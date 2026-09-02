@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# 由 seed.py 用固定种子确定性生成,不进版本库 —— 克隆后跑 python3 backend/seed.py 即可
+backend/lanxiu.db
+
+# 凭证
+.env
+*.token
+
+# 记录仪日志(体积会涨,且含调用内容)
+llm-trace.jsonl
+.feynman/llm-trace.jsonl
+
+# 说明:agent/*-results.jsonl 是评测结果,**要进版本库** ——
+# 它们是「这个版本的模型在这套题上考了多少分」的历史,是可比对的度量记录,不是临时产物。

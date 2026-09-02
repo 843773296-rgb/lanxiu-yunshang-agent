@@ -1,0 +1,658 @@
+#!/usr/bin/env python3
+"""按澜绣云裳 PRD 的状态机与业务规则生成模拟数据。
+
+每条异常案例都带 _truth 字段(已知真因),仅用于评测比对,
+不通过任何 agent 可见的接口暴露。
+"""
+import sqlite3, sys, json, os, random
+
+HERE=os.path.dirname(os.path.abspath(__file__))
+DB=os.path.join(HERE,"lanxiu.db")
+random.seed(20260830)   # 固定种子,数据可复现
+
+SCHEMA="""
+DROP TABLE IF EXISTS customer; DROP TABLE IF EXISTS deposit; DROP TABLE IF EXISTS refund_trace;
+DROP TABLE IF EXISTS payment_flow; DROP TABLE IF EXISTS appointment; DROP TABLE IF EXISTS followup;
+DROP TABLE IF EXISTS task; DROP TABLE IF EXISTS truth;
+CREATE TABLE customer(id TEXT PRIMARY KEY, name TEXT, phone TEXT, phone_tail TEXT, shop TEXT,
+  advisor TEXT, lifecycle TEXT, level TEXT, created TEXT, order_cnt INT, paid_amount REAL,
+  last_interact TEXT, addr TEXT, birthday TEXT, archived INT DEFAULT 0,
+  first_order TEXT, orders_12m INT DEFAULT 0, quarters_12m INT DEFAULT 0, amount_12m REAL DEFAULT 0,
+  idle_days INT DEFAULT 0, matched TEXT, manual_lc TEXT, manual_at TEXT);
+CREATE TABLE deposit(id TEXT PRIMARY KEY, customer_id TEXT, appt_id TEXT, amount REAL,
+  status TEXT, idem_key TEXT, created TEXT, updated TEXT);
+CREATE TABLE refund_trace(id INTEGER PRIMARY KEY AUTOINCREMENT, deposit_id TEXT, attempt INT,
+  ts TEXT, channel TEXT, req_amount REAL, resp_code TEXT, resp_msg TEXT, idem_key TEXT);
+CREATE TABLE payment_flow(id TEXT PRIMARY KEY, deposit_id TEXT, direction TEXT, amount REAL,
+  channel TEXT, channel_serial TEXT, status TEXT, ts TEXT);
+CREATE TABLE appointment(id TEXT PRIMARY KEY, customer_id TEXT, shop TEXT, advisor TEXT,
+  start_ts TEXT, end_ts TEXT, status TEXT, deposit_id TEXT, checkin_ts TEXT);
+CREATE TABLE followup(id TEXT PRIMARY KEY, customer_id TEXT, appt_id TEXT, ts TEXT,
+  channel TEXT, content TEXT, advisor TEXT);
+CREATE TABLE task(id TEXT PRIMARY KEY, type TEXT, ref_id TEXT, status TEXT, created TEXT, summary TEXT);
+CREATE TABLE shop(code TEXT PRIMARY KEY, name TEXT, status TEXT, manager TEXT,
+  phone TEXT, province TEXT, addr TEXT, updated TEXT);
+CREATE TABLE staff(no TEXT PRIMARY KEY, name TEXT, role TEXT, shop TEXT, status TEXT,
+  updated_by TEXT, updated TEXT);
+CREATE TABLE schedule(id TEXT PRIMARY KEY, type TEXT, advisor TEXT, customer_id TEXT,
+  start_ts TEXT, end_ts TEXT, status TEXT, summary TEXT, cancel_reason TEXT, shop TEXT);
+CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
+  advisor TEXT, shop TEXT, source TEXT, activity TEXT, delivery TEXT,
+  amount REAL, payable REAL, created TEXT, updated TEXT);
+CREATE TABLE ordr_item(id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT, sku TEXT,
+  name TEXT, tag TEXT, price REAL, qty INT);
+CREATE TABLE category(code TEXT PRIMARY KEY, name TEXT, parent TEXT, sort INT, status TEXT);
+CREATE TABLE product(spu TEXT PRIMARY KEY, name TEXT, category TEXT, kind TEXT, status TEXT,
+  base_price REAL, template TEXT, created TEXT, updated TEXT, cover TEXT);
+CREATE TABLE sku(code TEXT PRIMARY KEY, spu TEXT, spec TEXT, color TEXT, size TEXT,
+  price REAL, stock INT, locked INT, status TEXT);
+CREATE TABLE measure_item(code TEXT PRIMARY KEY, name TEXT, unit TEXT, required INT,
+  sort INT, status TEXT, note TEXT);
+CREATE TABLE measure_tpl(code TEXT PRIMARY KEY, name TEXT, descr TEXT, status TEXT,
+  updated_by TEXT, updated TEXT);
+CREATE TABLE tpl_item(tpl TEXT, item TEXT, sort INT);
+CREATE TABLE measure_rec(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, tpl TEXT,
+  item TEXT, value REAL, measured_by TEXT, measured_at TEXT);
+CREATE TABLE content(code TEXT PRIMARY KEY, title TEXT, kind TEXT, status TEXT,
+  channel TEXT, author TEXT, published TEXT, views INT);
+CREATE TABLE activity(code TEXT PRIMARY KEY, name TEXT, kind TEXT, status TEXT,
+  start_d TEXT, end_d TEXT, shop TEXT, budget REAL, signup INT, orders INT, created TEXT);
+CREATE TABLE activity_cost(id INTEGER PRIMARY KEY AUTOINCREMENT, activity TEXT, item TEXT,
+  amount REAL, note TEXT, created_by TEXT, created TEXT);
+CREATE TABLE invite_code(code TEXT PRIMARY KEY, batch TEXT, activity TEXT, status TEXT,
+  used_by TEXT, used_at TEXT, created TEXT);
+CREATE TABLE page(code TEXT PRIMARY KEY, name TEXT, channel TEXT, status TEXT,
+  updated_by TEXT, updated TEXT);
+CREATE TABLE page_block(id INTEGER PRIMARY KEY AUTOINCREMENT, page TEXT, sort INT,
+  kind TEXT, title TEXT, cfg TEXT);
+CREATE TABLE sys_code(code TEXT PRIMARY KEY, category TEXT, name TEXT, val TEXT,
+  sort INT, status TEXT, note TEXT);
+CREATE TABLE download_task(id TEXT PRIMARY KEY, kind TEXT, filters TEXT, status TEXT,
+  rows_n INT, size_kb INT, created_by TEXT, created TEXT, expire_at TEXT);
+CREATE TABLE level_cfg(code TEXT PRIMARY KEY, name TEXT, amount REAL, orders INT,
+  sort INT, status TEXT, note TEXT);
+CREATE TABLE tag(code TEXT PRIMARY KEY, name TEXT, grp TEXT, status TEXT, n INT, updated TEXT);
+CREATE TABLE approval(id TEXT PRIMARY KEY, kind TEXT, target TEXT, payload TEXT,
+  status TEXT, applied_by TEXT, applied_at TEXT, decided_by TEXT, decided_at TEXT, note TEXT);
+CREATE TABLE aftersale(id TEXT PRIMARY KEY, kind TEXT, order_id TEXT, customer_id TEXT,
+  status TEXT, reason TEXT, amount REAL, shop TEXT, advisor TEXT, created TEXT, updated TEXT,
+  ext_system TEXT, synced_at TEXT);
+CREATE TABLE maintain(id TEXT PRIMARY KEY, order_id TEXT, customer_id TEXT, item TEXT,
+  status TEXT, issue TEXT, shop TEXT, advisor TEXT, created TEXT, updated TEXT,
+  ext_system TEXT, synced_at TEXT);
+CREATE TABLE stock_log(id INTEGER PRIMARY KEY AUTOINCREMENT, sku TEXT, spu TEXT,
+  kind TEXT, delta INT, before_n INT, after_n INT, ref TEXT, operator TEXT, ts TEXT, note TEXT);
+CREATE TABLE craft(code TEXT PRIMARY KEY, name TEXT, cat TEXT, alias TEXT,
+  brief TEXT, detail TEXT, fit TEXT, lead_days TEXT, cost_level TEXT,
+  src_type TEXT, src_url TEXT, src_name TEXT);
+CREATE TABLE craft_combo(craft TEXT, material TEXT, verdict TEXT, reason TEXT, src_type TEXT);
+CREATE TABLE kb_table(topic TEXT, head TEXT, rows TEXT, src_file TEXT);
+CREATE TABLE truth(case_id TEXT PRIMARY KEY, breakpoint TEXT, root_cause TEXT,
+  expected_action TEXT, expected_evidence TEXT, note TEXT);
+"""
+
+# ── 退款失败的六类真因(BP-01)────────────────────────────
+REFUND_CASES=[
+ ("渠道超时但实际已退","支付平台三次均返回 TIMEOUT,但正向查询显示退款已成功",
+  "不得再次发起退款;应以支付平台查询结果为准,将押金置为已退并补记流水",
+  "payment_flow 中存在方向为 out 且状态为 success 的记录",
+  [("TIMEOUT","渠道响应超时"),("TIMEOUT","渠道响应超时"),("TIMEOUT","渠道响应超时")], True),
+ ("退款金额超过可退额","请求退款金额大于原支付金额",
+  "驳回并按原支付金额重新发起;需财务确认差额来源",
+  "req_amount 大于 payment_flow 中 in 方向的 amount",
+  [("AMOUNT_EXCEED","退款金额超过原交易金额")]*3, False),
+ ("原支付渠道已注销","客户原支付账户已销户,渠道返回 ACCOUNT_CLOSED",
+  "转财务人工处理,走线下退款并留痕;不得重试",
+  "resp_code 为 ACCOUNT_CLOSED",
+  [("ACCOUNT_CLOSED","收款账户已注销")]*3, False),
+ ("幂等号重复提交","三次重试使用了不同幂等号,存在重复出账风险",
+  "立即停止重试并核对是否已出账;后续重试必须复用原幂等号",
+  "refund_trace 三条记录的 idem_key 不一致",
+  [("DUPLICATE","重复请求")]*3, False),
+ ("商户账户余额不足","商户结算账户余额不足以完成退款",
+  "通知财务充值后重试;不属于单据问题",
+  "resp_code 为 INSUFFICIENT_BALANCE",
+  [("INSUFFICIENT_BALANCE","商户账户余额不足")]*3, False),
+ ("审批未完成即发起","押金仍处于退款审批中,却已发起退款请求",
+  "撤回退款请求,补齐店长复核(单笔≥1000元需财务复核)后重新发起",
+  "deposit.status 为退款审批中,但 refund_trace 已有记录",
+  [("NOT_APPROVED","审批状态不允许")]*3, False),
+]
+
+TODAY="2026-08-31"
+from datetime import date, timedelta
+T=date(2026,8,31)
+def ago(days): return (T-timedelta(days=days)).isoformat()
+
+# 判定规则(逐字来自后台 PRD 6.1)与优先级
+PRIORITY=["流失","潜在流失","休眠","忠诚","高价值","新客","活跃","潜在"]
+def match_rules(c):
+    """返回命中的全部生命周期条件"""
+    m=[]
+    if c["order_cnt"]==0: m.append("潜在")
+    if c["first_order"] and (T-date.fromisoformat(c["first_order"])).days<=30: m.append("新客")
+    if c["idle_days"]<=90: m.append("活跃")
+    if c["amount_12m"]>=15000: m.append("高价值")
+    if c["orders_12m"]>=4 and c["quarters_12m"]>=2: m.append("忠诚")
+    if 91<=c["idle_days"]<=180: m.append("休眠")
+    if 181<=c["idle_days"]<=365: m.append("潜在流失")
+    if c["idle_days"]>365: m.append("流失")
+    return m
+def decide(c):
+    m=match_rules(c)
+    for p in PRIORITY:
+        if p in m: return p,m
+    return "潜在",m
+
+def run():
+    if os.path.exists(DB): os.remove(DB)
+    c=sqlite3.connect(DB); c.executescript(SCHEMA)
+    SHOPS=["SH001 静安旗舰店","SH002 徐汇店","SH003 杭州湖滨店"]
+    ADV=["A01 林岚","A02 周叙","A03 沈砚","A04 陆微"]
+    SURN="陈林黄张李王吴刘蔡杨"; GIVEN=["雨桐","知微","砚清","书言","молод","апрель","子衿","望舒","астра","青梧"]
+    GIVEN=[g for g in GIVEN if all('一'<=ch<='鿿' for ch in g)]
+
+    # 基础客户 60 人
+    def mk(cid,name,idle,ocnt,amt,o12,q12,first,manual=None,mat=None):
+        row=dict(id=cid,name=name,order_cnt=ocnt,paid_amount=amt,amount_12m=amt,
+                 orders_12m=o12,quarters_12m=q12,first_order=first,idle_days=idle)
+        lc,m=decide(row)
+        eff = manual if (manual and mat and (T-date.fromisoformat(mat)).days<=30) else lc
+        phone=f"13{random.randint(100000000,999999999)}"
+        return (cid,name,phone,phone[-4:],random.choice(SHOPS),random.choice(ADV),eff,
+                random.choice(["普通","银卡","金卡"]),first or ago(400),ocnt,amt,ago(idle),
+                f"上海市{random.choice('静徐黄浦长宁')}区{random.randint(1,999)}号",
+                f"199{random.randint(0,9)}-{random.randint(1,12):02d}-{random.randint(1,28):02d}",0,
+                first,o12,q12,amt,idle,"/".join(m),manual,mat)
+
+    cust=[]
+    # 60 个常规客户:参数随机,但生命周期一律由规则算出
+    for i in range(60):
+        idle=random.choice([5,20,45,80,95,140,175,200,300,380,500])
+        ocnt=random.randint(0,8); o12=min(ocnt,random.randint(0,6))
+        amt=0.0 if ocnt==0 else round(random.uniform(500,42000),2)
+        first=None if ocnt==0 else ago(random.randint(10,700))
+        cust.append(mk(f"C{10000+i}", random.choice(SURN)+random.choice(GIVEN),
+                       idle,ocnt,amt,o12,random.randint(1,4),first))
+    c.executemany("INSERT INTO customer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", cust)
+
+    # ── A2/A3/A4 专用案例 ─────────────────────────────
+    EDGE=[
+     ("E-A3-01","互动第 90 天(活跃/休眠边界)",90,3,8000,3,2,ago(300),None,None,"活跃",
+      "「90 天内有有效互动=活跃」,第 90 天应含端计入活跃"),
+     ("E-A3-02","互动第 91 天(活跃/休眠边界)",91,3,8000,3,2,ago(300),None,None,"休眠",
+      "「无互动 91-180 天=休眠」,第 91 天进入休眠"),
+     ("E-A3-03","互动第 180 天(休眠/潜在流失边界)",180,3,8000,3,2,ago(400),None,None,"休眠",
+      "休眠区间上界含端"),
+     ("E-A3-04","互动第 181 天(休眠/潜在流失边界)",181,3,8000,3,2,ago(400),None,None,"潜在流失",
+      "潜在流失区间下界含端"),
+     ("E-A3-05","互动第 365 天(潜在流失/流失边界)",365,3,8000,3,2,ago(500),None,None,"潜在流失",
+      "「超过 365 天=流失」,第 365 天仍属潜在流失"),
+     ("E-A3-06","互动第 366 天(潜在流失/流失边界)",366,3,8000,3,2,ago(500),None,None,"流失",
+      "第 366 天进入流失"),
+     ("E-A3-07","实付 14,999 元(高价值边界)",30,5,14999,5,2,ago(200),None,None,"忠诚",
+      "未达 15000,不计高价值;因满 4 单跨两季度而为忠诚"),
+     ("E-A3-08","实付 15,000 元(高价值边界)",30,3,15000,3,1,ago(200),None,None,"高价值",
+      "恰好满 15000,含端计入高价值"),
+     ("E-A3-09","4 单但同一季度(忠诚边界)",30,4,9000,4,1,ago(60),None,None,"活跃",
+      "满 4 单但未跨两个季度,不计忠诚"),
+     ("E-A2-01","高价值 + 潜在流失同时命中",200,6,30000,6,3,ago(300),None,None,"潜在流失",
+      "优先级 潜在流失(2) > 高价值(5),必须取潜在流失"),
+     ("E-A2-02","忠诚 + 流失同时命中",400,8,26000,8,4,ago(500),None,None,"流失",
+      "优先级 流失(1) 最高,压过忠诚"),
+     ("E-A2-03","新客 + 高价值同时命中",10,2,32000,2,1,ago(20),None,None,"高价值",
+      "优先级 高价值(5) > 新客(6)"),
+     ("E-A4-01","人工调整 15 天前(仍在 30 天窗口内)",200,6,30000,6,3,ago(300),"高价值",ago(15),"高价值",
+      "人工结果 30 天内优先,重算值(潜在流失)被抑制"),
+     ("E-A4-02","人工调整 35 天前(已超窗)",200,6,30000,6,3,ago(300),"高价值",ago(35),"潜在流失",
+      "超过 30 天优先期,以重算值为准"),
+    ]
+    edge_rows=[]
+    for cid,nm,idle,ocnt,amt,o12,q12,first,man,mat,expect,note in EDGE:
+        edge_rows.append(mk(cid,nm,idle,ocnt,amt,o12,q12,first,man,mat))
+    c.executemany("INSERT INTO customer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", edge_rows)
+
+    truths=[]
+    for cid,nm,idle,ocnt,amt,o12,q12,first,man,mat,expect,note in EDGE:
+        bp="BP-05"
+        truths.append((cid,bp,expect,f"生命周期应判定为「{expect}」",note,nm))
+    # ── BP-01:24 个退款失败案例(6 类 × 4)───────────────
+    n=0
+    for cls,(cause,desc,action,evid,traces,已退) in enumerate(REFUND_CASES):
+        for k in range(4):
+            did=f"D{2000+n}"; cid=cust[n%len(cust)][0]; amt=round(random.choice([500,800,1000,1500,2000,3000]),2)
+            status="退款失败" if cause!="审批未完成即发起" else "退款审批中"
+            idem=f"IDEM-{did}"
+            day=14+(n%7)          # 2026-08-14 ~ 08-20,七天铺开
+            dstr=f"2026-08-{day:02d}"
+            c.execute("INSERT INTO deposit VALUES(?,?,?,?,?,?,?,?)",
+                      (did,cid,f"AP{3000+n}",amt,status,idem,"2026-08-01",dstr))
+            c.execute("INSERT INTO payment_flow VALUES(?,?,?,?,?,?,?,?)",
+                      (f"PF{did}I",did,"in",amt,"微信支付",f"WX{random.randint(10**11,10**12)}","success","2026-08-01 10:12"))
+            if 已退:
+                c.execute("INSERT INTO payment_flow VALUES(?,?,?,?,?,?,?,?)",
+                          (f"PF{did}O",did,"out",amt,"微信支付",f"WX{random.randint(10**11,10**12)}","success",f"{dstr} 14:31"))
+            req = amt*1.5 if cause=="退款金额超过可退额" else amt
+            for a,(code,msg) in enumerate(traces,1):
+                ik = f"IDEM-{did}-{a}" if cause=="幂等号重复提交" else idem
+                c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key) VALUES(?,?,?,?,?,?,?,?)",
+                          (did,a,f"{dstr} 14:{20+a*3:02d}","微信支付",round(req,2),code,msg,ik))
+            c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)",
+                      (f"T{did}","财务人工任务",did,"待处理",f"{dstr} 14:35",None))
+            truths.append((did,"BP-01",cause,action,evid,desc))
+            n+=1
+
+    # ── BP-02:16 对疑似重复客户(8 同一人 / 8 不同人)────
+    for i in range(16):
+        same = i<8
+        base=cust[i]
+        aid=f"C2{1000+i*2}"; bid=f"C2{1000+i*2+1}"
+        name=base[1]; phone=base[2]
+        if same:
+            # 同一人:手机号不同(换号)但生日+地址一致,订单在两店
+            p2=f"13{random.randint(100000000,999999999)}"
+            rows=[(aid,name,phone,phone[-4:],SHOPS[0],ADV[0],"活跃","金卡","2025-03-01",3,18000.0,"2026-07-01",base[12],base[13],0,"2025-03-01",3,2,18000.0,60,"活跃/高价值",None,None),
+                  (bid,name,p2,p2[-4:],SHOPS[1],ADV[1],"新客","普通","2026-05-01",1,3200.0,"2026-06-20",base[12],base[13],0,"2026-05-01",1,1,3200.0,72,"活跃",None,None)]
+            cause="同一客户跨店重复建档"
+            action="建议合并;冲突字段取最近一次经确认的数据(手机号取新号),被合并档案归档保留日志"
+            evid="生日与地址完全一致,姓名相同,手机号不同(换号)"
+        else:
+            # 不同人:同名同姓,生日与地址均不同
+            p2=f"13{random.randint(100000000,999999999)}"
+            rows=[(aid,name,phone,phone[-4:],SHOPS[0],ADV[0],"活跃","银卡","2025-06-01",2,9000.0,"2026-07-11",base[12],base[13],0,"2025-06-01",2,2,9000.0,50,"活跃",None,None),
+                  (bid,name,p2,p2[-4:],SHOPS[2],ADV[2],"潜在","普通","2026-04-01",0,0.0,"2026-04-02",
+                   f"杭州市西湖区{random.randint(1,999)}号",f"198{random.randint(0,9)}-0{random.randint(1,9)}-1{random.randint(0,9)}",0,None,0,0,0.0,150,"潜在",None,None)]
+            cause="同名不同人"
+            action="不合并;建议在两条档案上互相标注已核验非同一人,避免反复进入队列"
+            evid="生日不同、地址城市不同、手机号不同,仅姓名相同"
+        c.executemany("INSERT INTO customer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        case=f"MERGE-{i:02d}"
+        c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)",(f"T{case}","客户合并确认",f"{aid}|{bid}","待处理","2026-08-22",None))
+        truths.append((case,"BP-02",cause,action,evid,f"{aid} vs {bid}"))
+
+    # ── 预约记录:每个押金对应一条,状态按后台 PRD 6.1 的预约状态机 ──
+    APPT_ST=["已预约","已到店","已完成","已取消","已过期","爽约"]
+    WAY=["到店量体","上门沟通","电话回电","到店试衣"]
+    deps=[dict(r) for r in c.execute("SELECT id,customer_id,appt_id,amount,status FROM deposit")] if False else \
+         [{"id":r[0],"customer_id":r[1],"appt_id":r[2],"amount":r[3],"status":r[4]}
+          for r in c.execute("SELECT id,customer_id,appt_id,amount,status FROM deposit")]
+    for i,d in enumerate(deps):
+        st = "已取消" if d["status"] in ("退款失败","退款审批中") else APPT_ST[i%6]
+        day=14+(i%7)
+        c.execute("INSERT INTO appointment VALUES(?,?,?,?,?,?,?,?,?)",
+          (d["appt_id"], d["customer_id"], random.choice(SHOPS), random.choice(ADV),
+           f"2026-08-{day:02d} {9+i%8:02d}:30", f"2026-08-{day:02d} {10+i%8:02d}:30",
+           st, d["id"], f"2026-08-{day:02d} {9+i%8:02d}:28" if st in ("已到店","已完成") else None))
+        c.execute("INSERT INTO followup VALUES(?,?,?,?,?,?,?)",
+          (f"F{d['appt_id']}", d["customer_id"], d["appt_id"], f"2026-08-{day:02d} 09:10",
+           random.choice(["电话","微信","到店"]),
+           random.choice(["客户确认到店时间","客户询问面料选项","客户要求改期","客户未接听,留言"]),
+           random.choice(ADV)))
+    # 另建 20 条不带押金的预约
+    for i in range(20):
+        aid=f"AP{4000+i}"; day=14+(i%7)
+        c.execute("INSERT INTO appointment VALUES(?,?,?,?,?,?,?,?,?)",
+          (aid, cust[i%len(cust)][0], random.choice(SHOPS), random.choice(ADV),
+           f"2026-08-{day:02d} {10+i%7:02d}:00", f"2026-08-{day:02d} {11+i%7:02d}:00",
+           APPT_ST[i%6], None, None))
+    # ── 店铺(后台 PRD 6.1 店铺状态机:有效 ⇄ 无效)──
+    SHOPDATA=[("SH001","静安旗舰店","有效","张静静","021-6200-1001","上海市静安区","上海市静安区南京西路 1266 号 3F"),
+              ("SH002","徐汇店","有效","周恒东","021-6400-2002","上海市徐汇区","上海市徐汇区淮海中路 1010 号 2F"),
+              ("SH003","杭州湖滨店","无效","李明华","0571-8700-3003","浙江省杭州市","杭州市上城区湖滨路 88 号 1F")]
+    for code,nm,st,mg,ph,pv,ad in SHOPDATA:
+        c.execute("INSERT INTO shop VALUES(?,?,?,?,?,?,?,?)",(code,nm,st,mg,ph,pv,ad,"2026-08-20 10:12"))
+
+    # ── 员工与角色(PRD 第 8 章:按角色做数据权限控制)──
+    STAFF=[("60000001","张静静","店长","SH001 静安旗舰店"),("60000002","林岚","顾问","SH001 静安旗舰店"),
+           ("60000003","周叙","顾问","SH001 静安旗舰店"),("60000004","周恒东","店长","SH002 徐汇店"),
+           ("60000005","沈砚","顾问","SH002 徐汇店"),("60000006","陆微","顾问","SH002 徐汇店"),
+           ("60000007","李明华","店长","SH003 杭州湖滨店"),("60000008","魏欣新","总部运营",""),
+           ("60000009","陈曦","总部运营",""),("60000010","何舟","财务","")]
+    for no,nm,ro,sh in STAFF:
+        c.execute("INSERT INTO staff VALUES(?,?,?,?,?,?,?)",
+                  (no,nm,ro,sh,"启用","60000008","2026-08-2%d 1%d:16"%(random.randint(0,9),random.randint(0,9))))
+
+    # ── 日程任务(后台 PRD 6.1:有效 → 完结;有效 → 取消/无效)──
+    STYPE=["客户预约","企业任务","订单任务","回访跟进"]
+    SST=["有效","有效","有效","完结","完结","取消","无效"]
+    for i in range(28):
+        day=14+(i%7)
+        st=SST[i%7]
+        c.execute("INSERT INTO schedule VALUES(?,?,?,?,?,?,?,?,?,?)",
+          (f"SC{7000+i}", STYPE[i%4], random.choice(ADV), cust[i%len(cust)][0],
+           f"2026-08-{day:02d} {9+i%9:02d}:00", f"2026-08-{day:02d} {10+i%9:02d}:00",
+           st, "已完成服务并记录结果" if st=="完结" else None,
+           "客户改期" if st=="取消" else None, random.choice(SHOPS)))
+
+    # ── 订单(前端 PRD 11.1 订单状态机:6 态)──
+    OST=["待付款","方案确认中","待发货","待收货","已完成","已关闭"]
+    SRC=["微信小程序","门店A","门店B","门店Pad"]
+    DLV=["配送到店","配送到客户"]
+    ACT=["品牌文化体验活动","春季新品预售","","老客转介绍"]
+    GOODS=[("lxys_333342334","Highbridge Nailhead 海军蓝套装","标品",2680.00),
+           ("lxys_889201773","云锦缠枝纹 唐制齐胸襦裙","定制品",5880.00),
+           ("lxys_442097112","苏绣缂丝 明制马面裙","定制品",7200.00),
+           ("lxys_120945667","素罗对襟 宋制褙子","标品",1980.00),
+           ("lxys_775530219","妆花缎 唐制大袖衫","定制品",9600.00)]
+    for i in range(46):
+        oid=f"64880127{19714560000+i}"
+        st=OST[i%6]
+        kind="定制品订单" if i%3 else "标品订单"
+        day=10+(i%18)
+        n=1 if i%4 else 3
+        items=[GOODS[(i+k)%5] for k in range(n)]
+        amt=round(sum(g[3] for g in items),2)
+        c.execute("INSERT INTO ordr VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          (oid,cust[i%len(cust)][0],kind,st,random.choice(ADV),random.choice(SHOPS),
+           SRC[i%4],ACT[i%4],DLV[i%2],amt,amt,f"2026-08-{day:02d} 16:16",f"2026-08-{day:02d} 18:20"))
+        for sku,nm,tg,pr in items:
+            c.execute("INSERT INTO ordr_item(order_id,sku,name,tag,price,qty) VALUES(?,?,?,?,?,?)",
+                      (oid,sku,nm,tg,pr,1))
+
+    # ── 品类(树形两级)──
+    CATS=[("C01","汉服成衣",None,1),("C0101","唐制",  "C01",1),("C0102","宋制","C01",2),
+          ("C0103","明制",  "C01",3),("C02","配饰",None,2),("C0201","发饰","C02",1),
+          ("C0202","腰饰","C02",2),("C03","面料部件",None,3),("C0301","面料","C03",1),
+          ("C0302","绣片","C03",2)]
+    for code,nm,pa,so in CATS:
+        c.execute("INSERT INTO category VALUES(?,?,?,?,?)",(code,nm,pa,so,"启用"))
+
+    # ── 商品(SPU)与 SKU ──
+    PRODS=[("lxys_333342334","Highbridge Nailhead 海军蓝套装","C0103","标品",2680.0,None),
+           ("lxys_889201773","云锦缠枝纹 唐制齐胸襦裙","C0101","定制品",5880.0,"MT01 唐装模版"),
+           ("lxys_442097112","苏绣缂丝 明制马面裙","C0103","定制品",7200.0,"MT02 裙装模版"),
+           ("lxys_120945667","素罗对襟 宋制褙子","C0102","标品",1980.0,None),
+           ("lxys_775530219","妆花缎 唐制大袖衫","C0101","定制品",9600.0,"MT01 唐装模版"),
+           ("lxys_556120884","缂丝团花 明制立领长衫","C0103","定制品",8400.0,"MT03 长衫模版"),
+           ("lxys_907733215","错金鎏银 缠枝发簪","C0201","标品",680.0,None),
+           ("lxys_331092447","苏绣双面 玉兰腰封","C0202","标品",1280.0,None),
+           ("lxys_664201938","真丝香云纱 面料(米白)","C0301","标品",420.0,None),
+           ("lxys_228740116","手工盘金 云肩绣片","C0302","标品",1560.0,None),
+           ("lxys_449302771","织金妆花 宋制大袖","C0102","定制品",11200.0,"MT03 长衫模版"),
+           ("lxys_812004553","点翠嵌珠 步摇","C0201","标品",2200.0,None)]
+    COLORS=["黛蓝","月白","绛红","缃色","黛紫"]; SIZES=["S","M","L","XL","定制"]
+    for i,(spu,nm,cat,kind,price,tpl) in enumerate(PRODS):
+        st = "已下架" if i in (7,10) else "已上架"
+        c.execute("INSERT INTO product VALUES(?,?,?,?,?,?,?,?,?,?)",
+          (spu,nm,cat,kind,st,price,tpl,f"2026-0{1+i%8}-1{i%9} 10:00",f"2026-08-2{i%9} 15:20",nm[:2]))
+        n = 1 if kind=="定制品" else 3
+        for k in range(n):
+            col=COLORS[(i+k)%5]; sz="定制" if kind=="定制品" else SIZES[k%4]
+            stock = 0 if (i==3 and k==0) else random.randint(0,60)
+            c.execute("INSERT INTO sku VALUES(?,?,?,?,?,?,?,?,?)",
+              (f"{spu}-{k+1:02d}",spu,f"{col}/{sz}",col,sz,price,stock,
+               random.randint(0,min(3,stock)) if stock else 0,
+               "停用" if (i==7) else "启用"))
+
+    # ── 量体测量项 ──
+    MI=[("MI01","身高","cm",1,1),("MI02","体重","kg",1,2),("MI03","胸围","cm",1,3),
+        ("MI04","腰围","cm",1,4),("MI05","臀围","cm",1,5),("MI06","肩宽","cm",1,6),
+        ("MI07","袖长","cm",0,7),("MI08","衣长","cm",0,8),("MI09","裙长","cm",0,9),
+        ("MI10","领围","cm",0,10),("MI11","臂围","cm",0,11),("MI12","裤长","cm",0,12)]
+    for code,nm,un,rq,so in MI:
+        c.execute("INSERT INTO measure_item VALUES(?,?,?,?,?,?,?)",
+          (code,nm,un,rq,so,"启用" if code!="MI12" else "停用",
+           "必填项,缺失时不可保存方案" if rq else "选填,按款式需要采集"))
+    # ── 量体模版 ──
+    TPL=[("MT01","唐装模版","唐制齐胸襦裙、大袖衫等,采集上身与裙长","启用",
+          ["MI01","MI02","MI03","MI04","MI05","MI06","MI07","MI09"]),
+         ("MT02","裙装模版","明制马面裙、宋制百迭裙,重点采集腰臀与裙长","启用",
+          ["MI01","MI02","MI04","MI05","MI09"]),
+         ("MT03","长衫模版","明制立领长衫、宋制大袖,采集全身","启用",
+          ["MI01","MI02","MI03","MI04","MI05","MI06","MI07","MI08","MI10"]),
+         ("MT04","上衣用量体","仅上身,用于褙子、比甲等短款","启用",
+          ["MI01","MI03","MI06","MI07","MI08"]),
+         ("MT05","裤装模版(停用)","已并入裙装模版,保留历史数据","停用",
+          ["MI01","MI04","MI12"])]
+    for code,nm,de,st,items in TPL:
+        c.execute("INSERT INTO measure_tpl VALUES(?,?,?,?,?,?)",
+          (code,nm,de,st,"60000008",f"2026-08-2{TPL.index((code,nm,de,st,items))} 16:16"))
+        for j,it in enumerate(items):
+            c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it,j+1))
+    # ── 客户量体档案(定制品订单的客户)──
+    IDEAL={"MI01":165,"MI02":52,"MI03":86,"MI04":68,"MI05":92,"MI06":38,
+           "MI07":56,"MI08":110,"MI09":98,"MI10":34,"MI11":26,"MI12":100}
+    cust_ids=[r[0] for r in c.execute("SELECT DISTINCT customer_id FROM ordr WHERE kind='定制品订单' LIMIT 18")]
+    for k,cid in enumerate(cust_ids):
+        tpl=TPL[k%4][0]
+        for it in dict(TPL[k%4][4] and {i:1 for i in TPL[k%4][4]}):
+            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,measured_at) VALUES(?,?,?,?,?,?)",
+              (cid,tpl,it,round(IDEAL[it]+random.uniform(-6,6),1),random.choice(ADV),
+               f"2026-0{6+k%3}-1{k%9} 14:30"))
+    # ── 内容管理 ──
+    CK=["品牌故事","穿搭指南","工艺科普","活动预告"]
+    CH=["小程序首页","会员中心","门店Pad","公众号"]
+    for i in range(16):
+        c.execute("INSERT INTO content VALUES(?,?,?,?,?,?,?,?)",
+          (f"CT{100+i}",
+           ["云锦织造的七十二道工序","唐制齐胸襦裙的日常穿法","缂丝为什么被称为织中之圣",
+            "秋季新品预览:妆花缎系列","如何挑选适合自己的马面裙","明制立领长衫的历史沿革",
+            "苏绣双面绣工艺解析","汉服形制入门:唐宋明三制对比","盘扣的十二种做法",
+            "香云纱的晒莨工艺","品牌十周年回顾","门店预约量体全流程","定制方案确认要点",
+            "配饰搭配的三个原则","真丝面料的保养方法","冬季新品预告"][i],
+           CK[i%4],"已发布" if i%5 else "草稿",CH[i%4],"60000009",
+           f"2026-0{6+i%3}-{10+i%18:02d} 10:00",random.randint(120,8600)))
+
+    # ── 营销活动 ──
+    ACTS=[("AC2601","品牌文化体验活动","线上","进行中","2026-08-01","2026-09-30",128000.0),
+          ("AC2602","春季新品预售","线上","已结束","2026-03-01","2026-04-15",86000.0),
+          ("AC2603","老客转介绍","门店","进行中","2026-06-01","2026-12-31",45000.0),
+          ("AC2604","静安旗舰店周年庆","门店","未开始","2026-10-01","2026-10-07",68000.0),
+          ("AC2605","非遗工艺展联名","联名","进行中","2026-07-15","2026-09-15",210000.0),
+          ("AC2606","会员日专享","线上","已取消","2026-05-01","2026-05-07",32000.0)]
+    COSTITEM=["场地租赁","物料印刷","KOL 投放","礼品采购","摄影摄像","门店陈列"]
+    for i,(code,nm,kd,st,sd,ed,bg) in enumerate(ACTS):
+        su=random.randint(30,480) if st!="未开始" else 0
+        od=rows_n=random.randint(5,90) if st!="未开始" else 0
+        c.execute("INSERT INTO activity VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+          (code,nm,kd,st,sd,ed,random.choice(SHOPS) if kd=="门店" else "全渠道",bg,su,od,sd+" 09:00"))
+        for k in range(3 if st!="未开始" else 1):
+            c.execute("INSERT INTO activity_cost(activity,item,amount,note,created_by,created) VALUES(?,?,?,?,?,?)",
+              (code,COSTITEM[(i+k)%6],round(bg*random.uniform(.08,.32),2),
+               "已开票" if k%2 else "待开票","60000009",f"{sd} 1{k}:20"))
+    # ── 邀请码(两个批次)──
+    for b,(act,n) in enumerate([("AC2603",40),("AC2605",30)]):
+        for k in range(n):
+            used = k < n//3
+            c.execute("INSERT INTO invite_code VALUES(?,?,?,?,?,?,?)",
+              (f"INV{b+1}{k:04d}",f"B{b+1:02d}",act,
+               "已使用" if used else ("已作废" if k>=n-3 else "未使用"),
+               cust[k%len(cust)][0] if used else None,
+               f"2026-08-{10+k%18:02d} 14:00" if used else None,"2026-07-20 10:00"))
+    # ── 页面管理 ──
+    BK=["普通图片","轮播图片","商品列表","热点图"]
+    PAGES=[("PG01","小程序首页","小程序","已发布"),("PG02","会员中心","小程序","已发布"),
+           ("PG03","秋季新品专题","小程序","草稿"),("PG04","门店预约引导页","小程序","已发布"),
+           ("PG05","非遗联名专题","小程序","草稿"),("PG06","Pad 接待首屏","门店Pad","已发布")]
+    for i,(code,nm,ch,st) in enumerate(PAGES):
+        c.execute("INSERT INTO page VALUES(?,?,?,?,?,?)",
+          (code,nm,ch,st,"60000009",f"2026-08-{18+i%12:02d} 1{i%9}:30"))
+        for k in range(2+i%3):
+            kd=BK[(i+k)%4]
+            c.execute("INSERT INTO page_block(page,sort,kind,title,cfg) VALUES(?,?,?,?,?)",
+              (code,k+1,kd,
+               {"普通图片":"品牌主视觉","轮播图片":"新品轮播","商品列表":"热销推荐","热点图":"款式导航"}[kd],
+               {"普通图片":"1 张 / 750×420","轮播图片":"4 张 / 自动播放 3s",
+                "商品列表":"取自品类 C0101 / 最多 8 个","热点图":"1 张 / 5 个热区"}[kd]))
+    # ── 系统编码 ──
+    SC=[("SC-ORD-01","订单来源","微信小程序","wxapp",1),("SC-ORD-02","订单来源","门店Pad","pad",2),
+        ("SC-ORD-03","订单来源","门店A","shopA",3),("SC-ORD-04","订单来源","门店B","shopB",4),
+        ("SC-DLV-01","配送方式","配送到店","to_shop",1),("SC-DLV-02","配送方式","配送到客户","to_cust",2),
+        ("SC-APT-01","预约方式","到店量体","onsite_m",1),("SC-APT-02","预约方式","到店试衣","onsite_t",2),
+        ("SC-APT-03","预约方式","上门沟通","visit",3),("SC-APT-04","预约方式","电话回电","callback",4),
+        ("SC-REF-01","退款失败码","渠道响应超时","TIMEOUT",1),
+        ("SC-REF-02","退款失败码","退款金额超过原交易","AMOUNT_EXCEED",2),
+        ("SC-REF-03","退款失败码","收款账户已注销","ACCOUNT_CLOSED",3),
+        ("SC-REF-04","退款失败码","重复请求","DUPLICATE",4),
+        ("SC-REF-05","退款失败码","商户账户余额不足","INSUFFICIENT_BALANCE",5),
+        ("SC-REF-06","退款失败码","审批状态不允许","NOT_APPROVED",6)]
+    for code,cat,nm,vl,so in SC:
+        c.execute("INSERT INTO sys_code VALUES(?,?,?,?,?,?,?)",
+          (code,cat,nm,vl,so,"启用" if code!="SC-ORD-04" else "停用",
+           "与支付渠道返回码一一对应" if cat=="退款失败码" else ""))
+    # ── 下载任务 ──
+    DT=[("DL2609010001","客户档案","生命周期=流失","已完成",10,4),
+        ("DL2609010002","操作日志","全部","已完成",18,6),
+        ("DL2608310003","商品库","类型=定制品","已过期",5,2),
+        ("DL2608310004","客户档案","归属店铺=SH001","失败",0,0),
+        ("DL2609010005","交易查询","状态=待付款","生成中",0,0)]
+    for i,(did,kd,fl,st,rn,sz) in enumerate(DT):
+        c.execute("INSERT INTO download_task VALUES(?,?,?,?,?,?,?,?,?)",
+          (did,kd,fl,st,rn,sz,"60000008",f"2026-0{8+i%2}-3{i%2} 1{i}:0{i}",
+           f"2026-09-0{2+i%3} 1{i}:0{i}"))
+
+    # ── 会员等级配置(后台 PRD 6.2:滚动 12 个月实付金额或订单数,任一满足即升级)──
+    LV=[("L0","普通",0,0,0,"注册后默认等级"),
+        ("L1","银卡",5000,2,1,"滚动 12 个月实付 ≥5000 元 或 完成订单 ≥2 单"),
+        ("L2","金卡",15000,4,2,"滚动 12 个月实付 ≥15000 元 或 完成订单 ≥4 单"),
+        ("L3","黑金",30000,6,3,"滚动 12 个月实付 ≥30000 元 或 完成订单 ≥6 单")]
+    for code,nm,am,od,so,nt in LV:
+        c.execute("INSERT INTO level_cfg VALUES(?,?,?,?,?,?,?)",(code,nm,am,od,so,"启用",nt))
+    # 按规则重算客户等级(每日计算,订单完成 7 个自然日后计入)
+    def level_of(amt,od):
+        for code,nm,am,ordn,so,_ in reversed(LV):
+            if so and (amt>=am or od>=ordn): return nm
+        return "普通"
+    for r in list(c.execute("SELECT id,amount_12m,orders_12m FROM customer")):
+        c.execute("UPDATE customer SET level=? WHERE id=?",(level_of(r[1] or 0,r[2] or 0),r[0]))
+    # ── 客户标签 ──
+    TAGS=[("TG01","高意向","意向度"),("TG02","观望中","意向度"),("TG03","价格敏感","意向度"),
+          ("TG04","唐制偏好","款式偏好"),("TG05","宋制偏好","款式偏好"),("TG06","明制偏好","款式偏好"),
+          ("TG07","重复购买","行为"),("TG08","仅线上","行为"),("TG09","到店频繁","行为"),
+          ("TG10","已流失(停用)","行为")]
+    for i,(code,nm,gp) in enumerate(TAGS):
+        c.execute("INSERT INTO tag VALUES(?,?,?,?,?,?)",
+          (code,nm,gp,"停用" if code=="TG10" else "启用",random.randint(3,42),
+           f"2026-08-{18+i%12:02d} 1{i%9}:20"))
+    # ── 审批单(三类高风险操作,PRD 第 8 章)──
+    APV=[("AP-LV-001","等级调整","C10008",'{"from":"金卡","to":"黑金"}',"待审批","60000001"),
+         ("AP-PT-001","积分调整","C10012",'{"delta":5000,"reason":"活动补发"}',"待审批","60000004"),
+         ("AP-TR-001","客户转移","C10003|C10005",'{"to_advisor":"A03 沈砚","n":2}',"待审批","60000001"),
+         ("AP-LV-002","等级调整","C10001",'{"from":"银卡","to":"金卡"}',"已通过","60000001"),
+         ("AP-PT-002","积分调整","C10020",'{"delta":-2000,"reason":"重复发放回收"}',"已驳回","60000004")]
+    for aid,kd,tg,pl,st,by in APV:
+        c.execute("INSERT INTO approval VALUES(?,?,?,?,?,?,?,?,?,?)",
+          (aid,kd,tg,pl,st,by,"2026-08-30 15:20",
+           "60000008" if st!="待审批" else None,
+           "2026-08-31 09:10" if st!="待审批" else None,
+           {"已通过":"核实无误,同意调整","已驳回":"缺少活动依据,退回补充","待审批":None}[st]))
+
+    # ── 售后工单(状态取自设计稿的两条链;PRD 定其为外部主系统,本平台只读)──
+    AS_REFUND=["待确认","审批同意","审批失败","退款失败","待结算","已完成"]
+    AS_RETURN=["提交申请","审批同意","审批拒绝","商品寄回","已入库","退款成功","退款失败","已完成"]
+    REASONS=["多拍/拍错/不想要","尺寸不合适","面料与描述不符","工艺瑕疵","交期延误","质量问题"]
+    oids=[r[0] for r in c.execute("SELECT id FROM ordr ORDER BY id LIMIT 30")]
+    for i in range(26):
+        kind="仅退款" if i%2 else "退货退款"
+        st=(AS_REFUND if kind=="仅退款" else AS_RETURN)[i%(6 if kind=="仅退款" else 8)]
+        day=12+(i%18)
+        c.execute("INSERT INTO aftersale VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          (f"AS{64880127+i}",kind,oids[i%len(oids)],cust[i%len(cust)][0],st,
+           REASONS[i%6],round(random.uniform(680,9600),2),random.choice(SHOPS),random.choice(ADV),
+           f"2026-08-{day:02d} 09:{10+i%40:02d}",f"2026-08-{min(31,day+2):02d} 15:{10+i%40:02d}",
+           "售后/维保系统",f"2026-09-01 0{i%9}:1{i%9}"))
+    # ── 维保工单 ──
+    MT=["待确认","取消","待入库","待处理","处理中","待签收","已完成"]
+    ISSUES=["盘扣脱线","下摆开线","面料起球","刺绣局部脱落","拉链损坏","染色不均","尺寸需调整"]
+    ITEMS=["云锦缠枝纹 唐制齐胸襦裙","苏绣缂丝 明制马面裙","素罗对襟 宋制褙子",
+           "妆花缎 唐制大袖衫","缂丝团花 明制立领长衫"]
+    for i in range(21):
+        day=10+(i%20)
+        c.execute("INSERT INTO maintain VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+          (f"MW{73020+i}",oids[i%len(oids)],cust[(i+7)%len(cust)][0],ITEMS[i%5],
+           MT[i%7],ISSUES[i%7],random.choice(SHOPS),random.choice(ADV),
+           f"2026-08-{day:02d} 11:{10+i%40:02d}",f"2026-08-{min(31,day+3):02d} 16:{10+i%40:02d}",
+           "售后/维保系统",f"2026-09-01 0{i%9}:2{i%9}"))
+
+    # ── 库存变更日志(后台 PRD 第 8 章:关键写操作均可查询操作人、时间、前后值和业务编号)──
+    KINDS=[("入库",1),("订单占用",-1),("订单释放",1),("退货入库",1),("盘点调整",0),("报损",-1)]
+    skus=[r for r in c.execute("SELECT code,spu,stock FROM sku ORDER BY code")]
+    ops=["60000001 张静静","60000004 周恒东","60000008 魏欣新","系统"]
+    for i in range(60):
+        sk=skus[i%len(skus)]
+        kd,sign=KINDS[i%6]
+        amt=random.randint(1,12)
+        delta=amt*sign if sign else random.choice([-3,-2,2,3])
+        before=max(0,sk[2]-delta*((i//len(skus))+1))
+        after=max(0,before+delta)
+        day=8+(i%22)
+        c.execute("""INSERT INTO stock_log(sku,spu,kind,delta,before_n,after_n,ref,operator,ts,note)
+                     VALUES(?,?,?,?,?,?,?,?,?,?)""",
+          (sk[0],sk[1],kd,delta,before,after,
+           {"入库":"PO2608"+str(1000+i),"订单占用":"64880127"+str(19714560000+i%46),
+            "订单释放":"64880127"+str(19714560000+i%46),"退货入库":"AS64880127"+str(i%26),
+            "盘点调整":"CK2608"+str(100+i),"报损":"DM2608"+str(100+i)}[kd],
+           random.choice(ops),f"2026-08-{day:02d} 1{i%9}:{10+i%45:02d}",
+           {"盘点调整":"月度盘点差异修正","报损":"运输途中破损"}.get(kd,"")))
+
+    # ── 汉服工艺 / 材质 / 形制知识库 ──
+    # src_type:  public=公开来源可溯源  scale=公开资料量级  demo=演示数据(企业 know-how,无公开来源)
+    # 工艺知识不在这里手写 —— 由 knowledge/*.md 解析而来,md 是唯一源头。
+    # 存两遍一定会漂移,所以这里只负责把解析结果写进表。
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "knowledge"))
+    import kb as _kb
+    CRAFTS = _kb.load()
+
+    for row in CRAFTS: c.execute("INSERT INTO craft VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",row)
+    # 决策表:顾问问的多是「客户说 X 我推什么」,这类答案在 md 里是表格不是条目
+    for topic,head,rws,fn in _kb.tables():
+        c.execute("INSERT INTO kb_table VALUES(?,?,?,?)",
+                  (topic,json.dumps(head,ensure_ascii=False),json.dumps(rws,ensure_ascii=False),fn))
+
+    # ── 组合约束矩阵(工艺 × 材质)—— 企业 know-how,全部为演示数据 ──
+    COMBO=[
+     ("KF01","MT01","不可","香云纱经薯莨与河泥处理,表面涂层遇缂织张力易开裂"),
+     ("KF01","MT02","需评估","云锦本身已厚重,叠加缂丝会显笨重且成本极高"),
+     ("KF01","MT03","可","素罗轻薄,缂丝局部点缀效果佳"),
+     ("KF01","MT04","可","织金缎面平滑,缂丝纹样表现清晰"),
+     ("KF02","MT01","不可","妆花属织造技法,须在织造阶段完成,不可后加于成品面料"),
+     ("KF02","MT02","可","妆花本即云锦核心技法"),
+     ("KF02","MT03","不可","罗组织松,承不住妆花的密实纬线"),
+     ("KF02","MT04","需评估","二者均含金线,需评估纹样是否互相干扰"),
+     ("KF03","MT01","可","苏绣针法细密,香云纱底面平整适合"),
+     ("KF03","MT02","需评估","云锦纹样已满,加绣需留白设计"),
+     ("KF03","MT03","可","轻薄底料适合平绣,不宜厚绣"),
+     ("KF03","MT04","可","织金缎适合苏绣局部提亮"),
+     ("KF04","MT01","不可","盘金需钉固,香云纱涂层受针易破损"),
+     ("KF04","MT02","可","云锦厚实挺括,承得住盘金重量"),
+     ("KF04","MT03","不可","罗组织张力低,盘金易造成拉扯变形"),
+     ("KF04","MT04","可","织金缎厚度与光泽与盘金相配"),
+    ]
+    for a,b,v,r in COMBO:
+        c.execute("INSERT INTO craft_combo VALUES(?,?,?,?,'demo')",(a,b,v,r))
+
+    # ── 负向评测专用数据(不进 task 表,由 agent/negative.py 单独出题)────────────
+    # 双向测试原则:正向考「该做的做对」,负向考「不该做的没做」。
+    # 负向题需要两种正向题里根本不存在的数据形态:一张没出问题的单、一张证据残缺的单。
+    _cid = c.execute("SELECT id FROM customer LIMIT 1").fetchone()[0]
+    # N1 健康单据:退款早已成功,压根没有失败可查
+    c.execute("INSERT INTO deposit VALUES(?,?,?,?,?,?,?,?)",
+              ("D9001", _cid, None, 600.0, "已退", "IDEM-D9001", "2026-08-05 10:00", "2026-08-05 10:07"))
+    c.execute("INSERT INTO payment_flow VALUES(?,?,?,?,?,?,?,?)",
+              ("PFD9001I", "D9001", "in", 600.0, "微信支付", "WX600100100100", "success", "2026-08-05 10:00"))
+    c.execute("INSERT INTO payment_flow VALUES(?,?,?,?,?,?,?,?)",
+              ("PFD9001O", "D9001", "out", 600.0, "微信支付", "WX600200200200", "success", "2026-08-05 10:07"))
+    c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key)"
+              " VALUES(?,?,?,?,?,?,?,?)",
+              ("D9001", 1, "2026-08-05 10:07", "微信支付", 600.0, "SUCCESS", "退款成功", "IDEM-D9001"))
+    # N2 证据残缺:有失败轨迹,但支付流水一条都没有 —— 无法判断钱到底动没动
+    c.execute("INSERT INTO deposit VALUES(?,?,?,?,?,?,?,?)",
+              ("D9002", _cid, None, 1500.0, "退款失败", "IDEM-D9002", "2026-08-11 09:30", "2026-08-19 15:02"))
+    for _a, _t in [(1, "2026-08-19 14:50"), (2, "2026-08-19 14:56"), (3, "2026-08-19 15:02")]:
+        c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key)"
+                  " VALUES(?,?,?,?,?,?,?,?)",
+                  ("D9002", _a, _t, "微信支付", 1500.0, "UNKNOWN", "渠道未返回明确结果", "IDEM-D9002"))
+
+    c.executemany("INSERT INTO truth VALUES(?,?,?,?,?,?)", truths)
+    c.commit()
+    print(f"已生成 {DB}")
+    for t,label in [("customer","客户"),("deposit","押金"),("refund_trace","退款轨迹"),
+                    ("payment_flow","支付流水"),("appointment","预约"),("followup","跟进"),
+                    ("task","人工任务"),("truth","标注真因")]:
+        print(f"  {label:8s} {c.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]:4d}")
+    print("\n真因分布:")
+    for bp,cause,cnt in c.execute("SELECT breakpoint,root_cause,COUNT(*) FROM truth GROUP BY breakpoint,root_cause"):
+        print(f"  [{bp}] {cause:16s} {cnt}")
+    c.close()
+
+if __name__=="__main__": run()

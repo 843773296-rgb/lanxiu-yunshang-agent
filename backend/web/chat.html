@@ -1,0 +1,175 @@
+<title>工艺顾问助手</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#EFEFF2; --paper:#FFFFFF; --paper-2:#F6F6F9; --line:#DCDCE4; --line-2:#E9E9F0;
+  --ink:#15171C; --ink-2:#4E525E; --ink-3:#82879A;
+  --dye:#2B3F7A; --dye-soft:#E4E8F4;
+  --pass:#1C6448; --pass-soft:#E1EFE9; --fail:#9C3222; --fail-soft:#F7E5E1;
+  --warn:#7E5714; --warn-soft:#F6EDDA;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0E1015; --paper:#161922; --paper-2:#1D212C; --line:#2A2F3D; --line-2:#232733;
+  --ink:#E7E9EF; --ink-2:#A7ADBE; --ink-3:#767D92; --dye:#93A9E4; --dye-soft:#1A2140;
+  --pass:#63C79E; --pass-soft:#122619; --fail:#EC9481; --fail-soft:#2C1512;
+  --warn:#DFB25C; --warn-soft:#281E0F;
+}}
+:root[data-theme="dark"]{
+  --ground:#0E1015; --paper:#161922; --paper-2:#1D212C; --line:#2A2F3D; --line-2:#232733;
+  --ink:#E7E9EF; --ink-2:#A7ADBE; --ink-3:#767D92; --dye:#93A9E4; --dye-soft:#1A2140;
+  --pass:#63C79E; --pass-soft:#122619; --fail:#EC9481; --fail-soft:#2C1512;
+  --warn:#DFB25C; --warn-soft:#281E0F;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;
+  line-height:1.65;-webkit-font-smoothing:antialiased}
+.wrap{max-width:840px;margin:0 auto;padding:0 24px 40px;min-height:100vh;display:flex;flex-direction:column}
+h1{font-size:26px;font-weight:600;letter-spacing:-.02em;margin:0}
+header.top{padding:36px 0 20px;border-bottom:1px solid var(--line)}
+.eyebrow{display:flex;gap:9px;align-items:center;margin-bottom:12px}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--dye)}
+.lab{font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+.deck{margin-top:10px;color:var(--ink-2);font-size:14.5px;max-width:60ch}
+.tiers{display:flex;flex-wrap:wrap;gap:6px;margin-top:13px}
+.tier{font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:2px}
+.t-public{background:var(--pass-soft);color:var(--pass)}
+.t-scale{background:var(--warn-soft);color:var(--warn)}
+.t-demo{background:var(--paper-2);color:var(--ink-3);border:1px solid var(--line)}
+
+#log{flex:1;padding:22px 0 8px;display:flex;flex-direction:column;gap:16px}
+.msg{display:flex;flex-direction:column;gap:6px;max-width:100%}
+.msg.u{align-items:flex-end}
+.bub{padding:11px 15px;border-radius:10px;max-width:88%;white-space:pre-wrap;word-break:break-word}
+.msg.u .bub{background:var(--dye);color:#fff;border-bottom-right-radius:3px}
+:root[data-theme="dark"] .msg.u .bub,:root:not([data-theme="light"]) .msg.u .bub{color:#0E1015}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .msg.u .bub{color:#fff}}
+.msg.a .bub{background:var(--paper);border:1px solid var(--line);border-bottom-left-radius:3px}
+.bub b,.bub strong{font-weight:600}
+.traj{display:flex;flex-direction:column;gap:3px;font-family:var(--mono);font-size:11.5px;
+  color:var(--ink-3);background:var(--paper-2);border:1px solid var(--line-2);
+  border-radius:6px;padding:8px 11px;max-width:88%}
+.traj .h{color:var(--ink-3);letter-spacing:.08em;text-transform:uppercase;font-size:10px;margin-bottom:2px}
+.traj .r{display:flex;gap:7px;flex-wrap:wrap}
+.traj .t{color:var(--dye)}
+.traj .v{color:var(--ink-2)}
+.traj .v.no{color:var(--warn)}
+.meta{font-family:var(--mono);font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.err{background:var(--fail-soft);color:var(--fail);padding:10px 14px;border-radius:6px;
+  font-size:13px;font-family:var(--mono)}
+.spin{display:inline-block;width:10px;height:10px;border:2px solid var(--line);
+  border-top-color:var(--dye);border-radius:50%;animation:sp .7s linear infinite;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+.seeds{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 14px}
+.seed{font-size:12.5px;padding:6px 11px;border:1px solid var(--line);border-radius:14px;
+  background:var(--paper);color:var(--ink-2);cursor:pointer;transition:border-color .12s,color .12s}
+.seed:hover{border-color:var(--dye);color:var(--dye)}
+.bar{position:sticky;bottom:0;background:var(--ground);padding:12px 0 16px;
+  border-top:1px solid var(--line);display:flex;gap:8px}
+#q{flex:1;padding:11px 14px;border:1px solid var(--line);border-radius:8px;background:var(--paper);
+  color:var(--ink);font-family:var(--sans);font-size:14.5px;resize:none;min-height:44px;max-height:140px}
+#q:focus{outline:2px solid var(--dye);outline-offset:-1px;border-color:var(--dye)}
+#send{padding:0 20px;border:1px solid var(--dye);background:var(--dye);color:#fff;border-radius:8px;
+  cursor:pointer;font-weight:600;font-size:14.5px;font-family:var(--sans)}
+:root[data-theme="dark"] #send,:root:not([data-theme="light"]) #send{color:#0E1015}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) #send{color:#fff}}
+#send[disabled]{opacity:.5;cursor:progress}
+#send:focus-visible,.seed:focus-visible{outline:2px solid var(--dye);outline-offset:2px}
+footer{font-size:12px;color:var(--ink-3);padding-top:10px;text-align:center}
+footer code{font-family:var(--mono);font-size:11px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">澜绣云裳 · 定制业务协同助手</span></div>
+  <h1>工艺顾问助手</h1>
+  <p class="deck">顾问懂客户、不懂工艺。这里可以直接用大白话问 ——
+  它会去查工艺知识库,<b>只答查到的</b>,查不到就说查不到。</p>
+  <div class="tiers" id="score" style="display:none"></div>
+  <div class="tiers">
+    <span class="tier t-public">public 可对客户说</span>
+    <span class="tier t-scale">scale 行业量级</span>
+    <span class="tier t-demo">demo 需工艺确认</span>
+  </div>
+</header>
+
+<div id="log"></div>
+
+<div class="seeds" id="seeds"></div>
+
+<div class="bar">
+  <textarea id="q" rows="1" placeholder="比如:香云纱能不能做妆花?  (Enter 发送,Shift+Enter 换行)"></textarea>
+  <button id="send">问</button>
+</div>
+<footer>工具 <code>backend/api.py</code> 四个只读接口 · 循环 <code>agent/chat.py</code> · 知识库 <code>knowledge/</code></footer>
+</div>
+<script>
+const $=id=>document.getElementById(id), log=$("log");
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const md=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/「(.+?)」/g,"「<b>$1</b>」");
+let HISTORY=[];
+
+const SEEDS=["香云纱能不能做妆花?","客户想在宋锦上做妆花,行吗?",
+  "客人说要仙气飘飘的,该推什么形制?","明制马面裙配什么颜色不会出错?",
+  "缂丝大概要多久、多少钱?","客户结婚穿,10 月要,现在下单来得及吗?"];
+(async()=>{ try{
+  const j=await (await fetch("/api/chat-eval")).json();
+  if(!j.total) return;
+  const el=$("score"); el.style.display="flex";
+  el.innerHTML=`<span class="tier t-public">评测 ${j.passed}/${j.total} 命中</span>`
+    +`<span class="tier t-demo">正向 ${j.pos_ok}/${j.pos} · 负向 ${j.neg_ok}/${j.neg}</span>`
+    +`<span class="tier t-demo">${esc(j.model||"")} · $${j.cost}</span>`;
+}catch(e){} })();
+$("seeds").innerHTML=SEEDS.map(s=>`<button class="seed">${esc(s)}</button>`).join("");
+document.querySelectorAll(".seed").forEach(b=>b.addEventListener("click",()=>{
+  $("q").value=b.textContent; send();
+}));
+
+function bubble(role,html){
+  const d=document.createElement("div"); d.className="msg "+(role==="user"?"u":"a");
+  d.innerHTML=`<div class="bub">${html}</div>`; log.appendChild(d);
+  d.scrollIntoView({block:"end",behavior:"smooth"}); return d;
+}
+function trajHTML(t){
+  if(!t||!t.length) return "";
+  return `<div class="traj"><div class="h">它查了什么</div>`+t.map(x=>{
+    const no=/查不到|未定义/.test(x.brief);
+    return `<div class="r"><span class="t">${esc(x.tool)}</span>`+
+      `<span>${esc(JSON.stringify(x.args))}</span>`+
+      `<span class="v ${no?"no":""}">→ ${esc(x.brief)}</span></div>`;
+  }).join("")+`</div>`;
+}
+
+async function send(){
+  const q=$("q").value.trim(); if(!q) return;
+  $("q").value=""; $("q").style.height="auto";
+  $("send").disabled=true; $("send").textContent="…";
+  bubble("user",esc(q));
+  const wait=bubble("assistant",`<span class="spin"></span>正在查知识库…`);
+  try{
+    const r=await (await fetch("/api/chat",{method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({q,history:HISTORY})})).json();
+    wait.remove();
+    if(r.error){ bubble("assistant",`<span class="err">${esc(r.error)}</span>`); return; }
+    const d=document.createElement("div"); d.className="msg a";
+    d.innerHTML=trajHTML(r.trajectory)+
+      `<div class="bub">${md(r.answer)}</div>`+
+      `<div class="meta">${r.calls} 次调用 · ${r.seconds}s · $${(r.cost_local||0).toFixed(4)} · ${esc(r.model)}</div>`;
+    log.appendChild(d); d.scrollIntoView({block:"end",behavior:"smooth"});
+    HISTORY.push({role:"user",content:q},{role:"assistant",content:r.answer});
+    if(HISTORY.length>8) HISTORY=HISTORY.slice(-8);
+  }catch(e){
+    wait.remove(); bubble("assistant",`<span class="err">连不上后台:${esc(e.message)}</span>`);
+  }finally{ $("send").disabled=false; $("send").textContent="问"; }
+}
+$("send").addEventListener("click",send);
+$("q").addEventListener("keydown",e=>{
+  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}
+});
+$("q").addEventListener("input",e=>{
+  e.target.style.height="auto"; e.target.style.height=Math.min(e.target.scrollHeight,140)+"px";
+});
+</script>

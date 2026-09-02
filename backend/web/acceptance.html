@@ -1,0 +1,369 @@
+<title>状态机验收台</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#EFEFF2; --paper:#FFFFFF; --paper-2:#F6F6F9; --line:#DCDCE4; --line-2:#E9E9F0;
+  --ink:#15171C; --ink-2:#4E525E; --ink-3:#82879A;
+  --dye:#2B3F7A; --dye-soft:#E4E8F4; --dye-2:#4C63A8;
+  --pass:#1C6448; --pass-soft:#E1EFE9; --fail:#9C3222; --fail-soft:#F7E5E1;
+  --warn:#7E5714; --warn-soft:#F6EDDA;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0E1015; --paper:#161922; --paper-2:#1D212C; --line:#2A2F3D; --line-2:#232733;
+  --ink:#E7E9EF; --ink-2:#A7ADBE; --ink-3:#767D92;
+  --dye:#93A9E4; --dye-soft:#1A2140; --dye-2:#7C93D4;
+  --pass:#63C79E; --pass-soft:#122619; --fail:#EC9481; --fail-soft:#2C1512;
+  --warn:#DFB25C; --warn-soft:#281E0F;
+}}
+:root[data-theme="dark"]{
+  --ground:#0E1015; --paper:#161922; --paper-2:#1D212C; --line:#2A2F3D; --line-2:#232733;
+  --ink:#E7E9EF; --ink-2:#A7ADBE; --ink-3:#767D92;
+  --dye:#93A9E4; --dye-soft:#1A2140; --dye-2:#7C93D4;
+  --pass:#63C79E; --pass-soft:#122619; --fail:#EC9481; --fail-soft:#2C1512;
+  --warn:#DFB25C; --warn-soft:#281E0F;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);
+  font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px 96px}
+h1,h2,h3{text-wrap:balance;margin:0}
+.lab{font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:500}
+.num{font-variant-numeric:tabular-nums;font-family:var(--mono)}
+
+/* ── 抬头 ── */
+header.top{padding:56px 0 34px;border-bottom:1px solid var(--line)}
+.eyebrow{display:flex;gap:10px;align-items:center;margin-bottom:16px}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--dye)}
+h1{font-size:clamp(28px,4.4vw,42px);font-weight:600;letter-spacing:-.022em;line-height:1.16}
+.deck{margin-top:14px;max-width:62ch;color:var(--ink-2);font-size:16.5px}
+.deck b{color:var(--ink);font-weight:600}
+
+/* ── 记分板 ── */
+.score{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);margin-top:34px;border-radius:3px;overflow:hidden}
+.sc{background:var(--paper);padding:18px 20px}
+.sc b{display:block;font-family:var(--mono);font-size:30px;font-weight:600;
+  letter-spacing:-.03em;line-height:1.1;font-variant-numeric:tabular-nums}
+.sc span{display:block;margin-top:4px;font-size:12.5px;color:var(--ink-3)}
+.sc.is-pass b{color:var(--pass)} .sc.is-fail b{color:var(--fail)} .sc.is-open b{color:var(--warn)}
+
+/* ── 管道 ── */
+section{padding-top:52px}
+h2{font-size:20px;font-weight:600;letter-spacing:-.012em}
+.sub{color:var(--ink-2);margin:8px 0 22px;max-width:64ch;font-size:14.5px}
+.pipe{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}
+.pstep{flex:1 1 150px;background:var(--paper);border:1px solid var(--line);
+  border-radius:3px;padding:14px 16px;position:relative}
+.pstep b{font-family:var(--mono);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;
+  letter-spacing:-.02em;display:block;line-height:1.2}
+.pstep span{font-size:12.5px;color:var(--ink-3);display:block;margin-top:3px}
+.pstep em{font-style:normal;font-size:11.5px;color:var(--ink-3);font-family:var(--mono)}
+.pstep.hi{border-color:var(--dye);background:var(--dye-soft)}
+.pstep.hi b{color:var(--dye)}
+
+/* ── 三档 ── */
+.kinds{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+.kcard{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:16px 18px;
+  border-top:2px solid var(--ink-3)}
+.kcard.k-fire{border-top-color:var(--dye)} .kcard.k-code{border-top-color:var(--warn)}
+.kcard.k-human{border-top-color:var(--ink-3)}
+.kcard-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.kname{font-weight:600;font-size:14.5px}
+.knum{font-family:var(--mono);font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.kcard p{margin:8px 0 0;font-size:13px;color:var(--ink-2);line-height:1.6}
+
+/* ── 发现 ── */
+.finds{display:grid;gap:12px}
+.find{background:var(--paper);border:1px solid var(--line);border-left:3px solid var(--fail);
+  border-radius:3px;padding:18px 20px}
+.find header{display:flex;align-items:center;gap:12px;margin-bottom:9px}
+.find-n{font-family:var(--mono);font-size:24px;font-weight:600;color:var(--fail);
+  font-variant-numeric:tabular-nums;line-height:1}
+.find h3{font-size:16px;font-weight:600;margin-bottom:7px}
+.find p{margin:0;color:var(--ink-2);font-size:14px;max-width:70ch}
+.find-e{display:inline-block;margin-top:11px;font-family:var(--mono);font-size:11.5px;
+  background:var(--fail-soft);color:var(--fail);padding:3px 8px;border-radius:2px}
+
+/* ── chip ── */
+.chip{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;
+  padding:2px 7px;border-radius:2px;white-space:nowrap;font-weight:500}
+.chip-fire{background:var(--dye-soft);color:var(--dye)}
+.chip-code{background:var(--warn-soft);color:var(--warn)}
+.chip-human{background:var(--paper-2);color:var(--ink-3);border:1px solid var(--line)}
+.chip-warn{background:var(--warn-soft);color:var(--warn)}
+.chip-pass{background:var(--pass-soft);color:var(--pass)}
+.chip-fail{background:var(--fail-soft);color:var(--fail)}
+
+/* ── 规则表 ── */
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:3px;background:var(--paper)}
+table{border-collapse:collapse;width:100%;min-width:560px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+tbody tr:last-child th,tbody tr:last-child td{border-bottom:none}
+thead th{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:500;background:var(--paper-2);border-bottom:1px solid var(--line)}
+.rname{font-family:var(--mono);font-size:13px;font-weight:500;display:block}
+.rdesc{font-size:12px;color:var(--ink-3);display:block;margin-top:1px}
+td.c{white-space:nowrap} td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;
+  font-size:13px;white-space:nowrap;text-align:right}
+.bar{height:6px;background:var(--line-2);border-radius:3px;overflow:hidden;min-width:90px}
+.bar i{display:block;height:100%;background:var(--pass);border-radius:3px}
+.miss{color:var(--fail);font-weight:600}
+.open{color:var(--warn);font-weight:600;font-size:11.5px}
+
+/* ── 明细 ── */
+.tools{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:9px;align-items:center}
+.tools-2{margin-bottom:16px;padding-top:9px;border-top:1px solid var(--line)}
+button.f{font-family:var(--mono);font-size:11.5px;padding:5px 11px;border-radius:2px;
+  border:1px solid var(--line);background:var(--paper);color:var(--ink-2);cursor:pointer;
+  transition:background .12s,border-color .12s,color .12s}
+button.f:hover{border-color:var(--dye);color:var(--dye)}
+button.f[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+button.f:focus-visible,details:focus-visible>summary{outline:2px solid var(--dye);outline-offset:2px}
+.cnt{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-left:auto}
+button.f.rerun{border-color:var(--dye);color:var(--dye);margin-left:auto}
+button.f.rerun:hover{background:var(--dye);color:var(--paper)}
+button.f.rerun[disabled]{opacity:.5;cursor:progress}
+.live{font-family:var(--mono);font-size:11.5px;padding:4px 9px;border-radius:2px;
+  background:var(--pass-soft);color:var(--pass)}
+.live.err{background:var(--warn-soft);color:var(--warn)}
+.rows{display:flex;flex-direction:column;gap:5px}
+details.row{background:var(--paper);border:1px solid var(--line);border-radius:3px;
+  border-left:3px solid var(--pass)}
+details.row.no{border-left-color:var(--fail)}
+details.row.open{border-left-color:var(--warn)}
+details.row[open]{border-color:var(--dye)}
+summary{cursor:pointer;list-style:none;padding:11px 15px;display:grid;
+  grid-template-columns:auto auto 1fr auto;gap:12px;align-items:center}
+summary::-webkit-details-marker{display:none}
+.mk{font-family:var(--mono);font-size:13px;font-weight:600;width:14px;text-align:center}
+.mk.y{color:var(--pass)} .mk.n{color:var(--fail)} .mk.o{color:var(--warn)}
+.mach{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);white-space:nowrap;min-width:88px}
+.scen{font-size:13.5px;line-height:1.45;color:var(--ink)}
+.body{padding:0 15px 15px 15px;border-top:1px solid var(--line-2);margin-top:2px}
+.kv{display:grid;grid-template-columns:78px 1fr;gap:5px 14px;margin-top:13px;font-size:13px}
+.kv dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ink-3);padding-top:3px}
+.kv dd{margin:0;color:var(--ink-2);line-height:1.6}
+.kv dd b{color:var(--ink);font-weight:600}
+.eng{font-family:var(--mono);font-size:12px;background:var(--paper-2);border:1px solid var(--line-2);
+  border-radius:2px;padding:8px 11px;color:var(--ink-2);display:block;line-height:1.55}
+.eng .code{font-weight:600}
+.eng .code.y{color:var(--pass)} .eng .code.n{color:var(--fail)}
+footer{margin-top:64px;padding-top:22px;border-top:1px solid var(--line);
+  font-size:12.5px;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:8px 22px}
+footer code{font-family:var(--mono);font-size:11.5px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media(max-width:620px){
+  summary{grid-template-columns:auto 1fr;gap:8px}
+  .mach{grid-column:2;min-width:0} .scen{grid-column:1/-1}
+}
+</style>
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">异常场景与验收助手 · 澜绣云裳后台</span></div>
+  <h1>91 条异常场景,逐条打到后台上跑了一遍</h1>
+  <p class="deck">这些场景不是想出来的,是从 PRD 和设计稿里的 <b>9 个状态机</b>机械推导出来的 ——
+  合法流转的反向、跳过中间态、终态之后、重复提交,每一类都有明确的推导规则。
+  推完之后,再把每一条变成一次真实请求发给后台的状态流转引擎,看它到底拒不拒。</p>
+  <div class="score">
+    <div class="sc"><b>91</b><span>推导出的异常场景</span></div>
+    <div class="sc is-pass"><b>74</b><span>后台已处理</span></div>
+    <div class="sc is-fail"><b>13</b><span>确认没处理</span></div>
+    <div class="sc is-open"><b>4</b><span>机器判不了,须人看</span></div>
+  </div>
+</header>
+
+<section>
+  <h2>这 91 条是怎么来的</h2>
+  <p class="sub">每一步都是可复算的,没有一步靠"感觉漏了"。中间那次判定砍掉 7 条,
+  是因为推导规则会产出形式上成立但业务上正常的场景 —— 比如「待支付 → 编辑中」看着是回退,其实是付款前正常改单。</p>
+  <div class="pipe">
+    <div class="pstep"><b>5</b><span>份 Figma 设计稿</span><em>1.33M tokens</em></div>
+    <div class="pstep"><b>9</b><span>个状态机</span><em>7 事件驱动 + 2 算法型</em></div>
+    <div class="pstep"><b>98</b><span>条候选场景</span><em>11 条推导规则</em></div>
+    <div class="pstep hi"><b>91</b><span>条判定有效</span><em>砍 5 无效 · 2 存疑</em></div>
+    <div class="pstep"><b>74 / 13 / 4</b><span>通过 / 没处理 / 待人看</span><em>对着真引擎跑</em></div>
+  </div>
+</section>
+
+<section>
+  <h2>机器只能替你验 73%</h2>
+  <p class="sub">把三种验收方式混成一个"已验证"是最容易的偷懒,也是这类工具失信的第一步。
+  所以每条结论都标着它是怎么来的。</p>
+  <div class="kinds"><div class="kcard k-fire">
+<div class="kcard-top"><span class="kname">实发请求</span><b class="knum">66</b></div>
+<p>真的往状态机引擎发一次非法流转,看它拒不拒、报什么码</p></div><div class="kcard k-code">
+<div class="kcard-top"><span class="kname">查代码声明</span><b class="knum">21</b></div>
+<p>引擎没有这种请求入口(初始态、重算规则不是一次流转),只能查代码里有没有对应声明</p></div><div class="kcard k-human">
+<div class="kcard-top"><span class="kname">须人工判断</span><b class="knum">4</b></div>
+<p>并发撞车、断网超时 —— 静态检查判不了,必须人看</p></div></div>
+</section>
+
+<section>
+  <h2>三个真实缺口</h2>
+  <p class="sub">机器能确认的 13 条缺口归成三类,第一类最要命 —— 它直接对应重复扣款。另有 4 条(自动流转撞上人工操作)静态检查证明不了,没算进来。</p>
+  <div class="finds"><article class="find">
+<header><span class="find-n">10</span><span class="chip chip-warn">资金 / 库存</span></header>
+<h3>10 条会动钱和库存的流转,没有幂等保护</h3><p>引擎里只有押金的 2 条流转登记了幂等号要求,其余 10 条(含「未付 → 已付」「待收货 → 已完成」)重复提交会被直接放行 —— 用户连点两次、支付回调重放,就是第二笔扣款。</p><code class="find-e">引擎实际回应:OK(放行)</code></article><article class="find">
+<header><span class="find-n">2</span><span class="chip chip-warn">规格缺口</span></header>
+<h3>两个状态机没写新建对象进哪个状态</h3><p>「店铺」和「标签」的状态图上每个状态都有入边,找不到入口。state-machines.json 里只有 states / edges / terminal,没有 initial —— 不同实现者会给出不同默认值,而店铺初始态如果直接可售卖,就是数据没备齐先对外开张。</p><code class="find-e">引擎实际回应:MISSING(无 initial 字段)</code></article><article class="find">
+<header><span class="find-n">1</span><span class="chip chip-warn">断网恢复</span></header>
+<h3>「退款处理中」断网后,分不清该查还是该重试</h3><p>引擎把状态分成了「不可逆」和「可重试」两类,但少了第三类:事务进行中态。退款请求已经发给支付通道、结果还没回来时断网 —— 直接重试就是重复退款,必须先主动查真实结果。</p><code class="find-e">引擎实际回应:MISSING(无事务进行中态声明)</code></article></div>
+</section>
+
+<section>
+  <h2>按推导规则看</h2>
+  <p class="sub">四条能实发请求的规则里,三条满分 —— 说明这套引擎对"不该往回走"这件事守得住;
+  漏的全在幂等,也就是"同一件事被说了两遍"。</p>
+  <div class="tblwrap"><table>
+    <thead><tr><th>推导规则</th><th>验收方式</th><th>通过率</th><th style="text-align:right">通过</th><th style="text-align:right">漏</th></tr></thead>
+    <tbody><tr><th scope="row"><span class="rname">R1回退</span>
+<span class="rdesc">合法流转的反向请求</span></th>
+<td class="c"><span class="chip chip-fire">实发请求</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:100.0%"></i></div></td>
+<td class="num">29 / 29</td>
+<td class="num"></td></tr><tr><th scope="row"><span class="rname">R2跳跃</span>
+<span class="rdesc">跳过中间态直达</span></th>
+<td class="c"><span class="chip chip-fire">实发请求</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:100.0%"></i></div></td>
+<td class="num">11 / 11</td>
+<td class="num"></td></tr><tr><th scope="row"><span class="rname">R3终态</span>
+<span class="rdesc">终态后的续流转</span></th>
+<td class="c"><span class="chip chip-fire">实发请求</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:100.0%"></i></div></td>
+<td class="num">14 / 14</td>
+<td class="num"></td></tr><tr><th scope="row"><span class="rname">R5幂等</span>
+<span class="rdesc">同一请求被重复提交</span></th>
+<td class="c"><span class="chip chip-fire">实发请求</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:16.7%"></i></div></td>
+<td class="num">2 / 12</td>
+<td class="num"><span class="miss">10</span></td></tr><tr><th scope="row"><span class="rname">R4中断</span>
+<span class="rdesc">进行中断网,结果未知</span></th>
+<td class="c"><span class="chip chip-code">查代码声明</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:0.0%"></i></div></td>
+<td class="num">0 / 1</td>
+<td class="num"><span class="miss">1</span></td></tr><tr><th scope="row"><span class="rname">R7自动</span>
+<span class="rdesc">自动流转撞上人工操作</span></th>
+<td class="c"><span class="chip chip-human">须人工判断</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:0.0%"></i></div></td>
+<td class="num">0 / 4</td>
+<td class="num"><span class="open">4 待人看</span></td></tr><tr><th scope="row"><span class="rname">R8初始态</span>
+<span class="rdesc">新建对象进入哪个状态</span></th>
+<td class="c"><span class="chip chip-code">查代码声明</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:0.0%"></i></div></td>
+<td class="num">0 / 2</td>
+<td class="num"><span class="miss">2</span></td></tr><tr><th scope="row"><span class="rname">A1重算幂等</span>
+<span class="rdesc">当天重复重算</span></th>
+<td class="c"><span class="chip chip-code">查代码声明</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:100.0%"></i></div></td>
+<td class="num">1 / 1</td>
+<td class="num"></td></tr><tr><th scope="row"><span class="rname">A2优先级</span>
+<span class="rdesc">同时命中多个标签</span></th>
+<td class="c"><span class="chip chip-code">查代码声明</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:100.0%"></i></div></td>
+<td class="num">7 / 7</td>
+<td class="num"></td></tr><tr><th scope="row"><span class="rname">A3边界值</span>
+<span class="rdesc">数据恰好落在阈值上</span></th>
+<td class="c"><span class="chip chip-code">查代码声明</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:100.0%"></i></div></td>
+<td class="num">8 / 8</td>
+<td class="num"></td></tr><tr><th scope="row"><span class="rname">A4人工窗口</span>
+<span class="rdesc">人工调整后被重算覆盖</span></th>
+<td class="c"><span class="chip chip-code">查代码声明</span></td>
+<td class="bar-cell"><div class="bar"><i style="width:100.0%"></i></div></td>
+<td class="num">2 / 2</td>
+<td class="num"></td></tr></tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>全部 91 条</h2>
+  <p class="sub">点开任意一条,能看到它的推导依据、验收动作,以及引擎回的原话。</p>
+  <div class="tools">
+    <button class="f" data-g="res" data-v="all" aria-pressed="true">全部</button>
+    <button class="f" data-g="res" data-v="fail" aria-pressed="false">只看没处理</button>
+    <button class="f" data-g="res" data-v="open" aria-pressed="false">只看待人看</button>
+    <button class="f" data-g="res" data-v="pass" aria-pressed="false">只看通过</button>
+    <button class="f rerun" id="rerun">↻ 重跑一遍</button>
+  </div>
+  <div class="tools tools-2">
+    <button class="f" data-g="rule" data-v="all" aria-pressed="true">全部规则</button>
+    <button class="f" data-g="rule" data-v="R1回退" aria-pressed="false">R1回退</button><button class="f" data-g="rule" data-v="R2跳跃" aria-pressed="false">R2跳跃</button><button class="f" data-g="rule" data-v="R3终态" aria-pressed="false">R3终态</button><button class="f" data-g="rule" data-v="R5幂等" aria-pressed="false">R5幂等</button><button class="f" data-g="rule" data-v="R4中断" aria-pressed="false">R4中断</button><button class="f" data-g="rule" data-v="R7自动" aria-pressed="false">R7自动</button><button class="f" data-g="rule" data-v="R8初始态" aria-pressed="false">R8初始态</button><button class="f" data-g="rule" data-v="A1重算幂等" aria-pressed="false">A1重算幂等</button><button class="f" data-g="rule" data-v="A2优先级" aria-pressed="false">A2优先级</button><button class="f" data-g="rule" data-v="A3边界值" aria-pressed="false">A3边界值</button><button class="f" data-g="rule" data-v="A4人工窗口" aria-pressed="false">A4人工窗口</button>
+    <span class="cnt" id="cnt"></span>
+  </div>
+  <div class="rows" id="rows"></div>
+</section>
+
+<footer>
+  <span>本页由 <code>python3 backend/server.py</code> 提供 · <code>http://127.0.0.1:8760/acceptance</code></span>
+  <span>推导 <code>tools/derive_lanxiu.py</code></span>
+  <span>验收 <code>tools/acceptance.py</code></span>
+  <span>引擎 <code>backend/fsm.py</code></span>
+</footer>
+</div>
+<script>
+const D = [{"id": "bk-shop-R8初始态-000", "project": "澜绣云裳后台", "machine": "店铺", "source": "后台PRD 6.1 店铺", "sm_type": "event", "rule": "R8初始态", "risk": "低", "scenario": "新建一个「店铺」对象时,应进入哪个状态(图上所有状态都有入边,找不到入口)", "expect": "必须明确定义新建对象的初始状态;若初始态可对外生效(可售卖/可展示),须说明数据未就绪时的保护", "states": ["店铺"], "verdict": "valid", "reason": "新建对象的初始状态未定义,不同实现者会给出不同默认值", "machine_id": "bk-shop", "probe": "code", "action": "「店铺」是否声明了初始态", "allowed": null, "code": "MISSING", "engine_says": "state-machines.json 里只有 states / edges / terminal,没有 initial 字段", "passed": false}, {"id": "bk-task-R1回退-001", "project": "澜绣云裳后台", "machine": "日程任务", "source": "后台PRD 6.1 日程任务", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「完结」回退到「有效」的请求(合法流转 有效→完结 的反向)", "expect": "必须拒绝并保持「完结」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["完结", "有效"], "verdict": "valid", "reason": "进入「完结」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "bk-task", "probe": "fire", "action": "完结 → 有效", "allowed": false, "code": "TERMINAL", "engine_says": "「完结」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-task-R1回退-002", "project": "澜绣云裳后台", "machine": "日程任务", "source": "后台PRD 6.1 日程任务", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「取消」回退到「有效」的请求(合法流转 有效→取消 的反向)", "expect": "必须拒绝并保持「取消」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["取消", "有效"], "verdict": "valid", "reason": "「取消」已终止,回退等于让单据复活,必须拒绝", "machine_id": "bk-task", "probe": "fire", "action": "取消 → 有效", "allowed": false, "code": "TERMINAL", "engine_says": "「取消」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-task-R1回退-003", "project": "澜绣云裳后台", "machine": "日程任务", "source": "后台PRD 6.1 日程任务", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「无效」回退到「有效」的请求(合法流转 有效→无效 的反向)", "expect": "必须拒绝并保持「无效」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["无效", "有效"], "verdict": "valid", "reason": "「无效」已终止,回退等于让单据复活,必须拒绝", "machine_id": "bk-task", "probe": "fire", "action": "无效 → 有效", "allowed": false, "code": "TERMINAL", "engine_says": "「无效」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-task-R3终态-004", "project": "澜绣云裳后台", "machine": "日程任务", "source": "后台PRD 6.1 日程任务", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「完结」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「完结」;需留审计记录", "states": ["完结"], "verdict": "valid", "reason": "「完结」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "bk-task", "probe": "fire", "action": "完结 → 其余 3 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「完结」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-task-R3终态-005", "project": "澜绣云裳后台", "machine": "日程任务", "source": "后台PRD 6.1 日程任务", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「取消」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「取消」;需留审计记录", "states": ["取消"], "verdict": "valid", "reason": "「取消」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "bk-task", "probe": "fire", "action": "取消 → 其余 3 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「取消」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-task-R3终态-006", "project": "澜绣云裳后台", "machine": "日程任务", "source": "后台PRD 6.1 日程任务", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「无效」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「无效」;需留审计记录", "states": ["无效"], "verdict": "valid", "reason": "「无效」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "bk-task", "probe": "fire", "action": "无效 → 其余 3 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「无效」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-task-R7自动-007", "project": "澜绣云裳后台", "machine": "日程任务", "source": "后台PRD 6.1 日程任务", "sm_type": "event", "rule": "R7自动", "risk": "低", "scenario": "自动流转规则「任务超时按店长、总部运营层级升级并记录原因」触发的同一时刻,用户或后台正在手动操作同一单据", "expect": "必须有并发控制(锁/版本号),结果唯一且可追溯,不得两边都生效", "states": ["有效"], "auto_rule": "任务超时按店长、总部运营层级升级并记录原因", "verdict": "valid", "reason": "真自动流转,与人工操作并发时必须有锁或版本号", "machine_id": "bk-task", "probe": "human", "action": "自动流转与人工操作撞车时的并发控制", "allowed": null, "code": "MISSING", "engine_says": "自动升级由定时任务触发,人工改单走 HTTP;两条路径没有共同的锁或版本号", "passed": false}, {"id": "bk-appt-R1回退-008", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R1回退", "risk": "低", "scenario": "系统收到把「已到店」回退到「已预约」的请求(合法流转 已预约→已到店 的反向)", "expect": "必须拒绝并保持「已到店」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已到店", "已预约"], "verdict": "valid", "reason": "进入「已到店」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "bk-appt", "probe": "fire", "action": "已到店 → 已预约", "allowed": false, "code": "IRREVERSIBLE", "engine_says": "进入「已到店」已产生资金/资源/不可逆记录,回退到「已预约」会造成两边不一致", "passed": true}, {"id": "bk-appt-R1回退-009", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已完成」回退到「已到店」的请求(合法流转 已到店→已完成 的反向)", "expect": "必须拒绝并保持「已完成」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已完成", "已到店"], "verdict": "valid", "reason": "进入「已完成」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "bk-appt", "probe": "fire", "action": "已完成 → 已到店", "allowed": false, "code": "TERMINAL", "engine_says": "「已完成」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-appt-R1回退-010", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已取消」回退到「已预约」的请求(合法流转 已预约→已取消 的反向)", "expect": "必须拒绝并保持「已取消」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已取消", "已预约"], "verdict": "valid", "reason": "「已取消」已终止,回退等于让单据复活,必须拒绝", "machine_id": "bk-appt", "probe": "fire", "action": "已取消 → 已预约", "allowed": false, "code": "TERMINAL", "engine_says": "「已取消」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-appt-R1回退-011", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已过期」回退到「已预约」的请求(合法流转 已预约→已过期 的反向)", "expect": "必须拒绝并保持「已过期」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已过期", "已预约"], "verdict": "valid", "reason": "进入「已过期」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "bk-appt", "probe": "fire", "action": "已过期 → 已预约", "allowed": false, "code": "TERMINAL", "engine_says": "「已过期」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-appt-R1回退-012", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「爽约」回退到「已预约」的请求(合法流转 已预约→爽约 的反向)", "expect": "必须拒绝并保持「爽约」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["爽约", "已预约"], "verdict": "valid", "reason": "进入「爽约」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "bk-appt", "probe": "fire", "action": "爽约 → 已预约", "allowed": false, "code": "TERMINAL", "engine_says": "「爽约」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-appt-R2跳跃-013", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R2跳跃", "risk": "高", "scenario": "系统收到从「已预约」直接跳到「已完成」的请求(跳过「已到店」)", "expect": "必须拒绝;「已到店」的校验和记账不可省略", "states": ["已预约", "已完成", "已到店"], "verdict": "valid", "reason": "「已到店」承载记账或资源动作,跳过会丢账", "machine_id": "bk-appt", "probe": "fire", "action": "已预约 → 已完成(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「已预约」直接跳到「已完成」,跳过了「已到店」的校验与记账", "passed": true}, {"id": "bk-appt-R3终态-014", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「已完成」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「已完成」;需留审计记录", "states": ["已完成"], "verdict": "valid", "reason": "「已完成」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "bk-appt", "probe": "fire", "action": "已完成 → 其余 5 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「已完成」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-appt-R3终态-015", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「已取消」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「已取消」;需留审计记录", "states": ["已取消"], "verdict": "valid", "reason": "「已取消」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "bk-appt", "probe": "fire", "action": "已取消 → 其余 5 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「已取消」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-appt-R3终态-016", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「已过期」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「已过期」;需留审计记录", "states": ["已过期"], "verdict": "valid", "reason": "「已过期」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "bk-appt", "probe": "fire", "action": "已过期 → 其余 5 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「已过期」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-appt-R3终态-017", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「爽约」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「爽约」;需留审计记录", "states": ["爽约"], "verdict": "valid", "reason": "「爽约」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "bk-appt", "probe": "fire", "action": "爽约 → 其余 5 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「爽约」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-appt-R7自动-018", "project": "澜绣云裳后台", "machine": "预约(后台口径)", "source": "后台PRD 6.1 预约", "sm_type": "event", "rule": "R7自动", "risk": "低", "scenario": "自动流转规则「预约结束 2 小时后未处理自动过期」触发的同一时刻,用户或后台正在手动操作同一单据", "expect": "必须有并发控制(锁/版本号),结果唯一且可追溯,不得两边都生效", "states": ["已预约"], "auto_rule": "预约结束 2 小时后未处理自动过期", "verdict": "valid", "reason": "真自动流转,与人工操作并发时必须有锁或版本号", "machine_id": "bk-appt", "probe": "human", "action": "自动流转与人工操作撞车时的并发控制", "allowed": null, "code": "MISSING", "engine_says": "自动升级由定时任务触发,人工改单走 HTTP;两条路径没有共同的锁或版本号", "passed": false}, {"id": "bk-deposit-R1回退-019", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R1回退", "risk": "低", "scenario": "系统收到把「已付」回退到「未付」的请求(合法流转 未付→已付 的反向)", "expect": "必须拒绝并保持「已付」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已付", "未付"], "verdict": "valid", "reason": "进入「已付」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "bk-deposit", "probe": "fire", "action": "已付 → 未付", "allowed": false, "code": "IRREVERSIBLE", "engine_says": "进入「已付」已产生资金/资源/不可逆记录,回退到「未付」会造成两边不一致", "passed": true}, {"id": "bk-deposit-R1回退-021", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「退款处理中」回退到「退款审批中」的请求(合法流转 退款审批中→退款处理中 的反向)", "expect": "必须拒绝并保持「退款处理中」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["退款处理中", "退款审批中"], "verdict": "valid", "reason": "进入「退款处理中」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "bk-deposit", "probe": "fire", "action": "退款处理中 → 退款审批中", "allowed": false, "code": "IRREVERSIBLE", "engine_says": "进入「退款处理中」已产生资金/资源/不可逆记录,回退到「退款审批中」会造成两边不一致", "passed": true}, {"id": "bk-deposit-R1回退-022", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已退」回退到「退款处理中」的请求(合法流转 退款处理中→已退 的反向)", "expect": "必须拒绝并保持「已退」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已退", "退款处理中"], "verdict": "valid", "reason": "进入「已退」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "bk-deposit", "probe": "fire", "action": "已退 → 退款处理中", "allowed": false, "code": "TERMINAL", "engine_says": "「已退」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-deposit-R2跳跃-023", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R2跳跃", "risk": "高", "scenario": "系统收到从「未付」直接跳到「退款审批中」的请求(跳过「已付」)", "expect": "必须拒绝;「已付」的校验和记账不可省略", "states": ["未付", "退款审批中", "已付"], "verdict": "valid", "reason": "「已付」承载必做校验或审批,跳过即漏校验", "machine_id": "bk-deposit", "probe": "fire", "action": "未付 → 退款审批中(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「未付」直接跳到「退款审批中」,跳过了「已付」的校验与记账", "passed": true}, {"id": "bk-deposit-R2跳跃-024", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R2跳跃", "risk": "高", "scenario": "系统收到从「已付」直接跳到「退款处理中」的请求(跳过「退款审批中」)", "expect": "必须拒绝;「退款审批中」的校验和记账不可省略", "states": ["已付", "退款处理中", "退款审批中"], "verdict": "valid", "reason": "「退款审批中」承载必做校验或审批,跳过即漏校验", "machine_id": "bk-deposit", "probe": "fire", "action": "已付 → 退款处理中(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「已付」直接跳到「退款处理中」,跳过了「退款审批中」的校验与记账", "passed": true}, {"id": "bk-deposit-R2跳跃-025", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R2跳跃", "risk": "高", "scenario": "系统收到从「退款审批中」直接跳到「已退」的请求(跳过「退款处理中」)", "expect": "必须拒绝;「退款处理中」的校验和记账不可省略", "states": ["退款审批中", "已退", "退款处理中"], "verdict": "valid", "reason": "「退款处理中」承载记账或资源动作,跳过会丢账", "machine_id": "bk-deposit", "probe": "fire", "action": "退款审批中 → 已退(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「退款审批中」直接跳到「已退」,跳过了「退款处理中」的校验与记账", "passed": true}, {"id": "bk-deposit-R2跳跃-027", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R2跳跃", "risk": "高", "scenario": "系统收到从「退款失败」直接跳到「已退」的请求(跳过「退款处理中」)", "expect": "必须拒绝;「退款处理中」的校验和记账不可省略", "states": ["退款失败", "已退", "退款处理中"], "verdict": "valid", "reason": "「退款处理中」承载记账或资源动作,跳过会丢账", "machine_id": "bk-deposit", "probe": "fire", "action": "退款失败 → 已退(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「退款失败」直接跳到「已退」,跳过了「退款处理中」的校验与记账", "passed": true}, {"id": "bk-deposit-R3终态-028", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「已退」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「已退」;需留审计记录", "states": ["已退"], "verdict": "valid", "reason": "「已退」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "bk-deposit", "probe": "fire", "action": "已退 → 其余 5 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「已退」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "bk-deposit-R4中断-030", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R4中断", "risk": "高", "scenario": "处于「退款处理中」时客户端崩溃 / 断网 / 请求超时", "expect": "结果未知,恢复后必须先主动查询真实结果再决定下一步,不得直接重试", "states": ["退款处理中"], "verdict": "valid", "reason": "「退款处理中」是事务进行中态,中断后结果未知,必须先查支付平台", "machine_id": "bk-deposit", "probe": "code", "action": "「退款处理中」是否被声明为事务进行中态(须主动查询而非重试)", "allowed": null, "code": "MISSING", "engine_says": "fsm.py 里有 IRREVERSIBLE / RETRYABLE 两个集合,但没有「事务进行中态」这一类 —— 断网后无法区分该查还是该重试", "passed": false}, {"id": "bk-deposit-R5幂等-031", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R5幂等", "risk": "低", "scenario": "「未付」→「已付」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["未付", "已付"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "bk-deposit", "probe": "fire", "action": "未付 → 已付 不带幂等号重复提交", "allowed": true, "code": "OK", "engine_says": "该流转未登记进 IDEMPOTENT,重复提交会被直接放行", "passed": false}, {"id": "bk-deposit-R5幂等-032", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R5幂等", "risk": "高", "scenario": "「已付」→「退款审批中」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["已付", "退款审批中"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "bk-deposit", "probe": "fire", "action": "已付 → 退款审批中 不带幂等号重复提交", "allowed": false, "code": "NEED_APPROVAL", "engine_says": "须由客服或店长发起、店长复核;单笔≥1000元增加财务复核", "passed": false}, {"id": "bk-deposit-R5幂等-033", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R5幂等", "risk": "高", "scenario": "「退款审批中」→「退款处理中」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["退款审批中", "退款处理中"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "bk-deposit", "probe": "fire", "action": "退款审批中 → 退款处理中 不带幂等号重复提交", "allowed": false, "code": "NEED_IDEM", "engine_says": "资金类流转必须携带幂等号", "passed": true}, {"id": "bk-deposit-R5幂等-034", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R5幂等", "risk": "高", "scenario": "「退款处理中」→「已退」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["退款处理中", "已退"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "bk-deposit", "probe": "fire", "action": "退款处理中 → 已退 不带幂等号重复提交", "allowed": true, "code": "OK", "engine_says": "该流转未登记进 IDEMPOTENT,重复提交会被直接放行", "passed": false}, {"id": "bk-deposit-R5幂等-035", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R5幂等", "risk": "高", "scenario": "「退款处理中」→「退款失败」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["退款处理中", "退款失败"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "bk-deposit", "probe": "fire", "action": "退款处理中 → 退款失败 不带幂等号重复提交", "allowed": true, "code": "OK", "engine_says": "该流转未登记进 IDEMPOTENT,重复提交会被直接放行", "passed": false}, {"id": "bk-deposit-R5幂等-036", "project": "澜绣云裳后台", "machine": "押金", "source": "后台PRD 6.1 押金", "sm_type": "event", "rule": "R5幂等", "risk": "高", "scenario": "「退款失败」→「退款处理中」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["退款失败", "退款处理中"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "bk-deposit", "probe": "fire", "action": "退款失败 → 退款处理中 不带幂等号重复提交", "allowed": false, "code": "NEED_IDEM", "engine_says": "资金类流转必须携带幂等号", "passed": true}, {"id": "bk-tag-R8初始态-037", "project": "澜绣云裳后台", "machine": "标签", "source": "后台PRD 6.1 标签", "sm_type": "event", "rule": "R8初始态", "risk": "低", "scenario": "新建一个「标签」对象时,应进入哪个状态(图上所有状态都有入边,找不到入口)", "expect": "必须明确定义新建对象的初始状态;若初始态可对外生效(可售卖/可展示),须说明数据未就绪时的保护", "states": ["标签"], "verdict": "valid", "reason": "新建对象的初始状态未定义,不同实现者会给出不同默认值", "machine_id": "bk-tag", "probe": "code", "action": "「标签」是否声明了初始态", "allowed": null, "code": "MISSING", "engine_says": "state-machines.json 里只有 states / edges / terminal,没有 initial 字段", "passed": false}, {"id": "bk-lifecycle-A1重算幂等-038", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A1重算幂等", "risk": "低", "scenario": "「客户生命周期」的每日重算在同一天被重复执行(补跑、故障恢复、手动触发)", "expect": "必须得到同一结果且不重复产生副作用(通知、权益、任务)", "states": ["客户生命周期"], "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "每日重算是否为纯函数(补跑不产生第二次副作用)", "allowed": null, "code": "PURE", "engine_says": "seed.py 的 match_rules() 只读客户字段返回标签列表,不写库、不发通知 —— 重复执行结果一致", "passed": true}, {"id": "bk-lifecycle-A2优先级-039", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A2优先级", "risk": "低", "scenario": "客户同时满足「流失」和「潜在流失」的判定条件", "expect": "必须严格按声明优先级取「流失」为单一主状态,不得同时生效或随机取值", "states": ["流失", "潜在流失"], "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "多标签命中时是否有声明式优先级", "allowed": null, "code": "DECLARED", "engine_says": "seed.py: PRIORITY=[\"流失\",\"潜在流失\",\"休眠\",\"忠诚\",\"高价值\",\"新客\",\"活跃\",\"潜在\"] —— 单一主状态按此顺序取第一个", "passed": true}, {"id": "bk-lifecycle-A2优先级-040", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A2优先级", "risk": "低", "scenario": "客户同时满足「潜在流失」和「休眠」的判定条件", "expect": "必须严格按声明优先级取「潜在流失」为单一主状态,不得同时生效或随机取值", "states": ["潜在流失", "休眠"], "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "多标签命中时是否有声明式优先级", "allowed": null, "code": "DECLARED", "engine_says": "seed.py: PRIORITY=[\"流失\",\"潜在流失\",\"休眠\",\"忠诚\",\"高价值\",\"新客\",\"活跃\",\"潜在\"] —— 单一主状态按此顺序取第一个", "passed": true}, {"id": "bk-lifecycle-A2优先级-041", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A2优先级", "risk": "低", "scenario": "客户同时满足「休眠」和「忠诚」的判定条件", "expect": "必须严格按声明优先级取「休眠」为单一主状态,不得同时生效或随机取值", "states": ["休眠", "忠诚"], "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "多标签命中时是否有声明式优先级", "allowed": null, "code": "DECLARED", "engine_says": "seed.py: PRIORITY=[\"流失\",\"潜在流失\",\"休眠\",\"忠诚\",\"高价值\",\"新客\",\"活跃\",\"潜在\"] —— 单一主状态按此顺序取第一个", "passed": true}, {"id": "bk-lifecycle-A2优先级-042", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A2优先级", "risk": "低", "scenario": "客户同时满足「忠诚」和「高价值」的判定条件", "expect": "必须严格按声明优先级取「忠诚」为单一主状态,不得同时生效或随机取值", "states": ["忠诚", "高价值"], "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "多标签命中时是否有声明式优先级", "allowed": null, "code": "DECLARED", "engine_says": "seed.py: PRIORITY=[\"流失\",\"潜在流失\",\"休眠\",\"忠诚\",\"高价值\",\"新客\",\"活跃\",\"潜在\"] —— 单一主状态按此顺序取第一个", "passed": true}, {"id": "bk-lifecycle-A2优先级-043", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A2优先级", "risk": "低", "scenario": "客户同时满足「高价值」和「新客」的判定条件", "expect": "必须严格按声明优先级取「高价值」为单一主状态,不得同时生效或随机取值", "states": ["高价值", "新客"], "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "多标签命中时是否有声明式优先级", "allowed": null, "code": "DECLARED", "engine_says": "seed.py: PRIORITY=[\"流失\",\"潜在流失\",\"休眠\",\"忠诚\",\"高价值\",\"新客\",\"活跃\",\"潜在\"] —— 单一主状态按此顺序取第一个", "passed": true}, {"id": "bk-lifecycle-A2优先级-044", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A2优先级", "risk": "低", "scenario": "客户同时满足「新客」和「活跃」的判定条件", "expect": "必须严格按声明优先级取「新客」为单一主状态,不得同时生效或随机取值", "states": ["新客", "活跃"], "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "多标签命中时是否有声明式优先级", "allowed": null, "code": "DECLARED", "engine_says": "seed.py: PRIORITY=[\"流失\",\"潜在流失\",\"休眠\",\"忠诚\",\"高价值\",\"新客\",\"活跃\",\"潜在\"] —— 单一主状态按此顺序取第一个", "passed": true}, {"id": "bk-lifecycle-A2优先级-045", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A2优先级", "risk": "低", "scenario": "客户同时满足「活跃」和「潜在」的判定条件", "expect": "必须严格按声明优先级取「活跃」为单一主状态,不得同时生效或随机取值", "states": ["活跃", "潜在"], "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "多标签命中时是否有声明式优先级", "allowed": null, "code": "DECLARED", "engine_says": "seed.py: PRIORITY=[\"流失\",\"潜在流失\",\"休眠\",\"忠诚\",\"高价值\",\"新客\",\"活跃\",\"潜在\"] —— 单一主状态按此顺序取第一个", "passed": true}, {"id": "bk-lifecycle-A3边界值-046", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A3边界值", "risk": "低", "scenario": "客户数据恰好落在阈值边界上:无完成订单=潜在", "expect": "边界归属必须明确(含端还是不含端),且与文案、报表口径一致", "states": ["客户生命周期"], "threshold": "无完成订单=潜在", "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "阈值边界「无完成订单=潜在」是否明确含端", "allowed": null, "code": "EXPLICIT", "engine_says": "seed.py 的 match_rules() 用 <= / >= 写死了闭区间,且相邻区间首尾相接(90/91、180/181)", "passed": true}, {"id": "bk-lifecycle-A3边界值-047", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A3边界值", "risk": "低", "scenario": "客户数据恰好落在阈值边界上:首单后30天内=新客", "expect": "边界归属必须明确(含端还是不含端),且与文案、报表口径一致", "states": ["客户生命周期"], "threshold": "首单后30天内=新客", "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "阈值边界「首单后30天内=新客」是否明确含端", "allowed": null, "code": "EXPLICIT", "engine_says": "seed.py 的 match_rules() 用 <= / >= 写死了闭区间,且相邻区间首尾相接(90/91、180/181)", "passed": true}, {"id": "bk-lifecycle-A3边界值-048", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A3边界值", "risk": "低", "scenario": "客户数据恰好落在阈值边界上:90天内有有效互动=活跃", "expect": "边界归属必须明确(含端还是不含端),且与文案、报表口径一致", "states": ["客户生命周期"], "threshold": "90天内有有效互动=活跃", "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "阈值边界「90天内有有效互动=活跃」是否明确含端", "allowed": null, "code": "EXPLICIT", "engine_says": "seed.py 的 match_rules() 用 <= / >= 写死了闭区间,且相邻区间首尾相接(90/91、180/181)", "passed": true}, {"id": "bk-lifecycle-A3边界值-049", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A3边界值", "risk": "低", "scenario": "客户数据恰好落在阈值边界上:近12个月实付满15000元=高价值", "expect": "边界归属必须明确(含端还是不含端),且与文案、报表口径一致", "states": ["客户生命周期"], "threshold": "近12个月实付满15000元=高价值", "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "阈值边界「近12个月实付满15000元=高价值」是否明确含端", "allowed": null, "code": "EXPLICIT", "engine_says": "seed.py 的 match_rules() 用 <= / >= 写死了闭区间,且相邻区间首尾相接(90/91、180/181)", "passed": true}, {"id": "bk-lifecycle-A3边界值-050", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A3边界值", "risk": "低", "scenario": "客户数据恰好落在阈值边界上:近12个月满4单且跨两个季度=忠诚", "expect": "边界归属必须明确(含端还是不含端),且与文案、报表口径一致", "states": ["客户生命周期"], "threshold": "近12个月满4单且跨两个季度=忠诚", "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "阈值边界「近12个月满4单且跨两个季度=忠诚」是否明确含端", "allowed": null, "code": "EXPLICIT", "engine_says": "seed.py 的 match_rules() 用 <= / >= 写死了闭区间,且相邻区间首尾相接(90/91、180/181)", "passed": true}, {"id": "bk-lifecycle-A3边界值-051", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A3边界值", "risk": "低", "scenario": "客户数据恰好落在阈值边界上:无互动91-180天=休眠", "expect": "边界归属必须明确(含端还是不含端),且与文案、报表口径一致", "states": ["客户生命周期"], "threshold": "无互动91-180天=休眠", "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "阈值边界「无互动91-180天=休眠」是否明确含端", "allowed": null, "code": "EXPLICIT", "engine_says": "seed.py 的 match_rules() 用 <= / >= 写死了闭区间,且相邻区间首尾相接(90/91、180/181)", "passed": true}, {"id": "bk-lifecycle-A3边界值-052", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A3边界值", "risk": "低", "scenario": "客户数据恰好落在阈值边界上:181-365天=潜在流失", "expect": "边界归属必须明确(含端还是不含端),且与文案、报表口径一致", "states": ["客户生命周期"], "threshold": "181-365天=潜在流失", "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "阈值边界「181-365天=潜在流失」是否明确含端", "allowed": null, "code": "EXPLICIT", "engine_says": "seed.py 的 match_rules() 用 <= / >= 写死了闭区间,且相邻区间首尾相接(90/91、180/181)", "passed": true}, {"id": "bk-lifecycle-A3边界值-053", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A3边界值", "risk": "低", "scenario": "客户数据恰好落在阈值边界上:超过365天=流失", "expect": "边界归属必须明确(含端还是不含端),且与文案、报表口径一致", "states": ["客户生命周期"], "threshold": "超过365天=流失", "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "阈值边界「超过365天=流失」是否明确含端", "allowed": null, "code": "EXPLICIT", "engine_says": "seed.py 的 match_rules() 用 <= / >= 写死了闭区间,且相邻区间首尾相接(90/91、180/181)", "passed": true}, {"id": "bk-lifecycle-A4人工窗口-054", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A4人工窗口", "risk": "低", "scenario": "人工调整后的 30 天优先期内,每日重算得出不同结果", "expect": "重算不得覆盖人工结果;须记录被抑制的重算值", "states": ["客户生命周期"], "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "人工调整后的 30 天优先期,重算是否会覆盖人工结果", "allowed": null, "code": "DECLARED", "engine_says": "customer 表有 manual_lc / manual_at 两列;写入时 `eff = manual if (T-manual_at).days<=30 else 重算值` —— 窗口内人工优先,超窗自动回落", "passed": true}, {"id": "bk-lifecycle-A4人工窗口-055", "project": "澜绣云裳后台", "machine": "客户生命周期", "source": "后台PRD 6.1 客户生命周期", "sm_type": "algorithmic", "rule": "A4人工窗口", "risk": "低", "scenario": "人工调整的 30 天优先期结束当天,重算与人工结果冲突", "expect": "必须明确当天以谁为准,且切换有留痕", "states": ["客户生命周期"], "verdict": "valid", "reason": "算法型状态机的固有风险点,与具体业务无关", "machine_id": "bk-lifecycle", "probe": "code", "action": "人工调整后的 30 天优先期,重算是否会覆盖人工结果", "allowed": null, "code": "DECLARED", "engine_says": "customer 表有 manual_lc / manual_at 两列;写入时 `eff = manual if (T-manual_at).days<=30 else 重算值` —— 窗口内人工优先,超窗自动回落", "passed": true}, {"id": "fe-order-R1回退-056", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「方案确认中」回退到「待付款」的请求(合法流转 待付款→方案确认中 的反向)", "expect": "必须拒绝并保持「方案确认中」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["方案确认中", "待付款"], "verdict": "valid", "reason": "进入「方案确认中」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-order", "probe": "fire", "action": "方案确认中 → 待付款", "allowed": false, "code": "IRREVERSIBLE", "engine_says": "进入「方案确认中」已产生资金/资源/不可逆记录,回退到「待付款」会造成两边不一致", "passed": true}, {"id": "fe-order-R1回退-057", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「待发货」回退到「待付款」的请求(合法流转 待付款→待发货 的反向)", "expect": "必须拒绝并保持「待发货」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["待发货", "待付款"], "verdict": "valid", "reason": "进入「待发货」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-order", "probe": "fire", "action": "待发货 → 待付款", "allowed": false, "code": "IRREVERSIBLE", "engine_says": "进入「待发货」已产生资金/资源/不可逆记录,回退到「待付款」会造成两边不一致", "passed": true}, {"id": "fe-order-R1回退-058", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R1回退", "risk": "中", "scenario": "系统收到把「待发货」回退到「方案确认中」的请求(合法流转 方案确认中→待发货 的反向)", "expect": "必须拒绝并保持「待发货」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["待发货", "方案确认中"], "verdict": "valid", "reason": "进入「待发货」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-order", "probe": "fire", "action": "待发货 → 方案确认中", "allowed": false, "code": "IRREVERSIBLE", "engine_says": "进入「待发货」已产生资金/资源/不可逆记录,回退到「方案确认中」会造成两边不一致", "passed": true}, {"id": "fe-order-R1回退-059", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R1回退", "risk": "低", "scenario": "系统收到把「待收货」回退到「待发货」的请求(合法流转 待发货→待收货 的反向)", "expect": "必须拒绝并保持「待收货」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["待收货", "待发货"], "verdict": "valid", "reason": "进入「待收货」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-order", "probe": "fire", "action": "待收货 → 待发货", "allowed": false, "code": "IRREVERSIBLE", "engine_says": "进入「待收货」已产生资金/资源/不可逆记录,回退到「待发货」会造成两边不一致", "passed": true}, {"id": "fe-order-R1回退-060", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已完成」回退到「待收货」的请求(合法流转 待收货→已完成 的反向)", "expect": "必须拒绝并保持「已完成」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已完成", "待收货"], "verdict": "valid", "reason": "进入「已完成」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-order", "probe": "fire", "action": "已完成 → 待收货", "allowed": false, "code": "TERMINAL", "engine_says": "「已完成」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-order-R1回退-061", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已关闭」回退到「待付款」的请求(合法流转 待付款→已关闭 的反向)", "expect": "必须拒绝并保持「已关闭」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已关闭", "待付款"], "verdict": "valid", "reason": "「已关闭」已终止,回退等于让单据复活,必须拒绝", "machine_id": "fe-order", "probe": "fire", "action": "已关闭 → 待付款", "allowed": false, "code": "TERMINAL", "engine_says": "「已关闭」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-order-R2跳跃-062", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R2跳跃", "risk": "高", "scenario": "系统收到从「待付款」直接跳到「待收货」的请求(跳过「待发货」)", "expect": "必须拒绝;「待发货」的校验和记账不可省略", "states": ["待付款", "待收货", "待发货"], "verdict": "valid", "reason": "「待发货」承载记账或资源动作,跳过会丢账", "machine_id": "fe-order", "probe": "fire", "action": "待付款 → 待收货(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「待付款」直接跳到「待收货」,跳过了「待发货」的校验与记账", "passed": true}, {"id": "fe-order-R2跳跃-063", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R2跳跃", "risk": "中", "scenario": "系统收到从「方案确认中」直接跳到「待收货」的请求(跳过「待发货」)", "expect": "必须拒绝;「待发货」的校验和记账不可省略", "states": ["方案确认中", "待收货", "待发货"], "verdict": "valid", "reason": "「待发货」承载记账或资源动作,跳过会丢账", "machine_id": "fe-order", "probe": "fire", "action": "方案确认中 → 待收货(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「方案确认中」直接跳到「待收货」,跳过了「待发货」的校验与记账", "passed": true}, {"id": "fe-order-R2跳跃-064", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R2跳跃", "risk": "高", "scenario": "系统收到从「待发货」直接跳到「已完成」的请求(跳过「待收货」)", "expect": "必须拒绝;「待收货」的校验和记账不可省略", "states": ["待发货", "已完成", "待收货"], "verdict": "valid", "reason": "「待收货」承载记账或资源动作,跳过会丢账", "machine_id": "fe-order", "probe": "fire", "action": "待发货 → 已完成(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「待发货」直接跳到「已完成」,跳过了「待收货」的校验与记账", "passed": true}, {"id": "fe-order-R3终态-065", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「已完成」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「已完成」;需留审计记录", "states": ["已完成"], "verdict": "valid", "reason": "「已完成」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "fe-order", "probe": "fire", "action": "已完成 → 其余 5 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「已完成」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-order-R3终态-066", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「已关闭」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「已关闭」;需留审计记录", "states": ["已关闭"], "verdict": "valid", "reason": "「已关闭」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "fe-order", "probe": "fire", "action": "已关闭 → 其余 5 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「已关闭」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-order-R5幂等-068", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R5幂等", "risk": "高", "scenario": "「待付款」→「方案确认中」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["待付款", "方案确认中"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "fe-order", "probe": "fire", "action": "待付款 → 方案确认中 不带幂等号重复提交", "allowed": true, "code": "OK", "engine_says": "该流转未登记进 IDEMPOTENT,重复提交会被直接放行", "passed": false}, {"id": "fe-order-R5幂等-069", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R5幂等", "risk": "高", "scenario": "「待付款」→「待发货」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["待付款", "待发货"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "fe-order", "probe": "fire", "action": "待付款 → 待发货 不带幂等号重复提交", "allowed": true, "code": "OK", "engine_says": "该流转未登记进 IDEMPOTENT,重复提交会被直接放行", "passed": false}, {"id": "fe-order-R5幂等-070", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R5幂等", "risk": "中", "scenario": "「方案确认中」→「待发货」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["方案确认中", "待发货"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "fe-order", "probe": "fire", "action": "方案确认中 → 待发货 不带幂等号重复提交", "allowed": true, "code": "OK", "engine_says": "该流转未登记进 IDEMPOTENT,重复提交会被直接放行", "passed": false}, {"id": "fe-order-R5幂等-071", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R5幂等", "risk": "低", "scenario": "「待发货」→「待收货」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["待发货", "待收货"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "fe-order", "probe": "fire", "action": "待发货 → 待收货 不带幂等号重复提交", "allowed": true, "code": "OK", "engine_says": "该流转未登记进 IDEMPOTENT,重复提交会被直接放行", "passed": false}, {"id": "fe-order-R5幂等-072", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R5幂等", "risk": "高", "scenario": "「待收货」→「已完成」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["待收货", "已完成"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "fe-order", "probe": "fire", "action": "待收货 → 已完成 不带幂等号重复提交", "allowed": true, "code": "OK", "engine_says": "该流转未登记进 IDEMPOTENT,重复提交会被直接放行", "passed": false}, {"id": "fe-order-R5幂等-073", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R5幂等", "risk": "高", "scenario": "「待付款」→「已关闭」的请求被重复提交(网络重发 / 用户连点 / 回调重放)", "expect": "必须按幂等键返回首次执行结果,不得产生第二笔资金或库存变动", "states": ["待付款", "已关闭"], "verdict": "valid", "reason": "资金边重复提交必须幂等,无例外", "machine_id": "fe-order", "probe": "fire", "action": "待付款 → 已关闭 不带幂等号重复提交", "allowed": true, "code": "OK", "engine_says": "该流转未登记进 IDEMPOTENT,重复提交会被直接放行", "passed": false}, {"id": "fe-order-R7自动-074", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R7自动", "risk": "高", "scenario": "自动流转规则「未支付订单 30 分钟关闭」触发的同一时刻,用户或后台正在手动操作同一单据", "expect": "必须有并发控制(锁/版本号),结果唯一且可追溯,不得两边都生效", "states": ["待付款"], "auto_rule": "未支付订单 30 分钟关闭", "verdict": "valid", "reason": "真自动流转,与人工操作并发时必须有锁或版本号", "machine_id": "fe-order", "probe": "human", "action": "自动流转与人工操作撞车时的并发控制", "allowed": null, "code": "MISSING", "engine_says": "自动升级由定时任务触发,人工改单走 HTTP;两条路径没有共同的锁或版本号", "passed": false}, {"id": "fe-order-R7自动-075", "project": "澜绣云裳小程序/Pad", "machine": "订单", "source": "前端PRD 11.1 订单状态", "sm_type": "event", "rule": "R7自动", "risk": "高", "scenario": "自动流转规则「提交订单锁定库存 15 分钟」触发的同一时刻,用户或后台正在手动操作同一单据", "expect": "必须有并发控制(锁/版本号),结果唯一且可追溯,不得两边都生效", "states": ["待付款"], "auto_rule": "提交订单锁定库存 15 分钟", "verdict": "valid", "reason": "真自动流转,与人工操作并发时必须有锁或版本号", "machine_id": "fe-order", "probe": "human", "action": "自动流转与人工操作撞车时的并发控制", "allowed": null, "code": "MISSING", "engine_says": "自动升级由定时任务触发,人工改单走 HTTP;两条路径没有共同的锁或版本号", "passed": false}, {"id": "fe-appt-R1回退-076", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R1回退", "risk": "中", "scenario": "系统收到把「已确认」回退到「预约审核中」的请求(合法流转 预约审核中→已确认 的反向)", "expect": "必须拒绝并保持「已确认」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已确认", "预约审核中"], "verdict": "valid", "reason": "进入「已确认」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-appt", "probe": "fire", "action": "已确认 → 预约审核中", "allowed": false, "code": "IRREVERSIBLE", "engine_says": "进入「已确认」已产生资金/资源/不可逆记录,回退到「预约审核中」会造成两边不一致", "passed": true}, {"id": "fe-appt-R1回退-077", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已取消」回退到「预约审核中」的请求(合法流转 预约审核中→已取消 的反向)", "expect": "必须拒绝并保持「已取消」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已取消", "预约审核中"], "verdict": "valid", "reason": "「已取消」已终止,回退等于让单据复活,必须拒绝", "machine_id": "fe-appt", "probe": "fire", "action": "已取消 → 预约审核中", "allowed": false, "code": "TERMINAL", "engine_says": "「已取消」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-appt-R1回退-078", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R1回退", "risk": "低", "scenario": "系统收到把「已到店」回退到「已确认」的请求(合法流转 已确认→已到店 的反向)", "expect": "必须拒绝并保持「已到店」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已到店", "已确认"], "verdict": "valid", "reason": "进入「已到店」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-appt", "probe": "fire", "action": "已到店 → 已确认", "allowed": false, "code": "IRREVERSIBLE", "engine_says": "进入「已到店」已产生资金/资源/不可逆记录,回退到「已确认」会造成两边不一致", "passed": true}, {"id": "fe-appt-R1回退-079", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已完成」回退到「已确认」的请求(合法流转 已确认→已完成 的反向)", "expect": "必须拒绝并保持「已完成」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已完成", "已确认"], "verdict": "valid", "reason": "进入「已完成」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-appt", "probe": "fire", "action": "已完成 → 已确认", "allowed": false, "code": "TERMINAL", "engine_says": "「已完成」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-appt-R1回退-080", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已取消」回退到「已确认」的请求(合法流转 已确认→已取消 的反向)", "expect": "必须拒绝并保持「已取消」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已取消", "已确认"], "verdict": "valid", "reason": "「已取消」已终止,回退等于让单据复活,必须拒绝", "machine_id": "fe-appt", "probe": "fire", "action": "已取消 → 已确认", "allowed": false, "code": "TERMINAL", "engine_says": "「已取消」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-appt-R1回退-081", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「爽约」回退到「已确认」的请求(合法流转 已确认→爽约 的反向)", "expect": "必须拒绝并保持「爽约」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["爽约", "已确认"], "verdict": "valid", "reason": "进入「爽约」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-appt", "probe": "fire", "action": "爽约 → 已确认", "allowed": false, "code": "TERMINAL", "engine_says": "「爽约」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-appt-R1回退-082", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已完成」回退到「已到店」的请求(合法流转 已到店→已完成 的反向)", "expect": "必须拒绝并保持「已完成」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已完成", "已到店"], "verdict": "valid", "reason": "进入「已完成」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-appt", "probe": "fire", "action": "已完成 → 已到店", "allowed": false, "code": "TERMINAL", "engine_says": "「已完成」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-appt-R1回退-083", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已取消」回退到「已到店」的请求(合法流转 已到店→已取消 的反向)", "expect": "必须拒绝并保持「已取消」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已取消", "已到店"], "verdict": "valid", "reason": "「已取消」已终止,回退等于让单据复活,必须拒绝", "machine_id": "fe-appt", "probe": "fire", "action": "已取消 → 已到店", "allowed": false, "code": "TERMINAL", "engine_says": "「已取消」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-appt-R2跳跃-084", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R2跳跃", "risk": "中", "scenario": "系统收到从「预约审核中」直接跳到「已到店」的请求(跳过「已确认」)", "expect": "必须拒绝;「已确认」的校验和记账不可省略", "states": ["预约审核中", "已到店", "已确认"], "verdict": "valid", "reason": "「已确认」承载必做校验或审批,跳过即漏校验", "machine_id": "fe-appt", "probe": "fire", "action": "预约审核中 → 已到店(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「预约审核中」直接跳到「已到店」,跳过了「已确认」的校验与记账", "passed": true}, {"id": "fe-appt-R2跳跃-085", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R2跳跃", "risk": "高", "scenario": "系统收到从「预约审核中」直接跳到「已完成」的请求(跳过「已确认」)", "expect": "必须拒绝;「已确认」的校验和记账不可省略", "states": ["预约审核中", "已完成", "已确认"], "verdict": "valid", "reason": "「已确认」承载必做校验或审批,跳过即漏校验", "machine_id": "fe-appt", "probe": "fire", "action": "预约审核中 → 已完成(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「预约审核中」直接跳到「已完成」,跳过了「已确认」的校验与记账", "passed": true}, {"id": "fe-appt-R2跳跃-086", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R2跳跃", "risk": "高", "scenario": "系统收到从「预约审核中」直接跳到「爽约」的请求(跳过「已确认」)", "expect": "必须拒绝;「已确认」的校验和记账不可省略", "states": ["预约审核中", "爽约", "已确认"], "verdict": "valid", "reason": "「已确认」承载必做校验或审批,跳过即漏校验", "machine_id": "fe-appt", "probe": "fire", "action": "预约审核中 → 爽约(跳过中间态)", "allowed": false, "code": "SKIP", "engine_says": "不得从「预约审核中」直接跳到「爽约」,跳过了「已确认」的校验与记账", "passed": true}, {"id": "fe-appt-R3终态-087", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「已完成」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「已完成」;需留审计记录", "states": ["已完成"], "verdict": "valid", "reason": "「已完成」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "fe-appt", "probe": "fire", "action": "已完成 → 其余 5 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「已完成」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-appt-R3终态-088", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「已取消」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「已取消」;需留审计记录", "states": ["已取消"], "verdict": "valid", "reason": "「已取消」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "fe-appt", "probe": "fire", "action": "已取消 → 其余 5 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「已取消」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-appt-R3终态-089", "project": "澜绣云裳小程序/Pad", "machine": "预约(前端口径)", "source": "前端PRD 11.2 预约状态", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「爽约」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「爽约」;需留审计记录", "states": ["爽约"], "verdict": "valid", "reason": "「爽约」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "fe-appt", "probe": "fire", "action": "爽约 → 其余 5 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「爽约」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-scheme-R1回退-092", "project": "澜绣云裳小程序/Pad", "machine": "定制方案", "source": "前端PRD 11.3 定制方案状态", "sm_type": "event", "rule": "R1回退", "risk": "低", "scenario": "系统收到把「已锁定」回退到「已保存」的请求(合法流转 已保存→已锁定 的反向)", "expect": "必须拒绝并保持「已锁定」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已锁定", "已保存"], "verdict": "valid", "reason": "进入「已锁定」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-scheme", "probe": "fire", "action": "已锁定 → 已保存", "allowed": false, "code": "IRREVERSIBLE", "engine_says": "进入「已锁定」已产生资金/资源/不可逆记录,回退到「已保存」会造成两边不一致", "passed": true}, {"id": "fe-scheme-R1回退-093", "project": "澜绣云裳小程序/Pad", "machine": "定制方案", "source": "前端PRD 11.3 定制方案状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已失效」回退到「草稿」的请求(合法流转 草稿→已失效 的反向)", "expect": "必须拒绝并保持「已失效」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已失效", "草稿"], "verdict": "valid", "reason": "进入「已失效」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-scheme", "probe": "fire", "action": "已失效 → 草稿", "allowed": false, "code": "TERMINAL", "engine_says": "「已失效」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-scheme-R1回退-094", "project": "澜绣云裳小程序/Pad", "machine": "定制方案", "source": "前端PRD 11.3 定制方案状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已失效」回退到「已保存」的请求(合法流转 已保存→已失效 的反向)", "expect": "必须拒绝并保持「已失效」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已失效", "已保存"], "verdict": "valid", "reason": "进入「已失效」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-scheme", "probe": "fire", "action": "已失效 → 已保存", "allowed": false, "code": "TERMINAL", "engine_says": "「已失效」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-scheme-R1回退-095", "project": "澜绣云裳小程序/Pad", "machine": "定制方案", "source": "前端PRD 11.3 定制方案状态", "sm_type": "event", "rule": "R1回退", "risk": "高", "scenario": "系统收到把「已失效」回退到「已锁定」的请求(合法流转 已锁定→已失效 的反向)", "expect": "必须拒绝并保持「已失效」;重复回调应返回首次结果,不得重复执行资金动作", "states": ["已失效", "已锁定"], "verdict": "valid", "reason": "进入「已失效」已产生资金/资源/不可逆记录,回退会造成两边不一致", "machine_id": "fe-scheme", "probe": "fire", "action": "已失效 → 已锁定", "allowed": false, "code": "TERMINAL", "engine_says": "「已失效」是终态,任何续流转都必须拒绝并留审计", "passed": true}, {"id": "fe-scheme-R3终态-097", "project": "澜绣云裳小程序/Pad", "machine": "定制方案", "source": "前端PRD 11.3 定制方案状态", "sm_type": "event", "rule": "R3终态", "risk": "高", "scenario": "「已失效」是终态,收到任何要求它继续流转的请求(含重复回调、人工改单)", "expect": "必须拒绝并原样返回「已失效」;需留审计记录", "states": ["已失效"], "verdict": "valid", "reason": "「已失效」是真终态,任何续流转都必须拒绝并留审计", "machine_id": "fe-scheme", "probe": "fire", "action": "已失效 → 其余 3 个状态,全部应拒", "allowed": false, "code": "TERMINAL", "engine_says": "「已失效」是终态,任何续流转都必须拒绝并留审计", "passed": true}];
+const KL = {fire:"实发请求",code:"查代码声明",human:"须人工判断"};
+let F = {res:"all", rule:"all"};
+const rows = document.getElementById("rows"), cnt = document.getElementById("cnt");
+const esc = s => String(s??"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function render(){
+  const list = D.filter(o =>
+    (F.res==="all" ||
+     (F.res==="pass" && o.passed) ||
+     (F.res==="fail" && !o.passed && o.probe!=="human") ||
+     (F.res==="open" && !o.passed && o.probe==="human")) &&
+    (F.rule==="all" || o.rule===F.rule));
+  cnt.textContent = `显示 ${list.length} / ${D.length} 条`;
+  rows.innerHTML = list.map(o => `
+  <details class="row ${o.passed?"":(o.probe==="human"?"open":"no")}">
+    <summary>
+      <span class="mk ${o.passed?"y":(o.probe==="human"?"o":"n")}">${o.passed?"✓":(o.probe==="human"?"?":"✕")}</span>
+      <span class="chip chip-${o.probe}">${KL[o.probe]}</span>
+      <span class="scen">${esc(o.scenario)}</span>
+      <span class="mach">${esc(o.machine)}</span>
+    </summary>
+    <div class="body">
+      <dl class="kv">
+        <dt>规则</dt><dd><b>${esc(o.rule)}</b> · 风险 ${esc(o.risk)} · 来源 ${esc(o.source)}</dd>
+        <dt>应该怎样</dt><dd>${esc(o.expect)}</dd>
+        <dt>验收动作</dt><dd>${esc(o.action)}</dd>
+        <dt>引擎回应</dt><dd><span class="eng"><span class="code ${o.passed?"y":"n"}">${esc(o.code)}</span>${o.engine_says?"  —  "+esc(o.engine_says):""}</span></dd>
+      </dl>
+    </div>
+  </details>`).join("") ||
+  `<p style="color:var(--ink-3);padding:28px 0;text-align:center">这组是空的,换个筛选看看。</p>`;
+}
+const rerun = document.getElementById("rerun"), cnt2 = document.getElementById("cnt");
+rerun.addEventListener("click", async () => {
+  rerun.disabled = true; rerun.textContent = "↻ 跑批中…";
+  try{
+    const r = await fetch("/api/acceptance", {cache:"no-store"});
+    if(!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    D.length = 0; j.rows.forEach(x => D.push(x));
+    render();
+    const s = j.summary;
+    cnt2.insertAdjacentHTML("beforebegin",
+      `<span class="live">刚跑完 ${s.total} 条 · ${j.ms} ms · 通过 ${s.passed} / 没处理 ${s.confirmed} / 待人看 ${s.open}</span>`);
+  }catch(e){
+    cnt2.insertAdjacentHTML("beforebegin",
+      `<span class="live err">连不上后台 —— 先跑 python3 backend/server.py,再开 http://127.0.0.1:8760/acceptance</span>`);
+  }finally{
+    document.querySelectorAll(".live").forEach((n,i,a)=>{ if(i<a.length-1) n.remove(); });
+    rerun.disabled = false; rerun.textContent = "↻ 重跑一遍";
+  }
+});
+document.querySelectorAll("button.f:not(.rerun)").forEach(b => b.addEventListener("click", () => {
+  const g = b.dataset.g;
+  document.querySelectorAll(`button.f[data-g="${g}"]`).forEach(x => x.setAttribute("aria-pressed","false"));
+  b.setAttribute("aria-pressed","true");
+  F[g] = b.dataset.v; render();
+}));
+render();
+</script>

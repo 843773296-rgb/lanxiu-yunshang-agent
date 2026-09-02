@@ -1,0 +1,2734 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>澜绣云裳管理后台</title>
+<style>
+:root{
+ --white:#FFFFFF; --canvas:#F0F0F1; --tile:#F7F8FB; --line:#E6E6E7; --line2:#EFEFF0;
+ --blue:#3381FF; --navy:#385099; --navy-bg:#EDF0F8; --blue2:#5495FF; --blue3:#8AB6FF; --blue4:#B0CEFF; --blue-bg:#EAF1FF;
+ --ink:#1D2129; --ink2:#4E5969; --ink3:#86909C; --ink4:#A9AFB8;
+ --up:#F53F3F; --down:#3381FF; --warn:#FF7D00; --warn-bg:#FFF3E8; --ok:#00B42A; --ok-bg:#E8FFEA;
+ --bad:#F53F3F; --bad-bg:#FFECE8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--canvas);color:var(--ink);
+ font:14px/1.55 "PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+svg{display:block}
+
+/* 顶栏 */
+.top{height:78px;background:var(--white);display:flex;align-items:center;padding:0 26px;gap:12px;
+ position:sticky;top:0;z-index:20;border-bottom:1px solid var(--line2)}
+.logo{display:flex;align-items:center;gap:11px;font-size:19px;font-weight:600;letter-spacing:.01em}
+.logo .mk{width:30px;height:30px;border-radius:5px;background:linear-gradient(160deg,#2B4D8C,#1D3karma);
+ background:#2B4D8C;display:grid;place-items:center}
+.top .sp{margin-left:auto;display:flex;align-items:center;gap:20px}
+.ic{color:var(--ink2);cursor:pointer;position:relative}
+.ic:hover{color:var(--blue)}
+.ic.dis{color:var(--ink4);cursor:not-allowed}
+.ic.dis:hover{color:var(--ink4)}
+.dead{color:var(--ink4)!important;cursor:not-allowed!important;text-decoration:none!important}
+.dead:hover{color:var(--ink4)!important;text-decoration:none!important}
+.badge{position:absolute;top:-4px;right:-6px;background:var(--warn);color:#fff;font-size:10px;
+ min-width:15px;height:15px;border-radius:99px;display:grid;place-items:center;padding:0 4px;font-weight:600}
+.user{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13.5px}
+.av{width:27px;height:27px;border-radius:99px;background:var(--blue);color:#fff;
+ display:grid;place-items:center;font-size:12px;font-weight:600}
+
+/* 布局 */
+.wrap{display:grid;grid-template-columns:240px 1fr;min-height:calc(100vh - 78px)}
+nav{background:var(--white);padding:14px 0 40px;border-right:1px solid var(--line2)}
+nav .item{display:flex;align-items:center;gap:11px;padding:9px 22px;color:var(--ink);cursor:pointer;font-size:14px}
+nav .item:hover{color:var(--blue)}
+nav .item.on{color:var(--blue);font-weight:500}
+nav .item.off{color:var(--ink4);cursor:not-allowed}
+nav .item.off:hover{color:var(--ink4)}
+nav .item .ch{margin-left:auto;color:var(--ink4);display:flex}
+nav .item .ch svg{transition:transform .15s}
+nav .item.open .ch svg{transform:rotate(90deg)}
+nav .sub{padding:8px 22px 8px 55px;color:var(--ink2);cursor:pointer;font-size:13.5px;display:block;
+ border-radius:0 6px 6px 0;margin-right:9px}
+nav .sub:hover{color:var(--blue)}
+nav .sub.on{background:var(--blue-bg);color:var(--blue);font-weight:500}
+main{padding:16px 22px 60px;min-width:0}
+.crumb{color:var(--ink3);font-size:13px;margin-bottom:11px}
+.crumb b{color:var(--ink2);font-weight:400}
+.tabbar{display:flex;align-items:center;gap:7px;margin-bottom:16px;flex-wrap:wrap}
+.tab{background:var(--white);border:1px solid var(--line);border-radius:5px;
+ padding:7px 11px;font-size:13px;color:var(--ink2);display:flex;align-items:center;gap:7px;
+ cursor:pointer;max-width:190px}
+.tab:hover{border-color:var(--blue);color:var(--blue)}
+.tab.on{border-color:var(--blue);color:var(--blue);box-shadow:inset 0 -2px 0 var(--blue)}
+.tab .lb{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab .x{color:var(--ink4);cursor:pointer;font-size:12px;padding:0 1px;border-radius:3px;flex:none}
+.tab .x:hover{background:var(--line);color:var(--ink)}
+.tabbar .gridic{margin-left:auto;color:var(--ink2);cursor:pointer}
+.crumb b{cursor:default}
+.crumb a{color:var(--ink2);cursor:pointer;text-decoration:none}
+.crumb a:hover{color:var(--blue);text-decoration:underline}
+
+/* 卡片 */
+.card{background:var(--white);border-radius:9px;margin-bottom:14px}
+.card>.hd{padding:15px 20px 0;display:flex;align-items:baseline;gap:9px}
+.card>.hd h3{margin:0;font-size:15.5px;font-weight:600}
+.card>.hd .n{color:var(--ink3);font-size:12.5px}
+.card>.hd .more{margin-left:auto;color:var(--blue);font-size:13px;cursor:pointer}
+.card>.bd{padding:15px 20px 20px}
+.row{display:grid;gap:14px;margin-bottom:14px}
+.r-13{grid-template-columns:1fr 2.05fr}
+.r-3{grid-template-columns:repeat(3,1fr)}
+.r-4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1120px){.r-13,.r-3,.r-4{grid-template-columns:1fr}}
+.row>.card{margin:0}
+
+/* 指标块 */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+@media(max-width:1120px){.tiles{grid-template-columns:repeat(2,1fr)}}
+.tile{background:var(--tile);border-radius:7px;padding:13px 15px}
+.tile .l{font-size:12.5px;color:var(--ink2)}
+.tile .v{margin:5px 0 3px;font-size:23px;font-weight:600;color:var(--blue);letter-spacing:-.01em}
+.tile .v small{font-size:12px;color:var(--ink2);font-weight:400;margin-left:3px}
+.tile .s{font-size:11.5px;color:var(--ink3)}
+.tile.plain .v{color:var(--ink)}
+
+/* 基本信息 */
+.who{display:flex;align-items:center;gap:13px;margin-bottom:15px}
+.who .ph{width:54px;height:54px;border-radius:99px;background:var(--blue-bg);color:var(--blue);
+ display:grid;place-items:center;font-size:18px;font-weight:600}
+.who .nm{font-size:16px;font-weight:600}
+.who .st{font-size:12.5px;color:var(--ink2);margin-top:2px}
+.who .st b{color:var(--blue);font-weight:600}
+.quick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.q{background:var(--tile);border-radius:7px;padding:11px 13px;font-size:13px;cursor:pointer;
+ display:flex;align-items:center;gap:8px}
+.q:hover{background:var(--blue-bg);color:var(--blue)}
+.q .d{width:7px;height:7px;border-radius:99px;background:var(--blue2)}
+
+/* 快捷入口 */
+.quick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.q{border-radius:7px;padding:11px 12px;font-size:13.5px;cursor:pointer;display:flex;align-items:center;gap:9px}
+.q .ci{width:22px;height:22px;border-radius:99px;display:grid;place-items:center;flex:none}
+.q.c1{background:#FFF7E8} .q.c1 .ci{background:#FFB400}
+.q.c2{background:#EAF1FF} .q.c2 .ci{background:#3381FF}
+.q.c3{background:#FFEEF0} .q.c3 .ci{background:#F76D80}
+.q.c4{background:#EAFBF0} .q.c4 .ci{background:#00B42A}
+.q:hover{filter:brightness(.97)}
+.q.dis{background:var(--tile);color:var(--ink4);cursor:not-allowed}
+.q.dis .ci{background:var(--ink4)}
+/* 分段器 */
+.seg{margin-left:auto;background:var(--tile);border-radius:6px;padding:3px;display:flex;gap:2px}
+.seg b{padding:4px 15px;border-radius:4px;font-size:12.5px;font-weight:400;color:var(--ink2);cursor:pointer}
+.seg b.on{background:var(--white);color:var(--ink);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+/* 趋势 */
+.tr{font-size:11.5px;color:var(--ink3);display:flex;align-items:center;gap:3px}
+.tr b{font-weight:600} .tr.up b{color:var(--up)} .tr.dn b{color:var(--down)}
+/* 图例 */
+.lg{display:flex;gap:14px;font-size:12px;color:var(--ink2);align-items:center}
+.lg i{width:7px;height:7px;border-radius:99px;display:inline-block;margin-right:5px}
+/* 横条 */
+.hb{display:grid;grid-template-columns:148px 1fr 54px 40px;align-items:center;gap:11px;margin-bottom:13px;font-size:12.5px}
+.hb .tk{height:7px;background:var(--tile);border-radius:99px;overflow:hidden}
+.hb .tk i{display:block;height:100%;background:var(--blue2);border-radius:99px}
+.hb .n{text-align:right;font-weight:600} .hb .p{text-align:right;color:var(--ink3)}
+/* 门店 */
+.thumb{width:56px;height:56px;border-radius:6px;display:grid;place-items:center;color:#fff;
+ font-size:19px;font-weight:600;flex:none;letter-spacing:.04em}
+.shops{display:grid;grid-template-columns:repeat(3,1fr);gap:0}
+@media(max-width:1120px){.shops{grid-template-columns:1fr}}
+.shop{padding:0 20px;border-right:1px solid var(--line2)}
+.shop:last-child{border-right:0}
+.shop .t{display:flex;align-items:center;gap:11px;margin-bottom:13px}
+.shop .t .nm{font-size:14.5px;font-weight:600}
+.shop .kv{display:grid;grid-template-columns:1fr 1fr;gap:9px 12px;margin-bottom:12px}
+.shop .kv .l{font-size:12px;color:var(--ink3)}
+.shop .kv .v{font-size:17px;font-weight:600;margin-top:1px}
+.shop .kv .v small{font-size:11.5px;color:var(--ink3);font-weight:400;margin-left:2px}
+.foot{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding-top:11px;border-top:1px solid var(--line2)}
+.foot .l{font-size:11.5px;color:var(--ink3)} .foot .v{font-size:15px;font-weight:600}
+
+/* 待处理 */
+.pend .big{font-size:30px;font-weight:600;color:var(--blue);letter-spacing:-.02em}
+.pend .big small{font-size:12px;color:var(--ink2);font-weight:400;margin-left:3px}
+.pend .subs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:9px}
+.pend .subs .l{font-size:11.5px;color:var(--ink3)}
+.pend .subs .v{font-size:14.5px;font-weight:600}
+.pend .subs .v.w{color:var(--warn)} .pend .subs .v.z{color:var(--ink4)}
+
+/* 表格 */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;padding:11px 20px;color:var(--ink2);font-weight:500;font-size:12.5px;background:var(--tile)}
+td{padding:12px 20px;border-bottom:1px solid var(--line2);color:var(--ink)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr.clk{cursor:pointer} tbody tr.clk:hover td{background:var(--blue-bg)}
+.pill{display:inline-block;padding:2px 9px;border-radius:4px;font-size:12px;font-weight:500;white-space:nowrap}
+.p-bad{background:var(--bad-bg);color:var(--bad)} .p-warn{background:var(--warn-bg);color:var(--warn)}
+.p-ok{background:var(--ok-bg);color:var(--ok)} .p-blue{background:var(--blue-bg);color:var(--blue)}
+.p-mut{background:var(--tile);color:var(--ink3)}
+.dot{width:6px;height:6px;border-radius:99px;display:inline-block;margin-right:5px;vertical-align:1px}
+
+/* 明细 */
+.kvl{display:grid;grid-template-columns:96px 1fr;gap:11px 14px;font-size:13.5px}
+.kvl dt{color:var(--ink3)} .kvl dd{margin:0}
+.diff td.d{background:var(--bad-bg)} .diff td.s{background:var(--ok-bg)}
+.back{color:var(--blue);cursor:pointer;font-size:13px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--white);color:var(--ink2);
+ padding:8px 17px;border-radius:5px}
+button:hover{border-color:var(--blue);color:var(--blue)}
+button.pri{background:var(--blue);border-color:var(--blue);color:#fff}
+button.pri:hover{opacity:.9;color:#fff}
+button:disabled{opacity:.5;cursor:not-allowed}
+.err{background:var(--bad-bg);color:var(--bad);padding:12px 15px;border-radius:6px;
+ font-size:12.5px;white-space:pre-wrap;word-break:break-all;margin-top:12px}
+.ev{margin:6px 0 0;padding-left:17px} .ev li{margin:3px 0;color:var(--ink2);font-size:13px}
+.note{font-size:12px;color:var(--ink3);margin-top:11px}
+h1{font-size:18px;margin:0 0 3px;font-weight:600}
+/* 表单区 */
+.form{display:grid;grid-template-columns:repeat(3,1fr);gap:15px 26px;padding:22px 24px 0}
+.fi{display:flex;align-items:center;gap:11px}
+.fi label{width:66px;text-align:right;color:var(--ink2);font-size:13.5px;flex:none}
+.fi .ctl{flex:1;height:34px;border:1px solid #D9DCE1;border-radius:3px;background:#fff;
+ display:flex;align-items:center;padding:0 11px;color:var(--ink4);font-size:13.5px;gap:6px}
+.fi .ctl .r{margin-left:auto;color:var(--ink4);font-size:12px}
+.facts{display:flex;justify-content:flex-end;gap:11px;padding:16px 24px 0}
+.form .facts{padding:0;grid-column:-2/-1;justify-content:flex-start}
+.btn{height:34px;padding:0 22px;border-radius:3px;border:1px solid var(--navy);background:#fff;
+ color:var(--navy);font-size:13.5px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn.sol{background:var(--navy);color:#fff}
+.btn.gray{border-color:#D9DCE1;color:var(--ink)}
+.btn:hover{opacity:.88}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.ops{display:flex;gap:11px;padding:18px 24px 4px}
+/* 表格增强 */
+.tb th{background:var(--canvas);color:var(--ink);font-weight:500;font-size:13px}
+.tb td,.tb th{padding:13px 16px}
+.tb .lk{color:var(--navy);cursor:pointer;margin-right:14px;font-size:13px}
+.tb .lk:hover{text-decoration:underline}
+.cb{width:14px;height:14px;border:1px solid #C9CDD4;border-radius:2px;display:inline-block;
+ vertical-align:-2px;cursor:pointer;position:relative}
+.cb:hover{border-color:var(--navy)}
+.cb.ck{background:var(--navy);border-color:var(--navy)}
+.cb.ck::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;
+ border:solid #fff;border-width:0 1.6px 1.6px 0;transform:rotate(42deg)}
+/* 分页 */
+.pg{display:flex;align-items:center;justify-content:flex-end;gap:7px;padding:16px 24px;font-size:13px;color:var(--ink2)}
+.pg b{min-width:28px;height:28px;border:1px solid #D9DCE1;border-radius:3px;display:grid;place-items:center;
+ font-weight:400;cursor:pointer;background:#fff}
+.pg b.on{border-color:var(--navy);color:var(--navy)}
+.pg .sel{height:28px;border:1px solid #D9DCE1;border-radius:3px;padding:0 9px;display:flex;align-items:center;gap:14px}
+.pg input{width:46px;height:28px;border:1px solid #D9DCE1;border-radius:3px;text-align:center;font:inherit}
+/* 详情页头 */
+.dh{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+.dh .no{font-size:17px;font-weight:600}
+/* 步骤条 */
+.steps{display:flex;align-items:flex-start;padding:26px 40px 22px}
+.step{flex:1;display:flex;flex-direction:column;align-items:center;position:relative}
+.step .c{width:26px;height:26px;border-radius:99px;display:grid;place-items:center;font-size:12.5px;
+ background:#C3C3C3;color:#fff;z-index:1}
+.step.done .c{background:var(--navy)} .step.cur .c{background:var(--navy)}
+.step .t{font-size:14px;margin-top:9px;color:var(--ink)}
+.step .d{font-size:11.5px;color:var(--ink3);margin-top:3px}
+.step::before{content:"";position:absolute;top:13px;left:-50%;width:100%;height:2px;background:#DCDCDC}
+.step:first-child::before{display:none}
+.step.done::before,.step.cur::before{background:var(--navy)}
+/* 时间轴 */
+.tl{padding:4px 24px 8px}
+.tl .it{display:flex;gap:13px;padding-bottom:22px;position:relative}
+.tl .it:last-child{padding-bottom:4px}
+.tl .it::before{content:"";position:absolute;left:8px;top:20px;bottom:0;width:1px;background:var(--line)}
+.tl .it:last-child::before{display:none}
+.tl .ic{width:17px;height:17px;border-radius:99px;border:1.5px solid var(--ink4);flex:none;
+ display:grid;place-items:center;background:#fff;z-index:1}
+.tl .it.bad .ic{border-color:var(--bad)}
+.tl .tt{font-size:13.5px} .tl .dd{font-size:12px;color:var(--ink3);margin-top:3px}
+/* 底部操作栏 */
+.fbar{background:var(--white);border-radius:9px;padding:15px;display:flex;justify-content:center;gap:13px}
+/* 客户详情 */
+.cd{display:grid;grid-template-columns:1fr 322px;gap:14px;align-items:start}
+@media(max-width:1180px){.cd{grid-template-columns:1fr}}
+.cd-h{display:flex;align-items:center;gap:10px;margin-bottom:11px}
+.cd-h .nm{font-size:19px;font-weight:600}
+.cd-h .ed{color:var(--navy);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:4px}
+.cd-h .rt{margin-left:auto;color:var(--navy);font-size:13px;cursor:pointer}
+.tags{display:flex;gap:9px;align-items:center;margin-bottom:13px;flex-wrap:wrap}
+.tags .tg{border:1px solid #D9DCE1;border-radius:4px;padding:4px 16px;font-size:13px;background:#fff}
+.tags a{color:var(--navy);font-size:13px;cursor:pointer}
+.pf{display:flex;gap:20px;padding:20px 22px}
+.pf .ph2{width:112px;height:132px;border-radius:6px;display:grid;place-items:center;
+ background:linear-gradient(160deg,#2B4D8C,#4C6FB5);color:#fff;font-size:30px;font-weight:600;flex:none}
+.pf .cts{flex:1;display:grid;gap:13px;align-content:start;font-size:13.5px}
+.pf .ct{display:flex;gap:9px;align-items:flex-start;color:var(--ink)}
+.pf .ct svg{flex:none;margin-top:2px;color:var(--ink3)}
+.sec{padding:0 22px 4px}
+.sec h5{margin:0 0 12px;font-size:14px;font-weight:600}
+.dgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:15px 20px;font-size:13.5px}
+@media(max-width:1180px){.dgrid{grid-template-columns:repeat(2,1fr)}}
+.dgrid .l{color:var(--ink3);font-size:12.5px} .dgrid .v{margin-top:4px}
+.note2{background:var(--tile);border-radius:6px;padding:12px 14px;font-size:13px;color:var(--ink2);margin-top:14px}
+.stiles{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;padding:18px 22px 22px}
+@media(max-width:1180px){.stiles{grid-template-columns:repeat(2,1fr)}}
+.st4{border-radius:7px;padding:14px 16px;min-height:88px}
+.st4 .l{font-size:12.5px;color:var(--ink2);display:flex;align-items:center}
+.st4 .l span{margin-left:auto;color:var(--ink4);font-size:11px}
+.st4 .v{font-size:20px;font-weight:600;margin-top:7px}
+.st4 .s{font-size:11.5px;color:var(--ink3);margin-top:5px}
+.st4.a{background:#FDF8EC} .st4.b{background:#FDF0F5} .st4.c{background:#EDF4FE} .st4.d{background:#F3F4F6}
+/* 日历 */
+.cal{padding:14px 16px}
+.cal .hd2{display:flex;align-items:center;gap:9px;font-size:13.5px;margin-bottom:12px}
+.cal .hd2 .nav{cursor:pointer;color:var(--ink3);padding:0 4px}
+.cal .hd2 .today{margin-left:auto;color:var(--navy);cursor:pointer;font-size:12.5px}
+.cal table{width:100%;table-layout:fixed}
+.cal th{background:none;padding:6px 0;text-align:center;color:var(--ink3);font-size:12px;font-weight:400}
+.cal td{border:0;padding:7px 0;text-align:center;font-size:13px;position:relative;height:44px;vertical-align:top}
+.cal .dnum{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:99px}
+.cal .out .dnum{color:var(--ink4)}
+.cal .today2 .dnum{background:var(--navy);color:#fff}
+.cal .hd2 .nav:hover,.cal .hd2 .today:hover{color:var(--blue)}
+.cal .mk{position:absolute;left:50%;transform:translateX(-50%);bottom:6px;width:14px;height:2px;border-radius:2px}
+/* tab 条 */
+.tabs2{display:flex;gap:26px;padding:15px 22px 0;border-bottom:1px solid var(--line2);align-items:center}
+.tabs2 b{font-size:14px;font-weight:400;color:var(--ink2);padding-bottom:11px;cursor:pointer;border-bottom:2px solid transparent}
+.tabs2 b.on{color:var(--navy);font-weight:600;border-bottom-color:var(--navy)}
+.tabs2 .add2{margin-left:auto;color:var(--navy);font-size:13px;cursor:pointer;padding-bottom:11px}
+.empty{text-align:center;color:var(--ink4);padding:38px;font-size:13px}
+/* 开关(量体模版状态列)*/
+.tg{width:40px;height:21px;border-radius:99px;background:#C9CDD4;position:relative;
+ display:inline-block;cursor:pointer;transition:.15s;vertical-align:-5px}
+.tg.on{background:var(--navy)}
+.tg::after{content:"";position:absolute;left:2px;top:2px;width:17px;height:17px;border-radius:99px;
+ background:#fff;transition:.15s}
+.tg.on::after{left:21px}
+.tg i{position:absolute;font-style:normal;font-size:10.5px;color:#fff;line-height:21px}
+.tg.on i{left:7px} .tg:not(.on) i{right:6px;color:#fff}
+/* 订单卡片式表格 */
+.otab{display:flex;gap:26px;padding:14px 24px 0;border-bottom:1px solid var(--line2);
+ align-items:center;flex-wrap:wrap}
+.otab b{font-size:13.5px;font-weight:400;color:var(--ink2);padding-bottom:11px;cursor:pointer;
+ border-bottom:2px solid transparent;position:relative}
+.otab b.on{color:var(--navy);font-weight:600;border-bottom-color:var(--navy)}
+.otab b.nomap{color:var(--ink4)}
+.otab b.nomap::after{content:"";position:absolute;top:-2px;right:-7px;width:5px;height:5px;
+ border-radius:99px;background:var(--bad)}
+.ordhd{background:var(--tile);padding:10px 16px;font-size:12.5px;color:var(--ink2);
+ display:flex;gap:18px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line2)}
+.ordhd .no{color:var(--navy);font-family:ui-monospace,monospace}
+.orditem{display:grid;grid-template-columns:1fr 130px 110px 120px 120px 110px 90px;
+ gap:12px;padding:14px 16px;align-items:center;border-top:1px solid var(--line2);font-size:13px}
+@media(max-width:1180px){.orditem{grid-template-columns:1fr 110px 100px 100px}}
+.orditem .g{display:flex;gap:12px;align-items:center}
+.orditem .thumb2{width:58px;height:58px;border-radius:5px;flex:none;
+ background:linear-gradient(155deg,#2F5A4B,#4C7F6C);display:grid;place-items:center;color:#fff;font-size:11px}
+/* 知识库 */
+.kbcard{background:var(--white);border-radius:9px;padding:18px 20px;margin-bottom:12px}
+.kbcard .t1{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:9px}
+.kbcard .nm2{font-size:16px;font-weight:600}
+.kbcard .al{font-size:12.5px;color:var(--ink3)}
+.kbcard .br{font-size:13.5px;color:var(--ink);margin-bottom:10px}
+.kbcard .dt{font-size:13px;color:var(--ink2);line-height:1.75;background:var(--tile);
+ border-radius:6px;padding:12px 14px;margin-bottom:10px}
+.kbcard .mt2{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:12.5px;margin-bottom:10px}
+.kbcard .mt2 .l{color:var(--ink3)} .kbcard .mt2 .v{margin-top:3px;color:var(--ink)}
+.src{font-size:12px;display:flex;align-items:center;gap:7px;padding-top:10px;border-top:1px solid var(--line2)}
+.src a{color:var(--blue);text-decoration:none} .src a:hover{text-decoration:underline}
+.cmb{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}
+.mx td{text-align:center} .mx td.v-可{background:var(--ok-bg);color:var(--ok);font-weight:600}
+.mx td.v-不可{background:var(--bad-bg);color:var(--bad);font-weight:600}
+.mx td.v-需评估{background:var(--warn-bg);color:var(--warn);font-weight:600}
+.mx td.v-未定义{background:var(--tile);color:var(--ink4)}
+.mx th.rowh{text-align:left;background:var(--tile)}
+/* 弹窗 */
+.mask{position:fixed;inset:0;background:rgba(20,25,33,.42);z-index:60;display:grid;place-items:center}
+.modal{background:#fff;border-radius:9px;width:440px;max-width:92vw;overflow:hidden}
+.modal h4{margin:0;padding:16px 22px;font-size:15.5px;border-bottom:1px solid var(--line2)}
+.modal .bd2{padding:20px 22px}
+.modal .ft{padding:14px 22px;display:flex;justify-content:flex-end;gap:11px;background:var(--tile)}
+.modal label{display:block;font-size:13px;color:var(--ink2);margin:0 0 6px}
+.modal input,.modal select,.modal textarea{width:100%;border:1px solid #D9DCE1;border-radius:3px;
+ padding:8px 11px;font:inherit;margin-bottom:15px}
+.modal textarea{min-height:64px;resize:vertical}
+/* 结果条 */
+.res{position:fixed;left:50%;top:96px;transform:translateX(-50%);z-index:70;border-radius:7px;
+ padding:13px 20px;font-size:13.5px;max-width:640px;box-shadow:0 6px 24px rgba(20,25,33,.14);
+ display:flex;gap:10px;align-items:flex-start}
+.res.ok{background:var(--ok-bg);color:var(--ok);border:1px solid #B7E3C3}
+.res.no{background:var(--bad-bg);color:var(--bad);border:1px solid #F3C3B8}
+.res b{font-family:ui-monospace,monospace}
+/* 双栏:左类型列表 */
+.split{display:grid;grid-template-columns:264px 1fr;gap:14px;align-items:start}
+@media(max-width:1120px){.split{grid-template-columns:1fr}}
+.tylist{background:var(--white);border-radius:9px;padding:8px}
+.ty{padding:13px 15px;border-bottom:1px solid var(--line2);cursor:pointer;border-radius:5px}
+.ty:last-of-type{border-bottom:0}
+.ty:hover{background:var(--canvas)}
+.ty.on{background:var(--canvas);box-shadow:inset 3px 0 0 var(--navy)}
+.ty.on .n{color:var(--navy)}
+.ty .n{font-size:14px;font-weight:500}
+.ty .m{font-size:12.5px;color:var(--ink3);margin-top:5px;display:flex;align-items:center}
+.ty .m a{color:var(--blue);margin-left:auto;cursor:pointer}
+.tylist .add{text-align:right;padding:12px 15px;color:var(--blue);font-size:13px;cursor:pointer}
+/* 开关 */
+.sw{width:38px;height:20px;border-radius:99px;background:var(--navy);position:relative;display:inline-block;vertical-align:-5px}
+.sw::after{content:"";position:absolute;right:2px;top:2px;width:16px;height:16px;border-radius:99px;background:#fff}
+.sw i{position:absolute;left:7px;top:2px;font-size:11px;color:#fff;font-style:normal;line-height:16px}
+/* 单列 label:value */
+.lv{padding:18px 24px}
+.lv .r{display:flex;gap:10px;margin-bottom:11px;font-size:13.5px}
+.lv .r .l{color:var(--ink2);flex:none}
+/* 信息网格 */
+.info{display:grid;grid-template-columns:repeat(4,1fr);gap:17px 20px;padding:16px 24px 22px}
+@media(max-width:1120px){.info,.form{grid-template-columns:repeat(2,1fr)}}
+.info .l{font-size:12.5px;color:var(--ink3)} .info .v{font-size:14px;margin-top:4px}
+.sub{color:var(--ink3);font-size:12.5px;margin:0 0 16px}
+</style></head><body>
+
+<div class="top">
+  <div class="logo"><span class="mk">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.4">
+      <path d="M2 14V3M5.3 14V3M8 14V3M10.7 14V3M14 14V3M1 14h14"/></svg></span>
+    澜绣云裳管理后台</div>
+  <div class="sp">
+    <span class="ic dis" title="系统设置 · 本期未实现"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+      <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 8.9 19a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5 8.9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9.5a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9.5a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span>
+    <span class="ic" id="bellBtn" title="查看待处理任务"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      <span class="badge" id="bell">0</span></span>
+    <span class="user" id="roleSw" title="切换角色以演示审批链"><span class="av">魏</span>魏欣新
+      <span style="color:var(--ink3);font-size:12px;margin-left:2px">· <b id="roleTxt">顾问</b></span>
+      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="var(--ink3)" stroke-width="1.6"><path d="M2 4.5 6 8.5 10 4.5"/></svg></span>
+  </div>
+</div>
+
+<div class="wrap">
+<nav id="nav"></nav>
+<main id="main">加载中…</main>
+</div>
+
+<script>
+const M=document.getElementById("main"), NAV=document.getElementById("nav");
+const esc=s=>String(s??"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const num=n=>Number(n||0).toLocaleString("zh");
+const money=n=>Number(n||0).toLocaleString("zh",{minimumFractionDigits:2,maximumFractionDigits:2});
+let W=null, CUR="workbench";
+
+const ICON={
+ workbench:'<rect x="2" y="3" width="16" height="11" rx="1.5"/><path d="M7 17h6M10 14v3"/>',
+ customer:'<circle cx="10" cy="10" r="8"/><path d="M10 2a8 8 0 0 1 0 16M2.6 7.5h14.8M2.6 12.5h14.8"/>',
+ shop:'<path d="M3 7h14v10H3zM3 7l1.5-4h11L17 7M7 17v-5h6v5"/>',
+ guide:'<circle cx="10" cy="6.5" r="3"/><path d="M3.5 17c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5"/>',
+ page:'<rect x="2.5" y="3" width="15" height="14" rx="1.5"/><path d="M2.5 7.5h15M7.5 7.5V17"/>',
+ mkt:'<circle cx="10" cy="10" r="8"/><path d="M6.5 10.5 9 13l4.5-5.5"/>',
+ goods:'<path d="M4 6.5h12V17H4zM7 6.5V4a3 3 0 0 1 6 0v2.5"/>',
+ pay:'<circle cx="10" cy="10" r="8"/><path d="M10 5.5v9M7 8.5h6M7 11.5h6"/>',
+ biz:'<rect x="3.5" y="2.5" width="13" height="15" rx="1.5"/><path d="M7 6.5h6M7 10h6M7 13.5h3.5"/>',
+ sys:'<circle cx="10" cy="10" r="2.5"/><path d="M16.2 12.2a1.4 1.4 0 0 0 .3 1.5l.1.1a1.6 1.6 0 1 1-2.3 2.3l-.1-.1a1.4 1.4 0 0 0-1.5-.3 1.4 1.4 0 0 0-.9 1.3v.2a1.6 1.6 0 1 1-3.2 0v-.1a1.4 1.4 0 0 0-.9-1.3 1.4 1.4 0 0 0-1.5.3l-.1.1a1.6 1.6 0 1 1-2.3-2.3l.1-.1a1.4 1.4 0 0 0 .3-1.5 1.4 1.4 0 0 0-1.3-.9H2.7a1.6 1.6 0 1 1 0-3.2h.1a1.4 1.4 0 0 0 1.3-.9 1.4 1.4 0 0 0-.3-1.5l-.1-.1a1.6 1.6 0 1 1 2.3-2.3l.1.1a1.4 1.4 0 0 0 1.5.3h.1a1.4 1.4 0 0 0 .9-1.3V2.7a1.6 1.6 0 1 1 3.2 0v.1a1.4 1.4 0 0 0 .9 1.3 1.4 1.4 0 0 0 1.5-.3l.1-.1a1.6 1.6 0 1 1 2.3 2.3l-.1.1a1.4 1.4 0 0 0-.3 1.5v.1a1.4 1.4 0 0 0 1.3.9h.2a1.6 1.6 0 1 1 0 3.2h-.1a1.4 1.4 0 0 0-1.3.9z"/>'};
+const CHEV='<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg>';
+const ic=k=>`<svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICON[k]}</svg>`;
+
+const MENU=[
+ {k:"workbench",i:"workbench",t:"工作台"},
+ {k:"customer",i:"customer",t:"客户管理",subs:[["customers","客户档案"],["merge","客户合并确认"],
+   ["appts","客户预约"],["lifecycle","客户生命周期类型"],["levels","会员等级"],["tags","客户标签管理"]]},
+ {k:"shop",i:"shop",t:"店铺配置",subs:[["shops","店铺管理"],["off","店铺日程(原稿标注:本期不做)"]]},
+ {k:"guide",i:"guide",t:"导购",subs:[["schedule","个人日程"],["perf","导购业绩"]]},
+ {k:"page",i:"page",t:"页面",subs:[["pages","页面配置"]]},
+ {k:"mkt",i:"mkt",t:"营销",subs:[["activities","营销活动"],["invites","邀请码管理"]]},
+ {k:"goods",i:"goods",t:"商品",subs:[["products","商品库"],["categories","品类管理"],
+   ["stock","库存查询"],["stocklog","库存变更日志"]]},
+ {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"]]},
+ {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"]]},
+ {k:"sys",i:"sys",t:"系统",subs:[["approvals","审批中心"],["staff","权限管理"],["syscodes","系统编码"],
+   ["downloads","下载中心"],["oplog","操作日志"]]}];
+
+function renderNav(){
+  NAV.innerHTML=MENU.map(m=>{
+    if(m.off) return `<div class="item off">${ic(m.i)}${esc(m.t)}<span class="ch">${CHEV}</span></div>`;
+    if(!m.subs) return `<div class="item ${CUR===m.k?"on":""}" data-v="${m.k}">${ic(m.i)}${esc(m.t)}</div>`;
+    const open=m.subs.some(s=>s[0]===CUR);
+    if(!open) return `<div class="item" data-open="${m.k}">${ic(m.i)}${esc(m.t)}<span class="ch">${CHEV}</span></div>`;
+    return `<div class="item on open">${ic(m.i)}${esc(m.t)}<span class="ch">${CHEV}</span></div>`+
+      m.subs.map(([k,t])=>k==="off"
+        ? `<span class="sub" style="color:var(--ink4);cursor:not-allowed">${esc(t)}</span>`
+        : `<span class="sub ${CUR===k?"on":""}" data-v="${k}">${esc(t)}</span>`).join("");
+  }).join("");
+  NAV.querySelectorAll("[data-v]").forEach(e=>e.onclick=()=>view(e.dataset.v));
+  NAV.querySelectorAll("[data-open]").forEach(e=>e.onclick=()=>{
+    const m=MENU.find(x=>x.k===e.dataset.open); if(m&&m.subs){const f=m.subs.find(s=>s[0]!=="off"); if(f) view(f[0]);}});
+}
+/* 面包屑:每一级可点回上级。crumbs 支持 "标签" 或 ["标签","路由","参数"] */
+const CRUMB_ROUTE={"首页":"workbench","客户管理":"customers","客户档案":"customers",
+  "店铺配置":"shops","店铺管理":"shops","导购":"schedule","个人日程":"schedule","权限管理":"staff",
+  "交易查询":"orders","商品":"products","商品库":"products","品类管理":"categories","库存查询":"stock",
+  "业务内容":"mtpls","量体配置":"mitems","量体模版":"mtpls","内容管理":"contents",
+  "营销":"activities","营销活动":"activities","邀请码管理":"invites",
+  "页面":"pages","页面配置":"pages","系统编码":"syscodes","下载中心":"downloads","审批中心":"approvals","会员等级":"levels","客户标签管理":"tags",
+  "售后工单":"aftersales","维保工单":"maintains","导购业绩":"perf","库存变更日志":"stocklog","工艺知识库":"kb",
+  "客户合并确认":"merge","客户预约":"appts","客户生命周期类型":"lifecycle",
+  "消费与售后":"finance","押金退款异常":"finance","系统":"oplog","操作日志":"oplog"};
+function chrome(crumbs,body){
+  const last=crumbs.length-1;
+  const cr=crumbs.map((c,i)=>{
+    const label=Array.isArray(c)?c[0]:c, route=Array.isArray(c)?c[1]:CRUMB_ROUTE[c];
+    const arg=Array.isArray(c)?c[2]:null;
+    const sep=i?'<b> / </b>':"";
+    return sep+((i===last||!route)
+      ? `<b style="color:var(--ink)">${esc(label)}</b>`
+      : `<a data-cr="${esc(route)}" data-ca="${esc(arg||"")}">${esc(label)}</a>`);
+  }).join("");
+  return `<div class="crumb">${cr}</div><div class="tabbar"></div>${body}`;
+}
+async function get(u){return (await fetch(u)).json()}
+async function post(u,b){return (await fetch(u,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b||{})})).json()}
+
+const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合并确认",finance:"押金退款异常",
+  appts:"客户预约",lifecycle:"客户生命周期类型",oplog:"操作日志",
+  shops:"店铺管理",staff:"权限管理",schedule:"个人日程",orders:"交易查询",
+  products:"商品库",categories:"品类管理",stock:"库存查询",
+  mitems:"量体配置",mtpls:"量体模版",contents:"内容管理",
+  activities:"营销活动",invites:"邀请码管理",pages:"页面配置",
+  syscodes:"系统编码",downloads:"下载中心",approvals:"审批中心",
+  levels:"会员等级",tags:"客户标签管理",
+  aftersales:"售后工单",maintains:"维保工单",perf:"导购业绩",stocklog:"库存变更日志",kb:"工艺知识库"};
+async function view(v,arg,fromTab){
+  CUR=(["task","cust","appt"].includes(v)?CUR:v); renderNav();
+  if(!fromTab){
+    const t = v==="task" ? (arg||"").startsWith("TMERGE") ? "合并 "+arg : "退款 "+arg
+            : v==="cust" ? "客户 "+arg : v==="appt" ? "预约 "+arg
+            : (TAB_TITLE[v]||v)+(arg?" "+arg:"");
+    openTab(v,arg,t);
+  }
+  location.hash = arg? v+"/"+arg : v;
+  await route(v,arg);
+  renderTabs();
+  M.querySelectorAll("[data-cr]").forEach(e=>e.onclick=()=>view(e.dataset.cr,e.dataset.ca||undefined));
+}
+async function route(v,arg){
+  if(v==="workbench")return workbench();
+  if(v==="finance")  return listPage("finance");
+  if(v==="merge")    return listPage("merge");
+  if(v==="customers")return customers();
+  if(v==="lifecycle")return lifecycle(arg);
+  if(v==="appts")    return apptList();
+  if(v==="appt")     return apptDetail(arg);
+  if(v==="oplog")    return oplog();
+  if(v==="shops")    return shopList();
+  if(v==="shop")     return shopDetail(arg);
+  if(v==="staff")    return staffList();
+  if(v==="schedule") return scheduleList();
+  if(v==="orders")   return orderList();
+  if(v==="products") return productList();
+  if(v==="product")  return productDetail(arg);
+  if(v==="categories")return categoryPage();
+  if(v==="stock")    return stockList();
+  if(v==="mitems")   return measureItems();
+  if(v==="mtpls")    return measureTpls();
+  if(v==="contents") return contentList();
+  if(v==="activities")return activityList();
+  if(v==="activity") return activityDetail(arg);
+  if(v==="invites")  return inviteList();
+  if(v==="pages")    return pageList();
+  if(v==="page")     return pageDetail(arg);
+  if(v==="syscodes") return syscodeList();
+  if(v==="downloads")return downloadList();
+  if(v==="approvals")return approvalCenter();
+  if(v==="levels")   return levelPage();
+  if(v==="tags")     return tagPage();
+  if(v==="aftersales")return afterList();
+  if(v==="maintains") return maintainList();
+  if(v==="perf")      return perfPage();
+  if(v==="stocklog")  return stockLog();
+  if(v==="kb")        return kbPage();
+  if(v==="aftersale") return afterDetail(arg);
+  if(v==="maintain")  return maintainDetail(arg);
+  if(v==="cust")     return custDetail(arg);
+  if(v==="task")     return task(arg);
+}
+
+async function workbench(){
+  W=await get("/api/workbench");
+  document.getElementById("bell").textContent=W.finance.length+W.merge.length;
+  const trLine=m=>m.trend===null||m.trend===undefined
+    ? `<div class="s">${esc(m.sub||"")}</div>`
+    : `<div class="tr ${m.trend>=0?"up":"dn"}">较昨日 <b>${Math.abs(m.trend)}%</b>
+       <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"
+        style="color:var(--${m.trend>=0?"up":"down"})">${m.trend>=0?'<path d="M3 8.5 8.5 3M5 3h3.5v3.5"/>':'<path d="M3 3.5 8.5 9M5 9h3.5V5.5"/>'}</svg></div>`;
+  const tile=(m,plain)=>`<div class="tile ${plain?"plain":""}"><div class="l">${esc(m.label)}</div>
+    <div class="v mono">${esc(m.value)}<small>${esc(m.unit||"")}</small></div>${trLine(m)}</div>`;
+
+  const QI={c1:'<path d="M3 5h8M3 8h8M3 11h5"/>',c2:'<path d="M3.5 4.5h7v6h-7zM5.5 4.5V3h3v1.5"/>',
+            c3:'<circle cx="7" cy="5.2" r="2"/><path d="M3 11.5a4 4 0 0 1 8 0"/>',
+            c4:'<circle cx="7" cy="7" r="4.5"/><path d="M5 7.2 6.6 8.8 9.4 5.6"/>'};
+  const qic=k=>`<span class="ci"><svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${QI[k]}</svg></span>`;
+
+  M.innerHTML=chrome(["首页","工作台"],`
+  <div class="row r-13">
+    <div class="card"><div class="hd"><h3>基本信息</h3></div><div class="bd">
+      <div class="who"><span class="ph">魏</span><div><div class="nm">魏欣新</div>
+        <div class="st">今日待处理 <b>${W.finance.length+W.merge.length}</b> 件 · 本月操作 <b>${W.oplog.allow+W.oplog.deny}</b> 次</div></div></div>
+      <div class="quick">
+        <div class="q c1" data-go="finance">${qic("c1")}押金退款异常</div>
+        <div class="q c2" data-go="merge">${qic("c2")}客户合并确认</div>
+        <div class="q c3" data-go="customers">${qic("c3")}客户档案</div>
+        <div class="q c4" data-go="appts">${qic("c4")}客户预约</div>
+      </div>
+      <div style="margin-top:15px;padding-top:14px;border-top:1px solid var(--line2);
+                  display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        ${[["预约总数",W.appt.total,"条"],["门店",W.shops.length,"家"],
+           ["规则拒绝",W.oplog.deny,"次"]].map(([l,v,u])=>
+          `<div><div style="font-size:12px;color:var(--ink3)">${l}</div>
+           <div class="mono" style="font-size:17px;font-weight:600;margin-top:3px">${v}<small style="font-size:11.5px;color:var(--ink3);font-weight:400;margin-left:2px">${u}</small></div></div>`).join("")}
+      </div></div></div>
+    <div class="card"><div class="hd"><h3>核心数据概览</h3>
+      <div class="seg"><b class="on">日</b><b>周</b><b>月</b></div></div>
+      <div class="bd"><div class="tiles">${W.metrics.map(m=>tile(m)).join("")}</div>
+      <div class="tiles" style="margin-top:11px">${W.metrics2.map(m=>tile(m,1)).join("")}</div></div></div>
+  </div>
+
+  <div class="card"><div class="hd"><h3>门店运营概览</h3><span class="n">(${W.shops.length}家门店)</span>
+    <span class="more">查看全部门店 ›</span></div>
+    <div class="bd"><div class="shops">${W.shops.map((s,i)=>{
+      const nm=s.shop.split(" ")[1]||s.shop, col=["#2B4D8C","#3381FF","#7B8794"][i%3];
+      return `<div class="shop">
+        <div class="t"><span class="thumb" style="background:${col};width:66px;height:52px;font-size:17px">${esc(nm.slice(0,2))}</span>
+          <span class="nm">${esc(nm)}</span>
+          <span class="pill ${s.open?"p-warn":"p-mut"}" style="margin-left:auto">
+            <span class="dot" style="background:${s.open?"var(--warn)":"var(--ink4)"}"></span>${s.open?"营业中":"歇业中"}</span></div>
+        <div class="kv"><div><div class="l">累计实付</div><div class="v mono">${money(s.amt)}<small>元</small></div></div>
+          <div><div class="l">累计订单</div><div class="v mono">${num(s.orders)}<small>单</small></div></div></div>
+        <div class="foot">
+          <div><div class="l">客户数</div><div class="v mono">${s.cust}</div></div>
+          <div><div class="l">押金单</div><div class="v mono">${s.deposit}</div></div>
+          <div><div class="l">门店编码</div><div class="v mono" style="font-size:13px">${esc(s.shop.split(" ")[0])}</div></div>
+        </div></div>`}).join("")}</div></div></div>
+
+  <div class="row r-3">
+    <div class="card"><div class="hd"><h3>退款尝试趋势</h3>
+      <div class="lg" style="margin-left:auto"><span><i style="background:var(--blue4)"></i>尝试次数(次)</span>
+      <span><i style="background:var(--blue)"></i>涉及金额(元)</span></div></div>
+      <div class="bd">${trendChart(W.trend)}</div></div>
+    <div class="card"><div class="hd"><h3>客户生命周期分布</h3></div>
+      <div class="bd">${donut(W.lifecycle)}</div></div>
+    <div class="card"><div class="hd"><h3>Top 失败原因</h3><span class="n">(按涉及金额)</span></div>
+      <div class="bd">${hbars(W.codes)}</div></div>
+  </div>
+
+  <div class="row r-4">
+    ${pend("退款待处理","finance",W.finance.length,[["已达重试上限",W.metrics2[1].value,""],["等待复核",4,"w"],["涉及金额",Math.round(+String(W.metrics2[0].value).replace(/,/g,"")/1000)+"k","z"]])}
+    ${pend("合并待处理","merge",W.merge.length,[["疑似重复",W.merge.length,""],["已核验",0,"z"],["已合并",0,"z"]])}
+    ${pend("预约待处理","appts",W.appt.booked+W.appt.arrived,[["已预约",W.appt.booked,""],["已到店",W.appt.arrived,""],["爽约",W.appt.noshow,"w"]])}
+    ${pend("操作留痕","oplog",W.oplog.allow+W.oplog.deny,[["允许",W.oplog.allow,""],["拒绝",W.oplog.deny,"w"],["规则数",14,"z"]])}
+  </div>`);
+  M.querySelectorAll("[data-go]").forEach(e=>e.onclick=()=>view(e.dataset.go));
+  M.querySelectorAll("[data-pend]").forEach(e=>e.onclick=()=>view(e.dataset.pend));
+  M.querySelectorAll(".seg b").forEach(b=>b.onclick=()=>{
+    M.querySelectorAll(".seg b").forEach(x=>x.classList.remove("on")); b.classList.add("on")});
+}
+
+/* ── 图表:全部内联 SVG,不引外部库 ── */
+function trendChart(t){
+  const W_=330,H_=170,PL=34,PR=40,PT=12,PB=26, iw=W_-PL-PR, ih=H_-PT-PB;
+  const maxN=Math.max(...t.map(d=>d.n))*1.25, maxA=Math.max(...t.map(d=>d.amt))*1.25;
+  const bw=iw/t.length*0.42;
+  const cx=i=>PL+iw/t.length*(i+0.5);
+  const yN=v=>PT+ih-(v/maxN)*ih, yA=v=>PT+ih-(v/maxA)*ih;
+  const pts=t.map((d,i)=>[cx(i),yA(d.amt)]);
+  // 平滑曲线
+  let path=`M${pts[0][0]},${pts[0][1]}`;
+  for(let i=0;i<pts.length-1;i++){const[x1,y1]=pts[i],[x2,y2]=pts[i+1];const mx=(x1+x2)/2;
+    path+=` C${mx},${y1} ${mx},${y2} ${x2},${y2}`}
+  const area=path+` L${pts[pts.length-1][0]},${PT+ih} L${pts[0][0]},${PT+ih} Z`;
+  const grid=[0,.25,.5,.75,1].map(f=>`<line x1="${PL}" y1="${PT+ih*f}" x2="${PL+iw}" y2="${PT+ih*f}"
+    stroke="var(--line2)" stroke-width="1"/>`).join("");
+  return `<svg viewBox="0 0 ${W_} ${H_}" width="100%" style="overflow:visible">
+   <defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#3381FF" stop-opacity=".22"/><stop offset="1" stop-color="#3381FF" stop-opacity="0"/>
+   </linearGradient></defs>${grid}
+   ${t.map((d,i)=>`<rect x="${cx(i)-bw/2}" y="${yN(d.n)}" width="${bw}" height="${PT+ih-yN(d.n)}"
+     rx="2" fill="var(--blue4)"/>`).join("")}
+   <path d="${area}" fill="url(#ga)"/><path d="${path}" fill="none" stroke="var(--blue)" stroke-width="1.8"/>
+   ${pts.map(([x,y])=>`<circle cx="${x}" cy="${y}" r="2.6" fill="#fff" stroke="var(--blue)" stroke-width="1.6"/>`).join("")}
+   ${[0,.5,1].map(f=>`<text x="${PL-6}" y="${PT+ih*(1-f)+4}" text-anchor="end" font-size="9.5"
+     fill="var(--ink4)">${Math.round(maxN*f)}</text>`).join("")}
+   ${[0,.5,1].map(f=>`<text x="${PL+iw+6}" y="${PT+ih*(1-f)+4}" font-size="9.5"
+     fill="var(--ink4)">${Math.round(maxA*f/1000)}k</text>`).join("")}
+   ${t.map((d,i)=>`<text x="${cx(i)}" y="${H_-8}" text-anchor="middle" font-size="9.5"
+     fill="var(--ink4)">${d.d.slice(5)}</text>`).join("")}</svg>`;
+}
+function donut(rows0){
+  const tot0=rows0.reduce((a,b)=>a+b.n,0);
+  const top=rows0.slice(0,4), rest=rows0.slice(4);
+  const rows=rest.length? top.concat([{l:"其他 "+rest.length+" 类",n:rest.reduce((a,b)=>a+b.n,0)}]) : top;
+  const tot=tot0, C=["#3381FF","#5495FF","#8AB6FF","#B0CEFF","#DDE7F7"];
+  const R=54,r=34,cx=68,cy=76; let ang=-Math.PI/2, seg="";
+  rows.forEach((d,i)=>{const a=d.n/tot*Math.PI*2, e=ang+a, big=a>Math.PI?1:0;
+    const p=(rad,ra)=>[cx+ra*Math.cos(rad),cy+ra*Math.sin(rad)];
+    const[x1,y1]=p(ang,R),[x2,y2]=p(e,R),[x3,y3]=p(e,r),[x4,y4]=p(ang,r);
+    seg+=`<path d="M${x1},${y1} A${R},${R} 0 ${big},1 ${x2},${y2} L${x3},${y3} A${r},${r} 0 ${big},0 ${x4},${y4} Z"
+      fill="${C[i%6]}"/>`; ang=e});
+  return `<div style="display:flex;align-items:center;gap:14px">
+   <svg viewBox="0 0 136 152" width="136" style="flex:none">${seg}
+    <text x="68" y="72" text-anchor="middle" font-size="20" font-weight="600" fill="var(--ink)">${tot}</text>
+    <text x="68" y="88" text-anchor="middle" font-size="10" fill="var(--ink3)">客户总数</text></svg>
+   <div style="flex:1;font-size:12.5px">${rows.map((d,i)=>`
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px">
+      <i style="width:7px;height:7px;border-radius:99px;background:${C[i%6]};flex:none"></i>
+      <span style="color:var(--ink2)">${esc(d.l)}</span>
+      <span class="mono" style="margin-left:auto;color:var(--ink3)">${Math.round(d.n/tot*100)}%</span></div>`).join("")}
+   </div></div>`;
+}
+function hbars(rows){
+  const max=Math.max(...rows.map(d=>d.amt)), tot=rows.reduce((a,b)=>a+b.amt,0);
+  return rows.map(d=>`<div class="hb"><span class="mono" style="color:var(--ink2);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(d.c)}">${esc(d.c)}</span>
+    <span class="tk"><i style="width:${(d.amt/max*100).toFixed(1)}%"></i></span>
+    <span class="n mono">${Math.round(d.amt/1000)}k</span>
+    <span class="p mono">${Math.round(d.amt/tot*100)}%</span></div>`).join("");
+}
+
+function pend(title,go,big,subs,dim){
+  return `<div class="card pend" ${dim?'style="opacity:.55"':""}><div class="hd"><h3>${esc(title)}</h3>
+    ${go?`<span class="more" data-pend="${go}">详情 ›</span>`:""}</div><div class="bd">
+    <div class="big mono">${big}<small>件</small></div>
+    <div class="subs">${subs.map(([l,v,c])=>`<div><div class="l">${esc(l)}</div><div class="v mono ${c||""}">${v}</div></div>`).join("")}</div>
+  </div></div>`;
+}
+
+function formRow(items){return `<div class="form">${items.map(([l,ph,sel])=>`
+  <div class="fi"><label>${esc(l)}</label><div class="ctl">${esc(ph)}
+    ${sel?'<span class="r">▾</span>':''}</div></div>`).join("")}</div>`}
+const Q={};   /* 每个列表页自己的查询状态 */
+function qs(o){return Object.entries(o).filter(([k,v])=>v!==""&&v!=null)
+  .map(([k,v])=>k+"="+encodeURIComponent(v)).join("&")}
+function sortTh(label,key,st,width){
+  const on=st.sort===key, dir=on&&st.dir==="desc"?"desc":"asc";
+  return `<th ${width?`style="width:${width}"`:""} data-sort="${key}" style="cursor:pointer;${width?`width:${width}`:""}">
+    ${esc(label)} <span style="color:${on?"var(--navy)":"var(--ink4)"};font-size:11px">${on?(st.dir==="desc"?"▼":"▲"):"⇅"}</span></th>`;
+}
+function pagerC(d,onGo){
+  const ns=[]; for(let i=1;i<=Math.min(d.pages,6);i++)ns.push(i);
+  return `<div class="pg"><b data-go="${Math.max(1,d.page-1)}">‹</b>
+   ${ns.map(n=>`<b class="${n===d.page?"on":""}" data-go="${n}">${n}</b>`).join("")}
+   ${d.pages>6?`<span>…</span><b data-go="${d.pages}">${d.pages}</b>`:""}
+   <b data-go="${Math.min(d.pages,d.page+1)}">›</b>
+   <span class="sel" data-per>${d.per}/页 <span style="color:var(--ink4)">▾</span></span>
+   <span>前往</span><input data-jump value="${d.page}"><span>页</span>
+   <span style="color:var(--ink3);margin-left:6px">共 ${d.total} 条</span></div>`;
+}
+function bindCb(){
+  const all=M.querySelector("[data-cball]");
+  const items=[...M.querySelectorAll("[data-cb]")];
+  items.forEach(e=>e.onclick=()=>{e.classList.toggle("ck");
+    if(all) all.classList.toggle("ck", items.length>0 && items.every(x=>x.classList.contains("ck")))});
+  if(all) all.onclick=()=>{const on=!all.classList.contains("ck");
+    all.classList.toggle("ck",on); items.forEach(e=>e.classList.toggle("ck",on))};
+}
+function bindTable(st,reload){
+  bindCb();
+  M.querySelectorAll("[data-sort]").forEach(e=>e.onclick=()=>{
+    if(st.sort===e.dataset.sort) st.dir=st.dir==="desc"?"asc":"desc";
+    else {st.sort=e.dataset.sort; st.dir="asc"}
+    st.page=1; reload()});
+  M.querySelectorAll(".pg [data-go]").forEach(e=>e.onclick=()=>{st.page=+e.dataset.go; reload()});
+  M.querySelectorAll("[data-jump]").forEach(e=>e.onkeydown=ev=>{
+    if(ev.key==="Enter"){const n=parseInt(e.value)||1; st.page=Math.max(1,n); reload()}});
+  M.querySelectorAll("[data-per]").forEach(e=>e.onclick=()=>{
+    st.per=st.per===10?20:st.per===20?50:10; st.page=1; reload()});
+  M.querySelectorAll("[data-f]").forEach(e=>e.onchange=e2=>{st[e.dataset.f]=e2.target.value});
+  M.querySelectorAll("[data-search]").forEach(e=>e.onclick=()=>{st.page=1; reload()});
+  M.querySelectorAll("[data-reset]").forEach(e=>e.onclick=()=>{
+    Object.keys(st).forEach(k=>{if(!["page","per"].includes(k))delete st[k]});
+    st.page=1; reload()});
+  M.querySelectorAll("input[data-f]").forEach(e=>e.onkeydown=ev=>{
+    if(ev.key==="Enter"){st[e.dataset.f]=e.target.value; st.page=1; reload()}});
+}
+function acts(){return `<div class="facts"><button class="btn sol" data-search>搜索</button>
+  <button class="btn" data-reset>重置</button></div>`}
+function fld(label,k,st,opts,ph){
+  return `<div class="fi"><label>${esc(label)}</label>${opts
+    ? `<select class="ctl" data-f="${k}" style="color:var(--ink)"><option value="">全部</option>
+        ${opts.map(o=>`<option ${st[k]===o?"selected":""}>${esc(o)}</option>`).join("")}</select>`
+    : `<input class="ctl" data-f="${k}" value="${esc(st[k]||"")}" placeholder="${esc(ph||"")}" style="color:var(--ink)">`}</div>`;
+}
+function pager(total,per){const pages=Math.ceil(total/per);
+  const ns=[];for(let i=1;i<=Math.min(pages,6);i++)ns.push(i);
+  return `<div class="pg"><b>‹</b>${ns.map(n=>`<b class="${n===1?"on":""}">${n}</b>`).join("")}
+   ${pages>6?`<span>…</span><b>${pages}</b>`:""}<b>›</b>
+   <span class="sel">${per}/页 <span style="color:var(--ink4)">▾</span></span>
+   <span>前往</span><input value="1"><span>页</span></div>`}
+
+Q.fin={page:1,per:10}; Q.mrg={page:1,per:10}; Q.cus={page:1,per:10}; Q.apt={page:1,per:10};
+
+async function listPage(kind){
+  const fin=kind==="finance", st=fin?Q.fin:Q.mrg;
+  st.type=fin?"财务人工任务":"客户合并确认";
+  const d=await get("/api/tasks?"+qs(st));
+  M.innerHTML=chrome(["首页",fin?"消费与售后":"客户管理",fin?"押金退款异常":"客户合并确认"],`
+   <div class="card">
+    <div class="form">
+      ${fld("任务号","q",st,null,fin?'例如"TD2000"':'例如"TMERGE-00"')}
+      ${fld("状态","status",st,["待处理","已转财务","已合并","已核验"])}
+      ${fld("创建时间","created",st,null,"YYYY-MM-DD")}
+      ${acts()}
+    </div>
+    <div class="ops">
+      <button class="btn sol" disabled title="${fin?"新建退款":"手动合并"} · 本期未实现">+ ${fin?"新建退款":"手动合并"}</button>
+      <button class="btn" data-exp-task>导出</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:44px"><span class="cb" data-cball></span></th>
+     ${sortTh("任务号","id",st,"150px")}${sortTh(fin?"押金单号":"客户档案","ref_id",st)}
+     ${sortTh("创建时间","created",st,"160px")}${sortTh("状态","status",st,"110px")}
+     <th style="width:150px">操作</th></tr></thead><tbody>
+     ${d.rows.map(t=>`<tr><td><span class="cb"></span></td>
+      <td class="mono">${esc(t.id)}</td><td class="mono">${esc(t.ref_id)}</td>
+      <td class="mono">${esc(t.created)}</td>
+      <td><span class="pill ${t.status==="待处理"?"p-warn":"p-ok"}">${esc(t.status)}</span></td>
+      <td><span class="lk" data-t="${t.id}">详情</span></td></tr>`).join("")}
+     ${d.rows.length?"":'<tr><td colspan="6" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的记录</td></tr>'}
+     </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-t]").forEach(e=>e.onclick=()=>view("task",e.dataset.t));
+  M.querySelectorAll("[data-exp-task]").forEach(e=>e.onclick=()=>dl("/api/export/oplog"));
+  bindTable(st,()=>listPage(kind));
+}
+
+async function customers(){
+  const st=Q.cus, d=await get("/api/customers2?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome(["首页","客户管理","客户档案"],`
+   <div class="card">
+    <div class="form">
+      ${fld("关键词","q",st,null,'姓名 / 客户ID / 手机号')}
+      ${fld("生命周期","lifecycle",st,F.lifecycle)}
+      ${fld("归属店铺","shop",st,F.shop)}
+      ${fld("销售顾问","advisor",st,F.advisor)}
+      ${fld("会员等级","level",st,F.level)}
+      ${acts()}
+    </div>
+    <div class="ops"><button class="btn sol" data-new-cus>+ 客户录入</button>
+      <button class="btn gray" data-transfer>转移客户顾问归属</button>
+      <button class="btn" data-import>导入客户</button>
+      <button class="btn" data-export="customers">导出</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:44px"><span class="cb" data-cball></span></th>
+     ${sortTh("客户编码","id",st,"110px")}${sortTh("姓名","name",st)}
+     <th style="width:130px">手机号</th><th>归属店铺</th><th style="width:100px">顾问</th>
+     <th style="width:100px">生命周期</th>${sortTh("未互动","idle_days",st,"88px")}
+     ${sortTh("累计实付","paid_amount",st,"120px")}<th style="width:80px">操作</th></tr></thead><tbody>
+     ${d.rows.map(c=>`<tr><td><span class="cb" data-cb="${esc(c.id)}"></span></td><td class="mono">${esc(c.id)}</td>
+      <td>${esc(c.name)}</td><td class="mono">${esc(c.phone_mask)}</td>
+      <td>${esc(c.shop)}</td><td>${esc(c.advisor)}</td>
+      <td><span class="pill p-blue">${esc(c.lifecycle)}</span></td>
+      <td class="mono">${c.idle_days}天</td>
+      <td class="mono" style="text-align:right">${money(c.paid_amount)}</td>
+      <td><span class="lk" data-c="${esc(c.id)}">详情</span></td></tr>`).join("")}
+     ${d.rows.length?"":'<tr><td colspan="10" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的记录</td></tr>'}
+    </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-c]").forEach(e=>e.onclick=()=>view("cust",e.dataset.c));
+  M.querySelectorAll("[data-new-cus]").forEach(e=>e.onclick=()=>formCustomer(customers));
+  M.querySelectorAll("[data-import]").forEach(e=>e.onclick=()=>formImport(customers));
+  M.querySelectorAll("[data-transfer]").forEach(e=>e.onclick=()=>{
+    const sel=[...M.querySelectorAll(".cb.ck")].map(x=>x.dataset.cb).filter(Boolean);
+    if(!sel.length){res(false,"NO_SELECT","请先勾选要转移的客户");return}
+    modal(`转移客户顾问归属 · 已选 ${sel.length} 人`,[
+      {k:"advisor",type:"select",label:"转移至顾问",req:1,opts:ADVS},
+      {k:"note",type:"text",label:"转移原因(必填,提交后需总部运营审批)",req:1,
+       ph:"后台 PRD 6.2:同店转移自动迁移未完成跟进任务与未来预约"}],
+      v=>doOp("/api/approval-apply",{kind:"客户转移",target:sel.join("|"),
+        payload:{to_advisor:v.advisor,n:sel.length},note:v.note,role:ROLE},customers))});
+  M.querySelectorAll("[data-export]").forEach(e=>e.onclick=()=>dl("/api/export/customers?"+qs(st)));
+  bindTable(st,customers);
+}
+
+async function lifecycle(t){
+  const d=await get("/api/lifecycle"+(t?"?t="+encodeURIComponent(t):""));
+  const tag=(x,cur)=>`<span class="pill ${x===cur?"p-blue":"p-mut"}" style="margin-right:4px">${esc(x)}</span>`;
+  M.innerHTML=chrome(["首页","客户管理","客户生命周期类型"],`
+   <div class="split">
+    <div class="tylist">
+     ${d.types.map(x=>`<div class="ty ${x.l===d.cur?"on":""}" data-t="${esc(x.l)}">
+       <div class="n">${esc(x.l)}客户</div>
+       <div class="m">人数: ${x.n}<a>定向运营</a></div></div>`).join("")}
+     <div class="add dead" title="添加生命周期 · 本期未实现">添加生命周期</div></div>
+    <div>
+     <div class="card"><div class="bd" style="padding:18px 24px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+        <h3 style="margin:0;font-size:16px">${esc(d.cur)}客户</h3>
+        <span style="font-size:13px;color:var(--ink2)">设为默认值: <span class="sw"><i>默认</i></span></span>
+        <span style="margin-left:auto"><button class="btn sol" disabled title="定向运营 · 本期未实现">+ 定向运营</button></span></div>
+      <div style="background:var(--tile);border-radius:6px;padding:14px 16px;font-size:13px;color:var(--ink2)">
+        <div><b style="color:var(--ink)">判定规则</b> · ${esc(d.rule)}</div>
+        <div style="margin-top:7px"><b style="color:var(--ink)">重算优先级</b> · 第 ${d.pri} 位 —
+          ${d.priority.map(p=>tag(p,d.cur)).join("")}</div>
+        <div style="margin-top:7px;color:var(--ink3)">${esc(d.recalc)}</div>
+      </div>
+      ${(d.conflicts||d.overrides)?`<div style="display:flex;gap:11px;margin-top:12px">
+        ${d.conflicts?`<span class="pill p-warn">${d.conflicts} 人同时命中多个条件,按优先级取本档</span>`:""}
+        ${d.overrides?`<span class="pill p-blue">${d.overrides} 人处于人工调整 30 天优先期</span>`:""}
+      </div>`:""}
+     </div></div>
+     <div class="card">
+      <table class="tb"><thead><tr><th style="width:44px"><span class="cb" data-cball></span></th>
+      <th style="width:96px">客户编码</th><th>客户姓名</th><th style="width:80px">未互动</th>
+      <th style="width:110px">近12月实付</th><th style="width:74px">订单/季度</th>
+      <th>命中条件</th><th style="width:80px">操作</th></tr></thead><tbody>
+      ${d.customers.map(c=>`<tr${c.overridden?' style="background:var(--navy-bg)"':(c.conflict?' style="background:#FFFCF5"':"")}>
+       <td><span class="cb"></span></td><td class="mono">${esc(c.id)}</td>
+       <td>${esc(c.name)}${c.overridden?' <span class="pill p-blue">人工</span>':""}</td>
+       <td class="mono">${c.idle_days}天</td>
+       <td class="mono">${money(c.amount_12m)}</td>
+       <td class="mono">${c.orders_12m}/${c.quarters_12m}</td>
+       <td>${c.matched_list.map(x=>`<span class="pill ${x===d.cur?"p-ok":"p-mut"}" style="margin-right:4px">${esc(x)}</span>`).join("")}
+         ${c.conflict?'<span style="color:var(--ink3);font-size:12px;margin-left:2px">← 按优先级取 '+esc(d.cur)+'</span>':""}</td>
+       <td><span class="lk" data-adj="${esc(c.id)}">调整</span></td></tr>`).join("")}
+      </tbody></table>
+      <div class="pg"><span style="color:var(--ink3)">共 ${d.customers.length} 人 · 其中 ${d.conflicts} 人同时命中多个条件</span></div></div>
+    </div></div>`);
+  M.querySelectorAll(".ty[data-t]").forEach(e=>e.onclick=()=>view("lifecycle",e.dataset.t));
+  M.querySelectorAll("[data-adj]").forEach(e=>e.onclick=()=>
+    modal(`人工调整生命周期 · ${e.dataset.adj}`,[
+      {k:"to",type:"select",label:"调整为",opts:d.priority},
+      {k:"reason",type:"text",label:"调整原因(必填,将写入审计日志)",ph:"例如:客户已电话确认仍在服务中"}],
+      v=>doOp("/api/lifecycle-adjust",{id:e.dataset.adj,to:v.to,reason:v.reason},
+              ()=>view("lifecycle",d.cur))));
+}
+
+const APILL={"已预约":"p-blue","已到店":"p-warn","已完成":"p-ok","已取消":"p-mut","已过期":"p-mut","爽约":"p-bad"};
+async function apptList(){
+  const st=Q.apt, d=await get("/api/appts2?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome(["首页","客户管理","客户预约"],`
+   <div class="card">
+    <div class="form">
+      ${fld("关键词","q",st,null,'预约号 / 客户姓名 / 客户ID')}
+      ${fld("预约状态","status",st,F.status)}
+      ${fld("归属店铺","shop",st,F.shop)}
+      ${acts()}
+    </div>
+    <div class="ops"><button class="btn sol" data-new-apt>+ 新增预约</button>
+      <button class="btn" data-export>导出</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:44px"><span class="cb" data-cball></span></th>
+     ${sortTh("预约编号","id",st,"110px")}<th>客户</th>
+     ${sortTh("预约时间","start_ts",st,"170px")}${sortTh("归属店铺","shop",st)}
+     <th style="width:100px">顾问</th>${sortTh("状态","status",st,"100px")}
+     <th style="width:110px">押金</th><th style="width:80px">操作</th></tr></thead><tbody>
+     ${d.rows.map(x=>`<tr><td><span class="cb"></span></td><td class="mono">${esc(x.id)}</td>
+      <td>${esc(x.cname||"")} <span class="mono" style="color:var(--ink3)">${esc(x.customer_id)}</span></td>
+      <td class="mono">${esc(x.start_ts)}</td><td>${esc(x.shop)}</td><td>${esc(x.advisor)}</td>
+      <td><span class="pill ${APILL[x.status]||"p-mut"}">${esc(x.status)}</span></td>
+      <td>${x.deposit_id?`<span class="mono">${esc(x.deposit_id)}</span>`:'<span style="color:var(--ink4)">无</span>'}</td>
+      <td><span class="lk" data-a="${esc(x.id)}">详情</span></td></tr>`).join("")}
+     ${d.rows.length?"":'<tr><td colspan="9" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的记录</td></tr>'}
+    </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-a]").forEach(e=>e.onclick=()=>view("appt",e.dataset.a));
+  M.querySelectorAll("[data-new-apt]").forEach(e=>e.onclick=()=>formAppt("",apptList));
+  bindTable(st,apptList);
+}
+
+async function apptDetail(aid){
+  const d=await get("/api/appt/"+aid);
+  if(d.error){M.innerHTML=chrome(["首页","客户预约"],`<div class="err">${esc(d.error)}</div>`);return}
+  const a=d.appt, dep=d.deposit;
+  M.innerHTML=chrome([["首页","workbench"],["客户管理","customers"],["客户预约","appts"],"预约详情"],`
+   <div class="card"><div class="bd" style="padding:18px 24px 0">
+     <div style="display:flex;align-items:center;gap:11px;padding-bottom:14px;border-bottom:1px solid var(--line2)">
+       <h3 style="margin:0;font-size:16px">预约记录</h3>
+       <span class="pill ${APILL[a.status]||"p-mut"}">${esc(a.status)}</span></div></div>
+    <div class="lv">
+      <div class="r"><span class="l">客户姓名:</span><span>${esc(a.cname||"")}</span></div>
+      <div class="r"><span class="l">预约编号:</span><span class="mono">${esc(a.id)}</span></div>
+      <div class="r"><span class="l">预约时间:</span><span class="mono">${esc(a.start_ts)} — ${esc((a.end_ts||"").slice(-5))}</span></div>
+      <div class="r"><span class="l">归属店铺:</span><span>${esc(a.shop)}</span></div>
+      <div class="r"><span class="l">顾问:</span><span>${esc(a.advisor)}</span></div>
+      <div class="r"><span class="l">联系电话:</span><span class="mono">${esc(a.cphone||"")}</span></div>
+      <div class="r"><span class="l">签到时间:</span><span class="mono">${esc(a.checkin_ts||"未签到")}</span></div>
+      ${dep?`<div class="r"><span class="l">押金状态:</span>
+        <span><span class="pill ${dep.status==="退款失败"?"p-bad":"p-warn"}">${esc(dep.status)}</span>
+        <span class="mono" style="margin-left:9px">${esc(dep.id)}</span></span></div>
+       <div class="r"><span class="l">收取金额:</span><span class="mono">¥${money(dep.amount)}</span></div>`
+       :`<div class="r"><span class="l">押金状态:</span><span style="color:var(--ink4)">未收取</span></div>`}
+    </div>
+    <div style="padding:0 24px 14px"><div style="font-size:13.5px;color:var(--ink2);margin-bottom:8px">关联商品</div>
+      <div style="background:var(--tile);border-radius:6px;padding:18px;text-align:center;color:var(--ink4);font-size:13px">本期未采集关联商品</div></div>
+    ${d.followups.length?`<div style="padding:0 24px 6px"><div style="font-size:13.5px;color:var(--ink2);margin-bottom:8px">跟进记录</div>
+      ${d.followups.map(f=>`<div style="background:var(--tile);border-radius:6px;padding:11px 14px;margin-bottom:8px;font-size:13px">
+        <span class="mono" style="color:var(--ink3)">${esc(f.ts)}</span> · ${esc(f.channel)} · ${esc(f.advisor)}
+        <div style="margin-top:4px">${esc(f.content)}</div></div>`).join("")}</div>`:""}
+    <div style="padding:8px 24px 0"><div style="font-size:14px;font-weight:600;margin-bottom:10px">日志</div></div>
+    <div style="padding:0 24px 20px"><table class="tb" style="border:1px solid var(--line2);border-radius:6px;overflow:hidden"><thead><tr><th style="width:190px">创建时间 ⇅</th><th style="width:130px">操作人</th>
+     <th>日志标题</th><th style="width:120px">来源</th></tr></thead><tbody>
+     ${d.logs.map(l=>`<tr><td class="mono">${esc(l.ts)}</td><td>${esc(l.who)}</td>
+      <td>${esc(l.title)}</td><td>${esc(l.src)}</td></tr>`).join("")}</tbody></table></div>
+   </div>
+   <div class="fbar"><button class="btn sol" disabled title="编辑预约 · 本期未实现">编辑预约</button>
+     ${dep&&dep.status==="已付"?`<button class="btn sol" data-refund="${esc(dep.id)}" data-amt="${dep.amount}">退押金</button>`:""}
+     ${dep&&dep.status!=="已付"&&dep.status!=="已退"?`<button class="btn" data-dep="${esc(dep.id)}">查看退款</button>`:""}
+     <button class="btn sol" data-cancel="${esc(a.id)}">取消预约</button>
+     <button class="btn" data-back="appts">返回</button></div>`);
+  M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
+  M.querySelectorAll("[data-dep]").forEach(e=>e.onclick=()=>view("task","T"+e.dataset.dep));
+  M.querySelectorAll("[data-refund]").forEach(e=>e.onclick=()=>{
+    const amt=Number(e.dataset.amt);
+    modal("发起退押金",[
+      {k:"approved_by",type:"select",label:`复核人${amt>=1000?"(本单 ¥"+amt.toLocaleString()+" ≥1000,须含财务)":""}`,
+       opts:["店长","店长+财务"]},
+      {k:"note",type:"text",label:"退款原因",ph:"例如:客户取消预约"}],
+      v=>doTransit("bk-deposit",e.dataset.refund,"退款审批中",
+                   {approved_by:v.approved_by,amount:amt},()=>view("appt",aid)))});
+  M.querySelectorAll("[data-cancel]").forEach(e=>e.onclick=()=>
+    doTransit("bk-appt",e.dataset.cancel,"已取消",{},()=>view("appt",aid)));
+}
+
+/* ── 操作:统一走引擎,结果(含拒绝理由)必须显形 ── */
+function res(ok,code,msg){
+  document.querySelectorAll(".res").forEach(e=>e.remove());
+  const el=document.createElement("div"); el.className="res "+(ok?"ok":"no");
+  el.innerHTML=`<span>${ok?"✓":"✕"}</span><div><b>${esc(code||"")}</b> ${esc(msg||"")}</div>`;
+  document.body.appendChild(el); setTimeout(()=>el.remove(), ok?3200:6500);
+}
+function modal(title,fields,onOk,wide){
+  const m=document.createElement("div"); m.className="mask";
+  m.innerHTML=`<div class="modal" ${wide?'style="width:560px"':""}><h4>${esc(title)}</h4>
+   <div class="bd2" ${wide?'style="display:grid;grid-template-columns:1fr 1fr;gap:0 18px"':""}>
+    ${fields.map(f=>f.type==="text"
+      ? `<div style="grid-column:1/-1"><label>${esc(f.label)}${f.req?' <span style="color:var(--bad)">*</span>':""}</label>
+          <textarea data-k="${f.k}" placeholder="${esc(f.ph||"")}"></textarea></div>`
+      : f.type==="select"
+      ? `<div><label>${esc(f.label)}${f.req?' <span style="color:var(--bad)">*</span>':""}</label>
+          <select data-k="${f.k}">${f.opts.map(o=>`<option ${f.val===o?"selected":""}>${esc(o)}</option>`).join("")}</select></div>`
+      : `<div><label>${esc(f.label)}${f.req?' <span style="color:var(--bad)">*</span>':""}</label>
+          <input data-k="${f.k}" type="${f.it||"text"}" value="${esc(f.val||"")}" placeholder="${esc(f.ph||"")}"></div>`).join("")}
+    </div><div class="ft"><button class="btn gray" data-x>取消</button>
+    <button class="btn sol" data-y>确定</button></div></div>`;
+  document.body.appendChild(m);
+  m.querySelector("[data-x]").onclick=()=>m.remove();
+  m.querySelector("[data-y]").onclick=()=>{
+    const v={}; m.querySelectorAll("[data-k]").forEach(e=>v[e.dataset.k]=e.value);
+    m.remove(); onOk(v)};
+  m.onclick=e=>{if(e.target===m)m.remove()};
+}
+async function doTransit(machine,target,to,ctx,after){
+  const r=await post("/api/transit",{machine,target,to,ctx:ctx||{}});
+  if(r.error){res(false,"ERR",r.error);return}
+  res(r.ok,r.code,r.reason);
+  if(r.ok&&after)after();
+}
+async function doOp(url,body,after){
+  const r=await post(url,body);
+  if(r.error){res(false,"ERR",r.error);return r}
+  const extra=(r.suspects&&r.suspects.length)
+    ? " 疑似档案:"+r.suspects.map(s=>`${s.id} ${s.name}`).join("、") : "";
+  res(r.ok,r.code||"OK",(r.reason||"")+extra);
+  if(r.ok&&after)after();
+  return r;
+}
+function dl(url){ /* 导出:后端返回 CSV 附件 */ location.href=url }
+
+async function oplog(){
+  const L=await get("/api/oplog");
+  const nOk=L.filter(x=>x.allowed).length;
+  M.innerHTML=chrome(["首页","系统","操作日志"],`
+   <div class="card"><div class="hd"><h3>操作日志</h3>
+     <span class="n">${L.length} 条 · 允许 ${nOk} · 拒绝 ${L.length-nOk} —— 拒绝同样留痕(PRD 第 8 章审计要求)</span>
+     <span class="more" data-exp-log>导出 CSV ›</span></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:160px">时间</th><th style="width:90px">操作人</th><th style="width:130px">对象</th>
+     <th style="width:150px">流转</th><th style="width:80px">结果</th>
+     <th style="width:130px">判定码</th><th>理由</th></tr></thead><tbody>
+     ${L.map(r=>`<tr><td class="mono" style="color:var(--ink3)">${esc(r.ts)}</td><td>${esc(r.actor)}</td>
+      <td class="mono">${esc(r.target)}</td>
+      <td class="mono">${esc(r.frm)} → ${esc(r.too)}</td>
+      <td><span class="pill ${r.allowed?"p-ok":"p-bad"}">${r.allowed?"允许":"拒绝"}</span></td>
+      <td class="mono" style="font-size:12px">${esc(r.code)}</td>
+      <td style="color:var(--ink2)">${esc(r.reason)}</td></tr>`).join("")}
+     ${L.length?"":'<tr><td colspan="7" style="text-align:center;color:var(--ink4);padding:36px">暂无操作记录</td></tr>'}
+    </tbody></table></div>`);
+  M.querySelectorAll("[data-exp-log]").forEach(e=>e.onclick=()=>dl("/api/export/oplog"));
+}
+
+const ICO={
+ phone:'<path d="M4 2.5h2.6l1.3 3.2-1.6 1a9 9 0 0 0 4 4l1-1.6 3.2 1.3V13a1.5 1.5 0 0 1-1.6 1.5A12.5 12.5 0 0 1 2.5 4.1 1.5 1.5 0 0 1 4 2.5z"/>',
+ mail:'<rect x="2" y="3.5" width="14" height="11" rx="1.5"/><path d="m2.6 4.4 6.4 5 6.4-5"/>',
+ chat:'<path d="M15 9.5a5.5 5.5 0 0 1-5.5 5.5c-1 0-1.9-.2-2.7-.7L3 15.5l1.2-3.6A5.5 5.5 0 1 1 15 9.5z"/>',
+ pin:'<path d="M9 16s5.5-5 5.5-9A5.5 5.5 0 1 0 3.5 7c0 4 5.5 9 5.5 9z"/><circle cx="9" cy="7" r="2"/>'};
+const cico=k=>`<svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${ICO[k]}</svg>`;
+let CT={tab:"跟进记录"};
+/* ── 页签工作区:已打开的页面并存,可切换可关闭 ── */
+let TABS=[{k:"workbench",t:"工作台",v:"workbench",a:null,fixed:1}];
+let ACTIVE="workbench";
+function tabKey(v,a){return a?v+"/"+a:v}
+function openTab(v,a,title){
+  const k=tabKey(v,a);
+  if(!TABS.some(x=>x.k===k)) TABS.push({k,t:title||v,v,a});
+  else { const t=TABS.find(x=>x.k===k); if(title) t.t=title; }
+  ACTIVE=k; if(TABS.length>9) TABS.splice(1,1);   /* 上限 9 个,保留工作台 */
+}
+function closeTab(k,ev){
+  if(ev) ev.stopPropagation();
+  const i=TABS.findIndex(x=>x.k===k); if(i<0||TABS[i].fixed) return;
+  TABS.splice(i,1);
+  if(ACTIVE===k){const n=TABS[Math.min(i,TABS.length-1)]; ACTIVE=n.k; view(n.v,n.a,1)}
+  else renderTabs();
+}
+function renderTabs(){
+  const el=document.querySelector(".tabbar"); if(!el) return;
+  el.innerHTML=TABS.map(t=>`<span class="tab ${t.k===ACTIVE?"on":""}" data-tk="${esc(t.k)}">
+    ${ic("workbench")}<span class="lb">${esc(t.t)}</span>
+    ${t.fixed?"":`<span class="x" data-tx="${esc(t.k)}">✕</span>`}</span>`).join("")+
+   `<span class="gridic" title="关闭其他页签" data-closeother><svg width="19" height="19" viewBox="0 0 20 20" fill="currentColor">
+    <rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/>
+    <rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/></svg></span>`;
+  el.querySelectorAll("[data-tk]").forEach(e=>e.onclick=ev=>{
+    if(ev.target.closest("[data-tx]")) return;
+    const t=TABS.find(x=>x.k===e.dataset.tk); if(t){ACTIVE=t.k; view(t.v,t.a,1)}});
+  el.querySelectorAll("[data-tx]").forEach(e=>e.onclick=ev=>closeTab(e.dataset.tx,ev));
+  el.querySelector("[data-closeother]").onclick=()=>{
+    TABS=TABS.filter(t=>t.fixed||t.k===ACTIVE); renderTabs()};
+}
+let ROLE=localStorage.getItem("lx_role")||"顾问";
+const ROLES=["顾问","店长","总部运营"];
+function setRole(r){ROLE=r;localStorage.setItem("lx_role",r);
+  const el=document.getElementById("roleTxt"); if(el)el.textContent=r;}
+
+let CAL={y:2026,m:8};
+function calendar(marks){
+  const Y=CAL.y,Mo=CAL.m, first=new Date(Y,Mo-1,1), days=new Date(Y,Mo,0).getDate();
+  const lead=first.getDay(), prevD=new Date(Y,Mo-1,0).getDate();
+  const cells=[];
+  for(let i=lead-1;i>=0;i--) cells.push({d:prevD-i,out:1});
+  for(let d=1;d<=days;d++) cells.push({d,out:0});
+  while(cells.length%7) cells.push({d:cells.length-lead-days+1,out:1});
+  const wk=["周日","周一","周二","周三","周四","周五","周六"];
+  let html=`<div class="cal"><div class="hd2"><span class="nav" data-cal="-1">‹</span>
+    <b>${Y}</b><span style="color:var(--ink3)">|</span><b>${Mo}月</b><span class="nav" data-cal="1">›</span>
+    <span class="today" data-cal="0">回到今天</span></div>
+   <table><thead><tr>${wk.map(w=>`<th>${w}</th>`).join("")}</tr></thead><tbody>`;
+  for(let i=0;i<cells.length;i+=7){
+    html+="<tr>"+cells.slice(i,i+7).map(c=>{
+      const key=`2026-08-${String(c.d).padStart(2,"0")}`, m=!c.out&&marks[key];
+      return `<td class="${c.out?"out":""} ${!c.out&&c.d===31?"today2":""}">
+        <span class="dnum">${c.d}</span>${m?`<span class="mk" style="background:${m}"></span>`:""}</td>`}).join("")+"</tr>";
+  }
+  return html+"</tbody></table></div>";
+}
+
+async function custDetail(cid){
+  const d=await get("/api/customer/"+cid);
+  if(d.error){M.innerHTML=chrome(["首页","客户管理","客户详情"],`<div class="err">${esc(d.error)}</div>`);return}
+  const c=d.customer;
+  const APC={"已预约":"#3381FF","已到店":"#FF7D00","已完成":"#00B42A","已取消":"#C9CDD4",
+             "已过期":"#C9CDD4","爽约":"#F53F3F"};
+  const marks={}; d.appts.forEach(a=>{marks[(a.start_ts||"").slice(0,10)]=APC[a.status]||"#C9CDD4"});
+  const TABS=["跟进记录","预约记录","押金记录","操作日志"];
+  const tbl=()=>{
+    if(CT.tab==="跟进记录") return d.followups.length? `<table class="tb"><thead><tr>
+      <th style="width:170px">跟进时间</th><th style="width:110px">跟进方式</th>
+      <th style="width:110px">顾问</th><th>跟进内容</th></tr></thead><tbody>
+      ${d.followups.map(f=>`<tr><td class="mono">${esc(f.ts)}</td><td>${esc(f.channel)}</td>
+       <td>${esc(f.advisor)}</td><td>${esc(f.content)}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="empty">暂无跟进记录</div>`;
+    if(CT.tab==="预约记录") return d.appts.length? `<table class="tb"><thead><tr>
+      <th style="width:110px">预约编号</th><th style="width:170px">预约时间</th><th>归属店铺</th>
+      <th style="width:100px">顾问</th><th style="width:100px">状态</th>
+      <th style="width:110px">押金</th><th style="width:70px">操作</th></tr></thead><tbody>
+      ${d.appts.map(a=>`<tr><td class="mono">${esc(a.id)}</td><td class="mono">${esc(a.start_ts)}</td>
+       <td>${esc(a.shop)}</td><td>${esc(a.advisor)}</td>
+       <td><span class="pill ${APILL[a.status]||"p-mut"}">${esc(a.status)}</span></td>
+       <td class="mono">${esc(a.deposit_id||"—")}</td>
+       <td><span class="lk" data-a="${esc(a.id)}">详情</span></td></tr>`).join("")}</tbody></table>`
+      : `<div class="empty">暂无预约记录</div>`;
+    if(CT.tab==="押金记录") return d.deposits.length? `<table class="tb"><thead><tr>
+      <th style="width:110px">押金单号</th><th style="width:130px">金额</th><th style="width:130px">状态</th>
+      <th style="width:170px">幂等号</th><th style="width:130px">最后更新</th>
+      <th style="width:70px">操作</th></tr></thead><tbody>
+      ${d.deposits.map(x=>`<tr><td class="mono">${esc(x.id)}</td><td class="mono">¥${money(x.amount)}</td>
+       <td><span class="pill ${x.status==="退款失败"?"p-bad":x.status==="已退"?"p-ok":"p-warn"}">${esc(x.status)}</span></td>
+       <td class="mono">${esc(x.idem_key)}</td><td class="mono">${esc(x.updated)}</td>
+       <td><span class="lk" data-t="T${esc(x.id)}">详情</span></td></tr>`).join("")}</tbody></table>`
+      : `<div class="empty">暂无押金记录</div>`;
+    return d.logs.length? `<table class="tb"><thead><tr><th style="width:170px">时间</th>
+      <th style="width:90px">操作人</th><th style="width:150px">流转</th><th style="width:80px">结果</th>
+      <th>理由</th></tr></thead><tbody>
+      ${d.logs.map(l=>`<tr><td class="mono">${esc(l.ts)}</td><td>${esc(l.actor)}</td>
+       <td class="mono">${esc(l.frm)} → ${esc(l.too)}</td>
+       <td><span class="pill ${l.allowed?"p-ok":"p-bad"}">${l.allowed?"允许":"拒绝"}</span></td>
+       <td style="color:var(--ink2)">${esc(l.reason)}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="empty">暂无操作记录</div>`;
+  };
+
+  M.innerHTML=chrome([["首页","workbench"],["客户管理","customers"],["客户档案","customers"],"客户详情"],`
+   <div class="cd-h"><span class="nm">${esc(c.name)}</span>
+     <span class="ed" data-edit>✎ 编辑</span>
+     <span class="rt" data-fu>＋ 跟进</span></div>
+   <div class="tags"><span class="tg">${esc(c.level)}</span>
+     <span class="tg">${esc(c.lifecycle)}</span>
+     ${c.manual_lc?`<span class="tg" style="border-color:var(--navy);color:var(--navy)">人工调整</span>`:""}
+     ${c.archived?`<span class="tg" style="border-color:var(--bad);color:var(--bad)">已归档</span>`:""}
+     <a class="dead" title="标签配置 · 本期未实现">标签配置</a></div>
+   <div class="cd">
+    <div>
+     <div class="card">
+      <div class="pf"><span class="ph2">${esc((c.name||"").slice(0,1))}</span>
+       <div class="cts">
+        <div class="ct">${cico("phone")}<span class="mono">${esc(c.phone_mask)}</span></div>
+        <div class="ct">${cico("mail")}<span class="mono">${esc((c.id||"").toLowerCase())}@example.com</span></div>
+        <div class="ct">${cico("chat")}<span>${esc(c.advisor)}</span></div>
+        <div class="ct">${cico("pin")}<span>${esc(c.addr||"")}</span></div>
+       </div></div>
+      <div class="sec"><h5>详细信息</h5><div class="dgrid">
+        <div><div class="l">客户编码</div><div class="v mono">${esc(c.id)}</div></div>
+        <div><div class="l">生命周期</div><div class="v">${esc(c.lifecycle)}</div></div>
+        <div><div class="l">归属店铺</div><div class="v">${esc(c.shop)}</div></div>
+        <div><div class="l">销售顾问</div><div class="v">${esc(c.advisor)}</div></div>
+        <div><div class="l">生日</div><div class="v mono">${esc(c.birthday||"—")}</div></div>
+        <div><div class="l">建档日期</div><div class="v mono">${esc(c.created||"—")}</div></div>
+        <div><div class="l">首单日期</div><div class="v mono">${esc(c.first_order||"无")}</div></div>
+        <div><div class="l">近12月订单/跨季</div><div class="v mono">${c.orders_12m} / ${c.quarters_12m}</div></div>
+      </div>
+      <div class="note2"><b style="color:var(--ink)">生命周期判定</b> —— 命中条件
+        ${(c.matched_list||[]).map(x=>`<span class="pill ${x===c.lifecycle?"p-ok":"p-mut"}" style="margin:0 4px">${esc(x)}</span>`).join("")}
+        ${(c.matched_list||[]).length>1?`,按优先级取 <b style="color:var(--ink)">${esc(c.lifecycle)}</b>`:""}
+        ${c.manual_lc?`<div style="margin-top:6px">人工于 ${esc(c.manual_at)} 调整为「${esc(c.manual_lc)}」,30 天内优先</div>`:""}
+      </div></div>
+      <div class="stiles">
+       <div class="st4 a"><div class="l">会员等级<span>⇅</span></div><div class="v">${esc(c.level)}</div>
+         <div class="s">生命周期 ${esc(c.lifecycle)}</div></div>
+       <div class="st4 b"><div class="l">累计实付<span>⇅</span></div><div class="v mono">${money(c.paid_amount)}</div>
+         <div class="s">近 12 月 ${money(c.amount_12m)}</div></div>
+       <div class="st4 c"><div class="l">消费记录</div><div class="v mono">${c.order_cnt} 单</div>
+         <div class="s">首单 ${esc(c.first_order||"无")}</div></div>
+       <div class="st4 d"><div class="l">最近沟通时间</div><div class="v mono">${esc(c.last_interact||"—")}</div>
+         <div class="s">已 ${c.idle_days} 天未互动</div></div>
+      </div></div>
+     <div class="row" style="grid-template-columns:1fr 1fr">
+      <div class="card"><div class="hd"><h3>绑定关系</h3><span class="more">管理绑定关系</span></div>
+        <div class="empty">本期未采集关系人数据</div></div>
+      <div class="card"><div class="hd"><h3>量体裁衣</h3>
+        ${d.measures.length?`<span class="n">${d.measures.length} 份档案</span>`:""}</div>
+        ${d.measures.length? d.measures.map(m=>`<div style="padding:14px 20px 4px">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:10px">
+            <b style="font-size:13.5px">${esc(m.name)}</b>
+            <span class="mono" style="font-size:12px;color:var(--ink3)">${esc(m.at)} · ${esc(m.by)}</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px 18px;font-size:13px">
+           ${m.items.map(i=>`<div style="display:flex"><span style="color:var(--ink3)">${esc(i.iname)}:</span>
+             <span class="mono" style="margin-left:auto">${i.value} ${esc(i.unit)}</span></div>`).join("")}
+          </div></div>`).join("")
+        : '<div class="empty">该客户尚无量体档案</div>'}</div>
+     </div>
+    </div>
+    <div>
+     <div class="card"><div class="bd" style="padding:15px 16px;display:flex;gap:12px;align-items:center">
+       <span class="thumb" style="width:46px;height:46px;font-size:15px;background:#2B4D8C">${esc((c.shop||"  ").split(" ")[1]||"门店").slice(0,2)}</span>
+       <div><div style="font-weight:600">${esc((c.shop||"").split(" ")[1]||"—")}</div>
+         <div style="font-size:12.5px;color:var(--ink3);margin-top:3px">顾问: ${esc(c.advisor)}</div></div>
+       <span class="ed dead" style="margin-left:auto;font-size:13px" title="编辑门店 · 本期未实现">✎ 编辑</span></div></div>
+     <div class="card">${calendar(marks)}
+      <div style="padding:0 16px 14px;display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--ink2)">
+       ${Object.entries(APC).slice(0,4).map(([k,v])=>`<span><i style="display:inline-block;width:9px;height:2px;background:${v};vertical-align:3px;margin-right:4px"></i>${k}</span>`).join("")}
+      </div></div>
+    </div>
+   </div>
+   <div class="card" style="margin-top:14px">
+    <div class="tabs2">${TABS.map(t=>`<b class="${t===CT.tab?"on":""}" data-tab="${t}">${t}</b>`).join("")}
+     <span class="add2" data-fu>＋ 添加跟进记录</span>
+     <span class="add2" data-newapt style="margin-left:16px">＋ 新增预约</span></div>
+    ${tbl()}</div>`);
+  M.querySelectorAll("[data-tab]").forEach(e=>e.onclick=()=>{CT.tab=e.dataset.tab; custDetail(cid)});
+  M.querySelectorAll("[data-cal]").forEach(e=>e.onclick=()=>{
+    const d=+e.dataset.cal;
+    if(d===0){CAL={y:2026,m:8}} else {CAL.m+=d; if(CAL.m>12){CAL.m=1;CAL.y++} if(CAL.m<1){CAL.m=12;CAL.y--}}
+    custDetail(cid)});
+  M.querySelectorAll("[data-edit]").forEach(e=>e.onclick=()=>formEditCustomer(c,()=>custDetail(cid)));
+  M.querySelectorAll("[data-fu]").forEach(e=>e.onclick=()=>formFollowup(cid,()=>custDetail(cid)));
+  M.querySelectorAll("[data-newapt]").forEach(e=>e.onclick=()=>formAppt(cid,()=>{CT.tab="预约记录";custDetail(cid)}));
+  M.querySelectorAll("[data-a]").forEach(e=>e.onclick=()=>view("appt",e.dataset.a));
+  M.querySelectorAll("[data-t]").forEach(e=>e.onclick=()=>view("task",e.dataset.t));
+}
+
+const SHOPS=["SH001 静安旗舰店","SH002 徐汇店","SH003 杭州湖滨店"];
+const ADVS=["A01 林岚","A02 周叙","A03 沈砚","A04 陆微"];
+const WAYS=["到店量体","到店试衣","上门沟通","电话回电"];
+function nowPlus(h){const d=new Date(Date.now()+h*3600e3);
+  const p=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:00`}
+
+function formCustomer(after){
+  modal("客户录入",[
+    {k:"name",label:"客户姓名",req:1,ph:"例如:李四"},
+    {k:"phone",label:"手机号",req:1,ph:"11 位手机号,支持带空格或 +86"},
+    {k:"shop",type:"select",label:"归属店铺",req:1,opts:SHOPS},
+    {k:"advisor",type:"select",label:"销售顾问",req:1,opts:ADVS},
+    {k:"birthday",label:"生日",ph:"1990-01-01"},
+    {k:"addr",label:"地址",ph:"选填"},
+  ],v=>doOp("/api/customer-create",v,after),true);
+}
+function formAppt(cid,after){
+  modal("新增预约",[
+    {k:"customer_id",label:"客户编码",req:1,val:cid||"",ph:"例如:C10000"},
+    {k:"way",type:"select",label:"预约方式",req:1,opts:WAYS},
+    {k:"start",label:"开始时间",req:1,val:nowPlus(26),ph:"2026-09-01 09:00"},
+    {k:"end",label:"结束时间",req:1,val:nowPlus(27),ph:"2026-09-01 10:00"},
+    {k:"shop",type:"select",label:"归属店铺",req:1,opts:SHOPS},
+    {k:"advisor",type:"select",label:"销售顾问",req:1,opts:ADVS},
+  ],v=>doOp("/api/appt-create",v,after),true);
+}
+function formFollowup(cid,after){
+  modal("添加跟进记录",[
+    {k:"customer_id",label:"客户编码",req:1,val:cid||""},
+    {k:"channel",type:"select",label:"跟进方式",req:1,opts:["电话","微信","到店","上门"]},
+    {k:"advisor",type:"select",label:"顾问",req:1,opts:ADVS},
+    {k:"content",type:"text",label:"跟进内容",req:1,ph:"例如:客户确认下周三到店试衣"},
+  ],v=>doOp("/api/followup-create",v,after),true);
+}
+
+Q.shp={page:1,per:10}; Q.stf={page:1,per:10}; Q.sch={page:1,per:10};
+const SPILL={"有效":"p-ok","无效":"p-bad","完结":"p-ok","取消":"p-mut","启用":"p-ok","停用":"p-mut"};
+
+async function shopList(){
+  const st=Q.shp, d=await get("/api/shops?"+qs(st));
+  M.innerHTML=chrome([["首页","workbench"],"店铺配置","店铺管理"],`
+   <div class="card">
+    <div class="form">${fld("店铺名称","q",st,null,"请输入")}${fld("状态","status",st,d.facets.status)}${acts()}</div>
+    <div class="ops"><button class="btn sol" disabled title="新增店铺 · 本期未实现">+ 新增店铺</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:100px">店铺编码</th><th style="width:170px">店铺名称</th>
+     <th style="width:80px">状态</th><th style="width:100px">店长</th>
+     <th style="width:150px">联系方式</th><th style="width:130px">省市区</th><th>地址</th>
+     <th style="width:80px">客户</th><th style="width:80px">员工</th><th style="width:80px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.code)}</td><td>${esc(r.name)}</td>
+      <td><span class="pill ${SPILL[r.status]}">${esc(r.status)}</span></td>
+      <td>${esc(r.manager)}</td><td class="mono">${esc(r.phone)}</td>
+      <td>${esc(r.province)}</td><td style="color:var(--ink2)">${esc(r.addr)}</td>
+      <td class="mono">${r.cust}</td><td class="mono">${r.staff}</td>
+      <td><span class="lk" data-sh="${esc(r.code)}">详情</span></td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-sh]").forEach(e=>e.onclick=()=>view("shop",e.dataset.sh));
+  bindTable(st,shopList);
+}
+async function shopDetail(code){
+  const d=await get("/api/shop/"+code);
+  if(d.error){M.innerHTML=chrome([["首页","workbench"],["店铺配置","shops"],"店铺详情"],
+    `<div class="err">${esc(d.error)}</div>`);return}
+  const on=d.status==="有效";
+  M.innerHTML=chrome([["首页","workbench"],["店铺配置","shops"],["店铺管理","shops"],"店铺详情"],`
+   <div class="dh"><span class="no">${esc(d.name)}</span>
+     <span class="pill ${SPILL[d.status]}">${esc(d.status)}</span>
+     <span class="mono" style="color:var(--ink3);font-size:13px">${esc(d.code)}</span></div>
+   <div class="card"><div class="hd"><h3>基本信息:</h3>
+     <span class="more dead" title="编辑店铺 · 本期未实现">✎ 编辑</span></div>
+    <div class="info">
+     <div><div class="l">店铺编码</div><div class="v mono">${esc(d.code)}</div></div>
+     <div><div class="l">店长</div><div class="v">${esc(d.manager)}</div></div>
+     <div><div class="l">联系方式</div><div class="v mono">${esc(d.phone)}</div></div>
+     <div><div class="l">省市区</div><div class="v">${esc(d.province)}</div></div>
+     <div style="grid-column:1/-1"><div class="l">详细地址</div><div class="v">${esc(d.addr)}</div></div>
+     <div><div class="l">关联客户</div><div class="v mono">${d.cust} 人</div></div>
+     <div><div class="l">关联预约</div><div class="v mono">${d.appt} 条</div></div>
+     <div><div class="l">最后更新</div><div class="v mono">${esc(d.updated)}</div></div>
+    </div>
+    <div class="note2" style="margin:0 24px 20px">
+     <b style="color:var(--ink)">状态规则</b> —— 后台 PRD 6.1:有效店铺可承接客户、顾问和任务;
+     无效店铺保留历史数据但禁止新增业务。</div></div>
+   <div class="card"><div class="hd"><h3>门店员工</h3><span class="n">${d.staff.length} 人</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:130px">工号</th>
+    <th style="width:130px">姓名</th><th style="width:120px">角色</th><th style="width:100px">状态</th>
+    <th>最后修改</th></tr></thead><tbody>
+    ${d.staff.map(x=>`<tr><td class="mono">${esc(x.no)}</td><td>${esc(x.name)}</td>
+     <td><span class="pill p-blue">${esc(x.role)}</span></td>
+     <td><span class="pill ${SPILL[x.status]}">${esc(x.status)}</span></td>
+     <td class="mono" style="color:var(--ink3)">${esc(x.updated)}</td></tr>`).join("")}
+    </tbody></table></div>
+   ${d.logs.length?`<div class="card"><div class="hd"><h3>操作日志</h3></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:170px">时间</th>
+    <th style="width:150px">流转</th><th style="width:80px">结果</th><th>理由</th></tr></thead><tbody>
+    ${d.logs.map(l=>`<tr><td class="mono">${esc(l.ts)}</td>
+     <td class="mono">${esc(l.frm)} → ${esc(l.too)}</td>
+     <td><span class="pill ${l.allowed?"p-ok":"p-bad"}">${l.allowed?"允许":"拒绝"}</span></td>
+     <td style="color:var(--ink2)">${esc(l.reason)}</td></tr>`).join("")}</tbody></table></div>`:""}
+   <div class="fbar"><button class="btn" data-back="shops">返回</button>
+    <button class="btn sol" data-shop="${esc(code)}" data-to="${on?"无效":"有效"}">${on?"停用店铺":"启用店铺"}</button></div>`);
+  M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
+  M.querySelectorAll("[data-shop]").forEach(e=>e.onclick=()=>
+    modal(`${on?"停用":"启用"}店铺 · ${d.name}`,[{k:"note",type:"text",req:1,
+      label:on?"停用原因(无效店铺将禁止新增业务)":"启用原因",ph:"例如:门店装修暂停营业"}],
+      v=>doTransit("bk-shop",code,e.dataset.to,{note:v.note},()=>view("shop",code))));
+}
+
+async function staffList(){
+  const st=Q.stf, d=await get("/api/staff?"+qs(st));
+  M.innerHTML=chrome([["首页","workbench"],"系统","权限管理"],`
+   <div class="card">
+    <div class="form">${fld("工号/姓名","q",st,null,"请输入")}${fld("角色","role",st,d.facets.role)}${acts()}</div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:44px"><span class="cb" data-cball></span></th>
+     <th style="width:140px">工号</th><th style="width:120px">姓名</th>
+     <th style="width:120px">角色</th><th>归属门店</th><th style="width:90px">状态</th>
+     <th style="width:130px">修改人</th><th style="width:150px">最后修改时间</th>
+     <th style="width:80px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td><span class="cb" data-cb="${esc(r.no)}"></span></td>
+      <td class="mono">${esc(r.no)}</td><td>${esc(r.name)}</td>
+      <td><span class="pill p-blue">${esc(r.role)}</span></td>
+      <td>${esc(r.shop||"—— 总部")}</td>
+      <td><span class="pill ${SPILL[r.status]}">${esc(r.status)}</span></td>
+      <td class="mono">${esc(r.updated_by)}</td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.updated)}</td>
+      <td><span class="lk dead" title="编辑权限 · 本期未实现">编辑</span></td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>
+   <div class="card"><div class="hd"><h3>角色权限矩阵</h3>
+     <span class="n">来源:后台 PRD 第 8 章与 6.2 —— 原设计稿的权限管理页无角色列,此表为按 PRD 补充</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:130px">角色</th>
+     <th style="width:80px">人数</th><th>可执行操作</th></tr></thead><tbody>
+     ${Object.entries(d.matrix).map(([r,ops])=>`<tr>
+      <td><span class="pill p-blue">${esc(r)}</span></td>
+      <td class="mono">${d.rows.concat([]).length?"":""}${(d.facets.role.includes(r))?"":""}
+        ${["顾问","店长","财务","总部运营"].includes(r)?"":""}</td>
+      <td>${ops.map(o=>`<span class="pill p-mut" style="margin-right:5px">${esc(o)}</span>`).join("")}</td>
+      </tr>`).join("")}
+    </tbody></table></div>`);
+  bindTable(st,staffList);
+}
+
+async function scheduleList(){
+  const st=Q.sch, d=await get("/api/schedule?"+qs(st));
+  M.innerHTML=chrome([["首页","workbench"],"导购","个人日程"],`
+   <div class="card">
+    <div class="form">${fld("任务号/客户","q",st,null,"请输入")}
+      ${fld("任务类型","type",st,d.facets.type)}${fld("状态","status",st,d.facets.status)}${acts()}</div>
+    <div class="ops"><button class="btn sol" disabled title="新建日程 · 本期未实现">+ 新建日程</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:110px">任务号</th><th style="width:110px">类型</th><th>客户</th>
+     <th style="width:100px">顾问</th><th style="width:170px">起止时间</th>
+     <th style="width:90px">状态</th><th>总结 / 原因</th><th style="width:140px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.id)}</td><td>${esc(r.type)}</td>
+      <td>${esc(r.cname||"")} <span class="mono" style="color:var(--ink3)">${esc(r.customer_id)}</span></td>
+      <td>${esc(r.advisor)}</td>
+      <td class="mono">${esc(r.start_ts)} — ${esc((r.end_ts||"").slice(-5))}</td>
+      <td><span class="pill ${SPILL[r.status]||"p-warn"}">${esc(r.status)}</span></td>
+      <td style="color:var(--ink2)">${esc(r.summary||r.cancel_reason||"—")}</td>
+      <td>${r.status==="有效"
+        ? `<span class="lk" data-done="${esc(r.id)}">完结</span><span class="lk" data-cxl="${esc(r.id)}">取消</span>`
+        : '<span style="color:var(--ink4);font-size:12.5px">已结束</span>'}</td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>
+   <div class="card"><div class="hd"><h3>状态规则</h3><span class="n">后台 PRD 6.1 日程任务</span></div>
+    <div class="bd" style="padding:14px 24px 20px"><ul class="ev" style="padding-left:20px">
+     <li>有效 → 完结:<b>完成需总结</b></li>
+     <li>有效 → 取消 / 无效:<b>取消需原因</b></li>
+     <li>完结 / 取消后默认不可编辑,仅可查看</li>
+     <li>超时按店长、总部运营层级升级并记录原因</li>
+    </ul></div></div>`);
+  M.querySelectorAll("[data-done]").forEach(e=>e.onclick=()=>
+    modal("完结日程任务",[{k:"summary",type:"text",req:1,label:"服务总结(必填)",
+      ph:"例如:已到店完成量体,方案已确认"}],
+      v=>doTransit("bk-task",e.dataset.done,"完结",{summary:v.summary},scheduleList)));
+  M.querySelectorAll("[data-cxl]").forEach(e=>e.onclick=()=>
+    modal("取消日程任务",[{k:"reason",type:"text",req:1,label:"取消原因(必填)",ph:"例如:客户改期"}],
+      v=>doTransit("bk-task",e.dataset.cxl,"取消",{reason:v.reason},scheduleList)));
+  bindTable(st,scheduleList);
+}
+
+Q.ord={page:1,per:10,tab:"全部"};
+const OPILL={"待付款":"p-warn","方案确认中":"p-blue","待发货":"p-blue","待收货":"p-warn",
+             "已完成":"p-ok","已关闭":"p-mut"};
+async function orderList(){
+  const st=Q.ord, d=await get("/api/orders?"+qs(st));
+  const nomap=d.tabs.filter(t=>!t.mapped).map(t=>t.name);
+  M.innerHTML=chrome([["首页","workbench"],"消费与售后","交易查询"],`
+   <div class="card">
+    <div class="form">
+      ${fld("订单号/下单人","q",st,null,"请输入")}
+      ${fld("订单类型","kind",st,d.facets.kind)}
+      ${fld("订单来源","source",st,d.facets.source)}${acts()}</div>
+    <div class="otab">${d.tabs.map(t=>`<b class="${t.name===d.tab?"on":""} ${t.mapped?"":"nomap"}"
+      data-otab="${esc(t.name)}" title="${t.mapped?("对应 PRD 状态:"+(t.prd||"全部")):"PRD 订单状态机中无此状态"}">${esc(t.name)}</b>`).join("")}</div>
+    ${d.unmapped?`<div style="padding:26px 24px;background:var(--bad-bg);color:var(--bad);font-size:13px">
+      「${esc(d.tab)}」是设计稿的状态页签,但<b>前端 PRD 11.1 的订单状态机中没有这个状态</b>,
+      因此永远筛不出数据。PRD 定义的 6 个状态是:${d.prd_states.join(" / ")}。</div>`:""}
+    <div>${d.rows.map(o=>`
+      <div class="ordhd">
+        <span>订单号: <span class="no">${esc(o.id)}</span></span>
+        <span class="pill ${o.kind==="定制品订单"?"p-warn":"p-blue"}">${esc(o.kind)}</span>
+        <span>销售顾问: ${esc(o.advisor)}</span>
+        <span>下单时间: <span class="mono">${esc(o.created)}</span></span>
+        <span>订单来源: ${esc(o.source)}</span>
+        ${o.activity?`<span style="color:var(--ink3)">${esc(o.activity)}</span>`:""}
+      </div>
+      ${o.items.map((it,i)=>`<div class="orditem">
+        <div class="g"><span class="thumb2">${esc(it.tag)}</span>
+          <div><div>${esc(it.name)}</div>
+            <div class="mono" style="color:var(--ink3);font-size:11.5px;margin-top:3px">${esc(it.sku)}</div>
+            <span class="pill ${it.tag==="定制品"?"p-warn":"p-blue"}" style="margin-top:5px;display:inline-block">${esc(it.tag)}</span></div></div>
+        <div class="mono">¥${money(it.price)}<div style="color:var(--ink3);font-size:12px">X${it.qty}</div></div>
+        <div>${i===0?`<span class="pill ${OPILL[o.status]}">${esc(o.status)}</span>`:""}</div>
+        <div class="mono">${i===0?"¥"+money(o.payable):""}</div>
+        <div class="mono">${i===0?"¥"+money(o.amount):""}</div>
+        <div>${i===0?`<span class="pill p-mut">${esc(o.delivery)}</span>`:""}</div>
+        <div>${i===0?`<span class="lk" data-ov="${esc(o.id)}">查看订单</span>`:""}</div>
+      </div>`).join("")}`).join("")}
+      ${d.rows.length?"":(d.unmapped?"":'<div class="empty">没有符合条件的订单</div>')}
+    </div>${pagerC(d)}</div>
+
+   <div class="card"><div class="hd"><h3>状态口径不一致</h3>
+     <span class="n">差集 D · 设计稿页签 vs 前端 PRD 11.1 订单状态机</span></div>
+    <div class="bd" style="padding:14px 24px 20px">
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div><div style="font-size:12.5px;color:var(--ink3);margin-bottom:8px">设计稿状态页签(10 个)</div>
+        ${d.tabs.filter(t=>t.name!=="全部").map(t=>`<span class="pill ${t.mapped?"p-ok":"p-bad"}" style="margin:0 5px 6px 0;display:inline-block">${esc(t.name)}</span>`).join("")}</div>
+      <div><div style="font-size:12.5px;color:var(--ink3);margin-bottom:8px">PRD 11.1 订单状态机(6 个)</div>
+        ${d.prd_states.map(x=>`<span class="pill p-blue" style="margin:0 5px 6px 0;display:inline-block">${esc(x)} ${d.counts[x]}</span>`).join("")}</div>
+     </div>
+     <div class="note2" style="margin-top:14px">
+      <b style="color:var(--ink)">${nomap.length} 个页签在 PRD 中无对应状态</b> ——
+      ${nomap.map(n=>`「${esc(n)}」`).join("、")};
+      而 PRD 的<b style="color:var(--ink)">「方案确认中」</b>(当前 ${d.counts["方案确认中"]} 单)在设计稿中没有任何页签承载。
+      <div style="margin-top:6px">研发按 PRD 实现只有 6 个状态,前端按设计稿做 10 个页签,其中 4 个永远筛不出数据。</div>
+     </div></div></div>`);
+  M.querySelectorAll("[data-otab]").forEach(e=>e.onclick=()=>{st.tab=e.dataset.otab;st.page=1;orderList()});
+  M.querySelectorAll("[data-ov]").forEach(e=>e.onclick=()=>res(true,"INFO","订单详情本期未实现,订单号 "+e.dataset.ov));
+  bindTable(st,orderList);
+}
+
+Q.prd={page:1,per:10}; Q.stk={page:1,per:10};
+const PPILL={"已上架":"p-ok","已下架":"p-mut","启用":"p-ok","停用":"p-mut"};
+const cover=(nm,kind)=>`<span class="thumb2" style="background:${kind==="定制品"
+  ?"linear-gradient(155deg,#7A4A2E,#A9713F)":"linear-gradient(155deg,#2F5A4B,#4C7F6C)"}">${esc((nm||"").slice(0,2))}</span>`;
+
+async function productList(){
+  const st=Q.prd, d=await get("/api/products?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome([["首页","workbench"],"商品","商品库"],`
+   <div class="card">
+    <div class="form">${fld("商品名称/SPU","q",st,null,"请输入")}
+      ${fld("商品类型","kind",st,F.kind)}${fld("上架状态","status",st,F.status)}
+      <div class="fi"><label>所属品类</label><select class="ctl" data-f="category" style="color:var(--ink)">
+        <option value="">全部</option>${F.category.map(c=>`<option value="${esc(c)}" ${st.category===c?"selected":""}>${esc(d.catnames[c]||c)}</option>`).join("")}
+      </select></div>${acts()}</div>
+    <div class="ops"><button class="btn sol" data-newprod>+ 新建商品</button>
+      <button class="btn" data-exp-prd>导出</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:44px"><span class="cb" data-cball></span></th>
+     ${sortTh("SPU","spu",st,"150px")}${sortTh("商品名称","name",st)}
+     <th style="width:100px">品类</th><th style="width:90px">类型</th>
+     ${sortTh("基础价","base_price",st,"110px")}<th style="width:70px">SKU</th>
+     ${sortTh("库存","stock",st,"80px")}${sortTh("可用","avail",st,"80px")}
+     <th style="width:90px">状态</th><th style="width:80px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td><span class="cb" data-cb="${esc(r.spu)}"></span></td>
+      <td class="mono">${esc(r.spu)}</td>
+      <td><div style="display:flex;gap:10px;align-items:center">${cover(r.name,r.kind)}
+        <div>${esc(r.name)}${r.template?`<div style="font-size:11.5px;color:var(--ink3);margin-top:3px">量体模版 ${esc(r.template)}</div>`:""}</div></div></td>
+      <td>${esc(r.cat_name||"")}</td>
+      <td><span class="pill ${r.kind==="定制品"?"p-warn":"p-blue"}">${esc(r.kind)}</span></td>
+      <td class="mono">¥${money(r.base_price)}</td><td class="mono">${r.sku_n}</td>
+      <td class="mono">${r.stock}</td>
+      <td class="mono" style="${r.avail<=5?"color:var(--bad);font-weight:600":""}">${r.avail}</td>
+      <td><span class="pill ${PPILL[r.status]}">${esc(r.status)}</span></td>
+      <td><span class="lk" data-pd="${esc(r.spu)}">详情</span></td></tr>`).join("")}
+     ${d.rows.length?"":'<tr><td colspan="11" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的商品</td></tr>'}
+    </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-pd]").forEach(e=>e.onclick=()=>view("product",e.dataset.pd));
+  M.querySelectorAll("[data-newprod]").forEach(e=>e.onclick=()=>formProduct(null,productList));
+  M.querySelectorAll("[data-exp-prd]").forEach(e=>e.onclick=()=>dl("/api/export/customers?"+qs(st)));
+  bindTable(st,productList);
+}
+
+async function productDetail(spu){
+  const d=await get("/api/product/"+spu);
+  if(d.error){M.innerHTML=chrome([["首页","workbench"],["商品","products"],"商品详情"],
+    `<div class="err">${esc(d.error)}</div>`);return}
+  const on=d.status==="已上架";
+  M.innerHTML=chrome([["首页","workbench"],["商品","products"],["商品库","products"],"商品详情"],`
+   <div class="dh">${cover(d.name,d.kind)}<span class="no" style="margin-left:4px">${esc(d.name)}</span>
+     <span class="pill ${PPILL[d.status]}">${esc(d.status)}</span>
+     <span class="pill ${d.kind==="定制品"?"p-warn":"p-blue"}">${esc(d.kind)}</span></div>
+   <div class="card"><div class="hd"><h3>基本信息:</h3>
+     <span class="more" data-editprod>✎ 编辑</span></div>
+    <div class="info">
+     <div><div class="l">SPU</div><div class="v mono">${esc(d.spu)}</div></div>
+     <div><div class="l">所属品类</div><div class="v">${esc(d.cat_name||"")}</div></div>
+     <div><div class="l">基础价</div><div class="v mono">¥${money(d.base_price)}</div></div>
+     <div><div class="l">量体模版</div><div class="v">${esc(d.template||"—— 标品无需量体")}</div></div>
+     <div><div class="l">创建时间</div><div class="v mono">${esc(d.created)}</div></div>
+     <div><div class="l">最后更新</div><div class="v mono">${esc(d.updated)}</div></div>
+     <div><div class="l">SKU 数</div><div class="v mono">${d.skus.length}</div></div>
+     <div><div class="l">近期订单</div><div class="v mono">${d.orders.length} 单</div></div>
+    </div></div>
+   <div class="card"><div class="hd"><h3>规格与库存</h3><span class="n">${d.skus.length} 个 SKU</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:190px">SKU 编码</th>
+    <th style="width:120px">规格</th><th style="width:110px">价格</th><th style="width:90px">库存</th>
+    <th style="width:90px">占用</th><th style="width:90px">可用</th><th style="width:90px">状态</th>
+    <th>提示</th></tr></thead><tbody>
+    ${d.skus.map(k=>{const av=k.stock-k.locked; return `<tr>
+     <td class="mono">${esc(k.code)}</td><td>${esc(k.spec)}</td>
+     <td class="mono">¥${money(k.price)}</td><td class="mono">${k.stock}</td>
+     <td class="mono">${k.locked}</td>
+     <td class="mono" style="${av<=5?"color:var(--bad);font-weight:600":""}">${av}</td>
+     <td><span class="pill ${PPILL[k.status]}">${esc(k.status)}</span></td>
+     <td style="color:var(--ink2);font-size:12.5px">${av<=0?"库存不足,提交订单时须重新计价并要求用户确认":av<=5?"低库存预警":""}</td>
+     </tr>`}).join("")}</tbody></table>
+    <div class="note2" style="margin:0 24px 20px"><b style="color:var(--ink)">库存规则</b> ——
+     前端 PRD 11.5:库存不足、配置失效或交期变化时<b style="color:var(--ink)">禁止静默替换</b>,必须明确提示用户重新确认。</div></div>
+   ${d.orders.length?`<div class="card"><div class="hd"><h3>近期订单</h3></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:220px">订单号</th>
+    <th style="width:130px">状态</th><th style="width:140px">金额</th><th>下单时间</th></tr></thead><tbody>
+    ${d.orders.map(o=>`<tr><td class="mono">${esc(o.id)}</td>
+     <td><span class="pill ${OPILL[o.status]||"p-mut"}">${esc(o.status)}</span></td>
+     <td class="mono">¥${money(o.amount)}</td><td class="mono">${esc(o.created)}</td></tr>`).join("")}
+    </tbody></table></div>`:""}
+   <div class="fbar"><button class="btn" data-back="products">返回</button>
+    <button class="btn sol" data-prod="${esc(spu)}" data-to="${on?"已下架":"已上架"}">${on?"下架商品":"上架商品"}</button></div>`);
+  M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
+  M.querySelectorAll("[data-editprod]").forEach(e=>e.onclick=()=>formProduct(d,()=>view("product",spu)));
+  M.querySelectorAll("[data-prod]").forEach(e=>e.onclick=()=>
+    modal(`${on?"下架":"上架"}商品 · ${d.name}`,[{k:"note",type:"text",req:1,
+      label:on?"下架原因(下架后不可新增下单,历史订单保留)":"上架原因",ph:"例如:面料断货"}],
+      v=>doTransit("bk-product",spu,e.dataset.to,{note:v.note},()=>view("product",spu))));
+}
+
+async function categoryPage(){
+  const t=await get("/api/categories");
+  M.innerHTML=chrome([["首页","workbench"],"商品","品类管理"],`
+   <div class="card"><div class="hd"><h3>品类管理</h3>
+     <span class="n">${t.length} 个一级品类 · ${t.reduce((a,b)=>a+b.children.length,0)} 个二级品类</span>
+     <span class="more dead" title="新建品类 · 本期未实现">+ 新建品类</span></div>
+    <div class="bd" style="padding:16px 24px 22px">
+     ${t.map(x=>`<div style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--tile);border-radius:6px">
+        <b style="font-size:14.5px">${esc(x.name)}</b>
+        <span class="mono" style="color:var(--ink3);font-size:12.5px">${esc(x.code)}</span>
+        <span class="pill p-blue">${x.n} 个商品</span>
+        <span class="pill ${PPILL[x.status]}" style="margin-left:auto">${esc(x.status)}</span></div>
+      <div style="margin:10px 0 0 26px;display:grid;gap:8px">
+       ${x.children.map(c=>`<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;
+         border:1px solid var(--line2);border-radius:6px">
+         <span>${esc(c.name)}</span>
+         <span class="mono" style="color:var(--ink3);font-size:12px">${esc(c.code)}</span>
+         <span class="pill p-mut">${c.n} 个商品</span>
+         <span class="lk dead" style="margin-left:auto" title="编辑品类 · 本期未实现">编辑</span></div>`).join("")}
+      </div></div>`).join("")}
+    </div></div>`);
+}
+
+async function stockList(){
+  const st=Q.stk, d=await get("/api/stock?"+qs(st));
+  M.innerHTML=chrome([["首页","workbench"],"商品","库存查询"],`
+   <div class="card">
+    <div class="form">${fld("SKU/商品名","q",st,null,"请输入")}
+      ${fld("仅看低库存","low",st,d.facets.low)}${acts()}</div>
+    ${d.alert?`<div style="margin:14px 24px 0;background:var(--warn-bg);color:var(--warn);
+      border-radius:6px;padding:11px 15px;font-size:13px">
+      ⚠ 当前有 <b>${d.alert}</b> 个 SKU 可用库存 ≤ 5,提交订单时须重新计价并要求用户确认(前端 PRD 11.5)</div>`:""}
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("SKU 编码","code",st,"190px")}<th>商品名称</th><th style="width:90px">类型</th>
+     <th style="width:110px">规格</th>${sortTh("价格","price",st,"110px")}
+     ${sortTh("库存","stock",st,"90px")}<th style="width:80px">占用</th>
+     ${sortTh("可用","avail",st,"90px")}<th style="width:90px">状态</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr${r.avail<=5?' style="background:#FFFBF5"':""}>
+      <td class="mono">${esc(r.code)}</td><td>${esc(r.pname)}</td>
+      <td><span class="pill ${r.kind==="定制品"?"p-warn":"p-blue"}">${esc(r.kind)}</span></td>
+      <td>${esc(r.spec)}</td><td class="mono">¥${money(r.price)}</td>
+      <td class="mono">${r.stock}</td><td class="mono">${r.locked}</td>
+      <td class="mono" style="${r.avail<=5?"color:var(--bad);font-weight:600":""}">${r.avail}</td>
+      <td><span class="pill ${PPILL[r.status]}">${esc(r.status)}</span></td></tr>`).join("")}
+     ${d.rows.length?"":'<tr><td colspan="9" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的 SKU</td></tr>'}
+    </tbody></table>${pagerC(d)}</div>`);
+  bindTable(st,stockList);
+}
+
+Q.mtp={page:1,per:10}; Q.cnt={page:1,per:10};
+async function measureItems(){
+  const d=await get("/api/measure-items");
+  M.innerHTML=chrome([["首页","workbench"],"业务内容","量体配置"],`
+   <div class="card"><div class="hd"><h3>测量项配置</h3>
+     <span class="n">${d.total} 项 · 必填项缺失时不可保存定制方案</span>
+     <span class="more dead" title="新增测量项 · 本期未实现">+ 新增测量项</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:100px">编码</th>
+     <th style="width:130px">名称</th><th style="width:80px">单位</th><th style="width:90px">必填</th>
+     <th style="width:80px">排序</th><th style="width:90px">状态</th>
+     <th style="width:110px">被模版引用</th><th>说明</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr${r.status==="停用"?' style="opacity:.55"':""}>
+      <td class="mono">${esc(r.code)}</td><td>${esc(r.name)}</td><td>${esc(r.unit)}</td>
+      <td>${r.required?'<span class="pill p-bad">必填</span>':'<span class="pill p-mut">选填</span>'}</td>
+      <td class="mono">${r.sort}</td>
+      <td><span class="tg ${r.status==="启用"?"on":""}" data-tgl="measure_item|code|${esc(r.code)}"><i>${r.status==="启用"?"启用":"停用"}</i></span></td>
+      <td class="mono">${r.used} 个</td>
+      <td style="color:var(--ink2);font-size:12.5px">${esc(r.note||"")}</td></tr>`).join("")}
+    </tbody></table></div>`);
+  bindToggle(measureItems);
+}
+function bindToggle(reload){
+  M.querySelectorAll("[data-tgl]").forEach(e=>e.onclick=()=>{
+    const [table,key,val]=e.dataset.tgl.split("|");
+    doOp("/api/toggle",{table,key,val},reload)});
+}
+
+async function measureTpls(){
+  const st=Q.mtp, d=await get("/api/measure-tpls?"+qs(st));
+  M.innerHTML=chrome([["首页","workbench"],"业务内容","量体模版"],`
+   <div class="card">
+    <div class="form">${fld("模版名称","q",st,null,'例如"唐装模版"')}
+      ${fld("状态","status",st,d.facets.status)}${acts()}</div>
+    <div class="ops"><button class="btn sol" data-newtpl>+ 新增模版</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:100px">模版编号</th><th style="width:150px">模版名称</th><th>描述</th>
+     <th style="width:90px">测量项</th><th style="width:100px">关联商品</th>
+     <th style="width:100px">已量体</th><th style="width:90px">状态</th>
+     ${sortTh("最后修改","updated",st,"150px")}<th style="width:110px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.code)}</td><td>${esc(r.name)}</td>
+      <td style="color:var(--ink2)">${esc(r.descr)}</td>
+      <td><span class="pill p-blue" title="${esc(r.items.join(" / "))}">${r.items.length} 项</span></td>
+      <td class="mono">${r.used}</td><td class="mono">${r.recs} 人</td>
+      <td><span class="tg ${r.status==="启用"?"on":""}" data-tgl="measure_tpl|code|${esc(r.code)}"><i>${r.status==="启用"?"启用":"停用"}</i></span></td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.updated)}</td>
+      <td><span class="lk" data-mt="${esc(r.code)}">查看</span>
+        <span class="lk dead" title="删除模版 · 已被引用时不可删除">删除</span></td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-mt]").forEach(e=>{const r=d.rows.find(x=>x.code===e.dataset.mt);
+    e.onclick=()=>modal(`${r.name} · 测量项`,[],()=>{},false)||showTpl(r)});
+  M.querySelectorAll("[data-newtpl]").forEach(e=>e.onclick=()=>formTemplate(measureTpls));
+  bindToggle(measureTpls); bindTable(st,measureTpls);
+}
+function showTpl(r){
+  document.querySelectorAll(".mask").forEach(x=>x.remove());
+  const m=document.createElement("div"); m.className="mask";
+  m.innerHTML=`<div class="modal" style="width:520px"><h4>${esc(r.name)} · ${esc(r.code)}</h4>
+   <div class="bd2"><div style="font-size:13px;color:var(--ink2);margin-bottom:14px">${esc(r.descr)}</div>
+    <table class="tb" style="border:1px solid var(--line2);border-radius:6px;overflow:hidden">
+     <thead><tr><th style="width:70px">顺序</th><th>测量项</th></tr></thead><tbody>
+     ${r.items.map((x,i)=>`<tr><td class="mono">${i+1}</td><td>${esc(x)}</td></tr>`).join("")}
+     </tbody></table>
+    <div style="margin-top:12px;font-size:12.5px;color:var(--ink3)">
+      关联商品 ${r.used} 个 · 已按此模版量体 ${r.recs} 人</div></div>
+   <div class="ft"><button class="btn gray" data-x>关闭</button></div></div>`;
+  document.body.appendChild(m);
+  m.querySelector("[data-x]").onclick=()=>m.remove(); m.onclick=e=>{if(e.target===m)m.remove()};
+}
+
+async function contentList(){
+  const st=Q.cnt, d=await get("/api/contents?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome([["首页","workbench"],"业务内容","内容管理"],`
+   <div class="card">
+    <div class="form">${fld("标题/编码","q",st,null,"请输入")}
+      ${fld("内容类型","kind",st,F.kind)}${fld("发布状态","status",st,F.status)}
+      ${fld("投放渠道","channel",st,F.channel)}${acts()}</div>
+    <div class="ops"><button class="btn sol" data-newct>+ 新建内容</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("编码","code",st,"100px")}${sortTh("标题","title",st)}
+     <th style="width:110px">类型</th><th style="width:120px">投放渠道</th>
+     <th style="width:90px">状态</th>${sortTh("发布时间","published",st,"150px")}
+     ${sortTh("浏览","views",st,"100px")}<th style="width:110px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.code)}</td><td>${esc(r.title)}</td>
+      <td><span class="pill p-mut">${esc(r.kind)}</span></td><td>${esc(r.channel)}</td>
+      <td><span class="pill ${r.status==="已发布"?"p-ok":"p-warn"}">${esc(r.status)}</span></td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.published)}</td>
+      <td class="mono">${num(r.views)}</td>
+      <td><span class="lk dead" title="编辑内容 · 本期未实现">编辑</span>
+        <span class="lk dead" title="下架 · 本期未实现">下架</span></td></tr>`).join("")}
+     ${d.rows.length?"":'<tr><td colspan="8" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的内容</td></tr>'}
+    </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-newct]").forEach(e=>e.onclick=()=>formContent(contentList));
+  bindTable(st,contentList);
+}
+
+Q.act={page:1,per:10}; Q.inv={page:1,per:10}; Q.pg2={page:1,per:10};
+Q.sc={page:1,per:20}; Q.dl={page:1,per:10};
+const APIL={"进行中":"p-ok","未开始":"p-warn","已结束":"p-mut","已取消":"p-bad",
+  "已使用":"p-ok","未使用":"p-blue","已作废":"p-mut","已发布":"p-ok","草稿":"p-warn",
+  "生成中":"p-warn","已完成":"p-ok","失败":"p-bad","已过期":"p-mut"};
+
+async function activityList(){
+  const st=Q.act, d=await get("/api/activities?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome([["首页","workbench"],"营销","营销活动"],`
+   <div class="card">
+    <div class="form">${fld("活动名称/编码","q",st,null,"请输入")}
+      ${fld("活动类型","kind",st,F.kind)}${fld("状态","status",st,F.status)}${acts()}</div>
+    <div class="ops"><button class="btn sol" disabled title="新建活动 · 本期未实现">+ 新建活动</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("活动编码","code",st,"110px")}${sortTh("活动名称","name",st)}
+     <th style="width:80px">类型</th><th style="width:150px">起止</th>
+     ${sortTh("预算","budget",st,"120px")}<th style="width:130px">已用/占比</th>
+     ${sortTh("报名","signup",st,"80px")}${sortTh("订单","orders",st,"80px")}
+     <th style="width:80px">邀请码</th><th style="width:90px">状态</th>
+     <th style="width:70px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.code)}</td><td>${esc(r.name)}</td>
+      <td><span class="pill p-mut">${esc(r.kind)}</span></td>
+      <td class="mono" style="font-size:12px">${esc(r.start_d)} ~ ${esc(r.end_d)}</td>
+      <td class="mono">¥${money(r.budget)}</td>
+      <td class="mono" style="${r.rate>90?"color:var(--bad);font-weight:600":""}">¥${money(r.cost)}
+        <span style="color:var(--ink3);font-size:11.5px"> ${r.rate}%</span></td>
+      <td class="mono">${r.signup}</td><td class="mono">${r.orders}</td>
+      <td class="mono">${r.codes||"—"}</td>
+      <td><span class="pill ${APIL[r.status]}">${esc(r.status)}</span></td>
+      <td><span class="lk" data-ac="${esc(r.code)}">详情</span></td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-ac]").forEach(e=>e.onclick=()=>view("activity",e.dataset.ac));
+  bindTable(st,activityList);
+}
+async function activityDetail(code){
+  const d=await get("/api/activity/"+code);
+  if(d.error){M.innerHTML=chrome([["首页","workbench"],["营销","activities"],"活动详情"],
+    `<div class="err">${esc(d.error)}</div>`);return}
+  const NEXT={"未开始":"进行中","进行中":"已结束"}[d.status];
+  M.innerHTML=chrome([["首页","workbench"],["营销","activities"],["营销活动","activities"],"活动详情"],`
+   <div class="dh"><span class="no">${esc(d.name)}</span>
+     <span class="pill ${APIL[d.status]}">${esc(d.status)}</span>
+     <span class="mono" style="color:var(--ink3);font-size:13px">${esc(d.code)}</span></div>
+   <div class="card"><div class="hd"><h3>基本信息:</h3></div><div class="info">
+     <div><div class="l">活动类型</div><div class="v">${esc(d.kind)}</div></div>
+     <div><div class="l">投放范围</div><div class="v">${esc(d.shop)}</div></div>
+     <div><div class="l">起止日期</div><div class="v mono">${esc(d.start_d)} ~ ${esc(d.end_d)}</div></div>
+     <div><div class="l">创建时间</div><div class="v mono">${esc(d.created)}</div></div>
+     <div><div class="l">预算</div><div class="v mono">¥${money(d.budget)}</div></div>
+     <div><div class="l">已用费用</div><div class="v mono" style="${d.rate>90?"color:var(--bad)":""}">¥${money(d.cost_total)} (${d.rate}%)</div></div>
+     <div><div class="l">报名人数</div><div class="v mono">${d.signup}</div></div>
+     <div><div class="l">带来订单</div><div class="v mono">${d.orders}</div></div>
+   </div></div>
+   <div class="card"><div class="hd"><h3>费用明细</h3><span class="n">${d.costs.length} 笔 · 合计 ¥${money(d.cost_total)}</span>
+     <span class="more dead" title="添加费用 · 本期未实现">+ 添加费用</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:150px">费用项</th>
+     <th style="width:150px">金额</th><th style="width:110px">开票</th>
+     <th style="width:130px">录入人</th><th>录入时间</th></tr></thead><tbody>
+     ${d.costs.map(x=>`<tr><td>${esc(x.item)}</td><td class="mono">¥${money(x.amount)}</td>
+      <td><span class="pill ${x.note==="已开票"?"p-ok":"p-warn"}">${esc(x.note)}</span></td>
+      <td class="mono">${esc(x.created_by)}</td>
+      <td class="mono" style="color:var(--ink3)">${esc(x.created)}</td></tr>`).join("")}
+    </tbody></table></div>
+   ${d.codes.length?`<div class="card"><div class="hd"><h3>邀请码批次</h3></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:120px">批次</th>
+    <th style="width:120px">状态</th><th>数量</th></tr></thead><tbody>
+    ${d.codes.map(x=>`<tr><td class="mono">${esc(x.batch)}</td>
+     <td><span class="pill ${APIL[x.status]}">${esc(x.status)}</span></td>
+     <td class="mono">${x.n}</td></tr>`).join("")}</tbody></table></div>`:""}
+   ${d.orders_l.length?`<div class="card"><div class="hd"><h3>关联订单</h3><span class="n">最近 ${d.orders_l.length} 单</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:220px">订单号</th>
+    <th style="width:130px">状态</th><th style="width:140px">金额</th><th>下单时间</th></tr></thead><tbody>
+    ${d.orders_l.map(o=>`<tr><td class="mono">${esc(o.id)}</td>
+     <td><span class="pill ${OPILL[o.status]||"p-mut"}">${esc(o.status)}</span></td>
+     <td class="mono">¥${money(o.amount)}</td><td class="mono">${esc(o.created)}</td></tr>`).join("")}
+    </tbody></table></div>`:""}
+   <div class="fbar"><button class="btn" data-back="activities">返回</button>
+    ${NEXT?`<button class="btn sol" data-actr="${esc(code)}" data-to="${NEXT}">${NEXT==="进行中"?"启动活动":"结束活动"}</button>`:""}
+    ${d.status==="未开始"||d.status==="进行中"?`<button class="btn" data-actr="${esc(code)}" data-to="已取消">取消活动</button>`:""}</div>`);
+  M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
+  M.querySelectorAll("[data-actr]").forEach(e=>e.onclick=()=>
+    modal(`${e.dataset.to} · ${d.name}`,[{k:"note",type:"text",req:1,label:"操作说明",ph:"将写入操作日志"}],
+      v=>doTransit("bk-activity",code,e.dataset.to,{note:v.note},()=>view("activity",code))));
+}
+async function inviteList(){
+  const st=Q.inv, d=await get("/api/invites?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome([["首页","workbench"],"营销","邀请码管理"],`
+   <div class="card"><div class="hd"><h3>批次汇总</h3><span class="n">${d.batches.length} 个批次</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:100px">批次</th>
+     <th>关联活动</th><th style="width:90px">总数</th><th style="width:90px">已使用</th>
+     <th style="width:90px">未使用</th><th style="width:90px">已作废</th>
+     <th style="width:120px">核销率</th></tr></thead><tbody>
+     ${d.batches.map(b=>`<tr><td class="mono">${esc(b.batch)}</td><td>${esc(b.act_name)}</td>
+      <td class="mono">${b.n}</td><td class="mono">${b.used}</td>
+      <td class="mono">${b.unused}</td><td class="mono">${b.void}</td>
+      <td class="mono">${Math.round(b.used/b.n*100)}%</td></tr>`).join("")}
+    </tbody></table></div>
+   <div class="card">
+    <div class="form">${fld("邀请码","q",st,null,"请输入")}
+      ${fld("批次","batch",st,F.batch)}${fld("状态","status",st,F.status)}${acts()}</div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("邀请码","code",st,"140px")}<th style="width:90px">批次</th><th>关联活动</th>
+     <th style="width:100px">状态</th><th style="width:120px">使用人</th>
+     <th style="width:150px">使用时间</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.code)}</td><td class="mono">${esc(r.batch)}</td>
+      <td>${esc(r.act_name)}</td>
+      <td><span class="pill ${APIL[r.status]}">${esc(r.status)}</span></td>
+      <td class="mono">${esc(r.used_by||"—")}</td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.used_at||"—")}</td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>`);
+  bindTable(st,inviteList);
+}
+
+async function pageList(){
+  const st=Q.pg2, d=await get("/api/pages?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome([["首页","workbench"],"页面","页面配置"],`
+   <div class="card">
+    <div class="form">${fld("页面名称/编码","q",st,null,"请输入")}
+      ${fld("投放渠道","channel",st,F.channel)}${fld("状态","status",st,F.status)}${acts()}</div>
+    <div class="ops"><button class="btn sol" disabled title="新增页面 · 本期未实现">+ 新增页面</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("页面编码","code",st,"110px")}${sortTh("页面名称","name",st)}
+     <th style="width:120px">投放渠道</th><th style="width:100px">内容区块</th>
+     <th style="width:90px">状态</th>${sortTh("最后更新","updated",st,"150px")}
+     <th style="width:70px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.code)}</td><td>${esc(r.name)}</td>
+      <td>${esc(r.channel)}</td><td class="mono">${r.blocks} 个</td>
+      <td><span class="pill ${APIL[r.status]}">${esc(r.status)}</span></td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.updated)}</td>
+      <td><span class="lk" data-pgv="${esc(r.code)}">配置</span></td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-pgv]").forEach(e=>e.onclick=()=>view("page",e.dataset.pgv));
+  bindTable(st,pageList);
+}
+const BKIC={"普通图片":"▭","轮播图片":"◫","商品列表":"▤","热点图":"◈"};
+async function pageDetail(code){
+  const d=await get("/api/page/"+code);
+  if(d.error){M.innerHTML=chrome([["首页","workbench"],["页面","pages"],"页面配置"],
+    `<div class="err">${esc(d.error)}</div>`);return}
+  const pub=d.status==="已发布";
+  M.innerHTML=chrome([["首页","workbench"],["页面","pages"],["页面配置","pages"],"内容配置"],`
+   <div class="dh"><span class="no">${esc(d.name)}</span>
+     <span class="pill ${APIL[d.status]}">${esc(d.status)}</span>
+     <span class="mono" style="color:var(--ink3);font-size:13px">${esc(d.code)} · ${esc(d.channel)}</span></div>
+   <div class="card"><div class="hd"><h3>页面内容</h3><span class="n">${d.blocks.length} 个区块 · 按顺序渲染</span>
+     <span class="more" data-newblk>+ 新增页面内容</span></div>
+    <div class="bd" style="padding:16px 24px 22px">
+     ${d.blocks.map(b=>`<div style="display:flex;gap:14px;align-items:center;padding:14px 16px;
+        border:1px solid var(--line2);border-radius:7px;margin-bottom:10px">
+       <span style="width:44px;height:44px;border-radius:6px;background:var(--tile);display:grid;
+         place-items:center;font-size:19px;color:var(--navy);flex:none">${BKIC[b.kind]||"▭"}</span>
+       <div style="flex:1"><div style="font-size:14px;font-weight:500">${esc(b.title)}</div>
+         <div style="font-size:12.5px;color:var(--ink3);margin-top:3px">${esc(b.cfg)}</div></div>
+       <span class="pill p-blue">${esc(b.kind)}</span>
+       <span class="mono" style="color:var(--ink3);font-size:12px">顺序 ${b.sort}</span>
+       <span class="lk" data-eblk="${b.id}">编辑</span>
+       <span class="lk" data-mvup="${b.id}">↑</span>
+       <span class="lk" data-mvdn="${b.id}">↓</span>
+       <span class="lk" data-dblk="${b.id}">删除</span></div>`).join("")}
+     ${d.blocks.length?"":'<div class="empty">该页面尚无内容区块</div>'}
+    </div></div>
+   <div class="fbar"><button class="btn" data-back="pages">返回</button>
+    <button class="btn sol" data-pgt="${esc(code)}" data-to="${pub?"草稿":"已发布"}">${pub?"下线为草稿":"发布页面"}</button></div>`);
+  M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
+  M.querySelectorAll("[data-newblk]").forEach(e=>e.onclick=()=>formBlock(code,null,()=>view("page",code)));
+  M.querySelectorAll("[data-eblk]").forEach(e=>e.onclick=()=>
+    formBlock(code,d.blocks.find(b=>String(b.id)===e.dataset.eblk),()=>view("page",code)));
+  M.querySelectorAll("[data-mvup]").forEach(e=>e.onclick=()=>
+    doOp("/api/block-save",{act:"move",page:code,id:e.dataset.mvup,dir:"up"},()=>view("page",code)));
+  M.querySelectorAll("[data-mvdn]").forEach(e=>e.onclick=()=>
+    doOp("/api/block-save",{act:"move",page:code,id:e.dataset.mvdn,dir:"down"},()=>view("page",code)));
+  M.querySelectorAll("[data-dblk]").forEach(e=>e.onclick=()=>
+    modal("删除内容区块",[{k:"c",type:"select",label:"确认删除该区块?删除后序号自动重排",opts:["确认删除"]}],
+      ()=>doOp("/api/block-save",{act:"del",page:code,id:e.dataset.dblk},()=>view("page",code))));
+  M.querySelectorAll("[data-pgt]").forEach(e=>e.onclick=()=>
+    doTransit("bk-page",code,e.dataset.pgt==="已发布"?"已发布":"草稿",{},()=>view("page",code)));
+}
+
+async function syscodeList(){
+  const st=Q.sc, d=await get("/api/syscodes?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome([["首页","workbench"],"系统","系统编码"],`
+   <div class="card">
+    <div class="form">${fld("编码/名称/值","q",st,null,"请输入")}
+      ${fld("分类","category",st,F.category)}${fld("状态","status",st,F.status)}${acts()}</div>
+    <div class="ops"><button class="btn sol" data-newsc>+ 新增编码</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("编码","code",st,"140px")}<th style="width:130px">分类</th>
+     <th style="width:200px">名称</th><th style="width:190px">值</th>
+     ${sortTh("排序","sort",st,"80px")}<th style="width:90px">状态</th><th>说明</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr${r.status==="停用"?' style="opacity:.55"':""}>
+      <td class="mono">${esc(r.code)}</td><td><span class="pill p-mut">${esc(r.category)}</span></td>
+      <td>${esc(r.name)}</td><td class="mono">${esc(r.val)}</td>
+      <td class="mono">${r.sort}</td>
+      <td><span class="tg ${r.status==="启用"?"on":""}" data-tgl="sys_code|code|${esc(r.code)}"><i>${r.status==="启用"?"启用":"停用"}</i></span></td>
+      <td style="color:var(--ink2);font-size:12.5px">${esc(r.note||"")}</td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-newsc]").forEach(e=>e.onclick=()=>formSyscode(syscodeList));
+  bindToggle(syscodeList); bindTable(st,syscodeList);
+}
+
+async function downloadList(){
+  const st=Q.dl, d=await get("/api/downloads?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome([["首页","workbench"],"系统","下载中心"],`
+   <div class="card">
+    <div class="form">${fld("任务号/类型","q",st,null,"请输入")}
+      ${fld("导出类型","kind",st,F.kind)}${fld("状态","status",st,F.status)}${acts()}</div>
+    <div class="ops">
+      <button class="btn sol" data-newdl="客户档案">+ 导出客户档案</button>
+      <button class="btn" data-newdl="操作日志">+ 导出操作日志</button></div>
+    <div style="margin:14px 24px 0;background:var(--tile);border-radius:6px;padding:11px 15px;
+      font-size:12.5px;color:var(--ink2)">
+      后台 PRD 8.1:批量导出须经总部运营负责人审批,导出文件添加操作人及时间水印,
+      <b style="color:var(--ink)">下载链接 24 小时后失效</b>。</div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("任务号","id",st,"170px")}<th style="width:120px">导出类型</th>
+     <th>筛选条件</th><th style="width:90px">行数</th><th style="width:90px">大小</th>
+     <th style="width:90px">状态</th>${sortTh("创建时间","created",st,"150px")}
+     <th style="width:150px">失效时间</th><th style="width:80px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.id)}</td><td>${esc(r.kind)}</td>
+      <td style="color:var(--ink2)">${esc(r.filters)}</td>
+      <td class="mono">${r.rows_n||"—"}</td><td class="mono">${r.size_kb?r.size_kb+" KB":"—"}</td>
+      <td><span class="pill ${APIL[r.status]}">${esc(r.status)}</span></td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.created)}</td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.expire_at)}</td>
+      <td>${r.status==="已完成"
+        ? `<span class="lk" data-dlf="${esc(r.kind)}">下载</span>`
+        : '<span style="color:var(--ink4);font-size:12.5px">—</span>'}</td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>`);
+  M.querySelectorAll("[data-newdl]").forEach(e=>e.onclick=()=>
+    doOp("/api/download-create",{kind:e.dataset.newdl,filters:"全部"},downloadList));
+  M.querySelectorAll("[data-dlf]").forEach(e=>e.onclick=()=>
+    dl(e.dataset.dlf==="操作日志"?"/api/export/oplog":"/api/export/customers"));
+  bindTable(st,downloadList);
+}
+
+async function approvalCenter(){
+  const d=await get("/api/approvals");
+  M.innerHTML=chrome([["首页","workbench"],"系统","审批中心"],`
+   <div class="row r-4" style="margin-bottom:14px">
+    ${[["待审批合计",d.todo,"项"],["客户合并",d.merge.length,"项"],
+       ["批量导出",d.export.length,"项"],["当前角色",ROLE,""]].map(([l,v,u])=>
+      `<div class="card"><div class="bd" style="padding:15px 18px">
+        <div style="font-size:12.5px;color:var(--ink2)">${l}</div>
+        <div class="v mono" style="font-size:24px;font-weight:600;color:${l==="当前角色"?(ROLE==="总部运营"?"var(--ok)":"var(--warn)"):"var(--blue)"};margin-top:5px">
+          ${esc(String(v))}<small style="font-size:12px;color:var(--ink2);font-weight:400;margin-left:3px">${u}</small></div>
+        ${l==="当前角色"&&ROLE!=="总部运营"?'<div style="font-size:11.5px;color:var(--ink3);margin-top:4px">点右上角切换为总部运营可审批</div>':""}
+      </div></div>`).join("")}
+   </div>
+   <div class="card"><div class="hd"><h3>客户合并待审批</h3>
+     <span class="n">${d.merge.length} 项 · 由店长发起,须总部运营审批(后台 PRD 6.2)</span></div>
+    ${d.merge.length?`<table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:190px">任务号</th><th>档案 A(建档)</th><th>档案 B(建档)</th>
+     <th style="width:150px">发起时间</th><th>发起说明</th><th style="width:170px">操作</th></tr></thead><tbody>
+     ${d.merge.map(m=>`<tr><td class="mono">${esc(m.id)}</td>
+      <td>${m.a?`${esc(m.a.name)} <span class="mono" style="color:var(--ink3)">${esc(m.a.id)} · ${esc(m.a.created)}</span>`:"—"}</td>
+      <td>${m.b?`${esc(m.b.name)} <span class="mono" style="color:var(--ink3)">${esc(m.b.id)} · ${esc(m.b.created)}</span>`:"—"}</td>
+      <td class="mono">${esc(m.created)}</td>
+      <td style="color:var(--ink2)">${esc(m.summary||"—")}</td>
+      <td><span class="lk" data-apv="${esc(m.id)}">查看比对</span>
+        ${ROLE==="总部运营"
+          ? `<span class="lk" data-apok="${esc(m.id)}">通过</span><span class="lk" data-apno="${esc(m.id)}">驳回</span>`
+          : '<span style="color:var(--ink4);font-size:12.5px">需总部运营</span>'}</td></tr>`).join("")}
+     </tbody></table>`:'<div class="empty">当前没有待审批的客户合并</div>'}</div>
+
+   <div class="card"><div class="hd"><h3>批量导出待审批</h3>
+     <span class="n">${d.export.length} 项 · 须经总部运营负责人审批(后台 PRD 8.1)</span></div>
+    ${d.export.length?`<table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:170px">任务号</th><th style="width:130px">导出类型</th><th>筛选条件</th>
+     <th style="width:150px">申请时间</th><th style="width:170px">操作</th></tr></thead><tbody>
+     ${d.export.map(x=>`<tr><td class="mono">${esc(x.id)}</td><td>${esc(x.kind)}</td>
+      <td style="color:var(--ink2)">${esc(x.filters)}</td>
+      <td class="mono">${esc(x.created)}</td>
+      <td>${ROLE==="总部运营"
+        ? `<span class="lk" data-dlok="${esc(x.id)}">批准导出</span><span class="lk" data-dlno="${esc(x.id)}">驳回</span>`
+        : '<span style="color:var(--ink4);font-size:12.5px">需总部运营</span>'}</td></tr>`).join("")}
+     </tbody></table>`:'<div class="empty">当前没有待审批的导出申请</div>'}</div>
+
+   <div class="card"><div class="hd"><h3>高风险操作待审批</h3>
+     <span class="n">${d.risky.length} 项 · 等级调整 / 积分调整 / 客户转移(后台 PRD 第 8 章)</span></div>
+    ${d.risky.length?`<table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:130px">申请单</th><th style="width:110px">类型</th><th style="width:180px">对象</th>
+     <th>调整内容</th><th style="width:130px">申请人</th><th style="width:150px">申请时间</th>
+     <th>申请原因</th><th style="width:150px">操作</th></tr></thead><tbody>
+     ${d.risky.map(r=>`<tr><td class="mono">${esc(r.id)}</td>
+      <td><span class="pill p-warn">${esc(r.kind)}</span></td>
+      <td class="mono">${esc(r.target)} <span style="color:var(--ink3)">${esc(r.target_name||"")}</span></td>
+      <td class="mono" style="font-size:12.5px">${esc(Object.entries(r.pl||{}).map(([k,v])=>k+"="+v).join(" · "))}</td>
+      <td class="mono">${esc(r.applied_by)}</td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.applied_at)}</td>
+      <td style="color:var(--ink2)">${esc(r.note||"—")}</td>
+      <td>${ROLE==="总部运营"
+        ? `<span class="lk" data-rkok="${esc(r.id)}">通过</span><span class="lk" data-rkno="${esc(r.id)}">驳回</span>`
+        : '<span style="color:var(--ink4);font-size:12.5px">需总部运营</span>'}</td></tr>`).join("")}
+     </tbody></table>`:'<div class="empty">当前没有待审批的高风险操作</div>'}</div>
+
+   <div class="card"><div class="hd"><h3>需要审批的规则</h3>
+     <span class="n">来源:后台 PRD —— 本页为按规则补充的承载物,原设计稿无审批中心</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:140px">事项</th>
+     <th>规则</th><th style="width:130px">出处</th></tr></thead><tbody>
+     ${d.rules.map(([a,b,c])=>`<tr><td><span class="pill p-blue">${esc(a)}</span></td>
+      <td style="color:var(--ink2)">${esc(b)}</td>
+      <td class="mono" style="font-size:12px;color:var(--ink3)">${esc(c)}</td></tr>`).join("")}
+    </tbody></table></div>`);
+  M.querySelectorAll("[data-apv]").forEach(e=>e.onclick=()=>view("task",e.dataset.apv));
+  M.querySelectorAll("[data-apok]").forEach(e=>e.onclick=()=>
+    modal("审批通过并合并",[{k:"note",type:"text",req:1,label:"审批意见"}],
+      v=>doOp("/api/merge",{id:e.dataset.apok,to:"已合并",note:v.note,role:ROLE},approvalCenter)));
+  M.querySelectorAll("[data-apno]").forEach(e=>e.onclick=()=>
+    modal("驳回合并",[{k:"note",type:"text",req:1,label:"驳回原因"}],
+      v=>doOp("/api/merge",{id:e.dataset.apno,to:"已驳回",note:v.note,role:ROLE},approvalCenter)));
+  M.querySelectorAll("[data-dlok]").forEach(e=>e.onclick=()=>
+    doTransit("bk-download",e.dataset.dlok,"已完成",{},approvalCenter));
+  M.querySelectorAll("[data-dlno]").forEach(e=>e.onclick=()=>
+    doTransit("bk-download",e.dataset.dlno,"失败",{},approvalCenter));
+  M.querySelectorAll("[data-rkok]").forEach(e=>e.onclick=()=>
+    modal("审批通过",[{k:"note",type:"text",req:1,label:"审批意见"}],
+      v=>doOp("/api/approval-decide",{id:e.dataset.rkok,to:"已通过",note:v.note,role:ROLE},approvalCenter)));
+  M.querySelectorAll("[data-rkno]").forEach(e=>e.onclick=()=>
+    modal("驳回申请",[{k:"note",type:"text",req:1,label:"驳回原因"}],
+      v=>doOp("/api/approval-decide",{id:e.dataset.rkno,to:"已驳回",note:v.note,role:ROLE},approvalCenter)));
+}
+
+function formImport(after){
+  const SAMPLE="姓名,手机号,归属店铺,销售顾问\n李四,13812345678,SH001 静安旗舰店,A01 林岚\n"+
+    "王五,136 0000 0511,SH002 徐汇店,A02 周叙\n,13900000001,SH001 静安旗舰店,A01 林岚\n"+
+    "蔡青云,13911110511,SH002 徐汇店,A02 周叙";
+  const m=document.createElement("div"); m.className="mask";
+  m.innerHTML=`<div class="modal" style="width:720px"><h4>批量导入客户</h4><div class="bd2">
+    <div class="note2" style="margin:0 0 14px">
+     <b style="color:var(--ink)">导入规则</b>(后台 PRD 6.2)——
+     文件不超过 10MB、单次不超过 2000 行;<b style="color:var(--ink)">结构错误整批拒绝</b>;
+     行级错误允许部分成功并生成错误报告;重复记录跳过,<b style="color:var(--ink)">疑似重复进入人工确认</b>;
+     任务异步执行并使用批次号保证幂等。</div>
+    <label>CSV 内容(首行为表头,必需列:姓名、手机号、归属店铺、销售顾问)</label>
+    <textarea data-k="text" style="min-height:150px;font-family:ui-monospace,monospace;font-size:12.5px">${esc(SAMPLE)}</textarea>
+    <div id="impres"></div></div>
+   <div class="ft"><button class="btn gray" data-x>取消</button>
+    <button class="btn" data-dry>试算</button>
+    <button class="btn sol" data-run>确认导入</button></div></div>`;
+  document.body.appendChild(m);
+  const box=m.querySelector("#impres");
+  const run=async dry=>{
+    const text=m.querySelector("[data-k]").value;
+    const r=await post("/api/import",{text,dry,role:ROLE});
+    if(!r.ok){box.innerHTML=`<div class="err">${esc(r.code)} · ${esc(r.reason)}</div>`;return}
+    const c=r.counts, D=r.detail;
+    box.innerHTML=`<div style="margin-top:14px;background:var(--tile);border-radius:6px;padding:14px">
+      <div style="display:flex;gap:18px;font-size:13px;margin-bottom:${(D.skip.length||D.err.length||D.review.length)?"12px":"0"}">
+       <span>共 <b>${c.total}</b> 行</span>
+       <span style="color:var(--ok)">成功 <b>${c.ok}</b></span>
+       <span style="color:var(--ink3)">跳过 <b>${c.skip}</b></span>
+       <span style="color:var(--bad)">错误 <b>${c.err}</b></span>
+       <span style="color:var(--warn)">待人工确认 <b>${c.review}</b></span></div>
+      ${[["跳过",D.skip,"var(--ink3)"],["错误",D.err,"var(--bad)"],["待确认",D.review,"var(--warn)"]]
+        .filter(([_,a])=>a.length).map(([t,a,col])=>`<div style="margin-bottom:8px">
+         <div style="font-size:12px;color:${col};margin-bottom:4px">${t} ${a.length} 行</div>
+         ${a.map(([ln,nm,why])=>`<div style="font-size:12.5px;color:var(--ink2);padding:3px 0">
+           第 ${ln} 行 ${esc(nm||"(无姓名)")} —— ${esc(why)}</div>`).join("")}</div>`).join("")}
+      <div style="font-size:12px;color:var(--ink3);margin-top:8px">批次号 ${esc(r.batch)}${r.dry?" · 试算,未写入":""}</div>
+     </div>`;
+    if(!dry){res(true,"IMPORT",r.reason); setTimeout(()=>{m.remove(); after&&after()},1200)}
+  };
+  m.querySelector("[data-x]").onclick=()=>m.remove();
+  m.querySelector("[data-dry]").onclick=()=>run(true);
+  m.querySelector("[data-run]").onclick=()=>run(false);
+  m.onclick=e=>{if(e.target===m)m.remove()};
+}
+
+function formEditCustomer(c,after){
+  modal(`编辑客户 · ${c.id}`,[
+    {k:"name",label:"客户姓名",req:1,val:c.name},
+    {k:"phone",label:"手机号",req:1,val:(c.phone_mask||"").replace(/\*/g,"")||""},
+    {k:"shop",type:"select",label:"归属店铺",req:1,opts:SHOPS,val:c.shop},
+    {k:"advisor",type:"select",label:"销售顾问",req:1,opts:ADVS,val:c.advisor},
+    {k:"birthday",label:"生日",val:c.birthday},
+    {k:"addr",label:"地址",val:c.addr},
+  ],v=>doOp("/api/customer-update/"+c.id,{...v,role:ROLE},after),true);
+}
+
+Q.tg2={page:1,per:20};
+async function levelPage(){
+  const d=await get("/api/levels");
+  const tot=Object.values(d.dist).reduce((a,b)=>a+b,0);
+  M.innerHTML=chrome([["首页","workbench"],"客户管理","会员等级"],`
+   <div class="card"><div class="hd"><h3>等级配置</h3>
+     <span class="n">滚动 12 个月实付金额<b>或</b>完成订单数,任一满足即升级(后台 PRD 6.2)</span>
+     <span class="more dead" title="新增等级 · 本期未实现">+ 新增等级</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:100px">编码</th>
+     <th style="width:120px">等级</th><th style="width:150px">金额门槛</th>
+     <th style="width:130px">订单门槛</th><th style="width:120px">当前人数</th>
+     <th style="width:90px">状态</th><th>规则</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.code)}</td>
+      <td><span class="pill ${{"普通":"p-mut","银卡":"p-blue","金卡":"p-warn","黑金":"p-ok"}[r.name]||"p-mut"}">${esc(r.name)}</span></td>
+      <td class="mono">${r.amount?"¥"+money(r.amount):"—"}</td>
+      <td class="mono">${r.orders?r.orders+" 单":"—"}</td>
+      <td class="mono">${d.dist[r.name]||0} 人
+        <span style="color:var(--ink3);font-size:11.5px">${tot?Math.round((d.dist[r.name]||0)/tot*100):0}%</span></td>
+      <td><span class="pill p-ok">${esc(r.status)}</span></td>
+      <td style="color:var(--ink2);font-size:12.5px">${esc(r.note)}</td></tr>`).join("")}
+    </tbody></table>
+    <div class="note2" style="margin:0 24px 20px"><b style="color:var(--ink)">计算规则</b> ——
+     注册后默认普通;<b style="color:var(--ink)">订单完成 7 个自然日后</b>计入等级计算;
+     观察期内全额退款不计金额和订单数,部分退款按净实付计算;
+     观察期后退款触发次日重算,满足降级条件时进入 <b style="color:var(--ink)">30 天保级期</b>;
+     总部运营可人工调整,但须填写原因并记录日志。</div></div>
+   <div class="card"><div class="hd"><h3>人工调整</h3>
+     <span class="n">属高风险操作,须经总部运营审批(PRD 第 8 章)</span></div>
+    <div class="bd" style="padding:14px 24px 20px">
+     <button class="btn sol" data-lvapply>发起等级调整申请</button>
+     <button class="btn" data-ptapply style="margin-left:9px">发起积分调整申请</button>
+     <div class="note" style="margin-top:10px">申请提交后进入 系统 › 审批中心,由总部运营审批;通过后自动执行并留痕。</div>
+    </div></div>`);
+  M.querySelectorAll("[data-lvapply]").forEach(e=>e.onclick=()=>
+    modal("发起等级调整申请",[
+      {k:"target",label:"客户编码",req:1,ph:"例如:C10000"},
+      {k:"to",type:"select",label:"调整为",req:1,opts:["普通","银卡","金卡","黑金"]},
+      {k:"note",type:"text",label:"调整原因(必填,将写入审计日志)",req:1,ph:"例如:客户投诉后补偿升级"}],
+      v=>doOp("/api/approval-apply",{kind:"等级调整",target:v.target,
+        payload:{to:v.to},note:v.note,role:ROLE},levelPage),true));
+  M.querySelectorAll("[data-ptapply]").forEach(e=>e.onclick=()=>
+    modal("发起积分调整申请",[
+      {k:"target",label:"客户编码",req:1,ph:"例如:C10000"},
+      {k:"delta",label:"调整积分(可为负)",req:1,ph:"例如:5000 或 -2000"},
+      {k:"note",type:"text",label:"调整原因(必填)",req:1,ph:"例如:活动补发"}],
+      v=>doOp("/api/approval-apply",{kind:"积分调整",target:v.target,
+        payload:{delta:parseInt(v.delta)||0},note:v.note,role:ROLE},levelPage),true));
+}
+
+async function tagPage(){
+  const st=Q.tg2, d=await get("/api/tags?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome([["首页","workbench"],"客户管理","客户标签管理"],`
+   <div class="card">
+    <div class="form">${fld("标签名称/编码","q",st,null,"请输入")}
+      ${fld("标签分组","grp",st,F.grp)}${fld("状态","status",st,F.status)}${acts()}</div>
+    <div class="ops"><button class="btn sol" disabled title="新建标签 · 本期未实现">+ 新建标签</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("标签编码","code",st,"120px")}<th style="width:160px">标签名称</th>
+     <th style="width:130px">所属分组</th>${sortTh("已绑定客户","n",st,"130px")}
+     <th style="width:90px">状态</th>${sortTh("最后修改","updated",st,"150px")}
+     <th>说明</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr${r.status==="停用"?' style="opacity:.6"':""}>
+      <td class="mono">${esc(r.code)}</td><td>${esc(r.name)}</td>
+      <td><span class="pill p-mut">${esc(r.grp)}</span></td>
+      <td class="mono">${r.n} 人</td>
+      <td><span class="tg ${r.status==="启用"?"on":""}" data-tgl="tag|code|${esc(r.code)}"><i>${r.status==="启用"?"启用":"停用"}</i></span></td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.updated)}</td>
+      <td style="color:var(--ink2);font-size:12.5px">${r.status==="停用"?"停用后不可新增绑定,但保留历史客户上的标签显示":""}</td>
+      </tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>`);
+  bindToggle(tagPage); bindTable(st,tagPage);
+}
+
+Q.as1={page:1,per:10}; Q.mt1={page:1,per:10};
+const ASPILL={"待确认":"p-warn","提交申请":"p-warn","审批同意":"p-blue","审批失败":"p-bad",
+ "审批拒绝":"p-bad","商品寄回":"p-blue","已入库":"p-blue","退款成功":"p-ok","退款失败":"p-bad",
+ "待结算":"p-warn","已完成":"p-ok","待入库":"p-blue","待处理":"p-warn","处理中":"p-blue",
+ "待签收":"p-warn","取消":"p-mut"};
+const roBanner=`<div style="margin:14px 24px 0;background:var(--warn-bg);color:var(--warn);
+  border-radius:6px;padding:11px 15px;font-size:12.5px">
+  ⓘ 后台 PRD 第 7.1 节:<b>售后/维保系统是售后工单、维保工单及处理状态的主系统</b>;
+  本平台「负责读取状态、聚合待办和单点跳转」,<b>不提供写操作</b>。
+  设计稿另有 21 个含审批同意/拒绝等写操作的页面,与该口径冲突,已记入差集清单。</div>`;
+
+async function afterList(){
+  const st=Q.as1, d=await get("/api/aftersales?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome([["首页","workbench"],"消费与售后","售后工单"],`
+   <div class="card">
+    <div class="form">${fld("单号/订单号/客户","q",st,null,"请输入")}
+      ${fld("售后类型","kind",st,F.kind)}${fld("状态","status",st,F.status)}
+      ${fld("归属店铺","shop",st,F.shop)}${acts()}</div>
+    ${roBanner}
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("售后单号","id",st,"150px")}<th style="width:100px">类型</th>
+     <th style="width:190px">关联订单</th><th>客户</th><th style="width:150px">售后原因</th>
+     ${sortTh("退款金额","amount",st,"130px")}<th style="width:110px">状态</th>
+     ${sortTh("申请时间","created",st,"160px")}<th style="width:80px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.id)}</td>
+      <td><span class="pill ${r.kind==="退货退款"?"p-warn":"p-blue"}">${esc(r.kind)}</span></td>
+      <td class="mono" style="font-size:12px">${esc(r.order_id)}</td>
+      <td>${esc(r.cname)} <span class="mono" style="color:var(--ink3)">${esc(r.customer_id)}</span></td>
+      <td style="color:var(--ink2)">${esc(r.reason)}</td>
+      <td class="mono">¥${money(r.amount)}</td>
+      <td><span class="pill ${ASPILL[r.status]||"p-mut"}">${esc(r.status)}</span></td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.created)}</td>
+      <td><span class="lk" data-asd="${esc(r.id)}">详情</span></td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>
+   <div class="card"><div class="hd"><h3>状态链(取自设计稿)</h3>
+     <span class="n">两份 PRD 均未定义售后状态机,以下状态为从设计稿画板名反推</span></div>
+    <div class="bd" style="padding:16px 24px 22px">
+     ${Object.entries(d.chain).map(([k,v])=>`<div style="margin-bottom:14px">
+       <div style="font-size:13px;color:var(--ink2);margin-bottom:8px">${esc(k)}</div>
+       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        ${v.map((x,i)=>`${i?'<span style="color:var(--ink4)">→</span>':""}
+          <span class="pill ${ASPILL[x]||"p-mut"}">${esc(x)}</span>`).join("")}</div></div>`).join("")}
+     <div class="note2">状态链由设计稿的 21 个画板名反推得出,<b style="color:var(--ink)">PRD 中无对应定义</b>。
+      研发若照设计稿实现写操作,会与外部主系统冲突;若照 PRD 只读,则这 21 个页面无处安放。</div>
+    </div></div>`);
+  M.querySelectorAll("[data-asd]").forEach(e=>e.onclick=()=>view("aftersale",e.dataset.asd));
+  bindTable(st,afterList);
+}
+
+async function maintainList(){
+  const st=Q.mt1, d=await get("/api/maintains?"+qs(st)), F=d.facets;
+  M.innerHTML=chrome([["首页","workbench"],"消费与售后","维保工单"],`
+   <div class="card">
+    <div class="form">${fld("单号/订单号/商品","q",st,null,"请输入")}
+      ${fld("状态","status",st,F.status)}${fld("归属店铺","shop",st,F.shop)}${acts()}</div>
+    ${roBanner}
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("维保单号","id",st,"130px")}<th style="width:190px">关联订单</th>
+     <th>客户</th><th style="width:220px">商品</th><th style="width:140px">问题</th>
+     <th style="width:110px">状态</th><th style="width:100px">顾问</th>
+     ${sortTh("创建时间","created",st,"160px")}<th style="width:70px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.id)}</td>
+      <td class="mono" style="font-size:12px">${esc(r.order_id)}</td>
+      <td>${esc(r.cname)} <span class="mono" style="color:var(--ink3)">${esc(r.customer_id)}</span></td>
+      <td>${esc(r.item)}</td><td style="color:var(--ink2)">${esc(r.issue)}</td>
+      <td><span class="pill ${ASPILL[r.status]||"p-mut"}">${esc(r.status)}</span></td>
+      <td>${esc(r.advisor)}</td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.created)}</td>
+      <td><span class="lk" data-mtd="${esc(r.id)}">详情</span></td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}</div>
+   <div class="card"><div class="hd"><h3>状态链(取自设计稿)</h3></div>
+    <div class="bd" style="padding:16px 24px 22px">
+     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      ${d.chain.map((x,i)=>`${i?'<span style="color:var(--ink4)">→</span>':""}
+        <span class="pill ${ASPILL[x]||"p-mut"}">${esc(x)}</span>`).join("")}
+      <span style="color:var(--ink4);margin:0 6px">;</span>
+      <span class="pill p-mut">取消</span></div>
+     <div class="note2" style="margin-top:12px">同售后:该状态链取自设计稿的 7 个维保画板,PRD 中无定义。</div>
+    </div></div>`);
+  M.querySelectorAll("[data-mtd]").forEach(e=>e.onclick=()=>view("maintain",e.dataset.mtd));
+  bindTable(st,maintainList);
+}
+
+async function perfPage(){
+  const d=await get("/api/guide-perf?sort=amount&dir=desc");
+  const max=Math.max(...d.rows.map(r=>r.amount),1);
+  M.innerHTML=chrome([["首页","workbench"],"导购","导购业绩"],`
+   <div class="row r-4" style="margin-bottom:14px">
+    ${[["顾问人数",d.rows.length,"人"],
+       ["销售额合计",money(d.rows.reduce((a,b)=>a+b.amount,0)),"元"],
+       ["订单合计",d.rows.reduce((a,b)=>a+b.orders,0),"单"],
+       ["跟进合计",d.rows.reduce((a,b)=>a+b.followup,0),"条"]].map(([l,v,u])=>
+      `<div class="card"><div class="bd" style="padding:15px 18px">
+       <div style="font-size:12.5px;color:var(--ink2)">${l}</div>
+       <div class="mono" style="font-size:22px;font-weight:600;color:var(--blue);margin-top:5px">${v}<small style="font-size:12px;color:var(--ink2);font-weight:400;margin-left:3px">${u}</small></div>
+      </div></div>`).join("")}
+   </div>
+   <div class="card"><div class="hd"><h3>顾问业绩</h3>
+     <span class="n">按销售额降序 · 口径见下方说明</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:120px">工号</th><th style="width:110px">姓名</th><th>归属门店</th>
+     <th style="width:90px">客户数</th><th style="width:90px">订单</th>
+     <th style="width:140px">销售额</th><th style="width:120px">客单价</th>
+     <th style="width:130px">预约/到店</th><th style="width:110px">到店率</th>
+     <th style="width:110px">任务完成率</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono">${esc(r.no)}</td><td>${esc(r.name)}</td>
+      <td>${esc(r.shop)}</td><td class="mono">${r.cust}</td><td class="mono">${r.orders}</td>
+      <td><div style="display:flex;align-items:center;gap:8px">
+        <span class="mono">¥${money(r.amount)}</span>
+        <span style="flex:1;height:5px;background:var(--tile);border-radius:99px;min-width:34px">
+          <i style="display:block;height:100%;width:${(r.amount/max*100).toFixed(0)}%;background:var(--blue2);border-radius:99px"></i></span></div></td>
+      <td class="mono">¥${money(r.avg)}</td>
+      <td class="mono">${r.appt} / ${r.arrived}</td>
+      <td class="mono" style="${r.arrive_rate<50?"color:var(--warn)":""}">${r.arrive_rate}%</td>
+      <td class="mono" style="${r.task_rate<50?"color:var(--warn)":""}">${r.task_rate}%
+        <span style="color:var(--ink3);font-size:11.5px">(${r.task_done}/${r.task})</span></td>
+      </tr>`).join("")}
+    </tbody></table>
+    <div class="note2" style="margin:0 24px 20px">${esc(d.note)}</div></div>`);
+}
+
+Q.slg={page:1,per:15};
+async function stockLog(){
+  const st=Q.slg, d=await get("/api/stock-log?"+qs(st)), F=d.facets;
+  const KC={"入库":"p-ok","退货入库":"p-ok","订单释放":"p-blue","订单占用":"p-warn",
+            "盘点调整":"p-mut","报损":"p-bad"};
+  M.innerHTML=chrome([["首页","workbench"],"商品","库存变更日志"],`
+   <div class="row r-3" style="margin-bottom:14px">
+    ${d.stat.slice(0,3).map(x=>`<div class="card"><div class="bd" style="padding:15px 18px">
+      <div style="font-size:12.5px;color:var(--ink2)">${esc(x.kind)}</div>
+      <div class="mono" style="font-size:22px;font-weight:600;margin-top:5px;
+        color:${x.sum_d>=0?"var(--ok)":"var(--bad)"}">${x.sum_d>=0?"+":""}${x.sum_d}
+        <small style="font-size:12px;color:var(--ink2);font-weight:400;margin-left:4px">${x.n} 次</small></div>
+     </div></div>`).join("")}
+   </div>
+   <div class="card">
+    <div class="form">${fld("SKU/SPU/单据号/操作人","q",st,null,"请输入")}
+      ${fld("变更类型","kind",st,F.kind)}${fld("操作人","operator",st,F.operator)}${acts()}</div>
+    <div class="ops"><button class="btn" data-exp-sl>导出</button></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     ${sortTh("时间","ts",st,"160px")}<th style="width:100px">类型</th>
+     <th style="width:190px">SKU</th><th>商品</th>
+     ${sortTh("变更","delta",st,"90px")}<th style="width:120px">前 → 后</th>
+     <th style="width:190px">关联单据</th><th style="width:150px">操作人</th>
+     <th>备注</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr><td class="mono" style="color:var(--ink3)">${esc(r.ts)}</td>
+      <td><span class="pill ${KC[r.kind]||"p-mut"}">${esc(r.kind)}</span></td>
+      <td class="mono" style="font-size:12px">${esc(r.sku)}</td>
+      <td>${esc(r.pname)}</td>
+      <td class="mono" style="font-weight:600;color:${r.delta>=0?"var(--ok)":"var(--bad)"}">${r.delta>=0?"+":""}${r.delta}</td>
+      <td class="mono">${r.before_n} → ${r.after_n}</td>
+      <td class="mono" style="font-size:12px">${esc(r.ref)}</td>
+      <td class="mono" style="font-size:12px">${esc(r.operator)}</td>
+      <td style="color:var(--ink2);font-size:12.5px">${esc(r.note||"")}</td></tr>`).join("")}
+    </tbody></table>${pagerC(d)}
+    <div class="note2" style="margin:0 24px 20px"><b style="color:var(--ink)">留痕口径</b> ——
+     后台 PRD 第 8 章:关键写操作均可查询<b style="color:var(--ink)">操作人、时间、前后值和业务编号</b>。
+     本表四项齐全,可按任一维度反查。</div></div>`);
+  M.querySelectorAll("[data-exp-sl]").forEach(e=>e.onclick=()=>
+    doOp("/api/download-create",{kind:"库存变更日志",filters:"全部"},()=>view("downloads")));
+  bindTable(st,stockLog);
+}
+
+function chainBar(chain,idx){
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:18px 24px">
+    ${chain.map((x,i)=>`${i?'<span style="color:var(--ink4)">→</span>':""}
+      <span class="pill ${i===idx?(ASPILL[x]||"p-blue"):"p-mut"}"
+        style="${i===idx?"outline:2px solid var(--navy);outline-offset:1px":i<idx?"":"opacity:.5"}">${esc(x)}</span>`).join("")}
+   </div>`;
+}
+async function afterDetail(aid){
+  const d=await get("/api/aftersale/"+aid);
+  if(d.error){M.innerHTML=chrome([["首页","workbench"],["消费与售后","aftersales"],"售后详情"],
+    `<div class="err">${esc(d.error)}</div>`);return}
+  M.innerHTML=chrome([["首页","workbench"],"消费与售后",["售后工单","aftersales"],"售后详情"],`
+   <div class="dh"><span class="no">售后单号: ${esc(d.id)}</span>
+     <span class="pill ${ASPILL[d.status]||"p-mut"}">${esc(d.status)}</span>
+     <span class="pill ${d.kind==="退货退款"?"p-warn":"p-blue"}">${esc(d.kind)}</span></div>
+   <div class="card">${chainBar(d.chain,d.idx)}
+     <div class="note2" style="margin:0 24px 18px">状态链取自设计稿画板名,PRD 中无对应定义;
+      本平台按 PRD 7.1 只读展示,状态由外部售后系统维护。</div></div>
+   <div class="card"><div class="hd"><h3>基本信息:</h3>
+     <span class="n">数据源 ${esc(d.ext_system)} · 最后同步 ${esc(d.synced_at)}</span></div>
+    <div class="info">
+     <div><div class="l">客户</div><div class="v">${esc(d.customer?d.customer.name:"")}
+       <span class="mono" style="color:var(--ink3)">${esc(d.customer_id)}</span></div></div>
+     <div><div class="l">联系电话</div><div class="v mono">${esc(d.customer?d.customer.phone:"")}</div></div>
+     <div><div class="l">归属店铺</div><div class="v">${esc(d.shop)}</div></div>
+     <div><div class="l">销售顾问</div><div class="v">${esc(d.advisor)}</div></div>
+     <div><div class="l">售后原因</div><div class="v">${esc(d.reason)}</div></div>
+     <div><div class="l">退款金额</div><div class="v mono">¥${money(d.amount)}</div></div>
+     <div><div class="l">申请时间</div><div class="v mono">${esc(d.created)}</div></div>
+     <div><div class="l">最后更新</div><div class="v mono">${esc(d.updated)}</div></div>
+    </div></div>
+   ${d.order?`<div class="card"><div class="hd"><h3>关联订单</h3>
+     <span class="n">${esc(d.order.id)} · ${esc(d.order.kind)}</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th>商品</th>
+     <th style="width:190px">SKU</th><th style="width:90px">标签</th>
+     <th style="width:130px">单价</th><th style="width:80px">数量</th></tr></thead><tbody>
+     ${d.items.map(i=>`<tr><td>${esc(i.name)}</td><td class="mono" style="font-size:12px">${esc(i.sku)}</td>
+      <td><span class="pill ${i.tag==="定制品"?"p-warn":"p-blue"}">${esc(i.tag)}</span></td>
+      <td class="mono">¥${money(i.price)}</td><td class="mono">${i.qty}</td></tr>`).join("")}
+     </tbody></table>
+     <div style="padding:12px 24px 18px;text-align:right;font-size:13px">订单金额
+      <span class="mono" style="font-size:16px;font-weight:600;color:var(--warn);margin-left:8px">¥${money(d.order.amount)}</span></div>
+    </div>`:""}
+   <div class="fbar"><button class="btn" data-back="aftersales">返回</button>
+    <button class="btn sol" disabled title="按 PRD 7.1,售后状态由外部主系统维护,本平台不提供写操作">在售后系统中处理</button></div>`);
+  M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
+}
+async function maintainDetail(mid){
+  const d=await get("/api/maintain/"+mid);
+  if(d.error){M.innerHTML=chrome([["首页","workbench"],["消费与售后","maintains"],"维保详情"],
+    `<div class="err">${esc(d.error)}</div>`);return}
+  M.innerHTML=chrome([["首页","workbench"],"消费与售后",["维保工单","maintains"],"维保详情"],`
+   <div class="dh"><span class="no">维保单号: ${esc(d.id)}</span>
+     <span class="pill ${ASPILL[d.status]||"p-mut"}">${esc(d.status)}</span></div>
+   <div class="card">${chainBar(d.chain,d.idx)}
+     ${d.status==="取消"?'<div class="note2" style="margin:0 24px 18px">该单已取消,不在主链上。</div>':
+       '<div class="note2" style="margin:0 24px 18px">状态链取自设计稿画板名,PRD 中无对应定义;本平台只读展示。</div>'}</div>
+   <div class="card"><div class="hd"><h3>基本信息:</h3>
+     <span class="n">数据源 ${esc(d.ext_system)} · 最后同步 ${esc(d.synced_at)}</span></div>
+    <div class="info">
+     <div><div class="l">客户</div><div class="v">${esc(d.customer?d.customer.name:"")}
+       <span class="mono" style="color:var(--ink3)">${esc(d.customer_id)}</span></div></div>
+     <div><div class="l">联系电话</div><div class="v mono">${esc(d.customer?d.customer.phone:"")}</div></div>
+     <div style="grid-column:span 2"><div class="l">维保商品</div><div class="v">${esc(d.item)}</div></div>
+     <div style="grid-column:span 2"><div class="l">问题描述</div><div class="v">${esc(d.issue)}</div></div>
+     <div><div class="l">归属店铺</div><div class="v">${esc(d.shop)}</div></div>
+     <div><div class="l">负责顾问</div><div class="v">${esc(d.advisor)}</div></div>
+     <div><div class="l">创建时间</div><div class="v mono">${esc(d.created)}</div></div>
+     <div><div class="l">最后更新</div><div class="v mono">${esc(d.updated)}</div></div>
+    </div></div>
+   ${d.order?`<div class="card"><div class="hd"><h3>关联订单</h3></div>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:220px">订单号</th>
+     <th style="width:130px">状态</th><th style="width:140px">金额</th><th>下单时间</th></tr></thead><tbody>
+     <tr><td class="mono">${esc(d.order.id)}</td>
+      <td><span class="pill ${OPILL[d.order.status]||"p-mut"}">${esc(d.order.status)}</span></td>
+      <td class="mono">¥${money(d.order.amount)}</td>
+      <td class="mono">${esc(d.order.created)}</td></tr></tbody></table></div>`:""}
+   <div class="fbar"><button class="btn" data-back="maintains">返回</button>
+    <button class="btn sol" disabled title="按 PRD 7.1,维保状态由外部主系统维护,本平台不提供写操作">在维保系统中处理</button></div>`);
+  M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
+}
+
+const CATS=[["C0101","唐制"],["C0102","宋制"],["C0103","明制"],
+  ["C0201","发饰"],["C0202","腰饰"],["C0301","面料"],["C0302","绣片"]];
+const BKINDS=["普通图片","轮播图片","商品列表","热点图"];
+async function formProduct(cur,after){
+  const tp=await get("/api/measure-tpls?per=50");
+  const tpls=tp.rows.filter(x=>x.status==="启用").map(x=>x.code+" "+x.name);
+  modal(cur?`编辑商品 · ${cur.spu}`:"新建商品",[
+    {k:"name",label:"商品名称",req:1,val:cur&&cur.name,ph:"例如:缂丝云鹤 唐制半臂"},
+    {k:"base_price",label:"基础价(元)",req:1,val:cur&&cur.base_price,ph:"例如:4200"},
+    {k:"kind",type:"select",label:"商品类型",req:1,opts:["标品","定制品"],val:cur&&cur.kind},
+    {k:"category",type:"select",label:"所属品类",req:1,
+     opts:CATS.map(c=>c[0]+" "+c[1]),val:cur&&cur.category},
+    {k:"template",type:"select",label:"量体模版(定制品必填)",opts:[""].concat(tpls),val:cur&&cur.template},
+  ],v=>doOp("/api/product-save",{...v,spu:cur&&cur.spu,
+      category:(v.category||"").split(" ")[0],role:ROLE},after),true);
+}
+async function formBlock(page,blk,after){
+  modal(blk?`编辑区块 · ${blk.kind}`:"新增页面内容",
+   blk?[{k:"title",label:"区块标题",req:1,val:blk.title},
+        {k:"cfg",type:"text",label:"配置说明",val:blk.cfg,ph:"例如:4 张 / 自动播放 3s"}]
+      :[{k:"kind",type:"select",label:"内容类型",req:1,opts:BKINDS},
+        {k:"title",label:"区块标题",req:1,ph:"例如:秋季专题入口"},
+        {k:"cfg",type:"text",label:"配置说明",ph:"例如:1 张 / 750×420"}],
+   v=>doOp("/api/block-save",{act:blk?"edit":"add",page,id:blk&&blk.id,...v},after),true);
+}
+async function formTemplate(after){
+  const it=await get("/api/measure-items");
+  const on=it.rows.filter(x=>x.status==="启用");
+  modal("新增量体模版",[
+    {k:"name",label:"模版名称",req:1,ph:"例如:半臂模版"},
+    {k:"descr",label:"描述",ph:"例如:唐制半臂,采集上身"},
+    {k:"items",type:"text",label:`测量项编码(逗号分隔)· 可用:${on.map(x=>x.code+"="+x.name).join(" ")}`,
+     req:1,ph:"MI01,MI03,MI06"},
+  ],v=>doOp("/api/template-save",v,after),true);
+}
+function formSyscode(after){
+  modal("新增系统编码",[
+    {k:"category",type:"select",label:"分类",req:1,opts:["订单来源","配送方式","预约方式","退款失败码"]},
+    {k:"name",label:"名称",req:1,ph:"例如:抖音小店"},
+    {k:"val",label:"值",req:1,ph:"例如:douyin"},
+    {k:"note",type:"text",label:"说明",ph:"选填"},
+  ],v=>doOp("/api/syscode-save",{...v,role:ROLE},after),true);
+}
+function formContent(after){
+  modal("新建内容",[
+    {k:"title",label:"标题",req:1,ph:"例如:秋季新品预览"},
+    {k:"kind",type:"select",label:"内容类型",req:1,opts:["品牌故事","穿搭指南","工艺科普","活动预告"]},
+    {k:"channel",type:"select",label:"投放渠道",req:1,opts:["小程序首页","会员中心","门店Pad","公众号"]},
+  ],v=>doOp("/api/content-save",v,after),true);
+}
+
+Q.kb={};
+const SRCP={public:"p-ok",scale:"p-warn",demo:"p-mut"};
+const SRCT={public:"公开来源",scale:"公开量级",demo:"演示数据"};
+async function kbPage(){
+  const st=Q.kb, d=await get("/api/kb?"+qs(st)), mx=await get("/api/kb-matrix");
+  const VP={"可":"p-ok","不可":"p-bad","需评估":"p-warn","未定义":"p-mut"};
+  M.innerHTML=chrome([["首页","workbench"],"业务内容","工艺知识库"],`
+   <div class="card"><div class="bd" style="padding:16px 22px">
+     <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <div class="fi" style="flex:1;min-width:260px"><label>检索</label>
+        <input class="ctl" data-f="q" value="${esc(st.q||"")}"
+          placeholder="工艺 / 材质 / 形制名称、别名或关键词,例如:缂丝、通经断纬、马面" style="color:var(--ink)"></div>
+      <div class="fi"><label>类型</label><select class="ctl" data-f="cat" style="color:var(--ink)">
+        <option value="">全部</option>${d.cats.map(c=>`<option ${st.cat===c?"selected":""}>${esc(c)}</option>`).join("")}
+      </select></div>
+      <div class="fi"><label>来源等级</label><select class="ctl" data-f="src" style="color:var(--ink)">
+        <option value="">全部</option>${(d.srcs||[]).map(c=>`<option ${st.src===c?"selected":""}>${esc(c)}</option>`).join("")}
+      </select></div>
+      <button class="btn sol" data-search>检索</button><button class="btn" data-reset>重置</button>
+      <a class="btn" href="/chat" target="_blank" rel="noopener"
+         style="text-decoration:none;display:inline-flex;align-items:center">问工艺顾问助手 ↗</a></div>
+     <div class="note2" style="margin-top:12px;color:var(--ink3)">
+      翻不如问 —— 顾问一般不会翻 60 条卡片,直接问助手更快。助手只答知识库里查到的,查不到会说查不到。</div>
+     <div class="note2" style="margin-top:14px">
+      <b style="color:var(--ink)">来源分层</b> ——
+      <span class="pill p-ok">公开来源</span> 可溯源至权威页面,可对客户转述;
+      <span class="pill p-warn">公开量级</span> 公开资料给出的数量级,非本企业数据;
+      <span class="pill p-mut">演示数据</span> 企业 know-how,当前为演示内容,<b style="color:var(--ink)">不可对客户使用</b>。
+     </div></div></div>
+
+   <div class="card"><div class="hd"><h3>工艺 × 材质 组合约束</h3>
+     <span class="n">${mx.crafts.length} 工艺 × ${mx.mats.length} 材质,未定义 ${mx.undef} 处</span></div>
+    <table class="tb mx" style="margin-top:12px"><thead><tr><th class="rowh" style="width:120px">工艺 \ 材质</th>
+     ${mx.mats.map(m=>`<th style="text-align:center">${esc(m.name)}</th>`).join("")}</tr></thead><tbody>
+     ${mx.grid.map(r=>`<tr><th class="rowh">${esc(r.name)}</th>
+      ${r.cells.map(c=>`<td class="v-${c.verdict}" title="${esc(c.reason)}">${esc(c.verdict)}</td>`).join("")}
+      </tr>`).join("")}
+    </tbody></table>
+    <div class="note2" style="margin:0 22px 20px">${esc(mx.note)}<br>
+     悬停单元格可见判定理由。<b style="color:var(--ink)">配置方案时,组合可行性只认本表的返回值</b>,不接受模型自行判断。</div></div>
+
+   <div style="margin-top:4px">
+    ${d.rows.map(r=>`<div class="kbcard">
+      <div class="t1"><span class="nm2">${esc(r.name)}</span>
+        <span class="pill p-blue">${esc(r.cat)}</span>
+        <span class="pill ${SRCP[r.src_type]}">${SRCT[r.src_type]}</span>
+        ${r.alias?`<span class="al">别名:${esc(r.alias)}</span>`:""}</div>
+      <div class="br">${esc(r.brief)}</div>
+      <div class="dt">${esc(r.detail)}</div>
+      <div class="mt2">
+       <div><div class="l">适配建议</div><div class="v">${esc(r.fit)}</div></div>
+       <div><div class="l">周期</div><div class="v">${esc(r.lead_days)}</div></div>
+       <div><div class="l">成本档位</div><div class="v">${esc(r.cost_level)}</div></div></div>
+      ${r.combo&&r.combo.length?`<div style="font-size:12.5px;color:var(--ink3);margin-bottom:4px">组合约束</div>
+       <div class="cmb">${r.combo.map(c=>`<span class="pill ${VP[c.verdict]}" title="${esc(c.reason)}">${esc(c.mname)} · ${esc(c.verdict)}</span>`).join("")}</div>`:""}
+      <div class="src">
+       <span class="pill ${SRCP[r.src_type]}">${SRCT[r.src_type]}</span>
+       ${r.src_url?`<a href="${esc(r.src_url)}" target="_blank" rel="noreferrer">${esc(r.src_name)} ↗</a>`
+                  :`<span style="color:var(--ink3)">${esc(r.src_name)} —— 无公开来源,不可对客户转述</span>`}</div>
+     </div>`).join("")}
+    ${d.rows.length?"":'<div class="card"><div class="empty">没有匹配的知识条目</div></div>'}
+   </div>`);
+  M.querySelectorAll("[data-f]").forEach(e=>e.onchange=ev=>{st[e.dataset.f]=ev.target.value});
+  M.querySelectorAll("input[data-f]").forEach(e=>e.onkeydown=ev=>{
+    if(ev.key==="Enter"){st[e.dataset.f]=e.target.value; kbPage()}});
+  M.querySelectorAll("[data-search]").forEach(e=>e.onclick=kbPage);
+  M.querySelectorAll("[data-reset]").forEach(e=>e.onclick=()=>{Q.kb={}; kbPage()});
+}
+
+const BADCODE=["ACCOUNT_CLOSED","AMOUNT_EXCEED","NOT_APPROVED","INSUFFICIENT_BALANCE","DUPLICATE"];
+const STEPS=["未付","已付","退款审批中","退款处理中","已退"];
+function stepBar(dep,trace){
+  const status=dep.status, bad=status==="退款失败";
+  let cur=STEPS.indexOf(status); if(bad) cur=3;
+  const t0=(trace&&trace[0]||{}).ts||"", tl=(trace&&trace[trace.length-1]||{}).ts||"";
+  const view=[["发起","已付",dep.created],["审批","退款审批中",dep.created],
+              ["退款","退款处理中",t0],["完成","已退",status==="已退"?dep.updated:""]];
+  return `<div class="steps">${view.map(([t,st,ts],i)=>{
+    const idx=STEPS.indexOf(st), cls=idx<cur?"done":idx===cur?"cur":"";
+    const mark=idx<cur?'<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M3 7.2 5.8 10 11 4.4"/></svg>':(i+1);
+    return `<div class="step ${cls}"><span class="c">${mark}</span>
+      <span class="t">${t}</span><span class="d mono">${idx<=cur?esc(ts||""):""}</span></div>`}).join("")}</div>`;
+}
+async function task(tid){
+  const d=await get("/api/task/"+tid);
+  if(d.error){M.innerHTML=chrome(["首页","任务"],`<div class="err">${esc(d.error)}</div>`);return}
+  const fin=d.kind==="refund";
+  M.innerHTML=chrome([["首页","workbench"],fin?["消费与售后","finance"]:["客户管理","customers"],
+     fin?["押金退款异常","finance"]:["客户合并确认","merge"],fin?"退款详情":"合并详情"],
+   fin?refundPage(d,tid):mergePage(d,tid));
+  bindOps(tid);
+}
+function bindOps(tid){
+  M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
+  M.querySelectorAll("[data-mg]").forEach(e=>e.onclick=()=>{
+    const to=e.dataset.mg;
+    const L={"待总部审批":["提交合并申请","判定依据(将写入审批记录)"],
+             "已合并":["总部运营审批","审批意见"],"已驳回":["驳回合并","驳回原因"],
+             "已核验":["标记为非同一人","核验依据"],"待核验":["退回重新核验","退回说明"]}[to];
+    modal(L[0],[{k:"note",type:"text",label:L[1],req:1,ph:"例如:生日与地址一致,判为同一人"}],
+      v=>doOp("/api/merge",{id:tid,to,note:v.note,role:ROLE},()=>view("task",tid)))});
+  M.querySelectorAll("[data-retry]").forEach(e=>e.onclick=()=>
+    doTransit("bk-deposit",e.dataset.retry,"退款处理中",{idem_key:e.dataset.idem},()=>view("task",tid)));
+  M.querySelectorAll("[data-fin]").forEach(e=>e.onclick=()=>
+    modal("转财务人工处理",[{k:"note",type:"text",label:"处理说明",ph:"写明为何转人工、建议的补偿方式"}],
+      v=>doOp("/api/task-close",{id:tid,result:"已转财务",note:v.note},()=>view("finance"))));
+  M.querySelectorAll("[data-merge]").forEach(e=>e.onclick=()=>{
+    const [a,b]=e.dataset.merge.split("|");
+    modal("合并客户档案",[{k:"note",type:"text",label:"合并原因",ph:"冲突字段的取值依据"}],
+      v=>doOp("/api/merge",{a,b,decision:"merge",note:v.note},
+        ()=>doOp("/api/task-close",{id:tid,result:"已合并",note:v.note},()=>view("merge"))))});
+  M.querySelectorAll("[data-note]").forEach(e=>e.onclick=()=>
+    modal("添加备注",[{k:"note",type:"text",label:"备注内容",req:1,ph:"写明处理进展或与渠道沟通结果"}],
+      v=>doOp("/api/task-note",{id:e.dataset.note,note:v.note},()=>view("task",tid))));
+  M.querySelectorAll("[data-notsame]").forEach(e=>e.onclick=()=>{
+    const [a,b]=e.dataset.notsame.split("|");
+    modal("标记为非同一人",[{k:"note",type:"text",label:"核验依据",ph:"例如:生日与地址均不同"}],
+      v=>doOp("/api/merge",{a,b,decision:"not_same",note:v.note},
+        ()=>doOp("/api/task-close",{id:tid,result:"已核验",note:v.note},()=>view("merge"))))});
+}
+function refundPage(d,tid){const p=d.deposit, bad=p.status==="退款失败";
+ return `<div class="dh"><span class="no">押金单号: ${esc(p.id)}</span>
+   <span class="pill ${bad?"p-bad":"p-warn"}">${esc(p.status)}</span></div>
+  <div class="card">${stepBar(p,d.trace)}</div>
+  <div class="card"><div class="hd"><h3>基本信息:</h3></div>
+   <div class="info">
+    <div><div class="l">客户</div><div class="v">${esc(d.customer.name||"")} <span class="mono" style="color:var(--ink3)">${esc(p.customer_id)}</span></div></div>
+    <div><div class="l">押金金额</div><div class="v mono">¥${money(p.amount)}</div></div>
+    <div><div class="l">关联预约</div><div class="v mono">${esc(p.appt_id)}</div></div>
+    <div><div class="l">幂等号</div><div class="v mono">${esc(p.idem_key)}</div></div>
+    <div><div class="l">创建时间</div><div class="v mono">${esc(p.created)}</div></div>
+    <div><div class="l">最后更新</div><div class="v mono">${esc(p.updated)}</div></div>
+    <div><div class="l">重试次数</div><div class="v">${d.trace.length} / 3</div></div>
+    <div><div class="l">退款方式</div><div class="v">微信支付</div></div>
+   </div></div>
+  <div class="card"><div class="hd"><h3>备注</h3>
+   <span class="more" data-note="${esc(tid)}">添加备注</span></div>
+   <div class="bd" style="padding:14px 24px 20px">
+    ${d.task&&d.task.summary
+      ? `<div style="background:#FDF3F4;border-radius:6px;padding:14px 16px;font-size:13px;color:var(--ink2)">${esc(d.task.summary)}</div>`
+      : `<div style="background:#FDF3F4;border-radius:6px;padding:16px;font-size:13px;color:var(--ink4);text-align:center">暂无备注</div>`}
+   </div></div>
+  <div class="card"><div class="hd"><h3>上传凭证</h3>
+   <span class="n">支持 JPG/PNG/PDF/DOC/XLS,单文件 ≤20MB,最多 9 个</span></div>
+   <div class="bd" style="padding:14px 24px 20px">
+    <div style="display:flex;gap:12px">
+     ${[0,1,2,3].map(()=>`<div style="width:96px;height:96px;border:1px dashed #D9DCE1;border-radius:6px;
+        display:grid;place-items:center;color:var(--ink4);font-size:12px">+ 上传</div>`).join("")}
+    </div>
+    <div class="note" style="margin-top:10px">本期仅实现校验规则,上传通道未开放</div></div></div>
+  <div class="card"><div class="hd"><h3>支付流水</h3><span class="n">${d.flow.length} 条</span></div>
+   <table class="tb" style="margin-top:12px"><thead><tr><th style="width:90px">方向</th>
+   <th style="width:140px">金额</th><th>渠道流水号</th><th style="width:110px">状态</th>
+   <th style="width:170px">时间</th></tr></thead><tbody>
+   ${d.flow.map(f=>`<tr><td>${f.direction==="in"?"收款":"退款"}</td><td class="mono">¥${money(f.amount)}</td>
+    <td class="mono">${esc(f.channel_serial)}</td>
+    <td><span class="pill ${f.status==="success"?"p-ok":"p-bad"}">${esc(f.status)}</span></td>
+    <td class="mono" style="color:var(--ink3)">${esc(f.ts)}</td></tr>`).join("")}</tbody></table></div>
+  <div class="card"><div class="hd"><h3>退款日志</h3><span class="n">${d.trace.length} 次尝试 · 上限 3 次</span></div>
+   <div class="tl" style="padding-top:16px">
+    <div class="it"><span class="ic"></span><div><div class="tt">退款申请已提交 操作人:客服</div>
+      <div class="dd mono">${esc(p.created)}</div></div></div>
+    <div class="it"><span class="ic"></span><div><div class="tt">退款单审核通过 操作人:店长${p.amount>=1000?"、财务复核":""}</div>
+      <div class="dd mono">${esc(p.created)}</div></div></div>
+    ${d.trace.map(t=>`<div class="it bad"><span class="ic">
+      <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--bad)" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 2.5 7.5 7.5M7.5 2.5 2.5 7.5"/></svg></span>
+      <div><div class="tt">第 ${t.attempt} 次退款失败 · <span class="mono">${esc(t.resp_code)}</span> ${esc(t.resp_msg)}
+        <span style="color:var(--ink3)">· 请求金额 ¥${money(t.req_amount)} · 幂等号 ${esc(t.idem_key)}</span></div>
+       <div class="dd mono">${esc(t.ts)}</div></div></div>`).join("")}
+    <div class="it"><span class="ic"></span><div><div class="tt">已达重试上限,转财务人工任务 操作人:系统</div>
+      <div class="dd mono">${esc(p.updated)} 14:35</div></div></div>
+   </div></div>
+  <div class="fbar"><button class="btn gray" data-back="finance">返回</button>
+   <button class="btn sol" data-retry="${esc(p.id)}" data-idem="${esc(p.idem_key)}">重新退款</button>
+   <button class="btn sol" data-fin="${esc(tid)}">转财务处理</button></div>`}
+function mergePage(d,tid){const diff=d.compare.filter(c=>!c.same).length;
+ const MP={"待核验":"p-warn","待总部审批":"p-blue","已合并":"p-ok","已核验":"p-mut","已驳回":"p-bad"};
+ const st=d.merge_status||"待核验";
+ const flow=["待核验","待总部审批","已合并"];
+ const cur=flow.indexOf(st);
+ const btns = st==="待核验"
+   ? `<button class="btn sol" data-mg="待总部审批">提交合并(店长)</button>
+      <button class="btn" data-mg="已核验">标记为非同一人</button>`
+   : st==="待总部审批"
+   ? `<button class="btn sol" data-mg="已合并">审批通过并合并(总部运营)</button>
+      <button class="btn" data-mg="已驳回">驳回</button>`
+   : st==="已驳回"
+   ? `<button class="btn sol" data-mg="待核验">退回重新核验</button>` : "";
+ return `<div class="dh"><span class="no">客户合并确认: ${esc(d.a.id)} / ${esc(d.b.id)}</span>
+   <span class="pill ${MP[st]||"p-mut"}">${esc(st)}</span></div>
+  <div class="card"><div class="steps">${
+   [["核验","待核验"],["总部审批","待总部审批"],["完成","已合并"]].map(([t,x],i)=>{
+    const cls=i<cur?"done":i===cur?"cur":"";
+    const mk=i<cur?'<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M3 7.2 5.8 10 11 4.4"/></svg>':(i+1);
+    return `<div class="step ${cls}"><span class="c">${mk}</span><span class="t">${t}</span>
+      <span class="d">${i===0?"店长":i===1?"总部运营":""}</span></div>`}).join("")}</div></div>
+  <div class="card"><div class="hd"><h3>逐字段比对</h3>
+   <span class="n">${diff} 项不一致 / 共 ${d.compare.length} 项 —— 合并时冲突字段取最近一次经确认的数据</span></div>
+   <table class="tb diff" style="margin-top:12px"><thead><tr><th style="width:150px">字段</th>
+    <th>${esc(d.a.id)}</th><th>${esc(d.b.id)}</th><th style="width:90px">一致</th></tr></thead><tbody>
+    ${d.compare.map(c=>`<tr><td style="color:var(--ink3)">${esc(c.label)}</td>
+     <td class="${c.same?"s":"d"}">${esc(c.a)}</td><td class="${c.same?"s":"d"}">${esc(c.b)}</td>
+     <td>${c.same?'<span class="pill p-ok">一致</span>':'<span class="pill p-bad">不一致</span>'}</td></tr>`).join("")}
+   </tbody></table></div>
+  <div class="card"><div class="hd"><h3>合并规则</h3><span class="n">后台 PRD 6.2</span></div>
+   <div class="bd" style="padding:14px 24px 20px">
+    <ul class="ev" style="padding-left:20px">
+     <li>由店长发起、总部运营审批</li>
+     <li>保留最早客户编号,被合并档案转为归档状态</li>
+     <li>合并标签、量体、跟进、预约和购买记录</li>
+     <li>订单、积分和支付<b>只建立关联且不重复累计</b></li>
+     <li>冲突字段采用最近一次经确认的数据,保留完整日志</li>
+    </ul></div></div>
+  ${d.task&&d.task.summary?`<div class="card"><div class="hd"><h3>处理记录</h3></div>
+    <div class="bd" style="padding:14px 24px 20px;font-size:13px;color:var(--ink2)">${esc(d.task.summary)}</div></div>`:""}
+  <div class="fbar"><button class="btn" data-back="merge">返回</button>${btns}</div>`}
+
+
+
+function draftBox(tid,dr){
+  if(!dr) return `<div class="card"><div class="hd"><h3>Agent 草稿</h3>
+    <span class="n">草稿仅供参考,采纳后仍由人触发原有写入流程,走既有幂等与审批</span></div>
+    <div class="bd"><button class="btn sol" onclick="genDraft('${tid}')">生成草稿</button></div></div>`;
+  const f=dr.finding||{};
+  return `<div class="card"><div class="hd"><h3>Agent 草稿</h3>
+   <span class="pill ${dr.status==="已丢弃"?"p-mut":dr.status==="待采纳"?"p-warn":"p-ok"}">${esc(dr.status)}</span>
+   <span class="n">置信度 ${esc(f.confidence||"—")} · ${dr.calls} 次调用 · ${dr.seconds}s · $${(dr.cost_local||0).toFixed(4)}</span></div>
+   <div class="bd"><dl class="kvl" style="margin-bottom:16px">
+    <dt>根因</dt><dd>${esc(f.root_cause)}</dd>
+    <dt>建议动作</dt><dd>${esc(f.recommended_action)}</dd>
+    <dt>证据</dt><dd><ul class="ev">${(f.evidence||[]).map(e=>`<li>${esc(e)}</li>`).join("")}</ul></dd></dl>
+   <button class="btn sol" onclick="mark('${tid}','已采纳')">采纳</button>
+   <button class="btn" onclick="mark('${tid}','已修改后采纳')" style="margin-left:9px">修改后采纳</button>
+   <button class="btn gray" onclick="mark('${tid}','已丢弃')" style="margin-left:9px">丢弃</button>
+   <div class="note">工具轨迹:<span class="mono">${(dr.trajectory||[]).join(" → ")}</span></div></div></div>`;
+}
+
+async function genDraft(tid){const b=event.target;b.disabled=true;b.textContent="生成中…";
+  const r=await post("/api/draft/"+tid);
+  if(r.error){b.disabled=false;b.textContent="重试";
+    b.insertAdjacentHTML("afterend",`<div class="err">生成失败:${esc(r.error)}</div>`);return}
+  view("task",tid)}
+async function mark(tid,s){await post("/api/draft-status/"+tid,{status:s});view("task",tid)}
+window.view=view;window.genDraft=genDraft;window.mark=mark;
+if(location.search.indexOf("probe")>=0){
+  setTimeout(async()=>{
+    await view("customers"); await view("cust","C10000");
+    await view("finance");   await view("task","TD2000");
+    await view("appts");
+    document.title="TABS="+TABS.map(t=>t.t).join("|");
+  },300);
+}
+
+setRole(ROLE);
+document.getElementById("roleSw").onclick=()=>{
+  setRole(ROLES[(ROLES.indexOf(ROLE)+1)%ROLES.length]);
+  res(true,"ROLE","当前角色已切换为「"+ROLE+"」");
+  const h=(location.hash||"").slice(1).split("/"); view(h[0]||"workbench",h[1]);
+};
+renderNav();
+{const h=(location.hash||"").slice(1).split("/");
+ if(h[0]&&h[0]!=="workbench") view(h[0],h[1]); else view("workbench");}
+</script></body></html>

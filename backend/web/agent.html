@@ -1,0 +1,273 @@
+<title>智能体工作台</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#EFEFF2; --paper:#FFFFFF; --paper-2:#F6F6F9; --line:#DCDCE4; --line-2:#E9E9F0;
+  --ink:#15171C; --ink-2:#4E525E; --ink-3:#82879A;
+  --dye:#2B3F7A; --dye-soft:#E4E8F4;
+  --pass:#1C6448; --pass-soft:#E1EFE9; --fail:#9C3222; --fail-soft:#F7E5E1;
+  --warn:#7E5714; --warn-soft:#F6EDDA;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0E1015; --paper:#161922; --paper-2:#1D212C; --line:#2A2F3D; --line-2:#232733;
+  --ink:#E7E9EF; --ink-2:#A7ADBE; --ink-3:#767D92;
+  --dye:#93A9E4; --dye-soft:#1A2140;
+  --pass:#63C79E; --pass-soft:#122619; --fail:#EC9481; --fail-soft:#2C1512;
+  --warn:#DFB25C; --warn-soft:#281E0F;
+}}
+:root[data-theme="dark"]{
+  --ground:#0E1015; --paper:#161922; --paper-2:#1D212C; --line:#2A2F3D; --line-2:#232733;
+  --ink:#E7E9EF; --ink-2:#A7ADBE; --ink-3:#767D92;
+  --dye:#93A9E4; --dye-soft:#1A2140;
+  --pass:#63C79E; --pass-soft:#122619; --fail:#EC9481; --fail-soft:#2C1512;
+  --warn:#DFB25C; --warn-soft:#281E0F;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;
+  line-height:1.65;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 28px 96px}
+h1,h2,h3{text-wrap:balance;margin:0}
+.lab{font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+header.top{padding:52px 0 30px;border-bottom:1px solid var(--line)}
+.eyebrow{display:flex;gap:10px;align-items:center;margin-bottom:15px}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--dye)}
+h1{font-size:clamp(27px,4.2vw,40px);font-weight:600;letter-spacing:-.022em;line-height:1.16}
+.deck{margin-top:13px;max-width:62ch;color:var(--ink-2);font-size:16px}
+.deck b{color:var(--ink);font-weight:600}
+section{padding-top:46px}
+h2{font-size:19px;font-weight:600;letter-spacing:-.012em}
+.sub{color:var(--ink-2);margin:8px 0 20px;max-width:66ch;font-size:14.5px}
+
+.score{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;
+  background:var(--line);border:1px solid var(--line);margin-top:30px;border-radius:3px;overflow:hidden}
+.sc{background:var(--paper);padding:16px 18px}
+.sc b{display:block;font-family:var(--mono);font-size:27px;font-weight:600;letter-spacing:-.03em;
+  line-height:1.15;font-variant-numeric:tabular-nums}
+.sc span{display:block;margin-top:3px;font-size:12.5px;color:var(--ink-3)}
+.sc.p b{color:var(--pass)}
+
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:3px;padding:20px}
+.pick{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:16px}
+select,button{font-family:var(--sans);font-size:14px}
+select{padding:7px 10px;border:1px solid var(--line);border-radius:2px;background:var(--paper);
+  color:var(--ink);font-family:var(--mono);font-size:13px;max-width:100%}
+.go{padding:8px 18px;border:1px solid var(--dye);background:var(--dye);color:#fff;border-radius:2px;
+  cursor:pointer;font-weight:600;transition:opacity .12s}
+.go:hover{opacity:.86}
+.go[disabled]{opacity:.5;cursor:progress}
+:root[data-theme="dark"] .go,:root:not([data-theme="light"]) .go{color:#0E1015}
+@media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .go{color:#fff}}
+button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--dye);outline-offset:2px}
+
+.prompt{font-family:var(--mono);font-size:12.5px;background:var(--paper-2);border:1px solid var(--line-2);
+  border-radius:2px;padding:12px 14px;white-space:pre-wrap;color:var(--ink-2);line-height:1.6}
+.stage{margin-top:18px}
+.traj{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0}
+.tool{font-family:var(--mono);font-size:11.5px;padding:4px 9px;border-radius:2px;
+  background:var(--dye-soft);color:var(--dye);white-space:nowrap}
+.tool.sub{background:var(--pass-soft);color:var(--pass);font-weight:600}
+.arw{color:var(--ink-3);font-size:11px}
+.meta{display:flex;flex-wrap:wrap;gap:16px;font-family:var(--mono);font-size:12px;color:var(--ink-3);
+  font-variant-numeric:tabular-nums;margin-top:4px}
+.meta b{color:var(--ink);font-weight:600}
+
+.out{margin-top:16px;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.out-h{background:var(--paper-2);padding:9px 14px;border-bottom:1px solid var(--line);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:7px 14px;padding:14px;font-size:13.5px}
+.kv dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ink-3);padding-top:3px}
+.kv dd{margin:0;color:var(--ink-2);line-height:1.62}
+.kv dd b{color:var(--ink);font-weight:600}
+.kv ul{margin:0;padding-left:17px} .kv li{margin:2px 0}
+.verdict{padding:12px 14px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:baseline;
+  flex-wrap:wrap;font-size:13.5px}
+.verdict.y{background:var(--pass-soft)} .verdict.n{background:var(--fail-soft)}
+.vmark{font-family:var(--mono);font-weight:600;font-size:15px}
+.verdict.y .vmark{color:var(--pass)} .verdict.n .vmark{color:var(--fail)}
+.hold{color:var(--ink-3);font-size:13.5px;padding:26px 0;text-align:center}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--dye);
+  border-radius:50%;animation:sp .7s linear infinite;vertical-align:-1px;margin-right:7px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.note{margin-top:14px;font-size:12.5px;color:var(--ink-3);border-left:2px solid var(--line);padding-left:11px}
+.note b{color:var(--ink-2)}
+.tools-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.err{background:var(--warn-soft);color:var(--warn);padding:11px 14px;border-radius:2px;
+  font-size:13px;font-family:var(--mono)}
+table{border-collapse:collapse;width:100%;min-width:520px}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:3px;background:var(--paper)}
+th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--line-2);font-size:13px}
+tbody tr:last-child td{border-bottom:none}
+thead th{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:500;background:var(--paper-2)}
+td.m{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;
+  color:var(--ink-3);display:flex;flex-wrap:wrap;gap:8px 22px}
+footer code{font-family:var(--mono);font-size:11.5px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">异常场景与验收助手 · V1 纯 API 循环</span></div>
+  <h1>让智能体现场做一道题</h1>
+  <p class="deck">后台每天堆着两类人做的活:<b>退款失败转人工</b>和<b>疑似重复客户待合并</b>。
+  这两类都不能提前把步骤写死 —— 查完押金才知道要不要查流水,看完流水才知道要不要查客户。
+  下面这个智能体拿到题目后自己决定查什么、查几次,最后交一份草稿。</p>
+  <div class="score" id="score"></div>
+</header>
+
+<section>
+  <h2>现场跑一道</h2>
+  <p class="sub">选一道待处理的任务,点「跑一遍」。这不是回放 —— 每次都真的调模型、真的查库,大约 15 秒。</p>
+  <div class="panel">
+    <div class="pick">
+      <select id="task"><option>加载中…</option></select>
+      <button class="go" id="run">跑一遍</button>
+    </div>
+    <div class="lab" style="margin-bottom:7px">发给模型的题面</div>
+    <div class="prompt" id="prompt">选一道任务</div>
+    <div class="lab" style="margin-top:16px;margin-bottom:5px">它能用的工具(全部只读,没有写权限)</div>
+    <div class="tools-list">
+      <span class="tool">list_tasks</span><span class="tool">get_deposit</span>
+      <span class="tool">get_refund_trace</span><span class="tool">get_payment_flow</span>
+      <span class="tool">get_customer</span><span class="tool sub">submit_finding</span>
+    </div>
+    <div class="stage" id="stage"><p class="hold">还没跑。</p></div>
+  </div>
+  <p class="note"><b>答案是跑完之后才附上的。</b>标注真因存在 <code>truth</code> 表里,
+  这张表不在上面任何一个工具的返回值中,也不在题面里 —— 模型从头到尾看不到它。
+  服务端拿到草稿之后才去读表判分。<code>backend/selftest.py</code> 每次都会重新验证这条隔离。</p>
+</section>
+
+<section>
+  <h2>评测集成绩</h2>
+  <p class="sub" id="evalsub">加载中…</p>
+  <div class="tblwrap"><table>
+    <thead><tr><th>题号</th><th>断点</th><th>标注真因</th><th>结果</th><th class="m">调用</th><th class="m">耗时</th><th class="m">成本</th></tr></thead>
+    <tbody id="evalrows"></tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>负向题:不该做的事,它有没有不做</h2>
+  <p class="sub" id="negsub">加载中…</p>
+  <div class="tblwrap"><table>
+    <thead><tr><th>题号</th><th>陷阱</th><th>正确行为</th><th>结果</th><th class="m">置信度</th></tr></thead>
+    <tbody id="negrows"></tbody>
+  </table></div>
+  <p class="note"><b>正向题问「根因是什么」,负向题问「你会不会硬编、会不会越权、会不会认领假证据」。</b>
+  双向测试原则是正向 70% + 负向 30% —— 只有正向题,等于考试只考课本原题。</p>
+</section>
+
+<footer>
+  <span>循环 <code>agent/v1.py</code></span>
+  <span>判分 <code>agent/eval.py</code></span>
+  <span>工具 <code>backend/api.py</code></span>
+  <span>隔离验证 <code>backend/selftest.py</code></span>
+</footer>
+</div>
+<script>
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const $ = id => document.getElementById(id);
+let TASKS = [];
+
+async function boot(){
+  try{
+    const j = await (await fetch("/api/agent-tasks")).json();
+    TASKS = j.rows;
+    $("task").innerHTML = TASKS.map(t =>
+      `<option value="${t.id}">${t.bp} · ${t.type} · ${esc(t.ref)}</option>`).join("");
+    showPrompt();
+  }catch(e){ $("task").innerHTML = `<option>连不上后台</option>`; }
+  loadEval();
+}
+function showPrompt(){
+  const t = TASKS.find(x => x.id === $("task").value);
+  if(!t) return;
+  $("prompt").textContent = t.bp === "BP-01"
+    ? `任务类型:财务人工任务\n押金单号:${t.ref}\n\n这笔押金退款已连续失败并转入人工处理。请查清失败的根本原因,给出建议的处理动作,并列出支撑结论的证据。`
+    : `任务类型:客户合并确认\n两条疑似重复的客户档案:${t.ref.split("|").join(" 和 ")}\n\n请判断是否为同一客户,给出合并或不合并的建议,并逐项列出比对依据。`;
+}
+$("task").addEventListener("change", showPrompt);
+
+$("run").addEventListener("click", async () => {
+  const btn = $("run"), st = $("stage");
+  btn.disabled = true; btn.textContent = "跑批中…";
+  st.innerHTML = `<p class="hold"><span class="spin"></span>模型正在自己决定查什么 —— 通常 3 轮、10 秒上下</p>`;
+  try{
+    const r = await (await fetch(`/api/agent-run?task=${encodeURIComponent($("task").value)}`)).json();
+    if(r.error){ st.innerHTML = `<div class="err">${esc(r.error)}</div>`; return; }
+    const f = r.finding, tr = r.truth || {};
+    const chain = (r.trajectory||[]).map(n =>
+      `<span class="tool ${n==="submit_finding"?"sub":""}">${esc(n)}</span>`).join(`<span class="arw">→</span>`);
+    st.innerHTML = `
+      <div class="lab" style="margin-bottom:4px">执行轨迹 —— 查什么、查几次,都是它自己定的</div>
+      <div class="traj">${chain}</div>
+      <div class="meta"><span>模型 <b>${esc(r.model)}</b></span>
+        <span>模型调用 <b>${r.calls}</b> 次</span><span>工具调用 <b>${(r.trajectory||[]).length}</b> 次</span>
+        <span>耗时 <b>${r.seconds}s</b></span><span>成本 <b>$${(r.cost_local||0).toFixed(4)}</b></span>
+        <span>token <b>${r.input}</b> 进 / <b>${r.output}</b> 出</span></div>
+      ${f ? `<div class="out">
+        <div class="out-h">它交的草稿</div>
+        <dl class="kv">
+          <dt>根因</dt><dd><b>${esc(f.root_cause)}</b></dd>
+          <dt>建议动作</dt><dd>${esc(f.recommended_action)}</dd>
+          <dt>证据</dt><dd><ul>${(f.evidence||[]).map(e=>`<li>${esc(e)}</li>`).join("")}</ul></dd>
+          <dt>置信度</dt><dd>${esc(f.confidence)}</dd>
+        </dl>
+        <div class="verdict ${r.passed?"y":"n"}">
+          <span class="vmark">${r.passed?"✓ 判对":"✕ 判错"}</span>
+          <span>标注真因:<b>${esc(tr.root_cause)}</b>${r.judge?" · "+esc(r.judge):""}</span>
+        </div>
+        <div class="verdict" style="background:var(--paper-2)">
+          <span class="lab">标注要求的动作</span><span>${esc(tr.expected_action)}</span>
+        </div>
+      </div>` : `<div class="err">模型没有提交草稿</div>`}`;
+  }catch(e){
+    st.innerHTML = `<div class="err">跑失败:${esc(e.message)} —— 后台起了吗?</div>`;
+  }finally{ btn.disabled = false; btn.textContent = "跑一遍"; }
+});
+
+async function loadEval(){
+  try{
+    const j = await (await fetch("/api/agent-eval")).json();
+    if(!j.rows.length){ $("evalsub").textContent = "还没跑过评测集。跑:python3 agent/eval.py 12 8"; return; }
+    const pct = (j.passed/j.total*100).toFixed(0);
+    $("evalsub").innerHTML = `模型 <b>${esc(j.model||"—")}</b> · 命中 <b>${j.passed}/${j.total} = ${pct}%</b> · 总成本 $${j.cost} · 判分规则见 <code>agent/eval.py</code>`;
+    $("evalrows").innerHTML = j.rows.map(r => `<tr>
+      <td class="m">${esc(r.case)}</td><td class="m">${esc(r.bp)}</td>
+      <td>${esc(r.truth)}</td>
+      <td><span class="vmark" style="color:var(--${r.passed?"pass":"fail"})">${r.passed?"✓":"✕"}</span>
+          <span style="color:var(--ink-3);font-size:12px"> ${esc(r.judge||"")}</span></td>
+      <td class="m">${r.calls??"—"}</td><td class="m">${r.seconds??"—"}s</td>
+      <td class="m">$${(r.cost_local||0).toFixed(4)}</td></tr>`).join("");
+    $("score").innerHTML = `
+      <div class="sc"><b>${j.total}</b><span>做过的题</span></div>
+      <div class="sc p"><b>${j.passed}</b><span>判对</span></div>
+      <div class="sc"><b>${pct}%</b><span>命中率</span></div>
+      <div class="sc"><b>$${j.cost}</b><span>总成本</span></div>`;
+  }catch(e){ $("evalsub").textContent = "连不上后台"; }
+}
+async function loadNeg(){
+  try{
+    const j = await (await fetch("/api/agent-negative")).json();
+    if(!j.rows.length){ $("negsub").textContent = "还没跑过负向题。跑:python3 agent/negative.py"; return; }
+    const proto = j.rows.filter(r => !r.passed && /协议没走/.test(r.judge||"")).length;
+    const real  = j.rows.length - j.passed - proto;
+    $("negsub").innerHTML = `命中 <b>${j.passed}/${j.total}</b> · 成本 $${j.cost} —— 没过的分两种:`
+      + `<b>${proto}</b> 条是<b>协议问题</b>(内容判断对了,但没调 submit_finding,产品侧拿不到结构化结果),`
+      + `<b>${real}</b> 条是<b>真的答错</b>。`;
+    $("negrows").innerHTML = j.rows.map(r => `<tr>
+      <td class="m">${esc(r.id)} ${esc(r.name)}</td>
+      <td style="color:var(--ink-3);font-size:12.5px">${esc(r.trap)}</td>
+      <td style="font-size:12.5px">${esc(r.want)}</td>
+      <td><span class="vmark" style="color:var(--${r.passed?"pass":"fail"})">${r.passed?"✓":"✕"}</span>
+          <span style="color:var(--ink-3);font-size:12px"> ${esc(r.judge||"")}</span></td>
+      <td class="m">${esc((r.finding||{}).confidence || "—")}</td></tr>`).join("");
+  }catch(e){ $("negsub").textContent = "连不上后台"; }
+}
+boot(); loadNeg();
+</script>
