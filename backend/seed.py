@@ -87,6 +87,9 @@ CREATE TABLE craft(code TEXT PRIMARY KEY, name TEXT, cat TEXT, alias TEXT,
   src_type TEXT, src_url TEXT, src_name TEXT);
 CREATE TABLE craft_combo(craft TEXT, material TEXT, verdict TEXT, reason TEXT, src_type TEXT);
 CREATE TABLE kb_table(topic TEXT, head TEXT, rows TEXT, src_file TEXT);
+CREATE TABLE scheme(id TEXT PRIMARY KEY, customer_id TEXT, name TEXT, status TEXT,
+  xz TEXT, mt TEXT, kf TEXT, color TEXT, ps TEXT,
+  advisor TEXT, note TEXT, created TEXT, updated TEXT);
 CREATE TABLE truth(case_id TEXT PRIMARY KEY, breakpoint TEXT, root_cause TEXT,
   expected_action TEXT, expected_evidence TEXT, note TEXT);
 """
@@ -642,6 +645,17 @@ def run():
         c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key)"
                   " VALUES(?,?,?,?,?,?,?,?)",
                   ("D9002", _a, _t, "微信支付", 1500.0, "UNKNOWN", "渠道未返回明确结果", "IDEM-D9002"))
+
+    # 定制方案:fe-scheme 状态机终于有承载物了(此前 PRD 定义了 4 状态 5 边,却没有任何页面)
+    _cid2 = c.execute("SELECT id FROM customer LIMIT 1").fetchone()[0]
+    for sid, nm, st, xz, mt, kf, col, ps in [
+        ("SC2601","林女士婚服方案","已锁定","明制立领长衫","云锦","妆花,苏绣","胭脂","云肩,腰封"),
+        ("SC2602","陈小姐日常款",  "已保存","宋制褙子",    "绫",  "平绣",     "竹青","发簪"),
+        ("SC2603","写真三件套",    "草稿",  "唐制齐胸襦裙","真丝素罗","苏绣",  "月白","披帛"),
+        ("SC2604","去年未成单",    "已失效","明制马面裙",  "织金缎","织金",    "玄色",""),
+    ]:
+        c.execute("INSERT INTO scheme VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (sid,_cid2,nm,st,xz,mt,kf,col,ps,"A01 林岚",None,ago(20),ago(3)))
 
     c.executemany("INSERT INTO truth VALUES(?,?,?,?,?,?)", truths)
     c.commit()

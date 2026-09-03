@@ -1,0 +1,11 @@
+{
+  "intro_seen": true,
+  "proactive": true,
+  "version": "0.2.0",
+  "profile": {
+    "coding": "完全不读代码",
+    "agent_exp": "只用过 ChatGPT 类产品",
+    "purpose": "做来学习的"
+  },
+  "_note": "本项目独立于「帕鲁打工仔」,画像沿用但各自维护;agent_exp 于 2026-09-03 经学员确认维持原样"
+}

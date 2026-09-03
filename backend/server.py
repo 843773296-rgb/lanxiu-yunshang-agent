@@ -9,6 +9,18 @@ import fsm, rules
 
 HERE=os.path.dirname(os.path.abspath(__file__))
 
+def scheme_list():
+    """已有方案清单。写成模块级函数而不是在路由里直接查 ——
+    do_GET 内部有个局部变量也叫 rows,会把模块级的 rows() 函数整段遮蔽掉。"""
+    return dict(rows=rows("SELECT * FROM scheme ORDER BY updated DESC"))
+
+def scheme_status(sid):
+    r=rows("SELECT status FROM scheme WHERE id=?",sid)
+    return r[0]["status"] if r else None
+
+def _now():
+    import time as _t; return _t.strftime("%Y-%m-%d %H:%M")
+
 def _agent():
     sys.path.insert(0, os.path.join(HERE,"..","agent")); import v1; return v1
 def _eval():
@@ -164,6 +176,10 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
         r=rows("SELECT * FROM appointment WHERE id=?",target)
         if not r: return {"error":"预约不存在"}
         cur=r[0]["status"]
+    elif mid=="fe-scheme":
+        r=rows("SELECT * FROM scheme WHERE id=?",target)
+        if not r: return {"error":"定制方案不存在"}
+        cur=r[0]["status"]
     else:
         return {"error":f"暂不支持 {mid}"}
 
@@ -172,7 +188,8 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
     if not ok: return dict(ok=False,code=code,reason=why,frm=cur,to=to)
 
     tbl={"bk-deposit":"deposit","bk-appt":"appointment","bk-shop":"shop","bk-task":"schedule",
-         "bk-product":"product","bk-activity":"activity","bk-page":"page","bk-download":"download_task"}[mid]
+         "bk-product":"product","bk-activity":"activity","bk-page":"page","bk-download":"download_task",
+         "fe-scheme":"scheme"}[mid]
     key={"bk-shop":"code","bk-product":"spu","bk-activity":"code","bk-page":"code"}.get(mid,"id")
     with sqlite3.connect(DB) as c:
         c.execute(f"UPDATE {tbl} SET status=? WHERE {key}=?",(to,target))
@@ -1078,6 +1095,10 @@ class H(BaseHTTPRequestHandler):
             b=open(os.path.join(HERE,"web","acceptance.html"),"rb").read()
             self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
             self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
+        if p=="/scheme":
+            b=open(os.path.join(HERE,"web","scheme.html"),"rb").read()
+            self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
+            self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
         if p=="/chat":
             b=open(os.path.join(HERE,"web","chat.html"),"rb").read()
             self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
@@ -1146,10 +1167,15 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/agent-negative":
             f=os.path.join(HERE,"..","agent","negative-results.jsonl")
             if not os.path.exists(f): return self._send(dict(rows=[]))
-            rows=[json.loads(l) for l in open(f,encoding="utf-8")]
-            return self._send(dict(rows=rows, passed=sum(r.get("passed") for r in rows),
-                                   total=len(rows),
-                                   cost=round(sum(r.get("cost_local",0) for r in rows),4)))
+            _nr=[json.loads(l) for l in open(f,encoding="utf-8")]
+            return self._send(dict(rows=_nr, passed=sum(r.get("passed") for r in _nr),
+                                   total=len(_nr),
+                                   cost=round(sum(r.get("cost_local",0) for r in _nr),4)))
+        if p=="/api/scheme-options":
+            import scheme as _sch
+            return self._send(_sch.options())
+        if p=="/api/schemes":
+            return self._send(scheme_list())
         if p=="/api/chat-eval":
             f=os.path.join(HERE,"..","agent","chat-eval-results.jsonl")
             if not os.path.exists(f): return self._send(dict(rows=[]))
@@ -1164,11 +1190,13 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/agent-eval":
             f=os.path.join(HERE,"..","agent","eval-results.jsonl")
             if not os.path.exists(f): return self._send(dict(rows=[]))
-            rows=[json.loads(l) for l in open(f,encoding="utf-8")]
-            return self._send(dict(rows=rows, passed=sum(r.get("passed") for r in rows),
-                                   total=len(rows),
-                                   cost=round(sum(r.get("cost_local",0) for r in rows),4),
-                                   model=rows[0].get("model") if rows else None))
+            # 不要叫 rows —— 那会把整个 do_GET 里的模块级 rows() 函数遮蔽掉,
+            # 后加的任何路由一用 rows() 就 UnboundLocalError,而且表现为连接重置不是 500
+            _er=[json.loads(l) for l in open(f,encoding="utf-8")]
+            return self._send(dict(rows=_er, passed=sum(r.get("passed") for r in _er),
+                                   total=len(_er),
+                                   cost=round(sum(r.get("cost_local",0) for r in _er),4),
+                                   model=_er[0].get("model") if _er else None))
         if p.startswith("/api/export/"):
             kind=p.split("/api/export/")[1]
             data=export_csv(kind,Q).encode("utf-8-sig")
@@ -1225,6 +1253,48 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/transit":
             return self._send(transit(body.get("machine"),body.get("target"),
                                       body.get("to"),body.get("ctx") or {}))
+        if p=="/api/scheme-check":
+            # 只校验不落库,给页面做即时提示用。前端拿它染色,但它不是闸门。
+            import scheme as _sch
+            ok,iss=_sch.validate(xz=body.get("xz"),mt=body.get("mt"),
+                                 kf=body.get("kf") or [],ps=body.get("ps") or [],color=body.get("color"))
+            return self._send(dict(can_save=ok,issues=iss))
+        if p=="/api/scheme-save":
+            # 这里才是闸门。前端 disabled 只是体验 —— 绕过前端直接调这个接口,一样拦。
+            import scheme as _sch
+            ok,iss=_sch.validate(xz=body.get("xz"),mt=body.get("mt"),
+                                 kf=body.get("kf") or [],ps=body.get("ps") or [],color=body.get("color"))
+            if not ok:
+                blocked=[i for i in iss if i["level"]=="block"]
+                log_op("魏欣新","fe-scheme",body.get("id") or "新建","-","已保存",False,"INCOMPATIBLE",
+                       ";".join(f"{i.get('pair','')} {i['msg'][:40]}" for i in blocked)[:200],{})
+                return self._send(dict(ok=False,code="INCOMPATIBLE",
+                    reason="选中的组合里有「不可」项,不能保存",issues=iss),409)
+            sid=body.get("id") or f"SC{int(__import__('time').time())%100000:05d}"
+            cur=rows("SELECT status FROM scheme WHERE id=?",sid)
+            with sqlite3.connect(DB) as c:
+                if cur:
+                    if cur[0]["status"]!="草稿" and cur[0]["status"]!="已保存":
+                        return self._send(dict(ok=False,code="NOT_EDITABLE",
+                            reason=f"「{cur[0]['status']}」的方案不可再编辑"),409)
+                    c.execute("""UPDATE scheme SET name=?,xz=?,mt=?,kf=?,color=?,ps=?,status='已保存',updated=?
+                                 WHERE id=?""",
+                              (body.get("name"),body.get("xz"),body.get("mt"),
+                               ",".join(body.get("kf") or []),body.get("color"),
+                               ",".join(body.get("ps") or []),_now(),sid))
+                else:
+                    c.execute("INSERT INTO scheme VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                              (sid,body.get("customer_id"),body.get("name") or "未命名方案","已保存",
+                               body.get("xz"),body.get("mt"),",".join(body.get("kf") or []),
+                               body.get("color"),",".join(body.get("ps") or []),
+                               "A01 林岚",None,_now(),_now()))
+            log_op("魏欣新","fe-scheme",sid,(cur[0]["status"] if cur else "-"),"已保存",True,"OK",
+                   ";".join(f"{i.get('pair','')} {i['kind']}" for i in iss) or "无问题",{})
+            return self._send(dict(ok=True,id=sid,issues=iss))
+        if p=="/api/scheme-transit":
+            if scheme_status(body.get("id")) is None:
+                return self._send(dict(ok=False,reason="方案不存在"),404)
+            return self._send(transit("fe-scheme",body.get("id"),body.get("to"),body))
         if p=="/api/chat":
             sys.path.insert(0, os.path.join(HERE,"..","agent"))
             import chat as _chat
