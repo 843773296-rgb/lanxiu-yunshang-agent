@@ -101,7 +101,7 @@ CREATE TABLE stock_log(id INTEGER PRIMARY KEY AUTOINCREMENT, sku TEXT, spu TEXT,
 CREATE TABLE craft(code TEXT PRIMARY KEY, name TEXT, cat TEXT, alias TEXT,
   brief TEXT, detail TEXT, fit TEXT, lead_days TEXT, cost_level TEXT,
   src_type TEXT, src_url TEXT, src_name TEXT);
-CREATE TABLE craft_combo(craft TEXT, material TEXT, verdict TEXT, reason TEXT, src_type TEXT);
+CREATE TABLE craft_combo(craft TEXT, material TEXT, verdict TEXT, reason TEXT, src_type TEXT, rule TEXT);
 CREATE TABLE kb_table(topic TEXT, head TEXT, rows TEXT, src_file TEXT);
 CREATE TABLE product_custom(spu TEXT PRIMARY KEY, xz TEXT, mt_opts TEXT, kf_opts TEXT,
   lead_days TEXT, note TEXT);
@@ -397,27 +397,13 @@ def run():
         c.execute("INSERT INTO kb_table VALUES(?,?,?,?)",
                   (topic,json.dumps(head,ensure_ascii=False),json.dumps(rws,ensure_ascii=False),fn))
 
-    # ── 组合约束矩阵(工艺 × 材质)—— 企业 know-how,全部为演示数据 ──
-    COMBO=[
-     ("KF01","MT01","不可","香云纱经薯莨与河泥处理,表面涂层遇缂织张力易开裂"),
-     ("KF01","MT02","需评估","云锦本身已厚重,叠加缂丝会显笨重且成本极高"),
-     ("KF01","MT03","可","素罗轻薄,缂丝局部点缀效果佳"),
-     ("KF01","MT04","可","织金缎面平滑,缂丝纹样表现清晰"),
-     ("KF02","MT01","不可","妆花属织造技法,须在织造阶段完成,不可后加于成品面料"),
-     ("KF02","MT02","可","妆花本即云锦核心技法"),
-     ("KF02","MT03","不可","罗组织松,承不住妆花的密实纬线"),
-     ("KF02","MT04","需评估","二者均含金线,需评估纹样是否互相干扰"),
-     ("KF03","MT01","可","苏绣针法细密,香云纱底面平整适合"),
-     ("KF03","MT02","需评估","云锦纹样已满,加绣需留白设计"),
-     ("KF03","MT03","可","轻薄底料适合平绣,不宜厚绣"),
-     ("KF03","MT04","可","织金缎适合苏绣局部提亮"),
-     ("KF04","MT01","不可","盘金需钉固,香云纱涂层受针易破损"),
-     ("KF04","MT02","可","云锦厚实挺括,承得住盘金重量"),
-     ("KF04","MT03","不可","罗组织张力低,盘金易造成拉扯变形"),
-     ("KF04","MT04","可","织金缎厚度与光泽与盘金相配"),
-    ]
-    for a,b,v,r in COMBO:
-        c.execute("INSERT INTO craft_combo VALUES(?,?,?,?,'demo')",(a,b,v,r))
+    # ── 组合约束矩阵(工艺 × 材质)—— 21 × 13 = 273 格 ────────────────
+    # 不手写 273 条。属性表和 R1–R13 规则都在 06-相容矩阵.md 里,
+    # derive_combo.py 只负责执行它们 —— md 仍是唯一源头,改 md 就改了全表。
+    # 每格带 rule:人工确认 / R2 / R11 …,结论可追到依据,不可追的结论不该给客户。
+    import derive_combo as _dc
+    for a,b,v,r,rule in _dc.derive():
+        c.execute("INSERT INTO craft_combo VALUES(?,?,?,?,'demo',?)",(a,b,v,r,rule))
 
     # ── 会员信息(设计稿「客户详情」的字段)────────────────────────────
     OCC=["室内设计师","中学教师","注册会计师","三甲医院医师","自由摄影师","品牌运营",
@@ -479,6 +465,8 @@ def run():
     _combo = {(a, b): v for a, b, v in
               c.execute("SELECT craft,material,verdict FROM craft_combo")}
     _code = {r[1]: r[0] for r in c.execute("SELECT code,name FROM craft")}
+    _combo_rule = {(a, b): u for a, b, u in
+                   c.execute("SELECT craft,material,rule FROM craft_combo")}
 
     def _legal(mts, kfs):
         """去掉会撞上「不可」的面料 —— 保证这个定制品提供的任意组合都能通过校验"""
@@ -621,7 +609,11 @@ def run():
         c.execute("INSERT INTO product_custom VALUES(?,?,?,?,?,?)",
                   (spu, xz, ",".join(mts2), ",".join(kfs), lead,
                    None if len(mts2)==len(mts) else
-                   f"已剔除与所选工艺不相容的面料:{set(mts)-set(mts2)}"))
+                   "已剔除与所选工艺不相容的面料:" + "、".join(
+                       f"{m}(工艺{k}·{_combo_rule.get((_code.get(k),_code.get(m)),'?')})"
+                       for m in sorted(set(mts)-set(mts2))
+                       for k in kfs
+                       if _combo.get((_code.get(k),_code.get(m)))=="不可")))
         c.execute("INSERT INTO sku VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (f"{spu}-01", spu, "定制/定制", "定制", "定制", float(price), 0, 0, "启用",
                    None, None, f"GG{_i:03d}01", None, None, int(price*100), _img(spu,"sku1")))

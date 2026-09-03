@@ -19,6 +19,7 @@ run "MCP · 两个服务连通性"      python3 mcp/selftest.py
 run "MCP · 通道等价(不调模型)" python3 mcp/parity.py
 run "V1 循环 · 离线自测"       python3 agent/offline_test.py
 run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py
+run "相容矩阵 · 273 格推导/对账/落库" python3 knowledge/derive_combo.py
 run "判分器自测 · 18 条人造用例" python3 agent/chat_eval_judgetest.py
 printf "\n%s\n" "────────────────────────────────────────"
 if [ $FAIL -eq 0 ]; then printf "\033[32m✅ 全部检查通过\033[0m\n"; else printf "\033[31m❌ 存在失败项\033[0m\n"; fi

@@ -97,7 +97,7 @@ def kb_combo(craft, material):
     if e1: return {"error":e1}
     if e2: return {"error":e2}
     craft_code, material_code = k["code"], m["code"]
-    r=_rows("SELECT verdict,reason,src_type FROM craft_combo WHERE craft=? AND material=?",
+    r=_rows("SELECT verdict,reason,src_type,rule FROM craft_combo WHERE craft=? AND material=?",
             craft_code,material_code)
     if not r:
         return {"craft":k["name"],"material":m["name"],
@@ -126,9 +126,14 @@ def kb_coverage():
     ks=_rows("SELECT code FROM craft WHERE cat='工艺'"); ms=_rows("SELECT code FROM craft WHERE cat='材质'")
     n=_rows("SELECT COUNT(*) c FROM craft_combo")[0]["c"]
     tot=len(ks)*len(ms)
+    by={}
+    for r in _rows("SELECT rule,COUNT(*) c FROM craft_combo GROUP BY rule"):
+        k="人工确认" if r["rule"]=="人工确认" else "规则推导"
+        by[k]=by.get(k,0)+r["c"]
     return {"工艺数":len(ks),"材质数":len(ms),"总格数":tot,"已定义":n,"未定义":tot-n,
-            "完成度":f"{n/tot*100:.0f}%",
-            "note":"未定义的格子占大多数。遇到未定义必须说查不到,不要推断。"}
+            "完成度":f"{n/tot*100:.0f}%","来源":by,
+            "note":"每格都带 rule 字段说明依据(人工确认 / R1–R13)。"
+                   "仍有未定义的格子时必须说查不到,不要推断。"}
 
 
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
@@ -141,7 +146,7 @@ KB_SCHEMAS=[
     "src":{"type":"string","enum":["public","scale","demo"]}},"required":[]}},
  {"name":"kb_detail","description":"按编码取一条知识的完整内容(含出处链接)。编码形如 KF01 / MT01 / XZ01 / PS01。",
   "input_schema":{"type":"object","properties":{"code":{"type":"string"}},"required":["code"]}},
- {"name":"kb_combo","description":"查某工艺能否用于某面料。**工艺名和面料名直接写中文即可**(如「妆花」「云锦」),不必也不要猜编码 —— 名字对不上会明确报错并列出现有选项。返回「可/需评估/不可」及理由;该组合未录入时返回「未定义」;返回里的 resolved 字段是实际解析到的那一对,回答前请核对它和用户问的是不是同一对。",
+ {"name":"kb_combo","description":"查某工艺能否用于某面料。**工艺名和面料名直接写中文即可**(如「妆花」「云锦」),不必也不要猜编码 —— 名字对不上会明确报错并列出现有选项。返回「可/需评估/不可」、理由,以及 rule 字段(依据的规则号,或「人工确认」)—— 判「不可」时请把依据一并告诉用户;该组合未录入时返回「未定义」;返回里的 resolved 字段是实际解析到的那一对,回答前请核对它和用户问的是不是同一对。",
   "input_schema":{"type":"object","properties":{
     "craft":{"type":"string","description":"工艺名称或编码,如「妆花」或 KF02。**直接写名称即可,不要猜编码。**"},
     "material":{"type":"string","description":"面料名称或编码,如「云锦」或 MT02。**直接写名称即可,不要猜编码。**"}},
