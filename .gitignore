@@ -15,3 +15,7 @@ llm-trace.jsonl
 
 # 说明:agent/*-results.jsonl 是评测结果,**要进版本库** ——
 # 它们是「这个版本的模型在这套题上考了多少分」的历史,是可比对的度量记录,不是临时产物。
+
+# 飞书凭证不在项目内(在 ~/.feishu-publish),这里兜底防止误放
+tools/.feishu_app.json
+tools/.uat_cache.json
