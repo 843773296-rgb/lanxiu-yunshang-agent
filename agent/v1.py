@@ -27,6 +27,35 @@ def _dispatch(kind, name, args):
 HERE=os.path.dirname(os.path.abspath(__file__))
 TRACE=os.path.join(HERE,"llm-trace.jsonl")
 
+# ── 单价表(美元 / 百万 token)──────────────────────────────────────
+# 一律以**官方文档**为准。这个项目在成本口径上栽过:
+#   · Haiku 那次,OAuth 分支的单价写死成旧 Opus 的 $15/$75,虚高 15 倍
+#   · DeepSeek 这次,原来写的 $0.55/$2.19 三方都对不上 ——
+#     博客聚合站说 $0.435/$0.87,官方文档说 $0.66/$1.98。以官方为准。
+#
+# ⚠️ DeepSeek 有**分时定价**:周一至周五 UTC 01:00-04:00 与 06:00-10:00 为高峰,
+#    单价是平峰的 2 倍;其余时段(含周末全天)平峰。下表存的是**平峰价**,
+#    实际计费时按 price_now() 乘系数 —— 不算这一层,高峰时段的成本会少算一半。
+#    出处:https://api-docs.deepseek.com/quick_start/pricing
+DEEPSEEK_PRICE={
+  "deepseek-v4-pro":              dict(inp=0.66, cache=0.022, out=1.98),
+  "deepseek-v4-flash":            dict(inp=0.22, cache=0.007, out=0.66),
+  "deepseek-v4-flash-vision-exp": dict(inp=0.22, cache=0.007, out=0.66),
+}
+
+def is_peak(ts=None):
+    """DeepSeek 高峰时段:周一至周五 UTC 01:00-04:00 / 06:00-10:00"""
+    t=time.gmtime(ts)
+    if t.tm_wday>=5: return False
+    return (1<=t.tm_hour<4) or (6<=t.tm_hour<10)
+
+def price_now(pv, ts=None):
+    """取当下有效单价。分时定价只有 DeepSeek 有,Anthropic 不分时段。"""
+    p=pv.get("price") or {}
+    if pv.get("id")=="deepseek" and is_peak(ts):
+        return {k: v*2 for k, v in p.items()}
+    return p
+
 # Anthropic 官方单价(美元 / 百万 token),缓存读取按输入的 0.1 倍
 PRICE={"claude-opus-5":  dict(inp=5.0, cache=0.5,  out=25.0),
        "claude-opus-4-8":dict(inp=5.0, cache=0.5,  out=25.0),
@@ -38,11 +67,24 @@ def price_of(model):
 
 # ── 供应商解析(与 v1-raw-loop/src/api.ts 同逻辑)──────────
 def provider():
+    # 凭证来源:环境变量 → ~/.deepseek-key(600,在两个项目之外)。
+    # 不进仓库、不进项目目录 —— 和飞书凭证同一个做法。
     k=os.environ.get("DEEPSEEK_API_KEY")
-    if k: return dict(id="deepseek",url="https://api.deepseek.com/anthropic/v1/messages",
-        model=os.environ.get("DEEPSEEK_MODEL","deepseek-v4-pro"),
-        headers=["x-api-key: "+k,"anthropic-version: 2023-06-01"],
-        price=dict(inp=0.55,cache=0.055,out=2.19))
+    if not k:
+        _kf=os.path.expanduser("~/.deepseek-key")
+        if os.path.exists(_kf): k=open(_kf).read().strip()
+    if k:
+        m=os.environ.get("DEEPSEEK_MODEL","deepseek-v4-pro")
+        if m not in DEEPSEEK_PRICE:
+            raise SystemExit(f"没有 {m} 的官方单价。可用:{list(DEEPSEEK_PRICE)}。"
+                             "拒绝用猜的单价算成本 —— 这个项目在这上面栽过两次。")
+        # ⚠️ v4 系列是**推理模型**,返回里带 thinking 块,思考本身要吃掉大量输出额度。
+        # 原来所有供应商共用写死的 max_tokens=2000,实测 6 次调用被 max_tokens 截断 ——
+        # 截断的响应既没有 text 也没有 submit_finding,循环空着退出,评测记成「未提交」,
+        # 看起来像模型能力不行,实际是配置不够。**这就是记录仪里 finish_reason 那一栏的用处。**
+        return dict(id="deepseek",url="https://api.deepseek.com/anthropic/v1/messages",
+            model=m, headers=["x-api-key: "+k,"anthropic-version: 2023-06-01"],
+            price=DEEPSEEK_PRICE[m], max_tokens=8000)
     k=os.environ.get("ANTHROPIC_API_KEY")
     if k:
         m=os.environ.get("ANTHROPIC_MODEL","claude-opus-5")
@@ -80,9 +122,10 @@ def call(pv, body, retries=6, purpose="未标注", turn=None, cache=None):
         r=subprocess.run(cmd,input=json.dumps(body),capture_output=True,text=True)
         ms=(time.time()-t0)*1000
         def _rec(**kw):
-            try: _trace.record(model=pv.get("model"),purpose=purpose,price=pv.get("price"),
+            try: _trace.record(model=pv.get("model"),purpose=purpose,price=price_now(pv),
                                latency_ms=ms,turn=turn,attempt=att,body=body,
-                               cache_on=not isinstance(body.get("system"),str),**kw)
+                               cache_on=not isinstance(body.get("system"),str),
+                               peak=(pv.get("id")=="deepseek" and is_peak()),**kw)
             except Exception: pass          # 记录仪永远不能把主流程搞挂
         if r.returncode!=0:
             _rec(usage=None,error=f"curl 失败: {r.stderr[:200]}")
@@ -124,7 +167,8 @@ def run_case(pv, prompt, max_turns=12, purpose="人工任务"):
     tools=_tools("task",[SUBMIT])
     tin=tout=tcache=0; calls=0; t0=time.time(); finding=None; traj=[]; last_text=""
     for _t in range(max_turns):
-        resp=call(pv,dict(model=pv["model"],max_tokens=2000,system=SYSTEM,tools=tools,messages=msgs),
+        resp=call(pv,dict(model=pv["model"],max_tokens=pv.get("max_tokens",2000),
+                          system=SYSTEM,tools=tools,messages=msgs),
                   purpose=purpose,turn=_t+1)
         if "error" in resp: raise RuntimeError(json.dumps(resp["error"],ensure_ascii=False)[:300])
         calls+=1
@@ -150,7 +194,7 @@ def run_case(pv, prompt, max_turns=12, purpose="人工任务"):
                             "content":json.dumps(out,ensure_ascii=False)})
         msgs.append({"role":"user","content":results})
         if finding: break
-    p=pv["price"]
+    p=price_now(pv)                    # 分时定价:高峰 ×2
     cost=(tin*p["inp"]+tcache*p["cache"]+tout*p["out"])/1_000_000
     return dict(finding=finding,text=last_text,calls=calls,input=tin,output=tout,cache=tcache,
                 cost_local=round(cost,6),cost_source=pv["id"],

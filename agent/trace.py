@@ -15,7 +15,7 @@ BODY = os.environ.get("TRACE_BODY") == "1"
 
 
 def record(*, model, purpose, usage, latency_ms, price, finish_reason=None,
-           turn=None, attempt=0, error=None, body=None, resp_text=None, cache_on=False):
+           turn=None, attempt=0, error=None, body=None, resp_text=None, cache_on=False, peak=False):
     u = usage or {}
     tin = u.get("input_tokens", 0)
     tout = u.get("output_tokens", 0)
@@ -28,7 +28,7 @@ def record(*, model, purpose, usage, latency_ms, price, finish_reason=None,
         ts=time.strftime("%Y-%m-%d %H:%M:%S"),
         model=model, purpose=purpose,
         input_tokens=tin, output_tokens=tout, cache_hit_tokens=tcache,
-        cache_write_tokens=twrite, cache_on=bool(cache_on),
+        cache_write_tokens=twrite, cache_on=bool(cache_on), peak=bool(peak),
         latency_ms=round(latency_ms), cost_est=round(cost, 6),
         finish_reason=finish_reason, turn=turn, attempt=attempt,
     )
@@ -37,6 +37,10 @@ def record(*, model, purpose, usage, latency_ms, price, finish_reason=None,
         if body is not None:
             row["prompt_head"] = json.dumps(body, ensure_ascii=False)[:200]
         if resp_text: row["resp_head"] = resp_text[:200]
+    # 截断是高频事故且**表现为「模型答得不好」**,必须当场喊出来,不能等人去翻日志
+    if finish_reason == "max_tokens":
+        print(f"⚠️ [trace] {purpose} 第 {turn} 轮被 max_tokens 截断"
+              f"(输出 {tout})—— 响应不完整,后续判定不可信", file=__import__("sys").stderr, flush=True)
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")

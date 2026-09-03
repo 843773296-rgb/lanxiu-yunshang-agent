@@ -64,7 +64,7 @@ def ask(question, history=None, max_turns=8):
 
     tin = tout = tcache = 0; calls = 0; traj = []; t0 = time.time(); answer = ""
     for _ in range(max_turns):
-        resp = v1.call(pv, dict(model=pv["model"], max_tokens=1500, system=SYSTEM,
+        resp = v1.call(pv, dict(model=pv["model"], max_tokens=pv.get("max_tokens", 1500), system=SYSTEM,
                                 tools=tools(), messages=msgs),
                        purpose="工艺顾问", turn=len(traj) + 1)
         if "error" in resp:
@@ -90,7 +90,7 @@ def ask(question, history=None, max_turns=8):
                             "content": json.dumps(out, ensure_ascii=False)})
         msgs.append({"role": "user", "content": results})
 
-    p = pv["price"]
+    p = v1.price_now(pv)               # 分时定价:高峰 ×2
     cost = (tin * p["inp"] + tcache * p["cache"] + tout * p["out"]) / 1_000_000
     return dict(answer=answer, trajectory=traj, calls=calls, seconds=round(time.time() - t0, 1),
                 input=tin, output=tout, cost_local=round(cost, 6), model=pv["model"],

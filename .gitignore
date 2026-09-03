@@ -19,3 +19,7 @@ llm-trace.jsonl
 # 飞书凭证不在项目内(在 ~/.feishu-publish),这里兜底防止误放
 tools/.feishu_app.json
 tools/.uat_cache.json
+
+# 凭证一律不进仓库(实际存在 ~/.deepseek-key)
+*.key
+.deepseek-key
