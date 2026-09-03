@@ -326,8 +326,14 @@ def schedule_list(q):
 
 # 设计稿的 10 个状态页签 vs 前端 PRD 11.1 的 6 个状态 —— 差集 D 实例
 DESIGN_TABS=["全部","待付款","待审核","待生产","生产中","已生产","待发货","已发货","待完成","完成","取消"]
-TAB_MAP={"全部":None,"待付款":"待付款","待发货":"待发货","已发货":"待收货",
-         "完成":"已完成","取消":"已关闭"}   # 其余 4 个页签在 PRD 中无对应状态
+# 设计稿 10 个页签 → PRD 6 个状态的映射。**这不是「有 4 个没对应」,是多对一** ——
+# 待审核/待生产/生产中 三个页签在 PRD 里都被归进「方案确认中」,
+# 已生产/待发货 归进「待发货」,已发货/待完成 归进「待收货」。
+# 订单表两个口径都存:status 是设计稿口径(页面筛选用),prd_status 是 PRD 口径(状态机用)。
+TAB_MAP={"全部":None,
+         "待付款":"待付款","待审核":"方案确认中","待生产":"方案确认中","生产中":"方案确认中",
+         "已生产":"待发货","待发货":"待发货","已发货":"待收货","待完成":"待收货",
+         "完成":"已完成","取消":"已关闭"}
 
 def order_list(q):
     kw=(q.get("q") or [""])[0].strip()
@@ -336,14 +342,14 @@ def order_list(q):
     rs=rows("""SELECT o.*, c.name cname FROM ordr o LEFT JOIN customer c
                ON o.customer_id=c.id ORDER BY o.created DESC""")
     for r in rs:
-        r["items"]=rows("SELECT sku,name,tag,price,qty FROM ordr_item WHERE order_id=?",r["id"])
+        r["items"]=rows("""SELECT sku,name,tag,price,qty,spu,base_amount,custom_amount,total
+                           FROM ordr_item WHERE order_id=?""",r["id"])
     if kw: rs=[r for r in rs if kw in r["id"] or kw in (r["cname"] or "")]
     if kind: rs=[r for r in rs if r["kind"]==kind]
     if src:  rs=[r for r in rs if r["source"]==src]
-    mapped=TAB_MAP.get(tab,"__NONE__")
-    unmapped = tab!="全部" and tab not in TAB_MAP
-    if mapped: rs=[r for r in rs if r["status"]==mapped]
-    elif unmapped: rs=[]
+    # status 存的就是设计稿口径,直接按页签筛
+    unmapped = tab != "全部" and tab not in TAB_MAP
+    if tab != "全部": rs=[r for r in rs if r["status"]==tab]
     d=_page(rs,q)
     d["tabs"]=[dict(name=t,mapped=(t in TAB_MAP),
                     prd=TAB_MAP.get(t) or ("全部" if t=="全部" else None)) for t in DESIGN_TABS]
@@ -351,7 +357,11 @@ def order_list(q):
     d["facets"]=dict(kind=[r["v"] for r in rows("SELECT DISTINCT kind v FROM ordr")],
                      source=[r["v"] for r in rows("SELECT DISTINCT source v FROM ordr ORDER BY v")])
     d["prd_states"]=["待付款","方案确认中","待发货","待收货","已完成","已关闭"]
-    d["counts"]={s:rows("SELECT COUNT(*) c FROM ordr WHERE status=?",s)[0]["c"] for s in d["prd_states"]}
+    d["counts"]={s:rows("SELECT COUNT(*) c FROM ordr WHERE prd_status=?",s)[0]["c"] for s in d["prd_states"]}
+    # 每个设计稿页签下有多少单 —— 用来证明「多对一」而不是「筛不出数据」
+    d["tab_counts"]={t:rows("SELECT COUNT(*) c FROM ordr WHERE status=?",t)[0]["c"]
+                     for t in DESIGN_TABS if t!="全部"}
+    d["tab_counts"]["全部"]=rows("SELECT COUNT(*) c FROM ordr")[0]["c"]
     return d
 
 def cat_paths():
@@ -1076,8 +1086,13 @@ def customer_detail(cid):
     deps=rows("""SELECT d.* FROM deposit d WHERE d.customer_id=? ORDER BY d.updated DESC""",cid)
     logs=rows("SELECT * FROM op_log WHERE target=? OR target LIKE ? ORDER BY id DESC LIMIT 50",
               cid,f"%{cid}%")
+    binds=rows("SELECT kind,target_id,target_name,ts FROM member_bind WHERE customer_id=? ORDER BY kind",cid)
+    plog=rows("""SELECT behavior,delta,balance,reason,actor,ts FROM points_log
+                 WHERE customer_id=? ORDER BY id DESC LIMIT 20""",cid)
+    lv=rows("SELECT * FROM level_cfg WHERE name=?",c.get("level"))
     return dict(customer=c,appts=appts,followups=fus,deposits=deps,logs=logs,
-                measures=measure_of(cid))
+                measures=measure_of(cid),binds=binds,points_log=plog,
+                level_cfg=lv[0] if lv else None)
 
 def lifecycle_page(sel=None):
     types=["潜在","新客","活跃","高价值","忠诚","休眠","潜在流失","流失"]

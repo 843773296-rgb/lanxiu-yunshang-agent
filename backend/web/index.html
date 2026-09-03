@@ -1165,13 +1165,21 @@ async function custDetail(cid){
       <div class="pf"><span class="ph2">${esc((c.name||"").slice(0,1))}</span>
        <div class="cts">
         <div class="ct">${cico("phone")}<span class="mono">${esc(c.phone_mask)}</span></div>
-        <div class="ct">${cico("mail")}<span class="mono">${esc((c.id||"").toLowerCase())}@example.com</span></div>
-        <div class="ct">${cico("chat")}<span>${esc(c.advisor)}</span></div>
-        <div class="ct">${cico("pin")}<span>${esc(c.addr||"")}</span></div>
+        <div class="ct">${cico("mail")}<span class="mono">${esc(c.email||"—")}</span></div>
+        <div class="ct">${cico("chat")}<span class="mono">${esc(c.wechat||"—")}</span></div>
+        <div class="ct">${cico("pin")}<span>${esc([c.province,c.city,c.district].filter(Boolean).join(""))}</span></div>
+        <div class="ct" style="align-items:flex-start">${cico("pin")}<span>${esc(c.addr||"")}</span></div>
        </div></div>
       <div class="sec"><h5>详细信息</h5><div class="dgrid">
         <div><div class="l">客户编码</div><div class="v mono">${esc(c.id)}</div></div>
+        <div><div class="l">性别</div><div class="v">${esc(c.gender||"—")}</div></div>
         <div><div class="l">生命周期</div><div class="v">${esc(c.lifecycle)}</div></div>
+        <div><div class="l">会员等级</div><div class="v">${esc(c.level||"—")}${
+          d.level_cfg?`<span style="color:var(--ink3);font-size:11.5px;margin-left:6px">${esc(d.level_cfg.note||"")}</span>`:""}</div></div>
+        <div><div class="l">积分余额</div><div class="v mono">${(c.points||0).toLocaleString()}</div></div>
+        <div><div class="l">职业</div><div class="v">${esc(c.occupation||"—")}</div></div>
+        <div><div class="l">年收入</div><div class="v">${esc(c.income||"—")}</div></div>
+        <div><div class="l">座驾</div><div class="v">${esc(c.car||"—")}</div></div>
         <div><div class="l">归属店铺</div><div class="v">${esc(c.shop)}</div></div>
         <div><div class="l">销售顾问</div><div class="v">${esc(c.advisor)}</div></div>
         <div><div class="l">生日</div><div class="v mono">${esc(c.birthday||"—")}</div></div>
@@ -1194,9 +1202,27 @@ async function custDetail(cid){
        <div class="st4 d"><div class="l">最近沟通时间</div><div class="v mono">${esc(c.last_interact||"—")}</div>
          <div class="s">已 ${c.idle_days} 天未互动</div></div>
       </div></div>
+     <div class="card"><div class="hd"><h3>积分流水</h3>
+       <span class="n">余额 ${(c.points||0).toLocaleString()} · 近 ${(d.points_log||[]).length} 条</span></div>
+      ${(d.points_log||[]).length?`<table class="tb" style="margin-top:10px"><thead><tr>
+        <th style="width:110px">积分行为</th><th style="width:90px">变动</th><th style="width:100px">变动后</th>
+        <th style="width:150px">原因</th><th style="width:100px">操作人</th><th>时间</th></tr></thead><tbody>
+       ${d.points_log.map(g=>`<tr><td><span class="pill ${g.delta>=0?"p-ok":"p-warn"}">${esc(g.behavior)}</span></td>
+         <td class="mono" style="color:${g.delta>=0?"var(--ok)":"var(--bad)"}">${g.delta>=0?"+":""}${g.delta}</td>
+         <td class="mono">${g.balance}</td><td style="font-size:12.5px">${esc(g.reason||"")}</td>
+         <td>${esc(g.actor||"")}</td><td class="mono" style="font-size:12px">${esc(g.ts)}</td></tr>`).join("")}
+       </tbody></table>`:'<div class="empty">该客户暂无积分变动</div>'}</div>
+
      <div class="row" style="grid-template-columns:1fr 1fr">
-      <div class="card"><div class="hd"><h3>绑定关系</h3><span class="more">管理绑定关系</span></div>
-        <div class="empty">本期未采集关系人数据</div></div>
+      <div class="card"><div class="hd"><h3>绑定关系</h3>
+        <span class="n">${(d.binds||[]).length} 条</span></div>
+        ${(d.binds||[]).length?`<div style="padding:12px 20px 16px;display:flex;flex-direction:column;gap:9px">
+        ${d.binds.map(b=>`<div style="display:flex;align-items:center;gap:10px;font-size:13.5px">
+          <span class="pill ${b.kind==="邀请人"?"p-blue":"p-mut"}">${esc(b.kind)}</span>
+          <span>${esc(b.target_name||"")}</span>
+          <span class="mono" style="color:var(--ink3);font-size:12px">${esc(b.target_id)}</span>
+          <span class="mono" style="color:var(--ink3);font-size:12px;margin-left:auto">${esc(b.ts)}</span>
+        </div>`).join("")}</div>`:'<div class="empty">该客户没有绑定关系</div>'}</div>
       <div class="card"><div class="hd"><h3>量体裁衣</h3>
         ${d.measures.length?`<span class="n">${d.measures.length} 份档案</span>`:""}</div>
         ${d.measures.length? d.measures.map(m=>`<div style="padding:14px 20px 4px">
@@ -1433,10 +1459,13 @@ async function orderList(){
       ${fld("订单类型","kind",st,d.facets.kind)}
       ${fld("订单来源","source",st,d.facets.source)}${acts()}</div>
     <div class="otab">${d.tabs.map(t=>`<b class="${t.name===d.tab?"on":""} ${t.mapped?"":"nomap"}"
-      data-otab="${esc(t.name)}" title="${t.mapped?("对应 PRD 状态:"+(t.prd||"全部")):"PRD 订单状态机中无此状态"}">${esc(t.name)}</b>`).join("")}</div>
-    ${d.unmapped?`<div style="padding:26px 24px;background:var(--bad-bg);color:var(--bad);font-size:13px">
-      「${esc(d.tab)}」是设计稿的状态页签,但<b>前端 PRD 11.1 的订单状态机中没有这个状态</b>,
-      因此永远筛不出数据。PRD 定义的 6 个状态是:${d.prd_states.join(" / ")}。</div>`:""}
+      data-otab="${esc(t.name)}" title="${t.mapped?("PRD 状态机里归入:"+(t.prd||"全部")):"PRD 订单状态机中无此状态"}">${esc(t.name)}<span style="opacity:.6;font-weight:400;margin-left:4px">${d.tab_counts?.[t.name]??""}</span></b>`).join("")}</div>
+    ${d.tab!=="全部"&&d.tabs.find(t=>t.name===d.tab)?.prd?`
+      <div style="padding:14px 24px;background:var(--tile);color:var(--ink2);font-size:12.5px">
+      「<b>${esc(d.tab)}</b>」是设计稿口径的页签,在 <b>PRD 11.1 的订单状态机</b>里被归入
+      「<b>${esc(d.tabs.find(t=>t.name===d.tab).prd)}</b>」——
+      这是<b>多对一</b>,不是「PRD 里没有」:待审核/待生产/生产中 三个页签在 PRD 里都是「方案确认中」。
+      订单表两个口径都存(status / prd_status),映射由 <code>member_order_check.py</code> 逐单校验。</div>`:""}
     <div>${d.rows.map(o=>`
       <div class="ordhd">
         <span>订单号: <span class="no">${esc(o.id)}</span></span>

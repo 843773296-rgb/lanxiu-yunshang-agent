@@ -11,14 +11,22 @@ DB=os.path.join(HERE,"lanxiu.db")
 random.seed(20260830)   # 固定种子,数据可复现
 
 SCHEMA="""
-DROP TABLE IF EXISTS customer; DROP TABLE IF EXISTS deposit; DROP TABLE IF EXISTS refund_trace;
+DROP TABLE IF EXISTS points_log; DROP TABLE IF EXISTS member_bind; DROP TABLE IF EXISTS customer; DROP TABLE IF EXISTS deposit; DROP TABLE IF EXISTS refund_trace;
 DROP TABLE IF EXISTS payment_flow; DROP TABLE IF EXISTS appointment; DROP TABLE IF EXISTS followup;
 DROP TABLE IF EXISTS task; DROP TABLE IF EXISTS truth;
 CREATE TABLE customer(id TEXT PRIMARY KEY, name TEXT, phone TEXT, phone_tail TEXT, shop TEXT,
   advisor TEXT, lifecycle TEXT, level TEXT, created TEXT, order_cnt INT, paid_amount REAL,
   last_interact TEXT, addr TEXT, birthday TEXT, archived INT DEFAULT 0,
   first_order TEXT, orders_12m INT DEFAULT 0, quarters_12m INT DEFAULT 0, amount_12m REAL DEFAULT 0,
-  idle_days INT DEFAULT 0, matched TEXT, manual_lc TEXT, manual_at TEXT);
+  idle_days INT DEFAULT 0, matched TEXT, manual_lc TEXT, manual_at TEXT,
+  gender TEXT, email TEXT, wechat TEXT, occupation TEXT, income TEXT, car TEXT,
+  province TEXT, city TEXT, district TEXT, inviter TEXT, points INT DEFAULT 0, remark TEXT);
+-- 积分流水(设计稿 积分行为:账户调加/账户调减/积分消费/积分返还/确认款样/完成定购)
+CREATE TABLE points_log(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, behavior TEXT,
+  delta INT, balance INT, ref_id TEXT, reason TEXT, actor TEXT, ts TEXT);
+-- 绑定关系(设计稿 客户详情-绑定关系:邀请人 / 联系人)
+CREATE TABLE member_bind(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, kind TEXT,
+  target_id TEXT, target_name TEXT, ts TEXT);
 CREATE TABLE deposit(id TEXT PRIMARY KEY, customer_id TEXT, appt_id TEXT, amount REAL,
   status TEXT, idem_key TEXT, created TEXT, updated TEXT);
 CREATE TABLE refund_trace(id INTEGER PRIMARY KEY AUTOINCREMENT, deposit_id TEXT, attempt INT,
@@ -38,9 +46,13 @@ CREATE TABLE schedule(id TEXT PRIMARY KEY, type TEXT, advisor TEXT, customer_id 
   start_ts TEXT, end_ts TEXT, status TEXT, summary TEXT, cancel_reason TEXT, shop TEXT);
 CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
   advisor TEXT, shop TEXT, source TEXT, activity TEXT, delivery TEXT,
-  amount REAL, payable REAL, created TEXT, updated TEXT);
+  amount REAL, payable REAL, created TEXT, updated TEXT,
+  prd_status TEXT, goods_amount REAL, freight REAL, received REAL, refund_status TEXT,
+  addr TEXT, paid_at TEXT, audit_at TEXT, produced_at TEXT, shipped_at TEXT,
+  finished_at TEXT, cancelled_at TEXT, remark TEXT);
 CREATE TABLE ordr_item(id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT, sku TEXT,
-  name TEXT, tag TEXT, price REAL, qty INT);
+  name TEXT, tag TEXT, price REAL, qty INT,
+  spu TEXT, base_amount REAL, custom_amount REAL, total REAL);
 CREATE TABLE category(code TEXT PRIMARY KEY, name TEXT, parent TEXT, sort INT, status TEXT);
 CREATE TABLE product(spu TEXT PRIMARY KEY, name TEXT, category TEXT, kind TEXT, status TEXT,
   base_price REAL, template TEXT, created TEXT, updated TEXT, cover TEXT,
@@ -74,7 +86,7 @@ CREATE TABLE sys_code(code TEXT PRIMARY KEY, category TEXT, name TEXT, val TEXT,
 CREATE TABLE download_task(id TEXT PRIMARY KEY, kind TEXT, filters TEXT, status TEXT,
   rows_n INT, size_kb INT, created_by TEXT, created TEXT, expire_at TEXT);
 CREATE TABLE level_cfg(code TEXT PRIMARY KEY, name TEXT, amount REAL, orders INT,
-  sort INT, status TEXT, note TEXT);
+  sort INT, status TEXT, note TEXT, need_points INT, point_rule TEXT);
 CREATE TABLE tag(code TEXT PRIMARY KEY, name TEXT, grp TEXT, status TEXT, n INT, updated TEXT);
 CREATE TABLE approval(id TEXT PRIMARY KEY, kind TEXT, target TEXT, payload TEXT,
   status TEXT, applied_by TEXT, applied_at TEXT, decided_by TEXT, decided_at TEXT, note TEXT);
@@ -183,7 +195,7 @@ def run():
         first=None if ocnt==0 else ago(random.randint(10,700))
         cust.append(mk(f"C{10000+i}", random.choice(SURN)+random.choice(GIVEN),
                        idle,ocnt,amt,o12,random.randint(1,4),first))
-    c.executemany("INSERT INTO customer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", cust)
+    c.executemany("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,lifecycle,level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", cust)
 
     # ── A2/A3/A4 专用案例 ─────────────────────────────
     EDGE=[
@@ -219,7 +231,7 @@ def run():
     edge_rows=[]
     for cid,nm,idle,ocnt,amt,o12,q12,first,man,mat,expect,note in EDGE:
         edge_rows.append(mk(cid,nm,idle,ocnt,amt,o12,q12,first,man,mat))
-    c.executemany("INSERT INTO customer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", edge_rows)
+    c.executemany("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,lifecycle,level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", edge_rows)
 
     truths=[]
     for cid,nm,idle,ocnt,amt,o12,q12,first,man,mat,expect,note in EDGE:
@@ -274,7 +286,7 @@ def run():
             cause="同名不同人"
             action="不合并;建议在两条档案上互相标注已核验非同一人,避免反复进入队列"
             evid="生日不同、地址城市不同、手机号不同,仅姓名相同"
-        c.executemany("INSERT INTO customer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        c.executemany("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,lifecycle,level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
         case=f"MERGE-{i:02d}"
         c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)",(f"T{case}","客户合并确认",f"{aid}|{bid}","待处理","2026-08-22",None))
         truths.append((case,"BP-02",cause,action,evid,f"{aid} vs {bid}"))
@@ -332,32 +344,6 @@ def run():
            f"2026-08-{day:02d} {9+i%9:02d}:00", f"2026-08-{day:02d} {10+i%9:02d}:00",
            st, "已完成服务并记录结果" if st=="完结" else None,
            "客户改期" if st=="取消" else None, random.choice(SHOPS)))
-
-    # ── 订单(前端 PRD 11.1 订单状态机:6 态)──
-    OST=["待付款","方案确认中","待发货","待收货","已完成","已关闭"]
-    SRC=["微信小程序","门店A","门店B","门店Pad"]
-    DLV=["配送到店","配送到客户"]
-    ACT=["品牌文化体验活动","春季新品预售","","老客转介绍"]
-    GOODS=[("lxys_333342334","Highbridge Nailhead 海军蓝套装","标品",2680.00),
-           ("lxys_889201773","云锦缠枝纹 唐制齐胸襦裙","定制品",5880.00),
-           ("lxys_442097112","苏绣缂丝 明制马面裙","定制品",7200.00),
-           ("lxys_120945667","素罗对襟 宋制褙子","标品",1980.00),
-           ("lxys_775530219","妆花缎 唐制大袖衫","定制品",9600.00)]
-    for i in range(46):
-        oid=f"64880127{19714560000+i}"
-        st=OST[i%6]
-        kind="定制品订单" if i%3 else "标品订单"
-        day=10+(i%18)
-        n=1 if i%4 else 3
-        items=[GOODS[(i+k)%5] for k in range(n)]
-        amt=round(sum(g[3] for g in items),2)
-        c.execute("INSERT INTO ordr VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-          (oid,cust[i%len(cust)][0],kind,st,random.choice(ADV),random.choice(SHOPS),
-           SRC[i%4],ACT[i%4],DLV[i%2],amt,amt,f"2026-08-{day:02d} 16:16",f"2026-08-{day:02d} 18:20"))
-        for sku,nm,tg,pr in items:
-            c.execute("INSERT INTO ordr_item(order_id,sku,name,tag,price,qty) VALUES(?,?,?,?,?,?)",
-                      (oid,sku,nm,tg,pr,1))
-
     # ── 品类(树形两级)──
     # 三级类目 —— 设计稿「商品库-新建商品」是三个级联下拉,详情页写作「类目一-类目二-类目三」
     CATS=[("C01","女装",None,1),
@@ -432,6 +418,60 @@ def run():
     ]
     for a,b,v,r in COMBO:
         c.execute("INSERT INTO craft_combo VALUES(?,?,?,?,'demo')",(a,b,v,r))
+
+    # ── 会员信息(设计稿「客户详情」的字段)────────────────────────────
+    OCC=["室内设计师","中学教师","注册会计师","三甲医院医师","自由摄影师","品牌运营",
+         "律师","软件工程师","茶艺师","大学讲师","公务员","民宿主理人"]
+    INC=["10w 以下","10w-20w","20w-30w","30w-50w","50w 以上","不愿透露"]
+    CAR=["福特蒙迪欧-沪B·UH123","比亚迪汉-沪A·L2K88","无","特斯拉Model Y-浙A·D77Q1",
+         "本田CR-V-苏E·M0J52","蔚来ES6-沪C·P3X09","无","大众途观-沪B·K8T21"]
+    PROV=[("上海市","上海市","静安区"),("上海市","上海市","徐汇区"),("浙江省","杭州市","西湖区"),
+          ("江苏省","苏州市","姑苏区"),("河北省","衡水市","武邑县"),("广东省","广州市","越秀区"),
+          ("北京市","北京市","朝阳区"),("四川省","成都市","锦江区")]
+    REM=["偏好素雅低饱和,忌大面积撞色","婚期 10 月,需倒推工期","对香云纱气味敏感,已书面告知",
+         "有两次远程量体记录,公差按合同约定","习惯微信沟通,电话常不接",None,None,None]
+    allc=[r[0] for r in c.execute("SELECT id FROM customer ORDER BY id")]
+    for n,cid in enumerate(allc):
+        pv,ct,ds = PROV[n % len(PROV)]
+        c.execute("""UPDATE customer SET gender=?,email=?,wechat=?,occupation=?,income=?,car=?,
+                     province=?,city=?,district=?,inviter=?,points=?,remark=? WHERE id=?""",
+                  ("女" if n % 5 else "男",
+                   f"{cid.lower()}@163.com", f"wx_{cid.lower()}",
+                   OCC[n % len(OCC)], INC[n % len(INC)], CAR[n % len(CAR)],
+                   pv, ct, ds,
+                   allc[(n*7+3) % len(allc)] if n % 4 == 0 else None,
+                   random.choice([0,120,380,760,1290,2400,5600,12800]),
+                   REM[n % len(REM)], cid))
+
+    # 积分流水(设计稿「积分行为」六种)
+    BEH=["账户调加","账户调减","积分消费","积分返还","确认款样","完成定购"]
+    for n,cid in enumerate(allc):
+        bal=int(c.execute("SELECT points FROM customer WHERE id=?",(cid,)).fetchone()[0] or 0)
+        run=0
+        for k in range(random.randint(0,5)):
+            b=BEH[(n+k) % 6]
+            amt=random.choice([50,100,200,500,1000])
+            delta = -amt if b in ("账户调减","积分消费") else amt
+            run += delta
+            c.execute("INSERT INTO points_log(customer_id,behavior,delta,balance,ref_id,reason,actor,ts)"
+                      " VALUES(?,?,?,?,?,?,?,?)",
+                      (cid,b,delta,max(0,bal-run+delta),None,
+                       {"账户调加":"人工补发","账户调减":"人工扣减","积分消费":"积分商城兑换",
+                        "积分返还":"订单取消返还","确认款样":"定制款样确认奖励",
+                        "完成定购":"订单完成奖励"}[b],
+                       "魏欣新" if b.startswith("账户") else "系统", ago(k*13+3)))
+
+    # 绑定关系(设计稿 客户详情-绑定关系:邀请人 / 联系人)
+    names={r[0]:r[1] for r in c.execute("SELECT id,name FROM customer")}
+    for n,cid in enumerate(allc):
+        if n % 4 == 0:
+            inv=allc[(n*7+3) % len(allc)]
+            c.execute("INSERT INTO member_bind(customer_id,kind,target_id,target_name,ts)"
+                      " VALUES(?,?,?,?,?)",(cid,"邀请人",inv,names.get(inv),ago(60)))
+        if n % 3 == 0:
+            ct2=allc[(n*11+5) % len(allc)]
+            c.execute("INSERT INTO member_bind(customer_id,kind,target_id,target_name,ts)"
+                      " VALUES(?,?,?,?,?)",(cid,"联系人",ct2,names.get(ct2),ago(40)))
 
     # ── 商品(SPU)与 SKU ──
     # 定制品的可选面料 × 可选工艺,**由相容矩阵现场过滤** ——
@@ -586,6 +626,85 @@ def run():
                   (f"{spu}-01", spu, "定制/定制", "定制", "定制", float(price), 0, 0, "启用",
                    None, None, f"GG{_i:03d}01", None, None, int(price*100), _img(spu,"sku1")))
 
+
+    # ── 订单(设计稿「订单管理-订单列表」「交易查询-买家付款」)────────────────
+    # 放在商品之后 —— 订单行要引用真实 SPU。原来放在商品之前,只能硬编码一批
+    # 早已不存在的 SPU,结果 ordr_item 里 5 个 SPU 全是断链,而且不报错。
+    #
+    # ⚠️ 订单状态有一条**跨文档冲突**(答案集里的差集 D):
+    #    PRD / 状态机 fe-order:待付款 / 方案确认中 / 待发货 / 待收货 / 已完成 / 已关闭(6 个)
+    #    设计稿订单列表页签:待付款/待审核/待生产/生产中/已生产/待发货/已发货/待完成/完成/取消(10 个)
+    # 不偷偷选一边:`status` 存设计稿口径(页面用),`prd_status` 存 PRD 口径(状态机用),
+    # 映射写成显式的一张表。改状态机会让 19 条已推导的订单异常题作废,只用 PRD 口径又对不上页面。
+    # 这几个常量原来在订单块头部,搬块时落在了原地(SRC/ACT/DLV 全丢了)——
+    # 一起带过来。设计稿:订单来源、绑定活动、配送方式。
+    SRC = ["微信小程序","门店 Pad","官网","客服代下单"]
+    ACT = ["品牌文化体验活动","春季新品预售","","老客转介绍"]
+    DLV = ["配送到店","配送到客户"]
+    ST2PRD = {"待付款":"待付款","待审核":"方案确认中","待生产":"方案确认中","生产中":"方案确认中",
+              "已生产":"待发货","待发货":"待发货","已发货":"待收货","待完成":"待收货",
+              "完成":"已完成","取消":"已关闭"}
+    ST_CUS = ["待付款","待审核","待生产","生产中","已生产","待发货","已发货","待完成","完成","取消"]
+    ST_STD = ["待付款","待发货","已发货","待完成","完成","取消"]
+    REFUND = ["未退款","未退款","未退款","未退款","退款中","已退款"]
+    ADDR = ["上海市静安区南京西路 1266 号 3201 室","浙江省杭州市西湖区文三路 258 号 5 幢 802",
+            "江苏省苏州市姑苏区平江路 88 号","上海市徐汇区衡山路 922 弄 12 号 501",
+            "广东省广州市越秀区中山五路 33 号 1808","北京市朝阳区建国路 87 号 2604"]
+    ORD_REM = [None,None,"客户要求周六送达,已与门店确认",
+               "婚期临近,已标记优先排产","客户已确认款样,勿再改配置"]
+    # seed.py 的连接没设 row_factory,取出来是元组 —— 显式构造 dict
+    _prods = [dict(spu=r[0], name=r[1], kind=r[2], base_price=r[3], category=r[4])
+              for r in c.execute(
+              "SELECT spu,name,kind,base_price,category FROM product WHERE status='上架'")]
+    _std = [p for p in _prods if p["kind"] == "标品"]
+    _cus = [p for p in _prods if p["kind"] == "定制品"]
+    _custs = [r[0] for r in c.execute("SELECT id FROM customer ORDER BY id")]
+
+    for i in range(46):
+        oid = f"64880127{19714560000+i}"
+        is_cus = bool(i % 3)
+        kind = "定制品订单" if is_cus else "标品订单"
+        st = (ST_CUS if is_cus else ST_STD)[i % (10 if is_cus else 6)]
+        pool = _cus if is_cus else _std
+        n = 1 if i % 4 else 3
+        items = [pool[(i * 3 + k) % len(pool)] for k in range(n)]
+        goods = round(sum(p["base_price"] for p in items), 2)
+        # 定制部件金额:定制品另计,标品为 0(设计稿「基本金额 / 定制部件金额 / 合计总价」)
+        custom = round(goods * 0.18, 2) if is_cus else 0.0
+        freight = 0.0 if goods >= 2000 else 28.0
+        total = round(goods + custom + freight, 2)
+        received = total if st in ("已发货","待完成","完成","待生产","生产中","已生产","待发货") else \
+                   (0.0 if st in ("待付款","取消") else total)
+        day = 10 + (i % 18)
+        base_ts = f"2026-08-{day:02d}"
+        def _t(off, cond):
+            return f"{base_ts} {10+off:02d}:{(i*7)%60:02d}" if cond else None
+        seq = ST_CUS if is_cus else ST_STD
+        at = seq.index(st) if st in seq else 0
+        c.execute("""INSERT INTO ordr(id,customer_id,kind,status,advisor,shop,source,activity,
+                     delivery,amount,payable,created,updated,prd_status,goods_amount,freight,
+                     received,refund_status,addr,paid_at,audit_at,produced_at,shipped_at,
+                     finished_at,cancelled_at,remark)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (oid, _custs[i % len(_custs)], kind, st, random.choice(ADV), random.choice(SHOPS),
+                   SRC[i % 4], ACT[i % 4], DLV[i % 2], total, total,
+                   f"{base_ts} 16:16", f"{base_ts} 18:20",
+                   ST2PRD[st], goods, freight, received,
+                   REFUND[i % 6] if st in ("完成","待完成","已发货") else "未退款",
+                   ADDR[i % len(ADDR)],
+                   _t(1, at >= 1 or st == "完成"), _t(3, is_cus and at >= 2),
+                   _t(5, is_cus and at >= 4), _t(7, at >= (6 if is_cus else 2)),
+                   _t(9, st == "完成"), _t(11, st == "取消"),
+                   ORD_REM[i % len(ORD_REM)]))
+        for p in items:
+            base = p["base_price"]
+            cust_amt = round(base * 0.18, 2) if is_cus else 0.0
+            c.execute("""INSERT INTO ordr_item(order_id,sku,name,tag,price,qty,spu,
+                         base_amount,custom_amount,total)
+                         VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                      (oid, f"{p['spu']}-01", p["name"], p["kind"], base, 1,
+                       p["spu"], base, cust_amt, round(base + cust_amt, 2)))
+
     # ── 量体测量项 ──
     MI=[("MI01","身高","cm",1,1),("MI02","体重","kg",1,2),("MI03","胸围","cm",1,3),
         ("MI04","腰围","cm",1,4),("MI05","臀围","cm",1,5),("MI06","肩宽","cm",1,6),
@@ -704,15 +823,17 @@ def run():
            f"2026-09-0{2+i%3} 1{i}:0{i}"))
 
     # ── 会员等级配置(后台 PRD 6.2:滚动 12 个月实付金额或订单数,任一满足即升级)──
-    LV=[("L0","普通",0,0,0,"注册后默认等级"),
-        ("L1","银卡",5000,2,1,"滚动 12 个月实付 ≥5000 元 或 完成订单 ≥2 单"),
-        ("L2","金卡",15000,4,2,"滚动 12 个月实付 ≥15000 元 或 完成订单 ≥4 单"),
-        ("L3","黑金",30000,6,3,"滚动 12 个月实付 ≥30000 元 或 完成订单 ≥6 单")]
-    for code,nm,am,od,so,nt in LV:
-        c.execute("INSERT INTO level_cfg VALUES(?,?,?,?,?,?,?)",(code,nm,am,od,so,"启用",nt))
+    # 设计稿「会员等级」把规则拆成两条:购物规则(实付/单数)+ 积分规则(所需积分)
+    LV=[("L0","普通",0,0,0,"注册后默认等级",0,"下单实付每 1 元累积 1 分"),
+        ("L1","银卡",5000,2,1,"滚动 12 个月实付 ≥5000 元 或 完成订单 ≥2 单",3000,"下单实付每 1 元累积 1.2 分"),
+        ("L2","金卡",15000,4,2,"滚动 12 个月实付 ≥15000 元 或 完成订单 ≥4 单",10000,"下单实付每 1 元累积 1.5 分"),
+        ("L3","黑金",30000,6,3,"滚动 12 个月实付 ≥30000 元 或 完成订单 ≥6 单",25000,"下单实付每 1 元累积 2 分")]
+    for code,nm,am,od,so,nt,np_,pr in LV:
+        c.execute("INSERT INTO level_cfg VALUES(?,?,?,?,?,?,?,?,?)",
+                  (code,nm,am,od,so,"启用",nt,np_,pr))
     # 按规则重算客户等级(每日计算,订单完成 7 个自然日后计入)
     def level_of(amt,od):
-        for code,nm,am,ordn,so,_ in reversed(LV):
+        for code,nm,am,ordn,so,_,_np,_pr in reversed(LV):
             if so and (amt>=am or od>=ordn): return nm
         return "普通"
     for r in list(c.execute("SELECT id,amount_12m,orders_12m FROM customer")):
