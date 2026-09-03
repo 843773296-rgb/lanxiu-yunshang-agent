@@ -8,6 +8,21 @@ import json, os, subprocess, sys, time
 import trace as _trace
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","backend"))
 import api as backend
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","mcp"))
+import client as mcp                    # 只读,不启动进程;USE_MCP=1 时才真的拉起来
+
+def _tools(kind, extra=()):
+    """工具来源:默认直连 api.py;USE_MCP=1 时改走 MCP。
+    两条通道给出的 schema 同形、返回同形,所以**循环代码一个字都不用改**。"""
+    if mcp.enabled():
+        return mcp.get(kind).schemas() + list(extra)
+    return (backend.KB_SCHEMAS if kind == "kb" else backend.SCHEMAS) + list(extra)
+
+def _dispatch(kind, name, args):
+    if mcp.enabled():
+        return mcp.get(kind).call(name, **args)
+    fn = backend.TOOLS.get(name)
+    return fn(**args) if fn else {"error": f"未知工具 {name}"}
 
 HERE=os.path.dirname(os.path.abspath(__file__))
 TRACE=os.path.join(HERE,"llm-trace.jsonl")
@@ -106,7 +121,7 @@ SYSTEM="""你是澜绣云裳门店客户运营管理后台的人工任务助手�
 
 def run_case(pv, prompt, max_turns=12, purpose="人工任务"):
     msgs=[{"role":"user","content":prompt}]
-    tools=backend.SCHEMAS+[SUBMIT]
+    tools=_tools("task",[SUBMIT])
     tin=tout=tcache=0; calls=0; t0=time.time(); finding=None; traj=[]; last_text=""
     for _t in range(max_turns):
         resp=call(pv,dict(model=pv["model"],max_tokens=2000,system=SYSTEM,tools=tools,messages=msgs),
@@ -129,8 +144,7 @@ def run_case(pv, prompt, max_turns=12, purpose="人工任务"):
                 finding=blk["input"]
                 results.append({"type":"tool_result","tool_use_id":blk["id"],"content":"已提交"})
                 continue
-            fn=backend.TOOLS.get(blk["name"])
-            try: out=fn(**blk["input"]) if fn else {"error":f"未知工具 {blk['name']}"}
+            try: out=_dispatch("task",blk["name"],blk["input"])
             except Exception as e: out={"error":str(e)}
             results.append({"type":"tool_result","tool_use_id":blk["id"],
                             "content":json.dumps(out,ensure_ascii=False)})

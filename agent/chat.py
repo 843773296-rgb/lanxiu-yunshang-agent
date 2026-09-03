@@ -51,7 +51,7 @@ SYSTEM = """你是澜绣云裳的汉服工艺顾问助手,服务对象是**客�
 
 
 def tools():
-    return backend.KB_SCHEMAS
+    return v1._tools("kb")
 
 
 def ask(question, history=None, max_turns=8):
@@ -80,9 +80,8 @@ def ask(question, history=None, max_turns=8):
         results = []
         for blk in resp["content"]:
             if blk.get("type") != "tool_use": continue
-            fn = backend.TOOLS.get(blk["name"])
             try:
-                out = fn(**blk["input"]) if fn else {"error": f"未知工具 {blk['name']}"}
+                out = v1._dispatch("kb", blk["name"], blk["input"])
             except Exception as e:
                 out = {"error": str(e)}
             traj.append(dict(tool=blk["name"], args=blk["input"],
