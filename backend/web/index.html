@@ -1544,6 +1544,23 @@ async function productDetail(spu){
      <div><div class="l">SKU 数</div><div class="v mono">${d.skus.length}</div></div>
      <div><div class="l">近期订单</div><div class="v mono">${d.orders.length} 单</div></div>
     </div></div>
+   ${d.custom?`<div class="card"><div class="hd"><h3>定制可选项</h3>
+     <span class="n">形制 ${esc(d.custom.xz)} · 工期 ${esc(d.custom.lead_days||"—")}</span></div>
+    <div class="info" style="border-bottom:1px solid var(--line)">
+     <div><div class="l">可选面料</div><div class="v">${esc(d.custom.mt_opts||"(无,不可上架)")}</div></div>
+     <div><div class="l">可选工艺</div><div class="v">${esc(d.custom.kf_opts||"")}</div></div>
+    </div>
+    ${d.custom.note?`<div class="note2" style="margin:14px 24px 0"><b style="color:var(--bad)">已自动剔除</b> —— ${esc(d.custom.note)}</div>`:""}
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:170px">工艺</th>
+     <th style="width:130px">面料</th><th style="width:110px">相容判定</th><th>依据</th></tr></thead><tbody>
+    ${d.custom.combo.map(g=>`<tr><td>${esc(g.craft)}</td><td>${esc(g.material)}</td>
+      <td><span class="pill ${g.verdict==="可"?"p-ok":g.verdict==="不可"?"p-bad":"p-warn"}">${esc(g.verdict)}</span></td>
+      <td style="color:var(--ink2);font-size:12.5px">${esc(g.reason)}</td></tr>`).join("")}</tbody></table>
+    <div class="note2" style="margin:0 24px 20px"><b style="color:var(--ink)">这张表是商品库和约束层的对账</b> ——
+     商品库提供的每一对组合都必须能通过配置页的校验,否则客户会在下单时被拦。
+     判为「不可」的会在建库时自动剔除;<b>${d.custom.undef} 对「未定义」</b>说明相容矩阵还没录到这一格,
+     须转工艺负责人确认,<b>不得自行推断</b>。</div>
+   </div>`:""}
    <div class="card"><div class="hd"><h3>规格与库存</h3><span class="n">${d.skus.length} 个 SKU</span></div>
     <table class="tb" style="margin-top:12px"><thead><tr><th style="width:190px">SKU 编码</th>
     <th style="width:120px">规格</th><th style="width:110px">价格</th><th style="width:90px">库存</th>

@@ -385,6 +385,26 @@ def product_detail(spu):
                         JOIN ordr_item i ON i.order_id=o.id WHERE i.sku=?
                         ORDER BY o.created DESC LIMIT 10""",spu)
     p["logs"]=rows("SELECT * FROM op_log WHERE target=? ORDER BY id DESC LIMIT 20",spu)
+    # 定制品的可选项:形制 + 可选面料 + 可选工艺。
+    # 每一对「面料 × 工艺」的相容判定一并带出来 —— 顾问在商品页就能看到哪些组合要留意,
+    # 不必等到配置页被拦才知道。
+    pc=rows("SELECT * FROM product_custom WHERE spu=?",spu)
+    if pc:
+        d=dict(pc[0])
+        mts=[x for x in (d.get("mt_opts") or "").split(",") if x]
+        kfs=[x for x in (d.get("kf_opts") or "").split(",") if x]
+        n2c={r["name"]:r["code"] for r in rows("SELECT code,name FROM craft")}
+        cb={(r["craft"],r["material"]):r for r in rows("SELECT * FROM craft_combo")}
+        grid=[]
+        for k in kfs:
+            for m in mts:
+                hit=cb.get((n2c.get(k),n2c.get(m)))
+                grid.append(dict(craft=k,material=m,
+                                 verdict=hit["verdict"] if hit else "未定义",
+                                 reason=hit["reason"] if hit else "相容矩阵尚未录入这一格,须转工艺负责人确认"))
+        d["combo"]=grid
+        d["undef"]=sum(1 for g in grid if g["verdict"]=="未定义")
+        p["custom"]=d
     return p
 
 def category_tree():

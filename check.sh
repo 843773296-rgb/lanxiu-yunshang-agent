@@ -13,6 +13,7 @@ run "状态流转引擎 · 17 个用例" python3 backend/fsm.py
 run "写入校验规则 · 10 个用例" python3 backend/rules.py
 run "控件审计 · 死控件检查"    python3 backend/ui_audit.py
 run "遮蔽检查 · 局部变量压函数" python3 backend/shadow_check.py
+run "商品库 · 不卖矩阵判不可的组合" python3 backend/catalog_check.py
 run "V1 循环 · 离线自测"       python3 agent/offline_test.py
 run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py
 run "判分器自测 · 18 条人造用例" python3 agent/chat_eval_judgetest.py
