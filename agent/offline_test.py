@@ -38,7 +38,7 @@ def make_script(deposit_id):
 
 def run(deposit_id="D2000"):
     script=make_script(deposit_id); idx={"i":0}
-    def fake_call(pv, body, retries=6):
+    def fake_call(pv, body, retries=6, **kw):   # **kw 兼容记录仪加的 purpose/turn
         # run_case 是原地 append messages,必须存快照否则四轮记的都是最终状态
         CALLS.append(json.loads(json.dumps(body["messages"], ensure_ascii=False)))
         r=script[idx["i"]]; idx["i"]+=1; return r

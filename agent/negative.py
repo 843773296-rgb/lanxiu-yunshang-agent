@@ -134,7 +134,7 @@ def main():
     recs = []
     for i, cs in enumerate(CASES, 1):
         try:
-            r = v1.run_case(pv, cs["prompt"])
+            r = v1.run_case(pv, cs["prompt"], purpose="退款定因·负向")
         except Exception as e:
             r = dict(finding=None, error=str(e)[:160])
         f = r.get("finding")

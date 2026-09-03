@@ -5,6 +5,7 @@ HTTP 一律走 curl(本机 Python 的 TLS 校验会被中间人拦截失败)。
 记录仪同时记 cost_usd(供应商口径)与 cost_local(按当前单价自算),用 cost_source 标明该信哪个。
 """
 import json, os, subprocess, sys, time
+import trace as _trace
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","backend"))
 import api as backend
 
@@ -42,21 +43,46 @@ def provider():
         headers=["authorization: Bearer "+tok,"anthropic-version: 2023-06-01",
                  "anthropic-beta: oauth-2025-04-20"],price=price_of(m))
 
-def call(pv, body, retries=6):
-    """限流退避:OAuth 凭证与本机 Claude Code 会话共用额度,必须退让。"""
+def call(pv, body, retries=6, purpose="未标注", turn=None, cache=None):
+    """限流退避:OAuth 凭证与本机 Claude Code 会话共用额度,必须退让。
+
+    这是全项目唯一真正发出请求的地方 —— 记录仪就包在这一层,
+    所以两个智能体、三套评测集、页面上的每一次点击,全都会被记下来。
+    """
+    # 提示词缓存(实验开关):把 system 改成带 cache_control 的块。
+    # 渲染顺序是 tools → system → messages,所以标在 system 上,
+    # 缓存的正好是「工具说明书 + 系统提示词」这段每轮都一样的前缀。
+    if (cache if cache is not None else os.environ.get("PROMPT_CACHE")=="1") \
+       and isinstance(body.get("system"), str):
+        body=dict(body, system=[{"type":"text","text":body["system"],
+                                 "cache_control":{"type":"ephemeral"}}])
     cmd=["curl","-sS","-X","POST",pv["url"],"-H","content-type: application/json"]
     for h in pv["headers"]: cmd += ["-H",h]
     cmd += ["--data-binary","@-"]
     delay=8
     for att in range(retries):
+        t0=time.time()
         r=subprocess.run(cmd,input=json.dumps(body),capture_output=True,text=True)
-        if r.returncode!=0: raise RuntimeError(f"curl 失败: {r.stderr[:300]}")
+        ms=(time.time()-t0)*1000
+        def _rec(**kw):
+            try: _trace.record(model=pv.get("model"),purpose=purpose,price=pv.get("price"),
+                               latency_ms=ms,turn=turn,attempt=att,body=body,
+                               cache_on=not isinstance(body.get("system"),str),**kw)
+            except Exception: pass          # 记录仪永远不能把主流程搞挂
+        if r.returncode!=0:
+            _rec(usage=None,error=f"curl 失败: {r.stderr[:200]}")
+            raise RuntimeError(f"curl 失败: {r.stderr[:300]}")
         try: resp=json.loads(r.stdout)
-        except Exception: raise RuntimeError(f"响应不是 JSON: {r.stdout[:300]}")
+        except Exception:
+            _rec(usage=None,error=f"响应不是 JSON: {r.stdout[:200]}")
+            raise RuntimeError(f"响应不是 JSON: {r.stdout[:300]}")
         err=resp.get("error",{})
         if err.get("type") in ("rate_limit_error","overloaded_error","api_error"):
+            _rec(usage=None,error=f"{err.get('type')}: {err.get('message','')[:120]}")
             if att==retries-1: raise RuntimeError(f"重试 {retries} 次仍限流")
             time.sleep(delay); delay=min(delay*2,120); continue
+        _rec(usage=resp.get("usage"),finish_reason=resp.get("stop_reason"),
+             resp_text="".join(b.get("text","") for b in resp.get("content",[]) if b.get("type")=="text"))
         return resp
 
 SUBMIT={"name":"submit_finding","description":"提交最终草稿。调用后本次分析结束。",
@@ -78,12 +104,13 @@ SYSTEM="""你是澜绣云裳门店客户运营管理后台的人工任务助手�
 3. 不得建议绕过审批链、幂等号或重试上限。退款必须由客服或店长发起、店长复核,单笔达 1000 元时增加财务复核。
 4. 分析完成后调用 submit_finding 提交,不要用纯文本回复结论。"""
 
-def run_case(pv, prompt, max_turns=12):
+def run_case(pv, prompt, max_turns=12, purpose="人工任务"):
     msgs=[{"role":"user","content":prompt}]
     tools=backend.SCHEMAS+[SUBMIT]
     tin=tout=tcache=0; calls=0; t0=time.time(); finding=None; traj=[]; last_text=""
-    for _ in range(max_turns):
-        resp=call(pv,dict(model=pv["model"],max_tokens=2000,system=SYSTEM,tools=tools,messages=msgs))
+    for _t in range(max_turns):
+        resp=call(pv,dict(model=pv["model"],max_tokens=2000,system=SYSTEM,tools=tools,messages=msgs),
+                  purpose=purpose,turn=_t+1)
         if "error" in resp: raise RuntimeError(json.dumps(resp["error"],ensure_ascii=False)[:300])
         calls+=1
         u=resp.get("usage",{})

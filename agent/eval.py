@@ -119,7 +119,7 @@ def main():
             prompt, case, bp = v1.BP02.format(a=a, b=b), t["id"][1:], "BP-02"
         tr = T.get(case, {})
         try:
-            r = v1.run_case(pv, prompt)
+            r = v1.run_case(pv, prompt, purpose=("退款定因" if bp=="BP-01" else "客户合并"))
         except Exception as e:
             r = dict(finding=None, error=str(e)[:160])
         f = r.get("finding")

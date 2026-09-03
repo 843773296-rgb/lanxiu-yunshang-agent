@@ -65,7 +65,8 @@ def ask(question, history=None, max_turns=8):
     tin = tout = tcache = 0; calls = 0; traj = []; t0 = time.time(); answer = ""
     for _ in range(max_turns):
         resp = v1.call(pv, dict(model=pv["model"], max_tokens=1500, system=SYSTEM,
-                                tools=tools(), messages=msgs))
+                                tools=tools(), messages=msgs),
+                       purpose="工艺顾问", turn=len(traj) + 1)
         if "error" in resp:
             raise RuntimeError(json.dumps(resp["error"], ensure_ascii=False)[:300])
         calls += 1
