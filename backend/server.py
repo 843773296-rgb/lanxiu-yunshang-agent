@@ -354,9 +354,20 @@ def order_list(q):
     d["counts"]={s:rows("SELECT COUNT(*) c FROM ordr WHERE status=?",s)[0]["c"] for s in d["prd_states"]}
     return d
 
+def cat_paths():
+    """三级类目的全路径 —— 设计稿详情页写作「类目一-类目二-类目三」"""
+    cs={r["code"]:r for r in rows("SELECT code,name,parent FROM category")}
+    out={}
+    for code,r in cs.items():
+        parts=[]; cur=r
+        while cur:
+            parts.insert(0,cur["name"]); cur=cs.get(cur["parent"])
+        out[code]="-".join(parts)
+    return out
+
 def product_list(q):
     kw=(q.get("q") or [""])[0].strip()
-    f={k:(q.get(k) or [""])[0] for k in ("kind","status","category")}
+    f={k:(q.get(k) or [""])[0] for k in ("kind","status","category","gender")}
     rs=rows("""SELECT p.*, c.name cat_name FROM product p
                LEFT JOIN category c ON p.category=c.code ORDER BY p.spu""")
     for r in rs:
@@ -367,12 +378,15 @@ def product_list(q):
         r["sold"]=rows("SELECT COUNT(*) c FROM ordr_item WHERE sku=?",r["spu"])[0]["c"]
     if kw: rs=[r for r in rs if kw in r["spu"] or kw in r["name"]]
     for k,v in f.items():
-        if v: rs=[r for r in rs if r.get(k if k!="category" else "category")==v]
+        if v: rs=[r for r in rs if r.get(k)==v]
     rs=_sort(rs,q,{"spu","name","base_price","stock","avail","updated"})
     d=_page(rs,q)
-    d["facets"]=dict(kind=["标品","定制品"],status=["已上架","已下架"],
-      category=[r["code"] for r in rows("SELECT code FROM category WHERE parent IS NOT NULL ORDER BY code")])
-    d["catnames"]={r["code"]:r["name"] for r in rows("SELECT code,name FROM category")}
+    # 只列末级类目(没有子节点的),否则筛选框里会混进一二级
+    _leaf=[r["code"] for r in rows("""SELECT code FROM category c WHERE NOT EXISTS
+             (SELECT 1 FROM category x WHERE x.parent=c.code) ORDER BY code""")]
+    d["facets"]=dict(kind=["标品","定制品"],status=["上架","下架"],
+      gender=["女","男","童","通用"],category=_leaf)
+    d["catnames"]=cat_paths()
     return d
 
 def product_detail(spu):
@@ -380,6 +394,7 @@ def product_detail(spu):
               LEFT JOIN category c ON p.category=c.code WHERE p.spu=?""",spu)
     if not r: return {"error":"商品不存在"}
     p=r[0]
+    p["cat_path"]=cat_paths().get(p["category"],"")
     p["skus"]=rows("SELECT * FROM sku WHERE spu=? ORDER BY code",spu)
     p["orders"]=rows("""SELECT o.id,o.status,o.created,o.amount FROM ordr o
                         JOIN ordr_item i ON i.order_id=o.id WHERE i.sku=?
@@ -843,15 +858,29 @@ def save_product(d,actor="魏欣新",role="顾问"):
                          updated=datetime('now','localtime') WHERE spu=?""",
                       (name,cat,kind,price,tpl,spu))
         else:
-            c.execute("""INSERT INTO product VALUES(?,?,?,?,'已下架',?,?,
-                         datetime('now','localtime'),datetime('now','localtime'),?)""",
-                      (spu,name,cat,kind,price,tpl,name[:2]))
-            c.execute("INSERT INTO sku VALUES(?,?,?,?,?,?,0,0,'启用')",
-                      (f"{spu}-01",spu,"默认/均码","默认","均码",price))
+            # 具名列 —— product 表已按设计稿扩到 21 列,位置参数插入会静默错位
+            c.execute("""INSERT INTO product
+                (spu,name,category,kind,status,base_price,template,created,updated,cover,
+                 tag_price,unit,gender,points,commission_type,commission_val,remark,
+                 img_main,img_detail,img_intro)
+                VALUES(?,?,?,?,'下架',?,?,datetime('now','localtime'),
+                       datetime('now','localtime'),?,?,?,?,?,?,?,?,?,?,?)""",
+                      (spu,name,cat,kind,price,tpl,name[:2],
+                       round(price*1.12,2),d.get("unit") or "件",d.get("gender") or "女",
+                       int(price*100),d.get("commission_type") or "按比例",
+                       float(d.get("commission_val") or 10),d.get("remark"),
+                       f"/img/{spu}-main.svg",
+                       json.dumps([f"/img/{spu}-d{k}.svg" for k in (1,2,3)]),
+                       json.dumps([f"/img/{spu}-intro.svg"])))
+            c.execute("""INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,
+                         spec_code,points,img)
+                         VALUES(?,?,?,?,?,?,0,0,'启用',?,?,?)""",
+                      (f"{spu}-01",spu,"默认/均码","默认","均码",price,
+                       f"GG{spu[-5:]}01",int(price*100),f"/img/{spu}-sku1.svg"))
     log_op(actor,"product",spu,"新建" if new else "编辑","已保存",True,
            "CREATE" if new else "UPDATE",f"{name} · {kind} · ¥{price}",{"role":role})
     return dict(ok=True,code="CREATE" if new else "UPDATE",spu=spu,
-      reason=(f"商品 {spu} 已创建,默认状态为「已下架」,补齐 SKU 与库存后再上架" if new
+      reason=(f"商品 {spu} 已创建,默认状态为「下架」,补齐 SKU 与库存后再上架" if new
               else f"商品 {spu} 已更新"))
 
 def save_block(d,actor="魏欣新"):
@@ -1114,6 +1143,14 @@ class H(BaseHTTPRequestHandler):
         if p=="/acceptance":
             b=open(os.path.join(HERE,"web","acceptance.html"),"rb").read()
             self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
+            self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
+        if p.startswith("/img/") and p.endswith(".svg"):
+            import img as _img
+            stem=p[len("/img/"):-4]; spu,_,variant=stem.rpartition("-")
+            b=_img.render(spu,variant).encode("utf-8")
+            self.send_response(200)
+            self.send_header("content-type","image/svg+xml; charset=utf-8")
+            self.send_header("cache-control","max-age=3600")
             self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
         if p=="/scheme":
             b=open(os.path.join(HERE,"web","scheme.html"),"rb").read()

@@ -41,7 +41,7 @@ SM["bk-download"]=dict(id="bk-download",name="下载任务",type="event",
   terminal=["已过期"])
 # 商品上下架(后台无独立 PRD 章节,按标签状态机形态定义;下架不影响历史订单)
 SM["bk-product"]=dict(id="bk-product",name="商品",type="event",
-  states=["已上架","已下架"],edges=[["已上架","已下架"],["已下架","已上架"]],terminal=[],
+  states=["上架","下架"],edges=[["上架","下架"],["下架","上架"]],terminal=[],
   notes=["下架后不可新增下单,历史订单与库存记录保留"])
 MERGE_ROLE={("待核验","待总部审批"):"店长",("待总部审批","已合并"):"总部运营",
             ("待总部审批","已驳回"):"总部运营",("待核验","已核验"):"店长"}

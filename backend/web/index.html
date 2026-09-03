@@ -1482,7 +1482,7 @@ async function orderList(){
 }
 
 Q.prd={page:1,per:10}; Q.stk={page:1,per:10};
-const PPILL={"已上架":"p-ok","已下架":"p-mut","启用":"p-ok","停用":"p-mut"};
+const PPILL={"上架":"p-ok","下架":"p-mut","启用":"p-ok","停用":"p-mut"};
 const cover=(nm,kind)=>`<span class="thumb2" style="background:${kind==="定制品"
   ?"linear-gradient(155deg,#7A4A2E,#A9713F)":"linear-gradient(155deg,#2F5A4B,#4C7F6C)"}">${esc((nm||"").slice(0,2))}</span>`;
 
@@ -1492,6 +1492,7 @@ async function productList(){
    <div class="card">
     <div class="form">${fld("商品名称/SPU","q",st,null,"请输入")}
       ${fld("商品类型","kind",st,F.kind)}${fld("上架状态","status",st,F.status)}
+      ${fld("性别","gender",st,F.gender)}
       <div class="fi"><label>所属品类</label><select class="ctl" data-f="category" style="color:var(--ink)">
         <option value="">全部</option>${F.category.map(c=>`<option value="${esc(c)}" ${st.category===c?"selected":""}>${esc(d.catnames[c]||c)}</option>`).join("")}
       </select></div>${acts()}</div>
@@ -1501,21 +1502,28 @@ async function productList(){
      <th style="width:44px"><span class="cb" data-cball></span></th>
      ${sortTh("SPU","spu",st,"150px")}${sortTh("商品名称","name",st)}
      <th style="width:100px">品类</th><th style="width:90px">类型</th>
-     ${sortTh("基础价","base_price",st,"110px")}<th style="width:70px">SKU</th>
+     ${sortTh("售价","base_price",st,"100px")}<th style="width:105px">吊牌价</th>
+     <th style="width:100px">兑换积分</th><th style="width:70px">SKU</th>
      ${sortTh("库存","stock",st,"80px")}${sortTh("可用","avail",st,"80px")}
      <th style="width:90px">状态</th><th style="width:80px">操作</th></tr></thead><tbody>
      ${d.rows.map(r=>`<tr><td><span class="cb" data-cb="${esc(r.spu)}"></span></td>
       <td class="mono">${esc(r.spu)}</td>
-      <td><div style="display:flex;gap:10px;align-items:center">${cover(r.name,r.kind)}
-        <div>${esc(r.name)}${r.template?`<div style="font-size:11.5px;color:var(--ink3);margin-top:3px">量体模版 ${esc(r.template)}</div>`:""}</div></div></td>
-      <td>${esc(r.cat_name||"")}</td>
+      <td><div style="display:flex;gap:10px;align-items:center">
+        <img src="${esc(r.img_main||"")}" alt="" width="40" height="40"
+             style="border-radius:5px;object-fit:cover;flex:0 0 40px;background:var(--tile)">
+        <div>${esc(r.name)}<div style="font-size:11.5px;color:var(--ink3);margin-top:3px">
+          ${esc(r.gender||"")} · ${esc(r.unit||"")}${r.template?" · 量体模版 "+esc(r.template):""}</div></div></div></td>
+      <td style="font-size:12.5px">${esc(d.catnames[r.category]||r.cat_name||"")}</td>
       <td><span class="pill ${r.kind==="定制品"?"p-warn":"p-blue"}">${esc(r.kind)}</span></td>
-      <td class="mono">¥${money(r.base_price)}</td><td class="mono">${r.sku_n}</td>
+      <td class="mono">¥${money(r.base_price)}</td>
+      <td class="mono" style="color:var(--ink3)">¥${money(r.tag_price||r.base_price)}</td>
+      <td class="mono" style="color:var(--ink3)">${(r.points||0).toLocaleString()}</td>
+      <td class="mono">${r.sku_n}</td>
       <td class="mono">${r.stock}</td>
       <td class="mono" style="${r.avail<=5?"color:var(--bad);font-weight:600":""}">${r.avail}</td>
       <td><span class="pill ${PPILL[r.status]}">${esc(r.status)}</span></td>
       <td><span class="lk" data-pd="${esc(r.spu)}">详情</span></td></tr>`).join("")}
-     ${d.rows.length?"":'<tr><td colspan="11" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的商品</td></tr>'}
+     ${d.rows.length?"":'<tr><td colspan="13" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的商品</td></tr>'}
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-pd]").forEach(e=>e.onclick=()=>view("product",e.dataset.pd));
   M.querySelectorAll("[data-newprod]").forEach(e=>e.onclick=()=>formProduct(null,productList));
@@ -1527,23 +1535,42 @@ async function productDetail(spu){
   const d=await get("/api/product/"+spu);
   if(d.error){M.innerHTML=chrome([["首页","workbench"],["商品","products"],"商品详情"],
     `<div class="err">${esc(d.error)}</div>`);return}
-  const on=d.status==="已上架";
+  const on=d.status==="上架";
   M.innerHTML=chrome([["首页","workbench"],["商品","products"],["商品库","products"],"商品详情"],`
    <div class="dh">${cover(d.name,d.kind)}<span class="no" style="margin-left:4px">${esc(d.name)}</span>
      <span class="pill ${PPILL[d.status]}">${esc(d.status)}</span>
      <span class="pill ${d.kind==="定制品"?"p-warn":"p-blue"}">${esc(d.kind)}</span></div>
    <div class="card"><div class="hd"><h3>基本信息:</h3>
      <span class="more" data-editprod>✎ 编辑</span></div>
+    <div style="display:flex;gap:18px;padding:0 24px 4px;flex-wrap:wrap">
+      <div><div class="l" style="margin-bottom:6px">主图</div>
+        <img src="${esc(d.img_main||"")}" alt="" width="132" height="132"
+             style="border-radius:8px;background:var(--tile)"></div>
+      <div style="flex:1;min-width:260px"><div class="l" style="margin-bottom:6px">商品细节图 / 简介图</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${[...(JSON.parse(d.img_detail||"[]")),...(JSON.parse(d.img_intro||"[]"))].map(u=>
+          `<img src="${esc(u)}" alt="" width="78" height="78" style="border-radius:6px;background:var(--tile)">`).join("")}
+        </div>
+        <div style="font-size:11.5px;color:var(--ink3);margin-top:8px">
+          建议 750×750px,最多 9 张</div></div>
+    </div>
     <div class="info">
-     <div><div class="l">SPU</div><div class="v mono">${esc(d.spu)}</div></div>
-     <div><div class="l">所属品类</div><div class="v">${esc(d.cat_name||"")}</div></div>
-     <div><div class="l">基础价</div><div class="v mono">¥${money(d.base_price)}</div></div>
+     <div><div class="l">货品编码(SPU)</div><div class="v mono">${esc(d.spu)}</div></div>
+     <div><div class="l">商品类目</div><div class="v">${esc(d.cat_path||d.cat_name||"")}</div></div>
+     <div><div class="l">计量单位</div><div class="v">${esc(d.unit||"")}</div></div>
+     <div><div class="l">性别</div><div class="v">${esc(d.gender||"")}</div></div>
+     <div><div class="l">售价</div><div class="v mono">¥${money(d.base_price)}</div></div>
+     <div><div class="l">吊牌价</div><div class="v mono">¥${money(d.tag_price||d.base_price)}</div></div>
+     <div><div class="l">兑换积分</div><div class="v mono">${(d.points||0).toLocaleString()}</div></div>
+     <div><div class="l">佣金分配方式</div><div class="v">${esc(d.commission_type||"")}${
+        d.commission_type==="按比例"?` · ${d.commission_val}%`:` · ¥${money(d.commission_val||0)}`}</div></div>
      <div><div class="l">量体模版</div><div class="v">${esc(d.template||"—— 标品无需量体")}</div></div>
+     <div><div class="l">上架时间</div><div class="v mono">${esc(d.on_shelf_at||"—")}</div></div>
      <div><div class="l">创建时间</div><div class="v mono">${esc(d.created)}</div></div>
      <div><div class="l">最后更新</div><div class="v mono">${esc(d.updated)}</div></div>
-     <div><div class="l">SKU 数</div><div class="v mono">${d.skus.length}</div></div>
-     <div><div class="l">近期订单</div><div class="v mono">${d.orders.length} 单</div></div>
-    </div></div>
+    </div>
+    ${d.remark?`<div class="note2" style="margin:0 24px 20px"><b style="color:var(--ink)">备注</b> —— ${esc(d.remark)}</div>`:""}
+    </div>
    ${d.custom?`<div class="card"><div class="hd"><h3>定制可选项</h3>
      <span class="n">形制 ${esc(d.custom.xz)} · 工期 ${esc(d.custom.lead_days||"—")}</span></div>
     <div class="info" style="border-bottom:1px solid var(--line)">
@@ -1562,12 +1589,19 @@ async function productDetail(spu){
      须转工艺负责人确认,<b>不得自行推断</b>。</div>
    </div>`:""}
    <div class="card"><div class="hd"><h3>规格与库存</h3><span class="n">${d.skus.length} 个 SKU</span></div>
-    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:190px">SKU 编码</th>
-    <th style="width:120px">规格</th><th style="width:110px">价格</th><th style="width:90px">库存</th>
-    <th style="width:90px">占用</th><th style="width:90px">可用</th><th style="width:90px">状态</th>
+    <table class="tb" style="margin-top:12px"><thead><tr><th style="width:52px">图</th>
+    <th style="width:172px">商品编码(SKU)</th>
+    <th style="width:104px">规格</th><th style="width:74px">领型</th><th style="width:64px">号型</th>
+    <th style="width:108px">规格码</th><th style="width:78px">重量KG</th><th style="width:88px">体积m³</th>
+    <th style="width:100px">销售价</th><th style="width:78px">库存</th>
+    <th style="width:74px">占用</th><th style="width:74px">可用</th><th style="width:82px">是否停用</th>
     <th>提示</th></tr></thead><tbody>
     ${d.skus.map(k=>{const av=k.stock-k.locked; return `<tr>
+     <td><img src="${esc(k.img||"")}" alt="" width="34" height="34" style="border-radius:4px;background:var(--tile)"></td>
      <td class="mono">${esc(k.code)}</td><td>${esc(k.spec)}</td>
+     <td>${esc(k.collar||"—")}</td><td class="mono">${esc(k.size_no||"—")}</td>
+     <td class="mono" style="font-size:12px">${esc(k.spec_code||"—")}</td>
+     <td class="mono">${k.weight_kg??"—"}</td><td class="mono">${k.volume_m3??"—"}</td>
      <td class="mono">¥${money(k.price)}</td><td class="mono">${k.stock}</td>
      <td class="mono">${k.locked}</td>
      <td class="mono" style="${av<=5?"color:var(--bad);font-weight:600":""}">${av}</td>
@@ -1584,7 +1618,7 @@ async function productDetail(spu){
      <td class="mono">¥${money(o.amount)}</td><td class="mono">${esc(o.created)}</td></tr>`).join("")}
     </tbody></table></div>`:""}
    <div class="fbar"><button class="btn" data-back="products">返回</button>
-    <button class="btn sol" data-prod="${esc(spu)}" data-to="${on?"已下架":"已上架"}">${on?"下架商品":"上架商品"}</button></div>`);
+    <button class="btn sol" data-prod="${esc(spu)}" data-to="${on?"下架":"上架"}">${on?"下架商品":"上架商品"}</button></div>`);
   M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));
   M.querySelectorAll("[data-editprod]").forEach(e=>e.onclick=()=>formProduct(d,()=>view("product",spu)));
   M.querySelectorAll("[data-prod]").forEach(e=>e.onclick=()=>

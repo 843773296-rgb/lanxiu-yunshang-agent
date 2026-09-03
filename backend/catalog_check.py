@@ -29,31 +29,44 @@ for pc in q("SELECT * FROM product_custom"):
             v, why = combo.get((name2code.get(k), name2code.get(m)), (None, None))
             if v == "不可":
                 bad.append(f"{p['name']}({p['status']}) 提供了不可组合 {k} × {m} —— {why}")
-    if p["status"] == "已上架" and not mts:
-        bad.append(f"{p['name']} 已上架但一个可选面料都没有")
-    if not mts and p["status"] != "已下架":
-        bad.append(f"{p['name']} 无可选面料却不是已下架")
+    if p["status"] == "上架" and not mts:
+        bad.append(f"{p['name']} 上架但一个可选面料都没有")
+    if not mts and p["status"] != "下架":
+        bad.append(f"{p['name']} 无可选面料却不是下架")
 
-# ② 定制品必须有量体模版(和 save_product 的规则一致)
+# ②b 定制品必须有量体模版(和 save_product 的规则一致)
 for p in prods.values():
     if p["kind"] == "定制品" and not p["template"]:
         bad.append(f"{p['name']} 是定制品但没关联量体模版")
     if p["category"] and p["category"] not in cats:
         bad.append(f"{p['name']} 的品类 {p['category']} 不存在")
 
-# ③ 定制品都要有 product_custom 扩展
+# ③b 定制品都要有 product_custom 扩展
 missing = [p["name"] for p in prods.values() if p["kind"] == "定制品"
            and not q("SELECT 1 FROM product_custom WHERE spu=?", p["spu"])]
 for m in missing: warn.append(f"{m} 是定制品但没有可选项配置(product_custom)")
 
-# ④ 已上架标品至少要有一个启用且有库存的 SKU
+# ④ 设计稿要求的字段不能空(商品库-新建商品 / 商品详情-标品)
+NEED = [("tag_price","吊牌价"),("unit","计量单位"),("gender","性别"),("points","兑换积分"),
+        ("commission_type","佣金分配方式"),("img_main","主图")]
 for p in prods.values():
-    if p["kind"] != "标品" or p["status"] != "已上架": continue
+    for f,label in NEED:
+        if p.get(f) in (None,"",0) and not (f=="points" and p.get(f)==0):
+            bad.append(f"{p['name']} 缺「{label}」—— 设计稿的商品表单要求必填")
+    if p["status"]=="上架" and not p.get("on_shelf_at"):
+        warn.append(f"{p['name']} 已上架但没有上架时间")
+for s_ in q("SELECT * FROM sku"):
+    if not s_.get("spec_code"):
+        bad.append(f"{s_['code']} 缺商品规格码")
+
+# ⑤ 上架标品至少要有一个启用且有库存的 SKU
+for p in prods.values():
+    if p["kind"] != "标品" or p["status"] != "上架": continue
     sks = q("SELECT * FROM sku WHERE spu=?", p["spu"])
     if not any(s["status"] == "启用" for s in sks):
-        bad.append(f"{p['name']} 已上架但没有一个启用的 SKU")
+        bad.append(f"{p['name']} 上架但没有一个启用的 SKU")
     elif not any(s["status"] == "启用" and s["stock"] > 0 for s in sks):
-        warn.append(f"{p['name']} 已上架但全部 SKU 零库存")
+        warn.append(f"{p['name']} 上架但全部 SKU 零库存")
     for s in sks:
         if s["locked"] > s["stock"]:
             bad.append(f"{s['code']} 锁定 {s['locked']} > 库存 {s['stock']}")
