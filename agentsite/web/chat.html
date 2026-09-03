@@ -1,4 +1,4 @@
-<title>工艺顾问助手</title>
+<title>工艺顾问助手 · 智能体工作站</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 :root{
@@ -81,12 +81,37 @@ footer{font-size:12px;color:var(--ink-3);padding-top:10px;text-align:center}
 footer code{font-family:var(--mono);font-size:11px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
+<nav class="sitenav">
+  <a class="brand" href="/">澜绣云裳 · 智能体工作站</a>
+  <a href="/chat" data-p="/chat">工艺顾问助手</a>
+  <a href="/scheme" data-p="/scheme">定制方案配置</a>
+  <a href="/workbench" data-p="/workbench">智能体工作台</a>
+  <a href="/acceptance" data-p="/acceptance">验收台</a>
+  <span class="core">内核 Claude Agent SDK · 工具经 MCP 挂载</span>
+  <a class="back" href="http://127.0.0.1:8760/" target="_blank" rel="noopener">← 回后台</a>
+</nav>
+<style>
+.sitenav{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 26px;height:52px;
+ background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;
+ font-family:var(--sans);font-size:13.5px;margin:0 -26px 0}
+.sitenav a{color:var(--ink-2);text-decoration:none;padding:6px 12px;border-radius:4px}
+.sitenav a:hover{background:var(--paper-2);color:var(--dye)}
+.sitenav a[aria-current]{background:var(--dye-soft);color:var(--dye);font-weight:600}
+.sitenav .brand{font-weight:600;color:var(--ink);margin-right:10px;padding-left:0}
+.sitenav .core{margin-left:auto;color:var(--ink-3);font-size:11.5px;font-family:var(--mono)}
+.sitenav .back{color:var(--ink-3);font-size:12.5px}
+body>.wrap{padding-top:0}
+</style>
+<script>document.querySelectorAll(".sitenav a[data-p]").forEach(a=>{
+  if(a.dataset.p===location.pathname)a.setAttribute("aria-current","page")});</script>
 <div class="wrap">
 <header class="top">
   <div class="eyebrow"><span class="dot"></span><span class="lab">澜绣云裳 · 定制业务协同助手</span></div>
   <h1>工艺顾问助手</h1>
   <p class="deck">顾问懂客户、不懂工艺。这里可以直接用大白话问 ——
-  它会去查工艺知识库,<b>只答查到的</b>,查不到就说查不到。</p>
+  它会去查工艺知识库,<b>只答查到的</b>,查不到就说查不到。<br>
+  <b>内核是 Claude Agent SDK</b>:循环、上下文、工具调度都由它管,
+  知识库工具经 <b>MCP</b> 挂载,模型走 DeepSeek。</p>
   <div class="tiers" id="score" style="display:none"></div>
   <div class="tiers">
     <span class="tier t-public">public 可对客户说</span>
@@ -103,13 +128,13 @@ footer code{font-family:var(--mono);font-size:11px}
   <textarea id="q" rows="1" placeholder="比如:香云纱能不能做妆花?  (Enter 发送,Shift+Enter 换行)"></textarea>
   <button id="send">问</button>
 </div>
-<footer>工具 <code>backend/api.py</code> 四个只读接口 · 循环 <code>agent/chat.py</code> · 知识库 <code>knowledge/</code></footer>
+<footer>内核 <code>agentsite/sdk.py</code>(Agent SDK)· 工具 <code>mcp/kb_server.py</code>(MCP)· 知识库 <code>knowledge/</code></footer>
 </div>
 <script>
 const $=id=>document.getElementById(id), log=$("log");
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const md=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/「(.+?)」/g,"「<b>$1</b>」");
-let HISTORY=[];
+let HISTORY=[];   // Agent SDK 每次 query 起新会话,历史暂不透传
 
 const SEEDS=["香云纱能不能做妆花?","客户想在宋锦上做妆花,行吗?",
   "客人说要仙气飘飘的,该推什么形制?","明制马面裙配什么颜色不会出错?",
@@ -149,18 +174,19 @@ async function send(){
   bubble("user",esc(q));
   const wait=bubble("assistant",`<span class="spin"></span>正在查知识库…`);
   try{
-    const r=await (await fetch("/api/chat",{method:"POST",
+    const r=await (await fetch("/run",{method:"POST",
       headers:{"content-type":"application/json"},
-      body:JSON.stringify({q,history:HISTORY})})).json();
+      body:JSON.stringify({kind:"kb",prompt:q})})).json();
     wait.remove();
     if(r.error){ bubble("assistant",`<span class="err">${esc(r.error)}</span>`); return; }
+    const u=r.usage||{}, cr=u.cache_read_input_tokens||0, ti=u.input_tokens||0;
     const d=document.createElement("div"); d.className="msg a";
     d.innerHTML=trajHTML(r.trajectory)+
-      `<div class="bub">${md(r.answer)}</div>`+
-      `<div class="meta">${r.calls} 次调用 · ${r.seconds}s · $${(r.cost_local||0).toFixed(4)} · ${esc(r.model)}</div>`;
+      `<div class="bub">${md(r.text)}</div>`+
+      `<div class="meta">${(r.trajectory||[]).length} 次工具调用 · ${r.seconds}s · ${esc(r.model)}`+
+      ` · 输入 ${ti}(缓存命中 ${cr}${ti?` = ${(cr/ti*100).toFixed(0)}%`:""}) · 输出 ${u.output_tokens||0}</div>`;
     log.appendChild(d); d.scrollIntoView({block:"end",behavior:"smooth"});
-    HISTORY.push({role:"user",content:q},{role:"assistant",content:r.answer});
-    if(HISTORY.length>8) HISTORY=HISTORY.slice(-8);
+
   }catch(e){
     wait.remove(); bubble("assistant",`<span class="err">连不上后台:${esc(e.message)}</span>`);
   }finally{ $("send").disabled=false; $("send").textContent="问"; }

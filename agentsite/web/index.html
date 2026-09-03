@@ -1,0 +1,119 @@
+<title>澜绣云裳 · 智能体工作站</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{--ground:#EFEFF2;--paper:#FFF;--paper-2:#F6F6F9;--line:#DCDCE4;--line-2:#E9E9F0;
+ --ink:#15171C;--ink-2:#4E525E;--ink-3:#82879A;--dye:#2B3F7A;--dye-soft:#E4E8F4;
+ --pass:#1C6448;--pass-soft:#E1EFE9;--warn:#7E5714;--warn-soft:#F6EDDA;--fail:#9C3222;
+ --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+ --sans:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--ground:#0E1015;--paper:#161922;
+ --paper-2:#1D212C;--line:#2A2F3D;--line-2:#232733;--ink:#E7E9EF;--ink-2:#A7ADBE;--ink-3:#767D92;
+ --dye:#93A9E4;--dye-soft:#1A2140;--pass:#63C79E;--pass-soft:#122619;--warn:#DFB25C;--warn-soft:#281E0F;--fail:#EC9481;}}
+:root[data-theme="dark"]{--ground:#0E1015;--paper:#161922;--paper-2:#1D212C;--line:#2A2F3D;
+ --line-2:#232733;--ink:#E7E9EF;--ink-2:#A7ADBE;--ink-3:#767D92;--dye:#93A9E4;--dye-soft:#1A2140;
+ --pass:#63C79E;--pass-soft:#122619;--warn:#DFB25C;--warn-soft:#281E0F;--fail:#EC9481;}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1000px;margin:0 auto;padding:0 26px 80px}
+h1{font-size:clamp(28px,4.4vw,40px);font-weight:600;letter-spacing:-.022em;margin:0;line-height:1.16}
+header.top{padding:52px 0 30px;border-bottom:1px solid var(--line)}
+.eyebrow{display:flex;gap:9px;align-items:center;margin-bottom:14px}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--dye)}
+.lab{font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+.deck{margin-top:13px;color:var(--ink-2);font-size:16px;max-width:64ch}
+.deck b{color:var(--ink);font-weight:600}
+section{padding-top:40px}
+h2{font-size:19px;font-weight:600;margin:0 0 6px}
+.sub{color:var(--ink-2);font-size:14.5px;margin:0 0 18px;max-width:66ch}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:12px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:20px;
+ text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:8px;transition:.12s;border-top:2px solid var(--dye)}
+.card:hover{border-color:var(--dye);transform:translateY(-1px)}
+.card.q{border-top-color:var(--ink-3)}
+.card .t{font-size:16px;font-weight:600}
+.card .d{font-size:13px;color:var(--ink-2);line-height:1.6;flex:1}
+.card .m{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);letter-spacing:.05em}
+.card .m.ai{color:var(--dye)}
+pre{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:16px 18px;
+ overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--ink-2);margin:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.box{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:16px 18px}
+.box h3{font-size:14.5px;font-weight:600;margin:0 0 8px}
+.box p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.65}
+.box code{font-family:var(--mono);font-size:12px;background:var(--paper-2);padding:1px 5px;border-radius:3px}
+.st{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.pill{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:3px;background:var(--paper-2);color:var(--ink-3);border:1px solid var(--line)}
+.pill.ok{background:var(--pass-soft);color:var(--pass);border-color:transparent}
+.pill.no{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-3)}
+footer code{font-family:var(--mono);font-size:11.5px}
+</style>
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">澜绣云裳 · 独立于管理后台</span></div>
+  <h1>智能体工作站</h1>
+  <p class="deck">四个面向业务的智能体应用,<b>内核是 Claude Agent SDK</b> ——
+  循环、上下文、工具调度都交给它,这边只提供环境和工具。<br>
+  业务工具经 <b>MCP</b> 挂载,<b>数据仍归后台</b>:本站不碰数据库,一切读写反代过去。</p>
+  <div class="st" id="st"><span class="pill">正在检测…</span></div>
+</header>
+
+<section>
+  <h2>四个应用</h2>
+  <p class="sub">前两个是智能体驱动的,后两个是产品页面,数据来自后台。</p>
+  <div class="cards">
+    <a class="card" href="/chat"><span class="m ai">Agent SDK · MCP kb</span>
+      <span class="t">工艺顾问助手</span>
+      <span class="d">顾问懂客户不懂工艺。用大白话问,它去查工艺知识库,只答查到的,查不到就说查不到。</span></a>
+    <a class="card" href="/workbench"><span class="m ai">Agent SDK · MCP task</span>
+      <span class="t">智能体工作台</span>
+      <span class="d">拿一道真实人工任务现场跑:它自己决定查什么、查几次,交一份草稿,跑完再对标注答案。</span></a>
+    <a class="card q" href="/scheme"><span class="m">硬约束 · 后台数据</span>
+      <span class="t">定制方案配置</span>
+      <span class="d">五项选完构成一个方案。工艺 × 面料有硬约束,选了「不可」的组合保存按钮直接不可点。</span></a>
+    <a class="card q" href="/acceptance"><span class="m">验收 · 后台引擎</span>
+      <span class="t">验收台</span>
+      <span class="d">91 条从状态机机械推导的异常场景,逐条打到后台引擎上跑,看它到底处理没处理。</span></a>
+  </div>
+</section>
+
+<section>
+  <h2>这个站和后台是什么关系</h2>
+  <p class="sub">两个独立服务。后台是记录系统,这里是交互系统。</p>
+<pre>  浏览器
+    │
+    ▼
+  智能体工作站  :8770        ← 你在这
+    ├── Claude Agent SDK ──→ DeepSeek(ANTHROPIC_BASE_URL 指过去)
+    │       └── MCP(stdio)──→ mcp/kb_server.py · mcp/task_server.py
+    │
+    └── /api/* 反向代理 ──→  管理后台  :8760   ← 数据的家,本站不碰库</pre>
+  <div class="grid2" style="margin-top:14px">
+    <div class="box"><h3>为什么工具走 MCP</h3>
+      <p>工具面按用途拆成两个服务(<code>kb</code> / <code>task</code>),各挂各的。
+      一个服务会让工艺顾问看到 5 个无关的任务工具 —— <b>给模型的每个多余选择都是自己加的失败模式</b>。</p></div>
+    <div class="box"><h3>为什么数据不搬过来</h3>
+      <p>搬过来就有两份库,迟早对不上。本站 <code>/api/*</code> 一律反代到后台,
+      <b>判分和标注答案也留在后台</b> —— 数据的家只有一个。</p></div>
+  </div>
+</section>
+
+<footer>
+  内核 <code>agentsite/sdk.py</code> · 服务 <code>agentsite/app.py</code> ·
+  工具 <code>mcp/*_server.py</code> · 数据源 <code id="be">:8760</code>
+</footer>
+</div>
+<script>
+fetch("/health").then(r=>r.json()).then(j=>{
+  document.getElementById("st").innerHTML =
+    `<span class="pill ok">Agent SDK 就绪</span>`+
+    `<span class="pill">模型 ${j.model}</span>`+
+    `<span class="pill">MCP kb + task</span>`+
+    `<span class="pill">数据源 ${j.backend}</span>`;
+  document.getElementById("be").textContent = j.backend;
+}).catch(()=>{document.getElementById("st").innerHTML='<span class="pill no">服务未就绪</span>'});
+fetch("/api/workbench").then(r=>r.ok?r.json():Promise.reject()).then(()=>{
+  document.getElementById("st").insertAdjacentHTML("beforeend",'<span class="pill ok">后台已连通</span>');
+}).catch(()=>{document.getElementById("st").insertAdjacentHTML("beforeend",
+  '<span class="pill no">后台未启动 —— 先跑 backend/server.py</span>')});
+</script>

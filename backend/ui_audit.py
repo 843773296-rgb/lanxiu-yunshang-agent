@@ -9,7 +9,10 @@
 """
 import re, sys, os, glob
 HERE = os.path.dirname(os.path.abspath(__file__))
-PAGES = sorted(glob.glob(os.path.join(HERE, "web", "*.html")))
+# 后台 web/ + 独立站点 agentsite/web/ —— 页面搬走了,审计也得跟过去,
+# 否则新站的控件全在盲区里(这个项目为「新页面不在审计范围内」栽过一次)。
+PAGES = sorted(glob.glob(os.path.join(HERE, "web", "*.html")) +
+               glob.glob(os.path.join(HERE, "..", "agentsite", "web", "*.html")))
 
 # 容器类(子元素才是控件),不当控件查
 CONTAINERS = {"btn","clk","row","tab","ty","sel","x","dnum","mask",
@@ -77,7 +80,7 @@ total = 0
 for src in PAGES:
     dead_attr, dead_cls, naked = audit(src)
     n = len(dead_attr) + len(dead_cls) + len(naked); total += n
-    print(f"\n{os.path.basename(src):20s} {'✅ 干净' if n == 0 else f'❌ {n} 处'}")
+    print(f"\n{('agentsite/' if 'agentsite' in src else '')+os.path.basename(src):26s} {'✅ 干净' if n == 0 else f'❌ {n} 处'}")
     for a in dead_attr: print(f"   ❌ data-{a} 无绑定")
     for c in dead_cls:  print(f"   ❌ .{c} 声明了 cursor:pointer 但无任何绑定")
     for b in naked:     print(f"   ❌ <button>{b}</button> 既无 data-* 也无 onclick")

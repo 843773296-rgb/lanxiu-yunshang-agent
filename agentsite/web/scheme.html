@@ -76,6 +76,29 @@ thead th{background:var(--paper-2);font-family:var(--mono);font-size:10.5px;lett
 .toast.on{opacity:1}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
+<nav class="sitenav">
+  <a class="brand" href="/">澜绣云裳 · 智能体工作站</a>
+  <a href="/chat" data-p="/chat">工艺顾问助手</a>
+  <a href="/scheme" data-p="/scheme">定制方案配置</a>
+  <a href="/workbench" data-p="/workbench">智能体工作台</a>
+  <a href="/acceptance" data-p="/acceptance">验收台</a>
+  <span class="core">内核 Claude Agent SDK · 工具经 MCP 挂载</span>
+  <a class="back" href="http://127.0.0.1:8760/" target="_blank" rel="noopener">← 回后台</a>
+</nav>
+<style>
+.sitenav{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 26px;height:52px;
+ background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;
+ font-family:var(--sans);font-size:13.5px;margin:0 -26px 0}
+.sitenav a{color:var(--ink-2);text-decoration:none;padding:6px 12px;border-radius:4px}
+.sitenav a:hover{background:var(--paper-2);color:var(--dye)}
+.sitenav a[aria-current]{background:var(--dye-soft);color:var(--dye);font-weight:600}
+.sitenav .brand{font-weight:600;color:var(--ink);margin-right:10px;padding-left:0}
+.sitenav .core{margin-left:auto;color:var(--ink-3);font-size:11.5px;font-family:var(--mono)}
+.sitenav .back{color:var(--ink-3);font-size:12.5px}
+body>.wrap{padding-top:0}
+</style>
+<script>document.querySelectorAll(".sitenav a[data-p]").forEach(a=>{
+  if(a.dataset.p===location.pathname)a.setAttribute("aria-current","page")});</script>
 <div class="wrap">
 <header class="top">
   <div class="eyebrow"><span class="dot"></span><span class="lab">澜绣云裳 · 定制业务</span></div>

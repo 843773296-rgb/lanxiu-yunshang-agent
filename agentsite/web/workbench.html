@@ -1,4 +1,4 @@
-<title>智能体工作台</title>
+<title>智能体工作台 · 智能体工作站</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 :root{
@@ -108,14 +108,38 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);font-si
 footer code{font-family:var(--mono);font-size:11.5px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
+<nav class="sitenav">
+  <a class="brand" href="/">澜绣云裳 · 智能体工作站</a>
+  <a href="/chat" data-p="/chat">工艺顾问助手</a>
+  <a href="/scheme" data-p="/scheme">定制方案配置</a>
+  <a href="/workbench" data-p="/workbench">智能体工作台</a>
+  <a href="/acceptance" data-p="/acceptance">验收台</a>
+  <span class="core">内核 Claude Agent SDK · 工具经 MCP 挂载</span>
+  <a class="back" href="http://127.0.0.1:8760/" target="_blank" rel="noopener">← 回后台</a>
+</nav>
+<style>
+.sitenav{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 26px;height:52px;
+ background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;
+ font-family:var(--sans);font-size:13.5px;margin:0 -26px 0}
+.sitenav a{color:var(--ink-2);text-decoration:none;padding:6px 12px;border-radius:4px}
+.sitenav a:hover{background:var(--paper-2);color:var(--dye)}
+.sitenav a[aria-current]{background:var(--dye-soft);color:var(--dye);font-weight:600}
+.sitenav .brand{font-weight:600;color:var(--ink);margin-right:10px;padding-left:0}
+.sitenav .core{margin-left:auto;color:var(--ink-3);font-size:11.5px;font-family:var(--mono)}
+.sitenav .back{color:var(--ink-3);font-size:12.5px}
+body>.wrap{padding-top:0}
+</style>
+<script>document.querySelectorAll(".sitenav a[data-p]").forEach(a=>{
+  if(a.dataset.p===location.pathname)a.setAttribute("aria-current","page")});</script>
 <div class="wrap">
 
 <header class="top">
-  <div class="eyebrow"><span class="dot"></span><span class="lab">异常场景与验收助手 · V1 纯 API 循环</span></div>
+  <div class="eyebrow"><span class="dot"></span><span class="lab">澜绣云裳 · 内核 Claude Agent SDK</span></div>
   <h1>让智能体现场做一道题</h1>
   <p class="deck">后台每天堆着两类人做的活:<b>退款失败转人工</b>和<b>疑似重复客户待合并</b>。
-  这两类都不能提前把步骤写死 —— 查完押金才知道要不要查流水,看完流水才知道要不要查客户。
-  下面这个智能体拿到题目后自己决定查什么、查几次,最后交一份草稿。</p>
+  这两类都不能提前把步骤写死 —— 查完押金才知道要不要查流水,看完流水才知道要不要查客户。<br>
+  <b>循环、上下文、工具调度全由 Claude Agent SDK 管</b>,工具经 MCP 挂载;
+  <b>标注答案与判分留在后台</b>,本站只跑智能体。</p>
   <div class="score" id="score"></div>
 </header>
 
@@ -131,9 +155,9 @@ footer code{font-family:var(--mono);font-size:11.5px}
     <div class="prompt" id="prompt">选一道任务</div>
     <div class="lab" style="margin-top:16px;margin-bottom:5px">它能用的工具(全部只读,没有写权限)</div>
     <div class="tools-list">
-      <span class="tool">list_tasks</span><span class="tool">get_deposit</span>
-      <span class="tool">get_refund_trace</span><span class="tool">get_payment_flow</span>
-      <span class="tool">get_customer</span><span class="tool sub">submit_finding</span>
+      <span class="tool">task__list_tasks</span><span class="tool">task__get_deposit</span>
+      <span class="tool">task__get_refund_trace</span><span class="tool">task__get_payment_flow</span>
+      <span class="tool">task__get_customer</span>
     </div>
     <div class="stage" id="stage"><p class="hold">还没跑。</p></div>
   </div>
@@ -163,10 +187,9 @@ footer code{font-family:var(--mono);font-size:11.5px}
 </section>
 
 <footer>
-  <span>循环 <code>agent/v1.py</code></span>
-  <span>判分 <code>agent/eval.py</code></span>
-  <span>工具 <code>backend/api.py</code></span>
-  <span>隔离验证 <code>backend/selftest.py</code></span>
+  <span>内核 <code>agentsite/sdk.py</code>(Claude Agent SDK)</span>
+  <span>工具 <code>mcp/task_server.py</code>(MCP)</span>
+  <span>判分与标注答案 <code>后台 /api/judge</code></span>
 </footer>
 </div>
 <script>
@@ -198,26 +221,25 @@ $("run").addEventListener("click", async () => {
   btn.disabled = true; btn.textContent = "跑批中…";
   st.innerHTML = `<p class="hold"><span class="spin"></span>模型正在自己决定查什么 —— 通常 3 轮、10 秒上下</p>`;
   try{
-    const r = await (await fetch(`/api/agent-run?task=${encodeURIComponent($("task").value)}`)).json();
+    const r = await (await fetch("/run-task",{method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({task_id:$("task").value})})).json();
     if(r.error){ st.innerHTML = `<div class="err">${esc(r.error)}</div>`; return; }
-    const f = r.finding, tr = r.truth || {};
-    const chain = (r.trajectory||[]).map(n =>
-      `<span class="tool ${n==="submit_finding"?"sub":""}">${esc(n)}</span>`).join(`<span class="arw">→</span>`);
+    const tr = r.truth || {}, u = r.usage || {};
+    const chain = (r.trajectory||[]).map(x =>
+      `<span class="tool">${esc((x.tool||"").replace(/^mcp__/,""))}</span>`).join(`<span class="arw">→</span>`);
+    const cr = u.cache_read_input_tokens||0, ti = u.input_tokens||0;
     st.innerHTML = `
-      <div class="lab" style="margin-bottom:4px">执行轨迹 —— 查什么、查几次,都是它自己定的</div>
-      <div class="traj">${chain}</div>
+      <div class="lab" style="margin-bottom:4px">执行轨迹 —— 查什么、查几次,都是它自己定的(工具经 MCP)</div>
+      <div class="traj">${chain||'<span style="color:var(--ink-3)">没有调用工具</span>'}</div>
       <div class="meta"><span>模型 <b>${esc(r.model)}</b></span>
-        <span>模型调用 <b>${r.calls}</b> 次</span><span>工具调用 <b>${(r.trajectory||[]).length}</b> 次</span>
-        <span>耗时 <b>${r.seconds}s</b></span><span>成本 <b>$${(r.cost_local||0).toFixed(4)}</b></span>
-        <span>token <b>${r.input}</b> 进 / <b>${r.output}</b> 出</span></div>
-      ${f ? `<div class="out">
+        <span>工具调用 <b>${(r.trajectory||[]).length}</b> 次</span>
+        <span>耗时 <b>${r.seconds}s</b></span>
+        <span>输入 <b>${ti}</b>(缓存命中 <b>${cr}</b>${ti?` = ${(cr/ti*100).toFixed(0)}%`:""})</span>
+        <span>输出 <b>${u.output_tokens||0}</b></span></div>
+      <div class="out">
         <div class="out-h">它交的草稿</div>
-        <dl class="kv">
-          <dt>根因</dt><dd><b>${esc(f.root_cause)}</b></dd>
-          <dt>建议动作</dt><dd>${esc(f.recommended_action)}</dd>
-          <dt>证据</dt><dd><ul>${(f.evidence||[]).map(e=>`<li>${esc(e)}</li>`).join("")}</ul></dd>
-          <dt>置信度</dt><dd>${esc(f.confidence)}</dd>
-        </dl>
+        <div style="padding:14px;font-size:13.5px;line-height:1.7;white-space:pre-wrap">${esc(r.text||"(空)")}</div>
         <div class="verdict ${r.passed?"y":"n"}">
           <span class="vmark">${r.passed?"✓ 判对":"✕ 判错"}</span>
           <span>标注真因:<b>${esc(tr.root_cause)}</b>${r.judge?" · "+esc(r.judge):""}</span>
@@ -225,7 +247,7 @@ $("run").addEventListener("click", async () => {
         <div class="verdict" style="background:var(--paper-2)">
           <span class="lab">标注要求的动作</span><span>${esc(tr.expected_action)}</span>
         </div>
-      </div>` : `<div class="err">模型没有提交草稿</div>`}`;
+      </div>`;
   }catch(e){
     st.innerHTML = `<div class="err">跑失败:${esc(e.message)} —— 后台起了吗?</div>`;
   }finally{ btn.disabled = false; btn.textContent = "跑一遍"; }

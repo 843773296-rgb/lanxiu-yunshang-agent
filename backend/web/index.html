@@ -2568,10 +2568,8 @@ async function kbPage(){
         <option value="">全部</option>${(d.srcs||[]).map(c=>`<option ${st.src===c?"selected":""}>${esc(c)}</option>`).join("")}
       </select></div>
       <button class="btn sol" data-search>检索</button><button class="btn" data-reset>重置</button>
-      <a class="btn" href="/chat" target="_blank" rel="noopener"
-         style="text-decoration:none;display:inline-flex;align-items:center">问工艺顾问助手 ↗</a>
-      <a class="btn" href="/scheme" target="_blank" rel="noopener"
-         style="text-decoration:none;display:inline-flex;align-items:center">定制方案配置 ↗</a></div>
+      <a class="btn sol" href="http://127.0.0.1:8770/" target="_blank" rel="noopener"
+         style="text-decoration:none;display:inline-flex;align-items:center">前往智能体工作站 ↗</a></div>
      <div class="note2" style="margin-top:12px;color:var(--ink3)">
       翻不如问 —— 顾问一般不会翻 60 条卡片,直接问助手更快。助手只答知识库里查到的,查不到会说查不到。</div>
      <div class="note2" style="margin-top:14px">

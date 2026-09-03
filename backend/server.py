@@ -1151,12 +1151,10 @@ class H(BaseHTTPRequestHandler):
         self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b)
     def do_GET(self):
         p=_u(unquote(urlparse(self.path).path))
+        # 四个智能体页面已迁到独立站点(agentsite/,端口 8770)。
+        # 后台只留一个入口链接,接口仍对外提供 —— 新站的 /api/* 反代过来。
         if p in ("/","/index.html"):
             b=open(os.path.join(HERE,"web","index.html"),"rb").read()
-            self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
-            self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
-        if p=="/acceptance":
-            b=open(os.path.join(HERE,"web","acceptance.html"),"rb").read()
             self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
             self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
         if p.startswith("/img/") and p.endswith(".svg"):
@@ -1166,18 +1164,6 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("content-type","image/svg+xml; charset=utf-8")
             self.send_header("cache-control","max-age=3600")
-            self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
-        if p=="/scheme":
-            b=open(os.path.join(HERE,"web","scheme.html"),"rb").read()
-            self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
-            self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
-        if p=="/chat":
-            b=open(os.path.join(HERE,"web","chat.html"),"rb").read()
-            self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
-            self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
-        if p=="/agent":
-            b=open(os.path.join(HERE,"web","agent.html"),"rb").read()
-            self.send_response(200); self.send_header("content-type","text/html; charset=utf-8")
             self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
         if p=="/api/acceptance":
             # 验收器属于「异常场景与验收助手」那个项目,不在本仓库里。
@@ -1367,6 +1353,16 @@ class H(BaseHTTPRequestHandler):
             if scheme_status(body.get("id")) is None:
                 return self._send(dict(ok=False,reason="方案不存在"),404)
             return self._send(transit("fe-scheme",body.get("id"),body.get("to"),body))
+        if p=="/api/judge":
+            # 给「智能体工作站」用:它跑智能体,判分和标注答案留在后台(数据的家在这)。
+            # 依旧遵守隔离:truth 只在**跑完之后**读,绝不进模型上下文。
+            _ev=_eval(); case=(body.get("case") or "").strip(); txt=body.get("text") or ""
+            tr=_truths().get(case)
+            if not tr: return self._send(dict(error=f"没有 {case} 的标注答案"),404)
+            ok,why=_ev.hit(txt,tr.get("root_cause",""),case)
+            return self._send(dict(passed=ok,judge=why,truth=dict(
+                root_cause=tr.get("root_cause"),expected_action=tr.get("expected_action"),
+                expected_evidence=tr.get("expected_evidence"),note=tr.get("note"))))
         if p=="/api/chat":
             sys.path.insert(0, os.path.join(HERE,"..","agent"))
             import chat as _chat
