@@ -177,7 +177,10 @@ function render(){
        <span class="why" id="why"></span>
      </div>`;
   document.querySelectorAll(".opt").forEach(b=>b.addEventListener("click",()=>{
-    const g=b.dataset.g, v=b.dataset.v, multi=GRPS.find(x=>x[0]===g)[3];
+    // 版型和尺码这两组不在 GRPS 里(它们是级联出来的),find 会返回 undefined ——
+    // 直接 [3] 会抛 TypeError,按钮看起来绑了、一点就死。
+    // **控件审计查的是"有没有绑",查不出"绑了但一点就报错"** —— 这类只能靠自己看。
+    const g=b.dataset.g, v=b.dataset.v, gr=GRPS.find(x=>x[0]===g), multi=gr?gr[3]:false;
     if(multi){ SEL[g]=SEL[g].includes(v)?SEL[g].filter(x=>x!==v):[...SEL[g],v]; }
     else { SEL[g]=SEL[g]===v?null:v; }
     if(g==="xz"){ SEL.pt=null; SEL.size=null; }     // 换形制,原来的版型多半不适用
