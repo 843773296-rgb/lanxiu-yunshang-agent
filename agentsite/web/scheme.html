@@ -128,7 +128,9 @@ body>.wrap{padding-top:0}
   <b>工艺 × 面料</b>有硬约束:有些组合不是贵不贵的问题,是<b>物理上做不了</b>,选中即校验,
   <b>「不可」的组合保存按钮直接不可点</b>。<br>
   选到<b>版型和尺码</b>之后,下面会按 BOM 算出<b>这一件要用哪些料、各多少、物料成本多少、备料卡在哪一项</b> ——
-  相容矩阵回答「能不能做」,BOM 回答「多少钱、多久」。</p>
+  相容矩阵回答「能不能做」,BOM 回答「多少钱」,工期推算回答「多久」。<br>
+  填了<b>用件日期</b>之后,<b>赶不上就直接拦住</b> —— 婚礼的日子改不了,
+  到时候交不出来,赔多少钱都换不回那一天。</p>
 </header>
 
 <section>
@@ -153,7 +155,7 @@ body>.wrap{padding-top:0}
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let OPT=null, CUS=[], SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null,cust:""}, ISS=[];
+let OPT=null, CUS=[], SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null,cust:"",need_date:"",workers:2,scope:"局部"}, ISS=[];
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");setTimeout(()=>t.classList.remove("on"),3200);}
 
 const GRPS=[["xz","形制","单选 · 决定裁法和关键尺寸",false],
@@ -175,9 +177,10 @@ function render(){
         return `<button class="opt ${cls}" data-g="${k}" data-v="${esc(o.name)}" aria-pressed="${on}">${esc(o.name)}${
           o.src?`<span class="src">${o.src}</span>`:""}</button>`;}).join("")}</div></div>`;
   }).join("")
-  + patGroups() + custGroup()
+  + patGroups() + custGroup() + planGroup()
   + `<div class="issues" id="iss"></div>
      <div id="fit"></div>
+     <div id="lead"></div>
      <div id="bom"></div>
      <div class="bar">
        <input class="nm" id="nm" placeholder="方案名称,如「林女士婚服」" value="${esc(SEL.name)}">
@@ -198,10 +201,28 @@ function render(){
   }));
   $("nm").addEventListener("input",e=>SEL.name=e.target.value);
   if($("cust")) $("cust").addEventListener("change",e=>{SEL.cust=e.target.value;check();});
+  if($("nd")) $("nd").addEventListener("change",e=>{SEL.need_date=e.target.value;check();});
+  if($("wk")) $("wk").addEventListener("change",e=>{SEL.workers=+e.target.value||2;check();});
+  if($("sc")) $("sc").addEventListener("change",e=>{SEL.scope=e.target.value;check();});
   $("save").addEventListener("click",save);
-  $("reset").addEventListener("click",()=>{SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null,cust:""};ISS=[];render();});
+  $("reset").addEventListener("click",()=>{SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null,cust:"",need_date:"",workers:2,scope:"局部"};ISS=[];render();});
   paintIssues();
 }
+function planGroup(){
+  return `<div class="grp"><div class="h"><span class="n">9</span>
+    <span class="t">工期条件</span><span class="hint">选填 · 用件日期是**硬约束**,赶不上直接拦</span></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <label class="hint">用件日期 <input type="date" id="nd" class="csel" style="min-width:170px"
+        value="${esc(SEL.need_date)}"></label>
+      <label class="hint">安排师傅 <input type="number" id="wk" class="csel" min="1" max="6"
+        style="min-width:70px" value="${SEL.workers}"></label>
+      <label class="hint">工艺范围
+        <select id="sc" class="csel" style="min-width:100px">
+          <option ${SEL.scope==="局部"?"selected":""}>局部</option>
+          <option ${SEL.scope==="整幅"?"selected":""}>整幅</option></select></label>
+    </div></div>`;
+}
+
 function custGroup(){
   const c=CUS.find(x=>x.id===SEL.cust);
   return `<div class="grp"><div class="h"><span class="n">8</span>
@@ -262,6 +283,34 @@ async function paintFit(){
   if($("usefit")) $("usefit").addEventListener("click",()=>{SEL.size=r.推荐尺码;check();});
 }
 
+async function paintLead(){
+  const el=$("lead"); if(!el) return;
+  if(!(SEL.mt && SEL.size)){ el.innerHTML=""; return; }
+  const r=await (await fetch("/api/scheme-lead",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify(SEL)})).json();
+  if(r.skip||r.error){ el.innerHTML=""; return; }
+  const seg=(r.分段||[]).map(x=>`<tr><td>${esc(x.段)}</td>
+      <td class="num">${x.最快}</td><td class="num"><b>${x.最慢}</b></td>
+      <td class="why2">${esc(x.说明).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")}</td></tr>`).join("");
+  const dl = r.赶得上===undefined ? "" :
+    `<div class="hint" style="margin-top:9px;color:${r.赶得上?"var(--pass)":"var(--fail)"}">
+       <b>${r.赶得上?"✅":"❌"} ${esc(r.结论)}</b> · 最晚下单日 ${esc(r.最晚下单日)}</div>`;
+  el.innerHTML=`<div class="bomwrap">
+    <div class="bomhd"><b>工期</b>
+      <span class="tagv">${r.最快天数}–${r.最慢天数} 天</span>
+      <span class="tagv warn">${esc(r.关键路径)}</span>
+      <span class="tagv">${r.师傅数} 个师傅</span></div>
+    <div class="tw"><table class="bom"><thead><tr>
+      <th>阶段</th><th>最快</th><th>最慢</th><th>说明</th></tr></thead><tbody>${seg}</tbody></table></div>
+    ${dl}
+    ${(r.风险||[]).length?`<div class="hint" style="margin-top:9px">⚠ ${
+      r.风险.map(x=>esc(x).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")).join("<br>⚠ ")}</div>`:""}
+    <div class="hint" style="margin-top:8px">可压缩:${
+      (r.可压缩||[]).map(x=>esc(x).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")).join(";")}</div>
+    <div class="hint" style="margin-top:6px">${esc(r.note||"")}</div>
+  </div>`;
+}
+
 async function paintBom(){
   const el=$("bom"); if(!el) return;
   if(!(SEL.mt && SEL.size)){ el.innerHTML=""; return; }
@@ -305,7 +354,7 @@ async function check(){
       headers:{"content-type":"application/json"},body:JSON.stringify(SEL)})).json();
     ISS=r.issues||[]; render();
   }catch(e){}
-  paintBom(); paintFit();
+  paintBom(); paintFit(); paintLead();
 }
 async function save(){
   const r=await fetch("/api/scheme-save",{method:"POST",

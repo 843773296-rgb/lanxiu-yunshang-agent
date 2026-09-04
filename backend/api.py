@@ -233,10 +233,32 @@ def kb_fit(customer, pattern):
     return out
 
 
+def _lt():
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","knowledge"))
+    import leadtime; return leadtime
+
+
+def kb_lead(pattern, size, material, crafts=None, scope="局部", workers=2, need_date=None):
+    """算工期。给了 need_date 就顺便倒推来不来得及。"""
+    lt=_lt()
+    p=_rows("SELECT code FROM pattern WHERE code=? OR name=?",pattern,pattern)
+    if not p: return {"error":f"没有版型「{pattern}」"}
+    m,e=_resolve(material,"材质")
+    if e: return {"error":e}
+    kcs=[]
+    for k in (crafts or []):
+        r,e2=_resolve(k,"工艺")
+        if e2: return {"error":e2}
+        kcs.append(r["code"])
+    kw=dict(pattern=p[0]["code"], size=size, material=m["code"], crafts=kcs,
+            scope=scope, workers=int(workers or 2), craft_names=_names())
+    return lt.deadline(need_date, None, **kw) if need_date else lt.estimate(**kw)
+
+
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,
-              "kb_fit":kb_fit})
+              "kb_fit":kb_fit,"kb_lead":kb_lead})
 KB_SCHEMAS=[
  {"name":"kb_lookup","description":"按关键词查工艺知识库。也可按分类(形制/材质/工艺/配饰)或来源等级(public/scale/demo)筛选。查不到会明确返回 hit=0。",
   "input_schema":{"type":"object","properties":{
@@ -266,6 +288,16 @@ KB_SCHEMAS=[
     "customer":{"type":"string","description":"客户姓名或客户号"},
     "pattern":{"type":"string","description":"版型名称或编码,如「明制马面裙·标准」或 PT04。不知道有哪些版型时先用 kb_pattern 查。"}},
    "required":["customer","pattern"]}},
+ {"name":"kb_lead","description":"算工期:给定版型 + 尺码 + 面料 + 工艺,返回**最快到最慢的天数区间**、每一段花多久、**关键路径卡在哪一环**、有哪些风险、哪些环节加钱能压缩。传了 need_date(用件日期,YYYY-MM-DD)还会倒推最晚下单日并判断来不来得及。三条铁律:①**对客户报最慢那个数**,余量留给自己,绝不能报最快的;②「关键路径」告诉你加钱只对哪一环有用 —— 不在关键路径上的环节压缩了也没用;③返回的「风险」里凡是提到**不能靠加人压缩**(织造、染色晾晒、手绘顾绣发绣)的,加急要求必须当场拒绝,不要先答应再想办法。",
+  "input_schema":{"type":"object","properties":{
+    "pattern":{"type":"string","description":"版型名称或编码"},
+    "size":{"type":"string","description":"尺码,如 M"},
+    "material":{"type":"string","description":"面料名称,直接写中文"},
+    "crafts":{"type":"array","items":{"type":"string"},"description":"所选工艺名称列表"},
+    "scope":{"type":"string","enum":["局部","整幅"],"description":"整幅按局部的 4 倍估,默认局部"},
+    "workers":{"type":"integer","description":"安排几个师傅并行,默认 2。注意染色、织造、手绘这些除不动。"},
+    "need_date":{"type":"string","description":"客户的用件日期 YYYY-MM-DD。婚礼、写真这类**日子不能改**的场合必须传,系统会倒推最晚下单日。"}},
+   "required":["pattern","size","material"]}},
  {"name":"kb_bom","description":"算料算钱:给定版型 + 尺码 + 面料 + 所选工艺,返回完整物料清单(每项的净用量、损耗、实际用量、单价、金额)、物料成本合计、备料周期和卡在哪个物料上。**客户问「多少钱」「要等多久」时用这个。** 注意:返回的是**物料成本,不是售价** —— 不含工时、门店成本与税,**绝不能把这个数当报价告诉客户**。",
   "input_schema":{"type":"object","properties":{
     "pattern":{"type":"string","description":"版型名称或编码"},

@@ -67,7 +67,7 @@ def mcp_config():
 KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
             "mcp__kb__kb_tables", "mcp__kb__kb_coverage",
             "mcp__kb__kb_pattern", "mcp__kb__kb_size", "mcp__kb__kb_bom",
-            "mcp__kb__kb_fit"]
+            "mcp__kb__kb_fit", "mcp__kb__kb_lead"]
 TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
               "mcp__task__get_refund_trace", "mcp__task__get_payment_flow",
               "mcp__task__get_customer"]
@@ -91,7 +91,12 @@ SYS_KB = """你是澜绣云裳的汉服工艺顾问助手,服务对象是客户�
 8. **kb_fit 判「需补量」时,绝不能按身高体重猜码** —— 直接告诉顾问请客户补量哪几项。
    判出档位后也要把「关键尺寸未覆盖」的那几项说出来,别让人以为系统全查过了。
    不要默认推全定制:**很多客户标准码就合适**,推全定制既加价又加工期。
-9. 客户问「能不能做小码 / 能不能改尺寸」→ 先 kb_pattern。
+9. 客户问「什么时候能拿到」→ kb_lead。**报最慢那个数**,余量留给自己。
+   婚礼、写真这类日子不能改的场合,一定要问出用件日期并传 need_date ——
+   **交不出来赔多少钱都换不回那一天。**
+   风险里写着「不能靠加人压缩」的(织造、染色晾晒、手绘顾绣发绣),
+   加急要求当场拒绝,别先答应再想办法。
+10. 客户问「能不能做小码 / 能不能改尺寸」→ 先 kb_pattern。
    某个尺码不在版型的尺码序列里,意思是**这个版型裁不出来**,不是缺货,不要说「可以订」。
 
 先给结论,再给理由,最后给能直接说出口的话术。一般 5 行以内。"""

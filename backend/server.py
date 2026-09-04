@@ -1327,13 +1327,21 @@ class H(BaseHTTPRequestHandler):
             # 只校验不落库,给页面做即时提示用。前端拿它染色,但它不是闸门。
             import scheme as _sch
             ok,iss=_sch.validate(xz=body.get("xz"),mt=body.get("mt"),
-                                 kf=body.get("kf") or [],ps=body.get("ps") or [],color=body.get("color"))
+                                 kf=body.get("kf") or [],ps=body.get("ps") or [],color=body.get("color"),
+                                 pattern=body.get("pt"),size=body.get("size"),
+                                 need_date=body.get("need_date"),
+                                 scope=body.get("scope") or "局部",
+                                 workers=int(body.get("workers") or 2))
             return self._send(dict(can_save=ok,issues=iss))
         if p=="/api/scheme-save":
             # 这里才是闸门。前端 disabled 只是体验 —— 绕过前端直接调这个接口,一样拦。
             import scheme as _sch
             ok,iss=_sch.validate(xz=body.get("xz"),mt=body.get("mt"),
-                                 kf=body.get("kf") or [],ps=body.get("ps") or [],color=body.get("color"))
+                                 kf=body.get("kf") or [],ps=body.get("ps") or [],color=body.get("color"),
+                                 pattern=body.get("pt"),size=body.get("size"),
+                                 need_date=body.get("need_date"),
+                                 scope=body.get("scope") or "局部",
+                                 workers=int(body.get("workers") or 2))
             if not ok:
                 blocked=[i for i in iss if i["level"]=="block"]
                 log_op("魏欣新","fe-scheme",body.get("id") or "新建","-","已保存",False,"INCOMPATIBLE",
@@ -1394,6 +1402,13 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
         if p=="/api/fit":
             return self._send(backend.kb_fit(body.get("customer"),body.get("pattern")))
+        if p=="/api/scheme-lead":
+            import scheme as _sc
+            return self._send(_sc.lead(body.get("xz"),body.get("mt"),body.get("kf"),
+                                       body.get("pt"),body.get("size"),
+                                       body.get("scope") or "局部",
+                                       int(body.get("workers") or 2),
+                                       body.get("need_date")))
         if p=="/api/scheme-cost":
             import scheme as _sc
             return self._send(_sc.estimate(body.get("xz"),body.get("mt"),body.get("kf"),

@@ -20,7 +20,8 @@ COLORS = ["朱红","胭脂","绛","妃色","月白","藏青","靛青","黛","竹
 BLOCK, WARN, OK = "block", "warn", "ok"
 
 
-def validate(xz=None, mt=None, kf=None, ps=None, color=None):
+def validate(xz=None, mt=None, kf=None, ps=None, color=None,
+             pattern=None, size=None, need_date=None, scope="局部", workers=2):
     """返回 (能不能保存, 问题清单)。问题分三档:
 
       block  不可 —— 物理上做不了,加钱也没用。**服务端硬拦。**
@@ -51,6 +52,19 @@ def validate(xz=None, mt=None, kf=None, ps=None, color=None):
                 issues.append(dict(level=WARN, kind="未定义", pair=f"{r['craft']} × {r['material']}",
                                    msg="这一格相容矩阵还没录入,须转工艺负责人确认,不得自行推断"))
 
+    # 用件日期是硬约束:07-工期与成本.md 写着「下单日 + 预估工期 > 用件日期时,
+    # **直接拦截并提示改配置**」。婚礼订单尤其致命 —— **日子是不能改的**,
+    # 到时候交不出来,赔多少钱都换不回那一天。所以这条走 block,不是 warn。
+    if need_date and mt and size:
+        r = lead(xz, mt, kf, pattern, size, scope, workers, need_date)
+        if not r.get("skip") and not r.get("赶得上"):
+            issues.append(dict(level=BLOCK, kind="赶不上",
+                               msg=r["结论"] + " —— 换配置或改日期,不要先答应再想办法"))
+        elif not r.get("skip") and (r["剩余天数"] - r["最慢天数"]) < 7:
+            issues.append(dict(level=WARN, kind="工期紧",
+                               msg=f"只剩 {r['剩余天数'] - r['最慢天数']} 天余量,"
+                                   f"任何一环延期都会误期;最晚下单日 {r['最晚下单日']}"))
+
     if color and color not in COLORS:
         issues.append(dict(level=WARN, kind="颜色", msg=f"「{color}」不在传统色清单里,须确认打样色卡"))
 
@@ -70,6 +84,19 @@ def estimate(xz=None, mt=None, kf=None, pattern=None, size=None):
         pattern = ps["rows"][0]["code"]
     r = api.kb_bom(pattern, size, mt, kf or [])
     if r.get("error"): return {"skip": True, "why": r["error"], "note": r.get("note")}
+    return r
+
+
+def lead(xz=None, mt=None, kf=None, pattern=None, size=None, scope="局部",
+         workers=2, need_date=None):
+    """算工期,并在给了用件日期时倒推。"""
+    if not (mt and size): return {"skip": True, "why": "选完面料和尺码才能算工期"}
+    if not pattern:
+        ps = api.kb_pattern(xz) if xz else {"hit": 0}
+        if not ps.get("hit"): return {"skip": True, "why": "这个形制还没有版型"}
+        pattern = ps["rows"][0]["code"]
+    r = api.kb_lead(pattern, size, mt, kf or [], scope, workers, need_date or None)
+    if r.get("error"): return {"skip": True, "why": r["error"]}
     return r
 
 
