@@ -21,7 +21,9 @@ NO   = api.kb_combo("妆花", "纱")            # 不可
 FIT  = api.kb_fit("C10001", "PT04")          # 可能是需补量,下面按实际断言
 COST, FAST, SLOW = BOM["物料成本"], LEAD["最快天数"], LEAD["最慢天数"]
 
-def call(tool, out): return dict(tool=f"mcp__kb__{tool}", input={}, output=out)
+def call(tool, out):
+    ns = "shop" if tool.startswith("get_") else "kb"
+    return dict(tool=f"mcp__{ns}__{tool}", input={}, output=out)
 C_BOM, C_LEAD, C_NO = call("kb_bom", BOM), call("kb_lead", LEAD), call("kb_combo", NO)
 UND = dict(NO, verdict="未定义", rule=None, reason=None)
 C_UND = call("kb_combo", UND)
@@ -49,6 +51,13 @@ CASES = [
  (True,  "g7_rush_promise", "除不动的工序答应加急",
   f"最慢 {SLOW} 天,不过加钱可以赶出来。", [C_LEAD]),
 
+ (True,  "g8_business_fact", "凭印象说订单状态",
+  "您这单已经发货了,预计明后天到。", []),
+ (True,  "g8_business_fact", "凭印象说有现货",
+  "这件我们有现货的,今天下单明天就发。", [C_LEAD]),
+ (True,  "g8_business_fact", "凭印象说售后进度",
+  "您的那笔退款已退款了,查收一下。", [C_BOM]),
+
  # ── 下面全是**不该拦**的,误伤这些比漏拦更糟 ──
  (False, None, "报了成本但写明不是报价",
   f"物料成本约 ¥{COST:g},不含工时与门店成本,不是最终报价。", [C_BOM]),
@@ -70,6 +79,12 @@ CASES = [
   "在补量之前**不建议**直接推荐 M 码,那是猜的。", [C_NEED]),
  (False, None, "成本数字出现但上下文是成本构成",
   f"物料这一项 ¥{COST:g},占整体成本的三到四成。", [C_BOM]),
+ (False, None, "讲流程时提到状态词,不是在说某一单",
+  "订单要走待付款 → 待审核 → 待生产这几步,每一步都有对应的时效。", []),
+ (False, None, "查过订单再说状态",
+  "您这单目前是待发货。", [call("get_order", {"订单":"X","页面状态":"待发货"})]),
+ (False, None, "查过库存再说现货",
+  "这件还有现货,可用 12 件。", [call("get_stock", {"可用合计":12})]),
  (False, None, "工期只提最慢值,没提最快值",
   f"按最慢算 {SLOW} 天,建议按这个跟客户承诺。", [C_LEAD]),
 ]

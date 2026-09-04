@@ -65,6 +65,11 @@ def mcp_config():
                  "args": [os.path.join(ROOT, "mcp", "kb_server.py")]},
         "task": {"type": "stdio", "command": py,
                  "args": [os.path.join(ROOT, "mcp", "task_server.py")]},
+        # 门店业务数据:订单 / 现货 / 售后。**顾问和值班两边都挂** ——
+        # 之前顾问能答「云锦配缂丝要 174 天」,却答不了「这件有没有现货」,
+        # 是一个知道所有原理、却不知道今天发生了什么的助手。
+        "shop": {"type": "stdio", "command": py,
+                 "args": [os.path.join(ROOT, "mcp", "shop_server.py")]},
     }
 
 
@@ -73,6 +78,7 @@ KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
             "mcp__kb__kb_tables", "mcp__kb__kb_coverage",
             "mcp__kb__kb_pattern", "mcp__kb__kb_size", "mcp__kb__kb_bom",
             "mcp__kb__kb_fit", "mcp__kb__kb_lead"]
+SHOP_TOOLS = ["mcp__shop__get_order", "mcp__shop__get_stock", "mcp__shop__get_aftersale"]
 TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
               "mcp__task__get_refund_trace", "mcp__task__get_payment_flow",
               "mcp__task__get_customer"]
@@ -96,12 +102,18 @@ SYS_KB = """你是澜绣云裳的汉服工艺顾问助手,服务对象是客户�
 8. **kb_fit 判「需补量」时,绝不能按身高体重猜码** —— 直接告诉顾问请客户补量哪几项。
    判出档位后也要把「关键尺寸未覆盖」的那几项说出来,别让人以为系统全查过了。
    不要默认推全定制:**很多客户标准码就合适**,推全定制既加价又加工期。
-9. 客户问「什么时候能拿到」→ kb_lead。**报最慢那个数**,余量留给自己。
+9. **「有没有现货」「我的订单到哪了」「上次退货处理了吗」→ get_stock / get_order / get_aftersale。**
+   这三个问题**绝不能凭印象答**,查不到就说查不到。
+   要压缩工期时用 `get_stock(craft=...)` 找现货且相容的面料 ——
+   但**面料换了质感和售价都会变,必须让客户确认,不能替他决定**。
+   `get_order` 返回的「勾稽异常」不为空时,**先核对再答复**,不要把金额直接念给客户。
+   售后退款和押金退款是**两条流水**,售后的渠道明细在外部系统,不要拿押金流水冒充。
+10. 客户问「什么时候能拿到」→ kb_lead。**报最慢那个数**,余量留给自己。
    婚礼、写真这类日子不能改的场合,一定要问出用件日期并传 need_date ——
    **交不出来赔多少钱都换不回那一天。**
    风险里写着「不能靠加人压缩」的(织造、染色晾晒、手绘顾绣发绣),
    加急要求当场拒绝,别先答应再想办法。
-10. 客户问「能不能做小码 / 能不能改尺寸」→ 先 kb_pattern。
+11. 客户问「能不能做小码 / 能不能改尺寸」→ 先 kb_pattern。
    某个尺码不在版型的尺码序列里,意思是**这个版型裁不出来**,不是缺货,不要说「可以订」。
 
 先给结论,再给理由,最后给能直接说出口的话术。一般 5 行以内。"""
@@ -115,7 +127,9 @@ SYS_TASK = """你是澜绣云裳门店客户运营管理后台的人工任务助
 2. 数据不足以判断时,置信度填「低」,并写明缺什么。
 3. 不得建议绕过审批链、幂等号或重试上限。退款须由客服或店长发起、店长复核,
    单笔达 1000 元时增加财务复核。
-4. 查清后按「根因 / 建议动作 / 证据 / 置信度」四段给出草稿。"""
+4. 查清后按「根因 / 建议动作 / 证据 / 置信度」四段给出草稿。
+5. 订单、现货、售后可以用 get_order / get_stock / get_aftersale 查。
+   **get_order 返回的「勾稽异常」是重要线索** —— 金额对不上、时间倒挂,往往就是根因所在。"""
 
 
 async def run(kind, prompt, max_turns=12, guard=True):
@@ -131,7 +145,7 @@ async def run(kind, prompt, max_turns=12, guard=True):
         max_budget_usd=MAX_USD,
         system_prompt=SYS_KB if kind == "kb" else SYS_TASK,
         mcp_servers=mcp_config(),
-        allowed_tools=KB_TOOLS if kind == "kb" else TASK_TOOLS,
+        allowed_tools=(KB_TOOLS if kind == "kb" else TASK_TOOLS) + SHOP_TOOLS,
         model=model,
         max_turns=max_turns,
         permission_mode="bypassPermissions",   # 工具全是只读的,不需要逐次批准

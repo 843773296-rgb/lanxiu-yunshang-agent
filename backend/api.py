@@ -136,6 +136,112 @@ def kb_coverage():
                    "仍有未定义的格子时必须说查不到,不要推断。"}
 
 
+# ── 门店业务数据(shop 服务)—— 顾问和值班同学天天要查的三样 ────────────
+def get_order(order_id=None, customer=None):
+    """订单全链路。**金额勾稽当场自检**,对不上的直接在返回里标出来 ——
+    藏着不说,顾问就会拿一个错的数字去跟客户对账。"""
+    if not (order_id or customer):
+        return {"error": "要么给订单号,要么给客户号/姓名"}
+    if customer and not order_id:
+        cs=_rows("SELECT id,name FROM customer WHERE id=? OR name=?",customer,customer)
+        if not cs: return {"error":f"没有客户「{customer}」"}
+        rs=_rows("SELECT id,kind,status,prd_status,amount,received,refund_status,created"
+                 " FROM ordr WHERE customer_id=? ORDER BY created DESC",cs[0]["id"])
+        return {"客户":cs[0]["name"],"hit":len(rs),"orders":rs,
+                "note":"这是该客户的订单清单;要看某一单的明细,拿 id 再调一次。"}
+    o=_rows("SELECT * FROM ordr WHERE id=?",order_id)
+    if not o: return {"error":f"没有订单 {order_id}"}
+    o=o[0]
+    cu=_rows("SELECT name,phone FROM customer WHERE id=?",o["customer_id"])
+    items=_rows("SELECT sku,name,tag,price,qty,spu,base_amount,custom_amount,total"
+                " FROM ordr_item WHERE order_id=?",order_id)
+    af=_rows("SELECT id,kind,status,reason,amount,created FROM aftersale WHERE order_id=?",order_id)
+    # 勾稽自检
+    bad=[]
+    g,f,a=o["goods_amount"] or 0,o["freight"] or 0,o["amount"] or 0
+    if abs(g+f-a)>0.01: bad.append(f"商品额 {g} + 运费 {f} ≠ 订单额 {a}")
+    it=round(sum(x["total"] or 0 for x in items),2)
+    if items and abs(it-g)>0.01: bad.append(f"订单行合计 {it} ≠ 商品额 {g}")
+    if (o["received"] or 0)>(o["payable"] or 0)+0.01:
+        bad.append(f"已收 {o['received']} > 应付 {o['payable']}")
+    tl=[(k,o[k]) for k in ("created","paid_at","audit_at","produced_at","shipped_at",
+                           "finished_at","cancelled_at") if o[k]]
+    for (k1,v1),(k2,v2) in zip(tl,tl[1:]):
+        if v2<v1: bad.append(f"时间倒挂:{k2}({v2}) 早于 {k1}({v1})")
+    return {"订单":o["id"],"客户":(cu[0]["name"] if cu else o["customer_id"]),
+            "类型":o["kind"],"页面状态":o["status"],"PRD状态":o["prd_status"],
+            "状态口径":"页面按设计稿 10 档,PRD 按状态机 6 档,两套并存且有显式映射",
+            "门店":o["shop"],"顾问":o["advisor"],"来源":o["source"],"配送":o["delivery"],
+            "金额":dict(商品额=g,运费=f,订单额=a,应付=o["payable"],已收=o["received"],
+                       退款状态=o["refund_status"]),
+            "时间线":dict(tl),"订单行":items,"售后":af,
+            "勾稽异常":bad,
+            "note":("勾稽有异常,**先核对再答复客户**" if bad else "金额与时间线勾稽一致")}
+
+
+def get_stock(spu=None, sku=None, material=None, craft=None):
+    """现货。三种问法:某商品有没有货 / 某面料有多少米 / **这个工艺有哪些现货面料可选**。
+
+    第三种是工期推算那条「改用现货面料可压缩 20 天」真正落地的地方 ——
+    在此之前系统根本不知道哪些面料有现货,那条建议只是一句空话。
+    """
+    if sku:
+        r=_rows("SELECT code,spu,spec,color,size,price,stock,locked,status FROM sku WHERE code=?",sku)
+        if not r: return {"error":f"没有 SKU {sku}"}
+        d=r[0]; d["可用"]=(d["stock"] or 0)-(d["locked"] or 0)
+        return d
+    if spu:
+        p=_rows("SELECT spu,name,kind,status FROM product WHERE spu=? OR name=?",spu,spu)
+        if not p: return {"error":f"没有商品「{spu}」"}
+        rs=_rows("SELECT code,spec,color,size,stock,locked,status FROM sku WHERE spu=?",p[0]["spu"])
+        for x in rs: x["可用"]=(x["stock"] or 0)-(x["locked"] or 0)
+        tot=sum(x["可用"] for x in rs)
+        return dict(p[0],skus=rs,可用合计=tot,
+                    note=("**全部零库存** —— 现货答不了,要走定制或补货" if tot<=0 else ""))
+    if material:
+        m,e=_resolve(material,"材质")
+        if e: return {"error":e}
+        r=_rows("SELECT code,name,unit,price,lead_days,stock_qty FROM material WHERE code=?",m["code"])
+        if not r: return {"error":f"{m['name']} 不在物料表里"}
+        d=r[0]; d["有现货"]=(d["stock_qty"] or 0)>0
+        d["note"]=(f"现货 {d['stock_qty']} {d['unit']},可省掉 {d['lead_days']} 天备料"
+                   if d["有现货"] else f"**无现货**,须备料 {d['lead_days']} 天")
+        return d
+    if craft:
+        k,e=_resolve(craft,"工艺")
+        if e: return {"error":e}
+        rs=_rows("SELECT m.code,m.name,m.price,m.lead_days,m.stock_qty,cc.verdict,cc.rule"
+                 " FROM material m JOIN craft_combo cc ON cc.material=m.code"
+                 " WHERE m.cat='主料' AND cc.craft=? AND cc.verdict='可' AND m.stock_qty>0"
+                 " ORDER BY m.stock_qty DESC",k["code"])
+        return {"工艺":k["name"],"hit":len(rs),"现货且相容的面料":rs,
+                "note":"按现货量排序。换成这里的面料可以把备料压到 1–3 天;"
+                       "**但面料换了,质感与售价都会变,必须让客户确认**,不能替他决定。"}
+    return {"error": "要给 spu / sku / material / craft 其中之一"}
+
+
+def get_aftersale(order_id=None, customer=None, status=None):
+    """售后记录。判责依据在 kb_tables 的「售后争议判定」表里,这里只给事实。"""
+    q="SELECT a.*,c.name cust FROM aftersale a LEFT JOIN customer c ON c.id=a.customer_id WHERE 1=1"
+    args=[]
+    if order_id: q+=" AND a.order_id=?"; args.append(order_id)
+    if customer:
+        cs=_rows("SELECT id FROM customer WHERE id=? OR name=?",customer,customer)
+        if not cs: return {"error":f"没有客户「{customer}」"}
+        q+=" AND a.customer_id=?"; args.append(cs[0]["id"])
+    if status: q+=" AND a.status=?"; args.append(status)
+    rs=_rows(q+" ORDER BY a.created DESC",*args)
+    if not rs:
+        return {"hit":0,"note":"没有匹配的售后单。**查不到就说查不到**,不要推测客户提过什么。"}
+    ext=sorted({r["ext_system"] for r in rs if r["ext_system"]})
+    return {"hit":len(rs),"rows":rs,"外部系统":ext,
+            "note":"判责标准见 kb_tables 的「售后争议判定」表,这里只提供事实,不下结论。",
+            "⚠退款流水":"**售后退款和押金退款是两条流水,不要混。** "
+                       "本系统只存押金退款的渠道明细(get_refund_trace / get_payment_flow,按押金单号查);"
+                       "售后退款的渠道明细在" + ("、".join(ext) if ext else "外部系统") +
+                       "里,**这里查不到,要如实告诉客户去哪查,不要拿押金流水冒充**。"}
+
+
 def _names():
     return {r["code"]: r["name"] for r in _rows("SELECT code,name FROM craft")}
 
@@ -255,6 +361,24 @@ def kb_lead(pattern, size, material, crafts=None, scope="局部", workers=2, nee
     return lt.deadline(need_date, None, **kw) if need_date else lt.estimate(**kw)
 
 
+SHOP_SCHEMAS=[
+ {"name":"get_order","description":"查订单。给 order_id 返回单条全链路(双口径状态、金额勾稽、时间线、订单行、关联售后);给 customer(客户号或姓名)返回该客户的订单清单。**返回里的「勾稽异常」不为空时,必须先核对再答复客户**,不要直接把金额念给客户听。注意状态有两套口径:页面按设计稿 10 档、PRD 按状态机 6 档,对客户说页面口径。",
+  "input_schema":{"type":"object","properties":{
+    "order_id":{"type":"string","description":"订单号"},
+    "customer":{"type":"string","description":"客户号或姓名。不知道订单号时先用这个列清单。"}},"required":[]}},
+ {"name":"get_stock","description":"查现货。四种问法,给其中一个参数即可:sku=某个具体规格;spu=某个商品的全部规格;material=某种面料还有多少米;**craft=这个工艺有哪些面料是现货且相容的**。最后一种用于回答「能不能快一点」——换现货面料可以把备料从十几二十天压到 1–3 天,但**面料换了质感和售价都会变,必须让客户确认,不能替他决定**。",
+  "input_schema":{"type":"object","properties":{
+    "sku":{"type":"string"},"spu":{"type":"string","description":"商品编码或名称"},
+    "material":{"type":"string","description":"面料名称,直接写中文"},
+    "craft":{"type":"string","description":"工艺名称。用来找「现货且能做这个工艺」的面料。"}},
+   "required":[]}},
+ {"name":"get_aftersale","description":"查售后记录(退货/换货/退款/维修),可按订单号、客户或状态筛。退款类会带上退款轨迹。**这个工具只给事实,不给判责结论** —— 判责标准在 kb_tables 的「售后争议判定」表里,要另外查。查不到就如实说查不到,不要推测客户提过什么。",
+  "input_schema":{"type":"object","properties":{
+    "order_id":{"type":"string"},"customer":{"type":"string","description":"客户号或姓名"},
+    "status":{"type":"string","description":"如「退款失败」「审批同意」"}},"required":[]}},
+]
+
+TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

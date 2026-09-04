@@ -135,7 +135,10 @@ CREATE TABLE pattern_piece(pattern TEXT, name TEXT, qty INT, note TEXT);
 CREATE TABLE size_spec(pattern TEXT, size TEXT, item TEXT, value REAL);
 -- 主料行的 name 从 craft 表取,ref_craft 指回去 —— 面料名不在物料表里存第二遍
 CREATE TABLE material(code TEXT PRIMARY KEY, name TEXT, cat TEXT, spec TEXT, width_cm REAL,
-  unit TEXT, price REAL, loss_rate REAL, lead_days INT, ref_craft TEXT, src_type TEXT);
+  unit TEXT, price REAL, loss_rate REAL, lead_days INT, ref_craft TEXT, src_type TEXT,
+  -- 现货米数。**没有这个字段,工期推算那条「改用现货面料可压缩 20 天」就是空话** ——
+  -- 系统根本不知道哪些面料有现货。越贵的料现货越少,这是真实的:压着钱的东西没人多囤。
+  stock_qty REAL DEFAULT 0);
 CREATE TABLE pattern_bom(pattern TEXT, material TEXT, qty_base REAL, qty_step REAL, unit TEXT, note TEXT);
 CREATE TABLE craft_bom(craft TEXT, material TEXT, qty REAL, unit TEXT, note TEXT);
 CREATE TABLE kb_table(topic TEXT, head TEXT, rows TEXT, src_file TEXT);
@@ -458,9 +461,15 @@ def run():
     for row in _dp.size_specs():
         c.execute("INSERT INTO size_spec VALUES(?,?,?,?)", row)
     for m in _dp.materials(_names):
-        c.execute("INSERT INTO material VALUES(?,?,?,?,?,?,?,?,?,?,'demo')",
+        # 现货量与单价反相关:¥45 的棉麻可以囤几百米,¥1800 的云锦基本不囤 ——
+        # 压着钱的东西没人多备。这条规律让「有没有现货」这个问题有真实的答案分布。
+        pr = m["price"] or 1
+        base = 400 if pr < 60 else 220 if pr < 150 else 90 if pr < 300 else 30 if pr < 700 else 0
+        qty = 0.0 if base == 0 and (_dp.materials(_names).index(m) % 3) else round(
+            base * (0.4 + (hash(m["code"]) % 100) / 100), 1)
+        c.execute("INSERT INTO material VALUES(?,?,?,?,?,?,?,?,?,?,'demo',?)",
                   (m["code"], m["name"], m["cat"], m["spec"], m["width_cm"], m["unit"],
-                   m["price"], m["loss"], m["lead"], m["ref_craft"]))
+                   m["price"], m["loss"], m["lead"], m["ref_craft"], qty))
     for b in _dp.pattern_bom():
         c.execute("INSERT INTO pattern_bom VALUES(?,?,?,?,?,?)",
                   (b["pattern"], b["material"], b["qty_base"], b["qty_step"], b["unit"], b["note"]))

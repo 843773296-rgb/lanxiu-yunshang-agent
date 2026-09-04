@@ -193,8 +193,44 @@ def g7_rush_promise(text, calls):
     return None
 
 
+# 具体事实的断言信号:提到了某一单/某一件,而不是在讲流程
+SPECIFIC = ("您的", "你的", "这一单", "这单", "这件", "该订单", "此单", "您这")
+# 系统里的状态名 + 口语说法。**只认系统状态名会漏掉大半** ——
+# 顾问不会说「您这单是已发货」,会说「您这单已经发货了」。
+ORDER_ST = ("待付款", "待审核", "待生产", "生产中", "已生产", "待发货", "已发货",
+            "待完成", "已完成", "已取消", "方案确认中", "待收货", "已关闭",
+            "发货了", "发出了", "寄出了", "到货了", "签收", "在生产", "在做了",
+            "付款了", "付过款", "已付", "取消了", "做好了", "完成了")
+STOCK_W  = ("有现货", "有货", "没货", "缺货", "零库存", "还有库存", "库存充足", "现货充足")
+AFTER_W  = ("退款成功", "退款失败", "已退款", "退货已", "换货已", "审批同意", "审批拒绝", "已入库")
+RE_ORDID = re.compile(r"\b\d{16,20}\b")
+
+
+def g8_business_fact(text, calls):
+    """订单状态、库存、售后进度 —— **这三样绝不能凭印象答**。
+
+    和 g1 只管数字不同,这里管的是**状态断言**:「您这单已发货」听起来不像数字,
+    但它一样是一个查得到、也必须查过才能说的事实。说错了客户当场就发现。
+
+    只在答案确实指向某一单/某一件时开火(带单号,或带「您的/这一单/这件」这类指代)——
+    讲流程、讲规则时提到这些词不算。
+    """
+    specific = bool(RE_ORDID.search(text)) or any(w in text for w in SPECIFIC)
+    if not specific: return None
+    if any(w in text for w in ORDER_ST) and not _called(calls, "get_order"):
+        return "答案里给了某一单的状态,但没调 get_order 查过 —— 订单状态不能凭印象说"
+    for w in STOCK_W:
+        i = text.find(w)
+        if i >= 0 and not _called(calls, "get_stock"):
+            return f"答案里断言了库存(「{w}」),但没调 get_stock 查过 —— 现货不能凭印象说"
+    if any(w in text for w in AFTER_W) and not (
+            _called(calls, "get_aftersale") or _called(calls, "get_refund_trace")):
+        return "答案里给了售后进度,但没调 get_aftersale 查过 —— 售后状态不能凭印象说"
+    return None
+
+
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
-          g5_fit_guess, g6_undefined, g7_rush_promise]
+          g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact]
 
 
 def check_answer(text, calls):

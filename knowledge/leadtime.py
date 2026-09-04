@@ -55,6 +55,26 @@ def craft_days():
     return out
 
 
+def _in_stock(crafts, names, exclude=None):
+    """和这些工艺都相容、且当前有现货的面料。
+
+    工期推算一直有条建议叫「改用现货面料可压缩 20 天」—— 在库里加上现货字段之前,
+    **系统根本不知道哪些面料有现货,那条建议只是一句空话。** 现在它能点名了。
+    """
+    db = os.path.join(HERE, "..", "backend", "lanxiu.db")
+    if not os.path.exists(db) or not crafts: return []
+    import sqlite3
+    con = sqlite3.connect(db); con.row_factory = sqlite3.Row
+    q = ("SELECT m.code,m.name,m.unit,m.price,m.lead_days,m.stock_qty FROM material m"
+         " WHERE m.cat='主料' AND m.stock_qty>0 AND m.code<>?"
+         + "".join(" AND EXISTS(SELECT 1 FROM craft_combo cc WHERE cc.material=m.code"
+                   " AND cc.craft=? AND cc.verdict='可')" for _ in crafts)
+         + " ORDER BY m.stock_qty DESC")
+    rs = con.execute(q, [exclude or ""] + list(crafts)).fetchall()
+    return [dict(code=r["code"], name=r["name"], unit=r["unit"], price=r["price"],
+                 lead=r["lead_days"], stock=r["stock_qty"]) for r in rs]
+
+
 def _pan_pairs(pattern):
     """这个版型有几对盘扣 —— 从 BOM 里取,不拍固定值"""
     return sum(b["qty_base"] for b in dp.pattern_bom()
@@ -149,8 +169,18 @@ def estimate(pattern, size, material, crafts=(), scope="局部",
             risk.append(f"{names.get(kc,kc)}:{d[4] or '不能靠加人压缩'}")
     if "KF41" in crafts or "MT01" in material or "香云纱" in bom["material"]:
         risk.append("香云纱晒莨**需日照,雨季直接停工** —— 工期承诺必须留余量,且下单时就要说")
-    if par["说明"] == "卡在面料备料":
-        press.append(f"改用现货面料可把备料从 {supply['最慢']} 天压到 1–3 天(面料选择会大幅受限)")
+    if par["说明"].startswith("卡在面料备料"):
+        alt = _in_stock(crafts, names, exclude=material)
+        if alt:
+            top = "、".join(f"{a['name']}(现货 {a['stock']:.0f}{a['unit']},备料 {a['lead']} 天)"
+                            for a in alt[:3])
+            press.append(f"改用现货面料可把备料从 {supply['最慢']} 天压到 1–3 天。"
+                         f"和所选工艺相容且**当前有现货**的:{top}"
+                         f"(共 {len(alt)} 种)。"
+                         f"**面料换了质感和售价都会变,必须让客户确认,不能替他决定。**")
+        else:
+            press.append(f"备料 {supply['最慢']} 天,而所选工艺相容的面料**当前全部无现货** —— "
+                         "这一段压不下去,只能换工艺或改期")
     else:
         can = [k for k in crafts if D.get(k) and D[k][3] > 1 and D[k][2] == "工日"]
         press.append(f"增加绣工并行可压缩 {[names.get(k,k) for k in can]}(成本上升,"
@@ -260,4 +290,13 @@ if __name__ == "__main__":
         print(f"     最晚下单日 {r['最晚下单日']}")
     assert not deadline("2026-10-01","2026-09-04",pattern="PT06",size="M",material="MT02",
                         crafts=["KF01","KF04"],craft_names=N)["赶得上"]
+    print("\n现货接上了,压缩建议能点名了:")
+    r = estimate("PT03", "M", "MT02", ["KF03"], craft_names=N)     # 云锦,无现货
+    print(f"  云锦 + 苏绣 → {r['关键路径']}")
+    for x in r["可压缩"][:1]: print(f"    {x[:110]}")
+    assert "现货" in r["可压缩"][0], "卡在备料时必须给出现货替代方案"
+    r2 = estimate("PT06", "M", "MT02", ["KF01"], scope="整幅", craft_names=N)  # 卡在缂丝
+    print(f"  云锦 + 缂丝整幅 → {r2['关键路径']}")
+    for x in r2["可压缩"][:1]: print(f"    {x[:110]}")
+
     print("\n✅ 工期推算自测通过")

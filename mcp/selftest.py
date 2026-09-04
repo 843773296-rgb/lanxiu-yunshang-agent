@@ -25,6 +25,9 @@ CASES = [
     ("mcp/task_server.py", "lanxiu-task", [x["name"] for x in _api.SCHEMAS],
      ("get_deposit", {"deposit_id": "D2000"}, "D2000"),
      ("get_deposit", {}, None)),
+    ("mcp/shop_server.py", "lanxiu-shop", [x["name"] for x in _api.SHOP_SCHEMAS],
+     ("get_stock", {"material": "棉麻"}, "现货"),
+     ("get_order", {}, None)),
 ]
 
 
@@ -91,8 +94,13 @@ for script, want_name, want_n, (gt, ga, expect), (bt, ba, _) in CASES:
 
         r = c.call("tools/call", {"name": bt, "arguments": ba})
         res = r.get("result", {})
-        ok4 = bool(res.get("isError"))
-        print(f"  {'✅' if ok4 else '❌'} ④ 错参数 → isError={res.get('isError')} "
+        # 参数不对时,**返回一条能看懂的错误**也算合格,不一定要抛异常 ——
+        # 对模型来说 {"error": "要么给订单号,要么给客户号"} 比一个 traceback 有用得多,
+        # 它能照着改再调一次。这一项要查的是「错参数不会静默通过」,不是「必须抛」。
+        _t4 = (res.get("content") or [{}])[0].get("text", "")
+        ok4 = bool(res.get("isError")) or '"error"' in _t4
+        print(f"  {'✅' if ok4 else '❌'} ④ 错参数 → "
+              f"{'isError' if res.get('isError') else '返回 error 字段'} "
               f"「{(res.get('content') or [{}])[0].get('text','')[:40]}」")
         bad += 0 if ok4 else 1
 
@@ -112,4 +120,4 @@ for script, want_name, want_n, (gt, ga, expect), (bt, ba, _) in CASES:
 print("\n" + "=" * 74)
 if bad:
     print(f"❌ {bad} 项不通过"); sys.exit(1)
-print("✅ 两个 MCP 服务全部连通")
+print(f"✅ {len(CASES)} 个 MCP 服务全部连通")

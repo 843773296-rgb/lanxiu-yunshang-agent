@@ -12,7 +12,7 @@
 import atexit, json, os, subprocess, sys, threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SERVERS = {"kb": "kb_server.py", "task": "task_server.py"}
+SERVERS = {"kb": "kb_server.py", "task": "task_server.py", "shop": "shop_server.py"}
 _POOL = {}
 _LOCK = threading.Lock()
 

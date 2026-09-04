@@ -43,6 +43,14 @@ CASES = {
                          "crafts": ["平绣"], "workers": 4}),
         ("kb_lead",     {"pattern": "PT06", "size": "M", "material": "云锦",
                          "crafts": ["缂丝"], "scope": "整幅", "need_date": "2026-10-01"})],
+    "shop": [("get_stock",     {"material": "云锦"}),
+             ("get_stock",     {"material": "棉麻"}),
+             ("get_stock",     {"craft": "苏绣"}),
+             ("get_stock",     {}),
+             ("get_aftersale", {"status": "退款失败"}),
+             ("get_aftersale", {"customer": "查无此人"}),
+             ("get_order",     {"customer": "C10000"}),
+             ("get_order",     {"order_id": "不存在的单号"})],
  "task":[("list_tasks",  {}),
          ("list_tasks",  {"task_type": "财务人工任务"}),
          ("get_deposit", {"deposit_id": "D2000"}),
@@ -61,7 +69,7 @@ print("通道等价性测试(不调模型)\n" + "=" * 74)
 for kind, cases in CASES.items():
     cl = mcp.get(kind)
     # ① schema 必须同形
-    direct_s = api.KB_SCHEMAS if kind == "kb" else api.SCHEMAS
+    direct_s = {"kb": api.KB_SCHEMAS, "task": api.SCHEMAS, "shop": api.SHOP_SCHEMAS}[kind]
     ms = {t["name"]: t for t in cl.schemas()}
     ds = {t["name"]: t for t in direct_s}
     if set(ms) != set(ds):
