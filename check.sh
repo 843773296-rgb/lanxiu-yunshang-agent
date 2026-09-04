@@ -16,11 +16,11 @@ run "遮蔽检查 · 局部变量压函数" python3 backend/shadow_check.py
 run "商品库 · 不卖矩阵判不可的组合" python3 backend/catalog_check.py
 run "会员与订单 · 映射/勾稽/门槛" python3 backend/member_order_check.py
 run "运维平台 · 队列/时效/解析/置信度" python3 backend/ops.py
-run "MCP · 两个服务连通性"      python3 mcp/selftest.py
+run "MCP · 三个服务连通性"      python3 mcp/selftest.py
 run "MCP · 通道等价(不调模型)" python3 mcp/parity.py
 run "V1 循环 · 离线自测"       python3 agent/offline_test.py
 run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py
-run "相容矩阵 · 273 格推导/对账/落库" python3 knowledge/derive_combo.py
+run "相容矩阵 · 2025 格推导/对账/落库" python3 knowledge/derive_combo.py
 run "版型库与 BOM · 推档/裁片/物料对账" python3 knowledge/derive_pattern.py
 run "量体推荐 · 三档判定/放松量/齐胸特例" python3 knowledge/fitting.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py
