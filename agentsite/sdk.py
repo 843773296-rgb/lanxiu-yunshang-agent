@@ -78,7 +78,8 @@ KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
             "mcp__kb__kb_tables", "mcp__kb__kb_coverage",
             "mcp__kb__kb_pattern", "mcp__kb__kb_size", "mcp__kb__kb_bom",
             "mcp__kb__kb_fit", "mcp__kb__kb_lead"]
-SHOP_TOOLS = ["mcp__shop__get_order", "mcp__shop__get_stock", "mcp__shop__get_aftersale"]
+SHOP_TOOLS = ["mcp__shop__get_order", "mcp__shop__get_stock", "mcp__shop__get_aftersale",
+              "mcp__shop__get_capacity"]
 
 # 项目自带的 Skill(agentsite/.claude/skills/<名字>/SKILL.md)。
 # Skill 管的是**产出物的格式**:报价单会被截图转发,脱离上下文独自存在,
@@ -113,7 +114,10 @@ SYS_KB = """你是澜绣云裳的汉服工艺顾问助手,服务对象是客户�
    但**面料换了质感和售价都会变,必须让客户确认,不能替他决定**。
    `get_order` 返回的「勾稽异常」不为空时,**先核对再答复**,不要把金额直接念给客户。
    售后退款和押金退款是**两条流水**,售后的渠道明细在外部系统,不要拿押金流水冒充。
-10. 客户问「什么时候能拿到」→ kb_lead。**报最慢那个数**,余量留给自己。
+10. 客户问「什么时候能拿到」→ kb_lead(**排队等待已经算在里面了**,不必再查产能)。
+   工坊问「现在谁有空 / 瓶颈在哪 / 这活什么时候排得上」→ get_capacity。
+   返回 `不可加人` 为真时,**排满了就只能等,加钱也没用**;
+   返回说没有师傅会做,那是**产能缺口不是排期问题**,只能外发或不接。**报最慢那个数**,余量留给自己。
    婚礼、写真这类日子不能改的场合,一定要问出用件日期并传 need_date ——
    **交不出来赔多少钱都换不回那一天。**
    风险里写着「不能靠加人压缩」的(织造、染色晾晒、手绘顾绣发绣),

@@ -242,6 +242,19 @@ def get_aftersale(order_id=None, customer=None, status=None):
                        "里,**这里查不到,要如实告诉客户去哪查,不要拿押金流水冒充**。"}
 
 
+def get_capacity(craft=None, workdays=None, from_date=None):
+    """产能排期。不传 craft 就是全工坊负载概览(瓶颈在哪个工种)。"""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","knowledge"))
+    import capacity as cap
+    if not craft:
+        return cap.overview(from_date)
+    k,e=_resolve(craft,"工艺")
+    if e: return {"error":e}
+    r=cap.when_free(k["code"], float(workdays or 10), from_date)
+    if not r.get("error"): r["工艺"]=k["name"]
+    return r
+
+
 def _names():
     return {r["code"]: r["name"] for r in _rows("SELECT code,name FROM craft")}
 
@@ -344,7 +357,8 @@ def _lt():
     import leadtime; return leadtime
 
 
-def kb_lead(pattern, size, material, crafts=None, scope="局部", workers=2, need_date=None):
+def kb_lead(pattern, size, material, crafts=None, scope="局部", workers=2,
+            need_date=None, from_date=None):
     """算工期。给了 need_date 就顺便倒推来不来得及。"""
     lt=_lt()
     p=_rows("SELECT code FROM pattern WHERE code=? OR name=?",pattern,pattern)
@@ -357,7 +371,8 @@ def kb_lead(pattern, size, material, crafts=None, scope="局部", workers=2, nee
         if e2: return {"error":e2}
         kcs.append(r["code"])
     kw=dict(pattern=p[0]["code"], size=size, material=m["code"], crafts=kcs,
-            scope=scope, workers=int(workers or 2), craft_names=_names())
+            scope=scope, workers=int(workers or 2), craft_names=_names(),
+            from_date=from_date)
     return lt.deadline(need_date, None, **kw) if need_date else lt.estimate(**kw)
 
 
@@ -372,13 +387,19 @@ SHOP_SCHEMAS=[
     "material":{"type":"string","description":"面料名称,直接写中文"},
     "craft":{"type":"string","description":"工艺名称。用来找「现货且能做这个工艺」的面料。"}},
    "required":[]}},
+ {"name":"get_capacity","description":"查工坊产能排期。**不传 craft 就是全工坊负载概览**(每个工种几人、在制多少、手上的活要消化几天、瓶颈在哪);传 craft 则返回这个工艺**最早什么时候能排上**、谁来做、要做到几号、有几位师傅可选。两条要点:①返回 `不可加人=true` 时,说明会这个工艺的师傅只有一位或都是一人一机(缂丝、妆花、手绘、顾绣、发绣),**排满了就只能等,加钱也没用**;②返回 error 说没有师傅会做时,那**不是排期问题是产能缺口**,只能外发或者不接这个单。注意 kb_lead 已经自动把排队等待算进工期了,这个工具是给工坊排产用的,不必为了算工期再调一次。",
+  "input_schema":{"type":"object","properties":{
+    "craft":{"type":"string","description":"工艺名称,直接写中文。不传则返回全工坊概览。"},
+    "workdays":{"type":"number","description":"这活需要多少工日,默认 10"},
+    "from_date":{"type":"string","description":"从哪天起算,YYYY-MM-DD,默认今天"}},"required":[]}},
  {"name":"get_aftersale","description":"查售后记录(退货/换货/退款/维修),可按订单号、客户或状态筛。退款类会带上退款轨迹。**这个工具只给事实,不给判责结论** —— 判责标准在 kb_tables 的「售后争议判定」表里,要另外查。查不到就如实说查不到,不要推测客户提过什么。",
   "input_schema":{"type":"object","properties":{
     "order_id":{"type":"string"},"customer":{"type":"string","description":"客户号或姓名"},
     "status":{"type":"string","description":"如「退款失败」「审批同意」"}},"required":[]}},
 ]
 
-TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale})
+TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale,
+              "get_capacity":get_capacity})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,
@@ -412,7 +433,7 @@ KB_SCHEMAS=[
     "customer":{"type":"string","description":"客户姓名或客户号"},
     "pattern":{"type":"string","description":"版型名称或编码,如「明制马面裙·标准」或 PT04。不知道有哪些版型时先用 kb_pattern 查。"}},
    "required":["customer","pattern"]}},
- {"name":"kb_lead","description":"算工期:给定版型 + 尺码 + 面料 + 工艺,返回**最快到最慢的天数区间**、每一段花多久、**关键路径卡在哪一环**、有哪些风险、哪些环节加钱能压缩。传了 need_date(用件日期,YYYY-MM-DD)还会倒推最晚下单日并判断来不来得及。三条铁律:①**对客户报最慢那个数**,余量留给自己,绝不能报最快的;②「关键路径」告诉你加钱只对哪一环有用 —— 不在关键路径上的环节压缩了也没用;③返回的「风险」里凡是提到**不能靠加人压缩**(织造、染色晾晒、手绘顾绣发绣)的,加急要求必须当场拒绝,不要先答应再想办法。",
+ {"name":"kb_lead","description":"算工期:给定版型 + 尺码 + 面料 + 工艺,返回**最快到最慢的天数区间**、每一段花多久、**关键路径卡在哪一环**、有哪些风险、哪些环节加钱能压缩。**已经把工坊的排队等待算进去了**(师傅手上压着活,新单要排队),不必再单独查产能。传了 need_date(用件日期,YYYY-MM-DD)还会倒推最晚下单日并判断来不来得及。三条铁律:①**对客户报最慢那个数**,余量留给自己,绝不能报最快的;②「关键路径」告诉你加钱只对哪一环有用 —— 不在关键路径上的环节压缩了也没用;③返回的「风险」里凡是提到**不能靠加人压缩**(织造、染色晾晒、手绘顾绣发绣)的,加急要求必须当场拒绝,不要先答应再想办法。",
   "input_schema":{"type":"object","properties":{
     "pattern":{"type":"string","description":"版型名称或编码"},
     "size":{"type":"string","description":"尺码,如 M"},
@@ -420,6 +441,7 @@ KB_SCHEMAS=[
     "crafts":{"type":"array","items":{"type":"string"},"description":"所选工艺名称列表"},
     "scope":{"type":"string","enum":["局部","整幅"],"description":"整幅按局部的 4 倍估,默认局部"},
     "workers":{"type":"integer","description":"安排几个师傅并行,默认 2。注意染色、织造、手绘这些除不动。"},
+    "from_date":{"type":"string","description":"从哪天起算,YYYY-MM-DD。不传按今天。"},
     "need_date":{"type":"string","description":"客户的用件日期 YYYY-MM-DD。婚礼、写真这类**日子不能改**的场合必须传,系统会倒推最晚下单日。"}},
    "required":["pattern","size","material"]}},
  {"name":"kb_bom","description":"算料算钱:给定版型 + 尺码 + 面料 + 所选工艺,返回完整物料清单(每项的净用量、损耗、实际用量、单价、金额)、物料成本合计、备料周期和卡在哪个物料上。**客户问「多少钱」「要等多久」时用这个。** 注意:返回的是**物料成本,不是售价** —— 不含工时、门店成本与税,**绝不能把这个数当报价告诉客户**。",

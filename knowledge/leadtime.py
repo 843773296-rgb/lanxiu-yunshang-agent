@@ -28,6 +28,10 @@ import derive_pattern as dp
 import derive_combo
 
 
+def _cap():
+    import capacity; return capacity
+
+
 def dp_combo_tables():
     """工艺的「工序」从相容矩阵的属性表来 —— 那张表已经标好了织造/印染/刺绣/缝制。
     不在这里另存一份:同一个属性存两处,一定漂。"""
@@ -82,7 +86,7 @@ def _pan_pairs(pattern):
 
 
 def estimate(pattern, size, material, crafts=(), scope="局部",
-             workers=2, custom=True, craft_names=None):
+             workers=2, custom=True, craft_names=None, from_date=None, capacity=True):
     """返回(最快, 最慢)天数、各段明细、关键路径和风险。"""
     D = craft_days()
     bom = dp.estimate(pattern, size, material, crafts, scope, craft_names)
@@ -106,6 +110,7 @@ def estimate(pattern, size, material, crafts=(), scope="局部",
     mult = 4 if scope == "整幅" else 1
     deco, items = [0.0, 0.0], []
     dye, sewc = [0.0, 0.0], [0.0, 0.0]
+    waits, queue_risk, gap = {}, [], []
     for kc in crafts:
         d = D.get(kc)
         if not d: continue
@@ -125,12 +130,32 @@ def estimate(pattern, size, material, crafts=(), scope="局部",
             how = f"{lo:.0f}–{hi:.0f} 日历天(**加人无效**)"
         st = STAGE.get(kc, "刺绣")
         bucket = {"印染": dye, "缝制": sewc}.get(st, deco)   # 织造与刺绣走并行支
+        # **排队等待。** 工期算的是「要做多久」,这里补上「什么时候排得上」——
+        # 定制业最常见的延期原因是排不上,不是做得慢。
+        if capacity and (a or b):
+            try:
+                cp = _cap().when_free(kc, hi, from_date)
+                if not cp.get("error"):
+                    w = cp["排队等待天数"]
+                    waits.setdefault(st, []).append((w, nm, cp))
+                    if cp.get("不可加人") and w > 0:
+                        queue_risk.append(f"{nm}:排队 {w} 天 —— {cp['note']}")
+                else:
+                    gap.append(f"{nm}:{cp['error']}")
+            except Exception:
+                pass
         if a or b:
             bucket[0] += a; bucket[1] += b
             items.append(dict(工艺=nm, 工序=st, 最快=round(a, 1), 最慢=round(b, 1),
                               算法=how, 备注=note,
                               位置={"印染": "备料之后、裁剪之前(串行)",
                                     "缝制": "成衣阶段(串行)"}.get(st, "绣片,与备料并行")))
+    # 各支的排队等待:同一支里的工艺可以由不同师傅同时等,取最长的那个
+    qw = {k: max(x[0] for x in v) for k, v in waits.items()}
+    deco[0] += max(qw.get("刺绣", 0), qw.get("织造", 0))
+    deco[1] += max(qw.get("刺绣", 0), qw.get("织造", 0))
+    dye[0] += qw.get("印染", 0); dye[1] += qw.get("印染", 0)
+    sewc[0] += qw.get("缝制", 0); sewc[1] += qw.get("缝制", 0)
     decor = dict(段="绣片 / 织片制作", 最快=round(deco[0], 1), 最慢=round(deco[1], 1),
                  说明=("、".join(x["工艺"] for x in items if x["工序"] in ("刺绣", "织造"))
                        or "无绣织工艺"), 明细=items)
@@ -188,7 +213,10 @@ def estimate(pattern, size, material, crafts=(), scope="局部",
                      else "**关键路径上的工艺都不能靠加人压缩** —— 只能简化工艺或换配置")
     press.append("机缝替代手工可省 2–4 天(「高定感」下降,须客户确认)")
 
-    return dict(版型=p["name"], 尺码=size, 面料=bom["material"], 工艺范围=scope,
+    risk = queue_risk + risk
+    if gap: risk = gap + risk
+    return dict(排队等待=qw, 产能缺口=gap,
+                版型=p["name"], 尺码=size, 面料=bom["material"], 工艺范围=scope,
                 师傅数=workers, 最快天数=fast, 最慢天数=slow,
                 关键路径=par["说明"], 分段=seq, 装饰明细=items,
                 备料=supply, 装饰=decor, 印染=dict(最快=dye[0], 最慢=dye[1]),
@@ -298,5 +326,20 @@ if __name__ == "__main__":
     r2 = estimate("PT06", "M", "MT02", ["KF01"], scope="整幅", craft_names=N)  # 卡在缂丝
     print(f"  云锦 + 缂丝整幅 → {r2['关键路径']}")
     for x in r2["可压缩"][:1]: print(f"    {x[:110]}")
+
+    print("\n排队等待接进来了(工期不再假设师傅立刻有空):")
+    a = estimate("PT06", "M", "MT02", ["KF01"], scope="整幅",
+                 from_date="2026-09-04", capacity=False, craft_names=N)
+    b = estimate("PT06", "M", "MT02", ["KF01"], scope="整幅",
+                 from_date="2026-09-04", capacity=True, craft_names=N)
+    print(f"  不算排队:{a['最快天数']}–{a['最慢天数']} 天")
+    print(f"  算上排队:{b['最快天数']}–{b['最慢天数']} 天(缂丝要等 {b['排队等待'].get('织造',0)} 天)")
+    assert b["最慢天数"] > a["最慢天数"], "排队等待必须计入工期"
+    for r0 in b["风险"][:1]: print(f"  风险:{r0[:80]}")
+
+    print("\n没人会的工艺:")
+    g = estimate("PT03", "M", "MT16", ["KF40"], from_date="2026-09-04", craft_names=N)
+    print(f"  {g['产能缺口'][0][:70] if g['产能缺口'] else '(无)'}")
+    assert g["产能缺口"], "没有师傅会的工艺必须报成产能缺口"
 
     print("\n✅ 工期推算自测通过")

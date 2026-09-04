@@ -23,6 +23,7 @@ run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py
 run "相容矩阵 · 273 格推导/对账/落库" python3 knowledge/derive_combo.py
 run "版型库与 BOM · 推档/裁片/物料对账" python3 knowledge/derive_pattern.py
 run "量体推荐 · 三档判定/放松量/齐胸特例" python3 knowledge/fitting.py
+run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py
 run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/leadtime.py
 run "回答体检 · 人造用例(正反各半)" python3 agentsite/guards_test.py
 run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py

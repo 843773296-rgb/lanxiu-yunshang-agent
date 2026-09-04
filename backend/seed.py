@@ -89,6 +89,20 @@ CREATE TABLE tpl_item(tpl TEXT, item TEXT, sort INT);
 -- 体型特征 —— 「差 >5cm **或有明显体型特征** 即全定制」里的后半句,
 -- 之前只是知识库里的一句话,没有任何字段承载它,所以那条规则永远跑不到。
 CREATE TABLE body_feature(customer_id TEXT, feature TEXT, note TEXT, recorded_by TEXT, ts TEXT);
+-- ── 工坊产能 ──────────────────────────────────────────────────────────
+-- staff / schedule 都是**门店侧**的(店长、顾问、客户预约),工坊的师傅原来根本不在库里。
+-- 工期推算一直默认「师傅立刻有空」—— 那是最乐观的假设,而定制业最常见的延期原因
+-- 恰恰是**排不上**,不是做得慢。
+CREATE TABLE artisan(
+  no TEXT PRIMARY KEY, name TEXT, trade TEXT,      -- 工种:织造/印染/刺绣/缝制
+  skills TEXT,                                     -- 会哪几种工艺(KF 编码,逗号分隔)
+  day_rate REAL DEFAULT 1.0,                       -- 日产能:一天出几个工日
+  wip_limit INT DEFAULT 2,                         -- 同时能接几件(在制上限)
+  workshop TEXT, status TEXT, note TEXT);
+-- 已排上的活。**未完成的工单占着未来的产能** —— 新单要排在它们后面
+CREATE TABLE workorder(
+  id TEXT PRIMARY KEY, artisan TEXT, craft TEXT, ref TEXT,
+  workdays REAL, start_date TEXT, due_date TEXT, status TEXT, note TEXT);
 CREATE TABLE measure_rec(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, tpl TEXT,
   item TEXT, value REAL, measured_by TEXT, measured_at TEXT, method TEXT DEFAULT '到店');
 CREATE TABLE content(code TEXT PRIMARY KEY, title TEXT, kind TEXT, status TEXT,
@@ -530,6 +544,58 @@ def run():
             ct2=allc[(n*11+5) % len(allc)]
             c.execute("INSERT INTO member_bind(customer_id,kind,target_id,target_name,ts)"
                       " VALUES(?,?,?,?,?)",(cid,"联系人",ct2,names.get(ct2),ago(40)))
+
+    # ── 工坊师傅与在制工单 ────────────────────────────────────────────
+    # 工种不是通用劳动力:绣工不会织缂丝,织工也不裁衣服。
+    # **织造类一人一机,wip_limit 只能是 1** —— 这不是管理选择,是物理限制。
+    ART = [
+      ("W0101","沈素心","刺绣","KF03,KF11,KF24,KF34",1.0,2,"苏州绣坊","苏绣主力,兼平绣"),
+      ("W0102","顾云舒","刺绣","KF03,KF36,KF34",1.0,2,"苏州绣坊","顾绣,劈丝极细,**不能分工**"),
+      ("W0103","唐锦儿","刺绣","KF07,KF11,KF22",1.0,2,"成都绣坊","蜀绣"),
+      ("W0104","柳依湘","刺绣","KF08,KF10,KF11",1.0,2,"长沙绣坊","湘绣、打籽"),
+      ("W0105","陈婉粤","刺绣","KF09,KF12,KF30",1.0,2,"广州绣坊","粤绣、珠绣,针法最密"),
+      ("W0106","苏念金","刺绣","KF04,KF33,KF35",1.0,2,"苏州绣坊","盘金、京绣,重工"),
+      ("W0107","方小满","刺绣","KF11,KF22,KF24,KF23",1.2,3,"上海工坊","平绣挑花,手快,预算款主力"),
+      ("W0108","何雨眠","刺绣","KF37,KF36",0.8,1,"苏州绣坊","发绣,**一人一稿,换人就变**"),
+      ("W0201","罗一机","织造","KF01",1.0,1,"苏州缂丝坊","**缂丝,一台织机只能一个人织**"),
+      ("W0202","江云锦","织造","KF02,KF05",1.0,1,"南京云锦坊","**妆花与织金,一人一机**"),
+      ("W0203","蒋提花","织造","KF05,KF06",1.0,1,"苏州织造坊","织金、提花"),
+      ("W0301","邵青蓝","印染","KF13,KF14,KF15,KF16",1.0,4,"浙南染坊","植物染,按批次,**晾晒占日历天**"),
+      ("W0302","黎腊生","印染","KF17,KF27,KF38,KF39",1.0,4,"贵州蜡染坊","蜡染、型糊、灰缬"),
+      ("W0303","莨师傅","印染","KF41",1.0,3,"顺德晒莨场","晒莨,**看天吃饭**"),
+      ("W0304","文墨行","印染","KF25,KF26",0.9,1,"上海工坊","手绘、描金,**一人一稿**"),
+      ("W0401","裁云生","缝制","KF18,KF19,KF20,KF42,KF43",1.0,3,"上海工坊","成衣主力"),
+      ("W0402","缝月白","缝制","KF18,KF20,KF28,KF32",1.2,3,"上海工坊","机缝快手"),
+      ("W0403","镶三滚","缝制","KF19,KF42,KF44,KF45",0.9,2,"苏州工坊","三镶三滚、堆花"),
+      ("W0404","补子安","缝制","KF21,KF31,KF29",1.0,2,"苏州工坊","补子、拼布、盘编"),
+      ("W0405","盘扣娘","缝制","KF20,KF29,KF19",1.1,3,"上海工坊","盘扣按颗计,手快"),
+      ("W0406","衬里工","缝制","KF18,KF32,KF28",1.0,3,"上海工坊","锁边、压褶"),
+    ]
+    for no,nm,tr,sk,dr,wl,ws,note in ART:
+        c.execute("INSERT INTO artisan VALUES(?,?,?,?,?,?,?,'在职',?)",(no,nm,tr,sk,dr,wl,ws,note))
+    # 在制工单:让「现在排队要等多久」有真实分布 —— 有的师傅空着,有的排到一个月后
+    _base = date(2026, 9, 4)
+    wo = 0
+    for i,(no,nm,tr,sk,dr,wl,ws,note) in enumerate(ART):
+        ks = sk.split(",")
+        n_job = (i * 7 + 3) % 5          # 0–4 件在制,分布不均才真实
+        cur = _base
+        for j in range(n_job):
+            k = ks[j % len(ks)]
+            wd = round(2 + ((i * 13 + j * 7) % 22), 1)
+            end = cur + timedelta(days=int(wd / dr) + 1)
+            wo += 1
+            c.execute("INSERT INTO workorder VALUES(?,?,?,?,?,?,?,'在制',?)",
+                      (f"WO{8000+wo}", no, k, f"ORD-{7000+wo}", wd,
+                       cur.isoformat(), end.isoformat(), None))
+            cur = end
+    # 已完成的历史工单不占产能,但要有,否则看不出「这个师傅一直很忙」
+    for i,(no,*_ ) in enumerate(ART[:10]):
+        wo += 1
+        c.execute("INSERT INTO workorder VALUES(?,?,?,?,?,?,?,'已完成',?)",
+                  (f"WO{8000+wo}", no, "KF11", f"ORD-{6900+i}", 6.0,
+                   (_base - timedelta(days=40)).isoformat(),
+                   (_base - timedelta(days=30)).isoformat(), None))
 
     # ── 商品(SPU)与 SKU ──
     # 定制品的可选面料 × 可选工艺,**由相容矩阵现场过滤** ——

@@ -303,6 +303,11 @@ async function paintLead(){
     <div class="tw"><table class="bom"><thead><tr>
       <th>阶段</th><th>最快</th><th>最慢</th><th>说明</th></tr></thead><tbody>${seg}</tbody></table></div>
     ${dl}
+    ${(r.产能缺口||[]).length?`<div class="hint" style="margin-top:9px;color:var(--fail)">
+      <b>产能缺口:</b>${r.产能缺口.map(esc).join("<br>")}</div>`:""}
+    ${Object.keys(r.排队等待||{}).length?`<div class="hint" style="margin-top:9px">
+      <b>排队等待</b>(工坊师傅手上压着活,新单要排在后面):${
+        Object.entries(r.排队等待).map(([k,v])=>`${esc(k)} ${v} 天`).join(" · ")}</div>`:""}
     ${(r.风险||[]).length?`<div class="hint" style="margin-top:9px">⚠ ${
       r.风险.map(x=>esc(x).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")).join("<br>⚠ ")}</div>`:""}
     <div class="hint" style="margin-top:8px">可压缩:${
