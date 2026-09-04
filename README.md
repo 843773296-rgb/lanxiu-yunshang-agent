@@ -37,7 +37,7 @@
 | `/` | **值班台** —— 今天还剩多少件、超时几件、最久等了多久 | 队列,`backend/ops.py` |
 | `/queue` | **研判队列** —— 主工作面。智能体交草稿,人采纳 / 改判 / 升级 | Agent SDK + MCP `task` |
 | `/health` | **智能体健康** —— 采纳率、协议失败率、实际成本、缓存命中 | `triage` 表 |
-| `/chat` | 工艺顾问助手 | Agent SDK + MCP `kb` / `shop`,四个 Hook 全程把关 |
+| `/chat` | 工艺顾问助手 | Agent SDK + MCP `kb`/`shop` + Skill `quote`,四个 Hook 全程把关 |
 | `/scheme` | 定制方案配置 | 硬约束(Hook),数据来自后台 |
 | `/workbench` | 单条试跑 | Agent SDK + MCP `task` |
 | `/acceptance` | 回归验收 | 后台引擎 |

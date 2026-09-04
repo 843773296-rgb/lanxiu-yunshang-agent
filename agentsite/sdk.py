@@ -79,6 +79,11 @@ KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
             "mcp__kb__kb_pattern", "mcp__kb__kb_size", "mcp__kb__kb_bom",
             "mcp__kb__kb_fit", "mcp__kb__kb_lead"]
 SHOP_TOOLS = ["mcp__shop__get_order", "mcp__shop__get_stock", "mcp__shop__get_aftersale"]
+
+# 项目自带的 Skill(agentsite/.claude/skills/<名字>/SKILL.md)。
+# Skill 管的是**产出物的格式**:报价单会被截图转发,脱离上下文独自存在,
+# 所以每一份都得自带完整前提 —— 这种「有固定套路、做错了有代价」的事才该做成 Skill。
+SKILLS = ["quote"]
 TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
               "mcp__task__get_refund_trace", "mcp__task__get_payment_flow",
               "mcp__task__get_customer"]
@@ -155,7 +160,14 @@ async def run(kind, prompt, max_turns=12, guard=True):
         # allowed_tools 白名单也就形同虚设(实测工具名跑成了 mcp__lanxiu-task__*)。
         # 服务要在别的机器上行为一致,配置必须是封闭的。
         strict_mcp_config=True,     # 只用上面 mcp_servers 声明的,忽略文件里的
-        setting_sources=[],         # 不读 user / project / local 任何设置文件
+        # 要用项目自带的 Skill,就必须让 CLI 去读 project 设置 —— setting_sources=[]
+        # 的话它连 .claude/skills/ 都不会去看。**只开 project,不开 user 和 local**:
+        # user 是开发机上那个人的偏好,local 是没进版本库的临时配置,
+        # 服务在别的机器上必须行为一致,那两个一开就不一致了。
+        # MCP 的污染由 strict_mcp_config=True 挡住(它只认代码里声明的服务),
+        # 所以这里放开 project 是安全的 —— 但**必须有检查盯着**,见 skills_check.py。
+        setting_sources=["project"],
+        skills=SKILLS,
     )
     # 按「一段回答」分开收,不是一路拼下去。
     # 体检打回后模型会重答,而 hook 的反馈是以 user 角色进流的 ——

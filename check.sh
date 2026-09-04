@@ -24,7 +24,8 @@ run "相容矩阵 · 273 格推导/对账/落库" python3 knowledge/derive_combo
 run "版型库与 BOM · 推档/裁片/物料对账" python3 knowledge/derive_pattern.py
 run "量体推荐 · 三档判定/放松量/齐胸特例" python3 knowledge/fitting.py
 run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/leadtime.py
-run "回答体检 · 20 条人造用例(正反各半)" python3 agentsite/guards_test.py
+run "回答体检 · 人造用例(正反各半)" python3 agentsite/guards_test.py
+run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py
 run "判分器自测 · 18 条人造用例" python3 agent/chat_eval_judgetest.py
 printf "\n%s\n" "────────────────────────────────────────"
 if [ $FAIL -eq 0 ]; then printf "\033[32m✅ 全部检查通过\033[0m\n"; else printf "\033[31m❌ 存在失败项\033[0m\n"; fi

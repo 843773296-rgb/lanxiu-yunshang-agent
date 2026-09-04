@@ -229,8 +229,45 @@ def g8_business_fact(text, calls):
     return None
 
 
+# 报价单的识别信号 —— 三个以上才算,避免把普通答复误判成报价单
+QUOTE_SIG = ("报价单", "方案报价", "物料成本", "用料清单", "工期", "免责", "有效期",
+             "尺码建议", "可行性")
+# 「任何报价单都必须有」的两条
+MUST_ALWAYS = [
+    (("不是最终报价", "非最终报价", "不含工时", "不是报价", "不构成报价"),
+     "没写明「物料成本不是最终报价、不含工时与门店成本」"),
+    (("区间", "最慢", "以最慢", "估算"),
+     "没写明工期是区间估算、以最慢值为准"),
+]
+
+
+def g9_quote_disclaimer(text, calls):
+    """报价单**会被截图转发**,脱离对话独自存在 —— 所以必须自带完整前提。
+
+    少一句免责,三个月后客户翻出来问「你们当时说 xx 的」,就是一场纠纷。
+    Skill 里写了该有哪几条;这里保证它真的有。
+    **Skill 提供格式,Hook 保证格式被遵守** —— 少了后半句,格式只是建议。
+    """
+    if sum(1 for w in QUOTE_SIG if w in text) < 3: return None
+    miss = [why for words, why in MUST_ALWAYS if not any(w in text for w in words)]
+    # 按方案里的实际情况追加必须写的话
+    for c in _called(calls, "kb_combo"):
+        if _res(c).get("verdict") == "需评估" and not any(
+                w in text for w in ("不构成承诺", "须工艺负责人", "须打样", "评估通过前")):
+            miss.append("组合是「需评估」,却没写明评估通过前不构成承诺")
+    for c in _called(calls, "kb_fit"):
+        if _res(c).get("档位") == "需补量" and "补量" not in text:
+            miss.append("尺码档位是「需补量」,报价单里没写明补量后才能开工")
+    if any(w in text for w in ("香云纱", "晒莨")) and not any(
+            w in text for w in ("雨季", "日照", "天气")):
+        miss.append("用了香云纱/晒莨,没提示雨季可能延期")
+    if miss:
+        return "这是一份会被转发出去的报价单,但免责前提不全:" + ";".join(miss)
+    return None
+
+
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
-          g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact]
+          g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer]
 
 
 def check_answer(text, calls):
