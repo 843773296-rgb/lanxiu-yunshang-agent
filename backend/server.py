@@ -1391,6 +1391,10 @@ class H(BaseHTTPRequestHandler):
                     note=body.get("note")))
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
+        if p=="/api/scheme-cost":
+            import scheme as _sc
+            return self._send(_sc.estimate(body.get("xz"),body.get("mt"),body.get("kf"),
+                                           body.get("pt"),body.get("size")))
         if p=="/api/judge":
             # 给「单条试跑」页用:它跑智能体,判分和标注答案留在后台(数据的家在这)。
             # 依旧遵守隔离:truth 只在**跑完之后**读,绝不进模型上下文。

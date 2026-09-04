@@ -3,7 +3,7 @@
 
 铁律:truth 表绝不通过任何接口暴露。评测比对在 agent 之外做。
 """
-import sqlite3, os, json
+import sqlite3, os, json, sys
 DB=os.path.join(os.path.dirname(os.path.abspath(__file__)),"lanxiu.db")
 def _c():
     c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
@@ -136,8 +136,69 @@ def kb_coverage():
                    "仍有未定义的格子时必须说查不到,不要推断。"}
 
 
+def _names():
+    return {r["code"]: r["name"] for r in _rows("SELECT code,name FROM craft")}
+
+
+def kb_pattern(xz=None):
+    """版型库 —— 一个形制有哪些版型、分几个裁片、出哪些码。"""
+    q="SELECT * FROM pattern"; a=()
+    if xz:
+        k,e=_resolve(xz,"形制")
+        if e: return {"error":e}
+        q+=" WHERE xz=?"; a=(k["code"],)
+    rs=_rows(q+" ORDER BY code",*a)
+    if not rs:
+        return {"hit":0,"note":f"「{xz}」这个形制还没有版型。**没有版型就裁不出来**,"
+                              "不能在配置页上架,须先请版师建版。"}
+    nm=_names()
+    for r in rs:
+        r["形制"]=nm.get(r["xz"],r["xz"])
+        r["裁片"]=[dict(名称=p["name"],数量=p["qty"],说明=p["note"])
+                  for p in _rows("SELECT * FROM pattern_piece WHERE pattern=?",r["code"])]
+        r["尺码"]=r.pop("sizes").split(",")
+    return {"hit":len(rs),"rows":rs,
+            "note":"difficulty=改版难度。「极高」的(马面裙)腰围错了等于重做,不能放缝头改。"}
+
+
+def kb_size(pattern, size=None):
+    """某版型的成衣尺码表。**这是成衣尺寸,不是人体尺寸**,两者之差是放松量。"""
+    p=_rows("SELECT * FROM pattern WHERE code=? OR name=?",pattern,pattern)
+    if not p: return {"error":f"没有版型「{pattern}」,可先用 kb_pattern 查这个形制有哪些版型"}
+    p=p[0]
+    rs=_rows("SELECT size,item,value FROM size_spec WHERE pattern=?",p["code"])
+    if size: rs=[r for r in rs if r["size"]==size]
+    if not rs:
+        return {"error":f"{p['name']} 没有 {size} 码,只有 {p['sizes']}",
+                "note":"尺码不存在不是缺货,是这个版型裁不出来。"}
+    out={}
+    for r in rs: out.setdefault(r["size"],{})[r["item"]]=r["value"]
+    return {"版型":p["name"],"尺码表":out,"量体模版":p["tpl"],
+            "note":"成衣尺寸。推荐尺码要拿客户量体值比对后由版师定,系统只给建议。"}
+
+
+def kb_bom(pattern, size, material, crafts=None, scope="局部"):
+    """算料算钱 —— 这个配置要用哪些物料、各多少、物料成本多少、多久备齐。
+
+    相容矩阵回答「能不能做」,这个回答「要多少料、多少钱、多久备齐」。
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","knowledge"))
+    import derive_pattern as dp
+    p=_rows("SELECT code FROM pattern WHERE code=? OR name=?",pattern,pattern)
+    if not p: return {"error":f"没有版型「{pattern}」"}
+    m,e=_resolve(material,"材质")
+    if e: return {"error":e}
+    kcs=[]
+    for k in (crafts or []):
+        r,e2=_resolve(k,"工艺")
+        if e2: return {"error":e2}
+        kcs.append(r["code"])
+    return dp.estimate(p[0]["code"], size, m["code"], kcs, scope, craft_names=_names())
+
+
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
-              "kb_combo":kb_combo,"kb_coverage":kb_coverage})
+              "kb_combo":kb_combo,"kb_coverage":kb_coverage,
+              "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom})
 KB_SCHEMAS=[
  {"name":"kb_lookup","description":"按关键词查工艺知识库。也可按分类(形制/材质/工艺/配饰)或来源等级(public/scale/demo)筛选。查不到会明确返回 hit=0。",
   "input_schema":{"type":"object","properties":{
@@ -155,4 +216,19 @@ KB_SCHEMAS=[
   "input_schema":{"type":"object","properties":{"topic":{"type":"string","description":"通常不要传。全部决策表合计只有 30 行,一次全取更可靠 —— 传了 topic 反而容易取错表。"}},"required":[]}},
  {"name":"kb_coverage","description":"查相容矩阵的完成度(共多少格、已定义多少、未定义多少)。",
   "input_schema":{"type":"object","properties":{},"required":[]}},
+ {"name":"kb_pattern","description":"查版型库:某个形制有哪些版型、每个版型分几个裁片、能出哪些尺码、改版难度多高。**客户问「这个能不能改尺寸/能不能做小码」时用这个。**某个尺码不在列表里,意味着这个版型裁不出来,不是缺货。",
+  "input_schema":{"type":"object","properties":{
+    "xz":{"type":"string","description":"形制名称或编码,如「明制马面裙」或 XZ03。不传则列出全部版型。"}},"required":[]}},
+ {"name":"kb_size","description":"查某版型的成衣尺码表(各部位厘米数)。**返回的是成衣尺寸不是人体尺寸**,和客户量体值之间差一个放松量,不能直接比。推荐尺码最终由版师定。",
+  "input_schema":{"type":"object","properties":{
+    "pattern":{"type":"string","description":"版型名称或编码,如「明制马面裙·标准」或 PT04"},
+    "size":{"type":"string","description":"只看某一个码,如 M。不传则返回全部码。"}},"required":["pattern"]}},
+ {"name":"kb_bom","description":"算料算钱:给定版型 + 尺码 + 面料 + 所选工艺,返回完整物料清单(每项的净用量、损耗、实际用量、单价、金额)、物料成本合计、备料周期和卡在哪个物料上。**客户问「多少钱」「要等多久」时用这个。** 注意:返回的是**物料成本,不是售价** —— 不含工时、门店成本与税,**绝不能把这个数当报价告诉客户**。",
+  "input_schema":{"type":"object","properties":{
+    "pattern":{"type":"string","description":"版型名称或编码"},
+    "size":{"type":"string","description":"尺码,如 M"},
+    "material":{"type":"string","description":"面料名称,如「云锦」。直接写名称,不要猜编码。"},
+    "crafts":{"type":"array","items":{"type":"string"},"description":"所选工艺名称列表,如 [\"盘金绣\"]"},
+    "scope":{"type":"string","enum":["局部","整幅"],"description":"工艺做局部还是整幅,整幅按局部的 4 倍估。默认局部。"}},
+   "required":["pattern","size","material"]}},
 ]

@@ -13,11 +13,16 @@
 import json, os, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# 期望的工具**清单**从 api.py 的 schema 定义来,不写死数量 ——
+# 写死数字的话,每加一个工具这个检查就红一次,红久了就没人看了;
+# 而对清单比数量更严:少注册、多注册、名字写错都能查出来。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend"))
+import api as _api
 CASES = [
-    ("mcp/kb_server.py",   "lanxiu-kb",   5,
+    ("mcp/kb_server.py",   "lanxiu-kb",   [x["name"] for x in _api.KB_SCHEMAS],
      ("kb_combo", {"craft": "妆花", "material": "香云纱"}, "不可"),
      ("kb_combo", {"craft": 123}, None)),
-    ("mcp/task_server.py", "lanxiu-task", 5,
+    ("mcp/task_server.py", "lanxiu-task", [x["name"] for x in _api.SCHEMAS],
      ("get_deposit", {"deposit_id": "D2000"}, "D2000"),
      ("get_deposit", {}, None)),
 ]
@@ -68,10 +73,13 @@ for script, want_name, want_n, (gt, ga, expect), (bt, ba, _) in CASES:
         r = c.call("tools/list")
         tools = r.get("result", {}).get("tools", [])
         shapes_ok = all(t.get("inputSchema", {}).get("type") == "object" for t in tools)
-        ok2 = len(tools) == want_n and shapes_ok
-        print(f"  {'✅' if ok2 else '❌'} ② tools/list → {len(tools)} 个(期望 {want_n})"
-              f",inputSchema 根均为 object:{shapes_ok}")
-        print(f"       {', '.join(t['name'] for t in tools)}")
+        got = [t["name"] for t in tools]
+        ok2 = got == want_n and shapes_ok
+        print(f"  {'✅' if ok2 else '❌'} ② tools/list → {len(got)} 个"
+              f"(声明 {len(want_n)} 个),inputSchema 根均为 object:{shapes_ok}")
+        print(f"       {', '.join(got)}")
+        if got != want_n:
+            print(f"       ⚠ 少了 {sorted(set(want_n)-set(got))} / 多了 {sorted(set(got)-set(want_n))}")
         bad += 0 if ok2 else 1
 
         r = c.call("tools/call", {"name": gt, "arguments": ga})

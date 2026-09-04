@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """澜绣云裳 · 工艺知识库 MCP 服务
 
-暴露 5 个只读工具,供顾问查汉服工艺、面料、形制、配饰与相容矩阵。
+暴露的工具由 backend/api.py 的 KB_SCHEMAS 决定,这里不再写死数量 ——
+工艺 / 面料 / 形制 / 配饰 / 相容矩阵,加上版型库与 BOM(算料算钱)。
 工具实现直接复用 backend/api.py —— 不复制一份逻辑。
 """
 import os, sys

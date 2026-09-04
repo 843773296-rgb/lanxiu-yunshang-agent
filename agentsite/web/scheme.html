@@ -40,6 +40,17 @@ h2{font-size:18px;font-weight:600;margin:0 0 4px}
 .opt.bad[aria-pressed="true"]{background:var(--fail);border-color:var(--fail);color:#fff}
 .opt.warn[aria-pressed="true"]{background:var(--warn);border-color:var(--warn);color:#fff}
 .opt .src{font-family:var(--mono);font-size:9.5px;opacity:.6;margin-left:4px}
+.bomwrap{margin-top:14px;border:1px solid var(--line);border-radius:4px;padding:14px 16px;background:var(--paper-2)}
+.bomhd{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.tagv{font-family:var(--mono);font-size:11.5px;padding:3px 9px;border-radius:3px;
+ background:var(--dye-soft);color:var(--dye)}
+.tagv.warn{background:var(--warn-soft);color:var(--warn)}
+table.bom{width:100%;border-collapse:collapse;font-size:12.5px}
+table.bom th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+ text-transform:uppercase;color:var(--ink-3);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.bom td{padding:6px 8px;border-bottom:1px solid var(--line-2);vertical-align:top}
+table.bom .num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+table.bom .why2{color:var(--ink-3);font-size:11.5px;line-height:1.5;min-width:180px}
 .issues{margin-top:4px;display:flex;flex-direction:column;gap:7px}
 .iss{border-radius:4px;padding:11px 14px;font-size:13.5px;border-left:3px solid}
 .iss.block{background:var(--fail-soft);border-color:var(--fail)}
@@ -105,14 +116,16 @@ body>.wrap{padding-top:0}
 <header class="top">
   <div class="eyebrow"><span class="dot"></span><span class="lab">澜绣云裳 · 定制业务</span></div>
   <h1>定制方案配置</h1>
-  <p class="deck">定制不是选 SKU,是配置。五项选完才构成一个方案 ——
-  而其中<b>工艺 × 面料</b>有硬约束:有些组合不是贵不贵的问题,是<b>物理上做不了</b>。
-  选中即校验,<b>「不可」的组合保存按钮直接不可点</b>。</p>
+  <p class="deck">定制不是选 SKU,是配置。七项选完才构成一个方案 ——
+  <b>工艺 × 面料</b>有硬约束:有些组合不是贵不贵的问题,是<b>物理上做不了</b>,选中即校验,
+  <b>「不可」的组合保存按钮直接不可点</b>。<br>
+  选到<b>版型和尺码</b>之后,下面会按 BOM 算出<b>这一件要用哪些料、各多少、物料成本多少、备料卡在哪一项</b> ——
+  相容矩阵回答「能不能做」,BOM 回答「多少钱、多久」。</p>
 </header>
 
 <section>
   <h2>新建 / 编辑方案</h2>
-  <p class="sub">选项全部来自工艺知识库(60 条),标 <code>demo</code> 的是演示数据,需工艺负责人确认。</p>
+  <p class="sub">选项来自工艺知识库(60 条)与版型库(12 个版型),标 <code>demo</code> 的是演示数据,需工艺负责人确认。</p>
   <div class="panel" id="cfg"><p style="color:var(--ink-3)">加载中…</p></div>
   <p class="note"><b>前端的「不可点」只是体验,不是闸门。</b>
   真正的拦截在服务端 —— 绕过页面直接调 <code>POST /api/scheme-save</code>,一样会被拒(HTTP 409)。
@@ -132,7 +145,7 @@ body>.wrap{padding-top:0}
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let OPT=null, SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:""}, ISS=[];
+let OPT=null, SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null}, ISS=[];
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");setTimeout(()=>t.classList.remove("on"),3200);}
 
 const GRPS=[["xz","形制","单选 · 决定裁法和关键尺寸",false],
@@ -154,7 +167,9 @@ function render(){
         return `<button class="opt ${cls}" data-g="${k}" data-v="${esc(o.name)}" aria-pressed="${on}">${esc(o.name)}${
           o.src?`<span class="src">${o.src}</span>`:""}</button>`;}).join("")}</div></div>`;
   }).join("")
+  + patGroups()
   + `<div class="issues" id="iss"></div>
+     <div id="bom"></div>
      <div class="bar">
        <input class="nm" id="nm" placeholder="方案名称,如「林女士婚服」" value="${esc(SEL.name)}">
        <button class="save" id="save">保存方案</button>
@@ -165,13 +180,60 @@ function render(){
     const g=b.dataset.g, v=b.dataset.v, multi=GRPS.find(x=>x[0]===g)[3];
     if(multi){ SEL[g]=SEL[g].includes(v)?SEL[g].filter(x=>x!==v):[...SEL[g],v]; }
     else { SEL[g]=SEL[g]===v?null:v; }
+    if(g==="xz"){ SEL.pt=null; SEL.size=null; }     // 换形制,原来的版型多半不适用
+    if(g==="pt"){ SEL.size=null; }                  // 换版型,尺码序列可能不一样
     check();
   }));
   $("nm").addEventListener("input",e=>SEL.name=e.target.value);
   $("save").addEventListener("click",save);
-  $("reset").addEventListener("click",()=>{SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:""};ISS=[];render();});
+  $("reset").addEventListener("click",()=>{SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null};ISS=[];render();});
   paintIssues();
 }
+function patGroups(){
+  // 版型和尺码是**级联**的:选了形制才有版型,选了版型才知道有哪些码。
+  // 不做级联的话,页面会让人选一个这个版型根本裁不出来的尺码。
+  const pats = (SEL.xz && OPT["版型"][SEL.xz]) || [];
+  const cur  = pats.find(p=>p.code===SEL.pt);
+  const g=(no,t,hint,items,key,dis)=>`<div class="grp"><div class="h"><span class="n">${no}</span>
+      <span class="t">${t}</span><span class="hint">${hint}</span></div>
+      <div class="opts" data-g="${key}">${
+        dis?`<span class="hint" style="padding:6px 0">${dis}</span>`
+           :items.map(o=>`<button class="opt" data-g="${key}" data-v="${esc(o.v)}"
+              aria-pressed="${SEL[key]===o.v}">${esc(o.t)}</button>`).join("")}</div></div>`;
+  return g(6,"版型","单选 · 决定怎么裁、分几片、能出哪些码",
+           pats.map(p=>({v:p.code,t:p.name+(p.difficulty==="极高"?" ⚠改版极难":"")})),
+           "pt", SEL.xz?(pats.length?"":"这个形制还没有版型 —— 裁不出来,不能上架"):"先选形制")
+       + g(7,"尺码","单选 · 尺码序列由版型决定,不是通用的 S/M/L",
+           (cur?cur.sizes:[]).map(z=>({v:z,t:z})), "size",
+           SEL.pt?"":"先选版型");
+}
+
+async function paintBom(){
+  const el=$("bom"); if(!el) return;
+  if(!(SEL.mt && SEL.size)){ el.innerHTML=""; return; }
+  el.innerHTML=`<div class="bomwrap"><div class="hint">正在算料…</div></div>`;
+  const r=await (await fetch("/api/scheme-cost",{method:"POST",
+    headers:{"content-type":"application/json"},body:JSON.stringify(SEL)})).json();
+  if(r.skip||r.error){
+    el.innerHTML=`<div class="bomwrap"><div class="hint">${esc(r.why||r.error)}${
+      r.note?`<br><b>${esc(r.note)}</b>`:""}</div></div>`; return; }
+  el.innerHTML=`<div class="bomwrap">
+    <div class="bomhd"><b>用料与成本</b>
+      <span class="tagv">物料成本 ¥${r.物料成本.toLocaleString()}</span>
+      <span class="tagv warn">备料 ${r.备料天} 天 · 卡在${esc(r.最长备料项)}</span></div>
+    <div class="tw"><table class="bom"><thead><tr>
+      <th>物料</th><th>类别</th><th>净用量</th><th>损耗</th><th>实际</th><th>单价</th><th>金额</th><th>为什么用它</th>
+    </tr></thead><tbody>${r.lines.map(l=>`<tr>
+      <td>${esc(l.name)}</td><td>${esc(l.cat)}</td>
+      <td class="num">${l.net} ${esc(l.unit)}</td><td class="num">${esc(l.loss)}</td>
+      <td class="num">${l.qty}</td><td class="num">¥${l.price}</td>
+      <td class="num"><b>¥${l.amount.toLocaleString()}</b></td>
+      <td class="why2">${esc(l.why).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")}</td></tr>`).join("")}
+    </tbody></table></div>
+    <div class="hint" style="margin-top:9px"><b>这是物料成本,不是售价。</b>${esc(r.note)}</div>
+  </div>`;
+}
+
 function paintIssues(){
   const blocked=ISS.filter(i=>i.level==="block");
   $("iss").innerHTML = ISS.map(i=>`<div class="iss ${i.level}">
@@ -189,6 +251,7 @@ async function check(){
       headers:{"content-type":"application/json"},body:JSON.stringify(SEL)})).json();
     ISS=r.issues||[]; render();
   }catch(e){}
+  paintBom();
 }
 async function save(){
   const r=await fetch("/api/scheme-save",{method:"POST",

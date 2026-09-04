@@ -118,6 +118,20 @@ CREATE TABLE craft(code TEXT PRIMARY KEY, name TEXT, cat TEXT, alias TEXT,
   brief TEXT, detail TEXT, fit TEXT, lead_days TEXT, cost_level TEXT,
   src_type TEXT, src_url TEXT, src_name TEXT);
 CREATE TABLE craft_combo(craft TEXT, material TEXT, verdict TEXT, reason TEXT, src_type TEXT, rule TEXT);
+-- ── 四大库之三、之四:版型库 与 BOM 库 ──
+-- 款式库 = product / category,工艺库 = craft + craft_combo(已有);
+-- 版型库回答「怎么裁」,BOM 库回答「用多少料、多少钱、多久备齐」。
+-- 两张主表都不手写,由 knowledge/10、11 两个 md 推出来。
+CREATE TABLE pattern(code TEXT PRIMARY KEY, name TEXT, xz TEXT, gender TEXT, tpl TEXT,
+  pieces INT, fabric_base REAL, fabric_step REAL, sizes TEXT, difficulty TEXT, src_type TEXT);
+CREATE TABLE pattern_piece(pattern TEXT, name TEXT, qty INT, note TEXT);
+-- 推档结果:每个版型 × 每个尺码 × 每个部位。基码和档差在 md 里,这张表是算出来的
+CREATE TABLE size_spec(pattern TEXT, size TEXT, item TEXT, value REAL);
+-- 主料行的 name 从 craft 表取,ref_craft 指回去 —— 面料名不在物料表里存第二遍
+CREATE TABLE material(code TEXT PRIMARY KEY, name TEXT, cat TEXT, spec TEXT, width_cm REAL,
+  unit TEXT, price REAL, loss_rate REAL, lead_days INT, ref_craft TEXT, src_type TEXT);
+CREATE TABLE pattern_bom(pattern TEXT, material TEXT, qty_base REAL, qty_step REAL, unit TEXT, note TEXT);
+CREATE TABLE craft_bom(craft TEXT, material TEXT, qty REAL, unit TEXT, note TEXT);
 CREATE TABLE kb_table(topic TEXT, head TEXT, rows TEXT, src_file TEXT);
 CREATE TABLE product_custom(spu TEXT PRIMARY KEY, xz TEXT, mt_opts TEXT, kf_opts TEXT,
   lead_days TEXT, note TEXT);
@@ -425,6 +439,29 @@ def run():
     for a,b,v,r,rule in _dc.derive():
         c.execute("INSERT INTO craft_combo VALUES(?,?,?,?,'demo',?)",(a,b,v,r,rule))
 
+    # ── 版型库与 BOM 库 —— 同样由 md 推,md 是唯一源头 ──────────────────
+    import derive_pattern as _dp
+    _names = {r[0]: r[1] for r in c.execute("SELECT code,name FROM craft")}
+    for x in _dp.patterns():
+        c.execute("INSERT INTO pattern VALUES(?,?,?,?,?,?,?,?,?,?,'demo')",
+                  (x["code"], x["name"], x["xz"], x["gender"], x["tpl"], x["pieces"],
+                   x["fabric_base"], x["fabric_step"], ",".join(x["sizes"]), x["difficulty"]))
+    for x in _dp.pieces():
+        c.execute("INSERT INTO pattern_piece VALUES(?,?,?,?)",
+                  (x["pattern"], x["name"], x["qty"], x["note"]))
+    for row in _dp.size_specs():
+        c.execute("INSERT INTO size_spec VALUES(?,?,?,?)", row)
+    for m in _dp.materials(_names):
+        c.execute("INSERT INTO material VALUES(?,?,?,?,?,?,?,?,?,?,'demo')",
+                  (m["code"], m["name"], m["cat"], m["spec"], m["width_cm"], m["unit"],
+                   m["price"], m["loss"], m["lead"], m["ref_craft"]))
+    for b in _dp.pattern_bom():
+        c.execute("INSERT INTO pattern_bom VALUES(?,?,?,?,?,?)",
+                  (b["pattern"], b["material"], b["qty_base"], b["qty_step"], b["unit"], b["note"]))
+    for b in _dp.craft_bom():
+        c.execute("INSERT INTO craft_bom VALUES(?,?,?,?,?)",
+                  (b["craft"], b["material"], b["qty"], b["unit"], b["note"]))
+
     # ── 会员信息(设计稿「客户详情」的字段)────────────────────────────
     OCC=["室内设计师","中学教师","注册会计师","三甲医院医师","自由摄影师","品牌运营",
          "律师","软件工程师","茶艺师","大学讲师","公务员","民宿主理人"]
@@ -718,24 +755,40 @@ def run():
                        p["spu"], base, cust_amt, round(base + cust_amt, 2)))
 
     # ── 量体测量项 ──
-    MI=[("MI01","身高","cm",1,1),("MI02","体重","kg",1,2),("MI03","胸围","cm",1,3),
-        ("MI04","腰围","cm",1,4),("MI05","臀围","cm",1,5),("MI06","肩宽","cm",1,6),
-        ("MI07","袖长","cm",0,7),("MI08","衣长","cm",0,8),("MI09","裙长","cm",0,9),
-        ("MI10","领围","cm",0,10),("MI11","臂围","cm",0,11),("MI12","裤长","cm",0,12)]
-    for code,nm,un,rq,so in MI:
+    # 08-量体与版型.md 把「胸上围」和「通袖长」列为最高风险的两个尺寸
+    # (齐胸类退货主因 / 汉服特有量法,新顾问最常量成西式袖长),
+    # 但量体项表里原本一个都没有 —— **知识库说的关键项,系统里采集不到**。
+    # 这类「文档和数据对不上」的缺口,建版型库时才暴露出来,补上并写进检查。
+    MI=[("MI01","身高","cm",1,1,"必填。要问穿什么鞋,高跟差 5–8cm"),
+        ("MI02","体重","kg",1,2,"必填"),
+        ("MI03","胸围","cm",1,3,"必填。呼吸状态统一为平静呼气"),
+        ("MI13","胸上围","cm",0,4,"**齐胸类必填**。腋下、胸部上方一周,决定裙头位置;不可用胸围推算"),
+        ("MI04","腰围","cm",1,5,"必填。要问是否含内搭厚度;马面裙须复核两次"),
+        ("MI05","臀围","cm",1,6,"必填"),
+        ("MI06","肩宽","cm",0,7,"汉服多连肩袖,容差比西式大"),
+        ("MI14","通袖长","cm",0,8,"**指尖到指尖**(双臂平展)。汉服上衣用这一项,不是袖长"),
+        ("MI07","袖长","cm",0,9,"西式量法。汉服请改用通袖长 MI14,量错整件报废"),
+        ("MI08","衣长","cm",0,10,"后颈点垂直向下;须与客户确认到胯还是到膝"),
+        ("MI09","裙长","cm",0,11,"齐胸与齐腰的起量点不同"),
+        ("MI10","领围","cm",0,12,"**立领款必填**。±1cm 就影响舒适,须注明是否含内搭"),
+        ("MI11","臂围","cm",0,13,"选填"),
+        ("MI12","裤长","cm",0,14,"选填")]
+    for code,nm,un,rq,so,note in MI:
         c.execute("INSERT INTO measure_item VALUES(?,?,?,?,?,?,?)",
-          (code,nm,un,rq,so,"启用" if code!="MI12" else "停用",
-           "必填项,缺失时不可保存方案" if rq else "选填,按款式需要采集"))
+          (code,nm,un,rq,so,"停用" if code=="MI12" else "启用",note))
     # ── 量体模版 ──
-    TPL=[("MT01","唐装模版","唐制齐胸襦裙、大袖衫等,采集上身与裙长","启用",
-          ["MI01","MI02","MI03","MI04","MI05","MI06","MI07","MI09"]),
-         ("MT02","裙装模版","明制马面裙、宋制百迭裙,重点采集腰臀与裙长","启用",
+    # 编码从 MT 改成 LT:原来量体模版用 MT01,而材质里 MT01 是香云纱 ——
+    # **同一个编码指两样东西**。人看得出上下文,按编码查知识库的智能体看不出。
+    # 建版型库时要同时引用这两张表,冲突才藏不住了。
+    TPL=[("LT01","唐装模版","唐制齐胸襦裙、大袖衫等,采集上身与裙长","启用",
+          ["MI01","MI02","MI03","MI13","MI04","MI05","MI06","MI14","MI09"]),
+         ("LT02","裙装模版","明制马面裙、宋制百迭裙,重点采集腰臀与裙长","启用",
           ["MI01","MI02","MI04","MI05","MI09"]),
-         ("MT03","长衫模版","明制立领长衫、宋制大袖,采集全身","启用",
-          ["MI01","MI02","MI03","MI04","MI05","MI06","MI07","MI08","MI10"]),
-         ("MT04","上衣用量体","仅上身,用于褙子、比甲等短款","启用",
-          ["MI01","MI03","MI06","MI07","MI08"]),
-         ("MT05","裤装模版(停用)","已并入裙装模版,保留历史数据","停用",
+         ("LT03","长衫模版","明制立领长衫、宋制大袖,采集全身","启用",
+          ["MI01","MI02","MI03","MI04","MI05","MI06","MI14","MI08","MI10"]),
+         ("LT04","上衣用量体","仅上身,用于褙子、比甲等短款","启用",
+          ["MI01","MI03","MI06","MI14","MI08"]),
+         ("LT05","裤装模版(停用)","已并入裙装模版,保留历史数据","停用",
           ["MI01","MI04","MI12"])]
     for code,nm,de,st,items in TPL:
         c.execute("INSERT INTO measure_tpl VALUES(?,?,?,?,?,?)",
@@ -744,7 +797,8 @@ def run():
             c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it,j+1))
     # ── 客户量体档案(定制品订单的客户)──
     IDEAL={"MI01":165,"MI02":52,"MI03":86,"MI04":68,"MI05":92,"MI06":38,
-           "MI07":56,"MI08":110,"MI09":98,"MI10":34,"MI11":26,"MI12":100}
+           "MI07":56,"MI08":110,"MI09":98,"MI10":34,"MI11":26,"MI12":100,
+           "MI13":80,"MI14":180}
     cust_ids=[r[0] for r in c.execute("SELECT DISTINCT customer_id FROM ordr WHERE kind='定制品订单' LIMIT 18")]
     for k,cid in enumerate(cust_ids):
         tpl=TPL[k%4][0]

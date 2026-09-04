@@ -58,12 +58,36 @@ def validate(xz=None, mt=None, kf=None, ps=None, color=None):
     return can_save, issues
 
 
+def estimate(xz=None, mt=None, kf=None, pattern=None, size=None):
+    """算料与成本 —— 校验回答「能不能做」,这里回答「要多少料、多少钱、多久备齐」。
+
+    没有传版型时,按形制取第一个版型作默认(配置页上顾问可以改)。
+    """
+    if not (mt and size): return {"skip": True, "why": "选完面料和尺码才能算料"}
+    if not pattern:
+        ps = api.kb_pattern(xz) if xz else {"hit": 0}
+        if not ps.get("hit"): return {"skip": True, "why": ps.get("note") or "这个形制还没有版型"}
+        pattern = ps["rows"][0]["code"]
+    r = api.kb_bom(pattern, size, mt, kf or [])
+    if r.get("error"): return {"skip": True, "why": r["error"], "note": r.get("note")}
+    return r
+
+
 def options():
     """配置页要用的选项。全部来自 craft 表(而 craft 表来自 knowledge/*.md)。"""
     def by(cat):
         return [dict(code=r["code"], name=r["name"], src=r["src_type"], brief=r["brief"])
                 for r in api._rows("SELECT code,name,src_type,brief FROM craft WHERE cat=? ORDER BY code", cat)]
-    return dict(形制=by("形制"), 材质=by("材质"), 工艺=by("工艺"), 配饰=by("配饰"), 颜色=COLORS)
+    # 版型按形制分组:选了形制才知道有哪些版型,选了版型才知道有哪些尺码。
+    # **尺码不是通用的 S/M/L** —— 阔褶马面裙就没有 S 码,版型上裁不出来。
+    pat = {}
+    for r in api._rows("SELECT p.code,p.name,p.sizes,p.difficulty,c.name xz"
+                       " FROM pattern p JOIN craft c ON c.code=p.xz ORDER BY p.code"):
+        pat.setdefault(r["xz"], []).append(
+            dict(code=r["code"], name=r["name"], sizes=r["sizes"].split(","),
+                 difficulty=r["difficulty"]))
+    return dict(形制=by("形制"), 材质=by("材质"), 工艺=by("工艺"), 配饰=by("配饰"),
+                颜色=COLORS, 版型=pat)
 
 
 if __name__ == "__main__":
