@@ -1199,6 +1199,7 @@ class H(BaseHTTPRequestHandler):
                 d=_ops.get_triage((Q.get("id") or [None])[0])
                 return self._send(d or dict(error="没有这条研判"), 200 if d else 404)
             return self._send(dict(error="no ops route"),404)
+        if p=="/api/fit-customers": return self._send(backend.fit_customers())
         if p=="/api/agent-tasks":
             _T=_truths()
             _out=[]
@@ -1391,6 +1392,8 @@ class H(BaseHTTPRequestHandler):
                     note=body.get("note")))
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
+        if p=="/api/fit":
+            return self._send(backend.kb_fit(body.get("customer"),body.get("pattern")))
         if p=="/api/scheme-cost":
             import scheme as _sc
             return self._send(_sc.estimate(body.get("xz"),body.get("mt"),body.get("kf"),

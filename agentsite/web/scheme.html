@@ -40,6 +40,14 @@ h2{font-size:18px;font-weight:600;margin:0 0 4px}
 .opt.bad[aria-pressed="true"]{background:var(--fail);border-color:var(--fail);color:#fff}
 .opt.warn[aria-pressed="true"]{background:var(--warn);border-color:var(--warn);color:#fff}
 .opt .src{font-family:var(--mono);font-size:9.5px;opacity:.6;margin-left:4px}
+.fitwrap{margin-top:14px;border:1px solid var(--dye);border-radius:4px;padding:14px 16px;background:var(--paper)}
+.csel{font-family:var(--sans);font-size:13.5px;padding:7px 10px;border:1px solid var(--line);
+ border-radius:4px;background:var(--paper);color:var(--ink);max-width:100%;min-width:min(420px,100%)}
+.tagv.ok{background:var(--pass-soft);color:var(--pass)}
+.tagv.bad{background:var(--fail-soft);color:var(--fail)}
+table.bom tr.key td{font-weight:600}
+.kk{font-family:var(--mono);font-size:9.5px;padding:1px 5px;border-radius:2px;
+ background:var(--warn-soft);color:var(--warn)}
 .bomwrap{margin-top:14px;border:1px solid var(--line);border-radius:4px;padding:14px 16px;background:var(--paper-2)}
 .bomhd{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
 .tagv{font-family:var(--mono);font-size:11.5px;padding:3px 9px;border-radius:3px;
@@ -145,7 +153,7 @@ body>.wrap{padding-top:0}
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let OPT=null, SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null}, ISS=[];
+let OPT=null, CUS=[], SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null,cust:""}, ISS=[];
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");setTimeout(()=>t.classList.remove("on"),3200);}
 
 const GRPS=[["xz","形制","单选 · 决定裁法和关键尺寸",false],
@@ -167,8 +175,9 @@ function render(){
         return `<button class="opt ${cls}" data-g="${k}" data-v="${esc(o.name)}" aria-pressed="${on}">${esc(o.name)}${
           o.src?`<span class="src">${o.src}</span>`:""}</button>`;}).join("")}</div></div>`;
   }).join("")
-  + patGroups()
+  + patGroups() + custGroup()
   + `<div class="issues" id="iss"></div>
+     <div id="fit"></div>
      <div id="bom"></div>
      <div class="bar">
        <input class="nm" id="nm" placeholder="方案名称,如「林女士婚服」" value="${esc(SEL.name)}">
@@ -188,10 +197,23 @@ function render(){
     check();
   }));
   $("nm").addEventListener("input",e=>SEL.name=e.target.value);
+  if($("cust")) $("cust").addEventListener("change",e=>{SEL.cust=e.target.value;check();});
   $("save").addEventListener("click",save);
-  $("reset").addEventListener("click",()=>{SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null};ISS=[];render();});
+  $("reset").addEventListener("click",()=>{SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null,cust:""};ISS=[];render();});
   paintIssues();
 }
+function custGroup(){
+  const c=CUS.find(x=>x.id===SEL.cust);
+  return `<div class="grp"><div class="h"><span class="n">8</span>
+    <span class="t">客户</span><span class="hint">选填 · 选了就按他的量体记录推荐尺码</span></div>
+    <select id="cust" class="csel"><option value="">（不选客户,自己挑码）</option>${
+      CUS.map(x=>`<option value="${esc(x.id)}" ${x.id===SEL.cust?"selected":""}>${esc(x.name)} · ${
+        esc(x.tpl_code)} · ${x.items}项${x.method==="远程"?" · 远程量体":""}${
+        x.feature?" · ⚠"+esc(x.feature):""}</option>`).join("")}</select>
+    ${c&&c.feature?`<div class="hint" style="margin-top:6px">⚠ 这位客户记了体型特征「${esc(c.feature)}」——
+      按判断线<b>直接全定制</b>,和差多少厘米无关。</div>`:""}</div>`;
+}
+
 function patGroups(){
   // 版型和尺码是**级联**的:选了形制才有版型,选了版型才知道有哪些码。
   // 不做级联的话,页面会让人选一个这个版型根本裁不出来的尺码。
@@ -209,6 +231,35 @@ function patGroups(){
        + g(7,"尺码","单选 · 尺码序列由版型决定,不是通用的 S/M/L",
            (cur?cur.sizes:[]).map(z=>({v:z,t:z})), "size",
            SEL.pt?"":"先选版型");
+}
+
+const GRADE={"标准码":"ok","调号":"warn","全定制":"bad","需补量":"bad"};
+async function paintFit(){
+  const el=$("fit"); if(!el) return;
+  if(!(SEL.cust && SEL.pt)){ el.innerHTML=""; return; }
+  const r=await (await fetch("/api/fit",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({customer:SEL.cust,pattern:SEL.pt})})).json();
+  if(r.error && !r.档位){ el.innerHTML=`<div class="fitwrap"><div class="hint">${esc(r.error)}</div></div>`; return; }
+  const det=(r.明细||[]).map(d=>`<tr class="${d.关键?"key":""}">
+      <td>${esc(d.部位)}${d.关键?' <span class="kk">关键</span>':""}</td>
+      <td>${esc(d.量体项)}</td><td class="num">${d.成衣}</td><td class="num">${d.应有净体}</td>
+      <td class="num">${d.客户}</td><td class="num"><b>${d.差>0?"+":""}${d.差}</b></td></tr>`).join("");
+  el.innerHTML=`<div class="fitwrap">
+    <div class="bomhd"><b>推荐尺码</b>
+      ${r.推荐尺码?`<span class="tagv">${esc(r.推荐尺码)} 码</span>`:""}
+      <span class="tagv ${GRADE[r.档位]||""}">${esc(r.档位)}</span>
+      <span class="tagv">${esc(r.量体方式)}量体</span>
+      ${r.推荐尺码&&r.推荐尺码!==SEL.size?`<button class="ghost" id="usefit">采用 ${esc(r.推荐尺码)} 码</button>`:""}
+    </div>
+    <div class="hint">${esc(r.理由).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>")}</div>
+    ${det?`<div class="tw"><table class="bom"><thead><tr>
+      <th>部位</th><th>对应量体项</th><th>成衣</th><th>应有净体</th><th>客户实测</th><th>差</th>
+    </tr></thead><tbody>${det}</tbody></table></div>
+    <div class="hint" style="margin-top:8px">成衣尺寸减去<b>放松量</b>才是「应有净体」——
+      直接拿成衣尺寸和人体比一定判错。汉服放松量比西式大得多(胸围 16cm)。</div>`:""}
+    <div class="hint" style="margin-top:8px">${esc(r.note||"")}</div>
+  </div>`;
+  if($("usefit")) $("usefit").addEventListener("click",()=>{SEL.size=r.推荐尺码;check();});
 }
 
 async function paintBom(){
@@ -254,7 +305,7 @@ async function check(){
       headers:{"content-type":"application/json"},body:JSON.stringify(SEL)})).json();
     ISS=r.issues||[]; render();
   }catch(e){}
-  paintBom();
+  paintBom(); paintFit();
 }
 async function save(){
   const r=await fetch("/api/scheme-save",{method:"POST",
@@ -285,5 +336,8 @@ async function loadList(){
     loadList();
   }));
 }
-(async()=>{ OPT=await (await fetch("/api/scheme-options")).json(); await check(); loadList(); })();
+(async()=>{
+  OPT=await (await fetch("/api/scheme-options")).json();
+  CUS=(await (await fetch("/api/fit-customers")).json()).rows||[];
+  await check(); loadList(); })();
 </script>

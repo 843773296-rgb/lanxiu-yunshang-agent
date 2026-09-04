@@ -66,7 +66,8 @@ def mcp_config():
 # MCP 工具在 SDK 里的名字是 mcp__<服务名>__<工具名>
 KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
             "mcp__kb__kb_tables", "mcp__kb__kb_coverage",
-            "mcp__kb__kb_pattern", "mcp__kb__kb_size", "mcp__kb__kb_bom"]
+            "mcp__kb__kb_pattern", "mcp__kb__kb_size", "mcp__kb__kb_bom",
+            "mcp__kb__kb_fit"]
 TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
               "mcp__task__get_refund_trace", "mcp__task__get_payment_flow",
               "mcp__task__get_customer"]
@@ -87,7 +88,10 @@ SYS_KB = """你是澜绣云裳的汉服工艺顾问助手,服务对象是客户�
 6. 「客户说 X 我该推什么」这类问题**先用 kb_tables 取全部决策表**,不要挑。
 7. **kb_bom 返回的是物料成本,不是售价。** 不含工时、门店成本与税,
    **绝不能把这个数说成价格**;只能说「物料这一项大概是多少」,报价由店长出。
-8. 客户问「能不能做小码 / 能不能改尺寸」→ 先 kb_pattern。
+8. **kb_fit 判「需补量」时,绝不能按身高体重猜码** —— 直接告诉顾问请客户补量哪几项。
+   判出档位后也要把「关键尺寸未覆盖」的那几项说出来,别让人以为系统全查过了。
+   不要默认推全定制:**很多客户标准码就合适**,推全定制既加价又加工期。
+9. 客户问「能不能做小码 / 能不能改尺寸」→ 先 kb_pattern。
    某个尺码不在版型的尺码序列里,意思是**这个版型裁不出来**,不是缺货,不要说「可以订」。
 
 先给结论,再给理由,最后给能直接说出口的话术。一般 5 行以内。"""

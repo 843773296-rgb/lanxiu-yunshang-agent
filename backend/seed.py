@@ -83,8 +83,11 @@ CREATE TABLE measure_item(code TEXT PRIMARY KEY, name TEXT, unit TEXT, required 
 CREATE TABLE measure_tpl(code TEXT PRIMARY KEY, name TEXT, descr TEXT, status TEXT,
   updated_by TEXT, updated TEXT);
 CREATE TABLE tpl_item(tpl TEXT, item TEXT, sort INT);
+-- 体型特征 —— 「差 >5cm **或有明显体型特征** 即全定制」里的后半句,
+-- 之前只是知识库里的一句话,没有任何字段承载它,所以那条规则永远跑不到。
+CREATE TABLE body_feature(customer_id TEXT, feature TEXT, note TEXT, recorded_by TEXT, ts TEXT);
 CREATE TABLE measure_rec(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, tpl TEXT,
-  item TEXT, value REAL, measured_by TEXT, measured_at TEXT);
+  item TEXT, value REAL, measured_by TEXT, measured_at TEXT, method TEXT DEFAULT '到店');
 CREATE TABLE content(code TEXT PRIMARY KEY, title TEXT, kind TEXT, status TEXT,
   channel TEXT, author TEXT, published TEXT, views INT);
 CREATE TABLE activity(code TEXT PRIMARY KEY, name TEXT, kind TEXT, status TEXT,
@@ -803,9 +806,19 @@ def run():
     for k,cid in enumerate(cust_ids):
         tpl=TPL[k%4][0]
         for it in dict(TPL[k%4][4] and {i:1 for i in TPL[k%4][4]}):
-            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,measured_at) VALUES(?,?,?,?,?,?)",
+            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,measured_at,method) VALUES(?,?,?,?,?,?,?)",
               (cid,tpl,it,round(IDEAL[it]+random.uniform(-6,6),1),random.choice(ADV),
-               f"2026-0{6+k%3}-1{k%9} 14:30"))
+               f"2026-0{6+k%3}-1{k%9} 14:30", "远程" if k%5==3 else "到店"))
+    # 体型特征:每 4 个客户里有 1 个记了 —— 记了的必须走全定制,与差值无关
+    FEAT=[("溜肩","肩斜大于常规 3°,标准版肩部会起空"),
+          ("含胸","前胸量偏小而后背偏宽,需前后片分别调整"),
+          ("高低肩","左右肩差 1.5cm 以上,须单独出版"),
+          ("腹凸","腰腹差小,标准腰位会顶")]
+    for k,cid in enumerate(cust_ids):
+        if k%4: continue
+        f,note=FEAT[(k//4)%4]
+        c.execute("INSERT INTO body_feature VALUES(?,?,?,?,?)",
+                  (cid,f,note,random.choice(ADV),f"2026-0{6+k%3}-1{k%9} 14:40"))
     # ── 内容管理 ──
     CK=["品牌故事","穿搭指南","工艺科普","活动预告"]
     CH=["小程序首页","会员中心","门店Pad","公众号"]

@@ -196,9 +196,47 @@ def kb_bom(pattern, size, material, crafts=None, scope="局部"):
     return dp.estimate(p[0]["code"], size, m["code"], kcs, scope, craft_names=_names())
 
 
+def fit_customers():
+    """量过体的客户 —— 只有这些人能算推荐尺码。"""
+    return {"rows": _rows(
+        "SELECT c.id,c.name,MAX(r.method) method,COUNT(DISTINCT r.item) items,"
+        " MIN(r.tpl) tpl_code,"
+        " (SELECT GROUP_CONCAT(feature,'、') FROM body_feature WHERE customer_id=c.id) feature"
+        " FROM customer c JOIN measure_rec r ON r.customer_id=c.id"
+        " GROUP BY c.id,c.name ORDER BY c.name")}
+
+
+def kb_fit(customer, pattern):
+    """拿客户的量体记录比对版型尺码表,给出推荐尺码和档位(标准码 / 调号 / 全定制)。"""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","knowledge"))
+    import fitting
+    cs=_rows("SELECT id,name FROM customer WHERE id=? OR name=?",customer,customer)
+    if not cs: return {"error":f"没有客户「{customer}」"}
+    cu=cs[0]
+    p=_rows("SELECT code,name,xz,sizes,tpl FROM pattern WHERE code=? OR name=?",pattern,pattern)
+    if not p: return {"error":f"没有版型「{pattern}」"}
+    p=p[0]
+    ms={r["name"]:r["value"] for r in _rows(
+        "SELECT i.name,r.value FROM measure_rec r JOIN measure_item i ON i.code=r.item"
+        " WHERE r.customer_id=?",cu["id"])}
+    if not ms:
+        return {"error":f"{cu['name']} 没有量体记录","档位":"需补量",
+                "note":"没量过体就不能推荐尺码,**不要按身高体重猜**。"}
+    mth=(_rows("SELECT method FROM measure_rec WHERE customer_id=? LIMIT 1",cu["id"]) or
+         [{"method":"到店"}])[0]["method"]
+    fs=[r["feature"] for r in _rows("SELECT feature FROM body_feature WHERE customer_id=?",cu["id"])]
+    specs={}
+    for r in _rows("SELECT size,item,value FROM size_spec WHERE pattern=?",p["code"]):
+        specs.setdefault(r["size"],{})[r["item"]]=r["value"]
+    out=fitting.recommend(ms,p["code"],p["sizes"].split(","),specs,p["xz"],mth,fs)
+    out.update(客户=cu["name"],版型=p["name"])
+    return out
+
+
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
-              "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom})
+              "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,
+              "kb_fit":kb_fit})
 KB_SCHEMAS=[
  {"name":"kb_lookup","description":"按关键词查工艺知识库。也可按分类(形制/材质/工艺/配饰)或来源等级(public/scale/demo)筛选。查不到会明确返回 hit=0。",
   "input_schema":{"type":"object","properties":{
@@ -223,6 +261,11 @@ KB_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "pattern":{"type":"string","description":"版型名称或编码,如「明制马面裙·标准」或 PT04"},
     "size":{"type":"string","description":"只看某一个码,如 M。不传则返回全部码。"}},"required":["pattern"]}},
+ {"name":"kb_fit","description":"拿客户的量体记录比对版型尺码表,给出**推荐尺码**和**档位**(标准码 / 调号 / 全定制 / 需补量)。返回逐项差值,标出哪几项是这个形制的关键尺寸。三条铁律:①系统只给建议,**最终由版师定**;②档位是「需补量」时**绝不能按身高体重猜码**,要请客户补量;③返回里的「关键尺寸未覆盖」列出的项系统比不了(比如马面宽没有对应量体项),必须告诉用户这几项还需人工确认,不能让人以为已经全查过了。",
+  "input_schema":{"type":"object","properties":{
+    "customer":{"type":"string","description":"客户姓名或客户号"},
+    "pattern":{"type":"string","description":"版型名称或编码,如「明制马面裙·标准」或 PT04。不知道有哪些版型时先用 kb_pattern 查。"}},
+   "required":["customer","pattern"]}},
  {"name":"kb_bom","description":"算料算钱:给定版型 + 尺码 + 面料 + 所选工艺,返回完整物料清单(每项的净用量、损耗、实际用量、单价、金额)、物料成本合计、备料周期和卡在哪个物料上。**客户问「多少钱」「要等多久」时用这个。** 注意:返回的是**物料成本,不是售价** —— 不含工时、门店成本与税,**绝不能把这个数当报价告诉客户**。",
   "input_schema":{"type":"object","properties":{
     "pattern":{"type":"string","description":"版型名称或编码"},
