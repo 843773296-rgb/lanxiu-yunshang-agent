@@ -38,6 +38,22 @@ CREATE TABLE appointment(id TEXT PRIMARY KEY, customer_id TEXT, shop TEXT, advis
 CREATE TABLE followup(id TEXT PRIMARY KEY, customer_id TEXT, appt_id TEXT, ts TEXT,
   channel TEXT, content TEXT, advisor TEXT);
 CREATE TABLE task(id TEXT PRIMARY KEY, type TEXT, ref_id TEXT, status TEXT, created TEXT, summary TEXT);
+-- 研判台账 —— 平台和展示件的分界就在这张表:
+-- 展示件跑一条、显示、忘掉;平台跑一条、落库、等人销账。
+-- 同一条工单研判多次就是多行,谁都能回头看当时智能体说了什么、花了多少钱。
+CREATE TABLE triage(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT, breakpoint TEXT, case_id TEXT, created TEXT,
+  ai_root_cause TEXT, ai_action TEXT, ai_evidence TEXT,
+  ai_confidence TEXT,          -- 高 / 中 / 低,由工具调用数与证据完整度推,不是模型自称
+  ai_text TEXT, tool_calls INT, cost REAL, latency_ms INT, model TEXT,
+  in_tokens INT, out_tokens INT, cache_read INT,   -- 按 DeepSeek 实价算成本要用,顺便看缓存命中
+
+  status TEXT,                 -- 待复核 / 已采纳 / 已改判 / 已升级
+  human_root_cause TEXT, human_action TEXT, human_note TEXT,
+  handler TEXT, handled_at TEXT,
+  into_eval INT DEFAULT 0      -- 人工改判后是否已回流评测集
+);
 CREATE TABLE shop(code TEXT PRIMARY KEY, name TEXT, status TEXT, manager TEXT,
   phone TEXT, province TEXT, addr TEXT, updated TEXT);
 CREATE TABLE staff(no TEXT PRIMARY KEY, name TEXT, role TEXT, shop TEXT, status TEXT,
@@ -109,7 +125,11 @@ CREATE TABLE scheme(id TEXT PRIMARY KEY, customer_id TEXT, name TEXT, status TEX
   xz TEXT, mt TEXT, kf TEXT, color TEXT, ps TEXT,
   advisor TEXT, note TEXT, created TEXT, updated TEXT);
 CREATE TABLE truth(case_id TEXT PRIMARY KEY, breakpoint TEXT, root_cause TEXT,
-  expected_action TEXT, expected_evidence TEXT, note TEXT);
+  expected_action TEXT, expected_evidence TEXT, note TEXT,
+  -- 来源:建库标注 = 上线前人工写的;人工改判 = 上线后值班同学否掉智能体时回流进来的。
+  -- 分开记是因为回流条目**没有第二个人复核过**,回归时要能单独看它们的通过率 ——
+  -- 否则一个判错的人工裁决会悄悄变成"标准答案"。
+  src TEXT DEFAULT '建库标注');
 """
 
 # ── 退款失败的六类真因(BP-01)────────────────────────────
@@ -935,7 +955,7 @@ def run():
         c.execute("INSERT INTO scheme VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (sid,_cid2,nm,st,xz,mt,kf,col,ps,"A01 林岚",None,ago(20),ago(3)))
 
-    c.executemany("INSERT INTO truth VALUES(?,?,?,?,?,?)", truths)
+    c.executemany("INSERT INTO truth(case_id,breakpoint,root_cause,expected_action,expected_evidence,note) VALUES(?,?,?,?,?,?)", truths)
     c.commit()
     print(f"已生成 {DB}")
     for t,label in [("customer","客户"),("deposit","押金"),("refund_trace","退款轨迹"),

@@ -1,0 +1,73 @@
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{--ground:#EFEFF2;--paper:#FFF;--paper-2:#F6F6F9;--line:#DCDCE4;--line-2:#E9E9F0;
+ --ink:#15171C;--ink-2:#4E525E;--ink-3:#82879A;--dye:#2B3F7A;--dye-soft:#E4E8F4;
+ --pass:#1C6448;--pass-soft:#E1EFE9;--warn:#7E5714;--warn-soft:#F6EDDA;--fail:#9C3222;--fail-soft:#F7E4E0;
+ --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+ --sans:"IBM Plex Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--ground:#0E1015;--paper:#161922;
+ --paper-2:#1D212C;--line:#2A2F3D;--line-2:#232733;--ink:#E7E9EF;--ink-2:#A7ADBE;--ink-3:#767D92;
+ --dye:#93A9E4;--dye-soft:#1A2140;--pass:#63C79E;--pass-soft:#122619;--warn:#DFB25C;--warn-soft:#281E0F;
+ --fail:#EC9481;--fail-soft:#2C1512;}}
+:root[data-theme="dark"]{--ground:#0E1015;--paper:#161922;--paper-2:#1D212C;--line:#2A2F3D;
+ --line-2:#232733;--ink:#E7E9EF;--ink-2:#A7ADBE;--ink-3:#767D92;--dye:#93A9E4;--dye-soft:#1A2140;
+ --pass:#63C79E;--pass-soft:#122619;--warn:#DFB25C;--warn-soft:#281E0F;--fail:#EC9481;--fail-soft:#2C1512;}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:0 26px 80px}
+h1{font-size:clamp(26px,4vw,36px);font-weight:600;letter-spacing:-.022em;margin:0;line-height:1.16}
+header.top{padding:34px 0 26px;border-bottom:1px solid var(--line)}
+.eyebrow{display:flex;gap:9px;align-items:center;margin-bottom:12px}
+.eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--dye)}
+.lab{font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+.deck{margin-top:12px;color:var(--ink-2);font-size:15.5px;max-width:70ch}
+.deck b{color:var(--ink);font-weight:600}
+section{padding-top:34px}
+h2{font-size:18px;font-weight:600;margin:0 0 6px}
+.sub{color:var(--ink-2);font-size:14px;margin:0 0 16px;max-width:70ch}
+.sitenav{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 26px;height:52px;
+ background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;
+ font-family:var(--sans);font-size:13.5px}
+.sitenav a{color:var(--ink-2);text-decoration:none;padding:6px 12px;border-radius:4px}
+.sitenav a:hover{background:var(--paper-2);color:var(--dye)}
+.sitenav a[aria-current]{background:var(--dye-soft);color:var(--dye);font-weight:600}
+.sitenav .brand{font-weight:600;color:var(--ink);margin-right:10px;padding-left:0}
+.sitenav .core{margin-left:auto;color:var(--ink-3);font-size:11.5px;font-family:var(--mono)}
+.mono{font-family:var(--mono)}
+button{font-family:var(--sans);font-size:13.5px;padding:7px 15px;border-radius:4px;border:1px solid var(--line);
+ background:var(--paper);color:var(--ink);cursor:pointer}
+button:hover:not(:disabled){border-color:var(--dye);color:var(--dye)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.pri{background:var(--dye);color:#fff;border-color:var(--dye)}
+button.pri:hover:not(:disabled){opacity:.88;color:#fff}
+.box{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:16px 18px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+ color:var(--ink-3);font-weight:500;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line-2);vertical-align:top}
+tbody tr:hover{background:var(--paper-2);cursor:pointer}
+tbody tr[aria-selected]{background:var(--dye-soft)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tag{font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:3px;white-space:nowrap;
+ background:var(--paper-2);color:var(--ink-3);border:1px solid var(--line)}
+.tag.over{background:var(--fail-soft);color:var(--fail);border-color:transparent;font-weight:600}
+.tag.near{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.tag.ok{background:var(--pass-soft);color:var(--pass);border-color:transparent}
+.tag.dye{background:var(--dye-soft);color:var(--dye);border-color:transparent}
+.scroll{overflow-x:auto}
+footer{margin-top:48px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-3)}
+footer code{font-family:var(--mono);font-size:11.5px}
+</style>
+<nav class="sitenav">
+  <a class="brand" href="/">澜绣云裳 · 智能运维平台</a>
+  <a href="/" data-p="/">值班台</a>
+  <a href="/queue" data-p="/queue">研判队列</a>
+  <a href="/health" data-p="/health">智能体健康</a>
+  <a href="/chat" data-p="/chat">工艺顾问</a>
+  <a href="/scheme" data-p="/scheme">方案配置</a>
+  <a href="/workbench" data-p="/workbench">单条试跑</a>
+  <a href="/acceptance" data-p="/acceptance">回归验收</a>
+  <span class="core">内核 Claude Agent SDK · 工具经 MCP 挂载</span>
+</nav>
+<script>document.querySelectorAll(".sitenav a[data-p]").forEach(a=>{
+  if(a.dataset.p===location.pathname)a.setAttribute("aria-current","page")});</script>

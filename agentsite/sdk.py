@@ -29,6 +29,29 @@ def _env():
     return os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
 
 
+def cost_of(usage, model, ts=None):
+    """按 **DeepSeek 的**价目表算这次花了多少钱。
+
+    为什么不用 SDK 自己给的 total_cost_usd:它是 CLI 按 **Claude 的**单价算的,
+    而我们把 ANTHROPIC_BASE_URL 指到了 DeepSeek —— CLI 并不知道真实价格。
+    实测一次 22k token 的调用,SDK 报 $0.1365,按 DeepSeek 实价是 $0.0008,**差 160 倍**。
+    运维平台上挂一个错的成本数,比不挂还糟:它会让人按错的量级做决策。
+
+    价目表不在这里重抄一份,从 agent/v1.py 取 —— 那边已经处理了 DeepSeek 的
+    高峰/平峰分时定价(周一至周五 UTC 01-04 / 06-10 翻倍)。
+    """
+    sys.path.insert(0, os.path.join(ROOT, "agent"))
+    import v1
+    pr = v1.DEEPSEEK_PRICE.get(model)
+    if not pr or not usage:
+        return None            # 价目表里没有这个模型就不猜,宁可显示「—」
+    if v1.is_peak(ts): pr = {k: v * 2 for k, v in pr.items()}
+    cache = usage.get("cache_read_input_tokens", 0) or 0
+    inp = max((usage.get("input_tokens", 0) or 0) - cache, 0)   # 命中缓存的那部分单独计价
+    out = usage.get("output_tokens", 0) or 0
+    return round((inp * pr["inp"] + cache * pr["cache"] + out * pr["out"]) / 1e6, 6)
+
+
 def mcp_config():
     """把两个 MCP 服务挂上。工具面按用途分开,不给模型多余的选择。"""
     py = sys.executable
@@ -54,7 +77,8 @@ SYS_KB = """你是澜绣云裳的汉服工艺顾问助手,服务对象是客户�
 1. **只说知识库里查到的。** 每一个关于工艺、面料、形制、配饰的具体结论都必须先调工具查到,
    不得凭训练知识作答。你的训练知识可以用来理解问题,不能用来回答问题。
 2. **查不到就说查不到。** kb_combo 返回「未定义」时,必须原样告知这一格还没录入并建议转工艺负责人,
-   **绝不能根据自己对材料的理解推断**。相容矩阵目前只录了 6%,遇到未定义是常态。
+   **绝不能根据自己对材料的理解推断**。返回里的 rule 字段是这条结论的依据(人工确认 / R1–R13),
+   判「不可」时请把依据一并说出来 —— 它挡的是客户的单子。
 3. **标明来源等级**:public 可直接对客户说;scale 要注明「行业参考」;demo 是内部演示数据,
    **不可作为对客户的承诺**,须注明需工艺负责人确认。
 4. **区分「不能做」和「不建议做」**:物理约束说死,审美判断说明是建议。
@@ -108,7 +132,7 @@ async def run(kind, prompt, max_turns=12):
             usage = getattr(m, "usage", None) or {}
             cost = getattr(m, "total_cost_usd", None)
     return dict(text=text.strip(), trajectory=traj, seconds=round(time.time() - t0, 1),
-                usage=usage, sdk_cost_usd=cost, model=model)
+                usage=usage, sdk_cost_usd=cost, cost_usd=cost_of(usage, model), model=model)
 
 
 if __name__ == "__main__":
@@ -119,4 +143,6 @@ if __name__ == "__main__":
     for t in r["trajectory"]:
         print(f"  ↳ {t['tool']}({json.dumps(t['args'],ensure_ascii=False)[:70]})")
     print(f"\n{r['text']}\n")
-    print(f"—— {r['seconds']}s · {r['model']} · usage={r['usage']}")
+    u = r["usage"] or {}
+    print(f"—— {r['seconds']}s · {r['model']} · 实价 ${r['cost_usd']} "
+          f"(SDK 按 Claude 单价报 ${r['sdk_cost_usd']},不可用)\n   输入 {u.get('input_tokens')} 其中命中缓存 {u.get('cache_read_input_tokens')} · 输出 {u.get('output_tokens')}")

@@ -27,7 +27,14 @@ def audit(src):
     ids = set(re.findall(r'getElementById\("(\w+)"\)', s))
     if re.search(r'\$\s*=\s*\w+\s*=>\s*document\.getElementById', s):
         ids |= set(re.findall(r'\$\("(\w+)"\)', s))
-    sel_txt = " ".join(qsa) + " " + " ".join(ids) + " " + \
+    # 另一种常见简写:const $=s=>document.querySelector(s),调用写成 $("#run")。
+    # 不认这一种的话,凡是用 id 选择器绑事件的按钮全会被误报成死控件。
+    if re.search(r'\$\s*=\s*\w+\s*=>\s*document\.querySelector', s):
+        ids |= set(re.findall(r'\$\("#(\w+)"\)', s))
+        sel_extra = " ".join(re.findall(r'\$\("([^"]+)"\)', s))
+    else:
+        sel_extra = ""
+    sel_txt = " ".join(qsa) + " " + " ".join(ids) + " " + sel_extra + " " + \
               " ".join(re.findall(r'querySelector\("([^"]+)"\)', s))
 
     # ① data-* 属性:模板里用了,但没有对应的 querySelectorAll 绑定
@@ -66,10 +73,14 @@ def audit(src):
         attrs, inner = m.group(1), m.group(2)
         bid = re.search(r'id="(\w+)"', attrs)
         if bid and bid.group(1) in ids: continue          # 由 getElementById 绑定
+        # 或者被 querySelector("#xx") / querySelectorAll("#xx …") 选中 —— 一样是真绑定
+        if bid and ("#" + bid.group(1)) in sel_txt: continue
         # 由类绑定:class 里任一类出现在某个绑定选择器里(如 querySelectorAll(".seed"))
         cls = re.search(r'class="([^"]*)"', attrs)
         if cls and any(c and ("." + c) in sel_txt for c in cls.group(1).split()): continue
         if "${" in inner and "disabled" in inner: continue
+        # 外面套了 <a href> 的按钮 —— 点了会跳页,是真动作,不是死控件
+        if re.search(r'<a [^>]*href="[^"]+"[^>]*>\s*$', s[:m.start()]): continue
         naked.append(re.sub(r"<[^>]+>", "", inner).strip()[:24])
 
     return dead_attr, dead_cls, naked

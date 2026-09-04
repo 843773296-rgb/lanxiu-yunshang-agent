@@ -15,6 +15,7 @@ run "控件审计 · 死控件检查"    python3 backend/ui_audit.py
 run "遮蔽检查 · 局部变量压函数" python3 backend/shadow_check.py
 run "商品库 · 不卖矩阵判不可的组合" python3 backend/catalog_check.py
 run "会员与订单 · 映射/勾稽/门槛" python3 backend/member_order_check.py
+run "运维平台 · 队列/时效/解析/置信度" python3 backend/ops.py
 run "MCP · 两个服务连通性"      python3 mcp/selftest.py
 run "MCP · 通道等价(不调模型)" python3 mcp/parity.py
 run "V1 循环 · 离线自测"       python3 agent/offline_test.py

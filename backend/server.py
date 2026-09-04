@@ -1188,6 +1188,17 @@ class H(BaseHTTPRequestHandler):
             return self._send(lifecycle_page(_u(unquote(t)) if t else None))
         from urllib.parse import parse_qs
         Q={k:[_u(unquote(x)) for x in v] for k,v in parse_qs(urlparse(self.path).query).items()}
+        if p.startswith("/api/ops-"):
+            # 智能运维平台的读接口。队列/积压/健康度都在 ops.py 里算,
+            # 这里只负责转发 —— 路由层不放业务规则,SLA 改了不用翻两个文件。
+            import ops as _ops
+            if p=="/api/ops-queue":   return self._send(dict(rows=_ops.queue((Q.get("state") or [None])[0])))
+            if p=="/api/ops-backlog": return self._send(_ops.backlog())
+            if p=="/api/ops-health":  return self._send(_ops.health())
+            if p=="/api/ops-detail":
+                d=_ops.get_triage((Q.get("id") or [None])[0])
+                return self._send(d or dict(error="没有这条研判"), 200 if d else 404)
+            return self._send(dict(error="no ops route"),404)
         if p=="/api/agent-tasks":
             _T=_truths()
             _out=[]
@@ -1353,8 +1364,35 @@ class H(BaseHTTPRequestHandler):
             if scheme_status(body.get("id")) is None:
                 return self._send(dict(ok=False,reason="方案不存在"),404)
             return self._send(transit("fe-scheme",body.get("id"),body.get("to"),body))
+        if p=="/api/ops-triage":
+            # 智能体站跑完一条,把研判结果寄存到后台。**数据的家在后台**,
+            # 站上不复制一份库 —— 否则两边一定会漂。
+            import ops as _ops
+            try:
+                tid=_ops.save_triage(body.get("task_id"), body.get("bp"), body.get("case"),
+                                     body.get("text") or "", body.get("trajectory") or [],
+                                     cost=body.get("cost"), latency_ms=body.get("latency_ms"),
+                                     model=body.get("model"), usage=body.get("usage"))
+            except Exception as e:
+                return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
+            return self._send(dict(ok=True, triage_id=tid, row=_ops.get_triage(tid)))
+        if p=="/api/ops-reparse":
+            # 解析规则改了之后重算历史条目。不重新调模型 —— ai_text 全文都存着。
+            import ops as _ops
+            f=_ops.reparse(only_failed=not body.get("all"))
+            return self._send(dict(ok=True, 重算=len(f), rows=f))
+        if p=="/api/ops-resolve":
+            # 值班同学销账。改判会回流评测集 —— 这是整套东西唯一的自我改进通路。
+            import ops as _ops
+            try:
+                return self._send(_ops.resolve(
+                    body.get("triage_id"), body.get("decision"), body.get("handler") or "值班同学",
+                    root_cause=body.get("root_cause"), action=body.get("action"),
+                    note=body.get("note")))
+            except Exception as e:
+                return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
         if p=="/api/judge":
-            # 给「智能体工作站」用:它跑智能体,判分和标注答案留在后台(数据的家在这)。
+            # 给「单条试跑」页用:它跑智能体,判分和标注答案留在后台(数据的家在这)。
             # 依旧遵守隔离:truth 只在**跑完之后**读,绝不进模型上下文。
             _ev=_eval(); case=(body.get("case") or "").strip(); txt=body.get("text") or ""
             tr=_truths().get(case)

@@ -1,0 +1,135 @@
+<title>澜绣云裳值班台</title>
+<!--SHELL-->
+<style>
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.kpi{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:15px 17px;border-top:2px solid var(--line)}
+.kpi.bad{border-top-color:var(--fail)} .kpi.warn{border-top-color:var(--warn)} .kpi.good{border-top-color:var(--pass)}
+.kpi .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.kpi .v{font-family:var(--mono);font-size:29px;font-weight:600;line-height:1.25;font-variant-numeric:tabular-nums}
+.kpi .n{font-size:12px;color:var(--ink-3);line-height:1.5}
+.kpi.bad .v{color:var(--fail)} .kpi.warn .v{color:var(--warn)}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 14px}
+.bar .note{font-size:12.5px;color:var(--ink-3)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(224px,1fr));gap:12px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:17px;text-decoration:none;
+ color:inherit;display:flex;flex-direction:column;gap:7px;border-top:2px solid var(--dye);transition:.12s}
+.card:hover{border-color:var(--dye);transform:translateY(-1px)}
+.card.q{border-top-color:var(--ink-3)}
+.card .t{font-size:15.5px;font-weight:600}
+.card .d{font-size:12.8px;color:var(--ink-2);line-height:1.6}
+.card .m{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);letter-spacing:.05em}
+.diff{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.diff>div{padding:15px 17px;background:var(--paper)}
+.diff>div+div{border-left:1px solid var(--line);background:var(--paper-2)}
+.diff h3{margin:0 0 9px;font-size:13px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.diff ul{margin:0;padding-left:17px;font-size:13.2px;color:var(--ink-2);line-height:1.75}
+.diff>div+div ul{color:var(--ink)}
+@media(max-width:700px){.diff{grid-template-columns:1fr}.diff>div+div{border-left:0;border-top:1px solid var(--line)}}
+</style>
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">澜绣云裳 · 门店客户运营</span></div>
+  <h1>值班台</h1>
+  <p class="deck">这不是演示页。<b>队列里的每一条都是真实积压的人工任务</b>,
+  等的时间在跑,超过时效就变红。智能体的活是把它们研判成草稿,
+  <b>你的活是销账</b> —— 采纳、改判,或者升级给别人。</p>
+</header>
+
+<section>
+  <h2>今天的积压</h2>
+  <p class="sub">看的是「还剩多少件」,不是「历史一共多少件」。</p>
+  <div class="kpis" id="kpis"><div class="kpi"><div class="k">加载中</div></div></div>
+</section>
+
+<section>
+  <h2>队列最前面</h2>
+  <p class="sub">超时的排最前,同档按等待时长倒序 —— <b>排序本身就是一条业务规则</b>,写在 <code class="mono">backend/ops.py</code> 里,不在页面上。</p>
+  <div class="bar">
+    <button class="pri" id="run">让智能体研判 3 条</button>
+    <a href="/queue"><button>去队列逐条销账 →</button></a>
+    <span class="note" id="msg">每条约 2–4 次工具调用,跑之前先想清楚要跑几条 —— 这是真花钱的。</span>
+  </div>
+  <div class="box scroll"><table>
+    <thead><tr><th>工单</th><th>类型</th><th>等待</th><th>时效</th><th>状态</th><th>智能体研判的根因</th><th>置信度</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="7">加载中…</td></tr></tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>为什么改成这样</h2>
+  <p class="sub">同一个智能体、同一批工具,组织形态换了。</p>
+  <div class="diff">
+    <div><h3>之前:展示件</h3><ul>
+      <li>你点它才跑</li><li>跑完显示一次,关掉就没了</li>
+      <li>成功 = 这次答得漂亮</li><li>有标准答案可以判分</li>
+      <li>没有人负责,也没有截止时间</li></ul></div>
+    <div><h3>现在:运维平台</h3><ul>
+      <li>积压在那儿等着被跑完</li><li>研判落库,谁都能回头看当时说了什么、花了多少钱</li>
+      <li>成功 = 队列见底,而且人愿意采纳</li>
+      <li><b>上线后没有标准答案</b> —— 人的裁决就是答案,改判会回流成新标注</li>
+      <li>有时效、有责任人、有升级路径</li></ul></div>
+  </div>
+</section>
+
+<section>
+  <h2>值班时会用到的工具</h2>
+  <div class="cards">
+    <a class="card" href="/queue"><span class="m">主工作面</span><span class="t">研判队列</span>
+      <span class="d">逐条看智能体的四段草稿,采纳 / 改判 / 升级。改判会自动进评测集。</span></a>
+    <a class="card" href="/health"><span class="m">运维智能体本身</span><span class="t">智能体健康</span>
+      <span class="d">采纳率、协议失败率、高置信度被改判次数、花了多少钱。掉下来不用等投诉。</span></a>
+    <a class="card q" href="/chat"><span class="m">Agent SDK · MCP kb</span><span class="t">工艺顾问</span>
+      <span class="d">销账时要跟客户解释工艺问题,在这问。只答查到的。</span></a>
+    <a class="card q" href="/scheme"><span class="m">硬约束 · Hook</span><span class="t">方案配置</span>
+      <span class="d">工艺 × 面料 273 格全部有判定,选到「不可」保存按钮直接不可点。</span></a>
+  </div>
+</section>
+
+<footer>数据仍归后台(<code>8760</code>),本站不碰数据库 · 队列与时效规则在 <code>backend/ops.py</code></footer>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>(s??"").toString().replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const LV={已超时:"over",临期:"near",正常:"ok",已销账:"dye"};
+const CF={高:"ok",中:"near",低:"over"};
+
+function kpi(b){
+  const k=(cls,label,val,note)=>`<div class="kpi ${cls}"><div class="k">${label}</div>
+    <div class="v">${val}</div><div class="n">${note}</div></div>`;
+  $("#kpis").innerHTML=
+    k(b.待办?"warn":"good","待办",b.待办,`共 ${b.总量} 条,已销账 ${b.已销账}`)+
+    k(b.已超时?"bad":"good","已超时",b.已超时,`临期还有 ${b.临期} 条`)+
+    k(b.最久未处理小时>72?"bad":"","最久等待",b.最久未处理小时+"h",`时效:财务 24h / 合并 48h`)+
+    k("","等你复核",b.待复核,`还有 ${b.未研判} 条智能体没看过`);
+}
+function row(x){
+  return `<tr><td class="num">${esc(x.task_id)}</td><td>${esc(x.type)}</td>
+    <td class="num">${x.waited_h}h</td>
+    <td><span class="tag ${LV[x.level]}">${esc(x.level)}${x.left_h!=null&&x.left_h>0?" 余"+x.left_h+"h":""}</span></td>
+    <td>${esc(x.state)}</td>
+    <td>${x.ai_root_cause?esc(x.ai_root_cause):'<span style="color:var(--ink-3)">—</span>'}</td>
+    <td>${x.ai_confidence?`<span class="tag ${CF[x.ai_confidence]||""}">${x.ai_confidence}</span>`:"—"}</td></tr>`;
+}
+async function load(){
+  const [b,q]=await Promise.all([
+    fetch("/api/ops-backlog").then(r=>r.json()),
+    fetch("/api/ops-queue?state=待办").then(r=>r.json())]);
+  kpi(b);
+  $("#rows").innerHTML=q.rows.length?q.rows.slice(0,8).map(row).join(""):
+    `<tr><td colspan="7">队列见底了 —— 今天可以下班。</td></tr>`;
+}
+$("#run").onclick=async()=>{
+  const btn=$("#run"); btn.disabled=true; const t0=Date.now();
+  $("#msg").textContent="智能体在跑…… 每条要查 2–4 次数据,别关页面。";
+  try{
+    const r=await fetch("/run-batch",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({n:3})}).then(r=>r.json());
+    const n=(r.done||[]).length, f=(r.failed||[]).length;
+    $("#msg").textContent=`研判了 ${n} 条${f?`,失败 ${f} 条`:""},花了 $${(r.cost||0).toFixed(4)},`+
+      `用时 ${((Date.now()-t0)/1000).toFixed(0)}s。去队列复核 →`;
+    await load();
+  }catch(e){ $("#msg").textContent="跑失败:"+e; }
+  btn.disabled=false;
+};
+load();
+</script>

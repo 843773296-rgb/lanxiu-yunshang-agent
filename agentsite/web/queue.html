@@ -1,0 +1,178 @@
+<title>研判队列</title>
+<!--SHELL-->
+<style>
+.split{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:14px;align-items:start}
+@media(max-width:960px){.split{grid-template-columns:1fr}}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
+.bar .note{font-size:12.5px;color:var(--ink-3);margin-left:auto}
+.seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:6px 13px;background:var(--paper);font-size:13px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--dye-soft);color:var(--dye);font-weight:600}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:5px;position:sticky;top:66px}
+.panel .hd{padding:14px 17px;border-bottom:1px solid var(--line);display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.panel .hd .id{font-family:var(--mono);font-weight:600}
+.panel .bd{padding:15px 17px;max-height:60vh;overflow-y:auto}
+.panel .ft{padding:13px 17px;border-top:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.fld{margin-bottom:13px}
+.fld .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px}
+.fld .v{font-size:13.8px;line-height:1.7;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+.fld .v.dim{color:var(--ink-3)}
+.traj{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);background:var(--paper-2);
+ border:1px solid var(--line-2);border-radius:4px;padding:8px 11px;line-height:1.75}
+textarea,input[type=text]{width:100%;font-family:var(--sans);font-size:13.5px;padding:7px 10px;
+ border:1px solid var(--line);border-radius:4px;background:var(--paper-2);color:var(--ink);resize:vertical}
+.edit{display:none;border-top:1px dashed var(--line);margin-top:12px;padding-top:12px}
+.edit.on{display:block}
+.edit label{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+ text-transform:uppercase;color:var(--ink-3);margin:9px 0 3px}
+.hint{font-size:12.3px;color:var(--ink-3);line-height:1.6;margin-top:9px}
+.hint b{color:var(--warn)}
+.empty{padding:38px 20px;text-align:center;color:var(--ink-3);font-size:13.5px}
+</style>
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">值班主工作面</span></div>
+  <h1>研判队列</h1>
+  <p class="deck">智能体交草稿,<b>你签字</b>。采纳 = 认可;改判 = 它错了,你写对的
+  —— <b>你写的那条会进评测集</b>,下次回归跑得到;升级 = 这条你也定不了,转给别人。</p>
+</header>
+
+<section>
+  <div class="bar">
+    <div class="seg" id="seg">
+      <button data-s="待办" aria-pressed="true">待办</button>
+      <button data-s="未研判">未研判</button>
+      <button data-s="待复核">待复核</button>
+      <button data-s="已销账">已销账</button>
+      <button data-s="">全部</button>
+    </div>
+    <button class="pri" id="run">研判 <input id="n" type="number" value="3" min="1" max="10"
+      style="width:44px;padding:2px 4px;font-family:var(--mono);border-radius:3px;border:1px solid rgba(255,255,255,.4);background:transparent;color:inherit"> 条</button>
+    <span class="note" id="msg"></span>
+  </div>
+  <div class="split">
+    <div class="box scroll" style="padding:0">
+      <table><thead><tr><th>工单</th><th>类型</th><th>等待</th><th>时效</th><th>状态</th><th>置信</th><th>成本</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody></table>
+    </div>
+    <div class="panel" id="panel">
+      <div class="hd"><span class="id">选一条工单</span></div>
+      <div class="bd"><div class="empty">左边点一行,这里显示智能体的四段草稿和它查了哪些数据。</div></div>
+    </div>
+  </div>
+</section>
+
+<footer>研判落库在 <code>triage</code> 表 · 改判回流写 <code>truth</code> 表并标 <code>src=人工改判</code>
+—— 分开标是因为回流条目<b>没有第二个人复核过</b></footer>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>(s??"").toString().replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const LV={已超时:"over",临期:"near",正常:"ok",已销账:"dye"};
+const CF={高:"ok",中:"near",低:"over"};
+let state="待办", rows=[], sel=null;
+
+function render(){
+  $("#rows").innerHTML = rows.length ? rows.map(x=>`
+    <tr data-t="${esc(x.task_id)}" ${sel===x.task_id?'aria-selected="true"':""}>
+      <td class="num">${esc(x.task_id)}</td><td>${esc(x.type)}</td>
+      <td class="num">${x.waited_h}h</td>
+      <td><span class="tag ${LV[x.level]}">${esc(x.level)}</span></td>
+      <td>${esc(x.state)}</td>
+      <td>${x.ai_confidence?`<span class="tag ${CF[x.ai_confidence]||""}">${x.ai_confidence}</span>`:"—"}</td>
+      <td class="num">${x.cost!=null?"$"+(+x.cost).toFixed(4):"—"}</td></tr>`).join("")
+    : `<tr><td colspan="7" class="empty">这一档是空的。</td></tr>`;
+  $("#rows").querySelectorAll("tr[data-t]").forEach(tr=>tr.onclick=()=>open_(tr.dataset.t));
+}
+async function load(){
+  const q=await fetch("/api/ops-queue"+(state?"?state="+encodeURIComponent(state):"")).then(r=>r.json());
+  rows=q.rows; render();
+}
+function fld(k,v,dim){return `<div class="fld"><div class="k">${k}</div>
+  <div class="v${dim?" dim":""}">${v?esc(v):"—"}</div></div>`;}
+
+async function open_(tid){
+  sel=tid; render();
+  const x=rows.find(r=>r.task_id===tid);
+  if(!x) return;
+  const hd=`<span class="id">${esc(x.task_id)}</span>
+    <span class="tag ${LV[x.level]}">${esc(x.level)}</span>
+    <span class="tag">${esc(x.type)}</span>
+    <span class="tag">等了 ${x.waited_h}h</span>`;
+  if(!x.triage_id){
+    $("#panel").innerHTML=`<div class="hd">${hd}</div>
+      <div class="bd"><div class="empty">这条还没研判过。<br>用上面的「研判 N 条」按钮跑,或单独跑它。</div></div>
+      <div class="ft"><button class="pri" onclick="runOne('${esc(x.task_id)}')">只跑这一条</button></div>`;
+    return;
+  }
+  const d=await fetch("/api/ops-detail?id="+x.triage_id).then(r=>r.json());
+  const done=["已采纳","已改判","已升级"].includes(d.status);
+  $("#panel").innerHTML=`<div class="hd">${hd}
+    <span class="tag ${CF[d.ai_confidence]||""}">置信度 ${esc(d.ai_confidence)}</span>
+    <span class="tag ${done?"dye":""}">${esc(d.status)}</span></div>
+  <div class="bd">
+    ${fld("智能体给的根因",d.ai_root_cause)}
+    ${fld("建议动作",d.ai_action)}
+    ${fld("证据",d.ai_evidence)}
+    <div class="fld"><div class="k">查了哪些数据 · ${d.tool_calls} 次 · $${(+d.cost||0).toFixed(4)} · ${Math.round((d.latency_ms||0)/1000)}s · ${esc(d.model)}</div>
+      <div class="traj">${esc((d.ai_text||"").slice(0,700))||"(没有正文)"}</div></div>
+    ${done?fld("人工裁决",`${d.status} · ${d.handler||""} ${d.handled_at||""}
+${d.human_root_cause||""}${d.human_note?"\n"+d.human_note:""}`):""}
+    ${done?"":`<div class="edit" id="edit">
+      <label>你认定的根因</label><input type="text" id="hrc" placeholder="改判必填 —— 这句会成为这条 case 的标注答案">
+      <label>应该怎么处理</label><input type="text" id="hac" placeholder="例:不得重新发起退款,先向渠道核对流水">
+      <label>备注 / 依据</label><textarea id="hnt" rows="2" placeholder="选填"></textarea>
+      <div class="hint"><b>注意:</b>改判会写进评测集并标为「人工改判」。
+        它<b>只经过你一个人</b>的判断,回归时会单独统计通过率 —— 判错了会变成假的标准答案。</div>
+    </div>`}
+  </div>
+  ${done?"":`<div class="ft">
+    <button class="pri" onclick="resolve(${d.id},'已采纳')">采纳草稿</button>
+    <button onclick="toggleEdit()" id="btnEdit">改判…</button>
+    <button onclick="resolve(${d.id},'已升级')">升级给店长</button>
+    <span class="note" id="rmsg" style="font-size:12.5px;color:var(--ink-3)"></span></div>`}`;
+}
+window.toggleEdit=()=>{
+  const e=$("#edit"); e.classList.toggle("on");
+  const on=e.classList.contains("on");
+  $("#btnEdit").textContent=on?"提交改判":"改判…";
+  $("#btnEdit").onclick=on?()=>{
+    const rc=$("#hrc").value.trim();
+    if(!rc){$("#rmsg").textContent="改判必须写清根因 —— 它要当标注答案用。";return;}
+    resolve(+$("#panel").querySelector("[onclick^='resolve']").getAttribute("onclick").match(/\d+/)[0],
+            "已改判",rc,$("#hac").value.trim(),$("#hnt").value.trim());
+  }:window.toggleEdit;
+};
+window.resolve=async(id,decision,rc,ac,nt)=>{
+  const r=await fetch("/api/ops-resolve",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({triage_id:id,decision,handler:"值班同学",root_cause:rc,action:ac,note:nt})
+  }).then(r=>r.json());
+  if(r.error){ $("#rmsg").textContent="失败:"+r.error; return; }
+  await load();
+  $("#msg").textContent=`${decision}${r.回流评测集?" · 已回流评测集":""}`;
+  open_(sel);
+};
+window.runOne=async(tid)=>{
+  $("#msg").textContent="跑这一条中…";
+  await fetch("/run-triage",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({task_id:tid})}).then(r=>r.json());
+  await load(); open_(tid); $("#msg").textContent="研判完成,请复核";
+};
+$("#run").onclick=async(e)=>{
+  if(e.target.id==="n") return;
+  const b=$("#run"); b.disabled=true; $("#msg").textContent="智能体在跑……";
+  const r=await fetch("/run-batch",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({n:+$("#n").value||3})}).then(r=>r.json()).catch(e=>({error:e+""}));
+  $("#msg").textContent=r.error?("失败:"+r.error):
+    `研判 ${(r.done||[]).length} 条,失败 ${(r.failed||[]).length} 条,$${(r.cost||0).toFixed(4)}`;
+  b.disabled=false; await load();
+};
+$("#seg").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  $("#seg").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));
+  b.setAttribute("aria-pressed","true"); state=b.dataset.s; sel=null; load();
+  $("#panel").innerHTML=`<div class="hd"><span class="id">选一条工单</span></div>
+    <div class="bd"><div class="empty">左边点一行。</div></div>`;
+});
+load();
+</script>
