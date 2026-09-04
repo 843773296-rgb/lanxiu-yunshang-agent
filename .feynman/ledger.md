@@ -28,3 +28,13 @@
 - 2026-09-03 ·【鉴别】**推理模型的 thinking 会撑爆 max_tokens,而截断的表现是「模型能力不行」** · 换 DeepSeek v4-pro 后正向集 18/20 → 14/20,其中 3 条判语是「未提交」——**看起来像它不肯调 submit_finding** · 真因:v4 是推理模型,返回带 thinking 块,思考吃掉大量输出额度,撞上 `max_tokens=2000` 被截断;**截断的响应既没有 text 也没有 submit_finding,循环空着退出** · 证据来自记录仪的 `finish_reason` 一栏:`{'max_tokens': 6, 'end_turn': 2, 'tool_use': 56}` · 修法:max_tokens 按供应商配(DeepSeek 8000),并让记录仪在截断时**当场告警**而不是等人翻日志 · **换模型时 max_tokens 是必查项,尤其从非推理模型换到推理模型** · 自评:懂了
 - 2026-09-03 ·【判据】**成本单价必须查一手来源,而且要查有没有分时/阶梯这种隐藏维度** · deepseek-v4-pro 的输出价三个来源三个数:项目里原来写的 $2.19、博客聚合站说的 $0.87、**官方文档 $1.98(平峰)/ $3.96(高峰)** · 信博客会把成本算成实际的 1/2 到 1/4,**而这个数字不会有任何东西告诉你它错了,它只是一个看起来很合理的小数** · DeepSeek 还有分时定价(周一至周五 UTC 01-04、06-10 为高峰 ×2),不算这层高峰时段少算一半 · 这已经是本项目第三次在单价上栽,所以在 provider() 里加了硬拦截:**模型不在官方单价表里就直接拒跑** · 自评:懂了
 - 2026-09-03 ·【概念】**记录仪的价值不在事后统计,在于它记的字段能反证你的归因** · 本轮如果只看评测分数,结论会是「DeepSeek 不如 Haiku,还不肯走协议」;而 trace 里 `finish_reason` 一栏直接指出是截断 —— **同一份数据,一个说是模型的问题,一个说是配置的问题** · 装记录仪那次记的六个字段里,`finish_reason` 当时看着最没用,这次它是唯一能定案的 · 自评:懂了
+
+- 2026-09-04 ·【架构】升代完成:1.5 代手写循环 → 第三代 Harness · 在 agentsite/sdk.py:152 的 ClaudeAgentOptions(Agent SDK + 3 个 MCP + Skill + 4 个 Hook)· 出处:Anthropic Agent SDK 官方文档 · 自评:懂了
+- 2026-09-04 ·【概念】Harness = 赋能 + 引导 · 赋能靠 MCP 挂 19 个工具,引导靠 Hook 在工具前后插检查;只做前一半不算第三代 · 出处:训练营代际地图 agent-map.md · 自评:懂了
+- 2026-09-04 ·【鉴别】Tool 与 Hook 的分界 · Tool 是模型想起来才用,Hook 是不管它想不想都执行;提示词里的「铁律」不挂 Hook 就只是祈使句 · 在 agentsite/guards.py 九项体检 · 自评:懂了
+- 2026-09-04 ·【教训】可观测性不会自动跟着架构走 · trace.jsonl 停在升代那天,新一代一行日志都没有,而且不报错 · 在 .feynman/llm-trace.jsonl vs agentsite/sdk.py · 自评:懂了(待补)
+- 2026-09-04 ·【教训】SDK 给的数字要先验证再用 · Agent SDK 的 total_cost_usd 按 Claude 单价算,而模型指向 DeepSeek,实测差 24 倍 · 在 agentsite/sdk.py 的 cost_of() · 自评:懂了
+- 2026-09-04 ·【评测】新评测集第一次跑,失败的往往是评测本身 · 24 题错 5 题,五题全是用例/判分器的问题,模型一题没错 · 在 agent/tool_eval.py · 自评:懂了
+- 2026-09-04 ·【评测】三轴打分:轨迹 / 内容 / 体检 · 只看内容的话瞎猜蒙对会被判满分 · 在 agent/tool_eval.py 的 judge() · 自评:懂了
+- 2026-09-04 ·【鉴别】must 与 forbid 的否定语义不同 · must 问「提到了吗」不该查否定(数字不存在被否定),forbid 问「说了吗」才要查 · 在 agent/tool_eval.py 的 hit() · 自评:懂了
+- 2026-09-04 ·【工程】开一个口子就得同时装一把锁 · 为用 Skill 放开 setting_sources=["project"],同时加 skills_check.py 盯住 .mcp.json 污染 · 在 agentsite/skills_check.py · 自评:懂了
