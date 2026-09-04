@@ -1,0 +1,190 @@
+[
+ {
+  "case": "T04",
+  "passed": true,
+  "why": [],
+  "tools": "kb_fit",
+  "cost": 0.002964,
+  "text": "**结论:建议按「全定制」处理,不是直接推 M。**\n\n依据(kb_fit,C10001 黄青梧 / PT04 明制马面裙·标准):\n- 客户有体型特征「溜肩」——与差值无关,直接出专属版,所以档位判为全定制。\n- 腰围:成衣 72 vs 客户 63,差 -7cm(关键尺寸);裙长:成衣 96 vs 客户 102.3,差 +6.3cm(关键尺寸)。\n- **关键尺寸未覆盖:马面宽**——马面宽不是人体尺寸、系统没有对应量体项,这一项系统比不了,需版师人工确认。\n\n可对客户说的话术:\n\"黄小姐,您的腰围比标准码窄不少、裙长又偏长,加上溜肩,标准码不合适,建议给您出专属版;马面宽这一项我需要再请版师当面确认。具体以到店版师定版为准。\"\n\n(注意:系统只给建议,最终由版师定;马面宽那一项别让客户以为系统已经全查过了。)",
+  "usage": {
+   "input_tokens": 27834,
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 27520,
+   "output_tokens": 338,
+   "output_tokens_details": {
+    "thinking_tokens": 0
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "",
+   "iterations": [],
+   "speed": "standard"
+  },
+  "turns": 1,
+  "guard": []
+ },
+ {
+  "case": "T09",
+  "passed": true,
+  "why": [],
+  "tools": "kb_combo,kb_lead",
+  "cost": 0.006518,
+  "text": "**结论:来不及,今天下单赶不上 2026-10-01 的婚礼,加钱也压不下来,须当场如实告知客户。**\n\n理由:\n- kb_lead 算最慢 **162 天**,最晚下单日 **2026-04-22**,已过 135 天;今天到婚礼只剩 27 天。\n- 关键路径卡在**缂丝织造**:60–100 工日,且「一台织机只能一人织、加人无效」,整幅还要按 ×4 估;排队还压着 19 天,只有一位师傅会(风险已写明**不能靠加人压缩**),所以加急无效。\n- 组合本身:缂丝×云锦判「需评估」(依据:人工确认,内部 demo 数据,须工艺负责人确认)——云锦已厚重,叠缂丝显笨重且成本极高。\n\n可对客户说的话:\n「这套我们核实过了,缂丝整幅的织造工期按最慢要 160 多天,婚礼在 10 月 1 号、今天下单只有 27 天,确实赶不上,而且这个工艺一台织机只能一位师傅做,加钱也快不了。建议要么换工艺(如机缝可省 2–4 天,但高级感会下降)、要么换工期档更短的配置,我们再帮你重排一次。」",
+  "usage": {
+   "input_tokens": 28746,
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 27776,
+   "output_tokens": 1014,
+   "output_tokens_details": {
+    "thinking_tokens": 0
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "",
+   "iterations": [],
+   "speed": "standard"
+  },
+  "turns": 1,
+  "guard": []
+ },
+ {
+  "case": "T10",
+  "passed": true,
+  "why": [],
+  "tools": "kb_combo,kb_pattern,kb_pattern,kb_lead",
+  "cost": 0.010671,
+  "text": "**结论:加钱也加急不了,这件压不动。**\n\n理由:\n- **关键路径卡在缂丝织造**——60–100 工日 ÷ 1 人,**一台织机只能一个人织,加人无效**;而且工坊**只有一位师傅会缂丝**,现排队 19 天,排满只能等,加钱没用。云锦织造还要再等 19 天、备料 22 天。全程最快 102 天、最慢 162 天,对客户报 **162 天**。\n- 唯一能省的是「机缝替代手工」,省 2–4 天,但高定感会下降,须客户确认;其余都在关键路径上,压缩了也没用。\n- 另外提醒:缂丝×云锦这个组合在库里是「**需评估**(内部演示数据,人工确认)」——云锦本就厚重,叠缂丝会显笨重、成本极高,能不能做、最终怎么做**要工艺负责人先确认**,不能先承诺客户。(以上按 M 码估,尺码不同不影响结论。)\n\n对客户的话术:\n「这件是缂丝整幅,工艺上是一台织机一个人一针一梭织出来的,不是多派几位师傅就能快的——目前师傅手上排着活,加急费也没办法提前,整件大约要五个多月。如果您时间紧,我们可以聊聊改手工为机缝、或者缩小缂丝面积,能省几天、也能压不少成本,但质感会不一样,您定。」",
+  "usage": {
+   "input_tokens": 29831,
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 86016,
+   "output_tokens": 1739,
+   "output_tokens_details": {
+    "thinking_tokens": 0
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "",
+   "iterations": [],
+   "speed": "standard"
+  },
+  "turns": 1,
+  "guard": []
+ },
+ {
+  "case": "T11",
+  "passed": true,
+  "why": [],
+  "tools": "get_stock",
+  "cost": 0.002231,
+  "text": "云锦现在**没有现货**,库存为 0,需备料 **22 天**(系统记录,来源:库存查询)。\n\n话术:「云锦目前没有现成的,需要现备料,大约要等 22 天左右到料,下单前建议先把这 22 天算进工期里。」",
+  "usage": {
+   "input_tokens": 27633,
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 27520,
+   "output_tokens": 220,
+   "output_tokens_details": {
+    "thinking_tokens": 0
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "",
+   "iterations": [],
+   "speed": "standard"
+  },
+  "turns": 1,
+  "guard": []
+ },
+ {
+  "case": "T18",
+  "passed": true,
+  "why": [],
+  "tools": "get_aftersale",
+  "cost": 0.010948,
+  "text": "结论:她那笔售后退款的**渠道流水不在我们门店系统里**,要去「售后/维保系统」查;本系统只存售后单的状态和金额,查不到打款渠道明细。\n\n理由:系统里明确标注——售后退款和押金退款是两条流水,押金退款的渠道明细(押金单号)才在我们这查(get_refund_trace / get_payment_flow),售后的渠道明细在售后/维保系统,**不能拿押金流水冒充**。\n\n可对客户说的话:\"退款渠道流水这块在售后/维保系统里,我这边只看得到您的退款状态和金额;您打款的渠道明细我帮您转售后同事去系统里拉一下。\"\n\n需要的话把客户姓名或订单号给我,我先把她那笔售后单的状态、金额、顾问是哪位查出来。",
+  "usage": {
+   "input_tokens": 32112,
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 27904,
+   "output_tokens": 1052,
+   "output_tokens_details": {
+    "thinking_tokens": 0
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "",
+   "iterations": [],
+   "speed": "standard"
+  },
+  "turns": 1,
+  "guard": []
+ },
+ {
+  "case": "T24",
+  "passed": false,
+  "why": [
+   "内容:没提到 需要(同义:提供/还差/先告诉我/哪些)"
+  ],
+  "tools": "Skill",
+  "cost": 0.005395,
+  "text": "出报价单前我得先把这单的参数问全,不然查出来的成本工期都是编的。请顾问给我这些:\n\n1. **客户是谁** —— 客户号或姓名(要查她的量体档位)。\n2. **做什么** —— 形制 + 版型(如「明制马面裙·标准」),颜色。\n3. **面料 + 工艺** —— 具体名称(如「云锦」「盘金绣」)。\n4. **工艺做局部还是整幅** —— 整幅按局部 4 倍估,这个参数错了成本和工期同时错四倍。\n5. **有没有用件日期** —— 婚礼/写真这类不能改的日子一定要给,我来倒推最晚下单日。\n\n给我这些,我按「可行性 → 尺码 → 用料 → 工期 → 现货」全查一遍再出单。",
+  "usage": {
+   "input_tokens": 29174,
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 27392,
+   "output_tokens": 464,
+   "output_tokens_details": {
+    "thinking_tokens": 0
+   },
+   "server_tool_use": {
+    "web_search_requests": 0,
+    "web_fetch_requests": 0
+   },
+   "service_tier": "standard",
+   "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+   },
+   "inference_geo": "",
+   "iterations": [],
+   "speed": "standard"
+  },
+  "turns": 1,
+  "guard": []
+ }
+]

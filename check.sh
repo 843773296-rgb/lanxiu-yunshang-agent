@@ -28,6 +28,7 @@ run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/lead
 run "回答体检 · 人造用例(正反各半)" python3 agentsite/guards_test.py
 run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py
 run "判分器自测 · 18 条人造用例" python3 agent/chat_eval_judgetest.py
+run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judgetest.py
 printf "\n%s\n" "────────────────────────────────────────"
 if [ $FAIL -eq 0 ]; then printf "\033[32m✅ 全部检查通过\033[0m\n"; else printf "\033[31m❌ 存在失败项\033[0m\n"; fi
 exit $FAIL
