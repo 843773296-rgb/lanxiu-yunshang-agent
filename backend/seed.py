@@ -48,6 +48,9 @@ CREATE TABLE triage(
   ai_confidence TEXT,          -- 高 / 中 / 低,由工具调用数与证据完整度推,不是模型自称
   ai_text TEXT, tool_calls INT, cost REAL, latency_ms INT, model TEXT,
   in_tokens INT, out_tokens INT, cache_read INT,   -- 按 DeepSeek 实价算成本要用,顺便看缓存命中
+  -- 回答体检:被打回过没有、因为什么。**这是「模型有多不听话」的直接度量** ——
+  -- 比事后抽样评测灵敏得多,因为它是全量的。
+  guard_blocked INT DEFAULT 0, guard_violations TEXT, answer_turns INT DEFAULT 1,
 
   status TEXT,                 -- 待复核 / 已采纳 / 已改判 / 已升级
   human_root_cause TEXT, human_action TEXT, human_note TEXT,

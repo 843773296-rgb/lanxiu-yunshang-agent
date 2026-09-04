@@ -16,6 +16,11 @@ ROOT = os.path.dirname(HERE)
 KEYFILE = os.path.expanduser("~/.deepseek-key")
 
 from claude_agent_sdk import query, ClaudeAgentOptions   # noqa: E402
+import guards   # noqa: E402
+
+# 单次调用的花费上限。研判队列支持批量跑,一条失控就是真金白银 ——
+# SDK 现成的参数,不设等于没有闸门。
+MAX_USD = float(os.environ.get("LANXIU_MAX_USD", "0.60"))
 
 
 def _env():
@@ -113,10 +118,17 @@ SYS_TASK = """你是澜绣云裳门店客户运营管理后台的人工任务助
 4. 查清后按「根因 / 建议动作 / 证据 / 置信度」四段给出草稿。"""
 
 
-async def run(kind, prompt, max_turns=12):
-    """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。"""
+async def run(kind, prompt, max_turns=12, guard=True):
+    """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
+
+    guard=True 时挂上回答体检 hook:交付前检查一遍,不合格**打回重答**。
+    提示词里那些「铁律」原本只是祈使句,挂上 hook 才是强制。
+    """
     model = _env()
+    state = {}
     opts = ClaudeAgentOptions(
+        hooks=guards.make_hooks(state) if guard else None,
+        max_budget_usd=MAX_USD,
         system_prompt=SYS_KB if kind == "kb" else SYS_TASK,
         mcp_servers=mcp_config(),
         allowed_tools=KB_TOOLS if kind == "kb" else TASK_TOOLS,
@@ -131,22 +143,36 @@ async def run(kind, prompt, max_turns=12):
         strict_mcp_config=True,     # 只用上面 mcp_servers 声明的,忽略文件里的
         setting_sources=[],         # 不读 user / project / local 任何设置文件
     )
-    text, traj, usage, cost = "", [], {}, None
+    # 按「一段回答」分开收,不是一路拼下去。
+    # 体检打回后模型会重答,而 hook 的反馈是以 user 角色进流的 ——
+    # 原来对所有消息都读 content,结果 text 里混进了反馈原文和被打回的那版答案,
+    # 客户会看到「Stop hook feedback: ...」。**最终答案取最后一段。**
+    turns, traj, usage, cost = [], [], {}, None
     t0 = time.time()
     async for m in query(prompt=prompt, options=opts):
         cls = type(m).__name__
-        for b in getattr(m, "content", []) or []:
-            bt = type(b).__name__
-            if bt == "TextBlock" and getattr(b, "text", ""):
-                text += b.text
-            elif bt == "ToolUseBlock":
-                traj.append({"tool": getattr(b, "name", "?"),
-                             "args": getattr(b, "input", {})})
-        if cls == "ResultMessage":
+        if cls == "AssistantMessage":
+            cur = ""
+            for b in getattr(m, "content", []) or []:
+                bt = type(b).__name__
+                if bt == "TextBlock" and getattr(b, "text", ""):
+                    cur += b.text
+                elif bt == "ToolUseBlock":
+                    traj.append({"tool": getattr(b, "name", "?"),
+                                 "args": getattr(b, "input", {})})
+            if cur.strip(): turns.append(cur)
+        elif cls == "ResultMessage":
             usage = getattr(m, "usage", None) or {}
             cost = getattr(m, "total_cost_usd", None)
+    text = turns[-1] if turns else ""
     return dict(text=text.strip(), trajectory=traj, seconds=round(time.time() - t0, 1),
-                usage=usage, sdk_cost_usd=cost, cost_usd=cost_of(usage, model), model=model)
+                usage=usage, sdk_cost_usd=cost, cost_usd=cost_of(usage, model), model=model,
+                # 被体检打回过几次、因为什么 —— 这两个数要落进研判台账,
+                # 它们是「模型有多不听话」的直接度量,比事后抽样评测灵敏得多
+                guard_blocked=bool(state.get("violations")),
+                guard_violations=state.get("violations") or [],
+                tool_calls_seen=len(state.get("calls") or []),
+                answer_turns=len(turns), text_all="\n\n".join(turns))
 
 
 if __name__ == "__main__":
@@ -157,6 +183,9 @@ if __name__ == "__main__":
     for t in r["trajectory"]:
         print(f"  ↳ {t['tool']}({json.dumps(t['args'],ensure_ascii=False)[:70]})")
     print(f"\n{r['text']}\n")
+    if r.get("guard_blocked"):
+        print("⚠ 回答体检打回过:")
+        for v in r["guard_violations"]: print(f"   · {v['msg']}")
     u = r["usage"] or {}
     print(f"—— {r['seconds']}s · {r['model']} · 实价 ${r['cost_usd']} "
           f"(SDK 按 Claude 单价报 ${r['sdk_cost_usd']},不可用)\n   输入 {u.get('input_tokens')} 其中命中缓存 {u.get('cache_read_input_tokens')} · 输出 {u.get('output_tokens')}")

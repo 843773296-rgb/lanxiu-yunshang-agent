@@ -179,20 +179,23 @@ def confidence(trajectory, parsed, need_tools=2):
 
 
 def save_triage(task_id, breakpoint, case_id, text, trajectory,
-                cost=None, latency_ms=None, model=None, usage=None):
+                cost=None, latency_ms=None, model=None, usage=None,
+                guard_blocked=False, guard_violations=None, answer_turns=1):
     p = parse_draft(text)
     conf = confidence(trajectory, p)
     with _c() as c:
         cur = c.execute(
             "INSERT INTO triage(task_id,breakpoint,case_id,created,ai_root_cause,ai_action,"
             "ai_evidence,ai_confidence,ai_text,tool_calls,cost,latency_ms,model,"
-            "in_tokens,out_tokens,cache_read,status)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'待复核')",
+            "in_tokens,out_tokens,cache_read,guard_blocked,guard_violations,answer_turns,status)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'待复核')",
             (task_id, breakpoint, case_id, now().strftime("%Y-%m-%d %H:%M:%S"),
              p["ai_root_cause"], p["ai_action"], p["ai_evidence"], conf, text,
              len(trajectory or []), cost, latency_ms, model,
              (usage or {}).get("input_tokens"), (usage or {}).get("output_tokens"),
-             (usage or {}).get("cache_read_input_tokens")))
+             (usage or {}).get("cache_read_input_tokens"),
+             1 if guard_blocked else 0,
+             json.dumps(guard_violations or [], ensure_ascii=False), answer_turns))
         c.execute("UPDATE task SET status='待复核', summary=? WHERE id=?",
                   (p["ai_root_cause"][:60] or "(未解析出根因)", task_id))
         return cur.lastrowid
@@ -305,6 +308,8 @@ def health():
         单条均价=round(sum(costs)/len(costs), 4) if costs else None,
         中位耗时秒=round(sorted(lats)[len(lats)//2]/1000, 1) if lats else None,
         置信度分布=conf,
+        体检打回率=(f"{sum(1 for t in tr if t['guard_blocked'])/len(tr)*100:.0f}%" if tr else "—"),
+        体检打回数=sum(1 for t in tr if t["guard_blocked"]),
         缓存命中率=(f"{sum(t['cache_read'] or 0 for t in tr)/max(sum(t['in_tokens'] or 0 for t in tr),1)*100:.0f}%"
                 if any(t["in_tokens"] for t in tr) else "—"),
         评测集来源={r["src"]: r["n"] for r in ev}, 与建库标注冲突=clash,

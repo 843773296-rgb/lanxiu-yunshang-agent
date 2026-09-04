@@ -1381,7 +1381,10 @@ class H(BaseHTTPRequestHandler):
                 tid=_ops.save_triage(body.get("task_id"), body.get("bp"), body.get("case"),
                                      body.get("text") or "", body.get("trajectory") or [],
                                      cost=body.get("cost"), latency_ms=body.get("latency_ms"),
-                                     model=body.get("model"), usage=body.get("usage"))
+                                     model=body.get("model"), usage=body.get("usage"),
+                                     guard_blocked=body.get("guard_blocked"),
+                                     guard_violations=body.get("guard_violations"),
+                                     answer_turns=body.get("answer_turns") or 1)
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
             return self._send(dict(ok=True, triage_id=tid, row=_ops.get_triage(tid)))

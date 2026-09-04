@@ -170,11 +170,16 @@ class H(BaseHTTPRequestHandler):
         saved = _post("/api/ops-triage", dict(
             task_id=tid, bp=t["bp"], case=case, text=r["text"],
             trajectory=r["trajectory"], cost=r.get("cost_usd"),   # 实价,不是 SDK 报的那个
-            usage=r.get("usage"), latency_ms=ms, model=r.get("model")))
+            usage=r.get("usage"), latency_ms=ms, model=r.get("model"),
+            guard_blocked=r.get("guard_blocked"),
+            guard_violations=r.get("guard_violations"),
+            answer_turns=r.get("answer_turns")))
         row = saved.get("row") or {}
         return dict(task_id=tid, triage_id=saved.get("triage_id"),
                     root_cause=row.get("ai_root_cause"), confidence=row.get("ai_confidence"),
-                    tools=row.get("tool_calls"), cost=r.get("cost_usd"), seconds=r["seconds"])
+                    tools=row.get("tool_calls"), cost=r.get("cost_usd"), seconds=r["seconds"],
+                    guard_blocked=r.get("guard_blocked"),
+                    guard=[v["msg"] for v in (r.get("guard_violations") or [])])
 
 
 def _post(path, payload, timeout=60):
