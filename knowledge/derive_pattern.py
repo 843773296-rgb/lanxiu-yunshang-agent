@@ -18,6 +18,30 @@ BASE_WIDTH = 114.0          # 版型的基础用布按这个幅宽标定
 PACKAGING = ["WL17", "WL18", "WL19", "WL20"]
 
 
+_CACHE = {}
+
+
+def _memo(fn):
+    """md 只读一次、只解析一次。
+
+    seed 时要给两百多个商品算 BOM 定价,每次重读并重新解析两个 md 文件会慢到不可接受。
+    这些函数都是**纯函数**(输入只有 md 文件),缓存是安全的;
+    md 改了要重新跑进程 —— 而 seed 本来就是一次性进程。
+    """
+    def wrap(*a):
+        k = (fn.__name__, a)
+        if k not in _CACHE: _CACHE[k] = fn(*a)
+        return _CACHE[k]
+    wrap.__name__ = fn.__name__
+    wrap.__doc__ = fn.__doc__
+    return wrap
+
+
+@_memo
+def _read(path):
+    return open(path, encoding="utf-8").read()
+
+
 def _tbl(txt, ncol, first):
     """把 md 里以 first 开头、有 ncol 列的表格行切出来"""
     out = []
@@ -37,8 +61,9 @@ def _num(x, default=None):
 
 
 # ── 一、版型 ────────────────────────────────────────────────────────────
+@_memo
 def patterns():
-    t = open(MD_PT, encoding="utf-8").read()
+    t = _read(MD_PT)
     out = []
     for c in _tbl(t, 10, "PT"):
         out.append(dict(code=c[0], name=c[1], xz=c[2], gender=c[3], tpl=c[4],
@@ -47,14 +72,16 @@ def patterns():
     return out
 
 
+@_memo
 def pieces():
-    t = open(MD_PT, encoding="utf-8").read()
+    t = _read(MD_PT)
     return [dict(pattern=c[0], name=c[1], qty=int(c[2]), note=c[3])
             for c in _tbl(t, 4, "PT") if c[2].isdigit()]
 
 
+@_memo
 def _base_specs():
-    t = open(MD_PT, encoding="utf-8").read()
+    t = _read(MD_PT)
     out = {}
     for c in _tbl(t, 3, "PT"):
         v = _num(c[2])
@@ -62,8 +89,9 @@ def _base_specs():
     return out
 
 
+@_memo
 def _steps():
-    t = open(MD_PT, encoding="utf-8").read()
+    t = _read(MD_PT)
     out = {}
     for line in t.split("\n"):
         m = re.match(r"\|\s*([一-龥]+)\s*\|\s*\+([\d.]+)\s*\|", line.strip())
@@ -88,8 +116,14 @@ def size_specs():
 
 # ── 二、物料 ────────────────────────────────────────────────────────────
 def materials(craft_names=None):
+    return _materials(tuple(sorted((craft_names or {}).items())))
+
+
+@_memo
+def _materials(pairs):
+    craft_names = dict(pairs)
     """主料的名称从 craft 表来(不在 BOM 文件里重写一遍),辅料在本文件里定义。"""
-    t = open(MD_BOM, encoding="utf-8").read()
+    t = _read(MD_BOM)
     out = []
     for c in _tbl(t, 5, "MT"):
         nm = (craft_names or {}).get(c[0], c[0])
@@ -103,15 +137,17 @@ def materials(craft_names=None):
     return out
 
 
+@_memo
 def pattern_bom():
-    t = open(MD_BOM, encoding="utf-8").read()
+    t = _read(MD_BOM)
     return [dict(pattern=c[0], material=c[1], qty_base=float(c[2]),
                  qty_step=_num(c[3], 0.0), unit=c[4], note=c[5])
             for c in _tbl(t, 6, "PT")]
 
 
+@_memo
 def craft_bom():
-    t = open(MD_BOM, encoding="utf-8").read()
+    t = _read(MD_BOM)
     return [dict(craft=c[0], material=c[1], qty=float(c[2]), unit=c[3], note=c[4])
             for c in _tbl(t, 5, "KF")]
 

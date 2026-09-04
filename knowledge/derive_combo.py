@@ -43,7 +43,10 @@ def _tables():
         c = [x.strip() for x in line.strip().strip("|").split("|")]
         if c[0].startswith("KF") and len(c) >= 8:
             kf[c[0]] = dict(name=c[1], stage=c[2], sheet=c[3] == "是", pierce=c[4],
-                            weight=c[5], heat=c[6] == "是", light=c[7] == "是")
+                            weight=c[5], heat=c[6] == "是", light=c[7] == "是",
+                            # 灰缬是拔染,**必须深底才拔得出白花** —— 和别的印染工艺正好相反。
+                            # 加这一列而不是给它开个特例分支:特例写在代码里,下一个人看不见。
+                            dark="是" in c[8] if len(c) > 8 else False)
         elif c[0].startswith("MT") and len(c) >= 11:
             mt[c[0]] = dict(name=c[1], tension=c[2], thick=c[3], coated=c[4] == "有",
                             heat_ok=c[5] == "是", ground=c[6], busy=c[7] == "是",
@@ -60,6 +63,11 @@ def judge(k, m):
     st, wt = k["stage"], W.get(k["weight"], 0)
     low = m["tension"] == "低"
 
+    # R0 是全局的,不属于任何一支工序 —— 补进「压褶定型」后才发现
+    # 原来那条「印染需高温」把范围划小了。详见 md 里「规则表会随知识增加而重构」。
+    if k["heat"] and not m["heat_ok"]:
+        return "不可", f"{k['name']}需高温,{m['name']}不耐热会烫坏", "R0"
+
     if st == "织造":
         if k["name"] in m["builtin"]:
             return "可", f"{m['name']}本身即以{k['name']}织成,天然相容", "R1"
@@ -70,11 +78,11 @@ def judge(k, m):
     if st == "印染":
         if not m["dyeable"]:
             return "不可", f"{m['name']}已织入纹样或已染整,再染会毁掉原有效果", "R4"
-        if k["heat"] and not m["heat_ok"]:
-            return "不可", f"{k['name']}需高温,{m['name']}不耐热会烫坏", "R5"
         if m["fiber"] == "化纤":
             return "不可", f"{k['name']}用传统植物染料,上不了{m['name']}这类化学纤维,须改走分散染料的工业工艺", "R5b"
-        if m["ground"] == "深":
+        if k["dark"] and m["ground"] != "深":
+            return "不可", f"{k['name']}是拔染,要在深色底上拔出白花,{m['name']}底色不够深", "R6b"
+        if m["ground"] == "深" and not k["dark"]:
             return "不可", f"{m['name']}底色深,压不出{k['name']}的染色纹样", "R6"
         return "可", f"{m['name']}为素色可后染底料,适合{k['name']}", "—"
 
@@ -94,6 +102,8 @@ def judge(k, m):
         return "可", f"{m['name']}适合{k['name']}", "—"
 
     # 缝制
+    if wt >= 3 and low:
+        return "不可", f"{m['name']}张力低,{k['name']}有重量,会把布坠变形", "R14"
     if wt >= 1 and m["thick"] == "极薄":
         return "需评估", f"{m['name']}极薄,承不住{k['name']}的重量与拉力,须加衬", "R13"
     return "可", f"{k['name']}属成衣阶段工序,{m['name']}无特殊限制", "—"
@@ -135,7 +145,7 @@ if __name__ == "__main__":
     print(f"    16 格人工确认中,与规则不一致 {bad} 格(人工优先,规则不覆盖)")
     print()
     print("  规则命中:")
-    ALL = ["R1","R2","R3","R4","R5","R5b","R6","R7","R8","R9","R10","R11","R12","R13"]
+    ALL = ["R0","R1","R2","R3","R4","R5b","R6","R7","R8","R9","R10","R11","R12","R13","R14","R6b"]
     hit = collections.Counter(r[4] for r in rows)
     for r in ALL:
         print(f"    {r:4s} {hit.get(r,0):3d}" + ("   ← 0 命中,这条规则从没被验证过" if not hit.get(r) else ""))

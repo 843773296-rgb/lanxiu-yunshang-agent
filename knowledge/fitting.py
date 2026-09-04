@@ -125,8 +125,13 @@ if __name__ == "__main__":
     print("量体 → 推荐尺码 · 自测\n" + "=" * 76)
     E, K = ease(), key_sizes()
     print(f"放松量表 {len(E)} 个部位(其中不比对 {sum(1 for v in E.values() if v[0] is None)} 个)")
-    print(f"关键尺寸覆盖 {len(K)}/10 个形制")
-    assert len(K) == 10, f"有形制没写关键尺寸:只覆盖了 {sorted(K)}"
+    con0 = sqlite3.connect(db)
+    all_xz = {r[0]: r[1] for r in con0.execute("SELECT code,name FROM craft WHERE cat='形制'")}
+    miss = [f"{c} {n}" for c, n in all_xz.items() if c not in K]
+    print(f"关键尺寸覆盖 {len(K & all_xz.keys() if hasattr(K,'keys') else set(K))}/{len(all_xz)} 个形制")
+    # 断言写成「和 craft 表比」而不是「等于 10」——
+    # 写死数字的检查在扩容那天会一起变绿或一起变红,都不说明问题。
+    assert not miss, f"这些形制没写关键尺寸,它们的推荐尺码全是瞎判的:{miss}"
     assert E["胸围"][1] == 16 and E["马面宽"][0] is None
     con = sqlite3.connect(db); con.row_factory = sqlite3.Row
 
