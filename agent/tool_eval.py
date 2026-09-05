@@ -95,6 +95,21 @@ def A():
     return d
 
 
+# **跑评测之前先验锚点。**
+# 这个文件里的锚点全是从库里现算的 —— 好处是数据变了跟着变、评测不会烂在原地,
+# 代价是**实现错了锚点跟着错**(同源谬误)。
+# pinned_check.py 里那 8 条是人从 md 手抄的、故意不现算,专门抓这个。
+# 它们对不上就别跑了:**拿错的期望值跑一轮评测,比不跑更糟** ——
+# 你会拿到一份看起来很正常的成绩单,然后照着它去改本来正确的提示词。
+sys.path.insert(0, os.path.join(HERE, "..", "knowledge"))
+import pinned_check as _pin
+_bad = _pin.verify()
+if _bad:
+    print("❌ 手抄锚点对不上,拒绝跑评测(先跑 knowledge/pinned_check.py 看是哪一条):",
+          file=sys.stderr)
+    for p, why in _bad: print(f"   · {p['name']}:{why}", file=sys.stderr)
+    sys.exit(1)
+
 K = A()
 
 # need: 轨迹里必须出现的工具;must: 每组至少命中一个;forbid: 一个都不许(未被否定地)出现

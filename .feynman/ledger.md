@@ -38,3 +38,6 @@
 - 2026-09-04 ·【评测】三轴打分:轨迹 / 内容 / 体检 · 只看内容的话瞎猜蒙对会被判满分 · 在 agent/tool_eval.py 的 judge() · 自评:懂了
 - 2026-09-04 ·【鉴别】must 与 forbid 的否定语义不同 · must 问「提到了吗」不该查否定(数字不存在被否定),forbid 问「说了吗」才要查 · 在 agent/tool_eval.py 的 hit() · 自评:懂了
 - 2026-09-04 ·【工程】开一个口子就得同时装一把锁 · 为用 Skill 放开 setting_sources=["project"],同时加 skills_check.py 盯住 .mcp.json 污染 · 在 agentsite/skills_check.py · 自评:懂了
+- 2026-09-04 ·【鉴别】工具的「规范」来自 JSON Schema,不来自 MCP · 把工具搬进进程内,SDK 用 @tool + create_sdk_mcp_server 包成**进程内 MCP**,schema 还在、稳定性不变;真正失去的是进程隔离、可挂载性、通道等价测试、按服务收权 · 出处:claude_agent_sdk 导出 tool / create_sdk_mcp_server / McpSdkServerConfig · 自评:半懂(答对「能跑」和「MCP 是规范」,因果链答错)
+- 2026-09-04 ·【鉴别】MCP 管什么、不管什么 · 90 行的 mcp/protocol.py 里只有三件事:报工具清单(tools/list)、把异常包成 isError、走标准协议所以别的客户端能挂;**权限、只读、查库、参数校验它一件都不管** · 常犯错:把「经过它」当成「它负责」 · 出处:MCP 官方 SDK types.js 的 LATEST_PROTOCOL_VERSION 与 tools/call 结构 · 自评:讲过一遍,待验证
+- 2026-09-05 ·【鉴别】同源谬误:拿被测对象生成期望值 · tool_eval 的锚点、guards_test 的 fixture、parity 的两条通道,期望值都来自同一份实现——实现错了它们跟着错,全绿 · 补了 knowledge/pinned_check.py:8 条人从 md 手抄、故意不现算的锚点 · 咬合验证:把推档算错 ×1.5 后,derive_pattern 自测绿、pinned 红 2 条 · 自评:懂了
