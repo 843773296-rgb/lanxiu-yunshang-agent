@@ -164,7 +164,16 @@ SYS_KB = """你是澜绣云裳的汉服工艺顾问助手,服务对象是客户�
    **交不出来赔多少钱都换不回那一天。**
    风险里写着「不能靠加人压缩」的(织造、染色晾晒、手绘顾绣发绣),
    加急要求当场拒绝,别先答应再想办法。
-12. 客户问「能不能做小码 / 能不能改尺寸」→ 先 kb_pattern。
+12. **看图只能提假设,不能下结论。** 客户发照片问「这是什么形制、能不能做」时:
+   · 先说出你**实际看到了什么**(轮廓、颜色、纹理、有没有交领/立领/褶),
+     让顾问能判断你的假设站不站得住;
+   · **形制是结论,不是观察** —— 一张照片分不出唐制大袖衫和宋制褙子,
+     光线、角度、褶皱都会骗人。给假设要说「看起来像…,但要确认」;
+   · 假设必须**用工具查证**(kb_lookup / kb_pattern)或**向顾问反问**;
+   · **绝不能只凭一张图报价、报工期或承诺能做** —— 价钱和工期取决于
+     面料与工艺,而那两样**照片里根本看不出来**,必须问客户或查库。
+   · 看不出来就说看不出来,请客户补拍细节(领口、袖口、裙门)或直接说形制。
+13. 客户问「能不能做小码 / 能不能改尺寸」→ 先 kb_pattern。
    某个尺码不在版型的尺码序列里,意思是**这个版型裁不出来**,不是缺货,不要说「可以订」。
 
 先给结论,再给理由,最后给能直接说出口的话术。一般 5 行以内。"""
@@ -189,11 +198,36 @@ SYS_TASK = """你是澜绣云裳门店客户运营管理后台的人工任务助
    **get_order 返回的「勾稽异常」是重要线索** —— 金额对不上、时间倒挂,往往就是根因所在。"""
 
 
-async def run(kind, prompt, max_turns=12, guard=True):
+def _img_block(path):
+    """本地图片 → Anthropic 的 image content block(base64)。"""
+    import base64, mimetypes
+    mt = mimetypes.guess_type(path)[0] or "image/png"
+    if mt not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
+        raise ValueError(f"{mt} 不是视觉模型收的格式(png/jpeg/gif/webp)—— "
+                         "SVG 要先栅格化,见 backend/img.py 的 png()")
+    return {"type": "image",
+            "source": {"type": "base64", "media_type": mt,
+                       "data": base64.standard_b64encode(open(path, "rb").read()).decode()}}
+
+
+async def _stream_once(prompt, images):
+    """带图时走**流式输入**:query() 的 prompt 除了字符串,
+    还能收 AsyncIterable[dict],每条是一个 user 消息 —— 图片块只能这么送。"""
+    yield {"type": "user",
+           "message": {"role": "user",
+                       "content": [_img_block(p) for p in images]
+                                  + [{"type": "text", "text": prompt}]},
+           "parent_tool_use_id": None, "session_id": "vision"}
+
+
+async def run(kind, prompt, max_turns=12, guard=True, images=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
 
     guard=True 时挂上回答体检 hook:交付前检查一遍,不合格**打回重答**。
     提示词里那些「铁律」原本只是祈使句,挂上 hook 才是强制。
+
+    images:本地图片路径列表。**给了图就走流式输入通道** ——
+    字符串 prompt 塞不进图片块,这是接识图时唯一需要动的地方。
     """
     model = _env()
     state = {}
@@ -245,7 +279,8 @@ async def run(kind, prompt, max_turns=12, guard=True):
     # 客户会看到「Stop hook feedback: ...」。**最终答案取最后一段。**
     turns, traj, usage, cost, res = [], [], {}, None, None
     t0 = time.time()
-    async for m in query(prompt=prompt, options=opts):
+    _p = _stream_once(prompt, images) if images else prompt
+    async for m in query(prompt=_p, options=opts):
         cls = type(m).__name__
         if cls == "AssistantMessage":
             cur = ""

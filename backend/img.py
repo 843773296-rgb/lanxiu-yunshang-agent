@@ -178,7 +178,51 @@ def render(spu, variant):
     ) % (bg, bg, lit, base, deep, dx, dy, zoom, d, d, dim, tex)
 
 
+# ── 栅格化:SVG → PNG ────────────────────────────────────────────────────
+# 视觉模型不吃 SVG(Anthropic 只收 png/jpeg/gif/webp),所以要先转成位图。
+#
+# ⚠️ **这一步依赖 macOS 自带的 qlmanage**,换台 Linux 就没有。
+# 没有引入 cairosvg 之类的依赖,是因为这个项目的底线是「无第三方依赖」;
+# 但这个取舍要写出来,**不能等别人在别的机器上跑挂了才发现**。
+#
+# 更要紧的一句:**这批图是合成剪影,不是实物照片。**
+# 它只画得出「上装 / 裙装 / 外套」这种粗轮廓,
+# **分不出唐制大袖衫和宋制褙子** —— 拿它评测「识别准确率」是自欺欺人。
+# 它能评测的是另一件事:**信息不足时,模型会不会硬编一个自信的答案。**
+import subprocess, shutil, tempfile
+
+CACHE = os.path.join(HERE, ".imgcache")
+
+
+def png(spu, variant="main", size=750):
+    """把商品图渲染成 PNG,返回文件路径。同一个 spu 结果确定,带缓存。"""
+    os.makedirs(CACHE, exist_ok=True)
+    out = os.path.join(CACHE, f"{spu}-{variant}-{size}.png")
+    if os.path.exists(out) and os.path.getsize(out) > 1000:
+        return out
+    if not shutil.which("qlmanage"):
+        raise RuntimeError("找不到 qlmanage —— 本机没有 SVG 栅格化能力。"
+                           "这一步依赖 macOS 自带工具,换平台需要另接渲染服务。")
+    svg = render(spu, variant)
+    with tempfile.TemporaryDirectory() as td:
+        f = os.path.join(td, f"{spu}.svg")
+        open(f, "w", encoding="utf-8").write(svg)
+        subprocess.run(["qlmanage", "-t", "-s", str(size), "-o", td, f],
+                       capture_output=True, timeout=60)
+        got = os.path.join(td, f"{spu}.svg.png")
+        if not os.path.exists(got):
+            raise RuntimeError(f"qlmanage 没能渲染 {spu} —— SVG 可能有问题")
+        shutil.copy(got, out)
+    return out
+
+
 if __name__ == "__main__":
     import sys
     print(render(sys.argv[1] if len(sys.argv) > 1 else "lxys_100007919",
                  sys.argv[2] if len(sys.argv) > 2 else "main")[:200])
+
+    # --png:渲染成位图给视觉模型用
+    if "--png" in sys.argv:
+        _spu = [a for a in sys.argv[1:] if a.startswith("lxys")]
+        _p = png(_spu[0] if _spu else "lxys_100617682")
+        print(f"{_p}  {os.path.getsize(_p)//1024} KB")

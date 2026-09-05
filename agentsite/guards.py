@@ -374,6 +374,45 @@ CONFIRM = ("人工确认", "待确认", "由店长", "须确认", "不构成承�
            "需客服确认", "转人工", "草稿", "供参考")
 
 
+# 形制词一出现就是结论 —— 观察词只是特征
+XZ_WORDS = ("马面裙", "襦裙", "褙子", "大袖衫", "半臂", "曳撒", "圆领袍", "百迭裙",
+            "立领长衫", "披风", "唐制", "宋制", "明制", "齐胸", "齐腰")
+# ⚠️ 名字不能叫 HEDGE —— 上面 g2 已经有一个 HEDGE(装的是「不含工时」这类免责词)。
+# 第一版就叫了 HEDGE,把它覆盖掉,于是 g2 丢了豁免词开始误伤两条正确答案。
+# **同名常量被后定义的覆盖,不报错、不警告,只是前面用它的函数悄悄换了行为。**
+VISION_HEDGE = ("看起来像", "可能是", "疑似", "初步判断", "不确定", "要确认", "需确认",
+                "无法确定", "看不出", "请确认", "补拍", "先确认", "假设", "待查证")
+PRICE_WORDS = ("报价", "价格", "多少钱", "工期", "天能做", "元", "¥")
+
+
+def g18_vision_conclusion(text, calls):
+    """看了图就直接下形制结论,或者只凭图报价。
+
+    **图给的是特征,不是结论。** 一张照片分不出唐制大袖衫和宋制褙子 ——
+    光线、角度、褶皱都会骗人,而模型天然想跳过「查证」那一步,
+    因为「这是明制马面裙」比「看起来像马面裙,要确认」好听得多。
+
+    价钱和工期更危险:它们取决于**面料与工艺**,
+    而那两样**照片里根本看不出来** —— 只凭图报价是纯粹的编。
+    """
+    if not _called(calls, "__vision__") and "[图片]" not in (text or ""):
+        # 这一条只在带图的那一轮生效。带图与否由调用方在文本里打标记,
+        # 或者由 vision_eval 直接调 check_answer 时传进来。
+        pass
+    xz = tm.mentions(text, XZ_WORDS)
+    if not xz: return None
+    tools = " ".join(c.get("tool", "") for c in (calls or []))
+    verified = any(k in tools for k in ("kb_lookup", "kb_pattern", "kb_detail", "kb_tables"))
+    if not verified and not tm.mentions(text, VISION_HEDGE):
+        return (f"你看图直接给了形制结论「{xz}」,既没查证也没加限定。"
+                "**图给的是特征,不是结论** —— 一张照片分不出唐制大袖衫和宋制褙子。"
+                "要么用 kb_lookup / kb_pattern 查证,要么说「看起来像…,需确认」。")
+    if tm.mentions(text, PRICE_WORDS) and not verified:
+        return ("你只凭一张图就谈了价钱或工期。**价钱和工期取决于面料与工艺,"
+                "而那两样照片里根本看不出来** —— 必须先问客户或查库。")
+    return None
+
+
 def g17_liability_promise(text, calls):
     """判责结论直接当承诺发出去。
 
@@ -453,7 +492,7 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer,
           g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
           g15_growth_plan_sections, g16_bypass_control,
-          g17_liability_promise]
+          g17_liability_promise, g18_vision_conclusion]
 
 
 def check_answer(text, calls):
