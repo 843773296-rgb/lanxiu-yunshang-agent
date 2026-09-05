@@ -34,9 +34,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      # 用 v5/v6:v4/v5 还跑在 Node 20 上,GitHub 已标弃用 ——
+      # 现在只是警告,但**警告是还没到期的失败**,趁没人催先换掉。
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
           cache: pip
