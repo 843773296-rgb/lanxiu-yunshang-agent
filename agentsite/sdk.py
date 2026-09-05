@@ -175,6 +175,24 @@ async def run(kind, prompt, max_turns=12, guard=True):
         system_prompt=SYS_KB if kind == "kb" else SYS_TASK,
         mcp_servers=mcp_config(),
         allowed_tools=(KB_TOOLS if kind == "kb" else TASK_TOOLS) + SHOP_TOOLS,
+        # ⚠️ **allowed_tools 不是排他白名单。**
+        # 它管的是「哪些工具不用逐次批准」,不是「只有这些工具存在」——
+        # 配上 permission_mode="bypassPermissions" 之后,CLI 的内置工具
+        # (Bash / Read / Write / Edit / Task / WebFetch …)**一样在场,一样能用**。
+        #
+        # 这是实跑抓到的:一条查押金单的任务,轨迹里出现了
+        #   ['ToolSearch', 'Bash', 'Agent', 'ToolSearch', 'get_deposit', ...]
+        # 模型自己去开了 Bash 和子智能体。
+        #
+        # 这直接打穿了这个项目最硬的一条保证:**工具全部只读,0 个写接口**。
+        # 只读的是我们挂的 19 个 MCP 工具,而 Bash 能读能写能删,**它不受这条保证约束**。
+        # 更要命的是它一直没被发现 —— DeepSeek 那边的模型只是**碰巧没去用**。
+        # 「模型没用」和「模型不能用」是两回事,安全边界不能建在前者上。
+        disallowed_tools=[
+            "Bash", "BashOutput", "KillShell", "Read", "Write", "Edit", "NotebookEdit",
+            "Glob", "Grep", "WebFetch", "WebSearch", "Task", "Agent", "ToolSearch",
+            "TodoWrite", "SlashCommand", "Artifact", "SendUserFile",
+        ],
         model=model,
         max_turns=max_turns,
         permission_mode="bypassPermissions",   # 工具全是只读的,不需要逐次批准

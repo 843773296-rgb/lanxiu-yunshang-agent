@@ -60,6 +60,22 @@ if 'setting_sources=["project"]' in src:
             bad.append(f"setting_sources 里出现了 {w} —— 那是本机配置,换台机器行为就不一致")
 print("  ✅ project 设置源已放开,strict_mcp_config 锁住 MCP,未引入 user/local")
 
+# ③.5 内置工具必须被封 —— 这条是实跑抓出来的,不是想出来的
+DANGEROUS = ("Bash", "Write", "Edit", "Read", "Task", "Agent", "ToolSearch",
+             "WebFetch", "NotebookEdit")
+if "disallowed_tools" not in src:
+    bad.append("sdk.py 没有 disallowed_tools —— **allowed_tools 不是排他白名单**,"
+               "CLI 的内置工具(Bash/Write/Task)会一直在场")
+else:
+    missing = [t for t in DANGEROUS if f'"{t}"' not in src]
+    if missing:
+        bad.append(f"disallowed_tools 没封住:{missing} —— 这些能读写文件、执行命令、开子智能体")
+if "not name.startswith(\"mcp__\")" not in open(
+        os.path.join(HERE, "guards.py"), encoding="utf-8").read():
+    bad.append("guards.py 的 PreToolUse 没有拦非 MCP 工具 —— "
+               "配置是第一道锁,Hook 是第二道,少一道都不该过")
+print(f"  ✅ 内置工具双重封锁:disallowed_tools 配置 + PreToolUse 运行时拦截")
+
 # ④ .mcp.json 里有什么,和代码声明的差多少 —— 差多少就是 strict 在挡多少
 mj = os.path.join(ROOT, ".mcp.json")
 if os.path.exists(mj):

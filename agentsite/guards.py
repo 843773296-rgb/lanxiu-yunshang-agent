@@ -298,6 +298,19 @@ def make_hooks(state):
 
     async def pre_tool(inp, tool_use_id, ctx):
         name, args = inp.get("tool_name", ""), inp.get("tool_input") or {}
+        # ── 第二道锁:非 MCP 工具一律拦下 ──────────────────────────────
+        # sdk.py 的 disallowed_tools 是第一道,但**配置能被人删掉、能被改错**,
+        # 而这条保证太硬了(工具全部只读、0 个写接口),不能只靠一处配置守着。
+        #
+        # 实跑抓到过:allowed_tools **不是排他白名单**,配上 bypassPermissions 之后
+        # CLI 的内置工具(Bash / Write / Task …)照样在场,模型自己去开了 Bash。
+        # 「模型没用」和「模型不能用」是两回事 —— 安全边界不能建在前者上。
+        if name and not name.startswith("mcp__"):
+            state.setdefault("blocked_tools", []).append(name)
+            return {"decision": "block",
+                    "reason": f"工具「{name}」不在本系统挂载的 MCP 工具里,已拦下。"
+                              "这个助手**只能用挂载的只读业务工具**,不能读写文件、"
+                              "不能执行命令、不能开子智能体。请改用 MCP 工具完成。"}
         # 客户说了「整幅」而工具传「局部」—— 成本和工期差 4 倍,一旦发生就是报价事故
         if name.endswith(("kb_bom", "kb_lead")) and args.get("scope", "局部") == "局部":
             p = state.get("prompt", "")

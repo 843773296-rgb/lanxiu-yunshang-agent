@@ -39,8 +39,14 @@ def run_v1(t, pv):
         p, purpose = v1.BP02.format(a=a, b=b), "客户合并"
     t0 = time.time()
     r = v1.run_case(pv, p, purpose=purpose)
-    return dict(text=r.get("text") or json.dumps(r.get("finding") or {}, ensure_ascii=False),
-                calls=len(r.get("trajectory") or []) + 1, sec=round(time.time() - t0, 1))
+    # **判 V1 要判它的 finding,不是自由文本。**
+    # 第一版优先取了 text,结果 6 条只判对 1 条 —— 而 V1 的历史成绩是 18/20。
+    # 数字反常得离谱时,先怀疑测量:eval.py 判的一直是 submit_finding 的结构化结果,
+    # 自由文本只是模型顺手说的话。**换了读的东西,就不是同一把尺子了。**
+    f = r.get("finding")
+    return dict(text=json.dumps(f, ensure_ascii=False) if f else (r.get("text") or ""),
+                calls=len(r.get("trajectory") or []) + 1, sec=round(time.time() - t0, 1),
+                protocol=bool(f))
 
 
 def run_v2(t):
@@ -100,7 +106,8 @@ if __name__ == "__main__":
             hit = judge(r["text"], tr) if tr else None
             d = res[g]; d["n"] += 1; d["calls"] += r["calls"]; d["sec"] += r["sec"]
             d["ok"] += bool(hit)
-            line += f"  {g}{'✅' if hit else '❌'}{r['calls']}调/{r['sec']:.0f}s"
+            mark = "" if r.get("protocol", True) else "⚠协议"
+            line += f"  {g}{'✅' if hit else '❌'}{r['calls']}调/{r['sec']:.0f}s{mark}"
         print(line)
 
     print("=" * 92)
