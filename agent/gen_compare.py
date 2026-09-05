@@ -91,7 +91,8 @@ if __name__ == "__main__":
     gens = [g for g in ("V1", "V2", "V3") if f"--only-{g.lower()}" not in sys.argv] \
         if any(a.startswith("--only") for a in sys.argv) else ["V1", "V2", "V3"]
     tasks = pick(n)
-    truths = {r["case_id"]: r for r in api._rows("SELECT * FROM truth")}
+    import truthdb
+    truths = truthdb.by_case()   # 评测侧自己的只读连接,不借工具层
     pv = v1.provider()
     print(f"三代横向对比 · {len(tasks)} 条工单 · 模型 {pv['model']}")
     print("=" * 92)

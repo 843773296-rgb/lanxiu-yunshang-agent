@@ -158,6 +158,38 @@ def in_clause(text, word, needles, span=30):
     return None
 
 
+HARD = "。!!??\n\r"      # 句号级边界。in_sentence 用它,in_clause 用更细的 STOP
+
+
+def in_sentence(text, word, needles, span=120):
+    """word 所在的**整句**里有没有 needles 之一。句子边界 = 句号级标点。
+
+    和 in_clause 的区别是**作用域粒度**,不是参数大小:
+
+      in_clause(逗号级)   限定必须**贴着说**才算数
+        「腰围只给区间」—— 隔一个逗号就可能是在说别的部位
+
+      in_sentence(句号级) 前提在同一句里就算数
+        「核对流水后,可由客服重新发起退款,须经店长复核。」
+        —— 前提在前半句和后半句,中间隔着逗号,但显然是在说同一件事
+
+    **粒度选错的代价是相反方向的**:粒度太细会误伤(把合规的答案拦下),
+    粒度太粗会漏放(把「区间」算到别的部位头上)。所以两个都要有。
+    """
+    if isinstance(needles, str): needles = (needles,)
+    i = text.find(word)
+    while i >= 0:
+        lo = max(0, i - span); hi = min(len(text), i + len(word) + span)
+        a = i
+        while a > lo and text[a - 1] not in HARD: a -= 1
+        b = i + len(word)
+        while b < hi and text[b] not in HARD: b += 1
+        seg = text[a:b]
+        if any(n in seg for n in needles): return seg
+        i = text.find(word, i + 1)
+    return None
+
+
 def decide(text, yes, no, span=DEFAULT_SPAN):
     """二选一判定。返回 "yes" / "no" / "conflict" / None。
 
@@ -201,6 +233,12 @@ if __name__ == "__main__":
          lambda: in_clause("预测 142cm,按这个做。腰围区间我们再确认", "腰围", "区间") is not None, True),
         ("⑧ 逗号后面的限定不算 —— 中文作用域到标点为止",
          lambda: in_clause("腰围也一并算好了,记得复量身高", "腰围", "复量") is None, True),
+        ("⑨ 句号级作用域:前提跨逗号仍算数",
+         lambda: in_sentence("核对流水后,可由客服重新发起退款,须经店长复核。",
+                             "重新发起退款", ("审批", "复核")) is not None, True),
+        ("⑨ 句号级作用域:跨了句号就不算",
+         lambda: in_sentence("直接重新发起一次就行。另外记得让店长复核别的单。",
+                             "重新发起", ("复核",)) is None, True),
         ("⑦ 没有现货 → 不算说了有现货",
          lambda: says("云锦目前没有现货", "有现货") is None, True),
         ("⑧ 反向:must 锚点不查否定,「无现货…22 天」里的 22 要算提到",

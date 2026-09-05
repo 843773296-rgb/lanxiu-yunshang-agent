@@ -3,11 +3,29 @@
 
 铁律:truth 表绝不通过任何接口暴露。评测比对在 agent 之外做。
 """
-import sqlite3, os, json, sys
+import sqlite3, os, json, sys, re
 DB=os.path.join(os.path.dirname(os.path.abspath(__file__)),"lanxiu.db")
+
+# ── 两道结构锁 ──────────────────────────────────────────────────────────
+# 这两条原来都是**约定**:靠「这里没人写 INSERT」和「这里没人 JOIN truth」守着。
+# 边界审计的结论是:**靠人不写的边界不是边界** —— 换个人、隔三个月就会破,
+# 而且破了不会报错,只会安静地多一个写接口 / 多一条泄漏路径。
+#
+# 锁一:连接开成只读。任何写操作直接抛 OperationalError,而不是碰巧没人写。
+# 锁二:任何提到 truth 的 SQL 一律拒绝执行 —— **不看语句形状**。
+#       原来的检查是 `re.findall(r'FROM\s+(\w+)', 源码)`,只认 `FROM truth`;
+#       写成 `JOIN truth u ON …` 就完全查不到(ops.py 里正是这么写的)。
+#       静态扫源码永远追不上语句写法,所以改成运行时拦。
+_TRUTH = re.compile(r"\btruth\b", re.I)
+
 def _c():
-    c=sqlite3.connect(DB); c.row_factory=sqlite3.Row; return c
+    c=sqlite3.connect(f"file:{DB}?mode=ro", uri=True); c.row_factory=sqlite3.Row; return c
+
 def _rows(sql,*a):
+    if _TRUTH.search(sql):
+        raise PermissionError(
+            "truth 是评测答案表,**不允许经工具层访问**(任何语句形状都不行)。"
+            "评测比对在 agent 之外做 —— 见 backend/boundary_audit.py 第 2 条。")
     with _c() as c: return [dict(r) for r in c.execute(sql,a)]
 
 def list_tasks(task_type=None, status="待处理"):

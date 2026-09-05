@@ -327,7 +327,8 @@ if __name__ == "__main__":
     import collections
     only_rule = "--llm" not in sys.argv
     tasks = api._rows("SELECT id,type,ref_id FROM task ORDER BY id")
-    truths = {r["case_id"]: r for r in api._rows("SELECT * FROM truth")}
+    import truthdb
+    truths = truthdb.by_case()   # 评测侧自己的只读连接,不借工具层
 
     print(f"V2 工作流 · {'纯规则(不调模型)' if only_rule else '规则 + 模型写草稿'}"
           f" · {len(tasks)} 条工单\n" + "=" * 88)

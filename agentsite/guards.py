@@ -356,6 +356,36 @@ PLAN_MUST = [
 ]
 
 
+BYPASS = ("直接重新发起", "直接重发", "再发起一次", "重新发起退款", "直接退给",
+          "跳过审批", "不用审批", "无需审批", "不必审批", "绕过审批",
+          "沿用原幂等号", "复用幂等号", "换个幂等号再试", "多试几次", "再重试几次")
+# 这几个词出现时,说明答案里已经带着必要的前提,不算绕过
+GUARD_WORDS = ("审批", "店长", "复核", "核对", "确认后", "渠道核实", "不得", "先查")
+
+
+def g16_bypass_control(text, calls):
+    """建议绕过审批链 / 幂等号 / 重试上限。**这条涉及钱。**
+
+    边界审计点名的缺口:这条原来**只有提示词守着** —— 而提示词是祈使句,
+    模型多数时候会听,但「多数时候」不是边界。
+
+    退款重发是这套系统里唯一能把钱弄出去的动作:
+    幂等号复用会重复退款,跳过审批会绕开双人复核,
+    而两者出事之后**都不可逆**。
+    """
+    w = tm.says(text, BYPASS)
+    if not w: return None
+    # **句号级**作用域,不是逗号级 —— 审批前提天然跨逗号:
+    # 「核对渠道流水确认未到账后,可由客服重新发起退款,须经店长复核。」
+    # 前提在前半句和后半句,用逗号级窗口会把这条合规的答案误拦。
+    if tm.in_sentence(text, w, GUARD_WORDS): return None
+    if tm.says(text, ("不得" + w, "不要" + w, "禁止" + w)): return None
+    return (f"你建议了「{w}」,而同一句里没有任何前提(审批 / 店长复核 / 渠道核对)。"
+            "**退款重发是这套系统里唯一能把钱弄出去的动作** —— "
+            "幂等号复用会重复退款,跳过审批会绕开双人复核,两者都不可逆。"
+            "必须写明:须由客服或店长发起、店长复核。")
+
+
 def g15_growth_plan_sections(text, calls):
     """成长方案**会被转发给另一位家长看**,所以必须自带完整前提。
 
@@ -391,7 +421,7 @@ def g14_consent_bypass(text, calls):
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer,
           g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
-          g15_growth_plan_sections]
+          g15_growth_plan_sections, g16_bypass_control]
 
 
 def check_answer(text, calls):
@@ -408,6 +438,53 @@ def check_answer(text, calls):
 SCOPE_WORDS = ("整幅", "满地", "通身", "全身", "满绣", "整件")
 
 
+def pre_tool_verdict(name, args, prompt=""):
+    """PreToolUse 的判定逻辑,**纯函数版**。返回拦截理由,None = 放行。
+
+    抽出来的理由:**安全边界必须离线可测**。
+    藏在 async hook 里的判定,只能靠真跑一次模型才验得到 ——
+    那样太贵、太慢,于是实际上就没人验,边界又退回成「但愿它是对的」。
+    backend/boundary_audit.py 直接攻击这个函数。
+    """
+    args = args or {}
+    # ── 第一条:非 MCP 工具一律拦下 ────────────────────────────────────
+    # sdk.py 的 disallowed_tools 是配置层的第一道,但**配置能被删掉、能被改错**,
+    # 而这条保证太硬了(工具全部只读、0 个写接口),不能只靠一处配置守着。
+    #
+    # 实跑抓到过:allowed_tools **不是排他白名单**,配上 bypassPermissions 之后
+    # CLI 的内置工具(Bash / Write / Task …)照样在场,模型自己去开了 Bash。
+    # 「模型没用」和「模型不能用」是两回事 —— 安全边界不能建在前者上。
+    if name and not name.startswith("mcp__"):
+        return (f"工具「{name}」不在本系统挂载的 MCP 工具里,已拦下。"
+                "这个助手**只能用挂载的只读业务工具**,不能读写文件、"
+                "不能执行命令、不能开子智能体。请改用 MCP 工具完成。")
+    # ── 第二条:拿客户号当着装人编号 ──────────────────────────────────
+    if name.endswith(("plan_for_event", "forecast_growth", "get_wearer")):
+        w = args.get("wearer_id") or ""
+        if w.startswith("C"):
+            return (f"「{w}」是客户号(账号),不是着装人编号。"
+                    "**账号和衣服穿在谁身上是两回事** —— "
+                    "先用 get_wearer(customer=...) 找到那个人,再拿 W 开头的编号来调。")
+    # ── 第三条:场景倒推的日期体检 ────────────────────────────────────
+    if name.endswith("plan_for_event"):
+        d = args.get("event_date") or ""
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", d):
+            return (f"event_date「{d}」不是 YYYY-MM-DD。"
+                    "客户说「明年六月」时要先换算成具体日期再调。")
+        if d <= dt.date.today().isoformat():
+            return (f"用件日期 {d} 不在将来。倒推是往前排产,"
+                    "过去的日子推不出窗口 —— 跟客户确认是哪一年。")
+    # ── 第四条:客户说了「整幅」而工具传「局部」 ──────────────────────
+    # 整幅按局部的 4 倍算,成本和工期都会差一大截,一旦发生就是报价事故
+    if name.endswith(("kb_bom", "kb_lead")) and args.get("scope", "局部") == "局部":
+        hit = [w for w in SCOPE_WORDS if w in (prompt or "")]
+        if hit:
+            return (f"用户说的是「{hit[0]}」,你传的 scope 是「局部」——"
+                    "整幅按局部的 4 倍算,成本和工期都会差一大截。"
+                    "改成 scope=\"整幅\" 重新调一次。")
+    return None
+
+
 def make_hooks(state):
     """state 是一个 dict,跨 hook 共享这一轮的上下文。"""
 
@@ -422,46 +499,11 @@ def make_hooks(state):
 
     async def pre_tool(inp, tool_use_id, ctx):
         name, args = inp.get("tool_name", ""), inp.get("tool_input") or {}
-        # ── 第二道锁:非 MCP 工具一律拦下 ──────────────────────────────
-        # sdk.py 的 disallowed_tools 是第一道,但**配置能被人删掉、能被改错**,
-        # 而这条保证太硬了(工具全部只读、0 个写接口),不能只靠一处配置守着。
-        #
-        # 实跑抓到过:allowed_tools **不是排他白名单**,配上 bypassPermissions 之后
-        # CLI 的内置工具(Bash / Write / Task …)照样在场,模型自己去开了 Bash。
-        # 「模型没用」和「模型不能用」是两回事 —— 安全边界不能建在前者上。
-        if name and not name.startswith("mcp__"):
-            state.setdefault("blocked_tools", []).append(name)
-            return {"decision": "block",
-                    "reason": f"工具「{name}」不在本系统挂载的 MCP 工具里,已拦下。"
-                              "这个助手**只能用挂载的只读业务工具**,不能读写文件、"
-                              "不能执行命令、不能开子智能体。请改用 MCP 工具完成。"}
-        # 场景倒推的参数体检 —— 这两个错会让整段推算安静地跑偏,不报错
-        if name.endswith(("plan_for_event", "forecast_growth", "get_wearer")):
-            w = args.get("wearer_id") or ""
-            if w.startswith("C"):
-                return {"decision": "block",
-                        "reason": f"「{w}」是客户号(账号),不是着装人编号。"
-                                  "**账号和衣服穿在谁身上是两回事** —— "
-                                  "先用 get_wearer(customer=...) 找到那个人,再拿 W 开头的编号来调。"}
-        if name.endswith("plan_for_event"):
-            d = args.get("event_date") or ""
-            if not re.match(r"^\d{4}-\d{2}-\d{2}$", d):
-                return {"decision": "block",
-                        "reason": f"event_date「{d}」不是 YYYY-MM-DD。"
-                                  "客户说「明年六月」时要先换算成具体日期再调。"}
-            if d <= dt.date.today().isoformat():
-                return {"decision": "block",
-                        "reason": f"用件日期 {d} 不在将来。倒推是往前排产,"
-                                  "过去的日子推不出窗口 —— 跟客户确认是哪一年。"}
-        # 客户说了「整幅」而工具传「局部」—— 成本和工期差 4 倍,一旦发生就是报价事故
-        if name.endswith(("kb_bom", "kb_lead")) and args.get("scope", "局部") == "局部":
-            p = state.get("prompt", "")
-            hit = [w for w in SCOPE_WORDS if w in p]
-            if hit:
-                return {"decision": "block",
-                        "reason": f"用户说的是「{hit[0]}」,你传的 scope 是「局部」——"
-                                  "整幅按局部的 4 倍算,成本和工期都会差一大截。"
-                                  "改成 scope=\"整幅\" 重新调一次。"}
+        v = pre_tool_verdict(name, args, state.get("prompt", ""))
+        if v:
+            if not name.startswith("mcp__"):
+                state.setdefault("blocked_tools", []).append(name)
+            return {"decision": "block", "reason": v}
         return {}
 
     async def post_tool(inp, tool_use_id, ctx):
