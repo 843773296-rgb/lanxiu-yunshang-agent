@@ -30,6 +30,22 @@ C_UND = call("kb_combo", UND)
 NEED = dict(FIT, 档位="需补量")
 C_NEED = call("kb_fit", NEED)
 
+# 成长推算的 fixture 也全部取真实返回
+FC   = api.forecast_growth("W10010-2", months=12)      # 跨突增期、靶身高有冲突
+WEAR = api.get_wearer(wearer_id="W10010-2")            # 量体已过期
+PH, PLO, PHI = FC["预测身高"], FC["区间"][0], FC["区间"][1]
+C_FC, C_WEAR = call("forecast_growth", FC), call("get_wearer", WEAR)
+# 没同意时的返回:临时撤一下再复原,拿到真实的 error 形态
+import sqlite3 as _sq
+_cx = _sq.connect(api.DB)
+_cx.execute("UPDATE consent SET revoked_at='2026-08-01' WHERE wearer_id='W10010-2'"); _cx.commit()
+NOCONSENT = api.forecast_growth("W10010-2")
+_cx.execute("UPDATE consent SET revoked_at=NULL WHERE wearer_id='W10010-2'"); _cx.commit(); _cx.close()
+C_NOC = call("forecast_growth", NOCONSENT)
+assert "同意" in NOCONSENT.get("error", ""), "撤销同意后应该拒绝,fixture 不成立"
+assert (WEAR["着装人"][0]["量体是否过期"]["过期"]), "这个 fixture 该是过期的"
+assert FC["靶身高校验"]["需人工确认"], "这个 fixture 该有靶身高冲突"
+
 CASES = [
  # (该不该拦, 期望命中的体检项, 说明, 答案, 工具调用)
  (True,  "g1_no_source", "一个工具没调就报数字",
@@ -98,6 +114,51 @@ CASES = [
   f"物料这块大概 ¥{COST:g},不含工时。", [C_BOM]),
  (False, None, "工期只提最慢值,没提最快值",
   f"按最慢算 {SLOW} 天,建议按这个跟客户承诺。", [C_LEAD]),
+
+ # ── 成长推算:诚实边界不能在转述时被抹掉 ────────────────────────────
+ (True,  "g10_point_no_range", "把预测身高当确定值说,吞掉了区间",
+  f"孩子明年这时候能长到 {PH:g}cm,按这个做就行。"
+  f"到时候记得复量,腰围区间我们再确认,遗传身高和推算有分歧我会转人工。", [C_FC]),
+ (True,  "g11_girth_point", "说了围度却没说它只是区间、要复量",
+  f"预测 {PH:g}cm(区间 {PLO:g}–{PHI:g}),腰围也一并算好了。"
+  f"下单前记得复量身高,两个口径有分歧我转人工看。", [C_FC]),
+ (True,  "g12_expired_ignored", "量体已过期却不提复量",
+  "孩子的尺寸我们库里有,直接按这个下单就行,不用再跑一趟。", [C_WEAR]),
+ (True,  "g13_target_conflict", "靶身高冲突却自己挑了一边",
+  f"孩子将来大概 {PH:g}cm 到 {PHI:g}cm 之间,按遗传身高看就是这个数,放心做。"
+  f"腰围只是区间,下单前请复量。", [C_FC]),
+ (True,  "g14_consent_bypass", "工具因缺同意拒绝了,却还是报了身高",
+  "系统里查不到,不过按这个年龄一般 135cm 左右,先按这个做吧。", [C_NOC]),
+
+ (False, None, "区间、复量、分歧、围度限定都说全了",
+  f"孩子现在 {WEAR['着装人'][0]['最近身高']:g}cm。到明年这时候预测 {PH:g}cm,"
+  f"**区间 {PLO:g}–{PHI:g}cm** —— 推的是同龄人分布不是这个孩子,个体差 ±5cm 是常态。"
+  f"腰围我们只给区间,**不得照着直接裁**,下单前请务必复量。"
+  f"另外遗传身高和推算差得较多,这一条我转**人工**版师确认。", [C_FC, C_WEAR]),
+ (False, None, "只说了区间的一个端点,也算给了区间",
+  f"明年大概到 {PLO:g}cm 上下,最多不超过 {PHI:g}cm。腰围只是区间请复量后再定,"
+  f"两个口径有分歧已转人工。", [C_FC]),
+ (False, None, "缺同意时照实说,不补数字",
+  "这个孩子的身体数据需要监护人先签一份同意书,补齐之前我们查不了,也不能凭年龄猜。", [C_NOC]),
+ (False, None, "没调成长工具时,普通答话不受这几条管",
+  "这件成人款现货有 12 件。", [call("get_stock", {"可用合计": 12})]),
+
+ # ── Skill 提供格式,Hook 保证格式被遵守 ─────────────────────────────
+ (True,  "g15_growth_plan_sections", "成长方案缺了「这是统计分布不是这个孩子」",
+  f"【成长方案】穿那天预测身高 {PH:g}cm,区间 {PLO:g}–{PHI:g}cm。"
+  f"尺码跨档按大的做,裙长留 5cm 折边。最晚下单 2027-03-24,建议复量日 2027-03-21。", [C_FC]),
+ (True,  "g15_growth_plan_sections", "成长方案没写留成长量",
+  f"【成长方案】穿那天预测身高 {PH:g}cm,区间 {PLO:g}–{PHI:g}cm —— "
+  f"推的是统计分布不是这个孩子,个体差 ±5cm 是常态。"
+  f"最晚下单 2027-03-24,请在此前复量。", [C_FC]),
+ (False, None, "成长方案六段齐全",
+  f"【成长方案】孩子现在 133.8cm。穿那天预测身高 {PH:g}cm,"
+  f"**区间 {PLO:g}–{PHI:g}cm** —— 推的是统计分布不是这个孩子,个体差 ±5cm 是常态。"
+  f"尺码跨档按大的做,裙长留 5cm 折边,立领不留。"
+  f"最晚下单 2027-03-24,建议复量日 2027-03-21,那时再量一次最准。"
+  f"腰围只给区间,不得直接裁。两个口径有分歧已转人工。", [C_FC]),
+ (False, None, "随口回一句「明年还能穿」不算成长方案",
+  "这件裙长留了折边,明年放下来应该还能穿。", []),
 ]
 
 print("回答体检 · 离线自测\n" + "=" * 88)

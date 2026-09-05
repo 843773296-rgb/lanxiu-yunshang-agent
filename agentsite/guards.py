@@ -253,8 +253,145 @@ def g9_quote_disclaimer(text, calls):
     return None
 
 
+# ── 成长推算相关的四条 ─────────────────────────────────────────────────
+# 这一组守的都是同一件事:**推算的诚实边界不能在转述时被抹掉。**
+# 工具返回里带着区间、限定、冲突标记、过期标记 —— 它们是返回值的一等公民,
+# 但**从工具到客户中间隔着一个模型**,模型天然倾向于把话说得干净利落。
+# 「142.3cm」比「137.8 到 146.8」好听得多,而后者才是真话。
+
+def _fc(calls):
+    """取成长推算类工具的返回。plan_for_event 的字段名带前缀,统一成一份。"""
+    out = []
+    for c in _called(calls, "forecast_growth") + _called(calls, "plan_for_event"):
+        r = _res(c)
+        if not isinstance(r, dict) or r.get("error"): continue
+        out.append(dict(h=r.get("预测身高") or r.get("穿那天预测身高"),
+                        rng=r.get("区间") or r.get("身高区间"),
+                        girth=r.get("围度区间"),
+                        conflict=(r.get("靶身高校验") or {}).get("需人工确认"),
+                        warn=r.get("提醒") or []))
+    return out
+
+
+def g10_point_no_range(text, calls):
+    """报了预测身高却没报区间。**只给点估计等于骗人。**
+
+    区间不是附注,是这个结论的精度本身 —— 抹掉它,家长会以为「就是 142.3」,
+    然后按 142.3 定做,而真实落点可能在 137.8。**小了没法救。**
+    """
+    for f in _fc(calls):
+        if not f["h"] or not f["rng"]: continue
+        if not tm.mentions(text, f"{f['h']:g}"): continue        # 压根没提这个数,不管
+        lo, hi = f["rng"]
+        # **只认端点数字或明确的 ± 表述。**
+        # 不认「区间」这个词 —— 踩过:答案里那个「区间」是在说围度,
+        # 身高照样被当成确定值说了出去。**词在,不代表它在限定这件事。**
+        if tm.mentions(text, (f"{lo:g}", f"{hi:g}")): continue
+        if re.search(r"[±±]\s*\d|浮动\s*\d|上下\s*\d", text or ""): continue
+        return (f"你把预测身高 {f['h']:g}cm 当成一个确定值说了,却没给区间 "
+                f"{lo:g}–{hi:g}cm。**只报点估计等于骗人** —— "
+                "推的是统计分布不是这个孩子。把区间一起说出去。")
+    return None
+
+
+def g11_girth_point(text, calls):
+    """给了围度点估计,或者没说围度必须复量。
+
+    身高受遗传主导可推,围度受营养运动影响 —— **同一个身高能对应差很多的围度**。
+    拿推算围度去裁,是这套系统里最容易造成报废的一步。
+    """
+    for f in _fc(calls):
+        if not f["girth"]: continue
+        w = tm.mentions(text, ("胸围", "腰围", "臀围"))
+        if not w: continue
+        # **限定必须和围度在同一小句里。** 踩过:「复量」写在说身高的那句上,
+        # 围度那句只有「也一并算好了」,体检却因为整段里有「复量」而放行。
+        if tm.in_clause(text, w, ("区间", "范围", "复量", "再量", "不得直接", "不能直接")):
+            continue
+        return ("你说了围度却没说它只是一个区间、必须复量。"
+                "**围度不给点估计,更不能照着裁** —— 同一个身高能对应差很多的围度。")
+    return None
+
+
+def g12_expired_ignored(text, calls):
+    """量体已过期,却没让客户复量就往下说。
+
+    「有个旧尺寸总比没有强」是童装返工的来源。**超期的记录是无效值,不是参考值。**
+    """
+    stale = False
+    for c in _called(calls, "get_wearer"):
+        r = _res(c)
+        for w in (r.get("着装人") or []) if isinstance(r, dict) else []:
+            if (w.get("量体是否过期") or {}).get("过期"): stale = True
+    for f in _fc(calls):
+        if any("无效记录" in w or "已过" in w for w in f["warn"]): stale = True
+    if not stale: return None
+    if tm.says(text, ("复量", "再量一次", "重新量", "回店量")): return None
+    return ("这个着装人的量体记录**已经过期**,你却没提复量。"
+            "超期的量体是无效值不是参考值 —— 下单前必须先约复量。")
+
+
+def g13_target_conflict(text, calls):
+    """遗传身高和百分位推算差太多,却自己挑了一边。
+
+    和客户合并判断是同一条道理:**两个口径打架时自动挑一边都是猜。**
+    """
+    for f in _fc(calls):
+        if not f["conflict"]: continue
+        if tm.says(text, ("人工", "版师", "转专业", "两个口径", "存在分歧")): continue
+        return ("遗传身高与百分位推算差得较多(工具已标「需人工确认」),"
+                "你却给了一个确定结论。**不要自己挑一边** —— 说明分歧并转人工。")
+    return None
+
+
+PLAN_SIG = ("成长方案", "留成长量", "折边", "最晚下单", "复量日", "穿那天",
+            "预测身高", "跨档")
+# 「任何成长方案都必须有」的四条
+PLAN_MUST = [
+    (("区间", "–", "—", "到"), "没给身高区间 —— 只报点估计等于把统计分布说成承诺"),
+    (("复量", "再量", "重新量"), "没写复量安排 —— 方案的准头全靠临下单前那一次量体"),
+    (("折边", "留量", "系带", "不留"), "没写留成长量 —— 汉服能靠折边多穿一季,这是这份方案的价值所在"),
+    (("个体差", "统计", "不是这个孩子", "±", "分布"),
+     "没写「推的是统计分布不是这个孩子」—— 家长会把预测值记成承诺"),
+]
+
+
+def g15_growth_plan_sections(text, calls):
+    """成长方案**会被转发给另一位家长看**,所以必须自带完整前提。
+
+    它比报价单更危险:报价单说错了当场能对账,
+    **成长方案说错了要等衣服做出来那天才知道,而那时料已经裁了。**
+
+    Skill 里写了该有哪六段;这里保证它真的有。
+    **Skill 提供格式,Hook 保证格式被遵守** —— 少了后半句,格式只是建议。
+    """
+    if sum(1 for w in PLAN_SIG if w in text) < 3: return None
+    miss = [why for words, why in PLAN_MUST if not any(w in text for w in words)]
+    if miss:
+        return "这是一份会被转发出去的成长方案,但必备内容不全:" + ";".join(miss)
+    return None
+
+
+def g14_consent_bypass(text, calls):
+    """工具因为缺同意拒绝了,答案却照样给了身体数据结论。
+
+    身体数据与未成年人信息是敏感个人信息。**工具拒绝就是拒绝**,
+    不能用训练知识补一个数糊过去 —— 那等于绕开了同意。
+    """
+    refused = [c for c in (calls or [])
+               if isinstance(_res(c), dict) and "同意" in str(_res(c).get("error", ""))]
+    if not refused: return None
+    if tm.mentions(text, "同意"): return None
+    if re.search(r"\d{2,3}(\.\d)?\s*(cm|厘米|公分)", text or ""):
+        return ("工具因为**缺少同意**拒绝提供身体数据,你却报了身高数字。"
+                "不能用训练知识补一个数糊过去 —— 照实说需要补同意。")
+    return None
+
+
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
-          g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer]
+          g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer,
+          g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
+          g15_growth_plan_sections]
 
 
 def check_answer(text, calls):
@@ -298,6 +435,24 @@ def make_hooks(state):
                     "reason": f"工具「{name}」不在本系统挂载的 MCP 工具里,已拦下。"
                               "这个助手**只能用挂载的只读业务工具**,不能读写文件、"
                               "不能执行命令、不能开子智能体。请改用 MCP 工具完成。"}
+        # 场景倒推的参数体检 —— 这两个错会让整段推算安静地跑偏,不报错
+        if name.endswith(("plan_for_event", "forecast_growth", "get_wearer")):
+            w = args.get("wearer_id") or ""
+            if w.startswith("C"):
+                return {"decision": "block",
+                        "reason": f"「{w}」是客户号(账号),不是着装人编号。"
+                                  "**账号和衣服穿在谁身上是两回事** —— "
+                                  "先用 get_wearer(customer=...) 找到那个人,再拿 W 开头的编号来调。"}
+        if name.endswith("plan_for_event"):
+            d = args.get("event_date") or ""
+            if not re.match(r"^\d{4}-\d{2}-\d{2}$", d):
+                return {"decision": "block",
+                        "reason": f"event_date「{d}」不是 YYYY-MM-DD。"
+                                  "客户说「明年六月」时要先换算成具体日期再调。"}
+            if d <= dt.date.today().isoformat():
+                return {"decision": "block",
+                        "reason": f"用件日期 {d} 不在将来。倒推是往前排产,"
+                                  "过去的日子推不出窗口 —— 跟客户确认是哪一年。"}
         # 客户说了「整幅」而工具传「局部」—— 成本和工期差 4 倍,一旦发生就是报价事故
         if name.endswith(("kb_bom", "kb_lead")) and args.get("scope", "局部") == "局部":
             p = state.get("prompt", "")

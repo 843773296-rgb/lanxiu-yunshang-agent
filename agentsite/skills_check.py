@@ -50,6 +50,31 @@ if set(declared) != set(found):
                f"(多声明 {sorted(set(declared)-set(found))} / 漏声明 {sorted(set(found)-set(declared))})")
 print(f"  {'✅' if set(declared)==set(found) else '❌'} sdk.SKILLS 与目录一致:{declared}")
 
+# ②.5 白名单必须和 MCP 实际暴露的工具**完全一致**
+#
+# 这条是漏出来的:plan_for_event 挂上了 MCP、写进了 SHOP_SCHEMAS,
+# 却忘了加进 sdk.py 的 allowed_tools —— 结果模型在工具清单里看得见它,
+# 一调就撞权限。**声明和挂载分在两个文件里,靠人记得同步是不行的。**
+#
+# 两个方向都查:
+#   漏加 → 模型看得见用不了
+#   多加 → 白名单里挂着一个不存在的工具名,那是死配置,以后没人敢删
+import re as _re
+_src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
+sys.path.insert(0, os.path.join(HERE, "..", "backend"))
+import api as _api
+_GROUPS = {"kb": _api.KB_SCHEMAS, "shop": _api.SHOP_SCHEMAS, "task": _api.SCHEMAS}
+for _ns, _sch in _GROUPS.items():
+    _white = set(_re.findall(r'"mcp__%s__(\w+)"' % _ns, _src))
+    _real = {x["name"] for x in _sch}
+    _miss, _dead = sorted(_real - _white), sorted(_white - _real)
+    if _miss:
+        bad.append(f"MCP {_ns} 暴露了 {_miss} 但 sdk 白名单里没有 —— 模型看得见却用不了")
+    if _dead:
+        bad.append(f"sdk 白名单里的 {_dead} 在 MCP {_ns} 里不存在 —— 死配置")
+    print(f"  {'✅' if not (_miss or _dead) else '❌'} {_ns}:MCP 暴露 {len(_real)} 个,"
+          f"白名单 {len(_white)} 个,{'完全一致' if not (_miss or _dead) else '对不上'}")
+
 # ③ 放开了 project 设置源,就必须有两道锁
 src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
 if 'setting_sources=["project"]' in src:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""中文否定与子串的统一判定 —— 这个项目在这上面栽过七次。
+"""中文否定与子串的统一判定 —— 这个项目在这上面栽过八次。
 
 ## 为什么要收成一处
 
@@ -28,7 +28,7 @@
 
 把它们当否定,正确的「答应了加急」会被放过去。**这个坑栽了一次,方向正好相反。**
 
-## 历史上的七次(都在下面的自测里钉着)
+## 历史上的八次(都在下面的自测里钉着)
 
 1. 「**不得**重新发起退款」被判成「建议重新发起」
 2. 「建议**不**合并」被判成「建议合并」
@@ -37,6 +37,10 @@
 5. 「**不过**加钱可以赶出来」被当成拒绝加急(转折词误判为否定)
 6. 「香云**纱**」撞上面料名「纱」的子串
 7. 「**没有**现货」被判成说了「有现货」
+8. 「预测 142cm……**腰围区间**我们再确认」——「区间」这个词在,
+   但它在说围度,身高照样被当成确定值说了出去。
+   **第八次和前七次是同一个形状:词在,但不是在限定它该限定的那个东西。**
+   所以有了 `in_clause` —— 问的是「这个限定词落在哪个小句里」。
 
 另有一次方向相反的:给「must 类锚点」也做否定检查,
 结果「**无**现货,需备料 **22** 天」里的 22 被判成被否定 ——
@@ -137,6 +141,23 @@ def mentions(text, words):
     return next((w for w in words if w in text), None)
 
 
+def in_clause(text, word, needles, span=30):
+    """word 出现的那个**小句里**有没有 needles 之一。小句边界 = 标点。
+
+    问的是「这个限定词是在说谁」,而不是「整段里有没有这个词」。
+    踩过:答案里「区间」是在说围度、「复量」是在说身高,
+    体检只问「有没有出现」,于是两条该拦的都放行了 ——
+    **词在,但都不是在限定它该限定的那个东西。**
+    """
+    if isinstance(needles, str): needles = (needles,)
+    i = text.find(word)
+    while i >= 0:
+        seg = word + _seg_after(text, i + len(word), span)
+        if any(n in seg for n in needles): return seg
+        i = text.find(word, i + 1)
+    return None
+
+
 def decide(text, yes, no, span=DEFAULT_SPAN):
     """二选一判定。返回 "yes" / "no" / "conflict" / None。
 
@@ -172,6 +193,14 @@ if __name__ == "__main__":
          lambda: says("最慢 174 天,不过加钱可以赶出来", "加钱可以") is not None, True),
         ("⑥ 香云纱 不该撞上面料名「纱」的子串",
          lambda: "纱" in "香云纱涂层" and mentions("香云纱涂层", "香云纱") is not None, True),
+        # in_clause —— 限定词必须落在**同一小句**里。
+        # 第八次踩坑,形状和前七次一样:词在,但不是在限定它该限定的那个东西。
+        ("⑧ 「区间」写在围度那句上,不算给了身高区间",
+         lambda: in_clause("预测 142cm,按这个做。腰围区间我们再确认", "142cm", "区间") is None, True),
+        ("⑧ 同一句里的「区间」才算数",
+         lambda: in_clause("预测 142cm,按这个做。腰围区间我们再确认", "腰围", "区间") is not None, True),
+        ("⑧ 逗号后面的限定不算 —— 中文作用域到标点为止",
+         lambda: in_clause("腰围也一并算好了,记得复量身高", "腰围", "复量") is None, True),
         ("⑦ 没有现货 → 不算说了有现货",
          lambda: says("云锦目前没有现货", "有现货") is None, True),
         ("⑧ 反向:must 锚点不查否定,「无现货…22 天」里的 22 要算提到",
@@ -210,4 +239,4 @@ if __name__ == "__main__":
     print("\n" + "=" * 76)
     print(f"  否定词 {len(NEG)} 个 · 转折词(不算否定){len(NEG_FALSE)} 个")
     if bad: print(f"❌ {bad} 条不符"); sys.exit(1)
-    print(f"✅ {len(CASES)} 条全部符合 —— 七次踩过的坑都钉住了")
+    print(f"✅ {len(CASES)} 条全部符合 —— 八次踩过的坑都钉住了")
