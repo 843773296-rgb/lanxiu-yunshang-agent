@@ -24,6 +24,7 @@ run "运维平台 · 队列/时效/解析/置信度" python3 backend/ops.py
 run "MCP · 三个服务连通性"      python3 mcp/selftest.py
 run "MCP · 通道等价(不调模型)" python3 mcp/parity.py
 run "V1 循环 · 离线自测"       python3 agent/offline_test.py
+run "V2 工作流 · 40 条工单纯规则(不调模型)" python3 agent/v2.py
 run "记录仪覆盖 · 每个调模型的地方都接了" python3 agent/trace_check.py
 run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py
 run "相容矩阵 · 2025 格推导/对账/落库" python3 knowledge/derive_combo.py

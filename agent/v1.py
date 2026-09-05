@@ -67,10 +67,17 @@ def price_of(model):
 
 # ── 供应商解析(与 v1-raw-loop/src/api.ts 同逻辑)──────────
 def provider():
-    # 凭证来源:环境变量 → ~/.deepseek-key(600,在两个项目之外)。
-    # 不进仓库、不进项目目录 —— 和飞书凭证同一个做法。
-    k=os.environ.get("DEEPSEEK_API_KEY")
-    if not k:
+    """凭证来源:环境变量 → ~/.deepseek-key(600,在两个项目之外)。
+
+    **LANXIU_PROVIDER=claude 可以强制走 Claude。** 加这个开关有两个理由:
+      ① 三代横向对比要**控制变量** —— 换模型比就白比了,得能指定同一个
+      ② **识图这条路只能走 Claude**(视觉输入),而顾问助手迟早要接
+         「客户发张照片问这是什么形制/什么面料」
+    不加开关的话,谁的 key 先被找到就用谁,这在对比实验里是致命的。
+    """
+    force = os.environ.get("LANXIU_PROVIDER", "").lower()
+    k = None if force == "claude" else os.environ.get("DEEPSEEK_API_KEY")
+    if not k and force != "claude":
         _kf=os.path.expanduser("~/.deepseek-key")
         if os.path.exists(_kf): k=open(_kf).read().strip()
     if k:
@@ -100,7 +107,7 @@ def provider():
         headers=["authorization: Bearer "+tok,"anthropic-version: 2023-06-01",
                  "anthropic-beta: oauth-2025-04-20"],price=price_of(m))
 
-def call(pv, body, retries=6, purpose="未标注", turn=None, cache=None):
+def call(pv, body, retries=6, purpose="未标注", turn=None, cache=None, gen="V1"):
     """限流退避:OAuth 凭证与本机 Claude Code 会话共用额度,必须退让。
 
     这是全项目唯一真正发出请求的地方 —— 记录仪就包在这一层,
@@ -122,7 +129,9 @@ def call(pv, body, retries=6, purpose="未标注", turn=None, cache=None):
         r=subprocess.run(cmd,input=json.dumps(body),capture_output=True,text=True)
         ms=(time.time()-t0)*1000
         def _rec(**kw):
-            try: _trace.record(model=pv.get("model"),purpose=purpose,price=price_now(pv),
+            # gen 由调用方传:V2 的工作流也走这个函数发请求,
+            # 但它必须记成 V2,否则三代对照表就把它算进 V1 里了。
+            try: _trace.record(gen=gen,model=pv.get("model"),purpose=purpose,price=price_now(pv),
                                latency_ms=ms,turn=turn,attempt=att,body=body,
                                cache_on=not isinstance(body.get("system"),str),
                                peak=(pv.get("id")=="deepseek" and is_peak()),**kw)

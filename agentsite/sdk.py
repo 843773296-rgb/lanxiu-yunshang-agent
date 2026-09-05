@@ -28,7 +28,21 @@ MAX_USD = float(os.environ.get("LANXIU_MAX_USD", "0.60"))
 
 
 def _env():
-    """把凭证和模型指向装进环境。SDK 会把这些透传给它拉起的 CLI。"""
+    """把凭证和模型指向装进环境。SDK 会把这些透传给它拉起的 CLI。
+
+    **LANXIU_PROVIDER=claude 时什么都不设** —— 让 CLI 用它自己的登录态。
+    这条开关是给两件事准备的:
+      ① 三代横向对比要控制变量,三代必须能指定同一个模型
+      ② **识图只能走 Claude**(视觉输入),顾问助手迟早要接
+         「客户发张照片问这是什么形制」
+
+    要**主动清掉**上一次设过的两个变量 —— 同一个进程里先跑 DeepSeek 再跑 Claude,
+    不清就会带着 DeepSeek 的 base_url 去打 Claude。
+    """
+    if os.environ.get("LANXIU_PROVIDER", "").lower() == "claude":
+        for v in ("ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"):
+            os.environ.pop(v, None)
+        return os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5")
     k = os.environ.get("DEEPSEEK_API_KEY") or (
         open(KEYFILE).read().strip() if os.path.exists(KEYFILE) else None)
     if not k:
@@ -51,10 +65,12 @@ def cost_of(usage, model, ts=None):
     """
     sys.path.insert(0, os.path.join(ROOT, "agent"))
     import v1
-    pr = v1.DEEPSEEK_PRICE.get(model)
+    # 模型可能是 DeepSeek 也可能是 Claude —— 两张价目表都查,**查不到就不猜**
+    pr = v1.DEEPSEEK_PRICE.get(model) or v1.PRICE.get(model)
     if not pr or not usage:
         return None            # 价目表里没有这个模型就不猜,宁可显示「—」
-    if v1.is_peak(ts): pr = {k: v * 2 for k, v in pr.items()}
+    if model in v1.DEEPSEEK_PRICE and v1.is_peak(ts):
+        pr = {k: v * 2 for k, v in pr.items()}     # 分时定价只有 DeepSeek 有
     cache = usage.get("cache_read_input_tokens", 0) or 0
     inp = max((usage.get("input_tokens", 0) or 0) - cache, 0)   # 命中缓存的那部分单独计价
     out = usage.get("output_tokens", 0) or 0
