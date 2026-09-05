@@ -1,0 +1,61 @@
+# 全套检查 —— 每次 push 和 PR 自动跑。
+#
+# ## 为什么要有它
+#
+# check.sh 有 33 项,**全绿不代表安全,「有人记得敲那条命令」才是前提**。
+# 而这个项目一路上最反复的教训就是:**靠人记得的事,迟早有一次不记得。**
+# 七环体检里「部署」那一环一直挂着,挂的就是这一条。
+#
+# ## 它跑什么、不跑什么
+#
+# 跑:33 项**不花钱、不联网调模型**的检查(数据勾稽、规则推导、边界审计、
+#     判分器对照、回答体检的离线用例……)。
+# **不跑:要真调模型的评测**(工具使用 / 成长推算 / 识图)——
+# 那些要凭据、要花钱,而且结果有波动,放进门禁会变成随机拦路。
+# 它们由人手动跑,结果落在 agent/*-results.jsonl 里进版本库,可比对。
+#
+# ## 两个已知取舍(写出来,别让人自己撞)
+#
+# 1. **Python 版本钉成 3.14,和开发机一致。**
+#    好处是 CI 不会因为版本差异给假警报;代价是**它查不出跨版本兼容问题**。
+#    这个项目是学习/作品集用途,不需要多版本矩阵 —— 真要上线再加。
+# 2. **识图那条链在 CI 里跑不了。** backend/img.py 的 SVG 栅格化依赖
+#    macOS 自带的 qlmanage,ubuntu runner 上没有。
+#    所以 CI 只跑识图**判分器**的 13 条离线对照,不渲染图、不调模型。
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: agentsite/requirements.txt
+
+      # skills_check.py 要 import claude_agent_sdk,所以这个 venv 是必需的。
+      # check.sh 里那一行写死了 ./agentsite/.venv/bin/python,路径要对上。
+      - name: 装 agentsite 依赖
+        run: |
+          python3 -m venv agentsite/.venv
+          ./agentsite/.venv/bin/pip install --quiet -r agentsite/requirements.txt
+
+      # 数据库不进版本库(固定种子,确定性生成)—— 克隆下来必须先跑这个
+      - name: 生成数据库
+        run: python3 backend/seed.py
+
+      # 单独一步,让它失败时一眼看得出是密钥问题而不是别的
+      - name: 扫密钥
+        run: ./tools/scan_secrets.sh
+
+      - name: 全套检查(33 项)
+        run: ./check.sh

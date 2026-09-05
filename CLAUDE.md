@@ -33,6 +33,10 @@
 
 `check.sh` 是这个项目的**唯一验收标准**。它绿了才算做完,才可以 commit。
 
+每次 push / PR 会在 GitHub Actions 上自动跑一遍(`.github/workflows/check.yml`)。
+**CI 只跑不花钱的那 33 项** —— 要真调模型的评测(工具 / 成长 / 识图)由人手动跑,
+因为它们要凭据、要花钱、结果有波动,放进门禁会变成随机拦路。
+
 数据库 `backend/lanxiu.db` **不进版本库**(gitignore),由 `python3 backend/seed.py` 用固定种子确定性生成。克隆下来跑一次 `seed.py` 就有了。
 
 无第三方依赖,纯 Python 标准库 —— 只有 `agentsite/` 例外(它要 `claude-agent-sdk`,装在 `agentsite/.venv`,所以 `skills_check.py` 得用 `./agentsite/.venv/bin/python` 跑)。

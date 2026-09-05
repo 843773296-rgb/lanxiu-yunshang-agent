@@ -28,6 +28,9 @@
 ./check.sh        # 全套检查,任一失败即整体失败
 ```
 
+每次 push 和 PR 会自动跑 `check.sh`(GitHub Actions,`.github/workflows/check.yml`)——
+**「有人记得敲那条命令」不该是安全的前提。**
+
 **两个独立服务:**
 
 | 服务 | 地址 | 是什么 |

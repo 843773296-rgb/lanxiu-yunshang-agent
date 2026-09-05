@@ -74,38 +74,32 @@ Claude 上连跑三轮 24/24;判分器另有 22 条对照用例进了 `check.sh`
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-05 20:48。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-05 20:54。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 1395a62 · 2026-09-05 · 补上售后判责:文档里写了一年的能力,今天才真的接上 |
-| 代码量 | 59 个 Python 文件 / 13468 行(不含 .venv) |
+| 最新提交 | e6a062f · 2026-09-05 · 识图接进顾问助手 —— 但测的不是「认得准不准」 |
+| 代码量 | 61 个 Python 文件 / 13716 行(不含 .venv) |
 | 验收 | `./check.sh` 共 33 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
 **未提交的改动:**
 
 ```
-M .gitignore
- M agentsite/guards.py
- M agentsite/sdk.py
- M backend/img.py
- M backend/shadow_check.py
- M check.sh
-?? agent/vision-eval-results.jsonl
-?? agent/vision_eval.py
-?? agent/vision_eval_judgetest.py
+M CLAUDE.md
+ M README.md
+?? .github/
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+e6a062f 识图接进顾问助手 —— 但测的不是「认得准不准」
 1395a62 补上售后判责:文档里写了一年的能力,今天才真的接上
 4abe31b 补上生命周期的模型评测 —— 装了六道锁,现在量过那个风险了
 372a3c0 费曼报告第 7 版:从「修 bug」升级到「修产生 bug 的那个条件」
 939edcb 加交接文档:上下文满了换会话时,先读它
-0ab3d58 边界审计:每条保证到底靠结构还是靠约定,现在有清单了,而且清单是可执行的
 ```
 <!--/AUTO-->
