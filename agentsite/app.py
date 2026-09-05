@@ -154,8 +154,20 @@ class H(BaseHTTPRequestHandler):
         t = next((x for x in q if x["task_id"] == tid), None)
         if not t: raise ValueError(f"队列里没有 {tid}")
         t = dict(id=t["task_id"], ref=t["ref"],
-                 bp="BP-01" if t["type"] == "财务人工任务" else "BP-02")
-        if t["bp"] == "BP-01":
+                 bp={"财务人工任务": "BP-01", "客户合并确认": "BP-02",
+                     "售后判责": "BP-03"}.get(t["type"], "BP-02"))
+        if t["bp"] == "BP-03":
+            case = t["ref"]
+            prompt = (f"任务类型:售后判责\n维修工单号:{t['ref']}\n\n"
+                      "客户报修,需要判定责任归属并给出处理方式。"
+                      "先用 get_maintain 查现场,再用 kb_tables 取「售后争议判定」,"
+                      "对照 09-养护与售后.md 第五节的返修判定表给结论。\n"
+                      "两条硬规矩:①「交付告知签收」为 null 就是**没有书面告知**,"
+                      "特性类问题在这种情况下按「我方,让步处理」;"
+                      "② **你只出草稿,不对客户承诺任何金额或返修结果** —— "
+                      "结论必须由店长/客服确认后执行。\n"
+                      "按「根因 / 建议动作 / 证据 / 置信度」四段输出,每段单独起一行。")
+        elif t["bp"] == "BP-01":
             case = t["ref"]
             prompt = (f"任务类型:财务人工任务\n押金单号:{t['ref']}\n\n"
                       "这笔押金退款已连续失败并转入人工处理。请查清失败的根本原因,"

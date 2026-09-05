@@ -103,6 +103,23 @@ for t in q("SELECT id,ref_id FROM task WHERE type='客户合并确认'"):
         if (ra["province"], ra["city"]) == (rb["province"], rb["city"]) and ra["addr"] != rb["addr"]:
             warn.append(f"{t['id']} 真值是「不同人」,但两条在同一城市 —— 证据偏弱")
 
+# ── 维修工单:「这条记录属于谁」必须从关联对象取,不能靠下标碰 ──────────
+# 这条也是查出来的:21/21 条维修工单的客户号和它所属订单的客户对不上,
+# 因为种子里写的是 `cust[(i+7)%len(cust)]` —— **按下标凑关联**。
+# 和上面那 8 对合并档案是同一类错,只是换了张表。
+#
+# 下标凑出来的关联在小数据上看不出来,数据一多就全错,**而且不会报错** ——
+# 它只会让「售后判责」这类跨表推理拿到一个自相矛盾的现场。
+for r in q("""SELECT m.id, m.customer_id mc, o.customer_id oc, m.item, m.order_id
+              FROM maintain m JOIN ordr o ON o.id = m.order_id"""):
+    if r["mc"] != r["oc"]:
+        bad.append(f"维修工单 {r['id']} 的客户 {r['mc']} 与订单 {r['order_id']} 的客户 "
+                   f"{r['oc']} 不一致 —— 判责要跨表看现场,现场自相矛盾就没法判")
+for r in q("SELECT id, order_id, item FROM maintain"):
+    names = [x["name"] for x in q("SELECT name FROM ordr_item WHERE order_id=?", r["order_id"])]
+    if names and r["item"] not in names:
+        bad.append(f"维修工单 {r['id']} 修的是「{r['item']}」,但订单里没有这件商品")
+
 print("会员与订单一致性检查\n" + "=" * 68)
 print(f"订单 {q('SELECT COUNT(*) n FROM ordr')[0]['n']} · 订单行 {q('SELECT COUNT(*) n FROM ordr_item')[0]['n']}"
       f" · 会员 {q('SELECT COUNT(*) n FROM customer')[0]['n']}"

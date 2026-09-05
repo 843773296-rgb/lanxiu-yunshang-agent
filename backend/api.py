@@ -485,6 +485,64 @@ def forecast_growth(wearer_id, target_date=None, months=12):
         r.pop("围度")
     return r
 
+# ── 售后判责的现场 ──────────────────────────────────────────────────────
+# **这个工具只给事实,不给判责结论** —— 和 get_aftersale 是同一条规矩。
+# 判定表在 kb_tables 的「售后争议判定」和 09-养护与售后.md 第五节,要另外查。
+#
+# 09 那份文档第六节自己写着这个能力该长什么样:
+# 「助手查记录、给判据、拟话术;**人做决定**」—— 涉及退换和赔付,结论必须由人给。
+# 所以工具的职责边界就是「把现场摆全」,摆全之后判给谁,是人的事。
+#
+# 现场包括四样,少一样就判不了:
+#   ① 这件是什么(面料 / 工艺 / 什么时候交付的)
+#   ② 客户报的问题是什么
+#   ③ 量体记录全不全、是到店还是远程 —— 尺寸类判责全看这个
+#   ④ 交付时有没有书面告知过 —— 特性类判责全看这个
+def get_maintain(maintain_id=None, customer=None, status=None):
+    """售后维修工单的现场。**只给事实,判责结论要另外查判定表。**"""
+    where, args = [], []
+    if maintain_id: where.append("m.id=?"); args.append(maintain_id)
+    if customer: where.append("(m.customer_id=? OR c.name=?)"); args += [customer, customer]
+    if status: where.append("m.status=?"); args.append(status)
+    rows = _rows("SELECT m.*, c.name cname FROM maintain m "
+                 "LEFT JOIN customer c ON c.id=m.customer_id"
+                 + (" WHERE " + " AND ".join(where) if where else "")
+                 + " ORDER BY m.created DESC", *args)
+    if not rows: return {"hit": 0, "error": "查不到这样的维修工单"}
+    out = []
+    for m in rows[:12]:
+        o = _rows("SELECT id,kind,status,amount,created FROM ordr WHERE id=?", m["order_id"])
+        it = _rows("SELECT oi.spu, oi.name, p.remark, pc.xz, pc.mt_opts, pc.kf_opts "
+                   "FROM ordr_item oi LEFT JOIN product p ON p.spu=oi.spu "
+                   "LEFT JOIN product_custom pc ON pc.spu=oi.spu "
+                   "WHERE oi.order_id=? AND oi.name=?", m["order_id"], m["item"])
+        nt = _rows("SELECT * FROM delivery_notice WHERE order_id=?", m["order_id"])
+        ms = _rows("SELECT DISTINCT method FROM measure_rec WHERE customer_id=?", m["customer_id"])
+        n_item = _rows("SELECT count(*) n FROM measure_rec WHERE customer_id=?",
+                       m["customer_id"])[0]["n"]
+        hist = _rows("SELECT count(*) n FROM maintain WHERE customer_id=? AND id<>?",
+                     m["customer_id"], m["id"])[0]["n"]
+        d = {"工单": m["id"], "状态": m["status"], "客户": f"{m['customer_id']} {m['cname'] or ''}".strip(),
+             "商品": m["item"], "客户报的问题": m["issue"],
+             "报修时间": m["created"], "门店": m["shop"], "顾问": m["advisor"],
+             "订单": (o[0] if o else {"error": "订单查不到"}),
+             "这件的配置": (dict(形制=it[0]["xz"], 可选面料=it[0]["mt_opts"],
+                            可选工艺=it[0]["kf_opts"], 商品备注=it[0]["remark"])
+                        if it else {"note": "订单行里没有同名商品"}),
+             "量体记录": {"条数": n_item, "方式": [x["method"] for x in ms],
+                       "是否远程": any(x["method"] == "远程" for x in ms)},
+             "交付告知签收": (dict(已告知条目=nt[0]["items"], 签收时间=nt[0]["signed_at"],
+                             渠道=nt[0]["channel"]) if nt else None),
+             "该客户历史维修次数": hist}
+        out.append(d)
+    return {"hit": len(rows), "工单": out,
+            "怎么用": "**这里只有事实,没有结论。** 判责要另外调 kb_tables 取「售后争议判定」,"
+                    "并对照 09-养护与售后.md 第五节的返修判定表。"
+                    "「交付告知签收」为 null 表示**没有书面告知记录** —— "
+                    "特性类问题(起球/色差/掉色/勾丝)在这种情况下按「我方,让步处理」;"
+                    "尺寸类问题看「量体记录」完不完整、是不是远程量的。"
+                    "**结论必须由人确认后执行,你只出草稿。**"}
+
 # ── 场景倒推 ────────────────────────────────────────────────────────────
 # 「明年六月毕业礼要穿」这句话,拆开是四个互相咬着的约束:
 #   ① 选码要用**穿的那天**的身高,不是下单那天的
@@ -610,6 +668,11 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号或姓名"},
     "wearer_id":{"type":"string","description":"着装人编号,如 W10001-2"}},"required":[]}},
+ {"name":"get_maintain","description":"查售后维修工单的**现场**。客户说「衣服起球了 / 开线了 / 尺寸不对」时用。返回这件是什么(形制/可选面料/可选工艺)、客户报的问题、**量体记录全不全、是到店还是远程量的**、**交付时有没有书面告知签收**、以及该客户历史维修次数。\n\n**这个工具只给事实,不给判责结论** —— 判定表要另外调 kb_tables 取「售后争议判定」,并对照 09-养护与售后.md 第五节。两条关键判据:①「交付告知签收」为 null 表示**没有书面告知记录**,特性类问题(起球/色差/掉色/勾丝)在这种情况下按「我方,让步处理」,已告知则「无责,解释 + 提供保养服务」;② 尺寸类问题看量体记录完不完整、是不是**远程**量的(远程按合同分担)。\n\n**结论必须由人确认后执行,你只出草稿。** 不要直接对客户承诺免费返修或赔付金额。",
+  "input_schema":{"type":"object","properties":{
+    "maintain_id":{"type":"string","description":"维修工单号,如 MW73020"},
+    "customer":{"type":"string","description":"客户号或姓名"},
+    "status":{"type":"string","description":"如「待确认」「处理中」"}},"required":[]}},
  {"name":"plan_for_event","description":"场景倒推 —— 客户说「明年六月毕业礼要穿」时用这个。它把四个互相咬着的约束一次算完:①选码用**穿的那天**的预测身高,不是今天的;②下单太晚排不上产能;③**下单太早也不行** —— 用的量体更旧、推算跨度更长,误差更大;④下单前必须有没过期的量体。所以返回的是一个**窗口**:建议复量日 + 最晚下单日,不是单个日期。「尺码是否跨档」为真时说明围度区间横跨两个码,**按大的做并留折边** —— 小了没法救,大了能收。返回的「提醒」和「限定」必须一并说给客户。",
   "input_schema":{"type":"object","properties":{
     "wearer_id":{"type":"string","description":"着装人编号"},
@@ -629,7 +692,7 @@ SHOP_SCHEMAS=[
 TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale,
               "get_capacity":get_capacity,
               "get_wearer":get_wearer,"forecast_growth":forecast_growth,
-              "plan_for_event":plan_for_event})
+              "plan_for_event":plan_for_event,"get_maintain":get_maintain})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

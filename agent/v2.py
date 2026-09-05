@@ -297,6 +297,66 @@ def _(s): s["fallback"] = True
 def _(s): _draft(s, use_llm=s.get("use_llm", True))
 
 
+# ── 流程三:售后判责(BP-03)────────────────────────────────────────────
+# 这一条最能说明二代的适用边界:
+# **判责看起来最需要「判断」,拆开之后判断只占一小段。**
+#   取现场(工具)→ 归类(规则)→ 查判定表(规则,7 行)→ 写草稿
+# 真正需要脑子的是「把客户那句话归到哪一类」,而那一步同样能枚举 ——
+# 直到出现表里没有的新问题类型,规则才交给模型。
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                  "..", "knowledge"))
+import liability as _lia
+
+bp03 = Flow("售后判责")
+
+
+@bp03.node("取维修现场", nxt="规则判责")
+def _(s):
+    r = api.get_maintain(maintain_id=s["case_ref"])
+    s["site"] = (r.get("工单") or [None])[0]
+
+
+@bp03.node("规则判责", nxt="写草稿")
+def _(s):
+    w = s.get("site")
+    if not w:
+        s.update(rule_decided=False, root_cause="规则判不出", confidence="低",
+                 action="转人工:查不到这张维修工单", evidence="get_maintain 没返回现场")
+        return "模型兜底"
+    m = w["量体记录"]
+    got = _lia.judge(issue=w["客户报的问题"],
+                     notified=bool(w["交付告知签收"]),
+                     measure_full=(m["条数"] >= 4),
+                     measure_remote=m["是否远程"])
+    if not got["判得出"]:
+        s.update(rule_decided=False, root_cause="规则判不出", confidence="低",
+                 action=f"转人工:{got['依据']}", evidence=f"问题「{w['客户报的问题']}」归类失败")
+        return "模型兜底"
+    # 真值的话术是「归类 · 责任处理」,规则给的是拆开的两截 —— 这里拼回同一种口径
+    tag = {("工艺瑕疵", "我方"): "工艺瑕疵 · 我方免费返修",
+           ("尺寸偏差", "客方"): "尺寸偏差 · 记录完整 · 客方收费改",
+           ("尺寸偏差", "我方"): "尺寸偏差 · 记录不全 · 我方免费改",
+           ("尺寸偏差", "按合同分担"): "远程量体偏差 · 按合同分担",
+           ("特性类", "无责"): "特性类已告知 · 无责解释",
+           ("特性类", "我方"): "特性类未告知 · 我方让步"}.get((got["归类"], got["责任"]))
+    s.update(rule_decided=bool(tag), confidence="高" if tag else "低",
+             root_cause=tag or f"{got['归类']} · {got['责任']}",
+             action=got["处理"] + "(**须由人确认后执行,不得直接对客户承诺**)",
+             evidence=f"{got['依据']};"
+                      f"交付告知签收 {'有' if w['交付告知签收'] else '**无**'};"
+                      f"量体 {m['条数']} 项,方式 {m['方式']}")
+    if not tag: return "模型兜底"
+
+
+@bp03.node("模型兜底", nxt="写草稿", uses_llm=True)
+def _(s): s["fallback"] = True
+
+
+@bp03.node("写草稿", nxt=None, uses_llm=True)
+def _(s): _draft(s, use_llm=s.get("use_llm", True))
+
+
 # ── 对外入口 ────────────────────────────────────────────────────────
 def run_task(task_id, use_llm=True):
     """跑一条工单。返回结论、走过的路径、调了几次模型。"""
@@ -305,7 +365,11 @@ def run_task(task_id, use_llm=True):
     t = api._rows("SELECT * FROM task WHERE id=?", task_id)
     if not t: return {"error": f"没有工单 {task_id}"}
     t = t[0]
-    if t["type"] == "财务人工任务":
+    if t["type"] == "售后判责":
+        s = dict(case=t["ref_id"], case_ref=t["ref_id"], purpose="售后判责",
+                 flow="bp03", use_llm=use_llm)
+        f = bp03; start = "取维修现场"
+    elif t["type"] == "财务人工任务":
         s = dict(case=t["ref_id"], purpose="退款定因", flow="bp01", use_llm=use_llm)
         f = bp01; start = "取押金单"
     else:
@@ -364,6 +428,9 @@ if __name__ == "__main__":
     print("  路径是**人写死的**,不是模型决定的 —— 这就是第二代:")
     print("    BP-01  取押金单 → 取退款轨迹 → 取支付流水 → 规则判真因 →(判不出才)模型兜底 → 写草稿")
     print("    BP-02  取两条档案 → 规则判同异 →(判不出才)模型兜底 → 写草稿")
+    print("    BP-03  取维修现场 → 规则判责(7 行表)→(判不出才)模型兜底 → 写草稿")
+    print("           **判责看起来最需要判断,拆开之后判断只占一小段** ——")
+    print("           难的是把客户那句话归到哪一类,而那一步同样能枚举。")
     # ── 自查:这个 100% 是不是同源来的 ────────────────────────────────
     # **刚讲完同源谬误就得先怀疑自己。** 那张映射表是我先查了
     # 「真因 × 返回码」的对应关系才写的 —— 有拿答案反推规则的嫌疑。

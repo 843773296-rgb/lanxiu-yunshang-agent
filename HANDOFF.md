@@ -74,34 +74,43 @@ Claude 上连跑三轮 24/24;判分器另有 22 条对照用例进了 `check.sh`
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-05 15:57。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-05 19:36。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 372a3c0 · 2026-09-05 · 费曼报告第 7 版:从「修 bug」升级到「修产生 bug 的那个条件」 |
-| 代码量 | 55 个 Python 文件 / 12347 行(不含 .venv) |
-| 验收 | `./check.sh` 共 30 项 —— **接手第一件事就是跑它** |
+| 最新提交 | 4abe31b · 2026-09-05 · 补上生命周期的模型评测 —— 装了六道锁,现在量过那个风险了 |
+| 代码量 | 57 个 Python 文件 / 13029 行(不含 .venv) |
+| 验收 | `./check.sh` 共 32 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
+M agent/eval.py
+ M agent/v1.py
+ M agent/v2.py
+ M agentsite/app.py
+ M agentsite/guards.py
+ M agentsite/guards_test.py
+ M agentsite/sdk.py
+ M backend/api.py
+ M backend/member_order_check.py
+ M backend/ops.py
+ M backend/seed.py
  M check.sh
-?? agent/growth-eval-results.jsonl
-?? agent/growth_eval.py
-?? agent/growth_eval_judgetest.py
+?? backend/liability_check.py
+?? knowledge/liability.py
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+4abe31b 补上生命周期的模型评测 —— 装了六道锁,现在量过那个风险了
 372a3c0 费曼报告第 7 版:从「修 bug」升级到「修产生 bug 的那个条件」
 939edcb 加交接文档:上下文满了换会话时,先读它
 0ab3d58 边界审计:每条保证到底靠结构还是靠约定,现在有清单了,而且清单是可执行的
 d976171 补齐 Hook / MCP / Skill 三层 —— 只挂工具不算接完
-ef0f353 铁律加一条:看见错直接改;并修掉密钥扫描第三次自我匹配
 ```
 <!--/AUTO-->

@@ -164,6 +164,15 @@ CREATE TABLE approval(id TEXT PRIMARY KEY, kind TEXT, target TEXT, payload TEXT,
 CREATE TABLE aftersale(id TEXT PRIMARY KEY, kind TEXT, order_id TEXT, customer_id TEXT,
   status TEXT, reason TEXT, amount REAL, shop TEXT, advisor TEXT, created TEXT, updated TEXT,
   ext_system TEXT, synced_at TEXT);
+-- 交付告知签收 —— 09-养护与售后.md 第三节写着「交付时必须书面告知的六条」,
+-- 第五节的返修判定里,**特性类(色差/掉色/勾丝)是否书面告知,直接决定有责无责**:
+--   已书面告知 → 无责,解释 + 提供保养服务
+--   **未**书面告知 → 我方,让步处理
+-- 这条判据原来在文档里写着,但**库里没有任何字段承载它**,所以那条规则永远跑不到。
+-- 和「体型特征」当初的情况一模一样。
+CREATE TABLE delivery_notice(
+  order_id TEXT PRIMARY KEY, items TEXT,
+  signed_at TEXT, advisor TEXT, channel TEXT);
 CREATE TABLE maintain(id TEXT PRIMARY KEY, order_id TEXT, customer_id TEXT, item TEXT,
   status TEXT, issue TEXT, shop TEXT, advisor TEXT, created TEXT, updated TEXT,
   ext_system TEXT, synced_at TEXT);
@@ -1313,13 +1322,50 @@ def run():
     ISSUES=["盘扣脱线","下摆开线","面料起球","刺绣局部脱落","拉链损坏","染色不均","尺寸需调整"]
     ITEMS=["云锦缠枝纹 唐制齐胸襦裙","苏绣缂丝 明制马面裙","素罗对襟 宋制褙子",
            "妆花缎 唐制大袖衫","缂丝团花 明制立领长衫"]
+    # ⚠️ 这里原来是 `cust[(i+7)%len(cust)][0]` —— 客户号**按下标凑**,
+    # 结果 21/21 条维修工单的客户号都和它所属订单的客户对不上(整体错位 7 位)。
+    # 和 8 对「同一人」合并对里的性别/省份矛盾是**同一类错**:
+    # **凡是「这条记录属于谁」,就必须从关联对象取,不能靠下标碰**。
+    # 下标凑出来的关联在小数据上看不出来,数据一多就全错,而且不会报错。
+    # item 同理:从订单真实的商品名取,这样才查得到它的面料与工艺 —— 判责要用。
+    # 只挂**定制品订单** —— 判责要回头查这件的面料与工艺,标品查不到,
+    # 而「西装套装盘扣脱线」这种现场本身就是假的。
+    _cust_oids=[r[0] for r in c.execute(
+        "SELECT id FROM ordr WHERE kind='定制品订单' ORDER BY id")] or oids
     for i in range(21):
         day=10+(i%20)
+        _oid=_cust_oids[i%len(_cust_oids)]
+        _own=c.execute("SELECT customer_id FROM ordr WHERE id=?",(_oid,)).fetchone()[0]
+        _it=c.execute("SELECT name FROM ordr_item WHERE order_id=? LIMIT 1",(_oid,)).fetchone()
         c.execute("INSERT INTO maintain VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-          (f"MW{73020+i}",oids[i%len(oids)],cust[(i+7)%len(cust)][0],ITEMS[i%5],
-           MT[i%7],ISSUES[i%7],random.choice(SHOPS),random.choice(ADV),
+          (f"MW{73020+i}",_oid,_own,(_it[0] if _it else ITEMS[i%5]),
+           # ⚠️ 状态和问题原来都用 `i%7`,于是两者**完全相关** ——
+           # 按状态筛出来的任何子集,问题必然是同一个值。
+           # 结果「待确认/待处理/处理中」这 9 条判责工单全是「工艺瑕疵」一类,
+           # **测试覆盖度被悄悄削成了 1/7,而且数据看起来完全正常**。
+           # 让问题额外依赖 i//7,两个维度才真的独立。
+           MT[i%7],ISSUES[(i+i//7*2)%7],random.choice(SHOPS),random.choice(ADV),
            f"2026-08-{day:02d} 11:{10+i%40:02d}",f"2026-08-{min(31,day+3):02d} 16:{10+i%40:02d}",
            "售后/维保系统",f"2026-09-01 0{i%9}:2{i%9}"))
+
+    # ── 交付告知签收 ──────────────────────────────────────────────────
+    # **故意不是每单都有。** 三分之一的定制单没有签收记录 ——
+    # 那正是「特性类但未书面告知 → 我方让步」这条规则要抓的现场。
+    # 全都有签收的种子数据,等于把判责题的答案统一成了「无责」,那就不用判了。
+    NOTICE=["N1 面料特性","N2 色差与掉色","N3 手工痕迹","N4 洗护方式","N5 尺寸容差","N6 工期与延期"]
+    for i,_no in enumerate(_cust_oids):
+        # 缺签收的挑 i%3==1 而不是 ==2:==2 时缺签收的那几单恰好都是工艺/尺寸类,
+        # **而「有没有书面告知」只对特性类有意义** —— 结果「特性类未告知 → 我方让步」
+        # 这条真值一个用例都没有,那条规则在评测里等于不存在。
+        # 造数据时要盯的不是「分布均不均匀」,是「**每条规则有没有至少一个用例**」。
+        # 再收窄一档:两条特性类工单(面料起球 / 染色不均)要**一条有告知、一条没有**,
+        # 否则「已告知→无责」和「未告知→我方让步」总有一条拿不到用例。
+        if i%3==1 and i%2==1: continue
+        n=NOTICE if i%4 else NOTICE[:3]
+        c.execute("INSERT INTO delivery_notice VALUES(?,?,?,?,?)",
+                  (_no, ",".join(x.split()[0] for x in n),
+                   f"2026-08-{10+i%18:02d} 17:{10+i%40:02d}",
+                   random.choice(ADV), "门店纸质" if i%2 else "电子签"))
 
     # ── 库存变更日志(后台 PRD 第 8 章:关键写操作均可查询操作人、时间、前后值和业务编号)──
     KINDS=[("入库",1),("订单占用",-1),("订单释放",1),("退货入库",1),("盘点调整",0),("报损",-1)]
@@ -1376,6 +1422,50 @@ def run():
     ]:
         c.execute("INSERT INTO scheme VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (sid,_cid2,nm,st,xz,mt,kf,col,ps,"A01 林岚",None,ago(20),ago(3)))
+
+    # ── BP-03 售后判责:研判工单 + 人工标注真值 ────────────────────────
+    # 只挑**还没处理完**的(待确认 / 待处理 / 处理中)—— 已完成和取消的不用判。
+    #
+    # ⚠️ 这里的标注是**在种子里显式写出来的一套判断**,
+    # 而 knowledge/liability.py 是**从 09-养护与售后.md 第五节独立解析出来的另一套**。
+    # 两条实现,同一份文档 —— 对不上就说明有一边错了,
+    # backend/liability_check.py 每次都会对账。
+    # **拿被测系统自己算出来的期望值,只能抓数据漂移,抓不到实现错误。**
+    _CRAFT = ("盘扣脱线", "下摆开线", "刺绣局部脱落", "拉链损坏")
+    _SIZE  = ("尺寸需调整",)
+    for m in c.execute("""SELECT id, order_id, customer_id, item, issue, status
+                          FROM maintain WHERE status IN ('待确认','待处理','处理中')
+                          ORDER BY id""").fetchall():
+        mid, oid, cid, item, issue, st = m
+        notified = c.execute("SELECT 1 FROM delivery_notice WHERE order_id=?", (oid,)).fetchone()
+        remote = c.execute("SELECT 1 FROM measure_rec WHERE customer_id=? AND method='远程'",
+                           (cid,)).fetchone()
+        n_meas = c.execute("SELECT count(*) FROM measure_rec WHERE customer_id=?",
+                           (cid,)).fetchone()[0]
+        if issue in _CRAFT:
+            rc = "工艺瑕疵 · 我方免费返修"
+            act = "免费返修,不向客户收费"
+            ev = f"「{issue}」属工艺瑕疵(09 第五节第 1 行)"
+        elif issue in _SIZE:
+            if remote:
+                rc, act = "远程量体偏差 · 按合同分担", "按合同约定分担返修费用"
+                ev = "该客户量体方式含「远程」,09 第五节第 4 行优先于记录是否完整"
+            elif n_meas >= 4:
+                rc, act = "尺寸偏差 · 记录完整 · 客方收费改", "收费改,出示量体记录"
+                ev = f"到店量体 {n_meas} 项,记录完整且相符(09 第五节第 2 行)"
+            else:
+                rc, act = "尺寸偏差 · 记录不全 · 我方免费改", "免费改"
+                ev = f"量体记录只有 {n_meas} 项,不完整(09 第五节第 3 行)"
+        else:
+            if notified:
+                rc, act = "特性类已告知 · 无责解释", "解释 + 提供保养服务,不返修不赔付"
+                ev = "交付时有书面告知签收记录(09 第五节第 6 行)"
+            else:
+                rc, act = "特性类未告知 · 我方让步", "让步处理"
+                ev = "**没有交付告知签收记录**,特性类未书面告知(09 第五节第 7 行)"
+        c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)",
+                  (f"T{mid}", "售后判责", mid, "待处理", "2026-08-25", f"{item} · {issue}"))
+        truths.append((mid, "BP-03", rc, act, ev, f"{item} · {issue} · 工单状态 {st}"))
 
     c.executemany("INSERT INTO truth(case_id,breakpoint,root_cause,expected_action,expected_evidence,note) VALUES(?,?,?,?,?,?)", truths)
     c.commit()

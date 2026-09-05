@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""售后判责 —— 从 09-养护与售后.md 第五节那张「返修判定」表推结论。
+
+## 这块能力为什么早该有
+
+09 那份文档第六节自己写着售后是智能体的天然落点,理由是:
+「客服面对的问题**高度重复**、判定依据**是结构化的**、但结论必须由人给」。
+
+标准写好了、决策表在库里(kb_tables 的「售后争议判定」)、
+工具说明里还专门指了路(get_aftersale:「只给事实,不给判责结论」)——
+**但那条路从来没人走过。** 知识资产闲置最容易被忽略,因为它不报错。
+
+## 判责其实是可枚举的,难的是前一步
+
+第五节那张表只有 7 行,**规则完全覆盖得住** —— 所以 V2 能做。
+真正难的是**把客户那句话归到哪一类**:
+「面料起球」是特性还是洗护不当?「尺寸不对」是谁的量体记录有问题?
+归类要看现场(面料工艺、量体记录全不全、有没有书面告知),
+这一步才是要调工具的地方。
+
+**这是个好例子:一件事看起来需要判断,拆开之后判断只占一小段。**
+
+## 一条判据原来落不了地
+
+第五节写着「特性类**且已书面告知** → 无责」「**未**书面告知 → 我方让步」,
+但库里原本没有任何字段记「告知过没有」——**所以那两行永远跑不到**。
+这次补了 `delivery_notice` 表。和当初「体型特征」的情况一模一样:
+**文档里写着的判据,如果数据里没有对应字段,它就只是一句话。**
+"""
+import os, re, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+MD = os.path.join(HERE, "09-养护与售后.md")
+_c = {}
+
+
+def _md():
+    if "t" not in _c: _c["t"] = open(MD, encoding="utf-8").read()
+    return _c["t"]
+
+
+def table():
+    """第五节「返修判定」:情形 → (责任, 处理)。从 md 解析,不在代码里另存一份。"""
+    if "tbl" in _c: return _c["tbl"]
+    t = _md()
+    seg = t.split("## 五、返修判定", 1)[-1].split("\n## ", 1)[0]
+    out = []
+    for line in seg.split("\n"):
+        l = line.strip()
+        if not l.startswith("|") or l.startswith("|---") or "情形" in l: continue
+        col = [x.strip().replace("**", "") for x in l.strip("|").split("|")]
+        if len(col) == 3: out.append(tuple(col))
+    if len(out) < 5:
+        raise RuntimeError(f"返修判定表没解析出来(只拿到 {len(out)} 行)—— md 表格格式变了?")
+    _c["tbl"] = out
+    return out
+
+
+# issue → 大类。**这一步是归类,不是判责** —— 判责在下面那张表里。
+KIND = {
+    "盘扣脱线": "工艺瑕疵", "下摆开线": "工艺瑕疵",
+    "刺绣局部脱落": "工艺瑕疵", "拉链损坏": "工艺瑕疵",
+    "尺寸需调整": "尺寸偏差",
+    "面料起球": "特性类", "染色不均": "特性类",
+}
+FEATURE_WORDS = ("色差", "掉色", "勾丝", "起球", "染色不均", "褪色", "手工痕迹")
+
+
+def classify(issue):
+    """把客户报的问题归到大类。归不出来就返回 None —— **不猜**。"""
+    if issue in KIND: return KIND[issue]
+    if any(w in (issue or "") for w in FEATURE_WORDS): return "特性类"
+    return None
+
+
+def judge(issue, notified=None, measure_full=None, measure_remote=False):
+    """按第五节判责。返回 dict,判不出来时 rule=None(交给人/模型)。
+
+    notified      特性类才用:交付时有没有**书面告知**过这一条
+    measure_full  尺寸类才用:量体记录是否完整且相符
+    measure_remote 远程量体 → 按合同分担,优先级高于上面两条
+    """
+    tb = {row[0]: row for row in table()}
+    kind = classify(issue)
+    d = dict(问题=issue, 归类=kind, 责任=None, 处理=None, 依据=None, 判得出=False)
+    if kind is None:
+        d["依据"] = "归不到第五节任何一类 —— **不猜**,转人工"
+        return d
+
+    def _pick(key, why):
+        row = next((r for k, r in tb.items() if key in k), None)
+        if not row: return d
+        d.update(责任=row[1], 处理=row[2], 依据=f"09-养护与售后.md 第五节「{row[0]}」—— {why}",
+                 判得出=True)
+        return d
+
+    if kind == "工艺瑕疵":
+        return _pick("工艺瑕疵", "脱线/开线/绣面脱落属工艺瑕疵")
+    if kind == "尺寸偏差":
+        if measure_remote:
+            return _pick("远程量体", "这次是远程量体,按合同分担,优先于记录是否完整")
+        if measure_full is None:
+            d["依据"] = "尺寸类要先查量体记录完不完整,现在查不到 —— 转人工"
+            return d
+        return _pick("量体记录完整且相符" if measure_full else "量体记录缺失",
+                     "量体记录完整且相符" if measure_full else "量体记录缺失或不全")
+    if kind == "特性类":
+        if notified is None:
+            d["依据"] = "特性类要先查有没有书面告知,现在查不到 —— 转人工"
+            return d
+        # 注意:table() 解析时已经把 ** 去掉了,这里的查找键**不能再带 **
+        return _pick("且已书面告知" if notified else "但未书面告知",
+                     "交付时已书面告知" if notified else "交付时未书面告知")
+    return d
+
+
+if __name__ == "__main__":
+    fail = []
+    def ck(name, cond, extra=""):
+        print(f"  {'✅' if cond else '❌'} {name}{('  ' + extra) if extra else ''}")
+        if not cond: fail.append(name)
+
+    print("售后判责 · 自测\n" + "=" * 88)
+    tb = table()
+    print(f"\n▸ 返修判定表:{len(tb)} 行(从 09-养护与售后.md 第五节解析)")
+    for r in tb: print(f"    {r[0]:32s} → {r[1]:8s} {r[2]}")
+    ck("表至少 7 行", len(tb) >= 7, f"实际 {len(tb)}")
+
+    print("\n▸ 归类")
+    ck("脱线 → 工艺瑕疵", classify("下摆开线") == "工艺瑕疵")
+    ck("起球 → 特性类", classify("面料起球") == "特性类")
+    ck("没见过的问题不猜", classify("客户说不好看") is None)
+
+    print("\n▸ 判责")
+    a = judge("盘扣脱线")
+    ck("工艺瑕疵 → 我方免费返修", a["责任"] == "我方" and "免费返修" in a["处理"], str(a["处理"]))
+    b = judge("尺寸需调整", measure_full=True)
+    ck("尺寸偏差 + 记录完整 → 客方收费改", b["责任"] == "客方", str(b["责任"]))
+    c2 = judge("尺寸需调整", measure_full=False)
+    ck("尺寸偏差 + 记录不全 → 我方免费改", c2["责任"] == "我方", str(c2["责任"]))
+    r = judge("尺寸需调整", measure_full=True, measure_remote=True)
+    ck("远程量体优先于记录完整", "分担" in (r["责任"] or ""), str(r["责任"]))
+    d1 = judge("面料起球", notified=True)
+    ck("特性类已告知 → 无责", d1["责任"] == "无责", str(d1["责任"]))
+    d2 = judge("面料起球", notified=False)
+    ck("特性类未告知 → 我方让步", d2["责任"] == "我方" and "让步" in d2["处理"], str(d2["处理"]))
+
+    print("\n▸ 查不到证据时不硬判")
+    ck("特性类不知道有没有告知 → 判不出", not judge("面料起球")["判得出"])
+    ck("尺寸类不知道记录全不全 → 判不出", not judge("尺寸需调整")["判得出"])
+    ck("归不了类 → 判不出", not judge("客户说不好看")["判得出"])
+
+    print("\n▸ 每条结论都带出处")
+    ck("判得出的都带 md 出处",
+       all("09-养护与售后.md" in (judge(*x)["依据"] or "")
+           for x in [("盘扣脱线",), ("面料起球", True), ("面料起球", False)]))
+
+    # ── 咬合:把 md 那张表弄坏,判责必须立刻失败而不是照旧输出 ──────────
+    print("\n▸ 咬合测试")
+    _bak = dict(_c)
+    _c["tbl"] = [r for r in table() if "工艺瑕疵" not in r[0]]
+    got = judge("盘扣脱线")
+    ck("表里删掉「工艺瑕疵」那行 → 判不出而不是瞎判", not got["判得出"], str(got["责任"]))
+    _c.clear(); _c.update(_bak)
+    ck("咬合后表已复原", len(table()) >= 7)
+
+    print("\n" + "=" * 88)
+    if fail:
+        print(f"❌ {len(fail)} 条没过:" + " / ".join(fail)); sys.exit(1)
+    print("✅ 售后判责自测全部通过 —— 规则覆盖 7 行,证据不足时一律不硬判")

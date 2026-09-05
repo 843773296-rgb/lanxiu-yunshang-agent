@@ -108,7 +108,9 @@ SHOP_TOOLS = ["mcp__shop__get_order", "mcp__shop__get_stock", "mcp__shop__get_af
               # 所以 skills_check.py 加了结构检查:**白名单必须和 MCP 暴露的完全一致**,
               # 靠人记得同步是不行的。
               "mcp__shop__get_wearer", "mcp__shop__forecast_growth",
-              "mcp__shop__plan_for_event"]
+              "mcp__shop__plan_for_event",
+              # 售后判责的现场。只给事实不给结论 —— 结论必须由人确认。
+              "mcp__shop__get_maintain"]
 
 # 项目自带的 Skill(agentsite/.claude/skills/<名字>/SKILL.md)。
 # Skill 管的是**产出物的格式**:报价单会被截图转发,脱离上下文独自存在,

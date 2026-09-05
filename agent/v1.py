@@ -225,12 +225,31 @@ BP02="""任务类型:客户合并确认
 · **手机号不同不是反对合并的理由** —— 换号很常见,这正是重复建档的典型成因
 标准覆盖不到的情况(比如三项里只对上两项)如实说判不了,转人工。"""
 
+BP03="""任务类型:售后判责
+维修工单号:{ref}
+
+客户报修,需要判定责任归属并给出处理方式。请查清现场,给出判责结论、处理动作和依据。
+
+**判定表在知识库里,先查再判**(kb_tables 的「售后争议判定」,以及 09-养护与售后.md 第五节):
+· 工艺瑕疵(脱线 / 开线 / 绣面脱落 / 拉链损坏) → **我方,免费返修**
+· 尺寸偏差 + 量体记录完整且相符 → 客方,收费改
+· 尺寸偏差 + 量体记录缺失或不全 → 我方,免费改
+· **远程量体**偏差 → 按合同分担(优先于上面两条)
+· 特性类(起球 / 色差 / 掉色 / 勾丝)**且已书面告知** → 无责,解释 + 提供保养服务
+· 特性类**但未**书面告知 → **我方,让步处理**
+
+两条硬规矩:
+1. 「有没有书面告知」看现场里的「交付告知签收」—— **为 null 就是没有告知**,不要当成有。
+2. **你只出草稿,不对客户承诺任何金额或返修结果** —— 涉及退换赔付,结论必须由人确认。
+归不到上面任何一类就如实说判不了,转人工。"""
+
 def one(task_id):
     """被后台页面调用:跑单个任务,最后一行输出 JSON。"""
     t=[x for x in backend.list_tasks(None,"待处理") if x["id"]==task_id]
     if not t: print(json.dumps({"error":"任务不存在"},ensure_ascii=False)); return
     t=t[0]
-    if t["type"]=="财务人工任务": prompt=BP01.format(ref=t["ref_id"])
+    if t["type"]=="售后判责": prompt=BP03.format(ref=t["ref_id"])
+    elif t["type"]=="财务人工任务": prompt=BP01.format(ref=t["ref_id"])
     else:
         a,b=t["ref_id"].split("|"); prompt=BP02.format(a=a,b=b)
     try:
@@ -251,12 +270,16 @@ if __name__=="__main__":
         tasks=[tasks[i] for i in [0,4,8,12,16,20,24,32]]
     recs=[]
     for i,t in enumerate(tasks,1):
-        if t["type"]=="财务人工任务": prompt=BP01.format(ref=t["ref_id"]); case=t["ref_id"]
+        if t["type"]=="售后判责":
+            prompt=BP03.format(ref=t["ref_id"]); case=t["ref_id"]
+        elif t["type"]=="财务人工任务":
+            prompt=BP01.format(ref=t["ref_id"]); case=t["ref_id"]
         else:
             a,b=t["ref_id"].split("|"); prompt=BP02.format(a=a,b=b); case=t["id"][1:]
         try: r=run_case(pv,prompt)
         except Exception as e: r=dict(finding=None,error=str(e)[:200]); print(f"[{i}] {case} 失败: {e}")
-        r.update(case=case,bp="BP-01" if t["type"]=="财务人工任务" else "BP-02")
+        r.update(case=case,bp={"财务人工任务":"BP-01","客户合并确认":"BP-02",
+                              "售后判责":"BP-03"}.get(t["type"],"BP-02"))
         recs.append(r)
         f=r.get("finding")
         print(f"[{i:2d}] {case:12s} {r.get('calls','-'):>2} 次调用  "
