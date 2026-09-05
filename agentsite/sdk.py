@@ -17,6 +17,10 @@ KEYFILE = os.path.expanduser("~/.deepseek-key")
 
 from claude_agent_sdk import query, ClaudeAgentOptions   # noqa: E402
 import guards   # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "agent"))
+import trace       # noqa: E402  记录仪:**和 V1 共用同一份**,写同一个文件、同一套字段
+# 两代分开记就没法横向对比了,而「一代 vs 三代到底差多少」这个问题
+# 只有手上同时有两套实现的人答得了 —— 别把这个优势浪费在格式不一致上。
 
 # 单次调用的花费上限。研判队列支持批量跑,一条失控就是真金白银 ——
 # SDK 现成的参数,不设等于没有闸门。
@@ -177,7 +181,7 @@ async def run(kind, prompt, max_turns=12, guard=True):
     # 体检打回后模型会重答,而 hook 的反馈是以 user 角色进流的 ——
     # 原来对所有消息都读 content,结果 text 里混进了反馈原文和被打回的那版答案,
     # 客户会看到「Stop hook feedback: ...」。**最终答案取最后一段。**
-    turns, traj, usage, cost = [], [], {}, None
+    turns, traj, usage, cost, res = [], [], {}, None, None
     t0 = time.time()
     async for m in query(prompt=prompt, options=opts):
         cls = type(m).__name__
@@ -194,9 +198,43 @@ async def run(kind, prompt, max_turns=12, guard=True):
         elif cls == "ResultMessage":
             usage = getattr(m, "usage", None) or {}
             cost = getattr(m, "total_cost_usd", None)
+            res = m
     text = turns[-1] if turns else ""
+    # ── 记录仪 ─────────────────────────────────────────────────────────
+    # 升代之后这条路径一度**一行日志都没有**:trace.jsonl 停在换架构那天,
+    # 而且不报错 —— 文件还在、还有数据,只是日期不动了。
+    # 「换了车,仪表盘留在旧车上」是升代最容易漏的一项,补上并加了结构检查防复发。
+    ms = (time.time() - t0) * 1000
+    real = cost_of(usage, model)
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "agent"))
+        import v1 as _v1
+        price = _v1.DEEPSEEK_PRICE.get(model)
+        peak = _v1.is_peak()
+        if price and peak: price = {k: v * 2 for k, v in price.items()}
+    except Exception:
+        price, peak = None, False
+    trace.record(
+        gen="V3", model=model, purpose={"kb": "工艺顾问", "task": "人工任务研判"}.get(kind, kind),
+        usage=usage, latency_ms=ms, price=price, peak=peak, cache_on=True,
+        cost_est=real,                      # 成本口径只有一处:sdk.cost_of()
+        finish_reason=getattr(res, "stop_reason", None),
+        turn=getattr(res, "num_turns", None),
+        error=(getattr(res, "errors", None) or None) if getattr(res, "is_error", False) else None,
+        extra=dict(
+            tool_calls=len(traj),
+            answer_turns=len(turns),
+            guard_blocked=bool(state.get("violations")),
+            guard_checks=[v["check"] for v in (state.get("violations") or [])] or None,
+            # SDK 自报的两个数一起记下来,但**不当依据用** ——
+            # sdk_cost 实测按 Claude 单价算,和 DeepSeek 实价差 24 倍。
+            # 记着是为了以后能证明「它确实不准」,不是为了拿它算账。
+            sdk_cost_usd=cost, api_ms=getattr(res, "duration_api_ms", None),
+            terminal_reason=getattr(res, "terminal_reason", None),
+        ))
+
     return dict(text=text.strip(), trajectory=traj, seconds=round(time.time() - t0, 1),
-                usage=usage, sdk_cost_usd=cost, cost_usd=cost_of(usage, model), model=model,
+                usage=usage, sdk_cost_usd=cost, cost_usd=real, model=model,
                 # 被体检打回过几次、因为什么 —— 这两个数要落进研判台账,
                 # 它们是「模型有多不听话」的直接度量,比事后抽样评测灵敏得多
                 guard_blocked=bool(state.get("violations")),

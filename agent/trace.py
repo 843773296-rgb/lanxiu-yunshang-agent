@@ -15,7 +15,16 @@ BODY = os.environ.get("TRACE_BODY") == "1"
 
 
 def record(*, model, purpose, usage, latency_ms, price, finish_reason=None,
-           turn=None, attempt=0, error=None, body=None, resp_text=None, cache_on=False, peak=False):
+           turn=None, attempt=0, error=None, body=None, resp_text=None, cache_on=False,
+           peak=False, gen="V1", cost_est=None, extra=None):
+    """gen: 哪一代架构调的(V1 手写循环 / V3 Agent Harness)。
+
+    **两代必须写进同一个文件、同一套字段** —— 否则做不了横向对比,
+    而「一代 vs 三代到底差多少」这个问题只有手上同时有两套实现的人答得了。
+
+    cost_est: 传了就用传进来的,不再自己算(跨供应商时成本口径必须只有一处)。
+    extra:    这一代特有的字段(工具调用数、体检打回、回答轮数……)。
+    """
     u = usage or {}
     tin = u.get("input_tokens", 0)
     tout = u.get("output_tokens", 0)
@@ -25,13 +34,15 @@ def record(*, model, purpose, usage, latency_ms, price, finish_reason=None,
     cost = (tin * p.get("inp", 0) + tcache * p.get("cache", 0)
             + twrite * p.get("inp", 0) * 1.25 + tout * p.get("out", 0)) / 1_000_000
     row = dict(
-        ts=time.strftime("%Y-%m-%d %H:%M:%S"),
+        ts=time.strftime("%Y-%m-%d %H:%M:%S"), gen=gen,
         model=model, purpose=purpose,
         input_tokens=tin, output_tokens=tout, cache_hit_tokens=tcache,
         cache_write_tokens=twrite, cache_on=bool(cache_on), peak=bool(peak),
-        latency_ms=round(latency_ms), cost_est=round(cost, 6),
+        latency_ms=round(latency_ms),
+        cost_est=round(cost_est if cost_est is not None else cost, 6),
         finish_reason=finish_reason, turn=turn, attempt=attempt,
     )
+    if extra: row.update({k: v for k, v in extra.items() if v is not None})
     if error: row["error"] = str(error)[:200]
     if BODY:                                           # 显式打开才记内容
         if body is not None:
@@ -45,6 +56,19 @@ def record(*, model, purpose, usage, latency_ms, price, finish_reason=None,
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
     return row
+
+
+def _by_gen(rs):
+    """按代际分组的对照表 —— 「一代 vs 三代到底差多少」就看这张。"""
+    g = {}
+    for r in rs: g.setdefault(r.get("gen", "V1"), []).append(r)
+    out = {}
+    for k, v in sorted(g.items()):
+        lat = sorted(x["latency_ms"] for x in v)
+        out[k] = dict(次数=len(v), 成本=round(sum(x["cost_est"] for x in v), 4),
+                      均价=round(sum(x["cost_est"] for x in v) / len(v), 5),
+                      中位耗时秒=round(lat[len(lat) // 2] / 1000, 1))
+    return out
 
 
 def summary(path=None):
@@ -61,6 +85,7 @@ def summary(path=None):
         cache_rate=f"{tc/(tin+tc)*100:.1f}%" if (tin + tc) else "0%",
         by_purpose=dict(collections.Counter(r["purpose"] for r in rs)),
         by_model=dict(collections.Counter(r["model"] for r in rs)),
+        by_gen=_by_gen(rs),
         slowest=max(rs, key=lambda r: r["latency_ms"], default=None),
         priciest=max(rs, key=lambda r: r["cost_est"], default=None),
         truncated=[r for r in rs if r.get("finish_reason") == "max_tokens"],
@@ -74,6 +99,7 @@ if __name__ == "__main__":
     print(f"共 {s['rows']} 次调用 · 总成本 ${s['cost']}")
     print(f"  输入 {s['input_tokens']:,}  输出 {s['output_tokens']:,}  缓存命中 {s['cache_hit_tokens']:,}"
           f"  → 缓存命中率 {s['cache_rate']}")
+    print(f"  按代际 {s['by_gen']}")
     print(f"  按场景 {s['by_purpose']}")
     print(f"  按模型 {s['by_model']}")
     if s["slowest"]:  print(f"  最慢 {s['slowest']['latency_ms']}ms  ({s['slowest']['purpose']})")

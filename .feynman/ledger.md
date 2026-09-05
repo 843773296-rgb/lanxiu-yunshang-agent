@@ -41,3 +41,5 @@
 - 2026-09-04 ·【鉴别】工具的「规范」来自 JSON Schema,不来自 MCP · 把工具搬进进程内,SDK 用 @tool + create_sdk_mcp_server 包成**进程内 MCP**,schema 还在、稳定性不变;真正失去的是进程隔离、可挂载性、通道等价测试、按服务收权 · 出处:claude_agent_sdk 导出 tool / create_sdk_mcp_server / McpSdkServerConfig · 自评:半懂(答对「能跑」和「MCP 是规范」,因果链答错)
 - 2026-09-04 ·【鉴别】MCP 管什么、不管什么 · 90 行的 mcp/protocol.py 里只有三件事:报工具清单(tools/list)、把异常包成 isError、走标准协议所以别的客户端能挂;**权限、只读、查库、参数校验它一件都不管** · 常犯错:把「经过它」当成「它负责」 · 出处:MCP 官方 SDK types.js 的 LATEST_PROTOCOL_VERSION 与 tools/call 结构 · 自评:讲过一遍,待验证
 - 2026-09-05 ·【鉴别】同源谬误:拿被测对象生成期望值 · tool_eval 的锚点、guards_test 的 fixture、parity 的两条通道,期望值都来自同一份实现——实现错了它们跟着错,全绿 · 补了 knowledge/pinned_check.py:8 条人从 md 手抄、故意不现算的锚点 · 咬合验证:把推档算错 ×1.5 后,derive_pattern 自测绿、pinned 红 2 条 · 自评:懂了
+- 2026-09-05 ·【教训】可观测性不会自动跟着架构走 · 升代后 V3 路径一行日志都没记,而且不报错(文件还在、只是日期停在升代那天);补记录仪时**复用 agent/trace.py 写同一个文件**,加 gen 字段区分两代,否则做不了横向对比 · 在 agentsite/sdk.py · 自评:懂了
+- 2026-09-05 ·【工程】把「容易漏的一步」变成结构检查 · agent/trace_check.py 扫描所有真正调模型的地方,断言都接了记录仪;新增调用点忘接就红(已咬合验证)· 第一版指纹只认字面 trace.record( ,把 import trace as _trace 的 v1.py 误报 —— 和评测锚点同义词写窄了是同一类错 · 自评:懂了
