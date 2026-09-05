@@ -2,6 +2,11 @@
 # 一条命令跑完全部检查。任一失败即整体失败。
 cd "$(dirname "$0")"
 FAIL=0
+# 不写 .pyc。踩过一次:咬合测试把某个模块改坏又在**同一秒内**改回来,
+# 而文件大小正好没变 —— CPython 判断缓存是否失效看的就是 (源文件 mtime 秒数, 大小),
+# 两个都没变就直接用旧的 .pyc。结果检查跑的是被改坏的那一版,红得莫名其妙。
+# 检查脚本本来就不在乎那点编译时间,关掉最省事。
+export PYTHONDONTWRITEBYTECODE=1
 run(){ printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
   if "$@" > /tmp/chk.out 2>&1; then
     tail -3 /tmp/chk.out | sed 's/^/  /'
