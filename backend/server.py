@@ -1199,6 +1199,30 @@ class H(BaseHTTPRequestHandler):
                 d=_ops.get_triage((Q.get("id") or [None])[0])
                 return self._send(d or dict(error="没有这条研判"), 200 if d else 404)
             return self._send(dict(error="no ops route"),404)
+        # ── 用户生命周期 ────────────────────────────────────────────
+        # 注意别和上面的 /api/lifecycle 混了:那个是**会员**生命周期(新客/沉默/流失),
+        # 这个是**着装人**的身体生命周期(长个儿、该复量、场景倒推)。
+        # 两个都叫「生命周期」是业务里的真实歧义,所以路径分开写清楚。
+        if p=="/api/wearers":
+            import api as _api, ops as _o
+            rl=_o.recheck_list()
+            due={x["id"]:x for x in rl["该复量"]}
+            _out=[]   # 别叫 rows —— 模块级已经有个 rows() 函数,遮蔽了后面就调不到
+            for w in _api._rows("SELECT * FROM wearer ORDER BY customer_id,id"):
+                d=_api.get_wearer(wearer_id=w["id"])["着装人"][0]
+                d["该复量"]=w["id"] in due
+                d["超期天数"]=(due[w["id"]]["已过"]-due[w["id"]]["上限"]) if w["id"] in due else None
+                _out.append(d)
+            return self._send(dict(rows=_out, 需人工确认=rl["需人工确认"],
+                                   说明=rl["说明"]))
+        if p=="/api/wearer-plan":
+            import api as _api
+            from urllib.parse import parse_qs as _pq
+            q={k:[_u(unquote(x)) for x in v] for k,v in _pq(urlparse(self.path).query).items()}
+            g=lambda k,d=None:(q.get(k) or [d])[0]
+            cs=[x for x in (g("c") or "").split(",") if x]
+            return self._send(_api.plan_for_event(g("w"), g("d"), g("p","PT04"),
+                                                  g("m","云锦"), cs, g("s","局部")))
         if p=="/api/fit-customers": return self._send(backend.fit_customers())
         if p=="/api/agent-tasks":
             _T=_truths()

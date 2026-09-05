@@ -467,6 +467,107 @@ def forecast_growth(wearer_id, target_date=None, months=12):
         r.pop("围度")
     return r
 
+# ── 场景倒推 ────────────────────────────────────────────────────────────
+# 「明年六月毕业礼要穿」这句话,拆开是四个互相咬着的约束:
+#   ① 选码要用**穿的那天**的身高,不是下单那天的
+#   ② 下单太晚 → 排不上产能,做不出来
+#   ③ 下单太早 → 用的量体更旧、推算跨度更长,**误差更大**
+#   ④ 下单前必须有**没过期**的量体记录
+# 所以答案不是一个日期,是**一个窗口**:什么时候约复量、什么时候下单。
+# 只回答「最晚哪天下单」是把 ③ 漏了 —— 而 ③ 恰恰是童装做小了的主因。
+GIRTH = {"胸围", "腰围", "臀围", "领围", "胸上围", "臂围"}
+FIT_BUFFER = 7      # 交付到穿之间留的试穿与小改天数
+
+def plan_for_event(wearer_id, event_date, pattern, material,
+                   crafts=None, scope="局部", today=None):
+    """场景倒推:为某个日子做一件衣服,什么时候复量、什么时候下单、按多高做。"""
+    import growth
+    from datetime import date, timedelta
+    today = date.fromisoformat(today) if today else date(2026, 8, 31)
+    ev = date.fromisoformat(event_date)
+    if ev <= today: return {"error": "用件日期已经过了"}
+
+    w = _wearer(wearer_id)
+    if not w: return {"error": f"着装人 {wearer_id} 不存在"}
+    if not _consent_ok(w["id"]):
+        return {"error": "没有有效的身体数据同意,不能推算", "着装人": w["name"]}
+    age = growth.age_at(w["birthday"], today) if w["birthday"] else None
+    if age is not None and age < 14 and not _consent_ok(w["id"], "未成年人"):
+        return {"error": "不满十四周岁,缺少监护人同意,不能推算", "着装人": w["name"]}
+
+    ms = {r["name"]: r["value"] for r in _rows(
+        "SELECT i.name,r.value,r.measured_at FROM measure_rec r"
+        " JOIN measure_item i ON i.code=r.item WHERE r.wearer_id=?"
+        " ORDER BY r.measured_at", wearer_id)}
+    if "身高" not in ms: return {"error": "没量过身高,先约量体", "着装人": w["name"]}
+    mdate = _rows("SELECT max(measured_at) a FROM measure_rec WHERE wearer_id=?",
+                  wearer_id)[0]["a"][:10]
+
+    # ① 穿的那天该按多高做 —— **不是今天的身高**
+    fc = growth.forecast(w["gender"], w["birthday"], ms["身高"], mdate, ev.isoformat())
+    ratio = fc["预测身高"] / ms["身高"]
+
+    # 长度类按身高比例缩放给点估计;围度类只给区间(md 第四节)
+    lo_ms, hi_ms = {}, {}
+    for k, v in ms.items():
+        if k in GIRTH:
+            b = growth.girth_band(v, ms["身高"], fc["预测身高"])["区间"]
+            lo_ms[k], hi_ms[k] = b
+        else:
+            lo_ms[k] = hi_ms[k] = round(v * ratio, 1)
+
+    pr = _rows("SELECT code,name,xz,sizes FROM pattern WHERE code=? OR name=?", pattern, pattern)
+    if not pr: return {"error": f"没有版型「{pattern}」"}
+    pr = pr[0]
+    specs = {}
+    for r in _rows("SELECT size,item,value FROM size_spec WHERE pattern=?", pr["code"]):
+        specs.setdefault(r["size"], {})[r["item"]] = r["value"]
+    import fitting
+    szs = pr["sizes"].split(",")
+    r_lo = fitting.recommend(lo_ms, pr["code"], szs, specs, pr["xz"])
+    r_hi = fitting.recommend(hi_ms, pr["code"], szs, specs, pr["xz"])
+    size_lo, size_hi = r_lo.get("推荐尺码"), r_hi.get("推荐尺码")
+    span = size_lo != size_hi
+    size = size_hi if span else size_lo    # 跨码时按大的做,靠折边收回来
+
+    # ② / ③ / ④ 三个日期
+    ship = ev - timedelta(days=FIT_BUFFER)
+    lead = kb_lead(pr["code"], size or szs[-1], material, crafts or [], scope,
+                   need_date=ship.isoformat(), from_date=today.isoformat())
+    if lead.get("error"): return lead
+    latest = date.fromisoformat(lead["最晚下单日"])
+    remeasure = latest - timedelta(days=3)      # 量完就下单,记录最新
+    e = growth.measure_expired(w["gender"], w["birthday"], mdate, today)
+
+    warn = []
+    if latest < today:
+        warn.append(f"**赶不上** —— 最晚 {latest} 就得下单,今天已经 {today}")
+    if span:
+        warn.append(f"围度区间跨了 {size_lo}/{size_hi} 两个码 —— **按大的 {size} 做,"
+                    f"裙长留 5cm 折边**,小了没法救,大了能收")
+    if e["过期"]:
+        warn.append(f"现有量体已过 {e['已过天数']} 天(上限 {e['允许天数']}),"
+                    f"**这次推算是拿一份无效记录做的,只能当参考**")
+    if (latest - today).days > 60:
+        warn.append(f"离最晚下单日还有 {(latest - today).days} 天 —— "
+                    f"**现在不要下单**:早下单等于用更旧的量体、推更长的跨度,误差更大。"
+                    f"等到 {remeasure} 前后复量再下")
+    if fc["跨突增期"]:
+        warn.append("这段跨过突增窗口,身高区间已放宽近一倍,**务必按上限留折边**")
+
+    return {"着装人": w["name"], "用件日期": event_date, "场合": None,
+            "现在": today.isoformat(), "上次量体": mdate,
+            "现有身高": ms["身高"], "穿那天预测身高": fc["预测身高"], "身高区间": fc["区间"],
+            "推荐尺码": size, "尺码是否跨档": span, "区间下限码": size_lo, "区间上限码": size_hi,
+            "交付日": ship.isoformat(), "最晚下单日": lead["最晚下单日"],
+            "建议复量日": remeasure.isoformat(),
+            "工期最快": lead.get("最快天数"), "工期最慢": lead.get("最慢天数"),
+            "赶得上": lead.get("赶得上"),
+            "留成长量": growth.allowance(fc["长高"]),
+            "限定": fc["限定"], "提醒": warn,
+            "说明": "选码用的是**穿那天的预测身高**,不是今天的身高。"
+                    "答案是一个窗口不是一个日期:早下单误差大,晚下单排不上。"}
+
 SHOP_SCHEMAS=[
  {"name":"get_order","description":"查订单。给 order_id 返回单条全链路(双口径状态、金额勾稽、时间线、订单行、关联售后);给 customer(客户号或姓名)返回该客户的订单清单。**返回里的「勾稽异常」不为空时,必须先核对再答复客户**,不要直接把金额念给客户听。注意状态有两套口径:页面按设计稿 10 档、PRD 按状态机 6 档,对客户说页面口径。",
   "input_schema":{"type":"object","properties":{
@@ -491,6 +592,15 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号或姓名"},
     "wearer_id":{"type":"string","description":"着装人编号,如 W10001-2"}},"required":[]}},
+ {"name":"plan_for_event","description":"场景倒推 —— 客户说「明年六月毕业礼要穿」时用这个。它把四个互相咬着的约束一次算完:①选码用**穿的那天**的预测身高,不是今天的;②下单太晚排不上产能;③**下单太早也不行** —— 用的量体更旧、推算跨度更长,误差更大;④下单前必须有没过期的量体。所以返回的是一个**窗口**:建议复量日 + 最晚下单日,不是单个日期。「尺码是否跨档」为真时说明围度区间横跨两个码,**按大的做并留折边** —— 小了没法救,大了能收。返回的「提醒」和「限定」必须一并说给客户。",
+  "input_schema":{"type":"object","properties":{
+    "wearer_id":{"type":"string","description":"着装人编号"},
+    "event_date":{"type":"string","description":"要穿的那天,YYYY-MM-DD"},
+    "pattern":{"type":"string","description":"版型编码或名称"},
+    "material":{"type":"string","description":"面料名称"},
+    "crafts":{"type":"array","items":{"type":"string"},"description":"工艺名称列表"},
+    "scope":{"type":"string","description":"局部 / 整幅,默认局部"}},
+   "required":["wearer_id","event_date","pattern","material"]}},
  {"name":"forecast_growth","description":"推算某个着装人到未来某天的身高,并给留成长量建议。主要用于**小孩** —— 定制工期 30–150 天,成人这段时间不变,小孩能长 1–2.5cm,而童装档差只有 4–6cm。**必须把返回里的「区间」和「限定」一起说给客户**,只报一个点估计等于骗人:推的是统计分布不是这个孩子,个体差 ±5cm 是常态,青春期突增的起始时间个体差可达 2–3 年。**围度只给区间不给点估计,任何情况下不得用推算围度直接下单裁剪。**「靶身高校验.需人工确认」为真时说明遗传身高和推算差得多,**转人工,不要自己挑一边**。",
   "input_schema":{"type":"object","properties":{
     "wearer_id":{"type":"string","description":"着装人编号,先用 get_wearer 查出来"},
@@ -500,7 +610,8 @@ SHOP_SCHEMAS=[
 
 TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale,
               "get_capacity":get_capacity,
-              "get_wearer":get_wearer,"forecast_growth":forecast_growth})
+              "get_wearer":get_wearer,"forecast_growth":forecast_growth,
+              "plan_for_event":plan_for_event})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

@@ -17,7 +17,9 @@ PORT = int(os.environ.get("AGENTSITE_PORT", "8770"))
 # 首页是值班台,不是导航页 —— 打开就该看见「今天还剩多少件」。
 PAGES = {"/": "duty.html", "/queue": "queue.html", "/health": "health.html",
          "/chat": "chat.html", "/scheme": "scheme.html",
-         "/workbench": "workbench.html", "/acceptance": "acceptance.html"}
+         "/workbench": "workbench.html", "/acceptance": "acceptance.html",
+         # 着装人的身体生命周期 —— 和会员生命周期(新客/沉默/流失)不是一回事
+         "/wearers": "wearers.html"}
 
 sys.path.insert(0, HERE)
 import sdk

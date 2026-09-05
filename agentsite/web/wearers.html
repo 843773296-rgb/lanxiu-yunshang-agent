@@ -1,0 +1,159 @@
+<title>着装人与成长</title>
+<!--SHELL-->
+<style>
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.kpi{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:15px 17px;border-top:2px solid var(--line)}
+.kpi.bad{border-top-color:var(--fail)} .kpi.warn{border-top-color:var(--warn)} .kpi.good{border-top-color:var(--pass)}
+.kpi .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.kpi .v{font-family:var(--mono);font-size:29px;font-weight:600;line-height:1.25;font-variant-numeric:tabular-nums}
+.kpi .n{font-size:12px;color:var(--ink-3);line-height:1.5}
+.kpi.bad .v{color:var(--fail)} .kpi.warn .v{color:var(--warn)}
+.bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:0 0 14px}
+.bar input,.bar select{font:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);
+ border-radius:4px;background:var(--paper);color:inherit}
+.bar .note{font-size:12.5px;color:var(--ink-3)}
+.win{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:0;border:1px solid var(--line);
+ border-radius:5px;overflow:hidden;margin:0 0 14px}
+.win>div{padding:14px 16px;background:var(--paper);border-left:1px solid var(--line)}
+.win>div:first-child{border-left:0}
+.win .k{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+.win .v{font-family:var(--mono);font-size:19px;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums}
+.win .n{font-size:11.5px;color:var(--ink-3);line-height:1.5;margin-top:4px}
+.win .v.hi{color:var(--dye)}
+ul.warn{margin:0;padding-left:18px;font-size:13.2px;line-height:1.8}
+ul.warn li{margin:2px 0}
+ul.lim{margin:0;padding-left:18px;font-size:12.6px;color:var(--ink-3);line-height:1.75}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:5px;overflow:hidden}
+.two>div{padding:15px 17px;background:var(--paper)}
+.two>div+div{border-left:1px solid var(--line);background:var(--paper-2)}
+.two h3{margin:0 0 9px;font-size:13px;font-family:var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.two ul{margin:0;padding-left:17px;font-size:13.2px;color:var(--ink-2);line-height:1.75}
+@media(max-width:700px){.two{grid-template-columns:1fr}.two>div+div{border-left:0;border-top:1px solid var(--line)}}
+</style>
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">澜绣云裳 · 用户生命周期</span></div>
+  <h1>着装人与成长</h1>
+  <p class="deck"><b>「谁付钱」和「衣服穿在谁身上」是两回事。</b>
+  妈妈给女儿买汉服时,付款人、收货人、量体对象是三个不同的人 ——
+  女儿没有账号,却是唯一一个身体数据有意义的人。
+  这一页管的就是这些人:各自量体到什么时候、哪些该复量了、
+  <b>为某个日子做衣服该按多高做</b>。</p>
+</header>
+
+<section>
+  <h2>今天的状况</h2>
+  <p class="sub">下面这些数是<b>规则直出的,一次模型都没调</b> ——
+  年龄查表、周期查表、日期相减,三步走完的事不该花钱买不确定性。</p>
+  <div class="kpis" id="kpis"><div class="kpi"><div class="k">加载中</div></div></div>
+</section>
+
+<section>
+  <h2>场景倒推</h2>
+  <p class="sub">客户说「明年六月毕业礼要穿」时,要回答的<b>不是一个日期,是一个窗口</b>。</p>
+  <div class="bar">
+    <select id="w"><option>加载中…</option></select>
+    <input id="d" type="date" value="2027-06-20">
+    <select id="p"><option value="PT04">明制马面裙·标准</option><option value="PT01">齐胸襦裙·标准</option></select>
+    <select id="m"><option>云锦</option><option>香云纱</option><option>宋锦</option></select>
+    <button class="pri" id="go">倒推</button>
+    <span class="note" id="msg">选一个孩子和要穿的日子。</span>
+  </div>
+  <div id="plan"></div>
+</section>
+
+<section>
+  <h2>着装人清单</h2>
+  <p class="sub">「该复量」不是错误,是<b>业务信号</b> ——
+  数据没错,只是需要有人约客户回店。把信号做成红色告警,人很快就学会忽略它。</p>
+  <div class="box scroll"><table>
+    <thead><tr><th>着装人</th><th>关系</th><th>性别</th><th>年龄</th><th>最近身高</th>
+      <th>上次量体</th><th>状态</th><th>同意</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="8">加载中…</td></tr></tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2>为什么答案是窗口,不是日期</h2>
+  <div class="two">
+    <div><h3>只答「最晚哪天下单」</h3><ul>
+      <li>客户听完就早早下单了</li>
+      <li>下单那天用的是<b>更旧的量体记录</b></li>
+      <li>推算跨度更长 → 误差更大</li>
+      <li>衣服做小了,而且<b>小了没法救</b></li>
+      <li>这正是童装返工的主因</li></ul></div>
+    <div><h3>答一个窗口</h3><ul>
+      <li><b>建议复量日</b>:量完就下单,记录最新</li>
+      <li><b>最晚下单日</b>:再晚就排不上产能</li>
+      <li>选码用<b>穿那天</b>的预测身高,不是今天的</li>
+      <li>围度区间跨两个码时,<b>按大的做 + 留折边</b></li>
+      <li>区间和限定一并说出口 —— 只报一个点估计等于骗人</li></ul></div>
+  </div>
+</section>
+
+<footer>数据仍归后台(<code>8760</code>)· 推算在 <code>knowledge/growth.py</code>,参照表在
+<code>knowledge/12-成长与生命周期.md</code> · 身体数据与未成年人信息需单独同意,无同意则接口取不到</footer>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>(s??"").toString().replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const md=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
+let ROWS=[];
+
+function kpi(rows,conf){
+  const kid=rows.filter(x=>x.年龄!=null&&x.年龄<18).length;
+  const due=rows.filter(x=>x.该复量).length;
+  const k=(cls,label,val,note)=>`<div class="kpi ${cls}"><div class="k">${label}</div>
+    <div class="v">${val}</div><div class="n">${note}</div></div>`;
+  $("#kpis").innerHTML=
+    k("","着装人",rows.length,`挂在账号下的人,不是账号数`)+
+    k("","未成年",kid,`这个模块真正要管的对象`)+
+    k(due?"warn":"good","该复量",due,`超过周期的量体记录是无效值,不是参考值`)+
+    k(conf.length?"warn":"good","需人工确认",conf.length,`遗传身高与推算差 >8cm,不自动挑边`);
+}
+function row(x){
+  const st=x.该复量?`<span class="tag over">该复量 超期${x.超期天数}天</span>`
+    :(x.量体日?`<span class="tag ok">有效</span>`:`<span class="tag">未量体</span>`);
+  return `<tr><td>${esc(x.姓名)}</td><td>${esc(x.关系)}</td><td>${esc(x.性别)}</td>
+    <td class="num">${x.年龄??"—"}</td><td class="num">${x.最近身高??"—"}</td>
+    <td class="num">${esc(x.量体日||"—")}</td><td>${st}</td>
+    <td>${x.身体数据同意==="有效"?'<span class="tag ok">有效</span>':'<span class="tag over">缺失</span>'}</td></tr>`;
+}
+async function load(){
+  const r=await fetch("/api/wearers").then(r=>r.json());
+  ROWS=r.rows; kpi(ROWS,r.需人工确认||[]);
+  $("#rows").innerHTML=ROWS.map(row).join("");
+  const kids=ROWS.filter(x=>x.年龄!=null&&x.年龄<18&&x.量体日);
+  $("#w").innerHTML=kids.map(x=>`<option value="${x.着装人}">${esc(x.姓名)}(${x.年龄}岁)</option>`).join("")
+    ||`<option value="">没有可推算的着装人</option>`;
+}
+function plan(r){
+  if(r.error){ $("#plan").innerHTML=`<div class="box" style="padding:15px">⚠ ${esc(r.error)}</div>`; return; }
+  const w=(k,v,n,hi)=>`<div><div class="k">${k}</div><div class="v${hi?" hi":""}">${v}</div><div class="n">${n}</div></div>`;
+  $("#plan").innerHTML=
+    `<div class="win">
+      ${w("建议复量日",esc(r.建议复量日),"量完就下单,记录最新",1)}
+      ${w("最晚下单日",esc(r.最晚下单日),`再晚排不上(工期 ${r.工期最快}–${r.工期最慢} 天)`)}
+      ${w("交付日",esc(r.交付日),"留 7 天试穿与小改")}
+      ${w("穿那天该按多高做",r.穿那天预测身高+"cm",`区间 ${r.身高区间[0]}–${r.身高区间[1]} · 现在 ${r.现有身高}cm`,1)}
+      ${w("推荐尺码",esc(r.推荐尺码||"—"),r.尺码是否跨档?`区间跨 ${r.区间下限码}/${r.区间上限码},按大的做`:"区间内不跨档")}
+     </div>`+
+    (r.提醒.length?`<div class="box" style="padding:14px 17px;margin-bottom:12px">
+      <ul class="warn">${r.提醒.map(x=>`<li>${md(x)}</li>`).join("")}</ul></div>`:"")+
+    `<div class="box" style="padding:14px 17px">
+      <div style="font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;
+        text-transform:uppercase;color:var(--ink-3);margin-bottom:7px">必须一起说出口的限定</div>
+      <ul class="lim">${r.限定.map(x=>`<li>${md(x)}</li>`).join("")}</ul>
+      <div style="font-size:12.6px;color:var(--ink-3);margin-top:9px">${md(r.说明)}</div></div>`;
+}
+$("#go").onclick=async()=>{
+  const w=$("#w").value; if(!w) return;
+  $("#msg").textContent="算…";
+  const q=new URLSearchParams({w,d:$("#d").value,p:$("#p").value,m:$("#m").value,c:"盘金绣"});
+  try{
+    const r=await fetch("/api/wearer-plan?"+q).then(r=>r.json());
+    plan(r); $("#msg").textContent="规则直出,0 次模型调用。";
+  }catch(e){ $("#msg").textContent="失败:"+e; }
+};
+load();
+</script>
