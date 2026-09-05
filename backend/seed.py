@@ -89,6 +89,37 @@ CREATE TABLE tpl_item(tpl TEXT, item TEXT, sort INT);
 -- 体型特征 —— 「差 >5cm **或有明显体型特征** 即全定制」里的后半句,
 -- 之前只是知识库里的一句话,没有任何字段承载它,所以那条规则永远跑不到。
 CREATE TABLE body_feature(customer_id TEXT, feature TEXT, note TEXT, recorded_by TEXT, ts TEXT);
+-- ── 着装人与家庭 ────────────────────────────────────────────────────────
+-- 原来所有身体数据都挂在 customer_id 上,而 customer 是**账号 / 付钱的人**。
+-- 妈妈给女儿买汉服时,**付款人、收货人、量体对象是三个不同的人** ——
+-- 女儿没有账号,却是唯一一个身体数据有意义的人。所以把两个概念拆开。
+CREATE TABLE wearer(
+  id TEXT PRIMARY KEY, customer_id TEXT,   -- 挂在哪个账号下
+  name TEXT, gender TEXT,                  -- 男 / 女
+  birthday TEXT,                           -- **存生日,不存年龄。**
+                                           -- 年龄每天在变,存年龄的系统一年后全库都错,
+                                           -- 而且错得很安静 —— 不报错,只是所有推算偏一岁。
+  relation TEXT,                           -- 本人 / 配偶 / 子 / 女 / 父 / 母
+  parent_a TEXT, parent_b TEXT,            -- 指向同账号下的另两个 wearer,用于靶身高校验
+  height REAL,                             -- 成人自报身高(父母身高是靶身高的唯一个体化输入)
+  status TEXT DEFAULT '在用', created TEXT);
+-- 同意记录 —— 身体数据属于敏感个人信息;不满十四周岁未成年人的个人信息**一律**是。
+-- 依《个人信息保护法》,处理敏感个人信息需**单独同意**(第 28 条);
+-- 处理不满十四周岁未成年人信息还须**监护人同意**并制定专门规则(第 31 条)。
+-- **没有这张表,这个模块不能上线 —— 能跑也不能上。**
+CREATE TABLE consent(
+  id TEXT PRIMARY KEY, wearer_id TEXT,
+  scope TEXT,                              -- 身体数据 / 未成年人 / 营销触达
+  granted_by TEXT, relation TEXT,          -- 谁同意的、什么关系(未成年须监护人)
+  channel TEXT, granted_at TEXT, revoked_at TEXT);
+-- 生长推算留档 —— 存的**不是结果,是当时怎么推的**:
+-- 基于哪次量体、用了哪个方法、推到哪天、给了多宽的区间。
+-- 事后客户说「你们说能穿到明年」,得查得出当时到底说了什么。
+CREATE TABLE growth_forecast(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, wearer_id TEXT,
+  base_at TEXT, base_height REAL, base_z REAL,
+  method TEXT, target_at TEXT,
+  pred_height REAL, lo REAL, hi REAL, note TEXT, created TEXT);
 -- ── 工坊产能 ──────────────────────────────────────────────────────────
 -- staff / schedule 都是**门店侧**的(店长、顾问、客户预约),工坊的师傅原来根本不在库里。
 -- 工期推算一直默认「师傅立刻有空」—— 那是最乐观的假设,而定制业最常见的延期原因
@@ -103,8 +134,12 @@ CREATE TABLE artisan(
 CREATE TABLE workorder(
   id TEXT PRIMARY KEY, artisan TEXT, craft TEXT, ref TEXT,
   workdays REAL, start_date TEXT, due_date TEXT, status TEXT, note TEXT);
+-- wearer_id:衣服穿在谁身上。**在已有表上加一个维度,不另起一套量体表** ——
+-- 另起一套的代价是两份量体数据迟早打架,而且 fitting.py 得跟着分叉。
+-- 老记录一律指向该账号的「本人」着装人,所以历史数据不用改口径。
 CREATE TABLE measure_rec(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, tpl TEXT,
-  item TEXT, value REAL, measured_by TEXT, measured_at TEXT, method TEXT DEFAULT '到店');
+  item TEXT, value REAL, measured_by TEXT, measured_at TEXT, method TEXT DEFAULT '到店',
+  wearer_id TEXT);
 CREATE TABLE content(code TEXT PRIMARY KEY, title TEXT, kind TEXT, status TEXT,
   channel TEXT, author TEXT, published TEXT, views INT);
 CREATE TABLE activity(code TEXT PRIMARY KEY, name TEXT, kind TEXT, status TEXT,
@@ -1077,6 +1112,68 @@ def run():
         f,note=FEAT[(k//4)%4]
         c.execute("INSERT INTO body_feature VALUES(?,?,?,?,?)",
                   (cid,f,note,random.choice(ADV),f"2026-0{6+k%3}-1{k%9} 14:40"))
+
+    # ── 着装人:把「账号」和「衣服穿在谁身上」拆开 ────────────────────
+    # 老的量体记录一律归到该账号的「本人」着装人 —— 历史数据口径不变。
+    KID_M = ["砚舟", "子墨", "望舒", "知许", "星野"]
+    KID_F = ["星芜", "昭昭", "令仪", "清和", "若薇"]
+    def _w(i, cid, name, gender, bday, rel, pa=None, pb=None, h=None):
+        wid = f"W{cid[1:]}-{i}"
+        c.execute("INSERT INTO wearer VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                  (wid, cid, name, gender, bday, rel, pa, pb, h, "在用", T.isoformat()))
+        return wid
+    def _consent(n, wid, scope, by, rel, at):
+        c.execute("INSERT INTO consent VALUES(?,?,?,?,?,?,?,?)",
+                  (f"CS{2000+n}", wid, scope, by, rel, "门店纸质", at, None))
+
+    cn = 0
+    for k, cid in enumerate(cust_ids):
+        row = c.execute("SELECT name,gender,birthday FROM customer WHERE id=?", (cid,)).fetchone()
+        nm, gd, bd = (row or ("客户", "女", "1992-01-01"))
+        gd = gd if gd in ("男", "女") else "女"
+        bd = bd or "1992-01-01"
+        # 本人身高:取该客户量过的身高值,没量过就按性别给个中位数
+        hh = c.execute("SELECT value FROM measure_rec WHERE customer_id=? AND item='MI01'",
+                       (cid,)).fetchone()
+        self_h = round(hh[0], 1) if hh else (171.2 if gd == "男" else 159.6)
+        w_self = _w(0, cid, nm, gd, bd, "本人", h=self_h)
+        c.execute("UPDATE measure_rec SET wearer_id=? WHERE customer_id=? AND wearer_id IS NULL",
+                  (w_self, cid))
+        _consent(cn, w_self, "身体数据", nm, "本人", f"2026-0{6+k%3}-1{k%9}"); cn += 1
+
+        # 每隔一个账号挂一个孩子 —— 孩子才是这个模块真正要管的对象
+        if k % 2: continue
+        # 配偶(只为了父母身高:靶身高法的唯一个体化输入)
+        sg = "男" if gd == "女" else "女"
+        w_sp = _w(1, cid, f"{nm[0]}{'先生' if sg=='男' else '女士'}", sg,
+                  "1990-05-20", "配偶", h=174.0 if sg == "男" else 161.0)
+        _consent(cn, w_sp, "身体数据", nm, "配偶", f"2026-0{6+k%3}-1{k%9}"); cn += 1
+        # 孩子:年龄铺开 3–14 岁,覆盖「学龄前 / 学龄 / 突增期」三段
+        age = [3, 5, 7, 9, 11, 13, 14, 4, 6][(k // 2) % 9]
+        kg = "女" if (k // 2) % 2 else "男"
+        kname = nm[0] + ((KID_F if kg == "女" else KID_M)[(k // 2) % 5])
+        kbd = (T - timedelta(days=int(age * 365.25) + (k * 11) % 300)).isoformat()
+        pa, pb = (w_self, w_sp) if gd == "男" else (w_sp, w_self)
+        w_kid = _w(2, cid, kname, kg, kbd, "女" if kg == "女" else "子", pa, pb)
+        # 未成年:同意人必须是监护人,且关系要记下来
+        _consent(cn, w_kid, "未成年人", nm, "监护人(母)" if gd == "女" else "监护人(父)",
+                 f"2026-0{6+k%3}-1{k%9}"); cn += 1
+        _consent(cn, w_kid, "身体数据", nm, "监护人(母)" if gd == "女" else "监护人(父)",
+                 f"2026-0{6+k%3}-1{k%9}"); cn += 1
+        # 孩子的量体记录:**故意铺开新旧** —— 有的还在有效期,有的早就该复量了。
+        # 这不是脏数据,这是真实业务:半年前的记录被顺手复用,正是童装返工第一大原因。
+        days_ago = [40, 95, 150, 210, 280, 330][(k // 2) % 6]
+        mdate = (T - timedelta(days=days_ago)).isoformat()
+        base = {2:88.5,3:96.8,4:103.1,5:109.7,6:116.0,7:121.7,8:127.0,9:132.0,
+                10:137.0,11:142.5,12:148.8,13:156.0,14:162.5}[age]
+        kid_h = round(base + random.uniform(-5, 5), 1)
+        for it, v in (("MI01", kid_h), ("MI03", round(kid_h*0.47, 1)),
+                      ("MI04", round(kid_h*0.42, 1)), ("MI09", round(kid_h*0.55, 1)),
+                      ("MI14", round(kid_h*1.03, 1))):
+            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
+                      "measured_at,method,wearer_id) VALUES(?,?,?,?,?,?,?,?)",
+                      (cid, TPL[k % 4][0], it, v, random.choice(ADV),
+                       f"{mdate} 15:00", "到店", w_kid))
     # ── 内容管理 ──
     CK=["品牌故事","穿搭指南","工艺科普","活动预告"]
     CH=["小程序首页","会员中心","门店Pad","公众号"]

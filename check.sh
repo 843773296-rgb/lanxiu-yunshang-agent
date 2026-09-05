@@ -38,6 +38,8 @@ run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py
 run "相容矩阵 · 2025 格推导/对账/落库" python3 knowledge/derive_combo.py
 run "版型库与 BOM · 推档/裁片/物料对账" python3 knowledge/derive_pattern.py
 run "量体推荐 · 三档判定/放松量/齐胸特例" python3 knowledge/fitting.py
+run "成长推算 · 百分位/靶身高/复量周期" python3 knowledge/growth.py
+run "用户生命周期 · 着装人/家庭/同意/过期量体" python3 backend/lifecycle_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py
 run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/leadtime.py

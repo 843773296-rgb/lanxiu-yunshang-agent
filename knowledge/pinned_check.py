@@ -70,6 +70,21 @@ def PINNED():
         allow = fitting.ease()["腰围"][1]
         return round(api.kb_size("PT04", "M")["尺码表"]["M"]["腰围"] - allow, 1)
 
+    def g(age, sex):
+        """参照表里某年龄某性别的 P50 —— 走 p50sd 是为了**顺带验插值**:
+        整岁点上插值必须落回表里那个数,落不回去说明插值写错了。"""
+        import growth
+        return round(growth.p50sd(sex, float(age))[0], 1)
+
+    def spurt_girl():
+        import growth
+        return growth.SPURT["女"]
+
+    def target_boy():
+        """男孩靶身高:(父 + 母 + 13) / 2"""
+        import growth
+        return growth.target_height("男", 176.0, 162.0)["遗传身高"]
+
     return [
      dict(name="PT04 基码(M)腰围", want=72.0, got=lambda: waist("M"),
           src="10-版型库.md 三、基码成衣尺寸",
@@ -95,6 +110,22 @@ def PINNED():
      dict(name="PT04 M 码对应的人体腰围", want=70.0, got=waist_body,
           src="10-版型库.md 三 + 六(放松量表)",
           how="成衣 72 − 放松量 2 = 70;放松量表「腰围 | 围度 | 2」"),
+     dict(name="8 岁男孩身高 P50", want=127.0, got=lambda: g(8, "男"),
+          src="12-成长与生命周期.md 二、身高参照表",
+          how="`| G08 | 8 | 127.0 | ...` 照抄;整岁点上插值必须落回表里这个数"),
+     dict(name="11 岁女孩身高 P50", want=143.9, got=lambda: g(11, "女"),
+          src="12-成长与生命周期.md 二、身高参照表",
+          how="`| G11 | 11 | 142.5 | 6.6 | 143.9 | 6.6 |` 的第四个数 —— "
+              "**这一格比同龄男孩高,是真的**,女孩突增早约两年"),
+     dict(name="11 岁男孩身高 P50", want=142.5, got=lambda: g(11, "男"),
+          src="12-成长与生命周期.md 二、身高参照表",
+          how="同一行的第二个数。和上一条配成一对,**钉死男女两列没被读串**"),
+     dict(name="女孩突增窗口", want=(9.5, 13.0), got=spurt_girl,
+          src="12-成长与生命周期.md 五、复量周期",
+          how="表里写的「突增期(女 9.5–13 / 男 11.5–15)」,决定 4 个月的复量周期"),
+     dict(name="靶身高(男,父176 母162)", want=175.5, got=target_boy,
+          src="12-成长与生命周期.md 三、校验 · 靶身高法",
+          how="(176 + 162 + 13) ÷ 2 = 175.5 —— 手算,**+13 这个常数是男女之差**"),
     ]
 
 
