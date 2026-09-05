@@ -35,6 +35,7 @@ run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacit
 run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/leadtime.py
 run "回答体检 · 人造用例(正反各半)" python3 agentsite/guards_test.py
 run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py
+run "中文否定与子串 · 14 条(七次踩过的坑)" python3 agent/textmatch.py
 run "判分器自测 · 18 条人造用例" python3 agent/chat_eval_judgetest.py
 run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judgetest.py
 printf "\n%s\n" "────────────────────────────────────────"

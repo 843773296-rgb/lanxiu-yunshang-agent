@@ -18,7 +18,7 @@
 体检逻辑写成**纯函数** `check_answer(text, calls)`,不依赖 SDK ——
 所以能离线测(见 guards_test.py),不用花一分钱调模型。
 """
-import datetime as dt, json, os, re
+import datetime as dt, json, os, re, sys
 
 # 数字型结论的识别
 RE_MONEY = re.compile(r"(?:[¥￥]\s*|人民币\s*)([\d,]+(?:\.\d+)?)|([\d,]+(?:\.\d+)?)\s*元")
@@ -30,11 +30,10 @@ TOTAL_M  = ("总价", "合计", "报价", "价格", "多少钱", "售价", "要�
 PRICEY   = ("售价", "报价", "价格", "多少钱", "卖", "要花", "收")
 HEDGE    = ("物料成本", "不含", "不是售价", "不是报价", "仅物料", "材料成本")
 UNKNOWN  = ("查不到", "未录入", "没有录入", "尚未录入", "转工艺负责人", "未定义", "不清楚")
-NEG      = ("不", "无法", "没法", "不能", "拒绝", "无", "别", "勿")
-# 含「不」但**不表否定**的词。不排掉它们,「不过加钱可以赶出来」会被当成拒绝加急放行 ——
-# 这正是判分器栽过四次的那类错的镜像:那次是把否定当肯定,这次是把转折当否定。
-NEG_FALSE = ("不过", "不仅", "不但", "不只", "不光", "不妨", "差不多", "要不", "不然",
-             "不如", "不用说", "无非", "无论")
+# 中文否定与子串**统一走 agent/textmatch.py** —— 原来四个文件各有一份词表,
+# 每次踩坑只补一份,别的三份继续错。这里只留业务词表。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agent"))
+import textmatch as tm      # noqa: E402
 # 判「不可」的说法 —— 答案里没有这类断言时,g4 不该开火
 DENY = ("不可", "做不了", "不能做", "不行", "没法做", "做不出", "无法做", "做不到")
 
@@ -48,18 +47,6 @@ def _near(text, idx, words, span=28):
     """idx 附近 span 字内有没有 words 里的词"""
     seg = text[max(0, idx - span): idx + span]
     return any(w in seg for w in words)
-
-
-def _negated(text, idx, span=12):
-    """idx 前面 span 字内有没有真的否定词。
-
-    判分器在否定上栽过四次(「不得重新发起退款」被当成「建议重新发起退款」),
-    这里是它的镜像坑:**「不过」「不仅」这些含「不」但表转折的词会被误认成否定**,
-    于是「不过加钱可以赶出来」就被当成拒绝加急放过去了。先把它们抹掉再看。
-    """
-    seg = text[max(0, idx - span): idx]
-    for w in NEG_FALSE: seg = seg.replace(w, "〇")
-    return any(w in seg for w in NEG)
 
 
 def _monies(text):
@@ -164,7 +151,7 @@ def g5_fit_guess(text, calls):
     for c in _called(calls, "kb_fit"):
         if _res(c).get("档位") != "需补量": continue
         m = RE_SIZE.search(text)
-        if m and not _negated(text, m.start()):
+        if m and not tm.negated(text, m.start()):
             return (f"kb_fit 判的是「需补量」,答案却推荐了 {m.group(1)} 码 —— "
                     "**不许按身高体重猜**,要请客户补量")
     return None
@@ -187,7 +174,7 @@ def g7_rush_promise(text, calls):
             if any(k in w for k in ("加人无效", "除不动", "不能靠加人", "只能一个人")): hard.append(w)
     if not hard: return None
     for m in re.finditer(r"(可以加急|能加急|加钱可以|能赶出来|可以赶|能提前)", text):
-        if not _negated(text, m.start()):
+        if not tm.negated(text, m.start()):
             return (f"关键路径上有**不能靠加人压缩**的工序({hard[0][:24]}),"
                     "却答应了加急 —— 这类要求要当场拒绝,不要先答应再想办法")
     return None

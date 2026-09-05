@@ -27,15 +27,8 @@ import guards
 
 # 「没」必须单列。第一版只写了「没法」,结果「**没**有现货」被判成说了「有现货」——
 # 这个项目在否定上已经栽过第六次了,每次都是漏了某一种写法。
-NEG = ("不", "没", "无", "无法", "没法", "不能", "拒绝", "别", "勿", "不会", "不可", "缺")
-NEG_FALSE = ("不过", "不仅", "不但", "不只", "不光", "不妨", "差不多", "要不", "不然", "不如")
-
-
-def _negated(text, i, span=14):
-    seg = text[max(0, i - span):i]
-    for w in NEG_FALSE: seg = seg.replace(w, "〇")
-    return any(w in seg for w in NEG)
-
+import textmatch as tm     # **中文否定与子串统一走这里** —— 原来四个文件各有一份词表,
+                          # 每次踩坑只补一份,别的三份继续错(见 textmatch.py 文件头)
 
 RE_THOUSAND = re.compile(r"(?<=\d),(?=\d{3})")
 
@@ -43,9 +36,8 @@ RE_THOUSAND = re.compile(r"(?<=\d),(?=\d{3})")
 def _norm(t):
     """去掉数字里的千分位逗号。
 
-    模型写的是「¥12,024.09」,锚点是「12024」—— 逗号一插,字符串匹配就断了。
-    这类失败**看起来像模型答错,其实是判分器不认**,
-    而它比模型真答错更难发现:你会去改本来对的提示词。
+    模型写「¥12,024.09」而锚点是「12024」—— 逗号一插,字符串匹配就断了。
+    这类失败**看起来像模型答错,其实是判分器不认**,比真答错更难发现。
     """
     return RE_THOUSAND.sub("", t)
 
@@ -53,20 +45,13 @@ def _norm(t):
 def hit(text, group, negation=False):
     """group 里任一个词出现就算命中。
 
-    **must 类锚点不做否定检查,forbid 类才做。** 这是两件不同的事:
-      must  问的是「提到这个事实了吗」—— 一个数字不存在「被否定」这回事
-      forbid 问的是「说了这句不该说的话吗」—— 被否定就不算说了
-
-    第一版给 must 也做了否定检查,结果「无现货,需备料 **22** 天」里的 22
-    被判成被否定 —— 否定窗口撞上了前面不相干的「无」。
-    加否定词是对的,加错地方就成了新 bug。
+    **must 类锚点不做否定检查,forbid 类才做**(negation=True):
+      must  问「提到这个事实了吗」—— 一个数字不存在「被否定」这回事
+      forbid 问「说了这句不该说的话吗」—— 被否定就不算说了
     """
     for src in (text, _norm(text)):
-        for w in group:
-            i = src.find(w)
-            while i >= 0:
-                if not negation or not _negated(src, i): return w
-                i = src.find(w, i + 1)
+        w = tm.says(src, group) if negation else tm.mentions(src, group)
+        if w: return w
     return None
 
 

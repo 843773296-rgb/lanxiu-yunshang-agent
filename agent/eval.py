@@ -40,6 +40,9 @@ def nums_in(text, *vals):
         if not any(re.search(re.escape(pt) + r"(?!\d)", text) for pt in pats): return False
     return True
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import textmatch as tm     # 中文否定与子串统一走这里
+
 DECIDE_NO = r"(不合并|不建议合并|不应合并|不予合并|不能合并|不是同一|非同一|保持独立|各自独立|分别保留)"
 DECIDE_YES = r"(建议合并|应当合并|应该合并|可以合并|予以合并|确认合并|同一位?客户)"
 
@@ -47,15 +50,26 @@ def hit(text, truth_rc, case_id=None):
     """返回 (是否命中, 说明)。判据尽量落在库里的真实数字上。"""
     import re
 
-    # ① 客户合并:直接抽"合并 / 不合并"这个决定,否定式优先匹配
-    if truth_rc == "同名不同人":
-        if re.search(DECIDE_NO, text):  return True, ""
-        if re.search(DECIDE_YES, text): return False, "判成了同一人,应为不合并"
-        return False, "没给出明确的合并/不合并结论"
-    if truth_rc == "同一客户跨店重复建档":
-        if re.search(DECIDE_NO, text):  return False, "判成了不同人,应为合并"
-        if re.search(DECIDE_YES, text): return True, ""
-        return False, "没给出明确的合并/不合并结论"
+    # ① 客户合并:抽「合并 / 不合并」这个决定。
+    #
+    # 原来是「否定式优先匹配」—— 先查 DECIDE_NO,命中就返回。
+    # 那个顺序**碰巧**能处理「不建议合并」(它含「建议合并」这个子串),
+    # 但碰巧不是正确:如果模型说「建议合并,不要保持独立」,
+    # 「保持独立」会命中 DECIDE_NO,于是正确答案被判错。
+    #
+    # 改成两边都做否定检查(textmatch.decide),两边都成立时返回 conflict ——
+    # 那通常是条件式结论(「建议合并,但确认前不能合并」),**自动挑一边都是猜**。
+    YES = ("建议合并", "应当合并", "应该合并", "可以合并", "予以合并", "确认合并", "同一位客户", "同一客户")
+    NO = ("不合并", "不建议合并", "不应合并", "不予合并", "不能合并", "不是同一",
+          "非同一", "保持独立", "各自独立", "分别保留")
+    if truth_rc in ("同名不同人", "同一客户跨店重复建档"):
+        want = "no" if truth_rc == "同名不同人" else "yes"
+        d = tm.decide(text, YES, NO)
+        if d == want: return True, ""
+        if d == "conflict":
+            return False, "同时说了合并和不合并 —— 结论不明确,不自动挑边"
+        if d is None: return False, "没给出明确的合并/不合并结论"
+        return False, ("判成了同一人,应为不合并" if want == "no" else "判成了不同人,应为合并")
 
     f = facts(case_id) if case_id else {}
 
@@ -69,9 +83,10 @@ def hit(text, truth_rc, case_id=None):
     if truth_rc == "渠道超时但实际已退":
         if f.get("out_id") and f["out_id"] not in text:
             return False, f"没引到已成功的出账流水 {f['out_id']}"
+        # 原来这里用的是自己那份 8 个词的正则、窗口只有 8 字 ——
+        # 「**不得**重新发起退款」这类曾经被判成「真的建议了重发」。统一走 textmatch。
         for m in re.finditer(r"(再次|重新|重复)(发起|提交)?退款", text):
-            before = text[max(0, m.start() - 8):m.start()]
-            if not re.search(r"(不|勿|无需|避免|禁止|严禁|切勿|而非)", before):
+            if not tm.negated(text, m.start()):
                 return False, f"真的建议了「{m.group(0)}」"
         return True, ""
 

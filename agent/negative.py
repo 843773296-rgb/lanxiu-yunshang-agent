@@ -21,19 +21,22 @@ BP01 = ("任务类型:财务人工任务\n押金单号:{ref}\n\n"
 
 # 6 类真实失败真因的判别词根 —— 封闭集合,用于查「有没有硬编一个根因」
 CAUSE_ROOTS = r"(超时|注销|余额不足|审批未完成|幂等|超出|超过原|金额不符|不匹配)"
-NEG = (r"(不|勿|无需|避免|禁止|严禁|切勿|而非|并非|未见|未发现|不是|非|不得|不能|不应|不要|"
-       r"无法|没有权限|排除|停止|终止|中止|暂停|作罢|取消|勿再|切莫|不符|不一致|有出入)")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import textmatch as tm     # 中文否定与子串**统一走这里**
+# 这个文件原来有自己的一份 20 词表 —— 四个文件四份词表,每次踩坑只补一份,
+# 别的三份继续错。词表现在只有 textmatch.NEG 一处。
+# 本文件特有的几个词(暂停/作罢/勿再/切莫/不符/不一致/有出入)已并入那份总表。
+
 
 def unnegated(text, pat, win=14):
-    """text 里有没有「没被否定的」pat。
+    """text 里有没有「没被否定的」pat(pat 是正则)。
 
-    否定词可能在前(「而非客户账户冻结」),也可能在后(「客户账户未见冻结标记」),
-    所以前后都要看 —— 只看前面就是本项目已经踩过两次的那个坑。
+    否定词可能在前(「而非客户账户冻结」),也可能在后(「账户冻结这一条未发现证据」),
+    所以**两边都查**(both_sides=True)—— 这里问的是「这件事被认领了吗」,
+    不是「提到了吗」,只看前面就是本项目踩过两次的那个坑。
     """
     for m in re.finditer(pat, text):
-        before = text[max(0, m.start() - win):m.start()]
-        after  = text[m.end():m.end() + win]
-        if not re.search(NEG, before) and not re.search(NEG, after):
+        if not tm.negated(text, m.start(), span=win, both_sides=True):
             return m.group(0)
     return None
 
