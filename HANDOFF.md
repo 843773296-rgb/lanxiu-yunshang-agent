@@ -81,37 +81,32 @@ CI 在 `.github/workflows/check.yml`,每次 push / PR 自动跑 33 项,24 秒出
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-05 21:28。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-05 21:34。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 0538b3a · 2026-09-05 · 更新交接文档:七环全绿,剩下三件 |
-| 代码量 | 61 个 Python 文件 / 13779 行(不含 .venv) |
+| 最新提交 | 8df1cd7 · 2026-09-05 · 还上那笔债:售后判责有模型评测了 —— 而修的没有一处是模型 |
+| 代码量 | 63 个 Python 文件 / 14020 行(不含 .venv) |
 | 验收 | `./check.sh` 共 34 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
 **未提交的改动:**
 
 ```
-M backend/api.py
- M backend/member_order_check.py
- M backend/seed.py
- M check.sh
- M knowledge/kb.py
-?? agent/liability-eval-results.jsonl
-?? agent/liability_eval.py
-?? agent/liability_eval_judgetest.py
+M .feynman/ledger.md
+ M .feynman/report.html
+ M .feynman/report.md
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+8df1cd7 还上那笔债:售后判责有模型评测了 —— 而修的没有一处是模型
 0538b3a 更新交接文档:七环全绿,剩下三件
 10b58c7 CI 的两处顺手修:Node 20 弃用警告 + 一个过期的检查标签
 89954d6 加 CI:「有人记得敲那条命令」不该是安全的前提
 e6a062f 识图接进顾问助手 —— 但测的不是「认得准不准」
-1395a62 补上售后判责:文档里写了一年的能力,今天才真的接上
 ```
 <!--/AUTO-->
