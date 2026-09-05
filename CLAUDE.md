@@ -40,7 +40,8 @@
 
 | 目录 | 是什么 |
 |---|---|
-| `backend/` | **数据的家**。SQLite 52 张表 + 38 个页面的管理后台 + 状态机 + 写入规则 + 运维队列(`ops.py`) |
+| `backend/` | **数据的家**。SQLite 55 张表 + 38 个页面的管理后台 + 状态机 + 写入规则 + 运维队列(`ops.py`) |
+| ↳ 用户生命周期 | `wearer` / `consent` / `growth_forecast` 三张表 + `lifecycle_check.py`。**`customer` 是账号,`wearer` 是衣服穿在谁身上** —— 两个概念不能混 |
 | `knowledge/` | **领域知识层**。11 篇手写知识 md + 7 个推导脚本(相容矩阵 / 版型推档 / BOM / 量体 / 工期 / 产能) |
 | `mcp/` | **三个 MCP 服务**:`kb`(知识库 10 个工具)/ `task`(任务 5 个)/ `shop`(店务 4 个)。裸手写 JSON-RPC,没用 SDK |
 | `agent/` | **V1 和 V2**,以及全部评测集、记录仪、判分器 |
@@ -84,7 +85,9 @@ LANXIU_PROVIDER=claude   # 走 Claude(CLI 登录态,月租,不额外花钱)
 ## 5. 铁律(用户明确要求过的,不要问,直接做)
 
 1. **每做完一处改动就 `commit` + `push`,不攒着。** 提交信息要写清**为什么这么改、踩了什么坑**——它是 `项目日志.md` 的数据源,而项目日志是用户唯一能看见「到底发生了什么」的地方。
-   - push 前必扫密钥:`git ls-files | xargs grep -lE "sk-[A-Za-z0-9]{20,}|gho_|BEGIN.*PRIVATE KEY"`
+   - push 前必扫密钥:`git ls-files | xargs grep -lE "$(cat .secretscan)"` —— 规则放在 `.secretscan` 里。
+     **规则本身不要写进任何被扫描的文件**,否则那个文件会匹配自己,扫描天天误报,
+     人就学会忽略它 —— 然后真漏密钥的那次也一样被忽略。
    - 远程:`https://github.com/843773296-rgb/lanxiu-yunshang-agent`(**私有**。改公开不可逆,必须先问)
 2. **每做完一个功能就更新文档并发飞书,不攒着。**
    ```bash
@@ -148,7 +151,7 @@ LANXIU_PROVIDER=claude   # 走 Claude(CLI 登录态,月租,不额外花钱)
 
 ## 9. 现在的状态(2026-09-05)
 
-- 50 个 Python 文件 / 10441 行(不含 .venv)· git 39 次提交 · `check.sh` **25 项全绿**
+- 52 个 Python 文件 / 11272 行(不含 .venv)· git 42 次提交 · `check.sh` **27 项全绿**
 - 三代齐了,横向对比数据已跑出(见上面第 3 节)
 - 费曼报告到**第 6 版**(`.feynman/report.md`,网页版 `report.html`),学习台账 46 条
 - **未开工的下一步**(报告里给的第一条建议,用户还没点头):

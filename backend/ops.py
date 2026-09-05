@@ -273,6 +273,47 @@ def resolve(triage_id, decision, handler, root_cause=None, action=None, note=Non
     return dict(triage_id=triage_id, decision=decision, 回流评测集=flowed, 与建库标注冲突=conflict)
 
 
+# ── 五、生命周期提醒 ────────────────────────────────────────────────────
+# **这一节刻意不进研判队列。**
+#
+# 研判队列是给「智能体先出草稿、人来采纳或改判」的事准备的 ——
+# 前提是那件事**步骤枚举不完**,需要模型去查、去推。
+#
+# 「谁该复量了」不是这种事:年龄查表 → 周期查表 → 日期相减,三步走完。
+# 这种事丢给模型,是花钱买不确定性 —— 这正是三代对比里 V2 打赢 V3 的那类任务。
+#
+# 所以它是一张**规则生成的提醒清单**,不是一条研判工单。
+# 判断标准就一句:**步骤能不能提前枚举。能,就别用智能体。**
+def recheck_list():
+    """该复量的人。规则直出,0 次模型调用。"""
+    import lifecycle_check as lc
+    _, sig, conf = lc.run(verbose=False)
+    return {"该复量": sorted(sig, key=lambda x: -(x["已过"] - x["上限"])),
+            "需人工确认": conf,
+            "说明": "规则直出,不经模型 —— 步骤能枚举的事不该花钱买不确定性"}
+
+
+def order_block(wearer_id, today=None):
+    """下单前的尺码失效拦截。**超期的量体记录不是参考值,是无效值。**"""
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.dirname(
+        _o.path.abspath(__file__))), "knowledge"))
+    import growth
+    from datetime import date
+    today = today or date(2026, 8, 31)
+    w = _rows("SELECT * FROM wearer WHERE id=?", wearer_id)
+    if not w: return {"放行": False, "原因": f"着装人 {wearer_id} 不存在"}
+    w = w[0]
+    h = _rows("""SELECT value,measured_at FROM measure_rec WHERE wearer_id=? AND item='MI01'
+                 ORDER BY measured_at DESC LIMIT 1""", wearer_id)
+    if not h: return {"放行": False, "原因": "没量过身高,先约量体"}
+    e = growth.measure_expired(w["gender"], w["birthday"], h[0]["measured_at"][:10], today)
+    if e["过期"]:
+        return {"放行": False, "着装人": w["name"], "原因": f"量体记录已过 {e['已过天数']} 天,"
+                f"上限 {e['允许天数']} 天({e['原因']})", "处置": "拦下,要求复量"}
+    return {"放行": True, "着装人": w["name"], "量体日": h[0]["measured_at"][:10]}
+
+
 # ── 四、健康度 ──────────────────────────────────────────────────────────
 def health():
     """智能体自己的运维指标。
@@ -352,4 +393,23 @@ if __name__ == "__main__":
     assert b["ai_evidence"].startswith("无 out"), b["ai_evidence"]
     print("  ✅ 两条线上真实格式(段名独占行+结尾复述 / 段名与正文同行)都能解析")
     print("\n健康度:", json.dumps(health(), ensure_ascii=False))
+    print("\n生命周期提醒(规则直出,0 次模型调用):")
+    rl = recheck_list()
+    for x in rl["该复量"][:5]:
+        print(f"  · {x['着装人']}({x['年龄']}岁) 超期 {x['已过'] - x['上限']:>3} 天 —— {x['原因']}")
+    print(f"  需人工确认(遗传身高与推算冲突){len(rl['需人工确认'])} 人")
+    assert rl["该复量"], "一条该复量的都没有 —— 提醒清单是死的?"
+    # 拦截:同一个人,过期的拦下、没过期的放行
+    blocked = [ (x["id"]) for x in rl["该复量"] ][0]
+    b = order_block(blocked)
+    assert not b["放行"] and "复量" in b["处置"], f"过期的没拦住:{b}"
+    ok = _rows("""SELECT w.id FROM wearer w JOIN measure_rec m ON m.wearer_id=w.id
+                  WHERE w.relation='本人' AND m.item='MI01'
+                  AND w.id NOT IN ({})  LIMIT 1""".format(
+                  ",".join("'%s'" % x["id"] for x in rl["该复量"])))
+    if ok:
+        p2 = order_block(ok[0]["id"])
+        assert p2["放行"], f"没过期的被误拦:{p2}"
+        print(f"  ✅ 拦截咬合:过期的拦下({b['着装人']})、没过期的放行({p2['着装人']})")
+
     print("\n✅ 数据层自测通过")

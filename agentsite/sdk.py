@@ -99,7 +99,10 @@ KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
             "mcp__kb__kb_pattern", "mcp__kb__kb_size", "mcp__kb__kb_bom",
             "mcp__kb__kb_fit", "mcp__kb__kb_lead"]
 SHOP_TOOLS = ["mcp__shop__get_order", "mcp__shop__get_stock", "mcp__shop__get_aftersale",
-              "mcp__shop__get_capacity"]
+              "mcp__shop__get_capacity",
+              # 着装人与成长推算。**同意状态是这两个工具里的硬门** ——
+              # 没有有效同意就取不到身体数据、算不出推算,不靠模型自觉。
+              "mcp__shop__get_wearer", "mcp__shop__forecast_growth"]
 
 # 项目自带的 Skill(agentsite/.claude/skills/<名字>/SKILL.md)。
 # Skill 管的是**产出物的格式**:报价单会被截图转发,脱离上下文独自存在,

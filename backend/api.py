@@ -376,6 +376,97 @@ def kb_lead(pattern, size, material, crafts=None, scope="局部", workers=2,
     return lt.deadline(need_date, None, **kw) if need_date else lt.estimate(**kw)
 
 
+# ── 着装人与成长推算 ────────────────────────────────────────────────────
+# 这两个工具是**只读**的,而且**同意状态是硬门**:没有有效同意就拿不到身体数据,
+# 也算不出推算 —— 不是「模型应该守规矩」,是「不守也拿不到」。
+# 这个区别在本项目里付过学费:一条靠约定守着的边界,换个模型就破了。
+_GROWTH_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge")
+if _GROWTH_DIR not in sys.path: sys.path.insert(0, _GROWTH_DIR)
+
+def _consent_ok(wearer_id, scope="身体数据"):
+    r = _rows("""SELECT 1 FROM consent WHERE wearer_id=? AND scope=? AND revoked_at IS NULL""",
+              wearer_id, scope)
+    return bool(r)
+
+def _wearer(wid):
+    r = _rows("SELECT * FROM wearer WHERE id=?", wid)
+    return r[0] if r else None
+
+def get_wearer(customer=None, wearer_id=None):
+    """着装人档案:一个账号下都有谁、各自量体到什么时候、哪些该复量了。"""
+    import growth
+    from datetime import date
+    today = date(2026, 8, 31)
+    if wearer_id:
+        ws = [w for w in [_wearer(wearer_id)] if w]
+    elif customer:
+        ws = _rows("""SELECT w.* FROM wearer w JOIN customer c ON c.id=w.customer_id
+                      WHERE w.customer_id=? OR c.name=? ORDER BY w.id""", customer, customer)
+    else:
+        return {"error": "要么给 customer(客户号或姓名),要么给 wearer_id"}
+    if not ws: return {"error": "查不到这个着装人", "hit": 0}
+    out = []
+    for w in ws:
+        ok = _consent_ok(w["id"])
+        d = {"着装人": w["id"], "姓名": w["name"], "性别": w["gender"],
+             "关系": w["relation"], "生日": w["birthday"],
+             "年龄": round(growth.age_at(w["birthday"], today), 1) if w["birthday"] else None,
+             "身体数据同意": "有效" if ok else "**缺失或已撤回**"}
+        if not ok:
+            d["量体"] = "无法提供 —— 没有有效的身体数据同意"
+            out.append(d); continue
+        recs = _rows("""SELECT item,value,measured_at,method FROM measure_rec
+                        WHERE wearer_id=? ORDER BY measured_at DESC""", w["id"])
+        d["量体项数"] = len(recs)
+        h = next((r for r in recs if r["item"] == "MI01"), None)
+        if h:
+            e = growth.measure_expired(w["gender"], w["birthday"], h["measured_at"][:10], today)
+            d["最近身高"] = h["value"]
+            d["量体日"] = h["measured_at"][:10]
+            d["量体是否过期"] = e
+        if w["parent_a"]:
+            ps = [_wearer(w["parent_a"]), _wearer(w["parent_b"])]
+            d["父母身高"] = [p["height"] for p in ps if p]
+        out.append(d)
+    return {"hit": len(out), "着装人": out,
+            "提示": "「量体是否过期」为真时,**下单前必须拦下要求复量** —— 超期的记录不是参考值,是无效值。"}
+
+def forecast_growth(wearer_id, target_date=None, months=12):
+    """推算某着装人到某天的身高与留量建议。**不给围度点估计。**"""
+    import growth
+    from datetime import date, timedelta
+    today = date(2026, 8, 31)
+    w = _wearer(wearer_id)
+    if not w: return {"error": f"着装人 {wearer_id} 不存在"}
+    if not _consent_ok(w["id"]):
+        return {"error": "没有有效的身体数据同意,不能推算", "着装人": w["name"]}
+    age = growth.age_at(w["birthday"], today) if w["birthday"] else None
+    if age is not None and age < 14 and not _consent_ok(w["id"], "未成年人"):
+        return {"error": "不满十四周岁,缺少监护人同意,不能推算", "着装人": w["name"]}
+    h = _rows("""SELECT value,measured_at FROM measure_rec WHERE wearer_id=? AND item='MI01'
+                 ORDER BY measured_at DESC LIMIT 1""", wearer_id)
+    if not h: return {"error": "这个着装人没量过身高,无法推算", "着装人": w["name"]}
+    tgt = target_date or (today + timedelta(days=int(30.4 * months))).isoformat()
+    par = None
+    if w["parent_a"]:
+        ps = [_wearer(w["parent_a"]), _wearer(w["parent_b"])]
+        hs = [p["height"] for p in ps if p and p["height"]]
+        if len(hs) == 2: par = tuple(hs)
+    r = growth.forecast(w["gender"], w["birthday"], h[0]["value"], h[0]["measured_at"][:10],
+                        tgt, parents=par)
+    r["着装人"] = w["name"]
+    r["留成长量"] = growth.allowance(r["长高"])
+    r["话术"] = growth.sales_line(w["name"], r["长高"], 5.0) if r["长高"] > 0 else None
+    g = _rows("""SELECT item,value FROM measure_rec WHERE wearer_id=? AND item IN ('MI03','MI04')
+                 ORDER BY measured_at DESC""", wearer_id)
+    if g and r["长高"] > 0:
+        r["围度"] = {"MI03": "胸围", "MI04": "腰围"}
+        r["围度区间"] = {{"MI03": "胸围", "MI04": "腰围"}[x["item"]]:
+                        growth.girth_band(x["value"], h[0]["value"], r["预测身高"])
+                        for x in g}
+        r.pop("围度")
+    return r
+
 SHOP_SCHEMAS=[
  {"name":"get_order","description":"查订单。给 order_id 返回单条全链路(双口径状态、金额勾稽、时间线、订单行、关联售后);给 customer(客户号或姓名)返回该客户的订单清单。**返回里的「勾稽异常」不为空时,必须先核对再答复客户**,不要直接把金额念给客户听。注意状态有两套口径:页面按设计稿 10 档、PRD 按状态机 6 档,对客户说页面口径。",
   "input_schema":{"type":"object","properties":{
@@ -396,10 +487,20 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "order_id":{"type":"string"},"customer":{"type":"string","description":"客户号或姓名"},
     "status":{"type":"string","description":"如「退款失败」「审批同意」"}},"required":[]}},
+ {"name":"get_wearer","description":"查着装人档案 —— **衣服穿在谁身上**,和「谁付钱」是两回事。妈妈给女儿买汉服时,付款人、收货人、量体对象是三个人。给 customer(客户号或姓名)返回这个账号下的全部着装人(本人/配偶/子/女),给 wearer_id 查单个。返回里的「量体是否过期」为真时,**下单前必须拦下要求复量** —— 超期的量体记录不是参考值,是无效值,「有个旧尺寸总比没有强」正是童装返工的来源。没有有效身体数据同意的着装人,量体数据一律取不到。",
+  "input_schema":{"type":"object","properties":{
+    "customer":{"type":"string","description":"客户号或姓名"},
+    "wearer_id":{"type":"string","description":"着装人编号,如 W10001-2"}},"required":[]}},
+ {"name":"forecast_growth","description":"推算某个着装人到未来某天的身高,并给留成长量建议。主要用于**小孩** —— 定制工期 30–150 天,成人这段时间不变,小孩能长 1–2.5cm,而童装档差只有 4–6cm。**必须把返回里的「区间」和「限定」一起说给客户**,只报一个点估计等于骗人:推的是统计分布不是这个孩子,个体差 ±5cm 是常态,青春期突增的起始时间个体差可达 2–3 年。**围度只给区间不给点估计,任何情况下不得用推算围度直接下单裁剪。**「靶身高校验.需人工确认」为真时说明遗传身高和推算差得多,**转人工,不要自己挑一边**。",
+  "input_schema":{"type":"object","properties":{
+    "wearer_id":{"type":"string","description":"着装人编号,先用 get_wearer 查出来"},
+    "target_date":{"type":"string","description":"推到哪天,YYYY-MM-DD。不传则按 months 算"},
+    "months":{"type":"number","description":"往后推几个月,默认 12"}},"required":["wearer_id"]}},
 ]
 
 TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale,
-              "get_capacity":get_capacity})
+              "get_capacity":get_capacity,
+              "get_wearer":get_wearer,"forecast_growth":forecast_growth})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,
