@@ -44,8 +44,12 @@ for o in q("SELECT id,amount,goods_amount,freight FROM ordr"):
         if abs(round((i["base_amount"] or 0) + (i["custom_amount"] or 0), 2) - (i["total"] or 0)) > 0.01:
             bad.append(f"订单 {o['id']} 某行 基本+定制部件 ≠ 合计")
 
-# ④ 时间戳顺序:付款 ≤ 审核 ≤ 生产 ≤ 发货 ≤ 完成
-ORDER = ["paid_at","audit_at","produced_at","shipped_at","finished_at"]
+# ④ 时间戳顺序:**下单** ≤ 付款 ≤ 审核 ≤ 生产 ≤ 发货 ≤ 完成
+#
+# `created` 原来不在这条序列里,于是「付款早于下单」**35/35 条一直没被发现** ——
+# 检查从第二个环节才开始查,第一个环节缺位就等于没查。
+# **一条链上少查一环,那一环就会长年错着。**
+ORDER = ["created","paid_at","audit_at","produced_at","shipped_at","finished_at"]
 for o in q("SELECT id,%s FROM ordr" % ",".join(ORDER)):
     seq = [(k, o[k]) for k in ORDER if o[k]]
     for (k1,v1),(k2,v2) in zip(seq, seq[1:]):
@@ -119,6 +123,24 @@ for r in q("SELECT id, order_id, item FROM maintain"):
     names = [x["name"] for x in q("SELECT name FROM ordr_item WHERE order_id=?", r["order_id"])]
     if names and r["item"] not in names:
         bad.append(f"维修工单 {r['id']} 修的是「{r['item']}」,但订单里没有这件商品")
+
+# ⑤ 售后链条的时间顺序:下单 → 交付签收 → 报修
+#
+# 这三条是**模型在跑判责评测时抓出来的**,不是想出来的:
+# 它读到「报修 2026-08-10,订单创建 2026-08-11」,直接拒绝判责,
+# 理由是「这在逻辑上不可能,数据链路已破损」—— **它是对的**。
+#
+# 模型是这个项目里最好的数据审计员:它逐字读现场,
+# 而且**没有「我知道这是 demo 数据」这个心理豁免**。
+for r in q("""SELECT m.id, m.created mc, o.created oc, o.id oid
+              FROM maintain m JOIN ordr o ON o.id = m.order_id WHERE m.created < o.created"""):
+    bad.append(f"维修工单 {r['id']} 报修({r['mc']})早于订单创建({r['oc']})—— 衣服还没下单就来报修")
+for r in q("""SELECT d.order_id, d.signed_at, o.created FROM delivery_notice d
+              JOIN ordr o ON o.id = d.order_id WHERE d.signed_at < o.created"""):
+    bad.append(f"订单 {r['order_id']} 交付签收({r['signed_at']})早于下单({r['created']})")
+for r in q("""SELECT m.id, m.created mc, d.signed_at sa FROM maintain m
+              JOIN delivery_notice d ON d.order_id = m.order_id WHERE m.created < d.signed_at"""):
+    bad.append(f"维修工单 {r['id']} 报修({r['mc']})早于交付签收({r['sa']})")
 
 print("会员与订单一致性检查\n" + "=" * 68)
 print(f"订单 {q('SELECT COUNT(*) n FROM ordr')[0]['n']} · 订单行 {q('SELECT COUNT(*) n FROM ordr_item')[0]['n']}"

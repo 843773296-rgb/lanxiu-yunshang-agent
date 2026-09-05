@@ -1042,7 +1042,10 @@ def run():
                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (oid, _custs[i % len(_custs)], kind, st, random.choice(ADV), random.choice(SHOPS),
                    SRC[i % 4], ACT[i % 4], DLV[i % 2], total, total,
-                   f"{base_ts} 16:16", f"{base_ts} 18:20",
+                   # created 原来写死 16:16,而 paid_at 是 11:xx —— **35/35 条付款早于下单**。
+                   # 一直没被发现,是因为时间顺序检查从 paid_at 才开始查,
+                   # **没把 created 放进序列**。改成 09:xx,并把 created 补进那条检查。
+                   f"{base_ts} 09:{(i*11)%60:02d}", f"{base_ts} 18:20",
                    ST2PRD[st], goods, freight, received,
                    REFUND[i % 6] if st in ("完成","待完成","已发货") else "未退款",
                    ADDR[i % len(ADDR)],
@@ -1332,9 +1335,28 @@ def run():
     # 而「西装套装盘扣脱线」这种现场本身就是假的。
     _cust_oids=[r[0] for r in c.execute(
         "SELECT id FROM ordr WHERE kind='定制品订单' ORDER BY id")] or oids
+    # ── 按「每条规则至少一个用例」显式排,不用模运算撞 ────────────────
+    # 之前靠 `ISSUES[(i+i//7*2)%7]` 凑分布,结果三条尺寸类工单的客户
+    # **全是「到店且记录完整」**,于是返修判定表里
+    # 「记录不全 → 我方免费改」和「远程量体 → 按合同分担」两行永远命中不了。
+    #
+    # 模运算能凑出**均匀**,凑不出**覆盖**。这两件事经常被当成一回事。
+    # 下面这几条是照着客户的真实量体画像挑的(序号 = 定制单序号):
+    #   5  → 记录完整且到店  → 客方收费改
+    #   18 → 量体不足 4 项    → 我方免费改
+    #   3  → 有远程量体      → 按合同分担
+    #   7  → 特性类 + 无签收  → 我方让步
+    #   10 → 特性类 + 有签收  → 无责解释
+    FORCE = {5: ("尺寸需调整", "待确认"), 18: ("尺寸需调整", "待处理"),
+             3: ("尺寸需调整", "处理中"), 7: ("面料起球", "待确认"),
+             10: ("染色不均", "待处理"), 0: ("盘扣脱线", "处理中")}
     for i in range(21):
-        day=10+(i%20)
         _oid=_cust_oids[i%len(_cust_oids)]
+        # 报修时间必须在**下单 → 交付 → 穿 → 报修**这条链的最后。
+        # 原来 day 是独立编的,结果 13/21 条「报修早于订单创建」——
+        # 衣服还没下单就来报修了。**模型读到这个现场直接拒绝判责,它是对的。**
+        _ocr = c.execute("SELECT created FROM ordr WHERE id=?", (_oid,)).fetchone()[0][:10]
+        _rep = date.fromisoformat(_ocr) + timedelta(days=18 + (i * 3) % 20)
         _own=c.execute("SELECT customer_id FROM ordr WHERE id=?",(_oid,)).fetchone()[0]
         _it=c.execute("SELECT name FROM ordr_item WHERE order_id=? LIMIT 1",(_oid,)).fetchone()
         c.execute("INSERT INTO maintain VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -1344,8 +1366,10 @@ def run():
            # 结果「待确认/待处理/处理中」这 9 条判责工单全是「工艺瑕疵」一类,
            # **测试覆盖度被悄悄削成了 1/7,而且数据看起来完全正常**。
            # 让问题额外依赖 i//7,两个维度才真的独立。
-           MT[i%7],ISSUES[(i+i//7*2)%7],random.choice(SHOPS),random.choice(ADV),
-           f"2026-08-{day:02d} 11:{10+i%40:02d}",f"2026-08-{min(31,day+3):02d} 16:{10+i%40:02d}",
+           FORCE.get(i, (None, MT[i%7]))[1], FORCE.get(i, (ISSUES[(i+i//7*2)%7],))[0],
+           random.choice(SHOPS),random.choice(ADV),
+           f"{_rep.isoformat()} 11:{10+i%40:02d}",
+           f"{(_rep+timedelta(days=3)).isoformat()} 16:{10+i%40:02d}",
            "售后/维保系统",f"2026-09-01 0{i%9}:2{i%9}"))
 
     # ── 交付告知签收 ──────────────────────────────────────────────────
@@ -1362,9 +1386,13 @@ def run():
         # 否则「已告知→无责」和「未告知→我方让步」总有一条拿不到用例。
         if i%3==1 and i%2==1: continue
         n=NOTICE if i%4 else NOTICE[:3]
+        # 签收时间必须**在下单之后**。原来是独立编的日期,
+        # 结果 15/20 条「交付签收早于订单创建」—— 衣服还没下单就签收了。
+        _ocr = c.execute("SELECT created FROM ordr WHERE id=?", (_no,)).fetchone()[0][:10]
+        _sign = (date.fromisoformat(_ocr) + timedelta(days=5 + i % 6)).isoformat()
         c.execute("INSERT INTO delivery_notice VALUES(?,?,?,?,?)",
                   (_no, ",".join(x.split()[0] for x in n),
-                   f"2026-08-{10+i%18:02d} 17:{10+i%40:02d}",
+                   f"{_sign} 17:{10+i%40:02d}",
                    random.choice(ADV), "门店纸质" if i%2 else "电子签"))
 
     # ── 库存变更日志(后台 PRD 第 8 章:关键写操作均可查询操作人、时间、前后值和业务编号)──

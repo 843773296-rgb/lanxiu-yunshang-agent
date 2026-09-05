@@ -54,6 +54,7 @@ run "判分器自测 · 18 条人造用例" python3 agent/chat_eval_judgetest.py
 run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judgetest.py
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py
 run "识图判分器 · 13 条对照用例" python3 agent/vision_eval_judgetest.py
+run "判责判分器 · 14 条对照用例" python3 agent/liability_eval_judgetest.py
 printf "\n%s\n" "────────────────────────────────────────"
 if [ $FAIL -eq 0 ]; then printf "\033[32m✅ 全部检查通过\033[0m\n"; else printf "\033[31m❌ 存在失败项\033[0m\n"; fi
 exit $FAIL

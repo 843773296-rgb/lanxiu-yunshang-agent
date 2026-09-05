@@ -531,8 +531,11 @@ def get_maintain(maintain_id=None, customer=None, status=None):
                         if it else {"note": "订单行里没有同名商品"}),
              "量体记录": {"条数": n_item, "方式": [x["method"] for x in ms],
                        "是否远程": any(x["method"] == "远程" for x in ms)},
-             "交付告知签收": (dict(已告知条目=nt[0]["items"], 签收时间=nt[0]["signed_at"],
-                             渠道=nt[0]["channel"]) if nt else None),
+             # 代码要翻成名称。原来只给「N1,N2,N3」,模型看得见却看不懂 ——
+             # 它会说「需要人工查出 N1-N6 具体条目」,**而那正是它该自己拿到的东西**。
+             "交付告知签收": (dict(已告知条目=[NOTICE_NAME.get(x, x)
+                                          for x in (nt[0]["items"] or "").split(",") if x],
+                             签收时间=nt[0]["signed_at"], 渠道=nt[0]["channel"]) if nt else None),
              "该客户历史维修次数": hist}
         out.append(d)
     return {"hit": len(rows), "工单": out,
@@ -551,6 +554,11 @@ def get_maintain(maintain_id=None, customer=None, status=None):
 #   ④ 下单前必须有**没过期**的量体记录
 # 所以答案不是一个日期,是**一个窗口**:什么时候约复量、什么时候下单。
 # 只回答「最晚哪天下单」是把 ③ 漏了 —— 而 ③ 恰恰是童装做小了的主因。
+# 交付告知的六条(见 09-养护与售后.md 第三节)。库里存代码,对外给名称 ——
+# 判责时「有没有告知过色差」这种问题,看代码是答不了的。
+NOTICE_NAME = {"N1": "N1 面料特性", "N2": "N2 色差与掉色", "N3": "N3 手工痕迹",
+               "N4": "N4 洗护方式", "N5": "N5 尺寸容差", "N6": "N6 工期与延期"}
+
 GIRTH = {"胸围", "腰围", "臀围", "领围", "胸上围", "臂围"}
 FIT_BUFFER = 7      # 交付到穿之间留的试穿与小改天数
 
