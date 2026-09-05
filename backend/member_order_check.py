@@ -77,6 +77,32 @@ for r in q("SELECT id,inviter FROM customer WHERE inviter IS NOT NULL"):
     if r["inviter"] == r["id"]:
         bad.append(f"{r['id']} 把自己设成了邀请人")
 
+# ── 合并工单的两条档案:数据不能和真值自相矛盾 ────────────────────────
+# **这条是被模型抓出来的,不是想出来的。**
+# 跑三代对比时 V1 和 V3 都把「同一客户跨店重复建档」判成了「不同人」,
+# 理由是「性别 男/女 矛盾、地址字符串相同但省市区不同(河北衡水 vs 广东广州)」——
+# **它们推理没错,是种子数据自相矛盾**(客户信息按下标分配,而一对的 id 相邻)。
+#
+# 教训:模型答错时先检查真值和数据。而这条检查本该早就有 ——
+# 一份「真值说是同一人、数据说不是」的用例,考的不是模型,是运气。
+for t in q("SELECT id,ref_id FROM task WHERE type='客户合并确认'"):
+    a, b = t["ref_id"].split("|")
+    ra = q("SELECT * FROM customer WHERE id=?", a)
+    rb = q("SELECT * FROM customer WHERE id=?", b)
+    tr = q("SELECT root_cause FROM truth WHERE case_id=?", t["id"][1:])
+    if not (ra and rb and tr): continue
+    ra, rb, rc = ra[0], rb[0], tr[0]["root_cause"]
+    if rc == "同一客户跨店重复建档":
+        for f in ("gender", "province", "city"):
+            if ra[f] != rb[f]:
+                bad.append(f"{t['id']} 真值是「同一人」,但 {f} 不同({ra[f]} / {rb[f]})"
+                           f" —— 数据和真值自相矛盾,模型判「不同人」反而是对的")
+        if ra["addr"] == rb["addr"] and (ra["city"] != rb["city"]):
+            bad.append(f"{t['id']} 地址字符串相同却不在同一个城市 —— 数据自相矛盾")
+    else:
+        if (ra["province"], ra["city"]) == (rb["province"], rb["city"]) and ra["addr"] != rb["addr"]:
+            warn.append(f"{t['id']} 真值是「不同人」,但两条在同一城市 —— 证据偏弱")
+
 print("会员与订单一致性检查\n" + "=" * 68)
 print(f"订单 {q('SELECT COUNT(*) n FROM ordr')[0]['n']} · 订单行 {q('SELECT COUNT(*) n FROM ordr_item')[0]['n']}"
       f" · 会员 {q('SELECT COUNT(*) n FROM customer')[0]['n']}"

@@ -515,6 +515,33 @@ def run():
                    random.choice([0,120,380,760,1290,2400,5600,12800]),
                    REM[n % len(REM)], cid))
 
+    # ── 修:BP-02「同一人」8 对的身份字段必须一致 ──────────────────────
+    # 上面那个 enumerate 按**下标**分配性别和省市区,而一对里的两条 id 是相邻的,
+    # 于是同一个人被分成了「男 / 女」「河北衡水 / 广东广州」—— 而 addr 字符串又一样,
+    # 数据**自相矛盾**。
+    #
+    # 这是跑三代对比时被模型抓出来的:V1 和 V3 都判「不同人」,理由是
+    # 「性别矛盾、地址字符串相同但省市区不同」—— **它们的推理是对的,是数据错了**。
+    # 而 V2 判对是因为规则只看姓名/生日/地址三项,**看得少所以没看到矛盾** ——
+    # 那不是优点。
+    #
+    # 教训:**模型答错时,先检查真值和数据是不是错的。**
+    for _i in range(8):
+        _a, _b = f"C2{1000+_i*2}", f"C2{1000+_i*2+1}"
+        c.execute("""UPDATE customer SET
+                       gender=(SELECT gender FROM customer WHERE id=?),
+                       province=(SELECT province FROM customer WHERE id=?),
+                       city=(SELECT city FROM customer WHERE id=?),
+                       district=(SELECT district FROM customer WHERE id=?)
+                     WHERE id=?""", (_a, _a, _a, _a, _b))
+    # 「同名不同人」8 对反过来:省市必须真的不同,否则「不同人」这个结论也没依据
+    for _i in range(8, 16):
+        _a, _b = f"C2{1000+_i*2}", f"C2{1000+_i*2+1}"
+        _pa = c.execute("SELECT province,city FROM customer WHERE id=?", (_a,)).fetchone()
+        _alt = next(x for x in PROV if x[0] != _pa[0])
+        c.execute("UPDATE customer SET province=?,city=?,district=? WHERE id=?",
+                  (*_alt, _b))
+
     # 积分流水(设计稿「积分行为」六种)
     BEH=["账户调加","账户调减","积分消费","积分返还","确认款样","完成定购"]
     for n,cid in enumerate(allc):
