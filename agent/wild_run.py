@@ -43,7 +43,13 @@ import textmatch as tm
 
 # 拒答 / 反问 —— 在真实语料里,这两件事的**比例**比对错更能说明问题
 REFUSE = ("查不到", "没有查到", "无法确定", "看不出", "不能确定", "查不了", "没有记录")
-ASK = ("请问", "能否告诉", "需要确认", "想先确认", "补充", "是哪", "要不要", "?", "?")
+# ⚠️ 词表第一版漏了最常见的一种反问句式:**祈使式索要**。
+# 实测里那条答得最好的(「不能凭『远程量』直接甩责任……给我订单号,我马上跑一遍」)
+# 被判成了「没反问」——它句句都在要信息,只是一个问号都没打。
+# **第六次栽在词表不全上。**
+ASK = ("请问", "能否告诉", "需要确认", "想先确认", "补充", "是哪", "要不要",
+       "给我", "告诉我", "提供一下", "先确认", "麻烦发", "把…发", "需要你",
+       "?", "?")
 NUM = re.compile(r"(?:¥|￥)\s*[\d,]|\d[\d,]*\s*(?:元|天|米)")
 
 
@@ -68,9 +74,18 @@ def corpus(path=None):
 def observe(text, traj, guard):
     """不判对错,只记行为。**没有真值时,行为分布就是信号。**"""
     names = [x.split("__")[-1] for x in (traj or [])]
+    refuse = bool(tm.says(text, REFUSE))
+    ask = bool(tm.mentions(text, ASK))
     return dict(工具=names, 工具数=len(names),
-                拒答=bool(tm.says(text, REFUSE)),
-                反问=bool(tm.mentions(text, ASK)),
+                # **零工具还硬答** —— 一个工具都没调,却既不拒答也不反问,
+                # 直接给了实质结论。这是「只说知识库里查到的」那条**约定**
+                # 唯一能被量出来的形式,而且**不需要真值**:
+                # 不看答案对错,只看「有没有依据就下结论」。
+                # 边界审计把这条归在「约定」类(没有任何东西强制),
+                # 野外巡检给了它第一个实测值。
+                零工具硬答=(len(names) == 0 and not refuse and not ask
+                          and len(text or "") > 120),
+                拒答=refuse, 反问=ask,
                 给了数字=bool(NUM.search(text or "")),
                 字数=len(text or ""),
                 违规=[v["check"] for v in (guard or [])])
@@ -129,6 +144,14 @@ def _selftest():
     ck("带钱的识别得出", observe("物料约 3800 元。", [], [])["给了数字"])
     ck("违规原样带出", observe("x", [], [{"check": "g1_no_source", "msg": "m"}])["违规"]
        == ["g1_no_source"])
+    long_answer = "推荐宋制褙子配百迭裙。" * 12
+    ck("零工具 + 不拒答不反问 + 长答案 → 无据下结论",
+       observe(long_answer, [], [])["零工具硬答"])
+    ck("零工具但反问了 → 不算无据下结论",
+       not observe("先给我订单号,我查完再答。" + long_answer, [], [])["零工具硬答"])
+    ck("调了工具就不算", not observe(long_answer, ["mcp__kb__kb_tables"], [])["零工具硬答"])
+    ck("祈使式索要也算反问(实测里漏过)",
+       observe("给我订单号,我马上跑一遍。", [], [])["反问"])
     print("\n" + "=" * 76)
     if bad:
         print(f"❌ {len(bad)} 条没过:" + " / ".join(bad)); return 1
@@ -179,6 +202,11 @@ if __name__ == "__main__":
           f"拒答率 {sum(r['runs'][0]['拒答'] for r in rows)}/{n} · "
           f"平均 {sum(r['runs'][0]['工具数'] for r in rows)/n:.1f} 次工具调用")
     print(f"     工具分布 {dict(tools)}")
+    hard = [r for r in rows if r["runs"][0]["零工具硬答"]]
+    zero = [r for r in rows if r["runs"][0]["工具数"] == 0]
+    print(f"  ④ 无据下结论 {len(hard)}/{n}"
+          + (f" —— 🛑 {[r['q'][:18] for r in hard]}" if hard
+             else f" ✅(零工具调用 {len(zero)} 条,全部是反问或拒答)"))
     print(f"  ③ 两遍一致  {sum(r['一致'] for r in rows)}/{n}"
           f"{' —— 不一致的说明它在猜' if sum(r['一致'] for r in rows) < n else ' ✅'}")
     print(f"\n  总花费 ${cost:.4f}")
