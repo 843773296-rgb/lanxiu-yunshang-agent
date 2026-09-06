@@ -252,6 +252,12 @@ def main():
         except guard.Refused: got = False
         ck(got == should, f"闸门 {tgt!r}/{env!r} → {'放行' if should else '拒绝'}")
 
+    own = os.path.join(ROOT, "backend", "lanxiu.db")
+    try: guard.check_target(own, "test", write=True); ck(False, "仓库自己的库禁止写入")
+    except guard.Refused: ck(True, "仓库自己的库禁止写入(它是四个数据检查的真值源)")
+    try: guard.check_target(own, "test", write=False); ck(True, "但允许只读采样(出方案不写库)")
+    except guard.Refused as e: ck(False, "只读采样不该被拦", str(e)[:80])
+
     print("\n【端到端 · 灌入/自检/回滚(临时副本,不碰本体)】")
     src = os.path.join(ROOT, "backend", "lanxiu.db")
     if os.path.exists(src):

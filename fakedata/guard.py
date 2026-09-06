@@ -47,7 +47,16 @@ ENVS = ("dev", "test", "staging")
 class Refused(SystemExit):
     pass
 
-def check_target(target, env, write=False):
+# 仓库自己的那个库,**只读不写**。
+# 它是 spec_check / liability_check / fitting / guards_test 四个检查的真值源,
+# 由 seed.py 用固定种子确定性生成。往里灌假数据会同时踩到两条别人的红线:
+#   · 反例夹具是「故意不完整的数据」,多灌几行合理数据就可能把某条规则的唯一用例淹掉
+#   · BP-03 的判责真值是**照最终数据算出来的**,数据后来再变,真值描述的就是一个不存在的世界
+# 两种破法的共同点是**检查仍然全绿** —— 规则没被改坏,只是再也测不到东西了。
+# 拿它当**样本源**读是这个工具的正常用法,写不是。
+PROTECTED = ("backend/lanxiu.db",)
+
+def check_target(target, env, write=False, root=None):
     """返回一条说明。拒绝就抛 Refused —— 不返回布尔值,免得调用方忘了看。"""
     if env not in ENVS:
         raise Refused(f"必须显式声明环境:--env {'|'.join(ENVS)}(当前:{env!r})\n"
@@ -56,6 +65,17 @@ def check_target(target, env, write=False):
     if hit:
         raise Refused(f"目标 {target!r} 命中生产特征 {hit!r},拒绝。\n"
                       f"你声明的是 {env},但名字看起来是生产库。**声明和名字打架时,以拒绝为准。**")
+    if write:
+        root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for rel in PROTECTED:
+            if os.path.realpath(target) == os.path.realpath(os.path.join(root, rel)):
+                raise Refused(
+                    f"{rel} 是仓库自己的库,拒绝写入。\n"
+                    f"它是 spec_check / liability_check / fitting / guards_test 四个检查的真值源,"
+                    f"由 seed.py 确定性生成。\n"
+                    f"往里灌假数据会**淹掉反例夹具**、并让 BP-03 的判责真值描述一个不存在的世界 ——"
+                    f"而这两种破法都不会让检查变红,只会让它们再也测不到东西。\n"
+                    f"要拿它当样本源:出方案(plan)是只读的,随便读。要灌,先 cp 一份副本。")
     if write and env == "staging":
         return f"⚠️ 预发环境写入 —— 预发常有人在用,确认过再来。"
     return f"目标 {target} · 环境 {env} · {'写入' if write else '只读'}"
@@ -113,6 +133,12 @@ if __name__ == "__main__":
     expect_refuse("mysql://u@h/app_live", "dev", "live 带分隔符")
     expect_pass("mysql://u@h/delivery_dev", "dev", "delivery 不该被 live 误伤")
     expect_pass("/Users/x/mastering_db_test.db", "test", "mastering 不该被 master 误伤")
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _own = os.path.join(_root, "backend", "lanxiu.db")
+    try: check_target(_own, "test", write=True); fail.append("仓库自己的库不该允许写入")
+    except Refused: ok += 1
+    try: check_target(_own, "test", write=False); ok += 1
+    except Refused as e: fail.append(f"仓库自己的库应该允许只读采样 —— {e}")
     print(f"安全闸门自测:{ok} 通过 / {len(fail)} 失败")
     for f_ in fail: print("  ✗", f_)
     raise SystemExit(1 if fail else 0)
