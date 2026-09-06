@@ -1,0 +1,519 @@
+<title>澜绣云裳 · 智能工作站</title>
+<style>
+:root{
+  --bg:#F5F7FA; --surface:#FFFFFF; --surface2:#F0F3F8;
+  --ink:#20242B; --muted:#5E6673; --faint:#8B93A1;
+  --line:#E4E8EF; --line2:#CDD4DF;
+  --accent:#8C4356; --accent-ink:#6E2F40; --accent-soft:#FBEEF1; --accent-line:#EBCBD4;
+  --warn:#D97A00; --warn-soft:#FFF1E0; --crit:#E5484D; --crit-soft:#FDEAEA;
+  --info:#0E9384; --info-soft:#E0F3F0;
+  --shadow:0 1px 2px rgba(31,41,55,.05),0 4px 16px rgba(31,41,55,.06);
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11141A; --surface:#191E27; --surface2:#202734;
+  --ink:#E6E9EF; --muted:#9AA4B2; --faint:#6E7787;
+  --line:#272E3A; --line2:#343D4C;
+  --accent:#D98BA0; --accent-ink:#E9AEBE; --accent-soft:#2E1B22; --accent-line:#4A2C36;
+  --warn:#F0A34E; --warn-soft:#33260F; --crit:#F4766C; --crit-soft:#3A1D1A;
+  --info:#4CC3B4; --info-soft:#12332E;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+}}
+:root[data-theme="dark"]{
+  --bg:#11141A; --surface:#191E27; --surface2:#202734;
+  --ink:#E6E9EF; --muted:#9AA4B2; --faint:#6E7787;
+  --line:#272E3A; --line2:#343D4C;
+  --accent:#D98BA0; --accent-ink:#E9AEBE; --accent-soft:#2E1B22; --accent-line:#4A2C36;
+  --warn:#F0A34E; --warn-soft:#33260F; --crit:#F4766C; --crit-soft:#3A1D1A;
+  --info:#4CC3B4; --info-soft:#12332E;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 16px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+ font:14px/1.65 -apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+ -webkit-font-smoothing:antialiased}
+.serif{font-family:"Songti SC","STSong","Noto Serif CJK SC",serif}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;padding:0}
+button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code{font:12px ui-monospace,Menlo,monospace;background:var(--surface2);padding:1px 5px;border-radius:4px}
+
+/* 顶栏 */
+.topbar{position:sticky;top:0;z-index:40;height:52px;display:flex;align-items:center;gap:16px;
+ padding:0 18px;background:var(--surface);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;flex:none}
+.seal{width:30px;height:30px;border-radius:7px;background:var(--accent);color:#fff;display:grid;
+ place-items:center;font-family:"Songti SC","STSong",serif;font-size:19px;font-weight:700;line-height:1}
+.brand b{font-family:"Songti SC","STSong",serif;font-size:17px;letter-spacing:.5px}
+.scopechip{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;
+ background:var(--accent-soft);color:var(--accent-ink);border:1px solid var(--accent-line);
+ font-size:12px;font-weight:600;flex:none}
+.nav{display:flex;gap:2px;margin:0 auto}
+.nav button{padding:6px 15px;border-radius:8px;font-size:14px;color:var(--muted);font-weight:500}
+.nav button:hover{background:var(--surface2);color:var(--ink)}
+.nav button.on{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+.topbtns{display:flex;gap:8px;flex:none;align-items:center}
+.ghostbtn{padding:5px 11px;border-radius:8px;border:1px solid var(--line2);font-size:13px;color:var(--muted)}
+.ghostbtn:hover{background:var(--surface2);color:var(--ink)}
+.qbtn{width:28px;height:28px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);
+ display:grid;place-items:center;font-weight:700;font-size:14px}
+.qbtn:hover{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-line)}
+
+/* 骨架 */
+.shell{display:flex;min-height:calc(100vh - 52px)}
+main{flex:1;min-width:0}
+.wrap{max-width:1080px;margin:0 auto;padding:20px 22px 64px}
+.screen{display:none}.screen.on{display:block}
+.pagehead{display:flex;align-items:baseline;gap:12px;margin:0 0 14px}
+.pagehead h1{font-size:20px;margin:0;font-weight:650}
+.pagehead .why{font-size:12.5px;color:var(--faint)}
+
+/* 卡片 */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.cardpad{padding:16px 18px}
+.grid{display:grid;gap:12px}
+.k4{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.kpi .k{font:11px ui-monospace,Menlo,monospace;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+.kpi .v{font-size:27px;font-weight:650;line-height:1.25;font-variant-numeric:tabular-nums;margin-top:2px}
+.kpi .n{font-size:12px;color:var(--muted);line-height:1.5}
+.kpi.bad .v{color:var(--crit)} .kpi.warn .v{color:var(--warn)} .kpi.good .v{color:var(--info)}
+
+/* 表 */
+table{width:100%;border-collapse:collapse;font-size:13.2px}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:11.5px;letter-spacing:.06em;color:var(--faint);text-transform:uppercase;font-weight:600}
+tbody tr:hover{background:var(--surface2)}
+.scroll{overflow-x:auto}
+.pill{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:600;
+ background:var(--surface2);color:var(--muted);border:1px solid var(--line)}
+.pill.ok{background:var(--info-soft);color:var(--info);border-color:transparent}
+.pill.warn{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.pill.crit{background:var(--crit-soft);color:var(--crit);border-color:transparent}
+.pill.acc{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-line)}
+
+/* 面料 */
+.fabgrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(232px,1fr))}
+.fab{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:13px 15px;
+ box-shadow:var(--shadow);cursor:pointer;text-align:left;display:flex;flex-direction:column;gap:7px;transition:.12s}
+.fab:hover{border-color:var(--accent-line);transform:translateY(-1px)}
+.fab .sw{height:44px;border-radius:7px;border:1px solid var(--line)}
+.fab .nm{font-size:15px;font-weight:650;display:flex;align-items:center;gap:7px}
+.fab .bf{font-size:12.3px;color:var(--muted);line-height:1.55;
+ display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.fab .sp{display:flex;gap:10px;font:11.5px ui-monospace,Menlo,monospace;color:var(--faint);flex-wrap:wrap}
+.filters{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 13px;align-items:center}
+.filters button{font-size:12.5px;padding:4px 12px;border-radius:999px;border:1px solid var(--line2);color:var(--muted)}
+.filters button.on{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent-line);font-weight:600}
+.filters input{font:inherit;font-size:13px;padding:5px 11px;border:1px solid var(--line2);border-radius:8px;
+ background:var(--surface);color:inherit;min-width:150px}
+
+/* 智能体侧栏 */
+aside.agent{width:372px;flex:none;background:var(--surface);border-left:1px solid var(--line);
+ display:flex;flex-direction:column;position:sticky;top:52px;height:calc(100vh - 52px)}
+aside.agent.off{display:none}
+.aghead{flex:none;display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--line)}
+.aghead .t{font-weight:700;font-size:14px}
+.aghead select{font:inherit;font-size:12.5px;padding:3px 8px;border:1px solid var(--line2);border-radius:7px;
+ background:var(--surface2);color:inherit;margin-left:auto}
+.agbody{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:11px}
+.msg{max-width:90%;padding:9px 12px;border-radius:12px;font-size:13.2px;line-height:1.62;white-space:pre-wrap}
+.msg.ai{background:var(--surface2);border-bottom-left-radius:4px;align-self:flex-start}
+.msg.me{background:var(--accent);color:#fff;border-bottom-right-radius:4px;align-self:flex-end}
+.msg .ctx{display:block;font-size:11px;color:var(--faint);margin-bottom:5px;
+ font-family:ui-monospace,Menlo,monospace}
+.agfoot{flex:none;border-top:1px solid var(--line);padding:9px 12px 12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
+.chips button{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line2);color:var(--muted)}
+.chips button:hover{border-color:var(--accent-line);color:var(--accent-ink)}
+.inputrow{display:flex;gap:7px}
+.inputrow textarea{flex:1;font:inherit;font-size:13.2px;padding:8px 11px;border:1px solid var(--line2);
+ border-radius:9px;background:var(--surface);color:inherit;resize:none;height:56px}
+.send{padding:0 15px;border-radius:9px;background:var(--accent);color:#fff;font-weight:600;font-size:13px}
+.send[disabled]{opacity:.5;cursor:default}
+
+/* 教学层 */
+.overlay{position:fixed;inset:0;z-index:80;background:rgba(16,20,28,.5);display:none;
+ align-items:flex-start;justify-content:center;padding:44px 18px;overflow-y:auto}
+.overlay.on{display:flex}
+.teach{background:var(--surface);border-radius:14px;max-width:660px;width:100%;box-shadow:0 18px 60px rgba(0,0,0,.28)}
+.teachhead{display:flex;align-items:flex-start;gap:12px;padding:17px 22px;border-bottom:1px solid var(--line)}
+.teachhead .kpid{font:11.5px ui-monospace,Menlo,monospace;color:var(--faint)}
+.teachhead h2{margin:2px 0 0;font-size:18px}
+.teachhead .x{margin-left:auto;font-size:17px;color:var(--faint)}
+.teachbody{padding:4px 22px 18px;max-height:64vh;overflow-y:auto}
+.sect{margin-top:16px}
+.sect h3{display:flex;align-items:center;gap:8px;font-size:12.5px;margin:0 0 6px;color:var(--accent-ink);
+ letter-spacing:.06em;text-transform:uppercase}
+.sect p{margin:0 0 8px;color:var(--muted);font-size:13.4px;line-height:1.72}
+.sect b{color:var(--ink)}
+.sect table{margin-top:6px}
+.teachfoot{padding:12px 22px;border-top:1px solid var(--line);font-size:12.3px;color:var(--faint)}
+@media(max-width:900px){aside.agent{display:none}.nav{gap:0}.nav button{padding:6px 9px;font-size:13px}}
+</style>
+
+<div class="topbar">
+  <div class="brand"><span class="seal">澜</span><b>澜绣云裳</b></div>
+  <span class="scopechip" id="scope">加载中</span>
+  <nav class="nav" id="nav">
+    <button data-s="dash" class="on">值班台</button>
+    <button data-s="queue">研判队列</button>
+    <button data-s="fabric">面料库</button>
+    <button data-s="wearer">着装人</button>
+    <button data-s="health">智能体健康</button>
+  </nav>
+  <div class="topbtns">
+    <button class="qbtn" id="help" title="这一屏在讲什么">?</button>
+    <button class="ghostbtn" id="theme">主题</button>
+    <button class="ghostbtn" id="agtoggle">智能体</button>
+  </div>
+</div>
+
+<div class="shell">
+<main><div class="wrap">
+
+  <section class="screen on" data-s="dash">
+    <div class="pagehead"><h1>值班台</h1><span class="why">今天还剩多少件 · 超时几件 · 最久等了多久</span></div>
+    <div class="grid k4" id="kpis"></div>
+    <div class="card cardpad" style="margin-top:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <b>队列最前面</b><span class="pill" id="qhint">超时优先</span>
+        <button class="ghostbtn" id="run3" style="margin-left:auto">让智能体研判 3 条</button>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>工单</th><th>类型</th><th>等待</th><th>时效</th><th>状态</th><th>智能体判的根因</th></tr></thead>
+        <tbody id="dashrows"><tr><td colspan="6">加载中…</td></tr></tbody>
+      </table></div>
+      <div style="font-size:12.3px;color:var(--faint);margin-top:8px" id="runmsg"></div>
+    </div>
+  </section>
+
+  <section class="screen" data-s="queue">
+    <div class="pagehead"><h1>研判队列</h1><span class="why">智能体交草稿,你采纳 / 改判 / 升级</span></div>
+    <div class="card cardpad"><div class="scroll"><table>
+      <thead><tr><th>工单</th><th>类型</th><th>等待</th><th>时效</th><th>状态</th><th>根因</th><th>置信度</th></tr></thead>
+      <tbody id="queuerows"><tr><td colspan="7">加载中…</td></tr></tbody>
+    </table></div></div>
+  </section>
+
+  <section class="screen" data-s="fabric">
+    <div class="pagehead"><h1>面料库</h1><span class="why">定制业务里客户第一个摸的是布</span></div>
+    <div class="filters" id="fabfilters">
+      <button data-f="all" class="on">全部</button>
+      <button data-f="public">可对客户说</button>
+      <button data-f="scale">行业参考</button>
+      <button data-f="demo">内部演示</button>
+      <button data-f="stock">有现货</button>
+      <input id="fabq" placeholder="搜面料名或别名…">
+      <span style="font-size:12.3px;color:var(--faint)" id="fabcount"></span>
+    </div>
+    <div class="fabgrid" id="fabgrid"></div>
+  </section>
+
+  <section class="screen" data-s="wearer">
+    <div class="pagehead"><h1>着装人</h1><span class="why">谁付钱,和衣服穿在谁身上,是两回事</span></div>
+    <div class="grid k4" id="wkpis"></div>
+    <div class="card cardpad" style="margin-top:14px"><div class="scroll"><table>
+      <thead><tr><th>姓名</th><th>关系</th><th>性别</th><th>年龄</th><th>最近身高</th><th>上次量体</th><th>状态</th><th>同意</th></tr></thead>
+      <tbody id="wrows"><tr><td colspan="8">加载中…</td></tr></tbody>
+    </table></div></div>
+  </section>
+
+  <section class="screen" data-s="health">
+    <div class="pagehead"><h1>智能体健康</h1><span class="why">采纳率掉下来,不用等投诉</span></div>
+    <div class="grid k4" id="hkpis"></div>
+  </section>
+
+</div></main>
+
+<aside class="agent" id="agent">
+  <div class="aghead">
+    <span class="seal" style="width:24px;height:24px;font-size:14px;border-radius:6px">✦</span>
+    <span class="t">智能体</span>
+    <select id="agkind">
+      <option value="kb">工艺顾问</option>
+      <option value="task">研判助手</option>
+    </select>
+  </div>
+  <div class="agbody" id="agbody"></div>
+  <div class="agfoot">
+    <div class="chips" id="agchips"></div>
+    <div class="inputrow">
+      <textarea id="agq" placeholder="用大白话问,比如「香云纱能做妆花吗」"></textarea>
+      <button class="send" id="agsend">问</button>
+    </div>
+  </div>
+</aside>
+</div>
+
+<div class="overlay" id="ov" role="dialog" aria-modal="true">
+  <div class="card teach">
+    <div class="teachhead">
+      <div style="flex:1"><div class="kpid" id="tid"></div><h2 id="ttitle"></h2></div>
+      <button class="x" id="ovclose" aria-label="关闭">✕</button>
+    </div>
+    <div class="teachbody" id="tbody"></div>
+    <div class="teachfoot">这些说明只在「?」里出现 —— 页面本身只放数据。</div>
+  </div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s), esc=s=>(s??"").toString().replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const md=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`(.+?)`/g,"<code>$1</code>");
+let FAB=[], FILTER="all";
+
+/* ── 教学内容:全部收在这里,页面上一句都不铺 ─────────────────────── */
+const TEACH={
+ dash:{id:"值班台 · 为什么改成这样",t:"从展示件到运维平台",b:[
+  ["同一个智能体,组织形态换了",
+   "之前是**展示件**:你点它才跑,跑完显示一次,关掉就没了,成功 = 这次答得漂亮。\n"+
+   "现在是**运维平台**:积压在那儿等着被跑完,研判落库,谁都能回头看当时说了什么、花了多少钱。"],
+  ["成功的定义也换了",
+   "展示件有标准答案可以判分;**上线后没有标准答案** —— 人的裁决就是答案,"+
+   "而改判会回流成新的标注,进评测集。"],
+  ["排序本身就是业务规则",
+   "超时的排最前,同档按等待时长倒序。这条规则写在 `backend/ops.py` 里,**不在页面上** —— "+
+   "页面只负责显示,换个前端不该改变谁先被处理。"],
+  ["跑一次是真花钱的",
+   "每条约 2–4 次工具调用。「让智能体研判 3 条」按下去是真的调模型、真的查库。"]]},
+ queue:{id:"研判队列 · 三个动作",t:"采纳 / 改判 / 升级",b:[
+  ["为什么必须有人签字",
+   "智能体只出**草稿**。涉及退款、判责、赔付的结论,**必须由人确认后执行** —— "+
+   "认责这件事没有回退键。"],
+  ["改判最值钱",
+   "你改一次,系统就多一条**带标注的真实用例**,自动进评测集。"+
+   "**上线后的评测集不是攒出来的,是改判改出来的。**"],
+  ["置信度是怎么来的",
+   "一次数据都没查就下结论 → 低;查了但没给根因 → 低。"+
+   "**高置信度被改判**是最该看的一个数,它说明智能体在错误的地方很自信。"]]},
+ fabric:{id:"面料库 · 三个数怎么读",t:"来源等级 · 备料天 · 相容矩阵",b:[
+  ["来源等级决定这句话能不能说给客户",
+   "**public** 可直接对客户说;**scale** 要注明「行业参考」;"+
+   "**demo** 是内部演示数据,**不可作为对客户的承诺**,须工艺负责人确认。"],
+  ["备料天是工期的第一段",
+   "从下单到面料到位的天数。云锦 22 天、香云纱 12 天 —— "+
+   "**它常常比缝制还长**,所以「能不能快点」第一个该问的是换不换料,不是加不加人。"],
+  ["损耗率不是浪费,是版型决定的",
+   "马面裙要对花对格,损耗天然高。报价按**含损耗**的用量算,"+
+   "按净用量报价的单子最后都要补钱。"],
+  ["相容矩阵:可 / 需评估 / 不可",
+   "每种面料对 45 种工艺各有一个判定。**判「不可」时必须把依据一起说出来** —— "+
+   "它挡的是客户的单子。「未定义」表示这一格还没录入,**不许推断**,转工艺负责人。"]]},
+ wearer:{id:"着装人 · 三条硬规矩",t:"账号 ≠ 穿衣服的人",b:[
+  ["先分清是谁要穿",
+   "妈妈给女儿买汉服时,**付款人、收货人、量体对象是三个人**。"+
+   "系统里存的是**生日不是年龄** —— 存年龄的系统一年后全库都错,而且不报错。"],
+  ["超期的量体不是参考值,是无效值",
+   "儿童 6 个月、突增期 4 个月、成人 12 个月。"+
+   "「有个旧尺寸总比没有强」正是童装返工的第一大原因。"],
+  ["答案是一个窗口,不是一个日期",
+   "「明年六月毕业礼要穿」要同时回答:什么时候复量、最晚什么时候下单。"+
+   "**早下单也不行** —— 用的量体更旧、推算跨度更长,误差更大。"],
+  ["推的是分布,不是这个孩子",
+   "身高推算给的是区间,**只报一个点估计等于骗人**;"+
+   "围度受营养运动影响更大,**只给区间,不给点估计**。"]]},
+ health:{id:"智能体健康 · 指标含义",t:"掉下来不用等投诉",b:[
+  ["采纳率 / 改判率",
+   "人采纳了多少、改判了多少。改判率上升说明它在某类问题上开始飘。"],
+  ["协议失败率",
+   "四段格式没解析出来的比例。**这不是模型笨,是提示词或解析器该修了。**"],
+  ["成本要自己算",
+   "Agent SDK 返回的 `total_cost_usd` 跨供应商时用错价目表(实测差过 24–135 倍),"+
+   "这里显示的是**按真实单价重算**的。"]]}
+};
+const CHIPS={kb:["香云纱能做妆花吗","云锦备料要多久","客户说要仙气飘飘的,推什么"],
+             task:["队列里最急的是哪条","MW73027 这个算谁的责任","C10010 的孩子还能按旧尺寸下单吗"]};
+
+/* ── 屏切换 ─────────────────────────────────────────────────────── */
+let SCR="dash";
+function show(s){
+  SCR=s;
+  document.querySelectorAll(".screen").forEach(x=>x.classList.toggle("on",x.dataset.s===s));
+  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.s===s));
+  if(s==="fabric") loadFab(); if(s==="wearer") loadWearer(); if(s==="health") loadHealth();
+}
+$("#nav").addEventListener("click",e=>{const b=e.target.closest("button"); if(b) show(b.dataset.s);});
+
+/* ── 教学层 ─────────────────────────────────────────────────────── */
+function openTeach(){
+  const t=TEACH[SCR]; if(!t) return;
+  $("#tid").textContent=t.id; $("#ttitle").textContent=t.t;
+  $("#tbody").innerHTML=t.b.map(([h,p])=>`<div class="sect"><h3>${esc(h)}</h3><p>${md(p).replace(/\n/g,"<br>")}</p></div>`).join("");
+  $("#ov").classList.add("on");
+}
+$("#help").addEventListener("click",openTeach);
+$("#ovclose").addEventListener("click",()=>$("#ov").classList.remove("on"));
+$("#ov").addEventListener("click",e=>{if(e.target===$("#ov"))$("#ov").classList.remove("on");});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")$("#ov").classList.remove("on");});
+
+/* ── 主题 / 智能体开关 ──────────────────────────────────────────── */
+$("#theme").addEventListener("click",()=>{
+  const r=document.documentElement, now=r.getAttribute("data-theme");
+  r.setAttribute("data-theme", now==="dark"?"light":"dark");
+});
+$("#agtoggle").addEventListener("click",()=>$("#agent").classList.toggle("off"));
+
+/* ── 值班台 ─────────────────────────────────────────────────────── */
+const LV={已超时:"crit",临期:"warn",正常:"",已销账:"ok"}, CF={高:"ok",中:"warn",低:"crit"};
+function kpi(box,items){
+  $(box).innerHTML=items.map(([cls,k,v,n])=>
+    `<div class="card cardpad kpi ${cls}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="n">${esc(n)}</div></div>`).join("");
+}
+async function loadDash(){
+  const [b,q]=await Promise.all([fetch("/api/ops-backlog").then(r=>r.json()),
+                                 fetch("/api/ops-queue?state=待办").then(r=>r.json())]);
+  $("#scope").textContent=`待办 ${b.待办} · 超时 ${b.已超时}`;
+  kpi("#kpis",[[b.待办?"warn":"good","待办",b.待办,`共 ${b.总量} 条,已销账 ${b.已销账}`],
+    [b.已超时?"bad":"good","已超时",b.已超时,`临期还有 ${b.临期} 条`],
+    [b.最久未处理小时>72?"bad":"","最久等待",b.最久未处理小时+"h","财务 24h / 合并 48h / 判责 36h"],
+    ["","等你复核",b.待复核,`还有 ${b.未研判} 条没研判`]]);
+  $("#dashrows").innerHTML=q.rows.length?q.rows.slice(0,8).map(x=>
+    `<tr><td class="num">${esc(x.task_id)}</td><td>${esc(x.type)}</td><td class="num">${x.waited_h}h</td>
+     <td><span class="pill ${LV[x.level]||""}">${esc(x.level)}</span></td><td>${esc(x.state)}</td>
+     <td>${x.ai_root_cause?esc(x.ai_root_cause):'<span style="color:var(--faint)">—</span>'}</td></tr>`).join("")
+    :`<tr><td colspan="6">队列见底了。</td></tr>`;
+  $("#queuerows").innerHTML=q.rows.map(x=>
+    `<tr><td class="num">${esc(x.task_id)}</td><td>${esc(x.type)}</td><td class="num">${x.waited_h}h</td>
+     <td><span class="pill ${LV[x.level]||""}">${esc(x.level)}</span></td><td>${esc(x.state)}</td>
+     <td>${x.ai_root_cause?esc(x.ai_root_cause):"—"}</td>
+     <td>${x.ai_confidence?`<span class="pill ${CF[x.ai_confidence]||""}">${x.ai_confidence}</span>`:"—"}</td></tr>`).join("");
+}
+$("#run3").addEventListener("click",async()=>{
+  const b=$("#run3"); b.disabled=true; $("#runmsg").textContent="智能体在跑…… 每条要查 2–4 次数据,别关页面。";
+  try{
+    const r=await (await fetch("/run-batch",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({n:3})})).json();
+    $("#runmsg").textContent=`研判了 ${(r.done||[]).length} 条,花了 $${(r.cost||0).toFixed(4)}。`;
+    await loadDash();
+  }catch(e){ $("#runmsg").textContent="跑失败:"+e; }
+  b.disabled=false;
+});
+
+/* ── 面料库 ─────────────────────────────────────────────────────── */
+const HUE={香云纱:"#4A3B2A",云锦:"#8C4356",真丝素罗:"#E8EFE6",宋锦:"#2E4E7E",妆花缎:"#9D2933",
+ 缂丝:"#C9A227",棉麻:"#D8CFC0",绡:"#EDEAE3",纱:"#F0EDE6",织金缎:"#C9A227",绫:"#DCE3E8"};
+function swatch(n){const k=Object.keys(HUE).find(k=>n.includes(k));return HUE[k]||"#C8BFB4";}
+function fabCard(f){
+  const s=f.规格||{}, stock=(s.库存||0)>0;
+  return `<button class="fab" data-code="${esc(f.code)}">
+    <div class="sw" style="background:${swatch(f.name)}"></div>
+    <div class="nm">${esc(f.name)}<span class="pill ${f.src_type==="public"?"ok":f.src_type==="demo"?"warn":""}">${esc(f.src_type)}</span></div>
+    <div class="bf">${esc(f.brief||"")}</div>
+    <div class="sp"><span>${s.幅宽?s.幅宽+"cm":"—"}</span><span>¥${s.单价??"—"}/${esc(s.单位||"米")}</span>
+      <span>备料 ${s.备料天??"—"} 天</span><span class="pill ${stock?"ok":"crit"}">${stock?"有现货":"无现货"}</span></div>
+    <div class="sp"><span>可 ${f.工艺.可}</span><span>需评估 ${f.工艺.需评估}</span><span>不可 ${f.工艺.不可}</span></div>
+  </button>`;
+}
+function renderFab(){
+  const q=($("#fabq").value||"").trim();
+  let rows=FAB.filter(f=>{
+    if(FILTER==="stock") return (f.规格?.库存||0)>0;
+    if(FILTER!=="all" && f.src_type!==FILTER) return false;
+    return true;
+  });
+  if(q) rows=rows.filter(f=>(f.name+(f.alias||"")+(f.brief||"")).includes(q));
+  $("#fabcount").textContent=`${rows.length} / ${FAB.length} 种`;
+  $("#fabgrid").innerHTML=rows.map(fabCard).join("")||`<div class="card cardpad">没有符合条件的面料。</div>`;
+}
+async function loadFab(){
+  if(!FAB.length){ FAB=(await (await fetch("/api/fabrics")).json()).rows; }
+  renderFab();
+}
+$("#fabfilters").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-f]"); if(!b) return;
+  FILTER=b.dataset.f;
+  document.querySelectorAll("#fabfilters button").forEach(x=>x.classList.toggle("on",x===b));
+  renderFab();
+});
+$("#fabq").addEventListener("input",renderFab);
+$("#fabgrid").addEventListener("click",e=>{
+  const b=e.target.closest(".fab"); if(!b) return;
+  const f=FAB.find(x=>x.code===b.dataset.code); if(!f) return;
+  const s=f.规格||{};
+  $("#tid").textContent=`${f.code} · 面料`; $("#ttitle").textContent=f.name;
+  $("#tbody").innerHTML=
+    `<div class="sect"><h3>它是什么</h3><p>${md(f.brief||"—")}</p>
+       ${f.alias?`<p style="font-size:12.5px">别名:${esc(f.alias)}</p>`:""}</div>`+
+    (f.细节.length?`<div class="sect"><h3>细节</h3><p>${f.细节.map(esc).join("<br>")}</p></div>`:"")+
+    (f.fit?`<div class="sect"><h3>适合什么形制</h3><p>${esc(f.fit)}</p></div>`:"")+
+    `<div class="sect"><h3>规格与备料</h3><div class="scroll"><table>
+      <tr><th>幅宽</th><th>单价</th><th>损耗率</th><th>备料天</th><th>库存</th></tr>
+      <tr><td class="num">${s.幅宽??"—"} cm</td><td class="num">¥${s.单价??"—"}</td>
+      <td class="num">${s.损耗!=null?(s.损耗*100).toFixed(0)+"%":"—"}</td>
+      <td class="num">${s.备料天??"—"} 天</td>
+      <td class="num">${s.库存??"—"} ${esc(s.单位||"")}</td></tr></table></div>
+      <p style="margin-top:7px">损耗率不是浪费,是对花对格决定的 —— <b>报价必须按含损耗的用量算</b>。</p></div>`+
+    `<div class="sect"><h3>能做哪些工艺</h3><p>可 <b>${f.工艺.可}</b> 种 · 需评估 <b>${f.工艺.需评估}</b> 种 · 不可 <b>${f.工艺.不可}</b> 种。
+      判「不可」时<b>必须把依据一起说出来</b> —— 它挡的是客户的单子。</p></div>`+
+    `<div class="sect"><h3>来源等级</h3><p><span class="pill ${f.src_type==="public"?"ok":f.src_type==="demo"?"warn":""}">${esc(f.src_type)}</span>
+      ${f.src_type==="public"?"可直接对客户说。":f.src_type==="scale"?"要注明「行业参考」。":"内部演示数据,<b>不可作为对客户的承诺</b>,须工艺负责人确认。"}</p></div>`;
+  $("#ov").classList.add("on");
+});
+
+/* ── 着装人 / 健康度 ────────────────────────────────────────────── */
+async function loadWearer(){
+  const r=await (await fetch("/api/wearers")).json(), rows=r.rows;
+  const kid=rows.filter(x=>x.年龄!=null&&x.年龄<18).length, due=rows.filter(x=>x.该复量).length;
+  kpi("#wkpis",[["","着装人",rows.length,"挂在账号下的人,不是账号数"],
+    ["","未成年",kid,"这个模块真正要管的对象"],
+    [due?"warn":"good","该复量",due,"超期的量体是无效值"],
+    [(r.需人工确认||[]).length?"warn":"good","需人工确认",(r.需人工确认||[]).length,"遗传身高与推算差 >8cm"]]);
+  $("#wrows").innerHTML=rows.map(x=>`<tr><td>${esc(x.姓名)}</td><td>${esc(x.关系)}</td><td>${esc(x.性别)}</td>
+    <td class="num">${x.年龄??"—"}</td><td class="num">${x.最近身高??"—"}</td><td class="num">${esc(x.量体日||"—")}</td>
+    <td>${x.该复量?`<span class="pill crit">该复量 超期${x.超期天数}天</span>`:x.量体日?'<span class="pill ok">有效</span>':'<span class="pill">未量体</span>'}</td>
+    <td>${x.身体数据同意==="有效"?'<span class="pill ok">有效</span>':'<span class="pill crit">缺失</span>'}</td></tr>`).join("");
+}
+async function loadHealth(){
+  const h=await (await fetch("/api/ops-health")).json();
+  kpi("#hkpis",[["","研判总数",h.研判总数,`已销账 ${h.已销账}`],
+    ["","采纳率",h.采纳率,`改判率 ${h.改判率}`],
+    [h.协议失败数?"warn":"good","协议失败率",h.协议失败率,`${h.协议失败数} 条没解析出四段`],
+    ["","单条均价",h.单条均价!=null?"$"+Number(h.单条均价).toFixed(4):"—","按真实单价重算,不是 SDK 报的"]]);
+}
+
+/* ── 智能体 ─────────────────────────────────────────────────────── */
+function say(cls,text,ctx){
+  const d=document.createElement("div"); d.className="msg "+cls;
+  d.innerHTML=(ctx?`<span class="ctx">${esc(ctx)}</span>`:"")+md(text).replace(/\n/g,"<br>");
+  $("#agbody").appendChild(d); $("#agbody").scrollTop=1e9; return d;
+}
+function chips(){
+  // 带 data-q:一是别拿按钮文字当值(改文案就会坏),二是让控件审计看得出它是绑了的
+  $("#agchips").innerHTML=CHIPS[$("#agkind").value]
+    .map(c=>`<button data-q="${esc(c)}">${esc(c)}</button>`).join("");
+}
+$("#agchips").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  $("#agq").value=b.dataset.q||b.textContent; ask();
+});
+$("#agkind").addEventListener("change",()=>{
+  chips();
+  say("ai",$("#agkind").value==="kb"
+    ? "切到**工艺顾问**。问形制、面料、工艺、工期、尺码都行 —— 我只说查到的。"
+    : "切到**研判助手**。可以让我看队列里的工单、判责现场、客户合并。**结论都是草稿,要你签字。**");
+});
+async function ask(){
+  const q=($("#agq").value||"").trim(); if(!q) return;
+  $("#agq").value=""; say("me",q);
+  const kind=$("#agkind").value, wait=say("ai","查库中……");
+  $("#agsend").disabled=true;
+  try{
+    const r=await (await fetch("/run",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({kind,prompt:q})})).json();
+    wait.remove();
+    if(r.error){ say("ai","出错了:"+r.error); }
+    else{
+      const tools=(r.trajectory||[]).map(t=>t.tool.split("__").pop()).join(" · ")||"没调工具";
+      say("ai",r.text||"(空)",`${tools} · ${r.seconds}s · $${(r.cost_usd||0).toFixed(4)}`);
+      (r.guard_violations||[]).forEach(v=>say("ai","**体检打回**:"+v.msg));
+    }
+  }catch(e){ wait.remove(); say("ai","请求失败:"+e); }
+  $("#agsend").disabled=false;
+}
+$("#agsend").addEventListener("click",ask);
+$("#agq").addEventListener("keydown",e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey))ask();});
+
+chips();
+say("ai","我是工艺顾问。**只说知识库里查到的**,查不到会直说。\n上面可以切换到研判助手。");
+loadDash();
+</script>

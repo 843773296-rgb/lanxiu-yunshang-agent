@@ -15,7 +15,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND = os.environ.get("LANXIU_BACKEND", "http://127.0.0.1:8760")
 PORT = int(os.environ.get("AGENTSITE_PORT", "8770"))
 # 首页是值班台,不是导航页 —— 打开就该看见「今天还剩多少件」。
-PAGES = {"/": "duty.html", "/queue": "queue.html", "/health": "health.html",
+# 新工作站(单壳多屏 + 右侧智能体 + 「?」教学层)。
+# 旧的分页仍在原路径上,没删 —— 它们还是 ui_audit 的扫描对象,也方便对照。
+PAGES = {"/": "station.html", "/duty": "duty.html", "/queue": "queue.html", "/health": "health.html",
          "/chat": "chat.html", "/scheme": "scheme.html",
          "/workbench": "workbench.html", "/acceptance": "acceptance.html",
          # 着装人的身体生命周期 —— 和会员生命周期(新客/沉默/流失)不是一回事

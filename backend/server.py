@@ -1203,6 +1203,34 @@ class H(BaseHTTPRequestHandler):
         # 注意别和上面的 /api/lifecycle 混了:那个是**会员**生命周期(新客/沉默/流失),
         # 这个是**着装人**的身体生命周期(长个儿、该复量、场景倒推)。
         # 两个都叫「生命周期」是业务里的真实歧义,所以路径分开写清楚。
+        # ── 面料库 ──────────────────────────────────────────────────
+        # 45 条材质 + 135 条物料 + 相容矩阵,原来一个页面都没展示 ——
+        # **定制业务里客户第一个摸的是布,而系统里它一直只是个下拉选项。**
+        if p=="/api/fabrics":
+            import api as _api
+            mats=_api._rows("""SELECT code,name,alias,brief,detail,fit,src_type
+                               FROM craft WHERE cat='材质' ORDER BY code""")
+            out=[]
+            for m in mats:
+                phy=_api._rows("""SELECT width_cm,price,loss_rate,lead_days,stock_qty,unit
+                                  FROM material WHERE name=? OR name LIKE ?
+                                  ORDER BY code LIMIT 1""", m["name"], f"%{m['name']}%")
+                cb=_api._rows("""SELECT verdict,count(*) n FROM craft_combo
+                                 WHERE material=? GROUP BY verdict""", m["code"])
+                v={r["verdict"]:r["n"] for r in cb}
+                d=dict(m); d.pop("detail",None)
+                d.update(工艺=dict(可=v.get("可",0),需评估=v.get("需评估",0),
+                                  不可=v.get("不可",0),未定义=v.get("未定义",0)),
+                         规格=(dict(幅宽=phy[0]["width_cm"],单价=phy[0]["price"],
+                                   损耗=phy[0]["loss_rate"],备料天=phy[0]["lead_days"],
+                                   库存=phy[0]["stock_qty"],单位=phy[0]["unit"])
+                              if phy else None),
+                         细节=[x.strip() for x in (m["detail"] or "").split("/") if x.strip()])
+                out.append(d)
+            return self._send(dict(rows=out,
+                说明="来源等级 public 可直接对客户说;scale 要注明「行业参考」;"
+                     "demo 是内部演示数据,**不可作为对客户的承诺**。"
+                     "「备料天」是下单到面料到位的天数,现货为 1–3 天。"))
         if p=="/api/wearers":
             import api as _api, ops as _o
             rl=_o.recheck_list()
