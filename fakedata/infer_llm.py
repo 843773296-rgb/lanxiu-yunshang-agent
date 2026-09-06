@@ -194,6 +194,17 @@ def validate(raw, facts, plan):
             ts = {k: v for k, v in ts.items() if v not in shared}
             dropped.append(f'状态机:{t}.{c} 的 {sorted(shared)[:3]} 被多个状态共用,'
                            f'会派生出自相矛盾的断言,已整列剔除')
+        # **诞生时间不能当状态时间戳。** 模型把 ordr 的「待付款」映到了 created,
+        # 于是「待完成」的订单被判定为没走到待付款 → created 置空 ——
+        # 造出一批**没有下单时间的订单**。
+        # created 是这一行的诞生时刻,不是某个状态的产物:它永远存在,
+        # 而且是所有状态机对齐时间的**锚点**。锚点被当成状态戳,锚就没了。
+        birth = {k: v for k, v in ts.items()
+                 if v in ("created", "created_at", "create_time", "gmt_create")}
+        if birth:
+            ts = {k: v for k, v in ts.items() if k not in birth}
+            dropped.append(f'状态机:{t}.{c} 把 {sorted(set(birth.values()))} 当成了状态时间戳,'
+                           f'而它是这一行的诞生时刻(也是对齐用的锚点),已剔除')
         taken = {k: v for k, v in ts.items() if (t, v) in claimed}
         if taken:
             ts = {k: v for k, v in ts.items() if k not in taken}

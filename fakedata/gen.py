@@ -245,6 +245,12 @@ def _fsm_fix(rows, cname, g, cols, r):
     trans, start, ts = g["transitions"], g["start"], g["timestamps"]
     if not ts: return
     depth = _depths(start, trans)
+    # **下单时间是这一行的时间原点。** 一张表可以有好几个状态机(订单状态、生产状态、
+    # 退款状态),它们各管各的时间戳、互相不知道对方存在 ——
+    # 于是生产完成时间会被排到下单时间之前。荒谬,但每个状态机单看都是自洽的。
+    # 找一个所有状态机都认的锚点,是唯一能让它们对齐的办法。
+    anchor_col = next((c for c in ("created", "create_time", "created_at")
+                       if c in cols and c not in ts.values()), None)
     for row in rows:
         st = str(row.get(cname))
         must = dominators(start, trans, st) & set(ts)
@@ -253,7 +259,7 @@ def _fsm_fix(rows, cname, g, cols, r):
         for stt in order:
             col = ts[stt]
             if cur is None:
-                v = row.get(col)
+                v = row.get(col) or (row.get(anchor_col) if anchor_col else None)
                 try: cur = datetime.date.fromisoformat(str(v)[:10]) if v else _dt(r)
                 except ValueError: cur = _dt(r)
             else:
@@ -368,6 +374,29 @@ def generate(plan, conn=None, edge_rate=0.05):
                         row[c] = d.isoformat() if cols[c]["gen"] == "date" else \
                             f"{d.isoformat()} {rt.randint(8,21):02d}:{rt.randint(0,59):02d}:00"
                     last = row[c]
+        # 兜底:任何 *_at 都不该早于 created。
+        # 状态机管得住它认领的那几列,管不住剩下的(synced_at / on_shelf_at / handled_at…)——
+        # 那些是各自独立抽的,自然会掉到下单时间前面。
+        # 时间原点这件事得**全表统一**兜一次,不能指望每个局部规则各自记得。
+        if "created" in cols:
+            rt = rng_for(seed, tname, "__锚点")
+            ats = [c for c in cols if c.endswith("_at")
+                   and cols[c]["gen"] in ("date", "datetime")]
+            for row in rows:
+                base = row.get("created")
+                if not base: continue
+                for c in ats:
+                    v = row.get(c)
+                    if v is None or str(v) >= str(base): continue
+                    d = datetime.date.fromisoformat(str(base)[:10]) + \
+                        datetime.timedelta(days=rt.randint(0, 30))
+                    nv = d.isoformat() if cols[c]["gen"] == "date" else \
+                        f"{d.isoformat()} {rt.randint(8,21):02d}:{rt.randint(0,59):02d}:00"
+                    # 偏移可能是 0 天,而 created 带时分秒 —— 这时新值的时分仍可能更早。
+                    # 只按日期算、把时分丢掉,是这类「差一点」错误的固定来源。
+                    # 兜不住就直接取 created 本身:相等不违反「不早于」。
+                    row[c] = nv if nv >= str(base) else str(base)
+
         for row in rows: row.pop("__ctx", None)
         made[tname] = rows
     return made, manifest

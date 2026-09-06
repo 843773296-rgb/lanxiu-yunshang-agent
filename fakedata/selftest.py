@@ -35,7 +35,9 @@ def build_known_db(path):
     c = sqlite3.connect(path)
     c.executescript("""
     create table cust(id text primary key, name text, city text, created text, phone text unique);
-    create table ordr(id text primary key, cust_id text, amount real, status text, created text);
+    create table ordr(id text primary key, cust_id text, amount real, status text,
+                      created text, paid_at text, shipped_at text, cancelled_at text,
+                      prd_status text);
     create table item(id integer primary key, ordr text, sku text, qty int);
     create table note(body text);                       -- 没有主键:该被跳过
     """)
@@ -44,13 +46,19 @@ def build_known_db(path):
     c.executemany("insert into cust values(?,?,?,?,?)", custs)
     # 引用形状故意做成长尾:一半客户零订单,少数客户很多单
     ordrs, k = [], 0
+    ST = ["待付款", "已付款", "已发货", "已完成", "已取消"]
     for i, (cid, *_r) in enumerate(custs):
         n = 0 if i % 2 == 0 else (1 if i % 3 else 12)
         for _ in range(n):
             k += 1
-            ordrs.append((f"O{k:05d}", cid, 100.0 + k, "已完成" if k % 3 else "待付款",
-                          "2024-06-%02d" % (k % 28 + 1)))
-    c.executemany("insert into ordr values(?,?,?,?,?)", ordrs)
+            st = ST[k % len(ST)]
+            cr = "2024-06-%02d" % (k % 28 + 1)
+            ordrs.append((f"O{k:05d}", cid, 100.0 + k, st, cr,
+                          cr if st in ("已付款", "已发货", "已完成") else None,
+                          cr if st in ("已发货", "已完成") else None,
+                          cr if st == "已取消" else None,
+                          "待生产" if k % 2 else "已生产"))
+    c.executemany("insert into ordr values(?,?,?,?,?,?,?,?,?)", ordrs)
     items = [(None, o[0], f"SKU{j%7}", (j % 5) + 1)
              for j, o in enumerate(ordrs) for _ in (0,)]
     c.executemany("insert into item values(?,?,?,?)", items)
@@ -116,6 +124,79 @@ def main():
        f"只出现了 {kinds}")
     ck(sum(1 for t in texts if t in [v for _n, v in G.EDGE_TEXT]) <= len(texts) // 3,
        "边界值不能喧宾夺主(占比不超过三分之一)")
+
+    print("\n【模型层 · 全部离线,一次模型都不调】")
+    import infer_llm as I
+    FSM = {"table": "ordr", "column": "status", "start": ["待付款"],
+           "transitions": [["待付款", "已付款"], ["待付款", "已取消"], ["已付款", "已发货"],
+                           ["已付款", "已取消"], ["已发货", "已完成"]],
+           "terminal": ["已完成", "已取消"],
+           "timestamps": {"已付款": "paid_at", "已发货": "shipped_at", "已取消": "cancelled_at"},
+           "reason": "夹具"}
+    ck(sorted(P.dominators(["待付款"], FSM["transitions"], "已取消")) == ["已取消", "待付款"],
+       "支配点:「已取消」不要求有付款时间(可以从待付款直接取消)",
+       "用可达性算会错误地要求它有 paid_at")
+    ck("已付款" in P.dominators(["待付款"], FSM["transitions"], "已完成"),
+       "支配点:「已完成」必须经过已付款")
+
+    raw = {"relations": [
+              {"table": "ordr", "column": "cust_id", "verdict": "confirm", "reason": "x"},
+              {"table": "没这张表", "column": "a", "verdict": "reject", "reason": "x"},
+              {"table": "ordr", "column": "cust_id", "verdict": "乱写", "reason": "x"}],
+           "columns": [
+              {"table": "cust", "column": "city", "semantic": "city", "reason": "x"},
+              {"table": "cust", "column": "city", "semantic": "身份证号", "reason": "x"}],
+           "state_machines": [
+              dict(FSM),
+              dict(FSM, column="status", timestamps={"已付款": "paid_at", "已发货": "paid_at"}),
+              dict(FSM, timestamps={"待付款": "created", "已付款": "paid_at"}),
+              dict(FSM, transitions=FSM["transitions"] + [["已完成", "已退款"]]),
+              # 第二个状态机,来抢 ordr.shipped_at —— 同表同列只能有一个主人
+              {"table": "ordr", "column": "prd_status", "start": ["待生产"],
+               "transitions": [["待生产", "已生产"]], "terminal": ["已生产"],
+               "timestamps": {"已生产": "shipped_at"}, "reason": "夹具"}]}
+    good, drop = I.validate(raw, facts, P.build(facts, scale=1.0))
+    txt = " | ".join(drop)
+    ck(len(good["relations"]) == 1, "编出来的表名被丢掉", str(good["relations"]))
+    ck(all(r["verdict"] in ("confirm", "reject", "retarget") for r in good["relations"]),
+       "不认识的 verdict 被丢掉")
+    ck(len(good["columns"]) == 1 and good["columns"][0]["semantic"] == "city",
+       "生成器不认识的语义被丢掉(模型可以随便编一个词)")
+    ck("库里没有的状态" in txt, "编出来的状态值被丢掉(它会当场违反枚举断言)", txt[:120])
+    ck("被多个状态共用" in txt, "一个时间戳列被两个状态共用 → 整列剔除(否则断言自相矛盾)", txt[:120])
+    ck("诞生时刻" in txt, "created 被当成状态时间戳 → 剔除(它是锚点,不是某个状态的产物)", txt[:120])
+    ck(any("一列只能有一个主人" in d for d in drop),
+       "跨状态机抢同一列被挡下(不变量的作用域是「表」,不是「状态机」)", txt[:160])
+    ck(not any(m["column"] == "prd_status" and m.get("timestamps")
+               for m in good["state_machines"]),
+       "被抢的那个状态机,时间戳映射已清空")
+    for m in good["state_machines"]:
+        ck("created" not in (m.get("timestamps") or {}).values(),
+           "过完校验的状态机里不会再有 created 当状态戳")
+        break
+
+    print("\n【状态机落到数据上】")
+    f2 = D.discover(conn, sc)
+    f2, applied = P.apply_overlay(f2, {"relations": [], "columns": [], "state_machines": [FSM]})
+    ck(any("状态机" in x for x in applied), "overlay 盖到事实层")
+    p3 = P.build(f2, scale=1.0)
+    fas = [a for a in p3["assertions"] if a["类"] == "状态机"]
+    ck(len(fas) >= 6, f"派生了状态机断言({len(fas)} 条)")
+    m3, _man3 = G.generate(p3, conn)
+    bad = []
+    for row in m3["ordr"]:
+        st = row["status"]
+        must = P.dominators(FSM["start"], FSM["transitions"], st) & set(FSM["timestamps"])
+        for stt, col in FSM["timestamps"].items():
+            if stt in must and not row.get(col):   bad.append(f"{st} 缺 {col}")
+            if stt not in must and row.get(col):   bad.append(f"{st} 多了 {col}")
+    ck(not bad, "造出来的每一行:状态和时间戳都对得上(没有「已发货但没付款」)",
+       "; ".join(sorted(set(bad))[:4]))
+    ck(all(row.get("created") for row in m3["ordr"]),
+       "每张订单都有下单时间(created 不会被状态机置空)")
+    ck(all(not row.get(c) or str(row[c]) >= str(row["created"])
+           for row in m3["ordr"] for c in ("paid_at", "shipped_at", "cancelled_at")),
+       "所有 *_at 都不早于 created(全表统一的时间原点)")
 
     print("\n【安全闸门】")
     for tgt, env, should in [("shop.db", "生产", False), ("shop.db", "", False),

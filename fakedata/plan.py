@@ -310,6 +310,16 @@ def _assertions(facts, names, fkmap, dialect="sqlite"):
                                            f'cast({qi(cn)} as {TXT})=\'{st}\' and {qi(ts)} is not null',
                                     "期望": 0})
         cols = set(tf["columns"])
+        # 所有 *_at 都不该早于下单时间。原来只查写死的那几对,
+        # 而状态机带进来的时间戳(audit_at / produced_at / cancelled_at…)一条都没被查。
+        # **新增的能力要顺带把检查面也扩上,不然新能力就是新的盲区。**
+        if "created" in cols:
+            for c in sorted(cols):
+                if c.endswith("_at") and tf["columns"][c].get("kind") in ("text", "datetime"):
+                    out.append({"名": f"{tn}: {c} 不该早于 created", "表": tn, "类": "时间线(候选)",
+                                "sql": f'select count(*) from {qi(tn)} where {qi("created")} is not null '
+                                       f'and {qi(c)} is not null and {qi(c)} < {qi("created")}',
+                                "期望": 0, "需确认": "按列名对推的,业务上不一定成立"})
         for a, b in TIME_PAIRS:
             if a in cols and b in cols:
                 out.append({"名": f"{tn}: {b} 不该早于 {a}", "表": tn, "类": "时间线(候选)",
