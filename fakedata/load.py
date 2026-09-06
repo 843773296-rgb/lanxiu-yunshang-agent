@@ -48,9 +48,8 @@ def load(conn, plan, made, dry=True, log=print):
         for r in rows:
             buf.append(tuple(r.get(c) for c in cols))
             if len(buf) >= BATCH:
-                conn.c.executemany(sql, buf) if hasattr(conn, "c") else None
-                buf = []
-        if buf: conn.c.executemany(sql, buf)
+                conn.many(sql, buf); buf = []
+        if buf: conn.many(sql, buf)
         total += len(rows)
         log(f"  {tname}: +{len(rows)}")
     return total, sample
@@ -73,7 +72,7 @@ def fill_deferred(conn, plan, made, dry=True, log=print):
         if not dry:
             sql = (f'update {conn.ident(t)} set {conn.ident(c)}={conn.ph} '
                    f'where {conn.ident(pk)}={conn.ph}')
-            conn.c.executemany(sql, [(pool[i], rows[i][pk]) for i in range(len(rows))])
+            conn.many(sql, [(pool[i], rows[i][pk]) for i in range(len(rows))])
         n += len(rows)
         log(f"  回填 {t}.{c} → {parent}.{pcol}: {len(rows)} 行")
     return n

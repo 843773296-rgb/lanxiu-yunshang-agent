@@ -37,10 +37,25 @@ class Rule:
     avoid:装了这些工具就**不**发这条 —— 同一件事换了机制,说法就得换。
           例:V1 用 submit_finding 交结构化结果,V3 出纯文本,
           「按四段写草稿」对前者是错的指令。
+    scope:"铁律" 或 "工具"。
+
+      **「这个工具怎么用」不该混在铁律列表里。** 一条规矩如果只在讲某个工具的
+      用法(kb_bom 返回的是成本不是售价、kb_fit 判需补量时不许猜码),
+      它就该贴在那个工具旁边,而不是当成第 7 条通用戒律 ——
+      铁律列表越长,每一条被稀释得越厉害,而工具用法本来就有天然的落点。
+
+      拆解 Accio 时看到的同一个做法:它的 `tool-registry.jsonc` 有个 `notes` 字段,
+      内容("Shopify 域内写操作必须先读对应 SKILL.md")会被运行时**注入进工具清单**,
+      和工具列表一起给模型看,不进系统提示词的戒律段。
+
+      ⚠️ 诚实说明:这是**结构上的改进,不是已验证的效果改进**。
+      现有 20 题评测在 6 道负向题上单跑一遍的波动就有 ±2,分辨不出这种量级的差别。
+      改它的理由是「规矩该放在它管的东西旁边」,不是「实测涨分」。
     """
-    __slots__ = ("id", "needs", "avoid", "text")
-    def __init__(self, id, needs, text, avoid=()):
-        self.id, self.needs, self.avoid, self.text = id, tuple(needs), tuple(avoid), text.strip()
+    __slots__ = ("id", "needs", "avoid", "text", "scope")
+    def __init__(self, id, needs, text, avoid=(), scope="铁律"):
+        self.id, self.needs, self.avoid = id, tuple(needs), tuple(avoid)
+        self.text, self.scope = text.strip(), scope
 
 
 # ── 汉服工艺顾问助手 ─────────────────────────────────────────────────
@@ -97,12 +112,12 @@ Rule("TL06", ("kb_tables",), """
 Rule("TL07", ("kb_bom",), """
 **kb_bom 返回的是物料成本,不是售价。** 不含工时、门店成本与税,
 **绝不能把这个数说成价格**;只能说「物料这一项大概是多少」,报价由店长出。
-"""),
+""", scope="工具"),
 Rule("TL08", ("kb_fit",), """
 **kb_fit 判「需补量」时,绝不能按身高体重猜码** —— 直接告诉顾问请客户补量哪几项。
 判出档位后也要把「关键尺寸未覆盖」的那几项说出来,别让人以为系统全查过了。
 不要默认推全定制:**很多客户标准码就合适**,推全定制既加价又加工期。
-"""),
+""", scope="工具"),
 Rule("TL09", ("get_wearer",), """
 **「衣服穿在谁身上」和「谁付钱」是两回事。** 家长问孩子的衣服时,
 **先用 get_wearer 找到那个孩子**(一个客户号下挂着本人 / 配偶 / 子 / 女),
@@ -140,12 +155,12 @@ Rule("TL12", ("kb_lead",), """
 **交不出来赔多少钱都换不回那一天。**
 风险里写着「不能靠加人压缩」的(织造、染色晾晒、手绘顾绣发绣),
 加急要求当场拒绝,别先答应再想办法。
-"""),
+""", scope="工具"),
 Rule("TL13", ("get_capacity",), """
 工坊问「现在谁有空 / 瓶颈在哪 / 这活什么时候排得上」→ get_capacity。
 返回 `不可加人` 为真时,**排满了就只能等,加钱也没用**;
 返回说没有师傅会做,那是**产能缺口不是排期问题**,只能外发或不接。
-"""),
+""", scope="工具"),
 Rule("TL14", ("图片",), """
 **看图只能提假设,不能下结论。** 客户发照片问「这是什么形制、能不能做」时:
 · 先说出你**实际看到了什么**(轮廓、颜色、纹理、有没有交领/立领/褶),
@@ -160,7 +175,7 @@ Rule("TL14", ("图片",), """
 Rule("TL15", ("kb_pattern",), """
 客户问「能不能做小码 / 能不能改尺寸」→ 先 kb_pattern。
 某个尺码不在版型的尺码序列里,意思是**这个版型裁不出来**,不是缺货,不要说「可以订」。
-"""),
+""", scope="工具"),
 ]
 
 
@@ -210,8 +225,16 @@ def assemble(role, have):
     have = set(have)
     picked = [r for r in rules
               if all(n in have for n in r.needs) and not any(n in have for n in r.avoid)]
-    body = "\n\n".join(f"{i}. {r.text}" for i, r in enumerate(picked, 1))
-    return head + "\n" + body + "\n" + foot, [r.id for r in picked]
+    laws = [r for r in picked if r.scope == "铁律"]
+    tips = [r for r in picked if r.scope == "工具"]
+    body = "\n\n".join(f"{i}. {r.text}" for i, r in enumerate(laws, 1))
+    out = head + "\n" + body + "\n"
+    if tips:
+        # 工具用法**贴着工具写**,按工具名分组 —— 模型找「这个工具怎么用」时,
+        # 落点是工具名,不是「第几条铁律」。
+        out += "\n## 手上这几个工具的用法\n\n" + "\n\n".join(
+            f"**`{r.needs[0]}`** —— {r.text}" for r in tips) + "\n"
+    return out + foot, [r.id for r in picked]
 
 
 def all_rules():

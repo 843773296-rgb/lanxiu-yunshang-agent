@@ -75,6 +75,16 @@ rule("P3", "每条铁律至少要有一个调用方装得上", orphan,
      "装不上的铁律等于不存在,而它看起来一直好好地躺在源码里 —— "
      "和「没有用例的规则」是同一个病")
 
+# ── P5:工具级规矩必须**恰好**依赖一个工具 ─────────────────────────
+# scope="工具" 的那几条是贴在工具旁边渲染的,渲染时取 needs[0] 当标题。
+# 依赖零个工具就不知道贴谁旁边,依赖两个就会贴错一个 ——
+# 原来的第 12 条正是这个毛病:把「工期 kb_lead」和「产能 get_capacity」写在一条里,
+# 于是有 kb_lead 没 get_capacity 的调用方整条都拿不到。拆开之后才对得上。
+_p5 = [f"{r.id} 依赖 {len(r.needs)} 个工具({r.needs or '零个'}),贴不到工具旁边"
+       for _, r in prompts.all_rules() if r.scope == "工具" and len(r.needs) != 1]
+rule("P5", "工具级规矩必须恰好依赖一个工具", _p5,
+     "工具用法要贴着工具写 —— 依赖零个不知道贴谁,依赖两个必然贴错一个")
+
 # ── P4:稳定编号不得重复 ────────────────────────────────────────────
 ids = [r.id for _, r in prompts.all_rules()]
 dup = [f"{i} 出现 {ids.count(i)} 次" for i in sorted(set(ids)) if ids.count(i) > 1]
@@ -85,4 +95,4 @@ if bad:
     print(f"❌ {len(bad)} 条没守住:")
     for no, why, n in bad: print(f"   · {no}({n} 条):{why}")
     sys.exit(1)
-print(f"✅ 提示词单一源头(P1–P4)· 共 {len(ids)} 条铁律,{len(CALLERS)} 个调用方")
+print(f"✅ 提示词单一源头(P1–P5)· 共 {len(ids)} 条铁律,{len(CALLERS)} 个调用方")

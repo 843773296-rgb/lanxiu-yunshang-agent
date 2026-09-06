@@ -71,6 +71,7 @@ class Conn:
     dialect = "?"
     def q(self, sql, params=()):  raise NotImplementedError   # 查,返回 list[tuple]
     def exec(self, sql, params=()): raise NotImplementedError # 写
+    def many(self, sql, rows):    raise NotImplementedError   # 批量写
     def commit(self):  raise NotImplementedError
     def rollback(self): raise NotImplementedError
     def close(self):   raise NotImplementedError
@@ -119,6 +120,7 @@ class SqliteConn(Conn):
         self.label = os.path.basename(path)
     def q(self, sql, params=()):    return list(self.c.execute(sql, params))
     def exec(self, sql, params=()): return self.c.execute(sql, params)
+    def many(self, sql, rows):      return self.c.executemany(sql, rows)
     def commit(self):   self.c.commit()
     def rollback(self): self.c.rollback()
     def close(self):    self.c.close()
@@ -171,6 +173,12 @@ class MysqlConn(Conn):
         cur = self.c.cursor(); cur.execute(sql, params); r = cur.fetchall(); cur.close(); return list(r)
     def exec(self, sql, params=()):
         cur = self.c.cursor(); cur.execute(sql, params); cur.close()
+    def many(self, sql, rows):
+        # sqlite3 的**连接**对象自带 executemany,pymysql 的没有 —— 那是**游标**的方法。
+        # 灌入层原来直接写 `conn.c.executemany(...)`,在 SQLite 上跑得好好的,
+        # 到 MySQL 上第一条 INSERT 就 AttributeError。
+        # 这类差异不会在类型检查里暴露,也不会在只有一种数据库的测试里暴露。
+        cur = self.c.cursor(); cur.executemany(sql, rows); cur.close()
     def commit(self):   self.c.commit()
     def rollback(self): self.c.rollback()
     def close(self):    self.c.close()
@@ -192,9 +200,17 @@ class MysqlConn(Conn):
             "from information_schema.key_column_usage "
             "where table_schema=%s and referenced_table_name is not null", (self.db,)):
             if tname in sc.tables: sc.tables[tname].declared_fks.append((cname, rt, rc))
-        for tname, n in self.q("select table_name, table_rows from information_schema.tables "
-                               "where table_schema=%s", (self.db,)):
-            if tname in sc.tables: sc.tables[tname].rows = n or 0
+        # 行数**必须**逐表 count(*),不能用 information_schema.tables.table_rows。
+        # 那个值对 InnoDB 是**估算**:小表上经常是 0,大表上能差几倍。
+        # 而行数在这里不是展示用的 —— 推断层拿它算「去重值占比」来判枚举、
+        # 拿它定可信度,方案层拿它按 scale 算要造多少。估算值会让这三件事同时歪掉。
+        # 代价是每张表一次 count(*),大表上不便宜。**准确性优先,慢了再优化。**
+        for tname in sc.tables:
+            try:
+                sc.tables[tname].rows = self.q(
+                    f"select count(*) from {self.ident(tname)}")[0][0]
+            except Exception:
+                sc.tables[tname].rows = 0
         return sc
 
 
