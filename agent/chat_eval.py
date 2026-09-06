@@ -14,7 +14,7 @@ import json, os, re, sqlite3, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(ROOT, "backend"))
-import chat, api
+import chat, api, fingerprint
 
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
 KB_TOOLS = {"kb_lookup", "kb_detail", "kb_combo", "kb_tables", "kb_coverage"}
@@ -179,7 +179,16 @@ def main():
               f"{r.get('calls','-')}调 {r.get('seconds','-')}s ${r.get('cost_local',0):.4f} "
               f"| {tools[:44]:44s} | {why[:34]}", flush=True)
         time.sleep(1.2)
+    # 头一行落**指纹**:提示词 / 判分器 / 题目 / 数据 / 模型。
+    # 没有它,下次分数变了只能靠猜是哪一维动了 —— 这周为此花了三轮消融。
+    # 见 agent/fingerprint.py,归因:python3 agent/fingerprint.py 归因 旧.jsonl 新.jsonl
+    fp = fingerprint.snapshot(
+        role="kb", have={t["name"] for t in chat.tools()},
+        judge_src=(os.path.abspath(__file__),), cases=cs,
+        model=(recs[0].get("model") if recs else None),
+        provider=os.environ.get("LANXIU_PROVIDER") or "默认")
     with open(os.path.join(HERE, "chat-eval-results.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"_fingerprint": fp}, ensure_ascii=False) + "\n")
         for r in recs: fh.write(json.dumps(r, ensure_ascii=False) + "\n")
     p = sum(r["passed"] for r in recs)
     pp = sum(r["passed"] for r in recs if r["kind"] == "正向")
@@ -192,7 +201,8 @@ def main():
 
 def rescore():
     p = os.path.join(HERE, "chat-eval-results.jsonl")
-    recs = [json.loads(l) for l in open(p, encoding="utf-8")]
+    recs = [x for l in open(p, encoding="utf-8")
+            if not (x := json.loads(l)).get("_fingerprint")]
     by = {c["id"]: c for c in CASES}; ch = 0
     for r in recs:
         ok, why = (by[r["id"]]["grade"](r) if r.get("answer") else (False, r.get("error", "无回答")))

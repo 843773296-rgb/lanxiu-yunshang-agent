@@ -83,6 +83,16 @@ def build_input(facts, plan, max_rel=40, max_col=40, max_fsm=12):
     T = facts["tables"]
     rel, col, fsm = [], [], []
 
+    # **先全收,再排序,最后截断。** 第一版是边遍历边收、收满就停,
+    # 而遍历顺序是拓扑序 —— 于是 `ordr.status`(整个库最重要的那个状态机)
+    # 排在第 47 张表,被 max_fsm=12 直接切掉了。
+    # 截断本身没问题,**按什么顺序截才是问题**:
+    # 名字像状态、表里时间戳列多、行数多的,先送。
+    def _fsm_rank(item):
+        nm = 3 if re.search(r"(status|state|lifecycle)", item["column"].lower()) else 0
+        return -(nm + len(item["time_columns"]) + min(len(item["values"]), 8) / 8
+                 + min(item["rows"], 2000) / 1000)
+
     for tn, tp in plan["tables"].items():
         for cn, g in tp["columns"].items():
             cf = T[tn]["columns"].get(cn, {})
@@ -99,13 +109,16 @@ def build_input(facts, plan, max_rel=40, max_col=40, max_fsm=12):
                             "comment": cf.get("comment", ""),
                             "samples": list(cf.get("enum", {}))[:5],
                             "max_len": (cf.get("len") or {}).get("max")})
-            if cf.get("enum") and len(fsm) < max_fsm and _looks_stateful(cn, cf["enum"]):
+            if cf.get("enum") and _looks_stateful(cn, cf["enum"]):
                 fsm.append({"table": tn, "column": cn,
                             "comment": cf.get("comment", ""),
                             "values": list(cf["enum"]),
+                            "rows": T[tn]["rows"],
                             "time_columns": [c for c in T[tn]["columns"]
                                              if re.search(r"(_at$|created|updated|时间)", c)]})
-    return {"关系待判": rel, "列语义待定": col, "疑似状态机": fsm,
+    fsm.sort(key=_fsm_rank)
+    for f in fsm: f.pop("rows", None)
+    return {"关系待判": rel, "列语义待定": col, "疑似状态机": fsm[:max_fsm],
             "可选语义": ALLOWED_SEM}
 
 
@@ -146,6 +159,13 @@ def validate(raw, facts, plan):
                            f'{c.get("semantic")!r} 不是生成器认识的语义'); continue
         out["columns"].append(c)
 
+    # 一个时间戳列只能有**一个主人**。这条不变量有两个破法,第一版只堵了一个:
+    #   · 同一个状态机里两个状态映到同一列(已堵)
+    #   · **同一张表上两个状态机认领同一列**(没堵)——
+    #     ordr.status 和 ordr.prd_status 都要 audit_at,于是两个后处理互相覆盖、
+    #     两套断言互相打架,造什么数据都过不了。
+    # 教训:不变量要在**它真正的作用域**上执行。这条的作用域是「表」,不是「状态机」。
+    claimed = {}
     for m in raw.get("state_machines", []):
         t, c = m.get("table"), m.get("column")
         if not has(t, c): dropped.append(f'状态机:{t}.{c} 不存在'); continue
@@ -162,6 +182,24 @@ def validate(raw, facts, plan):
               if str(k) in known and has(t, v)}
         badts = set(map(str, (m.get("timestamps") or {}))) - set(ts)
         if badts: dropped.append(f'状态机:{t}.{c} 的时间戳映射有 {sorted(badts)[:3]} 对不上,已剔除')
+        # **一个时间戳列被两个状态共用 → 派生出的断言必然自相矛盾。**
+        # 比如 tag.status 把「启用」和「停用」都映到 updated:
+        #   状态是启用 → updated 必须有值(启用是必经)
+        #   状态是启用 → updated 必须为空(停用不是必经)
+        # 同一列同一行,两条断言对着干,造什么数据都过不了。
+        # 分不清哪个状态才是这列的主人,就整列剔除 —— **宁可少一条约束,不能留一条自毁的。**
+        from collections import Counter
+        shared = {v for v, n in Counter(ts.values()).items() if n > 1}
+        if shared:
+            ts = {k: v for k, v in ts.items() if v not in shared}
+            dropped.append(f'状态机:{t}.{c} 的 {sorted(shared)[:3]} 被多个状态共用,'
+                           f'会派生出自相矛盾的断言,已整列剔除')
+        taken = {k: v for k, v in ts.items() if (t, v) in claimed}
+        if taken:
+            ts = {k: v for k, v in ts.items() if k not in taken}
+            dropped.append(f'状态机:{t}.{c} 想认领的 {sorted(set(taken.values()))[:3]} '
+                           f'已经归 {claimed[(t, list(taken.values())[0])]} 了,一列只能有一个主人')
+        for v in ts.values(): claimed[(t, v)] = f"{t}.{c}"
         m = dict(m, transitions=trans, timestamps=ts)
         if not trans: dropped.append(f'状态机:{t}.{c} 没给出任何转移'); continue
         out["state_machines"].append(m)

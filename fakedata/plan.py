@@ -300,7 +300,9 @@ def _assertions(facts, names, fkmap, dialect="sqlite"):
                                        f'cast({qi(cn)} as {TXT})=\'{st}\' and {qi(ts)} is null',
                                 "期望": 0})
                 for m, ts in fsm["timestamps"].items():
-                    if m not in must:
+                    # 非空列永远不可能是空的,给它派生「不该有」等于派生一条
+                    # **不可满足**的断言 —— 那不是发现问题,那是自己造问题。
+                    if m not in must and tf["columns"].get(ts, {}).get("nullable", True):
                         # 没走到那一步,那一步的时间戳就该是空的 ——
                         # 「已取消但有发货时间」是数据库允许、业务不可能的典型
                         out.append({"名": f"{tn}: 状态是「{st}」就不该有 {ts}", "表": tn, "类": "状态机",

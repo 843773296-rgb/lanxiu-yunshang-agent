@@ -36,9 +36,33 @@ def cmd_plan(a):
     facts = D.discover(conn, sc, tables)
     nfk = sum(len(tf["fks"]) for tf in facts["tables"].values())
     print(f"推断: 挖出 {nfk} 条表关系")
+
+    base = os.path.join(_outdir(), f'{sc.label.replace("/", "_")}-{a.seed}')
+    ov = None
+    if a.overlay:
+        ov = json.load(open(a.overlay, encoding="utf-8"))
+        print(f"模型层: 复用已有判定 {a.overlay}(**不调模型**)")
+    elif a.infer:
+        import infer_llm as I
+        pl0 = P.build(facts, seed=a.seed, scale=a.scale, tables=tables,
+                      allow_no_pk=a.allow_no_pk)
+        print("模型层: 调一次模型,只判统计推不出来的那部分")
+        ov, dropped, meta = I.infer(facts, pl0)
+        I.save(base + ".overlay.json", ov, dropped, meta)
+        print(f'  {meta["model"]} · {meta["耗时秒"]}s · '
+              f'in {meta["usage"].get("input_tokens")} / out {meta["usage"].get("output_tokens")}')
+        if dropped:
+            print(f"  校验丢弃 {len(dropped)} 条(模型说的对不上真实 schema):")
+            for d in dropped[:6]: print(f"    - {d}")
+        print(f'  判定存到 {base}.overlay.json —— 人可以直接改,下次用 --overlay 复用')
+    if ov:
+        facts, log = P.apply_overlay(facts, ov)
+        print(f"  盖到事实层的判定 {len(log)} 条:")
+        for l in log[:8]: print(f"    · {l}")
+        if len(log) > 8: print(f"    · …还有 {len(log)-8} 条")
+
     pl = P.build(facts, seed=a.seed, scale=a.scale, tables=tables,
                  allow_no_pk=a.allow_no_pk)
-    base = os.path.join(_outdir(), f'{sc.label.replace("/", "_")}-{a.seed}')
     with open(base + ".plan.json", "w", encoding="utf-8") as f:
         json.dump(pl, f, ensure_ascii=False, indent=1)
     md = P.to_markdown(pl)
@@ -46,8 +70,11 @@ def cmd_plan(a):
         f.write(md)
     todo = sum(1 for tp in pl["tables"].values() for g in tp["columns"].values() if "需确认" in g)
     skip = sum(1 for tp in pl["tables"].values() if tp.get("skip"))
+    nfsm = sum(1 for tp in pl["tables"].values() for g in tp["columns"].values()
+               if g["gen"] == "fsm")
     print(f'\n方案: {len(pl["tables"])} 张表 / 环 {len(pl["deferred_fks"])} 条 / '
-          f'断言 {len(pl["assertions"])} 条 / 待确认 {todo} 处 / 跳过 {skip} 张')
+          f'断言 {len(pl["assertions"])} 条 / 待确认 {todo} 处 / 跳过 {skip} 张'
+          + (f' / 状态机 {nfsm} 个' if nfsm else ""))
     print(f'  机器读 → {base}.plan.json')
     print(f'  人读   → {base}.方案预览.md   ← **先看这个再灌**')
 
@@ -116,6 +143,10 @@ def main(argv=None):
     p1.add_argument("--seed", type=int, default=20260906)
     p1.add_argument("--tables", default=None)
     p1.add_argument("--allow-no-pk", action="store_true")
+    p1.add_argument("--infer", action="store_true",
+                    help="调一次模型补语义(否决误报关系/认领无语义列/推状态机)")
+    p1.add_argument("--overlay", default=None,
+                    help="复用已有的模型判定文件,不调模型")
     p1.set_defaults(fn=cmd_plan)
     p2 = sub.add_parser("load");  common(p2)
     p2.add_argument("--plan", required=True); p2.add_argument("--yes", action="store_true")
