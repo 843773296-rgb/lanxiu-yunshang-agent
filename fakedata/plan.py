@@ -87,26 +87,34 @@ def topo_order(tables, fks):
         for k in ks:
             if k["table"] in tables and k["table"] != child:
                 dep[child].add(k["table"])
-    order, deferred, remaining = [], [], dict(dep)
+    order, deferred, remaining, broken = [], [], dict(dep), set()
     while remaining:
         ready = sorted(t for t, d in remaining.items() if not (d & remaining.keys()))
         if not ready:
-            # 成环了。在剩下的边里挑一条最该断的
+            # 成环了。在剩下的边里挑一条最该断的。
+            # **已经断过的边必须排除** —— 第一版没排除,断完又把它当候选捞回来,
+            # 于是每轮断同一条边、每轮都断不干净,死循环。
+            # 症状很温和:不报错、不刷屏,就是不结束。查了才发现是「断边」和
+            # 「记住断过」少了后半句 —— 和记录仪那个坑同一类:**漏掉的表现是「一切正常」**。
             cands = []
             for t in remaining:
                 for k in fks.get(t, []):
-                    if k["table"] in remaining and k["table"] != t:
+                    key = (t, k["column"], k["table"])
+                    if k["table"] in remaining and k["table"] != t and key not in broken:
                         cands.append((k.get("nullable", True), k["confidence"] != "高", t, k))
-            if not cands: break
+            if not cands:
+                order += sorted(remaining); break      # 断无可断,兜底:剩下的按名字排
             cands.sort(key=lambda x: (not x[0], not x[1]))   # 可空优先、低可信优先
             _, _, t, k = cands[0]
+            broken.add((t, k["column"], k["table"]))
+            k["deferred"] = True
             deferred.append({"table": t, "column": k["column"],
                              "ref": f'{k["table"]}.{k["column_ref"]}',
                              "why": "成环,先插空再回填"})
-            remaining[t].discard(k["table"])
-            fks[t] = [x for x in fks[t] if not (x["table"] == k["table"]
-                                                and x["column"] == k["column"])] + \
-                     [dict(k, deferred=True)]
+            # 这张表对目标表的依赖,只有在**没有别的活边**指过去时才能真正解除
+            if not any(x["table"] == k["table"] and (t, x["column"], x["table"]) not in broken
+                       for x in fks.get(t, [])):
+                remaining[t].discard(k["table"])
             continue
         order += ready
         for t in ready: remaining.pop(t)
