@@ -44,7 +44,7 @@ rule("P1", "提示词只能有一处定义", hits,
 # ── P2:needs / avoid 里的工具名必须真实存在 ────────────────────────
 REAL = set(api.TOOLS) | {"图片", "submit_finding"}
 ghost = [f"{r.id} 依赖 {n}(不存在这个工具)"
-         for _, r in prompts.all_rules() for n in r.needs + r.avoid if n not in REAL]
+         for _, r in prompts.all_rules(unique=True) for n in r.needs + r.avoid if n not in REAL]
 rule("P2", "铁律依赖的工具必须真实存在", ghost,
      "工具名打错了不会报错,只会让那条铁律**永远装不上** —— 静默失效")
 
@@ -55,10 +55,11 @@ def wl(name):
     m = re.search(rf"^{name} = \[(.*?)\]", SDK, re.S | re.M)
     return {t.rsplit("__", 1)[-1] for t in re.findall(r'"([^"]+)"', m.group(1))} if m else set()
 KB, SHOP, TASK = wl("KB_TOOLS"), wl("SHOP_TOOLS"), wl("TASK_TOOLS")
-KBONLY = wl("KB_ONLY_TOOLS")
+KBONLY, WORK = wl("KB_ONLY_TOOLS"), wl("WORKSHOP_TOOLS")
 KBSET = {t["name"] for t in api.KB_SCHEMAS}
 CALLERS = {
     "工作站·工艺顾问(sdk)":   ("kb",   KB | KBONLY | SHOP | {"图片"}),
+    "工作站·工坊排产(sdk)":   ("workshop", WORK),
     "工作站·任务助手(sdk)":   ("task", TASK | SHOP),
     "后台聊天(chat.py)":      ("kb",   KBSET),
     "一代任务循环(v1.py)":    ("task", {t["name"] for t in api.SCHEMAS} | {"submit_finding"}),
@@ -71,7 +72,7 @@ for nm, (role, have) in CALLERS.items():
     print(f"     {nm:26s} {len(ids):2d} 条  {' '.join(ids)}")
 print()
 orphan = [f"{r.id}(需要 {r.needs or '—'},没有任何调用方满足)"
-          for _, r in prompts.all_rules() if r.id not in used]
+          for _, r in prompts.all_rules(unique=True) if r.id not in used]
 rule("P3", "每条铁律至少要有一个调用方装得上", orphan,
      "装不上的铁律等于不存在,而它看起来一直好好地躺在源码里 —— "
      "和「没有用例的规则」是同一个病")
@@ -82,7 +83,7 @@ rule("P3", "每条铁律至少要有一个调用方装得上", orphan,
 # 原来的第 12 条正是这个毛病:把「工期 kb_lead」和「产能 get_capacity」写在一条里,
 # 于是有 kb_lead 没 get_capacity 的调用方整条都拿不到。拆开之后才对得上。
 _p5 = [f"{r.id} 依赖 {len(r.needs)} 个工具({r.needs or '零个'}),贴不到工具旁边"
-       for _, r in prompts.all_rules() if r.scope == "工具" and len(r.needs) != 1]
+       for _, r in prompts.all_rules(unique=True) if r.scope == "工具" and len(r.needs) != 1]
 rule("P5", "工具级规矩必须恰好依赖一个工具", _p5,
      "工具用法要贴着工具写 —— 依赖零个不知道贴谁,依赖两个必然贴错一个")
 
@@ -97,7 +98,7 @@ rule("P5", "工具级规矩必须恰好依赖一个工具", _p5,
 #
 # 这比「工具没给」更危险:模型会用它,而且没有任何一句话告诉它怎么算用错。
 GOVERNED = {}                        # 工具名 → 管它的那条规矩
-for _role, _r in prompts.all_rules():
+for _role, _r in prompts.all_rules(unique=True):
     if _r.scope == "工具" and _r.needs:
         GOVERNED.setdefault(_r.needs[0], []).append((_role, _r.id))
 _p6 = []
@@ -113,7 +114,8 @@ rule("P6", "挂了某个工具,就必须拿到那个工具的规矩", _p6,
      "而且没有任何一句话告诉它怎么算用错")
 
 # ── P4:稳定编号不得重复 ────────────────────────────────────────────
-ids = [r.id for _, r in prompts.all_rules()]
+# 去重版:同一条规矩被多个角色复用是**设计**,不是编号撞车
+ids = [r.id for _, r in prompts.all_rules(unique=True)]
 dup = [f"{i} 出现 {ids.count(i)} 次" for i in sorted(set(ids)) if ids.count(i) > 1]
 rule("P4", "稳定编号唯一", dup, "编号撞了,外部文档引用的就不知道是哪一条")
 

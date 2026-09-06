@@ -136,6 +136,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   <div id="top">
     <select id="kind">
       <option value="kb">工艺顾问</option>
+      <option value="workshop">工坊排产</option>
       <option value="task">任务助手</option>
     </select>
     <select id="model" title="换模型"><option>载入中…</option></select>
@@ -227,6 +228,7 @@ const cur = () => DB.convs.find(c => c.id === DB.cur) || null;
 
 const KINDS = {
   kb:   {name:"工艺顾问", hint:"查工艺 / 面料 / 形制 / 工期 · 只读,不下单不报价"},
+  workshop: {name:"工坊排产", hint:"产能瓶颈 / 在制工单 / 工期物料 · 不改期不改派"},
   task: {name:"任务助手", hint:"退款定因 / 客户合并 · 只出草稿,由人确认"}
 };
 

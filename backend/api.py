@@ -908,7 +908,8 @@ def _masked(fn):
 TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale,
               "get_capacity":get_capacity,
               "get_wearer":get_wearer,"forecast_growth":forecast_growth,
-              "plan_for_event":plan_for_event,"get_maintain":get_maintain})
+              "plan_for_event":plan_for_event,"get_maintain":get_maintain,
+              "get_workorder":get_workorder})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

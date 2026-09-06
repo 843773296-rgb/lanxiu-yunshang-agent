@@ -160,7 +160,18 @@ SHOP_TOOLS = [
 # 靠人记得同步是不行的。
 KB_ONLY_TOOLS = [
     "mcp__shop__get_wearer", "mcp__shop__forecast_growth",
-    "mcp__shop__plan_for_event", "mcp__shop__get_capacity",
+    "mcp__shop__plan_for_event",
+]
+
+# ── 工坊排产:面对产能,不面对客户 ──────────────────────────────────
+# 顾问问「客户什么时候能拿到」,工坊问「这活派给谁、会不会拖」——
+# 同一批数据,两种问题。get_capacity 从顾问那边搬过来了:
+# 那条规矩(TL13)的原文写的就是「工坊问……」,它本来就该在这儿。
+WORKSHOP_TOOLS = [
+    "mcp__shop__get_capacity",     # 工种级:瓶颈在哪、消化几天
+    "mcp__shop__get_workorder",    # 单件级:在谁手上、会不会拖
+    "mcp__kb__kb_lead", "mcp__kb__kb_bom",
+    "mcp__kb__kb_pattern", "mcp__kb__kb_size",
 ]
 
 # 项目自带的 Skill(agentsite/.claude/skills/<名字>/SKILL.md)。
@@ -182,15 +193,26 @@ TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
 sys.path.insert(0, ROOT)
 import prompts   # noqa: E402
 
+_ROLE_TOOLS = {
+    "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS,
+    "workshop": lambda: WORKSHOP_TOOLS,           # 工坊不看订单流水,只看产能和工单
+    "task":     lambda: TASK_TOOLS + SHOP_TOOLS,
+}
+
+def _tools_for(kind):
+    return _ROLE_TOOLS.get(kind, _ROLE_TOOLS["kb"])()
+
+
 def _have(kind):
     """本进程实际挂上的工具名(去掉 mcp__<服务>__ 前缀),外加能力标记。"""
-    names = {t.rsplit("__", 1)[-1]
-             for t in (((KB_TOOLS + KB_ONLY_TOOLS) if kind == "kb" else TASK_TOOLS) + SHOP_TOOLS)}
+    names = {t.rsplit("__", 1)[-1] for t in _tools_for(kind)}
     # 工艺顾问这条路径收图(见 _img_block),后台任务助手不收
     return names | ({"图片"} if kind == "kb" else set())
 
 SYS_KB, KB_RULE_IDS = prompts.assemble("kb", _have("kb"))
+SYS_WORKSHOP, WORKSHOP_RULE_IDS = prompts.assemble("workshop", _have("workshop"))
 SYS_TASK, TASK_RULE_IDS = prompts.assemble("task", _have("task"))
+_SYS = {"kb": SYS_KB, "workshop": SYS_WORKSHOP, "task": SYS_TASK}
 
 
 def _img_block(path):
@@ -235,9 +257,9 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     opts = ClaudeAgentOptions(
         hooks=guards.make_hooks(state) if guard else None,
         max_budget_usd=MAX_USD,
-        system_prompt=SYS_KB if kind == "kb" else SYS_TASK,
+        system_prompt=_SYS.get(kind, SYS_KB),
         mcp_servers=mcp_config(),
-        allowed_tools=((KB_TOOLS + KB_ONLY_TOOLS) if kind == "kb" else TASK_TOOLS) + SHOP_TOOLS,
+        allowed_tools=_tools_for(kind),
         # ⚠️ **allowed_tools 不是排他白名单。**
         # 它管的是「哪些工具不用逐次批准」,不是「只有这些工具存在」——
         # 配上 permission_mode="bypassPermissions" 之后,CLI 的内置工具
