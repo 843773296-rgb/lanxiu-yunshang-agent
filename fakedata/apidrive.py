@@ -89,6 +89,7 @@ class Driver:
         self.created = []      # [(表, 真实 id)] 顺序即创建顺序,回滚要倒着来
         self.rejected = []     # 被接口拒绝的,这是这条路最值钱的产出
         self.skipped = []
+        self.unknown = []      # 判不出成败的:规格没说清,必须显式报,不许塞进成功那边
 
     # ---- 一行 → 一次请求 ----
     def _payload(self, tname, row, ep, plan, driven=()):
@@ -141,8 +142,11 @@ class Driver:
                 code, doc, _raw = _curl(ep.get("method", "POST"), self.base + ep["path"],
                                         body, self.headers)
                 if self.pause: time.sleep(self.pause)
-                good = code == 200 and not _is_error(doc, ep)
-                if good:
+                res, why = outcome(doc, code, ep)
+                if res == "unknown":
+                    self.unknown.append({"表": tname, "HTTP": code, "响应": why[:160]})
+                    continue
+                if res == "ok":
                     rid = _dig(doc, ep.get("id_path", "id"))
                     if rid is None:
                         # 建成了却拿不到 id:子表没法引用它,而且它已经躺在库里了。
@@ -155,11 +159,12 @@ class Driver:
                     ok += 1
                 else:
                     self.rejected.append({"表": tname, "HTTP": code,
-                                          "错误": _msg(doc)[:160],
+                                          "错误": why[:160],
                                           "提交的": {k: v for k, v in list(body.items())[:6]}})
             self.log(f"    {tname}: 成功 {ok} / 拒绝 "
                      f"{sum(1 for r in self.rejected if r['表'] == tname)} / 跳过 "
-                     f"{sum(1 for s in self.skipped if s['表'] == tname)}")
+                     f"{sum(1 for s in self.skipped if s['表'] == tname)} / 判不出 "
+                     f"{sum(1 for u in self.unknown if u['表'] == tname)}")
         return self.report()
 
     def rollback(self):
@@ -187,18 +192,33 @@ class Driver:
         # 第一版直接展示归一化后的 key,于是「按 PRD 6.2 阻止新建」显示成「按 PRD N.N」、
         # 客户名被换成 N。**把用于比较的形式当成用于阅读的形式,是报告类代码的常见错。**
         return {"成功": len(self.created), "拒绝": len(self.rejected),
-                "跳过": len(self.skipped),
+                "跳过": len(self.skipped), "判不出成败": len(self.unknown),
+                "判不出明细": self.unknown[:10],
                 "规则": [{"表": t, "接口说": v[0]["错误"], "撞了几次": len(v),
                           "例子": v[0]["提交的"]}
                          for (t, e), v in sorted(by.items(), key=lambda x: -len(x[1]))],
                 "跳过明细": self.skipped[:20]}
 
 
-def _is_error(doc, ep):
-    if not isinstance(doc, dict): return False
+def outcome(doc, http, ep):
+    """判成败,**判不出来时算「不确定」,不算成功。**
+
+    第一版的默认是「没看到 error 字段就算成功」。而这个仓库真实的写接口
+    返回的是 `{ok: false, code: ..., reason: ...}` —— 压根没有 error 字段。
+    于是每一次业务拒绝都会被记成成功:成功数虚高、拒绝清单空空如也,
+    而拒绝清单正是这条路唯一不可替代的产出。**兜底方向选错,失败会打扮成成功。**
+
+    现在:规格必须说清怎么判(`ok_field`,或者靠 `id_path` 取不取得到 id)。
+    两者都判不出来 → 记成「不确定」并显式报出来,不塞进任何一边。
+    """
+    if not isinstance(doc, dict): return "unknown", str(doc)[:200]
+    if http != 200: return "rejected", _msg(doc)
     okf = ep.get("ok_field")
-    if okf: return not doc.get(okf)
-    return bool(doc.get("error") or doc.get("err") or doc.get("message") and doc.get("code"))
+    if okf is not None:
+        return ("ok" if doc.get(okf) else "rejected"), _msg(doc)
+    if doc.get("error") or doc.get("err"): return "rejected", _msg(doc)
+    if _dig(doc, ep.get("id_path", "id")) is not None: return "ok", ""
+    return "unknown", _msg(doc)
 
 
 def _msg(doc):

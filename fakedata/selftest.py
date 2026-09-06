@@ -285,6 +285,18 @@ def main():
         p6 = P.build(f6, scale=0.2, tables=DRIVEN)
         m6, _mm = G.generate(p6, c6)
 
+        # 成败判定:照**真实接口的响应约定** `{ok, code, id, reason}` 验
+        REAL_FAIL = {"ok": False, "code": "DUP_PHONE", "reason": "手机号完全相同"}
+        REAL_OK = {"ok": True, "code": "CREATE", "id": "C10086", "reason": "已建档"}
+        ck(apidrive.outcome(REAL_FAIL, 200, {"ok_field": "ok"})[0] == "rejected",
+           "业务拒绝(HTTP 200 + ok:false)判成拒绝")
+        ck(apidrive.outcome(REAL_OK, 200, {"ok_field": "ok"})[0] == "ok", "成功判成成功")
+        ck(apidrive.outcome(REAL_FAIL, 200, {})[0] != "ok",
+           "**规格没说清怎么判成败时,绝不能算成功** —— 真实接口没有 error 字段,"
+           "旧的兜底会把每一次业务拒绝记成成功,而拒绝清单正是这条路唯一不可替代的产出")
+        ck(apidrive.outcome({"whatever": 1}, 200, {})[0] == "unknown",
+           "判不出来的记成「不确定」,不塞进任何一边")
+
         # 规格校验:三类写错的规格都要被挡下
         base6, store6, stop6 = apimock.serve()
         spec6 = json.loads(json.dumps(apimock.SPEC)); spec6["base"] = base6

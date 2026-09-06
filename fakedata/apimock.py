@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""自测用的接口靶子 —— 壳是假的,**校验是这个项目真正的那一份**。
+"""自测用的接口靶子 —— 壳是假的,**校验和响应约定都照着项目真实那一份**。
+
+⚠️ 一开始这个靶子的响应是我自己拍的(`{"error": ...}` / `{"id": ...}`),
+而 `backend/server.py` 里真实的写接口返回的是 `{ok, code, id, reason}`。
+**靶子是我造的、规格也是我写的,两者一致证明不了规格对** —— 那是个自我确认的闭环。
+真实现补上之后照着改的,顺带发现驱动会把每一次业务拒绝记成成功。
 
 `backend/rules.py` 里的 `validate_customer` / `validate_appointment` 是纯函数,
 这里只读地 import 进来用。所以自测验的不是我编的规则,是产品真实在用的规则。
@@ -32,37 +37,41 @@ def _make_handler(store):
         def do_POST(self):
             n = int(self.headers.get("content-length") or 0)
             try: body = json.loads(self.rfile.read(n) or b"{}")
-            except Exception: return self._send({"error": "请求体不是 JSON"}, 400)
+            except Exception:
+                return self._send({"ok": False, "code": "BAD_JSON", "reason": "请求体不是 JSON"}, 400)
             p = self.path
 
             if p == "/api/customer-create":
                 ok, code, reason, _s = _rules.validate_customer(body, store.customer)
-                if not ok: return self._send({"error": reason, "code": code}, 200)
+                if not ok: return self._send({"ok": False, "code": code, "reason": reason})
                 rid = store.nid("SVR-C")
                 store.customer.append(dict(body, id=rid))
-                return self._send({"id": rid})
+                return self._send({"ok": True, "code": "CREATE", "id": rid,
+                                   "reason": f"已建档 {rid}"})
 
             if p == "/api/customer-delete":
                 store.customer = [c for c in store.customer if c["id"] != body.get("id")]
-                return self._send({"ok": True})
+                return self._send({"ok": True, "code": "DELETE"})
 
             if p == "/api/appt-create":
                 if not any(c["id"] == body.get("customer_id") for c in store.customer):
-                    return self._send({"error": f'客户 {body.get("customer_id")} 不存在',
-                                       "code": "NO_CUSTOMER"})
+                    return self._send({"ok": False, "code": "NO_CUSTOMER",
+                                       "reason": f'客户 {body.get("customer_id")} 不存在'})
                 d = {"way": body.get("way") or "到店量体",
                      "start": body.get("start"), "end": body.get("end")}
                 ok, code, reason = _rules.validate_appointment(d)
-                if not ok: return self._send({"error": reason, "code": code})
+                if not ok: return self._send({"ok": False, "code": code, "reason": reason})
                 rid = store.nid("SVR-AP")
                 store.appointment.append(dict(body, id=rid))
-                return self._send({"id": rid})
+                return self._send({"ok": True, "code": "CREATE", "id": rid,
+                                   "reason": f"已建预约 {rid}"})
 
             if p == "/api/appt-delete":
                 store.appointment = [a for a in store.appointment if a["id"] != body.get("id")]
-                return self._send({"ok": True})
+                return self._send({"ok": True, "code": "DELETE"})
 
-            return self._send({"error": f"没有这个路由: {p}"}, 404)
+            return self._send({"ok": False, "code": "NO_ROUTE",
+                               "reason": f"没有这个路由: {p}"}, 404)
     return H
 
 
@@ -80,7 +89,7 @@ SPEC = {
         "customer": {
             "create": {"method": "POST", "path": "/api/customer-create",
                        "fields": {"name": "name", "phone": "phone", "shop": "shop"},
-                       "id_path": "id"},
+                       "id_path": "id", "ok_field": "ok"},
             "delete": {"method": "POST", "path": "/api/customer-delete", "id_field": "id"},
         },
         "appointment": {
@@ -88,7 +97,7 @@ SPEC = {
                        # customer_id 是外键:驱动会把方案里的假 id 翻译成服务端真实 id
                        "fields": {"customer_id": "customer_id", "shop": "shop",
                                   "start": "start_ts", "end": "end_ts"},
-                       "id_path": "id"},
+                       "id_path": "id", "ok_field": "ok"},
             "delete": {"method": "POST", "path": "/api/appt-delete", "id_field": "id"},
         },
     },
