@@ -78,6 +78,27 @@ def fill_deferred(conn, plan, made, dry=True, log=print):
     return n
 
 
+def sink_for(conn, plan, log=lambda *a: None):
+    """给 gen.generate() 用的落地口:一张表造完就立刻灌进去。
+
+    造和灌串成流水线之后,内存里同时存在的只有**当前这一张表**的完整行,
+    加上前面各表被子表指到的那几列。
+    """
+    def sink(tname, rows):
+        tp = plan["tables"][tname]
+        if not rows or tp.get("skip"): return
+        cols = [c for c in tp["columns"] if c in rows[0]]
+        sql = _insert_sql(conn, tname, cols)
+        buf = []
+        for r in rows:
+            buf.append(tuple(r.get(c) for c in cols))
+            if len(buf) >= BATCH:
+                conn.many(sql, buf); buf = []
+        if buf: conn.many(sql, buf)
+        log(f"  {tname}: +{len(rows)}")
+    return sink
+
+
 def run_assertions(conn, plan):
     """跑一遍断言。返回 {断言名: 查出来几行}。跑不动的记成 None(表不存在等)。"""
     res = {}

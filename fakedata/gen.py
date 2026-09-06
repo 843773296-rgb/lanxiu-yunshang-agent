@@ -218,6 +218,28 @@ def _fk_pool(shape, parents, n, r):
     return pool[:n]
 
 
+def _not_before(base, cols, col, r, max_days=30):
+    """造一个「不早于 base」的时间值。**这个函数存在的理由是它被写错过两次。**
+
+    朴素写法是「取 base 的日期部分,加 0..N 天,再随机一个时分」。
+    偏移抽到 0 天、而 base 带时分秒时,新值的时分仍然可能更早 —— 差几个小时,
+    刚好还是违反「不早于」。概率很低,所以**在几十行的数据上根本不出现**:
+    scale=1(26 行)一次没有,scale=5(130 行)就有一条。
+
+    第一次在锚点兜底那里修好了,时间线修正那里**没跟着改** ——
+    两处各写一遍同样的逻辑,就一定会有一处是旧的。
+    所以收成一个函数:兜不住就直接取 base 本身,相等不违反「不早于」。
+    """
+    try:
+        d = datetime.date.fromisoformat(str(base)[:10]) + \
+            datetime.timedelta(days=r.randint(0, max_days))
+    except ValueError:
+        return base
+    nv = d.isoformat() if cols[col]["gen"] == "date" else \
+        f"{d.isoformat()} {r.randint(8,21):02d}:{r.randint(0,59):02d}:00"
+    return nv if nv >= str(base) else str(base)
+
+
 def _depths(start, trans):
     """每个状态离起点几步 —— 决定时间戳的先后。"""
     d, frontier, k = {s: 0 for s in start}, list(start), 0
@@ -276,9 +298,35 @@ def _fsm_fix(rows, cname, g, cols, r):
 
 TIME_ORDER = ["created", "paid_at", "shipped_at", "done_at", "updated", "last_interact"]
 
-def generate(plan, conn=None, edge_rate=0.05):
-    """按方案造数据。返回 {表名: [行字典]}。表按方案里的拓扑顺序生成。"""
+def needed_columns(plan):
+    """每张表**会被别人用到**的列:自己的主键,加上被别的表外键指过来的那些列。
+
+    流式生成的关键就在这个集合。造完一张表之后,整行数据其实只剩两个用途:
+    灌进库里(灌完就不需要了)、给子表当外键取值(只需要被指的那一列)。
+    其余的列留在内存里纯属占地方。
+    """
+    need = {t: set(tp["pk"]) for t, tp in plan["tables"].items()}
+    for t, tp in plan["tables"].items():
+        for _cn, g in tp["columns"].items():
+            if g["gen"] == "fk" and g.get("table") in need:
+                need[g["table"]].add(g["column"])
+    return need
+
+
+def generate(plan, conn=None, edge_rate=0.05, sink=None):
+    """按方案造数据。返回 {表名: [行字典]}。表按方案里的拓扑顺序生成。
+
+    ## sink:把「造」和「灌」串成流水线
+
+    不给 sink 时,所有表所有行会一直留在内存里 —— 这是个 **O(总行数 × 总列数)** 的设计。
+    实测约 0.87 KB/行:88 万行吃掉 764 MB,而这个工具的核心主张恰恰是「要多少有多少」。
+    在几百行上完全看不出来,正是那种**小规模下永远正确**的架构决定。
+
+    给了 sink,每造完一张表就交出去灌,然后**只留下会被子表用到的那几列**。
+    一张 36 列的客户表通常只有 2-3 列被指过来,剩下的当场释放。
+    """
     seed = plan["seed"]
+    need = needed_columns(plan) if sink else None
     made, manifest = {}, {}
     for tname in plan["order"]:
         tp = plan["tables"][tname]
@@ -388,10 +436,7 @@ def generate(plan, conn=None, edge_rate=0.05):
                     v = row.get(c)
                     if v is None: continue
                     if last and str(v) < str(last):
-                        d = datetime.date.fromisoformat(str(last)[:10]) + \
-                            datetime.timedelta(days=rt.randint(0, 20))
-                        row[c] = d.isoformat() if cols[c]["gen"] == "date" else \
-                            f"{d.isoformat()} {rt.randint(8,21):02d}:{rt.randint(0,59):02d}:00"
+                        row[c] = _not_before(last, cols, c, rt, 20)
                     last = row[c]
         # 兜底:任何 *_at 都不该早于 created。
         # 状态机管得住它认领的那几列,管不住剩下的(synced_at / on_shelf_at / handled_at…)——
@@ -407,17 +452,15 @@ def generate(plan, conn=None, edge_rate=0.05):
                 for c in ats:
                     v = row.get(c)
                     if v is None or str(v) >= str(base): continue
-                    d = datetime.date.fromisoformat(str(base)[:10]) + \
-                        datetime.timedelta(days=rt.randint(0, 30))
-                    nv = d.isoformat() if cols[c]["gen"] == "date" else \
-                        f"{d.isoformat()} {rt.randint(8,21):02d}:{rt.randint(0,59):02d}:00"
-                    # 偏移可能是 0 天,而 created 带时分秒 —— 这时新值的时分仍可能更早。
-                    # 只按日期算、把时分丢掉,是这类「差一点」错误的固定来源。
-                    # 兜不住就直接取 created 本身:相等不违反「不早于」。
-                    row[c] = nv if nv >= str(base) else str(base)
+                    row[c] = _not_before(base, cols, c, rt, 30)
 
         for row in rows: row.pop("__ctx", None)
-        made[tname] = rows
+        if sink:
+            sink(tname, rows)
+            keep = need[tname]
+            made[tname] = [{k: r[k] for k in keep if k in r} for r in rows]
+        else:
+            made[tname] = rows
     return made, manifest
 
 

@@ -241,6 +241,39 @@ def main():
            for row in m3["ordr"] for c in ("paid_at", "shipped_at", "cancelled_at")),
        "所有 *_at 都不早于 created(全表统一的时间原点)")
 
+    print("\n【流式生成 · 省内存不能改变结果】")
+    import sqlite3 as _sq
+    def _fill(path, use_sink):
+        shutil.copy(os.path.join(ROOT, "backend", "lanxiu.db"), path)
+        c2 = S.connect(path)
+        f5 = D.discover(c2, c2.reflect())
+        p5 = P.build(f5, scale=0.3)
+        if use_sink:
+            m5, mn5 = G.generate(p5, c2, sink=L.sink_for(c2, p5))
+        else:
+            m5, mn5 = G.generate(p5, c2)
+            L.load(c2, p5, m5, dry=False, log=lambda *x: None)
+        L.fill_deferred(c2, p5, m5, dry=False, log=lambda *x: None)
+        c2.commit()
+        pre = p5["marker"]["prefix"]
+        dump = {}
+        for t in p5["order"]:
+            tp = p5["tables"][t]
+            if tp.get("skip") or not tp["pk"]: continue
+            cols = ", ".join(f'"{c}"' for c in tp["columns"])
+            dump[t] = c2.q(f'select {cols} from "{t}" where "{tp["pk"][0]}" like \'{pre}%\' '
+                           f'order by "{tp["pk"][0]}"')
+        c2.close()
+        return dump, mn5
+    d_mem, mn_mem = _fill(os.path.join(tmpd, "nostream_test.db"), False)
+    d_str, mn_str = _fill(os.path.join(tmpd, "stream_test.db"), True)
+    diff = [t for t in d_mem if d_mem[t] != d_str.get(t)]
+    ck(not diff, "流式和全内存灌进去的数据**逐行完全一样**(省内存不能改变结果)",
+       f"这些表不一致: {diff[:4]}")
+    ck({t: m["values"] for t, m in mn_mem.items()} ==
+       {t: m["values"] for t, m in mn_str.items()},
+       "两条路径的 manifest 也一样(回滚依据不能因为省内存而变)")
+
     print("\n【安全闸门】")
     for tgt, env, should in [("shop.db", "生产", False), ("shop.db", "", False),
                              ("mysql://u@h/shop_prod", "dev", False),
