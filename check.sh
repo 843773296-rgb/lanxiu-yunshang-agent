@@ -45,6 +45,7 @@ run "版型库与 BOM · 推档/裁片/物料对账" python3 knowledge/derive_pa
 run "量体推荐 · 三档判定/放松量/齐胸特例" python3 knowledge/fitting.py
 run "成长推算 · 百分位/靶身高/复量周期" python3 knowledge/growth.py
 run "用户生命周期 · 着装人/家庭/同意/过期量体" python3 backend/lifecycle_check.py
+run "数据规范 · 身份/关联/覆盖(对照 数据规范.md)" python3 backend/spec_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py
 run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/leadtime.py

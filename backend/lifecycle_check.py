@@ -95,13 +95,18 @@ def structural(c):
                    WHERE k.id IS NULL""").fetchall(),
       "着装人必须有归属账号 —— 否则没人能对这份身体数据负责"),
 
-    A("父母指向了别的账号下的人",
+    # ⚠️ 粒度必须是**账户**,不是门店档案。
+    # 这条第一版写的是 `customer_id = w.customer_id` —— 账户层加进来之后就错了:
+    # 一个账户可能有两条门店档案,本人挂在其中一条、配偶挂在另一条,
+    # **它们本来就是一家人**,却被判成「跨账号引用」。
+    # **模型一变,检查的粒度也得跟着变** —— 这类不一致是重播种逼出来的,不会自己冒头。
+    A("父母指向了别的账户下的人",
       c.execute("""SELECT w.id, w.parent_a, w.parent_b FROM wearer w
                    WHERE (w.parent_a IS NOT NULL AND w.parent_a NOT IN
-                            (SELECT id FROM wearer WHERE customer_id = w.customer_id))
+                            (SELECT id FROM wearer WHERE account_id = w.account_id))
                       OR (w.parent_b IS NOT NULL AND w.parent_b NOT IN
-                            (SELECT id FROM wearer WHERE customer_id = w.customer_id))""").fetchall(),
-      "靶身高会读父母身高。跨账号引用等于把别人家的身高算进这个孩子"),
+                            (SELECT id FROM wearer WHERE account_id = w.account_id))""").fetchall(),
+      "靶身高会读父母身高。跨账户引用等于把别人家的身高算进这个孩子"),
 
     A("性别不是「男」或「女」",
       c.execute("SELECT id, name, gender FROM wearer WHERE gender NOT IN ('男','女')").fetchall(),

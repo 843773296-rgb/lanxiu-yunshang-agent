@@ -31,8 +31,21 @@ NEED = dict(FIT, 档位="需补量")
 C_NEED = call("kb_fit", NEED)
 
 # 成长推算的 fixture 也全部取真实返回
-FC   = api.forecast_growth("W10010-2", months=12)      # 跨突增期、靶身高有冲突
-WEAR = api.get_wearer(wearer_id="W10010-2")            # 量体已过期
+# ⚠️ **别写死着装人编号。** 上一版钉的是 W10010-2,重播种之后它的父母身高变了、
+# 靶身高不再冲突,夹具当场挂掉 —— 而挂的不是体检逻辑,是夹具的假设。
+# 改成**按需要的性质去挑**:要一个「靶身高冲突」的,和一个「量体已过期」的。
+def _pick(pred):
+    for w in api._rows("SELECT id FROM wearer WHERE birthday IS NOT NULL ORDER BY id"):
+        try: r = api.forecast_growth(w["id"], months=12)
+        except Exception: continue
+        if r.get("error"): continue
+        if pred(w["id"], r): return w["id"], r
+    raise SystemExit("找不到满足条件的着装人 —— 种子数据的覆盖变了,先看 spec_check")
+
+_CONF_ID, FC = _pick(lambda i, r: (r.get("靶身高校验") or {}).get("需人工确认"))
+_EXP_ID, _ = _pick(lambda i, r: ((api.get_wearer(wearer_id=i)["着装人"][0]
+                                  .get("量体是否过期") or {}).get("过期")))
+WEAR = api.get_wearer(wearer_id=_EXP_ID)
 PH, PLO, PHI = FC["预测身高"], FC["区间"][0], FC["区间"][1]
 C_FC, C_WEAR = call("forecast_growth", FC), call("get_wearer", WEAR)
 # 没同意时的返回:临时撤一下再复原,拿到真实的 error 形态

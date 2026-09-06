@@ -104,9 +104,26 @@ CREATE TABLE body_feature(customer_id TEXT, feature TEXT, note TEXT, recorded_by
 --   pwd_*       自设密码。**只存 PBKDF2 哈希 + 每账户独立的盐,绝不存明文**,
 --               而且**不允许经工具层访问**(和 truth 表同一条规矩,api._rows 里硬拦)
 CREATE TABLE account(
-  id TEXT PRIMARY KEY, phone TEXT NOT NULL UNIQUE,
+  id TEXT PRIMARY KEY,
+  -- A1/A9:**登录凭据**。着装人那个 phone 是**联系方式**,两件事,别合并。
+  phone TEXT NOT NULL UNIQUE,
   login_name TEXT UNIQUE, pwd_algo TEXT, pwd_salt TEXT, pwd_hash TEXT,
-  status TEXT DEFAULT '正常', created TEXT, last_login TEXT);
+  status TEXT DEFAULT '正常', created TEXT, last_login TEXT,
+  -- 称呼与联系:账户原来没有名字,名字散在门店档案和着装人上 ——
+  -- 顾问打开账户第一眼要知道「叫她什么」
+  display_name TEXT, contact_pref TEXT, default_addr TEXT, home_shop TEXT,
+  -- A8:有且只有一个「本人」着装人。指出来,而不是靠 relation 字符串猜
+  self_wearer_id TEXT,
+  -- 合规:协议是有版本的 —— **改了条款而没重新取得同意,等于没同意**
+  tos_version TEXT, privacy_version TEXT, marketing_consent INT DEFAULT 0,
+  -- 「注销」和「数据删除」是两件事,分别记时间
+  closed_at TEXT, purge_at TEXT,
+  -- 登录安全:没有这个,自设密码那一档等于裸奔
+  fail_count INT DEFAULT 0, locked_until TEXT);
+-- A6:换号之后旧号仍要能找到人。合并流程写着「手机号取新号」,
+-- 不留别名就等于让客户失联 —— 客户拿旧号来问,系统会说查无此人。
+CREATE TABLE phone_alias(
+  phone TEXT PRIMARY KEY, account_id TEXT, reason TEXT, since TEXT);
 -- ── 着装人与家庭 ────────────────────────────────────────────────────────
 -- 原来所有身体数据都挂在 customer_id 上,而 customer 是**账号 / 付钱的人**。
 -- 妈妈给女儿买汉服时,**付款人、收货人、量体对象是三个不同的人** ——
@@ -119,6 +136,9 @@ CREATE TABLE wearer(
                                            -- 年龄每天在变,存年龄的系统一年后全库都错,
                                            -- 而且错得很安静 —— 不报错,只是所有推算偏一岁。
   relation TEXT,                           -- 本人 / 配偶 / 子 / 女 / 父 / 母
+  -- A9:**联系方式**,可空(孩子没手机)、**可重复**(妈妈给全家都留自己的号)。
+  -- 和 account.phone 是两件事:那个管「能不能登进来」,这个管「衣服出问题打给谁」。
+  phone TEXT,
   parent_a TEXT, parent_b TEXT,            -- 指向同账号下的另两个 wearer,用于靶身高校验
   height REAL,                             -- 成人自报身高(父母身高是靶身高的唯一个体化输入)
   status TEXT DEFAULT '在用', created TEXT);
@@ -566,8 +586,17 @@ def run():
     REM=["偏好素雅低饱和,忌大面积撞色","婚期 10 月,需倒推工期","对香云纱气味敏感,已书面告知",
          "有两次远程量体记录,公差按合同约定","习惯微信沟通,电话常不接",None,None,None]
     allc=[r[0] for r in c.execute("SELECT id FROM customer ORDER BY id")]
+    # D1:**地址串必须和省市一致**。原来 addr 一律生成成「上海市…」,
+    # 而 province/city 另外按下标分配 —— 于是出现「浙江省杭州市」的人住在「上海市浦区」,
+    # 全库 21 对「同地址串却不同省市」。**同一个事实两个来源,必然漂。**
+    # 改成:PROV 是唯一来源,地址串跟着它生成,只保留原来的门牌号。
+    import re as _re
     for n,cid in enumerate(allc):
         pv,ct,ds = PROV[n % len(PROV)]
+        _old = c.execute("SELECT addr FROM customer WHERE id=?", (cid,)).fetchone()[0] or ""
+        _no = (_re.search(r"\d+号.*$", _old) or [""])[0] if _re.search(r"\d+号.*$", _old) else "1号"
+        _addr = f"{pv}{'' if ct == pv else ct}{ds}{_no}"
+        c.execute("UPDATE customer SET addr=? WHERE id=?", (_addr, cid))
         c.execute("""UPDATE customer SET gender=?,email=?,wechat=?,occupation=?,income=?,car=?,
                      province=?,city=?,district=?,inviter=?,points=?,remark=? WHERE id=?""",
                   ("女" if n % 5 else "男",
@@ -595,15 +624,24 @@ def run():
                        gender=(SELECT gender FROM customer WHERE id=?),
                        province=(SELECT province FROM customer WHERE id=?),
                        city=(SELECT city FROM customer WHERE id=?),
-                       district=(SELECT district FROM customer WHERE id=?)
-                     WHERE id=?""", (_a, _a, _a, _a, _b))
+                       district=(SELECT district FROM customer WHERE id=?),
+                       -- D1:**省市和地址串必须一起搬**。只搬省市会留下
+                       -- 「河北省的人住在广东省地址」这种矛盾,而真值明写着「地址完全一致」。
+                       addr=(SELECT addr FROM customer WHERE id=?)
+                     WHERE id=?""", (_a, _a, _a, _a, _a, _b))
     # 「同名不同人」8 对反过来:省市必须真的不同,否则「不同人」这个结论也没依据
     for _i in range(8, 16):
         _a, _b = f"C2{1000+_i*2}", f"C2{1000+_i*2+1}"
         _pa = c.execute("SELECT province,city FROM customer WHERE id=?", (_a,)).fetchone()
         _alt = next(x for x in PROV if x[0] != _pa[0])
-        c.execute("UPDATE customer SET province=?,city=?,district=? WHERE id=?",
-                  (*_alt, _b))
+        # **改省市就得同时改地址串**,否则 D1 又破了 ——
+        # 上一版这里只改省市,留下 2 对「同地址串却不同省市」。
+        # 这正是「同一个事实两个来源」的典型:改一处忘一处,而且不报错。
+        _oa = c.execute("SELECT addr FROM customer WHERE id=?", (_b,)).fetchone()[0] or "1号"
+        _n2 = (_re.search(r"\d+号.*$", _oa) or [None])
+        _n2 = _n2[0] if _re.search(r"\d+号.*$", _oa) else "1号"
+        c.execute("UPDATE customer SET province=?,city=?,district=?,addr=? WHERE id=?",
+                  (*_alt, f"{_alt[0]}{'' if _alt[1]==_alt[0] else _alt[1]}{_alt[2]}{_n2}", _b))
 
     # 积分流水(设计稿「积分行为」六种)
     BEH=["账户调加","账户调减","积分消费","积分返还","确认款样","完成定购"]
@@ -663,6 +701,19 @@ def run():
     ]
     for no,nm,tr,sk,dr,wl,ws,note in ART:
         c.execute("INSERT INTO artisan VALUES(?,?,?,?,?,?,?,'在职',?)",(no,nm,tr,sk,dr,wl,ws,note))
+    # B4:**工单必须指向真实订单**。原来是 `ORD-7001` 这种占位号,53 条没一条对得上,
+    # 于是「我的衣服做到哪了」这个定制业最高频的问题根本答不了,产能排期成了孤岛。
+    # 一单可以有多道工序(织造/印染/刺绣/缝制),所以多对一是对的。
+    # ⚠️ **懒查**:工坊工单在订单之前播种,提前取会拿到空列表 ——
+    # 第一版就是这样,53 条 ref 全成了 NULL,而且**不报错**。
+    # 「先建的东西引用后建的东西」这类顺序依赖,写成懒查最省心。
+    _oc = []
+    def _ord_for(i):
+        if not _oc:
+            _oc.extend(r[0] for r in c.execute(
+                "SELECT id FROM ordr WHERE kind='定制品订单' ORDER BY id"))
+        return _oc[i % len(_oc)] if _oc else None
+
     # 在制工单:让「现在排队要等多久」有真实分布 —— 有的师傅空着,有的排到一个月后
     _base = date(2026, 9, 4)
     wo = 0
@@ -676,7 +727,7 @@ def run():
             end = cur + timedelta(days=int(wd / dr) + 1)
             wo += 1
             c.execute("INSERT INTO workorder VALUES(?,?,?,?,?,?,?,'在制',?)",
-                      (f"WO{8000+wo}", no, k, f"ORD-{7000+wo}", wd,
+                      (f"WO{8000+wo}", no, k, _ord_for(wo), wd,
                        cur.isoformat(), end.isoformat(), None))
             cur = end
     # 已完成的历史工单不占产能,但要有,否则看不出「这个师傅一直很忙」
@@ -1168,47 +1219,94 @@ def run():
             algo = f"pbkdf2_sha256${PWD_ITER}"
         else:
             login = salt = h = algo = None
-        c.execute("INSERT INTO account VALUES(?,?,?,?,?,?,?,?,?)",
+        cu = c.execute("SELECT name,addr,shop,province,city FROM customer WHERE phone=? "
+                       "ORDER BY created LIMIT 1", (ph,)).fetchone()
+        pref = ["微信", "电话", "短信"][i % 3]
+        c.execute("INSERT INTO account VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (aid, ph, login, algo, salt, h, "正常", ago(200 - i % 150),
-                   ago(i % 40) if i % 3 else None))
+                   ago(i % 40) if i % 3 else None,
+                   cu[0] if cu else None, pref,
+                   f"{cu[3] or ''}{cu[4] or ''}{cu[1] or ''}" if cu else None,
+                   cu[2] if cu else None,
+                   None,                       # self_wearer_id 建完着装人再回填
+                   "v2.1", "v1.4", 1 if i % 3 else 0,
+                   None, None, 0, None))
         c.execute("UPDATE customer SET account_id=? WHERE phone=?", (aid, ph))
+        # A6:每 7 个账户里有 1 个换过号,旧号留成别名 ——
+        # 合并流程写着「手机号取新号」,不留别名就等于让客户失联:
+        # **客户拿旧号来问,系统会说查无此人。**
+        if i % 7 == 3:
+            c.execute("INSERT OR IGNORE INTO phone_alias VALUES(?,?,?,?)",
+                      (f"1{(int(ph)+7_0000_0000) % 10_000_000_000:010d}", aid,
+                       "换号,旧号保留", ago(120 + i % 60)))
 
     # ── 着装人:把「账号」和「衣服穿在谁身上」拆开 ────────────────────
     # 老的量体记录一律归到该账号的「本人」着装人 —— 历史数据口径不变。
     KID_M = ["砚舟", "子墨", "望舒", "知许", "星野"]
     KID_F = ["星芜", "昭昭", "令仪", "清和", "若薇"]
-    def _w(i, cid, name, gender, bday, rel, pa=None, pb=None, h=None):
+    def _w(i, cid, name, gender, bday, rel, pa=None, pb=None, h=None, phone=None):
         wid = f"W{cid[1:]}-{i}"
         # **身份绑账户,不绑门店档案** —— 档案可能有好几条,账户只有一个
         aid = c.execute("SELECT account_id FROM customer WHERE id=?", (cid,)).fetchone()[0]
-        c.execute("INSERT INTO wearer VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                  (wid, cid, aid, name, gender, bday, rel, pa, pb, h, "在用", T.isoformat()))
+        c.execute("INSERT INTO wearer VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (wid, cid, aid, name, gender, bday, rel, phone, pa, pb, h, "在用", T.isoformat()))
         return wid
     def _consent(n, wid, scope, by, rel, at):
         c.execute("INSERT INTO consent VALUES(?,?,?,?,?,?,?,?)",
                   (f"CS{2000+n}", wid, scope, by, rel, "门店纸质", at, None))
 
+    # ── A3/A7/A8:**每个账户必须有一个「本人」着装人,而且必须成年** ──────
+    # 账户 = 一个人;那个人本身就是第一个着装人。原来只给 18 个有量体记录的
+    # 客户建了着装人,于是 72 个账户底下空着 —— 空账户在业务上没有意义:
+    # **一个连「衣服穿在谁身上」都答不出的账户,做定制没法用。**
+    #
+    # 本人取该账户下**最早建档**的那条门店档案(一个账户可能有多条)。
+    # 联系手机号默认等于账户登录号 —— 本人这一个是重合的,别的着装人各留各的。
     cn = 0
+    for a in c.execute("SELECT id, phone, display_name FROM account ORDER BY id").fetchall():
+        aid, aph, anm = a
+        cu = c.execute("""SELECT id,name,gender,birthday FROM customer
+                          WHERE account_id=? ORDER BY created LIMIT 1""", (aid,)).fetchone()
+        if not cu: continue
+        cid, nm, gd, bd = cu
+        gd = gd if gd in ("男", "女") else "女"
+        bd = bd or "1992-01-01"
+        # A7:账户持有人必须成年。种子里客户生日都在 26–46 岁,这里再兜一道 ——
+        # **规范说了必须成年,就不能指望「数据碰巧是成年的」**。
+        if (T - date.fromisoformat(bd)).days / 365.25 < 18:
+            bd = (T - timedelta(days=int(30 * 365.25))).isoformat()
+        hh = c.execute("SELECT value FROM measure_rec WHERE customer_id=? AND item='MI01'",
+                       (cid,)).fetchone()
+        self_h = round(hh[0], 1) if hh else (171.2 if gd == "男" else 159.6)
+        wid = _w(0, cid, nm or anm, gd, bd, "本人", h=self_h, phone=aph)
+        c.execute("UPDATE account SET self_wearer_id=? WHERE id=?", (wid, aid))
+        # 该账户名下所有门店档案的量体记录,都归到本人
+        c.execute("""UPDATE measure_rec SET wearer_id=? WHERE wearer_id IS NULL
+                     AND customer_id IN (SELECT id FROM customer WHERE account_id=?)""", (wid, aid))
+        _consent(cn, wid, "身体数据", nm or anm or "本人", "本人",
+                 f"2026-0{6+cn%3}-1{cn%9}"); cn += 1
+
     for k, cid in enumerate(cust_ids):
         row = c.execute("SELECT name,gender,birthday FROM customer WHERE id=?", (cid,)).fetchone()
         nm, gd, bd = (row or ("客户", "女", "1992-01-01"))
         gd = gd if gd in ("男", "女") else "女"
         bd = bd or "1992-01-01"
-        # 本人身高:取该客户量过的身高值,没量过就按性别给个中位数
-        hh = c.execute("SELECT value FROM measure_rec WHERE customer_id=? AND item='MI01'",
-                       (cid,)).fetchone()
-        self_h = round(hh[0], 1) if hh else (171.2 if gd == "男" else 159.6)
-        w_self = _w(0, cid, nm, gd, bd, "本人", h=self_h)
-        c.execute("UPDATE measure_rec SET wearer_id=? WHERE customer_id=? AND wearer_id IS NULL",
-                  (w_self, cid))
-        _consent(cn, w_self, "身体数据", nm, "本人", f"2026-0{6+k%3}-1{k%9}"); cn += 1
+        # 本人已在上面按账户建好了 —— **不再建第二个**(A8:有且只有一个「本人」)
+        aid0 = c.execute("SELECT account_id FROM customer WHERE id=?", (cid,)).fetchone()[0]
+        w_self = c.execute("SELECT self_wearer_id FROM account WHERE id=?", (aid0,)).fetchone()[0]
+        if not w_self: continue
 
         # 每隔一个账号挂一个孩子 —— 孩子才是这个模块真正要管的对象
         if k % 2: continue
         # 配偶(只为了父母身高:靶身高法的唯一个体化输入)
         sg = "男" if gd == "女" else "女"
+        # A9:配偶留**自己的**联系号;孩子不留(可空)——
+        # 合成一个字段的话,孩子就被迫要有手机号,或者妈妈的号在库里唯一冲突。
+        _sp_phone = f"1{(int(c.execute('SELECT phone FROM account WHERE id=?',(
+            c.execute('SELECT account_id FROM customer WHERE id=?',(cid,)).fetchone()[0],)
+        ).fetchone()[0]) + 31_4159_265) % 10_000_000_000:010d}"
         w_sp = _w(1, cid, f"{nm[0]}{'先生' if sg=='男' else '女士'}", sg,
-                  "1990-05-20", "配偶", h=174.0 if sg == "男" else 161.0)
+                  "1990-05-20", "配偶", h=174.0 if sg == "男" else 161.0, phone=_sp_phone)
         _consent(cn, w_sp, "身体数据", nm, "配偶", f"2026-0{6+k%3}-1{k%9}"); cn += 1
         # 孩子:年龄铺开 3–14 岁,覆盖「学龄前 / 学龄 / 突增期」三段
         age = [3, 5, 7, 9, 11, 13, 14, 4, 6][(k // 2) % 9]
@@ -1544,6 +1642,15 @@ def run():
         c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)",
                   (f"T{mid}", "售后判责", mid, "待处理", "2026-08-25", f"{item} · {issue}"))
         truths.append((mid, "BP-03", rc, act, ev, f"{item} · {issue} · 工单状态 {st}"))
+
+    # ── B4:工单 ref 统一回填 ────────────────────────────────────────
+    # 工坊工单在订单之前播种,所以播种时取不到订单 —— 懒查也救不了,
+    # 因为那时订单表就是空的。**顺序依赖治不好,就别治,挪到最后统一回填。**
+    # 一单可以有多道工序(织造/印染/刺绣/缝制),多对一是对的。
+    _co = [r[0] for r in c.execute("SELECT id FROM ordr WHERE kind='定制品订单' ORDER BY id")]
+    if _co:
+        for _n, _wo in enumerate(r[0] for r in c.execute("SELECT id FROM workorder ORDER BY id")):
+            c.execute("UPDATE workorder SET ref=? WHERE id=?", (_co[_n % len(_co)], _wo))
 
     c.executemany("INSERT INTO truth(case_id,breakpoint,root_cause,expected_action,expected_evidence,note) VALUES(?,?,?,?,?,?)", truths)
     c.commit()
