@@ -218,6 +218,36 @@ def get_lifecycle(customer=None, lifecycle=None):
                     "**多条命中时要把命中列表说出来** —— 只报结论,运营无从判断算得对不对。"}
 
 
+def get_member_priority(lifecycle=None, limit=10):
+    """同一档里**先联系谁**。给一个生命周期档位,按 RFM 排出优先次序。
+
+    八档答「这个客户处在什么阶段」,答不了「潜在流失这 16 个人我先打给谁」——
+    档内没有排序,而运营每天要做的正是后者。
+
+    口径在 knowledge/rfm.py。**分数只在传进来的这一批人内部可比** ——
+    换一批人同一个人的分数会变,这是相对指标的本性。
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "knowledge"))
+    import rfm as _rfm, lifecycle as _lc
+    if lifecycle and lifecycle not in _lc.PRIORITY:
+        return {"error": f"没有「{lifecycle}」这一档", "现有档位": _lc.PRIORITY}
+    sql = ("SELECT id,name,lifecycle,idle_days,orders_12m,amount_12m,last_interact,advisor "
+           "FROM customer")
+    args = []
+    if lifecycle: sql += " WHERE lifecycle=?"; args.append(lifecycle)
+    rs = _rows(sql, *args)
+    if not rs:
+        return {"hit": 0, "note": "这一档一个人都没有,不要凭印象回答"}
+    ranked = _rfm.score(rs)[: max(1, min(int(limit or 10), 40))]
+    for r in ranked: r["评分依据"] = _rfm.explain(r)
+    return {"hit": len(rs), "档位": lifecycle or "全部", "rows": [_nz(r) for r in ranked],
+            "note": "**RFM 是相对分,只在这一批人内部可比** —— 不要拿两个档位的分数直接比，"
+                    "也不要说「他 RFM 12 分所以是优质客户」。"
+                    "排序解决的是「先打给谁」,不是「谁更值钱」。"
+                    "**这是排序不是预测**,不代表联系了就能挽回。"}
+
+
 def kb_detail(code):
     """按编码取某一条的完整内容"""
     r=_rows("SELECT * FROM craft WHERE code=?",code)
@@ -896,6 +926,10 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号或姓名"},
     "lifecycle":{"type":"string","description":"按档位筛,如「潜在流失」"}},"required":[]}},
+ {"name":"get_member_priority","description":"回答「**同一档里先联系谁**」。给一个生命周期档位(如「潜在流失」),按 RFM 三维打分并排出优先次序,返回每个人的 R/F/M 分、合计分和**评分依据**。\n\n生命周期八档答的是「这个客户处在什么阶段」,答不了「潜在流失这 16 个人我先打给谁」—— 档内没有排序,而这正是运营每天要做的决定。\n\n**RFM 是相对分,只在返回的这一批人内部可比。** 不要拿两个档位的分数直接比,也不要说「他 RFM 12 分所以是优质客户」——换一批人同一个人的分数就变了。排序解决的是「先打给谁」,不是「谁更值钱」。\n\n**这是排序不是预测**,不代表联系了就能挽回。回答时把「评分依据」一起说出来,只给名次运营无从判断该不该信。",
+  "input_schema":{"type":"object","properties":{
+    "lifecycle":{"type":"string","description":"生命周期档位,如「潜在流失」「休眠」。不传则对全部客户排。"},
+    "limit":{"type":"number","description":"返回前几名,默认 10,最多 40"}},"required":[]}},
  {"name":"get_aftersale","description":"查售后记录(退货/换货/退款/维修),可按订单号、客户或状态筛。退款类会带上退款轨迹。**这个工具只给事实,不给判责结论** —— 判责标准在 kb_tables 的「售后争议判定」表里,要另外查。查不到就如实说查不到,不要推测客户提过什么。",
   "input_schema":{"type":"object","properties":{
     "order_id":{"type":"string"},"customer":{"type":"string","description":"客户号或姓名"},
@@ -956,7 +990,8 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_wearer":get_wearer,"forecast_growth":forecast_growth,
               "plan_for_event":plan_for_event,"get_maintain":get_maintain,
               "get_workorder":get_workorder,
-              "get_lifecycle":get_lifecycle})
+              "get_lifecycle":get_lifecycle,
+              "get_member_priority":get_member_priority})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

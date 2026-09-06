@@ -187,7 +187,7 @@ TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
 # P6 当场拦住了我最初「放进两个角色共用那包」的写法:工具发给了工艺顾问,
 # 而管它的规矩 TK08 只写给后台运营 —— **工具给了、规矩没给**。
 # 它逼我决定这个工具归谁,而不是默认发给所有人。
-TASK_ONLY_TOOLS = ["mcp__shop__get_lifecycle"]
+TASK_ONLY_TOOLS = ["mcp__shop__get_lifecycle", "mcp__shop__get_member_priority"]
 
 # ── 提示词:唯一源头在根目录 prompts.py ──────────────────────────────
 # 原来这里是两份 64 行 + 18 行的字面量,而 agent/chat.py 里还有**另一份**同角色的
