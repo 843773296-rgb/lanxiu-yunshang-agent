@@ -27,6 +27,8 @@
 否则灌不进去,等于没测。
 """
 import os, sys, math, random, datetime
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from plan import dominators
 
 # ---------- 中文数据池 ----------
 XING = "王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾"
@@ -216,6 +218,56 @@ def _fk_pool(shape, parents, n, r):
     return pool[:n]
 
 
+def _depths(start, trans):
+    """每个状态离起点几步 —— 决定时间戳的先后。"""
+    d, frontier, k = {s: 0 for s in start}, list(start), 0
+    while frontier and k < 40:
+        k += 1; nxt = []
+        for n in frontier:
+            for a, b in trans:
+                if a == n and b not in d: d[b] = k; nxt.append(b)
+        frontier = nxt
+    return d
+
+
+def _fsm_fix(rows, cname, g, cols, r):
+    """把状态和时间戳绑在一起 —— 这是「语义像」和「结构像」的分界。
+
+    统计层能造出「状态分布跟源库一样」的数据,但它是**逐列独立**抽的:
+    状态抽到「已发货」,付款时间那一列另抽一次,可能是空的。
+    于是库里躺着一批「已发货但没付过款」的订单 —— 数据库完全允许,业务上不可能。
+    你拿这种数据去测,会花半天 debug 一个根本不存在的 bug。
+
+    这里按状态机改写:到达该状态的**必经**状态,时间戳依次填上、时间递增;
+    没走到的那些,时间戳留空。必经关系用支配点算,不是可达性 ——
+    否则「从待付款直接取消」的订单会被要求有付款时间。
+    """
+    trans, start, ts = g["transitions"], g["start"], g["timestamps"]
+    if not ts: return
+    depth = _depths(start, trans)
+    for row in rows:
+        st = str(row.get(cname))
+        must = dominators(start, trans, st) & set(ts)
+        order = sorted(must, key=lambda x: depth.get(x, 99))
+        cur = None
+        for stt in order:
+            col = ts[stt]
+            if cur is None:
+                v = row.get(col)
+                try: cur = datetime.date.fromisoformat(str(v)[:10]) if v else _dt(r)
+                except ValueError: cur = _dt(r)
+            else:
+                cur = cur + datetime.timedelta(days=r.randint(0, 12))
+            row[col] = cur.isoformat() if cols[col]["gen"] == "date" else \
+                f"{cur.isoformat()} {r.randint(8,21):02d}:{r.randint(0,59):02d}:00"
+        for stt, col in ts.items():
+            # 没走到那一步就该是空的。但**非空列不能置空** ——
+            # 那会当场违反方案自己派生的「不可为空」断言,
+            # 变成工具自己造出来的检查失败。
+            if stt not in must and cols[col].get("nullable", True):
+                row[col] = None
+
+
 TIME_ORDER = ["created", "paid_at", "shipped_at", "done_at", "updated", "last_interact"]
 
 def generate(plan, conn=None, edge_rate=0.05):
@@ -267,6 +319,13 @@ def generate(plan, conn=None, edge_rate=0.05):
                 for i, row in enumerate(rows): row[cname] = pool[i]
                 continue
 
+            if g["gen"] == "fsm":
+                states = [s for s in ({x for ab in g["transitions"] for x in ab}
+                                      | set(g["start"]))]
+                w = {s: (g.get("dist") or {}).get(s, 0.01) for s in states}
+                for row in rows: row[cname] = _weighted(r, w)
+                continue
+
             nr = g.get("null_rate") or 0
             slots = (_edge_slots(rng_for(seed, tname, cname, "边界"), n,
                                  [v for _n, v in EDGE_TEXT], edge_rate)
@@ -286,6 +345,12 @@ def generate(plan, conn=None, edge_rate=0.05):
                     while v in seen:
                         v = _cap(str(_value(g, r2, {})) + str(r2.randint(10, 9999)), g)
                     seen.add(v); row[cname] = v
+
+        # 状态机改写要在时间线修正**之前** —— 它写的是「哪些时间戳该有值」,
+        # 时间线修正管的是「有值的那些先后对不对」。顺序反了会把状态机写的空值填回去。
+        for cname, g in cols.items():
+            if g["gen"] == "fsm":
+                _fsm_fix(rows, cname, g, cols, rng_for(seed, tname, cname, "状态机"))
 
         # 时间线修正:让 created ≤ paid_at ≤ shipped_at ≤ …
         # 这一步不是锦上添花 —— 方案里自动派生的时间线断言,靠它才通得过。

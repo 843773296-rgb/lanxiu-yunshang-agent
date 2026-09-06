@@ -55,9 +55,10 @@ def wl(name):
     m = re.search(rf"^{name} = \[(.*?)\]", SDK, re.S | re.M)
     return {t.rsplit("__", 1)[-1] for t in re.findall(r'"([^"]+)"', m.group(1))} if m else set()
 KB, SHOP, TASK = wl("KB_TOOLS"), wl("SHOP_TOOLS"), wl("TASK_TOOLS")
+KBONLY = wl("KB_ONLY_TOOLS")
 KBSET = {t["name"] for t in api.KB_SCHEMAS}
 CALLERS = {
-    "工作站·工艺顾问(sdk)":   ("kb",   KB | SHOP | {"图片"}),
+    "工作站·工艺顾问(sdk)":   ("kb",   KB | KBONLY | SHOP | {"图片"}),
     "工作站·任务助手(sdk)":   ("task", TASK | SHOP),
     "后台聊天(chat.py)":      ("kb",   KBSET),
     "一代任务循环(v1.py)":    ("task", {t["name"] for t in api.SCHEMAS} | {"submit_finding"}),
@@ -85,6 +86,32 @@ _p5 = [f"{r.id} 依赖 {len(r.needs)} 个工具({r.needs or '零个'}),贴不到
 rule("P5", "工具级规矩必须恰好依赖一个工具", _p5,
      "工具用法要贴着工具写 —— 依赖零个不知道贴谁,依赖两个必然贴错一个")
 
+# ── P6:挂了某个工具,就必须拿到那个工具的规矩 ───────────────────────
+# P3 查的是「规矩有没有调用方」,方向是 规矩 → 调用方。
+# 这一条查反方向:**调用方 → 工具 → 规矩**。
+#
+# 抓到过一个真的:SHOP_TOOLS 一整包同时发给两个角色,于是任务助手
+# (退款定因 / 客户合并 / 售后判责)手里有 forecast_growth、plan_for_event、
+# get_wearer、get_capacity 四个工具,而这四个的用法规矩 TL09/TL10/TL12/TL13
+# 全在工艺顾问那一侧 —— **工具给了,规矩没给**。
+#
+# 这比「工具没给」更危险:模型会用它,而且没有任何一句话告诉它怎么算用错。
+GOVERNED = {}                        # 工具名 → 管它的那条规矩
+for _role, _r in prompts.all_rules():
+    if _r.scope == "工具" and _r.needs:
+        GOVERNED.setdefault(_r.needs[0], []).append((_role, _r.id))
+_p6 = []
+for nm, (role, have) in CALLERS.items():
+    _, ids = prompts.assemble(role, have)
+    got = set(ids)
+    for t in sorted(have):
+        owners = GOVERNED.get(t)
+        if owners and not any(rid in got for _rl, rid in owners):
+            _p6.append(f"{nm} 挂了 `{t}`,但没拿到管它的 {'/'.join(r for _, r in owners)}")
+rule("P6", "挂了某个工具,就必须拿到那个工具的规矩", _p6,
+     "「工具给了、规矩没给」比「工具没给」更危险 —— 模型会用它,"
+     "而且没有任何一句话告诉它怎么算用错")
+
 # ── P4:稳定编号不得重复 ────────────────────────────────────────────
 ids = [r.id for _, r in prompts.all_rules()]
 dup = [f"{i} 出现 {ids.count(i)} 次" for i in sorted(set(ids)) if ids.count(i) > 1]
@@ -95,4 +122,4 @@ if bad:
     print(f"❌ {len(bad)} 条没守住:")
     for no, why, n in bad: print(f"   · {no}({n} 条):{why}")
     sys.exit(1)
-print(f"✅ 提示词单一源头(P1–P5)· 共 {len(ids)} 条铁律,{len(CALLERS)} 个调用方")
+print(f"✅ 提示词单一源头(P1–P6)· 共 {len(ids)} 条铁律,{len(CALLERS)} 个调用方")

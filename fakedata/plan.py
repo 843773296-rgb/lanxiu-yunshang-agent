@@ -64,6 +64,9 @@ def _gen_for(cname, cf, fk):
         return g
     if cf["pk"]:
         return {"gen": "pk", "style": "coded" if cf["kind"] == "text" else "int_seq"}
+    if cf.get("fsm"):
+        # 状态机在,就不能再按枚举分布**独立**抽了 —— 状态和时间戳得一起定
+        return {"gen": "fsm", "dist": cf.get("enum", {}), **cf["fsm"]}
     sem = cf.get("semantic", cf["kind"])
     # **观察到的长度可以否决语义。** `phone_tail` 命中了列名里的 phone,
     # 于是差点被当成手机号造成 11 位 —— 而源库里它只有 4 位。
@@ -79,6 +82,7 @@ def _gen_for(cname, cf, fk):
     if "range" in cf:     g["range"] = cf["range"]
     if "len" in cf:       g["len"] = cf["len"]
     if cf.get("unique"):  g["unique"] = True
+    g["nullable"] = cf.get("nullable", True)
     if cf.get("null_rate"): g["null_rate"] = cf["null_rate"]
     if cf.get("comment"): g["注释"] = cf["comment"]
     # 自由文本 + 无注释 + 无枚举 = 真的猜不准,标出来等人或模型补
@@ -87,6 +91,73 @@ def _gen_for(cname, cf, fk):
     if cf.get("confidence") == "低":
         g.setdefault("需确认", "源库这张表没数据,只能靠列名猜")
     return g
+
+
+def apply_overlay(facts, overlay):
+    """把模型层的判定盖在统计结论之上。**改的是「事实」,不是「方案」。**
+
+    为什么盖在事实层而不是方案层:否决一条关系会连带改变拓扑顺序、环的位置、
+    断言的组成。盖在方案上就得手工把这些一处处同步过去,漏一处就不自洽。
+    盖回事实层再让 build() 重算一遍,是唯一不会漏的做法 ——
+    **能重算就别打补丁。**
+    """
+    T = facts["tables"]; log = []
+    for r in overlay.get("relations", []):
+        t, c, v = r["table"], r["column"], r["verdict"]
+        ks = T[t]["fks"]
+        hit = next((k for k in ks if k["column"] == c), None)
+        if not hit: continue
+        if v == "reject":
+            ks.remove(hit)
+            cf = T[t]["columns"][c]
+            # 退回统计原本的判断:有枚举事实就退回枚举,否则退回类型
+            cf["semantic"] = "enum" if cf.get("enum") else cf["kind"]
+            log.append(f'否决 {t}.{c} → {hit["table"]}.{hit["column_ref"]}:{r.get("reason","")[:60]}')
+        elif v == "retarget":
+            hit["table"], hit["column_ref"] = r["to_table"], r["to_column"]
+            hit["confidence"] = "高"; hit["source"] = "模型改指"
+            log.append(f'改指 {t}.{c} → {r["to_table"]}.{r["to_column"]}:{r.get("reason","")[:60]}')
+        else:
+            hit["confidence"] = "高"; hit["source"] = hit["source"] + "+模型确认"
+            log.append(f'确认 {t}.{c} → {hit["table"]}.{hit["column_ref"]}')
+    for c in overlay.get("columns", []):
+        cf = T[c["table"]]["columns"][c["column"]]
+        cf["semantic"] = c["semantic"]; cf["由模型指定"] = c.get("reason", "")
+        log.append(f'补语义 {c["table"]}.{c["column"]} → {c["semantic"]}')
+    for m in overlay.get("state_machines", []):
+        T[m["table"]]["columns"][m["column"]]["fsm"] = {
+            "start": m.get("start", []), "transitions": m["transitions"],
+            "terminal": m.get("terminal", []), "timestamps": m.get("timestamps", {}),
+            "reason": m.get("reason", "")}
+        log.append(f'状态机 {m["table"]}.{m["column"]}:{len(m["transitions"])} 条转移,'
+                   f'{len(m.get("timestamps") or {})} 个时间戳对应')
+    return facts, log
+
+
+def dominators(start, trans, target):
+    """哪些状态是「到达 target **必经**」的。
+
+    这是状态机断言正确与否的关键。朴素做法是用可达性:
+    「target 从 s 可达 → s 的时间戳必须有值」。**错的。**
+    订单从「待付款」可以直接到「已取消」,也可以从「已付款」到「已取消」——
+    已取消从已付款可达,于是朴素做法会要求所有已取消的订单都有付款时间。
+    而直接取消的那些根本没付过钱。
+
+    正确的问法是「**去掉 s 之后,还到得了 target 吗**」——到不了,s 才是必经。
+    图很小,直接删点重算可达性最省事,也最不容易写错。
+    """
+    def reachable(banned):
+        seen, stack = set(), [x for x in start if x != banned]
+        while stack:
+            n = stack.pop()
+            if n in seen: continue
+            seen.add(n)
+            for a, b in trans:
+                if a == n and b != banned: stack.append(b)
+        return seen
+    if target not in reachable(None): return set()
+    return {s for s in {x for ab in trans for x in ab} | set(start)
+            if s != target and target not in reachable(s)} | {target}
 
 
 def topo_order(tables, fks):
@@ -195,6 +266,7 @@ def _assertions(facts, names, fkmap, dialect="sqlite"):
                   ("shipped_at", "done_at"), ("created", "last_interact")]
     for tn in names:
         tf = facts["tables"][tn]
+        isfk = {k["column"] for k in fkmap[tn]}
         for k in fkmap[tn]:
             out.append({"名": f'{tn}.{k["column"]} 不能有孤儿引用', "表": tn, "类": "孤儿",
                         "sql": f'select count(*) from {qi(tn)} where {qi(k["column"])} is not null '
@@ -210,11 +282,31 @@ def _assertions(facts, names, fkmap, dialect="sqlite"):
                             "sql": f'select count(*) from (select {qi(cn)} from {qi(tn)} '
                                    f'where {qi(cn)} is not null group by 1 having count(*)>1) dup',
                             "期望": 0})
-            if cf.get("enum"):
+            if cf.get("enum") and cn not in isfk:
                 vals = ",".join("'" + str(v).replace("'", "''") + "'" for v in cf["enum"])
                 out.append({"名": f"{tn}.{cn} 只能取已知的 {len(cf['enum'])} 个值", "表": tn, "类": "枚举",
                             "sql": f'select count(*) from {qi(tn)} where {qi(cn)} is not null '
                                    f'and cast({qi(cn)} as {TXT}) not in ({vals})', "期望": 0})
+        for cn, cf in tf["columns"].items():
+            fsm = cf.get("fsm")
+            if not fsm or not fsm.get("timestamps"): continue
+            allst = sorted({x for ab in fsm["transitions"] for x in ab} | set(fsm["start"]))
+            for st in allst:
+                must = dominators(fsm["start"], fsm["transitions"], st) & set(fsm["timestamps"])
+                for m in must:
+                    ts = fsm["timestamps"][m]
+                    out.append({"名": f"{tn}: 状态是「{st}」就必须有 {ts}", "表": tn, "类": "状态机",
+                                "sql": f'select count(*) from {qi(tn)} where '
+                                       f'cast({qi(cn)} as {TXT})=\'{st}\' and {qi(ts)} is null',
+                                "期望": 0})
+                for m, ts in fsm["timestamps"].items():
+                    if m not in must:
+                        # 没走到那一步,那一步的时间戳就该是空的 ——
+                        # 「已取消但有发货时间」是数据库允许、业务不可能的典型
+                        out.append({"名": f"{tn}: 状态是「{st}」就不该有 {ts}", "表": tn, "类": "状态机",
+                                    "sql": f'select count(*) from {qi(tn)} where '
+                                           f'cast({qi(cn)} as {TXT})=\'{st}\' and {qi(ts)} is not null',
+                                    "期望": 0})
         cols = set(tf["columns"])
         for a, b in TIME_PAIRS:
             if a in cols and b in cols:

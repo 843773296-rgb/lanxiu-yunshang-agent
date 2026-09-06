@@ -133,19 +133,35 @@ KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
             "mcp__kb__kb_tables", "mcp__kb__kb_coverage",
             "mcp__kb__kb_pattern", "mcp__kb__kb_size", "mcp__kb__kb_bom",
             "mcp__kb__kb_fit", "mcp__kb__kb_lead"]
-SHOP_TOOLS = ["mcp__shop__get_order", "mcp__shop__get_stock", "mcp__shop__get_aftersale",
-              "mcp__shop__get_capacity",
-              # 着装人与成长推算。**同意状态是这三个工具里的硬门** ——
-              # 没有有效同意就取不到身体数据、算不出推算,不靠模型自觉。
-              #
-              # ⚠️ 加了新 MCP 工具就必须同步加到这里,否则模型看得见却用不了。
-              # 这一条漏过一次(plan_for_event 挂上了 MCP 却忘了进白名单),
-              # 所以 skills_check.py 加了结构检查:**白名单必须和 MCP 暴露的完全一致**,
-              # 靠人记得同步是不行的。
-              "mcp__shop__get_wearer", "mcp__shop__forecast_growth",
-              "mcp__shop__plan_for_event",
-              # 售后判责的现场。只给事实不给结论 —— 结论必须由人确认。
-              "mcp__shop__get_maintain"]
+# ── 按角色发工具,不是两个角色都给全量 ────────────────────────────────
+# 原来 SHOP_TOOLS 一整包同时给了工艺顾问和任务助手,于是任务助手(退款定因 /
+# 客户合并 / 售后判责)手里多出 forecast_growth、plan_for_event、get_wearer、
+# get_capacity 四个它业务上用不着的工具 —— **而这四个的用法规矩(TL09/TL10/
+# TL12/TL13)全在工艺顾问那一侧**,任务助手拿到了工具却拿不到规矩。
+#
+# 「工具给了,规矩没给」比「工具没给」更危险:模型会用,而且没人告诉它怎么用错。
+# 拆解 Accio 时看到它的做法是从 none 起白名单、按角色逐个发权,
+# 这条对我们成立 —— 检查见 prompts_check.py 的 P6。
+SHOP_TOOLS = [
+    # 两个角色都要:客户问「订单到哪了 / 有没有现货 / 上次退货处理了吗」,
+    # 后台定因也要靠 get_order 的勾稽异常。售后判责的现场在 get_maintain。
+    "mcp__shop__get_order", "mcp__shop__get_stock", "mcp__shop__get_aftersale",
+    # 售后判责的现场。只给事实不给结论 —— 结论必须由人确认。
+    "mcp__shop__get_maintain",
+]
+
+# 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。
+# **同意状态是这几个工具里的硬门** —— 没有有效同意就取不到身体数据、
+# 算不出推算,不靠模型自觉。
+#
+# ⚠️ 加了新 MCP 工具就必须同步加到这里,否则模型看得见却用不了。
+# 这一条漏过一次(plan_for_event 挂上了 MCP 却忘了进白名单),
+# 所以 skills_check.py 加了结构检查:**白名单必须和 MCP 暴露的完全一致**,
+# 靠人记得同步是不行的。
+KB_ONLY_TOOLS = [
+    "mcp__shop__get_wearer", "mcp__shop__forecast_growth",
+    "mcp__shop__plan_for_event", "mcp__shop__get_capacity",
+]
 
 # 项目自带的 Skill(agentsite/.claude/skills/<名字>/SKILL.md)。
 # Skill 管的是**产出物的格式**:报价单会被截图转发,脱离上下文独自存在,
@@ -169,7 +185,7 @@ import prompts   # noqa: E402
 def _have(kind):
     """本进程实际挂上的工具名(去掉 mcp__<服务>__ 前缀),外加能力标记。"""
     names = {t.rsplit("__", 1)[-1]
-             for t in ((KB_TOOLS if kind == "kb" else TASK_TOOLS) + SHOP_TOOLS)}
+             for t in (((KB_TOOLS + KB_ONLY_TOOLS) if kind == "kb" else TASK_TOOLS) + SHOP_TOOLS)}
     # 工艺顾问这条路径收图(见 _img_block),后台任务助手不收
     return names | ({"图片"} if kind == "kb" else set())
 
@@ -221,7 +237,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         max_budget_usd=MAX_USD,
         system_prompt=SYS_KB if kind == "kb" else SYS_TASK,
         mcp_servers=mcp_config(),
-        allowed_tools=(KB_TOOLS if kind == "kb" else TASK_TOOLS) + SHOP_TOOLS,
+        allowed_tools=((KB_TOOLS + KB_ONLY_TOOLS) if kind == "kb" else TASK_TOOLS) + SHOP_TOOLS,
         # ⚠️ **allowed_tools 不是排他白名单。**
         # 它管的是「哪些工具不用逐次批准」,不是「只有这些工具存在」——
         # 配上 permission_mode="bypassPermissions" 之后,CLI 的内置工具
