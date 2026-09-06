@@ -310,8 +310,8 @@ aside.agent.off{display:none}
     <div class="pagehead"><h1>着装人</h1><span class="why">谁付钱,和衣服穿在谁身上,是两回事</span></div>
     <div class="grid k4" id="wkpis"></div>
     <div class="card cardpad" style="margin-top:14px"><div class="scroll"><table>
-      <thead><tr><th>姓名</th><th>关系</th><th>性别</th><th>年龄</th><th>最近身高</th><th>上次量体</th><th>状态</th><th>同意</th></tr></thead>
-      <tbody id="wrows"><tr><td colspan="8">加载中…</td></tr></tbody>
+      <thead><tr><th>账户</th><th>手机号</th><th>姓名</th><th>关系</th><th>性别</th><th>年龄</th><th>最近身高</th><th>上次量体</th><th>状态</th><th>同意</th></tr></thead>
+      <tbody id="wrows"><tr><td colspan="10">加载中…</td></tr></tbody>
     </table></div></div>
   </section>
 
@@ -396,6 +396,11 @@ const TEACH={
    "每种面料对 45 种工艺各有一个判定。**判「不可」时必须把依据一起说出来** —— "+
    "它挡的是客户的单子。「未定义」表示这一格还没录入,**不许推断**,转工艺负责人。"]]},
  wearer:{id:"着装人 · 三条硬规矩",t:"账号 ≠ 穿衣服的人",b:[
+  ["身份绑账户,不绑门店档案",
+   "账户以**手机号**为主标识(也可以自设账号密码),**一个账户下可以有多个着装人**。\n"+
+   "同一个人在不同店建过档,门店档案就有两条 —— 而账户只有一个。"+
+   "「关联门店档案」大于 1,正是客户合并要处理的那种情况。\n"+
+   "手机号一律**脱敏**显示;**账号密码工具层根本拿不到** —— 不是不该查,是查了会抛异常。"],
   ["先分清是谁要穿",
    "妈妈给女儿买汉服时,**付款人、收货人、量体对象是三个人**。"+
    "系统里存的是**生日不是年龄** —— 存年龄的系统一年后全库都错,而且不报错。"],
@@ -647,7 +652,7 @@ async function loadWearer(){
     ["","未成年",kid,"这个模块真正要管的对象"],
     [due?"warn":"good","该复量",due,"超期的量体是无效值"],
     [(r.需人工确认||[]).length?"warn":"good","需人工确认",(r.需人工确认||[]).length,"遗传身高与推算差 >8cm"]]);
-  $("#wrows").innerHTML=rows.map(x=>`<tr><td>${esc(x.姓名)}</td><td>${esc(x.关系)}</td><td>${esc(x.性别)}</td>
+  $("#wrows").innerHTML=rows.map(x=>`<tr><td class="mono">${esc(x.账户?.账户||"—")}${(x.账户?.关联门店档案||0)>1?' <span class="pill warn">2 条档案</span>':""}</td><td class="mono">${esc(x.账户?.手机号||"—")}</td><td>${esc(x.姓名)}</td><td>${esc(x.关系)}</td><td>${esc(x.性别)}</td>
     <td class="num">${x.年龄??"—"}</td><td class="num">${x.最近身高??"—"}</td><td class="num">${esc(x.量体日||"—")}</td>
     <td>${x.该复量?`<span class="pill crit">该复量 超期${x.超期天数}天</span>`:x.量体日?'<span class="pill ok">有效</span>':'<span class="pill">未量体</span>'}</td>
     <td>${x.身体数据同意==="有效"?'<span class="pill ok">有效</span>':'<span class="pill crit">缺失</span>'}</td></tr>`).join("");

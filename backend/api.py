@@ -17,16 +17,36 @@ DB=os.path.join(os.path.dirname(os.path.abspath(__file__)),"lanxiu.db")
 #       写成 `JOIN truth u ON …` 就完全查不到(ops.py 里正是这么写的)。
 #       静态扫源码永远追不上语句写法,所以改成运行时拦。
 _TRUTH = re.compile(r"\btruth\b", re.I)
+# 锁三:**凭据字段和 truth 表同等对待。**
+# 密码哈希与盐拿到手就能离线爆破,所以工具层连读都不许读 ——
+# 不是「模型不该查」,是「查了会抛异常」。
+# 顺带禁掉 `SELECT * FROM account`:星号会把 pwd_* 一起带出来,
+# **一个没写清楚的星号,就能把前面两道锁绕过去。**
+# 语句文本只是**快速失败**;真正的锁在下面「查返回的列名」——
+# `select a.* from account a join …` 这种带别名的星号,正则永远追不完。
+# **别枚举语句形状,去看结果长什么样** —— truth 那次已经教过一遍了。
+_CRED = re.compile(r"pwd_(hash|salt|algo)", re.I)
 
 def _c():
     c=sqlite3.connect(f"file:{DB}?mode=ro", uri=True); c.row_factory=sqlite3.Row; return c
 
+_CRED_MSG = ("账户凭据(密码哈希 / 盐)**不允许经工具层访问** —— 拿到哈希和盐就能离线爆破。\n"
+             "查账户请把列名写清楚(id / phone / login_name / status),对外只给脱敏手机号。\n"
+             "见 backend/boundary_audit.py。")
+
 def _rows(sql,*a):
+    if _CRED.search(sql): raise PermissionError(_CRED_MSG)
     if _TRUTH.search(sql):
         raise PermissionError(
             "truth 是评测答案表,**不允许经工具层访问**(任何语句形状都不行)。"
             "评测比对在 agent 之外做 —— 见 backend/boundary_audit.py 第 2 条。")
-    with _c() as c: return [dict(r) for r in c.execute(sql,a)]
+    with _c() as c:
+        cur = c.execute(sql, a)
+        cols = [d[0].lower() for d in (cur.description or [])]
+        # **与语句写法无关的那道锁**:结果里只要出现凭据列,就不给。
+        # 星号、别名星号、子查询、以后新加的写法,全在这一关。
+        if any(x.startswith("pwd_") for x in cols): raise PermissionError(_CRED_MSG)
+        return [dict(r) for r in cur]
 
 def list_tasks(task_type=None, status="待处理"):
     """列出人工任务。type: 财务人工任务 / 客户合并确认"""
@@ -410,24 +430,58 @@ def _wearer(wid):
     r = _rows("SELECT * FROM wearer WHERE id=?", wid)
     return r[0] if r else None
 
-def get_wearer(customer=None, wearer_id=None):
+
+def _mask(phone):
+    """手机号对外一律脱敏。顾问要的是「认得出是哪个号」,不是号本身。"""
+    p = (phone or "").strip()
+    return f"{p[:3]}****{p[-4:]}" if len(p) >= 7 else "—"
+
+
+def _account(aid):
+    """账户的对外视图。**列名写死,不用星号** —— 星号会把 pwd_* 带出来,
+    而 _rows 那道锁会当场抛异常。这里主动只取该给的四列。
+
+    login_name 本身也是登录凭据,所以只回答「有没有自设」,不回答「叫什么」。
+    """
+    if not aid: return None
+    r = _rows("SELECT id, phone, login_name, status, created, last_login "
+              "FROM account WHERE id=?", aid)
+    if not r: return None
+    a = r[0]
+    n = _rows("SELECT count(*) n FROM wearer WHERE account_id=?", aid)[0]["n"]
+    docs = _rows("SELECT count(*) n FROM customer WHERE account_id=?", aid)[0]["n"]
+    return {"账户": a["id"], "手机号": _mask(a["phone"]),
+            "已自设账号密码": bool(a["login_name"]),
+            "状态": a["status"], "注册于": a["created"], "最近登录": a["last_login"],
+            "该账户下着装人": n, "关联门店档案": docs}
+
+def get_wearer(customer=None, wearer_id=None, account=None):
     """着装人档案:一个账号下都有谁、各自量体到什么时候、哪些该复量了。"""
     import growth
     from datetime import date
     today = date(2026, 8, 31)
     if wearer_id:
         ws = [w for w in [_wearer(wearer_id)] if w]
+    elif account:
+        # 手机号是账户主标识,所以直接支持拿手机号查 —— 顾问手边只有手机号的时候最常见
+        ws = _rows("""SELECT w.* FROM wearer w JOIN account a ON a.id=w.account_id
+                      WHERE a.id=? OR a.phone=? OR a.login_name=? ORDER BY w.id""",
+                   account, account, account)
     elif customer:
         ws = _rows("""SELECT w.* FROM wearer w JOIN customer c ON c.id=w.customer_id
                       WHERE w.customer_id=? OR c.name=? ORDER BY w.id""", customer, customer)
     else:
-        return {"error": "要么给 customer(客户号或姓名),要么给 wearer_id"}
+        return {"error": "给 account(手机号 / 账户号)、customer(客户号或姓名)"
+                         "或 wearer_id 其中之一"}
     if not ws: return {"error": "查不到这个着装人", "hit": 0}
     out = []
     for w in ws:
         ok = _consent_ok(w["id"])
         d = {"着装人": w["id"], "姓名": w["name"], "性别": w["gender"],
              "关系": w["relation"], "生日": w["birthday"],
+             # **身份绑账户,不绑门店档案** —— 同一个人在不同店建过档就是两条档案,
+             # 而账户只有一个。「关联门店档案 > 1」正是客户合并要处理的那种情况。
+             "账户": _account(w.get("account_id")),
              "年龄": round(growth.age_at(w["birthday"], today), 1) if w["birthday"] else None,
              "身体数据同意": "有效" if ok else "**缺失或已撤回**"}
         if not ok:
@@ -672,9 +726,10 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "order_id":{"type":"string"},"customer":{"type":"string","description":"客户号或姓名"},
     "status":{"type":"string","description":"如「退款失败」「审批同意」"}},"required":[]}},
- {"name":"get_wearer","description":"查着装人档案 —— **衣服穿在谁身上**,和「谁付钱」是两回事。妈妈给女儿买汉服时,付款人、收货人、量体对象是三个人。给 customer(客户号或姓名)返回这个账号下的全部着装人(本人/配偶/子/女),给 wearer_id 查单个。返回里的「量体是否过期」为真时,**下单前必须拦下要求复量** —— 超期的量体记录不是参考值,是无效值,「有个旧尺寸总比没有强」正是童装返工的来源。没有有效身体数据同意的着装人,量体数据一律取不到。",
+ {"name":"get_wearer","description":"查着装人档案 —— **衣服穿在谁身上**,和「谁付钱」是两回事。**身份绑在账户上**(账户以手机号为主标识,一个账户可以有多个着装人),不绑门店档案 —— 同一个人在不同店建过档就是两条档案。返回里「账户.关联门店档案」大于 1 时,说明这个人有多条门店档案,那正是客户合并要处理的情况。**手机号一律脱敏返回,账号密码任何情况下都拿不到。**妈妈给女儿买汉服时,付款人、收货人、量体对象是三个人。给 customer(客户号或姓名)返回这个账号下的全部着装人(本人/配偶/子/女),给 wearer_id 查单个。返回里的「量体是否过期」为真时,**下单前必须拦下要求复量** —— 超期的量体记录不是参考值,是无效值,「有个旧尺寸总比没有强」正是童装返工的来源。没有有效身体数据同意的着装人,量体数据一律取不到。",
   "input_schema":{"type":"object","properties":{
-    "customer":{"type":"string","description":"客户号或姓名"},
+    "account":{"type":"string","description":"**手机号**(账户主标识,最常用)、账户号或自设账号"},
+    "customer":{"type":"string","description":"门店客户号或姓名"},
     "wearer_id":{"type":"string","description":"着装人编号,如 W10001-2"}},"required":[]}},
  {"name":"get_maintain","description":"查售后维修工单的**现场**。客户说「衣服起球了 / 开线了 / 尺寸不对」时用。返回这件是什么(形制/可选面料/可选工艺)、客户报的问题、**量体记录全不全、是到店还是远程量的**、**交付时有没有书面告知签收**、以及该客户历史维修次数。\n\n**这个工具只给事实,不给判责结论** —— 判定表要另外调 kb_tables 取「售后争议判定」,并对照 09-养护与售后.md 第五节。两条关键判据:①「交付告知签收」为 null 表示**没有书面告知记录**,特性类问题(起球/色差/掉色/勾丝)在这种情况下按「我方,让步处理」,已告知则「无责,解释 + 提供保养服务」;② 尺寸类问题看量体记录完不完整、是不是**远程**量的(远程按合同分担)。\n\n**结论必须由人确认后执行,你只出草稿。** 不要直接对客户承诺免费返修或赔付金额。",
   "input_schema":{"type":"object","properties":{

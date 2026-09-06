@@ -41,6 +41,54 @@ def structural(c):
                    WHERE m.wearer_id IS NULL OR w.id IS NULL""").fetchall(),
       "每条量体记录都要能答出「这是谁的尺寸」,答不出的记录不能参与任何推算"),
 
+    # ── 账户层 ──────────────────────────────────────────────────────
+    # 「账户 id 以手机号为主」这句话,落到数据上就是下面这几条必须成立。
+    A("账户没有手机号,或手机号重复",
+      c.execute("""SELECT id, phone FROM account
+                   WHERE phone IS NULL OR phone=''
+                      OR phone IN (SELECT phone FROM account GROUP BY phone HAVING count(*)>1)
+                   """).fetchall(),
+      "手机号是账户的主标识 —— 缺了这个账户就没有身份,重了就是两个人共用一个账户。"
+      "⚠️ 这一条**平时永远不会触发**:`phone TEXT NOT NULL UNIQUE` 在表结构上就拦死了,"
+      "数据库根本写不进去。留着它是守「哪天有人把 UNIQUE 删了」—— "
+      "**约束是写不进去,检查是写进去之后发现**,两者不是一回事"),
+
+    A("自设账号重复",
+      c.execute("""SELECT id, login_name FROM account WHERE login_name IS NOT NULL
+                   AND login_name IN (SELECT login_name FROM account
+                                      WHERE login_name IS NOT NULL
+                                      GROUP BY login_name HAVING count(*)>1)""").fetchall(),
+      "自设账号也是登录凭据,重了就登不进正确的那个"),
+
+    A("有密码却没有盐,或有盐却没有算法",
+      c.execute("""SELECT id FROM account
+                   WHERE (pwd_hash IS NOT NULL AND (pwd_salt IS NULL OR pwd_algo IS NULL))
+                      OR (pwd_salt IS NOT NULL AND pwd_hash IS NULL)""").fetchall(),
+      "哈希、盐、算法三者缺一就验不了密码 —— 而且**缺盐的哈希等于没加盐**"),
+
+    A("密码看起来像明文(不是哈希)",
+      c.execute("""SELECT id FROM account WHERE pwd_hash IS NOT NULL
+                   AND (length(pwd_hash) < 40 OR pwd_hash GLOB '*[^0-9a-fA-F]*')""").fetchall(),
+      "**只存 PBKDF2 哈希,绝不存明文** —— demo 数据也不例外"),
+
+    A("着装人没绑账户,或绑了不存在的账户",
+      c.execute("""SELECT w.id, w.account_id FROM wearer w
+                   LEFT JOIN account a ON a.id = w.account_id
+                   WHERE w.account_id IS NULL OR a.id IS NULL""").fetchall(),
+      "**身份绑在账户上,不绑门店档案** —— 档案可能有好几条,账户只有一个"),
+
+    A("门店档案归错了账户(手机号对不上)",
+      c.execute("""SELECT k.id, k.phone, a.phone FROM customer k
+                   JOIN account a ON a.id = k.account_id
+                   WHERE k.phone <> a.phone""").fetchall(),
+      "账户是按手机号归的,归完之后两边手机号必须一致"),
+
+    A("着装人的账户与它建档门店档案的账户不一致",
+      c.execute("""SELECT w.id, w.account_id, k.account_id FROM wearer w
+                   JOIN customer k ON k.id = w.customer_id
+                   WHERE w.account_id <> k.account_id""").fetchall(),
+      "两条路径指向同一个账户,对不上说明有一条是靠下标凑的"),
+
     A("着装人挂在不存在的账号下",
       c.execute("""SELECT w.id, w.customer_id FROM wearer w
                    LEFT JOIN customer k ON k.id = w.customer_id

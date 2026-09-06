@@ -81,34 +81,34 @@ CI 在 `.github/workflows/check.yml`,每次 push / PR 自动跑 33 项,24 秒出
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-06 12:43。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-06 13:36。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | d877856 · 2026-09-06 · 学堂并进工作站,demo 撤掉 —— 留两个 UI 迟早会漂 |
-| 代码量 | 65 个 Python 文件 / 14419 行(不含 .venv) |
+| 最新提交 | 67299b2 · 2026-09-06 · 修好「框架有、数据没有」:let 重复声明让整段 script 没执行 |
+| 代码量 | 66 个 Python 文件 / 14658 行(不含 .venv) |
 | 验收 | `./check.sh` 共 37 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
 **未提交的改动:**
 
 ```
-M CLAUDE.md
- M agentsite/web/station.html
- M check.sh
-?? agentsite/js_check.py
-?? agentsite/js_smoke.js
+M agentsite/web/station.html
+ M backend/api.py
+ M backend/boundary_audit.py
+ M backend/lifecycle_check.py
+ M backend/seed.py
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+67299b2 修好「框架有、数据没有」:let 重复声明让整段 script 没执行
 d877856 学堂并进工作站,demo 撤掉 —— 留两个 UI 迟早会漂
 717e459 出个 demo:顾问学堂(学习应用框架),工作站一行没改
 a6e4c14 重做工作站:单壳多屏 + 右侧智能体 + 教学内容全收进「?」
 24d9cc9 野外巡检跑了 20 条:边界审计点名的那条约定,拿到第一个实测值
-a571b31 野外巡检:没有真值的时候,该看什么
 ```
 <!--/AUTO-->

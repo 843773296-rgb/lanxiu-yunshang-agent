@@ -20,7 +20,10 @@ CREATE TABLE customer(id TEXT PRIMARY KEY, name TEXT, phone TEXT, phone_tail TEX
   first_order TEXT, orders_12m INT DEFAULT 0, quarters_12m INT DEFAULT 0, amount_12m REAL DEFAULT 0,
   idle_days INT DEFAULT 0, matched TEXT, manual_lc TEXT, manual_at TEXT,
   gender TEXT, email TEXT, wechat TEXT, occupation TEXT, income TEXT, car TEXT,
-  province TEXT, city TEXT, district TEXT, inviter TEXT, points INT DEFAULT 0, remark TEXT);
+  province TEXT, city TEXT, district TEXT, inviter TEXT, points INT DEFAULT 0, remark TEXT,
+  -- 这条门店档案属于哪个账户(按手机号归)。**同一账户可以有多条档案** ——
+  -- 在不同店建过档就是两条,「客户合并」工单要解决的正是这个。
+  account_id TEXT);
 -- 积分流水(设计稿 积分行为:账户调加/账户调减/积分消费/积分返还/确认款样/完成定购)
 CREATE TABLE points_log(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, behavior TEXT,
   delta INT, balance INT, ref_id TEXT, reason TEXT, actor TEXT, ts TEXT);
@@ -89,12 +92,28 @@ CREATE TABLE tpl_item(tpl TEXT, item TEXT, sort INT);
 -- 体型特征 —— 「差 >5cm **或有明显体型特征** 即全定制」里的后半句,
 -- 之前只是知识库里的一句话,没有任何字段承载它,所以那条规则永远跑不到。
 CREATE TABLE body_feature(customer_id TEXT, feature TEXT, note TEXT, recorded_by TEXT, ts TEXT);
+-- ── 账户 ────────────────────────────────────────────────────────────────
+-- **账户在门店档案之上。** 一个人 = 一个账户;门店档案(customer)可以有好几条 ——
+-- 在不同店建过档就是两条,这正是「客户合并」工单要解决的事。
+-- 按手机号建账户,那 16 组「同名 + 同生日 + 同地址 + 同号」的重复档案
+-- **天然落进同一个账户**,不需要人去合。
+--
+-- 身份口径:
+--   phone       主标识,唯一,必填 —— 「账户 id 以手机号为主」
+--   login_name  自设账号,可空,唯一
+--   pwd_*       自设密码。**只存 PBKDF2 哈希 + 每账户独立的盐,绝不存明文**,
+--               而且**不允许经工具层访问**(和 truth 表同一条规矩,api._rows 里硬拦)
+CREATE TABLE account(
+  id TEXT PRIMARY KEY, phone TEXT NOT NULL UNIQUE,
+  login_name TEXT UNIQUE, pwd_algo TEXT, pwd_salt TEXT, pwd_hash TEXT,
+  status TEXT DEFAULT '正常', created TEXT, last_login TEXT);
 -- ── 着装人与家庭 ────────────────────────────────────────────────────────
 -- 原来所有身体数据都挂在 customer_id 上,而 customer 是**账号 / 付钱的人**。
 -- 妈妈给女儿买汉服时,**付款人、收货人、量体对象是三个不同的人** ——
 -- 女儿没有账号,却是唯一一个身体数据有意义的人。所以把两个概念拆开。
 CREATE TABLE wearer(
-  id TEXT PRIMARY KEY, customer_id TEXT,   -- 挂在哪个账号下
+  id TEXT PRIMARY KEY, customer_id TEXT,   -- 建档来源的门店档案(可能有多条)
+  account_id TEXT,                         -- **身份绑定在这** —— 一个账户可以有多个着装人
   name TEXT, gender TEXT,                  -- 男 / 女
   birthday TEXT,                           -- **存生日,不存年龄。**
                                            -- 年龄每天在变,存年龄的系统一年后全库都错,
@@ -1125,14 +1144,45 @@ def run():
         c.execute("INSERT INTO body_feature VALUES(?,?,?,?,?)",
                   (cid,f,note,random.choice(ADV),f"2026-0{6+k%3}-1{k%9} 14:40"))
 
+    # ── 账户:按手机号归,一个人一个 ────────────────────────────────
+    # 106 条门店档案只有 90 个不同手机号 —— 那 16 组重号按项目自己的判定标准
+    # (姓名 + 生日 + 地址三项全同)就是同一个人,**按手机号建账户天然把它们并了**。
+    #
+    # 密码:**只存 PBKDF2-HMAC-SHA256 哈希 + 每账户独立的盐,绝不存明文**。
+    # demo 里也不例外 —— 一份会被别人照抄的代码,不该示范存明文密码。
+    import hashlib, secrets
+    PWD_ITER = 120_000
+    def _hash(pw, salt):
+        return hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt), PWD_ITER).hex()
+
+    phones = [r[0] for r in c.execute(
+        "SELECT phone FROM customer WHERE phone IS NOT NULL GROUP BY phone ORDER BY phone")]
+    for i, ph in enumerate(phones):
+        aid = f"U{20000+i}"
+        # 四成用户自设了账号密码,其余只用手机号 —— 真实产品里就是这个比例感
+        if i % 5 < 2:
+            login = f"lx_{ph[-6:]}"
+            salt = secrets.token_hex(16)
+            # demo 口令不是真凭据,但也只以哈希形态落库
+            h = _hash(f"demo-{ph[-4:]}-pwd", salt)
+            algo = f"pbkdf2_sha256${PWD_ITER}"
+        else:
+            login = salt = h = algo = None
+        c.execute("INSERT INTO account VALUES(?,?,?,?,?,?,?,?,?)",
+                  (aid, ph, login, algo, salt, h, "正常", ago(200 - i % 150),
+                   ago(i % 40) if i % 3 else None))
+        c.execute("UPDATE customer SET account_id=? WHERE phone=?", (aid, ph))
+
     # ── 着装人:把「账号」和「衣服穿在谁身上」拆开 ────────────────────
     # 老的量体记录一律归到该账号的「本人」着装人 —— 历史数据口径不变。
     KID_M = ["砚舟", "子墨", "望舒", "知许", "星野"]
     KID_F = ["星芜", "昭昭", "令仪", "清和", "若薇"]
     def _w(i, cid, name, gender, bday, rel, pa=None, pb=None, h=None):
         wid = f"W{cid[1:]}-{i}"
-        c.execute("INSERT INTO wearer VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                  (wid, cid, name, gender, bday, rel, pa, pb, h, "在用", T.isoformat()))
+        # **身份绑账户,不绑门店档案** —— 档案可能有好几条,账户只有一个
+        aid = c.execute("SELECT account_id FROM customer WHERE id=?", (cid,)).fetchone()[0]
+        c.execute("INSERT INTO wearer VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (wid, cid, aid, name, gender, bday, rel, pa, pb, h, "在用", T.isoformat()))
         return wid
     def _consent(n, wid, scope, by, rel, at):
         c.execute("INSERT INTO consent VALUES(?,?,?,?,?,?,?,?)",

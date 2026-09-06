@@ -72,6 +72,15 @@ def a_truth_from():   return api._rows("SELECT * FROM truth")
 def a_truth_join():   return api._rows("SELECT t.id FROM task t JOIN truth u ON u.case_id=t.id")
 def a_truth_case():   return api._rows("select ROOT_CAUSE from TRUTH limit 1")
 
+def a_cred_direct(): return api._rows("SELECT pwd_hash FROM account")
+def a_cred_case():   return api._rows("select PWD_SALT from ACCOUNT")
+def a_cred_star():   return api._rows("SELECT * FROM account")
+def a_cred_alias():  return api._rows(
+    "select a.* from account a join wearer w on w.account_id=a.id")
+def a_cred_sub():    return api._rows(
+    "SELECT p AS x FROM (SELECT pwd_hash p FROM account) t")
+
+
 def a_bash():
     v = guards.pre_tool_verdict("Bash", {"command": "ls"})
     if v: raise PermissionError(v)
@@ -142,6 +151,20 @@ STRUCT = [
   "而 ops.py 里就是 JOIN 写法。改成运行时按语句内容拦"),
  ("truth 表不经工具层暴露 · 大小写", "同上",
   a_truth_case, "select … from TRUTH", "正则带 re.I,不看大小写"),
+ ("账户凭据不经工具层暴露 · 直查", "backend/api.py 锁三 / 个保法敏感信息",
+  a_cred_direct, "SELECT pwd_hash FROM account",
+  "语句文本命中 pwd_ 就快速失败"),
+ ("账户凭据不经工具层暴露 · 大小写", "同上", a_cred_case, "select PWD_SALT from ACCOUNT",
+  "正则带 re.I"),
+ ("账户凭据不经工具层暴露 · 星号", "同上", a_cred_star, "SELECT * FROM account",
+  "**查的是返回的列名,不是语句写法** —— 星号会把 pwd_* 带出来"),
+ ("账户凭据不经工具层暴露 · 别名星号", "同上", a_cred_alias,
+  "select a.* from account a join wearer w …",
+  "**这条第一版是破的** —— 当时只正则匹配 `select * from account`,"
+  "带别名就绕过去了。改成查结果列名,与写法无关"),
+ ("账户凭据不经工具层暴露 · 子查询改名", "同上", a_cred_sub,
+  "SELECT p AS x FROM (SELECT pwd_hash p FROM account) t",
+  "两道锁各管一段:这条被语句文本那道接住"),
  ("模型不能执行命令", "sdk.py 提示词铁律 5「你没有任何写权限」",
   a_bash, "让 PreToolUse 判定 Bash 工具", "非 mcp__ 开头的工具一律拦下(Hook 运行时)"),
  ("模型不能开子智能体", "同上", a_task, "让 PreToolUse 判定 Task 工具", "同上"),
