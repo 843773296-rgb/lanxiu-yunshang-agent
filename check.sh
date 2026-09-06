@@ -22,6 +22,7 @@ run(){ printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
     FAIL=1; sed 's/^/  /' /tmp/chk.out; printf "  \033[31m✗ 失败\033[0m\n"
   fi }
 run "数据层 · truth 表隔离"   python3 backend/selftest.py
+run "路由 · handler 必须真的存在" python3 backend/route_check.py
 run "边界审计 · 每条保证真的攻击一次" python3 backend/boundary_audit.py
 run "提示词 · 单一源头与按工具装配" python3 tools/prompts_check.py
 run "生命周期口径 · 自测" python3 knowledge/lifecycle.py
@@ -63,6 +64,7 @@ run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judget
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py
 run "识图判分器 · 13 条对照用例" python3 agent/vision_eval_judgetest.py
 run "判责判分器 · 14 条对照用例" python3 agent/liability_eval_judgetest.py
+run "运维侧判分器 · 16 条对照用例" python3 agent/ops_eval_judgetest.py
 run "野外巡检 · 指纹粒度与行为观测" python3 agent/wild_run.py --selftest
 run "野外语料 · 多样性(够多≠够杂)" python3 agent/wild_corpus.py --selftest
 printf "\n%s\n" "────────────────────────────────────────"

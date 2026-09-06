@@ -593,6 +593,118 @@ def create_download(kind,filters,actor="魏欣新"):
     return dict(ok=True,code="EXPORT",id=did,
       reason=f"导出任务 {did} 已生成({cnt} 行),可在 系统 › 下载中心 获取;链接 24 小时后失效")
 
+# ── 四个写接口:路由一直挂着,函数从来没写过 ─────────────────────
+# 发现方式:另一个会话用 AST 把 do_POST / do_GET 里被调用的裸函数名和模块里
+# 定义过的名字对了一遍,四个对不上。实证 `GET /api/export/customers` → **HTTP 000**
+# (handler 抛 NameError,连响应都没发出去,连接直接断)。
+#
+# 这类洞的可怕之处:**它不在任何检查的视野里**。ui_audit 查的是页面控件有没有绑定,
+# 不解析 POST handler 的名字;页面上按钮好好的,后端一调就断。
+# 所以这一轮同时加了结构检查 route_check.py:**路由调的函数必须真的存在**。
+#
+# 校验一律走 backend/rules.py —— 那是产品真实在用的规则,不在这儿另写一遍。
+
+def create_customer(d, actor="魏欣新"):
+    """新建客户档案。PRD 6.2:姓名必填、手机号唯一、疑似重复要提示。"""
+    import datetime
+    role = d.get("role") or "顾问"
+    ex = rows("SELECT id,name,phone,shop,birthday,addr FROM customer")
+    ok, code, why = rules.validate_customer(d, ex, actor_role=role)
+    if not ok:
+        log_op(actor, "customer", "-", "—", "新建", False, code, why, {"role": role})
+        return dict(ok=False, code=code, reason=why)
+    ph = rules.norm_phone(d.get("phone"))
+    n = rows("SELECT COUNT(*) c FROM customer")[0]["c"]
+    cid = f"C{10000 + n + 1}"
+    with sqlite3.connect(DB) as c:
+        c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,lifecycle,
+                     level,created,order_cnt,paid_amount,addr,birthday,archived,idle_days)
+                     VALUES(?,?,?,?,?,?,'潜在','普通',?,0,0,?,?,0,0)""",
+                  (cid, d.get("name"), ph, (ph or "")[-4:], d.get("shop"), d.get("advisor"),
+                   datetime.date.today().isoformat(), d.get("addr"), d.get("birthday")))
+    log_op(actor, "customer", cid, "—", "潜在", True, "CREATE",
+           f"新建客户 {d.get('name')};生命周期初始为「潜在」(无完成订单)", {"role": role})
+    return dict(ok=True, code="CREATE", id=cid,
+                reason=f"已建档 {cid}。**生命周期初始是「潜在」** —— 它由每日重算决定,不接受手工流转")
+
+
+def create_appointment(d, actor="魏欣新"):
+    """新建预约。PRD:早于当前时间的补录只有店长及以上能做 —— 判据在 rules.py。"""
+    import datetime
+    role = d.get("role") or "顾问"
+    ok, code, why = rules.validate_appointment(d, actor_role=role)
+    if not ok:
+        log_op(actor, "appointment", "-", "—", "新建", False, code, why, {"role": role})
+        return dict(ok=False, code=code, reason=why)
+    n = rows("SELECT COUNT(*) c FROM appointment")[0]["c"]
+    aid = f"AP{datetime.datetime.now():%y%m%d}{n + 1:04d}"
+    with sqlite3.connect(DB) as c:
+        cols = [x[1] for x in c.execute("PRAGMA table_info(appointment)")]
+        vals = {"id": aid, "customer_id": d.get("customer_id"), "shop": d.get("shop"),
+                "advisor": d.get("advisor"), "status": "待确认",
+                "appt_at": d.get("appt_at") or d.get("time"), "note": d.get("note")}
+        use = [k for k in cols if k in vals]
+        c.execute(f"INSERT INTO appointment({','.join(use)}) VALUES({','.join('?' * len(use))})",
+                  [vals[k] for k in use])
+    log_op(actor, "appointment", aid, "—", "待确认", True, "CREATE",
+           f"新建预约 {aid},客户 {d.get('customer_id')},时间 {vals['appt_at']}", {"role": role})
+    return dict(ok=True, code="CREATE", id=aid, reason=f"已建预约 {aid},状态「待确认」")
+
+
+def create_followup(d, actor="魏欣新"):
+    """新建跟进记录。跟进是**只增不改**的流水 —— 改跟进等于改历史。"""
+    import datetime
+    if not (d.get("customer_id") and (d.get("content") or d.get("note"))):
+        return dict(ok=False, code="MISSING", reason="客户号和跟进内容都必填")
+    if not rows("SELECT id FROM customer WHERE id=?", d["customer_id"]):
+        return dict(ok=False, code="NO_CUSTOMER", reason=f"客户 {d['customer_id']} 不存在")
+    n = rows("SELECT COUNT(*) c FROM followup")[0]["c"]
+    fid = f"FU{datetime.datetime.now():%y%m%d}{n + 1:04d}"
+    with sqlite3.connect(DB) as c:
+        cols = [x[1] for x in c.execute("PRAGMA table_info(followup)")]
+        vals = {"id": fid, "customer_id": d["customer_id"],
+                "content": d.get("content") or d.get("note"),
+                "note": d.get("content") or d.get("note"),
+                "advisor": d.get("advisor"), "created": datetime.date.today().isoformat(),
+                "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}
+        use = [k for k in cols if k in vals]
+        c.execute(f"INSERT INTO followup({','.join(use)}) VALUES({','.join('?' * len(use))})",
+                  [vals[k] for k in use])
+    log_op(actor, "followup", fid, "—", "已记录", True, "CREATE",
+           f"跟进 {d['customer_id']}:{(d.get('content') or d.get('note'))[:40]}", {})
+    return dict(ok=True, code="CREATE", id=fid, reason=f"已记录跟进 {fid}")
+
+
+# CSV 导出。**不做全表 SELECT *** —— 手机号、地址这些字段导出去就脱离系统了,
+# 只导页面上已经展示的那几列,而且沿用页面的脱敏。
+_EXPORT = {
+    "customers": ("客户档案", "SELECT id 客户号,name 姓名,phone_tail 手机尾号,shop 门店,"
+                  "advisor 顾问,lifecycle 生命周期,level 等级,order_cnt 订单数,"
+                  "paid_amount 实付,created 建档日 FROM customer ORDER BY id"),
+    "orders":    ("订单", "SELECT id 订单号,customer_id 客户号,status 状态,amount 金额,"
+                  "created 下单时间 FROM ordr ORDER BY id"),
+    "workorders":("在制工单", "SELECT id 工单号,artisan 师傅,craft 工艺,status 状态,"
+                  "start_date 开工,due_date 交期 FROM workorder ORDER BY due_date"),
+    "oplog":     ("操作日志", "SELECT ts 时间,actor 操作人,obj 对象,obj_id 编号,"
+                  "code 结果码,detail 说明 FROM op_log ORDER BY ts DESC LIMIT 5000"),
+}
+
+def export_csv(kind, q=None, actor="魏欣新"):
+    """导出 CSV。kind 见 _EXPORT;未知 kind 返回可选清单,不静默给空文件。"""
+    import csv, io
+    if kind not in _EXPORT:
+        return "错误\n" + f"没有「{kind}」这种导出,可选:{'、'.join(_EXPORT)}\n"
+    name, sql = _EXPORT[kind]
+    rs = rows(sql)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(rs[0].keys() if rs else ["(无数据)"])
+    for r in rs: w.writerow([r[k] for k in r.keys()])
+    log_op(actor, "download", kind, "—", "已导出", True, "EXPORT",
+           f"{name} 导出 {len(rs)} 行", {})
+    return buf.getvalue()
+
+
 def update_customer(cid,d,actor="魏欣新",role="顾问"):
     r=rows("SELECT * FROM customer WHERE id=?",cid)
     if not r: return {"error":"客户不存在"}
