@@ -437,6 +437,21 @@ def _mask(phone):
     return f"{p[:3]}****{p[-4:]}" if len(p) >= 7 else "—"
 
 
+# 当前生效的协议版本。**字段有值不等于同意有效** ——
+# 条款改版之后,旧版本的同意就该重新取,而这件事没人比对就永远不会发生。
+TOS_NOW, PRIVACY_NOW = "v2.3", "v1.5"
+# 账户状态 → 顾问该怎么办。**状态是给行动看的,不是给人看的。**
+ACCT_ACTION = {
+    "正常":   None,
+    "锁定":   "账户已锁定(连续输错密码)。**不要在电话里帮客户改密码或绕过锁定** —— "
+              "让客户自助解锁,或按门店流程走身份核验。",
+    "注销中": "客户已申请注销,正在冷静期。**不要推进新订单、不要做营销触达**;"
+              "如果还有在办的单,先问清楚是要撤回注销还是把单收尾。",
+    "已注销": "账户已注销,**个人数据已删除**。查不到尺寸、偏好、着装人是正常的 —— "
+              "不要凭印象补,也不要让客户「报一下就行」。要下单请重新注册。",
+}
+
+
 def _account(aid):
     """账户的对外视图。**列名写死,不用星号** —— 星号会把 pwd_* 带出来,
     而 _rows 那道锁会当场抛异常。这里主动只取该给的四列。
@@ -444,16 +459,37 @@ def _account(aid):
     login_name 本身也是登录凭据,所以只回答「有没有自设」,不回答「叫什么」。
     """
     if not aid: return None
-    r = _rows("SELECT id, phone, login_name, status, created, last_login "
-              "FROM account WHERE id=?", aid)
+    # 列名写死,不用星号 —— 星号会把 pwd_* 带出来,_rows 那道锁会当场抛异常
+    r = _rows("SELECT id, phone, login_name, status, created, last_login, contact_pref, "
+              "default_addr, home_shop, tos_version, privacy_version, marketing_consent, "
+              "closed_at, purge_at, locked_until FROM account WHERE id=?", aid)
     if not r: return None
     a = r[0]
     n = _rows("SELECT count(*) n FROM wearer WHERE account_id=?", aid)[0]["n"]
     docs = _rows("SELECT count(*) n FROM customer WHERE account_id=?", aid)[0]["n"]
-    return {"账户": a["id"], "手机号": _mask(a["phone"]),
-            "已自设账号密码": bool(a["login_name"]),
-            "状态": a["status"], "注册于": a["created"], "最近登录": a["last_login"],
-            "该账户下着装人": n, "关联门店档案": docs}
+    stale = [x for x, cur, col in (("服务条款", TOS_NOW, "tos_version"),
+                                   ("隐私政策", PRIVACY_NOW, "privacy_version"))
+             if (a[col] or "") != cur]
+    d = {"账户": a["id"], "手机号": _mask(a["phone"]),
+         "已自设账号密码": bool(a["login_name"]),
+         "状态": a["status"], "注册于": a["created"], "最近登录": a["last_login"],
+         "该账户下着装人": n, "关联门店档案": docs,
+         # 这几样是**给行动用的**,不是摆着看的
+         "联系方式偏好": a["contact_pref"],
+         "默认地址": a["default_addr"], "常用门店": a["home_shop"],
+         "营销触达同意": bool(a["marketing_consent"])}
+    if stale:
+        d["协议需重新取得同意"] = (
+            f"{'、'.join(stale)}已改版(当前 {TOS_NOW} / {PRIVACY_NOW},"
+            f"账户是 {a['tos_version']} / {a['privacy_version']})。"
+            "**改了条款而没重新取得同意,等于没同意** —— 下单前请客户在小程序上重新确认。")
+    if ACCT_ACTION.get(a["status"]):
+        d["该怎么办"] = ACCT_ACTION[a["status"]]
+    if a["status"] == "锁定":
+        d["解锁时间"] = a["locked_until"]
+    if a["status"] in ("注销中", "已注销"):
+        d["注销申请于"] = a["closed_at"]; d["数据清除于"] = a["purge_at"]
+    return d
 
 def get_wearer(customer=None, wearer_id=None, account=None):
     """着装人档案:一个账号下都有谁、各自量体到什么时候、哪些该复量了。"""

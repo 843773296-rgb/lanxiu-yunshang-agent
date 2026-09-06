@@ -1226,10 +1226,19 @@ def run():
                   (aid, ph, login, algo, salt, h, "正常", ago(200 - i % 150),
                    ago(i % 40) if i % 3 else None,
                    cu[0] if cu else None, pref,
-                   f"{cu[3] or ''}{cu[4] or ''}{cu[1] or ''}" if cu else None,
+                   # ⚠️ 直接用 addr,**不要再拼省市** —— D1 那次修完之后
+                   # addr 本身已经含省市了,再拼一遍就成了
+                   # 「河北省衡水市河北省衡水市武邑县961号」。
+                   # 两个改动单独看都对,**撞在一起就重复**。
+                   cu[1] if cu else None,
                    cu[2] if cu else None,
                    None,                       # self_wearer_id 建完着装人再回填
-                   "v2.1", "v1.4", 1 if i % 3 else 0,
+                   # 协议版本:**大多数在当前版,少数落后** ——
+                   # 全都落后的话「需重新取得同意」这盏灯就一直亮,
+                   # **全都亮的灯等于没有灯**,顾问三天就学会无视它。
+                   ("v2.1" if i % 7 == 2 else "v2.3"),
+                   ("v1.4" if i % 11 == 3 else "v1.5"),
+                   1 if i % 3 else 0,
                    None, None, 0, None))
         c.execute("UPDATE customer SET account_id=? WHERE phone=?", (aid, ph))
         # A6:每 7 个账户里有 1 个换过号,旧号留成别名 ——

@@ -197,6 +197,46 @@ CASES = [
   "这类问题通常走返修判定,具体要看现场。", []),
 ]
 
+# ── 账户状态与协议版本:它们会挡住业务 ──────────────────────────────
+# 要一个**量体没过期、也没有靶身高冲突**的着装人 ——
+# 夹具里带着别的违规,测的就不是你想测的那件事。
+# 上一版拿了 _EXP_ID(量体已过期),结果 g12 跟着一起响,4 条用例全花了。
+# **一个用例只测一件事。**
+_CLEAN_ID = next(
+    w["id"] for w in api._rows("SELECT id FROM wearer WHERE birthday IS NOT NULL ORDER BY id")
+    if not ((api.get_wearer(wearer_id=w["id"])["着装人"][0].get("量体是否过期") or {}).get("过期"))
+    and not (api.forecast_growth(w["id"], months=12).get("靶身高校验") or {}).get("需人工确认"))
+
+
+def _acct_call(status=None, stale=False):
+    """造一个 get_wearer 的返回,只改账户那一块 —— 其余取真实数据"""
+    import copy
+    w = copy.deepcopy(api.get_wearer(wearer_id=_CLEAN_ID))
+    a = w["着装人"][0]["账户"]
+    if status:
+        a["状态"] = status; a["该怎么办"] = api.ACCT_ACTION[status]
+    a.pop("协议需重新取得同意", None)
+    if stale: a["协议需重新取得同意"] = "服务条款已改版……"
+    return call("get_wearer", w)
+
+CASES += [
+ (True,  "g19_account_state", "账户注销中,答案当没这回事",
+  "好的,我这就帮她把新单排进去,下周就能开工。", [_acct_call("注销中")]),
+ (True,  "g19_account_state", "账户已注销,却让客户「报一下尺寸」",
+  "系统里查不到,您把三围报一下就行,我直接下单。", [_acct_call("已注销")]),
+ (False, None, "说明了注销中的处置",
+  "客户已申请**注销**,还在冷静期 —— 现在不推新单;要继续做的话得先撤回注销。",
+  [_acct_call("注销中")]),
+ (False, None, "正常账户不受这条管",
+  "好的,这就安排。", [_acct_call("正常")]),
+ (True,  "g20_consent_version", "协议没重签就谈下单",
+  "尺寸都齐了,可以下单,大概 45 天。", [_acct_call(stale=True)]),
+ (False, None, "先让客户重新确认协议",
+  "尺寸齐了,但服务**条款**改版了,请客户在小程序上**重新确认**后我们再下单。",
+  [_acct_call(stale=True)]),
+]
+
+
 print("回答体检 · 离线自测\n" + "=" * 88)
 print(f"真实工具返回:物料成本 ¥{COST:g} · 工期 {FAST}–{SLOW} 天 · "
       f"妆花×纱={NO.get('verdict')}[{NO.get('rule')}]\n")
