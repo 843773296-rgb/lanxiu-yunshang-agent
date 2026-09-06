@@ -27,8 +27,32 @@ import trace       # noqa: E402  记录仪:**和 V1 共用同一份**,写同一�
 MAX_USD = float(os.environ.get("LANXIU_MAX_USD", "0.60"))
 
 
-def _env():
+def models():
+    """能选的模型清单。**从单价表长出来,不在这里另抄一份。**
+
+    v1.price_of 对没有单价的模型直接拒绝跑(帕鲁项目踩过:用错单价虚高 12.5 倍),
+    所以「页面上能选什么」和「有没有单价」必须是同一个来源 ——
+    另写一份清单,迟早出现一个选得中却算不出钱的模型。
+    """
+    import v1
+    out = [dict(id="claude:" + m, provider="claude", model=m, label=m, note="订阅内")
+           for m in v1.PRICE]
+    out += [dict(id="deepseek:" + m, provider="deepseek", model=m, label=m, note="按量计费")
+            for m in v1.DEEPSEEK_PRICE]
+    return out
+
+
+def default_model_id():
+    prov = "claude" if os.environ.get("LANXIU_PROVIDER", "").lower() == "claude" else "deepseek"
+    return f"{prov}:" + (os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5") if prov == "claude"
+                         else os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro"))
+
+
+def _env(provider=None, model=None):
     """把凭证和模型指向装进环境。SDK 会把这些透传给它拉起的 CLI。
+
+    provider / model 是**单次调用的覆盖**(页面上换模型走这条路);
+    都不给时按环境变量走 —— 命令行和评测脚本的行为一个字没变。
 
     **LANXIU_PROVIDER=claude 时什么都不设** —— 让 CLI 用它自己的登录态。
     这条开关是给两件事准备的:
@@ -39,17 +63,18 @@ def _env():
     要**主动清掉**上一次设过的两个变量 —— 同一个进程里先跑 DeepSeek 再跑 Claude,
     不清就会带着 DeepSeek 的 base_url 去打 Claude。
     """
-    if os.environ.get("LANXIU_PROVIDER", "").lower() == "claude":
+    prov = (provider or os.environ.get("LANXIU_PROVIDER", "")).lower()
+    if prov == "claude":
         for v in ("ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"):
             os.environ.pop(v, None)
-        return os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5")
+        return model or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5")
     k = os.environ.get("DEEPSEEK_API_KEY") or (
         open(KEYFILE).read().strip() if os.path.exists(KEYFILE) else None)
     if not k:
         raise RuntimeError("没有 DeepSeek 凭证:设 DEEPSEEK_API_KEY 或写入 ~/.deepseek-key")
     os.environ["ANTHROPIC_BASE_URL"] = "https://api.deepseek.com/anthropic"
     os.environ["ANTHROPIC_API_KEY"] = k
-    return os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
+    return model or os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
 
 
 def cost_of(usage, model, ts=None):
@@ -164,7 +189,8 @@ async def _stream_once(prompt, images):
            "parent_tool_use_id": None, "session_id": "vision"}
 
 
-async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None):
+async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
+              provider=None, model_name=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
 
     guard=True 时挂上回答体检 hook:交付前检查一遍,不合格**打回重答**。
@@ -178,7 +204,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None):
     CLI 自己存着这条会话的完整记录,给它 session_id 就接着往下走,
     前面几轮的上下文还能命中缓存。返回值里带 session_id,前端存着下轮送回来。
     """
-    model = _env()
+    model = _env(provider, model_name)
     state = {}
     opts = ClaudeAgentOptions(
         hooks=guards.make_hooks(state) if guard else None,

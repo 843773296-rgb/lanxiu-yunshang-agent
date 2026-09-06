@@ -8,6 +8,9 @@
   · 智能体不再走后台那个手写循环,改由 Agent SDK 驱动,工具通过 MCP 挂载。
 """
 import asyncio, json, os, sys, threading, urllib.request, urllib.error
+
+# 见 /run 里的注释:切供应商是改进程环境变量,多线程会串味,所以跑模型这段串行
+RUNLOCK = threading.Lock()
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote, quote
 
@@ -73,6 +76,9 @@ class H(BaseHTTPRequestHandler):
                     os.path.join(HERE, "web", "_shell.txt"), encoding="utf-8").read())
             self._send(html.encode(), "text/html; charset=utf-8"); return
         if p.startswith("/api/") or p.startswith("/img/"): return self._proxy("GET")
+        if p == "/models":
+            # 清单由 sdk 从**单价表**长出来,页面不许自己写死一份
+            return self._send({"rows": sdk.models(), "default": sdk.default_model_id()})
         if p == "/healthz":
             return self._send({"ok": True, "backend": BACKEND, "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")})
         self._send({"error": "no route"}, code=404)
@@ -87,9 +93,22 @@ class H(BaseHTTPRequestHandler):
             kind = body.get("kind") or "kb"
             prompt = (body.get("prompt") or "").strip()
             if not prompt: return self._send({"error": "问题是空的"}, code=400)
+            # model:"供应商:模型名",来自 /models。不给就走环境变量里的默认。
+            prov = mdl = None
+            mid = (body.get("model") or "").strip()
+            if mid:
+                if mid not in {m["id"] for m in sdk.models()}:
+                    return self._send({"error": f"没有这个模型:{mid}"}, code=400)
+                prov, mdl = mid.split(":", 1)
             # session:上一轮返回的会话号。前端每条会话存一个,续着问就带上。
             try:
-                r = asyncio.run(sdk.run(kind, prompt, resume=body.get("session") or None))
+                # **必须串行。** sdk._env 是改进程环境变量(ANTHROPIC_BASE_URL / API_KEY)
+                # 来切供应商的,而这是个多线程服务 —— 两个请求同时进来,
+                # 后一个会把前一个的凭证改掉,前一个就带着 DeepSeek 的 base_url 去打 Claude。
+                # 本机单人用,串行的代价可以接受;串味的代价不能接受。
+                with RUNLOCK:
+                    r = asyncio.run(sdk.run(kind, prompt, resume=body.get("session") or None,
+                                            provider=prov, model_name=mdl))
                 return self._send(r)
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)

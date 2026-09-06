@@ -103,13 +103,45 @@ def kb_lookup(keyword=None, cat=None, src=None):
         k=keyword.strip()
         rs=[r for r in rs if any(k in str(r.get(f) or "") for f in ("name","alias","brief","fit","code"))]
     if not rs: return {"hit":0,"note":f"知识库里查不到「{keyword or cat or src}」,不要凭印象回答"}
-    return {"hit":len(rs),"rows":rs[:12]}
+    return {"hit":len(rs),"rows":[_nz(_with_material(r)) for r in rs[:12]]}
+
+# 面料的**物理参数**(备料天/现货/单价/损耗/幅宽)家在 material 表,不在知识库条目里。
+# craft.lead_days 对**工艺**条目有值(工期档位),对**材质**条目一律为空。
+# 原来 kb_detail 直接把这个空值返回去,模型如实回答「知识库里还没有录入」——
+# 而 material 表里明明写着 12 天,kb_lead 和 get_stock 也都能查到。
+# **工具说了假话,模型没错。** 换模型对照时露出来的:同一个问题,
+# 一个模型走 kb_lead 答「12 天」,另一个走 kb_detail 答「未录入」。
+_MAT_FIELDS = ("备料天", "现货", "单价", "计价单位", "损耗率", "幅宽cm")
+
+def _nz(d):
+    """**值为空的字段整个去掉,不要发给模型。**
+
+    `null` 和「没有这个字段」对人是一回事,对模型完全不是:
+    看到 `cost_level: null`,它会如实回答「成本档位知识库里还没录入」——
+    可成本档位本来就只对**工艺**条目有,形制/材质根本没有这一项。
+    「未录入」和「不适用」被同一个 null 表达了,而它只能照着字面说。
+
+    少一个字段,模型不会去提它;给一个空字段,模型一定会提它。"""
+    return {k: v for k, v in dict(d).items() if v not in (None, "")}
+
+def _with_material(d):
+    """材质条目补上物理参数。**同一个事实只留一个字段** —— 空的那个要拿掉,
+    留着它就等于给模型两个矛盾的来源,而它没法判断该信哪个。"""
+    if (d.get("cat") or "") != "材质": return d
+    m=_rows("SELECT price,unit,loss_rate,lead_days,stock_qty,width_cm FROM material WHERE code=?",
+            d.get("code"))
+    d=dict(d)
+    if m:
+        d.update(备料天=m[0]["lead_days"], 现货=m[0]["stock_qty"], 单价=m[0]["price"],
+                 计价单位=m[0]["unit"], 损耗率=m[0]["loss_rate"], 幅宽cm=m[0]["width_cm"])
+        d.pop("lead_days", None)
+    return d
 
 def kb_detail(code):
     """按编码取某一条的完整内容"""
     r=_rows("SELECT * FROM craft WHERE code=?",code)
     if not r: return {"error":f"没有编码 {code} 这一条"}
-    return r[0]
+    return _nz(_with_material(r[0]))
 
 def _resolve(x, cat):
     """把「云锦」「MT02」都解析成同一条。模型不知道编码,让它猜编码是工具设计的错误 ——

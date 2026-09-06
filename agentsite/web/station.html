@@ -127,6 +127,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
       <option value="kb">工艺顾问</option>
       <option value="task">任务助手</option>
     </select>
+    <select id="model" title="换模型"><option>载入中…</option></select>
     <span id="kindhint"></span>
     <span class="sp"></span>
     <a class="tbtn" href="/panels">面板</a>
@@ -217,7 +218,9 @@ const KINDS = {
 
 function newConv(kind){
   const c = {id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
-             title:"新会话", kind: kind || $("#kind").value, session:null, at:Date.now(), msgs:[]};
+             title:"新会话", kind: kind || $("#kind").value,
+             model: $("#model").value || MODEL_DEFAULT,
+             session:null, at:Date.now(), msgs:[]};
   DB.convs.unshift(c); DB.cur = c.id; save(); return c;
 }
 
@@ -235,7 +238,8 @@ function drawSide(){
     const el = document.createElement("div");
     el.className = "conv" + (c.id === DB.cur ? " on" : "");
     el.innerHTML = `<div class="t">${esc(c.title)}</div>
-      <div class="m">${esc(KINDS[c.kind] ? KINDS[c.kind].name : c.kind)} · ${c.msgs.length} 条</div>
+      <div class="m">${esc(KINDS[c.kind] ? KINDS[c.kind].name : c.kind)}
+        · ${esc(String(c.model || "").split(":")[1] || "默认")} · ${c.msgs.length} 条</div>
       <button class="x" data-act="del" title="删除本会话">×</button>`;
     el.onclick = e => {
       if(e.target.dataset && e.target.dataset.act === "del"){
@@ -328,7 +332,8 @@ async function ask(){
   try{
     const resp = await fetch("/run", {method:"POST", headers:{"content-type":"application/json"},
       signal: RUNNING.signal,
-      body: JSON.stringify({kind: c.kind, prompt: text, session: c.session || null})});
+      body: JSON.stringify({kind: c.kind, prompt: text,
+                            session: c.session || null, model: c.model || null})});
     r = await resp.json();
   }catch(e){
     r = {error: e.name === "AbortError" ? "已停止" : ("请求失败:" + e.message)};
@@ -363,6 +368,11 @@ const TEACH = [
   "交付前有一道 Hook 检查:报了数字却没调工具、拿 demo 数据做承诺、只凭一张图报价 —— " +
   "**不合格直接打回重答**。打回记录会显示在答案下方。提示词里的铁律原本只是祈使句," +
   "挂上 Hook 才是强制。"],
+ ["换模型意味着什么",
+  "顶栏那个下拉换的是**这条会话下一轮用哪个模型**,换完接着问就行,上文不丢。" +
+  "每条答案下方都写着当时用的是哪个模型,所以**同一个问题换个模型再问一遍,可以直接对照**。" +
+  "清单里只有**有单价的模型** —— 算不出钱的模型不许选,免得成本栏骗人。" +
+  "<code>订阅内</code>的走 Claude 登录态;<code>按量计费</code>的是 DeepSeek,真花钱。"],
  ["聊天记录存在哪",
   "**你的浏览器本地**,不进库。这是一个人的草稿本,不是台账 —— " +
   "要留档的结论走研判队列,那条路径是有人签字的。旧的多屏工作台在 <code>/panels</code>。"]
@@ -399,9 +409,37 @@ function syncHint(){
   $("#hint").textContent = "只读工具 · 产出是草稿,须人确认 · 会话记录存在本机浏览器";
 }
 
+/* ── 模型清单 ─────────────────────────────────────────────
+   清单**从后端拿**,不在页面里写死一份。后端那份又是从单价表长出来的 ——
+   能选的模型 = 有单价的模型。另写一份清单,迟早出现一个选得中却算不出钱的。 */
+let MODEL_DEFAULT = "";
+async function loadModels(){
+  let rows = [], def = "";
+  try{
+    const r = await (await fetch("/models")).json();
+    rows = r.rows || []; def = r.default || "";
+  }catch(e){}
+  MODEL_DEFAULT = def;
+  const sel = $("#model");
+  sel.innerHTML = rows.length
+    ? rows.map(m => `<option value="${esc(m.id)}">${esc(m.label)}${m.note ? " · " + esc(m.note) : ""}</option>`).join("")
+    : `<option value="">(取不到清单)</option>`;
+  const c = cur();
+  sel.value = (c && c.model) || def || (rows[0] && rows[0].id) || "";
+  if(c && !c.model){ c.model = sel.value; save(); }
+  drawSide();
+}
+$("#model").onchange = () => {
+  const c = cur(); if(!c) return;
+  c.model = $("#model").value; save(); drawSide();
+  // 换模型**不新开会话**,也不清 session —— 续着问,让它接着上文回答。
+  // 每条答案下方的元信息里写着当时用的是哪个模型,所以对照得出来。
+};
+
 /* ── 启动 ─────────────────────────────────────────────────── */
 if(!DB.convs.length) newConv("kb");
 if(!cur()) DB.cur = DB.convs[0].id;
 $("#kind").value = cur().kind || "kb";
 syncHint(); drawSide(); drawStream(); grow(); $("#q").focus();
+loadModels();
 </script>
