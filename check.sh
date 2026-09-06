@@ -27,6 +27,7 @@ run "交接文档 · 四段必填是否齐全" python3 tools/make_handoff.py --c
 run "状态流转引擎 · 17 个用例" python3 backend/fsm.py
 run "写入校验规则 · 10 个用例" python3 backend/rules.py
 run "控件审计 · 死控件检查"    python3 backend/ui_audit.py
+run "页面内联 JS · 语法(重复声明/括号)" python3 agentsite/js_check.py
 run "遮蔽检查 · 局部变量压函数" python3 backend/shadow_check.py
 run "商品库 · 不卖矩阵判不可的组合" python3 backend/catalog_check.py
 run "会员与订单 · 映射/勾稽/门槛" python3 backend/member_order_check.py
