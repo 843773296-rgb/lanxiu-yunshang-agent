@@ -97,6 +97,17 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 #send{background:var(--accent);color:#fff}
 #send:disabled{background:#c8cdd8;cursor:default}
 #stop{background:var(--chip);color:var(--ink)}
+#thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+#thumbs .th{position:relative;width:62px;height:62px;border-radius:9px;overflow:hidden;
+  border:1px solid var(--line);background:#fafafb}
+#thumbs .th img{width:100%;height:100%;object-fit:cover;display:block}
+#thumbs .th button{position:absolute;right:2px;top:2px;width:17px;height:17px;border:0;
+  border-radius:50%;background:rgba(20,20,24,.62);color:#fff;font-size:11px;line-height:17px;
+  padding:0;cursor:pointer}
+.msg.u .imgs{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;margin-bottom:6px}
+.msg.u .imgs img{width:104px;height:104px;object-fit:cover;border-radius:11px;border:1px solid var(--line)}
+#cbox.drag{border-color:var(--accent);background:#f7f9ff}
+#novis{font-size:11.5px;color:var(--warn);margin-top:6px}
 #hint{max-width:760px;margin:7px auto 0;padding:0 24px;font-size:11.5px;color:var(--dim)}
 
 /* ── 「?」教学层 ─────────────────────────────────────────── */
@@ -136,13 +147,16 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   <div id="stream"></div>
   <div id="composer">
     <div class="wrap">
+      <div id="thumbs"></div>
       <div id="cbox">
-        <textarea id="q" rows="1" placeholder="问一句…(↩ 发送,⇧↩ 换行)"></textarea>
+        <textarea id="q" rows="1" placeholder="问一句…(↩ 发送,⇧↩ 换行,可直接粘贴或拖入图片)"></textarea>
+        <input id="file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+        <button class="tbtn" id="pic" data-act="pic" title="加图片">图片</button>
         <button id="stop" hidden>停</button>
         <button id="send">发送</button>
       </div>
     </div>
-    <div id="hint"></div>
+    <div id="hint"></div><div class="wrap"><div id="novis"></div></div>
   </div>
 </div>
 
@@ -293,8 +307,12 @@ function drawStream(){
     return;
   }
   s.innerHTML = c.msgs.map(m => {
-    if(m.role === "user")
-      return `<div class="msg u"><div class="wrap"><div class="bub">${esc(m.text)}</div></div></div>`;
+    if(m.role === "user"){
+      const im = (m.images || []).length
+        ? `<div class="imgs">${m.images.map(u => `<img src="${esc(u)}">`).join("")}</div>` : "";
+      return `<div class="msg u"><div class="wrap"><div>${im}
+        <div class="bub">${esc(m.text)}</div></div></div></div>`;
+    }
     if(m.error)
       return `<div class="msg a"><div class="wrap"><div class="err">${esc(m.error)}</div></div></div>`;
     const gv = (m.guard_violations || []).length
@@ -308,16 +326,74 @@ function drawStream(){
   s.scrollTop = s.scrollHeight;
 }
 
+/* ── 图片附件 ─────────────────────────────────────────────
+   限额和后端一致(四张、每张 6MB、四种格式)。**两边都要拦** ——
+   前端拦是为了让人立刻知道为什么不行,后端拦是因为前端拦不住绕过去的请求。 */
+const MAX_IMGS = 4, MAX_BYTES = 6 * 1024 * 1024;
+const OKMIME = ["image/png","image/jpeg","image/gif","image/webp"];
+let PEND = [];   // [{name, url}] —— url 是 data URL,直接发给后端
+
+function drawThumbs(){
+  $("#thumbs").innerHTML = PEND.map((p, i) =>
+    `<div class="th"><img src="${esc(p.url)}" title="${esc(p.name)}">
+       <button data-act="rmimg" data-i="${i}" title="移除">×</button></div>`).join("");
+  $("#thumbs").querySelectorAll("button").forEach(b => {
+    b.onclick = () => { PEND.splice(+b.dataset.i, 1); drawThumbs(); };
+  });
+  checkVision();
+}
+
+function checkVision(){
+  const sel = $("#model");
+  const opt = sel.selectedOptions && sel.selectedOptions[0];
+  const canSee = !opt || opt.dataset.vision !== "0";
+  $("#novis").textContent = (PEND.length && !canSee)
+    ? `⚠ ${sel.value.split(":")[1] || "这个模型"} 看不了图 —— 换成 Claude 任一款,或 deepseek-v4-flash-vision-exp`
+    : "";
+  return canSee;
+}
+
+async function addFiles(files){
+  for(const f of files){
+    if(PEND.length >= MAX_IMGS){ alert(`一次最多 ${MAX_IMGS} 张`); break; }
+    if(!OKMIME.includes(f.type)){ alert(`${f.name}:只收 png / jpeg / gif / webp`); continue; }
+    if(f.size > MAX_BYTES){ alert(`${f.name}:超过 ${MAX_BYTES/1024/1024}MB`); continue; }
+    const url = await new Promise(res => {
+      const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f);
+    });
+    PEND.push({name: f.name || "粘贴的图", url});
+  }
+  drawThumbs();
+}
+
+$("#pic").onclick = () => $("#file").click();
+$("#file").onchange = e => { addFiles([...e.target.files]); e.target.value = ""; };
+$("#q").addEventListener("paste", e => {
+  const fs = [...(e.clipboardData ? e.clipboardData.files : [])];
+  if(fs.length){ e.preventDefault(); addFiles(fs); }
+});
+["dragover","dragleave","drop"].forEach(ev => {
+  $("#cbox").addEventListener(ev, e => {
+    e.preventDefault();
+    $("#cbox").classList.toggle("drag", ev === "dragover");
+    if(ev === "drop") addFiles([...(e.dataTransfer ? e.dataTransfer.files : [])]);
+  });
+});
+
 /* ── 提问 ─────────────────────────────────────────────────── */
 let RUNNING = null;
 function grow(){ const q = $("#q"); q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 190) + "px"; }
 
 async function ask(){
   const q = $("#q"); const text = q.value.trim();
-  if(!text || RUNNING) return;
+  if((!text && !PEND.length) || RUNNING) return;
+  if(PEND.length && !checkVision()) return;
   let c = cur(); if(!c) c = newConv();
   if(!c.msgs.length){ c.title = text.slice(0, 26); c.kind = $("#kind").value; }
-  c.msgs.push({role:"user", text}); c.at = Date.now();
+  const imgs = PEND.map(p => p.url);
+  c.msgs.push({role:"user", text, images: imgs});
+  c.at = Date.now();
+  PEND = []; drawThumbs();
   q.value = ""; grow(); save(); drawSide(); drawStream();
 
   const s = $("#stream");
@@ -333,7 +409,8 @@ async function ask(){
     const resp = await fetch("/run", {method:"POST", headers:{"content-type":"application/json"},
       signal: RUNNING.signal,
       body: JSON.stringify({kind: c.kind, prompt: text,
-                            session: c.session || null, model: c.model || null})});
+                            session: c.session || null, model: c.model || null,
+                            images: imgs.length ? imgs : undefined})});
     r = await resp.json();
   }catch(e){
     r = {error: e.name === "AbortError" ? "已停止" : ("请求失败:" + e.message)};
@@ -368,6 +445,15 @@ const TEACH = [
   "交付前有一道 Hook 检查:报了数字却没调工具、拿 demo 数据做承诺、只凭一张图报价 —— " +
   "**不合格直接打回重答**。打回记录会显示在答案下方。提示词里的铁律原本只是祈使句," +
   "挂上 Hook 才是强制。"],
+ ["发图片给它看",
+  "点「图片」、直接粘贴、或者拖进输入框都行,一次最多 4 张(png / jpeg / gif / webp,每张 6MB 以内)。" +
+  "图**不留在服务器上** —— 落成临时文件发给模型,跑完就删。" +
+  "只有标着<code>可识图</code>的模型收得下图,选错了会当场拦下来告诉你换哪个。"],
+ ["它看图时会克制到什么程度",
+  "**形制是结论,不是观察。** 一张照片分不出唐制大袖衫和宋制褙子 —— 光线、角度、褶皱都会骗人。" +
+  "所以它只会说「我看到了什么」(轮廓、颜色、纹理、有没有交领立领褶),再给一个**待确认的假设**," +
+  "然后要么查库验证、要么反问你。**绝不会只凭一张图报价、报工期或承诺能做** —— " +
+  "价钱和工期取决于面料与工艺,那两样照片里根本看不出来。"],
  ["换模型意味着什么",
   "顶栏那个下拉换的是**这条会话下一轮用哪个模型**,换完接着问就行,上文不丢。" +
   "每条答案下方都写着当时用的是哪个模型,所以**同一个问题换个模型再问一遍,可以直接对照**。" +
@@ -422,7 +508,8 @@ async function loadModels(){
   MODEL_DEFAULT = def;
   const sel = $("#model");
   sel.innerHTML = rows.length
-    ? rows.map(m => `<option value="${esc(m.id)}">${esc(m.label)}${m.note ? " · " + esc(m.note) : ""}</option>`).join("")
+    ? rows.map(m => `<option value="${esc(m.id)}" data-vision="${m.vision ? 1 : 0}">${esc(m.label)}`
+        + `${m.note ? " · " + esc(m.note) : ""}${m.vision ? " · 可识图" : ""}</option>`).join("")
     : `<option value="">(取不到清单)</option>`;
   const c = cur();
   sel.value = (c && c.model) || def || (rows[0] && rows[0].id) || "";
@@ -431,7 +518,7 @@ async function loadModels(){
 }
 $("#model").onchange = () => {
   const c = cur(); if(!c) return;
-  c.model = $("#model").value; save(); drawSide();
+  c.model = $("#model").value; save(); drawSide(); checkVision();
   // 换模型**不新开会话**,也不清 session —— 续着问,让它接着上文回答。
   // 每条答案下方的元信息里写着当时用的是哪个模型,所以对照得出来。
 };

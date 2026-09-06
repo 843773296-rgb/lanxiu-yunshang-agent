@@ -7,10 +7,40 @@
   · 后台只留一个入口链接指过来。
   · 智能体不再走后台那个手写循环,改由 Agent SDK 驱动,工具通过 MCP 挂载。
 """
-import asyncio, json, os, sys, threading, urllib.request, urllib.error
+import asyncio, json, os, re, shutil, sys, threading, urllib.request, urllib.error
 
 # 见 /run 里的注释:切供应商是改进程环境变量,多线程会串味,所以跑模型这段串行
 RUNLOCK = threading.Lock()
+
+# 上传的图:**四张封顶、每张 6MB 封顶、只收视觉模型认的四种格式**。
+# 不设上限的话,一次粘几十张就能把内存和账单一起打穿 ——
+# 而这条路径是浏览器直连的,不是内部脚本。
+MAX_IMGS, MAX_BYTES = 4, 6 * 1024 * 1024
+_MIME_EXT = {"image/png": ".png", "image/jpeg": ".jpg",
+             "image/gif": ".gif", "image/webp": ".webp"}
+
+
+def _save_images(items):
+    """data URL 列表 → 临时文件路径列表。返回 (paths, tmpdir)。"""
+    import base64, binascii, tempfile
+    if len(items) > MAX_IMGS:
+        raise ValueError(f"一次最多 {MAX_IMGS} 张图,收到 {len(items)} 张")
+    d = tempfile.mkdtemp(prefix="lanxiu-img-")
+    out = []
+    for i, s0 in enumerate(items):
+        m = re.match(r"^data:([\w/+-]+);base64,(.+)$", s0 or "", re.S)
+        if not m: raise ValueError(f"第 {i+1} 张不是 data URL")
+        mt = m.group(1)
+        if mt not in _MIME_EXT:
+            raise ValueError(f"第 {i+1} 张是 {mt} —— 只收 png / jpeg / gif / webp")
+        try: blob = base64.b64decode(m.group(2), validate=True)
+        except (binascii.Error, ValueError): raise ValueError(f"第 {i+1} 张解不开")
+        if len(blob) > MAX_BYTES:
+            raise ValueError(f"第 {i+1} 张 {len(blob)//1024//1024}MB,超过 {MAX_BYTES//1024//1024}MB")
+        fp = os.path.join(d, f"{i}{_MIME_EXT[mt]}")
+        with open(fp, "wb") as fh: fh.write(blob)
+        out.append(fp)
+    return out, d
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote, quote
 
@@ -100,6 +130,20 @@ class H(BaseHTTPRequestHandler):
                 if mid not in {m["id"] for m in sdk.models()}:
                     return self._send({"error": f"没有这个模型:{mid}"}, code=400)
                 prov, mdl = mid.split(":", 1)
+            # images:data URL 列表。sdk.run 收的是**本地文件路径**,
+            # 所以这里落成临时文件,跑完删掉 —— 图不留在服务器上。
+            imgs, tmpdir, ierr = [], None, None
+            raw_imgs = body.get("images") or []
+            if raw_imgs:
+                pv = prov or ("claude" if os.environ.get("LANXIU_PROVIDER","").lower()=="claude"
+                              else "deepseek")
+                mv = mdl or (sdk.default_model_id().split(":",1)[1])
+                if not sdk.sees_images(pv, mv):
+                    return self._send({"error": f"{mv} 看不了图 —— "
+                                       "换成 Claude 任一款,或 deepseek-v4-flash-vision-exp"}, code=400)
+                try: imgs, tmpdir = _save_images(raw_imgs)
+                except ValueError as e: ierr = str(e)
+                if ierr: return self._send({"error": ierr}, code=400)
             # session:上一轮返回的会话号。前端每条会话存一个,续着问就带上。
             try:
                 # **必须串行。** sdk._env 是改进程环境变量(ANTHROPIC_BASE_URL / API_KEY)
@@ -108,10 +152,12 @@ class H(BaseHTTPRequestHandler):
                 # 本机单人用,串行的代价可以接受;串味的代价不能接受。
                 with RUNLOCK:
                     r = asyncio.run(sdk.run(kind, prompt, resume=body.get("session") or None,
-                                            provider=prov, model_name=mdl))
+                                            provider=prov, model_name=mdl, images=imgs or None))
                 return self._send(r)
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)
+            finally:
+                if tmpdir: shutil.rmtree(tmpdir, ignore_errors=True)
         if p == "/run-task":
             # 智能体工作台:本站跑智能体(Agent SDK),判分和标注答案交给后台 ——
             # 数据的家在后台,不在这边复制一份判分逻辑。

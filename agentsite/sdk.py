@@ -35,11 +35,21 @@ def models():
     另写一份清单,迟早出现一个选得中却算不出钱的模型。
     """
     import v1
-    out = [dict(id="claude:" + m, provider="claude", model=m, label=m, note="订阅内")
-           for m in v1.PRICE]
-    out += [dict(id="deepseek:" + m, provider="deepseek", model=m, label=m, note="按量计费")
-            for m in v1.DEEPSEEK_PRICE]
+    out = [dict(id="claude:" + m, provider="claude", model=m, label=m, note="订阅内",
+                vision=sees_images("claude", m)) for m in v1.PRICE]
+    out += [dict(id="deepseek:" + m, provider="deepseek", model=m, label=m, note="按量计费",
+                 vision=sees_images("deepseek", m)) for m in v1.DEEPSEEK_PRICE]
     return out
+
+
+def sees_images(provider, model):
+    """这个模型收不收得下图。
+
+    Claude 全系都收;DeepSeek 只有名字里带 vision 的那个实验模型收。
+    **按规则判,不另列一张表** —— 单价表里加个新模型时这里自动跟上,
+    另列一张表就迟早出现「清单里说能看图、实际发过去报错」。
+    """
+    return provider == "claude" or "vision" in (model or "")
 
 
 def default_model_id():
