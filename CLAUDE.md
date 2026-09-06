@@ -47,8 +47,9 @@
 
 | 目录 | 是什么 |
 |---|---|
-| `backend/` | **数据的家**。SQLite 55 张表 + 38 个页面的管理后台 + 状态机 + 写入规则 + 运维队列(`ops.py`) |
-| ↳ 用户生命周期 | `wearer` / `consent` / `growth_forecast` 三张表 + `lifecycle_check.py`。**`customer` 是账号,`wearer` 是衣服穿在谁身上** —— 两个概念不能混 |
+| `backend/` | **数据的家**。SQLite 57 张表 + 38 个页面的管理后台 + 状态机 + 写入规则 + 运维队列(`ops.py`) |
+| ↳ 账户与身份 | `account`(手机号唯一,可自设账号密码)。**账户在门店档案之上**:一个人一个账户,`customer` 可以有好几条 —— 那正是「客户合并」要处理的事 |
+| ↳ 用户生命周期 | `wearer` / `consent` / `growth_forecast` 三张表 + `lifecycle_check.py`。**身份绑 `account`,不绑 `customer`** —— 档案可能有多条,账户只有一个 |
 | `knowledge/` | **领域知识层**。11 篇手写知识 md + 7 个推导脚本(相容矩阵 / 版型推档 / BOM / 量体 / 工期 / 产能) |
 | `mcp/` | **三个 MCP 服务**:`kb`(知识库 10 个工具)/ `task`(任务 5 个)/ `shop`(店务 4 个)。裸手写 JSON-RPC,没用 SDK |
 | `agent/` | **V1 和 V2**,以及全部评测集、记录仪、判分器 |
@@ -125,6 +126,8 @@ LANXIU_PROVIDER=claude   # 走 Claude(CLI 登录态,月租,不额外花钱)
 | 红线 | 为什么 | 谁在守 |
 |---|---|---|
 | `truth` 表**绝不能**经任何 API / 工具暴露 | 它是评测答案。漏了整套评测就废了 | `backend/selftest.py`,每次 `check.sh` 都验 |
+| 账户凭据(密码哈希 / 盐)**绝不能**经工具层读到 | 拿到哈希和盐就能离线爆破 | `api._rows` **查返回的列名**,与语句写法无关(星号/别名星号/子查询都拦得住);5 条攻击在 `boundary_audit.py` |
+| 密码**只存 PBKDF2 哈希 + 每账户独立的盐** | demo 数据也不例外 —— 一份会被别人照抄的代码不该示范存明文 | `lifecycle_check.py` 有「像明文就红」的检查 |
 | 挂给模型的工具**全部只读** | 项目最硬的一条主张 | 见下面第 7 条第 1 项——这里踩过大坑 |
 | `~/Desktop/chatgpt/`(帕鲁打工仔)**只读** | 常有另一个会话在同时改它 | 人肉。清理残留也算动,要先问 |
 | API key 不进仓库 | | `~/.deepseek-key`(600),`.gitignore` 兜底 |
