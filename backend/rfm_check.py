@@ -33,7 +33,18 @@ def rule(no, desc, rows, why):
     for r in rows[:5]: print(f"        · {r}")
     if rows: bad.append((no, why, len(rows)))
 
-print(f"RFM 性质检查 · {len(ALL)} 位客户")
+# **空集合上所有性质都成立。** 没有这道守卫,客户表一空,五条全绿 ——
+# 而「什么都没验」和「验过了没问题」在输出上长得一模一样。
+#
+# 实测过一次:清空 customer 表,它确实红了,但报的是 F3「分布塌了」——
+# **红错了理由**。误导的红比不红好一点,但不多:照着 F3 去查分桶逻辑是白费功夫。
+MIN = 20
+if len(ALL) < MIN:
+    print(f"❌ 只有 {len(ALL)} 位客户(至少要 {MIN})—— "
+          "**这不是「性质都守住了」,是什么都没验**。先看种子数据。")
+    sys.exit(1)
+
+print(f"RFM 性质检查 · {len(ALL)} 位客户(样本量下限 {MIN})")
 print("=" * 92)
 scored = _rfm.score(ALL)
 

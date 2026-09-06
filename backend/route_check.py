@@ -29,9 +29,13 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGETS = ["backend/server.py", "agentsite/app.py"]
 
 bad = []
+seen_files, seen_calls = 0, 0    # **验了几个要说出来** —— 见文件末尾的样本量守卫
 for rel in TARGETS:
     path = os.path.join(ROOT, rel)
-    if not os.path.exists(path): continue
+    if not os.path.exists(path):
+        print(f"  ⚠ {rel} 不存在 —— 跳过(**跳过不等于通过**)")
+        continue
+    seen_files += 1
     tree = ast.parse(open(path, encoding="utf-8").read())
     defined = set(dir(builtins))
     for n in ast.walk(tree):
@@ -44,9 +48,10 @@ for rel in TARGETS:
         elif isinstance(n, (ast.ExceptHandler,)) and n.name: defined.add(n.name)
     miss = {}
     for n in ast.walk(tree):
-        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) \
-                and n.func.id not in defined:
-            miss.setdefault(n.func.id, []).append(n.lineno)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
+            seen_calls += 1
+            if n.func.id not in defined:
+                miss.setdefault(n.func.id, []).append(n.lineno)
     print(f"  {'✅' if not miss else '❌'} {rel}"
           + ("" if not miss else f"  —— {len(miss)} 个函数调了但没定义"))
     for k, v in sorted(miss.items()):
@@ -54,9 +59,16 @@ for rel in TARGETS:
         bad.append((rel, k, v))
 
 print("=" * 84)
+# 样本量守卫:文件都不在、或者一个裸函数调用都没解析到,说明这个检查**什么都没验** ——
+# 而「什么都没验」和「验过了没问题」在输出上长得一模一样。
+if seen_files < len(TARGETS) or seen_calls < 50:
+    print(f"❌ 只扫到 {seen_files}/{len(TARGETS)} 个文件、{seen_calls} 处裸函数调用 —— "
+          "**这不是「都存在」,是没扫到东西**。先看 TARGETS 的路径对不对。")
+    sys.exit(1)
 if bad:
     print(f"❌ {len(bad)} 个 handler 不存在 —— 这几条路由一被调用就是 NameError,"
           "**连响应都发不出去,客户端看到的是连接断开**")
     print("   Python 到那一行才解析名字,平时没人走的路径不会报错 —— 所以要静态查。")
     sys.exit(1)
-print("✅ 路由调用的函数全部存在(只查裸函数名,带点的属性调用不在范围内)")
+print(f"✅ {seen_files} 个文件 · {seen_calls} 处裸函数调用全部有定义"
+      "(带点的属性调用不在范围内 —— 属性要运行时才知道,静态判会误报)")
