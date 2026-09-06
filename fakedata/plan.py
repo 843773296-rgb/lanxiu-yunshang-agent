@@ -68,11 +68,24 @@ def _gen_for(cname, cf, fk):
         # 状态机在,就不能再按枚举分布**独立**抽了 —— 状态和时间戳得一起定
         return {"gen": "fsm", "dist": cf.get("enum", {}), **cf["fsm"]}
     sem = cf.get("semantic", cf["kind"])
-    # **观察到的长度可以否决语义。** `phone_tail` 命中了列名里的 phone,
-    # 于是差点被当成手机号造成 11 位 —— 而源库里它只有 4 位。
-    # 列名是弱证据,实测长度是强证据,强的赢。
+    if sem == "fk":
+        # 语义说它是外键,但这份方案里没有对应的外键条目 ——
+        # 只会发生在**限定了表集**的时候:父表被排除在外了。
+        # 不处理的话会生成一个「没有目标的外键」策略,生成器取 g["table"] 直接 KeyError。
+        # 退回被"外键"盖掉之前的那个判断,和模型否决那条路一样。
+        sem = cf.get("semantic0") or ("enum" if cf.get("enum") else cf["kind"])
+    # **观察到的长度可以否决语义**,但要用中位数,不能用最大值。
+    # 起因:`phone_tail` 命中列名里的 phone,差点被当成手机号造成 11 位,而它只有 4 位。
+    # 于是我加了这条否决 —— 却拿 `max` 当判据。
+    #
+    # **max 是最容易被离群值带偏的统计量。** `account.phone` 里有两个带空格/区号的号码,
+    # 长度 14,于是整列的「这是手机号」被一条数据否掉,退化成随机串;
+    # 而 `customer.phone` 作为它的外键,继承了满列乱码。
+    # 直连那条路永远发现不了 —— 数据库不在乎电话长什么样,是**接口的格式校验**把它照出来的。
+    #
+    # 中位数才代表"这一列通常是什么样",离群值归离群值,该在边界值那一层处理。
     FIXED_LEN = {"cn_mobile": 11}
-    if sem in FIXED_LEN and (cf.get("len") or {}).get("max") not in (None, FIXED_LEN[sem]):
+    if sem in FIXED_LEN and (cf.get("len") or {}).get("p50") not in (None, FIXED_LEN[sem]):
         sem = cf["kind"]
     g = {"gen": SEM2GEN.get(sem, "text")}
     import re as _re
@@ -111,7 +124,7 @@ def apply_overlay(facts, overlay):
             ks.remove(hit)
             cf = T[t]["columns"][c]
             # 退回统计原本的判断:有枚举事实就退回枚举,否则退回类型
-            cf["semantic"] = "enum" if cf.get("enum") else cf["kind"]
+            cf["semantic"] = cf.get("semantic0") or ("enum" if cf.get("enum") else cf["kind"])
             log.append(f'否决 {t}.{c} → {hit["table"]}.{hit["column_ref"]}:{r.get("reason","")[:60]}')
         elif v == "retarget":
             hit["table"], hit["column_ref"] = r["to_table"], r["to_column"]
@@ -338,6 +351,15 @@ def _assertions(facts, names, fkmap, dialect="sqlite"):
                                 "sql": f'select count(*) from {qi(tn)} where {qi("created")} is not null '
                                        f'and {qi(c)} is not null and {qi(c)} < {qi("created")}',
                                 "期望": 0, "需确认": "按列名对推的,业务上不一定成立"})
+        for c in sorted(cols):
+            if "start" not in c.lower(): continue
+            e = c.lower().replace("start", "end")
+            m = next((x for x in cols if x.lower() == e), None)
+            if m:
+                out.append({"名": f"{tn}: {m} 不该早于 {c}", "表": tn, "类": "时间线(候选)",
+                            "sql": f'select count(*) from {qi(tn)} where {qi(c)} is not null '
+                                   f'and {qi(m)} is not null and {qi(m)} < {qi(c)}',
+                            "期望": 0, "需确认": "按列名对推的,业务上不一定成立"})
         for a, b in TIME_PAIRS:
             if a in cols and b in cols:
                 out.append({"名": f"{tn}: {b} 不该早于 {a}", "表": tn, "类": "时间线(候选)",

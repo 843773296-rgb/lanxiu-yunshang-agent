@@ -17,7 +17,7 @@
 「没红过的检查等于没有」。改坏 → 确认变红 → 改回来。
 本文件里的断言全部是双向的:该找到的没找到要红,不该找到的找到了也要红。
 """
-import os, sys, shutil, sqlite3, tempfile
+import json, os, re, shutil, sqlite3, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -273,6 +273,78 @@ def main():
     ck({t: m["values"] for t, m in mn_mem.items()} ==
        {t: m["values"] for t, m in mn_str.items()},
        "两条路径的 manifest 也一样(回滚依据不能因为省内存而变)")
+
+    print("\n【接口入口 · 靶子是假的,校验是项目真正那一份】")
+    import apimock, apidrive, datetime as _dt
+    f6 = D.discover(conn, sc) if False else None      # 用主库那份 facts
+    src = os.path.join(ROOT, "backend", "lanxiu.db")
+    if os.path.exists(src):
+        cp6 = os.path.join(tmpd, "api_test.db"); shutil.copy(src, cp6)
+        c6 = S.connect(cp6); f6 = D.discover(c6, c6.reflect())
+        DRIVEN = ["customer", "appointment"]
+        p6 = P.build(f6, scale=0.2, tables=DRIVEN)
+        m6, _mm = G.generate(p6, c6)
+
+        # 规格校验:三类写错的规格都要被挡下
+        base6, store6, stop6 = apimock.serve()
+        spec6 = json.loads(json.dumps(apimock.SPEC)); spec6["base"] = base6
+        ck(not apidrive.check_spec(spec6, p6), "正确的规格能通过校验",
+           str(apidrive.check_spec(spec6, p6))[:120])
+        bad6 = json.loads(json.dumps(spec6))
+        bad6["endpoints"]["customer"]["create"]["fields"]["name"] = "根本没这列"
+        ck(apidrive.check_spec(bad6, p6), "字段映到不存在的列 → 挡下")
+        bad7 = json.loads(json.dumps(spec6)); bad7["base"] = "127.0.0.1:8760"
+        ck(apidrive.check_spec(bad7, p6), "base 不是 http(s):// → 挡下")
+
+        # **全局环判定污染局部**:拿整库方案来驱动,必须被挡下
+        pall = P.build(f6, scale=0.2)
+        defer = [1 for t in DRIVEN for g in pall["tables"][t]["columns"].values()
+                 if g.get("gen") == "fk" and g.get("deferred") and g.get("table") in DRIVEN]
+        if defer:
+            ck(apidrive.check_spec(spec6, pall),
+               "整库方案里被判成「两阶段」的外键 → 挡下(接口这条路没有回填)")
+
+        # **显式种两条必被拒的**,不靠边界值的运气。
+        # 第一版指望「造出来的数据里碰巧有空名字」,scale 小的时候一条都没有,
+        # 检查就空过去了 —— 和「夹具写死 id」是同一类毛病:**用例的存在与否交给了偶然**。
+        if len(m6["customer"]) >= 3:
+            m6["customer"][0]["name"] = ""                       # 姓名必填
+            m6["customer"][2]["phone"] = m6["customer"][1]["phone"]   # 手机号重复
+
+        # 把预约时间挪到未来,才验得了 id 翻译(不然全被「必须提前预约」挡掉)
+        fut = _dt.datetime.now() + _dt.timedelta(days=3)
+        for r in m6["appointment"]:
+            r["start_ts"] = fut.strftime("%Y-%m-%d %H:%M:%S")
+            r["end_ts"] = (fut + _dt.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+
+        d6 = apidrive.Driver(spec6, dry=False, log=lambda *a: None)
+        rep6 = d6.run(p6, m6)
+        ck(rep6["成功"] > 0, f'接口造出了数据(成功 {rep6["成功"]} 条)')
+        ck(all(str(c["id"]).startswith("SVR-C") for c in store6.customer),
+           "落到服务端的是**服务端分配的 id**,不是我们方案里那个假 id")
+        ck(store6.appointment and all(a["customer_id"].startswith("SVR-C")
+                                      for a in store6.appointment),
+           "子表的外键被翻译成了服务端真实 id(翻译一断,引用会静默指错)",
+           str([a.get("customer_id") for a in store6.appointment][:3]))
+        says = " | ".join(r["接口说"] for r in rep6["规则"])
+        ck("必填" in says, "接口拒了「姓名为空」——库里这列可空,业务不允许", says[:120])
+        ck("完全相同" in says, "接口拒了「手机号重复」——库里这列不唯一,业务不允许", says[:120])
+        ck(len(rep6["规则"]) == 2 and sum(r["撞了几次"] for r in rep6["规则"]) == 2,
+           "拒绝按错误归类:2 条拒绝归成 2 类规则", str(rep6["规则"])[:140])
+        ck(all(not re.search(r"PRD N", r["接口说"]) for r in rep6["规则"]),
+           "报告展示的是错误**原文**,不是用来分组的归一化形式")
+
+        n6, cant6 = d6.rollback()
+        ck(len(store6.customer) == 0 and len(store6.appointment) == 0,
+           f"照创建顺序倒着删,删干净了({n6} 条)")
+
+        # 没有删除接口的表:必须如实说删不掉,不许假装成功
+        nod = json.loads(json.dumps(spec6)); nod["endpoints"]["customer"].pop("delete")
+        ck(apidrive.rollbackable(nod, DRIVEN) == ["customer"],
+           "没声明删除接口的表要被点名(灌得进去但删不掉,比灌不进去糟)")
+        stop6()
+    else:
+        print("  (跳过:backend/lanxiu.db 不在)")
 
     print("\n【安全闸门】")
     for tgt, env, should in [("shop.db", "生产", False), ("shop.db", "", False),

@@ -218,7 +218,7 @@ def _fk_pool(shape, parents, n, r):
     return pool[:n]
 
 
-def _not_before(base, cols, col, r, max_days=30):
+def _not_before(base, cols, col, r, max_days=30, strict=False):
     """造一个「不早于 base」的时间值。**这个函数存在的理由是它被写错过两次。**
 
     朴素写法是「取 base 的日期部分,加 0..N 天,再随机一个时分」。
@@ -237,7 +237,14 @@ def _not_before(base, cols, col, r, max_days=30):
         return base
     nv = d.isoformat() if cols[col]["gen"] == "date" else \
         f"{d.isoformat()} {r.randint(8,21):02d}:{r.randint(0,59):02d}:00"
-    return nv if nv >= str(base) else str(base)
+    if nv > str(base) or (nv == str(base) and not strict): return nv
+    # strict:必须**严格晚于**。起止时间就是这种 —— 接口判的是 `end <= start` 就拒,
+    # 相等也不行。兜底退回"等于"在「不早于」下是对的,在「必须晚于」下还是错的。
+    # **同一个词在两条规则下的边界不一样,兜底也得跟着分。**
+    if not strict: return str(base)
+    d2 = datetime.date.fromisoformat(str(base)[:10]) + datetime.timedelta(days=1)
+    return d2.isoformat() if cols[col]["gen"] == "date" else \
+        f"{d2.isoformat()} {r.randint(8,21):02d}:{r.randint(0,59):02d}:00"
 
 
 def _depths(start, trans):
@@ -438,6 +445,26 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None):
                     if last and str(v) < str(last):
                         row[c] = _not_before(last, cols, c, rt, 20)
                     last = row[c]
+        # 起止成对的列:结束不得早于开始。
+        # 这条是**接口照出来的**:预约表的 start_ts / end_ts 既不以 _at 结尾、
+        # 也不在写死的那张时间线表里,于是两套时间修正一条都没覆盖到它们,
+        # 造出来 4 条「结束早于开始」的预约 —— 数据库照单全收,写接口当场拒绝。
+        # 直连那条路对此完全无感,因为库里它们只是两个字符串。
+        pairs = []
+        for c in cols:
+            if "start" in c.lower():
+                e = c.lower().replace("start", "end")
+                m = next((x for x in cols if x.lower() == e), None)
+                if m and cols[c]["gen"] in ("date", "datetime") \
+                   and cols[m]["gen"] in ("date", "datetime"):
+                    pairs.append((c, m))
+        if pairs:
+            rp = rng_for(seed, tname, "__起止")
+            for row in rows:
+                for a, b in pairs:
+                    if row.get(a) and row.get(b) and str(row[b]) <= str(row[a]):
+                        row[b] = _not_before(row[a], cols, b, rp, 2, strict=True)
+
         # 兜底:任何 *_at 都不该早于 created。
         # 状态机管得住它认领的那几列,管不住剩下的(synced_at / on_shelf_at / handled_at…)——
         # 那些是各自独立抽的,自然会掉到下单时间前面。
