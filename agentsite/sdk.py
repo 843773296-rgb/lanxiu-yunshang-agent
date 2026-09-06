@@ -15,7 +15,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 KEYFILE = os.path.expanduser("~/.deepseek-key")
 
-from claude_agent_sdk import query, ClaudeAgentOptions   # noqa: E402
+try:
+    from claude_agent_sdk import query, ClaudeAgentOptions   # noqa: E402
+except ModuleNotFoundError as _e:      # noqa: E402
+    # 踩过两次(都是我自己):`python3 agent/liability_eval.py` 直接跑,
+    # 报一句 "No module named 'claude_agent_sdk'",看不出该怎么办。
+    # SDK 只装在 agentsite/.venv 里 —— 凡是 import sdk 的脚本都得用那个 python。
+    raise ModuleNotFoundError(
+        f"{_e}\n\n"
+        "  claude_agent_sdk 只装在 agentsite/.venv 里。\n"
+        "  凡是 import sdk 的脚本(sdk / gen_compare / liability_eval / growth_eval /\n"
+        "  tool_eval / vision_eval)都要用那个解释器:\n\n"
+        "      ./agentsite/.venv/bin/python <脚本>\n\n"
+        "  没有 .venv 就先 ./start.sh 建一次。") from None
 import guards   # noqa: E402
 sys.path.insert(0, os.path.join(ROOT, "agent"))
 import trace       # noqa: E402  记录仪:**和 V1 共用同一份**,写同一个文件、同一套字段
@@ -187,7 +199,15 @@ TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
 # P6 当场拦住了我最初「放进两个角色共用那包」的写法:工具发给了工艺顾问,
 # 而管它的规矩 TK08 只写给后台运营 —— **工具给了、规矩没给**。
 # 它逼我决定这个工具归谁,而不是默认发给所有人。
-TASK_ONLY_TOOLS = ["mcp__shop__get_lifecycle", "mcp__shop__get_member_priority"]
+TASK_ONLY_TOOLS = [
+    "mcp__shop__get_lifecycle", "mcp__shop__get_member_priority",
+    # 售后判责跑在这个角色上,而**判定表在 kb_tables 里**。
+    # 原来没给:get_maintain 的描述明写「判定标准要另外查 kb_tables」,
+    # liability_eval 的提示词也明写「再用 kb_tables 取售后争议判定」——
+    # 而这个角色根本调不了它。18/18 全过,但**每条判责结论都没有依据来源**,
+    # 模型是凭自己对「什么算公平」的理解在判。改公司政策,它不会跟着变。
+    "mcp__kb__kb_tables",
+]
 
 # ── 提示词:唯一源头在根目录 prompts.py ──────────────────────────────
 # 原来这里是两份 64 行 + 18 行的字面量,而 agent/chat.py 里还有**另一份**同角色的

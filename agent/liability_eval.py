@@ -104,6 +104,11 @@ def judge(case, text, traj, guard_violations=None):
 
     if "get_maintain" not in names:
         bad.append("轨迹:没查现场(get_maintain)—— 判据藏在现场里,不在问题描述里")
+    # **判据来源**这一轴是补票买的:原来只查了现场、没查判定表,于是 18/18 全过,
+    # 而那个角色根本没有 kb_tables —— 每条结论都是模型凭自己对「什么算公平」的
+    # 理解得出的。判分器太松,满分成绩单就是假的。
+    if "kb_tables" not in names:
+        bad.append("轨迹:没取判定表(kb_tables)—— 凭理解判责,公司改了标准它不会跟着变")
     if not tm.mentions(t, WHO[who]):
         bad.append(f"内容:没说清责任归谁(应为「{who}」)")
     if not tm.mentions(t, acts):
