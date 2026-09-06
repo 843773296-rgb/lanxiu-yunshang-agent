@@ -54,6 +54,7 @@
 | `mcp/` | **三个 MCP 服务**:`kb`(知识库 10 个工具)/ `task`(任务 5 个)/ `shop`(店务 4 个)。裸手写 JSON-RPC,没用 SDK |
 | `agent/` | **V1 和 V2**,以及全部评测集、记录仪、判分器 |
 | `agentsite/` | **V3**。Claude Agent SDK 为内核,四个 Hook 全程把关,一个 `quote` Skill |
+| `fakedata/` | **假数据工厂**。给任意库灌假数据:反射 → 挖关系 → 出方案 → 确定性生成 → 灌入 → 自检 → 照 manifest 回滚。详见 `假数据工厂.md`。目标是 MySQL,但**只在 SQLite 上实跑过** |
 | `tools/` | 飞书发布(`feishu_publish.py`)、项目日志生成(`make_log.py`) |
 | `.feynman/` | 学习引擎的产物:报告、台账、考试记录、调用记录仪日志 |
 

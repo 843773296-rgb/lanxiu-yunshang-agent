@@ -152,3 +152,8 @@ cd ../异常场景与验收助手
 TARGET=../澜绣云裳agent python3 tools/acceptance.py
 TARGET=../澜绣云裳agent python3 tools/build_demo.py
 ```
+
+## 假数据工厂
+
+给任意库灌假数据的工具,代码在 `fakedata/`,说明见 [`假数据工厂.md`](假数据工厂.md)。
+在本库上实测:58 张表、**0 个明写外键** → 挖出 59 条表关系 → 灌 246 行 → 0 条新违规 → 回滚回到基线。
