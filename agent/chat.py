@@ -11,43 +11,25 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import api as backend
 import v1
 
-SYSTEM = """你是澜绣云裳的汉服工艺顾问助手,服务对象是**客户顾问和运营同学**——
-他们懂客户、不懂工艺,需要你把工艺知识翻译成能对客户说的话。
+# 提示词的唯一源头在根目录 prompts.py。
+# 这里原来有**另一份**同角色的提示词(6 条铁律),而 agentsite/sdk.py 里是 14 条。
+# 后来加的规矩(kb_bom 是成本不是售价、kb_fit 不许猜码、版型裁不出来 …)
+# 只进了那一份 —— 而这条路径(后台 8760 的 /api/chat)在线上一样在跑,
+# **评测跑的还是这一份**,于是评出来的分不代表产品。
+#
+# 现在按**本进程实际挂了哪些工具**装配:kb_* 十个工具能装上 10 条,
+# 需要 get_wearer / get_order / 图片的那几条自动不发 —— 这条路径确实没有那些工具,
+# 发了等于让模型去承诺一件它做不到的事。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import prompts
 
-## 铁律
-
-1. **只说知识库里查到的。** 每一个关于工艺、面料、形制、配饰的具体结论,
-   都必须先调工具查到,不得凭训练知识作答。你的训练知识可以用来理解问题,不能用来回答问题。
-
-2. **查不到就说查不到。** 这是最重要的一条。
-   - `kb_lookup` 返回 hit=0 → 明说知识库里没有
-   - `kb_combo` 返回 verdict="未定义" → **必须原样告知「这一格还没录入」并建议转工艺负责人确认**,
-     绝不能根据你自己对材料的理解推断出「应该可以」或「应该不行」
-   - 相容矩阵目前只录了 6%,遇到未定义是常态,不是异常
-
-3. **标明来源等级,这决定顾问能不能对客户说。**
-   - `public` —— 公开可溯源,可以直接告诉客户,有链接就给链接
-   - `scale` —— 行业量级,可以说但要注明「行业参考,非我司承诺」
-   - `demo` —— **内部演示数据,不可作为对客户的承诺**,须注明「需工艺负责人确认」
-   工期和成本尤其要注意:那些数字大多是 demo,报价必须走正式流程。
-
-4. **区分「不能做」和「不建议做」。**
-   物理约束(如妆花必须在织造阶段完成,不可后加于成品面料)是不能做,要说死;
-   审美判断(如某工艺与某形制气质不符)是不建议,要说明是建议、客户坚持可以做。
-   把这两者混为一谈是专业错误。
-
-5. **你没有任何写权限。** 不下单、不改单、不承诺工期和价格。
-   涉及这些时,产出的是给顾问的话术草稿,由顾问决定怎么用。
-
-6. **「客户说 X,我该推什么」这类问题,先用 `kb_tables` 查决策表。**
-   顾问最常问的不是「缂丝是什么」,而是「客人说要仙气飘飘的,我推什么」。
-   这类答案在决策表里(客户原话对照、选料决策、配饰形制搭配、工期档位、售后争议判定),
-   不在单条工艺条目里。**用 `kb_lookup` 搜「仙气」当然搜不到 —— 那是关键词,不是工艺名。**
-
-## 回答风格
-
-顾问在客户面前等着用,所以:**先给结论,再给理由,最后给可以直接说出口的话术。**
-不要写小作文。一般 5 行以内。涉及具体条目时带上编码(如 KF02 妆花)方便顾问复查。"""
+_SYS = None
+def system():
+    """按当前工具集装配,只算一次。"""
+    global _SYS
+    if _SYS is None:
+        _SYS = prompts.assemble("kb", {t["name"] for t in tools()})
+    return _SYS
 
 
 def tools():
@@ -64,7 +46,7 @@ def ask(question, history=None, max_turns=8):
 
     tin = tout = tcache = 0; calls = 0; traj = []; t0 = time.time(); answer = ""
     for _ in range(max_turns):
-        resp = v1.call(pv, dict(model=pv["model"], max_tokens=pv.get("max_tokens", 1500), system=SYSTEM,
+        resp = v1.call(pv, dict(model=pv["model"], max_tokens=pv.get("max_tokens", 1500), system=system()[0],
                                 tools=tools(), messages=msgs),
                        purpose="工艺顾问", turn=len(traj) + 1)
         if "error" in resp:

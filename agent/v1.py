@@ -161,15 +161,25 @@ SUBMIT={"name":"submit_finding","description":"提交最终草稿。调用后本
     "confidence":{"type":"string","enum":["高","中","低"]}},
   "required":["root_cause","recommended_action","evidence","confidence"]}}
 
-SYSTEM="""你是澜绣云裳门店客户运营管理后台的人工任务助手。
+# 提示词的唯一源头在根目录 prompts.py。
+# 这里原来是**第三份**同角色(后台人工任务助手)的提示词,只有 4 条铁律,
+# 而 agentsite/sdk.py 那份有 6 条 —— 少的两条里包含「客户合并判定标准」,
+# 那条是有实测的:**不给标准时模型 0/2,给了 2/2**。
+# 而 V1 的评测里恰恰有合并题。于是三代对比里 V1 是**少带一条已知能加分的规矩**上的场,
+# 「三代提示词本来就不同」这条限定不是脚注,它在咬人。
+#
+# 现在按本进程实际挂的工具装配。V1 多一个 submit_finding(交结构化结果),
+# 所以它拿到的是「调 submit_finding 提交」那条,而不是 V3 的「按四段写纯文本」。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import prompts
 
-你的产出是**草稿**,供人确认或修改后使用。你没有任何写权限,不得建议由你自己执行操作。
-
-铁律:
-1. 结论必须建立在你实际读到的数据上。引用的每一个编号(押金单号、流水号、客户ID)都必须是你从工具返回值里看到的原文,不得编造或推测。
-2. 数据不足以判断时,confidence 填「低」,并在 root_cause 里写明缺什么。
-3. 不得建议绕过审批链、幂等号或重试上限。退款必须由客服或店长发起、店长复核,单笔达 1000 元时增加财务复核。
-4. 分析完成后调用 submit_finding 提交,不要用纯文本回复结论。"""
+_SYS_TASK = None
+def system_task():
+    global _SYS_TASK
+    if _SYS_TASK is None:
+        _SYS_TASK = prompts.assemble(
+            "task", {t["name"] for t in _tools("task", [SUBMIT])})
+    return _SYS_TASK
 
 def run_case(pv, prompt, max_turns=12, purpose="人工任务"):
     msgs=[{"role":"user","content":prompt}]
@@ -177,7 +187,7 @@ def run_case(pv, prompt, max_turns=12, purpose="人工任务"):
     tin=tout=tcache=0; calls=0; t0=time.time(); finding=None; traj=[]; last_text=""
     for _t in range(max_turns):
         resp=call(pv,dict(model=pv["model"],max_tokens=pv.get("max_tokens",2000),
-                          system=SYSTEM,tools=tools,messages=msgs),
+                          system=system_task()[0],tools=tools,messages=msgs),
                   purpose=purpose,turn=_t+1)
         if "error" in resp: raise RuntimeError(json.dumps(resp["error"],ensure_ascii=False)[:300])
         calls+=1
