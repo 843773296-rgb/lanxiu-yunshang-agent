@@ -21,7 +21,9 @@ PAGES = {"/": "station.html", "/duty": "duty.html", "/queue": "queue.html", "/he
          "/chat": "chat.html", "/scheme": "scheme.html",
          "/workbench": "workbench.html", "/acceptance": "acceptance.html",
          # 着装人的身体生命周期 —— 和会员生命周期(新客/沉默/流失)不是一回事
-         "/wearers": "wearers.html"}
+         "/wearers": "wearers.html",
+         # demo:照「学习应用」框架做的顾问学堂,**没接进工作站**,只挂个路由方便看
+         "/demo": "demo.html"}
 
 sys.path.insert(0, HERE)
 import sdk

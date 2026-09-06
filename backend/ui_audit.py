@@ -40,7 +40,12 @@ def audit(src):
     # ① data-* 属性:模板里用了,但没有对应的 querySelectorAll 绑定
     used = set(re.findall(r'\bdata-([a-z][a-z0-9-]*)\s*=', s)) - {"k", "f", "theme"}
     bound = set()
-    for sel in qsa:
+    # 事件委托:closest("[data-x]") / matches("[data-x]") 也是绑定。
+    # 只认 querySelectorAll 的话,**纯标记型的 data-\* 全会被误报成死控件** ——
+    # 而委托恰恰是这类按钮最正常的写法(参照原型里也是这么写的)。
+    # 这个误报出现过两次:第一次我改了代码去迁就审计,第二次才想起来该修的是审计。
+    # **同一个误报出现两次,就该修检查。**
+    for sel in qsa + re.findall(r'\.(?:closest|matches)\("([^"]+)"\)', s):
         bound |= set(re.findall(r'\[data-([a-z][a-z0-9-]*)\]', sel))
     # dataset.xxx 读取的属于「数据载体」,由别的 handler 消费,不算死控件
     carriers = {m.replace("-", "") for m in used} & set(re.findall(r'dataset\.([a-zA-Z]\w*)', s))
