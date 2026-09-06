@@ -54,7 +54,7 @@
 | `mcp/` | **三个 MCP 服务**:`kb`(知识库 10 个工具)/ `task`(任务 5 个)/ `shop`(店务 4 个)。裸手写 JSON-RPC,没用 SDK |
 | `agent/` | **V1 和 V2**,以及全部评测集、记录仪、判分器 |
 | `agentsite/` | **V3**。Claude Agent SDK 为内核,四个 Hook 全程把关,一个 `quote` Skill |
-| `fakedata/` | **假数据工厂**。给任意库灌假数据:反射 → 挖关系 → 出方案 → 确定性生成 → 灌入 → 自检 → 照 manifest 回滚。模型层只判统计推不出来的三件事(否决误报关系/认领无语义列/推状态机),走 `agent/v1.py::call()` 那个唯一发请求口,记录仪自动接上。详见 `假数据工厂.md`。SQLite 与 **MySQL 都实跑验证过**(MySQL 那条要人手起实例:`fakedata/mysql_e2e.py`,不进 check.sh) |
+| `fakedata/` | **假数据工厂**。给任意库灌假数据:反射 → 挖关系 → 出方案 → 确定性生成 → 灌入 → 自检 → 照 manifest 回滚。模型层只判统计推不出来的四件事(否决误报关系/认领无语义列/推状态机/判禁配组合是真规则还是样本太小),走 `agent/v1.py::call()` 那个唯一发请求口,记录仪自动接上。详见 `假数据工厂.md`。SQLite 与 **MySQL 都实跑验证过**(MySQL 那条要人手起实例:`fakedata/mysql_e2e.py`,不进 check.sh) |
 | `tools/` | 飞书发布(`feishu_publish.py`)、项目日志生成(`make_log.py`) |
 | `.feynman/` | 学习引擎的产物:报告、台账、考试记录、调用记录仪日志 |
 
