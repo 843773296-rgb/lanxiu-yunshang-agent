@@ -604,15 +604,51 @@ def create_download(kind,filters,actor="魏欣新"):
 #
 # 校验一律走 backend/rules.py —— 那是产品真实在用的规则,不在这儿另写一遍。
 
+def _insert(table, vals, required):
+    """按列名写一行。**必填列对不上就当场炸,不静默丢。**
+
+    这个函数是补票买的。原来两个 create 里写的是:
+
+        use = [k for k in cols if k in vals]      # 只写表里真有的列
+
+    本意是「列名对不上也不炸」,实际效果是**把崩溃换成了静默丢数据**——
+    create_appointment 的 vals 写了 `appt_at`,而表里是 `start_ts`/`end_ts`,
+    于是**时间被严格校验了(补录权限那条就是它),然后没有被存下来**;
+    create_followup 同样丢了 `ts`。建出来的记录一片 NULL,而接口返回 ok:true。
+
+    **崩溃是好事,静默丢数据不是。** 现在必填列不在表里就直接抛,
+    在开发期第一次调用就会炸出来,而不是在某天有人问「这条预约几点」时才发现。
+    """
+    with sqlite3.connect(DB) as c:
+        cols = {x[1] for x in c.execute(f"PRAGMA table_info({table})")}
+        miss = [k for k in required if k not in cols]
+        if miss:
+            raise RuntimeError(f"{table} 表没有这些列:{miss} —— 代码和库结构对不上,"
+                               f"现有列:{sorted(cols)}")
+        use = [k for k in vals if k in cols]
+        dropped = [k for k in vals if k not in cols]
+        if dropped:   # 非必填的对不上也要出声,别让它悄悄消失
+            print(f"⚠ {table}: 字段 {dropped} 不在表里,已忽略", file=sys.stderr)
+        c.execute(f"INSERT INTO {table}({','.join(use)}) VALUES({','.join('?' * len(use))})",
+                  [vals[k] for k in use])
+
+
 def create_customer(d, actor="魏欣新"):
     """新建客户档案。PRD 6.2:姓名必填、手机号唯一、疑似重复要提示。"""
     import datetime
     role = d.get("role") or "顾问"
     ex = rows("SELECT id,name,phone,shop,birthday,addr FROM customer")
-    ok, code, why = rules.validate_customer(d, ex, actor_role=role)
+    # validate_customer 返回的是 **4 个值**:(ok, code, reason, suspects)。
+    # 第一版只解了 3 个,直接 ValueError —— 而且 suspects 是有业务含义的:
+    # NEED_REVIEW 那条规则(姓名相似 + 尾号门店相同 → 转店长确认)
+    # 要把疑似的那几条**带给人看**,不然店长凭什么确认。
+    ok, code, why, suspects = rules.validate_customer(d, ex, actor_role=role)
     if not ok:
-        log_op(actor, "customer", "-", "—", "新建", False, code, why, {"role": role})
-        return dict(ok=False, code=code, reason=why)
+        log_op(actor, "customer", "-", "—", "新建", False, code, why,
+               {"role": role, "suspects": [x["id"] for x in (suspects or [])]})
+        return dict(ok=False, code=code, reason=why,
+                    疑似重复=[dict(id=x["id"], name=x["name"], shop=x.get("shop"))
+                              for x in (suspects or [])])
     ph = rules.norm_phone(d.get("phone"))
     n = rows("SELECT COUNT(*) c FROM customer")[0]["c"]
     cid = f"C{10000 + n + 1}"
@@ -638,16 +674,17 @@ def create_appointment(d, actor="魏欣新"):
         return dict(ok=False, code=code, reason=why)
     n = rows("SELECT COUNT(*) c FROM appointment")[0]["c"]
     aid = f"AP{datetime.datetime.now():%y%m%d}{n + 1:04d}"
-    with sqlite3.connect(DB) as c:
-        cols = [x[1] for x in c.execute("PRAGMA table_info(appointment)")]
-        vals = {"id": aid, "customer_id": d.get("customer_id"), "shop": d.get("shop"),
-                "advisor": d.get("advisor"), "status": "待确认",
-                "appt_at": d.get("appt_at") or d.get("time"), "note": d.get("note")}
-        use = [k for k in cols if k in vals]
-        c.execute(f"INSERT INTO appointment({','.join(use)}) VALUES({','.join('?' * len(use))})",
-                  [vals[k] for k in use])
+    # 列名以**表**为准:appointment 是 start_ts / end_ts,不是 appt_at。
+    # 校验读的也是 d["start"] / d["end"](见 rules.validate_appointment),两头对齐。
+    _insert("appointment",
+            {"id": aid, "customer_id": d.get("customer_id"), "shop": d.get("shop"),
+             "advisor": d.get("advisor"), "status": "待确认",
+             "start_ts": (d.get("start") or "").replace("T", " "),
+             "end_ts": (d.get("end") or "").replace("T", " ")},
+            required=["id", "customer_id", "start_ts", "end_ts", "status"])
     log_op(actor, "appointment", aid, "—", "待确认", True, "CREATE",
-           f"新建预约 {aid},客户 {d.get('customer_id')},时间 {vals['appt_at']}", {"role": role})
+           f"新建预约 {aid},客户 {d.get('customer_id')},"
+           f"{d.get('start')} → {d.get('end')}", {"role": role})
     return dict(ok=True, code="CREATE", id=aid, reason=f"已建预约 {aid},状态「待确认」")
 
 
@@ -660,16 +697,15 @@ def create_followup(d, actor="魏欣新"):
         return dict(ok=False, code="NO_CUSTOMER", reason=f"客户 {d['customer_id']} 不存在")
     n = rows("SELECT COUNT(*) c FROM followup")[0]["c"]
     fid = f"FU{datetime.datetime.now():%y%m%d}{n + 1:04d}"
-    with sqlite3.connect(DB) as c:
-        cols = [x[1] for x in c.execute("PRAGMA table_info(followup)")]
-        vals = {"id": fid, "customer_id": d["customer_id"],
-                "content": d.get("content") or d.get("note"),
-                "note": d.get("content") or d.get("note"),
-                "advisor": d.get("advisor"), "created": datetime.date.today().isoformat(),
-                "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}
-        use = [k for k in cols if k in vals]
-        c.execute(f"INSERT INTO followup({','.join(use)}) VALUES({','.join('?' * len(use))})",
-                  [vals[k] for k in use])
+    # followup 的列是 id / customer_id / appt_id / ts / channel / content / advisor
+    _insert("followup",
+            {"id": fid, "customer_id": d["customer_id"],
+             "appt_id": d.get("appt_id"),
+             "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+             "channel": d.get("channel") or "电话",
+             "content": d.get("content") or d.get("note"),
+             "advisor": d.get("advisor")},
+            required=["id", "customer_id", "ts", "content"])
     log_op(actor, "followup", fid, "—", "已记录", True, "CREATE",
            f"跟进 {d['customer_id']}:{(d.get('content') or d.get('note'))[:40]}", {})
     return dict(ok=True, code="CREATE", id=fid, reason=f"已记录跟进 {fid}")
