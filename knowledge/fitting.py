@@ -177,7 +177,9 @@ if __name__ == "__main__":
 
     print("\n拿库里真实的 18 个客户跑一遍:")
     feats = {}
-    for r0 in con.execute("SELECT customer_id,feature FROM body_feature"):
+    # 体型特征挂着装人了 —— 这里换算回它所属的门店档案,自测口径不变
+    for r0 in con.execute("""SELECT w.customer_id, b.feature FROM body_feature b
+                             JOIN wearer w ON w.id = b.wearer_id"""):
         feats.setdefault(r0["customer_id"], []).append(r0["feature"])
     item_nm = {r0["code"]: r0["name"] for r0 in con.execute("SELECT code,name FROM measure_item")}
     dist = {}
@@ -188,7 +190,12 @@ if __name__ == "__main__":
         rr = recommend(ms, "PT04", None, specs, "XZ03", mth, feats.get(cid, []))
         g = rr["档位"]; dist[g] = dist.get(g, 0) + 1
     print("  ", dist)
-    assert sum(dist.values()) == 18
+    # 别写死人数 —— 量体覆盖是会变的(补全那一轮从 18 涨到 95)。
+    # **夹具写死数量,迟早被一次合理的数据变更打断。**
+    # 这里要断言的其实是「有量体记录的人,一个都没被 recommend 悄悄丢掉」,
+    # 所以拿一句独立的 COUNT 去对,而不是拿一个常数去对。
+    n = con.execute("SELECT COUNT(DISTINCT customer_id) FROM measure_rec").fetchone()[0]
+    assert sum(dist.values()) == n, f"有人没出档位:{sum(dist.values())} / {n}"
     assert "需补量" in dist, "应该有客户因为量体模版不含腰围/裙长而需补量"
     print("   其中「需补量」的是用『上衣用量体』模版的客户 —— 他们没量过腰围和裙长,")
     print("   系统不猜,直接说要补量。")

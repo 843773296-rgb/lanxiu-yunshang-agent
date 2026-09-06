@@ -91,7 +91,12 @@ CREATE TABLE measure_tpl(code TEXT PRIMARY KEY, name TEXT, descr TEXT, status TE
 CREATE TABLE tpl_item(tpl TEXT, item TEXT, sort INT);
 -- 体型特征 —— 「差 >5cm **或有明显体型特征** 即全定制」里的后半句,
 -- 之前只是知识库里的一句话,没有任何字段承载它,所以那条规则永远跑不到。
-CREATE TABLE body_feature(customer_id TEXT, feature TEXT, note TEXT, recorded_by TEXT, ts TEXT);
+-- 体型特征挂**着装人**,不挂门店档案。
+-- 原来挂 customer_id,而一条档案下可能有 3 个人 ——
+-- 妈妈的「溜肩」会被算到 3 岁儿子头上,而规则是「有明显体型特征即全定制」,
+-- 于是孩子被直接推成全定制:**加价又加工期**。
+-- 体型特征和身高胸围一样,是**这个人身上的事**。
+CREATE TABLE body_feature(wearer_id TEXT, feature TEXT, note TEXT, recorded_by TEXT, ts TEXT);
 -- ── 账户 ────────────────────────────────────────────────────────────────
 -- **账户在门店档案之上。** 一个人 = 一个账户;门店档案(customer)可以有好几条 ——
 -- 在不同店建过档就是两条,这正是「客户合并」工单要解决的事。
@@ -178,7 +183,14 @@ CREATE TABLE workorder(
 -- 老记录一律指向该账号的「本人」着装人,所以历史数据不用改口径。
 CREATE TABLE measure_rec(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, tpl TEXT,
   item TEXT, value REAL, measured_by TEXT, measured_at TEXT, method TEXT DEFAULT '到店',
-  wearer_id TEXT);
+  wearer_id TEXT,
+  -- 08-量体与版型.md 第四节:「每次量体必须记下三件事,**缺一件就等于没量**」——
+  -- ①数值+单位 ②**量体条件** ③量体人+时间。前后两件早就有了,唯独缺第二件,
+  -- 而文档专门写着它「最常漏」:同一个人穿厚内搭和不穿,胸围差 3–4cm,
+  -- **没记条件的尺寸,返修时无法判断是量错了还是穿法变了**,争议只能靠嗓门解决。
+  cond_inner TEXT,   -- 内搭:无 / 薄 / 厚
+  cond_shoe TEXT,    -- 鞋:赤足 / 平底 / 高跟(影响身高与裙长)
+  cond_breath TEXT); -- 呼吸状态:平静呼气 / 吸气
 CREATE TABLE content(code TEXT PRIMARY KEY, title TEXT, kind TEXT, status TEXT,
   channel TEXT, author TEXT, published TEXT, views INT);
 CREATE TABLE activity(code TEXT PRIMARY KEY, name TEXT, kind TEXT, status TEXT,
@@ -1181,19 +1193,17 @@ def run():
     for k,cid in enumerate(cust_ids):
         tpl=TPL[k%4][0]
         for it in dict(TPL[k%4][4] and {i:1 for i in TPL[k%4][4]}):
-            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,measured_at,method) VALUES(?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
+                      "measured_at,method,cond_inner,cond_shoe,cond_breath) "
+                      "VALUES(?,?,?,?,?,?,?,?,?,?)",
               (cid,tpl,it,round(IDEAL[it]+random.uniform(-6,6),1),random.choice(ADV),
-               f"2026-0{6+k%3}-1{k%9} 14:30", "远程" if k%5==3 else "到店"))
+               f"2026-0{6+k%3}-1{k%9} 14:30", "远程" if k%5==3 else "到店",
+               ["无","薄","厚"][k%3], ["赤足","平底","高跟"][k%3], "平静呼气"))
     # 体型特征:每 4 个客户里有 1 个记了 —— 记了的必须走全定制,与差值无关
     FEAT=[("溜肩","肩斜大于常规 3°,标准版肩部会起空"),
           ("含胸","前胸量偏小而后背偏宽,需前后片分别调整"),
           ("高低肩","左右肩差 1.5cm 以上,须单独出版"),
           ("腹凸","腰腹差小,标准腰位会顶")]
-    for k,cid in enumerate(cust_ids):
-        if k%4: continue
-        f,note=FEAT[(k//4)%4]
-        c.execute("INSERT INTO body_feature VALUES(?,?,?,?,?)",
-                  (cid,f,note,random.choice(ADV),f"2026-0{6+k%3}-1{k%9} 14:40"))
 
     # ── 账户:按手机号归,一个人一个 ────────────────────────────────
     # 106 条门店档案只有 90 个不同手机号 —— 那 16 组重号按项目自己的判定标准
@@ -1308,7 +1318,8 @@ def run():
                 "SELECT id FROM customer WHERE account_id=?", (_aid,))]
             for _cd in _cids:
                 c.execute("DELETE FROM measure_rec WHERE customer_id=?", (_cd,))
-                c.execute("DELETE FROM body_feature WHERE customer_id=?", (_cd,))
+                c.execute("""DELETE FROM body_feature WHERE wearer_id IN
+                             (SELECT id FROM wearer WHERE customer_id=?)""", (_cd,))
                 c.execute("""DELETE FROM consent WHERE wearer_id IN
                              (SELECT id FROM wearer WHERE customer_id=?)""", (_cd,))
                 c.execute("DELETE FROM wearer WHERE customer_id=?", (_cd,))
@@ -1342,7 +1353,13 @@ def run():
         hh = c.execute("SELECT value FROM measure_rec WHERE customer_id=? AND item='MI01'",
                        (cid,)).fetchone()
         self_h = round(hh[0], 1) if hh else (171.2 if gd == "男" else 159.6)
-        wid = _w(0, cid, nm or anm, gd, bd, "本人", h=self_h, phone=aph)
+        # 边界用例那些客户的 name 存的是**描述**(「实付 15,000 元(高价值边界)」),
+        # 不是人名 —— 直接拿来当着装人姓名会出现「本人:高价值边界」这种记录。
+        # 姓名是要打印在工单上给师傅看的,不能是测试说明。
+        _nm = nm or anm or "本人"
+        if any(x in _nm for x in ("边界", "命中", "元", "+", "同时")) or len(_nm) > 6:
+            _nm = f"{_nm[0] if _nm[0].isalpha() or '\u4e00' <= _nm[0] <= '\u9fff' else '客'}女士"
+        wid = _w(0, cid, _nm, gd, bd, "本人", h=self_h, phone=aph)
         c.execute("UPDATE account SET self_wearer_id=? WHERE id=?", (wid, aid))
         # 该账户名下所有门店档案的量体记录,都归到本人
         c.execute("""UPDATE measure_rec SET wearer_id=? WHERE wearer_id IS NULL
@@ -1395,9 +1412,11 @@ def run():
                       ("MI04", round(kid_h*0.42, 1)), ("MI09", round(kid_h*0.55, 1)),
                       ("MI14", round(kid_h*1.03, 1))):
             c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
-                      "measured_at,method,wearer_id) VALUES(?,?,?,?,?,?,?,?)",
+                      "measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath) "
+                      "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                       (cid, TPL[k % 4][0], it, v, random.choice(ADV),
-                       f"{mdate} 15:00", "到店", w_kid))
+                       f"{mdate} 15:00", "到店", w_kid,
+                       "薄", "平底", "平静呼气"))
     # ── 内容管理 ──
     CK=["品牌故事","穿搭指南","工艺科普","活动预告"]
     CH=["小程序首页","会员中心","门店Pad","公众号"]
@@ -1663,6 +1682,67 @@ def run():
         c.execute("INSERT INTO scheme VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (sid,_cid2,nm,st,xz,mt,kf,col,ps,"A01 林岚",None,ago(20),ago(3)))
 
+    # ── ③ 量体覆盖:让「本人」都有一套完整量体 ──────────────────────
+    # 原来 104 个着装人只有 27 个有量体记录,而且每人只量了 5 或 9 项 ——
+    # **14 个量体项没有一个人量全**。做上衣要通袖长、胸围、领围,
+    # 只量了身高和裙长的话,推荐尺码那一步直接判「需补量」。
+    #
+    # 量体条件按 08 第四节记全:内搭 / 鞋 / 呼吸状态,**缺一件就等于没量**。
+    _ITEMS = [r[0] for r in c.execute("SELECT code FROM measure_item ORDER BY code")]
+    _BASE = {"MI01":165,"MI02":52,"MI03":86,"MI04":68,"MI05":92,"MI06":38,"MI07":56,
+             "MI08":110,"MI09":98,"MI10":34,"MI11":26,"MI12":100,"MI13":80,"MI14":180}
+    for _i, _w2 in enumerate(c.execute("""SELECT w.id, w.customer_id, w.gender, w.height
+                                          FROM wearer w WHERE w.relation='本人'
+                                            AND NOT EXISTS(SELECT 1 FROM measure_rec m
+                                                           WHERE m.wearer_id=w.id)
+                                          ORDER BY w.id""").fetchall()):
+        _wid, _cid, _g, _h = _w2
+        _d = (T - timedelta(days=20 + (_i * 13) % 300)).isoformat()
+        _mth = "远程" if _i % 6 == 4 else "到店"
+        _in, _sh = ["无","薄","厚"][_i % 3], ["赤足","平底","高跟"][_i % 3]
+        for _it in _ITEMS:
+            _base = _BASE.get(_it, 60) * ((_h or 165) / 165 if _it in ("MI01","MI08","MI09","MI12","MI14") else 1)
+            c.execute("""INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,
+                         measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                      (_cid, "MT01", _it, round(_base + ((_i * 7 + hash(_it) % 11) % 9) - 4, 1),
+                       random.choice(ADV), f"{_d} 14:30", _mth, _wid,
+                       _in, _sh, "平静呼气"))
+
+    # ── 反例夹具:**故意留着的不完整数据** ──────────────────────────
+    # ⚠️ 这一段看起来像脏数据,它不是。**不要好心把它补全。**
+    #
+    # 上面那个「给所有本人补齐 14 项量体」的改动,顺手把两类反例清零了:
+    #   ① 判责规则「尺寸偏差 · 记录不全 · 我方免费改」从此没有任何用例;
+    #   ② 靶身高与推算冲突「需人工确认」从此没有任何用例。
+    # 没有用例的规则可以是错的,而且永远不会被发现 —— 反例在种子数据里是资产。
+    #
+    # ①:挑一个「到店量体 + 尺寸类在办工单」的客户,把量体删到 3 项。
+    #    现实里这就是「量体没量完就下了单」,不罕见。
+    _sp = c.execute("""SELECT m.customer_id FROM maintain m
+                       WHERE m.issue='尺寸需调整' AND m.status IN ('待确认','待处理','处理中')
+                         AND NOT EXISTS(SELECT 1 FROM measure_rec r
+                                        WHERE r.customer_id=m.customer_id AND r.method='远程')
+                       ORDER BY m.id DESC LIMIT 1""").fetchone()
+    assert _sp, "没有「到店 + 尺寸类在办」的客户可做反例 —— 判责规则会缺用例"
+    c.execute("""DELETE FROM measure_rec WHERE customer_id=? AND item NOT IN
+                 (SELECT item FROM measure_rec WHERE customer_id=? ORDER BY item LIMIT 3)""",
+              (_sp[0], _sp[0]))
+    print(f"  [反例] {_sp[0]} 量体只留 3 项 —— 供「记录不全 · 我方免费改」用")
+
+    # ②:挑一个父母俱全的孩子,把父母身高拉到两端。
+    #    父母都不高(162/152),孩子却一直在高百分位上跑 —— 中亲值 ~163,
+    #    百分位推算 ~176,差 13cm,靶身高法在这个孩子身上不成立,该转人工。
+    #    (试过父 192/母 150:中亲值 177.5 反而和推算 176.6 撞上了,gap 0.9。
+    #     父母身高「差距大」不等于「和孩子对不上」—— 靶身高只看中亲值。)
+    _kid = c.execute("""SELECT id, parent_a, parent_b FROM wearer
+                        WHERE parent_a IS NOT NULL AND parent_b IS NOT NULL
+                        ORDER BY id LIMIT 1""").fetchone()
+    assert _kid, "没有父母俱全的孩子 —— 靶身高校验会缺用例"
+    c.execute("UPDATE wearer SET height=162.0 WHERE id=?", (_kid[1],))
+    c.execute("UPDATE wearer SET height=152.0 WHERE id=?", (_kid[2],))
+    print(f"  [反例] {_kid[0]} 的父母身高设为 162/152 —— 供「靶身高冲突需人工确认」用")
+
     # ── BP-03 售后判责:研判工单 + 人工标注真值 ────────────────────────
     # 只挑**还没处理完**的(待确认 / 待处理 / 处理中)—— 已完成和取消的不用判。
     #
@@ -1706,6 +1786,48 @@ def run():
         c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)",
                   (f"T{mid}", "售后判责", mid, "待处理", "2026-08-25", f"{item} · {issue}"))
         truths.append((mid, "BP-03", rc, act, ev, f"{item} · {issue} · 工单状态 {st}"))
+
+    # ── ④ 成长推算留档 ──────────────────────────────────────────────
+    # 表建了却一行没写,等于没建。它存的**不是结果,是当时怎么推的**:
+    # 依据哪次量体、用了哪个方法、给了多宽的区间。
+    # 事后客户说「你们说能穿到明年」,得查得出当时到底说了什么。
+    #
+    # 留档写在**运维侧**,不写在工具层 —— 工具层是只读的,那是本项目最硬的一条主张。
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "knowledge"))
+    import growth as _gr
+    _fc = 0
+    for _w3 in c.execute("""SELECT w.id, w.gender, w.birthday FROM wearer w
+                            WHERE w.relation IN ('子','女') AND w.birthday IS NOT NULL
+                            ORDER BY w.id""").fetchall():
+        _wid, _g3, _bd = _w3
+        _h3 = c.execute("""SELECT value, measured_at FROM measure_rec
+                           WHERE wearer_id=? AND item='MI01'
+                           ORDER BY measured_at DESC LIMIT 1""", (_wid,)).fetchone()
+        if not _h3: continue
+        for _m in (6, 12):
+            _tgt = (T + timedelta(days=int(30.4 * _m))).isoformat()
+            try:
+                _r3 = _gr.forecast(_g3, _bd, _h3[0], _h3[1][:10], _tgt)
+            except Exception:
+                continue
+            c.execute("""INSERT INTO growth_forecast(wearer_id,base_at,base_height,base_z,
+                         method,target_at,pred_height,lo,hi,note,created)
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                      (_wid, _h3[1][:10], _h3[0], _r3["z分数"], _r3["方法"], _tgt,
+                       _r3["预测身高"], _r3["区间"][0], _r3["区间"][1],
+                       " / ".join(_r3["限定"][:2]), T.isoformat()))
+            _fc += 1
+
+    # ── 体型特征(放在最后:要等所有着装人都建完)────────────────────
+    # 挂到**具体的着装人**上 —— 而且只挂成年人:
+    # 溜肩/含胸/高低肩/腹凸这几种是成人体型问题,给 3 岁孩子记「腹凸」是假数据。
+    _adults = [r[0] for r in c.execute("""SELECT id FROM wearer
+                 WHERE relation IN ('本人','配偶') ORDER BY id""")]
+    for k,wid in enumerate(_adults):
+        if k % 9: continue                       # 九分之一的人有明显体型特征
+        f,note=FEAT[(k//9)%4]
+        c.execute("INSERT INTO body_feature VALUES(?,?,?,?,?)",
+                  (wid,f,note,random.choice(ADV),f"2026-0{6+k%3}-1{k%9} 14:40"))
 
     # ── C3:把时间锚点理顺(放在最后,等所有对象都建完)────────────────
     # ① 客户建档不得晚于他最早的业务事件 —— **人还没建档就下了单**,是不可能的。

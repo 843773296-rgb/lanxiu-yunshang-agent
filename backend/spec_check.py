@@ -176,6 +176,29 @@ rule("C3", "任何记录的时间不得早于它所属对象的创建时间", c3
      "**一条链上少查一环,那一环就会长年错着** —— "
      "C1 漏了 created,「付款早于下单」35/35 全错却长年没人发现")
 
+# ── 四之二、身体数据 ────────────────────────────────────────────────────
+rule("G1", "体型特征挂着装人,且不挂在未成年身上",
+     q("""SELECT b.rowid, b.wearer_id FROM body_feature b
+          WHERE b.wearer_id IS NULL OR b.wearer_id NOT IN (SELECT id FROM wearer)
+             OR b.wearer_id IN (SELECT id FROM wearer WHERE relation IN ('子','女'))"""),
+     "**它已经在算错尺码**:挂客户档案时,妈妈的「溜肩」会让 3 岁儿子被推成全定制。"
+     "溜肩/含胸/高低肩/腹凸是成人体型问题,给孩子记等于造假数据")
+
+rule("G2", "量体记录必须记全三件事(数值 + 条件 + 量体人和时间)",
+     q("""SELECT id, item FROM measure_rec
+          WHERE value IS NULL OR measured_by IS NULL OR measured_at IS NULL
+             OR cond_inner IS NULL OR cond_shoe IS NULL OR cond_breath IS NULL"""),
+     "08 第四节:「**缺一件就等于没量**」。没记条件的尺寸,"
+     "返修时无法判断是量错了还是穿法变了 —— 争议只能靠嗓门解决")
+
+rule("G3", "推算留档能追到它依据的那次量体",
+     q("""SELECT g.id, g.wearer_id, g.base_at FROM growth_forecast g
+          WHERE NOT EXISTS(SELECT 1 FROM measure_rec m
+                           WHERE m.wearer_id=g.wearer_id AND m.item='MI01'
+                             AND substr(m.measured_at,1,10)=g.base_at)"""),
+     "留档存的**不是结果,是当时怎么推的** —— 追不到依据的那次量体,"
+     "事后客户问「你们当时说什么」就答不了")
+
 # ── 三、属性一致 ────────────────────────────────────────────────────────
 rule("D1", "地址串必须和省市一致",
      q("SELECT id, province, addr FROM customer "
@@ -195,6 +218,26 @@ rule("E2", "两个维度不得完全相关(否则覆盖度悄悄坍缩)", _e2,
      "状态和问题都用 i%7 时,按状态筛出来的工单永远只有一类 —— "
      "**数据看起来正常,覆盖度却只剩 1/7**")
 
+# E3:**反例必须还在。**
+# 「把数据补齐」是一类看起来永远正确的改动,而它会静默清空反例:
+# 量体一补全,判责规则「记录不全 · 我方免费改」就再也没有用例;
+# 父母身高一规整,「靶身高冲突需人工确认」就再也不会触发。
+# 没有用例的规则可以是错的,而且永远不会被发现 —— 所以反例要当资产来守。
+_e3 = []
+if not q("""SELECT m.id FROM maintain m
+            WHERE m.issue='尺寸需调整' AND m.status IN ('待确认','待处理','处理中')
+              AND (SELECT count(*) FROM measure_rec r WHERE r.customer_id=m.customer_id) < 4
+            LIMIT 1"""):
+    _e3.append({"缺": "量体记录不全的尺寸类在办工单", "影响": "判责「记录不全 · 我方免费改」无用例"})
+if not q("""SELECT k.id FROM wearer k JOIN wearer f ON f.id=k.parent_a
+                                     JOIN wearer m ON m.id=k.parent_b
+            WHERE f.height IS NOT NULL AND m.height IS NOT NULL
+              AND (f.height + m.height) / 2 < 160 LIMIT 1"""):
+    _e3.append({"缺": "父母中亲值明显偏低的孩子", "影响": "靶身高「需人工确认」无用例"})
+rule("E3", "反例夹具必须还在(别好心把不完整的数据补全)", _e3,
+     "补数据是看起来永远正确的改动,但它会顺手把反例清零 —— "
+     "**seed.py 里那段「反例夹具」不许删,也不许补全**")
+
 print("\n" + "=" * 84)
 for no, msg in note: print(f"  ℹ {no}  {msg}")
 if bad:
@@ -202,4 +245,4 @@ if bad:
     for no, why, n in bad: print(f"   · {no}({n} 条):{why}")
     print("   **不要直接把断言改松** —— 要么数据破了,要么规范该改了,两种都得人看一眼。")
     sys.exit(1)
-print("✅ 规范全部守住(A3/A7/A8/A9/A11–A15 · B2/B3/B4 · D1 · E2)")
+print("✅ 规范全部守住(A3/A7/A8/A9/A11–A15 · G1–G3 · B2/B3/B4 · D1 · E2/E3)")

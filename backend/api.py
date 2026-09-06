@@ -358,13 +358,19 @@ def fit_customers():
     return {"rows": _rows(
         "SELECT c.id,c.name,MAX(r.method) method,COUNT(DISTINCT r.item) items,"
         " MIN(r.tpl) tpl_code,"
-        " (SELECT GROUP_CONCAT(feature,'、') FROM body_feature WHERE customer_id=c.id) feature"
+        # 体型特征挂**着装人**。这里按「该客户档案下的着装人」聚合 ——
+        # 用于列表概览;真正推尺码时必须**指定是谁**,见 kb_fit。
+        " (SELECT GROUP_CONCAT(feature,'、') FROM body_feature b"
+        "  JOIN wearer w ON w.id=b.wearer_id WHERE w.customer_id=c.id) feature"
         " FROM customer c JOIN measure_rec r ON r.customer_id=c.id"
         " GROUP BY c.id,c.name ORDER BY c.name")}
 
 
-def kb_fit(customer, pattern):
-    """拿客户的量体记录比对版型尺码表,给出推荐尺码和档位(标准码 / 调号 / 全定制)。"""
+def kb_fit(customer, pattern, wearer=None):
+    """拿量体记录比对版型尺码表,给出推荐尺码和档位(标准码 / 调号 / 全定制)。
+
+    **wearer 才是正确的粒度** —— 一个账户下几个人,尺寸和体型各不相同。
+    只给 customer 时,退回到该账户的「本人」。"""
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","knowledge"))
     import fitting
     cs=_rows("SELECT id,name FROM customer WHERE id=? OR name=?",customer,customer)
@@ -381,7 +387,15 @@ def kb_fit(customer, pattern):
                 "note":"没量过体就不能推荐尺码,**不要按身高体重猜**。"}
     mth=(_rows("SELECT method FROM measure_rec WHERE customer_id=? LIMIT 1",cu["id"]) or
          [{"method":"到店"}])[0]["method"]
-    fs=[r["feature"] for r in _rows("SELECT feature FROM body_feature WHERE customer_id=?",cu["id"])]
+    # ⚠️ **体型特征必须按着装人取,不能按客户档案取。**
+    # 原来读的是 customer_id,而一条档案下可能有 3 个人 ——
+    # 妈妈的「溜肩」会被算到 3 岁儿子头上,而规则是「有明显体型特征即全定制」,
+    # 于是孩子被直接推成全定制:**加价又加工期**。
+    # 没指定着装人时,退回到该账户的「本人」—— 而不是把全家的特征并起来。
+    _wid = wearer or _rows("""SELECT a.self_wearer_id w FROM customer k
+                              JOIN account a ON a.id=k.account_id WHERE k.id=?""", cu["id"])
+    _wid = wearer if wearer else (_wid[0]["w"] if _wid else None)
+    fs=[r["feature"] for r in _rows("SELECT feature FROM body_feature WHERE wearer_id=?", _wid)]
     specs={}
     for r in _rows("SELECT size,item,value FROM size_spec WHERE pattern=?",p["code"]):
         specs.setdefault(r["size"],{})[r["item"]]=r["value"]
