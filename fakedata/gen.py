@@ -359,7 +359,11 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None):
                     # 自引用(上级分类 / 父母是谁)。只能指向**本表更早的那些行** ——
                     # 指向后面的行会在数据里造出真正的环,任何递归查询都会打转。
                     # 头 20% 的行留空当根节点,不然一棵树没有根。
-                    if not pkcol: continue
+                    if not pkcol:
+                        # 无主键表的自引用:没有可引用的值。**要显式置空,不能 continue** ——
+                        # continue 会让这一列在每一行里都不存在,于是灌入时被整列丢掉。
+                        for row in rows: row[cname] = None
+                        continue
                     for i, row in enumerate(rows):
                         row[cname] = None if i < max(1, n // 5) else r.choice(pkvals[:i])
                     continue

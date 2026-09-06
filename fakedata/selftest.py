@@ -241,6 +241,28 @@ def main():
            for row in m3["ordr"] for c in ("paid_at", "shipped_at", "cancelled_at")),
        "所有 *_at 都不早于 created(全表统一的时间原点)")
 
+    print("\n【灌入前:列对不上要当场抛,不许静默补 NULL】")
+    p7 = P.build(facts, scale=1.0, tables=["cust"])
+    m7, _m7 = G.generate(p7, conn)
+    ck(not (set(p7["tables"]["cust"]["columns"]) - set(m7["cust"][0])),
+       "正常情况下,方案声明的每一列生成器都产出了")
+    broken = [dict(r) for r in m7["cust"]]
+    for r in broken: r.pop("city", None)      # 模拟生成器漏了一列
+    # 只认 SystemExit + 说清是哪几列。**别的异常算失败** ——
+    # 拆掉这道检查之后真实的表现是 KeyError,那也叫"抛了",但它:
+    #   ① 说不清是哪一列出的事  ② 会把整个自测带走,后面十几项一条都跑不到
+    # 所以这里必须自己接住,让它变成**一条红线**而不是一次崩溃。
+    # 一个检查崩掉会顺手关掉它后面的所有检查,这比它自己不准更糟。
+    try:
+        # dry=True 不写任何东西,但列的检查在拼 SQL 之前 —— **预演就该发现它**
+        L.load(conn, p7, {"cust": broken}, dry=True, log=lambda *x: None)
+        ck(False, "少一列要当场抛(不能静默丢成 NULL)", "没抛,静默丢了")
+    except SystemExit as e:
+        ck("city" in str(e), "少一列当场抛,并且指名道姓说是哪几列", str(e)[:90])
+    except Exception as e:
+        ck(False, "少一列要当场抛(不能静默丢成 NULL)",
+           f"抛的是 {type(e).__name__}: {e} —— 说不清哪一列,而且会把整个自测带走")
+
     print("\n【流式生成 · 省内存不能改变结果】")
     import sqlite3 as _sq
     def _fill(path, use_sink):

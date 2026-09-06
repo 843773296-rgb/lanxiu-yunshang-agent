@@ -27,6 +27,26 @@ import os, sys, json
 
 BATCH = 500
 
+def _cols_of(tp, rows, tname):
+    """取要写入的列,**方案声明了而行里没有的,当场抛**。
+
+    原来写的是 `[c for c in tp["columns"] if c in rows[0]]` —— 想的是"列对不上也不炸"。
+    实际效果是**把崩溃换成了静默丢数据**:那一列不进 INSERT,库里就是 NULL,
+    而 NULL 在可空列上不会触发任何断言,能一直躺着。
+
+    **崩溃当天就发现,静默丢数据几个月后才发现。**
+    (同一个写法在另一条线的 create_appointment 上刚炸过一次:
+     校验严格读了 start/end,插入却把它们过滤掉了,建出来的预约没有时间。)
+    """
+    missing = sorted(set(tp["columns"]) - set(rows[0]))
+    if missing:
+        raise SystemExit(
+            f"表 {tname}:方案里声明了 {len(missing)} 列,生成出来的行里没有 —— "
+            f"{missing[:6]}\n"
+            f"直接灌的话这些列会变成 NULL,而且不会有任何检查报错。这是生成器的 bug,不是数据问题。")
+    return list(tp["columns"])
+
+
 def _insert_sql(conn, tname, cols):
     ph = ", ".join([conn.ph] * len(cols))
     return (f'insert into {conn.ident(tname)} '
@@ -39,7 +59,7 @@ def load(conn, plan, made, dry=True, log=print):
         tp = plan["tables"][tname]
         rows = made.get(tname) or []
         if not rows or tp.get("skip"): continue
-        cols = [c for c in tp["columns"] if c in rows[0]]
+        cols = _cols_of(tp, rows, tname)
         sql = _insert_sql(conn, tname, cols)
         if sample is None: sample = (sql, [rows[0][c] for c in cols])
         if dry:
@@ -87,7 +107,7 @@ def sink_for(conn, plan, log=lambda *a: None):
     def sink(tname, rows):
         tp = plan["tables"][tname]
         if not rows or tp.get("skip"): return
-        cols = [c for c in tp["columns"] if c in rows[0]]
+        cols = _cols_of(tp, rows, tname)
         sql = _insert_sql(conn, tname, cols)
         buf = []
         for r in rows:
