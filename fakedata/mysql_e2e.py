@@ -28,6 +28,10 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import schema as S, discover as D, plan as P, gen as G, guard, load as L
 
+def _cap_like(v, n):
+    """跟生成器一样按列长度截断,才好对得上 —— 超长边界值进 varchar(52) 就是 52 个字。"""
+    return v[:n] if len(v) > n else v
+
 TABLES = ["shop", "staff", "account", "customer", "wearer", "category",
           "product", "sku", "ordr", "ordr_item", "aftersale",
           "appointment", "deposit", "measure_item", "measure_rec"]
@@ -44,8 +48,13 @@ def _mysql_type(col_type, maxlen, is_pk, unique):
 
 
 def mirror(src_path, my, tables, log=print):
-    """把 SQLite 的表结构和数据搬进 MySQL。**故意不建外键。**"""
+    """把 SQLite 的表结构和数据搬进 MySQL。**故意不建外键**,但**注释要带过去** ——
+    不然 MySQL 那条读 COLUMN_COMMENT 的路径一行都没被跑到,
+    等于把「元信息里最值钱的那部分」留在了未验证状态。"""
     sc_conn = sqlite3.connect(src_path)
+    ddl = {t: (r[0] or "") for t, r in
+           ((t, sc_conn.execute("select sql from sqlite_master where name=?", (t,)).fetchone()
+              or ("",)) for t in tables)}
     made = []
     for t in tables:
         info = list(sc_conn.execute(f'PRAGMA table_info("{t}")'))
@@ -62,8 +71,10 @@ def mirror(src_path, my, tables, log=print):
                     f'select max(length(cast("{name}" as text))) from "{t}"').fetchone()[0]
             except Exception: ml = None
             mt = _mysql_type(ctype, ml, bool(ispk), name in uniq)
+            cmt = S._sqlite_comments(ddl.get(t, "")).get(name, "")
             # NOT NULL 原样带过来 —— 断言层要靠它派生「不可为空」的检查
-            cols.append(f'`{name}` {mt}' + (" not null" if notnull and not ispk else ""))
+            cols.append(f'`{name}` {mt}' + (" not null" if notnull and not ispk else "")
+                        + (" comment '%s'" % cmt.replace("'", "''")[:255] if cmt else ""))
         if pk: cols.append("primary key (" + ", ".join(f"`{c}`" for c in pk) + ")")
         for u in uniq:
             if u not in pk: cols.append(f"unique key `uq_{t}_{u}` (`{u}`)")
@@ -101,6 +112,14 @@ def main():
     ncomment = sum(1 for t in sc.tables.values() for c in t.columns if c.comment)
     print(f"  {len(sc.tables)} 张表 / {sum(len(t.columns) for t in sc.tables.values())} 列 / "
           f"明写外键 {ndecl} 个 / 带注释的列 {ncomment} 个")
+    if ncomment == 0:
+        print("  ❌ 一个注释都没读到 —— COLUMN_COMMENT 这条路没被验证到")
+    else:
+        for t in sc.tables.values():
+            for c in t.columns:
+                if c.comment: print(f"    例:{t.name}.{c.name} → {c.comment[:60]}"); break
+            else: continue
+            break
     print(f"  行数样本(必须是真实 count(*),不是 InnoDB 的估算值):")
     for t in list(sc.tables)[:4]: print(f"    {t}: {sc.tables[t].rows}")
 
@@ -138,7 +157,58 @@ def main():
     for k, b, a, note in worse[:10]:
         print(f"    ✗ {k}: {b} → {a}" + (f"  [{note}]" if note else ""))
 
-    print("\n【6/6 回滚】照 manifest 删")
+    print("\n【6/7 取证】造出来的东西在真 MySQL 里长什么样")
+    mode = my.q("select @@sql_mode")[0][0]
+    strict = "STRICT" in mode
+    print(f'  sql_mode 含 STRICT: {strict}  ← 不严格的话「超长被拒」这条根本没被考验')
+    pre = pl["marker"]["prefix"]
+    ev = []
+    # 边界值有几种真的活着落进了 MySQL —— 严格模式 + varchar 长度 + 字符集,三关都过了才算
+    names = [r[0] for r in my.q(
+        f"select `name` from `customer` where `id` like '{pre}%' and `name` is not null")]
+    # 列长必须从 information_schema 现查。第一版写死 52,而 `customer.name` 其实是
+    # varchar(44) —— 超长边界值明明活着落库了(实测最长 44),却被判成「没出现」。
+    # **测量口径和被测对象对不上,量出来的是测量误差,不是事实。**
+    nlen = my.q("select character_maximum_length from information_schema.columns "
+                "where table_schema=%s and table_name='customer' and column_name='name'",
+                (my.db,))[0][0] or 255
+    alive = {n for n, v in G.EDGE_TEXT if _cap_like(v, int(nlen)) in names}
+    ev.append((f"边界值活着落库的种类(共 {len(G.EDGE_TEXT)} 种)",
+               f"{len(alive)} 种 —— {'、'.join(sorted(alive))}"))
+    # emoji 真的存进去了吗(utf8mb4 路径)
+    r = my.q(f"select count(*) from `customer` where `id` like '{pre}%' "
+             f"and `name` like '%\U0001F9F5%'")
+    ev.append(("emoji 名字存活", r[0][0]))
+    # 超长文本
+    r = my.q(f"select max(char_length(`name`)) from `customer` where `id` like '{pre}%'")
+    ev.append(("最长姓名字符数", r[0][0]))
+    # 前后空格没被 MySQL 悄悄吃掉(varchar 存尾空格是会被比较忽略的经典坑)
+    r = my.q(f"select count(*) from `customer` where `id` like '{pre}%' "
+             f"and `name` <> trim(`name`)")
+    ev.append(("带前后空格的姓名", r[0][0]))
+    # 金额长尾:p50 和 max 差几倍
+    r = my.q(f"select min(`amount`), avg(`amount`), max(`amount`) from `ordr` "
+             f"where `id` like '{pre}%'")
+    if r and r[0][0] is not None:
+        lo, av, hi = r[0]
+        ev.append(("订单金额 min / 均值 / max(长尾看 max÷均值)",
+                   f"{lo:.0f} / {av:.0f} / {hi:.0f}  (max 是均值的 {hi/av:.1f} 倍)"))
+    # 引用形状:多少客户零订单
+    r = my.q(f"select sum(c=0), sum(c between 1 and 3), sum(c>10) from "
+             f"(select cu.`id`, count(o.`id`) c from `customer` cu "
+             f"left join `ordr` o on o.`customer_id`=cu.`id` "
+             f"where cu.`id` like '{pre}%' group by cu.`id`) x")
+    if r: ev.append(("客户订单数分布 0 / 1-3 / >10", " / ".join(str(v) for v in r[0])))
+    for k, v in ev: print(f"    {k}: {v}")
+    emoji_ok = ev[1][1] > 0
+    # 时间线:方案自动派生的断言只查「不倒挂」,这里直接看一眼真实取值
+    r = my.q(f"select count(*) from `ordr` where `id` like '{pre}%' "
+             f"and `paid_at` is not null and `created` is not null and `paid_at` >= `created`")
+    t = my.q(f"select count(*) from `ordr` where `id` like '{pre}%' "
+             f"and `paid_at` is not null and `created` is not null")
+    print(f"    付款时间不早于下单时间: {r[0][0]}/{t[0][0]}")
+
+    print("\n【7/7 回滚】照 manifest 删")
     doc = {"顺序": pl["order"],
            "表": {t: {"pk": m["pk"], "主键": m["values"]} for t, m in man.items()}}
     removed = L.rollback(my, doc, dry=False, log=lambda *x: None)
@@ -147,7 +217,7 @@ def main():
     clean = all(back.get(k) == before.get(k) for k in before)
     print(f"  删除 {removed} 行 → 断言回到基线 {'✅' if clean else '❌'}")
 
-    ok = (not worse) and clean and not skipped
+    ok = (not worse) and clean and not skipped and strict and emoji_ok
     print("\n" + "=" * 66)
     print("MySQL 实跑:" + ("✅ 整条链通了" if ok else "❌ 有问题,见上"))
     return 0 if ok else 1

@@ -169,10 +169,16 @@ class MysqlConn(Conn):
         self.c = pymysql.connect(host=u["host"], port=u["port"], user=u["user"],
                                  password=u["pwd"], database=u["db"], charset="utf8mb4")
     def ident(self, name): return "`%s`" % name.replace("`", "``")
+    # `params or None` 不是可有可无的写法。pymysql 只要收到 args(哪怕是空元组),
+    # 就会对 SQL 做一次 `query % args` —— 于是任何**含 % 的 SQL** 当场炸:
+    #   `... where id like 'SYN-%'`  → TypeError: not enough arguments for format string
+    # 而 LIKE 的通配符恰恰就是 %。传 None 才会走「不做格式化」那条路。
+    # 这个洞在自动派生的断言里碰不到(它们不含 %),是真跑 MySQL 时才炸出来的。
     def q(self, sql, params=()):
-        cur = self.c.cursor(); cur.execute(sql, params); r = cur.fetchall(); cur.close(); return list(r)
+        cur = self.c.cursor(); cur.execute(sql, params or None)
+        r = cur.fetchall(); cur.close(); return list(r)
     def exec(self, sql, params=()):
-        cur = self.c.cursor(); cur.execute(sql, params); cur.close()
+        cur = self.c.cursor(); cur.execute(sql, params or None); cur.close()
     def many(self, sql, rows):
         # sqlite3 的**连接**对象自带 executemany,pymysql 的没有 —— 那是**游标**的方法。
         # 灌入层原来直接写 `conn.c.executemany(...)`,在 SQLite 上跑得好好的,

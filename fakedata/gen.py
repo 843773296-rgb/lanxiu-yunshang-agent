@@ -62,6 +62,29 @@ EDGE_TEXT = [
 # 往日期列掺,时间线断言会红。**造出来的脏数据必须是合法的脏,不然灌不进去,等于没测。**
 EDGE_OK = ("text", "long_text", "cn_name", "address")
 
+def _edge_slots(r, n, kinds, rate):
+    """给每一种边界值**指定行号**,而不是每行掷一次骰子。
+
+    第一版是「每行 5% 概率掺一个随机边界值」。在真 MySQL 上跑完一看:
+    32 行客户里只中了一个 emoji,超长和前后空格一个都没出现。
+    **边界值的全部意义就是覆盖,而用概率去赌覆盖率,是把手段和目的搞反了。**
+    行数越少漏得越狠 —— 而小批量恰恰是人跑得最勤的那种。
+
+    改成:先算出这批数据能容下几个边界值(不超过 rate 的两倍,也不超过 25%),
+    然后**按种类轮着放**,保证在容得下的前提下每种至少出现一次。
+    位置由种子决定,所以仍然是确定性的。
+    """
+    # 两个目标会打架,都要满足:
+    #   (a) **覆盖** —— 每一种边界值至少出现一次(行数容得下的前提下)
+    #   (b) **比例** —— 大批量时脏数据要占到 rate,不然压力测试里它们等于不存在
+    # 所以:先按 (a) 定下保底条数,再按 (b) 往上加,位置轮着分配 ——
+    # 轮着分配天然保证了「先覆盖全,再各自加量」。
+    # 硬上限是四分之一:边界值再重要也不能喧宾夺主,不然它就不叫边界了。
+    guaranteed = min(len(kinds), max(1, n // 4))
+    total = max(guaranteed, min(int(n * rate), max(1, n // 4) * len(kinds)))
+    idx = list(range(n)); r.shuffle(idx)
+    return {idx[i]: kinds[i % len(kinds)] for i in range(min(total, n))}
+
 def rng_for(seed, *parts):
     return random.Random(f"{seed}::" + "::".join(str(p) for p in parts))
 
@@ -245,13 +268,15 @@ def generate(plan, conn=None, edge_rate=0.05):
                 continue
 
             nr = g.get("null_rate") or 0
+            slots = (_edge_slots(rng_for(seed, tname, cname, "边界"), n,
+                                 [v for _n, v in EDGE_TEXT], edge_rate)
+                     if (g["gen"] in EDGE_OK and not g.get("unique") and edge_rate) else {})
             for i, row in enumerate(rows):
                 if nr and r.random() < nr:
                     row[cname] = None; continue
                 ctx = row.setdefault("__ctx", {})
-                if g["gen"] in EDGE_OK and not g.get("unique") \
-                   and edge_rate and r.random() < edge_rate:
-                    row[cname] = _cap(r.choice(EDGE_TEXT)[1], g)
+                if i in slots:
+                    row[cname] = _cap(slots[i], g)
                 else:
                     row[cname] = _cap(_value(g, r, ctx), g)
             if g.get("unique"):

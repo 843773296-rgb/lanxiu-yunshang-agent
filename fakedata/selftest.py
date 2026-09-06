@@ -110,8 +110,12 @@ def main():
                and r[cn] not in {x.get(g["column"]) for x in a1[g["table"]]})
     ck(leak == 0, "外键值全部指向本次生成的数据,不悄悄挂到库里已有的行上", f"漏 {leak}")
     texts = [r["name"] for r in a1["cust"]]
-    ck(any(len(t) > 40 or "🧵" in t or t != t.strip() for t in texts),
-       "文本列掺进了边界值(超长/emoji/前后空格)——正常路径谁都测得到,炸的是这些")
+    kinds = {n for n, v in G.EDGE_TEXT if v in texts}
+    ck(len(kinds) >= 5,
+       f"边界值按种类铺开,不是靠概率赌(命中 {len(kinds)}/{len(G.EDGE_TEXT)} 种)",
+       f"只出现了 {kinds}")
+    ck(sum(1 for t in texts if t in [v for _n, v in G.EDGE_TEXT]) <= len(texts) // 3,
+       "边界值不能喧宾夺主(占比不超过三分之一)")
 
     print("\n【安全闸门】")
     for tgt, env, should in [("shop.db", "生产", False), ("shop.db", "", False),
