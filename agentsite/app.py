@@ -17,7 +17,11 @@ PORT = int(os.environ.get("AGENTSITE_PORT", "8770"))
 # 首页是值班台,不是导航页 —— 打开就该看见「今天还剩多少件」。
 # 新工作站(单壳多屏 + 右侧智能体 + 「?」教学层)。
 # 旧的分页仍在原路径上,没删 —— 它们还是 ui_audit 的扫描对象,也方便对照。
-PAGES = {"/": "station.html", "/duty": "duty.html", "/queue": "queue.html", "/health": "health.html",
+# 首页是**一个通用对话助手**,不是导航页也不是多屏工作台。
+# 之前那版单壳多屏(值班台/研判队列/面料学堂/着装人/健康 + 「?」教学层)
+# 整体挪到 /panels 保住了 —— 里面的教学内容是攒出来的,不能因为换个形态就丢。
+PAGES = {"/": "station.html", "/panels": "panels.html",
+         "/duty": "duty.html", "/queue": "queue.html", "/health": "health.html",
          "/chat": "chat.html", "/scheme": "scheme.html",
          "/workbench": "workbench.html", "/acceptance": "acceptance.html",
          # 着装人的身体生命周期 —— 和会员生命周期(新客/沉默/流失)不是一回事
@@ -83,8 +87,9 @@ class H(BaseHTTPRequestHandler):
             kind = body.get("kind") or "kb"
             prompt = (body.get("prompt") or "").strip()
             if not prompt: return self._send({"error": "问题是空的"}, code=400)
+            # session:上一轮返回的会话号。前端每条会话存一个,续着问就带上。
             try:
-                r = asyncio.run(sdk.run(kind, prompt))
+                r = asyncio.run(sdk.run(kind, prompt, resume=body.get("session") or None))
                 return self._send(r)
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)

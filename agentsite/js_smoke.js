@@ -8,7 +8,7 @@
  * 用法:./start.sh 之后 `node agentsite/js_smoke.js [页面]`
  */
 const fs = require("fs"), path = require("path");
-const page = process.argv[2] || "station.html";
+const page = process.argv[2] || "panels.html";
 const file = path.join(__dirname, "web", page);
 const src = fs.readFileSync(file, "utf8");
 const js = src.split("<script>").slice(1).join("<script>").split("</script>")[0];
@@ -22,6 +22,10 @@ const el = (id) => ({
   get innerHTML(){ return this._h; }, set innerHTML(v){ this._h = String(v); },
   get textContent(){ return this._h; }, set textContent(v){ this._h = String(v); },
   value:"", disabled:false, scrollTop:0, closest:()=>null, children:[],
+  // 元素身上也能再查子元素 —— 页面里 `s.querySelectorAll(".sug button")` 是常规写法,
+  // 桩不给就会报「不是函数」,而浏览器里好好的。**桩不够真,冒烟就会报假警。**
+  querySelectorAll(){ return []; }, querySelector(){ return null; },
+  scrollHeight:0, hidden:false, onclick:null, title:"",
 });
 const store = new Map(ids.map(i => [i, el(i)]));
 /* select 要给它默认值 —— 浏览器里 <select> 的 value 是第一个 option 的值。
@@ -48,8 +52,12 @@ process.on("unhandledRejection", e => errs.push("未捕获的 Promise:" + e));
 
 console.log(`页面脚本冒烟 · ${page}\n` + "=".repeat(68));
 /* 光跑首屏不够 —— 其它屏是**切屏才加载**的,而合并动的正是那几屏。
-   在脚本末尾追加几次 show(),把每条加载路径都真的走一遍。 */
-const drive = (process.argv[3] || "fabric,wearer,health").split(",").filter(Boolean);
+   在脚本末尾追加几次 show(),把每条加载路径都真的走一遍。
+   station.html 换成对话助手之后没有 show():它的加载路径在脚本末尾就跑完了,
+   所以驱动列表给空 —— **不是不测,是那一页不需要切屏就已经全跑过**。 */
+const DEFAULT_DRIVE = {"panels.html": "fabric,wearer,health", "station.html": ""};
+const drive = (process.argv[3] !== undefined ? process.argv[3]
+              : (DEFAULT_DRIVE[page] !== undefined ? DEFAULT_DRIVE[page] : "")).split(",").filter(Boolean);
 const driver = drive.map(s => `try{show(${JSON.stringify(s)})}catch(e){__E.push("show(${s}) 挂了:"+e.message)}`).join(";");
 global.__E = errs;
 try { new Function(js + "\n;" + driver)(); }

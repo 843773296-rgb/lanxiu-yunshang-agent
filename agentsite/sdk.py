@@ -164,7 +164,7 @@ async def _stream_once(prompt, images):
            "parent_tool_use_id": None, "session_id": "vision"}
 
 
-async def run(kind, prompt, max_turns=12, guard=True, images=None):
+async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
 
     guard=True 时挂上回答体检 hook:交付前检查一遍,不合格**打回重答**。
@@ -172,6 +172,11 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None):
 
     images:本地图片路径列表。**给了图就走流式输入通道** ——
     字符串 prompt 塞不进图片块,这是接识图时唯一需要动的地方。
+
+    resume:上一轮返回的 session_id。**多轮不是把历史拼进 prompt** ——
+    那样每轮都要重发全部上下文,又贵又容易被截断,而且工具调用记录会丢。
+    CLI 自己存着这条会话的完整记录,给它 session_id 就接着往下走,
+    前面几轮的上下文还能命中缓存。返回值里带 session_id,前端存着下轮送回来。
     """
     model = _env()
     state = {}
@@ -216,6 +221,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None):
         # 所以这里放开 project 是安全的 —— 但**必须有检查盯着**,见 skills_check.py。
         setting_sources=["project"],
         skills=SKILLS,
+        resume=resume,          # 见 docstring:多轮靠 CLI 续会话,不靠拼历史
     )
     # 按「一段回答」分开收,不是一路拼下去。
     # 体检打回后模型会重答,而 hook 的反馈是以 user 角色进流的 ——
@@ -275,6 +281,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None):
         ))
 
     return dict(text=text.strip(), trajectory=traj, seconds=round(time.time() - t0, 1),
+                session_id=getattr(res, "session_id", None),
                 usage=usage, sdk_cost_usd=cost, cost_usd=real, model=model,
                 # 被体检打回过几次、因为什么 —— 这两个数要落进研判台账,
                 # 它们是「模型有多不听话」的直接度量,比事后抽样评测灵敏得多
