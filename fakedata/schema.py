@@ -227,11 +227,26 @@ def _parse_dsn(dsn):
             "host": m.group(3), "port": int(m.group(4) or 3306), "db": m.group(5)}
 
 
+def normalize_target(target):
+    """把目标字符串解析成 (方言, 归一化后的地址)。**这是这个字符串唯一的解释处。**
+
+    为什么单独抽出来:闸门要判「这是不是那个不许写的库」,连接器要判「该连哪」——
+    两边都在解释同一个字符串。第一版各解释各的,于是
+    `backend/lanxiu.db` 被闸门拦住,而 `sqlite://backend/lanxiu.db` **同一个文件、换个拼法就放行了**。
+
+    洞不在少写了一个分支,在于**同一个字符串的含义有两处定义** ——
+    两处各自理解,迟早分叉,而分叉的那一刻两边都自认没错。
+    (这个仓库在提示词上栽过同一件事:三份手抄件漂了很久。)
+    """
+    if target.startswith("mysql://"): return "mysql", target
+    path = target[len("sqlite://"):] if target.startswith("sqlite://") else target
+    return "sqlite", os.path.realpath(path)
+
+
 def connect(target):
     """统一入口。`xxx.db` / `sqlite://路径` 走 SQLite,`mysql://...` 走 MySQL。"""
-    if target.startswith("mysql://"): return MysqlConn(target)
-    if target.startswith("sqlite://"): return SqliteConn(target[len("sqlite://"):])
-    return SqliteConn(target)
+    kind, addr = normalize_target(target)
+    return MysqlConn(addr) if kind == "mysql" else SqliteConn(addr)
 
 
 if __name__ == "__main__":

@@ -22,7 +22,9 @@
 
 主键前缀(`SYN-`)只是给人肉排查用的方便,不是回滚依据。整数主键根本加不了前缀。
 """
-import os, re, json, time, datetime
+import os, re, json, time, datetime, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from schema import normalize_target      # 目标字符串的解释,只有这一处
 
 # 边界怎么划,是这里唯一需要动脑子的地方。
 # 第一版写的是 `\bprod\b` —— 结果 `shop_prod` **没被拦住**:
@@ -67,8 +69,9 @@ def check_target(target, env, write=False, root=None):
                       f"你声明的是 {env},但名字看起来是生产库。**声明和名字打架时,以拒绝为准。**")
     if write:
         root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        kind, addr = normalize_target(target)
         for rel in PROTECTED:
-            if os.path.realpath(target) == os.path.realpath(os.path.join(root, rel)):
+            if kind == "sqlite" and addr == os.path.realpath(os.path.join(root, rel)):
                 raise Refused(
                     f"{rel} 是仓库自己的库,拒绝写入。\n"
                     f"它是 spec_check / liability_check / fitting / guards_test 四个检查的真值源,"
@@ -135,8 +138,13 @@ if __name__ == "__main__":
     expect_pass("/Users/x/mastering_db_test.db", "test", "mastering 不该被 master 误伤")
     _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     _own = os.path.join(_root, "backend", "lanxiu.db")
-    try: check_target(_own, "test", write=True); fail.append("仓库自己的库不该允许写入")
-    except Refused: ok += 1
+    # **同一个库的每一种拼法都要拦住。** 第一版只比 realpath(target),
+    # 于是 `sqlite://` 前缀那种写法直接绕过去了 —— 检查是绿的,洞是真的。
+    for _v in (_own, "backend/lanxiu.db", "./backend/lanxiu.db",
+               "backend/../backend/lanxiu.db",
+               "sqlite://backend/lanxiu.db", "sqlite://" + _own):
+        try: check_target(_v, "test", write=True); fail.append(f"仓库自己的库放行了写入: {_v}")
+        except Refused: ok += 1
     try: check_target(_own, "test", write=False); ok += 1
     except Refused as e: fail.append(f"仓库自己的库应该允许只读采样 —— {e}")
     print(f"安全闸门自测:{ok} 通过 / {len(fail)} 失败")

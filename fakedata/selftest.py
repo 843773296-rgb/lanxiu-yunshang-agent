@@ -253,8 +253,14 @@ def main():
         ck(got == should, f"闸门 {tgt!r}/{env!r} → {'放行' if should else '拒绝'}")
 
     own = os.path.join(ROOT, "backend", "lanxiu.db")
-    try: guard.check_target(own, "test", write=True); ck(False, "仓库自己的库禁止写入")
-    except guard.Refused: ck(True, "仓库自己的库禁止写入(它是四个数据检查的真值源)")
+    _spell = [own, "backend/lanxiu.db", "./backend/lanxiu.db",
+              "backend/../backend/lanxiu.db", "sqlite://backend/lanxiu.db", "sqlite://" + own]
+    _leak = []
+    for _v in _spell:
+        try: guard.check_target(_v, "test", write=True); _leak.append(_v)
+        except guard.Refused: pass
+    ck(not _leak, f"仓库自己的库禁止写入 —— **{len(_spell)} 种拼法全都拦住**"
+                  "(它是四个数据检查的真值源)", f"放行了 {_leak}")
     try: guard.check_target(own, "test", write=False); ck(True, "但允许只读采样(出方案不写库)")
     except guard.Refused as e: ck(False, "只读采样不该被拦", str(e)[:80])
 
