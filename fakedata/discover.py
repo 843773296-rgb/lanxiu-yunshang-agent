@@ -209,7 +209,12 @@ def discover(conn, schema, tables=None, verbose=False):
             cf["semantic"] = _shape(vals) or _name_hint(c.name) or c.kind
 
             # 枚举:取值少、占比低,才算枚举而不是自由文本
-            if c.kind in ("text", "int") and t.rows >= 10 and 1 < len(vals) <= 24 \
+            # 日期不能当枚举。小表上「去重值 ≤ 24 且占比低」这条对日期列也成立,
+            # 于是 `created` 被判成枚举,生成时从旧值里随机抽 —— 时间线全乱。
+            # 判据本身没错,错在**没有排除已经认出语义的列**:
+            # 形状认出来是日期,就不该再让一条统计规则把它盖掉。
+            if cf["semantic"] not in ("date", "datetime") \
+               and c.kind in ("text", "int") and t.rows >= 10 and 1 < len(vals) <= 24 \
                and len(vals) / max(t.rows, 1) <= 0.3 and not c.unique:
                 freq = dict(conn.q(
                     f"select {conn.ident(c.name)}, count(*) from {conn.ident(tn)} "
@@ -225,6 +230,12 @@ def discover(conn, schema, tables=None, verbose=False):
                 if nums:
                     cf["range"] = {"min": nums[0], "p50": _pct(nums, .5),
                                    "p90": _pct(nums, .9), "max": nums[-1]}
+            # 日期/时间也要量范围 —— 否则生日会被造在最近两年,
+            # 一个「儿童成长推算」功能拿这种数据测,等于没测。
+            # 这是「结构像」和「分布像」的分界:类型对不等于值域对。
+            if cf["semantic"] in ("date", "datetime") and vals:
+                ss = sorted(str(v) for v in vals if v)
+                if ss: cf["range"] = {"min": ss[0], "max": ss[-1]}
             # 文本长度:UI 撑不撑得爆,看的是 max 不是 p50
             if c.kind == "text" and vals:
                 ls = sorted(len(str(v)) for v in vals)
@@ -250,7 +261,11 @@ def discover(conn, schema, tables=None, verbose=False):
                         "confidence": "高" if best["named"] and best["overlap"] >= 0.99
                                       else "中" if best["named"] or best["overlap"] >= 0.99 else "低",
                         "alternatives": [f'{a["table"]}.{a["column"]}' for a in cands[1:3]]})
-                    cf["semantic"] = "fk"
+                    # 外键列上的枚举事实必须清掉。它是在认出外键**之前**统计的,
+                    # 留着会派生出「只能取这 13 个已知值」的断言 ——
+                    # 而外键的合法取值是父表的**全部**主键,不是采样时碰巧见过的那几个。
+                    # 一条过时的事实,比没有事实更坏:它会伪装成检查失败。
+                    cf["semantic"] = "fk"; cf.pop("enum", None)
         facts["tables"][tn] = tf
 
     # 形状:只给高/中可信度的外键算,低可信度的不值得为它多跑查询

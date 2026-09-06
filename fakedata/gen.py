@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+"""生成器 —— 照方案造数据。**确定性**是这一层唯一不能让步的性质。
+
+## 为什么种子这么重要
+
+假数据最常见的失败不是「造得不像」,是「**造完这批,bug 就不见了**」。
+测试跑红了,你想复现,重新造一批 —— 数据全变了,红的那条也没了。
+于是这个 bug 变成玄学,没人再敢碰。
+
+所以每一列的随机数发生器都由 `(种子, 表名, 列名)` 单独播种:
+  · 同一个种子 → 永远同一批数据
+  · 给方案**新加一张表,不会让原来那些表的数据变样** ——
+    如果所有列共用一个全局 rng,插入顺序一变,后面全跟着漂。
+    这条差别在小 demo 上看不出来,在「加了张表之后昨天的复现用例失效了」时要人命。
+
+## 引用密度:照形状分配,不是平均分
+
+推断层量出来的形状(60% 的父亲一个孩子都没有 / 10% 有 50 个以上),在这里落地。
+平均分配的假数据测不出 N+1 查询、测不出空状态、测不出分页 ——
+而这三类恰恰是线上最常见的问题。
+
+## 边界值:5% 的脏数据,是这批数据里最值钱的部分
+
+正常路径谁都测得到。真正会炸的是超长昵称把表格撑破、emoji 存进 latin1 字段、
+前后空格让精确匹配失效、单引号进了拼接的 SQL。
+所以文本列默认掺 5% 的边界值 —— 它们**必须**是合法数据(不违反非空/唯一/长度),
+否则灌不进去,等于没测。
+"""
+import os, sys, math, random, datetime
+
+# ---------- 中文数据池 ----------
+XING = "王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾"
+MING = "秀英伟芳娜敏静丽强磊洋勇艳杰娟涛明超霞平刚桂英玉兰建华文博宇轩子涵欣怡梓晴一诺沐辰"
+# 省-市-区 三级要**对得上**。造出「浙江省·成都市」这种数据,
+# 任何按地域筛选的功能测起来都是假的。
+REGION = {
+    "浙江": {"杭州": ["西湖区", "拱墅区", "余杭区"], "宁波": ["海曙区", "鄞州区"]},
+    "江苏": {"苏州": ["姑苏区", "工业园区"], "南京": ["鼓楼区", "秦淮区"]},
+    "四川": {"成都": ["武侯区", "锦江区", "青羊区"]},
+    "陕西": {"西安": ["雁塔区", "碑林区"]},
+    "广东": {"广州": ["天河区", "越秀区"], "深圳": ["南山区", "福田区"]},
+    "上海": {"上海": ["徐汇区", "静安区", "浦东新区"]},
+    "北京": {"北京": ["朝阳区", "海淀区", "东城区"]},
+    "湖北": {"武汉": ["武昌区", "江汉区"]},
+}
+STREET = ["文一西路", "解放路", "中山北路", "人民大道", "锦绣路", "长虹街", "望江东路"]
+# 边界值:每一个都对应一类线上真出过的事故
+EDGE_TEXT = [
+    ("超长", "测试" * 60),                    # 表格撑破 / varchar 截断
+    ("emoji", "小王🧵🪡汉服"),                 # 字符集不是 utf8mb4 就当场炸
+    ("前后空格", "  张三  "),                  # 精确匹配失效
+    ("单引号", "O'Brien 的马面裙"),            # 字符串拼接 SQL
+    ("换行", "第一行\n第二行"),                # CSV 导出错行
+    ("空串", ""),                             # 和 NULL 不是一回事
+    ("全角数字", "１２３４５"),                 # 数字校验漏
+]
+
+# 边界值只往**自由文本**列掺,不往有格式契约的列掺。
+# 第一版只掺 `text` 兜底列 —— 于是姓名列一个边界值都没有,
+# 而「超长昵称撑破表格」「emoji 名字存不进 latin1」恰恰是最经典的两起线上事故。
+# 反过来也不能一掺到底:往枚举列掺,方案自己派生的枚举断言会红;
+# 往日期列掺,时间线断言会红。**造出来的脏数据必须是合法的脏,不然灌不进去,等于没测。**
+EDGE_OK = ("text", "long_text", "cn_name", "address")
+
+def rng_for(seed, *parts):
+    return random.Random(f"{seed}::" + "::".join(str(p) for p in parts))
+
+def _lognormal(r, p50, p90):
+    """按 p50/p90 拟合长尾。金额、时长都是长尾 —— 用均值造出来的数据全挤在中间,
+    压根测不出「那个花了 8 万的大单页面会不会崩」。"""
+    if not p50 or p50 <= 0: return abs(r.gauss(100, 50))
+    if not p90 or p90 <= p50: p90 = p50 * 3
+    mu = math.log(p50)
+    sigma = max(0.05, (math.log(p90) - mu) / 1.2816)
+    return math.exp(r.gauss(mu, sigma))
+
+def _weighted(r, dist):
+    keys = list(dist); w = [max(dist[k], 1e-6) for k in keys]
+    return r.choices(keys, weights=w, k=1)[0]
+
+def _dt(r, lo=None, hi=None):
+    hi = hi or datetime.date.today()
+    lo = lo or (hi - datetime.timedelta(days=730))
+    d = lo + datetime.timedelta(days=r.randint(0, max(1, (hi - lo).days)))
+    return d
+
+# ---------- 单列生成 ----------
+
+def _value(g, r, ctx):
+    k = g["gen"]
+    if k == "cn_name":
+        return r.choice(XING) + "".join(r.choice(MING) for _ in range(r.choice([1, 1, 2])))
+    if k == "cn_mobile":
+        return "1" + r.choice("3567889") + "".join(str(r.randint(0, 9)) for _ in range(9))
+    if k == "email":
+        return f"u{r.randint(1000,999999)}@{r.choice(['qq.com','163.com','gmail.com','foxmail.com'])}"
+    if k in ("province", "city", "district"):
+        # 三者要一致 —— 同一行里第一次抽定省市区,后面两列直接取
+        if "region" not in ctx:
+            p = r.choice(list(REGION)); c = r.choice(list(REGION[p]))
+            ctx["region"] = (p, c, r.choice(REGION[p][c]))
+        return ctx["region"]["province city district".split().index(k)]
+    if k == "address":
+        if "region" not in ctx:
+            p = r.choice(list(REGION)); c = r.choice(list(REGION[p]))
+            ctx["region"] = (p, c, r.choice(REGION[p][c]))
+        p, c, d = ctx["region"]
+        return f"{p}{c}市{d}{r.choice(STREET)}{r.randint(1,999)}号{r.randint(1,30)}幢{r.randint(101,2508)}"
+    if k == "money":
+        rg = g.get("range") or {}
+        v = _lognormal(r, rg.get("p50"), rg.get("p90"))
+        return round(min(v, (rg.get("max") or v * 5) * 1.5), 2)
+    if k == "percent":  return round(r.uniform(0, 1), 3)
+    if k == "small_int":
+        rg = g.get("range") or {}
+        return r.randint(int(rg.get("min", 0) or 0), int(rg.get("max", 9) or 9))
+    if k == "number":
+        rg = g.get("range") or {}
+        lo, hi = rg.get("min", 0) or 0, rg.get("max", 100) or 100
+        if isinstance(lo, float) or isinstance(hi, float):
+            return round(r.uniform(float(lo), float(hi)), 2)
+        return r.randint(int(lo), int(hi))
+    if k in ("date", "datetime"):
+        rg = g.get("range") or {}
+        lo = hi = None
+        try:
+            if rg.get("min"): lo = datetime.date.fromisoformat(str(rg["min"])[:10])
+            if rg.get("max"): hi = datetime.date.fromisoformat(str(rg["max"])[:10])
+        except ValueError: pass
+        d = _dt(r, lo, hi)
+        if k == "date": return d.isoformat()
+        return f"{d.isoformat()} {r.randint(8,21):02d}:{r.randint(0,59):02d}:{r.randint(0,59):02d}"
+    if k == "enum":     return _weighted(r, g["dist"]) if g.get("dist") else "未知"
+    if k == "url":      return f"/static/{r.randint(1000,9999)}.jpg"
+    if k == "json_blob":return '{"k":%d}' % r.randint(1, 99)
+    if k == "coded_id": return f"REF{r.randint(100000,999999)}"
+    if k == "long_text":
+        return r.choice(["客户对袖型有特别要求,已备注给版房。",
+                         "量体数据偏差较大,建议复量后再开工。",
+                         "婚期临近,工期已排加急。", "面料到货延迟,已知会顾问。"])
+    ln = (g.get("len") or {}).get("p50") or 8
+    return "".join(r.choice("甲乙丙丁戊己庚辛壬癸ABCDEFGH0123456789") for _ in range(max(2, int(ln))))
+
+
+def _cap(v, g):
+    """长度上限:MySQL 的 varchar(N) 超了会**截断或报错**,SQLite 不管。
+    边界值的意义是「合法但极端」,不是「灌不进去」—— 所以必须在这里收住。"""
+    m = g.get("maxlen")
+    return v[:m] if (m and isinstance(v, str) and len(v) > m) else v
+
+
+def _pk_values(plan, tname, tp, n):
+    """主键 = 假数据的**标记**。带前缀的 id 让「清干净」变成一条 DELETE。
+
+    整数主键没法加前缀,改用一个约定的高位段(9 开头的十位数)。
+    两种都会同时记进 manifest —— 前缀只是方便人肉排查,真正的回滚依据是 manifest。
+    """
+    g = tp["columns"].get(tp["pk"][0], {}) if tp["pk"] else {}
+    pre = plan["marker"]["prefix"]
+    if g.get("style") == "int_seq" or g.get("gen") == "pk" and g.get("style") == "int_seq":
+        return [900000000 + i for i in range(1, n + 1)]
+    abbr = "".join(ch for ch in tname.upper() if ch.isalnum())[:6]
+    return [f"{pre}{abbr}{i:05d}" for i in range(1, n + 1)]
+
+
+def _fk_pool(shape, parents, n, r):
+    """按形状把 n 个孩子分给 parents。
+
+    形状是「多少比例的父亲有几个孩子」,不是平均数。先按比例决定每个父亲带几个,
+    再按总数缩放对齐 n。缩放会有误差,最后多退少补 —— 补的时候优先补给
+    已经有孩子的父亲,免得把「60% 的父亲零孩子」这个最要紧的特征冲掉。
+    """
+    if not parents: return []
+    if not shape:
+        return [r.choice(parents) for _ in range(n)]
+    RANGE = {"0": (0, 0), "1-3": (1, 3), "4-10": (4, 10), "11-50": (11, 50), "50+": (51, 120)}
+    ps = list(parents); r.shuffle(ps)
+    counts, i = [], 0
+    for bucket, frac in shape.items():
+        k = int(round(frac * len(ps)))
+        lo, hi = RANGE.get(bucket, (1, 3))
+        for _ in range(k):
+            if i >= len(ps): break
+            counts.append([ps[i], r.randint(lo, hi)]); i += 1
+    for j in range(i, len(ps)): counts.append([ps[j], 0])
+    tot = sum(c for _p, c in counts) or 1
+    scale = n / tot
+    for c in counts: c[1] = int(round(c[1] * scale))
+    pool = [p for p, c in counts for _ in range(c)]
+    nonzero = [p for p, c in counts if c > 0] or ps
+    while len(pool) < n: pool.append(r.choice(nonzero))
+    r.shuffle(pool)
+    return pool[:n]
+
+
+TIME_ORDER = ["created", "paid_at", "shipped_at", "done_at", "updated", "last_interact"]
+
+def generate(plan, conn=None, edge_rate=0.05):
+    """按方案造数据。返回 {表名: [行字典]}。表按方案里的拓扑顺序生成。"""
+    seed = plan["seed"]
+    made, manifest = {}, {}
+    for tname in plan["order"]:
+        tp = plan["tables"][tname]
+        if tp.get("skip"):
+            made[tname] = []; continue
+        n = tp["count"]
+        cols = tp["columns"]
+        pkcol = tp["pk"][0] if tp["pk"] else None
+        rows = [{} for _ in range(n)]
+
+        pkvals = _pk_values(plan, tname, tp, n) if pkcol else []
+        if pkcol:
+            for i, row in enumerate(rows): row[pkcol] = pkvals[i]
+            manifest[tname] = {"pk": pkcol, "values": pkvals}
+
+        for cname, g in cols.items():
+            if cname == pkcol: continue
+            r = rng_for(seed, tname, cname)
+
+            if g["gen"] == "fk":
+                parent = g["table"]
+                if parent == tname:
+                    # 自引用(上级分类 / 父母是谁)。只能指向**本表更早的那些行** ——
+                    # 指向后面的行会在数据里造出真正的环,任何递归查询都会打转。
+                    # 头 20% 的行留空当根节点,不然一棵树没有根。
+                    if not pkcol: continue
+                    for i, row in enumerate(rows):
+                        row[cname] = None if i < max(1, n // 5) else r.choice(pkvals[:i])
+                    continue
+                if parent in made and made[parent]:
+                    pv = [x.get(g["column"]) for x in made[parent] if x.get(g["column"]) is not None]
+                elif conn is not None:
+                    try:
+                        pv = [x[0] for x in conn.q(
+                            f'select {conn.ident(g["column"])} from {conn.ident(parent)} '
+                            f'where {conn.ident(g["column"])} is not null limit 20000')]
+                    except Exception: pv = []
+                else: pv = []
+                # 成环时先留空,全部灌完再回填(见 load 的第二阶段)
+                if g.get("deferred") or not pv:
+                    for row in rows: row[cname] = None
+                    continue
+                pool = _fk_pool(g.get("shape"), pv, n, r)
+                for i, row in enumerate(rows): row[cname] = pool[i]
+                continue
+
+            nr = g.get("null_rate") or 0
+            for i, row in enumerate(rows):
+                if nr and r.random() < nr:
+                    row[cname] = None; continue
+                ctx = row.setdefault("__ctx", {})
+                if g["gen"] in EDGE_OK and not g.get("unique") \
+                   and edge_rate and r.random() < edge_rate:
+                    row[cname] = _cap(r.choice(EDGE_TEXT)[1], g)
+                else:
+                    row[cname] = _cap(_value(g, r, ctx), g)
+            if g.get("unique"):
+                seen, r2 = set(), rng_for(seed, tname, cname, "uniq")
+                for row in rows:
+                    v = row[cname]
+                    while v in seen:
+                        v = _cap(str(_value(g, r2, {})) + str(r2.randint(10, 9999)), g)
+                    seen.add(v); row[cname] = v
+
+        # 时间线修正:让 created ≤ paid_at ≤ shipped_at ≤ …
+        # 这一步不是锦上添花 —— 方案里自动派生的时间线断言,靠它才通得过。
+        present = [c for c in TIME_ORDER if c in cols and cols[c]["gen"] in ("date", "datetime")]
+        if len(present) > 1:
+            rt = rng_for(seed, tname, "__timeline")
+            for row in rows:
+                last = None
+                for c in present:
+                    v = row.get(c)
+                    if v is None: continue
+                    if last and str(v) < str(last):
+                        d = datetime.date.fromisoformat(str(last)[:10]) + \
+                            datetime.timedelta(days=rt.randint(0, 20))
+                        row[c] = d.isoformat() if cols[c]["gen"] == "date" else \
+                            f"{d.isoformat()} {rt.randint(8,21):02d}:{rt.randint(0,59):02d}:00"
+                    last = row[c]
+        for row in rows: row.pop("__ctx", None)
+        made[tname] = rows
+    return made, manifest
+
+
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import schema as S, discover as D, plan as P
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    conn = S.connect(os.path.join(root, "backend", "lanxiu.db"))
+    sc = conn.reflect(); f = D.discover(conn, sc)
+    pl = P.build(f, scale=0.05)
+    a, _m = generate(pl, conn)
+    b, _m = generate(pl, conn)
+    same = all(a[t] == b[t] for t in a)
+    print("确定性(同种子两次生成完全一致):", "✅" if same else "❌")
+    for t in ("customer", "ordr", "wearer"):
+        if t in a and a[t]:
+            print(f"\n=== {t} 头两行 ===")
+            for row in a[t][:2]:
+                print({k: v for k, v in list(row.items())[:9]})

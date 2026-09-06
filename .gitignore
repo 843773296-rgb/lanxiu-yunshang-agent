@@ -24,3 +24,7 @@ tools/.uat_cache.json
 *.key
 .deepseek-key
 backend/.imgcache/
+
+# 假数据工厂的产物:方案、预览、回滚凭据。
+# manifest 里是主键值,方案里是源库的取值分布 —— 都不该进版本库。
+.fakedata/

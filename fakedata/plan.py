@@ -54,14 +54,27 @@ def _gen_for(cname, cf, fk):
         g = {"gen": "fk", "table": fk["table"], "column": fk["column_ref"],
              "shape": fk.get("shape"), "confidence": fk["confidence"],
              "source": fk["source"], "overlap": fk.get("overlap"),
-             "alternatives": fk.get("alternatives", [])}
+             "alternatives": fk.get("alternatives", []),
+             # 这一行漏了一次:拓扑排序把边标成「成环,先插空再回填」,
+             # 但方案里没把标记传下去,生成器照常去找父表 —— 而父表还没生成。
+             # **排序算出来的结论,没走到执行的那一层,等于没算。**
+             "deferred": bool(fk.get("deferred"))}
         if fk["confidence"] != "高":
             g["需确认"] = f'这条关系是{fk["source"]}推出来的,不是库里明写的'
         return g
     if cf["pk"]:
         return {"gen": "pk", "style": "coded" if cf["kind"] == "text" else "int_seq"}
     sem = cf.get("semantic", cf["kind"])
+    # **观察到的长度可以否决语义。** `phone_tail` 命中了列名里的 phone,
+    # 于是差点被当成手机号造成 11 位 —— 而源库里它只有 4 位。
+    # 列名是弱证据,实测长度是强证据,强的赢。
+    FIXED_LEN = {"cn_mobile": 11}
+    if sem in FIXED_LEN and (cf.get("len") or {}).get("max") not in (None, FIXED_LEN[sem]):
+        sem = cf["kind"]
     g = {"gen": SEM2GEN.get(sem, "text")}
+    import re as _re
+    m = _re.search(r"\((\d+)\)", cf.get("type") or "")
+    if m: g["maxlen"] = int(m.group(1))
     if sem == "enum":     g["dist"] = cf.get("enum", {})
     if "range" in cf:     g["range"] = cf["range"]
     if "len" in cf:       g["len"] = cf["len"]
@@ -121,7 +134,8 @@ def topo_order(tables, fks):
     return order, deferred
 
 
-def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN-"):
+def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN-",
+          allow_no_pk=False):
     counts = counts or {}
     names = tables or sorted(facts["tables"])
     fkmap = {}
@@ -148,11 +162,17 @@ def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN
             "count": n, "pk": tf["pk"], "源行数": tf["rows"],
             "columns": {c: _gen_for(c, cf, byfk.get(c)) for c, cf in tf["columns"].items()},
         }
-    plan["assertions"] = _assertions(facts, names, fkmap)
+        # **没有主键 = 灌得进去但删不掉。** 这比灌不进去糟得多:
+        # 假数据永久混在测试库里,时间长了没人分得清哪条是真的。
+        # 回滚的依据是 manifest 里的主键值,没有主键就没有依据 ——
+        # 所以默认跳过,要开得自己显式承担。
+        if not tf["pk"] and not allow_no_pk:
+            plan["tables"][tn]["skip"] = "没有主键 —— 灌得进去但删不掉,回滚没有依据"
+    plan["assertions"] = _assertions(facts, names, fkmap, facts["dialect"])
     return plan
 
 
-def _assertions(facts, names, fkmap):
+def _assertions(facts, names, fkmap, dialect="sqlite"):
     """自动派生断言 —— 灌完立刻自检。
 
     数据库直连绕过了业务层校验,这是优点也是陷阱:能造出「数据库允许但业务不可能」的数据,
@@ -163,6 +183,13 @@ def _assertions(facts, names, fkmap):
       孤儿引用 / 该非空的却空了 / 该唯一的却重了 / 枚举外的野值。
     时间线类(下单时间不能晚于发货时间)靠列名对推,标成候选,需要人或模型确认。
     """
+    # 断言 SQL 要跟着方言走。MySQL 默认**不认双引号标识符**(那是字符串),
+    # 也没有 `cast(x as text)`。第一版全写死成 SQLite 语法 ——
+    # 在 SQLite 上跑得好好的,换到真正的目标库上 271 条断言会全部报语法错。
+    # **只在一种数据库上验证过的方言层,等于没有方言层。**
+    Q = '`' if dialect == "mysql" else '"'
+    TXT = "char" if dialect == "mysql" else "text"
+    def qi(*parts): return ".".join(Q + p + Q for p in parts)
     out = []
     TIME_PAIRS = [("created", "updated"), ("created", "paid_at"), ("paid_at", "shipped_at"),
                   ("shipped_at", "done_at"), ("created", "last_interact")]
@@ -170,29 +197,30 @@ def _assertions(facts, names, fkmap):
         tf = facts["tables"][tn]
         for k in fkmap[tn]:
             out.append({"名": f'{tn}.{k["column"]} 不能有孤儿引用', "表": tn, "类": "孤儿",
-                        "sql": f'select count(*) from "{tn}" where "{k["column"]}" is not null '
-                               f'and "{k["column"]}" not in (select "{k["column_ref"]}" from "{k["table"]}")',
+                        "sql": f'select count(*) from {qi(tn)} where {qi(k["column"])} is not null '
+                               f'and {qi(k["column"])} not in '
+                               f'(select {qi(k["column_ref"])} from {qi(k["table"])})',
                         "期望": 0})
         for cn, cf in tf["columns"].items():
             if not cf["nullable"]:
                 out.append({"名": f"{tn}.{cn} 不可为空", "表": tn, "类": "非空",
-                            "sql": f'select count(*) from "{tn}" where "{cn}" is null', "期望": 0})
+                            "sql": f'select count(*) from {qi(tn)} where {qi(cn)} is null', "期望": 0})
             if cf.get("unique"):
                 out.append({"名": f"{tn}.{cn} 必须唯一", "表": tn, "类": "唯一",
-                            "sql": f'select count(*) from (select "{cn}" from "{tn}" '
-                                   f'where "{cn}" is not null group by 1 having count(*)>1)',
+                            "sql": f'select count(*) from (select {qi(cn)} from {qi(tn)} '
+                                   f'where {qi(cn)} is not null group by 1 having count(*)>1) dup',
                             "期望": 0})
             if cf.get("enum"):
                 vals = ",".join("'" + str(v).replace("'", "''") + "'" for v in cf["enum"])
                 out.append({"名": f"{tn}.{cn} 只能取已知的 {len(cf['enum'])} 个值", "表": tn, "类": "枚举",
-                            "sql": f'select count(*) from "{tn}" where "{cn}" is not null '
-                                   f'and cast("{cn}" as text) not in ({vals})', "期望": 0})
+                            "sql": f'select count(*) from {qi(tn)} where {qi(cn)} is not null '
+                                   f'and cast({qi(cn)} as {TXT}) not in ({vals})', "期望": 0})
         cols = set(tf["columns"])
         for a, b in TIME_PAIRS:
             if a in cols and b in cols:
                 out.append({"名": f"{tn}: {b} 不该早于 {a}", "表": tn, "类": "时间线(候选)",
-                            "sql": f'select count(*) from "{tn}" where "{a}" is not null '
-                                   f'and "{b}" is not null and "{b}" < "{a}"',
+                            "sql": f'select count(*) from {qi(tn)} where {qi(a)} is not null '
+                                   f'and {qi(b)} is not null and {qi(b)} < {qi(a)}',
                             "期望": 0, "需确认": "按列名对推的,业务上不一定成立"})
     return out
 
@@ -234,6 +262,13 @@ def to_markdown(plan, facts=None):
         for tn, cn, _g in unknown_col: by.setdefault(tn, []).append(cn)
         for tn in sorted(by): A(f'- `{tn}`: ' + ", ".join(f'`{c}`' for c in sorted(by[tn])))
     A("")
+
+    skipped = [(t, tp["skip"]) for t, tp in plan["tables"].items() if tp.get("skip")]
+    if skipped:
+        A(f'## ⛔ 跳过的 {len(skipped)} 张表\n')
+        A("**灌得进去但删不掉**,比灌不进去糟得多 —— 假数据会永久混在库里。\n")
+        A("`" + "`  `".join(t for t, _w in skipped) + "`\n")
+        A("确实要灌,加 `--allow-no-pk`,自己承担清不干净的后果。\n")
 
     if plan["deferred_fks"]:
         A(f'## 环:{len(plan["deferred_fks"])} 条边要两阶段灌\n')
