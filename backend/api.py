@@ -176,6 +176,48 @@ def get_workorder(workorder_id=None, artisan=None, status=None, ref=None, overdu
                     "一个师傅手上的在制件数超过 wip_limit,说明他已经排满,再派活只会更晚。"}
 
 
+def get_lifecycle(customer=None, lifecycle=None):
+    """查会员生命周期判定:这个客户属于哪一档、**凭什么**、有没有被人工覆盖。
+
+    口径在 knowledge/lifecycle.py,这里只取数和包装 ——
+    判定逻辑不写在工具里,否则又是一份手抄件。
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "knowledge"))
+    import lifecycle as _lc
+    where, args = [], []
+    if customer:  where.append("(id=? OR name=?)"); args += [customer, customer]
+    if lifecycle: where.append("lifecycle=?"); args.append(lifecycle)
+    sql = ("SELECT id,name,lifecycle,order_cnt,idle_days,amount_12m,orders_12m,"
+           "quarters_12m,first_order,manual_lc,manual_at,last_interact FROM customer")
+    if where: sql += " WHERE " + " AND ".join(where)
+    rs = _rows(sql + " ORDER BY id LIMIT 40", *args)
+    if not rs:
+        return {"hit": 0, "note": "查不到这个客户,不要凭印象回答",
+                "现有档位": _lc.PRIORITY}
+    out = []
+    for r in rs:
+        d = dict(r)
+        # 天数由**这一层**算好再交给口径 —— 口径不管今天几号,
+        # 否则同一批数据在不同时刻算出不同结果,真值对账没法复现。
+        def _ago(iso):
+            return ((_dt.date.today() - _dt.date.fromisoformat(iso)).days
+                    if iso else None)
+        v = _lc.decide(dict(d, days_since_first_order=_ago(d.get("first_order")),
+                            days_since_manual=_ago(d.get("manual_at"))))
+        d.update(v)
+        # 库里存的是每日重算的结果,这里是**按今天**重算的 —— 不一致要说出来,
+        # 不要默默用其中一个:那说明这条记录还没被今天的重算刷过。
+        if d.get("lifecycle") and d["lifecycle"] != v["生命周期"]:
+            d["提醒"] = (f"库里存的是「{d['lifecycle']}」,按今天重算是「{v['生命周期']}」——"
+                       "说明这条还没被今天的重算刷到,**以哪个为准要问运营**")
+        out.append(_nz(d))
+    return {"hit": len(out), "rows": out,
+            "优先级": _lc.PRIORITY, "判定条件": _lc.RULES,
+            "note": "「命中」列出全部命中的条件,「生命周期」是按优先级取的那一个。"
+                    "**多条命中时要把命中列表说出来** —— 只报结论,运营无从判断算得对不对。"}
+
+
 def kb_detail(code):
     """按编码取某一条的完整内容"""
     r=_rows("SELECT * FROM craft WHERE code=?",code)
@@ -850,6 +892,10 @@ SHOP_SCHEMAS=[
     "status":{"type":"string","description":"在制 / 已完成"},
     "ref":{"type":"string","description":"订单号"},
     "overdue":{"type":"boolean","description":"只看已逾期的"}},"required":[]}},
+ {"name":"get_lifecycle","description":"查会员生命周期判定:某个客户属于八档中的哪一档(潜在/新客/活跃/高价值/忠诚/休眠/潜在流失/流失)、**凭什么判成这一档**、有没有被人工覆盖。也可按档位列人。\n\n**判定口径全是含端边界**:第 90 天算活跃、第 91 天进休眠、第 180 天仍休眠、第 181 天进潜在流失、第 365 天仍潜在流失、第 366 天才算流失;实付满 15000 **含端**计高价值。这些不要自己心算,直接看返回值。\n\n返回里「命中」是**全部**命中的条件,「生命周期」是按优先级取的那一个 —— **多条命中时必须把命中列表一起说出来**,只报结论运营无从判断算得对不对(实测四分之三的潜在流失客户同时命中多个条件)。出现「提醒」字段说明库里存的值和按今天重算的不一致,照实说,不要替它选一个。\n\n**这是判定不是预测**,不要拿它当流失概率用。",
+  "input_schema":{"type":"object","properties":{
+    "customer":{"type":"string","description":"客户号或姓名"},
+    "lifecycle":{"type":"string","description":"按档位筛,如「潜在流失」"}},"required":[]}},
  {"name":"get_aftersale","description":"查售后记录(退货/换货/退款/维修),可按订单号、客户或状态筛。退款类会带上退款轨迹。**这个工具只给事实,不给判责结论** —— 判责标准在 kb_tables 的「售后争议判定」表里,要另外查。查不到就如实说查不到,不要推测客户提过什么。",
   "input_schema":{"type":"object","properties":{
     "order_id":{"type":"string"},"customer":{"type":"string","description":"客户号或姓名"},
@@ -909,7 +955,8 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_capacity":get_capacity,
               "get_wearer":get_wearer,"forecast_growth":forecast_growth,
               "plan_for_event":plan_for_event,"get_maintain":get_maintain,
-              "get_workorder":get_workorder})
+              "get_workorder":get_workorder,
+              "get_lifecycle":get_lifecycle})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

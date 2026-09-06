@@ -182,6 +182,13 @@ TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
               "mcp__task__get_refund_trace", "mcp__task__get_payment_flow",
               "mcp__task__get_customer"]
 
+# 只给后台运营:会员生命周期判定(八档 + 凭什么 + 有没有被人工覆盖)。
+# 这是**台账活** —— 顾问在跟客户说话的时候不该做分群。
+# P6 当场拦住了我最初「放进两个角色共用那包」的写法:工具发给了工艺顾问,
+# 而管它的规矩 TK08 只写给后台运营 —— **工具给了、规矩没给**。
+# 它逼我决定这个工具归谁,而不是默认发给所有人。
+TASK_ONLY_TOOLS = ["mcp__shop__get_lifecycle"]
+
 # ── 提示词:唯一源头在根目录 prompts.py ──────────────────────────────
 # 原来这里是两份 64 行 + 18 行的字面量,而 agent/chat.py 里还有**另一份**同角色的
 # 提示词(6 条铁律)。同一个事实两个来源,必然漂 —— 而且它漂了:
@@ -196,7 +203,7 @@ import prompts   # noqa: E402
 _ROLE_TOOLS = {
     "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS,
     "workshop": lambda: WORKSHOP_TOOLS,           # 工坊不看订单流水,只看产能和工单
-    "task":     lambda: TASK_TOOLS + SHOP_TOOLS,
+    "task":     lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS,
 }
 
 def _tools_for(kind):

@@ -56,11 +56,12 @@ def wl(name):
     return {t.rsplit("__", 1)[-1] for t in re.findall(r'"([^"]+)"', m.group(1))} if m else set()
 KB, SHOP, TASK = wl("KB_TOOLS"), wl("SHOP_TOOLS"), wl("TASK_TOOLS")
 KBONLY, WORK = wl("KB_ONLY_TOOLS"), wl("WORKSHOP_TOOLS")
+TASKONLY = wl("TASK_ONLY_TOOLS")
 KBSET = {t["name"] for t in api.KB_SCHEMAS}
 CALLERS = {
     "工作站·工艺顾问(sdk)":   ("kb",   KB | KBONLY | SHOP | {"图片"}),
     "工作站·工坊排产(sdk)":   ("workshop", WORK),
-    "工作站·任务助手(sdk)":   ("task", TASK | SHOP),
+    "工作站·任务助手(sdk)":   ("task", TASK | TASKONLY | SHOP),
     "后台聊天(chat.py)":      ("kb",   KBSET),
     "一代任务循环(v1.py)":    ("task", {t["name"] for t in api.SCHEMAS} | {"submit_finding"}),
 }

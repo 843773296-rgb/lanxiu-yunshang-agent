@@ -4,8 +4,11 @@ import json, os, sqlite3, subprocess, sys, threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, unquote
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))), "knowledge"))
 import api as backend
 import fsm, rules
+import lifecycle as _lc     # 生命周期口径的唯一源头,页面不再自己抄一份
 
 HERE=os.path.dirname(os.path.abspath(__file__))
 
@@ -1095,7 +1098,7 @@ def customer_detail(cid):
                 level_cfg=lv[0] if lv else None)
 
 def lifecycle_page(sel=None):
-    types=["潜在","新客","活跃","高价值","忠诚","休眠","潜在流失","流失"]
+    types=["潜在","新客","活跃","高价值","忠诚","休眠","潜在流失","流失"]  # 展示顺序,不是优先级
     cnt={r["lifecycle"]:r["n"] for r in rows("SELECT lifecycle,COUNT(*) n FROM customer GROUP BY lifecycle")}
     cur=sel or types[0]
     cs=rows("""SELECT id,name,phone,lifecycle,shop,advisor,level,order_cnt,paid_amount,last_interact,
@@ -1103,11 +1106,9 @@ def lifecycle_page(sel=None):
                FROM customer WHERE lifecycle=? ORDER BY (manual_lc IS NULL), id LIMIT 60""",cur)
     for c in cs:
         p=c["phone"] or ""; c["phone"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
-    # 判定规则来自后台 PRD 6.1
-    RULE={"潜在":"无完成订单","新客":"首单后 30 天内","活跃":"90 天内有有效互动",
-          "高价值":"近 12 个月实付满 15000 元","忠诚":"近 12 个月满 4 单且跨两个季度",
-          "休眠":"无互动 91-180 天","潜在流失":"无互动 181-365 天","流失":"无互动超过 365 天"}
-    PRI=["流失","潜在流失","休眠","忠诚","高价值","新客","活跃","潜在"]
+    # 判定规则和优先级都来自 knowledge/lifecycle.py —— 这里原来是第二份手抄件。
+    # 页面写「优先级 3」而实际按第 4 位算,这种漂不会报错,只会让运营看不懂。
+    RULE, PRI = _lc.RULES, _lc.PRIORITY
     for c in cs:
         c["matched_list"]=[x for x in (c.get("matched") or "").split("/") if x]
         c["conflict"]=len(c["matched_list"])>1

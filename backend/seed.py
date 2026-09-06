@@ -297,25 +297,22 @@ from datetime import date, timedelta
 T=date(2026,8,31)
 def ago(days): return (T-timedelta(days=days)).isoformat()
 
-# 判定规则(逐字来自后台 PRD 6.1)与优先级
-PRIORITY=["流失","潜在流失","休眠","忠诚","高价值","新客","活跃","潜在"]
+# 判定口径的唯一源头在 knowledge/lifecycle.py。
+# 这里原来是**一份手抄件**(PRIORITY + match_rules + decide),server.py 里还有另一份。
+# 两份都写着同一个优先级列表 —— 同一个事实两个来源,必然漂,而且漂了不报错。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge"))
+import lifecycle as _lc
+PRIORITY = _lc.PRIORITY
+
+def _days(iso):
+    return (T - date.fromisoformat(iso)).days if iso else None
+
 def match_rules(c):
-    """返回命中的全部生命周期条件"""
-    m=[]
-    if c["order_cnt"]==0: m.append("潜在")
-    if c["first_order"] and (T-date.fromisoformat(c["first_order"])).days<=30: m.append("新客")
-    if c["idle_days"]<=90: m.append("活跃")
-    if c["amount_12m"]>=15000: m.append("高价值")
-    if c["orders_12m"]>=4 and c["quarters_12m"]>=2: m.append("忠诚")
-    if 91<=c["idle_days"]<=180: m.append("休眠")
-    if 181<=c["idle_days"]<=365: m.append("潜在流失")
-    if c["idle_days"]>365: m.append("流失")
-    return m
+    return _lc.match(dict(c, days_since_first_order=_days(c.get("first_order"))))
+
 def decide(c):
-    m=match_rules(c)
-    for p in PRIORITY:
-        if p in m: return p,m
-    return "潜在",m
+    r = _lc.decide(dict(c, days_since_first_order=_days(c.get("first_order"))))
+    return r["系统重算值"], r["命中"]
 
 def run():
     if os.path.exists(DB): os.remove(DB)
