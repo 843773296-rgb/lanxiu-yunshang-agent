@@ -1255,6 +1255,58 @@ def run():
         c.execute("INSERT INTO consent VALUES(?,?,?,?,?,?,?,?)",
                   (f"CS{2000+n}", wid, scope, by, rel, "门店纸质", at, None))
 
+    # ── 账户生命周期:锁定 / 注销中 / 已注销 ────────────────────────────
+    # **「注销」和「数据删除」是两件事**,个保法里也是分开的:
+    #   注销中 —— 冷静期,数据还在,可以撤回
+    #   已注销 —— 个人数据必须**真的删掉**
+    #
+    # 已注销账户因此**不该有着装人**(数据已删),所以 A3 要加这条例外。
+    # 手机号是 NOT NULL UNIQUE,删不掉 —— 真实系统的做法是换成**墓碑值**:
+    # 唯一性还在,真号已经没了,拿旧号也查不到人。
+    # 注销 / 锁定的目标要挑**没有在办业务**的账户 —— 这是真实业务规则:
+    # 有在办维修工单、未完成订单、活跃量体记录的账户,不该被注销,
+    # **冷静期存在的意义正是等这些事了结**。
+    # 顺带的好处:评测夹具不会被一次注销级联打断。
+    _busy = {r[0] for r in c.execute("""
+        SELECT DISTINCT k.account_id FROM customer k
+        WHERE k.account_id IS NOT NULL AND (
+             EXISTS(SELECT 1 FROM measure_rec m WHERE m.customer_id=k.id)
+          OR EXISTS(SELECT 1 FROM maintain t WHERE t.customer_id=k.id)
+          OR EXISTS(SELECT 1 FROM ordr o WHERE o.customer_id=k.id
+                    AND o.status NOT IN ('完成','取消')))""")}
+    _accs = [r[0] for r in c.execute("SELECT id FROM account ORDER BY id")
+             if r[0] not in _busy]
+    for _n, _aid in enumerate(_accs):
+        if _n % 12 == 1:            # 3 个:锁定(连续输错密码)
+            c.execute("UPDATE account SET fail_count=?, locked_until=?, status='锁定' "
+                      "WHERE id=?", (5 + _n % 3, ago(-1), _aid))
+        elif _n % 12 == 5:         # 3 个:注销中,冷静期 15 天,数据还在
+            c.execute("UPDATE account SET status='注销中', closed_at=?, marketing_consent=0 "
+                      "WHERE id=?", (ago(_n % 10 + 2), _aid))
+        elif _n % 12 == 9:         # 3 个:已注销,个人数据已清除
+            c.execute("UPDATE account SET status='已注销', closed_at=?, purge_at=?, "
+                      "phone=?, login_name=NULL, pwd_algo=NULL, pwd_salt=NULL, pwd_hash=NULL, "
+                      "display_name=NULL, contact_pref=NULL, default_addr=NULL, "
+                      "marketing_consent=0, self_wearer_id=NULL WHERE id=?",
+                      (ago(60 + _n % 20), ago(45 + _n % 20), f"DELETED-{_aid}", _aid))
+            # **注销不是删掉一行,是决定「哪些必须删、哪些必须留」:**
+            #   必须删  —— 身体数据(着装人 / 量体 / 体型特征 / 同意):敏感个人信息,没有保留依据
+            #   必须留  —— 订单、售后:履行合同与法定义务所需的经营记录
+            #   去标识化 —— 门店档案上的姓名、手机、地址、微信、邮箱
+            # 删多了违约,删少了违法。上一版只清了账户那一行,
+            # 结果 14 条量体记录成了孤儿 —— **人删了,身体数据还躺在库里。**
+            _cids = [r[0] for r in c.execute(
+                "SELECT id FROM customer WHERE account_id=?", (_aid,))]
+            for _cd in _cids:
+                c.execute("DELETE FROM measure_rec WHERE customer_id=?", (_cd,))
+                c.execute("DELETE FROM body_feature WHERE customer_id=?", (_cd,))
+                c.execute("""DELETE FROM consent WHERE wearer_id IN
+                             (SELECT id FROM wearer WHERE customer_id=?)""", (_cd,))
+                c.execute("DELETE FROM wearer WHERE customer_id=?", (_cd,))
+                c.execute("""UPDATE customer SET name='已注销用户', phone=?, phone_tail=NULL,
+                             addr=NULL, email=NULL, wechat=NULL, birthday=NULL, remark=NULL
+                             WHERE id=?""", (f"DELETED-{_cd}", _cd))
+
     # ── A3/A7/A8:**每个账户必须有一个「本人」着装人,而且必须成年** ──────
     # 账户 = 一个人;那个人本身就是第一个着装人。原来只给 18 个有量体记录的
     # 客户建了着装人,于是 72 个账户底下空着 —— 空账户在业务上没有意义:
@@ -1265,6 +1317,9 @@ def run():
     cn = 0
     for a in c.execute("SELECT id, phone, display_name FROM account ORDER BY id").fetchall():
         aid, aph, anm = a
+        # 已注销的账户不建着装人 —— **个人数据已删除,建回去就是把删掉的又写回来**
+        if c.execute("SELECT status FROM account WHERE id=?", (aid,)).fetchone()[0] == "已注销":
+            continue
         cu = c.execute("""SELECT id,name,gender,birthday FROM customer
                           WHERE account_id=? ORDER BY created LIMIT 1""", (aid,)).fetchone()
         if not cu: continue

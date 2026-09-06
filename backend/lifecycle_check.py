@@ -77,10 +77,12 @@ def structural(c):
                    WHERE w.account_id IS NULL OR a.id IS NULL""").fetchall(),
       "**身份绑在账户上,不绑门店档案** —— 档案可能有好几条,账户只有一个"),
 
+    # 已注销的排除:两边都是墓碑值(DELETED-<id>),本来就对不上 ——
+    # **拿「删干净了」当违规,是规范少了例外,不是数据错了。**
     A("门店档案归错了账户(手机号对不上)",
       c.execute("""SELECT k.id, k.phone, a.phone FROM customer k
                    JOIN account a ON a.id = k.account_id
-                   WHERE k.phone <> a.phone""").fetchall(),
+                   WHERE a.status <> '已注销' AND k.phone <> a.phone""").fetchall(),
       "账户是按手机号归的,归完之后两边手机号必须一致"),
 
     A("着装人的账户与它建档门店档案的账户不一致",

@@ -41,7 +41,8 @@ print("数据规范检查 · 对照《数据规范.md》\n" + "=" * 84)
 # ── 一、身份 ────────────────────────────────────────────────────────────
 rule("A3", "每个账户至少有一个着装人",
      q("""SELECT a.id FROM account a
-          WHERE NOT EXISTS(SELECT 1 FROM wearer w WHERE w.account_id=a.id)"""),
+          WHERE a.status <> '已注销'
+            AND NOT EXISTS(SELECT 1 FROM wearer w WHERE w.account_id=a.id)"""),
      "一个连「衣服穿在谁身上」都答不出的账户,做定制没法用")
 
 rule("A7", "账户持有人必须成年",
@@ -56,9 +57,9 @@ rule("A8", "每个账户有且只有一个「本人」,且 self_wearer_id 指向
             (SELECT count(*) FROM wearer w WHERE w.account_id=a.id AND w.relation='本人') n,
             a.self_wearer_id
           FROM account a
-          WHERE n <> 1 OR a.self_wearer_id IS NULL
+          WHERE a.status <> '已注销' AND (n <> 1 OR a.self_wearer_id IS NULL
              OR a.self_wearer_id NOT IN (SELECT id FROM wearer WHERE account_id=a.id
-                                          AND relation='本人')"""),
+                                          AND relation='本人'))"""),
      "「本人」要能指出来,而不是靠 relation 字符串去猜")
 
 rule("A9", "旧号别名不得与现有登录号相撞",
@@ -70,6 +71,45 @@ _a10 = q("""SELECT w.id wearer, w.name, a.id acct FROM wearer w
             JOIN account a ON a.phone = w.phone
             WHERE w.account_id <> a.id""")
 if _a10: note.append(("A10", f"{len(_a10)} 个着装人本人也有自己的账户(可关联,不是冲突)"))
+
+rule("A11", "账户状态与注销时间一致",
+     q("""SELECT id,status,closed_at,purge_at FROM account WHERE
+            (status='注销中' AND (closed_at IS NULL OR purge_at IS NOT NULL))
+         OR (status='已注销' AND (closed_at IS NULL OR purge_at IS NULL))
+         OR (status IN ('正常','锁定') AND (closed_at IS NOT NULL OR purge_at IS NOT NULL))"""),
+     "注销中是冷静期(数据还在),已注销是数据已删 —— 状态和时间戳对不上,"
+     "就说不清这个账户到底在哪一步")
+
+rule("A12", "已注销账户名下不得留有身体数据",
+     q("""SELECT a.id,
+            (SELECT count(*) FROM wearer w WHERE w.account_id=a.id) w,
+            (SELECT count(*) FROM measure_rec m JOIN customer k ON k.id=m.customer_id
+             WHERE k.account_id=a.id) m
+          FROM account a WHERE a.status='已注销' AND (w>0 OR m>0)"""),
+     "身体数据是敏感个人信息,注销后**没有保留依据** —— "
+     "只清账户那一行会留下孤儿:人删了,尺寸还躺在库里")
+
+rule("A13", "已注销账户的门店档案已去标识化,且订单仍在",
+     q("""SELECT k.id, k.name, k.phone FROM customer k JOIN account a ON a.id=k.account_id
+          WHERE a.status='已注销'
+            AND (k.name <> '已注销用户' OR k.phone NOT LIKE 'DELETED-%'
+                 OR k.addr IS NOT NULL OR k.birthday IS NOT NULL)"""),
+     "**删多了违约,删少了违法** —— 个人标识必须去掉,订单这类经营记录必须留着")
+
+rule("A14", "锁定账户必须有失败次数与解锁时间",
+     q("""SELECT id FROM account WHERE status='锁定'
+          AND (fail_count IS NULL OR fail_count=0 OR locked_until IS NULL)"""),
+     "锁了却说不出为什么锁、什么时候解 —— 客服没法答复客户")
+
+rule("A15", "有在办业务的账户不得注销",
+     q("""SELECT a.id, a.status FROM account a JOIN customer k ON k.account_id=a.id
+          WHERE a.status IN ('注销中','已注销') AND (
+               EXISTS(SELECT 1 FROM maintain t WHERE t.customer_id=k.id
+                      AND t.status NOT IN ('已完成','取消'))
+            OR EXISTS(SELECT 1 FROM ordr o WHERE o.customer_id=k.id
+                      AND o.status NOT IN ('完成','取消')))"""),
+     "**冷静期存在的意义正是等这些事了结** —— 衣服还在做、维修还没交,"
+     "人把账号注销了、身体数据一删,这单就没法收尾")
 
 # ── 二、关联 ────────────────────────────────────────────────────────────
 REF = {"customer_id": "customer", "order_id": "ordr", "account_id": "account",
@@ -126,4 +166,4 @@ if bad:
     for no, why, n in bad: print(f"   · {no}({n} 条):{why}")
     print("   **不要直接把断言改松** —— 要么数据破了,要么规范该改了,两种都得人看一眼。")
     sys.exit(1)
-print(f"✅ 规范全部守住(A3/A7/A8/A9 · B2/B3/B4 · D1 · E2)")
+print("✅ 规范全部守住(A3/A7/A8/A9/A11–A15 · B2/B3/B4 · D1 · E2)")
