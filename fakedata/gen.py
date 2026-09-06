@@ -352,6 +352,25 @@ def generate(plan, conn=None, edge_rate=0.05):
                         v = _cap(str(_value(g, r2, {})) + str(r2.randint(10, 9999)), g)
                     seen.add(v); row[cname] = v
 
+        # 联合抽样要在状态机改写**之前**:它定的是「这一行的各个状态分别是什么」,
+        # 状态机再据此把时间戳对上。反过来的话状态机刚排好的时间戳会被换掉的状态作废。
+        #
+        # 为什么照真实出现过的组合抽,而不是各列独立抽:
+        # 独立抽样天然造不出列与列之间的关系 —— 订单状态抽到「待付款」,
+        # 生产状态另抽一次抽到「已生产」,于是**未付款却已经生产了**。
+        # 照真实组合抽,一致性是白送的:不需要先判断出规则,也就不会判错。
+        # 代价是**不会造出源库没见过的组合**,变化少一点 —— 测试数据要一致性,这个换法划算。
+        for grp in tp.get("joint", []):
+            gcols = [c for c in grp["columns"] if c in cols]
+            if len(gcols) < 2 or not grp["dist"]: continue
+            keep = [grp["columns"].index(c) for c in gcols]
+            tuples = [[t[i] for i in keep] for t, _w in grp["dist"]]
+            weights = [w for _t, w in grp["dist"]]
+            rj = rng_for(seed, tname, "联合", "|".join(gcols))
+            for row in rows:
+                pick = rj.choices(tuples, weights=weights, k=1)[0]
+                for c, v in zip(gcols, pick): row[c] = v
+
         # 状态机改写要在时间线修正**之前** —— 它写的是「哪些时间戳该有值」,
         # 时间线修正管的是「有值的那些先后对不对」。顺序反了会把状态机写的空值填回去。
         for cname, g in cols.items():

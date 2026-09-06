@@ -124,6 +124,11 @@ def apply_overlay(facts, overlay):
         cf = T[c["table"]]["columns"][c["column"]]
         cf["semantic"] = c["semantic"]; cf["由模型指定"] = c.get("reason", "")
         log.append(f'补语义 {c["table"]}.{c["column"]} → {c["semantic"]}')
+    real = [f for f in overlay.get("forbidden", []) if f["verdict"] == "real"]
+    for f in real:
+        T[f["table"]].setdefault("forbidden", []).append(f)
+    if real: log.append(f'禁配确认 {len(real)} 条(另有 '
+                        f'{len(overlay.get("forbidden", [])) - len(real)} 条判为样本太小)')
     for m in overlay.get("state_machines", []):
         T[m["table"]]["columns"][m["column"]]["fsm"] = {
             "start": m.get("start", []), "transitions": m["transitions"],
@@ -233,6 +238,11 @@ def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN
             "count": n, "pk": tf["pk"], "源行数": tf["rows"],
             "columns": {c: _gen_for(c, cf, byfk.get(c)) for c, cf in tf["columns"].items()},
         }
+        # 联合分布只带 columns + dist 进方案 —— 禁配候选是给模型判的原料,不是执行用的
+        if tf.get("joint"):
+            plan["tables"][tn]["joint"] = [{"columns": j["columns"], "dist": j["dist"],
+                                            "组合数": j["组合数"], "笛卡尔积": j["笛卡尔积"]}
+                                           for j in tf["joint"]]
         # **没有主键 = 灌得进去但删不掉。** 这比灌不进去糟得多:
         # 假数据永久混在测试库里,时间长了没人分得清哪条是真的。
         # 回滚的依据是 manifest 里的主键值,没有主键就没有依据 ——
@@ -309,6 +319,14 @@ def _assertions(facts, names, fkmap, dialect="sqlite"):
                                     "sql": f'select count(*) from {qi(tn)} where '
                                            f'cast({qi(cn)} as {TXT})=\'{st}\' and {qi(ts)} is not null',
                                     "期望": 0})
+        for f in tf.get("forbidden", []):
+            av = str(f["a_value"]).replace("'", "''"); bv = str(f["b_value"]).replace("'", "''")
+            out.append({"名": f'{tn}: 「{f["a_column"]}={f["a_value"]}」不能配'
+                             f'「{f["b_column"]}={f["b_value"]}」', "表": tn, "类": "禁配",
+                        "sql": f'select count(*) from {qi(tn)} where '
+                               f"cast({qi(f['a_column'])} as {TXT})='{av}' and "
+                               f"cast({qi(f['b_column'])} as {TXT})='{bv}'",
+                        "期望": 0, "理由": f.get("reason", "")})
         cols = set(tf["columns"])
         # 所有 *_at 都不该早于下单时间。原来只查写死的那几对,
         # 而状态机带进来的时间戳(audit_at / produced_at / cancelled_at…)一条都没被查。

@@ -55,12 +55,19 @@ SYSTEM = """你是数据库结构分析员。任务是审阅一份「造假数�
 2. 【列语义】给「看不出语义」的列指定该造什么。只能从给定清单里挑。
 3. 【状态机】给状态类的枚举列,写出合法的状态流转:起点、转移、终点。
    如果表里有对应的时间戳列(下单时间/付款时间/发货时间),把状态和时间戳对应起来。
+4. 【禁配判定】**「禁配待判」里每一个候选都要给一条判定,一个都不能漏**,判 real 还是 coincidence。
+   real  = 业务上不可能同时成立(例:订单还没付款,生产状态却是已发货)
+   coincidence = 业务上完全可能,只是这批数据量小、碰巧没赶上
+   **样本量小的时候这两者长得一模一样,只能靠业务常识分。拿不准一律 coincidence。**
+   判成 real 会变成一条永久的检查,判错了会让以后每一批数据都误报。
 
 规则:
 - 只输出 JSON,不要任何解释文字、不要 markdown 代码围栏。
 - 每条判定都要带 reason,一句话,说清依据(引用注释就直接引原文)。
 - 拿不准就别写。**漏掉一条的代价,远小于编一条错的。**
 - 只能提到草稿里出现过的表名和列名。编出来的会被丢弃。
+
+输出条数必须对得上:relations 与「关系待判」等长,forbidden 与「禁配待判」等长。
 
 输出格式:
 {
@@ -69,11 +76,13 @@ SYSTEM = """你是数据库结构分析员。任务是审阅一份「造假数�
  "columns":[{"table":"","column":"","semantic":"","reason":""}],
  "state_machines":[{"table":"","column":"","start":[""],
                     "transitions":[["from","to"]],"terminal":[""],
-                    "timestamps":{"状态名":"时间戳列名"},"reason":""}]
+                    "timestamps":{"状态名":"时间戳列名"},"reason":""}],
+ "forbidden":[{"table":"","a_column":"","a_value":"","b_column":"","b_value":"",
+               "verdict":"real|coincidence","reason":""}]
 }"""
 
 
-def build_input(facts, plan, max_rel=40, max_col=40, max_fsm=12):
+def build_input(facts, plan, max_rel=40, max_col=40, max_fsm=12, max_forb=30):
     """挑要送给模型的那一小部分。
 
     整个库 58 张表 566 列全塞进去,又贵又容易分心。
@@ -118,13 +127,38 @@ def build_input(facts, plan, max_rel=40, max_col=40, max_fsm=12):
                                              if re.search(r"(_at$|created|updated|时间)", c)]})
     fsm.sort(key=_fsm_rank)
     for f in fsm: f.pop("rows", None)
+
+    # 禁配候选的排序,栽了两次,两次都是「截断规则单看合理,却让最该看的掉出名单」:
+    #   ① 不排序就截断 → 随机丢掉最有把握的(期望 277 次没出现 vs 期望 1.6 次,证据强度差两个量级)
+    #   ② 只按期望值全局排 → `measure_rec` 一张表的 27 条高期望候选吃光整个预算,
+    #      而 `ordr` 的「未付款却已发货」(期望 3.1)根本进不来 —— 那才是最该问的。
+    # 所以**排序之外还要保证多样性**:一张表最多占 per_table 个名额,再全局排。
+    # 还有第三条:**两列都像状态的那些对,优先。**
+    # 光按期望值排,`ordr` 的名额会被 `status × delivery`(期望 5.5)占满,
+    # 而「未付款却已发货」这种**跨状态机**的不一致(期望 3.1)仍然进不来 ——
+    # 而那正是这一刀要解决的问题。证据强度不等于重要性。
+    per_table = 3
+    def _both_stateful(tn, p):
+        cols = facts["tables"][tn]["columns"]
+        return all(_looks_stateful(c, cols[c].get("enum") or {}) for c in (p["a"], p["b"]))
+    byt = {}
+    for tn, tf in facts["tables"].items():
+        for j in tf.get("joint", []):
+            byt.setdefault(tn, []).extend(dict(p, table=tn) for p in j["禁配候选"])
+    forb = []
+    for tn, ps in byt.items():
+        forb += sorted(ps, key=lambda p: (not _both_stateful(tn, p),
+                                          -p["期望次数"]))[:per_table]
+    forb.sort(key=lambda p: (not _both_stateful(p["table"], p), -p["期望次数"]))
+
     return {"关系待判": rel, "列语义待定": col, "疑似状态机": fsm[:max_fsm],
-            "可选语义": ALLOWED_SEM}
+            "禁配待判": forb[:max_forb], "可选语义": ALLOWED_SEM}
 
 
-def _looks_stateful(cname, enum):
-    if re.search(r"(status|state|stage|lifecycle|阶段|状态)", cname.lower()): return True
-    return sum(1 for v in enum if re.match(r"^(待|已|未|在)", str(v))) >= 2
+# 「这一列像不像状态」在 discover.py 里已经定义过一份(挑联合分布的列时用)。
+# 判的是同一件事,所以 import 过来 —— 两份手抄件迟早会漂,
+# 而漂了之后「送给模型判的候选」和「统计挑出来的相关列」就对不上了。
+from discover import _looks_stateful
 
 
 # ── 校验:模型说的每一句都要能对上真实 schema ──────────────────────
@@ -135,7 +169,7 @@ SQL_BAD = re.compile(r"\b(insert|update|delete|drop|alter|create|truncate|grant|
 def validate(raw, facts, plan):
     """把模型的输出核一遍。核不上的**丢掉并报出来** —— 默默忽略等于假装没发生。"""
     T = facts["tables"]
-    out = {"relations": [], "columns": [], "state_machines": []}
+    out = {"relations": [], "columns": [], "state_machines": [], "forbidden": []}
     dropped = []
 
     def has(t, c=None):
@@ -215,6 +249,25 @@ def validate(raw, facts, plan):
         if not trans: dropped.append(f'状态机:{t}.{c} 没给出任何转移'); continue
         out["state_machines"].append(m)
 
+    for f in raw.get("forbidden", []):
+        t, ac, bc = f.get("table"), f.get("a_column"), f.get("b_column")
+        if not (has(t, ac) and has(t, bc)):
+            dropped.append(f'禁配:{t}.{ac}×{bc} 不存在'); continue
+        if f.get("verdict") not in ("real", "coincidence"):
+            dropped.append(f'禁配:{t}.{ac}×{bc} 的 verdict={f.get("verdict")!r} 不认识'); continue
+        if f["verdict"] == "real":
+            # real 会变成一条**永久的检查**。所以取值必须真的在库里见过 ——
+            # 对一个不存在的取值下禁令,这条断言永远查不到东西,
+            # 看起来一直是绿的,其实什么也没查。**永远为真的检查等于没有检查。**
+            for col, val in ((ac, f.get("a_value")), (bc, f.get("b_value"))):
+                if str(val) not in set(map(str, (T[t]["columns"][col].get("enum") or {}))):
+                    dropped.append(f'禁配:{t}.{col}={val!r} 这个取值库里没有,'
+                                   f'对它下禁令等于加一条永远为真的检查'); break
+            else:
+                out["forbidden"].append(f)
+        else:
+            out["forbidden"].append(f)
+
     return out, dropped
 
 
@@ -232,24 +285,54 @@ def infer(facts, plan, model=None, log=print):
     sys.path.insert(0, os.path.join(ROOT, "agent"))
     import v1
     payload = build_input(facts, plan)
-    n = sum(len(payload[k]) for k in ("关系待判", "列语义待定", "疑似状态机"))
-    log(f"  送去判断:关系 {len(payload['关系待判'])} 条 / "
-        f"列 {len(payload['列语义待定'])} 个 / 疑似状态机 {len(payload['疑似状态机'])} 个")
+    n = sum(len(payload[k]) for k in ("关系待判", "列语义待定", "疑似状态机", "禁配待判"))
+    log(f"  送去判断:关系 {len(payload['关系待判'])} 条 / 列 {len(payload['列语义待定'])} 个 / "
+        f"疑似状态机 {len(payload['疑似状态机'])} 个 / 禁配候选 {len(payload['禁配待判'])} 个")
     if not n:
-        return {"relations": [], "columns": [], "state_machines": []}, [], {}
+        return {"relations": [], "columns": [], "state_machines": [], "forbidden": []}, [], {}
     if model: os.environ["ANTHROPIC_MODEL"] = model
     pv = v1.provider()
     t0 = time.time()
-    resp = v1.call(pv, dict(model=pv["model"], max_tokens=pv.get("max_tokens", 8000),
+    # 输出上限要按**要产出多少条判定**来定,不能用一个写死的默认值。
+    # 加上「每个候选都要判」这条要求之后,输出从 5k 涨到超过 8k,当场被截断 ——
+    # 而截断的表现是「JSON 解析失败」,看起来像格式问题,其实是配置不够。
+    # 记录仪的 finish_reason 那一栏一句话就定位了(stop_reason=max_tokens)。
+    budget = max(8000, 400 * n)
+    resp = v1.call(pv, dict(model=pv["model"], max_tokens=min(budget, 32000),
                             system=SYSTEM,
                             messages=[{"role": "user", "content":
                                        json.dumps(payload, ensure_ascii=False, indent=1)}]),
                    purpose="假数据工厂·补语义", gen="工具")
     text = "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text")
+    if resp.get("stop_reason") == "max_tokens":
+        raise SystemExit(
+            f"模型回答被 max_tokens 截断(要了 {min(budget, 32000)},还是不够)。\n"
+            f"这不是格式问题,是配置不够 —— 截断的 JSON 解析失败,长得像模型不会输出 JSON。\n"
+            f"办法:少送点候选(改 build_input 的 max_* 参数),或者换个输出上限更高的模型。")
     raw = _parse_json(text)
     good, dropped = validate(raw, facts, plan)
+    # **覆盖率要算,不能默认它全判了。** 模型少判几条不会报错 ——
+    # 那几条就静悄悄地没有结论,而「没结论」会被当成「没问题」。
+    # 漏判按「不是规则」处理(安全的一侧),但必须报出来。
+    cov = {}
+    for k, outk, key in (("关系待判", "relations", lambda p: (p["table"], p["column"])),
+                         ("禁配待判", "forbidden", lambda p: (p["table"], p["a"], p["b"],
+                                                             p["a值"], p["b值"]))):
+        asked = len(payload[k])
+        if k == "禁配待判":
+            got = {(f["table"], f["a_column"], f["b_column"],
+                    str(f["a_value"]), str(f["b_value"])) for f in good[outk]}
+            miss = [p for p in payload[k] if (p["table"], p["a"], p["b"],
+                                              str(p["a值"]), str(p["b值"])) not in got]
+        else:
+            got = {(r["table"], r["column"]) for r in good[outk]}
+            miss = [p for p in payload[k] if (p["table"], p["column"]) not in got]
+        cov[k] = {"送去": asked, "判了": asked - len(miss), "漏判": len(miss)}
+        if miss:
+            dropped.append(f'{k}:送去 {asked} 条,模型只判了 {asked - len(miss)} 条,'
+                           f'漏判 {len(miss)} 条(按「不是规则」处理)')
     meta = {"model": pv["model"], "耗时秒": round(time.time() - t0, 1),
-            "usage": resp.get("usage", {}), "送去判断": n}
+            "usage": resp.get("usage", {}), "送去判断": n, "覆盖率": cov}
     return good, dropped, meta
 
 

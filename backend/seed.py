@@ -1741,6 +1741,15 @@ def run():
     assert _kid, "没有父母俱全的孩子 —— 靶身高校验会缺用例"
     c.execute("UPDATE wearer SET height=162.0 WHERE id=?", (_kid[1],))
     c.execute("UPDATE wearer SET height=152.0 WHERE id=?", (_kid[2],))
+    # ③:把一条在制工单的交期设成过去 —— 否则 get_workorder 的「已逾期」
+    #    这条规则**永远不会被触发**,它错了也没人知道(和上面两条同病)。
+    #    现实里逾期工单当然存在,而且正是排产最该先看的那一类。
+    _wo = c.execute("SELECT id FROM workorder WHERE status='在制' ORDER BY id LIMIT 1").fetchone()
+    assert _wo, "没有在制工单可做反例 —— get_workorder 的逾期分支会缺用例"
+    c.execute("UPDATE workorder SET due_date=? WHERE id=?",
+              ((T - timedelta(days=6)).isoformat(), _wo[0]))
+    print(f"  [反例] {_wo[0]} 交期设为 6 天前 —— 供「已逾期」用")
+
     print(f"  [反例] {_kid[0]} 的父母身高设为 162/152 —— 供「靶身高冲突需人工确认」用")
 
     # ── BP-03 售后判责:研判工单 + 人工标注真值 ────────────────────────

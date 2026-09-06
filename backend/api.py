@@ -4,6 +4,7 @@
 铁律:truth 表绝不通过任何接口暴露。评测比对在 agent 之外做。
 """
 import sqlite3, os, json, sys, re
+import datetime as _dt
 DB=os.path.join(os.path.dirname(os.path.abspath(__file__)),"lanxiu.db")
 
 # ── 两道结构锁 ──────────────────────────────────────────────────────────
@@ -136,6 +137,44 @@ def _with_material(d):
                  计价单位=m[0]["unit"], 损耗率=m[0]["loss_rate"], 幅宽cm=m[0]["width_cm"])
         d.pop("lead_days", None)
     return d
+
+def get_workorder(workorder_id=None, artisan=None, status=None, ref=None, overdue=None):
+    """查在制工单:这件活在谁手上、到哪一步、会不会拖。
+
+    get_capacity 给的是**工种级**聚合(瓶颈在哪、消化天数),
+    答不了「这一件现在什么情况」。排产的人两个都要:
+    先看瓶颈决定接不接,再看单件决定怎么调。
+    """
+    where, args = [], []
+    if workorder_id: where.append("w.id=?"); args.append(workorder_id)
+    if artisan:      where.append("(a.no=? OR a.name=?)"); args += [artisan, artisan]
+    if status:       where.append("w.status=?"); args.append(status)
+    if ref:          where.append("w.ref=?"); args.append(ref)
+    sql = ("SELECT w.id,w.craft,w.ref,w.workdays,w.start_date,w.due_date,w.status,w.note,"
+           "a.no artisan_no,a.name artisan,a.trade,a.workshop,a.wip_limit,c.name craft_name "
+           "FROM workorder w LEFT JOIN artisan a ON a.no=w.artisan "
+           "LEFT JOIN craft c ON c.code=w.craft")
+    if where: sql += " WHERE " + " AND ".join(where)
+    rs = _rows(sql + " ORDER BY w.due_date", *args)
+    today = _dt.date.today().isoformat()
+    out = []
+    for r in rs:
+        d = dict(r)
+        # **交期是否已经过了**,而不是让模型自己拿今天去比 ——
+        # 模型不知道今天几号,靠它算这个必错,而且错得很自然。
+        d["已逾期"] = bool(d.get("due_date") and d["due_date"] < today and d["status"] == "在制")
+        d["剩余天数"] = ((_dt.date.fromisoformat(d["due_date"]) - _dt.date.today()).days
+                     if d.get("due_date") else None)
+        out.append(d)
+    if not out:
+        return {"hit": 0, "note": "没有符合条件的在制工单,不要凭印象回答"}
+    if overdue: out = [x for x in out if x["已逾期"]]
+    late = [x["id"] for x in out if x["已逾期"]]
+    return {"hit": len(out), "rows": [_nz(x) for x in out[:30]],
+            "已逾期工单": late,
+            "note": "「剩余天数」为负说明已经过了交期。**逾期工单要先说,不要埋在列表里。**"
+                    "一个师傅手上的在制件数超过 wip_limit,说明他已经排满,再派活只会更晚。"}
+
 
 def kb_detail(code):
     """按编码取某一条的完整内容"""
@@ -804,6 +843,13 @@ SHOP_SCHEMAS=[
     "craft":{"type":"string","description":"工艺名称,直接写中文。不传则返回全工坊概览。"},
     "workdays":{"type":"number","description":"这活需要多少工日,默认 10"},
     "from_date":{"type":"string","description":"从哪天起算,YYYY-MM-DD,默认今天"}},"required":[]}},
+ {"name":"get_workorder","description":"查**在制工单**:这件活在谁手上、做到哪一步、会不会拖。可按工单号、师傅(工号或姓名)、状态、订单号筛;传 `overdue=true` 只看已逾期的。\n\n**和 get_capacity 分工**:get_capacity 给工种级的负载和瓶颈(接不接得下),get_workorder 给单件的去向和进度(这一件怎么办)。排产两个都要。\n\n返回里「剩余天数」为负说明已经过了交期,**逾期的要先说,不要埋在列表里**;一个师傅在制件数超过他的 wip_limit,说明已经排满,再派活只会更晚。**这个工具只读,不能改期不能改派。**",
+  "input_schema":{"type":"object","properties":{
+    "workorder_id":{"type":"string","description":"工单号,如 WO8001"},
+    "artisan":{"type":"string","description":"师傅工号或姓名"},
+    "status":{"type":"string","description":"在制 / 已完成"},
+    "ref":{"type":"string","description":"订单号"},
+    "overdue":{"type":"boolean","description":"只看已逾期的"}},"required":[]}},
  {"name":"get_aftersale","description":"查售后记录(退货/换货/退款/维修),可按订单号、客户或状态筛。退款类会带上退款轨迹。**这个工具只给事实,不给判责结论** —— 判责标准在 kb_tables 的「售后争议判定」表里,要另外查。查不到就如实说查不到,不要推测客户提过什么。",
   "input_schema":{"type":"object","properties":{
     "order_id":{"type":"string"},"customer":{"type":"string","description":"客户号或姓名"},

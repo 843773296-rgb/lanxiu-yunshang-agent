@@ -234,6 +234,8 @@ if not q("""SELECT k.id FROM wearer k JOIN wearer f ON f.id=k.parent_a
             WHERE f.height IS NOT NULL AND m.height IS NOT NULL
               AND (f.height + m.height) / 2 < 160 LIMIT 1"""):
     _e3.append({"缺": "父母中亲值明显偏低的孩子", "影响": "靶身高「需人工确认」无用例"})
+if not q("SELECT id FROM workorder WHERE status='在制' AND due_date < date('now') LIMIT 1"):
+    _e3.append({"缺": "已逾期的在制工单", "影响": "get_workorder 的「已逾期」分支无用例"})
 rule("E3", "反例夹具必须还在(别好心把不完整的数据补全)", _e3,
      "补数据是看起来永远正确的改动,但它会顺手把反例清零 —— "
      "**seed.py 里那段「反例夹具」不许删,也不许补全**")

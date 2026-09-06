@@ -57,7 +57,10 @@ def build_known_db(path):
                           cr if st in ("已付款", "已发货", "已完成") else None,
                           cr if st in ("已发货", "已完成") else None,
                           cr if st == "已取消" else None,
-                          "待生产" if k % 2 else "已生产"))
+                          # **故意种一个跨列依赖**:只有发出去的订单才可能「已生产」。
+                          # 于是「待付款 × 已生产」在源数据里一次都不出现 ——
+                          # 这就是禁配检测该抓到的东西,而独立抽样必然会造出它。
+                          "已生产" if st in ("已发货", "已完成") else "待生产"))
     c.executemany("insert into ordr values(?,?,?,?,?,?,?,?,?)", ordrs)
     items = [(None, o[0], f"SKU{j%7}", (j % 5) + 1)
              for j, o in enumerate(ordrs) for _ in (0,)]
@@ -125,6 +128,23 @@ def main():
     ck(sum(1 for t in texts if t in [v for _n, v in G.EDGE_TEXT]) <= len(texts) // 3,
        "边界值不能喧宾夺主(占比不超过三分之一)")
 
+    print("\n【列与列之间 · 跨状态机一致性】")
+    jt = facts["tables"]["ordr"].get("joint")
+    ck(bool(jt) and {"status", "prd_status"} <= set(jt[0]["columns"]),
+       "status 和 prd_status 被认成相关列,一起进联合分布",
+       str(jt[0]["columns"]) if jt else "没识别出联合分布")
+    cand = {(p["a值"], p["b值"]) for p in (jt[0]["禁配候选"] if jt else [])}
+    ck(("待付款", "已生产") in cand or ("已生产", "待付款") in cand,
+       "抓到「待付款 × 已生产」这个从没出现过的组合", str(sorted(cand))[:120])
+    pj = P.build(facts, scale=1.0)
+    mj, _mm = G.generate(pj, conn)
+    srcpairs = {tuple(r) for r in conn.q("select status, prd_status from ordr")}
+    novel = {(r["status"], r["prd_status"]) for r in mj["ordr"]} - srcpairs
+    ck(not novel, "造出来的组合全都在源库出现过(联合抽样,不是逐列独立抽)",
+       f"造出了源库没有的组合 {sorted(novel)[:3]}")
+    ck(not any(r["status"] == "待付款" and r["prd_status"] == "已生产" for r in mj["ordr"]),
+       "一条「待付款却已生产」都没造出来")
+
     print("\n【模型层 · 全部离线,一次模型都不调】")
     import infer_llm as I
     FSM = {"table": "ordr", "column": "status", "start": ["待付款"],
@@ -146,6 +166,16 @@ def main():
            "columns": [
               {"table": "cust", "column": "city", "semantic": "city", "reason": "x"},
               {"table": "cust", "column": "city", "semantic": "身份证号", "reason": "x"}],
+           "forbidden": [
+              {"table": "ordr", "a_column": "status", "a_value": "待付款",
+               "b_column": "prd_status", "b_value": "已生产",
+               "verdict": "real", "reason": "没付款不可能已生产"},
+              {"table": "ordr", "a_column": "status", "a_value": "根本没这个状态",
+               "b_column": "prd_status", "b_value": "已生产",
+               "verdict": "real", "reason": "对不存在的取值下禁令"},
+              {"table": "ordr", "a_column": "status", "a_value": "已付款",
+               "b_column": "prd_status", "b_value": "待生产",
+               "verdict": "乱写", "reason": "x"}],
            "state_machines": [
               dict(FSM),
               dict(FSM, column="status", timestamps={"已付款": "paid_at", "已发货": "paid_at"}),
@@ -174,6 +204,19 @@ def main():
         ck("created" not in (m.get("timestamps") or {}).values(),
            "过完校验的状态机里不会再有 created 当状态戳")
         break
+
+    ck(len(good["forbidden"]) == 1 and good["forbidden"][0]["a_value"] == "待付款",
+       "禁配:对**库里不存在的取值**下禁令要被丢掉(那是一条永远为真的检查)",
+       str([f.get("a_value") for f in good["forbidden"]]))
+    ck("永远为真" in txt, "而且要说明白为什么丢", txt[:120])
+
+    f4 = D.discover(conn, sc)
+    f4, _lg = P.apply_overlay(f4, {"relations": [], "columns": [], "state_machines": [],
+                                   "forbidden": [good["forbidden"][0]]})
+    p4 = P.build(f4, scale=1.0)
+    fb = [a for a in p4["assertions"] if a["类"] == "禁配"]
+    ck(len(fb) == 1, f"确认过的禁配变成断言({len(fb)} 条)")
+    ck(conn.q(fb[0]["sql"])[0][0] == 0, "这条断言在源数据上是 0(它本来就是这么推出来的)")
 
     print("\n【状态机落到数据上】")
     f2 = D.discover(conn, sc)

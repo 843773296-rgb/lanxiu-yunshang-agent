@@ -183,6 +183,66 @@ def _shape_of_fk(conn, child, ccol, parent, pcol):
     return {k: round(v / tot, 3) for k, v in buckets.items()}
 
 
+MIN_EXPECT = 1.5   # 独立假设下的期望出现次数,低于这个不值得当候选
+
+def _looks_stateful(cname, enum):
+    """名字像状态,或者取值里带「待/已/未/在」这种阶段前缀。
+    (infer_llm 里有一份同样的判断,那边是给模型挑候选用的;这边是挑联合分布的列。
+     两处判的是同一件事,所以定义放在这里,那边 import 过去,别抄第二份。)"""
+    if re.search(r"(status|state|stage|lifecycle|阶段|状态|gender|kind|type)", cname.lower()):
+        return True
+    return sum(1 for v in enum if re.match(r"^(待|已|未|在)", str(v))) >= 2
+
+
+def _joint(conn, tn, cols, rows):
+    """同一张表里几个枚举列的**联合分布**,以及「本该出现却一次没出现」的组合。
+
+    ## 要解决的问题
+
+    状态机管得住「订单状态和它自己的时间戳对得上」,管不住**两个状态机之间**:
+    订单状态抽到「待付款」,生产状态另抽一次抽到「已生产」——
+    未付款却已经生产了。逐列独立抽样,天然造不出列与列之间的关系。
+
+    ## 两个产物,用途完全不同
+
+    · **联合分布** 给生成器用。照着真实出现过的组合抽,一致性是白送的 ——
+      不需要先判断出规则,也就不会判错。代价是**不会造出源库没见过的组合**,
+      变化少一点。测试数据要一致性,这个换法划算。
+    · **禁配候选** 给模型判。统计只能说「这个组合一次没出现,而独立假设下该出现 3 次」,
+      说不出这到底是**业务上不可能**,还是**样本太小碰巧没赶上**。
+      46 行数据上,这两件事长得一模一样 —— 而它们的区别决定了该不该写成断言。
+      **「从没见过」和「不可能」不是一回事**,统计跨不过这道坎,所以交给模型。
+    """
+    import collections, itertools
+    n = len(rows)
+    marg = {c: collections.Counter(r[i] for r in rows) for i, c in enumerate(cols)}
+    pairs = []
+    for (i, a), (j, b) in itertools.combinations(list(enumerate(cols)), 2):
+        joint = collections.Counter((r[i], r[j]) for r in rows)
+        for av, ac in marg[a].items():
+            for bv, bc in marg[b].items():
+                exp = ac * bc / n
+                if joint[(av, bv)] == 0 and exp >= MIN_EXPECT:
+                    pairs.append({"a": a, "a值": av, "b": b, "b值": bv,
+                                  "期望次数": round(exp, 1)})
+    if not pairs: return None
+    # 有禁配候选的列才算「相关」,把它们连成组一起抽
+    linked = {p["a"] for p in pairs} | {p["b"] for p in pairs}
+    idx = [cols.index(c) for c in cols if c in linked]
+    names = [cols[i] for i in idx]
+    dist = collections.Counter(tuple(r[i] for i in idx) for r in rows)
+    return {"columns": names,
+            "dist": [[list(k), v] for k, v in dist.most_common(200)],
+            "组合数": len(dist), "笛卡尔积": _prod(len(marg[c]) for c in names),
+            "禁配候选": sorted(pairs, key=lambda x: -x["期望次数"])[:30]}
+
+
+def _prod(xs):
+    r = 1
+    for x in xs: r *= x
+    return r
+
+
 def discover(conn, schema, tables=None, verbose=False):
     """返回「观察到的事实」——不是方案,是造方案的原料。"""
     keyidx = _key_index(conn, schema)
@@ -270,6 +330,28 @@ def discover(conn, schema, tables=None, verbose=False):
                     # **事实层只记录观察到的,该不该采信是上层的事。**
                     cf["semantic"] = "fk"
         facts["tables"][tn] = tf
+
+    # 列与列之间的关系。只看枚举列 —— 自由文本之间没有「禁配」这回事,
+    # 而列数一多联合分布就稀疏得没意义,所以按取值最少的挑前 6 个。
+    for tn, tf in facts["tables"].items():
+        if tf["rows"] < 20: continue
+        # 挑哪 6 列进联合分布,**顺序比数量重要**。第一版按「取值最少」挑,
+        # 结果把 `ordr.status × prd_status` 挑掉了 —— 整个库最该看的那一对。
+        # 这已经是同一个错误的第二次(上一次是状态机候选按拓扑序截断):
+        # **凡是要截断的地方,都得先问「按什么排」。**
+        def _pri(c):
+            return (0 if _looks_stateful(c, tf["columns"][c]["enum"]) else 1,
+                    len(tf["columns"][c]["enum"]))
+        ec = sorted((c for c, cf in tf["columns"].items()
+                     if cf.get("enum") and c not in tf["pk"]), key=_pri)[:6]
+        if len(ec) < 2: continue
+        try:
+            rows = conn.q(f"select {', '.join(conn.ident(c) for c in ec)} "
+                          f"from {conn.ident(tn)}")
+        except Exception:
+            continue
+        j = _joint(conn, tn, ec, [r for r in rows if all(x is not None for x in r)])
+        if j: tf["joint"] = [j]
 
     # 形状:只给高/中可信度的外键算,低可信度的不值得为它多跑查询
     for tn, tf in facts["tables"].items():

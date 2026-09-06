@@ -201,6 +201,14 @@ def main():
     if r: ev.append(("客户订单数分布 0 / 1-3 / >10", " / ".join(str(v) for v in r[0])))
     for k, v in ev: print(f"    {k}: {v}")
     emoji_ok = ev[1][1] > 0
+    # 跨列一致性:造出来的状态组合,有没有源库从没出现过的
+    src = {tuple(x) for x in my.q(
+        f"select `status`, `prd_status` from `ordr` where `id` not like '{pre}%'")}
+    mine = {tuple(x) for x in my.q(
+        f"select distinct `status`, `prd_status` from `ordr` where `id` like '{pre}%'")}
+    novel = mine - src
+    print(f"    造出来的 status×prd_status 组合 {len(mine)} 种,源库没有的 {len(novel)} 种"
+          f"{'  ← 逐列独立抽必然 >0' if not novel else '  ❌ ' + str(sorted(novel)[:3])}")
     # 时间线:方案自动派生的断言只查「不倒挂」,这里直接看一眼真实取值
     r = my.q(f"select count(*) from `ordr` where `id` like '{pre}%' "
              f"and `paid_at` is not null and `created` is not null and `paid_at` >= `created`")
