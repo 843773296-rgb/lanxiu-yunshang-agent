@@ -81,6 +81,29 @@ def a_cred_sub():    return api._rows(
     "SELECT p AS x FROM (SELECT pwd_hash p FROM account) t")
 
 
+_PH = __import__("re").compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+
+
+def a_phone_leak():
+    """把每个工具都调一遍,只要返回里出现完整手机号就算破了。
+
+    **这条以前是「约定」** —— `_mask()` 全项目只被调用一次,
+    「对外一律脱敏」全靠工具作者记得。现在包在工具出口上,
+    **新加的工具默认就是脱敏的**。
+    """
+    import json as _j
+    hit = []
+    for name, fn in api.TOOLS.items():
+        for args in ({}, {"customer": "C10001"}, {"status": "待确认"},
+                     {"customer_id": "C10000"}, {"account": "C10001"}):
+            try: r = fn(**args)
+            except Exception: continue
+            m = _PH.search(_j.dumps(r, ensure_ascii=False, default=str))
+            if m: hit.append(f"{name} → {m.group()}")
+    if hit: return "工具返回里出现完整手机号:" + "; ".join(hit[:3])
+    raise PermissionError(f"{len(api.TOOLS)} 个工具的返回全部脱敏")
+
+
 def a_bash():
     v = guards.pre_tool_verdict("Bash", {"command": "ls"})
     if v: raise PermissionError(v)
@@ -165,6 +188,14 @@ STRUCT = [
  ("账户凭据不经工具层暴露 · 子查询改名", "同上", a_cred_sub,
   "SELECT p AS x FROM (SELECT pwd_hash p FROM account) t",
   "两道锁各管一段:这条被语句文本那道接住"),
+ ("对外一律脱敏手机号", "数据规范 F3",
+  a_phone_leak, "把 23 个工具全调一遍,搜返回里的完整手机号",
+  "**包在工具出口上,不是每个函数各自记得** —— "
+  "库里是真的,离开工具那一刻才脱敏;内部对账照常拿真号。"
+  "⚠️ **诚实说明:现存的 23 个工具本来就没有一个会吐真号** —— "
+  "这层包装防的是**未来新加的工具**。所以它的咬合方式是"
+  "「临时加一个会吐真号的工具,看包装拦不拦得住」,"
+  "而不是「拆掉包装看漏不漏」(现在拆了也不漏)"),
  ("模型不能执行命令", "sdk.py 提示词铁律 5「你没有任何写权限」",
   a_bash, "让 PreToolUse 判定 Bash 工具", "非 mcp__ 开头的工具一律拦下(Hook 运行时)"),
  ("模型不能开子智能体", "同上", a_task, "让 PreToolUse 判定 Task 工具", "同上"),

@@ -140,6 +140,42 @@ rule("B4", "生产工单指向真实订单",
      q("SELECT id, ref FROM workorder WHERE ref IS NULL OR ref NOT IN (SELECT id FROM ordr)"),
      "不接真订单,「我的衣服做到哪了」就答不了,产能排期成孤岛")
 
+# ── C3:通用时间链 ──────────────────────────────────────────────────────
+# 「任何记录的时间不得早于它所属对象的创建时间」——
+# 原来是**逐表写死**的 8 处,新加一张带时间的表就没人记得补。
+# 这里从**外键关系 + 列名**自动推出来,新表自动进入覆盖范围。
+#
+# 之所以值得做成通用:C1 那次就是因为漏了 `created` 这一环,
+# 「付款早于下单」35/35 全错却长年没被发现 ——
+# **一条链上少查一环,那一环就会长年错着。**
+TIME_HINT = ("_at", "_ts", "created", "measured_at", "signed_at", "updated")
+def _timecols(t):
+    return [x[1] for x in c.execute(f"PRAGMA table_info({t})")
+            if any(h in x[1] for h in TIME_HINT) and x[1] not in ("purge_at", "closed_at",
+                                                                  "locked_until", "synced_at",
+                                                                  "on_shelf_at")]
+c3 = []
+for t in tabs:
+    cols = [x[1] for x in c.execute(f"PRAGMA table_info({t})")]
+    for fk, ref in REF.items():
+        # **父锚点只取业务对象。**
+        # `wearer.created` / `account.created` 是**系统建档时间**,不是业务发生时间 ——
+        # 真实迁移里所有着装人的建档时间都是「上线那天」,而量体可以是几个月前的事。
+        # 拿建档时间当下限,会把 171 条正常的量体记录判成违规。
+        # **建档时间 ≠ 业务发生时间**,这条分界线不划清,C3 就只会制造噪音。
+        if ref not in ("customer", "ordr", "deposit", "product"): continue
+        if fk not in cols or ref not in tabs or ref == t: continue
+        if "created" not in [x[1] for x in c.execute(f"PRAGMA table_info({ref})")]: continue
+        pk = [x[1] for x in c.execute(f"PRAGMA table_info({ref})")][0]
+        for tc in _timecols(t):
+            n = c.execute(f"""SELECT count(*) FROM {t} x JOIN {ref} p ON p.{pk}=x.{fk}
+                              WHERE x.{tc} IS NOT NULL AND p.created IS NOT NULL
+                                AND substr(x.{tc},1,10) < substr(p.created,1,10)""").fetchone()[0]
+            if n: c3.append({"记录": f"{t}.{tc}", "早于": f"{ref}.created", "条数": n})
+rule("C3", "任何记录的时间不得早于它所属对象的创建时间", c3,
+     "**一条链上少查一环,那一环就会长年错着** —— "
+     "C1 漏了 created,「付款早于下单」35/35 全错却长年没人发现")
+
 # ── 三、属性一致 ────────────────────────────────────────────────────────
 rule("D1", "地址串必须和省市一致",
      q("SELECT id, province, addr FROM customer "

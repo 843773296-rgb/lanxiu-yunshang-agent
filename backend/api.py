@@ -788,6 +788,31 @@ SHOP_SCHEMAS=[
     "months":{"type":"number","description":"往后推几个月,默认 12"}},"required":["wearer_id"]}},
 ]
 
+# ── F3:出工具的那一刻,一律脱敏 ────────────────────────────────────────
+# **位置很关键**:不能放在 _rows(数据访问层)—— 内部的数据体检要拿真手机号
+# 做归户对账,脱敏了就查不了。放在**工具出口**:库里是真的,
+# **离开工具的那一刻**才脱敏。
+#
+# 这样任何新加的工具**默认就是脱敏的** —— 不靠作者记得写 _mask()。
+# 在此之前 _mask 全项目只被调用一次,「对外一律脱敏」是一句**约定**,不是结构。
+_PHONE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+
+
+def _mask_out(o, depth=0):
+    """递归把返回值里的手机号脱敏。字符串里夹着的也认。"""
+    if depth > 8: return o
+    if isinstance(o, str): return _PHONE.sub(lambda m: _mask(m.group()), o)
+    if isinstance(o, dict): return {k: _mask_out(v, depth + 1) for k, v in o.items()}
+    if isinstance(o, (list, tuple)): return [_mask_out(v, depth + 1) for v in o]
+    return o
+
+
+def _masked(fn):
+    def wrap(*a, **kw): return _mask_out(fn(*a, **kw))
+    wrap.__name__, wrap.__doc__ = fn.__name__, fn.__doc__
+    return wrap
+
+
 TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale,
               "get_capacity":get_capacity,
               "get_wearer":get_wearer,"forecast_growth":forecast_growth,
@@ -796,6 +821,16 @@ TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,
               "kb_fit":kb_fit,"kb_lead":kb_lead})
+# **统一包一层** —— 放在这里而不是每个函数上,是为了「新加工具自动生效」。
+# 漏包一个就等于开了个口子,而漏包是**不会报错**的。
+#
+# ⚠️ **原地改写,不要重新绑定 `TOOLS = {...}`。**
+# 重新绑定的话,任何在这一行之前 `from api import TOOLS` 的模块
+# 会一直拿着**没包装的那份**,脱敏静默失效。
+# (这处是项目里的重复定义检查抓出来的 —— 它抓到的不只是命名冲突,
+#  是一个真实的绑定时序隐患。)
+for _k in list(TOOLS): TOOLS[_k] = _masked(TOOLS[_k])
+
 KB_SCHEMAS=[
  {"name":"kb_lookup","description":"按关键词查工艺知识库。也可按分类(形制/材质/工艺/配饰)或来源等级(public/scale/demo)筛选。查不到会明确返回 hit=0。",
   "input_schema":{"type":"object","properties":{

@@ -81,36 +81,33 @@ CI 在 `.github/workflows/check.yml`,每次 push / PR 自动跑 33 项,24 秒出
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-06 14:42。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-06 14:48。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 00ef676 · 2026-09-06 · 数据层补满:账户生命周期,以及「注销 ≠ 删除」这件事 |
-| 代码量 | 67 个 Python 文件 / 15159 行(不含 .venv) |
+| 最新提交 | 677f489 · 2026-09-06 · 账户字段接到「行动」上 —— 字段有值不等于做完了 |
+| 代码量 | 67 个 Python 文件 / 15285 行(不含 .venv) |
 | 验收 | `./check.sh` 共 38 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
 **未提交的改动:**
 
 ```
-M agentsite/guards.py
- M agentsite/guards_test.py
- M agentsite/sdk.py
- M agentsite/web/station.html
- M backend/api.py
+M backend/api.py
+ M backend/boundary_audit.py
  M backend/seed.py
- M "\346\225\260\346\215\256\350\247\204\350\214\203.md"
+ M backend/spec_check.py
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+677f489 账户字段接到「行动」上 —— 字段有值不等于做完了
 00ef676 数据层补满:账户生命周期,以及「注销 ≠ 删除」这件事
 8ca7af6 先定规范再重做库:10 条规则从「待建」变成「有人守」
 57650f0 CLAUDE.md 补上账户层与两条新红线
 a4df49f 加账户层:着装人绑账户,账户以手机号为主标识
-67299b2 修好「框架有、数据没有」:let 重复声明让整段 script 没执行
 ```
 <!--/AUTO-->

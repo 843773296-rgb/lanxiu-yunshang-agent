@@ -1707,6 +1707,30 @@ def run():
                   (f"T{mid}", "售后判责", mid, "待处理", "2026-08-25", f"{item} · {issue}"))
         truths.append((mid, "BP-03", rc, act, ev, f"{item} · {issue} · 工单状态 {st}"))
 
+    # ── C3:把时间锚点理顺(放在最后,等所有对象都建完)────────────────
+    # ① 客户建档不得晚于他最早的业务事件 —— **人还没建档就下了单**,是不可能的。
+    #    往前拉建档日期,而不是往后推订单 —— 订单日期牵着一整条时间链。
+    for _cid, _first in c.execute("""
+            SELECT k.id, MIN(x.d) FROM customer k JOIN (
+                SELECT customer_id cid, created d FROM ordr
+                UNION ALL SELECT customer_id, created FROM deposit
+                UNION ALL SELECT customer_id, start_ts FROM appointment
+                UNION ALL SELECT customer_id, start_ts FROM schedule
+                -- 量体也是业务事件 —— 漏了它,14 条量体记录就会早于客户建档。
+                -- **「最早业务事件」这个集合少列一项,那一项就永远查不出来。**
+                UNION ALL SELECT customer_id, measured_at FROM measure_rec
+                UNION ALL SELECT customer_id, created FROM maintain
+            ) x ON x.cid = k.id
+            WHERE x.d IS NOT NULL GROUP BY k.id""").fetchall():
+        if _first and _first[:10] < (c.execute("SELECT created FROM customer WHERE id=?",
+                                               (_cid,)).fetchone()[0] or "9999")[:10]:
+            c.execute("UPDATE customer SET created=? WHERE id=?",
+                      ((date.fromisoformat(_first[:10]) - timedelta(days=3)).isoformat(), _cid))
+    # ② 账户不得晚于它名下最早的门店档案 —— 账户是在第一次建档时开出来的
+    c.execute("""UPDATE account SET created = COALESCE(
+                   (SELECT MIN(k.created) FROM customer k WHERE k.account_id = account.id),
+                   created)""")
+
     # ── B4:工单 ref 统一回填 ────────────────────────────────────────
     # 工坊工单在订单之前播种,所以播种时取不到订单 —— 懒查也救不了,
     # 因为那时订单表就是空的。**顺序依赖治不好,就别治,挪到最后统一回填。**
