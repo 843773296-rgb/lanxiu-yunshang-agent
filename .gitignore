@@ -28,3 +28,5 @@ backend/.imgcache/
 # 假数据工厂的产物:方案、预览、回滚凭据。
 # manifest 里是主键值,方案里是源库的取值分布 —— 都不该进版本库。
 .fakedata/
+# 差集清单是 fakedata/diffreport.py 生成的,别手写也别提交(两份一定漂)
+fakedata/差集清单.json

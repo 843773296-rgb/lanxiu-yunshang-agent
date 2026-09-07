@@ -159,13 +159,68 @@ class Driver:
                     ok += 1
                 else:
                     self.rejected.append({"表": tname, "HTTP": code,
-                                          "错误": why[:160],
-                                          "提交的": {k: v for k, v in list(body.items())[:6]}})
+                                          "码": _code(doc, ep) or "(接口没给码)",
+                                          "错误": why[:160], "提交的": dict(body)})
             self.log(f"    {tname}: 成功 {ok} / 拒绝 "
                      f"{sum(1 for r in self.rejected if r['表'] == tname)} / 跳过 "
                      f"{sum(1 for s in self.skipped if s['表'] == tname)} / 判不出 "
                      f"{sum(1 for u in self.unknown if u['表'] == tname)}")
         return self.report()
+
+    def minimize(self, plan, max_calls=200):
+        """把每一类拒绝削到**最小请求体**:逐个字段试着拿掉,拿掉之后还报同一个码就真拿掉。
+
+        为什么必须"同一个码"而不是"还是失败":
+        `DUP_PHONE` 的请求体削掉 name 之后照样失败 —— 但失败的是 `NEED_NAME`,
+        那是**另一条规则**。拿它当题面,问的就不是原来那件事了。
+        **判据要钉在「是不是同一个原因」上,不是「是不是还错」。**
+
+        削的过程会真的发请求。万一某个变体**成功**了,它就在库里留了一条记录 ——
+        所以照样记进 created,回滚时一起删。**探测也是写入,不能假装它没发生。**
+        """
+        eps = self.spec["endpoints"]
+        seen, calls = set(), 0
+        for r in self.rejected:
+            key = (r["表"], r.get("码"))
+            if key in seen: continue
+            seen.add(key)
+            ep = eps.get(r["表"], {}).get("create")
+            if not ep or self.dry: continue
+            body, want = dict(r["提交的"]), r.get("码")
+            pk = (plan["tables"][r["表"]]["pk"] or [None])[0]
+            for f in list(body):
+                if calls >= max_calls: break
+                trial = {k: v for k, v in body.items() if k != f}
+                if not trial: continue
+                code, doc, _x = _curl(ep.get("method", "POST"), self.base + ep["path"],
+                                      trial, self.headers)
+                calls += 1
+                res, _why = outcome(doc, code, ep)
+                if res == "ok":
+                    rid = _dig(doc, ep.get("id_path", "id"))
+                    if rid is not None: self.created.append((r["表"], rid))
+                    continue                      # 变体建成了 → 这个字段不能删
+                if res == "rejected" and _code(doc, ep) == want:
+                    body = trial                  # 同一个码,这个字段是多余的
+            r["最小请求体"] = body
+            # **差集的另一半:同样这几个字段,数据库怎么说。**
+            # 「接口不让」单独看只是一条校验;配上「而库让」才是一条**差集** ——
+            # 也才说得清这条规则为什么只存在于业务层。
+            cols = plan["tables"][r["表"]]["columns"]
+            fmap = ep.get("fields") or {}
+            # 覆盖**这个接口的整个字段面**,不是削剩下的那几个。
+            # `NEED_NAME` 会被削成只剩 `{shop}` —— 而这条规则针对的恰恰是被削掉的 `name`,
+            # 只报剩下的,「库里 name 可空」这个最关键的对照就不见了。
+            # **削最小是为了让题面干净,不是为了缩小观察范围。**
+            r["库这边"] = {}
+            for f, col in fmap.items():
+                if col not in cols: continue
+                g = cols[col]
+                r["库这边"][col] = {"可空": bool(g.get("nullable", True)),
+                                    "唯一": bool(g.get("unique")),
+                                    "最小请求体里还留着": f in body}
+            r["删掉也一样"] = sorted(set(fmap) - set(body))
+        return calls
 
     def rollback(self):
         """倒着调删除接口。没声明删除接口的表,**如实说删不掉**,不假装成功。"""
@@ -184,20 +239,35 @@ class Driver:
 
     def report(self):
         """把拒绝按错误信息归类 —— 一类错误就是一条规则,不是一堆失败。"""
+        # 按 (表, 错误码) 归类。码取不到时才退回文案归一化 ——
+        # 退化路径要留,但不能当主路径。
         by = {}
         for r in self.rejected:
-            key = (r["表"], re.sub(r"\d+", "N", r["错误"]))
+            k = r.get("码") or ""
+            key = (r["表"], k if k and not k.startswith("(") else re.sub(r"\d+", "N", r["错误"]))
             by.setdefault(key, []).append(r)
-        # 归一化(把数字换成 N)只用来**分组**,展示要用原文 ——
-        # 第一版直接展示归一化后的 key,于是「按 PRD 6.2 阻止新建」显示成「按 PRD N.N」、
-        # 客户名被换成 N。**把用于比较的形式当成用于阅读的形式,是报告类代码的常见错。**
         return {"成功": len(self.created), "拒绝": len(self.rejected),
                 "跳过": len(self.skipped), "判不出成败": len(self.unknown),
                 "判不出明细": self.unknown[:10],
-                "规则": [{"表": t, "接口说": v[0]["错误"], "撞了几次": len(v),
-                          "例子": v[0]["提交的"]}
+                "规则": [{"表": t, "码": e, "接口说": v[0]["错误"], "撞了几次": len(v),
+                          "例子": v[0]["提交的"],
+                          "最小请求体": v[0].get("最小请求体"),
+                          "库这边": v[0].get("库这边"),
+                          "删掉也一样": v[0].get("删掉也一样")}
                          for (t, e), v in sorted(by.items(), key=lambda x: -len(x[1]))],
                 "跳过明细": self.skipped[:20]}
+
+
+def _code(doc, ep):
+    """取业务错误码。**归类要锚在码上,不是措辞上。**
+
+    `reason` 里带客户 id、人名、分钟数,同一条规则每次的文案都不一样;
+    原来靠"把数字换成 N"来归一化再分组 —— 那本质还是在拿字面量归类,
+    而中文表达同一个意思的写法接近无限,枚举必输。
+    `code`(DUP_PHONE / NO_BACKFILL / NEED_NAME)是结构,不会随文案漂。
+    """
+    if not isinstance(doc, dict): return ""
+    return str(_dig(doc, ep.get("code_path", "code")) or "")
 
 
 def outcome(doc, http, ep):

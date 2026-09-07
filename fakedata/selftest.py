@@ -368,9 +368,75 @@ def main():
         ck(all(not re.search(r"PRD N", r["接口说"]) for r in rep6["规则"]),
            "报告展示的是错误**原文**,不是用来分组的归一化形式")
 
-        n6, cant6 = d6.rollback()
-        ck(len(store6.customer) == 0 and len(store6.appointment) == 0,
-           f"照创建顺序倒着删,删干净了({n6} 条)")
+        # ---- 差集清单:按错误码归类 + 削到最小请求体 ----
+        # 再种两条同码但**文案不同**的拒绝(文案里带被撞客户的名字)
+        if len(m6["customer"]) >= 8:
+            m6["customer"][4]["phone"] = m6["customer"][3]["phone"]
+            m6["customer"][5]["phone"] = m6["customer"][1]["phone"]
+            m6["customer"][6]["advisor"] = "已离职 张三"   # 删掉这个字段请求就会成功
+        # **d7 要一个干净的靶子。** 第一版让它打 d6 已经灌满的那个 ——
+        # 于是每一行的手机号都先撞 DUP_PHONE,根本走不到后面的规则。
+        # 检查因此一直是 0,而 0 看起来像"这条路径不存在",不像"我把路堵住了"。
+        base7, store7, stop7 = apimock.serve()
+        spec7 = json.loads(json.dumps(spec6)); spec7["base"] = base7
+        d7 = apidrive.Driver(spec7, dry=False, log=lambda *a: None)
+        d7.run(p6, m6)
+        dup = [r for r in d7.rejected if r.get("码") == "DUP_PHONE"]
+        ck(len(dup) >= 2 and len({r["错误"] for r in dup}) >= 2,
+           "种出了同码但文案不同的拒绝(文案里带被撞客户的名字)", f"只有 {len(dup)} 条")
+        rep7 = d7.report()
+        codes = [r["码"] for r in rep7["规则"]]
+        ck(len(codes) == len(set(codes)),
+           "**按错误码归类,不按文案** —— 文案带 id 和人名,同一条规则每次都不一样",
+           str(codes))
+        ck(sum(1 for r in rep7["规则"] if r["码"] == "DUP_PHONE") == 1,
+           f"{len(dup)} 条同码拒绝归成 1 条规则")
+
+        # 种一条「顾问不在职」——它的最小化会把 advisor 删掉,而删掉之后请求**会成功**,
+        # 于是探测本身在库里留下一条记录。这正是要验的那条路径。
+        before_min = len(d7.created)
+        calls = d7.minimize(p6)
+        minted = len(d7.created) - before_min
+        rep7 = d7.report()
+        # **别用 next(...) 找规则。** 找不到时抛 StopIteration,把整个自测带走 ——
+        # 而崩溃和"没跑过"在输出上分不开。这个坑在这个文件里踩到第三次了:
+        # **测试代码里任何「假定它一定存在」的写法(next / [0] / 直接下标),
+        # 在被测对象坏掉时都会变成崩溃。测试代码要比被测代码更防御。**
+        def rule_of(code):
+            return next((r for r in rep7["规则"] if r.get("码") == code), None)
+        rule = rule_of("DUP_PHONE")
+        ck(rule is not None, "报告里能按码找到 DUP_PHONE 这条规则",
+           str([r.get("码") for r in rep7["规则"]])[:120])
+        mb = (rule or {}).get("最小请求体")
+        ck(rule is not None and mb is not None and len(mb) <= len(rule["例子"]),
+           f"削出了最小请求体({len((rule or {}).get('例子') or {})} 字段 → "
+           f"{len(mb or {})} 字段,{calls} 次请求)")
+        ck("phone" in (mb or {}) and "name" in (mb or {}),
+           "**削最小要保持同一个错误码**:少了 name 会变成 NEED_NAME,那是另一条规则,"
+           "所以 name 不能删", str(mb))
+        need = rule_of("NEED_NAME")
+        if need:
+            ck("name" in (need["库这边"] or {}),
+               "「库这边」覆盖整个字段面,连被削掉的 name 也在 —— "
+               "而「库里 name 可空」正是这条差集的另一半", str(need["库这边"]))
+            ck(need["库这边"]["name"]["可空"] is True,
+               "而且它如实说了:库里这一列**可空**,业务却必填")
+        # **削最小会真的发请求**,某个变体建成了就在库里留了一条 ——
+        # 所以它必须被记进回滚清单。第一版这条写成了 `len(...) >= 0`,永远成立,
+        # 等于没有。**这是我第二次写出永远为真的检查了,专门记在这。**
+        d7.rollback(); d6.rollback(); stop7()
+        ck(minted > 0,
+           f"削最小过程中确实有变体**建成**了({minted} 条)—— 这条路径真的走到了,"
+           "不是绿在没走到上", "一条都没建成,那下面那条检查是空的")
+        ck(len(store6.customer) == 0 and len(store6.appointment) == 0
+           and len(store7.customer) == 0 and len(store7.appointment) == 0,
+           "两个驱动都回滚后靶子清零 —— 削最小时建成的变体也被删掉了(探测也是写入)",
+           f"还剩 {len(store6.customer)}/{len(store7.customer)} 客户")
+        n6, cant6 = 0, {}
+        # 靶子会拒绝删除「名下还有预约」的客户 —— 只有**先孩子后父亲**才删得干净。
+        # 顺序错了的表现是删不掉,而不是"删掉了但没人知道顺序对不对"。
+        ck(len(store6.customer) == 0,
+           "回滚必须先孩子后父亲:靶子拒绝删「名下还有预约」的客户,顺序错了就会剩下客户删不掉")
 
         # 没有删除接口的表:必须如实说删不掉,不许假装成功
         nod = json.loads(json.dumps(spec6)); nod["endpoints"]["customer"].pop("delete")

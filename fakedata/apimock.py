@@ -13,7 +13,7 @@
 它写的是 `backend/lanxiu.db` —— 四个数据检查的真值源,不能碰(闸门也拦着)。
 而且 check.sh 不该依赖一个得先手动起起来的服务。
 """
-import json, os, sys, threading
+import json, os, re, sys, threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -43,6 +43,20 @@ def _make_handler(store):
 
             if p == "/api/customer-create":
                 ok, code, reason, _s = _rules.validate_customer(body, store.customer)
+                # 顾问是**选填**,但填了就必须是在职工号。
+                #
+                # 这条规则的作用是让「删掉某个字段之后请求反而成功」**真实存在**。
+                # 没有它,削最小时永远不会有变体建成,于是那条
+                # 「探测也是写入,建成的变体要记进回滚清单」的检查一辈子走不到 ——
+                # **看着是绿的,其实一次都没验过。**(咬合时发现的:破坏它也不红。)
+                #
+                # 顺序也是有讲究的:必须排在基础校验**之后**。
+                # 排在前面的话,削最小会先把 name/phone 删光(反正一直报 BAD_ADVISOR),
+                # 等轮到删 advisor 时 name 已经没了 —— 结果是 NEED_NAME,还是不会成功。
+                adv = body.get("advisor")
+                if ok and adv is not None and not re.match(r"^A0\d ", str(adv)):
+                    return self._send({"ok": False, "code": "BAD_ADVISOR",
+                                       "reason": f"顾问「{adv}」不是在职工号"})
                 if not ok: return self._send({"ok": False, "code": code, "reason": reason})
                 rid = store.nid("SVR-C")
                 store.customer.append(dict(body, id=rid))
@@ -50,7 +64,14 @@ def _make_handler(store):
                                    "reason": f"已建档 {rid}"})
 
             if p == "/api/customer-delete":
-                store.customer = [c for c in store.customer if c["id"] != body.get("id")]
+                # **还有预约挂着就不许删。** 加这条不是为了拟真,是为了让
+                # 「回滚必须先孩子后父亲」这件事**可观测** ——
+                # 顺序错了就删不掉,而不是"删掉了但没人知道顺序对不对"。
+                cid = body.get("id")
+                if any(a.get("customer_id") == cid for a in store.appointment):
+                    return self._send({"ok": False, "code": "HAS_APPT",
+                                       "reason": f"客户 {cid} 名下还有预约,不能删"})
+                store.customer = [c for c in store.customer if c["id"] != cid]
                 return self._send({"ok": True, "code": "DELETE"})
 
             if p == "/api/appt-create":
@@ -88,7 +109,8 @@ SPEC = {
     "endpoints": {
         "customer": {
             "create": {"method": "POST", "path": "/api/customer-create",
-                       "fields": {"name": "name", "phone": "phone", "shop": "shop"},
+                       "fields": {"name": "name", "phone": "phone", "shop": "shop",
+                                  "advisor": "advisor"},
                        "id_path": "id", "ok_field": "ok"},
             "delete": {"method": "POST", "path": "/api/customer-delete", "id_field": "id"},
         },
