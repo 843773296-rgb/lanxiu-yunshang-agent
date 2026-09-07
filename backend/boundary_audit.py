@@ -162,10 +162,64 @@ def a_strict_mcp():
     raise PermissionError(f".mcp.json 声明的 {sorted(declared)} 全被忽略,只认代码里的")
 
 
+def a_workorder_ro():
+    """get_workorder 只读 —— 拿它的返回去改交期,改不动。"""
+    import api
+    r = api.get_workorder(workorder_id="WO8001")
+    if not (r.get("rows")): raise PermissionError("没有可攻击的工单(夹具不成立)")
+    try:
+        api._rows("UPDATE workorder SET due_date='2099-01-01' WHERE id=?", "WO8001")
+    except Exception:
+        raise PermissionError("连接开成 mode=ro,改交期直接抛 —— 不是碰巧没人写 UPDATE")
+    return "居然写进去了"
+
+
+def a_lifecycle_no_manual():
+    """生命周期是**算法型状态机**,不接受手工流转 —— 工具层给不出改档的路径。"""
+    import api
+    if any("lifecycle" in n and ("set" in n or "update" in n) for n in api.TOOLS):
+        return "工具层出现了改生命周期的接口"
+    r = api.get_lifecycle(customer="C10001")
+    if not r.get("rows"): raise PermissionError("查不到客户(夹具不成立)")
+    row = r["rows"][0]
+    if "系统重算值" not in row:
+        return "返回里没有「系统重算值」—— 人工覆盖和重算值分不开,就没法判断哪个在生效"
+    raise PermissionError("工具层没有任何改档接口,且人工覆盖与系统重算值分开返回")
+
+
+def a_rfm_cross_group():
+    """RFM 是**相对分**:同一个人在不同人群里分数不同 —— 这是设计,不是 bug。
+    审计这一条是为了钉住「跨档比较无意义」这个事实是**可验证的**,不只是提示词说说。"""
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(ROOT, "knowledge"))
+    import rfm as _rfm
+    import api
+    a = {r["id"]: r for r in _rfm.score(api._rows(
+        "SELECT id,idle_days,orders_12m,amount_12m FROM customer WHERE lifecycle='潜在流失'"))}
+    b = {r["id"]: r for r in _rfm.score(api._rows(
+        "SELECT id,idle_days,orders_12m,amount_12m FROM customer"))}
+    both = [k for k in a if k in b and a[k]["RFM"] != b[k]["RFM"]]
+    if not both:
+        return "同一个人在两个人群里分数完全一样 —— 那它就不是相对分,跨档比较的禁令没有依据"
+    raise PermissionError(
+        f"同一个人换个人群分数就变({both[0]}: 档内 {a[both[0]]['RFM']} vs 全量 {b[both[0]]['RFM']})"
+        " —— **跨档比较无意义是可验证的事实,不是提示词的一句话**")
+
+
 STRUCT = [
  ("工具层一个写接口都没有", "backend/api.py 开篇铁律 / README「工具全部只读」",
   a_write, "拿工具层的连接去 UPDATE 一条客户记录",
   "连接开成 mode=ro —— **写操作直接抛错,不是碰巧没人写 INSERT**"),
+ ("在制工单只读 —— 不能改期不改派", "prompts.py 铁律 TW05 / 工具描述「这个工具只读」",
+  a_workorder_ro, "拿工具层的连接把 WO8001 的交期改到 2099 年",
+  "同 mode=ro 那条锁 —— 工坊角色**结构上就改不了**排产,不靠它自觉"),
+ ("生命周期不接受手工流转", "后台 PRD 6.1「算法型状态机」/ 铁律 TK08",
+  a_lifecycle_no_manual, "在工具层找一个能改档位的接口;并检查人工覆盖有没有和重算值混在一起",
+  "工具层没有改档接口;且「人工覆盖生效」与「系统重算值」**分开返回** —— "
+  "混在一起的话,没人分得清眼前这个档是算出来的还是人改的"),
+ ("RFM 跨档比较无意义", "prompts.py 铁律 TK09 / knowledge/rfm.py 模块开篇",
+  a_rfm_cross_group, "把同一个客户放进「档内」和「全量」两个人群各打一次分,看分数变不变",
+  "**分数真的会变** —— 这条禁令有可验证的事实撑着,不是提示词的一句话"),
  ("truth 表不经工具层暴露 · 直查", "backend/api.py 开篇铁律",
   a_truth_from, "SELECT * FROM truth", "任何提到 truth 的 SQL 一律拒绝执行"),
  ("truth 表不经工具层暴露 · JOIN 绕过", "同上",
