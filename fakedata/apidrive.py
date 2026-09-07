@@ -237,6 +237,39 @@ class Driver:
             done += 1
         return done, cant
 
+    def coverage(self, order=None):
+        """这一批数据把**多少条业务规则撞出来了**,还有多少条从没撞到。
+
+        这份清单的危险之处在于:**它列出的每一条都是真的,所以看起来是完整的。**
+        没撞到的规则不会留下任何痕迹 —— 而「没撞到」有两种解释:
+        这条规则不存在,或者我的数据恰好绕开了它。两者在输出上分不开。
+
+        (另一条线按 rules.py 里声明的错误码逐个验可达性,发现 `NEED_REVIEW` 触发不到 ——
+         而那恰恰是业务上最有意思的一条:正确动作**既不是能也不是不能,是转店长确认**。)
+
+        所以全集要由**规格**声明(`endpoints[t].codes`)。
+        规格没声明的,如实说「全集未知,覆盖率无法度量」——
+        **不许默默让人以为这就是全部。**
+        """
+        eps = self.spec["endpoints"]
+        hit = {}
+        for r in self.rejected:
+            hit.setdefault(r["表"], set()).add(r.get("码"))
+        out = {}
+        for t in (order or eps):
+            known = (eps.get(t, {}).get("codes") or None)
+            got = sorted(x for x in hit.get(t, set()) if x and not x.startswith("("))
+            if known is None:
+                out[t] = {"撞到": got, "全集": None,
+                          "说明": "规格没声明这个接口能返回哪些业务码 —— **覆盖率无法度量**,"
+                                  "这份清单不能当作完整的规则清单"}
+            else:
+                miss = [c for c in known if c not in got]
+                out[t] = {"撞到": got, "全集": list(known), "没撞到": miss,
+                          "覆盖率": round(len(got) / max(len(known), 1), 3),
+                          "说明": "「没撞到」有两种解释:规则不存在,或者这批数据恰好绕开了它"}
+        return out
+
     def report(self):
         """把拒绝按错误信息归类 —— 一类错误就是一条规则,不是一堆失败。"""
         # 按 (表, 错误码) 归类。码取不到时才退回文案归一化 ——
@@ -248,6 +281,7 @@ class Driver:
             by.setdefault(key, []).append(r)
         return {"成功": len(self.created), "拒绝": len(self.rejected),
                 "跳过": len(self.skipped), "判不出成败": len(self.unknown),
+                "覆盖": self.coverage(),
                 "判不出明细": self.unknown[:10],
                 "规则": [{"表": t, "码": e, "接口说": v[0]["错误"], "撞了几次": len(v),
                           "例子": v[0]["提交的"],

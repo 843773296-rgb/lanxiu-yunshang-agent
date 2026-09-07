@@ -421,6 +421,24 @@ def main():
                "而「库里 name 可空」正是这条差集的另一半", str(need["库这边"]))
             ck(need["库这边"]["name"]["可空"] is True,
                "而且它如实说了:库里这一列**可空**,业务却必填")
+        # ---- 覆盖率:这批数据撞到了多少条已知规则 ----
+        cov = d7.coverage()
+        ck("customer" in cov and cov["customer"].get("全集"),
+           "规格声明了业务码全集,覆盖率才度量得出来", str(cov)[:120])
+        ck(isinstance(cov["customer"].get("没撞到"), list),
+           "**没撞到的也要列出来** —— 清单里每一条都是真的,所以它看起来是完整的;"
+           "缺的那些不留痕迹")
+        ck("NEED_REVIEW" in cov["customer"]["没撞到"],
+           "随机数据天然撞不到「相似性」类规则(姓名相似+尾号相同+同门店)—— "
+           "如实报出来,不假装覆盖全了", str(cov["customer"]))
+        nodecl = json.loads(json.dumps(spec7))
+        nodecl["endpoints"]["customer"].pop("codes")
+        d8 = apidrive.Driver(nodecl, dry=True, log=lambda *a: None)
+        c8 = d8.coverage()
+        ck(c8["customer"]["全集"] is None and "无法度量" in c8["customer"]["说明"],
+           "规格没声明全集时,明说**覆盖率无法度量**,不默默让人以为这就是全部",
+           str(c8["customer"])[:120])
+
         # **削最小会真的发请求**,某个变体建成了就在库里留了一条 ——
         # 所以它必须被记进回滚清单。第一版这条写成了 `len(...) >= 0`,永远成立,
         # 等于没有。**这是我第二次写出永远为真的检查了,专门记在这。**

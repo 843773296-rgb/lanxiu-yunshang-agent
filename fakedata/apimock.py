@@ -112,6 +112,10 @@ SPEC = {
                        "fields": {"name": "name", "phone": "phone", "shop": "shop",
                                   "advisor": "advisor"},
                        "id_path": "id", "ok_field": "ok"},
+            # 这个接口能返回的**全部**业务码。前四个来自 backend/rules.py 的
+            # validate_customer,BAD_ADVISOR 是这个靶子自己的。
+            # 声明全集,报告才说得出「哪几条规则这批数据从没撞到」。
+            "codes": ["NEED_NAME", "BAD_PHONE", "DUP_PHONE", "NEED_REVIEW", "BAD_ADVISOR"],
             "delete": {"method": "POST", "path": "/api/customer-delete", "id_field": "id"},
         },
         "appointment": {
@@ -120,6 +124,8 @@ SPEC = {
                        "fields": {"customer_id": "customer_id", "shop": "shop",
                                   "start": "start_ts", "end": "end_ts"},
                        "id_path": "id", "ok_field": "ok"},
+            "codes": ["BAD_TIME", "END_BEFORE_START", "NO_BACKFILL", "BACKFILL_LIMIT",
+                      "LEAD_TIME", "NO_CUSTOMER"],
             "delete": {"method": "POST", "path": "/api/appt-delete", "id_field": "id"},
         },
     },

@@ -79,6 +79,13 @@ def build(spec=None, scale=0.3, driven=("customer", "appointment"), log=print):
         f"削最小 {calls} 次请求;回滚 {n} 条" + (f",删不掉 {cant}" if cant else ""))
     if stop: stop()
 
+    cov = rep.get("覆盖") or {}
+    for t, c in cov.items():
+        if c.get("全集") is None:
+            log(f"  ⚠️ {t}:规格没声明业务码全集 —— **覆盖率无法度量**,别把这份清单当完整规则表")
+        else:
+            log(f"  {t}:撞到 {len(c['撞到'])}/{len(c['全集'])} 条规则"
+                f"{'  没撞到:' + '、'.join(c['没撞到']) if c['没撞到'] else '  (全撞到了)'}")
     rules = [r for r in rep["规则"] if r["码"] in WANT]
     return {
         "说明": "「数据库允许、业务不允许」的差集。每条可直接变成一道负向评测题:"
@@ -92,6 +99,10 @@ def build(spec=None, scale=0.3, driven=("customer", "appointment"), log=print):
             "撞了几次": "这一批数据里撞上它多少次,可以当作它有多容易被踩",
         },
         "生成于": dt.datetime.now().isoformat(timespec="seconds"),
+        "覆盖": cov,
+        "覆盖说明": "「没撞到」有两种解释:规则不存在,或者这批数据恰好绕开了它 —— "
+                    "两者在输出上分不开,所以必须把没撞到的也列出来。"
+                    "规格没声明全集时,这份清单**不能**当作完整的规则清单。",
         "差集": rules,
     }
 
