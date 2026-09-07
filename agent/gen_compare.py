@@ -94,6 +94,12 @@ if __name__ == "__main__":
     import truthdb
     truths = truthdb.by_case()   # 评测侧自己的只读连接,不借工具层
     pv = v1.provider()
+    # **这一轮的成本**要单独算:记录仪里的「累计均价」会被历史稀释,
+    # 于是两次对比表之间根本不可比 —— V1 从 $0.021 变成 $0.0065,
+    # 可能只是后来跑了很多便宜调用,不是任何东西变好了。
+    # 记下开跑前的行数,跑完只统计新增的那几行。
+    import trace as _t0
+    _base = sum(1 for _ in open(_t0.LOG, encoding="utf-8")) if os.path.exists(_t0.LOG) else 0
     print(f"三代横向对比 · {len(tasks)} 条工单 · 模型 {pv['model']}")
     print("=" * 92)
     res = {g: dict(ok=0, calls=0, sec=0.0, n=0) for g in gens}
@@ -115,14 +121,28 @@ if __name__ == "__main__":
 
     print("=" * 92)
     # 成本从记录仪里取 —— 三代都记在同一个文件、同一套字段,这时候就用上了
-    import trace as _t
+    import trace as _t, json as _j
     by = _t.summary()["by_gen"]
-    print(f"  {'代':4s}{'判对':>7s}{'模型调用/条':>13s}{'耗时/条':>10s}{'累计均价':>12s}")
+    # 只读本轮新增的那些记录,按代汇总 —— 这才是可以跨版本比的那个数
+    _new = []
+    if os.path.exists(_t.LOG):
+        with open(_t.LOG, encoding="utf-8") as fh:
+            for i, line in enumerate(fh):
+                if i >= _base:
+                    try: _new.append(_j.loads(line))
+                    except Exception: pass
+    run_cost = {}
+    for r in _new:
+        run_cost[r.get("gen", "V1")] = run_cost.get(r.get("gen", "V1"), 0) + (r.get("cost_est") or 0)
+    print(f"  {'代':4s}{'判对':>7s}{'模型调用/条':>13s}{'耗时/条':>10s}"
+          f"{'本轮/条':>12s}{'累计均价/次':>13s}")
     for g in gens:
         d = res[g]
         if not d["n"]: continue
         print(f"  {g:4s}{d['ok']}/{d['n']:<5d}{d['calls']/d['n']:>12.1f}"
-              f"{d['sec']/d['n']:>9.1f}s  ${by.get(g,{}).get('均价',0):>9.5f}")
-    print("\n  注:「累计均价」是记录仪里该代**全部历史调用**的单次均价,不只这一轮;")
-    print("      三代的提示词和流程本来就不同 —— 这一栏比的是「一次调用多贵」,")
-    print("      要看「一条工单多贵」得乘上「模型调用/条」。")
+              f"{d['sec']/d['n']:>9.1f}s  ${run_cost.get(g, 0)/d['n']:>9.5f}"
+              f"  ${by.get(g,{}).get('均价',0):>10.5f}")
+    print("\n  **「本轮/条」才是跨版本能比的那个数**(这一轮实际花了多少 ÷ 条数)。")
+    print("  「累计均价/次」是记录仪里该代**全部历史调用**的单次均价 ——")
+    print("  它会被后来的调用稀释,**两次对比表之间不可比**,只能看「一次调用多贵」。")
+    print("  另:三代的提示词和流程本来就不同,这不是控制变量实验。")
