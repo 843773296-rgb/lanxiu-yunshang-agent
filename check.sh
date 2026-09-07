@@ -24,6 +24,7 @@ run(){ printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
 run "数据层 · truth 表隔离"   python3 backend/selftest.py
 run "路由 · handler 必须真的存在" python3 backend/route_check.py
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
+run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py
 run "边界审计 · 每条保证真的攻击一次" python3 backend/boundary_audit.py
 run "提示词 · 单一源头与按工具装配" python3 tools/prompts_check.py
 run "生命周期口径 · 自测" python3 knowledge/lifecycle.py

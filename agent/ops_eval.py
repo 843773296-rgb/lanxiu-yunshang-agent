@@ -26,6 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "backend"),
                 os.path.join(ROOT, "knowledge"), os.path.join(ROOT, "agentsite")]
+import re as _re
 import textmatch as tm
 import api
 
@@ -84,6 +85,29 @@ def disclaim_write():
     return g
 
 
+_YES = _re.compile(r"(可以|能够|能|允许|没问题|行的)")
+_NO  = _re.compile(r"(不能|不行|不可以|不允许|无法|不得|做不了)")
+
+def _said_no(text):
+    """回答的**结论**是不是「不行」—— 取最早出现的那个判断,不是全文搜否定词。
+
+    **同一族的第五次。** 模型答「**能。**……**注意:** 顾问不行,只有店长可以补录」——
+    结论是「能」,而末尾那句「顾问不行」是在说**另一个角色**,而且是有用的补充。
+    我原来在全文里搜「不行」,于是把它读成了模型自己的结论。
+
+    **答案里对别人的判断,不是对被问者的判断。** 取最早出现的那个 ——
+    提示词要求「先给结论」,所以最早的那个判断就是结论(和 chat_eval 的 conclude() 同理)。
+    """
+    # 先把「能不能 / 可不可以」这类**正反疑问**抹掉 —— 那里的「不」是在提问不是在否定。
+    # 实测栽在这上面:模型的表格里有一行「店长角色**能不能**做 | ✅ 能」,
+    # 全文搜「不能」就命中了它,把一行表头当成了结论。
+    t = tm._clean(text or "")
+    n, y = _NO.search(t), _YES.search(t)
+    if not n: return False
+    if not y: return True
+    return n.start() < y.start()
+
+
 def write_verdict(action, fields, want_ok):
     """业务允不允许 —— **期望值现场跑真校验器取,不手写。**
 
@@ -97,8 +121,7 @@ def write_verdict(action, fields, want_ok):
                        "不查就只能凭系统结构推断,而那会得出相反的结论")
         r = api.check_write(action, fields)
         真 = r.get("能不能做")
-        说不行 = bool(tm.says(text, ["不能", "不行", "不可以", "无法", "必填", "须由", "仅店长",
-                                    "不允许", "得先", "要先"]))
+        说不行 = _said_no(text)
         if 真 == "不能" and not 说不行:
             bad.append(f"内容:业务规则说不能({r.get('编码')} {r.get('理由','')[:24]}),"
                        "而回答没有明确拒绝")
@@ -135,7 +158,6 @@ def must_not_promise(*needles, why=""):
     return g
 
 
-import re as _re
 _NUM_NEAR = _re.compile(r"(\d+\s*%|\d+\s*(个|位|人|成))")
 
 # 引号:模型举「我不会说的话」当例子时,内容都在引号里
@@ -247,6 +269,21 @@ def all_of(*gs):
         return out
     return g
 
+# ── 时间夹具:**题面和判据用同一个现算的日期** ──────────────────
+# 栽过一次:题面写「上周三」、判据写死 2026-09-01,两边算的不是同一天;
+# 而那天恰好卡在 7 天补录窗口的边界上,模型算超窗、判分器算没超,判成了模型错。
+#
+# **写死日期的夹具和写死 id 的夹具是同一个病** —— 都会随时间漂移。
+# 更隐蔽的是题面里的**相对时间**:「上周三」让模型和判分器各算各的。
+# 现在日期现算,并且**直接写进题面**,两边说的是同一天。
+import datetime as _dt
+_now = _dt.datetime.now()
+def _ago(days, hour=14):
+    d = (_now - _dt.timedelta(days=days)).replace(hour=hour, minute=0, second=0, microsecond=0)
+    return d.strftime("%Y-%m-%d %H:%M")
+IN_WIN, IN_WIN_END = _ago(3), _ago(3, 15)          # 3 天前:在 7 天补录窗口内
+OUT_WIN, OUT_WIN_END = _ago(90), _ago(90, 15)      # 90 天前:远超窗口
+
 # ── 题目 ────────────────────────────────────────────────────────────
 CASES = [
 # ═══ 工坊排产 ═══
@@ -311,13 +348,36 @@ dict(id="D1", role="task", kind="负向",
      q="客户到店了但姓名还没问到,能不能先用手机号建个档,姓名回头补?",
      grade=write_verdict("建档", {"phone": "13900001111", "shop": "SH001 静安旗舰店"}, False)),
 dict(id="D2", role="task", kind="负向",
-     q="我是顾问,想把上周三那次到店补录成一条预约记录,能弄吗?",
-     grade=write_verdict("预约", {"start": "2026-09-01 10:00", "end": "2026-09-01 11:00",
+     q=f"我是顾问,想把 {IN_WIN} 那次到店(到 {IN_WIN_END[-5:]})补录成一条预约记录,能弄吗?",
+     grade=write_verdict("预约", {"start": IN_WIN, "end": IN_WIN_END,
                                   "way": "到店量体", "role": "顾问"}, False)),
 dict(id="D3", role="task", kind="正向",
-     q="店长要把上周三那次到店补录成预约记录,他这个角色能做吗?",
-     grade=write_verdict("预约", {"start": "2026-09-01 10:00", "end": "2026-09-01 11:00",
+     q=f"店长要把 {IN_WIN} 那次到店(到 {IN_WIN_END[-5:]})补录成预约记录,他这个角色能做吗?",
+     grade=write_verdict("预约", {"start": IN_WIN, "end": IN_WIN_END,
                                   "way": "到店量体", "role": "店长"}, True)),
+
+dict(id="D4", role="task", kind="负向",
+     q="新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?",
+     # NEED_REVIEW 的正确动作**既不是「行」也不是「不行」**,是「转店长确认」,
+     # 而且要把疑似的那几条列给人看 —— 店长得看见凭什么。
+     # 这是这批规则里最容易被答成二选一的一条。
+     grade=all_of(need_tool("check_write"),
+                  must_say("店长", "确认", "人工", "复核",
+                           why="这条规则是转店长确认,不是「能」也不是「不能」"),
+                  must_say("疑似", "相似", "可能是同一", "重复",
+                           why="要把疑似重复的那几条列给人看,店长才判得了"))),
+dict(id="D5", role="task", kind="负向",
+     q=f"店长要补录 {OUT_WIN} 那次到店(到 {OUT_WIN_END[-5:]})的记录,他权限够,应该可以吧?",
+     # BACKFILL_LIMIT:店长能补录,但**有窗口**。
+     # 「权限够」和「时间还来得及」是两件事,顺着「他权限够」往下答就会错。
+     # 判据拆两轴。只查「有没有拒绝」是不够的:模型可能因为**别的**理由拒绝
+     # (我自己写探针时就手滑传了 start==end,撞的是 END_BEFORE_START),
+     # 那样「答对了」但凭的不是这条规则 —— 和判责那次「没取判定表」是同一个病。
+     grade=all_of(need_tool("check_write"),
+                  must_say("不能", "不行", "不可以", "无法",
+                           why="补录超窗,店长也不行"),
+                  must_say("超过", "窗口", "天内", "过期", "太久", "时限", "7 天", "七天",
+                           why="拒绝的理由必须是**时间窗口** —— 权限够不等于时间还来得及"))),
 
 # ═══ 优先联系(RFM)═══
 dict(id="P01", role="task", kind="正向",
