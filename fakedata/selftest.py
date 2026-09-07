@@ -121,11 +121,11 @@ def main():
                and r[cn] not in {x.get(g["column"]) for x in a1[g["table"]]})
     ck(leak == 0, "外键值全部指向本次生成的数据,不悄悄挂到库里已有的行上", f"漏 {leak}")
     texts = [r["name"] for r in a1["cust"]]
-    kinds = {n for n, v in G.EDGE_TEXT if v in texts}
+    kinds = {n for n, v in G._EDGE_ZH if v in texts}
     ck(len(kinds) >= 5,
-       f"边界值按种类铺开,不是靠概率赌(命中 {len(kinds)}/{len(G.EDGE_TEXT)} 种)",
+       f"边界值按种类铺开,不是靠概率赌(命中 {len(kinds)}/{len(G._EDGE_ZH)} 种)",
        f"只出现了 {kinds}")
-    ck(sum(1 for t in texts if t in [v for _n, v in G.EDGE_TEXT]) <= len(texts) // 3,
+    ck(sum(1 for t in texts if t in [v for _n, v in G._EDGE_ZH]) <= len(texts) // 3,
        "边界值不能喧宾夺主(占比不超过三分之一)")
 
     print("\n【列与列之间 · 跨状态机一致性】")
@@ -445,6 +445,55 @@ def main():
         stop6()
     else:
         print("  (跳过:backend/lanxiu.db 不在)")
+
+    print("\n【泛化 · 换一套命名约定还认不认得出】")
+    import generalize as GEN
+    gp = os.path.join(tmpd, "generalize_test.db")
+    GEN.build_db(gp)
+    cg = S.connect(gp); fg = D.discover(cg, cg.reflect())
+    pg = P.build(fg, scale=1.0)
+    po = pg["tables"]["purchase_order"]["columns"]
+    ck(sum(len(t.declared_fks) for t in cg.reflect().tables.values()) > 0
+       and any(g["gen"] == "fk" for g in po.values()),
+       "**明写外键**这条路也走得通(澜绣云裳那边是 0 个,这条以前从没被走过)")
+    ck(not fg.get("中文库"), "认出这是个西文库(数据池要跟着源库的文字走)")
+    ck(po["amount_cents"]["gen"] == "money" and po["amount_cents"].get("kind") == "int",
+       "`amount_cents` 认成钱,但记住了它是整数列")
+    ck(po.get("order_no", {}).get("编号格式", {}).get("前缀") == "PO",
+       "编号格式学的是源库的(PO-…),不是自己拍一个前缀",
+       str(po.get("order_no", {}).get("编号格式")))
+    seqg = pg["tables"]["purchase_order"].get("时间序") or []
+    ck(any(o["先"] == "created_at" and o["后"] == "placed_at" for o in seqg),
+       "从源库**统计**出时间先后,而不是靠写死的列名表", str(seqg)[:120])
+
+    mg, _mg = G.generate(pg, cg)
+    ck(all(isinstance(r["amount_cents"], int) for r in mg["purchase_order"]),
+       "整数金额列造出来的是整数(SQLite 宽容,MySQL 会截断)",
+       str([r["amount_cents"] for r in mg["purchase_order"][:3]]))
+    ck(all(re.match(r"^PO-\d{6}$", str(r["order_no"])) for r in mg["purchase_order"]),
+       "编号照源库格式造", str([r["order_no"] for r in mg["purchase_order"][:3]]))
+    edge_vals = {v for _n, v in G._EDGE_EN} | {v for _n, v in G._EDGE_ZH}
+    ordinary = [str(r["display_name"]) for r in mg["account"]
+                if str(r["display_name"]) not in edge_vals]
+    ck(ordinary and not any("\u4e00" <= ch <= "\u9fff" for x in ordinary for ch in x),
+       "西文库里的普通姓名不会是中文", str(ordinary[:3]))
+    injected = [str(r["display_name"]) for r in mg["account"]
+                if str(r["display_name"]) in {v for _n, v in G._EDGE_EN}]
+    ck(injected and not any(x in {v for _n, v in G._EDGE_ZH} - {v for _n, v in G._EDGE_EN}
+                            for x in injected),
+       "边界值也跟着语言走(「  John  」而不是「  张三  」)", str(injected[:3]))
+    ck(any("汉服" in x or "🧵" in x for x in injected),
+       "但**非拉丁字符**那一条两种库都保留 —— 在西文系统里它是正当的字符集测试",
+       str(injected[:4]))
+    badseq = [(r["created_at"], r["placed_at"]) for r in mg["purchase_order"]
+              if r.get("created_at") and r.get("placed_at")
+              and str(r["placed_at"]) < str(r["created_at"])]
+    ck(not badseq, "统计出来的先后真的落到数据上了(created_at ≤ placed_at)",
+       str(badseq[:2]))
+    # 建档时间列**不能写死名字**:这个库叫 created_at
+    ck(D.creation_col(list(po), {c: g["gen"] for c, g in po.items()}) == "created_at",
+       "建档时间那一列是**推**出来的(这个库叫 created_at,不叫 created)")
+    cg.close()
 
     print("\n【安全闸门】")
     for tgt, env, should in [("shop.db", "生产", False), ("shop.db", "", False),

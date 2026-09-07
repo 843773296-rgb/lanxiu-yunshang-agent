@@ -183,6 +183,23 @@ def _shape_of_fk(conn, child, ccol, parent, pcol):
     return {k: round(v / tot, 3) for k, v in buckets.items()}
 
 
+# 「这一行是什么时候诞生的」那一列。**不能写死成 `created`。**
+# 澜绣云裳叫 `created`,别的系统叫 `created_at` / `create_time` / `opened_at`。
+# 写死的后果不是报错,是**那几层时间修正一条都不生效**,
+# 而由于同一个名字也被断言用着,连检查一起消失 —— 数据错了,检查恰好也瞎了。
+CREATION_RX = re.compile(
+    r"^(created|create|creation|opened|added|inserted|registered|placed_on|gmt_create)"
+    r"(_at|_time|_on|_date|_ts)?$", re.I)
+
+def creation_col(cols, kinds=None):
+    """按语义找建档时间列;kinds 给的话要求它确实是日期/时间类型。"""
+    for c in cols:
+        if CREATION_RX.match(c) and (kinds is None or
+                                     kinds.get(c) in ("date", "datetime")):
+            return c
+    return None
+
+
 MIN_EXPECT = 1.5   # 独立假设下的期望出现次数,低于这个不值得当候选
 
 def _looks_stateful(cname, enum):
@@ -243,11 +260,36 @@ def _prod(xs):
     return r
 
 
+def _looks_chinese(conn, schema, only=None):
+    """源库的文字是中文还是西文。**数据池得跟着源库走。**
+
+    往一个 US/GB/DE/JP 的系统里灌「郭磊」「马超」,结构上没错,
+    但任何跟人名、地址、排序、字符宽度有关的功能拿它测都是假的。
+    判据很粗:采样一批文本值,看汉字占比 —— 粗但足够分开两类库。
+    """
+    han = tot = 0
+    for t in list(schema.tables.values())[:12]:
+        cs = [c.name for c in t.columns if c.kind == "text"][:6]
+        if not cs or (only and t.name not in only): continue
+        try:
+            rows = conn.q(f"select {', '.join(conn.ident(c) for c in cs)} "
+                          f"from {conn.ident(t.name)} limit 40")
+        except Exception:
+            continue
+        for r in rows:
+            for v in r:
+                for ch in str(v or "")[:40]:
+                    tot += 1
+                    if "\u4e00" <= ch <= "\u9fff": han += 1
+    return (han / tot) > 0.08 if tot > 200 else True
+
+
 def discover(conn, schema, tables=None, verbose=False):
     """返回「观察到的事实」——不是方案,是造方案的原料。"""
     keyidx = _key_index(conn, schema)
     names = tables or sorted(schema.tables)
     facts = {"source": schema.label, "dialect": schema.dialect, "tables": {}}
+    facts["中文库"] = _looks_chinese(conn, schema, names if tables else None)
 
     for tn in names:
         t = schema.tables[tn]
@@ -290,6 +332,18 @@ def discover(conn, schema, tables=None, verbose=False):
                 if nums:
                     cf["range"] = {"min": nums[0], "p50": _pct(nums, .5),
                                    "p90": _pct(nums, .9), "max": nums[-1]}
+            # 编号格式要**学源库的**,不能自己拍一个前缀。
+            # 源库是 `PO-000123`,造出 `REF956796` —— 结构对了,格式不对,
+            # 任何按前缀筛选/解析编号的功能拿它测都是假的。
+            if cf["semantic"] == "coded_id" and vals:
+                import re as _re
+                ms = [_re.match(r"^([A-Za-z]{1,8})([-_]?)(\d+)$", str(v)) for v in vals]
+                ms = [m for m in ms if m]
+                if ms:
+                    pre = collections.Counter(m.group(1) for m in ms).most_common(1)[0][0]
+                    sep = collections.Counter(m.group(2) for m in ms).most_common(1)[0][0]
+                    w = collections.Counter(len(m.group(3)) for m in ms).most_common(1)[0][0]
+                    cf["编号格式"] = {"前缀": pre, "分隔": sep, "位数": w}
             # 日期/时间也要量范围 —— 否则生日会被造在最近两年,
             # 一个「儿童成长推算」功能拿这种数据测,等于没测。
             # 这是「结构像」和「分布像」的分界:类型对不等于值域对。
@@ -336,6 +390,37 @@ def discover(conn, schema, tables=None, verbose=False):
                     # **被覆盖前的判断要留着,否则回退无据。**
                     cf["semantic0"] = cf["semantic"]; cf["semantic"] = "fk"
         facts["tables"][tn] = tf
+
+    # 时间列之间的先后,**从源库统计出来,不写死列名表。**
+    #
+    # 原来靠一张写死的 TIME_ORDER(created→paid_at→shipped_at→…)。
+    # 换个命名约定就整张表失效,而且失效时不出声。
+    # 但「先后」这件事源数据里明明白白写着:如果源库里每一行都满足 a ≤ b,
+    # 那就是一条真实存在的顺序约束 —— 和禁配候选是同一个思路,
+    # 只不过那边看的是"从没同时出现",这边看的是"从没出现倒挂"。
+    #
+    # 要求全部成立(不是绝大部分):时间倒挂是硬错误,源库里但凡有一例,
+    # 就说明这不是一条约束,而是我看错了。
+    for tn, tf in facts["tables"].items():
+        dts = [c for c, cf in tf["columns"].items()
+               if cf.get("semantic") in ("date", "datetime")]
+        if tf["rows"] < 10 or len(dts) < 2: continue
+        orders = []
+        for i, a in enumerate(dts):
+            for b in dts[i + 1:]:
+                try:
+                    both, ab, ba = conn.q(
+                        f"select count(*), "
+                        f"sum(case when {conn.ident(a)} <= {conn.ident(b)} then 1 else 0 end), "
+                        f"sum(case when {conn.ident(b)} <= {conn.ident(a)} then 1 else 0 end) "
+                        f"from {conn.ident(tn)} "
+                        f"where {conn.ident(a)} is not null and {conn.ident(b)} is not null")[0]
+                except Exception:
+                    continue
+                if not both or both < 10: continue
+                if ab == both and ba != both: orders.append({"先": a, "后": b, "样本": both})
+                elif ba == both and ab != both: orders.append({"先": b, "后": a, "样本": both})
+        if orders: tf["时间序"] = orders
 
     # 列与列之间的关系。只看枚举列 —— 自由文本之间没有「禁配」这回事,
     # 而列数一多联合分布就稀疏得没意义,所以按取值最少的挑前 6 个。

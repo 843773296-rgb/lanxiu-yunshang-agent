@@ -29,6 +29,7 @@
 import os, sys, math, random, datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from plan import dominators
+from discover import creation_col
 
 # ---------- 中文数据池 ----------
 XING = "王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾"
@@ -45,17 +46,31 @@ REGION = {
     "北京": {"北京": ["朝阳区", "海淀区", "东城区"]},
     "湖北": {"武汉": ["武昌区", "江汉区"]},
 }
+# 数据池要跟着源库的文字走。往一个 US/GB/DE/JP 的系统里灌「郭磊」,
+# 结构上没错,但任何跟人名、排序、字符宽度有关的功能拿它测都是假的。
+EN_FIRST = ["James", "Mary", "Liam", "Olivia", "Noah", "Emma", "Lucas", "Sophia",
+            "Ethan", "Ava", "Mia", "Leo", "Hannah", "Yuki", "Kenji", "Anna"]
+EN_LAST = ["Smith", "Johnson", "Müller", "Garcia", "Brown", "Wilson", "Tanaka",
+           "Dubois", "Rossi", "Novak", "Silva", "Khan"]
 STREET = ["文一西路", "解放路", "中山北路", "人民大道", "锦绣路", "长虹街", "望江东路"]
-# 边界值:每一个都对应一类线上真出过的事故
-EDGE_TEXT = [
-    ("超长", "测试" * 60),                    # 表格撑破 / varchar 截断
-    ("emoji", "小王🧵🪡汉服"),                 # 字符集不是 utf8mb4 就当场炸
-    ("前后空格", "  张三  "),                  # 精确匹配失效
-    ("单引号", "O'Brien 的马面裙"),            # 字符串拼接 SQL
-    ("换行", "第一行\n第二行"),                # CSV 导出错行
-    ("空串", ""),                             # 和 NULL 不是一回事
-    ("全角数字", "１２３４５"),                 # 数字校验漏
+# 边界值:每一个都对应一类线上真出过的事故。
+#
+# **它也要跟着源库的文字走。** 往一个英文系统里注入「  张三  」测前后空格,
+# 测的东西是对的,但样本不像它会收到的数据 —— 而边界值的全部价值就在于
+# "它长得像真会出现的那种脏"。
+# 例外是**非拉丁字符**那一条:在西文系统里它恰恰是正当的字符集测试(能不能存 CJK/emoji),
+# 所以两种库里都保留。
+_EDGE_ZH = [
+    ("超长", "测试" * 60), ("emoji", "小王🧵🪡汉服"), ("前后空格", "  张三  "),
+    ("单引号", "O'Brien 的马面裙"), ("换行", "第一行\n第二行"),
+    ("空串", ""), ("全角数字", "１２３４５"),
 ]
+_EDGE_EN = [
+    ("超长", "Test" * 90), ("非拉丁", "Zoë 汉服🧵"), ("前后空格", "  John  "),
+    ("单引号", "O'Brien & Sons"), ("换行", "line one\nline two"),
+    ("空串", ""), ("全角数字", "１２３４５"),
+]
+EDGE_TEXT = _EDGE_ZH        # 默认中文;generate() 会按源库切换
 
 # 边界值只往**自由文本**列掺,不往有格式契约的列掺。
 # 第一版只掺 `text` 兜底列 —— 于是姓名列一个边界值都没有,
@@ -114,6 +129,8 @@ def _dt(r, lo=None, hi=None):
 def _value(g, r, ctx):
     k = g["gen"]
     if k == "cn_name":
+        if not ctx.get("中文库", True):
+            return f"{r.choice(EN_FIRST)} {r.choice(EN_LAST)}"
         return r.choice(XING) + "".join(r.choice(MING) for _ in range(r.choice([1, 1, 2])))
     if k == "cn_mobile":
         return "1" + r.choice("3567889") + "".join(str(r.randint(0, 9)) for _ in range(9))
@@ -134,7 +151,11 @@ def _value(g, r, ctx):
     if k == "money":
         rg = g.get("range") or {}
         v = _lognormal(r, rg.get("p50"), rg.get("p90"))
-        return round(min(v, (rg.get("max") or v * 5) * 1.5), 2)
+        v = min(v, (rg.get("max") or v * 5) * 1.5)
+        # **金额列是整数时不能出小数。** `amount_cents` 存的是分,
+        # 造出 28363.32 分既不合类型也不合语义 —— SQLite 宽容不报错,MySQL 会截断。
+        # 语义(这是钱)和类型(这列是整数)都要听,不能只听语义。
+        return int(round(v)) if g.get("kind") == "int" else round(v, 2)
     if k == "percent":  return round(r.uniform(0, 1), 3)
     if k == "small_int":
         rg = g.get("range") or {}
@@ -158,7 +179,11 @@ def _value(g, r, ctx):
     if k == "enum":     return _weighted(r, g["dist"]) if g.get("dist") else "未知"
     if k == "url":      return f"/static/{r.randint(1000,9999)}.jpg"
     if k == "json_blob":return '{"k":%d}' % r.randint(1, 99)
-    if k == "coded_id": return f"REF{r.randint(100000,999999)}"
+    if k == "coded_id":
+        f = g.get("编号格式")
+        if f:   # 学源库的格式:前缀 + 分隔符 + 位数
+            return f'{f["前缀"]}{f["分隔"]}{r.randint(0, 10 ** f["位数"] - 1):0{f["位数"]}d}'
+        return f"REF{r.randint(100000,999999)}"
     if k == "long_text":
         return r.choice(["客户对袖型有特别要求,已备注给版房。",
                          "量体数据偏差较大,建议复量后再开工。",
@@ -278,8 +303,8 @@ def _fsm_fix(rows, cname, g, cols, r):
     # 退款状态),它们各管各的时间戳、互相不知道对方存在 ——
     # 于是生产完成时间会被排到下单时间之前。荒谬,但每个状态机单看都是自洽的。
     # 找一个所有状态机都认的锚点,是唯一能让它们对齐的办法。
-    anchor_col = next((c for c in ("created", "create_time", "created_at")
-                       if c in cols and c not in ts.values()), None)
+    anchor_col = creation_col([c for c in cols if c not in ts.values()],
+                              {c: cols[c]["gen"] for c in cols})
     for row in rows:
         st = str(row.get(cname))
         must = dominators(start, trans, st) & set(ts)
@@ -333,6 +358,7 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None):
     一张 36 列的客户表通常只有 2-3 列被指过来,剩下的当场释放。
     """
     seed = plan["seed"]
+    edges = _EDGE_ZH if plan.get("中文库", True) else _EDGE_EN
     need = needed_columns(plan) if sink else None
     made, manifest = {}, {}
     for tname in plan["order"]:
@@ -393,12 +419,13 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None):
 
             nr = g.get("null_rate") or 0
             slots = (_edge_slots(rng_for(seed, tname, cname, "边界"), n,
-                                 [v for _n, v in EDGE_TEXT], edge_rate)
+                                 [v for _n, v in edges], edge_rate)
                      if (g["gen"] in EDGE_OK and not g.get("unique") and edge_rate) else {})
             for i, row in enumerate(rows):
                 if nr and r.random() < nr:
                     row[cname] = None; continue
                 ctx = row.setdefault("__ctx", {})
+                ctx["中文库"] = plan.get("中文库", True)
                 if i in slots:
                     row[cname] = _cap(slots[i], g)
                 else:
@@ -469,21 +496,43 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None):
                     if row.get(a) and row.get(b) and str(row[b]) <= str(row[a]):
                         row[b] = _not_before(row[a], cols, b, rp, 2, strict=True)
 
-        # 兜底:任何 *_at 都不该早于 created。
+        # 兜底:任何 *_at 都不该早于**建档时间那一列**(名字是推出来的,不写死)。
         # 状态机管得住它认领的那几列,管不住剩下的(synced_at / on_shelf_at / handled_at…)——
         # 那些是各自独立抽的,自然会掉到下单时间前面。
         # 时间原点这件事得**全表统一**兜一次,不能指望每个局部规则各自记得。
-        if "created" in cols:
+        base_c = creation_col(list(cols), {c: cols[c]["gen"] for c in cols})
+        if base_c:
             rt = rng_for(seed, tname, "__锚点")
-            ats = [c for c in cols if c.endswith("_at")
+            ats = [c for c in cols if c != base_c and (c.endswith("_at") or c.endswith("_time"))
                    and cols[c]["gen"] in ("date", "datetime")]
             for row in rows:
-                base = row.get("created")
+                base = row.get(base_c)
                 if not base: continue
                 for c in ats:
                     v = row.get(c)
                     if v is None or str(v) >= str(base): continue
                     row[c] = _not_before(base, cols, c, rt, 30)
+
+        # 源库统计出来的时间先后。**必须排在所有时间修正的最后。**
+        #
+        # 排序依据是**谁的约束更具体**:统计出来的成对先后(源库 88 行无一倒挂)
+        # 比「都不早于建档时间」这条通用兜底具体得多,所以它说了算。
+        # 放在前面会被兜底推翻 —— 兜底把某一列往后挪一个随机天数,
+        # 刚排好的成对先后就散了。规则本身都对,顺序错了就互相拆台。
+        # 它只把值往后推,不会破坏"不早于建档时间"(建档时间是链的头)。
+        #
+        # 多跑几遍:a≤b、b≤c 是一条链,一遍只推平相邻的一对,链长几步就要几遍。
+        seq = tp.get("时间序") or []
+        if seq:
+            rs = rng_for(seed, tname, "__时间序")
+            for _pass in range(5):
+                for o in seq:
+                    a, b = o["先"], o["后"]
+                    if a not in cols or b not in cols: continue
+                    if cols[b]["gen"] not in ("date", "datetime"): continue
+                    for row in rows:
+                        if row.get(a) and row.get(b) and str(row[b]) < str(row[a]):
+                            row[b] = _not_before(row[a], cols, b, rs, 10)
 
         for row in rows: row.pop("__ctx", None)
         if sink:

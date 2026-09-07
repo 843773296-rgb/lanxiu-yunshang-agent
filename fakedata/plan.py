@@ -95,6 +95,8 @@ def _gen_for(cname, cf, fk):
     if "range" in cf:     g["range"] = cf["range"]
     if "len" in cf:       g["len"] = cf["len"]
     if cf.get("unique"):  g["unique"] = True
+    g["kind"] = cf.get("kind")
+    if cf.get("编号格式"): g["编号格式"] = cf["编号格式"]
     g["nullable"] = cf.get("nullable", True)
     if cf.get("null_rate"): g["null_rate"] = cf["null_rate"]
     if cf.get("comment"): g["注释"] = cf["comment"]
@@ -104,6 +106,9 @@ def _gen_for(cname, cf, fk):
     if cf.get("confidence") == "低":
         g.setdefault("需确认", "源库这张表没数据,只能靠列名猜")
     return g
+
+
+from discover import creation_col as _creation_col
 
 
 def apply_overlay(facts, overlay):
@@ -238,6 +243,7 @@ def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN
     order, deferred = topo_order(set(names), fkmap)
 
     plan = {"seed": seed, "dialect": facts["dialect"], "source": facts["source"],
+            "中文库": facts.get("中文库", True),
             "marker": {"strategy": "id_prefix", "prefix": marker,
                        "why": "每条假数据的主键都带这个前缀,一条 DELETE 就能清干净"},
             "order": order, "deferred_fks": deferred, "tables": {}, "assertions": []}
@@ -250,6 +256,7 @@ def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN
         plan["tables"][tn] = {
             "count": n, "pk": tf["pk"], "源行数": tf["rows"],
             "columns": {c: _gen_for(c, cf, byfk.get(c)) for c, cf in tf["columns"].items()},
+            "时间序": tf.get("时间序", []),
         }
         # 联合分布只带 columns + dist 进方案 —— 禁配候选是给模型判的原料,不是执行用的
         if tf.get("joint"):
@@ -341,26 +348,46 @@ def _assertions(facts, names, fkmap, dialect="sqlite"):
                                f"cast({qi(f['b_column'])} as {TXT})='{bv}'",
                         "期望": 0, "理由": f.get("reason", "")})
         cols = set(tf["columns"])
-        # 所有 *_at 都不该早于下单时间。原来只查写死的那几对,
-        # 而状态机带进来的时间戳(audit_at / produced_at / cancelled_at…)一条都没被查。
-        # **新增的能力要顺带把检查面也扩上,不然新能力就是新的盲区。**
-        if "created" in cols:
+        # 所有时间戳都不该早于建档时间。
+        # 建档时间那一列**要推,不能写死** —— 写死 `created` 的话,
+        # 一个叫 `created_at` 的库上这一整批断言一条都不会生成:
+        # 数据错了,而检查因为同一个原因也没了。
+        # 统计出来的先后。它同时是**猜测类断言的否决依据** ——
+        # `growth_forecast` 里源库 18 行都是 `base_at ≤ created`(基准日在建档之前,
+        # 因为它是照一份更早的量体记录算出来的),而按列名猜的规则会断言
+        # 「base_at 不该早于 created」—— 正好相反。
+        # 两条互相矛盾的检查同时存在,**等于保证有一条永远红**,而红的那条毫无信息。
+        # **证据推翻猜测,不是并存。**
+        seen_order = {(o["先"], o["后"]) for o in tf.get("时间序", [])}
+        for o in tf.get("时间序", []):
+            out.append({"名": f'{tn}: {o["后"]} 不该早于 {o["先"]}', "表": tn, "类": "时间序",
+                        "sql": f'select count(*) from {qi(tn)} where {qi(o["先"])} is not null '
+                               f'and {qi(o["后"])} is not null and {qi(o["后"])} < {qi(o["先"])}',
+                        "期望": 0, "理由": f'源库 {o["样本"]} 行里没有一例倒挂'})
+        kinds = {c: cf.get("semantic") for c, cf in tf["columns"].items()}
+        base_c = _creation_col(cols, kinds)
+        if base_c:
             for c in sorted(cols):
-                if c.endswith("_at") and tf["columns"][c].get("kind") in ("text", "datetime"):
-                    out.append({"名": f"{tn}: {c} 不该早于 created", "表": tn, "类": "时间线(候选)",
-                                "sql": f'select count(*) from {qi(tn)} where {qi("created")} is not null '
-                                       f'and {qi(c)} is not null and {qi(c)} < {qi("created")}',
+                if c == base_c: continue
+                if (c, base_c) in seen_order: continue      # 证据说反了,猜测让路
+                if (base_c, c) in seen_order: continue      # 证据已经断言过了,别重复
+                if (c.endswith("_at") or c.endswith("_time")) \
+                   and tf["columns"][c].get("semantic") in ("date", "datetime"):
+                    out.append({"名": f"{tn}: {c} 不该早于 {base_c}", "表": tn, "类": "时间线(候选)",
+                                "sql": f'select count(*) from {qi(tn)} where {qi(base_c)} is not null '
+                                       f'and {qi(c)} is not null and {qi(c)} < {qi(base_c)}',
                                 "期望": 0, "需确认": "按列名对推的,业务上不一定成立"})
         for c in sorted(cols):
             if "start" not in c.lower(): continue
             e = c.lower().replace("start", "end")
             m = next((x for x in cols if x.lower() == e), None)
-            if m:
+            if m and (m, c) not in seen_order and (c, m) not in seen_order:
                 out.append({"名": f"{tn}: {m} 不该早于 {c}", "表": tn, "类": "时间线(候选)",
                             "sql": f'select count(*) from {qi(tn)} where {qi(c)} is not null '
                                    f'and {qi(m)} is not null and {qi(m)} < {qi(c)}',
                             "期望": 0, "需确认": "按列名对推的,业务上不一定成立"})
         for a, b in TIME_PAIRS:
+            if (b, a) in seen_order or (a, b) in seen_order: continue
             if a in cols and b in cols:
                 out.append({"名": f"{tn}: {b} 不该早于 {a}", "表": tn, "类": "时间线(候选)",
                             "sql": f'select count(*) from {qi(tn)} where {qi(a)} is not null '
