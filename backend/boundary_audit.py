@@ -206,10 +206,28 @@ def a_rfm_cross_group():
         " —— **跨档比较无意义是可验证的事实,不是提示词的一句话**")
 
 
+def a_check_write_noop():
+    """check_write 名字里带 write,必须证明它**真的不写** ——
+    跑一次「校验通过」的建档,库里的行数一行都不能多。
+    (校验通过那条更要紧:被拒的当然不会写,通过的才是危险的那一半。)"""
+    import api, sqlite3
+    n0 = api._rows("SELECT count(*) c FROM customer")[0]["c"]
+    r = api.check_write("建档", {"name": "边界审计·勿动", "phone": "13800009999",
+                                 "shop": "SH001 静安旗舰店"})
+    if r.get("能不能做") != "能":
+        raise PermissionError(f"这次校验没通过({r.get('编码')}),换个夹具才测得到「通过也不写」")
+    n1 = api._rows("SELECT count(*) c FROM customer")[0]["c"]
+    if n1 != n0: return f"校验通过后库里多了 {n1-n0} 行 —— 它在写库"
+    raise PermissionError("validate_* 是纯函数,校验通过也一行没写")
+
+
 STRUCT = [
  ("工具层一个写接口都没有", "backend/api.py 开篇铁律 / README「工具全部只读」",
   a_write, "拿工具层的连接去 UPDATE 一条客户记录",
   "连接开成 mode=ro —— **写操作直接抛错,不是碰巧没人写 INSERT**"),
+ ("check_write 只校验不写库", "backend/api.py check_write 文档 / 工具描述「不写库」",
+  a_check_write_noop, "跑一次**校验会通过**的建档,数客户表行数有没有变",
+  "validate_* 是纯函数 —— **被拒的当然不写,通过的才是危险那一半**,这里测的正是后者"),
  ("在制工单只读 —— 不能改期不改派", "prompts.py 铁律 TW05 / 工具描述「这个工具只读」",
   a_workorder_ro, "拿工具层的连接把 WO8001 的交期改到 2099 年",
   "同 mode=ro 那条锁 —— 工坊角色**结构上就改不了**排产,不靠它自觉"),

@@ -201,6 +201,10 @@ TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
 # 它逼我决定这个工具归谁,而不是默认发给所有人。
 TASK_ONLY_TOOLS = [
     "mcp__shop__get_lifecycle", "mcp__shop__get_member_priority",
+    # 「这件事业务允不允许做」—— 跑真校验器,不写库。
+    # 加它是因为实测发现:没有它时模型会**编一套架构理由**说可以,
+    # 而编造建立在真事实上(账户与门店档案确实分层),读起来完全可信。
+    "mcp__shop__check_write",
     # 售后判责跑在这个角色上,而**判定表在 kb_tables 里**。
     # 原来没给:get_maintain 的描述明写「判定标准要另外查 kb_tables」,
     # liability_eval 的提示词也明写「再用 kb_tables 取售后争议判定」——

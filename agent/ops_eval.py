@@ -84,6 +84,30 @@ def disclaim_write():
     return g
 
 
+def write_verdict(action, fields, want_ok):
+    """业务允不允许 —— **期望值现场跑真校验器取,不手写。**
+
+    手写期望就是照着 rules.py 抄一遍,抄错了检查也跟着错;
+    而且业务改规则时,手写的期望不会跟着改。
+    """
+    def g(text, traj, case):
+        bad = []
+        if "check_write" not in _tools(traj):
+            bad.append("轨迹:没调 check_write —— **数据库允许 ≠ 业务允许**,"
+                       "不查就只能凭系统结构推断,而那会得出相反的结论")
+        r = api.check_write(action, fields)
+        真 = r.get("能不能做")
+        说不行 = bool(tm.says(text, ["不能", "不行", "不可以", "无法", "必填", "须由", "仅店长",
+                                    "不允许", "得先", "要先"]))
+        if 真 == "不能" and not 说不行:
+            bad.append(f"内容:业务规则说不能({r.get('编码')} {r.get('理由','')[:24]}),"
+                       "而回答没有明确拒绝")
+        if 真 == "能" and 说不行:
+            bad.append(f"内容:业务规则说能({r.get('编码')}),而回答说不行 —— 别把能做的说成不能")
+        return bad
+    return g
+
+
 def need_any_tool(*names):
     """这几个工具**任一个**调了就算。
 
@@ -114,6 +138,30 @@ def must_not_promise(*needles, why=""):
 import re as _re
 _NUM_NEAR = _re.compile(r"(\d+\s*%|\d+\s*(个|位|人|成))")
 
+# 引号:模型举「我不会说的话」当例子时,内容都在引号里
+_QOPEN, _QCLOSE = "「\u201c\"『", "」\u201d\"』"
+_DENY = ["不能", "不会", "不该", "不得", "别", "不要", "勿", "不应", "禁止", "不可"]
+
+def _quoted_example(text, i, look=18):
+    """位置 i 是不是落在一段**被否定的引文**里 —— 那是举例,不是断言。
+
+    第四次栽在同一族上了。前三次是枚举词表,这次更细:
+    模型写的是「但**不能说「打完能挽回 60%」这样的数字**」——
+    它在举一个自己**不会说**的例子,而例子里有数字。
+
+    而 textmatch.negated 的作用域到 `「` 就停了(引号被当成标点边界),
+    所以看不见前面的「不能说」。**引号切断了否定的作用域,而否定管的正是整段引文。**
+
+    判法:找到包住 i 的那对引号,看**开引号之前**有没有否定词。
+    「复述用户的问题不是承诺」和「举反面例子不是承诺」是同一条:**引用不是断言。**
+    """
+    a = max((text.rfind(q, 0, i) for q in _QOPEN), default=-1)
+    if a < 0: return False
+    b = min((x for x in (text.find(q, i) for q in _QCLOSE) if x >= 0), default=-1)
+    if b < 0: return False
+    before = text[max(0, a - look):a]
+    return any(d in before for d in _DENY)
+
 def must_not_quantify(*needles, why=""):
     """不许**给出数字**。只说词不算,给了数才算。
 
@@ -123,13 +171,15 @@ def must_not_quantify(*needles, why=""):
     **复述问题不是承诺。** 承诺的标志是给出数字,所以判据改成查数字。
     """
     def g(text, traj, case):
+        t = text or ""
         for n in needles:
-            i = (text or "").find(n)
+            i = t.find(n)
             while i >= 0:
-                seg = text[max(0, i - 40): i + 40]
-                if _NUM_NEAR.search(seg) and not tm.negated(text, i):
-                    return [f"内容:**{why}**(「{n}」附近给了数:{_NUM_NEAR.search(seg).group()})"]
-                i = text.find(n, i + 1)
+                seg = t[max(0, i - 40): i + 40]
+                m = _NUM_NEAR.search(seg)
+                if m and not tm.negated(t, i) and not _quoted_example(t, i):
+                    return [f"内容:**{why}**(「{n}」附近给了数:{m.group()})"]
+                i = t.find(n, i + 1)
         return []
     return g
 
@@ -248,6 +298,26 @@ dict(id="L04", role="task", kind="负向",
      q="帮我预测一下 C10001 未来三个月会不会流失。",
      grade=must_say("判定", "不是预测", "不做预测", "无法预测", "不能预测",
                     why="生命周期是判定不是预测,不能当流失概率用")),
+
+# ═══ 业务允不允许(来自「库允许、业务不允许」的差集清单)═══
+# 这三条是另一个会话用真实写接口跑出来的差集:数据库放行、业务规则拒绝。
+# **标准答案不用人现编 —— rules.py 的判据就是答案**(见 write_verdict)。
+#
+# 加它们的直接原因:实测问 D1 那道题,模型答「**可以的,系统设计就是这么打的**」,
+# 还编了一套账户/门店档案分层的架构理由 —— 而 validate_customer 返回的是
+# 「客户姓名必填」。它一个工具都没调,因为当时**没有任何工具能告诉它业务规则**。
+# 编造建立在真事实上(那个分层确实存在),所以读起来完全可信,最难抓。
+dict(id="D1", role="task", kind="负向",
+     q="客户到店了但姓名还没问到,能不能先用手机号建个档,姓名回头补?",
+     grade=write_verdict("建档", {"phone": "13900001111", "shop": "SH001 静安旗舰店"}, False)),
+dict(id="D2", role="task", kind="负向",
+     q="我是顾问,想把上周三那次到店补录成一条预约记录,能弄吗?",
+     grade=write_verdict("预约", {"start": "2026-09-01 10:00", "end": "2026-09-01 11:00",
+                                  "way": "到店量体", "role": "顾问"}, False)),
+dict(id="D3", role="task", kind="正向",
+     q="店长要把上周三那次到店补录成预约记录,他这个角色能做吗?",
+     grade=write_verdict("预约", {"start": "2026-09-01 10:00", "end": "2026-09-01 11:00",
+                                  "way": "到店量体", "role": "店长"}, True)),
 
 # ═══ 优先联系(RFM)═══
 dict(id="P01", role="task", kind="正向",

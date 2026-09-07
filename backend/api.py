@@ -248,6 +248,48 @@ def get_member_priority(lifecycle=None, limit=10):
                     "**这是排序不是预测**,不代表联系了就能挽回。"}
 
 
+def check_write(action, fields=None):
+    """**这件事业务允不允许做** —— 不写库,只跑一遍真正的校验器。
+
+    为什么要有它:顾问问「客户姓名还没问到,能不能先建档回头补」,
+    实测智能体答「**可以的,系统设计就是这么打的**」,还编了一套
+    account/customer 分层的架构理由 —— 而 rules.validate_customer 返回的是
+    `NEED_NAME 客户姓名必填`。它一个工具都没调,因为**没有任何工具能告诉它业务规则**。
+
+    编造建立在真事实上(账户与门店档案确实分层),所以读起来完全可信,最难抓。
+
+    ## 为什么是「跑校验器」而不是「把规则写进提示词」
+
+    把规则抄进提示词就是第二份手抄件,业务改了规则、提示词不会跟着改。
+    这里直接调 backend/rules.py —— **和真实写接口用的是同一个函数**,
+    所以「工具说不行」和「真去建会被拒」永远是同一件事。
+
+    ## 它不写库
+
+    validate_* 都是纯函数,只读现有客户做重复判定。见边界审计「check_write 不写库」。
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import rules as _r
+    d = dict(fields or {})
+    role = d.pop("role", None) or "顾问"
+    act = (action or "").strip()
+    if act in ("建档", "新建客户", "customer", "create_customer"):
+        ex = _rows("SELECT id,name,phone,shop,birthday,addr FROM customer")
+        ok, code, why, sus = _r.validate_customer(d, ex, actor_role=role)
+        out = {"能不能做": "能" if ok else "不能", "编码": code, "理由": why or "校验通过",
+               "以什么角色判的": role}
+        if sus:
+            out["疑似重复"] = [dict(id=x["id"], name=x["name"], shop=x.get("shop")) for x in sus]
+            out["该怎么办"] = "转店长确认后再建档 —— 系统不替人做这个判断"
+        return _nz(out)
+    if act in ("预约", "补录预约", "appointment", "create_appointment"):
+        ok, code, why = _r.validate_appointment(d, actor_role=role)
+        return _nz({"能不能做": "能" if ok else "不能", "编码": code,
+                    "理由": why or "校验通过", "以什么角色判的": role})
+    return {"error": f"不认识的动作「{action}」", "支持": ["建档", "预约"],
+            "note": "只覆盖这两类写入的业务规则;别的动作请走后台审批链"}
+
+
 def kb_detail(code):
     """按编码取某一条的完整内容"""
     r=_rows("SELECT * FROM craft WHERE code=?",code)
@@ -930,6 +972,11 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "lifecycle":{"type":"string","description":"生命周期档位,如「潜在流失」「休眠」。不传则对全部客户排。"},
     "limit":{"type":"number","description":"返回前几名,默认 10,最多 40"}},"required":[]}},
+ {"name":"check_write","description":"问「**这件事业务允不允许做**」时用它。它会拿真正的校验器跑一遍,返回能不能做、错误码和理由。**不写库**。\n\n支持两类:`建档`(新建客户)和 `预约`(含补录)。fields 传要写的字段,再加一个 `role`(顾问 / 店长 / 总部运营)——**权限判定看角色**,比如「预约时间早于当前,仅店长及以上可补录」。\n\n**顾问问「能不能先建档回头补姓名」「能不能把上周的到店补录成预约」这类问题,必须调这个,不许凭系统结构推断。** 数据库允许和业务允许是两回事:`customer.name` 在库里可空,而业务规则是姓名必填 —— 只看表结构会得出完全相反的结论。\n\n返回里出现「疑似重复」时,**要把那几条列给人看** —— 那条规则是「转店长确认」,不是「不能建」,而店长得看见凭什么。",
+  "input_schema":{"type":"object","properties":{
+    "action":{"type":"string","description":"建档 或 预约"},
+    "fields":{"type":"object","description":"要写的字段,如 {name,phone,shop} 或 {start,end,way};另可传 role"}},
+   "required":["action"]}},
  {"name":"get_aftersale","description":"查售后记录(退货/换货/退款/维修),可按订单号、客户或状态筛。退款类会带上退款轨迹。**这个工具只给事实,不给判责结论** —— 判责标准在 kb_tables 的「售后争议判定」表里,要另外查。查不到就如实说查不到,不要推测客户提过什么。",
   "input_schema":{"type":"object","properties":{
     "order_id":{"type":"string"},"customer":{"type":"string","description":"客户号或姓名"},
@@ -991,7 +1038,8 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "plan_for_event":plan_for_event,"get_maintain":get_maintain,
               "get_workorder":get_workorder,
               "get_lifecycle":get_lifecycle,
-              "get_member_priority":get_member_priority})
+              "get_member_priority":get_member_priority,
+              "check_write":check_write})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,
