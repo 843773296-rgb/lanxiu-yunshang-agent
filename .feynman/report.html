@@ -1,215 +1,40 @@
-<!doctype html>
-<!-- 网页版报告模板。用法：把 {{占位符}} 全部替换为报告真实内容；三代进度条把当前代的 .seg 加 class="on"（1.5 代/混合可两段同亮并在代内形态标注）；
-     可以按项目实际情况增删卡片，但保持整体风格。要求：自包含（无外链）、双击可开。 -->
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>澜绣云裳agent · 项目解读报告</title>
-<style>
-  :root { --bg:#0f1115; --card:#161a22; --line:#2a3040; --fg:#e8eaf0; --dim:#9aa3b5;
-          --blue:#4f8cff; --green:#34c98e; --orange:#ff9f43; --red:#ff6b6b; --yellow:#ffd166; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:'PingFang SC','Microsoft YaHei',system-ui,sans-serif; background:var(--bg);
-         color:var(--fg); line-height:1.7; padding:32px 16px; }
-  .wrap { max-width:860px; margin:0 auto; }
-  header h1 { font-size:26px; } header .meta { color:var(--dim); font-size:13px; margin:6px 0 24px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px 22px; margin-bottom:18px; }
-  .card h2 { font-size:17px; margin-bottom:12px; }
-  .card h2 .num { color:var(--blue); font-family:monospace; margin-right:6px; }
-  pre.diagram { background:#0b0d11; border:1px solid var(--line); border-radius:8px; padding:14px;
-                overflow-x:auto; font-size:13px; line-height:1.5; color:var(--green); }
-  /* 六档进度条 */
-  .gears { display:flex; gap:6px; margin:12px 0; }
-  .seg { flex:1; text-align:center; padding:10px 4px; border:1px solid var(--line); border-radius:8px;
-         font-size:12px; color:var(--dim); }
-  .seg.on { background:var(--blue); color:#fff; border-color:var(--blue); font-weight:700; }
-  .seg .g { display:block; font-size:16px; font-family:monospace; }
-  /* 体检表 */
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  td,th { padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; }
-  td:first-child { color:var(--dim); white-space:nowrap; }
-  .ok{color:var(--green)} .warn{color:var(--yellow)} .bad{color:var(--red)}
-  .tag { display:inline-block; border:1px solid var(--line); border-radius:14px; padding:2px 12px;
-         font-size:12px; color:var(--dim); margin:2px 4px 2px 0; }
-  .money { color:var(--yellow); font-family:monospace; }
-  .next li { margin:10px 0; }
-  .next a { color:var(--blue); }
-  footer { text-align:center; color:var(--dim); font-size:12px; margin-top:26px; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>📋 澜绣云裳agent · 项目解读报告</h1>
-    <div class="meta">第 9 版 · 2026-09-08 · 本次变化：<b>同一个事实有两份，是这个项目最贵的一类 bug</b> · Feynman for AI Builders · 张和的AI训练营</div>
-  </header>
-
-  <div class="card">
-    <h2><span class="num">一</span>你的项目由哪几块组成</h2>
-    <pre class="diagram">知识库 knowledge/*.md ──► 口径层 lifecycle / rfm / liability / growth / fitting
-                              │  「业务判定怎么算」，只管算不管取数
-                              ▼
-                        工具层 backend/api.py   27 个只读工具
-                              │
-        提示词 prompts.py ─────┤  32 条铁律的<b>唯一源头</b>，按工具装配
-        (P1–P7 七道结构检查)   │
-                              ▼
-              三个角色  门店顾问 15 条规矩 / 工坊排产 11 条 / 后台运营 11 条
-                              │
-                              ▼
-                  一个对话页 station.html（会话列表·换模型·发图）
-
-              旁边站着：记录仪 · 边界审计 24 条 · check.sh 48 项</pre>
-    <p>规模：96 个 Python 文件 / 23142 行 / 127 次提交。记录仪累计 <b>1071 次</b>模型调用、<span class="money">$10.91</span>、缓存命中率 <b>85.9%</b>。</p>
-    <h2 style="margin-top:18px"><span class="num">➕</span>工程体检（七环）</h2>
-    <table>
-      <tr><th>环节</th><th>状态</th><th>现场证据</th></tr>
-      <tr><td>需求</td><td><span class="ok">✅</span></td><td>业务覆盖盘点 18/18，三个角色的真实问题都答得了</td></tr>
-      <tr><td>架构</td><td><span class="ok">✅</span></td><td>三代同仓；角色<b>按岗位切</b>不按功能模块切</td></tr>
-      <tr><td>实现</td><td><span class="ok">✅</span></td><td>密钥在项目外、每次推送前扫；工具全只读且是结构性的</td></tr>
-      <tr><td>验证</td><td><span class="ok">✅</span></td><td>48 项检查、6 套判分器对照约 79 条、5 套模型评测</td></tr>
-      <tr><td>部署</td><td><span class="ok">✅</span></td><td><code>./start.sh</code> 一条命令</td></tr>
-      <tr><td>运维</td><td><span class="ok">✅</span></td><td>记录仪、研判队列、边界审计 24 条结构性保证<b>每条都真的被攻击过</b></td></tr>
-      <tr><td>迭代</td><td><span class="warn">⚠️</span></td><td><b>两个会话同仓协作撞过三次车</b>（互相提交半成品），已约定只提交明确路径</td></tr>
-    </table>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">二</span>本版主线：「同一个事实两个来源」撞见了五次</h2>
-    <table>
-      <tr><th>同一个事实</th><th>有几份</th><th>后果</th></tr>
-      <tr><td>工艺顾问的提示词</td><td><b>3 份</b></td><td><b>评测跑的是旧那份 —— 分数评的不是产品</b></td></tr>
-      <tr><td>会员生命周期口径</td><td>2 份</td><td>页面写「优先级 3」而实际按第 4 位算</td></tr>
-      <tr><td>面料备料天数</td><td>2 张表</td><td>一个模型答「12 天」，另一个答「没录入」</td></tr>
-      <tr><td>相容矩阵完成度</td><td>2 种数法</td><td><b>1274 格「没人验证过」被报成「规则推导」</b></td></tr>
-      <tr><td>三代对比成本</td><td>累计 vs 本轮</td><td>两次表之间不可比，而看起来像变便宜了</td></tr>
-    </table>
-    <p style="margin-top:10px"><b>共同点：每一条都不报错。</b>系统照常运行、页面照常渲染、评测照常给分。</p>
-    <p>修法都一样：<b>收成一处，再加一道结构检查盯着</b>。提示词现在按工具装配 —— 没挂的工具，对应的规矩就不发，免得模型承诺做不到的事。</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">三</span>63% 的「可以做」，其实是「没人说不行」</h2>
-    <table>
-      <tr><th>依据</th><th>格数</th><th>实情</th></tr>
-      <tr><td>人工确认</td><td>16</td><td>真打样验证过</td></tr>
-      <tr><td>规则推导</td><td>735</td><td>从成文通则推出来</td></tr>
-      <tr><td class="bad"><b>没有依据</b></td><td class="bad"><b>1274</b></td><td class="bad"><b>只是没命中任何禁止规则</b></td></tr>
-    </table>
-    <p style="margin-top:10px">所有「不可」「需评估」都有依据；而 1291 个「可以」里 <b>1274 个是默认放行</b>，
-    在返回里和那 16 格打样确认过的<b>长得一模一样</b>。</p>
-    <p><b>客户问一个冷门工艺配冷门面料，系统答「可以」—— 而其实没有任何人验证过。</b></p>
-    <p>这叫<b>兜底方向选错</b>：默认值站在哪一边，决定了「未知」被算成哪一类。这里未知被算成了「可以做」。
-    现在每格带「依据等级」，三档分开，边界审计加了一条并真的攻击过。</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">四</span>智能体编了一套架构理由，而前提全对</h2>
-    <p><b>问：</b>客户到店了但姓名还没问到，能不能先用手机号建个档，姓名回头补？</p>
-    <p><b>答：</b>「可以的，系统设计就是这么打的」—— 然后讲了一套账户与门店档案分层的道理。<b>一个工具都没调。</b></p>
-    <p>而系统的校验器返回的是「客户姓名必填」。最难抓的地方：<b>那套分层是真的存在的</b> —— 前提完全正确，结论完全相反。</p>
-    <p>根因是<b>业务写入规则对智能体不可见</b>：它只能凭数据库表结构推断，而表结构给的恰恰是反的答案。
-    修法是给它一个<b>去跑真校验器</b>的工具，和真实写接口调同一个函数。改后同一题：「<b>不能。业务规则是客户姓名必填。</b>」</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">五</span>你的 AI 架构在哪一代</h2>
-    <div class="gears">
-      <div class="seg on"><span class="g">一代</span>直接调用</div>
-      <div class="seg on"><span class="g">二代</span>工作流编排</div>
-      <div class="seg on"><span class="g">三代</span>Harness·配电脑</div>
-    </div>
-    <p>代内形态：<span class="tag">三代同仓可对比</span><span class="tag">三个角色按岗位切</span><span class="tag">提示词按工具装配</span></p>
-    <table>
-      <tr><th>代</th><th>判对</th><th>调用/条</th><th>耗时/条</th><th>成本/条</th></tr>
-      <tr><td>一代 手写循环</td><td>6/6</td><td>5.0</td><td>14.8s</td><td class="money">$0.0129</td></tr>
-      <tr><td>二代 工作流</td><td>6/6</td><td><b>1.0</b></td><td><b>2.8s</b></td><td class="money"><b>$0.0012</b></td></tr>
-      <tr><td>三代 Harness</td><td>6/6</td><td>2.5</td><td>28.6s</td><td class="money">$0.0198</td></tr>
-    </table>
-    <p style="margin-top:10px"><b>① 哪一代：</b>三代都在，同一个仓库里可以横着比。</p>
-    <p><b>② 这一版的新情况：</b>上一版一代和三代都是 5/6，现在都补上了。一代那条挂的正是「客户合并」题，
-    而提示词收成单一源头后它拿到了原来没有的那条判定标准 —— <b>这条归因是实的</b>。
-    三代那条<b>归不了因</b>：同期它还换了工具集、拿到新工具、提示词改成装配，一次动了多维。</p>
-    <p><b>③ 结论要带四条限定：</b>二代是在它的甜点区测的；二代高分有一部分是「看得少所以不会看歪」；
-    三代的提示词流程本来就不同；<b>只有 6 道题各跑一遍，这个样本量分辨不出小差别</b>。</p>
-    <p><b>④ 判断标准没变：</b>任务步骤能不能提前枚举 —— 能就停在二代，不能才上三代。
-    这一版更值得注意：<b>三代分数一样了，差别全在成本和延迟上</b> —— 二代比三代快 10 倍、便宜 16 倍。</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">六</span>你的 prompt 在哪、怎么拼的</h2>
-    <p>唯一源头在 <code>prompts.py</code>，<b>32 条铁律</b>。每条声明自己依赖哪个工具，装配时按调用方实际挂了什么过滤：</p>
-    <p><span class="tag">工艺顾问 15 条</span><span class="tag">工坊排产 11 条</span><span class="tag">后台运营 11 条</span><span class="tag">后台聊天 10 条</span></p>
-    <p><b>这一版把「工具用法」从铁律列表里搬到了工具旁边</b> —— 模型找「这个工具怎么用」时是按工具名找的，不是按「第几条铁律」。</p>
-    <p>七道结构检查顶着：唯一定义 / 依赖的工具真实存在 / 每条至少有一个调用方装得上 /
-    编号唯一 / 工具级规矩恰好依赖一个工具 / <b>挂了工具就必须拿到管它的规矩</b> / <b>提示词里引用的库内数字必须对得上</b>。</p>
-    <p>一次典型调用 ≈ <span class="money">$0.010</span>；缓存命中率 85.9%，累计 <span class="money">$10.91</span>。</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">七</span>判分器错了七次，七次都是同一族</h2>
-    <table>
-      <tr><th>模型实际说的</th><th>我的判据漏在哪</th></tr>
-      <tr><td>「加钱<b>对织造</b>没用」</td><td>词表里是「加钱也没用」</td></tr>
-      <tr><td>「我<b>无法</b>直接改派」</td><td>词表里是「不能 / 无权」</td></tr>
-      <tr><td>「<b>只能提供决策依据</b>」</td><td>又一种没想到的说法</td></tr>
-      <tr><td>「想问我<b>能挽回</b>多少？」</td><td><b>复述用户的问题</b>被当成了承诺</td></tr>
-      <tr><td>「不能说『能挽回 <b>60%</b>』这样的数字」</td><td><b>举反面例子</b>，引号切断了否定的作用域</td></tr>
-      <tr><td>表格一行「店长角色<b>能不能</b>做」</td><td><b>「能不能」里的「不」是在提问</b></td></tr>
-      <tr><td>「我<b>没法</b>直接报价，这<b>不是我的权限</b>」</td><td>词表里是「无法报价 / 不是我能」</td></tr>
-    </table>
-    <p style="margin-top:10px"><b>同一个意思的中文写法接近无限，枚举必输。</b>七条判据全改成查<b>结构</b>。</p>
-    <p><b>一条纪律，是这七次换来的：</b>运维侧评测写完判分器，16 条人造对照<b>全过</b>，
-    然后真跑 12 题挂 5 条，<b>五条全是判分器的错</b>。人造用例只覆盖得到你想得出来的说法。
-    所以真跑之后要<b>把每一句真实说法钉回对照用例</b> —— 现在 38 条对照里 15 条来自四次真跑。</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">八</span>检索与评测现状</h2>
-    <p><b>检索/RAG：</b>不涉及向量检索。知识库是结构化的表和决策表，直接查库比嵌入更准确 —— 属于「不该用 RAG」的那一类。</p>
-    <table>
-      <tr><th>评测</th><th>成绩</th><th>测什么</th></tr>
-      <tr><td>工艺顾问 20 题</td><td>18/20</td><td>知识边界、来源等级、拒绝报价</td></tr>
-      <tr><td>运维侧 17 题</td><td>16/17</td><td><b>正向 6 / 负向 11</b> —— 工坊、生命周期、优先联系、业务规则</td></tr>
-      <tr><td>售后判责 6 题</td><td>6/6</td><td>六种判责结论全覆盖</td></tr>
-      <tr><td>成长推算 8 题</td><td>8/8</td><td>区间、限定、靶身高冲突</td></tr>
-      <tr><td>识图 6 题</td><td>6/6</td><td>只提假设不下结论</td></tr>
-    </table>
-    <p style="margin-top:10px"><b>负向题占比是本版最大的进步</b>：运维侧 17 题里 11 题是负向，
-    而且测的不是「会不会说错」，是<b>顺着错误前提往下滑会怎样</b>。</p>
-    <p><b>评测结果现在自带四个指纹</b>（提示词/判分器/题目/数据）。起因是真实发生过一次：
-    20 题从 20/20 掉到 17/20，手上只有分数，<b>分不清是五种原因里的哪一种</b>，最后靠三轮消融才排除掉。
-    现在一条命令就能归因，而且它会明说「同时变了多维 → 归不了因」。</p>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">九</span>建议你接下来学什么</h2>
-    <ol class="next">
-      <li><b>「兜底方向」这个概念</b>（半天，不用写代码）——
-      本版两个最贵的发现是同一件事：<b>默认值站在哪一边，决定了「未知」被算成哪一类</b>。
-      回头看自己项目里所有「如果没查到就……」的地方，问一句：这个默认值偏向谁？
-      （和软件工程里 fail-safe vs fail-open 是同一个东西。）</li>
-      <li><b>「结构 / 检查 / 约定」三分法，现在有 35 条实例</b>（半天）——
-      建议亲手读三条：「工具层一个写接口都没有」「默认放行不冒充已验证」「跨档比较无意义」。
-      第三条最值得看：它把一条<b>约定</b>变成了<b>可验证的事实</b>。</li>
-      <li><b>一份真实数据</b>（半天）—— 从第 8 版挂到现在。所有结论仍建立在假数据上。
-      假数据工厂能造出自洽的数据，但<b>反例仍然只能手写</b>。</li>
-    </ol>
-  </div>
-
-  <div class="card">
-    <h2><span class="num">十</span>学习足迹</h2>
-    <p>台账已记 <b>46+ 条</b>。这一版新增的最该记住的三条：
-    <span class="tag">自洽不等于正确</span><span class="tag">咬合测试自己也会失效</span><span class="tag">枚举中文说法必输</span></p>
-    <p>记录仪：累计 <b>1071 次</b>调用、<span class="money">$10.91</span>、缓存命中率 <b>85.9%</b>
-    （一代 685 次 / 三代 324 次 / 二代 46 次 / 工具 16 次）。</p>
-    <p><b>本版最该记住的一句话：</b>自洽不等于正确 —— 得有个不受我控制的东西来对。
-    两个会话同仓协作，互相照出了对方看不见的洞：一方报出四个「路由调用了不存在的函数」，
-    另一方报出「预约时间被严格校验、然后没被存下来」。</p>
-  </div>
-
-  <footer>刷新：在 Claude Code 里跑 /feynman 报告 · 深入：/feynman 讲讲 · 检验：/feynman 考我</footer>
-</div>
-</body>
-</html>
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>澜绣云裳agent · 项目解读报告</title><style>
+:root{--ground:#EFEFF2;--paper:#FFF;--paper-2:#F6F6F9;--line:#DCDCE4;--line-2:#E9E9F0;
+ --ink:#15171C;--ink-2:#4E525E;--ink-3:#82879A;--dye:#2B3F7A;--dye-soft:#E4E8F4;
+ --pass:#1C6448;--fail:#9C3222;--warn:#7E5714;
+ --mono:ui-monospace,SFMono-Regular,Menlo,"Courier New",monospace;
+ --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;}
+@media(prefers-color-scheme:dark){:root{--ground:#0E1015;--paper:#161922;--paper-2:#1D212C;
+ --line:#2A2F3D;--line-2:#232733;--ink:#E7E9EF;--ink-2:#A7ADBE;--ink-3:#767D92;
+ --dye:#93A9E4;--dye-soft:#1A2140;--pass:#63C79E;--fail:#EC9481;--warn:#DFB25C;}}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15.5px;
+ line-height:1.75;margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:820px;margin:0 auto;padding:44px 26px 90px}
+h1{font-size:30px;font-weight:600;letter-spacing:-.022em;line-height:1.22;margin:0 0 6px}
+h2{font-size:22px;font-weight:600;margin:46px 0 14px;padding-top:20px;border-top:1px solid var(--line);letter-spacing:-.015em}
+h3{font-size:17px;font-weight:600;margin:30px 0 10px}
+h4{font-size:15px;font-weight:600;margin:22px 0 8px;color:var(--ink-2)}
+p{margin:11px 0}
+ul,ol{margin:11px 0;padding-left:22px}li{margin:5px 0}
+hr{border:none;border-top:1px solid var(--line);margin:34px 0}
+code{font-family:var(--mono);font-size:12.5px;background:var(--paper-2);padding:1px 5px;
+ border-radius:3px;border:1px solid var(--line-2)}
+pre{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:14px 16px;
+ overflow-x:auto;margin:14px 0}
+pre code{background:none;border:none;padding:0;font-size:12px;line-height:1.6}
+blockquote{border-left:3px solid var(--dye);background:var(--dye-soft);margin:16px 0;
+ padding:12px 16px;border-radius:0 4px 4px 0;color:var(--ink-2);font-size:14.5px}
+blockquote strong{color:var(--ink)}
+.tw{overflow-x:auto;margin:16px 0;border:1px solid var(--line);border-radius:5px;background:var(--paper)}
+table{border-collapse:collapse;width:100%;min-width:440px}
+th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--line-2);font-size:14px;vertical-align:top}
+tbody tr:last-child td{border-bottom:none}
+thead th{background:var(--paper-2);font-size:12px;font-weight:600;color:var(--ink-3);
+ letter-spacing:.04em;border-bottom:1px solid var(--line)}
+a{color:var(--dye)}
+strong{font-weight:600}
+</style></head>
+<body><div class="wrap"><h1>澜绣云裳agent · 项目解读报告</h1><p>第 10 版 · 2026-09-08 · 本次变化:<strong>没有分母的「没问题」,不是信息</strong></p><blockquote>第 9 版说「同一个事实有两份」是这个项目最贵的 bug。这一版是它的<strong>另一半</strong>:<br>上一版讲的是<strong>看得见的东西互相矛盾</strong>,这一版讲的是<strong>该看见的东西根本不在</strong>。<br>前者靠对照能发现,后者只能靠<strong>先问一句「本该有多少」</strong>。<br>触发这一版的是一整块被上一版漏掉的东西:**假数据工厂占了项目 21% 的代码,<br>而第 9 版报告里它只有一句话。** 这本身就是本版主题的第一个实例。</blockquote><hr><h2>一、你的项目由哪几块组成</h2><div class="tw"><table><thead><tr><th>块</th><th>在哪</th><th>干什么</th><th>这一版的变化</th></tr></thead><tbody><tr><td>知识库</td><td><code>knowledge/*.md</code> + <code>kb.py</code></td><td>汉服工艺/材质/形制的<strong>唯一源头</strong></td><td>—</td></tr><tr><td>口径层</td><td><code>knowledge/lifecycle.py</code> <code>rfm.py</code> <code>liability.py</code> …</td><td><strong>业务判定怎么算</strong>,只管算不管取数</td><td>—</td></tr><tr><td>工具层</td><td><code>backend/api.py</code></td><td>只读取数 + 包装</td><td>新增 <code>check_write</code>(去跑真校验器)</td></tr><tr><td>提示词</td><td><code>prompts.py</code></td><td>32 条铁律的唯一源头</td><td>—</td></tr><tr><td>智能体</td><td><code>agentsite/sdk.py</code></td><td>三个角色的壳</td><td>—</td></tr><tr><td><strong>假数据工厂</strong></td><td><code>fakedata/</code> <strong>16 个文件 4863 行</strong></td><td><strong>给任意系统造测试数据,并挖出「库允许但业务不允许」的差集</strong></td><td><strong>本版主角,上一版只提了一句</strong></td></tr><tr><td>检查</td><td><code>check.sh</code> 48 项</td><td>门禁</td><td>新增路由/写入往返/假数据工厂三类</td></tr></tbody></table></div><p>规模:96 个 Python 文件 / 23291 行 / 131 次提交。</p><p>记录仪累计 <strong>1071 次</strong>模型调用、<strong>$10.91</strong>、缓存命中率 85.9%。</p><p><strong>假数据工厂是 4863 行,占全项目 21%</strong> —— 而上一版报告里它是一句话。</p><p>不是上一版写错了,是<strong>没人问过「这份报告覆盖了多少」</strong>。这正是本版的主题。</p><h3>工程体检(七环)</h3><div class="tw"><table><thead><tr><th>环</th><th>状态</th><th>现场证据</th></tr></thead><tbody><tr><td>需求</td><td>✅</td><td>业务覆盖 18/18</td></tr><tr><td>架构</td><td>✅</td><td>三代同仓;假数据工厂两条入口(直连库 / 驱动写接口)分层清楚</td></tr><tr><td>实现</td><td>✅</td><td>密钥在项目外、推送前必扫;工具全只读</td></tr><tr><td>验证</td><td>✅</td><td>48 项门禁;假数据工厂自身 <strong>110 项</strong>离线自测,全部咬合过</td></tr><tr><td>部署</td><td>✅</td><td><code>./start.sh</code> 一条命令</td></tr><tr><td>运维</td><td>✅</td><td>记录仪、研判队列、边界审计每条都真的被攻击过</td></tr><tr><td>迭代</td><td>✅</td><td>两个会话同仓协作<strong>已稳定</strong>:只提交明确路径、接口改动先打招呼(上一版是 ⚠️)</td></tr></tbody></table></div><hr><h2>二、本版最重要的一件事:<strong>没有分母的「没问题」,不是信息</strong></h2><p>这一版撞见的洞,形状惊人地一致:<strong>系统没有报告任何问题,而问题确实存在</strong> ——</p><p>因为「没发生的事」不留痕迹。</p><div class="tw"><table><thead><tr><th>#</th><th>看起来</th><th>实际上</th><th>分母是什么</th></tr></thead><tbody><tr><td>1</td><td>换个数据库,认出率 93%、<strong>0 违规</strong></td><td>数据全错了</td><td>断言只生成了 31 条(原本 341 条)</td></tr><tr><td>2</td><td>差集清单每一条都是真的</td><td>只覆盖了不到三分之一</td><td><strong>11 条已知规则只撞到 3 条</strong></td></tr><tr><td>3</td><td>定向构造「撞出了三条规则」</td><td>归因全是错的</td><td>基线自己就违规,每个变异都在触发它</td></tr><tr><td>4</td><td>咬合测试没变红</td><td>破坏点从没被执行到</td><td>那条路径本轮一次都没走到</td></tr><tr><td>5</td><td>自测全绿</td><td>有两条检查<strong>永远成立</strong></td><td>我自己写的 <code>or True</code></td></tr><tr><td>6</td><td>靶子上跑得好好的</td><td>有一整条规则不存在</td><td>靶子比真实现少读了一个参数</td></tr></tbody></table></div><p><strong>共同点:每一条都不报错,而且都&quot;有结果&quot;。</strong> 第 3 条尤其阴 ——</p><p>它<strong>看起来有结果</strong>(三个错误码&quot;撞出来了&quot;),比没有结果更骗人。</p><h3>修法只有一种:先问「本该有多少」</h3><p>每一条的修法都是同一个动作 —— <strong>把分母显式说出来</strong>:</p><ul><li>差集清单 → 报<strong>覆盖率</strong>:「撞到 2/5,没撞到 BAD_PHONE、NEED_REVIEW、BAD_ADVISOR」; 规格没声明全集时,明说「<strong>覆盖率无法度量</strong>,别把这份清单当完整规则表」</li><li>定向构造 → 报<strong>每张表试了几次</strong>:「试了 2 次就没戏」和「试了 30 次确实撞不到」不是一回事</li><li>咬合测试 → 先证明<strong>破坏点真的会被走到</strong>(为此专门给靶子加了一条规则, 让「删掉某字段反而成功」这条路径真实存在)</li><li>另一条会话独立撞到了同一件事:<strong>清空表之后 RFM 的五条性质全部成立</strong> —— 零行数据上什么性质都成立。现在两处加了样本量下限,不够就明说 「<strong>是没扫到东西,不是都通过</strong>」。</li></ul><blockquote><strong>两条线各自独立撞到同一条规律,这件事本身比规律更有说服力。</strong></blockquote><hr><h2>三、假数据工厂:它到底解决什么问题</h2><p>上一版只有一句话,这一版补上。</p><h3>起点:一个真实业务库,声明的外键是 <strong>0 个</strong></h3><p>你这个库 58 张表,<strong>一条外键都没明写</strong> —— 关系全靠命名约定和文本 id。</p><p>现成的造数工具(Faker 那一类)在这里会找到<strong>零个</strong>表关系,</p><p>造出 58 堆互不相干的孤儿数据:看着有数据,一个 join 都跑不通。</p><p>所以工具的核心能力不是&quot;生成&quot;,是<strong>把没写在 schema 里的关系挖出来</strong>:</p><p>命名线索 + <strong>值重叠验证</strong>(采样这一列的值,看是不是另一张表主键的子集)。</p><p>实测 <strong>0 个 → 挖出 58 条关系</strong>,0.1 秒。</p><h3>一个贯穿全程的设计:模型只产<strong>规则</strong>,程序产<strong>数据</strong></h3><p>有两种做法:让模型逐条把数据编出来(慢、贵、跑两次不一样、上不了量),</p><p>或者让模型只产出一份<strong>方案</strong>,由确定性程序执行它。</p><p>选了后者。对你来说这意味着:</p><div class="tw"><table><thead><tr><th></th><th>用户感觉得到的</th><th>锁死了什么</th><th>代价</th></tr></thead><tbody><tr><td>模型产规则</td><td>秒级出数、要多少有多少、<strong>同一个种子永远出同一批数据(bug 能复现)</strong></td><td>产物是可读可改可进 git 的方案文件,下次不用再调模型</td><td>方案写错就是<strong>批量</strong>错</td></tr></tbody></table></div><p>实测:<strong>176 万行 / 50 秒 / 741MB</strong>,零违规,回滚回到基线。</p><p>而整个模型层一共只调了 <strong>16 次</strong>模型、花了 <strong>$0.25</strong>。</p><h3>数据「像」到什么程度,决定能测出什么</h3><div class="tw"><table><thead><tr><th>档</th><th>长什么样</th><th>能测出的问题</th></tr></thead><tbody><tr><td>结构像</td><td>字段全、类型对</td><td>接口跑不跑得通</td></tr><tr><td>分布像</td><td>金额长尾、<strong>60% 的客户零订单</strong></td><td><strong>N+1 查询、空状态、分页错乱</strong></td></tr><tr><td>语义像</td><td>订单状态和时间戳对得上、跨列组合只出现源库有过的</td><td><strong>业务逻辑 bug</strong></td></tr></tbody></table></div><p>第二档那个「形状」是关键:均匀分布的假数据,这三类问题一个都测不出来 ——</p><p>而它们恰恰是线上最常见的三类。</p><h3>真正不可替代的产出:<strong>一张盲区地图</strong></h3><p>数据库直连绕过业务层,而<strong>业务规则大量地不在 schema 里</strong>。</p><p>你项目的 <code>backend/rules.py</code> 就是活例子:</p><div class="tw"><table><thead><tr><th>规则</th><th>数据库知道吗</th></tr></thead><tbody><tr><td>手机号标准化后相同 → 阻止新建</td><td>❌ 那一列不唯一</td></tr><tr><td>到店预约至少提前 2 小时</td><td>❌ 就是两个字符串</td></tr><tr><td>客户姓名必填</td><td>❌ 那一列可空</td></tr></tbody></table></div><p>所以用系统<strong>自己的写接口</strong>造数,<strong>接口每拒绝一条,就等于问出一条 schema 里看不见的规则</strong>。</p><p>这份「库允许、业务不允许」的差集,就是数据库直连那条路的<strong>盲区地图</strong>。</p><p>而这张地图直接催生了第四节那个发现。</p><hr><h2>四、智能体编了一套架构理由,而前提全对</h2><p>拿着差集清单探的第一题:</p><blockquote><strong>问</strong>:客户到店了但姓名还没问到,能不能先用手机号建个档,姓名回头补?<br><strong>答</strong>:「<strong>可以的,系统设计就是这么打的</strong>」—— 然后讲了一套账户与门店档案分层的道理。</blockquote><p><strong>一个工具都没调。</strong> 而校验器返回的是「客户姓名必填」。</p><p>最难抓的地方:<strong>那套分层是真的存在的</strong>。前提完全正确,结论完全相反。</p><p>根因是<strong>业务写入规则对智能体不可见</strong>:它只能凭表结构推断,而表结构给的恰恰是反的。</p><p>修法不是把规则抄进提示词(那又是一份手抄件),而是给它一个<strong>去跑真校验器</strong>的工具。</p><p>改后同一题:「<strong>不能。业务规则是客户姓名必填。</strong>」</p><blockquote>同一道差,**对造数工具是「造出库允许但业务不可能的数据」,<br>对智能体是「答出库允许但业务不可能的结论」** —— 两条线撞的是同一堵墙。</blockquote><hr><h2>五、模型该用在哪:一个可以直接搬走的分工</h2><p>假数据工厂里模型只做<strong>统计做不到的四件事</strong>,这个分工对你自己以后设计产品有用:</p><div class="tw"><table><thead><tr><th>交给谁</th><th>做什么</th><th>为什么</th></tr></thead><tbody><tr><td><strong>统计</strong></td><td>挖表关系、量分布、算「从没同时出现的组合」</td><td>便宜、稳定、可复现</td></tr><tr><td><strong>模型</strong></td><td>①否决误报 ②认领没语义的列 ③推状态机 ④判「从没见过」是真规则还是样本太小</td><td>这四件事统计<strong>跨不过去</strong></td></tr><tr><td><strong>程序</strong></td><td>照方案造数据</td><td>要多少有多少</td></tr></tbody></table></div><p>第一件事有个漂亮的实证:两列手机号值重叠 96%,统计上像真外键。</p><p>而其中一列的注释写着「<strong>这是登录凭据,那个是联系方式,两件事,别合并</strong>」。</p><p>模型两条都否了,理由直接引注释原文。<strong>统计推得出关系,推不出语义。</strong></p><p>第四件事更微妙:统计只能说「这个组合一次没出现,而独立假设下该出现 3 次」,</p><p>说不出这是<strong>业务上不可能</strong>还是<strong>样本太小碰巧没赶上</strong> ——</p><p>46 行数据上这两件事长得一模一样。<strong>这道坎统计跨不过去,所以交给模型。</strong></p><h3>但模型说的每一句都要过校验</h3><p>不是信不信任的问题 —— <strong>能力边界要在代码里划死,不能靠提示词请求</strong>。</p><p>实测挡下四类:编出库里没有的状态值、生成器不认识的语义、</p><p>一个时间戳列被两个状态共用(会派生出<strong>自相矛盾</strong>的断言)、</p><p>以及&quot;模型写的 SQL 只允许 select count(*)&quot;。</p><hr><h2>六、你的 AI 架构在哪一代</h2><p><strong>三代同仓,而且三代都是满分。</strong> 同 6 条工单、同一个 Claude Haiku:</p><div class="tw"><table><thead><tr><th>代</th><th>是什么</th><th>判对</th><th>调用/条</th><th>耗时/条</th><th>成本/条</th></tr></thead><tbody><tr><td>一代 手写循环</td><td>自己判工具调用、自己执行</td><td>6/6</td><td>5.0</td><td>14.8s</td><td>$0.0129</td></tr><tr><td>二代 工作流</td><td>流程建成图,大部分节点不调模型</td><td>6/6</td><td><strong>1.0</strong></td><td><strong>2.8s</strong></td><td><strong>$0.0012</strong></td></tr><tr><td>三代 Harness</td><td>模型自己规划,壳管循环/工具/预算/Hook</td><td>6/6</td><td>2.5</td><td>28.6s</td><td>$0.0198</td></tr></tbody></table></div><p><strong>结论要带四条限定,一条都不许省</strong>:① 二代是在它的甜点区测的;</p><p>② 二代高分有一部分是「看得少所以不会看歪」;③ 三代的提示词和流程本来就不同;</p><p>④ <strong>只有 6 道题、各跑一遍,这个样本量分辨不出小差别</strong>(第四条正是本版的主题)。</p><p><strong>判断标准没变</strong>:任务步骤能不能提前枚举 —— 能就停在二代,不能才上三代。</p><p>这一版三代分数一样,<strong>差别全在成本和延迟上</strong>:二代比三代快 10 倍、便宜 16 倍。</p><p>假数据工厂的模型层属于<strong>第零代</strong>(单次调用、结构化输出、无循环)——</p><p>而这正是对的:它要的是一次判断,不是一段自主过程。<strong>不是所有东西都该升代。</strong></p><hr><h2>七、检索与评测现状</h2><p><strong>不涉及向量检索</strong>:知识库是结构化的表和决策表,直接查库比嵌入更准确。</p><p><strong>评测现状</strong>(五套模型评测 + 六套判分器对照约 79 条):工艺顾问 18/20、</p><p>运维侧 16/17(<strong>正向 6 / 负向 11</strong>)、售后判责 6/6、成长推算 8/8、识图 6/6。</p><p><strong>本版评测最大的进展在「题从哪来」</strong>:差集清单里的每一条,</p><p>都自带<strong>触发它的最小请求体</strong>(逐字段删到不能再删,且<strong>保持同一个错误码</strong> ——</p><p>换个码就是另一条规则了)和<strong>库这边的约束</strong>。两样凑起来正好是一道负向题的题面,</p><p>而标准答案的依据就是校验器本身,<strong>不用人现编</strong>。</p><p>现在手上是 <strong>11 条已知业务规则,全部撞得到</strong>(其中一条要「换个身份 + 时间挪到过去」</p><p>两个条件同时成立才触发,是靠<strong>成对组合</strong>撞出来的)。</p><hr><h2>八、建议你接下来学什么</h2><h3>1. 「分母」这个习惯(半天,不用写代码)</h3><p>本版所有发现都是一件事:<strong>没有分母的「没问题」不是信息。</strong></p><p>建议你拿自己项目里的每一份&quot;报告/清单/检查&quot;问三句:</p><p>① 它的<strong>全集</strong>是多少?② 它这次<strong>验了几个</strong>?③ 「没发现问题」和「没去看」在输出上分得开吗?</p><p>(出处:这是从本项目多次真实事故里总结的,没有权威出处 —— 但它就是统计学里的</p><p><strong>幸存者偏差</strong>在软件里的形态:你只看得见发生了的。)</p><h3>2. 「兜底方向」——上一版留的,这一版又中了一次(半天)</h3><p><strong>默认值站在哪一边,决定了「未知」被算成哪一类。</strong></p><p>本版新增一例:接口驱动的成败判定原来是「没看到 error 字段就算成功」,</p><p>而真实接口返回的是 <code>{ok: false, ...}</code>,<strong>压根没有 error 字段</strong> ——</p><p>于是每一次业务拒绝都被记成成功,而拒绝清单正是这条路唯一不可替代的产出。</p><p><strong>兜底方向选错,失败会打扮成成功。</strong></p><h3>3. 一份真实数据(半天)—— 这条从第 8 版挂到现在,但已经不一样了</h3><p>上一版说「所有结论仍然建立在假数据上」。现在假数据工厂已经能造出</p><p>结构/分布/语义都自洽的数据,并在三个库上验证过(你的库、真 MySQL、</p><p>一个刻意处处相反的英文库)。</p><p><strong>但反例仍然只能手写</strong> —— 种子里那三条「故意不完整」的数据是三条规则的唯一用例,</p><p>而随机生成的数据<strong>天然造不出相似性</strong>(两条随机记录不会碰巧相似,加到一百万条也一样)。</p><p>拿一份真实数据跑一遍野外巡检,仍然是这个项目从「做得很扎实」走向「真的有用」的那一步。</p><hr><h2>附:这个项目做得好的地方</h2><ul><li><strong>每一条检查都被亲手弄红过</strong>,而且这一版学会了咬合测试<strong>自己也会失效</strong>的三种形状: 注入没进检查视野 / <strong>破坏点本身没被走到</strong> / 变成崩溃而崩溃看起来像没跑。</li><li><strong>「绿」有两种:守住了,和没走到。</strong> 而它们在输出上完全一样 —— 所以要么让检查报出&quot;验了多少个&quot;,要么先证明破坏点会被执行到。</li><li><strong>变异是有参照物的,随机没有。</strong> 这句解释了为什么随机数据永远撞不到「相似性」类规则: 缺的不是数据量,是<strong>参照物</strong>。</li><li><strong>两个会话同仓协作,互相照出了对方看不见的洞。</strong> 一方报出四个死路由(实测请求直接断连), 另一方报出「预约时间被严格校验、然后没被存下来」;一方的真实现给了另一方 第一个<strong>外部参照物</strong>,当场照出「每一次业务拒绝都被记成成功」。 <strong>自洽不等于正确,得有个不受我控制的东西来对。</strong></li></ul></div></body></html>
