@@ -37,6 +37,25 @@ shutil.copy(REAL, copy)
 
 import server
 server.DB = copy          # 把写接口指到副本上
+
+# ── 前置断言:副本必须真的可用 ──────────────────────────────────────
+# 出现过一次**没能复现**的失败:`no such table: op_log`。
+# 同样的步骤事后跑了五遍全绿,所以我没有「修好」它 —— 我只是让它下次
+# 再犯时能自己说清楚原因。sqlite3.connect() 对**不存在的路径会静默新建一个空库**,
+# 于是「副本没拷成」和「表真的没有」会报出一模一样的错。
+# 这两种必须分开,否则下次又是一样的抓瞎。
+_need = ["customer", "appointment", "followup", "op_log"]
+_have = {r[0] for r in sqlite3.connect(copy).execute(
+    "SELECT name FROM sqlite_master WHERE type='table'")}
+_miss = [t for t in _need if t not in _have]
+if _miss:
+    print(f"❌ 副本缺表 {_miss} —— 副本共 {len(_have)} 张表")
+    print(f"   副本路径:{copy}(存在={os.path.exists(copy)}"
+          f",{os.path.getsize(copy) if os.path.exists(copy) else 0} 字节)")
+    print(f"   源库路径:{REAL}(存在={os.path.exists(REAL)}"
+          f",{os.path.getsize(REAL) if os.path.exists(REAL) else 0} 字节)")
+    print("   **不是检查失败,是副本没准备好** —— 先看源库是不是刚 seed 完还没落盘。")
+    sys.exit(1)
 try: server.rules
 except AttributeError: pass
 

@@ -30,3 +30,4 @@ backend/.imgcache/
 .fakedata/
 # 差集清单是 fakedata/diffreport.py 生成的,别手写也别提交(两份一定漂)
 fakedata/差集清单.json
+combo-review.jsonl

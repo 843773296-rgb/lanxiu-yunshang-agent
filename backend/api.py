@@ -290,6 +290,30 @@ def check_write(action, fields=None):
             "note": "只覆盖这两类写入的业务规则;别的动作请走后台审批链"}
 
 
+def get_review_queue(top=15):
+    """看**待核实队列**:哪些组合被问到了却没有依据,按被问次数排。
+
+    队列是「被真正问到」才进的 —— 所以它同时回答了一个运营真正关心的问题:
+    **在还没验证过的那 1274 格里,顾问实际会撞上哪几十格。**
+    核实工作量由真实需求决定,不由矩阵大小决定。
+
+    这个工具**只读队列**。核实回填在后台做(`/api/combo-resolve`),不在工具层 ——
+    「工具层一个写接口都没有」那条保证不能为了方便就破。
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import combo_review as _cr
+    done = {(r["craft"], r["material"]) for r in
+            _rows("SELECT craft,material FROM craft_combo WHERE rule='人工确认'")}
+    q = _cr.queue(top=int(top or 15), resolved=done)
+    if not q:
+        return {"hit": 0, "note": "队列是空的 —— 还没有人问到没依据的格子,"
+                                  "或者问到的都已经核实回填了"}
+    return {"hit": len(q), "rows": [_nz(r) for r in q],
+            "note": "按**被问次数**排,最常被问的最该先核。"
+                    "核完一格用后台的「核实回填」写回去,那一格就从队列里消失。"
+                    "**这个队列只说「谁被问了」,不说「答案是什么」** —— 答案要人去打样。"}
+
+
 def kb_detail(code):
     """按编码取某一条的完整内容"""
     r=_rows("SELECT * FROM craft WHERE code=?",code)
@@ -314,19 +338,53 @@ def _resolve(x, cat):
     return None,f"知识库里没有叫「{x}」的{cat}。现有{cat}:{names}"
 
 def _combo_caveat(d):
-    """给相容判定加一句**依据等级** —— 让「默认放行」自己说出来。
+    """给相容判定加**依据等级**;没有依据的那一档,**不再给结论**。
 
-    `rule='—'` 的 1274 格是「没命中任何禁止规则 → 默认可」,**没有人验证过**。
-    不标出来的话,它和 16 格人工确认过的在返回里长得一模一样,
-    而模型只能照着「可」讲给客户听。
+    ## 这里改过两版,第二版是产品决策的结果
+
+    第一版:`rule='—'` 的 1274 格返回「可以」,只是多标一句「默认放行,没有依据」。
+    第二版(现在):**这一档不给结论了**,verdict 改成「待核实」,并记一笔待办。
+
+    改的理由是**偏错的代价不对称**:说「可以」结果做不出来,赔的是工期、料钱和客户;
+    说「待核实」最多是多打一个电话。而这 1274 格**没有任何人验证过** ——
+    它们只是「没命中任何禁止规则」,和「确认可以」完全是两回事。
+
+    ## 但光不给结论会把风险赶到看不见的地方
+
+    顾问常问的组合里有 30% 落在这一档。每问三次就有一次「待核实」,
+    顾问不会真的每三次去找一次工艺负责人 —— 他会开始凭经验答,
+    **风险从系统里被赶到人身上,而且从此看不见**。
+
+    所以配了回流:**被真正问到的那一格记一笔进待办**(见 combo_review.py),
+    运营核实后回填。待办量由真实需求决定,而不是由矩阵大小决定。
+
+    ## 记一笔是「旁路」,不是模型在写
+
+    追加的是日志文件,不碰业务库 —— 「工具层一个写接口都没有」那条保证不受影响。
     """
     ru=(d.get("rule") or "").strip()
     if d.get("verdict")=="未定义": return d
     d=dict(d)
-    if ru=="人工确认": d["依据等级"]="人工确认 —— 打样验证过,可以直接说"
-    elif ru.startswith("R"): d["依据等级"]=f"规则推导({ru})—— 从成文通则推出,**这一格没有单独打样验证**"
-    else: d["依据等级"]=("**默认放行,没有依据** —— 只是没命中任何禁止规则,"
-                       "没有人确认过。对客户说必须带上这句限定,或转工艺负责人打样")
+    if ru=="人工确认":
+        d["依据等级"]="人工确认 —— 打样验证过,可以直接说"
+    elif ru.startswith("R"):
+        d["依据等级"]=f"规则推导({ru})—— 从成文通则推出,**这一格没有单独打样验证**"
+    else:
+        # **不给结论。** 原来的 verdict(多半是「可」)挪到旁边留痕,不作为答案。
+        d["原始默认值"]=d.get("verdict")
+        d["verdict"]="待核实"
+        d["依据等级"]=("**没有依据,不给结论** —— 这一格只是没命中任何禁止规则,"
+                     "没有任何人验证过。「没查到禁止」和「确认可以」是两回事。")
+        d["该怎么办"]=("如实告诉顾问这一格**还没核实过**,不要说可以也不要说不可以;"
+                     "已经自动记入待核实队列,工艺负责人核完会回填。"
+                     "客户急着要答复的话,建议换一个已确认的工艺或面料。")
+        try:
+            import combo_review as _cr
+            _cr.record_ask(d.get("craft_code") or d.get("craft"),
+                           d.get("material_code") or d.get("material"),
+                           craft_name=d.get("craft"), material_name=d.get("material"))
+        except Exception:
+            pass      # 记不上待办不能影响回答本身 —— 旁路不是主路
     return d
 
 def kb_combo(craft, material):
@@ -344,6 +402,7 @@ def kb_combo(craft, material):
                 "note":"这一格组合约束尚未录入。**必须如实告知查不到,并建议转工艺负责人确认**,"
                        "不得自行推断可或不可。","src_type":None}
     d=r[0]; d.update(craft=k["name"],material=m["name"],
+                     craft_code=k["code"], material_code=m["code"],
                      resolved=f"{k['code']} {k['name']} × {m['code']} {m['name']}")
     return _nz(_combo_caveat(d))
 
@@ -1000,6 +1059,9 @@ SHOP_SCHEMAS=[
     "action":{"type":"string","description":"建档 或 预约"},
     "fields":{"type":"object","description":"要写的字段,如 {name,phone,shop} 或 {start,end,way};另可传 role"}},
    "required":["action"]}},
+ {"name":"get_review_queue","description":"看**待核实队列**:哪些工艺×面料组合被顾问问到了、却没有任何依据,按被问次数排序。\n\n背景:相容矩阵里有 1274 格只是「没命中任何禁止规则」,没有人验证过 —— 现在这类不给结论,而是记进这个队列。**队列是「被真正问到」才进的**,所以它回答的是运营真正关心的问题:那 1274 格里顾问实际会撞上哪几十格,核实工作量由真实需求决定。\n\n返回里「被问次数」最高的最该先核。**这个队列只说「谁被问了」,不说「答案是什么」** —— 答案要工艺负责人去打样,不能推断。核实回填在后台做,不是这个工具能做的。",
+  "input_schema":{"type":"object","properties":{
+    "top":{"type":"number","description":"返回前几条,默认 15"}},"required":[]}},
  {"name":"get_aftersale","description":"查售后记录(退货/换货/退款/维修),可按订单号、客户或状态筛。退款类会带上退款轨迹。**这个工具只给事实,不给判责结论** —— 判责标准在 kb_tables 的「售后争议判定」表里,要另外查。查不到就如实说查不到,不要推测客户提过什么。",
   "input_schema":{"type":"object","properties":{
     "order_id":{"type":"string"},"customer":{"type":"string","description":"客户号或姓名"},
@@ -1062,7 +1124,8 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_workorder":get_workorder,
               "get_lifecycle":get_lifecycle,
               "get_member_priority":get_member_priority,
-              "check_write":check_write})
+              "check_write":check_write,
+              "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

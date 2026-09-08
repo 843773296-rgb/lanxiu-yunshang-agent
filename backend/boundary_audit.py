@@ -236,21 +236,57 @@ def a_default_allow_visible():
     kb = api._rows("SELECT name FROM craft WHERE code=?", r[0]["craft"])[0]["name"]
     mb = api._rows("SELECT name FROM craft WHERE code=?", r[0]["material"])[0]["name"]
     d = api.kb_combo(craft=kb, material=mb)
-    lvl = d.get("依据等级") or ""
-    if "默认放行" not in lvl:
-        return f"无依据的格子返回里没标出来(依据等级={lvl!r})—— 它和人工确认过的分不开"
-    raise PermissionError("无依据的格子在返回里明写「默认放行,没有依据」,"
-                          "和「人工确认」「规则推导」三档分开")
+    if d.get("verdict") != "待核实":
+        return (f"无依据的格子仍然给了结论({d.get('verdict')!r})—— "
+                "「没查到禁止」和「确认可以」是两回事")
+    if "不给结论" not in (d.get("依据等级") or ""):
+        return "verdict 改了但依据等级没说清为什么"
+    raise PermissionError("无依据的格子**不给结论**,verdict 返回「待核实」并记入队列 —— "
+                          "偏错的代价不对称:说「可以」赔工期料钱,说「待核实」多打个电话")
+
+
+def a_review_readonly():
+    """待核实队列:模型**看得见,填不了**。
+
+    回流这件事天然要写。如果让模型的工具去写,「工具层一个写接口都没有」
+    那条保证当场就破 —— 而它是靠 mode=ro 连接结构性成立的,不是靠自觉。
+    所以拆成两半:记一笔走**日志文件**(旁路),回填走**后台**(那边本来有写权限)。
+    这里攻击的正是这条边界。
+    """
+    import api
+    # ① 工具层不许出现任何能改矩阵的接口
+    bad = [n for n in api.TOOLS if any(w in n for w in ("resolve", "fill", "update", "set_"))]
+    if bad: return f"工具层出现了疑似写接口:{bad}"
+    # ② 队列工具真的只读:调一次,矩阵里那一格一个字都不能变
+    q = api.get_review_queue(top=1)
+    row = (q.get("rows") or [None])[0]
+    if row:
+        before = api._rows("SELECT verdict,rule FROM craft_combo WHERE craft=? AND material=?",
+                           row["craft"], row["material"])
+        api.get_review_queue(top=1)
+        after = api._rows("SELECT verdict,rule FROM craft_combo WHERE craft=? AND material=?",
+                          row["craft"], row["material"])
+        if before != after: return "看一眼队列就把矩阵改了"
+    # ③ 拿工具层的连接去回填,必须抛
+    try:
+        api._rows("UPDATE craft_combo SET rule='人工确认' WHERE craft='KF01'")
+    except Exception:
+        raise PermissionError("工具层没有回填接口,而且拿它的连接去 UPDATE 直接抛 —— "
+                              "回填只能走后台 /api/combo-resolve(要工艺负责人及以上 + 必须写理由)")
+    return "工具层的连接居然能改矩阵"
 
 
 STRUCT = [
  ("工具层一个写接口都没有", "backend/api.py 开篇铁律 / README「工具全部只读」",
   a_write, "拿工具层的连接去 UPDATE 一条客户记录",
   "连接开成 mode=ro —— **写操作直接抛错,不是碰巧没人写 INSERT**"),
- ("「默认放行」不冒充「已验证」", "backend/api.py _combo_caveat / kb_coverage 三分类",
-  a_default_allow_visible, "随便取一格 rule='—' 的组合,看返回里认不认得出它没有依据",
-  "返回里明写「默认放行,没有依据」—— **1274 格(63%)属于这一类**,"
-  "不标出来它和 16 格打样确认过的完全一样"),
+ ("待核实队列:模型看得见,填不了", "backend/api.py get_review_queue / server.py resolve_combo",
+  a_review_readonly, "在工具层找回填接口;调一次队列看矩阵变没变;拿工具层连接去 UPDATE",
+  "回流拆成两半 —— **记一笔走日志文件(旁路),回填走后台**。"
+  "让模型去写待办,只读保证当场就破"),
+ ("无依据的格子不给结论", "backend/api.py _combo_caveat",
+  a_default_allow_visible, "随便取一格 rule='—' 的组合,看它还给不给结论",
+  "verdict 返回「待核实」并记入待办队列 —— **1274 格(63%)属于这一类**"),
  ("check_write 只校验不写库", "backend/api.py check_write 文档 / 工具描述「不写库」",
   a_check_write_noop, "跑一次**校验会通过**的建档,数客户表行数有没有变",
   "validate_* 是纯函数 —— **被拒的当然不写,通过的才是危险那一半**,这里测的正是后者"),

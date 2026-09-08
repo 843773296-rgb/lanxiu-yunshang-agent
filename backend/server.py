@@ -633,6 +633,41 @@ def _insert(table, vals, required):
                   [vals[k] for k in use])
 
 
+def resolve_combo(d, actor="魏欣新"):
+    """**核实回填** —— 工艺负责人打样确认之后,把结论写回相容矩阵。
+
+    这是待核实队列的另一半。队列只说「谁被问了」,答案要人去打样;
+    打完样由这里写回去,那一格的依据就从「没有」变成「人工确认」,
+    从此 kb_combo 会直接给结论,也不再进队列。
+
+    **写在后台,不在工具层** —— 「工具层一个写接口都没有」那条保证靠
+    mode=ro 连接结构性成立,不能为了方便就破。模型能看队列,不能回填。
+    """
+    ck, mk = (d.get("craft") or "").strip(), (d.get("material") or "").strip()
+    v = (d.get("verdict") or "").strip()
+    role = d.get("role") or "顾问"
+    if v not in ("可", "不可", "需评估"):
+        return dict(ok=False, code="BAD_VERDICT",
+                    reason="结论只能是「可 / 不可 / 需评估」三选一")
+    if role not in ("工艺负责人", "店长", "总部运营"):
+        return dict(ok=False, code="WRONG_ROLE",
+                    reason=f"核实回填须由工艺负责人及以上操作,当前角色:{role}")
+    if not (d.get("reason") or "").strip():
+        return dict(ok=False, code="NEED_REASON",
+                    reason="必须写明**打样看到了什么** —— 没有理由的结论和默认放行没区别")
+    cur = rows("SELECT verdict,rule FROM craft_combo WHERE craft=? AND material=?", ck, mk)
+    if not cur: return dict(ok=False, code="NO_CELL", reason=f"矩阵里没有 {ck} × {mk} 这一格")
+    old = cur[0]
+    with sqlite3.connect(DB) as c:
+        c.execute("UPDATE craft_combo SET verdict=?,reason=?,rule='人工确认',src_type='demo' "
+                  "WHERE craft=? AND material=?", (v, d["reason"], ck, mk))
+    log_op(actor, "combo", f"{ck}×{mk}", old["verdict"], v, True, "RESOLVE",
+           f"核实回填:{old['rule'] or '无依据'} → 人工确认;{d['reason'][:50]}", {"role": role})
+    return dict(ok=True, code="RESOLVE",
+                reason=f"{ck} × {mk} 已回填为「{v}」,依据等级升为「人工确认」,"
+                       f"这一格从待核实队列里消失")
+
+
 def create_customer(d, actor="魏欣新"):
     """新建客户档案。PRD 6.2:姓名必填、手机号唯一、疑似重复要提示。"""
     import datetime
@@ -1636,6 +1671,7 @@ class H(BaseHTTPRequestHandler):
                   if m.get("role") in ("user","assistant") and isinstance(m.get("content"),str)][-8:]
             try: return self._send(_chat.ask(q, hist))
             except Exception as e: return self._send(dict(error=str(e)[:300]),500)
+        if p=="/api/combo-resolve": return self._send(resolve_combo(body))
         if p=="/api/customer-create": return self._send(create_customer(body))
         if p.startswith("/api/customer-update/"):
             return self._send(update_customer(p.split("/api/customer-update/")[1],body,
