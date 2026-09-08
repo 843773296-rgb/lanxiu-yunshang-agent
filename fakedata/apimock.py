@@ -116,6 +116,10 @@ SPEC = {
             # validate_customer,BAD_ADVISOR 是这个靶子自己的。
             # 声明全集,报告才说得出「哪几条规则这批数据从没撞到」。
             "codes": ["NEED_NAME", "BAD_PHONE", "DUP_PHONE", "NEED_REVIEW", "BAD_ADVISOR"],
+            # 业务上必须唯一的字段。schema 里 customer.phone **不唯一**,
+            # 但业务规则要求它唯一 —— 定向构造要靠这条才能把基线弄干净,
+            # 否则 DUP_PHONE 抢先返回,把后面的规则全遮住。
+            "fresh_fields": ["phone"],
             "delete": {"method": "POST", "path": "/api/customer-delete", "id_field": "id"},
         },
         "appointment": {

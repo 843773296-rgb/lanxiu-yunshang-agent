@@ -29,7 +29,7 @@
 所以拒绝理由和真实业务规则是同一个来源,不是我编的。
 """
 import datetime as dt
-import json, os, shutil, sys, tempfile
+import json, os, re, shutil, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -70,8 +70,61 @@ def build(spec=None, scale=0.3, driven=("customer", "appointment"), log=print):
         r["start_ts"] = past.strftime("%Y-%m-%d %H:%M:%S")
         r["end_ts"] = (past + dt.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
 
+    # 留一批**没发过**的行给定向构造当基线 —— 基线必须是"发出去会成功"的那种
+    spare = {t: made[t][-6:] for t in driven if len(made.get(t, [])) > 8}
+    for t in spare: made[t] = made[t][:-6]
+
     d = apidrive.Driver(spec, dry=False, log=lambda *a: None)
     d.run(pl, made)
+
+    # ---- 定向构造:把随机数据撞不到的码补上 ----
+    import probe as PR
+    cov0 = d.coverage()
+    targets = {t: c.get("没撞到") or [] for t, c in cov0.items()}
+    # 先**不做外键翻译**地拿到完整请求体:`_payload` 一旦翻译不到就提前返回半条,
+    # 后面想补都没字段可补(第一版就栽在这:补丁写了,但 body 是空的)。
+    bases = {t: [d.payload_of(t, r, pl, set())[0] for r in rs]
+             for t, rs in spare.items()}
+    # **留出来的子表行,引用的是同样被留出的父表行** —— 那些父记录从没被创建,
+    # 外键翻译不到,于是每条基线都被「客户不存在」挡回来,整张表只试了 2 次就没了。
+    # (而它不报错、不跳过,只是"没撞到"—— 又一个「绿有两种」。)
+    # 基线的外键改指到**真正建成的**那些记录上。
+    for t, bs in bases.items():
+        ep = spec["endpoints"][t]["create"]
+        for f, col in (ep.get("fields") or {}).items():
+            g = pl["tables"][t]["columns"].get(col) or {}
+            if g.get("gen") != "fk" or g.get("table") not in driven: continue
+            real = [v for (pt, _k), v in d.idmap.items() if pt == g["table"]]
+            if not real: continue
+            for i, b in enumerate(bs):
+                if f in b: b[f] = real[i % len(real)]
+    # **基线必须是发出去会成功的那种**,而我们照源库分布造的预约全是历史时间 ——
+    # 业务规则只收未来的预约,于是每一条基线都被拒,整张表被跳过。
+    # 这是这条路的真实前提:**造出来的数据本身违规时,你拿不到有效基线。**
+    # 所以基线单独把时间挪到未来(只动基线,不动那批用来发现差集的数据)。
+    fut = dt.datetime.now() + dt.timedelta(days=5)
+    for t, bs in bases.items():
+        for b in bs:
+            for k, v in list(b.items()):
+                if isinstance(v, str) and re.match(r"^\d{4}-\d{2}-\d{2}", v):
+                    b[k] = (fut if "end" not in k.lower()
+                            else fut + dt.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    pres = PR.probe(d, pl, targets, bases, budget=300, log=log)
+    for t, why in (pres.get("跳过的表") or {}).items():
+        log(f"  ⚠️ {t}:{why}")
+    # **无条件**打每张表试了几次。只在"有原因"时才打的话,
+    # 「这张表试了 2 次就没戏了」和「这张表试了 30 次确实撞不到」看起来一模一样。
+    for t, info in (pres.get("每张表") or {}).items():
+        log(f"  定向构造 · {t}:试了 {info.get('试了', 0)} 次"
+            + (f" —— {info['原因']}" if info.get("原因") else ""))
+    if pres["撞出来的"]:
+        log(f'  定向构造:试了 {pres["试了"]} 次,补上 {len(pres["撞出来的"])} 条'
+            f'({"、".join(sorted(pres["撞出来的"]))})')
+    for c, info in pres["撞出来的"].items():
+        # 把探出来的也做成一条拒绝记录,好和随机撞到的一起归类
+        d.rejected.append({"表": info["表"], "HTTP": 200, "码": c,
+                           "错误": info["接口说"], "提交的": info["请求体"],
+                           "定向构造": {"算子": info["算子"], "改的字段": info["改的字段"]}})
     calls = d.minimize(pl)
     rep = d.report()
     n, cant = d.rollback()
@@ -79,7 +132,8 @@ def build(spec=None, scale=0.3, driven=("customer", "appointment"), log=print):
         f"削最小 {calls} 次请求;回滚 {n} 条" + (f",删不掉 {cant}" if cant else ""))
     if stop: stop()
 
-    cov = rep.get("覆盖") or {}
+    cov = d.coverage()
+    rep["覆盖"] = cov
     for t, c in cov.items():
         if c.get("全集") is None:
             log(f"  ⚠️ {t}:规格没声明业务码全集 —— **覆盖率无法度量**,别把这份清单当完整规则表")
@@ -100,6 +154,8 @@ def build(spec=None, scale=0.3, driven=("customer", "appointment"), log=print):
         },
         "生成于": dt.datetime.now().isoformat(timespec="seconds"),
         "覆盖": cov,
+        "定向构造": {k: {"算子": v["算子"], "改的字段": v["改的字段"]}
+                     for k, v in pres["撞出来的"].items()},
         "覆盖说明": "「没撞到」有两种解释:规则不存在,或者这批数据恰好绕开了它 —— "
                     "两者在输出上分不开,所以必须把没撞到的也列出来。"
                     "规格没声明全集时,这份清单**不能**当作完整的规则清单。",

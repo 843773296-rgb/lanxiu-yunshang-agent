@@ -90,6 +90,7 @@ class Driver:
         self.rejected = []     # 被接口拒绝的,这是这条路最值钱的产出
         self.skipped = []
         self.unknown = []      # 判不出成败的:规格没说清,必须显式报,不许塞进成功那边
+        self.sent_ok = []      # 成功发出去的 (表, 请求体) —— 定向构造拿它当「参照物」
 
     # ---- 一行 → 一次请求 ----
     def _payload(self, tname, row, ep, plan, driven=()):
@@ -117,6 +118,11 @@ class Driver:
                 v = real
             body[field] = v
         return body, miss
+
+    def payload_of(self, tname, row, plan, driven):
+        """给外部(定向构造)复用的请求体构造:含外键 id 翻译。"""
+        ep = self.spec["endpoints"][tname]["create"]
+        return self._payload(tname, row, ep, plan, driven=driven)
 
     def run(self, plan, made, tables=None):
         eps = self.spec["endpoints"]
@@ -156,6 +162,7 @@ class Driver:
                     else:
                         if pk: self.idmap[(tname, row.get(pk))] = rid
                         self.created.append((tname, rid))
+                        self.sent_ok.append((tname, dict(body)))
                     ok += 1
                 else:
                     self.rejected.append({"表": tname, "HTTP": code,
@@ -287,6 +294,7 @@ class Driver:
                           "例子": v[0]["提交的"],
                           "最小请求体": v[0].get("最小请求体"),
                           "库这边": v[0].get("库这边"),
+                          "定向构造": v[0].get("定向构造"),
                           "删掉也一样": v[0].get("删掉也一样")}
                          for (t, e), v in sorted(by.items(), key=lambda x: -len(x[1]))],
                 "跳过明细": self.skipped[:20]}

@@ -380,7 +380,10 @@ def main():
         base7, store7, stop7 = apimock.serve()
         spec7 = json.loads(json.dumps(spec6)); spec7["base"] = base7
         d7 = apidrive.Driver(spec7, dry=False, log=lambda *a: None)
-        d7.run(p6, m6)
+        # 留一批没发过的当定向构造的基线
+        bases7 = [d7.payload_of("customer", r, p6, set())[0] for r in m6["customer"][-4:]]
+        m6b = dict(m6); m6b["customer"] = m6["customer"][:-4]
+        d7.run(p6, m6b)
         dup = [r for r in d7.rejected if r.get("码") == "DUP_PHONE"]
         ck(len(dup) >= 2 and len({r["错误"] for r in dup}) >= 2,
            "种出了同码但文案不同的拒绝(文案里带被撞客户的名字)", f"只有 {len(dup)} 条")
@@ -421,6 +424,47 @@ def main():
                "而「库里 name 可空」正是这条差集的另一半", str(need["库这边"]))
             ck(need["库这边"]["name"]["可空"] is True,
                "而且它如实说了:库里这一列**可空**,业务却必填")
+        # ---- 定向构造:为撞不到的码反推数据 ----
+        # **单开一个干净靶子。** 同一次运行不能既撞到 DUP_PHONE(前面那几条归类/削最小
+        # 的检查要它),又把 DUP_PHONE 留给定向构造当目标 —— 两个需求互斥。
+        # 挤在一个靶子上的结果是:要么前面几条挂,要么「归因正确」那条空过。
+        import probe as PR
+        base9, store9, stop9 = apimock.serve()
+        spec9 = json.loads(json.dumps(spec6)); spec9["base"] = base9
+        d9 = apidrive.Driver(spec9, dry=False, log=lambda *a: None)
+        m9 = dict(m6); m9["customer"] = m6["customer"][7:-4]   # 不含种过重复的那几行
+        spare9 = [d9.payload_of("customer", r, p6, set())[0] for r in m6["customer"][-4:]]
+        d9.run(p6, m9)
+        cov_b = d9.coverage()
+        pres = PR.probe(d9, p6, {t: c.get("没撞到") or [] for t, c in cov_b.items()},
+                        {"customer": spare9}, budget=120)
+        got = pres["撞出来的"]
+        ck("NEED_REVIEW" in got,
+           "**定向构造撞出了随机数据永远撞不到的那条**(姓名相似+尾号相同+同门店)—— "
+           "随机数据之间没有关系,加到一百万条也一样", str(sorted(got)))
+        ck(got.get("NEED_REVIEW", {}).get("算子") == "仿冒近似重复",
+           "而且是「仿冒」这个算子撞出来的 —— 它需要一个**参照物**",
+           str(got.get("NEED_REVIEW")))
+        ck("DUP_PHONE" in got, "DUP_PHONE 确实进了探测目标(不然下面那条是空过的)",
+           str(sorted(got)))
+        ck(got.get("DUP_PHONE", {}).get("算子") in ("抄已有", "仿冒近似重复"),
+           "**归因正确**:重复类规则只能由「抄已有 / 仿冒」触发 —— "
+           "探测之间不隔离的话,前一个变异建成的记录会让后一个撞上重复,"
+           "于是「缺某个选填字段」被记成触发重复的算子",
+           str(got.get("DUP_PHONE")))
+        ck(not any(v.get("归因存疑") for v in got.values()),
+           "没有归因存疑的条目(未变异的基线自己不触发这些码)",
+           str({k: v.get("归因存疑") for k, v in got.items() if v.get("归因存疑")}))
+        ck(pres["每张表"]["customer"]["试了"] > 5,
+           f'每张表试了几次要报出来({pres["每张表"]})—— '
+           "「试了 2 次没戏」和「试了 30 次确实撞不到」不是一回事")
+        bad_base = PR.probe(d9, p6, {"customer": ["NEED_REVIEW"]},
+                            {"customer": [{"name": "", "phone": "x"}]}, budget=10)
+        ck(bad_base["跳过的表"].get("customer"),
+           "基线本身就被拒时,拒绝出结论(基线不干净,归因就是假的)",
+           str(bad_base))
+        d9.rollback(); stop9()
+
         # ---- 覆盖率:这批数据撞到了多少条已知规则 ----
         cov = d7.coverage()
         ck("customer" in cov and cov["customer"].get("全集"),
