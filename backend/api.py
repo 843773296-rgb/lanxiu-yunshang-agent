@@ -313,6 +313,22 @@ def _resolve(x, cat):
     names=[q["name"] for q in _rows("SELECT name FROM craft WHERE cat=?",cat)]
     return None,f"知识库里没有叫「{x}」的{cat}。现有{cat}:{names}"
 
+def _combo_caveat(d):
+    """给相容判定加一句**依据等级** —— 让「默认放行」自己说出来。
+
+    `rule='—'` 的 1274 格是「没命中任何禁止规则 → 默认可」,**没有人验证过**。
+    不标出来的话,它和 16 格人工确认过的在返回里长得一模一样,
+    而模型只能照着「可」讲给客户听。
+    """
+    ru=(d.get("rule") or "").strip()
+    if d.get("verdict")=="未定义": return d
+    d=dict(d)
+    if ru=="人工确认": d["依据等级"]="人工确认 —— 打样验证过,可以直接说"
+    elif ru.startswith("R"): d["依据等级"]=f"规则推导({ru})—— 从成文通则推出,**这一格没有单独打样验证**"
+    else: d["依据等级"]=("**默认放行,没有依据** —— 只是没命中任何禁止规则,"
+                       "没有人确认过。对客户说必须带上这句限定,或转工艺负责人打样")
+    return d
+
 def kb_combo(craft, material):
     """查某工艺能不能用在某面料上。工艺名/面料名或编码都接受。返回 可/需评估/不可/未定义。"""
     k,e1=_resolve(craft,"工艺")
@@ -329,7 +345,7 @@ def kb_combo(craft, material):
                        "不得自行推断可或不可。","src_type":None}
     d=r[0]; d.update(craft=k["name"],material=m["name"],
                      resolved=f"{k['code']} {k['name']} × {m['code']} {m['name']}")
-    return d
+    return _nz(_combo_caveat(d))
 
 def kb_tables(topic=None):
     """决策表 —— 「客户说 X 该推什么」这类问题的答案在这里,不在条目里。"""
@@ -349,14 +365,21 @@ def kb_coverage():
     ks=_rows("SELECT code FROM craft WHERE cat='工艺'"); ms=_rows("SELECT code FROM craft WHERE cat='材质'")
     n=_rows("SELECT COUNT(*) c FROM craft_combo")[0]["c"]
     tot=len(ks)*len(ms)
-    by={}
+    # **三类分开数。** 原来把「不是人工确认的」一律算作「规则推导」——
+    # 而其中 1274 格的 rule 是 `—`,**根本没有依据**,是「没命中任何禁止规则 → 默认可」。
+    # 把它们报成「规则推导」是在美化:一个没人验证过的结论被说成有依据的。
+    # 兜底方向选错,未知就会被打扮成已知 —— 这里未知被默认算成了「可以做」。
+    by={"人工确认":0,"规则推导":0,"默认放行(无依据)":0}
     for r in _rows("SELECT rule,COUNT(*) c FROM craft_combo GROUP BY rule"):
-        k="人工确认" if r["rule"]=="人工确认" else "规则推导"
-        by[k]=by.get(k,0)+r["c"]
+        ru=(r["rule"] or "").strip()
+        k=("人工确认" if ru=="人工确认" else
+           "规则推导" if ru.startswith("R") else "默认放行(无依据)")
+        by[k]+=r["c"]
     return {"工艺数":len(ks),"材质数":len(ms),"总格数":tot,"已定义":n,"未定义":tot-n,
             "完成度":f"{n/tot*100:.0f}%","来源":by,
-            "note":"每格都带 rule 字段说明依据(人工确认 / R1–R13)。"
-                   "仍有未定义的格子时必须说查不到,不要推断。"}
+            "note":"**「默认放行(无依据)」不等于验证过** —— 那是「没命中任何禁止规则」"
+                   "的兜底结果,没有人打样确认过。对客户说这类结论必须带上这句限定。"
+                   f"所有「不可」和「需评估」都有依据;而「可」里有 {by['默认放行(无依据)']} 格是默认放行。"}
 
 
 # ── 门店业务数据(shop 服务)—— 顾问和值班同学天天要查的三样 ────────────

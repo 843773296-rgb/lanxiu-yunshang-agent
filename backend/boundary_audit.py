@@ -221,10 +221,36 @@ def a_check_write_noop():
     raise PermissionError("validate_* 是纯函数,校验通过也一行没写")
 
 
+def a_default_allow_visible():
+    """「默认放行」必须在返回里自己说出来 —— 不能和「人工确认过」长得一样。
+
+    2025 格里有 1274 格的依据是 `—`:**只是没命中任何禁止规则**,没有人验证过。
+    它们的 verdict 全是「可」。不标出来的话,它和 16 格打样确认过的在返回里
+    完全一致,而模型只能照着「可」讲给客户听。
+
+    **兜底方向选错,未知就会被打扮成已知** —— 这里未知被默认算成了「可以做」。
+    """
+    import api
+    r = api._rows("SELECT craft,material FROM craft_combo WHERE (rule IS NULL OR rule='—') LIMIT 1")
+    if not r: raise PermissionError("库里没有无依据的格子了(那也很好)")
+    kb = api._rows("SELECT name FROM craft WHERE code=?", r[0]["craft"])[0]["name"]
+    mb = api._rows("SELECT name FROM craft WHERE code=?", r[0]["material"])[0]["name"]
+    d = api.kb_combo(craft=kb, material=mb)
+    lvl = d.get("依据等级") or ""
+    if "默认放行" not in lvl:
+        return f"无依据的格子返回里没标出来(依据等级={lvl!r})—— 它和人工确认过的分不开"
+    raise PermissionError("无依据的格子在返回里明写「默认放行,没有依据」,"
+                          "和「人工确认」「规则推导」三档分开")
+
+
 STRUCT = [
  ("工具层一个写接口都没有", "backend/api.py 开篇铁律 / README「工具全部只读」",
   a_write, "拿工具层的连接去 UPDATE 一条客户记录",
   "连接开成 mode=ro —— **写操作直接抛错,不是碰巧没人写 INSERT**"),
+ ("「默认放行」不冒充「已验证」", "backend/api.py _combo_caveat / kb_coverage 三分类",
+  a_default_allow_visible, "随便取一格 rule='—' 的组合,看返回里认不认得出它没有依据",
+  "返回里明写「默认放行,没有依据」—— **1274 格(63%)属于这一类**,"
+  "不标出来它和 16 格打样确认过的完全一样"),
  ("check_write 只校验不写库", "backend/api.py check_write 文档 / 工具描述「不写库」",
   a_check_write_noop, "跑一次**校验会通过**的建档,数客户表行数有没有变",
   "validate_* 是纯函数 —— **被拒的当然不写,通过的才是危险那一半**,这里测的正是后者"),
