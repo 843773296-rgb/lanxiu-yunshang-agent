@@ -455,9 +455,36 @@ def main():
         ck(not any(v.get("归因存疑") for v in got.values()),
            "没有归因存疑的条目(未变异的基线自己不触发这些码)",
            str({k: v.get("归因存疑") for k, v in got.items() if v.get("归因存疑")}))
+        # 上下文字段 + 成对组合
+        ck("role" in (spec9["endpoints"]["appointment"]["create"].get("const_fields") or {}),
+           "规格支持**上下文字段**(role/actor/幂等键)—— 它们不对应任何列,"
+           "只用列映射表达不了")
+        b9 = d9.payload_of("appointment", m6["appointment"][0], p6, set())[0]
+        ck(b9.get("role") == "顾问", "上下文字段真的进了请求体", str(b9)[:100])
+        alt = PR.op_alt_value({"role": "顾问"}, "role", None, {"role": ["店长"]})
+        ck(alt == {"role": "店长"},
+           "「换合法取值」算子:同一份数据换个身份,会落到另一条规则上")
         ck(pres["每张表"]["customer"]["试了"] > 5,
            f'每张表试了几次要报出来({pres["每张表"]})—— '
            "「试了 2 次没戏」和「试了 30 次确实撞不到」不是一回事")
+        # 成对组合:BACKFILL_LIMIT 要「role=店长」**且**「超过 7 天前」,单改一处只会落到别的码
+        real_c = [v for (pt, _k), v in d9.idmap.items() if pt == "customer"]
+        ab = []
+        for r in m6["appointment"][:4]:
+            b = d9.payload_of("appointment", r, p6, set())[0]
+            if real_c: b["customer_id"] = real_c[0]
+            b["start"] = (_dt.datetime.now() + _dt.timedelta(days=4)).strftime("%Y-%m-%d %H:%M:%S")
+            b["end"] = (_dt.datetime.now() + _dt.timedelta(days=4, hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+            ab.append(b)
+        pres2 = PR.probe(d9, p6, {"appointment": ["BACKFILL_LIMIT"]},
+                         {"appointment": ab}, budget=200)
+        bl = pres2["撞出来的"].get("BACKFILL_LIMIT")
+        ck(bl is not None,
+           "**成对组合**撞出了要两个条件同时成立的规则(role=店长 且 超过 7 天前)",
+           str(pres2)[:160])
+        ck(bl and "+" in bl["算子"],
+           f'而且如实报出是组合出来的:{bl["算子"] if bl else "—"} 改 {bl["改的字段"] if bl else "—"}')
+
         bad_base = PR.probe(d9, p6, {"customer": ["NEED_REVIEW"]},
                             {"customer": [{"name": "", "phone": "x"}]}, budget=10)
         ck(bad_base["跳过的表"].get("customer"),

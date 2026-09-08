@@ -111,6 +111,13 @@ def op_bogus_ref(body, f, ref=None):
     return dict(body, **{f: "__does_not_exist__"})
 
 
+def _apply(fn, body, f, ref, fresh, alts):
+    """算子签名不统一(有的要 fresh,有的要 alts),在这里统一分发,别在调用点分叉。"""
+    if fn is op_impersonate: return fn(body, f, ref, fresh)
+    if fn is op_alt_value:   return fn(body, f, ref, alts)
+    return fn(body, f, ref)
+
+
 def _freshen(v, *salt):
     """造一个「同形状但换一个」的值:11 位手机号还是 11 位,别的加个后缀。
     用 salt 播种,所以同一次探测里是确定性的。"""
@@ -127,7 +134,23 @@ def _is_dt(v):
     return bool(v) and bool(re.match(r"^\d{4}-\d{2}-\d{2}", str(v)))
 
 
-OPS = [("缺字段", op_drop), ("空值", op_empty), ("坏格式", op_garble),
+def op_alt_value(body, f, ref=None, alts=None):
+    """换一个**合法的**取值 —— 权限/身份类字段就是这样。
+
+    前面那些算子都是「把数据弄坏」。但有一整类规则不是被坏数据触发的,
+    而是**同一份数据换个身份就落到另一条规则上**:
+    同一个 90 天前的补录请求,`role=顾问` 是「无权补录」,`role=店长` 是「超出补录期限」。
+    **这两条码指向完全不同的业务动作,而数据一个字都没变。**
+
+    合法取值的清单只有规格作者知道(schema 里没有 role 这一列),所以由规格给。
+    """
+    if not alts or f not in body: return None
+    cur = str(body.get(f) or "")
+    pick = next((v for v in alts.get(f, []) if str(v) != cur), None)
+    return dict(body, **{f: pick}) if pick is not None else None
+
+
+OPS = [("换合法取值", op_alt_value), ("缺字段", op_drop), ("空值", op_empty), ("坏格式", op_garble),
        ("抄已有", op_copy), ("仿冒近似重复", op_impersonate),
        ("时间挪到过去", op_past), ("时间挪到马上", op_soon),
        ("引用不存在", op_bogus_ref)]
@@ -208,6 +231,7 @@ def probe(driver, plan, targets, bases, budget=120, log=print):
         # `fresh_fields` 声明在 **endpoint 层**(和 codes 并列),不在 create 里面。
         # 第一版从 create 里读,取到 None,整段静默不生效 —— 又一次层级看错。
         fresh = eps.get(tname, {}).get("fresh_fields") or []
+        alts = eps.get(tname, {}).get("alt_values") or {}
         mut_base = dict(next((c for c in cands if c is not base), base))
         for f in fresh:
             if f in mut_base and mut_base[f]:
@@ -219,8 +243,7 @@ def probe(driver, plan, targets, bases, budget=120, log=print):
             for f in fields:
                 if not want: break
                 if tried >= budget: exhausted = True; break
-                cand = (fn(mut_base, f, ref, fresh) if fn is op_impersonate
-                        else fn(mut_base, f, ref))
+                cand = _apply(fn, mut_base, f, ref, fresh, alts)
                 if cand is None: continue
                 # **每一次探测都要是独立实验。**
                 # 变异之间会互相污染:前一个「缺一个选填字段」是合法请求,它成功建了记录;
@@ -274,6 +297,48 @@ def probe(driver, plan, targets, bases, budget=120, log=print):
                     if c == bad and info["表"] == tname:
                         info["归因存疑"] = (f"未变异的基线自己也返回 {bad} —— "
                                             f"这条不是算子造成的")
+        # ---- 还缺的码,试**两两组合** ----
+        # 有些规则要几个条件同时成立才触发:`BACKFILL_LIMIT` 要
+        # 「role=店长」**且**「时间超过 7 天前」—— 单改一处只会落到别的码上。
+        # 这就是组合测试里的 2-way,只不过目标是「撞出某个码」而不是「覆盖参数组合」。
+        # 只对**单算子跑完还缺的**码做,而且封顶 —— 组合是平方级的。
+        if want and tried < budget:
+            singles = []
+            for opname, fn in OPS:
+                for f in ([None] if fn is op_swap_times else list(mut_base)):
+                    if _apply(fn, mut_base, f, ref, fresh, alts) is not None:
+                        singles.append((opname, fn, f))
+            for i in range(len(singles)):
+                if not want or tried >= budget: break
+                for j in range(len(singles)):
+                    if not want or tried >= budget: break
+                    if i == j: continue
+                    n1, f1, x1 = singles[i]; n2, f2, x2 = singles[j]
+                    if x1 == x2 and f1 is not op_swap_times: continue
+                    c1 = _apply(f1, mut_base, x1, ref, fresh, alts)
+                    if c1 is None: continue
+                    cand = _apply(f2, c1, x2, ref, fresh, alts)
+                    if cand is None: continue
+                    if f1 not in (op_copy, op_impersonate) and \
+                       f2 not in (op_copy, op_impersonate):
+                        for uf in fresh:
+                            if uf in cand and cand[uf]:
+                                cand[uf] = _freshen(str(cand[uf]), tname, uf, n1, n2, tried)
+                    code, doc, _x = _curl(ep.get("method", "POST"),
+                                          driver.base + ep["path"], cand, driver.headers)
+                    tried += 1
+                    res, why = outcome(doc, code, ep)
+                    if res == "ok":
+                        rid = _dig(doc, ep.get("id_path", "id"))
+                        if rid is not None: driver.created.append((tname, rid))
+                        continue
+                    c = _code(doc, ep)
+                    if c in want:
+                        found[c] = {"表": tname, "算子": f"{n1} + {n2}",
+                                    "改的字段": f"{x1} / {x2}", "请求体": cand,
+                                    "接口说": why[:140], "组合": True}
+                        want.discard(c)
+
         per[tname] = {"试了": tried - t0}
     return {"撞出来的": found, "试了": tried, "每张表": per, "预算": budget, "预算用光": exhausted,
             "跳过的表": skipped,

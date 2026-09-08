@@ -103,7 +103,8 @@ class Driver:
         45 行全跳,零成功零拒绝,而这看起来像"没数据可造",不像 bug。
         **判据的适用范围写宽了,失败方式是安静的。**
         """
-        body, miss = {}, None
+        # 上下文字段(role / actor / 幂等键)不对应任何列,但接口收、而且影响判定。
+        body, miss = dict(ep.get("const_fields") or {}), None
         cols = plan["tables"][tname]["columns"]
         for field, col in ep["fields"].items():
             v = row.get(col)

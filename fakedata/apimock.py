@@ -80,7 +80,11 @@ def _make_handler(store):
                                        "reason": f'客户 {body.get("customer_id")} 不存在'})
                 d = {"way": body.get("way") or "到店量体",
                      "start": body.get("start"), "end": body.get("end")}
-                ok, code, reason = _rules.validate_appointment(d)
+                # 真实现是 `role = d.get("role") or "顾问"` —— 靶子漏了这一句,
+                # 于是 BACKFILL_LIMIT(店长补录超过 7 天)这条路**根本不存在**,
+                # 而我一直以为是"规格字段面缺 role"。**靶子比真实现宽松,等于少测一块。**
+                ok, code, reason = _rules.validate_appointment(
+                    d, actor_role=body.get("role") or "顾问")
                 if not ok: return self._send({"ok": False, "code": code, "reason": reason})
                 rid = store.nid("SVR-AP")
                 store.appointment.append(dict(body, id=rid))
@@ -127,9 +131,15 @@ SPEC = {
                        # customer_id 是外键:驱动会把方案里的假 id 翻译成服务端真实 id
                        "fields": {"customer_id": "customer_id", "shop": "shop",
                                   "start": "start_ts", "end": "end_ts"},
+                       # **上下文字段**:不对应任何列,但接口收、而且影响判定。
+                       # role / actor / 幂等键都是这一类 —— 只用列映射表达不了它们。
+                       "const_fields": {"role": "顾问"},
                        "id_path": "id", "ok_field": "ok"},
             "codes": ["BAD_TIME", "END_BEFORE_START", "NO_BACKFILL", "BACKFILL_LIMIT",
                       "LEAD_TIME", "NO_CUSTOMER"],
+            # 换一个**合法的**取值(而不是改坏它)也能触发规则 —— 权限类字段就是这样:
+            # 同一份数据、只换角色,落到两个不同的码上。
+            "alt_values": {"role": ["店长", "总部运营"]},
             "delete": {"method": "POST", "path": "/api/appt-delete", "id_field": "id"},
         },
     },
