@@ -712,6 +712,128 @@ def resolve_combo(d, actor="魏欣新", _role=None):
                        f"原来是「{old['verdict']} / {old['rule'] or '无依据'}」")
 
 
+# ── 排任务:店长派给顾问 ─────────────────────────────────────────────
+# 这是系统里**第一个「两个人协作」的功能** —— 之前所有写操作都只关系到操作者自己。
+# 所以权限有三层,每一层都不能靠自觉:
+#   ① 谁能派      —— 店长及以上(顾问不能给自己派活,也不能给同事派)
+#   ② 能派给谁    —— **只能派给同门店的顾问**(店长管不到别的店)
+#   ③ 谁能看/完成 —— 顾问只看得到派给自己的;完成也只能完成自己的
+# 三层全部从**会话身份**判,请求体里说自己是谁一律不算。
+
+MANAGER_ROLES = ("店长", "总部运营")
+
+
+def _deny(me, code, reason, key="—"):
+    """拒绝一次越权,**并且记进台账**。
+
+    只记成功的日志等于没有审计:出事之后要查的从来不是「谁做成了什么」,
+    而是「谁反复试着做不该做的事」。所以拒绝走这个函数,不许直接 return。
+    """
+    log_op((me or {}).get("name") or "未登录", "schedule", key, "—", "—", False, code,
+           reason[:120], {"role": (me or {}).get("role")})
+    return dict(ok=False, code=code, reason=reason)
+
+
+
+def my_staff(me):
+    """当前登录的人**能派给谁**。店长 → 本店顾问;总部运营 → 全部顾问。
+
+    这个函数就是权限②的实现 —— 让「能派给谁」变成一个查询,
+    而不是派的时候再判一次(判两遍就会有一遍是旧的)。
+    """
+    if not me or me.get("role") not in MANAGER_ROLES: return []
+    if me["role"] == "总部运营":
+        return rows("SELECT no,name,role,shop FROM staff WHERE role='顾问' AND status='启用' ORDER BY no")
+    return rows("SELECT no,name,role,shop FROM staff "
+                "WHERE role='顾问' AND status='启用' AND shop=? ORDER BY no", me.get("shop"))
+
+
+def assign_task(d, me):
+    """店长派一条任务给顾问。"""
+    import datetime
+    if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return _deny(me, "WRONG_ROLE",
+                     f"排任务须由店长及以上操作,你的角色是「{me['role']}」")
+    to = (d.get("assignee_no") or "").strip()
+    allowed = {x["no"]: x for x in my_staff(me)}
+    if to not in allowed:
+        return _deny(me, "NOT_YOURS",
+                     f"只能派给**{me.get('shop') or '你管辖'}**的在职顾问;"
+                     f"可派的人:{[x['name'] for x in allowed.values()] or '(没有)'}", to)
+    title = (d.get("title") or "").strip()
+    if not title: return dict(ok=False, code="NEED_TITLE", reason="任务内容必填")
+    due = (d.get("due") or "").strip()
+    if not due: return dict(ok=False, code="NEED_DUE", reason="截止时间必填 —— 没有截止时间的任务不会被做")
+    try: datetime.datetime.fromisoformat(due.replace("T", " "))
+    except ValueError: return dict(ok=False, code="BAD_DUE", reason=f"截止时间「{due}」格式不对")
+    n = rows("SELECT COUNT(*) c FROM schedule")[0]["c"]
+    sid = f"SC{7000 + n + 1}"
+    him = allowed[to]
+    with sqlite3.connect(DB) as c:
+        c.execute("""INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,status,
+                     shop,assignee_no,assigned_by,assigned_at,note)
+                     VALUES(?,'企业任务',?,?,?,?, '有效',?,?,?,?,?)""",
+                  (sid, him["name"], d.get("customer_id"),
+                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                   due.replace("T", " "), him.get("shop"), to, me["no"],
+                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), title))
+    log_op(me["name"], "schedule", sid, "—", "有效", True, "ASSIGN",
+           f"{me['name']}({me['role']})派给 {him['name']}:{title[:40]};截止 {due}",
+           {"role": me["role"], "assignee": to})
+    return dict(ok=True, code="ASSIGN", id=sid,
+                reason=f"已派给 **{him['name']}**,截止 {due}。他登录后会在「我的任务」里看到。")
+
+
+def my_tasks(me, status=None):
+    """看任务。**顾问只看得到派给自己的**;店长看本店全部。"""
+    if not me: return dict(error="请先登录")
+    if me.get("role") in MANAGER_ROLES:
+        sql = ("SELECT s.*, st.name assignee_name FROM schedule s "
+               "LEFT JOIN staff st ON st.no=s.assignee_no WHERE s.shop=?")
+        args = [me.get("shop")]
+        scope = f"{me.get('shop') or '全部'} 的任务(你是{me['role']})"
+        if me["role"] == "总部运营":
+            sql = ("SELECT s.*, st.name assignee_name FROM schedule s "
+                   "LEFT JOIN staff st ON st.no=s.assignee_no WHERE 1=1"); args = []
+            scope = "全部门店的任务(你是总部运营)"
+    else:
+        # **顾问只看自己的。** 这一条是数据隔离,不是界面上少显示几行。
+        sql = ("SELECT s.*, st.name assignee_name FROM schedule s "
+               "LEFT JOIN staff st ON st.no=s.assignee_no WHERE s.assignee_no=?")
+        args = [me["no"]]
+        scope = "派给你的任务"
+    if status: sql += " AND s.status=?"; args.append(status)
+    rs = rows(sql + " ORDER BY (s.status='有效') DESC, s.end_ts", *args)
+    for r in rs:
+        by = rows("SELECT name,role FROM staff WHERE no=?", r.get("assigned_by") or "")
+        # 历史排班没有派单人(本来就不是谁派的),那就**不要这个字段**,
+        # 而不是显示成 None —— None 会被读成「有人派的但查不到是谁」,是另一回事。
+        if by: r["派任务的人"] = f"{by[0]['name']}({by[0]['role']})"
+    return dict(scope=scope, hit=len(rs), rows=rs)
+
+
+def finish_task(d, me):
+    """完成任务。**只能完成派给自己的**;店长也不能替顾问点完成。"""
+    if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
+    sid = (d.get("id") or "").strip()
+    rs = rows("SELECT * FROM schedule WHERE id=?", sid)
+    if not rs: return dict(ok=False, code="NO_TASK", reason=f"没有任务 {sid}")
+    t = rs[0]
+    if t.get("assignee_no") != me["no"]:
+        return _deny(me, "NOT_MINE",
+                     "**只能完成派给自己的任务** —— 谁做的谁点完成,"
+                     "别人代点等于台账上写了一件没发生的事", sid)
+    if t.get("status") != "有效":
+        return dict(ok=False, code="BAD_STATE", reason=f"这条任务当前是「{t['status']}」,不能完成")
+    with sqlite3.connect(DB) as c:
+        c.execute("UPDATE schedule SET status='完结',summary=? WHERE id=?",
+                  ((d.get("summary") or "").strip() or None, sid))
+    log_op(me["name"], "schedule", sid, "有效", "完结", True, "FINISH",
+           f"{me['name']} 完成任务:{(t.get('note') or '')[:40]}", {"role": me["role"]})
+    return dict(ok=True, code="FINISH", reason=f"任务 {sid} 已标记完结")
+
+
 def create_customer(d, actor="魏欣新", _role=None):
     """新建客户档案。PRD 6.2:姓名必填、手机号唯一、疑似重复要提示。"""
     import datetime
@@ -1420,6 +1542,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(lifecycle_page(_u(unquote(t)) if t else None))
         from urllib.parse import parse_qs
         Q={k:[_u(unquote(x)) for x in v] for k,v in parse_qs(urlparse(self.path).query).items()}
+        # 这两条必须放在 Q 赋值**之后**。第一版插在 do_GET 开头,
+        # 报的是 `UnboundLocalError: Q`,而不是「路由写错了」——
+        # **错误信息指向的是症状发生的地方,不是原因所在的地方。**
+        if p == "/api/my-tasks":
+            return self._send(my_tasks(_me(self), (Q.get("status") or [None])[0]))
+        if p == "/api/my-staff":
+            return self._send({"rows": my_staff(_me(self))})
         if p.startswith("/api/ops-"):
             # 智能运维平台的读接口。队列/积压/健康度都在 ops.py 里算,
             # 这里只负责转发 —— 路由层不放业务规则,SLA 改了不用翻两个文件。
@@ -1747,6 +1876,8 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(data); return
         if p=="/api/combo-resolve":
             return self._send(resolve_combo(body, _actor_of(self), _role_of(self)))
+        if p=="/api/task-assign": return self._send(assign_task(body, _me(self)))
+        if p=="/api/task-finish": return self._send(finish_task(body, _me(self)))
         if p=="/api/customer-create":
             return self._send(create_customer(body, _actor_of(self), _role_of(self)))
         if p.startswith("/api/customer-update/"):

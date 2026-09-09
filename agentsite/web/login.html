@@ -1,0 +1,81 @@
+<title>登录 · 澜绣云裳</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#fff;--line:#e6e6e8;--ink:#17181c;--dim:#8b8d94;--accent:#2f5bff;
+  --err:#b42318;--errbg:#fef3f2;--chip:#f1f2f4}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:#f7f7f8;color:var(--ink);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+.card{width:380px;background:var(--bg);border:1px solid var(--line);border-radius:14px;
+  padding:30px 30px 26px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+h1{margin:0 0 4px;font-size:19px;letter-spacing:.3px}
+.sub{margin:0 0 22px;font-size:12.5px;color:var(--dim)}
+label{display:block;font-size:12.5px;color:var(--dim);margin:0 0 5px}
+input{width:100%;font:inherit;padding:9px 11px;border:1px solid var(--line);
+  border-radius:9px;background:#fff;color:var(--ink);outline:none}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,91,255,.10)}
+.f{margin-bottom:14px}
+button{width:100%;font:inherit;font-weight:600;padding:10px;border:0;border-radius:9px;
+  background:var(--accent);color:#fff;cursor:pointer;margin-top:6px}
+button:disabled{opacity:.55;cursor:default}
+#err{display:none;margin:12px 0 0;padding:9px 11px;border-radius:9px;font-size:12.5px;
+  background:var(--errbg);color:var(--err);border:1px solid #fecdca}
+.demo{margin:20px 0 0;padding-top:14px;border-top:1px solid var(--line);
+  font-size:12px;color:var(--dim)}
+.demo b{color:var(--ink);font-weight:600}
+.demo code{background:var(--chip);padding:1px 5px;border-radius:5px;font-size:11.5px}
+.demo p{margin:6px 0 0}
+</style>
+
+<form class="card" id="f" autocomplete="on">
+  <h1>澜绣云裳 · 智能助手</h1>
+  <p class="sub">用门店工号登录 —— 你能看到什么、能做什么,由工号决定</p>
+
+  <div class="f">
+    <label for="no">工号</label>
+    <input id="no" name="username" inputmode="numeric" autocomplete="username"
+           placeholder="8 位工号" autofocus>
+  </div>
+  <div class="f">
+    <label for="pw">密码</label>
+    <input id="pw" name="password" type="password" autocomplete="current-password"
+           placeholder="密码">
+  </div>
+  <button id="go">登录</button>
+  <p id="err"></p>
+
+  <div class="demo">
+    <b>演示账号</b>(这是一套假数据,密码只在本机)
+    <p>店长 <code>60000001</code> 张静静 —— 能给顾问派任务、看全店</p>
+    <p>顾问 <code>60000003</code> 周叙 —— 只看得到派给自己的</p>
+    <p>密码都是 <code>lanxiu@2026</code></p>
+  </div>
+</form>
+
+<script>
+const $=s=>document.querySelector(s);
+const err=m=>{const e=$("#err");e.textContent=m;e.style.display=m?"block":"none"};
+
+$("#f").addEventListener("submit", async ev=>{
+  ev.preventDefault();
+  err("");
+  const no=$("#no").value.trim(), pw=$("#pw").value;
+  if(!no||!pw) return err("工号和密码都要填");
+  $("#go").disabled=true; $("#go").textContent="登录中…";
+  try{
+    const r=await fetch("/api/login",{method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({login_name:no, password:pw})});
+    const d=await r.json();
+    if(d.ok){
+      // 登录成功不停在这一页 —— 回到进来时想去的地方
+      const back=new URLSearchParams(location.search).get("back");
+      location.href = back && back.startsWith("/") ? back : "/";
+      return;
+    }
+    err(d.reason || d.error || "登录失败");
+  }catch(e){ err("连不上服务:"+e.message); }
+  $("#go").disabled=false; $("#go").textContent="登录";
+});
+</script>

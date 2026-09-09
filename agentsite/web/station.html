@@ -39,6 +39,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 /* ── 右侧主区 ─────────────────────────────────────────────── */
 #main{flex:1;display:flex;flex-direction:column;height:100vh;min-width:0}
 #top{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--line);flex:none}
+#me{font-size:12px;color:var(--dim);padding-left:2px}
 #top select{font:inherit;font-size:13px;padding:5px 26px 5px 10px;border:1px solid var(--line);
   border-radius:8px;background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%238b8d94'/></svg>") no-repeat right 9px center;
   -webkit-appearance:none;appearance:none;cursor:pointer;color:var(--ink)}
@@ -184,8 +185,10 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
     <select id="model" title="换模型"><option>载入中…</option></select>
     <span id="kindhint"></span>
     <span class="sp"></span>
+    <a class="tbtn" href="/tasks">任务</a>
     <a class="tbtn" href="/panels">面板</a>
     <button class="tbtn" id="help">?</button>
+    <span id="me" title="你能看到什么、能做什么,由这个工号决定"></span>
   </div>
   <div id="stream"></div>
   <div id="composer">
@@ -645,6 +648,22 @@ async function loadRoles(){
   for(const r of ROLES) KINDS[r.kind] = r;
   syncHint(); drawSide(); drawStream();
 }
+// 登录态。**没登录就别让人先聊起来再发现存不下东西** ——
+// 助手背后所有写操作(派任务、回填矩阵、建客户)都是按工号判权限的,
+// 匿名状态下这些一律会被后台拒,界面上却看着能用。
+async function loadMe(){
+  try{
+    const r = await fetch("/api/me");
+    if(r.status===401){
+      location.href = "/login?back=" + encodeURIComponent(location.pathname);
+      return;
+    }
+    const u = await r.json();
+    $("#me").textContent = `${u.name} · ${u.role}`;
+    $("#me").title = `${u.name}(${u.no})· ${u.role}${u.shop ? " · " + u.shop : ""}`;
+  }catch(e){ $("#me").textContent = ""; }
+}
+
 syncHint(); drawSide(); drawStream(); grow(); $("#q").focus();
-loadRoles(); loadModels();
+loadRoles(); loadModels(); loadMe();
 </script>

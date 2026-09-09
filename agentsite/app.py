@@ -54,6 +54,8 @@ PORT = int(os.environ.get("AGENTSITE_PORT", "8770"))
 # 之前那版单壳多屏(值班台/研判队列/面料学堂/着装人/健康 + 「?」教学层)
 # 整体挪到 /panels 保住了 —— 里面的教学内容是攒出来的,不能因为换个形态就丢。
 PAGES = {"/": "station.html", "/panels": "panels.html",
+         # 登录与任务:登录态是**后台**发的 session cookie,本站只转发不解读
+         "/login": "login.html", "/tasks": "tasks.html",
          "/duty": "duty.html", "/queue": "queue.html", "/health": "health.html",
          "/chat": "chat.html", "/scheme": "scheme.html",
          "/workbench": "workbench.html", "/acceptance": "acceptance.html",
@@ -81,15 +83,32 @@ class H(BaseHTTPRequestHandler):
         self.end_headers(); self.wfile.write(b)
 
     def _proxy(self, method="GET", payload=None):
-        """/api/* 与 /img/* 反代到后台 —— 本站不直接读库"""
+        """/api/* 与 /img/* 反代到后台 —— 本站不直接读库
+
+        **cookie 必须双向转**:登录态是后台发的 session cookie,
+        反代不转的话,浏览器的 cookie 到不了后台(每次都是新访客),
+        后台的 set-cookie 也回不到浏览器(登录成功了但存不下来)。
+        少转一个方向都是「登录看着成功、下一个请求就没登录」。
+        """
         url = BACKEND + self.path
-        req = urllib.request.Request(url, method=method, data=payload,
-                                     headers={"content-type": "application/json"})
+        h = {"content-type": "application/json"}
+        ck = self.headers.get("cookie")
+        if ck: h["cookie"] = ck
+        req = urllib.request.Request(url, method=method, data=payload, headers=h)
+
+        def _back(r, body, code):
+            sc = r.headers.get_all("set-cookie") or []
+            self.send_response(code)
+            self.send_header("content-type", r.headers.get("content-type", "application/json"))
+            for v in sc: self.send_header("set-cookie", v)
+            self.send_header("content-length", str(len(body)))
+            self.end_headers(); self.wfile.write(body)
+
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
-                self._send(r.read(), r.headers.get("content-type", "application/json"), r.status)
+                _back(r, r.read(), r.status)
         except urllib.error.HTTPError as e:
-            self._send(e.read(), e.headers.get("content-type", "application/json"), e.code)
+            _back(e, e.read(), e.code)
         except Exception as e:
             self._send({"error": f"后台({BACKEND})连不上:{e}。先启动 backend/server.py"}, code=502)
 
