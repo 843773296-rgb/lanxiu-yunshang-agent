@@ -643,7 +643,20 @@ def resolve_combo(d, actor="魏欣新"):
     **写在后台,不在工具层** —— 「工具层一个写接口都没有」那条保证靠
     mode=ro 连接结构性成立,不能为了方便就破。模型能看队列,不能回填。
     """
-    ck, mk = (d.get("craft") or "").strip(), (d.get("material") or "").strip()
+    # **名字和编码都收,而且回显名字。**
+    # 演示时当场栽了一次:我手输编码 KF11 × MT44,以为那是「平绣×棉麻」,
+    # 而它是另一个组合。旧版只检查「这一格存在」,不检查「是不是你要的那一格」——
+    # 于是它老老实实给另一个组合盖了「人工确认」的章,还返回成功。
+    #
+    # **回填是把「没有依据」覆盖成「验证过」,写错格子等于给没人验过的组合发合格证。**
+    # 现在走和 kb_combo 同一套名字解析(_resolve),而且返回里回显**名字**,
+    # 让人一眼看得出自己填的是哪一格。
+    _ck, _e1 = backend._resolve(d.get("craft"), "工艺")
+    _mk, _e2 = backend._resolve(d.get("material"), "材质")
+    if _e1: return dict(ok=False, code="BAD_CRAFT", reason=_e1)
+    if _e2: return dict(ok=False, code="BAD_MATERIAL", reason=_e2)
+    ck, mk = _ck["code"], _mk["code"]
+    cname, mname = _ck["name"], _mk["name"]
     v = (d.get("verdict") or "").strip()
     role = d.get("role") or "顾问"
     if v not in ("可", "不可", "需评估"):
@@ -661,11 +674,13 @@ def resolve_combo(d, actor="魏欣新"):
     with sqlite3.connect(DB) as c:
         c.execute("UPDATE craft_combo SET verdict=?,reason=?,rule='人工确认',src_type='demo' "
                   "WHERE craft=? AND material=?", (v, d["reason"], ck, mk))
-    log_op(actor, "combo", f"{ck}×{mk}", old["verdict"], v, True, "RESOLVE",
-           f"核实回填:{old['rule'] or '无依据'} → 人工确认;{d['reason'][:50]}", {"role": role})
-    return dict(ok=True, code="RESOLVE",
-                reason=f"{ck} × {mk} 已回填为「{v}」,依据等级升为「人工确认」,"
-                       f"这一格从待核实队列里消失")
+    log_op(actor, "combo", f"{cname}×{mname}", old["verdict"], v, True, "RESOLVE",
+           f"核实回填 {ck}×{mk}:{old['rule'] or '无依据'} → 人工确认;{d['reason'][:50]}",
+           {"role": role})
+    return dict(ok=True, code="RESOLVE", 组合=f"{cname} × {mname}", 编码=f"{ck} × {mk}",
+                reason=f"**{cname} × {mname}**({ck} × {mk})已回填为「{v}」,"
+                       f"依据等级升为「人工确认」,这一格从待核实队列里消失。"
+                       f"原来是「{old['verdict']} / {old['rule'] or '无依据'}」")
 
 
 def create_customer(d, actor="魏欣新"):
