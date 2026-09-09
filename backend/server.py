@@ -743,8 +743,8 @@ def my_staff(me):
     """
     if not me or me.get("role") not in MANAGER_ROLES: return []
     if me["role"] == "总部运营":
-        return rows("SELECT no,name,role,shop FROM staff WHERE role='顾问' AND status='启用' ORDER BY no")
-    return rows("SELECT no,name,role,shop FROM staff "
+        return rows("SELECT no,name,role,shop,adv_code FROM staff WHERE role='顾问' AND status='启用' ORDER BY no")
+    return rows("SELECT no,name,role,shop,adv_code FROM staff "
                 "WHERE role='顾问' AND status='启用' AND shop=? ORDER BY no", me.get("shop"))
 
 
@@ -774,7 +774,7 @@ def assign_task(d, me):
         c.execute("""INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,status,
                      shop,assignee_no,assigned_by,assigned_at,note)
                      VALUES(?,'企业任务',?,?,?,?, '有效',?,?,?,?,?)""",
-                  (sid, him["name"], d.get("customer_id"),
+                  (sid, f"{him.get('adv_code') or ''} {him['name']}".strip(), d.get("customer_id"),
                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                    due.replace("T", " "), him.get("shop"), to, me["no"],
                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), title))
@@ -783,6 +783,45 @@ def assign_task(d, me):
            {"role": me["role"], "assignee": to})
     return dict(ok=True, code="ASSIGN", id=sid,
                 reason=f"已派给 **{him['name']}**,截止 {due}。他登录后会在「我的任务」里看到。")
+
+
+def dispatch(d, me):
+    """把**待分配池里已经存在的**预约单派给某个顾问。
+
+    和 assign_task 的区别不是「新建 vs 修改」,是责任来源不同:
+    assign_task 是店长凭空派一件事,dispatch 是客户已经约了、系统没认出该给谁。
+    所以这里多一条限制:**只能派还没派出去的单**。
+    已经派给小张的单要改派给小李,那是「改派」—— 得让小张知道他的活被拿走了,
+    是另一个动作、另一条台账。悄悄换掉 assignee_no 会让小张的列表凭空少一行。
+    """
+    import datetime
+    if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return _deny(me, "WRONG_ROLE", f"分派预约须由店长及以上操作,你的角色是「{me['role']}」")
+    sid = (d.get("id") or "").strip()
+    rs = rows("SELECT * FROM schedule WHERE id=?", sid)
+    if not rs: return dict(ok=False, code="NO_TASK", reason=f"没有任务 {sid}")
+    t = rs[0]
+    if t.get("assignee_no"):
+        who = rows("SELECT name FROM staff WHERE no=?", t["assignee_no"])
+        return _deny(me, "ALREADY", f"这单已经派给 {who[0]['name'] if who else t['assignee_no']} 了;"
+                                    f"要换人得走改派,不能直接覆盖", sid)
+    if me["role"] != "总部运营" and t.get("shop") != me.get("shop"):
+        return _deny(me, "NOT_YOURS", f"这单属于 {t.get('shop')},不在你管辖范围", sid)
+    to = (d.get("assignee_no") or "").strip()
+    allowed = {x["no"]: x for x in my_staff(me)}
+    if to not in allowed:
+        return _deny(me, "NOT_YOURS", f"只能派给本店在职顾问;可派的人:"
+                                      f"{[x['name'] for x in allowed.values()] or '(没有)'}", sid)
+    him = allowed[to]
+    with sqlite3.connect(DB) as c:
+        c.execute("UPDATE schedule SET assignee_no=?,assigned_by=?,assigned_at=?,advisor=? WHERE id=?",
+                  (to, me["no"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                   f"{him.get('adv_code') or ''} {him['name']}".strip(), sid))
+    log_op(me["name"], "schedule", sid, "待分配", him["name"], True, "DISPATCH",
+           f"{me['name']}({me['role']})把待分配的预约 {sid} 分给 {him['name']}",
+           {"role": me["role"], "assignee": to})
+    return dict(ok=True, code="DISPATCH", reason=f"已分给 **{him['name']}**,他的 pad 上就能看到了")
 
 
 def my_tasks(me, status=None):
@@ -806,10 +845,19 @@ def my_tasks(me, status=None):
     if status: sql += " AND s.status=?"; args.append(status)
     rs = rows(sql + " ORDER BY (s.status='有效') DESC, s.end_ts", *args)
     for r in rs:
-        by = rows("SELECT name,role FROM staff WHERE no=?", r.get("assigned_by") or "")
-        # 历史排班没有派单人(本来就不是谁派的),那就**不要这个字段**,
-        # 而不是显示成 None —— None 会被读成「有人派的但查不到是谁」,是另一回事。
-        if by: r["派任务的人"] = f"{by[0]['name']}({by[0]['role']})"
+        src = r.get("assigned_by") or ""
+        # 三种情况,三种说法 —— 挤成一种就丢信息:
+        #   SYS      系统按归属顾问自动派的     → 说清楚是自动派的
+        #   工号      某个店长派的               → 说是谁
+        #   空        历史排班,本来就不是谁派的 → **不要这个字段**
+        # 第三种如果渲染成 None,会被读成「有人派的但查不到是谁」,那是数据坏了,
+        # 和「本来就没人派」是两回事。
+        if src == "SYS":
+            r["派任务的人"] = "系统自动派单(按归属顾问)"
+        elif src:
+            by = rows("SELECT name,role FROM staff WHERE no=?", src)
+            r["派任务的人"] = (f"{by[0]['name']}({by[0]['role']})" if by
+                            else f"工号 {src}(员工表里查不到这个人)")
     return dict(scope=scope, hit=len(rs), rows=rs)
 
 
@@ -1549,6 +1597,15 @@ class H(BaseHTTPRequestHandler):
             return self._send(my_tasks(_me(self), (Q.get("status") or [None])[0]))
         if p == "/api/my-staff":
             return self._send({"rows": my_staff(_me(self))})
+        if p == "/api/unassigned":
+            # 待分配池。顾问看不到 —— 他不负责分活,给他看只会让他以为该自己认领。
+            _u2 = _me(self)
+            if not _u2: return self._send({"error": "请先登录"}, 401)
+            if _u2.get("role") not in MANAGER_ROLES:
+                return self._send({"rows": [], "note": "待分配由店长处理"})
+            import booking as _bk
+            return self._send({"rows": _bk.unassigned(
+                None if _u2["role"] == "总部运营" else _u2.get("shop"))})
         if p.startswith("/api/ops-"):
             # 智能运维平台的读接口。队列/积压/健康度都在 ops.py 里算,
             # 这里只负责转发 —— 路由层不放业务规则,SLA 改了不用翻两个文件。
@@ -1878,6 +1935,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(resolve_combo(body, _actor_of(self), _role_of(self)))
         if p=="/api/task-assign": return self._send(assign_task(body, _me(self)))
         if p=="/api/task-finish": return self._send(finish_task(body, _me(self)))
+        if p=="/api/task-dispatch": return self._send(dispatch(body, _me(self)))
+        if p=="/api/book":
+            # **唯一一个不要登录的写接口。** 客户没有员工账号,
+            # 要求他登录等于要求他先注册,人不会为了约个量体去注册。
+            # 敞开的代价由 booking.book() 自己的三道闸兜(格式/频次/派给谁不由请求决定)。
+            import booking as _bk
+            return self._send(_bk.book(body))
         if p=="/api/customer-create":
             return self._send(create_customer(body, _actor_of(self), _role_of(self)))
         if p.startswith("/api/customer-update/"):

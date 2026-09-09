@@ -51,6 +51,7 @@ td.n{white-space:nowrap;color:var(--dim);font-size:12.5px}
   <b>任务</b>
   <span id="who"></span>
   <span class="sp"></span>
+  <a class="tbtn" href="/pad">我的接待</a>
   <a class="tbtn" href="/">← 回助手</a>
   <button class="tbtn" id="out">退出登录</button>
 </div>
@@ -77,6 +78,15 @@ td.n{white-space:nowrap;color:var(--dim);font-size:12.5px}
     </div>
     <button class="go" id="send">派下去</button>
     <p class="msg" id="amsg"></p>
+  </div>
+
+  <!-- 待分配池:客户约了,但系统没认出该派给谁。**这块必须在派任务上面** ——
+       它是「已经有人在等」,比店长凭空想派的活更急。 -->
+  <div class="card" id="poolcard" hidden style="border-color:#fec84b;background:#fffcf5">
+    <h2>待分配的预约 <span id="pooln" style="color:#b45309"></span></h2>
+    <p class="hint">客户已经约了时间,但系统没能自动派单 —— 每一条下面都写了为什么。
+      <b>这些单子在你分派之前没有人负责。</b></p>
+    <div id="pool"></div>
   </div>
 
   <div class="card">
@@ -113,9 +123,55 @@ async function boot(){
   if(boss){
     $("#assign").hidden = false;
     $("#scope").textContent = ME.shop || "你管辖";
-    loadStaff();
+    // **必须 await。** 待分配池里每条都要一个「派给谁」的下拉,
+    // 选项是从 #to 抄过去的 —— 顾问名单还没回来就画池子,
+    // 画出来的是一排空下拉,而且不会报错。
+    await loadStaff();
   }
   loadTasks();
+  if(boss) loadPool();
+}
+
+// 待分配池为什么派不出去 —— 前端不自己判断,直接用后端给的绑定信息说人话。
+// 前端重算一遍口径,就是第二个来源,迟早和后端说的不一样。
+function whyPool(r){
+  const b=(r.bind||"").trim();
+  if(!b) return "这个客户没有归属顾问";
+  return `档案里的归属顾问是「${esc(b)}」,但他已离职或不在本店 —— 需要重新指人`;
+}
+
+async function loadPool(){
+  const d=await(await fetch("/api/unassigned")).json();
+  const rs=d.rows||[];
+  $("#poolcard").hidden = rs.length===0;
+  if(!rs.length) return;
+  $("#pooln").textContent=`· ${rs.length} 条`;
+  const opts=$("#to").innerHTML;
+  $("#pool").innerHTML=rs.map(r=>`<div style="border-top:1px solid var(--line);padding:13px 0">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <b>${esc(r.customer_name||r.customer_id)}</b>
+        <span class="tag late">${esc((r.start_ts||"").slice(0,16))}</span>
+        <span style="font-size:12.5px;color:var(--dim)">${esc(r.id)}</span>
+      </div>
+      <div style="font-size:13px;margin:4px 0 3px">${esc(r.note||"")}</div>
+      <div style="font-size:12px;color:var(--warn)">${whyPool(r)}</div>
+      <div style="display:flex;gap:8px;margin-top:9px;align-items:center;flex-wrap:wrap">
+        <select style="width:auto;min-width:170px">${opts}</select>
+        <button class="fin" data-dis="${esc(r.id)}">分给他</button>
+      </div></div>`).join("");
+  for(const b of document.querySelectorAll("[data-dis]")) b.onclick=()=>doDispatch(b);
+}
+
+async function doDispatch(b){
+  const id=b.dataset.dis;
+  // 下拉就在按钮旁边,同一个容器里 —— 不用再给它一个 id 去对。
+  const to=b.parentElement.querySelector("select").value;
+  b.disabled=true; b.textContent="…";
+  const d=await(await fetch("/api/task-dispatch",{method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({id, assignee_no:to})})).json();
+  if(!d.ok){alert((d.reason||"").replace(/\*\*/g,""));b.disabled=false;b.textContent="分给他";return}
+  loadPool(); loadTasks();
 }
 
 async function loadStaff(){

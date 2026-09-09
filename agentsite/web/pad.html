@@ -1,0 +1,130 @@
+<title>我的接待 · 澜绣云裳</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--ink:#1a1614;--dim:#8a8178;--line:#e8e2da;--bg:#f6f3ee;--card:#fff;
+  --accent:#8C4356;--live:#2f5bff;--livebg:#eef2ff;--ok:#067647;--okbg:#ecfdf3;
+  --late:#b45309;--latebg:#fff7ed}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+#bar{display:flex;align-items:center;gap:14px;padding:15px 26px;background:#fff;
+  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+#bar h1{margin:0;font-size:18px;letter-spacing:1px}
+#bar .who{font-size:14px;color:var(--dim)}
+#bar .who b{color:var(--ink)}
+.sp{flex:1}
+.tb{font:inherit;font-size:14px;padding:8px 15px;border:1px solid var(--line);border-radius:10px;
+  background:#fff;color:var(--ink);text-decoration:none;cursor:pointer}
+main{max-width:1100px;margin:22px auto 70px;padding:0 22px}
+.sum{display:flex;gap:14px;margin-bottom:20px;flex-wrap:wrap}
+.kpi{flex:1;min-width:150px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.kpi .n{font-size:30px;font-weight:600;line-height:1.2}
+.kpi .l{font-size:13px;color:var(--dim);margin-top:2px}
+h2{font-size:15px;margin:26px 0 12px;color:var(--dim);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+.t{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:17px 18px;
+  display:flex;flex-direction:column;gap:9px}
+.t .hd{display:flex;align-items:baseline;gap:9px}
+.t .cust{font-size:17px;font-weight:600}
+.t .id{font-size:12px;color:var(--dim);margin-left:auto}
+.t .when{font-size:15px;color:var(--accent);font-weight:600}
+.t .what{font-size:14.5px;color:#4a443e}
+.t .foot{display:flex;align-items:center;gap:9px;margin-top:3px;
+  border-top:1px solid var(--line);padding-top:11px}
+.tag{font-size:12px;padding:3px 10px;border-radius:20px;background:var(--livebg);color:var(--live)}
+.tag.late{background:var(--latebg);color:var(--late)}
+.tag.done{background:var(--okbg);color:var(--ok)}
+.by{font-size:12px;color:var(--dim)}
+.fin{font:inherit;font-size:14px;font-weight:600;padding:8px 17px;border:0;border-radius:10px;
+  background:var(--accent);color:#fff;margin-left:auto;cursor:pointer}
+.fin:disabled{opacity:.5}
+.done .cust,.done .when{opacity:.55}
+.empty{background:#fff;border:1px dashed var(--line);border-radius:14px;
+  padding:36px;text-align:center;color:var(--dim)}
+</style>
+
+<div id="bar">
+  <h1>我的接待</h1>
+  <span class="who" id="who"></span>
+  <span class="sp"></span>
+  <a class="tb" href="/tasks">全部任务</a>
+  <a class="tb" href="/">助手</a>
+  <button class="tb" id="out">退出</button>
+</div>
+
+<main>
+  <div class="sum">
+    <div class="kpi"><div class="n" id="k1">–</div><div class="l">今天要接待</div></div>
+    <div class="kpi"><div class="n" id="k2">–</div><div class="l">进行中(全部)</div></div>
+    <div class="kpi"><div class="n" id="k3" style="color:var(--late)">–</div><div class="l">已逾期</div></div>
+  </div>
+  <h2 id="h1">今天</h2>
+  <div class="grid" id="today"></div>
+  <h2>之后</h2>
+  <div class="grid" id="later"></div>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+let ME=null;
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+// "2026-09-15 14:00" 里的 - 在 Safari 上 new Date 解不了,换成 /
+const dt=s=>s?new Date(String(s).replace(/-/g,"/")):null;
+const isToday=d=>{const n=new Date();return d&&d.toDateString()===n.toDateString()};
+
+function card(r){
+  const d=dt(r.start_ts||r.end_ts), late=r.status==="有效"&&dt(r.end_ts)<new Date();
+  const done=r.status!=="有效";
+  return `<div class="t ${done?"done":""}">
+    <div class="hd">
+      <span class="cust">${esc(r.customer_name||r.customer_id||"—")}</span>
+      <span class="id">${esc(r.id)}</span>
+    </div>
+    <div class="when">${d?d.toLocaleString("zh-CN",{month:"numeric",day:"numeric",
+        hour:"2-digit",minute:"2-digit",hour12:false}):"—"}</div>
+    <div class="what">${esc(r.note||r.type||"—")}</div>
+    <div class="foot">
+      <span class="tag ${done?"done":(late?"late":"")}">${done?esc(r.status):(late?"已逾期":"待接待")}</span>
+      <span class="by">${esc(r["派任务的人"]||"系统自动派单")}</span>
+      ${r.status==="有效"?`<button class="fin" data-id="${esc(r.id)}">做完了</button>`:""}
+    </div></div>`;
+}
+
+async function load(){
+  const r=await fetch("/api/me");
+  if(r.status===401){location.href="/login?back=/pad";return}
+  ME=await r.json();
+  $("#who").innerHTML=`<b>${esc(ME.name)}</b> · ${esc(ME.role)}${ME.shop?" · "+esc(ME.shop):""}`;
+
+  const d=await(await fetch("/api/my-tasks")).json();
+  // 顾问端只关心**自己要做的事**。店长打开这一页,看到的也只是他自己名下的,
+  // 全店的在 /tasks —— 一个屏幕回答一个问题。
+  const mine=(d.rows||[]).filter(x=>x.assignee_no===ME.no);
+  const live=mine.filter(x=>x.status==="有效");
+  const today=live.filter(x=>isToday(dt(x.start_ts)));
+  $("#k1").textContent=today.length;
+  $("#k2").textContent=live.length;
+  $("#k3").textContent=live.filter(x=>dt(x.end_ts)<new Date()).length;
+
+  $("#today").innerHTML=today.length?today.map(card).join("")
+    :`<div class="empty">今天没有安排</div>`;
+  const later=live.filter(x=>!isToday(dt(x.start_ts)));
+  $("#later").innerHTML=later.length?later.map(card).join("")
+    :`<div class="empty">之后暂时没有</div>`;
+  for(const b of document.querySelectorAll(".fin")) b.onclick=()=>fin(b);
+}
+
+async function fin(b){
+  const s=prompt("接待完了,记一句结果(可留空):","");
+  if(s===null) return;
+  b.disabled=true; b.textContent="…";
+  const d=await(await fetch("/api/task-finish",{method:"POST",
+    headers:{"content-type":"application/json"},
+    body:JSON.stringify({id:b.dataset.id,summary:s})})).json();
+  if(!d.ok){alert(d.reason||"没能完成");b.disabled=false;b.textContent="做完了";return}
+  load();
+}
+
+$("#out").onclick=async()=>{await fetch("/api/logout",{method:"POST"});location.href="/login"};
+load();
+</script>

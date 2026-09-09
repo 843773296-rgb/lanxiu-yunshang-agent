@@ -56,6 +56,8 @@ PORT = int(os.environ.get("AGENTSITE_PORT", "8770"))
 PAGES = {"/": "station.html", "/panels": "panels.html",
          # 登录与任务:登录态是**后台**发的 session cookie,本站只转发不解读
          "/login": "login.html", "/tasks": "tasks.html",
+         # /m 是**客户**用的(手机端自助预约,不登录);/pad 是顾问在平板上看单子的
+         "/m": "m.html", "/pad": "pad.html",
          "/duty": "duty.html", "/queue": "queue.html", "/health": "health.html",
          "/chat": "chat.html", "/scheme": "scheme.html",
          "/workbench": "workbench.html", "/acceptance": "acceptance.html",

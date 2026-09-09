@@ -1,0 +1,112 @@
+<title>预约到店 · 澜绣云裳</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<style>
+:root{--ink:#1a1614;--dim:#8a8178;--line:#e8e2da;--bg:#faf7f2;--card:#fff;
+  --accent:#8C4356;--ok:#067647;--okbg:#ecfdf3;--err:#b42318;--errbg:#fef3f2}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:480px;margin:0 auto;padding:26px 20px 60px}
+.brand{text-align:center;margin:12px 0 26px}
+.brand h1{margin:0;font-size:21px;letter-spacing:3px;font-weight:600}
+.brand p{margin:5px 0 0;font-size:12.5px;color:var(--dim);letter-spacing:1px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 20px}
+label{display:block;font-size:13px;color:var(--dim);margin:0 0 7px}
+input,select,textarea{width:100%;font:inherit;font-size:16px;padding:12px 13px;
+  border:1px solid var(--line);border-radius:11px;background:#fff;color:var(--ink);outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(140,67,86,.10)}
+.f{margin-bottom:17px}
+textarea{resize:none;min-height:74px}
+button{width:100%;font:inherit;font-size:16.5px;font-weight:600;padding:14px;border:0;
+  border-radius:12px;background:var(--accent);color:#fff;margin-top:4px}
+button:disabled{opacity:.5}
+.msg{display:none;margin-top:16px;padding:13px 15px;border-radius:12px;font-size:14px;border:1px solid}
+.msg.ok{display:block;background:var(--okbg);color:var(--ok);border-color:#abefc6}
+.msg.no{display:block;background:var(--errbg);color:var(--err);border-color:#fecdca}
+.msg b{display:block;font-size:15px;margin-bottom:3px}
+.tip{margin:18px 4px 0;font-size:12px;color:var(--dim);line-height:1.8}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
+.chip{font-size:13px;padding:6px 13px;border:1px solid var(--line);border-radius:20px;
+  background:#fff;color:var(--dim)}
+.chip.on{border-color:var(--accent);color:var(--accent);background:#fdf6f7}
+</style>
+
+<div class="wrap">
+  <div class="brand">
+    <h1>澜 绣 云 裳</h1>
+    <p>汉服定制 · 预约到店</p>
+  </div>
+
+  <div class="card">
+    <div class="f">
+      <label for="phone">手机号</label>
+      <input id="phone" type="tel" inputmode="numeric" maxlength="11" placeholder="下单时用的号码">
+    </div>
+    <div class="f">
+      <label for="when">到店时间</label>
+      <input id="when" type="datetime-local">
+    </div>
+    <div class="f">
+      <label>来做什么</label>
+      <div class="chips" id="chips">
+        <span class="chip on">量体</span><span class="chip">看面料</span>
+        <span class="chip">试衣</span><span class="chip">改尺寸</span><span class="chip">取衣</span>
+      </div>
+      <textarea id="need" style="margin-top:10px" placeholder="补充说明(可不填)"></textarea>
+    </div>
+    <button id="go">提交预约</button>
+    <p class="msg" id="msg"></p>
+  </div>
+
+  <p class="tip">
+    · 营业时间 10:00–21:00,请在此区间内选择<br>
+    · 提交后由你的专属顾问与你确认;若暂时没有专属顾问,门店会尽快安排<br>
+    · 首次到店请先在门店建档
+  </p>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+let PICK="量体";
+
+for(const c of document.querySelectorAll("#chips .chip")){
+  c.onclick=()=>{
+    document.querySelectorAll("#chips .chip").forEach(x=>x.classList.remove("on"));
+    c.classList.add("on"); PICK=c.textContent;
+  };
+}
+
+// 默认填「明天下午 2 点」—— 让人少填一个字段。
+// 但**不默认填今天**:今天下午两点可能已经过了,一提交就被拒,
+// 用户会以为是自己填错了。
+(function(){
+  const d=new Date(); d.setDate(d.getDate()+1); d.setHours(14,0,0,0);
+  const p=n=>String(n).padStart(2,"0");
+  $("#when").value=`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T14:00`;
+})();
+
+$("#go").onclick=async()=>{
+  const m=$("#msg"); m.className="msg";
+  const need=[PICK, $("#need").value.trim()].filter(Boolean).join(" · ");
+  $("#go").disabled=true; $("#go").textContent="提交中…";
+  try{
+    const d=await(await fetch("/api/book",{method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({phone:$("#phone").value, when:$("#when").value, need})})).json();
+    if(d.ok){
+      m.className="msg ok";
+      // 派没派出去,对客户来说说法不一样,但**都不能说成失败** ——
+      // 单子确实收到了,只是店里还没定谁接待。
+      m.innerHTML=`<b>预约成功 · ${d.when}</b>`+
+        (d.assigned ? `${d.customer},你的专属顾问会与你确认。`
+                    : `${d.customer},门店会尽快为你安排顾问并确认。`)+
+        `<br><span style="font-size:12px;opacity:.75">预约号 ${d.appt}</span>`;
+      $("#need").value="";
+    }else{
+      m.className="msg no";
+      m.innerHTML=`<b>没能提交</b>${(d.reason||"").replace(/\*\*/g,"")}`;
+    }
+  }catch(e){ m.className="msg no"; m.textContent="网络不通:"+e.message; }
+  $("#go").disabled=false; $("#go").textContent="提交预约";
+};
+</script>

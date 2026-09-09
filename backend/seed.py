@@ -68,9 +68,20 @@ CREATE TABLE staff(no TEXT PRIMARY KEY, name TEXT, role TEXT, shop TEXT, status 
   -- 员工一个都没有 —— 于是「你是店长还是顾问」只能靠请求里自称的字符串。
   -- 一条链上有一环是约定,整条链就只有约定那么强。
   login_name TEXT UNIQUE, pwd_algo TEXT, pwd_salt TEXT, pwd_hash TEXT,
-  fail_count INT DEFAULT 0, locked_until TEXT, last_login TEXT);
+  fail_count INT DEFAULT 0, locked_until TEXT, last_login TEXT,
+  -- 顾问在业务侧的编号(A01…)。客户档案里的「归属顾问」历来存的是
+  -- 「A01 林岚」这种显示串,和工号是**两套编号**;把 A 号放进花名册,
+  -- 两套之间才有一个能查的桥,而不是靠名字连(名字既不唯一也会改)。
+  adv_code TEXT);
 CREATE TABLE schedule(id TEXT PRIMARY KEY, type TEXT, advisor TEXT, customer_id TEXT,
-  start_ts TEXT, end_ts TEXT, status TEXT, summary TEXT, cancel_reason TEXT, shop TEXT);
+  start_ts TEXT, end_ts TEXT, status TEXT, summary TEXT, cancel_reason TEXT, shop TEXT,
+  -- ── 排任务用的三列 ──────────────────────────────────────────────
+  -- **同一个人两套编号**:schedule.advisor 是「A01 林岚」,staff 是工号 60000002,
+  -- 原来只能靠名字连 —— 而名字既不唯一也会改。补一列工号做真正的关联。
+  assignee_no TEXT,          -- 派给谁(staff.no)
+  assigned_by TEXT,          -- 谁派的(staff.no)。**排任务必须记得住是谁派的**
+  assigned_at TEXT,          -- 什么时候派的
+  note TEXT);
 CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
   advisor TEXT, shop TEXT, source TEXT, activity TEXT, delivery TEXT,
   amount REAL, payable REAL, created TEXT, updated TEXT,
@@ -326,11 +337,50 @@ def decide(c):
     r = _lc.decide(dict(c, days_since_first_order=_days(c.get("first_order"))))
     return r["系统重算值"], r["命中"]
 
+# ── 员工花名册:**「谁在哪个店」只有这一个来源** ─────────────────────
+# 客户的归属顾问、日程的顾问、预约的顾问,全部从这张表派生。
+# 原来是另起一个 ADV=["A01 林岚",…] 平铺列表,和门店无关地随机挑 ——
+# 结果是静安店的顾问绑着徐汇店的客户。**同一个事实两个来源,必然漂**。
+#   (工号, 姓名, 角色, 门店, 顾问编号, 在职状态)
+STAFF = [
+    ("60000001", "张静静", "店长",   "SH001 静安旗舰店", None,  "启用"),
+    ("60000002", "林岚",   "顾问",   "SH001 静安旗舰店", "A01", "启用"),
+    ("60000003", "周叙",   "顾问",   "SH001 静安旗舰店", "A02", "启用"),
+    ("60000011", "苏彧",   "顾问",   "SH001 静安旗舰店", "A05", "启用"),
+    ("60000012", "顾晚",   "顾问",   "SH001 静安旗舰店", "A06", "启用"),
+    ("60000013", "白鹭",   "顾问",   "SH001 静安旗舰店", "A07", "启用"),
+    # ⚠️ 反例夹具 · 不许「顺手把她改成启用」──────────────────────────
+    # 何苓已离职,但她名下还挂着客户。客户来预约时,系统**不能**把单子
+    # 派给一个已经走的人 —— 那种单子会安静地躺在一个没人看的账号里,
+    # 直到客户打电话来问。这条数据就是用来把这个洞逼出来的。
+    ("60000015", "何苓",   "顾问",   "SH001 静安旗舰店", "A09", "停用"),
+    ("60000004", "周恒东", "店长",   "SH002 徐汇店",     None,  "启用"),
+    ("60000005", "沈砚",   "顾问",   "SH002 徐汇店",     "A03", "启用"),
+    ("60000006", "陆微",   "顾问",   "SH002 徐汇店",     "A04", "启用"),
+    ("60000007", "李明华", "店长",   "SH003 杭州湖滨店", None,  "启用"),
+    ("60000014", "程萦",   "顾问",   "SH003 杭州湖滨店", "A08", "启用"),
+    ("60000008", "魏欣新", "总部运营", "",               None,  "启用"),
+    ("60000009", "陈曦",   "总部运营", "",               None,  "启用"),
+    ("60000010", "何舟",   "财务",   "",                 None,  "启用"),
+]
+
+
+def advisors_of(shop, include_left=False):
+    """某个门店的顾问,写成「A01 林岚」这种业务侧显示串。
+
+    include_left=True 才带上离职的 —— 默认不带,因为**能被派单的只有在职的**。
+    """
+    return [f"{a} {n}" for no, n, ro, sh, a, st in STAFF
+            if ro == "顾问" and sh == shop and (include_left or st == "启用")]
+
+
 def run():
     if os.path.exists(DB): os.remove(DB)
     c=sqlite3.connect(DB); c.executescript(SCHEMA)
     SHOPS=["SH001 静安旗舰店","SH002 徐汇店","SH003 杭州湖滨店"]
-    ADV=["A01 林岚","A02 周叙","A03 沈砚","A04 陆微"]
+    # ADV 平铺列表已删。顾问一律按门店取 —— 见 advisors_of()。
+    ADV_BY_SHOP = {sh: advisors_of(sh) for sh in SHOPS}
+    def _adv(shop): return random.choice(ADV_BY_SHOP[shop])
     SURN="陈林黄张李王吴刘蔡杨"; GIVEN=["雨桐","知微","砚清","书言","молод","апрель","子衿","望舒","астра","青梧"]
     GIVEN=[g for g in GIVEN if all('一'<=ch<='鿿' for ch in g)]
 
@@ -341,7 +391,9 @@ def run():
         lc,m=decide(row)
         eff = manual if (manual and mat and (T-date.fromisoformat(mat)).days<=30) else lc
         phone=f"13{random.randint(100000000,999999999)}"
-        return (cid,name,phone,phone[-4:],random.choice(SHOPS),random.choice(ADV),eff,
+        _shop = random.choice(SHOPS)
+        # 归属顾问必须是**本店**的 —— 客户在静安店,顾问就不能是徐汇店的人。
+        return (cid,name,phone,phone[-4:],_shop,_adv(_shop),eff,
                 random.choice(["普通","银卡","金卡"]),first or ago(400),ocnt,amt,ago(idle),
                 f"上海市{random.choice('静徐黄浦长宁')}区{random.randint(1,999)}号",
                 f"199{random.randint(0,9)}-{random.randint(1,12):02d}-{random.randint(1,28):02d}",0,
@@ -433,16 +485,16 @@ def run():
         if same:
             # 同一人:手机号不同(换号)但生日+地址一致,订单在两店
             p2=f"13{random.randint(100000000,999999999)}"
-            rows=[(aid,name,phone,phone[-4:],SHOPS[0],ADV[0],"活跃","金卡","2025-03-01",3,18000.0,"2026-07-01",base[12],base[13],0,"2025-03-01",3,2,18000.0,60,"活跃/高价值",None,None),
-                  (bid,name,p2,p2[-4:],SHOPS[1],ADV[1],"新客","普通","2026-05-01",1,3200.0,"2026-06-20",base[12],base[13],0,"2026-05-01",1,1,3200.0,72,"活跃",None,None)]
+            rows=[(aid,name,phone,phone[-4:],SHOPS[0],_adv(SHOPS[0]),"活跃","金卡","2025-03-01",3,18000.0,"2026-07-01",base[12],base[13],0,"2025-03-01",3,2,18000.0,60,"活跃/高价值",None,None),
+                  (bid,name,p2,p2[-4:],SHOPS[1],_adv(SHOPS[1]),"新客","普通","2026-05-01",1,3200.0,"2026-06-20",base[12],base[13],0,"2026-05-01",1,1,3200.0,72,"活跃",None,None)]
             cause="同一客户跨店重复建档"
             action="建议合并;冲突字段取最近一次经确认的数据(手机号取新号),被合并档案归档保留日志"
             evid="生日与地址完全一致,姓名相同,手机号不同(换号)"
         else:
             # 不同人:同名同姓,生日与地址均不同
             p2=f"13{random.randint(100000000,999999999)}"
-            rows=[(aid,name,phone,phone[-4:],SHOPS[0],ADV[0],"活跃","银卡","2025-06-01",2,9000.0,"2026-07-11",base[12],base[13],0,"2025-06-01",2,2,9000.0,50,"活跃",None,None),
-                  (bid,name,p2,p2[-4:],SHOPS[2],ADV[2],"潜在","普通","2026-04-01",0,0.0,"2026-04-02",
+            rows=[(aid,name,phone,phone[-4:],SHOPS[0],_adv(SHOPS[0]),"活跃","银卡","2025-06-01",2,9000.0,"2026-07-11",base[12],base[13],0,"2025-06-01",2,2,9000.0,50,"活跃",None,None),
+                  (bid,name,p2,p2[-4:],SHOPS[2],_adv(SHOPS[2]),"潜在","普通","2026-04-01",0,0.0,"2026-04-02",
                    f"杭州市西湖区{random.randint(1,999)}号",f"198{random.randint(0,9)}-0{random.randint(1,9)}-1{random.randint(0,9)}",0,None,0,0,0.0,150,"潜在",None,None)]
             cause="同名不同人"
             action="不合并;建议在两条档案上互相标注已核验非同一人,避免反复进入队列"
@@ -455,6 +507,24 @@ def run():
     # ── 预约记录:每个押金对应一条,状态按后台 PRD 6.1 的预约状态机 ──
     APPT_ST=["已预约","已到店","已完成","已取消","已过期","爽约"]
     WAY=["到店量体","上门沟通","电话回电","到店试衣"]
+    # 预约/日程/跟进都挂在某个客户身上 —— 门店跟着**客户**走,不再另掷一次骰子。
+    # 独立掷骰的后果是:徐汇店客户的预约落在静安店,顾问也成了静安店的人。
+    # ⚠️ 反例夹具 · 不许「顺手把他们改绑给在职顾问」──────────────────
+    # 给离职的何苓(A09)留三个客户。**离职不会把客户一起带走** ——
+    # 现实里人走了,他名下的客户还在,还会来预约。这三条就是用来检验:
+    # 他们来预约时,单子是掉进待分配池(对),还是照样派给何苓(错)。
+    # 挑**固定的三个**而不是随机三个 —— 随机的夹具下次重建就换了人,
+    # 测试挂了你分不清是代码坏了还是夹具变了。
+    _LEFT = [r[0] for r in c.execute(
+        "SELECT id FROM customer WHERE shop='SH001 静安旗舰店' ORDER BY id").fetchall()[:3]]
+    for _cid in _LEFT:
+        c.execute("UPDATE customer SET advisor='A09 何苓' WHERE id=?", (_cid,))
+
+    CSHOP = {r[0]: r[1] for r in c.execute("SELECT id,shop FROM customer").fetchall()}
+    def _shop_of(cid): return CSHOP.get(cid) or SHOPS[0]
+    def _adv_of(cid):  return _adv(_shop_of(cid))
+    def _adv_any():    return random.choice(sum(ADV_BY_SHOP.values(), []))
+
     deps=[dict(r) for r in c.execute("SELECT id,customer_id,appt_id,amount,status FROM deposit")] if False else \
          [{"id":r[0],"customer_id":r[1],"appt_id":r[2],"amount":r[3],"status":r[4]}
           for r in c.execute("SELECT id,customer_id,appt_id,amount,status FROM deposit")]
@@ -462,19 +532,19 @@ def run():
         st = "已取消" if d["status"] in ("退款失败","退款审批中") else APPT_ST[i%6]
         day=14+(i%7)
         c.execute("INSERT INTO appointment VALUES(?,?,?,?,?,?,?,?,?)",
-          (d["appt_id"], d["customer_id"], random.choice(SHOPS), random.choice(ADV),
+          (d["appt_id"], d["customer_id"], _shop_of(d["customer_id"]), _adv_of(d["customer_id"]),
            f"2026-08-{day:02d} {9+i%8:02d}:30", f"2026-08-{day:02d} {10+i%8:02d}:30",
            st, d["id"], f"2026-08-{day:02d} {9+i%8:02d}:28" if st in ("已到店","已完成") else None))
         c.execute("INSERT INTO followup VALUES(?,?,?,?,?,?,?)",
           (f"F{d['appt_id']}", d["customer_id"], d["appt_id"], f"2026-08-{day:02d} 09:10",
            random.choice(["电话","微信","到店"]),
            random.choice(["客户确认到店时间","客户询问面料选项","客户要求改期","客户未接听,留言"]),
-           random.choice(ADV)))
+           _adv_of(d["customer_id"])))
     # 另建 20 条不带押金的预约
     for i in range(20):
         aid=f"AP{4000+i}"; day=14+(i%7)
         c.execute("INSERT INTO appointment VALUES(?,?,?,?,?,?,?,?,?)",
-          (aid, cust[i%len(cust)][0], random.choice(SHOPS), random.choice(ADV),
+          (aid, cust[i%len(cust)][0], _shop_of(cust[i%len(cust)][0]), _adv_of(cust[i%len(cust)][0]),
            f"2026-08-{day:02d} {10+i%7:02d}:00", f"2026-08-{day:02d} {11+i%7:02d}:00",
            APPT_ST[i%6], None, None))
     # ── 店铺(后台 PRD 6.1 店铺状态机:有效 ⇄ 无效)──
@@ -485,18 +555,17 @@ def run():
         c.execute("INSERT INTO shop VALUES(?,?,?,?,?,?,?,?)",(code,nm,st,mg,ph,pv,ad,"2026-08-20 10:12"))
 
     # ── 员工与角色(PRD 第 8 章:按角色做数据权限控制)──
-    STAFF=[("60000001","张静静","店长","SH001 静安旗舰店"),("60000002","林岚","顾问","SH001 静安旗舰店"),
-           ("60000003","周叙","顾问","SH001 静安旗舰店"),("60000004","周恒东","店长","SH002 徐汇店"),
-           ("60000005","沈砚","顾问","SH002 徐汇店"),("60000006","陆微","顾问","SH002 徐汇店"),
-           ("60000007","李明华","店长","SH003 杭州湖滨店"),("60000008","魏欣新","总部运营",""),
-           ("60000009","陈曦","总部运营",""),("60000010","何舟","财务","")]
-    for no,nm,ro,sh in STAFF:
+    # 花名册在模块级(见文件上方 STAFF)—— 这里**不再抄一份**。
+    # 抄一份的后果不是「两个列表不一样」,而是「客户绑的顾问库里查无此人」:
+    # 上面按花名册给客户绑了 A05 苏彧,这里没插他,自动派单就一路静默失败。
+    for no, nm, ro, sh, adv, stt in STAFF:
         # **显式写列名。** 原来是 `INSERT INTO staff VALUES(?,?,?,?,?,?,?)` ——
         # 按位置写,给表加一列就当场断,而且报错信息("14 columns but 7 values")
         # 完全指不到「你刚加了列」这个真因。
-        c.execute("INSERT INTO staff(no,name,role,shop,status,updated_by,updated) "
-                  "VALUES(?,?,?,?,?,?,?)",
-                  (no,nm,ro,sh,"启用","60000008","2026-08-2%d 1%d:16"%(random.randint(0,9),random.randint(0,9))))
+        c.execute("INSERT INTO staff(no,name,role,shop,status,adv_code,updated_by,updated) "
+                  "VALUES(?,?,?,?,?,?,?,?)",
+                  (no, nm, ro, sh, stt, adv, "60000008",
+                   "2026-08-2%d 1%d:16" % (random.randint(0, 9), random.randint(0, 9))))
 
         # ── 员工登录凭据 ────────────────────────────────────────────────
     # 密码一律 PBKDF2 + 每人独立 salt,**明文一个字都不落库**(演示数据也不例外)。
@@ -518,11 +587,19 @@ def run():
     for i in range(28):
         day=14+(i%7)
         st=SST[i%7]
-        c.execute("INSERT INTO schedule VALUES(?,?,?,?,?,?,?,?,?,?)",
-          (f"SC{7000+i}", STYPE[i%4], random.choice(ADV), cust[i%len(cust)][0],
+        c.execute("INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,status,summary,cancel_reason,shop) VALUES(?,?,?,?,?,?,?,?,?,?)",
+          (f"SC{7000+i}", STYPE[i%4], _adv_of(cust[i%len(cust)][0]), cust[i%len(cust)][0],
            f"2026-08-{day:02d} {9+i%9:02d}:00", f"2026-08-{day:02d} {10+i%9:02d}:00",
            st, "已完成服务并记录结果" if st=="完结" else None,
-           "客户改期" if st=="取消" else None, random.choice(SHOPS)))
+           "客户改期" if st=="取消" else None, _shop_of(cust[i%len(cust)][0])))
+    # 把历史日程的 advisor(A0x 姓名)对到工号上。
+    # **这是一次性迁移** —— 以后新排的任务直接写工号,不再靠名字连。
+    _name2no = {r[0]: r[1] for r in c.execute("SELECT name,no FROM staff").fetchall()}
+    for _sc in c.execute("SELECT id,advisor FROM schedule").fetchall():
+        _nm = (_sc[1] or "").split(" ", 1)[-1]
+        if _nm in _name2no:
+            c.execute("UPDATE schedule SET assignee_no=? WHERE id=?", (_name2no[_nm], _sc[0]))
+
     # ── 品类(树形两级)──
     # 三级类目 —— 设计稿「商品库-新建商品」是三个级联下拉,详情页写作「类目一-类目二-类目三」
     CATS=[("C01","女装",None,1),
@@ -1149,7 +1226,8 @@ def run():
                      received,refund_status,addr,paid_at,audit_at,produced_at,shipped_at,
                      finished_at,cancelled_at,remark)
                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (oid, _custs[i % len(_custs)], kind, st, random.choice(ADV), random.choice(SHOPS),
+                  (oid, _custs[i % len(_custs)], kind, st,
+                   _adv_of(_custs[i % len(_custs)]), _shop_of(_custs[i % len(_custs)]),
                    SRC[i % 4], ACT[i % 4], DLV[i % 2], total, total,
                    # created 原来写死 16:16,而 paid_at 是 11:xx —— **35/35 条付款早于下单**。
                    # 一直没被发现,是因为时间顺序检查从 paid_at 才开始查,
@@ -1223,7 +1301,7 @@ def run():
             c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
                       "measured_at,method,cond_inner,cond_shoe,cond_breath) "
                       "VALUES(?,?,?,?,?,?,?,?,?,?)",
-              (cid,tpl,it,round(IDEAL[it]+random.uniform(-6,6),1),random.choice(ADV),
+              (cid,tpl,it,round(IDEAL[it]+random.uniform(-6,6),1),_adv_any(),
                f"2026-0{6+k%3}-1{k%9} 14:30", "远程" if k%5==3 else "到店",
                ["无","薄","厚"][k%3], ["赤足","平底","高跟"][k%3], "平静呼气"))
     # 体型特征:每 4 个客户里有 1 个记了 —— 记了的必须走全定制,与差值无关
@@ -1354,6 +1432,29 @@ def run():
                              addr=NULL, email=NULL, wechat=NULL, birthday=NULL, remark=NULL
                              WHERE id=?""", (f"DELETED-{_cd}", _cd))
 
+    # ── 注销的下游还有一处:**挂在队列里的工单** ─────────────────────
+    # 上面清了量体、着装人、同意,把门店档案去标识化了,但漏了 task ——
+    # 于是一条「客户合并确认」还挂在待处理队列里,而两条档案里已经
+    # 一个字都比不了了(姓名成了「已注销用户」,生日地址全空)。
+    #
+    # 更要命的是**真值**:真值在建这对档案时就标好了「同名不同人」,
+    # 而那时候还没脱敏。**真值必须是最终数据的函数** —— 数据后来变了,
+    # 真值没跟着变,评测就会去要一个数据里根本不存在的答案,
+    # 而报错会说「规则判不出」,指向的是规则,不是指向真值过期。
+    # 这个坑这个项目在 BP-03 上踩过一次,这是第二次。
+    _purged = {r[0] for r in c.execute(
+        "SELECT id FROM customer WHERE name='已注销用户'").fetchall()}
+    _drop = set()
+    for _t in c.execute("SELECT id,ref_id FROM task WHERE type='客户合并确认'").fetchall():
+        if _purged & set((_t[1] or "").split("|")):
+            # 队列里关掉:注销后没有可比对的数据,这条合并不该再等人判
+            c.execute("UPDATE task SET status='已关闭' WHERE id=?", (_t[0],))
+            _drop.add(_t[0][1:])          # 工单 TMERGE-09 → 用例 MERGE-09
+    if _drop:
+        truths[:] = [t for t in truths if t[0] not in _drop]
+        print(f"  [注销] {len(_drop)} 条客户合并工单因档案已注销而关闭,对应真值一并撤下:"
+              f"{sorted(_drop)}")
+
     # ── A3/A7/A8:**每个账户必须有一个「本人」着装人,而且必须成年** ──────
     # 账户 = 一个人;那个人本身就是第一个着装人。原来只给 18 个有量体记录的
     # 客户建了着装人,于是 72 个账户底下空着 —— 空账户在业务上没有意义:
@@ -1441,7 +1542,7 @@ def run():
             c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
                       "measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath) "
                       "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                      (cid, TPL[k % 4][0], it, v, random.choice(ADV),
+                      (cid, TPL[k % 4][0], it, v, _adv_any(),
                        f"{mdate} 15:00", "到店", w_kid,
                        "薄", "平底", "平静呼气"))
     # ── 内容管理 ──
@@ -1575,7 +1676,7 @@ def run():
         day=12+(i%18)
         c.execute("INSERT INTO aftersale VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
           (f"AS{64880127+i}",kind,oids[i%len(oids)],cust[i%len(cust)][0],st,
-           REASONS[i%6],round(random.uniform(680,9600),2),random.choice(SHOPS),random.choice(ADV),
+           REASONS[i%6],round(random.uniform(680,9600),2),random.choice(SHOPS),_adv_any(),
            f"2026-08-{day:02d} 09:{10+i%40:02d}",f"2026-08-{min(31,day+2):02d} 15:{10+i%40:02d}",
            "售后/维保系统",f"2026-09-01 0{i%9}:1{i%9}"))
     # ── 维保工单 ──
@@ -1625,7 +1726,7 @@ def run():
            # **测试覆盖度被悄悄削成了 1/7,而且数据看起来完全正常**。
            # 让问题额外依赖 i//7,两个维度才真的独立。
            FORCE.get(i, (None, MT[i%7]))[1], FORCE.get(i, (ISSUES[(i+i//7*2)%7],))[0],
-           random.choice(SHOPS),random.choice(ADV),
+           random.choice(SHOPS),_adv_any(),
            f"{_rep.isoformat()} 11:{10+i%40:02d}",
            f"{(_rep+timedelta(days=3)).isoformat()} 16:{10+i%40:02d}",
            "售后/维保系统",f"2026-09-01 0{i%9}:2{i%9}"))
@@ -1651,7 +1752,7 @@ def run():
         c.execute("INSERT INTO delivery_notice VALUES(?,?,?,?,?)",
                   (_no, ",".join(x.split()[0] for x in n),
                    f"{_sign} 17:{10+i%40:02d}",
-                   random.choice(ADV), "门店纸质" if i%2 else "电子签"))
+                   _adv_any(), "门店纸质" if i%2 else "电子签"))
 
     # ── 库存变更日志(后台 PRD 第 8 章:关键写操作均可查询操作人、时间、前后值和业务编号)──
     KINDS=[("入库",1),("订单占用",-1),("订单释放",1),("退货入库",1),("盘点调整",0),("报损",-1)]
@@ -1733,7 +1834,7 @@ def run():
                          measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath)
                          VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                       (_cid, "MT01", _it, round(_base + ((_i * 7 + hash(_it) % 11) % 9) - 4, 1),
-                       random.choice(ADV), f"{_d} 14:30", _mth, _wid,
+                       _adv_any(), f"{_d} 14:30", _mth, _wid,
                        _in, _sh, "平静呼气"))
 
     # ── 反例夹具:**故意留着的不完整数据** ──────────────────────────
@@ -1863,7 +1964,7 @@ def run():
         if k % 9: continue                       # 九分之一的人有明显体型特征
         f,note=FEAT[(k//9)%4]
         c.execute("INSERT INTO body_feature VALUES(?,?,?,?,?)",
-                  (wid,f,note,random.choice(ADV),f"2026-0{6+k%3}-1{k%9} 14:40"))
+                  (wid,f,note,_adv_any(),f"2026-0{6+k%3}-1{k%9} 14:40"))
 
     # ── C3:把时间锚点理顺(放在最后,等所有对象都建完)────────────────
     # ① 客户建档不得晚于他最早的业务事件 —— **人还没建档就下了单**,是不可能的。

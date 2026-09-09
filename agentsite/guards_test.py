@@ -43,8 +43,17 @@ def _pick(pred):
     raise SystemExit("找不到满足条件的着装人 —— 种子数据的覆盖变了,先看 spec_check")
 
 _CONF_ID, FC = _pick(lambda i, r: (r.get("靶身高校验") or {}).get("需人工确认"))
+# 挑「量体已过期」的那个,**同时要求他的账户不欠一次重新同意** ——
+# 否则 g20(协议改版没重签)会跟着一起响,而这几条用例根本不是在测协议。
+# 上一版只挑了「过期」,重播种之后挑中的人恰好协议落后一版,g20 当场跟着响。
+# 这是**同一个错的第二次**:夹具带着别的违规,测的就不是你想测的那件事。
+def _needs_reconsent(wid):
+    w = api.get_wearer(wearer_id=wid)["着装人"][0]
+    return bool((w.get("账户") or {}).get("协议需重新取得同意"))
+
 _EXP_ID, _ = _pick(lambda i, r: ((api.get_wearer(wearer_id=i)["着装人"][0]
-                                  .get("量体是否过期") or {}).get("过期")))
+                                  .get("量体是否过期") or {}).get("过期"))
+                                and not _needs_reconsent(i))
 WEAR = api.get_wearer(wearer_id=_EXP_ID)
 PH, PLO, PHI = FC["预测身高"], FC["区间"][0], FC["区间"][1]
 C_FC, C_WEAR = call("forecast_growth", FC), call("get_wearer", WEAR)
@@ -57,6 +66,10 @@ _cx.execute("UPDATE consent SET revoked_at=NULL WHERE wearer_id='W10010-2'"); _c
 C_NOC = call("forecast_growth", NOCONSENT)
 assert "同意" in NOCONSENT.get("error", ""), "撤销同意后应该拒绝,fixture 不成立"
 assert (WEAR["着装人"][0]["量体是否过期"]["过期"]), "这个 fixture 该是过期的"
+# 夹具**要求什么就断言什么**。上面已经把「不欠重新同意」写进挑选条件了,
+# 但挑选条件是「怎么挑」,断言才是「挑出来的必须满足什么」——
+# 少了这条,下次谁改了挑选逻辑,漂移还是无声的。
+assert not _needs_reconsent(_EXP_ID), "这个 fixture 的账户不该欠一次重新同意,否则 g20 会跟着响"
 assert FC["靶身高校验"]["需人工确认"], "这个 fixture 该有靶身高冲突"
 
 CASES = [

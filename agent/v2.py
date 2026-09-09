@@ -390,7 +390,13 @@ def run_task(task_id, use_llm=True):
 if __name__ == "__main__":
     import collections
     only_rule = "--llm" not in sys.argv
-    tasks = api._rows("SELECT id,type,ref_id FROM task ORDER BY id")
+    # 不按状态过滤 —— 研判过一次就变「待复核」,过滤了就再也重跑不了。
+    # **但「已关闭」要排除**:它已经不是待办的活了(比如档案注销之后,
+    # 合并工单被关掉,两条档案里已经没有可比对的字段)。
+    # 让它留在评测集里,它就是一条永远无真值的用例 ——
+    # 而无真值在通过条件里是被容忍的,于是它会**静默地一直通过**。
+    tasks = api._rows("SELECT id,type,ref_id FROM task "
+                      "WHERE status IS NULL OR status<>'已关闭' ORDER BY id")
     import truthdb
     truths = truthdb.by_case()   # 评测侧自己的只读连接,不借工具层
 
