@@ -25,6 +25,7 @@ def check(title, got, want, extra=""):
 
 
 def main():
+    global bad
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
     q = lambda s, *a: [dict(r) for r in c.execute(s, a)]
     print("\n\033[1m▸ 派单决策 · 逐例标真值\033[0m")
@@ -59,6 +60,33 @@ def main():
     if r:
         no, code, _ = booking.route({"advisor": r[0]["adv_code"], "shop": "SH001 静安旗舰店"})
         check("绑定顾问不在客户所在门店", code, "CROSS_SHOP")
+
+    print("\n\033[1m▸ 任务类型 · 两族的规则不一样\033[0m")
+    print("  " + "=" * 76)
+    import tasktypes as tt
+    check("客户相关类型数", str(len(tt.CUSTOMER_TYPES)), "4")
+    check("店铺运营类型数", str(len(tt.OPS_TYPES)), "5")
+    for t in tt.CUSTOMER_TYPES:
+        if not tt.info(t)["needs_customer"]:
+            print(f"  {R}❌{D} 客户相关的「{t}」竟然不要求挂客户"); bad += 1
+    for t in tt.OPS_TYPES:
+        if tt.info(t)["needs_customer"]:
+            print(f"  {R}❌{D} 店铺运营的「{t}」竟然要求挂客户"); bad += 1
+        if tt.agent_may_propose(t):
+            print(f"  {R}❌{D} agent 不该给运营任务「{t}」出建议 —— "
+                  f"谁该轮培训、谁家里有事,依据不在库里"); bad += 1
+    check("agent 只对客户相关出建议",
+          str(sorted(t for t in tt.BY_NAME if tt.agent_may_propose(t))),
+          str(sorted(tt.CUSTOMER_TYPES)))
+    # **不许全都要传图**:全要求等于没要求,人会拍张桌子交差
+    _ph = [t for t in tt.BY_NAME if tt.needs_photo(t)]
+    check("要传现场照的类型不是全部", "部分" if 0 < len(_ph) < len(tt.BY_NAME) else "全部或零",
+          "部分", f"  ← 现在是 {len(_ph)}/{len(tt.BY_NAME)}:{_ph}")
+    check("电话回电不强制传图", str(tt.needs_photo("电话回电")), "False",
+          "  ← 电话没什么可拍的,硬要求只会拍到桌面")
+    # 旧类型必须都能归一,否则老单子在新界面上会落进「未知」
+    for old, new in tt.LEGACY.items():
+        check(f"老类型「{old}」能归一", tt.norm(old), new)
 
     print("\n\033[1m▸ 两套编号之间的桥\033[0m")
     print("  " + "=" * 76)

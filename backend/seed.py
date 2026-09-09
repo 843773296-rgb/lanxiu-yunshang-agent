@@ -81,7 +81,15 @@ CREATE TABLE schedule(id TEXT PRIMARY KEY, type TEXT, advisor TEXT, customer_id 
   assignee_no TEXT,          -- 派给谁(staff.no)
   assigned_by TEXT,          -- 谁派的(staff.no)。**排任务必须记得住是谁派的**
   assigned_at TEXT,          -- 什么时候派的
-  note TEXT);
+  note TEXT,                 -- 日程描述(这件事要做什么)
+  activity_code TEXT);       -- 绑定活动(activity.code)。可空 —— 大多数任务和活动无关
+-- 任务附件。**派单时的图和总结时的图是两回事**,所以用 kind 分开而不是两张表:
+--   派单 —— 店长/客户给的现场照、参考图,是「要做什么」的证据
+--   总结 —— 顾问做完拍的,是「做成什么样」的证据
+-- 合成一列存的话,一张图到底是要求还是结果就只能靠上传时间猜。
+CREATE TABLE schedule_file(id INTEGER PRIMARY KEY AUTOINCREMENT,
+  schedule_id TEXT, kind TEXT, name TEXT, mime TEXT, size INT, path TEXT,
+  uploaded_by TEXT, uploaded_at TEXT);
 CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
   advisor TEXT, shop TEXT, source TEXT, activity TEXT, delivery TEXT,
   amount REAL, payable REAL, created TEXT, updated TEXT,
@@ -582,7 +590,11 @@ def run():
                   (_no, f"pbkdf2_sha256${_ITER}", _salt, _hash, _no))
 
 # ── 日程任务(后台 PRD 6.1:有效 → 完结;有效 → 取消/无效)──
-    STYPE=["客户预约","企业任务","订单任务","回访跟进"]
+    # 类型清单**从 tasktypes 来**,种子里不再自己写一份 ——
+    # 写两份的结果是种子造出界面上认不出的类型,而认不出会被当成新的一类。
+    import tasktypes as _tt
+    STYPE = ["预约到店", "电话回电", "订单跟踪", "日常运维"]
+    assert all(_tt.info(t) for t in STYPE), "种子用了 tasktypes 里没有的类型"
     SST=["有效","有效","有效","完结","完结","取消","无效"]
     for i in range(28):
         day=14+(i%7)
@@ -1576,6 +1588,20 @@ def run():
             c.execute("INSERT INTO activity_cost(activity,item,amount,note,created_by,created) VALUES(?,?,?,?,?,?)",
               (code,COSTITEM[(i+k)%6],round(bg*random.uniform(.08,.32),2),
                "已开票" if k%2 else "待开票","60000009",f"{sd} 1{k}:20"))
+    # 一部分日程绑到活动上。**这段必须放在活动建完之后** ——
+    # 上一版写在日程那一段里,那时 activity 表还是空的,SELECT 返回空列表,
+    # 循环一次都没跑,结果是 0 条绑定,而且**一句报错都没有**。
+    # 空查询不报错,是种子脚本里最常见的静默失败。
+    # 一部分日程绑到活动上。**不是全绑** —— 全绑和全不绑一样没信息量:
+    # 界面上「绑定活动」这一列要么永远有值要么永远为空,都看不出这列在干嘛。
+    _acs = [r[0] for r in c.execute(
+        "SELECT code FROM activity WHERE status='进行中'").fetchall()]
+    if _acs:
+        for _k, _sc in enumerate(c.execute("SELECT id FROM schedule ORDER BY id").fetchall()):
+            if _k % 4 == 1:
+                c.execute("UPDATE schedule SET activity_code=? WHERE id=?",
+                          (_acs[_k % len(_acs)], _sc[0]))
+
     # ── 邀请码(两个批次)──
     for b,(act,n) in enumerate([("AC2603",40),("AC2605",30)]):
         for k in range(n):

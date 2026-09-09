@@ -144,7 +144,7 @@ def book(d):
         # 客户取消预约,任务单要留痕说明为什么白排了一小时。
         c.execute("""INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,
                      status,shop,assignee_no,assigned_by,assigned_at,note)
-                     VALUES(?,'客户预约',?,?,?,?, '有效',?,?,?,?,?)""",
+                     VALUES(?,'预约到店',?,?,?,?, '有效',?,?,?,?,?)""",
                   (sid, adv_disp, cust["id"],
                    t.strftime("%Y-%m-%d %H:%M"), end.strftime("%Y-%m-%d %H:%M"),
                    cust.get("shop"), assignee,
@@ -163,9 +163,101 @@ def unassigned(shop=None):
     **这个池子必须是店长首页就能看见的东西。** 它要是藏在二级页面里,
     就和没有一样 —— 待分配池的价值全在「有人每天扫一眼」。
     """
+    import tasktypes as _tt
     sql = ("SELECT s.*, c.name customer_name, c.phone, c.advisor bind FROM schedule s "
            "LEFT JOIN customer c ON c.id=s.customer_id "
-           "WHERE s.assignee_no IS NULL AND s.status='有效' AND s.type='客户预约'")
-    a = []
+           "WHERE s.assignee_no IS NULL AND s.status='有效' "
+           # 客户族有四种类型,不能只认「预约到店」。
+           # 而且类型清单要从 tasktypes 取 —— 这里写死一份就是第二个来源。
+           "AND s.type IN (%s)" % ",".join("?" * len(_tt.CUSTOMER_TYPES)))
+    a = list(_tt.CUSTOMER_TYPES)
     if shop: sql += " AND s.shop=?"; a.append(shop)
-    return _rows(sql + " ORDER BY s.start_ts", *a)
+    out = _rows(sql + " ORDER BY s.start_ts", *a)
+    # 每条现算一个建议。**现算不存库** —— 存下来的建议会变味(人离职了、
+    # 负载变了),而且从存下到店长确认之间,库里那张单看起来已经有人负责了。
+    for r in out:
+        r["建议"] = suggest(r)
+    return out
+
+
+# ── agent 建议:算得出「谁最合适」,但算出来的不是决定 ────────────────
+def _busy(no, start, end):
+    """这个顾问在这个时间段上有没有别的活。"""
+    if not (start and end): return []
+    return _rows("SELECT id,start_ts,end_ts,note FROM schedule "
+                 "WHERE assignee_no=? AND status='有效' "
+                 "AND start_ts < ? AND end_ts > ?", no, end, start)
+
+
+def suggest(task):
+    """给一张没派出去的客户任务提一个人选,**并且说清楚凭什么**。
+
+    依据按强弱排,强的先用 —— 强弱不是修辞,是「店长凭这条能不能一眼点头」:
+
+      ① 这个客户以前谁接待过     —— 客户认识他,他也知道上次聊到哪儿。最强。
+      ② 那个时间段谁有空         —— 排除硬冲突。这条是**否决项**,不是加分项。
+      ③ 谁手上的活最少           —— 只在前两条分不出时用。它公平,但和这个客户无关。
+
+    **建议不写库。** 写库的话,从 agent 写下到店长点确认之间,这张单看起来
+    已经有人负责了,而实际上没有任何人看过它。而且存下来的建议会变味:
+    顾问离职了、负载变了,昨天的建议今天就是错的。所以每次现算,
+    确认那一刻再算一次,把「建议谁 / 店长选了谁」一起记进台账。
+
+    返回 None 表示**提不出建议** —— 这是一个正常结果,不是错误。
+    店里没有在职顾问时硬凑一个人出来,比说「提不出」有害得多。
+    """
+    shop = task.get("shop")
+    pool = _rows("SELECT no,name,adv_code FROM staff "
+                 "WHERE role='顾问' AND status='启用' AND shop=? ORDER BY no", shop)
+    if not pool:
+        return None
+
+    cid = task.get("customer_id")
+    start, end = task.get("start_ts"), task.get("end_ts")
+
+    # ① 接触史:这个客户以前被谁服务过(日程 + 跟进都算)
+    seen = {}
+    if cid:
+        for r in _rows("SELECT assignee_no no,COUNT(*) n FROM schedule "
+                       "WHERE customer_id=? AND assignee_no IS NOT NULL GROUP BY assignee_no", cid):
+            seen[r["no"]] = seen.get(r["no"], 0) + r["n"]
+
+    # ② 时段冲突:有冲突的直接出局
+    free, clash = [], {}
+    for p in pool:
+        b = _busy(p["no"], start, end)
+        (clash.setdefault(p["no"], b) if b else None)
+        if not b: free.append(p)
+    cands = free or pool          # 全都冲突时不弃权,但要在理由里说出来
+
+    # ③ 负载:手上还有几件没做完
+    load = {p["no"]: _rows("SELECT COUNT(*) c FROM schedule "
+                           "WHERE assignee_no=? AND status='有效'", p["no"])[0]["c"]
+            for p in pool}
+
+    def rank(p):
+        return (-seen.get(p["no"], 0), load[p["no"]], p["no"])
+
+    cands = sorted(cands, key=rank)
+    pick = cands[0]
+
+    why = []
+    n = seen.get(pick["no"], 0)
+    if n:
+        why.append(f"这个客户以前由 {pick['name']} 接待过 {n} 次 —— 他知道上次聊到哪儿")
+    else:
+        why.append(f"这个客户没有接触史,{pick['name']} 手上活最少({load[pick['no']]} 件在办)")
+    if not free:
+        why.append("⚠️ 这个时间段**所有在职顾问都有别的活**,选出来的这位也冲突,请确认能不能挪")
+    elif clash:
+        who = [p["name"] for p in pool if clash.get(p["no"])]
+        why.append(f"{'、'.join(who)} 在这个时间段已经有别的安排,已排除")
+    if len(cands) > 1 and rank(cands[0])[:2] == rank(cands[1])[:2]:
+        why.append(f"⚠️ {pick['name']} 和 {cands[1]['name']} 依据完全一样 —— "
+                   f"**这一条是按工号先后挑的,不是算出来的**,请你来定")
+
+    return dict(no=pick["no"], name=pick["name"], why=why,
+                load=load[pick["no"]], history=n,
+                alts=[dict(no=p["no"], name=p["name"], load=load[p["no"]],
+                           history=seen.get(p["no"], 0),
+                           busy=bool(clash.get(p["no"]))) for p in cands[1:4]])

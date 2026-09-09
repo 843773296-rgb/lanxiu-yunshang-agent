@@ -749,40 +749,96 @@ def my_staff(me):
 
 
 def assign_task(d, me):
-    """店长派一条任务给顾问。"""
-    import datetime
+    """店长派一条任务。任务清单的字段:类型 / 顾问 / 起止时间 / 绑定活动 / 描述 / 附件。
+
+    类型决定了两件事,所以它必须先填:
+      · **客户相关**(预约到店/电话回电/上门沟通/接待任务)必须挂一个客户 ——
+        不挂客户的「电话回电」是回给谁?这种单派下去顾问只能来问。
+      · **店铺运营**(团建培训/日常运维/订单跟踪/维保任务/售后任务)不挂客户,
+        而且只能店长派:谁该轮培训、谁家里有事,这些依据不在库里。
+    """
+    import datetime, tasktypes as tt
     if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
     if me.get("role") not in MANAGER_ROLES:
         return _deny(me, "WRONG_ROLE",
                      f"排任务须由店长及以上操作,你的角色是「{me['role']}」")
+
+    kind = tt.norm(d.get("type") or "")
+    ti = tt.info(kind)
+    if not ti:
+        return dict(ok=False, code="BAD_TYPE",
+                    reason=f"任务类型「{d.get('type') or '(空)'}」不认识;"
+                           f"可选:{'、'.join(tt.CUSTOMER_TYPES + tt.OPS_TYPES)}")
+
     to = (d.get("assignee_no") or "").strip()
     allowed = {x["no"]: x for x in my_staff(me)}
     if to not in allowed:
         return _deny(me, "NOT_YOURS",
                      f"只能派给**{me.get('shop') or '你管辖'}**的在职顾问;"
                      f"可派的人:{[x['name'] for x in allowed.values()] or '(没有)'}", to)
-    title = (d.get("title") or "").strip()
-    if not title: return dict(ok=False, code="NEED_TITLE", reason="任务内容必填")
-    due = (d.get("due") or "").strip()
-    if not due: return dict(ok=False, code="NEED_DUE", reason="截止时间必填 —— 没有截止时间的任务不会被做")
-    try: datetime.datetime.fromisoformat(due.replace("T", " "))
-    except ValueError: return dict(ok=False, code="BAD_DUE", reason=f"截止时间「{due}」格式不对")
+
+    cid = (d.get("customer_id") or "").strip() or None
+    if ti["needs_customer"]:
+        if not cid:
+            return dict(ok=False, code="NEED_CUSTOMER",
+                        reason=f"「{kind}」是客户相关任务,必须挂一个客户 —— "
+                               f"不挂客户的「{kind}」派下去,顾问只能回来问是给谁做")
+        if not rows("SELECT id FROM customer WHERE id=?", cid):
+            return dict(ok=False, code="NO_CUSTOMER", reason=f"客户 {cid} 不存在")
+    elif cid:
+        # 运营任务挂了客户 —— 不拦,但要说一声。**静默丢弃字段比报错更难查**:
+        # 店长填了客户,列表里却看不到,他会以为是显示的问题。
+        return dict(ok=False, code="NO_NEED_CUSTOMER",
+                    reason=f"「{kind}」是店铺运营任务,不挂客户。你填了 {cid},"
+                           f"要么换成客户相关的类型,要么把客户去掉")
+
+    note = (d.get("note") or d.get("title") or "").strip()
+    if not note: return dict(ok=False, code="NEED_NOTE", reason="日程描述必填 —— 写清楚这件事要做什么")
+
+    st = (d.get("start") or "").replace("T", " ").strip()
+    en = (d.get("end") or d.get("due") or "").replace("T", " ").strip()
+    if not en: return dict(ok=False, code="NEED_END", reason="结束时间必填 —— 没有截止时间的任务不会被做")
+    if not st: st = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    try:
+        t0 = datetime.datetime.fromisoformat(st); t1 = datetime.datetime.fromisoformat(en)
+    except ValueError:
+        return dict(ok=False, code="BAD_TIME", reason=f"时间格式不对({st} / {en})")
+    if t1 <= t0:
+        return dict(ok=False, code="BAD_RANGE",
+                    reason=f"结束时间({en})不在开始时间({st})之后")
+
+    ac = (d.get("activity_code") or "").strip() or None
+    if ac and not rows("SELECT code FROM activity WHERE code=?", ac):
+        return dict(ok=False, code="NO_ACTIVITY", reason=f"没有活动 {ac}")
+
     n = rows("SELECT COUNT(*) c FROM schedule")[0]["c"]
     sid = f"SC{7000 + n + 1}"
     him = allowed[to]
     with sqlite3.connect(DB) as c:
         c.execute("""INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,status,
-                     shop,assignee_no,assigned_by,assigned_at,note)
-                     VALUES(?,'企业任务',?,?,?,?, '有效',?,?,?,?,?)""",
-                  (sid, f"{him.get('adv_code') or ''} {him['name']}".strip(), d.get("customer_id"),
-                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                   due.replace("T", " "), him.get("shop"), to, me["no"],
-                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), title))
+                     shop,assignee_no,assigned_by,assigned_at,note,activity_code)
+                     VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?)""",
+                  (sid, kind, f"{him.get('adv_code') or ''} {him['name']}".strip(), cid,
+                   st, en, him.get("shop"), to, me["no"],
+                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), note, ac))
+
+    # 派单附件 —— 存不下的**逐张回报**,不要笼统说「部分失败」。
+    import files as _f
+    saved, failed = 0, []
+    for it in (d.get("files") or [])[:_f.MAX_PER_TASK]:
+        ok2, why2 = _f.save(sid, "派单", (it or {}).get("name"), (it or {}).get("data"), me["name"])
+        if ok2: saved += 1
+        else: failed.append(why2)
+
     log_op(me["name"], "schedule", sid, "—", "有效", True, "ASSIGN",
-           f"{me['name']}({me['role']})派给 {him['name']}:{title[:40]};截止 {due}",
-           {"role": me["role"], "assignee": to})
-    return dict(ok=True, code="ASSIGN", id=sid,
-                reason=f"已派给 **{him['name']}**,截止 {due}。他登录后会在「我的任务」里看到。")
+           f"{me['name']}({me['role']})派给 {him['name']}:[{kind}] {note[:36]};"
+           f"{st} → {en}" + (f";活动 {ac}" if ac else "") + (f";附件 {saved} 张" if saved else ""),
+           {"role": me["role"], "assignee": to, "type": kind})
+    return dict(ok=True, code="ASSIGN", id=sid, 类型=kind, 附件=saved,
+                reason=f"已派给 **{him['name']}**({kind}),{st} → {en}。"
+                       f"他登录后会在「我的任务」里看到。"
+                       + (f" 附件 {saved} 张。" if saved else "")
+                       + (f" 有 {len(failed)} 张没存下:{failed[0]}" if failed else ""))
 
 
 def dispatch(d, me):
@@ -814,14 +870,27 @@ def dispatch(d, me):
         return _deny(me, "NOT_YOURS", f"只能派给本店在职顾问;可派的人:"
                                       f"{[x['name'] for x in allowed.values()] or '(没有)'}", sid)
     him = allowed[to]
+    # **建议必须在写库之前算。**
+    # 上一版写在 UPDATE 后面,结果是:派给苏彧 → 苏彧负载 +1 → 重算时他不再是最优 →
+    # 台账记成「建议林岚,店长改派苏彧」。**采纳被记成了改派,而且每次都记反。**
+    # 判据要在被判的那个状态下取,取晚了就是在给已经变过的世界打分。
+    # 重算是对的(不信前端报上来的建议),错的只是重算的时机。
+    import booking as _bk
+    sg = _bk.suggest(t)
     with sqlite3.connect(DB) as c:
         c.execute("UPDATE schedule SET assignee_no=?,assigned_by=?,assigned_at=?,advisor=? WHERE id=?",
                   (to, me["no"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                    f"{him.get('adv_code') or ''} {him['name']}".strip(), sid))
+    adopted = bool(sg and sg["no"] == to)
+    tail = ("(采纳了建议)" if adopted else
+            (f"(agent 建议 {sg['name']},店长改派 {him['name']})" if sg else "(agent 没提出建议)"))
     log_op(me["name"], "schedule", sid, "待分配", him["name"], True, "DISPATCH",
-           f"{me['name']}({me['role']})把待分配的预约 {sid} 分给 {him['name']}",
-           {"role": me["role"], "assignee": to})
-    return dict(ok=True, code="DISPATCH", reason=f"已分给 **{him['name']}**,他的 pad 上就能看到了")
+           f"{me['name']}({me['role']})把待分配的 {sid} 分给 {him['name']}{tail}",
+           {"role": me["role"], "assignee": to,
+            "suggested": (sg or {}).get("no"), "adopted": adopted})
+    return dict(ok=True, code="DISPATCH", 采纳建议=adopted,
+                reason=f"已分给 **{him['name']}**,他的 pad 上就能看到了" +
+                       ("" if adopted or not sg else f"(agent 建议的是 {sg['name']},已记下这次改派)"))
 
 
 def my_tasks(me, status=None):
@@ -852,6 +921,10 @@ def my_tasks(me, status=None):
         #   空        历史排班,本来就不是谁派的 → **不要这个字段**
         # 第三种如果渲染成 None,会被读成「有人派的但查不到是谁」,那是数据坏了,
         # 和「本来就没人派」是两回事。
+        import files as _fl
+        fs = _fl.listing(r["id"])
+        if fs:
+            r["附件"] = fs
         if src == "SYS":
             r["派任务的人"] = "系统自动派单(按归属顾问)"
         elif src:
@@ -862,7 +935,13 @@ def my_tasks(me, status=None):
 
 
 def finish_task(d, me):
-    """完成任务。**只能完成派给自己的**;店长也不能替顾问点完成。"""
+    """完成任务:提交**日程总结**,该传图的还要传总结附件。
+
+    **只能完成派给自己的**;店长也不能替顾问点完成。
+    总结必填 —— 一条只写「完结」的任务,过两个月谁也说不出当时发生了什么,
+    等于没有台账。
+    """
+    import tasktypes as tt, files as _f
     if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
     sid = (d.get("id") or "").strip()
     rs = rows("SELECT * FROM schedule WHERE id=?", sid)
@@ -874,12 +953,34 @@ def finish_task(d, me):
                      "别人代点等于台账上写了一件没发生的事", sid)
     if t.get("status") != "有效":
         return dict(ok=False, code="BAD_STATE", reason=f"这条任务当前是「{t['status']}」,不能完成")
+
+    summary = (d.get("summary") or "").strip()
+    if len(summary) < 4:
+        return dict(ok=False, code="NEED_SUMMARY",
+                    reason="日程总结必填,写清楚做了什么、结果如何 —— "
+                           "只写「完结」的任务,过两个月谁也说不出当时发生了什么")
+
+    # 先存附件再改状态。**顺序反了会出现「已完结但图没传上」** ——
+    # 而任务一旦完结,顾问就没有入口再补图了。
+    kind_ok, msgs = 0, []
+    for it in (d.get("files") or [])[:_f.MAX_PER_TASK]:
+        ok2, why2 = _f.save(sid, "总结", (it or {}).get("name"), (it or {}).get("data"), me["name"])
+        if ok2: kind_ok += 1
+        else: msgs.append(why2)
+    have = len(_f.listing(sid, "总结"))
+    if tt.needs_photo(t.get("type")) and have == 0:
+        return dict(ok=False, code="NEED_PHOTO",
+                    reason=f"「{tt.norm(t.get('type'))}」完成时要传现场照"
+                           + (f";这次这 {len(msgs)} 张没存下:{msgs[0]}" if msgs else ""))
+
     with sqlite3.connect(DB) as c:
-        c.execute("UPDATE schedule SET status='完结',summary=? WHERE id=?",
-                  ((d.get("summary") or "").strip() or None, sid))
+        c.execute("UPDATE schedule SET status='完结',summary=? WHERE id=?", (summary, sid))
     log_op(me["name"], "schedule", sid, "有效", "完结", True, "FINISH",
-           f"{me['name']} 完成任务:{(t.get('note') or '')[:40]}", {"role": me["role"]})
-    return dict(ok=True, code="FINISH", reason=f"任务 {sid} 已标记完结")
+           f"{me['name']} 完成[{tt.norm(t.get('type'))}]:{summary[:40]}"
+           + (f";总结附件 {have} 张" if have else ""), {"role": me["role"]})
+    return dict(ok=True, code="FINISH", 总结附件=have,
+                reason=f"任务 {sid} 已完结" + (f",总结附件 {have} 张" if have else "")
+                       + (f"。有 {len(msgs)} 张没存下:{msgs[0]}" if msgs else ""))
 
 
 def create_customer(d, actor="魏欣新", _role=None):
@@ -1597,6 +1698,37 @@ class H(BaseHTTPRequestHandler):
             return self._send(my_tasks(_me(self), (Q.get("status") or [None])[0]))
         if p == "/api/my-staff":
             return self._send({"rows": my_staff(_me(self))})
+        if p == "/api/task-types":
+            # 类型清单**由后端出**。界面自己写一份的话,加一个类型就要改两处,
+            # 而漏改的那一处不会报错,只会少一个选项。
+            import tasktypes as _tt
+            return self._send({"rows": _tt.catalog()})
+        if p == "/api/activities":
+            return self._send({"rows": rows(
+                "SELECT code,name,kind,status,shop FROM activity "
+                "WHERE status='进行中' ORDER BY code")})
+        if p.startswith("/api/task-file/"):
+            # 取图。**权限跟着任务走** —— 能看这条任务的人才能看它的图。
+            _u4 = _me(self)
+            if not _u4: return self._send({"error": "请先登录"}, 401)
+            try: _fid = int(p.rsplit("/", 1)[1])
+            except ValueError: return self._send({"error": "文件号不对"}, 400)
+            import files as _f
+            _own = rows("SELECT s.assignee_no,s.shop FROM schedule_file f "
+                        "JOIN schedule s ON s.id=f.schedule_id WHERE f.id=?", _fid)
+            if not _own: return self._send({"error": "没有这个附件"}, 404)
+            _o = _own[0]
+            if not (_o["assignee_no"] == _u4["no"] or
+                    (_u4.get("role") in MANAGER_ROLES and
+                     (_u4["role"] == "总部运营" or _o["shop"] == _u4.get("shop")))):
+                return self._send({"error": "这个附件不归你"}, 403)
+            b4 = _f.blob(_fid)
+            if not b4: return self._send({"error": "附件文件丢了"}, 404)
+            self.send_response(200)
+            self.send_header("content-type", b4[0])
+            self.send_header("cache-control", "max-age=86400")
+            self.send_header("content-length", str(len(b4[1])))
+            self.end_headers(); self.wfile.write(b4[1]); return
         if p == "/api/unassigned":
             # 待分配池。顾问看不到 —— 他不负责分活,给他看只会让他以为该自己认领。
             _u2 = _me(self)
@@ -1936,6 +2068,23 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/task-assign": return self._send(assign_task(body, _me(self)))
         if p=="/api/task-finish": return self._send(finish_task(body, _me(self)))
         if p=="/api/task-dispatch": return self._send(dispatch(body, _me(self)))
+        if p=="/api/task-file":
+            # 单独补传附件(派单后想起来还有张图)。只有**看得见这条任务的人**能传:
+            # 派给他的顾问,或者本店店长。
+            _u3 = _me(self)
+            if not _u3: return self._send(dict(ok=False, reason="请先登录"), 401)
+            import files as _f
+            _t3 = rows("SELECT * FROM schedule WHERE id=?", body.get("id") or "")
+            if not _t3: return self._send(dict(ok=False, reason="没有这条任务"))
+            _t3 = _t3[0]
+            _mine = _t3.get("assignee_no") == _u3["no"]
+            _boss = (_u3.get("role") in MANAGER_ROLES and
+                     (_u3["role"] == "总部运营" or _t3.get("shop") == _u3.get("shop")))
+            if not (_mine or _boss):
+                return self._send(dict(ok=False, reason="这条任务不归你"), 403)
+            ok4, why4 = _f.save(_t3["id"], body.get("kind") or "派单",
+                                body.get("name"), body.get("data"), _u3["name"])
+            return self._send(dict(ok=ok4, reason=why4))
         if p=="/api/book":
             # **唯一一个不要登录的写接口。** 客户没有员工账号,
             # 要求他登录等于要求他先注册,人不会为了约个量体去注册。

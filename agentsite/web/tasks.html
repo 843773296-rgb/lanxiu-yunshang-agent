@@ -3,7 +3,7 @@
 <style>
 :root{--bg:#fff;--side:#f7f7f8;--line:#e6e6e8;--ink:#17181c;--dim:#8b8d94;
   --accent:#2f5bff;--chip:#f1f2f4;--ok:#067647;--okbg:#ecfdf3;
-  --err:#b42318;--errbg:#fef3f2;--warn:#b45309;--warnbg:#fff7ed}
+  --err:#b42318;--errbg:#fef3f2;--warn:#b45309;--warnbg:#fff7ed;--warnln:#fec84b}
 *{box-sizing:border-box}
 body{margin:0;background:var(--side);color:var(--ink);
   font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
@@ -14,18 +14,18 @@ body{margin:0;background:var(--side);color:var(--ink);
 .tbtn{font:inherit;font-size:12.5px;padding:5px 11px;border:1px solid var(--line);
   border-radius:8px;background:#fff;color:var(--ink);cursor:pointer;text-decoration:none}
 .tbtn:hover{background:var(--chip)}
-#who{font-size:12.5px;color:var(--dim)}
-#who b{color:var(--ink)}
-main{max-width:940px;margin:20px auto 60px;padding:0 20px}
+#who{font-size:12.5px;color:var(--dim)}#who b{color:var(--ink)}
+main{max-width:1000px;margin:20px auto 60px;padding:0 20px}
 .card{background:#fff;border:1px solid var(--line);border-radius:13px;padding:20px 22px;margin-bottom:18px}
 h2{margin:0 0 3px;font-size:15px}
 .hint{margin:0 0 16px;font-size:12.5px;color:var(--dim)}
 label{display:block;font-size:12.5px;color:var(--dim);margin:0 0 5px}
 input,select,textarea{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);
   border-radius:8px;background:#fff;color:var(--ink);outline:none}
+textarea{resize:vertical;min-height:58px}
 input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,91,255,.10)}
 .row{display:flex;gap:12px;flex-wrap:wrap}
-.row>div{flex:1;min-width:180px;margin-bottom:12px}
+.row>div{flex:1;min-width:170px;margin-bottom:12px}
 button.go{font:inherit;font-weight:600;padding:9px 20px;border:0;border-radius:8px;
   background:var(--accent);color:#fff;cursor:pointer}
 button.go:disabled{opacity:.55;cursor:default}
@@ -40,11 +40,26 @@ td.n{white-space:nowrap;color:var(--dim);font-size:12.5px}
 .tag.live{background:#eef2ff;color:var(--accent)}
 .tag.done{background:var(--okbg);color:var(--ok)}
 .tag.late{background:var(--warnbg);color:var(--warn)}
+.tag.fam{background:#f4f1ff;color:#6941c6}
 .fin{font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--accent);
   border-radius:7px;background:#fff;color:var(--accent);cursor:pointer;white-space:nowrap}
 .fin:disabled{border-color:var(--line);color:var(--dim);cursor:default}
 .empty{padding:26px 0;text-align:center;color:var(--dim);font-size:13px}
 .note{margin-top:14px;font-size:11.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:10px}
+#thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
+#thumbs img,.th{width:62px;height:62px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+#thumbs .x{position:relative}
+#thumbs .x button{position:absolute;top:-6px;right:-6px;width:19px;height:19px;border-radius:50%;
+  border:1px solid var(--line);background:#fff;color:var(--dim);font-size:12px;line-height:1;cursor:pointer;padding:0}
+/* 待分配池 —— 黄框,因为它是「有人在等」 */
+#poolcard{border-color:var(--warnln);background:#fffcf5}
+.pool{border-top:1px solid var(--line);padding:14px 0}
+.sug{background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 13px;margin-top:9px}
+.sug .h{font-size:13px;font-weight:600;margin-bottom:5px}
+.sug ul{margin:0;padding-left:17px;font-size:12.5px;color:#4a4a52}
+.sug li{margin:2px 0}
+.sug .warnli{color:var(--warn)}
+.acts{display:flex;gap:8px;margin-top:11px;align-items:center;flex-wrap:wrap}
 </style>
 
 <div id="top">
@@ -57,36 +72,55 @@ td.n{white-space:nowrap;color:var(--dim);font-size:12.5px}
 </div>
 
 <main>
-  <!-- 派任务:只有店长能看见这张卡。看不见不是「藏起来了」——
-       后端也拦,前端少画一块只是别让人白填一遍表单 -->
+  <!-- 待分配池排在最上面:它是「客户已经在等」,比店长凭空想派的活更急 -->
+  <div class="card" id="poolcard" hidden>
+    <h2>待分配 <span id="pooln" style="color:var(--warn)"></span></h2>
+    <p class="hint">客户已经约了时间,但系统没能自动派单。
+      <b>在你分派之前,这些单子没有人负责。</b>下面每条都带了 agent 的人选建议和依据 ——
+      <b>建议不是决定,要你点了才算。</b></p>
+    <div id="pool"></div>
+  </div>
+
   <div class="card" id="assign" hidden>
     <h2>派任务</h2>
-    <p class="hint">只能派给<b id="scope">本店</b>的在职顾问。派完他登录就能在自己的「我的任务」里看到。</p>
+    <p class="hint">先选类型 —— 类型决定了要不要挂客户、完成时要不要传现场照。</p>
     <div class="row">
       <div>
-        <label for="to">派给谁</label>
-        <select id="to"><option>载入中…</option></select>
+        <label for="ttype">任务类型</label>
+        <select id="ttype"><option>载入中…</option></select>
       </div>
       <div>
-        <label for="due">截止时间</label>
-        <input id="due" type="datetime-local">
+        <label for="to">顾问</label>
+        <select id="to"><option>载入中…</option></select>
+      </div>
+    </div>
+    <div class="row">
+      <div><label for="start">开始时间</label><input id="start" type="datetime-local"></div>
+      <div><label for="end">结束时间</label><input id="end" type="datetime-local"></div>
+    </div>
+    <div class="row">
+      <div id="custwrap">
+        <label for="cust">客户号</label>
+        <input id="cust" placeholder="C10001">
+      </div>
+      <div>
+        <label for="act">绑定活动</label>
+        <select id="act"><option value="">（不绑活动）</option></select>
       </div>
     </div>
     <div style="margin-bottom:12px">
-      <label for="title">任务内容</label>
-      <input id="title" placeholder="例:回访 C10001,确认马面裙腰围要不要改">
+      <label for="note">日程描述</label>
+      <textarea id="note" placeholder="这件事要做什么、做到什么程度"></textarea>
+    </div>
+    <div style="margin-bottom:14px">
+      <label>派单附件（图片，可不传）</label>
+      <input id="pic" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple
+             style="font-size:12.5px;padding:6px 0;border:0">
+      <div id="thumbs"></div>
     </div>
     <button class="go" id="send">派下去</button>
     <p class="msg" id="amsg"></p>
-  </div>
-
-  <!-- 待分配池:客户约了,但系统没认出该派给谁。**这块必须在派任务上面** ——
-       它是「已经有人在等」,比店长凭空想派的活更急。 -->
-  <div class="card" id="poolcard" hidden style="border-color:#fec84b;background:#fffcf5">
-    <h2>待分配的预约 <span id="pooln" style="color:#b45309"></span></h2>
-    <p class="hint">客户已经约了时间,但系统没能自动派单 —— 每一条下面都写了为什么。
-      <b>这些单子在你分派之前没有人负责。</b></p>
-    <div id="pool"></div>
+    <p class="note" id="tnote"></p>
   </div>
 
   <div class="card">
@@ -99,145 +133,191 @@ td.n{white-space:nowrap;color:var(--dim);font-size:12.5px}
 
 <script>
 const $=s=>document.querySelector(s);
-let ME=null;
-
-function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+let ME=null, TYPES=[], PICS=[];
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const dt=s=>s?new Date(String(s).replace(/-/g,"/")):null;
 function msg(el,text,ok){el.className="msg "+(ok?"ok":"no");el.textContent=text}
 
-// 截止时间过了但还是「有效」= 逾期。这个判断放前端只是为了上色,
-// 真正的口径在后台;前端算错了顶多颜色不对,不会影响数据。
 function tag(r){
   if(r.status==="有效"){
-    const late = r.end_ts && new Date(r.end_ts.replace(/-/g,"/")) < new Date();
+    const late=r.end_ts&&dt(r.end_ts)<new Date();
     return `<span class="tag ${late?"late":"live"}">${late?"逾期":"进行中"}</span>`;
   }
   return `<span class="tag ${r.status==="完结"?"done":""}">${esc(r.status)}</span>`;
 }
 
 async function boot(){
-  const r = await fetch("/api/me");
-  if(r.status===401){ location.href="/login?back="+encodeURIComponent(location.pathname); return; }
-  ME = await r.json();
-  $("#who").innerHTML = `<b>${esc(ME.name)}</b> · ${esc(ME.role)}${ME.shop?" · "+esc(ME.shop):""}`;
-  const boss = ME.role==="店长" || ME.role==="总部运营";
+  const r=await fetch("/api/me");
+  if(r.status===401){location.href="/login?back="+encodeURIComponent(location.pathname);return}
+  ME=await r.json();
+  $("#who").innerHTML=`<b>${esc(ME.name)}</b> · ${esc(ME.role)}${ME.shop?" · "+esc(ME.shop):""}`;
+  const boss=ME.role==="店长"||ME.role==="总部运营";
   if(boss){
-    $("#assign").hidden = false;
-    $("#scope").textContent = ME.shop || "你管辖";
-    // **必须 await。** 待分配池里每条都要一个「派给谁」的下拉,
-    // 选项是从 #to 抄过去的 —— 顾问名单还没回来就画池子,
-    // 画出来的是一排空下拉,而且不会报错。
-    await loadStaff();
+    $("#assign").hidden=false;
+    // **必须 await。** 待分配池每条都要一个「换人」下拉,选项是从 #to 抄的;
+    // 顾问名单还没回来就画池子,画出来是一排空下拉,而且不会报错。
+    await Promise.all([loadStaff(), loadTypes(), loadActs()]);
   }
   loadTasks();
   if(boss) loadPool();
 }
 
-// 待分配池为什么派不出去 —— 前端不自己判断,直接用后端给的绑定信息说人话。
-// 前端重算一遍口径,就是第二个来源,迟早和后端说的不一样。
-function whyPool(r){
-  const b=(r.bind||"").trim();
-  if(!b) return "这个客户没有归属顾问";
-  return `档案里的归属顾问是「${esc(b)}」,但他已离职或不在本店 —— 需要重新指人`;
+async function loadStaff(){
+  const d=await(await fetch("/api/my-staff")).json();
+  const rs=d.rows||[];
+  $("#to").innerHTML=rs.length
+    ? rs.map(x=>`<option value="${esc(x.no)}">${esc(x.name)}（${esc(x.no)}）</option>`).join("")
+    : `<option value="">（没有可派的顾问）</option>`;
+}
+
+async function loadActs(){
+  const d=await(await fetch("/api/activities")).json();
+  $("#act").innerHTML=`<option value="">（不绑活动）</option>`+
+    (d.rows||[]).map(a=>`<option value="${esc(a.code)}">${esc(a.name)}（${esc(a.code)}）</option>`).join("");
+}
+
+async function loadTypes(){
+  const d=await(await fetch("/api/task-types")).json();
+  TYPES=d.rows||[];
+  // 按族分组显示 —— 两族的规则不一样,混在一个平铺列表里选，人分不清
+  const g=f=>TYPES.filter(t=>t.family===f)
+    .map(t=>`<option value="${esc(t.name)}">${esc(t.name)}</option>`).join("");
+  $("#ttype").innerHTML=
+    `<optgroup label="客户相关">${g("客户")}</optgroup>`+
+    `<optgroup label="店铺运营">${g("运营")}</optgroup>`;
+  syncType();
+}
+
+// 类型换了,表单跟着变：客户族要客户号,运营族没有客户
+function syncType(){
+  const t=TYPES.find(x=>x.name===$("#ttype").value);
+  if(!t) return;
+  $("#custwrap").hidden = !t.needs_customer;
+  $("#tnote").textContent =
+    `${t.desc}。${t.needs_customer?"必须挂一个客户。":"不挂客户。"}`+
+    (t.needs_photo?"完成时**必须**传现场照。":"完成时不强制传照片。").replace(/\*\*/g,"");
+}
+$("#ttype").addEventListener("change", syncType);
+
+// 图片选好后转成 data URL 带走。**在这里就把超大的挡掉** ——
+// 让人等 30 秒上传完再被后端拒,是最差的一种拒绝。
+$("#pic").addEventListener("change", async e=>{
+  for(const f of e.target.files){
+    if(PICS.length>=6){ msg($("#amsg"),"最多 6 张",false); break; }
+    if(f.size>5*1024*1024){ msg($("#amsg"),`${f.name} 有 ${(f.size/1048576).toFixed(1)}MB，超过 5MB`,false); continue; }
+    const data=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(f)});
+    PICS.push({name:f.name,data});
+  }
+  e.target.value="";
+  drawThumbs();
+});
+function drawThumbs(){
+  $("#thumbs").innerHTML=PICS.map((p,i)=>
+    `<span class="x"><img src="${p.data}" title="${esc(p.name)}"><button data-rm="${i}">×</button></span>`).join("");
+  for(const b of document.querySelectorAll("[data-rm]"))
+    b.onclick=()=>{PICS.splice(+b.dataset.rm,1);drawThumbs()};
+}
+
+async function loadTasks(){
+  const d=await(await fetch("/api/my-tasks")).json();
+  if(d.error){$("#list").innerHTML=`<p class="empty">${esc(d.error)}</p>`;return}
+  $("#ltitle").textContent=d.scope||"任务";
+  $("#lhint").textContent=`共 ${d.hit} 条 · 进行中的排在前面,同状态按截止时间`;
+  const rs=d.rows||[];
+  if(!rs.length){$("#list").innerHTML=`<p class="empty">还没有任务</p>`;return}
+  const mine=r=>r.assignee_no===ME.no;
+  $("#list").innerHTML=`<table><tr>
+      <th>单号</th><th>类型</th><th>内容</th><th>顾问</th><th>起止</th>
+      <th>状态</th><th>图</th><th>派任务的人</th><th></th></tr>`+
+    rs.map(r=>`<tr>
+      <td class="n">${esc(r.id)}</td>
+      <td class="n"><span class="tag fam">${esc(r.type||"—")}</span></td>
+      <td>${esc(r.note||"—")}
+        ${r.activity_code?`<br><span style="font-size:11.5px;color:var(--dim)">活动 ${esc(r.activity_code)}</span>`:""}
+        ${r.summary?`<br><span style="color:var(--ok);font-size:12px">✔ ${esc(r.summary)}</span>`:""}</td>
+      <td class="n">${esc(r.assignee_name||r.advisor||"—")}</td>
+      <td class="n">${esc((r.start_ts||"").slice(5,16))}<br>${esc((r.end_ts||"").slice(5,16))}</td>
+      <td class="n">${tag(r)}</td>
+      <td class="n">${(r.附件||[]).length||""}</td>
+      <td class="n">${esc(r["派任务的人"]||"—")}</td>
+      <td>${r.status==="有效"&&mine(r)?`<button class="fin" data-fin="${esc(r.id)}">完成</button>`:""}</td>
+    </tr>`).join("")+`</table>`;
+  $("#lnote").textContent = ME.role==="顾问"
+    ? "你只看得到派给自己的任务 —— 这是数据隔离,不是界面上少显示几行。"
+    : "你看得到全店的任务,但「完成」只能由做事的人自己点(带总结,该传图的要传图)。";
+  for(const b of document.querySelectorAll("[data-fin]")) b.onclick=()=>location.href="/pad";
+}
+
+// ── 待分配池 ────────────────────────────────────────────────────────
+function sugBox(r){
+  const s=r.建议;
+  if(!s) return `<div class="sug"><div class="h">agent 提不出建议</div>
+    <ul><li>这个门店没有在职顾问可派 —— 硬凑一个人出来比说「提不出」有害得多</li></ul></div>`;
+  return `<div class="sug">
+    <div class="h">agent 建议：${esc(s.name)}</div>
+    <ul>${s.why.map(w=>`<li class="${w.startsWith("⚠")?"warnli":""}">${esc(w).replace(/\*\*/g,"")}</li>`).join("")}</ul>
+    ${s.alts.length?`<div style="font-size:12px;color:var(--dim);margin-top:6px">备选：`+
+      s.alts.map(a=>`${esc(a.name)}（在办 ${a.load}${a.history?`，接待过 ${a.history} 次`:""}${a.busy?"，时段冲突":""}）`).join(" · ")+
+      `</div>`:""}
+  </div>`;
 }
 
 async function loadPool(){
   const d=await(await fetch("/api/unassigned")).json();
   const rs=d.rows||[];
-  $("#poolcard").hidden = rs.length===0;
+  $("#poolcard").hidden=rs.length===0;
   if(!rs.length) return;
   $("#pooln").textContent=`· ${rs.length} 条`;
   const opts=$("#to").innerHTML;
-  $("#pool").innerHTML=rs.map(r=>`<div style="border-top:1px solid var(--line);padding:13px 0">
-      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
-        <b>${esc(r.customer_name||r.customer_id)}</b>
-        <span class="tag late">${esc((r.start_ts||"").slice(0,16))}</span>
-        <span style="font-size:12.5px;color:var(--dim)">${esc(r.id)}</span>
-      </div>
-      <div style="font-size:13px;margin:4px 0 3px">${esc(r.note||"")}</div>
-      <div style="font-size:12px;color:var(--warn)">${whyPool(r)}</div>
-      <div style="display:flex;gap:8px;margin-top:9px;align-items:center;flex-wrap:wrap">
-        <select style="width:auto;min-width:170px">${opts}</select>
-        <button class="fin" data-dis="${esc(r.id)}">分给他</button>
-      </div></div>`).join("");
-  for(const b of document.querySelectorAll("[data-dis]")) b.onclick=()=>doDispatch(b);
+  $("#pool").innerHTML=rs.map(r=>`<div class="pool">
+    <div style="display:flex;gap:9px;align-items:baseline;flex-wrap:wrap">
+      <b>${esc(r.customer_name||r.customer_id)}</b>
+      <span class="tag fam">${esc(r.type)}</span>
+      <span class="tag late">${esc((r.start_ts||"").slice(0,16))}</span>
+      <span style="font-size:12px;color:var(--dim)">${esc(r.id)}</span>
+    </div>
+    <div style="font-size:13px;margin:5px 0 0">${esc(r.note||"")}</div>
+    <div style="font-size:12px;color:var(--warn)">${esc(r.bind?`档案里的归属顾问是「${r.bind}」，但他已离职或不在本店`:"这个客户没有归属顾问")}</div>
+    ${sugBox(r)}
+    <div class="acts">
+      ${r.建议?`<button class="go" style="padding:7px 15px;font-size:13px"
+          data-ok="${esc(r.id)}" data-no="${esc(r.建议.no)}">按建议派给 ${esc(r.建议.name)}</button>`:""}
+      <span style="font-size:12px;color:var(--dim)">或改派：</span>
+      <select style="width:auto;min-width:165px">${opts}</select>
+      <button class="fin" data-dis="${esc(r.id)}">分给他</button>
+    </div></div>`).join("");
+  for(const b of document.querySelectorAll("[data-ok]"))
+    b.onclick=()=>send(b, b.dataset.ok, b.dataset.no);
+  for(const b of document.querySelectorAll("[data-dis]"))
+    b.onclick=()=>send(b, b.dataset.dis, b.parentElement.querySelector("select").value);
 }
 
-async function doDispatch(b){
-  const id=b.dataset.dis;
-  // 下拉就在按钮旁边,同一个容器里 —— 不用再给它一个 id 去对。
-  const to=b.parentElement.querySelector("select").value;
-  b.disabled=true; b.textContent="…";
+async function send(b, id, to){
+  const t=b.textContent; b.disabled=true; b.textContent="…";
   const d=await(await fetch("/api/task-dispatch",{method:"POST",
     headers:{"content-type":"application/json"},
     body:JSON.stringify({id, assignee_no:to})})).json();
-  if(!d.ok){alert((d.reason||"").replace(/\*\*/g,""));b.disabled=false;b.textContent="分给他";return}
+  if(!d.ok){alert((d.reason||"").replace(/\*\*/g,""));b.disabled=false;b.textContent=t;return}
   loadPool(); loadTasks();
 }
 
-async function loadStaff(){
-  const d = await (await fetch("/api/my-staff")).json();
-  const rs = d.rows||[];
-  $("#to").innerHTML = rs.length
-    ? rs.map(x=>`<option value="${esc(x.no)}">${esc(x.name)}（${esc(x.no)}）</option>`).join("")
-    : `<option value="">（没有可派的顾问）</option>`;
-}
-
-async function loadTasks(){
-  const d = await (await fetch("/api/my-tasks")).json();
-  if(d.error){ $("#list").innerHTML=`<p class="empty">${esc(d.error)}</p>`; return; }
-  $("#ltitle").textContent = d.scope || "任务";
-  $("#lhint").textContent  = `共 ${d.hit} 条 · 进行中的排在前面,同状态按截止时间`;
-  const rs = d.rows||[];
-  if(!rs.length){ $("#list").innerHTML=`<p class="empty">还没有任务</p>`; return; }
-
-  const mine = r => r.assignee_no===ME.no;   // 只有自己的任务才有「完成」按钮
-  $("#list").innerHTML = `<table><tr>
-      <th>单号</th><th>内容</th><th>负责人</th><th>截止</th><th>状态</th><th>派任务的人</th><th></th>
-    </tr>` + rs.map(r=>`<tr>
-      <td class="n">${esc(r.id)}</td>
-      <td>${esc(r.note || r.type || "—")}${r.summary?`<br><span style="color:var(--dim);font-size:12px">✔ ${esc(r.summary)}</span>`:""}</td>
-      <td class="n">${esc(r.assignee_name || r.advisor || "—")}</td>
-      <td class="n">${esc((r.end_ts||"—").slice(0,16))}</td>
-      <td class="n">${tag(r)}</td>
-      <td class="n">${esc(r["派任务的人"] || "—")}</td>
-      <td>${ r.status==="有效" && mine(r)
-              ? `<button class="fin" data-id="${esc(r.id)}">完成</button>`
-              : "" }</td>
-    </tr>`).join("") + `</table>`;
-
-  // 「完成」按钮只画在自己的任务上。**这不是权限** —— 权限在后台的
-  // finish_task 里(店长替顾问点也会被拒)。这里少画一个按钮,
-  // 是为了别让人点了才知道不行。
-  $("#lnote").textContent = ME.role==="顾问"
-    ? "你只看得到派给自己的任务 —— 这是数据隔离,不是界面上少显示几行。"
-    : "你看得到全店的任务,但「完成」只能由做事的人自己点。";
-  for(const b of document.querySelectorAll(".fin")) b.onclick = ()=>finish(b);
-}
-
-async function finish(b){
-  const summary = prompt("这条任务做完了,写一句结果(可留空):", "");
-  if(summary===null) return;            // 点了取消就别提交
-  b.disabled=true; b.textContent="…";
-  const d = await (await fetch("/api/task-finish",{method:"POST",
-      headers:{"content-type":"application/json"},
-      body:JSON.stringify({id:b.dataset.id, summary})})).json();
-  if(!d.ok){ alert(d.reason||"完成失败"); b.disabled=false; b.textContent="完成"; return; }
-  loadTasks();
-}
-
-$("#send").onclick = async ()=>{
+$("#send").onclick=async()=>{
   const m=$("#amsg");
-  const body = {assignee_no:$("#to").value, title:$("#title").value.trim(), due:$("#due").value};
+  const body={type:$("#ttype").value, assignee_no:$("#to").value,
+    start:$("#start").value, end:$("#end").value,
+    note:$("#note").value.trim(), activity_code:$("#act").value,
+    files:PICS};
+  const t=TYPES.find(x=>x.name===body.type);
+  if(t&&t.needs_customer) body.customer_id=$("#cust").value.trim();
   if(!body.assignee_no) return msg(m,"没有可派的顾问",false);
   $("#send").disabled=true;
-  const d = await (await fetch("/api/task-assign",{method:"POST",
-      headers:{"content-type":"application/json"}, body:JSON.stringify(body)})).json();
+  const d=await(await fetch("/api/task-assign",{method:"POST",
+    headers:{"content-type":"application/json"},body:JSON.stringify(body)})).json();
   $("#send").disabled=false;
-  msg(m, (d.reason||"").replace(/\*\*/g,""), !!d.ok);
-  if(d.ok){ $("#title").value=""; loadTasks(); }
+  msg(m,(d.reason||"").replace(/\*\*/g,""),!!d.ok);
+  if(d.ok){$("#note").value="";PICS=[];drawThumbs();loadTasks()}
 };
 
-$("#out").onclick = async ()=>{ await fetch("/api/logout",{method:"POST"}); location.href="/login"; };
-
+$("#out").onclick=async()=>{await fetch("/api/logout",{method:"POST"});location.href="/login"};
 boot();
 </script>

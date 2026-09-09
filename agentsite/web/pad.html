@@ -41,6 +41,41 @@ h2{font-size:15px;margin:26px 0 12px;color:var(--dim);font-weight:600}
 .done .cust,.done .when{opacity:.55}
 .empty{background:#fff;border:1px dashed var(--line);border-radius:14px;
   padding:36px;text-align:center;color:var(--dim)}
+.t .pics{display:flex;gap:7px;flex-wrap:wrap}
+.t .pics img{width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.t .fam{font-size:12px;padding:2px 9px;border-radius:20px;background:#f4f1ff;color:#6941c6}
+.t .act{font-size:12px;color:var(--dim)}
+/* 完成弹窗 —— 总结必填,该传图的类型不传不让过 */
+#mask{position:fixed;inset:0;background:rgba(20,18,16,.45);display:none;
+  align-items:center;justify-content:center;padding:20px;z-index:20}
+#mask.on{display:flex}
+#dlg{background:#fff;border-radius:16px;padding:22px 24px;width:min(520px,100%);
+  max-height:88vh;overflow:auto}
+#dlg h3{margin:0 0 3px;font-size:17px}
+#dlg .sub{margin:0 0 16px;font-size:13px;color:var(--dim)}
+#dlg label{display:block;font-size:13px;color:var(--dim);margin:0 0 6px}
+#dlg textarea{width:100%;font:inherit;font-size:15px;padding:11px 12px;border:1px solid var(--line);
+  border-radius:11px;resize:vertical;min-height:92px;outline:none}
+#dlg textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(140,67,86,.10)}
+#need{display:none;margin:9px 0 0;font-size:12.5px;color:var(--late);
+  background:var(--latebg);border:1px solid #fec84b;border-radius:9px;padding:8px 11px}
+#need.on{display:block}
+#sthumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+#sthumbs .x{position:relative}
+#sthumbs img{width:66px;height:66px;object-fit:cover;border-radius:9px;border:1px solid var(--line)}
+#sthumbs .x button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;
+  border:1px solid var(--line);background:#fff;color:var(--dim);font-size:13px;line-height:1;padding:0;cursor:pointer}
+#dlg .btns{display:flex;gap:10px;margin-top:18px}
+/* cursor:pointer 写在 #ok / #cancel 上,不写在 .btns button 上 ——
+   死控件审计按选择器里最后一个**类名**记账,写成 .btns button 会被记成
+   「.btns 声明了 pointer 却没绑定」,而真正绑事件的是里面按 id 找的两个按钮。 */
+#dlg .btns button{flex:1;font:inherit;font-size:15px;font-weight:600;padding:12px;border-radius:11px}
+#ok{border:0;background:var(--accent);color:#fff;cursor:pointer}
+#ok:disabled{opacity:.5}
+#cancel{border:1px solid var(--line);background:#fff;color:var(--dim);cursor:pointer}
+#derr{display:none;margin-top:11px;padding:9px 12px;border-radius:9px;font-size:13px;
+  background:#fef3f2;color:#b42318;border:1px solid #fecdca}
+#derr.on{display:block}
 </style>
 
 <div id="bar">
@@ -50,6 +85,22 @@ h2{font-size:15px;margin:26px 0 12px;color:var(--dim);font-weight:600}
   <a class="tb" href="/tasks">全部任务</a>
   <a class="tb" href="/">助手</a>
   <button class="tb" id="out">退出</button>
+</div>
+
+<div id="mask">
+  <div id="dlg">
+    <h3 id="dtitle">做完了</h3>
+    <p class="sub" id="dsub"></p>
+    <label for="dsum">日程总结（必填）</label>
+    <textarea id="dsum" placeholder="做了什么、结果如何、客户下一步要什么"></textarea>
+    <p id="need"></p>
+    <label style="margin-top:15px" for="dpic">总结附件（现场照）</label>
+    <input id="dpic" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple
+           style="font-size:13px">
+    <div id="sthumbs"></div>
+    <p id="derr"></p>
+    <div class="btns"><button id="cancel">先不提交</button><button id="ok">提交</button></div>
+  </div>
 </div>
 
 <main>
@@ -66,7 +117,7 @@ h2{font-size:15px;margin:26px 0 12px;color:var(--dim);font-weight:600}
 
 <script>
 const $=s=>document.querySelector(s);
-let ME=null;
+let ME=null, TYPES=[];
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // "2026-09-15 14:00" 里的 - 在 Safari 上 new Date 解不了,换成 /
 const dt=s=>s?new Date(String(s).replace(/-/g,"/")):null;
@@ -82,7 +133,13 @@ function card(r){
     </div>
     <div class="when">${d?d.toLocaleString("zh-CN",{month:"numeric",day:"numeric",
         hour:"2-digit",minute:"2-digit",hour12:false}):"—"}</div>
-    <div class="what">${esc(r.note||r.type||"—")}</div>
+    <div class="what">${esc(r.note||"—")}</div>
+    <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+      <span class="fam">${esc(r.type||"—")}</span>
+      ${r.activity_code?`<span class="act">活动 ${esc(r.activity_code)}</span>`:""}
+    </div>
+    ${pics(r,"派单")}
+    ${r.summary?`<div class="what" style="color:var(--ok)">✔ ${esc(r.summary)}</div>${pics(r,"总结")}`:""}
     <div class="foot">
       <span class="tag ${done?"done":(late?"late":"")}">${done?esc(r.status):(late?"已逾期":"待接待")}</span>
       <span class="by">${esc(r["派任务的人"]||"系统自动派单")}</span>
@@ -96,6 +153,9 @@ async function load(){
   ME=await r.json();
   $("#who").innerHTML=`<b>${esc(ME.name)}</b> · ${esc(ME.role)}${ME.shop?" · "+esc(ME.shop):""}`;
 
+  if(!TYPES.length){
+    try{ TYPES=(await(await fetch("/api/task-types")).json()).rows||[] }catch(e){ TYPES=[] }
+  }
   const d=await(await fetch("/api/my-tasks")).json();
   // 顾问端只关心**自己要做的事**。店长打开这一页,看到的也只是他自己名下的,
   // 全店的在 /tasks —— 一个屏幕回答一个问题。
@@ -111,19 +171,70 @@ async function load(){
   const later=live.filter(x=>!isToday(dt(x.start_ts)));
   $("#later").innerHTML=later.length?later.map(card).join("")
     :`<div class="empty">之后暂时没有</div>`;
-  for(const b of document.querySelectorAll(".fin")) b.onclick=()=>fin(b);
+  for(const b of document.querySelectorAll(".fin")){
+    const row=mine.find(x=>x.id===b.dataset.id);
+    b.onclick=()=>openFin(row);
+  }
 }
 
-async function fin(b){
-  const s=prompt("接待完了,记一句结果(可留空):","");
-  if(s===null) return;
-  b.disabled=true; b.textContent="…";
+// 派单附件和总结附件分开画 —— 一张图是「要求」还是「结果」,看的人得能分清
+function pics(r,kind){
+  const fs=(r.附件||[]).filter(f=>f.kind===kind);
+  if(!fs.length) return "";
+  return `<div class="pics">`+fs.map(f=>
+    `<img src="/api/task-file/${f.id}" title="${esc(kind)}·${esc(f.name)}">`).join("")+`</div>`;
+}
+
+// ── 完成弹窗 ────────────────────────────────────────────────────────
+let CUR=null, SPICS=[];
+function openFin(r){
+  CUR=r; SPICS=[]; 
+  $("#dsum").value=""; $("#sthumbs").innerHTML="";
+  $("#derr").className=""; $("#dsub").textContent=`${r.id} · ${r.type} · ${r.note||""}`;
+  // 要不要传图由**类型**决定,清单来自后端 —— 前端不自己列一份该传图的类型。
+  const t=(TYPES.find(x=>x.name===r.type)||{});
+  $("#need").className = t.needs_photo ? "on" : "";
+  $("#need").textContent = t.needs_photo
+    ? "这个类型完成时必须传现场照 —— 事情本身留下了可看的痕迹,拍一张再提交。" : "";
+  $("#mask").className="on"; $("#dsum").focus();
+}
+$("#cancel").onclick=()=>{$("#mask").className=""};
+$("#mask").onclick=e=>{if(e.target.id==="mask")$("#mask").className=""};
+
+$("#dpic").addEventListener("change", async e=>{
+  for(const f of e.target.files){
+    if(SPICS.length>=6) break;
+    if(f.size>5*1024*1024){
+      $("#derr").className="on";
+      $("#derr").textContent=`${f.name} 有 ${(f.size/1048576).toFixed(1)}MB，超过 5MB`;
+      continue;
+    }
+    const data=await new Promise(res=>{const rd=new FileReader();rd.onload=()=>res(rd.result);rd.readAsDataURL(f)});
+    SPICS.push({name:f.name,data});
+  }
+  e.target.value="";
+  $("#sthumbs").innerHTML=SPICS.map((p,i)=>
+    `<span class="x"><img src="${p.data}"><button data-rm="${i}">×</button></span>`).join("");
+  for(const b of document.querySelectorAll("[data-rm]"))
+    b.onclick=()=>{SPICS.splice(+b.dataset.rm,1);b.closest("#sthumbs").innerHTML=
+      SPICS.map((p,i)=>`<span class="x"><img src="${p.data}"><button data-rm="${i}">×</button></span>`).join("");
+      for(const x of document.querySelectorAll("[data-rm]")) x.onclick=b.onclick};
+});
+
+$("#ok").onclick=async()=>{
+  $("#derr").className="";
+  $("#ok").disabled=true; $("#ok").textContent="提交中…";
   const d=await(await fetch("/api/task-finish",{method:"POST",
     headers:{"content-type":"application/json"},
-    body:JSON.stringify({id:b.dataset.id,summary:s})})).json();
-  if(!d.ok){alert(d.reason||"没能完成");b.disabled=false;b.textContent="做完了";return}
-  load();
-}
+    body:JSON.stringify({id:CUR.id, summary:$("#dsum").value.trim(), files:SPICS})})).json();
+  $("#ok").disabled=false; $("#ok").textContent="提交";
+  if(!d.ok){
+    $("#derr").className="on";
+    $("#derr").textContent=(d.reason||"没能完成").replace(/\*\*/g,"");
+    return;
+  }
+  $("#mask").className=""; load();
+};
 
 $("#out").onclick=async()=>{await fetch("/api/logout",{method:"POST"});location.href="/login"};
 load();
