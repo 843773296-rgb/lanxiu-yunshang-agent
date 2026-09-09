@@ -106,6 +106,9 @@ class H(BaseHTTPRequestHandler):
                     os.path.join(HERE, "web", "_shell.txt"), encoding="utf-8").read())
             self._send(html.encode(), "text/html; charset=utf-8"); return
         if p.startswith("/api/") or p.startswith("/img/"): return self._proxy("GET")
+        if p == "/roles":
+            # 角色清单由 sdk 出 —— 名字、职责、工具数、规矩数都在那儿,页面不许抄
+            return self._send({"rows": sdk.roles()})
         if p == "/models":
             # 清单由 sdk 从**单价表**长出来,页面不许自己写死一份
             return self._send({"rows": sdk.models(), "default": sdk.default_model_id()})

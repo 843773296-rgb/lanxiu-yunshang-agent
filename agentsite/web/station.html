@@ -43,6 +43,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   background:#fff;cursor:pointer;color:var(--dim);text-decoration:none}
 .tbtn:hover{color:var(--ink);border-color:#c9cace}
 #kindhint{font-size:12px;color:var(--dim)}
+#currole{font-size:13.5px;font-weight:600;padding:4px 11px;border-radius:8px;
+  background:var(--chip);white-space:nowrap}
 
 /* ── 消息流 ───────────────────────────────────────────────── */
 #stream{flex:1;overflow:auto;padding:26px 0 10px}
@@ -76,15 +78,50 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 .body th{background:var(--chip);font-weight:600}
 .body hr{border:0;border-top:1px solid var(--line);margin:16px 0}
 
-/* ── 空状态 ───────────────────────────────────────────────── */
-#empty{padding:70px 24px 0;text-align:center}
-#empty h2{font-size:19px;margin:0 0 8px;font-weight:600}
-#empty p{color:var(--dim);margin:0 0 26px;font-size:13px}
-.sug{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:660px;margin:0 auto;text-align:left}
-.sug button{font:inherit;font-size:13px;padding:11px 14px;border:1px solid var(--line);
-  border-radius:11px;background:#fff;cursor:pointer;color:var(--ink);line-height:1.5}
-.sug button:hover{border-color:#c9cace;background:#fafafb}
-.sug small{display:block;color:var(--dim);font-size:11.5px;margin-top:3px}
+/* ── 角色选择屏:进来第一件事是选角色,不是先聊 ─────────────── */
+/* 视觉参考 Accio 的智能体市场:圆形头像居中、名字居中、底部一个明显的「对话」按钮。
+   但卡片上多两个它没有的数:**工具数和规矩数** ——
+   这两个数说明了这个角色到底能干什么、被什么管着,是这个项目最该露出来的信息。 */
+#pick{padding:46px 24px 40px;max-width:860px;margin:0 auto}
+#pick h2{font-size:21px;margin:0 0 6px;font-weight:600}
+#pick .sub{color:var(--dim);font-size:13px;margin-bottom:26px;line-height:1.7}
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:16px}
+.role{border:1px solid var(--line);border-radius:14px;padding:22px 18px 16px;background:#fff;
+  display:flex;flex-direction:column;align-items:center;text-align:center;transition:.15s}
+.role:hover{border-color:#c9cace;box-shadow:0 3px 16px rgba(20,20,30,.07)}
+/* 圆形头像会读成「一个人」。这里是**能力封装**不是人格,所以用圆角方块。 */
+.role .av{width:52px;height:52px;border-radius:13px;background:var(--chip);
+  display:flex;align-items:center;justify-content:center;font-size:25px;margin-bottom:11px}
+.role .nm{font-size:15.5px;font-weight:600;margin-bottom:4px}
+.role .who{font-size:11.5px;color:var(--accent);margin-bottom:9px}
+.role .desc{font-size:12.5px;color:#5b5e66;line-height:1.65;margin-bottom:12px;flex:1}
+.role .cnt{font-size:11px;color:var(--dim);font-family:ui-monospace,Menlo,monospace;
+  margin-bottom:13px}
+.role .go{width:100%;border:0;border-radius:9px;padding:9px 0;font:inherit;font-size:13.5px;
+  background:#eef2ff;color:var(--accent);cursor:pointer;font-weight:500}
+.role .go:hover{background:var(--accent);color:#fff}
+#pick .why{margin-top:30px;font-size:12px;color:var(--dim);line-height:1.85;
+  border-top:1px solid var(--line);padding-top:16px}
+
+/* ── 空状态:选完角色之后 ───────────────────────────────────
+   参考 Accio 的「新任务」屏:当前角色的头像 + 名字 + 一句话描述放在**输入框正上方**,
+   旁边就是「切换角色」;下面是场景标签。角色不是设置项,是你正在跟谁说话。 */
+#empty{padding:96px 24px 0;max-width:760px;margin:0 auto}
+.idbar{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.idbar .av{width:48px;height:48px;border-radius:12px;background:var(--chip);flex:none;
+  display:flex;align-items:center;justify-content:center;font-size:25px}
+.idbar .txt{flex:1;min-width:0}
+.idbar .nm{font-size:19px;font-weight:600;margin-bottom:3px}
+.idbar .ds{font-size:12.5px;color:var(--dim);line-height:1.6}
+.idbar .sw{flex:none;border:1px solid var(--line);border-radius:20px;padding:7px 15px;
+  background:#fff;font:inherit;font-size:13px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.idbar .sw:hover{border-color:#c9cace}
+.sug{display:flex;flex-wrap:wrap;gap:9px}
+.sug button{font:inherit;font-size:13px;padding:8px 15px;border:1px solid var(--line);
+  border-radius:20px;background:#fff;cursor:pointer;color:#42454d;line-height:1.5}
+.sug button:hover{border-color:var(--accent);color:var(--accent)}
+#disclaim{max-width:760px;margin:9px auto 0;padding:0 24px;font-size:11.5px;
+  color:var(--dim);text-align:center;line-height:1.7}
 
 /* ── 输入区 ───────────────────────────────────────────────── */
 #composer{flex:none;padding:6px 0 16px;background:var(--bg)}
@@ -134,11 +171,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 
 <div id="main">
   <div id="top">
-    <select id="kind">
-      <option value="kb">工艺顾问</option>
-      <option value="workshop">工坊排产</option>
-      <option value="task">任务助手</option>
-    </select>
+    <span id="currole" title="角色在新建会话时定死,之后不变"></span>
+    <button class="tbtn" id="switch">换一套能力</button>
     <select id="model" title="换模型"><option>载入中…</option></select>
     <span id="kindhint"></span>
     <span class="sp"></span>
@@ -158,6 +192,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
       </div>
     </div>
     <div id="hint"></div><div class="wrap"><div id="novis"></div></div>
+    <div id="disclaim"></div>
   </div>
 </div>
 
@@ -226,15 +261,19 @@ if(!Array.isArray(DB.convs)) DB.convs = [];
 const save = () => { try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){} };
 const cur = () => DB.convs.find(c => c.id === DB.cur) || null;
 
-const KINDS = {
-  kb:   {name:"工艺顾问", hint:"查工艺 / 面料 / 形制 / 工期 · 只读,不下单不报价"},
-  workshop: {name:"工坊排产", hint:"产能瓶颈 / 在制工单 / 工期物料 · 不改期不改派"},
-  task: {name:"任务助手", hint:"退款定因 / 客户合并 · 只出草稿,由人确认"}
-};
+// 角色清单**从后端拉**(/roles)—— 工具数和规矩数只有那边算得出来,
+// 页面抄一份当天就开始漂。这是这个项目撞了五次的那条:同一个事实两个来源。
+let ROLES = [];
+const KINDS = {};      // kind → 角色对象,拉到之后填
+
+// **角色在新建会话时定死,之后不变。** 换角色 = 新会话。
+// 理由不是产品洁癖:换角色就是换工具集,前面几轮的上下文对不上了 ——
+// 顾问那条会话里模型手上有 17 个工具,工坊那条只有 6 个。
+let PICKING = false;   // 正在选角色
 
 function newConv(kind){
   const c = {id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
-             title:"新会话", kind: kind || $("#kind").value,
+             title:"新会话", kind: kind || "kb",
              model: $("#model").value || MODEL_DEFAULT,
              session:null, at:Date.now(), msgs:[]};
   DB.convs.unshift(c); DB.cur = c.id; save(); return c;
@@ -296,15 +335,63 @@ function metaLine(r){
   return bits.join(" · ");
 }
 
+function drawRoles(){
+  const s = $("#stream");
+  s.innerHTML = `<div id="pick">
+    <h2>这次要做哪一类事?</h2>
+    <div class="sub"><b>是同一个智能体</b> —— 换的不是人,是**它手上有哪些工具、受哪些规矩管**。<br>
+      三套封装都是<b>只读的</b>:不下单、不改单、不改期、不改档,产出都是给人确认的草稿。</div>
+    <div class="roles">${ROLES.map((r,i) => `
+      <div class="role">
+        <div class="av">${esc(r.emoji)}</div>
+        <div class="nm">${esc(r.name)}</div>
+        <div class="who">${esc(r.who)}</div>
+        <div class="desc">${esc(r.desc)}</div>
+        <div class="cnt">${r.tools} 个工具 · ${r.rules} 条规矩</div>
+        <button class="go" data-act="go" data-i="${i}">用这套开始</button>
+      </div>`).join("")}</div>
+    <div class="why"><b>为什么要先选,而不是聊到一半再切?</b><br>
+      一套封装 = 一组工具 + 一组规矩。门店顾问手上有 ${(ROLES[0]||{}).tools || "?"} 个工具,
+      工坊排产只有 ${(ROLES[1]||{}).tools || "?"} 个 ——
+      聊到一半切过去,前面几轮的上下文对不上,而且模型会拿它**已经没有的工具**去承诺事情。
+      所以<b>换封装一律新开会话</b>,这是结构上的,不是提醒。<br><br>
+      <b>规矩也是跟着工具走的:</b>挂了哪个工具,管它的那条规矩才会发给模型 ——
+      没挂的工具,对应的规矩一个字都不发,免得它承诺做不到的事。</div>
+  </div>`;
+  s.querySelectorAll(".role .go").forEach(b => {
+    b.onclick = () => {
+      const r = ROLES[+b.dataset.i];
+      const c = cur();
+      // 当前会话还没说过话,就直接把它定成这个角色;否则开一条新的
+      if(c && !c.msgs.length){ c.kind = r.kind; save(); }
+      else newConv(r.kind);
+      PICKING = false; syncHint(); drawSide(); drawStream(); $("#q").focus();
+    };
+  });
+}
+
 function drawStream(){
   const s = $("#stream"); const c = cur();
-  if(!c || !c.msgs.length){
-    s.innerHTML = `<div id="empty"><h2>问点什么</h2>
-      <p>它只读库,不下单、不改单、不承诺工期和价格 —— 产出是给你的草稿。</p>
-      <div class="sug">${SUG.map((x,i) =>
-        `<button data-i="${i}">${esc(x[0])}<small>${esc(x[1])}</small></button>`).join("")}</div></div>`;
+  if(PICKING || !c){ drawRoles(); return; }
+  if(!c.msgs.length){
+    const R = KINDS[c.kind] || {};
+    const ex = R.examples || [];
+    s.innerHTML = `<div id="empty">
+      <div class="idbar">
+        <div class="av">${esc(R.emoji || "")}</div>
+        <div class="txt">
+          <div class="nm">澜绣云裳助手 · ${esc(R.name || "")}</div>
+          <div class="ds">${esc(R.desc || "")}<br>
+            <span style="color:#9aa0ad">这套封装:${R.tools || "?"} 个工具 · ${R.rules || "?"} 条规矩</span>
+          </div></div>
+        <button class="sw" data-act="switch">⇄ 换一套能力</button>
+      </div>
+      <div class="sug">${ex.map((q,i) =>
+        `<button data-i="${i}">${esc(q)}</button>`).join("")}</div></div>`;
+    const sw = s.querySelector(".sw");
+    if(sw) sw.onclick = () => { PICKING = true; drawStream(); };
     s.querySelectorAll(".sug button").forEach(b => {
-      b.onclick = () => { $("#q").value = SUG[+b.dataset.i][0]; grow(); ask(); };
+      b.onclick = () => { $("#q").value = ex[+b.dataset.i]; grow(); ask(); };
     });
     return;
   }
@@ -476,7 +563,8 @@ $("#ovx").onclick = closeOv;
 $("#ov").onclick = e => { if(e.target.id === "ov") closeOv(); };
 
 /* ── 事件绑定 ─────────────────────────────────────────────── */
-$("#newbtn").onclick = () => { newConv(); drawSide(); drawStream(); $("#q").focus(); };
+$("#newbtn").onclick = () => { PICKING = true; drawSide(); drawStream(); };
+$("#switch").onclick = () => { PICKING = true; drawStream(); };
 $("#send").onclick = ask;
 $("#stop").onclick = () => { if(RUNNING) RUNNING.abort(); };
 $("#q").addEventListener("input", grow);
@@ -484,17 +572,19 @@ $("#q").addEventListener("keydown", e => {
   if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); ask(); }
 });
 document.addEventListener("keydown", e => { if(e.key === "Escape") closeOv(); });
-$("#kind").onchange = () => {
-  const c = cur();
-  // 会话开始之后不许换智能体:换了工具集就换了,**前面几轮的上下文对不上**。
-  if(c && c.msgs.length){ newConv($("#kind").value); }
-  else if(c){ c.kind = $("#kind").value; save(); }
-  syncHint(); drawSide(); drawStream();
-};
 function syncHint(){
-  const k = $("#kind").value;
-  $("#kindhint").textContent = KINDS[k].hint;
-  $("#hint").textContent = "只读工具 · 产出是草稿,须人确认 · 会话记录存在本机浏览器";
+  const c = cur(); const R = (c && KINDS[c.kind]) || {};
+  // 顶栏显示**当前角色**(不可改),换角色走「切换角色」——
+  // 角色在新建会话时定死,界面不该做成一个随手能拨的下拉。
+  $("#currole").textContent = `${R.emoji || ""} ${R.name || "未选"}`;
+  $("#kindhint").textContent = R.who || "";
+  // 占位符带上角色名 —— 让人一眼知道自己在跟谁说话
+  $("#q").placeholder = R.name ? `向 ${R.name} 提问…(↩ 发送,⇧↩ 换行,可粘贴图片)`
+                              : "先选一套能力封装";
+  $("#hint").textContent = "";
+  $("#disclaim").textContent =
+    "内容由 AI 生成,请核实后再对客户使用。三个角色都是只读的 —— " +
+    "涉及退款、判责、赔付、改期的结论必须由人签字。会话记录存在本机浏览器。";
 }
 
 /* ── 模型清单 ─────────────────────────────────────────────
@@ -528,7 +618,6 @@ $("#model").onchange = () => {
 /* ── 启动 ─────────────────────────────────────────────────── */
 if(!DB.convs.length) newConv("kb");
 if(!cur()) DB.cur = DB.convs[0].id;
-$("#kind").value = cur().kind || "kb";
 syncHint(); drawSide(); drawStream(); grow(); $("#q").focus();
 loadModels();
 </script>
