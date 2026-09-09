@@ -9,6 +9,35 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import api as backend
 import fsm, rules
 import lifecycle as _lc     # 生命周期口径的唯一源头,页面不再自己抄一份
+import auth                     # 员工登录:**角色只从服务端会话取,不从请求体读**
+
+
+def _me(handler):
+    """从 Cookie 里的 token 换出当前登录的员工。没登录返回 None。
+
+    **这是整个权限体系的地基。** 在它之前,role 是请求体里的一个字符串 ——
+    `check_write` 判「顾问不能补录、店长可以」判得再对,
+    也拦不住任何人在请求里写上「店长」。
+    **一条链上有一环是约定,整条链就只有约定那么强。**
+    """
+    ck = handler.headers.get("cookie") or ""
+    tok = ""
+    for part in ck.split(";"):
+        k, _, v = part.strip().partition("=")
+        if k == "lx_token": tok = v
+    return auth.who(tok)
+
+
+def _role_of(handler, fallback="顾问"):
+    """当前角色。**登录了就用登录身份,没登录就用最低权限** ——
+    绝不读请求体里的 role(那是自称)。"""
+    u = _me(handler)
+    return (u or {}).get("role") or fallback
+
+
+def _actor_of(handler, fallback="魏欣新"):
+    u = _me(handler)
+    return (u or {}).get("name") or fallback
 
 HERE=os.path.dirname(os.path.abspath(__file__))
 
@@ -633,7 +662,7 @@ def _insert(table, vals, required):
                   [vals[k] for k in use])
 
 
-def resolve_combo(d, actor="魏欣新"):
+def resolve_combo(d, actor="魏欣新", _role=None):
     """**核实回填** —— 工艺负责人打样确认之后,把结论写回相容矩阵。
 
     这是待核实队列的另一半。队列只说「谁被问了」,答案要人去打样;
@@ -658,7 +687,7 @@ def resolve_combo(d, actor="魏欣新"):
     ck, mk = _ck["code"], _mk["code"]
     cname, mname = _ck["name"], _mk["name"]
     v = (d.get("verdict") or "").strip()
-    role = d.get("role") or "顾问"
+    role = _role or "顾问"
     if v not in ("可", "不可", "需评估"):
         return dict(ok=False, code="BAD_VERDICT",
                     reason="结论只能是「可 / 不可 / 需评估」三选一")
@@ -683,10 +712,11 @@ def resolve_combo(d, actor="魏欣新"):
                        f"原来是「{old['verdict']} / {old['rule'] or '无依据'}」")
 
 
-def create_customer(d, actor="魏欣新"):
+def create_customer(d, actor="魏欣新", _role=None):
     """新建客户档案。PRD 6.2:姓名必填、手机号唯一、疑似重复要提示。"""
     import datetime
-    role = d.get("role") or "顾问"
+    # role 由调用方(路由)从**会话**取好传进来;d 里的 role 一律忽略。
+    role = _role or "顾问"
     ex = rows("SELECT id,name,phone,shop,birthday,addr FROM customer")
     # validate_customer 返回的是 **4 个值**:(ok, code, reason, suspects)。
     # 第一版只解了 3 个,直接 ValueError —— 而且 suspects 是有业务含义的:
@@ -714,10 +744,10 @@ def create_customer(d, actor="魏欣新"):
                 reason=f"已建档 {cid}。**生命周期初始是「潜在」** —— 它由每日重算决定,不接受手工流转")
 
 
-def create_appointment(d, actor="魏欣新"):
+def create_appointment(d, actor="魏欣新", _role=None):
     """新建预约。PRD:早于当前时间的补录只有店长及以上能做 —— 判据在 rules.py。"""
     import datetime
-    role = d.get("role") or "顾问"
+    role = _role or "顾问"
     ok, code, why = rules.validate_appointment(d, actor_role=role)
     if not ok:
         log_op(actor, "appointment", "-", "—", "新建", False, code, why, {"role": role})
@@ -1350,6 +1380,9 @@ class H(BaseHTTPRequestHandler):
         self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b)
     def do_GET(self):
         p=_u(unquote(urlparse(self.path).path))
+        if _u(unquote(urlparse(self.path).path)) == "/api/me":
+            u = _me(self)
+            return self._send(u or {"error": "没登录"}, 200 if u else 401)
         # 四个智能体页面已迁到独立站点(agentsite/,端口 8770)。
         # 后台只留一个入口链接,接口仍对外提供 —— 新站的 /api/* 反代过来。
         if p in ("/","/index.html"):
@@ -1686,35 +1719,65 @@ class H(BaseHTTPRequestHandler):
                   if m.get("role") in ("user","assistant") and isinstance(m.get("content"),str)][-8:]
             try: return self._send(_chat.ask(q, hist))
             except Exception as e: return self._send(dict(error=str(e)[:300]),500)
-        if p=="/api/combo-resolve": return self._send(resolve_combo(body))
-        if p=="/api/customer-create": return self._send(create_customer(body))
+        if p=="/api/login":
+            tok, r = auth.login(body.get("login_name"), body.get("password"))
+            if not tok:
+                # **登录失败不写日志正文**(别把口令或工号猜测留在台账里),只记一条计数
+                return self._send(dict(ok=False, reason=r), 401)
+            log_op(r["name"], "staff", r["no"], "—", "已登录", True, "LOGIN",
+                   f"{r['name']}({r['role']} · {r['shop']})登录", {})
+            # HttpOnly:JS 读不到这个 cookie,XSS 也偷不走
+            self.send_response(200)
+            self.send_header("content-type", "application/json; charset=utf-8")
+            self.send_header("set-cookie",
+                             f"lx_token={tok}; Path=/; HttpOnly; SameSite=Lax; Max-Age={12*3600}")
+            data = _j.dumps(dict(ok=True, **r), ensure_ascii=False).encode()
+            self.send_header("content-length", str(len(data))); self.end_headers()
+            self.wfile.write(data); return
+        if p=="/api/logout":
+            ck = self.headers.get("cookie") or ""
+            for part in ck.split(";"):
+                k, _, v = part.strip().partition("=")
+                if k == "lx_token": auth.logout(v)
+            self.send_response(200)
+            self.send_header("content-type", "application/json; charset=utf-8")
+            self.send_header("set-cookie", "lx_token=; Path=/; HttpOnly; Max-Age=0")
+            data = b'{"ok":true}'
+            self.send_header("content-length", str(len(data))); self.end_headers()
+            self.wfile.write(data); return
+        if p=="/api/combo-resolve":
+            return self._send(resolve_combo(body, _actor_of(self), _role_of(self)))
+        if p=="/api/customer-create":
+            return self._send(create_customer(body, _actor_of(self), _role_of(self)))
         if p.startswith("/api/customer-update/"):
             return self._send(update_customer(p.split("/api/customer-update/")[1],body,
-                                              role=body.get("role") or "顾问"))
+                                              role=_role_of(self)))
         if p=="/api/approval-apply":
             return self._send(apply_approval(body.get("kind"),body.get("target"),
-                body.get("payload") or {},body.get("note"),role=body.get("role") or "顾问"))
+                body.get("payload") or {},body.get("note"),role=_role_of(self)))
         if p=="/api/approval-decide":
             return self._send(decide_approval(body.get("id"),body.get("to"),body.get("note"),
-                                              role=body.get("role") or "顾问"))
+                                              role=_role_of(self)))
         if p=="/api/import":
-            return self._send(import_customers(body.get("text"),role=body.get("role") or "顾问",
+            return self._send(import_customers(body.get("text"),role=_role_of(self),
                                                dry=bool(body.get("dry",True))))
-        if p=="/api/appt-create": return self._send(create_appointment(body))
-        if p=="/api/followup-create": return self._send(create_followup(body))
+        if p=="/api/appt-create":
+            return self._send(create_appointment(body, _actor_of(self), _role_of(self)))
+        if p=="/api/followup-create":
+            return self._send(create_followup(body, _actor_of(self)))
         if p=="/api/download-create":
             return self._send(create_download(body.get("kind"),body.get("filters")))
         if p=="/api/product-save":
-            return self._send(save_product(body,role=body.get("role") or "顾问"))
+            return self._send(save_product(body,role=_role_of(self)))
         if p=="/api/block-save": return self._send(save_block(body))
         if p=="/api/template-save": return self._send(save_template(body))
         if p=="/api/syscode-save":
-            return self._send(save_syscode(body,role=body.get("role") or "顾问"))
+            return self._send(save_syscode(body,role=_role_of(self)))
         if p=="/api/content-save": return self._send(save_content(body))
         if p=="/api/toggle":
             return self._send(toggle(body.get("table"),body.get("key"),body.get("val")))
         if p=="/api/transfer":
-            ids=body.get("ids") or []; adv=body.get("advisor"); role=body.get("role") or "顾问"
+            ids=body.get("ids") or []; adv=body.get("advisor"); role=_role_of(self)
             if role not in ("店长","总部运营"):
                 log_op("魏欣新","customer","|".join(ids[:3]),"—","转移",False,"WRONG_ROLE",
                        f"客户转移须由店长及以上操作,当前角色:{role}",{})
@@ -1738,7 +1801,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(close_task(body.get("id"),body.get("result"),body.get("note")))
         if p=="/api/merge":
             return self._send(merge_transit(body.get("id"),body.get("to"),
-                                            body.get("note"),role=body.get("role") or "顾问"))
+                                            body.get("note"),role=_role_of(self)))
         if p=="/api/lifecycle-adjust":
             return self._send(adjust_lifecycle(body.get("id"),body.get("to"),body.get("reason")))
         if p.startswith("/api/draft/"): return self._send(gen_draft(p.split("/api/draft/")[1]))

@@ -22,6 +22,7 @@ run(){ printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
     FAIL=1; sed 's/^/  /' /tmp/chk.out; printf "  \033[31m✗ 失败\033[0m\n"
   fi }
 run "数据层 · truth 表隔离"   python3 backend/selftest.py
+run "员工登录 · 5 条自测" python3 backend/auth.py
 run "路由 · handler 必须真的存在" python3 backend/route_check.py
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
 run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py
@@ -36,6 +37,7 @@ run "状态流转引擎 · 17 个用例" python3 backend/fsm.py
 run "写入校验规则 · 10 个用例" python3 backend/rules.py
 run "控件审计 · 死控件检查"    python3 backend/ui_audit.py
 run "页面内联 JS · 语法(重复声明/括号)" python3 agentsite/js_check.py
+run "前端 · 引用的元素必须存在" python3 agentsite/ref_check.py
 run "遮蔽检查 · 局部变量压函数" python3 backend/shadow_check.py
 run "商品库 · 不卖矩阵判不可的组合" python3 backend/catalog_check.py
 run "会员与订单 · 映射/勾稽/门槛" python3 backend/member_order_check.py

@@ -63,7 +63,12 @@ CREATE TABLE triage(
 CREATE TABLE shop(code TEXT PRIMARY KEY, name TEXT, status TEXT, manager TEXT,
   phone TEXT, province TEXT, addr TEXT, updated TEXT);
 CREATE TABLE staff(no TEXT PRIMARY KEY, name TEXT, role TEXT, shop TEXT, status TEXT,
-  updated_by TEXT, updated TEXT);
+  updated_by TEXT, updated TEXT,
+  -- 登录凭据。**员工才是后台的使用者**,而原来只有消费者账户(account)有密码,
+  -- 员工一个都没有 —— 于是「你是店长还是顾问」只能靠请求里自称的字符串。
+  -- 一条链上有一环是约定,整条链就只有约定那么强。
+  login_name TEXT UNIQUE, pwd_algo TEXT, pwd_salt TEXT, pwd_hash TEXT,
+  fail_count INT DEFAULT 0, locked_until TEXT, last_login TEXT);
 CREATE TABLE schedule(id TEXT PRIMARY KEY, type TEXT, advisor TEXT, customer_id TEXT,
   start_ts TEXT, end_ts TEXT, status TEXT, summary TEXT, cancel_reason TEXT, shop TEXT);
 CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
@@ -486,10 +491,28 @@ def run():
            ("60000007","李明华","店长","SH003 杭州湖滨店"),("60000008","魏欣新","总部运营",""),
            ("60000009","陈曦","总部运营",""),("60000010","何舟","财务","")]
     for no,nm,ro,sh in STAFF:
-        c.execute("INSERT INTO staff VALUES(?,?,?,?,?,?,?)",
+        # **显式写列名。** 原来是 `INSERT INTO staff VALUES(?,?,?,?,?,?,?)` ——
+        # 按位置写,给表加一列就当场断,而且报错信息("14 columns but 7 values")
+        # 完全指不到「你刚加了列」这个真因。
+        c.execute("INSERT INTO staff(no,name,role,shop,status,updated_by,updated) "
+                  "VALUES(?,?,?,?,?,?,?)",
                   (no,nm,ro,sh,"启用","60000008","2026-08-2%d 1%d:16"%(random.randint(0,9),random.randint(0,9))))
 
-    # ── 日程任务(后台 PRD 6.1:有效 → 完结;有效 → 取消/无效)──
+        # ── 员工登录凭据 ────────────────────────────────────────────────
+    # 密码一律 PBKDF2 + 每人独立 salt,**明文一个字都不落库**(演示数据也不例外)。
+    # 演示口令统一是 `lanxiu@2026`,写在这儿是因为它本来就是公开的演示密码;
+    # 真上线时这段要换成「首次登录强制改密」。
+    import hashlib as _hl, secrets as _sc
+    _ITER = 120000
+    DEMO_PW = "lanxiu@2026"
+    for _st in c.execute("SELECT no,name FROM staff").fetchall():
+        _no, _nm = _st
+        _salt = _sc.token_hex(13)
+        _hash = _hl.pbkdf2_hmac("sha256", DEMO_PW.encode(), bytes.fromhex(_salt), _ITER).hex()
+        c.execute("UPDATE staff SET login_name=?,pwd_algo=?,pwd_salt=?,pwd_hash=? WHERE no=?",
+                  (_no, f"pbkdf2_sha256${_ITER}", _salt, _hash, _no))
+
+# ── 日程任务(后台 PRD 6.1:有效 → 完结;有效 → 取消/无效)──
     STYPE=["客户预约","企业任务","订单任务","回访跟进"]
     SST=["有效","有效","有效","完结","完结","取消","无效"]
     for i in range(28):

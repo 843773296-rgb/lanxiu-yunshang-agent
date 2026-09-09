@@ -488,7 +488,15 @@ async function ask(){
   if((!text && !PEND.length) || RUNNING) return;
   if(PEND.length && !checkVision()) return;
   let c = cur(); if(!c) c = newConv();
-  if(!c.msgs.length){ c.title = text.slice(0, 26); c.kind = $("#kind").value; }
+  // ⚠️ 这里原来是 `c.kind = $("#kind").value` —— 那个下拉在改版时删掉了,
+  // 而这句留在了 ask() 里。于是**一按回车就抛 TypeError,消息发不出去**,
+  // 而页面看起来完全正常:框架在、按钮在、输入框能打字。
+  //
+  // 三道前端检查都没抓到它:js_check 只验语法(这句语法是对的);
+  // js_smoke 的 DOM 桩对任何 #id 都返回一个假元素,所以桩里它不会 null;
+  // ui_audit 查的是控件有没有绑定,不查引用的元素还在不在。
+  // **删元素的时候要连引用一起删** —— 这类错只有真点一下才会露出来。
+  if(!c.msgs.length){ c.title = text.slice(0, 26); }
   const imgs = PEND.map(p => p.url);
   c.msgs.push({role:"user", text, images: imgs});
   c.at = Date.now();
