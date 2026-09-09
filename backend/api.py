@@ -290,13 +290,21 @@ def check_write(action, fields=None):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import rules as _r
     d = dict(fields or {})
-    role = d.pop("role", None) or "顾问"
+    # **说清楚是按哪个角色算的,以及这个角色是谁给的。**
+    # 智能体调工具时没有身份(见 docstring 里那条约定),所以它答的永远是
+    # 「如果是这个角色」。不在返回里标出来的话,「如果是店长就能」和「你现在能」
+    # 在输出上分不开 —— 而后者是承诺,前者只是查规则。
+    _given = (d.pop("role", None) or "").strip()
+    role = _given or "顾问"
+    _how = (f"{role}(你指定的角色 —— 这是「**如果是**{role}」的查询,"
+            f"不代表提问的人就是{role})" if _given
+            else "顾问(没指定,**按最低权限算**)")
     act = (action or "").strip()
     if act in ("建档", "新建客户", "customer", "create_customer"):
         ex = _rows("SELECT id,name,phone,shop,birthday,addr FROM customer")
         ok, code, why, sus = _r.validate_customer(d, ex, actor_role=role)
         out = {"能不能做": "能" if ok else "不能", "编码": code, "理由": why or "校验通过",
-               "以什么角色判的": role}
+               "以什么角色判的": _how}
         if sus:
             out["疑似重复"] = [dict(id=x["id"], name=x["name"], shop=x.get("shop")) for x in sus]
             out["该怎么办"] = "转店长确认后再建档 —— 系统不替人做这个判断"
@@ -304,7 +312,7 @@ def check_write(action, fields=None):
     if act in ("预约", "补录预约", "appointment", "create_appointment"):
         ok, code, why = _r.validate_appointment(d, actor_role=role)
         return _nz({"能不能做": "能" if ok else "不能", "编码": code,
-                    "理由": why or "校验通过", "以什么角色判的": role})
+                    "理由": why or "校验通过", "以什么角色判的": _how})
     return {"error": f"不认识的动作「{action}」", "支持": ["建档", "预约"],
             "note": "只覆盖这两类写入的业务规则;别的动作请走后台审批链"}
 
