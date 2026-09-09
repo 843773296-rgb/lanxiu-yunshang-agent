@@ -252,6 +252,9 @@ def main():
 
     print("\n【schema 明写的约束,压过推断出来的结论】")
     gl = P.build(facts, scale=1.0, tables=["cust"])["tables"]["cust"]["columns"]["login"]
+    ck("取值恰好相等" in (gl.get("需确认") or ""),
+       "唯一列被推成外键时,**把怀疑说出来** —— 不崩不等于推对了",
+       str(gl.get("需确认"))[:90])
     ck(gl.get("unique") is True,
        "外键的生成策略要**带上 schema 的事实**(唯一/可空)—— "
        "第一版外键分支自己造了份精简规格,把它们丢了", str(gl)[:110])
