@@ -19,7 +19,9 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 #side h1 small{display:block;font-weight:400;font-size:11px;color:var(--dim);letter-spacing:0}
 #newbtn{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:9px;
   background:#fff;cursor:pointer;font:inherit;font-size:13px;text-align:left;color:var(--ink)}
-#newbtn:hover{border-color:#c9cace}
+#newbtn:hover,#gallery:hover{border-color:#c9cace}
+#gallery{width:100%;margin-top:7px;padding:8px 12px;border:1px solid transparent;border-radius:9px;
+  background:none;cursor:pointer;font:inherit;font-size:13px;text-align:left;color:var(--dim)}
 #convs{flex:1;overflow:auto;padding:6px 8px 18px}
 .grp{font-size:11px;color:var(--dim);padding:14px 8px 5px;letter-spacing:.04em}
 .conv{padding:7px 9px;border-radius:8px;cursor:pointer;position:relative}
@@ -27,6 +29,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 .conv.on{background:#e4e5e9}
 .conv .t{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .conv .m{font-size:11px;color:var(--dim);margin-top:1px}
+.conv .dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;
+  vertical-align:1px}
 .conv .x{position:absolute;right:5px;top:6px;display:none;border:0;background:none;
   color:var(--dim);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:5px}
 .conv:hover .x{display:block}
@@ -88,10 +92,12 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 .roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:16px}
 .role{border:1px solid var(--line);border-radius:14px;padding:22px 18px 16px;background:#fff;
   display:flex;flex-direction:column;align-items:center;text-align:center;transition:.15s}
-.role:hover{border-color:#c9cace;box-shadow:0 3px 16px rgba(20,20,30,.07)}
-/* 圆形头像会读成「一个人」。这里是**能力封装**不是人格,所以用圆角方块。 */
-.role .av{width:52px;height:52px;border-radius:13px;background:var(--chip);
-  display:flex;align-items:center;justify-content:center;font-size:25px;margin-bottom:11px}
+.role:hover{border-color:var(--c);box-shadow:0 3px 18px rgba(20,20,30,.09)}
+/* 圆形头像 + 每个助手自己的配色。底层是同一个内核,但**呈现上它就该有身份** ——
+   有头像、有介绍、有入口,人才认得出自己在跟谁说话。 */
+.role .av{width:62px;height:62px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:28px;margin-bottom:12px;
+  box-shadow:0 0 0 3px #fff, 0 0 0 4px currentColor}
 .role .nm{font-size:15.5px;font-weight:600;margin-bottom:4px}
 .role .who{font-size:11.5px;color:var(--accent);margin-bottom:9px}
 .role .desc{font-size:12.5px;color:#5b5e66;line-height:1.65;margin-bottom:12px;flex:1}
@@ -99,7 +105,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   margin-bottom:13px}
 .role .go{width:100%;border:0;border-radius:9px;padding:9px 0;font:inherit;font-size:13.5px;
   background:#eef2ff;color:var(--accent);cursor:pointer;font-weight:500}
-.role .go:hover{background:var(--accent);color:#fff}
+.role:hover .go{background:var(--c)!important;color:#fff!important}
 #pick .why{margin-top:30px;font-size:12px;color:var(--dim);line-height:1.85;
   border-top:1px solid var(--line);padding-top:16px}
 
@@ -108,7 +114,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
    旁边就是「切换角色」;下面是场景标签。角色不是设置项,是你正在跟谁说话。 */
 #empty{padding:96px 24px 0;max-width:760px;margin:0 auto}
 .idbar{display:flex;align-items:center;gap:14px;margin-bottom:22px}
-.idbar .av{width:48px;height:48px;border-radius:12px;background:var(--chip);flex:none;
+.idbar .av{width:50px;height:50px;border-radius:50%;flex:none;
+  box-shadow:0 0 0 2px #fff, 0 0 0 3px currentColor;
   display:flex;align-items:center;justify-content:center;font-size:25px}
 .idbar .txt{flex:1;min-width:0}
 .idbar .nm{font-size:19px;font-weight:600;margin-bottom:3px}
@@ -165,6 +172,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   <header>
     <h1>澜绣云裳 · 智能助手<small>汉服定制运维</small></h1>
     <button id="newbtn">＋ 新建会话</button>
+    <button id="gallery">☰ 全部助手</button>
   </header>
   <div id="convs"></div>
 </div>
@@ -172,7 +180,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 <div id="main">
   <div id="top">
     <span id="currole" title="角色在新建会话时定死,之后不变"></span>
-    <button class="tbtn" id="switch">换一套能力</button>
+    <button class="tbtn" id="switch">换助手</button>
     <select id="model" title="换模型"><option>载入中…</option></select>
     <span id="kindhint"></span>
     <span class="sp"></span>
@@ -293,7 +301,7 @@ function drawSide(){
     const el = document.createElement("div");
     el.className = "conv" + (c.id === DB.cur ? " on" : "");
     el.innerHTML = `<div class="t">${esc(c.title)}</div>
-      <div class="m">${esc(KINDS[c.kind] ? KINDS[c.kind].name : c.kind)}
+      <div class="m"><span class="dot" style="background:${esc((KINDS[c.kind]||{}).color || '#8b8d94')}"></span>${esc(KINDS[c.kind] ? KINDS[c.kind].name : c.kind)}
         · ${esc(String(c.model || "").split(":")[1] || "默认")} · ${c.msgs.length} 条</div>
       <button class="x" data-act="del" title="删除本会话">×</button>`;
     el.onclick = e => {
@@ -338,23 +346,25 @@ function metaLine(r){
 function drawRoles(){
   const s = $("#stream");
   s.innerHTML = `<div id="pick">
-    <h2>这次要做哪一类事?</h2>
-    <div class="sub"><b>是同一个智能体</b> —— 换的不是人,是**它手上有哪些工具、受哪些规矩管**。<br>
-      三套封装都是<b>只读的</b>:不下单、不改单、不改期、不改档,产出都是给人确认的草稿。</div>
+    <h2>选一个助手开始</h2>
+    <div class="sub">三个助手<b>共用同一个内核</b>,区别在**手上有哪些工具、受哪些规矩管** ——
+      所以换助手要新开一条会话。<br>
+      三个都是<b>只读的</b>:不下单、不改单、不改期、不改档,产出都是给人确认的草稿。</div>
     <div class="roles">${ROLES.map((r,i) => `
-      <div class="role">
-        <div class="av">${esc(r.emoji)}</div>
+      <div class="role" style="--c:${esc(r.color || '#2f5bff')}">
+        <div class="av" style="color:${esc(r.color)};background:${esc(r.color)}18">${esc(r.emoji)}</div>
         <div class="nm">${esc(r.name)}</div>
-        <div class="who">${esc(r.who)}</div>
-        <div class="desc">${esc(r.desc)}</div>
+        <div class="who" style="color:${esc(r.color)}">${esc(r.who)}</div>
+        <div class="desc">${esc(r.intro || r.desc)}</div>
         <div class="cnt">${r.tools} 个工具 · ${r.rules} 条规矩</div>
-        <button class="go" data-act="go" data-i="${i}">用这套开始</button>
+        <button class="go" data-act="go" data-i="${i}"
+          style="background:${esc(r.color)}14;color:${esc(r.color)}">开始对话</button>
       </div>`).join("")}</div>
-    <div class="why"><b>为什么要先选,而不是聊到一半再切?</b><br>
-      一套封装 = 一组工具 + 一组规矩。门店顾问手上有 ${(ROLES[0]||{}).tools || "?"} 个工具,
+    <div class="why"><b>为什么换助手要新开会话?</b><br>
+      一个助手 = 一组工具 + 一组规矩。门店顾问手上有 ${(ROLES[0]||{}).tools || "?"} 个工具,
       工坊排产只有 ${(ROLES[1]||{}).tools || "?"} 个 ——
-      聊到一半切过去,前面几轮的上下文对不上,而且模型会拿它**已经没有的工具**去承诺事情。
-      所以<b>换封装一律新开会话</b>,这是结构上的,不是提醒。<br><br>
+      聊到一半切过去,前面几轮的上下文对不上,而且它会拿**已经没有的工具**去承诺事情。
+      所以<b>换助手一律新开会话</b>,这是结构上的,不是提醒。<br><br>
       <b>规矩也是跟着工具走的:</b>挂了哪个工具,管它的那条规矩才会发给模型 ——
       没挂的工具,对应的规矩一个字都不发,免得它承诺做不到的事。</div>
   </div>`;
@@ -378,13 +388,13 @@ function drawStream(){
     const ex = R.examples || [];
     s.innerHTML = `<div id="empty">
       <div class="idbar">
-        <div class="av">${esc(R.emoji || "")}</div>
+        <div class="av" style="color:${esc(R.color || '#2f5bff')};background:${esc(R.color || '#2f5bff')}18">${esc(R.emoji || "")}</div>
         <div class="txt">
-          <div class="nm">澜绣云裳助手 · ${esc(R.name || "")}</div>
+          <div class="nm">${esc(R.name || "")}</div>
           <div class="ds">${esc(R.desc || "")}<br>
-            <span style="color:#9aa0ad">这套封装:${R.tools || "?"} 个工具 · ${R.rules || "?"} 条规矩</span>
+            <span style="color:#9aa0ad">${R.tools || "?"} 个工具 · ${R.rules || "?"} 条规矩 · 只读</span>
           </div></div>
-        <button class="sw" data-act="switch">⇄ 换一套能力</button>
+        <button class="sw" data-act="switch">⇄ 换个助手</button>
       </div>
       <div class="sug">${ex.map((q,i) =>
         `<button data-i="${i}">${esc(q)}</button>`).join("")}</div></div>`;
@@ -565,6 +575,7 @@ $("#ov").onclick = e => { if(e.target.id === "ov") closeOv(); };
 /* ── 事件绑定 ─────────────────────────────────────────────── */
 $("#newbtn").onclick = () => { PICKING = true; drawSide(); drawStream(); };
 $("#switch").onclick = () => { PICKING = true; drawStream(); };
+$("#gallery").onclick = () => { PICKING = true; drawStream(); };
 $("#send").onclick = ask;
 $("#stop").onclick = () => { if(RUNNING) RUNNING.abort(); };
 $("#q").addEventListener("input", grow);
@@ -577,10 +588,11 @@ function syncHint(){
   // 顶栏显示**当前角色**(不可改),换角色走「切换角色」——
   // 角色在新建会话时定死,界面不该做成一个随手能拨的下拉。
   $("#currole").textContent = `${R.emoji || ""} ${R.name || "未选"}`;
+  $("#currole").style.color = R.color || "";
   $("#kindhint").textContent = R.who || "";
   // 占位符带上角色名 —— 让人一眼知道自己在跟谁说话
   $("#q").placeholder = R.name ? `向 ${R.name} 提问…(↩ 发送,⇧↩ 换行,可粘贴图片)`
-                              : "先选一套能力封装";
+                              : "先选一个助手";
   $("#hint").textContent = "";
   $("#disclaim").textContent =
     "内容由 AI 生成,请核实后再对客户使用。三个角色都是只读的 —— " +
