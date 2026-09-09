@@ -205,6 +205,13 @@ CREATE TABLE page_block(id INTEGER PRIMARY KEY AUTOINCREMENT, page TEXT, sort IN
   kind TEXT, title TEXT, cfg TEXT);
 CREATE TABLE sys_code(code TEXT PRIMARY KEY, category TEXT, name TEXT, val TEXT,
   sort INT, status TEXT, note TEXT);
+CREATE TABLE op_log(
+  -- 操作日志。**原来这张表是 server.py 导入时的副作用建的**(ensure_oplog),
+  -- 于是「刚 seed 完的库」里没有它 —— write_check 先拷副本再 import server,
+  -- 副本就缺这张表,报 `no such table: op_log`,而且**只有 reseed 后第一次会红**。
+  -- 业务表不该靠 import 的副作用存在。ensure_oplog 留着当兜底,但源头在这儿。
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, actor TEXT, machine TEXT,
+  target TEXT, frm TEXT, too TEXT, allowed INT, code TEXT, reason TEXT, ctx TEXT);
 CREATE TABLE download_task(id TEXT PRIMARY KEY, kind TEXT, filters TEXT, status TEXT,
   rows_n INT, size_kb INT, created_by TEXT, created TEXT, expire_at TEXT);
 CREATE TABLE level_cfg(code TEXT PRIMARY KEY, name TEXT, amount REAL, orders INT,
