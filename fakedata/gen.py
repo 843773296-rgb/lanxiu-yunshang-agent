@@ -330,6 +330,20 @@ def _fsm_fix(rows, cname, g, cols, r):
 
 TIME_ORDER = ["created", "paid_at", "shipped_at", "done_at", "updated", "last_interact"]
 
+def existing_values(conn, tname, cname, cap=50000):
+    """库里这一列**已经有的**值。唯一性要跟它们比,不能只跟本次造的比。
+
+    NULL 不算:SQL 的 UNIQUE 允许多个 NULL。
+    """
+    if conn is None: return set()
+    try:
+        return {r[0] for r in conn.q(
+            f"select {conn.ident(cname)} from {conn.ident(tname)} "
+            f"where {conn.ident(cname)} is not null limit {cap}")}
+    except Exception:
+        return set()
+
+
 def needed_columns(plan):
     """每张表**会被别人用到**的列:自己的主键,加上被别的表外键指过来的那些列。
 
@@ -390,6 +404,14 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None):
                         # continue 会让这一列在每一行里都不存在,于是灌入时被整列丢掉。
                         for row in rows: row[cname] = None
                         continue
+                    if g.get("unique"):
+                        # 唯一的自引用:每行指向**前一行**,既不重复又不成环。
+                        # (随机从前面挑会重复 —— 唯一约束当场炸。
+                        #  这是同一个坑的第二处:外键分支和自引用分支各写了一遍,
+                        #  我只修了前一处。**同样的逻辑写两遍,就会有一处是旧的。**)
+                        for i, row in enumerate(rows):
+                            row[cname] = pkvals[i - 1] if i else None
+                        continue
                     for i, row in enumerate(rows):
                         row[cname] = None if i < max(1, n // 5) else r.choice(pkvals[:i])
                     continue
@@ -405,6 +427,31 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None):
                 # 成环时先留空,全部灌完再回填(见 load 的第二阶段)
                 if g.get("deferred") or not pv:
                     for row in rows: row[cname] = None
+                    continue
+                if g.get("unique"):
+                    # **schema 明写的 UNIQUE,压过推断出来的「形状」。**
+                    # 唯一和外键本身不矛盾(1:1 关系是合法的);矛盾的是唯一
+                    # 和**按形状分配** —— 形状说「一个父亲 1-3 个孩子」,
+                    # 唯一说「最多 1 个」。所以唯一外键必须**无放回**地取。
+                    #
+                    # 这个 bug 是这么暴露的:另一条线给 staff 加了
+                    # `login_name TEXT UNIQUE`,而种子里登录名就等于工号,
+                    # 于是值重叠 100%,推断层把它认成「指向工号的外键」,
+                    # 外键分支 `continue` 掉、唯一性那段根本没跑到,当场 IntegrityError。
+                    # **一个明写的约束,被一个推断出来的结论盖过去了。**
+                    used = existing_values(conn, tname, cname)
+                    avail = [v for v in pv if v not in used]
+                    r.shuffle(avail)
+                    nullable = g.get("nullable", True)
+                    for i, row in enumerate(rows):
+                        if i < len(avail): row[cname] = avail[i]
+                        elif nullable:     row[cname] = None      # 取不够就留空,NULL 不受唯一约束
+                        else:
+                            raise SystemExit(
+                                f"{tname}.{cname} 是唯一外键,但父表只剩 {len(avail)} 个"
+                                f"没被占用的值,不够造 {n} 行,而这一列又不可为空。\n"
+                                f"办法:把这张表的行数调小,或者确认这条外键是不是推错了"
+                                f"(唯一列指向另一列,常常只是取值恰好相等)。")
                     continue
                 pool = _fk_pool(g.get("shape"), pv, n, r)
                 for i, row in enumerate(rows): row[cname] = pool[i]
@@ -431,9 +478,13 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None):
                 else:
                     row[cname] = _cap(_value(g, r, ctx), g)
             if g.get("unique"):
-                seen, r2 = set(), rng_for(seed, tname, cname, "uniq")
+                # 和**库里已有的**比,不能只跟本次造的比 ——
+                # 灌进的是一张已经有数据的表,只在自己这批里去重是不够的。
+                seen = set(existing_values(conn, tname, cname))
+                r2 = rng_for(seed, tname, cname, "uniq")
                 for row in rows:
                     v = row[cname]
+                    if v is None: continue          # NULL 不受唯一约束,多个 NULL 合法
                     while v in seen:
                         v = _cap(str(_value(g, r2, {})) + str(r2.randint(10, 9999)), g)
                     seen.add(v); row[cname] = v

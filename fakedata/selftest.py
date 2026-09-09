@@ -34,16 +34,20 @@ def build_known_db(path):
     """手搭一个已知真相的小库。**一条外键都不明写** —— 复现真实业务库的样子。"""
     c = sqlite3.connect(path)
     c.executescript("""
-    create table cust(id text primary key, name text, city text, created text, phone text unique);
+    create table cust(id text primary key, name text, city text, created text, phone text unique,
+                      login text unique);
     create table ordr(id text primary key, cust_id text, amount real, status text,
                       created text, paid_at text, shipped_at text, cancelled_at text,
                       prd_status text);
     create table item(id integer primary key, ordr text, sku text, qty int);
     create table note(body text);                       -- 没有主键:该被跳过
     """)
-    custs = [(f"C{i:04d}", f"客{i}", "杭州", "2024-01-%02d" % (i % 28 + 1), f"1380000{i:04d}")
-             for i in range(60)]
-    c.executemany("insert into cust values(?,?,?,?,?)", custs)
+    # `login` 的取值**恰好等于主键** —— 值重叠 100%,推断层会把它认成外键。
+    # 而它在 schema 里明写着 UNIQUE。这正是真实撞车的形状:
+    # 一个明写的约束,被一个推断出来的结论盖掉。
+    custs = [(f"C{i:04d}", f"客{i}", "杭州", "2024-01-%02d" % (i % 28 + 1), f"1380000{i:04d}",
+              f"C{i:04d}") for i in range(60)]
+    c.executemany("insert into cust(id,name,city,created,phone,login) values(?,?,?,?,?,?)", custs)
     # 引用形状故意做成长尾:一半客户零订单,少数客户很多单
     ordrs, k = [], 0
     ST = ["待付款", "已付款", "已发货", "已完成", "已取消"]
@@ -121,11 +125,16 @@ def main():
                and r[cn] not in {x.get(g["column"]) for x in a1[g["table"]]})
     ck(leak == 0, "外键值全部指向本次生成的数据,不悄悄挂到库里已有的行上", f"漏 {leak}")
     texts = [r["name"] for r in a1["cust"]]
-    kinds = {n for n, v in G._EDGE_ZH if v in texts}
+    # **别写死用哪个池。** 池是跟着源库文字选的,检查写死中文池的话,
+    # 靶子库的文字构成一变(我加了个 ASCII 列)这条就红,而工具一点毛病没有。
+    # 检查要验的是「铺开了」,不是「铺的是中文那一套」。
+    pool = G._EDGE_ZH if facts.get("中文库", True) else G._EDGE_EN
+    kinds = {n for n, v in pool if v in texts}
     ck(len(kinds) >= 5,
-       f"边界值按种类铺开,不是靠概率赌(命中 {len(kinds)}/{len(G._EDGE_ZH)} 种)",
+       f"边界值按种类铺开,不是靠概率赌(命中 {len(kinds)}/{len(pool)} 种,"
+       f"{'中文' if facts.get('中文库', True) else '西文'}池)",
        f"只出现了 {kinds}")
-    ck(sum(1 for t in texts if t in [v for _n, v in G._EDGE_ZH]) <= len(texts) // 3,
+    ck(sum(1 for t in texts if t in [v for _n, v in pool]) <= len(texts) // 3,
        "边界值不能喧宾夺主(占比不超过三分之一)")
 
     print("\n【列与列之间 · 跨状态机一致性】")
@@ -240,6 +249,25 @@ def main():
     ck(all(not row.get(c) or str(row[c]) >= str(row["created"])
            for row in m3["ordr"] for c in ("paid_at", "shipped_at", "cancelled_at")),
        "所有 *_at 都不早于 created(全表统一的时间原点)")
+
+    print("\n【schema 明写的约束,压过推断出来的结论】")
+    gl = P.build(facts, scale=1.0, tables=["cust"])["tables"]["cust"]["columns"]["login"]
+    ck(gl.get("unique") is True,
+       "外键的生成策略要**带上 schema 的事实**(唯一/可空)—— "
+       "第一版外键分支自己造了份精简规格,把它们丢了", str(gl)[:110])
+    pu = P.build(facts, scale=1.0, tables=["cust"])
+    mu, _mu = G.generate(pu, conn)
+    lv = [r.get("login") for r in mu["cust"] if r.get("login") is not None]
+    ck(len(lv) == len(set(lv)), f"唯一列造出来不重复({len(lv)} 个值)", str(lv[:4]))
+    ex = {r[0] for r in conn.q("select login from cust where login is not null")}
+    ck(not (set(lv) & ex),
+       "而且和**库里已有的**不重 —— 只在自己这批里去重是不够的")
+    try:
+        cu = S.connect(os.path.join(tmpd, "known_test.db"))
+        L.load(cu, pu, mu, dry=False, log=lambda *x: None); cu.commit(); cu.close()
+        ck(True, "真灌进一张已经有数据的表,不触发 UNIQUE 冲突")
+    except Exception as e:
+        ck(False, "真灌进一张已经有数据的表,不触发 UNIQUE 冲突", f"{type(e).__name__}: {e}")
 
     print("\n【灌入前:列对不上要当场抛,不许静默补 NULL】")
     p7 = P.build(facts, scale=1.0, tables=["cust"])

@@ -55,6 +55,14 @@ def _gen_for(cname, cf, fk):
              "shape": fk.get("shape"), "confidence": fk["confidence"],
              "source": fk["source"], "overlap": fk.get("overlap"),
              "alternatives": fk.get("alternatives", []),
+             # **schema 的事实要带过来。** 外键分支原来自己造了一份精简规格,
+             # 把 unique / nullable / kind 全丢了 —— 于是生成器不知道这列是唯一的,
+             # 照着「形状」重复分配,一灌就 UNIQUE 冲突。
+             # (真实触发:另一条线给 staff 加了 `login_name TEXT UNIQUE`,
+             #  而种子里登录名等于工号,值重叠 100%,被推成了指向工号的外键。)
+             # **一个明写在 schema 里的约束,被一个推断出来的结论盖掉了。**
+             "unique": bool(cf.get("unique")), "nullable": cf.get("nullable", True),
+             "kind": cf.get("kind"),
              # 这一行漏了一次:拓扑排序把边标成「成环,先插空再回填」,
              # 但方案里没把标记传下去,生成器照常去找父表 —— 而父表还没生成。
              # **排序算出来的结论,没走到执行的那一层,等于没算。**

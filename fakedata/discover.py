@@ -267,7 +267,12 @@ def _looks_chinese(conn, schema, only=None):
     但任何跟人名、地址、排序、字符宽度有关的功能拿它测都是假的。
     判据很粗:采样一批文本值,看汉字占比 —— 粗但足够分开两类库。
     """
-    han = tot = 0
+    # **按列判,不按字符占比判。**
+    # 第一版数所有文本字符里汉字的比例,阈值 8% —— 太脆:
+    # 给靶子加**一个** ASCII 列(登录名),整个库就从中文翻成了西文,
+    # 而库一点没变。一个中文系统本来就有大量 ASCII 字段(编号、时间、手机号)。
+    # 改成:先看每一列自己是不是"以汉字为主",再看这样的列占几成。
+    han_cols = all_cols = 0
     for t in list(schema.tables.values())[:12]:
         cs = [c.name for c in t.columns if c.kind == "text"][:6]
         if not cs or (only and t.name not in only): continue
@@ -276,12 +281,16 @@ def _looks_chinese(conn, schema, only=None):
                           f"from {conn.ident(t.name)} limit 40")
         except Exception:
             continue
-        for r in rows:
-            for v in r:
-                for ch in str(v or "")[:40]:
-                    tot += 1
-                    if "\u4e00" <= ch <= "\u9fff": han += 1
-    return (han / tot) > 0.08 if tot > 200 else True
+        for i, _c in enumerate(cs):
+            h = n = 0
+            for r in rows:
+                for ch in str(r[i] or "")[:40]:
+                    n += 1
+                    if "\u4e00" <= ch <= "\u9fff": h += 1
+            if n < 20: continue
+            all_cols += 1
+            if h / n >= 0.3: han_cols += 1
+    return (han_cols / all_cols) >= 0.25 if all_cols >= 4 else True
 
 
 def discover(conn, schema, tables=None, verbose=False):
