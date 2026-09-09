@@ -59,6 +59,7 @@ KBONLY, WORK = wl("KB_ONLY_TOOLS"), wl("WORKSHOP_TOOLS")
 TASKONLY = wl("TASK_ONLY_TOOLS")
 KBSET = {t["name"] for t in api.KB_SCHEMAS}
 CALLERS = {
+    "工作站·全能助手(sdk)":   ("all",  KB | KBONLY | WORK | TASK | TASKONLY | SHOP | {"图片"}),
     "工作站·工艺顾问(sdk)":   ("kb",   KB | KBONLY | SHOP | {"图片"}),
     "工作站·工坊排产(sdk)":   ("workshop", WORK),
     "工作站·任务助手(sdk)":   ("task", TASK | TASKONLY | SHOP),

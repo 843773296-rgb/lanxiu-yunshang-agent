@@ -236,6 +236,18 @@ import prompts   # noqa: E402
 # 「面对谁」这一栏是角色划分的依据本身:三个角色是按**岗位**切的,
 # 不是按功能模块切的。看同一批数据、问的问题完全不同。
 ROLE_META = {
+    "all": dict(
+        name="澜绣云裳助手", emoji="🪢", who="全部能力", color="#2f5bff",
+        desc="工艺知识、量体成长、工期产能、订单售后、判责定因、会员分档 —— 一个助手全管",
+        intro="先判断你这一问属于哪一摊(对客户 / 对产能 / 对台账),再动手。"
+              "三摊的判据不通用:对客户说的话要能直接说出口,对工坊说的话要能排班,"
+              "对台账说的话要能被人签字。",
+        note="只读。不下单、不改单、不改期、不改档 —— 产出都是给人确认的草稿。",
+        examples=["客人说要仙气飘飘的,我推什么料子?",
+                  "现在工坊什么情况?有没有要拖的活?",
+                  "潜在流失这一档我先联系谁?",
+                  "客户姓名还没问到,能不能先建档回头补?",
+                  "香云纱能不能做妆花?"]),
     "kb": dict(
         name="门店顾问", emoji="🧵", who="面对客户", color="#2f5bff",
         desc="能不能做、什么时候拿到、孩子明年要穿按多高做、客户发的照片是什么形制",
@@ -278,25 +290,29 @@ def roles():
 
 
 _ROLE_TOOLS = {
+    # 全能助手:所有工具一次给全。**分装的机制没删**,只是默认入口先合起来。
+    "all":      lambda: sorted(set(KB_TOOLS + KB_ONLY_TOOLS + WORKSHOP_TOOLS
+                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS)),
     "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS,
     "workshop": lambda: WORKSHOP_TOOLS,           # 工坊不看订单流水,只看产能和工单
     "task":     lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS,
 }
 
 def _tools_for(kind):
-    return _ROLE_TOOLS.get(kind, _ROLE_TOOLS["kb"])()
+    return _ROLE_TOOLS.get(kind, _ROLE_TOOLS["all"])()
 
 
 def _have(kind):
     """本进程实际挂上的工具名(去掉 mcp__<服务>__ 前缀),外加能力标记。"""
     names = {t.rsplit("__", 1)[-1] for t in _tools_for(kind)}
     # 工艺顾问这条路径收图(见 _img_block),后台任务助手不收
-    return names | ({"图片"} if kind == "kb" else set())
+    return names | ({"图片"} if kind in ("kb", "all") else set())
 
+SYS_ALL, ALL_RULE_IDS = prompts.assemble("all", _have("all"))
 SYS_KB, KB_RULE_IDS = prompts.assemble("kb", _have("kb"))
 SYS_WORKSHOP, WORKSHOP_RULE_IDS = prompts.assemble("workshop", _have("workshop"))
 SYS_TASK, TASK_RULE_IDS = prompts.assemble("task", _have("task"))
-_SYS = {"kb": SYS_KB, "workshop": SYS_WORKSHOP, "task": SYS_TASK}
+_SYS = {"all": SYS_ALL, "kb": SYS_KB, "workshop": SYS_WORKSHOP, "task": SYS_TASK}
 
 
 def _img_block(path):
@@ -341,7 +357,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     opts = ClaudeAgentOptions(
         hooks=guards.make_hooks(state) if guard else None,
         max_budget_usd=MAX_USD,
-        system_prompt=_SYS.get(kind, SYS_KB),
+        system_prompt=_SYS.get(kind, SYS_ALL),
         mcp_servers=mcp_config(),
         allowed_tools=_tools_for(kind),
         # ⚠️ **allowed_tools 不是排他白名单。**

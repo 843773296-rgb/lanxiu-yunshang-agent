@@ -281,7 +281,7 @@ let PICKING = false;   // 正在选角色
 
 function newConv(kind){
   const c = {id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
-             title:"新会话", kind: kind || "kb",
+             title:"新会话", kind: kind || "all",
              model: $("#model").value || MODEL_DEFAULT,
              session:null, at:Date.now(), msgs:[]};
   DB.convs.unshift(c); DB.cur = c.id; save(); return c;
@@ -628,8 +628,15 @@ $("#model").onchange = () => {
 };
 
 /* ── 启动 ─────────────────────────────────────────────────── */
-if(!DB.convs.length) newConv("kb");
+if(!DB.convs.length) newConv("all");
 if(!cur()) DB.cur = DB.convs[0].id;
+// 先拉角色信息(头像/介绍/例题都从那儿来),再画 —— 原来漏了这一步,
+// 于是 ROLES 一直是空数组,选择屏渲染出来是空的:**「看不见选助手」就是这个 bug**。
+async function loadRoles(){
+  try{ ROLES = (await (await fetch("/roles")).json()).rows || []; }catch(e){ ROLES = []; }
+  for(const r of ROLES) KINDS[r.kind] = r;
+  syncHint(); drawSide(); drawStream();
+}
 syncHint(); drawSide(); drawStream(); grow(); $("#q").focus();
-loadModels();
+loadRoles(); loadModels();
 </script>
