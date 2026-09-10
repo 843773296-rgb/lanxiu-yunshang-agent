@@ -1,5 +1,5 @@
 {
- "准确率": "13/15",
+ "准确率": "14/15",
  "明细": [
   {
    "id": 1,
@@ -27,12 +27,12 @@
    "id": 3,
    "prompt": "帮客户做份方案报价,预算两万左右",
    "want": "quote",
-   "got": "None?2种",
-   "ok": false,
-   "kind": "不稳定",
-   "hits": 1,
+   "got": "quote",
+   "ok": true,
+   "kind": "对",
+   "hits": 3,
    "runs": 3,
-   "wobbly": true
+   "wobbly": false
   },
   {
    "id": 4,
@@ -49,23 +49,23 @@
    "id": 5,
    "prompt": "孩子明年这时候还能穿这件吗?",
    "want": "growth-plan",
+   "got": "growth-plan?2种",
+   "ok": false,
+   "kind": "不稳定",
+   "hits": 2,
+   "runs": 3,
+   "wobbly": true
+  },
+  {
+   "id": 6,
+   "prompt": "6月毕业典礼那天要穿,现在该做多大?",
+   "want": "growth-plan",
    "got": "growth-plan",
    "ok": true,
    "kind": "对",
    "hits": 3,
    "runs": 3,
    "wobbly": false
-  },
-  {
-   "id": 6,
-   "prompt": "6月毕业典礼那天要穿,现在该做多大?",
-   "want": "growth-plan",
-   "got": "None?2种",
-   "ok": false,
-   "kind": "不稳定",
-   "hits": 2,
-   "runs": 3,
-   "wobbly": true
   },
   {
    "id": 7,
@@ -169,7 +169,7 @@
  ],
  "技能哈希": {
   "growth-plan": "7eedf4e3b832",
-  "quote": "d9e53f8c801d",
-  "roster": "771cdb1419e3"
+  "quote": "bbfca6a6b78a",
+  "roster": "1aae06a81656"
  }
 }

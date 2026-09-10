@@ -37,6 +37,18 @@ RUNS = os.path.join(HERE, "evals", "runs")
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
 
+def _hashes():
+    """当前每份技能的哈希 —— 存进结果文件,对比时才分得清哪些改过。"""
+    import hashlib
+    d = os.path.join(HERE, ".claude", "skills")
+    out = {}
+    for n in sorted(os.listdir(d)):
+        f = os.path.join(d, n, "SKILL.md")
+        if os.path.exists(f):
+            out[n] = hashlib.sha256(open(f, "rb").read()).hexdigest()[:12]
+    return out
+
+
 def _skill_of(traj):
     """从轨迹里读出**触发了哪个技能**。没触发返回 None。
 
@@ -139,27 +151,40 @@ def main():
     os.makedirs(RUNS, exist_ok=True)
     if a.save:
         p = os.path.join(RUNS, f"{a.save}.json")
-        json.dump(dict(准确率=f"{ok_n}/{len(rows)}", 明细=rows), open(p, "w", encoding="utf-8"),
-                  ensure_ascii=False, indent=1)
+        json.dump(dict(准确率=f"{ok_n}/{len(rows)}", 明细=rows, 技能哈希=_hashes()),
+                  open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         print(f"\n  已存基线:{p}")
     if a.diff:
         p = os.path.join(RUNS, f"{a.diff}.json")
         if not os.path.exists(p):
             print(f"\n  {R}没有基线 {a.diff}{D}"); return
-        old = {x["id"]: x for x in json.load(open(p, encoding="utf-8"))["明细"]}
+        base = json.load(open(p, encoding="utf-8"))
+        old = {x["id"]: x for x in base["明细"]}
+        oldh, newh = base.get("技能哈希") or {}, _hashes()
+        改了的技能 = {k for k, v in newh.items() if oldh.get(k) != v}
         print(f"\n  \033[1m和基线 {a.diff} 对比\033[0m")
-        改好, 改坏 = [], []
-        for x in rows:
-            o = old.get(x["id"])
-            if not o: continue
-            if x["ok"] and not o["ok"]: 改好.append(x)
-            if o["ok"] and not x["ok"]: 改坏.append(x)
-        print(f"    修好 {len(改好)} 条 · **改坏 {len(改坏)} 条**")
-        for x in 改坏: print(f"    {R}↓{D} #{x['id']} 「{x['prompt'][:30]}」原来对,现在 {x['kind']}")
-        for x in 改好: print(f"    {G}↑{D} #{x['id']} 「{x['prompt'][:30]}」原来错,现在对了")
-        if 改坏:
-            print(f"\n    {R}改坏了 {len(改坏)} 条 —— 描述改动是有代价的,"
-                  f"把一个问法拉进来常常把另一个推出去。{D}")
+        print(f"    这期间改过的技能:{sorted(改了的技能) or '(一个都没改)'}")
+
+        # **按「这条用例的技能改没改」分两组。**
+        # 没改的那组是**对照组** —— 它的变化量就是噪声。
+        # 没有对照组的话,任何一条变化都会被读成「我这次改动的效果」,
+        # 而实测:文件一个字没动的技能,用例照样 ±1/3 地抖。
+        def _grp(x):
+            want = next((c.get("expect") for c in spec["cases"] if c["id"] == x["id"]), None)
+            return "改动组" if want in 改了的技能 else "对照组"
+
+        for grp in ("改动组", "对照组"):
+            好 = [x for x in rows if _grp(x) == grp and x["ok"] and not old.get(x["id"], {}).get("ok")]
+            坏 = [x for x in rows if _grp(x) == grp and not x["ok"] and old.get(x["id"], {}).get("ok")]
+            n = len([x for x in rows if _grp(x) == grp])
+            tag = "" if grp == "改动组" else "  ← **这组是噪声,不是效果**"
+            print(f"\n    \033[1m{grp}\033[0m({n} 条){tag}")
+            print(f"      修好 {len(好)} · 变坏 {len(坏)}")
+            for x in 坏: print(f"      {R}↓{D} #{x['id']} 「{x['prompt'][:28]}」原来对,现在 {x['kind']}")
+            for x in 好: print(f"      {G}↑{D} #{x['id']} 「{x['prompt'][:28]}」原来错,现在对了")
+            if grp == "对照组" and (好 or 坏):
+                print(f"      {Y}对照组动了 {len(好)+len(坏)} 条 —— 这就是噪声底噪。"
+                      f"改动组里小于这个量的变化都读不出效果。{D}")
 
 
 async def _run_with_identity(sdk, prompt, me):
