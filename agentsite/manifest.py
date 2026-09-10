@@ -110,6 +110,22 @@ def main():
         for n in old:
             if n not in {s["名字"] for s in m["技能"]}: print(f"    {R}-{D} 删了 {n}"); ch = True
         if not ch: print("    没变")
+    # **改了技能却没重测** —— 这是这一段反复吃亏的地方。
+    # 哈希对不上说明描述或正文动过,而触发率的变化必须能对上某一次改动;
+    # 对不上的话,下次触发率变了,没人说得清是哪一次改的。
+    import glob, json as _js
+    runs = sorted(glob.glob(os.path.join(HERE, "evals", "runs", "*.json")))
+    if runs and os.path.exists(SNAP):
+        last_eval = max(os.path.getmtime(x) for x in runs)
+        newest_skill = max(
+            os.path.getmtime(os.path.join(SKILL_DIR, s["名字"], "SKILL.md"))
+            for s in m["技能"])
+        if newest_skill > last_eval + 60:
+            print(f"\n  {Y}⚠ 技能比最近一次评测新{D} —— 改完没重测。")
+            print(f"    描述改动是有代价的:**把一个问法拉进来常常把另一个推出去**,")
+            print(f"    没有重测就看不见被推出去的那个。")
+            print(f"    跑:./agentsite/.venv/bin/python agentsite/skill_eval.py "
+                  f"--repeat 3 --diff <上一版>")
     if save:
         os.makedirs(os.path.dirname(SNAP), exist_ok=True)
         json.dump(m, open(SNAP, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
