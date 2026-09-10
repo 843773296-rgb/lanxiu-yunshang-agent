@@ -211,12 +211,16 @@ TASK_ONLY_TOOLS = [
     # 加它是因为实测发现:没有它时模型会**编一套架构理由**说可以,
     # 而编造建立在真事实上(账户与门店档案确实分层),读起来完全可信。
     "mcp__shop__check_write",
-    # ── 任务:三个只读 + 三个起草 ──────────────────────────────────
-    # 起草工具**不写库**,所以「工具全部只读」这条保证仍然成立。
-    # 真正的写入发生在人点确认之后,用的是**登录用户自己的会话**,
-    # 授权来自人,不来自模型。
-    "mcp__shop__my_tasks", "mcp__shop__task_types", "mcp__shop__dispatch_pool",
-    "mcp__shop__draft_task", "mcp__shop__draft_dispatch", "mcp__shop__draft_finish",
+    # ── 任务:四个只读 + 三个**会写库的** ──────────────────────────
+    # ⚠️ 「工具全部只读」这条老保证到此为止 —— 现在有三个真写接口。
+    # 换来的安全靠三条,不靠「不给写」:
+    #   ① 身份来自会话,不是模型说自己是谁(一句「我以店长身份」不能提权)
+    #   ② 权限走 tasks.py 同一套判定 —— **和人在页面上点是同一份代码**,
+    #      智能体不会因为是智能体而多一分权,也不会少一分
+    #   ③ 每一笔都在台账里标明「智能体代 X 执行」,查得出是谁的主意
+    "mcp__shop__my_tasks", "mcp__shop__get_task",
+    "mcp__shop__task_types", "mcp__shop__dispatch_pool",
+    "mcp__shop__assign_task", "mcp__shop__dispatch_task", "mcp__shop__finish_task",
     # 售后判责跑在这个角色上,而**判定表在 kb_tables 里**。
     # 原来没给:get_maintain 的描述明写「判定标准要另外查 kb_tables」,
     # liability_eval 的提示词也明写「再用 kb_tables 取售后争议判定」——

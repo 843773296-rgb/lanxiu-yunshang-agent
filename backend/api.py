@@ -147,7 +147,22 @@ def get_workorder(workorder_id=None, artisan=None, status=None, ref=None, overdu
     """
     where, args = [], []
     if workorder_id: where.append("w.id=?"); args.append(workorder_id)
-    if artisan:      where.append("(a.no=? OR a.name=?)"); args += [artisan, artisan]
+    if artisan:
+        # **「查无此人」和「这人没活」必须分开说。**
+        # 这个工具查的是**工坊师傅**的在制工单。拿一个顾问的名字来查,
+        # 返回 0 条 —— 而 0 条会被读成「他手头没有没做完的活」。
+        # 实测栽过:顾问问「周叙手上还有几件活」,模型调这个工具查到 0 条,
+        # 答「他手头没有没做完的活」—— 周叙是顾问,有 4 条任务在身,
+        # 他只是**不在师傅表里**。**空结果不等于没有,只等于这里查不到。**
+        who = (artisan or "").strip()
+        if not _rows("SELECT no FROM artisan WHERE no=? OR name=?", who, who):
+            st = _rows("SELECT no,name,role FROM staff WHERE no=? OR name=?", who, who)
+            hint = (f"「{who}」是{st[0]['role']},不是工坊师傅。"
+                    f"这个工具只看得到工坊在制工单,看不到{st[0]['role']}的任务。"
+                    if st else f"工坊师傅里没有「{who}」这个人。")
+            return dict(error=hint + " **这不等于他没有活** —— 只是这个工具查不到。"
+                               "顾问的任务用 my_tasks(只看得到自己的)或问店长。")
+        where.append("(a.no=? OR a.name=?)"); args += [artisan, artisan]
     if status:       where.append("w.status=?"); args.append(status)
     if ref:          where.append("w.ref=?"); args.append(ref)
     sql = ("SELECT w.id,w.craft,w.ref,w.workdays,w.start_date,w.due_date,w.status,w.note,"
@@ -291,43 +306,55 @@ class as_user:
 # 而不是去解析模型说了什么。模型可能把参数复述错,入参不会。
 # 顺带一个好处:确认卡是**点的时候现算的**,不是两分钟前存下来的 ——
 # 期间那位顾问被派了别的活,卡上的撞车提醒会跟着变。
-DRAFT_TOOLS = ("draft_task", "draft_dispatch", "draft_finish")
+# 会改数据的工具。**列在这儿是给检查用的** —— isolation_check 逐个确认
+# 它们都从会话取身份、都走 tasks.py 那一套判定,不会因为「是智能体调的」而放宽。
+WRITE_TOOLS = ("assign_task", "dispatch_task", "finish_task")
 
 
 MANAGER_ROLES = ("店长", "总部运营")
 
 
 def my_tasks(status=None):
-    """我的任务清单。**顾问只看得到派给自己的,店长看本店全部** —— 这是数据隔离。"""
+    """看**我的任务**。顾问只看得到派给自己的,店长看本店全部。
+
+    **A 顾问不会在这里看到 B 顾问的活** —— 隔离在查询层,不在界面上。
+    范围由 tasks.visible_scope 一处判定,所有读任务的地方都走它。
+    """
+    import tasks as _tk, tasktypes as tt
     me = whoami()
     if not me: return dict(error="不知道现在是谁在问 —— 请先登录")
-    import tasktypes as tt
-    if me.get("role") in MANAGER_ROLES:
-        if me["role"] == "总部运营":
-            rs = _rows("SELECT s.*, st.name assignee_name FROM schedule s "
-                       "LEFT JOIN staff st ON st.no=s.assignee_no ORDER BY s.end_ts")
-            scope = "全部门店(你是总部运营)"
-        else:
-            rs = _rows("SELECT s.*, st.name assignee_name FROM schedule s "
-                       "LEFT JOIN staff st ON st.no=s.assignee_no WHERE s.shop=? "
-                       "ORDER BY s.end_ts", me.get("shop"))
-            scope = f"{me.get('shop')}(你是店长,看得到全店)"
-    else:
-        rs = _rows("SELECT s.*, st.name assignee_name FROM schedule s "
-                   "LEFT JOIN staff st ON st.no=s.assignee_no WHERE s.assignee_no=? "
-                   "ORDER BY s.end_ts", me["no"])
-        scope = "派给你的任务"
-    if status:
-        rs = [r for r in rs if r.get("status") == status]
-    out = []
-    for r in rs:
-        out.append(_nz({"任务号": r["id"], "类型": tt.norm(r.get("type")),
-                        "状态": r.get("status"), "内容": r.get("note"),
-                        "开始": r.get("start_ts"), "结束": r.get("end_ts"),
-                        "负责人": r.get("assignee_name") or r.get("advisor"),
-                        "挂的单据": r.get("ref_id"), "客户": r.get("customer_id"),
-                        "绑定活动": r.get("activity_code"), "总结": r.get("summary")}))
-    return dict(我是=f"{me['name']}·{me['role']}", 范围=scope, 条数=len(out), 任务=out[:40])
+    d = _tk.my_tasks(me, status)
+    if d.get("error"): return d
+    out = [_nz({"任务号": r["id"], "类型": tt.norm(r.get("type")),
+                "状态": r.get("status"), "内容": r.get("note"),
+                "开始": r.get("start_ts"), "结束": r.get("end_ts"),
+                "负责人": r.get("assignee_name") or r.get("advisor"),
+                "挂的单据": r.get("ref_id"), "客户": r.get("customer_id"),
+                "绑定活动": r.get("activity_code"), "总结": r.get("summary"),
+                "附件数": len(r.get("附件") or []) or None,
+                "派任务的人": r.get("派任务的人")})
+           for r in d["rows"]]
+    return dict(我是=f"{me['name']}·{me['role']}", 范围=d["scope"],
+                条数=len(out), 任务=out[:40])
+
+
+def get_task(task_id):
+    """看**一条任务**的详情。看不到别人的 —— 知道单号也看不到。
+
+    单条查询最容易漏掉隔离:列表过滤了,详情按 id 直接取,
+    于是知道单号就能看别人的活。这个洞不会报错,只会安静地漏。
+    """
+    import tasks as _tk, tasktypes as tt
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在问 —— 请先登录")
+    r = _tk.get_task((task_id or "").strip(), me)
+    if not r:
+        return dict(error=f"没有 {task_id} 这条任务,或者它不在你看得到的范围里")
+    return _nz({"任务号": r["id"], "类型": tt.norm(r.get("type")), "状态": r.get("status"),
+                "内容": r.get("note"), "开始": r.get("start_ts"), "结束": r.get("end_ts"),
+                "负责人": r.get("assignee_name") or r.get("advisor"),
+                "挂的单据": r.get("ref_id"), "客户": r.get("customer_id"),
+                "绑定活动": r.get("activity_code"), "总结": r.get("summary")})
 
 
 def task_types():
@@ -372,155 +399,107 @@ def dispatch_pool():
     return dict(条数=len(out), 说明="**建议不是决定** —— 要店长确认才算派出去", 待分配=out)
 
 
-# ── 起草:验全套规则,但**一个字都不写库** ──────────────────────────
-# 智能体不能直接派任务。理由不是「怕它出错」,是**它出错和它做对在库里长得一样**:
-# 两条任务都躺在那儿,都有负责人,都有截止时间。等发现派错了,顾问已经去做了。
+# ── 写工具:智能体代人执行 ────────────────────────────────────────
+# 这几个是**真的写库**。安全不靠「不给写」,靠三条:
 #
-# 所以走「起草 → 人确认」:起草工具跑的是**和真写接口同一套校验**
-# (assign_task / finish_task / dispatch 里的那些判断都在 server 侧,
-# 这里通过 dry-run 复用),验完返回一张草稿,由前端渲染成确认卡。
-# **点确认的那一下,是用登录用户自己的会话去调真正的写接口** ——
-# 所以最终那次写入的授权来自人,不来自模型。
-def _draft(kind, payload, human, warn=None):
-    return _nz({"这是草稿": True, "动作": kind, "参数": payload,
-                "给人看的话": human, "注意": warn,
-                "下一步": "**我不能自己执行**。确认卡会显示在对话下方,你点了才会真的写进去。"})
-
-
-def draft_task(type, assignee, note, end, start=None, ref_id=None, activity_code=None):
-    """起草一条**派任务**,交给你确认。**这个工具不会真的派** —— 它只验规则、出草稿。
-
-    type 必须是 task_types() 里的九种之一;ref_id 填什么由类型决定
-    (客户号 / 订单号 / 维保单号 / 售后单号;团建培训和日常运维不填)。
-    assignee 可以写工号或姓名。时间写 `YYYY-MM-DD HH:MM`。
-    """
-    import tasktypes as tt, datetime
+#   ① 身份来自签发方   —— 会话里的工号,不是模型说自己是谁。
+#                        一句「我以店长身份执行」不能提权。
+#   ② 权限和人一样      —— 走 tasks.py 里同一套判定,**和页面上点是同一份代码**。
+#                        智能体不会因为「是智能体」而多一分权,也不会少一分。
+#   ③ 每一笔都留痕      —— 台账里记着是智能体代谁做的,
+#                        以后要查「这条是人点的还是它自己派的」查得出来。
+#
+# **顾问之间的隔离由 tasks.visible_scope 一处判定**,写工具也吃这一条:
+# 顾问只能完成派给自己的,店长只能派给本店的人。
+def _need_me():
     me = whoami()
-    if not me: return dict(error="不知道现在是谁在派 —— 请先登录")
-    if me.get("role") not in MANAGER_ROLES:
-        return dict(error=f"排任务须由店长及以上操作,你是「{me.get('role')}」。"
-                          f"**这条不能起草** —— 起草一个注定被拒的动作只是浪费你一次点击")
+    if not me: raise _NoIdentity()
+    return me
 
-    kind = tt.norm(type or "")
-    ti = tt.info(kind)
-    if not ti:
-        return dict(error=f"没有「{type}」这个类型",
-                    可选=[i["name"] for i in tt.BY_NAME.values()])
 
-    # 收件人:工号或姓名都认,**同名认不出就报错,不猜**
+class _NoIdentity(Exception): pass
+
+
+def _agent_log(me, code, text):
+    """台账里标明这一笔是**智能体代做**的。
+
+    不标的话,人点的和它自己做的在台账上一模一样 ——
+    出事之后想知道「这条是谁的主意」就查不出来了。
+    """
+    from oplog import log_op as _lg
+    _lg(me["name"], "agent", "-", "—", "—", True, "AGENT_" + code,
+        f"智能体代 {me['name']}({me['role']})执行:{text[:90]}", {"role": me.get("role")})
+
+
+def assign_task(type, assignee, note, end, start=None, ref_id=None, activity_code=None):
+    """**派一条任务**(真的写进去)。只有店长及以上能派,只能派给本店在职顾问。
+
+    type 见 task_types();ref_id 填什么由类型决定
+    (客户相关填客户号;订单跟踪填订单号;维保填维保单号;售后填售后单号;
+    团建培训和日常运维不填)。assignee 写工号或姓名。时间 `YYYY-MM-DD HH:MM`。
+
+    **动手之前先跟用户把人、时间、内容对一遍** —— 派错了和派对了在库里长得
+    一模一样,等发现的时候顾问已经去做了。
+    """
+    import tasks
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在派 —— 请先登录")
+    # 收件人写姓名的,先换成工号;**同名认不出就报错,不猜**
     who = (assignee or "").strip()
-    pool = _rows("SELECT no,name,shop,adv_code FROM staff WHERE role='顾问' AND status='启用' "
-                 + ("" if me["role"] == "总部运营" else "AND shop=? "),
-                 *([] if me["role"] == "总部运营" else [me.get("shop")]))
+    pool = tasks.my_staff(me)
     hit = [p for p in pool if p["no"] == who] or [p for p in pool if p["name"] == who]
     if len(hit) != 1:
         return dict(error=(f"找不到「{who}」" if not hit else f"有 {len(hit)} 个人叫「{who}」,请给工号"),
                     可派的人=[f"{p['name']}({p['no']})" for p in pool])
-    him = hit[0]
-
-    ok, cid, _sh, ref_desc = tt.resolve_ref(ti["ref"], ref_id, _rows)
-    if not ok: return dict(error=f"「{kind}」:{ref_desc}")
-    if not ti["ref"] and ref_id:
-        return dict(error=f"「{kind}」是店内自己的事,不挂任何单据,但你给了 {ref_id}")
-
-    if not (note or "").strip(): return dict(error="日程描述必填 —— 写清楚这件事要做什么")
-    en = (end or "").replace("T", " ").strip()
-    st = (start or "").replace("T", " ").strip() or datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    if not en: return dict(error="结束时间必填 —— 没有截止时间的任务不会被做")
-    try:
-        t0 = datetime.datetime.fromisoformat(st); t1 = datetime.datetime.fromisoformat(en)
-    except ValueError: return dict(error=f"时间格式不对({st} / {en}),要 YYYY-MM-DD HH:MM")
-    if t1 <= t0: return dict(error=f"结束({en})不在开始({st})之后")
-    if activity_code and not _rows("SELECT code FROM activity WHERE code=?", activity_code):
-        return dict(error=f"没有活动 {activity_code}")
-
-    warn = None
-    busy = _rows("SELECT id,start_ts,end_ts FROM schedule WHERE assignee_no=? AND status='有效' "
-                 "AND start_ts < ? AND end_ts > ?", him["no"], en, st)
-    if busy:
-        warn = (f"⚠️ {him['name']} 这个时段已经有 {len(busy)} 件活({busy[0]['id']} "
-                f"{busy[0]['start_ts']}–{busy[0]['end_ts']})—— 派下去就是撞车,你确认要不要挪")
-    return _draft("assign",
-                  _nz({"type": kind, "assignee_no": him["no"], "note": note.strip(),
-                       "start": st, "end": en, "ref_id": ref_id, "activity_code": activity_code}),
-                  f"派给 {him['name']}:[{kind}] {note.strip()};{st} → {en}"
-                  + (f";挂 {ref_desc}" if ref_desc else "")
-                  + (f";属于活动 {activity_code}" if activity_code else "")
-                  + (f"。完成时需要传现场照。" if ti["needs_photo"] else ""),
-                  warn)
+    r = tasks.assign_task(_nz(dict(type=type, assignee_no=hit[0]["no"], note=note, end=end,
+                                   start=start, ref_id=ref_id, activity_code=activity_code)), me)
+    if r.get("ok"): _agent_log(me, "ASSIGN", r.get("reason", ""))
+    return r
 
 
-def draft_dispatch(task_id, assignee=None):
-    """起草一条**把待分配池里的单分给某人**。不给 assignee 就采纳 agent 的建议。
+def dispatch_task(task_id, assignee=None):
+    """**把待分配池里的单分出去**(真的写进去)。不给 assignee 就采纳 agent 自己的建议。
 
-    **这个工具不会真的分** —— 它只验规则、出草稿,要你点确认。
+    只能分**还没派出去的**单 —— 已经派给别人的要改派,那是另一个动作:
+    悄悄换掉负责人会让原来那个人的列表凭空少一行。
     """
-    me = whoami()
-    if not me: return dict(error="不知道现在是谁在分 —— 请先登录")
-    if me.get("role") not in MANAGER_ROLES:
-        return dict(error=f"分派预约须由店长及以上操作,你是「{me.get('role')}」")
-    import booking
-    rs = _rows("SELECT * FROM schedule WHERE id=?", (task_id or "").strip())
-    if not rs: return dict(error=f"没有任务 {task_id}")
-    t = rs[0]
-    if t.get("assignee_no"):
-        w = _rows("SELECT name FROM staff WHERE no=?", t["assignee_no"])
-        return dict(error=f"{task_id} 已经派给 {w[0]['name'] if w else t['assignee_no']} 了。"
-                          f"要换人得走改派 —— 悄悄覆盖会让他的列表凭空少一行")
-    if me["role"] != "总部运营" and t.get("shop") != me.get("shop"):
-        return dict(error=f"{task_id} 属于 {t.get('shop')},不在你管辖范围")
-
-    sg = booking.suggest(t)
-    pool = _rows("SELECT no,name FROM staff WHERE role='顾问' AND status='启用' AND shop=?",
-                 t.get("shop"))
-    if assignee:
-        who = assignee.strip()
-        hit = [p for p in pool if p["no"] == who] or [p for p in pool if p["name"] == who]
-        if len(hit) != 1:
-            return dict(error=f"找不到「{who}」或有重名", 可派的人=[f"{p['name']}({p['no']})" for p in pool])
-        him = hit[0]
-    elif sg:
-        him = dict(no=sg["no"], name=sg["name"])
+    import tasks, booking
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在分 —— 请先登录")
+    to = (assignee or "").strip()
+    if not to:
+        t = _rows("SELECT * FROM schedule WHERE id=?", (task_id or "").strip())
+        if not t: return dict(error=f"没有任务 {task_id}")
+        sg = booking.suggest(t[0])
+        if not sg:
+            return dict(error="这个门店没有在职顾问可派,也提不出建议 —— "
+                              "**硬凑一个人出来比说「提不出」有害得多**")
+        to = sg["no"]
     else:
-        return dict(error="这个门店没有在职顾问可派,agent 也提不出建议 —— "
-                          "**硬凑一个人出来比说「提不出」有害得多**")
-    adopted = bool(sg and sg["no"] == him["no"])
-    return _draft("dispatch", {"id": t["id"], "assignee_no": him["no"]},
-                  f"把 {t['id']}({t.get('type')})分给 {him['name']}"
-                  + ("(采纳 agent 建议)" if adopted else
-                     (f"(agent 建议的是 {sg['name']},这是改派)" if sg else "")),
-                  None if adopted or not sg else
-                  f"⚠️ 这次和 agent 的建议不同,台账会记下这是一次改派")
+        pool = tasks.my_staff(me)
+        hit = [p for p in pool if p["no"] == to] or [p for p in pool if p["name"] == to]
+        if len(hit) != 1:
+            return dict(error=f"找不到「{to}」或有重名",
+                        可派的人=[f"{p['name']}({p['no']})" for p in pool])
+        to = hit[0]["no"]
+    r = tasks.dispatch(dict(id=task_id, assignee_no=to), me)
+    if r.get("ok"): _agent_log(me, "DISPATCH", r.get("reason", ""))
+    return r
 
 
-def draft_finish(task_id, summary):
-    """起草一条**完成任务**。**只能完成派给自己的**;需要现场照的类型,照片要在页面上传。
+def finish_task(task_id, summary):
+    """**把任务标记完成**(真的写进去)。日程总结必填。
 
-    这个工具不会真的完成 —— 它只验规则、出草稿。
+    **只能完成派给自己的** —— 谁做的谁点完成,别人代点等于台账上写了
+    一件没发生的事。需要现场照的类型(上门沟通/团建培训/日常运维/维保/售后)
+    要先在页面上传照片,这里传不了图。
     """
-    import tasktypes as tt
-    me = whoami()
-    if not me: return dict(error="不知道现在是谁 —— 请先登录")
-    rs = _rows("SELECT * FROM schedule WHERE id=?", (task_id or "").strip())
-    if not rs: return dict(error=f"没有任务 {task_id}")
-    t = rs[0]
-    if t.get("assignee_no") != me["no"]:
-        return dict(error="**只能完成派给自己的任务** —— 谁做的谁点完成,"
-                          "别人代点等于台账上写了一件没发生的事")
-    if t.get("status") != "有效":
-        return dict(error=f"{task_id} 当前是「{t['status']}」,不能完成")
-    if len((summary or "").strip()) < 4:
-        return dict(error="日程总结必填,写清楚做了什么、结果如何 —— "
-                          "只写「完结」的任务,过两个月谁也说不出当时发生了什么")
-    warn = None
-    if tt.needs_photo(t.get("type")):
-        import files as _f
-        if not _f.listing(t["id"], "总结"):
-            warn = (f"⚠️ 「{tt.norm(t.get('type'))}」完成时必须有现场照,"
-                    f"这条还没有 —— 点确认时会让你先传图")
-    return _draft("finish", {"id": t["id"], "summary": summary.strip()},
-                  f"把 {t['id']}({tt.norm(t.get('type'))})标记完成,总结:{summary.strip()[:50]}",
-                  warn)
+    import tasks
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁 —— 请先登录")
+    r = tasks.finish_task(dict(id=task_id, summary=summary), me)
+    if r.get("ok"): _agent_log(me, "FINISH", r.get("reason", ""))
+    return r
 
 
 def check_write(action, fields=None):
@@ -1333,7 +1312,10 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{},"required":[]}},
  {"name":"dispatch_pool","description":"**待分配池**:客户已经约了时间、但系统没能自动派单的任务。每条都带 agent 的人选建议和依据(接触史 / 时段冲突 / 负载)。只有店长看得到。**建议不是决定** —— 要店长确认才算派出去。",
   "input_schema":{"type":"object","properties":{},"required":[]}},
- {"name":"draft_task","description":"**起草**一条派任务,交给人确认。⚠️ 这个工具**不会真的派** —— 它跑完整套校验后返回一张草稿,确认卡会显示在对话下方,由人点了才写进去。type 见 task_types();ref_id 填什么由类型决定;assignee 写工号或姓名都行。**别自作主张替用户决定派给谁**,拿不准就先问。",
+ {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
+  "input_schema":{"type":"object","properties":{
+    "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
+ {"name":"assign_task","description":"**派一条任务**(真的写进去,立即生效)。只有店长及以上能派,只能派给本店在职顾问。type 见 task_types();ref_id 填什么由类型决定;assignee 写工号或姓名。⚠️ **动手之前先跟用户把人、时间、内容对一遍** —— 派错了和派对了在库里长得一模一样,等发现的时候顾问已经去做了。用户没说清派给谁就问,别挑一个「看起来合理」的人。",
   "input_schema":{"type":"object","properties":{
     "type":{"type":"string","description":"任务类型,九种之一,见 task_types()"},
     "assignee":{"type":"string","description":"派给谁,工号或姓名"},
@@ -1343,12 +1325,12 @@ SHOP_SCHEMAS=[
     "ref_id":{"type":"string","description":"挂的单据号。客户相关填客户号;订单跟踪填订单号;维保填维保单号;售后填售后单号;团建培训和日常运维不填。"},
     "activity_code":{"type":"string","description":"绑定活动编码,可不填"}},
    "required":["type","assignee","note","end"]}},
- {"name":"draft_dispatch","description":"**起草**一条「把待分配池里的单分给某人」。不给 assignee 就采纳 agent 自己的建议。⚠️ 不会真的分,要人点确认。只能分**还没派出去的**单 —— 已经派给别人的要改派,那是另一个动作。",
+ {"name":"dispatch_task","description":"**把待分配池里的单分出去**(真的写进去)。不给 assignee 就采纳 dispatch_pool 里那条建议。只能分**还没派出去的**单 —— 已经派给别人的要改派是另一个动作,悄悄换掉负责人会让原来那个人的列表凭空少一行。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号,如 SC7029"},
     "assignee":{"type":"string","description":"分给谁,工号或姓名。不给则采纳建议。"}},
    "required":["task_id"]}},
- {"name":"draft_finish","description":"**起草**一条「完成任务」。⚠️ 不会真的完成,要人点确认。只能完成派给自己的;日程总结必填;需要现场照的类型,照片要在确认卡上传。",
+ {"name":"finish_task","description":"**把任务标记完成**(真的写进去)。日程总结必填。**只能完成派给自己的** —— 别人代点等于台账上写了一件没发生的事。需要现场照的类型要先在页面上传照片,这里传不了图。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号"},
     "summary":{"type":"string","description":"日程总结:做了什么、结果如何"}},
@@ -1443,6 +1425,11 @@ def _mask_out(o, depth=0):
 def _masked(fn):
     def wrap(*a, **kw): return _mask_out(fn(*a, **kw))
     wrap.__name__, wrap.__doc__ = fn.__name__, fn.__doc__
+    # **把原函数挂上去。** 不挂的话,任何想看这个工具真实实现的检查
+    # (比如 isolation_check 查「写工具有没有从会话取身份」)看到的都是
+    # 这三行包装器 —— 它会报「没取身份」,而实际取了。
+    # 检查看错了对象,结论就是错的,而且错得很像真的。
+    wrap.__wrapped__ = fn
     return wrap
 
 
@@ -1455,7 +1442,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "draft_task":draft_task,"draft_dispatch":draft_dispatch,"draft_finish":draft_finish,
+              "get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

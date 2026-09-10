@@ -31,6 +31,7 @@ run "提示词 · 单一源头与按工具装配" python3 tools/prompts_check.py
 run "生命周期口径 · 自测" python3 knowledge/lifecycle.py
 run "会员生命周期 · 14 条边界标注对账" python3 backend/member_check.py
 run "预约派单 · 逐例标真值(派错和派对长得一样)" python3 backend/booking_check.py
+run "数据隔离 · A 顾问看不到 B 顾问(漏了不会报错)" python3 backend/isolation_check.py
 run "RFM 评分 · 自测" python3 knowledge/rfm.py
 run "RFM 评分 · 五条性质" python3 backend/rfm_check.py
 run "交接文档 · 四段必填是否齐全" python3 tools/make_handoff.py --check
