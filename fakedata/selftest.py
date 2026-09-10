@@ -566,6 +566,57 @@ def main():
     else:
         print("  (跳过:backend/lanxiu.db 不在)")
 
+    print("\n【起草接口规格 · 静态扒 + 模型只补语义(离线,不调模型)】")
+    import specdraft as SD
+    sv = os.path.join(ROOT, "backend", "server.py")
+    rl = os.path.join(ROOT, "backend", "rules.py")
+    if os.path.exists(sv):
+        sc9 = SD.scan_service(sv, rl)
+        ck(len(sc9["routes"]) > 20, f'静态扒出路由 {len(sc9["routes"])} 条')
+        cc = next((r for r in sc9["routes"] if r["handler"] == "create_customer"), None)
+        ck(cc and "name" in cc["读的请求字段"] and "customer" in cc["写的表"],
+           "扒得出「读哪些请求字段 / 写哪张表」——这些是事实,不该让模型猜", str(cc)[:110])
+        ck(cc and "id" in cc["成功返回的字段"],
+           "成功返回的字段要抓**整个 dict**,不是一行里的第一个(第一版只抓到 code)",
+           str(cc and cc["成功返回的字段"]))
+        ck("NEED_REVIEW" in (sc9["校验器分函数"].get("validate_customer") or []),
+           "校验器的失败码按**函数**收集 —— 全塞给每个端点会诱导它乱选码")
+        tb9 = SD.table_columns(S.connect(os.path.join(ROOT, "backend", "lanxiu.db")))
+        # **送出去的候选码要按端点收窄**,不能把全部失败码塞给每一个。
+        # (上一条检查测的是「扒出来分没分函数」,而真正会出错的是「送出去时怎么给」——
+        #  咬合时发现破坏后者不会红:**检查和破坏点测的不是同一件事。**)
+        pay9 = SD.build_payload(sc9, tb9)
+        cce = next((e for e in pay9["写接口"] if e["handler"] == "create_customer"), None)
+        ck(cce and "NEED_NAME" in cce["可能的业务码"],
+           "建客户那条,候选码里有它真会撞上的 NEED_NAME")
+        ck(cce and not ({"TOO_BIG", "BAD_HEADER", "TOO_MANY"} & set(cce["可能的业务码"])),
+           "而**不含**导入/附件校验器的码 —— 它根本不调那些校验器。"
+           "清单里有,模型就以为可选,那不是它编的,是我诱导的",
+           str(cce and cce["可能的业务码"]))
+        # 校验层:五类都要挡下
+        raw9 = {"endpoints": [
+            {"handler": "create_customer", "table": "customer", "is_create": True,
+             "fields": {"name": "name", "phone": "phone", "根本不读的字段": "shop",
+                        "addr": "没这列"},
+             "context_fields": ["name"], "unique_fields": ["phone"],
+             "codes": ["NEED_NAME", "根本不存在的码"]},
+            {"handler": "查无此函数", "table": "customer", "is_create": True, "fields": {}},
+            {"handler": "save_block", "table": "page_block", "is_create": False,
+             "reason": "是编辑不是新建"}]}
+        sp9, dr9 = SD.validate(raw9, sc9, tb9)
+        txt9 = " | ".join(dr9)
+        ck("customer" in sp9["endpoints"], "正常那条留下来了", str(list(sp9["endpoints"])))
+        ck("不在真实路由表" in txt9, "编出来的 handler → 丢")
+        ck("接口根本不读这个字段" in txt9, "接口根本不读的字段 → 丢")
+        ck("列不存在" in txt9, "映到不存在的列 → 丢")
+        ck("源码里没出现过" in txt9, "编出来的业务码 → 丢")
+        ck("不是新建接口" in txt9,
+           "模型自己判为「不是新建」的 → 按**结构化字段**过滤,不靠它在自然语言里说")
+        ck(sp9["endpoints"]["customer"]["create"]["path"] == "/api/customer-create",
+           "**路径是我自己查回去的,不问模型** —— 少问一个已知字段就少一处填错的地方")
+        ck("name" not in (sp9["endpoints"]["customer"]["create"].get("const_fields") or {}),
+           "明明是列的字段,不许当上下文字段")
+
     print("\n【泛化 · 换一套命名约定还认不认得出】")
     import generalize as GEN
     gp = os.path.join(tmpd, "generalize_test.db")
