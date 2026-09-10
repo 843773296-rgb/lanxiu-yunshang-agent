@@ -308,7 +308,7 @@ class as_user:
 # 期间那位顾问被派了别的活,卡上的撞车提醒会跟着变。
 # 会改数据的工具。**列在这儿是给检查用的** —— isolation_check 逐个确认
 # 它们都从会话取身份、都走 tasks.py 那一套判定,不会因为「是智能体调的」而放宽。
-WRITE_TOOLS = ("assign_task", "dispatch_task", "reassign_task", "finish_task")
+WRITE_TOOLS = ("assign_task", "dispatch_task", "reassign_task", "finish_task", "assign_batch")
 
 
 MANAGER_ROLES = ("店长", "总部运营")
@@ -404,6 +404,87 @@ def team_tasks(assignee=None, status=None):
     return _nz(dict(范围=d["scope"], 人数=len(out), 团队=out,
                     手上没活的=idle or None,
                     待分配=len([r for r in rs if not r.get("assignee_no") and r.get("status") == "有效"]) or None))
+
+
+def week_grid(start=None, days=7):
+    """**一周的排班格子**:每个顾问哪天什么时段已经占了、哪些时段空着。
+
+    排班之前必须先看这个 —— 不看就排,排出来的东西**和正常任务长得一模一样**,
+    直到那天两个人同时约在一个时段。
+
+    返回按人 × 天的占用情况,以及每天没人覆盖的营业时段。
+    """
+    import datetime, tasks as _tk
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在排 —— 请先登录")
+    if me.get("role") not in _tk.MANAGER_ROLES:
+        return dict(error=f"排班是店长的活,你是「{me.get('role')}」。"
+                          f"你自己的日程用 my_tasks 看")
+    try:
+        d0 = (datetime.date.fromisoformat(start) if start else datetime.date.today())
+    except ValueError:
+        return dict(error=f"起始日期「{start}」格式不对,要 YYYY-MM-DD")
+    days = max(1, min(int(days or 7), 14))
+    d1 = d0 + datetime.timedelta(days=days)
+
+    staff = _tk.my_staff(me)
+    rs = _tk.rows("SELECT id,assignee_no,type,note,start_ts,end_ts FROM schedule "
+                  "WHERE status='有效' AND start_ts < ? AND end_ts > ? "
+                  "AND assignee_no IS NOT NULL ORDER BY start_ts",
+                  d1.isoformat() + " 00:00", d0.isoformat() + " 00:00")
+    OPEN_H, CLOSE_H = 10, 21          # 和 booking.OPEN_HOUR 一个口径
+
+    people = []
+    for p in staff:
+        mine = [r for r in rs if r["assignee_no"] == p["no"]]
+        byday = {}
+        for r in mine:
+            day = (r["start_ts"] or "")[:10]
+            byday.setdefault(day, []).append(
+                f"{(r['start_ts'] or '')[11:16]}–{(r['end_ts'] or '')[11:16]} "
+                f"{r['type']}({r['id']})")
+        people.append(_nz({"顾问": p["name"], "工号": p["no"],
+                           "这段时间在办": len(mine),
+                           "按天": byday or None}))
+
+    # 每天有多少人有安排 —— **没人覆盖的那天要单独说**,
+    # 它不会出现在任何一个人的列表里,所以最容易被漏掉。
+    naked = []
+    for k in range(days):
+        day = (d0 + datetime.timedelta(days=k)).isoformat()
+        cover = {r["assignee_no"] for r in rs if (r["start_ts"] or "").startswith(day)}
+        if not cover:
+            naked.append(day)
+    return _nz(dict(区间=f"{d0} 起 {days} 天", 营业时间=f"{OPEN_H}:00–{CLOSE_H}:00",
+                    可排的人=[p["name"] for p in staff],
+                    每人=people,
+                    完全没人排班的日子=naked or None,
+                    待分配=len(__import__("booking").unassigned(
+                        None if me["role"] == "总部运营" else me.get("shop"))) or None))
+
+
+def assign_batch(items):
+    """**一次排一批任务**(排班用,真的写进去)。**全过才写,一条不过就整批不写。**
+
+    items 是一个列表,每条:{type, assignee, note, start, end, ref_id?, activity_code?}。
+    一次最多 20 条。
+
+    为什么用批量而不是连着调 assign_task:
+      ① 一周的排班**是一个决定,不是七个决定**。半途失败留下三条已排四条没排,
+         比整批失败难收拾得多 —— 你得先搞清楚哪三条排进去了。
+      ② **有些冲突只有整体看才发现**:同一个人被排了两个重叠时段。
+         一条一条排,前四条都合法,第五条才撞上第二条,而那时前四条已经落库。
+
+    ⚠️ 排之前先 `week_grid()` 看现有占用,并把整张表念给用户确认。
+    """
+    import tasks
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在排 —— 请先登录")
+    if me.get("role") not in tasks.MANAGER_ROLES:
+        return dict(error=f"排班须由店长及以上操作,你是「{me.get('role')}」")
+    r = tasks.assign_batch(items, me)
+    if r.get("ok"): _agent_log(me, "BATCH", r.get("reason", ""))
+    return r
 
 
 def get_task(task_id):
@@ -1428,6 +1509,23 @@ SHOP_SCHEMAS=[
     "assignee":{"type":"string","description":"只看这一个人,工号或姓名。不给则按人分组列全店。"},
     "status":{"type":"string","description":"只看这一档:有效 / 完结 / 取消 / 无效。不传看全部。"}},
    "required":[]}},
+ {"name":"week_grid","description":"**排班用的格子**:一周里每个顾问哪天什么时段已经占了、哪几天完全没人排班、待分配还有几条。**排班之前必须先看这个** —— 不看就排,排出来的东西和正常任务长得一模一样,直到那天两个人同时约在一个时段。只有店长看得到。",
+  "input_schema":{"type":"object","properties":{
+    "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
+    "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
+ {"name":"assign_batch","description":"**一次排一批任务**(排班用,真的写进去)。items 是列表,每条 {type, assignee, note, start, end, ref_id?, activity_code?},一次最多 20 条。**全过才写,一条不过就整批不写** —— 半途失败留下几条已排几条没排,比整批失败难收拾得多。而且它会检查**只有整体看才发现的冲突**:同一个人被排了两个重叠时段。⚠️ 排之前先 week_grid() 看现有占用,并把整张表念给用户确认。",
+  "input_schema":{"type":"object","properties":{
+    "items":{"type":"array","description":"要排的任务列表",
+      "items":{"type":"object","properties":{
+        "type":{"type":"string","description":"任务类型,见 task_types()"},
+        "assignee":{"type":"string","description":"派给谁,工号或姓名"},
+        "note":{"type":"string","description":"日程描述"},
+        "start":{"type":"string","description":"开始 YYYY-MM-DD HH:MM"},
+        "end":{"type":"string","description":"结束 YYYY-MM-DD HH:MM"},
+        "ref_id":{"type":"string","description":"挂的单据号,类型要求时才填"},
+        "activity_code":{"type":"string","description":"绑定活动,可不填"}},
+        "required":["type","assignee","note","start","end"]}}},
+   "required":["items"]}},
  {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
@@ -1564,7 +1662,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"week_grid":week_grid,"assign_batch":assign_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

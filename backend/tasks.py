@@ -225,6 +225,114 @@ def dispatch(d, me):
                        ("" if adopted or not sg else f"(agent 建议的是 {sg['name']},已记下这次改派)"))
 
 
+def assign_batch(items, me):
+    """一次排一批任务(排班用)。**全过才写,一条不过就整批不写。**
+
+    为什么要有批量,而不是循环调 assign_task:
+
+      ① **一周的排班是一个决定,不是七个决定。** 半途失败留下三条已排、
+         四条没排,比整批失败难收拾得多 —— 你得先搞清楚哪三条排进去了。
+      ② **有些冲突只有整体看才发现**:同一个人被排了两个重叠时段。
+         一条一条排的话,前四条都合法,第五条才撞上第二条 ——
+         而那时前四条已经落库了。
+      ③ 一次调用 = 一次写,**和「一次只做一件」那条闸不矛盾**:
+         排一次班本来就是一件事。
+
+    返回 (ok, 明细)。失败时明细里逐条说清哪条为什么不行 ——
+    「批量失败」四个字会让人把七条挨个试一遍。
+    """
+    import datetime, tasktypes as tt, sqlite3 as _sq
+    if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return _deny(me, "WRONG_ROLE", f"排班须由店长及以上操作,你的角色是「{me['role']}」")
+    if not isinstance(items, list) or not items:
+        return dict(ok=False, code="EMPTY", reason="没有要排的内容")
+    if len(items) > 20:
+        return dict(ok=False, code="TOO_MANY",
+                    reason=f"一次最多排 20 条,你给了 {len(items)} 条 —— "
+                           f"排得太多一眼看不完,看不完的批量等于没审")
+
+    allowed = {x["no"]: x for x in my_staff(me)}
+    by_name = {x["name"]: x for x in allowed.values()}
+    plan, bad = [], []
+
+    for i, it in enumerate(items, 1):
+        it = it or {}
+        tag = f"第 {i} 条"
+        kind = tt.norm(it.get("type") or "")
+        ti = tt.info(kind)
+        if not ti: bad.append(f"{tag}:类型「{it.get('type')}」不认识"); continue
+        who = str(it.get("assignee") or it.get("assignee_no") or "").strip()
+        him = allowed.get(who) or by_name.get(who)
+        if not him: bad.append(f"{tag}:派给谁没写对(「{who}」不在可派的人里)"); continue
+        note = (it.get("note") or "").strip()
+        if not note: bad.append(f"{tag}:日程描述必填"); continue
+        st = (it.get("start") or "").replace("T", " ").strip()
+        en = (it.get("end") or "").replace("T", " ").strip()
+        if not (st and en): bad.append(f"{tag}:开始和结束时间都要填"); continue
+        try:
+            t0 = datetime.datetime.fromisoformat(st); t1 = datetime.datetime.fromisoformat(en)
+        except ValueError:
+            bad.append(f"{tag}:时间格式不对({st} / {en}),要 YYYY-MM-DD HH:MM"); continue
+        if t1 <= t0: bad.append(f"{tag}:结束({en})不在开始({st})之后"); continue
+        ok0, cid, _sh, ref_desc = tt.resolve_ref(ti["ref"], it.get("ref_id"), rows)
+        if not ok0: bad.append(f"{tag}:{ref_desc}"); continue
+        if not ti["ref"] and it.get("ref_id"):
+            bad.append(f"{tag}:「{kind}」不挂单据,但给了 {it.get('ref_id')}"); continue
+        plan.append(dict(i=i, kind=kind, him=him, note=note, t0=t0, t1=t1,
+                         cid=cid, ref_id=it.get("ref_id"), ref_desc=ref_desc,
+                         activity=(it.get("activity_code") or "").strip() or None))
+
+    # ── 只有整体看才发现的冲突:批内自撞 ─────────────────────────────
+    for a in plan:
+        for b in plan:
+            if a["i"] >= b["i"] or a["him"]["no"] != b["him"]["no"]: continue
+            if a["t0"] < b["t1"] and b["t0"] < a["t1"]:
+                bad.append(f"第 {a['i']} 条和第 {b['i']} 条撞了:{a['him']['name']} "
+                           f"在 {max(a['t0'], b['t0']):%m-%d %H:%M} 前后被排了两件事")
+    # 和已有任务撞
+    for a in plan:
+        busy = rows("SELECT id FROM schedule WHERE assignee_no=? AND status='有效' "
+                    "AND start_ts < ? AND end_ts > ?",
+                    a["him"]["no"], a["t1"].strftime("%Y-%m-%d %H:%M"),
+                    a["t0"].strftime("%Y-%m-%d %H:%M"))
+        if busy:
+            bad.append(f"第 {a['i']} 条撞上已有任务:{a['him']['name']} 那个时段已经有 "
+                       f"{busy[0]['id']}")
+
+    if bad:
+        return dict(ok=False, code="BATCH_REJECT", 逐条=bad,
+                    reason=f"这批 {len(items)} 条里有 {len(bad)} 处不行,**整批都没写** —— "
+                           f"半途失败留下几条已排几条没排,比整批失败难收拾得多。"
+                           f"改好再排一次。")
+
+    n = rows("SELECT COUNT(*) c FROM schedule")[0]["c"]
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    made = []
+    with _sq.connect(DB) as c:
+        for k, a in enumerate(plan, 1):
+            sid = f"SC{7000 + n + k}"
+            c.execute("""INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,status,
+                         shop,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)
+                         VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
+                      (sid, a["kind"],
+                       f"{a['him'].get('adv_code') or ''} {a['him']['name']}".strip(), a["cid"],
+                       a["t0"].strftime("%Y-%m-%d %H:%M"), a["t1"].strftime("%Y-%m-%d %H:%M"),
+                       a["him"].get("shop"), a["him"]["no"], me["no"], now,
+                       a["note"], a["activity"], a["ref_id"]))
+            made.append(dict(任务号=sid, 类型=a["kind"], 派给=a["him"]["name"],
+                             时间=f"{a['t0']:%m-%d %H:%M}–{a['t1']:%H:%M}", 内容=a["note"]))
+    log_op(me["name"], "schedule", f"{made[0]['任务号']}…{made[-1]['任务号']}", "—", "有效",
+           True, "BATCH_ASSIGN",
+           f"{me['name']}({me['role']})一次排了 {len(made)} 条:"
+           + "、".join(f"{m['派给']}{m['时间']}" for m in made[:6])
+           + ("…" if len(made) > 6 else ""),
+           {"role": me["role"], "count": len(made)})
+    return dict(ok=True, code="BATCH_ASSIGN", 条数=len(made), 明细=made,
+                reason=f"一次排了 **{len(made)} 条**,都写进去了。"
+                       f"每个人的 pad 上各自只看得到自己那几条。")
+
+
 def my_tasks(me, status=None):
     """看任务。范围由 visible_scope 一处判定 —— **顾问只看得到派给自己的**。
 

@@ -12,10 +12,11 @@
   ③ 写操作漏    —— 读隔离了但写没隔离(能完成别人的任务、能派给别店的人)
 第 ② 种最常见:列表那边一眼能看出来,详情这边没人会去点别人的单号。
 """
-import os, sys
+import os, sys, sqlite3
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import api, tasks
+DB = tasks.DB
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 bad = 0
@@ -87,10 +88,16 @@ def main():
 
     print(f"\n\033[1m▸ 单条隔离 · 知道单号能不能看别人的\033[0m")
     print("  " + "=" * 78)
-    if not idb:
-        print(f"  {R}❌{D} {B['name']} 一条任务都没有,这一节测不到"); bad += 1
+    # 挑一条**干净属于 B** 的:不能是曾经被改派、原主是 A 的那种 ——
+    # 那条 A 本来就看得见(设计如此),拿它测「A 看不到 B 的」会误报。
+    clean = tasks.rows(
+        "SELECT id FROM schedule WHERE assignee_no=? "
+        "AND (reassigned_from IS NULL OR reassigned_from<>?) ORDER BY id",
+        B["no"], A["no"])
+    if not clean:
+        print(f"  {R}❌{D} {B['name']} 没有一条「干净属于他」的任务,这一节测不到"); bad += 1
     else:
-        tid = sorted(idb)[0]
+        tid = clean[0]["id"]
         with api.as_user(A): ra = api.get_task(tid)
         with api.as_user(B): rb = api.get_task(tid)
         with api.as_user(mgr): rm = api.get_task(tid)
@@ -155,7 +162,15 @@ def main():
 
     print(f"\n\033[1m▸ 改派 · 原负责人不能凭空少一行\033[0m")
     print("  " + "=" * 78)
-    live = [t["任务号"] for t in db["任务"] if t.get("状态") == "有效"]
+    # **要挑「当前确实是 B 的」那条。**
+    # db["任务"] 现在包含被改派走的(那是设计),第二次跑这个检查时,
+    # 上一次改派过去的那条还在 B 的视野里,但负责人已经是 A ——
+    # 挑中它就会报「新负责人和原来是同一个人」。
+    # 检查**必须能反复跑**:不幂等的检查第一次绿第二次红,
+    # 而红的原因和被测的东西没关系。
+    live = [r["id"] for r in tasks.rows(
+        "SELECT id FROM schedule WHERE assignee_no=? AND status='有效' ORDER BY id",
+        B["no"])]
     if not live:
         print(f"  {R}❌{D} {B['name']} 没有进行中的任务,改派这一节测不到"); bad += 1
     else:
@@ -170,17 +185,30 @@ def main():
         with api.as_user(mgr): r = api.reassign_task(tid, A["name"], "")
         ck("改派不给理由", "被拒" if not r.get("ok") else "放行了", "被拒",
            "  ← 把人的活拿走要给个说法")
-        with api.as_user(mgr): r = api.reassign_task(tid, A["name"], "原负责人临时有事")
-        ck("店长带理由改派", "成了" if r.get("ok") else f"失败:{r.get('reason', r.get('error'))[:20]}", "成了")
-        if r.get("ok"):
-            with api.as_user(B): still = [t for t in api.my_tasks()["任务"] if t["任务号"] == tid]
-            ck(f"原负责人 {B['name']} 还看得见这条",
-               "看得见" if still else "看不见了", "看得见",
-               "  ← 看不见的话他的列表凭空少一行,他会以为自己记错了")
-            if still:
-                ck("  └ 而且看得出是被改派走的",
-                   "看得出" if still[0].get("改派") else "只显示新负责人", "看得出",
-                   "  ← 只显示「负责人:林岚」比少一行还糟")
+        # **改完要还原。** 检查本身在改数据,不还原的话跑一次库就变一次样 ——
+        # 第一次绿、第二次红,而红的原因和被测的东西没关系。
+        # 一个不能反复跑的检查,实际上只在第一次有用。
+        _before = tasks.rows("SELECT assignee_no,advisor,reassigned_from,reassign_reason,"
+                             "reassigned_at FROM schedule WHERE id=?", tid)[0]
+        try:
+            with api.as_user(mgr): r = api.reassign_task(tid, A["name"], "原负责人临时有事")
+            ck("店长带理由改派",
+               "成了" if r.get("ok") else f"失败:{str(r.get('reason') or r.get('error'))[:20]}", "成了")
+            if r.get("ok"):
+                with api.as_user(B): still = [t for t in api.my_tasks()["任务"] if t["任务号"] == tid]
+                ck(f"原负责人 {B['name']} 还看得见这条",
+                   "看得见" if still else "看不见了", "看得见",
+                   "  ← 看不见的话他的列表凭空少一行,他会以为自己记错了")
+                if still:
+                    ck("  └ 而且看得出是被改派走的",
+                       "看得出" if still[0].get("改派") else "只显示新负责人", "看得出",
+                       "  ← 只显示「负责人:林岚」比少一行还糟")
+        finally:
+            with sqlite3.connect(DB) as _c:
+                _c.execute("UPDATE schedule SET assignee_no=?,advisor=?,reassigned_from=?,"
+                           "reassign_reason=?,reassigned_at=? WHERE id=?",
+                           (_before["assignee_no"], _before["advisor"], _before["reassigned_from"],
+                            _before["reassign_reason"], _before["reassigned_at"], tid))
 
     print(f"\n\033[1m▸ 绕道 · 别的工具能不能问出「B 在做什么」\033[0m")
     print("  " + "=" * 78)

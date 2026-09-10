@@ -611,7 +611,7 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
     #      **某一次可能碰巧成功**,那就是一条没人打算派的任务。
     #   ③ 没查就派 —— 不知道有哪些类型、不知道能派给谁,就先派了。
     #      派出去的东西看起来和正常任务一模一样。
-    WRITE = ("assign_task", "dispatch_task", "reassign_task", "finish_task")
+    WRITE = ("assign_task", "dispatch_task", "reassign_task", "finish_task", "assign_batch")
     short = name.rsplit("__", 1)[-1]
     if short in WRITE:
         done = [c for c in (state_writes or []) if c.rsplit("__", 1)[-1] in WRITE]
@@ -676,7 +676,7 @@ def make_hooks(state):
         # 放行的写工具记一笔 —— 下一次写就会被上面那条闸拦住。
         # **记在放行处,不记在 post_tool**:工具执行失败也算「已经动过手」,
         # 失败之后紧接着换参数重试,正是要挡的那件事。
-        if name.rsplit("__", 1)[-1] in ("assign_task", "dispatch_task", "reassign_task", "finish_task"):
+        if name.rsplit("__", 1)[-1] in ("assign_task", "dispatch_task", "reassign_task", "finish_task", "assign_batch"):
             state.setdefault("wrote", []).append(name)
         return {}
 
