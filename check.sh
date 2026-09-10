@@ -35,6 +35,7 @@ run "数据隔离 · A 顾问看不到 B 顾问(漏了不会报错)" python3 bac
 run "花费闸 · 阈值够聊几轮 + 撞线说不说得清" ./agentsite/.venv/bin/python agentsite/budget_check.py
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
 run "技能形状 · 该有的段落齐不齐" ./agentsite/.venv/bin/python agentsite/skill_shape.py
+run "读不读得出效果 · 判据本身要能被测" ./agentsite/.venv/bin/python agentsite/evalnoise_test.py
 run "能力清单 · 声明/文件/白名单三边一致" ./agentsite/.venv/bin/python agentsite/manifest.py
 run "RFM 评分 · 自测" python3 knowledge/rfm.py
 run "RFM 评分 · 五条性质" python3 backend/rfm_check.py

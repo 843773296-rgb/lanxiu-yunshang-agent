@@ -62,7 +62,11 @@ def main():
         ck(f"「{p}」用单条派", g.pre_tool_verdict(W, A1, p, READ, []), True, "assign_batch")
     for p in ("明天让林岚回访 C10001", "给周叙派一条维保", "把 SC7007 改派给林岚"):
         ck(f"「{p}」用单条派", g.pre_tool_verdict(W, A1, p, READ, []), False)
-    ck("复合请求用批量", g.pre_tool_verdict(B, {"items": []}, "把这三条都派了", [], []), False)
+    # **前提要跟着新规矩走。** 加了「排班前先看格子」之后,
+    # 这条用例(只测「用批量不该被复合闸拦」)必须带上 week_grid,
+    # 否则它测的就变成了另一条规矩 —— 而它会红,红的原因和它想测的东西无关。
+    ck("复合请求用批量(已看过格子)",
+       g.pre_tool_verdict(B, {"items": []}, "把这三条都派了", ["mcp__shop__week_grid"], []), False)
     # **闸指的那条路必须真的通。**
     # 上一版不管什么动作都让改用 assign_batch,而 assign_batch 是新建任务的,
     # 派不了待分配池里已存在的单 —— 影子埋点抓到:模型被拦之后两条路都没走成,
@@ -92,6 +96,21 @@ def main():
     ck("没查 task_types 就派", g.pre_tool_verdict(W, A1, "派一条", [], []), True, "task_types")
     ck("查过了就放行", g.pre_tool_verdict(W, A1, "派一条", READ, []), False)
     ck("完成任务不要求先查", g.pre_tool_verdict(F, {"task_id": "SC1"}, "完成", [], []), False)
+
+    print("\n\033[1m▸ 先看再动:祈使句搬进 hook\033[0m")
+    print("  " + "=" * 78)
+    # 这两条原来只写在 Skill 正文里。**提示词里的规矩是祈使句,hook 才是强制** ——
+    # Accio 的实测结论是这类约束「召回不足」:模型会当成一个大流程顺着执行。
+    ck("没看格子就排班", g.pre_tool_verdict(B, {"items": []}, "排下周班", [], []),
+       True, "week_grid")
+    ck("看过格子再排班", g.pre_tool_verdict(B, {"items": []}, "排下周班",
+       ["mcp__shop__week_grid"], []), False)
+    ck("没看池子就批量分派", g.pre_tool_verdict("mcp__shop__dispatch_batch", {"items": []},
+       "把待分配的都派了", [], []), True, "dispatch_pool")
+    ck("看过池子再分派", g.pre_tool_verdict("mcp__shop__dispatch_batch", {"items": []},
+       "把待分配的都派了", ["mcp__shop__dispatch_pool"], []), False)
+    # **单条动作不受这条管** —— 判宽了会天天拦正常的活
+    ck("单条派任务不要求先看格子", g.pre_tool_verdict(W, A1, "派一条", READ, []), False)
 
     print("\n\033[1m▸ 非 MCP 工具一律拦(这条最硬)\033[0m")
     print("  " + "=" * 78)

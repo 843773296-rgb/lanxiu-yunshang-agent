@@ -697,6 +697,22 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
                     f"它全过才写、一条不过整批不写,而且能看见一条一条做看不见的冲突"
                     f"(同一个人被排了两个重叠时段)。")
 
+        # **排班前必须先看格子。** 这条原来只写在 Skill 正文里(祈使句)——
+        # 而 Accio 的实测结论是这类约束「召回不足」:模型会把它当成一个大流程顺着执行。
+        # 不看现有占用就排,排出来的东西和正常任务长得一模一样,
+        # 直到那天两个人同时约在一个时段。
+        if short == "assign_batch" and "week_grid" not in " ".join(
+                x if isinstance(x, str) else "" for x in (state_reads or [])):
+            return ("排班之前先调 `week_grid()` 看现有占用 —— "
+                    "**不看就排,排出来的东西和正常任务长得一模一样**,"
+                    "直到那天两个人同时约在一个时段。"
+                    "它还会告诉你哪几天完全没人排班,那一项不看整周摊开是发现不了的。")
+        if short == "dispatch_batch" and "dispatch_pool" not in " ".join(
+                x if isinstance(x, str) else "" for x in (state_reads or [])):
+            return ("批量分派之前先调 `dispatch_pool()` —— "
+                    "**你得先知道池子里有哪些、系统建议派给谁**,"
+                    "否则你分派的依据是自己猜的,而猜出来的负责人和真的在库里长得一样。")
+
         if short == "assign_task" and "task_types" not in " ".join(
                 x if isinstance(x, str) else "" for x in (state_reads or [])):
             return ("派任务之前先调 `task_types()` 看类型规范 —— "
@@ -737,10 +753,23 @@ def make_hooks(state):
         # 模型不知道今天几号 —— 工期倒推会算错,而且错得很自然,没人看得出来
         state["prompt"] = inp.get("prompt", "")
         state["calls"] = []
+        ctx_add = (f"[系统注入] 今天是 {dt.date.today().isoformat()}。"
+                   "涉及日期的推算一律以这一天为准,不要自己猜今天几号。")
+        # **每一轮都把日记塞进来(三条)。** 日记建起来之后有一阵只有写没有读,
+        # 而没人读的日记和没有日记是一回事。
+        # 原本想只在「重要动作」时注,判据当场就漏(「排下周的班」不含「排班」)——
+        # **判据漏一次的代价比每轮多几百 token 大得多**,而且失灵是静默的。
+        try:
+            import diary as _dy
+            b = _dy.brief(3)
+            if b:
+                ctx_add += "\n\n" + b
+                state["_diary_read"] = True
+        except Exception:
+            pass
         return {"hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": f"[系统注入] 今天是 {dt.date.today().isoformat()}。"
-                                 "涉及日期的推算一律以这一天为准,不要自己猜今天几号。"}}
+            "additionalContext": ctx_add}}
 
     async def pre_tool(inp, tool_use_id, ctx):
         name, args = inp.get("tool_name", ""), inp.get("tool_input") or {}

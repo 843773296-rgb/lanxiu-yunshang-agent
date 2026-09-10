@@ -164,6 +164,7 @@ def main():
         改了的技能 = {k for k, v in newh.items() if oldh.get(k) != v}
         print(f"\n  \033[1m和基线 {a.diff} 对比\033[0m")
         print(f"    这期间改过的技能:{sorted(改了的技能) or '(一个都没改)'}")
+        stat = {}
 
         # **按「这条用例的技能改没改」分两组。**
         # 没改的那组是**对照组** —— 它的变化量就是噪声。
@@ -183,8 +184,27 @@ def main():
             for x in 坏: print(f"      {R}↓{D} #{x['id']} 「{x['prompt'][:28]}」原来对,现在 {x['kind']}")
             for x in 好: print(f"      {G}↑{D} #{x['id']} 「{x['prompt'][:28]}」原来错,现在对了")
             if grp == "对照组" and (好 or 坏):
-                print(f"      {Y}对照组动了 {len(好)+len(坏)} 条 —— 这就是噪声底噪。"
-                      f"改动组里小于这个量的变化都读不出效果。{D}")
+                print(f"      {Y}对照组动了 {len(好)+len(坏)} 条 —— 这就是噪声底噪。{D}")
+            stat[grp] = (len(好), len(坏), n)
+
+        # **让它自己下判断,不要把两组丢给人看。**
+        # 「改动组 +1,对照组 +1/-1」摆在那儿,人还是会读成「改好了 1 条」——
+        # 这一段我就这么读错过两次。判据要么是结构,要么迟早失效。
+        import evalnoise
+        cf, cb, cn = stat.get("改动组", (0, 0, 0))
+        kf, kb, kn = stat.get("对照组", (0, 0, 0))
+        ok3, why3 = evalnoise.verdict(cf, cb, kf, kb, cn, kn)
+        color = G if ok3 else (Y if ok3 is None else R)
+        print(f"\n    \033[1m判断\033[0m")
+        print(f"      {color}{why3}{D}")
+
+        # 不稳定的用例单列 —— **它们是这把尺子自己在抖的地方**
+        wob = [x for x in rows if x.get("wobbly")]
+        if wob:
+            print(f"\n    {Y}这把尺子自己在抖的地方({len(wob)} 条){D}")
+            for x in wob:
+                print(f"      #{x['id']} 「{x['prompt'][:26]}」{x['hits']}/{x['runs']} 次对")
+            print(f"      **不稳的用例读不出任何改动的效果** —— 它们的变化永远分不清是谁的。")
 
 
 async def _run_with_identity(sdk, prompt, me):
