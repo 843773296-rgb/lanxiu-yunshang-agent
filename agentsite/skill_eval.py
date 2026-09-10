@@ -53,7 +53,16 @@ async def _one(sdk, prompt, me):
     # **身份要真传进去。** 排班/团队类问法要店长才答得了,
     # 匿名跑的话它会因为「你没这个权限」而不触发 ——
     # 那种不触发是权限挡的,不是描述不好,混在一起测就分不清是谁的责任。
-    r = await sdk.run("all", prompt, max_turns=6, guard=False, provider="claude", me=me)
+    # **必须和产品跑同一个配置。** 上一版为了快,设了 max_turns=6、guard=False,
+    # 而且没指定模型 —— sdk._env 在不给模型时回落到 **Haiku**,
+    # 而网站默认是 **Sonnet 5**。于是评测测的是一个用户根本不会碰到的东西:
+    # 同一句「给张女士出个报价单」,评测里 0/3 不触发,真实路径上一次就触发了。
+    # **评测不跑产品的配置,量出来的数字和产品没关系** ——
+    # 而它看起来和真数字一模一样。
+    import importlib
+    _sdk = importlib.import_module("sdk")
+    prov, mdl = _sdk.default_model_id().split(":", 1)
+    r = await sdk.run("all", prompt, provider=prov, model_name=mdl, me=me)
     return _skill_of(r.get("trajectory")), r
 
 
@@ -76,7 +85,8 @@ def main():
     sys.path.insert(0, os.path.join(ROOT, "backend"))
     me = {"no": "60000001", "name": "张静静", "role": "店长", "shop": "SH001 静安旗舰店"}
 
-    print(f"\n\033[1m技能触发评测 · {len(cases)} 条 · 模型 claude(订阅内)\033[0m")
+    import importlib as _il; _mid = _il.import_module("sdk").default_model_id()
+    print(f"\n\033[1m技能触发评测 · {len(cases)} 条 · 模型 {_mid}(和网站默认同一个)\033[0m")
     print("=" * 88)
     rows, t0 = [], time.time()
     for c in cases:
