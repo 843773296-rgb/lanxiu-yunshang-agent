@@ -63,6 +63,19 @@ def main():
     for p in ("明天让林岚回访 C10001", "给周叙派一条维保", "把 SC7007 改派给林岚"):
         ck(f"「{p}」用单条派", g.pre_tool_verdict(W, A1, p, READ, []), False)
     ck("复合请求用批量", g.pre_tool_verdict(B, {"items": []}, "把这三条都派了", [], []), False)
+    # **闸指的那条路必须真的通。**
+    # 上一版不管什么动作都让改用 assign_batch,而 assign_batch 是新建任务的,
+    # 派不了待分配池里已存在的单 —— 影子埋点抓到:模型被拦之后两条路都没走成,
+    # 直接放弃了。拦一个动作的时候,得确认自己指的那条路真的存在、真的能干这件事。
+    v = g.pre_tool_verdict(DP, {"task_id": "SC1"}, "把这三条待分配的都派了", READ, [])
+    ck("分派类的复合请求指向 dispatch_batch", v, True, "dispatch_batch")
+    v = g.pre_tool_verdict(W, A1, "把这三条都派了", READ, [])
+    ck("新建类的复合请求指向 assign_batch", v, True, "assign_batch")
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "backend"))
+    import api as _api
+    for t in ("assign_batch", "dispatch_batch"):
+        ck(f"闸指的 {t} 真的存在", None if t in _api.TOOLS else f"{t} 不存在", False,)
 
     print("\n\033[1m▸ 判据宁可漏,不可宽\033[0m")
     print("  " + "=" * 78)
@@ -86,6 +99,23 @@ def main():
         ck(f"{t}", g.pre_tool_verdict(t, {}, "随便", [], []), True)
     ck("读工具不受写闸管", g.pre_tool_verdict("mcp__shop__my_tasks", {}, "把这三条都派了", [],
        [att("assign_task", A1, ok=True)]), False)
+
+    print("\n\033[1m▸ 写工具清单只有一个来源\033[0m")
+    print("  " + "=" * 78)
+    # 这个病犯过三次:白名单漏工具、边界攻击用旧格式、漏斗清单没跟上。
+    # 三次都**不报错**,只是那一处从此把新工具当成不存在。
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "backend"))
+    import api as _api, funnel as _fn, inspect as _in
+    ck("闸的清单来自 api.WRITE_TOOLS",
+       None if set(g._write_tools()) == set(_api.WRITE_TOOLS) else "对不上", False,)
+    ck("漏斗不再手抄清单",
+       None if "WRITE_TOOLS" in _in.getsource(_fn.turn) else "还在手抄", False,)
+    src = open(_o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "sdk.py"),
+               encoding="utf-8").read()
+    miss = [t for t in _api.WRITE_TOOLS if f'"mcp__shop__{t}"' not in src]
+    ck("每个写工具都在 sdk 白名单里", str(miss) if miss else None, False,
+       "  ← 挂了工具没进白名单,这个坑漏过一次")
 
     print("\n\033[1m▸ 指纹:参数不同就该是不同的一次\033[0m")
     print("  " + "=" * 78)

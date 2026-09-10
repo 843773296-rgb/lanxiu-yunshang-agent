@@ -333,6 +333,91 @@ def assign_batch(items, me):
                        f"每个人的 pad 上各自只看得到自己那几条。")
 
 
+def dispatch_batch(items, me):
+    """一次把**待分配池里已经存在的**几条单分出去。全过才写,一条不过整批不写。
+
+    和 assign_batch 的区别:那个是**新建**任务,这个是给**已经存在的单**指人。
+    「把待分配的都派了」需要的是这个 —— 影子埋点抓到过一次:
+    闸让模型改用 assign_batch,而 assign_batch 派不了已存在的单,
+    **闸把模型指向了一条死路**,于是它两条路都没走成,直接放弃了。
+    拦一个动作的时候,得确认自己指的那条路真的通。
+
+    items:[{task_id, assignee?}]。不给 assignee 就采纳 agent 的建议。
+    """
+    import datetime, sqlite3 as _sq, booking
+    if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return _deny(me, "WRONG_ROLE", f"分派须由店长及以上操作,你的角色是「{me['role']}」")
+    if not isinstance(items, list) or not items:
+        return dict(ok=False, code="EMPTY", reason="没有要分派的单")
+    if len(items) > 20:
+        return dict(ok=False, code="TOO_MANY", reason=f"一次最多 20 条,你给了 {len(items)} 条")
+
+    allowed = {x["no"]: x for x in my_staff(me)}
+    by_name = {x["name"]: x for x in allowed.values()}
+    plan, bad = [], []
+    for i, it in enumerate(items, 1):
+        it = it or {}
+        tag = f"第 {i} 条"
+        sid = str(it.get("task_id") or it.get("id") or "").strip()
+        rs = rows("SELECT * FROM schedule WHERE id=?", sid)
+        if not rs: bad.append(f"{tag}:没有任务 {sid}"); continue
+        t = rs[0]
+        if t.get("assignee_no"):
+            w = rows("SELECT name FROM staff WHERE no=?", t["assignee_no"])
+            bad.append(f"{tag}:{sid} 已经派给 {w[0]['name'] if w else t['assignee_no']} 了,"
+                       f"要换人得走改派"); continue
+        if me["role"] != "总部运营" and t.get("shop") != me.get("shop"):
+            bad.append(f"{tag}:{sid} 属于 {t.get('shop')},不在你管辖范围"); continue
+        who = str(it.get("assignee") or it.get("assignee_no") or "").strip()
+        if who:
+            him = allowed.get(who) or by_name.get(who)
+            if not him: bad.append(f"{tag}:派给谁没写对(「{who}」)"); continue
+        else:
+            sg = booking.suggest(t)
+            if not sg:
+                bad.append(f"{tag}:{sid} 没给人选,agent 也提不出建议 —— "
+                           f"这个门店没有在职顾问可派"); continue
+            him = allowed.get(sg["no"])
+            if not him: bad.append(f"{tag}:建议的 {sg['name']} 不在可派范围"); continue
+        plan.append(dict(i=i, t=t, him=him,
+                         建议=(booking.suggest(t) or {}).get("no")))
+
+    # 批内自撞:同一个人被排进两个重叠时段
+    for a in plan:
+        for b in plan:
+            if a["i"] >= b["i"] or a["him"]["no"] != b["him"]["no"]: continue
+            if (a["t"].get("start_ts") or "") < (b["t"].get("end_ts") or "") and \
+               (b["t"].get("start_ts") or "") < (a["t"].get("end_ts") or ""):
+                bad.append(f"第 {a['i']} 条和第 {b['i']} 条撞了:{a['him']['name']} "
+                           f"这两个时段重叠")
+    if bad:
+        return dict(ok=False, code="BATCH_REJECT", 逐条=bad,
+                    reason=f"这批 {len(items)} 条里有 {len(bad)} 处不行,**整批都没写**。改好再来一次。")
+
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    made = []
+    with _sq.connect(DB) as c:
+        for a in plan:
+            c.execute("UPDATE schedule SET assignee_no=?,assigned_by=?,assigned_at=?,advisor=? "
+                      "WHERE id=?",
+                      (a["him"]["no"], me["no"], now,
+                       f"{a['him'].get('adv_code') or ''} {a['him']['name']}".strip(),
+                       a["t"]["id"]))
+            made.append(dict(任务号=a["t"]["id"], 分给=a["him"]["name"],
+                             采纳建议=(a["建议"] == a["him"]["no"])))
+    log_op(me["name"], "schedule", f"{made[0]['任务号']}…{made[-1]['任务号']}", "待分配", "已派",
+           True, "BATCH_DISPATCH",
+           f"{me['name']}({me['role']})一次分派 {len(made)} 条:"
+           + "、".join(f"{m['任务号']}→{m['分给']}" for m in made[:6]),
+           {"role": me["role"], "count": len(made),
+            "采纳建议数": sum(1 for m in made if m["采纳建议"])})
+    return dict(ok=True, code="BATCH_DISPATCH", 条数=len(made), 明细=made,
+                采纳建议=sum(1 for m in made if m["采纳建议"]),
+                reason=f"一次分派了 **{len(made)} 条**,其中 "
+                       f"{sum(1 for m in made if m['采纳建议'])} 条采纳了 agent 的建议。")
+
+
 def my_tasks(me, status=None):
     """看任务。范围由 visible_scope 一处判定 —— **顾问只看得到派给自己的**。
 

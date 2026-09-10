@@ -273,7 +273,7 @@ TASK_ONLY_TOOLS = [
     #      智能体不会因为是智能体而多一分权,也不会少一分
     #   ③ 每一笔都在台账里标明「智能体代 X 执行」,查得出是谁的主意
     "mcp__shop__my_tasks", "mcp__shop__team_tasks", "mcp__shop__get_task",
-    "mcp__shop__week_grid", "mcp__shop__assign_batch",
+    "mcp__shop__week_grid", "mcp__shop__assign_batch", "mcp__shop__dispatch_batch",
     "mcp__shop__task_types", "mcp__shop__dispatch_pool",
     "mcp__shop__assign_task", "mcp__shop__dispatch_task",
     "mcp__shop__reassign_task", "mcp__shop__finish_task",
@@ -571,6 +571,15 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     if budget_hit and not text.strip():
         # 一个字都没答出来 —— 那就把预算这件事当成回答本身,而不是报个错
         text = budget_hit
+    # 漏斗汇总:**轮末落一行**。和逐事件行两者都要 ——
+    # 汇总行的价值在终态(一次就能看分布),但**单轮会话永远等不到汇总**,
+    # 而单轮恰恰是最需要观测的样本。他们的日报把这个列为 P0:
+    # **拿不到数据不是因为链路没跑,是因为没人写下来。**
+    try:
+        import funnel as _fn
+        _fn.turn(state, prompt, traj, me)
+    except Exception:
+        pass
     # 技能埋点:**每一轮都记,没触发也记** ——
     # 只记触发的话分母就没了,「触发了 12 次」单独看毫无意义。
     try:

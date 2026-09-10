@@ -567,6 +567,23 @@ def check_answer(text, calls):
 SCOPE_WORDS = ("整幅", "满地", "通身", "全身", "满绣", "整件")
 
 
+def _write_tools():
+    """会改数据的工具清单 —— **从 api.WRITE_TOOLS 取,不在这儿抄一份**。
+
+    抄一份的下场刚发生过两次:加了 dispatch_batch,一处跟上了另一处没跟上,
+    而**不跟上不会报错**,只是那一处从此当它是只读工具。
+    取不到时退回一个保守的硬编码 —— 宁可多拦,不可漏拦。
+    """
+    try:
+        import sys as _s, os as _o
+        _s.path.insert(0, _o.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend"))
+        import api as _api
+        return tuple(_api.WRITE_TOOLS)
+    except Exception:
+        return ("assign_task", "dispatch_task", "reassign_task", "finish_task",
+                "assign_batch", "dispatch_batch")
+
+
 def _arg_key(tool, args):
     """给一次工具调用算个指纹 —— 用来认出「一模一样的参数又试了一次」。"""
     import hashlib
@@ -632,7 +649,7 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
     #      **某一次可能碰巧成功**,那就是一条没人打算派的任务。
     #   ③ 没查就派 —— 不知道有哪些类型、不知道能派给谁,就先派了。
     #      派出去的东西看起来和正常任务一模一样。
-    WRITE = ("assign_task", "dispatch_task", "reassign_task", "finish_task", "assign_batch")
+    WRITE = _write_tools()
     short = name.rsplit("__", 1)[-1]
     if short in WRITE:
         # ── 尝试台账:**「改正参数重试」和「已经做成了还想再做一件」不是一回事** ──
@@ -668,11 +685,17 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
         #   而是模型把它当成一个大 workflow 顺着执行了」。
         # 提示词里写「一次只做一件」召回不足,**hook 才是强制**。
         if short in ("assign_task", "dispatch_task") and _looks_compound(prompt):
-            return ("用户这一句要安排的**不止一件事**,而你在一条一条派。"
-                    "一条一条派的问题是:前几条会成功,某一条才发现和前面撞了 —— "
-                    "而前几条已经落库了。**请改用 `assign_batch` 一次排完**:"
-                    "它全过才写、一条不过整批不写,而且能看见一条一条派看不见的冲突"
-                    "(同一个人被排了两个重叠时段)。")
+            # **指对路。** 上一版不管什么动作都让改用 assign_batch,
+            # 而 assign_batch 是新建任务的,派不了待分配池里已存在的单 ——
+            # 影子埋点抓到过:模型被拦之后两条路都走不成,直接放弃了。
+            # **拦一个动作的时候,得确认自己指的那条路真的通。**
+            better = "assign_batch" if short == "assign_task" else "dispatch_batch"
+            what = "一次排完" if short == "assign_task" else "一次分派完"
+            return (f"用户这一句要安排的**不止一件事**,而你在一条一条做。"
+                    f"一条一条做的问题是:前几条会成功,某一条才发现和前面撞了 —— "
+                    f"而前几条已经落库了。**请改用 `{better}` {what}**:"
+                    f"它全过才写、一条不过整批不写,而且能看见一条一条做看不见的冲突"
+                    f"(同一个人被排了两个重叠时段)。")
 
         if short == "assign_task" and "task_types" not in " ".join(
                 x if isinstance(x, str) else "" for x in (state_reads or [])):
@@ -727,6 +750,14 @@ def make_hooks(state):
         if v:
             if not name.startswith("mcp__"):
                 state.setdefault("blocked_tools", []).append(name)
+            # 影子埋点:**只记不改** —— 记完照样按原来的判定返回。
+            # 这一层要是能影响返回值,它就不是观测了。
+            try:
+                import funnel as _fn
+                state.setdefault("_funnel_blocks", []).append(v)
+                _fn.event(state, "blocked", tool=name.rsplit("__", 1)[-1], reason=v[:80])
+            except Exception:
+                pass
             return {"decision": "block", "reason": v}
         # 放行的写工具记一笔**结构化的**:哪个工具、什么参数、成没成。
         # 只记工具名的话,分不出「改正参数重试」和「又要做一件新的」——

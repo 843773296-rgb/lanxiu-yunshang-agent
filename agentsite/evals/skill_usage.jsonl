@@ -109,3 +109,8 @@
 {"ts": "2026-09-10 15:57:53", "skill": null, "prompt": "我今天有什么任务", "role": "店长", "tools": 1, "seconds": 13.5, "ok": true}
 {"ts": "2026-09-10 15:58:08", "skill": null, "prompt": "我今天有什么任务", "role": "店长", "tools": 1, "seconds": 14.8, "ok": true}
 {"ts": "2026-09-10 15:58:20", "skill": null, "prompt": "我今天有什么任务", "role": "店长", "tools": 1, "seconds": 12.2, "ok": true}
+{"ts": "2026-09-10 16:21:13", "skill": null, "prompt": "本店谁最忙?", "role": "店长", "tools": 1, "seconds": 12.5, "ok": true}
+{"ts": "2026-09-10 16:21:47", "skill": "roster", "prompt": "把这三条待分配的都派了", "role": "店长", "tools": 2, "seconds": 33.8, "ok": true}
+{"ts": "2026-09-10 16:22:03", "skill": null, "prompt": "明天让林岚回访 C10001", "role": "店长", "tools": 2, "seconds": 16.3, "ok": true}
+{"ts": "2026-09-10 16:24:07", "skill": "roster", "prompt": "把待分配的那几条都派了,人选你按建议来", "role": "店长", "tools": 2, "seconds": 26.9, "ok": true}
+{"ts": "2026-09-10 16:24:45", "skill": "roster", "prompt": "把待分配的那几条都派了,人选按你的建议来", "role": "店长", "tools": 3, "seconds": 21.0, "ok": true}

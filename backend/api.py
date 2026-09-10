@@ -308,7 +308,8 @@ class as_user:
 # 期间那位顾问被派了别的活,卡上的撞车提醒会跟着变。
 # 会改数据的工具。**列在这儿是给检查用的** —— isolation_check 逐个确认
 # 它们都从会话取身份、都走 tasks.py 那一套判定,不会因为「是智能体调的」而放宽。
-WRITE_TOOLS = ("assign_task", "dispatch_task", "reassign_task", "finish_task", "assign_batch")
+WRITE_TOOLS = ("assign_task", "dispatch_task", "reassign_task", "finish_task",
+               "assign_batch", "dispatch_batch")
 
 
 MANAGER_ROLES = ("店长", "总部运营")
@@ -484,6 +485,22 @@ def assign_batch(items):
         return dict(error=f"排班须由店长及以上操作,你是「{me.get('role')}」")
     r = tasks.assign_batch(items, me)
     if r.get("ok"): _agent_log(me, "BATCH", r.get("reason", ""))
+    return r
+
+
+def dispatch_batch(items):
+    """**一次把待分配池里的几条单分出去**(真的写进去)。全过才写,一条不过整批不写。
+
+    items:[{task_id, assignee?}]。不给 assignee 就采纳 dispatch_pool 里那条建议。
+    「把待分配的都派了」用这个 —— assign_batch 是**新建**任务的,派不了已存在的单。
+    """
+    import tasks
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在分 —— 请先登录")
+    if me.get("role") not in tasks.MANAGER_ROLES:
+        return dict(error=f"分派须由店长及以上操作,你是「{me.get('role')}」")
+    r = tasks.dispatch_batch(items, me)
+    if r.get("ok"): _agent_log(me, "BATCH_DISPATCH", r.get("reason", ""))
     return r
 
 
@@ -1526,6 +1543,14 @@ SHOP_SCHEMAS=[
         "activity_code":{"type":"string","description":"绑定活动,可不填"}},
         "required":["type","assignee","note","start","end"]}}},
    "required":["items"]}},
+ {"name":"dispatch_batch","description":"**一次把待分配池里的几条单分出去**(真的写进去)。items 是 [{task_id, assignee?}],不给 assignee 就采纳 dispatch_pool 给的建议,一次最多 20 条。**全过才写,一条不过整批不写。** 用户说「把待分配的都派了」「这几条都分下去」时用这个 —— assign_batch 是**新建**任务的,派不了已经存在的单。",
+  "input_schema":{"type":"object","properties":{
+    "items":{"type":"array","description":"要分派的单",
+      "items":{"type":"object","properties":{
+        "task_id":{"type":"string","description":"任务号,如 SC7032"},
+        "assignee":{"type":"string","description":"分给谁。不给则采纳建议。"}},
+        "required":["task_id"]}}},
+   "required":["items"]}},
  {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
@@ -1662,7 +1687,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"week_grid":week_grid,"assign_batch":assign_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
