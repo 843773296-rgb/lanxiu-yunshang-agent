@@ -34,9 +34,40 @@ import trace       # noqa: E402  记录仪:**和 V1 共用同一份**,写同一�
 # 两代分开记就没法横向对比了,而「一代 vs 三代到底差多少」这个问题
 # 只有手上同时有两套实现的人答得了 —— 别把这个优势浪费在格式不一致上。
 
-# 单次调用的花费上限。研判队列支持批量跑,一条失控就是真金白银 ——
-# SDK 现成的参数,不设等于没有闸门。
-MAX_USD = float(os.environ.get("LANXIU_MAX_USD", "0.60"))
+# 花费上限。研判队列支持批量跑,一条失控就是真金白银 —— 不设等于没有闸门。
+#
+# ⚠️ 两件事要写清楚,不然这个闸会莫名其妙掐掉正常的对话:
+#
+# ① **它是按整条会话累计的,不是单次调用。**
+#    我们用 resume 续会话(多轮不把历史拼进 prompt),SDK 在同一个 session 里
+#    一直累加。所以不是某一次调用贵,是聊到第六七轮时累计撞线 ——
+#    而每一轮看起来都很便宜。注释原来写的是「单次调用的上限」,**名字和行为对不上**。
+#
+# ② **它按 Claude 单价计,而我们多数时候跑 DeepSeek。**
+#    trace 里记的真实计费是 $0.003/次量级,SDK 自报的是它的几十倍
+#    (这个项目早就记着:sdk_cost 和 DeepSeek 实价差 24 倍)。
+#    所以 $0.60 的闸,对应的真实花费只有两三分钱。
+#
+# 结论:闸要留,但阈值得**按供应商分**,因为 SDK 那个数只在跑 Claude 时才接近真实。
+#
+# 实测(2026-09-10,一次「本店顾问任务清单」,单轮、一次工具调用):
+#     SDK 自报 $0.2426   真实计费 $0.0028   —— **86 倍**
+# 旧上限 $0.60 ÷ $0.243 ≈ 聊到第三轮就撞线,而真实花费才 7 厘钱。
+# (顺带:文件别处那句「差 24 倍」是更早测的,现在是 86 倍 ——
+#  **这种比值会随提示词和工具数变**,别把它当常数记。)
+def _max_usd(provider=None):
+    """这一轮的花费上限。跑 Claude 时 SDK 的数字大致可信,按它设;
+    跑 DeepSeek 时 SDK 的数字虚高几十倍,阈值要相应放大,
+    否则闸掐的是一个和真实花费没关系的数。"""
+    env = os.environ.get("LANXIU_MAX_USD")
+    if env: return float(env)          # 显式设了就听人的
+    pv = (provider or os.environ.get("LANXIU_PROVIDER") or "deepseek").lower()
+    # Claude:这是真实的 API 单价(订阅制下不另计费,但闸仍要留)
+    # DeepSeek:SDK 报的是 Claude 单价,放大到能聊几十轮
+    return 3.00 if pv.startswith("claude") else 12.00
+
+
+MAX_USD = _max_usd()   # 模块级默认,给不传 provider 的调用方兜底
 
 
 def models():
@@ -372,7 +403,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     state = {}
     opts = ClaudeAgentOptions(
         hooks=guards.make_hooks(state) if guard else None,
-        max_budget_usd=MAX_USD,
+        max_budget_usd=_max_usd(provider),
         # 身份写进提示词,是为了让模型**知道该怎么称呼和该问谁**;
         # 但取数的权限不靠这句话 —— 那是 MCP 服务的 env 管的。
         # 提示词里的身份是**告知**,env 里的身份才是**授权**。
@@ -428,23 +459,49 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     turns, traj, usage, cost, res = [], [], {}, None, None
     t0 = time.time()
     _p = _stream_once(prompt, images) if images else prompt
-    async for m in query(prompt=_p, options=opts):
-        cls = type(m).__name__
-        if cls == "AssistantMessage":
-            cur = ""
-            for b in getattr(m, "content", []) or []:
-                bt = type(b).__name__
-                if bt == "TextBlock" and getattr(b, "text", ""):
-                    cur += b.text
-                elif bt == "ToolUseBlock":
-                    traj.append({"tool": getattr(b, "name", "?"),
-                                 "args": getattr(b, "input", {})})
-            if cur.strip(): turns.append(cur)
-        elif cls == "ResultMessage":
-            usage = getattr(m, "usage", None) or {}
-            cost = getattr(m, "total_cost_usd", None)
-            res = m
+    # 预算闸是**抛异常**出来的,不是在结果里带个字段 ——
+    # 所以必须在这儿接住。接不住的话它会一路冒到 app.py 的兜底 except,
+    # 变成一句 "ResultError: ... exit code 1" 甩给用户:
+    # 不知道是预算、不知道该怎么办。**一个说不清自己为什么拦你的闸,和随机失败没区别。**
+    budget_err = None
+    try:
+        async for m in query(prompt=_p, options=opts):
+            cls = type(m).__name__
+            if cls == "AssistantMessage":
+                cur = ""
+                for b in getattr(m, "content", []) or []:
+                    bt = type(b).__name__
+                    if bt == "TextBlock" and getattr(b, "text", ""):
+                        cur += b.text
+                    elif bt == "ToolUseBlock":
+                        traj.append({"tool": getattr(b, "name", "?"),
+                                     "args": getattr(b, "input", {})})
+                if cur.strip(): turns.append(cur)
+            elif cls == "ResultMessage":
+                usage = getattr(m, "usage", None) or {}
+                cost = getattr(m, "total_cost_usd", None)
+                res = m
+
+    except Exception as e:
+        # 只认预算这一种,别的异常照旧往上抛 —— **把所有异常都吞成一句好话,
+        # 等于把真正的故障也说成「预算到了」**,那比原来的报错更难查。
+        if "maximum budget" not in str(e).lower():
+            raise
+        budget_err = str(e)
+
     text = turns[-1] if turns else ""
+    # 预算闸掐掉时,SDK 抛的是一句 "Reached maximum budget ($X)" ——
+    # 原样甩给用户等于什么都没说:不知道是预算、不知道该怎么办。
+    # **一个说不清自己为什么拦你的闸,和随机失败没区别。**
+    if budget_err:
+        budget_hit = (f"这条**会话**累计花费到了上限 ${_max_usd(provider):g},被拦下了。\n\n"
+                      f"要注意的是:①上限是按**整条会话累计**的,不是单次提问 —— "
+                      f"聊得越久越接近;②它按 Claude 单价计,而你多半跑的是 DeepSeek,"
+                      f"真实花费大约是这个数的二十几分之一。\n\n"
+                      f"最简单的办法:**左边「＋ 新建会话」开一条新的**,累计清零。"
+                      f"要调高就设环境变量 LANXIU_MAX_USD。")
+    else:
+        budget_hit = None
     # ── 记录仪 ─────────────────────────────────────────────────────────
     # 升代之后这条路径一度**一行日志都没有**:trace.jsonl 停在换架构那天,
     # 而且不报错 —— 文件还在、还有数据,只是日期不动了。
@@ -478,7 +535,12 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             terminal_reason=getattr(res, "terminal_reason", None),
         ))
 
-    return dict(text=text.strip(), trajectory=traj, seconds=round(time.time() - t0, 1),
+    if budget_hit and not text.strip():
+        # 一个字都没答出来 —— 那就把预算这件事当成回答本身,而不是报个错
+        text = budget_hit
+    return dict(text=text.strip(), budget_hit=bool(budget_hit),
+                budget_limit=_max_usd(provider),
+                trajectory=traj, seconds=round(time.time() - t0, 1),
                 session_id=getattr(res, "session_id", None),
                 usage=usage, sdk_cost_usd=cost, cost_usd=real, model=model,
                 # 被体检打回过几次、因为什么 —— 这两个数要落进研判台账,

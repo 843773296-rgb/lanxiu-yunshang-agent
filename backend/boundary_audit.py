@@ -183,8 +183,22 @@ def a_whitelist():
     raise PermissionError("白名单与 MCP 暴露完全一致")
 
 def a_budget():
-    if "max_budget_usd=MAX_USD" not in SDK_SRC: return "没传预算上限"
-    raise PermissionError("预算上限已传入 options")
+    """预算闸还在不在。
+
+    原来这条是按源码字符串比 `max_budget_usd=MAX_USD` —— 判据贴着**写法**,
+    不贴着**行为**。上限改成按供应商取值之后,写法一变它就红了,
+    而闸其实好好的。**判据要贴着「什么才算对」,不是贴着「我以为它会怎么写」。**
+    现在验两件事:传了上限,而且每个供应商解析出来都是正数。
+    """
+    if "max_budget_usd=" not in SDK_SRC: return "没传预算上限"
+    import re as _re
+    m = _re.search(r"max_budget_usd=([^,\n]+)", SDK_SRC)
+    if m and m.group(1).strip() in ("None", "0", "0.0"):
+        return f"预算上限传的是 {m.group(1).strip()} —— 等于没有闸"
+    # 解析出来的值必须是正数(不 import sdk —— 它要 venv,这里只做静态判断)
+    if "_max_usd" in (m.group(1) if m else "") and "return" not in SDK_SRC.split("def _max_usd")[1][:600]:
+        return "_max_usd 没有返回任何值"
+    raise PermissionError("预算上限已传入 options,且按供应商取正值")
 
 def a_disallowed():
     miss = [t for t in ("Bash", "Write", "Edit", "Read", "Task", "WebFetch")
@@ -403,8 +417,13 @@ STRUCT = [
   a_expired_order, "拿一个量体已过期的孩子走下单前拦截", "ops.order_block 规则直出"),
  ("白名单与 MCP 暴露完全一致", "skills_check.py",
   a_whitelist, "比对两边集合", "**这一条漏过一次**(新工具挂了 MCP 没进白名单)"),
- ("单次会话预算封顶", "sdk.py MAX_USD",
-  a_budget, "检查 max_budget_usd 是否传进 options", "SDK 层强制,超了直接停"),
+ # 注意名字:它是**按整条会话累计**的,不是「单次调用」。
+ # 原来这条叫「单次会话预算封顶」,而实际行为是跨轮累加 ——
+ # 名字说的和行为不是一回事,人会按名字去理解为什么被掐。
+ ("会话累计花费封顶(跨轮累加,不是单次)", "sdk.py _max_usd + budget_check.py",
+  a_budget, "检查 max_budget_usd 是否传进 options、是否为正值",
+  "SDK 层强制,超了直接停;阈值按供应商分 —— "
+  "SDK 那个数只在跑 Claude 时接近真实,跑 DeepSeek 时虚高几十倍"),
  ("MCP 只认代码里声明的服务", "sdk.py strict_mcp_config",
   a_strict_mcp, "比对 .mcp.json 与代码声明的服务名",
   "两边名字完全不同 —— 名字对不上,正好**证明** .mcp.json 真的被忽略了"),
