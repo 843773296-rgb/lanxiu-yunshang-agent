@@ -218,7 +218,7 @@ TASK_ONLY_TOOLS = [
     #   ② 权限走 tasks.py 同一套判定 —— **和人在页面上点是同一份代码**,
     #      智能体不会因为是智能体而多一分权,也不会少一分
     #   ③ 每一笔都在台账里标明「智能体代 X 执行」,查得出是谁的主意
-    "mcp__shop__my_tasks", "mcp__shop__get_task",
+    "mcp__shop__my_tasks", "mcp__shop__team_tasks", "mcp__shop__get_task",
     "mcp__shop__task_types", "mcp__shop__dispatch_pool",
     "mcp__shop__assign_task", "mcp__shop__dispatch_task", "mcp__shop__finish_task",
     # 售后判责跑在这个角色上,而**判定表在 kb_tables 里**。

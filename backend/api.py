@@ -334,8 +334,68 @@ def my_tasks(status=None):
                 "附件数": len(r.get("附件") or []) or None,
                 "派任务的人": r.get("派任务的人")})
            for r in d["rows"]]
-    return dict(我是=f"{me['name']}·{me['role']}", 范围=d["scope"],
-                条数=len(out), 任务=out[:40])
+    # **截断要说出来。** 原来直接 out[:40],多的部分无声消失 ——
+    # 40 条以内看不出问题,超了它会给出一个看起来完整的答案,而少了一批。
+    # 静默截断是最难发现的一类错:结果本身没有任何异常。
+    LIMIT = 40
+    shown, more = out[:LIMIT], max(0, len(out) - LIMIT)
+    return _nz(dict(我是=f"{me['name']}·{me['role']}", 范围=d["scope"],
+                    条数=len(out), 已列出=len(shown), 任务=shown,
+                    还有没列出的=(f"{more} 条没列出来 —— 加 status 参数缩小范围,"
+                                  f"或用 team_tasks 按人看" if more else None)))
+
+
+def team_tasks(assignee=None, status=None):
+    """**本店每个顾问手上各有什么活** —— 店长看团队用这个,不是 my_tasks。
+
+    给 assignee(工号或姓名)就只看那一个人。不给就按人分组,
+    带上每个人的在办件数和最近到期时间。
+
+    顾问调这个只会看到自己 —— **隔离在查询层**,不是这里少显示几行。
+    """
+    import tasks as _tk, tasktypes as tt
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在问 —— 请先登录")
+    d = _tk.my_tasks(me, status)
+    if d.get("error"): return d
+    rs = d["rows"]
+
+    who = (assignee or "").strip()
+    if who:
+        pool = _tk.rows("SELECT no,name FROM staff WHERE no=? OR name=?", who, who)
+        if len(pool) != 1:
+            return dict(error=(f"找不到「{who}」" if not pool else f"有 {len(pool)} 个人叫「{who}」,请给工号"))
+        rs = [r for r in rs if r.get("assignee_no") == pool[0]["no"]]
+        if not rs:
+            # **「他没活」和「你看不到他的活」要分开说。**
+            # 顾问问同事,拿到空列表会读成「他没活」—— 那是隔离挡的,不是真没有。
+            if me.get("role") not in _tk.MANAGER_ROLES and pool[0]["no"] != me["no"]:
+                return dict(error=f"你只看得到派给自己的任务,{pool[0]['name']} 的看不到 —— "
+                                  f"**这不等于他没有活**。要看全店得问店长。")
+            return dict(范围=d["scope"], 说明=f"{pool[0]['name']} 名下没有符合条件的任务", 条数=0, 任务=[])
+
+    by = {}
+    for r in rs:
+        k = r.get("assignee_name") or r.get("advisor") or "(没有负责人)"
+        by.setdefault(k, []).append(r)
+
+    def one(r):
+        return _nz({"任务号": r["id"], "类型": tt.norm(r.get("type")), "状态": r.get("status"),
+                    "内容": r.get("note"), "结束": r.get("end_ts"),
+                    "挂的单据": r.get("ref_id"), "客户": r.get("customer_id")})
+
+    out = []
+    for k, v in sorted(by.items(), key=lambda kv: -len([x for x in kv[1] if x.get("status") == "有效"])):
+        live = [x for x in v if x.get("status") == "有效"]
+        out.append(_nz({"顾问": k, "在办": len(live), "全部": len(v),
+                        "最近到期": min([x.get("end_ts") for x in live if x.get("end_ts")], default=None),
+                        # **每人只列在办的**,历史记录列出来会把清单撑爆,
+                        # 而撑爆之后就得截断,截断是静默的。
+                        "在办明细": [one(x) for x in live]}))
+    idle = [p["name"] for p in _tk.my_staff(me) if p["name"] not in by] if         me.get("role") in _tk.MANAGER_ROLES else []
+    return _nz(dict(范围=d["scope"], 人数=len(out), 团队=out,
+                    手上没活的=idle or None,
+                    待分配=len([r for r in rs if not r.get("assignee_no") and r.get("status") == "有效"]) or None))
 
 
 def get_task(task_id):
@@ -1312,6 +1372,11 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{},"required":[]}},
  {"name":"dispatch_pool","description":"**待分配池**:客户已经约了时间、但系统没能自动派单的任务。每条都带 agent 的人选建议和依据(接触史 / 时段冲突 / 负载)。只有店长看得到。**建议不是决定** —— 要店长确认才算派出去。",
   "input_schema":{"type":"object","properties":{},"required":[]}},
+ {"name":"team_tasks","description":"**本店每个顾问手上各有什么活** —— 店长看团队用这个。按人分组,带每个人的在办件数、最近到期时间和在办明细,还会列出手上没活的人和待分配的条数。给 assignee(工号或姓名)就只看那一个人。⚠️ 顾问调这个只看得到自己 —— 隔离在查询层。**「你看不到他的活」和「他没有活」是两回事**,工具会分开说。",
+  "input_schema":{"type":"object","properties":{
+    "assignee":{"type":"string","description":"只看这一个人,工号或姓名。不给则按人分组列全店。"},
+    "status":{"type":"string","description":"只看这一档:有效 / 完结 / 取消 / 无效。不传看全部。"}},
+   "required":[]}},
  {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
@@ -1442,7 +1507,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

@@ -69,6 +69,31 @@ def main():
         ck(f"{B['name']} 取自己的", rb.get("任务号") or "取不到", tid)
         ck("店长取本店的", rm.get("任务号") or "取不到", tid)
 
+    print(f"\n\033[1m▸ 团队视图 · 店长看得到全队,顾问只看得到自己\033[0m")
+    print("  " + "=" * 78)
+    with api.as_user(mgr): tm = api.team_tasks()
+    ck("店长的团队视图有几个人", "多于1人" if tm.get("人数", 0) > 1 else f"{tm.get('人数')}人", "多于1人")
+    with api.as_user(A): ta = api.team_tasks()
+    names = {g["顾问"] for g in ta.get("团队", [])}
+    ck(f"{A['name']} 的团队视图里只有他自己",
+       "只有自己" if names <= {A["name"], "(没有负责人)"} else f"混进 {names - {A['name']}}", "只有自己")
+    with api.as_user(A): r = api.team_tasks(assignee=B["name"])
+    ck(f"{A['name']} 指名查 {B['name']}", "被挡" if r.get("error") else "查到了", "被挡")
+    # **「你看不到」和「他没活」必须分开说** —— 返回空列表会被读成后者
+    if r.get("error"):
+        ck("  └ 而且说明了这不等于他没活", "有说" if "不等于" in r["error"] else "没说", "有说",
+           "  ← 空列表会被读成「他没活」,那是隔离挡的,不是真没有")
+
+    print(f"\n\033[1m▸ 截断要说出来\033[0m")
+    print("  " + "=" * 78)
+    with api.as_user(mgr): d2 = api.my_tasks()
+    has = "已列出" in d2
+    ck("my_tasks 会报「列了几条」", "会" if has else "不会", "会",
+       "  ← 静默截断:超了 40 条无声消失,而结果本身没有任何异常")
+    if has:
+        ck("  └ 条数和已列出对得上",
+           "一致" if d2["条数"] == d2["已列出"] or d2.get("还有没列出的") else "对不上", "一致")
+
     print(f"\n\033[1m▸ 写操作隔离 · 读挡住了不等于写也挡住了\033[0m")
     print("  " + "=" * 78)
     live_b = [t["任务号"] for t in db["任务"] if t.get("状态") == "有效"]
