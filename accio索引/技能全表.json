@@ -1,0 +1,3234 @@
+[
+ {
+  "名字": "accio-inquiry",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/accio-inquiry/SKILL.md",
+  "行数": 252,
+  "描述": "\"Prioritize this skill whenever the user's question or task touches inquiry or procurement on the buyer side — including RFQs, supplier communication and quotes, task progress, requirement changes, comparison and negotiation, auto-chat, and related controls. Do not default to email, search, or other skills first for these topics. Scope: anything about **existing or new inquiry tasks**, **seller/su",
+  "描述字数": 1545,
+  "写了不要用": false,
+  "附件": [
+   "requirements.md",
+   "references",
+   "negotiation.md",
+   "progress.md",
+   "daily-report.md",
+   "scripts",
+   "initiation.md"
+  ]
+ },
+ {
+  "名字": "accio-product-supplier-sourcing",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/accio-product-supplier-sourcing/SKILL.md",
+  "行数": 219,
+  "描述": "B2B product & supplier search with rich visual rendering",
+  "描述字数": 56,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "ai-product-designer",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/ai-product-designer/SKILL.md",
+  "行数": 306,
+  "描述": "| Full product development workflow for business/commercial product conceptualization. Use for business product development: design a product line, develop a new product for a market/audience, create a product strategy, or produce multiple differentiated product design options. Use for market-driven design: design based on trends, analyze market context and design, or decide what products to devel",
+  "描述字数": 1064,
+  "写了不要用": true,
+  "附件": []
+ },
+ {
+  "名字": "alibaba-icbu-payment-action",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-payment-action/SKILL.md",
+  "行数": 286,
+  "描述": "> 【Payment SubAgent internal handler — main Agent MUST route payment requests to buyer-payment-intent first】 Keywords 支付/付款/去支付/立即支付/重新支付/再次支付/再付一次/payment/pay/pay now/make payment/retry payment/re-pay. Alibaba.com Payment Action Skill — internal executor for initiating payment. Internally branches by `intent`: • intent=new (default) — call `icbu_alibaba_query_payment_url` (the dedicated cashier-U",
+  "描述字数": 2046,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "alibaba-icbu-payment-link",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-payment-link/SKILL.md",
+  "行数": 201,
+  "描述": "> 【Payment SubAgent internal handler — main Agent MUST route payment requests to buyer-payment-intent first】 Keywords 支付链接/付款链接/支付地址/收银台地址/payment url/payment link/checkout url. Alibaba.com Payment Link Skill. Given an orderId, calls the `icbu_alibaba_query_payment_url` MCP tool (backed by fund-operation `AiPaymentQueryFacade#queryCashierUrl`) to fetch the current retry-able cashier URL for an exi",
+  "描述字数": 1536,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "alibaba-icbu-payment-result-detail",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-payment-result-detail/SKILL.md",
+  "行数": 299,
+  "描述": "> 【Payment SubAgent internal handler — main Agent MUST route payment requests to buyer-payment-intent first】 Keywords 支付失败原因/错误码/为什么支付失败/到账时间/退款多久/汇率/error code/payment error/why failed/when will I receive/refund time/processing time. Alibaba.com Payment Result Detail Skill — fine-grained explanation of any payment-status bucket. Caller MUST have a resolved `bucket` (typically from `alibaba-icbu-p",
+  "描述字数": 1651,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-icbu-payment-status",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-payment-status/SKILL.md",
+  "行数": 432,
+  "描述": "> 【Payment SubAgent internal handler — main Agent MUST route payment requests to buyer-payment-intent first】 Keywords 支付状态/支付结果/支付了吗/支付历史/支付记录/payment status/payment result/has it been paid/payment history. Alibaba.com Payment Status Skill — internal executor for payment-status reads. Internally branches by `source`: • source=h5_closed (passive) — the task assembled by `buyer-payment-intent` carri",
+  "描述字数": 2800,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-icbu-trade-after-sales-refund-guide",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-trade-after-sales-refund-guide/SKILL.md",
+  "行数": 279,
+  "描述": "> Alibaba.com Trade After-Sales Refund Guide Skill. Handles the full refund pre-check pipeline: eligibility check, reason identification, and scenario recognition. Does NOT submit refunds; prepares an AW confirmation card or text-only guidance. Typical utterances: - I want a refund for order 634002494782600 - Can I cancel this order and get my money back? - The supplier hasn't shipped my order yet",
+  "描述字数": 651,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-icbu-trade-after-sales-refund-submit",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-trade-after-sales-refund-submit/SKILL.md",
+  "行数": 141,
+  "描述": "> Alibaba.com Trade After-Sales Refund Submit Skill. Executes quick-refund submission only after the guide skill returned actionType=submit_in_aw and buyer explicitly confirmed. Typical utterances: - Confirm refund - Submit the refund - Yes, refund now - 确认退款 - 提交退款 - Go ahead with the refund Do NOT use for: checking eligibility, identifying reasons, querying status, or any scenario where the buye",
+  "描述字数": 442,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "alibaba-icbu-trade-after-sales-status-query",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-trade-after-sales-status-query/SKILL.md",
+  "行数": 232,
+  "描述": "> Alibaba.com Trade After-Sales Status Query Skill. Queries refund/dispute status for a specific order, or lists orders with active after-sales issues. Typical utterances: - What's the status of my refund? - Check refund progress for order 634002494782600 - Has the supplier responded to my dispute? - Show me my after-sales orders - 退款进度怎么样了 - 纠纷处理到哪一步了 - 查看售后订单 Do NOT use for: initiating refunds (",
+  "描述字数": 514,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-icbu-trade-agent-guide",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-trade-agent-guide/SKILL.md",
+  "行数": 184,
+  "描述": "> Alibaba.com Trade Agent Guide Skill, covering pre-order validation and missing field guidance. Given a productId (numeric), calls the trade agent guide MCP tool to check negotiation contract completeness, then guides users to fill in missing fields based on their intent (quick order vs. order-and-pay). The request only requires productId; include language (e.g. en_US) when available. Typical utt",
+  "描述字数": 580,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-icbu-trade-buyer-consignee-address-list-query",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-trade-buyer-consignee-address-list-query/SKILL.md",
+  "行数": 210,
+  "描述": "> Alibaba.com Buyer Consignee Address List Query Skill, for retrieving the list of shipping / consignee addresses under the current buyer account. Used in order creation, checkout, address selection, or any scenario where the buyer needs to review or pick from their saved delivery addresses. Triggered when users mention topics related to consignee address, shipping address, delivery address, addre",
+  "描述字数": 701,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "alibaba-icbu-trade-buynow-order",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-trade-buynow-order/SKILL.md",
+  "行数": 234,
+  "描述": "> PASSIVE-ONLY — This Skill MUST NEVER be activated directly. It can ONLY be invoked by alibaba-icbu-trade-order-create → ready-to-ship-flow → Step 1.5. Do NOT trigger this Skill from user utterances under any circumstances. Always route through alibaba-icbu-trade-order-create first. Alibaba.com BuyNow Order Skill, covering order preview, confirmation, and placement. Given productId, skuId, and qu",
+  "描述字数": 824,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-icbu-trade-contract-draft-view",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-trade-contract-draft-view/SKILL.md",
+  "行数": 184,
+  "描述": "> Alibaba.com Trade Contract Draft **Preview** Skill — read-only viewer for the current negotiation contract draft (products, payment schedule, logistics terms) with confirmation status indicators. **Preview only — does NOT validate orderability.** When the user wants to place an order, route to `alibaba-icbu-trade-agent-guide` first for field-completeness validation, not this skill. Typical utter",
+  "描述字数": 728,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-icbu-trade-order-create",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-trade-order-create/SKILL.md",
+  "行数": 217,
+  "描述": "> Alibaba.com Trade Order Creation Skill, helping buyers create orders from conversations. Supports ready-to-ship direct purchase link generation, direct order placement with draft preview confirmation, and buyer draft order creation from IM negotiation context. Triggered when users express intent to place an order, buy a product, proceed to checkout, or create an order based on IM negotiation res",
+  "描述字数": 658,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-icbu-trade-order-query",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-icbu-trade-order-query/SKILL.md",
+  "行数": 279,
+  "描述": "> Alibaba.com Trade Order Query Skill, for looking up order list and specific order details. Triggered when users mention topics related to checking orders, order list, order details, order status, or any order-related inquiry. Typical utterances: - Check my order 634002494782600 - What's the status of my order? - Has my order been shipped? - I want to see order details for order number 6340024947",
+  "描述字数": 501,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-logistics-assistant-buyer",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/alibaba-logistics-assistant-buyer/SKILL.md",
+  "行数": 261,
+  "描述": "> MUST read before any other Owner or tool on the same turn for current shipping, freight, or delivery-cost facts, even inside product/supplier search, comparison, inquiry, quotation, negotiation, or order planning. Covers quotes, routes or modes, tracking, HS/customs codes, duties, tariffs, import charges, landed cost, low-shipping-cost selection, and price-plus-shipping requests. Missing product",
+  "描述字数": 1064,
+  "写了不要用": false,
+  "附件": [
+   "package.json"
+  ]
+ },
+ {
+  "名字": "buyer-payment-intent",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/buyer-payment-intent/SKILL.md",
+  "行数": 109,
+  "描述": "| 买家支付域统一入口。所有会调用 `alibaba-icbu-payment-sub-agent` 的支付诉求都必须先进入本 skill,不得绕过。 覆盖支付通知、支付状态/记录、支付链接、去支付/立即支付、重新支付、支付失败原因、到账时间、退款时间、H5 关闭回流、session resume 等场景。 本 skill 负责识别意图、按意图契约收集业务参数、构造内嵌 JSON、追加 `[Response Language]` / `[Client]` tag、调用并透传 sub-agent 返回。",
+  "描述字数": 253,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "buyer-trade-intent",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/buyer-trade-intent/SKILL.md",
+  "行数": 79,
+  "描述": "| 买家「下单 / 订单查询 / 地址查询 / 订单调整 / 交易通知 / 售后退款」类诉求的统一入口。命中以下任一即触发: 1. 下单意图:明确购买、索要下单链接、确认买某款、先下几件/几箱/几台、发起询盘下单(尤其上下文已有商品链接 / 卡片 / `productId`)。 2. 查询类(订单 + 地址):订单状态/详情/进度/付款/订单号查询;查/列出/切换收货地址、按国家或序号挑地址。无论是否处于下单上下文都触发;订单查询走正向流程 §7,地址查询无下单上下文时走正向流程 §5。 3. 可下单性判断:是否可下单 / 是否在售 / 是否支持 Buy Now 或询盘下单。 4. 订单调整:BN 订单展示后改 SKU / 换商品 / 换地址 / 换物流 / 确认下单 / 取消 / 去支付。 5. `[Trading Notifications]` 前缀消息:直接进入交易通知分支(正向流程",
+  "描述字数": 1033,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "coarse-rank",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/coarse-rank/SKILL.md",
+  "行数": 98,
+  "描述": "> Ranks up to 30 search-result candidates into a high-fit shortlist of up to 10 using surface data only. Supports silent SuperSourcing and visible standalone ranking.",
+  "描述字数": 166,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "conversation-summary",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/conversation-summary/SKILL.md",
+  "行数": 71,
+  "描述": "Summarize buyer-seller IM history for every supplier referenced in the current request when the buyer asks what was discussed, agreed, changed, remains open, or should happen next. Read each supplier independently through im-conversation-reader; do not summarize the current assistant conversation, merge suppliers, or persist the result.",
+  "描述字数": 338,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "cross-border-market-research",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/cross-border-market-research/SKILL.md",
+  "行数": 526,
+  "描述": "> [Market-level research] Use when the user wants a MARKET-LEVEL view of a cross-border track — market size, demand trend / seasonality, competitive landscape, and profit — rather than a list of specific products to buy. Method: match the track direction to the Amazon category tree → build the core keyword library via `scripts/build_keywords.py` (sibling / child category words + `js_keywords_by_ke",
+  "描述字数": 1474,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "follow-up",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/follow-up/SKILL.md",
+  "行数": 103,
+  "描述": "| **MUST be loaded on the first applicable assistant turn of a conversation.** On later turns, reuse it when its complete instructions remain available in the active context; reload only when they are absent or may have been lost after context compaction or handoff. Exceptions: skip turns showing an `ask_user` option card and active SuperSourcing before its final visible reply. Generates exactly 3",
+  "描述字数": 715,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "html-report-generator",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/html-report-generator/SKILL.md",
+  "行数": 195,
+  "描述": "| Config-driven HTML business report generator. Use when the buyer needs a polished HTML report, product comparison report, supplier verification report, product-selection analysis, market scan, or chart/table/card report. The agent writes a JSON report config, calls the registered html-report-generate CLI tool, and delivers the generated standalone HTML file.",
+  "描述字数": 362,
+  "写了不要用": false,
+  "附件": [
+   "block-config.md",
+   "examples",
+   "assets"
+  ]
+ },
+ {
+  "名字": "im-conversation-reader",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/im-conversation-reader/SKILL.md",
+  "行数": 118,
+  "描述": "Resolve and optionally read buyer-seller IM history for another sourcing or trade Skill. Use an imConversationId from the current supplier mention when present, otherwise resolve it from sellerAliId through query_recent_conversation; default to paginated query_conversation_msg_for_aimode and reserve query_conversation_msg_timeRange for explicit complete intervals. Use internally only and never exp",
+  "描述字数": 416,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "image-analysis",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/image-analysis/SKILL.md",
+  "行数": 109,
+  "描述": "Use when a buyer provides an image or public image URL and wants to identify, understand, find, source, or search for the pictured product; every usable image URL must first run through Google Lens before Alibaba.com product or supplier search.",
+  "描述字数": 244,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "negotiation-assist",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/negotiation-assist/SKILL.md",
+  "行数": 104,
+  "描述": "Help the buyer personally negotiate a better price or terms with the referenced supplier: identify the bargaining scenario, keep the buyer's target price strictly internal, propose a playbook-backed strategy, produce a ready-to-copy message after the buyer confirms the strategy, judge whether a seller counter-offer is near the floor, and, when the buyer confirms a negotiation outcome or asks about",
+  "描述字数": 683,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "product-analysis-report",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/product-analysis-report/SKILL.md",
+  "行数": 240,
+  "描述": "| Use for a comprehensive analysis, viability assessment, buying evaluation, or decision report for one specific product identified by a card, Alibaba.com URL, product ID, or clear conversation context. Not for unknown-product selection, multi-product comparison, profit-only requests, or supplier due diligence. This workflow owns its embedded profit analysis, HTML rendering, and follow-up output; ",
+  "描述字数": 470,
+  "写了不要用": true,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "product-selection",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/product-selection/SKILL.md",
+  "行数": 73,
+  "描述": "> Product selection and procurement planning for buyers who need to decide what category, product, style, SKU mix, equipment, or solution route to procure. Use for resale-profit questions such as what to sell, best sellers, winning products, trends, blue-ocean opportunities, market analysis, and margin analysis, and for business or operational self-use questions such as what to buy for a store, fa",
+  "描述字数": 1381,
+  "写了不要用": true,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "profit-calculator",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/profit-calculator/SKILL.md",
+  "行数": 626,
+  "描述": "| Profit calculator skill for cross-border trade buyers. Generates an interactive, config-driven HTML calculator with fields pre-filled from context, so the buyer immediately sees an estimated profit and can adjust any number. Trigger whenever the buyer shows an **intent to calculate profit** — e.g. wanting to know whether a deal is profitable, cost vs. profit, margin, whether a selling price is w",
+  "描述字数": 640,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "examples",
+   "assets"
+  ]
+ },
+ {
+  "名字": "quotation-analysis",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/quotation-analysis/SKILL.md",
+  "行数": 121,
+  "描述": "Analyze one seller quotation from the referenced supplier's IM conversation against the buyer's own inquiry: how well the quote covers the buyer's requirements, what the trade term means for landed cost and responsibility, and the quote's completeness, reasonableness, strengths, and risks. Use when the current request references a supplier via @ mention and the buyer asks to analyze, review, inter",
+  "描述字数": 1335,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "sourcing-artifact-writer",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/sourcing-artifact-writer/SKILL.md",
+  "行数": 162,
+  "描述": "> Canonical path, ownership, content, and write rules for sourcing artifacts in SuperSourcing and standalone flows.",
+  "描述字数": 115,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "sourcing-requirement-collect",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/sourcing-requirement-collect/SKILL.md",
+  "行数": 379,
+  "描述": "> Unified requirement collection skill for Accio Alibaba.com B2B buyers. Two context modes: (1) SS context — entered via supersourcing SKILL.md dispatch (status=collecting) or Direct Entry handoff, collects core fields + expanded attributes, writes to SUPERSOURCING_STATE.json, then returns. (2) Standalone context — independent requirement collection + enriched search flow, uses its own REQUIREMENT",
+  "描述字数": 820,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "supersourcing",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/supersourcing/SKILL.md",
+  "行数": 145,
+  "描述": "> Use before Owner Skills when the buyer delegates full-auto procurement or two or more connected procurement capabilities in one objective, selects auto-run after search, or resumes an active SuperSourcing plan.",
+  "描述字数": 212,
+  "写了不要用": false,
+  "附件": [
+   "capabilities.json",
+   "review-schema.md",
+   "execute-plan.md",
+   "adapters",
+   "scripts",
+   "new-intent-detection.md"
+  ]
+ },
+ {
+  "名字": "supplier-verification-report",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/supplier-verification-report/SKILL.md",
+  "行数": 606,
+  "描述": "> Single-supplier due diligence report for Accio Alibaba.com B2B buyers. IMPORTANT: When this skill is triggered, READ THIS FILE FIRST to get exact tool names and parameter formats before making any CLI calls. Tool names: supplier_verification_recall (params: supplier_name, candidates_only), supplier_verification_detail (param: comp_id_list; accepts exact company_id/comp_id), fetch_product_info (p",
+  "描述字数": 748,
+  "写了不要用": true,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "trade-knowledge",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/trade-knowledge/SKILL.md",
+  "行数": 157,
+  "描述": "Retrieve category-level B2B trade knowledge from DashVector. Use only when the buyer explicitly selects /knowledge or asks for general industry guidance about an identifiable product category: category pricing norms, product-type differences, compliance requirements, MOQ or negotiation strategy, category-specific shipping constraints, or regional trade rules. Do not use for product or supplier sea",
+  "描述字数": 822,
+  "写了不要用": true,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "trade-page-navigation",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/trade-page-navigation/SKILL.md",
+  "行数": 81,
+  "描述": "Navigate to the Alibaba.com Inquiry page only when the buyer explicitly asks to open, enter, or go to it, or to the Order creation page for order creation or navigation when no reliable current signal says the request is continuing the existing AI auto-chat flow. Emit contract-compliant action-link tags. Do not handle inquiry creation or management, order status/details, payment, logistics, after-",
+  "描述字数": 443,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "write-compare-report",
+  "来源": "插件/accio-com-buyer-assistant",
+  "路径": "插件/accio-com-buyer-assistant/skills/write-compare-report/SKILL.md",
+  "行数": 851,
+  "描述": "| Unified compare skill for product comparisons, supplier comparisons, and inquiry/auto-chat seller-response comparisons. Trigger when the buyer wants to compare, rank, choose, or decide between products, suppliers, quotes, seller replies, or inquiry options in any language. Also trigger on **selection intent that never says \"compare\"**, whenever two or more candidates already exist in context (se",
+  "描述字数": 1278,
+  "写了不要用": true,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "blog-post",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/blog-post/SKILL.md",
+  "行数": 86,
+  "描述": "| A long-form article / blog post — masthead, hero image, article body with figures and pull quotes, author byline, related posts. Use when the brief asks for \"blog\", \"article\", \"post\", \"essay\", or \"case study\".",
+  "描述字数": 211,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "canvas-design",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/canvas-design/SKILL.md",
+  "行数": 144,
+  "描述": "Execute the Canvas design branch for non-replication website work. Call canvas-designer when available, provide the mandatory main-Agent fallback when it is unavailable, and produce the shared Canvas Design Contract, vendor grounding, and Image Manifest before project UI implementation.",
+  "描述字数": 287,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "code-generator",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/code-generator/SKILL.md",
+  "行数": 200,
+  "描述": "| Task-driven multi-file code generation for React/Vite web projects. Converts a DESIGN.md contract into a complete, compilable project with pages, components, routing, and styles generated as a DAG of file-level tasks. Enforces provided-resources-only image policy — local assets, user-provided image URLs, and existing project CDN URLs from .accio/cdn-assets.json are allowed.",
+  "描述字数": 378,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "dashboard",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/dashboard/SKILL.md",
+  "行数": 77,
+  "描述": "| Admin / analytics dashboard in a single HTML file. Fixed left sidebar, top bar with user/search, main grid of KPI cards and one or two charts. Use when the brief asks for a \"dashboard\", \"admin\", \"analytics\", or \"control panel\" screen.",
+  "描述字数": 236,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "dashboard-admin",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/dashboard-admin/SKILL.md",
+  "行数": 66,
+  "描述": "Design and build data reports, dashboards, admin panels, back-office tools, CRUD consoles, and hybrid operations workspaces. Use when the interface centers on metrics, charts, tables, filters, records, workflows, approvals, or role-scoped operations; do not use for ordinary marketing sites that only contain a small statistics section.",
+  "描述字数": 336,
+  "写了不要用": true,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "dating-web",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/dating-web/SKILL.md",
+  "行数": 93,
+  "描述": "| A consumer-feeling dating / matchmaking dashboard — left rail navigation, ticker bar of community signals, headline KPIs, a 30-day mutual-matches bar chart, and a match-rate trend block. Editorial typography, restrained accent. Use when the brief asks for a \"dating site\", \"matchmaking\", \"community dashboard\", \"social network dashboard\", or any consumer product where the data is the story.",
+  "描述字数": 393,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "digital-eguide",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/digital-eguide/SKILL.md",
+  "行数": 95,
+  "描述": "| A two-spread digital e-guide preview — page 1 is a cover (display title, author, \"What's inside\" stats, table of contents teaser); page 2 is a spread (lesson body with pull-quote and a step list). Lifestyle / creator brand tone. Use when the brief asks for an \"e-guide\", \"digital guide\", \"lookbook\", \"lead magnet\", \"creator guide\", \"playbook\", \"PDF guide\", or \"电子指南\".",
+  "描述字数": 369,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "docs-page",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/docs-page/SKILL.md",
+  "行数": 81,
+  "描述": "| A documentation page — inline-start nav, scrollable article body, inline-end table of contents. Use when the brief mentions \"docs\", \"documentation\", \"guide\", \"API reference\", or \"tutorial\".",
+  "描述字数": 191,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "email-marketing",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/email-marketing/SKILL.md",
+  "行数": 92,
+  "描述": "| A brand product-launch email — masthead with wordmark, hero image block, headline lockup with skewed-italic accent, body copy, primary CTA, and a specifications grid. Pure HTML email layout (centered single column, table fallback). Use when the brief asks for an \"email\", \"newsletter blast\", \"MJML\", \"product launch email\", or \"email template\".",
+  "描述字数": 346,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "flowai-live-dashboard-template",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/flowai-live-dashboard-template/SKILL.md",
+  "行数": 88,
+  "描述": "| Team-management dashboard skill in the FlowAI aesthetic — three tabs (Team Members, Team Details, Activity Log), KPI stat row, member table, role distribution bar chart, online presence and activity sparklines, and a top-contributors panel, all in a single self-contained HTML file with light/dark theming, hoverable chart tooltips, click-to-zoom panels, and CSV export. Use when the brief asks for",
+  "描述字数": 497,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "example.html",
+   "assets"
+  ]
+ },
+ {
+  "名字": "follow-up",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/follow-up/SKILL.md",
+  "行数": 37,
+  "描述": "Offer relevant natural-language next steps after Accio Site Builder responses, prioritizing Supabase, scheduled refresh for external dynamic data, and SEO when applicable.",
+  "描述字数": 171,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "frontend-implementation-policy",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/frontend-implementation-policy/SKILL.md",
+  "行数": 53,
+  "描述": "Apply shared React/Vite implementation rules for every site-builder branch before editing UI, CSS, fonts, or project assets. Use for Canvas implementations, reference-site replications, redesigns, and visual edits so font loading, assets, Tailwind, dependencies, and scaffold boundaries remain consistent.",
+  "描述字数": 305,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "github-dashboard",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/github-dashboard/SKILL.md",
+  "行数": 131,
+  "描述": "| GitHub repository analytics dashboard — stars, forks, contributors, issues, pull requests, recent activity, and top contributors. Use when the brief asks for a GitHub repo dashboard, open-source growth report, repository health page, or GitHub analytics view.",
+  "描述字数": 261,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "example.html"
+  ]
+ },
+ {
+  "名字": "kami-landing",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/kami-landing/SKILL.md",
+  "行数": 234,
+  "描述": "> Produce a print-grade single-page kami (紙 / 纸) document — warm parchment canvas, ink-blue accent, serif at one weight, no italic, no cool grays. The output reads like a professional white paper or studio one-pager, not an app UI. Multilingual by design (EN · zh-CN · ja). One self-contained HTML file, zero dependencies.",
+  "描述字数": 322,
+  "写了不要用": false,
+  "附件": [
+   "README.md",
+   "example.html"
+  ]
+ },
+ {
+  "名字": "link-in-bio",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/link-in-bio/SKILL.md",
+  "行数": 220,
+  "描述": "Build personalized link-in-bio / link aggregation pages (Linktree-style) for creators and personal brands from a real avatar, a handful of links, and the creator's own visual identity. Use when the site-builder classifier sets site type to `link-in-bio`, or when the user asks for a link aggregation page / personal links page / Linktree / Beacons / bio link / \"put all my links on one page\" / \"link ",
+  "描述字数": 614,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "live-dashboard",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/live-dashboard/SKILL.md",
+  "行数": 203,
+  "描述": "| Notion-style team dashboard rendered as a Live Artifact. A single-page, self-contained HTML dashboard with KPIs, a 7-day sparkline, a real-time activity feed and a linked-database task table — wired to Notion via the Composio connector catalog. Refreshes on demand and when the artifact is opened. Falls back to seeded mock data when no connector is bound, so it works offline / in screenshots / in",
+  "描述字数": 420,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "example.html",
+   "assets"
+  ]
+ },
+ {
+  "名字": "media-kit",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/media-kit/SKILL.md",
+  "行数": 211,
+  "描述": "Build personal creator/influencer Media Kit sites from verified public social data and user-supplied materials. Use when the Media Kit Router in site-builder returns route_media_kit=true, or when building KOL rate cards, sponsor decks, creator sponsorship pages, or brand collaboration pages.",
+  "描述字数": 292,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "open-design-landing",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/open-design-landing/SKILL.md",
+  "行数": 316,
+  "描述": "> Produce a world-class single-page editorial landing site in the Atelier Zero visual language (Monocle / Apartamento / Études editorial collage) — the same aesthetic Open Design uses for its own marketing surface. The agent fills a typed `inputs.json` from a brand brief, optionally generates 16 collage assets via gpt-image-2, then runs a pure-function composer that emits a self-contained HTML fil",
+  "描述字数": 565,
+  "写了不要用": false,
+  "附件": [
+   "schema.ts",
+   "styles.css",
+   "README.md",
+   "example.html",
+   "scripts",
+   "inputs.example.json",
+   "assets"
+  ]
+ },
+ {
+  "名字": "pricing-page",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/pricing-page/SKILL.md",
+  "行数": 80,
+  "描述": "| A standalone pricing page — header, plan tiers, feature comparison table, and an FAQ. Use when the brief asks for \"pricing\", \"plans\", \"subscription tiers\", or a \"compare plans\" page.",
+  "描述字数": 184,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "provider-operations",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/provider-operations/SKILL.md",
+  "行数": 30,
+  "描述": "Plan, execute, verify, and recover cloud provider mutations through Supabase MCP using a stable operation contract.",
+  "描述字数": 115,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "react-local-runtime",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/react-local-runtime/SKILL.md",
+  "行数": 147,
+  "描述": "Create, extend, build, run, and inspect local React/Vite projects using scripts/site.js without MCP. Local preview is Vite-only; api/ route verification happens in the target backend/runtime environment after site publish or provider deployment.",
+  "描述字数": 245,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "reference-replication",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/reference-replication/SKILL.md",
+  "行数": 56,
+  "描述": "Execute the analysis-to-implementation workflow for reference-site replication after site-builder has set referenceReplication=true. Use when exactly one normalized reference website URL is supplied, or when the user explicitly asks to copy, clone, recreate, reproduce, closely match, or visually emulate one or more websites.",
+  "描述字数": 326,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "saas-landing",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/saas-landing/SKILL.md",
+  "行数": 143,
+  "描述": "| Single-page SaaS landing with hero, features, social proof, pricing, and CTA. Respects the active DESIGN.md color/typography/layout tokens. Trigger keywords: \"saas landing\", \"marketing page\", \"product landing\".",
+  "描述字数": 212,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "safety",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/safety/SKILL.md",
+  "行数": 62,
+  "描述": "Safety gates for local preview, Supabase MCP use, site publish, database migrations, provider mutations, and secret handling.",
+  "描述字数": 125,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "schema",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/schema/SKILL.md",
+  "行数": 31,
+  "描述": "Add, repair, or validate Schema.org structured data in JSON-LD. Use for schema markup, structured data, rich-result eligibility, JSON-LD, or when the SEO skill identifies verifiable entities that should be described to search engines.",
+  "描述字数": 234,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "seo",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/seo/SKILL.md",
+  "行数": 37,
+  "描述": "Audit, implement, and verify SEO for public websites. Use when the user asks for SEO, search visibility, metadata, indexing, crawlability, sitemaps, robots rules, canonical URLs, or accepts an SEO follow-up. Use schema separately when structured data is needed.",
+  "描述字数": 261,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "site-builder",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/site-builder/SKILL.md",
+  "行数": 99,
+  "描述": "Orchestrate Accio website and app creation, redesign, extension, local preview, site publish, and Supabase-backed features. Route reference replication and Canvas design into mutually exclusive branches, then coordinate specialized skills, React/Vite implementation, runtime verification, provider safety, and user-visible delivery.",
+  "描述字数": 332,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "social-avatar-fetch",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/social-avatar-fetch/SKILL.md",
+  "行数": 205,
+  "描述": "Fetch the real avatar/profile image URL for a social media creator from YouTube, Instagram, Twitter/X, or TikTok, preferring curl/profile JSON fields and falling back to browser DOM only when curl fails. Use when a creator's actual profile photo is needed for media kits, creator profile pages, design assets, or any task where a placeholder silhouette is not acceptable.",
+  "描述字数": 371,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "social-latest-fetch",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/social-latest-fetch/SKILL.md",
+  "行数": 313,
+  "描述": "Curl-first collection of public social profile data and recent posts/videos/tweets for Media Kits and creator pages. Use for YouTube, Instagram, TikTok, X/Twitter, or Facebook when you need creator profile fields, followers/subscribers, post/video counts, recent content, thumbnails/covers, visible interactions, contact links, or engagement-rate inputs. Falls back to browser only after curl/proxy a",
+  "描述字数": 457,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "social-media-dashboard",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/social-media-dashboard/SKILL.md",
+  "行数": 126,
+  "描述": "| Creator-facing social media analytics dashboard in a single HTML file. A platform switcher (X / LinkedIn / YouTube / Instagram), a row of KPI cards (followers, engagement rate, likes, reposts), a follower-growth chart, a \"top post this week\" preview, and a trending topics / top comments side panel. Use when the brief mentions a \"social media dashboard\", \"creator analytics\", \"social analytics\", o",
+  "描述字数": 543,
+  "写了不要用": false,
+  "附件": [
+   "example.html",
+   ".preview"
+  ]
+ },
+ {
+  "名字": "social-media-matrix-tracker-template",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/social-media-matrix-tracker-template/SKILL.md",
+  "行数": 107,
+  "描述": "| 社媒矩阵数据追踪面板模板（Social Media Matrix Tracker）。 Use when users ask for a cinematic, data-dense social media analytics dashboard with multi-platform metrics, interactive charts, hover insights, range compare, and dark/light theme switching in a single HTML artifact.",
+  "描述字数": 262,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "example.html",
+   "assets"
+  ]
+ },
+ {
+  "名字": "supabase-mcp-backend",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/skills/supabase-mcp-backend/SKILL.md",
+  "行数": 309,
+  "描述": "Supabase provider playbook for MCP-first project access, migrations, RLS, generated types, Edge Functions, logs, advisors, and Postgres design.",
+  "描述字数": 143,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "trading-analysis-dashboard-template",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/trading-analysis-dashboard-template/SKILL.md",
+  "行数": 79,
+  "描述": "| Professional trading analysis dashboard template (single-file HTML) with light/dark theme switch, dense market panels, chart interactions, demo/live playback, and command palette behavior. Use when users ask for a Wall-Street-style analytics terminal, trading cockpit, or high-tech financial dashboard template with realistic data layout.",
+  "描述字数": 340,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "example.html",
+   "assets"
+  ]
+ },
+ {
+  "名字": "waitlist-page",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/waitlist-page/SKILL.md",
+  "行数": 229,
+  "描述": "| Minimal pre-launch landing with email capture, brand logo, and optional decorative layer. Reads DESIGN.md for colors, typography, and layout rules. Best for: product launches, beta signups, early access programs, indie projects.",
+  "描述字数": 230,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "example.html",
+   "assets"
+  ]
+ },
+ {
+  "名字": "web-prototype",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/web-prototype/SKILL.md",
+  "行数": 98,
+  "描述": "| General-purpose desktop web prototype. Single self-contained HTML file built by copying the seed `assets/template.html` and pasting section layouts from `references/layouts.md`. Default for any landing / marketing / docs / SaaS page when no more specific skill matches.",
+  "描述字数": 271,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "example.html",
+   "assets"
+  ]
+ },
+ {
+  "名字": "web-prototype-taste-brutalist",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/web-prototype-taste-brutalist/SKILL.md",
+  "行数": 64,
+  "描述": "Swiss industrial-print web prototype. Newsprint canvas, monolithic black grotesque, viewport-bleeding numerals, hairline grid dividers, hazard-red accent, ASCII syntax decoration. Distilled from Leonxlnx/taste-skill `brutalist-skill` (Swiss Industrial Print mode).",
+  "描述字数": 264,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "web-prototype-taste-editorial",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/web-prototype-taste-editorial/SKILL.md",
+  "行数": 61,
+  "描述": "Editorial-minimalist web prototype. Warm monochrome canvas, serif display + grotesque body, 1px hairline borders, muted pastel chips, generous macro-whitespace, ambient micro-motion. Distilled from Leonxlnx/taste-skill `minimalist-skill`.",
+  "描述字数": 238,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "web-prototype-taste-soft",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/web-prototype-taste-soft/SKILL.md",
+  "行数": 64,
+  "描述": "Apple-tier soft web prototype. Silver/cream canvas, double-bezel cards, button-in-button CTAs, generous squircle radii, spring motion, ambient mesh. Distilled from Leonxlnx/taste-skill `soft-skill` + sections 4–8 of `taste-skill`.",
+  "描述字数": 230,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "wireframe-sketch",
+  "来源": "插件/accio-site-builder",
+  "路径": "插件/accio-site-builder/vendor/open-design/upstream/design-templates/wireframe-sketch/SKILL.md",
+  "行数": 98,
+  "描述": "| A hand-drawn wireframe exploration — graph-paper background, marker / pencil tone, multiple tab labels for variants, sticky-note annotations, scribbled chart placeholders, hatched fills. Reads like a designer's whiteboard before any pixels are committed. Use when the brief asks for \"wireframe\", \"sketch wireframe\", \"hand-drawn\", \"lo-fi\", \"whiteboard\", \"草稿\", or \"手绘原型\".",
+  "描述字数": 371,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "1688找货选品",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-1688-product-research/SKILL.md",
+  "行数": 279,
+  "描述": "| 1688 找货与货源检索：文字描述搜商品、图片找同款/找相似（支持直接传图或图片 URL）、1688 商品链接或商品 ID 找同款、三维度比价选品（销量最高/价格最低/综合最优）。 支持多种商品一起找（多品类同查；一次请求建议 ≤4 种商品，更多时本 skill 会与用户确认分批找，无需预先拆分请求）。 需 ali1688 MCP 连接器已完成 OAuth 授权；链接找同款仅支持 1688 站内链接/商品 ID（其他平台链接不支持）；支持按价格/销量/严选指数排序、指定返回数量；价格区间、材质、属性排除类条件筛选不支持。 限于 1688 平台商品搜索与信息展示；不做发品/搬品、下单、支付、物流、库存、店铺管理操作。",
+  "描述字数": 313,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "Destination Country Classification & Tax Calculation",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-tariff-assistant/SKILL.md",
+  "行数": 469,
+  "描述": "> Alibaba.com Destination Country Classification & Tariff Calculation Skill, covering destination-country HS code prediction, tariff rate lookup, and customs duty estimation for the United States, all 27 EU member states, the United Kingdom, and Brazil. Use this skill whenever the user mentions HS code, destination-country HS code, customs code, tariff rate, customs duty, import tax, tariff, duty,",
+  "描述字数": 2693,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "alibaba-competitor-analysis",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-competitor-analysis/SKILL.md",
+  "行数": 141,
+  "描述": "| 帮国际站卖家发现、筛选、分析并持续监控具体的竞争主体及其店内商品。竞争主体包括同行、竞品、竞争对手、标杆店铺、商家、店铺、贸易商、供应商、品牌、厂家、工厂、头部卖家。 提供两个确定性 Workflow 工具：store_list 负责行业标杆店铺发现与冻结，输出店铺名单、公司名称与店铺链接；full_report 负责标准完整竞品报告。同时提供经营指标、订单指数 Top20 商品、店内商品自由排序与筛选、买家画像、首页与 Listing、事实 fragment 和定制 HTML 等原子能力，供复杂 Query 自由编排。 适用于找同行与标杆商家；按 Top N、高 GMV、高成交额、高订单量、高询盘量、高访客量筛选同行商家或竞品店铺；输出同行竞品的商家名单、店铺名单、公司名称与店铺链接；指定店铺后分析店内商品排名、价格带、MOQ、商品结构与标题规律；指定商品 URL 的 Listing",
+  "描述字数": 663,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-global-ai-image-studio",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-ai-image-studio/SKILL.md",
+  "行数": 282,
+  "描述": "| 统一调度图像生成能力的综合技能。包含背景消除（白底图）、水印移除（图片擦除）、商品换色、场景图生成、一键智能优化等5大图像生成能力。 当用户需要进行图像生成或处理（去背景、去水印、换色、场景合成、一键优化）时，根据具体需求路由到对应的子能力。",
+  "描述字数": 123,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-global-amazon-market-intel",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-amazon-market-intel/SKILL.md",
+  "行数": 52,
+  "描述": "| Amazon market data analysis toolkit powered by Jungle Scout MCP tools. Covers keyword search volume, ASIN keyword research, sales estimates, product database filtering, and brand share of voice. ✅ Use this skill when: - Amazon keyword search volume, trends, or seasonality analysis - ASIN reverse keyword lookup, competitive keyword gap, Listing/SEO analysis - ASIN sales & revenue estimation, stoc",
+  "描述字数": 1006,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "reference"
+  ]
+ },
+ {
+  "名字": "alibaba-global-blue-ocean-finder",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-blue-ocean-finder/SKILL.md",
+  "行数": 325,
+  "描述": "| B2B cross-border blue ocean opportunity discovery expert. Finds high-potential, low-competition profit opportunities by analyzing demand-supply mismatches. Uses Alibaba.com platform search data for supply-side analysis (supplier count, price distribution, product density) and cross-platform web research for demand-side signals (Amazon BSR, TikTok trends, Google Trends). Example queries: \"Find pr",
+  "描述字数": 863,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "alibaba-global-chat-analysis-pro",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-chat-analysis-pro/SKILL.md",
+  "行数": 329,
+  "描述": "| Alibaba.com merchant chat analysis and weekly diagnostic report generator. Deeply integrates store reception data with real conversation content to review salesperson response performance, inquiry buyer insights, and communication quality. Performs full-conversation Pipeline stage diagnosis (Inquiry → Quotation → Negotiation → Won → Fulfillment → Lost), highlights discovery, and issue detection ",
+  "描述字数": 1048,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-global-create-website",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-create-website/SKILL.md",
+  "行数": 1043,
+  "描述": "| Canvas-based visual website builder that generates, previews, and validates React/Vite sites via the `workctl` CLI (accio-cli site builder commands). Covers five sub-capabilities: merchant info collection, Canvas design planning, code generation, local runtime, and safety gates. Supports creating new sites, redesign, bug fixes, and publishing.",
+  "描述字数": 347,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "legokits-canvas"
+  ]
+ },
+ {
+  "名字": "alibaba-global-high-demand-product",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-high-demand-product/SKILL.md",
+  "行数": 274,
+  "描述": "Empowers merchants with product selection, industry research, and real-time discovery of platform trends and top-selling opportunities—all through Alibaba.com's official High-Demand Product (HDP) themes. Supports keyword, category, and image-based search, with one-click publishing and optional daily push notifications to keep merchants ahead of every new opportunity.",
+  "描述字数": 369,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-global-hot-product-insight",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-hot-product-insight/SKILL.md",
+  "行数": 301,
+  "描述": "| Cross-border B2B hot product intelligence expert. Identifies top-selling trends on Alibaba.com using platform search data and cross-platform web research, then provides deep-dive analysis on profit logic, competition landscape, and actionable sourcing strategy. Example queries: \"What's hot on Alibaba.com right now — is competition fierce?\" \"Find high-inquiry products on Alibaba.com priced $20-50",
+  "描述字数": 635,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "alibaba-global-image-product-publish",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-image-product-publish/SKILL.md",
+  "行数": 288,
+  "描述": "| 支持海外商家通过上传图片的方式发布商品到 Alibaba.com 国际站（ICBU）。支持单品及多品并行发布。 触发场景： - 用户上传1张或多张图片，并附带\"发品\"、\"上架\"、\"发布商品\"、\"listing\"、\"post product\"、\"publish\"等语义 - 用户明确表示\"帮我用这张图发品\"、\"图片发品\"、\"用图片上架商品\" - 用户上传图片后说\"开始\"、\"继续\"、\"发\"等确认词 - 用户说\"我要发 ICBU\"、\"发国际站\"并附带图片 重要特性： - 包含多品识别、预检、类目预测、图片质检与优化、AI商品信息生成、CSV导出、预览与发布完整流程 - 预览/编辑参考 alibaba-global-product-optimize skill 文档执行 - 商品发布通过 alibaba-global-product-publish skill 执行 - 支持多品并行处理，所有商",
+  "描述字数": 433,
+  "写了不要用": false,
+  "附件": [
+   "reference"
+  ]
+ },
+ {
+  "名字": "alibaba-global-knowledge-base",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-knowledge-base/SKILL.md",
+  "行数": 132,
+  "描述": "Alibaba.com GGS (Global Golden Supplier) seller knowledge base fallback Skill (exported from Yuque ggs-seller-kb v2.1.1, 199 articles). Use when sellers inquire about platform rules, product features, or operation guides related to Alibaba.com, and no other specialized Skill (e.g. store-diagnosis, product-auto-optimizer) matches; locate documents via `main-index.md` / `subcategory-index.md` using ",
+  "描述字数": 1164,
+  "写了不要用": false,
+  "附件": [
+   "main-index.md",
+   "subcategory-index.md",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "alibaba-global-logistics-assistant",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-logistics-assistant/SKILL.md",
+  "行数": 70,
+  "描述": "国际站物流助手 Skill，覆盖运费试算、物流线路查询等物流服务。 当用户提到运费查询、运费计算、shipping cost、freight cost、物流费用、发货费用、发货到某国家、商品能不能运、最便宜运输方式、最快物流等物流相关话题时使用；即使用户只是简单问\"运费多少\"或\"怎么发货到XX\"也应触发。 典型话术（有商品）：商品17777111177771运到美国能运吗？/ 商品...20件运到美国运费多少？/ 商品链接(alibaba.com/product-detail/xxx_<ID>.html)到美国运费多少。 典型话术（无商品）：莫桑耳钉50g发往美国运费多少？/ 马丁靴50件100kg发往美国运费多少？/ 50kg货物发到德国运费多少？/ I want to ship 50kg to the US, how much would it cost?",
+  "描述字数": 385,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "package.json",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "alibaba-global-product-deep-dive",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-product-deep-dive/SKILL.md",
+  "行数": 547,
+  "描述": "Deep-dive product selection powered by Amazon market data (Jungle Scout) and Alibaba supply data. Analyzes demand, competition, pricing, and compliance across 8 dimensions, delivers ranked product recommendations with FOB pricing, and matches Alibaba suppliers — all from a GGS B2B supplier perspective. Bilingual.",
+  "描述字数": 314,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets",
+   "display.txt"
+  ]
+ },
+ {
+  "名字": "alibaba-global-product-migration-entry",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-product-migration-entry/SKILL.md",
+  "行数": 219,
+  "描述": "| 搬品入口与任务管理。负责搬品意图识别、预检查、物流模版选择、币种确认、搬品模式判定、恢复历史任务、取消任务。 本 Skill 是搬品流程的总调度中心，完成所有前置准备后，将参数传递给 alibaba-global-product-migration-executor 执行实际搬品任务。 When to use: - 用户想把其他平台的商品发布/搬运/迁移到 Alibaba 国际站（如\"帮我把1688商品搬到国际站\"、\"I want to publish products on Alibaba.com\"） - 用户上传了商品文件（Excel/CSV/PDF）并希望将其发布到国际站 - 用户提供了站外商品链接并希望搬到国际站 - 用户提供了 Shopify 的 API Key/Secret 并希望将 Shopify 商品搬到国际站 - 用户希望恢复或继续之前未完成的搬品任务（如\"继续昨天的",
+  "描述字数": 645,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-global-product-migration-executor",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-product-migration-executor/SKILL.md",
+  "行数": 311,
+  "描述": "搬品任务执行。负责根据不同搬品模式构造参数、OSS 上传、创建搬品任务、后台轮询、解析数据预览、调用优化 Skill、优化后展示。接收来自 alibaba-global-product-migration-entry 的参数，执行完成后将 CSV 传递给 alibaba-global-product-publish 进行发布。 when-to-use: 搬品入口 Skill 完成预检查和模式判定后，将参数传递到本 Skill 执行实际搬品任务 skip-for: 搬品意图识别/预检查/模式判定 → 使用 alibaba-global-product-migration-entry；发布操作 → 使用 alibaba-global-product-publish",
+  "描述字数": 334,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "alibaba-global-product-optimize",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-product-optimize/SKILL.md",
+  "行数": 792,
+  "描述": "| 对店铺内已有商品进行批量字段优化（标题/价格/MOQ/交期等），或对新发品/素材进行优化建议。 凡是涉及「优化商品」「修改商品」「编辑商品」的意图，均走本 Skill。 支持两种模式： 1. 存量治理：接收本地 CSV 文件（圈品结果），走「优化预览 → 确认发布」流水线。 2. 新发品优化：接收商品 JSON 信息（含图片），走「JSON 转 CSV → 优化预览 → 导出」流水线。 支持的优化字段： - Title（标题）、Description（详描）、Keywords（关键词） - Price（价格）、MOQ（最小起订量）、Lead Time（交期） - Images（图片，通过 Sub Agent 唤起 alibaba-global-ai-image-studio 处理） - Properties/CPV（属性）、Category（类目） - Unit Weight（单位重量",
+  "描述字数": 913,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "alibaba-global-product-publish",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-product-publish/SKILL.md",
+  "行数": 632,
+  "描述": "商品发布（新发+编辑）。负责发布前参数一致性自检（C1-C10）、双重确认、批量发布、发布错误诊断、结果汇总。支持两种模式：① 新发模式（搬品场景，productId 为空）② 编辑模式（存量商品优化场景，productId 非空）。统一使用 publish_ggs_migration_product 接口。 When to use: 搬品任务完成优化后需要发布新品时使用本 Skill；存量商品优化完成后需要发布编辑结果时也使用本 Skill Skip for: 搬品意图识别 → 使用 alibaba-global-product-migration-entry；搬品任务执行/优化 → 使用 alibaba-global-product-migration-executor；存量商品优化 → 使用 alibaba-global-product-optimize",
+  "描述字数": 385,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-global-product-select",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-product-select/SKILL.md",
+  "行数": 124,
+  "描述": "| 商品圈品/筛选工具，根据用户意图筛选候选商品。 支持通过自然语言描述圈品条件，自动推荐圈品维度组合。 When to use: - 用户需要筛选特定条件的商品（如\"低转化的 3C 商品\"、\"质量分低于 5 分的商品\"） - 用户通过商品 ID 圈品（如\"帮我优化商品 ID 为 123456 的商品\"、\"把这几个商品圈出来：123, 456, 789\"） - **用户指令包含圈品条件**（如\"帮我优化xxx的商品\"、\"优化近 90 天无曝光的商品\"）→ 先使用本 Skill 圈品，再使用 alibaba-global-product-optimize 优化 Skip for: - 用户已有本地 CSV 文件，直接进行优化 → 使用 alibaba-global-product-optimize - 单品查询/编辑 → 直接使用对应工具",
+  "描述字数": 373,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-global-smart-assistant-settings",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-smart-assistant-settings/SKILL.md",
+  "行数": 257,
+  "描述": "| Smart Assistant natural-language settings control skill for Alibaba.com sellers. Use when the merchant wants the agent to view, explain, compare, enable, disable, or update any Smart Assistant feature switch or setting through natural language. Coverage includes Product, Message, RFQ, and Risk & compliance sections, plus feature-level settings such as Auto reception, Smart visitor reception, Sma",
+  "描述字数": 1123,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-global-store-diagnosis",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-store-diagnosis/SKILL.md",
+  "行数": 680,
+  "描述": "Alibaba.com store diagnosis for GGS paid sellers (serviceType: hkgs/twgs/tp). Analyzes 4-5 dimensions (Star Rating, Buyer Traffic, Business Opportunities, Product, Trade) to deliver diagnostic conclusions, prioritized action plans, problem product optimization recommendations, scheduled periodic diagnosis, and IFM/non-member upgrade guidance. Use when sellers ask about store performance, issues, t",
+  "描述字数": 804,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-product-recruitment",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-product-recruitment/SKILL.md",
+  "行数": 158,
+  "描述": "|- 阿里国际站所有定招相关意图的唯一 Skill。用户只要涉及定招主题，无论是查主题、发品、检测已发品是否符合定招要求、还是为定招商品生成商品图片（套图），均由本 Skill 接收后在内部做细分路由。 当前已覆盖能力： ① 查定招主题：推荐（无关键词）/ 搜索（关键词或 topicId 精查）/ 筛选（tab、类目、国家、主题标签、上新、市场热卖等）。 ② 定招发品：默认调用 `listing_product_draft_by_topic` 将品发到卖家的**草稿箱**；仅当用户 query 中含明确的上架关键词（\"发到线上 / 上架 / 正式发布\" 等）时，才会追加调用 `product_submit_draft` 上架。**skill 不主动引导用户在发完草稿后继续上架**。 ③ 定招符合性检测：通过 product_topic_detect 校验一个已发商品是否符合指定定招主题的要",
+  "描述字数": 1690,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "alibaba-prohibited-rule-interpretation",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-prohibited-rule-interpretation/SKILL.md",
+  "行数": 406,
+  "描述": "| 阿里巴巴国际站禁限售规则解读助手。判断商品/品类能否在指定目的地销售，输出平台管控结论（禁售/限售/禁限售/合规须知）、 合规要求与官方规则链接。全部内容仅来自 prohibited_rule_interpretation + prohibited_rule_interpretation_query 两个 MCP 返回， 严禁联网检索或自行推演。即使用户只是简单问\"X 能卖吗\"也应触发本技能。",
+  "描述字数": 200,
+  "写了不要用": false,
+  "附件": [
+   "examples.md",
+   "references"
+  ]
+ },
+ {
+  "名字": "pricing-page",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-create-website/legokits-canvas/skills/pricing-page/SKILL.md",
+  "行数": 100,
+  "描述": "| A standalone pricing page — header, plan tiers, feature comparison table, and an FAQ. Use when the brief asks for \"pricing\", \"plans\", \"subscription tiers\", or a \"compare plans\" page.",
+  "描述字数": 184,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "pricing-page",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-create-website/legokits-canvas/skills/pricing-page/SKILL.md",
+  "行数": 100,
+  "描述": "| A standalone pricing page — header, plan tiers, feature comparison table, and an FAQ. Use when the brief asks for \"pricing\", \"plans\", \"subscription tiers\", or a \"compare plans\" page.",
+  "描述字数": 184,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "saas-landing",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-create-website/legokits-canvas/skills/saas-landing/SKILL.md",
+  "行数": 156,
+  "描述": "| Single-page SaaS landing with hero, features, social proof, pricing, and CTA. Respects the active DESIGN.md color/typography/layout tokens. Trigger keywords: \"saas landing\", \"marketing page\", \"product landing\".",
+  "描述字数": 212,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "saas-landing",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-create-website/legokits-canvas/skills/saas-landing/SKILL.md",
+  "行数": 156,
+  "描述": "| Single-page SaaS landing with hero, features, social proof, pricing, and CTA. Respects the active DESIGN.md color/typography/layout tokens. Trigger keywords: \"saas landing\", \"marketing page\", \"product landing\".",
+  "描述字数": 212,
+  "写了不要用": false,
+  "附件": [
+   "example.html"
+  ]
+ },
+ {
+  "名字": "web-prototype",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-create-website/legokits-canvas/skills/web-prototype/SKILL.md",
+  "行数": 135,
+  "描述": "| General-purpose desktop web prototype. Single self-contained HTML file built by copying the seed `assets/template.html` and pasting section layouts from `references/layouts.md`. Default for any landing / marketing / docs / SaaS page when no more specific skill matches.",
+  "描述字数": 271,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "example.html",
+   "assets"
+  ]
+ },
+ {
+  "名字": "web-prototype",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-global-create-website/legokits-canvas/skills/web-prototype/SKILL.md",
+  "行数": 135,
+  "描述": "| General-purpose desktop web prototype. Single self-contained HTML file built by copying the seed `assets/template.html` and pasting section layouts from `references/layouts.md`. Default for any landing / marketing / docs / SaaS page when no more specific skill matches.",
+  "描述字数": 271,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "example.html",
+   "assets"
+  ]
+ },
+ {
+  "名字": "买家背调",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-buyer-bgcheck/SKILL.md",
+  "行数": 359,
+  "描述": "| 交互式买家背调。商家给一条买家线索（公司名/邮箱/官网/Alibaba链接/可选平台buyer_id），产出背调风险卡片+可展开报告。 流程：需求澄清→公网搜索背调→AI Judge MCP校准(可选,查不到也能跑)→合并渲染。 当用户要背调买家、核验海外买家身份/风险/采购力、或说\"背调这个客户/买家\"时使用。",
+  "描述字数": 159,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "samples",
+   "MCP_SPEC.md",
+   "slot-schema.json",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "全平台商品标题生成",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-product-title-generation/SKILL.md",
+  "行数": 329,
+  "描述": "| 根据商家提供的商品素材（图片、关键词、属性、卖点等），生成符合目标平台规则的商品标题。 支持多平台规则路由（国际站、淘天、1688、Amazon、AE、LAZADA、京东、Shopee、TikTok、Shein、Shopify）， 具备图片优先的素材校验、用户诉求优先、多条差异化生成能力。 触发场景： - 用户要求生成/写/起商品标题（如\"帮我写个国际站标题\"、\"生成发品标题\"） - 用户提供商品素材要求生成标题（如\"根据这张图片帮我写标题\"） - 用户要求生成SEO标题/关键词标题（如\"生成seo标题和关键词\"） - 用户要求生成多条标题备选（如\"帮我生成20个发品标题\"） - 用户要求生成标题+卖点全套方案（如\"生成标题和卖点\"） - 用户指定目标市场/人群生成标题（如\"就法语买家的搜索习惯，生成一条黄金标题\"） 不触发场景： - 优化已有商品标题（有商品ID + 优化意图）→ 商",
+  "描述字数": 517,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "slot-schema.json"
+  ]
+ },
+ {
+  "名字": "创意工坊生图",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-image-generation/SKILL.md",
+  "行数": 526,
+  "描述": "| 统一调度图像生成和处理能力，覆盖背景消除、去水印、SKU 换色、Logo 贴图、场景图、细节图、清晰度增强、模特图、图片翻译、指令绘图等 10 大能力。 支持任意指令生图、商品图片素材处理；不处理视频或商品发布。",
+  "描述字数": 108,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "slot-schema.json"
+  ]
+ },
+ {
+  "名字": "创意工坊视频生成",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-product-video-generation/SKILL.md",
+  "行数": 145,
+  "描述": "| 统一调度视频生成能力，包含商品场景视频和多分镜视频生成两大子能力，覆盖商品场景视频、图片生成视频、文生视频和多分镜视频。 根据具体需求路由到对应子能力；不处理图片生成、视频后期剪辑或商品发布。",
+  "描述字数": 98,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "品牌广告关键词助手",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-brand-ads-keyword-recommendation/SKILL.md",
+  "行数": 318,
+  "描述": "| 阿里巴巴国际站品牌广告关键词助手，基于客户意图规划关键词推荐和关键词预定服务。 提供关键词智能推荐（秒杀/打标/次月同行释放词等场景）和关键词批量预定两项服务；不处理品牌投放数据播报或普通广告计划管理。",
+  "描述字数": 103,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "品牌数据报告",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-icbu-brand-data-report/SKILL.md",
+  "行数": 360,
+  "描述": "| 查询 ICBU 品牌广告核心数据与效果指标，覆盖品牌店铺报告、商品效果、关键词效果、聚量词效果、同行对比、达标率和履约 CPC。 支持多维度下钻、环比同比和事实总结；只做数据播报，不做优化建议或预定操作。",
+  "描述字数": 104,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "商品风险检测",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-product-risk-diagnosis/SKILL.md",
+  "行数": 135,
+  "描述": "| 跨境电商平台商家风险扫描入口，仅在用户明确表达风险、侵权、TRO、投诉、禁限售、违规、风控等风险排查意图时触发。 自动生成包含风险统计表格和后台处理链接的概览报告；不处理商品质量分、零效果、曝光点击转化、商品优化建议或普通“诊断商品”诉求。",
+  "描述字数": 122,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "国际站商品诊断优化",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-product-optimization/SKILL.md",
+  "行数": 292,
+  "描述": "| 对国际站商品进行优化，涵盖两大场景： 1. 商品详描AI优化：对已有商品的详情页（详描/商详）进行AI升级或装修 2. 商品信息优化与编辑：对标题/价格/SKU/属性/主图/卖点/商详等字段进行 AI 优化或明确值编辑；质量分、零效果品、普通诊断等泛化优化诉求会先识别问题，再生成优化任务 触发场景： - 用户要求优化/升级/装修商品的详情页（如\"帮我优化这个商品的详情页\"、\"升级我的商品详描\"） - 用户要求批量优化/升级多个商品的详情页（如\"帮我把这5个商品的详描都升级一下\"、\"批量升级详描\"） - 用户要求修改/编辑/更新商品的任意字段（如\"把标题改成 xxx\"、\"价格下调 3 美金\"） - 用户要求优化除商详外的商品信息（如\"帮我优化标题\"、\"优化卖点\"） - 用户要求诊断、提升质量分或优化零效果品（如\"把质量分低的商品优化一下\"、\"零效果品优化\"、\"诊断一下商品哪里需要改\"） ",
+  "描述字数": 823,
+  "写了不要用": false,
+  "附件": [
+   "slot-schema.json",
+   "scripts",
+   "reference"
+  ]
+ },
+ {
+  "名字": "国际站商机雷达",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-rfq-discovery/SKILL.md",
+  "行数": 635,
+  "描述": "| 帮国际站卖家处理 RFQ 全链路运营任务：用自然语言搜索 RFQ 采购商机（支持国际站站内与站外公开网络来源的 全网商机检索），查询某条 RFQ 详情（统一 detail workflow），查询单条/批量报价记录详情（quote-detail workflow）， 查询和汇总 RFQ 报价历史记录， 分析今日/本周/本月/指定日期范围内的已报价 RFQ、报价消耗、报价买家与报价产品内容，并查询 RFQ 报价权益、剩余额度、畅行报价权、置顶报价权、服务分相关权益。 数据域边界：返回 RFQ 商机列表（含站外公开网络采集的采购线索）、单/批量 RFQ 详情与买家画像、报价详情、报价历史和报价权益。 仅当当前卖家报价详情成功且用户明确索要时展示工具返回的邮箱/电话；WhatsApp、社媒账号等其他外部联系方式不在本 skill 范围，由买家背调基于公网信息尝试核实。不生成报价草稿，不处理询",
+  "描述字数": 417,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "schemas",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "国际站广告分析",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-ads-marketing-analysis/SKILL.md",
+  "行数": 215,
+  "描述": "| 使用 workctl 和广告 HATEOAS 能力查询、分析和管理国际站广告。覆盖全站推与标准推的计划、商品、关键词、地域、时段、效果报表、账户财务和账户/计划诊断，也处理预算、出价、暂停、删除、加删商品等写入意图。只有用户原话明确出现“标准推广”“手动推广”或“关键词”时才使用标准推；包括 P4P、直通车、广告、推广、计划在内的其他表述均默认全站推，不得主动补写“关键词推广”或“标准推广”改变用户意图。",
+  "描述字数": 206,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "slot-schema.json"
+  ]
+ },
+ {
+  "名字": "国际站店铺经营分析",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-analysis-brief/SKILL.md",
+  "行数": 247,
+  "描述": "| 分析 Alibaba.com 自有店铺的流量、商品、转化、交易、服务与员工经营数据，生成日报、周报、月报、定向诊断、单指标回答或全量明细文件。 适用于店铺经营分析、经营简报、经营波动、订单/商品表现、访客与员工数据；不用于商品写操作、外部市场选品、竞品、RFQ、星等级、税务或 IM 询盘导出。 本 Skill 必须由当前 Agent 直接执行，禁止转发子代理。",
+  "描述字数": 183,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "slot-schema.json",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "国际站店铺装修",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-create-website/SKILL.md",
+  "行数": 1067,
+  "描述": "| 基于 Canvas 的可视化网站构建器，通过 `workctl` CLI（accio-cli site builder 命令）生成、预览和验证 React/Vite 站点。 涵盖商家信息采集、Canvas 设计规划、代码生成、本地运行时和安全门禁五大子能力，支持新建站点、重新设计、Bug 修复和发布上线。",
+  "描述字数": 155,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "legokits-canvas"
+  ]
+ },
+ {
+  "名字": "国际站智能发品",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-product-publish/SKILL.md",
+  "行数": 390,
+  "描述": "| 支持素材包/URL 发品、批量发品/裂变，以及发品模版的创建、引用与复用。 采用「`workctl icbu product analyze-merge-optimize-material` 提交云端素材处理（`data` 直载 uniqueKey）→ `workctl publishflow fetch-material-result` 轮询并原样下载 `product.json` → `workctl publishflow publish-from-json` 直接使用该素材解析结果发品（内部逐 item 调 `new_publish_product`）」数据流； 沉淀单一总模版到会话产物面板。不处理商品字段优化、市场分析、图片生成。",
+  "描述字数": 326,
+  "写了不要用": false,
+  "附件": [
+   "slot-schema.json",
+   "scripts",
+   "reference"
+  ]
+ },
+ {
+  "名字": "国际站知识查询",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-cco-rag/SKILL.md",
+  "行数": 94,
+  "描述": "| 检索国际站官方 FAQ/知识库，回答平台经营规则、操作指引、服务政策和后台使用问题。 覆盖入驻、建站发品、营销商机、数据、生意助手、信保订单、资金/发票、物流、一达通、Alibaba.com Pay、金融、安全网规/禁售、买家服务、半托管、无忧退等知识场景；不执行具体业务操作或实时数据查询。",
+  "描述字数": 148,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "国际站订单拒付申诉",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-chargeback-appeal-assistant/SKILL.md",
+  "行数": 148,
+  "描述": "| 跨境电商平台拒付申诉助手，查询特定订单拒付状态、获取拒付详情，并生成 AI 抗辩材料。 引导商家完成从拒付信息查看到正式申诉的流程；不处理普通订单、物流、收款或平台规则咨询。",
+  "描述字数": 89,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "定制模板生成",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-pdf-to-catalog-table/SKILL.md",
+  "行数": 318,
+  "描述": "| 将商品目录、产品画册 PDF 或已确认页序的手册图片转换为定制商品表格，并在校验通过后导入定制商品。 用于目录级产品族、定制项和代表图提取；不用于通用 PDF 阅读、普通发品模板、已有商品优化或单纯图片处理。",
+  "描述字数": 106,
+  "写了不要用": false,
+  "附件": [
+   "app",
+   "app-src",
+   "references",
+   "build.sh",
+   "package.json",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "市场全景分析",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-market-analysis/SKILL.md",
+  "行数": 253,
+  "描述": "| 针对一个品类/市场一次性跑全维度（规模+增速+竞争+国家+买家+趋势）分析，输出一份市场全景报告，给出「是否值得介入 + 如何切入」决策结论与行动清单。 品类词是唯一必填输入：优先取 query 品类词，其次取商家主营品类画像，两者都拿不到才追问一次；目标市场默认全球、统计周期默认 30 天；一次执行聚焦一个品类/市场。 只做品类/市场级全景概览与介入判断；不做竞品店铺发现与逐店拆解（此类诉求用竞品对标分析）、不做店铺经营数据分析、不做单一产品级选品验证、不执行发品与店铺操作本身。",
+  "描述字数": 245,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "slot-schema.json",
+   "display.txt"
+  ]
+ },
+ {
+  "名字": "深度选品报告",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-jungle-scout-deep-dive-analyzer/SKILL.md",
+  "行数": 415,
+  "描述": "| 针对单一品类/产品/竞品 ASIN 做纵深选品验证，基于 Jungle Scout 市场数据与 Amazon 平台数据生成 8 维度纵深报告，附真实产品推荐与 B2B 货源溯源。 分析基座为 11 项指标数据框架，覆盖市场机会发现、竞品分析、产品验证、广告与流量、趋势与季节性 5 类问题场景。 关键输入：品类词（1-3 个纯产品名词，query 优先、其次取画像品类与目标市场槽位，均缺失时追问一次）；可选竞品 ASIN 与 Amazon 站点（默认 us）；多 ASIN 走同一管线，多关键词或多站点先收敛为一个目标。仅做单品类纵深验证；仅查单个数据点时直接用 Jungle Scout 工具；数据局部缺失降级交付。",
+  "描述字数": 312,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "slot-schema.json",
+   "assets",
+   "display.txt"
+  ]
+ },
+ {
+  "名字": "热销爆品洞察",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-hot-product-insight/SKILL.md",
+  "行数": 194,
+  "描述": "| 围绕指定品类输出多平台热销现状洞察与爆品榜单：Top 15 热销榜 + 热销归因、买家需求、竞争格局、风险评估、供应商推荐。 覆盖阿里国际站、Amazon、Temu、SHEIN、TikTok Shop、Shopee、1688、eBay、速卖通、Lazada 共 10 个平台；未指明平台时默认按阿里国际站处理，同时提及多平台时采集阶段各平台同批并行（最多 3 个）。 品类词是执行前提：优先取 query 品类词，其次取主营品类画像，两者都拿不到时才向用户追问确认；不做竞品店铺发现/对标/监控、低竞争蓝海发掘或完整市场全景分析。",
+  "描述字数": 267,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "slot-schema.json",
+   "assets"
+  ]
+ },
+ {
+  "名字": "物流助手",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-logistics-assistant/SKILL.md",
+  "行数": 62,
+  "描述": "国际站物流助手，处理承运咨询、线路查价、运费试算、下单发货、物流轨迹、HS 编码和关税税费等跨境物流任务。",
+  "描述字数": 53,
+  "写了不要用": false,
+  "附件": [
+   "package.json"
+  ]
+ },
+ {
+  "名字": "生意助手介绍",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-assistant-intro/SKILL.md",
+  "行数": 176,
+  "描述": "| 国际站生意助手功能介绍与使用引导，专用于新用户首发任务或用户询问助手能力的场景。 固定输出生意助手核心能力介绍文案，并通过追问引导用户发起首条业务 Query，提升用户激活转化；不处理已明确的具体业务任务。",
+  "描述字数": 105,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "蓝海机会发掘",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-blue-ocean-finder/SKILL.md",
+  "行数": 183,
+  "描述": "| 分析供需错配、发现高潜力低竞争品类，给出差异化路径和国际站发品策略。 支持两种模式：跨平台对比（国际站供给 vs Amazon/Temu/SHEIN/TikTok Shop/Shopee/1688/eBay/AliExpress/Lazada 外部需求）和国际站原生蓝海。 品类词是执行前提：优先取 query 品类词，其次取主营品类画像，两者都拿不到时才向用户追问确认；不处理纯热销榜、市场全景或 1688 找同款，也不做单品 8 维深度验证。",
+  "描述字数": 225,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "slot-schema.json",
+   "assets"
+  ]
+ },
+ {
+  "名字": "违规处罚查询",
+  "来源": "插件/alibaba-com-seller-assistant",
+  "路径": "插件/alibaba-com-seller-assistant/skills/alibaba-ip-violation-query/SKILL.md",
+  "行数": 481,
+  "描述": "| 商家店铺及商品知识产权违规查询。识别用户询问\"店铺违规\"、\"扣分情况\"、\"计振\"、\"商品违规\"、\"商品{ID}违规情况\"或包含商品链接的违规查询时，触发本流程。系统将调用违规查询接口，为商家生成违规情况报告。",
+  "描述字数": 106,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "docx",
+  "来源": "插件/documents",
+  "路径": "插件/documents/skills/docx/SKILL.md",
+  "行数": 280,
+  "描述": "\"Comprehensive document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. Use when working with professional documents (.docx files) for: (1) Creating new documents, (2) Modifying or editing content, (3) Working with tracked changes, (4) Adding comments, or any other document tasks\"",
+  "描述字数": 355,
+  "写了不要用": false,
+  "附件": [
+   "node_modules",
+   "ooxml.md",
+   "ooxml",
+   "bootstrap.sh",
+   ".gitignore",
+   "package-lock.json",
+   "package.json",
+   "docx-js.md",
+   "scripts",
+   "display.txt"
+  ]
+ },
+ {
+  "名字": "pdf",
+  "来源": "插件/documents",
+  "路径": "插件/documents/skills/pdf/SKILL.md",
+  "行数": 376,
+  "描述": "\"PDF creation, editing, and analysis with support for text extraction, tables, images, forms, merging/splitting, and rendering. Use when working with PDF documents (.pdf files) for: (1) Creating new PDF documents, (2) Extracting content from PDFs, (3) Editing or modifying existing PDFs, (4) Filling in PDF forms, (5) Merging, splitting, or transforming PDFs, (6) Analyzing PDF content, or any other ",
+  "描述字数": 410,
+  "写了不要用": false,
+  "附件": [
+   "reference.md",
+   "forms.md",
+   "scripts",
+   "display.txt"
+  ]
+ },
+ {
+  "名字": "browser-rpa-launch",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/browser-rpa-launch/SKILL.md",
+  "行数": 183,
+  "描述": "当已有一个或多个页面地址及对应的本地脚本文件，需要打开页面并执行脚本时使用。不用于生成、修改或解释脚本，也不用于在已有页面上回放脚本。",
+  "描述字数": 67,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "browser-rpa-run",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/browser-rpa-run/SKILL.md",
+  "行数": 138,
+  "描述": "当需要根据已准备的业务数据生成并执行浏览器 RPA 时使用；已有可执行 DSL 时使用 browser-rpa-launch。",
+  "描述字数": 63,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "discover-store-accounts",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/discover-store-accounts/SKILL.md",
+  "行数": 134,
+  "描述": "当需要查询用户在账号管理中维护的平台账号、登录状态和 Profile 选择信息，并用于各平台业务时使用。",
+  "描述字数": 52,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "douyin",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/ecommerce-search/platforms/douyin/SKILL.md",
+  "行数": 376,
+  "描述": "通过 Android 真机自动化搜索和采集抖音电商商品，支持关键词搜索、图片找同款、商品详情与 SKU 采集、短链解析、图片/视频下载和 Excel 报告。用户要求搜索抖音商品、图搜同款、采集竞品或导出抖音商品数据时使用。依赖 phone-auto CLI。",
+  "描述字数": 129,
+  "写了不要用": false,
+  "附件": [
+   "tools",
+   "references",
+   "scripts",
+   "assets",
+   "src"
+  ]
+ },
+ {
+  "名字": "ecommerce-search",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/ecommerce-search/SKILL.md",
+  "行数": 425,
+  "描述": "面向竞品调研与外部商品分析的电商公开页面采集体系（非店铺后台数据）。当用户需要对京东/淘宝/天猫/1688/拼多多/抖音的外部竞品商品进行调研、找同款、比价、详情采集、评论分析或价格监控时使用本Skill。典型触发表达包括但不限于：\"帮我看下这个竞品\"\"找下同款\"\"比一下价格\"\"采集这个商品详情\"\"搜一下XX关键词\"\"用这张图找同款\"\"看下这个商品的评价\"\"监控这个竞品价格变化\"\"分析这几个竞品的卖点和差异\"\"搜前20个商品\"\"三个平台都搜一下\"\"多搜几页\"。本Skill同时覆盖竞品店铺级监控（淘宝/天猫、1688、京东整店上新榜与销量榜跟踪），触发表达如\"监控这个店铺\"\"盯一下这个店\"\"看下竞品店铺上新了什么\"\"这个店的销量榜\"\"监控京东店铺\"，输入为店铺页URL（如 xxx.tmall.com/category.htm、xxx.1688.com/page/offerlist.htm、m",
+  "描述字数": 895,
+  "写了不要用": false,
+  "附件": [
+   "store-monitor",
+   "platforms",
+   "references",
+   "common",
+   "scripts",
+   "templates"
+  ]
+ },
+ {
+  "名字": "excel-product-data",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/excel-product-data/SKILL.md",
+  "行数": 132,
+  "描述": "当用户需要从已填写的商品发布素材包或商品信息表中提取商品信息、关联图片和视频素材，并为后续商品录入流程准备结构化业务数据时使用。不生成或执行 DSL，也不操作浏览器。",
+  "描述字数": 83,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "rules"
+  ]
+ },
+ {
+  "名字": "excel-product-publish",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/excel-product-publish/SKILL.md",
+  "行数": 171,
+  "描述": "根据已填写的商品上架素材包或商品信息 Excel，编排多平台、多店铺的商品发品任务。用于商品上架、批量商品上架、批量录入商品或创建商品发品任务；仅生成模板时使用 product-package-template，仅准备或校验数据时使用 excel-product-data。最终结果以商品发品成功或商品发品未成功为准。",
+  "描述字数": 159,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "multi-platform-ads-analysis",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-ads-analysis/SKILL.md",
+  "行数": 462,
+  "描述": "只读分析淘宝/天猫阿里妈妈、拼多多、京东、抖店（抖音千川）和 1688（数字营销 P4P）广告投放表现，生成 ROI 或线索成本 CPL、渠道趋势、预算错配、商品维度、AI 优化建议、HTML 报告和全量 Sheet 汇总 Excel。用于广告分析、推广效果/ROI/费比/获客成本复盘，以及直通车、引力魔方、万相台、淘宝客、商品推广、全店托管、明星店铺、京东全站/非全站营销、千川、全域投放、1688 全站推店/全站销货/精准获客/关键词卡位等请求；支持 Router 计划或直接调用。不得修改计划、预算、出价或店铺设置。",
+  "描述字数": 262,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "multi-platform-chat-analysis",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-chat-analysis/SKILL.md",
+  "行数": 137,
+  "描述": "分析淘宝、天猫、千牛、1688、拼多多、京东、抖店/飞鸽店铺客户聊天与历史会话记录，并生成脱敏、证据化的沟通卡点 HTML 报告。适用于聊天记录、客服会话、旺旺/千牛消息、抖店历史会话、询单转化、未成交原因、客服响应、话术复盘、订单成交证据。仅执行只读采集编排、规范化、标注、分析、验证与交付；不发送消息、优惠券，不修改退款、订单或商品。",
+  "描述字数": 169,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "multi-platform-custom-analysis",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-custom-analysis/SKILL.md",
+  "行数": 287,
+  "描述": "当用户想把淘宝、天猫、抖店、京东、拼多多或 1688 **自家已绑定店铺**的经营数据「抓下来」「爬一下」「拉一份原始表」「导出成 Excel」「只要 xlsx 不要报告」时使用本 Skill，也覆盖固定报告管道之外的自定义主题取数（评价、库存、广告、售后、搜索词、违规、行业对比与跨主题组合）。默认只做只读采集与原始 Excel 规范交付，不生成分析报告；交付后再询问用户是否需要基于本次数据出报告。不适用于非自家经营数据诉求，不修改店铺、商品、订单或后台配置。",
+  "描述字数": 232,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "multi-platform-intention-router",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-intention-router/SKILL.md",
+  "行数": 167,
+  "描述": "统一路由淘宝、天猫、京东、拼多多、抖店、1688 的电商数据分析和导出请求。适用于店铺分析、订单分析、流量分析、商品分析、单品分析、客服聊天/询盘分析、自定义分析、原始 xlsx 导出。不适用于直接执行 RPA、生成下游报告、最终交付打包或非电商任务。",
+  "描述字数": 126,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "multi-platform-inventory-warning",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-inventory-warning/SKILL.md",
+  "行数": 139,
+  "描述": "仅在用户显式调用 /multi-platform-inventory-warning、$multi-platform-inventory-warning 或明确点名 multi-platform-inventory-warning 时执行。面向多平台只读采集店铺商品总可售库存，当前支持淘宝、天猫，支持按单个商品 ID/商品链接、库存列表当前顺序的前 N 个商品或店铺全部商品查询，输出商品维度库存 JSON 和 Excel；不采集 SKU、仓、批次库存，不修改库存或店铺配置，也不接入意图 Router。",
+  "描述字数": 253,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "multi-platform-product-analysis",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-product-analysis/SKILL.md",
+  "行数": 281,
+  "描述": "拉取并分析淘宝、抖店、京东、拼多多和 1688 的商品列表与商品经营数据，覆盖销量、GMV、流量转化、库存、爆款/滞销、排行、清单和明细 Excel 导出。拼多多商品数据使用 pdd_product_detail DSL 采集，独立切换概况/列表/详情周期、动态解码 spider-font，并逐个采集前 10 个商品详情；全部平台统一走 Execution。用户没有明确指定商品 ID 时使用本 Skill；已经得到明确商品 ID 且要求淘宝/天猫瓴羊人群补采时也使用本 Skill 并自动按 10 个拆批。只有明确指定 1–10 个商品 ID 的常规经营下钻才转交 multi-platform-single-product-analysis。全流程只读，不修改店铺数据。",
+  "描述字数": 338,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "multi-platform-review-reply",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-review-reply/SKILL.md",
+  "行数": 209,
+  "描述": "处理 PDD/拼多多、JD/京东/京麦、Taobao/淘宝/千牛、Tmall/天猫、Doudian/抖店的商品评价采集（默认全部评价，可筛选时间、商家回复状态全部/已回复/未回复、正面/负面）、分析、回复草稿和已确认回复提交，并支持1688当前账户收到的评价只读采集与分析。自动回复候选仅限未回复评价；已回复/全部采集只用于查看与分析。适用于评价管理、评价投诉点与质量问题汇总、回复建议和基于确认的回复；天猫（platformId=tmall）是独立平台并只使用 tmall DSL；1688不支持草稿或回复提交，任何平台均不得未经确认提交。",
+  "描述字数": 271,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "multi-platform-rpa-execution-new",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-rpa-execution-new/SKILL.md",
+  "行数": 135,
+  "描述": "Executes multi-platform ecommerce RPA data collection, Chat collection, DSL compilation, rolling-concurrency browser RPA, result recording, and legacy-compatible request-level Excel delivery. Use when upstream provides batch-request.json or chat-collection-request.json with canonical platform keys; do not use for credential collection, manual browser scripting outside RPA tools, or legacy orchestr",
+  "描述字数": 406,
+  "写了不要用": true,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "multi-platform-single-product-analysis",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-single-product-analysis/SKILL.md",
+  "行数": 262,
+  "描述": "对淘宝、抖店、京东、拼多多和 1688 自家店铺中用户明确指定的 1–10 个商品 ID 做经营下钻，并为每个商品生成 HTML 报告。商品 ID 是必要触发条件；商品 URL、标题关键词、泛化“分析这个商品”或自动 Top 商品不能触发本 Skill，未指定商品 ID 时必须走 multi-platform-product-analysis 拉取商品列表。淘宝提供瓴羊深度维度，1688 逐商品直接下载单品分析导出并提供日粒度趋势，其余平台按各自商品明细真实字段分析并明确缺口。不得用于竞品、公开商品详情或修改商品。",
+  "描述字数": 260,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "multi-platform-store-analysis",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-store-analysis/SKILL.md",
+  "行数": 107,
+  "描述": "分析淘宝、天猫、抖店、京东、拼多多、1688 店铺的整体经营状况，采集经营数据后生成数据视图 Excel 与证据化的经营分析 HTML 报告。适用于店铺经营分析、经营周报/月报/日报、GMV 与成交额分析、流量与转化分析、推广投放与 ROI 复盘、退款与售后分析、评价与体验分查看、多平台多店铺经营对比、导出经营数据等请求。仅执行只读采集编排、计算、分析与交付；不修改店铺设置，不发布商品，不发送消息，不回复评价。",
+  "描述字数": 207,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "multi-platform-store-analysis-new",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/multi-platform-store-analysis-new/SKILL.md",
+  "行数": 692,
+  "描述": "当用户需要分析淘宝、天猫、抖店、京东、拼多多或 1688 店铺的整体经营状况时使用本 Skill。典型场景：查看店铺经营数据、生成经营周报/月报、分析 GMV/流量/订单/转化趋势、对比多平台或多店铺经营表现、导出经营原始数据。只要用户诉求涉及“店铺经营分析、经营报告、周报/月报、GMV、流量、订单、转化”等内容，无论单平台还是多平台、单店铺还是多店铺，即应加载本 Skill。用户在店铺相关诉求中附带任何 URL 时，URL 输入完全无效：必须直接忽略，不得打开、访问、解析或用于定位；只使用 URL 之外的用户文本和 Router 已确定的店铺信息。仅只读采集与分析并输出 HTML 报告和原始 Excel；不修改店铺任何经营设置。",
+  "描述字数": 319,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "pinduoduo",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/ecommerce-search/platforms/pinduoduo/SKILL.md",
+  "行数": 618,
+  "描述": "当用户需要在安卓手机上的拼多多应用中执行文搜、图搜、排序、商品采集、规格/评论/商详证据采集、多商品对比或生成表格时使用。",
+  "描述字数": 61,
+  "写了不要用": false,
+  "附件": [
+   "tools",
+   "src"
+  ]
+ },
+ {
+  "名字": "product-package-autofill",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/product-package-autofill/SKILL.md",
+  "行数": 441,
+  "描述": "当用户需要从商品 URL、商家 Excel、ERP 导出或自然语言 JSON 自动准备商品发布素材包时使用。它编排商品素材理解、类目模板衔接、Excel 与素材映射、字段缺口分类、AI 建议和用户补录回写，并自动执行发布前预检；不负责店铺绑定、浏览器录入或正式发布。缺少空白模板时先使用 product-package-template；预检 ready 后再交 excel-product-publish 保存草稿。",
+  "描述字数": 209,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "product-package-template",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/product-package-template/SKILL.md",
+  "行数": 221,
+  "描述": "当用户需要生成商品发布素材包、发品资料模板或未填写的商品信息表时使用。根据商品名称、类目 ID、类目名称或类目路径，为用户选择的平台确定叶子类目，并生成包含未填写商品信息表和空素材目录的 ZIP 压缩包。不生成实际素材，不解析或填写已有模板，也不创建或执行商品发布任务。",
+  "描述字数": 135,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "store-monitor",
+  "来源": "插件/ecommerce-automation-toolkit",
+  "路径": "插件/ecommerce-automation-toolkit/skills/ecommerce-search/store-monitor/SKILL.md",
+  "行数": 524,
+  "描述": "当用户要监控竞品店铺的上新或销量榜时使用本 Skill，典型触发表达：\"监控这个店铺\"\"看下竞品店铺上新了什么\"\"盯一下这个店的销量榜\"\"这家店最近有没有调价\"。输入为一条店铺链接，支持淘宝/天猫、1688（普通旺铺与工厂店）、京东（任意店铺形态）；形态识别、URL 归一化与排序动线由本 Skill 自动完成。产出商品清单 CSV 与监控看板 HTML，并与上一轮做上新、下架与变价比对。只采集公开店铺页面，不登录店铺后台。",
+  "描述字数": 213,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "geo-analyzer",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/geo-analyzer/SKILL.md",
+  "行数": 57,
+  "描述": "GEO Data Analyzer — Multi-dimensional statistical analysis of raw GEO JSON data. Supports two modes: (1) Batch Prompt Analysis — compare brand mention/citation rates across many queries; (2) Single Prompt Deep Analysis — analyze one query repeated N times to study answer probability distribution. Companion scripts: scripts/analyzer.py, scripts/single_query_analyzer.py. Trigger phrases: analyze dat",
+  "描述字数": 544,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "geo-collector",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/geo-collector/SKILL.md",
+  "行数": 177,
+  "描述": "GEO Data Collector — Collect AI search responses (ChatGPT / Gemini / Perplexity answers + citations). Use when the user has a query list and wants to collect LLM responses and citation sources at scale, or needs to run a single prompt repeatedly for fine-grained analysis. Companion script: scripts/collector.py. Trigger phrases: collect data, AI search data, snapshot, fetch answers, 采集数据、采集回答。",
+  "描述字数": 395,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "geo-content-writer",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/geo-content-writer/SKILL.md",
+  "行数": 124,
+  "描述": "GEO Content Writer — Produce publish-ready content based on GEO analysis data. Supports any platform: Blog, Reddit, Quora, LinkedIn, Twitter/X, YouTube, Medium, Hacker News, Newsletter, G2/Trustpilot, WeChat, Zhihu, Xiaohongshu, or any custom platform specified by the user. Also triggers geo-report-builder for single-prompt HTML analysis reports. Companion script: scripts/content_writer.py. Trigge",
+  "描述字数": 605,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "geo-dashboard-builder",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/geo-dashboard-builder/SKILL.md",
+  "行数": 81,
+  "描述": "GEO Dashboard Builder — Consolidate global monitoring analysis results into a single-page HTML dashboard. Pipeline skill: chains geo-analyzer, geo-domain-ranker, and geo-strategy-advisor outputs into a visual report with sidebar navigation, suitable for periodic monitoring reports. Companion script: scripts/dashboard_builder.py. Trigger phrases: generate dashboard, build dashboard, global report, ",
+  "描述字数": 493,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "geo-domain-ranker",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/geo-domain-ranker/SKILL.md",
+  "行数": 42,
+  "描述": "GEO Domain Ranker — Deep domain analysis of AI citation sources. Supports subdomain breakdown, root domain aggregation, and URL sample extraction. Use after geo-analyzer to understand which domains AI relies on as sources, to inform content placement and outreach strategy. Companion script: scripts/domain_analyzer.py. Trigger phrases: domain ranking, citation sources, which websites are cited, sou",
+  "描述字数": 459,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "geo-multi-engine-comparison",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/geo-multi-engine-comparison/SKILL.md",
+  "行数": 80,
+  "描述": "基于同一批 prompts 的多引擎（ChatGPT / Perplexity / Gemini）GEO 采集结果，生成三引擎对比 HTML 仪表盘（提及率矩阵、引用结构、Top10 信源、UGC 对比、生态洞察、分引擎策略）。当用户提到「三引擎对比」「多引擎对比」「engine comparison」「comparison dashboard」「对比报告」，或已有多个引擎的输出目录想横向比较 AI 搜索可见度时，务必使用本技能——即使用户没有明确说\"对比报告\"，只要涉及 ChatGPT/Gemini/Perplexity 三个引擎的并排分析就应触发。",
+  "描述字数": 279,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "geo-query-builder",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/geo-query-builder/SKILL.md",
+  "行数": 200,
+  "描述": "GEO Prompt Builder — Generate AI search monitoring prompt matrices for brands. Use when the user wants to analyze a brand's AI search visibility, needs a list of prompts for GEO data collection, or wants to start a GEO analysis. Also handles single-prompt repeated collection setup via single_query_runner.py. Trigger phrases: generate queries, generate prompts, GEO matrix, query list, start GEO ana",
+  "描述字数": 446,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "geo-report-builder",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/geo-report-builder/SKILL.md",
+  "行数": 103,
+  "描述": "GEO Report Builder — Render single-prompt deep analysis CSV data into a structured 8-section HTML report. Pipeline skill：consumes the output directory of geo-analyzer's single_query_analyzer.py and produces a self-contained HTML deliverable (inline CSS, no CDN, works offline). Companion script: scripts/single_query_report.py. Trigger phrases: generate report, analysis report, HTML report, single p",
+  "描述字数": 467,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "geo-site-auditor",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/geo-site-auditor/SKILL.md",
+  "行数": 139,
+  "描述": "GEO Site Auditor — Crawl a website and analyze its content structure for GEO (Generative Engine Optimization) opportunities. Identifies missing FAQ schema, weak E-E-A-T signals, content gaps vs AI citation patterns, and produces specific optimization recommendations. Can also generate ready-to-publish articles targeting AI citation. Use when the user wants to optimize their website for AI search v",
+  "描述字数": 627,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "geo-strategy-advisor",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/geo-strategy-advisor/SKILL.md",
+  "行数": 90,
+  "描述": "GEO Strategy Advisor — Synthesize GEO analysis data into actionable content intervention and GEO growth strategies. Use after domain ranking analysis to turn data into specific action items: Reddit posting priorities, website blog topics, third-party link opportunities. Companion script: scripts/strategy_generator.py. Trigger phrases: strategy recommendations, action plan, content strategy, GEO st",
+  "描述字数": 506,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "seo-content-writer",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/seo-content-writer/SKILL.md",
+  "行数": 99,
+  "描述": "SEO Content Writer — Generate keyword-targeted SEO content in three forms: (1) article outline + full draft with H1/H2/H3 keyword layout; (2) Meta title & description optimized to Google display limits (title ≤60 chars, description ≤155 chars); (3) structured data JSON-LD (FAQPage / Product / Article / BreadcrumbList). Companion scripts: scripts/meta_generator.py, scripts/schema_generator.py. Trig",
+  "描述字数": 590,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "seo-full-audit",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/seo-full-audit/SKILL.md",
+  "行数": 330,
+  "描述": "对客户网站进行完整的 SEO 诊断，包含技术 SEO 审计和内容质量评估。每次诊断独立运行（清空历史中间产物，不携带任何前次记忆），实时显示进度并一次性产出 4 份交付物：URL 清单 Excel、技术 SEO 诊断报告 PDF、内容质量诊断报告 PDF、《SEO 全站诊断服务使用说明》PDF。当用户需要做 SEO 诊断、网站审计、SEO 检查、网站健康检查时使用此技能。",
+  "描述字数": 187,
+  "写了不要用": false,
+  "附件": [
+   "assets"
+  ]
+ },
+ {
+  "名字": "seo-keyword-optimization",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/seo-keyword-optimization/SKILL.md",
+  "行数": 514,
+  "描述": "Keyword Optimization — On-page keyword optimization covering density calculation (1-2% target), LSI and semantic keyword expansion, keyword cannibalization detection, search-intent matching, long-tail strategy, and keyword-to-page mapping. Applies the keyword set produced by seo-keywords to concrete pages. Trigger phrases: keyword optimization, keyword density, LSI keywords, semantic optimization,",
+  "描述字数": 587,
+  "写了不要用": false,
+  "附件": [
+   "display.txt"
+  ]
+ },
+ {
+  "名字": "seo-keywords",
+  "来源": "插件/geo-agent",
+  "路径": "插件/geo-agent/skills/seo-keywords/SKILL.md",
+  "行数": 559,
+  "描述": "Keyword Research — Unified multi-source keyword planning, analysis and research. Merges Google Keyword Planner, Search Console, Semrush, Ahrefs, DataForSEO and Moz data into a prioritized opportunity matrix with difficulty assessment, search-intent classification, QDF freshness modeling and competitor keyword gap analysis. Companion scripts: python/keyword_research.py, python/keyword_planner.py, p",
+  "描述字数": 690,
+  "写了不要用": false,
+  "附件": [
+   "display.txt"
+  ]
+ },
+ {
+  "名字": "knowledge-base",
+  "来源": "插件/knowledge-base-plugin",
+  "路径": "插件/knowledge-base-plugin/skills/knowledge-base/SKILL.md",
+  "行数": 278,
+  "描述": "| Handles Accio Work Knowledge Base file and kit references and semantic search. Reads and searches KB content via the platform-provided MCP tools (get_kb_file_contents / search_kb_file_contents). Trigger — evaluate in order, stop at first match: 1. HARD (unconditional): message contains a <knowledge_base_refs> block. 2. SOFT: \"知识库 / knowledge base / kb\" mentioned with content intent, OR context s",
+  "描述字数": 1116,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "pptx",
+  "来源": "插件/presentations",
+  "路径": "插件/presentations/skills/pptx/SKILL.md",
+  "行数": 416,
+  "描述": "Presentation creation, editing, and analysis. Use when working with presentations (.pptx files) for: (1) Creating new presentations, (2) Modifying or editing content, (3) Working with layouts, (4) Adding comments or speaker notes, or any other presentation tasks",
+  "描述字数": 262,
+  "写了不要用": false,
+  "附件": [
+   "node_modules",
+   "ooxml.md",
+   "ooxml",
+   "bootstrap.sh",
+   ".gitignore",
+   "package-lock.json",
+   "package.json",
+   "scripts",
+   "html2pptx.md",
+   "display.txt"
+  ]
+ },
+ {
+  "名字": "aw-shopify-oauth",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/aw-shopify-oauth/SKILL.md",
+  "行数": 144,
+  "描述": "\"Accio Work Shopify Connector OAuth and authorization. Use when the user needs to connect, reconnect, confirm, or switch the active Shopify store in Accio Work, or when you need to verify the bound store and granted Shopify scopes before acting on that store. This skill covers only Accio Work authorization and permission checks; it does not create products, edit themes, write GraphQL, or execute b",
+  "描述字数": 419,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "dtc-builder",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/dtc-builder/SKILL.md",
+  "行数": 272,
+  "描述": "Shopify zero-to-launch build orchestrator with no GraphQL execution. Owns the ordered connection, optional sourcing, product-listing, Collection organization, theme-decoration, audit, resume, and advisory launch-checklist flow, plus registration, plan/theme choice, navigation, and Markets guidance. Payment, shipping, tax, legal policy, and domain setup remain merchant-owned. Delegates confirmed Pr",
+  "描述字数": 953,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "tests",
+   "scripts",
+   "templates"
+  ]
+ },
+ {
+  "名字": "dtc-monitoring-and-daily-report",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/dtc-monitoring-and-daily-report/SKILL.md",
+  "行数": 378,
+  "描述": "Set up Shopify store monitoring from zero — Microsoft Clarity, optional Judge.me, and an optional memory-gated social Campaign patrol — then schedule a daily Markdown digest with KPIs, UX health, new-product Campaign recommendations, and confirmed social action states. Use when the user wants store monitoring, a daily report, or scheduled new-product social recommendations. Not for one-off page CR",
+  "描述字数": 426,
+  "写了不要用": true,
+  "附件": [
+   "references",
+   "tests",
+   "scripts",
+   "templates"
+  ]
+ },
+ {
+  "名字": "dtc-product-selection",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/dtc-product-selection/SKILL.md",
+  "行数": 282,
+  "描述": "|- Shopify DTC product-selection methodology. Trigger when the user is exploring \"what should I sell on a Shopify / DTC store\", asks for niche discovery, product opportunity scan, or wants to validate a category before sourcing. Keywords: \"what should I sell\", \"product opportunity\", \"niche discovery\", \"DTC product selection\". Outputs `.workspace/_discovery-brief.md` plus `deliverables/product-sele",
+  "描述字数": 662,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "templates"
+  ]
+ },
+ {
+  "名字": "optimize-ecommerce-page-conversion",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/optimize-ecommerce-page-conversion/SKILL.md",
+  "行数": 125,
+  "描述": "Diagnose and fix Shopify page conversion problems — Home, Collection, Product Detail Page (PDP), and Promo Landing Pages. Use when traffic is healthy but conversion rate (CR), add-to-cart rate, or cart-to-checkout rate is below industry benchmark, or before launching a paid campaign so the landing page is ready. Triggers — \"conversion rate\", \"CR\", \"ATC\", \"cart-to-checkout\", \"high bounce\", \"abandon",
+  "描述字数": 461,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "shopify-admin",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-admin/SKILL.md",
+  "行数": 131,
+  "描述": "\"Write or explain **Admin GraphQL** queries and mutations for apps and integrations that extend the Shopify admin. Use when the user wants to **understand, design, or generate** the operation itself—even before deciding how to run it. Do **not** choose `admin` first for **app monetization**—charging merchants for the app itself via app pricing plans, paid app tiers, app subscription charges, or ap",
+  "描述字数": 1008,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "data",
+   "assets"
+  ]
+ },
+ {
+  "名字": "shopify-collection-management",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-collection-management/SKILL.md",
+  "行数": 96,
+  "描述": "\"Manage Shopify Collections as first-class catalog resources. MUST be used for collection search/detail reads and for any collection write: create, update, delete, publish/unpublish, core SEO, manual or smart rules, title/description/image/sort changes, and adding or removing product membership—even when membership follows product creation. Product, variant, inventory, and product-media fields rem",
+  "描述字数": 441,
+  "写了不要用": false,
+  "附件": [
+   "evals",
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "shopify-custom-data",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-custom-data/SKILL.md",
+  "行数": 251,
+  "描述": "\"MUST be used first when prompts mention Metafields or Metaobjects. Use Metafields and Metaobjects to model and store custom data for your app. Metafields extend built-in Shopify data types like products or customers, Metaobjects are custom data types that can be used to store bespoke data structures. Metafield and Metaobject definitions provide a schema and configuration for values to follow.\"",
+  "描述字数": 397,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "shopify-dev",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-dev/SKILL.md",
+  "行数": 77,
+  "描述": "\"Search Shopify developer documentation across all APIs. Use only when no API-specific skill applies.\"",
+  "描述字数": 102,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "shopify-execution",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-execution/SKILL.md",
+  "行数": 40,
+  "描述": "Accio Work execution adapter for bundled Shopify platform Skills. Load before using official Shopify documentation, schema, Liquid or Functions helpers, or executing Shopify store operations. Defines host compatibility, validated execution, and the Main Agent Route C write contract. Product/Collection and theme-file writes retain their dedicated owners; connection and auth repair remain with aw-sh",
+  "描述字数": 412,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "shopify-functions",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-functions/SKILL.md",
+  "行数": 431,
+  "描述": "\"Shopify Functions allow developers to customize the backend logic that powers parts of Shopify. Available APIs: Discount, Cart and Checkout Validation, Cart Transform, Pickup Point Delivery Option Generator, Delivery Customization, Fulfillment Constraints, Local Pickup Delivery Option Generator, Order Routing Location Rule, Payment Customization\"",
+  "描述字数": 349,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "shopify-liquid",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-liquid/SKILL.md",
+  "行数": 369,
+  "描述": "\"Liquid is an open-source templating language created by Shopify. It is the backbone of Shopify themes and is used to load dynamic content on storefronts. Keywords: liquid, theme, shopify-theme, liquid-component, liquid-block, liquid-section, liquid-snippet, liquid-schemas, shopify-theme-schemas\"",
+  "描述字数": 297,
+  "写了不要用": false,
+  "附件": [
+   "blocks",
+   "sections",
+   "locales",
+   "config",
+   "featured-collection.liquid",
+   ".gitignore",
+   "package-lock.json",
+   "package.json",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "shopify-marketing",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-marketing/SKILL.md",
+  "行数": 66,
+  "描述": "| Unified Shopify marketing router for SEO, explicit pSEO, explicit GEO / AI-search visibility, and confirmed social-media drafts/posts. Use when the user asks for Shopify marketing, Google/organic SEO, explicit pSEO / programmatic SEO, explicit GEO / AI Overviews / ChatGPT / Perplexity citation visibility, or IG/X social promotion for a Shopify product, or a user starts/customizes a recommended C",
+  "描述字数": 536,
+  "写了不要用": false,
+  "附件": [
+   "evals",
+   "references",
+   "tests",
+   "scripts",
+   "templates"
+  ]
+ },
+ {
+  "名字": "shopify-new-product-monitor",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-new-product-monitor/SKILL.md",
+  "行数": 66,
+  "描述": "Detect Shopify products that become publicly eligible for social promotion for the first time, with baseline initialization, permanent Product GID deduplication, and deterministic reason codes. Use during a scheduled Shopify social patrol or when the user asks which products are newly published, newly launched, or ready for a social campaign. This skill is read-only and never creates content or pu",
+  "描述字数": 417,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "shopify-product-collection-write-brief",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-product-collection-write-brief/SKILL.md",
+  "行数": 177,
+  "描述": "Canonical producer/consumer contract for every Product or Collection write delegated to shopify-product-editor. The Main Agent MUST load this Skill completely before preparing the first merchant-facing Product/Collection write preview, requesting confirmation, or spawning the editor. Defines the nested brief shape, homogeneous operation grouping, verbatim confirmation evidence, immediate ACTIVE pl",
+  "描述字数": 470,
+  "写了不要用": false,
+  "附件": [
+   "evals",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "shopify-product-management",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-product-management/SKILL.md",
+  "行数": 74,
+  "描述": "Manage products on a connected Shopify store with bundled scripts for create, get, search, update, SEO, publication, bulk status changes, reusable image upload, and inventory reads and compare-and-set writes, plus safe routing for deletion, variants, and media. Use for Shopify product catalog reads or confirmed product writes that need stable business-data mapping, duplicate protection, dry-runs, ",
+  "描述字数": 534,
+  "写了不要用": false,
+  "附件": [
+   "evals",
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "shopify-social-campaign",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-social-campaign/SKILL.md",
+  "行数": 74,
+  "描述": "Recommend and coordinate safe Shopify social campaigns for newly public products, including an optional seven-day Instagram launch plan, deterministic eligibility, draft-only activation, and handoff to the Shopify marketing social track for IG/X content and publishing. Use when the user asks for a Shopify social campaign, a seven-day product launch, new-product social promotion, or when the daily ",
+  "描述字数": 540,
+  "写了不要用": true,
+  "附件": [
+   "references",
+   "agents",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "shopify-storefront-validate",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-storefront-validate/SKILL.md",
+  "行数": 328,
+  "描述": "Shopify storefront/theme validation protocol. Use when an assistant or auditor must verify a Shopify dev-theme admin preview (`?preview_theme_id=`), post-publish live storefront, or pre-launch store readiness: theme structure, Theme Check, admin-preview rendering, homepage/PDP/collection/cart checks, desktop/mobile screenshots, password-page blockers, responsive layout, and evidence-based blocking",
+  "描述字数": 629,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "shopify-theme-craft",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-theme-craft/SKILL.md",
+  "行数": 81,
+  "描述": "| Theme decoration craft — banner / hero / announcement bar conventions, category-to-style strategy, style-pack section recipes, external theme-source intake, template/demo sanitization, Horizon-theme Liquid section patterns, targeted theme-file discovery/upsert workflow, rare local pull/push exceptions, dev-preview validation hooks, plus a non-theme-surface image-aspect picker. Main Agent loads t",
+  "描述字数": 747,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "shopify-use-shopify-cli",
+  "来源": "插件/shopify-plugin",
+  "路径": "插件/shopify-plugin/skills/shopify-use-shopify-cli/SKILL.md",
+  "行数": 155,
+  "描述": "\"Choose when the user needs **Shopify CLI** to run or fix something now: validate app or extension config on disk (`shopify.app.toml`, `shopify.app.<name>.toml`, `shopify.extension.toml`); run or troubleshoot Connector-managed store workflows (`shopify store execute`); reliably create or resume one Blog Article through the bundled publisher; inventory or product changes by handle, SKU, or location",
+  "描述字数": 939,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "xlsx",
+  "来源": "插件/spreadsheets",
+  "路径": "插件/spreadsheets/skills/xlsx/SKILL.md",
+  "行数": 307,
+  "描述": "\"Comprehensive spreadsheet creation, editing, and analysis. Use when working with spreadsheets (.xlsx, .xlsm, .xls, .csv, .tsv, etc) for: (1) Creating new spreadsheets, (2) Modify existing spreadsheets while preserving formulas, (3) Data analysis and visualization in spreadsheets, or any other spreadsheet tasks\"",
+  "描述字数": 313,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "display.txt"
+  ]
+ },
+ {
+  "名字": "accio-mcp-cli",
+  "来源": "角色/DID-82AD6B-5582AD6BU1788693-5519-5BC962",
+  "路径": "角色包/DID-82AD6B-5582AD6BU1788693-5519-5BC962/agent-core/skills/accio-mcp-cli/SKILL.md",
+  "行数": 70,
+  "描述": "Use the accio-mcp-cli command-line tool to discover, search, and invoke MCP tools (Twitter, Gmail, Notion, Square, Apify, etc.) directly from the terminal. Use when the user asks to call MCP tools via CLI, run accio-mcp-cli commands, list available MCP tools from the command line, or invoke remote service integrations from the shell instead of an in-app MCP gateway.",
+  "描述字数": 368,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "docx",
+  "来源": "角色/DID-82AD6B-5582AD6BU1788693-5519-5BC962",
+  "路径": "角色包/DID-82AD6B-5582AD6BU1788693-5519-5BC962/agent-core/skills/docx/SKILL.md",
+  "行数": 280,
+  "描述": "Comprehensive document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. Use when working with professional documents (.docx files) for: (1) Creating new documents, (2) Modifying or editing content, (3) Working with tracked changes, (4) Adding comments, or any other document tasks",
+  "描述字数": 353,
+  "写了不要用": false,
+  "附件": [
+   "node_modules",
+   "ooxml.md",
+   "ooxml",
+   "bootstrap.sh",
+   ".gitignore",
+   "package-lock.json",
+   "package.json",
+   "docx-js.md",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "gmail-assistant",
+  "来源": "角色/DID-82AD6B-5582AD6BU1788693-5519-5BC962",
+  "路径": "角色包/DID-82AD6B-5582AD6BU1788693-5519-5BC962/agent-core/skills/gmail-assistant/SKILL.md",
+  "行数": 184,
+  "描述": "Send, search, and manage Gmail messages with automatic delivery verification and smart draft workflow",
+  "描述字数": 101,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "pdf",
+  "来源": "角色/DID-82AD6B-5582AD6BU1788693-5519-5BC962",
+  "路径": "角色包/DID-82AD6B-5582AD6BU1788693-5519-5BC962/agent-core/skills/pdf/SKILL.md",
+  "行数": 376,
+  "描述": "\"PDF creation, editing, and analysis with support for text extraction, tables, images, forms, merging/splitting, and rendering. Use when working with PDF documents (.pdf files) for: (1) Creating new PDF documents, (2) Extracting content from PDFs, (3) Editing or modifying existing PDFs, (4) Filling in PDF forms, (5) Merging, splitting, or transforming PDFs, (6) Analyzing PDF content, or any other ",
+  "描述字数": 410,
+  "写了不要用": false,
+  "附件": [
+   "reference.md",
+   "forms.md",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "pptx",
+  "来源": "角色/DID-82AD6B-5582AD6BU1788693-5519-5BC962",
+  "路径": "角色包/DID-82AD6B-5582AD6BU1788693-5519-5BC962/agent-core/skills/pptx/SKILL.md",
+  "行数": 415,
+  "描述": "Presentation creation, editing, and analysis. Use when working with presentations (.pptx files) for: (1) Creating new presentations, (2) Modifying or editing content, (3) Working with layouts, (4) Adding comments or speaker notes, or any other presentation tasks",
+  "描述字数": 262,
+  "写了不要用": false,
+  "附件": [
+   "node_modules",
+   "ooxml.md",
+   "ooxml",
+   "bootstrap.sh",
+   ".gitignore",
+   "package-lock.json",
+   "package.json",
+   "scripts",
+   "html2pptx.md"
+  ]
+ },
+ {
+  "名字": "self-improvement",
+  "来源": "角色/DID-82AD6B-5582AD6BU1788693-5519-5BC962",
+  "路径": "角色包/DID-82AD6B-5582AD6BU1788693-5519-5BC962/agent-core/skills/self-improvement/SKILL.md",
+  "行数": 535,
+  "描述": "Captures learnings, errors, corrections, and self-reflections into daily diary for continuous improvement. Use when: (1) A command or operation fails unexpectedly, (2) User corrects you, (3) User requests a capability that doesn't exist, (4) An external API or tool fails, (5) Knowledge is outdated or incorrect, (6) A better approach is discovered, (7) You complete significant work and want to eval",
+  "描述字数": 451,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "skill-creator",
+  "来源": "角色/DID-82AD6B-5582AD6BU1788693-5519-5BC962",
+  "路径": "角色包/DID-82AD6B-5582AD6BU1788693-5519-5BC962/agent-core/skills/skill-creator/SKILL.md",
+  "行数": 498,
+  "描述": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+  "描述字数": 319,
+  "写了不要用": false,
+  "附件": [
+   "eval-viewer",
+   "references",
+   "agents",
+   "scripts",
+   "LICENSE.txt",
+   "assets"
+  ]
+ },
+ {
+  "名字": "skill-finder",
+  "来源": "角色/DID-82AD6B-5582AD6BU1788693-5519-5BC962",
+  "路径": "角色包/DID-82AD6B-5582AD6BU1788693-5519-5BC962/agent-core/skills/skill-finder/SKILL.md",
+  "行数": 351,
+  "描述": "Find, search, recommend, and install agent skills. Layered discovery — internal catalog (first-party, vetted) → skills.sh → web search → ClawHub / SkillsMP. Use when the user wants to find/search/discover/choose/install a skill, or asks \"how do I do X\", \"is there a skill for X\", \"find me something for X\", \"该用什么skill\", \"有没有XX的skill\", \"帮我找skill\", \"推荐一个skill\".",
+  "描述字数": 359,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "reference"
+  ]
+ },
+ {
+  "名字": "xlsx",
+  "来源": "角色/DID-82AD6B-5582AD6BU1788693-5519-5BC962",
+  "路径": "角色包/DID-82AD6B-5582AD6BU1788693-5519-5BC962/agent-core/skills/xlsx/SKILL.md",
+  "行数": 307,
+  "描述": "Comprehensive spreadsheet creation, editing, and analysis. Use when working with spreadsheets (.xlsx, .xlsm, .xls, .csv, .tsv, etc) for: (1) Creating new spreadsheets, (2) Modify existing spreadsheets while preserving formulas, (3) Data analysis and visualization in spreadsheets, or any other spreadsheet tasks",
+  "描述字数": 311,
+  "写了不要用": false,
+  "附件": [
+   "scripts"
+  ]
+ },
+ {
+  "名字": "image-prompt-guide",
+  "来源": "角色/MID-04832526U1788694-9FD0E7-9283-A8CF6F",
+  "路径": "角色包/MID-04832526U1788694-9FD0E7-9283-A8CF6F/agent-core/skills/image-prompt-guide/SKILL.md",
+  "行数": 856,
+  "描述": "Prompt engineering and tool routing for AI image generation and editing. Use for: creative generation, product photo editing, e-commerce platform image sets, marketing posters and banners (promo/sale, shop banner, exhibition, holiday, social cover), product detail page (PDP) screen images with baked copy and code-stitched long images, and specialized scenes (white background / transparent backgrou",
+  "描述字数": 702,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "self-improvement",
+  "来源": "角色/MID-04832526U1788694-9FD0E7-9283-A8CF6F",
+  "路径": "角色包/MID-04832526U1788694-9FD0E7-9283-A8CF6F/agent-core/skills/self-improvement/SKILL.md",
+  "行数": 535,
+  "描述": "Captures learnings, errors, corrections, and self-reflections into daily diary for continuous improvement. Use when: (1) A command or operation fails unexpectedly, (2) User corrects you, (3) User requests a capability that doesn't exist, (4) An external API or tool fails, (5) Knowledge is outdated or incorrect, (6) A better approach is discovered, (7) You complete significant work and want to eval",
+  "描述字数": 451,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "skill-finder",
+  "来源": "角色/MID-04832526U1788694-9FD0E7-9283-A8CF6F",
+  "路径": "角色包/MID-04832526U1788694-9FD0E7-9283-A8CF6F/agent-core/skills/skill-finder/SKILL.md",
+  "行数": 351,
+  "描述": "Find, search, recommend, and install agent skills. Layered discovery — internal catalog (first-party, vetted) → skills.sh → web search → ClawHub / SkillsMP. Use when the user wants to find/search/discover/choose/install a skill, or asks \"how do I do X\", \"is there a skill for X\", \"find me something for X\", \"该用什么skill\", \"有没有XX的skill\", \"帮我找skill\", \"推荐一个skill\".",
+  "描述字数": 359,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "reference"
+  ]
+ },
+ {
+  "名字": "shared-buyer-psychology",
+  "来源": "角色/MID-06832526U1788694-9FD0E7-9242-FD7BDD",
+  "路径": "角色包/MID-06832526U1788694-9FD0E7-9242-FD7BDD/agent-core/skills/shared-buyer-psychology/SKILL.md",
+  "行数": 241,
+  "描述": "",
+  "描述字数": 0,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "shared-industry-adaptation",
+  "来源": "角色/MID-06832526U1788694-9FD0E7-9242-FD7BDD",
+  "路径": "角色包/MID-06832526U1788694-9FD0E7-9242-FD7BDD/agent-core/skills/shared-industry-adaptation/SKILL.md",
+  "行数": 136,
+  "描述": "",
+  "描述字数": 0,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "shared-industry-profiles",
+  "来源": "角色/MID-06832526U1788694-9FD0E7-9242-FD7BDD",
+  "路径": "角色包/MID-06832526U1788694-9FD0E7-9242-FD7BDD/agent-core/skills/shared-industry-profiles/SKILL.md",
+  "行数": 132,
+  "描述": "",
+  "描述字数": 0,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "shared-output-templates",
+  "来源": "角色/MID-06832526U1788694-9FD0E7-9242-FD7BDD",
+  "路径": "角色包/MID-06832526U1788694-9FD0E7-9242-FD7BDD/agent-core/skills/shared-output-templates/SKILL.md",
+  "行数": 293,
+  "描述": "",
+  "描述字数": 0,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "shared-self-evolution",
+  "来源": "角色/MID-06832526U1788694-9FD0E7-9242-FD7BDD",
+  "路径": "角色包/MID-06832526U1788694-9FD0E7-9242-FD7BDD/agent-core/skills/shared-self-evolution/SKILL.md",
+  "行数": 77,
+  "描述": "",
+  "描述字数": 0,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "ecommerce-marketing",
+  "来源": "角色/MID-11832526U1788693-9FD0E7-5550-27A023",
+  "路径": "角色包/MID-11832526U1788693-9FD0E7-5550-27A023/agent-core/skills/ecommerce-marketing/SKILL.md",
+  "行数": 148,
+  "描述": "E-commerce marketing orchestrator that routes user requests to 19 specialized marketing skills. Use when user mentions marketing strategy, product promotion, social media campaign, increase sales, launch product, conversion optimization, Instagram marketing, TikTok marketing, 小红书推广, Facebook ads, Google ads, product description, landing page, SEO, content calendar, marketing ROI, or any e-commerce",
+  "描述字数": 607,
+  "写了不要用": false,
+  "附件": [
+   "evals",
+   "references",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "product-description-generator",
+  "来源": "角色/MID-11832526U1788693-9FD0E7-5550-27A023",
+  "路径": "角色包/MID-11832526U1788693-9FD0E7-5550-27A023/agent-core/skills/product-description-generator/SKILL.md",
+  "行数": 329,
+  "描述": "Generate SEO-optimized product descriptions for e-commerce platforms (Amazon, Shopify, eBay, Etsy). Create compelling, conversion-focused copy with keywords, features, benefits, and calls-to-action. Use when creating product listings, optimizing existing descriptions, or generating bulk product copy.",
+  "描述字数": 301,
+  "写了不要用": false,
+  "附件": [
+   "_meta.json",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "review-summarizer",
+  "来源": "角色/MID-11832526U1788693-9FD0E7-5550-27A023",
+  "路径": "角色包/MID-11832526U1788693-9FD0E7-5550-27A023/agent-core/skills/review-summarizer/SKILL.md",
+  "行数": 322,
+  "描述": "Scrape, analyze, and summarize product reviews from multiple platforms (Amazon, Google, Yelp, TripAdvisor). Extract key insights, sentiment analysis, pros/cons, and recommendations. Use when researching products for arbitrage, creating affiliate content, or making purchasing decisions.",
+  "描述字数": 286,
+  "写了不要用": false,
+  "附件": [
+   "_meta.json",
+   "scripts"
+  ]
+ },
+ {
+  "名字": "self-improvement",
+  "来源": "角色/MID-11832526U1788693-9FD0E7-5550-27A023",
+  "路径": "角色包/MID-11832526U1788693-9FD0E7-5550-27A023/agent-core/skills/self-improvement/SKILL.md",
+  "行数": 535,
+  "描述": "Captures learnings, errors, corrections, and self-reflections into daily diary for continuous improvement. Use when: (1) A command or operation fails unexpectedly, (2) User corrects you, (3) User requests a capability that doesn't exist, (4) An external API or tool fails, (5) Knowledge is outdated or incorrect, (6) A better approach is discovered, (7) You complete significant work and want to eval",
+  "描述字数": 451,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "skill-creator",
+  "来源": "角色/MID-11832526U1788693-9FD0E7-5550-27A023",
+  "路径": "角色包/MID-11832526U1788693-9FD0E7-5550-27A023/agent-core/skills/skill-creator/SKILL.md",
+  "行数": 498,
+  "描述": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+  "描述字数": 319,
+  "写了不要用": false,
+  "附件": [
+   "eval-viewer",
+   "references",
+   "agents",
+   "scripts",
+   "LICENSE.txt",
+   "assets"
+  ]
+ },
+ {
+  "名字": "skill-finder",
+  "来源": "角色/MID-11832526U1788693-9FD0E7-5550-27A023",
+  "路径": "角色包/MID-11832526U1788693-9FD0E7-5550-27A023/agent-core/skills/skill-finder/SKILL.md",
+  "行数": 351,
+  "描述": "Find, search, recommend, and install agent skills. Layered discovery — internal catalog (first-party, vetted) → skills.sh → web search → ClawHub / SkillsMP. Use when the user wants to find/search/discover/choose/install a skill, or asks \"how do I do X\", \"is there a skill for X\", \"find me something for X\", \"该用什么skill\", \"有没有XX的skill\", \"帮我找skill\", \"推荐一个skill\".",
+  "描述字数": 359,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "reference"
+  ]
+ },
+ {
+  "名字": "tax-compliance-engine",
+  "来源": "角色/MID-23832526U1788694-9FD0E7-9197-4E3471",
+  "路径": "角色包/MID-23832526U1788694-9FD0E7-9197-4E3471/agent-core/skills/tax-compliance-engine/SKILL.md",
+  "行数": 40,
+  "描述": "| 企业财税合规知识引擎，提供中国会计准则科目表、税率速查、财务公式和合规检查清单。 触发词：科目表、税率、会计分录、财务公式、合规检查、纳税申报",
+  "描述字数": 73,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "analytics-reporting",
+  "来源": "角色/MID-23832526U1788694-9FD0E7-9248-EFDFE4",
+  "路径": "角色包/MID-23832526U1788694-9FD0E7-9248-EFDFE4/agent-core/skills/analytics-reporting/SKILL.md",
+  "行数": 214,
+  "描述": "\"Build polished analytical reports, dashboards, and product/business analyses. Use when the user needs a durable report (executive or technical), an analytical dashboard with clear metrics, or a data-backed product/business analysis to inform decisions. Covers report building, dashboard construction, and decision-oriented quantitative analysis.\"",
+  "描述字数": 347,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "data-quality-assessment",
+  "来源": "角色/MID-23832526U1788694-9FD0E7-9248-EFDFE4",
+  "路径": "角色包/MID-23832526U1788694-9FD0E7-9248-EFDFE4/agent-core/skills/data-quality-assessment/SKILL.md",
+  "行数": 168,
+  "描述": "\"Assess whether datasets are trustworthy for analysis, modeling, dashboards, or pipelines; and validate finished analyses before sharing. Use for data quality checks (grain, freshness, nulls, duplicates, schema drift, joins, integrity, distributions) and analysis QA (methodology review, calculation verification, visualization checks, confidence assessment).\"",
+  "描述字数": 360,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "data-visualization",
+  "来源": "角色/MID-23832526U1788694-9FD0E7-9248-EFDFE4",
+  "路径": "角色包/MID-23832526U1788694-9FD0E7-9248-EFDFE4/agent-core/skills/data-visualization/SKILL.md",
+  "行数": 95,
+  "描述": "\"Design, specify, implement, revise, and QA quantitative visuals and chart choices. Use when an analytical answer needs visual judgment—comparing values, showing composition, reading concentration, understanding movement over time, or building chart specifications for reports and dashboards.\"",
+  "描述字数": 293,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "kpi-design",
+  "来源": "角色/MID-23832526U1788694-9FD0E7-9248-EFDFE4",
+  "路径": "角色包/MID-23832526U1788694-9FD0E7-9248-EFDFE4/agent-core/skills/kpi-design/SKILL.md",
+  "行数": 135,
+  "描述": "\"Design KPI frameworks, set targets, develop measurement plans, and estimate market/opportunity sizes (TAM/SAM/SOM). Use when success metrics, drivers, guardrails, targets, or measurement approach need to be defined or improved, or when a market or opportunity size estimate is needed.\"",
+  "描述字数": 286,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "metric-diagnostics",
+  "来源": "角色/MID-23832526U1788694-9FD0E7-9248-EFDFE4",
+  "路径": "角色包/MID-23832526U1788694-9FD0E7-9248-EFDFE4/agent-core/skills/metric-diagnostics/SKILL.md",
+  "行数": 144,
+  "描述": "\"Diagnose why a metric changed or differs from expectation, and produce leadership-ready KPI updates. Use when the user needs to understand what drove a metric movement, anomaly, or discrepancy, or when producing WBR/MBR/QBR summaries, scorecards, target pacing readouts, or performance updates.\"",
+  "描述字数": 296,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "skill-1-onboarding",
+  "来源": "角色/MID-48832526U1788694-9FD0E7-9265-AED732",
+  "路径": "角色包/MID-48832526U1788694-9FD0E7-9265-AED732/agent-core/skills/skill-1-onboarding/SKILL.md",
+  "行数": 257,
+  "描述": "入口引导与数据通路。引导用户绑定「国际站生意助手」插件、自动检测账号绑定状态、判定数据通路 A/B、收集品类与经营阶段、执行品类解析（MCP data_advisor_category_infer）与行业类型打标（时尚消费型/节庆周期型/技术驱动型等 7 种），输出上下文变量包（ROUTE/CATE_ID/INDUSTRY_TAGS/LIFECYCLE）供后续 Skill 使用。触发条件：用户首次与 Agent 交互、明确请求「开始行业分析」、或输入品类关键词时优先调用。",
+  "描述字数": 238,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "skill-2-market-overview",
+  "来源": "角色/MID-48832526U1788694-9FD0E7-9265-AED732",
+  "路径": "角色包/MID-48832526U1788694-9FD0E7-9265-AED732/agent-core/skills/skill-2-market-overview/SKILL.md",
+  "行数": 334,
+  "描述": "市场大盘分析（模块 A + 模块 B）。生成全球市场规模、CAGR、产地分布、平台需求指数、供需比、星级分布、24个月询盘趋势、飙升子类目、行业宏观驱动因素、近期政策事件。通过 MCP 工具（market_detail/seller_portrait/market_trend/cate_rank/crowd_insight）与 web_search（Fortune Business Insights / Grand View Research / Mordor Intelligence 等权威来源）双源交叉验证，按 LIFECYCLE 输出新手/成长/稳定期三种解读视角。触发条件：Skill 1 完成后自动进入，或用户请求「看市场大盘」「行业规模」「行业增长趋势」时。",
+  "描述字数": 338,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "skill-3-buyer-product",
+  "来源": "角色/MID-48832526U1788694-9FD0E7-9265-AED732",
+  "路径": "角色包/MID-48832526U1788694-9FD0E7-9265-AED732/agent-core/skills/skill-3-buyer-product/SKILL.md",
+  "行数": 559,
+  "描述": "买家与产品分析（模块 C + 模块 D）+ 通路 A 专属店铺经营对比。基于买家国活跃指数、询盘指数、分布份额和变化率分析主要市场，生成买家类型结构（批发商/零售商/品牌商/亚马逊卖家占比）、各国采购偏好差异、目标市场龙头品牌深度研究（品牌定位/核心竞争力/消费者评价/价格带/差异化机会）、子类目热度与蓝海机会、叶子类目深挖（价格带/MOQ/热销款式）。MCP 工具（buyer_profile/country_rank/js_share_of_voice/global_hot_selling/opportunity_discovery）+ web_search 组合。触发条件：Skill 2 完成后进入，或用户请求「买家分析」「竞品品牌」「热销产品」「蓝海机会」「深挖某子类目」时。",
+  "描述字数": 345,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "skill-4-trend-compliance",
+  "来源": "角色/MID-48832526U1788694-9FD0E7-9265-AED732",
+  "路径": "角色包/MID-48832526U1788694-9FD0E7-9265-AED732/agent-core/skills/skill-4-trend-compliance/SKILL.md",
+  "行数": 640,
+  "描述": "前瞻趋势洞察（模块 E）+ 合规认证壁垒（模块 F）+ 第三层运营执行建议 + 收尾引导。按 INDUSTRY_TAGS 动态选取 14 个趋势因子（流行色/节庆日历/赛事驱动/新材料/政策前置信号/ESG 合规等），生成三平台 C端热销信号（Amazon/Temu/TikTok Shop）、目标市场认证要求、关税税率、ESG 合规趋势，按 6 个经营阶段（0-30天 智能破冰 → 180天+ 进阶增长）输出可落地的运营执行建议与老板执行清单（🔴本周必做/🟡本月重点/🟢本季布局）。触发条件：Skill 3 完成后自动进入，或用户请求「趋势洞察」「合规认证」「运营建议」时。",
+  "描述字数": 289,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "ad-spend-planner",
+  "来源": "角色/MID-59832526U1788694-9FD0E7-9187-C55A2F",
+  "路径": "角色包/MID-59832526U1788694-9FD0E7-9187-C55A2F/agent-core/skills/ad-spend-planner/SKILL.md",
+  "行数": 278,
+  "描述": "Size a pre-launch Amazon ad test budget: keyword CPC, budget scenarios, expected vs breakeven vs target ACoS. 用于已有产品和售价，问广告要烧多少钱、目标 ACoS 怎么定。",
+  "描述字数": 141,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "competitor-teardown",
+  "来源": "角色/MID-59832526U1788694-9FD0E7-9187-C55A2F",
+  "路径": "角色包/MID-59832526U1788694-9FD0E7-9187-C55A2F/agent-core/skills/competitor-teardown/SKILL.md",
+  "行数": 237,
+  "描述": "Tear down a competing Amazon ASIN or brand: revenue, price history, keyword footprint, share of voice, and where it is weak. 用于给出竞品 ASIN/品牌，问能不能打、怎么差异化。",
+  "描述字数": 152,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "demand-mirror",
+  "来源": "角色/MID-59832526U1788694-9FD0E7-9187-C55A2F",
+  "路径": "角色包/MID-59832526U1788694-9FD0E7-9187-C55A2F/agent-core/skills/demand-mirror/SKILL.md",
+  "行数": 318,
+  "描述": "Mirror any product onto Amazon demand signals: category size, trend, seasonality, and variant demand signals (never per-variant unit sales). 用于评估某商品在 Amazon 的需求多大、何时是高峰、备哪些颜色尺码（如独立站/其他渠道选品）。",
+  "描述字数": 190,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "keyword-listing-builder",
+  "来源": "角色/MID-59832526U1788694-9FD0E7-9187-C55A2F",
+  "路径": "角色包/MID-59832526U1788694-9FD0E7-9187-C55A2F/agent-core/skills/keyword-listing-builder/SKILL.md",
+  "行数": 176,
+  "描述": "Build keyword-optimized Amazon listings (title, bullets, backend search terms) from search-volume data; Shopify copy reuses buyer language only. 用于写/优化 Listing、问该埋哪些关键词。",
+  "描述字数": 169,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "margin-reality-check",
+  "来源": "角色/MID-59832526U1788694-9FD0E7-9187-C55A2F",
+  "路径": "角色包/MID-59832526U1788694-9FD0E7-9187-C55A2F/agent-core/skills/margin-reality-check/SKILL.md",
+  "行数": 268,
+  "描述": "Check whether a product's economics work: supplier quote/landed cost plus live Amazon prices and fees, with fee scenarios and GO/CAUTION/NO-GO. 用于已有成本或供应商报价，问利润够不够。",
+  "描述字数": 164,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "new-product-approval-orchestrator",
+  "来源": "角色/MID-59832526U1788694-9FD0E7-9187-C55A2F",
+  "路径": "角色包/MID-59832526U1788694-9FD0E7-9187-C55A2F/agent-core/skills/new-product-approval-orchestrator/SKILL.md",
+  "行数": 88,
+  "描述": "Cross-border new-product approval orchestration: takes a product idea, keywords/category, competitor ASINs, or a supplier quote; dispatches the domain analysis skills; outputs a new-product approval memo with a five-level verdict and evidence tags. Use for: new-product approval, product-selection review, \"is it worth doing\", combined competitor+margin+first-order judgment, a reportable approval me",
+  "描述字数": 546,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "trend-breakout-scout",
+  "来源": "角色/MID-59832526U1788694-9FD0E7-9187-C55A2F",
+  "路径": "角色包/MID-59832526U1788694-9FD0E7-9187-C55A2F/agent-core/skills/trend-breakout-scout/SKILL.md",
+  "行数": 137,
+  "描述": "Discover fast-rising Amazon niches and breakout brands; year-over-year analysis separates real breakouts from seasonal spikes. 用于选品找机会：不知道卖什么、看什么在涨、真需求还是季节性。",
+  "描述字数": 157,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "validate-before-you-source",
+  "来源": "角色/MID-59832526U1788694-9FD0E7-9187-C55A2F",
+  "路径": "角色包/MID-59832526U1788694-9FD0E7-9187-C55A2F/agent-core/skills/validate-before-you-source/SKILL.md",
+  "行数": 343,
+  "描述": "Validate real Amazon demand before sourcing: demand score, realistic monthly sales range, and scenario-based first-order quantity. 用于已有具体产品想法，问值不值得做、能不能下单、首单备多少。",
+  "描述字数": 161,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "self-improvement",
+  "来源": "角色/MID-80832526U1788693-9FD0E7-5553-BA252E",
+  "路径": "角色包/MID-80832526U1788693-9FD0E7-5553-BA252E/agent-core/skills/self-improvement/SKILL.md",
+  "行数": 535,
+  "描述": "Captures learnings, errors, corrections, and self-reflections into daily diary for continuous improvement. Use when: (1) A command or operation fails unexpectedly, (2) User corrects you, (3) User requests a capability that doesn't exist, (4) An external API or tool fails, (5) Knowledge is outdated or incorrect, (6) A better approach is discovered, (7) You complete significant work and want to eval",
+  "描述字数": 451,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "skill-finder",
+  "来源": "角色/MID-80832526U1788693-9FD0E7-5553-BA252E",
+  "路径": "角色包/MID-80832526U1788693-9FD0E7-5553-BA252E/agent-core/skills/skill-finder/SKILL.md",
+  "行数": 351,
+  "描述": "Find, search, recommend, and install agent skills. Layered discovery — internal catalog (first-party, vetted) → skills.sh → web search → ClawHub / SkillsMP. Use when the user wants to find/search/discover/choose/install a skill, or asks \"how do I do X\", \"is there a skill for X\", \"find me something for X\", \"该用什么skill\", \"有没有XX的skill\", \"帮我找skill\", \"推荐一个skill\".",
+  "描述字数": 359,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "reference"
+  ]
+ },
+ {
+  "名字": "precise-image-editing",
+  "来源": "角色/MID-83832526U1788693-9FD0E7-5550-3259DE",
+  "路径": "角色包/MID-83832526U1788693-9FD0E7-5550-3259DE/agent-core/skills/precise-image-editing/SKILL.md",
+  "行数": 466,
+  "描述": "Use when one or more existing images are authoritative and must remain mostly unchanged while making controlled edits to text/brand, subject attributes, elements/background/composition, multi-reference transfer, output dimensions, or repair/refinement. A localized edit wins even when the source is a product or platform asset. Do not use for new creative/product presentations, coordinated product i",
+  "描述字数": 541,
+  "写了不要用": true,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "self-improvement",
+  "来源": "角色/MID-83832526U1788693-9FD0E7-5550-3259DE",
+  "路径": "角色包/MID-83832526U1788693-9FD0E7-5550-3259DE/agent-core/skills/self-improvement/SKILL.md",
+  "行数": 535,
+  "描述": "Captures learnings, errors, corrections, and self-reflections into daily diary for continuous improvement. Use when: (1) A command or operation fails unexpectedly, (2) User corrects you, (3) User requests a capability that doesn't exist, (4) An external API or tool fails, (5) Knowledge is outdated or incorrect, (6) A better approach is discovered, (7) You complete significant work and want to eval",
+  "描述字数": 451,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "skill-creator",
+  "来源": "角色/MID-83832526U1788693-9FD0E7-5550-3259DE",
+  "路径": "角色包/MID-83832526U1788693-9FD0E7-5550-3259DE/agent-core/skills/skill-creator/SKILL.md",
+  "行数": 498,
+  "描述": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+  "描述字数": 319,
+  "写了不要用": false,
+  "附件": [
+   "eval-viewer",
+   "references",
+   "agents",
+   "scripts",
+   "LICENSE.txt",
+   "assets"
+  ]
+ },
+ {
+  "名字": "skill-finder",
+  "来源": "角色/MID-83832526U1788693-9FD0E7-5550-3259DE",
+  "路径": "角色包/MID-83832526U1788693-9FD0E7-5550-3259DE/agent-core/skills/skill-finder/SKILL.md",
+  "行数": 351,
+  "描述": "Find, search, recommend, and install agent skills. Layered discovery — internal catalog (first-party, vetted) → skills.sh → web search → ClawHub / SkillsMP. Use when the user wants to find/search/discover/choose/install a skill, or asks \"how do I do X\", \"is there a skill for X\", \"find me something for X\", \"该用什么skill\", \"有没有XX的skill\", \"帮我找skill\", \"推荐一个skill\".",
+  "描述字数": 359,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "reference"
+  ]
+ },
+ {
+  "名字": "video-prompt-guide",
+  "来源": "角色/MID-83832526U1788693-9FD0E7-5550-3259DE",
+  "路径": "角色包/MID-83832526U1788693-9FD0E7-5550-3259DE/agent-core/skills/video-prompt-guide/SKILL.md",
+  "行数": 174,
+  "描述": "| Master routing skill that centrally dispatches video generation capabilities. It includes four sub-capabilities: \"Product Scene Video\", \"Single-Storyboard Video Generation\", \"Multi-Storyboard Video Generation\" and \"Video Regeneration\". When the user needs to generate a video, or asks to regenerate / modify a video that was generated earlier in the current conversation, route to the corresponding",
+  "描述字数": 446,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "\"[Harvest-SubAgent] 企业B2B潜在客户深度调研\"",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/sales/b2b-prospect-intelligence/SKILL.md",
+  "行数": 29,
+  "描述": "针对特定目标企业进行多维度销售情报搜集，涵盖官网产品与定位分析、关键决策人挖掘、海关进出口数据核实、细分市场趋势与采购痛点推演，以及官方联系方式汇总，适用于B2B销售拓客、供应链开发或竞品背调前的客户深度调研。",
+  "描述字数": 105,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "cart-abandonment-recovery",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/cart-abandonment-recovery/SKILL.md",
+  "行数": 125,
+  "描述": "Trigger: Set up automated email and SMS sequences to win back shoppers who abandon their items during checkout.",
+  "描述字数": 111,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "competitor-deep-analysis",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/competitor-deep-analysis/SKILL.md",
+  "行数": 115,
+  "描述": "Identify market gaps and strategic advantages through systematic multi-layer intelligence gathering and review mining.",
+  "描述字数": 118,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "coupon-discount-manager",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/coupon-discount-manager/SKILL.md",
+  "行数": 113,
+  "描述": "Trigger: Create and manage a coupon system with percentage and fixed discounts, usage limits, and expiration dates.",
+  "描述字数": 115,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "customer-ltv-calculator",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/customer-ltv-calculator/SKILL.md",
+  "行数": 106,
+  "描述": "Trigger: Calculate customer lifetime value (CLV) and use it to drive retention strategies, VIP programs, and win-back flows.",
+  "描述字数": 124,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "customer-retention-automator",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/customer-retention-automator/SKILL.md",
+  "行数": 92,
+  "描述": "Design and automate lifecycle campaigns to reduce churn using behavioral triggers, tiered incentives, and predictive timing.",
+  "描述字数": 124,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "customer-rfm-analyzer",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/customer-rfm-analyzer/SKILL.md",
+  "行数": 97,
+  "描述": "Analyze customer purchase patterns using RFM scoring, cohort retention grids, and lifecycle segmentation to drive repeat revenue.",
+  "描述字数": 129,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "customer-voice-analyzer",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/customer-voice-analyzer/SKILL.md",
+  "行数": 129,
+  "描述": "Mines customer reviews into 6 actionable dimensions — personas, scenarios, pros, cons, unmet needs, and buying motives. Use when analyzing Amazon product reviews to identify product flaws, extract high-converting marketing hooks, or find iteration opportunities.",
+  "描述字数": 262,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "customer-winback-automator",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/customer-winback-automator/SKILL.md",
+  "行数": 92,
+  "描述": "Identify and re-engage lapsed customers through automated multi-stage reactivation sequences. Implement tiered discounting based on historical LTV and establish sunsetting protocols for unengaged contacts.",
+  "描述字数": 205,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "helpdesk-order-integration",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/helpdesk-order-integration/SKILL.md",
+  "行数": 172,
+  "描述": "Connect your customer support helpdesk to your ecommerce platform to surface real-time order data and automate VIP routing for faster issue resolution.",
+  "描述字数": 151,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "lifecycle-marketing-automator",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/lifecycle-marketing-automator/SKILL.md",
+  "行数": 127,
+  "描述": "Map customer journey stages from first visit to loyal advocate with personalized messaging, triggered workflows, and segment-based campaign automation.",
+  "描述字数": 151,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "marketing-ideas",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/marketing-ideas/SKILL.md",
+  "行数": 567,
+  "描述": "When the user needs marketing ideas, inspiration, or strategies for their SaaS or software product. Also use when the user asks for 'marketing ideas,' 'growth ideas,' 'how to market,' 'marketing strategies,' 'marketing tactics,' 'ways to promote,' or 'ideas to grow.' This skill provides 140 proven marketing approaches organized by category.",
+  "描述字数": 342,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "marketing-psychology",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/marketing-psychology/SKILL.md",
+  "行数": 453,
+  "描述": "When the user wants to apply psychological principles, mental models, or behavioral science to marketing. Also use when the user mentions 'psychology,' 'mental models,' 'cognitive bias,' 'persuasion,' 'behavioral science,' 'why people buy,' 'decision-making,' or 'consumer behavior.' This skill provides 70+ mental models organized for marketing application.",
+  "描述字数": 358,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "marketing-roas-analyzer",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/marketing-roas-analyzer/SKILL.md",
+  "行数": 136,
+  "描述": "Track and analyze marketing spend across all channels with ROAS calculation, incrementality testing, and budget reallocation based on true profitability.",
+  "描述字数": 153,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "org-structure-research",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/org-structure-research/SKILL.md",
+  "行数": 185,
+  "描述": "Systematically research a company's organizational structure, build org charts, and create employee profiles per business line. Use when the user asks to \"调研组织架构\", \"org chart\", \"组织架构图\", \"员工画像\", \"业务线/部门结构\", or \"research [company] team structure and key people\".",
+  "描述字数": 260,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "product-marketing-brief",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/product-marketing-brief/SKILL.md",
+  "行数": 53,
+  "描述": "Synthesize product features and customer insights into a comprehensive marketing brief to guide messaging and sales positioning.",
+  "描述字数": 128,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "product-marketing-context",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/product-marketing-context/SKILL.md",
+  "行数": 241,
+  "描述": "When the user wants to create or update their product marketing context document. Also use when the user mentions 'product context,' 'marketing context,' 'set up context,' 'positioning,' or wants to avoid repeating foundational information across marketing tasks. Creates `./product-marketing-context.md` that other marketing skills reference.",
+  "描述字数": 343,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "product-review-intelligence-collector",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/product-review-intelligence-collector/SKILL.md",
+  "行数": 85,
+  "描述": "Automated product review collection and intelligence gathering from major e-commerce platforms (Amazon, TikTok, Walmart, etc.). Use this skill when the user wants to collect, analyze, and synthesize customer feedback for market research, competitor benchmarking, or identifying product improvement opportunities. It focuses on extraction strategies, data cleaning, and multi-dimensional analysis (pro",
+  "描述字数": 432,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "vibe-marketing",
+  "来源": "角色/MID-87832526U1788694-9FD0E7-9254-33509A",
+  "路径": "角色包/MID-87832526U1788694-9FD0E7-9254-33509A/agent-core/skills/vibe-marketing/SKILL.md",
+  "行数": 84,
+  "描述": "Apply 'Vibe Coding' principles to marketing: describe outcomes, iterate via AI, and prioritize speed and human edge over perfection.",
+  "描述字数": 132,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "accio-mcp-cli",
+  "来源": "账号级",
+  "路径": "账号级技能/accio-mcp-cli/SKILL.md",
+  "行数": 70,
+  "描述": "Use the accio-mcp-cli command-line tool to discover, search, and invoke MCP tools (Twitter, Gmail, Notion, Square, Apify, etc.) directly from the terminal. Use when the user asks to call MCP tools via CLI, run accio-mcp-cli commands, list available MCP tools from the command line, or invoke remote service integrations from the shell instead of an in-app MCP gateway.",
+  "描述字数": 368,
+  "写了不要用": false,
+  "附件": []
+ },
+ {
+  "名字": "image-prompt-guide",
+  "来源": "账号级",
+  "路径": "账号级技能/image-prompt-guide/SKILL.md",
+  "行数": 856,
+  "描述": "Prompt engineering and tool routing for AI image generation and editing. Use for: creative generation, product photo editing, e-commerce platform image sets, marketing posters and banners (promo/sale, shop banner, exhibition, holiday, social cover), product detail page (PDP) screen images with baked copy and code-stitched long images, and specialized scenes (white background / transparent backgrou",
+  "描述字数": 702,
+  "写了不要用": false,
+  "附件": [
+   "references"
+  ]
+ },
+ {
+  "名字": "self-improvement",
+  "来源": "账号级",
+  "路径": "账号级技能/self-improvement/SKILL.md",
+  "行数": 535,
+  "描述": "Captures learnings, errors, corrections, and self-reflections into daily diary for continuous improvement. Use when: (1) A command or operation fails unexpectedly, (2) User corrects you, (3) User requests a capability that doesn't exist, (4) An external API or tool fails, (5) Knowledge is outdated or incorrect, (6) A better approach is discovered, (7) You complete significant work and want to eval",
+  "描述字数": 451,
+  "写了不要用": false,
+  "附件": [
+   "references",
+   "scripts",
+   "assets"
+  ]
+ },
+ {
+  "名字": "skill-creator",
+  "来源": "账号级",
+  "路径": "账号级技能/skill-creator/SKILL.md",
+  "行数": 498,
+  "描述": "Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.",
+  "描述字数": 319,
+  "写了不要用": false,
+  "附件": [
+   "eval-viewer",
+   "references",
+   "agents",
+   "scripts",
+   "LICENSE.txt",
+   "assets"
+  ]
+ },
+ {
+  "名字": "skill-finder",
+  "来源": "账号级",
+  "路径": "账号级技能/skill-finder/SKILL.md",
+  "行数": 351,
+  "描述": "Find, search, recommend, and install agent skills. Layered discovery — internal catalog (first-party, vetted) → skills.sh → web search → ClawHub / SkillsMP. Use when the user wants to find/search/discover/choose/install a skill, or asks \"how do I do X\", \"is there a skill for X\", \"find me something for X\", \"该用什么skill\", \"有没有XX的skill\", \"帮我找skill\", \"推荐一个skill\".",
+  "描述字数": 359,
+  "写了不要用": false,
+  "附件": [
+   "scripts",
+   "reference"
+  ]
+ }
+]

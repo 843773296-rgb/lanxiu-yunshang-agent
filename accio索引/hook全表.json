@@ -1,0 +1,471 @@
+[
+ {
+  "文件": "pre-tool-use.js",
+  "是测试": false,
+  "行数": 4820,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/pre-tool-use.js",
+  "说明": "PreToolUse Hook — CGS skill executor redirect. * Keep this entrypoint scoped to CGS skill execution routing behavior without enabling intent switch, slot filling, or other hook features."
+ },
+ {
+  "文件": "post-tool-use.js",
+  "是测试": false,
+  "行数": 3134,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/post-tool-use.js",
+  "说明": "PostToolUse Hook — async task tracking. * Tracks async task submissions (unique_key/taskId/requestKey) and terminal confirmations (productId/success URL/ARTIFACT) in session state."
+ },
+ {
+  "文件": "competitor-analysis-guard.js",
+  "是测试": false,
+  "行数": 2838,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/competitor-analysis-guard.js",
+  "说明": ""
+ },
+ {
+  "文件": "index.js",
+  "是测试": false,
+  "行数": 2108,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-ready/index.js",
+  "说明": "Tokenize the small shell subset used by documented workctl commands. This is intentionally not a shell-policy implementation: it only recognizes one direct command so Pre/Post hooks can correlate the same lifecycle."
+ },
+ {
+  "文件": "rfq-delivery-post-tool-use.js",
+  "是测试": false,
+  "行数": 1608,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/rfq-delivery-post-tool-use.js",
+  "说明": "boundary 已声明未满足要求时的兜底 outcome。 * 为什么需要它：boundary 是 PreToolUse 侧的确定裁定——「这个节点只能执行 RFQ 的只读 子集，原请求还有 X 没做」。但 PostToolUse 侧有多条早退路径（profile 判定成非搜索、 交付目录解析失败、既无搜索结果又无装配回执），一旦早退就没有 intentOutcome，通用 聚合器回落 runtime 投影，节点被写成 completed —— 已知的未满足要求凭空消失。 * 线上实测（AI_AccioWork_3500027947588_1786544021947）：task 里「④ 落地执行清单 （每日执行动作…）」的「每日」命中 hasCronIntent，isSearchProfileTask 变 false、 isExplicitNonAssemblyProfileTask 变 true，guard 在 profile 门禁直接 return null。 boundary 判定完全正确、adapter 也在 enforce，但从没被调用到。 * 所以规则定成：**只要 boundary 有 unmet_requirements，本节点就不允许没有 outcome**。 这比逐个收紧 cron 词表更稳——将来任何措辞漂移导致的 profile 误判都被兜住。 兜底只声明"
+ },
+ {
+  "文件": "intent-plan-schema.js",
+  "是测试": false,
+  "行数": 1068,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/intent-plan-schema.js",
+  "说明": "intent-plan-schema.js — 多意图执行的跨模块契约（单一事实源） * 这个模块只定义契约：枚举、校验、归一化和聚合规则。它不读写任何状态、 不产生 reminder、不接入 hook 链，因此可以被任何一侧安全 require。 * ## 职责边界（这是契约的核心，先看这里） * ┌────────────────────────┬──────────────────────────────────────────────┐ │ 通用 intent-plan 层 │ 拆意图、生成 plan、绑定节点、**聚合整体状态** │ │ （本模块 + 阶段 1a） │ 唯一有权计算 overall_status 的一方 │ ├────────────────────────┼──────────────────────────────────────────────┤ │ 业务 Skill 模块 │ 只报告**当前节点**的 intent_status / │ │ （如 RFQ Node Guard） │ intent_evidence / unmet_requirements │ │ │ **不得输出 overall_status**，不得选择其他 │ │ │ Skill、不得创建新节点 │ └────────────────────────┴────────────"
+ },
+ {
+  "文件": "tool-args-auto-repair.js",
+  "是测试": false,
+  "行数": 870,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/tool-args-auto-repair.js",
+  "说明": ""
+ },
+ {
+  "文件": "intent-plan-store.js",
+  "是测试": false,
+  "行数": 742,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/intent-plan-store.js",
+  "说明": "intent-plan-store.js — 多意图 plan 的会话内状态 * 与 intent-plan-schema.js 的分工： - schema 是**纯契约**（枚举、校验、聚合规则），跨仓共享，不持有状态 - store 是**本插件的状态载体**，只在 hook 进程内使用，不对外暴露为契约 * 当前实现是进程内内存态（挂在 shared-state 的 session 上）。落盘尚未实现： plan 丢失时 aggregator 直接退化为惰性，等价于改造前的行为，不会误拦。 需要跨进程重启/compaction 恢复时，复用 pre-tool-use.js 里 delivery-path-cache.v1.json 的「目录锁 + tmp+rename + 按时间/条数 prune」模式， 不要新引入第二把锁。"
+ },
+ {
+  "文件": "cgs-progressive-context.js",
+  "是测试": false,
+  "行数": 633,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/cgs-progressive-context.js",
+  "说明": ""
+ },
+ {
+  "文件": "workctl-command-guard.js",
+  "是测试": false,
+  "行数": 573,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/workctl-command-guard.js",
+  "说明": ""
+ },
+ {
+  "文件": "pre-tool-use.js",
+  "是测试": false,
+  "行数": 515,
+  "路径": "插件/alibaba-com-seller-assistant/subagents/skill-executor/hooks/pre-tool-use.js",
+  "说明": "skill-executor SubAgent PreToolUse Hook * Intercepts reads of legacy meta_data.json files and deletes them. These files were written by a previous version of the main agent's pre-tool-use hook as a workaround for a Phoenix PC path resolution bug (now fixed). The content is stale/incorrect and must not be consumed by the SubAgent."
+ },
+ {
+  "文件": "workctl-resolver.js",
+  "是测试": false,
+  "行数": 493,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/workctl-resolver.js",
+  "说明": ""
+ },
+ {
+  "文件": "artifact-post-tool-use.js",
+  "是测试": false,
+  "行数": 422,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-ready/artifact-post-tool-use.js",
+  "说明": ""
+ },
+ {
+  "文件": "chat-file-delivery-contract.js",
+  "是测试": false,
+  "行数": 378,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-file-delivery-contract.js",
+  "说明": ""
+ },
+ {
+  "文件": "intent-plan-telemetry.js",
+  "是测试": false,
+  "行数": 335,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/intent-plan-telemetry.js",
+  "说明": "intent-plan-telemetry.js — 复合请求候选漏斗埋点（shadow，只观测不改行为） * 为什么先做这一层而不是直接做 direct 节点闭环： 上线后如果只看到\"intent plan 还是很少\"，无法区分五种完全不同的原因—— 复合 query 本身少 / gate 没命中 / gate 命中但模型没补 plan / 请求走的是主 Agent 直连没有注册入口 / plan 有了但 outcome 没被应用。这五种对应五套不同的改法， 靠观察 plan 数量这一个指标区分不了。 * 所以先把候选漏斗打出来，再决定要不要做 enforce 闭环。 * 设计约束： * 1. **绝不改变执行行为**。本模块只写 session 上的一个记录对象、只输出日志， 不产生 reminder、不 reject、不参与 overall_status 计算。 2. **不预登记 required 节点**。候选计划 ≠ 执行计划：用户可能因为澄清、权限或 路由变化只真正跑了一个节点，预登记三个 required 节点会凭空制造 false partial。 这里只记录\"我们认为它是复合请求\"这个事实，节点仍然等真实执行去登记。 3. **每个事件即时落一行，轮末再落一条汇总行**。两者都要，缺一不可： * 汇总行的价值在终态（一次 grep 出分布），但它只能在**下一轮"
+ },
+ {
+  "文件": "intent-plan-required.js",
+  "是测试": false,
+  "行数": 334,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/intent-plan-required.js",
+  "说明": "intent-plan-required.js — 高置信复合请求的「必须声明计划」判定 * 为什么需要这一层： 计划是否登记，目前完全取决于模型有没有在 `sessions_spawn.task` 里写 `intent_plan:`（登记点见 pre-tool-use.js 的 buildIntentPlanRegistration）。 线上多意图问题样本里，绝大多数根本没进入 plan —— 不是因为请求不复杂，而是 模型把它当成\"一个大 workflow\"顺着执行了，prompt 里的 §3.1 约束召回不足。 * 所以这里对**少数高置信复合请求**做确定性打标：只要本轮被打标、而首个插件 SubAgent 调度又没带计划，就先拦一次并给出可直接抄的声明。 * 设计上的几个刻意选择： * 1. **两层收敛，不是一层**。既要求\"家族内能力组全命中\"，也要求每个能力组自身 足够具体。只做前者会被一句话里同时出现两个裸词的单意图击穿：实测 「竞品店铺的曝光量怎么样」曾同时命中 product_filter + competitor_bench 而被 误拦。这个门禁会 reject 真实业务调度，precision 必须优先于 recall。 2. **家族可以带排除词**。RFQ 入口 B（\"结合我店铺 / 根据我的主营类目\"）按既有 路由约定是**单意图**，主营类目由 s"
+ },
+ {
+  "文件": "skill-executor-attempt-ledger.js",
+  "是测试": false,
+  "行数": 327,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/skill-executor-attempt-ledger.js",
+  "说明": "Fingerprint only the model-supplied execution payload. Identity/retry lines and Hook-injected blocks are excluded, so adding retry metadata or receiving a new delivery path cannot pretend that the business input changed."
+ },
+ {
+  "文件": "rfq-intent-outcome-adapter.js",
+  "是测试": false,
+  "行数": 282,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/rfq-intent-outcome-adapter.js",
+  "说明": "rfq-intent-outcome-adapter.js — 把 RFQ 的业务终态翻译成通用节点 outcome * 为什么需要这一层： RFQ 的 PostToolUse guard 有自己的确定性交付校验器，它的裁定（`rfq-delivery-envelope/v1`） 比通用 runtime status 准得多，但此前只以 `outcome={...}` 的形式写进 reminder 文本。 通用聚合器只读对象字段 intentOutcome、不解析文本，于是链路会变成： * rfqDeliveryGuard 命中并 return（无 intentOutcome） → readGuardIntentOutcome() = null → aggregator 回落 extractNodeOutcome → extractSkillStatus 读到交付头的 `status: completed` → 节点写成 completed，overall 变 completed，reminder 授权收尾 * 而 RFQ 自己的裁定可能是 partial + unmet_requirements（定时任务待确认、scope 未覆盖、 上游部分失败）。那就是 false completed —— 本改造要防的头号问题。 * 设计原则（评审时请重点看这几条）： * 1. **inte"
+ },
+ {
+  "文件": "rfq-intent-node-guard.js",
+  "是测试": false,
+  "行数": 242,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/rfq-intent-node-guard.js",
+  "说明": "清掉 task 里**全部**残留的 boundary 块，而不只是第一份。 * 该块由本 guard 单向注入，模型没有正当理由自己写；它会随 Hook 改写的 args 回流进 会话历史，下一轮被照抄。块内 JSON 是 SubAgent 的能力边界裁决书：伪造的 unmet_requirements 会让 RFQ 对本轮真实可做的动作误报 not_supported，反向伪造 decision: allow 则可绕过边界披露——都属静默错误，无显性报错。 * 未闭合块**不能**截断到 START 处。旧实现这么做时无害，因为 allow 路径提前 return、 taskWithoutBoundary 只用于分类、从不下发；一旦 allow 也改写 args，截断结果就成了真正 下发的 task，未闭合标签之后的用户需求会被整段删除（静默、不可自愈）。这与 stripInjectedContextBlocks 修过的「未闭合块吞正文」是同一类错误，只是换了个 tag。 * 统一复用 injected-block-sanitizer：完整块整体替换成 marker，畸形块只摘开标签和其后 连续的权威字段行（JSON 裁决体），遇到第一行普通正文即停手。宁可多留一行噪声，也不 删用户需求。 * 不放进 pre-tool-use 的 STRIPPABLE_INJECTED_BLO"
+ },
+ {
+  "文件": "user-prompt-submit.js",
+  "是测试": false,
+  "行数": 228,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/user-prompt-submit.js",
+  "说明": ""
+ },
+ {
+  "文件": "shared-state.js",
+  "是测试": false,
+  "行数": 200,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/shared-state.js",
+  "说明": "shared-state.js — 进程内存状态管理 * 所有 hook handler 共享的进程内存状态。 CJS 模块的 require 缓存机制保证同一进程内多个 handler require 同一个模块会拿到同一个对象引用。 * 局限：大部分 session 状态在进程重启后丢失。Chat Analysis 已接纳的 download/Ready 恢复凭证是例外：由 chat-analysis-download-context-store 按复用 delivery 持久化，新的 SubAgent 可恢复同一后台任务。"
+ },
+ {
+  "文件": "rfq-delivery-attempt.js",
+  "是测试": false,
+  "行数": 186,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/rfq-delivery-attempt.js",
+  "说明": ""
+ },
+ {
+  "文件": "chat-analysis-download-context-store.js",
+  "是测试": false,
+  "行数": 173,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-download-context-store.js",
+  "说明": ""
+ },
+ {
+  "文件": "subagent-tool-use.js",
+  "是测试": false,
+  "行数": 156,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-ready/subagent-tool-use.js",
+  "说明": ""
+ },
+ {
+  "文件": "injected-block-sanitizer.js",
+  "是测试": false,
+  "行数": 150,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/injected-block-sanitizer.js",
+  "说明": "Hook 注入块的统一清理器。 * 背景：Hook 改写后的 args 会被 Runtime 写回 assistant 消息并留在会话历史 （phoenix-pc agent/base.ts 的 PreToolUse gate 直接 `tc.arguments = decision.args`）， 下一轮模型看到历史里的注入块，会照抄格式并把其中的路径/ID 递推成「现在」。于是下发 的 task 同时挂着两份自称权威的同名块，SubAgent 没有分辨依据。 * 清理必须同时满足两个方向，二者不可偏废——之前两轮修复各自只顾一头，来回引入回归： * 1. 伪造的权威值（路径 / Ready 身份 / 上游产物 / 裁决 JSON）绝不能下发； 2. 用户正文绝不能被删除。 * 「整块从开标签删到末尾」会吞掉用户需求（静默、不可自愈，比原 bug 更糟）； 「未闭合块干脆不处理」又让伪造值原样穿透（退化回原 bug）。所以对畸形块采取 **保守逐行**策略：只删已知的权威字段行，遇到第一行无法确认的普通正文就停手。 残留一行噪声，远好于删掉整段用户需求。"
+ },
+ {
+  "文件": "user-prompt-submit.js",
+  "是测试": false,
+  "行数": 144,
+  "路径": "插件/accio-com-buyer-assistant/hooks/user-prompt-submit.js",
+  "说明": "UserPromptSubmit hook for supersourcing. * Host protocol (verified against aiclaw reference, 2026-05-20): Entry point: module.exports = async function(input, api) — default-export async function. No stdin/stdout envelope, no `if (require.main === module)` block. Input: input.message (string, raw user message); api.agentId (string, used to locate agent-core); api.conversationId (string, session key); api.log.info(msg) (host-provided logger). Output: return null to leave the message unchanged, or return { message: \"<rewritten string>\" } to REPLACE the user message inline. The returned `message` "
+ },
+ {
+  "文件": "skill-feedback.js",
+  "是测试": false,
+  "行数": 122,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/skill-feedback.js",
+  "说明": "skill-feedback.js — Skill 执行质量埋点 * 在每次 skill 执行完成（archiveCurrentTask）时，记录执行质量数据： - Layer 1：SKILL_FEEDBACK_LOG.jsonl（追加写入，保留最近 200 条） - Layer 2：SKILL_USAGE_STATS.json（从明细重新计算的聚合统计） * 由 shared-state.js 的 archiveCurrentTask 调用。"
+ },
+ {
+  "文件": "chat-analysis-delivery-session-store.js",
+  "是测试": false,
+  "行数": 119,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-delivery-session-store.js",
+  "说明": ""
+ },
+ {
+  "文件": "utils.js",
+  "是测试": false,
+  "行数": 103,
+  "路径": "插件/accio-com-buyer-assistant/hooks/utils.js",
+  "说明": "Resolve the agent-core directory for this hook. * Resolution order: 1. process.env.AGENT_CORE — explicit override (used by tests + advanced users). 2. aiclaw-style scan by agentId — scans $HOME/.accio/accounts/<acct>/agents/<agentId>/agent-core/ and returns the first existing match. Matches the host runtime convention. 3. Legacy fallback — $HOME/.accio/<AGENT_TYPE>. Kept so the hook never returns nothing and existing callers continue to work. * Total function: never throws. Returns a string path in every branch."
+ },
+ {
+  "文件": "workctl-runtime.js",
+  "是测试": false,
+  "行数": 93,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/workctl-runtime.js",
+  "说明": "workctl runtime guard. * The plugin locates an already available workctl binary. It never installs workctl."
+ },
+ {
+  "文件": "utils.js",
+  "是测试": false,
+  "行数": 84,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/utils.js",
+  "说明": "Hook handler 共享工具函数"
+ },
+ {
+  "文件": "skill-routing-constants.js",
+  "是测试": false,
+  "行数": 39,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/skill-routing-constants.js",
+  "说明": ""
+ },
+ {
+  "文件": "chat-artifact-commit-contract.js",
+  "是测试": false,
+  "行数": 39,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-artifact-commit-contract.js",
+  "说明": ""
+ },
+ {
+  "文件": "runtime-env.js",
+  "是测试": false,
+  "行数": 20,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/runtime-env.js",
+  "说明": "Runtime environment defaults for plugin-launched child processes. * Keep this module business-agnostic. It only normalizes process.env values inherited by shell/Python subprocesses after the PreToolUse hook runs."
+ },
+ {
+  "文件": "subagent-pre-tool-use.js",
+  "是测试": false,
+  "行数": 12,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-ready/subagent-pre-tool-use.js",
+  "说明": ""
+ },
+ {
+  "文件": "subagent-post-tool-use.js",
+  "是测试": false,
+  "行数": 6,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-ready/subagent-post-tool-use.js",
+  "说明": ""
+ },
+ {
+  "文件": "subagent-post-tool-use-failure.js",
+  "是测试": false,
+  "行数": 6,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-ready/subagent-post-tool-use-failure.js",
+  "说明": ""
+ },
+ {
+  "文件": "post-tool-use.test.js",
+  "是测试": true,
+  "行数": 7540,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/post-tool-use.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "competitor-analysis-guard.test.js",
+  "是测试": true,
+  "行数": 2350,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/competitor-analysis-guard.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "rfq-delivery-post-tool-use.test.js",
+  "是测试": true,
+  "行数": 1765,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/rfq-delivery-post-tool-use.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "pre-tool-use.intent-plan-cr-followup.test.js",
+  "是测试": true,
+  "行数": 1202,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/pre-tool-use.intent-plan-cr-followup.test.js",
+  "说明": "CR #29305677 遗留项回归。 * P1-0：merge 时新增 observable 节点仍可伪造 completed + evidence P1-1：一致性门禁用原始字符串比 skill id，把合法别名判成不一致（含 RFQ 插件自造冲突） P1-2：reroute 白名单在缺 intent_id / 陈旧 plan 时回落旧 heuristic P2-3：taskBlock 未注入时 reminder 仍宣称已注入 P2-4：上游 artifact 未校验存在/非空 N2-6：isPathLike 的 deliveries 前缀判定偏宽"
+ },
+ {
+  "文件": "intent-plan-store.test.js",
+  "是测试": true,
+  "行数": 949,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/intent-plan-store.test.js",
+  "说明": "空输入跳过的**真实**触发路径：节点没被执行，不会有 SubAgent 返回， 主 Agent 只能在 intent_plan 里自报。用 applyNodeOutcome 构造等于测了另一条路 （「SubAgent 跑完并报了 skipped」），会把声明路径缺指针这个缺口盖住（CR P1-2）。"
+ },
+ {
+  "文件": "skill-executor-attempt-ledger.test.js",
+  "是测试": true,
+  "行数": 928,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/skill-executor-attempt-ledger.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "pre-tool-use.chat-analysis-ready.test.js",
+  "是测试": true,
+  "行数": 915,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/pre-tool-use.chat-analysis-ready.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "intent-plan-schema.test.js",
+  "是测试": true,
+  "行数": 814,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/intent-plan-schema.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "cgs-progressive-context.test.js",
+  "是测试": true,
+  "行数": 666,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/cgs-progressive-context.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "pre-tool-use.delivery-context-dedupe.test.js",
+  "是测试": true,
+  "行数": 580,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/pre-tool-use.delivery-context-dedupe.test.js",
+  "说明": "Hook 注入块去重回归（`[DELIVERY_CONTEXT]` / `[CHAT_ANALYSIS_DOWNLOAD_CONTEXT]`）。 * 线上 AI_AccioWork_4500049725278_1787135341533（插件 0.3.54）：主 Agent 下发给 alibaba-chat-and-analysis 的 task 里挂了**两个**措辞完全一致的 `[DELIVERY_CONTEXT]`， 一个是 Hook 本轮真实创建的 `ca-20260819-142924`，另一个是模型照抄历史、把时间戳 递推成「现在」而伪造的 `ca-20260819-143215`（该目录不存在）。SubAgent 取了后者， bash 与 list 连续报 `workdir does not exist` / `Directory not found`，白烧两轮工具 调用才自愈回真实目录。 * 成因是 Hook 侧只做「前置拼接」不做「归一化」：buildDeliveryPathArgs 把注入块加在 最前面，却原样保留了模型写在 task 里的同名块。 * `[CHAT_ANALYSIS_DOWNLOAD_CONTEXT]` 同源同构，但后果更隐蔽：它伪造的是 analysisRequestId / readyToken / readyDir 等 Ready 身份，"
+ },
+ {
+  "文件": "competitor-analysis-dual-track-contract.test.js",
+  "是测试": true,
+  "行数": 563,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/competitor-analysis-dual-track-contract.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "subagent-tool-use.test.js",
+  "是测试": true,
+  "行数": 558,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-ready/subagent-tool-use.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "tool-args-auto-repair.test.js",
+  "是测试": true,
+  "行数": 530,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/tool-args-auto-repair.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "rfq-intent-node-guard.test.js",
+  "是测试": true,
+  "行数": 503,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/rfq-intent-node-guard.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "pre-tool-use.chat-analysis-reroute.test.js",
+  "是测试": true,
+  "行数": 497,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/pre-tool-use.chat-analysis-reroute.test.js",
+  "说明": "chat-analysis reroute 的 plan-aware 回归。 * 线上 AI_AccioWork_4500074009444_1786861945812：模型发出的 agent_id=alibaba-chat-and-analysis、plan 里 i1.executor 也是 alibaba-chat-and-analysis，但 reroute 扫整段 task 命中了后续 i2 节点的 「背调」语义，把本次调度改写成 skill-executor + alibaba-buyer-bgcheck。 同一节点连续 blocked 7 次，最终零产出。 * 这些测试锁住：绑定了 plan 节点时，只认节点声明的执行方式； 没有 plan 绑定时，单意图旧行为保持不变。"
+ },
+ {
+  "文件": "pre-tool-use.test.js",
+  "是测试": true,
+  "行数": 437,
+  "路径": "插件/alibaba-com-seller-assistant/subagents/skill-executor/hooks/pre-tool-use.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "pre-tool-use.intent-plan-handoff.test.js",
+  "是测试": true,
+  "行数": 409,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/pre-tool-use.intent-plan-handoff.test.js",
+  "说明": "两个 P0 的回归： * P0-1b executor 一致性 —— 线上 AI_AccioWork_4500074009444_1786861945812： intent_id=i1 声明 executor=alibaba-chat-and-analysis，实际按 skill-executor + alibaba-buyer-bgcheck 派发。skill-executor 每次都正确 blocked，但单次仍烧掉 136s / 6 次 LLM 调用 / 40 万 token，连续 7 轮后整轮零产出。 * P0-2 上游产物交接 —— 线上 AI_AccioWork_2034036595047_1786893207811： i1（chat-analysis）成功把询盘明细写到 ca-20260816-231220/，i2（bgcheck）拿到的是 空的 se-20260816-232103/，blocked：「交付目录为空，未收到前置询盘分析（i1）产出的 当日询盘买家名单文件」。证据早在 intent_evidence 里，只是没人交给下游。"
+ },
+ {
+  "文件": "intent-plan-required.test.js",
+  "是测试": true,
+  "行数": 317,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/intent-plan-required.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "intent-plan-telemetry.test.js",
+  "是测试": true,
+  "行数": 281,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/intent-plan-telemetry.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "user-prompt-submit.test.js",
+  "是测试": true,
+  "行数": 279,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/user-prompt-submit.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "rfq-intent-outcome-adapter.test.js",
+  "是测试": true,
+  "行数": 271,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/rfq-intent-outcome-adapter.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "pre-tool-use.rfq-reroute.test.js",
+  "是测试": true,
+  "行数": 250,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/pre-tool-use.rfq-reroute.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "workctl-command-guard.test.js",
+  "是测试": true,
+  "行数": 223,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/workctl-command-guard.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "pre-tool-use.intent-plan-forged-upstream.test.js",
+  "是测试": true,
+  "行数": 209,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/pre-tool-use.intent-plan-forged-upstream.test.js",
+  "说明": "P1：伪造的首次 plan 自报状态不得被上游产物注入消费。 * registerPlanDeclaration 的 merge 路径早就锁住了「可观测执行器不得自报 status」， 但**首次创建** plan 时是 `session.intentPlan = incoming` 原样接受。 加入 getUpstreamEvidence + [UPSTREAM_NODE_ARTIFACTS] 注入之后，这个洞变成 可利用路径：首次声明里把 chat-analysis 节点写成 status=completed 并夹带 intent_evidence，下游节点就能拿到这些从未真实产生过的路径， 既跳过了真实上游执行，又可能被引导去读 workspace 之外的位置。"
+ },
+ {
+  "文件": "competitor-analysis-skill-contract.test.js",
+  "是测试": true,
+  "行数": 209,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/competitor-analysis-skill-contract.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "workctl-resolver.test.js",
+  "是测试": true,
+  "行数": 195,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/workctl-resolver.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "competitor-analysis-monitor-contract.test.js",
+  "是测试": true,
+  "行数": 129,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/competitor-analysis-monitor-contract.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "chat-analysis-download-context-store.test.js",
+  "是测试": true,
+  "行数": 127,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-download-context-store.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "rfq-delivery-attempt.test.js",
+  "是测试": true,
+  "行数": 83,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/rfq-delivery-attempt.test.js",
+  "说明": ""
+ },
+ {
+  "文件": "chat-analysis-delivery-session-store.test.js",
+  "是测试": true,
+  "行数": 49,
+  "路径": "插件/alibaba-com-seller-assistant/hooks/chat-analysis-delivery-session-store.test.js",
+  "说明": ""
+ }
+]
