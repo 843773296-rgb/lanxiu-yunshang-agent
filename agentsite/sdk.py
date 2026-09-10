@@ -124,19 +124,25 @@ def cost_of(usage, model, ts=None):
     return round((inp * pr["inp"] + cache * pr["cache"] + out * pr["out"]) / 1e6, 6)
 
 
-def mcp_config():
-    """把两个 MCP 服务挂上。工具面按用途分开,不给模型多余的选择。"""
+def mcp_config(me=None):
+    """把三个 MCP 服务挂上。工具面按用途分开,不给模型多余的选择。
+
+    me:当前登录的人。**通过每个服务自己的 env 传,不改 os.environ** ——
+    改全局的话,两个请求同时进来会互相串身份,而串了不会报错:
+    甲的问题用乙的身份取数,答出来的东西看起来完全正常。
+    """
     py = sys.executable
+    env = {"LANXIU_ME": json.dumps(me, ensure_ascii=False)} if me else {}
     return {
         "kb":   {"type": "stdio", "command": py,
-                 "args": [os.path.join(ROOT, "mcp", "kb_server.py")]},
+                 "args": [os.path.join(ROOT, "mcp", "kb_server.py")], "env": env},
         "task": {"type": "stdio", "command": py,
-                 "args": [os.path.join(ROOT, "mcp", "task_server.py")]},
+                 "args": [os.path.join(ROOT, "mcp", "task_server.py")], "env": env},
         # 门店业务数据:订单 / 现货 / 售后。**顾问和值班两边都挂** ——
         # 之前顾问能答「云锦配缂丝要 174 天」,却答不了「这件有没有现货」,
         # 是一个知道所有原理、却不知道今天发生了什么的助手。
         "shop": {"type": "stdio", "command": py,
-                 "args": [os.path.join(ROOT, "mcp", "shop_server.py")]},
+                 "args": [os.path.join(ROOT, "mcp", "shop_server.py")], "env": env},
     }
 
 
@@ -205,6 +211,12 @@ TASK_ONLY_TOOLS = [
     # 加它是因为实测发现:没有它时模型会**编一套架构理由**说可以,
     # 而编造建立在真事实上(账户与门店档案确实分层),读起来完全可信。
     "mcp__shop__check_write",
+    # ── 任务:三个只读 + 三个起草 ──────────────────────────────────
+    # 起草工具**不写库**,所以「工具全部只读」这条保证仍然成立。
+    # 真正的写入发生在人点确认之后,用的是**登录用户自己的会话**,
+    # 授权来自人,不来自模型。
+    "mcp__shop__my_tasks", "mcp__shop__task_types", "mcp__shop__dispatch_pool",
+    "mcp__shop__draft_task", "mcp__shop__draft_dispatch", "mcp__shop__draft_finish",
     # 售后判责跑在这个角色上,而**判定表在 kb_tables 里**。
     # 原来没给:get_maintain 的描述明写「判定标准要另外查 kb_tables」,
     # liability_eval 的提示词也明写「再用 kb_tables 取售后争议判定」——
@@ -338,7 +350,7 @@ async def _stream_once(prompt, images):
 
 
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
-              provider=None, model_name=None):
+              provider=None, model_name=None, me=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
 
     guard=True 时挂上回答体检 hook:交付前检查一遍,不合格**打回重答**。
@@ -357,8 +369,16 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     opts = ClaudeAgentOptions(
         hooks=guards.make_hooks(state) if guard else None,
         max_budget_usd=MAX_USD,
-        system_prompt=_SYS.get(kind, SYS_ALL),
-        mcp_servers=mcp_config(),
+        # 身份写进提示词,是为了让模型**知道该怎么称呼和该问谁**;
+        # 但取数的权限不靠这句话 —— 那是 MCP 服务的 env 管的。
+        # 提示词里的身份是**告知**,env 里的身份才是**授权**。
+        system_prompt=(_SYS.get(kind, SYS_ALL) + (
+            f"\n\n## 现在是谁在跟你说话\n\n"
+            f"{me['name']}(工号 {me['no']})· {me['role']}"
+            f"{' · ' + me['shop'] if me.get('shop') else ''}。\n"
+            f"他能看到什么、能做什么由工号决定 —— 工具已经按他的身份取数了,"
+            f"你不需要(也不能)替他换个身份查。\n" if me else "")),
+        mcp_servers=mcp_config(me),
         allowed_tools=_tools_for(kind),
         # ⚠️ **allowed_tools 不是排他白名单。**
         # 它管的是「哪些工具不用逐次批准」,不是「只有这些工具存在」——

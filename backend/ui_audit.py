@@ -53,10 +53,22 @@ def audit(src):
     dead_attr = sorted(used - bound)
 
     # ② CSS 里声明了 cursor:pointer 的类,是否出现在任何绑定选择器里
-    # 取选择器里最后一个类名(.cal .hd2 .nav → nav),避免把容器当控件
+    # 取选择器里最后一个类名(.cal .hd2 .nav → nav),避免把容器当控件。
+    #
+    # **但选择器以标签名收尾时,那个类是容器,不是控件。**
+    # `.act button{cursor:pointer}` 说的是「.act 里面的按钮能点」,
+    # 能点的是 button;.act 只是它待的地方。按老写法会记成「.act 没绑定」,
+    # 而真正绑事件的是里面那些按 data-* 或 id 找的按钮。
+    # 这个误报出现过两次(pad.html 的 .btns button、station.html 的 .act button),
+    # 第一次我改了页面去迁就审计,第二次才想起来该修的是审计 ——
+    # **同一个误报出现两次,就该修检查。**
     ptr = set()
     for m in re.finditer(r'([^{}]*?)\{[^}]*cursor:\s*pointer', s):
         sel = m.group(1).split(",")[-1].strip()
+        # 最后一个「词」是标签名(不带 . # [)→ 这条规则落在标签上,不落在类上
+        last = sel.split()[-1] if sel.split() else ""
+        if last and re.fullmatch(r'[a-zA-Z][\w-]*', last):
+            continue
         cls = re.findall(r'\.([a-zA-Z][\w-]*)', sel)
         if cls: ptr.add(cls[-1])
     dead_cls = []

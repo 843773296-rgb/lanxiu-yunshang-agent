@@ -74,6 +74,56 @@ def _u(s):
     except Exception: return s
 
 
+def _who(handler):
+    """现在是谁在跟智能体说话 —— 从**后台的会话**换出来,不信前端说自己是谁。
+
+    智能体的工具要按这个人的身份取数(顾问只看得到自己的任务)。
+    身份来自签发方(后台的 session),不来自使用方 —— 否则一句
+    「我以店长身份执行」就能提权。
+    """
+    ck = handler.headers.get("cookie")
+    if not ck: return None
+    try:
+        req = urllib.request.Request(BACKEND + "/api/me", headers={"cookie": ck})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            d = json.loads(r.read())
+        return d if d.get("no") else None
+    except Exception:
+        return None
+
+
+def _drafts(traj, me):
+    """从轨迹里挑出起草工具的调用,**在服务端原样重跑一遍**,得到确认卡。
+
+    为什么重跑而不是解析模型说的话:模型可能把参数复述错,入参不会。
+    顺带一个好处 —— 卡是**现算的**:隔两分钟才点,期间那位顾问被派了别的活,
+    撞车提醒会跟着变;存下来的草稿不会。
+    """
+    if not me: return []
+    sys.path.insert(0, os.path.join(HERE, "..", "backend"))
+    try: import api
+    except Exception: return []
+    out = []
+    for step in traj:
+        name = (step.get("tool") or "").rsplit("__", 1)[-1]
+        if name not in api.DRAFT_TOOLS: continue
+        try:
+            with api.as_user(me):
+                d = api.TOOLS[name](**(step.get("args") or {}))
+        except Exception as e:
+            d = {"error": f"重算这条草稿时出错:{type(e).__name__}: {e}"}
+        if isinstance(d, dict) and d.get("这是草稿"):
+            out.append({"action": d["动作"], "payload": d["参数"],
+                        "text": d["给人看的话"], "warn": d.get("注意")})
+    # 同一张卡出现两次就去重 —— 模型有时会把同一个起草调用重试一遍
+    seen, uniq = set(), []
+    for a2 in out:
+        k = (a2["action"], json.dumps(a2["payload"], sort_keys=True, ensure_ascii=False))
+        if k in seen: continue
+        seen.add(k); uniq.append(a2)
+    return uniq
+
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
 
@@ -174,9 +224,12 @@ class H(BaseHTTPRequestHandler):
                 # 来切供应商的,而这是个多线程服务 —— 两个请求同时进来,
                 # 后一个会把前一个的凭证改掉,前一个就带着 DeepSeek 的 base_url 去打 Claude。
                 # 本机单人用,串行的代价可以接受;串味的代价不能接受。
+                me = _who(self)
                 with RUNLOCK:
                     r = asyncio.run(sdk.run(kind, prompt, resume=body.get("session") or None,
-                                            provider=prov, model_name=mdl, images=imgs or None))
+                                            provider=prov, model_name=mdl, images=imgs or None,
+                                            me=me))
+                r["actions"] = _drafts(r.get("trajectory") or [], me)
                 return self._send(r)
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)

@@ -248,6 +248,281 @@ def get_member_priority(lifecycle=None, limit=10):
                     "**这是排序不是预测**,不代表联系了就能挽回。"}
 
 
+# ── 「现在是谁在用这个工具」 ─────────────────────────────────────────
+# 智能体的工具跑在**独立子进程**里,拿不到 HTTP 会话。身份由启动它的那一方
+# 通过环境变量传进来(见 agentsite/sdk.py 的 mcp_config)。
+#
+# **为什么不让模型自己说自己是谁**:那就成了「我以店长身份执行」——
+# 一句话就能提权。身份必须来自签发方,不能来自使用方。
+# 这条和 check_write 里「授权主张 vs 查询条件」是同一条:
+#   工具**按谁的身份取数**,是授权主张,只能来自会话;
+#   「假如是店长,允不允许」,是查询条件,可以由参数给。
+import contextvars as _cv
+_ME = _cv.ContextVar("lanxiu_me", default=None)
+
+
+def whoami():
+    """当前操作人。没有身份时返回 None —— **不许兜底成某个默认角色**。
+
+    两个来源,按优先级:
+      ① contextvar —— 同进程内调用(比如服务端重跑一遍起草工具)
+      ② 环境变量   —— MCP 子进程,由启动它的那一方注入
+    用 contextvar 而不是全局变量:**两个请求同时进来不会互相串身份**,
+    而串了不会报错 —— 甲的问题用乙的身份取数,答出来完全正常。
+    """
+    v = _ME.get()
+    if v: return v
+    import json as _js
+    raw = os.environ.get("LANXIU_ME") or ""
+    if not raw: return None
+    try: return _js.loads(raw)
+    except Exception: return None
+
+
+class as_user:
+    """`with api.as_user(me): ...` —— 在这段代码里,工具以这个人的身份取数。"""
+    def __init__(self, me): self.me, self.tok = me, None
+    def __enter__(self): self.tok = _ME.set(self.me); return self
+    def __exit__(self, *a): _ME.reset(self.tok); return False
+
+
+# 起草工具的名字 → 函数。**服务端重跑用这张表** ——
+# 从轨迹里拿到模型调用起草工具时的入参,原样重跑一遍拿到草稿,
+# 而不是去解析模型说了什么。模型可能把参数复述错,入参不会。
+# 顺带一个好处:确认卡是**点的时候现算的**,不是两分钟前存下来的 ——
+# 期间那位顾问被派了别的活,卡上的撞车提醒会跟着变。
+DRAFT_TOOLS = ("draft_task", "draft_dispatch", "draft_finish")
+
+
+MANAGER_ROLES = ("店长", "总部运营")
+
+
+def my_tasks(status=None):
+    """我的任务清单。**顾问只看得到派给自己的,店长看本店全部** —— 这是数据隔离。"""
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在问 —— 请先登录")
+    import tasktypes as tt
+    if me.get("role") in MANAGER_ROLES:
+        if me["role"] == "总部运营":
+            rs = _rows("SELECT s.*, st.name assignee_name FROM schedule s "
+                       "LEFT JOIN staff st ON st.no=s.assignee_no ORDER BY s.end_ts")
+            scope = "全部门店(你是总部运营)"
+        else:
+            rs = _rows("SELECT s.*, st.name assignee_name FROM schedule s "
+                       "LEFT JOIN staff st ON st.no=s.assignee_no WHERE s.shop=? "
+                       "ORDER BY s.end_ts", me.get("shop"))
+            scope = f"{me.get('shop')}(你是店长,看得到全店)"
+    else:
+        rs = _rows("SELECT s.*, st.name assignee_name FROM schedule s "
+                   "LEFT JOIN staff st ON st.no=s.assignee_no WHERE s.assignee_no=? "
+                   "ORDER BY s.end_ts", me["no"])
+        scope = "派给你的任务"
+    if status:
+        rs = [r for r in rs if r.get("status") == status]
+    out = []
+    for r in rs:
+        out.append(_nz({"任务号": r["id"], "类型": tt.norm(r.get("type")),
+                        "状态": r.get("status"), "内容": r.get("note"),
+                        "开始": r.get("start_ts"), "结束": r.get("end_ts"),
+                        "负责人": r.get("assignee_name") or r.get("advisor"),
+                        "挂的单据": r.get("ref_id"), "客户": r.get("customer_id"),
+                        "绑定活动": r.get("activity_code"), "总结": r.get("summary")}))
+    return dict(我是=f"{me['name']}·{me['role']}", 范围=scope, 条数=len(out), 任务=out[:40])
+
+
+def task_types():
+    """九种任务类型,以及每种的数据规范:挂哪张单据、谁能派、完成时要不要传现场照。
+
+    **派任务前先看这个** —— 类型决定了要填什么,填错了会被拒。
+    """
+    import tasktypes as tt
+    return dict(说明="族决定谁派,ref 决定挂哪张单据 —— 这是两件事",
+                类型=[{"名称": i["name"], "族": i["family"],
+                      "要填": i["ref_label"] or "不挂单据",
+                      "举例": i["ref_eg"] or "—",
+                      "谁能派": "店长" if i["route"] == "manager" else "有归属顾问就自动派,没有则 agent 建议+店长确认",
+                      "完成要传现场照": i["needs_photo"], "说明": i["desc"]}
+                     for i in tt.BY_NAME.values()])
+
+
+def dispatch_pool():
+    """待分配池:客户已经约了,但系统没能自动派单的任务 —— **带 agent 的人选建议和依据**。
+
+    只有店长看得到。顾问不负责分活,给他看只会让他以为该自己认领。
+    """
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在问 —— 请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return dict(说明="待分配由店长处理,你是顾问,这里看不到东西", 条数=0, 任务=[])
+    import booking
+    rs = booking.unassigned(None if me["role"] == "总部运营" else me.get("shop"))
+    out = []
+    for r in rs:
+        sg = r.get("建议")
+        out.append(_nz({"任务号": r["id"], "客户": r.get("customer_name"),
+                        "类型": r.get("type"), "开始": r.get("start_ts"),
+                        "内容": r.get("note"),
+                        "为什么没自动派": (f"档案里的归属顾问是「{r.get('bind')}」,"
+                                          f"但他已离职或不在本店" if r.get("bind")
+                                          else "这个客户没有归属顾问"),
+                        "建议人选": (sg or {}).get("name"),
+                        "建议工号": (sg or {}).get("no"),
+                        "建议依据": (sg or {}).get("why"),
+                        "备选": [f"{a['name']}(在办 {a['load']})" for a in (sg or {}).get("alts", [])]}))
+    return dict(条数=len(out), 说明="**建议不是决定** —— 要店长确认才算派出去", 待分配=out)
+
+
+# ── 起草:验全套规则,但**一个字都不写库** ──────────────────────────
+# 智能体不能直接派任务。理由不是「怕它出错」,是**它出错和它做对在库里长得一样**:
+# 两条任务都躺在那儿,都有负责人,都有截止时间。等发现派错了,顾问已经去做了。
+#
+# 所以走「起草 → 人确认」:起草工具跑的是**和真写接口同一套校验**
+# (assign_task / finish_task / dispatch 里的那些判断都在 server 侧,
+# 这里通过 dry-run 复用),验完返回一张草稿,由前端渲染成确认卡。
+# **点确认的那一下,是用登录用户自己的会话去调真正的写接口** ——
+# 所以最终那次写入的授权来自人,不来自模型。
+def _draft(kind, payload, human, warn=None):
+    return _nz({"这是草稿": True, "动作": kind, "参数": payload,
+                "给人看的话": human, "注意": warn,
+                "下一步": "**我不能自己执行**。确认卡会显示在对话下方,你点了才会真的写进去。"})
+
+
+def draft_task(type, assignee, note, end, start=None, ref_id=None, activity_code=None):
+    """起草一条**派任务**,交给你确认。**这个工具不会真的派** —— 它只验规则、出草稿。
+
+    type 必须是 task_types() 里的九种之一;ref_id 填什么由类型决定
+    (客户号 / 订单号 / 维保单号 / 售后单号;团建培训和日常运维不填)。
+    assignee 可以写工号或姓名。时间写 `YYYY-MM-DD HH:MM`。
+    """
+    import tasktypes as tt, datetime
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在派 —— 请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return dict(error=f"排任务须由店长及以上操作,你是「{me.get('role')}」。"
+                          f"**这条不能起草** —— 起草一个注定被拒的动作只是浪费你一次点击")
+
+    kind = tt.norm(type or "")
+    ti = tt.info(kind)
+    if not ti:
+        return dict(error=f"没有「{type}」这个类型",
+                    可选=[i["name"] for i in tt.BY_NAME.values()])
+
+    # 收件人:工号或姓名都认,**同名认不出就报错,不猜**
+    who = (assignee or "").strip()
+    pool = _rows("SELECT no,name,shop,adv_code FROM staff WHERE role='顾问' AND status='启用' "
+                 + ("" if me["role"] == "总部运营" else "AND shop=? "),
+                 *([] if me["role"] == "总部运营" else [me.get("shop")]))
+    hit = [p for p in pool if p["no"] == who] or [p for p in pool if p["name"] == who]
+    if len(hit) != 1:
+        return dict(error=(f"找不到「{who}」" if not hit else f"有 {len(hit)} 个人叫「{who}」,请给工号"),
+                    可派的人=[f"{p['name']}({p['no']})" for p in pool])
+    him = hit[0]
+
+    ok, cid, _sh, ref_desc = tt.resolve_ref(ti["ref"], ref_id, _rows)
+    if not ok: return dict(error=f"「{kind}」:{ref_desc}")
+    if not ti["ref"] and ref_id:
+        return dict(error=f"「{kind}」是店内自己的事,不挂任何单据,但你给了 {ref_id}")
+
+    if not (note or "").strip(): return dict(error="日程描述必填 —— 写清楚这件事要做什么")
+    en = (end or "").replace("T", " ").strip()
+    st = (start or "").replace("T", " ").strip() or datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    if not en: return dict(error="结束时间必填 —— 没有截止时间的任务不会被做")
+    try:
+        t0 = datetime.datetime.fromisoformat(st); t1 = datetime.datetime.fromisoformat(en)
+    except ValueError: return dict(error=f"时间格式不对({st} / {en}),要 YYYY-MM-DD HH:MM")
+    if t1 <= t0: return dict(error=f"结束({en})不在开始({st})之后")
+    if activity_code and not _rows("SELECT code FROM activity WHERE code=?", activity_code):
+        return dict(error=f"没有活动 {activity_code}")
+
+    warn = None
+    busy = _rows("SELECT id,start_ts,end_ts FROM schedule WHERE assignee_no=? AND status='有效' "
+                 "AND start_ts < ? AND end_ts > ?", him["no"], en, st)
+    if busy:
+        warn = (f"⚠️ {him['name']} 这个时段已经有 {len(busy)} 件活({busy[0]['id']} "
+                f"{busy[0]['start_ts']}–{busy[0]['end_ts']})—— 派下去就是撞车,你确认要不要挪")
+    return _draft("assign",
+                  _nz({"type": kind, "assignee_no": him["no"], "note": note.strip(),
+                       "start": st, "end": en, "ref_id": ref_id, "activity_code": activity_code}),
+                  f"派给 {him['name']}:[{kind}] {note.strip()};{st} → {en}"
+                  + (f";挂 {ref_desc}" if ref_desc else "")
+                  + (f";属于活动 {activity_code}" if activity_code else "")
+                  + (f"。完成时需要传现场照。" if ti["needs_photo"] else ""),
+                  warn)
+
+
+def draft_dispatch(task_id, assignee=None):
+    """起草一条**把待分配池里的单分给某人**。不给 assignee 就采纳 agent 的建议。
+
+    **这个工具不会真的分** —— 它只验规则、出草稿,要你点确认。
+    """
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在分 —— 请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return dict(error=f"分派预约须由店长及以上操作,你是「{me.get('role')}」")
+    import booking
+    rs = _rows("SELECT * FROM schedule WHERE id=?", (task_id or "").strip())
+    if not rs: return dict(error=f"没有任务 {task_id}")
+    t = rs[0]
+    if t.get("assignee_no"):
+        w = _rows("SELECT name FROM staff WHERE no=?", t["assignee_no"])
+        return dict(error=f"{task_id} 已经派给 {w[0]['name'] if w else t['assignee_no']} 了。"
+                          f"要换人得走改派 —— 悄悄覆盖会让他的列表凭空少一行")
+    if me["role"] != "总部运营" and t.get("shop") != me.get("shop"):
+        return dict(error=f"{task_id} 属于 {t.get('shop')},不在你管辖范围")
+
+    sg = booking.suggest(t)
+    pool = _rows("SELECT no,name FROM staff WHERE role='顾问' AND status='启用' AND shop=?",
+                 t.get("shop"))
+    if assignee:
+        who = assignee.strip()
+        hit = [p for p in pool if p["no"] == who] or [p for p in pool if p["name"] == who]
+        if len(hit) != 1:
+            return dict(error=f"找不到「{who}」或有重名", 可派的人=[f"{p['name']}({p['no']})" for p in pool])
+        him = hit[0]
+    elif sg:
+        him = dict(no=sg["no"], name=sg["name"])
+    else:
+        return dict(error="这个门店没有在职顾问可派,agent 也提不出建议 —— "
+                          "**硬凑一个人出来比说「提不出」有害得多**")
+    adopted = bool(sg and sg["no"] == him["no"])
+    return _draft("dispatch", {"id": t["id"], "assignee_no": him["no"]},
+                  f"把 {t['id']}({t.get('type')})分给 {him['name']}"
+                  + ("(采纳 agent 建议)" if adopted else
+                     (f"(agent 建议的是 {sg['name']},这是改派)" if sg else "")),
+                  None if adopted or not sg else
+                  f"⚠️ 这次和 agent 的建议不同,台账会记下这是一次改派")
+
+
+def draft_finish(task_id, summary):
+    """起草一条**完成任务**。**只能完成派给自己的**;需要现场照的类型,照片要在页面上传。
+
+    这个工具不会真的完成 —— 它只验规则、出草稿。
+    """
+    import tasktypes as tt
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁 —— 请先登录")
+    rs = _rows("SELECT * FROM schedule WHERE id=?", (task_id or "").strip())
+    if not rs: return dict(error=f"没有任务 {task_id}")
+    t = rs[0]
+    if t.get("assignee_no") != me["no"]:
+        return dict(error="**只能完成派给自己的任务** —— 谁做的谁点完成,"
+                          "别人代点等于台账上写了一件没发生的事")
+    if t.get("status") != "有效":
+        return dict(error=f"{task_id} 当前是「{t['status']}」,不能完成")
+    if len((summary or "").strip()) < 4:
+        return dict(error="日程总结必填,写清楚做了什么、结果如何 —— "
+                          "只写「完结」的任务,过两个月谁也说不出当时发生了什么")
+    warn = None
+    if tt.needs_photo(t.get("type")):
+        import files as _f
+        if not _f.listing(t["id"], "总结"):
+            warn = (f"⚠️ 「{tt.norm(t.get('type'))}」完成时必须有现场照,"
+                    f"这条还没有 —— 点确认时会让你先传图")
+    return _draft("finish", {"id": t["id"], "summary": summary.strip()},
+                  f"把 {t['id']}({tt.norm(t.get('type'))})标记完成,总结:{summary.strip()[:50]}",
+                  warn)
+
+
 def check_write(action, fields=None):
     """**这件事业务允不允许做** —— 不写库,只跑一遍真正的校验器。
 
@@ -1051,6 +1326,33 @@ def plan_for_event(wearer_id, event_date, pattern, material,
                     "答案是一个窗口不是一个日期:早下单误差大,晚下单排不上。"}
 
 SHOP_SCHEMAS=[
+ {"name":"my_tasks","description":"看**我自己的任务**。顾问只看得到派给自己的,店长看本店全部 —— 这是数据隔离,不是界面上少显示几行。可用 status 只看某一档(有效/完结/取消/无效)。问「我今天有什么事」「张三手上几件活」先调这个。",
+  "input_schema":{"type":"object","properties":{
+    "status":{"type":"string","description":"只看这一档:有效 / 完结 / 取消 / 无效。不传看全部。"}},"required":[]}},
+ {"name":"task_types","description":"九种任务类型的**数据规范**:每种挂哪张单据(客户号/订单号/维保单号/售后单号/不挂)、谁能派、完成时要不要传现场照。**起草派任务之前先调这个** —— 类型决定了要填什么,填错会被拒。",
+  "input_schema":{"type":"object","properties":{},"required":[]}},
+ {"name":"dispatch_pool","description":"**待分配池**:客户已经约了时间、但系统没能自动派单的任务。每条都带 agent 的人选建议和依据(接触史 / 时段冲突 / 负载)。只有店长看得到。**建议不是决定** —— 要店长确认才算派出去。",
+  "input_schema":{"type":"object","properties":{},"required":[]}},
+ {"name":"draft_task","description":"**起草**一条派任务,交给人确认。⚠️ 这个工具**不会真的派** —— 它跑完整套校验后返回一张草稿,确认卡会显示在对话下方,由人点了才写进去。type 见 task_types();ref_id 填什么由类型决定;assignee 写工号或姓名都行。**别自作主张替用户决定派给谁**,拿不准就先问。",
+  "input_schema":{"type":"object","properties":{
+    "type":{"type":"string","description":"任务类型,九种之一,见 task_types()"},
+    "assignee":{"type":"string","description":"派给谁,工号或姓名"},
+    "note":{"type":"string","description":"日程描述:这件事要做什么"},
+    "end":{"type":"string","description":"结束时间 YYYY-MM-DD HH:MM"},
+    "start":{"type":"string","description":"开始时间,不给则用现在"},
+    "ref_id":{"type":"string","description":"挂的单据号。客户相关填客户号;订单跟踪填订单号;维保填维保单号;售后填售后单号;团建培训和日常运维不填。"},
+    "activity_code":{"type":"string","description":"绑定活动编码,可不填"}},
+   "required":["type","assignee","note","end"]}},
+ {"name":"draft_dispatch","description":"**起草**一条「把待分配池里的单分给某人」。不给 assignee 就采纳 agent 自己的建议。⚠️ 不会真的分,要人点确认。只能分**还没派出去的**单 —— 已经派给别人的要改派,那是另一个动作。",
+  "input_schema":{"type":"object","properties":{
+    "task_id":{"type":"string","description":"任务号,如 SC7029"},
+    "assignee":{"type":"string","description":"分给谁,工号或姓名。不给则采纳建议。"}},
+   "required":["task_id"]}},
+ {"name":"draft_finish","description":"**起草**一条「完成任务」。⚠️ 不会真的完成,要人点确认。只能完成派给自己的;日程总结必填;需要现场照的类型,照片要在确认卡上传。",
+  "input_schema":{"type":"object","properties":{
+    "task_id":{"type":"string","description":"任务号"},
+    "summary":{"type":"string","description":"日程总结:做了什么、结果如何"}},
+   "required":["task_id","summary"]}},
  {"name":"get_order","description":"查订单。给 order_id 返回单条全链路(双口径状态、金额勾稽、时间线、订单行、关联售后);给 customer(客户号或姓名)返回该客户的订单清单。**返回里的「勾稽异常」不为空时,必须先核对再答复客户**,不要直接把金额念给客户听。注意状态有两套口径:页面按设计稿 10 档、PRD 按状态机 6 档,对客户说页面口径。",
   "input_schema":{"type":"object","properties":{
     "order_id":{"type":"string","description":"订单号"},
@@ -1152,6 +1454,8 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_lifecycle":get_lifecycle,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
+              "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
+              "draft_task":draft_task,"draft_dispatch":draft_dispatch,"draft_finish":draft_finish,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
