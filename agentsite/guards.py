@@ -567,18 +567,32 @@ def check_answer(text, calls):
 SCOPE_WORDS = ("整幅", "满地", "通身", "全身", "满绣", "整件")
 
 
-def pre_tool_verdict(name, args, prompt=""):
+def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None):
     """PreToolUse 的判定逻辑,**纯函数版**。返回拦截理由,None = 放行。
 
     抽出来的理由:**安全边界必须离线可测**。
     藏在 async hook 里的判定,只能靠真跑一次模型才验得到 ——
     那样太贵、太慢,于是实际上就没人验,边界又退回成「但愿它是对的」。
     backend/boundary_audit.py 直接攻击这个函数。
+
+    state_reads / state_writes:这一轮已经调过的工具名。写工具的闸要看它们 ——
+    「一次只做一件」和「没查就别派」都是**跨调用**的判断,
+    只看当前这一次的参数是判不出来的。
     """
     args = args or {}
     # ── 第一条:非 MCP 工具一律拦下 ────────────────────────────────────
     # sdk.py 的 disallowed_tools 是配置层的第一道,但**配置能被删掉、能被改错**,
-    # 而这条保证太硬了(工具全部只读、0 个写接口),不能只靠一处配置守着。
+    # 而这条保证太硬了,不能只靠一处配置守着。
+    #
+    # ⚠️ 这条注释原来写的是「工具全部只读、0 个写接口」——
+    # 那句话在加了 assign_task / dispatch_task / finish_task 之后就**变成假的了**,
+    # 而它在文件里躺着,看起来仍然像一条成立的保证。
+    # **写下来但已经不对的约定,比没写更糟**:没写的话下一个人会去查,
+    # 写着的话他会直接信。改保证的时候,记着回来改这句话。
+    #
+    # 现在的保证是:能写的只有那三个业务工具,它们各自从会话取身份、
+    # 走和页面同一套权限判定;除此之外一个字都写不了(读写文件、执行命令、
+    # 开子智能体一律拦在这一条)。
     #
     # 实跑抓到过:allowed_tools **不是排他白名单**,配上 bypassPermissions 之后
     # CLI 的内置工具(Bash / Write / Task …)照样在场,模型自己去开了 Bash。
@@ -587,6 +601,30 @@ def pre_tool_verdict(name, args, prompt=""):
         return (f"工具「{name}」不在本系统挂载的 MCP 工具里,已拦下。"
                 "这个助手**只能用挂载的只读业务工具**,不能读写文件、"
                 "不能执行命令、不能开子智能体。请改用 MCP 工具完成。")
+    # ── 第一条半:写工具的闸 ──────────────────────────────────────────
+    # 提示词里那条「一次只做一件、别换个参数重试」只是祈使句。
+    # **hook 才是强制。** 这几条挡的都是实际会发生的事:
+    #
+    #   ① 一轮里连着写好几次 —— 用户说「把这三条都派了」,模型连开三刀,
+    #      其中一刀参数猜错,而三条都已经落库了。
+    #   ② 同一个动作重试 —— 工具报错,模型换个参数再试;
+    #      **某一次可能碰巧成功**,那就是一条没人打算派的任务。
+    #   ③ 没查就派 —— 不知道有哪些类型、不知道能派给谁,就先派了。
+    #      派出去的东西看起来和正常任务一模一样。
+    WRITE = ("assign_task", "dispatch_task", "finish_task")
+    short = name.rsplit("__", 1)[-1]
+    if short in WRITE:
+        done = [c for c in (state_writes or []) if c.rsplit("__", 1)[-1] in WRITE]
+        if done:
+            return (f"这一轮已经写过一次了({done[-1].rsplit('__',1)[-1]})。"
+                    "**一次只做一件** —— 请先把这一条的结果告诉用户,"
+                    "等他确认下一条要派给谁再动手。连着写好几条,"
+                    "其中一条参数猜错的话,三条都已经落库了。")
+        if short == "assign_task" and "task_types" not in " ".join(state_reads or []):
+            return ("派任务之前先调 `task_types()` 看类型规范 —— "
+                    "类型决定挂哪张单据、完成时要不要传图。**没查就派**,"
+                    "派出去的东西和正常任务长得一模一样,错了也看不出来。")
+
     # ── 第二条:拿客户号当着装人编号 ──────────────────────────────────
     if name.endswith(("plan_for_event", "forecast_growth", "get_wearer")):
         w = args.get("wearer_id") or ""
@@ -628,11 +666,18 @@ def make_hooks(state):
 
     async def pre_tool(inp, tool_use_id, ctx):
         name, args = inp.get("tool_name", ""), inp.get("tool_input") or {}
-        v = pre_tool_verdict(name, args, state.get("prompt", ""))
+        called = [c["tool"] for c in (state.get("calls") or [])]
+        v = pre_tool_verdict(name, args, state.get("prompt", ""),
+                             state_reads=called, state_writes=state.get("wrote") or [])
         if v:
             if not name.startswith("mcp__"):
                 state.setdefault("blocked_tools", []).append(name)
             return {"decision": "block", "reason": v}
+        # 放行的写工具记一笔 —— 下一次写就会被上面那条闸拦住。
+        # **记在放行处,不记在 post_tool**:工具执行失败也算「已经动过手」,
+        # 失败之后紧接着换参数重试,正是要挡的那件事。
+        if name.rsplit("__", 1)[-1] in ("assign_task", "dispatch_task", "finish_task"):
+            state.setdefault("wrote", []).append(name)
         return {}
 
     async def post_tool(inp, tool_use_id, ctx):
