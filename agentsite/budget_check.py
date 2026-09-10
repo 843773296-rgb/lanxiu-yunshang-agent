@@ -60,6 +60,37 @@ def main():
         ck(f"{pv} 的上限 ${cap:g} 够聊 {turns} 轮",
            "够" if turns >= MIN_TURNS else f"只够 {turns} 轮", "够",
            f"  ← 至少要 {MIN_TURNS} 轮")
+    # **松紧方向**:订阅内的该松(闸只防死循环),按量计费的该紧(闸真的在防花钱)。
+    # 这两个一开始设反了 —— 按「让阈值贴近计价口径」定,而真正的判据是钱包。
+    ck("订阅内的比按量计费的松",
+       "是" if sdk._max_usd("claude") > sdk._max_usd("deepseek") else "反了", "是",
+       "  ← Claude 边际成本为零,被掐断比多花钱讨厌;DeepSeek 是真金白银")
+
+    print("\n\033[1m▸ 默认不该花钱\033[0m")
+    print("  " + "=" * 76)
+    # **网站的默认供应商决定了「随手聊一句」花不花钱。**
+    # 原来默认 DeepSeek(按量计费),在浏览器里聊一句花一句 ——
+    # 默认值设反的代价不是「不好用」,是每次用都在漏钱,而且没人会注意到。
+    did = sdk.default_model_id()
+    ck("网站默认走订阅内的那个", "是" if did.startswith("claude:") else f"是 {did}", "是",
+       "  ← 默认按量计费的话,随手聊一句就花一句")
+    ck("默认不是最弱的那档", "不是" if "haiku" not in did else "haiku", "不是",
+       "  ← 免费的前提下用最弱的那个,试出来的效果会低估这套东西的上限")
+    # **界面说的默认,必须就是不传模型时真正跑的那个。**
+    # 这两个原来是两个来源:/models 说 claude:sonnet-5,不传 model 时实际跑 deepseek。
+    # 界面说一套实际做一套,而且不报错 —— 你以为在用订阅,其实在按量计费。
+    app_src = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
+    ck("不传模型时走 default_model_id",
+       "是" if "sdk.default_model_id()" in app_src.split('body.get("model")')[1][:200] else "没有", "是",
+       "  ← 不是的话会掉到脚本默认上,和界面显示的不是同一个")
+
+    # 评测那条路**必须仍然听环境变量** —— 默认一改就会悄悄变成
+    # 「拿 Claude 的成绩当 DeepSeek 的成绩」
+    os.environ["LANXIU_PROVIDER"] = "deepseek"
+    ck("评测路径仍听 LANXIU_PROVIDER",
+       "听" if sdk.default_model_id().startswith("deepseek:") else "没听", "听",
+       "  ← 不听的话,评测会拿 Claude 的成绩当 DeepSeek 的成绩")
+    os.environ.pop("LANXIU_PROVIDER", None)
 
     print("\n\033[1m▸ 撞线时说不说得清\033[0m")
     print("  " + "=" * 76)

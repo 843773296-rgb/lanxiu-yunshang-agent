@@ -56,15 +56,25 @@ import trace       # noqa: E402  记录仪:**和 V1 共用同一份**,写同一�
 # (顺带:文件别处那句「差 24 倍」是更早测的,现在是 86 倍 ——
 #  **这种比值会随提示词和工具数变**,别把它当常数记。)
 def _max_usd(provider=None):
-    """这一轮的花费上限。跑 Claude 时 SDK 的数字大致可信,按它设;
-    跑 DeepSeek 时 SDK 的数字虚高几十倍,阈值要相应放大,
-    否则闸掐的是一个和真实花费没关系的数。"""
+    """这一轮的花费上限。**判据是「哪个花钱」,不是「哪个数字准」。**
+
+    上一版按「让阈值贴近真实计价口径」定,结果两边设反了:
+    给 Claude 设了紧的、给 DeepSeek 设了松的。而实际情况是 ——
+
+      Claude   订阅制,**边际成本为零**。闸只是防死循环,不是防花钱,
+               所以要松:跑实验时被掐断比多花的钱讨厌得多(而并没有多花钱)。
+      DeepSeek 按量计费,**真金白银**。闸是真的在防花钱,所以要紧。
+               注意 SDK 报的是 Claude 单价,虚高约 86 倍:
+               $3 的 SDK 上限 ≈ 真实四分钱,够单次调用跑十几轮。
+
+    这条我一开始弄反了,记在这儿是因为**它是个典型**:
+    我拿了一个听起来合理的判据(让数字准),而真正的判据是钱包。
+    判据要贴着「什么才算对」,不是贴着「我以为它该怎么衡量」。
+    """
     env = os.environ.get("LANXIU_MAX_USD")
     if env: return float(env)          # 显式设了就听人的
-    pv = (provider or os.environ.get("LANXIU_PROVIDER") or "deepseek").lower()
-    # Claude:这是真实的 API 单价(订阅制下不另计费,但闸仍要留)
-    # DeepSeek:SDK 报的是 Claude 单价,放大到能聊几十轮
-    return 3.00 if pv.startswith("claude") else 12.00
+    pv = (provider or os.environ.get("LANXIU_PROVIDER") or "claude").lower()
+    return 50.00 if pv.startswith("claude") else 3.00
 
 
 MAX_USD = _max_usd()   # 模块级默认,给不传 provider 的调用方兜底
@@ -96,8 +106,21 @@ def sees_images(provider, model):
 
 
 def default_model_id():
-    prov = "claude" if os.environ.get("LANXIU_PROVIDER", "").lower() == "claude" else "deepseek"
-    return f"{prov}:" + (os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5") if prov == "claude"
+    """**网站上的默认选项**(不是脚本的默认)。
+
+    默认 Claude:开发和试玩用的是订阅,边际成本为零;
+    DeepSeek 是按量计费的真金白银 —— 让人在浏览器里随手聊天就花钱,
+    是把默认值设反了。原来默认 DeepSeek,聊一句花一句。
+
+    ⚠️ **只改网站,不改脚本。** 评测脚本走 _env(provider=None) 读
+    LANXIU_PROVIDER,一个字没动 —— 评测必须用产品真实在用的那个供应商,
+    默认值一改就会悄悄变成「拿 Claude 的成绩当 DeepSeek 的成绩」。
+    """
+    prov = "deepseek" if os.environ.get("LANXIU_PROVIDER", "").lower() == "deepseek" else "claude"
+    # Claude 侧默认给 Sonnet 而不是 Haiku:订阅内边际成本为零,
+    # **免费的前提下用最弱的那个没有道理** —— 试出来的效果会低估这套东西的上限,
+    # 而那正是做实验时最不该有的偏差。想省额度就在页面上换,选择器里标着口径。
+    return f"{prov}:" + (os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5") if prov == "claude"
                          else os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro"))
 
 
@@ -494,12 +517,20 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 原样甩给用户等于什么都没说:不知道是预算、不知道该怎么办。
     # **一个说不清自己为什么拦你的闸,和随机失败没区别。**
     if budget_err:
-        budget_hit = (f"这条**会话**累计花费到了上限 ${_max_usd(provider):g},被拦下了。\n\n"
-                      f"要注意的是:①上限是按**整条会话累计**的,不是单次提问 —— "
-                      f"聊得越久越接近;②它按 Claude 单价计,而你多半跑的是 DeepSeek,"
-                      f"真实花费大约是这个数的二十几分之一。\n\n"
-                      f"最简单的办法:**左边「＋ 新建会话」开一条新的**,累计清零。"
-                      f"要调高就设环境变量 LANXIU_MAX_USD。")
+        _pv = (provider or os.environ.get("LANXIU_PROVIDER") or "claude").lower()
+        _is_claude = _pv.startswith("claude")
+        budget_hit = (
+            f"这条**会话**累计花费到了上限 ${_max_usd(provider):g},被拦下了。\n\n"
+            f"上限是按**整条会话累计**的,不是单次提问 —— 聊得越久越接近。\n\n"
+            + (f"你现在跑的是 **Claude**(订阅制,边际成本为零),上限设得很松,"
+               f"撞到它多半说明这条会话真的很长,或者哪里绕圈了。\n\n"
+               if _is_claude else
+               f"你现在跑的是 **DeepSeek**,这是**按量计费**的 —— 闸设得紧就是为了这个。"
+               f"SDK 报的数按 Claude 单价算、虚高约 86 倍,所以 ${_max_usd(provider):g} "
+               f"对应的真实花费只有几分钱。想省钱就继续用 DeepSeek 但别聊太长,"
+               f"想放开跑就在页面上把模型换成 Claude。\n\n")
+            + f"最简单的办法:**左边「＋ 新建会话」开一条新的**,累计清零。"
+              f"要调整就设环境变量 LANXIU_MAX_USD。")
     else:
         budget_hit = None
     # ── 记录仪 ─────────────────────────────────────────────────────────

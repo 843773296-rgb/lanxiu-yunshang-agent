@@ -166,8 +166,12 @@ class H(BaseHTTPRequestHandler):
             prompt = (body.get("prompt") or "").strip()
             if not prompt: return self._send({"error": "问题是空的"}, code=400)
             # model:"供应商:模型名",来自 /models。不给就走环境变量里的默认。
+            # **不传模型时,用网站自己的默认** —— 而不是让它掉到 _env 的脚本默认上。
+            # 这两个原来是两个来源:/models 说默认是 claude:sonnet-5,
+            # 而不传 model 时实际跑的是 deepseek。**界面说一套、实际做一套**,
+            # 而且不会报错 —— 你以为在用订阅,其实在按量计费。
             prov = mdl = None
-            mid = (body.get("model") or "").strip()
+            mid = (body.get("model") or "").strip() or sdk.default_model_id()
             if mid:
                 if mid not in {m["id"] for m in sdk.models()}:
                     return self._send({"error": f"没有这个模型:{mid}"}, code=400)
