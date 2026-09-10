@@ -34,8 +34,14 @@ def _sha(p):
 
 def build():
     src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
-    declared = [x.strip().strip('"\'') for x in
-                re.search(r"^SKILLS = \[(.*?)\]", src, re.M).group(1).split(",")]
+    # **import 拿真值,不用正则去源码里抓。**
+    # 上一版是 `re.search(r"^SKILLS = \[(.*?)\]", src)` —— 判据贴着**写法**:
+    # 它假设 SKILLS 永远写成一个字面量列表。我把它改成从磁盘现算之后,
+    # 正则匹配不上,**这个检查当场崩掉**(AttributeError: NoneType.group)。
+    # 崩掉算运气好 —— 要是正则碰巧匹配到别的东西,它会安静地给出一份错清单。
+    # **判据要贴着「什么才算对」,不是贴着「我以为它会怎么写」** —— 这条这一段学过两次了。
+    import sdk as _sdk
+    declared = list(_sdk.SKILLS)
     ondisk = sorted(d for d in os.listdir(SKILL_DIR)
                     if os.path.isdir(os.path.join(SKILL_DIR, d)))
 

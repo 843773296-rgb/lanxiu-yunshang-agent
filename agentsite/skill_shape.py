@@ -63,11 +63,17 @@ def main():
     print(f"\n\033[1m技能形状检查\033[0m")
     print("=" * 84)
     print(f"  参照:Accio 发育完全的 60 份技能,正文中位数 ~247 行、描述 ~425 字、"
-          f"50/60 用 references/ 分层\n")
+          f"50/60 用 references/ 分层")
+    import skills_own
+    print(f"  只量我们自己写的 {len(skills_own.OURS)} 个 —— "
+          f"目录里另有 236 个第三方技能,它们怎么写不归我们改\n")
     bad = 0
+    import skills_own
     for n in sorted(os.listdir(SKILLS)):
         f = os.path.join(SKILLS, n, "SKILL.md")
         if not os.path.exists(f): continue
+        # 形状只量我们自己写的 —— 别人的技能怎么分段不归我们改
+        if not skills_own.is_ours(n): continue
         r = check_one(f)
         mark = f"{G}✅{D}" if not r["缺"] else f"{R}❌{D}"
         print(f"  {mark} {n:14s} {r['行数']:4d} 行 · 描述 {r['描述字数']:3d} 字 · "

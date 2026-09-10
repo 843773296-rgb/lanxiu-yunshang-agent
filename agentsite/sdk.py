@@ -249,7 +249,17 @@ WORKSHOP_TOOLS = [
 # 项目自带的 Skill(agentsite/.claude/skills/<名字>/SKILL.md)。
 # Skill 管的是**产出物的格式**:报价单会被截图转发,脱离上下文独自存在,
 # 所以每一份都得自带完整前提 —— 这种「有固定套路、做错了有代价」的事才该做成 Skill。
-SKILLS = ["quote", "growth-plan", "roster"]
+# 技能清单 —— **从磁盘现算,不手写**。
+# 手写的话加一个技能忘了写进来,它不会报错,只是永远不触发。
+# 用户要求把 Accio 的 262 份全拿了(去重后 236 份),加上我们自己的 3 份。
+# **装完直接拿评测量** —— 本项目有 15 条触发真值集和 14/15 的基线。
+def _all_skills():
+    d = os.path.join(HERE, ".claude", "skills")
+    if not os.path.isdir(d): return []
+    return sorted(x for x in os.listdir(d)
+                  if os.path.isfile(os.path.join(d, x, "SKILL.md")))
+
+SKILLS = _all_skills()
 TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
               "mcp__task__get_refund_trace", "mcp__task__get_payment_flow",
               "mcp__task__get_customer"]

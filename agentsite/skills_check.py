@@ -22,25 +22,41 @@ print("Skill 与配置面自查\n" + "=" * 74)
 
 # ① 每个 SKILL.md 的 frontmatter 必须齐 —— 缺 description,模型就不知道什么时候该用它
 sk_dir = os.path.join(HERE, ".claude", "skills")
+import skills_own
 found = sorted(d for d in os.listdir(sk_dir)) if os.path.isdir(sk_dir) else []
 metas = {}
 for d in found:
     f = os.path.join(sk_dir, d, "SKILL.md")
+    # **归属判断要放在最前面。** 上一版放在描述长度那一条前面,
+    # 而「没有 SKILL.md」「没有 frontmatter」两条在它**之前**就 append 了 ——
+    # 于是第三方技能照样报 5 条红。**边界画晚一步,等于没画。**
+    ours = skills_own.is_ours(d)
     if not os.path.exists(f):
-        bad.append(f"{d}/ 下没有 SKILL.md"); continue
+        if ours: bad.append(f"{d}/ 下没有 SKILL.md")
+        continue
     txt = open(f, encoding="utf-8").read()
     m = re.match(r"^---\n(.*?)\n---\n", txt, re.S)
     if not m:
-        bad.append(f"{d}/SKILL.md 没有 frontmatter"); continue
+        if ours: bad.append(f"{d}/SKILL.md 没有 frontmatter")
+        continue
     fm = dict(re.findall(r"^(\w+):\s*(.+)$", m.group(1), re.M))
     metas[d] = fm
+    # **质量只查我们自己写的。** 目录里现在还有 236 个从 Accio 提取的第三方技能,
+    # 它们的描述长短不归我们改;把它们算进来会出 136 条红,
+    # 而**淹掉的红和没有红是一回事**。
+    # 边界跟着**归属**走,不跟着「目录里有什么」走 —— 那个目录任何人都能往里写。
+    if not ours:
+        continue
     if fm.get("name") != d:
         bad.append(f"{d}/SKILL.md 的 name「{fm.get('name')}」和目录名对不上")
     if len(fm.get("description", "")) < 20:
         bad.append(f"{d} 的 description 太短 —— 模型靠它判断什么时候该用这个 skill")
-print(f"  {'✅' if metas else '❌'} 发现 {len(found)} 个 skill:{found}")
-for d, fm in metas.items():
-    print(f"       {d}: {fm.get('description','')[:56]}…")
+_ours = [d for d in metas if skills_own.is_ours(d)]
+_3rd = len(metas) - len(_ours)
+print(f"  {'✅' if metas else '❌'} 发现 {len(found)} 个 skill:"
+      f"我们自己的 {len(_ours)} 个 {_ours},第三方 {_3rd} 个({skills_own.THIRD_PARTY_NOTE})")
+for d in _ours:
+    print(f"       {d}: {metas[d].get('description','')[:56]}…")
 
 # ② 代码里声明的 SKILLS 要和目录对得上 —— 多了是死规则,少了是白写
 import sdk

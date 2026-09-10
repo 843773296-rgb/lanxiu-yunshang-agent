@@ -31,3 +31,12 @@ backend/.imgcache/
 # 差集清单是 fakedata/diffreport.py 生成的,别手写也别提交(两份一定漂)
 fakedata/差集清单.json
 combo-review.jsonl
+
+# 从 Accio 提取的第三方技能(236 个)。**装在本地生效,但不进版本库。**
+# 理由和当初把提取物放在仓库外一样:那是商业软件的文件(带 LICENSE.txt),
+# 推到 git 远端是另一回事。要在别的机器上装,跑 tools/install_accio_skills.py。
+# 我们自己那三个用 ! 排除在忽略之外 —— 它们必须进版本库。
+agentsite/.claude/skills/*
+!agentsite/.claude/skills/quote/
+!agentsite/.claude/skills/growth-plan/
+!agentsite/.claude/skills/roster/
