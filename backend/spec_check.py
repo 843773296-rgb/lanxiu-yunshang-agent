@@ -114,7 +114,7 @@ rule("A15", "有在办业务的账户不得注销",
 # ── 二、关联 ────────────────────────────────────────────────────────────
 REF = {"customer_id": "customer", "order_id": "ordr", "account_id": "account",
        "wearer_id": "wearer", "spu": "product", "sku": "sku", "pattern": "pattern",
-       "artisan": "artisan", "task_id": "task", "deposit_id": "deposit",
+       "artisan": "artisan", "task_id": "task", "schedule_id": "schedule", "deposit_id": "deposit",
        "self_wearer_id": "wearer", "parent_a": "wearer", "parent_b": "wearer"}
 tabs = [t[0] for t in c.execute("SELECT name FROM sqlite_master WHERE type='table'")
         if not t[0].startswith("sqlite")]

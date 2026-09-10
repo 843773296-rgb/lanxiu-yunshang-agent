@@ -112,11 +112,26 @@ def book(d):
         return dict(ok=False, code="CLOSED",
                     reason=f"门店 {OPEN_HOUR[0]}:00–{OPEN_HOUR[1]}:00 营业,这个点没人接待")
 
-    cust = (_rows("SELECT * FROM customer WHERE phone=? AND archived=0", phone) or [None])[0]
-    if not cust:
+    hits = _rows("SELECT * FROM customer WHERE phone=? AND archived=0 ORDER BY created", phone)
+    if not hits:
         return dict(ok=False, code="NO_CUSTOMER",
                     reason="这个手机号还不是我们的客户。第一次来请到店建档,"
                            "或让顾问替你登记 —— 自助预约暂时只对老客开放")
+    if len(hits) > 1:
+        # **一个手机号对应多条在用档案。** 库里现在有 16 个这样的号 ——
+        # 那正是「客户合并」要处理的场景(同一个人在两家店各建了一次档)。
+        #
+        # 上一版直接取 `[0]`,后果不是报错,是**单子落到另一条档案的顾问手上** ——
+        # 跨店、错人,而客户那头看起来一切正常,直到当天有人问「谁来接待我」。
+        # **「查到一条」和「查到多条只取了第一条」返回的东西长得一模一样。**
+        #
+        # 兜底方向:不猜。取**最早建档**的那条(主档口径和客户合并一致:
+        # 「保留下单记录较早的那条为主档」),但**把这件事说出来**并记进台账,
+        # 让店里知道这个号该合并了。
+        cust = hits[0]
+        _flag_dup(phone, hits)
+    else:
+        cust = hits[0]
 
     pend = _rows("SELECT id FROM schedule WHERE customer_id=? AND type='客户预约' AND status='有效'",
                  cust["id"])
@@ -155,6 +170,24 @@ def book(d):
                 customer=cust["name"], shop=cust.get("shop"),
                 assigned=bool(assignee), reason=why,
                 when=t.strftime("%Y-%m-%d %H:%M"))
+
+
+def _flag_dup(phone, hits):
+    """一个号多条档案 —— 记一笔,让它能被看见。
+
+    **不报错、不拦下单**:客户没做错任何事,不该因为门店的档案没合并而约不上。
+    但也不能不吭声 —— 不吭声的话这个号会一直派给同一条档案的顾问,
+    而另一条档案上的历史(量体、订单、偏好)永远用不上。
+    """
+    try:
+        from oplog import log_op
+        log_op("SYS", "customer", hits[0]["id"], "—", "—", True, "DUP_PHONE",
+               f"手机号 {phone[:3]}****{phone[-4:]} 有 {len(hits)} 条在用档案:"
+               f"{[h['id'] + '/' + (h.get('shop') or '') for h in hits]};"
+               f"本次按最早建档的 {hits[0]['id']} 派单 —— **这个号该走客户合并**",
+               {"phone_tail": phone[-4:], "ids": [h["id"] for h in hits]})
+    except Exception:
+        pass
 
 
 def unassigned(shop=None):

@@ -46,7 +46,7 @@ CREATE TABLE task(id TEXT PRIMARY KEY, type TEXT, ref_id TEXT, status TEXT, crea
 -- 同一条工单研判多次就是多行,谁都能回头看当时智能体说了什么、花了多少钱。
 CREATE TABLE triage(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id TEXT, breakpoint TEXT, case_id TEXT, created TEXT,
+  schedule_id TEXT, breakpoint TEXT, case_id TEXT, created TEXT,
   ai_root_cause TEXT, ai_action TEXT, ai_evidence TEXT,
   ai_confidence TEXT,          -- 高 / 中 / 低,由工具调用数与证据完整度推,不是模型自称
   ai_text TEXT, tool_calls INT, cost REAL, latency_ms INT, model TEXT,
@@ -218,6 +218,18 @@ CREATE TABLE workorder(
 CREATE TABLE measure_rec(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, tpl TEXT,
   item TEXT, value REAL, measured_by TEXT, measured_at TEXT, method TEXT DEFAULT '到店',
   wearer_id TEXT,
+  -- 这批量体是**哪次上门/接待量的**(schedule.id)。可空 —— 历史数据没有这条边。
+  -- 补它的理由:原来只有客户号和时间戳,要问「这次上门量了什么」只能拿时间去猜。
+  -- 同一个客户量过三次(2 月到店、6 月到店、9 月上门),猜就会猜错 —— 我自己就猜错过一次:
+  -- 拿「最新的模板分组」当成这次的,取到了 2 月那批,于是「时间先后」这条验证误报。
+  -- **靠时间戳连起来的两张表,平时和真有外键长得一模一样,直到有人量了第二次。**
+  --
+  -- ⚠️ 叫 schedule_id 不叫 task_id:**库里有两个都叫「任务」的东西** ——
+  -- `schedule` 是日程任务(派给顾问的活),`task` 是人工工单(退款/合并/判责)。
+  -- 第一版叫 task_id,悬空引用检查按列名猜表、去找 `task`,当场报 15 条对不上。
+  -- 检查抓对了「有条边对不上」,但**推错了指向哪儿** —— 而它推错的方式
+  -- 恰恰是我加列时的方式:**看名字**。命名撞车的代价在这儿现形。
+  schedule_id TEXT,
   -- 08-量体与版型.md 第四节:「每次量体必须记下三件事,**缺一件就等于没量**」——
   -- ①数值+单位 ②**量体条件** ③量体人+时间。前后两件早就有了,唯独缺第二件,
   -- 而文档专门写着它「最常漏」:同一个人穿厚内搭和不穿,胸围差 3–4cm,

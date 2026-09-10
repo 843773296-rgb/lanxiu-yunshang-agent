@@ -61,6 +61,41 @@ def main():
         no, code, _ = booking.route({"advisor": r[0]["adv_code"], "shop": "SH001 静安旗舰店"})
         check("绑定顾问不在客户所在门店", code, "CROSS_SHOP")
 
+    print("\n\033[1m▸ 一号多档 · 不许静默取第一条\033[0m")
+    print("  " + "=" * 76)
+    # 造数据时抓到的真 bug:book() 按手机号找客户,拿 `[0]` ——
+    # 而库里有 16 个号对应多条在用档案(那正是「客户合并」要处理的场景)。
+    # 后果不是报错,是**单子落到另一条档案的顾问手上** —— 跨店、错人,
+    # 而客户那头看起来一切正常,直到当天有人问「谁来接待我」。
+    # **「查到一条」和「查到多条只取了第一条」返回的东西长得一模一样。**
+    dups = q("""SELECT phone, COUNT(*) n FROM customer WHERE archived=0
+                GROUP BY phone HAVING n>1 ORDER BY phone LIMIT 1""")
+    if not dups:
+        print(f"  {R}❌{D} 库里没有一号多档的样本 —— 这一节测不到"); bad += 1
+    else:
+        ph = dups[0]["phone"]
+        hits = q("SELECT id,shop,created FROM customer WHERE phone=? AND archived=0 "
+                 "ORDER BY created", ph)
+        before = len(q("SELECT id FROM op_log WHERE code='DUP_PHONE'"))
+        import datetime
+        when = (datetime.datetime.now() + datetime.timedelta(days=6)).strftime("%Y-%m-%dT14:00")
+        r = booking.book(dict(phone=ph, when=when, need="检查用"))
+        # **照常放行** —— 客户没做错任何事,不该因为门店档案没合并而约不上
+        check("一号多档照常能约上", "能" if r.get("ok") else f"被拒:{r.get('code')}", "能")
+        if r.get("ok"):
+            t = q("SELECT customer_id FROM schedule WHERE id=?", r["task"])[0]
+            check("  └ 派给**最早建档**的那条", t["customer_id"], hits[0]["id"],
+                  f"  ← 候选 {[h['id'] for h in hits]}")
+            after = len(q("SELECT id FROM op_log WHERE code='DUP_PHONE'"))
+            check("  └ 而且留了痕", "记了" if after > before else "没记", "记了",
+                  "  ← 不吭声的话,另一条档案上的历史永远用不上")
+            # 造出来的这条清掉,**检查不许改库**
+            with sqlite3.connect(DB) as _c:
+                _c.execute("DELETE FROM schedule WHERE id=?", (r["task"],))
+                _c.execute("DELETE FROM appointment WHERE id=?", (r["appt"],))
+                _c.execute("DELETE FROM op_log WHERE code='DUP_PHONE' AND id>?", (before and
+                           q("SELECT MAX(id) m FROM op_log WHERE code='DUP_PHONE'")[0]["m"] - 1 or 0,))
+
     print("\n\033[1m▸ 任务类型 · 两族的规则不一样\033[0m")
     print("  " + "=" * 76)
     import tasktypes as tt
