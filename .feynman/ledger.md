@@ -32,7 +32,7 @@
 - 2026-09-04 ·【架构】升代完成:1.5 代手写循环 → 第三代 Harness · 在 agentsite/sdk.py:152 的 ClaudeAgentOptions(Agent SDK + 3 个 MCP + Skill + 4 个 Hook)· 出处:Anthropic Agent SDK 官方文档 · 自评:懂了
 - 2026-09-04 ·【概念】Harness = 赋能 + 引导 · 赋能靠 MCP 挂 19 个工具,引导靠 Hook 在工具前后插检查;只做前一半不算第三代 · 出处:训练营代际地图 agent-map.md · 自评:懂了
 - 2026-09-04 ·【鉴别】Tool 与 Hook 的分界 · Tool 是模型想起来才用,Hook 是不管它想不想都执行;提示词里的「铁律」不挂 Hook 就只是祈使句 · 在 agentsite/guards.py 九项体检 · 自评:懂了
-- 2026-09-04 ·【教训】可观测性不会自动跟着架构走 · trace.jsonl 停在升代那天,新一代一行日志都没有,而且不报错 · 在 .feynman/llm-trace.jsonl vs agentsite/sdk.py · 自评:懂了(待补)
+- 2026-09-04 ·【教训】可观测性不会自动跟着架构走 · trace.jsonl 停在升代那天,新一代一行日志都没有,而且不报错 · 在 .feynman/llm-trace.jsonl vs agentsite/sdk.py · 自评:**懂了 · 已结**(2026-09-10 核实:四代全在记(V1 423/V2 46/V3 391/工具 16),V3 最新一条今天 15:26;**而且 check.sh 有「记录仪覆盖」一项顶着** —— 新增调模型的地方漏接就红。**光补一次不算结,加了会红的检查才算**)
 - 2026-09-04 ·【教训】SDK 给的数字要先验证再用 · Agent SDK 的 total_cost_usd 按 Claude 单价算,而模型指向 DeepSeek,实测差 24 倍 · 在 agentsite/sdk.py 的 cost_of() · 自评:懂了
 - 2026-09-04 ·【评测】新评测集第一次跑,失败的往往是评测本身 · 24 题错 5 题,五题全是用例/判分器的问题,模型一题没错 · 在 agent/tool_eval.py · 自评:懂了
 - 2026-09-04 ·【评测】三轴打分:轨迹 / 内容 / 体检 · 只看内容的话瞎猜蒙对会被判满分 · 在 agent/tool_eval.py 的 judge() · 自评:懂了
