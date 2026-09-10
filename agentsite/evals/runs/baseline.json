@@ -1,0 +1,125 @@
+{
+ "准确率": "10/15",
+ "明细": [
+  {
+   "id": 1,
+   "prompt": "这套马面裙大概多少钱?",
+   "want": null,
+   "got": null,
+   "ok": true,
+   "kind": "对"
+  },
+  {
+   "id": 2,
+   "prompt": "给张女士出个报价单,她要那套云锦的明制",
+   "want": "quote",
+   "got": null,
+   "ok": false,
+   "kind": "漏触发"
+  },
+  {
+   "id": 3,
+   "prompt": "帮客户做份方案报价,预算两万左右",
+   "want": "quote",
+   "got": null,
+   "ok": false,
+   "kind": "漏触发"
+  },
+  {
+   "id": 4,
+   "prompt": "这件衣服工期要多久",
+   "want": null,
+   "got": null,
+   "ok": true,
+   "kind": "对"
+  },
+  {
+   "id": 5,
+   "prompt": "孩子明年这时候还能穿这件吗?",
+   "want": "growth-plan",
+   "got": null,
+   "ok": false,
+   "kind": "漏触发"
+  },
+  {
+   "id": 6,
+   "prompt": "6月毕业典礼那天要穿,现在该做多大?",
+   "want": "growth-plan",
+   "got": null,
+   "ok": false,
+   "kind": "漏触发"
+  },
+  {
+   "id": 7,
+   "prompt": "这个孩子现在多高?",
+   "want": null,
+   "got": null,
+   "ok": true,
+   "kind": "对"
+  },
+  {
+   "id": 8,
+   "prompt": "帮我排下周的班",
+   "want": "roster",
+   "got": "roster",
+   "ok": true,
+   "kind": "对"
+  },
+  {
+   "id": 9,
+   "prompt": "安排一下这周谁值哪天",
+   "want": "roster",
+   "got": "roster",
+   "ok": true,
+   "kind": "对"
+  },
+  {
+   "id": 10,
+   "prompt": "把待分配的那几条都排进去,分给合适的人",
+   "want": "roster",
+   "got": null,
+   "ok": false,
+   "kind": "漏触发"
+  },
+  {
+   "id": 11,
+   "prompt": "明天让林岚回访一下 C10001",
+   "want": null,
+   "got": null,
+   "ok": true,
+   "kind": "对"
+  },
+  {
+   "id": 12,
+   "prompt": "把苏彧的 SC7007 改派给林岚,他请假了",
+   "want": null,
+   "got": null,
+   "ok": true,
+   "kind": "对"
+  },
+  {
+   "id": 13,
+   "prompt": "本店谁最忙?",
+   "want": null,
+   "got": null,
+   "ok": true,
+   "kind": "对"
+  },
+  {
+   "id": 14,
+   "prompt": "香云纱能不能做平绣?",
+   "want": null,
+   "got": null,
+   "ok": true,
+   "kind": "对"
+  },
+  {
+   "id": 15,
+   "prompt": "我今天有什么任务",
+   "want": null,
+   "got": null,
+   "ok": true,
+   "kind": "对"
+  }
+ ]
+}

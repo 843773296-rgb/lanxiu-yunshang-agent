@@ -567,6 +567,27 @@ def check_answer(text, calls):
 SCOPE_WORDS = ("整幅", "满地", "通身", "全身", "满绣", "整件")
 
 
+def _arg_key(tool, args):
+    """给一次工具调用算个指纹 —— 用来认出「一模一样的参数又试了一次」。"""
+    import hashlib
+    payload = json.dumps({k: v for k, v in sorted((args or {}).items())},
+                         ensure_ascii=False, sort_keys=True, default=str)
+    return tool + ":" + hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+# 「这一句要安排的不止一件事」—— **确定性打标,只认少数高置信的说法**。
+# 判据宁可漏,不可宽:判宽了天天拦正常的单条派活,人会学会无视这条提示;
+# 而**被无视的闸和没有闸是一回事**。
+_COMPOUND = re.compile(
+    r"(这[几三四五六七八两]条|那[几三四五六七八两]条|[三四五六七八两]条都|"
+    r"都派|全部派|挨个派|一个个派|每个人都|每人都|每天(都)?(安排|排)|"
+    r"排[一整]?(周|下周|本周|这周)的?班|一周的班|排下周|批量)")
+
+
+def _looks_compound(prompt):
+    return bool(_COMPOUND.search(prompt or ""))
+
+
 def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None):
     """PreToolUse 的判定逻辑,**纯函数版**。返回拦截理由,None = 放行。
 
@@ -614,13 +635,47 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
     WRITE = ("assign_task", "dispatch_task", "reassign_task", "finish_task", "assign_batch")
     short = name.rsplit("__", 1)[-1]
     if short in WRITE:
-        done = [c for c in (state_writes or []) if c.rsplit("__", 1)[-1] in WRITE]
-        if done:
-            return (f"这一轮已经写过一次了({done[-1].rsplit('__',1)[-1]})。"
+        # ── 尝试台账:**「改正参数重试」和「已经做成了还想再做一件」不是一回事** ──
+        # 上一版把这两件揉成一条闸,后果是:参数写错被工具拒了之后,
+        # 模型连改正的机会都没有 —— 而改正一个校验错误是完全正当的。
+        # 抄 Accio 的 skill-executor-attempt-ledger:记每次尝试和它的结果,
+        # 按**尝试的性质**分别处理。
+        ledger = state_writes or []          # [{tool, key, ok}]
+        succeeded = [x for x in ledger if isinstance(x, dict) and x.get("ok")]
+        tried = [x for x in ledger if isinstance(x, dict)]
+        key = _arg_key(short, args)
+
+        if succeeded:
+            done = succeeded[-1]["tool"]
+            return (f"这一轮已经写成功一次了({done})。"
                     "**一次只做一件** —— 请先把这一条的结果告诉用户,"
-                    "等他确认下一条要派给谁再动手。连着写好几条,"
-                    "其中一条参数猜错的话,三条都已经落库了。")
-        if short == "assign_task" and "task_types" not in " ".join(state_reads or []):
+                    "等他确认下一条再动手。连着写好几条,"
+                    "其中一条参数猜错的话,几条都已经落库了。")
+
+        same = [x for x in tried if x.get("key") == key]
+        if same:
+            return ("**一模一样的参数再试一次不会有不同结果。**"
+                    f"上一次 {same[-1].get('tool')} 就是这些参数,被拒了。"
+                    "把工具说的原因告诉用户,让他决定改什么。")
+        if len(tried) >= 3:
+            return (f"这一轮已经试了 {len(tried)} 次都没成。**别再猜了** —— "
+                    "把最后一次的错误原话告诉用户。反复重试会在台账上留下一串失败记录,"
+                    "而其中某一次可能碰巧成功了 —— 那就是一条没人打算派的任务。")
+
+        # ── 计划先行:复合请求不许一条一条派 ──────────────────────────
+        # 抄 Accio 的 intent-plan-required。它的实测发现是:
+        # 「线上多意图问题样本里,绝大多数根本没进入 plan —— 不是因为请求不复杂,
+        #   而是模型把它当成一个大 workflow 顺着执行了」。
+        # 提示词里写「一次只做一件」召回不足,**hook 才是强制**。
+        if short in ("assign_task", "dispatch_task") and _looks_compound(prompt):
+            return ("用户这一句要安排的**不止一件事**,而你在一条一条派。"
+                    "一条一条派的问题是:前几条会成功,某一条才发现和前面撞了 —— "
+                    "而前几条已经落库了。**请改用 `assign_batch` 一次排完**:"
+                    "它全过才写、一条不过整批不写,而且能看见一条一条派看不见的冲突"
+                    "(同一个人被排了两个重叠时段)。")
+
+        if short == "assign_task" and "task_types" not in " ".join(
+                x if isinstance(x, str) else "" for x in (state_reads or [])):
             return ("派任务之前先调 `task_types()` 看类型规范 —— "
                     "类型决定挂哪张单据、完成时要不要传图。**没查就派**,"
                     "派出去的东西和正常任务长得一模一样,错了也看不出来。")
@@ -673,14 +728,25 @@ def make_hooks(state):
             if not name.startswith("mcp__"):
                 state.setdefault("blocked_tools", []).append(name)
             return {"decision": "block", "reason": v}
-        # 放行的写工具记一笔 —— 下一次写就会被上面那条闸拦住。
-        # **记在放行处,不记在 post_tool**:工具执行失败也算「已经动过手」,
-        # 失败之后紧接着换参数重试,正是要挡的那件事。
-        if name.rsplit("__", 1)[-1] in ("assign_task", "dispatch_task", "reassign_task", "finish_task", "assign_batch"):
-            state.setdefault("wrote", []).append(name)
+        # 放行的写工具记一笔**结构化的**:哪个工具、什么参数、成没成。
+        # 只记工具名的话,分不出「改正参数重试」和「又要做一件新的」——
+        # 而这两件的处理方式完全不同(前者该放,后者该拦)。
+        short2 = name.rsplit("__", 1)[-1]
+        if short2 in ("assign_task", "dispatch_task", "reassign_task",
+                      "finish_task", "assign_batch"):
+            state.setdefault("wrote", []).append(
+                dict(tool=short2, key=_arg_key(short2, args), ok=None))
         return {}
 
     async def post_tool(inp, tool_use_id, ctx):
+        # **回填这次写成没成。** 被工具拒了的不算「做完一件」——
+        # 不回填的话,一次校验失败就把这一轮的写额度用光了,
+        # 而改正一个校验错误是完全正当的。
+        _n2 = (inp.get("tool_name") or "").rsplit("__", 1)[-1]
+        _w = state.get("wrote") or []
+        if _w and _w[-1].get("tool") == _n2 and _w[-1].get("ok") is None:
+            _r = _unwrap(inp.get("tool_response"))
+            _w[-1]["ok"] = bool(isinstance(_r, dict) and _r.get("ok"))
         state.setdefault("calls", []).append(dict(
             tool=inp.get("tool_name", ""), input=inp.get("tool_input"),
             output=_unwrap(inp.get("tool_response"))))

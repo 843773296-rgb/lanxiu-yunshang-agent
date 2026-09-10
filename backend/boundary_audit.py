@@ -89,10 +89,20 @@ def _verdict(name, reads=(), writes=()):
 
 
 def a_double_write():
-    """一轮里连着写两次 —— 第二次必须被拦。"""
+    """**已经写成功一次之后**,同一轮再写必须被拦。
+
+    注意台账现在是结构化的 [{tool, key, ok}] —— 上一版这里传的是纯字符串列表,
+    改成结构化之后这条攻击悄悄失效了(闸看不懂旧格式,当成没写过就放行)。
+    **攻击本身也会过时**:被攻击的东西改了接口,攻击不会报错,只会开始放行。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "agentsite"))
+    import guards as _g
     W = "mcp__shop__assign_task"
-    v = _verdict(W, reads=["mcp__shop__task_types"], writes=[W])
-    if not v: return "同一轮里连着写第二次居然放行了"
+    args = {"type": "日常运维", "assignee": "林岚", "note": "x", "end": "2026-12-31 18:00"}
+    done = [dict(tool="assign_task", key=_g._arg_key("assign_task", args), ok=True)]
+    v = _verdict(W, reads=["mcp__shop__task_types"], writes=done)
+    if not v: return "已经写成功一次之后,同一轮再写居然放行了"
     raise PermissionError(v)
 
 

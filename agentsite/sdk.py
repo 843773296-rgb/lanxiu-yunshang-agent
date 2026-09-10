@@ -571,6 +571,17 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     if budget_hit and not text.strip():
         # 一个字都没答出来 —— 那就把预算这件事当成回答本身,而不是报个错
         text = budget_hit
+    # 技能埋点:**每一轮都记,没触发也记** ——
+    # 只记触发的话分母就没了,「触发了 12 次」单独看毫无意义。
+    try:
+        import skill_stats as _ss
+        _sk = next((( (t.get("args") or {}).get("skill") or "?")
+                    for t in traj if (t.get("tool") or "") == "Skill"), None)
+        _ss.record(_sk, prompt if isinstance(prompt, str) else "(带图)",
+                   role=(me or {}).get("role"), tools=traj,
+                   seconds=round(time.time() - t0, 1), ok=not budget_hit)
+    except Exception:
+        pass    # 埋点不许影响主流程 —— 记录仪坏了不该让业务跟着坏
     return dict(text=text.strip(), budget_hit=bool(budget_hit),
                 budget_limit=_max_usd(provider),
                 trajectory=traj, seconds=round(time.time() - t0, 1),
