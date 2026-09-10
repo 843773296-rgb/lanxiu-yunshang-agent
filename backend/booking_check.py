@@ -67,14 +67,46 @@ def main():
     check("客户相关类型数", str(len(tt.CUSTOMER_TYPES)), "4")
     check("店铺运营类型数", str(len(tt.OPS_TYPES)), "5")
     for t in tt.CUSTOMER_TYPES:
-        if not tt.info(t)["needs_customer"]:
-            print(f"  {R}❌{D} 客户相关的「{t}」竟然不要求挂客户"); bad += 1
+        if tt.ref_of(t) != "customer":
+            print(f"  {R}❌{D} 客户相关的「{t}」该直接挂客户号,现在挂的是 {tt.ref_of(t)}"); bad += 1
     for t in tt.OPS_TYPES:
-        if tt.info(t)["needs_customer"]:
-            print(f"  {R}❌{D} 店铺运营的「{t}」竟然要求挂客户"); bad += 1
         if tt.agent_may_propose(t):
             print(f"  {R}❌{D} agent 不该给运营任务「{t}」出建议 —— "
                   f"谁该轮培训、谁家里有事,依据不在库里"); bad += 1
+
+    # **族 ≠ 数据规范。** 运营族里既有不挂单据的(团建/日常运维),
+    # 也有必须挂单据的(订单跟踪/维保/售后)——
+    # 上一版把两者合成一个 needs_customer,订单跟踪就成了无主任务。
+    _ops_with_ref = [t for t in tt.OPS_TYPES if tt.ref_of(t)]
+    _ops_no_ref = [t for t in tt.OPS_TYPES if not tt.ref_of(t)]
+    check("运营族里有挂单据的", "有" if _ops_with_ref else "没有", "有",
+          f"  ← {_ops_with_ref}")
+    check("运营族里也有不挂的", "有" if _ops_no_ref else "没有", "有",
+          f"  ← {_ops_no_ref}")
+
+    # **客户号只在 ref=customer 时手填。** 订单/维保/售后的客户从单据带出 ——
+    # 手填就是第二个来源,而两个来源不一致时没有任何地方会报错。
+    for t in ("订单跟踪", "维保任务", "售后任务"):
+        check(f"「{t}」不让手填客户号", str(tt.needs_customer(t)), "False")
+        if not tt.ref_of(t):
+            print(f"  {R}❌{D} 「{t}」没有指定挂哪种单据,那客户从哪儿来?"); bad += 1
+
+    # 每种单据都要能真的解析出客户
+    print()
+    for kind, sql in [("customer", "SELECT id FROM customer WHERE archived=0 LIMIT 1"),
+                      ("order", "SELECT id FROM ordr LIMIT 1"),
+                      ("maintain", "SELECT id FROM maintain LIMIT 1"),
+                      ("aftersale", "SELECT id FROM aftersale LIMIT 1")]:
+        row = q(sql)
+        if not row:
+            print(f"  {R}❌{D} 库里一条 {kind} 都没有,「{kind} 能带出客户」这条测不到"); bad += 1
+            continue
+        ok2, cid, _sh, dsc = tt.resolve_ref(kind, row[0]["id"], q)
+        check(f"{tt.REF_SOURCE[kind][2]}能带出客户", "带出" if (ok2 and cid) else "带不出", "带出",
+              f"  ← {dsc[:38]}")
+    # 查不到的单据必须明确拒绝,**不许当成「没挂单据」放过去**
+    ok3, cid3, _s3, d3 = tt.resolve_ref("order", "这个单号不存在", q)
+    check("查不到的单据要拒绝", "拒绝" if not ok3 else "放过", "拒绝", f"  ← {d3}")
     check("agent 只对客户相关出建议",
           str(sorted(t for t in tt.BY_NAME if tt.agent_may_propose(t))),
           str(sorted(tt.CUSTOMER_TYPES)))

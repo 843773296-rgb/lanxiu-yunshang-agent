@@ -777,20 +777,17 @@ def assign_task(d, me):
                      f"只能派给**{me.get('shop') or '你管辖'}**的在职顾问;"
                      f"可派的人:{[x['name'] for x in allowed.values()] or '(没有)'}", to)
 
-    cid = (d.get("customer_id") or "").strip() or None
-    if ti["needs_customer"]:
-        if not cid:
-            return dict(ok=False, code="NEED_CUSTOMER",
-                        reason=f"「{kind}」是客户相关任务,必须挂一个客户 —— "
-                               f"不挂客户的「{kind}」派下去,顾问只能回来问是给谁做")
-        if not rows("SELECT id FROM customer WHERE id=?", cid):
-            return dict(ok=False, code="NO_CUSTOMER", reason=f"客户 {cid} 不存在")
-    elif cid:
-        # 运营任务挂了客户 —— 不拦,但要说一声。**静默丢弃字段比报错更难查**:
-        # 店长填了客户,列表里却看不到,他会以为是显示的问题。
-        return dict(ok=False, code="NO_NEED_CUSTOMER",
-                    reason=f"「{kind}」是店铺运营任务,不挂客户。你填了 {cid},"
-                           f"要么换成客户相关的类型,要么把客户去掉")
+    # 数据规范由**类型**说了算:挂哪种单据、单据上的客户是谁,都从这里出。
+    # customer_id 一律**不收**请求里的 —— 它是从单据带出来的结果,不是输入。
+    ref_kind = ti["ref"]
+    ref_id = (d.get("ref_id") or d.get("customer_id") or "").strip() or None
+    ok0, cid, ref_shop, ref_desc = tt.resolve_ref(ref_kind, ref_id, rows)
+    if not ok0:
+        return dict(ok=False, code="BAD_REF", reason=f"「{kind}」:{ref_desc}")
+    if not ref_kind and ref_id:
+        return dict(ok=False, code="NO_NEED_REF",
+                    reason=f"「{kind}」是店内自己的事,不挂任何单据。你填了 {ref_id} —— "
+                           f"要么换成挂单据的类型,要么把它去掉")
 
     note = (d.get("note") or d.get("title") or "").strip()
     if not note: return dict(ok=False, code="NEED_NOTE", reason="日程描述必填 —— 写清楚这件事要做什么")
@@ -816,11 +813,11 @@ def assign_task(d, me):
     him = allowed[to]
     with sqlite3.connect(DB) as c:
         c.execute("""INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,status,
-                     shop,assignee_no,assigned_by,assigned_at,note,activity_code)
-                     VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?)""",
+                     shop,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)
+                     VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
                   (sid, kind, f"{him.get('adv_code') or ''} {him['name']}".strip(), cid,
                    st, en, him.get("shop"), to, me["no"],
-                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), note, ac))
+                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), note, ac, ref_id))
 
     # 派单附件 —— 存不下的**逐张回报**,不要笼统说「部分失败」。
     import files as _f
@@ -831,14 +828,19 @@ def assign_task(d, me):
         else: failed.append(why2)
 
     log_op(me["name"], "schedule", sid, "—", "有效", True, "ASSIGN",
-           f"{me['name']}({me['role']})派给 {him['name']}:[{kind}] {note[:36]};"
-           f"{st} → {en}" + (f";活动 {ac}" if ac else "") + (f";附件 {saved} 张" if saved else ""),
-           {"role": me["role"], "assignee": to, "type": kind})
-    return dict(ok=True, code="ASSIGN", id=sid, 类型=kind, 附件=saved,
-                reason=f"已派给 **{him['name']}**({kind}),{st} → {en}。"
-                       f"他登录后会在「我的任务」里看到。"
-                       + (f" 附件 {saved} 张。" if saved else "")
-                       + (f" 有 {len(failed)} 张没存下:{failed[0]}" if failed else ""))
+           (f"{me['name']}({me['role']})派给 {him['name']}:[{kind}] {note[:36]};"
+            + (f"挂 {ref_desc};" if ref_desc else "")
+            + f"{st} → {en}"
+            + (f";活动 {ac}" if ac else "")
+            + (f";附件 {saved} 张" if saved else "")),
+           {"role": me["role"], "assignee": to, "type": kind,
+            "ref": ref_id, "customer": cid})
+    return dict(ok=True, code="ASSIGN", id=sid, 类型=kind, 附件=saved, 挂着=ref_desc or None,
+                reason=(f"已派给 **{him['name']}**({kind}),{st} → {en}。"
+                        + (f"这条挂着 {ref_desc}。" if ref_desc else "")
+                        + "他登录后会在「我的任务」里看到。"
+                        + (f" 附件 {saved} 张。" if saved else "")
+                        + (f" 有 {len(failed)} 张没存下:{failed[0]}" if failed else "")))
 
 
 def dispatch(d, me):
@@ -1703,6 +1705,13 @@ class H(BaseHTTPRequestHandler):
             # 而漏改的那一处不会报错,只会少一个选项。
             import tasktypes as _tt
             return self._send({"rows": _tt.catalog()})
+        if p == "/api/task-ref":
+            # 填完单号立刻回一句「这是谁的单」。**让人在提交前就看见带出来的客户** ——
+            # 提交后才发现挂错单,任务已经派下去了。
+            import tasktypes as _tt
+            _k = _tt.ref_of((Q.get("type") or [""])[0])
+            _ok, _cid, _sh, _dsc = _tt.resolve_ref(_k, (Q.get("id") or [""])[0], rows)
+            return self._send(dict(ok=_ok, customer_id=_cid, shop=_sh, desc=_dsc))
         if p == "/api/activities":
             return self._send({"rows": rows(
                 "SELECT code,name,kind,status,shop FROM activity "

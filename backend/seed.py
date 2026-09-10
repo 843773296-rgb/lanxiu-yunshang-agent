@@ -82,7 +82,10 @@ CREATE TABLE schedule(id TEXT PRIMARY KEY, type TEXT, advisor TEXT, customer_id 
   assigned_by TEXT,          -- 谁派的(staff.no)。**排任务必须记得住是谁派的**
   assigned_at TEXT,          -- 什么时候派的
   note TEXT,                 -- 日程描述(这件事要做什么)
-  activity_code TEXT);       -- 绑定活动(activity.code)。可空 —— 大多数任务和活动无关
+  activity_code TEXT,        -- 绑定活动(activity.code)。可空 —— 大多数任务和活动无关
+  -- 挂的单据号。**类型决定它是哪种单**:客户号 / 订单号 / 维保单号 / 售后单号。
+  -- customer_id 不由人填,从这张单据带出来 —— 手填就有两个来源,而两个来源必然漂。
+  ref_id TEXT);
 -- 任务附件。**派单时的图和总结时的图是两回事**,所以用 kind 分开而不是两张表:
 --   派单 —— 店长/客户给的现场照、参考图,是「要做什么」的证据
 --   总结 —— 顾问做完拍的,是「做成什么样」的证据

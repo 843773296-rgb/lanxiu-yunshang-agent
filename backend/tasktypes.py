@@ -25,28 +25,58 @@
                     店长会以为它算过。
 """
 
+# ── 数据规范:每一族有自己的必填项 ─────────────────────────────────
+# **族和数据规范是两根轴,别合成一根。**
+#   族      —— 决定**谁派**(客户相关能自动派/agent 建议;运营只能店长派)
+#   数据规范 —— 决定**必须挂哪张单据**
+# 订单跟踪由店长派(族=运营),但它盯的是某一张单,当然得知道是谁的单。
+# 上一版把两者合成了一个 needs_customer,于是「运营=不挂客户」,
+# 订单跟踪、维保、售后就都成了无主的任务。
+#
+# ref 的取值 = **挂哪种单据**:
+#   customer   客户号        —— 客户主动找上门的那四种
+#   order      订单号        —— 盯一张单的进度
+#   maintain   维保单号      —— 某件衣服的保养/返修
+#   aftersale  售后单号      —— 某张单的退换赔付
+#   None       不挂          —— 店内自己的事,本来就没有「给谁做」
+#
+# **客户号只在 ref=customer 时手填,其余一律从单据带出来。**
+# 让人手填的话就有两个来源:单子上写的客户,和人填的客户。两者不一致时
+# 没有任何地方会报错 —— 任务上写着 C10001,单子其实是 C10007 的,
+# 顾问照着任务去联系。同一个事实存两遍,必然漂。
+
 # 完成时要不要现场照?**别一刀切成「都要」。**
 # 电话回电没什么可拍的,硬性要求的结果不是多一张证据,是多一张桌面照 ——
-# 人会拍点什么交差。**强制的证据会变成假证据**,而假证据比没证据更坏:
+# **强制的证据会变成假证据**,而假证据比没证据更坏:
 # 它让台账看起来是有据可查的。
 # 所以只在「事情本身留下了可看的痕迹」时要求:去过现场、动过东西、修过件。
 #
-# (名称, 族, 是否必须挂客户, 派单方式, 完成时是否必须传图, 一句话说明)
+# (名称, 族, 挂哪种单据, 派单方式, 完成时是否必须传图, 一句话说明)
 TYPES = [
-    ("预约到店", "客户", True,  "auto_or_agent", False, "客户约了时间到店,需要有人接待"),
-    ("电话回电", "客户", True,  "auto_or_agent", False, "客户留了问题要回电"),
-    ("上门沟通", "客户", True,  "auto_or_agent", True,  "顾问上门量体或沟通方案 —— 要有到场的照片"),
-    ("接待任务", "客户", True,  "auto_or_agent", False, "客户到店后的接待与跟进"),
+    ("预约到店", "客户", "customer",  "auto_or_agent", False, "客户约了时间到店,需要有人接待"),
+    ("电话回电", "客户", "customer",  "auto_or_agent", False, "客户留了问题要回电"),
+    ("上门沟通", "客户", "customer",  "auto_or_agent", True,  "顾问上门量体或沟通方案 —— 要有到场的照片"),
+    ("接待任务", "客户", "customer",  "auto_or_agent", False, "客户到店后的接待与跟进"),
 
-    ("团建培训", "运营", False, "manager",       True,  "店内培训、内部活动 —— 要有现场照"),
-    ("日常运维", "运营", False, "manager",       True,  "陈列、盘点、卫生 —— 要有做完的样子"),
-    ("订单跟踪", "运营", False, "manager",       False, "盯一张订单的进度"),
-    ("维保任务", "运营", False, "manager",       True,  "成衣保养、返修 —— 要有件的照片"),
-    ("售后任务", "运营", False, "manager",       True,  "投诉、退换、赔付 —— 要有问题件的照片"),
+    ("团建培训", "运营", None,        "manager",       True,  "店内培训、内部活动 —— 要有现场照"),
+    ("日常运维", "运营", None,        "manager",       True,  "陈列、盘点、卫生 —— 要有做完的样子"),
+    ("订单跟踪", "运营", "order",     "manager",       False, "盯一张订单的进度 —— 填订单号,客户从单上带出"),
+    ("维保任务", "运营", "maintain",  "manager",       True,  "成衣保养、返修 —— 填维保单号,要有件的照片"),
+    ("售后任务", "运营", "aftersale", "manager",       True,  "投诉、退换、赔付 —— 填售后单号,要有问题件的照片"),
 ]
 
-BY_NAME = {t[0]: dict(name=t[0], family=t[1], needs_customer=t[2], route=t[3],
-                      needs_photo=t[4], desc=t[5])
+# 单据种类 → (库表, 主键列, 界面上叫什么, 举例)
+REF_SOURCE = {
+    "customer":  ("customer",  "id", "客户号",   "C10001"),
+    "order":     ("ordr",      "id", "订单号",   "6488012719714560000"),
+    "maintain":  ("maintain",  "id", "维保单号", "MW73020"),
+    "aftersale": ("aftersale", "id", "售后单号", "AS64880127"),
+}
+
+BY_NAME = {t[0]: dict(name=t[0], family=t[1], ref=t[2], route=t[3],
+                      needs_photo=t[4], desc=t[5],
+                      ref_label=(REF_SOURCE[t[2]][2] if t[2] else None),
+                      ref_eg=(REF_SOURCE[t[2]][3] if t[2] else None))
            for t in TYPES}
 CUSTOMER_TYPES = [t[0] for t in TYPES if t[1] == "客户"]
 OPS_TYPES = [t[0] for t in TYPES if t[1] == "运营"]
@@ -92,6 +122,21 @@ def agent_may_propose(t):
     return who_assigns(t) == "auto_or_agent"
 
 
+def ref_of(t):
+    """这个类型该挂哪种单据。None = 店内自己的事,不挂。"""
+    i = info(t)
+    return i["ref"] if i else None
+
+
+def needs_customer(t):
+    """要不要**手填**客户号 —— 只有客户主动找上门的那四种才要。
+
+    订单跟踪/维保/售后也是有客户的,但那个客户**从单据带出来**,
+    不由人填。这两件事一定要分开说,否则「有客户」会被理解成「要填客户」。
+    """
+    return ref_of(t) == "customer"
+
+
 def needs_photo(t):
     """完成时必须传现场照吗。认不出的类型一律**不强制** ——
     对一个不认识的类型硬加门槛,只会挡住正常的活。"""
@@ -102,3 +147,39 @@ def needs_photo(t):
 def catalog():
     """给界面用的清单。界面**不许自己写一份类型列表**。"""
     return [dict(BY_NAME[n], can_propose=agent_may_propose(n)) for n in BY_NAME]
+
+
+def resolve_ref(kind, ref_id, q):
+    """把单据号换成 (客户号, 门店, 人话说明)。
+
+    `q(sql, *args)` 由调用方传进来 —— 这个模块**不自己连库**:
+    类型表是规矩,规矩不该知道数据库在哪。
+
+    返回 (ok, customer_id, shop, 说明)。查不到就说清楚查的是什么单,
+    「单据不存在」这五个字会让人反复核对一个根本不该填在这儿的号。
+    """
+    src = REF_SOURCE.get(kind)
+    if not src:
+        return True, None, None, ""            # 不挂单据的类型
+    table, key, label, eg = src
+    rid = (ref_id or "").strip()
+    if not rid:
+        return False, None, None, f"{label}必填(例:{eg})"
+
+    if kind == "customer":
+        r = q(f"SELECT id,name,shop FROM customer WHERE {key}=?", rid)
+        if not r: return False, None, None, f"没有这个{label}:{rid}"
+        return True, r[0]["id"], r[0]["shop"], f"{r[0]['name']}({rid})"
+
+    r = q(f"SELECT * FROM {table} WHERE {key}=?", rid)
+    if not r: return False, None, None, f"没有这个{label}:{rid}"
+    row = r[0]
+    cid = row.get("customer_id")
+    if not cid:
+        # 单子上没有客户 —— **不许在这里猜一个**。
+        # 这种单本身就是坏数据,派下去只会把坏数据传下去。
+        return False, None, None, f"{label} {rid} 上没有客户,这张单据本身要先修"
+    nm = q("SELECT name FROM customer WHERE id=?", cid)
+    who = f"{nm[0]['name']}({cid})" if nm else cid
+    extra = row.get("item") or row.get("kind") or row.get("reason") or ""
+    return True, cid, row.get("shop"), f"{who}的{label} {rid}" + (f" · {extra}" if extra else "")

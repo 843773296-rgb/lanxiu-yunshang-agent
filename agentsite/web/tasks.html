@@ -100,8 +100,9 @@ td.n{white-space:nowrap;color:var(--dim);font-size:12.5px}
     </div>
     <div class="row">
       <div id="custwrap">
-        <label for="cust">客户号</label>
+        <label for="cust" id="reflabel">客户号</label>
         <input id="cust" placeholder="C10001">
+        <div id="refhint" style="font-size:12px;margin-top:5px;min-height:18px"></div>
       </div>
       <div>
         <label for="act">绑定活动</label>
@@ -188,16 +189,43 @@ async function loadTypes(){
   syncType();
 }
 
-// 类型换了,表单跟着变：客户族要客户号,运营族没有客户
+// 类型换了,表单跟着变。**每个类型挂的单据不一样**:
+// 客户主动找上门的四种填客户号;订单跟踪填订单号、维保填维保单号、售后填售后单号,
+// 客户由单据带出;团建/日常运维不挂任何单据。
 function syncType(){
   const t=TYPES.find(x=>x.name===$("#ttype").value);
   if(!t) return;
-  $("#custwrap").hidden = !t.needs_customer;
+  $("#custwrap").hidden = !t.ref;
+  if(t.ref){
+    $("#reflabel").textContent = t.ref_label;
+    $("#cust").placeholder = t.ref_eg || "";
+  }
+  $("#refhint").textContent="";
   $("#tnote").textContent =
-    `${t.desc}。${t.needs_customer?"必须挂一个客户。":"不挂客户。"}`+
-    (t.needs_photo?"完成时**必须**传现场照。":"完成时不强制传照片。").replace(/\*\*/g,"");
+    `${t.desc}。` +
+    (t.ref==="customer" ? "必须填客户号。"
+      : t.ref ? `必须填${t.ref_label},客户由单据带出 —— 不用你再填一遍。`
+      : "店内自己的事,不挂任何单据。") +
+    (t.needs_photo ? "完成时必须传现场照。" : "完成时不强制传照片。");
 }
-$("#ttype").addEventListener("change", syncType);
+$("#ttype").addEventListener("change", ()=>{ syncType(); $("#cust").value=""; });
+
+// 填完单号就查一次,把带出来的客户显示出来 ——
+// **提交后才发现挂错单,任务已经派下去了。**
+let refTimer=null;
+$("#cust").addEventListener("input", ()=>{
+  clearTimeout(refTimer);
+  refTimer=setTimeout(async()=>{
+    const id=$("#cust").value.trim(), h=$("#refhint");
+    if(!id){ h.textContent=""; return; }
+    h.style.color="var(--dim)"; h.textContent="查询中…";
+    try{
+      const d=await(await fetch(`/api/task-ref?type=${encodeURIComponent($("#ttype").value)}&id=${encodeURIComponent(id)}`)).json();
+      h.style.color = d.ok ? "var(--ok)" : "var(--err)";
+      h.textContent = (d.ok?"✔ ":"") + (d.desc||"");
+    }catch(e){ h.style.color="var(--dim)"; h.textContent=""; }
+  }, 350);
+});
 
 // 图片选好后转成 data URL 带走。**在这里就把超大的挡掉** ——
 // 让人等 30 秒上传完再被后端拒,是最差的一种拒绝。
@@ -233,6 +261,7 @@ async function loadTasks(){
       <td class="n">${esc(r.id)}</td>
       <td class="n"><span class="tag fam">${esc(r.type||"—")}</span></td>
       <td>${esc(r.note||"—")}
+        ${r.ref_id?`<br><span style="font-size:11.5px;color:var(--dim)">挂 ${esc(r.ref_id)}${r.customer_id?`（${esc(r.customer_id)}）`:""}</span>`:""}
         ${r.activity_code?`<br><span style="font-size:11.5px;color:var(--dim)">活动 ${esc(r.activity_code)}</span>`:""}
         ${r.summary?`<br><span style="color:var(--ok);font-size:12px">✔ ${esc(r.summary)}</span>`:""}</td>
       <td class="n">${esc(r.assignee_name||r.advisor||"—")}</td>
@@ -308,7 +337,7 @@ $("#send").onclick=async()=>{
     note:$("#note").value.trim(), activity_code:$("#act").value,
     files:PICS};
   const t=TYPES.find(x=>x.name===body.type);
-  if(t&&t.needs_customer) body.customer_id=$("#cust").value.trim();
+  if(t&&t.ref) body.ref_id=$("#cust").value.trim();
   if(!body.assignee_no) return msg(m,"没有可派的顾问",false);
   $("#send").disabled=true;
   const d=await(await fetch("/api/task-assign",{method:"POST",
