@@ -44,7 +44,11 @@ def visible_scope(me):
         return "1=1", [], "全部门店(你是总部运营)"
     if me.get("role") in MANAGER_ROLES:
         return "s.shop=?", [me.get("shop")], f"{me.get('shop')}(你是店长,看得到全店)"
-    return "s.assignee_no=?", [me["no"]], "只有派给你的任务"
+    # 顾问除了自己名下的,还看得见**曾经是自己、后来被改派走的**那些。
+    # 不给看的话,他的列表会凭空少一行 —— 他不会去问「我那条活呢」,
+    # 他会以为自己记错了。这不是放宽隔离:那条活本来就是他的,他早知道。
+    return ("(s.assignee_no=? OR s.reassigned_from=?)", [me["no"], me["no"]],
+            "派给你的任务(含被改派走的)")
 
 
 
@@ -249,6 +253,71 @@ def my_tasks(me, status=None):
             r["派任务的人"] = (f"{by[0]['name']}({by[0]['role']})" if by
                             else f"工号 {src}(员工表里查不到这个人)")
     return dict(scope=scope, hit=len(rs), rows=rs)
+
+
+def reassign(d, me):
+    """**改派**:把一条已经派出去的任务转给另一个人。
+
+    和 dispatch 的区别不是「改 vs 新建」,是**有人的活被拿走了**:
+      · dispatch 分的是没人管的单,谁也没损失
+      · reassign 是从小张手上拿走给小李 —— 小张的列表会少一行
+
+    所以这里多三条 dispatch 没有的:
+      ① **理由必填** —— 把人的活拿走要给个说法。没有说法的改派,
+         在小张眼里和「我的活莫名其妙没了」没区别
+      ② **原负责人留档** —— 他还看得见这条,看得见是谁拿走的、为什么
+      ③ **只能改有效的** —— 已完结的改派没有意义,只会把台账搅浑
+    """
+    import datetime
+    if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return _deny(me, "WRONG_ROLE", f"改派须由店长及以上操作,你的角色是「{me['role']}」")
+    sid = (d.get("id") or "").strip()
+    rs = rows("SELECT * FROM schedule WHERE id=?", sid)
+    if not rs: return dict(ok=False, code="NO_TASK", reason=f"没有任务 {sid}")
+    t = rs[0]
+    if not t.get("assignee_no"):
+        return dict(ok=False, code="NOT_ASSIGNED",
+                    reason=f"{sid} 还没派给任何人,这是**分派**不是改派 —— 用 dispatch")
+    if t.get("status") != "有效":
+        return dict(ok=False, code="BAD_STATE",
+                    reason=f"{sid} 当前是「{t['status']}」,改派已完结的任务没有意义,"
+                           f"只会把台账搅浑")
+    if me["role"] != "总部运营" and t.get("shop") != me.get("shop"):
+        return _deny(me, "NOT_YOURS", f"{sid} 属于 {t.get('shop')},不在你管辖范围", sid)
+
+    to = (d.get("assignee_no") or "").strip()
+    allowed = {x["no"]: x for x in my_staff(me)}
+    if to not in allowed:
+        return _deny(me, "NOT_YOURS",
+                     f"只能改派给**{me.get('shop') or '你管辖'}**的在职顾问;"
+                     f"可派的人:{[x['name'] for x in allowed.values()] or '(没有)'}", sid)
+    if to == t["assignee_no"]:
+        return dict(ok=False, code="SAME_PERSON",
+                    reason="新负责人和原来是同一个人 —— 这条不用改派")
+
+    why = (d.get("reason") or "").strip()
+    if len(why) < 4:
+        return dict(ok=False, code="NEED_REASON",
+                    reason="改派理由必填 —— **把人的活拿走要给个说法**。"
+                           "没有说法的改派,在原负责人眼里和「我的活莫名其妙没了」没区别")
+
+    old = rows("SELECT name FROM staff WHERE no=?", t["assignee_no"])
+    old_name = old[0]["name"] if old else t["assignee_no"]
+    him = allowed[to]
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    with sqlite3.connect(DB) as c:
+        c.execute("UPDATE schedule SET assignee_no=?,advisor=?,assigned_by=?,assigned_at=?,"
+                  "reassigned_from=?,reassign_reason=?,reassigned_at=? WHERE id=?",
+                  (to, f"{him.get('adv_code') or ''} {him['name']}".strip(), me["no"], now,
+                   t["assignee_no"], why, now, sid))
+    log_op(me["name"], "schedule", sid, old_name, him["name"], True, "REASSIGN",
+           f"{me['name']}({me['role']})把 {sid} 从 {old_name} 改派给 {him['name']};理由:{why[:50]}",
+           {"role": me["role"], "from": t["assignee_no"], "to": to, "reason": why})
+    return dict(ok=True, code="REASSIGN", id=sid, 原负责人=old_name, 新负责人=him["name"],
+                reason=f"{sid} 已从 **{old_name}** 改派给 **{him['name']}**。"
+                       f"{old_name} 那边仍然看得见这条,标着是你改派的和理由 —— "
+                       f"**不让他的列表凭空少一行**。")
 
 
 def get_task(tid, me):

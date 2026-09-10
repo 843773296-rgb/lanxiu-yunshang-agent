@@ -85,7 +85,14 @@ CREATE TABLE schedule(id TEXT PRIMARY KEY, type TEXT, advisor TEXT, customer_id 
   activity_code TEXT,        -- 绑定活动(activity.code)。可空 —— 大多数任务和活动无关
   -- 挂的单据号。**类型决定它是哪种单**:客户号 / 订单号 / 维保单号 / 售后单号。
   -- customer_id 不由人填,从这张单据带出来 —— 手填就有两个来源,而两个来源必然漂。
-  ref_id TEXT);
+  ref_id TEXT,
+  -- ── 改派留下的三列 ────────────────────────────────────────────────
+  -- **改派不是「换个 assignee_no」。** 悄悄换掉的话,原来那个人的列表
+  -- 凭空少一行 —— 他不会去问「我那条活呢」,他会以为自己记错了。
+  -- 所以要留下「原来是谁的」,让他还看得见这条,并且看得见是谁拿走的、为什么。
+  reassigned_from TEXT,      -- 改派前是谁的(staff.no)
+  reassign_reason TEXT,      -- 为什么改派。**必填** —— 把人的活拿走要给个说法
+  reassigned_at TEXT);
 -- 任务附件。**派单时的图和总结时的图是两回事**,所以用 kind 分开而不是两张表:
 --   派单 —— 店长/客户给的现场照、参考图,是「要做什么」的证据
 --   总结 —— 顾问做完拍的,是「做成什么样」的证据

@@ -274,7 +274,8 @@ TASK_ONLY_TOOLS = [
     #   ③ 每一笔都在台账里标明「智能体代 X 执行」,查得出是谁的主意
     "mcp__shop__my_tasks", "mcp__shop__team_tasks", "mcp__shop__get_task",
     "mcp__shop__task_types", "mcp__shop__dispatch_pool",
-    "mcp__shop__assign_task", "mcp__shop__dispatch_task", "mcp__shop__finish_task",
+    "mcp__shop__assign_task", "mcp__shop__dispatch_task",
+    "mcp__shop__reassign_task", "mcp__shop__finish_task",
     # 售后判责跑在这个角色上,而**判定表在 kb_tables 里**。
     # 原来没给:get_maintain 的描述明写「判定标准要另外查 kb_tables」,
     # liability_eval 的提示词也明写「再用 kb_tables 取售后争议判定」——

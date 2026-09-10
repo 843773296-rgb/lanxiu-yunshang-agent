@@ -308,7 +308,7 @@ class as_user:
 # 期间那位顾问被派了别的活,卡上的撞车提醒会跟着变。
 # 会改数据的工具。**列在这儿是给检查用的** —— isolation_check 逐个确认
 # 它们都从会话取身份、都走 tasks.py 那一套判定,不会因为「是智能体调的」而放宽。
-WRITE_TOOLS = ("assign_task", "dispatch_task", "finish_task")
+WRITE_TOOLS = ("assign_task", "dispatch_task", "reassign_task", "finish_task")
 
 
 MANAGER_ROLES = ("店长", "总部运营")
@@ -332,7 +332,15 @@ def my_tasks(status=None):
                 "挂的单据": r.get("ref_id"), "客户": r.get("customer_id"),
                 "绑定活动": r.get("activity_code"), "总结": r.get("summary"),
                 "附件数": len(r.get("附件") or []) or None,
-                "派任务的人": r.get("派任务的人")})
+                "派任务的人": r.get("派任务的人"),
+                # 被改派走的必须**看得出来**。只显示「负责人:林岚」的话,
+                # 原负责人会以为是自己记错了 —— 那比少一行还糟。
+                "改派": (f"这条原来是你的,{r.get('reassigned_at','')} 被改派给 "
+                        f"{r.get('assignee_name')};理由:{r.get('reassign_reason')}"
+                        if r.get("reassigned_from") == me["no"] else
+                        (f"{r.get('reassigned_at','')} 从别人那儿改派过来;"
+                         f"理由:{r.get('reassign_reason')}"
+                         if r.get("reassigned_from") else None))})
            for r in d["rows"]]
     # **截断要说出来。** 原来直接 out[:40],多的部分无声消失 ——
     # 40 条以内看不出问题,超了它会给出一个看起来完整的答案,而少了一批。
@@ -504,6 +512,12 @@ def assign_task(type, assignee, note, end, start=None, ref_id=None, activity_cod
     import tasks
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁在派 —— 请先登录")
+    # **权限先判,再解析人名。** 反过来的话,顾问调这个会收到
+    # 「找不到周叙」—— 而真因是「你没这个权限」。
+    # 顾问看到「找不到」会去核对名字拼写,那条路是死的。
+    # **错误信息要指向原因,不是指向症状。**
+    if me.get("role") not in tasks.MANAGER_ROLES:
+        return dict(error=f"这个动作须由店长及以上操作,你是「{me.get('role')}」")
     # 收件人写姓名的,先换成工号;**同名认不出就报错,不猜**
     who = (assignee or "").strip()
     pool = tasks.my_staff(me)
@@ -526,6 +540,12 @@ def dispatch_task(task_id, assignee=None):
     import tasks, booking
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁在分 —— 请先登录")
+    # **权限先判,再解析人名。** 反过来的话,顾问调这个会收到
+    # 「找不到周叙」—— 而真因是「你没这个权限」。
+    # 顾问看到「找不到」会去核对名字拼写,那条路是死的。
+    # **错误信息要指向原因,不是指向症状。**
+    if me.get("role") not in tasks.MANAGER_ROLES:
+        return dict(error=f"这个动作须由店长及以上操作,你是「{me.get('role')}」")
     to = (assignee or "").strip()
     if not to:
         t = _rows("SELECT * FROM schedule WHERE id=?", (task_id or "").strip())
@@ -544,6 +564,37 @@ def dispatch_task(task_id, assignee=None):
         to = hit[0]["no"]
     r = tasks.dispatch(dict(id=task_id, assignee_no=to), me)
     if r.get("ok"): _agent_log(me, "DISPATCH", r.get("reason", ""))
+    return r
+
+
+def reassign_task(task_id, assignee, reason):
+    """**改派**:把一条已经派出去的任务转给另一个人(真的写进去)。
+
+    和 dispatch_task 的区别是**有人的活被拿走了** ——
+    dispatch 分的是没人管的单,谁也没损失;改派是从小张手上拿走给小李。
+
+    所以理由必填。原负责人那边仍然看得见这条,标着是谁改派的、为什么 ——
+    **不让他的列表凭空少一行**。
+
+    ⚠️ 动手之前先问清楚:为什么要改派、原负责人知不知道。
+    """
+    import tasks
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在改派 —— 请先登录")
+    # **权限先判,再解析人名。** 反过来的话,顾问调这个会收到
+    # 「找不到周叙」—— 而真因是「你没这个权限」。
+    # 顾问看到「找不到」会去核对名字拼写,那条路是死的。
+    # **错误信息要指向原因,不是指向症状。**
+    if me.get("role") not in tasks.MANAGER_ROLES:
+        return dict(error=f"这个动作须由店长及以上操作,你是「{me.get('role')}」")
+    who = (assignee or "").strip()
+    pool = tasks.my_staff(me)
+    hit = [p for p in pool if p["no"] == who] or [p for p in pool if p["name"] == who]
+    if len(hit) != 1:
+        return dict(error=(f"找不到「{who}」" if not hit else f"有 {len(hit)} 个人叫「{who}」,请给工号"),
+                    可派的人=[f"{p['name']}({p['no']})" for p in pool])
+    r = tasks.reassign(dict(id=task_id, assignee_no=hit[0]["no"], reason=reason), me)
+    if r.get("ok"): _agent_log(me, "REASSIGN", r.get("reason", ""))
     return r
 
 
@@ -1395,6 +1446,12 @@ SHOP_SCHEMAS=[
     "task_id":{"type":"string","description":"任务号,如 SC7029"},
     "assignee":{"type":"string","description":"分给谁,工号或姓名。不给则采纳建议。"}},
    "required":["task_id"]}},
+ {"name":"reassign_task","description":"**改派**:把一条已经派出去的任务转给另一个人(真的写进去)。和 dispatch_task 的区别是**有人的活被拿走了** —— dispatch 分的是没人管的单,改派是从小张手上拿走给小李。所以 reason 必填,而且原负责人仍然看得见这条(标着是谁改派的、为什么),**不让他的列表凭空少一行**。只能改「有效」的任务。⚠️ 动手之前先问清楚为什么要改、原负责人知不知道。",
+  "input_schema":{"type":"object","properties":{
+    "task_id":{"type":"string","description":"任务号,如 SC7029"},
+    "assignee":{"type":"string","description":"改派给谁,工号或姓名"},
+    "reason":{"type":"string","description":"为什么改派。**必填** —— 把人的活拿走要给个说法"}},
+   "required":["task_id","assignee","reason"]}},
  {"name":"finish_task","description":"**把任务标记完成**(真的写进去)。日程总结必填。**只能完成派给自己的** —— 别人代点等于台账上写了一件没发生的事。需要现场照的类型要先在页面上传照片,这里传不了图。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号"},
@@ -1507,7 +1564,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

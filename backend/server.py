@@ -713,7 +713,7 @@ def resolve_combo(d, actor="魏欣新", _role=None):
 # 排任务的全部逻辑搬进 backend/tasks.py —— **HTTP 入口和智能体工具共用同一份**。
 # 抄两份的话,「顾问不能替别人点完成」这条会有一份先被改松,
 # 而松掉的那一份不会报错,只会悄悄多出一批别人代点的完结记录。
-from tasks import (MANAGER_ROLES, my_staff, assign_task, dispatch,   # noqa: E402
+from tasks import (MANAGER_ROLES, my_staff, assign_task, dispatch, reassign,   # noqa: E402
                    my_tasks, finish_task, visible_scope)
 
 
@@ -1809,6 +1809,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/task-assign": return self._send(assign_task(body, _me(self)))
         if p=="/api/task-finish": return self._send(finish_task(body, _me(self)))
         if p=="/api/task-dispatch": return self._send(dispatch(body, _me(self)))
+        if p=="/api/task-reassign": return self._send(reassign(body, _me(self)))
         if p=="/api/task-file":
             # 单独补传附件(派单后想起来还有张图)。只有**看得见这条任务的人**能传:
             # 派给他的顾问,或者本店店长。
