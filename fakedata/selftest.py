@@ -566,6 +566,29 @@ def main():
     else:
         print("  (跳过:backend/lanxiu.db 不在)")
 
+    print("\n【接手体检 · 门面那条命令】")
+    import checkup as CK
+    kp = os.path.join(tmpd, "known_test.db")
+    rk = CK.checkup(kp, "test", log=lambda *a: None)
+    ck(rk["表"]["总数"] >= 4 and rk["关系"]["挖出来"] > 0,
+       f'体检读得出表和关系(表 {rk["表"]["总数"]} 张 / 关系 {rk["关系"]["挖出来"]} 条)')
+    ck(0 < rk["认出率"]["百分比"] <= 1, f'认出率带分母({rk["认出率"]["认出语义"]}'
+       f'/{rk["认出率"]["列总数"]})')
+    # 靶子库在后面那一节才建 —— 这里自己建一份,别依赖执行顺序。
+    # (第一版直接引用,当场 SystemExit 把整个自测带走 ——
+    #  **检查之间的隐性顺序依赖,坏起来是崩溃不是红线**,这个坑今天第三次了。)
+    import generalize as GEN2
+    gp2 = os.path.join(tmpd, "checkup_gen_test.db")
+    if not os.path.exists(gp2): GEN2.build_db(gp2)
+    rg = CK.checkup(gp2, "test", log=lambda *a: None)
+    ck(rg["关系"]["库里明写"] == 3,
+       "明写的外键**按边去重**再数 —— 同一条关系常被声明两次(列级+表级),"
+       "不去重会报成「明写 4 → 挖出 3」,读起来像少了一条",
+       f'报了 {rg["关系"]["库里明写"]} 条')
+    try:
+        CK.checkup(kp, "生产", log=lambda *a: None); ck(False, "体检也要过闸门")
+    except guard.Refused: ck(True, "体检虽然只读,也要显式声明环境(闸门照拦)")
+
     print("\n【起草接口规格 · 静态扒 + 模型只补语义(离线,不调模型)】")
     import specdraft as SD
     sv = os.path.join(ROOT, "backend", "server.py")
