@@ -55,13 +55,20 @@ def ex(sql, *a):
 def pick_customers(n):
     """挑能安全跑旅程的客户。
 
-    三类必须排除,每一类都栽过:
+    **四类**必须排除,每一类都栽过:
 
     · **反例夹具**(E-* 共 14 个)—— 种子里写着「⚠️ 不许补全」。
       我第一版挑到了 E-A4-01「人工调整 15 天前」,给它加了一笔订单、
       改了累计金额和最近互动 —— **而它的 last_interact 正是生命周期真值的依据**。
     · **客户合并用例**(C21* 共 32 个,对应 15 条 BP-02 真值)——
       那 16 对是「疑似重复档案」,改它们的字段会动到评测答案。
+    · **被评测引用的客户** —— 这一类最难看见:它们**不是夹具**,就是普通客户,
+      但某条评测用例的真值依赖它们身上的某个事实。
+      栽过一次:C10017 原来只有 3 项量体记录(「记录不全」),
+      我给他补了 5 项完整的 —— **售后判责那条用例的真值当场翻了**
+      (「记录不全 · 我方免费改」变成规则算出的「客方 · 收费改」)。
+      夹具和普通数据之间有边,**而那条边从客户这一侧看不见**。
+      现在把四种引用都排掉:售后判责的维保单、客户合并、押金退款、truth 表提到的。
     · **一号多档**(库里有 16 个)—— book() 按手机号找人,
       多条时取最早建档那条,所以脚本挑的那条不一定是最后下单的那条,
       跑出来的数据会自相矛盾。这个 bug 已修(会记台账),但脚本仍然避开它们,
@@ -75,6 +82,12 @@ def pick_customers(n):
                   AND c.name<>'已注销用户'
                   AND c.id NOT LIKE 'E-%'          -- 反例夹具
                   AND c.id NOT LIKE 'C21%'         -- 客户合并用例
+                  -- 被评测引用的:动它们身上的事实,会翻掉某条用例的真值
+                  AND c.id NOT IN (SELECT customer_id FROM maintain
+                                   WHERE id IN (SELECT ref_id FROM task WHERE type='售后判责'))
+                  AND c.id NOT IN (SELECT customer_id FROM deposit
+                                   WHERE id IN (SELECT ref_id FROM task WHERE type='财务人工任务'))
+                  AND c.id NOT IN (SELECT customer_id FROM aftersale)
                   AND (SELECT COUNT(*) FROM customer d
                        WHERE d.phone=c.phone AND d.archived=0) = 1   -- 一号一档
                   AND (SELECT COUNT(*) FROM schedule s
