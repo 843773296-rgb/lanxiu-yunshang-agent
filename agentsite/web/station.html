@@ -266,11 +266,24 @@ function md(src){
    业务数据的家在后台库里(研判落库、工单、着装人),
    聊天记录留在本机既不用建表,也不会让人误以为它是台账。
    真要留档的结论,走研判队列 —— 那条路径是有人签字的。 */
-const KEY = "lanxiu.chat.v1";
+/* **一人一份。** 原来这里是写死的 "lanxiu.chat.v1" —— 同一台电脑上
+   店长退出、顾问登录,打开的是**同一份会话列表**,顾问看得见店长跟助手
+   说过的每一句话,里面有全店的数据。隔离做在工具层,却在草稿本这儿漏了。
+   所以键名带工号,**而且身份没拿到之前一个字都不读不写** ——
+   先画一个空列表再往里填,和一开始就画对,在屏幕上是两回事。
+   旧的那份不迁移:它是几个人的记录混在一起,**分不清哪条是谁的,
+   迁过来就是把漏看变成永久归档**。 */
+let KEY = null;
 let DB = {convs: [], cur: null};
-try{ const raw = localStorage.getItem(KEY); if(raw) DB = JSON.parse(raw); }catch(e){}
-if(!Array.isArray(DB.convs)) DB.convs = [];
-const save = () => { try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){} };
+const save = () => { if(!KEY) return;
+                     try{ localStorage.setItem(KEY, JSON.stringify(DB)); }catch(e){} };
+function bindStore(no){
+  KEY = "lanxiu.chat." + no;
+  DB = {convs: [], cur: null};
+  try{ const raw = localStorage.getItem(KEY); if(raw) DB = JSON.parse(raw); }catch(e){}
+  if(!Array.isArray(DB.convs)) DB.convs = [];
+  drawSide(); drawStream();
+}
 const cur = () => DB.convs.find(c => c.id === DB.cur) || null;
 
 // 角色清单**从后端拉**(/roles)—— 工具数和规矩数只有那边算得出来,
@@ -684,9 +697,11 @@ async function loadMe(){
     const u = await r.json();
     $("#me").textContent = `${u.name} · ${u.role}`;
     $("#me").title = `${u.name}(${u.no})· ${u.role}${u.shop ? " · " + u.shop : ""}`;
+    bindStore(u.no);          // **会话列表要等身份到了才读**
   }catch(e){ $("#me").textContent = ""; }
 }
 
-syncHint(); drawSide(); drawStream(); grow(); $("#q").focus();
+syncHint(); grow(); $("#q").focus();   // drawSide/drawStream 交给 bindStore ——
+                                       // 身份没到,列表就该是空的,不是别人的
 loadRoles(); loadModels(); loadMe(); loadSkillsets();
 </script>

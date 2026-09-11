@@ -65,7 +65,7 @@ PAGES = {"/": "station.html", "/panels": "panels.html",
          "/wearers": "wearers.html"}
 
 sys.path.insert(0, HERE)
-import sdk
+import sdk, sessions
 
 
 def _u(s):
@@ -203,10 +203,18 @@ class H(BaseHTTPRequestHandler):
                 # 后一个会把前一个的凭证改掉,前一个就带着 DeepSeek 的 base_url 去打 Claude。
                 # 本机单人用,串行的代价可以接受;串味的代价不能接受。
                 me = _who(self)
+                # **续聊要核对归属**:session_id 是前端送上来的,身份判得再对,
+                # 也挡不住「换一条别人已经判过的历史接着说」——
+                # 隔离是按「这轮取什么数」做的,而历史是上一轮就取好的。
+                sid_in = body.get("session") or None
+                ok_s, why_s = sessions.check(sid_in, me)
+                if not ok_s:
+                    return self._send({"error": why_s, "code": "SESSION_NOT_YOURS"}, code=403)
                 with RUNLOCK:
-                    r = asyncio.run(sdk.run(kind, prompt, resume=body.get("session") or None,
+                    r = asyncio.run(sdk.run(kind, prompt, resume=sid_in,
                                             provider=prov, model_name=mdl, images=imgs or None,
                                             me=me, skills=body.get("skills")))
+                sessions.own(r.get("session_id"), me)
                 return self._send(r)
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)

@@ -504,6 +504,139 @@ def dispatch_batch(items):
     return r
 
 
+def monthly_review(month=None):
+    """**月度复盘**:这个月做完了多少、几条逾期、逾期都在谁身上、改派了几次、
+    agent 的派单建议采纳率、待分配积压、订单走完一轮要多久。
+
+    month 写 `2026-09`,不给就是当月。范围跟身份走:顾问只看自己的,店长看本店。
+
+    ⚠️ **分母为零时不给比率,给一句话** —— 「没发生过」和「发生了但都是零」
+    是两件事,而它们在一张报表上长得一模一样。
+    """
+    import tasks as _tk, datetime, json as _js, statistics as _st
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import knowledge.review as rv
+
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在看 —— 请先登录")
+    today = _dt.date.today().isoformat()
+    m = (month or today[:7]).strip()
+    if not re.fullmatch(r"\d{4}-\d{2}", m):
+        return dict(error=f"月份写成 2026-09 这样,收到「{month}」")
+
+    where, args, scope = _tk.visible_scope(me)
+    ts_ = _rows(f"SELECT s.*, st.name assignee_name FROM schedule s "
+                f"LEFT JOIN staff st ON st.no=s.assignee_no "
+                f"WHERE {where} AND substr(s.{rv.归月字段},1,7)=?", *(args + [m]))
+
+    out = dict(月份=m, 范围=scope,
+               口径=f"任务按**{rv.归月字段_人话}**归月;"
+                    f"改派/分派这些动作,**按它动的那条任务归月** —— "
+                    f"台账记的是操作发生的墙上时间,和业务时间不是一个钟,"
+                    f"照墙上时间筛会筛出空集")
+
+    if ts_:
+        done = [r for r in ts_ if r.get("status") == "完结"]
+        od = [r for r in ts_ if rv.逾期判定(r.get("status"), r.get("end_ts"), today)]
+        by_person = {}
+        for r in od:
+            k = r.get("assignee_name") or "(没有负责人)"
+            by_person[k] = by_person.get(k, 0) + 1
+        done_txt, _ = rv.rate(len(done), len(ts_), "任务")
+        # **「逾期都在谁身上」只给店长及以上。**
+        # 它是管理信号(一个人欠 5 条 和 5 个人各欠 1 条是两个问题),
+        # 而顾问的可见范围里本来就会出现别人的名字 ——
+        # 被改派走的那条单子还挂在他列表里,现在的负责人是另一个人。
+        # 单看一条是知情权,**汇总成一张「谁在拖」的榜,就是越界了**。
+        mgr = me.get("role") in _tk.MANAGER_ROLES or me.get("role") == "总部运营"
+        out["任务"] = dict(总数=len(ts_), 完结=len(done), 完成率=done_txt,
+                          **({"逾期": len(od)} if mgr else
+                             {"你看得到的逾期": len(od),
+                              "说明": "含被改派走、但仍留在你列表里的那些 —— "
+                                      "它们现在的负责人是别人"}),
+                          逾期都在谁身上=(by_person or None) if mgr else None,
+                          你的逾期=None if mgr else len(
+                              [r for r in od if r.get("assignee_no") == me.get("no")]),
+                          逾期口径=f"截止时间已过、状态仍是「有效」,按**今天 {today}** 判 —— "
+                                   f"问的是「现在还有几条客户在等」,不是「当月月底欠着几条」")
+    else:
+        out["任务"] = dict(总数=0, 说明=f"{m} 这个月,你看得到的范围里没有任务到期")
+
+    # 动作:从台账里取,但**按它动的那条任务归月**,和上面同一个钟。
+    ids = {r["id"] for r in ts_}
+    logs = _rows("SELECT code,target,reason,ctx,ts FROM op_log WHERE code IN "
+                 "('REASSIGN','DISPATCH','ASSIGN','AGENT_REASSIGN','AGENT_DISPATCH','AGENT_ASSIGN')")
+    mine = [l for l in logs if l["target"] in ids]
+    reas = [l for l in mine if l["code"] == "REASSIGN"]
+    disp = [l for l in mine if l["code"] == "DISPATCH"]
+    agent = [l for l in mine if (l["code"] or "").startswith("AGENT_")]
+    adopted = sum(1 for l in disp
+                  if (_js.loads(l["ctx"] or "{}") or {}).get("adopted"))
+
+    out["改派"] = dict(次数=len(reas),
+                      涉及几条单子=len({l["target"] for l in reas}),
+                      理由=[(_js.loads(l["ctx"] or "{}") or {}).get("reason")
+                           for l in reas][:5] or None,
+                      提示="同一条单子来回改派,说明的多半是排班问题,不是人的问题"
+                           if len(reas) > len({l["target"] for l in reas}) else None)
+    ad_txt, _ = rv.rate(adopted, len(disp), "分派")
+    out["分派"] = dict(次数=len(disp), 采纳agent建议=ad_txt)
+    out["智能体代做"] = len(agent) or None
+
+    # 台账里对不上的动作 —— **不许静默丢掉,但要分清是哪一种**。
+    # 第一版把这两种混成一句,于是 6 条「没记下动的是哪条」被报成
+    # 「单子已经不在库里」,听起来像数据丢了 —— **报错了理由的告警,
+    # 比不报更费事**:照着它去查会去查错的地方。
+    live = {r[0] for r in _rows2("SELECT id FROM schedule")}
+    noname = [l for l in logs if not (l["target"] or "").strip()
+              or (l["target"] or "").strip() in ("-", "—")]
+    gone = [l for l in logs if l not in noname and l["target"] not in live]
+    if noname:
+        out["没记下动的是哪条"] = (
+            f"{len(noname)} 条动作台账里没填单号(多是 AGENT_* 那类「智能体代做」的记录)"
+            f" —— 挂不回任何一个月,**所以不计入上面的数**;要能按月复盘,这些得补上单号")
+    if gone:
+        out["指向的单子已经不在了"] = (
+            f"{len(gone)} 条动作指向的单子在库里找不到了(多半是重新灌过数据或从备份恢复过)"
+            f" —— 台账是流水、不跟着库换,所以会对不上")
+
+    pool = len(_rows(f"SELECT s.id FROM schedule s WHERE {where} "
+                     f"AND s.assignee_no IS NULL AND s.status='有效'", *args))
+    out["待分配积压"] = pool or None
+
+    # 订单工期 —— 和任务分开归月:订单按**完成时间**归月(那是它走完一轮的时刻)
+    o_where, o_args = ("1=1", [])
+    if me.get("role") != "总部运营":
+        o_where, o_args = ("shop=?", [me.get("shop")])
+        if me.get("role") not in _tk.MANAGER_ROLES:
+            o_where, o_args = ("shop=? AND advisor=?", [me.get("shop"), me.get("name")])
+    spans = []
+    for o in _rows(f"SELECT created,finished_at FROM ordr WHERE status='完成' "
+                   f"AND finished_at IS NOT NULL AND substr(finished_at,1,7)=? AND {o_where}",
+                   *([m] + o_args)):
+        try:
+            spans.append((_dt.date.fromisoformat(o["finished_at"][:10])
+                          - _dt.date.fromisoformat(o["created"][:10])).days)
+        except Exception:
+            pass
+    out["订单工期"] = (f"{len(spans)} 单走完,中位 {int(_st.median(spans))} 天"
+                      f"(最快 {min(spans)} / 最慢 {max(spans)})" if spans
+                      else f"{m} 没有订单走完,工期无从谈起")
+
+    out["先看这几件"] = rv.摘要(dict(
+        逾期数=len([r for r in ts_ if rv.逾期判定(r.get("status"), r.get("end_ts"), today)]),
+        待分配=pool, 改派次数=len(reas)))
+    out["说明"] = ("**分母为零的地方不给比率,给一句话** —— "
+                  "「没发生过」和「发生了但都是零」是两件事")
+    return _nz(out)
+
+
+def _rows2(sql, *a):
+    """只取一列的裸元组 —— `_rows` 会过列名黑名单,这里只要 id,不必走那一遍。"""
+    with sqlite3.connect(DB) as c:
+        return c.execute(sql, a).fetchall()
+
+
 def get_task(task_id):
     """看**一条任务**的详情。看不到别人的 —— 知道单号也看不到。
 
@@ -1551,6 +1684,9 @@ SHOP_SCHEMAS=[
         "assignee":{"type":"string","description":"分给谁。不给则采纳建议。"}},
         "required":["task_id"]}}},
    "required":["items"]}},
+ {"name":"monthly_review","description":"**月度复盘**:这个月做完了多少、几条逾期、逾期都在谁身上、改派几次和理由、**agent 的派单建议采纳率**、智能体代做了几笔、待分配积压、订单走完一轮要多久。month 写 `2026-09`,不给就是当月。按**截止时间**归月(复盘看的是「这个月该做完的做完了没有」)。范围跟身份走:顾问只看自己的,店长看本店。⚠️ **分母为零的地方不给比率,给一句话** —— 「没发生过分派」和「分派了但一次没采纳」是两件事。",
+  "input_schema":{"type":"object","properties":{
+    "month":{"type":"string","description":"哪个月,写 2026-09。不给就是当月。"}},"required":[]}},
  {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
@@ -1687,7 +1823,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

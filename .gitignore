@@ -50,3 +50,6 @@ backend/uploads/
 # 它们是**观测数据**不是源码 —— 要看趋势去读文件,不靠 git 历史。
 agentsite/evals/funnel.jsonl
 agentsite/evals/skill_usage.jsonl
+
+# 会话归属表(谁的对话是谁的)—— 本机运行态,不进版本库
+agentsite/.sessions.json
