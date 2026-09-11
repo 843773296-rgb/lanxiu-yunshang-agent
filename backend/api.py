@@ -631,6 +631,109 @@ def monthly_review(month=None):
     return _nz(out)
 
 
+def appt_funnel(since=None, until=None):
+    """**预约到店转化漏斗**:约了多少 → 我们确认了多少 → 真到店多少 →
+    量了体多少 → 下单多少,以及**流失分四种**(待确认烂掉 / 客户取消 /
+    爽约 / 已过期),每种给出该怎么办。
+
+    `since` / `until` 写 `2026-08-01`,不给就是全部。范围跟身份走:
+    顾问只看派给自己的预约,店长看本店。
+
+    ⚠️ 报两种转化率:**环节转化率**(÷ 上一环,看哪一环漏得最狠)和
+    **整体转化率**(÷ 总预约,看一百个最后剩几个)。只看一个会答错另一个问题。
+    ⚠️ 最后两环(量体 / 下单)**和预约之间没有外键**,是按「同一个客户、
+    预约之后」连的,**会高估**。
+    """
+    import tasks as _tk
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import knowledge.appt_funnel as af
+
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在看 —— 请先登录")
+    today = _dt.date.today().isoformat()
+    for lbl, v in (("since", since), ("until", until)):
+        if v and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(v).strip()):
+            return dict(error=f"{lbl} 写成 2026-08-01 这样,收到「{v}」")
+
+    where, args, scope = _tk.visible_appt_scope(me)
+    sql = f"SELECT a.* FROM appointment a WHERE {where}"
+    if since: sql += " AND a.start_ts>=?"; args = args + [since]
+    if until: sql += " AND a.start_ts<=?"; args = args + [until + " 23:59"]
+    rs = _rows(sql, *args)
+
+    # **还没到点的整条不进分母** —— 既不是到店也不是流失,它只是还没发生。
+    未到 = [r for r in rs if af.未到点(r.get("start_ts"), today)]
+    rs = [r for r in rs if r not in 未到]
+    if not rs:
+        return _nz(dict(范围=scope,
+                        说明="这个范围里没有已经到时间的预约" +
+                             (f"(还有 {len(未到)} 条在未来,不算进漏斗)" if 未到 else ""),
+                        还没到时间的=len(未到) or None))
+
+    总 = len(rs)
+    确认了 = [r for r in rs if r.get("status") not in af.没确认]
+    到店 = [r for r in rs if r.get("status") in af.到店了]
+
+    # 后两环:按「同一个客户、预约之后」连 —— **没有外键,是估的**。
+    cids = {r["customer_id"] for r in 到店 if r.get("customer_id")}
+    量了 = 下单了 = 0
+    for r in 到店:
+        cid, t0 = r.get("customer_id"), r.get("start_ts")
+        if not cid or not t0: continue
+        if _rows2("SELECT 1 FROM measure_rec WHERE customer_id=? AND measured_at>=? LIMIT 1",
+                  cid, t0[:10]): 量了 += 1
+        if _rows2("SELECT 1 FROM ordr WHERE customer_id=? AND created>=? LIMIT 1",
+                  cid, t0[:10]): 下单了 += 1
+
+    各环 = [("约了", 总), ("确认了", len(确认了)), ("到店", len(到店))]
+    表 = []
+    for i, (名, n) in enumerate(各环):
+        row = dict(环节=名, 人次=n)
+        if i:
+            row["这一环漏了多少"] = af.环节转化(n, 各环[i-1][1], 名)[0]
+            row["从头算剩多少"] = af.整体转化(n, 总, 名)[0]
+        表.append(row)
+
+    # 到店**之后**发生了什么 —— **并列的两件事,各自除以「到店」**,不串成链。
+    之后 = []
+    for 名, n in (("这次新量了体", 量了), ("之后下了单", 下单了)):
+        之后.append(dict(项=名, 人次=n,
+                        占到店的=af.环节转化(n, len(到店), 名)[0],
+                        说明=next(x[2] for x in af.到店之后 if x[0] == 名),
+                        估的="和预约之间**没有外键**,按「同一个客户、预约当天之后」连,会高估"))
+
+    # 流失分四种 —— **合成一个总数,看完不知道该干什么**。
+    丢 = {}
+    for st, (是什么, 怎么办) in af.流失分类.items():
+        n = len([r for r in rs if r.get("status") == st])
+        if n: 丢[st] = dict(条数=n, 是什么=是什么, 该怎么办=怎么办)
+
+    out = dict(
+        范围=scope,
+        区间=f"{since or '不限'} ~ {until or '不限'}",
+        先看这一句=af.最窄的一环(各环) or "算不出最窄的一环(有环节人数为 0)",
+        漏斗=表,
+        到店之后=之后,
+        流失在哪=丢 or None,
+        还没到时间的=(f"{len(未到)} 条预约还在未来 —— **没进分母**,"
+                    f"它既不是到店也不是流失") if 未到 else None,
+    )
+
+    # 说明书里没有的状态 —— **不许静默归进「其他」**。
+    野 = {}
+    for r in rs:
+        st = r.get("status")
+        if st and st not in af.状态机认的:
+            野[st] = 野.get(st, 0) + 1
+    if 野:
+        out["说明书里没有这些状态"] = dict(
+            分布=野,
+            这是什么=("状态机(bk-appt)认的只有 " + "、".join(af.状态机认的) +
+                    " —— 库里出现了别的,要么是说明书漏了这一档,要么是数据漂了。"
+                    "**两种都得有人看一眼**,所以单独列出来,不并进「其他」"))
+    return _nz(out)
+
+
 def _rows2(sql, *a):
     """只取一列的裸元组 —— `_rows` 会过列名黑名单,这里只要 id,不必走那一遍。"""
     with sqlite3.connect(DB) as c:
@@ -1687,6 +1790,10 @@ SHOP_SCHEMAS=[
  {"name":"monthly_review","description":"**月度复盘**:这个月做完了多少、几条逾期、逾期都在谁身上、改派几次和理由、**agent 的派单建议采纳率**、智能体代做了几笔、待分配积压、订单走完一轮要多久。month 写 `2026-09`,不给就是当月。按**截止时间**归月(复盘看的是「这个月该做完的做完了没有」)。范围跟身份走:顾问只看自己的,店长看本店。⚠️ **分母为零的地方不给比率,给一句话** —— 「没发生过分派」和「分派了但一次没采纳」是两件事。",
   "input_schema":{"type":"object","properties":{
     "month":{"type":"string","description":"哪个月,写 2026-09。不给就是当月。"}},"required":[]}},
+ {"name":"appt_funnel","description":"**预约到店转化漏斗**:约了多少 → 我们确认了多少 → 真到店多少 → 量体多少 → 下单多少;以及**流失分四种**(待确认烂掉 / 客户取消 / 爽约 / 已过期),每种带一句该怎么办。since/until 写 2026-08-01,不给就是全部。范围跟身份走。⚠️ 报**两种**转化率:环节转化率(÷上一环,看哪一环漏得最狠)和整体转化率(÷总预约,看一百个最后剩几个)——只报一个会答错另一个问题。⚠️ 最后两环(量体/下单)和预约之间**没有外键**,按「同一个客户、预约之后」连,**会高估**。",
+  "input_schema":{"type":"object","properties":{
+    "since":{"type":"string","description":"起始日,写 2026-08-01。不给就是不限。"},
+    "until":{"type":"string","description":"截止日,写 2026-08-31。不给就是不限。"}},"required":[]}},
  {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
@@ -1823,7 +1930,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

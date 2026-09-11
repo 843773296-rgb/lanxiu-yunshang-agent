@@ -53,6 +53,32 @@ def visible_scope(me):
 
 
 
+def visible_appt_scope(me):
+    """这个人能看到哪些**预约单** —— 返回 (WHERE 片段, 参数, 人话说明)。
+
+    和 `visible_scope`(日程任务)分开写,是因为**两张表连人的方式不一样**:
+    `schedule` 用工号(`assignee_no`),`appointment` 用「A03 沈砚」这种
+    顾问编号加名字的写法。同一个人两套编号,这是这个项目已经栽过的地方
+    —— 所以这里**从 staff 现查着搭桥**,不在别处手抄一份对照表。
+
+    放在这个文件里,是为了让**所有「谁看得见什么」的判定待在一起**。
+    散到各自的模块去,新加一张表就漏一处,而漏掉的那处不报错,只是多给几行。
+    """
+    if not me:
+        return "1=0", [], "没登录,什么都看不到"
+    if me.get("role") == "总部运营":
+        return "1=1", [], "全部门店(你是总部运营)"
+    if me.get("role") in MANAGER_ROLES:
+        return "a.shop=?", [me.get("shop")], f"{me.get('shop')}(你是店长,看得到全店)"
+    r = rows("SELECT adv_code,name FROM staff WHERE no=?", me.get("no"))
+    if not r or not r[0].get("adv_code"):
+        # **搭不上桥就一个都不给**,不要退回「看全店」——
+        # 兜底方向是收紧,不是放宽。
+        return "1=0", [], "查不到你的顾问编号,看不到预约(**不是没有预约**,是连不上)"
+    tag = f"{r[0]['adv_code']} {r[0]['name']}"
+    return "a.advisor=?", [tag], f"派给你的预约({tag})"
+
+
 def _deny(me, code, reason, key="—"):
     """拒绝一次越权,**并且记进台账**。
 
