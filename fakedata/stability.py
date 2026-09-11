@@ -84,7 +84,8 @@ def run(n=3, scale=0.2, model=None, log=print):
             "指纹": fps}
 
 
-def consensus(res):
+def consensus(res):   # 保留给老调用;真正的实现已收进 infer_llm.infer_n
+
     """把 N 次判定合成一份**共识 overlay**:只留每次都一样的,其余进「待人确认」。
 
     **不是追求稳定,是把不稳定标出来。** 做法分两档,依据是「这条判定错了会怎样」:

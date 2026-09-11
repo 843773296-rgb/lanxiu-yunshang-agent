@@ -566,6 +566,34 @@ def main():
     else:
         print("  (跳过:backend/lanxiu.db 不在)")
 
+    print("\n【多次判定取共识 · 离线测合并逻辑】")
+    r1 = {"relations": [{"table": "cust", "column": "login", "verdict": "reject"},
+                        {"table": "ordr", "column": "cust_id", "verdict": "confirm"}],
+          "columns": [{"table": "cust", "column": "city", "semantic": "city"}],
+          "forbidden": [{"table": "ordr", "a_column": "status", "a_value": "待付款",
+                         "b_column": "prd_status", "b_value": "已生产", "verdict": "real"}]}
+    r2 = json.loads(json.dumps(r1))
+    r2["relations"][0]["verdict"] = "confirm"          # 翻转
+    r2["forbidden"][0]["verdict"] = "coincidence"       # 翻转
+    con, uns = I.consensus_of([r1, r2])
+    keep = {(x["table"], x["column"]) for x in con["relations"]}
+    ck(("ordr", "cust_id") in keep and ("cust", "login") not in keep,
+       "两次一致的留下,翻转的踢出去", str(keep))
+    ck(all(x.get("票数") == "2/2" for x in con["relations"]),
+       "留下的每条都**标了票数** —— 不标样本量的判定,和「0 条违规」是同一类东西")
+    ck(not con["forbidden"],
+       "**禁配翻转 → 一条都不采用**(它会变成永久检查,错一条以后每批数据都误报)")
+    ck({u["在"] for u in uns} == {"cust.login", "ordr.status=待付款×prd_status=已生产"},
+       "不稳定的**列出来**,而不是当作没判过 ——「判不准」和「没判过」是两件事",
+       str([u["在"] for u in uns]))
+    con1, uns1 = I.consensus_of([r1])
+    # `.get` 不是啰嗦:直接下标在键被删掉时是 **KeyError 崩溃**,
+    # 而崩溃会把后面所有检查带走,看起来跟"没跑过"一模一样。
+    # 这个坑我在这个文件里踩到**第四次**了 —— 测试代码要比被测代码更防御。
+    ck(len(con1["relations"]) == 2
+       and all(x.get("票数") == "1/1" for x in con1["relations"]),
+       "只跑一次时照常采用,但标成 1/1(**它没验过稳定性,得说出来**)")
+
     print("\n【接手体检 · 门面那条命令】")
     import checkup as CK
     kp = os.path.join(tmpd, "known_test.db")

@@ -46,11 +46,19 @@ def cmd_plan(a):
         import infer_llm as I
         pl0 = P.build(facts, seed=a.seed, scale=a.scale, tables=tables,
                       allow_no_pk=a.allow_no_pk)
-        print("模型层: 调一次模型,只判统计推不出来的那部分")
-        ov, dropped, meta = I.infer(facts, pl0)
+        nrun = max(1, a.infer_n)
+        print(f"模型层: 调 {nrun} 次模型,只判统计推不出来的那部分"
+              + ("(取共识,只留全票的)" if nrun > 1 else ""))
+        ov, dropped, meta, unstable = I.infer_n(facts, pl0, n=nrun)
+        meta["不稳定明细"] = unstable
         I.save(base + ".overlay.json", ov, dropped, meta)
-        print(f'  {meta["model"]} · {meta["耗时秒"]}s · '
-              f'in {meta["usage"].get("input_tokens")} / out {meta["usage"].get("output_tokens")}')
+        u = meta["usage 合计"]
+        print(f'  {meta["model"]} · 跑了 {nrun} 次 · in {u["in"]} / out {u["out"]}')
+        print(f'  全票采用 {meta["全票的"]} 条 · **不稳定 {meta["不稳定的"]} 条**'
+              + ("(每条都标了票数)" if nrun > 1 else ""))
+        if meta.get("注意"): print(f'  ⚠️ {meta["注意"]}')
+        for x in unstable[:5]:
+            print(f'    不稳:{x["类"]} {x["在"]} —— 各次 {x["各次"]}')
         if dropped:
             print(f"  校验丢弃 {len(dropped)} 条(模型说的对不上真实 schema):")
             for d in dropped[:6]: print(f"    - {d}")
@@ -148,7 +156,10 @@ def main(argv=None):
     p1.add_argument("--tables", default=None)
     p1.add_argument("--allow-no-pk", action="store_true")
     p1.add_argument("--infer", action="store_true",
-                    help="调一次模型补语义(否决误报关系/认领无语义列/推状态机)")
+                    help="调模型补语义(否决误报关系/认领无语义列/推状态机/判禁配)")
+    p1.add_argument("--infer-n", type=int, default=1, metavar="N",
+                    help="跑 N 次取共识,只留全票的(默认 1 —— 但 1 次没验过稳定性,"
+                         "实测三遍只有约七成一致)")
     p1.add_argument("--overlay", default=None,
                     help="复用已有的模型判定文件,不调模型")
     p1.set_defaults(fn=cmd_plan)

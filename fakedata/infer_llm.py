@@ -336,6 +336,74 @@ def infer(facts, plan, model=None, log=print):
     return good, dropped, meta
 
 
+def _fp(ov):
+    """把一次判定拍平成「条目 → 结论」,好逐条比对。"""
+    fp = {}
+    for r in ov.get("relations", []): fp[("relations", r["table"], r["column"])] = r["verdict"]
+    for c in ov.get("columns", []):   fp[("columns", c["table"], c["column"])] = c["semantic"]
+    for m in ov.get("state_machines", []):
+        fp[("state_machines", m["table"], m["column"])] = tuple(sorted(map(tuple, m["transitions"])))
+    for f in ov.get("forbidden", []):
+        fp[("forbidden", f["table"],
+            f'{f["a_column"]}={f["a_value"]}×{f["b_column"]}={f["b_value"]}')] = f["verdict"]
+    return fp
+
+
+def consensus_of(runs):
+    """把 N 次判定合成「全票的」+「不稳定的」。**抽出来是为了能离线测** ——
+    合并逻辑是这套机制里唯一有分支的地方,而它恰恰是调模型才跑得到的那部分。
+    """
+    n = len(runs)
+    fps = [_fp(g) for g in runs]
+    keys = set().union(*[set(f) for f in fps])
+    unanimous = {k for k in keys if len({f.get(k) for f in fps}) == 1
+                 and None not in {f.get(k) for f in fps}}
+    base = runs[0]
+    out = {k: [] for k in ("relations", "columns", "state_machines", "forbidden")}
+    unstable = []
+    for kind in out:
+        for item in base.get(kind, []):
+            k = next(iter(_fp({kind: [item]})), None)
+            if k in unanimous:
+                out[kind].append(dict(item, 票数=f"{n}/{n}"))
+            else:
+                unstable.append({"类": kind, "在": f"{k[1]}.{k[2]}" if k else "?",
+                                 "各次": [f.get(k) for f in fps]})
+    return out, unstable
+
+
+def infer_n(facts, plan, n=1, model=None, log=print):
+    """跑 n 次取共识。**n=1 也走这条路** —— 因为要点不是"多跑几次",
+    是**每条判定都带上票数**。
+
+    实测同一份输入跑三遍只有七成一致(禁配和列语义最不稳)。而 overlay 会被盖到事实层、
+    影响整批数据 —— 「做一次跑一万次」成立的前提是那"一次"是个**结论**,
+    如果两遍给出相反判定,你复用的就是**一次抽样**。
+
+    分两档,依据是**这条判定错了会怎样**:
+      · **禁配** 判成 real 会变成一条**永久的检查** → **要求全票**,差一票就不采信
+      · 列语义 / 状态机 错了只是数据不像 → 同样只留全票,落选的进「待人确认」
+        (「判不准」和「没判过」是两件事,不能混成一堆)
+
+    n=1 时没有票可投,所有判定照常采用,但**每条都标成 1/1** ——
+    **一个不标样本量的判定,和「0 条违规」是同一类东西。**
+    """
+    runs, metas, allduds = [], [], []
+    for i in range(n):
+        if n > 1: log(f"  第 {i + 1}/{n} 次…")
+        g, d, m = infer(facts, plan, model=model, log=(log if n == 1 else lambda *a: None))
+        runs.append(g); metas.append(m); allduds += d
+    out, unstable = consensus_of(runs)
+    meta = {"model": metas[0]["model"], "跑了几次": n,
+            "全票的": sum(len(v) for v in out.values()), "不稳定的": len(unstable),
+            "覆盖率": metas[0].get("覆盖率"),
+            "usage 合计": {"in": sum((m["usage"] or {}).get("input_tokens", 0) for m in metas),
+                           "out": sum((m["usage"] or {}).get("output_tokens", 0) for m in metas)}}
+    if n == 1:
+        meta["注意"] = "**只跑了一次,没有验过稳定性** —— 实测同一份输入跑三遍只有约七成一致"
+    return out, allduds, meta, unstable
+
+
 def save(path, overlay, dropped, meta):
     doc = {"说明": "模型层的判定结果。人可以直接改这个文件,方案层会把它盖在统计结论之上。",
            "元信息": meta, "被丢弃的": dropped, **overlay}
