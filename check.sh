@@ -79,6 +79,7 @@ run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judg
 run "识图判分器 · 13 条对照用例" python3 agent/vision_eval_judgetest.py
 run "判责判分器 · 14 条对照用例" python3 agent/liability_eval_judgetest.py
 run "运维侧判分器 · 16 条对照用例" python3 agent/ops_eval_judgetest.py
+run "复盘与漏斗判分器 · 25 条对照用例" python3 agent/report_eval_judgetest.py
 run "野外巡检 · 指纹粒度与行为观测" python3 agent/wild_run.py --selftest
 run "野外语料 · 多样性(够多≠够杂)" python3 agent/wild_corpus.py --selftest
 printf "\n%s\n" "────────────────────────────────────────"
