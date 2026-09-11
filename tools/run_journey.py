@@ -35,9 +35,21 @@ import os, sys, json, random, sqlite3, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 sys.path.insert(0, os.path.join(ROOT, "backend"))
+sys.path.insert(0, ROOT)
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
 
 G, R, Y, B, D = "\033[32m", "\033[31m", "\033[33m", "\033[1m", "\033[0m"
+
+# 基准日:**从 seed.py 读,不在这儿抄一份**。
+# idle_days 的口径是「建库那天的快照」,spec_check 的 C5 也从同一处读 ——
+# 两边各抄一份的话,改了种子的基准日,造数据和检查就会在不同的日子上比。
+import re as _re
+try:
+    _BASE_DAY = _re.search(r'TODAY\s*=\s*"(\d{4}-\d{2}-\d{2})"',
+                           open(os.path.join(ROOT, "backend", "seed.py"),
+                                encoding="utf-8").read()).group(1)
+except Exception:
+    _BASE_DAY = "2026-08-31"
 REAL, RAW = f"{G}真路径{D}", f"{Y}直插{D}"
 
 
@@ -95,15 +107,86 @@ def pick_customers(n):
                 ORDER BY RANDOM() LIMIT ?""", n)
 
 
+def pick_repeat(n):
+    """**回头客**:已经走过一趟、现在手上没有在办预约的。
+
+    加这条是因为一次性客户池会用完(31 个跑完就没了),而现实里
+    **回头客本来就该有多次预约和多次订单** —— 一个只有一次消费的客户库,
+    RFM 的 F(频次)这一维永远分不出层来。
+
+    安全前提和 pick_customers 一样(排掉夹具/评测引用/一号多档),
+    额外要求:上一趟的订单已经走到终态 —— **一个客户不该同时有两张在制的定制单**,
+    那在现实里也不成立(版师手上一件一件做)。
+    """
+    return q("""SELECT c.id,c.name,c.phone,c.shop,c.advisor FROM customer c
+                WHERE c.archived=0 AND c.phone NOT LIKE 'DELETED%'
+                  AND c.name<>'已注销用户'
+                  AND c.id NOT LIKE 'E-%' AND c.id NOT LIKE 'C21%'
+                  AND c.id NOT IN (SELECT customer_id FROM maintain
+                                   WHERE id IN (SELECT ref_id FROM task WHERE type='售后判责'))
+                  AND c.id NOT IN (SELECT customer_id FROM deposit
+                                   WHERE id IN (SELECT ref_id FROM task WHERE type='财务人工任务'))
+                  AND c.id NOT IN (SELECT customer_id FROM aftersale)
+                  AND (SELECT COUNT(*) FROM customer d
+                       WHERE d.phone=c.phone AND d.archived=0) = 1
+                  AND (SELECT COUNT(*) FROM schedule s
+                       WHERE s.customer_id=c.id AND s.type='预约到店' AND s.status='有效') = 0
+                  -- 走过一趟(量体记录连着上门任务的那种)
+                  AND EXISTS (SELECT 1 FROM measure_rec m
+                              WHERE m.customer_id=c.id AND m.schedule_id IS NOT NULL)
+                  -- 上一趟的单已经收尾 —— 不该同时有两张在制的定制单
+                  AND NOT EXISTS (SELECT 1 FROM ordr o WHERE o.customer_id=c.id
+                                  AND o.status NOT IN ('完成','取消'))
+                ORDER BY RANDOM() LIMIT ?""", n)
+
+
 def journey(cust, dry=False):
+    """走完一条。任何一步炸了都**说清楚炸在哪**,不让整批停下来。
+
+    上一版没有这层:第 31 条订单号撞了,`UNIQUE constraint failed` 直接掀了整个进程,
+    前 30 条的结果一行没打印,而库里留着半条旅程(量体写了、订单没写、时间没挪回过去)。
+    **一个造数据的脚本崩在半路,留下的是看起来正常的残缺数据。**
+    """
+    try:
+        return _journey(cust, dry)
+    except Exception as e:
+        return [("✗ 崩了", f"{R}异常{D}",
+                 f"{type(e).__name__}: {e}  —— **这一条可能留了半截在库里**,"
+                 f"跑 spec_check 看有没有孤儿")], None
+
+
+def _journey(cust, dry=False):
     """走完一条。返回每一环的结果。"""
     import booking, tasks, tasktypes as tt
     steps = []
     now = datetime.datetime.now()
 
     # ── ① 预约(真路径:客户手机端那条)────────────────────────────
+    #
+    # **整条旅程往过去排,不往未来排。**
+    # 第一版从今天往后排(预约 +2~9 天、上门再 +1、订单再走 30~45 天),
+    # 于是整条链全在未来:客户「已经上门量过体」而那天还没到,
+    # 订单「已完成」而完成日在 11 月。C4 检查当场抓到 248 条未来时间。
+    #
+    # 这不是时间戳填错,是**方向反了** ——
+    # 一条「已完成」的旅程,它的每一步本来就都发生过了。
+    #
+    # 但 book() 会拒绝过去的时间(那是对的:客户不能预约昨天)。
+    # 所以:**预约按未来下单,拿到单号之后把整条链的时间改写到过去** ——
+    # 走的还是真路径,只是把这条旅程挪到它本来该在的时间上。
+    # 往前挪多少 —— **不能挪到客户建档之前**。
+    # 第一版固定挪 50~120 天,结果有客户是今年才建的档,预约被挪到了建档之前,
+    # C3(任何记录不早于所属对象的创建时间)当场抓到 8 条。
+    # **「往过去挪」有个下界,而这个下界因客户而异。**
+    _created = q("SELECT created FROM customer WHERE id=?", cust["id"])[0]["created"]
+    try:
+        _room = (datetime.date.today() - datetime.date.fromisoformat(_created[:10])).days - 20
+    except Exception:
+        _room = 120
+    span = random.randint(30, max(31, min(120, _room)))   # 这条旅程发生在多少天前
     when = (now + datetime.timedelta(days=random.randint(2, 9))).replace(
         hour=random.choice([10, 11, 14, 15, 16]), minute=0, second=0, microsecond=0)
+    shift = datetime.timedelta(days=span + 9)   # 事后整体往前挪这么多
     if dry:
         steps.append(("① 预约", REAL, f"会调 booking.book({cust['phone']}, {when:%m-%d %H:%M})"))
         return steps, None
@@ -175,7 +258,7 @@ def journey(cust, dry=False):
     # 第一版没传图,三条全被拦:「上门沟通完成时要传现场照」。
     # **那是规矩在正常工作** —— 上门这种事本身留下了可看的痕迹,不传图完不了。
     # 脚本得像真顾问那样传一张,而不是把规矩绕过去。
-    import files as _f, base64 as _b64
+    import files as _f, base64 as _b64, server as _srv0
     png = "data:image/png;base64," + _b64.b64encode(
         bytes.fromhex("89504e470d0a1a0a") + b"visit" * 24).decode()
     ok_img, why_img = _f.save(visit, "总结", "上门现场.png", png, adv["name"])
@@ -185,14 +268,39 @@ def journey(cust, dry=False):
     steps.append(("⑤ 完成上门", REAL,
                   (f"✅ 传了现场照,任务完结" if r5.get("ok")
                    else R + str(r5.get("reason") or r5.get("error"))[:44] + D)))
+    # 上门做完了,**那条「预约到店」也该收尾** —— 客户已经见过面了。
+    # 不收的话,顾问的待办里永远躺着一条已经做完的事:
+    # 实测跑完 31 条之后,34 条「预约到店」全是「有效」,而上门 31 条全是「完结」。
+    # 根因是**两条记录之间没有边**:上门完成了,预约那条不知道。
+    # 这里在脚本侧补上,但**真正的修法是让 finish_task 自己做这件事** ——
+    # 脚本补等于只在造数据时对,真人走一遍还是会留一条。
+    if r5.get("ok"):
+        rt = _srv0.transit("bk-task", task, "完结",
+                           {"summary": f"客户已上门接待并量体(见 {visit})"})
+        steps.append(("⑥ 收尾预约", REAL,
+                      f"{task} → 完结" if rt.get("ok")
+                      else f"{Y}没收上:{rt.get('reason','')[:34]}{D}"))
     if not r5.get("ok"):
         # **上门没完成就不该下单。** 这条链现在没有东西拦着,
         # 但脚本自己不许造出这种数据 —— 造出来就成了「库里本来就有这种」的先例。
-        steps.append(("⑥ 下单", RAW, f"{Y}跳过{D} —— 上门任务没完成,不该下单"))
+        steps.append(("⑦ 下单", RAW, f"{Y}跳过{D} —— 上门任务没完成,不该下单"))
         return steps, None
 
     # ── ⑥ 下单(⚠️ 直插:没有写接口,也没有状态机)────────────────
-    oid = str(random.randint(6488012719714560000, 6488012719714569999))
+    # 订单号:**取一个库里没有的**,不要靠随机撞运气。
+    # 上一版是 random.randint 取 4 位后缀,跑到第 31 条时撞上已有的单号 ——
+    # `UNIQUE constraint failed`,而且**整个脚本当场崩掉,半条旅程留在库里**
+    # (量体写了、订单没写,时间也没挪回过去)。
+    # 一个造数据的脚本崩在半路,留下的是**看起来正常的残缺数据**。
+    _used = {r["id"] for r in q("SELECT id FROM ordr")}
+    oid = None
+    for _ in range(500):
+        cand = str(random.randint(6488012719714560000, 6488012719714569999))
+        if cand not in _used:
+            oid = cand; break
+    if not oid:
+        steps.append(("⑦ 下单", RAW, f"{R}订单号取不到没被占的 —— 号段用满了{D}"))
+        return steps, None
     # sku 表的主键叫 code 不叫 sku,商品名在 product 表里 —— **列名以表为准**,
     # 这个项目在「列名靠猜」上栽过(appt_at vs start_ts)
     sk = q("""SELECT s.code,s.spu,s.price,s.spec,p.name FROM sku s
@@ -220,7 +328,7 @@ def journey(cust, dry=False):
           custom_amount,total) VALUES(?,?,?,'定制',?,1,?,?,?,?)""",
        oid, sku["code"], (sku.get("name") or "定制汉服") + (f"·{sku.get('spec')}" if sku.get("spec") else ""),
        sku["price"], sku["spu"], sku["price"], custom, amt)
-    steps.append(("⑥ 下单", RAW, f"{oid[-6:]}… · {sku['name']} · ¥{amt}(定制加价 ¥{custom})"))
+    steps.append(("⑦ 下单", RAW, f"{oid[-6:]}… · {sku['name']} · ¥{amt}(定制加价 ¥{custom})"))
 
     # ── ⑦ 订单推进到完成(真路径:一档一档走状态机)──────────────────
     # 上一版直接 UPDATE 到终态,中间七档全跳过 —— 而**跳过的档在库里看不出来**,
@@ -238,17 +346,85 @@ def journey(cust, dry=False):
         day += random.randint(2, 6)
         rr = _srv.transit("bk-order", oid, st, {"by": "旅程脚本"})
         if not rr.get("ok"):
-            steps.append(("⑦ 推进", REAL, f"{R}卡在 {st}:{rr.get('reason','')[:40]}{D}"))
+            steps.append(("⑧ 推进", REAL, f"{R}卡在 {st}:{rr.get('reason','')[:40]}{D}"))
             return steps, None
     # 时间戳按剧本回填 —— transit 落的是「现在」,而这条旅程是有时间线的
     done = (v_start + datetime.timedelta(days=day)).strftime("%Y-%m-%d %H:%M")
     ex("""UPDATE ordr SET updated=?,produced_at=?,shipped_at=?,finished_at=? WHERE id=?""",
        done, (v_start + datetime.timedelta(days=day - 12)).strftime("%Y-%m-%d %H:%M"),
        (v_start + datetime.timedelta(days=day - 6)).strftime("%Y-%m-%d %H:%M"), done, oid)
-    ex("UPDATE customer SET order_cnt=order_cnt+1, paid_amount=paid_amount+?, last_interact=? WHERE id=?",
-       amt, done[:10], cust["id"])
-    steps.append(("⑦ 推进到完成", REAL, f"走完 {len(PATH)} 档 · {done[:10]} 完成 · "
-                                      f"客户累计 +1 单 ¥{amt}"))
+    # ── 客户档案跟着动:三个字段必须一起对 ──────────────────────────
+    # 第一版只更了 order_cnt / paid_amount / last_interact,栽了两处:
+    #
+    # ① **last_interact 填成了订单完成日,而那是一个月后的未来日期** ——
+    #    库里出现了「上次联系客户是下个月」,而没有任何检查抓到它。
+    #    互动的时间点是**上门那天**(人真的见了面),不是订单完成那天。
+    # ② **idle_days 和 lifecycle 没跟着重算** —— 于是一个刚上门量过体的客户
+    #    同时挂着「流失、380 天没互动」。**三个字段互相矛盾,而没人报错。**
+    #
+    # 生命周期的判定口径在 knowledge/lifecycle.py,这里**调它,不自己写一遍** ——
+    # 自己写就是第二份口径,而两份口径迟早不一致。
+    import knowledge.lifecycle as _lc  # noqa
+    inter = v_start.date()                      # 互动 = 上门那天
+    idle = max(0, (datetime.date.today() - inter).days)   # 这个值稍后会按基准日重算
+    row = q("SELECT * FROM customer WHERE id=?", cust["id"])[0]
+    nr = dict(row, order_cnt=(row["order_cnt"] or 0) + 1,
+              paid_amount=round((row["paid_amount"] or 0) + amt, 2),
+              amount_12m=round((row["amount_12m"] or 0) + amt, 2),
+              orders_12m=(row["orders_12m"] or 0) + 1, idle_days=idle)
+    lc, matched = _lc.decide(nr)["生命周期"], None
+    try:
+        d2 = _lc.decide(nr); lc, matched = d2["生命周期"], "/".join(d2.get("命中", []) or [])
+    except Exception:
+        pass
+    # **会员等级也得跟着重算。** 又是同一个病的另一种形态:
+    # 我加了订单金额,而等级是**从金额派生的** —— 不重算的话,
+    # 一个 12 个月实付 3 万的客户还挂着「金卡」,而门槛表写着 3 万是黑金。
+    # 门槛**从 level_cfg 读,不在这儿抄一份** —— 抄一份的话,
+    # 运营改了门槛,造出来的数据就和对账检查对不上,而红的会是「数据错」。
+    lvs = q("SELECT name,amount,orders,sort FROM level_cfg WHERE status='启用' ORDER BY sort DESC")
+    level = lvs[-1]["name"] if lvs else "普通"
+    for L in lvs:                      # 从高到低,任一满足即取
+        if nr["amount_12m"] >= (L["amount"] or 0) or nr["orders_12m"] >= (L["orders"] or 0):
+            level = L["name"]; break
+    ex("""UPDATE customer SET order_cnt=?, paid_amount=?, amount_12m=?, orders_12m=?,
+          last_interact=?, idle_days=?, lifecycle=?, level=?, matched=COALESCE(?,matched)
+          WHERE id=?""",
+       nr["order_cnt"], nr["paid_amount"], nr["amount_12m"], nr["orders_12m"],
+       inter.isoformat(), idle, lc, level, matched or None, cust["id"])
+    # ── 把整条旅程挪到过去 ─────────────────────────────────────────
+    # book() 不收过去的时间(对的),所以先按未来下单、再整体前移。
+    # **每一张表都要挪** —— 漏一张就成了「预约在三个月前、量体在下个月」。
+    _sh = f"-{shift.days} days"
+    for _t, _cols, _key in (
+            ("appointment", ("start_ts", "end_ts", "checkin_ts"), f"id='{appt}'"),
+            ("schedule", ("start_ts", "end_ts", "assigned_at"), f"id IN ('{task}','{visit}')"),
+            ("measure_rec", ("measured_at",), f"schedule_id='{visit}'"),
+            ("schedule_file", ("uploaded_at",), f"schedule_id='{visit}'"),
+            ("ordr", ("created", "updated", "paid_at", "audit_at", "produced_at",
+                      "shipped_at", "finished_at"), f"id='{oid}'")):
+        sets = ", ".join(f"{c2}=datetime({c2}, '{_sh}')" for c2 in _cols)
+        ex(f"UPDATE {_t} SET {sets} WHERE {_key}")
+    # 客户那三个字段也跟着挪,并按挪后的日期重算闲置天数
+    inter2 = inter - shift
+    # **idle_days 要按基准日算,不是按今天。**
+    # 它是「建库那天的快照」这个口径(见 spec_check 的 C5)——
+    # 我按今天算,和检查按基准日比,永远差 11 天。
+    # 口径不统一时,两边各自都说得通,而对不上的时候不知道该改哪边。
+    try:
+        _base = datetime.date.fromisoformat(_BASE_DAY)
+    except Exception:
+        _base = datetime.date.today()
+    idle2 = max(0, (_base - inter2).days)
+    nr2 = dict(nr, idle_days=idle2)
+    lc2 = _lc.decide(nr2)["生命周期"]
+    ex("UPDATE customer SET last_interact=?, idle_days=?, lifecycle=? WHERE id=?",
+       inter2.isoformat(), idle2, lc2, cust["id"])
+    done2 = (datetime.datetime.strptime(done, "%Y-%m-%d %H:%M") - shift).strftime("%Y-%m-%d")
+
+    steps.append(("⑧ 推进到完成", REAL, f"走完 {len(PATH)} 档 · {done2} 完成"
+                                      f"({span} 天前的一单)· 客户累计 +1 单 ¥{amt} · "
+                                      f"生命周期 → {lc2} · 等级 → {level}"))
     return steps, dict(客户=cust["id"], 预约=appt, 预约任务=task, 上门任务=visit,
                        量体项=n_item, 订单=oid, 金额=amt)
 
@@ -259,6 +435,14 @@ def main():
     for a in sys.argv[1:]:
         if a.isdigit(): n = int(a)
     custs = pick_customers(n)
+    if len(custs) < n:
+        # 一次性客户不够了就补回头客 —— **说清楚补了几个**,
+        # 不说的话下次看数据的人会以为这批全是新客
+        more = pick_repeat(n - len(custs))
+        if more:
+            print(f"  一次性客户只剩 {len(custs)} 个,补 {len(more)} 个**回头客**"
+                  f"(已走过一趟、上一单已收尾)")
+            custs = custs + more
     if not custs:
         print(f"{R}挑不出客户{D} —— 可能都有在办预约了(那是 book() 的频次闸,是对的)")
         return

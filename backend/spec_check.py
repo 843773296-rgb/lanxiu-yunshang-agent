@@ -136,6 +136,78 @@ rule("B3", "着装人的账户 == 它建档门店档案的账户",
      "**「指向存在的对象」不等于「指向对的对象」** —— 错位那次指的也是真实客户,"
      "只有两条路径对账才抓得到")
 
+# ── C4:**已经发生的事,时间不能在未来** ────────────────────────────
+# C3 查的是「不早于创建时间」,不查「不晚于今天」—— 而我刚在这上面栽了:
+# 造数据时拿**订单完成日**去填客户的「最近互动」,而订单完成在一个月后,
+# 于是库里出现了「上次联系客户是下个月」。
+#
+# 为什么必须单独查:**未来日期在任何单条记录上都是合法的** ——
+# 它格式对、类型对、不早于创建时间。只有和「今天」比才看得出来。
+# 而它的后果很实在:生命周期按「多久没互动」算,负数天数会把客户算成永远活跃。
+#
+# 只查**已经发生**的事实(互动过了、量过了、付过了);
+# 计划类的字段(预约开始、任务截止、交期)本来就该在未来,不在这条里。
+_FUTURE = [("customer", "last_interact", "最近互动"),
+           ("measure_rec", "measured_at", "量体时间"),
+           ("ordr", "paid_at", "付款时间"),
+           ("ordr", "finished_at", "订单完成"),
+           ("schedule", "assigned_at", "派单时间"),
+           ("followup", "created", "跟进时间")]
+_fut = []
+for _t, _col, _cn in _FUTURE:
+    try:
+        _fut += [dict(表=f"{_t}.{_col}", 说明=_cn, id=r[0], 时间=r[1]) for r in c.execute(
+            f"SELECT id,{_col} FROM {_t} WHERE {_col} IS NOT NULL "
+            f"AND substr({_col},1,10) > date('now','localtime') LIMIT 3")]
+    except Exception:
+        pass
+rule("C4", "已经发生的事,时间不能在未来", _fut,
+     "**未来日期在单条记录上完全合法** —— 格式对、类型对、不早于创建时间,"
+     "只有和「今天」比才看得出来。而生命周期按「多久没互动」算,"
+     "负数天数会把客户算成永远活跃")
+
+# ── C5:最近互动和闲置天数必须在**同一个基准日**上对得上 ──────────────
+# last_interact 和 idle_days 是同一件事的两种说法。改了一个不改另一个,
+# 库里就同时存着「刚见过面」和「380 天没互动」,而两条看起来都正常。
+#
+# ⚠️ **第一版这条判据是错的,而且错得很典型。**
+# 我拿「今天 − last_interact」去和 idle_days 比,结果**全库 100% 不一致** ——
+# 而差值全是固定的 11 天。
+#
+# 真相:`idle_days` 是**建库那天的快照**(种子里 T=2026-08-31,
+# last_interact = T − idle_days),不是每天自己更新的实时值。
+# 我等于要求这个字段有个后台任务天天给它加一。
+#
+# **全库 100% 命中是个强信号:不是数据全坏了,是尺子错了。**
+# 这条今天已经栽过好几次 —— 判据要贴着「它实际是什么」,
+# 不是贴着「我以为它该是什么」。
+#
+# 改成在**基准日**上比:谁写的 idle_days,就用谁的那天当基准。
+# 种子写的用种子的基准日;旅程脚本写的用它写入那天(它自己会把两者一起算)。
+_BASE = "2026-08-31"          # 和 seed.py 的 T 同一个值
+try:
+    import re as _re
+    _seed = open(os.path.join(HERE, "seed.py"), encoding="utf-8").read()
+    _m = _re.search(r'TODAY\s*=\s*"(\d{4}-\d{2}-\d{2})"', _seed)
+    if _m: _BASE = _m.group(1)      # **从 seed 读,不在这儿抄一份**
+except Exception:
+    pass
+_incons = [dict(客户=r[0], 最近互动=r[1], idle_days=r[2], 生命周期=r[3],
+                按基准日应为=r[4], 基准日=_BASE)
+           for r in c.execute("""
+    SELECT id, last_interact, idle_days, lifecycle,
+           CAST(julianday(?) - julianday(last_interact) AS INT) d
+    FROM customer WHERE archived=0 AND last_interact IS NOT NULL AND idle_days IS NOT NULL
+      AND ABS(idle_days - CAST(julianday(?) - julianday(last_interact) AS INT)) > 2
+      -- 旅程脚本写的那些以「今天」为基准,单独放行(它们写入时是一起算的)
+      AND last_interact <= ?
+    LIMIT 5""", (_BASE, _BASE, _BASE))]
+rule("C5", f"最近互动和闲置天数在基准日({_BASE})上对得上", _incons,
+     "两个字段是同一件事的两种说法,改一个不改另一个,"
+     "库里就同时存着「刚见过面」和「380 天没互动」。"
+     "**注意基准日:idle_days 是建库那天的快照,不是实时值** —— "
+     "第一版拿「今天」比,全库 100% 红,那是尺子错了不是数据错了")
+
 rule("B4", "生产工单指向真实订单",
      q("SELECT id, ref FROM workorder WHERE ref IS NULL OR ref NOT IN (SELECT id FROM ordr)"),
      "不接真订单,「我的衣服做到哪了」就答不了,产能排期成孤岛")
