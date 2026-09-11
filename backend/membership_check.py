@@ -118,6 +118,34 @@ def main():
                                {"balance": 999, "delta": 50}])) == 1)
     ck("积分对账:连得上不报、断了要报", ok4, 2)
 
+    # ④·2 全库积分链:**修过一次之后,一处断点都不许有**。
+    #     这条和 ④ 分开:④ 验的是「口径函数会不会判」,这条验的是「数据对不对」。
+    #     合成一条的话,数据坏了会被报成「口径函数坏了」—— **红错理由比不红更费事**。
+    n42 = bad42 = 0; 例42 = ""
+    for cid, in api._rows2("SELECT DISTINCT customer_id FROM points_log"):
+        rows = api._rows("SELECT behavior,delta,balance,ts FROM points_log "
+                         "WHERE customer_id=? ORDER BY ts,rowid", cid)
+        n42 += 1
+        b = mb.积分对账(rows)
+        if b:
+            bad42 += 1
+            例42 = 例42 or f"{cid} 有 {len(b)} 处"
+    ck("全库积分链一处断点都没有", bad42 == 0, n42,
+       例42 or "修过一次(中间余额曾被截断),现在链条是通的")
+
+    # ④·3 **两个来源在终点必须一致** —— 修中间的时候不许把终点改掉。
+    #     这条是上一条的对照:光把链条修通很容易(全写成 0 也通),
+    #     **同时还要和档案上的余额对得上**,才说明修对了。
+    n43 = bad43 = 0
+    for cid, in api._rows2("SELECT DISTINCT customer_id FROM points_log"):
+        rows = api._rows("SELECT balance FROM points_log WHERE customer_id=? "
+                         "ORDER BY ts,rowid", cid)
+        p = api._rows("SELECT points FROM customer WHERE id=?", cid)
+        n43 += 1
+        if not p or rows[-1]["balance"] != p[0]["points"]: bad43 += 1
+    ck("档案上的余额 = 流水最后一条(两个来源在终点一致)", bad43 == 0, n43,
+       "光把链条修通不算修对 —— 全写成 0 链条也是通的")
+
     # ⑤ 审批的角色判定**只有一处** —— 工具不许自己再判一遍。
     #    验法:拿非总部运营去批,必须被拒,而且**理由要来自状态机**。
     r5 = None
@@ -174,7 +202,7 @@ def main():
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 会员等级 / 积分 / 审批 10 条全过")
+    print("✅ 会员等级 / 积分 / 审批 12 条全过")
     return 0
 
 
