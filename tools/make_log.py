@@ -92,14 +92,43 @@ def build():
     return "\n".join(L)
 
 
+# ── 手写区 ────────────────────────────────────────────────────────
+# 这个文件是**全量重建**的。栽过一次:我用 `cat >>` 往里追加了一段
+# 127 行的手写综述,下一次生成把它抹了 —— **而且抹得悄无声息**,
+# 要不是有人问起「日志做了吗」,那段就永远没了。
+#
+# 根子在于:**生成的文件里不能有手写内容,除非生成器知道要保留它。**
+# HANDOFF.md 那边早就写清了同一条(「自动区一律不许手写 —— 手写会漂」),
+# 我在这边犯了它。
+#
+# 手写的东西放 `项目日志-手记.md`,生成时**原样接在自动区后面**。
+# 放在单独文件而不是靠标记切分:标记会被人删掉、会被编辑器改掉,
+# 而一个独立文件不会因为谁多按了一次回车就消失。
+NOTES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "项目日志-手记.md")
+
+
+def with_notes(md):
+    if not os.path.exists(NOTES):
+        return md
+    hand = open(NOTES, encoding="utf-8").read().strip()
+    if not hand:
+        return md
+    return (md + "\n\n" + "=" * 60 + "\n\n"
+            "# 手记\n\n"
+            "> 下面是**手写**的综述,不是从 git 生成的。\n"
+            "> 源文件 `项目日志-手记.md` —— 改要改那个,改这里会被下次生成抹掉。\n\n"
+            + hand + "\n")
+
+
 if __name__ == "__main__":
-    md = build()
+    md = with_notes(build())
     open(OUT, "w", encoding="utf-8").write(md)
     print(f"写好 {OUT}  ({len(md.splitlines())} 行 / {len(md)} 字符)")
     if "--publish" in sys.argv:
         sp = "/private/tmp/claude-501/-Users-eureka/ba8cb0f4-e02a-4402-b9bf-3ff3ab966980/scratchpad"
         os.makedirs(sp, exist_ok=True)
         dst = os.path.join(sp, "澜绣云裳agent-项目日志.md")
-        open(dst, "w", encoding="utf-8").write(md)
+        open(dst, "w", encoding="utf-8").write(md)   # md 已含手记
         subprocess.run(["python3", os.path.expanduser(
             "~/Desktop/chatgpt/tools/feishu_publish.py"), dst])
