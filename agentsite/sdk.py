@@ -259,7 +259,43 @@ def _all_skills():
     return sorted(x for x in os.listdir(d)
                   if os.path.isfile(os.path.join(d, x, "SKILL.md")))
 
-SKILLS = _all_skills()
+
+# ── 技能分档:**装着 ≠ 每次都上场** ──────────────────────────────────
+#
+# 这两件事本来是绑在一起的(装了就全部参与路由),而实测证明那有代价:
+# 摘掉那 236 个第三方技能之后,「6月毕业典礼那天要穿,现在该做多大」
+# 从 **0/3 变回 2/3** —— 它们确实在抢。
+#
+# 但它们要留着(以后要拿来当写法样本、要挑着用)。所以拆开:
+#
+#     own    我们自己写的三个 —— **默认就这些**,业务问答只跟它们竞争
+#     all    239 个全上 —— 想让第三方技能也能被触发时用
+#     none   一个都不上 —— 想看「没有技能时模型怎么答」时用(评测对照组)
+#
+# 页面上是一个下拉,默认 own;接口上是 `skills` 参数。
+# **这不是省 token 的优化,是让路由空间可控** ——
+# 239 个描述互相竞争时,该触发的那个更难被选中,而这件事只有量过才知道。
+import skills_own as _own
+
+SKILL_SETS = {
+    "own":  lambda: [x for x in _all_skills() if _own.is_ours(x)],
+    "all":  _all_skills,
+    "none": lambda: [],
+}
+SKILL_SET_DESC = {
+    "own":  "只用自己写的(报价 / 成长方案 / 排班)",
+    "all":  "全部 239 个(含 236 个 Accio 提取的)",
+    "none": "都不用(看模型裸答什么样)",
+}
+
+
+def skills_for(which=None):
+    """这一轮让哪些技能上场。认不出的名字**退回 own**,不退回 all ——
+    退回 all 的话,写错一个参数就悄悄把 236 个放进了竞争,而没人会发现。"""
+    return SKILL_SETS.get((which or "own"), SKILL_SETS["own"])()
+
+
+SKILLS = skills_for("own")      # 模块级默认 —— 给不传参数的调用方兜底
 TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
               "mcp__task__get_refund_trace", "mcp__task__get_payment_flow",
               "mcp__task__get_customer"]
@@ -420,7 +456,7 @@ async def _stream_once(prompt, images):
 
 
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
-              provider=None, model_name=None, me=None):
+              provider=None, model_name=None, me=None, skills=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
 
     guard=True 时挂上回答体检 hook:交付前检查一遍,不合格**打回重答**。
@@ -484,7 +520,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         # MCP 的污染由 strict_mcp_config=True 挡住(它只认代码里声明的服务),
         # 所以这里放开 project 是安全的 —— 但**必须有检查盯着**,见 skills_check.py。
         setting_sources=["project"],
-        skills=SKILLS,
+        skills=skills_for(skills),
         resume=resume,          # 见 docstring:多轮靠 CLI 续会话,不靠拼历史
     )
     # 按「一段回答」分开收,不是一路拼下去。

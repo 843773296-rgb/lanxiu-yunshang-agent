@@ -183,6 +183,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
     <span id="currole" title="角色在新建会话时定死,之后不变"></span>
     <button class="tbtn" id="switch">换助手</button>
     <select id="model" title="换模型"><option>载入中…</option></select>
+    <select id="skillset" title="这一轮让哪些技能参与"><option>技能…</option></select>
     <span id="kindhint"></span>
     <span class="sp"></span>
     <a class="tbtn" href="/tasks">任务</a>
@@ -520,7 +521,8 @@ async function ask(){
       signal: RUNNING.signal,
       body: JSON.stringify({kind: c.kind, prompt: text,
                             session: c.session || null, model: c.model || null,
-                            images: imgs.length ? imgs : undefined})});
+                            images: imgs.length ? imgs : undefined,
+                            skills: c.skillset || "own"})});
     r = await resp.json();
   }catch(e){
     r = {error: e.name === "AbortError" ? "已停止" : ("请求失败:" + e.message)};
@@ -614,6 +616,27 @@ function syncHint(){
    清单**从后端拿**,不在页面里写死一份。后端那份又是从单价表长出来的 ——
    能选的模型 = 有单价的模型。另写一份清单,迟早出现一个选得中却算不出钱的。 */
 let MODEL_DEFAULT = "";
+// 技能分档 —— **装着不等于每次都上场**。
+// 实测:236 个第三方技能在场时,「6月毕业典礼那天要穿该做多大」从 2/3 掉到 0/3。
+// 它们要留着(以后挑着用),但默认不参与竞争。
+async function loadSkillsets(){
+  let rows=[], def="own";
+  try{
+    const r=await (await fetch("/skillsets")).json();
+    rows=r.rows||[]; def=r.default||"own";
+  }catch(e){}
+  const sel=$("#skillset");
+  sel.innerHTML = rows.length
+    ? rows.map(x=>`<option value="${esc(x.id)}">技能:${esc(x.name)}（${x.n}）</option>`).join("")
+    : `<option value="own">技能:自己的</option>`;
+  const c=cur();
+  sel.value=(c&&c.skillset)||def;
+  if(c&&!c.skillset){ c.skillset=sel.value; save(); }
+}
+$("#skillset").addEventListener("change", ()=>{
+  const c=cur(); if(c){ c.skillset=$("#skillset").value; save(); }
+});
+
 async function loadModels(){
   let rows = [], def = "";
   try{
@@ -665,5 +688,5 @@ async function loadMe(){
 }
 
 syncHint(); drawSide(); drawStream(); grow(); $("#q").focus();
-loadRoles(); loadModels(); loadMe();
+loadRoles(); loadModels(); loadMe(); loadSkillsets();
 </script>

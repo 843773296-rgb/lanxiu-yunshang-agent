@@ -148,6 +148,12 @@ class H(BaseHTTPRequestHandler):
         if p == "/roles":
             # 角色清单由 sdk 出 —— 名字、职责、工具数、规矩数都在那儿,页面不许抄
             return self._send({"rows": sdk.roles()})
+        if p == "/skillsets":
+            # 技能分档清单。**从 sdk 出,页面不许抄一份** ——
+            # 抄一份的话加一档要改两处,而漏改的那处不会报错,只会少一个选项。
+            return self._send({"rows": [
+                {"id": k, "name": sdk.SKILL_SET_DESC[k], "n": len(sdk.skills_for(k))}
+                for k in ("own", "all", "none")], "default": "own"})
         if p == "/models":
             # 清单由 sdk 从**单价表**长出来,页面不许自己写死一份
             return self._send({"rows": sdk.models(), "default": sdk.default_model_id()})
@@ -200,7 +206,7 @@ class H(BaseHTTPRequestHandler):
                 with RUNLOCK:
                     r = asyncio.run(sdk.run(kind, prompt, resume=body.get("session") or None,
                                             provider=prov, model_name=mdl, images=imgs or None,
-                                            me=me))
+                                            me=me, skills=body.get("skills")))
                 return self._send(r)
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)

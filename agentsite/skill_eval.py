@@ -61,7 +61,7 @@ def _skill_of(traj):
     return None
 
 
-async def _one(sdk, prompt, me):
+async def _one(sdk, prompt, me, sset="own"):
     # **身份要真传进去。** 排班/团队类问法要店长才答得了,
     # 匿名跑的话它会因为「你没这个权限」而不触发 ——
     # 那种不触发是权限挡的,不是描述不好,混在一起测就分不清是谁的责任。
@@ -74,7 +74,7 @@ async def _one(sdk, prompt, me):
     import importlib
     _sdk = importlib.import_module("sdk")
     prov, mdl = _sdk.default_model_id().split(":", 1)
-    r = await sdk.run("all", prompt, provider=prov, model_name=mdl, me=me)
+    r = await sdk.run("all", prompt, provider=prov, model_name=mdl, me=me, skills=sset)
     return _skill_of(r.get("trajectory")), r
 
 
@@ -83,6 +83,10 @@ def main():
     ap.add_argument("--only", type=int, help="只跑某一条")
     ap.add_argument("--save", help="把结果存成一版基线")
     ap.add_argument("--diff", help="和某版基线对比")
+    ap.add_argument("--set", default="own",
+                    help="用哪一档技能:own(自己的三个,默认)/ all(239 个)/ none。"
+                         "**这一栏会记进结果文件** —— 不记的话,两次结果没法比:"
+                         "分不清是改动的效果还是换了档")
     ap.add_argument("--repeat", type=int, default=1,
                     help="每条跑几遍。**单跑一次是有噪声的** —— "
                          "同一个问法两次结果可能不一样,分不清「改坏了」和「抖了一下」")
@@ -98,7 +102,8 @@ def main():
     me = {"no": "60000001", "name": "张静静", "role": "店长", "shop": "SH001 静安旗舰店"}
 
     import importlib as _il; _mid = _il.import_module("sdk").default_model_id()
-    print(f"\n\033[1m技能触发评测 · {len(cases)} 条 · 模型 {_mid}(和网站默认同一个)\033[0m")
+    print(f"\n\033[1m技能触发评测 · {len(cases)} 条 · 模型 {_mid} · "
+          f"技能档 {a.set}({len(_il.import_module('sdk').skills_for(a.set))} 个)\033[0m")
     print("=" * 88)
     rows, t0 = [], time.time()
     for c in cases:
@@ -109,7 +114,7 @@ def main():
         got_all = []
         for _ in range(max(1, a.repeat)):
             try:
-                g1, _r = asyncio.run(_run_with_identity(sdk, c["prompt"], me))
+                g1, _r = asyncio.run(_run_with_identity(sdk, c["prompt"], me, a.set))
             except Exception as e:
                 g1 = f"ERR:{type(e).__name__}"
             got_all.append(g1)
@@ -151,7 +156,8 @@ def main():
     os.makedirs(RUNS, exist_ok=True)
     if a.save:
         p = os.path.join(RUNS, f"{a.save}.json")
-        json.dump(dict(准确率=f"{ok_n}/{len(rows)}", 明细=rows, 技能哈希=_hashes()),
+        json.dump(dict(准确率=f"{ok_n}/{len(rows)}", 技能档=a.set,
+                       明细=rows, 技能哈希=_hashes()),
                   open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         print(f"\n  已存基线:{p}")
     if a.diff:
@@ -164,6 +170,10 @@ def main():
         改了的技能 = {k for k, v in newh.items() if oldh.get(k) != v}
         print(f"\n  \033[1m和基线 {a.diff} 对比\033[0m")
         print(f"    这期间改过的技能:{sorted(改了的技能) or '(一个都没改)'}")
+        _ob = base.get("技能档")
+        if _ob and _ob != a.set:
+            print(f"    {R}⚠ 两次用的技能档不同({_ob} → {a.set})—— "
+                  f"差异里混着「换了档」和「改了技能」两件事,读不出单独的效果。{D}")
         stat = {}
 
         # **按「这条用例的技能改没改」分两组。**
@@ -207,8 +217,8 @@ def main():
             print(f"      **不稳的用例读不出任何改动的效果** —— 它们的变化永远分不清是谁的。")
 
 
-async def _run_with_identity(sdk, prompt, me):
-    return await _one(sdk, prompt, me)
+async def _run_with_identity(sdk, prompt, me, sset="own"):
+    return await _one(sdk, prompt, me, sset)
 
 
 if __name__ == "__main__":

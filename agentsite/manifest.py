@@ -41,7 +41,12 @@ def build():
     # 崩掉算运气好 —— 要是正则碰巧匹配到别的东西,它会安静地给出一份错清单。
     # **判据要贴着「什么才算对」,不是贴着「我以为它会怎么写」** —— 这条这一段学过两次了。
     import sdk as _sdk
-    declared = list(_sdk.SKILLS)
+    # **「装了什么」和「默认上场哪些」现在是两件事。**
+    # 分档之后 SKILLS 只是**默认档**(own,3 个),而目录里装着 239 个。
+    # 拿默认档去和目录比,会报「236 个有文件没声明」—— 那是旧口径。
+    # 现在比的是:目录里的每一个,**至少属于某一档**(不属于任何档才是真的白装)。
+    declared = sorted({x for k in _sdk.SKILL_SETS for x in _sdk.skills_for(k)})
+    default_set = list(_sdk.SKILLS)
     ondisk = sorted(d for d in os.listdir(SKILL_DIR)
                     if os.path.isdir(os.path.join(SKILL_DIR, d)))
 
@@ -73,6 +78,7 @@ def build():
         挂了但没进白名单=sorted(set(tools) - white),
         进了白名单但没这个工具=sorted(white - set(tools)),
         铁律数=_rules(),
+        默认档=default_set,
     )
 
 
@@ -88,9 +94,13 @@ def main():
     diff = "--diff" in sys.argv
     print(f"\n\033[1m能力清单\033[0m")
     print("=" * 84)
-    print(f"  技能 {len(m['技能'])} 个 · 工具 {m['工具数']} 个(写 {len(m['写工具'])})· 铁律 {m['铁律数']} 条\n")
-    for s in m["技能"]:
-        flag = f"{G}✓{D}" if s["声明了"] else f"{R}✗ 没写进 SKILLS —— 永远不会触发{D}"
+    print(f"  技能 {len(m['技能'])} 个(**默认上场 {len(m['默认档'])} 个**:{m['默认档']})· "
+          f"工具 {m['工具数']} 个(写 {len(m['写工具'])})· 铁律 {m['铁律数']} 条")
+    print(f"  装着 ≠ 每次都上场 —— 实测 239 个全上时,"
+          f"「6月毕业典礼那天该做多大」从 3/3 掉到 0/3\n")
+    import skills_own
+    for s in [x for x in m["技能"] if skills_own.is_ours(x["名字"])]:
+        flag = f"{G}✓{D}" if s["声明了"] else f"{R}✗ 不属于任何一档 —— 永远不会触发{D}"
         d = f"{G}有{D}" if s["描述含触发词"] else f"{Y}弱{D}"
         print(f"  {flag} {s['名字']:14s} {s['行数']:4d} 行 · 描述 {s['描述字数']:3d} 字(触发词 {d})· {s['哈希']}")
     bad = 0

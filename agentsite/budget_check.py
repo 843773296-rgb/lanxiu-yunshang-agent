@@ -35,7 +35,7 @@ def ck(title, got, want, extra=""):
 
 def main():
     global bad
-    import prompts, api
+    import prompts, api, skills_own
     print("\n\033[1m▸ 每轮要重发多少东西\033[0m")
     print("  " + "=" * 76)
     txt, _ = prompts.assemble("all", {r.needs[0] for _, r in prompts.all_rules() if r.needs})
@@ -91,6 +91,24 @@ def main():
        "听" if sdk.default_model_id().startswith("deepseek:") else "没听", "听",
        "  ← 不听的话,评测会拿 Claude 的成绩当 DeepSeek 的成绩")
     os.environ.pop("LANXIU_PROVIDER", None)
+
+    print("\n\033[1m▸ 技能分档 · 装着 ≠ 每次都上场\033[0m")
+    print("  " + "=" * 76)
+    # 实测(2026-09-11,同一条用例、同一个模型、同一份技能文件,每条跑三遍):
+    #   --set own(3 个)  「6月毕业典礼那天要穿,现在该做多大」 3/3 触发
+    #   --set all(239 个)                                   0/3 不触发
+    # **唯一的差别是场上有 3 个还是 239 个。** 干扰是实打实的,不是噪声。
+    #
+    # 上一轮我说「装 236 个误触发 0、触发率没掉」,那个结论是错的 ——
+    # 它建立在一次 13/15 的单轮结果上,而**接近满分的结果最容易被当成结论**。
+    ck("默认档是 own", sdk.skills_for(None) == sdk.skills_for("own") and "是" or "不是", "是",
+       "  ← 默认 all 的话,每次问话都在和 236 个第三方技能竞争")
+    ck("认不出的档退回 own", "own" if sdk.skills_for("乱写的") == sdk.skills_for("own") else "退回别处",
+       "own", "  ← 退回 all 的话,写错一个参数就悄悄把 236 个放进竞争,而没人会发现")
+    ck("own 里只有我们自己的",
+       "是" if all(skills_own.is_ours(x) for x in sdk.skills_for("own")) else "混进别人的", "是")
+    ck("none 是真的空", str(len(sdk.skills_for("none"))), "0",
+       "  ← 评测要有「没有技能时什么样」这个对照")
 
     print("\n\033[1m▸ 撞线时说不说得清\033[0m")
     print("  " + "=" * 76)

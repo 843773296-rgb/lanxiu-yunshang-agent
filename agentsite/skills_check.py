@@ -60,11 +60,15 @@ for d in _ours:
 
 # ② 代码里声明的 SKILLS 要和目录对得上 —— 多了是死规则,少了是白写
 import sdk
-declared = list(sdk.SKILLS)
+# **「装了什么」和「默认上场哪些」是两件事。**
+# sdk.SKILLS 现在只是默认档(own);目录里装着 239 个,其余属于 all 档。
+# 比的是「目录里的每一个至少属于某一档」——
+# 不属于任何档才是真的白装(装了却永远不会被选中)。
+declared = sorted({x for k in sdk.SKILL_SETS for x in sdk.skills_for(k)})
 if set(declared) != set(found):
     bad.append(f"声明的 {declared} 与目录里的 {found} 对不上"
                f"(多声明 {sorted(set(declared)-set(found))} / 漏声明 {sorted(set(found)-set(declared))})")
-print(f"  {'✅' if set(declared)==set(found) else '❌'} sdk.SKILLS 与目录一致:{declared}")
+print(f"  {'✅' if set(declared)==set(found) else '❌'} 目录里每个技能都至少属于某一档:{len(found)} 个;默认档 {sorted(sdk.SKILLS)}")
 
 # ②.5 白名单必须和 MCP 实际暴露的工具**完全一致**
 #
