@@ -206,6 +206,12 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
         r=rows("SELECT * FROM appointment WHERE id=?",target)
         if not r: return {"error":"预约不存在"}
         cur=r[0]["status"]
+    elif mid=="bk-order":
+        r=rows("SELECT * FROM ordr WHERE id=?",target)
+        if not r: return {"error":"订单不存在"}
+        cur=r[0]["status"]; ctx.setdefault("kind",r[0]["kind"])
+        # 标品不走方案审核和生产 —— 把这条写进 ctx,拒绝时的话才说得具体
+        ctx.setdefault("amount",r[0]["amount"])
     elif mid=="fe-scheme":
         r=rows("SELECT * FROM scheme WHERE id=?",target)
         if not r: return {"error":"定制方案不存在"}
@@ -219,7 +225,7 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
 
     tbl={"bk-deposit":"deposit","bk-appt":"appointment","bk-shop":"shop","bk-task":"schedule",
          "bk-product":"product","bk-activity":"activity","bk-page":"page","bk-download":"download_task",
-         "fe-scheme":"scheme"}[mid]
+         "bk-order":"ordr","fe-scheme":"scheme"}[mid]
     key={"bk-shop":"code","bk-product":"spu","bk-activity":"code","bk-page":"code"}.get(mid,"id")
     with sqlite3.connect(DB) as c:
         c.execute(f"UPDATE {tbl} SET status=? WHERE {key}=?",(to,target))
@@ -227,6 +233,17 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
             c.execute("UPDATE schedule SET summary=? WHERE id=?",(ctx.get("summary") or "",target))
         if mid=="bk-task" and to=="取消":
             c.execute("UPDATE schedule SET cancel_reason=? WHERE id=?",(ctx.get("reason") or "",target))
+        if mid=="bk-order":
+            # **prd_status 由 status 派生,不单独流转。**
+            # 让两套口径各自走,就是同一个事实两个来源 —— 而它们不一致时
+            # 对账检查会红在「数据错」上,实际错的是「谁该跟着谁」。
+            c.execute("UPDATE ordr SET prd_status=?,updated=datetime('now','localtime') WHERE id=?",
+                      (fsm.ORDER_PRD.get(to, to), target))
+            # 几个到点就该落的时间戳 —— 不落的话「什么时候发的货」只能靠 op_log 翻
+            _stamp={"已生产":"produced_at","已发货":"shipped_at","完成":"finished_at",
+                    "取消":"cancelled_at"}.get(to)
+            if _stamp:
+                c.execute(f"UPDATE ordr SET {_stamp}=datetime('now','localtime') WHERE id=?",(target,))
         if mid=="bk-deposit" and to=="退款处理中":
             c.execute("""INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,
                          resp_code,resp_msg,idem_key)

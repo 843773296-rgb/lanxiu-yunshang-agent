@@ -19,7 +19,7 @@
     ✅ 真路径   完成  tasks.finish_task()   —— 只能本人完成、总结必填
     ⚠️ 直插     量体  没有写接口
     ⚠️ 直插     订单  没有写接口
-    ⚠️ 直插     完成  没有状态机
+    ✅ 真路径   推进  transit("bk-order")   —— 一档一档走状态机,跳档会被拒
 
 **直插的那三环不受任何业务规则约束** —— 这正是这个脚本要暴露的:
 它们现在只能靠人手工保证一致,而手工保证的东西迟早会不一致。
@@ -213,24 +213,42 @@ def journey(cust, dry=False):
     ex("""INSERT INTO ordr(id,customer_id,kind,status,advisor,shop,source,delivery,
           amount,payable,created,updated,prd_status,goods_amount,freight,received,
           refund_status,paid_at)
-          VALUES(?,?,'定制品订单','待生产',?,?,'门店Pad','配送到店',?,?,?,?,?,?,0,?,'未退款',?)""",
+          VALUES(?,?,'定制品订单','待付款',?,?,'门店Pad','配送到店',?,?,?,?,?,?,0,?,'未退款',?)""",
        oid, cust["id"], f"{adv.get('adv_code') or ''} {adv['name']}".strip(), cust["shop"],
-       amt, amt, created, created, ST2PRD["待生产"], sku["price"], amt, created)
+       amt, amt, created, created, ST2PRD["待付款"], sku["price"], amt, created)
     ex("""INSERT INTO ordr_item(order_id,sku,name,tag,price,qty,spu,base_amount,
           custom_amount,total) VALUES(?,?,?,'定制',?,1,?,?,?,?)""",
        oid, sku["code"], (sku.get("name") or "定制汉服") + (f"·{sku.get('spec')}" if sku.get("spec") else ""),
        sku["price"], sku["spu"], sku["price"], custom, amt)
     steps.append(("⑥ 下单", RAW, f"{oid[-6:]}… · {sku['name']} · ¥{amt}(定制加价 ¥{custom})"))
 
-    # ── ⑦ 订单完成(⚠️ 直插:没有状态机,直接跳到终态)──────────────
-    done = (v_start + datetime.timedelta(days=random.randint(28, 45))).strftime("%Y-%m-%d %H:%M")
-    ex("""UPDATE ordr SET status='完成',prd_status='已完成',updated=?,produced_at=?,
-          shipped_at=?,finished_at=? WHERE id=?""",
-       done, (v_start + datetime.timedelta(days=25)).strftime("%Y-%m-%d %H:%M"),
-       (v_start + datetime.timedelta(days=27)).strftime("%Y-%m-%d %H:%M"), done, oid)
+    # ── ⑦ 订单推进到完成(真路径:一档一档走状态机)──────────────────
+    # 上一版直接 UPDATE 到终态,中间七档全跳过 —— 而**跳过的档在库里看不出来**,
+    # 一张单子从「待生产」一步到「完成」和正常走完九档,最终长得一模一样。
+    # 现在走 transit(),每一步都过状态机、都留台账。
+    #
+    # 装上状态机之后第一步就抓到我自己写错的东西:下单时我把初始状态填成了「待生产」,
+    # 而定制品的链路第一档是「待付款」。**之前没有状态机的时候,这张单从一开始
+    # 就跳过了两档,而没有任何东西说得出来** —— 状态机不只拦「往后跳」,
+    # 还拦「起点就不对」,而起点不对在库里完全看不出来。
+    import server as _srv
+    PATH = ["待审核", "待生产", "生产中", "已生产", "待发货", "已发货", "待完成", "完成"]
+    day = 0
+    for st in PATH:
+        day += random.randint(2, 6)
+        rr = _srv.transit("bk-order", oid, st, {"by": "旅程脚本"})
+        if not rr.get("ok"):
+            steps.append(("⑦ 推进", REAL, f"{R}卡在 {st}:{rr.get('reason','')[:40]}{D}"))
+            return steps, None
+    # 时间戳按剧本回填 —— transit 落的是「现在」,而这条旅程是有时间线的
+    done = (v_start + datetime.timedelta(days=day)).strftime("%Y-%m-%d %H:%M")
+    ex("""UPDATE ordr SET updated=?,produced_at=?,shipped_at=?,finished_at=? WHERE id=?""",
+       done, (v_start + datetime.timedelta(days=day - 12)).strftime("%Y-%m-%d %H:%M"),
+       (v_start + datetime.timedelta(days=day - 6)).strftime("%Y-%m-%d %H:%M"), done, oid)
     ex("UPDATE customer SET order_cnt=order_cnt+1, paid_amount=paid_amount+?, last_interact=? WHERE id=?",
        amt, done[:10], cust["id"])
-    steps.append(("⑦ 完成", RAW, f"{done[:10]} 完成 · 客户累计单数 +1、金额 +¥{amt}"))
+    steps.append(("⑦ 推进到完成", REAL, f"走完 {len(PATH)} 档 · {done[:10]} 完成 · "
+                                      f"客户累计 +1 单 ¥{amt}"))
     return steps, dict(客户=cust["id"], 预约=appt, 预约任务=task, 上门任务=visit,
                        量体项=n_item, 订单=oid, 金额=amt)
 
