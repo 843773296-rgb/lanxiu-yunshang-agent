@@ -40,3 +40,13 @@ agentsite/.claude/skills/*
 !agentsite/.claude/skills/quote/
 !agentsite/.claude/skills/growth-plan/
 !agentsite/.claude/skills/roster/
+
+# 任务附件(演示上传的图片)。**当初加这个功能时我以为写了这条,其实没写** ——
+# 47 个文件一直躺在未跟踪里。规则没写进去和写进去了,在 `git status` 上差得很远,
+# 而我当时只在代码注释里写了「不进版本库」—— **注释不是规则**。
+backend/uploads/
+
+# 埋点流水:每跑一次就变,提交它只会让每个 diff 都带一堆噪声。
+# 它们是**观测数据**不是源码 —— 要看趋势去读文件,不靠 git 历史。
+agentsite/evals/funnel.jsonl
+agentsite/evals/skill_usage.jsonl
