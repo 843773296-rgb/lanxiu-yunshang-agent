@@ -308,7 +308,7 @@ class as_user:
 # 期间那位顾问被派了别的活,卡上的撞车提醒会跟着变。
 # 会改数据的工具。**列在这儿是给检查用的** —— isolation_check 逐个确认
 # 它们都从会话取身份、都走 tasks.py 那一套判定,不会因为「是智能体调的」而放宽。
-WRITE_TOOLS = ("assign_task", "dispatch_task", "reassign_task", "finish_task",
+WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task", "reassign_task", "finish_task",
                "assign_batch", "dispatch_batch")
 
 
@@ -535,6 +535,7 @@ def monthly_review(month=None):
                     f"台账记的是操作发生的墙上时间,和业务时间不是一个钟,"
                     f"照墙上时间筛会筛出空集")
 
+    mgr_view = (me.get("role") in _tk.MANAGER_ROLES or me.get("role") == "总部运营")
     if ts_:
         done = [r for r in ts_ if r.get("status") == "完结"]
         od = [r for r in ts_ if rv.逾期判定(r.get("status"), r.get("end_ts"), today)]
@@ -548,7 +549,7 @@ def monthly_review(month=None):
         # 而顾问的可见范围里本来就会出现别人的名字 ——
         # 被改派走的那条单子还挂在他列表里,现在的负责人是另一个人。
         # 单看一条是知情权,**汇总成一张「谁在拖」的榜,就是越界了**。
-        mgr = me.get("role") in _tk.MANAGER_ROLES or me.get("role") == "总部运营"
+        mgr = mgr_view
         out["任务"] = dict(总数=len(ts_), 完结=len(done), 完成率=done_txt,
                           **({"逾期": len(od)} if mgr else
                              {"你看得到的逾期": len(od),
@@ -603,6 +604,36 @@ def monthly_review(month=None):
     pool = len(_rows(f"SELECT s.id FROM schedule s WHERE {where} "
                      f"AND s.assignee_no IS NULL AND s.status='有效'", *args))
     out["待分配积压"] = pool or None
+
+    # ── 审批 ──────────────────────────────────────────────────────
+    # **这一段才是「AI 到底有没有用」的直接度量。**
+    # 上一版把「agent 建议采纳率」放在「分派」那一栏,而待分配池一直是空的,
+    # 一次分派都没发生过 —— 那个指标永远没有分母。
+    # 审批不一样:**它天生就是「智能体提议 → 人拍板」的结构**,
+    # 提了几单、人通过了几单,直接就是采纳率。
+    #
+    # 按 `applied_at` 归月。和 op_log 不同,审批单的申请时间**就是它的业务时间**,
+    # 不存在「墙钟和业务时间两个钟」的问题。
+    if mgr_view:
+        ap = _rows("SELECT a.*, c.shop cshop FROM approval a "
+                   "LEFT JOIN customer c ON c.id=a.target "
+                   "WHERE substr(a.applied_at,1,7)=?", m)
+        if me.get("role") != "总部运营":
+            ap = [x for x in ap if (x.get("cshop") or "") == me.get("shop")]
+        if ap:
+            agent = [x for x in ap if _by_agent(x["id"])]
+            done = [x for x in agent if x["status"] in ("已通过", "已驳回")]
+            passed = [x for x in done if x["status"] == "已通过"]
+            txt, _ = rv.rate(len(passed), len(done), "智能体提的审批")
+            out["审批"] = _nz(dict(
+                本月提了=len(ap),
+                其中智能体提的=len(agent) or None,
+                还挂着没批的=len([x for x in ap if x["status"] == "待审批"]) or None,
+                智能体提的通过率=txt,
+                这个数是什么=("**智能体提议、人拍板** —— 提了几单、人通过了几单,"
+                             "直接就是「它的建议有没有被采纳」。"
+                             "比「分派采纳率」可靠,因为那条路一次都没发生过"),
+                按什么归月="审批单的申请时间(它就是业务时间,不像操作台账是墙钟)"))
 
     # 订单工期 —— 和任务分开归月:订单按**完成时间**归月(那是它走完一轮的时刻)
     o_where, o_args = ("1=1", [])
@@ -732,6 +763,249 @@ def appt_funnel(since=None, until=None):
                     " —— 库里出现了别的,要么是说明书漏了这一档,要么是数据漂了。"
                     "**两种都得有人看一眼**,所以单独列出来,不并进「其他」"))
     return _nz(out)
+
+
+def _mem():
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import knowledge.member as _m
+    return _m
+
+
+def _levels():
+    return _rows("SELECT code,name,amount,orders,sort,need_points,note,point_rule "
+                 "FROM level_cfg WHERE status='启用' ORDER BY sort")
+
+
+def member_level(customer_id):
+    """**这个客户是哪一档会员、凭什么、离下一档还差多少。**
+
+    门槛按 `level_cfg`,是**滚动 12 个月**的实付或完成单数,满足**任一条**即可。
+
+    ⚠️ 依据取的是客户档案上的 12 个月快照字段,**不是去订单表现算** ——
+    库里的订单只是个样本(49 笔完成、涉及 33 人,而客户有 106 个),
+    现算会把大多数人算成「0 单 0 元」。
+    """
+    m = _mem()
+    cid = (customer_id or "").strip()
+    r = _rows("SELECT id,name,level,amount_12m,orders_12m,paid_amount,order_cnt,points "
+              "FROM customer WHERE id=?", cid)
+    if not r:
+        return dict(error=f"没有客户 {cid} —— **查无此人**,不是「这人没等级」")
+    c = r[0]
+    cfg = _levels()
+    算 = m.判档(c["amount_12m"], c["orders_12m"], cfg)
+    g = next((x for x in cfg if x["name"] == c["level"]), None)
+    out = dict(
+        客户=f"{c['name']}({c['id']})",
+        当前等级=c["level"],
+        依据=dict(窗口=m.窗口,
+                 这段时间实付=c["amount_12m"], 这段时间完成单数=c["orders_12m"],
+                 门槛=(f"实付 ≥{g['amount']:.0f} **或** 完成 ≥{g['orders']} 单"
+                       if g and (g["amount"] or g["orders"]) else "无门槛(默认档)")),
+        按规则现算=算,
+        规则与库里一致=(算 == c["level"]),
+        离升档还差=m.离下一档(c["amount_12m"], c["orders_12m"], c["level"], cfg),
+        积分=c["points"],
+        提醒=None if 算 == c["level"] else
+             f"⚠️ 库里存的是「{c['level']}」,按门槛算是「{算}」—— "
+             f"**多半是人工调过档**,查一下有没有对应的审批单",
+        口径说明=("**不要拿「累计实付」算等级** —— 累计算出来 106 个人里能对上 96 个,"
+                 "看起来就是对的,但那 10 个错的不会有任何地方报错"))
+    return _nz(out)
+
+
+def points_ledger(customer_id, limit=20):
+    """**积分流水和对账。**
+
+    ⚠️ 余额是「同一个事实两个来源」:既能从 `balance` 字段读,也能从流水累加。
+    **必然漂**,实测全库 268 条里 30 处对不上。所以这里两个都给,
+    并且把对不上的地方**指出来**,不替它选一个。
+    """
+    m = _mem()
+    cid = (customer_id or "").strip()
+    if not _rows2("SELECT 1 FROM customer WHERE id=?", cid):
+        return dict(error=f"没有客户 {cid} —— **查无此人**")
+    rows = _rows("SELECT behavior,delta,balance,reason,actor,ts FROM points_log "
+                 "WHERE customer_id=? ORDER BY ts,rowid", cid)
+    if not rows:
+        return dict(客户=cid, 说明="这个客户没有积分流水(0 条)—— "
+                                  "**不是余额为零,是一笔都没发生过**")
+    bad = m.积分对账(rows)
+    档案上的 = (_rows("SELECT points FROM customer WHERE id=?", cid) or [{}])[0].get("points")
+    return _nz(dict(
+        客户=cid,
+        档案上写的余额=档案上的,
+        流水最后一条的余额=rows[-1]["balance"],
+        按流水累加=sum(r["delta"] or 0 for r in rows),
+        流水条数=len(rows),
+        对不上的地方=([dict(上一条余额=b[0], 本次增减=b[1], 表上写的=b[2],
+                          应该是=(b[0] or 0) + (b[1] or 0), 行为=b[3], 时间=b[4])
+                      for b in bad[:5]] or None),
+        对不上几处=len(bad) or None,
+        最近流水=[dict(时间=r["ts"], 行为=r["behavior"], 增减=r["delta"],
+                     余额=r["balance"], 原因=r["reason"], 经办=r["actor"])
+                for r in rows[-int(limit or 20):]],
+        说明=("**余额字段和流水累加对不上时,这里不替你选一个** —— "
+              "哪个是对的取决于是谁写错了,那得查经办记录" if bad else None)))
+
+
+def approval_queue(status=None, kind=None):
+    """**审批队列**:等级调整 / 积分调整 / 客户转移,谁申请的、什么理由、批了没有。
+
+    这三种动作的共同点是 **它们都绕过了某条本该自动成立的规则** ——
+    自动算出来的等级不用审批,人手改的才要。**审批管的是例外,不是日常。**
+
+    status 写「待审批 / 已通过 / 已驳回 / 已撤回」,不给就是全部。
+    """
+    m = _mem()
+    where, args = ["1=1"], []
+    if status: where.append("a.status=?"); args.append(status.strip())
+    if kind: where.append("a.kind=?"); args.append(kind.strip())
+    rows = _rows(f"SELECT a.*, s1.name applier, s2.name decider FROM approval a "
+                 f"LEFT JOIN staff s1 ON s1.no=a.applied_by "
+                 f"LEFT JOIN staff s2 ON s2.no=a.decided_by "
+                 f"WHERE {' AND '.join(where)} ORDER BY a.applied_at DESC", *args)
+    import json as _js
+    out = []
+    for r in rows:
+        try: pl = _js.loads(r["payload"] or "{}")
+        except Exception: pl = {"原文": r["payload"]}
+        out.append(_nz(dict(单号=r["id"], 类型=r["kind"], 对象=r["target"],
+                            要改成什么=pl, 状态=r["status"],
+                            申请人=r["applier"] or r["applied_by"], 申请时间=r["applied_at"],
+                            审批人=r["decider"] or r["decided_by"], 审批时间=r["decided_at"],
+                            批注=r["note"],
+                            为什么要审批=m.要审批的.get(r["kind"]))))
+    待 = len([x for x in out if x.get("状态") == "待审批"])
+    return _nz(dict(条数=len(out), 待审批=待 or None,
+                    谁能批=f"「待审批 → 已通过/已驳回」这两步只有 **{m.审批角色}** 能走",
+                    清单=out or None,
+                    说明=None if out else "这个筛选条件下一条审批单都没有"))
+
+
+def apply_adjust(kind, target, payload, reason):
+    """**提一张审批单**(等级调整 / 积分调整 / 客户转移)——**只是申请,不生效**。
+
+    这三件事的共同点是**它们都绕过了某条本该自动成立的规则**,
+    所以一律走审批,不许直接改。提单本身不改任何业务数据。
+
+    `payload` 写要改成什么,比如等级调整写 `{"from":"金卡","to":"黑金"}`,
+    积分调整写 `{"delta":5000}`。`reason` 必填 —— **没有理由的申请,
+    审批的人只能靠猜,而猜出来的「同意」等于没审**。
+    """
+    import datetime, json as _js, oplog
+    m = _mem()
+    me = whoami()
+    if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
+    if me.get("role") not in ("店长", "店长助理", "总部运营"):
+        oplog.log_op(me.get("name") or "未登录", "approval", target or "—", "—", "—",
+                     False, "WRONG_ROLE", f"角色 {me.get('role')} 不能提审批单", {})
+        return dict(ok=False, code="WRONG_ROLE",
+                    reason=f"提审批单须由店长及以上操作,你的角色是「{me.get('role')}」")
+    kind = (kind or "").strip()
+    if kind not in m.要审批的:
+        return dict(ok=False, code="BAD_KIND",
+                    reason=f"只受理这三种:{list(m.要审批的)};收到「{kind}」")
+    tgt = (tgt0 := (target or "").strip())
+    if not tgt:
+        return dict(ok=False, code="NEED_TARGET", reason="要改谁?对象必填")
+    # 客户转移可以是多个,用 | 隔开;其余必须是一个真实存在的客户
+    for one in tgt.split("|"):
+        if not _rows2("SELECT 1 FROM customer WHERE id=?", one.strip()):
+            return dict(ok=False, code="NO_CUSTOMER",
+                        reason=f"没有客户 {one.strip()} —— **查无此人**,不是「这人没资格」")
+    why = (reason or "").strip()
+    if len(why) < 4:
+        return dict(ok=False, code="NEED_REASON",
+                    reason="理由必填 —— **没有理由的申请,审批的人只能靠猜**,"
+                           "而猜出来的「同意」等于没审")
+    if isinstance(payload, str):
+        try: payload = _js.loads(payload)
+        except Exception: payload = {"原文": payload}
+    if not isinstance(payload, dict) or not payload:
+        return dict(ok=False, code="NEED_PAYLOAD", reason="要改成什么?payload 必填")
+
+    pre = {"等级调整": "AP-LV", "积分调整": "AP-PT", "客户转移": "AP-TR"}[kind]
+    n = len(_rows2("SELECT id FROM approval WHERE id LIKE ?", pre + "-%")) + 1
+    aid = f"{pre}-{n:03d}"
+    while _rows2("SELECT 1 FROM approval WHERE id=?", aid):
+        n += 1; aid = f"{pre}-{n:03d}"
+    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    payload = dict(payload); payload["reason"] = why
+    with sqlite3.connect(DB) as c:
+        c.execute("INSERT INTO approval(id,kind,target,payload,status,applied_by,applied_at)"
+                  " VALUES(?,?,?,?,'待审批',?,?)",
+                  (aid, kind, tgt, _js.dumps(payload, ensure_ascii=False),
+                   me.get("no"), now))
+    oplog.log_op(me.get("name"), "approval", aid, "—", "待审批", True, "APPLY",
+                 f"{me.get('name')}({me.get('role')})提了一张{kind}:{tgt} —— {why}"[:120],
+                 {"kind": kind, "payload": payload, "by_agent": True})
+    return dict(ok=True, code="APPLY", 单号=aid, 状态="待审批",
+                reason=f"已提交 {aid}({kind}·{tgt})。**这只是申请,还没生效** —— "
+                       f"「待审批 → 已通过/已驳回」这一步只有 **{m.审批角色}** 能走")
+
+
+def decide_approval(approval_id, agree, note):
+    """**批一张审批单**:同意或驳回。
+
+    角色判定**不在这儿写** —— 走 `fsm.check("bk-approval", ...)`,
+    那边 `APPROVAL_ROLE` 是唯一判定处。两处各判一次,总有一处会判松,
+    而判松的那处**看起来完全正常**。
+
+    `note` 必填,同意和驳回都要。驳回不写理由,申请人不知道该补什么;
+    **同意不写理由,出事之后没人说得清当时看了什么**。
+    """
+    import fsm, oplog, json as _js
+    m = _mem()
+    me = whoami()
+    if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
+    aid = (approval_id or "").strip()
+    r = _rows("SELECT * FROM approval WHERE id=?", aid)
+    if not r: return dict(ok=False, code="NO_APPROVAL", reason=f"没有审批单 {aid}")
+    a = r[0]
+    to = "已通过" if agree else "已驳回"
+    ok, code, why = fsm.check("bk-approval", a["status"], to, {"role": me.get("role")})
+    if not ok:
+        oplog.log_op(me.get("name"), "approval", aid, a["status"], to, False, code, why[:120],
+                     {"role": me.get("role")})
+        return dict(ok=False, code=code, reason=why)
+    txt = (note or "").strip()
+    if len(txt) < 4:
+        return dict(ok=False, code="NEED_NOTE",
+                    reason="批注必填 —— 驳回不写理由,申请人不知道该补什么;"
+                           "**同意不写理由,出事之后没人说得清当时看了什么**")
+    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    with sqlite3.connect(DB) as c:
+        c.execute("UPDATE approval SET status=?,decided_by=?,decided_at=?,note=? WHERE id=?",
+                  (to, me.get("no"), now, txt, aid))
+    try: pl = _js.loads(a["payload"] or "{}")
+    except Exception: pl = {}
+    oplog.log_op(me.get("name"), "approval", aid, a["status"], to, True, "DECIDE",
+                 f"{me.get('name')}({me.get('role')}){'通过' if agree else '驳回'}了 "
+                 f"{aid}({a['kind']}·{a['target']}):{txt}"[:120],
+                 {"kind": a["kind"], "agree": bool(agree),
+                  "applied_by": a["applied_by"], "payload": pl})
+    return dict(ok=True, code="DECIDE", 单号=aid, 状态=to,
+                reason=f"{aid} 已{'通过' if agree else '驳回'}。"
+                       f"⚠️ **审批只改审批单的状态,没有替你去改客户档案** —— "
+                       f"实际调整要走各自的业务动作。这是有意的:"
+                       f"批准和执行分开,才查得出「谁批的」和「谁做的」")
+
+
+def _by_agent(approval_id):
+    """这张审批单是不是经智能体提的。
+
+    判据是台账里那条 APPLY 记录的 `by_agent` 标记 —— **不是猜的**。
+    工具层(`api.apply_adjust`)只有智能体走得到,页面走的是另一条路,
+    所以标记打在写的时候,不在事后推断。
+    """
+    import json as _js
+    for r in _rows2("SELECT ctx FROM op_log WHERE code='APPLY' AND target=?", approval_id):
+        try:
+            if (_js.loads(r[0] or "{}") or {}).get("by_agent"): return True
+        except Exception:
+            pass
+    return False
 
 
 def _rows2(sql, *a):
@@ -1794,6 +2068,30 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "since":{"type":"string","description":"起始日,写 2026-08-01。不给就是不限。"},
     "until":{"type":"string","description":"截止日,写 2026-08-31。不给就是不限。"}},"required":[]}},
+ {"name":"member_level","description":"**这个客户是哪一档会员、凭什么、离下一档还差多少。** 门槛按 level_cfg,是**滚动 12 个月**的实付或完成单数,满足**任一条**即可(不是「且」)。⚠️ 依据取客户档案上的 12 个月快照字段,**不是去订单表现算** —— 订单表只是个样本,现算会把大多数人算成 0 单 0 元。⚠️ **不要拿「累计实付」算等级**:累计算 106 个人里能对上 96 个,看起来就是对的,但那 10 个错的不会有任何地方报错。库里存的档和按门槛算的不一致时会给提醒 —— 那多半是人工调过档。",
+  "input_schema":{"type":"object","properties":{
+    "customer_id":{"type":"string","description":"客户号,如 C10001"}},"required":["customer_id"]}},
+ {"name":"points_ledger","description":"**积分流水和对账。** ⚠️ 余额是「同一个事实两个来源」:既能从 balance 字段读,也能从流水累加,**必然漂**(全库 268 条里 30 处对不上)。所以两个都给,并把对不上的地方指出来,**不替你选一个** —— 哪个对取决于是谁写错了。",
+  "input_schema":{"type":"object","properties":{
+    "customer_id":{"type":"string","description":"客户号,如 C10001"},
+    "limit":{"type":"integer","description":"最近几条流水,默认 20"}},"required":["customer_id"]}},
+ {"name":"approval_queue","description":"**审批队列**:等级调整 / 积分调整 / 客户转移,谁申请的、什么理由、批了没有。这三种的共同点是**它们都绕过了某条本该自动成立的规则** —— 自动算出来的等级不用审批,人手改的才要。**审批管的是例外,不是日常。** 「待审批 → 已通过/已驳回」这两步只有总部运营能走。",
+  "input_schema":{"type":"object","properties":{
+    "status":{"type":"string","description":"待审批 / 已通过 / 已驳回 / 已撤回,不给就是全部"},
+    "kind":{"type":"string","description":"等级调整 / 积分调整 / 客户转移,不给就是全部"}},"required":[]}},
+ {"name":"apply_adjust","description":"**提一张审批单**(等级调整 / 积分调整 / 客户转移)—— ⚠️ **只是申请,不生效**。这三件事都绕过了某条本该自动成立的规则,所以一律走审批。理由必填:**没有理由的申请,审批的人只能靠猜,而猜出来的「同意」等于没审**。店长及以上才能提。",
+  "input_schema":{"type":"object","properties":{
+    "kind":{"type":"string","description":"等级调整 / 积分调整 / 客户转移"},
+    "target":{"type":"string","description":"客户号;客户转移可多个,用 | 隔开"},
+    "payload":{"type":"object","description":"要改成什么,如 {\"from\":\"金卡\",\"to\":\"黑金\"} 或 {\"delta\":5000}"},
+    "reason":{"type":"string","description":"为什么要改。必填,至少 4 个字"}},
+   "required":["kind","target","payload","reason"]}},
+ {"name":"decide_approval","description":"**批一张审批单**:同意或驳回。「待审批 → 已通过/已驳回」这一步**只有总部运营能走**(角色判定在状态机里,不在这个工具里)。批注必填,同意和驳回都要 —— 驳回不写理由申请人不知道该补什么,**同意不写理由出事之后没人说得清当时看了什么**。⚠️ 审批**只改审批单的状态**,不会替你去改客户档案 —— 批准和执行分开,才查得出「谁批的」和「谁做的」。",
+  "input_schema":{"type":"object","properties":{
+    "approval_id":{"type":"string","description":"审批单号,如 AP-LV-001"},
+    "agree":{"type":"boolean","description":"true=通过,false=驳回"},
+    "note":{"type":"string","description":"批注。必填,至少 4 个字"}},
+   "required":["approval_id","agree","note"]}},
  {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
@@ -1930,7 +2228,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
