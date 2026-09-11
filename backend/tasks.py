@@ -527,6 +527,11 @@ def get_task(tid, me):
     return r[0] if r else None
 
 
+def _nz(d):
+    """去掉值为 None 的字段 —— None 会被如实报成「未录入」,而这里它只是「没有」。"""
+    return {k: v for k, v in d.items() if v is not None}
+
+
 def finish_task(d, me):
     """完成任务:提交**日程总结**,该传图的还要传总结附件。
 
@@ -571,8 +576,36 @@ def finish_task(d, me):
     log_op(me["name"], "schedule", sid, "有效", "完结", True, "FINISH",
            f"{me['name']} 完成[{tt.norm(t.get('type'))}]:{summary[:40]}"
            + (f";总结附件 {have} 张" if have else ""), {"role": me["role"]})
-    return dict(ok=True, code="FINISH", 总结附件=have,
-                reason=f"任务 {sid} 已完结" + (f",总结附件 {have} 张" if have else "")
-                       + (f"。有 {len(msgs)} 张没存下:{msgs[0]}" if msgs else ""))
+
+    # ── 接待类任务做完了,把那条还开着的「预约到店」一并收尾 ──────────
+    # 客户已经见过面了,那条预约不该还躺在待办里。
+    # 实测:跑完 31 条旅程之后,34 条「预约到店」全是「有效」而上门全是「完结」——
+    # **顾问的待办里永远躺着一条已经做完的事**,他每天都要重看一遍才知道哪些还要做。
+    #
+    # ⚠️ 这里**只认同一个客户 + 同一个人 + 预约时间不晚于这次接待**,
+    # 而且**一次只收最近的一条**。为什么不放宽:
+    # 上门和预约之间没有真正的边(schedule 里没有列指向彼此),
+    # 只能靠「同一个客户 + 时间接近」推 —— **推出来的关系和真外键长得一样,
+    # 但它会在客户约了两次的时候认错**。所以宁可少收一条,让人手工关掉,
+    # 也不要把不相干的那条关了:**关错了没人看得出来,漏关了顾问自己会发现。**
+    closed = None
+    if tt.norm(t.get("type")) in ("上门沟通", "接待任务") and t.get("customer_id"):
+        cand = rows("SELECT id FROM schedule WHERE type='预约到店' AND status='有效' "
+                    "AND customer_id=? AND assignee_no=? AND start_ts<=? "
+                    "ORDER BY start_ts DESC LIMIT 1",
+                    t["customer_id"], me["no"], t.get("end_ts") or t.get("start_ts") or "")
+        if cand:
+            closed = cand[0]["id"]
+            with sqlite3.connect(DB) as c:
+                c.execute("UPDATE schedule SET status='完结',summary=? WHERE id=?",
+                          (f"客户已上门接待(见 {sid})", closed))
+            log_op(me["name"], "schedule", closed, "有效", "完结", True, "AUTO_CLOSE",
+                   f"{me['name']} 完成 {sid} 后,自动收尾对应的预约 {closed} —— "
+                   f"客户已经见过面,这条不该还在待办里",
+                   {"role": me["role"], "by_task": sid, "推出来的": True})
+    return _nz(dict(ok=True, code="FINISH", 总结附件=have, 顺带收尾=closed,
+                    reason=f"任务 {sid} 已完结" + (f",总结附件 {have} 张" if have else "")
+                           + (f";顺带把预约 {closed} 也收了(客户已经见过面)" if closed else "")
+                           + (f"。有 {len(msgs)} 张没存下:{msgs[0]}" if msgs else "")))
 
 

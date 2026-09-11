@@ -268,18 +268,10 @@ def _journey(cust, dry=False):
     steps.append(("⑤ 完成上门", REAL,
                   (f"✅ 传了现场照,任务完结" if r5.get("ok")
                    else R + str(r5.get("reason") or r5.get("error"))[:44] + D)))
-    # 上门做完了,**那条「预约到店」也该收尾** —— 客户已经见过面了。
-    # 不收的话,顾问的待办里永远躺着一条已经做完的事:
-    # 实测跑完 31 条之后,34 条「预约到店」全是「有效」,而上门 31 条全是「完结」。
-    # 根因是**两条记录之间没有边**:上门完成了,预约那条不知道。
-    # 这里在脚本侧补上,但**真正的修法是让 finish_task 自己做这件事** ——
-    # 脚本补等于只在造数据时对,真人走一遍还是会留一条。
-    if r5.get("ok"):
-        rt = _srv0.transit("bk-task", task, "完结",
-                           {"summary": f"客户已上门接待并量体(见 {visit})"})
-        steps.append(("⑥ 收尾预约", REAL,
-                      f"{task} → 完结" if rt.get("ok")
-                      else f"{Y}没收上:{rt.get('reason','')[:34]}{D}"))
+    # 「顺带收尾预约」已经搬进 finish_task 了(见那里的注释)——
+    # 脚本侧补等于只在造数据时对,真人走一遍还是会留一条。
+    if r5.get("ok") and r5.get("顺带收尾"):
+        steps.append(("⑥ 收尾预约", REAL, f"{r5['顺带收尾']} → 完结(finish_task 自动)"))
     if not r5.get("ok"):
         # **上门没完成就不该下单。** 这条链现在没有东西拦着,
         # 但脚本自己不许造出这种数据 —— 造出来就成了「库里本来就有这种」的先例。
@@ -395,6 +387,17 @@ def _journey(cust, dry=False):
     # ── 把整条旅程挪到过去 ─────────────────────────────────────────
     # book() 不收过去的时间(对的),所以先按未来下单、再整体前移。
     # **每一张表都要挪** —— 漏一张就成了「预约在三个月前、量体在下个月」。
+    # **挪移要保证终点在过去,不是起点。**
+    # 订单本身要走 30~45 天:起点挪到 33 天前,终点就还在未来 5 天 ——
+    # C4 抓到过一条(8-09 下单、走 38 天、落到 9-16)。
+    # 我盯着开头,而约束在结尾。
+    _end = datetime.datetime.strptime(done, "%Y-%m-%d %H:%M")
+    _need = (_end.date() - datetime.date.today()).days + 3     # 终点至少要落到 3 天前
+    if _need > shift.days:
+        shift = datetime.timedelta(days=_need)
+    # 但也不能挪过客户建档 —— 两个下界取严的那个
+    if shift.days > (_room + 9):
+        shift = datetime.timedelta(days=max(1, _room + 9))
     _sh = f"-{shift.days} days"
     for _t, _cols, _key in (
             ("appointment", ("start_ts", "end_ts", "checkin_ts"), f"id='{appt}'"),

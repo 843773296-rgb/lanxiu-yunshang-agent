@@ -210,6 +210,33 @@ def main():
                            (_before["assignee_no"], _before["advisor"], _before["reassigned_from"],
                             _before["reassign_reason"], _before["reassigned_at"], tid))
 
+    print(f"\n\033[1m▸ 接待做完了,那条预约该跟着收尾\033[0m")
+    print("  " + "=" * 78)
+    # 实测:跑完 31 条旅程之后,34 条「预约到店」全是「有效」而上门全是「完结」——
+    # **顾问的待办里永远躺着一条已经做完的事。**
+    # 根因是两条记录之间没有真正的边,只能靠「同一个客户 + 时间接近」推。
+    open_appt = tasks.rows("""SELECT COUNT(*) n FROM schedule s WHERE s.type='预约到店'
+        AND s.status='有效' AND EXISTS(
+          SELECT 1 FROM schedule v WHERE v.customer_id=s.customer_id
+            AND v.type IN ('上门沟通','接待任务') AND v.status='完结'
+            AND v.assignee_no=s.assignee_no AND v.start_ts>=s.start_ts)""")[0]["n"]
+    ck("客户已接待完却还开着的预约", str(open_appt), "0",
+       "  ← 每一条都是顾问待办里一件已经做完的事")
+    # **推出来的关系要标出来** —— 它会在客户约了两次时认错
+    import inspect as _in
+    src = _in.getsource(tasks.finish_task)
+    ck("  └ 自动收尾只认同一个人 + 时间在前",
+       "是" if "assignee_no=?" in src and "start_ts<=?" in src else "放得太宽", "是",
+       "  ← 推出来的关系和真外键长得一样,但它会在客户约了两次时认错")
+    # **判据要贴着那段 SQL,不是贴着「它离某个词多远」。**
+    # 上一版切 src.split("预约到店")[1][:400] 找 LIMIT 1 —— 而 SQL 里
+    # 「预约到店」和 LIMIT 1 之间隔着 400 多字符,于是它报「可能一次收多条」,
+    # 而代码里明明写着 LIMIT 1。**检查错了,不是代码错了。**
+    _sql = src[src.find("type='预约到店'"):src.find("if cand:")]
+    ck("  └ 而且一次只收最近一条",
+       "是" if "LIMIT 1" in _sql and "ORDER BY start_ts DESC" in _sql else "可能一次收多条", "是",
+       "  ← 宁可漏关(顾问自己会发现),不要关错(没人看得出来)")
+
     print(f"\n\033[1m▸ 绕道 · 别的工具能不能问出「B 在做什么」\033[0m")
     print("  " + "=" * 78)
     # 实测栽过:顾问问「周叙手上还有几件活」,模型绕开 my_tasks 去调 get_workorder
