@@ -93,10 +93,21 @@ def main():
         if FX.顶级品类(c, r["category"]) == "面料部件": n42 += 1; bad42 += 1
     ck("面料部件不挂量体模板", bad42 == 0, n42 or 1, "卖的是料子和绣片,不是成衣")
 
-    # ⑤ **没连上边的要数出来**,不许当成「都连上了」。
-    print(f"  ℹ️ {total - linked}/{total} 个商品没连上版型(按名字匹配不上)——")
-    print(f"     **留空是不猜**,但它们的性别和模板没有东西校得住。"
-          f"要业务补 spu→版型的对照表")
+    # ⑤ **没连上边的要按类别分开数。**
+    #    第一版只报一个总数「124/288 没连上」,听起来像 124 个都缺东西 ——
+    #    实际上配饰和面料部件**本来就不该有版型**(它们不是成衣)。
+    #    **把「不需要」和「缺了」混成一个数,会让人去补一堆本来就不用补的。**
+    import collections
+    d5 = collections.Counter()
+    for r in c.execute("SELECT category FROM product WHERE pattern IS NULL"):
+        d5[FX.顶级品类(c, r["category"]) or "(品类认不出)"] += 1
+    该有 = sum(v for k, v in d5.items() if k in ("女装", "男装", "童装"))
+    print(f"  ℹ️ {total - linked}/{total} 个商品没连上版型,按类别拆:")
+    for k, v in d5.most_common():
+        标 = "**该有而没有**" if k in ("女装", "男装", "童装") else "本来就不是成衣"
+        print(f"       {k!s:<8} {v:>3}   {标}")
+    print(f"     → 真正要补对照表的是那 {该有} 个成衣,"
+          f"**其余的不需要版型,不是缺数据**")
 
     c.close()
     print("=" * 80)

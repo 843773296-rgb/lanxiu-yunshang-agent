@@ -32,6 +32,79 @@ import os, sys, sqlite3
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+# 变体后缀 —— 版型名里 `·` 后面那一段。**不带后缀就是标准款**,
+# 这是命名约定(变体款都带后缀),不是猜。
+变体后缀 = ("标准", "加长", "改良通勤", "长款", "短款", "阔褶", "坦领",
+            "六破长裙", "长衫版", "男款", "女款", "袄", "加大")
+
+
+def 匹配形制(conn, 商品名, xzs=None):
+    """按形制表匹配。返回 (形制 或 None, 理由)。
+
+    三层依次试,**每层都要求唯一**:
+      ① 形制全名(「宋制褙子」)
+      ② 别名(XZ04 明制立领长衫 的别名是「立领袄」)
+      ③ 去掉朝代前缀的器物名(「宋制褙子」→「褙子」)——
+         商品名常写成「宋制**对襟**褙子」,全名对不上而器物名对得上
+
+    两个形制的命中长度一样时返回 None:**一样长就是分不出**。
+    """
+    if xzs is None:
+        conn.row_factory = sqlite3.Row
+        xzs = [dict(r) for r in conn.execute("SELECT code,name,alias FROM xingzhi")]
+    hits = []
+    for z in xzs:
+        names = [z["name"]] + ([a.strip() for a in (z["alias"] or "").split("、")]
+                               if z["alias"] else [])
+        got = None
+        for n in names:
+            if n and n in 商品名:
+                got = len(n); break
+        if got is None:
+            核 = z["name"]
+            for pre in ("唐制", "宋制", "明制", "改良汉元素", "改良"):
+                if 核.startswith(pre):
+                    核 = 核[len(pre):]; break
+            if 核 and 核 in 商品名:
+                got = len(核)
+        if got:
+            hits.append((z, got))
+    if not hits:
+        return (None, "形制表里也认不出")
+    hits.sort(key=lambda x: -x[1])
+    if len(hits) > 1 and hits[0][1] == hits[1][1]:
+        return (None, f"{len(hits)} 个形制同样匹配,**分不出**")
+    return (hits[0][0], f"形制 {hits[0][0]['code']} {hits[0][0]['name']}")
+
+
+def 按形制选版型(conn, 商品名, 商品性别, 形制, pats=None):
+    """形制定了之后,在它的版型里挑。返回 (版型 或 None, 理由)。
+
+    依次收窄:**变体后缀 → 性别**,收到只剩一个才算定。
+    """
+    if pats is None:
+        conn.row_factory = sqlite3.Row
+        pats = [dict(r) for r in conn.execute(
+            "SELECT code,name,gender,tpl,xz FROM pattern")]
+    cand = [p for p in pats if p["xz"] == 形制["code"]]
+    if not cand:
+        return (None, f"形制 {形制['code']} 下没有版型")
+    v = [x for x in 变体后缀 if x in 商品名]
+    if v:
+        c2 = [p for p in cand if any(x in p["name"] for x in v)]
+        if c2: cand = c2
+    else:
+        # **不带变体后缀 = 标准款。** 变体款的名字都带后缀,这是命名约定。
+        c2 = [p for p in cand if "标准" in p["name"] or "·" not in p["name"]]
+        if c2: cand = c2
+    if 商品性别 in ("男", "女", "童"):
+        c3 = [p for p in cand if p["gender"] == 商品性别]
+        if c3: cand = c3
+    if len(cand) == 1:
+        return (cand[0], f"形制 {形制['code']} + 变体 + 性别 收窄到唯一")
+    return (None, f"收窄后还剩 {len(cand)} 个版型,**分不出**")
+
+
 def 匹配版型(conn, 商品名, pats=None):
     """按版型名匹配。返回 (版型 或 None, 理由)。
 
@@ -64,9 +137,19 @@ def link(conn, verbose=True):
     if "pattern" not in [x[1] for x in c.execute("PRAGMA table_info(product)")]:
         c.execute("ALTER TABLE product ADD COLUMN pattern TEXT")
     pats = [dict(r) for r in c.execute("SELECT code,name,gender,tpl,xz FROM pattern")]
+    xzs = [dict(r) for r in c.execute("SELECT code,name,alias FROM xingzhi")]
     连 = 空 = 0
     for r in c.execute("SELECT spu,name FROM product").fetchall():
         p, _ = 匹配版型(c, r["name"], pats)
+        if not p:
+            # **退一步走形制表。** 按版型全名匹配只连上 164/288 ——
+            # 「宋制**对襟**褙子」对不上「宋制褙子·标准」,差的就是中间那两个字。
+            # 走形制(器物名 + 别名)再按变体和性别收窄,又定下来 62 个。
+            z, _ = 匹配形制(c, r["name"], xzs)
+            if z:
+                g = c.execute("SELECT gender FROM product WHERE spu=?",
+                              (r["spu"],)).fetchone()
+                p, _ = 按形制选版型(c, r["name"], g[0] if g else None, z, pats)
         if p:
             c.execute("UPDATE product SET pattern=? WHERE spu=?", (p["code"], r["spu"]))
             连 += 1
