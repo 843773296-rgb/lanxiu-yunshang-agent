@@ -36,6 +36,7 @@ run "月度复盘 · 验性质不逐例标真值(相对指标标真值会过期)
 run "预约漏斗 · 嵌套/加总/最窄一环(后一环比前一环多=结构错)" python3 backend/funnel_check.py
 run "会员等级/积分/审批 · 边界逐例标真值(差一块钱掉一档是对的)" python3 backend/membership_check.py
 run "活动归因与投入产出 · 期外订单不算成交、ROI 用实收" python3 backend/activity_check.py
+run "能力管理 · 判据钉两头(中英文各一份,少一边就误报一片)" python3 agentsite/capman_check.py
 run "会话归属 · 续聊不能续别人的(身份判得对也挡不住换历史)" python3 agentsite/sessions_check.py
 run "花费闸 · 阈值够聊几轮 + 撞线说不说得清" ./agentsite/.venv/bin/python agentsite/budget_check.py
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py

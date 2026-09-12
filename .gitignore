@@ -53,3 +53,4 @@ agentsite/evals/skill_usage.jsonl
 
 # 会话归属表(谁的对话是谁的)—— 本机运行态,不进版本库
 agentsite/.sessions.json
+.capman-gaps.json
