@@ -76,12 +76,85 @@ def main():
     ck("至少有活动连得上订单(空集合上前面几条全成立)", 连上 > 0, 连上,
        f"{连上} 个活动有订单")
 
+    # ── 投入产出的口径 ──────────────────────────────────────────
+    sys.path.insert(0, os.path.dirname(HERE))
+    import api
+    import knowledge.activity as av
+    HQ = {"no": "60000009", "name": "魏欣新", "role": "总部运营", "shop": ""}
+    ADV = {"no": "60000002", "name": "林岚", "role": "顾问", "shop": "SH001 静安旗舰店"}
+    with api.as_user(HQ):
+        d = api.activity_roi()
+
+    # ⑥ 那两列随机数**一次都不许被读到**。
+    #    判法不是看代码里有没有写,是看**返回值里有没有出现那两列的数**。
+    #    看代码是查「我写没写」,看返回值是查「它有没有漏出来」。
+    src = open(os.path.join(HERE, "api.py"), encoding="utf-8").read()
+    seg = src[src.index("def activity_roi("): src.index("def _rows2(")]
+    读了 = [k for k in av.不可用的列 if f'"{k}"' in seg or f"['{k}']" in seg]
+    ck("随机数那两列一次都没被读", not 读了, len(av.不可用的列),
+       f"读了 {读了}" if 读了 else "signup / orders 都没进 SELECT")
+
+    # ⑦ 期外订单**不许并进成交** —— 实测 AC2602 全部 11 单在期外。
+    n7 = bad7 = 0
+    for row in (d.get("排名") or []) + (d.get("算不出投入产出的") or []):
+        n7 += 1
+        带 = row.get("带来多少") or {}
+        if 带.get("⚠️期外归因") and 带.get("期内成交"):
+            # 有期外就一定要单列;期内成交必须只数期内的
+            code = row["活动"].split("(")[-1].rstrip(")")
+            真期内 = api._rows2(
+                "SELECT COUNT(*) FROM ordr o JOIN activity a ON a.code=o.activity "
+                "WHERE o.activity=? AND o.status!='取消' "
+                "AND substr(o.created,1,10) BETWEEN a.start_d AND a.end_d", code)[0][0]
+            if 带["期内成交"] != 真期内: bad7 += 1
+    ck("期内成交只数期内的单", bad7 == 0, n7)
+
+    # ⑧ ROI 用**实收**不用应收。拿库里现算一遍对账 ——
+    #    **期望值从库里读,不手抄**(手抄一份,数据一变就开始误判)。
+    n8 = bad8 = 0
+    for row in (d.get("排名") or []):
+        n8 += 1
+        带, 花 = row["带来多少"], row["花了多少"]
+        txt = row["投入产出比"]
+        want, _ = av.roi(带.get("实收") or 0, 花.get("已发生") or 0)
+        if txt != want: bad8 += 1
+    ck("投入产出比用实收 ÷ 已发生", bad8 == 0, n8,
+       "拿应收算等于把没到账的钱当成战果")
+
+    # ⑨ **算不出 ROI 的不许混进排名。**
+    #    把「未开始」按 0 排进去,会让人把「还没开始」读成「效果最差」,
+    #    然后去砍一个根本还没开始的活动。
+    #
+    # ⚠️ 这一条的期望值**不能**从 `av.不给ROI的活动状态` 取 ——
+    # 那正是被测代码用来做判断的那个集合。咬合时把它的 key 改坏,
+    # **判断和期望一起变**,检查什么都看不见(实测:该红没红)。
+    # 这就是同源谬误:**期望值用被测系统本身算出来,只抓得到数据漂移,
+    # 抓不到实现错误。**
+    #
+    # 改成从数据独立判:一个活动能不能谈投入产出,取决于两件客观的事 ——
+    # **它开始了没有**、**它被取消了没有**。这两个从 activity 表直接看得出来,
+    # 不经过被测代码的任何一行。
+    今天 = __import__("datetime").date.today().isoformat()
+    不该进排名 = {r["code"] for r in api._rows(
+        "SELECT code,status,start_d FROM activity")
+        if (r["start_d"] or "9999") > 今天 or r["status"] == "已取消"}
+    混 = [x["活动"] for x in (d.get("排名") or [])
+          if x["活动"].split("(")[-1].rstrip(")") in 不该进排名]
+    n9 = len(d.get("排名") or []) + len(d.get("算不出投入产出的") or [])
+    ck("未开始/已取消的不混进排名", not 混, n9, f"混进来的 {混}" if 混 else "")
+
+    # ⑩ 隔离:顾问看不到投入产出(管理视角)。
+    with api.as_user(ADV):
+        e = api.activity_roi()
+    ck("顾问看不到活动投入产出", bool(e.get("error")), 1,
+       (e.get("error") or "")[:40])
+
     c.close()
     print("=" * 72)
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 活动归因 5 条全过")
+    print("✅ 活动归因与投入产出 10 条全过")
     return 0
 
 

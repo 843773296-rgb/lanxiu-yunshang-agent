@@ -1009,6 +1009,97 @@ def _by_agent(approval_id):
     return False
 
 
+def activity_roi(code=None):
+    """**活动投入产出**:花了多少、带来多少成交、投入产出比、单均获客成本。
+
+    不给 code 就是全部活动的排名;给了就看那一个的明细。
+
+    ⚠️ 三件事在别的报表里看不到,这里都会说:
+    · **活动表上的「报名 / 成交」两列是随机数**,和订单表毫无关系 —— 一律不读
+    · **归因期外的订单分开报**,不并进成交(实测有活动 100% 的订单在期外)
+    · **成本和成交各有三个口径**(预算/已发生/已开票、应收/实收/完成),
+      默认用「已发生」和「实收」,但三个都给
+    """
+    import tasks as _tk
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import knowledge.activity as av
+
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在看 —— 请先登录")
+    if me.get("role") not in _tk.MANAGER_ROLES and me.get("role") != "总部运营":
+        return dict(error=f"活动投入产出是管理视角,你的角色是「{me.get('role')}」—— "
+                          f"这个得问店长")
+
+    where, args = ("1=1", [])
+    if code: where, args = ("code=?", [code.strip()])
+    elif me.get("role") != "总部运营":
+        # 店长只看得到本店的活动 + 全渠道的
+        where, args = ("(shop=? OR shop='全渠道')", [me.get("shop")])
+    acts = _rows(f"SELECT code,name,kind,status,start_d,end_d,shop,budget "
+                 f"FROM activity WHERE {where} ORDER BY start_d DESC", *args)
+    if not acts:
+        return dict(说明=f"没有找到活动{('(' + code + ')') if code else ''}")
+
+    out = []
+    for a in acts:
+        # 成本三个口径
+        cs = _rows("SELECT amount,note FROM activity_cost WHERE activity=?", a["code"])
+        已发生 = sum(x["amount"] or 0 for x in cs)
+        已开票 = sum(x["amount"] or 0 for x in cs if (x["note"] or "") == "已开票")
+        # 成交:先按归因取单,再分期内期外,取消的一律排除
+        os_ = _rows("SELECT id,customer_id,status,payable,received,created FROM ordr "
+                    "WHERE activity=?", a["code"])
+        有效 = [o for o in os_ if o["status"] not in av.不算成交的状态]
+        取消 = len(os_) - len(有效)
+        期内 = [o for o in 有效 if av.在活动期内(o["created"], a["start_d"], a["end_d"])]
+        期外 = [o for o in 有效 if not av.在活动期内(o["created"], a["start_d"], a["end_d"])]
+        实收 = sum(o["received"] or 0 for o in 期内)
+        应收 = sum(o["payable"] or 0 for o in 期内)
+        完成 = len([o for o in 期内 if o["status"] == "完成"])
+
+        给, why = av.该不该给ROI(a["status"])
+        roi_txt, roi_v = av.roi(实收, 已发生) if 给 else (f"「{a['status']}」不给 —— {why}", None)
+        row = _nz(dict(
+            活动=f"{a['name']}({a['code']})",     # **名字带编号** —— 名字给人看,编号给系统连
+            类型=a["kind"], 状态=a["status"],
+            活动期=f"{a['start_d']} ~ {a['end_d']}", 范围=a["shop"],
+            先看这一句=av.一句话(a["name"], a["status"], 实收, 已发生,
+                              len(期外), len(有效)),
+            花了多少=dict(预算=round(a["budget"] or 0),
+                        已发生=round(已发生), 已开票=round(已开票),
+                        待开票=round(已发生 - 已开票) or None,
+                        用了预算的=f"{已发生 / a['budget'] * 100:.0f}%" if a["budget"] else None),
+            带来多少=dict(期内成交=len(期内),
+                        实收=round(实收), 应收=round(应收),
+                        走完的单=完成,
+                        取消的=取消 or None,
+                        **({"⚠️期外归因": f"{len(期外)} 单创建时间不在活动期内,"
+                                         f"**没并进上面的成交** —— 要么归因错了,"
+                                         f"要么活动日期错了,两种都得有人看一眼"}
+                           if 期外 else {})),
+            投入产出比=roi_txt,
+            单均获客成本=av.单均(已发生, len(期内), "单均成本")[0],
+            单均成交=av.单均(实收, len(期内), "单均成交")[0],
+            _roi=roi_v))
+        out.append(row)
+
+    # 排名:**只排算得出 ROI 的**。算不出的单独列,不许当 0 排在最后 ——
+    # 那会把「还没开始」和「效果最差」画上等号。
+    有分 = sorted([x for x in out if x.get("_roi") is not None],
+                  key=lambda x: -x["_roi"])
+    没分 = [x for x in out if x.get("_roi") is None]
+    for x in out: x.pop("_roi", None)
+    return _nz(dict(
+        活动数=len(out),
+        排名=[dict(名次=i + 1, **x) for i, x in enumerate(有分)] or None,
+        算不出投入产出的=没分 or None,
+        这两列不能用={k: v for k, v in av.不可用的列.items()},
+        口径=dict(成本=f"默认「{av.默认成本口径}」(实际记了账的,含待开票)",
+                 成交=f"默认「{av.默认成交口径}」—— 投入产出要用真到账的钱,"
+                     f"应收里有一部分永远收不回来",
+                 排除="取消的单既不算收入也不占分母")))
+
+
 def _rows2(sql, *a):
     """只取一列的裸元组 —— `_rows` 会过列名黑名单,这里只要 id,不必走那一遍。"""
     with sqlite3.connect(DB) as c:
@@ -2093,6 +2184,9 @@ SHOP_SCHEMAS=[
     "agree":{"type":"boolean","description":"true=通过,false=驳回"},
     "note":{"type":"string","description":"批注。必填,至少 4 个字"}},
    "required":["approval_id","agree","note"]}},
+ {"name":"activity_roi","description":"**活动投入产出**:花了多少、带来多少成交、投入产出比、单均获客成本。不给 code 就是全部活动的排名,给了就看那一个。⚠️ 三件事别处看不到:① **活动表上的「报名/成交」两列是随机数**,和订单表毫无关系,一律不读也不许引用;② **归因期外的订单分开报,不并进成交** —— 实测有活动 100% 的订单创建于活动期外,要么归因错了要么活动日期错了;③ 成本和成交**各有三个口径**(预算/已发生/已开票、应收/实收/完成),默认「已发生」和「实收」,三个都给。算不出 ROI 的(未开始、已取消)**单独列,不当 0 排最后** —— 那会把「还没开始」和「效果最差」画等号。管理视角,顾问看不到。",
+  "input_schema":{"type":"object","properties":{
+    "code":{"type":"string","description":"活动编号,如 AC2601。不给就是全部活动的排名。"}},"required":[]}},
  {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
@@ -2229,7 +2323,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
