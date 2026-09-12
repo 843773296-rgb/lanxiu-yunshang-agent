@@ -123,7 +123,12 @@ CREATE TABLE category(code TEXT PRIMARY KEY, name TEXT, parent TEXT, sort INT, s
 CREATE TABLE product(spu TEXT PRIMARY KEY, name TEXT, category TEXT, kind TEXT, status TEXT,
   base_price REAL, template TEXT, created TEXT, updated TEXT, cover TEXT,
   tag_price REAL, unit TEXT, gender TEXT, points INT, commission_type TEXT, commission_val REAL,
-  on_shelf_at TEXT, remark TEXT, img_main TEXT, img_detail TEXT, img_intro TEXT);
+  on_shelf_at TEXT, remark TEXT, img_main TEXT, img_detail TEXT, img_intro TEXT,
+  -- 这个商品用哪个版型。**性别和量体模板都从它派生,不在商品上另填一遍** ——
+  -- 补这条边之前,86 个有版型的定制品里 **66 个的量体模板和版型对不上**
+  -- (长衫按裙子的口径量)。同一个事实两个来源,必然漂。
+  -- 可空:按名字匹配不上的留空,**不猜** —— 猜错的话用料/工期/量体全跟着错。
+  pattern TEXT);
 CREATE TABLE sku(code TEXT PRIMARY KEY, spu TEXT, spec TEXT, color TEXT, size TEXT,
   price REAL, stock INT, locked INT, status TEXT,
   collar TEXT, size_no TEXT, spec_code TEXT, weight_kg REAL, volume_m3 REAL,
@@ -1120,7 +1125,8 @@ def run():
         spu = f"lxys_{100000000+_i*7919:09d}"[:14]
         st = "下架" if _i in (11, 23) else "上架"
         tagp = round(price * 1.12, 2)                       # 吊牌价 = 售价 × 1.12
-        c.execute("INSERT INTO product VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO product(spu,name,category,kind,status,base_price,template,created,updated,cover,tag_price,unit,gender,points,commission_type,commission_val,on_shelf_at,remark,img_main,img_detail,img_intro)"
+                  " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (spu, nm, cat, "标品", st, float(price), None,
                    ago(200-_i*4), ago(_i%30), nm[:2],
                    tagp, unit, gender, int(price*100), 
@@ -1146,7 +1152,8 @@ def run():
         mts2 = _legal(mts, kfs)
         st = "上架" if mts2 else "下架"
         tagp = round(price * 1.12, 2)
-        c.execute("INSERT INTO product VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO product(spu,name,category,kind,status,base_price,template,created,updated,cover,tag_price,unit,gender,points,commission_type,commission_val,on_shelf_at,remark,img_main,img_detail,img_intro)"
+                  " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (spu, nm, cat, "定制品", st, float(price), tpl,
                    ago(200-_i*3), ago(_i%30), nm[:2],
                    tagp, "件", gender, int(price*100), "按比例", 20.0,
@@ -1232,7 +1239,8 @@ def run():
             spu = f"lxys_{100000000+_i*7919:09d}"[:14]
             kind = "标品" if round_ == 0 else "定制品"
             tagp = round(price * 1.12, 2)
-            c.execute("INSERT INTO product VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO product(spu,name,category,kind,status,base_price,template,created,updated,cover,tag_price,unit,gender,points,commission_type,commission_val,on_shelf_at,remark,img_main,img_detail,img_intro)"
+                  " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (spu, nm, cat, kind, "上架", float(price),
                        ("LT02 裙装模版" if kind == "定制品" else None),
                        ago(180-_i%150), ago(_i%30), nm[1:3],
@@ -1384,6 +1392,39 @@ def run():
           ["MI01","MI03","MI06","MI14","MI08"]),
          ("LT05","裤装模版(停用)","已并入裙装模版,保留历史数据","停用",
           ["MI01","MI04","MI12"])]
+
+    # ── 配饰用量体:**知识库写着必须量,而量体项表里一项都没有** ─────
+
+    # `04-配饰.md`:冠/额饰「有头围尺寸,**必须量**,不能按均码发」、
+
+    # 鞋履「**按脚长定制,不按鞋码**」、腕饰「有腕围尺寸」、披帛「长度按身高定」。
+
+    # 而 MI01–MI14 十四项**全是衣服用的**,所以云肩、团扇、香囊、腰封
+
+    # 只能挂「LT03 长衫模版」—— **不是填错了,是没有可填的。**
+
+    #
+
+    # 这是这一轮第三次撞见同一个形状:
+
+    # **规则写在文档里,而库里没有字段承载它,那条规则就永远跑不到。**
+
+    for _c2,_n2,_u2,_srt,_note in [
+
+            ("MI15","头围","cm",15,"**冠/额饰必填**。眉上一指绕头一周;不能按均码发"),
+
+            ("MI16","腕围","cm",16,"腕饰必填。量腕骨最细处"),
+
+            ("MI17","脚长","cm",17,"**鞋履必填,按脚长不按鞋码** —— 汉履楦型与现代鞋不同")]:
+
+        c.execute("INSERT INTO measure_item(code,name,unit,required,sort,status,note)"
+
+                  " VALUES(?,?,?,0,?,'启用',?)", (_c2,_n2,_u2,_srt,_note))
+
+    TPL = TPL + [("LT06","配饰用量体","配饰按身高/头围/腕围/脚长定,不按三围","启用",
+
+                  ["MI01","MI04","MI06","MI10","MI15","MI16","MI17"])]
+
     for code,nm,de,st,items in TPL:
         c.execute("INSERT INTO measure_tpl VALUES(?,?,?,?,?,?)",
           (code,nm,de,st,"60000008",f"2026-08-2{TPL.index((code,nm,de,st,items))} 16:16"))
@@ -2134,6 +2175,13 @@ def run():
         for _r2, _b2 in zip(_rows, _new):
             if _r2[2] != _b2:
                 c.execute("UPDATE points_log SET balance=? WHERE rowid=?", (_b2, _r2[0]))
+
+    # 商品→版型这条边,以及从版型派生的性别/量体模板。
+    # **补这条边之前,86 个有版型的定制品里 66 个模板是错的** ——
+    # 长衫按裙子的口径量、罩甲按裙子的口径量、云肩和团扇也挂着长衫模版。
+    # 商品上原来没有 pattern 列,性别和模板只能各填一遍,**重填就会错**。
+    import fix_product_pattern as _fpp
+    _fpp.link(c); _fpp.derive(c); _fpp.recat(c)
 
     import fix_order_measure as _fx
     _fx.ensure_wearers(c)              # 名下没有对得上的人 → 建档 + 量体
