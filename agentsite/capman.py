@@ -67,26 +67,44 @@ def 有数据没工具():
     return out
 
 
-def 祈使句没有hook兜():
-    """提示词里写了「必须 / 不许 / 一律」,而 hook 一个都没检查它 → 可能缺 hook。
+def 写工具没有hook兜():
+    """**能写的工具,PreToolUse 里必须有对应的拦截逻辑。**
 
-    **这条最容易被忽略**:规矩写在提示词里,看起来就像已经生效了。
-    但提示词是祈使句 —— 模型可以不听。**hook 才是强制。**
+    这条探针重写过一次,第一版是错的,两个错叠在一起:
+
+      ① **数错了。** 正则找的是 `def ck_/check_/_chk`,
+         而这个项目的体检项叫 `g1_no_source`、`g2_cost_as_price` ——
+         20 个一个都没匹配上,报成了「只有 1 项」。
+      ② **判据本身不成立。** 就算数对了,「提示词里 45 条强制措辞
+         vs hook 20 项体检」也**不是可比的量**:一条 hook 能管好几条规矩,
+         而很多规矩(「一次只做一件」「如实报告」)**根本没法用 hook 检查**。
+         拿两个不可比的数相除,得出的比例再扎眼也没有意义。
+
+    第一版那条误报**特别像真的**:29 比 1 这个比例扎眼,
+    结论(「大部分规矩只是祈使句」)也符合直觉,所以一眼看过去不会怀疑。
+    **一个方向符合直觉的错误数字,比一个离谱的数字危险得多。**
+
+    重写后判的是一件**确实可比**的事:
+    `api.WRITE_TOOLS` 里的每一个,`guards.pre_tool_verdict` 里有没有提到它。
+    写工具漏一次就是一条没人打算派的任务、一张不该批的单 ——
+    **这正好是 hook 的判据:漏一次的代价。**
     """
-    p = os.path.join(ROOT, "prompts.py")
     g = os.path.join(HERE, "guards.py")
-    if not (os.path.exists(p) and os.path.exists(g)): return []
-    ps, gs = open(p, encoding="utf-8").read(), open(g, encoding="utf-8").read()
-    规矩 = len(re.findall(r"\*\*[^*]{0,40}(必须|不许|一律|绝不)[^*]{0,40}\*\*", ps))
-    检查 = len(re.findall(r"^\s*def\s+(_?ck_|check_|_chk)", gs, re.M)) or \
-           len(re.findall(r'"check":\s*"', gs))
-    if 规矩 and 检查 and 规矩 > 检查 * 3:
-        return [dict(kind="hook",
-                     标题=f"提示词里 {规矩} 条强制措辞,hook 只检查 {检查} 项",
-                     证据=f"prompts.py 里 **必须/不许/一律** 出现 {规矩} 次;"
-                          f"guards.py 里能数出来的检查 {检查} 项",
-                     数=规矩 - 检查, 对象="guards.py")]
-    return []
+    if not os.path.exists(g): return []
+    gs = open(g, encoding="utf-8").read()
+    try:
+        import api
+        writes = list(api.WRITE_TOOLS)
+    except Exception:
+        return []
+    没兜 = [w for w in writes if w not in gs]
+    if not 没兜: return []
+    return [dict(kind="hook",
+                 标题=f"{len(没兜)} 个写工具在 hook 里没被提到:{没兜}",
+                 证据=f"api.WRITE_TOOLS 有 {len(writes)} 个,"
+                      f"guards.py 全文里搜不到其中 {len(没兜)} 个 —— "
+                      f"**写工具漏一次就是一条没人打算派的任务**",
+                 数=len(没兜), 对象="guards.py")]
 
 
 def 技能装了从不触发():
@@ -147,7 +165,7 @@ def 重复的手工动作():
     return out[:3]
 
 
-探针 = [("有数据没工具", 有数据没工具), ("祈使句没有 hook 兜", 祈使句没有hook兜),
+探针 = [("有数据没工具", 有数据没工具), ("写工具没有 hook 兜", 写工具没有hook兜),
        ("技能装了从不触发", 技能装了从不触发), ("技能其实是死步骤", 技能其实是死步骤),
        ("重复的手工动作", 重复的手工动作)]
 

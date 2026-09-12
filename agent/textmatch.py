@@ -151,18 +151,29 @@ def mentions(text, words):
     return next((w for w in words if w in text), None)
 
 
-def in_clause(text, word, needles, span=30):
-    """word 出现的那个**小句里**有没有 needles 之一。小句边界 = 标点。
+def in_clause(text, word, needles, span=30, both=False):
+    """word **后面**那半个小句里有没有 needles 之一。小句边界 = 标点。
+
+    ⚠️ **默认只往后看。** 原来的 docstring 写的是「小句里」,而实现只扫 word 之后 ——
+    文档和实现不一致,踩过一次:判「已经把 C10001 **改成**黑金」时,
+    完成态标记「已经」在动作**前面**,查不到,该拦的放行了。
+    已有的体检项(围度/复量那几条)靠的正是「只往后看」的语义,
+    所以默认不改,**加一个 `both=True` 给需要往前看的场合。**
 
     问的是「这个限定词是在说谁」,而不是「整段里有没有这个词」。
     踩过:答案里「区间」是在说围度、「复量」是在说身高,
     体检只问「有没有出现」,于是两条该拦的都放行了 ——
     **词在,但都不是在限定它该限定的那个东西。**
+
+    both=True 时前后都扫 —— 用于「完成态标记 + 动作」这种
+    **标记在动作前面**的结构。
     """
     if isinstance(needles, str): needles = (needles,)
     i = text.find(word)
     while i >= 0:
         seg = word + _seg_after(text, i + len(word), span)
+        if both:
+            seg = _seg_before(text, i, span) + seg
         if any(n in seg for n in needles): return seg
         i = text.find(word, i + 1)
     return None
@@ -282,6 +293,16 @@ if __name__ == "__main__":
          lambda: says("7% 比行业平均低不少,差距明显", "行业平均") is not None, True),
         ("⑱ 但「不比行业平均低」是真否定",
          lambda: says("我们不比行业平均低", "行业平均") is None, True),
+        # 第十次踩:in_clause 的 docstring 说「小句里」,实现只扫后半句。
+        # 判「已经把 C10001 **改成**黑金」时,「已经」在动作前面,查不到。
+        ("⑲ in_clause 默认只往后看(已有体检项靠的就是这个语义)",
+         lambda: in_clause("已经把 C10001 改成黑金", "改成", ("已经",)) is None, True),
+        ("⑳ both=True 时前面也扫得到",
+         lambda: in_clause("已经把 C10001 改成黑金", "改成", ("已经",), both=True)
+                 is not None, True),
+        ("㉑ both=True 也不跨标点:「已经查过了,改成什么你定」不算完成态",
+         lambda: in_clause("已经查过了,改成什么你定", "改成", ("已经",), both=True)
+                 is None, True),
         ("⑯ 真否定还是要抓住:「不能做」就是否定",
          lambda: says("这件事不能做", "做") is None, True),
         ("⑫ 后置否定:结论在前、否认在后,只有 both_sides 抓得到",

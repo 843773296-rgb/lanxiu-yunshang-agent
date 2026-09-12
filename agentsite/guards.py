@@ -259,6 +259,57 @@ def g9_quote_disclaimer(text, calls):
 # 但**从工具到客户中间隔着一个模型**,模型天然倾向于把话说得干净利落。
 # 「142.3cm」比「137.8 到 146.8」好听得多,而后者才是真话。
 
+def g21_apply_as_done(text, calls):
+    """**提了审批单,不许说成「已经改好了」。**
+
+    `apply_adjust` 只建了一张单,客户档案一个字没动;
+    真正生效要等总部运营批,批完还要走实际的调整动作。
+    模型说成「已改为黑金」,用户会照着这句话去跟客户讲,而客户查不到。
+
+    ⚠️ 判据要绕开中文那个坑:**顶回一件事必须先把它说出来** ——
+    「**不能**直接改成黑金,得提审批」里也有「改成黑金」。
+    所以查的是「**未被否定的**完成态说法」,而且**引号里的不算**
+    (引号里是被提及的词,不是被主张的事)。
+    """
+    if not _called(calls, "apply_adjust"):
+        return None
+    t = _strip_quotes(text or "")
+    # **不枚举短语,查结构。** 第一版写的是「已经改成 / 已改为 / …」这样的整串,
+    # 而模型说的是「已经**把 C10001** 改成黑金」—— 完成态标记和动作
+    # **中间隔着宾语**,整串接不上。这个项目在枚举中文说法上栽到第十二次了。
+    #
+    # 结构是:**同一个小句里,既有完成态标记,又有「改动生效」的动作。**
+    # 小句边界是标点(textmatch 的 in_clause 按标点断),所以
+    # 「不能直接改成黑金,我已提交申请」里,前半句没有完成态标记、
+    # 后半句的动作是「提交」不是「改成」,两边都不命中。
+    for 动作 in ("改成", "改为", "调成", "调整为", "升为", "升级为", "变成", "生效"):
+        if tm.in_clause(t, 动作, ("已经", "已", "完成"), both=True) and \
+                not tm.negated(t, t.find(动作), span=20, both_sides=True):
+            return (f"「{动作}」那句带着完成态,但 `apply_adjust` "
+                    f"**只是提交了一张审批单** —— 客户档案一个字没改。"
+                    f"用户会照着这句去跟客户讲,而客户查不到。"
+                    f"改成「已提交申请,等总部运营审」。")
+    return None
+
+
+def _strip_quotes(text):
+    """挖掉引号里的内容 —— **引号里是被提及的词,不是被主张的事**。
+
+    「待审批 → **已生效**」这种引用状态名的写法,不该被当成「它说生效了」。
+    """
+    out = text or ""
+    for a, b in (("「", "」"), ("『", "』"), ("\u201c", "\u201d"), ("`", "`")):
+        parts, i = [], 0
+        while True:
+            j = out.find(a, i)
+            if j < 0: parts.append(out[i:]); break
+            k = out.find(b, j + len(a))
+            if k < 0: parts.append(out[i:]); break
+            parts.append(out[i:j]); i = k + len(b)
+        out = "".join(parts)
+    return out
+
+
 def _fc(calls):
     """取成长推算类工具的返回。plan_for_event 的字段名带前缀,统一成一份。"""
     out = []
@@ -550,7 +601,7 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
           g15_growth_plan_sections, g16_bypass_control,
           g17_liability_promise, g18_vision_conclusion,
-          g19_account_state, g20_consent_version]
+          g19_account_state, g20_consent_version, g21_apply_as_done]
 
 
 def check_answer(text, calls):
@@ -718,6 +769,26 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
             return ("派任务之前先调 `task_types()` 看类型规范 —— "
                     "类型决定挂哪张单据、完成时要不要传图。**没查就派**,"
                     "派出去的东西和正常任务长得一模一样,错了也看不出来。")
+
+        # ── 审批那两个写工具的闸 ──────────────────────────────────
+        # 这两条是**能力管理扫出来的**:`capman.py` 的探针发现
+        # `apply_adjust` / `decide_approval` 在 guards.py 里一次都没被提到。
+        # 通用闸(尝试台账、一次只做一件)覆盖得到它们,
+        # **但「先看再做」这类工具专属的约束一条都没有** ——
+        # 而这两个动作恰恰最怕盲做。
+        读过 = " ".join(x if isinstance(x, str) else "" for x in (state_reads or []))
+        if short == "decide_approval" and "approval_queue" not in 读过:
+            return ("批之前先调 `approval_queue()` 把这张单看一遍 —— "
+                    "**批一张没看过的单就是盲批**。批注写「同意」很容易,"
+                    "而出事之后要查的正是「当时看了什么」;"
+                    "什么都没看的话,那条批注是编的。")
+        if short == "apply_adjust" and args.get("kind") in ("等级调整", "积分调整") \
+                and "member_level" not in 读过 and "points_ledger" not in 读过:
+            return (f"给客户提「{args.get('kind')}」之前,先调 `member_level()` "
+                    f"或 `points_ledger()` 看他现在是什么状况 —— "
+                    f"**不看现状就提调整,理由只能是编的**。"
+                    f"而且很多时候一查就发现不用调:门槛是**滚动 12 个月**,"
+                    f"按累计算会多算一批人。")
 
     # ── 第二条:拿客户号当着装人编号 ──────────────────────────────────
     if name.endswith(("plan_for_event", "forecast_growth", "get_wearer")):
