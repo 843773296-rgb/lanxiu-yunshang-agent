@@ -1421,19 +1421,52 @@ def run():
 
                   " VALUES(?,?,?,0,?,'启用',?)", (_c2,_n2,_u2,_srt,_note))
 
-    TPL = TPL + [("LT06","配饰用量体","配饰按身高/头围/腕围/脚长定,不按三围","启用",
+        # ── 量体项补齐:**文档里写着关键尺寸,而系统里没有这一项** ─────────
+    # `01-形制.md` 的 XZ03 明制马面裙,关键尺寸里有「**马面宽度**」——
+    # 而 MI01–MI17 一项都没有。**这条文档里写着的尺寸,系统永远量不到。**
+    # 和头围/腕围/脚长是同一回事,只是这次是被 `xingzhi_check` 抓出来的
+    # (那三项是我看 04-配饰.md 发现的 —— **人眼扫文档会漏,检查不会**)。
+    c.execute("INSERT INTO measure_item(code,name,unit,required,sort,status,note)"
+              " VALUES('MI18','马面宽度','cm',0,18,'启用',"
+              "'**马面裙必填**。前后马面的门幅宽度,决定褶裥分配;"
+              "马面裙工艺难度极高,这一项错了整条裙子的比例就错了')")
+    TPL = TPL + [("LT06", "配饰用量体", "配饰按身高/头围/腕围/脚长定,不按三围", "启用",
+                  ["MI01", "MI04", "MI06", "MI10", "MI15", "MI16", "MI17"])]
 
-                  ["MI01","MI04","MI06","MI10","MI15","MI16","MI17"])]
-
+    # 三处模板漏了形制的关键尺寸(`xingzhi_check` 抓的):
+    #   LT01 缺「衣长」MI08 —— 影响 10 个版型(大袖衫、唐制交领襦裙…)
+    #   LT04 缺「胸上围」MI13、「腰围」MI04 —— 影响 4 个版型
+    #   LT02 缺「马面宽度」MI18 —— 马面裙
+    # **漏一项不是「少量一个数」**,是这个形制最敏感的那一项没量。
+    # ⚠️ **LT04 不补腰围和胸上围。** 第一版补了,当场打破 `fitting.py` 的
+    # 那条夹具(「应该有客户因为量体模版不含腰围/裙长而需补量」)——
+    # 而那条夹具拦得对:**把腰围塞进「上衣用量体」,它就不再是上衣用量体了。**
+    #
+    # 查下来只有两个形制在 LT04 上缺项,而缺的原因是**版型挂错了模板**:
+    #   · 改良汉元素连衣裙(要腰围)用「上衣用量体」—— 一条连衣裙用上衣模版量
+    #   · 宋制抹胸(要胸上围)用「上衣用量体」—— 胸上围决定裙头位置,上衣模版没有
+    # **不是模板缺项,是版型挂错。** 见下面 `_换模板`。
+    # LT02 裙装模版补胸围 MI03 和衣长 MI08:
+    # **连衣裙是一件衣服**,不是一条裙子 —— 上半身也要量。
+    # 补这两项不会打破 fitting 那条夹具(它靠的是「上衣用量体」没有腰围/裙长)。
+    _补项 = {"LT01": ["MI08"], "LT02": ["MI18", "MI03", "MI08"]}
+    TPL = [(c1, n1, d1, s1, it + [x for x in _补项.get(c1, []) if x not in it])
+           for c1, n1, d1, s1, it in TPL]
     for code,nm,de,st,items in TPL:
         c.execute("INSERT INTO measure_tpl VALUES(?,?,?,?,?,?)",
           (code,nm,de,st,"60000008",f"2026-08-2{TPL.index((code,nm,de,st,items))} 16:16"))
         for j,it in enumerate(items):
             c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it,j+1))
     # ── 客户量体档案(定制品订单的客户)──
+    # **加量体项的时候这里要一起加** —— 少一个当场 KeyError,
+    # 而且是在造数据的半路崩,留下**看起来正常的残缺库**。
     IDEAL={"MI01":165,"MI02":52,"MI03":86,"MI04":68,"MI05":92,"MI06":38,
            "MI07":56,"MI08":110,"MI09":98,"MI10":34,"MI11":26,"MI12":100,
-           "MI13":80,"MI14":180}
+           "MI13":80,"MI14":180,
+           "MI15":56,   # 头围
+           "MI16":16,   # 腕围
+           "MI17":24,   # 脚长
+           "MI18":33}   # 马面宽度
     cust_ids=[r[0] for r in c.execute("SELECT DISTINCT customer_id FROM ordr WHERE kind='定制品订单' LIMIT 18")]
     for k,cid in enumerate(cust_ids):
         tpl=TPL[k%4][0]
@@ -2180,6 +2213,32 @@ def run():
     # **补这条边之前,86 个有版型的定制品里 66 个模板是错的** ——
     # 长衫按裙子的口径量、罩甲按裙子的口径量、云肩和团扇也挂着长衫模版。
     # 商品上原来没有 pattern 列,性别和模板只能各填一遍,**重填就会错**。
+    # ── 版型挂错模板的,挂回去 ────────────────────────────────
+    # `xingzhi_check` 抓的:关键尺寸要腰围/胸上围,而模板是「上衣用量体」。
+    # **改模板会让「上衣用量体」不再是上衣用量体**,所以改的是版型。
+    for _pt, _want, _why in (
+            ("XZ37", "LT02", "改良汉元素连衣裙要腰围 —— 连衣裙用裙装模版,不用上衣模版"),
+            ("XZ14", "LT01", "宋制抹胸要胸上围(决定裙头位置)—— 唐装模版才有这一项")):
+        _n5 = c.execute("UPDATE pattern SET tpl=? WHERE xz=? AND tpl!=?",
+                        (_want, _pt, _want)).rowcount
+        if _n5:
+            print(f"  [版型换模板] {_pt} 的 {_n5} 个版型 → {_want}({_why})")
+
+    # 形制表从 `01-形制.md` 派生 —— **`pattern.xz` 原来指向空处**。
+    # 和别的推导器一样:md 是真相源,推导器算结论落库,检查对账。
+    #
+    # ⚠️ **用 seed 自己的连接,不起子进程。** 第一版 subprocess 调推导器,
+    # 它开第二个连接,而 seed 的事务还开着 —— 拿到的是半截状态,当场失败。
+    # 一个在事务中间被调用的脚本,不该自己去连库。
+    sys.path.insert(0, os.path.join(HERE, "..", "knowledge"))
+    import derive_xingzhi as _dx
+    c.execute("""CREATE TABLE IF NOT EXISTS xingzhi(
+        code TEXT PRIMARY KEY, name TEXT, alias TEXT, key_sizes TEXT, src_type TEXT)""")
+    c.execute("DELETE FROM xingzhi")
+    for _cd, _nm3, _al, _sz, _src in _dx.parse():
+        c.execute("INSERT INTO xingzhi VALUES(?,?,?,?,?)",
+                  (_cd, _nm3, _al, "、".join(_sz) or None, _src))
+
     import fix_product_pattern as _fpp
     _fpp.link(c); _fpp.derive(c); _fpp.recat(c)
 
