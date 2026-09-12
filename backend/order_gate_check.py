@@ -1,0 +1,167 @@
+# -*- coding: utf-8 -*-
+"""下单前置条件的检查 —— **定制订单的量体不许超期,判不了要说判不了。**
+
+规则出处:`12-成长与生命周期.md` 第五节
+「超期的量体记录**不是「参考值」,是「无效值」** —— 下单前必须拦下」。
+
+## 这条检查的三档,和别的检查不一样
+
+大部分检查只有「过 / 挂」两档。这一条有三档,因为**「判不了」是个独立的状态**:
+
+    可以      前置齐了
+    不可以    明确缺什么(没量体 / 超期)—— **这是违规,要红**
+    判不了    不知道给谁做的 —— **这不是违规,是数据不全,单独报**
+
+把「判不了」并进「可以」,等于默认放行;并进「不可以」,
+等于把 19 单数据不全的单子说成违规。**两种都在撒谎,只是方向不同。**
+
+## 上一版量错了,教训值得留着
+
+第一版按**客户**取「最近一条量体」,而一个客户名下可以有本人和两个孩子 ——
+取到的多半是**大人自己的**新记录,把孩子那条停在 342 天前的盖住了。
+于是量出「75/76 全部有效」,而真相是这条规则**根本没在孩子身上跑过**。
+
+**一个客户多个着装人时,「最近一条」和「这一单那个人的最近一条」
+返回的东西长得一模一样。**
+"""
+import os, sys, sqlite3, datetime
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path[:0] = [HERE, os.path.dirname(HERE)]
+import knowledge.growth as G
+import knowledge.order_gate as OG
+
+DB = os.path.join(HERE, "lanxiu.db")
+FAIL = []
+
+
+def ck(name, ok, n, msg=""):
+    print(f"  {'✅' if ok else '❌'} {name}(验了 {n} 个){'  ' + msg if msg else ''}")
+    if not ok: FAIL.append(name)
+    if n == 0:
+        print("     ⚠️ 样本量 0 —— **这不叫通过,这叫没扫到东西**")
+        FAIL.append(name + "(样本量 0)")
+
+
+def judge(c, o):
+    """一单的结论。**按这一单的着装人判,不按客户判。**"""
+    if not OG.需要量体吗(o["kind"]):
+        return OG.能不能下单(o["kind"], None, None, None)
+    wid = o["wearer_id"]
+    if not wid:
+        return OG.能不能下单(o["kind"], None, None, None)
+    w = c.execute("SELECT id,name,gender,birthday FROM wearer WHERE id=?", (wid,)).fetchone()
+    if not w:
+        return ("判不了", f"订单上的着装人 {wid} 在 wearer 表里找不到")
+    m = c.execute("SELECT measured_at FROM measure_rec WHERE wearer_id=? AND measured_at<=? "
+                  "ORDER BY measured_at DESC LIMIT 1", (wid, o["created"])).fetchone()
+    if not m:
+        return OG.能不能下单(o["kind"], w["name"], None, None)
+    exp = None
+    if w["birthday"] and w["gender"]:
+        try:
+            exp = G.measure_expired(w["gender"], w["birthday"],
+                                    m["measured_at"][:10], o["created"][:10])
+        except Exception:
+            exp = None
+    return OG.能不能下单(o["kind"], w["name"], m["measured_at"], exp)
+
+
+def main():
+    print("下单前置条件 · 检查")
+    print("=" * 80)
+    c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
+    rows = list(c.execute("SELECT id,customer_id,kind,created,wearer_id FROM ordr"))
+    res = [(o, judge(c, o)) for o in rows]
+    可以 = [x for x in res if x[1][0] == "可以"]
+    不可以 = [x for x in res if x[1][0] == "不可以"]
+    判不了 = [x for x in res if x[1][0] == "判不了"]
+
+    # ① 三档必须加起来等于总数 —— **少一档就是有单子被静默丢掉了**。
+    ck("三档加起来等于订单总数", len(可以) + len(不可以) + len(判不了) == len(rows),
+       len(rows), f"可以 {len(可以)} / 不可以 {len(不可以)} / 判不了 {len(判不了)}")
+
+    # ② **规则必须在未成年身上跑过。** 成人复量周期 365 天,几乎拦不住东西;
+    #    这条规则真正咬合的地方在孩子身上(180 天、120 天)。
+    #    在成人上全绿而没碰过孩子,等于这条规则**从没被真正执行过**。
+    今天 = datetime.date(2026, 9, 12)
+    未成年单 = 0
+    for o in rows:
+        if not o["wearer_id"]: continue
+        w = c.execute("SELECT birthday FROM wearer WHERE id=?", (o["wearer_id"],)).fetchone()
+        if not w or not w["birthday"]: continue
+        if (今天 - datetime.date.fromisoformat(w["birthday"])).days / 365.25 < 18:
+            未成年单 += 1
+    ck("规则在未成年着装人身上跑过", 未成年单 > 0, 未成年单,
+       "成人 365 天几乎拦不住东西 —— 在成人上全绿等于这条规则没被真正执行过")
+
+    # ③ 「不可以」的每一条,理由里必须说清缺什么。
+    糊 = [o["id"] for o, (k, why) in 不可以 if "量体" not in why and "超期" not in why]
+    ck("每条「不可以」都说清缺什么", not 糊, len(不可以) or 1,
+       f"说不清的 {糊[:3]}" if 糊 else "")
+
+    # ④ 「判不了」不许混进「可以」。
+    混 = [o["id"] for o, (k, why) in 可以
+          if OG.需要量体吗(o["kind"]) and not o["wearer_id"]]
+    ck("「判不了」没有被当成「可以」", not 混, len(可以),
+       "把判不了并进可以,等于默认放行" if not 混 else f"混了 {混[:3]}")
+
+    # ⑤ 标品不受这条管 —— **默认严,但不许拦错人**。
+    标品挂 = [o["id"] for o, (k, _) in res
+              if o["kind"] in OG.无需量体的订单类型 and k != "可以"]
+    n5 = len([o for o in rows if o["kind"] in OG.无需量体的订单类型])
+    ck("标品订单不受量体规则管", not 标品挂, n5,
+       "现货成衣按尺码卖,拦它是拦错人")
+
+    # ⑥ **口径逐例标真值,专挑边界。** 前五条验的全是「机制」——
+    #    三档加总、理由说得清、标品不受管 —— 这些在一个
+    #    **把所有单都判成「可以」的实现上照样全部成立**。
+    #    咬合实测:把「超期不算违规」改掉,违规从 3 掉到 1,**五条全绿**。
+    #    绝对判定就该逐例标真值,而且专挑边界(正好等于周期天数那一天)。
+    cases = [
+        ("超期一天", {"过期": True, "已过天数": 181, "允许天数": 180, "原因": "3–12 岁"}, "不可以"),
+        ("正好到期", {"过期": False, "已过天数": 180, "允许天数": 180, "原因": "3–12 岁"}, "可以"),
+        ("还差一天", {"过期": False, "已过天数": 179, "允许天数": 180, "原因": "3–12 岁"}, "可以"),
+        ("孕期立即复量", {"过期": True, "已过天数": 1, "允许天数": 0, "原因": "孕期"}, "不可以"),
+    ]
+    bad6 = [n for n, exp, want in cases
+            if OG.能不能下单("定制品订单", "某人", "2026-01-01", exp)[0] != want]
+    # 没量体 / 判不了 这两档也钉上
+    if OG.能不能下单("定制品订单", "某人", None, None)[0] != "不可以": bad6.append("没量体")
+    if OG.能不能下单("定制品订单", None, None, None)[0] != "判不了": bad6.append("不知给谁做")
+    if OG.能不能下单("标品订单", None, None, None)[0] != "可以": bad6.append("标品")
+    ck("口径逐例(含边界:正好到期那天算可用)", not bad6, len(cases) + 3,
+       ("挂了:" + "、".join(bad6)) if bad6 else "")
+
+    # ⑦ **库里的锚点:这两个孩子的单必须在违规名单里。**
+    #    钉的是**着装人**不是订单号 —— 订单号会随造数据漂,
+    #    「这个孩子的量体超期了」是数据事实。
+    #    这条抓的是取数取错人:按**客户**取「最近一条量体」会拿到大人的新记录,
+    #    把孩子那条停在 272 天前的盖住 —— 我第一次量的时候就是这么错的,
+    #    **量出「75/76 全部有效」,而规则根本没在孩子身上跑过。**
+    应该违规 = {"W10010-2", "W10013-2"}
+    实际违规 = {o["wearer_id"] for o, (k, _) in 不可以 if o["wearer_id"]}
+    漏 = 应该违规 - 实际违规
+    ck("已知超期的那两个孩子,一个都不许漏", not 漏, len(应该违规),
+       f"漏了 {漏} —— 多半是按客户取量体、被大人的新记录盖住了" if 漏 else
+       "按**着装人**取量体,不按客户")
+
+    print("-" * 80)
+    print(f"  可以 {len(可以)} · **不可以 {len(不可以)}** · 判不了 {len(判不了)}")
+    for o, (k, why) in 不可以[:5]:
+        print(f"    ❌ {o['id'][-6:]} {o['customer_id']} {why[:76]}")
+    if 判不了:
+        print(f"  判不了的 {len(判不了)} 单是**数据不全,不是违规** —— "
+              f"订单上没着装人,而客户名下不止一个人。"
+              f"跑 `tools/migrate_order_wearer.py` 看明细")
+    c.close()
+    print("=" * 80)
+    if FAIL:
+        print(f"❌ {len(FAIL)} 条没过:{FAIL}")
+        return 1
+    print("✅ 下单前置条件 7 条全过")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

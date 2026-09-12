@@ -273,9 +273,22 @@ def _journey(cust, dry=False):
     if r5.get("ok") and r5.get("顺带收尾"):
         steps.append(("⑥ 收尾预约", REAL, f"{r5['顺带收尾']} → 完结(finish_task 自动)"))
     if not r5.get("ok"):
-        # **上门没完成就不该下单。** 这条链现在没有东西拦着,
-        # 但脚本自己不许造出这种数据 —— 造出来就成了「库里本来就有这种」的先例。
         steps.append(("⑦ 下单", RAW, f"{Y}跳过{D} —— 上门任务没完成,不该下单"))
+        return steps, None
+
+    # ── 下单前置校验:**走统一口径,不在这儿自己写一遍** ──────────────
+    # 这条判断原来只写在这个脚本里(「脚本自己不许造出这种数据」),
+    # 于是系统允许、脚本不许 —— **两套规矩**,而系统那套才是真的。
+    # 现在口径在 `knowledge/order_gate.py`,`api.can_order` 和这里共用它。
+    #
+    # ⚠️ 真正该拦的不是「有没有上门任务」,是**这个着装人的量体在不在有效期**。
+    # 按「必须有上门任务」拦会误伤每一个老客户(回头客用的是几个月前的数据)。
+    import api as _api
+    with _api.as_user(adv):
+        gate = _api.can_order(cust["id"], "定制品订单", wid or None)
+    if gate.get("结论") != "可以":
+        steps.append(("⑦ 下单", REAL,
+                      f"{Y}拦下{D} —— {gate.get('结论')}:{str(gate.get('理由'))[:60]}"))
         return steps, None
 
     # ── ⑥ 下单(⚠️ 直插:没有写接口,也没有状态机)────────────────

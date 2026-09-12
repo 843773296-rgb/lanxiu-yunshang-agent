@@ -1100,6 +1100,75 @@ def activity_roi(code=None):
                  排除="取消的单既不算收入也不占分母")))
 
 
+def can_order(customer_id, kind="定制品订单", wearer_id=None):
+    """**下单之前先问一句:这单能下吗?**
+
+    定制订单要有**这个着装人**下单前的量体,而且不能超期。
+    超期的记录**不是「参考值」,是「无效值」**(`12-成长与生命周期.md` 第五节)。
+
+    结论有**三种**,不是两种:
+      · 可以    前置齐了
+      · 不可以  明确缺什么(没量体 / 超期)
+      · **判不了** 不知道这一单是给谁做的 —— **判不了不等于可以**
+
+    不传 wearer_id 时:客户名下只有一个在用着装人就用他;
+    多个的话返回「判不了」并列出候选,**不替你挑一个** ——
+    挑错的话这一单会拿着另一个人的尺寸去裁剪,而报表上完全正常。
+    """
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import knowledge.order_gate as og
+    import knowledge.growth as gr
+
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在看 —— 请先登录")
+    cid = (customer_id or "").strip()
+    if not _rows2("SELECT 1 FROM customer WHERE id=?", cid):
+        return dict(error=f"没有客户 {cid} —— **查无此人**,不是「这人不能下单」")
+    today = _dt.date.today().isoformat()
+
+    if not og.需要量体吗(kind):
+        k, why = og.能不能下单(kind, None, None, None)
+        return _nz(dict(结论=k, 理由=why, 订单类型=kind))
+
+    ws = _rows("SELECT id,name,gender,birthday FROM wearer "
+               "WHERE customer_id=? AND status='在用' ORDER BY id", cid)
+    w = None
+    if wearer_id:
+        w = next((x for x in ws if x["id"] == (wearer_id or "").strip()), None)
+        if not w:
+            return dict(结论="判不了",
+                        理由=f"着装人 {wearer_id} 不在 {cid} 名下(或已停用)",
+                        名下有谁=[f"{x['name']}({x['id']})" for x in ws] or None)
+    elif len(ws) == 1:
+        w = ws[0]
+    if not w:
+        k, why = og.能不能下单(kind, None, None, None)
+        return _nz(dict(结论=k, 理由=why, 订单类型=kind,
+                        名下有谁=[f"{x['name']}({x['id']})" for x in ws] or None,
+                        怎么办=("把 wearer_id 一起传进来再问一次。"
+                               "**别让我替你挑** —— 定制是照着尺寸裁的")
+                        if ws else "这个客户名下没有在用的着装人,先建档"))
+
+    m = _rows("SELECT measured_at,tpl FROM measure_rec WHERE wearer_id=? "
+              "AND measured_at<=? ORDER BY measured_at DESC LIMIT 1", w["id"], today + " 23:59")
+    last = m[0]["measured_at"] if m else None
+    exp = None
+    if last and w["birthday"] and w["gender"]:
+        try:
+            exp = gr.measure_expired(w["gender"], w["birthday"], last[:10], today)
+        except Exception:
+            exp = None
+    k, why = og.能不能下单(kind, w["name"], last, exp)
+    return _nz(dict(
+        结论=k, 理由=why, 订单类型=kind,
+        着装人=f"{w['name']}({w['id']})",
+        最近量体=last,
+        复量口径=(f"{exp['已过天数']}/{exp['允许天数']} 天 · {exp['原因']}") if exp else None,
+        名下有谁=[f"{x['name']}({x['id']})" for x in ws] if len(ws) > 1 else None,
+        提醒=("「有个旧尺寸总比没有强」正是返工的来源 —— "
+              "超期就要求复量,别将就") if k == "不可以" else None))
+
+
 def _rows2(sql, *a):
     """只取一列的裸元组 —— `_rows` 会过列名黑名单,这里只要 id,不必走那一遍。"""
     with sqlite3.connect(DB) as c:
@@ -2187,6 +2256,12 @@ SHOP_SCHEMAS=[
  {"name":"activity_roi","description":"**活动投入产出**:花了多少、带来多少成交、投入产出比、单均获客成本。不给 code 就是全部活动的排名,给了就看那一个。⚠️ 三件事别处看不到:① **活动表上的「报名/成交」两列是随机数**,和订单表毫无关系,一律不读也不许引用;② **归因期外的订单分开报,不并进成交** —— 实测有活动 100% 的订单创建于活动期外,要么归因错了要么活动日期错了;③ 成本和成交**各有三个口径**(预算/已发生/已开票、应收/实收/完成),默认「已发生」和「实收」,三个都给。算不出 ROI 的(未开始、已取消)**单独列,不当 0 排最后** —— 那会把「还没开始」和「效果最差」画等号。管理视角,顾问看不到。",
   "input_schema":{"type":"object","properties":{
     "code":{"type":"string","description":"活动编号,如 AC2601。不给就是全部活动的排名。"}},"required":[]}},
+ {"name":"can_order","description":"**下单之前先问一句:这单能下吗?** 定制订单要有**这个着装人**下单前的量体,而且不能超期 —— 超期的记录**不是「参考值」,是「无效值」**(复量周期:成人 12 个月、3–12 岁 6 个月、突增期 4 个月、0–3 岁 3 个月)。结论有**三种**:可以 / 不可以 / **判不了**。⚠️ **判不了不等于可以** —— 客户名下多个着装人而没传 wearer_id 时返回「判不了」并列出候选,**不替你挑一个**:挑错的话这一单会拿着另一个人的尺寸去裁剪,而报表上完全正常。标品订单是现货成衣,不受这条管。",
+  "input_schema":{"type":"object","properties":{
+    "customer_id":{"type":"string","description":"客户号,如 C10010"},
+    "kind":{"type":"string","description":"定制品订单 / 标品订单,默认定制品订单"},
+    "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
+   "required":["customer_id"]}},
  {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
@@ -2323,7 +2398,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

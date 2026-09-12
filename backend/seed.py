@@ -102,6 +102,12 @@ CREATE TABLE schedule_file(id INTEGER PRIMARY KEY AUTOINCREMENT,
   uploaded_by TEXT, uploaded_at TEXT);
 CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
   advisor TEXT, shop TEXT, source TEXT, activity TEXT, delivery TEXT,
+  -- 这一单是给**谁**做的。原来没有这个字段,于是
+  -- 「超期的量体不许下单」那条规则(12-成长与生命周期.md 第五节)
+  -- **执行不了** —— 一个客户名下可以有本人和两个孩子,判不出用谁的尺寸。
+  -- 可空:名下多人而定不下来时**留空**,下单校验会报「判不了」——
+  -- **判不了不等于可以**,不许挑一个候选顶上。
+  wearer_id TEXT,
   amount REAL, payable REAL, created TEXT, updated TEXT,
   prd_status TEXT, goods_amount REAL, freight REAL, received REAL, refund_status TEXT,
   addr TEXT, paid_at TEXT, audit_at TEXT, produced_at TEXT, shipped_at TEXT,
