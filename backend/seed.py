@@ -2139,6 +2139,7 @@ def run():
     _fx.ensure_wearers(c)              # 名下没有对得上的人 → 建档 + 量体
     _fx.assign_item_wearers(c)         # 行级:商品性别说得出来是给谁做的
     _fx.enforce_rows(c)                # 行级:被匹配上就必须有有效量体
+    c.execute("UPDATE ordr SET wearer_id=NULL")   # 判据换过,旧值要清
     _fx.assign_wearers(c)              # 订单级:整单只给一个人时也填上
     _n_fix, _kept = _fx.enforce(c, verbose=False)
     print(f"  [下单前置] 挪了 {_n_fix} 条超期量体;"

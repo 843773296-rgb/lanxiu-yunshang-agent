@@ -228,7 +228,9 @@ def main():
         return bool(b) and (_dt2.date.fromisoformat(今)
                             - _dt2.date.fromisoformat(b)).days / 365.25 >= 18
     n8 = bad8 = 0; 例8 = []
-    for r in c.execute("""SELECT i.id, i.wearer_id, i.order_id, p.gender g, o.customer_id
+    import fix_order_measure as _FX2
+    for r in c.execute("""SELECT i.id, i.wearer_id, i.order_id, p.gender g,
+                                 p.category cat, o.customer_id
                           FROM ordr_item i JOIN product p ON p.spu=i.spu
                           JOIN ordr o ON o.id=i.order_id
                           WHERE p.kind='定制品' AND i.wearer_id IS NOT NULL"""):
@@ -236,15 +238,49 @@ def main():
         ws = [tuple(x) for x in c.execute(
             "SELECT id,name,gender,birthday FROM wearer WHERE customer_id=? "
             "AND status='在用'", (r["customer_id"],))]
-        w, _ = OG.定位着装人(r["g"], ws, _成年2)
+        w, _ = OG.定位着装人(r["g"], ws, _成年2, _FX2.顶级品类(c, r["cat"]))
         if w and w[0] == r["wearer_id"]:
             continue
         bad8 += 1
         if len(例8) < 3:
             例8.append((r["order_id"][-6:], r["g"] + "款", r["wearer_id"],
                         "商品性别定出来的是 " + (w[1] if w else "定不了")))
-    ck("每行的着装人都是商品性别定出来的那个", bad8 == 0, n8,
-       f"对不上的 {例8}" if bad8 else "童款→唯一的孩子;男/女款→唯一的同性成人")
+    ck("每行的着装人都是品类树定出来的那个", bad8 == 0, n8,
+       f"对不上的 {例8}" if bad8 else "女装→唯一的女性成人;男装→男性成人;童装→未成年")
+
+    # ⑨ **不按人裁的行,不许挂着装人。**
+    #    配饰(腰封按长度、簪钗按款式)和面料部件(卖的是料子)和三围没关系。
+    #    给它们挂一个人不是「更完整」,是**假装这条边存在** ——
+    #    以后按着装人汇总定制量,配饰会被算进去。
+    n9 = bad9 = 0
+    for r in c.execute("""SELECT i.wearer_id, p.category cat FROM ordr_item i
+                          JOIN product p ON p.spu=i.spu WHERE p.kind='定制品'"""):
+        顶 = _FX2.顶级品类(c, r["cat"])
+        if OG.要按人裁吗(顶 or "")[0]: continue
+        n9 += 1
+        if r["wearer_id"]: bad9 += 1
+    ck("配饰/面料部件那些行不挂着装人", bad9 == 0, n9,
+       "挂一个人不是「更完整」,是假装这条边存在")
+
+    # ⑩ **`product.gender` 和品类树打架的,要数出来给人看。**
+    #    实测 17 处(顶级=女装而 gender=男 的 15 个,反过来 2 个)。
+    #    两条线都在库里,**对不上意味着至少一条填错了** ——
+    #    而填错的那条在别处也会出错。以树为准,但不许把打架藏起来。
+    打架 = []
+    for r in c.execute("SELECT spu,gender,category FROM product"):
+        顶 = _FX2.顶级品类(c, r["category"])
+        树说 = OG.按品类定性别(顶 or "")
+        if 树说 and r["gender"] not in OG.分不出性别的 and r["gender"] != 树说:
+            打架.append((r["spu"], 顶, r["gender"]))
+    n10 = c.execute("SELECT COUNT(*) FROM product").fetchone()[0]
+    print(f"  {'⚠️' if 打架 else '✅'} product.gender 和品类树对得上"
+          f"(验了 {n10} 个商品){'  打架 ' + str(len(打架)) + ' 处' if 打架 else ''}")
+    if 打架:
+        print(f"     例:{打架[:3]}")
+        print(f"     **这不算违规**(定位以树为准,树是三级结构、有 parent;"
+              f"gender 是平列字段,填错了没地方报错)——")
+        print(f"     但对不上意味着至少一条填错了,**而填错的那条在别处也会出错**。"
+              f"要业务拍板哪条为准。")
 
     print("-" * 80)
     print(f"  可以 {len(可以)} · **不可以 {len(不可以)}** · 判不了 {len(判不了)}")
@@ -259,7 +295,7 @@ def main():
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 下单前置条件 9 条全过")
+    print("✅ 下单前置条件 10 条全过")
     return 0
 
 

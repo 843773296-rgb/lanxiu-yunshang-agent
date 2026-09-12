@@ -513,6 +513,24 @@ def main():
     print("      · 订单两套状态口径的映射填反了(设计稿「完成」要映射到「已完成」)")
     print("      · goods_amount 填成了含定制加价的总额,而它的口径是**基本金额之和**")
     print()
+    # ── 收尾:把着装人那条链补一遍 ────────────────────────────────
+    # **这个脚本直插 `ordr_item`,不填 `wearer_id`。** 不补的话,
+    # 新造的旅程订单全部落在「判不了」里 —— 而它们看起来和正常订单一模一样。
+    # 实测重造 42 条之后有 8 行没人,而我上一条消息还跟用户说「只剩 1 行」。
+    #
+    # 逻辑在 `backend/fix_order_measure.py`,**和 seed.py 用同一份**。
+    if not dry:
+        import sqlite3 as _sq3, fix_order_measure as _fx
+        _c = _sq3.connect(DB)
+        _fx.ensure_wearers(_c, verbose=False)
+        _fx.assign_item_wearers(_c, verbose=False)
+        _fx.enforce_rows(_c, verbose=False)
+        _c.execute("UPDATE ordr SET wearer_id=NULL")
+        _fx.assign_wearers(_c, verbose=False)
+        _fx.enforce(_c, verbose=False)
+        _c.commit(); _c.close()
+        print(f"  {G}✅ 着装人链已补{D}(品类树定位 → 补档 → 量体落到有效期内)")
+
     print(f"  {G}后来补上的{D}:")
     print("    · **下单前置** —— `api.can_order()` 在第 ⑦ 步之前真的拦一道:")
     print("      定制订单要有**这个着装人**下单前的量体,而且不能超期")

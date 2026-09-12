@@ -85,6 +85,28 @@ def 挑量体日(下单日, 周期天数, 客户建档日=None):
     return d.isoformat()
 
 
+def 顶级品类(conn, code):
+    """顺着 `category.parent` 爬到顶,返回顶级品类的名字。
+
+    爬而不是截字符串:code 的位数是约定,而 parent 是**结构**。
+    截字符串的话,哪天多一级或少一级,截出来的还是个看起来合法的编号。
+    """
+    if not code: return None
+    seen = set()
+    cur = code
+    while cur and cur not in seen:
+        seen.add(cur)
+        # **按位置取,不按列名** —— 这个函数会被 row_factory 没设成 Row 的
+        # 连接调用(实测就栽了一次:`tuple indices must be integers`)。
+        # 一个工具函数不该假设调用方替它配好了 row_factory。
+        r = conn.execute("SELECT name,parent FROM category WHERE code=?", (cur,)).fetchone()
+        if not r: return None
+        名, 父 = r[0], r[1]
+        if not 父: return 名
+        cur = 父
+    return None
+
+
 def _成年(b, today):
     if not b: return False
     return (datetime.date.fromisoformat(today)
@@ -117,7 +139,8 @@ def ensure_wearers(conn, today="2026-09-12", verbose=True):
             "MI13": 80, "MI14": 180}
     建 = 0
     需要 = {}          # (客户, 性别) → 最早的那张单的下单日
-    for it in c.execute("""SELECT i.order_id, p.gender g, o.customer_id, o.created
+    for it in c.execute("""SELECT i.order_id, p.gender g, p.category cat,
+                                  o.customer_id, o.created
                            FROM ordr_item i JOIN product p ON p.spu=i.spu
                            JOIN ordr o ON o.id=i.order_id
                            WHERE p.kind='定制品' ORDER BY o.created""").fetchall():
@@ -125,8 +148,10 @@ def ensure_wearers(conn, today="2026-09-12", verbose=True):
         ws = [tuple(w) for w in c.execute(
             "SELECT id,name,gender,birthday FROM wearer WHERE customer_id=? "
             "AND status='在用'", (it["customer_id"],))]
-        w, _ = og.定位着装人(it["g"], ws, lambda b: _成年(b, today))
+        顶 = 顶级品类(c, it["cat"])
+        w, _ = og.定位着装人(it["g"], ws, lambda b: _成年(b, today), 顶)
         if w: continue
+        if not og.要按人裁吗(顶 or "")[0]: continue      # 配饰/面料不需要人
         # 只有「一个都没有」才补;「两个都对得上」是判不了,补人只会更乱
         cand = [x for x in ws if (not _成年(x[3], today)) if it["g"] == og.童款] or \
                [x for x in ws if _成年(x[3], today) and x[2] == it["g"]]
@@ -243,23 +268,34 @@ def assign_item_wearers(conn, today="2026-09-12", verbose=True):
     sys.path.insert(0, os.path.dirname(HERE))
     import knowledge.order_gate as og
     定 = 空 = 0
-    for it in c.execute("""SELECT i.id, p.gender g, p.kind, o.customer_id
+    # **先清一遍再重填。** 判据换过一次(从「名下唯一/唯一量过体」
+    # 换成品类树),而旧判据填进去的行**看起来和新判据填的一模一样** ——
+    # 不清就永远留着:配饰行挂着人、女装行挂着旧判据挑的人。
+    # 实测就是这样,检查报「对不上」而回填一行都不动(因为它只填空的)。
+    c.execute("UPDATE ordr_item SET wearer_id=NULL")
+    不用人裁 = 0
+    for it in c.execute("""SELECT i.id, p.gender g, p.kind, p.category cat, o.customer_id
                            FROM ordr_item i JOIN product p ON p.spu=i.spu
                            JOIN ordr o ON o.id=i.order_id""").fetchall():
         if it["kind"] != "定制品":
             continue                     # 标品按尺码卖,不需要知道给谁穿
+        顶 = 顶级品类(c, it["cat"])
+        if not og.要按人裁吗(顶 or "")[0]:
+            不用人裁 += 1                 # 配饰/面料部件 —— **不是判不了,是不需要**
+            continue
         ws = [tuple(w) for w in c.execute(
             "SELECT id,name,gender,birthday FROM wearer WHERE customer_id=? "
             "AND status='在用'", (it["customer_id"],))]
-        w, _ = og.定位着装人(it["g"], ws, lambda b: _成年(b, today))
+        w, _ = og.定位着装人(it["g"], ws, lambda b: _成年(b, today), 顶)
         if w:
             c.execute("UPDATE ordr_item SET wearer_id=? WHERE id=?", (w[0], it["id"]))
             定 += 1
         else:
             空 += 1
     if verbose:
-        print(f"  [行级着装人] 定了 {定} 行,留空 {空} 行"
-              f"(通用款分不出 / 名下多个对得上 —— **留空是判不了,不是可以**)")
+        print(f"  [行级着装人] 定了 {定} 行,留空 {空} 行,"
+              f"不按人裁的 {不用人裁} 行(配饰/面料部件)"
+              f" —— **留空是判不了,不按人裁是不需要,两件事**")
     return 定, 空
 
 
