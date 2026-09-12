@@ -44,7 +44,26 @@ def ck(name, ok, n, msg=""):
 
 
 def judge(c, o):
-    """一单的结论。**按这一单的着装人判,不按客户判。**"""
+    """一单的结论。**按行判** —— 一单可以给不止一个人做。
+
+    实测 7 单是「两件童款加一件女款」,一家三口订同款。
+    只看订单级的 `wearer_id` 表达不了这种单:只能挑一个人填,而挑谁都不对。
+
+    整单的结论是各行里**最坏的那个**:
+    任何一行定不了或超期,整单就不能下 —— 那一行照样要裁剪。
+    """
+    rows = c.execute("""SELECT i.id, i.wearer_id, p.gender g, p.kind
+                        FROM ordr_item i JOIN product p ON p.spu=i.spu
+                        WHERE i.order_id=?""", (o["id"],)).fetchall()
+    定制行 = [r for r in rows if r["kind"] == "定制品"]
+    if 定制行:
+        worst = None
+        for r in 定制行:
+            k, why = _judge_row(c, o, r)
+            if k == "不可以": return (k, why)       # 最坏的,直接返回
+            if k == "判不了": worst = (k, why)
+        return worst or ("可以", f"{len(定制行)} 行定制,着装人都定得下来且量体有效")
+    # 没有定制行(纯标品,或者压根没有明细)—— 退回订单级的老判法
     if not OG.需要量体吗(o["kind"]):
         return OG.能不能下单(o["kind"], None, None, None)
     wid = o["wearer_id"]
@@ -67,6 +86,31 @@ def judge(c, o):
     return OG.能不能下单(o["kind"], w["name"], m["measured_at"], exp)
 
 
+def _judge_row(c, o, r):
+    """一行的结论。"""
+    if not r["wearer_id"]:
+        return ("判不了", f"这一行({r['g']}款)定不到人 —— "
+                          f"通用款分不出性别,或者名下有不止一个人对得上。"
+                          f"**判不了不等于可以**")
+    w = c.execute("SELECT id,name,gender,birthday FROM wearer WHERE id=?",
+                  (r["wearer_id"],)).fetchone()
+    if not w:
+        return ("判不了", f"行上的着装人 {r['wearer_id']} 在 wearer 表里找不到")
+    m = c.execute("SELECT measured_at FROM measure_rec WHERE wearer_id=? AND measured_at<=? "
+                  "ORDER BY measured_at DESC LIMIT 1",
+                  (w["id"], o["created"])).fetchone()
+    if not m:
+        return OG.能不能下单("定制品订单", w["name"], None, None)
+    exp = None
+    if w["birthday"] and w["gender"]:
+        try:
+            exp = G.measure_expired(w["gender"], w["birthday"],
+                                    m["measured_at"][:10], o["created"][:10])
+        except Exception:
+            exp = None
+    return OG.能不能下单("定制品订单", w["name"], m["measured_at"], exp)
+
+
 def main():
     print("下单前置条件 · 检查")
     print("=" * 80)
@@ -85,14 +129,11 @@ def main():
     #    这条规则真正咬合的地方在孩子身上(180 天、120 天)。
     #    在成人上全绿而没碰过孩子,等于这条规则**从没被真正执行过**。
     今天 = datetime.date(2026, 9, 12)
-    未成年单 = 0
-    for o in rows:
-        if not o["wearer_id"]: continue
-        w = c.execute("SELECT birthday FROM wearer WHERE id=?", (o["wearer_id"],)).fetchone()
-        if not w or not w["birthday"]: continue
-        if (今天 - datetime.date.fromisoformat(w["birthday"])).days / 365.25 < 18:
-            未成年单 += 1
-    ck("规则在未成年着装人身上跑过", 未成年单 > 0, 未成年单,
+    未成年单 = c.execute("""SELECT COUNT(*) FROM ordr_item i JOIN wearer w ON w.id=i.wearer_id
+                          WHERE w.birthday IS NOT NULL
+                            AND julianday(?) - julianday(w.birthday) < 18*365.25""",
+                       (今天.isoformat(),)).fetchone()[0]
+    ck("规则在未成年着装人身上跑过(按行数)", 未成年单 > 0, 未成年单,
        "成人 365 天几乎拦不住东西 —— 在成人上全绿等于这条规则没被真正执行过")
 
     # ③ 「不可以」的每一条,理由里必须说清缺什么。
@@ -100,9 +141,15 @@ def main():
     ck("每条「不可以」都说清缺什么", not 糊, len(不可以) or 1,
        f"说不清的 {糊[:3]}" if 糊 else "")
 
-    # ④ 「判不了」不许混进「可以」。
-    混 = [o["id"] for o, (k, why) in 可以
-          if OG.需要量体吗(o["kind"]) and not o["wearer_id"]]
+    # ④ 「判不了」不许混进「可以」。**按行判** ——
+    #    判据从「订单级 wearer_id 为空」改成「有定制行落不到人」,
+    #    因为着装人现在挂在行上:一单可以给不止一个人做。
+    混 = []
+    for o, (k, why) in 可以:
+        空行 = c.execute("""SELECT COUNT(*) FROM ordr_item i JOIN product p ON p.spu=i.spu
+                          WHERE i.order_id=? AND p.kind='定制品'
+                            AND i.wearer_id IS NULL""", (o["id"],)).fetchone()[0]
+        if 空行: 混.append(o["id"])
     ck("「判不了」没有被当成「可以」", not 混, len(可以),
        "把判不了并进可以,等于默认放行" if not 混 else f"混了 {混[:3]}")
 
@@ -168,24 +215,36 @@ def main():
     # ⚠️ 期望值**从数据独立算**,不调 `assign_wearers` ——
     # 调它就是同源谬误:实现放宽了,期望跟着放宽,检查什么都看不见。
     # 独立的判据是两句话:名下只有这一个人,或者下单前只有这一个人量过体。
+    # 判据换成**商品性别**:童款 → 名下唯一的未成年人;男/女款 → 名下唯一的同性成人。
+    # 原来的判据是「名下唯一 / 唯一量过体」,而实测 560005 买的是**童装**、
+    # 名下只有一个成人,于是被填给了 32 岁的大人 ——
+    # **规则跑得欢,查的是错的人。**
+    #
+    # ⚠️ 期望值**从库里独立算**,不调 `assign_item_wearers` ——
+    # 调它就是同源谬误:实现放宽了,期望跟着放宽,检查什么都看不见。
+    import datetime as _dt2
+    今 = "2026-09-12"
+    def _成年2(b):
+        return bool(b) and (_dt2.date.fromisoformat(今)
+                            - _dt2.date.fromisoformat(b)).days / 365.25 >= 18
     n8 = bad8 = 0; 例8 = []
-    for o in c.execute("SELECT id,customer_id,created,wearer_id FROM ordr "
-                       "WHERE wearer_id IS NOT NULL"):
+    for r in c.execute("""SELECT i.id, i.wearer_id, i.order_id, p.gender g, o.customer_id
+                          FROM ordr_item i JOIN product p ON p.spu=i.spu
+                          JOIN ordr o ON o.id=i.order_id
+                          WHERE p.kind='定制品' AND i.wearer_id IS NOT NULL"""):
         n8 += 1
-        ws = [r["id"] for r in c.execute(
-            "SELECT id FROM wearer WHERE customer_id=? AND status='在用'",
-            (o["customer_id"],))]
-        if len(ws) == 1 and ws[0] == o["wearer_id"]:
-            continue
-        量过 = [w for w in ws if c.execute(
-            "SELECT COUNT(*) FROM measure_rec WHERE wearer_id=? AND measured_at<=?",
-            (w, o["created"])).fetchone()[0]]
-        if len(量过) == 1 and 量过[0] == o["wearer_id"]:
+        ws = [tuple(x) for x in c.execute(
+            "SELECT id,name,gender,birthday FROM wearer WHERE customer_id=? "
+            "AND status='在用'", (r["customer_id"],))]
+        w, _ = OG.定位着装人(r["g"], ws, _成年2)
+        if w and w[0] == r["wearer_id"]:
             continue
         bad8 += 1
-        if len(例8) < 3: 例8.append((o["id"][-6:], o["wearer_id"], f"候选 {len(ws)} 人,量过 {len(量过)} 人"))
-    ck("填上的着装人都是「唯一可能」的那个", bad8 == 0, n8,
-       f"凭空挑的 {例8}" if bad8 else "名下唯一 / 唯一量过体 —— 两者之一才许填")
+        if len(例8) < 3:
+            例8.append((r["order_id"][-6:], r["g"] + "款", r["wearer_id"],
+                        "商品性别定出来的是 " + (w[1] if w else "定不了")))
+    ck("每行的着装人都是商品性别定出来的那个", bad8 == 0, n8,
+       f"对不上的 {例8}" if bad8 else "童款→唯一的孩子;男/女款→唯一的同性成人")
 
     print("-" * 80)
     print(f"  可以 {len(可以)} · **不可以 {len(不可以)}** · 判不了 {len(判不了)}")

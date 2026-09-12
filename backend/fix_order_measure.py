@@ -43,10 +43,224 @@ import knowledge.growth as G
 #
 # 所以现在夹具**只有这一处声明**,`boundary_audit` 和 `order_gate_check`
 # 都从这儿取 —— 谁要改夹具,改这一行,两边一起跟。
-夹具着装人集 = ("W10010-2", "W10013-2")
-夹具着装人 = 夹具着装人集[1]      # boundary_audit 之外的地方用它当代表
-夹具说明 = ("刘星野(11 岁)过期 272 天 / 王清和(9 岁)过期 199 天 —— "
-            "供「超期量体不许下单」和边界审计用")
+# 只剩一个了。原来还有 W10013-2(刘星野),但她那张单买的是**女款成人装** ——
+# 补齐着装人之后,女款正确地匹配到了成年女性,**她本来就不该接那张单**。
+# 一个「靠错误匹配才成立」的夹具不是夹具,是另一个 bug。
+#
+# W10010-2(王清和)是干净的:**童款订单 + 超期量体**,
+# 商品性别说得明明白白是给孩子做的,而孩子的量体过期了 199 天。
+夹具着装人集 = ("W10010-2",)
+夹具着装人 = 夹具着装人集[0]
+夹具说明 = "王清和(9 岁)童款订单、量体过期 199 天 —— 供「超期量体不许下单」和边界审计用"
+
+
+def 挑量体日(下单日, 周期天数, 客户建档日=None):
+    """挑一个合规的量体日期。三个约束**同时**要满足:
+
+      · 在下单**之前**
+      · 在复量周期**之内**
+      · **不早于客户建档日** —— 客户 7 月才建档,量体记录写 4 月,
+        那是不可能发生的事。`spec_check` 的 C3 专门管这个,
+        实测一次性造出 **56 条**违规。
+
+    第三条是这次栽出来的:我按「下单日往前推周期的三分之一」挑日子,
+    完全没看客户是什么时候建的档。**改数据的连带后果,
+    往往落在一个和这次改动看起来毫无关系的检查里。**
+    """
+    d0 = datetime.date.fromisoformat(下单日)
+    提前 = max(1, min(周期天数 - 1, 周期天数 // 3))
+    d = d0 - datetime.timedelta(days=提前)
+    if 客户建档日:
+        下界 = datetime.date.fromisoformat(str(客户建档日)[:10])
+        if d < 下界:
+            # 建档到下单之间取中点;建档当天就下单的话,就用建档当天
+            if d0 <= 下界:
+                # **建档日晚于下单日 —— 数据本身矛盾,不该在这儿悄悄糊过去。**
+                # 糊过去的话会造出一条「量体晚于下单」的记录,
+                # 而那正是这次要修的毛病之一。抛出来让人看见。
+                raise ValueError(
+                    f"客户建档 {下界} 不早于下单 {d0} —— 这两个日期本身就矛盾,"
+                    f"挑不出合规的量体日。**先修这两个日期,别在量体上打补丁**")
+            d = 下界 + (d0 - 下界) // 2
+    return d.isoformat()
+
+
+def _成年(b, today):
+    if not b: return False
+    return (datetime.date.fromisoformat(today)
+            - datetime.date.fromisoformat(b)).days / 365.25 >= 18
+
+
+def ensure_wearers(conn, today="2026-09-12", verbose=True):
+    """**补齐着装人**:定制行的商品性别在名下找不到人时,给这个客户建一个。
+
+    为什么是补人而不是「挑一个现有的顶上」:
+    商品性别说得清清楚楚是童款/男款/女款,而客户名下没有对得上的人 ——
+    **这是档案没建全,不是判不了**。真实业务里就是这样:
+    太太在系统里,先生和孩子来试穿定做,但没人给他们建档。
+
+    建完的人**要有量体**,而且要落在「下单之前、复量周期之内」——
+    定制不能凭空裁,一个没量过体的着装人接不住一张定制单。
+
+    ⚠️ 只补**定制品**行。标品按尺码卖,不需要知道给谁穿。
+    """
+    import sqlite3 as _sq
+    conn.row_factory = _sq.Row
+    c = conn
+    sys.path.insert(0, os.path.dirname(HERE))
+    import knowledge.order_gate as og
+
+    ITEMS = ["MI01", "MI02", "MI03", "MI04", "MI05", "MI06", "MI07",
+             "MI08", "MI09", "MI10", "MI11", "MI12", "MI13", "MI14"]
+    BASE = {"MI01": 165, "MI02": 52, "MI03": 86, "MI04": 68, "MI05": 92, "MI06": 38,
+            "MI07": 56, "MI08": 110, "MI09": 98, "MI10": 34, "MI11": 26, "MI12": 100,
+            "MI13": 80, "MI14": 180}
+    建 = 0
+    需要 = {}          # (客户, 性别) → 最早的那张单的下单日
+    for it in c.execute("""SELECT i.order_id, p.gender g, o.customer_id, o.created
+                           FROM ordr_item i JOIN product p ON p.spu=i.spu
+                           JOIN ordr o ON o.id=i.order_id
+                           WHERE p.kind='定制品' ORDER BY o.created""").fetchall():
+        if it["g"] in og.分不出性别的: continue
+        ws = [tuple(w) for w in c.execute(
+            "SELECT id,name,gender,birthday FROM wearer WHERE customer_id=? "
+            "AND status='在用'", (it["customer_id"],))]
+        w, _ = og.定位着装人(it["g"], ws, lambda b: _成年(b, today))
+        if w: continue
+        # 只有「一个都没有」才补;「两个都对得上」是判不了,补人只会更乱
+        cand = [x for x in ws if (not _成年(x[3], today)) if it["g"] == og.童款] or \
+               [x for x in ws if _成年(x[3], today) and x[2] == it["g"]]
+        if cand: continue
+        k = (it["customer_id"], it["g"])
+        需要.setdefault(k, it["created"][:10])
+
+    for (cid, g), day in sorted(需要.items()):
+        # **取一个库里没有的编号,不要靠「数一数有几个」。**
+        # 第一版用 `COUNT(*)` 当后缀,而现有编号不连续
+        # (有 W10004-1 和 -2 却没有 -0)—— 当场 UNIQUE 撞车。
+        # 和订单号那次是同一个教训:**编号要取没被占的,不是算出来的。**
+        n = c.execute("SELECT COUNT(*) FROM wearer WHERE customer_id=?", (cid,)).fetchone()[0]
+        while True:
+            wid = f"W{cid[1:]}-{n}"
+            if not c.execute("SELECT 1 FROM wearer WHERE id=?", (wid,)).fetchone():
+                break
+            n += 1
+        姓 = (c.execute("SELECT name FROM customer WHERE id=?", (cid,)).fetchone()
+              or ["某"])[0][:1]
+        if g == og.童款:
+            # 3–14 岁,按客户号取一个稳定的年龄 —— **不用 random**,
+            # 造数据必须可复现,否则两次 seed 出来的库不一样。
+            岁 = 3 + (int(cid[1:]) % 12)
+            sex = "女" if int(cid[1:]) % 2 else "男"
+            bd = (datetime.date.fromisoformat(day)
+                  - datetime.timedelta(days=int(岁 * 365.25))).isoformat()
+            rel, nm = ("女" if sex == "女" else "子"), f"{姓}小{sex}"
+        else:
+            岁 = 28 + (int(cid[1:]) % 12)
+            sex = g
+            bd = (datetime.date.fromisoformat(day)
+                  - datetime.timedelta(days=int(岁 * 365.25))).isoformat()
+            rel, nm = "配偶", f"{姓}{'先生' if g == '男' else '女士'}"
+        h = round(110 + 岁 * 4.2, 1) if 岁 < 18 else (172.0 if g == "男" else 161.0)
+        # **account_id 必须跟着客户的账户走。**
+        # 第一版传了 None,当场被 `lifecycle_check` 的结构规则拦下:
+        # 「身份绑在账户上,不绑门店档案 —— 档案可能有好几条,账户只有一个」。
+        # 建数据的时候少填一个外键,**在这张表上看不出问题**,
+        # 要到另一个模块的结构检查里才会红。
+        acc = (c.execute("SELECT account_id FROM customer WHERE id=?", (cid,)).fetchone()
+               or [None])[0]
+        c.execute("INSERT INTO wearer(id,customer_id,account_id,name,gender,birthday,"
+                  "relation,height,status,created) VALUES(?,?,?,?,?,?,?,?,'在用',?)",
+                  (wid, cid, acc, nm, sex, bd, rel, h, day))
+        # **同意书要一起建。** 身体数据是敏感个人信息,
+        # `lifecycle_check` 有一条结构规则:有身体数据就必须有「身体数据」同意
+        # (个保法 28 条);未成年人还要额外一条「未成年人」同意(监护人签)。
+        #
+        # 这是这一轮第二次栽在「建数据时少填一样」上:
+        # 前一次是 `account_id` 传了 None。**在这张表上看不出问题,
+        # 要到另一个模块的结构检查里才会红** —— 而报出来的位置
+        # 和我改动的位置隔着好几层。
+        def _同意(scope, rel):
+            n2 = c.execute("SELECT COUNT(*) FROM consent").fetchone()[0]
+            while True:
+                sid = f"CS{2000 + n2}"
+                if not c.execute("SELECT 1 FROM consent WHERE id=?", (sid,)).fetchone():
+                    break
+                n2 += 1
+            c.execute("INSERT INTO consent(id,wearer_id,scope,granted_by,relation,"
+                      "channel,granted_at) VALUES(?,?,?,?,?,'门店纸质',?)",
+                      (sid, wid, scope, nm if rel == "本人" else 监护人, rel, day))
+
+        监护人 = (c.execute("SELECT name FROM wearer WHERE customer_id=? "
+                          "AND relation='本人' LIMIT 1", (cid,)).fetchone()
+                  or [nm])[0]
+        未成年 = not _成年(bd, today)
+        _同意("身体数据", "监护人" if 未成年 else "本人")
+        if 未成年:
+            _同意("未成年人", "监护人")
+
+        # 量体:落在下单前、复量周期之内的中间位置
+        days, _ = G.recheck_cycle(sex, G.age_at(bd, day))
+        建档 = (c.execute("SELECT created FROM customer WHERE id=?", (cid,)).fetchone()
+                or [None])[0]
+        at = 挑量体日(day, days, 建档) + " 14:30"
+        for i, item in enumerate(ITEMS):
+            v = BASE[item] * (h / 165 if item in ("MI01", "MI08", "MI09", "MI12", "MI14") else 1)
+            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
+                      "measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath) "
+                      "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                      (cid, "MT01", item, round(v + (i % 5) - 2, 1), "60000008",
+                       at, "到店", wid, "薄", "赤足", "平静呼气"))
+        建 += 1
+    if verbose:
+        print(f"  [补着装人] 建了 {建} 个(各带 {len(ITEMS)} 项量体,"
+              f"落在下单前、复量周期内)")
+    return 建
+
+
+def assign_item_wearers(conn, today="2026-09-12", verbose=True):
+    """给**订单行**填着装人 —— 按商品性别定位。
+
+    ## 为什么着装人必须挂在行上
+
+    **一单可以给不止一个人做**:实测 7 单是「两件童款加一件女款」,
+    一家三口订同款。着装人挂在订单上,这件事**根本表达不了** ——
+    只能挑一个填,而挑谁都不对。
+
+    ## 为什么不能只靠「名下唯一」
+
+    实测 560005 买的是**童装**,却挂在 32 岁的大人身上 ——
+    因为那个客户名下只登记了一个着装人,「名下唯一 → 直接填」就填上去了。
+    于是复量规则去查大人的量体,而衣服是给孩子做的。
+    **规则跑得欢,查的是错的人。**
+
+    所以判据换成:**商品性别自己说得出来是给谁做的**(童 / 男 / 女)。
+    通用款分不出,留空。
+    """
+    import sqlite3 as _sq
+    conn.row_factory = _sq.Row
+    c = conn
+    sys.path.insert(0, os.path.dirname(HERE))
+    import knowledge.order_gate as og
+    定 = 空 = 0
+    for it in c.execute("""SELECT i.id, p.gender g, p.kind, o.customer_id
+                           FROM ordr_item i JOIN product p ON p.spu=i.spu
+                           JOIN ordr o ON o.id=i.order_id""").fetchall():
+        if it["kind"] != "定制品":
+            continue                     # 标品按尺码卖,不需要知道给谁穿
+        ws = [tuple(w) for w in c.execute(
+            "SELECT id,name,gender,birthday FROM wearer WHERE customer_id=? "
+            "AND status='在用'", (it["customer_id"],))]
+        w, _ = og.定位着装人(it["g"], ws, lambda b: _成年(b, today))
+        if w:
+            c.execute("UPDATE ordr_item SET wearer_id=? WHERE id=?", (w[0], it["id"]))
+            定 += 1
+        else:
+            空 += 1
+    if verbose:
+        print(f"  [行级着装人] 定了 {定} 行,留空 {空} 行"
+              f"(通用款分不出 / 名下多个对得上 —— **留空是判不了,不是可以**)")
+    return 定, 空
 
 
 def assign_wearers(conn, verbose=True):
@@ -94,6 +308,73 @@ def assign_wearers(conn, verbose=True):
     return 定, 留空
 
 
+def enforce_rows(conn, verbose=True):
+    """**按订单行**收一遍:每个被匹配上的着装人,下单前都得有有效的量体。
+
+    `enforce` 管的是订单级,这条管行级 —— 一单可以给不止一个人做。
+
+    实测补齐着装人之后冒出 3 个「被匹配上却一条量体都没有」的人
+    (seed 生成的占位配偶,生日全是 1990-05-20)。
+    **定制不能凭空裁:被匹配上就必须有量体**,否则这一行落不了地。
+
+    夹具照旧跳过。
+    """
+    import sqlite3 as _sq
+    conn.row_factory = _sq.Row
+    c = conn
+    ITEMS = ["MI01", "MI02", "MI03", "MI04", "MI05", "MI06", "MI07",
+             "MI08", "MI09", "MI10", "MI11", "MI12", "MI13", "MI14"]
+    BASE = {"MI01": 165, "MI02": 52, "MI03": 86, "MI04": 68, "MI05": 92, "MI06": 38,
+            "MI07": 56, "MI08": 110, "MI09": 98, "MI10": 34, "MI11": 26, "MI12": 100,
+            "MI13": 80, "MI14": 180}
+    补 = 挪 = 0
+    for r in c.execute("""SELECT i.wearer_id, o.created, o.customer_id
+                          FROM ordr_item i JOIN ordr o ON o.id=i.order_id
+                          JOIN product p ON p.spu=i.spu
+                          WHERE p.kind='定制品' AND i.wearer_id IS NOT NULL
+                          ORDER BY o.created""").fetchall():
+        wid = r["wearer_id"]
+        if wid in 夹具着装人集:
+            continue
+        w = c.execute("SELECT id,name,gender,birthday,height FROM wearer WHERE id=?",
+                      (wid,)).fetchone()
+        if not (w and w["birthday"] and w["gender"]):
+            continue
+        day = r["created"][:10]
+        m = c.execute("SELECT measured_at FROM measure_rec WHERE wearer_id=? "
+                      "AND measured_at<=? ORDER BY measured_at DESC LIMIT 1",
+                      (wid, r["created"])).fetchone()
+        if m:
+            exp = G.measure_expired(w["gender"], w["birthday"], m["measured_at"][:10], day)
+            if not exp["过期"]:
+                continue
+        days, _ = G.recheck_cycle(w["gender"], G.age_at(w["birthday"], day))
+        建档 = (c.execute("SELECT created FROM customer WHERE id=?",
+                          (r["customer_id"],)).fetchone() or [None])[0]
+        新 = 挑量体日(day, days, 建档)
+        if m:
+            旧 = m["measured_at"][:10]
+            c.execute("UPDATE measure_rec SET measured_at=? WHERE wearer_id=?",
+                      (f"{新} 14:30", wid))
+            c.execute("UPDATE growth_forecast SET base_at=? WHERE wearer_id=? AND base_at=?",
+                      (新, wid, 旧))
+            挪 += 1
+        else:
+            h = w["height"] or 165.0
+            for i, item in enumerate(ITEMS):
+                v = BASE[item] * (h / 165 if item in ("MI01", "MI08", "MI09", "MI12", "MI14") else 1)
+                c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
+                          "measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath) "
+                          "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                          (r["customer_id"], "MT01", item, round(v + (i % 5) - 2, 1),
+                           "60000008", f"{新} 14:30", "到店", wid, "薄", "赤足", "平静呼气"))
+            补 += 1
+    if verbose:
+        print(f"  [行级量体] 补了 {补} 个人的量体,挪了 {挪} 条日期"
+              f"(夹具 {夹具着装人集} 跳过)")
+    return 补, 挪
+
+
 def enforce(conn, today=None, verbose=True):
     """把违规的量体日期挪到合规位置。**返回 (修了几条, 留着的夹具)。**
 
@@ -104,7 +385,7 @@ def enforce(conn, today=None, verbose=True):
     conn.row_factory = __import__("sqlite3").Row
     c = conn
     fixed, kept = [], None
-    for o in c.execute("SELECT id,created,kind,wearer_id FROM ordr "
+    for o in c.execute("SELECT id,created,kind,wearer_id,customer_id FROM ordr "
                        "WHERE wearer_id IS NOT NULL AND kind='定制品订单'").fetchall():
         w = c.execute("SELECT id,name,gender,birthday FROM wearer WHERE id=?",
                       (o["wearer_id"],)).fetchone()
@@ -142,8 +423,9 @@ def enforce(conn, today=None, verbose=True):
         # 挪到「下单前、周期之内」的中间位置 —— 现实里就是
         # 顾问发现超期、叫客户来复量,然后才下单。
         days, _ = G.recheck_cycle(w["gender"], G.age_at(w["birthday"], day))
-        提前 = max(1, min(days - 1, days // 3))
-        新 = (datetime.date.fromisoformat(day) - datetime.timedelta(days=提前)).isoformat()
+        建档 = (c.execute("SELECT created FROM customer WHERE id=?",
+                          (o["customer_id"],)).fetchone() or [None])[0]
+        新 = 挑量体日(day, days, 建档)
         旧日 = m["measured_at"][:10]
         c.execute("UPDATE measure_rec SET measured_at=? WHERE wearer_id=?",
                   (f"{新} 14:30", w["id"]))

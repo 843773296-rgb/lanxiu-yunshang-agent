@@ -114,7 +114,11 @@ CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
   finished_at TEXT, cancelled_at TEXT, remark TEXT);
 CREATE TABLE ordr_item(id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT, sku TEXT,
   name TEXT, tag TEXT, price REAL, qty INT,
-  spu TEXT, base_amount REAL, custom_amount REAL, total REAL);
+  spu TEXT, base_amount REAL, custom_amount REAL, total REAL,
+  -- 这一**行**是给谁做的。挂在行上不挂在订单上,是因为
+  -- **一单可以给不止一个人做**(实测 7 单是两件童款加一件女款,一家三口订同款)。
+  -- 挂在订单上只能挑一个填,而挑谁都不对。
+  wearer_id TEXT);
 CREATE TABLE category(code TEXT PRIMARY KEY, name TEXT, parent TEXT, sort INT, status TEXT);
 CREATE TABLE product(spu TEXT PRIMARY KEY, name TEXT, category TEXT, kind TEXT, status TEXT,
   base_price REAL, template TEXT, created TEXT, updated TEXT, cover TEXT,
@@ -510,12 +514,23 @@ def run():
             did=f"D{2000+n}"; cid=cust[n%len(cust)][0]; amt=round(random.choice([500,800,1000,1500,2000,3000]),2)
             status="退款失败" if cause!="审批未完成即发起" else "退款审批中"
             idem=f"IDEM-{did}"
-            day=14+(n%7)          # 2026-08-14 ~ 08-20,七天铺开
-            dstr=f"2026-08-{day:02d}"
+            # ⚠️ **押金必须早于它对应的那次预约。** 预约现在跨 6–8 月
+            # (见下面 `_AMON`),押金还钉在 8 月的话,
+            # `spec_check` 的 C3「任何记录的时间不得早于它所属对象的创建时间」
+            # 当场红 14 条 —— **一头挪了另一头没挪,而两头隔着几百行代码。**
+            _m = [6, 6, 7, 7, 7, 8, 8, 8, 8, 8][n % 10]
+            _d = 3 + (n * 3) % 25
+            day = _d
+            # 押金创建日 = 预约前两天 —— **先交押金,再约时间**。
+            # 方向搞反的话(押金钉死 8-01、预约挪到 6 月)就是
+            # 「预约早于它的押金」,C3 当场红 14 条。
+            import datetime as _dt3
+            _pre = _dt3.date(2026, _m, _d) - _dt3.timedelta(days=2)
+            dstr = _pre.isoformat()
             c.execute("INSERT INTO deposit VALUES(?,?,?,?,?,?,?,?)",
-                      (did,cid,f"AP{3000+n}",amt,status,idem,"2026-08-01",dstr))
+                      (did,cid,f"AP{3000+n}",amt,status,idem,dstr,dstr))
             c.execute("INSERT INTO payment_flow VALUES(?,?,?,?,?,?,?,?)",
-                      (f"PF{did}I",did,"in",amt,"微信支付",f"WX{random.randint(10**11,10**12)}","success","2026-08-01 10:12"))
+                      (f"PF{did}I",did,"in",amt,"微信支付",f"WX{random.randint(10**11,10**12)}","success",dstr+" 10:12"))
             if 已退:
                 c.execute("INSERT INTO payment_flow VALUES(?,?,?,?,?,?,?,?)",
                           (f"PF{did}O",did,"out",amt,"微信支付",f"WX{random.randint(10**11,10**12)}","success",f"{dstr} 14:31"))
@@ -581,24 +596,33 @@ def run():
     deps=[dict(r) for r in c.execute("SELECT id,customer_id,appt_id,amount,status FROM deposit")] if False else \
          [{"id":r[0],"customer_id":r[1],"appt_id":r[2],"amount":r[3],"status":r[4]}
           for r in c.execute("SELECT id,customer_id,appt_id,amount,status FROM deposit")]
+    # 预约同样要跨月 —— 理由见下面日程那段的注释:
+    # **一条只在「我这台机器的库」上成立的检查,等于没有这条检查。**
+    # **和押金用同一个序号**,否则押金在 8 月而预约在 6 月,C3 当场红。
+    _AMON = [6, 6, 7, 7, 7, 8, 8, 8, 8, 8]
     for i,d in enumerate(deps):
         st = "已取消" if d["status"] in ("退款失败","退款审批中") else APPT_ST[i%6]
-        day=14+(i%7)
+        _n = int(d["id"][1:]) - 2000 if d["id"][1:].isdigit() else i
+        mon = _AMON[_n % len(_AMON)]; day = 3 + (_n * 3) % 25
         c.execute("INSERT INTO appointment VALUES(?,?,?,?,?,?,?,?,?)",
           (d["appt_id"], d["customer_id"], _shop_of(d["customer_id"]), _adv_of(d["customer_id"]),
-           f"2026-08-{day:02d} {9+i%8:02d}:30", f"2026-08-{day:02d} {10+i%8:02d}:30",
-           st, d["id"], f"2026-08-{day:02d} {9+i%8:02d}:28" if st in ("已到店","已完成") else None))
+           f"2026-{mon:02d}-{day:02d} {9+i%8:02d}:30",
+           f"2026-{mon:02d}-{day:02d} {10+i%8:02d}:30",
+           st, d["id"],
+           f"2026-{mon:02d}-{day:02d} {9+i%8:02d}:28" if st in ("已到店","已完成") else None))
         c.execute("INSERT INTO followup VALUES(?,?,?,?,?,?,?)",
-          (f"F{d['appt_id']}", d["customer_id"], d["appt_id"], f"2026-08-{day:02d} 09:10",
+          (f"F{d['appt_id']}", d["customer_id"], d["appt_id"],
+           f"2026-{mon:02d}-{day:02d} 09:10",
            random.choice(["电话","微信","到店"]),
            random.choice(["客户确认到店时间","客户询问面料选项","客户要求改期","客户未接听,留言"]),
            _adv_of(d["customer_id"])))
     # 另建 20 条不带押金的预约
     for i in range(20):
-        aid=f"AP{4000+i}"; day=14+(i%7)
+        aid=f"AP{4000+i}"; mon=_AMON[(i+3) % len(_AMON)]; day=3+(i*3)%25
         c.execute("INSERT INTO appointment VALUES(?,?,?,?,?,?,?,?,?)",
           (aid, cust[i%len(cust)][0], _shop_of(cust[i%len(cust)][0]), _adv_of(cust[i%len(cust)][0]),
-           f"2026-08-{day:02d} {10+i%7:02d}:00", f"2026-08-{day:02d} {11+i%7:02d}:00",
+           f"2026-{mon:02d}-{day:02d} {10+i%7:02d}:00",
+           f"2026-{mon:02d}-{day:02d} {11+i%7:02d}:00",
            APPT_ST[i%6], None, None))
     # ── 店铺(后台 PRD 6.1 店铺状态机:有效 ⇄ 无效)──
     SHOPDATA=[("SH001","静安旗舰店","有效","张静静","021-6200-1001","上海市静安区","上海市静安区南京西路 1266 号 3F"),
@@ -641,12 +665,24 @@ def run():
     STYPE = ["预约到店", "电话回电", "订单跟踪", "日常运维"]
     assert all(_tt.info(t) for t in STYPE), "种子用了 tasktypes 里没有的类型"
     SST=["有效","有效","有效","完结","完结","取消","无效"]
+    # ⚠️ **日程要跨月。** 原来 28 条全排在 8 月的 7 天里
+    # (`day=14+(i%7)`),于是两条检查在**新灌的库上直接挂**:
+    #   · 月度复盘的「改一个月的数据不影响别的月」—— 只有一个月,验不了
+    #   · 预约漏斗的「给了起始日之后人数变少」—— 全在一个月,筛不掉任何东西
+    # 它们在我这台机器上是绿的,因为库里还有 `run_journey` 造的跨月数据。
+    #
+    # **一条只在「我这台机器的库」上成立的检查,等于没有这条检查** ——
+    # 别人 clone 下来跑一次 seed.py,它当场就红,而红的理由和他做的事无关。
+    # 摊到 5–8 月,月份分布也更像真的(近月多、远月少)。
+    _MON = [5, 6, 6, 7, 7, 7, 8, 8, 8, 8]
     for i in range(28):
-        day=14+(i%7)
+        mon = _MON[i % len(_MON)]
+        day = 3 + (i * 3) % 25
         st=SST[i%7]
         c.execute("INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,status,summary,cancel_reason,shop) VALUES(?,?,?,?,?,?,?,?,?,?)",
           (f"SC{7000+i}", STYPE[i%4], _adv_of(cust[i%len(cust)][0]), cust[i%len(cust)][0],
-           f"2026-08-{day:02d} {9+i%9:02d}:00", f"2026-08-{day:02d} {10+i%9:02d}:00",
+           f"2026-{mon:02d}-{day:02d} {9+i%9:02d}:00",
+           f"2026-{mon:02d}-{day:02d} {10+i%9:02d}:00",
            st, "已完成服务并记录结果" if st=="完结" else None,
            "客户改期" if st=="取消" else None, _shop_of(cust[i%len(cust)][0])))
     # 把历史日程的 advisor(A0x 姓名)对到工号上。
@@ -2082,8 +2118,28 @@ def run():
     # ⚠️ 它**故意留一个不修**(刘星野,量体过期 272 天)——
     # 和上面那段反例夹具同一个道理:**没有用例的规则可以是错的,
     # 而且永远不会被发现。** 全修干净的话「超期量体不许下单」一个用例都没有。
+    # 积分中间余额:生成时被 max(0,...) 截断过,这里统一重算一遍。
+    # **和老库迁移(tools/migrate_points_balance.py)用同一个算法** ——
+    # 第一版只写了迁移脚本,于是新灌的库照样有 30 处断点,
+    # 而检查在我这台机器上是绿的(因为我迁移过)。
+    _pl = {}
+    for _cid2, in c.execute("SELECT DISTINCT customer_id FROM points_log"):
+        _rows = list(c.execute("SELECT rowid,delta,balance FROM points_log "
+                               "WHERE customer_id=? ORDER BY ts,rowid", (_cid2,)))
+        if not _rows: continue
+        _bal = _rows[-1][2]
+        _new = [0] * len(_rows); _new[-1] = _bal
+        for _k2 in range(len(_rows) - 2, -1, -1):
+            _new[_k2] = _new[_k2 + 1] - _rows[_k2 + 1][1]
+        for _r2, _b2 in zip(_rows, _new):
+            if _r2[2] != _b2:
+                c.execute("UPDATE points_log SET balance=? WHERE rowid=?", (_b2, _r2[0]))
+
     import fix_order_measure as _fx
-    _fx.assign_wearers(c)
+    _fx.ensure_wearers(c)              # 名下没有对得上的人 → 建档 + 量体
+    _fx.assign_item_wearers(c)         # 行级:商品性别说得出来是给谁做的
+    _fx.enforce_rows(c)                # 行级:被匹配上就必须有有效量体
+    _fx.assign_wearers(c)              # 订单级:整单只给一个人时也填上
     _n_fix, _kept = _fx.enforce(c, verbose=False)
     print(f"  [下单前置] 挪了 {_n_fix} 条超期量体;"
           f"留 1 条反例夹具({_fx.夹具说明})")
