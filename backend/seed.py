@@ -2071,6 +2071,24 @@ def run():
         for _n, _wo in enumerate(r[0] for r in c.execute("SELECT id FROM workorder ORDER BY id")):
             c.execute("UPDATE workorder SET ref=? WHERE id=?", (_co[_n % len(_co)], _wo))
 
+    # ── 下单前置规则的不变量 ────────────────────────────────────
+    # 量体日期上面是按序号生成的(`f"2026-0{6+k%3}-1{k%9}"`),
+    # **既不看着装人年龄,也不看下单日期** —— 于是会生出两种坏数据:
+    # 量体比订单还晚、孩子的量体停在半年多以前(复量周期对未成年是 180/120 天)。
+    #
+    # 这里统一收一遍。逻辑在 `fix_order_measure.py`,**老库迁移也调它** ——
+    # 一份代码两个调用方,新库老库两条路都对。
+    #
+    # ⚠️ 它**故意留一个不修**(刘星野,量体过期 272 天)——
+    # 和上面那段反例夹具同一个道理:**没有用例的规则可以是错的,
+    # 而且永远不会被发现。** 全修干净的话「超期量体不许下单」一个用例都没有。
+    import fix_order_measure as _fx
+    _fx.assign_wearers(c)
+    _n_fix, _kept = _fx.enforce(c, verbose=False)
+    print(f"  [下单前置] 挪了 {_n_fix} 条超期量体;"
+          f"留 1 条反例夹具({_fx.夹具说明})")
+    assert _kept, "反例夹具丢了 —— 「超期量体不许下单」这条规则会没有用例"
+
     c.executemany("INSERT INTO truth(case_id,breakpoint,root_cause,expected_action,expected_evidence,note) VALUES(?,?,?,?,?,?)", truths)
     c.commit()
     print(f"已生成 {DB}")

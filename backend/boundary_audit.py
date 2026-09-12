@@ -179,7 +179,12 @@ def a_consent_minor():
     finally: _consent_on("W10010-2")
 
 def a_expired_order():
-    b = ops.order_block("W10010-2")
+    # 用哪个着装人**不写死在这儿** —— 从 `fix_order_measure` 取声明好的夹具。
+    # 原来写死 "W10010-2",而那条数据一度被「修违规」的脚本修好了,
+    # **这条边界保证当场失去唯一用例**,而它报出来的是「攻击成功」——
+    # 听起来像边界破了,实际是夹具没了。**红错理由比不红更费事。**
+    import fix_order_measure as _fx
+    b = ops.order_block(_fx.夹具着装人集[0])
     if not b["放行"]: raise PermissionError(b["原因"])
     return b
 
