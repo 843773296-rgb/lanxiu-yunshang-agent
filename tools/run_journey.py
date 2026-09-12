@@ -183,6 +183,22 @@ def _journey(cust, dry=False):
         _room = (datetime.date.today() - datetime.date.fromisoformat(_created[:10])).days - 20
     except Exception:
         _room = 120
+    # **两个下界会打架,打架时不许硬挑一个。**
+    #   · 终点要落到过去 → 要挪得**多**(订单本身走 30~45 天)
+    #   · 不能挪到客户建档之前 → 要挪得**少**
+    # 老客户两条都满足;而今年才建档的客户**根本放不下一条完整旅程**。
+    # 第一版在结尾处「取严的那个」,于是建档早的那个下界赢了,
+    # 终点留在未来 —— C4 抓到 3 条量体记录落在 2026-09-17。
+    #
+    # **挑不出合规的位置,就别造这条数据。** 造一条违规的比不造更糟:
+    # 它看起来和正常旅程一模一样,只有和「今天」比才看得出来。
+    需要天数 = 45 + 9 + 3          # 订单最长工期 + 预约到上门的间隔 + 落到过去的余量
+    if _room < 需要天数:
+        steps.append(("① 预约", REAL,
+                      f"{Y}跳过{D} —— {cust['id']} 是 {_created[:10]} 建的档,"
+                      f"往前只有 {_room} 天可挪,而一条完整旅程要 {需要天数} 天。"
+                      f"**挪不到过去就会造出未来日期**"))
+        return steps, None
     span = random.randint(30, max(31, min(120, _room)))   # 这条旅程发生在多少天前
     when = (now + datetime.timedelta(days=random.randint(2, 9))).replace(
         hour=random.choice([10, 11, 14, 15, 16]), minute=0, second=0, microsecond=0)
@@ -408,9 +424,15 @@ def _journey(cust, dry=False):
     _need = (_end.date() - datetime.date.today()).days + 3     # 终点至少要落到 3 天前
     if _need > shift.days:
         shift = datetime.timedelta(days=_need)
-    # 但也不能挪过客户建档 —— 两个下界取严的那个
+    # 但也不能挪过客户建档。两个下界**本来就不该打架** ——
+    # 上面那道「放不下就跳过」已经把打架的客户挡在门外了。
+    # 万一还是打架,**抛出来**,不要硬挑一个:硬挑的结果是
+    # 一条日期落在未来的旅程,而它看起来和正常的一模一样。
     if shift.days > (_room + 9):
-        shift = datetime.timedelta(days=max(1, _room + 9))
+        raise AssertionError(
+            f"{cust['id']}:终点要挪 {shift.days} 天才到过去,"
+            f"而建档只允许挪 {_room + 9} 天 —— 两个下界打架。"
+            f"**这条客户不该被选中造旅程**,门口那道检查漏了")
     _sh = f"-{shift.days} days"
     for _t, _cols, _key in (
             ("appointment", ("start_ts", "end_ts", "checkin_ts"), f"id='{appt}'"),
@@ -484,17 +506,22 @@ def main():
     print("  " + "-" * 82)
     print(f"  {G}✅ 有业务规则挡着{D}  预约(手机号/营业时间/频次)· 派单(归属/离职/跨店)")
     print(f"                     上门(类型规范/时段冲突/权限)· 完成(本人/总结必填)")
-    print(f"  {Y}⚠️ 直插,没有任何规则{D}  量体 · 下单 · 订单完成")
+    print(f"  {Y}⚠️ 直插(但下单前有一道闸){D}  量体 · 订单完成")
     print()
     print(f"  {Y}但「没有写接口保护」不等于「没有任何东西检查」{D} —— 我一开始把这两件事混成了一句。")
     print("    实际上 backend/member_order_check.py 一直在对账,而且当场抓到了我造的两处错:")
     print("      · 订单两套状态口径的映射填反了(设计稿「完成」要映射到「已完成」)")
     print("      · goods_amount 填成了含定制加价的总额,而它的口径是**基本金额之和**")
     print()
-    print(f"  {Y}真正缺的是这些{D}:")
+    print(f"  {G}后来补上的{D}:")
+    print("    · **下单前置** —— `api.can_order()` 在第 ⑦ 步之前真的拦一道:")
+    print("      定制订单要有**这个着装人**下单前的量体,而且不能超期")
+    print("      (复量周期:成人 12 个月 / 3–12 岁 6 个月 / 突增期 4 个月 / 0–3 岁 3 个月)")
+    print("      口径在 `knowledge/order_gate.py`,**脚本和工具共用一份** ——")
+    print("      原来这条判断只写在这个脚本里,于是系统允许、脚本不许,**两套规矩**")
+    print(f"  {Y}真正还缺的{D}:")
     print("    · 量体的人是不是真去上门的那个人 —— 现在靠 task_id 连上了,但没有检查盯着")
     print("    · 订单能不能从「待生产」直接跳「完成」—— 没有状态机拦,中间几档可以跳过")
-    print("    · 上门任务没完成能不能下单 —— 没有东西拦(这个脚本自己不许,但系统允许)")
     print(f"  **对账检查抓得到「填错了」,抓不到「顺序错了」** —— 后者要状态机。")
 
 
