@@ -81,6 +81,38 @@ def a_write_role_param():
     raise TypeError("写工具的签名里没有身份参数(这正是期望的)")
 
 
+class 不许留痕:
+    """攻击块里对 `product` 表的任何改动,出块时**一律还原**。
+
+    为什么需要它:下面两刀验的是「店长改不了商品」,**正常情况下一个字都不改**。
+    但咬合的时候把权限放回「店长及以上」,那一刀就**真的改成功了** ——
+    实测把商品名改成「越权改模板」、量体模板改成 LT02,
+    然后 `product_pattern_check` 报「模板和版型对不上」。
+
+    **一条在被测代码坏掉时会改数据的检查(或攻击),比没有它更糟** ——
+    它会在你最忙的那天(代码刚坏)悄悄污染数据,而你正忙着看红的那一条。
+
+    ⚠️ 这个包装我在 `membership_check` 上加过一次,**没加到这儿** ——
+    **教训没长成纪律,就会在下一个地方原样再来一遍。**
+    所以凡是「以某个角色去试写」的攻击,都要包在这里面。
+    """
+    def __enter__(self):
+        import sqlite3 as _sq
+        with _sq.connect(api.DB) as c:
+            c.row_factory = _sq.Row
+            self.snap = [dict(r) for r in c.execute("SELECT * FROM product")]
+        return self
+
+    def __exit__(self, *e):
+        import sqlite3 as _sq
+        with _sq.connect(api.DB) as c:
+            c.execute("DELETE FROM product")
+            for r in self.snap:
+                cols = ",".join(r); q = ",".join("?" * len(r))
+                c.execute(f"INSERT INTO product({cols}) VALUES({q})", list(r.values()))
+        return False
+
+
 def a_product_by_manager():
     """**店长改商品。** 商品是全国一份的主数据 —— 它挂的版型决定用料基准、
     工期、能做哪些尺码、量体量哪些项。店长能改的话,同一个 SPU 在两家店
@@ -92,8 +124,9 @@ def a_product_by_manager():
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
     import server as _sv
-    r = _sv.save_product({"spu": "lxys_100831495", "name": "越权改的商品",
-                          "base_price": 1, "kind": "标品"}, role="店长")
+    with 不许留痕():
+        r = _sv.save_product({"spu": "lxys_100831495", "name": "越权改的商品",
+                              "base_price": 1, "kind": "标品"}, role="店长")
     if r.get("ok"):
         return "店长改成了商品 —— 全国主数据被门店角色改了"
     raise PermissionError(r.get("reason", "")[:90])
@@ -108,9 +141,10 @@ def a_product_template_by_manager():
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
     import server as _sv
-    r = _sv.save_product({"spu": "lxys_100974037", "name": "越权改模板",
-                          "base_price": 9600, "kind": "定制品",
-                          "template": "LT02 裙装模版"}, role="店长")
+    with 不许留痕():
+        r = _sv.save_product({"spu": "lxys_100974037", "name": "越权改模板",
+                              "base_price": 9600, "kind": "定制品",
+                              "template": "LT02 裙装模版"}, role="店长")
     if r.get("ok"):
         return "店长改成了定制品的量体模板 —— 会照着错的口径量尺寸"
     raise PermissionError(r.get("reason", "")[:90])
