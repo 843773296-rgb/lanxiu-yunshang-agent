@@ -205,6 +205,29 @@ def main():
        f"传不出去的 {假的} —— **假旋钮比没有这个功能糟得多**" if 假的 else
        f"{控件} 都在请求体里")
 
+    # ⑩·2 **每个开关都要有一句说明。**
+    #
+    # 这是 Codex 那套设置的核心:每行是「标题 / 一句说明 / 右侧控件」。
+    # **一个只有标题的开关,用的人只能靠猜它影响什么** ——
+    # 而这几个开关恰恰都会改变回答(技能档位实测 3/3 → 0/3)。
+    #
+    # 验法:每个带 `<select>` 或 `<button>` 的 `.cfgitem`,
+    # 它的 `.t` 里必须有 `<p>`(说明),而且不能是空的。
+    items = _re.findall(r'<div class="cfgitem">(.*?)</div>\s*</div>', 面板, _re.S)
+    无说明 = []
+    for it in items:
+        有控件 = "<select" in it or "<button" in it
+        if not 有控件: continue
+        m11 = _re.search(r"<b>(.*?)</b>", it)
+        名 = _re.sub(r"<[^>]+>", "", m11.group(1)) if m11 else "?"
+        说明 = _re.findall(r"<p>(.*?)</p>", it, _re.S)
+        文 = "".join(_re.sub(r"<[^>]+>", "", x) for x in 说明).strip()
+        if len(文) < 12:
+            无说明.append(名)
+    ck("设置里每个开关都有一句说明", not 无说明, len(items),
+       f"只有标题没说明的 {无说明}" if 无说明 else
+       "**一个只有标题的开关,用的人只能靠猜它影响什么**")
+
     # ⑪ **温度这个词不许出现在设置面板里** —— 它不可调,写了就是误导。
     ck("设置面板没有承诺一个调不了的「温度」",
        "温度" not in 面板 or "不是「温度」" in 面板 or "没有 temperature" in 面板, 1,
@@ -215,7 +238,7 @@ def main():
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 角色与登录身份 11 条全过")
+    print("✅ 角色与登录身份 12 条全过")
     return 0
 
 

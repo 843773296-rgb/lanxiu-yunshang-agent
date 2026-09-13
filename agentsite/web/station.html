@@ -48,16 +48,43 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   background:#fff;cursor:pointer;color:var(--dim);text-decoration:none}
 .tbtn:hover{color:var(--ink);border-color:#c9cace}
 #kindhint{font-size:12px;color:var(--dim)}
-#cfg{position:absolute;top:50px;left:20px;z-index:30;width:330px;background:#fff;
-  border:1px solid var(--line);border-radius:12px;padding:6px 16px 12px;
-  box-shadow:0 12px 34px rgba(20,22,28,.14)}
-#cfg .cfgrow{padding:12px 0;border-bottom:1px solid var(--line)}
-#cfg label{display:block;font-size:12px;color:var(--dim);margin-bottom:6px}
-#cfg select{width:100%;font:inherit;font-size:13px;padding:6px 26px 6px 10px;
-  border:1px solid var(--line);border-radius:8px;background:#fff;
-  -webkit-appearance:none;appearance:none;cursor:pointer;color:var(--ink)}
-#cfg .cfghint{margin:7px 0 0;font-size:11.5px;line-height:1.6;color:var(--dim)}
-#cfg .cfghint b{color:var(--ink);font-weight:600}
+/* ── 设置:左侧分类 + 右侧分组(参考 Codex 的结构)──────────────
+   每行是「标题 / 一句说明 / 右侧控件」三件套。
+   **说明是必须的** —— 一个只有标题的开关,用的人只能靠猜它影响什么,
+   而这几个开关恰恰都会改变回答。 */
+#cfg{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex}
+#cfg[hidden]{display:none}
+#cfgnav{width:236px;flex:none;border-right:1px solid var(--line);
+  padding:16px 12px;overflow:auto;background:#fbfbfc}
+#cfgnav .back{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink);
+  background:none;border:0;cursor:pointer;padding:8px 10px;border-radius:8px;font:inherit}
+#cfgnav .back:hover{background:var(--chip)}
+#cfgnav h4{margin:18px 10px 6px;font-size:11.5px;color:var(--dim);font-weight:600;
+  letter-spacing:.04em}
+#cfgnav a{display:block;padding:7px 10px;border-radius:8px;font-size:13.5px;
+  color:var(--ink);text-decoration:none;cursor:pointer}
+#cfgnav a:hover{background:var(--chip)}
+#cfgnav a.on{background:var(--chip);font-weight:600}
+#cfgbody{flex:1;overflow:auto;padding:34px 46px 60px}
+#cfgbody h2{margin:0 0 24px;font-size:22px;font-weight:600}
+#cfgbody h3{margin:30px 0 10px;font-size:13px;color:var(--dim);font-weight:600}
+.cfgcard{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.cfgitem{display:flex;align-items:flex-start;gap:20px;padding:15px 18px;
+  border-bottom:1px solid var(--line)}
+.cfgitem:last-child{border-bottom:0}
+.cfgitem .t{flex:1;min-width:0}
+.cfgitem .t b{display:block;font-size:13.5px;font-weight:600;color:var(--ink)}
+.cfgitem .t p{margin:4px 0 0;font-size:12px;line-height:1.65;color:var(--dim)}
+.cfgitem .t p b{display:inline;color:var(--ink)}
+.cfgitem .c{flex:none;padding-top:2px}
+.cfgitem select{font:inherit;font-size:13px;padding:6px 28px 6px 11px;border:1px solid var(--line);
+  border-radius:8px;background:#fff;-webkit-appearance:none;appearance:none;cursor:pointer;
+  color:var(--ink);min-width:150px}
+.cfgitem .val{font-size:12.5px;color:var(--dim);padding:6px 2px}
+.cfgbtn2{font:inherit;font-size:12.5px;padding:6px 13px;border:1px solid var(--line);
+  border-radius:8px;background:#fff;cursor:pointer;color:var(--ink)}
+.cfgbtn2:hover{border-color:#c9cace}
+.cfgbtn2.warn{color:#b4232a;border-color:#eccfd1}
 #cfgbtn.on{color:var(--ink);border-color:#c9cace;background:var(--chip)}
 #currole{font-size:13.5px;font-weight:600;padding:4px 11px;border-radius:8px;
   background:var(--chip);white-space:nowrap}
@@ -208,42 +235,117 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
        否则「这一轮用的是哪档技能」变成看不见的状态,
        而它恰恰是会改变回答的那种设置。 -->
   <div id="cfg" hidden>
-    <div class="cfgrow">
-      <label for="model">模型</label>
-      <select id="model"><option>载入中…</option></select>
-      <p class="cfghint">换模型**不新开会话**,续着问,让它接着上文回答。</p>
+    <div id="cfgnav">
+      <button class="back" id="cfgback">← 返回对话</button>
+      <h4>这一轮怎么答</h4>
+      <a data-sec="run" class="on">运行</a>
+      <a data-sec="skill">技能</a>
+      <h4>这台机器</h4>
+      <a data-sec="data">会话数据</a>
+      <a data-sec="about">关于</a>
     </div>
-    <div class="cfgrow">
-      <label for="skillset">技能档位</label>
-      <select id="skillset"><option>技能…</option></select>
-      <p class="cfghint">
-        实测同一条用例:场上 <b>3 个技能时 3/3 触发</b>,<b>239 个时 0/3</b> ——
-        <b>装了 ≠ 每次都上场</b>。默认只用自己写的那几个。
-      </p>
-    </div>
-    <div class="cfgrow">
-      <label for="effort">想深多少</label>
-      <select id="effort">
-        <option value="low">low · 快,适合查一个数</option>
-        <option value="medium" selected>medium · 默认</option>
-        <option value="high">high · 要它把前后串起来想</option>
-        <option value="xhigh">xhigh · 复杂判责/对账</option>
-        <option value="max">max · 慢且贵,一般用不上</option>
-      </select>
-      <p class="cfghint">
-        <b>这不是「温度」。</b>Agent SDK 的 48 个参数里
-        <b>没有 temperature,也没有 top_p / seed</b> ——
-        这条路径根本不暴露采样参数。
-        放一个温度滑块会是<b>假旋钮</b>:拖了回答不变,而你以为自己在调,
-        出问题时会往错的方向查。<br>
-        <code>effort</code> 管的是<b>想多深</b>,不是<b>多随机</b> ——
-        定制业务要的本来也是稳,不是花样。
-      </p>
-    </div>
-    <div class="cfgrow" style="border:0;padding-bottom:2px">
-      <p class="cfghint" style="margin:0">
-        这几项**跟着会话走**,不是全局的 —— 换一条会话各记各的。
-      </p>
+    <div id="cfgbody">
+      <!-- ── 运行 ────────────────────────────────────────────── -->
+      <section data-sec="run">
+        <h2>运行</h2>
+        <h3>模型</h3>
+        <div class="cfgcard">
+          <div class="cfgitem">
+            <div class="t"><b>模型</b>
+              <p>换模型<b>不新开会话</b> —— 续着问,让它接着上文回答。
+                 清单从后端拿,能选的 = 有单价的。</p></div>
+            <div class="c"><select id="model"><option>载入中…</option></select></div>
+          </div>
+          <div class="cfgitem">
+            <div class="t"><b>想深多少</b>
+              <p>管的是<b>想多深</b>,不是多随机。查一个数用 low,
+                 判责和对账用 xhigh。</p>
+              <p><b>这不是「温度」。</b>Agent SDK 的 48 个参数里
+                 <b>没有 temperature,也没有 top_p / seed</b> ——
+                 这条路径根本不暴露采样参数。放一个温度滑块会是<b>假旋钮</b>:
+                 拖了回答不变,而你以为自己在调,出问题时会往错的方向查。</p></div>
+            <div class="c"><select id="effort">
+              <option value="low">low · 快</option>
+              <option value="medium" selected>medium · 默认</option>
+              <option value="high">high · 前后串起来想</option>
+              <option value="xhigh">xhigh · 判责 / 对账</option>
+              <option value="max">max · 慢且贵</option>
+            </select></div>
+          </div>
+        </div>
+        <h3>身份</h3>
+        <div class="cfgcard">
+          <div class="cfgitem">
+            <div class="t"><b>当前登录</b>
+              <p>你能看到什么、能做什么<b>由工号决定</b> ——
+                 换个工号问同一句话,答案会不一样。要换人请退出重登。</p></div>
+            <div class="c"><span class="val" id="cfgme">—</span></div>
+          </div>
+          <div class="cfgitem">
+            <div class="t"><b>这条会话的角色</b>
+              <p><b>角色在新建会话时定死,之后不变</b> ——
+                 换角色就是换工具集,前面几轮的上下文对不上了。
+                 换角色请开新会话。</p></div>
+            <div class="c"><span class="val" id="cfgrole">—</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 技能 ────────────────────────────────────────────── -->
+      <section data-sec="skill" hidden>
+        <h2>技能</h2>
+        <h3>这一轮让哪些技能参与</h3>
+        <div class="cfgcard">
+          <div class="cfgitem">
+            <div class="t"><b>技能档位</b>
+              <p>实测同一条用例:场上 <b>3 个技能时 3/3 触发</b>,
+                 <b>239 个时 0/3</b> —— <b>装了 ≠ 每次都上场</b>。
+                 236 个第三方技能留着以后挑用,但默认不参与竞争。</p></div>
+            <div class="c"><select id="skillset"><option>技能…</option></select></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 会话数据 ────────────────────────────────────────── -->
+      <section data-sec="data" hidden>
+        <h2>会话数据</h2>
+        <h3>存在哪</h3>
+        <div class="cfgcard">
+          <div class="cfgitem">
+            <div class="t"><b>聊天记录</b>
+              <p>存在<b>这台浏览器里</b>,按工号分开 ——
+                 换人登录看不到别人的记录。它不是台账:
+                 要留档的结论走研判队列,那条路径是有人签字的。</p></div>
+            <div class="c"><span class="val" id="cfgcount">—</span></div>
+          </div>
+          <div class="cfgitem">
+            <div class="t"><b>清空本机会话</b>
+              <p><b>只清这台浏览器里当前工号的</b>,不影响任何业务数据。
+                 清了不可恢复。</p></div>
+            <div class="c"><button class="cfgbtn2 warn" id="cfgclear">清空</button></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── 关于 ────────────────────────────────────────────── -->
+      <section data-sec="about" hidden>
+        <h2>关于</h2>
+        <div class="cfgcard">
+          <div class="cfgitem">
+            <div class="t"><b>这是一套演示数据</b>
+              <p>客户、订单、工单、量体全是生成的。
+                 内容由 AI 生成,<b>涉及退款、判责、赔付、改期的结论必须由人签字</b>。</p></div>
+            <div class="c"><a class="cfgbtn2" href="/panels">看面板</a></div>
+          </div>
+          <div class="cfgitem">
+            <div class="t"><b>为什么这里能调的东西这么少</b>
+              <p>只放<b>真的会起作用</b>的开关。
+                 一个调了没反应的旋钮比没有更糟 ——
+                 出问题时人会以为自己已经调过了,于是往错的方向查。</p></div>
+            <div class="c"><span class="val">3 项</span></div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
   <div id="stream"></div>
@@ -268,6 +370,9 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 <script>
 "use strict";
 const $ = s => document.querySelector(s);
+// `$$` 取一组。**这个页面原来没有它** —— 我直接用了,冒烟当场报
+// 「$$ is not defined」。js_check(正则)看不出来,**只有真跑一遍 DOM 才照得出**。
+const $$ = (q, r) => Array.from((r||document).querySelectorAll(q));
 const esc = s => String(s == null ? "" : s)
   .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 
@@ -746,16 +851,46 @@ function cfgHint(){
   const h=$("#kindhint");
   if(h) h.dataset.cfg = 非默认 ? skTxt : "";
 }
-$("#cfgbtn").addEventListener("click",(e)=>{
-  e.stopPropagation();
-  const box=$("#cfg"); box.hidden=!box.hidden;
-});
-// 点别处关掉。**不拦浮层内部的点击** —— 否则选框一点就关,选不中。
-document.addEventListener("click",(e)=>{
+/* 设置是**整页**的(参考 Codex),不是小浮层 ——
+   小浮层里放不下「一句说明」,而说明是这几个开关的必需品:
+   没有说明,用的人只能靠猜它影响什么。 */
+function cfgOpen(on){
   const box=$("#cfg");
-  if(box.hidden) return;
-  if(e.target.closest("#cfg")||e.target.closest("#cfgbtn")) return;
-  box.hidden=true;
+  box.hidden=!on;
+  if(on){ cfgFill(); }
+}
+$("#cfgbtn").addEventListener("click",()=>cfgOpen(true));
+$("#cfgback").addEventListener("click",()=>cfgOpen(false));
+document.addEventListener("keydown",(e)=>{
+  if(e.key==="Escape" && !$("#cfg").hidden) cfgOpen(false);
+});
+// 左侧分类切换
+$$("#cfgnav a").forEach(a=>a.addEventListener("click",()=>{
+  $$("#cfgnav a").forEach(x=>x.classList.toggle("on", x===a));
+  $$("#cfgbody section").forEach(x=>{ x.hidden = x.dataset.sec!==a.dataset.sec; });
+}));
+// 只读信息:进来时填一次。**不缓存** —— 换了会话角色就变了,
+// 而一个显示着上一条会话角色的设置页,比不显示更容易让人做错判断。
+function cfgFill(){
+  const c=cur();
+  const me=$("#me");
+  $("#cfgme").textContent = (me && me.textContent) || "未登录";
+  $("#cfgrole").textContent = (KINDS[c&&c.kind]||{}).name || (c&&c.kind) || "—";
+  $("#cfgcount").textContent = `${DB.convs.length} 条会话`;
+}
+$("#cfgclear").addEventListener("click",()=>{
+  // **不弹 confirm** —— 浏览器原生弹窗会挡住整个页面,
+  // 而这个操作只清本机草稿、不碰业务数据。改成二次点击确认。
+  const b=$("#cfgclear");
+  if(b.dataset.armed!=="1"){
+    b.dataset.armed="1"; b.textContent="再点一次确认";
+    setTimeout(()=>{ b.dataset.armed="0"; b.textContent="清空"; }, 4000);
+    return;
+  }
+  DB={convs:[],cur:null}; save(); drawSide(); drawStream();
+  b.dataset.armed="0"; b.textContent="已清空";
+  cfgFill();
+  setTimeout(()=>{ b.textContent="清空"; }, 2000);
 });
 
 async function loadModels(){
