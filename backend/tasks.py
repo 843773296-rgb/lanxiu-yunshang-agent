@@ -53,6 +53,37 @@ def visible_scope(me):
 
 
 
+def visible_wo_scope(me):
+    """这个人能看到哪些**工单** —— 返回 (WHERE 片段, 参数, 人话说明)。
+
+    **工匠只看自己的。** 21 位师傅刚并进 `staff`(role='工匠'),
+    而 `workorder.artisan` 存的是 `artisan.no`(W0101)——
+    两套编号靠 `artisan.staff_no` 这条边连起来,**不是靠「都叫一个名字」**
+    (「一个人两套编号」那个 bug 就是后者)。
+
+    为什么师傅之间也要隔离:**工价和产能是敏感信息**。
+    A 师傅看得到 B 师傅这个月接了几件、日产能多少,
+    那是把内部定价关系摆到台面上 —— 和「A 顾问看不到 B 顾问的活」同一个道理。
+
+    工坊管事看本工坊(和店长看本店对齐);总部运营看全部。
+    """
+    if not me:
+        return "1=0", [], "没登录,什么都看不到"
+    if me.get("role") in ("总部运营",):
+        return "1=1", [], "全部工坊(你是总部运营)"
+    if me.get("role") == "工坊管事":
+        return ("w.artisan IN (SELECT no FROM artisan WHERE workshop=?)",
+                [me.get("shop")], f"{me.get('shop')}(你是工坊管事,看得到本坊)")
+    if me.get("role") == "工匠":
+        # **搭不上桥就一个都不给** —— 兜底方向是收紧,不是放宽。
+        r = rows("SELECT no FROM artisan WHERE staff_no=?", me.get("no"))
+        if not r:
+            return "1=0", [], ("查不到你的工匠编号,看不到工单"
+                               "(**不是没有工单**,是连不上)")
+        return "w.artisan=?", [r[0]["no"]], f"派给你的工单({me.get('name')})"
+    return "1=0", [], f"「{me.get('role')}」看不到工单"
+
+
 def visible_appt_scope(me):
     """这个人能看到哪些**预约单** —— 返回 (WHERE 片段, 参数, 人话说明)。
 

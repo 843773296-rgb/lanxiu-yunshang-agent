@@ -662,19 +662,6 @@ def run():
                   (no, nm, ro, sh, stt, adv, "60000008",
                    "2026-08-2%d 1%d:16" % (random.randint(0, 9), random.randint(0, 9))))
 
-        # ── 员工登录凭据 ────────────────────────────────────────────────
-    # 密码一律 PBKDF2 + 每人独立 salt,**明文一个字都不落库**(演示数据也不例外)。
-    # 演示口令统一是 `lanxiu@2026`,写在这儿是因为它本来就是公开的演示密码;
-    # 真上线时这段要换成「首次登录强制改密」。
-    import hashlib as _hl, secrets as _sc
-    _ITER = 120000
-    DEMO_PW = "lanxiu@2026"
-    for _st in c.execute("SELECT no,name FROM staff").fetchall():
-        _no, _nm = _st
-        _salt = _sc.token_hex(13)
-        _hash = _hl.pbkdf2_hmac("sha256", DEMO_PW.encode(), bytes.fromhex(_salt), _ITER).hex()
-        c.execute("UPDATE staff SET login_name=?,pwd_algo=?,pwd_salt=?,pwd_hash=? WHERE no=?",
-                  (_no, f"pbkdf2_sha256${_ITER}", _salt, _hash, _no))
 
 # ── 日程任务(后台 PRD 6.1:有效 → 完结;有效 → 取消/无效)──
     # 类型清单**从 tasktypes 来**,种子里不再自己写一份 ——
@@ -928,6 +915,28 @@ def run():
     ]
     for no,nm,tr,sk,dr,wl,ws,note in ART:
         c.execute("INSERT INTO artisan VALUES(?,?,?,?,?,?,?,'在职',?)",(no,nm,tr,sk,dr,wl,ws,note))
+
+    # ── 师傅并进 staff:**「工坊排产」这个 agent 角色原来没有对应的登录身份** ──
+    #
+    # 21 位师傅在 `artisan` 里,工单也按 `W0101` 挂到人了,
+    # 而 `prompts.ROLES` 有 `workshop` 角色、11 条规矩 —— **唯独他们登录不了**。
+    # 于是那个角色只能被总部运营或店长冒着用,而**师傅看不到自己的活**。
+    #
+    # 为什么并进 `staff` 而不是给 `artisan` 加登录字段:
+    # **`staff` 是「能登录的人」的主表**,而 `artisan` 是工匠的岗位属性
+    # (工种、技能、在制上限、日产能)。两张表都放登录字段,
+    # 就是「同一个事实两个来源」—— 这个项目为这件事付过很多次学费。
+    #
+    # `artisan.no`(W0101)保持不变,它是工单上用的编号;
+    # `artisan.staff_no` 指向登录身份。**两套编号靠一条边连起来,
+    # 而不是靠「都叫一个名字」** —— 「一个人两套编号」那个 bug 就是后者。
+    c.execute("ALTER TABLE artisan ADD COLUMN staff_no TEXT")
+    for _i5, (no, nm, tr, sk, dr, wl, ws, note) in enumerate(ART):
+        _sno = f"7{1000 + _i5:07d}"        # 7 开头,和门店的 6 开头分开
+        c.execute("INSERT INTO staff(no,name,role,shop,status,updated_by,updated)"
+                  " VALUES(?,?,'工匠',?,'启用','系统',?)",
+                  (_sno, nm, ws, T.isoformat()))
+        c.execute("UPDATE artisan SET staff_no=? WHERE no=?", (_sno, no))
     # B4:**工单必须指向真实订单**。原来是 `ORD-7001` 这种占位号,53 条没一条对得上,
     # 于是「我的衣服做到哪了」这个定制业最高频的问题根本答不了,产能排期成了孤岛。
     # 一单可以有多道工序(织造/印染/刺绣/缝制),所以多对一是对的。
@@ -1993,6 +2002,28 @@ def run():
         c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key)"
                   " VALUES(?,?,?,?,?,?,?,?)",
                   ("D9002", _a, _t, "微信支付", 1500.0, "UNKNOWN", "渠道未返回明确结果", "IDEM-D9002"))
+
+    # ── 员工登录凭据 ────────────────────────────────────────────────
+    # ⚠️ **必须排在所有写 staff 的地方之后。** 第一版排在中间,
+    # 而后面又插了 21 位工匠 —— 那批进了 staff 却**没有密码,登录不了**,
+    # 而 staff 表上看起来完全正常(有工号、有姓名、有角色)。
+    # **发凭据这类「给每个人补一份」的收尾动作要排在最后**,
+    # 排在中间就只覆盖了那一刻已经存在的人。
+    #
+    # 这和「顾问引用回填排在中间漏了 238 条量体」是同一个形状 ——
+    # 同一个错犯第二次了,所以这次把规则写在这儿。
+    # 密码一律 PBKDF2 + 每人独立 salt,**明文一个字都不落库**(演示数据也不例外)。
+    # 演示口令统一是 `lanxiu@2026`,写在这儿是因为它本来就是公开的演示密码;
+    # 真上线时这段要换成「首次登录强制改密」。
+    import hashlib as _hl, secrets as _sc
+    _ITER = 120000
+    DEMO_PW = "lanxiu@2026"
+    for _st in c.execute("SELECT no,name FROM staff").fetchall():
+        _no, _nm = _st
+        _salt = _sc.token_hex(13)
+        _hash = _hl.pbkdf2_hmac("sha256", DEMO_PW.encode(), bytes.fromhex(_salt), _ITER).hex()
+        c.execute("UPDATE staff SET login_name=?,pwd_algo=?,pwd_salt=?,pwd_hash=? WHERE no=?",
+                  (_no, f"pbkdf2_sha256${_ITER}", _salt, _hash, _no))
 
     # 形制表从 `01-形制.md` 派生 —— **`pattern.xz` 原来指向空处**。
     # ⚠️ **必须排在「定制方案」之前**:方案要把形制名换成编码,

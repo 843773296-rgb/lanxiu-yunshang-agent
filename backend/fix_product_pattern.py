@@ -77,7 +77,7 @@ def 匹配形制(conn, 商品名, xzs=None):
     return (hits[0][0], f"形制 {hits[0][0]['code']} {hits[0][0]['name']}")
 
 
-def 按形制选版型(conn, 商品名, 商品性别, 形制, pats=None):
+def 按形制选版型(conn, 商品名, 商品性别, 形制, pats=None, 顶级品类名=None):
     """形制定了之后,在它的版型里挑。返回 (版型 或 None, 理由)。
 
     依次收窄:**变体后缀 → 性别**,收到只剩一个才算定。
@@ -102,6 +102,14 @@ def 按形制选版型(conn, 商品名, 商品性别, 形制, pats=None):
         if c3: cand = c3
     if len(cand) == 1:
         return (cand[0], f"形制 {形制['code']} + 变体 + 性别 收窄到唯一")
+    # **顶级品类能排掉成人/童款的歧义。**
+    # 「男装圆领常服袍」的顶级品类是男装,而 `XZ40 童款圆领袍` 的版型是童款 ——
+    # 品类树已经说了这不是童装,却还把童款算进候选,那是白留着一条能用的线不用。
+    if 顶级品类名 in ("女装", "男装", "童装"):
+        要 = {"女装": "女", "男装": "男", "童装": "童"}[顶级品类名]
+        c4 = [p for p in cand if p["gender"] == 要]
+        if len(c4) == 1:
+            return (c4[0], f"形制 {形制['code']} + 顶级品类「{顶级品类名}」收窄到唯一")
     return (None, f"收窄后还剩 {len(cand)} 个版型,**分不出**")
 
 
@@ -147,9 +155,14 @@ def link(conn, verbose=True):
             # 走形制(器物名 + 别名)再按变体和性别收窄,又定下来 62 个。
             z, _ = 匹配形制(c, r["name"], xzs)
             if z:
-                g = c.execute("SELECT gender FROM product WHERE spu=?",
+                g = c.execute("SELECT gender,category FROM product WHERE spu=?",
                               (r["spu"],)).fetchone()
-                p, _ = 按形制选版型(c, r["name"], g[0] if g else None, z, pats)
+                # **从 fix_order_measure 引,这个模块里没有这个函数。**
+                # 我改的时候直接写了裸名字 —— 当场 NameError,
+                # 而它是在 seed 半路崩的,**留下一个建了一半的库**。
+                import fix_order_measure as _fx2
+                顶 = _fx2.顶级品类(c, g["category"]) if g else None
+                p, _ = 按形制选版型(c, r["name"], g["gender"] if g else None, z, pats, 顶)
         if p:
             c.execute("UPDATE product SET pattern=? WHERE spu=?", (p["code"], r["spu"]))
             连 += 1

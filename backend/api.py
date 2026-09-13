@@ -1169,6 +1169,53 @@ def can_order(customer_id, kind="定制品订单", wearer_id=None):
               "超期就要求复量,别将就") if k == "不可以" else None))
 
 
+def my_workorders(status=None):
+    """**我手上的工单** —— 工匠看自己的,工坊管事看本坊,总部看全部。
+
+    带在制上限(`wip_limit`)和当前在制数:**接不接得下一件,这两个数说了算**,
+    不用猜。逾期的排在最前。
+    """
+    import tasks as _tk
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在看 —— 请先登录")
+    where, args, scope = _tk.visible_wo_scope(me)
+    sql = (f"SELECT w.*, a.name aname, a.trade, a.wip_limit, a.workshop "
+           f"FROM workorder w LEFT JOIN artisan a ON a.no=w.artisan WHERE {where}")
+    if status: sql += " AND w.status=?"; args = args + [status.strip()]
+    rows = _rows(sql + " ORDER BY w.due_date", *args)
+    if not rows:
+        return _nz(dict(范围=scope, 说明="这个范围里没有工单" +
+                        (f"(状态={status})" if status else "")))
+    today = _dt.date.today().isoformat()
+    逾期 = [r for r in rows if (r.get("due_date") or "9999") < today
+            and r.get("status") in ("在制", "待开工")]
+    在制 = [r for r in rows if r.get("status") == "在制"]
+    out = dict(
+        范围=scope, 工单数=len(rows),
+        先看这几件=(f"**{len(逾期)} 条逾期**" if 逾期 else "没有逾期"),
+        在制=len(在制),
+        清单=[_nz(dict(工单=r["id"], 工序=r.get("craft"), 订单=r.get("ref"),
+                      师傅=f"{r.get('aname')}({r.get('artisan')})",
+                      工种=r.get("trade"), 工坊=r.get("workshop"),
+                      工期=f"{r.get('workdays')} 天",
+                      开工=r.get("start_date"), 交期=r.get("due_date"),
+                      状态=r.get("status"),
+                      逾期=("**已过交期**" if (r.get("due_date") or "9999") < today
+                            and r.get("status") in ("在制", "待开工") else None),
+                      备注=r.get("note")))
+              for r in rows[:30]])
+    # 在制上限:接不接得下一件,这两个数说了算
+    if me.get("role") == "工匠" and rows:
+        lim = rows[0].get("wip_limit")
+        if lim:
+            out["还接不接得下"] = (
+                f"在制 {len(在制)} / 上限 {lim} —— "
+                + ("**满了,别再接**" if len(在制) >= lim else f"还能接 {lim - len(在制)} 件"))
+            out["为什么有上限"] = ("手工活同时开太多件,每件都慢,而且**串味**"
+                                  "(染色、绣线批次混起来)—— 上限是工艺约束,不是懒")
+    return _nz(out)
+
+
 def _rows2(sql, *a):
     """只取一列的裸元组 —— `_rows` 会过列名黑名单,这里只要 id,不必走那一遍。"""
     with sqlite3.connect(DB) as c:
@@ -2262,6 +2309,9 @@ SHOP_SCHEMAS=[
     "kind":{"type":"string","description":"定制品订单 / 标品订单,默认定制品订单"},
     "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
    "required":["customer_id"]}},
+ {"name":"my_workorders","description":"**我手上的工单**。工匠看自己的,工坊管事看本坊,总部运营看全部 —— 范围跟身份走。带**在制上限**和当前在制数:接不接得下一件,这两个数说了算,不用猜(上限是工艺约束 —— 手工活同时开太多件每件都慢,而且染色、绣线批次会串味)。逾期的排在最前。status 可选,写「在制/待开工/已完成」等。",
+  "input_schema":{"type":"object","properties":{
+    "status":{"type":"string","description":"只看某个状态的,不给就是全部"}},"required":[]}},
  {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
@@ -2398,7 +2448,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
