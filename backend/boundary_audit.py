@@ -81,6 +81,41 @@ def a_write_role_param():
     raise TypeError("写工具的签名里没有身份参数(这正是期望的)")
 
 
+def a_product_by_manager():
+    """**店长改商品。** 商品是全国一份的主数据 —— 它挂的版型决定用料基准、
+    工期、能做哪些尺码、量体量哪些项。店长能改的话,同一个 SPU 在两家店
+    挂不同版型,于是**同一件衣服报出不同的价**,而报表上完全正常。
+
+    原来这里是「店长及以上」,和「客户导入」同级。
+    **客户是门店的,商品和系统编码是全国的** —— 它该和 `save_syscode` 同级。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+    import server as _sv
+    r = _sv.save_product({"spu": "lxys_100831495", "name": "越权改的商品",
+                          "base_price": 1, "kind": "标品"}, role="店长")
+    if r.get("ok"):
+        return "店长改成了商品 —— 全国主数据被门店角色改了"
+    raise PermissionError(r.get("reason", "")[:90])
+
+
+def a_product_template_by_manager():
+    """更具体的一刀:**店长改一个定制品的量体模板**。
+
+    这比改名字严重 —— 量体模板决定量哪些尺寸。
+    改错了是照着错的口径去量,然后按那个尺寸裁。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+    import server as _sv
+    r = _sv.save_product({"spu": "lxys_100974037", "name": "越权改模板",
+                          "base_price": 9600, "kind": "定制品",
+                          "template": "LT02 裙装模版"}, role="店长")
+    if r.get("ok"):
+        return "店长改成了定制品的量体模板 —— 会照着错的口径量尺寸"
+    raise PermissionError(r.get("reason", "")[:90])
+
+
 def _verdict(name, reads=(), writes=()):
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "agentsite"))
@@ -424,6 +459,13 @@ STRUCT = [
  ("配置层也点名封了内置工具", "sdk.py disallowed_tools",
   a_disallowed, "检查危险工具是否都在 disallowed_tools 里",
   "**双锁**:配置一道 + Hook 一道。配置会被人改错,Hook 是兜底"),
+ ("店长改不了商品(全国主数据)", "server.py save_product",
+  a_product_by_manager, "以店长身份调 save_product",
+  "**原来是「店长及以上」,那是个漏洞** —— 商品挂的版型决定用料和报价,"
+  "门店各改一份会让同一件衣服在两家店报出不同的价。和 save_syscode 同级"),
+ ("店长改不了定制品的量体模板", "同上",
+  a_product_template_by_manager, "以店长身份改 template",
+  "比改名字严重 —— 量体模板决定量哪些尺寸,改错了是照着错的口径去裁"),
  ("无有效同意 → 取不到身体数据", "12-成长与生命周期.md 第七节 / 个保法 28 条",
   a_consent_body, "撤销身体数据同意后调推算", "工具层硬门,不靠模型自觉"),
  ("不满 14 周岁缺监护人同意 → 不能推算", "同上 / 个保法 31 条",
