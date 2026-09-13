@@ -260,6 +260,27 @@ M = [
 ]
 
 
+# ── 品类树也在说这是什么衣服 ─────────────────────────────────────────
+# **第六次「答案早就在库里」**(前五次:`product_custom.xz`、关键尺寸的两个来源、
+# `unit`、`sku.collar`、`pattern_piece`)。而品类树在这个项目里本来就是权威的 ——
+# 「商品性别按品类树判,不按 `gender` 字段」那条早就定了,
+# **我却一直没想到它也在说形制**。
+#
+# 叶子品类比形制**粗一档**(「袄」对着 4 个形制),所以它**能排除、有时能定**。
+品类用例 = [
+ ("「蜡染冰纹」男装道袍", "男装", "确定", {"XZ20"},
+  "配置表那格写的「圆领袍」是**填错的旧泛称**,而**品类树挂在 C020102「道袍」上**,"
+  "库里只有一个道袍形制 —— 品类树把 XZ09 排掉,这条就不用拍了。"
+  "⚠️ 它走的是**靠别名**那条分支,那条会提前 return —— "
+  "品类收窄第一版放在后面,根本跑不到"),
+ ("「布衣素心」棉麻交领襦裙", "女装", "要选一个", {"XZ11", "XZ25"},
+  "品类是 C010101「襦 / 衫」——**合并档,对不上任何形制**,帮不上忙。"
+  "**「品类说不出来」不等于「名字说错了」**:交集为空时不许收窄,"
+  "否则会把本来定得下来的商品全判成认不出。"
+  "这条是**唐制 vs 晋制**的真歧义,旧匹配器的朝代前缀表里漏了「晋制」才显得唯一"),
+]
+
+
 def main():
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
     xzs = [dict(r) for r in c.execute("SELECT code,name,alias,key_sizes FROM xingzhi")]
@@ -276,6 +297,16 @@ def main():
         if not ok:
             print(f"       ⚠️ 期望 {档} {码 if 码 is not None else ''} / "
                   f"实得 {d['档位']} {sorted(got码)}")
+    for 名, 顶, 档, 码, pin in 品类用例:
+        spu = c.execute("SELECT spu FROM product WHERE name=?", (名,)).fetchone()
+        d = F.拍板分档(c, 名, 顶, xzs, spu=spu[0])
+        got = {z["code"] for z in d["候选"]}
+        ok = (d["档位"] == 档) and got == 码
+        bad += (not ok)
+        print(f"  {'✅' if ok else '❌'} [品类树] {名[:20]:22s} → {d['档位']} {sorted(got)}")
+        print(f"       钉的坑:{pin}")
+        if not ok:
+            print(f"       ⚠️ 期望 {档} {sorted(码)} / 实得 {d['档位']} {sorted(got)}")
     for 名, 顶, 档, 码, pin in 具体度用例:
         d = F.拍板分档(c, 名, 顶, xzs)
         got = {z["code"] for z in d["候选"]}
@@ -363,9 +394,9 @@ def main():
             print(f"       ⚠️ 期望多件={多} / 实得 {d['多件']}")
     print("=" * 100)
     if bad:
-        print(f"❌ {bad}/{len(T)+len(已记用例)+len(靠别名用例)+len(领型用例)+len(具体度用例)+len(线索用例)+len(泛称用例)+len(轴用例)+len(M)} 条对照不符合预期")
+        print(f"❌ {bad}/{len(T)+len(已记用例)+len(靠别名用例)+len(领型用例)+len(品类用例)+len(具体度用例)+len(线索用例)+len(泛称用例)+len(轴用例)+len(M)} 条对照不符合预期")
         return 1
-    print(f"✅ {len(T)+len(已记用例)+len(靠别名用例)+len(领型用例)+len(具体度用例)+len(线索用例)+len(泛称用例)+len(轴用例)+len(M)} 条对照全部符合预期")
+    print(f"✅ {len(T)+len(已记用例)+len(靠别名用例)+len(领型用例)+len(品类用例)+len(具体度用例)+len(线索用例)+len(泛称用例)+len(轴用例)+len(M)} 条对照全部符合预期")
     return 0
 
 

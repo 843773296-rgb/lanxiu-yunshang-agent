@@ -465,6 +465,38 @@ def 已记的形制(conn, spu, xzs):
     return None                  # 指向空处 —— `product_pattern_check` 会红
 
 
+def 品类能定的形制(conn, 品类码, xzs):
+    """商品挂在哪个**叶子品类**上 —— 那一列也在说这是什么衣服。
+
+    **第六次「答案早就在库里」。** 前五次是 `product_custom.xz`、
+    关键尺寸的两个来源、`unit`、`sku.collar`、`pattern_piece`。
+    而品类树在这个项目里本来就是权威的 ——
+    「商品性别按品类树判,不按 `gender` 字段」那条早就定了,
+    **我却一直没想到它也在说形制**。
+
+    叶子品类比形制**粗一档**(「袄」对着 4 个形制),所以它
+    **能排除、有时能定**:「蜡染冰纹」男装道袍挂在 C020102「道袍」上,
+    而库里只有一个道袍形制 —— 它的配置表那格写的「圆领袍」是填错的旧泛称。
+
+    返回这个叶子品类对得上的形制码集合;对不上任何形制就返回空集
+    (「襦 / 衫」「长衫 / 长袄」这种合并档就是空的)。
+    """
+    if not 品类码:
+        return set()
+    r = conn.execute("SELECT name FROM category WHERE code=?", (品类码,)).fetchone()
+    if not r:
+        return set()
+    叶 = r[0]
+    if conn.execute("SELECT 1 FROM category WHERE parent=? LIMIT 1", (品类码,)).fetchone():
+        return set()                      # 不是叶子,不据此收窄
+    out = set()
+    for z in xzs:
+        核 = _拆朝代(z["name"])[1]
+        if 叶 == 核 or 核.endswith(叶) or 叶 == z["name"]:
+            out.add(z["code"])
+    return out
+
+
 def 商品领型(conn, spu):
     """这个商品的 sku 说领型是什么。多个 sku 说法不一时返回 None ——
     **不一致本身就是「说不清」,不该拿来排除别人。**"""
@@ -514,6 +546,12 @@ def 拍板分档(conn, 商品名, 顶级品类, xzs=None, spu=None):
         return dict(档位="不该有版型", 候选=[], 多件=多件, 尺寸空=[],
                     提示="不是成衣,本来就不该有版型")
 
+    # **品类树能定的形制**,提前算 —— 下面「靠别名」那条分支会提前 return,
+    # 放在后面它就跑不到(第一版就是这么漏的:道袍走别名分支,品类收窄没生效)。
+    品类码 = conn.execute("SELECT category FROM product WHERE spu=?",
+                          (spu,)).fetchone() if spu else None
+    可由品类定 = 品类能定的形制(conn, 品类码[0] if 品类码 else None, xzs)
+
     记 = 已记的形制(conn, spu, xzs)
     if 记:
         # 名字推出来的和记着的不一样,**要说出来** —— 那是商品命名和配置表打架,
@@ -527,6 +565,19 @@ def 拍板分档(conn, 商品名, 顶级品类, xzs=None, spu=None):
             # 配置表用的是别名(更松的旧标签),名字反而更具体 ——
             # **这种不许说「以配置表为准」**,两边都摆出来让人看。
             全 = 猜["候选"] + [记]
+            # **品类树先收一道。** 「蜡染冰纹」男装道袍挂在 C020102「道袍」上,
+            # 而配置表那格写的「圆领袍」是填错的旧泛称 ——
+            # 品类树把 XZ09 排掉之后只剩 XZ20,就不用人拍了。
+            交 = [z for z in 全 if z["code"] in 可由品类定] if 可由品类定 else []
+            if len(交) == 1:
+                叶名 = conn.execute("SELECT name FROM category WHERE code=?",
+                                    (品类码[0],)).fetchone()[0]
+                return dict(档位="确定", 候选=交, 多件=多件,
+                            尺寸空=[z["code"] for z in 交
+                                   if not (z["key_sizes"] or "").strip()],
+                            提示=f"配置表写的是「{记['配置原文']}」(别名,更松的旧标签),"
+                                 f"而**品类树挂在「{叶名}」上** —— "
+                                 f"品类树把别的候选排掉了,不用拍")
             return dict(档位="要选一个", 候选=全, 多件=多件,
                         尺寸空=[z["code"] for z in 全
                                if not (z["key_sizes"] or "").strip()],
@@ -647,6 +698,15 @@ def 拍板分档(conn, 商品名, 顶级品类, xzs=None, spu=None):
     if 领:
         宽 = [z for z in 宽 if not _领型打架(z["name"], 领)]
         窄 = [z for z in 窄 if not _领型打架(z["name"], 领)]
+
+    # **品类树收窄** —— 见 `品类能定的形制`。
+    # ⚠️ **只在有交集时收窄,交集为空就不动。** 叶子品类可能是合并档、
+    # 也可能挂错了,而**「品类说不出来」不等于「名字说错了」** ——
+    # 强行按空集收窄会把本来定得下来的商品全判成认不出。
+    if 可由品类定:
+        交 = [z for z in 宽 if z["code"] in 可由品类定]
+        if 交:
+            宽 = 交
 
     # **更具体的赢。** 只有并列最具体的才算「分不出」——
     # 这和泛称那一段是同一条:**「圆领袍」和「唐制圆领缺胯袍」不是两个平级候选**。
