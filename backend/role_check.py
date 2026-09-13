@@ -103,12 +103,64 @@ def main():
        f"没人进得来的 {缺}" if 缺 else
        "**一个没有登录身份的 agent 角色,和一个没有工具的登录身份,是同一个病的两面**")
 
+    # ⑦ **登录页要把每种角色都列出来,而且列的工号必须真的能登录。**
+    #
+    # 原来只列了店长和顾问两个 —— 而工匠和财务是后来补的,
+    # **不列出来等于那两个角色不存在**:看的人会以为这个系统只有门店两种身份。
+    #
+    # 这条检查验两件事,第二件更要紧:
+    #   · 每种在职角色在登录页上都出现了
+    #   · **页面上写的工号真的登得进去**(算一遍 PBKDF2,不是看它写了没有)——
+    #     一个写着假工号的演示清单,比不写更糟:照着它登不进去的人,
+    #     第一反应是「这系统坏了」,而不是「这行字过期了」。
+    import re as _re, hashlib as _hl
+    lp = os.path.join(os.path.dirname(HERE), "agentsite", "web", "login.html")
+    html = open(lp, encoding="utf-8").read() if os.path.exists(lp) else ""
+    在职角色 = {r["role"] for r in c.execute(
+        "SELECT DISTINCT role FROM staff WHERE status='启用'")}
+    # ⚠️ **只在演示账号那一段里找,而且要求「角色名 + 工号」成对出现。**
+    #
+    # 第一版整页搜角色名 —— 咬合时把「工匠」那一行删掉,**检查还是绿的**,
+    # 因为「工匠」这两个字在注释里也有。
+    # 判据要贴着「什么才算对」:该算对的是
+    # **「演示账号那一段里列了这个角色,并且给了工号」**,
+    # 不是「这个字在页面上出现过」。
+    m斑 = _re.search(r'class="demo"(.*?)</div>', html, _re.S)
+    段 = m斑.group(1) if m斑 else ""
+    # 取「标签后紧跟的中文角色名 + 工号」—— `\S+?` 会把 `<p>` 一起抓进来,
+    # 于是键变成「<p>总部运营」,和库里的角色名永远对不上。
+    成对 = dict(_re.findall(r">\s*([\u4e00-\u9fff]{2,4})\s*<code>(\d{8})</code>", 段))
+    漏角色 = sorted(r for r in 在职角色 if r not in 成对)
+    ck("登录页把每种在职角色连工号一起列出来", not 漏角色, len(在职角色),
+       f"没列的 {漏角色} —— **不列出来等于那个角色不存在**" if 漏角色 else
+       f"成对列出 {len(成对)} 个:{sorted(成对)}")
+
+    列的工号 = list(成对.values())
+    坏账号 = []
+    PW = "lanxiu@2026"          # 演示口令,和 seed 里那个是同一个
+    for no in 列的工号:
+        r = c.execute("SELECT no,pwd_algo,pwd_salt,pwd_hash,status FROM staff WHERE no=?",
+                      (no,)).fetchone()
+        if not r or r["status"] != "启用":
+            坏账号.append((no, "查无此人或已停用")); continue
+        try:
+            it = int(str(r["pwd_algo"]).split("$")[1])
+            h = _hl.pbkdf2_hmac("sha256", PW.encode(),
+                                bytes.fromhex(r["pwd_salt"]), it).hex()
+        except Exception as e:
+            坏账号.append((no, f"算不出:{type(e).__name__}")); continue
+        if h != r["pwd_hash"]:
+            坏账号.append((no, "密码对不上"))
+    ck("登录页写的工号真的登得进去", not 坏账号, len(列的工号),
+       f"登不进的 {坏账号}" if 坏账号 else
+       "**算了一遍 PBKDF2,不是看它写了没有** —— 写着假工号比不写更糟")
+
     c.close()
     print("=" * 84)
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 角色与登录身份 6 条全过")
+    print("✅ 角色与登录身份 8 条全过")
     return 0
 
 
