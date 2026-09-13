@@ -154,6 +154,11 @@ def 匹配版型(conn, 商品名, pats=None):
     # 2026-09-13 业务确认实物是对襟。sku 记着领型=方领,门襟没记 ——
     # 而 XZ22 是库里唯一的方领形制,只有一个版型。
     "「棉麻」明制方领短衫(基础)": ("PT26", "2026-09-13 业务确认实物是对襟"),
+    # 2026-09-13 业务确认是**唐制·襕袍**(膝部横襕),不是缺胯袍(两侧开裾)。
+    # 按名字推不出来:「女式圆领唐制袍」只对得上「圆领」两个字,
+    # 而缺胯 / 襕是这一族的区分项,名字里一个都没有。
+    # 配置表那格写的是旧泛称「圆领袍」——**比名字还模糊**,更定不了。
+    "「女式圆领」唐制袍": ("PT86", "2026-09-13 业务确认是襕袍(膝部横襕),新建女款版型"),
 }
 
 
@@ -165,6 +170,9 @@ def link(conn, verbose=True):
         c.execute("ALTER TABLE product ADD COLUMN pattern TEXT")
     pats = [dict(r) for r in c.execute("SELECT code,name,gender,tpl,xz FROM pattern")]
     xzs = [dict(r) for r in c.execute("SELECT code,name,alias FROM xingzhi")]
+    # 分档要 key_sizes(它要判「关键尺寸是不是空的」),比上面那份多一列
+    xzs全 = [dict(r) for r in c.execute(
+        "SELECT code,name,alias,key_sizes FROM xingzhi")]
     连 = 空 = 0
     for r in c.execute("SELECT spu,name FROM product").fetchall():
         # **业务拍过的优先** —— 人看过实物,比任何名字匹配都准。
@@ -177,17 +185,31 @@ def link(conn, verbose=True):
         if not p:
             # **退一步走形制表。** 按版型全名匹配只连上 164/288 ——
             # 「宋制**对襟**褙子」对不上「宋制褙子·标准」,差的就是中间那两个字。
-            # 走形制(器物名 + 别名)再按变体和性别收窄,又定下来 62 个。
-            z, _ = 匹配形制(c, r["name"], xzs)
-            if z:
-                g = c.execute("SELECT gender,category FROM product WHERE spu=?",
-                              (r["spu"],)).fetchone()
-                # **从 fix_order_measure 引,这个模块里没有这个函数。**
-                # 我改的时候直接写了裸名字 —— 当场 NameError,
-                # 而它是在 seed 半路崩的,**留下一个建了一半的库**。
-                import fix_order_measure as _fx2
-                顶 = _fx2.顶级品类(c, g["category"]) if g else None
-                p, _ = 按形制选版型(c, r["name"], g["gender"] if g else None, z, pats, 顶)
+            #
+            # ⚠️ **这里原来直接调 `匹配形制`(严格连续子串),于是和
+            # `拍板分档()` 成了同一个判定的两套实现。** 我这一整轮
+            # 把子序列匹配、别名、`product_custom.xz`、`sku.collar` 全加进了分档,
+            # **一条都没进这里** —— 结果待定清单说「库里已记 XZ04,不用拍」,
+            # 而 link 说「形制表里也认不出」,版型照样是空的。
+            # **清单自己和自己打架**,而且 8 个商品一直挂在那儿。
+            #
+            # 这和「`enforce` 用日期比、检查用时间戳,差了『当天』那一档」
+            # 是同一个病:**两套实现一定会在某一档上分家**。
+            # 改成:**link 用分档的结论**,自己不再推一遍。
+            g = c.execute("SELECT gender,category FROM product WHERE spu=?",
+                          (r["spu"],)).fetchone()
+            # **从 fix_order_measure 引,这个模块里没有这个函数。**
+            # 我改的时候直接写了裸名字 —— 当场 NameError,
+            # 而它是在 seed 半路崩的,**留下一个建了一半的库**。
+            import fix_order_measure as _fx2
+            顶 = _fx2.顶级品类(c, g["category"]) if g else None
+            d = 拍板分档(c, r["name"], 顶, xzs全, spu=r["spu"])
+            # **只认「不用拍」那两档。** 要选一个 / 省了区分项 / 表里没有
+            # 都是**人该看一眼**的,自动挂上去等于替人拍板 ——
+            # 而「猜对了没奖励,猜错了用料工期量体全错,报表上完全正常」。
+            if d["档位"] in ("库里已记", "确定") and len(d["候选"]) == 1:
+                p, _ = 按形制选版型(c, r["name"], g["gender"] if g else None,
+                                    d["候选"][0], pats, 顶)
         if p:
             c.execute("UPDATE product SET pattern=? WHERE spu=?", (p["code"], r["spu"]))
             连 += 1
@@ -534,6 +556,14 @@ def 拍板分档(conn, 商品名, 顶级品类, xzs=None, spu=None):
         童 = z["name"].startswith("童款")
         if 童 != (顶级品类 == "童装"):
             return False          # 童款形制只配童装,反之也一样
+        # **「改良」是款式修饰,不是朝代** —— 第三次犯同一个错
+        # (前两次:「童款」塞进朝代前缀表、领型/门襟/腰线塞进一个词表)。
+        # XZ38「改良马面裙(通勤)」和 XZ03「明制马面裙」核都是「马面裙」,
+        # 于是「金襕」织金缎马面裙(现货)两个都撞上、判成「要选一个」——
+        # **而商品名一个「改良」都没写**。改良款是要写出来的。
+        if z["name"].startswith("改良") and not any(
+                w in 名 for w in ("改良", "通勤", "汉元素")):
+            return False
         # **形制名自己声明了性别的,要认。**
         # XZ31「宋制直领长衫**(男)**」不该出现在女装商品的候选或线索里。
         # 只在形制**自己写了**的时候才据此排除 —— 大多数形制是男女通穿的
@@ -556,7 +586,15 @@ def 拍板分档(conn, 商品名, 顶级品类, xzs=None, spu=None):
         # (¥2280/¥2880/¥6800)全掉进「表里没有」—— 而 XZ04 的别名
         # **正是「立领袄」**,本来就对得上。别名列不查,等于那一列白填。
         名单 = [zk] + [a.strip() for a in (z["alias"] or "").split("、") if a.strip()]
-        if any(n and _子序列(n, 名) for n in 名单):
+        # **记下「有多具体」**:连续子串比只对上字序更具体,长的比短的更具体。
+        # 不记的话,「大袖衫」会同时撞上 XZ05 大袖衫 和 XZ36 明制**大衫**
+        # ——「大衫」是「大袖衫」的子序列,可它明显不是同一件衣服。
+        # 子序列那一层是为「百迭**长版**裙」这种中间插字留的,
+        # **不能让它把更短的名字也捞进来当平级候选**。
+        命中 = [(2 if n in 名 else 1, len(n)) for n in 名单
+                if n and _子序列(n, 名)]
+        if 命中:
+            z = dict(z, 具体度=max(命中))
             宽.append(z)
         elif len(zk) > 2 and (zk[:2] in 名 or zk[-2:] in 名):
             # 形制核的**头两字或尾两字**出现了,但整个名字对不上 ——
@@ -609,6 +647,14 @@ def 拍板分档(conn, 商品名, 顶级品类, xzs=None, spu=None):
     if 领:
         宽 = [z for z in 宽 if not _领型打架(z["name"], 领)]
         窄 = [z for z in 窄 if not _领型打架(z["name"], 领)]
+
+    # **更具体的赢。** 只有并列最具体的才算「分不出」——
+    # 这和泛称那一段是同一条:**「圆领袍」和「唐制圆领缺胯袍」不是两个平级候选**。
+    if len(宽) > 1:
+        顶级 = max(z.get("具体度", (0, 0)) for z in 宽)
+        最具体 = [z for z in 宽 if z.get("具体度", (0, 0)) == 顶级]
+        if len(最具体) == 1:
+            宽 = 最具体
 
     空 = [z["code"] for z in (宽 or 窄) if not (z["key_sizes"] or "").strip()]
     if len(宽) == 1:

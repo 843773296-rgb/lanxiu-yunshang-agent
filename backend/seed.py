@@ -1146,7 +1146,13 @@ def run():
       ('「素罗大袖」大袖衫·加长','C010301',5800,'女','大袖衫',['真丝素罗', '杭罗'],['手绘', '平绣'],'35–55 天','LT01 唐装模版'),
       ('「坦领」唐制半臂 定制','C010104',3200,'女','半臂',['蜀锦', '素缎'],['蜀绣', '网绣 / 锁绣'],'25–40 天','LT04 上衣用量体'),
       ('「百迭长版」宋制裙','C010202',3400,'女','百迭裙',['真丝双绉', '绫'],['压褶定型', '平绣'],'25–40 天','LT02 裙装模版'),
-      ('「女式圆领」唐制袍','C010302',5600,'女','圆领袍',['素缎', '提花暗纹缎'],['织金', '苏绣'],'40–60 天','LT03 长衫模版'),
+            # 2026-09-13 业务拍板两条:
+      #   ① 它是**唐制·襕袍**(膝部横襕),不是明制 —— 新建女款版型 PT86
+      #   ② 面料换**织金缎**。原来配的素缎 / 提花暗纹缎**被工艺「织金」按 R2 全剔**,
+      #      可选面料剩零个,所以它一直是下架状态。
+      #      同时过「织金 + 苏绣」的主料只有两种:云锦 1800 元/米、织金缎 680 元/米 ——
+      #      **云锦 × 4.0 米 = 7200 元料,而售价 ¥5600,卖一件亏 1600**。
+      ('「女式圆领」唐制袍','C010302',5600,'女','圆领袍',['织金缎'],['织金', '苏绣'],'40–60 天','LT03 长衫模版'),
       ('「长袄」明制袄裙 定制','C010302',6200,'女','明制袄裙',['漳缎', '宋锦'],['盘金绣', '缀珠流苏'],'45–65 天','LT03 长衫模版'),
       ('「苎麻本色」明制方领衫','C010101',1280,'女','明制方领对襟短衫',['苎麻', '天丝麻'],['草木染', '挑花'],'18–30 天','LT04 上衣用量体'),
       ('「棉绸」宋制抹胸 基础款','C010101',880,'女','宋制抹胸',['棉绸(人棉)', '真丝双绉'],['平绣'],'12–20 天','LT04 上衣用量体'),
@@ -2397,15 +2403,41 @@ def run():
     # 把童款那一行并到大人款所在的单上。**排在 assign_item_wearers 之前** ——
     # 着装人是后面按商品性别匹配的,行先到位,人才匹配得上
     # (「收尾动作要排在最后」的另一面:**产生行的动作要排在最前**)。
+    # ⚠️ **不能写成「两边都有订单行就合并」** —— 第一版就是那么写的,结果:
+    # 新增一个版型(PT86)让「商品由版型 × 相容矩阵长出来」那段多长了几个商品,
+    # 下标整体挪位,**童款那个 SPU 一条订单行都没被分到**,整段于是跳过,
+    # 王清和没有童款订单 ⇒ 「超期量体不许下单」的反例夹具又丢了。
+    # **夹具依赖一条碰巧存在的订单行,就一定会漂。**
+    #
+    # 改成:**大人款所在的单上必须有童款那一行,没有就补**。
+    # 这不只是为了夹具 —— **亲子装本来就该两件一起卖**,
+    # 一张单上只有大人那件,本身就是错的。
     _cp = [r[0] for r in c.execute(
         "SELECT spu FROM product WHERE name LIKE '「同心」亲子%' ORDER BY name")]
     if len(_cp) == 2:
         _adult = c.execute(
-            "SELECT p.spu,i.order_id FROM ordr_item i JOIN product p ON p.spu=i.spu "
-            "WHERE i.spu IN (?,?) AND p.gender='女'", tuple(_cp)).fetchone()
+            "SELECT p.spu,i.order_id,i.base_amount,i.custom_amount FROM ordr_item i "
+            "JOIN product p ON p.spu=i.spu WHERE i.spu IN (?,?) AND p.gender='女'",
+            tuple(_cp)).fetchone()
         _kid = c.execute(
             "SELECT i.id,i.order_id FROM ordr_item i JOIN product p ON p.spu=i.spu "
             "WHERE i.spu IN (?,?) AND p.gender='童'", tuple(_cp)).fetchone()
+        _kspu = next((x for x in _cp if x != (_adult[0] if _adult else None)), None)
+        if _adult and not _kid and _kspu:
+            # 童款根本没被下单 —— 补一行到大人款那张单上。
+            # 定制部件金额按**基本金额比例**分摊,和拆商品时按用料比定价同一个道理。
+            _kp = c.execute("SELECT name,base_price FROM product WHERE spu=?",
+                            (_kspu,)).fetchone()
+            _ratio = ((_adult["custom_amount"] or 0) / (_adult["base_amount"] or 1))
+            _kb2 = float(_kp["base_price"])
+            _kc = round(_kb2 * _ratio, 2)
+            c.execute("INSERT INTO ordr_item(order_id,sku,name,tag,price,qty,spu,"
+                      "base_amount,custom_amount,total) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                      (_adult["order_id"], f"{_kspu}-01", _kp["name"], "定制品",
+                       _kb2, 1, _kspu, _kb2, _kc, round(_kb2 + _kc, 2)))
+            print(f"  [亲子装] 童款没被下单,补一行到大人款那张单 {_adult['order_id']}")
+            _kid = c.execute("SELECT id,order_id FROM ordr_item WHERE spu=? ",
+                             (_kspu,)).fetchone()
         if _adult and _kid and _adult[1] != _kid[1]:
             _old = _kid[1]
             c.execute("UPDATE ordr_item SET order_id=? WHERE id=?", (_adult[1], _kid[0]))
@@ -2428,6 +2460,18 @@ def run():
             c.execute("DELETE FROM ordr WHERE id=? AND NOT EXISTS"
                       "(SELECT 1 FROM ordr_item WHERE order_id=?)", (_old, _old))
             print(f"  [亲子装] 童款那一行并进大人款所在的单 {_adult[1]}")
+    # **两种情况(补行 / 搬行)都要重算金额** —— 原来只在搬行那一支里算,
+    # 补行那一支金额就对不上,而 `member_order_check` 的勾稽会红。
+    if len(_cp) == 2:
+        for _oid in {r[0] for r in c.execute(
+                "SELECT DISTINCT order_id FROM ordr_item WHERE spu IN (?,?)", tuple(_cp))}:
+            _g, _t = c.execute(
+                "SELECT COALESCE(SUM(base_amount),0), COALESCE(SUM(total),0) "
+                "FROM ordr_item WHERE order_id=?", (_oid,)).fetchone()
+            _fr = (c.execute("SELECT freight FROM ordr WHERE id=?",
+                             (_oid,)).fetchone() or [0])[0] or 0
+            c.execute("UPDATE ordr SET goods_amount=?, amount=?, payable=? WHERE id=?",
+                      (round(_g, 2), round(_t + _fr, 2), round(_t + _fr, 2), _oid))
 
     import fix_order_measure as _fx
     _fx.ensure_wearers(c)              # 名下没有对得上的人 → 建档 + 量体
