@@ -363,9 +363,17 @@ def 已记的形制(conn, spu, xzs):
     if not nm:
         return None
     for z in xzs:
+        if nm == z["name"]:
+            return dict(z, 靠别名=False, 配置原文=nm)
+    for z in xzs:
         别 = [a.strip() for a in (z["alias"] or "").split("、") if a.strip()]
-        if nm == z["name"] or nm in 别:
-            return z
+        if nm in 别:
+            # **靠别名接上的,不算「配置表说得更具体」。**
+            # 「女式圆领」唐制袍 的配置表写的是「圆领袍」—— 那是 XZ09 改名前的
+            # 旧名字,现在只是别名。名字说**唐制**,配置表只说「圆领袍」(泛称),
+            # **配置表在这一条上比名字还模糊**。
+            # 要是照「以配置表为准」办,会把一件唐制的衣服改成明制。
+            return dict(z, 靠别名=True, 配置原文=nm)
     return None                  # 指向空处 —— `product_pattern_check` 会红
 
 
@@ -395,6 +403,18 @@ def 拍板分档(conn, 商品名, 顶级品类, xzs=None, spu=None):
             打架 = 猜["候选"] and 记["code"] not in {z["code"] for z in 猜["候选"]}
         except RecursionError:                              # 防御,正常走不到
             打架 = False
+        if 打架 and 记.get("靠别名"):
+            # 配置表用的是别名(更松的旧标签),名字反而更具体 ——
+            # **这种不许说「以配置表为准」**,两边都摆出来让人看。
+            全 = 猜["候选"] + [记]
+            return dict(档位="要选一个", 候选=全, 多件=多件,
+                        尺寸空=[z["code"] for z in 全
+                               if not (z["key_sizes"] or "").strip()],
+                        提示=f"配置表只写了「{记['配置原文']}」—— 那是 "
+                             f"{记['code']} {记['name']} 的**别名**(更松的旧标签),"
+                             f"而商品名写了朝代。"
+                             f"**配置表在这一条上比商品名还模糊**,不能以它为准,"
+                             f"要看实物定")
         return dict(档位="库里已记", 候选=[记], 多件=多件,
                     尺寸空=[记["code"]] if not (记["key_sizes"] or "").strip() else [],
                     提示=("**配置表里已经记着**,不是猜的" if not 打架 else
