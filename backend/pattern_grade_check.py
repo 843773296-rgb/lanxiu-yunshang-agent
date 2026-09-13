@@ -120,6 +120,32 @@ M = [
 ]
 
 
+# ── 「库里已记」这条路径 ─────────────────────────────────────────────
+# ⚠️ **这一整套一开始是反的。** 我照着商品名写了一套匹配器,
+# 而定制品的形制**早就一条一条填在 `product_custom.xz` 里** ——
+# 19 个待定成衣里 11 个有这一行,而按名字推**猜错 7 个**。
+#
+# 「一份没有被引用的主数据,和一份不存在的主数据,效果一样」——
+# 这是它的**镜像**:有人已经写了,我没去查,于是造了个东西去猜它。
+# 下面每条都传 spu,走 `已记的形制()`。
+# (不传 spu 的用例仍然有用 —— 那是**标品**的路径,标品没有 product_custom 行。)
+已记用例 = [
+ ("「凤仪锦瑟」粤绣重工婚服", "女装", "XZ04", False,
+  "按名字判是「表里没有,名字里只有场合词」—— **而配置表里写着明制立领长衫**。"
+  "这是最贵的一件(¥18800),猜错的代价最大"),
+ ("「织金妆花」宋制大袖", "女装", "XZ02", True,
+  "配置表说**宋制褙子**,名字听起来像大袖衫 —— **两边不是同一件衣服**。"
+  "卖场按名字理解、车间按配置表下料"),
+ ("「同心」亲子唐制襦裙", "童装", "XZ01", True,
+  "配置表说**唐制齐胸襦裙**(成人形制),而名字让我判成童款襦裙 ——"
+  "亲子装里有大人那一件,所以配置表是对的"),
+ ("「素纱单衣」唐制外罩", "女装", "XZ05", False,
+  "按名字判是「外罩是品类词,推不出形制」—— 配置表写着**大袖衫**"),
+ ("「百迭长版」宋制裙", "女装", "XZ07", False,
+  "这条按名字也能推对(XZ07 百迭裙)—— **两条路一致时不该报打架**"),
+]
+
+
 def main():
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
     xzs = [dict(r) for r in c.execute("SELECT code,name,alias,key_sizes FROM xingzhi")]
@@ -136,6 +162,21 @@ def main():
         if not ok:
             print(f"       ⚠️ 期望 {档} {码 if 码 is not None else ''} / "
                   f"实得 {d['档位']} {sorted(got码)}")
+    for 名, 顶, 码, 该打架, pin in 已记用例:
+        spu = c.execute("SELECT spu FROM product WHERE name=?", (名,)).fetchone()
+        if not spu:
+            print(f"  ❌ [库里已记] {名} —— 库里没有这个商品"); bad += 1; continue
+        d = F.拍板分档(c, 名, 顶, xzs, spu=spu[0])
+        got = {z["code"] for z in d["候选"]}
+        打架 = "而商品名" in d["提示"]
+        ok = (d["档位"] == "库里已记") and got == {码} and (打架 == 该打架)
+        bad += (not ok)
+        print(f"  {'✅' if ok else '❌'} [库里已记] {名[:22]:24s} → "
+              f"{d['档位']} {sorted(got)}{'  ⚠️打架' if 打架 else ''}")
+        print(f"       钉的坑:{pin}")
+        if not ok:
+            print(f"       ⚠️ 期望 库里已记 {码} 打架={该打架} / "
+                  f"实得 {d['档位']} {sorted(got)} 打架={打架}")
     for 名, 顶, 档, 码, pin in 泛称用例:
         d = F.拍板分档(c, 名, 顶, 泛称夹具)
         got码 = {z["code"] for z in d["候选"]}
@@ -156,9 +197,9 @@ def main():
             print(f"       ⚠️ 期望多件={多} / 实得 {d['多件']}")
     print("=" * 100)
     if bad:
-        print(f"❌ {bad}/{len(T)+len(泛称用例)+len(M)} 条对照不符合预期")
+        print(f"❌ {bad}/{len(T)+len(已记用例)+len(泛称用例)+len(M)} 条对照不符合预期")
         return 1
-    print(f"✅ {len(T)+len(泛称用例)+len(M)} 条对照全部符合预期")
+    print(f"✅ {len(T)+len(已记用例)+len(泛称用例)+len(M)} 条对照全部符合预期")
     return 0
 
 

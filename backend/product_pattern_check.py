@@ -93,6 +93,33 @@ def main():
         if FX.顶级品类(c, r["category"]) == "面料部件": n42 += 1; bad42 += 1
     ck("面料部件不挂量体模板", bad42 == 0, n42 or 1, "卖的是料子和绣片,不是成衣")
 
+    # ⑤·前 **`product_custom.xz` 存的是形制「名字」,必须解析得出来。**
+    #    这条是补上去的,补的原因是我自己差点栽:把 XZ09 从「圆领袍」改名成
+    #    「明制圆领袍」之后,`product_custom` 里 7 个商品那一格还写着「圆领袍」——
+    #    **而 check.sh 全绿**。没断裂纯属运气:我顺手给 XZ09 留了别名「圆领袍」,
+    #    正好接上了。要是没留,那 7 个商品的形制就指向空处,
+    #    而它们在报表上照样是「配置齐全」。
+    #
+    #    存名字不存编码本来就危险(改名即断链),但这一列是给人看和给模型读的,
+    #    改成编码会让配置页变成一串 XZ 码。**那就至少把它钉住** ——
+    #    「删不掉的副本要变成被钉住的缓存」。
+    野xz = []
+    _名 = {}
+    for _c, _n, _a in c.execute("SELECT code,name,alias FROM xingzhi"):
+        _名[_n] = _c
+        for _x in (_a or "").split("、"):
+            if _x.strip(): _名[_x.strip()] = _c
+    for _spu, _pn, _xz in c.execute(
+            "SELECT pc.spu,p.name,pc.xz FROM product_custom pc "
+            "JOIN product p ON p.spu=pc.spu WHERE pc.xz IS NOT NULL AND pc.xz!=''"):
+        if _xz not in _名:
+            野xz.append(f"{_pn}:「{_xz}」在形制表里查不到")
+    ck("product_custom.xz 都能解析到形制", not 野xz,
+       c.execute("SELECT COUNT(*) FROM product_custom WHERE xz IS NOT NULL AND xz!=''")
+        .fetchone()[0],
+       ("；".join(野xz[:2]) if 野xz else
+        "存的是名字不是编码 —— **改一次形制名就可能断链**,而断了不会报错"))
+
     # ⑤ **没连上边的要按类别分开数。**
     #    第一版只报一个总数「124/288 没连上」,听起来像 124 个都缺东西 ——
     #    实际上配饰和面料部件**本来就不该有版型**(它们不是成衣)。
