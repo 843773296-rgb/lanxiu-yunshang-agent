@@ -57,6 +57,28 @@ def need_tool(*names):
     return g
 
 
+def need_any_tool(*names):
+    """**这几个工具里调了任意一个就算过。**
+
+    和 `need_tool` 的区别不是宽松,是**判的东西不一样**:
+    `need_tool` 说的是「必须走这条路」,`need_any_tool` 说的是「必须去库里查」。
+
+    加这个函数是因为 role_eval 的 A01 栽了一次:我要求工匠必须调 `my_workorders`,
+    它调了 `get_workorder` + `get_capacity`,**答案一字不错**
+    (4 件在制、上限 1 件、超配、「缂丝一台织机一个人,加人没用」),却被判失败。
+
+    **判据要贴着「什么才算对」,不是贴着「我以为它会怎么做」。**
+    一条正确答案有几条路能走到,那就几条都认;
+    真正不许的是**一个工具都不调就开口**(那才是编)。
+    """
+    def g(text, traj, c):
+        got = _tools(traj)
+        if any(n in got for n in names):
+            return []
+        return [f"一个都没调 {'/'.join(names)}(实际调了 {got or '一个都没调'})"]
+    return g
+
+
 def all_of(*gs):
     def g(text, traj, c):
         out = []

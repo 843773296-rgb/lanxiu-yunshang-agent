@@ -166,9 +166,41 @@ ids = [r.id for _, r in prompts.all_rules(unique=True)]
 dup = [f"{i} 出现 {ids.count(i)} 次" for i in sorted(set(ids)) if ids.count(i) > 1]
 rule("P4", "稳定编号唯一", dup, "编号撞了,外部文档引用的就不知道是哪一条")
 
+# ── P8:装配出来的提示词必须真的接到模型上 ──────────────────────────
+# **P3 验的是「装得出来」,P8 验的是「装上了」** —— 这是两件事,
+# 而这个项目刚在财务角色上栽了一次:`prompts.py` 里 FINANCE_HEAD/FINANCE_RULES/TL24
+# 全写好了,`CALLERS` 里也登记了,P3/P6 全绿 ——
+# 但 `sdk.py` 的 `_SYS` 那张表漏了 `finance` 一行,
+# 而取用处写的是 `_SYS.get(kind, SYS_ALL)`,**静默回落到全能助手**。
+# 于是那套财务提示词一个字都没进过模型,评测还过了 5/7。
+#
+# 「一份没有被引用的主数据,和一份不存在的主数据,业务效果一样」——
+# 提示词也是主数据。这条就是查它被引用了没有。
+_SYS_KEYS = set(re.findall(r'"(\w+)":\s*SYS_\w+', SDK))
+_断了 = [f"{role}(CALLERS 里登记了,但 sdk._SYS 里没有这一行 —— "
+        f"run() 会静默用全能助手的规矩)"
+        for nm, (role, _) in CALLERS.items() if "sdk" in nm and role not in _SYS_KEYS]
+# 反向:`.get(kind, 默认)` 本身就是这个 bug 的载体 —— 漏配时它不报错。
+# ⚠️ **扫代码,不扫文本**:第一版直接 grep 源码,当场撞上我自己写在
+# `_SYS` 上方那条「原来写的是 `_SYS.get(kind, SYS_ALL)`」的注释 ——
+# 注释里解释这个坑,反而被判成还有这个坑。**判据贴着文案就会这样。**
+# 用 AST 找真的属性调用,注释和字符串都不算。
+import ast
+_真的用了get = any(
+    isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+    and n.func.attr == "get" and isinstance(n.func.value, ast.Name)
+    and n.func.value.id == "_SYS"
+    for n in ast.walk(ast.parse(SDK)))
+if _真的用了get:
+    _断了.append("sdk.py 用 `_SYS.get(kind, 默认)` 取提示词 —— "
+               "漏配一个角色时它不会报错,只会悄悄降级成全能助手")
+rule("P8", "装配出来的提示词必须真的接到 run() 上", _断了,
+     "**装得出来 ≠ 装上了**。提示词也是主数据,没被引用的主数据"
+     "和不存在的一样 —— 而它看起来一直好好地躺在源码里")
+
 print("\n" + "=" * 84)
 if bad:
     print(f"❌ {len(bad)} 条没守住:")
     for no, why, n in bad: print(f"   · {no}({n} 条):{why}")
     sys.exit(1)
-print(f"✅ 提示词单一源头(P1–P7)· 共 {len(ids)} 条铁律,{len(CALLERS)} 个调用方")
+print(f"✅ 提示词单一源头(P1–P8)· 共 {len(ids)} 条铁律,{len(CALLERS)} 个调用方")

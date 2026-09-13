@@ -458,7 +458,24 @@ SYS_ALL, ALL_RULE_IDS = prompts.assemble("all", _have("all"))
 SYS_KB, KB_RULE_IDS = prompts.assemble("kb", _have("kb"))
 SYS_WORKSHOP, WORKSHOP_RULE_IDS = prompts.assemble("workshop", _have("workshop"))
 SYS_TASK, TASK_RULE_IDS = prompts.assemble("task", _have("task"))
-_SYS = {"all": SYS_ALL, "kb": SYS_KB, "workshop": SYS_WORKSHOP, "task": SYS_TASK}
+SYS_FINANCE, FINANCE_RULE_IDS = prompts.assemble("finance", _have("finance"))
+
+# **每个角色都必须在这儿有一条,漏一个当场炸。**
+# 财务这个角色为此栽过一次:`prompts.py` 里 FINANCE_HEAD / FINANCE_RULES / TL24
+# 都写好了,`_ROLE_TOOLS` 里也配了工具,但这张表漏了 `finance` 一行,
+# 而取用的地方写的是 `_SYS.get(kind, SYS_ALL)` —— **静默回落到全能助手**。
+# 结果那套财务提示词一个字都没到过模型,评测还过了 5/7
+# (全能助手的规矩恰好也拦住了大部分越权)——**「没红」不等于「接上了」**。
+#
+# 教训写成代码:`.get(k, 默认)` 把「这个角色没配」和「配的就是默认」
+# 写成了同一件事。改成建表时就对齐,**让漏配在进程起来的那一刻就炸**,
+# 而不是等某次评测的某一题恰好露出来。
+_SYS = {"all": SYS_ALL, "kb": SYS_KB, "workshop": SYS_WORKSHOP,
+        "task": SYS_TASK, "finance": SYS_FINANCE}
+_漏配 = set(_ROLE_TOOLS) - set(_SYS)
+if _漏配:
+    raise RuntimeError(f"这些角色配了工具却没有提示词:{sorted(_漏配)} —— "
+                       "别靠 .get 回落,那会让它悄悄用全能助手的规矩")
 
 
 def _img_block(path):
@@ -530,7 +547,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         # 身份写进提示词,是为了让模型**知道该怎么称呼和该问谁**;
         # 但取数的权限不靠这句话 —— 那是 MCP 服务的 env 管的。
         # 提示词里的身份是**告知**,env 里的身份才是**授权**。
-        system_prompt=(_SYS.get(kind, SYS_ALL) + (
+        # **不用 .get 回落** —— 见上面 `_SYS` 那段。角色没配就该炸,不该静默降级。
+        system_prompt=(_SYS[kind] + (
             f"\n\n## 现在是谁在跟你说话\n\n"
             f"{me['name']}(工号 {me['no']})· {me['role']}"
             f"{' · ' + me['shop'] if me.get('shop') else ''}。\n"
