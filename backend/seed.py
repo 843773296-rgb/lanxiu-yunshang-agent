@@ -2289,6 +2289,18 @@ def run():
     c.execute("UPDATE ordr SET wearer_id=NULL")   # 判据换过,旧值要清
     _fx.assign_wearers(c)              # 订单级:整单只给一个人时也填上
     _n_fix, _kept = _fx.enforce(c, verbose=False)
+
+    # 顾问引用:七张表存着「A04 陆微」这种字符串,补上指向工号的列。
+    # **名字一改,所有历史记录当场断掉而且悄无声息** ——
+    # 而 `schedule` 已经把结论摆在那儿了:它同时有名字和工号,
+    # 而「一个人两套编号」那个 bug 就是从这儿来的。
+    #
+    # ⚠️ **必须排在所有写 measure_rec 的地方之后。** 第一版排在前面,
+    # 而 `ensure_wearers` 之后又插了 238 条量体 —— 那批没有工号,
+    # 检查报「有名字的行没补上工号」。**回填这类收尾动作要排在最后**,
+    # 排在中间就只覆盖了那一刻已经存在的行。
+    import fix_advisor_ref as _far
+    _far.link(c)
     print(f"  [下单前置] 挪了 {_n_fix} 条超期量体;"
           f"留 1 条反例夹具({_fx.夹具说明})")
     assert _kept, "反例夹具丢了 —— 「超期量体不许下单」这条规则会没有用例"

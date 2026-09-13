@@ -70,13 +70,19 @@ def visible_appt_scope(me):
         return "1=1", [], "全部门店(你是总部运营)"
     if me.get("role") in MANAGER_ROLES:
         return "a.shop=?", [me.get("shop")], f"{me.get('shop')}(你是店长,看得到全店)"
-    r = rows("SELECT adv_code,name FROM staff WHERE no=?", me.get("no"))
-    if not r or not r[0].get("adv_code"):
-        # **搭不上桥就一个都不给**,不要退回「看全店」——
-        # 兜底方向是收紧,不是放宽。
-        return "1=0", [], "查不到你的顾问编号,看不到预约(**不是没有预约**,是连不上)"
-    tag = f"{r[0]['adv_code']} {r[0]['name']}"
-    return "a.advisor=?", [tag], f"派给你的预约({tag})"
+    # **按工号比,不按「编号 名字」比。**
+    #
+    # 上一版拼出「A01 林岚」去和 `appointment.advisor` 比字符串 ——
+    # 而那一列存的是名字,**名字一改(结婚改姓、录错一个字),
+    # 这个顾问名下的预约当场变成 0 条**,而界面上和「他确实没有预约」
+    # 长得一模一样。隔离判定尤其不能建在名字上:
+    # **它出错的方向是「少给」,而少给不会有人来报**。
+    #
+    # 现在 `appointment.advisor_no` 指向工号(`fix_advisor_ref` 回填,
+    # `advisor_ref_check` 盯着名字和工号一致)。
+    if not me.get("no"):
+        return "1=0", [], "没有工号,看不到预约"
+    return "a.advisor_no=?", [me["no"]], f"派给你的预约({me.get('name')})"
 
 
 def _deny(me, code, reason, key="—"):

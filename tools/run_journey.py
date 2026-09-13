@@ -528,8 +528,11 @@ def main():
         _c.execute("UPDATE ordr SET wearer_id=NULL")
         _fx.assign_wearers(_c, verbose=False)
         _fx.enforce(_c, verbose=False)
+        # 顾问引用也要补 —— 这个脚本插 measure_rec 和 schedule,都带名字不带工号。
+        import fix_advisor_ref as _far
+        _far.link(_c, verbose=False)
         _c.commit(); _c.close()
-        print(f"  {G}✅ 着装人链已补{D}(品类树定位 → 补档 → 量体落到有效期内)")
+        print(f"  {G}✅ 着装人链与顾问引用已补{D}(品类树定位 → 补档 → 量体 → 工号)")
 
     print(f"  {G}后来补上的{D}:")
     print("    · **下单前置** —— `api.can_order()` 在第 ⑦ 步之前真的拦一道:")
