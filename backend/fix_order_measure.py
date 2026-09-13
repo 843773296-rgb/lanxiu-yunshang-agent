@@ -364,6 +364,7 @@ def enforce_rows(conn, verbose=True):
             "MI07": 56, "MI08": 110, "MI09": 98, "MI10": 34, "MI11": 26, "MI12": 100,
             "MI13": 80, "MI14": 180}
     补 = 挪 = 0
+    kept = None
     for r in c.execute("""SELECT i.wearer_id, o.created, o.customer_id
                           FROM ordr_item i JOIN ordr o ON o.id=i.order_id
                           JOIN product p ON p.spu=i.spu
@@ -371,6 +372,21 @@ def enforce_rows(conn, verbose=True):
                           ORDER BY o.created""").fetchall():
         wid = r["wearer_id"]
         if wid in 夹具着装人集:
+            # ⚠️ **夹具的认定搬到了这一层。** 原来它认在 `enforce`(订单级),
+            # 而订单级只看 `ordr.wearer_id` —— 亲子装拆成两个 SPU、两行并进同一张单
+            # 之后,这张单**合法地有了两个着装人**,订单级正确地判成「判不了」、
+            # `wearer_id` 留空,于是整张单被跳过,**夹具凭空消失**。
+            #
+            # 而这个反例的场景本来就是行级的:「一张单给两个人做,
+            # 其中一个的量体过期了」—— 订单级根本表达不了它,
+            # 那正是当初把着装人挂到行上的理由。
+            # **夹具要挂在它实际存在的那一层。**
+            _w = c.execute("SELECT name FROM wearer WHERE id=?", (wid,)).fetchone()
+            _m = c.execute("SELECT measured_at FROM measure_rec WHERE wearer_id=? "
+                           "AND measured_at<=? ORDER BY measured_at DESC LIMIT 1",
+                           (wid, r["created"])).fetchone()
+            kept = (_w["name"] if _w else wid,
+                    _m["measured_at"][:10] if _m else "无", r["created"][:10])
             continue
         w = c.execute("SELECT id,name,gender,birthday,height FROM wearer WHERE id=?",
                       (wid,)).fetchone()
@@ -408,7 +424,7 @@ def enforce_rows(conn, verbose=True):
     if verbose:
         print(f"  [行级量体] 补了 {补} 个人的量体,挪了 {挪} 条日期"
               f"(夹具 {夹具着装人集} 跳过)")
-    return 补, 挪
+    return 补, 挪, kept
 
 
 def enforce(conn, today=None, verbose=True):

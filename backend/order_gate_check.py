@@ -193,7 +193,22 @@ def main():
     # **量出「75/76 全部有效」,而规则根本没在孩子身上跑过。**
     sys.path.insert(0, HERE)
     import fix_order_measure as FX
-    实际违规 = {o["wearer_id"] for o, (k, _) in 不可以 if o["wearer_id"]}
+    # ⚠️ **判定按行,取证也必须按行。**
+    # 原来这里取的是 `ordr.wearer_id`(订单级),而 `judge()` 是逐行判的 ——
+    # 亲子装拆成两个 SPU、两行并进同一张单之后,这张单**合法地有了两个着装人**,
+    # 订单级的「这单给谁做」正确地判成「判不了」、`wearer_id` 留空,
+    # 于是**这条检查再也找不到夹具**,而下面的明细里它白纸黑字写着
+    # 「王清和 的量体已过 199 天」。
+    # **一个按行成立的事实,用按单的方式去取证,一定会漏掉多人单。**
+    实际违规 = set()
+    for o, (k, _) in 不可以:
+        for r in c.execute("""SELECT i.id, i.wearer_id, p.gender g, p.kind
+                              FROM ordr_item i JOIN product p ON p.spu=i.spu
+                              WHERE i.order_id=? AND p.kind='定制品'""", (o["id"],)):
+            if r["wearer_id"] and _judge_row(c, o, r)[0] == "不可以":
+                实际违规.add(r["wearer_id"])
+        if o["wearer_id"] and not 实际违规:
+            实际违规.add(o["wearer_id"])      # 纯订单级判出来的那种(没有定制行)
     漏 = set(FX.夹具着装人集) - 实际违规
     ck("反例夹具一个都不许少(规则得有用例)", not 漏, len(FX.夹具着装人集),
        f"漏了 {漏} —— {FX.夹具说明}" if 漏 else FX.夹具说明[:40])
