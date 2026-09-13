@@ -23,6 +23,8 @@ md 改了、推导器重跑,这条检查跟着变 —— 这是这个项目的�
 import os, sys, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# ❹ 那条检查要读 `knowledge/fitting.py` —— 关键尺寸的**第二个来源**在它手里
+sys.path[:0] = [os.path.join(os.path.dirname(HERE), "knowledge")]
 FAIL = []
 
 
@@ -90,12 +92,40 @@ def main():
     ck("形制里写的关键尺寸,量体项表里都有", 野 == 0, n3,
        f"**文档里有而系统里没有** {例3}" if 野 else "")
 
+    # ❹ **关键尺寸有两个来源,必须说一样的话。**
+    #    `01-形制.md` 的「- **关键尺寸**:」小点 → `xingzhi.key_sizes`(这张表)
+    #    `08-量体与版型.md` 第二节的表格 → `fitting.key_sizes()`(推荐尺码在用)
+    #    补 XZ41 宋制上襦 的时候才发现有第二处:只往 01 里写,`fitting.py` 当场断言失败
+    #    (「这些形制没写关键尺寸,它们的推荐尺码全是瞎判的」)。那条断言拦住了「漏写」,
+    #    **但它只验两边都有,不验两边说的一样** —— 一边写「胸围、肩宽、衣长」
+    #    另一边写「胸围、腰围」,两个检查都绿,而推荐尺码按后者判、
+    #    量体模板按前者校验,谁都不知道它们已经分家了。
+    #    **同一个事实两个来源必然漂;删不掉的副本要变成被钉住的缓存。**
+    import fitting as _ft
+    两处 = _ft.key_sizes()
+    不一致 = []
+    for code, name, _al, ks, _st in c.execute(
+            "SELECT code,name,alias,key_sizes,src_type FROM xingzhi ORDER BY code"):
+        甲 = [x for x in (ks or "").split("、") if x]
+        乙 = 两处.get(code)
+        if 乙 is None:
+            不一致.append(f"{code} {name}:08-量体与版型.md 里没有这一行")
+        # **按集合比,不按顺序比** —— 关键尺寸是一组要量的项,
+        # 谁先谁后不承载任何信息。按顺序比会把「08 写成腰围、肩宽、通袖长」
+        # 和「01 写成肩宽、通袖长、腰围」判成不一致,那是**判据比事实还严**。
+        elif {x.split("(")[0] for x in 甲} != {x.split("(")[0] for x in 乙}:
+            不一致.append(f"{code} {name}:01 写「{'、'.join(甲)}」/ "
+                        f"08 写「{'、'.join(乙)}」")
+    ck("两处关键尺寸说的是同一件事", not 不一致, len(两处),
+       ("、".join(不一致[:2]) if 不一致
+        else "01-形制.md 和 08-量体与版型.md 各存了一份 —— 一致靠检查,不靠记性"))
+
     c.close()
     print("=" * 84)
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 形制与量体模板 4 条全过")
+    print("✅ 形制与量体模板 5 条全过")
     return 0
 
 
