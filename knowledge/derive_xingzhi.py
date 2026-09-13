@@ -96,6 +96,22 @@ def main():
     for code, name, alias, sizes, src in rows:
         c.execute("INSERT INTO xingzhi VALUES(?,?,?,?,?)",
                   (code, name, alias, "、".join(sizes) or None, src))
+    # **两个投影要一起刷新。** `craft`(cat='形制')和 `xingzhi` 都从这份 md 派生,
+    # 但只有 `xingzhi` 能被这个脚本单独重建 —— `craft` 是整库 seed 的时候写的。
+    # 于是改了 md 之后只跑这个脚本,`craft.name` 还是旧的,
+    # 而 `xingzhi_check` 的一致性检查当场红(这次改 XZ09 的名字就红了一回)。
+    # 那条检查没白加:**它证明了「两个投影」这件事本身就是要一直付维护费的**。
+    # 这里顺手把 craft 的名字带走 —— 只同步 `name`,
+    # detail 那一列是给模型读的知识条目,整库 seed 才重写。
+    改 = 0
+    for code, name, *_ in rows:
+        cur = c.execute("SELECT name FROM craft WHERE code=? AND cat='形制'",
+                        (code,)).fetchone()
+        if cur and cur[0] != name:
+            c.execute("UPDATE craft SET name=? WHERE code=? AND cat='形制'",
+                      (name, code))
+            print(f"   craft 里 {code} 的名字跟着改:{cur[0]} → {name}")
+            改 += 1
     c.commit()
     孤 = [r[0] for r in c.execute(
         "SELECT DISTINCT xz FROM pattern WHERE xz NOT IN (SELECT code FROM xingzhi)")]
