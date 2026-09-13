@@ -120,6 +120,38 @@ def main():
        ("；".join(野xz[:2]) if 野xz else
         "存的是名字不是编码 —— **改一次形制名就可能断链**,而断了不会报错"))
 
+    # ⑥ **名字、`unit`、裁片三者必须说同一件事。**
+    #    「多件」这件事库里有三处在讲:商品名(套装 / 亲子 / 两件)、
+    #    `product.unit`(件 / 套)、版型的裁片(有没有下装片)。三处一不齐就出错:
+    #
+    #      名字说多件而 unit='件'  → 一个版型看起来刚好够,没人觉得缺
+    #      unit='套' 而裁片只有上装 → 车间照版型下料,**裙子不会被裁出来**
+    #
+    #    ⚠️ 我第一版把这件事诊断成「`product.pattern` 是单值,装不下多件」——
+    #    **错了**。单值装得下:PT01 齐胸襦裙·标准的裁片里上襦和裙片都有,
+    #    7 个 unit='套' 的襦裙商品全是这么挂的。
+    #    **问题从来不是模型装不下,是三处没对齐。**
+    import fix_product_pattern as _FPP
+    名不齐, 片不齐 = [], []
+    for _spu, _pn, _u, _pt in c.execute(
+            "SELECT spu,name,unit,pattern FROM product"):
+        _多 = any(w in _pn for w in _FPP.多件词)
+        if _多 and _u != "套":
+            名不齐.append(f"{_pn}(名字说多件,unit='{_u}')")
+        if _u == "套" and _pt:
+            _ps = [x[0] for x in c.execute(
+                "SELECT name FROM pattern_piece WHERE pattern=?", (_pt,))]
+            if not any(any(k in x for k in _FPP.下装裁片词) for x in _ps):
+                片不齐.append(f"{_pn} → {_pt} 裁片只有上装({'/'.join(_ps) or '空'})")
+    ck("名字说多件的商品,unit 必须是「套」", not 名不齐,
+       c.execute("SELECT COUNT(*) FROM product").fetchone()[0],
+       ("；".join(名不齐[:3]) if 名不齐 else
+        "`unit` 这一列早就在承载「一件还是一套」—— 字段在那儿,就得和名字对齐"))
+    ck("unit='套' 的商品,版型裁片必须覆盖下装", not 片不齐,
+       c.execute("SELECT COUNT(*) FROM product WHERE unit='套'").fetchone()[0],
+       ("；".join(片不齐[:2]) if 片不齐 else
+        "车间照版型下料 —— 裁片里没有裙片,裙子就不会被裁出来"))
+
     # ⑤ **没连上边的要按类别分开数。**
     #    第一版只报一个总数「124/288 没连上」,听起来像 124 个都缺东西 ——
     #    实际上配饰和面料部件**本来就不该有版型**(它们不是成衣)。
