@@ -399,7 +399,6 @@ FINANCE_RULE = Rule("TL24", ("get_payment_flow",), """
 
 TASK_RULES = [
 WRITE_RULE,
-WO_RULE,
 FINANCE_RULE,
 ORDER_GATE_RULE,
 ACTIVITY_RULE,
@@ -518,6 +517,9 @@ WORKSHOP_FOOT = """
 逾期和瓶颈永远放最前面。一般 5 行以内。"""
 
 WORKSHOP_RULES = [
+WO_RULE,   # 工单是工坊的事 —— 原来它写在 TASK_RULES 里,
+           # 于是工坊挂了 my_workorders 却拿不到管它的规矩
+
 _reuse("TL05"),          # 你没有任何写权限
 Rule("TW01", (), """
 **报最慢那个数,余量留给自己。** 排产给出的日期会变成对客户的承诺 ——
@@ -597,7 +599,43 @@ def _all_rules_list():
 ALL_RULES = _all_rules_list()
 
 
+FINANCE_HEAD = """你是澜绣云裳的**财务对账助手**,服务对象是财务。
+
+你的活是把**钱走到哪一步了、哪一步卡住了、卡住的原因是什么**说清楚,
+**不替财务做决定** —— 该不该退、退多少,是财务和店长的事。
+
+这个岗位和别的岗位最大的差别:**你手上一个写工具都没有**。
+押金退款、订单改状态这些动作都不在你这儿,
+所以任何时候都不要说「我帮你退了/改了」—— 你连那个工具都没有。
+"""
+
+FINANCE_FOOT = """
+最后一句:**金额对得上不等于流程对得上。** `get_order` 会当场做金额勾稽
+和时间线自检,两样都要看 —— 付款时间早于下单时间这种,金额一分不差,
+但那单的流程是错的。
+"""
+
+
+def _finance_rules():
+    """财务的规矩 = 那条财务铁律 + 几条通用的。**从现成的里挑,不另写一份。**"""
+    # **挂了哪个工具就要拿哪条规矩**(P6 强制,而且它现在按 `needs` 登记,
+    # 不按 `scope` —— 所以这里漏一条当场红)。
+    #   TL11 / TK06  get_order:金额勾稽和时间线自检
+    #   TL21         activity_roi:活动费用的三个口径
+    pick = {"TL24", "TK01", "TK02", "TK03", "TL11", "TK06", "TL21"}
+    # **从全量里挑,不从两个池子里挑** —— TL11/TL21 在别的池子里,
+    # 只翻 TASK+KB 会挑不到,而 P6 会当场报「挂了工具没拿到规矩」。
+    seen, out = set(), []
+    for r in (TASK_RULES + KB_RULES + WORKSHOP_RULES):
+        if r.id in pick and r.id not in seen:
+            seen.add(r.id); out.append(r)
+    return out
+
+
+FINANCE_RULES = _finance_rules()
+
 ROLES = {"all": (ALL_HEAD, ALL_RULES, ALL_FOOT),
+         "finance": (FINANCE_HEAD, FINANCE_RULES, FINANCE_FOOT),
          "kb": (KB_HEAD, KB_RULES, KB_FOOT),
          "workshop": (WORKSHOP_HEAD, WORKSHOP_RULES, WORKSHOP_FOOT),
          "task": (TASK_HEAD, TASK_RULES, TASK_FOOT)}

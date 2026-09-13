@@ -239,11 +239,37 @@ KB_ONLY_TOOLS = [
 # 顾问问「客户什么时候能拿到」,工坊问「这活派给谁、会不会拖」——
 # 同一批数据,两种问题。get_capacity 从顾问那边搬过来了:
 # 那条规矩(TL13)的原文写的就是「工坊问……」,它本来就该在这儿。
+# ⚠️ `my_workorders` **只进 WORKSHOP_TOOLS,不进 SHOP_TOOLS。**
+# 它一度混在 SHOP_TOOLS 里,而 SHOP_TOOLS 是**整包**发给任务助手和工艺顾问的 ——
+# 于是店长的任务助手手上有「我手上的工单」,而 `visible_wo_scope` 里
+# 门店角色返回 `1=0`,**它调出来永远是空的**。
+#
+# 空结果比没有工具更糟:模型会拿到「这个范围里没有工单」,
+# **然后据此告诉店长「工坊没活」** —— 一个空结果被当成了事实。
+#
+# 这正是 P6 注释里记的那个老坑:**一整包工具同时发给多个角色**,
+# 于是某个角色拿到了它用不上、也没有规矩管的工具。
 WORKSHOP_TOOLS = [
     "mcp__shop__get_capacity",     # 工种级:瓶颈在哪、消化几天
     "mcp__shop__get_workorder",    # 单件级:在谁手上、会不会拖
+    # **师傅自己的那一份。** 上一版漏了这个 —— `my_workorders` 只进了
+    # task 和 all,于是师傅登录进来用工坊角色**手上根本没有它**,
+    # 而店长用任务助手反倒看得到。补角色补到一半,比不补更难发现:
+    # **登录进得来、规矩也在,只是那个工具不在场。**
+    "mcp__shop__my_workorders",
     "mcp__kb__kb_lead", "mcp__kb__kb_bom",
     "mcp__kb__kb_pattern", "mcp__kb__kb_size",
+]
+
+# 财务:**只读账的四张表,一个写的都没有。**
+# 它不该看得到量体、版型、产能 —— 那些和对账无关,
+# 而「给一个角色多余的工具」的代价是它会去用(这个项目在 allowed_tools 上栽过)。
+FINANCE_TOOLS = [
+    "mcp__task__get_deposit",        # 押金单:金额、状态、幂等号
+    "mcp__task__get_refund_trace",   # 退款轨迹:卡在哪一步、为什么
+    "mcp__task__get_payment_flow",   # 支付流水:进出两向
+    "mcp__shop__get_order",          # 订单:自带金额勾稽和时间线自检
+    "mcp__shop__activity_roi",       # 活动费用核销:预算 / 已发生 / 已开票
 ]
 
 # 项目自带的 Skill(agentsite/.claude/skills/<名字>/SKILL.md)。
@@ -319,7 +345,7 @@ TASK_ONLY_TOOLS = [
     #      智能体不会因为是智能体而多一分权,也不会少一分
     #   ③ 每一笔都在台账里标明「智能体代 X 执行」,查得出是谁的主意
     "mcp__shop__my_tasks", "mcp__shop__team_tasks", "mcp__shop__get_task",
-    "mcp__shop__monthly_review", "mcp__shop__appt_funnel", "mcp__shop__member_level", "mcp__shop__points_ledger", "mcp__shop__approval_queue", "mcp__shop__activity_roi", "mcp__shop__can_order", "mcp__shop__my_workorders", "mcp__shop__apply_adjust", "mcp__shop__decide_approval", "mcp__shop__week_grid", "mcp__shop__assign_batch", "mcp__shop__dispatch_batch",
+    "mcp__shop__monthly_review", "mcp__shop__appt_funnel", "mcp__shop__member_level", "mcp__shop__points_ledger", "mcp__shop__approval_queue", "mcp__shop__activity_roi", "mcp__shop__can_order", "mcp__shop__apply_adjust", "mcp__shop__decide_approval", "mcp__shop__week_grid", "mcp__shop__assign_batch", "mcp__shop__dispatch_batch",
     "mcp__shop__task_types", "mcp__shop__dispatch_pool",
     "mcp__shop__assign_task", "mcp__shop__dispatch_task",
     "mcp__shop__reassign_task", "mcp__shop__finish_task",
@@ -414,6 +440,8 @@ _ROLE_TOOLS = {
     "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS,
     "workshop": lambda: WORKSHOP_TOOLS,           # 工坊不看订单流水,只看产能和工单
     "task":     lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS,
+    # 财务只对账,**不看量体/版型/产能** —— 给多余的工具它就会去用。
+    "finance":  lambda: FINANCE_TOOLS,
 }
 
 def _tools_for(kind):

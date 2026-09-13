@@ -62,6 +62,11 @@ CALLERS = {
     "工作站·全能助手(sdk)":   ("all",  KB | KBONLY | WORK | TASK | TASKONLY | SHOP | {"图片"}),
     "工作站·工艺顾问(sdk)":   ("kb",   KB | KBONLY | SHOP | {"图片"}),
     "工作站·工坊排产(sdk)":   ("workshop", WORK),
+    # ⚠️ **新角色要加到这儿,否则 P3/P6 根本不看它。**
+    # 财务角色刚加上时忘了这一行 —— 于是它挂了 5 个工具、拿了 4 条规矩,
+    # 而 P6 一个字都没验过它。**一条检查漏掉某个调用方,
+    # 和这个调用方不存在,在检查输出上长得一模一样。**
+    "工作站·财务对账(sdk)":   ("finance", wl("FINANCE_TOOLS")),
     "工作站·任务助手(sdk)":   ("task", TASK | TASKONLY | SHOP),
     "后台聊天(chat.py)":      ("kb",   KBSET),
     "一代任务循环(v1.py)":    ("task", {t["name"] for t in api.SCHEMAS} | {"submit_finding"}),
@@ -99,9 +104,19 @@ rule("P5", "工具级规矩必须恰好依赖一个工具", _p5,
 # 全在工艺顾问那一侧 —— **工具给了,规矩没给**。
 #
 # 这比「工具没给」更危险:模型会用它,而且没有任何一句话告诉它怎么算用错。
+# ⚠️ **按 `needs` 登记,不按 `scope` 登记。**
+#
+# 原来的条件是 `scope == "工具" and needs` —— 而 `scope` 默认是「铁律」,
+# 于是新写的 TL23/TL24 **声明了依赖某个工具,却不被这条检查覆盖**:
+# 咬合时把 TL23 从工坊池挪回任务池(工坊挂着 my_workorders 却拿不到规矩),
+# **P6 一声不响**。
+#
+# 这就是这个项目钉过的那条:**注入没进检查的视野,「没红」不代表守得住。**
+# 根子在 `needs` 和 `scope` 是两个独立字段,而它们本该联动 ——
+# **一条声明了 needs 的规矩,天然就是工具级的**,不该再要求作者记得改 scope。
 GOVERNED = {}                        # 工具名 → 管它的那条规矩
 for _role, _r in prompts.all_rules(unique=True):
-    if _r.scope == "工具" and _r.needs:
+    if _r.needs:
         GOVERNED.setdefault(_r.needs[0], []).append((_role, _r.id))
 _p6 = []
 for nm, (role, have) in CALLERS.items():
