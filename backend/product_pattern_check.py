@@ -152,6 +152,21 @@ def main():
        ("；".join(片不齐[:2]) if 片不齐 else
         "车间照版型下料 —— 裁片里没有裙片,裙子就不会被裁出来"))
 
+    # ⑦ **人工裁定表里的东西必须真实存在。**
+    #    这张表是业务拍板的落点(`fix_product_pattern.人工裁定`),
+    #    键是**商品名**、值是版型编码 —— **两头都会因为改名而断**,
+    #    而断了不报错:link() 查不到就默默走名字匹配,那个商品悄悄退回「待定」。
+    #    和 `product_custom.xz` 是同一个病,所以用同一种办法钉住。
+    野裁 = []
+    for _nm, (_pt, _why) in _FPP.人工裁定.items():
+        if not c.execute("SELECT 1 FROM product WHERE name=?", (_nm,)).fetchone():
+            野裁.append(f"「{_nm}」这个商品不存在(改名了?)")
+        elif not c.execute("SELECT 1 FROM pattern WHERE code=?", (_pt,)).fetchone():
+            野裁.append(f"「{_nm}」指的版型 {_pt} 不存在")
+    ck("人工裁定表两头都存在", not 野裁, len(_FPP.人工裁定),
+       ("；".join(野裁[:2]) if 野裁 else
+        "拍板结论也是主数据 —— **只落在库里,下次重建就悄悄退回「待定」**"))
+
     # ⑤ **没连上边的要按类别分开数。**
     #    第一版只报一个总数「124/288 没连上」,听起来像 124 个都缺东西 ——
     #    实际上配饰和面料部件**本来就不该有版型**(它们不是成衣)。

@@ -138,6 +138,25 @@ def 匹配版型(conn, 商品名, pats=None):
     return (hits[0], f"匹配到 {hits[0]['code']} {hits[0]['name']}")
 
 
+# ── 业务拍板过的商品 → 版型 ──────────────────────────────────────────
+# 名字推不出来、而业务看过实物给了结论的,写在这儿。
+#
+# **为什么要有这张表**:拍板的结论如果只落在库里(改一条 `product.pattern`),
+# 下一次重建数据就退回「待定」,而且**退得悄无声息** ——
+# 看的人只会以为「这个还没定」,不会知道「定过又丢了」。
+# 拍板结果和形制、版型一样是主数据,**要落在源头**。
+#
+# ⚠️ 这张表只放**业务真的拍过**的。名字能推出来的不许往这儿写 ——
+# 写了就等于给那个商品的名字**开了一个永久豁免**:
+# 以后名字改错了、形制改名了,它照样指着旧版型,而检查看不出来。
+# (`product_pattern_check` 会验这里的商品名和版型都真实存在。)
+人工裁定 = {
+    # 2026-09-13 业务确认实物是对襟。sku 记着领型=方领,门襟没记 ——
+    # 而 XZ22 是库里唯一的方领形制,只有一个版型。
+    "「棉麻」明制方领短衫(基础)": ("PT26", "2026-09-13 业务确认实物是对襟"),
+}
+
+
 def link(conn, verbose=True):
     """补 `product.pattern` 这条边。返回 (连上几个, 留空几个)。"""
     conn.row_factory = sqlite3.Row
@@ -148,6 +167,12 @@ def link(conn, verbose=True):
     xzs = [dict(r) for r in c.execute("SELECT code,name,alias FROM xingzhi")]
     连 = 空 = 0
     for r in c.execute("SELECT spu,name FROM product").fetchall():
+        # **业务拍过的优先** —— 人看过实物,比任何名字匹配都准。
+        裁 = 人工裁定.get(r["name"])
+        if 裁:
+            c.execute("UPDATE product SET pattern=? WHERE spu=?", (裁[0], r["spu"]))
+            连 += 1
+            continue
         p, _ = 匹配版型(c, r["name"], pats)
         if not p:
             # **退一步走形制表。** 按版型全名匹配只连上 164/288 ——
