@@ -1272,6 +1272,9 @@ def run():
         return 30, 700             # 其余走中档
 
     _gi = 0
+    # 生成商品的 SKU 颜色从传统色里取 —— **颜色列只放颜色**
+    PALETTE_SKU = ["胭脂", "藏青", "竹青", "月白", "缃色", "黛", "赭",
+                   "青碧", "藕荷", "秋香", "靛青", "玄色", "茜色", "天青"]
     for pt in c.execute("SELECT code,name,xz,gender,sizes FROM pattern ORDER BY code").fetchall():
         ptc, ptn, ptxz, ptg, ptsz = pt
         sizes = ptsz.split(",")
@@ -1320,10 +1323,17 @@ def run():
                            "启用", None, None, f"GG{_i:03d}01", None, None,
                            int(price*100), _img(spu,"sku1")))
             else:
+                # ⚠️ **颜色列不许填面料。** 第一版这里写的是 `mts[0]`(面料名),
+                # 于是 80 个生成商品的 `sku.color` 是「双宫绸」「竹节棉」「苎麻 · 细支」——
+                # 色表查不到,`img.render()` 兜底返回 `hsl(...)` 字符串,
+                # 而 `_mix()` 只认十六进制 ⇒ **这 80 个商品的图直接渲染不出来**。
+                # 又是「一列承载了另一件事」。
+                # 面料不会因此丢:**商品名里本来就带着它**(「霜序」**双宫绸**齐胸襦裙)。
+                _col = PALETTE_SKU[(_i * 3 + ptc.__hash__()) % len(PALETTE_SKU)]
                 for k, sz in enumerate(sizes[:4], 1):
                     stock = random.randint(0, 60)
                     c.execute("INSERT INTO sku VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                              (f"{spu}-{k:02d}", spu, f"{mts[0]}/{sz}", mts[0], sz,
+                              (f"{spu}-{k:02d}", spu, f"{_col}/{sz}", _col, sz,
                                float(price), stock, random.randint(0, min(3, stock)) if stock else 0,
                                "启用", None, None, f"GG{_i:03d}{k:02d}",
                                round(random.uniform(0.2,1.8),2), round(random.uniform(0.002,0.02),4),

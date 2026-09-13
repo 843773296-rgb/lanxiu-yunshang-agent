@@ -46,6 +46,24 @@ def _hue(seed):
     return (v ^ (v >> 16)) % 360
 
 
+def _hsl_hex(h, s_, l_):
+    """HSL → #RRGGBB。**兜底色也要是十六进制** —— 见 `render()` 里的说明。"""
+    h = (h % 360) / 360.0; s_ = s_ / 100.0; l_ = l_ / 100.0
+    if s_ == 0:
+        r = g = b = l_
+    else:
+        q = l_ * (1 + s_) if l_ < .5 else l_ + s_ - l_ * s_
+        p_ = 2 * l_ - q
+        def t2c(t):
+            t = t % 1.0
+            if t < 1/6: return p_ + (q - p_) * 6 * t
+            if t < 1/2: return q
+            if t < 2/3: return p_ + (q - p_) * (2/3 - t) * 6
+            return p_
+        r, g, b = t2c(h + 1/3), t2c(h), t2c(h - 1/3)
+    return "#%02X%02X%02X" % (round(r*255), round(g*255), round(b*255))
+
+
 def _mix(hex_, f):
     """f>0 提亮,f<0 压暗"""
     h = hex_.lstrip("#")
@@ -97,6 +115,134 @@ SHAPES = {
 }
 
 
+# ── 按**形制**生成剪影(不是按品类) ──────────────────────────────────
+# 品类只有 16 个叶子,296 个商品挤在 13 种剪影里 —— **同品类的全长一样**。
+# 而每个商品现在都挂上了版型,版型下面有**结构数据**:
+#
+#     size_spec     基码衣长 36–152cm、通袖长 96–252cm、胸围 86–126cm、裙长 68–122cm
+#     pattern_piece 裙片 / 大袖片 / 系带 / 马面 / 横襕 / 立领 / 圆领 …
+#     形制名        交领 / 立领 / 方领 / 圆领 / 直领 / 对襟
+#
+# **这些全部已经在库里** —— 又一次不必另造一套。
+# 手画 43 条形制路径既慢又会错,**按结构参数生成**才跟得上形制表扩容。
+#
+# ⚠️ 这改变了这批图能承载多少信息,**因此也动到了 `vision_eval` 的前提**
+# (那套评测原来靠的是「图分不出大袖衫和褙子」)—— 见文件末尾 `png()` 上方的说明。
+PART_LO, PART_HI = 36.0, 152.0          # 衣长的实际取值范围,用来定纵向比例
+Y_SHOULDER, Y_MAX = 200.0, 636.0
+K_LEN = (Y_MAX - Y_SHOULDER) / PART_HI   # ≈ 2.87 px/cm
+
+
+def _pattern_geom(conn, spu):
+    """从版型的结构数据取画图要用的几个数。取不到就返回 None(走老的品类剪影)。"""
+    r = conn.execute(
+        "SELECT p.pattern FROM product p WHERE p.spu=?", (spu,)).fetchone()
+    if not r or not r[0]:
+        return None
+    pt = r[0]
+    spec = {x[0]: x[1] for x in conn.execute(
+        "SELECT item,value FROM size_spec WHERE pattern=? AND size='M'", (pt,))}
+    if not spec:
+        spec = {x[0]: x[1] for x in conn.execute(
+            "SELECT item,value FROM size_spec WHERE pattern=? ORDER BY size", (pt,))}
+    pieces = {x[0] for x in conn.execute(
+        "SELECT name FROM pattern_piece WHERE pattern=?", (pt,))}
+    if not spec and not pieces:
+        return None
+    zn = (conn.execute("SELECT z.name FROM pattern p JOIN xingzhi z ON z.code=p.xz "
+                       "WHERE p.code=?", (pt,)).fetchone() or [""])[0]
+    return dict(衣长=spec.get("衣长") or spec.get("上襦衣长") or 100.0,
+                上襦衣长=spec.get("上襦衣长"),
+                裙长=spec.get("裙长"), 通袖长=spec.get("通袖长") or 180.0,
+                胸围=spec.get("胸围") or 100.0, 裁片=pieces, 形制名=zn)
+
+
+def _neck(g, cx, y):
+    """领口 —— 领型是形制最显眼的区分项,画出来才看得出两件衣服不一样。"""
+    n = g["形制名"]; P = g["裁片"]
+    if "交领" in n:                       # 两襟交叠,斜向右
+        return f"M{cx-34} {y} L{cx} {y+52} L{cx+34} {y} L{cx+8} {y-4} L{cx} {y+16} L{cx-8} {y-4} Z"
+    if "立领" in n or "竖领" in n or "立领" in "".join(P):
+        return f"M{cx-22} {y-14} L{cx+22} {y-14} L{cx+22} {y+18} L{cx-22} {y+18} Z"
+    if "方领" in n:
+        return f"M{cx-30} {y} L{cx+30} {y} L{cx+30} {y+40} L{cx-30} {y+40} Z"
+    if "圆领" in n or "圆领" in "".join(P) or "盘领" in n:
+        return f"M{cx-30} {y+4} a30 26 0 1 0 60 0 a30 26 0 1 0 -60 0 Z"
+    return ""                             # 直领 / 对襟:靠下面那条中缝表达
+
+
+def _shape_by_pattern(conn, spu):
+    """按形制的结构参数拼一张剪影。返回路径字符串,拼不出来返回 None。"""
+    g = _pattern_geom(conn, spu)
+    if not g:
+        return None
+    cx = 375.0
+    P = g["裁片"]
+    有裙 = any("裙" in x or "马面" in x or "褶裥" in x for x in P)
+    有上装 = any(("前片" in x or "后片" in x or "上襦" in x) for x in P)
+    # **只有裙、没有上装 ⇒ 只画裙。** 马面裙的裁片是「马面 / 褶裥片 / 裙腰 / 系带」,
+    # 一件上装裁片都没有 —— 第一版按「有裙片就两截」画,给马面裙硬加了一件上襦。
+    只有裙 = 有裙 and not 有上装
+    两截 = 有裙 and 有上装
+    阔袖 = any("大袖" in x for x in P)
+    无袖 = not any("袖" in x for x in P)
+    半身 = max(58.0, min(128.0, g["胸围"] / 4 * 3.4))
+    半袖 = max(90.0, min(312.0, g["通袖长"] / 2 * 2.45))
+    袖厚 = 150.0 if 阔袖 else 92.0
+    ys = Y_SHOULDER
+    出 = []
+
+    if 只有裙:
+        yw = 300.0                                        # 裙腰位置
+        y2 = min(Y_MAX, yw + (g["裙长"] or g["衣长"] or 100.0) * K_LEN)
+        出.append(f"M{cx-半身*0.86:.0f} {yw:.0f} L{cx+半身*0.86:.0f} {yw:.0f} "
+                  f"L{cx+半身*1.62:.0f} {y2:.0f} L{cx-半身*1.62:.0f} {y2:.0f} Z")
+        出.append(f"M{cx-半身*0.90:.0f} {yw-16:.0f} L{cx+半身*0.90:.0f} {yw-16:.0f} "
+                  f"L{cx+半身*0.86:.0f} {yw:.0f} L{cx-半身*0.86:.0f} {yw:.0f} Z")  # 裙腰
+        if "马面" in P:
+            出.append(f"M{cx-46} {yw+12:.0f} L{cx+46} {yw+12:.0f} "
+                      f"L{cx+54} {y2-8:.0f} L{cx-54} {y2-8:.0f} Z")
+        return " ".join(出)
+
+    if 两截:
+        上 = g["上襦衣长"] or min(g["衣长"], 62.0)
+        y1 = ys + 上 * K_LEN
+        y2 = min(Y_MAX, y1 + (g["裙长"] or 100.0) * K_LEN)
+        出.append(f"M{cx-半身} {ys} L{cx+半身} {ys} L{cx+半身} {y1:.0f} "
+                  f"L{cx-半身} {y1:.0f} Z")                       # 上襦
+        出.append(f"M{cx-半身*0.92:.0f} {y1:.0f} L{cx+半身*0.92:.0f} {y1:.0f} "
+                  f"L{cx+半身*1.55:.0f} {y2:.0f} L{cx-半身*1.55:.0f} {y2:.0f} Z")  # 裙
+        if "马面" in P:                                            # 正面一块马面
+            出.append(f"M{cx-44} {y1+10:.0f} L{cx+44} {y1+10:.0f} "
+                      f"L{cx+52} {y2-6:.0f} L{cx-52} {y2-6:.0f} Z")
+    else:
+        yh = min(Y_MAX, ys + g["衣长"] * K_LEN)
+        出.append(f"M{cx-半身} {ys} L{cx+半身} {ys} "
+                  f"L{cx+半身*1.18:.0f} {yh:.0f} L{cx-半身*1.18:.0f} {yh:.0f} Z")
+        if "横襕" in P:                                            # 膝部一道横襕
+            ym = ys + (yh - ys) * 0.72
+            出.append(f"M{cx-半身*1.10:.0f} {ym:.0f} L{cx+半身*1.10:.0f} {ym:.0f} "
+                      f"L{cx+半身*1.13:.0f} {ym+16:.0f} L{cx-半身*1.13:.0f} {ym+16:.0f} Z")
+
+    if not 无袖:
+        出.append(f"M{cx-半身} {ys} L{cx-半袖:.0f} {ys+24:.0f} "
+                  f"L{cx-半袖:.0f} {ys+袖厚:.0f} L{cx-半身} {ys+袖厚*0.86:.0f} Z")
+        出.append(f"M{cx+半身} {ys} L{cx+半袖:.0f} {ys+24:.0f} "
+                  f"L{cx+半袖:.0f} {ys+袖厚:.0f} L{cx+半身} {ys+袖厚*0.86:.0f} Z")
+    elif "系带" in P:                                              # 抹胸:肩上两条系带
+        出.append(f"M{cx-30} {ys-58} L{cx-22} {ys-58} L{cx-14} {ys} L{cx-22} {ys} Z")
+        出.append(f"M{cx+22} {ys-58} L{cx+30} {ys-58} L{cx+14} {ys} L{cx+22} {ys} Z")
+
+    ne = _neck(g, cx, ys)
+    if ne:
+        出.append(ne)
+    if "对襟" in g["形制名"] or "对襟" in "".join(P):               # 中缝开到底
+        底 = (ys + (g["上襦衣长"] or 60.0) * K_LEN) if 两截 else \
+             min(Y_MAX, ys + g["衣长"] * K_LEN)
+        出.append(f"M{cx-4} {ys} L{cx+4} {ys} L{cx+4} {底:.0f} L{cx-4} {底:.0f} Z")
+    return " ".join(出)
+
+
 def _shape(cat, name=None):
     c = cat or ""
     for k in ("C010101","C010102","C010103","C010104"):
@@ -131,8 +277,12 @@ def render(spu, variant):
     # 按 SPU 从传统色里挑一个固定的,免得 35 个定制品全是同一个兜底色
     if color in ("定制", "默认", "") or color is None:
         color = PALETTE[_hue(spu + "c") % len(PALETTE)]
+    # ⚠️ **兜底必须也是十六进制。** 原来兜底返回 `hsl(...)` 字符串,
+    # 而下一行的 `_mix()` 只认 `#RRGGBB` —— 色表查不到就当场 ValueError,
+    # **整张图渲染不出来**。一张颜色不准的图,比一张渲染不出来的图好得多。
+    # (根因另修:`sku.color` 原来填的是面料名,见 seed 里那段说明。)
     base = colors().get(color) or colors().get(color.replace("色", "")) \
-        or "hsl(%d,34%%,54%%)" % _hue(spu)
+        or _hsl_hex(_hue(spu), 34, 54)
     lit, dim, deep = _mix(base, .30), _mix(base, -.18), _mix(base, -.42)
     bg = _hue(spu + "bg") % 24 + 32                      # 棚拍底:极低饱和的暖灰
     # 细节图换机位:放大并偏移,像同一件衣服的另一张
@@ -152,7 +302,18 @@ def render(spu, variant):
     elif "纱" in mts or "罗" in mts or "绡" in mts:
         tex = '<rect x="180" y="180" width="390" height="390" fill="#FFFFFF" opacity=".16"/>'
 
-    d = _shape(cat, nm)
+    # **先按形制画,拼不出来再退回品类剪影。**
+    # 退回的那 42 个是配饰和面料部件 —— 它们本来就不该有版型,
+    # 品类剪影(簪 / 腰封 / 云肩 / 鞋 / 布样)对它们才是对的。
+    d = None
+    try:
+        _c2 = sqlite3.connect(DB); _c2.row_factory = sqlite3.Row
+        d = _shape_by_pattern(_c2, spu)
+        _c2.close()
+    except Exception:
+        d = None
+    if not d:
+        d = _shape(cat, nm)
     return (
       '<svg xmlns="http://www.w3.org/2000/svg" width="750" height="750" viewBox="0 0 750 750">'
       '<desc>合成商品图,非实物照片(由 backend/img.py 按商品属性生成)</desc>'
@@ -186,9 +347,17 @@ def render(spu, variant):
 # 但这个取舍要写出来,**不能等别人在别的机器上跑挂了才发现**。
 #
 # 更要紧的一句:**这批图是合成剪影,不是实物照片。**
-# 它只画得出「上装 / 裙装 / 外套」这种粗轮廓,
-# **分不出唐制大袖衫和宋制褙子** —— 拿它评测「识别准确率」是自欺欺人。
-# 它能评测的是另一件事:**信息不足时,模型会不会硬编一个自信的答案。**
+#
+# ⚠️ **这段话改过一次。** 原来写的是「只画得出上装 / 裙装 / 外套这种粗轮廓,
+# **分不出唐制大袖衫和宋制褙子**」。剪影改成按形制的结构参数生成之后
+# (见上面 `_shape_by_pattern`),**袖展、衣长、领型、有没有下裙都画出来了** ——
+# 大袖衫和褙子现在确实不一样了,那句话不再成立。
+#
+# 但**仍然不能拿它测「识别准确率」**:多个形制共用同一套几何
+# (唐制交领襦裙和晋制交领襦裙的剪影几乎一样),而且图里
+# **没有面料质感、没有朝代标记**。变的是「信息不足」的程度,不是这个事实本身。
+#
+# 它能评测的仍然是另一件事:**信息不足时,模型会不会硬编一个自信的答案。**
 import subprocess, shutil, tempfile
 
 CACHE = os.path.join(HERE, ".imgcache")
