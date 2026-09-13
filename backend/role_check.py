@@ -155,12 +155,29 @@ def main():
        f"登不进的 {坏账号}" if 坏账号 else
        "**算了一遍 PBKDF2,不是看它写了没有** —— 写着假工号比不写更糟")
 
+    # ⑨ **技能档位收进设置了,但当前值必须还看得见。**
+    #
+    # 它从工具栏挪进浮层是对的(调参用的,不是干活用的)。
+    # 但它**会改变回答** —— 实测同一句话,3 个技能时 3/3 触发、239 个时 0/3。
+    #
+    # **一个看不见又会改变结果的开关,出问题时没人想得起来去查它。**
+    # 所以验两件事:① 选择器还在页面上(没被删掉)
+    #             ② 有一段代码把当前档位显示出来(不是默认档时要提示)
+    sp = os.path.join(os.path.dirname(HERE), "agentsite", "web", "station.html")
+    st = open(sp, encoding="utf-8").read() if os.path.exists(sp) else ""
+    有选择器 = 'id="skillset"' in st and 'id="model"' in st
+    有回显 = "cfgHint" in st and "不是默认技能档" in st
+    ck("技能档位收进设置后,当前值仍然看得见", 有选择器 and 有回显, 2,
+       "" if (有选择器 and 有回显) else
+       f"选择器在={有选择器} 回显在={有回显} —— "
+       f"**一个看不见又会改变结果的开关,出问题时没人想得起来去查它**")
+
     c.close()
     print("=" * 84)
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 角色与登录身份 8 条全过")
+    print("✅ 角色与登录身份 9 条全过")
     return 0
 
 

@@ -48,6 +48,17 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   background:#fff;cursor:pointer;color:var(--dim);text-decoration:none}
 .tbtn:hover{color:var(--ink);border-color:#c9cace}
 #kindhint{font-size:12px;color:var(--dim)}
+#cfg{position:absolute;top:50px;left:20px;z-index:30;width:330px;background:#fff;
+  border:1px solid var(--line);border-radius:12px;padding:6px 16px 12px;
+  box-shadow:0 12px 34px rgba(20,22,28,.14)}
+#cfg .cfgrow{padding:12px 0;border-bottom:1px solid var(--line)}
+#cfg label{display:block;font-size:12px;color:var(--dim);margin-bottom:6px}
+#cfg select{width:100%;font:inherit;font-size:13px;padding:6px 26px 6px 10px;
+  border:1px solid var(--line);border-radius:8px;background:#fff;
+  -webkit-appearance:none;appearance:none;cursor:pointer;color:var(--ink)}
+#cfg .cfghint{margin:7px 0 0;font-size:11.5px;line-height:1.6;color:var(--dim)}
+#cfg .cfghint b{color:var(--ink);font-weight:600}
+#cfgbtn.on{color:var(--ink);border-color:#c9cace;background:var(--chip)}
 #currole{font-size:13.5px;font-weight:600;padding:4px 11px;border-radius:8px;
   background:var(--chip);white-space:nowrap}
 
@@ -182,14 +193,39 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   <div id="top">
     <span id="currole" title="角色在新建会话时定死,之后不变"></span>
     <button class="tbtn" id="switch">换助手</button>
-    <select id="model" title="换模型"><option>载入中…</option></select>
-    <select id="skillset" title="这一轮让哪些技能参与"><option>技能…</option></select>
+    <!-- **模型和技能档位收进设置。** 它们是调参用的,不是干活用的:
+         每天都要看见,而一个月用不到一次。
+         工具栏上留下的每一项,都该是「这一轮要用的」。 -->
+    <button class="tbtn" id="cfgbtn" title="模型 · 技能档位">设置</button>
     <span id="kindhint"></span>
     <span class="sp"></span>
     <a class="tbtn" href="/tasks">任务</a>
     <a class="tbtn" href="/panels">面板</a>
     <button class="tbtn" id="help">?</button>
     <span id="me" title="你能看到什么、能做什么,由这个工号决定"></span>
+  </div>
+  <!-- 设置浮层。**收起来不等于藏起来** —— 当前值要显示在按钮旁边的提示里,
+       否则「这一轮用的是哪档技能」变成看不见的状态,
+       而它恰恰是会改变回答的那种设置。 -->
+  <div id="cfg" hidden>
+    <div class="cfgrow">
+      <label for="model">模型</label>
+      <select id="model"><option>载入中…</option></select>
+      <p class="cfghint">换模型**不新开会话**,续着问,让它接着上文回答。</p>
+    </div>
+    <div class="cfgrow">
+      <label for="skillset">技能档位</label>
+      <select id="skillset"><option>技能…</option></select>
+      <p class="cfghint">
+        实测同一条用例:场上 <b>3 个技能时 3/3 触发</b>,<b>239 个时 0/3</b> ——
+        <b>装了 ≠ 每次都上场</b>。默认只用自己写的那几个。
+      </p>
+    </div>
+    <div class="cfgrow" style="border:0;padding-bottom:2px">
+      <p class="cfghint" style="margin:0">
+        这两项**跟着会话走**,不是全局的 —— 换一条会话各记各的。
+      </p>
+    </div>
   </div>
   <div id="stream"></div>
   <div id="composer">
@@ -645,9 +681,50 @@ async function loadSkillsets(){
   const c=cur();
   sel.value=(c&&c.skillset)||def;
   if(c&&!c.skillset){ c.skillset=sel.value; save(); }
+  cfgHint();
 }
 $("#skillset").addEventListener("change", ()=>{
   const c=cur(); if(c){ c.skillset=$("#skillset").value; save(); }
+  cfgHint();
+});
+
+/* ── 设置浮层 ─────────────────────────────────────────────
+   模型和技能档位从工具栏收进来了。**收起来不等于藏起来** ——
+   当前档位要显示在按钮旁边,否则「这一轮用的是哪档技能」变成看不见的状态,
+   而它恰恰是**会改变回答**的那种设置:同一句话,3 个技能和 239 个技能
+   答出来不一样(实测 3/3 → 0/3)。
+   一个看不见又会改变结果的开关,出问题时没人想得起来去查它。 */
+function cfgHint(){
+  const sk=$("#skillset"), md=$("#model"), btn=$("#cfgbtn");
+  if(!sk||!md||!btn) return;
+  // ⚠️ **不要求 cur() 有值。** 第一版开头写了 `if(!cur()) return`,
+  // 而这个函数在两个清单加载完时就会被调一次 —— **那时还没有会话**,
+  // 于是提示永远不刷新。冒烟测试里表现成「脚本跑不完」。
+  //
+  // `selectedOptions` 在选项还没填进去时是**空集合**,
+  // `[0].text` 直接 TypeError —— 而 js_check(正则)看不出来,
+  // **只有真跑一遍 DOM 才照得出**(这个项目为这件事栽过一次)。
+  const opt = o => (o && o.selectedOptions && o.selectedOptions.length)
+                   ? o.selectedOptions[0].text : "";
+  const skTxt = opt(sk), mdTxt = opt(md);
+  // 只在**不是默认档**时提示 —— 默认档天天提示等于没提示,
+  // 而「非默认」才是出问题时要第一个想起来的那件事。
+  const 非默认 = sk.value && sk.value!=="own";
+  btn.classList.toggle("on", !!非默认);
+  btn.title = `模型:${mdTxt}\n${skTxt}` + (非默认 ? "\n⚠️ 不是默认技能档" : "");
+  const h=$("#kindhint");
+  if(h) h.dataset.cfg = 非默认 ? skTxt : "";
+}
+$("#cfgbtn").addEventListener("click",(e)=>{
+  e.stopPropagation();
+  const box=$("#cfg"); box.hidden=!box.hidden;
+});
+// 点别处关掉。**不拦浮层内部的点击** —— 否则选框一点就关,选不中。
+document.addEventListener("click",(e)=>{
+  const box=$("#cfg");
+  if(box.hidden) return;
+  if(e.target.closest("#cfg")||e.target.closest("#cfgbtn")) return;
+  box.hidden=true;
 });
 
 async function loadModels(){
@@ -669,7 +746,7 @@ async function loadModels(){
 }
 $("#model").onchange = () => {
   const c = cur(); if(!c) return;
-  c.model = $("#model").value; save(); drawSide(); checkVision();
+  c.model = $("#model").value; save(); drawSide(); checkVision(); cfgHint();
   // 换模型**不新开会话**,也不清 session —— 续着问,让它接着上文回答。
   // 每条答案下方的元信息里写着当时用的是哪个模型,所以对照得出来。
 };
