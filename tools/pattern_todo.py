@@ -88,60 +88,109 @@ def main():
         return 0
 
     rows = 待定(c)
-    print(f"待定版型的成衣:{len(rows)} 个")
-    print("=" * 96)
-    能挑 = 认不出 = 0
+    xzs = [dict(r) for r in c.execute("SELECT code,name,alias,key_sizes FROM xingzhi")]
+    # **按「要拍的是哪一种决定」分组,不按商品排**。
+    # 第一版按商品名排,22 条一模一样的「认不出」铺了一屏,
+    # 只能给出一句笼统的「这些形制我们做不做」——
+    # 而那 22 条里其实混着四种决定,有一半根本不用业务拍。
+    组 = {k: [] for k in FPP.档位}
     for r, 顶 in rows:
-        z, cand, why = 候选(c, r["name"], r["gender"])
-        print(f"\n  {r['name']}")
-        print(f"    {顶} · {r['kind']} · ¥{r['base_price']:.0f} · gender={r['gender']}"
-              f" · spu={r['spu']}")
-        if not z:
-            认不出 += 1
-            print(f"    ⚠️ **{why}** —— 候选列不出来。"
-                  f"要么商品名里加上形制词,要么人工指定")
+        d = FPP.拍板分档(c, r["name"], 顶, xzs)
+        组[d["档位"]].append((r, 顶, d))
+
+    说明 = {
+        "不该有版型": ("这些压根不该出现在这张表上",
+                   "⚠️ **「不需要版型」和「还没定版型」在库里是同一个状态**"
+                   "(`pattern IS NULL`)—— 分不清的两种状态,"
+                   "合并之后一定按更糟的那个被理解"),
+        # ⚠️ 原来这档写的是「不用拍,照着挂就行」——**说过头了**。
+        # 确定的只是**形制**,下面还有两种情况仍要人看一眼:
+        #   ① 形制下有多个变体(标准 / 加长 / 改良通勤),还得挑一个
+        #   ② 🧩多件商品 —— 挂上去会**原样重演**「抹胸套装只挂了抹胸」那个坑
+        "确定":     ("形制已经确定 —— 但看一眼变体和多件标记",
+                   "商品名里写明了形制;下面标了「要挑变体」或「🧩多件」的,"
+                   "还不能直接挂"),
+        "要选一个":  ("**要业务拍**:几个形制都对得上,看实物定",
+                   "挂错的代价在下面的用料差里"),
+        "省了区分项": ("**要业务拍**:商品名省掉的正好是区分项",
+                   "省掉的那几个字(门襟 / 腰线)决定裁片和量体项 —— "
+                   "猜对了没奖励,猜错了用料工期量体全错,而报表上完全正常"),
+        "表里没有":  ("**要业务拍**:这个形制我们到底做不做",
+                   "做 → 录进 `01-形制.md`(连**关键尺寸**一起写)再建版型,"
+                   "商品自动就挂上了;不做 → 该下架,而不是硬挂一个不对的"),
+    }
+    print(f"待定版型的成衣:{len(rows)} 个 —— **分成 "
+          f"{sum(1 for k in 组 if 组[k])} 种决定**")
+    print("=" * 96)
+    mp = c.execute("SELECT AVG(price) FROM material WHERE cat='主料'").fetchone()[0] or 0
+    for k in FPP.档位:
+        if not 组[k]:
             continue
-        if not cand:
-            认不出 += 1
-            print(f"    ⚠️ 形制 {z['code']} {z['name']} 下没有 {r['gender']} 的版型")
-            continue
-        能挑 += 1
-        print(f"    形制:{z['code']} {z['name']}    候选 {len(cand)} 个:")
-        base = min(p["fabric_base"] or 0 for p in cand)
-        for p in cand:
-            米 = p["fabric_base"] or 0
-            差 = 米 - base
-            print(f"      {p['code']} {p['name']:<20} 用料 {米:>5.2f} 米"
-                  f"{('  (比最省的多 %.2f 米)' % 差) if 差 > 0.01 else '  ← 最省':<24}"
-                  f" 模板 {p['tpl']} · 尺码 {p['sizes']} · 难度 {p['difficulty']}")
-        if len(cand) > 1:
-            跨 = max(p["fabric_base"] or 0 for p in cand) - base
-            # 拿这个商品的主料估个价 —— 没有主料就用均价
-            mp = c.execute("SELECT AVG(price) FROM material WHERE cat='主料'").fetchone()[0] or 0
-            print(f"      → **挑错一档,每单差 {跨:.2f} 米料**;按主料均价 "
-                  f"{mp:.0f} 元/米算,约 **{跨 * mp:.0f} 元/单**")
+        题, 尾 = 说明[k]
+        print(f"\n【{k}】{len(组[k])} 个 —— {题}")
+        print(f"  {尾}")
+        for r, 顶, d in sorted(组[k], key=lambda x: -x[0]["base_price"]):
+            标 = ("  🧩多件" if d["多件"] else "") + \
+                 (f"  ⚠️{'/'.join(d['尺寸空'])} 关键尺寸是空的" if d["尺寸空"] else "")
+            if k == "确定" and d["候选"]:
+                变 = [dict(x) for x in c.execute(
+                    "SELECT code,name,gender FROM pattern WHERE xz=?",
+                    (d["候选"][0]["code"],))]
+                同 = [p for p in 变 if p["gender"] == r["gender"]] or 变
+                点名 = [p for p in 同 if p["name"].split("·")[-1] in r["name"]]
+                if len(同) == 1:
+                    标 += f"  ✓ 变体唯一 {同[0]['code']}"
+                elif len(点名) == 1:
+                    # 商品名点明了变体(「百迭**长版**」→ PT34 百迭裙·长版)
+                    标 += f"  ✓ 商品名点明了变体 {点名[0]['code']} {点名[0]['name']}"
+                else:
+                    标 += f"  ⚠️ 要挑变体({len(同)} 个)"
+            print(f"\n    ¥{r['base_price']:>6.0f}  {r['name']}{标}")
+            print(f"            {顶}·{r['kind']}·{r['spu']}   {d['提示']}")
+            for z in d["候选"]:
+                cand = [dict(x) for x in c.execute(
+                    "SELECT code,name,gender,fabric_base FROM pattern WHERE xz=? "
+                    "ORDER BY code", (z["code"],))]
+                同 = [p for p in cand if p["gender"] == r["gender"]] or cand
+                料 = [p["fabric_base"] or 0 for p in 同]
+                跨 = (max(料) - min(料)) if 料 else 0
+                print(f"            {z['code']} {z['name']:<16} "
+                      f"关键尺寸:{z['key_sizes'] or '**空的**':<24} "
+                      f"版型 {len(同)} 个"
+                      + (f",用料 {min(料):.2f}–{max(料):.2f} 米" if 料 else ""))
+            if len(d["候选"]) > 1:
+                # **把挑错的代价摆在决定的那一刻**,而不是事后。
+                全 = [p["fabric_base"] or 0 for z in d["候选"] for p in c.execute(
+                    "SELECT fabric_base FROM pattern WHERE xz=?", (z["code"],))]
+                if 全 and max(全) - min(全) > 0.01:
+                    跨 = max(全) - min(全)
+                    print(f"            → **挑错一个形制,每单差 {跨:.2f} 米料**;"
+                          f"按主料均价 {mp:.0f} 元/米,约 **{跨 * mp:.0f} 元/单**")
+    需拍 = sum(len(组[k]) for k in ("要选一个", "省了区分项", "表里没有"))
     print("\n" + "=" * 96)
-    print(f"  能列出候选的 {能挑} 个,连形制都认不出的 {认不出} 个")
-    if 认不出 and not 能挑:
-        # **这个结果本身就是结论,不是「工具没用」。**
-        # 22 个全部认不出,而看名字就知道原因:它们说的形制
-        # (宋制夏衫、明制交领短袄、唐制大袖披衫、男装圆领常服袍)
-        # 在 40 个形制里**根本没有** —— 不是匹配不上,是**没录进知识库**。
-        print()
-        print(f"  ⚠️ **{认不出} 个全都认不出,这说明要拍的不是「挂哪个版型」。**")
-        print(f"     它们说的形制(夏衫 / 交领短袄 / 大袖披衫 / 圆领常服袍…)")
-        print(f"     在 `01-形制.md` 的 40 个形制里**根本没有**。")
-        print(f"     所以真正的问题是:**这些形制我们做不做?**")
-        print(f"       做 → 录进 `01-形制.md`(连**关键尺寸**一起写),"
-              f"再建版型,商品自动就挂上了")
-        print(f"       不做 → 这些商品该下架,而不是硬挂一个不对的版型")
-        print(f"     **硬挂一个的代价**:用料、工期、量体项全跟着错,"
-              f"而报表上完全正常。")
-    print(f"  挂法:`python3 tools/pattern_todo.py <spu> <PT编码>`")
+    print(f"  {len(rows)} 个里:**{len(组['确定'])} 个形制已定**,"
+          f"**{需拍} 个要业务拍**"
+          + (f",{len(组['不该有版型'])} 个不该在表上" if 组["不该有版型"] else ""))
+    空 = sorted({z for _, _, d in sum(组.values(), []) for z in d["尺寸空"]})
+    if 空:
+        print(f"  ⚠️ 候选里有 {len(空)} 个形制的**关键尺寸是空的**:{'、'.join(空)}")
+        print(f"     挂上去等于**假旋钮** —— 形制在表里,可它不说要量什么,"
+              f"量体项就是空的")
+    多件 = [r["name"] for lst in 组.values() for r, _, d in lst if d["多件"]]
+    if 多件:
+        print(f"  🧩 有 {len(多件)} 个是**多件商品**(套装 / 亲子),"
+              f"而 `product.pattern` 是**单值**:")
+        for n in 多件:
+            print(f"       {n}")
+        print(f"     库里已经踩过一次:「乔其叠纱」宋制抹胸套装挂的是 "
+              f"PT17 宋制抹胸·标准 ——")
+        print(f"     **只挂了抹胸,套装里的裙子没有版型**,"
+              f"而报表上这个商品「版型已定」")
+    print(f"\n  挂法:`python3 tools/pattern_todo.py <spu> <PT编码>`")
     print(f"  ⚠️ **挂版型是总部运营的事,不是店长** —— 商品是全国一份的主数据,")
     print(f"     门店各挂一份会让同一件衣服在两家店报出不同的价。")
     print(f"     门店该定的是这一单用哪个变体(客户身高体型不同)。")
-    c.close()
+
     return 0
 
 
