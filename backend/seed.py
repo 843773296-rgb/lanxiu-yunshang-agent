@@ -2159,17 +2159,47 @@ def run():
               (_sp[0], _sp[0]))
     print(f"  [反例] {_sp[0]} 量体只留 3 项 —— 供「记录不全 · 我方免费改」用")
 
-    # ②:挑一个父母俱全的孩子,把父母身高拉到两端。
-    #    父母都不高(162/152),孩子却一直在高百分位上跑 —— 中亲值 ~163,
-    #    百分位推算 ~176,差 13cm,靶身高法在这个孩子身上不成立,该转人工。
-    #    (试过父 192/母 150:中亲值 177.5 反而和推算 176.6 撞上了,gap 0.9。
-    #     父母身高「差距大」不等于「和孩子对不上」—— 靶身高只看中亲值。)
+    # ②:挑一个父母俱全的孩子,把父母身高拉开,让**靶身高和百分位推算对不上**。
+    #
+    # ⚠️ **原来只钉了一半,所以它漂了两次。**
+    #    原写法是把父母身高**写死 162/152**,指望中亲值 ~163 和百分位推算 ~176
+    #    差 13cm。但差值是**两者之差**,而孩子那一边根本没钉 ——
+    #    孩子的百分位推算来自他自己的量体身高,而量体是按下标生成的。
+    #    新增一个版型(PT84)会让「商品由版型 × 相容矩阵长出来」那段多长几个商品,
+    #    后面所有生成项的下标整体挪位,于是**孩子的推算身高从 176 掉到 170.3**,
+    #    差值 6.8 < 门槛 8,**这条规则的唯一用例凭空消失**,
+    #    而 `guards_test` 报的是「找不到满足条件的着装人」——
+    #    看上去像夹具挑法的问题,其实是这个性质不存在了。
+    #
+    # **钉的应该是差值本身,不是其中一边。** 现在按孩子的实际推算身高倒推父母:
+    # 让中亲值 = 推算 - 14,稳稳越过门槛 8,不管重播种怎么挪下标。
+    # (试过父 192/母 150:中亲值 177.5 反而和推算 176.6 撞上了,gap 0.9。
+    #  父母身高「差距大」不等于「和孩子对不上」—— 靶身高只看中亲值。)
     _kid = c.execute("""SELECT id, parent_a, parent_b FROM wearer
                         WHERE parent_a IS NOT NULL AND parent_b IS NOT NULL
                         ORDER BY id LIMIT 1""").fetchone()
     assert _kid, "没有父母俱全的孩子 —— 靶身高校验会缺用例"
-    c.execute("UPDATE wearer SET height=162.0 WHERE id=?", (_kid[1],))
-    c.execute("UPDATE wearer SET height=152.0 WHERE id=?", (_kid[2],))
+    _ksex = c.execute("SELECT gender FROM wearer WHERE id=?", (_kid[0],)).fetchone()[0]
+    # 先随便给个值,好让 forecast 跑得出「百分位推算成年身高」
+    c.execute("UPDATE wearer SET height=170.0 WHERE id IN (?,?)", (_kid[1], _kid[2]))
+    c.commit()
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+    import api as _api
+    _fc = _api.forecast_growth(_kid[0], months=12)
+    assert not _fc.get("error"), f"夹具孩子推不出成长曲线:{_fc.get('error')}"
+    _pred = _fc["靶身高校验"]["百分位推算成年身高"]
+    # 中亲值 = (父 + 母 + 13男 / -13女) / 2,要它等于 _pred - 14
+    _want_mid = _pred - 14
+    _sum = _want_mid * 2 - (13 if _ksex == "男" else -13)
+    _fa, _mo = round(_sum / 2 + 5, 1), round(_sum / 2 - 5, 1)
+    c.execute("UPDATE wearer SET height=? WHERE id=?", (_fa, _kid[1]))
+    c.execute("UPDATE wearer SET height=? WHERE id=?", (_mo, _kid[2]))
+    c.commit()
+    # **要求什么就断言什么** —— 上面算得再对,也要真跑一遍确认它真的冲突了。
+    _fc2 = _api.forecast_growth(_kid[0], months=12)
+    assert _fc2["靶身高校验"]["需人工确认"], (
+        f"靶身高冲突夹具没立住:差值 {_fc2['靶身高校验'].get('差值')} "
+        f"没过门槛 —— 「需人工确认」这条规则会缺用例")
     # ③:把一条在制工单的交期设成过去 —— 否则 get_workorder 的「已逾期」
     #    这条规则**永远不会被触发**,它错了也没人知道(和上面两条同病)。
     #    现实里逾期工单当然存在,而且正是排产最该先看的那一类。
@@ -2179,7 +2209,8 @@ def run():
               ((T - timedelta(days=6)).isoformat(), _wo[0]))
     print(f"  [反例] {_wo[0]} 交期设为 6 天前 —— 供「已逾期」用")
 
-    print(f"  [反例] {_kid[0]} 的父母身高设为 162/152 —— 供「靶身高冲突需人工确认」用")
+    print(f"  [反例] {_kid[0]} 的父母身高设为 {_fa}/{_mo}(按他的推算身高 {_pred} 倒推,"
+          f"差值 {_fc2['靶身高校验']['差值']})—— 供「靶身高冲突需人工确认」用")
 
     # ── BP-03 售后判责:研判工单 + 人工标注真值 ────────────────────────
     # 只挑**还没处理完**的(待确认 / 待处理 / 处理中)—— 已完成和取消的不用判。
