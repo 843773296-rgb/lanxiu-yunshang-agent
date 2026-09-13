@@ -213,7 +213,8 @@ class H(BaseHTTPRequestHandler):
                 with RUNLOCK:
                     r = asyncio.run(sdk.run(kind, prompt, resume=sid_in,
                                             provider=prov, model_name=mdl, images=imgs or None,
-                                            me=me, skills=body.get("skills")))
+                                            me=me, skills=body.get("skills"),
+                                            effort=body.get("effort")))
                 sessions.own(r.get("session_id"), me)
                 return self._send(r)
             except Exception as e:

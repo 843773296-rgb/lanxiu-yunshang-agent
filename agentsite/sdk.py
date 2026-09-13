@@ -483,8 +483,13 @@ async def _stream_once(prompt, images):
            "parent_tool_use_id": None, "session_id": "vision"}
 
 
+# 「想深多少」的档位。**这不是温度** —— 见下面 `run()` 里的那段注释。
+EFFORT = ("low", "medium", "high", "xhigh", "max")
+EFFORT_DEFAULT = "medium"
+
+
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
-              provider=None, model_name=None, me=None, skills=None):
+              provider=None, model_name=None, me=None, skills=None, effort=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
 
     guard=True 时挂上回答体检 hook:交付前检查一遍,不合格**打回重答**。
@@ -500,7 +505,26 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     """
     model = _env(provider, model_name)
     state = {}
+    # ── 为什么这里是 effort 而不是 temperature ──────────────────────
+    #
+    # **Agent SDK 的 48 个参数里没有 `temperature`,也没有 `top_p` / `seed`。**
+    # 不是没接上 —— 这条路径(SDK → Claude Code CLI → 模型)**根本不暴露
+    # 采样参数**。所以页面上如果放一个温度滑块,**它会是个假旋钮**:
+    # 拖动它回答不会有任何变化,而用户会以为自己在调。
+    #
+    # **假旋钮比没有这个功能糟得多** —— 出问题时人会以为
+    # 「我温度都调低了还是不稳」,而真实原因在别处,于是往错的方向查。
+    # 这和 `allowed_tools` 那次是同一个病:**「配置写了」和「配置生效了」
+    # 是两回事**,而它们在界面上长得一模一样。
+    #
+    # 能调的是 `effort`(low/medium/high/xhigh/max)—— 它管的是**想多深**,
+    # 不是**多随机**。在这个业务里想要的多半正是前者:
+    # 定制要的是稳,不是花样。
+    eff = (effort or EFFORT_DEFAULT).strip().lower()
+    if eff not in EFFORT:
+        eff = EFFORT_DEFAULT          # 认不出就退回默认,**不报错也不瞎传**
     opts = ClaudeAgentOptions(
+        effort=eff,
         hooks=guards.make_hooks(state) if guard else None,
         max_budget_usd=_max_usd(provider),
         # 身份写进提示词,是为了让模型**知道该怎么称呼和该问谁**;

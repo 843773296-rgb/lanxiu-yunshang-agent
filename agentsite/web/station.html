@@ -221,9 +221,28 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
         <b>装了 ≠ 每次都上场</b>。默认只用自己写的那几个。
       </p>
     </div>
+    <div class="cfgrow">
+      <label for="effort">想深多少</label>
+      <select id="effort">
+        <option value="low">low · 快,适合查一个数</option>
+        <option value="medium" selected>medium · 默认</option>
+        <option value="high">high · 要它把前后串起来想</option>
+        <option value="xhigh">xhigh · 复杂判责/对账</option>
+        <option value="max">max · 慢且贵,一般用不上</option>
+      </select>
+      <p class="cfghint">
+        <b>这不是「温度」。</b>Agent SDK 的 48 个参数里
+        <b>没有 temperature,也没有 top_p / seed</b> ——
+        这条路径根本不暴露采样参数。
+        放一个温度滑块会是<b>假旋钮</b>:拖了回答不变,而你以为自己在调,
+        出问题时会往错的方向查。<br>
+        <code>effort</code> 管的是<b>想多深</b>,不是<b>多随机</b> ——
+        定制业务要的本来也是稳,不是花样。
+      </p>
+    </div>
     <div class="cfgrow" style="border:0;padding-bottom:2px">
       <p class="cfghint" style="margin:0">
-        这两项**跟着会话走**,不是全局的 —— 换一条会话各记各的。
+        这几项**跟着会话走**,不是全局的 —— 换一条会话各记各的。
       </p>
     </div>
   </div>
@@ -571,7 +590,8 @@ async function ask(){
       body: JSON.stringify({kind: c.kind, prompt: text,
                             session: c.session || null, model: c.model || null,
                             images: imgs.length ? imgs : undefined,
-                            skills: c.skillset || "own"})});
+                            skills: c.skillset || "own",
+                            effort: c.effort || "medium"})});
     r = await resp.json();
   }catch(e){
     r = {error: e.name === "AbortError" ? "已停止" : ("请求失败:" + e.message)};
@@ -681,10 +701,17 @@ async function loadSkillsets(){
   const c=cur();
   sel.value=(c&&c.skillset)||def;
   if(c&&!c.skillset){ c.skillset=sel.value; save(); }
+  const ef=$("#effort");
+  if(ef){ ef.value=(c&&c.effort)||"medium";
+          if(c&&!c.effort){ c.effort=ef.value; save(); } }
   cfgHint();
 }
 $("#skillset").addEventListener("change", ()=>{
   const c=cur(); if(c){ c.skillset=$("#skillset").value; save(); }
+  cfgHint();
+});
+$("#effort").addEventListener("change", ()=>{
+  const c=cur(); if(c){ c.effort=$("#effort").value; save(); }
   cfgHint();
 });
 
@@ -709,9 +736,13 @@ function cfgHint(){
   const skTxt = opt(sk), mdTxt = opt(md);
   // 只在**不是默认档**时提示 —— 默认档天天提示等于没提示,
   // 而「非默认」才是出问题时要第一个想起来的那件事。
-  const 非默认 = sk.value && sk.value!=="own";
+  const ef=$("#effort");
+  const efTxt = ef ? opt(ef) : "";
+  // **非默认的定义要把 effort 也算上** —— 它同样会改变回答,
+  // 而且改的是「想多深」,比技能档位更直接。
+  const 非默认 = (sk.value && sk.value!=="own") || (ef && ef.value && ef.value!=="medium");
   btn.classList.toggle("on", !!非默认);
-  btn.title = `模型:${mdTxt}\n${skTxt}` + (非默认 ? "\n⚠️ 不是默认技能档" : "");
+  btn.title = `模型:${mdTxt}\n${skTxt}\n想深多少:${efTxt}` + (非默认 ? "\n⚠️ 不是默认档" : "");
   const h=$("#kindhint");
   if(h) h.dataset.cfg = 非默认 ? skTxt : "";
 }

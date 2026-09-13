@@ -166,18 +166,56 @@ def main():
     sp = os.path.join(os.path.dirname(HERE), "agentsite", "web", "station.html")
     st = open(sp, encoding="utf-8").read() if os.path.exists(sp) else ""
     有选择器 = 'id="skillset"' in st and 'id="model"' in st
-    有回显 = "cfgHint" in st and "不是默认技能档" in st
+    # ⚠️ **判据贴行为,不贴那一句话的措辞。**
+    # 第一版写死了「不是默认技能档」这六个字 —— 我把提示改成
+    # 「不是默认档」(因为 effort 也算进来了),检查当场红,
+    # **而回显功能好好的**。判据贴着文案,文案一改就误报。
+    # 现在验的是结构:有这个函数、它会改按钮的 class、而且 title 里带当前值。
+    有回显 = ("function cfgHint" in st
+              and "classList.toggle(\"on\"" in st
+              and "btn.title" in st)
     ck("技能档位收进设置后,当前值仍然看得见", 有选择器 and 有回显, 2,
        "" if (有选择器 and 有回显) else
        f"选择器在={有选择器} 回显在={有回显} —— "
        f"**一个看不见又会改变结果的开关,出问题时没人想得起来去查它**")
+
+    # ⑩ **设置面板里不许出现「调了没反应」的旋钮。**
+    #
+    # 用户要过一个「温度」。查下来 Agent SDK 的 48 个参数里
+    # **没有 temperature,也没有 top_p / seed** —— 这条路径
+    # (SDK → Claude Code CLI → 模型)根本不暴露采样参数。
+    #
+    # **假旋钮比没有这个功能糟得多**:拖了回答不变,而用户以为自己在调,
+    # 出问题时会往错的方向查(「我温度都调低了还是不稳」)。
+    # 这和 `allowed_tools` 那次是同一个病:
+    # **「配置写了」和「配置生效了」是两回事,而它们在界面上长得一模一样。**
+    #
+    # 验法:设置面板里每个 `<select id=...>`,都要能在 `app.py` 的请求体里
+    # 找到同名字段传出去 —— **传不出去的控件就是假的**。
+    ap = os.path.join(os.path.dirname(HERE), "agentsite", "app.py")
+    apsrc = open(ap, encoding="utf-8").read() if os.path.exists(ap) else ""
+    m10 = _re.search(r'id="cfg"(.*?)<div id="stream"', st, _re.S)
+    面板 = m10.group(1) if m10 else ""
+    控件 = _re.findall(r'<select id="(\w+)"', 面板)
+    # model 和 skillset 在 app.py 里叫 model / skills
+    别名 = {"skillset": "skills"}
+    假的 = [x for x in 控件
+            if f'"{别名.get(x, x)}"' not in apsrc and f"'{别名.get(x, x)}'" not in apsrc]
+    ck("设置面板里没有假旋钮(每个控件都真传到后端)", not 假的, len(控件),
+       f"传不出去的 {假的} —— **假旋钮比没有这个功能糟得多**" if 假的 else
+       f"{控件} 都在请求体里")
+
+    # ⑪ **温度这个词不许出现在设置面板里** —— 它不可调,写了就是误导。
+    ck("设置面板没有承诺一个调不了的「温度」",
+       "温度" not in 面板 or "不是「温度」" in 面板 or "没有 temperature" in 面板, 1,
+       "SDK 不暴露采样参数 —— 要么不提,要么明说它不可调")
 
     c.close()
     print("=" * 84)
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 角色与登录身份 9 条全过")
+    print("✅ 角色与登录身份 11 条全过")
     return 0
 
 
