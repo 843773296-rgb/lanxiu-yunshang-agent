@@ -39,7 +39,7 @@ import knowledge.order_gate as OG
 def 待定(c):
     """要补版型的成衣。**配饰和面料部件不算** —— 它们不按版型做。"""
     out = []
-    for r in c.execute("SELECT spu,name,category,gender,kind,base_price FROM product "
+    for r in c.execute("SELECT spu,name,category,gender,kind,base_price,status FROM product "
                        "WHERE pattern IS NULL ORDER BY kind DESC,name"):
         顶 = FX.顶级品类(c, r["category"])
         if 顶 not in ("女装", "男装", "童装"):
@@ -151,7 +151,13 @@ def main():
                     标 += f"  ✓ 商品名点明了变体 {点名[0]['code']} {点名[0]['name']}"
                 else:
                     标 += f"  ⚠️ 要挑变体({len(同)} 个)"
-            print(f"\n    ¥{r['base_price']:>6.0f}  {r['name']}{标}")
+            # **「下架」和「待定版型」在这张表上长得一样** —— 得分开。
+            # 一个下架商品的版型待定,和一个在售商品的版型待定,紧迫性差一个量级:
+            # 在售的每一单都在按错的(或没有的)版型走,下架的一单都下不了。
+            # 「女式圆领」唐制袍 ¥5600 就是这样:它的可选面料被工艺相容规则
+            # 剔成了**空的**,所以是下架状态 —— 而我一度把它当成最该拍的一条。
+            下 = "  ⬇️ 已下架" if r["status"] != "上架" else ""
+            print(f"\n    ¥{r['base_price']:>6.0f}  {r['name']}{标}{下}")
             print(f"            {顶}·{r['kind']}·{r['spu']}   {d['提示']}")
             for z in d["候选"]:
                 cand = [dict(x) for x in c.execute(
@@ -183,6 +189,13 @@ def main():
             print(f"         {why}")
         print(f"     卖场页面按名字理解、车间按配置表下料 —— "
               f"**两边看的不是同一件**。以配置表为准,名字该改。")
+    下架的 = [r["name"] for lst in 组.values() for r, _, _ in lst
+             if r["status"] != "上架"]
+    if 下架的:
+        print(f"  ⬇️ 其中 {len(下架的)} 个**已经下架**,紧迫性低一个量级"
+              f"(在售的每一单都在按错的版型走,下架的一单都下不了):")
+        for n in 下架的:
+            print(f"       {n}")
     print(f"  {len(rows)} 个里:**{len(组['库里已记'])} 个库里已记 + "
           f"{len(组['确定'])} 个按名字能确定**,**{需拍} 个要业务拍**"
           + (f",{len(组['不该有版型'])} 个不该在表上" if 组["不该有版型"] else ""))
