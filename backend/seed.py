@@ -322,7 +322,20 @@ CREATE TABLE kb_table(topic TEXT, head TEXT, rows TEXT, src_file TEXT);
 CREATE TABLE product_custom(spu TEXT PRIMARY KEY, xz TEXT, mt_opts TEXT, kf_opts TEXT,
   lead_days TEXT, note TEXT);
 CREATE TABLE scheme(id TEXT PRIMARY KEY, customer_id TEXT, name TEXT, status TEXT,
-  xz TEXT, mt TEXT, kf TEXT, color TEXT, ps TEXT,
+  -- ⚠️ 下面这四个字段**原来存的是名字**(「明制立领长衫」「云锦」),
+  -- 而名字一改,所有历史方案的引用**当场断掉而且悄无声息**。
+  -- 现在存**编码**,名字要显示时去主数据取 —— 见 `knowledge/scheme_ref.py`。
+  -- 这和「订单靠活动名连活动」是同一个病,前几天刚修过一次。
+  xz TEXT,        -- 形制编码 XZ**(不是形制名)
+  mt TEXT,        -- 主料编码 MT**(不是面料名)
+  kf TEXT,        -- 工艺编码,逗号分隔(不是工艺名)
+  color TEXT, ps TEXT,
+  -- **版型接进来。** 方案里选的是形制,而真正决定
+  -- 用料多少 / 量体量哪些 / 能不能做 的是**版型** ——
+  -- 一个形制下常有好几个版型(标准/加长/改良通勤、男款/女款),
+  -- 报价和排产都得落到具体那一个。原来这条边不存在,
+  -- 于是方案报得出「明制立领长衫」,报不出「用多少米料」。
+  pattern TEXT,   -- 版型编码 PT**
   advisor TEXT, note TEXT, created TEXT, updated TEXT);
 CREATE TABLE truth(case_id TEXT PRIMARY KEY, breakpoint TEXT, root_cause TEXT,
   expected_action TEXT, expected_evidence TEXT, note TEXT,
@@ -1981,6 +1994,24 @@ def run():
                   " VALUES(?,?,?,?,?,?,?,?)",
                   ("D9002", _a, _t, "微信支付", 1500.0, "UNKNOWN", "渠道未返回明确结果", "IDEM-D9002"))
 
+    # 形制表从 `01-形制.md` 派生 —— **`pattern.xz` 原来指向空处**。
+    # ⚠️ **必须排在「定制方案」之前**:方案要把形制名换成编码,
+    #    表还没建就查不到。顺序错了报的是「no such table」——
+    #    而那句话看不出是顺序问题,看着像表没建。
+    # 和别的推导器一样:md 是真相源,推导器算结论落库,检查对账。
+    #
+    # ⚠️ **用 seed 自己的连接,不起子进程。** 第一版 subprocess 调推导器,
+    # 它开第二个连接,而 seed 的事务还开着 —— 拿到的是半截状态,当场失败。
+    # 一个在事务中间被调用的脚本,不该自己去连库。
+    sys.path.insert(0, os.path.join(HERE, "..", "knowledge"))
+    import derive_xingzhi as _dx
+    c.execute("""CREATE TABLE IF NOT EXISTS xingzhi(
+        code TEXT PRIMARY KEY, name TEXT, alias TEXT, key_sizes TEXT, src_type TEXT)""")
+    c.execute("DELETE FROM xingzhi")
+    for _cd, _nm3, _al, _sz, _src in _dx.parse():
+        c.execute("INSERT INTO xingzhi VALUES(?,?,?,?,?)",
+                  (_cd, _nm3, _al, "、".join(_sz) or None, _src))
+
     # 定制方案:fe-scheme 状态机终于有承载物了(此前 PRD 定义了 4 状态 5 边,却没有任何页面)
     _cid2 = c.execute("SELECT id FROM customer LIMIT 1").fetchone()[0]
     for sid, nm, st, xz, mt, kf, col, ps in [
@@ -1989,8 +2020,31 @@ def run():
         ("SC2603","写真三件套",    "草稿",  "唐制齐胸襦裙","真丝素罗","苏绣",  "月白","披帛"),
         ("SC2604","去年未成单",    "已失效","明制马面裙",  "织金缎","织金",    "玄色",""),
     ]:
-        c.execute("INSERT INTO scheme VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                  (sid,_cid2,nm,st,xz,mt,kf,col,ps,"A01 林岚",None,ago(20),ago(3)))
+        # **名字 → 编码,现查不手抄。** 手抄一份对照表就是第三个来源。
+        # 查不到就**报错停住**,不写一个空值进去 ——
+        # 一个 xz 为空的方案,在界面上和「还没选形制」长得一模一样。
+        _xzc = c.execute("SELECT code FROM xingzhi WHERE name=?", (xz,)).fetchone()
+        assert _xzc, f"方案 {sid} 的形制「{xz}」在形制表里查不到"
+        _mtc = c.execute("SELECT code FROM material WHERE name=?", (mt,)).fetchone()
+        assert _mtc, f"方案 {sid} 的面料「{mt}」在物料表里查不到"
+        _kfc = []
+        for _k3 in [x.strip() for x in kf.split(",") if x.strip()]:
+            _r3 = c.execute("SELECT code FROM craft WHERE name=? AND cat!='形制'",
+                            (_k3,)).fetchone()
+            assert _r3, f"方案 {sid} 的工艺「{_k3}」在工艺表里查不到"
+            _kfc.append(_r3[0])
+        # **版型:一个形制下常有好几个,方案得落到具体那一个。**
+        # 没指定变体就取标准款(命名约定:变体款都带后缀)——
+        # 和商品匹配版型用的是同一条规则。
+        _pt = c.execute("""SELECT code FROM pattern WHERE xz=?
+                           ORDER BY (name LIKE '%标准%') DESC, code LIMIT 1""",
+                        (_xzc[0],)).fetchone()
+        assert _pt, f"形制 {_xzc[0]} 下没有版型,方案 {sid} 落不到具体版型"
+        c.execute("INSERT INTO scheme(id,customer_id,name,status,xz,mt,kf,color,ps,"
+                  "pattern,advisor,note,created,updated)"
+                  " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (sid,_cid2,nm,st,_xzc[0],_mtc[0],",".join(_kfc),col,ps,
+                   _pt[0],"A01 林岚",None,ago(20),ago(3)))
 
     # ── ③ 量体覆盖:让「本人」都有一套完整量体 ──────────────────────
     # 原来 104 个着装人只有 27 个有量体记录,而且每人只量了 5 或 9 项 ——
@@ -2224,20 +2278,6 @@ def run():
         if _n5:
             print(f"  [版型换模板] {_pt} 的 {_n5} 个版型 → {_want}({_why})")
 
-    # 形制表从 `01-形制.md` 派生 —— **`pattern.xz` 原来指向空处**。
-    # 和别的推导器一样:md 是真相源,推导器算结论落库,检查对账。
-    #
-    # ⚠️ **用 seed 自己的连接,不起子进程。** 第一版 subprocess 调推导器,
-    # 它开第二个连接,而 seed 的事务还开着 —— 拿到的是半截状态,当场失败。
-    # 一个在事务中间被调用的脚本,不该自己去连库。
-    sys.path.insert(0, os.path.join(HERE, "..", "knowledge"))
-    import derive_xingzhi as _dx
-    c.execute("""CREATE TABLE IF NOT EXISTS xingzhi(
-        code TEXT PRIMARY KEY, name TEXT, alias TEXT, key_sizes TEXT, src_type TEXT)""")
-    c.execute("DELETE FROM xingzhi")
-    for _cd, _nm3, _al, _sz, _src in _dx.parse():
-        c.execute("INSERT INTO xingzhi VALUES(?,?,?,?,?)",
-                  (_cd, _nm3, _al, "、".join(_sz) or None, _src))
 
     import fix_product_pattern as _fpp
     _fpp.link(c); _fpp.derive(c); _fpp.recat(c)

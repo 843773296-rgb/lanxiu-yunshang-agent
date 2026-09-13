@@ -39,6 +39,21 @@ def main():
     print("=" * 84)
     c = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
 
+    # ⓿ **`xingzhi` 是 `craft`(cat='形制')的结构化投影,必须和它一致。**
+    #
+    # 两张表都从 `01-形制.md` 派生。我建 `xingzhi` 的时候没先查,
+    # **等于在讲「同一个事实两个来源必然漂」的下一步自己造了一个第二来源。**
+    # 留着它是因为 `craft.detail` 把关键尺寸拍平在一个字符串里,SQL 校不了;
+    # 而投影必须被钉住 —— **一个不被检查的投影,和一个第二来源没有区别。**
+    ca = {r["code"]: r["name"] for r in c.execute(
+        "SELECT code,name FROM craft WHERE cat='形制'")}
+    xi = {r["code"]: r["name"] for r in c.execute("SELECT code,name FROM xingzhi")}
+    差码 = (set(ca) ^ set(xi))
+    差名 = {k for k in set(ca) & set(xi) if ca[k] != xi[k]}
+    ck("形制投影和 craft(cat=形制)完全一致", not (差码 or 差名), len(ca),
+       f"编码差 {sorted(差码)[:3]} / 名字差 {sorted(差名)[:3]}" if (差码 or 差名)
+       else "两张表同源,一致靠检查而不是靠运气")
+
     # ① `pattern.xz` 不许指向形制表里没有的编码。
     孤 = [r[0] for r in c.execute(
         "SELECT DISTINCT xz FROM pattern WHERE xz NOT IN (SELECT code FROM xingzhi)")]
@@ -80,7 +95,7 @@ def main():
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 形制与量体模板 3 条全过")
+    print("✅ 形制与量体模板 4 条全过")
     return 0
 
 

@@ -40,6 +40,7 @@ run "能力管理 · 判据钉两头(中英文各一份,少一边就误报一片
 run "下单前置 · 超期量体不是参考值是无效值(按着装人不按客户)" python3 backend/order_gate_check.py
 run "商品与版型 · 性别和量体模板从版型派生(模板错了是量错尺寸)" python3 backend/product_pattern_check.py
 run "形制与量体模板 · 模板必须覆盖形制的关键尺寸(漏一项就是没量最敏感的)" python3 backend/xingzhi_check.py
+run "方案引用 · 存编码不存名字,而且落到具体版型(否则算不出用料)" python3 backend/scheme_check.py
 run "会话归属 · 续聊不能续别人的(身份判得对也挡不住换历史)" python3 agentsite/sessions_check.py
 run "花费闸 · 阈值够聊几轮 + 撞线说不说得清" ./agentsite/.venv/bin/python agentsite/budget_check.py
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
