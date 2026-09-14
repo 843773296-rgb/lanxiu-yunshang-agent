@@ -624,21 +624,38 @@ def product_detail(spu):
                         "knowledge", "part.py")
     _sp = _ilu.spec_from_file_location("part", _ps); _part = _ilu.module_from_spec(_sp)
     _sp.loader.exec_module(_part)
+    _c2p = sqlite3.connect(DB)
     _po = rows("SELECT part,material,sort FROM part_option WHERE spu=? "
-               "ORDER BY sort,material", spu)
+               "AND kind='面料' ORDER BY sort,material", spu)
     _by = {}
     for r in _po:
         _by.setdefault(r["part"], []).append(r["material"])
-    p["parts"] = [dict(部位=b, 可选材质=_by[b]) for b in _part.部位顺序 if b in _by]
+    # 每个部位吃多少米、这个数是估的还是版师核过的 —— **一起带出来**。
+    # 只给米数不给来源的话,看的人会当成实测值去报价。
+    _pt2 = p.get("pattern")
+    p["parts"] = []
+    for b in _part.部位顺序:
+        if b not in _by:
+            continue
+        米, 源 = _part.部位用料(_c2p, _pt2, b) if _pt2 else (None, None)
+        p["parts"].append(dict(部位=b, 可选材质=_by[b], 用料米=米, 用料来源=源))
     # **报价口径要跟着数据一起出** —— 只写在文档里的话,
     # 看页面的人不会去翻文档,而他会直接把这个价报给客户。
     p["part_note"] = _part.报价口径 if p["parts"] else ""
     if p["parts"]:
-        _prices = {r["name"]: r["price"] for r in rows(
-            "SELECT name,price FROM material WHERE cat='主料'")}
-        _all = {m for g in p["parts"] for m in g["可选材质"]}
-        _hit = [(m, _prices[m]) for m in _all if m in _prices]
-        p["part_quote_base"] = max(_hit, key=lambda x: x[1]) if _hit else None
+        # **按部位分摊算料费** —— 不再取「最贵那种料」当上限。
+        # 每个部位取它自己可选料里最贵的(客户还没选),乘这个部位的米数。
+        _prices = {r["name"]: r["price"] for r in rows("SELECT name,price FROM material")}
+        _sum, _估 = 0.0, False
+        for g in p["parts"]:
+            _hit = [_prices[m] for m in g["可选材质"] if m in _prices]
+            if _hit and g.get("用料米"):
+                _sum += max(_hit) * g["用料米"]
+            if g.get("用料来源") != "版师":
+                _估 = True
+        p["part_fabric_cost"] = round(_sum, 2)
+        p["part_cost_est"] = _估
+    _c2p.close()
     p["banner"]=读轮播图(p.get("img_detail"))
     p["intro_groups"]=读详情图(p.get("img_intro"))
     p["skus"]=rows("SELECT * FROM sku WHERE spu=? ORDER BY code",spu)

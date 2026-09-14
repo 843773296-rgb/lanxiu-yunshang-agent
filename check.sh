@@ -48,6 +48,7 @@ run "商品表单 · 显示的字段就得改得了(对照设计稿)" python3 ba
 run "量体模版 / 测量项 · 改一个被引用的东西是最危险的动作" python3 backend/measure_tpl_check.py
 run "分部位可选料 · 部位从裁片归并,报价口径要跟着出" python3 backend/part_check.py
 run "订单部位选择 · 什么钱都要有对应的记录" python3 backend/part_choice_check.py
+run "裁片用料占比 · 估出来的和版师给的不许长得一样" python3 backend/piece_ratio_check.py
 run "方案引用 · 存编码不存名字,而且落到具体版型(否则算不出用料)" python3 backend/scheme_check.py
 run "顾问引用 · 名字是被钉住的缓存,不是第二份真相" python3 backend/advisor_ref_check.py
 run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 backend/role_check.py

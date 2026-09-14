@@ -1627,10 +1627,15 @@ async function productDetail(spu){
       <div class="l" style="margin-bottom:8px">部件 —— <b style="color:var(--ink)">按部位选料</b></div>
       ${d.parts.map(g=>`<div style="margin-bottom:6px">
         <span class="pill p-blue" style="min-width:44px;display:inline-block;text-align:center">${esc(g.部位)}</span>
+        ${g.用料米!=null?`<span class="mono" style="margin-left:6px;font-size:12px;color:var(--ink2)">${g.用料米} 米</span>
+          <span class="pill ${g.用料来源==="版师"?"p-ok":g.用料来源==="BOM"?"p-blue":"p-warn"}"
+            title="${g.用料来源==="版师"?"版师核过的":g.用料来源==="BOM"?"BOM 里明写的用量":"按几何估算,规则见 knowledge/piece_ratio.py"}">${esc(g.用料来源)}</span>`:""}
         ${g.可选材质.map(m=>`<span class="pill p-mut" style="margin-left:6px">${esc(m)}</span>`).join("")}
       </div>`).join("")}
       <div class="note2" style="margin:10px 0 0"><b style="color:var(--bad)">报价口径</b> —— ${esc(d.part_note||"")}${
-        d.part_quote_base?`<br><b style="color:var(--ink)">当前按「${esc(d.part_quote_base[0])} ¥${d.part_quote_base[1]}/米」算</b>(可选料里最贵的那种)`:""}</div>
+        d.part_fabric_cost!=null?`<br><b style="color:var(--ink)">按部位分摊的料费上限:¥${money(d.part_fabric_cost)}</b>
+        (每个部位取它自己可选料里最贵的 × 这个部位的米数)${
+          d.part_cost_est?` · <span class="pill p-warn">含估算</span>`:` · <span class="pill p-ok">版师已核</span>`}`:""}</div>
       <div class="note2" style="margin:8px 0 0"><b style="color:var(--ink)">部位怎么来的</b> ——
         外层部位从这个版型的**裁片**归并(大襟贴边 → 门襟、褶裥片 → 裙);
         <b style="color:var(--ink)">内衬从 BOM 来</b>(裁片里没有「里 / 衬」——

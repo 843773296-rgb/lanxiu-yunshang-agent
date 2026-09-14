@@ -389,7 +389,18 @@ CREATE TABLE craft_combo(craft TEXT, material TEXT, verdict TEXT, reason TEXT, s
 -- 两张主表都不手写,由 knowledge/10、11 两个 md 推出来。
 CREATE TABLE pattern(code TEXT PRIMARY KEY, name TEXT, xz TEXT, gender TEXT, tpl TEXT,
   pieces INT, fabric_base REAL, fabric_step REAL, sizes TEXT, difficulty TEXT, src_type TEXT);
-CREATE TABLE pattern_piece(pattern TEXT, name TEXT, qty INT, note TEXT);
+CREATE TABLE pattern_piece(pattern TEXT, name TEXT, qty INT, note TEXT,
+  -- **用料占比** —— 分部位报价要靠它把整件用料摊到各个裁片上。
+  --
+  -- 原来这张表没有面积/占比,于是「按部位算料」成了一条
+  -- **会一直挂着的待办**(补齐要 84 个版型 × 平均 5 片 ≈ 400 个数,
+  -- 只有版师给得出来)。而挂着的这段时间里,报价一直按最贵的料算,
+  -- **客户一直被报高**。
+  --
+  -- 所以先按几何估一个初值(规则和依据在 `knowledge/piece_ratio.py`,
+  -- 每条都写了依据,版师能逐条驳),**并把来源标出来**。
+  ratio REAL,        -- 占比,同一版型之和 = 1
+  ratio_src TEXT);   -- 来源:估算 / 版师。**版师改过的不许被重新估覆盖**
 -- 推档结果:每个版型 × 每个尺码 × 每个部位。基码和档差在 md 里,这张表是算出来的
 CREATE TABLE size_spec(pattern TEXT, size TEXT, item TEXT, value REAL);
 -- 主料行的 name 从 craft 表取,ref_craft 指回去 —— 面料名不在物料表里存第二遍
@@ -858,7 +869,9 @@ def run():
                   (x["code"], x["name"], x["xz"], x["gender"], x["tpl"], x["pieces"],
                    x["fabric_base"], x["fabric_step"], ",".join(x["sizes"]), x["difficulty"]))
     for x in _dp.pieces():
-        c.execute("INSERT INTO pattern_piece VALUES(?,?,?,?)",
+        # **具名列** —— 这张表加了 ratio / ratio_src 两列,
+        # 位置参数插入会静默错位(把 note 写进 ratio)。
+        c.execute("INSERT INTO pattern_piece(pattern,name,qty,note) VALUES(?,?,?,?)",
                   (x["pattern"], x["name"], x["qty"], x["note"]))
     for row in _dp.size_specs():
         c.execute("INSERT INTO size_spec VALUES(?,?,?,?)", row)
@@ -2602,6 +2615,22 @@ def run():
     print(f"  [下单前置] 挪了 {_n_fix} 条超期量体;"
           f"留 1 条反例夹具({_fx.夹具说明})")
     assert _kept, "反例夹具丢了 —— 「超期量体不许下单」这条规则会没有用例"
+
+    # ── 裁片用料占比:按几何估一个初值 ──────────────────────────────
+    # ⚠️ **只填 `ratio_src IS NULL` 的**,也就是还没人核过的。
+    # 版师核过的(`ratio_src='版师'`)**不许被重新估覆盖** ——
+    # 那是这条最容易出的错:下次重跑脚本,把人工核过的数悄悄盖回去,
+    # 而**没有任何地方会报**。
+    import piece_ratio as _pr
+    _n_rt = 0
+    for _pt2, in c.execute("SELECT code FROM pattern").fetchall():
+        for _nm2, _q2, _rt, _why2 in _pr.版型占比(c, _pt2):
+            c.execute("UPDATE pattern_piece SET ratio=?, ratio_src='估算' "
+                      "WHERE pattern=? AND name=? AND ratio_src IS NULL",
+                      (_rt, _pt2, _nm2))
+            _n_rt += 1
+    print(f"  [裁片用料占比] 估了 {_n_rt} 条(来源标「估算」)—— "
+          f"**版师核过的不会被覆盖**")
 
     # ── 分部位可选料:按**形制的部位**铺,但**不拆现有的整件可选料** ────
     # 现有的 `mt_opts`(「云锦,真丝素罗」)是**整件**的口径。
