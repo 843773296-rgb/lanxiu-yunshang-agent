@@ -585,6 +585,26 @@ def craft_doc(order_id):
         w = rows("SELECT name,gender,birthday FROM wearer WHERE id=?",
                  it.get("wearer_id") or "-")
         it["wearer"] = dict(w[0]) if w else None
+        # **车间照着这张纸裁,所以这张纸上必须写清用的是版型的哪一版。**
+        # 版型是会改的(客户体型超出档差范围就要改版),而改完之后
+        # 一张三个月前的工艺文档和今天的长得一模一样。
+        # ⚠️ 版本取的是**订单行上的快照**,不是现在那一版 ——
+        # 现算会给出「今天」那一版,而车间当初裁的是「那天」那一版。
+        # 回填的要标出来:**一个回填的快照假装是当时记的,就是在撒谎。**
+        _pv = rows("SELECT p.code, p.name, p.version FROM product pr "
+                   "JOIN pattern p ON p.code=pr.pattern WHERE pr.spu=?",
+                   it.get("spu") or "-")
+        if _pv:
+            用 = it.get("pattern_version")
+            it["pattern"] = {
+                "编码": _pv[0]["code"], "名称": _pv[0]["name"],
+                "下单时的版本": (f"v{用}" if 用 else "**没记**"),
+                "来源": it.get("pattern_version_src") or "下单时记的",
+                "现在是": f"v{_pv[0]['version']}",
+                "提醒": (None if (用 and 用 == _pv[0]["version"]) else
+                         "⚠️ **这一单用的版本和现在的不是同一版** —— "
+                         "按现在这一版裁会和当初不一致"),
+            }
         o["items"].append(it)
     # 备注的署名从编辑日志派生 —— 和商品详情页同一条:不另存一份
     e = rows("SELECT ts,actor FROM edit_log WHERE target=? ORDER BY id DESC LIMIT 1",

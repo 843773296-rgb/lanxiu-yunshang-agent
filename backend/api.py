@@ -1457,7 +1457,8 @@ def grading_audit(pattern=None):
                         "**这不叫没查,是查过了**(扫了全部 "
                         f"{r['格子']} 条)。" if not r["疑点"] else "")),
         })
-    p = _rows("SELECT code,name,sizes FROM pattern WHERE code=? OR name=?", pattern, pattern)
+    p = _rows("SELECT code,name,sizes,version FROM pattern WHERE code=? OR name=?",
+              pattern, pattern)
     if not p:
         return {"error": f"没有版型「{pattern}」(认版型编码 PT04,也认全名「明制马面裙·标准」)"}
     p = p[0]
@@ -1485,8 +1486,10 @@ def grading_audit(pattern=None):
         }))
     体 = {sz: _g.体检(v, set(参考)) for sz, v in tbl.items()}
     体 = {k: v for k, v in 体.items() if v}
+    _v = _rows("SELECT version FROM pattern WHERE code=?", p["code"])
     return _nz({
         "版型": f"{p['code']} {p['name']}",
+        "版本": f"v{(_v[0]['version'] if _v else 1)}",
         "尺码": p["sizes"],
         "逐部位": 明细,
         "量纲体检": 体 or None,
@@ -2249,6 +2252,11 @@ def kb_pattern(xz=None):
         r["裁片"]=[dict(名称=p["name"],数量=p["qty"],说明=p["note"])
                   for p in _rows("SELECT * FROM pattern_piece WHERE pattern=?",r["code"])]
         r["尺码"]=r.pop("sizes").split(",")
+        # **版本要说出来。** 一个版号不带改动记录等于没有,所以连最近那条一起给。
+        _rv=_rows("SELECT version,changed_at,what,why FROM pattern_rev "
+                  "WHERE pattern=? ORDER BY version DESC LIMIT 1", r["code"])
+        r["版本"]=f"v{r.get('version') or 1}" + (
+            f"({_rv[0]['what']},{_rv[0]['changed_at']}:{_rv[0]['why']})" if _rv else "")
     return {"hit":len(rs),"rows":rs,
             "note":"difficulty=改版难度。「极高」的(马面裙)腰围错了等于重做,不能放缝头改。"}
 

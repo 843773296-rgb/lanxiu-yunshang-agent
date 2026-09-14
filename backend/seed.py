@@ -118,7 +118,18 @@ CREATE TABLE ordr_item(id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT, sku 
   -- 这一**行**是给谁做的。挂在行上不挂在订单上,是因为
   -- **一单可以给不止一个人做**(实测 7 单是两件童款加一件女款,一家三口订同款)。
   -- 挂在订单上只能挑一个填,而挑谁都不对。
-  wearer_id TEXT);
+  wearer_id TEXT,
+  -- **下单时用的是版型的哪一版** —— 快照,不是现算。
+  --
+  -- 和「成交价不许从配置表现算」是同一条:版型改过之后回头看这一单,
+  -- 现算会给出**今天**那一版,而车间当初裁的是**那天**那一版,
+  -- 两者在表上长得一模一样。
+  pattern_version INT,
+  -- ⚠️ **回填的快照不许假装是当时记的。**
+  -- 存量 71 行是这个字段加上之前下的单,它们的版本是**事后按当前版填的**,
+  -- 不是下单那一刻记下来的。标出来的理由和「估算 / 复核 / 版师」那三档一样:
+  -- **一个标着「实测」的估算值,比一个标着「估算」的估算值糟得多。**
+  pattern_version_src TEXT);
 CREATE TABLE category(code TEXT PRIMARY KEY, name TEXT, parent TEXT, sort INT, status TEXT);
 CREATE TABLE product(spu TEXT PRIMARY KEY, name TEXT, category TEXT, kind TEXT, status TEXT,
   base_price REAL, template TEXT, created TEXT, updated TEXT, cover TEXT,
@@ -388,7 +399,15 @@ CREATE TABLE craft_combo(craft TEXT, material TEXT, verdict TEXT, reason TEXT, s
 -- 版型库回答「怎么裁」,BOM 库回答「用多少料、多少钱、多久备齐」。
 -- 两张主表都不手写,由 knowledge/10、11 两个 md 推出来。
 CREATE TABLE pattern(code TEXT PRIMARY KEY, name TEXT, xz TEXT, gender TEXT, tpl TEXT,
-  pieces INT, fabric_base REAL, fabric_step REAL, sizes TEXT, difficulty TEXT, src_type TEXT);
+  pieces INT, fabric_base REAL, fabric_step REAL, sizes TEXT, difficulty TEXT, src_type TEXT,
+  -- **版本号** —— 版型是会改的(客户体型超出档差范围就要改版),
+  -- 而改完之后,一张三个月前的工艺文档和今天的长得一模一样。
+  -- 出争议时要回答的是「**当时用的是哪一版**」,而不是「现在是哪一版」。
+  version INT DEFAULT 1);
+-- 每一版改了什么、谁改的、为什么。**版本号不带这张表等于没有**:
+-- 「v2」三个字回答不了「v1 和 v2 差在哪」。
+CREATE TABLE pattern_rev(pattern TEXT, version INT, changed_by TEXT, changed_at TEXT,
+  what TEXT, why TEXT, PRIMARY KEY(pattern, version));
 CREATE TABLE pattern_piece(pattern TEXT, name TEXT, qty INT, note TEXT,
   -- **用料占比** —— 分部位报价要靠它把整件用料摊到各个裁片上。
   --
@@ -888,7 +907,12 @@ def run():
     import derive_pattern as _dp
     _names = {r[0]: r[1] for r in c.execute("SELECT code,name FROM craft")}
     for x in _dp.patterns():
-        c.execute("INSERT INTO pattern VALUES(?,?,?,?,?,?,?,?,?,?,'demo')",
+        # **具名列。** 位置参数的 INSERT 在加列时会静默错位 ——
+        # 这次是运气好当场报了「12 列给了 11 个值」,上一次(sku 加 supplier_code)
+        # 就没这么走运。这个项目已经为这件事改过四处。
+        c.execute("INSERT INTO pattern(code,name,xz,gender,tpl,pieces,fabric_base,"
+                  "fabric_step,sizes,difficulty,src_type) "
+                  "VALUES(?,?,?,?,?,?,?,?,?,?,'demo')",
                   (x["code"], x["name"], x["xz"], x["gender"], x["tpl"], x["pieces"],
                    x["fabric_base"], x["fabric_step"], ",".join(x["sizes"]), x["difficulty"]))
     for x in _dp.pieces():
@@ -2658,6 +2682,33 @@ def run():
             _n_rt += 1
     print(f"  [裁片用料占比] 估了 {_n_rt} 条(来源标「复核」:规则核过、数没核过)"
           f" —— **版师核过的不会被覆盖**")
+
+    # ── 版型版本:每个版型一条 v1,订单行回填快照 ──────────────────────
+    #
+    # 现在还没有「改版」这个动作(版师手上只有改占比那一个写工具),
+    # 所以全部停在 v1。**先立着不是为了现在用,是因为它一旦缺席就补不回来**:
+    # 等真的改了版再加这两列,之前所有单子的「当时用的哪一版」永远查不到了。
+    _n_rev = 0
+    for r in c.execute("SELECT code FROM pattern").fetchall():
+        c.execute("INSERT INTO pattern_rev(pattern,version,changed_by,changed_at,"
+                  "what,why) VALUES(?,1,?,?,?,?)",
+                  (r["code"], "系统", "2026-09-14",
+                   "初版",
+                   "从 knowledge/10-版型库.md 推导生成,**未经版师确认**"))
+        _n_rev += 1
+    # 订单行:**回填**,并且标明它是回填的。
+    # 回填一个看起来正常的数而不说它是回填的,就是在撒谎 ——
+    # 和「估算不许长得像实测」是同一条。
+    c.execute("UPDATE ordr_item SET pattern_version=("
+              "  SELECT p.version FROM product pr JOIN pattern p ON p.code=pr.pattern"
+              "  WHERE pr.spu=ordr_item.spu),"
+              " pattern_version_src='回填(这一列加上之前下的单)'"
+              " WHERE spu IN (SELECT spu FROM product WHERE pattern IS NOT NULL"
+              "               AND pattern!='')")
+    _n_bf = c.execute("SELECT COUNT(*) FROM ordr_item WHERE pattern_version IS NOT NULL"
+                      ).fetchone()[0]
+    print(f"  [版型版本] {_n_rev} 个版型各一条 v1;{_n_bf} 条订单行回填了版本快照"
+          f" —— **标着「回填」,不是下单时记的**")
 
     # ── 分部位可选料:按**形制的部位**铺,但**不拆现有的整件可选料** ────
     # 现有的 `mt_opts`(「云锦,真丝素罗」)是**整件**的口径。

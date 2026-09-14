@@ -165,6 +165,52 @@ def main():
        "两组性质不同(褶位是常设提醒,童款是缺一张表)—— "
        "混在一张清单上会让人以为是同一件事")
 
+    # ── ⑦ 版型版本:立着的字段必须有人读,而且回填的不许假装是记的 ──────
+    #
+    # **一份没被引用的主数据 = 一份不存在的主数据**(这个项目的老主题)。
+    # 所以这里验的不是「有没有这个字段」,是「**它有没有被用到**」:
+    #   ⓐ 每个版型都有一条改动记录 —— 一个版号不带「v1 和 v2 差在哪」等于没有
+    #   ⓑ 挂着版型的订单行都有版本快照
+    #   ⓒ 回填的那些**标着是回填的** —— 回填一个看起来正常的数而不说它是回填的,
+    #      就是在撒谎,和「估算不许长得像实测」同一条
+    #   ⓓ 工艺文档(车间照着裁的那张纸)真的把它印出来了
+    n7 = c.execute("SELECT COUNT(*) FROM pattern").fetchone()[0]
+    无记录 = [r["code"] for r in c.execute(
+        "SELECT code FROM pattern WHERE code NOT IN (SELECT pattern FROM pattern_rev)")]
+    ck("每个版型都有改动记录", not 无记录, n7,
+       f"没记录的 {无记录[:3]}" if 无记录 else
+       "**一个版号不带「v1 和 v2 差在哪」等于没有**")
+
+    该有 = c.execute(
+        "SELECT COUNT(*) FROM ordr_item oi JOIN product p ON p.spu=oi.spu "
+        "WHERE p.pattern IS NOT NULL AND p.pattern!=''").fetchone()[0]
+    缺 = c.execute(
+        "SELECT COUNT(*) FROM ordr_item oi JOIN product p ON p.spu=oi.spu "
+        "WHERE p.pattern IS NOT NULL AND p.pattern!='' "
+        "  AND oi.pattern_version IS NULL").fetchone()[0]
+    ck("挂着版型的订单行都记了下单时的版本", not 缺, 该有,
+       f"缺 {缺} 条" if 缺 else
+       "**快照不是现算** —— 版型改过之后,现算给的是今天那一版")
+
+    假装 = c.execute(
+        "SELECT COUNT(*) FROM ordr_item WHERE pattern_version IS NOT NULL "
+        "  AND (pattern_version_src IS NULL OR pattern_version_src='')").fetchone()[0]
+    ck("回填的快照标着是回填的", not 假装, 该有,
+       f"{假装} 条没标来源" if 假装 else
+       "**回填一个看起来正常的数而不说它是回填的,就是在撒谎**")
+
+    import importlib.util as _iu
+    sp = _iu.spec_from_file_location("srv", os.path.join(HERE, "server.py"))
+    srv = _iu.module_from_spec(sp); sp.loader.exec_module(srv)
+    oid = c.execute(
+        "SELECT oi.order_id FROM ordr_item oi JOIN product p ON p.spu=oi.spu "
+        "WHERE p.pattern IS NOT NULL AND p.pattern!='' LIMIT 1").fetchone()[0]
+    doc = srv.craft_doc(oid)
+    印 = [it for it in (doc.get("items") or []) if (it.get("pattern") or {}).get("下单时的版本")]
+    ck("工艺文档把版本印出来了", bool(印), len(doc.get("items") or []),
+       f"{印[0]['pattern']['编码']} {印[0]['pattern']['下单时的版本']}" if 印 else
+       "**车间照着这张纸裁** —— 纸上不写版本,改过版之后没人看得出来")
+
     print()
     if FAIL:
         print(f"\033[31m❌ 推档 {len(FAIL)} 处不符合预期\033[0m")
