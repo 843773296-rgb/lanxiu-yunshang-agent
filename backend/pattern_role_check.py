@@ -174,6 +174,60 @@ def main():
            f"被挤成了 {锁}" if abs((锁 or 0) - 0.3) >= 1e-6 else
            "**人核过的数不许被自动调** —— 否则先核的白核")
 
+    # ── ④半 隐私边界:版师看得到尺寸和体型,看不到手机号和消费额 ──────
+    #
+    # 这条边界**不靠提示词,靠工具清单** —— 而「工具清单选对了」这件事
+    # 没法靠读代码确认:一个工具的返回里有什么,只有跑一遍才知道。
+    # 所以这里把版师的**每一个工具**真跑一次,扫返回里有没有:
+    #   · 手机号形状的串(11 位、1 开头)
+    #   · 金额 / 消费 / 余额 / 积分 / 等级 这类字段名
+    #
+    # ⚠️ **扫的是「跑出来的东西」,不是「代码里写了什么」。**
+    # 按字段名读源码的话,一个 `SELECT *` 就能绕过去 ——
+    # 而这个项目的凭据黑名单当初就是为这个改成**查返回的列名**的。
+    import json as _js, re as _re
+    # ⚠️ **「客户的钱」和「物料的钱」不是同一件事** —— 第一版把它们写在一张词表里,
+    # 于是 `kb_bom` 的**物料金额**被当成了消费额报警。
+    # 又是「一列承载两件事」:一张词表同时装了两种不同的敏感性。
+    #
+    #   客户词  任何工具的返回里都不许有 —— 这是这条边界真正守的东西
+    #   钱词    除 kb_bom 外不许有 —— kb_bom 本来就是给版师交叉验用量的,
+    #           它报的是**物料成本**(TL07 管着「这不是报价」),不是客户花了多少
+    客户词 = ("手机", "phone", "mobile", "身份证", "消费", "余额", "积分", "等级",
+              "payable", "received", "实收", "应收", "成交")
+    钱词 = ("金额", "amount", "单价", "售价", "报价")
+    钱词豁免 = {"kb_bom"}
+    手机 = _re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+    跑法 = {
+        "pattern_queue": lambda: api.pattern_queue(),
+        "grading_audit": lambda: api.grading_audit("PT04"),
+        "piece_ratios":  lambda: api.piece_ratios("PT06"),
+        "kb_pattern":    lambda: api.kb_pattern("PT04"),
+        "kb_size":       lambda: api.kb_size("PT04"),
+        "kb_bom":        lambda: api.kb_bom("PT04", "M", "MT02"),
+        "kb_fit":        lambda: api.kb_fit("C10001", "PT04"),
+    }
+    读工具 = [t.rsplit("__", 1)[-1] for t in tools
+              if t.rsplit("__", 1)[-1] != "set_piece_ratio"]
+    漏 = [n for n in 读工具 if n not in 跑法]
+    ck("版师的每个读工具都被真跑过一遍", not 漏, len(读工具),
+       f"没跑到 {漏} —— **没跑过的工具,它返回什么没人知道**" if 漏 else
+       "扫的是跑出来的东西,不是代码里写了什么")
+    脏 = []
+    with api.as_user(me if 版师 else {}):
+        for n in 读工具:
+            if n not in 跑法: continue
+            try: out = _js.dumps(跑法[n](), ensure_ascii=False)
+            except Exception as e:
+                脏.append(f"{n} 跑不起来:{type(e).__name__}"); continue
+            if 手机.search(out): 脏.append(f"{n} 返回里有手机号形状的串")
+            词 = list(客户词) + ([] if n in 钱词豁免 else list(钱词))
+            hit = [w for w in 词 if f'"{w}' in out or f'{w}"' in out]
+            if hit: 脏.append(f"{n} 返回里有 {hit[:3]}")
+    ck("版师拿得到尺寸和体型,拿不到手机号和消费额", not 脏, len(读工具),
+       "；".join(脏[:3]) if 脏 else
+       "**给多余的字段,它就会去用** —— 这个项目在 allowed_tools 上栽过")
+
     # ── ⑤ 闸也要两个方向 ──────────────────────────────────────────────
     v1 = guards.pre_tool_verdict("mcp__shop__set_piece_ratio",
                                  dict(pattern="PT06", piece="袖片", ratio=0.3, why="量过"),

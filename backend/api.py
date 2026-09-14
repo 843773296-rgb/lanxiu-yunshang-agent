@@ -1331,6 +1331,43 @@ def pattern_queue():
                     "⚠️ 「确认不需要」这件事目前**没有地方记**,确认完它还会再出现在这张单上。",
         })
 
+    # ── ⑤ 在等改版的单 ────────────────────────────────────────────────
+    #
+    # 系统里三处写着「推荐尺码最终由版师定」,而版师**看不到有谁在等他定**。
+    # 这一摊把那件事接上:**有体型特征的着装人**(那是「直接全定制」的硬条件)
+    # 落在**还没走完的单**上。
+    #
+    # ⚠️ **这里只给尺寸和体型,不给手机号、不给金额。**
+    # 版师需要知道「这个人身上有什么要改版的地方」,不需要知道他花了多少钱 ——
+    # 而多给的字段会被用(这个项目在 allowed_tools 上栽过)。
+    # 这条边界有检查盯着:`pattern_role_check` 会把版师的**每一个工具**
+    # 真跑一遍,扫返回里有没有手机号形状的串或金额字段。
+    等改版 = _rows(
+        "SELECT oi.order_id, oi.wearer_id, oi.name item, o.status, p.pattern, "
+        "  pt.name pattern_name, "
+        "  (SELECT GROUP_CONCAT(feature,'、') FROM body_feature b "
+        "   WHERE b.wearer_id=oi.wearer_id) feature "
+        "FROM ordr_item oi JOIN ordr o ON o.id=oi.order_id "
+        "LEFT JOIN product p ON p.spu=oi.spu "
+        "LEFT JOIN pattern pt ON pt.code=p.pattern "
+        "WHERE oi.wearer_id IS NOT NULL AND o.status NOT IN ('完成','取消') "
+        "  AND EXISTS(SELECT 1 FROM body_feature b WHERE b.wearer_id=oi.wearer_id) "
+        "ORDER BY oi.order_id")
+    活.append(_nz({
+        "事": "在等改版的单(着装人有体型特征)",
+        "进度": f"{len(等改版)} 条 —— "
+                f"库里共 {_rows('SELECT COUNT(DISTINCT wearer_id) n FROM body_feature')[0]['n']}"
+                f" 位着装人有体型特征,其中这些落在还没走完的单上",
+        "明细": [f"{r['order_id']} · {r['wearer_id']}({r['feature']})· "
+                 f"{r['pattern_name'] or '未挂版型'} · {r['status']}"
+                 for r in 等改版] or None,
+        "状态": ("**一条都没有** —— 是真没有,不是没扫到(扫的是全部未完结的单)"
+                 if not 等改版 else None),
+        "怎么核": "`kb_fit(客户, 版型, 着装人)` 看逐项差值和关键尺寸覆盖。"
+                  "⚠️ **具体改哪儿、改多少不在知识库里** —— "
+                  "系统能说的到「要出专属版」为止,不要替版师给数",
+    }))
+
     out["谁在看"] = (whoami() or {}).get("name") or "(没登录)"
     out["该核的活"] = 活
     out["note"] = ("每一摊都报了「总数 / 已完成 / 还剩」—— "

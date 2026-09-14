@@ -733,7 +733,8 @@ def _pattern_rules():
     # 模型会用那个工具,而**没有任何一句话告诉它怎么算用错**。
     #   TL07  kb_bom     物料成本不是最终报价、不含工时
     #   TL15  kb_pattern 版型和形制的关系
-    pick = {"TL25", "TL26", "TK01", "TK03", "TL07", "TL15"}
+    #   TL08  kb_fit     推荐尺码只是建议、需补量时不许按身高体重猜码
+    pick = {"TL25", "TL26", "TK01", "TK03", "TL07", "TL15", "TL08"}
     seen, out = set(), []
     for r in (TASK_RULES + KB_RULES + WORKSHOP_RULES):
         if r.id in pick and r.id not in seen:
