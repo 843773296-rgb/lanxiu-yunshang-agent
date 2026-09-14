@@ -344,6 +344,18 @@ SKILL_SET_DESC = {
 }
 
 
+# 运行目录**故意放在项目之外** —— 整段理由和实测证据在 `runtime.py` 里。
+# 一句话:cwd 在项目里的话,CLI 会往上找到 CLAUDE.md,把整份工程手册
+# 塞进模型的系统提示词(问过它,它抄得出第一行)。
+#
+# **这段单独一个文件,是因为边界审计要拿得起它** —— 它跑在系统 python3 上,
+# 而这个文件 import claude_agent_sdk,那边 import 不动。
+# 原来那条攻击就因此**一次都没跑过,而它每次都绿**。
+import runtime as _rt
+RUNTIME = _rt.RUNTIME
+_ensure_runtime = _rt.ensure
+
+
 def skills_for(which=None):
     """这一轮让哪些技能上场。认不出的名字**退回 own**,不退回 all ——
     退回 all 的话,写错一个参数就悄悄把 236 个放进了竞争,而没人会发现。"""
@@ -620,14 +632,20 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         model=model,
         max_turns=max_turns,
         permission_mode="bypassPermissions",   # 工具全是只读的,不需要逐次批准
-        cwd=HERE,
+        # **项目之外** —— 见上面 RUNTIME 那一段:cwd 在项目里的话,
+        # CLI 会往上找到 CLAUDE.md 并把整份工程手册塞进系统提示词。
+        cwd=_ensure_runtime(),
         # ⚠️ 这两行是必须的。不设的话 SDK 会**继承开发机上的 Claude Code 配置** ——
         # 项目根的 .mcp.json 会被自动挂上,和这里声明的重复一套,
         # allowed_tools 白名单也就形同虚设(实测工具名跑成了 mcp__lanxiu-task__*)。
         # 服务要在别的机器上行为一致,配置必须是封闭的。
         strict_mcp_config=True,     # 只用上面 mcp_servers 声明的,忽略文件里的
         # 要用项目自带的 Skill,就必须让 CLI 去读 project 设置 —— setting_sources=[]
-        # 的话它连 .claude/skills/ 都不会去看。**只开 project,不开 user 和 local**:
+        # 的话它连 .claude/skills/ 都不会去看。
+        # ⚠️ 放开 project 的代价本来是「CLAUDE.md 一起进提示词」,
+        # 而那条**已经由 cwd 挪出项目解决掉了**(见 RUNTIME)——
+        # 现在 project 里 CLI 看得到的只有 `.claude/skills/`,没有别的。
+        # **只开 project,不开 user 和 local**:
         # user 是开发机上那个人的偏好,local 是没进版本库的临时配置,
         # 服务在别的机器上必须行为一致,那两个一开就不一致了。
         # MCP 的污染由 strict_mcp_config=True 挡住(它只认代码里声明的服务),

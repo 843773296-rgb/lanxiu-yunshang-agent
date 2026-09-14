@@ -104,20 +104,23 @@ if 放开:
     for w in ('"user"', '"local"'):
         if re.search(r'setting_sources=\[[^\]]*' + w, src):
             bad.append(f"setting_sources 里出现了 {w} —— 那是本机配置,换台机器行为就不一致")
-    # ⚠️ **放开 project 会把项目的 CLAUDE.md 一起带进模型的系统提示词。**
+    # ⚠️ **放开 project 原来会把项目的 CLAUDE.md 一起带进模型的系统提示词。**
     # 实测过:直接问智能体「你提示词里有没有 CLAUDE.md」,它答「有」并抄出了第一行。
-    # 这是一个**已知的权衡**(不放开的话 Skill 不上场),而权衡必须被登记 ——
-    # 「没写下来的约定,和结构锁在平时长得一模一样」。
-    ba = open(os.path.join(HERE, "..", "backend", "boundary_audit.py"),
-              encoding="utf-8").read()
-    if "CLAUDE.md 会进模型的系统提示词" not in ba:
-        bad.append("放开了 project 设置源(CLAUDE.md 会进提示词),"
-                   "而 boundary_audit 里没有登记这条已知风险")
+    #
+    # **那条已经不是权衡了,是结构** —— 把 cwd 挪出项目就两头都拿到了:
+    # 泄露没了,Skill 照样上场(另一条路 setting_sources=[] 泄露也没了,
+    # 但 Skill 跟着一起没)。所以这里验的是那个前提还在不在。
+    import runtime as _rt
+    if _rt.往上找():
+        bad.append(f"从运行目录往上撞见了 CLAUDE.md:{_rt.往上找()} —— "
+                   f"放开了 project 设置源,这些会整份进系统提示词")
+    if not os.path.isdir(os.path.join(_rt.RUNTIME, ".claude", "skills")):
+        bad.append("运行目录里没有 .claude/skills —— 隔离住了,但 Skill 也没了")
 # ⚠️ 这一行原来**印在 if 外面,无条件为真** —— 把 setting_sources 改成 []
 # 之后它照样绿着说「project 设置源已放开」。
 # **一条断言正确、话说得不对的检查,比没有检查更危险**:它每次都绿,
 # 而看的人以为绿的是它嘴上那件事。
-print(f"  ✅ 设置源 = {'project(已登记 CLAUDE.md 进提示词这条风险)' if 放开 else '空(Skill 不会上场)'}"
+print(f"  ✅ 设置源 = {'project(运行目录在项目外,CLAUDE.md 进不来)' if 放开 else '空(Skill 不会上场)'}"
       f",strict_mcp_config 锁住 MCP,未引入 user/local")
 
 # ③.5 内置工具必须被封 —— 这条是实跑抓出来的,不是想出来的
