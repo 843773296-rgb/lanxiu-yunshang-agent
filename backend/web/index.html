@@ -1632,9 +1632,17 @@ async function productDetail(spu){
       <div class="note2" style="margin:10px 0 0"><b style="color:var(--bad)">报价口径</b> —— ${esc(d.part_note||"")}${
         d.part_quote_base?`<br><b style="color:var(--ink)">当前按「${esc(d.part_quote_base[0])} ¥${d.part_quote_base[1]}/米」算</b>(可选料里最贵的那种)`:""}</div>
       <div class="note2" style="margin:8px 0 0"><b style="color:var(--ink)">部位怎么来的</b> ——
-        从这个版型的**裁片**归并(大襟贴边 → 门襟、褶裥片 → 裙),
-        <b style="color:var(--ink)">规则在 knowledge/part.py,那是一份推断,要业务核</b>。
+        外层部位从这个版型的**裁片**归并(大襟贴边 → 门襟、褶裥片 → 裙);
+        <b style="color:var(--ink)">内衬从 BOM 来</b>(裁片里没有「里 / 衬」——
+        裁片是面料的裁法,里布是另一层)。规则在 <code>knowledge/part.py</code>。
         所以部位**随形制变**:马面裙没有领口,立领长衫有。</div>
+      <div class="note2" style="margin:8px 0 0"><b style="color:var(--ink)">外层部位为什么都是同一组料</b> ——
+        <b style="color:var(--ink)">这是拍过板的决定,不是还没做完</b>:
+        业务定「维持可选,<b style="color:var(--ink)">客户自己挑</b>」。
+        「领口适合织金缎、主身适合素缎」是**审美和成本的判断,不是结构事实**,
+        库里没有依据支持它 —— 编一个出来就是假装业务拍过板。
+        <b style="color:var(--bad)">内衬和系带是例外</b>:它们按材料类别给
+        (依据是 BOM 备注里版师写的「挂里 → 真丝里布」)—— <b>云锦不做里子</b>。</div>
     </div>`:""}
     ${d.custom.note?`<div class="note2" style="margin:14px 24px 0"><b style="color:var(--bad)">已自动剔除</b> —— ${esc(d.custom.note)}</div>`:""}
     <table class="tb" style="margin-top:12px"><thead><tr><th style="width:170px">工艺</th>
