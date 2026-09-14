@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""量体模版管理的检查 —— **改一个被引用的模版是这块最危险的动作。**
+"""量体模版 / 测量项管理的检查 —— **改一个被引用的东西是这块最危险的动作。**
 
 ## 危险在哪
 
@@ -97,6 +97,66 @@ def main():
     if r5.get("ok"):
         print("       **只挡不放行等于这个功能不存在** —— 两个方向都要测")
 
+    # ── 测量项:和模版同一族的问题,合在一个文件里 ────────────────────
+    # 分两个文件的话,同一条纪律要写两遍,而写两遍必然有一遍先旧掉。
+    被用 = [r[0] for r in c.execute(
+        "SELECT DISTINCT item FROM tpl_item WHERE item IN "
+        "(SELECT DISTINCT item FROM measure_rec)")]
+    ck("有被引用的测量项可以拿来试", bool(被用), len(被用), "")
+    if 被用:
+        mi = 被用[0]
+        o = c.execute("SELECT name,unit,required,sort FROM measure_item WHERE code=?",
+                      (mi,)).fetchone()
+
+        # ⑦ **改单位**:有量体记录就不许改 —— 这一页最危险的动作
+        r7 = server.save_measure_item(
+            {"code": mi, "name": o[0], "unit": "寸", "required": o[2], "sort": o[3]},
+            role="总部运营")
+        ck("有量体记录的测量项不许改单位",
+           (not r7.get("ok")) and r7.get("code") == "UNIT_LOCKED", 1,
+           "" if not r7.get("ok") else f"改成功了:{r7}")
+        if not r7.get("ok"):
+            print("       **记录里存的是一个数,单位在测量项上** —— "
+                  "改了之后数值一个都没动,含义全变了,而没有任何东西会报错")
+
+        # ⑧ **停用**一个还被模版引用的测量项:要挡住,并说清是哪几个模版
+        r8 = server.toggle("measure_item", "code", mi)
+        说清了 = (not r8.get("ok")) and ("模版引用着它" in (r8.get("reason") or ""))
+        ck("停用还被模版引用的测量项要挡住,并说清是哪几个", 说清了, 1,
+           "" if 说清了 else f"实得:{r8}")
+        if 说清了:
+            print("       原来 `toggle()` 是**通用函数、一道守卫都没有** —— "
+                  "停用直接成功,而挂着这些模版的商品照样在量这一项")
+
+        # ⑨ 改名不许和别人重名
+        另 = c.execute("SELECT name FROM measure_item WHERE code!=? LIMIT 1",
+                       (mi,)).fetchone()[0]
+        r9 = server.save_measure_item(
+            {"code": mi, "name": 另, "unit": o[1], "required": o[2], "sort": o[3]},
+            role="总部运营")
+        ck("测量项不许重名", (not r9.get("ok")) and r9.get("code") == "DUP_NAME", 1,
+           "" if not r9.get("ok") else f"重名成功了:{r9}")
+        if not r9.get("ok"):
+            print("       **同名两项在量体页面上分不出来** —— 量的人只能猜")
+
+        # ⑩ 改说明/排序这种无害的要放行 —— **只挡不放行等于这个功能不存在**
+        r10 = server.save_measure_item(
+            {"code": mi, "name": o[0], "unit": o[1], "required": o[2],
+             "sort": o[3], "note": "改了个说明"}, role="总部运营")
+        ck("改说明这种无害的要放行", bool(r10.get("ok")), 1,
+           "" if r10.get("ok") else f"实得:{r10}")
+
+        # ⑪ 新建的测量项要说清**它还没被任何模版用上**
+        r11 = server.save_measure_item(
+            {"name": "试建小腿围", "unit": "cm", "required": 0, "sort": 99},
+            role="总部运营")
+        提醒了 = r11.get("ok") and "还没被任何模版引用" in (r11.get("reason") or "")
+        ck("新建的测量项要说清它还没被任何模版用上", 提醒了, 1,
+           "" if 提醒了 else f"实得:{r11}")
+        if 提醒了:
+            print("       建完就以为能用了,是这类配置最常见的落空 —— "
+                  "**建了和用上是两回事**")
+
     # ⑥ 角色:顾问不许动模版
     r6 = server.save_template({"code": tc, "name": "顾问想改", "items": ",".join(旧项)},
                               role="顾问")
@@ -108,7 +168,7 @@ def main():
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 量体模版管理 6 条全过")
+    print("✅ 量体模版 / 测量项管理 12 条全过")
     return 0
 
 

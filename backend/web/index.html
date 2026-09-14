@@ -1751,20 +1751,37 @@ async function measureItems(){
   M.innerHTML=chrome([["首页","workbench"],"业务内容","量体配置"],`
    <div class="card"><div class="hd"><h3>测量项配置</h3>
      <span class="n">${d.total} 项 · 必填项缺失时不可保存定制方案</span>
-     <span class="more dead" title="新增测量项 · 本期未实现">+ 新增测量项</span></div>
+     <span class="more" data-newmi>+ 新增测量项</span></div>
     <table class="tb" style="margin-top:12px"><thead><tr><th style="width:100px">编码</th>
      <th style="width:130px">名称</th><th style="width:80px">单位</th><th style="width:90px">必填</th>
      <th style="width:80px">排序</th><th style="width:90px">状态</th>
-     <th style="width:110px">被模版引用</th><th>说明</th></tr></thead><tbody>
+     <th style="width:110px">被模版引用</th><th>说明</th>
+     <th style="width:70px">操作</th></tr></thead><tbody>
      ${d.rows.map(r=>`<tr${r.status==="停用"?' style="opacity:.55"':""}>
       <td class="mono">${esc(r.code)}</td><td>${esc(r.name)}</td><td>${esc(r.unit)}</td>
       <td>${r.required?'<span class="pill p-bad">必填</span>':'<span class="pill p-mut">选填</span>'}</td>
       <td class="mono">${r.sort}</td>
       <td><span class="tg ${r.status==="启用"?"on":""}" data-tgl="measure_item|code|${esc(r.code)}"><i>${r.status==="启用"?"启用":"停用"}</i></span></td>
       <td class="mono">${r.used} 个</td>
-      <td style="color:var(--ink2);font-size:12.5px">${esc(r.note||"")}</td></tr>`).join("")}
+      <td style="color:var(--ink2);font-size:12.5px">${esc(r.note||"")}</td>
+      <td><span class="lk" data-editmi="${esc(r.code)}">编辑</span></td></tr>`).join("")}
     </tbody></table></div>`);
   bindToggle(measureItems);
+  M.querySelectorAll("[data-newmi]").forEach(e=>e.onclick=()=>formMeasureItem(measureItems));
+  M.querySelectorAll("[data-editmi]").forEach(e=>e.onclick=()=>
+    formMeasureItem(measureItems,d.rows.find(x=>x.code===e.dataset.editmi)));
+}
+function formMeasureItem(after,cur){
+  // 编辑时把**影响面**写在标题上 —— 改之前就看得见。
+  modal(cur?`编辑测量项 · ${cur.code}(${cur.used} 个模版引用着它)`:"新增测量项",[
+    {k:"name",label:"名称",req:1,val:cur&&cur.name,ph:"例如:小腿围"},
+    {k:"unit",type:"select",label:"单位",req:1,opts:["cm","kg","个","°"],val:cur&&cur.unit},
+    {k:"required",type:"select",label:"是否必填",req:1,opts:["0","1"],
+     val:cur&&String(cur.required)},
+    {k:"sort",label:"排序",req:1,val:cur?String(cur.sort):"99"},
+    {k:"note",type:"text",label:"说明(量的人会看到)",val:cur&&cur.note,
+     ph:"例如:必填。要问穿什么鞋,高跟差 5–8cm"},
+  ],v=>doOp("/api/mitem-save",{...v,code:cur&&cur.code,role:ROLE},after),true);
 }
 function bindToggle(reload){
   M.querySelectorAll("[data-tgl]").forEach(e=>e.onclick=()=>{

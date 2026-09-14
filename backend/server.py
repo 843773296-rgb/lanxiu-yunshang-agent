@@ -667,13 +667,134 @@ def content_list(q):
                      channel=[r["v"] for r in rows("SELECT DISTINCT channel v FROM content ORDER BY v")])
     return d
 
+def item_impact(code):
+    """**停用/改这个测量项会影响谁。**"""
+    return dict(
+        模版=rows("SELECT COUNT(*) c FROM tpl_item WHERE item=?",code)[0]["c"],
+        模版名=[r["name"] for r in rows(
+            "SELECT t.name FROM tpl_item ti JOIN measure_tpl t ON t.code=ti.tpl "
+            "WHERE ti.item=? LIMIT 4",code)],
+        量体记录=rows("SELECT COUNT(*) c FROM measure_rec WHERE item=?",code)[0]["c"])
+
+
+def _guard_measure_item(code, cur, to):
+    """停用测量项的守卫。**停用是可逆的,但不是无害的。**
+
+    一个还被模版引用的测量项被停掉之后:
+      · 那几个模版**编辑时**才会报「测量项已停用」
+      · 而**已经挂着这些模版的商品照样在用它** —— 量体页面还会量这一项
+    两边就此不自洽,**而没有任何地方会报**。
+
+    所以不是拦死 —— 是**要求先把它从模版里摘掉**:
+    摘的那一步有自己的守卫(已经量过的不许摘),该拦的在那儿拦。
+    """
+    if to != "停用":
+        return None
+    imp = item_impact(code)
+    if imp["模版"]:
+        return (f"停不了:还有 {imp['模版']} 个模版引用着它"
+                + (f"({'、'.join(imp['模版名'])})" if imp["模版名"] else "")
+                + f",已有 {imp['量体记录']} 条量体记录。"
+                  f"**停用之后这几个模版编辑时才会报错,而挂着它们的商品照样在量这一项** —— "
+                  f"两边就此不自洽,而没有任何地方会报。"
+                  f"请先把它从这几个模版里摘掉,再停用")
+    return None
+
+
+# 哪些表的状态切换要过守卫。**不在这张表里的照旧直接切** ——
+# 加守卫是有代价的(多一次查询、多一条要维护的规则),只给真的会出事的加。
+TOGGLE_GUARD = {"measure_item": _guard_measure_item}
+
+
 def toggle(table,key,val,col="status",on="启用",off="停用",actor="魏欣新"):
     r=rows(f"SELECT {col} s FROM {table} WHERE {key}=?",val)
     if not r: return {"error":"记录不存在"}
     cur=r[0]["s"]; to=off if cur==on else on
+    g=TOGGLE_GUARD.get(table)
+    if g:
+        why=g(val,cur,to)
+        if why:
+            log_op(actor,table,val,cur,to,False,"TOGGLE_BLOCKED",why[:80],{})
+            return dict(ok=False,code="TOGGLE_BLOCKED",reason=why)
     with sqlite3.connect(DB) as c: c.execute(f"UPDATE {table} SET {col}=? WHERE {key}=?",(to,val))
     log_op(actor,table,val,cur,to,True,"TOGGLE",f"{table} 状态切换",{})
     return dict(ok=True,code="TOGGLE",frm=cur,to=to,reason=f"已从「{cur}」切换为「{to}」")
+
+
+def save_measure_item(d,actor="魏欣新",role="顾问"):
+    """新建或编辑测量项。
+
+    ⚠️ **改单位是这一页最危险的动作。**
+    `measure_rec` 存的是一个**数**,单位在测量项上。把 cm 改成寸之后,
+    **所有历史数值的含义全变了,而数值本身一个都没动** ——
+    没有任何东西会报错,而所有按这个数算的东西(推荐尺码、成长预测、
+    版型比对)全错。
+
+    所以:**已经有量体记录的测量项,不许改单位。**
+    真要换单位,正确的做法是新建一个项 + 把历史数据换算迁过去,
+    那是一次有据可查的迁移,不是一次静默的改写。
+    """
+    if role not in ("总部运营","店长"):
+        return dict(ok=False,code="WRONG_ROLE",
+                    reason=f"测量项维护须由总部运营或店长操作,当前角色:{role}")
+    code=(d.get("code") or "").strip()
+    nm=(d.get("name") or "").strip()
+    unit=(d.get("unit") or "").strip()
+    if not nm: return dict(ok=False,code="NEED_NAME",reason="测量项名称必填")
+    if not unit: return dict(ok=False,code="NEED_UNIT",reason="单位必填(cm / kg …)")
+    try: req=int(d.get("required") or 0); srt=int(d.get("sort") or 99)
+    except Exception: return dict(ok=False,code="BAD_NUMBER",reason="必填与排序必须是数字")
+    old=rows("SELECT * FROM measure_item WHERE code=?",code) if code else []
+    if code and not old:
+        return dict(ok=False,code="NOT_FOUND",reason=f"测量项 {code} 不存在")
+    重名=rows("SELECT code FROM measure_item WHERE name=? AND code!=?",nm,code or "-")
+    if 重名:
+        return dict(ok=False,code="DUP_NAME",
+                    reason=f"已经有一个叫「{nm}」的测量项({重名[0]['code']})—— "
+                           f"**同名两项在量体页面上分不出来**,量的人只能猜")
+    if old:
+        o=dict(old[0]); imp=item_impact(code)
+        if o["unit"]!=unit and imp["量体记录"]:
+            return dict(ok=False,code="UNIT_LOCKED",
+                        reason=f"「{o['name']}」已有 {imp['量体记录']} 条量体记录,"
+                               f"**不许改单位**({o['unit']} → {unit})。"
+                               f"记录里存的是一个数,单位在这儿 —— 改了之后"
+                               f"**所有历史数值的含义全变了,而数值一个都没动**,"
+                               f"没有任何东西会报错。"
+                               f"真要换单位:新建一个项 + 把历史数据换算迁过去")
+        with sqlite3.connect(DB) as c:
+            c.execute("UPDATE measure_item SET name=?,unit=?,required=?,sort=?,note=? "
+                      "WHERE code=?",(nm,unit,req,srt,d.get("note") or "",code))
+        ch=[{"字段":k2,"改前":str(o[k1] or ""),"改后":str(v2)}
+            for k1,k2,v2 in (("name","名称",nm),("unit","单位",unit),
+                             ("required","必填",req),("sort","排序",srt),
+                             ("note","说明",d.get("note") or ""))
+            if str(o[k1] or "")!=str(v2)]
+        log_edit(actor,d.get("actor_no"),"测量项",code,"编辑测量项",ch,
+                 d.get("source") or "后台")
+        多 = ""
+        if not o["required"] and req:
+            缺=rows("SELECT COUNT(DISTINCT wearer_id) c FROM measure_rec WHERE wearer_id "
+                    "NOT IN (SELECT wearer_id FROM measure_rec WHERE item=?)",code)[0]["c"]
+            多=(f"。⚠️ 改成必填之后,**{缺} 个着装人会立刻缺这一项** —— "
+                f"他们不是数据错了,是从来没量过")
+        return dict(ok=True,code="UPDATE",
+                    reason=f"测量项 {code} 已更新({imp['模版']} 个模版引用着它,"
+                           f"{imp['量体记录']} 条量体记录){多}")
+    n=rows("SELECT COUNT(*) c FROM measure_item")[0]["c"]+1
+    code=f"MI{n:02d}"
+    while rows("SELECT 1 FROM measure_item WHERE code=?",code):
+        n+=1; code=f"MI{n:02d}"
+    with sqlite3.connect(DB) as c:
+        c.execute("INSERT INTO measure_item VALUES(?,?,?,?,?,'启用',?)",
+                  (code,nm,unit,req,srt,d.get("note") or ""))
+    log_edit(actor,d.get("actor_no"),"测量项",code,"创建测量项",
+             [{"字段":"名称","改前":"","改后":nm},{"字段":"单位","改前":"","改后":unit}],
+             d.get("source") or "后台")
+    log_op(actor,"measure_item",code,"—","新建",True,"CREATE",f"{nm} · {unit}",{})
+    return dict(ok=True,code="CREATE",
+                reason=f"测量项 {code} 已创建。**它还没被任何模版引用** —— "
+                       f"要真的用上,去量体模版里把它加进去")
 
 def _simple(table,q,key,sortable,facet_cols,order=None):
     kw=(q.get("q") or [""])[0].strip()
@@ -2201,6 +2322,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/block-save": return self._send(save_block(body))
         if p=="/api/template-save": return self._send(save_template(body,role=body.get("role") or "顾问"))
         if p=="/api/template-del": return self._send(del_template(body,role=body.get("role") or "顾问"))
+        if p=="/api/mitem-save": return self._send(save_measure_item(body,role=body.get("role") or "顾问"))
         if p=="/api/syscode-save":
             return self._send(save_syscode(body,role=_role_of(self)))
         if p=="/api/content-save": return self._send(save_content(body))
