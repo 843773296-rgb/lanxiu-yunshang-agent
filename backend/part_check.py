@@ -123,11 +123,20 @@ def main():
 
     # ④ 报价口径要跟着数据一起出现在页面上
     web = open(os.path.join(HERE, "web", "index.html"), encoding="utf-8").read()
-    有 = "part_note" in web and "报价口径" in web and "part_quote_base" in web
-    ck("报价口径要出现在页面上,不能只写在文档里", 有, 1,
-       "" if 有 else "页面上没渲染 part_note / 报价基准")
-    if 有:
-        print("       **看页面的人不会去翻文档,而他会直接把这个价报给客户**")
+    # ⚠️ 判据原来写死了 `part_quote_base` 这个字段名,而报价从
+    # 「整件按最贵的料」改成「按部位分摊」之后字段改叫 `part_fabric_cost` ——
+    # 当场红。**判据贴着字段名,字段名一改它就误报。**
+    # 改成验**这件事做到了没有**:页面上要有报价口径那段话,
+    # 而且要把「这个数是估的还是版师核过的」显示出来。
+    有口径 = "part_note" in web and "报价口径" in web
+    有料费 = "part_fabric_cost" in web or "part_quote_base" in web
+    有来源 = "用料来源" in web and "含估算" in web
+    ck("报价口径和「估算/已核」要出现在页面上", 有口径 and 有料费 and 有来源, 3,
+       "" if (有口径 and 有料费 and 有来源) else
+       f"口径={有口径} 料费={有料费} 来源标记={有来源}")
+    if 有口径 and 有料费 and 有来源:
+        print("       **一个标着「实价」的估算值,比一个标着「上限」的估算值糟得多**")
+
 
     # ⑤·前 **部位词只能有一个来源。**
     # 2026-09-14 业务裁决:设计交互稿里部位的叫法**自己就不统一**
