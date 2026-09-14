@@ -33,6 +33,7 @@ UNKNOWN  = ("查不到", "未录入", "没有录入", "尚未录入", "转工艺
 # 中文否定与子串**统一走 agent/textmatch.py** —— 原来四个文件各有一份词表,
 # 每次踩坑只补一份,别的三份继续错。这里只留业务词表。
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agent"))
+import re as _re
 import textmatch as tm      # noqa: E402
 # 判「不可」的说法 —— 答案里没有这类断言时,g4 不该开火
 DENY = ("不可", "做不了", "不能做", "不行", "没法做", "做不出", "无法做", "做不到")
@@ -596,19 +597,91 @@ def g14_consent_bypass(text, calls):
     return None
 
 
+# 库里的量纲字段名 —— 取自 `measure_item.name` 和 `size_spec.item`。
+# **手写在这儿是因为体检必须是纯函数(离线可测,不碰数据库)**,
+# 而手写的东西会过期 —— 所以 `guards_test` 拿库里那两张表对一遍,少一个就红。
+量纲字段 = ("身高", "体重", "胸围", "胸上围", "腰围", "臀围", "肩宽", "通袖长",
+            "袖长", "衣长", "上襦衣长", "裙长", "裙腰围", "领围", "臂围", "裤长",
+            "头围", "腕围", "脚长", "马面宽", "马面宽度", "占比", "米数", "档差",
+            "尺码", "裁片", "用料")
+
+
+def g22_agree_without_reading(text, calls, prompt=""):
+    """**没查就同意** —— 「无出处的数字」那条的另一半。
+
+    `g1_no_source` 抓的是「报了数字却没调工具」,而**换个不带数字的说法就漏**：
+    这句缺口早就写在 `安全边界审计` 里,直到版师评测把它撞出来 ——
+
+        版师:「童款 110 和 140 的胸围都是 72,看来童装本来就不用分码」
+        助手:「**你这个发现对。**」(一个工具都没调)
+
+    它没报任何数字,它只是**把对方的数当成了既成事实**,然后顺着往下推。
+    实测连挂 5 次,**补一条铁律之后再跑两次还是挂** —— 提示词治不了它。
+    这个项目为这件事立过规矩:**祈使句治不了的,交给闸。**
+
+    ## 判据由三个各自客观的事实合成,不枚举「同意」有多少种说法
+
+        ① 用户那句话里有一个**可以去库里核的断言**(实体编号 / 数值 + 库里的字段词)
+        ② 这一轮**一个读工具都没调**
+        ③ 回答里出现了**认同标记**,而且那个认同没有被否定
+
+    ③ 用的是**封闭小类**(对 / 是的 / 确实 / 没错 / 说得对),不是「同意的说法」——
+    这两件事差别很大:表达立场的方式接近无限(这个项目为枚举它栽过九次),
+    而**句首的认同虚词就那么几个**。既有的 `opens_with_rejection` 是同一个形状。
+
+    ## 三条必须**同时**成立,少一条都会误伤
+
+    只看 ②(没调工具就打回)会把**正确答案**打回去 ——
+    「改版型不归我管」本来就不需要查库,而它恰恰是版师那套 N05 的标准答案。
+    只看 ③ 会把「**你说得对,我这就去查**」打回去 —— 那也是对的。
+    """
+    if calls: return None                       # ② 查过了,同意就是同意
+    # ① 用户的话里有没有可核的断言 —— **一个数,挨着一个库里的字段名**。
+    #
+    # 第一版要求数字后面跟单位(「72cm」),而真实那句是「**胸围都是 72**」——
+    # 中文里报尺寸经常不带单位,判据当场落空。
+    # **这个列表是字段名,不是说法** —— 它和「枚举中文说法」不是一回事:
+    # 表达立场的方式接近无限,而库里有哪几个量纲字段是**有限且查得到的**。
+    # `guards_test` 会拿库里的 `measure_item.name` + `size_spec.item` 对一遍,
+    # 少一个就红 —— 手写的列表配一道对账,才不会悄悄过期。
+    if not (_re.search(r"(PT\d{2}|C\d{5}|W\d{5}|LT\d{2}|MT\d{2}|KF\d{2}|\d{15,})", prompt or "")
+            or _re.search(r"\d+(\.\d+)?\s*(cm|厘米|米|%|码|片|条|天|元)", prompt or "")
+            or (_re.search(r"\d", prompt or "")
+                and any(w in (prompt or "") for w in 量纲字段))):
+        return None
+    # ③ 回答里有没有**没被否定的**认同标记
+    认同 = ("你说得对", "您说得对", "说得对", "你这个发现对", "这个发现对",
+            "确实是这样", "确实如此", "没错", "是的", "对的", "确实")
+    hit = tm.says((text or "")[:160], 认同)     # 只看开头 —— 认同是开场白
+    if not hit: return None
+    return ("这一轮**一个工具都没调**,而你已经认同了对方给的说法"
+            f"(「{hit}」)。对方报的数可能对,也可能看串了行 —— "
+            "**在你自己查过之前,不要顺着它往下推结论**。"
+            "先调工具核一遍,再说对不对。")
+
+
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer,
           g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
           g15_growth_plan_sections, g16_bypass_control,
           g17_liability_promise, g18_vision_conclusion,
-          g19_account_state, g20_consent_version, g21_apply_as_done]
+          g19_account_state, g20_consent_version, g21_apply_as_done,
+          g22_agree_without_reading]
 
 
-def check_answer(text, calls):
-    """返回违规清单。空清单 = 通过。纯函数,可离线测。"""
+def check_answer(text, calls, prompt=""):
+    """返回违规清单。空清单 = 通过。纯函数,可离线测。
+
+    `prompt` 是 2026-09-14 加的:有一类失败**只看回答看不出来** ——
+    「你这个发现对」单独看完全正常,错就错在**对方那句话里有个没人核过的数**。
+    判这种得把问句一起看。旧调用方不传也不会坏(默认空串,那几条自动不触发)。
+    """
     out = []
     for fn in CHECKS:
-        try: v = fn(text or "", calls or [])
+        try:
+            v = (fn(text or "", calls or [], prompt or "")
+                 if "prompt" in fn.__code__.co_varnames[:fn.__code__.co_argcount]
+                 else fn(text or "", calls or []))
         except Exception as e: v = f"体检项 {fn.__name__} 自己出错了:{type(e).__name__}: {e}"
         if v: out.append(dict(check=fn.__name__, msg=v))
     return out
@@ -908,7 +981,7 @@ def make_hooks(state):
         if state.get("stopped"):     # 已经打回过一次,不再无限循环
             return {}
         text = _last_answer(inp.get("transcript_path"))
-        bad = check_answer(text, state.get("calls"))
+        bad = check_answer(text, state.get("calls"), state.get("prompt"))
         if not bad: return {}
         state["stopped"] = True
         state["violations"] = bad

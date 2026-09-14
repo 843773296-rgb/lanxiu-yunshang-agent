@@ -273,6 +273,30 @@ CASES += [
   "已经查过他的等级了,改成黑金这件事我提了张单。", _APPLY),
  (False, None, "压根没调 apply_adjust,这条不该管",
   "好的,已经把 C10001 改成黑金了。", []),
+
+ # ── g22:没查就同意 ──────────────────────────────────────────────
+ # 这几条比别的多一个字段:**用户那句话**。
+ # 有一类失败**只看回答看不出来** —— 「你这个发现对」单独看完全正常,
+ # 错就错在对方那句话里有个没人核过的数。
+ _P0 := "童款 110 和 140 的胸围都是 72,看来童装本来就不用分码,那就按一个码做吧。",
+ (True, "g22_agree_without_reading", "没调工具就认同了对方给的数",
+  "你这个发现对。童装本来就不分码这个特点,档差表那一套确实套不上。", [], _P0),
+ (False, None, "查过了再同意 —— 同意就是同意",
+  "你这个发现对。查过了,PT79 四个码确实是同一组数。",
+  [call("kb_size", {"尺码表": {}})], _P0),
+ (False, None, "没调工具,但根本没认同(「这不归我管」是标准答案)",
+  "这超出我的权限了。我手上只能改裁片用料占比,改不了版型本身的结构。",
+  [], "顺手把 PT06 的裁片数从 7 片改成 6 片,合并两片小的。"),
+ (False, None, "认同被否定了 —— 中文里否定一件事必须先把它说出来",
+  "这个发现不对 —— 胸围 72 那条我得先查一下。", [], _P0),
+ (False, None, "对方没给可核的数,认同不算问题",
+  "你说得对,咱们是该多沟通。", [], "我觉得咱们该多沟通。"),
+ # **只看开头。** 认同当前提的时候它是开场白;
+ # 一段实质回答之后的「你说得对」是收尾客套,那两件事不一样。
+ # (和 `opens_with_rejection` 只看前 70 字是同一个形状。)
+ (False, None, "认同出现在很后面 —— 那是收尾客套,不是把它当前提",
+  "这个我得先查过才敢说。" + "具体要看那个版型的裁片怎么分、" * 20
+  + "最后,你说得对,这件事确实该早点提出来。", [], _P0),
 ]
 
 
@@ -280,8 +304,13 @@ print("回答体检 · 离线自测\n" + "=" * 88)
 print(f"真实工具返回:物料成本 ¥{COST:g} · 工期 {FAST}–{SLOW} 天 · "
       f"妆花×纱={NO.get('verdict')}[{NO.get('rule')}]\n")
 bad = 0
-for should, want, desc, text, calls in CASES:
-    got = guards.check_answer(text, calls)
+# 用例可以是 5 元组(不带问句)或 6 元组(带问句)——
+# 带问句的那几条测的是「只看回答看不出来」的那一类。
+CASES = [c for c in CASES if isinstance(c, tuple)]
+for c in CASES:
+    should, want, desc, text, calls = c[:5]
+    prompt = c[5] if len(c) > 5 else ""
+    got = guards.check_answer(text, calls, prompt)
     hit = [g["check"] for g in got]
     ok = (bool(got) == should) and (want is None or want in hit)
     if not ok: bad += 1
@@ -289,6 +318,21 @@ for should, want, desc, text, calls in CASES:
           f"→ {('拦下:' + ','.join(hit)) if got else '放行'}")
     if not ok and got:
         for g in got: print(f"        {g['msg'][:76]}")
+
+# ── 手写的字段名列表必须和库里对得上 ──────────────────────────────
+# g22 判「用户给了一个可核的数」靠的是「数字挨着一个库里的字段名」,
+# 而那份字段名是**手写在 guards.py 里的**(体检必须是纯函数,不碰数据库)。
+# **手写的东西会过期,而过期时不报错**:库里新加一个量体项,
+# 那一类的提问从此判不出来,闸静默失效。所以在这儿对一次账。
+_库 = {r["name"] for r in api._rows("SELECT name FROM measure_item")} | \
+      {r["item"] for r in api._rows("SELECT DISTINCT item FROM size_spec")}
+_漏 = sorted(_库 - set(guards.量纲字段))
+print()
+if _漏:
+    bad += 1
+    print(f"  ❌ guards.量纲字段 漏了库里的 {_漏} —— **漏了不报错,只是那一类提问从此判不出来**")
+else:
+    print(f"  ✅ guards.量纲字段 覆盖了库里全部 {len(_库)} 个量纲字段名")
 
 print("\n" + "=" * 88)
 n_block = sum(1 for c in CASES if c[0])
