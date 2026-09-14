@@ -1537,6 +1537,19 @@ def _resolve(x, cat):
     if r: return r[0],None
     r=_rows("SELECT code,name,cat FROM craft WHERE cat=? AND (name=? OR alias=?)",cat,x,x)
     if r: return r[0],None
+    # **别名是顿号分隔的多值,不能按整列相等比。**
+    # 上面那句 `alias=?` 只有在别名恰好只有一个时才成立:
+    # 「立领袄」能命中(XZ04 的别名就这一个),而「圆领袍」命不中 ——
+    # XZ09 的别名是「圆领袍、常服袍」,整列不等于其中任何一个。
+    # 于是它掉进下面的模糊分支,撞上「明制圆领袍」和「童款圆领袍」两条,
+    # 报「对应多条」——**而它本来是一个明确声明的别名,不该是模糊匹配**。
+    # **一个明确声明的别名要赢过模糊包含。**
+    r=[q for q in _rows("SELECT code,name,alias,cat FROM craft WHERE cat=?",cat)
+       if x in [a.strip() for a in (q["alias"] or "").split("、") if a.strip()]]
+    if len(r)==1: return {k:r[0][k] for k in ("code","name","cat")},None
+    if len(r)>1:
+        return None,(f"「{x}」是这几条的别名:{[q['name'] for q in r]} —— "
+                     f"请用形制全名或编码")
     r=[q for q in _rows("SELECT code,name,alias,cat FROM craft WHERE cat=?",cat)
        if x in (q["name"] or "") or x in (q["alias"] or "") or (q["name"] or "") in x]
     if len(r)==1: return r[0],None
@@ -1773,12 +1786,41 @@ def _names():
 
 
 def kb_pattern(xz=None):
-    """版型库 —— 一个形制有哪些版型、分几个裁片、出哪些码。"""
+    """版型库 —— 一个形制有哪些版型、分几个裁片、出哪些码。
+
+    ⚠️ **入参既收形制名,也收版型编码和版型名。**
+    原来只收形制名,于是顾问按日常说法问「PT04 马面裙推荐什么码」「PT06 立领长衫
+    M 码要多久」,工具一律回「知识库里没有叫「PT04」的形制」——
+    **而 PT04 就在这张表里,是「明制马面裙·标准」**。
+
+    这不是模型的问题:实测它老老实实说「查不到这个编码,请确认」并要求补参数,
+    **没有编一个** —— 那正是对的行为。问题是
+    **工具的入参维度和人说话的维度对不上**:
+    顾问嘴里说的是版型编码和变体名(「阔褶马面裙」),工具只吃形制名。
+    一套工具评测里有 4 条栽在这上面。
+    """
     q="SELECT * FROM pattern"; a=()
     if xz:
-        k,e=_resolve(xz,"形制")
-        if e: return {"error":e}
-        q+=" WHERE xz=?"; a=(k["code"],)
+        # ① 先当版型编码 / 版型全名试(PT04、明制马面裙·标准)
+        直 = _rows("SELECT * FROM pattern WHERE code=? OR name=?", xz, xz)
+        # ② 再试变体名倒过来写:「阔褶马面裙」↔「明制马面裙·阔褶」
+        if not 直:
+            直 = [r for r in _rows("SELECT * FROM pattern")
+                  if "·" in (r["name"] or "")
+                  and r["name"].split("·")[-1] in xz
+                  and any(w in xz for w in r["name"].split("·")[0][-3:])]
+        if 直:
+            # 命中具体版型时,**仍然把同形制的都列出来** ——
+            # 问 PT04 的人多半也想知道同形制还有别的版型可挑(PT05 阔褶)。
+            # 只返回一条会让「有没有别的选择」这个问题永远问不出来。
+            q += " WHERE xz=?"; a = (直[0]["xz"],)
+        else:
+            k,e=_resolve(xz,"形制")
+            if e:
+                # 报错也要说清**这个工具认什么** —— 否则模型只能反复猜入参。
+                return {"error": e + "(这个工具也认**版型编码**如 PT04 和"
+                                    "**版型全名**如「明制马面裙·标准」)"}
+            q+=" WHERE xz=?"; a=(k["code"],)
     rs=_rows(q+" ORDER BY code",*a)
     if not rs:
         return {"hit":0,"note":f"「{xz}」这个形制还没有版型。**没有版型就裁不出来**,"

@@ -42,6 +42,7 @@ run "商品与版型 · 性别和量体模板从版型派生(模板错了是量�
 run "形制与量体模板 · 模板必须覆盖形制的关键尺寸(漏一项就是没量最敏感的)" python3 backend/xingzhi_check.py
 run "待定版型分档 · 47 条对照用例(真值手标)" python3 backend/pattern_grade_check.py
 run "商品图 · 每张都渲染得出来,且看得出是不同的衣服" python3 backend/img_check.py
+run "工具入参 · 人怎么称呼它,工具就得认得出来" python3 backend/tool_input_check.py
 run "方案引用 · 存编码不存名字,而且落到具体版型(否则算不出用料)" python3 backend/scheme_check.py
 run "顾问引用 · 名字是被钉住的缓存,不是第二份真相" python3 backend/advisor_ref_check.py
 run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 backend/role_check.py
