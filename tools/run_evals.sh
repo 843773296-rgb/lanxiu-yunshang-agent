@@ -14,7 +14,8 @@ export LANXIU_PROVIDER="${LANXIU_PROVIDER:-claude}"
 echo "供应商: $LANXIU_PROVIDER   输出: $OUT"
 for f in agent/chat_eval.py agent/tool_eval.py agent/growth_eval.py \
          agent/vision_eval.py agent/liability_eval.py agent/ops_eval.py \
-         agent/report_eval.py agent/member_eval.py agent/role_eval.py; do
+         agent/report_eval.py agent/member_eval.py agent/role_eval.py \
+         agent/pattern_eval.py; do
   n=$(basename "$f" .py)
   echo "▸ $n"
   $PY "$f" > "$OUT/$n.txt" 2>&1

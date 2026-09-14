@@ -1510,7 +1510,13 @@ def set_piece_ratio(pattern, piece, ratio, why=""):
                          f"**一片占满整件(1)或者不占布(0)都不成立**"}
     旧 = tgt[0]["ratio"]
     import sqlite3 as _sq, datetime as _dt
-    who = f"{me.get('id') or ''}|{me.get('name') or ''}".strip("|")
+    # **工号那一栏叫 `no`,不叫 `id`。** 第一版写的是 `me.get('id')` ——
+    # 后台的 `/api/me` 只发 `no`,于是这一栏在真实登录下**永远是空的**,
+    # 存进去的只有姓名。而 `pattern_role_check` 当时是绿的,
+    # 因为**我在夹具里同时喂了 `no` 和 `id`** —— 夹具比真实情况更宽容,
+    # 于是检查测的是一个现实中不存在的入参形状。
+    # **夹具喂出来的绿,和真的绿长得一模一样。**
+    who = f"{me.get('no') or me.get('id') or ''}|{me.get('name') or ''}".strip("|")
     now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _sq.connect(DB) as cx:
         cx.execute("UPDATE pattern_piece SET ratio=?, ratio_src='版师', "

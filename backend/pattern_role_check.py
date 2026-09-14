@@ -121,7 +121,11 @@ def main():
             r = api.set_piece_ratio(片["pattern"], 片["name"], 0.3, "试")
         if not r.get("error"): 挡.append("店长居然改得了裁片用料")
         # ⓒ 是版师但没写理由 —— 挡
-        me = dict(no=版师["no"], id=版师["no"], name=版师["name"], role="版师", shop="")
+        # ⚠️ **夹具的形状要和后台真发的一模一样。**
+        # 这里原来同时喂了 `no` 和 `id`,而 `/api/me` 只发 `no` ——
+        # 工具里读的却是 `id`,于是真实登录下工号那一栏永远是空的,
+        # 而这条检查一直是绿的。**夹具比现实宽容一点,检查就测了一个不存在的世界。**
+        me = dict(no=版师["no"], name=版师["name"], role="版师", shop="")
         with api.as_user(me):
             r = api.set_piece_ratio(片["pattern"], 片["name"], 0.3, "  ")
         if not r.get("error"): 挡.append("没写理由居然改成了")
@@ -143,7 +147,10 @@ def main():
         row = c.execute("SELECT ratio,ratio_src,ratio_by,ratio_at,ratio_why "
                         "FROM pattern_piece WHERE pattern=? AND name=?",
                         (片["pattern"], 片["name"])).fetchone()
+        # **工号必须真的在里面** —— 只有姓名的话,同名两个版师就分不开,
+        # 而「傅砚青核的」听起来和「60000020 傅砚青核的」一样可信。
         全 = bool(row and row["ratio_src"] == "版师" and row["ratio_by"]
+                  and 版师["no"] in (row["ratio_by"] or "")
                   and row["ratio_at"] and row["ratio_why"])
         ck("改过的数查得到是谁、什么时候、为什么", 全, 1,
            f"{row['ratio_by']} / {row['ratio_at']} / {row['ratio_why']}" if 全 else
