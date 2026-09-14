@@ -557,6 +557,14 @@ def product_detail(spu):
                "AND changes LIKE '%备注%' ORDER BY id DESC LIMIT 1", spu)
     p["remark_by"] = _rm[0]["actor"] if _rm else None
     p["remark_at"] = _rm[0]["ts"] if _rm else None
+    # 设计稿右侧那块「量体模板」显示的是**适用模板 + 字段列表** ——
+    # 只显示模板名的话,看的人还要跳到另一个页面才知道这件衣服要量哪几项。
+    p["tpl_items"]=[]
+    if p.get("template"):
+        _tc=str(p["template"]).split(" ")[0]
+        p["tpl_items"]=[r["name"] for r in rows(
+            "SELECT mi.name FROM tpl_item ti JOIN measure_item mi ON mi.code=ti.item "
+            "WHERE ti.tpl=? ORDER BY ti.sort",_tc)]
     p["banner"]=读轮播图(p.get("img_detail"))
     p["intro_groups"]=读详情图(p.get("img_intro"))
     p["skus"]=rows("SELECT * FROM sku WHERE spu=? ORDER BY code",spu)
@@ -1396,22 +1404,122 @@ def save_block(d,actor="魏欣新"):
     log_op(actor,"page_block",page,"—",act,True,"BLOCK",msg,{})
     return dict(ok=True,code="BLOCK",reason=msg+";页面已回到草稿状态,需重新发布")
 
-def save_template(d,actor="魏欣新"):
+def tpl_impact(code):
+    """**改这个模版会影响谁。** 改之前先算出来,别改完再说。"""
+    return dict(
+        商品=rows("SELECT COUNT(*) c FROM product WHERE template LIKE ?",f"{code}%")[0]["c"],
+        量体人次=rows("SELECT COUNT(DISTINCT wearer_id) c FROM measure_rec WHERE tpl=?",
+                      code)[0]["c"],
+        量体记录=rows("SELECT COUNT(*) c FROM measure_rec WHERE tpl=?",code)[0]["c"])
+
+
+def save_template(d,actor="魏欣新",role="顾问"):
+    """新建或编辑量体模版。
+
+    ⚠️ **编辑一个已经被引用的模版是这块最危险的动作。**
+    模版被 N 个商品挂着、被 M 条量体记录用过。从模版里**移掉一个测量项**,
+    那些历史记录就指向一个模版已经不包含的项 ——
+    **既不算错也不算对,而报表上完全正常**。
+
+    所以移除测量项时:**已经量过的那一项不许移**。
+    不是「提示一下还是让你移」—— 移了之后那批记录就悬空了,
+    而悬空的数据**没有任何检查会报**(它不违反任何外键)。
+    要停用整个模版走「停用」,那是可逆的;移一项是不可逆的。
+    """
+    if role not in ("总部运营","店长"):
+        return dict(ok=False,code="WRONG_ROLE",
+                    reason=f"量体模版维护须由总部运营或店长操作,当前角色:{role}")
+    code=(d.get("code") or "").strip()
     nm=(d.get("name") or "").strip()
-    items=[x for x in (d.get("items") or "").split(",") if x.strip()]
+    items=[x.strip() for x in (d.get("items") or "").split(",") if x.strip()]
     if not nm: return dict(ok=False,code="NEED_NAME",reason="模版名称必填")
     if not items: return dict(ok=False,code="NEED_ITEMS",reason="至少选择一个测量项")
-    bad=[i for i in items if not rows("SELECT 1 FROM measure_item WHERE code=? AND status='启用'",i.strip())]
+    bad=[i for i in items if not rows("SELECT 1 FROM measure_item WHERE code=? AND status='启用'",i)]
     if bad: return dict(ok=False,code="BAD_ITEM",reason=f"测量项不存在或已停用:{'、'.join(bad)}")
+    old=rows("SELECT * FROM measure_tpl WHERE code=?",code) if code else []
+    if code and not old:
+        return dict(ok=False,code="NOT_FOUND",reason=f"量体模版 {code} 不存在")
+
+    if old:
+        旧项=[r["item"] for r in rows("SELECT item FROM tpl_item WHERE tpl=? ORDER BY sort",code)]
+        移掉=[i for i in 旧项 if i not in items]
+        # **已经量过的那一项不许移** —— 移了那批记录就悬空,而悬空不违反任何外键,
+        # 没有检查会报。要整个停用走「停用」,那是可逆的。
+        挡=[]
+        for i in 移掉:
+            n=rows("SELECT COUNT(*) c FROM measure_rec WHERE tpl=? AND item=?",code,i)[0]["c"]
+            if n:
+                nmi=(rows("SELECT name FROM measure_item WHERE code=?",i) or [{"name":i}])[0]["name"]
+                挡.append(f"{nmi}({i})已有 {n} 条量体记录")
+        if 挡:
+            return dict(ok=False,code="ITEM_IN_USE",
+                        reason="这几项不能从模版里移掉:"+"；".join(挡)+
+                               "。**移掉之后那批记录会指向一个模版不再包含的项** —— "
+                               "既不算错也不算对,而报表上完全正常。"
+                               "要停用整个模版请走「停用」(可逆),移项不可逆")
+        with sqlite3.connect(DB) as c:
+            c.execute("UPDATE measure_tpl SET name=?,descr=?,"
+                      "updated=datetime('now','localtime') WHERE code=?",
+                      (nm,d.get("descr") or "",code))
+            c.execute("DELETE FROM tpl_item WHERE tpl=?",(code,))
+            for j,it in enumerate(items,1):
+                c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it,j))
+        ch=[]
+        if old[0]["name"]!=nm: ch.append({"字段":"模版名称","改前":old[0]["name"],"改后":nm})
+        if (old[0]["descr"] or "")!=(d.get("descr") or ""):
+            ch.append({"字段":"描述","改前":old[0]["descr"] or "","改后":d.get("descr") or ""})
+        if 旧项!=items:
+            ch.append({"字段":"测量项","改前":"、".join(旧项),"改后":"、".join(items)})
+        log_edit(actor,d.get("actor_no"),"量体模板",code,"编辑量体模板",ch,
+                 d.get("source") or "后台")
+        log_op(actor,"measure_tpl",code,"—","编辑",True,"UPDATE",
+               f"{nm} · {len(items)} 个测量项",{})
+        imp=tpl_impact(code)
+        return dict(ok=True,code="UPDATE",
+                    reason=f"量体模版 {code} 已更新,含 {len(items)} 个测量项。"
+                           f"**影响面**:{imp['商品']} 个商品挂着它,"
+                           f"已有 {imp['量体人次']} 人 / {imp['量体记录']} 条量体记录用过")
+
     n=rows("SELECT COUNT(*) c FROM measure_tpl")[0]["c"]+1
     code=f"MT{n:02d}"
     with sqlite3.connect(DB) as c:
         c.execute("INSERT INTO measure_tpl VALUES(?,?,?,'启用','60000008',datetime('now','localtime'))",
                   (code,nm,d.get("descr") or ""))
         for j,it in enumerate(items,1):
-            c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it.strip(),j))
+            c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it,j))
+    log_edit(actor,d.get("actor_no"),"量体模板",code,"创建量体模板",
+             [{"字段":"模版名称","改前":"","改后":nm},
+              {"字段":"测量项","改前":"","改后":"、".join(items)}],
+             d.get("source") or "后台")
     log_op(actor,"measure_tpl",code,"—","新建",True,"CREATE",f"{nm} · {len(items)} 个测量项",{})
     return dict(ok=True,code="CREATE",reason=f"量体模版 {code} 已创建,含 {len(items)} 个测量项")
+
+
+def del_template(d,actor="魏欣新",role="顾问"):
+    """删模版 —— **被引用就不许删**,而且要说清被谁引用。
+
+    「删不了」这三个字没用:看的人还要自己去翻是哪几个商品挂着它。
+    """
+    if role not in ("总部运营","店长"):
+        return dict(ok=False,code="WRONG_ROLE",reason=f"量体模版维护须由总部运营或店长操作,当前角色:{role}")
+    code=(d.get("code") or "").strip()
+    if not rows("SELECT 1 FROM measure_tpl WHERE code=?",code):
+        return dict(ok=False,code="NOT_FOUND",reason=f"量体模版 {code} 不存在")
+    imp=tpl_impact(code)
+    if imp["商品"] or imp["量体记录"]:
+        ps=[r["name"] for r in rows("SELECT name FROM product WHERE template LIKE ? LIMIT 3",f"{code}%")]
+        return dict(ok=False,code="IN_USE",
+                    reason=f"删不了:{imp['商品']} 个商品挂着它"
+                           + (f"(例如 {'、'.join(ps)})" if ps else "")
+                           + f",已有 {imp['量体记录']} 条量体记录用过。"
+                             f"**要停用请走「停用」** —— 停用是可逆的,删是不可逆的")
+    with sqlite3.connect(DB) as c:
+        c.execute("DELETE FROM tpl_item WHERE tpl=?",(code,))
+        c.execute("DELETE FROM measure_tpl WHERE code=?",(code,))
+    log_edit(actor,d.get("actor_no"),"量体模板",code,"删除量体模板",
+             [{"字段":"整条","改前":code,"改后":"(已删除)"}],d.get("source") or "后台")
+    log_op(actor,"measure_tpl",code,"—","删除",True,"DELETE","没有任何引用",{})
+    return dict(ok=True,code="DELETE",reason=f"量体模版 {code} 已删除(它没有被任何商品或量体记录引用)")
 
 def save_syscode(d,actor="魏欣新",role="顾问"):
     if role!="总部运营":
@@ -2091,7 +2199,8 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/product-save":
             return self._send(save_product(body,role=_role_of(self)))
         if p=="/api/block-save": return self._send(save_block(body))
-        if p=="/api/template-save": return self._send(save_template(body))
+        if p=="/api/template-save": return self._send(save_template(body,role=body.get("role") or "顾问"))
+        if p=="/api/template-del": return self._send(del_template(body,role=body.get("role") or "顾问"))
         if p=="/api/syscode-save":
             return self._send(save_syscode(body,role=_role_of(self)))
         if p=="/api/content-save": return self._send(save_content(body))

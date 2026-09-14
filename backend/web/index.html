@@ -1602,7 +1602,10 @@ async function productDetail(spu){
      <div><div class="l">兑换积分</div><div class="v mono">${(d.points||0).toLocaleString()}</div></div>
      <div><div class="l">佣金分配方式</div><div class="v">${esc(d.commission_type||"")}${
         d.commission_type==="按比例"?` · ${d.commission_val}%`:` · ¥${money(d.commission_val||0)}`}</div></div>
-     <div><div class="l">量体模版</div><div class="v">${esc(d.template||"—— 标品无需量体")}</div></div>
+     <div><div class="l">量体模版</div><div class="v">${esc(d.template||"—— 标品无需量体")}${
+       (d.tpl_items||[]).length?`<div style="margin-top:6px">${d.tpl_items.map(x=>
+         `<span class="pill p-mut" style="margin:2px 4px 2px 0">${esc(x)}</span>`).join("")}</div>`
+       :""}</div></div>
      <div><div class="l">上架时间</div><div class="v mono">${esc(d.on_shelf_at||"—")}</div></div>
      <div><div class="l">创建时间</div><div class="v mono">${esc(d.created)}</div></div>
      <div><div class="l">最后更新</div><div class="v mono">${esc(d.updated)}</div></div>
@@ -1788,11 +1791,19 @@ async function measureTpls(){
       <td><span class="tg ${r.status==="启用"?"on":""}" data-tgl="measure_tpl|code|${esc(r.code)}"><i>${r.status==="启用"?"启用":"停用"}</i></span></td>
       <td class="mono" style="color:var(--ink3)">${esc(r.updated)}</td>
       <td><span class="lk" data-mt="${esc(r.code)}">查看</span>
-        <span class="lk dead" title="删除模版 · 已被引用时不可删除">删除</span></td></tr>`).join("")}
+        <span class="lk" data-edittpl="${esc(r.code)}">编辑</span>
+        <span class="lk${(r.used||r.recs)?" dead":""}" data-deltpl="${esc(r.code)}"
+          title="${(r.used||r.recs)?`删不了:${r.used} 个商品挂着它、${r.recs} 人量过体 —— 要停用请走「停用」`:"没有任何引用,可以删"}">删除</span></td></tr>`).join("")}
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-mt]").forEach(e=>{const r=d.rows.find(x=>x.code===e.dataset.mt);
     e.onclick=()=>modal(`${r.name} · 测量项`,[],()=>{},false)||showTpl(r)});
   M.querySelectorAll("[data-newtpl]").forEach(e=>e.onclick=()=>formTemplate(measureTpls));
+  M.querySelectorAll("[data-edittpl]").forEach(e=>e.onclick=()=>
+    formTemplate(measureTpls,d.rows.find(x=>x.code===e.dataset.edittpl)));
+  M.querySelectorAll("[data-deltpl]:not(.dead)").forEach(e=>e.onclick=()=>
+    modal(`删除量体模版 · ${e.dataset.deltpl}`,[{k:"why",type:"text",req:1,
+      label:"删除原因(删除不可逆;要临时停掉请走「停用」)",ph:"例如:建错了,没用过"}],
+      ()=>doOp("/api/template-del",{code:e.dataset.deltpl,role:ROLE},measureTpls),true));
   bindToggle(measureTpls); bindTable(st,measureTpls);
 }
 function showTpl(r){
@@ -2571,15 +2582,18 @@ async function formBlock(page,blk,after){
         {k:"cfg",type:"text",label:"配置说明",ph:"例如:1 张 / 750×420"}],
    v=>doOp("/api/block-save",{act:blk?"edit":"add",page,id:blk&&blk.id,...v},after),true);
 }
-async function formTemplate(after){
+async function formTemplate(after,cur){
   const it=await get("/api/measure-items");
   const on=it.rows.filter(x=>x.status==="启用");
-  modal("新增量体模版",[
-    {k:"name",label:"模版名称",req:1,ph:"例如:半臂模版"},
-    {k:"descr",label:"描述",ph:"例如:唐制半臂,采集上身"},
-    {k:"items",type:"text",label:`测量项编码(逗号分隔)· 可用:${on.map(x=>x.code+"="+x.name).join(" ")}`,
+  // 编辑时把**影响面**写在标题上 —— 改之前就看得见,不用改完再说。
+  const imp=cur?`(${cur.used} 个商品挂着它 · ${cur.recs} 人量过体)`:"";
+  modal(cur?`编辑量体模版 · ${cur.code} ${imp}`:"新增量体模版",[
+    {k:"name",label:"模版名称",req:1,val:cur&&cur.name,ph:"例如:半臂模版"},
+    {k:"descr",label:"描述",val:cur&&cur.descr,ph:"例如:唐制半臂,采集上身"},
+    {k:"items",type:"text",val:cur&&(cur.item_codes||[]).join(","),
+     label:`测量项编码(逗号分隔)· 可用:${on.map(x=>x.code+"="+x.name).join(" ")}`,
      req:1,ph:"MI01,MI03,MI06"},
-  ],v=>doOp("/api/template-save",v,after),true);
+  ],v=>doOp("/api/template-save",{...v,code:cur&&cur.code,role:ROLE},after),true);
 }
 function formSyscode(after){
   modal("新增系统编码",[
