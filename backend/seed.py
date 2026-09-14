@@ -2619,14 +2619,21 @@ def run():
     # 但它们**确实收定制加价**(实测 ¥864 / ¥396)。漏掉它们的话,
     # 那两条订单行就是「有钱没项」——`part_choice_check` 当场红,而它红得对。
     # 配饰走「整件」那一档,见 `knowledge/part.py`。
-    for _r in c.execute("SELECT p.spu, p.pattern, pc.mt_opts FROM product p "
+    for _r in c.execute("SELECT p.spu, p.pattern, pc.mt_opts, pc.kf_opts FROM product p "
                         "JOIN product_custom pc ON pc.spu=p.spu "
                         "WHERE p.kind='定制品'").fetchall():
         _mts = [x for x in (_r["mt_opts"] or "").split(",") if x.strip()]
+        _kfs = [x for x in (_r["kf_opts"] or "").split(",") if x.strip()]
         if not _mts:
             continue
         _bs = _part.形制的部位(c, _r["pattern"])
         _n_sp += bool(_bs)
+        # **工艺也是一个维度**(pad 上那个「花型选择」tab)。
+        # 只铺面料的话,配置页上永远只有一半 —— 而客户选的是「云锦 + 苏绣」。
+        for _i3, _b in enumerate(_bs, 1):
+            for _k5 in _kfs:
+                c.execute("INSERT OR IGNORE INTO part_option VALUES(?,?,?,?,?,?,?)",
+                          (_r["spu"], "工艺", _b, _k5.strip(), 0.0, None, _i3))
         for _i3, _b in enumerate(_bs, 1):
             for _m in _mts:
                 # 加价:第一个选项不加价(pad 上就是 +¥0),其余按材质单价档位给
@@ -2655,7 +2662,10 @@ def run():
             "WHERE p.kind='定制品' AND i.custom_amount>0").fetchall():
         _opts = [dict(r) for r in c.execute(
             "SELECT part, material, addon, colors FROM part_option "
-            "WHERE spu=? ORDER BY sort, material", (_it["spu"],))]
+            "WHERE spu=? AND kind='面料' ORDER BY sort, material", (_it["spu"],))]
+        _kfopt = [r[0] for r in c.execute(
+            "SELECT DISTINCT material FROM part_option WHERE spu=? AND kind='工艺'",
+            (_it["spu"],))]
         if not _opts:
             continue
         # 每个部位挑一个(确定性:按订单行 id 定,重播种结果一样)
@@ -2679,6 +2689,29 @@ def run():
                       " VALUES(?,?,?,?,?,?,?)",
                       (_it["id"], "面料", _b, _m, _col, _amt, _desc))
             _n_ch += 1
+            # **同一个部位还要选工艺,而且必须和这个面料相容。**
+            # 相容矩阵 2025 格里有 441 对判「不可」(妆花 × 香云纱、缂丝 × 香云纱…),
+            # 这条原来**只在配置页拦,订单上没人对过账**。
+            # 挑不出相容的就**不给这个部位配工艺** —— 不是随便塞一个:
+            # 塞一个做不出来的组合,车间会拿着它去开工。
+            _ok_kf = []
+            for _kf in _kfopt:
+                _v = c.execute(
+                    "SELECT verdict FROM craft_combo WHERE craft=("
+                    "SELECT code FROM craft WHERE name=? AND cat='工艺') AND material=("
+                    "SELECT code FROM craft WHERE name=? AND cat='材质')",
+                    (_kf, _m)).fetchone()
+                if _v and _v[0] != "不可":
+                    _ok_kf.append(_kf)
+            if _ok_kf:
+                _kf = _ok_kf[(_it["id"] + _k4) % len(_ok_kf)]
+                _kd = (c.execute("SELECT brief FROM craft WHERE name=? AND cat='工艺'",
+                                 (_kf,)).fetchone() or [None])[0]
+                c.execute("INSERT INTO item_part_choice"
+                          "(item_id,kind,part,material,color,amount,note)"
+                          " VALUES(?,?,?,?,?,?,?)",
+                          (_it["id"], "工艺", _b, _kf, None, 0.0, _kd))
+                _n_ch += 1
     print(f"  [部位选择] 给 {_n_ch} 条订单行明细"
           f"(**加价之和 = 订单行已有的 custom_amount**,不是重算)")
 

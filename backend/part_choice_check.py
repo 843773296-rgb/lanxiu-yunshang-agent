@@ -122,6 +122,41 @@ def main():
            f"配置价一改,历史订单跟着变了:{tgt['amount']} → {后}")
         print("       **一个是「现在多少钱」,一个是「当时收了多少钱」** —— "
               "合并之后历史订单会跟着今天的价一起漂")
+    # ⑥·2 **同一个部位上选的面料和工艺必须相容。**
+    #     相容矩阵 2025 格里有 441 对判「不可」(妆花 × 香云纱、缂丝 × 香云纱…)。
+    #     这条原来**只在配置页拦,订单上没人对过账** ——
+    #     而配置页拦得住的前提是「所有下单路径都经过配置页」,
+    #     那是个假设,不是事实(导单、改单、后台补单都绕得过去)。
+    #     **拦在入口的规则,要在存量上对一次账,才知道它真的拦住了。**
+    不可 = [f"{r[0]}·{r[1]} × {r[2]}" for r in c.execute(
+        """SELECT m.part, m.material, k.material FROM item_part_choice m
+           JOIN item_part_choice k ON k.item_id=m.item_id AND k.part=m.part
+                                  AND k.kind='工艺'
+           JOIN craft_combo cc
+             ON cc.material=(SELECT code FROM craft WHERE name=m.material AND cat='材质')
+            AND cc.craft=(SELECT code FROM craft WHERE name=k.material AND cat='工艺')
+           WHERE m.kind='面料' AND cc.verdict='不可'""")]
+    n62 = c.execute("SELECT COUNT(*) FROM item_part_choice WHERE kind='工艺'").fetchone()[0]
+    ck("同一部位的面料和工艺必须相容", not 不可, n62,
+       ("；".join(不可[:3]) if 不可 else
+        "**拦在入口的规则,要在存量上对一次账** —— "
+        "配置页拦得住的前提是「所有下单路径都经过配置页」,那是假设不是事实"))
+
+    # ⑥·3 **有面料就得有工艺** —— 除非这个部位没有相容的工艺可选。
+    #     缺工艺不是小事:车间拿到「领口用云锦」而不知道做什么绣,只能问或者猜。
+    缺艺 = [f"{r[0]}·{r[1]}" for r in c.execute(
+        """SELECT m.part, m.material FROM item_part_choice m
+           WHERE m.kind='面料' AND NOT EXISTS(
+             SELECT 1 FROM item_part_choice k WHERE k.item_id=m.item_id
+               AND k.part=m.part AND k.kind='工艺')
+             AND EXISTS(SELECT 1 FROM ordr_item i JOIN part_option o ON o.spu=i.spu
+                        WHERE i.id=m.item_id AND o.kind='工艺')""")]
+    n63 = c.execute("SELECT COUNT(*) FROM item_part_choice WHERE kind='面料'").fetchone()[0]
+    ck("有面料的部位要有工艺(除非没有相容的可选)", not 缺艺, n63,
+       ("；".join(缺艺[:3]) if 缺艺 else
+        "**挑不出相容的就不配,不是随便塞一个** —— "
+        "塞一个做不出来的组合,车间会拿着它去开工"))
+
     # ⑦ **工艺文档要拼得出来,而且列名不许混。**
     #    交互稿那张表的列叫「位置 / 工艺 / 颜色 / 定制部件金额」,
     #    而那一列的**值是「真丝」—— 那是面料,不是工艺**。
@@ -156,7 +191,7 @@ def main():
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 订单部位选择 / 工艺文档 8 条全过")
+    print("✅ 订单部位选择 / 工艺文档 10 条全过")
     return 0
 
 

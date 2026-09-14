@@ -560,9 +560,22 @@ def craft_doc(order_id):
     o["items"] = []
     for it in rows("SELECT * FROM ordr_item WHERE order_id=? ORDER BY id", order_id):
         it = dict(it)
-        it["choices"] = rows(
-            "SELECT kind,part,material,color,amount,note FROM item_part_choice "
-            "WHERE item_id=? ORDER BY id", it["id"])
+        # 按**部位**归拢,一个部位一块 —— 而不是面料一串、工艺一串。
+        # 车间是按部位干活的:做领口的人要一眼看到「领口用什么料、做什么绣」。
+        _ch = rows("SELECT kind,part,material,color,amount,note FROM item_part_choice "
+                   "WHERE item_id=? ORDER BY id", it["id"])
+        _g = {}
+        for x in _ch:
+            b2 = _g.setdefault(x["part"], {"部位": x["part"], "面料": None,
+                                           "颜色": None, "工艺": [], "金额": 0.0,
+                                           "说明": None})
+            if x["kind"] == "面料":
+                b2["面料"], b2["颜色"], b2["说明"] = x["material"], x["color"], x["note"]
+            else:
+                b2["工艺"].append(x["material"])
+            b2["金额"] = round(b2["金额"] + (x["amount"] or 0), 2)
+        it["choices"] = _ch
+        it["parts"] = list(_g.values())
         # 量体:按这一行的着装人取,**取不到要说「没量过」,不能显示空表** ——
         # 空表和「量过但都是 0」在纸上长得一样,而车间会照着裁。
         it["measures"] = rows(

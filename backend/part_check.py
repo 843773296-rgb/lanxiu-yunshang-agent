@@ -71,20 +71,26 @@ def main():
        f"马面裙 {sorted(裙)} / 立领长衫 {sorted(衫)}")
 
     # ③ 没有哪个部位的可选料**少于**整件可选料 —— 少了就是被自动拆过
+    # ⚠️ **按 `kind` 分开比。** 这条检查写的时候 `part_option` 只有面料一个维度,
+    # 后来加了工艺(pad 上那个「花型选择」tab),一个部位下面就同时有
+    # 面料和工艺 —— 拿混在一起的集合去比整件面料,当场红。
+    # **判据的假设过期了,不是代码错了**;加维度是对的,是这条检查没跟上。
     坏 = []
-    for r in c.execute("SELECT p.spu,p.name,pc.mt_opts FROM product p "
+    for r in c.execute("SELECT p.spu,p.name,pc.mt_opts,pc.kf_opts FROM product p "
                        "JOIN product_custom pc ON pc.spu=p.spu "
                        "WHERE p.kind='定制品' AND p.pattern IS NOT NULL"):
-        整 = {x.strip() for x in (r["mt_opts"] or "").split(",") if x.strip()}
-        if not 整:
-            continue
-        for b, in c.execute("SELECT DISTINCT part FROM part_option WHERE spu=?",
-                            (r["spu"],)):
-            有 = {x[0] for x in c.execute(
-                "SELECT material FROM part_option WHERE spu=? AND part=?",
-                (r["spu"], b))}
-            if 有 != 整:
-                坏.append(f"{r['name'][:16]}·{b}:{sorted(有)} ≠ 整件 {sorted(整)}")
+        for 维, 源 in (("面料", r["mt_opts"]), ("工艺", r["kf_opts"])):
+            整 = {x.strip() for x in (源 or "").split(",") if x.strip()}
+            if not 整:
+                continue
+            for b, in c.execute(
+                    "SELECT DISTINCT part FROM part_option WHERE spu=? AND kind=?",
+                    (r["spu"], 维)):
+                有 = {x[0] for x in c.execute(
+                    "SELECT material FROM part_option WHERE spu=? AND kind=? AND part=?",
+                    (r["spu"], 维, b))}
+                if 有 != 整:
+                    坏.append(f"{r['name'][:14]}·{b}·{维}:{sorted(有)} ≠ 整件 {sorted(整)}")
     n3 = c.execute("SELECT COUNT(DISTINCT spu) FROM part_option").fetchone()[0]
     ck("每个部位先给全部整件可选料(不自动拆)", not 坏, n3,
        ("；".join(坏[:2]) if 坏 else
