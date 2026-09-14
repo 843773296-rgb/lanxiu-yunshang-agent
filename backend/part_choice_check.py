@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""订单行的部位选择检查 —— **收的钱和记的账不许分家。**
+
+## 背景
+
+2026-09-14 看到工艺文档的打印稿才发现:`ordr_item.custom_amount` 存着
+「定制部件金额 ¥756」,而**选了什么部位、什么料、什么颜色,一个字都没存**。
+工艺文档要打印「领口 · 真丝 · 红色 · ¥1,000」—— 那三项系统里全无,只有总额。
+
+> **钱已经收了,而收的是什么钱没有记录。**
+> 车间照着打印不出来,客户争议时也拿不出依据。
+
+这和「pad 上选的东西没进系统,等于没选过」是同一句话。
+
+## 四条
+
+**① 加价之和 = `custom_amount`。** 这是这张表存在的意义 ——
+它不是「重新算一遍价」,是**把一个已有的总额拆成看得见的项**。
+拆出来的和对不上,就是收的钱和记的账分家了,而**两个数各自看都很正常**。
+
+**② 有定制部件金额的订单行,必须有明细。** 有钱没项 = 回到出问题前的样子。
+
+**③ 没有定制部件金额的,不许有明细。** 有项没钱 = 白做了活没收钱,
+同样是账实不符,只是方向相反 —— **两个方向都要测**。
+
+**④ 选的料必须在这个商品的可选料里。** 选了一个配置页上根本没有的料,
+说明中间某一步把约束绕过去了 —— 而车间会照着做。
+"""
+import os, sys, sqlite3
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+FAIL = []
+
+
+def ck(name, ok, n, msg=""):
+    print(f"  {'✅' if ok else '❌'} {name}(验了 {n} 个){'  ' + msg if msg else ''}")
+    if not ok:
+        FAIL.append(name)
+    if n == 0:
+        print("       ⚠️ 样本量 0 —— **这不叫通过,这叫没扫到东西**")
+        FAIL.append(name + "(空)")
+
+
+def main():
+    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
+    c.row_factory = sqlite3.Row
+
+    # ① 加价之和 = custom_amount
+    差 = []
+    rs = c.execute("""SELECT i.id, i.name, i.custom_amount,
+                      (SELECT ROUND(SUM(amount),2) FROM item_part_choice WHERE item_id=i.id) s
+                      FROM ordr_item i WHERE i.custom_amount>0""").fetchall()
+    for r in rs:
+        if r["s"] is not None and abs(r["s"] - round(r["custom_amount"], 2)) > 0.01:
+            差.append(f"{r['name'][:16]}:明细 {r['s']} ≠ 订单行 {r['custom_amount']}")
+    ck("部位加价之和 = 订单行的定制部件金额", not 差, len(rs),
+       ("；".join(差[:2]) if 差 else
+        "**这张表不是重新算一遍价,是把一个已有的总额拆成看得见的项** —— "
+        "拆出来对不上,就是收的钱和记的账分家了"))
+
+    # ② 有钱就得有项
+    无项 = [r["name"][:18] for r in rs if r["s"] is None]
+    ck("有定制部件金额的订单行必须有明细", not 无项, len(rs),
+       ("；".join(无项[:3]) if 无项 else "有钱没项 = 回到出问题前的样子"))
+
+    # ③ 没钱不许有项 —— **两个方向都要测**
+    多项 = [r[0] for r in c.execute(
+        "SELECT i.name FROM ordr_item i WHERE COALESCE(i.custom_amount,0)<=0 "
+        "AND EXISTS(SELECT 1 FROM item_part_choice WHERE item_id=i.id)")]
+    n3 = c.execute("SELECT COUNT(*) FROM ordr_item WHERE COALESCE(custom_amount,0)<=0"
+                   ).fetchone()[0]
+    ck("没有定制部件金额的订单行不许有明细", not 多项, n3,
+       ("；".join(多项[:3]) if 多项 else
+        "有项没钱 = 白做了活没收钱 —— **同样是账实不符,只是方向相反**"))
+
+    # ④ 选的料必须在这个商品的可选料里
+    野 = [f"{r[0][:16]}·{r[1]}:{r[2]}" for r in c.execute(
+        """SELECT p.name, ch.part, ch.material FROM item_part_choice ch
+           JOIN ordr_item i ON i.id=ch.item_id JOIN product p ON p.spu=i.spu
+           WHERE NOT EXISTS(SELECT 1 FROM part_option o WHERE o.spu=i.spu
+                            AND o.part=ch.part AND o.material=ch.material)""")]
+    n4 = c.execute("SELECT COUNT(*) FROM item_part_choice").fetchone()[0]
+    ck("选的料必须在这个商品该部位的可选料里", not 野, n4,
+       ("；".join(野[:3]) if 野 else
+        "选了配置页上根本没有的料,说明中间某一步把约束绕过去了 —— **而车间会照着做**"))
+    # ⑤ **每一项都必须有金额、有料、有部位** —— 缺一样就不是「记录」。
+    #    业务原话:「具体选了什么部位、什么料、什么颜色,什么报价,都需要有」。
+    #    颜色**允许为空**(有些料只有一个色,pad 上那一排圆点是空的),
+    #    但部位 / 料 / 金额三样一个都不能少。
+    缺 = [f"#{r[0]} 缺 {r[1]}" for r in c.execute(
+        """SELECT id, CASE WHEN part IS NULL OR part='' THEN '部位'
+                           WHEN material IS NULL OR material='' THEN '料'
+                           ELSE '金额' END
+           FROM item_part_choice
+           WHERE part IS NULL OR part='' OR material IS NULL OR material=''
+              OR amount IS NULL""")]
+    n5 = c.execute("SELECT COUNT(*) FROM item_part_choice").fetchone()[0]
+    ck("每一项都要有部位、料、金额", not 缺, n5,
+       ("；".join(缺[:3]) if 缺 else
+        "颜色允许为空(有些料只有一个色),**部位 / 料 / 金额三样一个都不能少**"))
+
+    # ⑥ **成交金额是快照,不许从配置表现算。**
+    #    `part_option.addon` 是**今天的定价**,`item_part_choice.amount` 是
+    #    **当时收的钱**。改了加价、做了活动、店长让了价,历史订单**不能跟着变**。
+    #    这和会员等级用 `amount_12m` 快照而不是现算是同一条。
+    #    验法:把一条已有订单的配置定价改掉,它的成交金额必须纹丝不动。
+    tgt = c.execute("SELECT ch.id, ch.amount, i.spu, ch.part, ch.material "
+                    "FROM item_part_choice ch JOIN ordr_item i ON i.id=ch.item_id "
+                    "LIMIT 1").fetchone()
+    if tgt:
+        c.execute("UPDATE part_option SET addon=addon+9999 WHERE spu=? AND part=? "
+                  "AND material=?", (tgt["spu"], tgt["part"], tgt["material"]))
+        后 = c.execute("SELECT amount FROM item_part_choice WHERE id=?",
+                       (tgt["id"],)).fetchone()[0]
+        c.execute("UPDATE part_option SET addon=addon-9999 WHERE spu=? AND part=? "
+                  "AND material=?", (tgt["spu"], tgt["part"], tgt["material"]))
+        c.connection.rollback() if hasattr(c, "connection") else None
+        ck("成交金额是快照,改配置定价不许动到历史订单",
+           abs(后 - tgt["amount"]) < 0.01, 1,
+           "" if abs(后 - tgt["amount"]) < 0.01 else
+           f"配置价一改,历史订单跟着变了:{tgt['amount']} → {后}")
+        print("       **一个是「现在多少钱」,一个是「当时收了多少钱」** —— "
+              "合并之后历史订单会跟着今天的价一起漂")
+    c.close()
+
+    print("=" * 84)
+    if FAIL:
+        print(f"❌ {len(FAIL)} 条没过:{FAIL}")
+        return 1
+    print("✅ 订单部位选择 6 条全过")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

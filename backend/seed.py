@@ -282,6 +282,29 @@ CREATE TABLE op_log(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, actor TEXT, machine TEXT,
   target TEXT, frm TEXT, too TEXT, allowed INT, code TEXT, reason TEXT, ctx TEXT);
 
+CREATE TABLE item_part_choice(
+  -- **订单行上,客户每个部位实际选了什么。**
+  --
+  -- 2026-09-14 看到工艺文档的打印稿才发现:`ordr_item.custom_amount` 存着
+  -- 「定制部件金额 ¥756」,而**选了什么部位、什么料、什么颜色,一个字都没存**。
+  -- 工艺文档要打印「领口 · 真丝 · 红色 · ¥1,000」—— 那三项系统里全无,只有总额。
+  --
+  -- **钱已经收了,而收的是什么钱没有记录。**
+  -- 车间照着打印不出来,客户争议时也拿不出依据。
+  -- 这和「pad 上选的东西没进系统,等于没选过」是同一句话。
+  --
+  -- ⚠️ `amount` 是**这一项的加价**,不是总价。
+  -- `ordr_item.custom_amount` 必须等于同一行这些 amount 之和 ——
+  -- `part_choice_check` 盯着:**和对不上的话,收的钱和记的账就分家了**。
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INT,           -- 指向 ordr_item.id
+  kind TEXT,             -- 面料 / 花型(pad 上的一级 tab)
+  part TEXT,             -- 位置:领口 / 裙摆 / 上身 …
+  material TEXT,         -- 选的是什么(真丝 / 云锦 …)
+  color TEXT,            -- 选的颜色
+  amount REAL,           -- **这一项的加价**(pad 上卡片右下角那个 +¥1,000)
+  note TEXT);            -- 说明(工艺文档上那段面料描述)
+
 CREATE TABLE part_option(
   -- **商品 × 部位 × 可选材质** —— 设计稿「部件」那一块。
   --
@@ -297,8 +320,14 @@ CREATE TABLE part_option(
   -- ⚠️ **本期不按部位算料** —— `pattern_piece` 没有用料占比,
   -- 补齐要 84 个版型 × 平均 5 个裁片 ≈ 400 个数,只有版师给得出来。
   -- 报价取可选料里最贵的那种,**宁可报高不可报低**,见 `part.报价口径`。
-  spu TEXT, part TEXT, material TEXT, sort INT,
-  PRIMARY KEY(spu, part, material));
+  --
+  -- ⚠️ 三列是 2026-09-14 看了 pad 配置页的截图之后补的:
+  --   kind    pad 上的一级 tab 是「面料选择 / 花型选择」—— 原来只存得了面料
+  --   addon   每张面料卡片右下角有加价(+¥0 / +¥1,000),
+  --           而订单行的 `custom_amount` 就是这些加价之和 —— **和是有的,项没有**
+  --   colors  每个面料下面一排可选颜色圆点
+  spu TEXT, kind TEXT, part TEXT, material TEXT, addon REAL, colors TEXT, sort INT,
+  PRIMARY KEY(spu, kind, part, material));
 
 CREATE TABLE edit_log(
   -- **资料编辑日志 —— 和 op_log(状态流转)分开。**
@@ -2582,9 +2611,13 @@ def run():
                                     "knowledge"))
     import part as _part
     _n_po = _n_sp = 0
+    # ⚠️ **不限定「有版型的」** —— 配饰定制品(定制云肩 / 题字腰封)没有版型,
+    # 但它们**确实收定制加价**(实测 ¥864 / ¥396)。漏掉它们的话,
+    # 那两条订单行就是「有钱没项」——`part_choice_check` 当场红,而它红得对。
+    # 配饰走「整件」那一档,见 `knowledge/part.py`。
     for _r in c.execute("SELECT p.spu, p.pattern, pc.mt_opts FROM product p "
                         "JOIN product_custom pc ON pc.spu=p.spu "
-                        "WHERE p.kind='定制品' AND p.pattern IS NOT NULL").fetchall():
+                        "WHERE p.kind='定制品'").fetchall():
         _mts = [x for x in (_r["mt_opts"] or "").split(",") if x.strip()]
         if not _mts:
             continue
@@ -2592,11 +2625,58 @@ def run():
         _n_sp += bool(_bs)
         for _i3, _b in enumerate(_bs, 1):
             for _m in _mts:
-                c.execute("INSERT OR IGNORE INTO part_option VALUES(?,?,?,?)",
-                          (_r["spu"], _b, _m.strip(), _i3))
+                # 加价:第一个选项不加价(pad 上就是 +¥0),其余按材质单价档位给
+                _mp = (c.execute("SELECT price FROM material WHERE name=?",
+                                 (_m.strip(),)).fetchone() or [0])[0] or 0
+                _add = 0.0 if _m.strip() == _mts[0].strip() else \
+                    round(min(2000, max(200, _mp * 1.5)) / 100) * 100
+                _cols = "、".join(["月白", "缃色", "绛", "藏青"][:2 + _i3 % 3])
+                c.execute("INSERT OR IGNORE INTO part_option "
+                          "VALUES(?,?,?,?,?,?,?)",
+                          (_r["spu"], "面料", _b, _m.strip(), _add, _cols, _i3))
                 _n_po += 1
     print(f"  [分部位可选料] {_n_sp} 个定制品铺了 {_n_po} 条"
           f"(每个部位先给全部整件可选料 —— **不自动拆,那是编数据**)")
+
+    # ── 订单行上每个部位实际选了什么 ────────────────────────────────
+    # ⚠️ **加价之和必须等于已经记着的 `custom_amount`。**
+    # 那个数早就在订单上了(客户付过款),所以这里不是「重新算一遍」,
+    # 是**把一个已有的总额拆成看得见的项** ——
+    # 拆出来的和对不上,就是收的钱和记的账分家了。
+    # 所以按比例分摊,最后一项吃掉舍入差(不让误差累积到总额上)。
+    _n_ch = 0
+    for _it in c.execute(
+            "SELECT i.id, i.spu, i.custom_amount FROM ordr_item i "
+            "JOIN product p ON p.spu=i.spu "
+            "WHERE p.kind='定制品' AND i.custom_amount>0").fetchall():
+        _opts = [dict(r) for r in c.execute(
+            "SELECT part, material, addon, colors FROM part_option "
+            "WHERE spu=? ORDER BY sort, material", (_it["spu"],))]
+        if not _opts:
+            continue
+        # 每个部位挑一个(确定性:按订单行 id 定,重播种结果一样)
+        _bs, _pick = [], {}
+        for _o in _opts:
+            _pick.setdefault(_o["part"], []).append(_o)
+        _chosen = []
+        for _bi, (_b, _lst) in enumerate(sorted(_pick.items())):
+            _o = _lst[(_it["id"] + _bi) % len(_lst)]
+            _cs = [x for x in (_o["colors"] or "").split("、") if x]
+            _chosen.append((_b, _o["material"],
+                            _cs[(_it["id"] + _bi) % len(_cs)] if _cs else None))
+        # 把 custom_amount 按项数摊开,最后一项吃舍入差
+        _tot = round(float(_it["custom_amount"]), 2)
+        _each = round(_tot / len(_chosen), 2)
+        for _k4, (_b, _m, _col) in enumerate(_chosen):
+            _amt = _each if _k4 < len(_chosen) - 1 else round(_tot - _each * (len(_chosen) - 1), 2)
+            _desc = (c.execute("SELECT brief FROM craft WHERE name=? AND cat='材质'",
+                               (_m,)).fetchone() or [None])[0]
+            c.execute("INSERT INTO item_part_choice(item_id,kind,part,material,color,amount,note)"
+                      " VALUES(?,?,?,?,?,?,?)",
+                      (_it["id"], "面料", _b, _m, _col, _amt, _desc))
+            _n_ch += 1
+    print(f"  [部位选择] 给 {_n_ch} 条订单行明细"
+          f"(**加价之和 = 订单行已有的 custom_amount**,不是重算)")
 
     # ── 供应商编码:只给**标品**造 ──────────────────────────────────
     # **定制品没有供应商编码** —— 它不是从供应商进的货,是自己做的。
