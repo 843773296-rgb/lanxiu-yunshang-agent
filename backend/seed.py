@@ -299,7 +299,11 @@ CREATE TABLE item_part_choice(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id INT,           -- 指向 ordr_item.id
   kind TEXT,             -- 面料 / 花型(pad 上的一级 tab)
-  part TEXT,             -- 位置:领口 / 裙摆 / 上身 …
+  part TEXT,             -- 位置。**取值只能来自 `knowledge/part.py` 的 `部位顺序`**
+                         -- (领口 / 门襟 / 主身 / 袖 / 裙 / 下摆 / 横襕 / 系带 / 内衬 / 整件)。
+                         -- ⚠️ 第一版这条注释写的是「领口 / 裙摆 / 上身」——
+                         -- **照着设计交互稿抄的旧称**,而交互稿自己就不统一。
+                         -- 2026-09-14 裁决以 part.py 那套为准。
   material TEXT,         -- 选的是什么(真丝 / 云锦 …)
   color TEXT,            -- 选的颜色
   amount REAL,           -- **这一项的加价**(pad 上卡片右下角那个 +¥1,000)

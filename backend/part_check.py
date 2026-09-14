@@ -99,6 +99,54 @@ def main():
     if 有:
         print("       **看页面的人不会去翻文档,而他会直接把这个价报给客户**")
 
+    # ⑤·前 **部位词只能有一个来源。**
+    # 2026-09-14 业务裁决:设计交互稿里部位的叫法**自己就不统一**
+    # (pad 配置页写「上身 / 袖子 / 内衬」,工艺文档打印稿写「领口 / 裙摆」),
+    # **以 `knowledge/part.py` 这套为准,交互稿按这套改**。
+    #
+    # 裁决写在代码里还不够 —— 下一个人照着交互稿改的时候,
+    # 很可能顺手在页面上写一个「上身」。**单一来源不靠自觉,靠检查。**
+    # 报错要说得出**该用哪个词**:光说「不许用」,人还得自己猜。
+    # ⚠️ **只查「真的当部位值用」的地方,不查字符串出现过没有。**
+    # 第一版直接 grep,三处里两处是误报:
+    #   「采集**上身**与裙长」「仅**上身**,用于褙子」—— 那是**量体模板的描述**,
+    #   「上身」在那儿是日常汉语(量哪个部位的尺寸),不是部位枚举值。
+    # **判据贴着字面,不贴着含义** —— 这个项目为这句话栽过好几次。
+    #
+    # 现在只认这几种「当值用」的写法:引号包起来的、等号右边的、注释里当枚举列的。
+    import re as _re
+    扫 = ["backend/server.py", "backend/web/index.html", "backend/seed.py",
+          "knowledge/part.py"]
+    硬编 = []
+    for rel in 扫:
+        fp = os.path.join(os.path.dirname(HERE), rel)
+        if not os.path.exists(fp):
+            continue
+        if rel.endswith("part.py"):
+            continue                     # 唯一来源自己要列出旧称,不算硬编
+        txt = open(fp, encoding="utf-8").read()
+        for 旧, 新 in part.交互稿旧称.items():
+            # 当值用:"上身" / '上身' / 「上身」 且左右不是裁片后缀
+            pat = _re.compile(r'["\'「]' + 旧 + r'["\'」]')
+            for m in pat.finditer(txt):
+                行头 = txt.rfind("\n", 0, m.start()) + 1
+                行 = txt[行头:txt.find("\n", m.end())]
+                if "裁片" in 行 or "前片" in 行 or "后片" in 行:
+                    continue             # 裁片名,是版房的词,本来就该在
+                硬编.append(f"{rel}:{行.strip()[:40]} —— 「{旧}」该用「{新}」")
+    # 库里的数据也不许有旧称
+    野 = [r[0] for r in c.execute(
+        "SELECT DISTINCT part FROM part_option UNION "
+        "SELECT DISTINCT part FROM item_part_choice")
+        if r[0] not in part.部位顺序]
+    ck("库里的部位词都来自唯一来源", not 野,
+       c.execute("SELECT COUNT(DISTINCT part) FROM part_option").fetchone()[0],
+       (f"野词:{野} —— 该用 {part.部位顺序}" if 野 else
+        "**单一来源不靠自觉,靠检查** —— 交互稿里那套(上身/袖子/裙摆)不采用"))
+    ck("代码和页面里不许硬编交互稿那套部位词", not 硬编, len(part.交互稿旧称),
+       ("；".join(硬编[:3]) if 硬编 else
+        "报错会说得出该用哪个词 —— **光说「不许用」,人还得自己猜**"))
+
     # ⑤ 相容矩阵不许多出部位维度
     cols = {r[1] for r in c.execute("PRAGMA table_info(craft_combo)")}
     ck("相容矩阵不许加部位维度", "part" not in cols and "部位" not in cols, len(cols),
@@ -110,7 +158,7 @@ def main():
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 分部位可选料 6 条全过")
+    print("✅ 分部位可选料 8 条全过")
     return 0
 
 

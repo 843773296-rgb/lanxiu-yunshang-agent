@@ -122,13 +122,41 @@ def main():
            f"配置价一改,历史订单跟着变了:{tgt['amount']} → {后}")
         print("       **一个是「现在多少钱」,一个是「当时收了多少钱」** —— "
               "合并之后历史订单会跟着今天的价一起漂")
+    # ⑦ **工艺文档要拼得出来,而且列名不许混。**
+    #    交互稿那张表的列叫「位置 / 工艺 / 颜色 / 定制部件金额」,
+    #    而那一列的**值是「真丝」—— 那是面料,不是工艺**。
+    #    库里 `craft` 把工艺(45 条)和材质(45 条)分得很清,
+    #    混着叫会让车间不知道该看哪张表。
+    sys.path[:0] = [HERE]
+    import server
+    oid = c.execute("SELECT DISTINCT i.order_id FROM item_part_choice ch "
+                    "JOIN ordr_item i ON i.id=ch.item_id LIMIT 1").fetchone()
+    doc = server.craft_doc(oid[0]) if oid else {}
+    有件 = bool(doc.get("items"))
+    有选 = any(it.get("choices") for it in doc.get("items", []))
+    ck("工艺文档拼得出位置/面料/颜色/金额", 有件 and 有选, len(doc.get("items") or []),
+       "" if 有选 else f"拼不出来:{str(doc)[:80]}")
+    src = open(os.path.join(HERE, "server.py"), encoding="utf-8").read()
+    混 = "工艺" in src[src.find("def craft_doc"):src.find("def product_detail")] \
+         and "那是面料" not in src[src.find("def craft_doc"):src.find("def product_detail")]
+    ck("工艺文档里「面料」不许叫成「工艺」", not 混, 1,
+       "" if not 混 else "列名混了 —— 车间不知道该看 craft 的哪一类")
+
+    # ⑧ **量体取不到要说「没量过」,不能给一张空表。**
+    #    空表和「量过但都是 0」在纸上长得一样,而**车间会照着裁**。
+    空表 = [it["name"][:18] for it in doc.get("items", [])
+            if it.get("wearer_id") and not it.get("measures")]
+    ck("有着装人却没量体的,不许在文档上留一张空表", not 空表,
+       len(doc.get("items") or []),
+       ("；".join(空表[:3]) if 空表 else
+        "**空表和「量过但都是 0」在纸上长得一样,而车间会照着裁**"))
     c.close()
 
     print("=" * 84)
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 订单部位选择 6 条全过")
+    print("✅ 订单部位选择 / 工艺文档 8 条全过")
     return 0
 
 

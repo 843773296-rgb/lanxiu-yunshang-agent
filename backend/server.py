@@ -541,6 +541,46 @@ def 读详情图(v):
     return [g for g in d if isinstance(g, dict)]
 
 
+def craft_doc(order_id):
+    """**工艺文档** —— 车间照着做、客户照着核的那一张。
+
+    设计交互稿里这张表的列叫「位置 / 工艺 / 颜色 / 定制部件金额」,
+    而那一列的**值是「真丝」—— 那是面料,不是工艺**。
+    库里 `craft` 把「工艺」(45 条)和「材质」(45 条)分得很清,
+    混着叫会让车间不知道该看哪张表。所以这里这一列叫「**面料**」。
+
+    位置用 `knowledge/part.py` 那一套 —— 2026-09-14 裁决:
+    交互稿里 pad 写「上身 / 袖子」而这张文档写「领口 / 裙摆」,两套对不上,
+    **以 part.py 为准**。
+    """
+    o = rows("SELECT * FROM ordr WHERE id=?", order_id)
+    if not o:
+        return {"error": "订单不存在"}
+    o = dict(o[0])
+    o["items"] = []
+    for it in rows("SELECT * FROM ordr_item WHERE order_id=? ORDER BY id", order_id):
+        it = dict(it)
+        it["choices"] = rows(
+            "SELECT kind,part,material,color,amount,note FROM item_part_choice "
+            "WHERE item_id=? ORDER BY id", it["id"])
+        # 量体:按这一行的着装人取,**取不到要说「没量过」,不能显示空表** ——
+        # 空表和「量过但都是 0」在纸上长得一样,而车间会照着裁。
+        it["measures"] = rows(
+            "SELECT mi.name, r.value, mi.unit FROM measure_rec r "
+            "JOIN measure_item mi ON mi.code=r.item "
+            "WHERE r.wearer_id=? ORDER BY mi.sort", it.get("wearer_id") or "-")
+        w = rows("SELECT name,gender,birthday FROM wearer WHERE id=?",
+                 it.get("wearer_id") or "-")
+        it["wearer"] = dict(w[0]) if w else None
+        o["items"].append(it)
+    # 备注的署名从编辑日志派生 —— 和商品详情页同一条:不另存一份
+    e = rows("SELECT ts,actor FROM edit_log WHERE target=? ORDER BY id DESC LIMIT 1",
+             order_id)
+    o["remark_by"] = e[0]["actor"] if e else None
+    o["remark_at"] = e[0]["ts"] if e else None
+    return o
+
+
 def product_detail(spu):
     r=rows("""SELECT p.*, c.name cat_name FROM product p
               LEFT JOIN category c ON p.category=c.code WHERE p.spu=?""",spu)
@@ -2115,6 +2155,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/orders": return self._send(order_list(Q))
         if p=="/api/products": return self._send(product_list(Q))
         if p.startswith("/api/product/"): return self._send(product_detail(p.split("/api/product/")[1]))
+        if p.startswith("/api/craft-doc/"): return self._send(craft_doc(p.split("/api/craft-doc/")[1]))
         if p=="/api/categories": return self._send(category_tree())
         if p=="/api/stock": return self._send(stock_list(Q))
         if p=="/api/measure-items": return self._send(measure_items(Q))
