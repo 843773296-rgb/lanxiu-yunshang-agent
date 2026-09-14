@@ -565,6 +565,27 @@ def product_detail(spu):
         p["tpl_items"]=[r["name"] for r in rows(
             "SELECT mi.name FROM tpl_item ti JOIN measure_item mi ON mi.code=ti.item "
             "WHERE ti.tpl=? ORDER BY ti.sort",_tc)]
+    # ── 分部位可选料(设计稿的「部件」块)──────────────────────────
+    import importlib.util as _ilu, os as _os
+    _ps = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                        "knowledge", "part.py")
+    _sp = _ilu.spec_from_file_location("part", _ps); _part = _ilu.module_from_spec(_sp)
+    _sp.loader.exec_module(_part)
+    _po = rows("SELECT part,material,sort FROM part_option WHERE spu=? "
+               "ORDER BY sort,material", spu)
+    _by = {}
+    for r in _po:
+        _by.setdefault(r["part"], []).append(r["material"])
+    p["parts"] = [dict(部位=b, 可选材质=_by[b]) for b in _part.部位顺序 if b in _by]
+    # **报价口径要跟着数据一起出** —— 只写在文档里的话,
+    # 看页面的人不会去翻文档,而他会直接把这个价报给客户。
+    p["part_note"] = _part.报价口径 if p["parts"] else ""
+    if p["parts"]:
+        _prices = {r["name"]: r["price"] for r in rows(
+            "SELECT name,price FROM material WHERE cat='主料'")}
+        _all = {m for g in p["parts"] for m in g["可选材质"]}
+        _hit = [(m, _prices[m]) for m in _all if m in _prices]
+        p["part_quote_base"] = max(_hit, key=lambda x: x[1]) if _hit else None
     p["banner"]=读轮播图(p.get("img_detail"))
     p["intro_groups"]=读详情图(p.get("img_intro"))
     p["skus"]=rows("SELECT * FROM sku WHERE spu=? ORDER BY code",spu)

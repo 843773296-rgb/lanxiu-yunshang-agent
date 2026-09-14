@@ -282,6 +282,24 @@ CREATE TABLE op_log(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, actor TEXT, machine TEXT,
   target TEXT, frm TEXT, too TEXT, allowed INT, code TEXT, reason TEXT, ctx TEXT);
 
+CREATE TABLE part_option(
+  -- **商品 × 部位 × 可选材质** —— 设计稿「部件」那一块。
+  --
+  -- 2026-09-14 业务确认:门店接单时客户**确实分部位选料,记在 pad 上**。
+  -- pad 上那份不进报价、不进 BOM、不进工单,也和订单没有绑定关系 ——
+  -- 客户说「我领口选的是织金缎」,系统里查不到。
+  -- **一个在 pad 上流转的字段,和一个不存在的字段,在系统里效果一样。**
+  --
+  -- ⚠️ **部位不是裁片。** 裁片是版师裁布的单位(大襟贴边 / 褶裥片),
+  -- 部位是客户看得见的地方(领口 / 裙)。归并规则在 `knowledge/part.py`,
+  -- **那是一份推断,写出来是给业务核的**。
+  --
+  -- ⚠️ **本期不按部位算料** —— `pattern_piece` 没有用料占比,
+  -- 补齐要 84 个版型 × 平均 5 个裁片 ≈ 400 个数,只有版师给得出来。
+  -- 报价取可选料里最贵的那种,**宁可报高不可报低**,见 `part.报价口径`。
+  spu TEXT, part TEXT, material TEXT, sort INT,
+  PRIMARY KEY(spu, part, material));
+
 CREATE TABLE edit_log(
   -- **资料编辑日志 —— 和 op_log(状态流转)分开。**
   --
@@ -2551,6 +2569,34 @@ def run():
     print(f"  [下单前置] 挪了 {_n_fix} 条超期量体;"
           f"留 1 条反例夹具({_fx.夹具说明})")
     assert _kept, "反例夹具丢了 —— 「超期量体不许下单」这条规则会没有用例"
+
+    # ── 分部位可选料:按**形制的部位**铺,但**不拆现有的整件可选料** ────
+    # 现有的 `mt_opts`(「云锦,真丝素罗」)是**整件**的口径。
+    # 把它自动拆到部位上,等于替业务做了一次没人拍过的决定 ——
+    # **那是编数据**。所以:每个部位默认给**全部整件可选料**,
+    # 意思是「这个部位目前可以用任意一种,还没细分」,
+    # 而不是假装业务已经细分过了。
+    #
+    # 真实的细分在 pad 上,要业务逐个录/导入 —— 那是下一步的事。
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                                    "knowledge"))
+    import part as _part
+    _n_po = _n_sp = 0
+    for _r in c.execute("SELECT p.spu, p.pattern, pc.mt_opts FROM product p "
+                        "JOIN product_custom pc ON pc.spu=p.spu "
+                        "WHERE p.kind='定制品' AND p.pattern IS NOT NULL").fetchall():
+        _mts = [x for x in (_r["mt_opts"] or "").split(",") if x.strip()]
+        if not _mts:
+            continue
+        _bs = _part.形制的部位(c, _r["pattern"])
+        _n_sp += bool(_bs)
+        for _i3, _b in enumerate(_bs, 1):
+            for _m in _mts:
+                c.execute("INSERT OR IGNORE INTO part_option VALUES(?,?,?,?)",
+                          (_r["spu"], _b, _m.strip(), _i3))
+                _n_po += 1
+    print(f"  [分部位可选料] {_n_sp} 个定制品铺了 {_n_po} 条"
+          f"(每个部位先给全部整件可选料 —— **不自动拆,那是编数据**)")
 
     # ── 供应商编码:只给**标品**造 ──────────────────────────────────
     # **定制品没有供应商编码** —— 它不是从供应商进的货,是自己做的。

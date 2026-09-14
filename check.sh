@@ -46,6 +46,7 @@ run "工具入参 · 人怎么称呼它,工具就得认得出来" python3 backen
 run "资料编辑日志 · 日志要说实话,而且说得出改了什么" python3 backend/edit_log_check.py
 run "商品表单 · 显示的字段就得改得了(对照设计稿)" python3 backend/product_form_check.py
 run "量体模版 / 测量项 · 改一个被引用的东西是最危险的动作" python3 backend/measure_tpl_check.py
+run "分部位可选料 · 部位从裁片归并,报价口径要跟着出" python3 backend/part_check.py
 run "方案引用 · 存编码不存名字,而且落到具体版型(否则算不出用料)" python3 backend/scheme_check.py
 run "顾问引用 · 名字是被钉住的缓存,不是第二份真相" python3 backend/advisor_ref_check.py
 run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 backend/role_check.py

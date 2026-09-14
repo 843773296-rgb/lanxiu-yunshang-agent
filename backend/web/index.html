@@ -1620,6 +1620,19 @@ async function productDetail(spu){
      <div><div class="l">可选面料</div><div class="v">${esc(d.custom.mt_opts||"(无,不可上架)")}</div></div>
      <div><div class="l">可选工艺</div><div class="v">${esc(d.custom.kf_opts||"")}</div></div>
     </div>
+    ${(d.parts||[]).length?`<div style="padding:14px 24px 0">
+      <div class="l" style="margin-bottom:8px">部件 —— <b style="color:var(--ink)">按部位选料</b></div>
+      ${d.parts.map(g=>`<div style="margin-bottom:6px">
+        <span class="pill p-blue" style="min-width:44px;display:inline-block;text-align:center">${esc(g.部位)}</span>
+        ${g.可选材质.map(m=>`<span class="pill p-mut" style="margin-left:6px">${esc(m)}</span>`).join("")}
+      </div>`).join("")}
+      <div class="note2" style="margin:10px 0 0"><b style="color:var(--bad)">报价口径</b> —— ${esc(d.part_note||"")}${
+        d.part_quote_base?`<br><b style="color:var(--ink)">当前按「${esc(d.part_quote_base[0])} ¥${d.part_quote_base[1]}/米」算</b>(可选料里最贵的那种)`:""}</div>
+      <div class="note2" style="margin:8px 0 0"><b style="color:var(--ink)">部位怎么来的</b> ——
+        从这个版型的**裁片**归并(大襟贴边 → 门襟、褶裥片 → 裙),
+        <b style="color:var(--ink)">规则在 knowledge/part.py,那是一份推断,要业务核</b>。
+        所以部位**随形制变**:马面裙没有领口,立领长衫有。</div>
+    </div>`:""}
     ${d.custom.note?`<div class="note2" style="margin:14px 24px 0"><b style="color:var(--bad)">已自动剔除</b> —— ${esc(d.custom.note)}</div>`:""}
     <table class="tb" style="margin-top:12px"><thead><tr><th style="width:170px">工艺</th>
      <th style="width:130px">面料</th><th style="width:110px">相容判定</th><th>依据</th></tr></thead><tbody>
