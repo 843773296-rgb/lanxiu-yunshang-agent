@@ -142,20 +142,37 @@ def main():
         "**拦在入口的规则,要在存量上对一次账** —— "
         "配置页拦得住的前提是「所有下单路径都经过配置页」,那是假设不是事实"))
 
-    # ⑥·3 **有面料就得有工艺** —— 除非这个部位没有相容的工艺可选。
+    # ⑥·3 **外层部位有面料就得有工艺。**
     #     缺工艺不是小事:车间拿到「领口用云锦」而不知道做什么绣,只能问或者猜。
+    #
+    #     ⚠️ **但内衬和系带不算。** 这条判据第一版把它们也管了,当场红 ——
+    #     而它红得对、指出的是我没想到的事:**里面那层和辅料本来就不做工艺**。
+    #     醋酸里布上不绣花、织带上不做缂丝;客户在那儿选的是材质和厚度,不是纹样。
+    #     相容矩阵里也查不到「苏绣 × 醋酸里布」——**矩阵是主料 × 工艺的**,
+    #     里料压根不在里面。
+    #
+    #     所以「除非没有相容的可选」这个例外**不够**:真正的规则是
+    #     **只有外层部位才配工艺**。判据要守这个,而不是守一个凑出来的例外。
+    import importlib.util as _iu
+    _s2 = _iu.spec_from_file_location(
+        "part", os.path.join(os.path.dirname(HERE), "knowledge", "part.py"))
+    _part = _iu.module_from_spec(_s2); _s2.loader.exec_module(_part)
+    外层 = [b for b in _part.部位顺序 if _part.部位可选料类(b) == ("主料",)]
     缺艺 = [f"{r[0]}·{r[1]}" for r in c.execute(
         """SELECT m.part, m.material FROM item_part_choice m
-           WHERE m.kind='面料' AND NOT EXISTS(
+           WHERE m.kind='面料' AND m.part IN (""" + ",".join("?" * len(外层)) + """)
+             AND NOT EXISTS(
              SELECT 1 FROM item_part_choice k WHERE k.item_id=m.item_id
                AND k.part=m.part AND k.kind='工艺')
              AND EXISTS(SELECT 1 FROM ordr_item i JOIN part_option o ON o.spu=i.spu
-                        WHERE i.id=m.item_id AND o.kind='工艺')""")]
-    n63 = c.execute("SELECT COUNT(*) FROM item_part_choice WHERE kind='面料'").fetchone()[0]
-    ck("有面料的部位要有工艺(除非没有相容的可选)", not 缺艺, n63,
+                        WHERE i.id=m.item_id AND o.kind='工艺')""", 外层)]
+    n63 = c.execute(
+        "SELECT COUNT(*) FROM item_part_choice WHERE kind='面料' AND part IN ("
+        + ",".join("?" * len(外层)) + ")", 外层).fetchone()[0]
+    ck("外层部位有面料就得有工艺", not 缺艺, n63,
        ("；".join(缺艺[:3]) if 缺艺 else
-        "**挑不出相容的就不配,不是随便塞一个** —— "
-        "塞一个做不出来的组合,车间会拿着它去开工"))
+        "**内衬和系带不算** —— 里面那层和辅料本来就不做工艺,"
+        "而相容矩阵是主料 × 工艺的,里料压根不在里面"))
 
     # ⑦ **工艺文档要拼得出来,而且列名不许混。**
     #    交互稿那张表的列叫「位置 / 工艺 / 颜色 / 定制部件金额」,

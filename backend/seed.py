@@ -2635,6 +2635,21 @@ def run():
                 c.execute("INSERT OR IGNORE INTO part_option VALUES(?,?,?,?,?,?,?)",
                           (_r["spu"], "工艺", _b, _k5.strip(), 0.0, None, _i3))
         for _i3, _b in enumerate(_bs, 1):
+            # **按部位该用的材料类别挑**,不是一律给整件可选主料。
+            # 内衬给里料(云锦不做里子)、系带给辅料,其余给主料。依据见 part.py。
+            _cls = _part.部位可选料类(_b)
+            if _cls != ("主料",):
+                _pool = [r[0] for r in c.execute(
+                    "SELECT name FROM material WHERE cat IN ("
+                    + ",".join("?" * len(_cls)) + ") ORDER BY price", _cls)]
+                for _m2 in _pool:
+                    _mp2 = (c.execute("SELECT price FROM material WHERE name=?",
+                                      (_m2,)).fetchone() or [0])[0] or 0
+                    _add2 = 0.0 if _m2 == _pool[0] else \
+                        round(min(600, max(50, _mp2 * 2)) / 10) * 10
+                    c.execute("INSERT OR IGNORE INTO part_option VALUES(?,?,?,?,?,?,?)",
+                              (_r["spu"], "面料", _b, _m2, _add2, None, _i3))
+                continue
             for _m in _mts:
                 # 加价:第一个选项不加价(pad 上就是 +¥0),其余按材质单价档位给
                 _mp = (c.execute("SELECT price FROM material WHERE name=?",
