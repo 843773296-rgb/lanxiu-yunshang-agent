@@ -21,7 +21,16 @@ for f in agent/chat_eval.py agent/tool_eval.py agent/growth_eval.py \
   tail -3 "$OUT/$n.txt" | sed 's/^/    /'
 done
 echo "════════ 汇总 ════════"
+# ⚠️ **抓不到分数要显式说「抓不到」,不能显示空白。**
+# 第一版只认「通过 x/y」,而 chat_eval 打的是「总命中 x/y」——
+# 汇总那一行就是**空的**,看起来像「这套没跑」而不是「格式没对上」。
+# **一个空白和一个零分长得一样**,而它俩是两回事。
+BAD=0
 for f in "$OUT"/*.txt; do
-  printf "%-20s %s\n" "$(basename "$f" .txt)" \
-    "$(grep -oE '通过 [0-9]+/[0-9]+|[0-9]+/[0-9]+ 条' "$f" | tail -1)"
+  n=$(basename "$f" .txt)
+  s=$(grep -oE '通过 [0-9]+/[0-9]+|总命中 [0-9]+/[0-9]+' "$f" | tail -1)
+  if [ -z "$s" ]; then s="⚠️ 抓不到分数(格式没对上,去看 $f)"; BAD=1; fi
+  printf "%-20s %s\n" "$n" "$s"
 done
+[ "$BAD" = 1 ] && echo "⚠️ 有评测的分数没抓到 —— **空白不等于零分**,去看对应的原始输出"
+exit 0
