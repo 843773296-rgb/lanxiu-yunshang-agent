@@ -73,12 +73,13 @@ def main():
     野 = [r[0] for r in c.execute(
         "SELECT DISTINCT COALESCE(ratio_src,'(空)') FROM pattern_piece "
         "WHERE ratio IS NOT NULL")
-        if r[0] not in ("估算", "版师")]
+        if r[0] not in ("估算", "复核", "版师")]
     n2 = c.execute("SELECT COUNT(*) FROM pattern_piece WHERE ratio IS NOT NULL"
                    ).fetchone()[0]
-    ck("每条占比都要标来源(估算 / 版师)", not 野, n2,
+    ck("每条占比都要标来源(估算 / 复核 / 版师)", not 野, n2,
        ("；".join(野[:3]) if 野 else
-        "**估出来的和版师给的不许长得一样** —— 报价上要能区分"))
+        "**估算 / 复核 / 版师是三种可信度** —— "
+        "「复核」是核过规则、没核过数,报价上按最低那一档提示"))
 
     # ③ **版师核过的不许被重新估覆盖。**
     #    验法:把一条标成「版师」并改掉值,重跑估算,它必须纹丝不动。
