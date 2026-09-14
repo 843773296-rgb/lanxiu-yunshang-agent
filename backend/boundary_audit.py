@@ -389,10 +389,42 @@ def a_review_readonly():
     所以拆成两半:记一笔走**日志文件**(旁路),回填走**后台**(那边本来有写权限)。
     这里攻击的正是这条边界。
     """
-    import api
-    # ① 工具层不许出现任何能改矩阵的接口
-    bad = [n for n in api.TOOLS if any(w in n for w in ("resolve", "fill", "update", "set_"))]
-    if bad: return f"工具层出现了疑似写接口:{bad}"
+    import api, inspect, re as _re
+    # ① 工具层不许有任何**能改矩阵**的接口。
+    #
+    # ⚠️ 这一条原来写的是「名字里带 resolve / fill / update / set_ 的都算写接口」——
+    # **判据贴着名字,不贴着这条保证守的那件事。** 它守的是「craft_combo 只能从后台回填」,
+    # 而名字只是当时那几个写接口碰巧长的样子。
+    # 加了 `set_piece_ratio`(核裁片用料占比,和相容矩阵毫无关系)之后它当场红了,
+    # 红的不是边界 —— 是这条判据。**这个项目在同一个形状上栽过五次**
+    # (grep「上身」、写死 part_quote_base、按字段名判、按写法判预算闸……)。
+    #
+    # 现在验两件事,都是「这件事做到了没有」:
+    #   ⓐ 没有任何一个挂给模型的工具会写 craft_combo(读源码,连它调的私有函数一起看)
+    #   ⓑ **真会写库的工具,必须登记在 WRITE_TOOLS 里** —— 这条比名字硬:
+    #      进了那张表才会被 isolation_check(从会话取身份)、guards(一轮一次)、
+    #      funnel(记它走了写路径)一起管住。**一个没登记的写口,是没人管的写口。**
+    # 读不到源码的**不许当成「没写库」** —— 咬合的时候当场撞上这一条:
+    # 在 <stdin> 里造的假工具 getsource 抛异常,旧写法 return "",
+    # 于是「挂了一个会改矩阵的工具」这一刀**没红**。
+    # **读不到 ≠ 干净**,而这两种在结果上长得一模一样。
+    读不到 = []
+    def _src_of(n, fn):
+        try: return inspect.getsource(inspect.unwrap(fn))
+        except Exception as e:
+            读不到.append(f"{n}({type(e).__name__})"); return ""
+    改矩阵 = _re.compile(r"(UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+craft_combo", _re.I)
+    写库 = _re.compile(r"(UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+\w+", _re.I)
+    bad = [n for n, f in api.TOOLS.items() if 改矩阵.search(_src_of(n, f))]
+    if bad: return f"工具层出现了能改相容矩阵的接口:{bad}"
+    未登记 = [n for n, f in api.TOOLS.items()
+              if n not in api.WRITE_TOOLS and 写库.search(_src_of(n, f))]
+    if 读不到:
+        return (f"这些工具读不到源码,**这一刀等于没扫到它们**:{读不到} —— "
+                f"「读不到」和「干净」在结果上长得一模一样,所以这里必须红")
+    if 未登记:
+        return (f"这些工具会写库,却没登记在 WRITE_TOOLS 里:{未登记} —— "
+                f"**没登记就没人管**:身份、一轮一次、漏斗三道全都漏过它")
     # ② 队列工具真的只读:调一次,矩阵里那一格一个字都不能变
     q = api.get_review_queue(top=1)
     row = (q.get("rows") or [None])[0]

@@ -309,7 +309,14 @@ class as_user:
 # 会改数据的工具。**列在这儿是给检查用的** —— isolation_check 逐个确认
 # 它们都从会话取身份、都走 tasks.py 那一套判定,不会因为「是智能体调的」而放宽。
 WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task", "reassign_task", "finish_task",
-               "assign_batch", "dispatch_batch")
+               "assign_batch", "dispatch_batch",
+               # 版师核裁片用料占比。**登记在这儿不是形式** —— 进了这张表才会被
+               # `isolation_check`(从会话取身份、入参里没有身份字段)、
+               # `guards.pre_tool_verdict`(一轮只写一次、同参数不许重试)、
+               # `funnel`(漏斗记它走了写路径)一起管住。
+               # 上一版它没进来,于是它是**唯一一个没人管的写口**,
+               # 而边界审计只能靠名字里有没有 `set_` 猜它存在。
+               "set_piece_ratio")
 
 
 MANAGER_ROLES = ("店长", "总部运营")
@@ -1167,6 +1174,137 @@ def can_order(customer_id, kind="定制品订单", wearer_id=None):
         名下有谁=[f"{x['name']}({x['id']})" for x in ws] if len(ws) > 1 else None,
         提醒=("「有个旧尺寸总比没有强」正是返工的来源 —— "
               "超期就要求复量,别将就") if k == "不可以" else None))
+
+
+def piece_ratios(pattern=None):
+    """**裁片用料占比** —— 版师核对用的那张表。
+
+    每条带**来源**,三种可信度不许混为一谈:
+
+        估算   机器按几何估的,没人看过
+        复核   规则核过一遍(同形制变体结构一致、量纲常识、和 BOM 交叉验),
+               **但这个数本身没人核过**
+        版师   人核过数
+        BOM    BOM 里明写的用量(内衬走这条)
+
+    还给出**这个占比折成多少米**(× `fabric_base`),因为版师判断的是米数,
+    不是百分比 —— 「袖片 15.7%」看不出对不对,「袖片 0.63 米」一眼就知道。
+    """
+    if not pattern:
+        rs = _rows("SELECT pattern, COUNT(*) 片数, "
+                   "SUM(CASE WHEN ratio_src='版师' THEN 1 ELSE 0 END) 已核, "
+                   "GROUP_CONCAT(DISTINCT ratio_src) 来源 "
+                   "FROM pattern_piece WHERE ratio IS NOT NULL GROUP BY pattern")
+        nm = {r["code"]: r["name"] for r in _rows("SELECT code,name FROM pattern")}
+        for r in rs:
+            r["版型"] = nm.get(r["pattern"], r["pattern"])
+        待 = sum(1 for r in rs if r["已核"] < r["片数"])
+        return {"hit": len(rs), "rows": rs,
+                "note": f"**{待} 个版型还没核完**。传 pattern 看某一个的明细。"
+                        f"核过的标 `版师`,**不会被重新估算覆盖**。"}
+    p = _rows("SELECT code,name,fabric_base FROM pattern WHERE code=? OR name=?",
+              pattern, pattern)
+    if not p:
+        return {"error": f"没有版型「{pattern}」—— 这个工具认版型编码(PT06)和全名"}
+    p = p[0]
+    rs = _rows("SELECT name,qty,ratio,ratio_src,note FROM pattern_piece "
+               "WHERE pattern=? ORDER BY ratio DESC", p["code"])
+    fb = p["fabric_base"] or 0
+    for r in rs:
+        r["折合米数"] = round((r["ratio"] or 0) * fb, 3)
+    合 = round(sum(r["ratio"] or 0 for r in rs), 4)
+    return {"hit": len(rs), "版型": p["name"], "整件用料米": fb, "rows": rs,
+            "占比之和": 合,
+            "note": "**版师要判的是米数,不是百分比。** "
+                    "占比之和必须 = 1(用可信的整件用料 × 估算的相对占比,"
+                    "比两个都估要稳)。改一条用 `set_piece_ratio`,"
+                    "**改完这一片就标「版师」,不会再被估算覆盖**。"
+                    + ("" if abs(合 - 1) < 0.01 else
+                       f" ⚠️ 现在之和是 {合},不等于 1,这本身就是个问题")}
+
+
+def set_piece_ratio(pattern, piece, ratio, why=""):
+    """**改一片的用料占比,并标成「版师核过」。**
+
+    这是版师手上**唯一一个会改数据的工具** —— 版型、商品、订单都动不了。
+
+    ⚠️ 改一片之后,**同一个版型的其余片会按比例重新归一**,让总和回到 1 ——
+    否则总和不是 1,分摊出来的米数就和整件用料对不上。
+    **而已经标「版师」的片不参与重新归一** —— 人核过的数不许被自动调。
+
+    所以:**先核大片,再核小片**。反过来的话,先核的小片会被后面的归一挤动……
+    不会,因为标过「版师」的就锁住了。这条写在这儿是提醒顺序不影响结果。
+
+    ## 身份从会话取,**不收身份参数**
+
+    和别的写工具一样(`WRITE_TOOLS`,`isolation_check` 逐个验):
+    签名里没有 role / actor —— 有的话,一句「我以版师身份」就能提权。
+    而且**必须写 why**:这一列存下来是为了回答三个月后那句
+    「袖片为什么是 0.22」。只标一个「版师核过」答不了它 ——
+    那只说了「有人核过」,没说是谁、凭什么。
+    """
+    me = whoami()
+    if not me:
+        return {"error": "不知道现在是谁在核 —— 请先登录。"
+                         "**改过的数必须查得到是谁改的**,匿名改不了"}
+    if me.get("role") != "版师":
+        return {"error": f"核裁片用料要由版师来做,你的角色是「{me.get('role')}」。"
+                         f"**这个数是排料的依据** —— 核错了整批面料会不够裁"}
+    if not (why or "").strip():
+        return {"error": "why 必填:这个数是量的、照排料图算的、还是比着老版定的?"
+                         "**不写的话下次有人问「为什么是这个数」就查不到了**"}
+    p = _rows("SELECT code,name,fabric_base FROM pattern WHERE code=? OR name=?",
+              pattern, pattern)
+    if not p:
+        return {"error": f"没有版型「{pattern}」"}
+    code = p[0]["code"]
+    tgt = _rows("SELECT name,ratio FROM pattern_piece WHERE pattern=? AND name=?",
+                code, piece)
+    if not tgt:
+        有 = [r["name"] for r in _rows(
+            "SELECT name FROM pattern_piece WHERE pattern=?", code)]
+        return {"error": f"版型 {code} 没有「{piece}」这个裁片。它有:{有}"}
+    try:
+        ratio = float(ratio)
+    except Exception:
+        return {"error": "占比要是数字,0–1 之间(0.25 表示 25%)"}
+    if not (0 < ratio < 1):
+        return {"error": f"占比要在 0 和 1 之间,收到 {ratio}。"
+                         f"**一片占满整件(1)或者不占布(0)都不成立**"}
+    旧 = tgt[0]["ratio"]
+    import sqlite3 as _sq, datetime as _dt
+    who = f"{me.get('id') or ''}|{me.get('name') or ''}".strip("|")
+    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with _sq.connect(DB) as cx:
+        cx.execute("UPDATE pattern_piece SET ratio=?, ratio_src='版师', "
+                   "ratio_by=?, ratio_at=?, ratio_why=? "
+                   "WHERE pattern=? AND name=?",
+                   (ratio, who, now, why.strip(), code, piece))
+        # 其余**没被版师核过的**片按比例重新归一
+        剩 = cx.execute(
+            "SELECT name, ratio FROM pattern_piece "
+            "WHERE pattern=? AND name!=? AND COALESCE(ratio_src,'')!='版师'",
+            (code, piece)).fetchall()
+        锁 = cx.execute(
+            "SELECT COALESCE(SUM(ratio),0) FROM pattern_piece "
+            "WHERE pattern=? AND ratio_src='版师'", (code,)).fetchone()[0] or 0
+        余 = 1.0 - 锁
+        老和 = sum((r[1] or 0) for r in 剩) or 1.0
+        if 余 <= 0 and 剩:
+            return {"error": f"改不了:这个版型已经核过的片加起来是 {round(锁,4)},"
+                             f"**再加这一片就超过 1 了**。先把别的片调小"}
+        for nm2, r2 in 剩:
+            cx.execute("UPDATE pattern_piece SET ratio=? WHERE pattern=? AND name=?",
+                       (round((r2 or 0) / 老和 * 余, 6), code, nm2))
+    fb = p[0]["fabric_base"] or 0
+    return {"ok": True, "版型": p[0]["name"], "裁片": piece,
+            "改前": 旧, "改后": ratio,
+            "折合米数": f"{round((旧 or 0)*fb,3)} → {round(ratio*fb,3)} 米",
+            "核的人": who, "核的时刻": now, "理由": why.strip(),
+            "note": f"已标「版师」,**不会再被估算覆盖**。"
+                    f"同版型其余**没核过**的片已按比例重新归一,总和仍是 1;"
+                    f"**已核过的片没动** —— 人核过的数不许被自动调。"
+                    f" 这一笔记在 pattern_piece 上:{who} / {now} / 理由:{why.strip()}"}
 
 
 def my_workorders(status=None):
@@ -2351,6 +2489,8 @@ SHOP_SCHEMAS=[
     "kind":{"type":"string","description":"定制品订单 / 标品订单,默认定制品订单"},
     "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
    "required":["customer_id"]}},
+ {"name":"piece_ratios","description":"**裁片用料占比** —— 版师核对用。不传 pattern 给全部版型的核对进度;传 pattern(认编码 PT06 和全名)给某个版型的明细。每条带**来源**:`估算`(机器估的没人看过)/ `复核`(规则核过一遍但这个数没人核过)/ `版师`(人核过数)/ `BOM`(明写的用量)。**三种可信度不许混为一谈。** 还给出占比折合多少米 —— **版师判断的是米数不是百分比**:「袖片 15.7%」看不出对不对,「袖片 0.63 米」一眼就知道。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全部版型的进度"}}}},
+ {"name":"set_piece_ratio","description":"**改一片的用料占比,并标成「版师核过」**。改完这一片就锁住,不会再被估算覆盖;同版型其余**没核过**的片按比例重新归一,让总和回到 1,而**已核过的片不动** —— 人核过的数不许被自动调。ratio 填 0–1 之间的小数(0.25 = 25%)。**why 要写** —— 不写的话下次有人问「这个数为什么是这样」就查不到了。","input_schema":{"type":"object","properties":{"pattern":{"type":"string"},"piece":{"type":"string","description":"裁片名,如「袖片」"},"ratio":{"type":"number"},"why":{"type":"string","description":"为什么改成这个数"}},"required":["pattern","piece","ratio"]}},
  {"name":"my_workorders","description":"**我手上的工单**。工匠看自己的,工坊管事看本坊,总部运营看全部 —— 范围跟身份走。带**在制上限**和当前在制数:接不接得下一件,这两个数说了算,不用猜(上限是工艺约束 —— 手工活同时开太多件每件都慢,而且染色、绣线批次会串味)。逾期的排在最前。status 可选,写「在制/待开工/已完成」等。",
   "input_schema":{"type":"object","properties":{
     "status":{"type":"string","description":"只看某个状态的,不给就是全部"}},"required":[]}},
@@ -2490,7 +2630,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

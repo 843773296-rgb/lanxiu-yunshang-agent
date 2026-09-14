@@ -67,6 +67,10 @@ CALLERS = {
     # 而 P6 一个字都没验过它。**一条检查漏掉某个调用方,
     # 和这个调用方不存在,在检查输出上长得一模一样。**
     "工作站·财务对账(sdk)":   ("finance", wl("FINANCE_TOOLS")),
+    # 上面那条注释说的事又发生了一次:加版师角色时忘了这一行,
+    # P3 当场红「TL25 没有任何调用方装得上」—— **而它拦对了**:
+    # 一条装不上的铁律和一条不存在的铁律,在源码里长得一模一样。
+    "工作站·版师核料(sdk)":   ("pattern", wl("PATTERN_TOOLS")),
     "工作站·任务助手(sdk)":   ("task", TASK | TASKONLY | SHOP),
     "后台聊天(chat.py)":      ("kb",   KBSET),
     "一代任务循环(v1.py)":    ("task", {t["name"] for t in api.SCHEMAS} | {"submit_finding"}),

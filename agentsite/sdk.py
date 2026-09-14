@@ -261,6 +261,25 @@ WORKSHOP_TOOLS = [
     "mcp__kb__kb_pattern", "mcp__kb__kb_size",
 ]
 
+# 版师:核裁片用料占比。**这是唯一一个「有写工具但只有一个」的角色。**
+# 他的活就是把估算值核成实测值,不给写工具的话这个角色没有意义
+# (而「给了却核不了」比没有这个角色更糟 —— 人会以为核过了)。
+# 但也只给这一个写:版型、商品、订单都不是版师能动的。
+# ⚠️ 命名空间跟着 **schema 挂在哪个服务**走,不跟着「它像哪一类」走。
+# 这两个讲的是版型知识,我又一次写成了 `mcp__kb__`,而它们的 schema 在
+# `SHOP_SCHEMAS` 里 —— **同一个坑,第三次**(plan_for_event、get_review_queue,
+# 现在是它俩)。三次都不报错:白名单里那个名字根本不存在,
+# 于是模型手上少两个工具,而角色页面照样显示「5 个工具」。
+# 而且写工具**必须**在 shop:`gate_test` 要求 `WRITE_TOOLS` 里每一个
+# 都以 `mcp__shop__` 出现在这份白名单里。
+PATTERN_TOOLS = [
+    "mcp__shop__piece_ratios",      # 看占比和核对进度(带来源和折合米数)
+    "mcp__shop__set_piece_ratio",   # **唯一的写** —— 改占比并标「版师」
+    "mcp__kb__kb_pattern",          # 版型和裁片
+    "mcp__kb__kb_size",             # 成衣尺码表 —— 判米数要看尺寸
+    "mcp__kb__kb_bom",              # BOM:内衬和辅料的实际用量,可交叉验
+]
+
 # 财务:**只读账的四张表,一个写的都没有。**
 # 它不该看得到量体、版型、产能 —— 那些和对账无关,
 # 而「给一个角色多余的工具」的代价是它会去用(这个项目在 allowed_tools 上栽过)。
@@ -402,6 +421,18 @@ ROLE_META = {
                   "香云纱能不能做妆花?",
                   "W10001-2 明年六月毕业礼要穿,该按多高做?",
                   "客户发来这张图,问能不能照着做"]),
+    "pattern": dict(
+        name="版师核料", emoji="📐", who="面对版型", color="#7a5cc4",
+        desc="这一片吃多少布、估的准不准、哪些版型还没核完",
+        intro="它给的是**米数不是百分比** —— 「袖片 15.7%」看不出对不对,"
+              "「袖片 0.63 米」一眼就知道。每条都标来源:估算 / 复核 / 版师 / BOM,"
+              "**三种可信度不许混为一谈**。你核一条,它就锁一条,不会再被估算覆盖。",
+        note="**唯一能写的是占比。** 版型、商品、订单都动不了。"
+             "改完要写理由 —— 不写的话下次有人问「这个数为什么是这样」就查不到。",
+        examples=["哪些版型还没核完?",
+                  "PT06 立领长衫每一片吃多少布?",
+                  "袖片按 0.63 米算是不是太少了?",
+                  "把 PT06 的袖片改成 0.8 米,袖幅比估算宽"]),
     "workshop": dict(
         name="工坊排产", emoji="🪡", who="面对产能", color="#e07a3f",
         desc="接不接得下、派给谁、有没有要拖的活、压工期先换料还是先加人",
@@ -442,6 +473,7 @@ _ROLE_TOOLS = {
     "task":     lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS,
     # 财务只对账,**不看量体/版型/产能** —— 给多余的工具它就会去用。
     "finance":  lambda: FINANCE_TOOLS,
+    "pattern":  lambda: PATTERN_TOOLS,
 }
 
 def _tools_for(kind):
@@ -459,6 +491,7 @@ SYS_KB, KB_RULE_IDS = prompts.assemble("kb", _have("kb"))
 SYS_WORKSHOP, WORKSHOP_RULE_IDS = prompts.assemble("workshop", _have("workshop"))
 SYS_TASK, TASK_RULE_IDS = prompts.assemble("task", _have("task"))
 SYS_FINANCE, FINANCE_RULE_IDS = prompts.assemble("finance", _have("finance"))
+SYS_PATTERN, PATTERN_RULE_IDS = prompts.assemble("pattern", _have("pattern"))
 
 # **每个角色都必须在这儿有一条,漏一个当场炸。**
 # 财务这个角色为此栽过一次:`prompts.py` 里 FINANCE_HEAD / FINANCE_RULES / TL24
@@ -471,7 +504,7 @@ SYS_FINANCE, FINANCE_RULE_IDS = prompts.assemble("finance", _have("finance"))
 # 写成了同一件事。改成建表时就对齐,**让漏配在进程起来的那一刻就炸**,
 # 而不是等某次评测的某一题恰好露出来。
 _SYS = {"all": SYS_ALL, "kb": SYS_KB, "workshop": SYS_WORKSHOP,
-        "task": SYS_TASK, "finance": SYS_FINANCE}
+        "task": SYS_TASK, "finance": SYS_FINANCE, "pattern": SYS_PATTERN}
 _漏配 = set(_ROLE_TOOLS) - set(_SYS)
 if _漏配:
     raise RuntimeError(f"这些角色配了工具却没有提示词:{sorted(_漏配)} —— "
