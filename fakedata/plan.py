@@ -48,7 +48,7 @@ SEM2GEN = {
     "datetime_": "datetime", "blob": "text",
 }
 
-def _gen_for(cname, cf, fk):
+def _gen_for(cname, cf, fk, pkcols=()):
     """给一列挑生成策略。**猜不准就明说**,别悄悄用个默认值糊过去。"""
     if fk:
         g = {"gen": "fk", "table": fk["table"], "column": fk["column_ref"],
@@ -81,7 +81,18 @@ def _gen_for(cname, cf, fk):
         elif fk["confidence"] != "高":
             g["需确认"] = f'这条关系是{fk["source"]}推出来的,不是库里明写的'
         return g
-    if cf["pk"]:
+    # ⚠️ **只有单列主键才按「造主键」生成。**
+    # 复合主键(`PRIMARY KEY(spu, part, material)`)的每一列在 schema 里都标着 pk,
+    # 第一版照单全收,于是 `part` 这种**只有 8 个已知值的枚举列**
+    # 也被当成主键去造值 —— 造出 54 个不在那 8 个里的,而工厂自己的
+    # 「只能取已知的 8 个值」那条断言当场红。
+    #
+    # **一个列因为「在复合主键里」就被忽略了它自己的取值域。**
+    # 任何复合主键的表都会中招,而这个库里 part_option 是第一张。
+    #
+    # 生成器只拿 `pk[0]` 当主键列(见 gen.py),所以复合主键的**首列**
+    # 仍然按主键造(保证整行唯一),其余列按它们各自的性质推。
+    if cf["pk"] and (not pkcols or len(pkcols) == 1 or cname == pkcols[0]):
         return {"gen": "pk", "style": "coded" if cf["kind"] == "text" else "int_seq"}
     if cf.get("fsm"):
         # 状态机在,就不能再按枚举分布**独立**抽了 —— 状态和时间戳得一起定
@@ -274,7 +285,8 @@ def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN
         byfk = {k["column"]: k for k in fkmap[tn]}
         plan["tables"][tn] = {
             "count": n, "pk": tf["pk"], "源行数": tf["rows"],
-            "columns": {c: _gen_for(c, cf, byfk.get(c)) for c, cf in tf["columns"].items()},
+            "columns": {c: _gen_for(c, cf, byfk.get(c), tuple(tf["pk"] or ()))
+                        for c, cf in tf["columns"].items()},
             "时间序": tf.get("时间序", []),
         }
         # 联合分布只带 columns + dist 进方案 —— 禁配候选是给模型判的原料,不是执行用的
