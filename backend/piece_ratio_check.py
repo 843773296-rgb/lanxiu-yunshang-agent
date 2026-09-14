@@ -83,8 +83,15 @@ def main():
 
     # ③ **版师核过的不许被重新估覆盖。**
     #    验法:把一条标成「版师」并改掉值,重跑估算,它必须纹丝不动。
-    tgt = c.execute("SELECT pattern,name,ratio FROM pattern_piece "
+    # **连 ratio_src 一起存下来。** 原来只存了 ratio,还原时硬写回「估算」——
+    # 于是每跑一次 check.sh,这一行就被从「复核」降级成「估算」一次,
+    # **而且降完之后检查照样全绿**(来源仍在白名单里)。
+    # 一条会污染数据的检查,比没有它更糟:它在你最忙的那天悄悄改库,
+    # 而你正忙着看红的那一条。这个包装 boundary_audit 上有,这儿漏了 ——
+    # **教训没长成纪律,就会在下一个地方原样再来一遍。**
+    tgt = c.execute("SELECT pattern,name,ratio,ratio_src FROM pattern_piece "
                     "WHERE ratio IS NOT NULL LIMIT 1").fetchone()
+    原来的来源 = tgt["ratio_src"]
     c.execute("UPDATE pattern_piece SET ratio=0.999, ratio_src='版师' "
               "WHERE pattern=? AND name=?", (tgt["pattern"], tgt["name"]))
     for nm, q, rt, _w in pr.版型占比(c, tgt["pattern"]):
@@ -94,8 +101,9 @@ def main():
     后 = c.execute("SELECT ratio,ratio_src FROM pattern_piece WHERE pattern=? AND name=?",
                    (tgt["pattern"], tgt["name"])).fetchone()
     守住 = abs(后["ratio"] - 0.999) < 1e-6 and 后["ratio_src"] == "版师"
-    c.execute("UPDATE pattern_piece SET ratio=?, ratio_src='估算' "
-              "WHERE pattern=? AND name=?", (tgt["ratio"], tgt["pattern"], tgt["name"]))
+    c.execute("UPDATE pattern_piece SET ratio=?, ratio_src=? "
+              "WHERE pattern=? AND name=?",
+              (tgt["ratio"], 原来的来源, tgt["pattern"], tgt["name"]))
     ck("版师核过的不许被重新估覆盖", 守住, 1,
        "" if 守住 else f"被盖回去了:{dict(后)}")
     if 守住:
