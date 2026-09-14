@@ -132,7 +132,15 @@ CREATE TABLE product(spu TEXT PRIMARY KEY, name TEXT, category TEXT, kind TEXT, 
 CREATE TABLE sku(code TEXT PRIMARY KEY, spu TEXT, spec TEXT, color TEXT, size TEXT,
   price REAL, stock INT, locked INT, status TEXT,
   collar TEXT, size_no TEXT, spec_code TEXT, weight_kg REAL, volume_m3 REAL,
-  points INT, img TEXT);
+  points INT, img TEXT,
+  -- **供应商编码** —— 设计稿销售信息表里有这一列。
+  -- 我们自己的 SKU 码是内部的,供应商那边有他们自己的一套;
+  -- **对不上号的话,采购单和入库单只能靠人肉比对**。
+  --
+  -- ⚠️ 加这一列之前,先把四处 `INSERT INTO sku VALUES(?×16)` 改成了具名列。
+  -- 位置参数插入多一列会**静默错位**(值整体挪一格而不报错)——
+  -- `save_product` 里为 product 表留着同一条教训的注释。
+  supplier_code TEXT);
 CREATE TABLE measure_item(code TEXT PRIMARY KEY, name TEXT, unit TEXT, required INT,
   sort INT, status TEXT, note TEXT);
 CREATE TABLE measure_tpl(code TEXT PRIMARY KEY, name TEXT, descr TEXT, status TEXT,
@@ -1209,14 +1217,17 @@ def run():
                    tagp, unit, gender, int(price*100), 
                    "按比例" if _i%3 else "按固定金额", (10.0 if _i%3 else round(price*0.05,2)),
                    ago(190-_i*4) if st=="上架" else None, REMARKS[_i%4],
-                   _img(spu,"main"), json.dumps([_img(spu,f"d{k}") for k in range(1,4)]),
-                   json.dumps([_img(spu,"intro")])))
+                   _img(spu,"main"), json.dumps({"小程序":[_img(spu,f"d{k}") for k in range(1,4)],
+                               "ipad":[_img(spu,"d1")]}, ensure_ascii=False),
+                   json.dumps([{"组名":"商品信息","图":[_img(spu,"intro")]},
+                               {"组名":"保养","图":[_img(spu,"d2")]},
+                               {"组名":"送货与退货","图":[_img(spu,"d3")]}], ensure_ascii=False)))
         k = 0
         for col in cols:
             for sz in sizes:
                 k += 1
                 stock = 0 if (_i%7==3 and k==1) else random.randint(0,80)
-                c.execute("INSERT INTO sku VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                c.execute("INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,collar,size_no,spec_code,weight_kg,volume_m3,points,img) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                           (f"{spu}-{k:02d}", spu, f"{col}/{sz}", col, sz, float(price),
                            stock, random.randint(0,min(4,stock)) if stock else 0,
                            "停用" if _i==11 else "启用",
@@ -1242,8 +1253,11 @@ def run():
                    tagp, ("套" if any(w in nm for w in _多件词) else "件"),
                    gender, int(price*100), "按比例", 20.0,
                    ago(190-_i*3) if st=="上架" else None, REMARKS[_i%4],
-                   _img(spu,"main"), json.dumps([_img(spu,f"d{k}") for k in range(1,4)]),
-                   json.dumps([_img(spu,"intro")])))
+                   _img(spu,"main"), json.dumps({"小程序":[_img(spu,f"d{k}") for k in range(1,4)],
+                               "ipad":[_img(spu,"d1")]}, ensure_ascii=False),
+                   json.dumps([{"组名":"商品信息","图":[_img(spu,"intro")]},
+                               {"组名":"保养","图":[_img(spu,"d2")]},
+                               {"组名":"送货与退货","图":[_img(spu,"d3")]}], ensure_ascii=False)))
         c.execute("INSERT INTO product_custom VALUES(?,?,?,?,?,?)",
                   (spu, xz, ",".join(mts2), ",".join(kfs), lead,
                    None if len(mts2)==len(mts) else
@@ -1252,7 +1266,7 @@ def run():
                        for m in sorted(set(mts)-set(mts2))
                        for k in kfs
                        if _combo.get((_code.get(k),_code.get(m)))=="不可")))
-        c.execute("INSERT INTO sku VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        c.execute("INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,collar,size_no,spec_code,weight_kg,volume_m3,points,img) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (f"{spu}-01", spu, "定制/定制", "定制", "定制", float(price), 0, 0, "启用",
                    None, None, f"GG{_i:03d}01", None, None, int(price*100), _img(spu,"sku1")))
 
@@ -1333,15 +1347,20 @@ def run():
                        ago(180-_i%150), ago(_i%30), nm[1:3],
                        tagp, "件", ptg, int(price*100), "按比例", 20.0,
                        ago(170-_i%150), REMARKS[_i%4],
-                       _img(spu,"main"), json.dumps([_img(spu,f"d{k}") for k in range(1,4)]),
-                       json.dumps([_img(spu,"intro")])))
+                       _img(spu,"main"),
+                       json.dumps({"小程序":[_img(spu,f"d{k}") for k in range(1,4)],
+                                   "ipad":[_img(spu,"d1")]}, ensure_ascii=False),
+                       json.dumps([{"组名":"商品信息","图":[_img(spu,"intro")]},
+                                   {"组名":"保养","图":[_img(spu,"d2")]},
+                                   {"组名":"送货与退货","图":[_img(spu,"d3")]}],
+                                  ensure_ascii=False)))
             if kind == "定制品":
                 c.execute("INSERT INTO product_custom VALUES(?,?,?,?,?,?)",
                           (spu, _xz_name.get(ptxz, ptn), ",".join(mts), kf,
                            est.get("备料天") and f"{est['备料天']}–{est['备料天']+20} 天" or "30–45 天",
                            f"由版型 {ptc} 生成;物料成本 ¥{cost} × {coef} 定价,"
                            f"备料卡在{est.get('最长备料项')}"))
-                c.execute("INSERT INTO sku VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                c.execute("INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,collar,size_no,spec_code,weight_kg,volume_m3,points,img) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                           (f"{spu}-01", spu, "定制/定制", "定制", "定制", float(price), 0, 0,
                            "启用", None, None, f"GG{_i:03d}01", None, None,
                            int(price*100), _img(spu,"sku1")))
@@ -1355,7 +1374,7 @@ def run():
                 _col = PALETTE_SKU[(_i * 3 + ptc.__hash__()) % len(PALETTE_SKU)]
                 for k, sz in enumerate(sizes[:4], 1):
                     stock = random.randint(0, 60)
-                    c.execute("INSERT INTO sku VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    c.execute("INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,collar,size_no,spec_code,weight_kg,volume_m3,points,img) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                               (f"{spu}-{k:02d}", spu, f"{_col}/{sz}", _col, sz,
                                float(price), stock, random.randint(0, min(3, stock)) if stock else 0,
                                "启用", None, None, f"GG{_i:03d}{k:02d}",
@@ -2532,6 +2551,21 @@ def run():
     print(f"  [下单前置] 挪了 {_n_fix} 条超期量体;"
           f"留 1 条反例夹具({_fx.夹具说明})")
     assert _kept, "反例夹具丢了 —— 「超期量体不许下单」这条规则会没有用例"
+
+    # ── 供应商编码:只给**标品**造 ──────────────────────────────────
+    # **定制品没有供应商编码** —— 它不是从供应商进的货,是自己做的。
+    # 一刀切地每个 SKU 都给一个,那是假的:
+    # 「没有供应商编码」和「还没填供应商编码」是两回事,而**前者是正常的**。
+    _n_sup = 0
+    for _sk, _kd in c.execute("SELECT s.code, p.kind FROM sku s "
+                              "JOIN product p ON p.spu=s.spu").fetchall():
+        if _kd != "标品":
+            continue
+        c.execute("UPDATE sku SET supplier_code=? WHERE code=?",
+                  (f"SUP-{abs(hash(_sk)) % 900000 + 100000}", _sk))
+        _n_sup += 1
+    print(f"  [供应商编码] 给 {_n_sup} 个标品 SKU 造了编码"
+          f"(定制品不给 —— **它不是进的货,是自己做的**)")
 
     # ── 资料编辑日志:给演示数据造一批 ──────────────────────────────
     # **不造的话,商品详情页上那块日志永远是空的** —— 而空的那块看起来像

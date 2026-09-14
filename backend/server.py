@@ -515,12 +515,50 @@ def product_list(q):
     d["catnames"]=cat_paths()
     return d
 
+# ── 图片字段的两种形状 ────────────────────────────────────────────────
+# 设计稿要的是:
+#   轮播图  分**端**(小程序用 / ipad用),各一套
+#   详情图  分**组**(商品信息 / 保养 / 送货与退货),组名可自定义、可加新组
+# 而原来两个字段都是平数组,表达不了。
+#
+# ⚠️ **读的时候两种都认。** 换格式最容易出的事是「新代码 + 旧数据」——
+# 而旧数据不会报错,只会让页面上少一块图,**看起来像没上传过**。
+def 读轮播图(v):
+    """→ {"小程序": [...], "ipad": [...]}。旧的平数组当成「小程序」那一套。"""
+    try: d = json.loads(v or "[]")
+    except Exception: return {"小程序": [], "ipad": []}
+    if isinstance(d, list):
+        return {"小程序": d, "ipad": []}
+    return {"小程序": d.get("小程序") or [], "ipad": d.get("ipad") or []}
+
+
+def 读详情图(v):
+    """→ [{"组名": ..., "图": [...]}]。旧的平数组当成一个叫「商品信息」的组。"""
+    try: d = json.loads(v or "[]")
+    except Exception: return []
+    if isinstance(d, list) and (not d or isinstance(d[0], str)):
+        return [{"组名": "商品信息", "图": d}] if d else []
+    return [g for g in d if isinstance(g, dict)]
+
+
 def product_detail(spu):
     r=rows("""SELECT p.*, c.name cat_name FROM product p
               LEFT JOIN category c ON p.category=c.code WHERE p.spu=?""",spu)
     if not r: return {"error":"商品不存在"}
     p=r[0]
     p["cat_path"]=cat_paths().get(p["category"],"")
+    # **备注是谁写的、什么时候写的 —— 从编辑日志派生,不加两列。**
+    # 设计稿在备注旁边标着操作人和时间(李天芳 2025-07-20 03:50)。
+    # 加 `remark_by` / `remark_at` 两列当然做得到,但那就是**同一个事实两个来源**:
+    # 日志里已经记着「备注 X → Y、谁、什么时候」,再存一份必然会漂
+    # —— 有人直接改库、或者某条写入路径忘了同步,两边就对不上,而**不会报错**。
+    # 派生的代价是多一次查询,收益是**不可能不一致**。
+    _rm = rows("SELECT ts,actor FROM edit_log WHERE obj='商品' AND target=? "
+               "AND changes LIKE '%备注%' ORDER BY id DESC LIMIT 1", spu)
+    p["remark_by"] = _rm[0]["actor"] if _rm else None
+    p["remark_at"] = _rm[0]["ts"] if _rm else None
+    p["banner"]=读轮播图(p.get("img_detail"))
+    p["intro_groups"]=读详情图(p.get("img_intro"))
     p["skus"]=rows("SELECT * FROM sku WHERE spu=? ORDER BY code",spu)
     p["orders"]=rows("""SELECT o.id,o.status,o.created,o.amount FROM ordr o
                         JOIN ordr_item i ON i.order_id=o.id WHERE i.sku=?
@@ -1208,6 +1246,37 @@ def save_product(d,actor="魏欣新",role="顾问"):
         if not t: return dict(ok=False,code="BAD_TEMPLATE",reason=f"量体模版 {code} 不存在")
         if t[0]["status"]!="启用":
             return dict(ok=False,code="TPL_DISABLED",reason=f"量体模版 {code} 已停用,不可关联")
+    # ── 设计稿基本信息块有 12 项,而编辑表单原来只写 5 个 ──────────────
+    # 吊牌价 / 计量单位 / 性别 / 佣金方式 / 佣金比例 / 备注 / 主图
+    # **只有新建时写一次,之后永远改不了** —— 而页面上照样显示它们,
+    # 所以表现出来只是「点编辑,看到的字段比详情页少」,不报错。
+    def _num(k, lo=None):
+        v = d.get(k)
+        if v in (None, ""): return None, None
+        try: v = float(v)
+        except Exception: return None, f"{商品字段名.get(k,k)}必须是数字"
+        if lo is not None and v < lo: return None, f"{商品字段名.get(k,k)}不能小于 {lo}"
+        return v, None
+    tagp, e1 = _num("tag_price", 0)
+    comv, e2 = _num("commission_val", 0)
+    pts,  e3 = _num("points", 0)
+    for e in (e1, e2, e3):
+        if e: return dict(ok=False, code="BAD_NUMBER", reason=e)
+    # **吊牌价低于销售价是错的** —— 吊牌价是划线价,低了页面上会出现
+    # 「原价 ¥80 现价 ¥100」这种自相矛盾的展示,而它不会报错。
+    if tagp is not None and tagp < price:
+        return dict(ok=False, code="BAD_TAGPRICE",
+                    reason=f"吊牌价 ¥{tagp:.0f} 低于销售价 ¥{price:.0f} —— "
+                           f"吊牌价是划线价,低了页面上会出现「原价比现价还低」")
+    ct = d.get("commission_type")
+    if ct and ct not in ("按比例", "按金额"):
+        return dict(ok=False, code="BAD_COMMISSION", reason="佣金分配方式只能是「按比例」或「按金额」")
+    if ct == "按比例" and comv is not None and comv > 100:
+        return dict(ok=False, code="BAD_COMMISSION", reason="按比例时佣金不能超过 100%")
+    gd = d.get("gender")
+    if gd and gd not in ("女", "男", "童", "通用"):
+        return dict(ok=False, code="BAD_GENDER", reason="性别只能是 女 / 男 / 童 / 通用")
+
     new = not spu
     if new:
         n=rows("SELECT COUNT(*) c FROM product")[0]["c"]
@@ -1215,9 +1284,18 @@ def save_product(d,actor="魏欣新",role="顾问"):
     old=rows("SELECT * FROM product WHERE spu=?",spu)
     with sqlite3.connect(DB) as c:
         if old:
+            # **这条 SET 子句和下面的「写入覆盖的字段」必须一模一样**,
+            # `edit_log_check` 第一条盯着 —— 不一样的话日志就会撒谎。
             c.execute("""UPDATE product SET name=?,category=?,kind=?,base_price=?,template=?,
+                         tag_price=COALESCE(?,tag_price),unit=COALESCE(?,unit),
+                         gender=COALESCE(?,gender),points=COALESCE(?,points),
+                         commission_type=COALESCE(?,commission_type),
+                         commission_val=COALESCE(?,commission_val),
+                         remark=COALESCE(?,remark),img_main=COALESCE(?,img_main),
                          updated=datetime('now','localtime') WHERE spu=?""",
-                      (name,cat,kind,price,tpl,spu))
+                      (name,cat,kind,price,tpl,tagp,d.get("unit") or None,gd,
+                       int(pts) if pts is not None else None,ct,comv,
+                       d.get("remark"),d.get("img_main") or None,spu))
         else:
             # 具名列 —— product 表已按设计稿扩到 21 列,位置参数插入会静默错位
             c.execute("""INSERT INTO product
@@ -1231,8 +1309,10 @@ def save_product(d,actor="魏欣新",role="顾问"):
                        int(price*100),d.get("commission_type") or "按比例",
                        float(d.get("commission_val") or 10),d.get("remark"),
                        f"/img/{spu}-main.svg",
-                       json.dumps([f"/img/{spu}-d{k}.svg" for k in (1,2,3)]),
-                       json.dumps([f"/img/{spu}-intro.svg"])))
+                       json.dumps({"小程序":[f"/img/{spu}-d{k}.svg" for k in (1,2,3)],
+                                   "ipad":[]}, ensure_ascii=False),
+                       json.dumps([{"组名":"商品信息","图":[f"/img/{spu}-intro.svg"]}],
+                                  ensure_ascii=False)))
             c.execute("""INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,
                          spec_code,points,img)
                          VALUES(?,?,?,?,?,?,0,0,'启用',?,?,?)""",
@@ -1248,8 +1328,18 @@ def save_product(d,actor="魏欣新",role="顾问"):
     # 「主图 → 空」—— **而那几个字段根本没被改动**(UPDATE 只写下面这五个)。
     # **一条撒谎的日志比没有日志糟**:查账的人会照着它去追一个从没发生过的改动。
     # 这个列表要和上面那条 UPDATE 的 SET 子句**一模一样**,`edit_log_check` 盯着。
-    写入覆盖的字段 = ("name", "category", "kind", "base_price", "template")
+    写入覆盖的字段 = ("name", "category", "kind", "base_price", "template",
+                      "tag_price", "unit", "gender", "points",
+                      "commission_type", "commission_val", "remark", "img_main")
     新值 = dict(name=name, category=cat, kind=kind, base_price=price, template=tpl)
+    # COALESCE 的语义是「没传就保持原值」,所以**没传的字段要拿旧值填进 新值**,
+    # 否则 diff 会把它算成「改成空」——**日志又会撒谎**(第一版就是栽在这儿)。
+    if old:
+        for k, v in (("tag_price", tagp), ("unit", d.get("unit") or None),
+                     ("gender", gd), ("points", int(pts) if pts is not None else None),
+                     ("commission_type", ct), ("commission_val", comv),
+                     ("remark", d.get("remark")), ("img_main", d.get("img_main") or None)):
+            新值[k] = dict(old[0]).get(k) if v is None else v
     if new:
         # 创建时**把落库的初值记全** —— 一条只写「创建商品」的日志,
         # 回答不了「这个商品一开始是什么样」,而那正是查改动史的起点。

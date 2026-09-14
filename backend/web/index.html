@@ -1575,13 +1575,22 @@ async function productDetail(spu){
       <div><div class="l" style="margin-bottom:6px">主图</div>
         <img src="${esc(d.img_main||"")}" alt="" width="132" height="132"
              style="border-radius:8px;background:var(--tile)"></div>
-      <div style="flex:1;min-width:260px"><div class="l" style="margin-bottom:6px">商品细节图 / 简介图</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${[...(JSON.parse(d.img_detail||"[]")),...(JSON.parse(d.img_intro||"[]"))].map(u=>
-          `<img src="${esc(u)}" alt="" width="78" height="78" style="border-radius:6px;background:var(--tile)">`).join("")}
-        </div>
+      <div style="flex:1;min-width:300px">
+        <div class="l" style="margin-bottom:6px">轮播图 —— <b style="color:var(--ink)">按端分两套</b></div>
+        ${["小程序","ipad"].map(dev=>{const us=(d.banner||{})[dev]||[];
+          return `<div style="margin-bottom:8px"><span class="pill p-mut">${dev}用</span>
+           ${us.length?us.map(u=>`<img src="${esc(u)}" alt="" width="56" height="56"
+             style="border-radius:6px;background:var(--tile);margin-left:6px;vertical-align:middle">`).join("")
+            :`<span style="font-size:12px;color:var(--ink3);margin-left:8px">还没上传</span>`}</div>`}).join("")}
+        <div class="l" style="margin:12px 0 6px">详情图 —— <b style="color:var(--ink)">分组</b></div>
+        ${(d.intro_groups||[]).length?(d.intro_groups||[]).map(g=>
+          `<div style="margin-bottom:8px"><span class="pill p-blue">${esc(g.组名||"未命名组")}</span>
+           ${(g.图||[]).map(u=>`<img src="${esc(u)}" alt="" width="56" height="56"
+             style="border-radius:6px;background:var(--tile);margin-left:6px;vertical-align:middle">`).join("")}
+          </div>`).join(""):`<div style="font-size:12px;color:var(--ink3)">还没上传</div>`}
         <div style="font-size:11.5px;color:var(--ink3);margin-top:8px">
-          建议 750×750px,最多 9 张</div></div>
+          建议 750×750px。<b>轮播图按端分</b>(小程序 / ipad 尺寸不同);
+          <b>详情图按组分</b>(商品信息 / 保养 / 送货与退货,组名可自定义)</div></div>
     </div>
     <div class="info">
      <div><div class="l">货品编码(SPU)</div><div class="v mono">${esc(d.spu)}</div></div>
@@ -1598,7 +1607,9 @@ async function productDetail(spu){
      <div><div class="l">创建时间</div><div class="v mono">${esc(d.created)}</div></div>
      <div><div class="l">最后更新</div><div class="v mono">${esc(d.updated)}</div></div>
     </div>
-    ${d.remark?`<div class="note2" style="margin:0 24px 20px"><b style="color:var(--ink)">备注</b> —— ${esc(d.remark)}</div>`:""}
+    ${d.remark?`<div class="note2" style="margin:0 24px 20px"><b style="color:var(--ink)">备注</b>${
+       d.remark_by?` <span style="color:var(--ink3);font-size:11.5px">${esc(d.remark_by)} · ${esc(d.remark_at)}</span>`
+       :` <span style="color:var(--ink3);font-size:11.5px">建库时写入,之后没人改过</span>`} —— ${esc(d.remark)}</div>`:""}
     </div>
    ${d.custom?`<div class="card"><div class="hd"><h3>定制可选项</h3>
      <span class="n">形制 ${esc(d.custom.xz)} · 工期 ${esc(d.custom.lead_days||"—")}</span></div>
@@ -1620,6 +1631,7 @@ async function productDetail(spu){
    <div class="card"><div class="hd"><h3>规格与库存</h3><span class="n">${d.skus.length} 个 SKU</span></div>
     <table class="tb" style="margin-top:12px"><thead><tr><th style="width:52px">图</th>
     <th style="width:172px">商品编码(SKU)</th>
+    <th style="width:120px">供应商SKU编码</th>
     <th style="width:104px">规格</th><th style="width:74px">领型</th><th style="width:64px">号型</th>
     <th style="width:108px">规格码</th><th style="width:78px">重量KG</th><th style="width:88px">体积m³</th>
     <th style="width:100px">销售价</th><th style="width:78px">库存</th>
@@ -1627,7 +1639,10 @@ async function productDetail(spu){
     <th>提示</th></tr></thead><tbody>
     ${d.skus.map(k=>{const av=k.stock-k.locked; return `<tr>
      <td><img src="${esc(k.img||"")}" alt="" width="34" height="34" style="border-radius:4px;background:var(--tile)"></td>
-     <td class="mono">${esc(k.code)}</td><td>${esc(k.spec)}</td>
+     <td class="mono">${esc(k.code)}</td>
+     <td class="mono" style="font-size:12px">${k.supplier_code?esc(k.supplier_code)
+       :`<span style="color:var(--ink3)">${d.kind==="定制品"?"自制,无":"—"}</span>`}</td>
+     <td>${esc(k.spec)}</td>
      <td>${esc(k.collar||"—")}</td><td class="mono">${esc(k.size_no||"—")}</td>
      <td class="mono" style="font-size:12px">${esc(k.spec_code||"—")}</td>
      <td class="mono">${k.weight_kg??"—"}</td><td class="mono">${k.volume_m3??"—"}</td>
@@ -2532,6 +2547,18 @@ async function formProduct(cur,after){
     {k:"category",type:"select",label:"所属品类",req:1,
      opts:CATS.map(c=>c[0]+" "+c[1]),val:cur&&cur.category},
     {k:"template",type:"select",label:"量体模版(定制品必填)",opts:[""].concat(tpls),val:cur&&cur.template},
+    // ── 下面 7 项原来**只有新建时写一次,之后永远改不了** ──────────────
+    // 而详情页照样显示它们,所以表现出来只是「点编辑,看到的字段比详情页少」,
+    // 不报错。设计稿基本信息块有 12 项,表单原来只有 5 项。
+    {k:"tag_price",label:"吊牌价(元)",val:cur&&cur.tag_price,ph:"划线价,不得低于销售价"},
+    {k:"unit",type:"select",label:"计量单位",opts:["件","套","条","对","双","组","顶","把","米","片","支","卷"],val:cur&&cur.unit},
+    {k:"gender",type:"select",label:"性别",opts:["女","男","童","通用"],val:cur&&cur.gender},
+    {k:"points",label:"兑换积分",val:cur&&cur.points,ph:"留空则不改"},
+    {k:"commission_type",type:"select",label:"佣金分配方式",opts:["按比例","按金额"],val:cur&&cur.commission_type},
+    {k:"commission_val",label:"佣金比例(%)/ 金额(元)",val:cur&&cur.commission_val,ph:"按比例时不得超过 100"},
+    {k:"remark",type:"text",label:"备注",val:cur&&cur.remark,ph:"谁改的、什么时候改的会记进日志"},
+    // 主图:后台只填路径(没有上传服务)。**不填就不动**,不会被清空。
+    {k:"img_main",label:"主图路径",val:cur&&cur.img_main,ph:"留空则不改;图由 backend/img.py 按商品属性合成"},
   ],v=>doOp("/api/product-save",{...v,spu:cur&&cur.spu,
       category:(v.category||"").split(" ")[0],role:ROLE},after),true);
 }

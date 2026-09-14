@@ -44,6 +44,7 @@ run "待定版型分档 · 47 条对照用例(真值手标)" python3 backend/pat
 run "商品图 · 每张都渲染得出来,且看得出是不同的衣服" python3 backend/img_check.py
 run "工具入参 · 人怎么称呼它,工具就得认得出来" python3 backend/tool_input_check.py
 run "资料编辑日志 · 日志要说实话,而且说得出改了什么" python3 backend/edit_log_check.py
+run "商品表单 · 显示的字段就得改得了(对照设计稿)" python3 backend/product_form_check.py
 run "方案引用 · 存编码不存名字,而且落到具体版型(否则算不出用料)" python3 backend/scheme_check.py
 run "顾问引用 · 名字是被钉住的缓存,不是第二份真相" python3 backend/advisor_ref_check.py
 run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 backend/role_check.py

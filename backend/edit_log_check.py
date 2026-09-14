@@ -46,7 +46,13 @@ def main():
     #    两边都从源码取,不手抄 —— 手抄件不会自己告诉你它旧了。
     src_txt = open(os.path.join(HERE, "server.py"), encoding="utf-8").read()
     m = re.search(r'UPDATE product SET ([^"]+?)WHERE spu=\?', src_txt, re.S)
-    写的 = set(re.findall(r"(\w+)=\?", m.group(1))) - {"updated"} if m else set()
+    # ⚠️ 正则要认两种写法:`字段=?` 和 `字段=COALESCE(?,字段)`。
+    # 后者是「没传就保持原值」,加进 UPDATE 之后这条检查当场红 ——
+    # **而红的是检查跟不上,不是代码错**。
+    # 这类「检查本身的覆盖面」问题最容易被当成误报关掉,所以写清楚。
+    写的 = ((set(re.findall(r"(\w+)=\?", m.group(1)))
+            | set(re.findall(r"(\w+)=COALESCE\(", m.group(1))))
+           - {"updated"}) if m else set()
     m2 = re.search(r"写入覆盖的字段 = \(([^)]*)\)", src_txt)
     记的 = set(re.findall(r'"(\w+)"', m2.group(1))) if m2 else set()
     ck("日志记的字段 = UPDATE 真的写的字段", 写的 == 记的 and 写的,
