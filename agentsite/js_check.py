@@ -27,7 +27,14 @@
 import os, re, subprocess, sys, tempfile, shutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WEB = os.path.join(HERE, "web")
+# ⚠️ **两个站的页面都要扫。**
+# 第一版只扫 `agentsite/web/` —— 而后台那张 `backend/web/index.html`
+# (38 个功能页面全在里面、7000 多行内联 JS)**一直在这道检查的范围之外**。
+# 这个项目为「新页面不在审计范围内」栽过一次(交付说明 §24.5),
+# **现在是同一个坑的另一半:老页面不在新检查的范围内。**
+# 一道只扫一半的检查,和没有这道检查,在绿色的输出上长得一样。
+WEBDIRS = [os.path.join(HERE, "web"),
+           os.path.join(os.path.dirname(HERE), "backend", "web")]
 
 if not shutil.which("node"):
     print("❌ 找不到 node —— 页面内联 JS 就没法做语法检查。", file=sys.stderr)
@@ -36,12 +43,16 @@ if not shutil.which("node"):
 
 print("页面内联 JS · 语法检查\n" + "=" * 68)
 bad, n = [], 0
-for fn in sorted(os.listdir(WEB)):
-    if not fn.endswith(".html"): continue
-    src = open(os.path.join(WEB, fn), encoding="utf-8").read()
+FILES = [(d, f) for d in WEBDIRS if os.path.isdir(d)
+         for f in sorted(os.listdir(d)) if f.endswith(".html")]
+if not FILES:
+    print("❌ 一个页面都没扫到 —— **空扫不叫通过**", file=sys.stderr); sys.exit(1)
+for _dir, fn in FILES:
+    fn_show = os.path.relpath(os.path.join(_dir, fn), os.path.dirname(HERE))
+    src = open(os.path.join(_dir, fn), encoding="utf-8").read()
     blocks = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", src, re.S)
     if not blocks:
-        print(f"  ·  {fn:22s} 没有内联脚本"); continue
+        print(f"  ·  {fn_show:30s} 没有内联脚本"); continue
     for i, js in enumerate(blocks):
         n += 1
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as f:
@@ -50,10 +61,10 @@ for fn in sorted(os.listdir(WEB)):
         os.unlink(tmp)
         if r.returncode:
             err = [l for l in r.stderr.splitlines() if "Error" in l or "^" in l][:2]
-            bad.append((fn, i, " / ".join(x.strip() for x in err)))
-            print(f"  ❌ {fn:22s} 第 {i+1} 段:{err[0] if err else '语法错'}")
+            bad.append((fn_show, i, " / ".join(x.strip() for x in err)))
+            print(f"  ❌ {fn_show:30s} 第 {i+1} 段:{err[0] if err else '语法错'}")
         else:
-            print(f"  ✅ {fn:22s} 第 {i+1} 段 {len(js.splitlines()):>4} 行")
+            print(f"  ✅ {fn_show:30s} 第 {i+1} 段 {len(js.splitlines()):>4} 行")
 
 print("\n" + "=" * 68)
 if bad:

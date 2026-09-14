@@ -273,6 +273,29 @@ CREATE TABLE op_log(
   -- 业务表不该靠 import 的副作用存在。ensure_oplog 留着当兜底,但源头在这儿。
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, actor TEXT, machine TEXT,
   target TEXT, frm TEXT, too TEXT, allowed INT, code TEXT, reason TEXT, ctx TEXT);
+
+CREATE TABLE edit_log(
+  -- **资料编辑日志 —— 和 op_log(状态流转)分开。**
+  --
+  -- 为什么不塞进 op_log:`op_log` 的形状是「谁把某个对象从状态 A 变成状态 B,
+  -- 允不允许」。而资料编辑是「谁改了**哪几个字段**、每个字段从什么变成什么」——
+  -- **一次编辑改 N 个字段,塞进 frm/too 两列就是把一张清单压成一个标量。**
+  -- (`save_product` 原来就是这么干的:frm='编辑'、too='已保存' ——
+  --  「编辑 → 已保存」根本不是一个状态流转。)
+  -- 这一段已经因为「一列承载两件事」栽过五次,不该自己再造一个。
+  --
+  -- ⚠️ **`changes` 不许为空。** 一条说不出「改了什么」的日志,出事时等于没有:
+  --「编辑商品资料」这五个字回答不了「谁把售价从 5600 改成 5800」。
+  --  设计稿那一列叫「日志标题」,但**标题是给人扫的,明细才是给人查的**。
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL,
+  actor TEXT,          -- 操作人姓名(页面上那一列)
+  actor_no TEXT,       -- 工号 —— 名字会改,工号不会(顾问引用那一课)
+  obj TEXT,            -- 对象类型:商品 / SKU / 部件 / 量体模板
+  target TEXT,         -- 对象编码(SPU / SKU 码 …)
+  title TEXT,          -- 日志标题:创建商品 / 编辑商品资料 / 商品上架 …
+  source TEXT,         -- 来源:后台 / 小程序 / 接口
+  changes TEXT);       -- JSON 明细 [{字段, 改前, 改后}] —— 不许为空
 CREATE TABLE download_task(id TEXT PRIMARY KEY, kind TEXT, filters TEXT, status TEXT,
   rows_n INT, size_kb INT, created_by TEXT, created TEXT, expire_at TEXT);
 CREATE TABLE level_cfg(code TEXT PRIMARY KEY, name TEXT, amount REAL, orders INT,
@@ -2509,6 +2532,54 @@ def run():
     print(f"  [下单前置] 挪了 {_n_fix} 条超期量体;"
           f"留 1 条反例夹具({_fx.夹具说明})")
     assert _kept, "反例夹具丢了 —— 「超期量体不许下单」这条规则会没有用例"
+
+    # ── 资料编辑日志:给演示数据造一批 ──────────────────────────────
+    # **不造的话,商品详情页上那块日志永远是空的** —— 而空的那块看起来像
+    # 「这个商品没被改过」,不像「这个功能没数据」。
+    # 两者在页面上长得一样,而它们是两回事(这一段第七次撞见这个形状)。
+    #
+    # 只给**部分**商品造,而且每个商品的条数不同 ——
+    # 一刀切地每个商品都来 5 条,那是**假的**:真实的库里大多数商品
+    # 建完就没人动过,被反复改的是少数几个。
+    import json as _j2
+    _ops = [
+        ("创建商品", [("商品名称", "", None), ("销售价", "", None)]),
+        ("编辑商品资料", [("销售价", None, None)]),
+        ("编辑商品资料", [("商品类目", None, None)]),
+        ("商品上架", [("上架状态", "下架", "上架")]),
+        ("编辑量体模板", [("量体模版", None, None)]),
+    ]
+    _who = [r[0] for r in c.execute(
+        "SELECT name FROM staff WHERE role IN ('总部运营','店长') LIMIT 4")] or ["魏欣新"]
+    _plist = [dict(r) for r in c.execute(
+        "SELECT spu,name,base_price,category,template,created FROM product ORDER BY spu")]
+    _n_edit = 0
+    for _i2, _p in enumerate(_plist):
+        if _i2 % 3:                    # 三个里只有一个被改过 —— 大多数建完就没人动
+            条数 = 1
+        else:
+            条数 = 2 + (_i2 // 3) % 4
+        for _k2 in range(条数):
+            _t, _fs = _ops[min(_k2, len(_ops) - 1)]
+            _ch = []
+            for _fn, _a2, _b2 in _fs:
+                if _fn == "销售价":
+                    _a2 = f"{_p['base_price'] - 200:.1f}"; _b2 = f"{_p['base_price']:.1f}"
+                elif _fn == "商品名称":
+                    _b2 = _p["name"]
+                elif _fn == "商品类目":
+                    _a2 = "C010101"; _b2 = _p["category"]
+                elif _fn == "量体模版":
+                    _a2 = "LT01 唐装模版"; _b2 = _p["template"] or "(无)"
+                _ch.append({"字段": _fn, "改前": _a2 or "", "改后": _b2 or ""})
+            c.execute("INSERT INTO edit_log(ts,actor,actor_no,obj,target,title,source,changes)"
+                      " VALUES(?,?,?,?,?,?,?,?)",
+                      (f"{_p['created'][:10]} {9 + _k2}:{16 + _i2 % 40:02d}",
+                       _who[_i2 % len(_who)], None, "商品", _p["spu"], _t,
+                       "后台", _j2.dumps(_ch, ensure_ascii=False)))
+            _n_edit += 1
+    print(f"  [编辑日志] 造了 {_n_edit} 条,覆盖 {len(_plist)} 个商品"
+          f"(三个里只有一个被改过 —— 大多数建完就没人动)")
 
     c.executemany("INSERT INTO truth(case_id,breakpoint,root_cause,expected_action,expected_evidence,note) VALUES(?,?,?,?,?,?)", truths)
     c.commit()

@@ -43,6 +43,7 @@ run "形制与量体模板 · 模板必须覆盖形制的关键尺寸(漏一项�
 run "待定版型分档 · 47 条对照用例(真值手标)" python3 backend/pattern_grade_check.py
 run "商品图 · 每张都渲染得出来,且看得出是不同的衣服" python3 backend/img_check.py
 run "工具入参 · 人怎么称呼它,工具就得认得出来" python3 backend/tool_input_check.py
+run "资料编辑日志 · 日志要说实话,而且说得出改了什么" python3 backend/edit_log_check.py
 run "方案引用 · 存编码不存名字,而且落到具体版型(否则算不出用料)" python3 backend/scheme_check.py
 run "顾问引用 · 名字是被钉住的缓存,不是第二份真相" python3 backend/advisor_ref_check.py
 run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 backend/role_check.py
@@ -58,7 +59,7 @@ run "交接文档 · 四段必填是否齐全" python3 tools/make_handoff.py --c
 run "状态流转引擎 · 17 个用例" python3 backend/fsm.py
 run "写入校验规则 · 10 个用例" python3 backend/rules.py
 run "控件审计 · 死控件检查"    python3 backend/ui_audit.py
-run "页面内联 JS · 语法(重复声明/括号)" python3 agentsite/js_check.py
+run "页面内联 JS · 语法(两个站都扫)" python3 agentsite/js_check.py
 run "前端 · 引用的元素必须存在" python3 agentsite/ref_check.py
 run "遮蔽检查 · 局部变量压函数" python3 backend/shadow_check.py
 run "商品库 · 不卖矩阵判不可的组合" python3 backend/catalog_check.py

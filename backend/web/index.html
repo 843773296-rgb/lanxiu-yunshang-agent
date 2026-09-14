@@ -1646,6 +1646,27 @@ async function productDetail(spu){
      <td><span class="pill ${OPILL[o.status]||"p-mut"}">${esc(o.status)}</span></td>
      <td class="mono">¥${money(o.amount)}</td><td class="mono">${esc(o.created)}</td></tr>`).join("")}
     </tbody></table></div>`:""}
+   <div class="card"><div class="hd"><h3>日志</h3>
+     <span class="n">${(d.edits||[]).length} 条资料改动</span></div>
+    ${(d.edits||[]).length?`<table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:150px">创建时间</th><th style="width:96px">操作人</th>
+     <th style="width:150px">日志标题</th><th style="width:70px">来源</th>
+     <th>改了什么</th></tr></thead><tbody>
+    ${d.edits.map(g=>{let ch=[];try{ch=JSON.parse(g.changes||"[]")}catch(e){}
+      return `<tr><td class="mono">${esc(g.ts)}</td><td>${esc(g.actor||"—")}</td>
+      <td>${esc(g.title)}</td><td>${esc(g.source||"后台")}</td>
+      <td style="color:var(--ink2);font-size:12.5px">${
+        ch.map(x=>x.字段==="(无)"?esc(x.说明||"这次提交没有改动任何字段")
+          :`<b style="color:var(--ink)">${esc(x.字段)}</b> ${
+            esc(String(x.改前||"(空)")).slice(0,26)} → ${
+            esc(String(x.改后||"(空)")).slice(0,26)}`).join("；")}</td></tr>`}).join("")}
+    </tbody></table>`:`<div class="note2" style="margin:12px 24px 20px">
+     这个商品**建完之后没人改过** —— 不是没记录。
+     资料改动落在 <code>edit_log</code>,和状态流转(<code>op_log</code>)分两张表:
+     <b style="color:var(--ink)">前者回答「被谁改过什么」,后者回答「这次操作允不允许」</b>。</div>`}
+    <div class="note2" style="margin:0 24px 20px"><b style="color:var(--ink)">为什么要记「改了什么」</b> ——
+     光有标题的日志回答不了「谁把售价从 5600 改成 5800」。
+     <b style="color:var(--ink)">标题是给人扫的,明细才是给人查的。</b></div></div>
    <div class="fbar"><button class="btn" data-back="products">返回</button>
     <button class="btn sol" data-prod="${esc(spu)}" data-to="${on?"下架":"上架"}">${on?"下架商品":"上架商品"}</button></div>`);
   M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>view(e.dataset.back));

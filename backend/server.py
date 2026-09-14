@@ -171,6 +171,63 @@ ensure_oplog()
 # 两处各写一份总有一边会漏,而漏记的那边**看起来完全正常**。
 from oplog import log_op   # noqa: E402
 
+
+def ensure_editlog():
+    with sqlite3.connect(DB) as c:
+        c.execute("""CREATE TABLE IF NOT EXISTS edit_log(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, actor TEXT,
+          actor_no TEXT, obj TEXT, target TEXT, title TEXT, source TEXT,
+          changes TEXT)""")
+ensure_editlog()
+
+
+def diff_fields(old, new, 中文名):
+    """算出**哪几个字段变了**,返回 [{字段, 改前, 改后}]。
+
+    ⚠️ **只记真的变了的。** 把没改的字段也记一遍,日志会被噪声淹掉,
+    而「淹掉」和「没记」在查的时候是一回事 —— 翻十屏找不到那一行。
+    """
+    out = []
+    for k, cn in 中文名.items():
+        a, b = old.get(k), new.get(k)
+        if a is None and b is None:
+            continue
+        sa = "" if a is None else str(a)
+        sb = "" if b is None else str(b)
+        if sa != sb:
+            out.append({"字段": cn, "改前": sa, "改后": sb})
+    return out
+
+
+def log_edit(actor, actor_no, obj, target, title, changes, source="后台"):
+    """写一条资料编辑日志。
+
+    ⚠️ **`changes` 为空时不写这条日志,而是记一条「什么都没改」。**
+    悄悄不写会让「没改动」和「没记录」长得一样 —— 后者是 bug,前者不是,
+    而在日志页面上它们都表现为「这次操作没留下痕迹」。
+    """
+    import json as _j
+    if not changes:
+        changes = [{"字段": "(无)", "改前": "", "改后": "",
+                    "说明": "这次提交没有改动任何字段"}]
+        title = title + "(无改动)"
+    with sqlite3.connect(DB) as c:
+        c.execute("INSERT INTO edit_log(ts,actor,actor_no,obj,target,title,source,changes)"
+                  " VALUES(datetime('now','localtime'),?,?,?,?,?,?,?)",
+                  (actor, actor_no, obj, target, title, source,
+                   _j.dumps(changes, ensure_ascii=False)))
+
+
+# 商品字段的中文名 —— **日志给人看,不给机器看**。
+# 记 `base_price` 那一行,查的人还要去翻字段表才知道那是售价。
+商品字段名 = {"name": "商品名称", "category": "商品类目", "kind": "商品类型",
+              "base_price": "销售价", "tag_price": "吊牌价", "unit": "计量单位",
+              "gender": "性别", "template": "量体模版", "pattern": "版型",
+              "points": "兑换积分", "commission_type": "佣金分配方式",
+              "commission_val": "佣金比例/金额", "remark": "备注",
+              "status": "上架状态", "img_main": "主图",
+              "img_detail": "轮播图", "img_intro": "详情图"}
+
 def transit(mid, target, to, ctx, actor="魏欣新"):
     """统一入口:先过引擎,允许才落库,拒绝也留痕。"""
     if mid=="bk-deposit":
@@ -250,6 +307,18 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
                          SELECT ?,COALESCE(MAX(attempt),0)+1,datetime('now','localtime'),'微信支付',
                          (SELECT amount FROM deposit WHERE id=?),'PENDING','处理中',?
                          FROM refund_trace WHERE deposit_id=?""",(target,target,ctx.get("idem_key"),target))
+    # 商品的上下架也要进**资料编辑日志** —— 设计稿那块日志里写着「商品上架/下架」。
+    # 状态流转本来就在 op_log 里,这里再记一条不是重复:
+    # **两张表回答两个问题** —— op_log 回答「这次操作允不允许」(含被拒的),
+    # edit_log 回答「这个商品被谁改过什么」。
+    # 商品详情页上那块日志读的是后者,而**被拒的操作不该出现在商品的改动史里**
+    # (它什么都没改)。所以这条只在流转成功之后写。
+    if mid == "bk-product":
+        log_edit(actor, ctx.get("actor_no"), "商品", target,
+                 f"商品{to}",
+                 [{"字段": "上架状态", "改前": cur, "改后": to,
+                   "说明": ctx.get("note") or ""}],
+                 ctx.get("source") or "后台")
     return dict(ok=True,code="OK",frm=cur,to=to,reason=f"已从「{cur}」流转到「{to}」")
 
 def adjust_lifecycle(cid,to,reason,actor="魏欣新"):
@@ -457,6 +526,11 @@ def product_detail(spu):
                         JOIN ordr_item i ON i.order_id=o.id WHERE i.sku=?
                         ORDER BY o.created DESC LIMIT 10""",spu)
     p["logs"]=rows("SELECT * FROM op_log WHERE target=? ORDER BY id DESC LIMIT 20",spu)
+    # **资料编辑日志** —— 和上面那条不是一回事:
+    # `op_log` 回答「这次操作允不允许」(含被拒的),`edit_log` 回答
+    # 「这个商品被谁改过什么」。商品详情页上那块日志要的是后者。
+    p["edits"]=rows("SELECT ts,actor,title,source,changes FROM edit_log "
+                    "WHERE obj='商品' AND target=? ORDER BY id DESC LIMIT 30",spu)
     # 定制品的可选项:形制 + 可选面料 + 可选工艺。
     # 每一对「面料 × 工艺」的相容判定一并带出来 —— 顾问在商品页就能看到哪些组合要留意,
     # 不必等到配置页被拦才知道。
@@ -1164,8 +1238,38 @@ def save_product(d,actor="魏欣新",role="顾问"):
                          VALUES(?,?,?,?,?,?,0,0,'启用',?,?,?)""",
                       (f"{spu}-01",spu,"默认/均码","默认","均码",price,
                        f"GG{spu[-5:]}01",int(price*100),f"/img/{spu}-sku1.svg"))
+    # ⚠️ `op_log` 这一条**保留**,但它记的是「这次操作允不允许」那一层
+    # (frm='编辑'、too='已保存' 其实不是状态流转,是历史包袱,先不动它);
+    # **「改了什么」要落在 edit_log**,见那张表上方的说明。
     log_op(actor,"product",spu,"新建" if new else "编辑","已保存",True,
            "CREATE" if new else "UPDATE",f"{name} · {kind} · ¥{price}",{"role":role})
+    # ⚠️ **只 diff「写入真的覆盖了的字段」。**
+    # 第一版把表单没提交的字段也算进来,于是日志写出「吊牌价 20160 → 空」
+    # 「主图 → 空」—— **而那几个字段根本没被改动**(UPDATE 只写下面这五个)。
+    # **一条撒谎的日志比没有日志糟**:查账的人会照着它去追一个从没发生过的改动。
+    # 这个列表要和上面那条 UPDATE 的 SET 子句**一模一样**,`edit_log_check` 盯着。
+    写入覆盖的字段 = ("name", "category", "kind", "base_price", "template")
+    新值 = dict(name=name, category=cat, kind=kind, base_price=price, template=tpl)
+    if new:
+        # 创建时**把落库的初值记全** —— 一条只写「创建商品」的日志,
+        # 回答不了「这个商品一开始是什么样」,而那正是查改动史的起点。
+        # 创建时**把落库的初值记全**(不止上面五个 —— 新建那条 INSERT 写了更多列)。
+        # 一条只写「创建商品」的日志,回答不了「这个商品一开始是什么样」,
+        # 而那正是查改动史的起点。
+        初值 = dict(新值, unit=d.get("unit") or "件", gender=d.get("gender") or "女",
+                    tag_price=round(price * 1.12, 2), points=int(price * 100),
+                    commission_type=d.get("commission_type") or "按比例",
+                    commission_val=float(d.get("commission_val") or 10),
+                    remark=d.get("remark"), status="下架")
+        log_edit(actor, d.get("actor_no"), "商品", spu, "创建商品",
+                 [{"字段": 商品字段名.get(k, k), "改前": "", "改后": str(v)}
+                  for k, v in 初值.items() if v not in (None, "")],
+                 d.get("source") or "后台")
+    else:
+        log_edit(actor, d.get("actor_no"), "商品", spu, "编辑商品资料",
+                 diff_fields({k: dict(old[0]).get(k) for k in 写入覆盖的字段},
+                             新值, 商品字段名),
+                 d.get("source") or "后台")
     return dict(ok=True,code="CREATE" if new else "UPDATE",spu=spu,
       reason=(f"商品 {spu} 已创建,默认状态为「下架」,补齐 SKU 与库存后再上架" if new
               else f"商品 {spu} 已更新"))
