@@ -100,17 +100,42 @@ def _steps():
 
 
 def size_specs():
-    """推档 —— 基码值 + 档差 × 尺码序号。返回 (版型, 尺码, 部位, 值)"""
+    """推档 —— 基码值 + 档差 × 尺码序号。返回 (版型, 尺码, 部位, 值, 仅供参考的理由)
+
+    第五个字段是 2026-09-14 加的。**推得出不等于作数**:
+    马面裙的腰围推得出来,但褶位要重排,那一格只是下单参考 ——
+    而在表里它和一个能直接用的数**长得一模一样**。
+    标不标出来,是「版师看一眼就知道」和「版师得记得有这回事」的差别。
+
+    判据按**裁片结构**取(有褶裥片 ⇒ 腰围只是参考),不按版型编码 ——
+    md 里那条特例写的是「PT04 / PT05」,而库里有 5 个马面裙。
+    """
+    import grading as _g
     base, step, out = _base_specs(), _steps(), []
+    片 = {}
+    for pc in pieces():
+        片.setdefault(pc["pattern"], []).append(pc["name"])
     for p in patterns():
+        参考 = _g.参考项(片.get(p["code"], []))
+        # **尺码体系认不出来的,整个版型的尺码都标成「推得出但不作数」。**
+        # 童款用身高码(110/120/130/140),而 SIZE_NO 里一个都没有 ——
+        # 原来 `.get(sz, 0)` 把它们全算成 M,于是四个码推出**同一组数**,
+        # 而且没有任何地方会报。`.get(键, 0)` 是最安静的一种失败:
+        # 它把「查不到」变成一个看起来完全正常的数。
+        体系 = _g.尺码体系未定义(p["sizes"])
         for sz in p["sizes"]:
-            n = SIZE_NO.get(sz, 0)
+            n = _g.序号(sz)
+            if n is None:
+                print(f"⚠ 尺码「{sz}」不在档差序号表里,{p['code']} 只能按基码出 —— "
+                      f"已标「仅供参考」", file=sys.stderr)
+                n = 0
             for item, v in base.get(p["code"], {}).items():
                 d = step.get(item)
                 if d is None:
                     print(f"⚠ 「{item}」没有档差规则,{p['code']} 只能按基码出", file=sys.stderr)
                     d = 0
-                out.append((p["code"], sz, item, round(v + d * n, 1)))
+                out.append((p["code"], sz, item, round(v + d * n, 1),
+                            参考.get(item) or 体系))
     return out
 
 

@@ -273,6 +273,11 @@ WORKSHOP_TOOLS = [
 # 而且写工具**必须**在 shop:`gate_test` 要求 `WRITE_TOOLS` 里每一个
 # 都以 `mcp__shop__` 出现在这份白名单里。
 PATTERN_TOOLS = [
+    # **进来第一句话就该调它。** 没有这个入口的时候,版师只能问某一个版型的
+    # 某一件事,而「我手上到底有多少活、哪一件最该先做」系统一个字都没说 ——
+    # **没有入口的能力等于没做。**
+    "mcp__shop__pattern_queue",     # 排队看板:今天该我核什么(按影响面排序)
+    "mcp__shop__grading_audit",     # 推档自检:1237 个数压成 12 条档差
     "mcp__shop__piece_ratios",      # 看占比和核对进度(带来源和折合米数)
     "mcp__shop__set_piece_ratio",   # **唯一的写** —— 改占比并标「版师」
     "mcp__kb__kb_pattern",          # 版型和裁片

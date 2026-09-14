@@ -411,7 +411,13 @@ CREATE TABLE pattern_piece(pattern TEXT, name TEXT, qty INT, note TEXT,
   ratio_at TEXT,     -- 改的时刻
   ratio_why TEXT);   -- 为什么是这个数(量过 / 排料图 / 老版比对)
 -- 推档结果:每个版型 × 每个尺码 × 每个部位。基码和档差在 md 里,这张表是算出来的
-CREATE TABLE size_spec(pattern TEXT, size TEXT, item TEXT, value REAL);
+CREATE TABLE size_spec(pattern TEXT, size TEXT, item TEXT, value REAL,
+  -- **推得出不等于作数。** 马面裙的腰围推得出来(基码 + 4×序号),
+  -- 但褶位是从腰围反推排布的,腰围一变褶位要重排 —— 那一格只是下单参考。
+  -- 不标的话,它和一个能直接用的数在表里长得一模一样,
+  -- 而那条特例就只存在于一份 md 的一个段落里。
+  -- 判据按裁片结构取(有褶裥片),不按版型编码 —— md 写的是 PT04/PT05,而库里有 5 个马面裙。
+  caveat TEXT);
 -- 主料行的 name 从 craft 表取,ref_craft 指回去 —— 面料名不在物料表里存第二遍
 CREATE TABLE material(code TEXT PRIMARY KEY, name TEXT, cat TEXT, spec TEXT, width_cm REAL,
   unit TEXT, price REAL, loss_rate REAL, lead_days INT, ref_craft TEXT, src_type TEXT,
@@ -891,7 +897,8 @@ def run():
         c.execute("INSERT INTO pattern_piece(pattern,name,qty,note) VALUES(?,?,?,?)",
                   (x["pattern"], x["name"], x["qty"], x["note"]))
     for row in _dp.size_specs():
-        c.execute("INSERT INTO size_spec VALUES(?,?,?,?)", row)
+        c.execute("INSERT INTO size_spec(pattern,size,item,value,caveat) "
+                  "VALUES(?,?,?,?,?)", row)
     for m in _dp.materials(_names):
         # 现货量与单价反相关:¥45 的棉麻可以囤几百米,¥1800 的云锦基本不囤 ——
         # 压着钱的东西没人多备。这条规律让「有没有现货」这个问题有真实的答案分布。

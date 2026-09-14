@@ -1223,6 +1223,243 @@ def piece_ratios(pattern=None):
                        f" ⚠️ 现在之和是 {合},不等于 1,这本身就是个问题")}
 
 
+def pattern_queue():
+    """**版师的排队看板 —— 「今天该我核什么」。**
+
+    这个工具解决的不是「算不出来」,是「**没有入口**」:
+    版师进来只能问某一个版型的某一件事,而他手上到底有多少活、
+    哪一件最该先做,系统一个字都没说。**没有入口的能力等于没做。**
+
+    ## 排序有依据,不按编号
+
+    一张 86 行的清单等于没排队。这里按**影响面**排:
+    这个版型下面挂着多少商品、多少订单行已经用它出过货 ——
+    **核一个 PT06(7 个商品、5 条订单行)和核一个没人用的版型,价值差一个数量级。**
+
+    ## 空和零要分开
+
+    每一摊都报「总数 / 已完成 / 还剩」。一摊显示 0 的时候要说得出
+    是「**做完了**」还是「**一条都没扫到**」—— 这两种在看板上长得一模一样,
+    而它们该触发的动作正好相反。
+    """
+    out, 活 = {}, []
+
+    # ── ① 裁片用料占比 ────────────────────────────────────────────────
+    总片 = _rows("SELECT COUNT(*) n FROM pattern_piece WHERE ratio IS NOT NULL")[0]["n"]
+    已核 = _rows("SELECT COUNT(*) n FROM pattern_piece WHERE ratio_src='版师'")[0]["n"]
+    全核完 = _rows(
+        "SELECT COUNT(*) n FROM (SELECT pattern FROM pattern_piece "
+        "GROUP BY pattern HAVING SUM(CASE WHEN ratio_src='版师' THEN 0 ELSE 1 END)=0)")[0]["n"]
+    # **影响面**:挂的商品数 + 已出过货的订单行数。两个都算,因为它们答的不是同一个问题
+    # (商品多 = 以后会一直用;订单行多 = 已经在按这个数备料了)。
+    先核 = _rows(
+        "SELECT pp.pattern, pt.name, "
+        "  COUNT(DISTINCT pp.name) 片数, "
+        "  SUM(CASE WHEN pp.ratio_src='版师' THEN 1 ELSE 0 END) 已核, "
+        "  (SELECT COUNT(*) FROM product p WHERE p.pattern=pp.pattern) 商品数, "
+        "  (SELECT COUNT(*) FROM ordr_item oi JOIN product p2 ON p2.spu=oi.spu "
+        "   WHERE p2.pattern=pp.pattern) 订单行 "
+        "FROM pattern_piece pp JOIN pattern pt ON pt.code=pp.pattern "
+        "GROUP BY pp.pattern, pt.name "
+        "HAVING 已核 < 片数 "
+        "ORDER BY 商品数 DESC, 订单行 DESC, pp.pattern LIMIT 8")
+    活.append(_nz({
+        "事": "裁片用料占比",
+        "进度": f"{已核}/{总片} 片已核,{全核完}/{_rows('SELECT COUNT(DISTINCT pattern) n FROM pattern_piece')[0]['n']} 个版型全核完",
+        "状态": ("**一条都还没核**" if 已核 == 0 else None),
+        "建议先核": [dict(版型=r["pattern"], 名称=r["name"],
+                          进度=f"{r['已核']}/{r['片数']}",
+                          影响=f"挂 {r['商品数']} 个商品、{r['订单行']} 条订单行已按这个数备料")
+                     for r in 先核],
+        "怎么核": "`piece_ratios(版型)` 看明细和折合米数,`set_piece_ratio(...)` 改一片",
+    }))
+
+    # ── ② 推档疑点 ────────────────────────────────────────────────────
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "knowledge"))
+    import grading as _g
+    疑 = _grading_scan()
+    活.append(_nz({
+        "事": "推档自检",
+        "进度": f"{疑['扫了']} 个版型、{疑['格子']} 条尺码全部扫过",
+        # 看板上只给**一行摘要**,细节去 grading_audit 看 ——
+        # 同一段 60 字的解释在四个版型下各贴一遍,这一屏就只剩它了。
+        "有疑点的版型": [f"{r['版型']} {r['名称']}:"
+                         f"{r['疑点'][0].split('——')[0].strip()}"
+                         + (f"(共 {len(r['疑点'])} 类)" if len(r["疑点"]) > 1 else "")
+                         for r in 疑["疑点"][:8]] or None,
+        "状态": ("档差处处对得上 —— **这不叫没查,是查过了**" if not 疑["疑点"] else None),
+        "怎么核": "`grading_audit(版型)` 看逐部位的档差;"
+                  f"**要核的是那 {len(_g.档差())} 条档差,不是 {疑['格子']} 个数**",
+    }))
+
+    # ── ③ 推得出但不作数的格子 ────────────────────────────────────────
+    参考 = _rows("SELECT pattern, item, COUNT(*) n, MAX(caveat) why FROM size_spec "
+                 "WHERE caveat IS NOT NULL GROUP BY pattern, item ORDER BY pattern")
+    if 参考:
+        # **按理由分组。** 上一版这里是一张平铺的清单加一句「为什么」——
+        # 而清单里其实混着**两件不同的事**(马面裙的褶位、童款的身高码),
+        # 那句「为什么」只解释了其中一件,另一件被它的解释盖住了。
+        # 「一列承载两件事」这个坑,这一轮已经撞到第六次。
+        组 = {}
+        for r in 参考:
+            组.setdefault(r["why"], []).append(f"{r['pattern']}·{r['item']}({r['n']} 个码)")
+        活.append({
+            "事": "推得出但不作数的尺码",
+            "进度": f"{sum(r['n'] for r in 参考)} 格,分布在 "
+                    f"{len({r['pattern'] for r in 参考})} 个版型、{len(组)} 种原因",
+            "分组": [{"为什么": why, "哪些": lst} for why, lst in 组.items()],
+            "note": "**这两组的性质不一样**:褶位那组是**常设提醒**(每次出货都要重排,"
+                    "不是核一次就完了);童款那组是**缺一张档差表**(补上就能重推)。"
+                    "混在一张清单上会让人以为是同一件事。",
+        })
+
+    # ── ④ 没有版型的定制品 ────────────────────────────────────────────
+    无版 = _rows(
+        "SELECT p.spu, p.name, p.category FROM product_custom pc "
+        "JOIN product p ON p.spu=pc.spu "
+        "WHERE p.pattern IS NULL OR p.pattern=''")
+    if 无版:
+        活.append({
+            "事": "配置页上架了、但没有版型的定制品",
+            "进度": f"{len(无版)} 个",
+            "明细": [f"{r['name']}({r['spu']})" for r in 无版],
+            "note": "规则说「没有版型就裁不出来,不能在配置页上架,须先请版师建版」。"
+                    "但这几个看名字像**配饰**(云肩 / 团扇 / 香囊 / 腰封),"
+                    "**配饰可能本来就不需要版型** —— "
+                    "**要版师确认一次:是真不需要,还是漏建了。**"
+                    "⚠️ 「确认不需要」这件事目前**没有地方记**,确认完它还会再出现在这张单上。",
+        })
+
+    out["谁在看"] = (whoami() or {}).get("name") or "(没登录)"
+    out["该核的活"] = 活
+    out["note"] = ("每一摊都报了「总数 / 已完成 / 还剩」—— "
+                   "**「做完了」和「一条都没扫到」在看板上长得一模一样**,"
+                   "而它们该触发的动作正好相反。"
+                   "排序按**影响面**(挂多少商品、多少订单行已经按这个数备料),"
+                   "不按编号 —— 一张 86 行的清单等于没排队。")
+    return out
+
+
+def _grading_scan():
+    """把全部版型的推档扫一遍。**给 pattern_queue 和 grading_audit 共用一个口径。**"""
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "knowledge"))
+    import grading as _g
+    pats = _rows("SELECT code,name FROM pattern ORDER BY code")
+    片 = {}
+    for r in _rows("SELECT pattern,name FROM pattern_piece"):
+        片.setdefault(r["pattern"], []).append(r["name"])
+    格子, 疑点 = 0, []
+    for p in pats:
+        rs = _rows("SELECT size,item,value FROM size_spec WHERE pattern=?", p["code"])
+        格子 += len(rs)
+        tbl = {}
+        for r in rs: tbl.setdefault(r["size"], {})[r["item"]] = r["value"]
+        参考 = set(_g.参考项(片.get(p["code"], [])))
+        bad = []
+        for 部位, d in _g.核档(tbl, 参考).items():
+            # **顺序有意义。** 「算不出来」要排在「算出来不对」前面 ——
+            # 童款那四个版型第一次扫出来报的是「实际 [] ≠ 规则 4.0」,
+            # 看着像档差错了,实际是**一个码都比不了**(身高码不在序号表里)。
+            # **红错理由比不红更费事**:照着那条去查档差是白费功夫。
+            if d["算不出来"]:
+                bad.append(f"{部位}:**算不出档差** —— {d['算不出来的原因']}")
+            elif not d["有规则"]:
+                bad.append(f"{部位}:**没有档差规则**,只能按基码出")
+            elif not d["处处相等"]:
+                bad.append(f"{部位}:相邻码的差不一致 {d['实际档差']}")
+            elif not d["和规则一致"]:
+                bad.append(f"{部位}:实际 {d['实际档差']} ≠ 规则 {d['规则档差']}")
+        for sz, v in tbl.items():
+            bad += [f"{sz} 码:{x}" for x in _g.体检(v, 参考)]
+        # **同一个理由不要说四遍。** 一条 40 个字的解释乘以 4 个部位,
+        # 会把这一屏挤满,而看的人以为是四个不同的问题。按理由归并:
+        # 「上襦衣长 / 胸围 / 裙腰围 / 裙长:算不出档差 —— <理由说一次>」
+        if bad:
+            合 , 序 = {}, []
+            for line in bad:
+                部位, _, 理由 = line.partition(":")
+                if 理由 not in 合: 合[理由] = []; 序.append(理由)
+                合[理由].append(部位)
+            疑点.append(dict(版型=p["code"], 名称=p["name"],
+                             疑点=[f"{' / '.join(合[r])}:{r}" for r in 序][:4]))
+    return dict(扫了=len(pats), 格子=格子, 疑点=疑点)
+
+
+def grading_audit(pattern=None):
+    """**推档自检 —— 把「要核 1237 个数」压成「要核 12 条档差」。**
+
+    `size_spec` 那 1237 条全是推出来的(基码值 + 档差 × 尺码序号)。
+    让版师逐条核是不现实的,而他真正该核的只有两样:**基码表**和**那 12 条档差**。
+
+    不传 pattern 给全局:扫了多少、哪几个版型有疑点。
+    传 pattern 给这一个版型的逐部位明细:实际档差、规则档差、覆盖范围、量纲体检。
+
+    ## 判据零误报,因为它是定义性的
+
+    「相邻码之间的差处处相等,而且等于档差表里那个数」——
+    这是推档的**定义**,不是一个「看起来合理」的阈值。
+    上一次栽在阈值上:裁片占比第一版把「单片 > 60%」一律当异常,
+    而马面裙的裙片占 90% 本来就正常。**一刀切的阈值会把对的判成错的**,
+    而那种误报比漏报贵:它会让人去改一个本来对的数。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "knowledge"))
+    import grading as _g
+    if not pattern:
+        r = _grading_scan()
+        return _nz({
+            "扫了": f"{r['扫了']} 个版型 / {r['格子']} 条尺码",
+            "档差规则": _g.档差(),
+            "有疑点的版型": r["疑点"] or None,
+            "note": (f"要核的是上面那 {len(_g.档差())} 条档差和各版型的基码,"
+                     f"**不是 {r['格子']} 个数** —— 尺码表是推出来的,"
+                     f"改一条档差对全部码生效。"
+                     + ("  这一轮**一个疑点都没有**:档差处处对得上 —— "
+                        "**这不叫没查,是查过了**(扫了全部 "
+                        f"{r['格子']} 条)。" if not r["疑点"] else "")),
+        })
+    p = _rows("SELECT code,name,sizes FROM pattern WHERE code=? OR name=?", pattern, pattern)
+    if not p:
+        return {"error": f"没有版型「{pattern}」(认版型编码 PT04,也认全名「明制马面裙·标准」)"}
+    p = p[0]
+    片 = [r["name"] for r in _rows("SELECT name FROM pattern_piece WHERE pattern=?", p["code"])]
+    参考 = _g.参考项(片)
+    rs = _rows("SELECT size,item,value FROM size_spec WHERE pattern=?", p["code"])
+    tbl = {}
+    for r in rs: tbl.setdefault(r["size"], {})[r["item"]] = r["value"]
+    明细 = []
+    for 部位, d in sorted(_g.核档(tbl, set(参考)).items()):
+        基 = tbl.get("M", {}).get(部位)
+        rng = _g.覆盖范围(基, 部位, list(tbl)) if 基 is not None else None
+        明细.append(_nz({
+            "部位": 部位,
+            "基码(M)": 基,
+            "实际档差": (d["实际档差"][0] if len(d["实际档差"]) == 1 else d["实际档差"]),
+            "规则档差": d["规则档差"],
+            "对不对": ("⚠️ 算不出档差 —— " + (d["算不出来的原因"] or "")
+                       if d["算不出来"] else
+                       "✅ 和规则一致" if d["和规则一致"] else
+                       "⚠️ 没有档差规则,只能按基码出" if not d["有规则"] else
+                       "❌ 和规则对不上"),
+            "覆盖范围": (f"{rng[0]}–{rng[1]}cm" if rng else None),
+            "⚠️ 推得出但不作数": 参考.get(部位),
+        }))
+    体 = {sz: _g.体检(v, set(参考)) for sz, v in tbl.items()}
+    体 = {k: v for k, v in 体.items() if v}
+    return _nz({
+        "版型": f"{p['code']} {p['name']}",
+        "尺码": p["sizes"],
+        "逐部位": 明细,
+        "量纲体检": 体 or None,
+        "note": (f"这个版型有 {len(明细)} 个部位、{len(rs)} 条尺码,"
+                 f"**要核的是上面 {len(明细)} 行的「基码 + 档差」两个数,不是 {len(rs)} 个**。"
+                 + ("  量纲体检全过(值为正、领围小于胸围、马面宽小于腰围)——"
+                    "**扫了全部 " + str(len(tbl)) + " 个码,不是没扫**。" if not 体 else "")),
+    })
+
+
 def set_piece_ratio(pattern, piece, ratio, why=""):
     """**改一片的用料占比,并标成「版师核过」。**
 
@@ -1978,15 +2215,32 @@ def kb_size(pattern, size=None):
     p=_rows("SELECT * FROM pattern WHERE code=? OR name=?",pattern,pattern)
     if not p: return {"error":f"没有版型「{pattern}」,可先用 kb_pattern 查这个形制有哪些版型"}
     p=p[0]
-    rs=_rows("SELECT size,item,value FROM size_spec WHERE pattern=?",p["code"])
+    rs=_rows("SELECT size,item,value,caveat FROM size_spec WHERE pattern=?",p["code"])
     if size: rs=[r for r in rs if r["size"]==size]
     if not rs:
         return {"error":f"{p['name']} 没有 {size} 码,只有 {p['sizes']}",
                 "note":"尺码不存在不是缺货,是这个版型裁不出来。"}
-    out={}
-    for r in rs: out.setdefault(r["size"],{})[r["item"]]=r["value"]
-    return {"版型":p["name"],"尺码表":out,"量体模版":p["tpl"],
-            "note":"成衣尺寸。推荐尺码要拿客户量体值比对后由版师定,系统只给建议。"}
+    out, 参考 = {}, {}
+    for r in rs:
+        # **推得出不等于作数** —— 但这个标记**不许贴在值上**。
+        #
+        # 第一版把它写成 `"72.0(仅供参考)"`,当场炸了两处:
+        # 钉死的锚点对不上(手抄 72.0 vs 算出 '72.0(仅供参考)'),
+        # 以及 kb_fit 拿它去减放松量时 `str - float` 直接 TypeError。
+        # **这正是这个项目反复撞的「一列承载两件事」** —— 我一边在别处修它,
+        # 一边在这儿又犯了一次:一个数值字段同时装了数值和它的可信度。
+        # 现在数值还是数值,标记单独一栏。
+        out.setdefault(r["size"],{})[r["item"]] = r["value"]
+        if r["caveat"]: 参考[r["item"]] = r["caveat"]
+    res = {"版型":p["name"],"尺码表":out,"量体模版":p["tpl"],
+           "note":"成衣尺寸。推荐尺码要拿客户量体值比对后由版师定,系统只给建议。"}
+    if 参考:
+        res["⚠️ 这几项推得出但不作数"] = sorted(参考)
+        res["为什么"] = 参考
+        res["note"] += ("  ⚠️ 上面「推得出但不作数」列出的项**不能直接拿去下单或裁剪**,"
+                        "必须由版师按实际尺寸重新处理 —— "
+                        "**在尺码表里它们和别的数长得一模一样**,所以单独列一栏。")
+    return res
 
 
 def kb_bom(pattern, size, material, crafts=None, scope="局部"):
@@ -2489,6 +2743,8 @@ SHOP_SCHEMAS=[
     "kind":{"type":"string","description":"定制品订单 / 标品订单,默认定制品订单"},
     "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
    "required":["customer_id"]}},
+ {"name":"pattern_queue","description":"**版师的排队看板 —— 「今天该我核什么」。**不用传任何参数。把版师手上的活一次列全:裁片用料占比的进度(并按**影响面**排出先核哪几个 —— 挂多少商品、多少订单行已经按这个数备料)、推档有疑点的版型、「推得出但不作数」的尺码格子、配置页上架了却没有版型的定制品。**每一摊都报「总数 / 已完成 / 还剩」** —— 一摊显示 0 的时候要说得出是「做完了」还是「一条都没扫到」。版师进来第一句话就该调它。","input_schema":{"type":"object","properties":{}}},
+ {"name":"grading_audit","description":"**推档自检 —— 把「要核 1237 个数」压成「要核 12 条档差」。**尺码表全部是推出来的(基码值 + 档差 × 尺码序号),版师真正该核的只有基码和那 12 条档差。不传 pattern 给全局(扫了多少、哪几个版型有疑点、档差规则是什么);传 pattern 给这一个版型的逐部位明细:实际档差 / 规则档差 / **覆盖范围**(这个版型能做多大的人)/ 量纲体检 / 哪几项「推得出但不作数」。**判据是定义性的,不是阈值** —— 相邻码的差必须处处相等且等于档差表,不一致就是真的有一格不对。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全局"}}}},
  {"name":"piece_ratios","description":"**裁片用料占比** —— 版师核对用。不传 pattern 给全部版型的核对进度;传 pattern(认编码 PT06 和全名)给某个版型的明细。每条带**来源**:`估算`(机器估的没人看过)/ `复核`(规则核过一遍但这个数没人核过)/ `版师`(人核过数)/ `BOM`(明写的用量)。**三种可信度不许混为一谈。** 还给出占比折合多少米 —— **版师判断的是米数不是百分比**:「袖片 15.7%」看不出对不对,「袖片 0.63 米」一眼就知道。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全部版型的进度"}}}},
  {"name":"set_piece_ratio","description":"**改一片的用料占比,并标成「版师核过」**。改完这一片就锁住,不会再被估算覆盖;同版型其余**没核过**的片按比例重新归一,让总和回到 1,而**已核过的片不动** —— 人核过的数不许被自动调。ratio 填 0–1 之间的小数(0.25 = 25%)。**why 要写** —— 不写的话下次有人问「这个数为什么是这样」就查不到了。","input_schema":{"type":"object","properties":{"pattern":{"type":"string"},"piece":{"type":"string","description":"裁片名,如「袖片」"},"ratio":{"type":"number"},"why":{"type":"string","description":"为什么改成这个数"}},"required":["pattern","piece","ratio"]}},
  {"name":"my_workorders","description":"**我手上的工单**。工匠看自己的,工坊管事看本坊,总部运营看全部 —— 范围跟身份走。带**在制上限**和当前在制数:接不接得下一件,这两个数说了算,不用猜(上限是工艺约束 —— 手工活同时开太多件每件都慢,而且染色、绣线批次会串味)。逾期的排在最前。status 可选,写「在制/待开工/已完成」等。",
@@ -2630,7 +2886,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

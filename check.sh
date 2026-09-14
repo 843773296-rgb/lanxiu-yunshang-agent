@@ -55,6 +55,7 @@ run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 
 # 版师是第一个「有写工具,但只有一个」的角色 —— 它特有的两种失败
 # (给多了 / 给死了)在界面上长得一模一样,所以两个方向都得测。
 # 要 venv 的解释器:这条检查 import sdk 取角色工具清单,不手抄一份。
+run "推档 · 1237 条尺码要核的是 12 条档差" python3 backend/grading_check.py
 run "版师角色 · 唯一的写工具只能改占比,而且真的得能改" ./agentsite/.venv/bin/python backend/pattern_role_check.py
 run "会话归属 · 续聊不能续别人的(身份判得对也挡不住换历史)" python3 agentsite/sessions_check.py
 run "花费闸 · 阈值够聊几轮 + 撞线说不说得清" ./agentsite/.venv/bin/python agentsite/budget_check.py
