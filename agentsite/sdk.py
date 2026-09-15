@@ -408,6 +408,10 @@ TASK_ONLY_TOOLS = [
     # 我第一版写成 mcp__kb__(因为它讲的是知识库的事),而它的 schema 在 SHOP_SCHEMAS 里,
     # 于是白名单和 MCP 暴露对不上 —— skills_check 当场抓到,和当年 plan_for_event 同一个坑。
     "mcp__shop__get_review_queue",
+    # 未成交挽回:下了单没付钱的、约了没来的。**只出清单,不发任何东西。**
+    # 这两笔是**算得出金额的流失**,而在这之前没有任何东西在看它们 ——
+    # 它们在表上只是一个状态,没有一个动作。
+    "mcp__shop__recovery_queue",
 ]
 
 # ── 提示词:唯一源头在根目录 prompts.py ──────────────────────────────

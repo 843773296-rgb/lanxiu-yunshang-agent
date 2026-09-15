@@ -1265,6 +1265,98 @@ def piece_ratios(pattern=None):
                        f" ⚠️ 现在之和是 {合},不等于 1,这本身就是个问题")}
 
 
+def recovery_queue(kind=None, today=None):
+    """**未成交挽回清单** —— 下了单没付钱的、约了没来的,各压着多少钱、压了多久。
+
+    库里压着两笔**算得出金额的流失**,而在这个工具之前**没有任何东西在看它们**:
+    它们在表上只是一个状态,没有一个动作。
+
+    ## ⚠️ 这个工具只出清单,**不发任何东西**
+
+    发短信、发微信、打电话是**对外动作**。agent 给的是「该跟谁、凭什么、
+    什么顺序」,**按不按、怎么按是人的决定** —— 这是这个项目的硬规矩。
+
+    ## 它不划「超时」那条线
+
+    定制品和标品的合理等待期本来就不一样(定制品要等方案确认、
+    要等客户和家里商量一件几万块的衣服)。**编一个数出来,
+    会把正常的单子也算成流失** —— 而那种错不报错,只会让顾问去催一个该等的客户。
+
+    所以**只排序不划线**:按「金额 × 停留天数」排,让看的人自己决定从哪儿切。
+
+    ## 三种未成行不许混成一类
+
+    「已取消」是客户**主动说了不来**、「爽约」是**没说就没来**、
+    「已过期」是**系统判的**。同一套话术发给后两种会很唐突 ——
+    爽约的要先确认人没事,过期的客户自己可能都不知道有这条预约。
+
+    kind: 不传给两摊都要;传「待付款」或「预约」只要一摊。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
+                                   "..", "knowledge"))
+    import recovery as _rc
+    今天 = today or _dt.date.today().isoformat()
+    out = {"今天": 今天, "口径": _rc.口径说明()}
+
+    if kind in (None, "待付款"):
+        rs = _rows("SELECT o.id, o.kind, o.payable, o.created, o.source, "
+                   "  o.customer_id, c.name cname, o.advisor "
+                   "FROM ordr o LEFT JOIN customer c ON c.id=o.customer_id "
+                   "WHERE o.status='待付款'")
+        单 = []
+        for r in rs:
+            d = _rc.停留(r["created"], 今天)
+            单.append(_nz({
+                "订单": r["id"], "客户": f"{r['customer_id']} {r['cname'] or ''}".strip(),
+                "品类": r["kind"], "渠道": r["source"], "顾问": r["advisor"],
+                "金额": r["payable"], "压了几天": d,
+                "紧要度": _rc.紧要度(r["payable"], d),
+            }))
+        单.sort(key=lambda x: -(x.get("紧要度") or 0))
+        out["待付款"] = {
+            "笔数": len(单),
+            "压着的钱": round(sum(x.get("金额") or 0 for x in 单), 2),
+            "明细": 单,
+            "note": "按**金额 × 停留天数**排 —— 只看金额会把「5 万压两天」"
+                    "排在「500 压两个月」前面,而后者多半已经黄了;"
+                    "只看天数会把小单排在真金白银前面。",
+        }
+
+    if kind in (None, "预约"):
+        摊 = {}
+        for st, (是什么, 该做什么) in _rc.未成行.items():
+            rs = _rows("SELECT a.id, a.customer_id, c.name cname, a.start_ts, "
+                       "  a.shop, a.advisor FROM appointment a "
+                       "LEFT JOIN customer c ON c.id=a.customer_id "
+                       "WHERE a.status=? ORDER BY a.start_ts DESC", st)
+            摊[st] = {
+                "笔数": len(rs), "是什么": 是什么, "该做什么": 该做什么,
+                "最近几条": [{"预约": r["id"],
+                              "客户": f"{r['customer_id']} {r['cname'] or ''}".strip(),
+                              "原定": r["start_ts"], "门店": r["shop"],
+                              "顾问": r["advisor"],
+                              "过了几天": _rc.停留(r["start_ts"], 今天)}
+                             for r in rs[:5]],
+            }
+        到店 = _rows("SELECT COUNT(*) n FROM appointment "
+                     "WHERE status IN ('已到店','已完成')")[0]["n"]
+        out["预约未成行"] = _nz({
+            "合计": sum(v["笔数"] for v in 摊.values()),
+            "而真正到店的": 到店,
+            "分开看": 摊,
+            "note": "**三种不许混成一类** —— 已取消是客户主动说了不来,"
+                    "爽约是没说就没来(**先确认人没事**),"
+                    "已过期是系统判的(客户自己可能都不知道有这条预约)。"
+                    "同一套话术发给后两种会很唐突。",
+        })
+
+    out["⚠️ 这个工具不发任何东西"] = (
+        "发短信 / 发微信 / 打电话是**对外动作**,不在 agent 这儿。"
+        "这里给的是「该跟谁、凭什么、什么顺序」,**按不按、怎么按是人的决定**。")
+    return _nz(out)
+
+
 def pattern_queue():
     """**版师的排队看板 —— 「今天该我核什么」。**
 
@@ -2997,6 +3089,7 @@ SHOP_SCHEMAS=[
     "kind":{"type":"string","description":"定制品订单 / 标品订单,默认定制品订单"},
     "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
    "required":["customer_id"]}},
+ {"name":"recovery_queue","description":"**未成交挽回清单** —— 下了单没付钱的、约了没来的,各压着多少钱、压了多久、该按什么顺序跟。不传参数给两摊都要;传「待付款」或「预约」只要一摊。⚠️ **这个工具只出清单,不发任何东西** —— 发短信/微信/打电话是对外动作,按不按、怎么按是人的决定。⚠️ **它不划「超时」那条线**:定制品和标品的合理等待期本来就不一样,编一个数会把正常的单子算成流失。只排序不划线,按**金额 × 停留天数**排。⚠️ **三种未成行不许混成一类**:已取消是客户主动说了不来、爽约是没说就没来(**先确认人没事**)、已过期是系统判的(客户自己可能都不知道有这条预约)。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"待付款 或 预约;不传则两摊都给"}}}},
  {"name":"pattern_queue","description":"**版师的排队看板 —— 「今天该我核什么」。**不用传任何参数。把版师手上的活一次列全:裁片用料占比的进度(并按**影响面**排出先核哪几个 —— 挂多少商品、多少订单行已经按这个数备料)、推档有疑点的版型、「推得出但不作数」的尺码格子、配置页上架了却没有版型的定制品。**每一摊都报「总数 / 已完成 / 还剩」** —— 一摊显示 0 的时候要说得出是「做完了」还是「一条都没扫到」。版师进来第一句话就该调它。","input_schema":{"type":"object","properties":{}}},
  {"name":"grading_audit","description":"**推档自检 —— 把「要核 1237 个数」压成「要核 12 条档差」。**尺码表全部是推出来的(基码值 + 档差 × 尺码序号),版师真正该核的只有基码和那 12 条档差。不传 pattern 给全局(扫了多少、哪几个版型有疑点、档差规则是什么);传 pattern 给这一个版型的逐部位明细:实际档差 / 规则档差 / **覆盖范围**(这个版型能做多大的人)/ 量纲体检 / 哪几项「推得出但不作数」。**判据是定义性的,不是阈值** —— 相邻码的差必须处处相等且等于档差表,不一致就是真的有一格不对。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全局"}}}},
  {"name":"piece_ratios","description":"**裁片用料占比** —— 版师核对用。不传 pattern 给全部版型的核对进度;传 pattern(认编码 PT06 和全名)给某个版型的明细。每条带**来源**:`估算`(机器估的没人看过)/ `复核`(规则核过一遍但这个数没人核过)/ `版师`(人核过数)/ `BOM`(明写的用量)。**三种可信度不许混为一谈。** 还给出占比折合多少米 —— **版师判断的是米数不是百分比**:「袖片 15.7%」看不出对不对,「袖片 0.63 米」一眼就知道。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全部版型的进度"}}}},
@@ -3140,7 +3233,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"recovery_queue":recovery_queue,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
