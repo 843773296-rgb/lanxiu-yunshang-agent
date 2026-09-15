@@ -90,6 +90,9 @@ run "成长推算 · 百分位/靶身高/复量周期" python3 knowledge/growth.
 run "用户生命周期 · 着装人/家庭/同意/过期量体" python3 backend/lifecycle_check.py
 run "数据规范 · 身份/关联/覆盖(对照 数据规范.md)" python3 backend/spec_check.py
 run "假数据工厂 · 推断/生成/闸门/灌回滚(24 项)" python3 fakedata/selftest.py
+# ⚠️ 出处**对不对**是另一件事,由 tools/verify_sources.py 核(要联网,
+#    所以不进这里 —— 依赖外部状态的检查放进门禁会变成随机拦路)。
+#    **加知识、改出处之后手动跑一次。**
 run "来源等级 · 声称可溯源的得真溯得了源" python3 backend/source_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py
