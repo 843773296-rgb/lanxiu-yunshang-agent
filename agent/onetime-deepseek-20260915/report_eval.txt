@@ -1,0 +1,38 @@
+供应商:deepseek   ⚠️ **这是按量计费的**,开发验证请设 LANXIU_PROVIDER=claude
+复盘与漏斗评测 · 13 题(正向 4 / 负向 9)
+====================================================================================================
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ R01 正向 [店长      ] monthly_review                   
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ R02 正向 [店长      ] monthly_review                   
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ R03 负向 [店长      ] monthly_review                   
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ R04 负向 [店长      ] monthly_review                   
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ R05 负向 [顾问      ]                                  
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ F01 正向 [店长      ] appt_funnel                      
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ F02 正向 [店长      ] appt_funnel                      
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ F03 负向 [店长      ] appt_funnel,appt_funnel          
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ F04 负向 [店长      ] appt_funnel                      
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ F05 负向 [店长      ] appt_funnel                      
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ F06 负向 [店长      ] appt_funnel                      
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}

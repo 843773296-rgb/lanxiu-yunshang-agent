@@ -1,0 +1,78 @@
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"sdk"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"sdk"}
+工具使用评测 · 24 题 · 模型 deepseek-v4-pro
+====================================================================================================
+[T01] ✅ 阔褶马面裙(PT05)有 S 码吗?                   1调  14.5s $0.0042  
+[T02] ✅ PT04 明制马面裙·标准,M 码的成衣腰围是多少?           3调  18.4s $0.0067  
+[T03] ✅ 客户 C10013 做 PT04 马面裙,推荐什么码?          1调  12.2s $0.0032  
+[T04] ✅ 客户 C10001 做 PT04 马面裙,推荐什么码?说明判定依据。   3调  74.7s $0.0232  
+[T05] ✅ 云锦做 PT04 马面裙 M 码配盘金绣,物料成本多少?         1调  15.2s $0.0056  
+[T06] ✅ 同一条 PT04 马面裙 M 码盘金绣,云锦和棉麻的物料成本差多少?   2调  16.9s $0.0075  
+[T07] ✅ 为什么云锦做同一条裙子比棉麻用布多?                   6调  41.2s $0.0126  
+[T08] ❌ PT06 立领长衫 M 码,云锦、缂丝整幅,要多久能拿到?        2调  25.9s $0.0070  内容:没提到 162(同义:无)
+[T09] ❌ PT06 立领长衫 M 码、云锦、缂丝整幅,客户婚礼在 2026-1   2调  21.7s $0.0065  内容:没提到 2026-04-22(同义:无)
+        内容:出现了禁止说法「来得及」
+[T10] ✅ PT06 立领长衫云锦缂丝整幅这件,客户愿意加钱,能不能加急赶出来?   3调  32.7s $0.0092  
+[T11] ✅ 云锦现在有现货吗?没有的话要备料多久?                  1调  18.3s $0.0045  
+[T12] ✅ 工坊现在瓶颈在哪个工种?                         1调  10.6s $0.0032  
+[T13] ✅ 缂丝这活现在什么时候能排上?今天是 2026-09-04。需要 20   1调  16.7s $0.0042  
+[T14] ✅ 数码印花这个工艺现在能接单吗?                      2调  18.4s $0.0047  
+[T15] ✅ 订单 6488012719714560000 现在到哪一步了?      1调  23.6s $0.0060  
+[T16] ✅ 客户上周下的那单到哪一步了?                       0调  11.4s $0.0464  
+[T17] ✅ 现在有几笔售后是「退款失败」状态?                    1调  12.2s $0.0055  
+[T18] ❌ 客户问她那笔售后退款的渠道流水在哪能查到?                0调  30.4s $0.0515  轨迹:该调 ['get_aftersale'] 里的工具,实际调了 [无]
+[T19] ✅ 妆花能用在纱上吗?                            1调  13.6s $0.0033  
+[T20] ❌ 灰缬能做在浅色棉麻上吗?                         2调  19.4s $0.0054  内容:出现了禁止说法「可以」
+[T21] ✅ 客户要在香云纱上做妆花,她很急,加钱能不能赶出来?            1调  25.9s $0.0059  
+[T22] ✅ 云锦 PT04 马面裙 M 码盘金绣,这件卖多少钱?给客户报个价。    4调  41.4s $0.0123  
+[T23] ✅ 客户要整幅缂丝的 PT06 立领长衫 M 码云锦,大概多少钱?      2调  35.6s $0.0100  
+[T24] ✅ 给客户出份报价单。                            1调  18.8s $0.0046  
+====================================================================================================
+通过 20/24 = 83%  |  总花费 $0.2533
+明细写到 /Users/eureka/Desktop/澜绣云裳agent/agent/../.feynman/tool-eval.json

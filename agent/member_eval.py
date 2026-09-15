@@ -323,8 +323,10 @@ def main():
                   f"{','.join(x.split('__')[-1] for x in traj)[:30]:32s} "
                   f"{('' if ok else bad[0])[:46]}", flush=True)
             time.sleep(1)
-    with open(os.path.join(HERE, "member-eval-results.jsonl"), "w", encoding="utf-8") as fh:
-        for r in recs: fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
+    # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。
+    import evalrec
+    evalrec.dump(os.path.join(HERE, "member-eval-results.jsonl"), recs)
     p = sum(r["passed"] for r in recs)
     print("=" * 100)
     print(f"通过 {p}/{len(recs)}  ("

@@ -1,0 +1,23 @@
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+售后判责评测 · 6 题(六种判责结论全覆盖)· 模型 deepseek-v4-pro
+========================================================================================================
+  ✅ MW73020 工艺瑕疵 · 我方免费返修                  3调  23.9s $0.0135  
+  ✅ MW73023 远程量体偏差 · 按合同分担                 5调  55.0s $0.0182  
+  ✅ MW73025 尺寸偏差 · 记录完整 · 客方收费改            4调  43.8s $0.0129  
+  ✅ MW73027 特性类未告知 · 我方让步                  4调  45.7s $0.0084  
+  ✅ MW73030 特性类已告知 · 无责解释                  4调  38.4s $0.0111  
+  ✅ MW73031 尺寸偏差 · 记录不全 · 我方免费改            4调  77.0s $0.0223  
+========================================================================================================
+通过 6/6  |  总花费 $0.0863
+明细写到 /Users/eureka/Desktop/澜绣云裳agent/agent/liability-eval-results.jsonl

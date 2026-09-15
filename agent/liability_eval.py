@@ -155,7 +155,9 @@ if __name__ == "__main__":
     print("=" * 104)
     print(f"通过 {ok_n}/{len(todo)}  |  总花费 ${cost:.4f}")
     out = os.path.join(HERE, "liability-eval-results.jsonl")
-    with open(out, "w", encoding="utf-8") as fh:
-        for r in rows: fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
+    # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。
+    import evalrec
+    evalrec.dump(out, rows)
     print(f"明细写到 {out}")
     sys.exit(0 if ok_n == len(todo) else 1)

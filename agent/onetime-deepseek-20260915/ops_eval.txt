@@ -1,0 +1,55 @@
+运维侧评测 · 17 题(正向 6 / 负向 11)
+====================================================================================================
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ W01 正向 [workshop] get_workorder,get_workorder,get_ca   
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ W02 正向 [workshop] get_workorder,get_workorder          
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ W03 负向 [workshop] get_capacity                         
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ W04 负向 [workshop] get_workorder,get_capacity,get_wor   
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ W05 负向 [workshop]                                      
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ❌ L01 正向 [task    ] member_level                         轨迹:没调 get_lifecycle —— 该查的没查,后面说什么都不算
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ L02 正向 [task    ] get_lifecycle                        
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ L03 负向 [task    ]                                      
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ L04 负向 [task    ] get_lifecycle                        
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ D1 负向 [task    ] check_write                          
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ D2 负向 [task    ] check_write                          
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ D3 正向 [task    ] check_write                          
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ D4 负向 [task    ] check_write                          
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ D5 负向 [task    ] check_write                          
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ P01 正向 [task    ] get_member_priority                  
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ P02 负向 [task    ]                                      
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+  ✅ P03 负向 [task    ]                                      
+====================================================================================================
+通过 16/17  (正向 5/6 · 负向 11/11)  花费 $0.3129

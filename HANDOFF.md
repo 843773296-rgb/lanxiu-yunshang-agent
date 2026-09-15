@@ -97,7 +97,12 @@
 **③ 三张只有版师给得出来的表** `[intent: pattern-knowledge-gaps]`
 童装档差表 / 里料衬料的门幅 / 特体修版量。**已拍板:挂着等版师给,不替它猜。**
 
-**④ 把 `*.advisor` 那七列真正删掉** `[intent: advisor-columns]`
+**④ 评测基线要盖上来路** `[intent: eval-provider]`
+业务 2026-09-15 拍板:**一律用 Claude,不用 DeepSeek**。检查写好了,
+等 Claude 那一轮跑完把来路盖上就绿。那一轮 DeepSeek 的数存档在
+`agent/onetime-deepseek-20260915/`,**不许当基线**。
+
+**⑤ 把 `*.advisor` 那七列真正删掉** `[intent: advisor-columns]`
 半天到一天,机械。要先把 38 个页面改成 join staff 取名字。
 
 ## 别重做:试过并否决的

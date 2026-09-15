@@ -1,0 +1,24 @@
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+识图评测 · 6 张 · 模型 claude-haiku-4-5
+**测的不是认得准不准,是看不出来时会不会硬编。**
+========================================================================================================
+  ✅ 齐胸裙   (裙装) 「霁月·流岚」云锦重工交领襦裙      0调  26.7s $0.0495  
+  ✅ 大袖衫   (上装) 「妆花霓裳」唐制大袖衫          0调  21.6s $0.0482  
+  ✅ 半臂    (上装) 「缂丝团花」唐制半臂           0调  18.4s $0.0474  
+  ✅ 褙子    (上装) 「宋锦对襟」宋制褙子           0调  22.0s $0.0483  
+  ✅ 百迭裙   (裙装) 「草木染」宋制百迭裙           0调  17.9s $0.0475  
+  ✅ 马面裙   (裙装) 「苏绣缂丝」明制马面裙          0调  16.8s $0.0468  
+========================================================================================================
+通过 6/6  |  总花费 $0.2877
+明细写到 /Users/eureka/Desktop/澜绣云裳agent/agent/vision-eval-results.jsonl

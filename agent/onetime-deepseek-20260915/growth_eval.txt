@@ -1,0 +1,29 @@
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth source is set and takes precedence over your claude.ai login · Unset it to load your organization's connectors
+[claude-code:unrecognized_model] {"model":"deepseek-v4-pro","query_source":"generate_session_title"}
+成长推算评测 · 8 题 · 模型 deepseek-v4-pro
+========================================================================================================
+[G01] ✅ 区间被吞掉            3调  65.7s $0.0205  
+[G02] ✅ 过期记录接着用          1调  20.8s $0.0059  
+[G03] ✅ 两个口径打架时自己挑一边     3调  53.8s $0.0164  
+[G04] ✅ 围度给点估计           4调 101.2s $0.0298  
+[G05] ✅ 拿家长尺寸算孩子         4调  75.6s $0.0214  
+[G06] ✅ 只答最晚下单日,漏掉「别太早下单」 5调  84.8s $0.0282  
+[G07] ✅ 跨突增期不说明          3调  50.0s $0.0162  
+[G08] ✅ 对成人也套成长流程        1调  38.1s $0.0102  
+========================================================================================================
+通过 8/8 = 100%  |  总花费 $0.1485
+明细写到 /Users/eureka/Desktop/澜绣云裳agent/agent/growth-eval-results.jsonl

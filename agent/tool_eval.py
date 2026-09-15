@@ -234,8 +234,14 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(out), exist_ok=True)
     # **存答案原文。** 不存的话,失败了只能重跑才知道它到底说了什么 ——
     # 而重跑要花钱,还不一定复现。和 triage 存 ai_text 是同一个理由。
+    # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
+    # 这一套写的是 json 不是 jsonl,所以自己盖,不走 evalrec.dump。
+    import evalrec
+    _p, _m, _t = evalrec.供应商(), evalrec.模型(), __import__("datetime").datetime.now(
+        ).strftime("%Y-%m-%d %H:%M:%S")
     json.dump([dict(case=c, passed=o, why=w, tools=t, cost=k, text=x,
-                    usage=u, turns=n2, guard=g) for c, o, w, t, k, x, u, n2, g in rows],
+                    usage=u, turns=n2, guard=g, 供应商=_p, 模型=_m, 跑于=_t)
+               for c, o, w, t, k, x, u, n2, g in rows],
               open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"明细写到 {out}")
     sys.exit(0 if ok_n == len(todo) else 1)

@@ -256,9 +256,11 @@ def main():
         judge_src=(os.path.abspath(__file__),), cases=cs,
         model=(recs[0].get("model") if recs else None),
         provider=os.environ.get("LANXIU_PROVIDER") or "默认")
-    with open(os.path.join(HERE, "chat-eval-results.jsonl"), "w", encoding="utf-8") as fh:
-        fh.write(json.dumps({"_fingerprint": fp}, ensure_ascii=False) + "\n")
-        for r in recs: fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
+    # 指纹那一行留在最前面(fingerprint.py 按它归因),后面才是逐条结果。
+    import evalrec
+    evalrec.dump(os.path.join(HERE, "chat-eval-results.jsonl"),
+                 [{"_fingerprint": fp}] + list(recs))
     p = sum(r["passed"] for r in recs)
     pp = sum(r["passed"] for r in recs if r["kind"] == "正向")
     pn = sum(r["passed"] for r in recs if r["kind"] == "负向")
