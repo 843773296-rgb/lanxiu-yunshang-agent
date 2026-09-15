@@ -29,6 +29,27 @@ def 供应商():
     return (os.environ.get("LANXIU_PROVIDER", "") or "claude").lower()
 
 
+def 代码():
+    """跑这一轮时的提交号。
+
+    ⚠️ **同一天 ≠ 同一份代码。** `tools/eval_compare.py` 原来只比日期,
+    于是两轮之间改过判据也照样说「可以当结论」——
+    它防住了「差两天」,却放过了「差三次提交」。
+    而这个漏洞**只在结论那一行显形**:表照样出,只是那句话变成了假话。
+
+    脏工作区标 `+dirty` —— **改了没提交,那这一轮的代码谁也复现不了。**
+    """
+    import subprocess
+    try:
+        h = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=HERE,
+                           capture_output=True, text=True, timeout=5).stdout.strip()
+        d = subprocess.run(["git", "status", "--porcelain"], cwd=HERE,
+                           capture_output=True, text=True, timeout=5).stdout.strip()
+        return (h or "?") + ("+dirty" if d else "")
+    except Exception:
+        return "?"
+
+
 def 模型():
     p = 供应商()
     if p == "deepseek":
@@ -44,7 +65,7 @@ def dump(path, recs):
     这一天正好就是跑到一半被停的。
     """
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    p, m = 供应商(), 模型()
+    p, m, c = 供应商(), 模型(), 代码()
     with open(path, "w", encoding="utf-8") as fh:
         for r in recs:
             r = dict(r); r.update(供应商=p, 模型=m, 跑于=now)

@@ -34,6 +34,25 @@ import os, re, sys, datetime
 花费行 = re.compile(r"(?:花费|成本)\s*\$([\d.]+)")
 
 
+def 代码集(d):
+    """这一轮的结果里盖着哪些提交号 —— 从 agent/*-results.jsonl 里读。
+
+    只看**跑这一轮时**的代码,不是现在的代码:现在的代码随时在变,
+    而那一轮已经跑完了。
+    """
+    import json as _js, glob as _g
+    out = set()
+    for p in _g.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  "..", "agent", "*-results.jsonl")):
+        try:
+            for line in open(p, encoding="utf-8"):
+                r = _js.loads(line)
+                if isinstance(r, dict) and r.get("代码"): out.add(r["代码"]); break
+        except Exception:
+            pass
+    return out
+
+
 def 读(d):
     out = {}
     if not os.path.isdir(d): return out
@@ -93,16 +112,31 @@ def main():
     print()
     print(f"  {na} 跑于 {ta[0] if ta else '?'} – {ta[-1] if ta else '?'}")
     print(f"  {nb} 跑于 {tb[0] if tb else '?'} – {tb[-1] if tb else '?'}")
+    # ⚠️ **同一天 ≠ 同一份代码。**
+    # 第一版只比日期,于是两轮之间改过判据也照样说「可以当结论」——
+    # 它防住了「差两天」,却放过了「差三次提交」。而这个漏洞**只在结论那一行显形**:
+    # 表照样出,只是那句话变成了假话。现在比**提交号**(结果里由 evalrec 盖上)。
+    ca_, cb_ = 代码集(A), 代码集(B)
     同日 = bool(ta and tb and ta[0][:5] == tb[0][:5])
+    同码 = bool(ca_ and cb_ and ca_ == cb_ and not any("dirty" in x for x in ca_))
     print()
-    if 同日:
-        print("  ✅ 两列同一天跑的 —— 差出来的可以当成**两家模型的差别**来读,")
+    print(f"  {na} 的代码:{sorted(ca_) or '(结果里没盖提交号)'}")
+    print(f"  {nb} 的代码:{sorted(cb_) or '(结果里没盖提交号)'}")
+    print()
+    if 同码 and 同日:
+        print("  ✅ 两列同一天、同一份代码 —— 差出来的可以当成**两家模型的差别**来读,")
         print("     但仍然要带上那三条限定:题数小、各跑一遍、两家的提示词是同一份"
               "(**对谁都不是专门调过的**)。")
+    elif not (ca_ and cb_):
+        print("  ⚠️ **结果里没盖提交号,判不出是不是同一份代码** ——")
+        print("     用 `agent/evalrec.py` 落盘的那几套才有。没有的话这张表只能当参考。")
+    elif any("dirty" in x for x in ca_ | cb_):
+        print("  ⚠️ **有一轮是在改了没提交的工作区里跑的(+dirty)** ——")
+        print("     那一轮的代码谁也复现不了,这张表不能当结论。")
     else:
-        print("  ⚠️ **两列不是同一天跑的,这张表不能当结论。**")
-        print("     中间只要动过工具、规矩或体检,差出来的就是那些改动,不是模型的差别。")
-        print("     **一次动了多维就归不了因** —— 要出结论,拿同一份代码把另一家重跑一遍。")
+        print("  ⚠️ **两列不是同一份代码跑的,这张表不能当结论。**")
+        print(f"     {sorted(ca_)} vs {sorted(cb_)} —— 中间只要动过工具、规矩、判据,")
+        print("     差出来的就是那些改动,不是模型的差别。**一次动了多维就归不了因。**")
     抓不到 = [s for s in 套 for v in (a.get(s), b.get(s)) if v and v["过"] is None]
     if 抓不到:
         print(f"\n  ⚠️ {sorted(set(抓不到))} 抓不到分数 —— "
