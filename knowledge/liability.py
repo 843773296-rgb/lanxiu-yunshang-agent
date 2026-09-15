@@ -106,12 +106,32 @@ def classify(issue):
     return None
 
 
-def judge(issue, notified=None, measure_full=None, measure_remote=False):
+def judge(issue, notified=None, measure_full=None, measure_remote=False,
+          试衣状态=None):
     """按第五节判责。返回 dict,判不出来时 rule=None(交给人/模型)。
 
     notified      特性类才用:交付时有没有**书面告知**过这一条
     measure_full  尺寸类才用:量体记录是否完整且相符
-    measure_remote 远程量体 → 按合同分担,优先级高于上面两条
+    measure_remote 远程量体 → 按合同分担
+    试衣状态       尺寸类才用,取值见 `muslin.状态`:
+                  已试已签 / 该试没试 / 已试未签 / 不必试
+
+    ## 白坯试衣优先于量体记录,**这是有意的**
+
+    两者说的不是一件事:
+
+        量体记录  「**我们**量得对不对」
+        试衣签字  「**他本人穿过**并且认可了」
+
+    一个人到店穿过白坯、当场确认合身并签了字,之后再说尺寸不对,
+    **这时候量体记录全不全已经不重要了** —— 他自己验收过。
+    也因此它优先于「远程量体」:那一行讲的是**量的方式**,
+    而他已经亲自试穿过,方式不再是争点。
+
+    ## 「该试而没试」往**我方**判,这也是有意的
+
+    只写「签了字就转客方」的话,这个字段就成了一个**单向对我方有利**的东西 ——
+    而一条只会往有利方向走的判据,业务不会信,也不该信。
     """
     tb = {row[0]: row for row in table()}
     kind = classify(issue)
@@ -130,13 +150,28 @@ def judge(issue, notified=None, measure_full=None, measure_remote=False):
     if kind == "工艺瑕疵":
         return _pick("工艺瑕疵", "脱线/开线/绣面脱落属工艺瑕疵")
     if kind == "尺寸偏差":
+        if 试衣状态 == "已试已签":
+            return _pick("白坯试衣已签字",
+                         "他本人穿过白坯并签字确认了 —— **比量体记录硬**")
+        if 试衣状态 == "该试没试":
+            return _pick("该做白坯试衣而没做",
+                         "这一单该做白坯试衣而没做 —— **流程没走到,是我方的**")
         if measure_remote:
             return _pick("远程量体", "这次是远程量体,按合同分担,优先于记录是否完整")
         if measure_full is None:
             d["依据"] = "尺寸类要先查量体记录完不完整,现在查不到 —— 转人工"
             return d
-        return _pick("量体记录完整且相符" if measure_full else "量体记录缺失",
-                     "量体记录完整且相符" if measure_full else "量体记录缺失或不全")
+        d2 = _pick("量体记录完整且相符" if measure_full else "量体记录缺失",
+                   "量体记录完整且相符" if measure_full else "量体记录缺失或不全")
+        if 试衣状态 is None and d2.get("判得出"):
+            # ⚠️ **没查试衣记录,不许假装这个结论是完整的。**
+            # 一个「该做白坯试衣而没做」的重工单,量体记录完整时会被判成
+            # **客方收费改** —— 而正确结论是我方。两者在这里长得一模一样:
+            # 都是一条「量体记录完整」的记录。
+            # 不改结论(那会把所有老用例judge反),而是**把缺口说出来**。
+            d2["依据"] += ("。⚠️ **没查白坯试衣记录** —— "
+                           "如果这是重工单且该做试衣而没做,结论应是**我方免费改**")
+        return d2
     if kind == "特性类":
         if notified is None:
             d["依据"] = "特性类要先查有没有书面告知,现在查不到 —— 转人工"
@@ -177,6 +212,20 @@ if __name__ == "__main__":
     ck("特性类已告知 → 无责", d1["责任"] == "无责", str(d1["责任"]))
     d2 = judge("面料起球", notified=False)
     ck("特性类未告知 → 我方让步", d2["责任"] == "我方" and "让步" in d2["处理"], str(d2["处理"]))
+
+    print("\n▸ 白坯试衣(2026-09-15 新增两行)")
+    f1 = judge("尺寸需调整", measure_full=False, 试衣状态="已试已签")
+    ck("试衣已签 → 客方(**压过「量体记录不全」**)", f1["责任"] == "客方", str(f1["责任"]))
+    f2 = judge("尺寸需调整", measure_full=True, 试衣状态="该试没试")
+    ck("该试没试 → 我方(**压过「量体记录完整」**)", f2["责任"] == "我方", str(f2["责任"]))
+    f3 = judge("尺寸需调整", measure_full=True, measure_remote=True, 试衣状态="已试已签")
+    ck("试衣已签也压过「远程量体」", f3["责任"] == "客方", str(f3["责任"]))
+    f4 = judge("尺寸需调整", measure_full=True, 试衣状态="已试未签")
+    ck("试了没签 → 回落到量体记录", f4["责任"] == "客方" and "试衣" not in (f4["依据"] or ""),
+       str(f4["依据"])[:40])
+    f5 = judge("尺寸需调整", measure_full=True)
+    ck("没查试衣记录 → 判得出,但要说出这个缺口",
+       f5["判得出"] and "没查白坯试衣记录" in (f5["依据"] or ""), str(f5["依据"])[-40:])
 
     print("\n▸ 查不到证据时不硬判")
     ck("特性类不知道有没有告知 → 判不出", not judge("面料起球")["判得出"])

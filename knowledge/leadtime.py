@@ -169,12 +169,18 @@ def estimate(pattern, size, material, crafts=(), scope="局部",
                最慢=round(max(left[1], decor["最慢"]), 1),
                说明=("卡在面料备料" if left[1] >= decor["最慢"] and dye[1] == 0 else
                      "卡在面料备料+印染" if left[1] >= decor["最慢"] else "卡在绣织工艺"))
-    heavy = decor["最慢"] >= 25 or any(D.get(k, (0,))[0] >= 12 for k in crafts)
+    # **「该不该试衣」的判断不在这儿了。** 它原来是这一行的局部变量 `heavy` ——
+    # 一个连名字都没有的判断,别处要用只能抄一份,然后两份开始漂。
+    # 搬进 `muslin.py` 之后它有了名字、有了理由,而且那条线
+    # **是 demo 级、要业务确认**这件事跟着一起传出去了。
+    import muslin as _ms
+    heavy, heavy_why = _ms.该试衣(decor["最慢"], crafts, D)
     seq = [par]
     if custom: seq.append(dict(段="方案确认与打样", 最快=CONFIRM[0], 最慢=CONFIRM[1],
                                说明="设计稿确认 + 打样往返"))
     if heavy: seq.append(dict(段="白坯试衣", 最快=MUSLIN[0], 最慢=MUSLIN[1],
-                              说明="**重工档强制** —— 云锦缂丝裁下去没有回头路"))
+                              说明="**重工档强制** —— 云锦缂丝裁下去没有回头路。"
+                                   + heavy_why))
     seq.append(dict(段="裁剪缝制", 最快=round(sew, 1), 最慢=round(sew * 1.5, 1),
                     说明=f"{p['pieces']} 个裁片,改版难度{p['difficulty']}"))
     if sewc[1]:
