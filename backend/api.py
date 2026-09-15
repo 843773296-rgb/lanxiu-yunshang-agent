@@ -3102,6 +3102,114 @@ def _白坯试衣(order_id, item_name, order_status):
     })
 
 
+
+def fitting_queue(order=None):
+    """**白坯试衣看板** —— 哪些单该试、试了没有、签没签字。
+
+    知识库那句话分量很重:**白坯试衣是重工订单唯一的后悔药** ——
+    云锦缂丝一旦裁下去就没有回头路,几百块的白坯能挡掉几万块的返工。
+
+    而在这个工具之前系统只做到了一半:**工期里算了 7–12 天,
+    而试没试、谁陪的、客户签没签,一条记录都没有** ——
+    没有入口的能力等于没做。
+
+    ## ⚠️ 最要紧的那一档是「该试没试」
+
+    它不是「还没轮到」,是**已经开裁了而没有任何试衣记录** ——
+    白坯试衣排在裁剪之前,裁下去就没有回头路。
+    这一档在售后判尺寸争议时**往我方判**(09-养护与售后.md 第五节新加的一行):
+    流程没走到,是我们的。
+
+    ## ⚠️ 签字这一栏是这里最值钱的东西
+
+    行业里试穿确认是**责任转移点**。而我们判尺寸争议原来**只有量体记录一张底牌**。
+
+        量体记录说的是  「**我们**量得对不对」
+        试衣签字说的是  「**他本人穿过**并且认可了」
+
+    **「没有试衣记录」和「有记录但没签字」不是一回事** —— 前者是流程没走,
+    后者是流程走了确认没拿到,判责方向相反。所以两者分开报,
+    **不许拿「查不到记录」当成「没签字」。**
+
+    ## ⚠️ 「哪些款该试」这条线**业务还没确认过**
+
+    知识库只写了「重工款强烈建议做」——**一句话,没有数**。
+    实际在用的判断是工期推算推出来的,而它一直在影响客户看到的交期。
+    每一条结论都带着这句话出去。
+
+    order: 不传给全部;传订单号只看那一单。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
+                                   "..", "knowledge"))
+    import muslin as _mu
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import seed_fitting as _sf
+
+    w, a = "", []
+    if order:
+        w = " AND o.id=?"; a = [order]
+    rs = _rows("SELECT i.id,i.order_id,i.name,i.wearer_id,o.status,o.advisor,"
+               "  o.shop,c.name cname,o.customer_id "
+               "FROM ordr_item i JOIN ordr o ON o.id=i.order_id "
+               "LEFT JOIN customer c ON c.id=o.customer_id "
+               "WHERE o.kind='定制品订单'" + w + " ORDER BY i.id", *a)
+    摊 = {}
+    for r in rs:
+        f = _白坯试衣(r["order_id"], r["name"], r["status"])
+        st = f.get("归到哪一档")
+        if st == "不必试" and not order:
+            continue          # 不必试的不进看板 —— 一张 47 行的清单等于没排队
+        摊.setdefault(st or "**算不出**", []).append(_nz({
+            "订单": r["order_id"], "订单行": r["id"],
+            "客户": f"{r['customer_id']} {r['cname'] or ''}".strip(),
+            "着装人": r["wearer_id"], "商品": r["name"],
+            "订单状态": r["status"], "顾问": r["advisor"], "门店": r["shop"],
+            "凭什么该试": f.get("凭什么"),
+            "试衣记录": f.get("记录"),
+            "客户签字了吗": f.get("客户签字了吗"),
+            "在判责里算什么": f.get("在判责里算什么"),
+            "⚠️": f.get("⚠️"),
+        }))
+
+    次序 = ["该试没试", "已试未签", "还没到时候", "已试已签", "不必试", "**算不出**"]
+    out = {"看的是": "定制品订单行(白坯是给**某一个人**试的,所以挂在行上不挂在单上)"}
+    for k in 次序:
+        if k not in 摊: continue
+        out[k] = {
+            "件数": len(摊[k]),
+            "是什么": (_mu.状态.get(k) or ("算不出这一单归哪一档",))[0],
+            "在判责里算什么": (_mu.状态.get(k) or (None, None))[1],
+            "明细": 摊[k],
+        }
+    # **已经越过线的,单独点出来。** 「该试没试」这一档里凡是已经开裁的,
+    # 都是**已经发生的违规**,不是待办。
+    越线 = [x for x in 摊.get("该试没试", [])]
+    if 越线:
+        out["⚠️ 已经越过这道线的"] = {
+            "件数": len(越线),
+            "是什么": "**该做白坯试衣而没做,却已经开裁了。** "
+                      "白坯排在裁剪之前 —— 裁下去就没有回头路,"
+                      "这几单的后悔药已经吃不到了",
+            "现在能做什么": "**不是补一场试衣**(已经裁了),"
+                            "而是知道这几单出尺寸争议时**责任在我方** —— "
+                            "流程没走到。提前准备,别等客户找上门",
+            "明细": [x["商品"] for x in 越线],
+        }
+    out["⚠️ 这道闸现在拦不住任何东西"] = (
+        "「该做试衣的不许进裁剪」这条**只是口径和看板,不是运行时的拦截** —— "
+        "系统里没有任何写工具会推进订单进裁剪,所以没有东西可拦。"
+        "**「有一道闸」和「有一个会拦的闸」是两件事**,而它们在代码里长得一模一样。")
+    out["⚠️ 哪些款该试,业务还没确认"] = _mu.门槛_依据
+    out["⚠️ 「没记录」和「没签字」不是一回事"] = (
+        "**该试没试**是流程没走(判**我方**),**已试未签**是流程走了确认没拿到"
+        "(回落到量体记录)。两者在一张表上都是「没有签字」,而判责方向相反 —— "
+        "**不许拿「查不到记录」当成「没签字」。**")
+    out["这个工具不改任何东西"] = (
+        "约试衣、催签字是**人的动作**。这里只说「该跟哪一单、凭什么」。")
+    return _nz(out)
+
+
 def get_maintain(maintain_id=None, customer=None, status=None):
     """售后维修工单的现场。**只给事实,判责结论要另外查判定表。**"""
     where, args = [], []
@@ -3358,6 +3466,7 @@ SHOP_SCHEMAS=[
     "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
    "required":["customer_id"]}},
  {"name":"stock_alert","description":"**库存预警** —— 哪些 SKU 要断了、哪些**看着有货其实一件都发不出**(在手有货但全被订单占用)、哪些在压货。805 个 SKU 全有库存数而在这之前没有任何工具会说「这个要断了」。⚠️ **在手 ≠ 可用**:客户问「还有货吗」要的是 **可用 = 在手 − 已占用**,只报在手会让客户白等。⚠️ **它给不出可售天数,而且会直说给不出**:全库有销量的只有 71/797 个 SKU、每个只有一笔、订单只跨 18 天,**一笔销售画不出速度** —— 这时候任何一个可售天数都是编的,而编出来的数会让采购按它去补货。**不许把「算不出」说成 0 天,也不许退回成「低于 N 件就预警」假装算得出。** ⚠️ **这个工具不补货**:补多少、什么时候补是采购的决定。⚠️ 只看成品 SKU,**面料库存是另一摊**。","input_schema":{"type":"object","properties":{"scope":{"type":"string","description":"发不出 / 断货 / 快没了 / 卖不动;不传则全给"}}}},
+ {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**重工订单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。⚠️ **「哪些款该试」这条线业务还没确认过**(知识库只写了「重工款强烈建议做」,没有数),每条结论都要带着这句话说出去。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
  {"name":"recovery_queue","description":"**未成交挽回清单** —— 下了单没付钱的、约了没来的,各压着多少钱、压了多久、该按什么顺序跟。不传参数给两摊都要;传「待付款」或「预约」只要一摊。⚠️ **这个工具只出清单,不发任何东西** —— 发短信/微信/打电话是对外动作,按不按、怎么按是人的决定。⚠️ **它不划「超时」那条线**:定制品和标品的合理等待期本来就不一样,编一个数会把正常的单子算成流失。只排序不划线,按**金额 × 停留天数**排。⚠️ **三种未成行不许混成一类**:已取消是客户主动说了不来、爽约是没说就没来(**先确认人没事**)、已过期是系统判的(客户自己可能都不知道有这条预约)。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"待付款 或 预约;不传则两摊都给"}}}},
  {"name":"pattern_queue","description":"**版师的排队看板 —— 「今天该我核什么」。**不用传任何参数。把版师手上的活一次列全:裁片用料占比的进度(并按**影响面**排出先核哪几个 —— 挂多少商品、多少订单行已经按这个数备料)、推档有疑点的版型、「推得出但不作数」的尺码格子、配置页上架了却没有版型的定制品。**每一摊都报「总数 / 已完成 / 还剩」** —— 一摊显示 0 的时候要说得出是「做完了」还是「一条都没扫到」。版师进来第一句话就该调它。","input_schema":{"type":"object","properties":{}}},
  {"name":"grading_audit","description":"**推档自检 —— 把「要核 1237 个数」压成「要核 12 条档差」。**尺码表全部是推出来的(基码值 + 档差 × 尺码序号),版师真正该核的只有基码和那 12 条档差。不传 pattern 给全局(扫了多少、哪几个版型有疑点、档差规则是什么);传 pattern 给这一个版型的逐部位明细:实际档差 / 规则档差 / **覆盖范围**(这个版型能做多大的人)/ 量纲体检 / 哪几项「推得出但不作数」。**判据是定义性的,不是阈值** —— 相邻码的差必须处处相等且等于档差表,不一致就是真的有一格不对。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全局"}}}},
@@ -3502,7 +3611,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
