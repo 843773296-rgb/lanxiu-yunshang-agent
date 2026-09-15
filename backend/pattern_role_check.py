@@ -206,6 +206,8 @@ def main():
         "kb_size":       lambda: api.kb_size("PT04"),
         "kb_bom":        lambda: api.kb_bom("PT04", "M", "MT02"),
         "kb_fit":        lambda: api.kb_fit("C10001", "PT04"),
+        # 取一节**有实际正文**的,不是取目录 —— 目录里什么都没有,扫了等于没扫。
+        "kb_read":       lambda: api.kb_read("10", "六、放松量与量体项映射"),
     }
     读工具 = [t.rsplit("__", 1)[-1] for t in tools
               if t.rsplit("__", 1)[-1] != "set_piece_ratio"]

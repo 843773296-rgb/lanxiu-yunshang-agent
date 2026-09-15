@@ -103,7 +103,21 @@ def kb_lookup(keyword=None, cat=None, src=None):
     if keyword:
         k=keyword.strip()
         rs=[r for r in rs if any(k in str(r.get(f) or "") for f in ("name","alias","brief","fit","code"))]
-    if not rs: return {"hit":0,"note":f"知识库里查不到「{keyword or cat or src}」,不要凭印象回答"}
+    if not rs:
+        # ⚠️ **指路,别指到死路上。**
+        # 原来这句只说「查不到,不要凭印象回答」—— 而实测它就到此为止了:
+        # 问「真丝褙子怎么洗怎么存」,它 `kb_lookup` 查了三次「养护」「清洗」「真丝」,
+        # 然后答「知识库里查不到」。**而那些话就写在 09-养护与售后.md 的正文里。**
+        #
+        # 这条工具查的是**结构化条目**(名字、别名、简介),正文根本不在它的扫描范围里。
+        # 「查不到」于是被读成了「知识库里没有」——**两件事**。
+        # 和 guards 里那条教训同一个形状:**拦一个动作的时候,得确认自己指的那条路真的通。**
+        return {"hit": 0,
+                "note": f"**结构化条目里**查不到「{keyword or cat or src}」。"
+                        f"不要凭印象回答 —— 但也别就此打住:"
+                        f"**怎么洗、怎么存、为什么这么做这类话在正文里,不在条目里**,"
+                        f"用 `kb_read` 先看目录(比如 `kb_read(\"09\")` 是养护与售后)。",
+                "正文有这几篇": {k: v[1] for k, v in KB_DOCS.items()}}
     return {"hit":len(rs),"rows":[_nz(_with_source(_with_material(r))) for r in rs[:12]]}
 
 # 面料的**物理参数**(备料天/现货/单价/损耗/幅宽)家在 material 表,不在知识库条目里。
@@ -1971,6 +1985,132 @@ def get_review_queue(top=15):
                     "**这个队列只说「谁被问了」,不说「答案是什么」** —— 答案要人去打样。"}
 
 
+KB_DOCS = {
+    "01": ("01-形制.md", "形制:朝代、款式、怎么配"),
+    "02": ("02-面料.md", "面料:特性、适合什么、怎么洗"),
+    "03": ("03-工艺.md", "工艺:织造/刺绣/印染/缝制四类,什么时候能加"),
+    "04": ("04-配饰.md", "配饰:什么形制配什么"),
+    "05": ("05-颜色.md", "颜色:配色与忌讳"),
+    "06": ("06-相容矩阵.md", "相容矩阵:什么工艺能上什么面料,以及为什么"),
+    "07": ("07-工期与成本.md", "工期与成本:怎么估、什么会拖"),
+    "08": ("08-量体与版型.md", "量体与版型:量哪些、怎么判档"),
+    "09": ("09-养护与售后.md", "养护与售后:怎么洗、怎么存、争议怎么判"),
+    "10": ("10-版型库.md", "版型库:裁片、尺码、档差、放松量"),
+    "11": ("11-物料与BOM.md", "物料与 BOM:用量、损耗、备料"),
+    "12": ("12-成长与生命周期.md", "成长与生命周期:孩子长多快、什么时候复量"),
+}
+
+
+def _kb_dir():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "knowledge")
+
+
+def _kb_file(doc):
+    """把「09」「养护」「09-养护与售后.md」都解析成同一个文件。
+
+    ⚠️ **不接受调用方给的路径**,只在上面那张写死的表里挑。
+    接受路径的话这就是一个 `Read` 工具了 —— 而这个项目最硬的一条主张是
+    「挂给模型的工具只能读业务数据」。`boundary_audit` 拿 `../CLAUDE.md`
+    和 `/etc/passwd` 攻击过这里。
+    """
+    k = (doc or "").strip()
+    if k in KB_DOCS: return KB_DOCS[k]
+    for code, (fn, desc) in KB_DOCS.items():
+        if k == fn or k.lstrip("0") == code.lstrip("0"): return (fn, desc)
+    hit = [(fn, d) for fn, d in KB_DOCS.values() if k and (k in fn or k in d)]
+    if len(hit) == 1: return hit[0]
+    return None
+
+
+def kb_read(doc=None, section=None):
+    """**读知识库原文** —— 表里没有、只能在正文里的那些话。
+
+    库里已经有推导出来的**结构化**数据(尺码、用量、相容),`kb_tables` 也放了 9 张表。
+    漏的是**正文**:怎么洗、怎么存、为什么这么做、客户问「为什么这么贵」时怎么答。
+    那些话原来只在 md 里,模型一个字都读不到 —— 于是它只能凭训练知识讲,
+    而 TL01 明写着不许。
+
+    ## 先给目录,再给正文
+
+    不传 `section` 给这一篇的**小节目录**;传了给那一节的正文。
+    **不许一次吐整篇** —— 版型库那篇 961 行,一次给出去会把上下文淹掉,
+    而淹掉的后果不是报错,是**后面真正该看的东西被挤出去了**。
+
+    ## 来源标记跟着正文走
+
+    md 里的 `public` / `scale` / `demo` 是**行内标**的,取一节就要把这一节里
+    出现过的标记一起带出来,并按**最低那一档**给对客口径 ——
+    和分部位报价「按最贵的料报」是同一个方向:**偏错的代价不对称**。
+    """
+    import sys as _s
+    _s.path.insert(0, _kb_dir())
+    import source as _src
+    f = _kb_file(doc)
+    if not f:
+        return {"error": f"没有「{doc}」这一篇",
+                "有这几篇": {k: v[1] for k, v in KB_DOCS.items()}}
+    fn, desc = f
+    path = os.path.join(_kb_dir(), fn)
+    if not os.path.isfile(path):
+        return {"error": f"{fn} 不在 —— **不要凭印象补**,先确认知识库是不是缺文件"}
+    txt = open(path, encoding="utf-8").read()
+    # 按二级标题切;一级标题(#)当成篇首
+    节, 当前 = [], {"标题": "(篇首)", "行": []}
+    for line in txt.split("\n"):
+        if line.startswith("## "):
+            节.append(当前); 当前 = {"标题": line[3:].strip(), "行": []}
+        else:
+            当前["行"].append(line)
+    节.append(当前)
+    节 = [x for x in 节 if any(l.strip() for l in x["行"])]
+
+    def 档(块):
+        """这一块里出现过哪些来源标记 —— **按最低那一档给口径**。"""
+        有 = [g for g in ("demo", "scale", "public") if f"`{g}`" in 块]
+        低 = 有[0] if 有 else None
+        return 有, 低
+
+    if not section:
+        return _nz({
+            "篇": f"{fn} —— {desc}",
+            # ⚠️ **标记常常写在小节标题上**(`## 三、交付时必须书面告知的六条 `demo``),
+            # 第一版只扫正文行,于是三节带着 demo 标的小节全报「没有标记」——
+            # 而「没有标记」会被读成「这节不是演示数据」,**正好读反**。
+            "小节": [{"标题": x["标题"], "行数": len(x["行"]),
+                      "来源标记": 档(x["标题"] + "\n" + "\n".join(x["行"]))[0] or None}
+                     for x in 节],
+            "note": "传 `section`(小节标题,写一部分也认)取正文。"
+                    "**不给整篇** —— 一次吐几百行会把后面真正该看的挤出去。",
+        })
+    k = section.strip()
+    命中 = [x for x in 节 if k == x["标题"]] or \
+           [x for x in 节 if k in x["标题"]]
+    if not 命中:
+        return {"error": f"「{fn}」里没有「{section}」这一节",
+                "有这几节": [x["标题"] for x in 节]}
+    if len(命中) > 1:
+        return {"error": f"「{section}」对应多节,说具体点",
+                "对应": [x["标题"] for x in 命中]}
+    x = 命中[0]
+    body = "\n".join(x["行"]).strip()
+    MAX = 6000
+    截 = len(body) > MAX
+    有, 低 = 档(x["标题"] + "\n" + body)     # 标题上的标记也算(见上)
+    out = {"篇": fn, "小节": x["标题"], "正文": body[:MAX]}
+    if 截:
+        out["⚠️ 截断"] = (f"这一节 {len(body)} 字,只给了前 {MAX} 字。"
+                          "要后面的部分,指定更细的小节(三级标题)")
+    if 低:
+        out.update(_src.标注(低))
+        out["这一节出现的来源标记"] = 有
+        out["note"] = ("**按最低那一档说话** —— 一节里混着几档时,"
+                       "对客户的口径取最保守的那个。")
+    else:
+        out["note"] = ("这一节正文里**没有来源标记** —— 不代表它可靠,"
+                       "代表没人标过。对客户引用前先确认。")
+    return _nz(out)
+
+
 def kb_detail(code):
     """按编码取某一条的完整内容"""
     r=_rows("SELECT * FROM craft WHERE code=?",code)
@@ -2967,7 +3107,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
               "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
-TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
+TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,
               "kb_fit":kb_fit,"kb_lead":kb_lead})
@@ -2994,6 +3134,7 @@ KB_SCHEMAS=[
     "craft":{"type":"string","description":"工艺名称或编码,如「妆花」或 KF02。**直接写名称即可,不要猜编码。**"},
     "material":{"type":"string","description":"面料名称或编码,如「云锦」或 MT02。**直接写名称即可,不要猜编码。**"}},
    "required":["craft","material"]}},
+ {"name":"kb_read","description":"**读知识库原文** —— 表里查不到、只在正文里的那些话:怎么洗怎么存、为什么这么做、客户问「为什么这么贵」时怎么答。**先不传 section 拿这一篇的小节目录,再指定小节取正文** —— 不给整篇,一次几百行会把后面真正该看的挤出去。doc 认编号(09)、文件名、或主题词(养护)。返回带**来源等级**:一节里混着几档时按**最低那一档**给对客口径;**正文里没有标记不代表它可靠,代表没人标过**。","input_schema":{"type":"object","properties":{"doc":{"type":"string","description":"篇:01–12 的编号、文件名、或主题词(如「养护」「版型库」)"},"section":{"type":"string","description":"小节标题(写一部分也认)。不传则给这一篇的小节目录"}}}},
  {"name":"kb_tables","description":"取全部决策表(6 张共 30 行:客户原话对照、选料决策、配饰形制搭配、配色易错、工期档位、售后争议判定)。顾问问「客户说了 X,我该推什么/避开什么/怎么处理」这类问题时**优先用这个**,而不是 kb_lookup。**直接不带参数调用即可**,取全部比挑一张更可靠。",
   "input_schema":{"type":"object","properties":{"topic":{"type":"string","description":"通常不要传。全部决策表合计只有 30 行,一次全取更可靠 —— 传了 topic 反而容易取错表。"}},"required":[]}},
  {"name":"kb_coverage","description":"查相容矩阵的完成度(共多少格、已定义多少、未定义多少)。",

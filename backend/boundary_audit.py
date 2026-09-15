@@ -309,6 +309,29 @@ def a_no_project_memory():
         "**两头都拿到了**")
 
 
+def a_kb_read_traversal():
+    """**读原文的工具不许变成读文件的工具。**
+
+    `kb_read` 会把知识库的 md 正文交给模型 —— 那是这个项目第一个「读文件」形状的工具,
+    而它离「读任意文件」只差一个路径穿越。项目最硬的一条主张是
+    **挂给模型的工具只能读业务数据**,所以这条必须被真的攻击一次。
+
+    修法不是过滤 `../`(过滤永远漏一种写法),是**根本不接受路径** ——
+    调用方给的字串只在一张写死的白名单里挑,挑不中就报「没有这一篇」。
+    **能挑的东西只有 12 个,挑不中就没有第二条路。**
+    """
+    import api
+    for bad in ("../CLAUDE.md", "/etc/passwd", "../../.deepseek-key",
+                "09/../../CLAUDE.md", "..%2fCLAUDE.md", "../backend/lanxiu.db",
+                "....//CLAUDE.md", "knowledge/../CLAUDE.md"):
+        r = api.kb_read(bad)
+        if "正文" in r or isinstance(r.get("小节"), list):
+            return f"拿「{bad}」读到了知识库以外的东西"
+    raise PermissionError(
+        "八种路径穿越写法全部落空 —— **它根本不接受路径**,"
+        "只在 12 篇的白名单里挑。过滤 `../` 那条路永远漏一种写法")
+
+
 def a_whitelist():
     for ns, sch in (("kb", api.KB_SCHEMAS), ("shop", api.SHOP_SCHEMAS), ("task", api.SCHEMAS)):
         white = set(re.findall(r'"mcp__%s__(\w+)"' % ns, SDK_SRC))
@@ -590,6 +613,10 @@ STRUCT = [
   a_consent_minor, "只撤未成年人同意后调推算", "工具层硬门"),
  ("量体超期 → 下单被拦", "12-成长与生命周期.md 第五节",
   a_expired_order, "拿一个量体已过期的孩子走下单前拦截", "ops.order_block 规则直出"),
+ ("读原文的工具不许变成读文件的工具", "backend/api.py kb_read / KB_DOCS 白名单",
+  a_kb_read_traversal, "八种路径穿越写法(../ 、绝对路径、URL 编码、....// 等)",
+  "**根本不接受路径** —— 调用方给的字串只在写死的 12 篇里挑,"
+  "挑不中就没有第二条路。过滤 `../` 那条路永远漏一种写法"),
  ("项目的 CLAUDE.md 不进模型的系统提示词", "agentsite/sdk.py RUNTIME + _ensure_runtime",
   a_no_project_memory, "从运行目录一路往上找 CLAUDE.md;并确认 Skill 没被一起弄丢",
   "**这条以前是约定,而且实测是破的** —— 问它「你提示词里有没有 CLAUDE.md」,"
