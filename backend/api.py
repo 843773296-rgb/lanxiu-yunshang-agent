@@ -1355,6 +1355,123 @@ def recovery_queue(kind=None, today=None):
         "发短信 / 发微信 / 打电话是**对外动作**,不在 agent 这儿。"
         "这里给的是「该跟谁、凭什么、什么顺序」,**按不按、怎么按是人的决定**。")
     return _nz(out)
+def stock_alert(scope=None):
+    """**库存预警 —— 哪些要断了、哪些看着有货其实发不出、哪些在压货。**
+
+    805 个 SKU 全有库存数、60 条库存流水,而在这个工具之前
+    **没有任何东西会说「这个要断了」** —— 只能等客户问了再去查。
+
+    ## ⚠️ 可售天数现在**算不出来**,这个工具会直说
+
+    intent 里写死了要给可售天数而不只是件数。做到这一步才发现:**给不了。**
+
+        有销量的 SKU    **71 / 805**
+        这 71 个各卖几件 **全部恰好 1 件**
+        订单跨度        **17 天**
+
+    销售速度要么是 0,要么是同一个数。这样的数据算出来的可售天数
+    **不是指标,是装饰**,而**一个编出来的天数会让采购按它去补货**。
+
+    所以这里报「算不出,缺的是销量样本和时间跨度」,
+    **不换个算法凑一个数,也不偷偷退回成件数阈值** ——
+    这个项目为「抓不到 ≠ 零」栽过好几次。
+
+    ## 「在手」和「可用」是两个数
+
+    `stock` 是在手,`locked` 是已被订单占用。客户问「还有货吗」要的是
+    **可用 = 在手 − 已占用**。实测 **20 个 SKU 在手有货但全被占用** ——
+    只报在手会说有货,而实际一件都发不出,客户白等。
+
+    ## 没有补货点,也不自动补货
+
+    补多少、什么时候补是**采购的决定**。而且补货点 = 补货周期内的销量 + 安全库存,
+    前者算不出、后者要业务定「缺货一次的代价」——**两样都没有,任何一个数都是编的**。
+
+    scope: 不传给全部;传「发不出」「断货」「快没了」「卖不动」只要一档。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
+                                   "..", "knowledge"))
+    import stockalert as _sa
+
+    # 统计区间直接从订单数据来 —— **不写死,也不取今天**:
+    # 写死的话数据长出来了这儿还是旧数;取今天的话跨度会随时间白白变长,
+    # 而那不代表多了销量。
+    rg = _rows("SELECT MIN(created) a, MAX(created) b FROM ordr")[0]
+    起, 止 = (rg["a"] or "")[:10], (rg["b"] or "")[:10]
+    跨天 = 0
+    if 起 and 止:
+        跨天 = (_dt.date.fromisoformat(止) - _dt.date.fromisoformat(起)).days + 1
+
+    # **笔数和件数分开取。** 件数决定速度多大,笔数决定这个速度**能不能算** ——
+    # 一单卖 10 件也还是一个点,而一个点画不出一条斜率。
+    卖过 = {r["sku"]: (r["笔"], r["件"]) for r in _rows(
+        "SELECT sku, COUNT(*) 笔, SUM(COALESCE(qty,0)) 件 FROM ordr_item "
+        "WHERE sku IS NOT NULL AND sku<>'' GROUP BY sku")}
+
+    rs = _rows("SELECT s.code, s.spu, s.spec, s.color, s.size, s.price, "
+               "  s.stock, s.locked, s.status, p.name pname, p.status pstatus "
+               "FROM sku s LEFT JOIN product p ON p.spu=s.spu")
+
+    摊 = {}
+    停用 = 0
+    for r in rs:
+        # **停用的 SKU 不进预警。** 它不该有货可卖,库存为 0 是正常状态,
+        # 报出来就是每天 8 条噪音 —— 而**误报比漏报贵**:
+        # 一条误报会让采购去补一个已经下架的款。
+        if r["status"] == "停用":
+            停用 += 1
+            continue
+        笔, 件 = 卖过.get(r["code"], (0, 0))
+        档位, 话 = _sa.档(r["stock"], r["locked"], 件)
+        天, 为什么 = _sa.可售天数(r["stock"], r["locked"], 笔, 件, 跨天)
+        摊.setdefault(档位, []).append(_nz({
+            "SKU": r["code"], "商品": r["pname"], "规格": r["spec"],
+            "颜色": r["color"], "尺码": r["size"], "价格": r["price"],
+            "在手": r["stock"], "已占用": r["locked"],
+            "可用": _sa.可用(r["stock"], r["locked"]),
+            "卖过几笔": 笔, "卖过几件": 件,
+            "可售天数": 天 if 天 is not None else 为什么,
+            "说明": 话,
+        }))
+
+    要哪些 = [scope] if scope in 摊 else ["发不出", "断货", "快没了", "卖不动"]
+    out = {
+        "统计区间": f"{起} → {止}(共 {跨天} 天)" if 跨天 else "**没有订单数据**",
+        "在算的 SKU": len(rs) - 停用,
+        "（停用的 {} 个不算）".format(停用): "停用的 SKU 本来就不该有货可卖,"
+                                            "库存 0 是正常状态,报出来只是噪音",
+    }
+    档说明 = {
+        "发不出": "**在手有货,但全被订单占用了** —— 库存表上看着有货,实际一件发不出。"
+                  "这一档最要紧:它是唯一一种「看起来没问题」的缺货。",
+        "断货": "在手和可用都是 0",
+        "快没了": "可用 ≤ 4 件,**而且它卖得动**",
+        "卖不动": "有货,而**一件都没卖过** —— 这不是缺货风险,是压货",
+    }
+    for k in 要哪些:
+        lst = sorted(摊.get(k, []), key=lambda x: (x.get("可用") or 0))
+        out[k] = _nz({
+            "个数": len(lst),
+            "是什么": 档说明.get(k),
+            "明细": lst[:30],
+            **({"（只列了前 30 个）": f"共 {len(lst)} 个"} if len(lst) > 30 else {}),
+        })
+
+    out["⚠️ 为什么没有可售天数"] = (
+        f"有销量的只有 {len(卖过)}/{len(rs) - 停用} 个 SKU,"
+        f"而且**最多的一个也只有 {max((v[0] for v in 卖过.values()), default=0)} 笔**"
+        f"(一笔画不出速度:「每 18 天卖 1 件」和「碰巧卖了 1 件」数据上一样),"
+        f"订单只跨 {跨天} 天。这样算出来的可售天数**不是指标,是装饰** —— "
+        "而一个编出来的天数会让采购按它去补货。"
+        "**缺的是:每个 SKU 有过若干笔销售、订单跨度够长。**"
+        "在那之前这里只报算得出的事实,不凑数。")
+    out["⚠️ 这个工具不补货"] = (
+        "补多少、什么时候补是**采购的决定**。"
+        "而且补货点要销量数据和「缺货一次的代价」撑着,两样现在都没有。")
+    out["面料不在这儿"] = ("这个工具只看成品 SKU。面料库存(135 种,4 种没现货)"
+                          "影响的是**定制品工期**,是另一摊。")
+    return _nz(out)
 
 
 def pattern_queue():
@@ -3089,6 +3206,7 @@ SHOP_SCHEMAS=[
     "kind":{"type":"string","description":"定制品订单 / 标品订单,默认定制品订单"},
     "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
    "required":["customer_id"]}},
+ {"name":"stock_alert","description":"**库存预警** —— 哪些 SKU 要断了、哪些**看着有货其实一件都发不出**(在手有货但全被订单占用)、哪些在压货。805 个 SKU 全有库存数而在这之前没有任何工具会说「这个要断了」。⚠️ **在手 ≠ 可用**:客户问「还有货吗」要的是 **可用 = 在手 − 已占用**,只报在手会让客户白等。⚠️ **它给不出可售天数,而且会直说给不出**:全库有销量的只有 71/797 个 SKU、每个只有一笔、订单只跨 18 天,**一笔销售画不出速度** —— 这时候任何一个可售天数都是编的,而编出来的数会让采购按它去补货。**不许把「算不出」说成 0 天,也不许退回成「低于 N 件就预警」假装算得出。** ⚠️ **这个工具不补货**:补多少、什么时候补是采购的决定。⚠️ 只看成品 SKU,**面料库存是另一摊**。","input_schema":{"type":"object","properties":{"scope":{"type":"string","description":"发不出 / 断货 / 快没了 / 卖不动;不传则全给"}}}},
  {"name":"recovery_queue","description":"**未成交挽回清单** —— 下了单没付钱的、约了没来的,各压着多少钱、压了多久、该按什么顺序跟。不传参数给两摊都要;传「待付款」或「预约」只要一摊。⚠️ **这个工具只出清单,不发任何东西** —— 发短信/微信/打电话是对外动作,按不按、怎么按是人的决定。⚠️ **它不划「超时」那条线**:定制品和标品的合理等待期本来就不一样,编一个数会把正常的单子算成流失。只排序不划线,按**金额 × 停留天数**排。⚠️ **三种未成行不许混成一类**:已取消是客户主动说了不来、爽约是没说就没来(**先确认人没事**)、已过期是系统判的(客户自己可能都不知道有这条预约)。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"待付款 或 预约;不传则两摊都给"}}}},
  {"name":"pattern_queue","description":"**版师的排队看板 —— 「今天该我核什么」。**不用传任何参数。把版师手上的活一次列全:裁片用料占比的进度(并按**影响面**排出先核哪几个 —— 挂多少商品、多少订单行已经按这个数备料)、推档有疑点的版型、「推得出但不作数」的尺码格子、配置页上架了却没有版型的定制品。**每一摊都报「总数 / 已完成 / 还剩」** —— 一摊显示 0 的时候要说得出是「做完了」还是「一条都没扫到」。版师进来第一句话就该调它。","input_schema":{"type":"object","properties":{}}},
  {"name":"grading_audit","description":"**推档自检 —— 把「要核 1237 个数」压成「要核 12 条档差」。**尺码表全部是推出来的(基码值 + 档差 × 尺码序号),版师真正该核的只有基码和那 12 条档差。不传 pattern 给全局(扫了多少、哪几个版型有疑点、档差规则是什么);传 pattern 给这一个版型的逐部位明细:实际档差 / 规则档差 / **覆盖范围**(这个版型能做多大的人)/ 量纲体检 / 哪几项「推得出但不作数」。**判据是定义性的,不是阈值** —— 相邻码的差必须处处相等且等于档差表,不一致就是真的有一格不对。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全局"}}}},
@@ -3233,7 +3351,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"recovery_queue":recovery_queue,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

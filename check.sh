@@ -99,6 +99,7 @@ run "假数据工厂 · 推断/生成/闸门/灌回滚(24 项)" python3 fakedata
 #    所以不进这里 —— 依赖外部状态的检查放进门禁会变成随机拦路)。
 #    **加知识、改出处之后手动跑一次。**
 run "来源等级 · 声称可溯源的得真溯得了源" python3 backend/source_check.py
+run "库存预警 · 算不出可售天数的不许算出一个数来" python3 backend/stock_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py
 run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/leadtime.py
@@ -110,7 +111,7 @@ run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judget
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py
 run "识图判分器 · 13 条对照用例" python3 agent/vision_eval_judgetest.py
 run "判责判分器 · 14 条对照用例" python3 agent/liability_eval_judgetest.py
-run "运维侧判分器 · 16 条对照用例" python3 agent/ops_eval_judgetest.py
+run "运维侧判分器 · 对照用例(含库存预警 9 条)" python3 agent/ops_eval_judgetest.py
 run "复盘与漏斗判分器 · 31 条对照用例" python3 agent/report_eval_judgetest.py
 run "会员与审批判分器 · 30 条对照用例" python3 agent/member_eval_judgetest.py
 run "工匠与财务判分器 · 27 条对照用例" python3 agent/role_eval_judgetest.py
