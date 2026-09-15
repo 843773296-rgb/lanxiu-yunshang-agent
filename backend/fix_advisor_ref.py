@@ -3,7 +3,7 @@
 
 ## 为什么这是个问题
 
-七张表存着 `A04 陆微` 这样的字符串,约 2160 行。名字一改 ——
+**九张表**存着 `A04 陆微` 这样的字符串,约 2160 行。名字一改 ——
 结婚改姓、录错一个字、把「陆微」写成「陸微」—— **所有历史记录当场断掉,
 而且悄无声息**:按名字 join 出来是空,看起来像「这条记录没有顾问」。
 
@@ -33,13 +33,33 @@ import os, sys, sqlite3
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # (表, 存名字的列, 要加的引用列)
+#
+# ⚠️ **这张映射表漏过三张,而漏掉的那几张恰恰是没人盯着的。**
+#
+# 2026-09-15 扫了一遍:库里有 `advisor` 这一列的是**九张表**,
+# 而这里只列了六张(加 `measure_rec.measured_by` 共七条)——
+# `customer`(106 行,「这个客户归谁跟」)、`delivery_notice`、`scheme`
+# **从来没建过引用**,也就从来没进过 `advisor_ref_check` 的视野。
+#
+# 三个数没有一个对得上:文档写「七张表」、映射里六张、真实需要九张。
+# **而我们以为这笔债被盯着** —— 其实最大的那一张(客户归谁跟)
+# 从来没进过账本。
+#
+# 教训和今天反复撞的是同一条:**一份手写的清单会过期,而过期时不报错。**
+# 这里没法完全现算(哪一列是「名字」要人判),但至少
+# `advisor_ref_check` 现在会去比对「库里有 advisor 列的表」和这张映射,
+# 少一张就红。
 映射 = [("schedule", "advisor", "advisor_no"),
         ("ordr", "advisor", "advisor_no"),
         ("appointment", "advisor", "advisor_no"),
         ("maintain", "advisor", "advisor_no"),
         ("aftersale", "advisor", "advisor_no"),
         ("followup", "advisor", "advisor_no"),
-        ("measure_rec", "measured_by", "measured_by_no")]
+        ("measure_rec", "measured_by", "measured_by_no"),
+        # ↓ 2026-09-15 补上的三张,原来一直在外面
+        ("customer", "advisor", "advisor_no"),
+        ("delivery_notice", "advisor", "advisor_no"),
+        ("scheme", "advisor", "advisor_no")]
 
 
 def 解析(tag, 花名册, 全员=None):
