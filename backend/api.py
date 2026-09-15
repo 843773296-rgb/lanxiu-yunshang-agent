@@ -1434,7 +1434,8 @@ def stock_alert(scope=None):
     卖过 = {k: tuple(v) for k, v in 卖过.items()}
 
     rs = _rows("SELECT s.code, s.spu, s.spec, s.color, s.size, s.price, "
-               "  s.stock, s.locked, s.status, p.name pname, p.status pstatus "
+               "  s.stock, s.locked, s.status, p.name pname, p.status pstatus, "
+               "  COALESCE(p.on_shelf_at, p.created) shelf "
                "FROM sku s LEFT JOIN product p ON p.spu=s.spu")
 
     摊 = {}
@@ -1448,14 +1449,24 @@ def stock_alert(scope=None):
             continue
         笔, 件 = 卖过.get(r["code"], (0, 0))
         档位, 话 = _sa.档(r["stock"], r["locked"], 件)
-        天, 为什么 = _sa.可售天数(r["stock"], r["locked"], 笔, 件, 跨天)
+        # **分母是这个 SKU 自己能卖的那段**,不是全局跨度 ——
+        # 一个 6 月才上架的 SKU 按「2 月到 9 月」除,速度会被稀释、该报的不报。
+        窗, 窗起, 窗说 = _sa.可卖窗口(r["shelf"], 起, 止)
+        天, 为什么 = _sa.可售天数(r["stock"], r["locked"], 笔, 件, 窗)
+        if 天 is None and 窗 is None and 窗说:
+            为什么 = 窗说
         摊.setdefault(档位, []).append(_nz({
             "SKU": r["code"], "商品": r["pname"], "规格": r["spec"],
             "颜色": r["color"], "尺码": r["size"], "价格": r["price"],
             "在手": r["stock"], "已占用": r["locked"],
             "可用": _sa.可用(r["stock"], r["locked"]),
             "卖过几笔": 笔, "卖过几件": 件,
+            "能卖了几天": 窗, "上架": (r["shelf"] or "")[:10] or None,
             "可售天数": 天 if 天 is not None else 为什么,
+            # **数字一样而分量完全不同**:「12 天(上架 20 天、3 笔)」
+            # 和「12 天(上架 300 天、90 笔)」不该被一样地信。
+            "这个天数按多少数据算的": (f"{窗} 天里 {笔} 笔" if 天 is not None else None),
+            "⚠️": 窗说 if (窗说 and 窗 is not None) else None,
             "说明": 话,
         }))
 
@@ -1486,7 +1497,7 @@ def stock_alert(scope=None):
         f"有销量的只有 {len(卖过)}/{len(rs) - 停用} 个 SKU,"
         f"而且**最多的一个也只有 {max((v[0] for v in 卖过.values()), default=0)} 笔**"
         f"(一笔画不出速度:「每 18 天卖 1 件」和「碰巧卖了 1 件」数据上一样),"
-        f"订单只跨 {跨天} 天。这样算出来的可售天数**不是指标,是装饰** —— "
+        f"订单只跨 {跨天} 天(而且每个 SKU 按**自己上架后**那段算,只会更短)。这样算出来的可售天数**不是指标,是装饰** —— "
         "而一个编出来的天数会让采购按它去补货。"
         "**缺的是:每个 SKU 有过若干笔销售、订单跨度够长。**"
         "在那之前这里只报算得出的事实,不凑数。")
