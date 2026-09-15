@@ -1405,9 +1405,27 @@ def stock_alert(scope=None):
 
     # **笔数和件数分开取。** 件数决定速度多大,笔数决定这个速度**能不能算** ——
     # 一单卖 10 件也还是一个点,而一个点画不出一条斜率。
-    卖过 = {r["sku"]: (r["笔"], r["件"]) for r in _rows(
-        "SELECT sku, COUNT(*) 笔, SUM(COALESCE(qty,0)) 件 FROM ordr_item "
-        "WHERE sku IS NOT NULL AND sku<>'' GROUP BY sku")}
+    #
+    # ⚠️ **要带上订单状态。** 第一版没带,于是取消的单、还没付钱的单
+    # 全被算成卖出去了 —— 「下过单」和「卖掉了」长得一模一样。
+    # 哪些算,在 `stockalert.卖掉了()` 里,不在这儿拍。
+    卖过, 没算 = {}, {}
+    for r in _rows("SELECT i.sku, i.qty, o.status, o.refund_status "
+                   "FROM ordr_item i JOIN ordr o ON o.id=i.order_id "
+                   "WHERE i.sku IS NOT NULL AND i.sku<>''"):
+        算, 为啥 = _sa.卖掉了(r["status"], r["refund_status"])
+        if not 算:
+            # 归组的键要带上退款 —— 一行「待完成」因为退了款不算销量,
+            # 按状态归组会显示成「待完成不算销量」,而那是假的:
+            # **不算的理由是退款,不是状态。**
+            k = (r["status"] + " · 已退款") if (r["refund_status"] or "") == "已退款" \
+                else r["status"]
+            没算.setdefault(k, [0, 为啥])[0] += 1
+            continue
+        a = 卖过.setdefault(r["sku"], [0, 0])
+        a[0] += 1
+        a[1] += r["qty"] or 0
+    卖过 = {k: tuple(v) for k, v in 卖过.items()}
 
     rs = _rows("SELECT s.code, s.spu, s.spec, s.color, s.size, s.price, "
                "  s.stock, s.locked, s.status, p.name pname, p.status pstatus "
@@ -1466,6 +1484,21 @@ def stock_alert(scope=None):
         "而一个编出来的天数会让采购按它去补货。"
         "**缺的是:每个 SKU 有过若干笔销售、订单跨度够长。**"
         "在那之前这里只报算得出的事实,不凑数。")
+    out["算进销量的"] = {
+        "订单行": sum(v[0] for v in 卖过.values()),
+        "有销量的 SKU": len(卖过),
+        "note": "**只数卖掉了的** —— 取消 / 待付款 / 已退款都不算。"
+                "这个总数不受明细截断影响,检查拿它和口径对账。",
+    }
+    if 没算:
+        # **不许静默丢掉。** 白名单的代价就是「少算了什么看不见」——
+        # 「抓不到」和「零」不是一回事,这个项目为它栽过好几次。
+        out["没算进销量的订单行"] = {
+            "合计": sum(v[0] for v in 没算.values()),
+            "分开看": {k: f"{v[0]} 行 —— {v[1]}" for k, v in sorted(没算.items())},
+            "note": "**「下过单」和「卖掉了」是两件事。** 这些行不算销量,"
+                    "但列在这儿 —— 少算了什么要看得见。",
+        }
     out["⚠️ 这个工具不补货"] = (
         "补多少、什么时候补是**采购的决定**。"
         "而且补货点要销量数据和「缺货一次的代价」撑着,两样现在都没有。")
