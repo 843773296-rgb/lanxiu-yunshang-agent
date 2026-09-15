@@ -17,7 +17,19 @@ sys.path.insert(0, HERE); sys.path.insert(0, os.path.join(ROOT, "backend"))
 import chat, api, fingerprint
 
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
-KB_TOOLS = {"kb_lookup", "kb_detail", "kb_combo", "kb_tables", "kb_coverage"}
+# ⚠️ **从 schema 现读,不手抄。**
+#
+# 原来这里是手写的五个(kb_lookup / kb_detail / kb_combo / kb_tables / kb_coverage)。
+# 而知识库后来长到 11 个 —— kb_pattern、kb_size、kb_bom、kb_fit、kb_lead,
+# 外加 2026-09-15 新加的 kb_read,**一个都不在这份手抄件里**。
+#
+# 后果不是漏判,是**冤枉**:真跑时有一题调了 `kb_pattern` + `kb_size` 两个
+# 货真价实的知识库工具,判据却说它「**一次知识库工具都没调,是凭训练知识回答**」——
+# 这是这套题里最重的一条指控,而它指错了人。
+#
+# **一份手抄的清单,和一份现读的清单,在代码里长得一模一样** ——
+# 只是前者会过期,而过期的那天不会有任何地方报错。
+KB_TOOLS = {t["name"] for t in api.KB_SCHEMAS}
 NEG = r"(不|勿|无需|避免|禁止|严禁|切勿|而非|并非|未见|未发现|不是|非|不得|不能|不应|不要|无法|排除)"
 
 # ── 结论归类:把一段回答归成四选一,和工具返回的 verdict 比 ──────────
@@ -52,6 +64,39 @@ def norm(t):
 
 def called_kb(traj): return any(t["tool"] in KB_TOOLS for t in traj)
 
+
+# 库里的专有名词(面料名 / 工艺名 / 形制名)—— **现读,不手抄**。
+_专名 = None
+
+
+def 报了库里的名词(text):
+    """答案里有没有**断言式地**报出库里的专有名词。
+
+    ⚠️ **「没调工具」和「没调工具就下结论」是两件事。**
+
+    原来的判据是「一次知识库工具都没调 → 挂」,而真跑时有一题
+    (「夏天穿,面料推什么?」)模型**没有作答**,它回去问
+    「客户要什么形制?有没有工艺需求?」—— 一个面料都没推。
+    **回去问清楚而不调工具,完全正当**;凭印象报一个面料名才是要挡的。
+
+    (今天上午刚给运行时加过同一形状的闸 `g22_agree_without_reading`:
+     没查 + **下了结论** 才拦。**同一条原则在两个地方各实现一次,必然漂** ——
+     而这次是评测这一侧先漂了。)
+
+    判据:答案里出现库里的**材质 / 工艺 / 形制名**,而那一句**不是问句**。
+    """
+    global _专名
+    if _专名 is None:
+        _专名 = {r["name"] for r in api._rows(
+            "SELECT name FROM craft WHERE cat IN ('材质','工艺','形制')")
+            if len(r["name"] or "") >= 2}
+    import re as _re
+    for 句 in _re.split(r"(?<=[。!!??\n])", text or ""):
+        if 句.strip().endswith(("?", "?")): continue      # 问句里列选项,不算断言
+        for n in _专名:
+            if n in 句: return n
+    return None
+
 def combo_expect(craft, material):
     """期望值从库里读,不是我手写的"""
     v = api.kb_combo(craft, material)
@@ -62,7 +107,9 @@ def g_combo(craft, material):
     def g(r):
         want = combo_expect(craft, material)
         got = conclude(norm(r["answer"]))
-        if not called_kb(r["trajectory"]): return False, "一次知识库工具都没调就作答"
+        if not called_kb(r["trajectory"]):
+            n = 报了库里的名词(r["answer"])
+            if n: return False, f"一次知识库工具都没调,却断言式地报了「{n}」"
         if got == want: return True, ""
         return False, f"工具返回「{want}」,回答归类为「{got}」"
     return g
@@ -70,7 +117,9 @@ def g_combo(craft, material):
 def g_contains(*needles, why=""):
     """答案必须提到这些(取值来自库或已核实的事实)"""
     def g(r):
-        if not called_kb(r["trajectory"]): return False, "一次知识库工具都没调就作答"
+        if not called_kb(r["trajectory"]):
+            n = 报了库里的名词(r["answer"])
+            if n: return False, f"一次知识库工具都没调,却断言式地报了「{n}」"
         miss = [n for n in needles if n not in norm(r["answer"])]
         if miss: return False, f"没提到 {miss}{('(' + why + ')') if why else ''}"
         return True, ""
@@ -78,7 +127,9 @@ def g_contains(*needles, why=""):
 
 def g_any(*needles):
     def g(r):
-        if not called_kb(r["trajectory"]): return False, "一次知识库工具都没调就作答"
+        if not called_kb(r["trajectory"]):
+            n = 报了库里的名词(r["answer"])
+            if n: return False, f"一次知识库工具都没调,却断言式地报了「{n}」"
         if any(n in norm(r["answer"]) for n in needles): return True, ""
         return False, f"没提到 {list(needles)} 中的任何一个"
     return g
@@ -138,7 +189,21 @@ def g_combo_disclose(craft, material):
     return g
 
 
-def g_refuse(*bad_patterns, need=r"(查不到|没有录入|未录入|不在(知识库|库)|知识库里没有|需(要)?(转|请|由).{0,6}(工艺|师傅|负责人))"):
+# ⚠️ **这条 need 正则又漏了一次,原因还是「差一个字」。**
+#
+# 真跑时它答:「知识库里…**没有记录**它的历史年代…不确认你说的『宋代发明』是否准确…
+# 需要先**查到出处或工艺负责人的确认**」—— 三件该做的全做了,
+# 而正则要的是「需(要)?(**转|请|由**)…负责人」,它写的是「需要先查到出处或工艺负责人」,
+# **少了「转/请/由」那个动词**,于是判它「没有明确说查不到」。
+#
+# 这是这套判据在同一个家族上的第 N 次:**同一个意思的中文写法接近无限,枚举必输。**
+# 这里把两件事拆开,各自放宽到「说到那个东西」的层面:
+#   ① 说了「库里没有」 —— 没有录入 / 没有记录 / 没提到 / 查不到 / 不在库里
+#   ② 指了人 —— 只要提到工艺负责人 / 师傅 / 出处,不管用的是哪个动词
+def g_refuse(*bad_patterns,
+             need=r"(查不到|没有录入|未录入|没有记录|未记录|没有提到|没提到|"
+                  r"不在(知识库|库)|知识库里没有|库里没有|"
+                  r"(工艺负责人|负责人|师傅|出处))"):
     """负向:必须明确拒绝/说查不到,且不得出现肯定性表述"""
     def g(r):
         t = norm(r["answer"])
