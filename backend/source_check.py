@@ -39,6 +39,19 @@ import os, sys, sqlite3
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge")]
+
+# ── 咬合记录 ────────────────────────────────────────────────────────────
+咬合 = [
+    ("把 MT02 云锦的 src_name / src_url 都抹掉(欠账 +1)",
+     "溯不了源的条目不超过"),
+    ("把所有 demo 的 src_name 改成「内部资料」(一个认不出来的占位符)",
+     "没有认不出来的占位符混在出处里"),
+    ("把 kb_lookup 查不到时那句话里的 kb_read 指路整段删掉",
+     "结构化条目查不到时,那句话要指向正文"),
+    ("让 kb_read 的目录里也带上正文",
+     "不许一次吐整篇"),
+]
+
 FAIL = []
 
 # **溯不了源的条目数上限** —— 2026-09-15 首次扫出来的账是 46。

@@ -30,6 +30,23 @@ import os, sys, sqlite3
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "agentsite")]
+
+# ── 咬合记录 ────────────────────────────────────────────────────────────
+咬合 = [
+    ("把 sdk 里的 mcp__shop__piece_ratios 写回 mcp__kb__",
+     "版师白名单里的每个名字都真的挂在 MCP 上"),
+    ("把 set_piece_ratio 里的角色判定改成 if False",
+     "该挡的都挡住了"),
+    ("去掉 guards 里「没先看过就不许改」那道闸",
+     "没先看过就改 → 拦下"),
+    ("把 set_piece_ratio 写库时的 ratio_by 置成 NULL",
+     "改过的数查得到是谁、什么时候、为什么"),
+    ("把 me.get('no') 改回 me.get('id')(后台只发 no,夹具原来两个都喂)",
+     "改过的数查得到是谁、什么时候、为什么"),
+    ("给版师挂上 get_customer(会带出手机号和消费额)",
+     "版师拿得到尺寸和体型,拿不到手机号和消费额"),
+]
+
 FAIL = []
 
 
