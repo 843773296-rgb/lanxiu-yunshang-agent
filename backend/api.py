@@ -1397,8 +1397,14 @@ def stock_alert(scope=None):
     # 统计区间直接从订单数据来 —— **不写死,也不取今天**:
     # 写死的话数据长出来了这儿还是旧数;取今天的话跨度会随时间白白变长,
     # 而那不代表多了销量。
-    rg = _rows("SELECT MIN(created) a, MAX(created) b FROM ordr")[0]
-    起, 止 = (rg["a"] or "")[:10], (rg["b"] or "")[:10]
+    # ⚠️ **区间也要用同一套过滤。** 分子(销量)只数卖掉了的,
+    # 分母(天数)却数所有订单的话,一张一年前的取消单就会把跨度拉长 ——
+    # 速度被稀释、可售天数偏大、该报的不报。**分子分母的口径必须是同一套。**
+    日 = [x["created"][:10] for x in _rows(
+        "SELECT o.created, o.status, o.refund_status FROM ordr o "
+        "WHERE o.created IS NOT NULL")
+        if _sa.卖掉了(x["status"], x["refund_status"])[0]]
+    起, 止 = (min(日) if 日 else ""), (max(日) if 日 else "")
     跨天 = 0
     if 起 and 止:
         跨天 = (_dt.date.fromisoformat(止) - _dt.date.fromisoformat(起)).days + 1

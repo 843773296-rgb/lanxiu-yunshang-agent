@@ -160,6 +160,17 @@ def main():
     ck("工具数的销量和口径算的**完全一样**", 实算 == 应算, 应算,
        f"口径认可 {应算} 行,工具数到 {实算} 行")
 
+    # **分子分母要同一套口径。** 销量只数卖掉了的,而统计天数如果按所有订单算,
+    # 一张一年前的取消单就会把跨度拉长 —— 速度被稀释、可售天数偏大、该报的不报。
+    c1 = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c1.row_factory = sqlite3.Row
+    卖日 = [x["created"][:10] for x in c1.execute(
+        "SELECT created, status, refund_status FROM ordr WHERE created IS NOT NULL")
+        if SA.卖掉了(x["status"], x["refund_status"])[0]]
+    ck("统计区间只按卖掉了的订单算", 卖日 and min(卖日) in (r.get("统计区间") or ""),
+       len(卖日),
+       f"区间「{r.get('统计区间')}」应当从 {min(卖日) if 卖日 else '?'} 起"
+       f" —— **分子分母不是同一套口径的话,速度会被稀释**")
+
     # ── ④ 在手 ≠ 可用 ─────────────────────────────────────────────────
     错 = [x for x in 行
           if x.get("可用") != (x.get("在手") or 0) - (x.get("已占用") or 0)]
