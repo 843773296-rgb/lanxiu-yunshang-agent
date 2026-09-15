@@ -104,7 +104,7 @@ def kb_lookup(keyword=None, cat=None, src=None):
         k=keyword.strip()
         rs=[r for r in rs if any(k in str(r.get(f) or "") for f in ("name","alias","brief","fit","code"))]
     if not rs: return {"hit":0,"note":f"知识库里查不到「{keyword or cat or src}」,不要凭印象回答"}
-    return {"hit":len(rs),"rows":[_nz(_with_material(r)) for r in rs[:12]]}
+    return {"hit":len(rs),"rows":[_nz(_with_source(_with_material(r))) for r in rs[:12]]}
 
 # 面料的**物理参数**(备料天/现货/单价/损耗/幅宽)家在 material 表,不在知识库条目里。
 # craft.lead_days 对**工艺**条目有值(工期档位),对**材质**条目一律为空。
@@ -124,6 +124,34 @@ def _nz(d):
 
     少一个字段,模型不会去提它;给一个空字段,模型一定会提它。"""
     return {k: v for k, v in dict(d).items() if v not in (None, "")}
+
+def _with_source(d):
+    """给每一条知识贴上**来源等级 + 对客口径 + 溯源状态**。
+
+    2026-09-15 加。原来返回里只有一个 `src_type`,而那三个字**不够**:
+
+      · 只给档位  —— 读的人以为标着 `public` 就有出处。
+        实测 29 条 public 里 **15 条连出处的名字都没有**,scale 32 条里 31 条没有。
+        **一个标着「公开可查、可溯源」却给不出出处的条目,比标着 demo 更糟**:
+        标 demo 的没人敢拿去承诺,标 public 的顾问会照着它对客户说。
+      · 只给出处  —— 读的人不知道这一条能不能对外说。
+
+    **我不替它编出处,也不替它降档**(降档是说另一个方向的假话)。
+    做的是第三件事:**让它自己说出来** —— 「标着可溯源,但库里没有出处」
+    跟着这一条一起被读到,模型没法再把它当成有出处的知识往外说。
+    **补出处是人的活,不许假装有出处是代码的活。**
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
+                                   "..", "knowledge"))
+    import source as _src
+    d = dict(d)
+    档 = d.pop("src_type", None)
+    if not 档: return d
+    d.update(_src.标注(档, d.get("src_name"), d.get("src_url")))
+    d.pop("src_name", None); d.pop("src_url", None)
+    return d
+
 
 def _with_material(d):
     """材质条目补上物理参数。**同一个事实只留一个字段** —— 空的那个要拿掉,
@@ -1947,7 +1975,7 @@ def kb_detail(code):
     """按编码取某一条的完整内容"""
     r=_rows("SELECT * FROM craft WHERE code=?",code)
     if not r: return {"error":f"没有编码 {code} 这一条"}
-    return _nz(_with_material(r[0]))
+    return _nz(_with_source(_with_material(r[0])))
 
 def _resolve(x, cat):
     """把「云锦」「MT02」都解析成同一条。模型不知道编码,让它猜编码是工具设计的错误 ——

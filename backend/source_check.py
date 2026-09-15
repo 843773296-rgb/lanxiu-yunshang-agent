@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""来源等级的检查 —— **声称可溯源的,得真的溯得了源。**
+
+`README.md` 开头写着这个库最重的一句:
+
+> 知识库最怕的不是内容少,是**真假混在一起而读的人分不出来**。
+
+档位也定好了三档,连「能不能对客户说」都写清了。
+**而在这套检查之前,没有任何东西去核它** ——
+「demo 级来源不可作为对客户的承诺」一直挂在边界审计的**约定**那一档,
+缺口写得明明白白:「g1 查了来源标注,但没查『拿 demo 数据做承诺』」。
+
+首次扫出来的账:
+
+    public   29 条,**15 条连出处的名字都没有** —— 而这一档的定义是「给得出链接」
+    scale    32 条,**31 条没有出处**
+    demo      1 条**带着真实的非遗网链接** —— 它被低标了
+
+## 这套检查**不要求它立刻归零**
+
+补出处是人的活,而且要一条一条去查资料。所以这里钉的是**上限**:
+现在多少条不合格就记多少,**只许降不许涨**。
+
+> 一个「必须立刻全绿」的检查,在还不了的债面前只有一个下场:**被注释掉**。
+> 而一个钉住上限的检查,每加一条新知识都会逼着问一句「它的出处呢」。
+
+## 为什么不干脆把它们降成 demo
+
+那是**说另一个方向的假话**:这些多半是从公开资料写的、只是没记链接,
+一律降成「为跑通流程虚构的」同样不诚实。而替它编一个链接更糟。
+
+所以做的是第三件事:**让它自己说出来**(`api._with_source`)——
+「标着可溯源,但库里没有出处」跟着这一条一起被模型读到。
+**补出处是人的活,不许假装有出处是代码的活。**
+"""
+import os, sys, sqlite3
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge")]
+FAIL = []
+
+# **溯不了源的条目数上限** —— 2026-09-15 首次扫出来的账。
+# 只许降不许涨:补了出处就把这个数改小,**别把检查改掉**。
+欠账上限 = 46
+
+
+def ck(name, ok, n, msg=""):
+    print(f"  {'✅' if ok else '❌'} {name}(验了 {n} 个){'  ' + msg if msg else ''}")
+    if not ok: FAIL.append(name)
+    if n == 0:
+        print("     ⚠️ 样本量 0 —— **这不叫通过,这叫没扫到东西**")
+        FAIL.append(name + "(样本量 0)")
+
+
+def main():
+    print("来源等级 · 检查")
+    print("=" * 84)
+    import source as S, api
+    c = sqlite3.connect(os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+
+    # ── ① 口径读得出来,而且不是手抄的 ────────────────────────────────
+    档 = S.档位()
+    ck("来源等级的定义从 README 读得出来", len(档) == 3, len(档),
+       f"{sorted(档)} —— **手抄一份的话,改 md 不改代码就开始漂**")
+    import kb as _kb
+    正则档 = set(_kb.HEAD.pattern.split("(public|scale|demo)")[0] and
+                 {"public", "scale", "demo"})
+    ck("md 解析器和口径表认的是同一批档位",
+       正则档 == set(档), len(档),
+       f"解析器认 {sorted(正则档)},口径表认 {sorted(档)}")
+
+    # ── ② 每一条主数据都有档位,而且档位在口径表里 ────────────────────
+    野 = []
+    总 = 0
+    for t in ("craft", "xingzhi", "material", "pattern"):
+        for r in c.execute(f"SELECT COALESCE(src_type,'(空)') s, COUNT(*) n "
+                           f"FROM {t} GROUP BY s"):
+            总 += r["n"]
+            if r["s"] not in 档: 野.append(f"{t}.{r['s']}({r['n']} 条)")
+    ck("每条主数据的来源等级都在口径表里", not 野, 总,
+       "；".join(野[:3]) if 野 else f"{总} 条,四张主数据表")
+
+    # ── ③ 声称可溯源的,得真的溯得了源 ────────────────────────────────
+    欠 = []
+    for r in c.execute("SELECT code,name,src_type,src_name,src_url FROM craft"):
+        齐, 话 = S.溯源(r["src_type"], r["src_name"], r["src_url"])
+        if not 齐: 欠.append(f"{r['code']} {r['name']}")
+    n3 = c.execute("SELECT COUNT(*) FROM craft").fetchone()[0]
+    ck(f"溯不了源的条目不超过 {欠账上限} 条(只许降不许涨)",
+       len(欠) <= 欠账上限, n3,
+       f"现在 {len(欠)} 条:{欠[:3]}… —— "
+       + ("**涨了** —— 新加的知识没带出处" if len(欠) > 欠账上限 else
+          f"上限 {欠账上限};补了出处就把上限改小,**别把检查改掉**"))
+
+    # ── ④ 被低标的要说出来 —— 那也是「档位和依据对不上」 ───────────────
+    # ⚠️ **判「有没有出处」要用 `S.是出处`,不能看非空。**
+    # 第一版看非空,于是 106 条写着「演示数据」的 demo 被报成「其实有出处、该升档」——
+    # **占位符和真值长得一模一样**,而报错的方向恰好相反。
+    低标 = [f"{r['code']} {r['name']}({r['src_name'] or r['src_url']})"
+            for r in c.execute("SELECT code,name,src_type,src_name,src_url FROM craft "
+                               "WHERE src_type='demo'")
+            if S.是出处(r["src_name"]) or S.是出处(r["src_url"])]
+    print(f"  ℹ 被低标的 {len(低标)} 条(标着 demo,库里却有真出处):{低标[:3]}")
+    print("     **这也是「档位和依据对不上」** —— 只是它错在保守那一侧,"
+          "代价是一条真知识被当成了虚构的")
+
+    # ── ④半 占位符探测:**别的地方混进来的占位符,现在没人认识** ────────
+    # 「演示数据」是已知的那一个。而一个新的占位符(比如有人填「待补」)
+    # **和一个真出处在表上长得一模一样**,所以这里按「出现得太频繁」把它抓出来:
+    # 一个真实的出处不会挂在三分之一的条目上。
+    from collections import Counter
+    名次 = Counter(r["src_name"] for r in c.execute(
+        "SELECT src_name FROM craft WHERE src_name IS NOT NULL AND src_name!=''"))
+    可疑 = [f"「{k}」出现在 {v}/{n3} 条上" for k, v in 名次.items()
+            if v > n3 / 3 and S.是出处(k)]
+    ck("没有认不出来的占位符混在出处里", not 可疑, len(名次),
+       "；".join(可疑) if 可疑 else
+       f"{len(名次)} 种出处名;已知的占位符「演示数据」占 "
+       f"{名次.get('演示数据', 0)}/{n3}(它已经被认出来了,不算出处),"
+       f"其余最多的一个占 {max([v for k, v in 名次.items() if S.是出处(k)] or [0])}/{n3} —— "
+       f"**一个真实的出处不会挂在三分之一的条目上**")
+
+    # ── ⑤ 模型读到的东西里,必须带着溯源状态 ──────────────────────────
+    #     **这条才是真正管用的那条。** 前面几条是报账,这条是「不许假装有出处」。
+    d = api.kb_detail("MT11")          # 标 public、库里没有出处的那一条
+    ck("溯不了源的条目,查询返回里会自己说出来",
+       any("溯源" in k for k in d), 1,
+       next((v for k, v in d.items() if "溯源" in k), "**没说** —— "
+            "模型会把它当成有出处的知识往外说")[:60])
+    d2 = api.kb_detail("MT02")         # 有出处的那一条
+    ck("出处齐的条目不许被打上溯源警告(只挡不放行 = 全体降级)",
+       not any("溯源" in k for k in d2), 1,
+       f"{d2.get('来源等级')} / {d2.get('出处', '(无)')}")
+    ck("每条返回都带「对客户能说到什么程度」",
+       bool(d.get("对客户")) and bool(d2.get("对客户")), 2,
+       f"{d2.get('对客户')}")
+
+    print()
+    if FAIL:
+        print(f"\033[31m❌ 来源等级 {len(FAIL)} 处不符合预期\033[0m")
+        for f in FAIL: print(f"   · {f}")
+        sys.exit(1)
+    print("\033[32m✅ 来源等级全部符合预期\033[0m")
+    print(f"    溯不了源的 {len(欠)}/{n3} 条 —— **它们会自己说出来**,"
+          f"不会被当成有出处的知识往外说。")
+
+
+if __name__ == "__main__":
+    main()
