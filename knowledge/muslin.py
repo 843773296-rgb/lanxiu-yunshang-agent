@@ -99,7 +99,9 @@ def 该试衣(装饰最慢, crafts=(), 工时表=None):
 #     没试     → 我们没走该走的流程 → **我方**
 #     试了没签 → 流程走了,确认没拿到 → 回落到量体记录
 状态 = {
-    "该试没试": ("这一单该做白坯试衣,而没有任何试衣记录",
+    "还没到时候": ("这一单该做白坯试衣,而它还没走到那一步",
+                   "**不判责** —— 没试不是问题,时候没到"),
+    "该试没试": ("这一单该做白坯试衣,**已经开裁了**,而没有任何试衣记录",
                  "**我方** —— 我们没走该走的流程"),
     "已试未签": ("试了,但客户没有签字确认",
                  "回落到量体记录那两行 —— **流程走了,确认没拿到**"),
@@ -110,15 +112,70 @@ def 该试衣(装饰最慢, crafts=(), 工时表=None):
 }
 
 
-def 归档(该不该试, 试了吗, 签了吗):
-    """把一单归到上面四种状态之一。**不猜** —— 参数缺了就返回 None。"""
+# 什么时候算「过了试衣那一步」——**不是拍的,是从工期分段的顺序读出来的**。
+#
+# `leadtime.estimate()` 排出来的次序是:
+#
+#     关键路径 → 方案确认与打样 → **白坯试衣** → **裁剪缝制** → …
+#
+# 白坯试衣排在裁剪之前 —— 这正是它存在的理由:
+# **裁下去就没有回头路。** 所以一单只要进了裁剪,试衣的窗口就已经过去了。
+#
+# ⚠️ 这条**不许写成一串订单状态名**。这个项目为「枚举中文说法」栽过八次,
+# 而订单状态还有两套口径(设计稿 10 个 / PRD 6 个)。
+# 判的是**开没开裁**,由调用方从它自己那套状态翻译过来,
+# 并且**翻译不出来就传 None**,不许默认成「还没开裁」——
+# 那会把一单「该试没试」悄悄判成不判责。
+开裁之前 = "白坯试衣排在裁剪缝制之前(见 leadtime.estimate 的分段次序)—— 裁下去就没有回头路"
+
+
+def 归档(该不该试, 开裁了吗=None, 试了吗=None, 签了吗=None):
+    """把一单归到 `状态` 里的某一种。**不猜** —— 判不了就返回 None。
+
+    开裁了吗  None 表示**不知道**,不是「没开裁」。
+              不知道的时候不许判成「该试没试」(那是往我方判),
+              也不许判成「还没到时候」(那是把问题盖住)—— 一律返回 None 交给人。
+    """
     if 该不该试 is None:
         return None
     if not 该不该试:
         return "不必试"
-    if not 试了吗:
-        return "该试没试"
-    return "已试已签" if 签了吗 else "已试未签"
+    if 试了吗:
+        return "已试已签" if 签了吗 else "已试未签"
+    # 没有试衣记录 —— 这时候「开没开裁」才是决定性的
+    if 开裁了吗 is None:
+        return None
+    return "该试没试" if 开裁了吗 else "还没到时候"
+
+
+def 按配置判(pattern, material, crafts, scope="局部", size=None, craft_names=None):
+    """给一套真实配置,判它该不该做白坯试衣。返回 (该不该, 一句人话)。
+
+    **不在这里重算一遍** —— 直接跑工期推算,读它算出来的那个判断。
+    同一个判断两处实现,必然漂;而这一条漂了的后果是
+    **客户看到的交期和判责用的依据不一致**。
+
+    尺码不影响这个判断(实测 PT06 的 M / L / XL 三个码,装饰工序和关键路径
+    一天都不差),但 `estimate()` 必须要一个 —— 没给就取这个版型的第一个码。
+
+    **这不算替业务猜**:取哪个码不改变结论,而不取就一条也判不出来。
+    但取了这件事要说出来 —— 换一个「尺码会影响判断」的场景,
+    这个默认值就会**静默地**给出一个不该有的结论。
+    """
+    import leadtime, derive_pattern
+    补 = None
+    if not size:
+        pt = next((x for x in derive_pattern.patterns() if x["code"] == pattern), None)
+        if not pt or not pt.get("sizes"):
+            return None, f"**判不了** —— 版型 {pattern} 没有尺码表"
+        size = pt["sizes"][0]
+        补 = f"(尺码没给,取了 {size} —— **这个判断不看尺码**)"
+    e = leadtime.estimate(pattern=pattern, size=size, material=material,
+                          crafts=list(crafts or []), scope=scope,
+                          craft_names=craft_names or {})
+    if e.get("error"):
+        return None, f"**判不了** —— {e['error']}"
+    return e.get("要白坯试衣"), (e.get("要白坯试衣_为什么") or "") + (补 or "")
 
 
 def 口径说明():
@@ -153,11 +210,18 @@ if __name__ == "__main__":
     ck("都不够 → 不必试", not c, w3)
     ck("该试的那句话里要带着「业务没确认过」", "没确认过" in w)
     print()
-    for 三 in ((True, False, False), (True, True, False), (True, True, True), (False, 0, 0)):
-        print(f"    该试={三[0]} 试了={三[1]} 签了={三[2]} → {归档(*三)}")
-    ck("该试没试 → 我方", "我方" in 状态[归档(True, False, False)][1])
-    ck("已试已签 → 客方", "客方" in 状态[归档(True, True, True)][1])
-    ck("已试未签 → 回落到量体记录", "量体记录" in 状态[归档(True, True, False)][1])
+    for 四 in ((True, True, False, False), (True, False, False, False),
+               (True, None, False, False), (True, None, True, True),
+               (True, None, True, False), (False, None, None, None)):
+        print(f"    该试={四[0]} 开裁={四[1]} 试了={四[2]} 签了={四[3]} → {归档(*四)}")
+    ck("开了裁还没试 → 该试没试 → 我方",
+       "我方" in 状态[归档(True, True, False, False)][1])
+    ck("没开裁没试 → 还没到时候 → 不判责",
+       归档(True, False, False, False) == "还没到时候")
+    ck("**不知道开没开裁 → 判不了**(不许往任何一边倒)",
+       归档(True, None, False, False) is None)
+    ck("已试已签 → 客方", "客方" in 状态[归档(True, None, True, True)][1])
+    ck("已试未签 → 回落到量体记录", "量体记录" in 状态[归档(True, None, True, False)][1])
     print()
     print("❌ 有不符预期" if fail else "✅ 全部符合预期")
     sys.exit(1 if fail else 0)

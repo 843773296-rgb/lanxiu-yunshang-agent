@@ -222,6 +222,10 @@ def estimate(pattern, size, material, crafts=(), scope="局部",
     risk = queue_risk + risk
     if gap: risk = gap + risk
     return dict(排队等待=qw, 产能缺口=gap,
+                # **这个判断露出来,别处不用再算一遍。**
+                # 它原来只体现在「分段里有没有白坯试衣这一段」上 ——
+                # 谁想知道「这一单该不该试衣」,就只能去匹配一个段名。
+                要白坯试衣=heavy, 要白坯试衣_为什么=heavy_why,
                 版型=p["name"], 尺码=size, 面料=bom["material"], 工艺范围=scope,
                 师傅数=workers, 最快天数=fast, 最慢天数=slow,
                 关键路径=par["说明"], 分段=seq, 装饰明细=items,

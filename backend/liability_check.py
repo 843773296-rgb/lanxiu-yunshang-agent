@@ -30,21 +30,42 @@ import truthdb
 
 
 def facts(mid):
-    """判责要用的四样现场。和 get_maintain 走同一批表,但这里只取判据。"""
+    """判责要用的现场。和 get_maintain 走同一批表,但这里只取判据。
+
+    ⚠️ **白坯试衣这一项是 2026-09-15 加的,而且必须加。**
+    不加的话,`judge()` 拿不到试衣状态,新的两行判据在这套对账里
+    **永远走不到** —— 而那正是这个文件第 14 行在防的事。
+    """
     m = api._rows("SELECT * FROM maintain WHERE id=?", mid)
     if not m: return None
     m = m[0]
     notified = bool(api._rows("SELECT 1 FROM delivery_notice WHERE order_id=?", m["order_id"]))
     ms = api._rows("SELECT method FROM measure_rec WHERE customer_id=?", m["customer_id"])
+    # 白坯试衣状态 —— 走工具层同一个算法,**不在这儿另判一遍**。
+    # (这里是真值对账,「故意的第二套实现」指的是 md → liability.py 这条推导链,
+    #  不是让每个取数的地方都各写一套 —— 那只会漂。)
+    o = api._rows("SELECT status FROM ordr WHERE id=?", m["order_id"])
+    f = api._白坯试衣(m["order_id"], m["item"], o[0]["status"] if o else None)
     return dict(issue=m["issue"],
                 notified=notified,
                 measure_full=(len(ms) >= 4),
-                measure_remote=any(x["method"] == "远程" for x in ms))
+                measure_remote=any(x["method"] == "远程" for x in ms),
+                试衣状态=f.get("归到哪一档"))
 
 
 # 人工标注用的那套话术 → liability.py 的 (责任, 处理关键词)
 EXPECT = {
     "工艺瑕疵 · 我方免费返修":            ("我方", "免费返修"),
+    # ── 2026-09-15 新加的两行(09 第五节)────────────────────────────
+    # ⚠️ **这两条现在一条在办工单都没命中**,所以下面 ② 会报 ⚠️。
+    # 那个 ⚠️ 是**故意留着**的:一条没有用例的规则可以是错的,
+    # 而且永远不会被发现 —— 把它藏起来比让它显眼危险得多。
+    #
+    # 要让它们有用例,得新建一条维修工单**并给它写真值**。
+    # 而真值是**故意的第二套实现**,我写等于和自己对账 ——
+    # 所以这一步留给业务,已登记在 `intent/muslin-fitting.md`。
+    "尺寸偏差 · 试衣已签字 · 客方收费改":  ("客方", "收费改"),
+    "尺寸偏差 · 该试没试 · 我方免费改":    ("我方", "免费改"),
     "尺寸偏差 · 记录完整 · 客方收费改":    ("客方", "收费改"),
     "尺寸偏差 · 记录不全 · 我方免费改":    ("我方", "免费改"),
     "远程量体偏差 · 按合同分担":           ("按合同分担", ""),
@@ -85,7 +106,7 @@ def run(verbose=True):
         for tid, sm, rc, li, act, ok in rows:
             print(f"    {'✅' if ok else '❌'} {tid:12s} {(sm or '')[:24]:26s} "
                   f"标注「{rc}」 / 规则「{li} · {act}」")
-        print(f"\n  ② 每条规则有没有用例(六种判责结论)")
+        print(f"\n  ② 每条规则有没有用例({len(EXPECT)} 种判责结论)")
         for k in EXPECT:
             n = sum(1 for r in rows if r[2] == k)
             print(f"    {'✅' if n else '⚠️ '} {k:32s} {n} 条")

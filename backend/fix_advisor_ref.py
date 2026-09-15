@@ -59,7 +59,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
         # ↓ 2026-09-15 补上的三张,原来一直在外面
         ("customer", "advisor", "advisor_no"),
         ("delivery_notice", "advisor", "advisor_no"),
-        ("scheme", "advisor", "advisor_no")]
+        ("scheme", "advisor", "advisor_no"),
+        # ↓ 2026-09-15 白坯试衣记录。建表时漏了 advisor_no,
+        #   `advisor_ref_check` 当场抓到 —— **⓪ 那条检查是为这种情况写的**:
+        #   一张新表带着 advisor 列进来,而没人记得登记它。
+        ("fitting", "advisor", "advisor_no")]
 
 
 def 解析(tag, 花名册, 全员=None):

@@ -3035,6 +3035,73 @@ def _量体完整性(customer_id, 已有):
     return {"完整性": 话}
 
 
+def _白坯试衣(order_id, item_name, order_status):
+    """这一单的白坯试衣现场。**只给事实,不给判责结论。**
+
+    ⚠️ 和量体记录那一栏是同一条教训:**不许只给一个数让人自己去推。**
+    「有没有试衣记录」这一个事实推不出判责方向 —— 还要知道
+    **这一单该不该试**、**开没开裁**。三样缺一样,结论就可能反。
+
+    这里把三样一起算完,归到 `muslin.状态` 的某一种;
+    **算不出来就说算不出**,不给一个看起来很确定的默认值。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
+                                   "..", "knowledge"))
+    import muslin as _mu
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import seed_fitting as _sf
+
+    it = _rows("SELECT i.id, i.name, p.pattern FROM ordr_item i "
+               "LEFT JOIN product p ON p.spu=i.spu "
+               "WHERE i.order_id=? AND i.name=?", order_id, item_name)
+    if not it:
+        return {"note": "订单行里没有同名商品,查不到试衣记录"}
+    item = it[0]
+
+    # 该不该试 —— **跑真的工期推算**,不在这儿另判一遍
+    mt = {r["name"]: r["code"] for r in
+          _rows("SELECT code,name FROM material WHERE width_cm IS NOT NULL")}
+    kfm = {r["name"]: r["code"] for r in _rows("SELECT code,name FROM craft")}
+    ch = _rows("SELECT kind,material,part FROM item_part_choice WHERE item_id=? "
+               "ORDER BY id", item["id"])
+    ks = sorted({kfm[x["material"]] for x in ch
+                 if x["kind"] == "工艺" and x["material"] in kfm})
+    fab = [x for x in ch if x["kind"] == "面料" and x["material"] in mt]
+    主 = next((x for x in fab if x["part"] in ("主身", "整件")), fab[0] if fab else None)
+    if not item["pattern"] or not 主:
+        该 = None
+        why = ("**判不了该不该试衣** —— 这个商品没挂版型"
+               if not item["pattern"] else "**判不了** —— 没有带幅宽的主料")
+    else:
+        scope = "整幅" if any(w in (item["name"] or "")
+                              for w in ("重工", "婚服", "满工")) else "局部"
+        该, why = _mu.按配置判(item["pattern"], mt[主["material"]], ks, scope,
+                               None, _names())
+
+    recs = _rows("SELECT * FROM fitting WHERE item_id=? ORDER BY round", item["id"])
+    签 = any(r["signed"] for r in recs)
+    st = _mu.归档(该, _sf.开裁了吗(order_status), bool(recs), 签)
+
+    return _nz({
+        "该不该做白坯试衣": 该, "凭什么": why,
+        "订单开没开裁": _sf.开裁了吗(order_status),
+        "有几条试衣记录": len(recs),
+        "客户签字了吗": 签 if recs else None,
+        "记录": [{"第几轮": r["round"], "时间": r["ts"], "陪同": r["advisor"],
+                  "门店": r["shop"], "改了哪几处": r["adjust"],
+                  "签了吗": bool(r["signed"]), "签字时间": r["signed_at"],
+                  "备注": r["note"]} for r in recs] or None,
+        "归到哪一档": st,
+        "这一档是什么": (_mu.状态.get(st) or (None, None))[0],
+        "在判责里算什么": (_mu.状态.get(st) or (None, None))[1],
+        "⚠️": ("**算不出这一单归哪一档** —— 缺的是上面那几项里的某一个。"
+                "**不许挑一个默认值**:默认「没开裁」会把「该试没试」判成不判责,"
+                "默认「开裁了」会把「还没到时候」判成我方 —— 两个方向都错。"
+                if st is None else None),
+    })
+
+
 def get_maintain(maintain_id=None, customer=None, status=None):
     """售后维修工单的现场。**只给事实,判责结论要另外查判定表。**"""
     where, args = [], []
@@ -3088,6 +3155,11 @@ def get_maintain(maintain_id=None, customer=None, status=None):
              "交付告知签收": (dict(已告知条目=[NOTICE_NAME.get(x, x)
                                           for x in (nt[0]["items"] or "").split(",") if x],
                              签收时间=nt[0]["signed_at"], 渠道=nt[0]["channel"]) if nt else None),
+             # ⚠️ **判尺寸争议的第二张底牌,而且比量体记录硬。**
+             # 量体记录说的是「我们量得对不对」,试衣签字说的是
+             # 「**他本人穿过并且认可了**」—— 两句话在判责时的分量完全不同。
+             "白坯试衣": _白坯试衣(m["order_id"], m["item"],
+                                   (o[0]["status"] if o else None)),
              "该客户历史维修次数": hist}
         out.append(d)
     return {"hit": len(rows), "工单": out,
@@ -3095,7 +3167,10 @@ def get_maintain(maintain_id=None, customer=None, status=None):
                     "并对照 09-养护与售后.md 第五节的返修判定表。"
                     "「交付告知签收」为 null 表示**没有书面告知记录** —— "
                     "特性类问题(起球/色差/掉色/勾丝)在这种情况下按「我方,让步处理」;"
-                    "尺寸类问题看「量体记录」完不完整、是不是远程量的。"
+                    "尺寸类问题**先看「白坯试衣」**:已试已签 → 客方收费改"
+                    "(他本人穿过并认可了,**压过量体记录、也压过远程量体**);"
+                    "该试没试 → **我方**免费改(流程没走到)。"
+                    "试了没签或不必试,才回落到「量体记录」完不完整、是不是远程量的。"
                     "**结论必须由人确认后执行,你只出草稿。**"}
 
 # ── 场景倒推 ────────────────────────────────────────────────────────────
