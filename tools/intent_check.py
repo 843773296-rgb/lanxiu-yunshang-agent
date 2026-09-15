@@ -137,6 +137,32 @@ def main():
        f"找不到 {幽灵}" if 幽灵 else
        "**写着「见 xxx」而那份文件不在,看的人会以为是自己没找到**")
 
+    # ── ⑤ 《待办清单.md》必须是生成的,而且是**最新**的 ──────────────────
+    #
+    # 业务要一份「还有哪些没做」的文本。**手写一份的下场这个项目见过**:
+    # 「22 个形制没录」那条在交接文档里挂了很久,**而它早已清零**,
+    # 下一个人会照着去重做。
+    #
+    # 所以那份清单由 `tools/make_todo.py` 从 `intent/` 生成、数字从库里现算。
+    # 这条检查确认它**没被手改,也没过期**:重新生成一遍,内容该一模一样
+    # (只有那一行时间戳和提交号会变)。
+    import subprocess, re as _re
+    td = os.path.join(ROOT, "待办清单.md")
+    if not os.path.isfile(td):
+        ck("《待办清单.md》在", False, 0, "**没生成过** —— 跑 python3 tools/make_todo.py")
+    else:
+        旧 = open(td, encoding="utf-8").read()
+        subprocess.run([sys.executable, os.path.join(HERE, "make_todo.py")],
+                       capture_output=True, cwd=ROOT)
+        新 = open(td, encoding="utf-8").read()
+        剥 = lambda t: _re.sub(r"> 生成于 .*\n", "", t)
+        同 = 剥(旧) == 剥(新)
+        ck("《待办清单.md》是生成的,而且是最新的", 同, len(docs),
+           "" if 同 else
+           "**内容和现在的 intent/ 对不上** —— 要么有人手改了它,"
+           "要么 intent 变了而没重新生成。**一份漂着的待办清单,"
+           "会让人去做一件已经做完的事**")
+
     print()
     print(f"  ℹ 现在 {len(docs)} 份:" +
           "、".join(f"{k}({状态[k]})" for k in sorted(docs)))
