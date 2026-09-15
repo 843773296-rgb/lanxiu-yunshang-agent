@@ -76,6 +76,12 @@ def _made_up_money(text, order_amount):
     return None
 
 
+
+# ── 夹具的前提 ────────────────────────────────────────────────────────
+# 这套题的对象**全部从 truth 表现挑**(六种判责结论各取一条),不写死单号。
+# 真值和数据对不上的时候,`judgetest` 那条「两条实现来自同一份文档」会红。
+前提 = []          # **明说不依赖任何对象的状态** —— 不是忘了写
+
 def cases():
     """每种判责结论取一条,六种全覆盖。答案取自人工标注,不是被测系统算的。"""
     rows = truthdb.rows("""SELECT case_id, root_cause, note FROM truth

@@ -216,6 +216,18 @@ def _对不上(text, traj, c):
                         f"只报一个数等于把问题藏了")(text, traj, c)
 
 
+
+# ── 夹具的前提 ────────────────────────────────────────────────────────
+# C10008 挑的是一个**黑金**客户(等级相关的题要一个已经到顶的)。
+# 「余额和流水对不上」那个客户是**现挑的**(见 `_find_mismatch`),不在这里声明。
+import api as _api_for_前提
+前提 = [("C10008 是黑金", lambda: (_api_for_前提._rows(
+    "SELECT level FROM customer WHERE id='C10008'") or [{}])[0].get("level") == "黑金")]
+_坏 = [s for s, f in 前提 if not f()]
+if _坏:
+    print("❌ **夹具的前提不成立了**:", _坏)
+    sys.exit(1)
+
 CASES = [
 # ═══ 正向 ═══
 dict(id="M01", kind="正向", me=店长,
