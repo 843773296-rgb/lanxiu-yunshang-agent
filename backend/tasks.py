@@ -205,10 +205,13 @@ def assign_task(d, me):
     sid = f"SC{7000 + n + 1}"
     him = allowed[to]
     with sqlite3.connect(DB) as c:
-        c.execute("""INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,status,
+        # ⚠️ **工号也要写。** 名字是 staff 的副本、会漂;工号才是引用。
+        # 工号本来就在手边(`him["no"]`),原来只是没写进去。
+        c.execute("""INSERT INTO schedule(id,type,advisor,advisor_no,customer_id,start_ts,end_ts,status,
                      shop,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)
-                     VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
-                  (sid, kind, f"{him.get('adv_code') or ''} {him['name']}".strip(), cid,
+                     VALUES(?,?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
+                  (sid, kind, f"{him.get('adv_code') or ''} {him['name']}".strip(),
+                   him["no"], cid,
                    st, en, him.get("shop"), to, me["no"],
                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), note, ac, ref_id))
 
@@ -375,11 +378,12 @@ def assign_batch(items, me):
     with _sq.connect(DB) as c:
         for k, a in enumerate(plan, 1):
             sid = f"SC{7000 + n + k}"
-            c.execute("""INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,status,
+            c.execute("""INSERT INTO schedule(id,type,advisor,advisor_no,customer_id,start_ts,end_ts,status,
                          shop,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)
-                         VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
+                         VALUES(?,?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
                       (sid, a["kind"],
-                       f"{a['him'].get('adv_code') or ''} {a['him']['name']}".strip(), a["cid"],
+                       f"{a['him'].get('adv_code') or ''} {a['him']['name']}".strip(),
+                       a["him"]["no"], a["cid"],
                        a["t0"].strftime("%Y-%m-%d %H:%M"), a["t1"].strftime("%Y-%m-%d %H:%M"),
                        a["him"].get("shop"), a["him"]["no"], me["no"], now,
                        a["note"], a["activity"], a["ref_id"]))

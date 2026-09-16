@@ -148,19 +148,26 @@ def book(d):
     m = _rows("SELECT COUNT(*) c FROM schedule")[0]["c"]
     sid = f"SC{7000 + m + 1}"
     adv_disp = cust.get("advisor") if code == "BOUND" else None
+    # ⚠️ **工号也要写。** 原来这两条 INSERT **只写名字不写工号** ——
+    # 而名字是 `staff` 的副本,工号才是引用。
+    # 这条路径在门禁里没被走过(门禁跑的是静态种子数据),
+    # 所以 `advisor_ref_check` 一直绿着,而它每建一条预约就产出一行
+    # **有名字没工号**的记录。删掉名字列的话,那一行就彻底没有顾问了。
+    adv_no = cust.get("advisor_no") if code == "BOUND" else None
 
     with sqlite3.connect(DB) as c:
         # 预约单(客户视角:我约了几点)
-        c.execute("INSERT INTO appointment(id,customer_id,shop,advisor,start_ts,end_ts,status) "
-                  "VALUES(?,?,?,?,?,?,?)",
-                  (aid, cust["id"], cust.get("shop"), adv_disp,
+        c.execute("INSERT INTO appointment(id,customer_id,shop,advisor,advisor_no,"
+                  "start_ts,end_ts,status) VALUES(?,?,?,?,?,?,?,?)",
+                  (aid, cust["id"], cust.get("shop"), adv_disp, adv_no,
                    t.strftime("%Y-%m-%d %H:%M"), end.strftime("%Y-%m-%d %H:%M"), "待确认"))
         # 任务单(门店视角:谁去接待)—— **两张表是两个视角,不是冗余**:
         # 客户取消预约,任务单要留痕说明为什么白排了一小时。
-        c.execute("""INSERT INTO schedule(id,type,advisor,customer_id,start_ts,end_ts,
+        c.execute("""INSERT INTO schedule(id,type,advisor,advisor_no,customer_id,
+                     start_ts,end_ts,
                      status,shop,assignee_no,assigned_by,assigned_at,note)
-                     VALUES(?,'预约到店',?,?,?,?, '有效',?,?,?,?,?)""",
-                  (sid, adv_disp, cust["id"],
+                     VALUES(?,'预约到店',?,?,?,?,?, '有效',?,?,?,?,?)""",
+                  (sid, adv_disp, adv_no, cust["id"],
                    t.strftime("%Y-%m-%d %H:%M"), end.strftime("%Y-%m-%d %H:%M"),
                    cust.get("shop"), assignee,
                    "SYS" if assignee else None,          # 派单人是系统,不是某个人

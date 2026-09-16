@@ -430,8 +430,8 @@ def staff_list(q):
 def schedule_list(q):
     kw=(q.get("q") or [""])[0].strip()
     stt=(q.get("status") or [""])[0]; ty=(q.get("type") or [""])[0]
-    rs=rows("""SELECT s.*, c.name cname FROM schedule s
-               LEFT JOIN customer c ON s.customer_id=c.id ORDER BY s.start_ts DESC""")
+    rs=填顾问名(rows("""SELECT s.*, c.name cname FROM schedule s
+               LEFT JOIN customer c ON s.customer_id=c.id ORDER BY s.start_ts DESC"""))
     if kw: rs=[r for r in rs if kw in r["id"] or kw in (r["cname"] or "")]
     if stt: rs=[r for r in rs if r["status"]==stt]
     if ty:  rs=[r for r in rs if r["type"]==ty]
@@ -455,8 +455,8 @@ def order_list(q):
     kw=(q.get("q") or [""])[0].strip()
     tab=(q.get("tab") or ["全部"])[0]
     kind=(q.get("kind") or [""])[0]; src=(q.get("source") or [""])[0]
-    rs=rows("""SELECT o.*, c.name cname FROM ordr o LEFT JOIN customer c
-               ON o.customer_id=c.id ORDER BY o.created DESC""")
+    rs=填顾问名(rows("""SELECT o.*, c.name cname FROM ordr o LEFT JOIN customer c
+               ON o.customer_id=c.id ORDER BY o.created DESC"""))
     for r in rs:
         r["items"]=rows("""SELECT sku,name,tag,price,qty,spu,base_amount,custom_amount,total
                            FROM ordr_item WHERE order_id=?""",r["id"])
@@ -907,9 +907,75 @@ def save_measure_item(d,actor="魏欣新",role="顾问"):
                 reason=f"测量项 {code} 已创建。**它还没被任何模版引用** —— "
                        f"要真的用上,去量体模版里把它加进去")
 
+# ── 顾问名字:**工号是引用,名字现取** ──────────────────────────────────
+#
+# 那几张表的 `advisor` 列存的是「A04 陆微」这样的名字,而名字是 `staff` 的副本。
+# **一个被钉住的缓存和一个自由漂移的副本,在表上长得一模一样** ——
+# 这就是 `intent/advisor-columns.md` 要删掉它们的理由。
+#
+# 删列之前先把读的一侧收拢到这里:页面不再读那一列,而是**拿工号去员工表取**。
+# 这样列删掉之后页面一个字都不用改 —— 而在这个函数之前,
+# 删列的后果是**页面静默显示空名字**,没有人看得见。
+#
+# ⚠️ **只有一个来源。** 原来这件事散在 7 个页面函数的 SQL 里,
+# 而散着的口径必然漂。
+#
+# 显示格式是「A04 陆微」—— 短号在 `staff.adv_code`。
+# ⚠️ 38 个员工里 **29 个没有短号**(只有顾问角色才有),这时候**只显示名字**,
+# **不许自己拼一个短号出来** —— 拼出来的编号会被当成真的拿去对人。
+_号名 = {}
+
+
+def _花名册():
+    if not _号名:
+        for r in rows("SELECT no,name,adv_code FROM staff"):
+            _号名[r["no"]] = (r["name"], r["adv_code"])
+    return _号名
+
+
+def 顾问工号(显示串):
+    """「A04 陆微」/「陆微」→ 工号。**认不出返回 None,不猜。**
+
+    页面表单里填的是显示串,而库里要存的是工号 ——
+    **名字是 `staff` 的副本,工号才是引用**。
+    认不出来时返回 None 而不是挑一个最像的:
+    **挑错的话这条客户会挂到另一个顾问名下,而页面上完全正常。**
+    """
+    v = (显示串 or "").strip()
+    if not v: return None
+    for no, (名, 短) in _花名册().items():
+        if v == 名 or (短 and v == f"{短} {名}") or (短 and v == 短):
+            return no
+    return None
+
+
+def 填顾问名(rs):
+    """把每一行的顾问名字**按工号现取**填上。原地改,返回原列表。
+
+    ⚠️ **取不到就保留原值,不写空。** 取不到有两种可能:工号是空的(老数据),
+    或者这个人已经不在员工表里 —— **两种都不该让页面上那一栏变成空白**,
+    那会让人以为「这单没有顾问」。而真正的信息是「查不到这个工号对应的人」,
+    `advisor_name_check` 会把它抓出来。
+    """
+    nm = _花名册()
+    for r in rs:
+        try: 有 = set(r.keys())
+        except Exception: continue
+        for 名列, 号列 in (("advisor", "advisor_no"), ("measured_by", "measured_by_no")):
+            if 名列 not in 有 or 号列 not in 有:
+                continue
+            got = nm.get(r.get(号列))
+            if not got:
+                continue          # **保留原值** —— 见上面那段
+            名, 短 = got
+            r[名列] = f"{短} {名}" if 短 else 名
+    return rs
+
 def _simple(table,q,key,sortable,facet_cols,order=None):
     kw=(q.get("q") or [""])[0].strip()
-    rs=rows(f"SELECT * FROM {table}" + (f" ORDER BY {order}" if order else ""))
+    # **统一在这里填顾问名** —— `_simple` 是七八个列表页的共同入口,
+    # 在这儿填一次,比每个页面各填一次少七处漏掉的机会。
+    rs=填顾问名(rows(f"SELECT * FROM {table}" + (f" ORDER BY {order}" if order else "")))
     for col in facet_cols:
         v=(q.get(col) or [""])[0]
         if v: rs=[r for r in rs if str(r.get(col))==v]
@@ -1107,10 +1173,15 @@ def create_customer(d, actor="魏欣新", _role=None):
     n = rows("SELECT COUNT(*) c FROM customer")[0]["c"]
     cid = f"C{10000 + n + 1}"
     with sqlite3.connect(DB) as c:
-        c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,lifecycle,
+        # ⚠️ **工号也要写。** 表单里填的是显示串,而库里要存的是引用。
+        # 认不出来时 `顾问工号` 返回 None —— **不挑一个最像的**:
+        # 挑错的话这条客户会挂到另一个顾问名下,而页面上完全正常。
+        c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,advisor_no,
+                     lifecycle,
                      level,created,order_cnt,paid_amount,addr,birthday,archived,idle_days)
-                     VALUES(?,?,?,?,?,?,'潜在','普通',?,0,0,?,?,0,0)""",
+                     VALUES(?,?,?,?,?,?,?,'潜在','普通',?,0,0,?,?,0,0)""",
                   (cid, d.get("name"), ph, (ph or "")[-4:], d.get("shop"), d.get("advisor"),
+                   顾问工号(d.get("advisor")),
                    datetime.date.today().isoformat(), d.get("addr"), d.get("birthday")))
     log_op(actor, "customer", cid, "—", "潜在", True, "CREATE",
            f"新建客户 {d.get('name')};生命周期初始为「潜在」(无完成订单)", {"role": role})
@@ -1247,12 +1318,14 @@ def import_customers(text,actor="魏欣新",role="顾问",dry=True):
         with sqlite3.connect(DB) as c:
             for j,(ln,d) in enumerate(good):
                 nid=f"C{40000+n+j}"
-                c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,lifecycle,
+                c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,
+                  advisor_no,lifecycle,
                   level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,
                   first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at)
-                  VALUES(?,?,?,?,?,?,'潜在','普通',date('now','localtime'),0,0,date('now','localtime'),
+                  VALUES(?,?,?,?,?,?,?,'潜在','普通',date('now','localtime'),0,0,date('now','localtime'),
                   '','',0,NULL,0,0,0,0,'潜在',NULL,NULL)""",
-                  (nid,d["name"],d["phone"],d["phone"][-4:],d["shop"],d["advisor"]))
+                  (nid,d["name"],d["phone"],d["phone"][-4:],d["shop"],d["advisor"],
+                   顾问工号(d["advisor"])))
         # 疑似重复进人工确认队列
         with sqlite3.connect(DB) as c:
             for ln,nm,why2 in review:
@@ -1377,15 +1450,19 @@ def guide_perf(q):
     advs=rows("SELECT no,name,role,shop FROM staff WHERE role='顾问' ORDER BY no")
     out=[]
     for a in advs:
-        key=f"%{a['name']}%"
-        cust_n=rows("SELECT COUNT(*) c FROM customer WHERE advisor LIKE ?",key)[0]["c"]
+        # ⚠️ **按工号数,不按名字 LIKE。**
+        # 原来是 `WHERE advisor LIKE '%林岚%'` —— 名字一改,这几个统计**当场归零**,
+        # 而归零在页面上就是「这个顾问没有客户、没有订单」,
+        # **看不出是坏了**。而且 LIKE 还会把「林岚岚」这样的名字一起数进来。
+        no=a["no"]
+        cust_n=rows("SELECT COUNT(*) c FROM customer WHERE advisor_no=?",no)[0]["c"]
         od=rows("""SELECT COUNT(*) n, COALESCE(SUM(amount),0) amt FROM ordr
-                   WHERE advisor LIKE ? AND status IN ('已完成','待收货','待发货')""",key)[0]
-        apt=rows("SELECT COUNT(*) c FROM appointment WHERE advisor LIKE ?",key)[0]["c"]
-        arr=rows("SELECT COUNT(*) c FROM appointment WHERE advisor LIKE ? AND status IN ('已到店','已完成')",key)[0]["c"]
-        fu=rows("SELECT COUNT(*) c FROM followup WHERE advisor LIKE ?",key)[0]["c"]
-        sc=rows("SELECT COUNT(*) c FROM schedule WHERE advisor LIKE ?",key)[0]["c"]
-        scd=rows("SELECT COUNT(*) c FROM schedule WHERE advisor LIKE ? AND status='完结'",key)[0]["c"]
+                   WHERE advisor_no=? AND status IN ('已完成','待收货','待发货')""",no)[0]
+        apt=rows("SELECT COUNT(*) c FROM appointment WHERE advisor_no=?",no)[0]["c"]
+        arr=rows("SELECT COUNT(*) c FROM appointment WHERE advisor_no=? AND status IN ('已到店','已完成')",no)[0]["c"]
+        fu=rows("SELECT COUNT(*) c FROM followup WHERE advisor_no=?",no)[0]["c"]
+        sc=rows("SELECT COUNT(*) c FROM schedule WHERE advisor_no=?",no)[0]["c"]
+        scd=rows("SELECT COUNT(*) c FROM schedule WHERE advisor_no=? AND status='完结'",no)[0]["c"]
         out.append(dict(no=a["no"],name=a["name"],shop=a["shop"],cust=cust_n,
           orders=od["n"],amount=od["amt"],appt=apt,arrived=arr,
           arrive_rate=round(arr/apt*100) if apt else 0,
@@ -1856,8 +1933,11 @@ def task_list(q):
 def customer_list(q):
     kw=(q.get("q") or [""])[0].strip()
     f={k:(q.get(k) or [""])[0] for k in ("lifecycle","shop","advisor","level")}
-    rs=rows("""SELECT id,name,phone,lifecycle,shop,advisor,level,order_cnt,paid_amount,
-               last_interact,idle_days,amount_12m,archived FROM customer""")
+    # ⚠️ **要把 advisor_no 一起取出来** —— 名字由 `填顾问名()` 现取,
+    # 而它认的是工号。不取的话删列之后这一栏会静默变空。
+    rs=rows("""SELECT id,name,phone,lifecycle,shop,advisor,advisor_no,level,order_cnt,
+               paid_amount,last_interact,idle_days,amount_12m,archived FROM customer""")
+    填顾问名(rs)
     for c in rs:
         p=c["phone"] or ""; c["phone_mask"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
     if kw: rs=[c for c in rs if kw in c["id"] or kw in (c["name"] or "") or kw in (c["phone"] or "")]
@@ -1869,14 +1949,24 @@ def customer_list(q):
     d["facets"]=dict(
       lifecycle=[r["v"] for r in rows("SELECT DISTINCT lifecycle v FROM customer ORDER BY v")],
       shop=[r["v"] for r in rows("SELECT DISTINCT shop v FROM customer WHERE shop!='' ORDER BY v")],
-      advisor=[r["v"] for r in rows("SELECT DISTINCT advisor v FROM customer WHERE advisor!='' ORDER BY v")],
+      # ⚠️ **筛选项也要从员工表来,不能读那一列。**
+      # 实测:把名字列抹空之后这个下拉**直接变空**,而页面照常打开、
+      # 表格照常有行 —— 少一个筛选框没有人会去跑测试。
+      # 只列**真的有客户挂着的**顾问,不是全部员工 ——
+      # 一个筛出 0 条的选项比没有这个选项更糟。
+      advisor=[x for x in (
+          (lambda nm: [f"{nm[no][1]} {nm[no][0]}" if nm[no][1] else nm[no][0]
+                       for no in [r["v"] for r in rows(
+                           "SELECT DISTINCT advisor_no v FROM customer "
+                           "WHERE advisor_no IS NOT NULL AND advisor_no!='' ORDER BY v")]
+                       if no in nm])(_花名册())) if x],
       level=[r["v"] for r in rows("SELECT DISTINCT level v FROM customer ORDER BY v")])
     return d
 
 def appt_list_q(q):
     kw=(q.get("q") or [""])[0].strip(); stt=(q.get("status") or [""])[0]; sh=(q.get("shop") or [""])[0]
-    rs=rows("""SELECT a.*, c.name cname FROM appointment a
-               LEFT JOIN customer c ON a.customer_id=c.id""")
+    rs=填顾问名(rows("""SELECT a.*, c.name cname FROM appointment a
+               LEFT JOIN customer c ON a.customer_id=c.id"""))
     if kw: rs=[r for r in rs if kw in r["id"] or kw in (r["cname"] or "") or kw in (r["customer_id"] or "")]
     if stt: rs=[r for r in rs if r["status"]==stt]
     if sh:  rs=[r for r in rs if r["shop"]==sh]
@@ -1909,9 +1999,11 @@ def lifecycle_page(sel=None):
     types=["潜在","新客","活跃","高价值","忠诚","休眠","潜在流失","流失"]  # 展示顺序,不是优先级
     cnt={r["lifecycle"]:r["n"] for r in rows("SELECT lifecycle,COUNT(*) n FROM customer GROUP BY lifecycle")}
     cur=sel or types[0]
-    cs=rows("""SELECT id,name,phone,lifecycle,shop,advisor,level,order_cnt,paid_amount,last_interact,
+    cs=rows("""SELECT id,name,phone,lifecycle,shop,advisor,advisor_no,level,order_cnt,
+               paid_amount,last_interact,
                idle_days,amount_12m,orders_12m,quarters_12m,matched,manual_lc,manual_at
                FROM customer WHERE lifecycle=? ORDER BY (manual_lc IS NULL), id LIMIT 60""",cur)
+    填顾问名(cs)
     for c in cs:
         p=c["phone"] or ""; c["phone"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
     # 判定规则和优先级都来自 knowledge/lifecycle.py —— 这里原来是第二份手抄件。
@@ -2233,7 +2325,9 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/tags": return self._send(_simple("tag",Q,["code","name"],{"code","n","updated"},["grp","status"],"code"))
         if p=="/api/appts": return self._send(appt_list())
         if p.startswith("/api/appt/"): return self._send(appt_detail(p.split("/api/appt/")[1]))
-        if p=="/api/customers": return self._send(rows("SELECT id,name,phone,shop,advisor,lifecycle,level,order_cnt,paid_amount FROM customer ORDER BY id LIMIT 200"))
+        if p=="/api/customers": return self._send(填顾问名(rows(
+            "SELECT id,name,phone,shop,advisor,advisor_no,lifecycle,level,order_cnt,"
+            "paid_amount FROM customer ORDER BY id LIMIT 200")))
         self._send({"error":"not found"},404)
     def do_POST(self):
         p=_u(unquote(urlparse(self.path).path))

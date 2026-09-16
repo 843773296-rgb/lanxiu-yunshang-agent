@@ -261,11 +261,12 @@ def _journey(cust, dry=False):
     n_item = 0
     for it in items:
         val = round(base.get(it["code"], random.uniform(30, 60)), 1)
-        ex("""INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,measured_at,
+        ex("""INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,measured_by_no,
+              measured_at,
               method,wearer_id,cond_inner,cond_shoe,cond_breath,schedule_id)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
            cust["id"], tpl, it["code"], val,
-           f"{adv.get('adv_code') or ''} {adv['name']}".strip(), mt,
+           f"{adv.get('adv_code') or ''} {adv['name']}".strip(), adv["no"], mt,
            "上门", wid, "单层内衣", "赤足", "平静呼气", visit)
         n_item += 1
     steps.append(("④ 量体", RAW, f"{tpl} · {n_item} 项 · {adv['name']} 上门量 · 着装人 {wid or '(无)'}"))
@@ -339,11 +340,12 @@ def _journey(cust, dry=False):
     ST2PRD = {"待付款": "待付款", "待审核": "方案确认中", "待生产": "方案确认中",
               "生产中": "方案确认中", "已生产": "待发货", "待发货": "待发货",
               "已发货": "待收货", "待完成": "待收货", "完成": "已完成", "取消": "已关闭"}
-    ex("""INSERT INTO ordr(id,customer_id,kind,status,advisor,shop,source,delivery,
+    ex("""INSERT INTO ordr(id,customer_id,kind,status,advisor,advisor_no,shop,source,delivery,
           amount,payable,created,updated,prd_status,goods_amount,freight,received,
           refund_status,paid_at)
-          VALUES(?,?,'定制品订单','待付款',?,?,'门店Pad','配送到店',?,?,?,?,?,?,0,?,'未退款',?)""",
-       oid, cust["id"], f"{adv.get('adv_code') or ''} {adv['name']}".strip(), cust["shop"],
+          VALUES(?,?,'定制品订单','待付款',?,?,?,'门店Pad','配送到店',?,?,?,?,?,?,0,?,'未退款',?)""",
+       oid, cust["id"], f"{adv.get('adv_code') or ''} {adv['name']}".strip(),
+       adv["no"], cust["shop"],
        amt, amt, created, created, ST2PRD["待付款"], sku["price"], amt, created)
     ex("""INSERT INTO ordr_item(order_id,sku,name,tag,price,qty,spu,base_amount,
           custom_amount,total) VALUES(?,?,?,'定制',?,1,?,?,?,?)""",
