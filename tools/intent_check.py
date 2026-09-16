@@ -56,6 +56,19 @@ def ck(name, ok, n, msg=""):
         FAIL.append(name + "(样本量 0)")
 
 
+def 是门禁的一步(名, sh):
+    """名字要整个出现在某条 `run ` 命令行上，不是在正文里出现过就算。
+
+    子串匹配会放过 `_check.py` 这种**别人名字的一部分**，
+    也会放过只写在注释里的名字 —— 两种都不是「门禁盯着它」。
+    """
+    for line in sh.split("\n"):
+        if not line.startswith("run "): continue
+        if re.search(r"(?:^|[ /])" + re.escape(名) + r"(?:\s|$)", line):
+            return True
+    return False
+
+
 def main():
     print("intent · 检查")
     print("=" * 84)
@@ -96,9 +109,20 @@ def main():
         m = re.search(r"\*\*怎么算做完\*\*[::]\s*(.+?)(?=\n- \*\*|\Z)", t, re.S)
         判据 = m.group(1) if m else ""
         # 判据里点到的**脚本名**,必须能在 check.sh 里找到
-        脚本 = set(re.findall(r"`?([a-z_]+\.py)`?", 判据)) | \
-               set(re.findall(r"`([a-z_]+)\.py", 判据))
-        脚本 = {x if x.endswith(".py") else x + ".py" for x in 脚本}
+        # 2026-09-16 收紧了两处，两处原来都贴着字面而不是含义：
+        #
+        #   ① 只认 `.py`。而门禁里现在也有 node 步骤（提交闸的自测），
+        #      点名了它的 intent 被判成「没点名任何一条检查」——
+        #      **判据查的是文件后缀，而它该查的是「这是不是门禁里的一步」。**
+        #
+        #   ② 只要名字在 check.sh 的正文里出现过就算数（`x in sh`）。
+        #      于是注释里提一句、或者一个**名字是别人子串**的写法都能蒙混过去：
+        #      `_check.py` 是 `route_check.py` 的子串，任何一份 intent 只要
+        #      在判据里写个 `*_check.py` 就自动通过 —— `break-check-skill`
+        #      第一版正是这样**碰巧**过的。现在要求它整名出现在 `run ` 那一行上。
+        脚本 = set(re.findall(r"`?([a-z][\w-]*\.(?:py|mjs))`?", 判据))
+        # `check.sh` 自己不算「门禁里的一步」——它就是门禁本身，提它等于什么都没说。
+        脚本 = {x for x in 脚本 if x not in ("check.sh",)}
         # ⚠️ **要求「全部都在门禁里」是错的判据。**
         # 第一次跑就把 `pattern-eval-n04` 判成了错 —— 它的判据点了两条:
         # `pattern_eval.py`(**要花钱、不进 check.sh**)和 `guards_test.py`(在门禁里)。
@@ -107,8 +131,8 @@ def main():
         #
         # 该验的是「**有没有一条是门禁盯着的**」:全靠手动跑的判据,
         # 等于没有人在盯 —— 而那正是这条检查要防的。
-        在 = [x for x in 脚本 if x in sh]
-        丢 = [x for x in 脚本 if x not in sh]
+        在 = [x for x in 脚本 if 是门禁的一步(x, sh)]
+        丢 = [x for x in 脚本 if not 是门禁的一步(x, sh)]
         if not 脚本:
             断.append(f"{name}:说做完了,而判据里没点名任何一条检查")
         elif not 在:

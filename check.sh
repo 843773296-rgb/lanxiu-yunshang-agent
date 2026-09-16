@@ -124,6 +124,7 @@ run "工匠与财务判分器 · 27 条对照用例" python3 agent/role_eval_jud
 run "版师判分器 · 38 条对照用例" python3 agent/pattern_eval_judgetest.py
 run "野外巡检 · 指纹粒度与行为观测" python3 agent/wild_run.py --selftest
 run "野外语料 · 多样性(够多≠够杂)" python3 agent/wild_corpus.py --selftest
+run "提交闸 · 退出码不许被吞(22 条咬合)" node tools/hooks/commit-gate-exitcode.mjs --selftest
 printf "\n%s\n" "────────────────────────────────────────"
 if [ $FAIL -eq 0 ]; then printf "\033[32m✅ 全部检查通过\033[0m\n"; else printf "\033[31m❌ 存在失败项\033[0m\n"; fi
 exit $FAIL

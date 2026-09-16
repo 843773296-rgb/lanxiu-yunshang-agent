@@ -1,0 +1,182 @@
+[
+ {
+  "script": "tools/intent_check.py",
+  "改坏": "把 check.sh 里的 guards_test.py 改名(判据点名的检查从门禁里消失)",
+  "file": [
+   {
+    "path": "check.sh",
+    "old": "guards_test.py",
+    "new": "guards_testXX.py"
+   }
+  ],
+  "预期红": "说「做完了」的,判据点名的检查真的在 check.sh 里"
+ },
+ {
+  "script": "tools/intent_check.py",
+  "改坏": "把一份 intent 的「明确不做什么」那一栏改成别的标题",
+  "file": [
+   {
+    "path": "intent/stock-alert.md",
+    "old": "**明确不做什么**",
+    "new": "**顺带一提**"
+   }
+  ],
+  "预期红": "每份 intent 的必填字段都在"
+ },
+ {
+  "script": "tools/bite_check.py",
+  "改坏": "把 grading_check.py 里的 `咬合 = [` 整段删掉",
+  "file": [
+   {
+    "path": "backend/grading_check.py",
+    "old": "咬合 = [",
+    "new": "咬合_停用 = ["
+   }
+  ],
+  "预期红": "没有咬合记录的脚本不超过"
+ },
+ {
+  "script": "tools/bite_check.py",
+  "改坏": "把某条记录右边那句「预期红的那一条」改成一句脚本里不存在的话",
+  "file": [
+   {
+    "path": "backend/stock_check.py",
+    "old": "咬合 = [",
+    "new": "咬合 = [\n    (\"随便改点什么\", \"这句话脚本里根本没有\"),"
+   }
+  ],
+  "预期红": "有咬合记录的,记录本身是对的"
+ },
+ {
+  "script": "agent/chat_eval_judgetest.py",
+  "改坏": "把「调过知识库工具」判成永远为真(轨迹轴整条失效)",
+  "file": [
+   {
+    "path": "agent/chat_eval.py",
+    "old": "def called_kb(traj): return any(t[\"tool\"] in KB_TOOLS for t in traj)",
+    "new": "def called_kb(traj): return True"
+   }
+  ],
+  "预期红": "判分器本身不可信,评测结果不作数"
+ },
+ {
+  "script": "agent/growth_eval_judgetest.py",
+  "改坏": "把轨迹轴整条关掉(该调的工具一个没调也不扣分)",
+  "file": [
+   {
+    "path": "agent/growth_eval.py",
+    "old": "    if need and not any(n in names for n in need):",
+    "new": "    if False and need and not any(n in names for n in need):"
+   }
+  ],
+  "预期红": "说全了但一个工具没调"
+ },
+ {
+  "script": "agent/liability_eval_judgetest.py",
+  "改坏": "把「没查现场」那一轴关掉(不查现场也算过)",
+  "file": [
+   {
+    "path": "agent/liability_eval.py",
+    "old": "    if \"get_maintain\" not in names:",
+    "new": "    if False and \"get_maintain\" not in names:"
+   }
+  ],
+  "预期红": "没查现场就下判责结论"
+ },
+ {
+  "script": "agent/member_eval_judgetest.py",
+  "改坏": "把会员等级题的必调工具名改错(该调的工具永远调不到)",
+  "file": [
+   {
+    "path": "agent/member_eval.py",
+    "old": "need_tool(\"member_level\")",
+    "new": "need_tool(\"member_levelXX\")"
+   }
+  ],
+  "预期红": "等级·查了也说了窗口"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "把工坊题的必调工具从两个减成一个(只查产能也算过)",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "need_tool(\"get_capacity\", \"get_workorder\")",
+    "new": "need_tool(\"get_capacity\")"
+   }
+  ],
+  "预期红": "工坊·只调了产能没查工单"
+ },
+ {
+  "script": "agent/pattern_eval_judgetest.py",
+  "改坏": "把裁片占比题的必调工具名改错",
+  "file": [
+   {
+    "path": "agent/pattern_eval.py",
+    "old": "need_tool(\"piece_ratios\")",
+    "new": "need_tool(\"piece_ratiosXX\")"
+   }
+  ],
+  "预期红": "报了米数也报了来源"
+ },
+ {
+  "script": "agent/report_eval_judgetest.py",
+  "改坏": "把 need_tool 改成永远通过(轨迹轴整条失效)",
+  "file": [
+   {
+    "path": "agent/report_eval.py",
+    "old": "def need_tool(*names):",
+    "new": "def need_tool(*names):\n    return lambda text, traj, case: (True, \"\")"
+   }
+  ],
+  "预期红": "流失原因·五档都说了"
+ },
+ {
+  "script": "agent/role_eval_judgetest.py",
+  "改坏": "把「在制」题的可选工具名全改错(怎么调都算没调)",
+  "file": [
+   {
+    "path": "agent/role_eval.py",
+    "old": "need_any_tool(\"my_workorders\", \"get_workorder\", \"get_capacity\")",
+    "new": "need_any_tool(\"nope1\", \"nope2\", \"nope3\")"
+   }
+  ],
+  "预期红": "在制·说出具体的数"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "把内容轴(must)整条关掉(该说的没说也不扣分)",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "    for g in must:",
+    "new": "    for g in []:"
+   }
+  ],
+  "预期红": "没说档位也没说依据"
+ },
+ {
+  "script": "agent/vision_eval_judgetest.py",
+  "改坏": "把「定形制查证过」判成永远为真",
+  "file": [
+   {
+    "path": "agent/vision_eval.py",
+    "old": "    v_form = any(k in names for k in (\"kb_lookup\", \"kb_pattern\", \"kb_detail\", \"kb_tables\"))",
+    "new": "    v_form = True"
+   }
+  ],
+  "预期红": "看图就断言明制马面裙"
+ },
+ {
+  "script": "agent/textmatch.py",
+  "改坏": "把否定的回看窗口压成 0(「不代表能挽回」读成「能挽回」)",
+  "file": [
+   {
+    "path": "agent/textmatch.py",
+    "old": "DEFAULT_SPAN = ",
+    "new": "DEFAULT_SPAN = 0  # "
+   }
+  ],
+  "预期红": "不算建议重发"
+ }
+]

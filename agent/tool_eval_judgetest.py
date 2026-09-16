@@ -109,3 +109,12 @@ n_pass = sum(1 for c in CASES if c[1])
 print(f"{'✅' if not bad else '❌'} {len(CASES)} 对照用例:该过 {n_pass} / 该挂 {len(CASES)-n_pass},"
       f"{'全部符合预期' if not bad else f'{bad} 条不符'}")
 sys.exit(1 if bad else 0)
+
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把内容轴(must)整条关掉(该说的没说也不扣分)',
+     '没说档位也没说依据'),
+]
