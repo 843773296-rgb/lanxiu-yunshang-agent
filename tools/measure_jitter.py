@@ -31,7 +31,27 @@
 **「一次跑错了」和「每次都跑错」在一张成绩单上长得一模一样**,
 而前者该忽略,后者该去修提示词。
 
-用法:  ./agentsite/.venv/bin/python tools/measure_jitter.py [轮数] [评测名]
+## 单题模式 —— **这个模式才让「多跑几次」在工程上可行**
+
+跑整套 31 题一轮 11 分钟,跑 20 轮是 3.7 小时;而**只跑一道题**半分钟,
+20 轮约 10 分钟。**同一个办法,差 20 倍。**
+
+所以判断「我这版提示词有没有用」的正确做法是:
+
+    ① 先单题跑 10 次,看这道题本来稳不稳
+    ② 稳定错(0/10)   → 改完跑 1 次就够
+       稳定对(10/10)  → 不用改
+       抖动(比如 3/10)→ 改前改后各跑 N 次,比两个次数
+    ③ N 要多大取决于你想确认多大的改善:
+          大改善 20%→60%   各 10 次   (~10 分钟)   ✅
+          中等   40%→60%   各 40 次   (~40 分钟)   ⚠️
+          小改善 60%→70%   各 200 次+ (几小时)     ❌
+
+> ⚠️ **所以在抖动的题上,只值得追大幅改善。** 小幅改善不是做不到,是不划算 ——
+> 看到 3/10 别想着推到 4/10,要么找到能推到 8/10 的改法,要么别动它。
+
+用法:  ./agentsite/.venv/bin/python tools/measure_jitter.py [轮数] [评测名] [题号]
+       题号给了就**只跑那一道** —— 快 20 倍
 """
 import json, os, re, subprocess, sys, time
 
@@ -65,11 +85,12 @@ def 干净吗():
     return (not 脏), "\n".join(脏), "\n".join(别处)
 
 
-def 跑一轮(评测, out):
+def 跑一轮(评测, out, 题号=None):
     t0 = time.time()
+    cmd = [PY, os.path.join(ROOT, "agent", f"{评测}.py")]
+    if 题号: cmd.append(题号)          # 只跑这一道 —— 快 20 倍
     with open(out, "w", encoding="utf-8") as f:
-        subprocess.run([PY, os.path.join(ROOT, "agent", f"{评测}.py")],
-                       cwd=ROOT, stdout=f, stderr=subprocess.STDOUT,
+        subprocess.run(cmd, cwd=ROOT, stdout=f, stderr=subprocess.STDOUT,
                        env={**os.environ, "LANXIU_PROVIDER": "claude"})
     txt = open(out, encoding="utf-8").read()
     m = re.search(r"通过 (\d+)/(\d+)", txt)
@@ -92,6 +113,7 @@ def 跑一轮(评测, out):
 def main():
     轮 = int(sys.argv[1]) if len(sys.argv) > 1 else 5
     评测 = sys.argv[2] if len(sys.argv) > 2 else "ops_eval"
+    题号 = sys.argv[3] if len(sys.argv) > 3 else None
     净, 脏, 别处 = 干净吗()
     if not 净:
         print("❌ **被测路径**不干净,拒跑 —— 五次跑的必须是同一个世界。\n"
@@ -106,7 +128,8 @@ def main():
     sys.path.insert(0, os.path.join(ROOT, "agent"))
     import evalrec as er
     来路 = {"供应商": er.供应商(), "模型": er.模型(), "代码": er.代码()}
-    print(f"抖动测量 · {评测} × {轮} 轮")
+    print(f"抖动测量 · {评测}{('·' + 题号) if 题号 else ''} × {轮} 轮"
+          + ("   (**单题模式**,比跑整套快约 20 倍)" if 题号 else ""))
     print(f"来路:{来路}")
     print("=" * 84, flush=True)
 
@@ -114,7 +137,8 @@ def main():
     od = os.path.join(ROOT, ".feynman", "jitter")
     os.makedirs(od, exist_ok=True)
     for i in range(轮):
-        对, 总, 题, 秒 = 跑一轮(评测, os.path.join(od, f"{评测}-{i+1}.txt"))
+        标 = f"{评测}{('-' + 题号) if 题号 else ''}"
+        对, 总, 题, 秒 = 跑一轮(评测, os.path.join(od, f"{标}-{i+1}.txt"), 题号)
         结果.append(dict(轮=i + 1, 对=对, 总=总, 题=题, 秒=秒))
         print(f"  第 {i+1} 轮:{对}/{总}  ({秒}s)", flush=True)
 
@@ -150,13 +174,13 @@ def main():
           f"{'要往上改' if 极差 > er.同版波动_下限 else '这次没测出更大的,维持'}。")
     print(f"     ⚠️ **{轮} 轮仍然是小样本** —— 这个极差是下限,不是上限。")
 
-    with open(os.path.join(od, f"{评测}-summary.json"), "w", encoding="utf-8") as f:
-        json.dump(dict(来路=来路, 评测=评测, 轮数=轮, 分数=分, 极差=极差,
+    with open(os.path.join(od, f"{标}-summary.json"), "w", encoding="utf-8") as f:
+        json.dump(dict(来路=来路, 评测=评测, 题号=题号, 轮数=轮, 分数=分, 极差=极差,
                        每次都错=总错,
                        时对时错=[dict(题=q, 对几轮=a, 共几轮=b) for q, a, b in 翻转],
                        记于=time.strftime("%Y-%m-%d %H:%M")),
                   f, ensure_ascii=False, indent=1)
-    print(f"\n  明细:.feynman/jitter/{评测}-*.txt  汇总:{评测}-summary.json")
+    print(f"\n  明细:.feynman/jitter/{标}-*.txt  汇总:{标}-summary.json")
     return 0
 
 
