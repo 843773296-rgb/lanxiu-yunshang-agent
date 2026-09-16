@@ -31,10 +31,22 @@
 
 如果你只想知道一件事:**跑 `./check.sh`,84 项全绿就说明状态是完好的。**
 
-⚠️ **库是可再生的**:`python3 backend/seed.py` 一把生成,
-再 `python3 tools/run_journey.py 42` 造完整旅程。
-最后 `python3 tools/simulate_sales.py` 补 6 个月标品销量(库存预警要它才算得出可售天数)。
-**别去抢救某个特定的库文件。**
+⚠️ **别信下面这三步就能重建出一个可用的库 —— 实测重建完 `./check.sh` 红 8 项。**
+
+    python3 backend/seed.py            # 一把生成
+    python3 tools/run_journey.py 42    # 造完整旅程
+    python3 tools/simulate_sales.py    # 补 6 个月标品销量
+    python3 backend/seed_fitting.py    # 白坯试衣记录
+
+**这一段原来写的是「库是可再生的……别去抢救某个特定的库文件」,那句话是假的。**
+库是一路 ALTER、一路跑 `fix_*.py` 补出来的,而那些步骤**不在这儿、不在门禁里、
+不在任何清单里** —— 它能一直绿着,**只因为没有人从零重建过它**。
+
+> **一个「能跑」的库和一个「重建得出来」的库长得一模一样** ——
+> 直到有人换台机器,或者照着上面那句话真的把库删了。
+
+⚠️ **在这件事修好之前,`backend/lanxiu.db` 是不可再生的,不要删。**
+缺口清单和怎么算修好,见 `intent/db-not-regenerable.md`。
 
 **登录**(登录名就是工号,口令 `lanxiu@2026`):
 `60000008` 魏欣新 · 总部运营 / `60000001` 张静静 · 店长(静安) /
