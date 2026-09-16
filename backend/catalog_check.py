@@ -9,6 +9,15 @@ import os, sqlite3, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
 c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把一个商品的品类改成字典里不存在的值',
+     '商品库会卖出配置页拒绝的组合'),
+]
+
 def q(sql, *a): return [dict(r) for r in c.execute(sql, a)]
 
 name2code = {r["name"]: r["code"] for r in q("SELECT code,name FROM craft")}

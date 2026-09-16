@@ -330,5 +330,45 @@
    }
   ],
   "预期红": "分数落在 1–5"
+ },
+ {
+  "script": "backend/activity_check.py",
+  "改坏": "把一张订单的活动栏从 NULL 改成空字符串(「没参加活动」有了两种写法)",
+  "sql": [
+   "UPDATE ordr SET activity='' WHERE id=(SELECT id FROM ordr WHERE activity IS NULL LIMIT 1)"
+  ],
+  "预期红": "订单的活动栏只许是编号或 NULL"
+ },
+ {
+  "script": "backend/catalog_check.py",
+  "改坏": "把一个商品的品类改成字典里不存在的值",
+  "sql": [
+   "UPDATE product SET category='张冠李戴' WHERE spu=(SELECT spu FROM product LIMIT 1)"
+  ],
+  "预期红": "商品库会卖出配置页拒绝的组合"
+ },
+ {
+  "script": "backend/liability_check.py",
+  "改坏": "把判定表里「脱线」那一行的责任方从我方改成客方(标注还停在我方)",
+  "file": [
+   {
+    "path": "knowledge/09-养护与售后.md",
+    "old": "| 工艺瑕疵(脱线、绣面污渍) | 我方 | 免费返修 |",
+    "new": "| 工艺瑕疵(脱线、绣面污渍) | 客方 | 自费返修 |"
+   }
+  ],
+  "预期红": "两条实现来自同一份文档"
+ },
+ {
+  "script": "backend/edit_log_check.py",
+  "改坏": "把「日志覆盖的字段」清单里去掉 remark(UPDATE 还在写它,日志不再记它)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "\"commission_type\", \"commission_val\", \"remark\", \"img_main\")",
+    "new": "\"commission_type\", \"commission_val\", \"img_main\")"
+   }
+  ],
+  "预期红": "日志记的字段 = UPDATE 真的写的字段"
  }
 ]
