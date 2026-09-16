@@ -43,6 +43,15 @@ IMPORT_TRACE = re.compile(r"^\s*(?:import\s+trace\b|from\s+trace\s+import|"
 CALL_RECORD = re.compile(r"\.record\s*\(|(?<![\w.])record\s*\(")
 
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把 V1 里那句记录仪调用改名(调用点还在,记录仪没接上)',
+     '有调用点没接记录仪'),
+]
+
 def traced(src):
     return bool(IMPORT_TRACE.search(src) and CALL_RECORD.search(src))
 

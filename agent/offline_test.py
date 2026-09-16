@@ -12,6 +12,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import v1
 
 CALLS=[]          # 记录每轮实际发出去的 messages
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把工具返回里的幂等号抹掉(下一轮拿到的不再是那条真实数据)',
+     '② 结果回灌'),
+]
+
 def fake_provider():
     return dict(id="offline", url="", model="stub", headers=[],
                 price=dict(inp=0.55, cache=0.055, out=2.19))
@@ -46,7 +55,12 @@ def run(deposit_id="D2000"):
     pv=fake_provider()
     r=v1.run_case(pv, v1.BP01.format(ref=deposit_id))
 
-    ok=lambda b: "✅" if b else "❌"
+    # ⚠️ 原来这里只负责打 ✅/❌,**从不影响退出码** —— 于是 check.sh 里
+    # 「V1 循环 · 离线自测」这一步无论结果如何都是绿的。2026-09-16 做咬合时撞到:
+    # 故意抹掉工具返回里的幂等号,它老老实实打了「❌ ② 结果回灌」,然后退出 0。
+    # **一个自己说「我失败了」却报成功的检查,比没有这个检查更糟。**
+    坏 = []
+    ok = lambda b: (坏.append(1) if not b else None) or ("✅" if b else "❌")
     print("=== V1 循环离线自测 ===\n")
     print(f"{ok(r['trajectory']==['get_deposit','get_refund_trace','get_payment_flow','submit_finding'])} "
           f"① 工具派发顺序: {' → '.join(r['trajectory'])}")
@@ -76,6 +90,9 @@ def run(deposit_id="D2000"):
     allsent=json.dumps(CALLS, ensure_ascii=False)
     print(f"\n{ok('root_cause' not in allsent.replace(f['root_cause'],''))} "
           f"⑤ 答案隔离: 发给模型的全部消息里不含 truth 表内容")
+    if 坏:
+        print(f"\n❌ 离线自测 {len(坏)} 项不符预期")
+        sys.exit(1)
     return r
 
 if __name__=="__main__":

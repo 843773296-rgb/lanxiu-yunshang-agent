@@ -21,6 +21,15 @@ NO   = api.kb_combo("妆花", "纱")            # 不可
 FIT  = api.kb_fit("C10001", "PT04")          # 可能是需补量,下面按实际断言
 COST, FAST, SLOW = BOM["物料成本"], LEAD["最快天数"], LEAD["最慢天数"]
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把 g1 闸的取数一步掐掉(答案里的钱数和天数一律读不到,这道闸整条失效)',
+     '一个工具没调就报数字'),
+]
+
 def call(tool, out):
     ns = "shop" if tool.startswith("get_") else "kb"
     return dict(tool=f"mcp__{ns}__{tool}", input={}, output=out)

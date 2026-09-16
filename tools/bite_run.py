@@ -62,18 +62,47 @@ def 建副本(dst):
         d = os.path.join(dst, name)
         if os.path.isdir(src):
             shutil.copytree(src, d, ignore=shutil.ignore_patterns(
-                "__pycache__", "*.pyc", ".git"))
+                "__pycache__", "*.pyc", ".git", ".venv"), symlinks=True)
         else:
             shutil.copy2(src, d)
-    db = os.path.join(ROOT, "backend", "lanxiu.db")
+    for venv in ("agentsite/.venv", ".venv"):
+        real = os.path.join(ROOT, venv)
+        if not os.path.isdir(real): continue
+        link = os.path.join(dst, venv)
+        if os.path.isdir(link) and not os.path.islink(link):
+            shutil.rmtree(link)
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        if not os.path.exists(link):
+            os.symlink(real, link)
     if not os.path.exists(os.path.join(dst, "backend", "lanxiu.db")):
         raise SystemExit("❌ 副本里没有 backend/lanxiu.db —— 拷贝漏了库,跑出来的全是环境问题")
     return dst
 
 
+def 门禁怎么跑(script):
+    """从 check.sh 里取这个脚本的原样命令。
+
+    ⚠️ **不要自己拼 `python3 <脚本>`。** 门禁里有些步骤用的是 `agentsite/.venv/bin/python`，
+    有些带 `--selftest` 参数。用另一种姿势去跑，验的就不是门禁验的那个东西 ——
+    这个项目已经栽过一次同族的事：副本测试没软链 venv，7 项「失败」全是环境问题，
+    和真的数据问题混在同一张报告里。
+    """
+    sh = open(os.path.join(ROOT, "check.sh"), encoding="utf-8").read()
+    for line in sh.split("\n"):
+        if not line.startswith("run "): continue
+        if script not in line: continue
+        # run "标题" cmd args...   —— 标题带引号，去掉它之后剩下的就是命令
+        rest = line[4:].strip()
+        if rest.startswith('"'):
+            rest = rest[rest.index('"', 1) + 1:]
+        parts = rest.split()
+        if parts: return parts
+    return [sys.executable, script]
+
+
 def 跑(sand, script):
-    p = subprocess.run([sys.executable, script], cwd=sand,
-                       capture_output=True, text=True, timeout=300)
+    cmd = 门禁怎么跑(script)
+    p = subprocess.run(cmd, cwd=sand, capture_output=True, text=True, timeout=600)
     return p.returncode, p.stdout + p.stderr
 
 

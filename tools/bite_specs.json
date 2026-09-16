@@ -178,5 +178,77 @@
    }
   ],
   "预期红": "不算建议重发"
+ },
+ {
+  "script": "agent/trace_check.py",
+  "改坏": "把 V1 里那句记录仪调用改名(调用点还在,记录仪没接上)",
+  "file": [
+   {
+    "path": "agent/v1.py",
+    "old": "_trace.record(",
+    "new": "_traceXrecord("
+   }
+  ],
+  "预期红": "有调用点没接记录仪"
+ },
+ {
+  "script": "agent/offline_test.py",
+  "改坏": "把工具返回里的幂等号抹掉(下一轮拿到的不再是那条真实数据)",
+  "file": [
+   {
+    "path": "agent/v1.py",
+    "old": "                            \"content\":json.dumps(out,ensure_ascii=False)})",
+    "new": "                            \"content\":json.dumps({k:v for k,v in out.items() if k!=\"idem_key\"} if isinstance(out,dict) else out,ensure_ascii=False)})"
+   }
+  ],
+  "预期红": "② 结果回灌"
+ },
+ {
+  "script": "agentsite/js_check.py",
+  "改坏": "在聊天页的内联脚本里塞一处语法错误",
+  "file": [
+   {
+    "path": "agentsite/web/chat.html",
+    "old": "<script>",
+    "new": "<script>\nvar 坏 = ;\n"
+   }
+  ],
+  "预期红": "段有语法错"
+ },
+ {
+  "script": "agentsite/ref_check.py",
+  "改坏": "把值班页上第一个元素的 id 改掉(脚本引用的那个 id 消失)",
+  "file": [
+   {
+    "path": "agentsite/web/duty.html",
+    "old": "id=\"",
+    "new": "idXX=\""
+   }
+  ],
+  "预期红": "引用了不存在的元素"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "把 g1 闸的取数一步掐掉(答案里的钱数和天数一律读不到,这道闸整条失效)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    monies, days = _monies(text), _days(text)",
+    "new": "    monies, days = [], []"
+   }
+  ],
+  "预期红": "一个工具没调就报数字"
+ },
+ {
+  "script": "agentsite/skill_shape.py",
+  "改坏": "把 quote 那份 skill 的「什么时候用」小标题换个说法(这一段从此认不出来)",
+  "file": [
+   {
+    "path": "agentsite/.claude/skills/quote/SKILL.md",
+    "old": "## 什么时候用",
+    "new": "## 适用场合"
+   }
+  ],
+  "预期红": "共缺"
  }
 ]
