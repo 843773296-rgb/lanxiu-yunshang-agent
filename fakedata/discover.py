@@ -154,7 +154,20 @@ def _fk_candidates(tname, col, vals, keyidx):
         out.append({"table": ktab, "column": kcol, "overlap": round(over, 3),
                     "named": named, "score": round(over + (0.5 if named else 0)
                                                    + min(len(keys), 5000) / 100000, 4)})
-    return sorted(out, key=lambda d: -d["score"])
+    # ⚠️ **全覆盖的候选整体优先于覆盖不满的,命名线索只在同一层内部比。**
+    #
+    # 外键的定义是「**全部**指得到」,不是「大部分指得到」——
+    # MIN_OVER 那个阈值是容忍脏数据的下限,不该让脏候选赢过干净候选。
+    #
+    # 真实撞出来的:`ordr_item.order_id` 被认成指向 `sim_batch`(一张标记表):
+    #     ordr.id            覆盖 100%,但表名拼写是 ordr 不是 order → **命名分一分没拿**
+    #     sim_batch.order_id 覆盖 98%,**列名完全相同** → +0.5 命名分 → 赢了
+    # 而 0.5 的命名加分能盖住 2% 的覆盖差,是**判据贴错了东西**:
+    # 命名线索回答「像不像」,覆盖率回答「**能不能**」——后者是硬条件。
+    #
+    # 映射表、日志表、快照表都是这个形状(列名照抄父表、只盖住一部分行),
+    # 任何有这类表的库都会踩到,不止这一个。
+    return sorted(out, key=lambda d: (-(d["overlap"] >= 0.999), -d["score"]))
 
 
 def _shape_of_fk(conn, child, ccol, parent, pcol):

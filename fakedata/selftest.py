@@ -837,6 +837,40 @@ def main():
     _pth, n证 = PR.写声明(os.path.join(tmpd, "protected.json"), 建议)
     ck(n证 == len(证据), "落声明时**默认只落证据那一档**,猜的要人看过再加", f"落了 {n证} 条")
 
+    # ── 映射表抢父表:**全覆盖的候选不该输给部分覆盖的** ──────────────────
+    #
+    # 真实撞出来的:`ordr_item.order_id` 被认成指向 `sim_batch`(模拟销量那批的标记表),
+    # 而不是覆盖 100% 的 `ordr.id`。原因在打分:
+    #   ordr.id           覆盖 100%,但表名拼写是 ordr 不是 order → **命名分一分没拿**
+    #   sim_batch.order_id 覆盖 98%,但**列名完全相同** → +0.5 命名分 → 赢了
+    #
+    # **外键的定义是「全部指得到」,不是「大部分指得到」。** 0.9 那个阈值是
+    # 容忍脏数据的下限,不该让脏候选赢过干净候选。
+    print("\n【映射表抢父表】")
+    mapdb = os.path.join(tmpd, "mapping_test.db")
+    _c = sqlite3.connect(mapdb)
+    _c.executescript("""
+    create table ordr(id text primary key, amount real, created text);
+    create table line(id integer primary key, order_id text, sku text, qty int);
+    create table mark(order_id text primary key, batch text);   -- 映射表:列名和 line.order_id 一模一样
+    """)
+    _oids = [f"O{i:05d}" for i in range(80)]
+    _c.executemany("insert into ordr values(?,?,?)",
+                   [(o, 100.0 + i, "2026-03-%02d" % (i % 28 + 1)) for i, o in enumerate(_oids)])
+    _c.executemany("insert into line(order_id,sku,qty) values(?,?,?)",
+                   [(o, f"SKU{i%7:03d}", 1 + i % 3) for i, o in enumerate(_oids * 2)])
+    # 映射表只盖住其中 75 个 —— **覆盖不满**,但列名完全相同
+    _c.executemany("insert into mark values(?,?)", [(o, "batch/v1") for o in _oids[:75]])
+    _c.commit(); _c.close()
+    cm = S.connect(mapdb)
+    fm = D.discover(cm, cm.reflect())
+    指 = {(t, k["column"]): k for t, tf in fm["tables"].items() for k in tf["fks"]}
+    这条 = 指.get(("line", "order_id"))
+    ck(这条 and 这条["table"] == "ordr",
+       "**全覆盖的 ordr 赢过列名相同但覆盖不满的 mark** —— 外键的定义是「全部指得到」",
+       f'认成了 {这条["table"] if 这条 else "没认出来"}'
+       + (f'(覆盖 {这条.get("overlap")})' if 这条 else ""))
+
     # ── 试灌:拿项目自己的检查当裁判 ──────────────────────────────────
     #
     # 这一节钉的四件事,每一件都是一种「看起来在工作、其实没有」:
