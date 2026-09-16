@@ -1143,10 +1143,43 @@ def activity_roi(code=None):
         排名=[dict(名次=i + 1, **x) for i, x in enumerate(有分)] or None,
         算不出投入产出的=没分 or None,
         这两列不能用={k: v for k, v in av.不可用的列.items()},
+        # ⚠️ **这条警告比别的都难发现,因为它不在任何一个数上。**
+        # 每个 ROI 都算得对、每个分母都是真的,只是**归因归错了对象**,
+        # 而归错的那个对象(渠道)在这张表上根本不出现。
+        # 现算,不是背一句话 —— 种子数据一改它就该跟着变。
+        **({"⚠️ 活动和渠道完全共线": _活动渠道共线()}
+           if _活动渠道共线() else {}),
         口径=dict(成本=f"默认「{av.默认成本口径}」(实际记了账的,含待开票)",
                  成交=f"默认「{av.默认成交口径}」—— 投入产出要用真到账的钱,"
                      f"应收里有一部分永远收不回来",
                  排除="取消的单既不算收入也不占分母")))
+
+
+def _活动渠道共线():
+    """活动和下单渠道是不是一一对应。**现算,不背。**
+
+    `seed.py` 里 `SRC[i % 4]` 和 `ACT[i % 4]` 同一个周期,于是每个活动
+    恰好对应一个渠道 —— **按活动分组和按渠道分组变成了同一件事**。
+
+    返回一句话;不共线就返回 None(那时候这条警告不该出现)。
+    """
+    模拟 = {r["order_id"] for r in _rows("SELECT order_id FROM sim_batch")}
+    对 = {}
+    for r in _rows("SELECT id, COALESCE(activity,'(无)') a, source FROM ordr"):
+        if r["id"] in 模拟: continue          # 模拟单一律没绑活动,不参与判断
+        对.setdefault(r["a"], set()).add(r["source"])
+    if not 对: return None
+    一对一 = all(len(v) == 1 for v in 对.values()) and \
+             len({next(iter(v)) for v in 对.values()}) == len(对)
+    if not 一对一: return None
+    配 = "、".join(f"{k}↔{next(iter(v))}" for k, v in sorted(对.items()))
+    return (f"**每个活动恰好对应一个渠道,一一对应没有例外**({配})—— "
+            f"所以**按活动分组 ≡ 按渠道分组**,"
+            f"「这个活动效果好」和「这个渠道转化好」在这批数据上**分不开**。"
+            f"⚠️ 这条比别的警告难发现,因为**它不在任何一个数上**:"
+            f"每个 ROI 都算得对、每个分母都是真的,只是**归因归错了对象**,"
+            f"而归错的那个对象在这张表上根本不出现。"
+            f"详见 `channel_compare`。")
 
 
 def can_order(customer_id, kind="定制品订单", wearer_id=None):
@@ -3210,6 +3243,112 @@ def fitting_queue(order=None):
     return _nz(out)
 
 
+
+def channel_compare(include_sim=False):
+    """**多渠道表现对比** —— 四个下单渠道各自什么样。
+
+    ## ⚠️ 先说结论:**这个库上的渠道差异不能当结论**
+
+    这不是「数据少」,是**这一列是怎么填上去的**:
+
+        种子的 46 单    `SRC[i % 4]` —— **按订单序号轮着发的**
+        模拟的 3826 单  按固定权重独立抽,和金额、状态、客户**全无关**
+
+    两种机制都让 `source` 和别的一切**统计独立**,所以任何
+    「哪个渠道客单价高 / 退款多 / 付款慢」的差异,**都是这两个机制的产物**。
+
+    而它和真的渠道差异**在表上长得一模一样** —— 都是一张四行的表,
+    每行一个百分比。所以这里做的不是「不给数」,是**把数和它的来路一起给**。
+
+    ## ⚠️ 还有一件顺带查出来的:**渠道和活动 100% 共线**
+
+    `seed.py` 里 `SRC[i % 4]` 和 `ACT[i % 4]` 同一个周期,
+    于是每个渠道恰好对应一个活动,**一一对应没有例外**。
+    「这个渠道转化好」和「这个活动效果好」在这批数据上**分不开** ——
+    而 `activity_roi` 已经在用活动归因算 ROI,它的警告里**没有这一条**。
+
+    ## 客服代下单**不是渠道**,单独列
+
+    它是人工补录,背后可能是电话、微信、门店。
+
+    include_sim: 默认 False(只看种子的 46 单)。
+                 传 True 会把 3826 单模拟订单也算进来 —— **它们的渠道是抽出来的**,
+                 算进来只会让那张表看起来更可信,而不会更真。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
+                                   "..", "knowledge"))
+    import channel as _ch
+
+    模拟 = {r["order_id"] for r in _rows("SELECT order_id FROM sim_batch")}
+    rs = _rows("SELECT id, source, kind, status, payable, received, refund_status, "
+               "  created, paid_at, activity, customer_id FROM ordr")
+    用 = [r for r in rs if include_sim or r["id"] not in 模拟]
+
+    摊 = {}
+    for r in 用:
+        摊.setdefault(r["source"] or "(没记渠道)", []).append(r)
+
+    售后 = {r["order_id"]: r["n"] for r in _rows(
+        "SELECT order_id, COUNT(*) n FROM maintain GROUP BY order_id")}
+
+    渠道, 另列 = {}, {}
+    for 名, os_ in sorted(摊.items(), key=lambda x: -len(x[1])):
+        n = len(os_)
+        待付 = sum(1 for x in os_ if x["status"] == "待付款")
+        退 = sum(1 for x in os_ if (x["refund_status"] or "") in ("已退款", "退款中"))
+        修 = sum(1 for x in os_ if x["id"] in 售后)
+        实收 = sum(x["received"] or 0 for x in os_)
+        成 = [x for x in os_ if x["status"] not in ("待付款", "取消")]
+        d = _nz({
+            "单量": n,
+            "客单价(按实收)": (round(实收 / len(成), 2) if 成 else None),
+            "实收合计": round(实收, 2),
+            "待付款": _ch.比率(待付, n, "下单")[0],
+            "退款(含退款中)": _ch.比率(退, n, "下单")[0],
+            "有售后工单": _ch.比率(修, n, "下单")[0],
+            "绑的活动": sorted({x["activity"] or "(无)" for x in os_}),
+        })
+        能, 为什么 = _ch.可比吗(名)
+        if 能: 渠道[名] = d
+        else:
+            d["⚠️ 这不是一个渠道"] = 为什么
+            另列[名] = d
+
+    out = {
+        "算的是": (f"全部 {len(用)} 单(**含 {len(模拟)} 单模拟订单**)"
+                   if include_sim else
+                   f"{len(用)} 单 —— **只算种子订单**,"
+                   f"{len(模拟)} 单模拟订单的渠道是抽出来的,算进来只会让表看起来更可信"),
+        "⚠️ 这张表不能用来比渠道": _ch.不能比_为什么,
+        "⚠️ 渠道和活动 100% 共线": _ch.共线,
+        "四个渠道": 渠道,
+        "不算渠道的": 另列,
+    }
+    # **把共线现算一遍,不是背一句话。** 种子数据一改,这里就该跟着变。
+    对 = {}
+    for 名, os_ in 摊.items():
+        acts = {x["activity"] or "(无)" for x in os_}
+        对[名] = sorted(acts)
+    一对一 = all(len(v) == 1 for v in 对.values()) and \
+             len({v[0] for v in 对.values()}) == len(对)
+    out["共线现算的结果"] = {
+        "每个渠道绑了哪些活动": 对,
+        "是不是一一对应": 一对一,
+        "note": ("**是** —— 按渠道分组和按活动分组在这批数据上是同一件事"
+                 if 一对一 else "不是一一对应了,共线那条警告可以重新评估"),
+    }
+    out["不给渠道排名"] = (
+        "**11 单的样本排不出名次,排了会被当成结论去调预算。** "
+        "每个比率后面都带着「一单值多少个百分点」—— "
+        "看的人自己就知道该不该拿它去动钱。")
+    out["怎么才能真的比"] = (
+        "要让渠道这一列**携带信息**:渠道得由客户**实际从哪儿下单**决定,"
+        "而不是按序号轮发或按权重抽。在那之前,这里给的是**事实(单量、实收)**,"
+        "**不是渠道的表现**。")
+    return _nz(out)
+
+
 def get_maintain(maintain_id=None, customer=None, status=None):
     """售后维修工单的现场。**只给事实,判责结论要另外查判定表。**"""
     where, args = [], []
@@ -3467,6 +3606,7 @@ SHOP_SCHEMAS=[
    "required":["customer_id"]}},
  {"name":"stock_alert","description":"**库存预警** —— 哪些 SKU 要断了、哪些**看着有货其实一件都发不出**(在手有货但全被订单占用)、哪些在压货。805 个 SKU 全有库存数而在这之前没有任何工具会说「这个要断了」。⚠️ **在手 ≠ 可用**:客户问「还有货吗」要的是 **可用 = 在手 − 已占用**,只报在手会让客户白等。⚠️ **它给不出可售天数,而且会直说给不出**:全库有销量的只有 71/797 个 SKU、每个只有一笔、订单只跨 18 天,**一笔销售画不出速度** —— 这时候任何一个可售天数都是编的,而编出来的数会让采购按它去补货。**不许把「算不出」说成 0 天,也不许退回成「低于 N 件就预警」假装算得出。** ⚠️ **这个工具不补货**:补多少、什么时候补是采购的决定。⚠️ 只看成品 SKU,**面料库存是另一摊**。","input_schema":{"type":"object","properties":{"scope":{"type":"string","description":"发不出 / 断货 / 快没了 / 卖不动;不传则全给"}}}},
  {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**重工订单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。⚠️ **「哪些款该试」这条线业务还没确认过**(知识库只写了「重工款强烈建议做」,没有数),每条结论都要带着这句话说出去。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
+ {"name":"channel_compare","description":"**多渠道表现对比** —— 四个下单渠道(微信小程序/官网/门店 Pad/客服代下单)各自的单量、客单价、待付款占比、退款率、售后率。⚠️ **这张表不能用来比渠道,而它和真的渠道对比长得一模一样。** 原因不是数据少,是这一列怎么填上去的:种子订单是**按订单序号轮着发的**(`SRC[i % 4]`),模拟订单是**按固定权重独立抽的**,两种机制都让渠道和金额、状态、客户**统计独立** —— 任何渠道间差异都是这两个机制的产物,**不是渠道的表现**。⚠️ **渠道和活动 100% 共线**:每个渠道恰好对应一个活动,一一对应没有例外,所以「这个渠道转化好」和「这个活动效果好」在这批数据上**分不开**(这条同时影响 activity_roi)。⚠️ **客服代下单不是一个渠道**,是人工补录,背后可能是电话/微信/门店 —— 当渠道分析会得出假结论。⚠️ **不给渠道排名**:11 单的样本排不出名次,排了会被当成结论去调预算;每个比率后面都带着「**一单值多少个百分点**」。","input_schema":{"type":"object","properties":{"include_sim":{"type":"boolean","description":"是否把 3826 单模拟订单也算进来。默认 false —— 它们的渠道是抽出来的,算进来只会让表看起来更可信,不会更真"}}}},
  {"name":"recovery_queue","description":"**未成交挽回清单** —— 下了单没付钱的、约了没来的,各压着多少钱、压了多久、该按什么顺序跟。不传参数给两摊都要;传「待付款」或「预约」只要一摊。⚠️ **这个工具只出清单,不发任何东西** —— 发短信/微信/打电话是对外动作,按不按、怎么按是人的决定。⚠️ **它不划「超时」那条线**:定制品和标品的合理等待期本来就不一样,编一个数会把正常的单子算成流失。只排序不划线,按**金额 × 停留天数**排。⚠️ **三种未成行不许混成一类**:已取消是客户主动说了不来、爽约是没说就没来(**先确认人没事**)、已过期是系统判的(客户自己可能都不知道有这条预约)。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"待付款 或 预约;不传则两摊都给"}}}},
  {"name":"pattern_queue","description":"**版师的排队看板 —— 「今天该我核什么」。**不用传任何参数。把版师手上的活一次列全:裁片用料占比的进度(并按**影响面**排出先核哪几个 —— 挂多少商品、多少订单行已经按这个数备料)、推档有疑点的版型、「推得出但不作数」的尺码格子、配置页上架了却没有版型的定制品。**每一摊都报「总数 / 已完成 / 还剩」** —— 一摊显示 0 的时候要说得出是「做完了」还是「一条都没扫到」。版师进来第一句话就该调它。","input_schema":{"type":"object","properties":{}}},
  {"name":"grading_audit","description":"**推档自检 —— 把「要核 1237 个数」压成「要核 12 条档差」。**尺码表全部是推出来的(基码值 + 档差 × 尺码序号),版师真正该核的只有基码和那 12 条档差。不传 pattern 给全局(扫了多少、哪几个版型有疑点、档差规则是什么);传 pattern 给这一个版型的逐部位明细:实际档差 / 规则档差 / **覆盖范围**(这个版型能做多大的人)/ 量纲体检 / 哪几项「推得出但不作数」。**判据是定义性的,不是阈值** —— 相邻码的差必须处处相等且等于档差表,不一致就是真的有一格不对。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全局"}}}},
@@ -3611,7 +3751,7 @@ TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_af
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
