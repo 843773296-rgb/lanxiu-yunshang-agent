@@ -275,6 +275,10 @@ def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN
 
     plan = {"seed": seed, "dialect": facts["dialect"], "source": facts["source"],
             "中文库": facts.get("中文库", True),
+            # **记下当时是不是限定了表集。** 不记的话,下次拿这份方案查漂移,
+            # 会把「人主动没选的表」报成「漏造的新表」—— 60 张表的库能刷 65 条提示,
+            # 而**报多了人就不看了**,真正要紧的那几条被淹掉。
+            "限定表集": list(tables) if tables else None,
             # 保护声明跟着方案走 —— **方案文件是给人看的那一份**,
             # 「这次不许碰哪些行」属于必须能被复核的决定,不能只活在命令行参数里。
             "protect": list(protect or []),

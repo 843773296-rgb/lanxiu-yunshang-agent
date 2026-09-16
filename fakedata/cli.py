@@ -35,7 +35,15 @@ def cmd_plan(a):
         if miss: raise SystemExit(f"这些表不存在: {miss}")
     print(f"\n反射: {len(sc.tables)} 张表 / "
           f"{sum(len(t.declared_fks) for t in sc.tables.values())} 个明写外键")
-    facts = D.discover(conn, sc, tables)
+    if a.census:
+        # 按摘要出方案:**不连生产库**,分布来自摘要、结构来自目标库
+        import census as CS
+        摘 = CS.读(a.census)
+        facts = CS.转事实(摘)
+        print(f"按摘要出方案:{a.census}(来源 {摘.get('来源')} · {摘.get('普查时间')} · k={摘.get('k')})")
+        print("  ⚠️ **摘要里没有值,所以挖不出表关系** —— 外键要么在目标库上另跑一次推断,要么人手写")
+    else:
+        facts = D.discover(conn, sc, tables)
     nfk = sum(len(tf["fks"]) for tf in facts["tables"].values())
     print(f"推断: 挖出 {nfk} 条表关系")
 
@@ -227,6 +235,34 @@ def cmd_target(a):
     raise SystemExit(0 if rep["成功"] else 1)
 
 
+def cmd_drift(a):
+    """方案漂移:表结构变了,上一份方案里哪几条判断失效了。**只报,不改方案。**"""
+    print(guard.check_target(a.target, a.env))
+    import drift as DR
+    pl = json.load(open(a.plan, encoding="utf-8"))
+    conn = S.connect(a.target)
+    漂 = DR.对比(pl, conn.reflect())
+    n致命 = DR.报告(漂)
+    raise SystemExit(1 if n致命 else 0)
+
+
+def cmd_census(a):
+    """统计普查:把分布带出来,不把数据带出来。**只读源库。**"""
+    print(guard.check_target(a.target, a.env))
+    print(guard.readonly_sample_notice())
+    import census as CS
+    conn = S.connect(a.target); sc = conn.reflect()
+    tables = [x.strip() for x in a.tables.split(",")] if a.tables else None
+    摘 = CS.普查(conn, sc, tables, k=a.k)
+    坏 = CS.审计(摘)
+    out = a.out or os.path.join(_outdir(), f'{sc.label.replace("/", "_")}.census.json')
+    CS.存(out, 摘)
+    print(f"\n摘要 → {out}")
+    print("  **这份文件可以带出机房** —— 里面没有一行原始数据;"
+          "测试环境拿它出方案:`plan <目标> --census <这个文件>`")
+    raise SystemExit(1 if 坏 else 0)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="假数据工厂")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -245,6 +281,8 @@ def main(argv=None):
                          "实测三遍只有约七成一致)")
     p1.add_argument("--overlay", default=None,
                     help="复用已有的模型判定文件,不调模型")
+    p1.add_argument("--census", default=None, metavar="摘要文件",
+                    help="按统计摘要出方案(不连生产库)。分布来自摘要,结构来自目标库")
     p1.add_argument("--protect", default=None, metavar="声明文件",
                     help="行级保护声明(JSON):这些行不许被新数据引用。"
                          "先跑 `protect` 子命令扫一份建议出来")
@@ -254,6 +292,17 @@ def main(argv=None):
     p2.set_defaults(fn=cmd_load)
     p3 = sub.add_parser("verify"); common(p3)
     p3.add_argument("--plan", required=True); p3.set_defaults(fn=cmd_verify)
+    p9 = sub.add_parser("census", help="统计普查:把分布带出来,不把数据带出来")
+    common(p9)
+    p9.add_argument("--tables", default=None)
+    p9.add_argument("--k", type=int, default=5, metavar="N",
+                    help="出现不足 N 次的取值不导出具体值(默认 5)")
+    p9.add_argument("--out", default=None, metavar="文件")
+    p9.set_defaults(fn=cmd_census)
+    p8 = sub.add_parser("drift", help="方案漂移:表结构变了,方案里哪几条判断失效了")
+    common(p8)
+    p8.add_argument("--plan", required=True, help="上一次出的方案文件")
+    p8.set_defaults(fn=cmd_drift)
     p7 = sub.add_parser("target", help="定向造数:指定要让哪条检查红,倒推造什么数据")
     common(p7)
     p7.add_argument("--check", required=True, metavar="命令",

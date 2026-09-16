@@ -1131,6 +1131,171 @@ def main():
     ck(r5.get("本来就红") and not r5["成功"],
        "**目标本来就是红的要明说** —— 「本来就红」和「被我造红了」长得一模一样")
 
+    # ── 方案漂移:表结构变了,方案里哪几条判断失效了 ──────────────────
+    #
+    # 五种漂移里**只有两种会吵**(列没了、新增必填列 —— 灌入当场失败),
+    # 另外三种灌得进去、不报错,只是开始造错的数据。这一节钉的就是那三种。
+    print("\n【方案漂移】")
+    import drift as DR
+
+    老库 = os.path.join(tmpd, "drift_old.db")
+    build_known_db(老库)
+    co = S.connect(老库)
+    p老 = P.build(D.discover(co, co.reflect()), scale=0.2)
+
+    新库 = os.path.join(tmpd, "drift_new.db")
+    _c = sqlite3.connect(新库)
+    _c.executescript("""
+    create table cust(id text primary key, name text, city_name text, created text,
+                      phone text unique, login text unique, vip int not null);
+    create table ordr(id text primary key, cust_id text, amount text, status text not null,
+                      created text, paid_at text, shipped_at text, cancelled_at text,
+                      prd_status text);
+    create table note(body text);
+    create table brand_new(id integer primary key, x text);
+    """)
+    _c.commit(); _c.close()
+    cn新 = S.connect(新库)
+    漂 = DR.对比(p老, cn新.reflect())
+    种类 = {(x["是什么"], x["在哪"]) for x in 漂}
+    档 = {x["是什么"]: x["档"] for x in 漂}
+
+    ck(("表没了", "item") in 种类 and 档.get("表没了") == DR.致命,
+       "**表没了**要报致命(方案还要往它灌)", str(sorted(种类))[:80])
+    ck(("列没了", "cust.city") in 种类 and 档.get("列没了") == DR.致命,
+       "**列没了**要报致命(方案还在给它造值)")
+    ck(any(x["是什么"] == "列没了" and x["在哪"] == "cust.city" and x.get("猜") == "city_name"
+           for x in 漂),
+       "**猜出疑似改名**(city → city_name,类型一样),但只标猜")
+    ck(("新增了必填列", "cust.vip") in 种类 and 档.get("新增了必填列") == DR.致命,
+       "**新增必填列**要报致命 —— 方案不会给它造值,灌入当场失败")
+    ck(("类型变了", "ordr.amount") in 种类 and 档.get("类型变了") == DR.警告,
+       "**类型变了**要报警告 —— 灌得进去,但造出来的值没有意义")
+    ck(("可空改成了必填", "ordr.status") in 种类,
+       "**可空改成必填**要报 —— 方案还会按比例造 NULL")
+    ck(("新表没进方案", "brand_new") in 种类 and 档.get("新表没进方案") == DR.提示,
+       "**新表没进方案**要提示 —— 漏造不报错")
+
+    # 没有漂移时也要说清楚「比了什么」——「没扫到」和「没问题」长得一样
+    话 = []
+    DR.报告(DR.对比(p老, co.reflect()), log=话.append)
+    ck(话 and "比的是" in 话[0],
+       "**没有漂移时要说清楚比了哪几样** —— 「没扫到」和「没问题」长得一模一样", str(话[:1])[:70])
+
+    # ── 统计普查:把分布带出来,不把数据带出来 ────────────────────────
+    #
+    # 摘要**自己也会泄露**,这一节钉的就是三种泄露:
+    #   只出现一次的取值 = 那一条记录本身 / 极值 = 某一个人 / 高基数文本的任何样本都是原始数据
+    print("\n【统计普查】")
+    import census as CS
+
+    普库 = os.path.join(tmpd, "census_src.db")
+    _c = sqlite3.connect(普库)
+    _c.executescript("""
+    create table person(id text primary key, city text, level text, salary real, email text);
+    """)
+    # 常见值各 20 条,外加**一个只出现一次的秘密值**和**一个离群极值**
+    # ⚠️ email 要造成**高基数但每个值都出现 ≥k 次**(60 种 × 5 条)。
+    # 第一版每个 email 只出现一次,于是「高基数不导值」这条其实是被**低频抑制**兜住的 ——
+    # 咬合把形状分支关掉,它照样绿。**断言没落在它声称测的那条路径上**,
+    # 这个项目今天第四次栽在这个形状上。
+    行 = [(f"P{i:04d}", ["杭州", "上海"][i % 2], ["普通", "银卡"][i % 2],
+           5000.0 + i * 10, f"u{i // 5}@example.com") for i in range(300)]
+    行.append(("P9999", "秘密城", "VIP-某某某专属", 999999.0, "u0@example.com"))
+    _c.executemany("insert into person values(?,?,?,?,?)", 行)
+    _c.commit(); _c.close()
+    cc = S.connect(普库)
+    摘 = CS.普查(cc, cc.reflect(), k=5)
+    文 = json.dumps(摘, ensure_ascii=False)
+
+    ck("秘密城" not in 文 and "VIP-某某某专属" not in 文,
+       "**只出现一次的取值没被导出** —— 它等于那一条记录本身", 文[:60])
+    ck("999999" not in 文,
+       "**极值没被导出** —— max 往往就是某一个人",
+       str(摘["tables"]["person"]["columns"]["salary"].get("range")))
+    ck("@example.com" not in 文,
+       "**高基数文本一个真实值都没导** —— 任何样本都是原始数据;"
+       "而且这一列**每个值都出现 5 次**,低频抑制兜不住它,只有形状分支能挡",
+       str(摘["tables"]["person"]["columns"]["email"])[:90])
+    ck(摘["tables"]["person"]["columns"]["city"].get("其它", {}).get("种数") == 1,
+       "被抑制的取值**要报出来有几种**(不是悄悄丢掉)",
+       str(摘["tables"]["person"]["columns"]["city"]))
+    ck(len(摘["抹掉了什么"]) >= 3 and any("只出现一次" in x for x in 摘["抹掉了什么"]),
+       "**抹了什么要说清楚** —— 看得懂才敢往外发")
+
+    # 出门自查:人为塞一个低频值进摘要,必须被抓出来
+    坏摘 = json.loads(文)
+    # ⚠️ 占比要**按行数现算**,不能写死。第一版写死 0.02,样本从 41 行扩到 301 行之后
+    # 0.02×301≈6 行,已经 ≥ k=5 —— 查泄露判它合规是对的,是**我的夹具过期了**。
+    # 「夹具写死会过期,而过期时不报错」这个项目栽过很多次。
+    坏摘["tables"]["person"]["columns"]["city"]["enum"]["只有一条的城"] = \
+        0.5 / 坏摘["tables"]["person"]["rows"]        # 半行 —— 必然低于任何 k
+    ck(CS.查泄露(坏摘), "**出门前自己再查一遍**:塞进去的低频取值要被抓出来")
+    ck(not CS.查泄露(摘), "干净的摘要不该被误报")
+
+    # 消费端:摘要能直接喂给 plan.build —— 测试环境不必连生产库
+    f摘 = CS.转事实(摘)
+    p摘 = P.build(f摘, scale=1.0)
+    m摘, _ = G.generate(p摘, None)
+    ck(m摘.get("person") and len(m摘["person"]) > 0,
+       "**摘要能直接造出数据**(不连源库,只要摘要 + 目标库结构)",
+       str(m摘.get("person", [])[:1])[:80])
+    造文 = json.dumps(m摘, ensure_ascii=False)
+    ck("秘密城" not in 造文 and "999999" not in 造文,
+       "按摘要造出来的数据里**也不会冒出被抹掉的值**")
+
+    # ── 跨存储:一笔事实同时活在好几个地方 ────────────────────────────
+    #
+    # 这一节钉的是**「少写一处」有没有声音** —— 库里数据齐全、检查全绿,
+    # 而缓存是空的、事件没发,只有真跑业务才崩。那正是这类 bug 的全部形态。
+    print("\n【跨存储】")
+    import multistore as MS
+
+    msdir = os.path.join(tmpd, "ms"); os.makedirs(msdir, exist_ok=True)
+    msdb = os.path.join(msdir, "main.db")
+    _c = sqlite3.connect(msdb)
+    _c.execute("create table ordr(id text primary key, sku text, qty int)")
+    _c.commit(); _c.close()
+    cm = S.connect(msdb)
+    店 = {"关系库": MS.关系库(cm, "ordr", "id"),
+          "KV": MS.KV(os.path.join(msdir, "kv.json")),
+          "事件流": MS.事件流(os.path.join(msdir, "events.jsonl")),
+          "对象": MS.对象(os.path.join(msdir, "obj"))}
+
+    def 投影(事):
+        return {"关系库": [(事["id"], {"id": 事["id"], "sku": 事["sku"], "qty": 事["qty"]})],
+                "KV": [(f"stock:{事['sku']}", 100 - 事["qty"])],
+                "事件流": [(f"order.created:{事['id']}", {"订单": 事["id"]})],
+                "对象": [(f"{事['sku']}.jpg", b"fake-image")]}
+
+    事实们 = [{"id": f"O{i}", "sku": f"S{i}", "qty": i} for i in (1, 2, 3)]
+    凭 = [MS.落(店, 事, 投影) for 事 in 事实们]
+    ck(not MS.对账(店, 事实们, 投影), "**四个存储都写到了**(关系库/KV/事件流/对象)")
+
+    def 漏KV(事):
+        d = 投影(事); d.pop("KV"); return d
+    店["KV"].删("stock:S2")
+    缺 = MS.对账(店, 事实们, 投影)
+    ck(len(缺) == 1 and 缺[0]["存储"] == "KV",
+       "**少写一处要有声音** —— 库里看着数据是全的,其实缺了缓存那一条", str(缺)[:80])
+
+    try:
+        MS.落(店, {"id": "OX", "sku": "SX", "qty": 1},
+              lambda 事: {"没登记的存储": [("k", "v")]})
+        ck(False, "投影写到**没登记的存储**要抛错,不许静默跳过")
+    except SystemExit:
+        ck(True, "投影写到**没登记的存储**要抛错,不许静默跳过")
+
+    for z in 凭:
+        MS.回滚(店, z)
+    剩 = sqlite3.connect(msdb).execute("select count(*) from ordr").fetchone()[0]
+    ck(剩 == 0 and 店["KV"].读("stock:S1") is None and 店["对象"].读("S1.jpg") is None,
+       "**跨存储回滚删干净**(关系库/KV/对象)")
+    ck(店["事件流"].读("order.created:O1") is None
+       and os.path.getsize(os.path.join(msdir, "events.jsonl")) > 0,
+       "**只追加的存储删不掉,改为打作废标记** —— 文件还在但读不到,"
+       "把「删不掉」说清楚比假装删干净好")
+
     print(f"\n假数据工厂自测:{'全部通过' if not FAIL else str(len(FAIL)) + ' 项失败'}")
     return 1 if FAIL else 0
 
