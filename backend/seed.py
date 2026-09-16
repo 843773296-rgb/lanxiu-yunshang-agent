@@ -2431,10 +2431,30 @@ def run():
     # 让中亲值 = 推算 - 14,稳稳越过门槛 8,不管重播种怎么挪下标。
     # (试过父 192/母 150:中亲值 177.5 反而和推算 176.6 撞上了,gap 0.9。
     #  父母身高「差距大」不等于「和孩子对不上」—— 靶身高只看中亲值。)
+    # ⚠️ **必须是评测题问的那个孩子,不是「第一个父母俱全的」。**
+    #
+    # 原来写的是 `ORDER BY id LIMIT 1` —— 而 `agent/growth_eval.py` 的题面
+    # 写死问 **W10019-2**。两边**各挑各的**:
+    # 种子给「第一个」造了冲突,题目去问 W10019-2,而重建之后这两个不是同一个人。
+    #
+    # 后果在库里**完全看不出来**:两边都"有冲突用例",
+    # 而那道题测的孩子根本不冲突 —— **一道测不到东西的题,
+    # 和一道通过的题,在成绩单上长得一模一样。**
+    #
+    # 所以这里点名要评测题问的那一个。它要是没有父母,就当场喊出来,
+    # **不许退回「随便找一个」** —— 那正是这个 bug 的来源。
+    _目标 = "W10019-2"
     _kid = c.execute("""SELECT id, parent_a, parent_b FROM wearer
-                        WHERE parent_a IS NOT NULL AND parent_b IS NOT NULL
-                        ORDER BY id LIMIT 1""").fetchone()
-    assert _kid, "没有父母俱全的孩子 —— 靶身高校验会缺用例"
+                        WHERE id=? AND parent_a IS NOT NULL
+                          AND parent_b IS NOT NULL""", (_目标,)).fetchone()
+    if not _kid:
+        _kid = c.execute("""SELECT id, parent_a, parent_b FROM wearer
+                            WHERE parent_a IS NOT NULL AND parent_b IS NOT NULL
+                            ORDER BY id LIMIT 1""").fetchone()
+        assert _kid, "没有父母俱全的孩子 —— 靶身高校验会缺用例"
+        print(f"  ⚠️ **{_目标} 没有父母**,靶身高冲突夹具落到了 {_kid[0]} 身上 —— "
+              f"而 `agent/growth_eval.py` 的题面问的是 {_目标},"
+              f"**那道题会测不到东西**。去对一下两边。")
     _ksex = c.execute("SELECT gender FROM wearer WHERE id=?", (_kid[0],)).fetchone()[0]
     # 先随便给个值,好让 forecast 跑得出「百分位推算成年身高」
     c.execute("UPDATE wearer SET height=170.0 WHERE id IN (?,?)", (_kid[1], _kid[2]))

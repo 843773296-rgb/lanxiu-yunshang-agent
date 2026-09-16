@@ -163,6 +163,22 @@ def main():
            "要么 intent 变了而没重新生成。**一份漂着的待办清单,"
            "会让人去做一件已经做完的事**")
 
+    # ── **重建步骤只许有一处** ────────────────────────────────────────
+    # `HANDOFF.md` 原来手写着三步重建命令,而那三步是不全的 ——
+    # 照着跑 `./check.sh` 红 26 项,**而库能一直绿只因为没人重建过**。
+    #
+    # 修法不是把步骤补全再抄一遍(抄的那份照样会漂),
+    # 是**让文档指向脚本** —— 步骤只有 `tools/rebuild.sh` 里有一份。
+    脚本 = os.path.join(ROOT, "tools", "rebuild.sh")
+    交接 = open(os.path.join(ROOT, "HANDOFF.md"), encoding="utf-8").read()
+    ck("有一条命令能从零重建",
+       os.path.exists(脚本) and os.access(脚本, os.X_OK), 1,
+       "`tools/rebuild.sh` —— **「库是可再生的」这句话要有东西兑现它**")
+    ck("交接文档指向那个脚本,而不是手抄一遍步骤",
+       "tools/rebuild.sh" in 交接, 1,
+       "**抄一份步骤到文档里,那份就会漂** —— 而漂了的重建步骤"
+       "比没有步骤更糟:人照着跑,以为重建成功了")
+
     print()
     print(f"  ℹ 现在 {len(docs)} 份:" +
           "、".join(f"{k}({状态[k]})" for k in sorted(docs)))
