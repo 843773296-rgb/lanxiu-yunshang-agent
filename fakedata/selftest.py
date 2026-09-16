@@ -404,7 +404,14 @@ def main():
         if len(m6["customer"]) >= 8:
             m6["customer"][4]["phone"] = m6["customer"][3]["phone"]
             m6["customer"][5]["phone"] = m6["customer"][1]["phone"]
-            m6["customer"][6]["advisor"] = "已离职 张三"   # 删掉这个字段请求就会成功
+            # ⚠️ **种在表的列上,不是请求体的字段名上。**
+            # 规格里的映射是 `"advisor": "advisor_no"` —— 请求体字段叫 advisor,
+            # 它映射到表的 **advisor_no** 列;而这批 rows 是**表行**。
+            # 第一版写的是 `["advisor"]`,**以前两者同名所以碰巧一直有效**;
+            # 2026-09-16 名字列全库删除之后,这个键不再是表的列 ——
+            # 构造请求体时被静默丢掉 → BAD_ADVISOR 从没被触发 → 削最小没东西可削。
+            # **失效方式不是报错,是「这条路径没走到」**,正是下面那条断言要防的事。
+            m6["customer"][6]["advisor_no"] = "A04"   # 非 8 位工号 → 被拒;删掉这字段就会成功
         # **d7 要一个干净的靶子。** 第一版让它打 d6 已经灌满的那个 ——
         # 于是每一行的手机号都先撞 DUP_PHONE,根本走不到后面的规则。
         # 检查因此一直是 0,而 0 看起来像"这条路径不存在",不像"我把路堵住了"。
@@ -426,7 +433,7 @@ def main():
         ck(sum(1 for r in rep7["规则"] if r["码"] == "DUP_PHONE") == 1,
            f"{len(dup)} 条同码拒绝归成 1 条规则")
 
-        # 种一条「顾问不在职」——它的最小化会把 advisor 删掉,而删掉之后请求**会成功**,
+        # 种一条「顾问工号不合法」——它的最小化会把 advisor 字段删掉,而删掉之后请求**会成功**,
         # 于是探测本身在库里留下一条记录。这正是要验的那条路径。
         before_min = len(d7.created)
         calls = d7.minimize(p6)
@@ -1328,6 +1335,69 @@ def main():
        "省略主机端口时给出默认值(本机 5432)", str(u2))
     ck(S.PgConn.ph == "%s" and S.MysqlConn.ph == "%s" and S.SqliteConn.ph == "?",
        "占位符跟着方言走(PG/MySQL 用 %s,SQLite 用 ?)")
+
+    # ── 按摘要出方案时的表关系:只看结构,不看值 ────────────────────────
+    #
+    # 摘要里没有值,而值重叠是正常推断的主力。但关系有三个来源,**只有一个需要值**:
+    # 明写外键(schema 里就写着)、命名线索(也只是名字)、值重叠(带不出来)。
+    # 所以这条路推得出关系,**但靠命名那些没有覆盖率可算** —— 必须标清楚。
+    print("\n【按摘要出方案 · 关系从结构推】")
+    结构库 = os.path.join(tmpd, "census_struct.db")
+    _c = sqlite3.connect(结构库)
+    _c.executescript("""
+    create table shop(id text primary key, name text);
+    create table cust(id text primary key, name text, shop text);
+    create table ordr(id text primary key, cust_id text references cust(id), amount real);
+    """)
+    _c.executemany("insert into shop values(?,?)", [(f"SH{i}", f"店{i}") for i in range(3)])
+    _c.executemany("insert into cust values(?,?,?)",
+                   [(f"C{i}", f"客{i}", f"SH{i%3}") for i in range(30)])
+    _c.executemany("insert into ordr values(?,?,?)",
+                   [(f"O{i}", f"C{i%30}", 100.0 + i) for i in range(60)])
+    _c.commit(); _c.close()
+    cs = S.connect(结构库); scs = cs.reflect()
+    摘构 = CS.普查(cs, scs, k=5)
+    f构 = CS.转事实(摘构, scs)
+    关 = {(t, k["column"]): k for t, tf in f构["tables"].items() for k in tf["fks"]}
+
+    ck(关.get(("ordr", "cust_id"), {}).get("table") == "cust"
+       and 关[("ordr", "cust_id")]["source"] == "明写",
+       "**明写外键**照搬进来(schema 里就写着,和数据无关)", str(关.get(("ordr", "cust_id"))))
+    命 = 关.get(("cust", "shop"))
+    ck(命 and 命["table"] == "shop" and 命["source"].startswith("命名"),
+       "**命名线索**也认得出(cust.shop → shop)", str(命))
+    ck(命 and 命["confidence"] == "低" and 命["overlap"] is None,
+       "靠命名推的标成**低可信度、没有覆盖率** —— 不标就等于把猜说成了事实")
+
+    # 关键:**把表清空再推一次,结果必须一模一样** —— 证明这条路真的不看值
+    空库 = os.path.join(tmpd, "census_empty.db")
+    shutil.copy(结构库, 空库)
+    _e = sqlite3.connect(空库)
+    for tb in ("ordr", "cust", "shop"):
+        _e.execute(f"delete from {tb}")
+    _e.commit(); _e.close()
+    ce = S.connect(空库)
+    关空 = {(t, k["column"]): (k["table"], k["source"])
+            for t, tf in CS.结构关系(ce.reflect()).items() for k in tf}
+    ck(关空 == {k: (v["table"], v["source"]) for k, v in 关.items()},
+       "**把表清空再推一次,结果一模一样** —— 这条路真的一个值都没看", str(关空))
+
+    # 指不清楚就别指:一个列名同时像两张表时,猜错的外键比没有外键更糟
+    # ⚠️ 第一版这个「歧义」靶子**根本不歧义**:`x.shop` 只命中 shop 一张表
+    # (`shop_log` 不是 `shop` 的子串,去掉 _id 后缀也对不上),于是工具返回那条关系是对的,
+    # 是我的断言在测一个不存在的情况。**要构成真歧义,得让两张表的主键列名相同。**
+    多库 = os.path.join(tmpd, "census_ambi.db")
+    _a = sqlite3.connect(多库)
+    _a.executescript("""
+    create table shop(code text primary key);
+    create table shop_log(code text primary key);
+    create table x(id text primary key, code text);
+    """)
+    _a.commit(); _a.close()
+    ca = S.connect(多库)
+    ck(not CS.结构关系(ca.reflect())["x"],
+       "**指不清楚就不指** —— 一个列名同时像两张表时宁可不猜"
+       "(挂错表的数据每一行看起来都正常)")
 
     print(f"\n假数据工厂自测:{'全部通过' if not FAIL else str(len(FAIL)) + ' 项失败'}")
     return 1 if FAIL else 0

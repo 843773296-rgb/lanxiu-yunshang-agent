@@ -122,6 +122,20 @@ def _sample(conn, t, c):
         return []
 
 
+def 命名线索(列名, 父表, 父键):
+    """列名像不像指向那张表。**只看名字,不看值。**
+
+    (ordr_id → ordr / shop → shop / 列名恰好等于父表主键名)
+
+    ⚠️ 抽成公共函数是因为 `census.py` 也要用它:摘要里没有值,
+    只能靠「明写外键 + 命名」推关系。**同一个判断不许有两处定义** ——
+    两处各自理解,迟早分叉,而分叉的那一刻两边都自认没错
+    (这个仓库在提示词手抄件上栽过,`normalize_target` 也是为这件事抽出来的)。
+    """
+    cl, kt = 列名.lower(), 父表.lower()
+    return (kt in cl) or (cl.rstrip("_id") == kt) or (cl == 父键.lower() and 父键 != "id")
+
+
 def _fk_candidates(tname, col, vals, keyidx):
     """值重叠判定 + 命名加分。返回按分数排序的候选。"""
     if len(vals) < 3: return []
@@ -133,9 +147,7 @@ def _fk_candidates(tname, col, vals, keyidx):
         hit = len(vs & keys)
         over = hit / len(vs)
         if over < MIN_OVER: continue
-        # 命名线索:列名里出现目标表名(ordr_id→ordr / shop→shop),或列名==目标键名
-        cl, kt = col.lower(), ktab.lower()
-        named = (kt in cl) or (cl.rstrip("_id") == kt) or (cl == kcol.lower() and kcol != "id")
+        named = 命名线索(col, ktab, kcol)
         # ---- 反误报三条 ----
         # (a) 值太少,可能是枚举/布尔碰巧撞上
         if not named and len(vs) < 5: continue

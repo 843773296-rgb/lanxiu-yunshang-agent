@@ -216,12 +216,54 @@ def 审计(摘要, log=print):
     return 坏
 
 
-def 转事实(摘要):
+def 结构关系(sc, 表名=None):
+    """**只看结构推关系,一个值都不看。**
+
+    关系有三个来源,而只有一个需要值:
+
+        明写外键   schema 里就写着 —— 公开信息,和数据无关
+        命名线索   `ordr_item.order_id` → `ordr` —— 也只是名字
+        值重叠     **这一路需要数据** —— 摘要里没有,带不出来
+
+    所以按摘要出方案时,**分布归摘要、关系归目标库的结构**。
+    靠命名推出来的那些要标清 `没有值可验证` ——
+    正常推断里命名只是加分项,真正拍板的是覆盖率;这里没有覆盖率可算,
+    **不标就等于把猜说成了事实**。
+    """
+    import discover as D
+    表 = [t for t in sc.tables if not 表名 or t in 表名]
+    键 = [(t, c.name) for t in 表 for c in sc.tables[t].columns if c.pk or c.unique]
+    出 = {t: [] for t in 表}
+    for t in 表:
+        tb = sc.tables[t]
+        已有 = set()
+        for fc, ft, fcol in tb.declared_fks:
+            if ft in sc.tables:
+                出[t].append({"column": fc, "table": ft, "column_ref": fcol or "id",
+                              "source": "明写", "overlap": 1.0, "confidence": "高"})
+                已有.add(fc)
+        for col in tb.columns:
+            if col.name in 已有 or col.pk:
+                continue
+            命中 = [(kt, kc) for kt, kc in 键
+                    if kt != t and D.命名线索(col.name, kt, kc)]
+            if len(命中) != 1:
+                # 0 个:没线索。多个:**指不清楚就别指** —— 猜错的外键比没有外键更糟,
+                # 它会把数据挂到另一张表上,而每一行看起来都正常。
+                continue
+            kt, kc = 命中[0]
+            出[t].append({"column": col.name, "table": kt, "column_ref": kc,
+                          "source": "命名(摘要里没有值,没法用重叠验证)",
+                          "overlap": None, "confidence": "低"})
+    return 出
+
+
+def 转事实(摘要, sc=None, 表名=None):
     """摘要 → 事实层(能直接喂给 `plan.build`)。
 
-    **关系挖不出来** —— 那要看值的重叠,而摘要里没有值。所以这里的 `fks` 一律为空:
-    要么在目标库上另跑一次关系推断(结构是公开的,不涉及数据),要么人手写。
-    **这是个真限制,不是忘了做。**
+    `sc` 给了目标库结构的话,**关系从结构推**(明写外键 + 命名线索,不看值)——
+    没有它的话 `fks` 只能是空的,而**外键空了造出来就是一堆孤儿行**,
+    「把分布带出来」的价值也就没了。
     """
     facts = {"source": f"摘要:{摘要.get('来源')}", "dialect": 摘要.get("方言", "sqlite"),
              "中文库": True, "tables": {}}
@@ -238,6 +280,12 @@ def 转事实(摘要):
             cols[c] = f
         facts["tables"][t] = {"rows": tf.get("rows", 0), "pk": tf.get("pk", []),
                               "columns": cols, "fks": [], "时间序": [], "joint": []}
+    if sc is not None:
+        关系 = 结构关系(sc, 表名 or set(facts["tables"]))
+        for t, fks in 关系.items():
+            if t in facts["tables"]:
+                # 只留父表也在这批里的 —— 指向批次外的表会在方案里退化成编号生成
+                facts["tables"][t]["fks"] = [k for k in fks if k["table"] in facts["tables"]]
     return facts
 
 

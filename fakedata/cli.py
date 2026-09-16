@@ -39,9 +39,14 @@ def cmd_plan(a):
         # 按摘要出方案:**不连生产库**,分布来自摘要、结构来自目标库
         import census as CS
         摘 = CS.读(a.census)
-        facts = CS.转事实(摘)
+        facts = CS.转事实(摘, sc, tables)
         print(f"按摘要出方案:{a.census}(来源 {摘.get('来源')} · {摘.get('普查时间')} · k={摘.get('k')})")
-        print("  ⚠️ **摘要里没有值,所以挖不出表关系** —— 外键要么在目标库上另跑一次推断,要么人手写")
+        猜的 = [k for tf in facts["tables"].values() for k in tf["fks"] if k["source"].startswith("命名")]
+        明写 = [k for tf in facts["tables"].values() for k in tf["fks"] if k["source"] == "明写"]
+        print(f"  分布来自摘要,**关系来自目标库的结构**(不看值):明写 {len(明写)} 条 · 命名推的 {len(猜的)} 条")
+        if 猜的:
+            print("  ⚠️ 命名推出来的那些**没有值可验证** —— 正常推断里靠覆盖率拍板,"
+                  "这条路没有覆盖率可算,所以它们标的是「低」可信度,先看一眼再灌")
     else:
         facts = D.discover(conn, sc, tables)
     nfk = sum(len(tf["fks"]) for tf in facts["tables"].values())
