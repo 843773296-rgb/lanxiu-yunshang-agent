@@ -73,6 +73,18 @@ PY = os.path.join(ROOT, "agentsite", ".venv", "bin", "python")
 被测路径 = ("agent/", "agentsite/", "backend/", "knowledge/", "prompts.py",
             "mcp/", "tools/")
 
+# ⚠️ **产物不算代码。** 这几个是评测**自己跑出来的结果**,不是被测的东西。
+#
+# 不排掉的话这道闸会**自锁**:跑一次测量 → 产生结果文件 → 下次拒跑。
+# 而它锁的不是别人,是**自己刚才留下的脚印** —— 第二次跑就撞上了。
+#
+# ⚠️ 排它们是**安全的**,理由要说清:被测的是「代码在同一个世界」,
+# 而这几个文件**没有任何代码会读它们**(它们只被写、被人看)。
+# 如果哪天有东西开始读结果文件,这条豁免就不再安全 —— 所以写下理由,别只写名单。
+产物 = ("agent/ops-eval-results.jsonl", "agent/gen-compare-results.jsonl",
+        "agentsite/evals/", "agent/growth-eval-results.jsonl",
+        "agent/vision-eval-results.jsonl", "agent/liability-eval-results.jsonl")
+
 
 def 干净吗():
     """**只看被测路径**。返回 (干净吗, 脏了什么, 别处脏了什么)。"""
@@ -80,8 +92,10 @@ def 干净吗():
                        capture_output=True, text=True).stdout.strip()
     线 = [x for x in r.split("\n") if x.strip()]
     def 路(x): return x[3:].strip().strip('"')
-    脏 = [x for x in 线 if 路(x).startswith(被测路径)]
-    别处 = [x for x in 线 if not 路(x).startswith(被测路径)]
+    脏 = [x for x in 线 if 路(x).startswith(被测路径)
+          and not 路(x).startswith(产物)]
+    别处 = [x for x in 线 if not 路(x).startswith(被测路径)
+            or 路(x).startswith(产物)]
     return (not 脏), "\n".join(脏), "\n".join(别处)
 
 
