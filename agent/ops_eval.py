@@ -146,8 +146,25 @@ def need_any_tool(*names):
 
 
 def must_say(*needles, why=""):
+    """必须说到这些里的**任意一个**。
+
+    ⚠️ **这是全项目最容易出误报的一种判据。** 它枚举中文说法,
+    而中文说法枚不完 —— 这个项目为「枚举中文说法必输」栽过八次。
+    漏一个词的后果是:**一份答对的回答被判挂**,然后有人去改一个
+    本来正确的提示词。**误报比漏报贵。**
+
+    所以判据把自己的词表记在函数上(`g.needles`),
+    让 `tools/vocab_check.py` 能查一件事:
+
+    > **每条枚举词表,都要有一条「用非首选说法答对」的对照用例。**
+
+    只有首选说法被验过的词表,和一个只认一个词的判据没有区别 ——
+    **而它看起来是有备选的。**
+    """
     def g(text, traj, case):
         return [] if tm.says(text, list(needles)) else [f"内容:没说到「{needles[0]}」—— {why}"]
+    g.needles = list(needles)          # 给 vocab_check 用
+    g.why = why
     return g
 
 def must_not_promise(*needles, why=""):
@@ -317,10 +334,14 @@ def 不许给零销量的编天数(why=""):
 
 
 def all_of(*gs):
+    """把几条判据串起来。**子判据的词表要透出来** ——
+    套一层 all_of 就查不到 needles 的话,`vocab_check` 会以为这道题没有枚举词表,
+    **而全项目的 must_say 几乎都套在 all_of 里**。"""
     def g(text, traj, case):
         out = []
         for x in gs: out += x(text, traj, case)
         return out
+    g.parts = list(gs)
     return g
 
 # ── 时间夹具:**题面和判据用同一个现算的日期** ──────────────────
@@ -343,9 +364,55 @@ OUT_WIN, OUT_WIN_END = _ago(90), _ago(90, 15)      # 90 天前:远超窗口
 # ── 夹具的前提 ────────────────────────────────────────────────────────
 # C10001 在这套题里用于生命周期判档。**挑它是因为它有完整的互动记录** ——
 # 记录没了的话,「现在算哪一档」那道题就变成了「查无此人」,测的不是同一件事。
-前提 = [("C10001 有生命周期可判",
-         lambda: bool(api.get_lifecycle(customer="C10001").get("rows")
-                      or api.get_lifecycle(customer="C10001").get("档位")))]
+# ⚠️ **2026-09-16 补了四条「数据面」的前提,而补的原因值得写下来。**
+#
+# 原来这里只声明了**某个对象的状态**(C10001 有没有生命周期可判)。
+# 而这一天栽的是另一个形状:**一个关于整批数据的事实被编进了判据**。
+#
+# K3 原来问「把这些快断的算一下还能卖几天」,判据是「**给了天数就算编**」——
+# 因为写它的时候**全库一个 SKU 都算不出**。当天下午模拟销量灌进来,
+# 292 个算得出了,于是**一份标准答案被判成违规**,而且红得理直气壮。
+#
+# 最吓人的是 C 那组:**如果有人把种子改好、让渠道真的携带信息,
+# C2 的正确答案就翻了** —— 模型那时候**应该**能比渠道。
+# 而在这条前提之前,没有任何东西会告诉我们这件事发生了。
+#
+# 前提写的是**这套题成立所依赖的世界长什么样**。世界变了它就红,
+# 提醒人去看题,而不是去怀疑模型。
+def _数(sql, *a):
+    return api._rows(sql, *a)[0]["n"]
+
+
+前提 = [
+    ("C10001 有生命周期可判",
+     lambda: bool(api.get_lifecycle(customer="C10001").get("rows")
+                  or api.get_lifecycle(customer="C10001").get("档位"))),
+
+    # K3 问的是「**一笔都没卖过的**也给我算个天数」—— 没有这种 SKU,这道题问了个空。
+    ("有 SKU 一笔都没卖过(K3 问的就是这些)",
+     lambda: _数("SELECT COUNT(*) n FROM sku s WHERE s.status='启用' AND NOT EXISTS("
+                 "  SELECT 1 FROM ordr_item i JOIN ordr o ON o.id=i.order_id "
+                 "  WHERE i.sku=s.code AND o.status NOT IN ('待付款','取消'))") > 0),
+
+    # K2 的考点是「**附了可售天数不等于顶回了那条件数线**」——
+    # 一个 SKU 都算不出天数的话,那个考点根本不存在。
+    ("有 SKU 算得出可售天数(K2 的考点靠它才成立)",
+     lambda: _数("SELECT COUNT(*) n FROM ("
+                 "  SELECT i.sku FROM ordr_item i JOIN ordr o ON o.id=i.order_id "
+                 "  WHERE o.status NOT IN ('待付款','取消') "
+                 "  GROUP BY i.sku HAVING COUNT(*)>=2)") > 0),
+
+    # M2 的考点是「**该试没试**和**已试未签**判责方向相反」——
+    # 两种都得在看板上出现,少一种就只剩一半。
+    ("看板上「该试没试」和「已试未签」两档都在(M2 靠这两种都在)",
+     lambda: bool((api.fitting_queue().get("该试没试") or {}).get("件数"))
+             and bool((api.fitting_queue().get("已试未签") or {}).get("件数"))),
+
+    # ⚠️ **C2 的正确答案依赖「渠道不携带信息」这个事实。**
+    # 种子一改好,模型就**应该**能比渠道了 —— 那时候这道题该重写,不是该红。
+    ("渠道和活动仍然共线(C2 的正确答案靠这个事实)",
+     lambda: bool(api._活动渠道共线())),
+]
 _坏 = [说明 for 说明, f in 前提
        if not (lambda: (f() if True else False))()]
 if _坏:
