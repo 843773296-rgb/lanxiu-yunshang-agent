@@ -13,7 +13,7 @@
 **默认全是 dry-run。** 要真写库,每一步都得自己再加 `--yes` ——
 造数工具的默认值只有一个正确选项:什么都不做。
 """
-import os, sys, json, argparse
+import os, re, sys, json, argparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -202,6 +202,31 @@ def cmd_protect(a):
         print("\n加 --write <文件> 落成声明;默认只落「证据」那一档。")
 
 
+def cmd_target(a):
+    """定向造数:**先说要让哪条检查红**,再倒推造什么数据,造出来真跑验证。"""
+    print(guard.check_target(a.target, a.env, write=True))
+    import target as TG
+    源码 = TG.读线索(a.source, a.flag) if a.source else None
+    陪跑 = [x.strip() for x in (a.also or "").split(";") if x.strip()]
+    if not a.yes:
+        print(f"\n【dry-run】目标:让「{a.flag}」红")
+        print(f"  判定这一条:{a.check}")
+        print("  陪跑(不许跟着红):" + (str(陪跑) if 陪跑 else
+              "(没给 —— **那就只验了一半判据**:「把库搞坏也能让任何检查红」这一半没人盯)"))
+        print("  源码线索:" + (f"有,{len(源码.splitlines())} 行" if 源码 else "没有(模型只能靠结构猜)"))
+        print("\n定向造数**会真写库**(每一轮结束都删干净),所以要显式 --yes。")
+        return
+    conn = S.connect(a.target)
+    T = TG.目标(a.check, a.flag, 源码=源码)
+    rep = TG.打(conn, conn.reflect(), T, 陪跑, 轮数=a.rounds, root=ROOT,
+                表名=[x.strip() for x in a.tables.split(",")] if a.tables else None)
+    path = os.path.join(_outdir(), "定向造数-" + re.sub(r"[^\w.-]", "_", a.flag) + ".json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(rep, f, ensure_ascii=False, indent=1)
+    print(f"\n报告 → {path}")
+    raise SystemExit(0 if rep["成功"] else 1)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="假数据工厂")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -229,6 +254,21 @@ def main(argv=None):
     p2.set_defaults(fn=cmd_load)
     p3 = sub.add_parser("verify"); common(p3)
     p3.add_argument("--plan", required=True); p3.set_defaults(fn=cmd_verify)
+    p7 = sub.add_parser("target", help="定向造数:指定要让哪条检查红,倒推造什么数据")
+    common(p7)
+    p7.add_argument("--check", required=True, metavar="命令",
+                    help="判定这一条用的检查命令,例:'python3 backend/spec_check.py'")
+    p7.add_argument("--flag", required=True, metavar="标志",
+                    help="检查输出里代表这一条的字符串(编号 A3、或检查名的一段)")
+    p7.add_argument("--source", default=None, metavar="文件",
+                    help="检查的源码文件 —— 抠相关片段给模型当线索;不给的话模型只能靠结构猜")
+    p7.add_argument("--also", default=None, metavar="陪跑",
+                    help="分号隔开的陪跑检查,它们**不许跟着红**。不给就只验了一半判据")
+    p7.add_argument("--rounds", type=int, default=3, metavar="N",
+                    help="最多试几轮(每轮把上一轮失败的原因喂回去)")
+    p7.add_argument("--tables", default=None, help="只把这几张表的结构给模型看")
+    p7.add_argument("--yes", action="store_true")
+    p7.set_defaults(fn=cmd_target)
     p6 = sub.add_parser("protect", help="扫出可能碰不得的行(夹具/被真值引用的),出建议")
     common(p6)
     p6.add_argument("--write", default=None, metavar="文件", help="把建议落成声明文件")

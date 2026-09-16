@@ -1049,6 +1049,88 @@ def main():
     ck(差 and 差["差"] == 4 and "唯一真相来源" in 差["说明"],
        "**对不上要说清差多少**,不是只说「不一致」", str(差))
 
+    # ── 定向造数:先说要让哪条红,再倒推造什么 ──────────────────────────
+    #
+    # **离线跑**:注入一个固定的「假模型」,验的是闭环本身对不对,不是模型聪不聪明。
+    # 钉的五条里,最值钱的是第三条 —— **把库搞坏能让任何检查红,那不叫触发**。
+    print("\n【定向造数】")
+    import target as TG
+
+    tgt_db = os.path.join(tmpd, "target_db.db")
+    build_known_db(tgt_db)
+    ct = S.connect(tgt_db); sct = ct.reflect()
+    # 目标检查:cust 表里出现 city 为空的行就红。陪跑检查:item 行数变多就红。
+    n_item0 = sqlite3.connect(tgt_db).execute("select count(*) from item").fetchone()[0]
+    chk_city = os.path.join(tmpd, "chk_city.py")
+    with open(chk_city, "w", encoding="utf-8") as f:
+        f.write(f"import sqlite3,sys\n"
+                f"n=sqlite3.connect({tgt_db!r}).execute("
+                f"\"select count(*) from cust where city is null or city=''\").fetchone()[0]\n"
+                f"print('❌ CITY-1 有 %d 行客户没有城市' % n) if n else print('✅ CITY-1 都有城市')\n"
+                f"sys.exit(1 if n else 0)\n")
+    chk_item2 = os.path.join(tmpd, "chk_item2.py")
+    with open(chk_item2, "w", encoding="utf-8") as f:
+        f.write(f"import sqlite3,sys\n"
+                f"n=sqlite3.connect({tgt_db!r}).execute('select count(*) from item').fetchone()[0]\n"
+                f"print('❌ ITEM-1 行数变多 %d' % n) if n > {n_item0} else print('✅ ITEM-1 没变')\n"
+                f"sys.exit(1 if n > {n_item0} else 0)\n")
+    T1 = TG.目标(f"python3 {chk_city}", "CITY-1", 源码="select ... where city is null")
+    陪 = [f"python3 {chk_item2}"]
+
+    好草案 = {"要造的": [{"表": "cust", "行": {"id": "C-T-1", "name": "定向", "city": None,
+                                              "created": "2024-03-03", "phone": "13911110000",
+                                              "login": "C-T-1"}}],
+              "为什么会红": "这一行没有城市"}
+    r1 = TG.打(ct, sct, T1, 陪, 轮数=1, 起草器=lambda *a, **k: 好草案, root=tmpd,
+               log=lambda *a: None)
+    ck(r1["成功"], "**造出了精确触发那一条的数据**(目标红、其余不变)",
+       str(r1["轮"][-1]["为什么"])[:70] if r1["轮"] else "")
+
+    没触发 = {"要造的": [{"表": "cust", "行": {"id": "C-T-2", "name": "没触发", "city": "杭州",
+                                              "created": "2024-03-04", "phone": "13911110002",
+                                              "login": "C-T-2"}}]}
+    r2 = TG.打(ct, sct, T1, 陪, 轮数=1, 起草器=lambda *a, **k: 没触发, root=tmpd,
+               log=lambda *a: None)
+    ck(not r2["成功"] and "没红" in r2["轮"][-1]["为什么"],
+       "没触发就**老实说没触发**,不许自称成功", str(r2["轮"][-1]["为什么"])[:60])
+
+    # ⚠️ 这一条是这个模块的核心判据:**把库搞坏能让任何检查红,那不叫触发**
+    搞坏 = {"要造的": [
+        {"表": "cust", "行": {"id": "C-T-3", "name": "连带", "city": None,
+                              "created": "2024-03-05", "phone": "13911110003", "login": "C-T-3"}},
+        {"表": "item", "行": {"ordr": "O00001", "sku": "X", "qty": 1}}]}
+    r3 = TG.打(ct, sct, T1, 陪, 轮数=1, 起草器=lambda *a, **k: 搞坏, root=tmpd,
+               log=lambda *a: None)
+    ck(not r3["成功"] and r3["轮"][-1]["连带弄红的"],
+       "**顺带弄红别的检查算失败** —— 要的是精确触发,不是把库搞乱",
+       str(r3["轮"][-1]["为什么"])[:60])
+
+    r4 = TG.打(ct, sct, T1, 陪, 轮数=1,
+               起草器=lambda *a, **k: {"要造的": [], "造不出来的理由": "我不会"},
+               root=tmpd, log=lambda *a: None)
+    ck(not r4["成功"] and "造不出来" in r4["轮"][-1]["为什么"],
+       "模型说造不出来时,**如实报「造不出来」**(那也是结论)")
+
+    后 = sqlite3.connect(tgt_db).execute("select count(*) from cust").fetchone()[0]
+    ck(后 == nc, "**每一轮都删干净了** —— 试完库回到原样", f"{nc} → {后}")
+
+    # 目标本来就红的话,这次造不出任何信息 —— 要明说,不能算成功
+    坏库 = os.path.join(tmpd, "target_red.db")
+    build_known_db(坏库)
+    _c = sqlite3.connect(坏库); _c.execute("update cust set city=NULL where id='C0001'"); _c.commit(); _c.close()
+    chk_city2 = os.path.join(tmpd, "chk_city2.py")
+    with open(chk_city2, "w", encoding="utf-8") as f:
+        f.write(f"import sqlite3,sys\n"
+                f"n=sqlite3.connect({坏库!r}).execute("
+                f"\"select count(*) from cust where city is null or city=''\").fetchone()[0]\n"
+                f"print('❌ CITY-1 有 %d 行' % n) if n else print('✅ CITY-1 都有城市')\n"
+                f"sys.exit(1 if n else 0)\n")
+    c5 = S.connect(坏库)
+    r5 = TG.打(c5, c5.reflect(), TG.目标(f"python3 {chk_city2}", "CITY-1"), [], 轮数=1,
+               起草器=lambda *a, **k: 好草案, root=tmpd, log=lambda *a: None)
+    ck(r5.get("本来就红") and not r5["成功"],
+       "**目标本来就是红的要明说** —— 「本来就红」和「被我造红了」长得一模一样")
+
     print(f"\n假数据工厂自测:{'全部通过' if not FAIL else str(len(FAIL)) + ' 项失败'}")
     return 1 if FAIL else 0
 
