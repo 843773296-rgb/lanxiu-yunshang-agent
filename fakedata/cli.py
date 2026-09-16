@@ -18,7 +18,7 @@ import os, sys, json, argparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-import schema as S, discover as D, plan as P, gen as G, guard, load as L, protect as PR
+import schema as S, discover as D, plan as P, gen as G, guard, load as L, protect as PR, realism as R
 
 
 def _outdir():
@@ -113,6 +113,9 @@ def cmd_load(a):
     n = sum(tp["count"] for tp in pl["tables"].values() if not tp.get("skip"))
     print(f"\n基线自检…")
     before = L.run_assertions(conn, pl)
+    # 像不像体检的**灌前快照**:期望值一律从库里现算,不从方案里读 ——
+    # 拿方案去验方案造出来的数是同源谬误,造错了期望值跟着一起错。
+    前照 = R.快照(conn, pl)
     # 造和灌串成流水线:一张表造完立刻灌,然后只留下会被子表指到的那几列。
     # 实测 22 万行的峰值内存从 214MB 降到 132MB,速度不变。
     made, man = G.generate(pl, conn, sink=L.sink_for(conn, pl, log=print))
@@ -128,6 +131,7 @@ def cmd_load(a):
     print(f"  我弄脏的: {len(worse)} 条" + ("  ✅" if not worse else "  ❌"))
     for k, b, aa, note in worse[:20]:
         print(f"    ✗ {k}: {b} → {aa}" + (f"  [{note}]" if note else ""))
+    R.报告(R.体检(前照, R.快照(conn, pl)))
     print(f"\n回滚凭据 → {mpath}")
 
 
