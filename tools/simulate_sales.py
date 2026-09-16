@@ -76,6 +76,8 @@ import os, sys, math, heapq, random, sqlite3, argparse, datetime as dt
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(ROOT, "fakedata"))
+import ledger as LG          # 台账链:每一行 after = before + 增减,而且接得上上一行
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 sys.path.insert(0, os.path.join(ROOT, "knowledge"))
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
@@ -240,10 +242,12 @@ def simulate(skus, ver, custs, rng):
 
     start = min(v[0]["launch"] for v in live.values())
     loyal = {c["id"]: math.exp(rng.gauss(0, 1.0)) for c in custs}
-    avail = {s["code"]: 0 for ss in live.values() for s in ss}
+    # **每个 SKU 一本台账。** 原来是一个 dict 自己加加减减、自己拼 before/after ——
+    # 那段逻辑写错了不会有任何东西报,因为每一行单看都正常。
+    帐 = {s["code"]: LG.台账(s["code"], 起始=0) for ss in live.values() for s in ss}
     by_code = {s["code"]: s for ss in live.values() for s in ss}
-    on_order = {k: 0 for k in avail}
-    stopped = {k for k in avail if rng.random() < 0.08}       # 供应商停供,卖完不补
+    on_order = {k: 0 for k in 帐}
+    stopped = {k for k in 帐 if rng.random() < 0.08}       # 供应商停供,卖完不补
 
     logs, orders, lost = [], [], 0
     ev, seq = [], 0
@@ -254,12 +258,14 @@ def simulate(skus, ver, custs, rng):
         heapq.heappush(ev, (t, seq, kind, kw))
 
     def log(t, code, kind, delta, ref, note=""):
-        b = avail[code]
-        avail[code] = b + delta
+        行 = 帐[code].记(ts(t), kind, delta, ref, note)
+        if 行 is None:      # 余额不够 —— 台账拒绝记,不静默改数
+            return None
         logs.append(dict(sku=code, spu=by_code[code]["spu"], kind=kind, delta=delta,
-                         before_n=b, after_n=b + delta, ref=ref,
+                         before_n=行["前"], after_n=行["后"], ref=ref,
                          operator="系统" if kind in ("订单占用", "订单释放") else rng.choice(OPERATORS),
                          ts=ts(t), note=note))
+        return 行
 
     po = [0]
 
@@ -267,7 +273,7 @@ def simulate(skus, ver, custs, rng):
         s = by_code[code]
         if code in stopped or on_order[code]:
             return
-        if avail[code] > s["exp_day"] * 21 + 1:
+        if 帐[code].余额 > s["exp_day"] * 21 + 1:
             return
         qty = max(3, int(round(s["exp_day"] * rng.uniform(30, 50))))
         on_order[code] = qty
@@ -299,7 +305,7 @@ def simulate(skus, ver, custs, rng):
                 if t <= CUT:
                     push(t, "下单", spus=[pick(rng, act)] + ([pick(rng, act)] if rng.random() < 0.15 else []))
         if d.day == 1:
-            for code in sorted(avail):
+            for code in sorted(帐):
                 if by_code[code]["launch"] < d and rng.random() < 0.03:
                     push(dt.datetime.combine(d, dt.time(17, 30)), "盘点", code=code)
                 if by_code[code]["launch"] < d and rng.random() < 0.01:
@@ -318,11 +324,11 @@ def simulate(skus, ver, custs, rng):
         elif kind == "盘点":
             code = kw["code"]
             dlt = rng.choice((-2, -1, 1, 2))
-            if avail[code] + dlt >= 0:
+            if 帐[code].够吗(-dlt if dlt < 0 else 0):
                 log(t, code, "盘点调整", dlt, f"SIM-CK{t:%y%m%d}{code[-4:]}", "月度盘点差异修正")
         elif kind == "报损":
             code = kw["code"]
-            if avail[code] >= 1:
+            if 帐[code].够吗(1):
                 log(t, code, "报损", -1, f"SIM-DM{t:%y%m%d}{code[-4:]}", "运输途中破损")
                 replenish(t, code)
         elif kind == "释放":
@@ -343,7 +349,7 @@ def simulate(skus, ver, custs, rng):
                 ss = live[spu]
                 s = pick(rng, [(x, x["share"]) for x in ss])
                 qty = pick(rng, ((1, 85), (2, 13), (3, 2)))
-                if avail[s["code"]] < qty:
+                if not 帐[s["code"]].够吗(qty):
                     lost += 1
                     replenish(t, s["code"])
                     continue
@@ -426,9 +432,13 @@ def simulate(skus, ver, custs, rng):
         if o["status"] in ("待付款", "待发货"):
             for i in o["items"]:
                 hold[i["sku"]] = hold.get(i["sku"], 0) + i["qty"]
-    final = {code: (avail[code] + hold.get(code, 0), hold.get(code, 0)) for code in avail}
+    # 生成时就查一遍链,不等灌完再说 —— **断链在灌完之后极难追**
+    断 = [x for code in 帐 for x in LG.查链(帐[code].行, 起始=0)]
+    if 断:
+        raise SystemExit(f"❌ 台账链断了 {len(断)} 处,不往下走:{断[:2]}")
+    final = {code: (帐[code].余额 + hold.get(code, 0), hold.get(code, 0)) for code in 帐}
     return orders, logs, final, dict(lost=lost, start=start, live_spu=len(live),
-                                     live_sku=len(avail), stopped=len(stopped),
+                                     live_sku=len(帐), stopped=len(stopped),
                                      flat=sorted({ss[0]["category"] for ss in live.values()
                                                   if ss[0]["category"] not in SEASON}))
 
