@@ -102,6 +102,7 @@ run "来源等级 · 声称可溯源的得真溯得了源" python3 backend/sourc
 run "库存预警 · 算不出可售天数的不许算出一个数来" python3 backend/stock_check.py
 run "白坯试衣 · 「没走流程」和「走了没拿到确认」不许混成一个" python3 backend/muslin_check.py
 run "多渠道对比 · 数算得对,而这张表不能用来比渠道" python3 backend/channel_check.py
+run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/eval_provenance_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py
 run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/leadtime.py
