@@ -94,6 +94,28 @@ if __name__ == "__main__":
     import truthdb
     truths = truthdb.by_case()   # 评测侧自己的只读连接,不借工具层
     pv = v1.provider()
+    # ⚠️ **不显式指定模型就拒跑。**
+    #
+    # 不是因为「默认值不对」,而是因为**默认值取决于你用哪种凭证**:
+    # `v1.provider()` 两条 Claude 路径的默认模型不一样 ——
+    #     有 ANTHROPIC_API_KEY(按量计费) → 默认 claude-opus-5
+    #     走钥匙串登录态(月租)            → 默认 claude-haiku-4-5
+    #
+    # 于是**同一条命令在另一台机器上跑出来的是另一个模型的数**,
+    # 而这张表上完全看不出来:它只写「判对 6/6、$0.0129」,不写那是谁算出来的。
+    # 换了模型的两张表不可比,成本能差一个量级。
+    #
+    # 2026-09-16 重跑时差点栽在这上面:我以为默认是 opus-5(读的是另一条分支),
+    # 跑完看输出第一行才发现是 haiku-4.5。**一个名字两个默认值,读代码都会读错。**
+    if os.environ.get("LANXIU_PROVIDER", "").lower() == "claude" \
+            and not os.environ.get("ANTHROPIC_MODEL"):
+        raise SystemExit(
+            "❌ 没指定模型,拒跑。\n"
+            "   三代对比是**跨版本比**的,模型一换,这张表和上一张就不可比了"
+            "(成本能差一个量级,而表格上看不出来)。\n"
+            "   和基线同模型:  ANTHROPIC_MODEL=claude-haiku-4-5 \\\n"
+            "                  LANXIU_PROVIDER=claude ./agentsite/.venv/bin/python agent/gen_compare.py\n"
+            "   要换模型看差别也行,但**那是另一组数**,别拿去覆盖基线那一行。")
     # **这一轮的成本**要单独算:记录仪里的「累计均价」会被历史稀释,
     # 于是两次对比表之间根本不可比 —— V1 从 $0.021 变成 $0.0065,
     # 可能只是后来跑了很多便宜调用,不是任何东西变好了。
@@ -142,6 +164,63 @@ if __name__ == "__main__":
         print(f"  {g:4s}{d['ok']}/{d['n']:<5d}{d['calls']/d['n']:>12.1f}"
               f"{d['sec']/d['n']:>9.1f}s  ${run_cost.get(g, 0)/d['n']:>9.5f}"
               f"  ${by.get(g,{}).get('均价',0):>10.5f}")
+    # ── 落盘 ────────────────────────────────────────────────────────
+    # **这张表原来只打印,不落盘。** 于是「两次之间变了什么」只能靠人抄进 CLAUDE.md,
+    # 而抄下来的数**没有来路**:谁跑的、哪个模型、哪一天、几条工单,全靠记。
+    # 下一次重跑时没有基线可 diff —— 而没有基线的「看起来差不多」不是信息。
+    #
+    # 来路盖在**每一条**上,不是文件头:跑到一半被停时,文件头说的和内容里的会对不上。
+    # (这条口径照搬 tools/eval_provenance_check.py,那边管评测套,这份它不管。)
+    import datetime as _dt
+    出 = os.path.join(HERE, "gen-compare-results.jsonl")
+    # ── 和**上一轮同模型**的那次比一遍 ────────────────────────────────
+    # 不是为了好看:两张表之间「变了什么」原来只能靠人对着抄,
+    # 而人抄的时候**不会发现模型换了** —— 这一轮就是这么踩的。
+    # 按模型分组再比,模型不同的直接说「不可比」,不混在一起。
+    上一轮 = {}
+    if os.path.exists(出):
+        _hist = [_j.loads(l) for l in open(出, encoding="utf-8") if l.strip()]
+        同模型 = [r for r in _hist if r.get("模型") == pv.get("model")]
+        if 同模型:
+            最近 = max(r["跑次"] for r in 同模型)
+            上一轮 = {r["代"]: r for r in 同模型 if r["跑次"] == 最近}
+            print(f"\n  和上一轮同模型的对比(上一轮:{最近} · {pv.get('model')})")
+            for g in gens:
+                d, o = res[g], 上一轮.get(g)
+                if not d["n"] or not o:
+                    continue
+                def _箭(新, 旧, 小好=False):
+                    if abs(新 - 旧) < 1e-9: return "持平"
+                    好 = (新 < 旧) if 小好 else (新 > 旧)
+                    return f"{旧} → {新} {'↑' if 新 > 旧 else '↓'}{'' if 好 else ' ⚠️'}"
+                print(f"    {g}: 判对 {_箭(d['ok'], o['判对'])} · "
+                      f"调用/条 {_箭(round(d['calls']/d['n'],2), o['模型调用每条'], 小好=True)} · "
+                      f"成本/条 {_箭(round(run_cost.get(g,0)/d['n'],5), o['本轮成本每条'], 小好=True)}")
+            print("    ⚠️ 波动本身也是数据:**同一版跑两次分数就可能不一样**,"
+                  "别把一次变化当成改进或退步。")
+        else:
+            # 没有可比的上一轮要**说出来**,不是静默跳过 ——
+            # 「第一次跑」和「和上一轮一样」在输出上长得一模一样。
+            print(f"\n  ℹ️ 这个模型({pv.get('model')})**没有可比的上一轮** —— "
+                  f"这是它的第一轮,不是「和上次一样」。")
+    供应商 = "claude" if "claude" in (pv.get("model") or "").lower() else "deepseek"
+    跑次 = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    with open(出, "a", encoding="utf-8") as fh:
+        for g in gens:
+            d = res[g]
+            if not d["n"]: continue
+            fh.write(_j.dumps({
+                "跑次": 跑次, "供应商": 供应商, "模型": pv.get("model"),
+                "代": g, "工单数": d["n"], "判对": d["ok"],
+                "模型调用每条": round(d["calls"] / d["n"], 2),
+                "耗时每条秒": round(d["sec"] / d["n"], 1),
+                "本轮成本每条": round(run_cost.get(g, 0) / d["n"], 5),
+                "本轮总成本": round(run_cost.get(g, 0), 5),
+                "工单": [t["id"] for t in tasks],
+            }, ensure_ascii=False) + "\n")
+    print(f"\n  结果已落盘 → agent/gen-compare-results.jsonl(**每条都盖着来路**:{供应商} · {pv.get('model')})")
+    print("  上一轮的数在同一个文件里,`diff` 得出来 —— **没有基线的「看起来差不多」不是信息**。")
+
     print("\n  **「本轮/条」才是跨版本能比的那个数**(这一轮实际花了多少 ÷ 条数)。")
     print("  「累计均价/次」是记录仪里该代**全部历史调用**的单次均价 ——")
     print("  它会被后来的调用稀释,**两次对比表之间不可比**,只能看「一次调用多贵」。")
