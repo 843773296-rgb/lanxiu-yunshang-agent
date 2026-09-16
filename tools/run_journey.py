@@ -53,6 +53,66 @@ except Exception:
 REAL, RAW = f"{G}真路径{D}", f"{Y}直插{D}"
 
 
+def _拆定制明细(item_id, spu, 总额):
+    """把定制加价拆成看得见的部位明细。
+
+    ⚠️ **这不是重新算一遍价,是把一个已有的总额拆成看得见的项** ——
+    拆出来对不上,就是**收的钱和记的账分家了**(`part_choice_check` 盯着)。
+
+    口径和 `seed.py` 里那段一致:每个部位挑一个选项、按项数均摊、
+    **最后一项吃舍入差**。挑法按 item_id 定,**重播种结果一样**。
+    """
+    if not item_id or not 总额 or 总额 <= 0:
+        return
+    opts = q("SELECT part, material, addon, colors FROM part_option "
+             "WHERE spu=? AND kind='面料' ORDER BY sort, material", spu)
+    if not opts:
+        # ⚠️ **没得选就不该收这笔钱。** 这里不静默跳过 —— 静默跳过正是
+        # 「有钱没项」那条检查要抓的东西。说出来,让人去看这个 SPU 为什么没选项。
+        print(f"    ⚠️ SPU {spu} 没有面料部位选项,而订单行 {item_id} "
+              f"收了 ¥{总额} 定制加价 —— **有钱没项**,这一单的明细拆不出来")
+        return
+    分组 = {}
+    for o in opts:
+        分组.setdefault(o["part"], []).append(o)
+    选 = []
+    for i, (部位, lst) in enumerate(sorted(分组.items())):
+        o = lst[(item_id + i) % len(lst)]
+        cs = [x for x in (o["colors"] or "").split("、") if x]
+        选.append((部位, o["material"], cs[(item_id + i) % len(cs)] if cs else None))
+    # ⚠️ **外层部位有面料就得有工艺** —— 而内衬和系带不配工艺。
+    # 这条判据不在这儿重写:**口径在 `knowledge/part.py`**,这里只调它。
+    # (里面那层和辅料本来就不做工艺:醋酸里布上不绣花、织带上不做缂丝;
+    #  相容矩阵里也查不到「苏绣 × 醋酸里布」——**矩阵是主料 × 工艺的**。)
+    import importlib.util as _iu, os as _os
+    _sp = _iu.spec_from_file_location(
+        "part", _os.path.join(_os.path.dirname(_os.path.dirname(
+            _os.path.abspath(__file__))), "knowledge", "part.py"))
+    _pm = _iu.module_from_spec(_sp); _sp.loader.exec_module(_pm)
+    外层 = {b for b in _pm.部位顺序 if _pm.部位可选料类(b) == ("主料",)}
+    工艺可选 = [r["material"] for r in q(
+        "SELECT DISTINCT material FROM part_option WHERE spu=? AND kind='工艺'", spu)]
+
+    每项 = round(float(总额) / len(选), 2)
+    for i, (部位, 料, 色) in enumerate(选):
+        金 = 每项 if i < len(选) - 1 else round(float(总额) - 每项 * (len(选) - 1), 2)
+        ex("INSERT INTO item_part_choice(item_id,kind,part,material,color,amount,note)"
+           " VALUES(?,?,?,?,?,?,?)", item_id, "面料", 部位, 料, 色, 金, None)
+        if 部位 not in 外层:
+            continue
+        # ⚠️ **挑不出相容的就不配工艺,不是随便塞一个** ——
+        # 塞一个做不出来的组合,车间会拿着它去开工。
+        相容 = [k for k in 工艺可选 if (q(
+            "SELECT verdict v FROM craft_combo WHERE craft="
+            "(SELECT code FROM craft WHERE name=? AND cat='工艺') AND material="
+            "(SELECT code FROM craft WHERE name=? AND cat='材质')", k, 料)
+            or [{"v": None}])[0]["v"] not in ("不可", None)]
+        if not 相容:
+            continue
+        ex("INSERT INTO item_part_choice(item_id,kind,part,material,color,amount,note)"
+           " VALUES(?,?,?,?,?,?,?)",
+           item_id, "工艺", 部位, 相容[(item_id + i) % len(相容)], None, 0.0, None)
+
 def q(sql, *a):
     with sqlite3.connect(DB) as c:
         c.row_factory = sqlite3.Row
@@ -325,10 +385,30 @@ def _journey(cust, dry=False):
         return steps, None
     # sku 表的主键叫 code 不叫 sku,商品名在 product 表里 —— **列名以表为准**,
     # 这个项目在「列名靠猜」上栽过(appt_at vs start_ts)
+    # ⚠️ **这一单是定制单,所以 SKU 必须是定制品的。**
+    #
+    # 原来只写了 `WHERE s.status='启用'` —— 随机抽到什么算什么,
+    # 实测 31 单里 **24 单抽到了标品**,然后给它加了一笔几百到两千的「定制加价」。
+    #
+    # 后果不是「数字不好看」,是**业务上讲不通**:标品是现货成衣按尺码卖的,
+    # 它**没有部位选项**,那笔定制加价**拆不出明细** ——
+    # 车间照着打印不出来,客户争议时也拿不出依据。
+    # 而这 24 单在库里**看起来完全正常**:有订单、有金额、有状态。
+    #
+    # 再加一条 `part_option` 存在性:**有选项才拆得出明细**。
+    # 只判 kind 不够 —— 146 个定制品里有 2 个没录部位选项。
     sk = q("""SELECT s.code,s.spu,s.price,s.spec,p.name FROM sku s
-              LEFT JOIN product p ON p.spu=s.spu
-              WHERE s.status='启用' ORDER BY RANDOM() LIMIT 1""")
-    sku = sk[0] if sk else dict(code="SKU0001", name="定制汉服", price=4800.0, spu="SPU001", spec="")
+              JOIN product p ON p.spu=s.spu
+              WHERE s.status='启用' AND p.kind='定制品'
+                AND EXISTS(SELECT 1 FROM part_option WHERE spu=s.spu AND kind='面料')
+              ORDER BY RANDOM() LIMIT 1""")
+    if not sk:
+        # **不静默退回一个编出来的 SKU。** 原来这里有个 `dict(code="SKU0001", …)`
+        # 的兜底 —— 它指向一个**库里不存在的商品**,而下出来的单看起来完全正常。
+        raise SystemExit("❌ 找不到「启用 + 定制品 + 有部位选项」的 SKU —— "
+                         "**下不了定制单**。这不是随机波动,是主数据缺了东西,"
+                         "去查 product.kind 和 part_option。")
+    sku = sk[0]
     custom = round(random.uniform(600, 2400), 2)
     amt = round((sku["price"] or 4800) + custom, 2)
     created = (v_start + datetime.timedelta(hours=3)).strftime("%Y-%m-%d %H:%M")
@@ -347,10 +427,26 @@ def _journey(cust, dry=False):
        oid, cust["id"], f"{adv.get('adv_code') or ''} {adv['name']}".strip(),
        adv["no"], cust["shop"],
        amt, amt, created, created, ST2PRD["待付款"], sku["price"], amt, created)
+    # ⚠️ **下单时的版型版本是快照,不是现算。**
+    # 版型改过之后回头看这一单,现算会给出**今天**那一版,
+    # 而车间当初裁的是**那天**那一版 —— 两者在表上长得一模一样。
+    _pvr = q("SELECT version FROM pattern WHERE code="
+             "(SELECT pattern FROM product WHERE spu=?)", sku["spu"])
+    _pv = _pvr[0]["version"] if _pvr else None
     ex("""INSERT INTO ordr_item(order_id,sku,name,tag,price,qty,spu,base_amount,
-          custom_amount,total) VALUES(?,?,?,'定制',?,1,?,?,?,?)""",
+          custom_amount,total,pattern_version,pattern_version_src)
+          VALUES(?,?,?,'定制',?,1,?,?,?,?,?,?)""",
        oid, sku["code"], (sku.get("name") or "定制汉服") + (f"·{sku.get('spec')}" if sku.get("spec") else ""),
-       sku["price"], sku["spu"], sku["price"], custom, amt)
+       sku["price"], sku["spu"], sku["price"], custom, amt,
+       _pv, "下单时记的(run_journey)" if _pv is not None else None)
+    _ir = q("SELECT MAX(id) m FROM ordr_item WHERE order_id=?", oid)
+    _iid = _ir[0]["m"] if _ir else None
+    # ⚠️ **收了定制加价,就必须有部位明细。**
+    # 原来这里只写了金额:钱收了,而**选了什么部位、什么料、什么颜色一个字都没存** ——
+    # 车间照着打印不出来,客户争议时也拿不出依据。
+    # `seed.py` 里做对了这件事,而这条路径是后来加的,**没跟上** ——
+    # 两条路径写同一张表,只有一条是对的,而库里看不出来。
+    _拆定制明细(_iid, sku["spu"], custom)
     steps.append(("⑦ 下单", RAW, f"{oid[-6:]}… · {sku['name']} · ¥{amt}(定制加价 ¥{custom})"))
 
     # ── ⑦ 订单推进到完成(真路径:一档一档走状态机)──────────────────
