@@ -31,14 +31,29 @@ set -e
 cd "$(dirname "$0")/.."
 echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
 sleep 3
-for 步 in "backend/seed.py" "tools/run_journey.py 42" "tools/simulate_sales.py" \
-          "backend/seed_fitting.py" "tools/make_todo.py"; do
-  printf "\n\033[1m▸ %s\033[0m\n" "$步"
-  python3 $步 > /tmp/rebuild-step.out 2>&1 || {
+
+# ⚠️ **变量名用 ASCII。** 第一版写的是 `for 步 in ...`,bash 报
+# `not a valid identifier`,于是**循环体一步都没跑** ——
+# 而脚本照样打印了「✅ 重建完成」。
+# `set -e` 没救它:那个错发生在循环语法解析,不是命令失败。
+#
+# **一个什么都没做的脚本,和一个做完了的脚本,输出长得一模一样。**
+DONE=0
+for STEP in "backend/seed.py" "tools/run_journey.py 42" "tools/simulate_sales.py" \
+            "backend/seed_fitting.py" "tools/make_todo.py"; do
+  printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
+  python3 $STEP > /tmp/rebuild-step.out 2>&1 || {
     echo "  ❌ 这一步失败了,后面的不跑 —— **跳过一步不会报错,只会让某几张表空着**"
     tail -15 /tmp/rebuild-step.out | sed 's/^/     /'
     exit 1
   }
   tail -2 /tmp/rebuild-step.out | sed 's/^/     /'
+  DONE=$((DONE + 1))
 done
-printf "\n\033[32m✅ 重建完成\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n"
+
+# **自己证明干了活。** 不加这一条的话,上面那个 bug 会一直以「✅」收场。
+if [ "$DONE" -ne 5 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 5 步)—— **循环没跑全,而上面看起来是顺利的**"
+  exit 1
+fi
+printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"
