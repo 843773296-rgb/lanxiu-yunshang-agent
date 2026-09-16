@@ -18,7 +18,7 @@ import os, sys, json, argparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
-import schema as S, discover as D, plan as P, gen as G, guard, load as L
+import schema as S, discover as D, plan as P, gen as G, guard, load as L, protect as PR
 
 
 def _outdir():
@@ -71,8 +71,16 @@ def cmd_plan(a):
         for l in log[:8]: print(f"    · {l}")
         if len(log) > 8: print(f"    · …还有 {len(log)-8} 条")
 
+    decl = PR.读声明(a.protect) if a.protect else []
+    if a.protect:
+        st = PR.统计(conn, decl)
+        print(f"\n行级保护: {len(decl)} 条声明")
+        for s in st:
+            zero = isinstance(s["护住几行"], int) and s["护住几行"] == 0
+            print(f'  {"⚠️" if zero else "·"} {s["表"]}: {s["条件"]} → 护住 {s["护住几行"]} 行'
+                  + ("  **一条护住 0 行的声明,和没写是一样的**" if zero else ""))
     pl = P.build(facts, seed=a.seed, scale=a.scale, tables=tables,
-                 allow_no_pk=a.allow_no_pk)
+                 allow_no_pk=a.allow_no_pk, protect=decl)
     with open(base + ".plan.json", "w", encoding="utf-8") as f:
         json.dump(pl, f, ensure_ascii=False, indent=1)
     md = P.to_markdown(pl)
@@ -172,6 +180,24 @@ def cmd_trial(a):
     raise SystemExit(0 if rep["干净"] else 1)
 
 
+def cmd_protect(a):
+    """扫出「可能碰不得」的行。**出建议,不出结论** —— 人看过写进声明才算数。"""
+    print(guard.check_target(a.target, a.env))
+    conn = S.connect(a.target); sc = conn.reflect()
+    建议 = PR.猜夹具(conn, sc)
+    证据 = [b for b in 建议 if b["证据等级"] == "证据"]
+    print(f"\n扫出 {len(建议)} 条线索:证据 {len(证据)} 条,猜 {len(建议)-len(证据)} 条")
+    for b in 建议[:20]:
+        print(f'  [{b["证据等级"]}] {b["表"]} · {b["线索"]} · {b["命中"]} 行 · 例 {b["样例"][:4]}')
+        print(f'        {b["条件"][:100]}')
+    if a.write:
+        path, n = PR.写声明(a.write, 建议, 只要证据=not a.include_guesses)
+        print(f"\n落到 {path}:{n} 条"
+              + ("(证据 + 猜,**猜的那些请逐条看过**)" if a.include_guesses else "(**只落证据那一档**,猜的要人看过再加)"))
+    else:
+        print("\n加 --write <文件> 落成声明;默认只落「证据」那一档。")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="假数据工厂")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -190,12 +216,21 @@ def main(argv=None):
                          "实测三遍只有约七成一致)")
     p1.add_argument("--overlay", default=None,
                     help="复用已有的模型判定文件,不调模型")
+    p1.add_argument("--protect", default=None, metavar="声明文件",
+                    help="行级保护声明(JSON):这些行不许被新数据引用。"
+                         "先跑 `protect` 子命令扫一份建议出来")
     p1.set_defaults(fn=cmd_plan)
     p2 = sub.add_parser("load");  common(p2)
     p2.add_argument("--plan", required=True); p2.add_argument("--yes", action="store_true")
     p2.set_defaults(fn=cmd_load)
     p3 = sub.add_parser("verify"); common(p3)
     p3.add_argument("--plan", required=True); p3.set_defaults(fn=cmd_verify)
+    p6 = sub.add_parser("protect", help="扫出可能碰不得的行(夹具/被真值引用的),出建议")
+    common(p6)
+    p6.add_argument("--write", default=None, metavar="文件", help="把建议落成声明文件")
+    p6.add_argument("--include-guesses", action="store_true",
+                    help="连「猜」的那一档也落进去(默认只落证据)")
+    p6.set_defaults(fn=cmd_protect)
     p5 = sub.add_parser("trial", help="拿项目自己的检查当裁判:红了二分定位是哪张表干的")
     common(p5)
     p5.add_argument("--plan", required=True)

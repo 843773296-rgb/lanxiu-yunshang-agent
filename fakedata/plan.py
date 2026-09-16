@@ -259,6 +259,7 @@ def topo_order(tables, fks):
 
 
 def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN-",
+          protect=None,
           allow_no_pk=False):
     counts = counts or {}
     names = tables or sorted(facts["tables"])
@@ -274,6 +275,9 @@ def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN
 
     plan = {"seed": seed, "dialect": facts["dialect"], "source": facts["source"],
             "中文库": facts.get("中文库", True),
+            # 保护声明跟着方案走 —— **方案文件是给人看的那一份**,
+            # 「这次不许碰哪些行」属于必须能被复核的决定,不能只活在命令行参数里。
+            "protect": list(protect or []),
             "marker": {"strategy": "id_prefix", "prefix": marker,
                        "why": "每条假数据的主键都带这个前缀,一条 DELETE 就能清干净"},
             "order": order, "deferred_fks": deferred, "tables": {}, "assertions": []}

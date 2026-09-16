@@ -27,6 +27,7 @@
 否则灌不进去,等于没测。
 """
 import os, sys, math, random, datetime
+import protect as PR
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from plan import dominators
 from discover import creation_col
@@ -359,7 +360,7 @@ def needed_columns(plan):
     return need
 
 
-def generate(plan, conn=None, edge_rate=0.05, sink=None):
+def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
     """按方案造数据。返回 {表名: [行字典]}。表按方案里的拓扑顺序生成。
 
     ## sink:把「造」和「灌」串成流水线
@@ -372,6 +373,7 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None):
     一张 36 列的客户表通常只有 2-3 列被指过来,剩下的当场释放。
     """
     seed = plan["seed"]
+    保护 = plan.get("protect") or []
     edges = _EDGE_ZH if plan.get("中文库", True) else _EDGE_EN
     need = needed_columns(plan) if sink else None
     made, manifest = {}, {}
@@ -423,6 +425,14 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None):
                             f'select {conn.ident(g["column"])} from {conn.ident(parent)} '
                             f'where {conn.ident(g["column"])} is not null limit 20000')]
                     except Exception: pv = []
+                    # **受保护的行不许被指向。** 指过去就等于把夹具卷进新数据的语义里 ——
+                    # 给一个「量体记录不全」的客户挂上新订单,那条判责用例的真值就翻了,
+                    # 而**没有任何东西会变红**。
+                    # ⚠️ 只在这里剔,不在 existing_values 里剔:唯一性要跟**库里真实存在的值**比,
+                    # 受保护的行也占着位置。同一批值,两处用途正好相反。
+                    if 保护:
+                        pv, 剔 = PR.过滤外键池(conn, 保护, parent, g["column"], pv)
+                        if 剔: log(f"    保护:{tname}.{cname} 的取值池剔掉 {剔} 个受保护的 {parent}")
                 else: pv = []
                 # 成环时先留空,全部灌完再回填(见 load 的第二阶段)
                 if g.get("deferred") or not pv:

@@ -765,6 +765,78 @@ def main():
     else:
         print("  (跳过:backend/lanxiu.db 不在)")
 
+    # ── 行级保护:有些行碰不得,而它们和普通数据长得一模一样 ────────────
+    print("\n【行级保护】")
+    import protect as PR
+    声明 = [{"表": "cust", "条件": "id LIKE 'C000%'", "为什么": "假装这十个是夹具"}]
+    护住 = PR.受保护的值(conn, 声明, "cust", "id")
+    ck(len(护住) == 10 and "C0005" in 护住, "声明按 SQL 条件护住了那十行", f"护住 {len(护住)} 行")
+
+    # ⚠️ 这一节的断言**连着两版都是假绿**,两版的假法还不一样,都是咬合逼出来的:
+    #   v1 两张表一起造 → 订单指向的是本批新造的客户,库里的受保护行不在路径上
+    #   v2 改成 tables=["ordr"] → **父表被排除后,cust_id 根本不再是外键**,
+    #      方案里它退化成「按编号格式造」(C+四位),而那个值恰好也以 C0 开头,
+    #      于是「取值确实来自库里」这条断言也跟着假绿
+    # 正确的做法:外键留在方案里,但**父表这一批不造** —— 取值池就只能从库里来。
+    pp = P.build(facts, scale=0.3, protect=声明)
+    pp["tables"]["cust"]["skip"] = "测试:父表这一批不造,取值只能从库里来"
+    ck(pp["tables"]["ordr"]["columns"]["cust_id"]["gen"] == "fk",
+       "cust_id 在方案里**确实是外键**(不是退化成编号生成 —— 那样保护不在路径上)",
+       str(pp["tables"]["ordr"]["columns"]["cust_id"].get("gen")))
+    ck(pp.get("protect") == 声明, "保护声明写进了方案文件(**方案是给人复核的那一份**)")
+    mp, _mm = G.generate(pp, conn)
+    指向 = {r.get("cust_id") for r in mp.get("ordr", []) if r.get("cust_id")}
+    库里的 = {r[0] for r in conn.q("select id from cust")}
+    ck(指向 and 指向 <= 库里的,
+       "外键取值**全部来自库里已有的客户**(证明取值池真的走了库这条路)",
+       f"不在库里的:{sorted(指向 - 库里的)[:3]}")
+    ck(指向 and not (指向 & 护住),
+       "造出来的行**没有一条指向受保护的客户**", f"指了 {sorted(指向 & 护住)[:4]}")
+
+    # ⚠️ 两处用途相反:外键池要剔掉,唯一性要算上。合成一个函数就会造出撞主键的行。
+    ck(护住 <= G.existing_values(conn, "cust", "id"),
+       "**受保护的值仍然算进唯一性** —— 它们在库里确实占着位置")
+
+    try:
+        PR.受保护的值(conn, [{"表": "cust", "条件": "没有这一列 = 1"}], "cust", "id")
+        ck(False, "条件写错要**抛出来**,不许静默当成「没有要保护的行」")
+    except SystemExit:
+        ck(True, "条件写错要**抛出来**,不许静默当成「没有要保护的行」")
+
+    st = PR.统计(conn, 声明 + [{"表": "cust", "条件": "id = '不存在'", "为什么": "空声明"}])
+    ck([s["护住几行"] for s in st] == [10, 0],
+       "**一条护住 0 行的声明,和没写是一样的** —— 要能报出来", str([s["护住几行"] for s in st]))
+
+    # 认夹具:写死在源码里的 id 是**证据**,不是猜
+    srcd = os.path.join(tmpd, "fakesrc"); os.makedirs(srcd, exist_ok=True)
+    with open(os.path.join(srcd, "some_check.py"), "w", encoding="utf-8") as f:
+        f.write("# 这条检查的真值依赖这个客户\nFIX = 'C0005'\n")
+    建议 = PR.猜夹具(conn, sc, dirs=[srcd])
+    证据 = [b for b in 建议 if b["证据等级"] == "证据" and b["表"] == "cust"]
+    ck(证据 and "C0005" in 证据[0]["条件"],
+       "认出**写死在检查源码里的 id**,并标成「证据」", f"{[b['线索'] for b in 建议[:3]]}")
+    ck(all(b["证据等级"] in ("证据", "猜") for b in 建议),
+       "每条线索都标了是证据还是猜(**两者分量完全不同**)")
+    # ⚠️ 这条是真实项目上当场打脸打出来的:第一版扫全部源码,
+    # 把 category 53 行里的 53 行全标成「证据」—— 那是主数据不是夹具,
+    # 照它保护等于把整张表冻住。**夹具的定义里本来就带着「少数」。**
+    with open(os.path.join(srcd, "all_check.py"), "w", encoding="utf-8") as f:
+        f.write("ALL = " + repr([f"C{i:04d}" for i in range(60)]) + "\n")
+    建议2 = PR.猜夹具(conn, sc, dirs=[srcd])
+    整表 = [b for b in 建议2 if b["表"] == "cust" and b.get("占比", 0) >= 0.5]
+    ck(整表 and 整表[0]["证据等级"] == "猜",
+       "**整张表都被提到 → 降级成「猜」**(那是主数据,不是夹具)",
+       f'{[(b["表"], b.get("占比"), b["证据等级"]) for b in 建议2[:3]]}')
+
+    with open(os.path.join(srcd, "derive_thing.py"), "w", encoding="utf-8") as f:
+        f.write("X = 'C0042'   # 派生脚本提到编码是正常的,不该算线索\n")
+    建议3 = PR.猜夹具(conn, sc, dirs=[srcd])
+    ck(not any("C0042" in b["条件"] for b in 建议3),
+       "**派生脚本里的 id 不算线索** —— 只扫检查/评测类文件")
+
+    _pth, n证 = PR.写声明(os.path.join(tmpd, "protected.json"), 建议)
+    ck(n证 == len(证据), "落声明时**默认只落证据那一档**,猜的要人看过再加", f"落了 {n证} 条")
+
     # ── 试灌:拿项目自己的检查当裁判 ──────────────────────────────────
     #
     # 这一节钉的四件事,每一件都是一种「看起来在工作、其实没有」:
