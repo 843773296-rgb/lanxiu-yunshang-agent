@@ -30,10 +30,12 @@
 //   误拦的代价（闸被关掉）比漏拦一次高。
 
 import fs from "node:fs";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 // 门禁命令名单。加名字前先想一遍：这个命令的退出码是不是真的「该不该提交」的判据。
-const GATES = ["check\\.sh", "scan_secrets\\.sh", "rebuild\\.sh", "pytest"];
+const GATES = ["check\\.sh", "scan_secrets\\.sh", "rebuild\\.sh", "pytest", "[\\w-]*_check\\.py"];
+// _check.py：这个项目有 48 个单项检查脚本，check.sh 里调了 55 次，开发时常单独跑某一个再提交。
+// ⚠️ 白名单必然有漏，漏掉的那个和没装一样。加名字前先问：它的退出码是不是真的「该不该提交」的判据。
 
 // 门禁必须处在「命令位」：行首或控制符之后，可带解释器前缀和路径。
 // 这样 `cat check.sh | head -40 && git commit` 里的 check.sh 是 cat 的参数，不算门禁。
@@ -45,8 +47,16 @@ const COMMIT_RE = /\bgit\s+(?:-\S+\s+)*(?:commit|push)\b/;
 const FIRST_OP_RE = /&&|\|\||\||;|\n/;
 const CONDITION_POS_RE = /(?:^|[;&|(\n])\s*(?:if|while|until|!)\s+$/;
 
-export function verdict(command) {
-  if (typeof command !== "string" || !command) return null;
+// heredoc 的正文是喂给别的程序的数据，bash 不执行它，所以先剥掉再判。
+// 不剥的话 `python3 - <<'PY' ... PY` 里出现的门禁名会被当成真的跑了门禁 —— 实测误拦过一次。
+// 剥过头只会导致漏（不拦），不会导致误拦；这个方向的错更便宜。
+export function stripHeredocs(cmd) {
+  return cmd.replace(/<<-?\s*(['\"]?)([A-Za-z_]\w*)\1[\s\S]*?^\s*\2\s*$/gm, "<<HEREDOC");
+}
+
+export function verdict(rawCommand) {
+  if (typeof rawCommand !== "string" || !rawCommand) return null;
+  const command = stripHeredocs(rawCommand);
 
   const commit = COMMIT_RE.exec(command);
   if (!commit) return null;                       // 没提交动作，不关这道闸的事
@@ -95,8 +105,18 @@ function deny(v) {
   };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.argv[2] === "--selftest") {
+// 「我是不是被直接运行」这个判断，跟「要不要跑自测」其实没关系 —— 只是碰巧常常一致。
+// 2026-09-16 它两次把自测整段跳过还退出 0：一次是相对路径调用，一次是 /tmp 软链到 /private/tmp。
+// 坏了是绿的，比没有自测更糟。所以自测只认 argv 里的 --selftest，不挂在那个判断下面。
+function isMain() {
+  try {
+    return !!process.argv[1] &&
+      fs.realpathSync(fileURLToPath(import.meta.url)) === fs.realpathSync(process.argv[1]);
+  } catch { return false; }
+}
+
+if (process.argv.includes("--selftest")) {
+  {
     // 咬合测试：一道闸如果我证明不了它拦得住，它就等于没装。
     const 用例 = [
       // [命令, 该不该拦, 说明]
@@ -117,6 +137,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       ["./check.sh | tail -2", false, "只看日志，没提交 —— 拦了就是误拦"],
       ["git commit -m x", false, "门禁在上一次调用里跑过，无从判断"],
       ["cat check.sh | head -40 && git commit -m x", false, "check.sh 是 cat 的参数，不是门禁"],
+      ["python3 backend/stock_check.py | tail -5 && git commit -m x", true, "单项检查脚本，同样的形状"],
+      ["cat <<'EOF' > /tmp/x\nhello\nEOF\n./check.sh | tail -2 && git commit -m x", true, "heredoc 之后的真命令仍要拦"],
+      ["cat backend/stock_check.py | head -20 && git commit -m x", false, "_check.py 是 cat 的参数，别误拦"],
+      ["cat <<'PY' > /tmp/t.py\n./check.sh | tail -2 && git commit -m x\nPY", false, "heredoc 里是数据，bash 不执行 —— 真误拦过"],
       ["git log --oneline | head -5; ./check.sh", false, "git log 不是 commit"],
       ["git commit -m '修好 check.sh | tail 吞退出码的毛病'", false, "门禁名出现在 commit message 里"],
     ];
@@ -130,6 +154,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log(`\n${用例.length - 红}/${用例.length} 通过` + (红 ? `  ❌ ${红} 项不符` : "  ✅ 全绿"));
     process.exit(红 ? 1 : 0);
   }
+} else if (isMain()) {
   let out = {};
   try {
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
