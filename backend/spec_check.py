@@ -258,7 +258,7 @@ rule("G1", "体型特征挂着装人,且不挂在未成年身上",
 
 rule("G2", "量体记录必须记全三件事(数值 + 条件 + 量体人和时间)",
      q("""SELECT id, item FROM measure_rec
-          WHERE value IS NULL OR measured_by IS NULL OR measured_at IS NULL
+          WHERE value IS NULL OR measured_by_no IS NULL OR measured_at IS NULL
              OR cond_inner IS NULL OR cond_shoe IS NULL OR cond_breath IS NULL"""),
      "08 第四节:「**缺一件就等于没量**」。没记条件的尺寸,"
      "返修时无法判断是量错了还是穿法变了 —— 争议只能靠嗓门解决")

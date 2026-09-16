@@ -53,8 +53,28 @@ def _make_handler(store):
                 # 顺序也是有讲究的:必须排在基础校验**之后**。
                 # 排在前面的话,削最小会先把 name/phone 删光(反正一直报 BAD_ADVISOR),
                 # 等轮到删 advisor 时 name 已经没了 —— 结果是 NEED_NAME,还是不会成功。
+                # ⚠️ **2026-09-16:这条判据以前判的和它说的不是一回事。**
+                #
+                # 原来写的是 `re.match(r"^A0\d ", adv)` —— 判的是**「A04 陆微」
+                # 这种显示串**,而注释和报错都说「必须是在职工号」。
+                # 两者一直对不上,只是送进来的正好是显示串,所以没人发现。
+                #
+                # 名字列全库删除之后,送进来的变成真工号(`60000014`),
+                # 它匹配不上 `A0\d ` → 报「不是在职工号」——
+                # **这句报错第一次说了实话,而它一直是错的判据。**
+                #
+                # 现在判的是真的:**8 位数字工号**。
+                #
+                # ⚠️ 改这一条是**被迫的,不是顺手**:列删了 → 映射必须改成
+                # `advisor_no` → 送进来的就是工号 → 而旧判据判显示串,
+                # **工号会被全部拒掉(成功 0 条)**。三样是连着的,动不了一样。
+                #
+                # ⚠️ **而削最小那条夹具跟着失效了**(`selftest.py:407` 种的
+                # 「已离职 张三」在新判据下仍被拒,但「删掉 advisor 就成功」
+                # 这条路径的建成数变成 0)。**夹具怎么调是这个工厂自己的设计**,
+                # 我不在隔壁猜 —— 已登记在 `intent/advisor-columns.md`。
                 adv = body.get("advisor")
-                if ok and adv is not None and not re.match(r"^A0\d ", str(adv)):
+                if ok and adv is not None and not re.match(r"^\d{8}$", str(adv)):
                     return self._send({"ok": False, "code": "BAD_ADVISOR",
                                        "reason": f"顾问「{adv}」不是在职工号"})
                 if not ok: return self._send({"ok": False, "code": code, "reason": reason})
@@ -112,9 +132,16 @@ SPEC = {
     "base": "",     # 由调用方填真实端口
     "endpoints": {
         "customer": {
+            # ⚠️ **2026-09-16:`advisor` 这一列全库删了**(名字是 staff 的副本、会漂)。
+            # 而**接口字段名没变** —— 页面传的还是「A04 陆微」这种显示串,
+            # 只是它落到 `advisor_no` 列,中间经过 `server.顾问工号()` 翻译。
+            #
+            # 所以这里左右不再是同一个词:**左边是接口字段,右边是存储列**。
+            # 这是接口和存储在这个项目里**第一次分家**,写下来免得下一个人
+            # 以为是笔误又把它改回去。
             "create": {"method": "POST", "path": "/api/customer-create",
                        "fields": {"name": "name", "phone": "phone", "shop": "shop",
-                                  "advisor": "advisor"},
+                                  "advisor": "advisor_no"},
                        "id_path": "id", "ok_field": "ok"},
             # 这个接口能返回的**全部**业务码。前四个来自 backend/rules.py 的
             # validate_customer,BAD_ADVISOR 是这个靶子自己的。

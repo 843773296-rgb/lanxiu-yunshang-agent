@@ -54,13 +54,9 @@ CREATE TABLE IF NOT EXISTS fitting(
   -- 第几轮。一件衣服可以试不止一次(改完再试)。
   round INT DEFAULT 1,
   ts TEXT,                -- 什么时候试的
-  -- 谁陪的。**两列都要存**:`advisor` 是「A04 陆微」这样的显示用标签,
-  -- 而它是一个**被钉住的缓存,不是第二份真相** —— 名字一改,
-  -- 只有名字的那些记录当场断掉,而且断得悄无声息。
-  -- ⚠️ 建这张表时我漏了 `advisor_no`,`advisor_ref_check` 当场抓到:
-  -- 「库里每一张有 advisor 列的表,映射里都有」—— 漏了 fitting。
-  -- 补这一列的同时要把表登记进 `fix_advisor_ref.映射`,**两件事缺一不可**。
-  advisor TEXT, advisor_no TEXT,
+  -- 谁陪的。**只存工号**(2026-09-16 名字列全库删除)——
+  -- 名字是 `staff` 的副本,页面拿工号现取。
+  advisor_no TEXT,
   shop TEXT,
   adjust TEXT,            -- 改了哪几处
   -- ⚠️ **签没签字是这张表最值钱的一列。**
@@ -90,7 +86,7 @@ def 该试的行(c):
     names = {r["code"]: r["name"] for r in c.execute("SELECT code,name FROM craft")}
     该, 不必, 判不了 = [], [], []
     for r in c.execute(
-            "SELECT i.id,i.order_id,i.name,i.wearer_id,o.status,o.advisor,"
+            "SELECT i.id,i.order_id,i.name,i.wearer_id,o.status,"
             "  o.advisor_no,o.shop,o.created,p.pattern FROM ordr_item i "
             "JOIN ordr o ON o.id=i.order_id LEFT JOIN product p ON p.spu=i.spu "
             "WHERE o.kind='定制品订单' ORDER BY i.id"):
@@ -156,14 +152,14 @@ def main(apply=True):
         签 = (i != 1)
         日 = (r["created"] or "2026-08-01")[:10]
         rows.append((r["id"], r["order_id"], r["wearer_id"], 1,
-                     f"{日} 14:00", r["advisor"], r["advisor_no"], r["shop"],
+                     f"{日} 14:00", r["advisor_no"], r["shop"],
                      "袖长 -1.5cm、腰围 +2cm" if 签 else "肩宽待定,客户要回去想想",
                      1 if 签 else 0, f"{日} 15:30" if 签 else None,
                      "客户到店试穿白坯,当场确认合身并签字" if 签
                      else "**试了但没签字** —— 客户说回去和家里商量"))
     c.executemany(
-        "INSERT INTO fitting(item_id,order_id,wearer_id,round,ts,advisor,advisor_no,"
-        "  shop,adjust,signed,signed_at,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        "INSERT INTO fitting(item_id,order_id,wearer_id,round,ts,advisor_no,"
+        "  shop,adjust,signed,signed_at,note) VALUES(?,?,?,?,?,?,?,?,?,?,?)", rows)
     if apply: c.commit()
 
     import muslin

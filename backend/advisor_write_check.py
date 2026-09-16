@@ -38,15 +38,24 @@ ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, ROOT]
 
 咬合 = [
-    ("把 booking.py 那两条 INSERT 里的 advisor_no 去掉",
-     "写了名字列的 INSERT,都一起写了工号列"),
+    ("在任意一条 INSERT 的列清单里加回 advisor",
+     "名字列不许回来(INSERT 里不许出现 advisor / measured_by)"),
     ("把扫描范围改成只扫一个文件",
      "扫到的文件数不少于下限"),
 ]
 
 # 名字列 → 它的工号列。**和 `fix_advisor_ref.映射` 同一套口径**,
 # 但这里只需要列名对应关系,不需要表名 —— INSERT 里表名已经写着了。
+# ⚠️ **2026-09-16 名字列全库删除之后,这条检查换了守的东西。**
+#
+# 原来守的是「写了名字列就必须一起写工号」—— 而名字列没了,那条**失去对象**
+# (扫出来样本量 0,而**样本量 0 不叫通过,叫没扫到东西**)。
+#
+# 现在守的是反过来那条:**名字列不许回来。**
+# 谁要是在 INSERT 里又写了 `advisor` / `measured_by`,当场红 ——
+# 因为那意味着有人重新引入了一个**会漂的副本**。
 名号 = {"advisor": "advisor_no", "measured_by": "measured_by_no"}
+不许再出现 = ("advisor", "measured_by")
 
 # 扫哪些文件。**现算,不写死一张清单** —— 写死的话新加一个写入脚本
 # 不会有人记得回来加,而那时候它漏了的表现是「没被扫到」,
@@ -103,18 +112,19 @@ def main():
             表 = m.group(1)
             列 = [x.strip().strip('"').strip("'").strip()
                   for x in _净(m.group(2)).split(",")]
-            for 名, 号 in 名号.items():
+            for 名 in 不许再出现:
                 if 名 in 列:
-                    总 += 1
-                    if 号 not in 列:
-                        行 = src[:m.start()].count("\n") + 1
-                        坏.append(f"{os.path.relpath(f, ROOT)}:{行} "
-                                  f"INSERT INTO {表} 写了 {名} 没写 {号}")
+                    行 = src[:m.start()].count("\n") + 1
+                    坏.append(f"{os.path.relpath(f, ROOT)}:{行} "
+                              f"INSERT INTO {表} 又写了 **{名}** —— "
+                              f"名字列 2026-09-16 已删,该写 {名号[名]}")
 
-    ck("写了名字列的 INSERT,都一起写了工号列", not 坏, 总,
+    # ⚠️ 这条现在是**反着守**的:名字列已删,谁写它谁就是把副本又引回来了。
+    ck("名字列不许回来(INSERT 里不许出现 advisor / measured_by)",
+       not 坏, len(档),
        f"{len(坏)} 处:\n       " + "\n       ".join(坏[:6]) if 坏 else
-       f"{总} 条 INSERT 写了顾问名字,**每一条都带着工号** —— "
-       f"名字是 staff 的副本,工号才是引用")
+       f"扫了 {len(档)} 个文件,**没有一处 INSERT 写顾问名字** —— "
+       f"名字是 staff 的副本、会漂,工号才是引用")
 
     print()
     if FAIL:

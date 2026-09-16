@@ -14,13 +14,28 @@ SCHEMA="""
 DROP TABLE IF EXISTS points_log; DROP TABLE IF EXISTS member_bind; DROP TABLE IF EXISTS customer; DROP TABLE IF EXISTS deposit; DROP TABLE IF EXISTS refund_trace;
 DROP TABLE IF EXISTS payment_flow; DROP TABLE IF EXISTS appointment; DROP TABLE IF EXISTS followup;
 DROP TABLE IF EXISTS task; DROP TABLE IF EXISTS truth;
+-- ⚠️ **顾问「名字」那一列 2026-09-16 全库删除。**
+-- 它存的是 `staff` 的名字副本,而**一个被钉住的缓存和一个自由漂移的副本,
+-- 在表上长得一模一样**。页面一律走 `server.填顾问名()` 拿工号去员工表现取。
+--
+-- 删之前先立了两道网(都在 check.sh 里):
+--   `advisor_name_check`  页面那一栏有没有名字、对不对得上
+--   `advisor_write_check` 写了名字列的 INSERT 有没有一起写工号
+--
+-- ⚠️ 删的过程本身证明了这一列该删,三件事:
+--   ① **权限隔离原来是按名字比的**(`advisor=?` 配 `me["name"]`)——
+--      **两个同名顾问会看到彼此的订单**,那是越权不是显示问题
+--   ② 有一整座**「按名字连人的桥」**可以拆(`booking.staff_of_advisor`,
+--      容忍三种写法还要处理同名);检查脚本里甚至有 `substr(c.advisor,1,3)`
+--   ③ 种子里写死过 `advisor='A09 何苓'`,而何苓**在那一步还没插进 staff** ——
+--      **名字列可以装任何东西,包括一个不存在的人**
 CREATE TABLE customer(id TEXT PRIMARY KEY, name TEXT, phone TEXT, phone_tail TEXT, shop TEXT,
   -- 顾问工号 —— **引用**。上面那一列存的是名字,而名字是 `staff` 的副本。
   -- ⚠️ 这一列原来不在建表语句里,是 `fix_advisor_ref.py` 事后 ALTER 加的,
   --    于是 **schema 的真相分裂成两处**:seed 说这张表少一列,真实的库多一列。
   --    seed 一重跑工号列就没了,要再跑一次迁移脚本才回来 ——
   --    而写入的一侧也因此一直只写名字(**在 seed 的世界里这一列压根不存在**)。
-  advisor TEXT, advisor_no TEXT, lifecycle TEXT, level TEXT, created TEXT, order_cnt INT, paid_amount REAL,
+  advisor_no TEXT, lifecycle TEXT, level TEXT, created TEXT, order_cnt INT, paid_amount REAL,
   last_interact TEXT, addr TEXT, birthday TEXT, archived INT DEFAULT 0,
   first_order TEXT, orders_12m INT DEFAULT 0, quarters_12m INT DEFAULT 0, amount_12m REAL DEFAULT 0,
   idle_days INT DEFAULT 0, matched TEXT, manual_lc TEXT, manual_at TEXT,
@@ -41,10 +56,10 @@ CREATE TABLE refund_trace(id INTEGER PRIMARY KEY AUTOINCREMENT, deposit_id TEXT,
   ts TEXT, channel TEXT, req_amount REAL, resp_code TEXT, resp_msg TEXT, idem_key TEXT);
 CREATE TABLE payment_flow(id TEXT PRIMARY KEY, deposit_id TEXT, direction TEXT, amount REAL,
   channel TEXT, channel_serial TEXT, status TEXT, ts TEXT);
-CREATE TABLE appointment(id TEXT PRIMARY KEY, customer_id TEXT, shop TEXT, advisor TEXT, advisor_no TEXT,
+CREATE TABLE appointment(id TEXT PRIMARY KEY, customer_id TEXT, shop TEXT, advisor_no TEXT,
   start_ts TEXT, end_ts TEXT, status TEXT, deposit_id TEXT, checkin_ts TEXT);
 CREATE TABLE followup(id TEXT PRIMARY KEY, customer_id TEXT, appt_id TEXT, ts TEXT,
-  channel TEXT, content TEXT, advisor TEXT, advisor_no TEXT);
+  channel TEXT, content TEXT, advisor_no TEXT);
 CREATE TABLE task(id TEXT PRIMARY KEY, type TEXT, ref_id TEXT, status TEXT, created TEXT, summary TEXT);
 -- 研判台账 —— 平台和展示件的分界就在这张表:
 -- 展示件跑一条、显示、忘掉;平台跑一条、落库、等人销账。
@@ -78,7 +93,7 @@ CREATE TABLE staff(no TEXT PRIMARY KEY, name TEXT, role TEXT, shop TEXT, status 
   -- 「A01 林岚」这种显示串,和工号是**两套编号**;把 A 号放进花名册,
   -- 两套之间才有一个能查的桥,而不是靠名字连(名字既不唯一也会改)。
   adv_code TEXT);
-CREATE TABLE schedule(id TEXT PRIMARY KEY, type TEXT, advisor TEXT, advisor_no TEXT, customer_id TEXT,
+CREATE TABLE schedule(id TEXT PRIMARY KEY, type TEXT, advisor_no TEXT, customer_id TEXT,
   start_ts TEXT, end_ts TEXT, status TEXT, summary TEXT, cancel_reason TEXT, shop TEXT,
   -- ── 排任务用的三列 ──────────────────────────────────────────────
   -- **同一个人两套编号**:schedule.advisor 是「A01 林岚」,staff 是工号 60000002,
@@ -106,7 +121,7 @@ CREATE TABLE schedule_file(id INTEGER PRIMARY KEY AUTOINCREMENT,
   schedule_id TEXT, kind TEXT, name TEXT, mime TEXT, size INT, path TEXT,
   uploaded_by TEXT, uploaded_at TEXT);
 CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
-  advisor TEXT, advisor_no TEXT, shop TEXT, source TEXT, activity TEXT, delivery TEXT,
+  advisor_no TEXT, shop TEXT, source TEXT, activity TEXT, delivery TEXT,
   -- 这一单是给**谁**做的。原来没有这个字段,于是
   -- 「超期的量体不许下单」那条规则(12-成长与生命周期.md 第五节)
   -- **执行不了** —— 一个客户名下可以有本人和两个孩子,判不出用谁的尺寸。
@@ -255,7 +270,7 @@ CREATE TABLE workorder(
 -- 另起一套的代价是两份量体数据迟早打架,而且 fitting.py 得跟着分叉。
 -- 老记录一律指向该账号的「本人」着装人,所以历史数据不用改口径。
 CREATE TABLE measure_rec(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, tpl TEXT,
-  item TEXT, value REAL, measured_by TEXT, measured_by_no TEXT, measured_at TEXT, method TEXT DEFAULT '到店',
+  item TEXT, value REAL, measured_by_no TEXT, measured_at TEXT, method TEXT DEFAULT '到店',
   wearer_id TEXT,
   -- 这批量体是**哪次上门/接待量的**(schedule.id)。可空 —— 历史数据没有这条边。
   -- 补它的理由:原来只有客户号和时间戳,要问「这次上门量了什么」只能拿时间去猜。
@@ -379,7 +394,7 @@ CREATE TABLE tag(code TEXT PRIMARY KEY, name TEXT, grp TEXT, status TEXT, n INT,
 CREATE TABLE approval(id TEXT PRIMARY KEY, kind TEXT, target TEXT, payload TEXT,
   status TEXT, applied_by TEXT, applied_at TEXT, decided_by TEXT, decided_at TEXT, note TEXT);
 CREATE TABLE aftersale(id TEXT PRIMARY KEY, kind TEXT, order_id TEXT, customer_id TEXT,
-  status TEXT, reason TEXT, amount REAL, shop TEXT, advisor TEXT, advisor_no TEXT, created TEXT, updated TEXT,
+  status TEXT, reason TEXT, amount REAL, shop TEXT, advisor_no TEXT, created TEXT, updated TEXT,
   ext_system TEXT, synced_at TEXT);
 -- 交付告知签收 —— 09-养护与售后.md 第三节写着「交付时必须书面告知的六条」,
 -- 第五节的返修判定里,**特性类(色差/掉色/勾丝)是否书面告知,直接决定有责无责**:
@@ -389,9 +404,9 @@ CREATE TABLE aftersale(id TEXT PRIMARY KEY, kind TEXT, order_id TEXT, customer_i
 -- 和「体型特征」当初的情况一模一样。
 CREATE TABLE delivery_notice(
   order_id TEXT PRIMARY KEY, items TEXT,
-  signed_at TEXT, advisor TEXT, advisor_no TEXT, channel TEXT);
+  signed_at TEXT, advisor_no TEXT, channel TEXT);
 CREATE TABLE maintain(id TEXT PRIMARY KEY, order_id TEXT, customer_id TEXT, item TEXT,
-  status TEXT, issue TEXT, shop TEXT, advisor TEXT, advisor_no TEXT, created TEXT, updated TEXT,
+  status TEXT, issue TEXT, shop TEXT, advisor_no TEXT, created TEXT, updated TEXT,
   ext_system TEXT, synced_at TEXT);
 CREATE TABLE stock_log(id INTEGER PRIMARY KEY AUTOINCREMENT, sku TEXT, spu TEXT,
   kind TEXT, delta INT, before_n INT, after_n INT, ref TEXT, operator TEXT, ts TEXT, note TEXT);
@@ -468,7 +483,7 @@ CREATE TABLE scheme(id TEXT PRIMARY KEY, customer_id TEXT, name TEXT, status TEX
   -- 报价和排产都得落到具体那一个。原来这条边不存在,
   -- 于是方案报得出「明制立领长衫」,报不出「用多少米料」。
   pattern TEXT,   -- 版型编码 PT**
-  advisor TEXT, advisor_no TEXT, note TEXT, created TEXT, updated TEXT);
+  advisor_no TEXT, note TEXT, created TEXT, updated TEXT);
 CREATE TABLE truth(case_id TEXT PRIMARY KEY, breakpoint TEXT, root_cause TEXT,
   expected_action TEXT, expected_evidence TEXT, note TEXT,
   -- 来源:建库标注 = 上线前人工写的;人工改判 = 上线后值班同学否掉智能体时回流进来的。
@@ -633,9 +648,9 @@ def run():
         phone=f"13{random.randint(100000000,999999999)}"
         _shop = random.choice(SHOPS)
         # 归属顾问必须是**本店**的 —— 客户在静安店,顾问就不能是徐汇店的人。
-        # **名字和工号成对取** —— 不许先挑名字再照着名字去猜工号。
-        _disp, _no = _adv2(_shop)
-        return (cid,name,phone,phone[-4:],_shop,_disp,_no,eff,
+        # ⚠️ **名字列已删**(2026-09-16),只存工号 —— 名字页面现取。
+        _no = _adv2(_shop)[1]
+        return (cid,name,phone,phone[-4:],_shop,_no,eff,
                 random.choice(["普通","银卡","金卡"]),first or ago(400),ocnt,amt,ago(idle),
                 f"上海市{random.choice('静徐黄浦长宁')}区{random.randint(1,999)}号",
                 f"199{random.randint(0,9)}-{random.randint(1,12):02d}-{random.randint(1,28):02d}",0,
@@ -650,7 +665,7 @@ def run():
         first=None if ocnt==0 else ago(random.randint(10,700))
         cust.append(mk(f"C{10000+i}", random.choice(SURN)+random.choice(GIVEN),
                        idle,ocnt,amt,o12,random.randint(1,4),first))
-    c.executemany("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,advisor_no,lifecycle,level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", cust)
+    c.executemany("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,lifecycle,level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", cust)
 
     # ── A2/A3/A4 专用案例 ─────────────────────────────
     EDGE=[
@@ -686,7 +701,7 @@ def run():
     edge_rows=[]
     for cid,nm,idle,ocnt,amt,o12,q12,first,man,mat,expect,note in EDGE:
         edge_rows.append(mk(cid,nm,idle,ocnt,amt,o12,q12,first,man,mat))
-    c.executemany("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,advisor_no,lifecycle,level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", edge_rows)
+    c.executemany("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,lifecycle,level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", edge_rows)
 
     truths=[]
     for cid,nm,idle,ocnt,amt,o12,q12,first,man,mat,expect,note in EDGE:
@@ -740,7 +755,7 @@ def run():
         # 它**没有报错**:两个都是字符串,sqlite 照收。
         # 炸出来是在 365 天后有人拿那个「生日」去算年龄的时候。
         # 这就是这个文件自己写过的那条教训:**位置参数会静默错位**。
-        _COL = ("id","name","phone","phone_tail","shop","advisor","advisor_no",
+        _COL = ("id","name","phone","phone_tail","shop","advisor_no",
                 "lifecycle","level","created","order_cnt","paid_amount",
                 "last_interact","addr","birthday","archived","first_order",
                 "orders_12m","quarters_12m","amount_12m","idle_days","matched",
@@ -752,21 +767,21 @@ def run():
         if same:
             # 同一人:手机号不同(换号)但生日+地址一致,订单在两店
             p2=f"13{random.randint(100000000,999999999)}"
-            rows=[(aid,name,phone,phone[-4:],SHOPS[0],*_adv2(SHOPS[0]),"活跃","金卡","2025-03-01",3,18000.0,"2026-07-01",_addr,_bd,0,"2025-03-01",3,2,18000.0,60,"活跃/高价值",None,None),
-                  (bid,name,p2,p2[-4:],SHOPS[1],*_adv2(SHOPS[1]),"新客","普通","2026-05-01",1,3200.0,"2026-06-20",_addr,_bd,0,"2026-05-01",1,1,3200.0,72,"活跃",None,None)]
+            rows=[(aid,name,phone,phone[-4:],SHOPS[0],_adv2(SHOPS[0])[1],"活跃","金卡","2025-03-01",3,18000.0,"2026-07-01",_addr,_bd,0,"2025-03-01",3,2,18000.0,60,"活跃/高价值",None,None),
+                  (bid,name,p2,p2[-4:],SHOPS[1],_adv2(SHOPS[1])[1],"新客","普通","2026-05-01",1,3200.0,"2026-06-20",_addr,_bd,0,"2026-05-01",1,1,3200.0,72,"活跃",None,None)]
             cause="同一客户跨店重复建档"
             action="建议合并;冲突字段取最近一次经确认的数据(手机号取新号),被合并档案归档保留日志"
             evid="生日与地址完全一致,姓名相同,手机号不同(换号)"
         else:
             # 不同人:同名同姓,生日与地址均不同
             p2=f"13{random.randint(100000000,999999999)}"
-            rows=[(aid,name,phone,phone[-4:],SHOPS[0],*_adv2(SHOPS[0]),"活跃","银卡","2025-06-01",2,9000.0,"2026-07-11",_addr,_bd,0,"2025-06-01",2,2,9000.0,50,"活跃",None,None),
-                  (bid,name,p2,p2[-4:],SHOPS[2],*_adv2(SHOPS[2]),"潜在","普通","2026-04-01",0,0.0,"2026-04-02",
+            rows=[(aid,name,phone,phone[-4:],SHOPS[0],_adv2(SHOPS[0])[1],"活跃","银卡","2025-06-01",2,9000.0,"2026-07-11",_addr,_bd,0,"2025-06-01",2,2,9000.0,50,"活跃",None,None),
+                  (bid,name,p2,p2[-4:],SHOPS[2],_adv2(SHOPS[2])[1],"潜在","普通","2026-04-01",0,0.0,"2026-04-02",
                    f"杭州市西湖区{random.randint(1,999)}号",f"198{random.randint(0,9)}-0{random.randint(1,9)}-1{random.randint(0,9)}",0,None,0,0,0.0,150,"潜在",None,None)]
             cause="同名不同人"
             action="不合并;建议在两条档案上互相标注已核验非同一人,避免反复进入队列"
             evid="生日不同、地址城市不同、手机号不同,仅姓名相同"
-        c.executemany("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,advisor_no,lifecycle,level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        c.executemany("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,lifecycle,level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
         case=f"MERGE-{i:02d}"
         c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)",(f"T{case}","客户合并确认",f"{aid}|{bid}","待处理","2026-08-22",None))
         truths.append((case,"BP-02",cause,action,evid,f"{aid} vs {bid}"))
@@ -784,8 +799,14 @@ def run():
     # 测试挂了你分不清是代码坏了还是夹具变了。
     _LEFT = [r[0] for r in c.execute(
         "SELECT id FROM customer WHERE shop='SH001 静安旗舰店' ORDER BY id").fetchall()[:3]]
+    # ⚠️ 从 `STAFF` 常量取工号,**不查 `staff` 表** —— 这一步跑的时候表还是空的。
+    # 而这件事本身说明了为什么要删名字列:原来这里写死 `advisor='A09 何苓'`,
+    # **数据库欣然接受了一个当时还不存在的人**,而那 3 个客户在页面上显示得完全正常。
+    _离职号 = next((no for no, nm, ro, sh, a, st in STAFF
+                    if nm == "何苓" and st == "停用"), None)
+    assert _离职号, "STAFF 里没有「停用」状态的何苓 —— **这个夹具要的是一个离职顾问**"
     for _cid in _LEFT:
-        c.execute("UPDATE customer SET advisor='A09 何苓' WHERE id=?", (_cid,))
+        c.execute("UPDATE customer SET advisor_no=? WHERE id=?", (_离职号, _cid))
 
     CSHOP = {r[0]: r[1] for r in c.execute("SELECT id,shop FROM customer").fetchall()}
     def _shop_of(cid): return CSHOP.get(cid) or SHOPS[0]
@@ -811,30 +832,30 @@ def run():
         # ⚠️ 改成**具名列**。原来是 `INSERT INTO appointment VALUES(?×9)` ——
         # 而这个文件自己就写过这条教训:**位置参数插入多一列会静默错位**
         # (值整体挪一格而不报错)。加 advisor_no 时它真的挪了,幸好列数对不上才炸出来。
-        c.execute("INSERT INTO appointment(id,customer_id,shop,advisor,advisor_no,"
+        c.execute("INSERT INTO appointment(id,customer_id,shop,advisor_no,"
                   "start_ts,end_ts,status,deposit_id,checkin_ts) "
-                  "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                  "VALUES(?,?,?,?,?,?,?,?,?)",
           (d["appt_id"], d["customer_id"], _shop_of(d["customer_id"]),
-           *_adv_of2(d["customer_id"]),
+           _adv_of2(d["customer_id"])[1],
            f"2026-{mon:02d}-{day:02d} {9+i%8:02d}:30",
            f"2026-{mon:02d}-{day:02d} {10+i%8:02d}:30",
            st, d["id"],
            f"2026-{mon:02d}-{day:02d} {9+i%8:02d}:28" if st in ("已到店","已完成") else None))
         c.execute("INSERT INTO followup(id,customer_id,appt_id,ts,channel,content,"
-                  "advisor,advisor_no) VALUES(?,?,?,?,?,?,?,?)",
+                  "advisor_no) VALUES(?,?,?,?,?,?,?)",
           (f"F{d['appt_id']}", d["customer_id"], d["appt_id"],
            f"2026-{mon:02d}-{day:02d} 09:10",
            random.choice(["电话","微信","到店"]),
            random.choice(["客户确认到店时间","客户询问面料选项","客户要求改期","客户未接听,留言"]),
-           *_adv_of2(d["customer_id"])))
+           _adv_of2(d["customer_id"])[1]))
     # 另建 20 条不带押金的预约
     for i in range(20):
         aid=f"AP{4000+i}"; mon=_AMON[(i+3) % len(_AMON)]; day=3+(i*3)%25
-        c.execute("INSERT INTO appointment(id,customer_id,shop,advisor,advisor_no,"
+        c.execute("INSERT INTO appointment(id,customer_id,shop,advisor_no,"
                   "start_ts,end_ts,status,deposit_id,checkin_ts) "
-                  "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                  "VALUES(?,?,?,?,?,?,?,?,?)",
           (aid, cust[i%len(cust)][0], _shop_of(cust[i%len(cust)][0]),
-           *_adv_of2(cust[i%len(cust)][0]),
+           _adv_of2(cust[i%len(cust)][0])[1],
            f"2026-{mon:02d}-{day:02d} {10+i%7:02d}:00",
            f"2026-{mon:02d}-{day:02d} {11+i%7:02d}:00",
            APPT_ST[i%6], None, None))
@@ -880,20 +901,19 @@ def run():
         mon = _MON[i % len(_MON)]
         day = 3 + (i * 3) % 25
         st=SST[i%7]
-        _ad, _an = _adv_of2(cust[i%len(cust)][0])
-        c.execute("INSERT INTO schedule(id,type,advisor,advisor_no,customer_id,start_ts,end_ts,status,summary,cancel_reason,shop) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-          (f"SC{7000+i}", STYPE[i%4], _ad, _an, cust[i%len(cust)][0],
+        _an = _adv_of2(cust[i%len(cust)][0])[1]
+        c.execute("INSERT INTO schedule(id,type,advisor_no,customer_id,start_ts,end_ts,status,summary,cancel_reason,shop) VALUES(?,?,?,?,?,?,?,?,?,?)",
+          (f"SC{7000+i}", STYPE[i%4], _an, cust[i%len(cust)][0],
            f"2026-{mon:02d}-{day:02d} {9+i%9:02d}:00",
            f"2026-{mon:02d}-{day:02d} {10+i%9:02d}:00",
            st, "已完成服务并记录结果" if st=="完结" else None,
            "客户改期" if st=="取消" else None, _shop_of(cust[i%len(cust)][0])))
-    # 把历史日程的 advisor(A0x 姓名)对到工号上。
-    # **这是一次性迁移** —— 以后新排的任务直接写工号,不再靠名字连。
-    _name2no = {r[0]: r[1] for r in c.execute("SELECT name,no FROM staff").fetchall()}
-    for _sc in c.execute("SELECT id,advisor FROM schedule").fetchall():
-        _nm = (_sc[1] or "").split(" ", 1)[-1]
-        if _nm in _name2no:
-            c.execute("UPDATE schedule SET assignee_no=? WHERE id=?", (_name2no[_nm], _sc[0]))
+    # ⚠️ 这里原来有一段「把历史日程的 advisor(A0x 姓名)**按名字对到工号上**」——
+    # 名字列删了之后**这段不需要存在了**:工号在插入那一刻就写进去了。
+    # 这是删这一列的收益之一:**一整段「把名字翻译成工号」的代码可以消失。**
+    for _sc in c.execute("SELECT id,advisor_no FROM schedule").fetchall():
+        if _sc[1]:
+            c.execute("UPDATE schedule SET assignee_no=? WHERE id=?", (_sc[1], _sc[0]))
 
     # ── 品类(树形两级)──
     # 三级类目 —— 设计稿「商品库-新建商品」是三个级联下拉,详情页写作「类目一-类目二-类目三」
@@ -1615,14 +1635,14 @@ def run():
             return f"{base_ts} {10+off:02d}:{(i*7)%60:02d}" if cond else None
         seq = ST_CUS if is_cus else ST_STD
         at = seq.index(st) if st in seq else 0
-        _od, _on = _adv_of2(_custs[i % len(_custs)])
-        c.execute("""INSERT INTO ordr(id,customer_id,kind,status,advisor,advisor_no,shop,source,activity,
+        _on = _adv_of2(_custs[i % len(_custs)])[1]
+        c.execute("""INSERT INTO ordr(id,customer_id,kind,status,advisor_no,shop,source,activity,
                      delivery,amount,payable,created,updated,prd_status,goods_amount,freight,
                      received,refund_status,addr,paid_at,audit_at,produced_at,shipped_at,
                      finished_at,cancelled_at,remark)
-                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (oid, _custs[i % len(_custs)], kind, st,
-                   _od, _on, _shop_of(_custs[i % len(_custs)]),
+                   _on, _shop_of(_custs[i % len(_custs)]),
                    SRC[i % 4], ACT[i % 4], DLV[i % 2], total, total,
                    # created 原来写死 16:16,而 paid_at 是 11:xx —— **35/35 条付款早于下单**。
                    # 一直没被发现,是因为时间顺序检查从 paid_at 才开始查,
@@ -1770,11 +1790,11 @@ def run():
     for k,cid in enumerate(cust_ids):
         tpl=TPL[k%4][0]
         for it in dict(TPL[k%4][4] and {i:1 for i in TPL[k%4][4]}):
-            _md, _mn = _adv_any2()
-            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
+            _mn = _adv_any2()[1]
+            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,"
                       "measured_by_no,measured_at,method,cond_inner,cond_shoe,cond_breath) "
-                      "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-              (cid,tpl,it,round(IDEAL[it]+random.uniform(-6,6),1),_md,_mn,
+                      "VALUES(?,?,?,?,?,?,?,?,?,?)",
+              (cid,tpl,it,round(IDEAL[it]+random.uniform(-6,6),1),_mn,
                f"2026-0{6+k%3}-1{k%9} 14:30", "远程" if k%5==3 else "到店",
                ["无","薄","厚"][k%3], ["赤足","平底","高跟"][k%3], "平静呼气"))
     # 体型特征:每 4 个客户里有 1 个记了 —— 记了的必须走全定制,与差值无关
@@ -2012,11 +2032,11 @@ def run():
         for it, v in (("MI01", kid_h), ("MI03", round(kid_h*0.47, 1)),
                       ("MI04", round(kid_h*0.42, 1)), ("MI09", round(kid_h*0.55, 1)),
                       ("MI14", round(kid_h*1.03, 1))):
-            _md, _mn = _adv_any2()
-            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
+            _mn = _adv_any2()[1]
+            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,"
                       "measured_by_no,measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath) "
-                      "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                      (cid, TPL[k % 4][0], it, v, _md, _mn,
+                      "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                      (cid, TPL[k % 4][0], it, v, _mn,
                        f"{mdate} 15:00", "到店", w_kid,
                        "薄", "平底", "平静呼气"))
     # ── 内容管理 ──
@@ -2159,10 +2179,10 @@ def run():
         day=12+(i%18)
         # **具名列** —— 位置参数插入多一列会静默错位(这个文件的老教训)
         c.execute("INSERT INTO aftersale(id,kind,order_id,customer_id,status,reason,"
-                  "amount,shop,advisor,advisor_no,created,updated,ext_system,synced_at) "
-                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  "amount,shop,advisor_no,created,updated,ext_system,synced_at) "
+                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
           (f"AS{64880127+i}",kind,oids[i%len(oids)],cust[i%len(cust)][0],st,
-           REASONS[i%6],round(random.uniform(680,9600),2),random.choice(SHOPS),*_adv_any2(),
+           REASONS[i%6],round(random.uniform(680,9600),2),random.choice(SHOPS),_adv_any2()[1],
            f"2026-08-{day:02d} 09:{10+i%40:02d}",f"2026-08-{min(31,day+2):02d} 15:{10+i%40:02d}",
            "售后/维保系统",f"2026-09-01 0{i%9}:1{i%9}"))
     # ── 维保工单 ──
@@ -2205,8 +2225,8 @@ def run():
         _own=c.execute("SELECT customer_id FROM ordr WHERE id=?",(_oid,)).fetchone()[0]
         _it=c.execute("SELECT name FROM ordr_item WHERE order_id=? LIMIT 1",(_oid,)).fetchone()
         c.execute("INSERT INTO maintain(id,order_id,customer_id,item,status,issue,"
-                  "shop,advisor,advisor_no,created,updated,ext_system,synced_at) "
-                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  "shop,advisor_no,created,updated,ext_system,synced_at) "
+                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
           (f"MW{73020+i}",_oid,_own,(_it[0] if _it else ITEMS[i%5]),
            # ⚠️ 状态和问题原来都用 `i%7`,于是两者**完全相关** ——
            # 按状态筛出来的任何子集,问题必然是同一个值。
@@ -2214,7 +2234,7 @@ def run():
            # **测试覆盖度被悄悄削成了 1/7,而且数据看起来完全正常**。
            # 让问题额外依赖 i//7,两个维度才真的独立。
            FORCE.get(i, (None, MT[i%7]))[1], FORCE.get(i, (ISSUES[(i+i//7*2)%7],))[0],
-           random.choice(SHOPS),*_adv_any2(),
+           random.choice(SHOPS),_adv_any2()[1],
            f"{_rep.isoformat()} 11:{10+i%40:02d}",
            f"{(_rep+timedelta(days=3)).isoformat()} 16:{10+i%40:02d}",
            "售后/维保系统",f"2026-09-01 0{i%9}:2{i%9}"))
@@ -2237,11 +2257,11 @@ def run():
         # 结果 15/20 条「交付签收早于订单创建」—— 衣服还没下单就签收了。
         _ocr = c.execute("SELECT created FROM ordr WHERE id=?", (_no,)).fetchone()[0][:10]
         _sign = (date.fromisoformat(_ocr) + timedelta(days=5 + i % 6)).isoformat()
-        c.execute("INSERT INTO delivery_notice(order_id,items,signed_at,advisor,"
-                  "advisor_no,channel) VALUES(?,?,?,?,?,?)",
+        c.execute("INSERT INTO delivery_notice(order_id,items,signed_at,"
+                  "advisor_no,channel) VALUES(?,?,?,?,?)",
                   (_no, ",".join(x.split()[0] for x in n),
                    f"{_sign} 17:{10+i%40:02d}",
-                   *_adv_any2(), "门店纸质" if i%2 else "电子签"))
+                   _adv_any2()[1], "门店纸质" if i%2 else "电子签"))
 
     # ── 库存变更日志(后台 PRD 第 8 章:关键写操作均可查询操作人、时间、前后值和业务编号)──
     KINDS=[("入库",1),("订单占用",-1),("订单释放",1),("退货入库",1),("盘点调整",0),("报损",-1)]
@@ -2361,10 +2381,10 @@ def run():
         # 而对不上在表上和对得上长得一模一样。
         _sd = "A01 林岚"
         c.execute("INSERT INTO scheme(id,customer_id,name,status,xz,mt,kf,color,ps,"
-                  "pattern,advisor,advisor_no,note,created,updated)"
-                  " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  "pattern,advisor_no,note,created,updated)"
+                  " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (sid,_cid2,nm,st,_xzc[0],_mtc[0],",".join(_kfc),col,ps,
-                   _pt[0],_sd,_adv_no(_sd),None,ago(20),ago(3)))
+                   _pt[0],_adv_no(_sd),None,ago(20),ago(3)))
 
     # ── ③ 量体覆盖:让「本人」都有一套完整量体 ──────────────────────
     # 原来 104 个着装人只有 27 个有量体记录,而且每人只量了 5 或 9 项 ——
@@ -2386,12 +2406,12 @@ def run():
         _in, _sh = ["无","薄","厚"][_i % 3], ["赤足","平底","高跟"][_i % 3]
         for _it in _ITEMS:
             _base = _BASE.get(_it, 60) * ((_h or 165) / 165 if _it in ("MI01","MI08","MI09","MI12","MI14") else 1)
-            _md, _mn = _adv_any2()
-            c.execute("""INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,
+            _mn = _adv_any2()[1]
+            c.execute("""INSERT INTO measure_rec(customer_id,tpl,item,value,
                          measured_by_no,measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath)
-                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                         VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
                       (_cid, "MT01", _it, round(_base + ((_i * 7 + hash(_it) % 11) % 9) - 4, 1),
-                       _md, _mn, f"{_d} 14:30", _mth, _wid,
+                       _mn, f"{_d} 14:30", _mth, _wid,
                        _in, _sh, "平静呼气"))
 
     # ── 反例夹具:**故意留着的不完整数据** ──────────────────────────

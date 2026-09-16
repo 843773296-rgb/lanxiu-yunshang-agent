@@ -172,7 +172,7 @@ def pick_customers(n):
     **夹具被污染时不会报错** —— 它只是让某条评测下次给出一个不同的答案,
     而没人会想到去查是三周前一个造数据的脚本动的。
     """
-    return q("""SELECT c.id,c.name,c.phone,c.shop,c.advisor FROM customer c
+    return q("""SELECT c.id,c.name,c.phone,c.shop,c.advisor_no FROM customer c
                 WHERE c.archived=0 AND c.phone NOT LIKE 'DELETED%'
                   AND c.name<>'已注销用户'
                   AND c.id NOT LIKE 'E-%'          -- 反例夹具
@@ -201,7 +201,7 @@ def pick_repeat(n):
     额外要求:上一趟的订单已经走到终态 —— **一个客户不该同时有两张在制的定制单**,
     那在现实里也不成立(版师手上一件一件做)。
     """
-    return q("""SELECT c.id,c.name,c.phone,c.shop,c.advisor FROM customer c
+    return q("""SELECT c.id,c.name,c.phone,c.shop,c.advisor_no FROM customer c
                 WHERE c.archived=0 AND c.phone NOT LIKE 'DELETED%'
                   AND c.name<>'已注销用户'
                   AND c.id NOT LIKE 'E-%' AND c.id NOT LIKE 'C21%'
@@ -344,12 +344,11 @@ def _journey(cust, dry=False):
     n_item = 0
     for it in items:
         val = round(base.get(it["code"], random.uniform(30, 60)), 1)
-        ex("""INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,measured_by_no,
+        ex("""INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by_no,
               measured_at,
               method,wearer_id,cond_inner,cond_shoe,cond_breath,schedule_id)
-              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-           cust["id"], tpl, it["code"], val,
-           f"{adv.get('adv_code') or ''} {adv['name']}".strip(), adv["no"], mt,
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+           cust["id"], tpl, it["code"], val, adv["no"], mt,
            "上门", wid, "单层内衣", "赤足", "平静呼气", visit)
         n_item += 1
     steps.append(("④ 量体", RAW, f"{tpl} · {n_item} 项 · {adv['name']} 上门量 · 着装人 {wid or '(无)'}"))
@@ -443,12 +442,11 @@ def _journey(cust, dry=False):
     ST2PRD = {"待付款": "待付款", "待审核": "方案确认中", "待生产": "方案确认中",
               "生产中": "方案确认中", "已生产": "待发货", "待发货": "待发货",
               "已发货": "待收货", "待完成": "待收货", "完成": "已完成", "取消": "已关闭"}
-    ex("""INSERT INTO ordr(id,customer_id,kind,status,advisor,advisor_no,shop,source,delivery,
+    ex("""INSERT INTO ordr(id,customer_id,kind,status,advisor_no,shop,source,delivery,
           amount,payable,created,updated,prd_status,goods_amount,freight,received,
           refund_status,paid_at)
-          VALUES(?,?,'定制品订单','待付款',?,?,?,?,'配送到店',?,?,?,?,?,?,0,?,'未退款',?)""",
-       oid, cust["id"], f"{adv.get('adv_code') or ''} {adv['name']}".strip(),
-       adv["no"], cust["shop"], _门店渠道(),
+          VALUES(?,?,'定制品订单','待付款',?,?,?,'配送到店',?,?,?,?,?,?,0,?,'未退款',?)""",
+       oid, cust["id"], adv["no"], cust["shop"], _门店渠道(),
        amt, amt, created, created, ST2PRD["待付款"], sku["price"], amt, created)
     # ⚠️ **下单时的版型版本是快照,不是现算。**
     # 版型改过之后回头看这一单,现算会给出**今天**那一版,
@@ -610,7 +608,7 @@ def main():
     print("=" * 86)
     done = []
     for c in custs:
-        print(f"\n{B}▸ {c['name']}({c['id']}) · {c['shop']} · 归属 {c['advisor']}{D}")
+        print(f"\n{B}▸ {c['name']}({c['id']}) · {c['shop']} · 归属 {c['advisor_no']}{D}")
         steps, out = journey(c, dry)
         for name, kind, txt in steps:
             print(f"    {kind}  {name:10s} {txt}")

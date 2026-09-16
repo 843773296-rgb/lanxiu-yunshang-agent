@@ -363,7 +363,7 @@ def merge_transit(tid, to, note, actor="魏欣新", role="顾问"):
         # PRD:冲突字段采用最近一次经确认的数据
         fresh = ra if (ra["last_interact"] or "") >= (rb["last_interact"] or "") else rb
         conflicts=[]
-        for f in ("phone","addr","shop","advisor","level"):
+        for f in ("phone","addr","shop","advisor_no","level"):
             if ra[f]!=rb[f]: conflicts.append(f"{f}: 取自 {fresh['id']}")
         with sqlite3.connect(DB) as c:
             # 合并标签、量体、跟进、预约、购买记录 → 关联迁移到主档
@@ -371,9 +371,9 @@ def merge_transit(tid, to, note, actor="魏欣新", role="顾问"):
             c.execute("UPDATE followup    SET customer_id=? WHERE customer_id=?",(main["id"],dup["id"]))
             c.execute("UPDATE deposit     SET customer_id=? WHERE customer_id=?",(main["id"],dup["id"]))
             # 冲突字段取最近确认的数据
-            c.execute("""UPDATE customer SET phone=?,addr=?,shop=?,advisor=?,level=?,
+            c.execute("""UPDATE customer SET phone=?,addr=?,shop=?,advisor_no=?,level=?,
                          last_interact=? WHERE id=?""",
-                      (fresh["phone"],fresh["addr"],fresh["shop"],fresh["advisor"],fresh["level"],
+                      (fresh["phone"],fresh["addr"],fresh["shop"],fresh["advisor_no"],fresh["level"],
                        fresh["last_interact"],main["id"]))
             # PRD:订单、积分和支付只建立关联,不重复累计 —— 故不做 order_cnt / paid_amount 相加
             c.execute("UPDATE customer SET archived=1 WHERE id=?",(dup["id"],))
@@ -962,7 +962,15 @@ def 填顾问名(rs):
         try: 有 = set(r.keys())
         except Exception: continue
         for 名列, 号列 in (("advisor", "advisor_no"), ("measured_by", "measured_by_no")):
-            if 名列 not in 有 or 号列 not in 有:
+            # ⚠️ **名字列 2026-09-16 全库删除,所以这里要「造」出这个字段,不是「改写」它。**
+            #
+            # 原来的条件是「名字列和工号列都在才填」—— 那是列还没删时的写法。
+            # 列删掉之后 `advisor` 这个 key 根本不存在,于是这段直接跳过,
+            # **页面上那一栏整个消失** —— 而页面照常打开、表格照常有行。
+            #
+            # 这正是 `intent/advisor-columns.md` 警告的那句
+            # 「删了页面会静默显示空名字」。**是 `advisor_name_check` 抓住的。**
+            if 号列 not in 有:
                 continue
             got = nm.get(r.get(号列))
             if not got:
@@ -1176,11 +1184,11 @@ def create_customer(d, actor="魏欣新", _role=None):
         # ⚠️ **工号也要写。** 表单里填的是显示串,而库里要存的是引用。
         # 认不出来时 `顾问工号` 返回 None —— **不挑一个最像的**:
         # 挑错的话这条客户会挂到另一个顾问名下,而页面上完全正常。
-        c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,advisor_no,
+        c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,
                      lifecycle,
                      level,created,order_cnt,paid_amount,addr,birthday,archived,idle_days)
-                     VALUES(?,?,?,?,?,?,?,'潜在','普通',?,0,0,?,?,0,0)""",
-                  (cid, d.get("name"), ph, (ph or "")[-4:], d.get("shop"), d.get("advisor"),
+                     VALUES(?,?,?,?,?,?,'潜在','普通',?,0,0,?,?,0,0)""",
+                  (cid, d.get("name"), ph, (ph or "")[-4:], d.get("shop"),
                    顾问工号(d.get("advisor")),
                    datetime.date.today().isoformat(), d.get("addr"), d.get("birthday")))
     log_op(actor, "customer", cid, "—", "潜在", True, "CREATE",
@@ -1280,15 +1288,15 @@ def update_customer(cid,d,actor="魏欣新",role="顾问"):
             return dict(ok=False,code="DUP_PHONE",
                 reason=f"手机号与客户 {same[0]['id']}({same[0]['name']})重复,按 PRD 6.2 不可修改为该号")
     diff=[f"{k}: {old.get(k)} → {v}" for k,v in
-          dict(name=d.get("name"),phone=ph,shop=d.get("shop"),advisor=d.get("advisor"),
+          dict(name=d.get("name"),phone=ph,shop=d.get("shop"),advisor_no=顾问工号(d.get("advisor")),
                addr=d.get("addr"),birthday=d.get("birthday")).items()
           if v and str(old.get(k))!=str(v)]
     if not diff: return dict(ok=True,code="NOCHANGE",reason="没有字段发生变化")
     with sqlite3.connect(DB) as c:
         c.execute("""UPDATE customer SET name=COALESCE(?,name),phone=?,phone_tail=?,
-                     shop=COALESCE(?,shop),advisor=COALESCE(?,advisor),
+                     shop=COALESCE(?,shop),advisor_no=COALESCE(?,advisor_no),
                      addr=COALESCE(?,addr),birthday=COALESCE(?,birthday) WHERE id=?""",
-                  (d.get("name"),ph,ph[-4:],d.get("shop"),d.get("advisor"),
+                  (d.get("name"),ph,ph[-4:],d.get("shop"),顾问工号(d.get("advisor")),
                    d.get("addr"),d.get("birthday"),cid))
     log_op(actor,"customer",cid,"编辑","编辑",True,"UPDATE","; ".join(diff),{"role":role})
     return dict(ok=True,code="UPDATE",reason=f"已更新 {len(diff)} 个字段:"+"; ".join(diff[:3]))
@@ -1318,13 +1326,13 @@ def import_customers(text,actor="魏欣新",role="顾问",dry=True):
         with sqlite3.connect(DB) as c:
             for j,(ln,d) in enumerate(good):
                 nid=f"C{40000+n+j}"
-                c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,advisor,
+                c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,
                   advisor_no,lifecycle,
                   level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,
                   first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at)
-                  VALUES(?,?,?,?,?,?,?,'潜在','普通',date('now','localtime'),0,0,date('now','localtime'),
+                  VALUES(?,?,?,?,?,?,'潜在','普通',date('now','localtime'),0,0,date('now','localtime'),
                   '','',0,NULL,0,0,0,0,'潜在',NULL,NULL)""",
-                  (nid,d["name"],d["phone"],d["phone"][-4:],d["shop"],d["advisor"],
+                  (nid,d["name"],d["phone"],d["phone"][-4:],d["shop"],
                    顾问工号(d["advisor"])))
         # 疑似重复进人工确认队列
         with sqlite3.connect(DB) as c:
@@ -1383,9 +1391,12 @@ def decide_approval(aid,to,note,actor="魏欣新",role="顾问"):
                 applied=f";已为 {a['target']} 调整积分 {pl.get('delta'):+d}"
             elif a["kind"]=="客户转移":
                 ids=a["target"].split("|")
-                for i in ids: c.execute("UPDATE customer SET advisor=? WHERE id=?",(pl.get("to_advisor"),i))
-                c.executemany("UPDATE appointment SET advisor=? WHERE customer_id=? AND status='已预约'",
-                              [(pl.get("to_advisor"),i) for i in ids])
+                # ⚠️ 名字列已删 —— 转移写的是**工号**。页面传来的仍是显示串,
+                # 用 `顾问工号()` 翻译;**翻不出来就写 None,不猜**。
+                _to = 顾问工号(pl.get("to_advisor"))
+                for i in ids: c.execute("UPDATE customer SET advisor_no=? WHERE id=?",(_to,i))
+                c.executemany("UPDATE appointment SET advisor_no=? WHERE customer_id=? AND status='已预约'",
+                              [(_to,i) for i in ids])
                 applied=f";已将 {len(ids)} 位客户转至 {pl.get('to_advisor')},未完成预约同步迁移"
         log_op(actor,a["kind"],a["target"],"审批通过","已执行",True,"APPLIED",applied.lstrip(";"),{})
     with sqlite3.connect(DB) as c:
@@ -1935,7 +1946,7 @@ def customer_list(q):
     f={k:(q.get(k) or [""])[0] for k in ("lifecycle","shop","advisor","level")}
     # ⚠️ **要把 advisor_no 一起取出来** —— 名字由 `填顾问名()` 现取,
     # 而它认的是工号。不取的话删列之后这一栏会静默变空。
-    rs=rows("""SELECT id,name,phone,lifecycle,shop,advisor,advisor_no,level,order_cnt,
+    rs=rows("""SELECT id,name,phone,lifecycle,shop,advisor_no,level,order_cnt,
                paid_amount,last_interact,idle_days,amount_12m,archived FROM customer""")
     填顾问名(rs)
     for c in rs:
@@ -1999,7 +2010,7 @@ def lifecycle_page(sel=None):
     types=["潜在","新客","活跃","高价值","忠诚","休眠","潜在流失","流失"]  # 展示顺序,不是优先级
     cnt={r["lifecycle"]:r["n"] for r in rows("SELECT lifecycle,COUNT(*) n FROM customer GROUP BY lifecycle")}
     cur=sel or types[0]
-    cs=rows("""SELECT id,name,phone,lifecycle,shop,advisor,advisor_no,level,order_cnt,
+    cs=rows("""SELECT id,name,phone,lifecycle,shop,advisor_no,level,order_cnt,
                paid_amount,last_interact,
                idle_days,amount_12m,orders_12m,quarters_12m,matched,manual_lc,manual_at
                FROM customer WHERE lifecycle=? ORDER BY (manual_lc IS NULL), id LIMIT 60""",cur)
@@ -2326,7 +2337,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/appts": return self._send(appt_list())
         if p.startswith("/api/appt/"): return self._send(appt_detail(p.split("/api/appt/")[1]))
         if p=="/api/customers": return self._send(填顾问名(rows(
-            "SELECT id,name,phone,shop,advisor,advisor_no,lifecycle,level,order_cnt,"
+            "SELECT id,name,phone,shop,advisor_no,lifecycle,level,order_cnt,"
             "paid_amount FROM customer ORDER BY id LIMIT 200")))
         self._send({"error":"not found"},404)
     def do_POST(self):
@@ -2542,8 +2553,9 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(ok=False,code="WRONG_ROLE",
                     reason=f"客户转移须由店长及以上操作,当前角色:{role}"))
             with sqlite3.connect(DB) as c:
-                for i in ids: c.execute("UPDATE customer SET advisor=? WHERE id=?",(adv,i))
-                c.executemany("UPDATE appointment SET advisor=? WHERE customer_id=? AND status='已预约'",
+                _adv_no = 顾问工号(adv)
+                for i in ids: c.execute("UPDATE customer SET advisor_no=? WHERE id=?",(_adv_no,i))
+                c.executemany("UPDATE appointment SET advisor_no=? WHERE customer_id=? AND status='已预约'",
                               [(adv,i) for i in ids])
             log_op("魏欣新","customer","|".join(ids[:5]),"—","转移",True,"TRANSFER",
                    f"{len(ids)} 人转至 {adv};同店转移已迁移未完成预约。{body.get('note','')}",{})

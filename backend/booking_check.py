@@ -32,13 +32,13 @@ def main():
     print("  " + "=" * 76)
 
     # ① 绑定在职本店顾问 → 派给他
-    r = q("SELECT * FROM customer WHERE advisor='A02 周叙' AND shop='SH001 静安旗舰店' LIMIT 1")
+    r = q("SELECT * FROM customer WHERE advisor_no=(SELECT no FROM staff WHERE adv_code='A02') AND shop='SH001 静安旗舰店' LIMIT 1")
     if r:
         no, code, _ = booking.route(r[0])
         check("绑定在职本店顾问", code, "BOUND", f" · 派给 {no}")
 
     # ② 绑定的顾问已离职 → **不许派给他**
-    r = q("SELECT * FROM customer WHERE advisor LIKE 'A09%' LIMIT 1")
+    r = q("SELECT * FROM customer WHERE advisor_no=(SELECT no FROM staff WHERE adv_code='A09') LIMIT 1")
     if not r:
         print(f"  {R}❌{D} 反例夹具丢了:没有客户挂在离职顾问名下 —— "
               f"「离职顾问的单该落池」这条从此测不出来"); globals()['bad'] = bad + 1
@@ -48,17 +48,17 @@ def main():
         check("  └ 而且确实没派出去", "未派" if no is None else f"派给{no}", "未派")
 
     # ③ 没有归属顾问 → 落池
-    no, code, _ = booking.route({"advisor": "", "shop": "SH001 静安旗舰店"})
+    no, code, _ = booking.route({"advisor_no": "", "shop": "SH001 静安旗舰店"})
     check("客户没有归属顾问", code, "NO_BIND")
 
     # ④ 档案写了个查无此人的编号 → 落池,而不是猜一个
-    no, code, _ = booking.route({"advisor": "A99 张三", "shop": "SH001 静安旗舰店"})
+    no, code, _ = booking.route({"advisor_no": "99999999", "shop": "SH001 静安旗舰店"})
     check("归属顾问编号查无此人", code, "BAD_BIND")
 
     # ⑤ 绑定的顾问不在客户所在门店 → 落池
     r = q("SELECT * FROM staff WHERE role='顾问' AND status='启用' AND shop='SH002 徐汇店' LIMIT 1")
     if r:
-        no, code, _ = booking.route({"advisor": r[0]["adv_code"], "shop": "SH001 静安旗舰店"})
+        no, code, _ = booking.route({"advisor_no": r[0]["no"], "shop": "SH001 静安旗舰店"})
         check("绑定顾问不在客户所在门店", code, "CROSS_SHOP")
 
     print("\n\033[1m▸ 一号多档 · 不许静默取第一条\033[0m")
@@ -155,27 +155,40 @@ def main():
     for old, new in tt.LEGACY.items():
         check(f"老类型「{old}」能归一", tt.norm(old), new)
 
-    print("\n\033[1m▸ 两套编号之间的桥\033[0m")
+    print("\n\033[1m▸ 归属顾问 → 员工(按工号)\033[0m")
     print("  " + "=" * 76)
-    for who, want in [("A01 林岚", "60000002"), ("A05", "60000011"), ("苏彧", "60000011")]:
-        st = booking.staff_of_advisor(who)
-        check(f"「{who}」能查到人", st["no"] if st else "查不到", want)
-    st = booking.staff_of_advisor("A99 查无此人")
-    check("查不到的编号不许瞎猜", "None" if st is None else st["no"], "None")
-
-    # 同名的两个人 —— 桥必须放弃,不能返回其中一个。
-    # **这条得自己造现场**:花名册里正好没有同名的人,不造就永远测不到,
-    # 而没红过的检查等于没有。造完必删,失败也删。
-    dup = q("SELECT name FROM staff WHERE role='顾问' AND status='启用' LIMIT 1")[0]["name"]
+    # ⚠️ **这一段 2026-09-16 整体换掉了,而换的原因值得写下来。**
+    #
+    # 原来这里测的是「**两套编号之间的桥**」:能不能用
+    # 「A01 林岚」/「A01」/「苏彧」三种写法查到人,以及**两个人同名时要放弃**。
+    #
+    # 而名字列删掉之后,**档案里存的就是工号,那座桥整个拆了** ——
+    # 于是这几条用例开始红,**而它们红得理直气壮**:
+    # 「「A01 林岚」能查到人 —— 判为查不到」。
+    #
+    # > **删掉一个能力,和忘了实现它,在红色里长得一模一样。**
+    #
+    # 正确动作是**换掉用例去测新能力**,而不是想办法让旧能力复活。
+    _一 = q("SELECT no,name FROM staff WHERE role='顾问' AND status='启用' LIMIT 1")[0]
+    st = booking.staff_of_advisor(_一["no"])
+    check(f"按工号查得到人({_一['name']})", st["no"] if st else "查不到", _一["no"])
+    st = booking.staff_of_advisor("99999999")
+    check("查不到的工号不许瞎猜", "None" if st is None else st["no"], "None")
+    st = booking.staff_of_advisor("")
+    check("空工号不许返回人", "None" if st is None else st["no"], "None")
+    # ⚠️ **同名不再是问题 —— 而这正是删掉名字列换来的。**
+    # 造两个同名的人,按工号查仍然各是各的。
+    dup = _一["name"]
     try:
         with sqlite3.connect(DB) as w:
             w.execute("INSERT INTO staff(no,name,role,shop,status,adv_code) "
                       "VALUES('69999999',?,'顾问','SH009 临时','启用','A99')", (dup,))
-        st = booking.staff_of_advisor(dup)          # 按姓名查 —— 现在有两个人叫这个名字
-        check(f"有两个人叫「{dup}」时按姓名查要放弃",
-              "None" if st is None else st["no"], "None")
-        st = booking.staff_of_advisor("A99")        # 但按 A 号查仍然唯一,该查得到
-        check("  └ 同名不影响按编号查", st["no"] if st else "查不到", "69999999")
+        st = booking.staff_of_advisor("69999999")
+        check(f"有两个人叫「{dup}」也不影响按工号查",
+              st["no"] if st else "查不到", "69999999")
+        st = booking.staff_of_advisor(_一["no"])
+        check("  └ 原来那个也还查得到,没被同名顶掉",
+              st["no"] if st else "查不到", _一["no"])
     finally:
         with sqlite3.connect(DB) as w:
             w.execute("DELETE FROM staff WHERE no='69999999'")
@@ -192,9 +205,12 @@ def main():
     # 跨店绑定:客户在这个店,归属顾问却在另一个店
     print("\n\033[1m▸ 客户绑定 · 不许跨店\033[0m")
     print("  " + "=" * 76)
+    # ⚠️ 这里原来是 `ON s.adv_code = substr(c.advisor,1,3)` ——
+    # **靠截字符串前三位来连人**。名字列 2026-09-16 删了,现在是正经的引用。
     cross = q("""SELECT COUNT(*) n FROM customer c LEFT JOIN staff s
-                 ON s.adv_code = substr(c.advisor,1,3)
-                 WHERE c.advisor<>'' AND (s.shop IS NULL OR s.shop<>c.shop)""")[0]["n"]
+                 ON s.no = c.advisor_no
+                 WHERE c.advisor_no IS NOT NULL AND c.advisor_no<>''
+                   AND (s.shop IS NULL OR s.shop<>c.shop)""")[0]["n"]
     check("跨店绑定的客户数", str(cross), "0",
           "  ← 跨店绑定会让预约永远派不出去,却看不出是数据的错")
 

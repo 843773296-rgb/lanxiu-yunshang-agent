@@ -188,7 +188,7 @@ def main():
         # **改完要还原。** 检查本身在改数据,不还原的话跑一次库就变一次样 ——
         # 第一次绿、第二次红,而红的原因和被测的东西没关系。
         # 一个不能反复跑的检查,实际上只在第一次有用。
-        _before = tasks.rows("SELECT assignee_no,advisor,reassigned_from,reassign_reason,"
+        _before = tasks.rows("SELECT assignee_no,advisor_no,reassigned_from,reassign_reason,"
                              "reassigned_at FROM schedule WHERE id=?", tid)[0]
         try:
             with api.as_user(mgr): r = api.reassign_task(tid, A["name"], "原负责人临时有事")
@@ -205,9 +205,9 @@ def main():
                        "  ← 只显示「负责人:林岚」比少一行还糟")
         finally:
             with sqlite3.connect(DB) as _c:
-                _c.execute("UPDATE schedule SET assignee_no=?,advisor=?,reassigned_from=?,"
+                _c.execute("UPDATE schedule SET assignee_no=?,advisor_no=?,reassigned_from=?,"
                            "reassign_reason=?,reassigned_at=? WHERE id=?",
-                           (_before["assignee_no"], _before["advisor"], _before["reassigned_from"],
+                           (_before["assignee_no"], _before["advisor_no"], _before["reassigned_from"],
                             _before["reassign_reason"], _before["reassigned_at"], tid))
 
     print(f"\n\033[1m▸ 接待做完了,那条预约该跟着收尾\033[0m")

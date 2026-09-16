@@ -62,10 +62,8 @@ import knowledge.growth as G
 _量体人 = "60000008"
 
 
-def _量体人名(c, no):
-    """工号 → 名字。**从花名册取,不手抄** —— 手抄的名字会漂。"""
-    r = c.execute("SELECT name FROM staff WHERE no=?", (no,)).fetchone()
-    return r[0] if r else None
+# ⚠️ 这里原来有个 `_量体人名(c, no)`(工号 → 名字)。**名字列删了之后它没用了** ——
+# 留着的话下一个人会以为「写量体记录要先把工号翻成名字」,而那正是要消灭的那一步。
 
 def 挑量体日(下单日, 周期天数, 客户建档日=None):
     """挑一个合规的量体日期。三个约束**同时**要满足:
@@ -247,11 +245,11 @@ def ensure_wearers(conn, today="2026-09-12", verbose=True):
             # ⚠️ 这里原来往 **名字列**里写了一个**工号**(`"60000008"`)——
             # 一列装两种东西,而它们在表上长得一模一样(都是一串字符)。
             # 名字归名字列、工号归工号列,名字从花名册取。
-            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
+            c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,"
                       "measured_by_no,measured_at,method,wearer_id,cond_inner,cond_shoe,"
-                      "cond_breath) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                      "cond_breath) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                       (cid, "MT01", item, round(v + (i % 5) - 2, 1),
-                       _量体人名(c, _量体人), _量体人,
+                       _量体人,
                        at, "到店", wid, "薄", "赤足", "平静呼气"))
         建 += 1
     if verbose:
@@ -432,11 +430,11 @@ def enforce_rows(conn, verbose=True):
             h = w["height"] or 165.0
             for i, item in enumerate(ITEMS):
                 v = BASE[item] * (h / 165 if item in ("MI01", "MI08", "MI09", "MI12", "MI14") else 1)
-                c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by,"
+                c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,"
                           "measured_by_no,measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath) "
-                          "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                          "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                           (r["customer_id"], "MT01", item, round(v + (i % 5) - 2, 1),
-                           _量体人名(c, _量体人), _量体人,
+                           _量体人,
                            f"{新} 14:30", "到店", wid, "薄", "赤足", "平静呼气"))
             补 += 1
     if verbose:

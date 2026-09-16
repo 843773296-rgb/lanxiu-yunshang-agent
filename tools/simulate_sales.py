@@ -211,7 +211,7 @@ def load_world(c):
     # 冷静期就是等这些事了结的。旅程造的单都走到完成所以撞不上,这批有待付款/待发货就撞上了。
     # 锁定的账户一并排掉:给一个登不上的账户挂上百单同样说不通。
     custs = [dict(r) for r in c.execute(
-        """SELECT k.id, k.created, k.shop, k.advisor, k.advisor_no, k.addr FROM customer k
+        """SELECT k.id, k.created, k.shop, k.advisor_no, k.addr FROM customer k
            LEFT JOIN account a ON a.id=k.account_id
            WHERE a.id IS NULL OR a.status='正常' ORDER BY k.id""")
         if r["id"] in ids]
@@ -417,7 +417,7 @@ def simulate(skus, ver, custs, rng):
             stamps = [x for x in (t, paid, shipped, finished, cancelled) if x]
             orders.append(dict(
                 id=o_id, customer_id=cust["id"], status=status, prd_status=ORDER_PRD[status],
-                advisor=cust["advisor"], advisor_no=cust["advisor_no"], shop=cust["shop"],
+                advisor_no=cust["advisor_no"], shop=cust["shop"],
                 source=src, delivery="配送到店" if (src == "门店 Pad" or rng.random() < 0.3) else "配送到客户",
                 amount=amount, goods=goods, freight=freight,
                 received=amount if paid else 0.0, refund=refund, addr=cust["addr"],
@@ -450,11 +450,12 @@ def write(c, orders, logs, final, skus):
     before = {s["code"]: (s["stock"], s["locked"]) for s in skus}
     src_note = f"模拟造数({BATCH}):取生成时版型的当前版本"
     for o in orders:
-        c.execute("""INSERT INTO ordr(id,customer_id,kind,status,advisor,shop,source,activity,delivery,
+        # ⚠️ 2026-09-16:`ordr.advisor`(名字列)**已全库删除**。只去掉那一列,生成逻辑没动。
+        c.execute("""INSERT INTO ordr(id,customer_id,kind,status,shop,source,activity,delivery,
                      amount,payable,created,updated,prd_status,goods_amount,freight,received,
                      refund_status,addr,paid_at,shipped_at,finished_at,cancelled_at,advisor_no)
-                     VALUES(?,?,'标品订单',?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (o["id"], o["customer_id"], o["status"], o["advisor"], o["shop"], o["source"],
+                     VALUES(?,?,'标品订单',?,?,?,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (o["id"], o["customer_id"], o["status"], o["shop"], o["source"],
                    o["delivery"], o["amount"], o["amount"], o["created"], o["updated"], o["prd_status"],
                    o["goods"], o["freight"], o["received"], o["refund"], o["addr"], o["paid_at"],
                    o["shipped_at"], o["finished_at"], o["cancelled_at"], o["advisor_no"]))

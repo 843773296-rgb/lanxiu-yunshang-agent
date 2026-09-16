@@ -289,7 +289,7 @@ def get_member_priority(lifecycle=None, limit=10):
     import rfm as _rfm, lifecycle as _lc
     if lifecycle and lifecycle not in _lc.PRIORITY:
         return {"error": f"没有「{lifecycle}」这一档", "现有档位": _lc.PRIORITY}
-    sql = ("SELECT id,name,lifecycle,idle_days,orders_12m,amount_12m,last_interact,advisor "
+    sql = ("SELECT id,name,lifecycle,idle_days,orders_12m,amount_12m,last_interact,advisor_no "
            "FROM customer")
     args = []
     if lifecycle: sql += " WHERE lifecycle=?"; args.append(lifecycle)
@@ -378,7 +378,7 @@ def my_tasks(status=None):
     out = [_nz({"任务号": r["id"], "类型": tt.norm(r.get("type")),
                 "状态": r.get("status"), "内容": r.get("note"),
                 "开始": r.get("start_ts"), "结束": r.get("end_ts"),
-                "负责人": r.get("assignee_name") or r.get("advisor"),
+                "负责人": r.get("assignee_name") or r.get("advisor_no"),
                 "挂的单据": r.get("ref_id"), "客户": r.get("customer_id"),
                 "绑定活动": r.get("activity_code"), "总结": r.get("summary"),
                 "附件数": len(r.get("附件") or []) or None,
@@ -434,7 +434,7 @@ def team_tasks(assignee=None, status=None):
 
     by = {}
     for r in rs:
-        k = r.get("assignee_name") or r.get("advisor") or "(没有负责人)"
+        k = r.get("assignee_name") or r.get("advisor_no") or "(没有负责人)"
         by.setdefault(k, []).append(r)
 
     def one(r):
@@ -689,7 +689,12 @@ def monthly_review(month=None):
     if me.get("role") != "总部运营":
         o_where, o_args = ("shop=?", [me.get("shop")])
         if me.get("role") not in _tk.MANAGER_ROLES:
-            o_where, o_args = ("shop=? AND advisor=?", [me.get("shop"), me.get("name")])
+               # ⚠️ **按工号隔离,不按名字。**
+               # 原来是 `advisor=?` 配 `me["name"]` —— **两个同名顾问会看到
+               # 彼此的订单**。那不是显示问题,是**越权**。
+               # 名字列 2026-09-16 全库删除,这个风险**结构性消失**。
+               o_where, o_args = ("shop=? AND advisor_no=?",
+                                  [me.get("shop"), me.get("no")])
     spans = []
     for o in _rows(f"SELECT created,finished_at FROM ordr WHERE status='完成' "
                    f"AND finished_at IS NOT NULL AND substr(finished_at,1,7)=? AND {o_where}",
@@ -1334,7 +1339,7 @@ def recovery_queue(kind=None, today=None):
 
     if kind in (None, "待付款"):
         rs = _rows("SELECT o.id, o.kind, o.payable, o.created, o.source, "
-                   "  o.customer_id, c.name cname, o.advisor "
+                   "  o.customer_id, c.name cname, o.advisor_no "
                    "FROM ordr o LEFT JOIN customer c ON c.id=o.customer_id "
                    "WHERE o.status='待付款'")
         单 = []
@@ -1342,7 +1347,7 @@ def recovery_queue(kind=None, today=None):
             d = _rc.停留(r["created"], 今天)
             单.append(_nz({
                 "订单": r["id"], "客户": f"{r['customer_id']} {r['cname'] or ''}".strip(),
-                "品类": r["kind"], "渠道": r["source"], "顾问": r["advisor"],
+                "品类": r["kind"], "渠道": r["source"], "顾问工号": r["advisor_no"],
                 "金额": r["payable"], "压了几天": d,
                 "紧要度": _rc.紧要度(r["payable"], d),
             }))
@@ -1360,7 +1365,7 @@ def recovery_queue(kind=None, today=None):
         摊 = {}
         for st, (是什么, 该做什么) in _rc.未成行.items():
             rs = _rows("SELECT a.id, a.customer_id, c.name cname, a.start_ts, "
-                       "  a.shop, a.advisor FROM appointment a "
+                       "  a.shop, a.advisor_no FROM appointment a "
                        "LEFT JOIN customer c ON c.id=a.customer_id "
                        "WHERE a.status=? ORDER BY a.start_ts DESC", st)
             摊[st] = {
@@ -1368,7 +1373,7 @@ def recovery_queue(kind=None, today=None):
                 "最近几条": [{"预约": r["id"],
                               "客户": f"{r['customer_id']} {r['cname'] or ''}".strip(),
                               "原定": r["start_ts"], "门店": r["shop"],
-                              "顾问": r["advisor"],
+                              "顾问工号": r["advisor_no"],
                               "过了几天": _rc.停留(r["start_ts"], 今天)}
                              for r in rs[:5]],
             }
@@ -2017,7 +2022,7 @@ def get_task(task_id):
         return dict(error=f"没有 {task_id} 这条任务,或者它不在你看得到的范围里")
     return _nz({"任务号": r["id"], "类型": tt.norm(r.get("type")), "状态": r.get("status"),
                 "内容": r.get("note"), "开始": r.get("start_ts"), "结束": r.get("end_ts"),
-                "负责人": r.get("assignee_name") or r.get("advisor"),
+                "负责人": r.get("assignee_name") or r.get("advisor_no"),
                 "挂的单据": r.get("ref_id"), "客户": r.get("customer_id"),
                 "绑定活动": r.get("activity_code"), "总结": r.get("summary")})
 
@@ -2604,7 +2609,7 @@ def get_order(order_id=None, customer=None):
     return {"订单":o["id"],"客户":(cu[0]["name"] if cu else o["customer_id"]),
             "类型":o["kind"],"页面状态":o["status"],"PRD状态":o["prd_status"],
             "状态口径":"页面按设计稿 10 档,PRD 按状态机 6 档,两套并存且有显式映射",
-            "门店":o["shop"],"顾问":o["advisor"],"来源":o["source"],"配送":o["delivery"],
+            "门店":o["shop"],"顾问工号":o["advisor_no"],"来源":o["source"],"配送":o["delivery"],
             "金额":dict(商品额=g,运费=f,订单额=a,应付=o["payable"],已收=o["received"],
                        退款状态=o["refund_status"]),
             "时间线":dict(tl),"订单行":items,"售后":af,
@@ -3121,7 +3126,7 @@ def _白坯试衣(order_id, item_name, order_status):
         "订单开没开裁": _sf.开裁了吗(order_status),
         "有几条试衣记录": len(recs),
         "客户签字了吗": 签 if recs else None,
-        "记录": [{"第几轮": r["round"], "时间": r["ts"], "陪同": r["advisor"],
+        "记录": [{"第几轮": r["round"], "时间": r["ts"], "陪同工号": r["advisor_no"],
                   "门店": r["shop"], "改了哪几处": r["adjust"],
                   "签了吗": bool(r["signed"]), "签字时间": r["signed_at"],
                   "备注": r["note"]} for r in recs] or None,
@@ -3182,7 +3187,7 @@ def fitting_queue(order=None):
     w, a = "", []
     if order:
         w = " AND o.id=?"; a = [order]
-    rs = _rows("SELECT i.id,i.order_id,i.name,i.wearer_id,o.status,o.advisor,"
+    rs = _rows("SELECT i.id,i.order_id,i.name,i.wearer_id,o.status,o.advisor_no,"
                "  o.shop,c.name cname,o.customer_id "
                "FROM ordr_item i JOIN ordr o ON o.id=i.order_id "
                "LEFT JOIN customer c ON c.id=o.customer_id "
@@ -3197,7 +3202,7 @@ def fitting_queue(order=None):
             "订单": r["order_id"], "订单行": r["id"],
             "客户": f"{r['customer_id']} {r['cname'] or ''}".strip(),
             "着装人": r["wearer_id"], "商品": r["name"],
-            "订单状态": r["status"], "顾问": r["advisor"], "门店": r["shop"],
+            "订单状态": r["status"], "顾问工号": r["advisor_no"], "门店": r["shop"],
             "凭什么该试": f.get("凭什么"),
             "试衣记录": f.get("记录"),
             "客户签字了吗": f.get("客户签字了吗"),
@@ -3375,7 +3380,7 @@ def get_maintain(maintain_id=None, customer=None, status=None):
                      m["customer_id"], m["id"])[0]["n"]
         d = {"工单": m["id"], "状态": m["status"], "客户": f"{m['customer_id']} {m['cname'] or ''}".strip(),
              "商品": m["item"], "客户报的问题": m["issue"],
-             "报修时间": m["created"], "门店": m["shop"], "顾问": m["advisor"],
+             "报修时间": m["created"], "门店": m["shop"], "顾问工号": m["advisor_no"],
              "订单": (o[0] if o else {"error": "订单查不到"}),
              "这件的配置": (dict(形制=it[0]["xz"], 可选面料=it[0]["mt_opts"],
                             可选工艺=it[0]["kf_opts"], 商品备注=it[0]["remark"])

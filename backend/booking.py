@@ -27,28 +27,22 @@ def _rows(sql, *a):
         return [dict(r) for r in c.execute(sql, a)]
 
 
-# ── 两套编号之间的桥 ────────────────────────────────────────────────
-def staff_of_advisor(advisor):
-    """把客户档案里的「归属顾问」换成员工。
-
-    档案里存的历来是 `"A01 林岚"` 这种显示串,员工表的主键是工号 `60000002`。
-    **这是同一个人的两套编号**,以前只能靠名字连 —— 名字既不唯一也会改。
-    现在花名册上有 adv_code,这个函数是两套编号之间**唯一**的桥。
-
-    容忍三种写法:"A01 林岚" / "A01" / "林岚"。
-    容忍不是宽容,是因为库里这三种真的都存在过;但**新写入一律用 A 号**。
-    """
-    s = (advisor or "").strip()
-    if not s: return None
-    code = s.split(" ", 1)[0]
-    r = _rows("SELECT * FROM staff WHERE adv_code=?", code)
-    if r: return r[0]
-    # 退化到按姓名 —— 查到**多个同名**就当作查不到。
-    # 「有两个人叫这个名字」和「没有人叫这个名字」在派单这件事上后果一样:
-    # 都不知道该派给谁。返回一个是瞎猜。
-    name = s.split(" ", 1)[-1]
-    r = _rows("SELECT * FROM staff WHERE name=? AND role='顾问'", name)
-    return r[0] if len(r) == 1 else None
+# ── 归属顾问 → 员工 ────────────────────────────────────────────────
+#
+# ⚠️ **这里原来是一座「两套编号之间的桥」,2026-09-16 拆了。**
+#
+# 档案里存的曾经是 `"A01 林岚"` 这种显示串,而员工表的主键是工号 ——
+# 同一个人两套编号,只能**靠名字连**。那个函数因此要:
+#   · 容忍三种写法(`A01 林岚` / `A01` / `林岚`)
+#   · 处理「**两个人同名**」——「有两个叫这名字的」和「没有这个人」
+#     在派单上后果一样,都不知道派给谁
+#
+# **那一整套复杂度,全是因为档案里存的是名字。**
+# 名字列删掉之后档案里存的就是工号,这座桥不需要了 —— 一次查表就完。
+def staff_of_advisor(advisor_no):
+    """按工号取员工。取不到返回 None(**不猜**)。"""
+    r = _rows("SELECT * FROM staff WHERE no=?", (advisor_no or "").strip())
+    return r[0] if r else None
 
 
 # ── 派单决策(纯函数,不写库,可以单独测)──────────────────────────
@@ -58,13 +52,17 @@ def route(cust):
     返回 (assignee_no 或 None, code, 人话理由)。
     **None 不是失败** —— 是「这张单需要人来分」,是一个正常的结果。
     """
-    adv = (cust.get("advisor") or "").strip()
+    adv = (cust.get("advisor_no") or "").strip()
     if not adv:
         return None, "NO_BIND", "这个客户还没有归属顾问,单子进待分配池"
 
     st = staff_of_advisor(adv)
     if not st:
-        return None, "BAD_BIND", f"档案写的归属顾问是「{adv}」,但员工表里对不上人 —— 数据要修,单子先进待分配池"
+        # ⚠️ **这条现在几乎不该发生** —— 档案里存的是工号,而工号来自员工表。
+        # 留着它是因为「几乎不该」和「不可能」是两件事:
+        # 员工被删、库被手工改过,都会走到这儿。
+        return None, "BAD_BIND", (f"档案写的归属顾问工号是「{adv}」,"
+                                  f"而员工表里没有这个人 —— **数据要修**,单子先进待分配池")
 
     if st.get("status") != "启用":
         return None, "LEFT", (f"归属顾问 {st['name']} 已{st.get('status')},"
@@ -147,7 +145,6 @@ def book(d):
     aid = f"AP{_now():%y%m%d}{n + 1:04d}"
     m = _rows("SELECT COUNT(*) c FROM schedule")[0]["c"]
     sid = f"SC{7000 + m + 1}"
-    adv_disp = cust.get("advisor") if code == "BOUND" else None
     # ⚠️ **工号也要写。** 原来这两条 INSERT **只写名字不写工号** ——
     # 而名字是 `staff` 的副本,工号才是引用。
     # 这条路径在门禁里没被走过(门禁跑的是静态种子数据),
@@ -157,17 +154,17 @@ def book(d):
 
     with sqlite3.connect(DB) as c:
         # 预约单(客户视角:我约了几点)
-        c.execute("INSERT INTO appointment(id,customer_id,shop,advisor,advisor_no,"
-                  "start_ts,end_ts,status) VALUES(?,?,?,?,?,?,?,?)",
-                  (aid, cust["id"], cust.get("shop"), adv_disp, adv_no,
+        c.execute("INSERT INTO appointment(id,customer_id,shop,advisor_no,"
+                  "start_ts,end_ts,status) VALUES(?,?,?,?,?,?,?)",
+                  (aid, cust["id"], cust.get("shop"), adv_no,
                    t.strftime("%Y-%m-%d %H:%M"), end.strftime("%Y-%m-%d %H:%M"), "待确认"))
         # 任务单(门店视角:谁去接待)—— **两张表是两个视角,不是冗余**:
         # 客户取消预约,任务单要留痕说明为什么白排了一小时。
-        c.execute("""INSERT INTO schedule(id,type,advisor,advisor_no,customer_id,
+        c.execute("""INSERT INTO schedule(id,type,advisor_no,customer_id,
                      start_ts,end_ts,
                      status,shop,assignee_no,assigned_by,assigned_at,note)
-                     VALUES(?,'预约到店',?,?,?,?,?, '有效',?,?,?,?,?)""",
-                  (sid, adv_disp, adv_no, cust["id"],
+                     VALUES(?,'预约到店',?,?,?,?, '有效',?,?,?,?,?)""",
+                  (sid, adv_no, cust["id"],
                    t.strftime("%Y-%m-%d %H:%M"), end.strftime("%Y-%m-%d %H:%M"),
                    cust.get("shop"), assignee,
                    "SYS" if assignee else None,          # 派单人是系统,不是某个人
@@ -204,7 +201,7 @@ def unassigned(shop=None):
     就和没有一样 —— 待分配池的价值全在「有人每天扫一眼」。
     """
     import tasktypes as _tt
-    sql = ("SELECT s.*, c.name customer_name, c.phone, c.advisor bind FROM schedule s "
+    sql = ("SELECT s.*, c.name customer_name, c.phone, c.advisor_no bind FROM schedule s "
            "LEFT JOIN customer c ON c.id=s.customer_id "
            "WHERE s.assignee_no IS NULL AND s.status='有效' "
            # 客户族有四种类型,不能只认「预约到店」。

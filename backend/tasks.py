@@ -207,11 +207,10 @@ def assign_task(d, me):
     with sqlite3.connect(DB) as c:
         # ⚠️ **工号也要写。** 名字是 staff 的副本、会漂;工号才是引用。
         # 工号本来就在手边(`him["no"]`),原来只是没写进去。
-        c.execute("""INSERT INTO schedule(id,type,advisor,advisor_no,customer_id,start_ts,end_ts,status,
+        c.execute("""INSERT INTO schedule(id,type,advisor_no,customer_id,start_ts,end_ts,status,
                      shop,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)
-                     VALUES(?,?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
-                  (sid, kind, f"{him.get('adv_code') or ''} {him['name']}".strip(),
-                   him["no"], cid,
+                     VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
+                  (sid, kind, him["no"], cid,
                    st, en, him.get("shop"), to, me["no"],
                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), note, ac, ref_id))
 
@@ -276,9 +275,9 @@ def dispatch(d, me):
     import booking as _bk
     sg = _bk.suggest(t)
     with sqlite3.connect(DB) as c:
-        c.execute("UPDATE schedule SET assignee_no=?,assigned_by=?,assigned_at=?,advisor=? WHERE id=?",
+        c.execute("UPDATE schedule SET assignee_no=?,assigned_by=?,assigned_at=?,advisor_no=? WHERE id=?",
                   (to, me["no"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                   f"{him.get('adv_code') or ''} {him['name']}".strip(), sid))
+                   him["no"], sid))
     adopted = bool(sg and sg["no"] == to)
     tail = ("(采纳了建议)" if adopted else
             (f"(agent 建议 {sg['name']},店长改派 {him['name']})" if sg else "(agent 没提出建议)"))
@@ -378,12 +377,10 @@ def assign_batch(items, me):
     with _sq.connect(DB) as c:
         for k, a in enumerate(plan, 1):
             sid = f"SC{7000 + n + k}"
-            c.execute("""INSERT INTO schedule(id,type,advisor,advisor_no,customer_id,start_ts,end_ts,status,
+            c.execute("""INSERT INTO schedule(id,type,advisor_no,customer_id,start_ts,end_ts,status,
                          shop,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)
-                         VALUES(?,?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
-                      (sid, a["kind"],
-                       f"{a['him'].get('adv_code') or ''} {a['him']['name']}".strip(),
-                       a["him"]["no"], a["cid"],
+                         VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
+                      (sid, a["kind"], a["him"]["no"], a["cid"],
                        a["t0"].strftime("%Y-%m-%d %H:%M"), a["t1"].strftime("%Y-%m-%d %H:%M"),
                        a["him"].get("shop"), a["him"]["no"], me["no"], now,
                        a["note"], a["activity"], a["ref_id"]))
@@ -466,10 +463,9 @@ def dispatch_batch(items, me):
     made = []
     with _sq.connect(DB) as c:
         for a in plan:
-            c.execute("UPDATE schedule SET assignee_no=?,assigned_by=?,assigned_at=?,advisor=? "
+            c.execute("UPDATE schedule SET assignee_no=?,assigned_by=?,assigned_at=?,advisor_no=? "
                       "WHERE id=?",
-                      (a["him"]["no"], me["no"], now,
-                       f"{a['him'].get('adv_code') or ''} {a['him']['name']}".strip(),
+                      (a["him"]["no"], me["no"], now, a["him"]["no"],
                        a["t"]["id"]))
             made.append(dict(任务号=a["t"]["id"], 分给=a["him"]["name"],
                              采纳建议=(a["建议"] == a["him"]["no"])))
@@ -567,9 +563,9 @@ def reassign(d, me):
     him = allowed[to]
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     with sqlite3.connect(DB) as c:
-        c.execute("UPDATE schedule SET assignee_no=?,advisor=?,assigned_by=?,assigned_at=?,"
+        c.execute("UPDATE schedule SET assignee_no=?,advisor_no=?,assigned_by=?,assigned_at=?,"
                   "reassigned_from=?,reassign_reason=?,reassigned_at=? WHERE id=?",
-                  (to, f"{him.get('adv_code') or ''} {him['name']}".strip(), me["no"], now,
+                  (to, him["no"], me["no"], now,
                    t["assignee_no"], why, now, sid))
     log_op(me["name"], "schedule", sid, old_name, him["name"], True, "REASSIGN",
            f"{me['name']}({me['role']})把 {sid} 从 {old_name} 改派给 {him['name']};理由:{why[:50]}",
