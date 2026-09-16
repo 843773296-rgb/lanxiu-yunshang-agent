@@ -98,6 +98,7 @@ run "假数据工厂 · 推断/生成/闸门/灌回滚(24 项)" python3 fakedata
 # ⚠️ 出处**对不对**是另一件事,由 tools/verify_sources.py 核(要联网,
 #    所以不进这里 —— 依赖外部状态的检查放进门禁会变成随机拦路)。
 #    **加知识、改出处之后手动跑一次。**
+run "字典表 · 枚举表说的和数据里真有的,得是同一批" python3 backend/syscode_check.py
 run "来源等级 · 声称可溯源的得真溯得了源" python3 backend/source_check.py
 run "库存预警 · 算不出可售天数的不许算出一个数来" python3 backend/stock_check.py
 run "白坯试衣 · 「没走流程」和「走了没拿到确认」不许混成一个" python3 backend/muslin_check.py

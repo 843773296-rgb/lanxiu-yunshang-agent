@@ -53,6 +53,29 @@ except Exception:
 REAL, RAW = f"{G}真路径{D}", f"{Y}直插{D}"
 
 
+def _门店渠道():
+    """门店那个渠道在库里**怎么写的** —— 从数据取,不手写。
+
+    ⚠️ 这里原来写死「门店Pad」(无空格),而 `ordr.source` 里是
+    **「门店 Pad」(有空格)** —— 于是同一个渠道在统计里被算成**两个**,
+    「渠道和活动共线」那条评测前提当场不成立。
+
+    而这个笔误不是随手打的:**它照着 `sys_code` 的枚举表抄的**,
+    而那张表和真实数据是两套东西 ——
+
+        sys_code 说:微信小程序 / 门店Pad / 门店A / 门店B
+        ordr 实际是:微信小程序 / 门店 Pad / 官网 / 客服代下单
+
+    **只有一个对得上。** 这就是「同一个事实两个来源」,
+    而两个来源都在,写的人照哪个都像是对的。
+    """
+    r = q("SELECT source FROM ordr WHERE source LIKE '%Pad%' "
+          "GROUP BY source ORDER BY COUNT(*) DESC LIMIT 1")
+    if not r:
+        raise SystemExit("❌ 库里找不到门店那个渠道的写法 —— "
+                         "**不许我编一个**,去查 ordr.source 有哪些值")
+    return r[0]["source"]
+
 def _拆定制明细(item_id, spu, 总额):
     """把定制加价拆成看得见的部位明细。
 
@@ -423,9 +446,9 @@ def _journey(cust, dry=False):
     ex("""INSERT INTO ordr(id,customer_id,kind,status,advisor,advisor_no,shop,source,delivery,
           amount,payable,created,updated,prd_status,goods_amount,freight,received,
           refund_status,paid_at)
-          VALUES(?,?,'定制品订单','待付款',?,?,?,'门店Pad','配送到店',?,?,?,?,?,?,0,?,'未退款',?)""",
+          VALUES(?,?,'定制品订单','待付款',?,?,?,?,'配送到店',?,?,?,?,?,?,0,?,'未退款',?)""",
        oid, cust["id"], f"{adv.get('adv_code') or ''} {adv['name']}".strip(),
-       adv["no"], cust["shop"],
+       adv["no"], cust["shop"], _门店渠道(),
        amt, amt, created, created, ST2PRD["待付款"], sku["price"], amt, created)
     # ⚠️ **下单时的版型版本是快照,不是现算。**
     # 版型改过之后回头看这一单,现算会给出**今天**那一版,
