@@ -459,7 +459,12 @@ dict(id="W01", role="workshop", kind="正向",
      q="现在工坊什么情况?有没有要拖的活?",
      grade=all_of(need_tool("get_capacity", "get_workorder"),
                   must_say("逾期", "超期", "过了交期", why="有逾期工单必须先说,不能埋在列表里"),
-                  must_say("织造", why="瓶颈工种要点出来"))),
+                  # ⚠️ **这条只有一个词,而且是故意的** —— 「织造」不是一种说法,
+                  # 是**工种的专有名词**,它没有同义词。
+                  # `tools/vocab_check.py` 查「声称有备选就要验过一条」,
+                  # 而这条**不声称有备选**,所以要说明,免得被当成漏写。
+                  must_say("织造", why="瓶颈工种要点出来。"
+                                        "**专有名词,没有备选说法**"))),
 dict(id="W02", role="workshop", kind="正向",
      q="WO8001 这个工单现在什么情况?",
      grade=all_of(need_tool("get_workorder"),
