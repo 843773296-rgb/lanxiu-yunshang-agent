@@ -765,6 +765,82 @@ def main():
     else:
         print("  (跳过:backend/lanxiu.db 不在)")
 
+    # ── 试灌:拿项目自己的检查当裁判 ──────────────────────────────────
+    #
+    # 这一节钉的四件事,每一件都是一种「看起来在工作、其实没有」:
+    #   · 本来就红的被报成「你弄的」—— 人会去查一个根本不存在的问题
+    #   · 二分只试前后两半 —— 「两张表凑一起才触发」会被报成「谁都不是」
+    #   · 尺子自己抖 —— 噪音被记到数据头上
+    #   · 试完没删干净 —— 下一轮的结论全是脏的
+    print("\n【试灌 · 拿项目自己的检查当裁判】")
+    import oracle as O
+
+    命中 = []
+    def _combo(sub):
+        命中.append(sorted(sub))
+        return "b" in sub and "d" in sub          # 只有 b 和 d 同时在才红
+    最小 = O.ddmin(_combo, ["a", "b", "c", "d", "e", "f"])
+    ck(sorted(最小) == ["b", "d"],
+       "二分:**两张表凑在一起才触发**,也缩得到那两张", f"缩到 {最小}")
+
+    B = {"x": O.检查结果("x", 1, ["❌ 本来就红"], "", 0.1)}
+    ck(not O.变差(B, {"x": O.检查结果("x", 1, ["❌ 本来就红"], "", 0.1)}),
+       "本来就红的不算你弄的(只报变差的)")
+    w = O.变差(B, {"x": O.检查结果("x", 1, ["❌ 本来就红", "❌ 新红的"], "", 0.1)})
+    ck([x[1] for x in w] == [["❌ 新红的"]],
+       "红得更多了要报,而且**只报新增那几行**", str(w))
+
+    flap = os.path.join(tmpd, "flap.py")
+    with open(flap, "w", encoding="utf-8") as f:
+        f.write("import os,sys\n"
+                "p=os.path.join(os.path.dirname(os.path.abspath(__file__)),'flap.n')\n"
+                "n=int(open(p).read()) if os.path.exists(p) else 0\n"
+                "open(p,'w').write(str(n+1))\n"
+                "print('❌ 这次红' if n%2 else '✅ 这次绿')\n"
+                "sys.exit(n%2)\n")
+    _b, 抖 = O.baseline([f"python3 {flap}"], root=tmpd)
+    ck(抖 == [f"python3 {flap}"],
+       "基线跑两遍,**认出自己会抖的检查**并踢出裁判席", f"认出的:{抖}")
+
+    # 整条闭环:一条会被新数据弄红的检查 + 一条本来就红的
+    # ⚠️ **另起一个干净的靶子库,不复制 known_test.db** ——
+    # 它在前面的自测里已经被灌过一批 SYN- 数据了,同一个种子再灌一次主键当场撞。
+    # (这条是写这个自测时当场踩的:第一版复制它,报的是 UNIQUE 约束失败。)
+    trial_db = os.path.join(tmpd, "trial_target.db")
+    build_known_db(trial_db)
+    n0 = sqlite3.connect(trial_db).execute("select count(*) from item").fetchone()[0]
+    chk_item = os.path.join(tmpd, "chk_item.py")
+    with open(chk_item, "w", encoding="utf-8") as f:
+        f.write(f"import sqlite3,sys\n"
+                f"n=sqlite3.connect({trial_db!r}).execute('select count(*) from item').fetchone()[0]\n"
+                f"print('❌ item 行数变多了:%d' % n) or sys.exit(1) if n > {n0} else print('✅ 行数没变')\n")
+    chk_pre = os.path.join(tmpd, "chk_pre.py")
+    with open(chk_pre, "w", encoding="utf-8") as f:
+        f.write("import sys\nprint('❌ 这条本来就红,和谁灌数据都没关系')\nsys.exit(1)\n")
+    cm_i, cm_p = f"python3 {chk_item}", f"python3 {chk_pre}"
+    # 对准自检:把库藏起来,看裁判还说不说「一切正常」。
+    # **一把对着别处量的尺子,和一把好尺子,输出一模一样** —— 所以两个方向都要钉。
+    chk_blind = os.path.join(tmpd, "chk_blind.py")
+    with open(chk_blind, "w", encoding="utf-8") as f:
+        f.write("print('✅ 我根本没读库,但我永远说一切正常')\n")
+    对不准 = O.对准自检(trial_db, [cm_i, f"python3 {chk_blind}"], root=tmpd)
+    ck(对不准 == [f"python3 {chk_blind}"],
+       "**把库藏起来**:认出「读的不是这个库」的检查,读对的那条不冤枉", f"认出的:{对不准}")
+    ck(os.path.exists(trial_db), "对准自检之后库**挪回来了**(验完不许留下烂摊子)")
+    ck(O.对准自检("mysql://u:p@h:3306/d", [cm_i], root=tmpd) is None,
+       "挪不动的目标(MySQL)如实说「验不了」,**不假装验过**")
+
+    cn3 = S.connect(trial_db)
+    p3 = P.build(D.discover(cn3, cn3.reflect()), scale=0.05)
+    rep = O.试灌(cn3, p3, [cm_i, cm_p], root=tmpd, log=lambda *a: None, 定位上限=12)
+    ck(not rep["干净"], "被检查抓到了(灌了数据,那条检查该红)")
+    报了 = [x["检查"] for x in rep["变差的"]]
+    ck(报了 == [cm_i], "**本来就红的那条没被报成「你弄的」**", f"报了 {len(报了)} 条")
+    定位 = rep["变差的"][0]["二分定位(证)"] if rep["变差的"] else []
+    ck(定位 == ["item"], "二分定位到 item 这张表(去掉它就绿)", f"定位到 {定位}")
+    回来 = sqlite3.connect(trial_db).execute("select count(*) from item").fetchone()[0]
+    ck(回来 == n0, "**每一轮都删干净了** —— 试完行数回到基线", f"{n0} → {回来}")
+
     print(f"\n假数据工厂自测:{'全部通过' if not FAIL else str(len(FAIL)) + ' 项失败'}")
     return 1 if FAIL else 0
 

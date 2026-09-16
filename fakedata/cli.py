@@ -5,6 +5,8 @@
     python3 fakedata/cli.py load     <目标> --env test --plan .fakedata/x.plan.json [--yes]
     python3 fakedata/cli.py verify   <目标> --env test --plan .fakedata/x.plan.json
     python3 fakedata/cli.py rollback <目标> --env test --manifest .fakedata/x.manifest.json --yes
+    python3 fakedata/cli.py trial    <目标> --env test --plan .fakedata/x.plan.json \
+                                     --checks 'python3 backend/spec_check.py' --yes
 
 目标写法:`backend/lanxiu.db` 或 `mysql://user:pass@host:3306/dbname`
 
@@ -144,6 +146,32 @@ def cmd_rollback(a):
         print(f"\n【dry-run】将删除 {n} 行。确认后加 --yes。")
 
 
+def cmd_trial(a):
+    """拿项目自己的检查当裁判试灌一批,红了就二分定位是哪张表干的。"""
+    print(guard.check_target(a.target, a.env, write=True))
+    import oracle as O
+    cmds = [x.strip() for x in a.checks.split(";") if x.strip()]
+    if not a.yes:
+        print(f"\n【dry-run】将用这 {len(cmds)} 条检查当裁判:")
+        for c in cmds: print(f"  · {c}")
+        print("\n试灌**会真写库**(每一轮再删干净),所以要显式 --yes。\n"
+              "⚠️ 别拿它去试一个你不敢让它写的库 —— 二分要灌十几轮,"
+              "中途断电留下的残留只能靠 manifest 清。")
+        return
+    pl = json.load(open(a.plan, encoding="utf-8"))
+    conn = S.connect(a.target)
+    env = {a.db_env: os.path.abspath(a.target)} if a.db_env else None
+    if not a.db_env:
+        print("⚠️ 没给 --db-env:**裁判读的是它自己写死的那个库**,如果那不是你灌的这个,"
+              "结论全是错的。下面的对准自检会把对不准的踢出去。")
+    rep = O.试灌(conn, pl, cmds, root=ROOT, 定位上限=a.limit, 基线两遍=not a.once,
+                 env=env, 目标=a.target)
+    path = os.path.join(_outdir(), f'{pl["source"].replace("/", "_")}-试灌.json')
+    O.写报告(path, rep)
+    print(f"\n报告 → {path}")
+    raise SystemExit(0 if rep["干净"] else 1)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="假数据工厂")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -168,6 +196,21 @@ def main(argv=None):
     p2.set_defaults(fn=cmd_load)
     p3 = sub.add_parser("verify"); common(p3)
     p3.add_argument("--plan", required=True); p3.set_defaults(fn=cmd_verify)
+    p5 = sub.add_parser("trial", help="拿项目自己的检查当裁判:红了二分定位是哪张表干的")
+    common(p5)
+    p5.add_argument("--plan", required=True)
+    p5.add_argument("--checks", required=True,
+                    help="分号隔开的检查命令,例:'python3 backend/spec_check.py;python3 backend/x.py'。"
+                         "**别传整套门禁** —— 二分要跑十几轮")
+    p5.add_argument("--limit", type=int, default=24, metavar="N",
+                    help="每条检查最多重灌几次(默认 24)。到上限只能说「缩到这里」,不是结论")
+    p5.add_argument("--once", action="store_true",
+                    help="基线只跑一遍(省时间,但没验这把尺子自己稳不稳)")
+    p5.add_argument("--db-env", default=None, metavar="名字",
+                    help="把目标库的路径用这个环境变量传给检查(例:LANXIU_DB)。"
+                         "**检查脚本把库路径写死的项目用不了这个** —— 那就只能对着它写死的那个库灌")
+    p5.add_argument("--yes", action="store_true")
+    p5.set_defaults(fn=cmd_trial)
     p4 = sub.add_parser("rollback"); common(p4)
     p4.add_argument("--manifest", required=True); p4.add_argument("--yes", action="store_true")
     p4.set_defaults(fn=cmd_rollback)
