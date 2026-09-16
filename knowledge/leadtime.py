@@ -28,6 +28,15 @@ import derive_pattern as dp
 import derive_combo
 
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把方案确认与打样往返的天数抹成 0(定制品当标品算工期)',
+     '算出来的工期和知识库自己写的三档对不上'),
+]
+
 def _cap():
     import capacity; return capacity
 

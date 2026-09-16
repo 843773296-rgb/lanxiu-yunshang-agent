@@ -250,5 +250,85 @@
    }
   ],
   "预期红": "共缺"
+ },
+ {
+  "script": "knowledge/derive_combo.py",
+  "改坏": "把「重」这档工艺权重压成 0(重工和无工艺一样重)",
+  "file": [
+   {
+    "path": "knowledge/derive_combo.py",
+    "old": "W = {\"无\": 0, \"轻\": 1, \"中\": 2, \"重\": 3}",
+    "new": "W = {\"无\": 0, \"轻\": 1, \"中\": 2, \"重\": 0}"
+   }
+  ],
+  "预期红": "落库漂移"
+ },
+ {
+  "script": "knowledge/derive_pattern.py",
+  "改坏": "从库里删掉一种工艺(推导出来的 BOM 引用一个不存在的工艺)",
+  "sql": [
+   "DELETE FROM craft WHERE code=(SELECT code FROM craft WHERE cat='工艺' LIMIT 1)"
+  ],
+  "预期红": "与 craft / measure_tpl 对不上"
+ },
+ {
+  "script": "knowledge/growth.py",
+  "改坏": "把女孩的突增窗口挪到不可能的年龄段(谁都不在突增期)",
+  "file": [
+   {
+    "path": "knowledge/growth.py",
+    "old": "SPURT = {\"女\": (9.5, 13.0)",
+    "new": "SPURT = {\"女\": (99.5, 103.0)"
+   }
+  ],
+  "预期红": "跨突增期的区间明显更宽"
+ },
+ {
+  "script": "knowledge/leadtime.py",
+  "改坏": "把方案确认与打样往返的天数抹成 0(定制品当标品算工期)",
+  "file": [
+   {
+    "path": "knowledge/leadtime.py",
+    "old": "CONFIRM = (3, 10)",
+    "new": "CONFIRM = (0, 0)"
+   }
+  ],
+  "预期红": "算出来的工期和知识库自己写的三档对不上"
+ },
+ {
+  "script": "knowledge/lifecycle.py",
+  "改坏": "把人工干预窗口从 30 天压到 3 天(人工调的档提前失效)",
+  "file": [
+   {
+    "path": "knowledge/lifecycle.py",
+    "old": "MANUAL_WINDOW_DAYS = 30",
+    "new": "MANUAL_WINDOW_DAYS = 3"
+   }
+  ],
+  "预期红": "人工调整 15 天前生效"
+ },
+ {
+  "script": "knowledge/liability.py",
+  "改坏": "把判定表里「脱线」那一行的责任方从我方改成客方",
+  "file": [
+   {
+    "path": "knowledge/09-养护与售后.md",
+    "old": "| 工艺瑕疵(脱线、绣面污渍) | 我方 | 免费返修 |",
+    "new": "| 工艺瑕疵(脱线、绣面污渍) | 客方 | 自费返修 |"
+   }
+  ],
+  "预期红": "工艺瑕疵 → 我方免费返修"
+ },
+ {
+  "script": "knowledge/rfm.py",
+  "改坏": "把五分位改成七分位(分数越出 1–5 的范围)",
+  "file": [
+   {
+    "path": "knowledge/rfm.py",
+    "old": "BUCKETS = 5",
+    "new": "BUCKETS = 7"
+   }
+  ],
+  "预期红": "分数落在 1–5"
  }
 ]

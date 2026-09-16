@@ -188,9 +188,14 @@ def main():
 
         # ③ 红的必须是那一条
         rc, out = 跑(work, script)
-        命中 = [l for l in out.split("\n") if "❌" in l and expect in l]
+        # 红有两种长相:自己打 ❌ 的,和直接 assert 抛出来的。
+        # 只认前者的话,用 assert 的脚本会被判成「红的不是那一条」——
+        # 而那是**判据贴着字面(找 ❌ 这个符号)而不是含义(这一条失败了)**。
+        def 是红行(l):
+            return "❌" in l or "AssertionError" in l or "Error:" in l
+        命中 = [l for l in out.split("\n") if 是红行(l) and expect in l]
         if a.discover:
-            reds = [l.strip() for l in out.split("\n") if "❌" in l][:3]
+            reds = [l.strip() for l in out.split("\n") if 是红行(l)][:3]
             print(f"  🔍 [{i}/{len(specs)}] {script}  rc={rc}  {s['改坏']}")
             for l in reds: print(f"       红:{l[:120]}")
             if rc == 0: print("       ⚠️ 改坏了却没红 —— 这处破坏检查看不见"); 红.append(s)
@@ -199,7 +204,7 @@ def main():
             print(f"  ❌ [{i}/{len(specs)}] {script}  改坏了却**没红** —— 检查看不见这处破坏")
             红.append(s)
         elif not 命中:
-            别的 = [l.strip() for l in out.split("\n") if "❌" in l][:2]
+            别的 = [l.strip() for l in out.split("\n") if 是红行(l)][:2]
             print(f"  ❌ [{i}/{len(specs)}] {script}  红了,但**红的不是那一条**")
             print(f"       预期:{expect}")
             for l in 别的: print(f"       实际:{l[:110]}")
