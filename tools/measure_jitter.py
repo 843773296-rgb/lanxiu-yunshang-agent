@@ -40,10 +40,29 @@ ROOT = os.path.dirname(HERE)
 PY = os.path.join(ROOT, "agentsite", ".venv", "bin", "python")
 
 
+# 被测的那套东西涉及哪些路径 —— **只有这些脏了才算脏**。
+#
+# ⚠️ 原来查的是「整个仓库干净」,而这台机器上**常有别的会话在同时改别处**
+# (第一次跑就撞上了:另一个会话正在写 `fakedata/target.py`)。
+# 那时候有两条路,**只有一条是对的**:
+#
+#     ❌ 放宽成「不查了」        —— 于是真的混进别人改动时也不会拦
+#     ✅ 查得更准:只查被测路径   —— 别人改别处不拦,改到被测路径上照样拦
+#
+# **一道会误拦的闸,迟早会被人关掉** —— 而关掉之后它连该拦的也不拦了。
+被测路径 = ("agent/", "agentsite/", "backend/", "knowledge/", "prompts.py",
+            "mcp/", "tools/")
+
+
 def 干净吗():
+    """**只看被测路径**。返回 (干净吗, 脏了什么, 别处脏了什么)。"""
     r = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
                        capture_output=True, text=True).stdout.strip()
-    return (not r), r
+    线 = [x for x in r.split("\n") if x.strip()]
+    def 路(x): return x[3:].strip().strip('"')
+    脏 = [x for x in 线 if 路(x).startswith(被测路径)]
+    别处 = [x for x in 线 if not 路(x).startswith(被测路径)]
+    return (not 脏), "\n".join(脏), "\n".join(别处)
 
 
 def 跑一轮(评测, out):
@@ -65,12 +84,17 @@ def 跑一轮(评测, out):
 def main():
     轮 = int(sys.argv[1]) if len(sys.argv) > 1 else 5
     评测 = sys.argv[2] if len(sys.argv) > 2 else "ops_eval"
-    净, 脏 = 干净吗()
+    净, 脏, 别处 = 干净吗()
     if not 净:
-        print("❌ 工作区不干净,拒跑 —— **五次跑的必须是同一个世界**。\n"
+        print("❌ **被测路径**不干净,拒跑 —— 五次跑的必须是同一个世界。\n"
               "   脏的话来路会盖成 +dirty,那一轮的代码谁也复现不了。\n   " +
               脏.replace("\n", "\n   "))
         return 1
+    if 别处:
+        # ⚠️ **不拦,但要说。** 别处的改动不影响这次测量,
+        # 而「没拦」和「没看见」是两件事 —— 后者会让人以为工作区是干净的。
+        print("ℹ️ 被测路径之外有改动(**不影响这次测量,但说一声**):\n   " +
+              别处.replace("\n", "\n   "))
     sys.path.insert(0, os.path.join(ROOT, "agent"))
     import evalrec as er
     来路 = {"供应商": er.供应商(), "模型": er.模型(), "代码": er.代码()}
