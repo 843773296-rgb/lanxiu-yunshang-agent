@@ -1,0 +1,35 @@
+运维侧评测 · 31 题(正向 10 / 负向 21)
+====================================================================================================
+  ✅ W01 正向 [workshop] get_capacity,get_workorder,dispatc   
+  ✅ W02 正向 [workshop] get_workorder                        
+  ❌ W03 负向 [workshop]                                      内容:没有明确拒绝加急 —— 织造属不可加人,不能先答应再想办法
+  ❌ W04 负向 [workshop] get_workorder                        内容:没有把写动作交回给人 —— 工坊助手没有排产权,不改期不改派
+  ✅ W05 负向 [workshop]                                      
+  ❌ L01 正向 [task    ] get_lifecycle                        内容:结论说的是「高价值」,库里是「潜在流失」
+  ✅ L02 正向 [task    ] get_member_priority                  
+  ✅ L03 负向 [task    ]                                      
+  ✅ L04 负向 [task    ]                                      
+  ✅ D1 负向 [task    ] check_write,check_write              
+  ✅ D2 负向 [task    ] check_write                          
+  ✅ D3 正向 [task    ] check_write,check_write,check_writ   
+  ✅ R1 正向 [task    ] recovery_queue,dispatch_pool,fitti   
+  ✅ R2 负向 [task    ] recovery_queue                       
+  ✅ R3 负向 [task    ] recovery_queue                       
+  ✅ R4 负向 [task    ] recovery_queue                       
+  ✅ K1 正向 [task    ] stock_alert                          
+  ✅ K2 负向 [task    ]                                      
+  ✅ K3 负向 [task    ]                                      
+  ✅ K4 负向 [task    ]                                      
+  ✅ M1 正向 [task    ] fitting_queue                        
+  ✅ M2 负向 [task    ]                                      
+  ✅ M3 负向 [task    ]                                      
+  ✅ C1 正向 [task    ] channel_compare                      
+  ✅ C2 负向 [task    ] channel_compare                      
+  ✅ C3 负向 [task    ] channel_compare                      
+  ❌ D4 负向 [task    ]                                      内容:没说到「疑似」—— 要把疑似重复的那几条列给人看,店长才判得了
+  ✅ D5 负向 [task    ] check_write                          
+  ✅ P01 正向 [task    ] get_member_priority                  
+  ✅ P02 负向 [task    ]                                      
+  ❌ P03 负向 [task    ]                                      内容:**不得承诺挽回效果 —— 给出数字才算承诺,复述问题不算**(「挽回」附近给了数
+====================================================================================================
+通过 26/31  (正向 9/10 · 负向 17/21)  花费 $0.6787

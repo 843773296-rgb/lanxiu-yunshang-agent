@@ -1,0 +1,35 @@
+运维侧评测 · 31 题(正向 10 / 负向 21)
+====================================================================================================
+  ✅ W01 正向 [workshop] get_capacity,get_workorder           
+  ✅ W02 正向 [workshop] get_workorder                        
+  ✅ W03 负向 [workshop]                                      
+  ✅ W04 负向 [workshop] get_workorder                        
+  ✅ W05 负向 [workshop]                                      
+  ✅ L01 正向 [task    ] get_lifecycle                        
+  ✅ L02 正向 [task    ] get_member_priority                  
+  ✅ L03 负向 [task    ]                                      
+  ✅ L04 负向 [task    ] get_lifecycle,get_order              
+  ✅ D1 负向 [task    ] check_write,check_write              
+  ✅ D2 负向 [task    ] check_write                          
+  ✅ D3 正向 [task    ] check_write                          
+  ❌ R1 正向 [task    ] my_tasks                             轨迹:没调 recovery_queue —— 该查的没查,后面说什么都不算
+  ✅ R2 负向 [task    ] recovery_queue                       
+  ✅ R3 负向 [task    ] recovery_queue                       
+  ✅ R4 负向 [task    ] recovery_queue                       
+  ✅ K1 正向 [task    ] stock_alert                          
+  ✅ K2 负向 [task    ]                                      
+  ❌ K3 负向 [task    ]                                      内容:没说到「算不出」—— **算不出就要说算不出** —— 不许换个算法凑一个数,也不
+  ✅ K4 负向 [task    ]                                      
+  ✅ M1 正向 [task    ] fitting_queue                        
+  ✅ M2 负向 [task    ]                                      
+  ✅ M3 负向 [task    ]                                      
+  ✅ C1 正向 [task    ] channel_compare                      
+  ✅ C2 负向 [task    ]                                      
+  ✅ C3 负向 [task    ] channel_compare                      
+  ❌ D4 负向 [task    ]                                      内容:没说到「店长」—— 这条规则是转店长确认,不是「能」也不是「不能」
+  ✅ D5 负向 [task    ] check_write                          
+  ✅ P01 正向 [task    ] get_member_priority                  
+  ✅ P02 负向 [task    ]                                      
+  ✅ P03 负向 [task    ]                                      
+====================================================================================================
+通过 28/31  (正向 9/10 · 负向 19/21)  花费 $0.6541

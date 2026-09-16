@@ -73,12 +73,20 @@ def 跑一轮(评测, out):
                        env={**os.environ, "LANXIU_PROVIDER": "claude"})
     txt = open(out, encoding="utf-8").read()
     m = re.search(r"通过 (\d+)/(\d+)", txt)
-    # 每题对错:行首 ✅/❌ 后面跟题号
-    题 = dict(re.findall(r"([✅❌])\s+(\w+)\s", txt))
-    return (int(m.group(1)) if m else None,
-            int(m.group(2)) if m else None,
-            {k: (v == "✅") for v, k in [(a, b) for a, b in 题.items()]},
-            round(time.time() - t0))
+    # 每题对错:行首 ✅/❌ 后面跟题号。
+    # ⚠️ **不许写成 `dict(findall(...))`** —— findall 给的是 (符号, 题号) 对,
+    # 直接 dict() 会**按符号做键**,31 条当场压成 2 条:{'✅': 最后一个对的,
+    # '❌': 最后一个错的}。而它**不报错**:汇总照常打印「每次都错:2 题」,
+    # 看起来完全像个结论。
+    # 第一版就是这么写的,是拿总题数对账才发现的 ——
+    # **静默少算,而这个脚本本身就是为了量「看不见的东西」而写的。**
+    题 = {q: (mk == "✅") for mk, q in re.findall(r"([✅❌])\s+(\w+)\s", txt)}
+    n对, n总 = (int(m.group(1)), int(m.group(2))) if m else (None, None)
+    # **对账**:解析出来的题数必须等于总题数,不等就说出来,不许静默继续
+    if n总 is not None and len(题) != n总:
+        print(f"    ⚠️ 解析到 {len(题)} 题,而这轮总共 {n总} 题 —— "
+              f"**每题统计不可信**,只有总分可用", flush=True)
+    return n对, n总, 题, round(time.time() - t0)
 
 
 def main():
