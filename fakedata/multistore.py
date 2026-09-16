@@ -196,6 +196,104 @@ class 关系库(存储):
             self.删(k)
 
 
+# ── 真 Redis:裸 socket 写 RESP,**零依赖** ────────────────────────────
+#
+# Python 的 redis 包这台机器没有,而这个仓库的铁律是无第三方依赖。
+# RESP 协议本身很简单(几十行),所以直接写 —— 比引一个包更贴合这里的约束。
+class _RESP:
+    def __init__(self, host="127.0.0.1", port=6379, db=0, timeout=3):
+        import socket
+        self.s = socket.create_connection((host, port), timeout)
+        self.f = self.s.makefile("rb")
+        if db:
+            self.cmd("SELECT", db)
+
+    def cmd(self, *args):
+        out = b"*%d\r\n" % len(args)
+        for a in args:
+            b_ = a if isinstance(a, bytes) else str(a).encode()
+            out += b"$%d\r\n%s\r\n" % (len(b_), b_)
+        self.s.sendall(out)
+        return self._读()
+
+    def _读(self):
+        line = self.f.readline()
+        if not line:
+            raise SystemExit("Redis 连接断了")
+        t, body = line[:1], line[1:-2]
+        if t == b"+":  return body.decode()
+        if t == b":":  return int(body)
+        if t == b"-":  raise SystemExit(f"Redis 报错:{body.decode()}")
+        if t == b"$":
+            n = int(body)
+            if n == -1: return None
+            data = self.f.read(n + 2)[:-2]
+            return data
+        if t == b"*":
+            n = int(body)
+            return None if n == -1 else [self._读() for _ in range(n)]
+        raise SystemExit(f"看不懂的 RESP 响应:{line!r}")
+
+    def close(self):
+        try: self.s.close()
+        except Exception: pass
+
+
+class RedisKV(存储):
+    """真 Redis 的键值。和文件式 `KV` **同一个接口** —— 换驱动不改调用方。"""
+    名 = "KV"
+
+    def __init__(self, host="127.0.0.1", port=6379, db=0, 前缀=""):
+        self.r = _RESP(host, port, db); self.前缀 = 前缀
+
+    def _k(self, 键): return f"{self.前缀}{键}"
+    def 写(self, 键, 值):
+        self.r.cmd("SET", self._k(键), json.dumps(值, ensure_ascii=False)); return 键
+    def 读(self, 键):
+        v = self.r.cmd("GET", self._k(键))
+        return json.loads(v) if v else None
+    def 删(self, 键): self.r.cmd("DEL", self._k(键))
+    def 清(self, 凭据):
+        for k in 凭据: self.删(k)
+
+
+class Redis流(存储):
+    """真 Redis 的 Stream(消息队列的位置)。
+
+    ⚠️ **同一个抽象下,不同驱动的「能不能删」不一样**:
+    文件式事件流和 Kafka 只能打作废标记,而 Redis Stream **能 XDEL 真删**。
+    抽象要容得下这个差别 —— 所以接口只要求「清干净」,不规定怎么清。
+    这正是「抽象对不对和用哪个驱动无关」的**真实检验**:
+    要是当初把「只能打标记」写进了抽象,这个驱动就接不进来了。
+    """
+    名 = "事件流"
+
+    def __init__(self, host="127.0.0.1", port=6379, db=0, 流名="events"):
+        self.r = _RESP(host, port, db); self.流 = 流名; self.id = {}
+
+    def 写(self, 键, 值):
+        sid = self.r.cmd("XADD", self.流, "*", "键", 键,
+                         "值", json.dumps(值, ensure_ascii=False))
+        self.id[键] = sid.decode() if isinstance(sid, bytes) else sid
+        return 键
+
+    def 读(self, 键):
+        sid = self.id.get(键)
+        if not sid:
+            return None
+        r = self.r.cmd("XRANGE", self.流, sid, sid)
+        return {"键": 键, "值": r} if r else None
+
+    def 删(self, 键):
+        sid = self.id.get(键)
+        if sid:
+            self.r.cmd("XDEL", self.流, sid)      # Redis Stream 能真删,Kafka 不能
+            self.id.pop(键, None)
+
+    def 清(self, 凭据):
+        for k in 凭据: self.删(k)
+
+
 # ── 事实 → 投影 ──────────────────────────────────────────────────────
 def 落(存储表, 事实, 投影):
     """把一个事实投到各存储。`投影(事实)` 返回 {存储名: [(键, 值), ...]}。

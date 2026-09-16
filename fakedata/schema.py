@@ -220,11 +220,103 @@ class MysqlConn(Conn):
         return sc
 
 
-def _parse_dsn(dsn):
-    m = re.match(r"mysql://(?:([^:@/]+)(?::([^@/]*))?@)?([^:/]+)(?::(\d+))?/(\w+)", dsn)
-    if not m: raise SystemExit("MySQL 目标写法: mysql://user:pass@host:3306/dbname")
-    return {"user": m.group(1) or "root", "pwd": m.group(2) or "",
-            "host": m.group(3), "port": int(m.group(4) or 3306), "db": m.group(5)}
+class PgConn(Conn):
+    """PostgreSQL。驱动**懒加载**,和 MySQL 那条一个模式 —— 依赖不进主干。"""
+    dialect, ph = "postgres", "%s"
+
+    def __init__(self, dsn):
+        try:
+            import psycopg
+        except ImportError:
+            try:
+                import psycopg2 as psycopg          # 老版本也认
+            except ImportError:
+                raise SystemExit("要连 PostgreSQL 需要 psycopg:  pip3 install psycopg[binary]\n"
+                                 "(可选依赖,只在指定 postgres:// 目标时才用到)")
+        u = _parse_dsn(dsn, 默认端口=5432, 协议=("postgres", "postgresql"))
+        self.db = u["db"]; self.label = f'{u["host"]}/{u["db"]}'
+        kw = dict(host=u["host"], port=u["port"], user=u["user"], dbname=u["db"])
+        if u["pwd"]:
+            kw["password"] = u["pwd"]
+        self.c = psycopg.connect(**kw)
+
+    def ident(self, name): return '"%s"' % name.replace('"', '""')
+    def q(self, sql, params=()):
+        cur = self.c.cursor(); cur.execute(sql, params or None)
+        r = cur.fetchall(); cur.close(); return list(r)
+    def exec(self, sql, params=()):
+        cur = self.c.cursor(); cur.execute(sql, params or None); cur.close(); return cur
+    def many(self, sql, rows):
+        cur = self.c.cursor(); cur.executemany(sql, rows); cur.close()
+    def commit(self):   self.c.commit()
+    def rollback(self): self.c.rollback()
+    def close(self):    self.c.close()
+
+    def reflect(self):
+        sc = Schema("postgres", self.label)
+        # 注释要从 pg_description 取 —— information_schema 里没有它
+        for tname, cname, ctype, nullable, dflt, comment in self.q("""
+            select c.table_name, c.column_name, c.data_type, c.is_nullable, c.column_default,
+                   coalesce(pgd.description, '')
+            from information_schema.columns c
+            join information_schema.tables tb
+              on tb.table_name = c.table_name and tb.table_schema = c.table_schema
+             and tb.table_type = 'BASE TABLE'
+            left join pg_catalog.pg_statio_all_tables st
+              on st.relname = c.table_name and st.schemaname = c.table_schema
+            left join pg_catalog.pg_description pgd
+              on pgd.objoid = st.relid and pgd.objsubid = c.ordinal_position
+            where c.table_schema = 'public'
+            order by c.table_name, c.ordinal_position"""):
+            tb = sc.tables.setdefault(tname, Table(tname))
+            tb.columns.append(Column(cname, ctype, nullable=(nullable == "YES"),
+                                     default=dflt, comment=comment or ""))
+        for tname, cname, ctype in self.q("""
+            select tc.table_name, kcu.column_name, tc.constraint_type
+            from information_schema.table_constraints tc
+            join information_schema.key_column_usage kcu
+              on kcu.constraint_name = tc.constraint_name
+             and kcu.table_schema = tc.table_schema
+            where tc.table_schema = 'public'
+              and tc.constraint_type in ('PRIMARY KEY', 'UNIQUE')"""):
+            tb = sc.tables.get(tname)
+            col = tb.col(cname) if tb else None
+            if not col:
+                continue
+            col.unique = True
+            if ctype == "PRIMARY KEY":
+                col.pk = True
+                if cname not in tb.pk:
+                    tb.pk.append(cname)
+        for tname, cname, rt, rc in self.q("""
+            select tc.table_name, kcu.column_name, ccu.table_name, ccu.column_name
+            from information_schema.table_constraints tc
+            join information_schema.key_column_usage kcu
+              on kcu.constraint_name = tc.constraint_name
+            join information_schema.constraint_column_usage ccu
+              on ccu.constraint_name = tc.constraint_name
+            where tc.constraint_type = 'FOREIGN KEY' and tc.table_schema = 'public'"""):
+            if tname in sc.tables:
+                sc.tables[tname].declared_fks.append((cname, rt, rc))
+        # 行数逐表现算,理由和 MySQL 那边一样:估算值会让枚举判定/可信度/规模三件事同时歪
+        for tname in sc.tables:
+            try:
+                sc.tables[tname].rows = self.q(
+                    f"select count(*) from {self.ident(tname)}")[0][0]
+            except Exception:
+                sc.tables[tname].rows = 0
+        return sc
+
+
+def _parse_dsn(dsn, 默认端口=3306, 协议=("mysql",)):
+    pat = "(?:%s)://" % "|".join(协议)
+    m = re.match(pat + r"(?:([^:@/]+)(?::([^@/]*))?@)?([^:/]+)?(?::(\d+))?/(\w+)", dsn)
+    if not m:
+        raise SystemExit(f"目标写法: {协议[0]}://user:pass@host:{默认端口}/dbname")
+    默认用户 = "root" if 协议[0] == "mysql" else os.environ.get("USER", "postgres")
+    return {"user": m.group(1) or 默认用户, "pwd": m.group(2) or "",
+            "host": m.group(3) or "127.0.0.1", "port": int(m.group(4) or 默认端口),
+            "db": m.group(5)}
 
 
 def normalize_target(target):
@@ -238,15 +330,20 @@ def normalize_target(target):
     两处各自理解,迟早分叉,而分叉的那一刻两边都自认没错。
     (这个仓库在提示词上栽过同一件事:三份手抄件漂了很久。)
     """
+    # ⚠️ **加一种方言,这里必须同时加** —— 闸门和连接器共用这一处解释。
+    # 漏了的话 `postgres://prod-db/x` 会被当成 sqlite 文件路径,
+    # 生产库黑名单**根本不会看它**:新方言等于一条绕过安全闸门的后门。
+    # (`sqlite://` 当初就是这么漏过去的,同一个文件换个拼法就放行了。)
     if target.startswith("mysql://"): return "mysql", target
+    if target.startswith(("postgres://", "postgresql://")): return "postgres", target
     path = target[len("sqlite://"):] if target.startswith("sqlite://") else target
     return "sqlite", os.path.realpath(path)
 
 
 def connect(target):
-    """统一入口。`xxx.db` / `sqlite://路径` 走 SQLite,`mysql://...` 走 MySQL。"""
+    """统一入口。`xxx.db` / `sqlite://路径` → SQLite,`mysql://…` → MySQL,`postgres://…` → PostgreSQL。"""
     kind, addr = normalize_target(target)
-    return MysqlConn(addr) if kind == "mysql" else SqliteConn(addr)
+    return {"mysql": MysqlConn, "postgres": PgConn}.get(kind, SqliteConn)(addr)
 
 
 if __name__ == "__main__":

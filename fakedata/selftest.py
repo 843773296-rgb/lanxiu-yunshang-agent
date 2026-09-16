@@ -1296,6 +1296,39 @@ def main():
        "**只追加的存储删不掉,改为打作废标记** —— 文件还在但读不到,"
        "把「删不掉」说清楚比假装删干净好")
 
+    # ── 方言:加一种方言,闸门必须同时认得 ──────────────────────────────
+    #
+    # **这一节最要紧的不是能不能连上,是闸门拦不拦得住。**
+    # `normalize_target` 是这个目标字符串的唯一解释处;漏掉新方言的话,
+    # `postgres://prod-db/x` 会被当成 sqlite 文件路径 —— 生产库黑名单根本不看它,
+    # 于是**新方言等于一条绕过安全闸门的后门**。(`sqlite://` 当初就是这么漏过去的。)
+    print("\n【方言 · PostgreSQL】")
+    ck(S.normalize_target("postgres://u@h:5432/db")[0] == "postgres"
+       and S.normalize_target("postgresql://u@h:5432/db")[0] == "postgres",
+       "两种写法(postgres:// 和 postgresql://)都认得")
+    for 坏 in ("postgres://user@prod-db.internal:5432/app",
+               "postgresql://user@10.0.0.1:5432/live_orders",
+               "postgres://user@h:5432/master_db"):
+        try:
+            guard.check_target(坏, "test")
+            ck(False, f"**闸门要拦住 postgres 的生产库**:{坏}")
+            break
+        except guard.Refused:
+            pass
+    else:
+        ck(True, "**闸门拦得住 postgres:// 的生产库** —— 加方言最容易漏的就是这里")
+    ck(S.normalize_target("postgres://h/db")[1].startswith("postgres://"),
+       "postgres 目标**原样传下去**,不会被当成文件路径去 realpath")
+    u = S._parse_dsn("postgres://alice:pw@db.local:6543/shop", 默认端口=5432,
+                     协议=("postgres", "postgresql"))
+    ck(u == {"user": "alice", "pwd": "pw", "host": "db.local", "port": 6543, "db": "shop"},
+       "目标串解析:用户/口令/主机/端口/库名都拆对", str(u))
+    u2 = S._parse_dsn("postgres:///shop", 默认端口=5432, 协议=("postgres", "postgresql"))
+    ck(u2["port"] == 5432 and u2["db"] == "shop" and u2["host"] == "127.0.0.1",
+       "省略主机端口时给出默认值(本机 5432)", str(u2))
+    ck(S.PgConn.ph == "%s" and S.MysqlConn.ph == "%s" and S.SqliteConn.ph == "?",
+       "占位符跟着方言走(PG/MySQL 用 %s,SQLite 用 ?)")
+
     print(f"\n假数据工厂自测:{'全部通过' if not FAIL else str(len(FAIL)) + ' 项失败'}")
     return 1 if FAIL else 0
 
