@@ -41,24 +41,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SPECS = os.path.join(HERE, "bite_specs.json")
 
-# 副本里要带上的东西。**库是 gitignored 的,拷贝时容易漏 —— 漏了就全红**。
-带上 = ["agent", "agentsite", "backend", "data", "fakedata", "intent", "knowledge",
-        "mcp", "tools", "check.sh", "prompts.py", "CLAUDE.md", "HANDOFF.md",
-        "待办清单.md", "汉服工艺知识库.md", "数据规范.md", "业务全景.md",
-        "安全边界审计.md", "产品文档.md", "系统架构与技术文档.md", "项目日志.md",
-        "本期交付说明.md", "方案-部位与材质.md", "补页面-任务清单.md",
-        "假数据工厂.md", "给假数据工厂的交接说明.md", "技能可挖的业务需求.md",
-        "后台Agent接入方案.md", "方案A-服务进度Agent.md", "方案B-定制业务协同助手.md",
-        "项目日志-手记.md", "README.md", "start.sh", "accio索引",
-        "Accio可移植性调研.md", "业务全景.md"]
+# 副本里**不**带的东西。
+# ⚠️ 这里原来是白名单(列出要拷哪些),2026-09-17 改成黑名单。
+# 起因:白名单漏了根目录的 `.mcp.json`,于是 `boundary_audit` 在副本里对照就是红的 ——
+# 而「副本漏了文件」和「代码真的坏了」在报告里长得一模一样。
+# **白名单会静默漏掉新加的文件,黑名单不会。**
+不带 = {".git", ".venv", "__pycache__", ".pytest_cache", ".DS_Store", "node_modules"}
 
 
 def 建副本(dst):
     if os.path.isdir(dst): shutil.rmtree(dst)
     os.makedirs(dst)
-    for name in sorted(set(带上)):
+    for name in sorted(os.listdir(ROOT)):
+        if name in 不带: continue
         src = os.path.join(ROOT, name)
-        if not os.path.exists(src): continue
         d = os.path.join(dst, name)
         if os.path.isdir(src):
             shutil.copytree(src, d, ignore=shutil.ignore_patterns(

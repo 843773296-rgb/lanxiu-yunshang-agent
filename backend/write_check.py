@@ -60,6 +60,15 @@ try: server.rules
 except AttributeError: pass
 
 bad = []
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('让建客户不写门店字段(接口说成功,库里那一栏是空的)',
+     '建客户:接口说成功'),
+]
+
 def check(no, desc, rows, why):
     print(f"  {'✅' if not rows else '❌'} {no}  {desc}")
     for r in rows[:4]: print(f"        · {r}")

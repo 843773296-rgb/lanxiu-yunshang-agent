@@ -746,5 +746,77 @@
    }
   ],
   "预期红": "条对照不符合预期"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "把工具层的只读连接开成可写(读连接从此也能改库)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    c=sqlite3.connect(f\"file:{DB}?mode=ro\", uri=True)",
+    "new": "    c=sqlite3.connect(f\"file:{DB}?mode=rw\", uri=True)"
+   }
+  ],
+  "预期红": "工具层的读连接写不了库"
+ },
+ {
+  "script": "backend/rfm_check.py",
+  "改坏": "把 RFM 的分档数从五档压到两档(分布塌掉)",
+  "file": [
+   {
+    "path": "knowledge/rfm.py",
+    "old": "BUCKETS = 5",
+    "new": "BUCKETS = 2"
+   }
+  ],
+  "预期红": "分数分布不许塌"
+ },
+ {
+  "script": "backend/write_check.py",
+  "改坏": "让建客户不写门店字段(接口说成功,库里那一栏是空的)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        c.execute(\"\"\"INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,",
+    "new": "        d[\"shop\"]=None\n        c.execute(\"\"\"INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,"
+   }
+  ],
+  "预期红": "建客户:接口说成功"
+ },
+ {
+  "script": "backend/shadow_check.py",
+  "改坏": "在 server.py 里用一个局部变量遮蔽掉同名的模块级函数",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "def 顾问工号(",
+    "new": "def _遮蔽演示():\n    rows = 1\n    return rows\n\n\ndef 顾问工号("
+   }
+  ],
+  "预期红": "把模块级函数"
+ },
+ {
+  "script": "backend/ui_audit.py",
+  "改坏": "在页面上加一个既没有 data-* 也没有 onclick 的按钮(看起来能点,点了没反应)",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "</body>",
+    "new": "<button>假按钮</button>\n</body>"
+   }
+  ],
+  "预期红": "既无 data-* 也无 onclick"
+ },
+ {
+  "script": "backend/product_form_check.py",
+  "改坏": "往写入覆盖的字段清单里加一项,而编辑表单里没有它(能写却改不了)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "\"commission_type\", \"commission_val\", \"remark\", \"img_main\")",
+    "new": "\"commission_type\", \"commission_val\", \"remark\", \"img_main\", \"unit2\")"
+   }
+  ],
+  "预期红": "写入能改的字段,编辑表单里都要有"
  }
 ]

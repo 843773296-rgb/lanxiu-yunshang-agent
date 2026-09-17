@@ -28,6 +28,15 @@ ALL = [dict(r) for r in c.execute(
     "SELECT id,name,lifecycle,idle_days,orders_12m,amount_12m FROM customer")]
 
 bad = []
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把 RFM 的分档数从五档压到两档(分布塌掉)',
+     '分数分布不许塌'),
+]
+
 def rule(no, desc, rows, why):
     print(f"  {'✅' if not rows else '❌'} {no}  {desc}")
     for r in rows[:5]: print(f"        · {r}")
