@@ -281,6 +281,15 @@ M = [
 ]
 
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把多件词表清空(套装、亲子这些词从此认不出来,件数判不出)',
+     '条对照不符合预期'),
+]
+
 def main():
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
     xzs = [dict(r) for r in c.execute("SELECT code,name,alias,key_sizes FROM xingzhi")]

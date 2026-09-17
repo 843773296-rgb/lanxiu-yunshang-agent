@@ -682,5 +682,69 @@
    }
   ],
   "预期红": "推唐制 vs 推宋制,判为不一致"
+ },
+ {
+  "script": "backend/booking_check.py",
+  "改坏": "把「绑的顾问离职了」那一支关掉(人走了,单子还挂在他名下)",
+  "file": [
+   {
+    "path": "backend/booking.py",
+    "old": "    if st.get(\"status\") != \"启用\":",
+    "new": "    if False and st.get(\"status\") != \"启用\":"
+   }
+  ],
+  "预期红": "绑定的顾问已离职"
+ },
+ {
+  "script": "backend/funnel_check.py",
+  "改坏": "把一条预约的状态改成漏斗口径里没有的值(五档加起来对不上)",
+  "sql": [
+   "UPDATE appointment SET status='张冠李戴' WHERE id=(SELECT id FROM appointment LIMIT 1)"
+  ],
+  "预期红": "流失五档加起来 = 约了 - 到店"
+ },
+ {
+  "script": "backend/img_check.py",
+  "改坏": "让渲染器对所有商品返回同一段固定内容(页面上看着都有图,实际全是同一张)",
+  "file": [
+   {
+    "path": "backend/img.py",
+    "old": "def render(spu, variant):",
+    "new": "def render(spu, variant):\n    return '<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>'"
+   }
+  ],
+  "预期红": "每个商品的每种图都渲染得出来"
+ },
+ {
+  "script": "backend/member_check.py",
+  "改坏": "把生命周期的优先级顺序倒过来(同时命中多档时取的不再是该取的那一档)",
+  "file": [
+   {
+    "path": "knowledge/lifecycle.py",
+    "old": "PRIORITY = [\"流失\", \"潜在流失\", \"休眠\", \"忠诚\", \"高价值\", \"新客\", \"活跃\", \"潜在\"]",
+    "new": "PRIORITY = [\"潜在\", \"活跃\", \"新客\", \"高价值\", \"忠诚\", \"休眠\", \"潜在流失\", \"流失\"]"
+   }
+  ],
+  "预期红": "条对不上"
+ },
+ {
+  "script": "backend/part_choice_check.py",
+  "改坏": "把一条部位加价抬高 500(各部位之和 ≠ 订单行的定制部件金额)",
+  "sql": [
+   "UPDATE item_part_choice SET amount=amount+500 WHERE id=(SELECT id FROM item_part_choice LIMIT 1)"
+  ],
+  "预期红": "部位加价之和 = 订单行的定制部件金额"
+ },
+ {
+  "script": "backend/pattern_grade_check.py",
+  "改坏": "把多件词表清空(套装、亲子这些词从此认不出来,件数判不出)",
+  "file": [
+   {
+    "path": "backend/fix_product_pattern.py",
+    "old": "多件词 = (\"套装\", \"亲子\",",
+    "new": "多件词 = ("
+   }
+  ],
+  "预期红": "条对照不符合预期"
  }
 ]
