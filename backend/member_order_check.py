@@ -9,6 +9,15 @@
 import os, sqlite3, sys
 DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lanxiu.db")
 c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把一张订单的商品总额抬高 9 万(和各订单行之和对不上)',
+     '≠ 各行基本金额之和'),
+]
+
 def q(sql, *a): return [dict(r) for r in c.execute(sql, a)]
 
 ST2PRD = {"待付款":"待付款","待审核":"方案确认中","待生产":"方案确认中","生产中":"方案确认中",

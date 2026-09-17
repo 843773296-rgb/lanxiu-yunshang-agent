@@ -24,6 +24,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FAIL = []
 
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把一个方案的形制字段从编码改成中文名',
+     '形制/面料/工艺/版型都是编码且存在'),
+]
+
 def ck(name, ok, n, msg=""):
     print(f"  {'✅' if ok else '❌'} {name}(验了 {n} 个){'  ' + msg if msg else ''}")
     if not ok: FAIL.append(name)

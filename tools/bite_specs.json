@@ -430,5 +430,61 @@
    "UPDATE pattern_piece SET name='张冠李戴片' WHERE rowid=(SELECT rowid FROM pattern_piece LIMIT 1)"
   ],
   "预期红": "每一种裁片都归得进某个部位"
+ },
+ {
+  "script": "backend/lifecycle_check.py",
+  "改坏": "把「监护人同意」那条体检的判定条件改成永远匹配不上(注进去的问题它再也发现不了)",
+  "file": [
+   {
+    "path": "backend/lifecycle_check.py",
+    "old": "AND s.relation LIKE '%监护人%')",
+    "new": "AND s.relation LIKE '%根本不存在的关系%')"
+   }
+  ],
+  "预期红": "不满 14 周岁但没有监护人同意"
+ },
+ {
+  "script": "backend/membership_check.py",
+  "改坏": "把一个客户的等级改成门槛表里没有的档",
+  "sql": [
+   "UPDATE customer SET level='钻石' WHERE id=(SELECT id FROM customer LIMIT 1)"
+  ],
+  "预期红": "库里每个客户的等级都算得出来"
+ },
+ {
+  "script": "backend/scheme_check.py",
+  "改坏": "把一个方案的形制字段从编码改成中文名",
+  "sql": [
+   "UPDATE scheme SET xz='唐制' WHERE id=(SELECT id FROM scheme WHERE xz IS NOT NULL LIMIT 1)"
+  ],
+  "预期红": "形制/面料/工艺/版型都是编码且存在"
+ },
+ {
+  "script": "backend/member_order_check.py",
+  "改坏": "把一张订单的商品总额抬高 9 万(和各订单行之和对不上)",
+  "sql": [
+   "UPDATE ordr SET goods_amount=goods_amount+90000 WHERE id=(SELECT id FROM ordr WHERE goods_amount IS NOT NULL LIMIT 1)"
+  ],
+  "预期红": "≠ 各行基本金额之和"
+ },
+ {
+  "script": "backend/order_gate_check.py",
+  "改坏": "把所有着装人的生日都改成成年(未成年那条规则从此一行都跑不到)",
+  "sql": [
+   "UPDATE wearer SET birthday='1990-01-01'"
+  ],
+  "预期红": "规则在未成年着装人身上跑过"
+ },
+ {
+  "script": "backend/review_check.py",
+  "改坏": "把「已完结的不算逾期」那道判定去掉(做晚了和还没做混成一类)",
+  "file": [
+   {
+    "path": "knowledge/review.py",
+    "old": "    if 状态 != \"有效\":",
+    "new": "    if False and 状态 != \"有效\":"
+   }
+  ],
+  "预期红": "完结 ≤ 总数,逾期不含已完结"
  }
 ]

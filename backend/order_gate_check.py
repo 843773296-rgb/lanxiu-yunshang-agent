@@ -35,6 +35,15 @@ DB = os.path.join(HERE, "lanxiu.db")
 FAIL = []
 
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把所有着装人的生日都改成成年(未成年那条规则从此一行都跑不到)',
+     '规则在未成年着装人身上跑过'),
+]
+
 def ck(name, ok, n, msg=""):
     print(f"  {'✅' if ok else '❌'} {name}(验了 {n} 个){'  ' + msg if msg else ''}")
     if not ok: FAIL.append(name)
