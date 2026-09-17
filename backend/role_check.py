@@ -28,6 +28,15 @@ import tasks as TK
 FAIL = []
 
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把一位工匠的登录名抹掉(这个人从此登不进来)',
+     '启用的员工都能登录'),
+]
+
 def ck(name, ok, n, msg=""):
     print(f"  {'✅' if ok else '❌'} {name}(验了 {n} 个){'  ' + msg if msg else ''}")
     if not ok: FAIL.append(name)

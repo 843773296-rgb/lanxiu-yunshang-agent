@@ -28,6 +28,15 @@ sys.path[:0] = [os.path.join(os.path.dirname(HERE), "knowledge")]
 FAIL = []
 
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把一个版型引用的形制从字典里删掉',
+     '形制投影和 craft'),
+]
+
 def ck(name, ok, n, msg=""):
     print(f"  {'✅' if ok else '❌'} {name}(验了 {n} 个){'  ' + msg if msg else ''}")
     if not ok: FAIL.append(name)

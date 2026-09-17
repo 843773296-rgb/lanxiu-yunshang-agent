@@ -28,6 +28,15 @@ q = lambda s, *a: [dict(r) for r in c.execute(s, a)]
 bad, note = [], []
 
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把一个账户持有人的生日改成未成年',
+     '账户持有人必须成年'),
+]
+
 def rule(no, desc, rows, why):
     print(f"  {'✅' if not rows else '❌'} {no}  {desc}")
     if rows:

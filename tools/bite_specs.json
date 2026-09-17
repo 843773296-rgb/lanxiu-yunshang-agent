@@ -370,5 +370,65 @@
    }
   ],
   "预期红": "日志记的字段 = UPDATE 真的写的字段"
+ },
+ {
+  "script": "backend/role_check.py",
+  "改坏": "把一位工匠的登录名抹掉(这个人从此登不进来)",
+  "sql": [
+   "UPDATE staff SET login_name=NULL WHERE no=(SELECT no FROM staff WHERE role='工匠' AND status='启用' LIMIT 1)"
+  ],
+  "预期红": "启用的员工都能登录"
+ },
+ {
+  "script": "backend/spec_check.py",
+  "改坏": "把一个账户持有人的生日改成未成年",
+  "sql": [
+   "UPDATE wearer SET birthday='2020-01-01' WHERE id=(SELECT id FROM wearer WHERE relation='本人' LIMIT 1)"
+  ],
+  "预期红": "账户持有人必须成年"
+ },
+ {
+  "script": "backend/xingzhi_check.py",
+  "改坏": "把一个版型引用的形制从字典里删掉",
+  "sql": [
+   "DELETE FROM craft WHERE code=(SELECT xz FROM pattern WHERE xz IS NOT NULL LIMIT 1)"
+  ],
+  "预期红": "形制投影和 craft"
+ },
+ {
+  "script": "backend/product_pattern_check.py",
+  "改坏": "把一个商品连到一个不存在的版型上",
+  "sql": [
+   "UPDATE product SET pattern='PT999' WHERE spu=(SELECT spu FROM product WHERE pattern IS NOT NULL LIMIT 1)"
+  ],
+  "预期红": "商品连的版型都真实存在"
+ },
+ {
+  "script": "backend/measure_tpl_check.py",
+  "改坏": "把「已量过的测量项不许移掉」那道闸关掉(移掉之后历史记录会悬空,而悬空不违反任何外键)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            n=rows(\"SELECT COUNT(*) c FROM measure_rec WHERE tpl=? AND item=?\",code,i)[0][\"c\"]\n            if n:",
+    "new": "            n=rows(\"SELECT COUNT(*) c FROM measure_rec WHERE tpl=? AND item=?\",code,i)[0][\"c\"]\n            if False and n:"
+   }
+  ],
+  "预期红": "已经量过的测量项不许从模版里移掉"
+ },
+ {
+  "script": "backend/piece_ratio_check.py",
+  "改坏": "把一个版型里某个裁片的占比改大(这个版型的占比之和不再等于 1)",
+  "sql": [
+   "UPDATE pattern_piece SET ratio=ratio+0.3 WHERE rowid=(SELECT rowid FROM pattern_piece WHERE ratio IS NOT NULL LIMIT 1)"
+  ],
+  "预期红": "每个版型的裁片占比之和 = 1"
+ },
+ {
+  "script": "backend/part_check.py",
+  "改坏": "把一种裁片改名成归并规则认不出来的名字",
+  "sql": [
+   "UPDATE pattern_piece SET name='张冠李戴片' WHERE rowid=(SELECT rowid FROM pattern_piece LIMIT 1)"
+  ],
+  "预期红": "每一种裁片都归得进某个部位"
  }
 ]
