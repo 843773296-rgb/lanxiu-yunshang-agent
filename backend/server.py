@@ -761,7 +761,16 @@ def measure_of(cid):
     tpls={}
     for r in rs: tpls.setdefault(r["tpl"],[]).append(r)
     names={t["code"]:t["name"] for t in rows("SELECT code,name FROM measure_tpl")}
-    return [dict(tpl=k,name=names.get(k,k),at=v[0]["measured_at"],by=v[0]["measured_by"],items=v)
+    # ⚠️ **量体人的名字要「造」出来,不是直接读。** 2026-09-16 全库删掉了名字列,
+    # 而这里漏改了:`v[0]["measured_by"]` 当场抛 KeyError,客户详情页直接开不开。
+    # 门禁 99 步 + CI 全绿都没发现 —— **没有一条检查真的调过这个函数**,
+    # 只有 route_check 静态查过「这个 handler 存在」。
+    # **「handler 存在」和「handler 跑得起来」是两件事。**
+    填顾问名(rs)
+    return [dict(tpl=k,name=names.get(k,k),at=v[0]["measured_at"],
+                 # 取不到名字就退回工号,**不写空** —— 空白会让人以为「没人量过」,
+                 # 而真实信息是「查不到这个工号对应的人」(advisor_name_check 管这件事)。
+                 by=v[0].get("measured_by") or v[0].get("measured_by_no"),items=v)
             for k,v in tpls.items()]
 
 def content_list(q):
@@ -1501,7 +1510,9 @@ def aftersale_detail(aid):
     o=rows("SELECT * FROM ordr WHERE id=?",a["order_id"])
     a["order"]=o[0] if o else None
     a["items"]=rows("SELECT * FROM ordr_item WHERE order_id=?",a["order_id"])
-    cn=rows("SELECT id,name,phone,shop,advisor,level FROM customer WHERE id=?",a["customer_id"])
+    # 名字列 2026-09-16 已删,这里改取工号,名字交给 填顾问名() 现造
+    cn=rows("SELECT id,name,phone,shop,advisor_no,level FROM customer WHERE id=?",a["customer_id"])
+    填顾问名(cn)
     if cn:
         c0=cn[0]; p=c0.get("phone") or ""
         c0["phone"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
@@ -1516,7 +1527,9 @@ def maintain_detail(mid):
     r=rows("SELECT * FROM maintain WHERE id=?",mid)
     if not r: return {"error":"维保单不存在"}
     m=r[0]
-    cn=rows("SELECT id,name,phone,shop,advisor FROM customer WHERE id=?",m["customer_id"])
+    # 同上:按工号取,名字现造
+    cn=rows("SELECT id,name,phone,shop,advisor_no FROM customer WHERE id=?",m["customer_id"])
+    填顾问名(cn)
     if cn:
         c0=cn[0]; p=c0.get("phone") or ""
         c0["phone"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
@@ -2044,7 +2057,11 @@ def appt_detail(aid):
     p=a.get("cphone") or ""; a["cphone"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
     dep=rows("SELECT * FROM deposit WHERE id=?",a["deposit_id"])[0] if a.get("deposit_id") else None
     fu=rows("SELECT * FROM followup WHERE appt_id=? ORDER BY ts",aid)
-    logs=[dict(ts=a["start_ts"],who=a["advisor"] or "系统",title="新建预约",src="后台")]
+    # ⚠️ 这里和上面两处不同:SQL 写的是 a.*,**不会报 no such column**,
+    # 要等取值时才抛 KeyError —— 同一个根因,两种长相。
+    填顾问名([a])
+    logs=[dict(ts=a["start_ts"],who=a.get("advisor") or a.get("advisor_no") or "系统",
+               title="新建预约",src="后台")]
     if dep: logs.append(dict(ts=a["start_ts"],who=a["cname"],title="支付押金",src="小程序"))
     if a.get("checkin_ts"): logs.append(dict(ts=a["checkin_ts"],who=a["advisor"],title="到店签到",src="Pad"))
     if a["status"]=="已取消" and dep: logs.append(dict(ts=dep["updated"],who="客服",title="申请退押金",src="后台"))
