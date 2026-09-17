@@ -62,6 +62,15 @@ SUB = {"@SOON": (now + dt.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M"),
        "@RECENT": (now - dt.timedelta(days=2)).strftime("%Y-%m-%d %H:%M"),
        "@RECENT_END": (now - dt.timedelta(days=2) + dt.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")}
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把重号判定的错误码改掉(闸还在,报出来的不是那道闸)',
+     'DUP_PHONE'),
+]
+
 def fill(d):
     return {k: SUB.get(v, v) if isinstance(v, str) else v for k, v in (d or {}).items()}
 

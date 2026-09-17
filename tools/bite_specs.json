@@ -486,5 +486,89 @@
    }
   ],
   "预期红": "完结 ≤ 总数,逾期不含已完结"
+ },
+ {
+  "script": "backend/auth.py",
+  "改坏": "把「查无此人」单独报一句话(从报错就能试出哪个工号存在)",
+  "file": [
+   {
+    "path": "backend/auth.py",
+    "old": "    if not rs: return None, \"工号或密码不对\"",
+    "new": "    if not rs: return None, \"没有这个工号\""
+   }
+  ],
+  "预期红": "查无此人和密码错"
+ },
+ {
+  "script": "backend/rules.py",
+  "改坏": "把手机号的格式判定放宽成「有数字就行」(不合法的号也收得进来)",
+  "file": [
+   {
+    "path": "backend/rules.py",
+    "old": "    if not re.fullmatch(r\"1[3-9]\\d{9}\", phone):",
+    "new": "    if not re.fullmatch(r\"\\d*\", phone):"
+   }
+  ],
+  "预期红": "项与预期不符"
+ },
+ {
+  "script": "backend/fsm.py",
+  "改坏": "往订单状态机里加一条「待生产 → 完成」的边(中间七档全跳过,而库里看不出来)",
+  "file": [
+   {
+    "path": "backend/fsm.py",
+    "old": "         [\"待审核\",\"待生产\"],",
+    "new": "         [\"待审核\",\"待生产\"],\n         [\"待生产\",\"完成\"],"
+   }
+  ],
+  "预期红": "跳档 —— 中间七档全没走"
+ },
+ {
+  "script": "backend/ops.py",
+  "改坏": "把量体超期的拦截关掉(过期的尺码也放行下单)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    if e[\"过期\"]:",
+    "new": "    if False and e[\"过期\"]:"
+   }
+  ],
+  "预期红": "过期的没拦住"
+ },
+ {
+  "script": "backend/route_check.py",
+  "改坏": "在 server.py 里调一个不存在的函数(路由指向一个没有实现的 handler)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "def 顾问工号(",
+    "new": "def 这个函数会调一个不存在的():\n    return 根本没有定义过的函数()\n\n\ndef 顾问工号("
+   }
+  ],
+  "预期红": "函数调了但没定义"
+ },
+ {
+  "script": "backend/tool_input_check.py",
+  "改坏": "让版型查询只认全名不认编码(顾问问「PT04」就查不到)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        直 = _rows(\"SELECT * FROM pattern WHERE code=? OR name=?\", xz, xz)",
+    "new": "        直 = _rows(\"SELECT * FROM pattern WHERE name=?\", xz)"
+   }
+  ],
+  "预期红": "kb_pattern 认得出人对版型的每一种称呼"
+ },
+ {
+  "script": "backend/writerule_check.py",
+  "改坏": "把重号判定的错误码改掉(闸还在,报出来的不是那道闸)",
+  "file": [
+   {
+    "path": "backend/rules.py",
+    "old": "\"DUP_PHONE\"",
+    "new": "\"DUP_PHONE_XX\""
+   }
+  ],
+  "预期红": "DUP_PHONE"
  }
 ]
