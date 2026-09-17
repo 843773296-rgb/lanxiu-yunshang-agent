@@ -634,5 +634,53 @@
    }
   ],
   "预期红": "铁律依赖的工具必须真实存在"
+ },
+ {
+  "script": "agentsite/budget_check.py",
+  "改坏": "把 Claude 的花费上限从 $50 压到 $0.6(聊到第三轮就被掐)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    return 50.00 if pv.startswith(\"claude\") else 3.00",
+    "new": "    return 0.60 if pv.startswith(\"claude\") else 3.00"
+   }
+  ],
+  "预期红": "订阅内的比按量计费的松"
+ },
+ {
+  "script": "agentsite/sessions_check.py",
+  "改坏": "把「这条会话是别人的」那一支关掉(接着说别人的会话也放行)",
+  "file": [
+   {
+    "path": "agentsite/sessions.py",
+    "old": "        return False, (f\"这条会话是**别人的**(",
+    "new": "        return True, \"\" if True else (f\"这条会话是**别人的**("
+   }
+  ],
+  "预期红": "别人的会话,拒"
+ },
+ {
+  "script": "agent/v2.py",
+  "改坏": "把客户合并的规则表清空(该拦的合并从此不拦)",
+  "file": [
+   {
+    "path": "agent/v2.py",
+    "old": "MERGE_RULE = [",
+    "new": "MERGE_RULE = []\n_MERGE_RULE_OLD = ["
+   }
+  ],
+  "预期红": "结构化判错"
+ },
+ {
+  "script": "agent/wild_run.py",
+  "改坏": "把结论方向的指纹改成常数(推唐制和推宋制被判成同一套方案)",
+  "file": [
+   {
+    "path": "agent/wild_run.py",
+    "old": "def direction(text):",
+    "new": "def direction(text):\n    return (\"唐制\",)"
+   }
+  ],
+  "预期红": "推唐制 vs 推宋制,判为不一致"
  }
 ]
