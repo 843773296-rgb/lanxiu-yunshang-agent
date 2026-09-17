@@ -79,6 +79,15 @@ CASES = {
          ("get_customer",      {"customer_id": "NOPE"})],
 }
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('让 MCP 通道给返回值多塞一个字段(同样的入参,两条通道返回的东西不一样)',
+     '返回不同'),
+]
+
 def norm(x):
     return json.dumps(x, ensure_ascii=False, sort_keys=True)
 

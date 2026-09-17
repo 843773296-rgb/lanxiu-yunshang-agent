@@ -39,6 +39,15 @@ REQUIRED = ["## 一句话:现在在做什么",
 PLACEHOLDER = "(待填)"
 
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把交接文档里「别重做:试过并否决的」那一段标题换掉(必填的一段从此认不出来)',
+     '缺段落'),
+]
+
 def sh(cmd, default=""):
     try:
         return subprocess.run(cmd, shell=True, cwd=ROOT, capture_output=True,

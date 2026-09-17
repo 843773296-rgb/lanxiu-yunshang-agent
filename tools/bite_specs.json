@@ -570,5 +570,69 @@
    }
   ],
   "预期红": "DUP_PHONE"
+ },
+ {
+  "script": "tools/make_handoff.py",
+  "改坏": "把交接文档里「别重做:试过并否决的」那一段标题换掉(必填的一段从此认不出来)",
+  "file": [
+   {
+    "path": "HANDOFF.md",
+    "old": "## 别重做:试过并否决的",
+    "new": "## 顺带提一句"
+   }
+  ],
+  "预期红": "缺段落"
+ },
+ {
+  "script": "knowledge/pinned_check.py",
+  "改坏": "把 MT02 的幅宽加宽 20cm(钉死的锚点和库里算出来的对不上)",
+  "sql": [
+   "UPDATE material SET width_cm=width_cm+20 WHERE code='MT02'"
+  ],
+  "预期红": "不要把这里的数字改成系统算出来的"
+ },
+ {
+  "script": "knowledge/check_kb.py",
+  "改坏": "把库里一种工艺改名(知识库里写的和 craft 表对不上)",
+  "sql": [
+   "UPDATE craft SET name='张冠李戴' WHERE code=(SELECT code FROM craft WHERE cat='工艺' LIMIT 1)"
+  ],
+  "预期红": "名称不一致"
+ },
+ {
+  "script": "knowledge/fitting.py",
+  "改坏": "把腰围的放松量从 2 改成 8(净体腰围推出来的码整体偏一档)",
+  "file": [
+   {
+    "path": "knowledge/10-版型库.md",
+    "old": "| 腰围 | 围度 | 2 |",
+    "new": "| 腰围 | 围度 | 8 |"
+   }
+  ],
+  "预期红": "腰围偏 4cm,但换成 L 码就合上了"
+ },
+ {
+  "script": "mcp/parity.py",
+  "改坏": "让 MCP 通道给返回值多塞一个字段(同样的入参,两条通道返回的东西不一样)",
+  "file": [
+   {
+    "path": "mcp/client.py",
+    "old": "        try: return json.loads(txt)",
+    "new": "        try:\n            _v = json.loads(txt)\n            return dict(_v, 多出来一个字段=1) if isinstance(_v, dict) else _v"
+   }
+  ],
+  "预期红": "返回不同"
+ },
+ {
+  "script": "tools/prompts_check.py",
+  "改坏": "让 TL29 依赖一个不存在的工具",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "Rule(\"TL29\", (\"stock_alert\",)",
+    "new": "Rule(\"TL29\", (\"根本没有这个工具\",)"
+   }
+  ],
+  "预期红": "铁律依赖的工具必须真实存在"
  }
 ]
