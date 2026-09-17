@@ -2,7 +2,7 @@
 #
 # ## 为什么要有它
 #
-# check.sh 现在 **95 项**(2026-09-16;这份说明里原来写的是 33,漂了六天)——
+# check.sh 的项数由 `grep -c '^run ' check.sh` 数出来(2026-09-17 是 98 项)——
 # **全绿不代表安全,「有人记得敲那条命令」才是前提**。
 #
 # ⚠️ 这个数**不许手抄着维护**:它是 `grep -c '^run ' check.sh` 数出来的,
@@ -56,13 +56,30 @@ jobs:
           python3 -m venv agentsite/.venv
           ./agentsite/.venv/bin/pip install --quiet -r agentsite/requirements.txt
 
-      # 数据库不进版本库(固定种子,确定性生成)—— 克隆下来必须先跑这个
-      - name: 生成数据库
-        run: python3 backend/seed.py
+      # 数据库不进版本库(固定种子,确定性生成)—— 克隆下来必须先建。
+      #
+      # ⚠️ **这里必须用 tools/rebuild.sh,不许手抄步骤。**
+      # 2026-09-16 到 09-17,CI **连续 30 次全红,一次都没绿过**,根因就在这一行:
+      # 这里原来写的是 `python3 backend/seed.py`,而建库的配方后来变成了 5 步 ——
+      # 白坯试衣的 `fitting` 表由 backend/seed_fitting.py 建,
+      # 走量数据的 `sim_batch` 表由 tools/simulate_sales.py 建。
+      # 少了这两步,seed.py 建出 65 张表(全量是 68 张),于是九项检查
+      # 报 `no such table: fitting / sim_batch`。
+      #
+      # **而本地一直是绿的** —— 本地那份库早就有这两张表,没人会删了重建。
+      # 「本地绿」和「从零建得起来」是两件事,它们在开发机上长得一模一样。
+      # tools/rebuild.sh 存在的理由就是这句:**步骤只有一处,不在别处手抄一份。**
+      # 这个工作流原来就是那"别处"的一份,而它漂了。
+      - name: 从零重建数据库(唯一那份配方)
+        run: ./tools/rebuild.sh
 
       # 单独一步,让它失败时一眼看得出是密钥问题而不是别的
       - name: 扫密钥
         run: ./tools/scan_secrets.sh
 
-      - name: 全套检查(33 项)
+      # ⚠️ 步骤名里**不写项数**。这份文件顶上那段注释专门说过
+      # 「这个数不许手抄着维护」,而这一行自己手抄了一个 33 —— 写下那段话的时候
+      # 实际是 95 项,现在是 98 项。**一份讲着「别靠人记」的文档,自己靠人记。**
+      # 真实数由 check.sh 自己数出来打在日志里。
+      - name: 全套检查
         run: ./check.sh
