@@ -18,6 +18,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "..", "backend", "lanxiu.db")
 
 
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把「一人一机就加不了人」的判定去掉(缂丝被当成可以加人)',
+     '缂丝只有一位织工,必须标为加不了人'),
+]
+
 def _c():
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row; return c
 

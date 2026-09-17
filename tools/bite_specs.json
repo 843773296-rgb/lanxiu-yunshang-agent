@@ -818,5 +818,101 @@
    }
   ],
   "预期红": "写入能改的字段,编辑表单里都要有"
+ },
+ {
+  "script": "agentsite/capman_check.py",
+  "改坏": "把「可枚举的信号」词表里的英文那一半删掉(英文技能全被判成不需要判断)",
+  "file": [
+   {
+    "path": "knowledge/capability.py",
+    "old": "              \"run \", \"execute\", \"script\", \"command\", \"cli \", \"bash\",\n              \"for each\", \"iterate\", \"loop over\")",
+    "new": "              )"
+   }
+  ],
+  "预期红": "中英文两头都判得对"
+ },
+ {
+  "script": "agentsite/evalnoise_test.py",
+  "改坏": "把「没有对照组就不下判断」那一支关掉(算不出底噪也照样给结论)",
+  "file": [
+   {
+    "path": "agentsite/evalnoise.py",
+    "old": "    if control_n == 0:",
+    "new": "    if False and control_n == 0:"
+   }
+  ],
+  "预期红": "没有对照组 → 不下判断"
+ },
+ {
+  "script": "knowledge/capacity.py",
+  "改坏": "把「一人一机就加不了人」的判定去掉(缂丝被当成可以加人)",
+  "file": [
+   {
+    "path": "knowledge/capacity.py",
+    "old": "                不可加人=(len(who) == 1 or all((a[\"wip_limit\"] or 1) == 1 for a in who)),",
+    "new": "                不可加人=False,"
+   }
+  ],
+  "预期红": "缂丝只有一位织工,必须标为加不了人"
+ },
+ {
+  "script": "mcp/selftest.py",
+  "改坏": "从 kb 服务的工具表里砍掉一个(声明 11 个,实际暴露 10 个)",
+  "file": [
+   {
+    "path": "mcp/kb_server.py",
+    "old": "TOOLS = [(s[\"name\"], s[\"description\"], s[\"input_schema\"], api.TOOLS[s[\"name\"]])\n         for s in api.KB_SCHEMAS]",
+    "new": "TOOLS = [(s[\"name\"], s[\"description\"], s[\"input_schema\"], api.TOOLS[s[\"name\"]])\n         for s in api.KB_SCHEMAS][:-1]"
+   }
+  ],
+  "预期红": "tools/list"
+ },
+ {
+  "script": "agentsite/skills_check.py",
+  "改坏": "从 sdk 的白名单里删掉一个 kb 工具(MCP 暴露了,模型看得见却用不了)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "\"mcp__kb__kb_lookup\",",
+    "new": ""
+   }
+  ],
+  "预期红": "模型看得见却用不了"
+ },
+ {
+  "script": "agent/wild_corpus.py",
+  "改坏": "让 20 条语料的句尾问法完全一样(条数达标、多样性为零,而且看起来一切正常)",
+  "file": [
+   {
+    "path": "agent/wild_corpus.py",
+    "old": "    qs = build(20)",
+    "new": "    qs = [\"第%d 位客户的情况大致如此,那么这一单到底应该怎么给她推荐才好呢?\" % i for i in range(20)]"
+   }
+  ],
+  "预期红": "没有哪一类占到一半以上"
+ },
+ {
+  "script": "agentsite/manifest.py",
+  "改坏": "从 sdk 的白名单里删掉一个 shop 工具(挂了但没进白名单)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "\"mcp__shop__get_capacity\",",
+    "new": ""
+   }
+  ],
+  "预期红": "挂了但没进白名单"
+ },
+ {
+  "script": "fakedata/selftest.py",
+  "改坏": "把「模型编出来的状态值要丢掉」那一支关掉(造出来的数据会当场违反自己的枚举断言)",
+  "file": [
+   {
+    "path": "fakedata/infer_llm.py",
+    "old": "            dropped.append(f'状态机:{t}.{c} 提到库里没有的状态 {sorted(unknown)[:4]}')",
+    "new": "            pass"
+   }
+  ],
+  "预期红": "编出来的状态值被丢掉"
  }
 ]

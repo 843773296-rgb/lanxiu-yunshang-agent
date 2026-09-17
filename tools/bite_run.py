@@ -188,7 +188,10 @@ def main():
         # 只认前者的话,用 assert 的脚本会被判成「红的不是那一条」——
         # 而那是**判据贴着字面(找 ❌ 这个符号)而不是含义(这一条失败了)**。
         def 是红行(l):
-            return "❌" in l or "AssertionError" in l or "Error:" in l
+            # 失败的写法不止一种:❌ / ✗ / assert 抛出 / 「失败」二字。
+            # 只认某一个符号,就是**判据贴着字面而不是含义** —— 这道执行器自己栽过两次:
+            # 先是只认 ❌(用 assert 的脚本判不出),再是漏了 ✗(fakedata 那套用的是它)。
+            return any(k in l for k in ("❌", "✗", "AssertionError", "Error:"))
         命中 = [l for l in out.split("\n") if 是红行(l) and expect in l]
         if a.discover:
             reds = [l.strip() for l in out.split("\n") if 是红行(l)][:3]

@@ -25,6 +25,15 @@ sys.path.insert(0, HERE)
 import schema as S, discover as D, plan as P, gen as G, guard, load as L
 
 FAIL = []
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
+# 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
+# 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
+咬合 = [
+    ('把「模型编出来的状态值要丢掉」那一支关掉(造出来的数据会当场违反自己的枚举断言)',
+     '编出来的状态值被丢掉'),
+]
+
 def ck(cond, name, detail=""):
     if cond: print(f"  ✓ {name}")
     else:    print(f"  ✗ {name}  {detail}"); FAIL.append(name)
