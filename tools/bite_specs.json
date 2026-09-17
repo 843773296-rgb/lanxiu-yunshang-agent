@@ -930,18 +930,18 @@
     "new": "                 by=v[0][\"measured_by\"],items=v)"
    }
   ],
-  "预期红": "每个详情页都拿真数据跑得通"
+  "预期红": "每个只读入口都拿真数据跑得通"
  },
  {
   "script": "backend/page_smoke_check.py",
-  "改坏": "从「取参」对照表里删掉 customer_detail 那一行(某个页面从此不被验,而检查照样绿)",
+  "改坏": "从用例表里删掉 customer_detail 那一行(某个页面从此不被验,而检查照样绿)",
   "file": [
    {
     "path": "backend/page_smoke_check.py",
-    "old": "    \"customer_detail\":  \"SELECT customer_id FROM measure_rec LIMIT 1\",",
+    "old": "    \"customer_detail\":  [(SQL(\"SELECT customer_id FROM measure_rec LIMIT 1\"),)],",
     "new": ""
    }
   ],
-  "预期红": "server.py 里每个详情页函数都在对照表里"
+  "预期红": "do_GET 走得到的函数,都在用例表或豁免表里"
  }
 ]

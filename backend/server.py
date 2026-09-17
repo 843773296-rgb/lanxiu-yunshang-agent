@@ -1256,15 +1256,24 @@ def create_followup(d, actor="魏欣新"):
 # CSV 导出。**不做全表 SELECT *** —— 手机号、地址这些字段导出去就脱离系统了,
 # 只导页面上已经展示的那几列,而且沿用页面的脱敏。
 _EXPORT = {
-    "customers": ("客户档案", "SELECT id 客户号,name 姓名,phone_tail 手机尾号,shop 门店,"
-                  "advisor 顾问,lifecycle 生命周期,level 等级,order_cnt 订单数,"
-                  "paid_amount 实付,created 建档日 FROM customer ORDER BY id"),
+    # ⚠️ 名字列 2026-09-16 全库删除,这里漏改了 —— 整个导出功能报
+    # `no such column: advisor`,而**没有任何检查调用过导出**(route_check 只静态查存在)。
+    # 改成 join 员工表按工号取名,**同时保留工号**:取不到名字时那一栏不至于空白,
+    # 空白会让人以为「这个客户没有顾问」,而真实信息是「查不到这个工号对应的人」。
+    "customers": ("客户档案", "SELECT c.id 客户号,c.name 姓名,c.phone_tail 手机尾号,c.shop 门店,"
+                  "c.advisor_no 顾问工号,s.name 顾问,c.lifecycle 生命周期,c.level 等级,"
+                  "c.order_cnt 订单数,c.paid_amount 实付,c.created 建档日 "
+                  "FROM customer c LEFT JOIN staff s ON s.no=c.advisor_no ORDER BY c.id"),
     "orders":    ("订单", "SELECT id 订单号,customer_id 客户号,status 状态,amount 金额,"
                   "created 下单时间 FROM ordr ORDER BY id"),
     "workorders":("在制工单", "SELECT id 工单号,artisan 师傅,craft 工艺,status 状态,"
                   "start_date 开工,due_date 交期 FROM workorder ORDER BY due_date"),
-    "oplog":     ("操作日志", "SELECT ts 时间,actor 操作人,obj 对象,obj_id 编号,"
-                  "code 结果码,detail 说明 FROM op_log ORDER BY ts DESC LIMIT 5000"),
+    # ⚠️ 这条按的是**早就不存在的老 schema**(obj / obj_id / detail),
+    # 实际列是 machine / target / reason。整条导出一跑就 `no such column: obj` ——
+    # **说明它从来没被跑过一次**。和上面那条一样,是这次冒烟检查揪出来的。
+    "oplog":     ("操作日志", "SELECT ts 时间,actor 操作人,machine 对象,target 编号,"
+                  "code 结果码,allowed 是否放行,reason 说明 FROM op_log "
+                  "ORDER BY ts DESC LIMIT 5000"),
 }
 
 def export_csv(kind, q=None, actor="魏欣新"):
