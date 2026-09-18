@@ -37,7 +37,13 @@ REDIRECT = "http://localhost:3000/callback"
 
 # 本项目自己的飞书文件夹。默认文件夹是「帕鲁打工仔」在用的,不往那发。
 FOLDER = os.environ.get("FEISHU_FOLDER", "QexpfF7ejlotM8db6JEcZH5tnZf")
-SCOPE = "drive:drive docx:document offline_access"   # offline_access 才会下发 refresh_token
+# offline_access 才会下发 refresh_token。
+# ⚠️ **多要一个没批准的权限,整次授权会失败** —— 所以默认只要发布用得上的那几个,
+# 需要额外权限时用环境变量临时加,不改默认值:
+#     FEISHU_SCOPE="$(python3 -c 'import tools.feishu_publish as p;print(p.SCOPE)') board:whiteboard:node:read board:whiteboard:node:create" \
+#     python3 tools/feishu_publish.py --reauth
+SCOPE = os.environ.get(
+    "FEISHU_SCOPE", "drive:drive docx:document offline_access")
 TOKEN_URL = "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
 CACHE = os.path.join(_CRED_DIR, ".uat_cache.json")
 
@@ -98,7 +104,17 @@ def token_alive(t):
     return r.get("code") == 0
 
 
-def acquire_token():
+def acquire_token(force=False):
+    """force=True 时忽略缓存,重新走一次浏览器授权。
+
+    ⚠️ 加了新权限**必须重来一次** —— 缓存里那个 token 是按**旧 scope** 签发的,
+    它不会因为后台加了权限就自动变强。而「token 还能用」和「token 有新权限」
+    在调用失败之前长得一模一样。
+    """
+    if force:
+        try: os.remove(CACHE)
+        except FileNotFoundError: pass
+
     if os.path.exists(CACHE):
         try:
             store = json.load(open(CACHE))
@@ -215,6 +231,12 @@ def publish(path, uat):
 
 
 def main():
+    if "--reauth" in sys.argv:
+        print("重新授权(会弹浏览器)。当前请求的权限:\n  " + SCOPE.replace(" ", "\n  "))
+        t = acquire_token(force=True)
+        print("\n✅ 拿到新 token。" if t else "\n❌ 没拿到")
+        return 0
+
     files = [f for f in sys.argv[1:] if f.endswith(".md")]
     if not files:
         sys.exit("用法: feishu_publish.py <file.md> ...")
