@@ -2658,6 +2658,73 @@ def get_stock(spu=None, sku=None, material=None, craft=None):
     return {"error": "要给 spu / sku / material / craft 其中之一"}
 
 
+def get_scheme(scheme_id=None, customer=None, status=None):
+    """查方案。**方案是「一件事」的单位** —— 客户这次想做的这件衣服。
+
+    为什么是**资源型**工具(跟表走,和 get_order 一个形状),不是动词工具:
+    2026-09-18 业务定的规矩 —— MCP 跟表走跟 API 走,场景该由 Skill 编排。
+    所以这里只有「取」,没有 lock_scheme / convert_to_order 这类动作;
+    状态流转是 scheme.status 的值变化,走已有的写接口。
+
+    ⚠️ **代号一律翻成中文再返回。** 库里存的是 XZ04 / MT02 / KF02,
+    直接给模型看,它要么念代号给客户听,要么自己猜一个名字 ——
+    **而猜错了看起来和猜对了一模一样**。翻不出来的保留原代号并标出来,
+    不是静默丢掉:查不到本身就是要报的事。
+    """
+    if not (scheme_id or customer or status):
+        return {"error": "要么给方案号,要么给客户号/姓名,要么给状态"}
+
+    def 名(表, code, 列="name"):
+        if not code:
+            return None
+        r = _rows(f"SELECT {列} FROM {表} WHERE code=?", code)
+        return r[0][列] if r else f"{code}(库里查不到)"
+
+    def 展开(r):
+        kf = [k.strip() for k in (r.get("kf") or "").split(",") if k.strip()]
+        ps = [x.strip() for x in (r.get("ps") or "").split(",") if x.strip()]
+        return {"方案号": r["id"], "名称": r["name"], "状态": r["status"],
+                "客户号": r["customer_id"], "顾问工号": r["advisor_no"],
+                "形制": 名("xingzhi", r.get("xz")),
+                "面料": 名("material", r.get("mt")),
+                "工艺": [名("craft", k) for k in kf],
+                "颜色": r.get("color") or None,
+                "配饰": ps,
+                "版型": 名("pattern", r.get("pattern")),
+                "备注": r.get("note"), "建于": r.get("created"), "改于": r.get("updated")}
+
+    if scheme_id:
+        rs = _rows("SELECT * FROM scheme WHERE id=?", scheme_id)
+        if not rs:
+            return {"error": f"没有方案 {scheme_id}"}
+        d = 展开(rs[0])
+        cu = _rows("SELECT name FROM customer WHERE id=?", rs[0]["customer_id"])
+        d["客户"] = cu[0]["name"] if cu else None
+        # 同一客户还有哪些方案 —— **并行是常态**,不告诉模型它就会以为只有这一条
+        兄弟 = _rows("SELECT id,name,status FROM scheme WHERE customer_id=? AND id<>?"
+                    " ORDER BY updated DESC", rs[0]["customer_id"], scheme_id)
+        d["该客户的其他方案"] = 兄弟
+        d["note"] = ("方案是「一件事」的单位:报价、下单、试衣都挂在它上面。"
+                     "同一客户可以并行多条,**推进前先确认说的是哪一条**。")
+        return d
+
+    sql = "SELECT * FROM scheme WHERE 1=1"
+    args = []
+    if customer:
+        cs = _rows("SELECT id,name FROM customer WHERE id=? OR name=?", customer, customer)
+        if not cs:
+            return {"error": f"没有客户「{customer}」"}
+        sql += " AND customer_id=?"
+        args.append(cs[0]["id"])
+    if status:
+        sql += " AND status=?"
+        args.append(status)
+    rs = _rows(sql + " ORDER BY updated DESC", *args)
+    return {"hit": len(rs), "schemes": [展开(r) for r in rs],
+            "note": "要看某一条的明细,拿方案号再调一次。"
+                    "**同一客户并行多条是常态** —— 客户说「那个方案」时先问清是哪一条。"}
+
+
 def get_aftersale(order_id=None, customer=None, status=None):
     """售后记录。判责依据在 kb_tables 的「售后争议判定」表里,这里只给事实。"""
     q="SELECT a.*,c.name cust FROM aftersale a LEFT JOIN customer c ON c.id=a.customer_id WHERE 1=1"
@@ -3649,6 +3716,11 @@ SHOP_SCHEMAS=[
     "task_id":{"type":"string","description":"任务号"},
     "summary":{"type":"string","description":"日程总结:做了什么、结果如何"}},
    "required":["task_id","summary"]}},
+ {"name":"get_scheme","description":"查方案。**方案是「一件事」的单位** —— 客户这次想做的这件衣服(形制/面料/工艺/颜色/配饰/版型都挂在它上面),有自己的生命周期:草稿 → 已保存 → 已锁定 → 已失效。三种问法:给 scheme_id 返回单条明细(并附上该客户的其他方案);给 customer(客户号或姓名)列这个客户的全部方案;给 status 按状态筛。⚠️ **同一个客户并行多条方案是常态** —— 客户或顾问说「那个方案」「刚才那套」时,**先调这个工具看清楚有几条,不要默认只有一条就往下推进**。推进(报价、下单、排产)之前必须确认说的是哪一个方案号。",
+  "input_schema":{"type":"object","properties":{
+    "scheme_id":{"type":"string","description":"方案号,形如 SC2601"},
+    "customer":{"type":"string","description":"客户号或姓名。不知道方案号时先用这个列清单。"},
+    "status":{"type":"string","description":"按状态筛:草稿 / 已保存 / 已锁定 / 已失效"}},"required":[]}},
  {"name":"get_order","description":"查订单。给 order_id 返回单条全链路(双口径状态、金额勾稽、时间线、订单行、关联售后);给 customer(客户号或姓名)返回该客户的订单清单。**返回里的「勾稽异常」不为空时,必须先核对再答复客户**,不要直接把金额念给客户听。注意状态有两套口径:页面按设计稿 10 档、PRD 按状态机 6 档,对客户说页面口径。",
   "input_schema":{"type":"object","properties":{
     "order_id":{"type":"string","description":"订单号"},
@@ -3747,7 +3819,7 @@ def _masked(fn):
     return wrap
 
 
-TOOLS.update({"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale,
+TOOLS.update({"get_scheme":get_scheme,"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale,
               "get_capacity":get_capacity,
               "get_wearer":get_wearer,"forecast_growth":forecast_growth,
               "plan_for_event":plan_for_event,"get_maintain":get_maintain,

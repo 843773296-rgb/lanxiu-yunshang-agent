@@ -237,6 +237,10 @@ SHOP_TOOLS = [
 KB_ONLY_TOOLS = [
     "mcp__shop__get_wearer", "mcp__shop__forecast_growth",
     "mcp__shop__plan_for_event",
+    # 方案 =「一件事」的单位。**只给工艺顾问,不进 SHOP_TOOLS** ——
+    # SHOP_TOOLS 是整包发给顾问和任务助手的,而任务助手做的是退款定因,
+    # 跟客户这次想做哪件衣服无关。**给一个角色多余的工具,代价是它会去用。**
+    "mcp__shop__get_scheme",
 ]
 
 # ── 工坊排产:面对产能,不面对客户 ──────────────────────────────────

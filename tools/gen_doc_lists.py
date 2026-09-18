@@ -18,7 +18,7 @@ import api
     "排班与复盘": ["week_grid", "monthly_review", "appt_funnel"],
     "会员与审批": ["member_level", "points_ledger", "approval_queue",
                 "apply_adjust", "decide_approval", "get_lifecycle", "get_member_priority"],
-    "客户与订单": ["get_order", "can_order", "get_wearer", "recovery_queue", "activity_roi",
+    "客户与订单": ["get_scheme", "get_order", "can_order", "get_wearer", "recovery_queue", "activity_roi",
                 "channel_compare"],
     "库存与产能": ["get_stock", "stock_alert", "get_capacity", "get_workorder", "my_workorders"],
     "版师相关":   ["pattern_queue", "grading_audit", "piece_ratios", "set_piece_ratio"],
@@ -44,11 +44,11 @@ def 一行(t):
 
 S = {t["name"]: t for t in api.SHOP_SCHEMAS}
 out = []
-out.append("### 4.3 MCP:三个服务,59 个工具\n")
+out.append(f"### 4.3 MCP:三个服务,{len(全部)+len(api.KB_SCHEMAS)+len(api.SCHEMAS)} 个工具\n")
 out.append("**为什么分三个而不是一个:** 给一个角色多余的工具,代价不是浪费,"
            "是**它会去用**。工匠不需要看到客户资产,顾问不需要看到工单调度。"
            "分服务之后,挂哪几个是一次配置,不是每次提醒模型「别用那个」。\n")
-out.append("✍️ 标记的是**写工具**(共 9 个),要过白名单 + 预演 + 四道闸,见 4.6。\n")
+out.append(f"✍️ 标记的是**写工具**(共 {len(写)} 个),要过白名单 + 预演 + 四道闸,见 4.6。\n")
 
 out.append(f"#### `kb` · 知识库({len(api.KB_SCHEMAS)} 个)—— 回答「能不能做、怎么做、多少钱、多久」\n")
 out.append("| 工具 | 干什么 |\n|---|---|")
