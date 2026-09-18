@@ -81,6 +81,7 @@ run "RFM 评分 · 五条性质" python3 backend/rfm_check.py
 run "交接文档 · 四段必填是否齐全" python3 tools/make_handoff.py --check
 run "intent · 待办都点了名,「做完了」的判据真的在" python3 tools/intent_check.py
 run "咬合记录 · 最贵的那一步不许只在脑子里" python3 tools/bite_check.py
+run "仓库自洽 · 工作区绿不等于仓库里那一版绿" python3 tools/repo_consistency_check.py
 run "评测题面 · 有指代就得有编号,或写明是故意的" python3 tools/case_check.py
 run "改动影响面 · 警示段落找不着就是正则漏了" python3 tools/impact.py --selftest
 run "评测夹具 · 写死了对象就得声明前提,而前提得成立" python3 tools/fixture_check.py
