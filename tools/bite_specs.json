@@ -1075,5 +1075,45 @@
       }
     ],
     "预期红": "该挂"
+  },
+  {
+    "script": "backend/aftersale_rule_check.py",
+    "改坏": "把一单定制品订单的售后类型改成「退货退款」",
+    "sql": [
+      "UPDATE aftersale SET kind='退货退款' WHERE id=(SELECT a.id FROM aftersale a JOIN ordr o ON o.id=a.order_id WHERE o.kind='定制品订单' LIMIT 1)"
+    ],
+    "预期红": "R1 定制品订单不出现退货/换货类售后"
+  },
+  {
+    "script": "backend/aftersale_rule_check.py",
+    "改坏": "把标品那几单维保删掉(只剩定制品有维保)",
+    "sql": [
+      "DELETE FROM maintain WHERE order_id IN (SELECT id FROM ordr WHERE kind='标品订单')"
+    ],
+    "预期红": "R2 每一类订单都有维保单"
+  },
+  {
+    "script": "backend/aftersale_rule_check.py",
+    "改坏": "把一单维保的 order_id 改成不存在的订单号",
+    "sql": [
+      "UPDATE maintain SET order_id='NOPE-0000' WHERE id=(SELECT id FROM maintain LIMIT 1)"
+    ],
+    "预期红": "R3 售后与维保都挂得到订单"
+  },
+  {
+    "script": "backend/aftersale_rule_check.py",
+    "改坏": "把一单维保的 order_item_id 指到**另一张订单**的商品行(订单是裙子,维保写裤子)",
+    "sql": [
+      "UPDATE maintain SET order_item_id=(SELECT i.id FROM ordr_item i WHERE i.order_id<>maintain.order_id LIMIT 1) WHERE id=(SELECT id FROM maintain LIMIT 1)"
+    ],
+    "预期红": "R4a 维保的商品是该订单里的商品"
+  },
+  {
+    "script": "backend/aftersale_rule_check.py",
+    "改坏": "把一单售后的 order_item_id 清空(没写退的是哪一件)",
+    "sql": [
+      "UPDATE aftersale SET order_item_id=NULL WHERE id=(SELECT id FROM aftersale LIMIT 1)"
+    ],
+    "预期红": "R4b 售后的商品是该订单里的商品"
   }
 ]

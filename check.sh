@@ -52,6 +52,7 @@ run "分部位可选料 · 部位从裁片归并,报价口径要跟着出" pytho
 run "订单部位选择 · 什么钱都要有对应的记录" python3 backend/part_choice_check.py
 run "裁片用料占比 · 估出来的和版师给的不许长得一样" python3 backend/piece_ratio_check.py
 run "方案引用 · 存编码不存名字,而且落到具体版型(否则算不出用料)" python3 backend/scheme_check.py
+run "售后与维保 · 四条业务硬规则(库允许≠业务允许)" python3 backend/aftersale_rule_check.py
 run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 backend/role_check.py
 # 版师是第一个「有写工具,但只有一个」的角色 —— 它特有的两种失败
 # (给多了 / 给死了)在界面上长得一模一样,所以两个方向都得测。
