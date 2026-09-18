@@ -313,6 +313,8 @@ def 回滚(c, quiet=False):
             cols = list(row)
             c.execute(f"INSERT OR REPLACE INTO {what.split(':')[1]}({','.join(cols)}) "
                       f"VALUES({','.join('?' * len(cols))})", [row[k] for k in cols])
+        elif what == "改指:workorder":
+            c.execute("UPDATE workorder SET ref=? WHERE id=?", (payload and json.loads(payload), key))
         elif what == "重算:customer":
             row = json.loads(payload)
             c.execute("UPDATE customer SET " + ",".join(f"{k}=?" for k in row) + " WHERE id=?",
@@ -719,6 +721,60 @@ def 易损倾向(c, oid, kind):
     return w * (1.6 if 绣 else 1.0)
 
 
+# ── 车间工单对齐订单状态 ─────────────────────────────────────────────
+# 种子的工单表是**独立编的**,没跟着订单状态走:完成的订单挂着 18 张「在制」工单,
+# 待付款的订单已经有工单在做 —— 订单做完了工单还在做,钱都没付就开工了。
+#
+# ⚠️ **工单本身一个字不动,只改它挂在哪张单上。** 评测把工单的事实写死了:
+# 罗一机「在制 4 件、上限 1 件」、WO8001 逾期、WO8016 交期 —— 改状态这几道题的前提就塌了。
+# 而「挂在哪张订单上」没有评测读(工具返回里有,判据不看)。
+#
+# 改指的目标:在制 → 生产中的定制单;已完成 → 生产做完了的定制单。
+# 优先同一道工艺(缂丝工单挂在选了缂丝的单上),其次开工日不早于订单审核。
+在制该挂 = ("生产中",)
+已完成不该挂 = ("待付款", "待审核", "待生产", "取消")
+
+
+def 工单对齐(c, rng, log):
+    mine = {r[0] for r in c.execute("SELECT key FROM order_mix_batch WHERE what='转定制'")}
+    def 候选(sts):
+        out = []
+        for r in c.execute(f"""SELECT o.id, o.status, o.audit_at, o.produced_at,
+                (SELECT GROUP_CONCAT(p.material) FROM ordr_item i JOIN item_part_choice p
+                   ON p.item_id=i.id WHERE i.order_id=o.id AND p.kind='工艺') crafts
+                FROM ordr o WHERE o.kind='定制品订单' AND o.status IN ({",".join("?" * len(sts))})""",
+                sts):
+            if r["id"] in mine:
+                out.append(dict(r))
+        return out
+    在制池 = 候选(在制该挂)
+    完成池 = 候选(("已生产", "待发货", "已发货", "待完成", "完成"))
+    n = {"在制": 0, "已完成": 0}
+    用过 = {}
+    for w in [dict(r) for r in c.execute(
+            """SELECT w.id, w.craft, w.ref, w.start_date, w.due_date, w.status, o.status ost,
+                      (SELECT name FROM craft WHERE code=w.craft) cname
+               FROM workorder w JOIN ordr o ON o.id=w.ref ORDER BY w.id""")]:
+        if w["status"] == "在制" and w["ost"] not in 在制该挂:
+            pool = 在制池
+            ok_time = lambda o: (o["audit_at"] or "9")[:10] <= (w["start_date"] or "")
+        elif w["status"] == "已完成" and w["ost"] in 已完成不该挂:
+            pool = 完成池
+            ok_time = lambda o: (o["audit_at"] or "9")[:10] <= (w["start_date"] or "") and \
+                (w["due_date"] or "") <= (o["produced_at"] or "")[:10]
+        else:
+            continue
+        def 分(o):
+            return ((w["cname"] or "~") in (o["crafts"] or ""), ok_time(o), -用过.get(o["id"], 0))
+        best = max(分(o) for o in pool)
+        pick = rng.choice([o for o in pool if 分(o) == best])
+        _记(c, "改指:workorder", w["id"], w["ref"])
+        c.execute("UPDATE workorder SET ref=? WHERE id=?", (pick["id"], w["id"]))
+        用过[pick["id"]] = 用过.get(pick["id"], 0) + 1
+        n[w["status"]] += 1
+    log(f"  ① 工单:{n['在制']} 张在制、{n['已完成']} 张已完成的改挂到状态对得上的定制单(工单本身没动)")
+
+
 # ── 订单指回方案 ────────────────────────────────────────────────────
 # 方案检查第 ⑤ 条「订单指得回方案」原来只有 1 张样本 —— 证明的是「这条边通了」,
 # 不是「这条边到处都对」。给一小部分改造出来的定制单补上**下单前锁定的那条方案**。
@@ -935,6 +991,7 @@ def run(c, log=print):
     log(f"受保护的客户 {len(保护)} 个(不挂新单、不重算)· 判责客户 {len(判责)} 个(不加维保)")
     撤掉, _n = 分型(c, rng, set(保护), log)
     接方案(c, rng, log)
+    工单对齐(c, rng, log)
     候选, 插售后, 新单号 = 售后(c, rng, set(保护), 判责, log)
     # 换货逐条试接:换出去那件在那一刻有没有货,要接上那个 SKU 的整条链才知道
     账 = 流水(c, 撤掉)

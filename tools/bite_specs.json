@@ -1363,5 +1363,13 @@
       }
     ],
     "预期红": "② 列清单不算「取过」"
+  },
+  {
+    "script": "backend/dataset_check.py",
+    "改坏": "把一张在制工单挂回一张已完成的订单",
+    "sql": [
+      "UPDATE workorder SET ref=(SELECT id FROM ordr WHERE kind='定制品订单' AND status='完成' LIMIT 1) WHERE id=(SELECT id FROM workorder WHERE status='在制' LIMIT 1)"
+    ],
+    "预期红": "⑥ 车间工单和它挂的订单状态对得上"
   }
 ]
