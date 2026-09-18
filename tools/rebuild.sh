@@ -20,6 +20,8 @@
 #   seed.py          建表 + 主数据 + 种子订单 + 真值标注
 #   run_journey.py   一条完整客户旅程(预约→量体→方案→下单→生产→交付)
 #   simulate_sales.py 6 个月标品销量(库存预警要它才算得出可售天数)
+#   order_mix.py     把其中一批改成定制单 + 重建售后/换货/维保 + 客户汇总按订单重算
+#                    (业务 2026-09-18 的数据集规格,intent/order-aftersale-dataset.md)
 #   seed_fitting.py  白坯试衣记录(要先有定制订单行)
 #   make_todo.py     待办清单(从 intent/ 生成)
 #
@@ -40,7 +42,7 @@ sleep 3
 # **一个什么都没做的脚本,和一个做完了的脚本,输出长得一模一样。**
 DONE=0
 for STEP in "backend/seed.py" "tools/run_journey.py 42" "tools/simulate_sales.py" \
-            "backend/seed_fitting.py" "tools/make_todo.py"; do
+            "tools/order_mix.py" "backend/seed_fitting.py" "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
   python3 $STEP > /tmp/rebuild-step.out 2>&1 || {
     echo "  ❌ 这一步失败了,后面的不跑 —— **跳过一步不会报错,只会让某几张表空着**"
@@ -52,8 +54,8 @@ for STEP in "backend/seed.py" "tools/run_journey.py 42" "tools/simulate_sales.py
 done
 
 # **自己证明干了活。** 不加这一条的话,上面那个 bug 会一直以「✅」收场。
-if [ "$DONE" -ne 5 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 5 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 6 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 6 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"

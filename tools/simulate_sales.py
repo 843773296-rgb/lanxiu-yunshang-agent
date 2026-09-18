@@ -69,7 +69,12 @@ spec_check C3 要求流水时间不早于商品建档,而上架前卖货本来�
     python3 tools/simulate_sales.py --report     从库里现算:覆盖、对账、客户汇总对不上的清单
     python3 tools/simulate_sales.py --rollback   整批删掉,库存恢复成造之前的数
 
-再生顺序:`seed.py` → `run_journey.py 42` → `simulate_sales.py`。
+再生顺序:`seed.py` → `run_journey.py 42` → `simulate_sales.py` → **`order_mix.py`**。
+
+⚠️ **单独重跑这一步之后,必须接着跑 `order_mix.py`。** 业务 2026-09-18 改了口径:
+这批单里有一部分要改成定制单、客户汇总要按订单重算(上面「刻意不做的」前两条被推翻了,
+留着是因为它们说的是**这一步自己**不做 —— 那两件事现在由 order_mix 做)。
+回滚时会先调 `order_mix.回滚()`,把叠在这批上的那一层撤干净。
 """
 import os, sys, math, heapq, random, sqlite3, argparse, datetime as dt
 
@@ -179,6 +184,16 @@ def rollback(c, quiet=False):
                              f"上一次造到一半断了?先人工看一眼,别自动删")
         return 0
     n = c.execute("SELECT COUNT(*) FROM sim_batch").fetchone()[0]
+    # ⚠️ **订单分型(order_mix.py)是叠在这一批上的**:它把一部分模拟单改成了定制单、
+    # 给它们挂了分部位选料 / 售后 / 维保,还删过种子的旧售后、重算过客户汇总。
+    # 先让它把自己那一层撤干净,再删这一批 —— 反过来的话,那些行会指向不存在的订单。
+    import order_mix
+    order_mix.回滚(c, quiet=quiet)
+    for t in ("fitting", "aftersale", "maintain"):
+        if t in have:
+            c.execute(f"DELETE FROM {t} WHERE order_id IN (SELECT order_id FROM sim_batch)")
+    c.execute("DELETE FROM item_part_choice WHERE item_id IN (SELECT id FROM ordr_item "
+              "WHERE order_id IN (SELECT order_id FROM sim_batch))")
     if "sim_batch_sku" in have:
         c.execute("""UPDATE sku SET stock=(SELECT stock_before FROM sim_batch_sku b WHERE b.sku=sku.code),
                                     locked=(SELECT locked_before FROM sim_batch_sku b WHERE b.sku=sku.code)
@@ -560,6 +575,13 @@ def report(c):
         bad.append("种子流水对不上的数涨了")
 
     # ③ 客户汇总没回写 —— 对不上的清单要列出来,不能只活在文档里
+    # 2026-09-18 起汇总由 order_mix 按订单重算了;这一段要是还照旧报「没算进」,
+    # 就是一份**说错了的报告** —— 比不报更糟,读的人会去修一件已经修好的事
+    if "order_mix_batch" in have:
+        n_re = c.execute("SELECT COUNT(*) FROM order_mix_batch WHERE what='重算:customer'").fetchone()[0]
+        print(f"  ✅ 客户汇总已由 order_mix 按订单重算({n_re} 个客户变了);"
+              f"边界夹具和评测写死的客户不重算,见 `python3 tools/order_mix.py --report`")
+        return 1 if bad else 0
     cut = (END - dt.timedelta(days=365)).isoformat()
     per = {}
     for r in c.execute("""SELECT o.customer_id, o.status, o.refund_status, o.received, o.created

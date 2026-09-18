@@ -402,7 +402,19 @@ CREATE TABLE aftersale(id TEXT PRIMARY KEY, kind TEXT, order_id TEXT, customer_i
   ext_system TEXT, synced_at TEXT,
   -- 退的是**这张单里的哪一件**。原来一个商品字段都没有,「售后商品必须是该订单里的商品」
   -- 这条规则在库里**根本表达不了**。存键不存名字:名字一改,历史引用就断了。
-  order_item_id INTEGER);
+  order_item_id INTEGER,
+  -- ── 换货要的四样(业务 2026-09-18,09-养护与售后.md 6.2)──
+  -- 换**出去**的是哪件。换回来的那件是 order_item_id,受「必须是该单里的商品」约束;
+  -- 换出去的是新的,不受。
+  exchange_sku TEXT,
+  -- 从哪个渠道出货 = 下单渠道(ordr.source)。规则:从买的渠道出货,**不许跨渠道调货** ——
+  -- 渠道决定库存归属和结算对象。存下来而不是现取,是为了让「跨渠道」这件事查得出来。
+  channel TEXT,
+  -- 差价:正 = 客户补,负 = 退给客户。⚠️ **0 和 NULL 是两件事**:
+  -- 0 是「算过了,不用补也不用退」,NULL 是「还没算」—— 报表上长得一样,处理方式相反。
+  price_diff REAL,
+  -- 差价什么时候结清的。有差价而这一列空着 = 钱还没结。
+  diff_settled_at TEXT);
 -- 交付告知签收 —— 09-养护与售后.md 第三节写着「交付时必须书面告知的六条」,
 -- 第五节的返修判定里,**特性类(色差/掉色/勾丝)是否书面告知,直接决定有责无责**:
 --   已书面告知 → 无责,解释 + 提供保养服务
@@ -3164,6 +3176,50 @@ def run():
               ("SC2606", _ocid, f"{_xzn}·平绣·{_scr[:7]}", "已锁定", _oxz, _mt6[0], _kf6[0],
                "石青", "", _opt, _oadv, None, _scr, _scr))
     c.execute("UPDATE ordr SET scheme_id='SC2606' WHERE id=?", (_oid,))
+
+    # ── 等级口径的边界夹具:「累计够黑金,近 12 个月只够银卡」────────────
+    # 业务 2026-09-18 定了客户汇总**按订单重算**(tools/order_mix.py)。而订单只跨 7 个月,
+    # 重算之后**人人的累计 = 近 12 个月** —— 「等级按滚动 12 个月算,不按累计」这条口径
+    # 就没有一个客户能把两种算法区分开(membership_check ③ 当场红:「累计口径错 0 个」)。
+    # 用户拍板(2026-09-18):补一个和生命周期那 14 个同类的边界夹具 —— 名下 0 单、
+    # 数字手工摆在门槛两侧。E- 前缀 = 夹具,重算和造单都跳过它(run_journey 同一条约定)。
+    #
+    # ⚠️ **放在最后、一个随机数都不吃。** 放进上面 EDGE 表里会调 mk() —— 它吃随机数,
+    # 后面所有随机生成的数据整体错位。账户的盐从客户号派生,不走 random。
+    import hashlib as _hl
+    _shop0 = SHOPS[0]
+    _no0 = ADV_BY_SHOP[_shop0][0][1]
+    _fid, _fph = "E-M1-01", "13900009101"
+    _fnm = "累计 36,000 元 · 近 12 个月 5,200 元(等级口径边界)"
+    _faddr = "上海市静安区南京西路 1788 号"
+    _frow = dict(order_cnt=7, idle_days=40, amount_12m=5200.0, orders_12m=2, quarters_12m=2,
+                 first_order="2024-06-10")
+    _flc = decide(_frow)
+    c.execute("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,lifecycle,level,created,"
+              "order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,"
+              "quarters_12m,amount_12m,idle_days,matched,gender,province,city,district,points,remark)"
+              " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              (_fid, _fnm, _fph, _fph[-4:], _shop0, _no0, _flc[0], "银卡", "2024-05-20",
+               7, 36000.0, ago(40), _faddr, "1988-03-14", 0, "2024-06-10", 2, 2, 5200.0, 40,
+               "/".join(_flc[1]), "女", "上海市", "上海市", "静安区", 0,
+               "**夹具,不许补全**:累计 ¥36000/7 单 → 按累计是黑金;近 12 个月 ¥5200/2 单 → 银卡。"
+               "等级必须是银卡 —— 判成黑金说明用了累计口径"))
+    _salt = _hl.sha256(_fid.encode()).hexdigest()[:32]
+    _hash = _hl.pbkdf2_hmac("sha256", b"lanxiu-fixture", bytes.fromhex(_salt), 120000).hex()
+    c.execute("INSERT INTO account(id,phone,login_name,pwd_algo,pwd_salt,pwd_hash,status,created,"
+              "last_login,display_name,contact_pref,default_addr,home_shop,self_wearer_id,"
+              "tos_version,privacy_version,marketing_consent,closed_at,purge_at,fail_count,"
+              "locked_until) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              ("U29101", _fph, "lx_009101", "pbkdf2_sha256$120000", _salt, _hash, "正常",
+               "2024-05-20", ago(40), _fnm, "电话", _faddr, _shop0, "W-M1-01-0", "v2.3", "v1.5", 0,
+               None, None, 0, None))
+    c.execute("UPDATE customer SET account_id='U29101' WHERE id=?", (_fid,))
+    # 每个账户有且只有一个「本人」(lifecycle_check A3/A8)。**不给他量体** ——
+    # 这个夹具管的是等级口径,不该出现在任何量体 / 下单的统计里
+    c.execute("INSERT INTO wearer(id,customer_id,account_id,name,gender,birthday,relation,phone,"
+              "status,created) VALUES(?,?,?,?,?,?,?,?,?,?)",
+              ("W-M1-01-0", _fid, "U29101", _fnm, "女", "1988-03-14", "本人", _fph, "在用",
+               "2024-05-20"))
 
     c.commit()
     print(f"已生成 {DB}")
