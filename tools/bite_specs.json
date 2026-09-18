@@ -1365,6 +1365,14 @@
     "预期红": "② 列清单不算「取过」"
   },
   {
+    "script": "backend/scheme_check.py",
+    "改坏": "把大部分订单的 scheme_id 清掉,只留 3 张 —— 样本掉到下限以下,**而三条内容判据仍然全过**(剩下那 3 张都是对的)",
+    "sql": [
+      "UPDATE ordr SET scheme_id=NULL WHERE scheme_id IS NOT NULL AND id NOT IN (SELECT id FROM ordr WHERE scheme_id IS NOT NULL LIMIT 3)"
+    ],
+    "预期红": "订单指得回方案"
+  },
+  {
     "script": "backend/dataset_check.py",
     "改坏": "把一张在制工单挂回一张已完成的订单",
     "sql": [
