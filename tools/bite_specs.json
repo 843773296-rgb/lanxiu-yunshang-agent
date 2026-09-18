@@ -1,947 +1,983 @@
 [
- {
-  "script": "tools/intent_check.py",
-  "改坏": "把 check.sh 里的 guards_test.py 改名(判据点名的检查从门禁里消失)",
-  "file": [
-   {
-    "path": "check.sh",
-    "old": "guards_test.py",
-    "new": "guards_testXX.py"
-   }
-  ],
-  "预期红": "说「做完了」的,判据点名的检查真的在 check.sh 里"
- },
- {
-  "script": "tools/intent_check.py",
-  "改坏": "把一份 intent 的「明确不做什么」那一栏改成别的标题",
-  "file": [
-   {
-    "path": "intent/stock-alert.md",
-    "old": "**明确不做什么**",
-    "new": "**顺带一提**"
-   }
-  ],
-  "预期红": "每份 intent 的必填字段都在"
- },
- {
-  "script": "tools/bite_check.py",
-  "改坏": "把 grading_check.py 里的 `咬合 = [` 整段删掉",
-  "file": [
-   {
-    "path": "backend/grading_check.py",
-    "old": "咬合 = [",
-    "new": "咬合_停用 = ["
-   }
-  ],
-  "预期红": "没有咬合记录的脚本不超过"
- },
- {
-  "script": "tools/bite_check.py",
-  "改坏": "把某条记录右边那句「预期红的那一条」改成一句脚本里不存在的话",
-  "file": [
-   {
-    "path": "backend/stock_check.py",
-    "old": "咬合 = [",
-    "new": "咬合 = [\n    (\"随便改点什么\", \"这句话脚本里根本没有\"),"
-   }
-  ],
-  "预期红": "有咬合记录的,记录本身是对的"
- },
- {
-  "script": "agent/chat_eval_judgetest.py",
-  "改坏": "把「调过知识库工具」判成永远为真(轨迹轴整条失效)",
-  "file": [
-   {
-    "path": "agent/chat_eval.py",
-    "old": "def called_kb(traj): return any(t[\"tool\"] in KB_TOOLS for t in traj)",
-    "new": "def called_kb(traj): return True"
-   }
-  ],
-  "预期红": "判分器本身不可信,评测结果不作数"
- },
- {
-  "script": "agent/growth_eval_judgetest.py",
-  "改坏": "把轨迹轴整条关掉(该调的工具一个没调也不扣分)",
-  "file": [
-   {
-    "path": "agent/growth_eval.py",
-    "old": "    if need and not any(n in names for n in need):",
-    "new": "    if False and need and not any(n in names for n in need):"
-   }
-  ],
-  "预期红": "说全了但一个工具没调"
- },
- {
-  "script": "agent/liability_eval_judgetest.py",
-  "改坏": "把「没查现场」那一轴关掉(不查现场也算过)",
-  "file": [
-   {
-    "path": "agent/liability_eval.py",
-    "old": "    if \"get_maintain\" not in names:",
-    "new": "    if False and \"get_maintain\" not in names:"
-   }
-  ],
-  "预期红": "没查现场就下判责结论"
- },
- {
-  "script": "agent/member_eval_judgetest.py",
-  "改坏": "把会员等级题的必调工具名改错(该调的工具永远调不到)",
-  "file": [
-   {
-    "path": "agent/member_eval.py",
-    "old": "need_tool(\"member_level\")",
-    "new": "need_tool(\"member_levelXX\")"
-   }
-  ],
-  "预期红": "等级·查了也说了窗口"
- },
- {
-  "script": "agent/ops_eval_judgetest.py",
-  "改坏": "把工坊题的必调工具从两个减成一个(只查产能也算过)",
-  "file": [
-   {
-    "path": "agent/ops_eval.py",
-    "old": "need_tool(\"get_capacity\", \"get_workorder\")",
-    "new": "need_tool(\"get_capacity\")"
-   }
-  ],
-  "预期红": "工坊·只调了产能没查工单"
- },
- {
-  "script": "agent/pattern_eval_judgetest.py",
-  "改坏": "把裁片占比题的必调工具名改错",
-  "file": [
-   {
-    "path": "agent/pattern_eval.py",
-    "old": "need_tool(\"piece_ratios\")",
-    "new": "need_tool(\"piece_ratiosXX\")"
-   }
-  ],
-  "预期红": "报了米数也报了来源"
- },
- {
-  "script": "agent/report_eval_judgetest.py",
-  "改坏": "把 need_tool 改成永远通过(轨迹轴整条失效)",
-  "file": [
-   {
-    "path": "agent/report_eval.py",
-    "old": "def need_tool(*names):",
-    "new": "def need_tool(*names):\n    return lambda text, traj, case: (True, \"\")"
-   }
-  ],
-  "预期红": "流失原因·五档都说了"
- },
- {
-  "script": "agent/role_eval_judgetest.py",
-  "改坏": "把「在制」题的可选工具名全改错(怎么调都算没调)",
-  "file": [
-   {
-    "path": "agent/role_eval.py",
-    "old": "need_any_tool(\"my_workorders\", \"get_workorder\", \"get_capacity\")",
-    "new": "need_any_tool(\"nope1\", \"nope2\", \"nope3\")"
-   }
-  ],
-  "预期红": "在制·说出具体的数"
- },
- {
-  "script": "agent/tool_eval_judgetest.py",
-  "改坏": "把内容轴(must)整条关掉(该说的没说也不扣分)",
-  "file": [
-   {
-    "path": "agent/tool_eval.py",
-    "old": "    for g in must:",
-    "new": "    for g in []:"
-   }
-  ],
-  "预期红": "没说档位也没说依据"
- },
- {
-  "script": "agent/vision_eval_judgetest.py",
-  "改坏": "把「定形制查证过」判成永远为真",
-  "file": [
-   {
-    "path": "agent/vision_eval.py",
-    "old": "    v_form = any(k in names for k in (\"kb_lookup\", \"kb_pattern\", \"kb_detail\", \"kb_tables\"))",
-    "new": "    v_form = True"
-   }
-  ],
-  "预期红": "看图就断言明制马面裙"
- },
- {
-  "script": "agent/textmatch.py",
-  "改坏": "把否定的回看窗口压成 0(「不代表能挽回」读成「能挽回」)",
-  "file": [
-   {
-    "path": "agent/textmatch.py",
-    "old": "DEFAULT_SPAN = ",
-    "new": "DEFAULT_SPAN = 0  # "
-   }
-  ],
-  "预期红": "不算建议重发"
- },
- {
-  "script": "agent/trace_check.py",
-  "改坏": "把 V1 里那句记录仪调用改名(调用点还在,记录仪没接上)",
-  "file": [
-   {
-    "path": "agent/v1.py",
-    "old": "_trace.record(",
-    "new": "_traceXrecord("
-   }
-  ],
-  "预期红": "有调用点没接记录仪"
- },
- {
-  "script": "agent/offline_test.py",
-  "改坏": "把工具返回里的幂等号抹掉(下一轮拿到的不再是那条真实数据)",
-  "file": [
-   {
-    "path": "agent/v1.py",
-    "old": "                            \"content\":json.dumps(out,ensure_ascii=False)})",
-    "new": "                            \"content\":json.dumps({k:v for k,v in out.items() if k!=\"idem_key\"} if isinstance(out,dict) else out,ensure_ascii=False)})"
-   }
-  ],
-  "预期红": "② 结果回灌"
- },
- {
-  "script": "agentsite/js_check.py",
-  "改坏": "在聊天页的内联脚本里塞一处语法错误",
-  "file": [
-   {
-    "path": "agentsite/web/chat.html",
-    "old": "<script>",
-    "new": "<script>\nvar 坏 = ;\n"
-   }
-  ],
-  "预期红": "段有语法错"
- },
- {
-  "script": "agentsite/ref_check.py",
-  "改坏": "把值班页上第一个元素的 id 改掉(脚本引用的那个 id 消失)",
-  "file": [
-   {
-    "path": "agentsite/web/duty.html",
-    "old": "id=\"",
-    "new": "idXX=\""
-   }
-  ],
-  "预期红": "引用了不存在的元素"
- },
- {
-  "script": "agentsite/guards_test.py",
-  "改坏": "把 g1 闸的取数一步掐掉(答案里的钱数和天数一律读不到,这道闸整条失效)",
-  "file": [
-   {
-    "path": "agentsite/guards.py",
-    "old": "    monies, days = _monies(text), _days(text)",
-    "new": "    monies, days = [], []"
-   }
-  ],
-  "预期红": "一个工具没调就报数字"
- },
- {
-  "script": "agentsite/skill_shape.py",
-  "改坏": "把 quote 那份 skill 的「什么时候用」小标题换个说法(这一段从此认不出来)",
-  "file": [
-   {
-    "path": "agentsite/.claude/skills/quote/SKILL.md",
-    "old": "## 什么时候用",
-    "new": "## 适用场合"
-   }
-  ],
-  "预期红": "共缺"
- },
- {
-  "script": "knowledge/derive_combo.py",
-  "改坏": "把「重」这档工艺权重压成 0(重工和无工艺一样重)",
-  "file": [
-   {
-    "path": "knowledge/derive_combo.py",
-    "old": "W = {\"无\": 0, \"轻\": 1, \"中\": 2, \"重\": 3}",
-    "new": "W = {\"无\": 0, \"轻\": 1, \"中\": 2, \"重\": 0}"
-   }
-  ],
-  "预期红": "落库漂移"
- },
- {
-  "script": "knowledge/derive_pattern.py",
-  "改坏": "从库里删掉一种工艺(推导出来的 BOM 引用一个不存在的工艺)",
-  "sql": [
-   "DELETE FROM craft WHERE code=(SELECT code FROM craft WHERE cat='工艺' LIMIT 1)"
-  ],
-  "预期红": "与 craft / measure_tpl 对不上"
- },
- {
-  "script": "knowledge/growth.py",
-  "改坏": "把女孩的突增窗口挪到不可能的年龄段(谁都不在突增期)",
-  "file": [
-   {
-    "path": "knowledge/growth.py",
-    "old": "SPURT = {\"女\": (9.5, 13.0)",
-    "new": "SPURT = {\"女\": (99.5, 103.0)"
-   }
-  ],
-  "预期红": "跨突增期的区间明显更宽"
- },
- {
-  "script": "knowledge/leadtime.py",
-  "改坏": "把方案确认与打样往返的天数抹成 0(定制品当标品算工期)",
-  "file": [
-   {
-    "path": "knowledge/leadtime.py",
-    "old": "CONFIRM = (3, 10)",
-    "new": "CONFIRM = (0, 0)"
-   }
-  ],
-  "预期红": "算出来的工期和知识库自己写的三档对不上"
- },
- {
-  "script": "knowledge/lifecycle.py",
-  "改坏": "把人工干预窗口从 30 天压到 3 天(人工调的档提前失效)",
-  "file": [
-   {
-    "path": "knowledge/lifecycle.py",
-    "old": "MANUAL_WINDOW_DAYS = 30",
-    "new": "MANUAL_WINDOW_DAYS = 3"
-   }
-  ],
-  "预期红": "人工调整 15 天前生效"
- },
- {
-  "script": "knowledge/liability.py",
-  "改坏": "把判定表里「脱线」那一行的责任方从我方改成客方",
-  "file": [
-   {
-    "path": "knowledge/09-养护与售后.md",
-    "old": "| 工艺瑕疵(脱线、绣面污渍) | 我方 | 免费返修 |",
-    "new": "| 工艺瑕疵(脱线、绣面污渍) | 客方 | 自费返修 |"
-   }
-  ],
-  "预期红": "工艺瑕疵 → 我方免费返修"
- },
- {
-  "script": "knowledge/rfm.py",
-  "改坏": "把五分位改成七分位(分数越出 1–5 的范围)",
-  "file": [
-   {
-    "path": "knowledge/rfm.py",
-    "old": "BUCKETS = 5",
-    "new": "BUCKETS = 7"
-   }
-  ],
-  "预期红": "分数落在 1–5"
- },
- {
-  "script": "backend/activity_check.py",
-  "改坏": "把一张订单的活动栏从 NULL 改成空字符串(「没参加活动」有了两种写法)",
-  "sql": [
-   "UPDATE ordr SET activity='' WHERE id=(SELECT id FROM ordr WHERE activity IS NULL LIMIT 1)"
-  ],
-  "预期红": "订单的活动栏只许是编号或 NULL"
- },
- {
-  "script": "backend/catalog_check.py",
-  "改坏": "把一个商品的品类改成字典里不存在的值",
-  "sql": [
-   "UPDATE product SET category='张冠李戴' WHERE spu=(SELECT spu FROM product LIMIT 1)"
-  ],
-  "预期红": "商品库会卖出配置页拒绝的组合"
- },
- {
-  "script": "backend/liability_check.py",
-  "改坏": "把判定表里「脱线」那一行的责任方从我方改成客方(标注还停在我方)",
-  "file": [
-   {
-    "path": "knowledge/09-养护与售后.md",
-    "old": "| 工艺瑕疵(脱线、绣面污渍) | 我方 | 免费返修 |",
-    "new": "| 工艺瑕疵(脱线、绣面污渍) | 客方 | 自费返修 |"
-   }
-  ],
-  "预期红": "两条实现来自同一份文档"
- },
- {
-  "script": "backend/edit_log_check.py",
-  "改坏": "把「日志覆盖的字段」清单里去掉 remark(UPDATE 还在写它,日志不再记它)",
-  "file": [
-   {
-    "path": "backend/server.py",
-    "old": "\"commission_type\", \"commission_val\", \"remark\", \"img_main\")",
-    "new": "\"commission_type\", \"commission_val\", \"img_main\")"
-   }
-  ],
-  "预期红": "日志记的字段 = UPDATE 真的写的字段"
- },
- {
-  "script": "backend/role_check.py",
-  "改坏": "把一位工匠的登录名抹掉(这个人从此登不进来)",
-  "sql": [
-   "UPDATE staff SET login_name=NULL WHERE no=(SELECT no FROM staff WHERE role='工匠' AND status='启用' LIMIT 1)"
-  ],
-  "预期红": "启用的员工都能登录"
- },
- {
-  "script": "backend/spec_check.py",
-  "改坏": "把一个账户持有人的生日改成未成年",
-  "sql": [
-   "UPDATE wearer SET birthday='2020-01-01' WHERE id=(SELECT id FROM wearer WHERE relation='本人' LIMIT 1)"
-  ],
-  "预期红": "账户持有人必须成年"
- },
- {
-  "script": "backend/xingzhi_check.py",
-  "改坏": "把一个版型引用的形制从字典里删掉",
-  "sql": [
-   "DELETE FROM craft WHERE code=(SELECT xz FROM pattern WHERE xz IS NOT NULL LIMIT 1)"
-  ],
-  "预期红": "形制投影和 craft"
- },
- {
-  "script": "backend/product_pattern_check.py",
-  "改坏": "把一个商品连到一个不存在的版型上",
-  "sql": [
-   "UPDATE product SET pattern='PT999' WHERE spu=(SELECT spu FROM product WHERE pattern IS NOT NULL LIMIT 1)"
-  ],
-  "预期红": "商品连的版型都真实存在"
- },
- {
-  "script": "backend/measure_tpl_check.py",
-  "改坏": "把「已量过的测量项不许移掉」那道闸关掉(移掉之后历史记录会悬空,而悬空不违反任何外键)",
-  "file": [
-   {
-    "path": "backend/server.py",
-    "old": "            n=rows(\"SELECT COUNT(*) c FROM measure_rec WHERE tpl=? AND item=?\",code,i)[0][\"c\"]\n            if n:",
-    "new": "            n=rows(\"SELECT COUNT(*) c FROM measure_rec WHERE tpl=? AND item=?\",code,i)[0][\"c\"]\n            if False and n:"
-   }
-  ],
-  "预期红": "已经量过的测量项不许从模版里移掉"
- },
- {
-  "script": "backend/piece_ratio_check.py",
-  "改坏": "把一个版型里某个裁片的占比改大(这个版型的占比之和不再等于 1)",
-  "sql": [
-   "UPDATE pattern_piece SET ratio=ratio+0.3 WHERE rowid=(SELECT rowid FROM pattern_piece WHERE ratio IS NOT NULL LIMIT 1)"
-  ],
-  "预期红": "每个版型的裁片占比之和 = 1"
- },
- {
-  "script": "backend/part_check.py",
-  "改坏": "把一种裁片改名成归并规则认不出来的名字",
-  "sql": [
-   "UPDATE pattern_piece SET name='张冠李戴片' WHERE rowid=(SELECT rowid FROM pattern_piece LIMIT 1)"
-  ],
-  "预期红": "每一种裁片都归得进某个部位"
- },
- {
-  "script": "backend/lifecycle_check.py",
-  "改坏": "把「监护人同意」那条体检的判定条件改成永远匹配不上(注进去的问题它再也发现不了)",
-  "file": [
-   {
-    "path": "backend/lifecycle_check.py",
-    "old": "AND s.relation LIKE '%监护人%')",
-    "new": "AND s.relation LIKE '%根本不存在的关系%')"
-   }
-  ],
-  "预期红": "不满 14 周岁但没有监护人同意"
- },
- {
-  "script": "backend/membership_check.py",
-  "改坏": "把一个客户的等级改成门槛表里没有的档",
-  "sql": [
-   "UPDATE customer SET level='钻石' WHERE id=(SELECT id FROM customer LIMIT 1)"
-  ],
-  "预期红": "库里每个客户的等级都算得出来"
- },
- {
-  "script": "backend/scheme_check.py",
-  "改坏": "把一个方案的形制字段从编码改成中文名",
-  "sql": [
-   "UPDATE scheme SET xz='唐制' WHERE id=(SELECT id FROM scheme WHERE xz IS NOT NULL LIMIT 1)"
-  ],
-  "预期红": "形制/面料/工艺/版型都是编码且存在"
- },
- {
-  "script": "backend/member_order_check.py",
-  "改坏": "把一张订单的商品总额抬高 9 万(和各订单行之和对不上)",
-  "sql": [
-   "UPDATE ordr SET goods_amount=goods_amount+90000 WHERE id=(SELECT id FROM ordr WHERE goods_amount IS NOT NULL LIMIT 1)"
-  ],
-  "预期红": "≠ 各行基本金额之和"
- },
- {
-  "script": "backend/order_gate_check.py",
-  "改坏": "把所有着装人的生日都改成成年(未成年那条规则从此一行都跑不到)",
-  "sql": [
-   "UPDATE wearer SET birthday='1990-01-01'"
-  ],
-  "预期红": "规则在未成年着装人身上跑过"
- },
- {
-  "script": "backend/review_check.py",
-  "改坏": "把「已完结的不算逾期」那道判定去掉(做晚了和还没做混成一类)",
-  "file": [
-   {
-    "path": "knowledge/review.py",
-    "old": "    if 状态 != \"有效\":",
-    "new": "    if False and 状态 != \"有效\":"
-   }
-  ],
-  "预期红": "完结 ≤ 总数,逾期不含已完结"
- },
- {
-  "script": "backend/auth.py",
-  "改坏": "把「查无此人」单独报一句话(从报错就能试出哪个工号存在)",
-  "file": [
-   {
-    "path": "backend/auth.py",
-    "old": "    if not rs: return None, \"工号或密码不对\"",
-    "new": "    if not rs: return None, \"没有这个工号\""
-   }
-  ],
-  "预期红": "查无此人和密码错"
- },
- {
-  "script": "backend/rules.py",
-  "改坏": "把手机号的格式判定放宽成「有数字就行」(不合法的号也收得进来)",
-  "file": [
-   {
-    "path": "backend/rules.py",
-    "old": "    if not re.fullmatch(r\"1[3-9]\\d{9}\", phone):",
-    "new": "    if not re.fullmatch(r\"\\d*\", phone):"
-   }
-  ],
-  "预期红": "项与预期不符"
- },
- {
-  "script": "backend/fsm.py",
-  "改坏": "往订单状态机里加一条「待生产 → 完成」的边(中间七档全跳过,而库里看不出来)",
-  "file": [
-   {
-    "path": "backend/fsm.py",
-    "old": "         [\"待审核\",\"待生产\"],",
-    "new": "         [\"待审核\",\"待生产\"],\n         [\"待生产\",\"完成\"],"
-   }
-  ],
-  "预期红": "跳档 —— 中间七档全没走"
- },
- {
-  "script": "backend/ops.py",
-  "改坏": "把量体超期的拦截关掉(过期的尺码也放行下单)",
-  "file": [
-   {
-    "path": "backend/ops.py",
-    "old": "    if e[\"过期\"]:",
-    "new": "    if False and e[\"过期\"]:"
-   }
-  ],
-  "预期红": "过期的没拦住"
- },
- {
-  "script": "backend/route_check.py",
-  "改坏": "在 server.py 里调一个不存在的函数(路由指向一个没有实现的 handler)",
-  "file": [
-   {
-    "path": "backend/server.py",
-    "old": "def 顾问工号(",
-    "new": "def 这个函数会调一个不存在的():\n    return 根本没有定义过的函数()\n\n\ndef 顾问工号("
-   }
-  ],
-  "预期红": "函数调了但没定义"
- },
- {
-  "script": "backend/tool_input_check.py",
-  "改坏": "让版型查询只认全名不认编码(顾问问「PT04」就查不到)",
-  "file": [
-   {
-    "path": "backend/api.py",
-    "old": "        直 = _rows(\"SELECT * FROM pattern WHERE code=? OR name=?\", xz, xz)",
-    "new": "        直 = _rows(\"SELECT * FROM pattern WHERE name=?\", xz)"
-   }
-  ],
-  "预期红": "kb_pattern 认得出人对版型的每一种称呼"
- },
- {
-  "script": "backend/writerule_check.py",
-  "改坏": "把重号判定的错误码改掉(闸还在,报出来的不是那道闸)",
-  "file": [
-   {
-    "path": "backend/rules.py",
-    "old": "\"DUP_PHONE\"",
-    "new": "\"DUP_PHONE_XX\""
-   }
-  ],
-  "预期红": "DUP_PHONE"
- },
- {
-  "script": "tools/make_handoff.py",
-  "改坏": "把交接文档里「别重做:试过并否决的」那一段标题换掉(必填的一段从此认不出来)",
-  "file": [
-   {
-    "path": "HANDOFF.md",
-    "old": "## 别重做:试过并否决的",
-    "new": "## 顺带提一句"
-   }
-  ],
-  "预期红": "缺段落"
- },
- {
-  "script": "knowledge/pinned_check.py",
-  "改坏": "把 MT02 的幅宽加宽 20cm(钉死的锚点和库里算出来的对不上)",
-  "sql": [
-   "UPDATE material SET width_cm=width_cm+20 WHERE code='MT02'"
-  ],
-  "预期红": "不要把这里的数字改成系统算出来的"
- },
- {
-  "script": "knowledge/check_kb.py",
-  "改坏": "把库里一种工艺改名(知识库里写的和 craft 表对不上)",
-  "sql": [
-   "UPDATE craft SET name='张冠李戴' WHERE code=(SELECT code FROM craft WHERE cat='工艺' LIMIT 1)"
-  ],
-  "预期红": "名称不一致"
- },
- {
-  "script": "knowledge/fitting.py",
-  "改坏": "把腰围的放松量从 2 改成 8(净体腰围推出来的码整体偏一档)",
-  "file": [
-   {
-    "path": "knowledge/10-版型库.md",
-    "old": "| 腰围 | 围度 | 2 |",
-    "new": "| 腰围 | 围度 | 8 |"
-   }
-  ],
-  "预期红": "腰围偏 4cm,但换成 L 码就合上了"
- },
- {
-  "script": "mcp/parity.py",
-  "改坏": "让 MCP 通道给返回值多塞一个字段(同样的入参,两条通道返回的东西不一样)",
-  "file": [
-   {
-    "path": "mcp/client.py",
-    "old": "        try: return json.loads(txt)",
-    "new": "        try:\n            _v = json.loads(txt)\n            return dict(_v, 多出来一个字段=1) if isinstance(_v, dict) else _v"
-   }
-  ],
-  "预期红": "返回不同"
- },
- {
-  "script": "tools/prompts_check.py",
-  "改坏": "让 TL29 依赖一个不存在的工具",
-  "file": [
-   {
-    "path": "prompts.py",
-    "old": "Rule(\"TL29\", (\"stock_alert\",)",
-    "new": "Rule(\"TL29\", (\"根本没有这个工具\",)"
-   }
-  ],
-  "预期红": "铁律依赖的工具必须真实存在"
- },
- {
-  "script": "agentsite/budget_check.py",
-  "改坏": "把 Claude 的花费上限从 $50 压到 $0.6(聊到第三轮就被掐)",
-  "file": [
-   {
-    "path": "agentsite/sdk.py",
-    "old": "    return 50.00 if pv.startswith(\"claude\") else 3.00",
-    "new": "    return 0.60 if pv.startswith(\"claude\") else 3.00"
-   }
-  ],
-  "预期红": "订阅内的比按量计费的松"
- },
- {
-  "script": "agentsite/sessions_check.py",
-  "改坏": "把「这条会话是别人的」那一支关掉(接着说别人的会话也放行)",
-  "file": [
-   {
-    "path": "agentsite/sessions.py",
-    "old": "        return False, (f\"这条会话是**别人的**(",
-    "new": "        return True, \"\" if True else (f\"这条会话是**别人的**("
-   }
-  ],
-  "预期红": "别人的会话,拒"
- },
- {
-  "script": "agent/v2.py",
-  "改坏": "把客户合并的规则表清空(该拦的合并从此不拦)",
-  "file": [
-   {
-    "path": "agent/v2.py",
-    "old": "MERGE_RULE = [",
-    "new": "MERGE_RULE = []\n_MERGE_RULE_OLD = ["
-   }
-  ],
-  "预期红": "结构化判错"
- },
- {
-  "script": "agent/wild_run.py",
-  "改坏": "把结论方向的指纹改成常数(推唐制和推宋制被判成同一套方案)",
-  "file": [
-   {
-    "path": "agent/wild_run.py",
-    "old": "def direction(text):",
-    "new": "def direction(text):\n    return (\"唐制\",)"
-   }
-  ],
-  "预期红": "推唐制 vs 推宋制,判为不一致"
- },
- {
-  "script": "backend/booking_check.py",
-  "改坏": "把「绑的顾问离职了」那一支关掉(人走了,单子还挂在他名下)",
-  "file": [
-   {
-    "path": "backend/booking.py",
-    "old": "    if st.get(\"status\") != \"启用\":",
-    "new": "    if False and st.get(\"status\") != \"启用\":"
-   }
-  ],
-  "预期红": "绑定的顾问已离职"
- },
- {
-  "script": "backend/funnel_check.py",
-  "改坏": "把一条预约的状态改成漏斗口径里没有的值(五档加起来对不上)",
-  "sql": [
-   "UPDATE appointment SET status='张冠李戴' WHERE id=(SELECT id FROM appointment LIMIT 1)"
-  ],
-  "预期红": "流失五档加起来 = 约了 - 到店"
- },
- {
-  "script": "backend/img_check.py",
-  "改坏": "让渲染器对所有商品返回同一段固定内容(页面上看着都有图,实际全是同一张)",
-  "file": [
-   {
-    "path": "backend/img.py",
-    "old": "def render(spu, variant):",
-    "new": "def render(spu, variant):\n    return '<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>'"
-   }
-  ],
-  "预期红": "每个商品的每种图都渲染得出来"
- },
- {
-  "script": "backend/member_check.py",
-  "改坏": "把生命周期的优先级顺序倒过来(同时命中多档时取的不再是该取的那一档)",
-  "file": [
-   {
-    "path": "knowledge/lifecycle.py",
-    "old": "PRIORITY = [\"流失\", \"潜在流失\", \"休眠\", \"忠诚\", \"高价值\", \"新客\", \"活跃\", \"潜在\"]",
-    "new": "PRIORITY = [\"潜在\", \"活跃\", \"新客\", \"高价值\", \"忠诚\", \"休眠\", \"潜在流失\", \"流失\"]"
-   }
-  ],
-  "预期红": "条对不上"
- },
- {
-  "script": "backend/part_choice_check.py",
-  "改坏": "把一条部位加价抬高 500(各部位之和 ≠ 订单行的定制部件金额)",
-  "sql": [
-   "UPDATE item_part_choice SET amount=amount+500 WHERE id=(SELECT id FROM item_part_choice LIMIT 1)"
-  ],
-  "预期红": "部位加价之和 = 订单行的定制部件金额"
- },
- {
-  "script": "backend/pattern_grade_check.py",
-  "改坏": "把多件词表清空(套装、亲子这些词从此认不出来,件数判不出)",
-  "file": [
-   {
-    "path": "backend/fix_product_pattern.py",
-    "old": "多件词 = (\"套装\", \"亲子\",",
-    "new": "多件词 = ("
-   }
-  ],
-  "预期红": "条对照不符合预期"
- },
- {
-  "script": "backend/boundary_audit.py",
-  "改坏": "把工具层的只读连接开成可写(读连接从此也能改库)",
-  "file": [
-   {
-    "path": "backend/api.py",
-    "old": "    c=sqlite3.connect(f\"file:{DB}?mode=ro\", uri=True)",
-    "new": "    c=sqlite3.connect(f\"file:{DB}?mode=rw\", uri=True)"
-   }
-  ],
-  "预期红": "工具层的读连接写不了库"
- },
- {
-  "script": "backend/rfm_check.py",
-  "改坏": "把 RFM 的分档数从五档压到两档(分布塌掉)",
-  "file": [
-   {
-    "path": "knowledge/rfm.py",
-    "old": "BUCKETS = 5",
-    "new": "BUCKETS = 2"
-   }
-  ],
-  "预期红": "分数分布不许塌"
- },
- {
-  "script": "backend/write_check.py",
-  "改坏": "让建客户不写门店字段(接口说成功,库里那一栏是空的)",
-  "file": [
-   {
-    "path": "backend/server.py",
-    "old": "        c.execute(\"\"\"INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,",
-    "new": "        d[\"shop\"]=None\n        c.execute(\"\"\"INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,"
-   }
-  ],
-  "预期红": "建客户:接口说成功"
- },
- {
-  "script": "backend/shadow_check.py",
-  "改坏": "在 server.py 里用一个局部变量遮蔽掉同名的模块级函数",
-  "file": [
-   {
-    "path": "backend/server.py",
-    "old": "def 顾问工号(",
-    "new": "def _遮蔽演示():\n    rows = 1\n    return rows\n\n\ndef 顾问工号("
-   }
-  ],
-  "预期红": "把模块级函数"
- },
- {
-  "script": "backend/ui_audit.py",
-  "改坏": "在页面上加一个既没有 data-* 也没有 onclick 的按钮(看起来能点,点了没反应)",
-  "file": [
-   {
-    "path": "backend/web/index.html",
-    "old": "</body>",
-    "new": "<button>假按钮</button>\n</body>"
-   }
-  ],
-  "预期红": "既无 data-* 也无 onclick"
- },
- {
-  "script": "backend/product_form_check.py",
-  "改坏": "往写入覆盖的字段清单里加一项,而编辑表单里没有它(能写却改不了)",
-  "file": [
-   {
-    "path": "backend/server.py",
-    "old": "\"commission_type\", \"commission_val\", \"remark\", \"img_main\")",
-    "new": "\"commission_type\", \"commission_val\", \"remark\", \"img_main\", \"unit2\")"
-   }
-  ],
-  "预期红": "写入能改的字段,编辑表单里都要有"
- },
- {
-  "script": "agentsite/capman_check.py",
-  "改坏": "把「可枚举的信号」词表里的英文那一半删掉(英文技能全被判成不需要判断)",
-  "file": [
-   {
-    "path": "knowledge/capability.py",
-    "old": "              \"run \", \"execute\", \"script\", \"command\", \"cli \", \"bash\",\n              \"for each\", \"iterate\", \"loop over\")",
-    "new": "              )"
-   }
-  ],
-  "预期红": "中英文两头都判得对"
- },
- {
-  "script": "agentsite/evalnoise_test.py",
-  "改坏": "把「没有对照组就不下判断」那一支关掉(算不出底噪也照样给结论)",
-  "file": [
-   {
-    "path": "agentsite/evalnoise.py",
-    "old": "    if control_n == 0:",
-    "new": "    if False and control_n == 0:"
-   }
-  ],
-  "预期红": "没有对照组 → 不下判断"
- },
- {
-  "script": "knowledge/capacity.py",
-  "改坏": "把「一人一机就加不了人」的判定去掉(缂丝被当成可以加人)",
-  "file": [
-   {
-    "path": "knowledge/capacity.py",
-    "old": "                不可加人=(len(who) == 1 or all((a[\"wip_limit\"] or 1) == 1 for a in who)),",
-    "new": "                不可加人=False,"
-   }
-  ],
-  "预期红": "缂丝只有一位织工,必须标为加不了人"
- },
- {
-  "script": "mcp/selftest.py",
-  "改坏": "从 kb 服务的工具表里砍掉一个(声明 11 个,实际暴露 10 个)",
-  "file": [
-   {
-    "path": "mcp/kb_server.py",
-    "old": "TOOLS = [(s[\"name\"], s[\"description\"], s[\"input_schema\"], api.TOOLS[s[\"name\"]])\n         for s in api.KB_SCHEMAS]",
-    "new": "TOOLS = [(s[\"name\"], s[\"description\"], s[\"input_schema\"], api.TOOLS[s[\"name\"]])\n         for s in api.KB_SCHEMAS][:-1]"
-   }
-  ],
-  "预期红": "tools/list"
- },
- {
-  "script": "agentsite/skills_check.py",
-  "改坏": "从 sdk 的白名单里删掉一个 kb 工具(MCP 暴露了,模型看得见却用不了)",
-  "file": [
-   {
-    "path": "agentsite/sdk.py",
-    "old": "\"mcp__kb__kb_lookup\",",
-    "new": ""
-   }
-  ],
-  "预期红": "模型看得见却用不了"
- },
- {
-  "script": "agent/wild_corpus.py",
-  "改坏": "让 20 条语料的句尾问法完全一样(条数达标、多样性为零,而且看起来一切正常)",
-  "file": [
-   {
-    "path": "agent/wild_corpus.py",
-    "old": "    qs = build(20)",
-    "new": "    qs = [\"第%d 位客户的情况大致如此,那么这一单到底应该怎么给她推荐才好呢?\" % i for i in range(20)]"
-   }
-  ],
-  "预期红": "没有哪一类占到一半以上"
- },
- {
-  "script": "agentsite/manifest.py",
-  "改坏": "从 sdk 的白名单里删掉一个 shop 工具(挂了但没进白名单)",
-  "file": [
-   {
-    "path": "agentsite/sdk.py",
-    "old": "\"mcp__shop__get_capacity\",",
-    "new": ""
-   }
-  ],
-  "预期红": "挂了但没进白名单"
- },
- {
-  "script": "fakedata/selftest.py",
-  "改坏": "把「模型编出来的状态值要丢掉」那一支关掉(造出来的数据会当场违反自己的枚举断言)",
-  "file": [
-   {
-    "path": "fakedata/infer_llm.py",
-    "old": "            dropped.append(f'状态机:{t}.{c} 提到库里没有的状态 {sorted(unknown)[:4]}')",
-    "new": "            pass"
-   }
-  ],
-  "预期红": "编出来的状态值被丢掉"
- },
- {
-  "script": "backend/page_smoke_check.py",
-  "改坏": "把 measure_of 那处修复整个退回去(既不造 measured_by 字段,也不兜底)—— 这正是 2026-09-17 之前的样子",
-  "file": [
-   {
-    "path": "backend/server.py",
-    "old": "    填顾问名(rs)\n",
-    "new": ""
-   },
-   {
-    "path": "backend/server.py",
-    "old": "                 by=v[0].get(\"measured_by\") or v[0].get(\"measured_by_no\"),items=v)",
-    "new": "                 by=v[0][\"measured_by\"],items=v)"
-   }
-  ],
-  "预期红": "每个只读入口都拿真数据跑得通"
- },
- {
-  "script": "backend/page_smoke_check.py",
-  "改坏": "从用例表里删掉 customer_detail 那一行(某个页面从此不被验,而检查照样绿)",
-  "file": [
-   {
-    "path": "backend/page_smoke_check.py",
-    "old": "    \"customer_detail\":  [(SQL(\"SELECT customer_id FROM measure_rec LIMIT 1\"),)],",
-    "new": ""
-   }
-  ],
-  "预期红": "do_GET 走得到的函数,都在用例表或豁免表里"
- }
+  {
+    "script": "tools/intent_check.py",
+    "改坏": "把 check.sh 里的 guards_test.py 改名(判据点名的检查从门禁里消失)",
+    "file": [
+      {
+        "path": "check.sh",
+        "old": "guards_test.py",
+        "new": "guards_testXX.py"
+      }
+    ],
+    "预期红": "说「做完了」的,判据点名的检查真的在 check.sh 里"
+  },
+  {
+    "script": "tools/intent_check.py",
+    "改坏": "把一份 intent 的「明确不做什么」那一栏改成别的标题",
+    "file": [
+      {
+        "path": "intent/stock-alert.md",
+        "old": "**明确不做什么**",
+        "new": "**顺带一提**"
+      }
+    ],
+    "预期红": "每份 intent 的必填字段都在"
+  },
+  {
+    "script": "tools/bite_check.py",
+    "改坏": "把 grading_check.py 里的 `咬合 = [` 整段删掉",
+    "file": [
+      {
+        "path": "backend/grading_check.py",
+        "old": "咬合 = [",
+        "new": "咬合_停用 = ["
+      }
+    ],
+    "预期红": "没有咬合记录的脚本不超过"
+  },
+  {
+    "script": "tools/bite_check.py",
+    "改坏": "把某条记录右边那句「预期红的那一条」改成一句脚本里不存在的话",
+    "file": [
+      {
+        "path": "backend/stock_check.py",
+        "old": "咬合 = [",
+        "new": "咬合 = [\n    (\"随便改点什么\", \"这句话脚本里根本没有\"),"
+      }
+    ],
+    "预期红": "有咬合记录的,记录本身是对的"
+  },
+  {
+    "script": "agent/chat_eval_judgetest.py",
+    "改坏": "把「调过知识库工具」判成永远为真(轨迹轴整条失效)",
+    "file": [
+      {
+        "path": "agent/chat_eval.py",
+        "old": "def called_kb(traj): return any(t[\"tool\"] in KB_TOOLS for t in traj)",
+        "new": "def called_kb(traj): return True"
+      }
+    ],
+    "预期红": "判分器本身不可信,评测结果不作数"
+  },
+  {
+    "script": "agent/growth_eval_judgetest.py",
+    "改坏": "把轨迹轴整条关掉(该调的工具一个没调也不扣分)",
+    "file": [
+      {
+        "path": "agent/growth_eval.py",
+        "old": "    if need and not any(n in names for n in need):",
+        "new": "    if False and need and not any(n in names for n in need):"
+      }
+    ],
+    "预期红": "说全了但一个工具没调"
+  },
+  {
+    "script": "agent/liability_eval_judgetest.py",
+    "改坏": "把「没查现场」那一轴关掉(不查现场也算过)",
+    "file": [
+      {
+        "path": "agent/liability_eval.py",
+        "old": "    if \"get_maintain\" not in names:",
+        "new": "    if False and \"get_maintain\" not in names:"
+      }
+    ],
+    "预期红": "没查现场就下判责结论"
+  },
+  {
+    "script": "agent/member_eval_judgetest.py",
+    "改坏": "把会员等级题的必调工具名改错(该调的工具永远调不到)",
+    "file": [
+      {
+        "path": "agent/member_eval.py",
+        "old": "need_tool(\"member_level\")",
+        "new": "need_tool(\"member_levelXX\")"
+      }
+    ],
+    "预期红": "等级·查了也说了窗口"
+  },
+  {
+    "script": "agent/ops_eval_judgetest.py",
+    "改坏": "把工坊题的必调工具从两个减成一个(只查产能也算过)",
+    "file": [
+      {
+        "path": "agent/ops_eval.py",
+        "old": "need_tool(\"get_capacity\", \"get_workorder\")",
+        "new": "need_tool(\"get_capacity\")"
+      }
+    ],
+    "预期红": "工坊·只调了产能没查工单"
+  },
+  {
+    "script": "agent/pattern_eval_judgetest.py",
+    "改坏": "把裁片占比题的必调工具名改错",
+    "file": [
+      {
+        "path": "agent/pattern_eval.py",
+        "old": "need_tool(\"piece_ratios\")",
+        "new": "need_tool(\"piece_ratiosXX\")"
+      }
+    ],
+    "预期红": "报了米数也报了来源"
+  },
+  {
+    "script": "agent/report_eval_judgetest.py",
+    "改坏": "把 need_tool 改成永远通过(轨迹轴整条失效)",
+    "file": [
+      {
+        "path": "agent/report_eval.py",
+        "old": "def need_tool(*names):",
+        "new": "def need_tool(*names):\n    return lambda text, traj, case: (True, \"\")"
+      }
+    ],
+    "预期红": "流失原因·五档都说了"
+  },
+  {
+    "script": "agent/role_eval_judgetest.py",
+    "改坏": "把「在制」题的可选工具名全改错(怎么调都算没调)",
+    "file": [
+      {
+        "path": "agent/role_eval.py",
+        "old": "need_any_tool(\"my_workorders\", \"get_workorder\", \"get_capacity\")",
+        "new": "need_any_tool(\"nope1\", \"nope2\", \"nope3\")"
+      }
+    ],
+    "预期红": "在制·说出具体的数"
+  },
+  {
+    "script": "agent/tool_eval_judgetest.py",
+    "改坏": "把内容轴(must)整条关掉(该说的没说也不扣分)",
+    "file": [
+      {
+        "path": "agent/tool_eval.py",
+        "old": "    for g in must:",
+        "new": "    for g in []:"
+      }
+    ],
+    "预期红": "没说档位也没说依据"
+  },
+  {
+    "script": "agent/vision_eval_judgetest.py",
+    "改坏": "把「定形制查证过」判成永远为真",
+    "file": [
+      {
+        "path": "agent/vision_eval.py",
+        "old": "    v_form = any(k in names for k in (\"kb_lookup\", \"kb_pattern\", \"kb_detail\", \"kb_tables\"))",
+        "new": "    v_form = True"
+      }
+    ],
+    "预期红": "看图就断言明制马面裙"
+  },
+  {
+    "script": "agent/textmatch.py",
+    "改坏": "把否定的回看窗口压成 0(「不代表能挽回」读成「能挽回」)",
+    "file": [
+      {
+        "path": "agent/textmatch.py",
+        "old": "DEFAULT_SPAN = ",
+        "new": "DEFAULT_SPAN = 0  # "
+      }
+    ],
+    "预期红": "不算建议重发"
+  },
+  {
+    "script": "agent/trace_check.py",
+    "改坏": "把 V1 里那句记录仪调用改名(调用点还在,记录仪没接上)",
+    "file": [
+      {
+        "path": "agent/v1.py",
+        "old": "_trace.record(",
+        "new": "_traceXrecord("
+      }
+    ],
+    "预期红": "有调用点没接记录仪"
+  },
+  {
+    "script": "agent/offline_test.py",
+    "改坏": "把工具返回里的幂等号抹掉(下一轮拿到的不再是那条真实数据)",
+    "file": [
+      {
+        "path": "agent/v1.py",
+        "old": "                            \"content\":json.dumps(out,ensure_ascii=False)})",
+        "new": "                            \"content\":json.dumps({k:v for k,v in out.items() if k!=\"idem_key\"} if isinstance(out,dict) else out,ensure_ascii=False)})"
+      }
+    ],
+    "预期红": "② 结果回灌"
+  },
+  {
+    "script": "agentsite/js_check.py",
+    "改坏": "在聊天页的内联脚本里塞一处语法错误",
+    "file": [
+      {
+        "path": "agentsite/web/chat.html",
+        "old": "<script>",
+        "new": "<script>\nvar 坏 = ;\n"
+      }
+    ],
+    "预期红": "段有语法错"
+  },
+  {
+    "script": "agentsite/ref_check.py",
+    "改坏": "把值班页上第一个元素的 id 改掉(脚本引用的那个 id 消失)",
+    "file": [
+      {
+        "path": "agentsite/web/duty.html",
+        "old": "id=\"",
+        "new": "idXX=\""
+      }
+    ],
+    "预期红": "引用了不存在的元素"
+  },
+  {
+    "script": "agentsite/guards_test.py",
+    "改坏": "把 g1 闸的取数一步掐掉(答案里的钱数和天数一律读不到,这道闸整条失效)",
+    "file": [
+      {
+        "path": "agentsite/guards.py",
+        "old": "    monies, days = _monies(text), _days(text)",
+        "new": "    monies, days = [], []"
+      }
+    ],
+    "预期红": "一个工具没调就报数字"
+  },
+  {
+    "script": "agentsite/skill_shape.py",
+    "改坏": "把 quote 那份 skill 的「什么时候用」小标题换个说法(这一段从此认不出来)",
+    "file": [
+      {
+        "path": "agentsite/.claude/skills/quote/SKILL.md",
+        "old": "## 什么时候用",
+        "new": "## 适用场合"
+      }
+    ],
+    "预期红": "共缺"
+  },
+  {
+    "script": "knowledge/derive_combo.py",
+    "改坏": "把「重」这档工艺权重压成 0(重工和无工艺一样重)",
+    "file": [
+      {
+        "path": "knowledge/derive_combo.py",
+        "old": "W = {\"无\": 0, \"轻\": 1, \"中\": 2, \"重\": 3}",
+        "new": "W = {\"无\": 0, \"轻\": 1, \"中\": 2, \"重\": 0}"
+      }
+    ],
+    "预期红": "落库漂移"
+  },
+  {
+    "script": "knowledge/derive_pattern.py",
+    "改坏": "从库里删掉一种工艺(推导出来的 BOM 引用一个不存在的工艺)",
+    "sql": [
+      "DELETE FROM craft WHERE code=(SELECT code FROM craft WHERE cat='工艺' LIMIT 1)"
+    ],
+    "预期红": "与 craft / measure_tpl 对不上"
+  },
+  {
+    "script": "knowledge/growth.py",
+    "改坏": "把女孩的突增窗口挪到不可能的年龄段(谁都不在突增期)",
+    "file": [
+      {
+        "path": "knowledge/growth.py",
+        "old": "SPURT = {\"女\": (9.5, 13.0)",
+        "new": "SPURT = {\"女\": (99.5, 103.0)"
+      }
+    ],
+    "预期红": "跨突增期的区间明显更宽"
+  },
+  {
+    "script": "knowledge/leadtime.py",
+    "改坏": "把方案确认与打样往返的天数抹成 0(定制品当标品算工期)",
+    "file": [
+      {
+        "path": "knowledge/leadtime.py",
+        "old": "CONFIRM = (3, 10)",
+        "new": "CONFIRM = (0, 0)"
+      }
+    ],
+    "预期红": "算出来的工期和知识库自己写的三档对不上"
+  },
+  {
+    "script": "knowledge/lifecycle.py",
+    "改坏": "把人工干预窗口从 30 天压到 3 天(人工调的档提前失效)",
+    "file": [
+      {
+        "path": "knowledge/lifecycle.py",
+        "old": "MANUAL_WINDOW_DAYS = 30",
+        "new": "MANUAL_WINDOW_DAYS = 3"
+      }
+    ],
+    "预期红": "人工调整 15 天前生效"
+  },
+  {
+    "script": "knowledge/liability.py",
+    "改坏": "把判定表里「脱线」那一行的责任方从我方改成客方",
+    "file": [
+      {
+        "path": "knowledge/09-养护与售后.md",
+        "old": "| 工艺瑕疵(脱线、绣面污渍) | 我方 | 免费返修 |",
+        "new": "| 工艺瑕疵(脱线、绣面污渍) | 客方 | 自费返修 |"
+      }
+    ],
+    "预期红": "工艺瑕疵 → 我方免费返修"
+  },
+  {
+    "script": "knowledge/rfm.py",
+    "改坏": "把五分位改成七分位(分数越出 1–5 的范围)",
+    "file": [
+      {
+        "path": "knowledge/rfm.py",
+        "old": "BUCKETS = 5",
+        "new": "BUCKETS = 7"
+      }
+    ],
+    "预期红": "分数落在 1–5"
+  },
+  {
+    "script": "backend/activity_check.py",
+    "改坏": "把一张订单的活动栏从 NULL 改成空字符串(「没参加活动」有了两种写法)",
+    "sql": [
+      "UPDATE ordr SET activity='' WHERE id=(SELECT id FROM ordr WHERE activity IS NULL LIMIT 1)"
+    ],
+    "预期红": "订单的活动栏只许是编号或 NULL"
+  },
+  {
+    "script": "backend/catalog_check.py",
+    "改坏": "把一个商品的品类改成字典里不存在的值",
+    "sql": [
+      "UPDATE product SET category='张冠李戴' WHERE spu=(SELECT spu FROM product LIMIT 1)"
+    ],
+    "预期红": "商品库会卖出配置页拒绝的组合"
+  },
+  {
+    "script": "backend/liability_check.py",
+    "改坏": "把判定表里「脱线」那一行的责任方从我方改成客方(标注还停在我方)",
+    "file": [
+      {
+        "path": "knowledge/09-养护与售后.md",
+        "old": "| 工艺瑕疵(脱线、绣面污渍) | 我方 | 免费返修 |",
+        "new": "| 工艺瑕疵(脱线、绣面污渍) | 客方 | 自费返修 |"
+      }
+    ],
+    "预期红": "两条实现来自同一份文档"
+  },
+  {
+    "script": "backend/edit_log_check.py",
+    "改坏": "把「日志覆盖的字段」清单里去掉 remark(UPDATE 还在写它,日志不再记它)",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "\"commission_type\", \"commission_val\", \"remark\", \"img_main\")",
+        "new": "\"commission_type\", \"commission_val\", \"img_main\")"
+      }
+    ],
+    "预期红": "日志记的字段 = UPDATE 真的写的字段"
+  },
+  {
+    "script": "backend/role_check.py",
+    "改坏": "把一位工匠的登录名抹掉(这个人从此登不进来)",
+    "sql": [
+      "UPDATE staff SET login_name=NULL WHERE no=(SELECT no FROM staff WHERE role='工匠' AND status='启用' LIMIT 1)"
+    ],
+    "预期红": "启用的员工都能登录"
+  },
+  {
+    "script": "backend/spec_check.py",
+    "改坏": "把一个账户持有人的生日改成未成年",
+    "sql": [
+      "UPDATE wearer SET birthday='2020-01-01' WHERE id=(SELECT id FROM wearer WHERE relation='本人' LIMIT 1)"
+    ],
+    "预期红": "账户持有人必须成年"
+  },
+  {
+    "script": "backend/xingzhi_check.py",
+    "改坏": "把一个版型引用的形制从字典里删掉",
+    "sql": [
+      "DELETE FROM craft WHERE code=(SELECT xz FROM pattern WHERE xz IS NOT NULL LIMIT 1)"
+    ],
+    "预期红": "形制投影和 craft"
+  },
+  {
+    "script": "backend/product_pattern_check.py",
+    "改坏": "把一个商品连到一个不存在的版型上",
+    "sql": [
+      "UPDATE product SET pattern='PT999' WHERE spu=(SELECT spu FROM product WHERE pattern IS NOT NULL LIMIT 1)"
+    ],
+    "预期红": "商品连的版型都真实存在"
+  },
+  {
+    "script": "backend/measure_tpl_check.py",
+    "改坏": "把「已量过的测量项不许移掉」那道闸关掉(移掉之后历史记录会悬空,而悬空不违反任何外键)",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "            n=rows(\"SELECT COUNT(*) c FROM measure_rec WHERE tpl=? AND item=?\",code,i)[0][\"c\"]\n            if n:",
+        "new": "            n=rows(\"SELECT COUNT(*) c FROM measure_rec WHERE tpl=? AND item=?\",code,i)[0][\"c\"]\n            if False and n:"
+      }
+    ],
+    "预期红": "已经量过的测量项不许从模版里移掉"
+  },
+  {
+    "script": "backend/piece_ratio_check.py",
+    "改坏": "把一个版型里某个裁片的占比改大(这个版型的占比之和不再等于 1)",
+    "sql": [
+      "UPDATE pattern_piece SET ratio=ratio+0.3 WHERE rowid=(SELECT rowid FROM pattern_piece WHERE ratio IS NOT NULL LIMIT 1)"
+    ],
+    "预期红": "每个版型的裁片占比之和 = 1"
+  },
+  {
+    "script": "backend/part_check.py",
+    "改坏": "把一种裁片改名成归并规则认不出来的名字",
+    "sql": [
+      "UPDATE pattern_piece SET name='张冠李戴片' WHERE rowid=(SELECT rowid FROM pattern_piece LIMIT 1)"
+    ],
+    "预期红": "每一种裁片都归得进某个部位"
+  },
+  {
+    "script": "backend/lifecycle_check.py",
+    "改坏": "把「监护人同意」那条体检的判定条件改成永远匹配不上(注进去的问题它再也发现不了)",
+    "file": [
+      {
+        "path": "backend/lifecycle_check.py",
+        "old": "AND s.relation LIKE '%监护人%')",
+        "new": "AND s.relation LIKE '%根本不存在的关系%')"
+      }
+    ],
+    "预期红": "不满 14 周岁但没有监护人同意"
+  },
+  {
+    "script": "backend/membership_check.py",
+    "改坏": "把一个客户的等级改成门槛表里没有的档",
+    "sql": [
+      "UPDATE customer SET level='钻石' WHERE id=(SELECT id FROM customer LIMIT 1)"
+    ],
+    "预期红": "库里每个客户的等级都算得出来"
+  },
+  {
+    "script": "backend/scheme_check.py",
+    "改坏": "把一个方案的形制字段从编码改成中文名",
+    "sql": [
+      "UPDATE scheme SET xz='唐制' WHERE id=(SELECT id FROM scheme WHERE xz IS NOT NULL LIMIT 1)"
+    ],
+    "预期红": "形制/面料/工艺/版型都是编码且存在"
+  },
+  {
+    "script": "backend/member_order_check.py",
+    "改坏": "把一张订单的商品总额抬高 9 万(和各订单行之和对不上)",
+    "sql": [
+      "UPDATE ordr SET goods_amount=goods_amount+90000 WHERE id=(SELECT id FROM ordr WHERE goods_amount IS NOT NULL LIMIT 1)"
+    ],
+    "预期红": "≠ 各行基本金额之和"
+  },
+  {
+    "script": "backend/order_gate_check.py",
+    "改坏": "把所有着装人的生日都改成成年(未成年那条规则从此一行都跑不到)",
+    "sql": [
+      "UPDATE wearer SET birthday='1990-01-01'"
+    ],
+    "预期红": "规则在未成年着装人身上跑过"
+  },
+  {
+    "script": "backend/review_check.py",
+    "改坏": "把「已完结的不算逾期」那道判定去掉(做晚了和还没做混成一类)",
+    "file": [
+      {
+        "path": "knowledge/review.py",
+        "old": "    if 状态 != \"有效\":",
+        "new": "    if False and 状态 != \"有效\":"
+      }
+    ],
+    "预期红": "完结 ≤ 总数,逾期不含已完结"
+  },
+  {
+    "script": "backend/auth.py",
+    "改坏": "把「查无此人」单独报一句话(从报错就能试出哪个工号存在)",
+    "file": [
+      {
+        "path": "backend/auth.py",
+        "old": "    if not rs: return None, \"工号或密码不对\"",
+        "new": "    if not rs: return None, \"没有这个工号\""
+      }
+    ],
+    "预期红": "查无此人和密码错"
+  },
+  {
+    "script": "backend/rules.py",
+    "改坏": "把手机号的格式判定放宽成「有数字就行」(不合法的号也收得进来)",
+    "file": [
+      {
+        "path": "backend/rules.py",
+        "old": "    if not re.fullmatch(r\"1[3-9]\\d{9}\", phone):",
+        "new": "    if not re.fullmatch(r\"\\d*\", phone):"
+      }
+    ],
+    "预期红": "项与预期不符"
+  },
+  {
+    "script": "backend/fsm.py",
+    "改坏": "往订单状态机里加一条「待生产 → 完成」的边(中间七档全跳过,而库里看不出来)",
+    "file": [
+      {
+        "path": "backend/fsm.py",
+        "old": "         [\"待审核\",\"待生产\"],",
+        "new": "         [\"待审核\",\"待生产\"],\n         [\"待生产\",\"完成\"],"
+      }
+    ],
+    "预期红": "跳档 —— 中间七档全没走"
+  },
+  {
+    "script": "backend/ops.py",
+    "改坏": "把量体超期的拦截关掉(过期的尺码也放行下单)",
+    "file": [
+      {
+        "path": "backend/ops.py",
+        "old": "    if e[\"过期\"]:",
+        "new": "    if False and e[\"过期\"]:"
+      }
+    ],
+    "预期红": "过期的没拦住"
+  },
+  {
+    "script": "backend/route_check.py",
+    "改坏": "在 server.py 里调一个不存在的函数(路由指向一个没有实现的 handler)",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "def 顾问工号(",
+        "new": "def 这个函数会调一个不存在的():\n    return 根本没有定义过的函数()\n\n\ndef 顾问工号("
+      }
+    ],
+    "预期红": "函数调了但没定义"
+  },
+  {
+    "script": "backend/tool_input_check.py",
+    "改坏": "让版型查询只认全名不认编码(顾问问「PT04」就查不到)",
+    "file": [
+      {
+        "path": "backend/api.py",
+        "old": "        直 = _rows(\"SELECT * FROM pattern WHERE code=? OR name=?\", xz, xz)",
+        "new": "        直 = _rows(\"SELECT * FROM pattern WHERE name=?\", xz)"
+      }
+    ],
+    "预期红": "kb_pattern 认得出人对版型的每一种称呼"
+  },
+  {
+    "script": "backend/writerule_check.py",
+    "改坏": "把重号判定的错误码改掉(闸还在,报出来的不是那道闸)",
+    "file": [
+      {
+        "path": "backend/rules.py",
+        "old": "\"DUP_PHONE\"",
+        "new": "\"DUP_PHONE_XX\""
+      }
+    ],
+    "预期红": "DUP_PHONE"
+  },
+  {
+    "script": "tools/make_handoff.py",
+    "改坏": "把交接文档里「别重做:试过并否决的」那一段标题换掉(必填的一段从此认不出来)",
+    "file": [
+      {
+        "path": "HANDOFF.md",
+        "old": "## 别重做:试过并否决的",
+        "new": "## 顺带提一句"
+      }
+    ],
+    "预期红": "缺段落"
+  },
+  {
+    "script": "knowledge/pinned_check.py",
+    "改坏": "把 MT02 的幅宽加宽 20cm(钉死的锚点和库里算出来的对不上)",
+    "sql": [
+      "UPDATE material SET width_cm=width_cm+20 WHERE code='MT02'"
+    ],
+    "预期红": "不要把这里的数字改成系统算出来的"
+  },
+  {
+    "script": "knowledge/check_kb.py",
+    "改坏": "把库里一种工艺改名(知识库里写的和 craft 表对不上)",
+    "sql": [
+      "UPDATE craft SET name='张冠李戴' WHERE code=(SELECT code FROM craft WHERE cat='工艺' LIMIT 1)"
+    ],
+    "预期红": "名称不一致"
+  },
+  {
+    "script": "knowledge/fitting.py",
+    "改坏": "把腰围的放松量从 2 改成 8(净体腰围推出来的码整体偏一档)",
+    "file": [
+      {
+        "path": "knowledge/10-版型库.md",
+        "old": "| 腰围 | 围度 | 2 |",
+        "new": "| 腰围 | 围度 | 8 |"
+      }
+    ],
+    "预期红": "腰围偏 4cm,但换成 L 码就合上了"
+  },
+  {
+    "script": "mcp/parity.py",
+    "改坏": "让 MCP 通道给返回值多塞一个字段(同样的入参,两条通道返回的东西不一样)",
+    "file": [
+      {
+        "path": "mcp/client.py",
+        "old": "        try: return json.loads(txt)",
+        "new": "        try:\n            _v = json.loads(txt)\n            return dict(_v, 多出来一个字段=1) if isinstance(_v, dict) else _v"
+      }
+    ],
+    "预期红": "返回不同"
+  },
+  {
+    "script": "tools/prompts_check.py",
+    "改坏": "让 TL29 依赖一个不存在的工具",
+    "file": [
+      {
+        "path": "prompts.py",
+        "old": "Rule(\"TL29\", (\"stock_alert\",)",
+        "new": "Rule(\"TL29\", (\"根本没有这个工具\",)"
+      }
+    ],
+    "预期红": "铁律依赖的工具必须真实存在"
+  },
+  {
+    "script": "agentsite/budget_check.py",
+    "改坏": "把 Claude 的花费上限从 $50 压到 $0.6(聊到第三轮就被掐)",
+    "file": [
+      {
+        "path": "agentsite/sdk.py",
+        "old": "    return 50.00 if pv.startswith(\"claude\") else 3.00",
+        "new": "    return 0.60 if pv.startswith(\"claude\") else 3.00"
+      }
+    ],
+    "预期红": "订阅内的比按量计费的松"
+  },
+  {
+    "script": "agentsite/sessions_check.py",
+    "改坏": "把「这条会话是别人的」那一支关掉(接着说别人的会话也放行)",
+    "file": [
+      {
+        "path": "agentsite/sessions.py",
+        "old": "        return False, (f\"这条会话是**别人的**(",
+        "new": "        return True, \"\" if True else (f\"这条会话是**别人的**("
+      }
+    ],
+    "预期红": "别人的会话,拒"
+  },
+  {
+    "script": "agent/v2.py",
+    "改坏": "把客户合并的规则表清空(该拦的合并从此不拦)",
+    "file": [
+      {
+        "path": "agent/v2.py",
+        "old": "MERGE_RULE = [",
+        "new": "MERGE_RULE = []\n_MERGE_RULE_OLD = ["
+      }
+    ],
+    "预期红": "结构化判错"
+  },
+  {
+    "script": "agent/wild_run.py",
+    "改坏": "把结论方向的指纹改成常数(推唐制和推宋制被判成同一套方案)",
+    "file": [
+      {
+        "path": "agent/wild_run.py",
+        "old": "def direction(text):",
+        "new": "def direction(text):\n    return (\"唐制\",)"
+      }
+    ],
+    "预期红": "推唐制 vs 推宋制,判为不一致"
+  },
+  {
+    "script": "backend/booking_check.py",
+    "改坏": "把「绑的顾问离职了」那一支关掉(人走了,单子还挂在他名下)",
+    "file": [
+      {
+        "path": "backend/booking.py",
+        "old": "    if st.get(\"status\") != \"启用\":",
+        "new": "    if False and st.get(\"status\") != \"启用\":"
+      }
+    ],
+    "预期红": "绑定的顾问已离职"
+  },
+  {
+    "script": "backend/funnel_check.py",
+    "改坏": "把一条预约的状态改成漏斗口径里没有的值(五档加起来对不上)",
+    "sql": [
+      "UPDATE appointment SET status='张冠李戴' WHERE id=(SELECT id FROM appointment LIMIT 1)"
+    ],
+    "预期红": "流失五档加起来 = 约了 - 到店"
+  },
+  {
+    "script": "backend/img_check.py",
+    "改坏": "让渲染器对所有商品返回同一段固定内容(页面上看着都有图,实际全是同一张)",
+    "file": [
+      {
+        "path": "backend/img.py",
+        "old": "def render(spu, variant):",
+        "new": "def render(spu, variant):\n    return '<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>'"
+      }
+    ],
+    "预期红": "每个商品的每种图都渲染得出来"
+  },
+  {
+    "script": "backend/member_check.py",
+    "改坏": "把生命周期的优先级顺序倒过来(同时命中多档时取的不再是该取的那一档)",
+    "file": [
+      {
+        "path": "knowledge/lifecycle.py",
+        "old": "PRIORITY = [\"流失\", \"潜在流失\", \"休眠\", \"忠诚\", \"高价值\", \"新客\", \"活跃\", \"潜在\"]",
+        "new": "PRIORITY = [\"潜在\", \"活跃\", \"新客\", \"高价值\", \"忠诚\", \"休眠\", \"潜在流失\", \"流失\"]"
+      }
+    ],
+    "预期红": "条对不上"
+  },
+  {
+    "script": "backend/part_choice_check.py",
+    "改坏": "把一条部位加价抬高 500(各部位之和 ≠ 订单行的定制部件金额)",
+    "sql": [
+      "UPDATE item_part_choice SET amount=amount+500 WHERE id=(SELECT id FROM item_part_choice LIMIT 1)"
+    ],
+    "预期红": "部位加价之和 = 订单行的定制部件金额"
+  },
+  {
+    "script": "backend/pattern_grade_check.py",
+    "改坏": "把多件词表清空(套装、亲子这些词从此认不出来,件数判不出)",
+    "file": [
+      {
+        "path": "backend/fix_product_pattern.py",
+        "old": "多件词 = (\"套装\", \"亲子\",",
+        "new": "多件词 = ("
+      }
+    ],
+    "预期红": "条对照不符合预期"
+  },
+  {
+    "script": "backend/boundary_audit.py",
+    "改坏": "把工具层的只读连接开成可写(读连接从此也能改库)",
+    "file": [
+      {
+        "path": "backend/api.py",
+        "old": "    c=sqlite3.connect(f\"file:{DB}?mode=ro\", uri=True)",
+        "new": "    c=sqlite3.connect(f\"file:{DB}?mode=rw\", uri=True)"
+      }
+    ],
+    "预期红": "工具层的读连接写不了库"
+  },
+  {
+    "script": "backend/rfm_check.py",
+    "改坏": "把 RFM 的分档数从五档压到两档(分布塌掉)",
+    "file": [
+      {
+        "path": "knowledge/rfm.py",
+        "old": "BUCKETS = 5",
+        "new": "BUCKETS = 2"
+      }
+    ],
+    "预期红": "分数分布不许塌"
+  },
+  {
+    "script": "backend/write_check.py",
+    "改坏": "让建客户不写门店字段(接口说成功,库里那一栏是空的)",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "        c.execute(\"\"\"INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,",
+        "new": "        d[\"shop\"]=None\n        c.execute(\"\"\"INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,"
+      }
+    ],
+    "预期红": "建客户:接口说成功"
+  },
+  {
+    "script": "backend/shadow_check.py",
+    "改坏": "在 server.py 里用一个局部变量遮蔽掉同名的模块级函数",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "def 顾问工号(",
+        "new": "def _遮蔽演示():\n    rows = 1\n    return rows\n\n\ndef 顾问工号("
+      }
+    ],
+    "预期红": "把模块级函数"
+  },
+  {
+    "script": "backend/ui_audit.py",
+    "改坏": "在页面上加一个既没有 data-* 也没有 onclick 的按钮(看起来能点,点了没反应)",
+    "file": [
+      {
+        "path": "backend/web/index.html",
+        "old": "</body>",
+        "new": "<button>假按钮</button>\n</body>"
+      }
+    ],
+    "预期红": "既无 data-* 也无 onclick"
+  },
+  {
+    "script": "backend/product_form_check.py",
+    "改坏": "往写入覆盖的字段清单里加一项,而编辑表单里没有它(能写却改不了)",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "\"commission_type\", \"commission_val\", \"remark\", \"img_main\")",
+        "new": "\"commission_type\", \"commission_val\", \"remark\", \"img_main\", \"unit2\")"
+      }
+    ],
+    "预期红": "写入能改的字段,编辑表单里都要有"
+  },
+  {
+    "script": "agentsite/capman_check.py",
+    "改坏": "把「可枚举的信号」词表里的英文那一半删掉(英文技能全被判成不需要判断)",
+    "file": [
+      {
+        "path": "knowledge/capability.py",
+        "old": "              \"run \", \"execute\", \"script\", \"command\", \"cli \", \"bash\",\n              \"for each\", \"iterate\", \"loop over\")",
+        "new": "              )"
+      }
+    ],
+    "预期红": "中英文两头都判得对"
+  },
+  {
+    "script": "agentsite/evalnoise_test.py",
+    "改坏": "把「没有对照组就不下判断」那一支关掉(算不出底噪也照样给结论)",
+    "file": [
+      {
+        "path": "agentsite/evalnoise.py",
+        "old": "    if control_n == 0:",
+        "new": "    if False and control_n == 0:"
+      }
+    ],
+    "预期红": "没有对照组 → 不下判断"
+  },
+  {
+    "script": "knowledge/capacity.py",
+    "改坏": "把「一人一机就加不了人」的判定去掉(缂丝被当成可以加人)",
+    "file": [
+      {
+        "path": "knowledge/capacity.py",
+        "old": "                不可加人=(len(who) == 1 or all((a[\"wip_limit\"] or 1) == 1 for a in who)),",
+        "new": "                不可加人=False,"
+      }
+    ],
+    "预期红": "缂丝只有一位织工,必须标为加不了人"
+  },
+  {
+    "script": "mcp/selftest.py",
+    "改坏": "从 kb 服务的工具表里砍掉一个(声明 11 个,实际暴露 10 个)",
+    "file": [
+      {
+        "path": "mcp/kb_server.py",
+        "old": "TOOLS = [(s[\"name\"], s[\"description\"], s[\"input_schema\"], api.TOOLS[s[\"name\"]])\n         for s in api.KB_SCHEMAS]",
+        "new": "TOOLS = [(s[\"name\"], s[\"description\"], s[\"input_schema\"], api.TOOLS[s[\"name\"]])\n         for s in api.KB_SCHEMAS][:-1]"
+      }
+    ],
+    "预期红": "tools/list"
+  },
+  {
+    "script": "agentsite/skills_check.py",
+    "改坏": "从 sdk 的白名单里删掉一个 kb 工具(MCP 暴露了,模型看得见却用不了)",
+    "file": [
+      {
+        "path": "agentsite/sdk.py",
+        "old": "\"mcp__kb__kb_lookup\",",
+        "new": ""
+      }
+    ],
+    "预期红": "模型看得见却用不了"
+  },
+  {
+    "script": "agent/wild_corpus.py",
+    "改坏": "让 20 条语料的句尾问法完全一样(条数达标、多样性为零,而且看起来一切正常)",
+    "file": [
+      {
+        "path": "agent/wild_corpus.py",
+        "old": "    qs = build(20)",
+        "new": "    qs = [\"第%d 位客户的情况大致如此,那么这一单到底应该怎么给她推荐才好呢?\" % i for i in range(20)]"
+      }
+    ],
+    "预期红": "没有哪一类占到一半以上"
+  },
+  {
+    "script": "agentsite/manifest.py",
+    "改坏": "从 sdk 的白名单里删掉一个 shop 工具(挂了但没进白名单)",
+    "file": [
+      {
+        "path": "agentsite/sdk.py",
+        "old": "\"mcp__shop__get_capacity\",",
+        "new": ""
+      }
+    ],
+    "预期红": "挂了但没进白名单"
+  },
+  {
+    "script": "fakedata/selftest.py",
+    "改坏": "把「模型编出来的状态值要丢掉」那一支关掉(造出来的数据会当场违反自己的枚举断言)",
+    "file": [
+      {
+        "path": "fakedata/infer_llm.py",
+        "old": "            dropped.append(f'状态机:{t}.{c} 提到库里没有的状态 {sorted(unknown)[:4]}')",
+        "new": "            pass"
+      }
+    ],
+    "预期红": "编出来的状态值被丢掉"
+  },
+  {
+    "script": "backend/page_smoke_check.py",
+    "改坏": "把 measure_of 那处修复整个退回去(既不造 measured_by 字段,也不兜底)—— 这正是 2026-09-17 之前的样子",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "    填顾问名(rs)\n",
+        "new": ""
+      },
+      {
+        "path": "backend/server.py",
+        "old": "                 by=v[0].get(\"measured_by\") or v[0].get(\"measured_by_no\"),items=v)",
+        "new": "                 by=v[0][\"measured_by\"],items=v)"
+      }
+    ],
+    "预期红": "每个只读入口都拿真数据跑得通"
+  },
+  {
+    "script": "backend/page_smoke_check.py",
+    "改坏": "从用例表里删掉 customer_detail 那一行(某个页面从此不被验,而检查照样绿)",
+    "file": [
+      {
+        "path": "backend/page_smoke_check.py",
+        "old": "    \"customer_detail\":  [(SQL(\"SELECT customer_id FROM measure_rec LIMIT 1\"),)],",
+        "new": ""
+      }
+    ],
+    "预期红": "do_GET 走得到的函数,都在用例表或豁免表里"
+  },
+  {
+    "script": "tools/doc_numbers_check.py",
+    "改坏": "把产品文档里的「59 个业务工具」改成 58(文档数字与代码脱节)",
+    "file": [
+      {
+        "path": "澜绣云裳agent-产品需求文档.md",
+        "old": "59 个业务工具",
+        "new": "58 个业务工具"
+      }
+    ],
+    "预期红": "工具总数"
+  },
+  {
+    "script": "tools/doc_numbers_check.py",
+    "改坏": "把角色分布里的「顾问 9」改成 7(总数对得上、分布错了)",
+    "file": [
+      {
+        "path": "澜绣云裳agent-产品需求文档.md",
+        "old": "顾问 9、",
+        "new": "顾问 7、"
+      }
+    ],
+    "预期红": "顾问人数"
+  },
+  {
+    "script": "tools/doc_numbers_check.py",
+    "改坏": "在文档里新写一句带计数的话,不给出处也不豁免",
+    "file": [
+      {
+        "path": "澜绣云裳agent-产品需求文档.md",
+        "old": "# 1. 项目背景与目标",
+        "new": "# 1. 项目背景与目标\n\n本系统已接入 12 个渠道。"
+      }
+    ],
+    "预期红": "无人认领"
+  }
 ]
