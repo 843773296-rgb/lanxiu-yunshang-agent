@@ -119,6 +119,19 @@ def 查方案(c):
     for sid, nm, xz, kf, created, cid in 行:
         nm = nm or ""
 
+        # ⓪ **名字和「按编码推出来的标准名」一字不差,就不用再查人名。**
+        #    标准名只由形制编码、工艺编码、建单年月决定 —— 里面没有地方塞进一个人名,
+        #    撞上的只能是主数据**自己的**名字。实测撞过一次:苏州工坊有位师傅登记名叫
+        #    「镶三滚」(按手艺起的外号),而工艺「三镶三滚」正好含着这三个字 ——
+        #    子串一比,四条规规矩矩的方案全被判成「带了真人姓名」。
+        #    **字符串相似 ≠ 同一个东西**;标准名对得上,说明每个字都有编码撑着。
+        _xzn = c.execute("SELECT name FROM xingzhi WHERE code=?", (xz,)).fetchone()
+        _kfn = [c.execute("SELECT name FROM craft WHERE code=?", (k.strip(),)).fetchone()
+                for k in (kf or "").split(",") if k.strip()]
+        if _xzn and _kfn and all(_kfn) and \
+                nm == f"{_xzn[0]}{分隔}{连接.join(x[0] for x in _kfn)}{分隔}{(created or '')[:7]}":
+            continue
+
         # ① 不许带称谓
         m = 称谓.search(nm)
         if m:

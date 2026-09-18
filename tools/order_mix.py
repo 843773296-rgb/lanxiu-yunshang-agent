@@ -306,7 +306,7 @@ def 回滚(c, quiet=False):
     # 放回去的旧行会被紧接着的「删新增」一起删掉
     rows.sort(key=lambda r: 0 if r[0].startswith("新增") else 1)
     for what, key, payload in rows:
-        if what in ("新增:aftersale", "新增:maintain", "新增:item_part_choice"):
+        if what in ("新增:aftersale", "新增:maintain", "新增:item_part_choice", "新增:scheme"):
             c.execute(f"DELETE FROM {what.split(':')[1]} WHERE id=?", (key,))
         elif what in ("删除:aftersale", "删除:maintain"):
             row = json.loads(payload)
@@ -719,6 +719,74 @@ def 易损倾向(c, oid, kind):
     return w * (1.6 if 绣 else 1.0)
 
 
+# ── 订单指回方案 ────────────────────────────────────────────────────
+# 方案检查第 ⑤ 条「订单指得回方案」原来只有 1 张样本 —— 证明的是「这条边通了」,
+# 不是「这条边到处都对」。给一小部分改造出来的定制单补上**下单前锁定的那条方案**。
+#
+# 方案**从订单上反推**,不另编:形制 = 商品版型的形制,面料 = 主身选的料,
+# 工艺 = 这件实际选的工艺。名字按演示数据命名规范「形制·工艺[+工艺]·YYYY-MM」,
+# 年月取方案自己的建单日;同一客户名下撞名就跳过这张(消歧是规范的全部目的)。
+方案占比 = 0.02
+
+
+def 接方案(c, rng, log):
+    oids = [r[0] for r in c.execute("SELECT key FROM order_mix_batch WHERE what='转定制'")]
+    rng.shuffle(oids)
+    要 = round(len(oids) * 方案占比)
+    n = [2606]
+    have = {r[0] for r in c.execute("SELECT id FROM scheme")}
+    while f"SC{n[0]}" in have:
+        n[0] += 1
+    名 = {(r[0], r[1]) for r in c.execute("SELECT customer_id, name FROM scheme")}
+    接了 = 0
+    for oid in oids:
+        if 接了 >= 要:
+            break
+        o = c.execute("SELECT customer_id, created, advisor_no, status FROM ordr WHERE id=?",
+                      (oid,)).fetchone()
+        if o["status"] == "取消":
+            continue
+        it = c.execute("""SELECT i.id, p.pattern, pt.xz FROM ordr_item i JOIN product p ON p.spu=i.spu
+                          JOIN pattern pt ON pt.code=p.pattern WHERE i.order_id=?""", (oid,)).fetchone()
+        if not it:
+            continue
+        ch = c.execute("SELECT kind, part, material, color FROM item_part_choice WHERE item_id=? "
+                       "ORDER BY (part IN ('主身','整件')) DESC, id", (it["id"],)).fetchall()
+        fab = next((r for r in ch if r["kind"] == "面料"), None)
+        mt = fab and c.execute("SELECT code FROM material WHERE name=?", (fab["material"],)).fetchone()
+        kfs = []
+        for r in ch:
+            if r["kind"] == "工艺":
+                k = c.execute("SELECT code, name FROM craft WHERE name=? AND cat='工艺'",
+                              (r["material"],)).fetchone()
+                if k and k["code"] not in [x[0] for x in kfs]:
+                    kfs.append((k["code"], k["name"]))
+        xzn = c.execute("SELECT name FROM xingzhi WHERE code=?", (it["xz"],)).fetchone()
+        if not (mt and kfs and xzn) or any(("·" in x[1] or "+" in x[1]) for x in kfs):
+            continue
+        kfs = kfs[:2]
+        kc = (c.execute("SELECT created FROM customer WHERE id=?", (o["customer_id"],)).fetchone()[0]
+              or "")[:10]
+        cr = P(o["created"]) - days(rng, 1, 15)
+        if ts(cr)[:10] < kc:
+            continue
+        nm = f"{xzn[0]}·{'+'.join(x[1] for x in kfs)}·{ts(cr)[:7]}"
+        if (o["customer_id"], nm) in 名:
+            continue
+        n[0] += 1
+        sid = f"SC{n[0]}"
+        c.execute("""INSERT INTO scheme(id,customer_id,name,status,xz,mt,kf,color,ps,pattern,advisor_no,
+                     note,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (sid, o["customer_id"], nm, "已锁定", it["xz"], mt[0],
+                   ",".join(x[0] for x in kfs), fab["color"], "", it["pattern"], o["advisor_no"],
+                   None, ts(cr)[:10], ts(cr)[:10]))
+        c.execute("UPDATE ordr SET scheme_id=? WHERE id=?", (sid, oid))
+        _记(c, "新增:scheme", sid)
+        名.add((o["customer_id"], nm))
+        接了 += 1
+    log(f"  ① 方案:{接了} 张定制单指回下单前锁定的方案(目标 {要})")
+
+
 def 维保(c, rng, 排除, 判责, 改了的单, log):
     """维保只挂**已经完成**的单,报修在完成之后。
     业务 2026-09-18:「维保申请还必须在用户订单完成之后,完成后才能有维保」。
@@ -866,6 +934,7 @@ def run(c, log=print):
     判责 = 判责客户(c)
     log(f"受保护的客户 {len(保护)} 个(不挂新单、不重算)· 判责客户 {len(判责)} 个(不加维保)")
     撤掉, _n = 分型(c, rng, set(保护), log)
+    接方案(c, rng, log)
     候选, 插售后, 新单号 = 售后(c, rng, set(保护), 判责, log)
     # 换货逐条试接:换出去那件在那一刻有没有货,要接上那个 SKU 的整条链才知道
     账 = 流水(c, 撤掉)
