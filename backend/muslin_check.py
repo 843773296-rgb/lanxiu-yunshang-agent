@@ -48,6 +48,10 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "knowledge"),
      "四种试衣状态每种都要有活用例"),
     ("把 TL30 里「不许拿查不到记录当没签字」那句删掉",
      "TL30 说清「没记录」和「没签字」不是一回事"),
+    ("拆掉「不给下单日就判不了」那道拦截(又回到替调用方取今天)",
+     "不给下单日就说判不了"),
+    ("按配置判() 不把下单日传给工期推算(排队退回按今天算)",
+     "同一件衣服按下单日算"),
     ("让 能不能开裁() 在「判不了该不该试」时放行",
      "判不了该不该试的,不许放行开裁"),
     ("把看板上「这道闸拦不住任何东西」那句删掉",
@@ -132,6 +136,45 @@ def main():
     ck("该试衣的行是按真规则算出来的,不是挑的", len(该) > 0, len(该) + len(不必) + len(判不了),
        f"该试 {len(该)} / 不必 {len(不必)} / 判不了 {len(判不了)} —— "
        f"**判不了的留着不猜**(那 {len(判不了)} 行的商品没挂版型)")
+
+    # ── ④·2 **按下单那天算,不随「今天」变**(用户 2026-09-19 定)────────────
+    #   原来不传日期,工期推算自己取今天 —— 判责现场里的「装饰工序最慢 N 天」一天少一天,
+    #   跌破 25 天那天「该试」就翻成「不必试」,没有任何人动过数据。
+    #   验法:同一批真实订单行,把「今天」换成相隔两个月的两天,判断和理由必须一字不差。
+    ck("不给下单日就说判不了(不替调用方取今天)",
+       M.按配置判("PT06", "MT02", ["KF02"], on=None)[0] is None, 1)
+    import datetime as _real, types as _ty, capacity as _cap, leadtime as _lt
+    def _钉今天(d):
+        class _FD(_real.date):
+            @classmethod
+            def today(cls): return d
+        m = _ty.ModuleType("dt"); m.__dict__.update(_real.__dict__); m.date = _FD
+        _cap.dt = m; _lt.dt = m
+    mt = {r["name"]: r["code"] for r in c.execute("SELECT code,name FROM material WHERE width_cm IS NOT NULL")}
+    kfm = {r["name"]: r["code"] for r in c.execute("SELECT code,name FROM craft")}
+    names = {r["code"]: r["name"] for r in c.execute("SELECT code,name FROM craft")}
+    样 = []
+    for r in list(c.execute("""SELECT i.id, i.name, p.pattern, o.created FROM ordr_item i
+            JOIN ordr o ON o.id=i.order_id JOIN product p ON p.spu=i.spu
+            WHERE o.kind='定制品订单' AND p.pattern IS NOT NULL ORDER BY i.id LIMIT 40""")):
+        ch = list(c.execute("SELECT kind,material,part FROM item_part_choice WHERE item_id=?", (r["id"],)))
+        fab = [x for x in ch if x["kind"] == "面料" and x["material"] in mt]
+        if fab:
+            样.append((r["pattern"], mt[fab[0]["material"]],
+                       sorted({kfm[x["material"]] for x in ch if x["kind"] == "工艺" and x["material"] in kfm}),
+                       "整幅" if any(w in r["name"] for w in ("重工", "婚服", "满工")) else "局部",
+                       r["created"]))
+    def _判一遍(d):
+        _钉今天(d)
+        return [M.按配置判(p, m, k, s, None, names, on=o) for p, m, k, s, o in 样]
+    try:
+        甲, 乙 = _判一遍(_real.date(2026, 9, 18)), _判一遍(_real.date(2026, 11, 15))
+    finally:
+        _cap.dt = _real; _lt.dt = _real
+    变 = [i for i, (x, y) in enumerate(zip(甲, 乙)) if x != y]
+    ck("同一件衣服按下单日算,「今天」换成两个月后判断和理由一字不差", not 变, len(样),
+       f"变了 {len(变)} 件,例:{甲[变[0]][1][:40]} → {乙[变[0]][1][:40]}" if 变 else
+       "**试不试是接单时定的** —— 随日历翻页而变的判断,会让判责结论自己变")
 
     q = api.fitting_queue()
     有 = {k for k in q if k in M.状态 or k == "**算不出**"}

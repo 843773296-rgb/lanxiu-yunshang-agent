@@ -45,12 +45,22 @@ def artisans(craft=None):
     return rs
 
 
-def load(from_date=None):
-    """每位师傅当前压着多少活、最早什么时候能接新的。"""
+def load(from_date=None, 那天在做的=False):
+    """每位师傅当前压着多少活、最早什么时候能接新的。
+
+    `那天在做的=True`:看**那一天**的队 —— 那天已经开工、还没到交期的工单,
+    **不管它现在是什么状态**(七月在做、九月做完的,七月那天它就在队里)。
+    默认看的是**现在**的在制工单。两者只在「按过去某一天算」时才不一样:
+    拿现在的队去算七月下的单,等于让七月的客户排在九月的队后面 ——
+    实测这么算,3376 件定制里 441 件的「该不该白坯试衣」被排队拉长翻成了「该试」。
+    """
     d0 = _d(from_date) or dt.date.today()
     out = {}
+    sql = ("SELECT artisan,workdays,due_date FROM workorder WHERE start_date<=? AND due_date>?"
+           if 那天在做的 else
+           "SELECT artisan,workdays,due_date FROM workorder WHERE status='在制'")
     with _c() as c:
-        for r in c.execute("SELECT artisan,workdays,due_date FROM workorder WHERE status='在制'"):
+        for r in c.execute(sql, (d0.isoformat(), d0.isoformat()) if 那天在做的 else ()):
             o = out.setdefault(r["artisan"], {"件数": 0, "工日": 0.0, "最早腾出": d0})
             o["件数"] += 1
             o["工日"] += r["workdays"] or 0
@@ -60,7 +70,7 @@ def load(from_date=None):
     return out
 
 
-def when_free(craft, workdays, from_date=None):
+def when_free(craft, workdays, from_date=None, 那天在做的=False):
     """这个工艺,最早什么时候能开工、谁来做、要做到几号。
 
     在制件数没到上限 → 现在就能开工,但**日产能按在制件数+1 摊薄**;
@@ -71,7 +81,7 @@ def when_free(craft, workdays, from_date=None):
     if not who:
         return {"error": f"没有师傅会做 {craft} —— **这不是排期问题,是产能缺口**,"
                          "要么外发,要么这个工艺接不了单"}
-    ld, cand = load(from_date), []
+    ld, cand = load(from_date, 那天在做的), []
     for a in who:
         cur = ld.get(a["no"], {"件数": 0, "工日": 0.0, "最早腾出": d0})
         wip, limit = cur["件数"], a["wip_limit"] or 1

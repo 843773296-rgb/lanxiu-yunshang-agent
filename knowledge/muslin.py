@@ -148,8 +148,15 @@ def 归档(该不该试, 开裁了吗=None, 试了吗=None, 签了吗=None):
     return "该试没试" if 开裁了吗 else "还没到时候"
 
 
-def 按配置判(pattern, material, crafts, scope="局部", size=None, craft_names=None):
+def 按配置判(pattern, material, crafts, scope="局部", size=None, craft_names=None, on=None):
     """给一套真实配置,判它该不该做白坯试衣。返回 (该不该, 一句人话)。
+
+    ⚠️ **`on` = 按哪天算,必须由调用方给**(用户 2026-09-19 定:按下单那天)。
+    工期里含「排队等师傅」的天数,不给日期时工期推算会自己取今天 ——
+    于是同一件衣服的判断**随日历翻页而变**:判责现场里的「装饰工序最慢 N 天」
+    一天少一天,跌破 25 天那天「该试」就变成「不必试」,没有任何人动过数据。
+    这违反「口径模块不许自己取当前日期」。**试不试是接单时定的**,所以按下单日。
+    不给日期就说判不了,不替调用方取今天。
 
     **不在这里重算一遍** —— 直接跑工期推算,读它算出来的那个判断。
     同一个判断两处实现,必然漂;而这一条漂了的后果是
@@ -163,6 +170,8 @@ def 按配置判(pattern, material, crafts, scope="局部", size=None, craft_nam
     这个默认值就会**静默地**给出一个不该有的结论。
     """
     import leadtime, derive_pattern
+    if not on:
+        return None, "**判不了** —— 没说按哪天算(该按下单那天;不替你取今天,取了判断会随日历变)"
     补 = None
     if not size:
         pt = next((x for x in derive_pattern.patterns() if x["code"] == pattern), None)
@@ -172,7 +181,8 @@ def 按配置判(pattern, material, crafts, scope="局部", size=None, craft_nam
         补 = f"(尺码没给,取了 {size} —— **这个判断不看尺码**)"
     e = leadtime.estimate(pattern=pattern, size=size, material=material,
                           crafts=list(crafts or []), scope=scope,
-                          craft_names=craft_names or {})
+                          craft_names=craft_names or {}, from_date=str(on)[:10],
+                          排队按那天=True)   # 那天的队,不是现在的队
     if e.get("error"):
         return None, f"**判不了** —— {e['error']}"
     return e.get("要白坯试衣"), (e.get("要白坯试衣_为什么") or "") + (补 or "")

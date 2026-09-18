@@ -95,7 +95,8 @@ def _pan_pairs(pattern):
 
 
 def estimate(pattern, size, material, crafts=(), scope="局部",
-             workers=2, custom=True, craft_names=None, from_date=None, capacity=True):
+             workers=2, custom=True, craft_names=None, from_date=None, capacity=True,
+             排队按那天=False):
     """返回(最快, 最慢)天数、各段明细、关键路径和风险。"""
     D = craft_days()
     bom = dp.estimate(pattern, size, material, crafts, scope, craft_names)
@@ -143,7 +144,7 @@ def estimate(pattern, size, material, crafts=(), scope="局部",
         # 定制业最常见的延期原因是排不上,不是做得慢。
         if capacity and (a or b):
             try:
-                cp = _cap().when_free(kc, hi, from_date)
+                cp = _cap().when_free(kc, hi, from_date, 排队按那天)
                 if not cp.get("error"):
                     w = cp["排队等待天数"]
                     waits.setdefault(st, []).append((w, nm, cp))

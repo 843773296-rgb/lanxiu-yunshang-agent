@@ -103,8 +103,9 @@ def 该试的行(c):
         # 「重工 / 婚服 / 满工」这几个字出现在品名里时,绣的是整幅不是局部。
         # **这是从品名读的,不是猜的** —— 品名里写着的就是商品实际卖的东西。
         scope = "整幅" if any(w in r["name"] for w in ("重工", "婚服", "满工")) else "局部"
+        # 按**下单那天**算 —— 试不试是接单时定的(不传的话会取今天,判断随重建那天变)
         a, w = muslin.按配置判(r["pattern"], mt[主["material"]], ks, scope,
-                               None, names)
+                               None, names, on=r["created"])
         if a is None: 判不了.append((dict(r), w))
         elif a: 该.append((dict(r), w))
         else: 不必.append(dict(r))

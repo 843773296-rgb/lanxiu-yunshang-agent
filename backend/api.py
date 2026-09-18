@@ -3213,8 +3213,11 @@ def _白坯试衣(order_id, item_name, order_status):
     else:
         scope = "整幅" if any(w in (item["name"] or "")
                               for w in ("重工", "婚服", "满工")) else "局部"
+        # 按**下单那天**算(用户 2026-09-19 定)—— 不传的话工期推算取今天,
+        # 判责现场里的「凭什么」会一天变一天,跌破门槛那天结论就翻
+        _od = (_rows("SELECT created FROM ordr WHERE id=?", order_id) or [{}])[0].get("created")
         该, why = _mu.按配置判(item["pattern"], mt[主["material"]], ks, scope,
-                               None, _names())
+                               None, _names(), on=_od)
 
     recs = _rows("SELECT * FROM fitting WHERE item_id=? ORDER BY round", item["id"])
     签 = any(r["signed"] for r in recs)
