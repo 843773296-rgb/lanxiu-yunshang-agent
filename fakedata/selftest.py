@@ -344,7 +344,11 @@ def main():
         cp6 = os.path.join(tmpd, "api_test.db"); shutil.copy(src, cp6)
         c6 = S.connect(cp6); f6 = D.discover(c6, c6.reflect())
         DRIVEN = ["customer", "appointment"]
-        p6 = P.build(f6, scale=0.2, tables=DRIVEN)
+        # **样本量钉在二十来个,不随库的规模走。** 原来写的是 scale=0.2 ——
+        # 客户 108 个时造 21 个;客户放到 965 个之后造 193 个,边界值按概率撒出一条
+        # 天然的空名字,「刚好 2 条拒绝」当场红。**断言写的是精确数,输入却在随库长大。**
+        n6 = c6.q("SELECT COUNT(*) FROM customer")[0][0] or 1
+        p6 = P.build(f6, scale=min(0.2, 21 / n6), tables=DRIVEN)
         m6, _mm = G.generate(p6, c6)
 
         # 成败判定:照**真实接口的响应约定** `{ok, code, id, reason}` 验

@@ -91,9 +91,10 @@ BATCH = "simulate_sales/v1"
 SEED = 20260915
 END = dt.date(2026, 9, 15)          # 截止日。C4:已经发生的事不能在未来
 CUT = dt.datetime.combine(END, dt.time(20, 0))
-ORDERS_PER_DAY = 35                 # 全部 SPU 都在售时的日均单量(实际随上架逐步爬升)
-# ⚠️ 不往高调:能安全挂单的客户只有 31 个(四类夹具排掉之后),单量越大人均越离谱。
-# 要的是「几百个 SKU 有 ≥2 笔」,不是「看起来生意很好」。
+ORDERS_PER_DAY = 230                # 全部 SPU 都在售时的日均单量(实际随上架逐步爬升)
+# 原来是 35,理由是「能安全挂单的客户只有 31 个,单量越大人均越离谱」。
+# 2026-09-18 用户拍板客户 1000 / 订单约 2.5 万,`grow_customers.py` 补齐了人 ——
+# **先有人,再放量**:顺序反过来就是把 2.5 万单压在 31 个人头上。
 ID_BASE = 6488012800000000000       # 种子和旅程用 64880127197145600xx,不重叠
 
 # ── 季节:按品类编码给 12 个月的系数 ────────────────────────────────────
@@ -256,7 +257,9 @@ def simulate(skus, ver, custs, rng):
             s["exp_day"] = K * heat[spu] * s["share"] * 1.18      # 期望日销件数(含多件)
 
     start = min(v[0]["launch"] for v in live.values())
-    loyal = {c["id"]: math.exp(rng.gauss(0, 1.0)) for c in custs}
+    # 回购倾向:对数正态。σ 原来是 1.0 —— 客户放到九百多个之后,尾巴拉出一个
+    # **半年 689 单**的人(一天近 4 单)。σ=0.45 时最能买的大约是均值的四五倍,像熟客不像批发
+    loyal = {c["id"]: math.exp(rng.gauss(0, 0.45)) for c in custs}
     # **每个 SKU 一本台账。** 原来是一个 dict 自己加加减减、自己拼 before/after ——
     # 那段逻辑写错了不会有任何东西报,因为每一行单看都正常。
     帐 = {s["code"]: LG.台账(s["code"], 起始=0) for ss in live.values() for s in ss}
@@ -524,8 +527,12 @@ def report(c):
     print(f"  ⚠️ 区间只覆盖 {d0} 到 {d1}(约 {(d1 - d0).days // 30} 个月),落在里面的节日:"
           f"{'、'.join(节) or '无'};冬款只看得到 {冬月 or '无'} 月"
           f"{'' if 2 in 冬月 else ',**春节不在区间里**'} —— 季节性是弱的,而这是主数据上架日决定的")
-    print(f"  ⚠️ 挂单的客户只有 {n_c} 个(夹具排掉之后能安全用的全部),人均 {n_orders / max(n_c, 1):.0f} 单"
-          f" —— **看单个客户的订单历史会很不像真的**;要像,得先有更多能安全挂单的客户")
+    _mx = c.execute("SELECT MAX(n) FROM (SELECT COUNT(*) n FROM ordr WHERE id IN "
+                    "(SELECT order_id FROM sim_batch) GROUP BY customer_id)").fetchone()[0] or 0
+    _avg = n_orders / max(n_c, 1)
+    print(f"  {'⚠️' if _avg > 40 else 'ℹ'} 挂在 {n_c} 个客户名下,人均 {_avg:.0f} 单、最多的一人 {_mx} 单"
+          + (" —— **看单个客户的订单历史会很不像真的**;要像,得先有更多能安全挂单的客户"
+             if _avg > 40 else ""))
     print(f"  状态:{st}")
     sims = [r[0] for r in c.execute("SELECT sku FROM sim_batch_sku ORDER BY sku")]
     ge = {k: sum(1 for s in sims if sold.get(s, 0) >= k) for k in (2, 5, 10, 30)}

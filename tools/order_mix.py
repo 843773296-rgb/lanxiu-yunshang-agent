@@ -63,10 +63,33 @@ CUT = dt.datetime(2026, 9, 15, 20, 0)      # 和 simulate_sales 同一个截止�
 T = dt.date(2026, 8, 31)                   # 建库基准日:生命周期 / 闲置天数都按它算
 成年判定日 = dt.date(2026, 9, 12)           # 和 order_gate_check 的「今天」一致
 
-定制品目标 = 520            # ≥ 500,留一点余量(改造失败的会少几张)
-退货目标, 拒绝的退货 = 40, 5  # 40 张里 5 张是审批拒绝(订单没退款)
-换货目标 = 15
-维保目标_定制, 维保目标_标品 = 40, 15
+# ── 配比:**守的是比率,不是条数** ────────────────────────────────────
+# 业务 2026-09-18 定这几个数时是按「1000 单」说的,三次改口的原话全在说占比:
+# 「合计 100 条了,不然退货率太高了」「换货可以少点,维保可以多一些」。
+# 后来订单放大到约 2.5 万(用户拍板),**照绝对数给的话退货率只剩 0.16%,一眼就是假的**。
+# 所以从业务拍过板的那一版(3903 单:定制 520 / 退货 40 / 换货 15 / 维保 定制 40 + 标品 15)
+# 反算出比率,放大时守比率。
+定制品占比 = 520 / 3903          # ≈ 13%;业务的下限是 500 张,两者取大
+定制品下限 = 500
+退货率 = 40 / 3383               # 占标品单,≈ 1.2%
+退货里被拒的 = 5 / 40            # 审批拒绝(订单没退款)
+换货率 = 15 / 3383               # 占标品单,≈ 0.44%
+定制维保率 = 40 / 520            # 占定制单,≈ 7.7% —— 定制品唯一的实物出口
+标品维保率 = 15 / 3383           # 占标品单,≈ 0.44%
+# 下面这几个由 run() 按库里的订单总数现算
+定制品目标 = 退货目标 = 拒绝的退货 = 换货目标 = 维保目标_定制 = 维保目标_标品 = 0
+
+
+def 定配额(c):
+    global 定制品目标, 退货目标, 拒绝的退货, 换货目标, 维保目标_定制, 维保目标_标品
+    tot = c.execute("SELECT COUNT(*) FROM ordr").fetchone()[0]
+    定制品目标 = max(定制品下限, round(tot * 定制品占比))
+    std = tot - 定制品目标
+    退货目标 = round(std * 退货率)
+    拒绝的退货 = round(退货目标 * 退货里被拒的)
+    换货目标 = round(std * 换货率)
+    维保目标_定制 = round(定制品目标 * 定制维保率)
+    维保目标_标品 = round(std * 标品维保率)
 
 生产三档 = ("待生产", "生产中", "已生产")
 ST2PRD = {"待付款": "待付款", "待审核": "方案确认中", "待生产": "方案确认中", "生产中": "方案确认中",
@@ -339,23 +362,25 @@ def 分型(c, rng, 排除, log):
     计数 = {cid: 0 for cid in 人}
     改了, 失败 = [], 0
 
+    # 摊平成 (客户, 品类, 着装人, 量体时间) —— 每单只随机抽一部分去验,
+    # 一千个客户 × 几千张单全量扫一遍太慢,而铺开只需要「够多的候选里挑名下少的」
+    全体 = [(cid, 顶, v[0], v[1]) for cid, d in sorted(人.items())
+            for 顶, v in sorted(d.items(), key=lambda x: x[0]) if 顶 != "客户"]
+
     def 试(s):
         t = P(s["created"])
+        day = s["created"][:10]
         cands = []
-        for cid, d in 人.items():
-            if (d["客户"]["created"] or "")[:10] > s["created"][:10]:
+        for j in rng.sample(range(len(全体)), len(全体)):
+            cid, 顶, w, ms = 全体[j]
+            if (人[cid]["客户"]["created"] or "")[:10] > day or not 量体有效(w, ms, t):
                 continue
-            for 顶, v in d.items():
-                if 顶 == "客户":
-                    continue
-                w, ms = v
-                if not 量体有效(w, ms, t):
-                    continue
-                ok = [p for p in prods.get(顶, [])
-                      if (p["created"] or "")[:10] <= s["created"][:10]
-                      and (p["on_shelf_at"] or "")[:10] <= s["created"][:10]]
-                if ok:
-                    cands.append((cid, 顶, w, ok))
+            ok = [p for p in prods.get(顶, [])
+                  if (p["created"] or "")[:10] <= day and (p["on_shelf_at"] or "")[:10] <= day]
+            if ok:
+                cands.append((cid, 顶, w, ok))
+                if len(cands) >= 40:
+                    break
         if not cands:
             return None
         # 铺开:名下单子越少越容易被挑中(人均 5–9 张,不是一个人几十张)
@@ -429,23 +454,56 @@ def 分型(c, rng, 排除, log):
 
 
 # ── 库存流水:撤掉改造单的占用,加上换货的进出,再整条重新接链 ─────────────
-def 重接流水(c, 撤掉, 加上):
-    """模拟批次的流水**整批重写**:撤掉 refs 里的、加上换货的进出,按时间重排后重算
-    before/after。撤掉占用只会让余额变大,所以不会接出负数;加上的出库要逐条验。"""
+def _排(rows):
+    return sorted(rows, key=lambda r: (r["ts"], 0 if r["delta"] > 0 else 1))
+
+
+def _接一个(sku, rows):
+    """一个 SKU 的链:按时间排好,逐行记账。余额不够返回 None(台账拒绝记,不静默改数)。"""
     import ledger as LG
-    rows = [dict(r) for r in c.execute(
-        "SELECT sku,spu,kind,delta,ref,operator,ts,note FROM stock_log "
-        "WHERE ref LIKE 'SIM-%' ORDER BY id")]
-    keep = [r for r in rows if r["ref"] not in 撤掉] + 加上
-    keep.sort(key=lambda r: (r["ts"], 0 if r["delta"] > 0 else 1))
-    帐, out = {}, []
-    for r in keep:
-        a = 帐.setdefault(r["sku"], LG.台账(r["sku"], 起始=0))
+    a, out = LG.台账(sku, 起始=0), []
+    for r in _排(rows):
         行 = a.记(r["ts"], r["kind"], r["delta"], r["ref"], r["note"])
         if 行 is None:
-            return None, r                            # 余额不够 —— 调用方换一件
+            return None, r
         out.append(dict(r, before_n=行["前"], after_n=行["后"]))
-    return out, 帐
+    return out, a
+
+
+class 流水:
+    """模拟批次的流水,按 SKU 分开接链。
+
+    撤掉改造单的占用只会让余额变大,不会接出负数;换货的出库要验 ——
+    **只重接这一单碰到的那一两个 SKU**,不整批重来(2.5 万单时整批重来一次要几秒)。
+    """
+    def __init__(self, c, 撤掉):
+        self.组 = {}
+        for r in c.execute("SELECT sku,spu,kind,delta,ref,operator,ts,note FROM stock_log "
+                           "WHERE ref LIKE 'SIM-%' ORDER BY id"):
+            r = dict(r)
+            if r["ref"] not in 撤掉:
+                self.组.setdefault(r["sku"], []).append(r)
+
+    def 试加(self, rows):
+        碰到 = {r["sku"] for r in rows}
+        for sku in 碰到:
+            out, _ = _接一个(sku, self.组.get(sku, []) + [r for r in rows if r["sku"] == sku])
+            if out is None:
+                return False
+        for r in rows:
+            self.组.setdefault(r["sku"], []).append(r)
+        return True
+
+    def 接全(self):
+        out, 帐 = [], {}
+        for sku in sorted(self.组):
+            o, a = _接一个(sku, self.组[sku])
+            if o is None:
+                raise SystemExit(f"❌ 流水接不上:{a}")
+            out += o
+            帐[sku] = a
+        out.sort(key=lambda r: (r["ts"], 0 if r["delta"] > 0 else 1))
+        return out, 帐
 
 
 def 写流水(c, out, 帐):
@@ -633,6 +691,34 @@ def 写换货(c, 换, 插售后, 新单号):
              price_diff=r["diff"], diff_settled_at=ts(r["settled"]) if r["settled"] else None)
 
 
+# ── 易损倾向:面料分三档,刺绣再加一档 ───────────────────────────────
+# ⚠️ **这是需求形状的假设,不是实测的维保率** —— 和模拟销量里的季节系数是同一种东西。
+# 依据是行业常识:轻薄丝织物易勾丝、易撕裂;锦缎厚实但织金面会起毛;
+# 棉麻结实。刺绣的线头在穿着摩擦里最先出问题。倍数是编的,方向不是。
+易损_轻薄 = ("真丝", "素罗", "纱", "罗", "绡", "绢", "雪纺", "电力纺", "香云纱", "乔其")
+易损_锦缎 = ("锦", "缎", "妆花", "织金", "缂丝", "提花")
+易损_结实 = ("棉", "麻", "涤", "牛津")
+
+
+def 易损倾向(c, oid, kind):
+    if kind == "定制品订单":
+        rows = c.execute("SELECT kind, part, material FROM item_part_choice WHERE item_id="
+                         "(SELECT id FROM ordr_item WHERE order_id=? ORDER BY id LIMIT 1)",
+                         (oid,)).fetchall()
+        主 = next((r[2] for r in rows if r[0] == "面料" and r[1] in ("主身", "整件")),
+                  next((r[2] for r in rows if r[0] == "面料"), ""))
+        绣 = any(r[0] == "工艺" and "绣" in (r[2] or "") for r in rows)
+        名 = 主
+    else:
+        名 = (c.execute("SELECT name FROM ordr_item WHERE order_id=? ORDER BY id LIMIT 1",
+                        (oid,)).fetchone() or [""])[0] or ""
+        绣 = "绣" in 名
+    w = (2.2 if any(k in 名 for k in 易损_轻薄) else
+         1.3 if any(k in 名 for k in 易损_锦缎) else
+         0.45 if any(k in 名 for k in 易损_结实) else 1.0)
+    return w * (1.6 if 绣 else 1.0)
+
+
 def 维保(c, rng, 排除, 判责, 改了的单, log):
     """维保只挂**已经完成**的单,报修在完成之后。
     业务 2026-09-18:「维保申请还必须在用户订单完成之后,完成后才能有维保」。
@@ -670,7 +756,13 @@ def 维保(c, rng, 排除, 判责, 改了的单, log):
                 "SELECT substr(p.category,1,3) FROM ordr_item i JOIN product p ON p.spu=i.spu "
                 "WHERE i.order_id=? ORDER BY i.id LIMIT 1", (o["id"],)).fetchone() or [""])[0]
                 in ("C01", "C02", "C03")]
-        rng.shuffle(pool)
+        # **不纯随机** —— 真实的易损有结构。纯随机撒的话,各面料的维保率全挤在同一个数附近,
+        # 「哪种面料容易坏」这个问题的答案就是一张排出了名次、却什么都没说的榜
+        # (版师分析那边第一版就撞上了:42 种面料全在 9.9%–13.6% 之间)。
+        # 按易损倾向加权抽:加权无放回抽样,权重高的更可能排在前面。
+        for o in pool:
+            o["_w"] = 易损倾向(c, o["id"], kind)
+        pool.sort(key=lambda o: -(rng.random() ** (1.0 / o["_w"])))
         for o in pool:
             if 目标 <= 0:
                 break
@@ -767,25 +859,25 @@ def run(c, log=print):
                          "python3 tools/simulate_sales.py && python3 tools/order_mix.py")
     rng = random.Random(SEED)
     _manifest(c)
+    定配额(c)
+    log(f"配额(按比率):定制 {定制品目标} · 退货 {退货目标}(其中拒 {拒绝的退货})· 换货 {换货目标}"
+        f" · 维保 定制 {维保目标_定制} / 标品 {维保目标_标品}")
     保护 = 受保护客户(c)
     判责 = 判责客户(c)
     log(f"受保护的客户 {len(保护)} 个(不挂新单、不重算)· 判责客户 {len(判责)} 个(不加维保)")
     撤掉, _n = 分型(c, rng, set(保护), log)
     候选, 插售后, 新单号 = 售后(c, rng, set(保护), 判责, log)
-    # 换货逐条试接:换出去那件在那一刻有没有货,要接完整条流水才知道
-    收, 加上 = [], []
-    out, 帐 = 重接流水(c, 撤掉, [])
-    if out is None:
-        raise SystemExit(f"❌ 只撤掉改造单的占用,流水就接不上了:{帐}")
+    # 换货逐条试接:换出去那件在那一刻有没有货,要接上那个 SKU 的整条链才知道
+    账 = 流水(c, 撤掉)
+    收 = []
     for r in 候选:
         if len(收) >= 换货目标:
             break
-        o2, a2 = 重接流水(c, 撤掉, 加上 + r["rows"])
-        if o2 is None:
-            continue
-        收.append(r); 加上 += r["rows"]; out, 帐 = o2, a2
+        if 账.试加(r["rows"]):
+            收.append(r)
     if len(收) < 换货目标:
         raise SystemExit(f"❌ 换货只凑出 {len(收)} 张 —— 候选里那一刻有货的不够")
+    out, 帐 = 账.接全()
     写流水(c, out, 帐)
     写换货(c, 收, 插售后, 新单号)
     log(f"  ② 换货:{len(收)} 张(候选 {len(候选)},那一刻没货的跳过)")

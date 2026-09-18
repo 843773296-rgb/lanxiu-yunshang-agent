@@ -650,6 +650,25 @@ def advisors_with_no(shop, include_left=False):
 def run():
     if os.path.exists(DB): os.remove(DB)
     c=sqlite3.connect(DB); c.executescript(SCHEMA)
+    # ── 查询索引 ──────────────────────────────────────────────────────
+    # 订单从 3903 放到约 2.5 万张(用户 2026-09-18 拍板)之后,门禁从 40 秒涨到 13 分钟 ——
+    # 检查几乎都是「逐单去查它的订单行 / 量体 / 选料」,**没有索引时每一次都是翻整张表**,
+    # 耗时按行数的平方涨。数据小的时候平方也是小数,所以一直没人发现。
+    # 只加普通索引,不加唯一约束:唯一性是业务规则,要由检查守着、报得出是谁违反了。
+    c.executescript("""
+      CREATE INDEX IF NOT EXISTS ix_ordr_customer   ON ordr(customer_id);
+      CREATE INDEX IF NOT EXISTS ix_item_order      ON ordr_item(order_id);
+      CREATE INDEX IF NOT EXISTS ix_item_sku        ON ordr_item(sku);
+      CREATE INDEX IF NOT EXISTS ix_item_spu        ON ordr_item(spu);
+      CREATE INDEX IF NOT EXISTS ix_choice_item     ON item_part_choice(item_id);
+      CREATE INDEX IF NOT EXISTS ix_measure_wearer  ON measure_rec(wearer_id, measured_at);
+      CREATE INDEX IF NOT EXISTS ix_measure_cust    ON measure_rec(customer_id);
+      CREATE INDEX IF NOT EXISTS ix_wearer_customer ON wearer(customer_id);
+      CREATE INDEX IF NOT EXISTS ix_stocklog_sku    ON stock_log(sku);
+      CREATE INDEX IF NOT EXISTS ix_stocklog_ref    ON stock_log(ref);
+      CREATE INDEX IF NOT EXISTS ix_maintain_order  ON maintain(order_id);
+      CREATE INDEX IF NOT EXISTS ix_aftersale_order ON aftersale(order_id);
+    """)
     SHOPS=["SH001 静安旗舰店","SH002 徐汇店","SH003 杭州湖滨店"]
     # ADV 平铺列表已删。顾问一律按门店取 —— 见 advisors_of()。
     ADV_BY_SHOP = {sh: advisors_with_no(sh) for sh in SHOPS}
