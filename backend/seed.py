@@ -399,7 +399,10 @@ CREATE TABLE approval(id TEXT PRIMARY KEY, kind TEXT, target TEXT, payload TEXT,
   status TEXT, applied_by TEXT, applied_at TEXT, decided_by TEXT, decided_at TEXT, note TEXT);
 CREATE TABLE aftersale(id TEXT PRIMARY KEY, kind TEXT, order_id TEXT, customer_id TEXT,
   status TEXT, reason TEXT, amount REAL, shop TEXT, advisor_no TEXT, created TEXT, updated TEXT,
-  ext_system TEXT, synced_at TEXT);
+  ext_system TEXT, synced_at TEXT,
+  -- 退的是**这张单里的哪一件**。原来一个商品字段都没有,「售后商品必须是该订单里的商品」
+  -- 这条规则在库里**根本表达不了**。存键不存名字:名字一改,历史引用就断了。
+  order_item_id INTEGER);
 -- 交付告知签收 —— 09-养护与售后.md 第三节写着「交付时必须书面告知的六条」,
 -- 第五节的返修判定里,**特性类(色差/掉色/勾丝)是否书面告知,直接决定有责无责**:
 --   已书面告知 → 无责,解释 + 提供保养服务
@@ -411,7 +414,10 @@ CREATE TABLE delivery_notice(
   signed_at TEXT, advisor_no TEXT, channel TEXT);
 CREATE TABLE maintain(id TEXT PRIMARY KEY, order_id TEXT, customer_id TEXT, item TEXT,
   status TEXT, issue TEXT, shop TEXT, advisor_no TEXT, created TEXT, updated TEXT,
-  ext_system TEXT, synced_at TEXT);
+  ext_system TEXT, synced_at TEXT,
+  -- `item` 存的是商品**名字**,靠名字才对得上订单行 —— 21/21 对得上是碰巧,没有东西守着。
+  -- 加一个指得回去的键;item 保留,判责要读它的面料与工艺。
+  order_item_id INTEGER);
 CREATE TABLE stock_log(id INTEGER PRIMARY KEY AUTOINCREMENT, sku TEXT, spu TEXT,
   kind TEXT, delta INT, before_n INT, after_n INT, ref TEXT, operator TEXT, ts TEXT, note TEXT);
 CREATE TABLE craft(code TEXT PRIMARY KEY, name TEXT, cat TEXT, alias TEXT,
@@ -2180,17 +2186,31 @@ def run():
     REASONS=["多拍/拍错/不想要","尺寸不合适","面料与描述不符","工艺瑕疵","交期延误","质量问题"]
     oids=[r[0] for r in c.execute("SELECT id FROM ordr ORDER BY id LIMIT 30")]
     for i in range(26):
-        kind="仅退款" if i%2 else "退货退款"
+        _aso = oids[i%len(oids)]
+        _ok, _own = c.execute("SELECT kind, customer_id FROM ordr WHERE id=?", (_aso,)).fetchone()
+        # ⚠️ **定制品没有退货、换货**(业务 2026-09-18:「定制品没有退货换货,标品有」)。
+        # 原来 kind 只看 i 的奇偶,于是 8 单定制品订单挂着「退货退款」—— 包括「已入库」:
+        # 一件照着这个人的尺寸做的衣服被退回仓库,这个现场本身不存在。
+        # 定制品的出口是仅退款(或维保返修)。**规则写在生成处,不是事后改那几行** ——
+        # 事后改的话,下次换一批订单又会长出新的违规。
+        kind="仅退款" if (i%2 or _ok=="定制品订单") else "退货退款"
         st=(AS_REFUND if kind=="仅退款" else AS_RETURN)[i%(6 if kind=="仅退款" else 8)]
+        # 退的是这张单里的哪一件:固定取第一件(按行号),**不调随机数** ——
+        # seed 用固定种子,这里多吃一个随机数,后面所有随机生成的数据都会整体错位
+        _asi = c.execute("SELECT id FROM ordr_item WHERE order_id=? ORDER BY id LIMIT 1",
+                         (_aso,)).fetchone()
         day=12+(i%18)
         # **具名列** —— 位置参数插入多一列会静默错位(这个文件的老教训)
+        # ⚠️ 客户号原来是 `cust[i%len(cust)]` —— **按下标凑的**,和订单分配客户用的是同一个
+        # 下标规律,所以 26/26 恰好对上。维保那边犯过一模一样的错(21 条全错位 7 位)并修了,
+        # 这里没跟着修。**碰巧对上不等于对**:哪天两边的下标规律有一边变了,全部静默错位。
         c.execute("INSERT INTO aftersale(id,kind,order_id,customer_id,status,reason,"
-                  "amount,shop,advisor_no,created,updated,ext_system,synced_at) "
-                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-          (f"AS{64880127+i}",kind,oids[i%len(oids)],cust[i%len(cust)][0],st,
+                  "amount,shop,advisor_no,created,updated,ext_system,synced_at,order_item_id) "
+                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          (f"AS{64880127+i}",kind,_aso,_own,st,
            REASONS[i%6],round(random.uniform(680,9600),2),random.choice(SHOPS),_adv_any2()[1],
            f"2026-08-{day:02d} 09:{10+i%40:02d}",f"2026-08-{min(31,day+2):02d} 15:{10+i%40:02d}",
-           "售后/维保系统",f"2026-09-01 0{i%9}:1{i%9}"))
+           "售后/维保系统",f"2026-09-01 0{i%9}:1{i%9}",_asi[0] if _asi else None))
     # ── 维保工单 ──
     MT=["待确认","取消","待入库","待处理","处理中","待签收","已完成"]
     ISSUES=["盘扣脱线","下摆开线","面料起球","刺绣局部脱落","拉链损坏","染色不均","尺寸需调整"]
@@ -2229,10 +2249,12 @@ def run():
         _ocr = c.execute("SELECT created FROM ordr WHERE id=?", (_oid,)).fetchone()[0][:10]
         _rep = date.fromisoformat(_ocr) + timedelta(days=18 + (i * 3) % 20)
         _own=c.execute("SELECT customer_id FROM ordr WHERE id=?",(_oid,)).fetchone()[0]
-        _it=c.execute("SELECT name FROM ordr_item WHERE order_id=? LIMIT 1",(_oid,)).fetchone()
+        # 只多取一列 id,**查询形状不变** —— 选中的必须还是原来那一行:
+        # 这 21 条里有 10 条是售后判责评测的真值依赖,换一件商品,判责现场就变了
+        _it=c.execute("SELECT name, id FROM ordr_item WHERE order_id=? LIMIT 1",(_oid,)).fetchone()
         c.execute("INSERT INTO maintain(id,order_id,customer_id,item,status,issue,"
-                  "shop,advisor_no,created,updated,ext_system,synced_at) "
-                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                  "shop,advisor_no,created,updated,ext_system,synced_at,order_item_id) "
+                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
           (f"MW{73020+i}",_oid,_own,(_it[0] if _it else ITEMS[i%5]),
            # ⚠️ 状态和问题原来都用 `i%7`,于是两者**完全相关** ——
            # 按状态筛出来的任何子集,问题必然是同一个值。
@@ -2243,7 +2265,52 @@ def run():
            random.choice(SHOPS),_adv_any2()[1],
            f"{_rep.isoformat()} 11:{10+i%40:02d}",
            f"{(_rep+timedelta(days=3)).isoformat()} 16:{10+i%40:02d}",
-           "售后/维保系统",f"2026-09-01 0{i%9}:2{i%9}"))
+           "售后/维保系统",f"2026-09-01 0{i%9}:2{i%9}",_it[1] if _it else None))
+
+    # ── 标品也有维保(业务 2026-09-18:「标品和定制品都有维保」)────────
+    # 上面那段注释说「只挂定制品订单 —— 判责要查面料与工艺,标品查不到」,
+    # **那个前提被业务的新规则推翻了**:标品一样会开线、拉链坏,也要走维保。
+    # 所以这几条:
+    #   · **不进售后判责任务** —— 判责确实要面料与工艺,标品没有,放进去就是一道判不了的题
+    #   · 只挂在**名下没有任何维保单**的客户上 —— 判责会统计「这个客户的历史报修次数」,
+    #     给被判责的客户多加一条,那条用例的结论可能就翻了
+    #   · **只挑成衣**(女装 / 男装 / 童装三个大类)。第一版只排除了西装,结果造出
+    #     「手工盘扣 花型(六颗装)· 拉链损坏」—— 一副盘扣哪来的拉链。配饰、物料和西装一样,
+    #     配上成衣的维保问题就是假现场,**而假现场在表上和真现场长得一模一样**
+    #   · **一个随机数都不吃** —— 门店、顾问都取订单上的,不调 random:
+    #     固定种子的 seed 里多吃一个随机数,后面所有随机生成的数据整体错位
+    #   · 报修日不晚于建库基准日 —— 已经发生的事不能在未来
+    #   · **问题按商品定,不按位置排**。第一版按位置配,于是「明制立领长袄 · 拉链损坏」
+    #     (明制长袄用盘扣或子母扣)、「齐腰襦裙 · 盘扣脱线」(襦裙是系带的)。
+    #     问题只从上面 ISSUES 那张词表里取,**不新造词** —— 判责口径按这张表归类,
+    #     新词落不进任何一类
+    _STD_ST = ["待确认", "处理中", "待签收", "已完成"]
+    def _std_issue(nm):
+        if "袄" in nm or "立领" in nm: return "盘扣脱线"
+        if "裙" in nm: return "面料起球" if ("锦" in nm or "缎" in nm) else "染色不均"
+        return "下摆开线"            # 任何有下摆的成衣都会开线
+    _STD_MW = _STD_ST
+    _std = c.execute("""SELECT o.id, o.customer_id, o.created, o.shop, o.advisor_no,
+               (SELECT i.id FROM ordr_item i WHERE i.order_id=o.id ORDER BY i.id LIMIT 1),
+               (SELECT i.name FROM ordr_item i WHERE i.order_id=o.id ORDER BY i.id LIMIT 1)
+        FROM ordr o
+        WHERE o.kind='标品订单' AND o.status IN ('已发货','待完成','完成')
+          AND o.customer_id NOT LIKE 'E-%' AND o.customer_id NOT LIKE 'C21%'
+          AND o.customer_id NOT IN (SELECT customer_id FROM maintain WHERE customer_id IS NOT NULL)
+          AND (SELECT substr(p.category,1,3) FROM ordr_item i JOIN product p ON p.spu=i.spu
+               WHERE i.order_id=o.id ORDER BY i.id LIMIT 1) IN ('C01','C02','C03')
+        ORDER BY o.id LIMIT ?""", (len(_STD_MW),)).fetchall()
+    assert len(_std) >= 3, f"合规的标品订单只找到 {len(_std)} 张 —— 「标品也有维保」就没有像样的样本"
+    for _k, (_so, _sc, _scr, _ssh, _sadv, _sii, _sin) in enumerate(_std):
+        _st, _is = _STD_ST[_k], _std_issue(_sin or "")
+        assert _is in ISSUES, f"标品维保的问题「{_is}」不在维保问题词表里"
+        _rep = min(date.fromisoformat(_scr[:10]) + timedelta(days=12 + _k * 3), T)
+        c.execute("INSERT INTO maintain(id,order_id,customer_id,item,status,issue,"
+                  "shop,advisor_no,created,updated,ext_system,synced_at,order_item_id) "
+                  "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          (f"MW{73041+_k}", _so, _sc, _sin, _st, _is, _ssh, _sadv,
+           f"{_rep.isoformat()} 10:{20+_k:02d}", f"{_rep.isoformat()} 17:{20+_k:02d}",
+           "售后/维保系统", f"2026-09-01 0{_k}:3{_k}", _sii))
 
     # ── 交付告知签收 ──────────────────────────────────────────────────
     # **故意不是每单都有。** 三分之一的定制单没有签收记录 ——

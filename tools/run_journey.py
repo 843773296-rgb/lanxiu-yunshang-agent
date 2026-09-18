@@ -456,7 +456,7 @@ def _journey(cust, dry=False):
     _pv = _pvr[0]["version"] if _pvr else None
     ex("""INSERT INTO ordr_item(order_id,sku,name,tag,price,qty,spu,base_amount,
           custom_amount,total,pattern_version,pattern_version_src)
-          VALUES(?,?,?,'定制',?,1,?,?,?,?,?,?)""",
+          VALUES(?,?,?,'定制品',?,1,?,?,?,?,?,?)""",
        oid, sku["code"], (sku.get("name") or "定制汉服") + (f"·{sku.get('spec')}" if sku.get("spec") else ""),
        sku["price"], sku["spu"], sku["price"], custom, amt,
        _pv, "下单时记的(run_journey)" if _pv is not None else None)
