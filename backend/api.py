@@ -2658,6 +2658,13 @@ def get_stock(spu=None, sku=None, material=None, craft=None):
     return {"error": "要给 spu / sku / material / craft 其中之一"}
 
 
+import importlib.util as _ilu, os as _os
+_sr_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                         "knowledge", "scheme_ref.py")
+_sr_spec = _ilu.spec_from_file_location("scheme_ref", _sr_path)
+_scheme_ref = _ilu.module_from_spec(_sr_spec); _sr_spec.loader.exec_module(_scheme_ref)
+
+
 def get_scheme(scheme_id=None, customer=None, status=None):
     """查方案。**方案是「一件事」的单位** —— 客户这次想做的这件衣服。
 
@@ -2674,24 +2681,12 @@ def get_scheme(scheme_id=None, customer=None, status=None):
     if not (scheme_id or customer or status):
         return {"error": "要么给方案号,要么给客户号/姓名,要么给状态"}
 
-    def 名(表, code, 列="name"):
-        if not code:
-            return None
-        r = _rows(f"SELECT {列} FROM {表} WHERE code=?", code)
-        return r[0][列] if r else f"{code}(库里查不到)"
-
+    # 代号翻中文的口径在 knowledge/scheme_ref.py,**工具只取数不定口径**。
+    # 我第一版把它写在这里了 —— 而 seed.py 的注释早就写着「见 knowledge/scheme_ref.py」,
+    # 只是那个文件一直没建。**先 grep 一遍它是不是已经有人安排过**,这个项目撞过七次。
     def 展开(r):
-        kf = [k.strip() for k in (r.get("kf") or "").split(",") if k.strip()]
-        ps = [x.strip() for x in (r.get("ps") or "").split(",") if x.strip()]
-        return {"方案号": r["id"], "名称": r["name"], "状态": r["status"],
-                "客户号": r["customer_id"], "顾问工号": r["advisor_no"],
-                "形制": 名("xingzhi", r.get("xz")),
-                "面料": 名("material", r.get("mt")),
-                "工艺": [名("craft", k) for k in kf],
-                "颜色": r.get("color") or None,
-                "配饰": ps,
-                "版型": 名("pattern", r.get("pattern")),
-                "备注": r.get("note"), "建于": r.get("created"), "改于": r.get("updated")}
+        with _c() as c:
+            return _scheme_ref.展开(c, r)
 
     if scheme_id:
         rs = _rows("SELECT * FROM scheme WHERE id=?", scheme_id)
@@ -2704,8 +2699,20 @@ def get_scheme(scheme_id=None, customer=None, status=None):
         兄弟 = _rows("SELECT id,name,status FROM scheme WHERE customer_id=? AND id<>?"
                     " ORDER BY updated DESC", rs[0]["customer_id"], scheme_id)
         d["该客户的其他方案"] = 兄弟
+        # **把「已锁定几条」直接算好摆出来。** 业务 2026-09-18 定了可以多条同时锁,
+        # 于是「锁定那条」不再是一个能消歧的说法。让模型自己去数兄弟列表里有几条锁定,
+        # 是把一个**它很容易数错、而且数错了看不出来**的活交给它。
+        锁 = _scheme_ref.已锁定的(兄弟) + \
+            ([{"id": d["方案号"], "name": d["名称"], "status": "已锁定"}]
+             if d["状态"] == "已锁定" else [])
+        d["该客户已锁定的方案数"] = len(锁)
+        if len(锁) > 1:
+            d["⚠️消歧提示"] = (f"该客户有 {len(锁)} 条方案同时处于已锁定"
+                             f"({'、'.join(x['id'] for x in 锁)})。"
+                             "**「锁定那条」指代不明,必须问清方案号再推进。**")
         d["note"] = ("方案是「一件事」的单位:报价、下单、试衣都挂在它上面。"
-                     "同一客户可以并行多条,**推进前先确认说的是哪一条**。")
+                     "同一客户可以并行多条,**且可以多条同时处于已锁定** —— "
+                     "推进前先确认说的是哪一个方案号,不要靠状态猜。")
         return d
 
     sql = "SELECT * FROM scheme WHERE 1=1"
