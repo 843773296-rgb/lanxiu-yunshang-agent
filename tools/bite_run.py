@@ -129,6 +129,16 @@ def 改库(sand, sqls):
 
 
 def main():
+    # 库正在重建时不跑:对照会是红的,每一条咬合都会报「对照就不绿」(见 tools/rebuild.sh 的互斥标记)
+    _mk = os.path.join(ROOT, "backend", ".rebuilding")
+    if os.path.exists(_mk):
+        try:
+            _pid = int(open(_mk).read().strip() or 0)
+            os.kill(_pid, 0)
+            print(f"⏸  库正在重建(pid {_pid}),这时候跑咬合,对照一定是红的 —— 等它跑完再跑")
+            return 3
+        except (ValueError, ProcessLookupError, PermissionError):
+            pass          # 残留的标记(重建崩了留下的),当没看见
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="")
     ap.add_argument("--list", action="store_true")

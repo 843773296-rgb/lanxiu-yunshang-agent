@@ -58,3 +58,5 @@ agentsite/.sessions.json
 # 后台页面的草稿暂存 —— **运行时产物**,跟着谁开过服务变,
 # 进了版本库会让「谁在草稿箱里存了什么」变成一次代码改动。
 backend/drafts.json
+# 重建互斥标记(tools/rebuild.sh 写、结束时删)
+backend/.rebuilding

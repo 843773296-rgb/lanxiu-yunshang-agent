@@ -32,6 +32,20 @@
 # 用法: ./tools/rebuild.sh
 set -e
 cd "$(dirname "$0")/.."
+
+# ── 互斥标记:**「库坏了」和「库正在被重建」长得一模一样** ─────────────
+# 2026-09-18 一天里,另一个会话三次读到重建到一半的库:一次报「表从 67 掉到 64」、
+# 一次 `no such table: fitting`、一次门禁加 48 条咬合一起红 —— 每次都先花几分钟
+# 确认「是不是我改坏了」。这两种情况该触发的动作正好相反:前者要去查,后者只要等。
+# 标记里写进程号:check.sh / bite_run.py 看见它**而且那个进程还活着**就停下说明原因;
+# 进程已经不在(上次重建崩了留下的)就当没看见 —— 不能让一个残留文件永远卡住门禁。
+MARK=backend/.rebuilding
+if [ -f "$MARK" ] && kill -0 "$(cat "$MARK")" 2>/dev/null; then
+  echo "❌ 另一个重建正在跑(pid $(cat "$MARK")),两个同时写同一个库只会得到一个半成品"
+  exit 1
+fi
+echo $$ > "$MARK"
+trap 'rm -f "$MARK"' EXIT
 echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
 sleep 3
 

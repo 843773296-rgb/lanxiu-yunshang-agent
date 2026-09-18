@@ -1,6 +1,11 @@
 #!/bin/bash
 # 一条命令跑完全部检查。任一失败即整体失败。
 cd "$(dirname "$0")"
+# 库正在重建时不跑 —— 这时候的红不代表任何东西(见 tools/rebuild.sh 开头的互斥标记)
+if [ -f backend/.rebuilding ] && kill -0 "$(cat backend/.rebuilding)" 2>/dev/null; then
+  echo "⏸  库正在重建(pid $(cat backend/.rebuilding)),这时候跑出来的红不代表任何东西 —— 等它跑完再跑"
+  exit 3
+fi
 FAIL=0
 # .pyc 缓存的坑,踩过两次,**两次是同一个坑的两半**:
 #
