@@ -979,5 +979,53 @@
       }
     ],
     "预期红": "无人认领"
+  },
+  {
+    "script": "fakedata/naming.py",
+    "改坏": "把一条方案名改成带称谓的(「林女士婚服方案」—— 这正是规范要禁的原样)",
+    "sql": [
+      "UPDATE scheme SET name='林女士婚服方案' WHERE id='SC2601'"
+    ],
+    "预期红": "带称谓"
+  },
+  {
+    "script": "fakedata/naming.py",
+    "改坏": "方案名里嵌一个真实客户的名字(不带称谓,只能靠人名表拦)",
+    "sql": [
+      "UPDATE scheme SET name=(SELECT name FROM customer WHERE length(name)>=2 LIMIT 1)||'·平绣·2026-08' WHERE id='SC2602'"
+    ],
+    "预期红": "出现了真人姓名"
+  },
+  {
+    "script": "fakedata/naming.py",
+    "改坏": "定制款那段换成另一个形制(形状仍然合规,内容对不上 —— 只靠形状查不出来)",
+    "sql": [
+      "UPDATE scheme SET name='宋制褙子'||substr(name, instr(name,'·')) WHERE id='SC2601'"
+    ],
+    "预期红": "的定制款是"
+  },
+  {
+    "script": "fakedata/naming.py",
+    "改坏": "年月段改成和建单时间对不上的月份",
+    "sql": [
+      "UPDATE scheme SET name=substr(name,1,length(name)-7)||'1999-01' WHERE id='SC2603'"
+    ],
+    "预期红": "而它建于"
+  },
+  {
+    "script": "fakedata/naming.py",
+    "改坏": "把 scheme 表清空 —— 空表上所有性质都成立",
+    "sql": [
+      "DELETE FROM scheme"
+    ],
+    "预期红": "没扫到东西"
+  },
+  {
+    "script": "fakedata/naming.py",
+    "改坏": "给一个被方案用到的形制名里加上分隔符「·」(原来只写着「现在没有」)",
+    "sql": [
+      "UPDATE xingzhi SET name=name||' · 加长款' WHERE code=(SELECT xz FROM scheme LIMIT 1)"
+    ],
+    "预期红": "分隔符撞车"
   }
 ]

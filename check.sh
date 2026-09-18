@@ -96,6 +96,7 @@ run "成长推算 · 百分位/靶身高/复量周期" python3 knowledge/growth.
 run "用户生命周期 · 着装人/家庭/同意/过期量体" python3 backend/lifecycle_check.py
 run "数据规范 · 身份/关联/覆盖(对照 数据规范.md)" python3 backend/spec_check.py
 run "假数据工厂 · 推断/生成/闸门/灌回滚(24 项)" python3 fakedata/selftest.py
+run "演示数据命名 · 方案名只许「定制款·工艺·年月」,不带人名" python3 fakedata/naming.py
 # ⚠️ 出处**对不对**是另一件事,由 tools/verify_sources.py 核(要联网,
 #    所以不进这里 —— 依赖外部状态的检查放进门禁会变成随机拦路)。
 #    **加知识、改出处之后手动跑一次。**
