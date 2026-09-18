@@ -5,7 +5,7 @@
 和 publish_product_doc.py 同一套流程，区别只在：文档不同、图的文案是 PRD 口吻。
 坐标复用，文案单列 —— 两份文档的图形状一样，说法不一样。
 """
-import importlib.util, os, pathlib, re, subprocess, sys
+import importlib.util, os, pathlib, re, subprocess, sys, time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
@@ -151,18 +151,39 @@ def 做飞书版():
     return out
 
 def 找标记(tok, doc):
+    """返回 {章节号: 该占位段在根块子块里的序号}。
+
+    ⚠️ **一次列完所有块,不要一块一个 GET。** 文档现在 233 个块,
+    逐块请求要跑四分钟,上一版就是这么超时的 —— 而超时和「没找到」
+    在调用方看来是同一件事。
+    """
     d = fb._call(tok, "GET", f"{API}/docx/v1/documents/{doc}/blocks/{doc}")
     kids = ((d.get("data") or {}).get("block") or {}).get("children") or []
+
+    文本 = {}
+    页 = ""
+    while True:
+        u = f"{API}/docx/v1/documents/{doc}/blocks?page_size=500"
+        if 页:
+            u += f"&page_token={页}"
+        r = fb._call(tok, "GET", u)
+        data = r.get("data") or {}
+        for blk in data.get("items") or []:
+            文本[blk.get("block_id")] = "".join(
+                e.get("text_run", {}).get("content", "")
+                for e in (blk.get("text") or {}).get("elements", []))
+        页 = data.get("page_token") or ""
+        if not data.get("has_more"):
+            break
+
     位 = {}
     for i, bid in enumerate(kids):
-        r = fb._call(tok, "GET", f"{API}/docx/v1/documents/{doc}/blocks/{bid}")
-        blk = (r.get("data") or {}).get("block") or {}
-        txt = "".join(e.get("text_run", {}).get("content", "")
-                      for e in (blk.get("text") or {}).get("elements", []))
+        txt = 文本.get(bid, "")
         for 章, mk in 标记文本.items():
             if mk in txt:
                 位[章] = i
     return 位
+
 
 def main():
     md = 做飞书版()
@@ -177,7 +198,27 @@ def main():
     doc = mu.group(1)
 
     tok = fp.acquire_token()
-    print("\n② 找占位段")
+
+    # ⚠️ **导入是异步的。** 接口返回文档 id 的那一刻,块可能一个都还没写进去 ——
+    # 这时去找占位段会「一个都没找到」,而那和「文档里真的没有占位段」长得一模一样。
+    # 栽过一次:四个标记全报没找到,文档其实好好的,只是还没写完。
+    print("\n② 等导入写完")
+    上次, 稳定 = -1, 0
+    for i in range(60):
+        n = fb.根块子块数(tok, doc)
+        if n > 0 and n == 上次:
+            稳定 += 1
+            if 稳定 >= 2:            # 连续两次读到同一个数才算写完
+                break
+        else:
+            稳定 = 0
+        上次 = n
+        time.sleep(2)
+    else:
+        sys.exit(f"❌ 等了 120 秒,子块数仍在变(最后 {上次} 个)—— 停手,别对着半份文档插图")
+    print(f"   子块 {上次} 个,连续两次不变")
+
+    print("\n③ 找占位段")
     位 = 找标记(tok, doc)
     for 章 in 图序:
         有 = 章 in 位
@@ -186,7 +227,7 @@ def main():
     if len(位) != len(图序):
         sys.exit("❌ 占位段没找齐，停手")
 
-    print("\n③ 插画板并画（从后往前）")
+    print("\n④ 插画板并画（从后往前）")
     出图 = []
     for 章, g in sorted(zip(图序, 图), key=lambda x: -位[x[0]]):
         blk, wid = fb.建画板(tok, doc, index=位[章] + 1)
@@ -197,7 +238,7 @@ def main():
         出图.append((章, wid))
 
     out = pathlib.Path(os.environ.get("BOARD_IMG_DIR", "/tmp"))
-    print("\n④ 导出图片核对")
+    print("\n⑤ 导出图片核对")
     for i, (章, wid) in enumerate(reversed(出图), 1):
         pth = fb.导出图片(tok, wid, out / ("prd%d.jpg" % i))
         print("   %s → %s（%d 字节）" % (标记文本[章], pth, pth.stat().st_size))
