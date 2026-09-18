@@ -1226,11 +1226,11 @@
   },
   {
     "script": "backend/popularity_check.py",
-    "改坏": "把维保率的分母下限改成 0(卖 2 件修 1 件也给 50%)",
+    "改坏": "把口径里的分母下限改成 0(卖 2 件修 1 件也给 50%)—— **破坏点不写死当前值**:第一版写的是「10 → 0」,业务把下限提到 30 之后那段就找不到了,规格当场失效(咬合第一关抓到)",
     "file": [
       {
         "path": "knowledge/popularity.py",
-        "old": "易损分母下限 = 10",
+        "old": "易损分母下限 = 30",
         "new": "易损分母下限 = 0"
       }
     ],
@@ -1339,5 +1339,29 @@
       "DELETE FROM customer WHERE id IN (SELECT id FROM customer WHERE id LIKE 'C3%' ORDER BY id DESC LIMIT (SELECT COUNT(*) % 100 FROM customer))"
     ],
     "预期红": "⑤ 客户数和订单数不是整百"
+  },
+  {
+    "script": "agentsite/scheme_hook_test.py",
+    "改坏": "把 on_prompt 里注入当前方案那一段去掉",
+    "file": [
+      {
+        "path": "agentsite/guards.py",
+        "old": "        当 = state.get(\"当前方案\")",
+        "new": "        当 = None"
+      }
+    ],
+    "预期红": "① 按号取过一份方案之后"
+  },
+  {
+    "script": "agentsite/scheme_hook_test.py",
+    "改坏": "让 post_tool 列清单时也记「当前方案」(hook 替模型挑第一条)",
+    "file": [
+      {
+        "path": "agentsite/guards.py",
+        "old": "if _n2 == \"get_scheme\" and isinstance(_out, dict) and _out.get(\"方案号\"):\n            state[\"当前方案\"] = {\"号\": _out[\"方案号\"], \"名称\": _out.get(\"名称\"),",
+        "new": "if _n2 == \"get_scheme\" and isinstance(_out, dict):\n            _out = _out if _out.get(\"方案号\") else (_out.get(\"schemes\") or [{}])[0]\n            state[\"当前方案\"] = {\"号\": _out.get(\"方案号\"), \"名称\": _out.get(\"名称\"),"
+      }
+    ],
+    "预期红": "② 列清单不算「取过」"
   }
 ]

@@ -932,6 +932,19 @@ def make_hooks(state):
                 state["_diary_read"] = True
         except Exception:
             pass
+        # **当前在谈的是哪一份方案。** 这是「一件事」那条线的落点:
+        # 方案号放在 harness 留给我们的 `state` 里,**不放在对话文本里**。
+        #
+        # 为什么不靠模型自己记:自动压缩压的是「读起来连贯」,不是「标识不丢」。
+        # 压完之后模型很可能仍然记得「在聊一套唐制襦裙」,却**丢掉了 SC2601 这个号** ——
+        # 而这两种状态在对话里长得一模一样,直到它按错误的方案下了单。
+        当 = state.get("当前方案")
+        if 当:
+            ctx_add += (f"\n\n[系统注入] 本次会话里已经明确取过一份方案:"
+                       f"**{当['号']}**({当.get('名称')} · {当.get('状态')})。"
+                       f"客户说「这个 / 刚才那套 / 就按这个」时,**默认指的是它**,"
+                       f"但推进前仍要把号说出来让人确认。"
+                       f"⚠️ 若客户提到的是别的方案,以客户说的为准,并重新查一次。")
         return {"hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
             "additionalContext": ctx_add}}
@@ -972,9 +985,21 @@ def make_hooks(state):
         if _w and _w[-1].get("tool") == _n2 and _w[-1].get("ok") is None:
             _r = _unwrap(inp.get("tool_response"))
             _w[-1]["ok"] = bool(isinstance(_r, dict) and _r.get("ok"))
+        _out = _unwrap(inp.get("tool_response"))
         state.setdefault("calls", []).append(dict(
             tool=inp.get("tool_name", ""), input=inp.get("tool_input"),
-            output=_unwrap(inp.get("tool_response"))))
+            output=_out))
+
+        # ── 记住「当前方案」 ──────────────────────────────────────
+        # ⚠️ **只有按方案号取过单条时才记,列清单不算。**
+        #
+        # 这条限制是刻意的:业务 2026-09-18 定了「一个客户可以多条方案同时锁定」,
+        # 所以「锁定那条」不是唯一标识。如果列了一遍清单就顺手把第一条当成
+        # 「当前方案」,等于**把刚刚堵死的那条消歧捷径从后门放回来** ——
+        # 而且是以一种更隐蔽的方式:模型没挑,是 hook 替它挑的。
+        if _n2 == "get_scheme" and isinstance(_out, dict) and _out.get("方案号"):
+            state["当前方案"] = {"号": _out["方案号"], "名称": _out.get("名称"),
+                              "状态": _out.get("状态"), "客户号": _out.get("客户号")}
         return {}
 
     async def on_stop(inp, tool_use_id, ctx):
