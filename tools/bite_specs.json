@@ -1299,5 +1299,45 @@
       }
     ],
     "预期红": "④ 撤回之后"
+  },
+  {
+    "script": "backend/dataset_check.py",
+    "改坏": "给一张没有退货单的标品订单标上「已退款」",
+    "sql": [
+      "UPDATE ordr SET refund_status='已退款' WHERE id=(SELECT id FROM ordr WHERE kind='标品订单' AND refund_status='未退款' AND id NOT IN (SELECT order_id FROM aftersale) LIMIT 1)"
+    ],
+    "预期红": "① 订单的退款状态和售后单对得上"
+  },
+  {
+    "script": "backend/dataset_check.py",
+    "改坏": "把换货单整批删掉(换货率掉到 0)",
+    "sql": [
+      "DELETE FROM aftersale WHERE kind='换货'"
+    ],
+    "预期红": "② 占比在拍板的区间里"
+  },
+  {
+    "script": "backend/dataset_check.py",
+    "改坏": "把所有定制单的面料都改成同一种(差异被抹平)",
+    "sql": [
+      "UPDATE item_part_choice SET material='真丝素罗' WHERE kind='面料'"
+    ],
+    "预期红": "③ 维保率在面料上有显著差异"
+  },
+  {
+    "script": "backend/dataset_check.py",
+    "改坏": "给一个普通客户的完成单数 +1",
+    "sql": [
+      "UPDATE customer SET order_cnt=order_cnt+1 WHERE id=(SELECT MIN(id) FROM customer WHERE id LIKE 'C3%')"
+    ],
+    "预期红": "④ 客户的单数和实付和名下订单对得上"
+  },
+  {
+    "script": "backend/dataset_check.py",
+    "改坏": "删掉几个客户让客户数正好整百",
+    "sql": [
+      "DELETE FROM customer WHERE id IN (SELECT id FROM customer WHERE id LIKE 'C3%' ORDER BY id DESC LIMIT (SELECT COUNT(*) % 100 FROM customer))"
+    ],
+    "预期红": "⑤ 客户数和订单数不是整百"
   }
 ]
