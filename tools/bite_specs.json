@@ -1115,5 +1115,37 @@
       "UPDATE aftersale SET order_item_id=NULL WHERE id=(SELECT id FROM aftersale LIMIT 1)"
     ],
     "预期红": "R4b 售后的商品是该订单里的商品"
+  },
+  {
+    "script": "backend/order_status_check.py",
+    "改坏": "把一单标品的状态改成「生产中」",
+    "sql": [
+      "UPDATE ordr SET status='生产中' WHERE id=(SELECT id FROM ordr WHERE kind='标品订单' LIMIT 1)"
+    ],
+    "预期红": "② 标品不出现生产三档"
+  },
+  {
+    "script": "backend/order_status_check.py",
+    "改坏": "给一单标品填上生产完成时间(状态不动)",
+    "sql": [
+      "UPDATE ordr SET produced_at='2026-01-01 00:00' WHERE id=(SELECT id FROM ordr WHERE kind='标品订单' LIMIT 1)"
+    ],
+    "预期红": "③ 标品没有生产完成时间"
+  },
+  {
+    "script": "backend/order_status_check.py",
+    "改坏": "把 produced_at 整列清空 —— 只有前三条时会全绿",
+    "sql": [
+      "UPDATE ordr SET produced_at=NULL"
+    ],
+    "预期红": "④ 定制品已过生产阶段的,有生产完成时间"
+  },
+  {
+    "script": "backend/order_status_check.py",
+    "改坏": "把一单订单的状态改成一个谁也没定义过的词",
+    "sql": [
+      "UPDATE ordr SET status='拍脑袋档' WHERE id=(SELECT id FROM ordr LIMIT 1)"
+    ],
+    "预期红": "① 订单状态在它那一类的允许集里"
   }
 ]
