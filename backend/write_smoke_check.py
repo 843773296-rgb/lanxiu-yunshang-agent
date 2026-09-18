@@ -56,7 +56,7 @@ DONE = []
 
 # 还没有冒烟用例的写接口数。**只许降不许涨** —— 补一个改一次这个数。
 # 定在当前值而不是 0:一次补 17 个不现实,而「等补完再进门禁」的下场是永远补不完。
-欠账上限 = 15
+欠账上限 = 10
 
 
 def ck(name, ok, n, msg=""):
@@ -184,7 +184,83 @@ def 用例表():
                        客["id"], {"addr": "冒烟地址 " + str(id(s))[-6:]},
                        员["no"] if 员 else "魏欣新", "总部运营"),
                    "op_log"))
+    # ── 2026-09-19 补的五条 ──────────────────────────────────────
+    # 挑的是**真会改业务状态**的那几个:审批、任务、预约、建档、开关。
+    # 都**带够前置条件**:角色不对、原因没填、状态不对都会被正当拒绝,
+    # 而那种拒绝会被这道检查读成「接口坏了」—— 那是用例的错,不是接口的错。
+    import datetime
+    今 = datetime.datetime.now()
+
+    # apply_approval(kind, target, payload, note, actor, role)
+    # ⚠️ role 必须是店长及以上,note 必须非空 —— 两个都是接口明写的前置
+    if 客:
+        出.append(("apply_approval",
+                   lambda s: s.apply_approval(
+                       "等级调整", 客["id"], {"to": "金卡"}, "冒烟:测试审批发起",
+                       员["no"] if 员 else "魏欣新", "店长"),
+                   "approval"))
+
+    # create_customer(d, actor, _role) —— 手机号必须唯一,所以现造一个没人用的
+    未用手机 = _没被占用的手机号()
+    if 未用手机:
+        出.append(("create_customer",
+                   lambda s: s.create_customer(
+                       {"name": "冒烟客户" + 今.strftime("%H%M%S"),
+                        "phone": 未用手机, "shop": (客 or {}).get("shop")},
+                       员["no"] if 员 else "魏欣新", "店长"),
+                   "customer"))
+
+    # create_appointment(d, actor, _role)
+    # ⚠️ **时间要往后排** —— 早于当前时间的补录只有店长及以上能做,
+    #    用未来时间就绕开了那条规则,测的才是「建得出来」本身。
+    if 客 and 员:
+        将来 = (今 + datetime.timedelta(days=3)).replace(microsecond=0)
+        # ⚠️ 字段名是 `start` / `end` / `way`,**不是** `start_ts` / `type`。
+        #    第一版写错了,接口正当地返回 BAD_TIME,而这道检查把它读成
+        #    「返回成功但库里没多」—— **坏的是用例,不是接口**。
+        #    这正是这道检查里那条「接口明说没做」和「该做没做」要分开报的理由:
+        #    前者是用例失效,后者才是缺陷,而它们在「行数没变」上长得一样。
+        出.append(("create_appointment",
+                   lambda s: s.create_appointment(
+                       {"customer_id": 客["id"], "way": "到店量体",
+                        "start": 将来.strftime("%Y-%m-%d %H:%M"),
+                        "end": (将来 + datetime.timedelta(hours=1)).strftime("%Y-%m-%d %H:%M"),
+                        "advisor_no": 员["no"], "shop": 客.get("shop")},
+                       员["no"], "店长"),
+                   "appointment"))
+
+    # close_task(tid, result, note, actor) —— 只有「待处理」的才关得掉
+    待 = 取("SELECT id FROM task WHERE status='待处理' LIMIT 1") if 有表("task") else None
+    if 待:
+        出.append(("close_task",
+                   lambda s: s.close_task(待["id"], "已完成", "冒烟:关闭任务",
+                                          员["no"] if 员 else "魏欣新"),
+                   "op_log"))
+
+    # toggle(table, key, val, col, on, off, actor) —— 启停一个系统编码
+    码 = 取("SELECT code FROM sys_code LIMIT 1") if 有表("sys_code") else None
+    if 码:
+        出.append(("toggle",
+                   lambda s: s.toggle("sys_code", "code", 码["code"],
+                                      actor=员["no"] if 员 else "魏欣新"),
+                   "op_log"))
+
     return [x for x in 出 if 有表(x[2])]
+
+
+def _没被占用的手机号():
+    """现找一个库里没人用的号。**不写死** —— 写死的号迟早撞上一条真数据,
+    而那时接口会正当地报「手机号重复」,这道检查会把它读成「接口坏了」。"""
+    c = sqlite3.connect(副本)
+    try:
+        用过 = {r[0] for r in c.execute("SELECT phone FROM customer WHERE phone IS NOT NULL")}
+    finally:
+        c.close()
+    for i in range(9000, 9999):
+        号 = f"138{i:04d}0000"[:11]
+        if 号 not in 用过:
+            return 号
+    return None
 
 
 def 有表(t):
@@ -290,7 +366,7 @@ def main():
 
 
 咬合 = [
-    ('把用例表里的函数名写错一个字(create_followup → create_followupX),欠账从 15 涨到 16',
+    ('把用例表里的函数名写错一个字(create_followup → create_followupX),欠账涨一个',
      '没覆盖的写接口不超过'),
     ('让 create_followup 只返回 ok 不写库(把 _insert 那一句吞掉)',
      '写接口真跑,且库里真的变了'),

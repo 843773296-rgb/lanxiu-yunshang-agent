@@ -1150,7 +1150,7 @@
   },
   {
     "script": "backend/write_smoke_check.py",
-    "改坏": "把用例表里的函数名写错一个字(create_followup → create_followupX),欠账从 15 涨到 16",
+    "改坏": "把用例表里的函数名写错一个字(create_followup → create_followupX)——那个函数就没人覆盖了,欠账**涨一个**。⚠️ 描述里**不写死当前欠账数**:补一个用例它就变,而写死的数字漂了不会报错,只会让下一个人对着一个假前提排查",
     "file": [
       {
         "path": "backend/write_smoke_check.py",
@@ -1379,5 +1379,29 @@
       "UPDATE workorder SET ref=(SELECT id FROM ordr WHERE kind='定制品订单' AND status='完成' LIMIT 1) WHERE id=(SELECT id FROM workorder WHERE status='在制' LIMIT 1)"
     ],
     "预期红": "⑥ 车间工单和它挂的订单状态对得上"
+  },
+  {
+    "script": "backend/muslin_check.py",
+    "改坏": "拆掉「不给下单日就判不了」那道拦截(又回到替调用方取今天)",
+    "file": [
+      {
+        "path": "knowledge/muslin.py",
+        "old": "    if not on:\n        return None, \"**判不了** —— 没说按哪天算",
+        "new": "    if not on and False:\n        return None, \"**判不了** —— 没说按哪天算"
+      }
+    ],
+    "预期红": "不给下单日就说判不了"
+  },
+  {
+    "script": "backend/muslin_check.py",
+    "改坏": "按配置判() 不把下单日传给工期推算(排队退回按今天算)",
+    "file": [
+      {
+        "path": "knowledge/muslin.py",
+        "old": "craft_names=craft_names or {}, from_date=str(on)[:10],",
+        "new": "craft_names=craft_names or {}, from_date=None,"
+      }
+    ],
+    "预期红": "同一件衣服按下单日算"
   }
 ]
