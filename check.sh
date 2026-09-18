@@ -25,6 +25,7 @@ run "数据层 · truth 表隔离"   python3 backend/selftest.py
 run "员工登录 · 5 条自测" python3 backend/auth.py
 run "路由 · handler 必须真的存在" python3 backend/route_check.py
 run "只读入口冒烟 · 50 个入口真跑一遍(handler 存在≠跑得起来)" python3 backend/page_smoke_check.py
+run "写接口冒烟 · 在库的副本上真写一遍(返回 ok≠写进去了)" python3 backend/write_smoke_check.py
 run "产品文档 · 写死的数字和代码对账(文档变假时不会报错)" python3 tools/doc_numbers_check.py
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
 run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py

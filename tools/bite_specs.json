@@ -1147,5 +1147,29 @@
       "UPDATE ordr SET status='拍脑袋档' WHERE id=(SELECT id FROM ordr LIMIT 1)"
     ],
     "预期红": "① 订单状态在它那一类的允许集里"
+  },
+  {
+    "script": "backend/write_smoke_check.py",
+    "改坏": "把用例表里的函数名写错一个字(create_followup → create_followupX),欠账从 15 涨到 16",
+    "file": [
+      {
+        "path": "backend/write_smoke_check.py",
+        "old": "出.append((\"create_followup\",",
+        "new": "出.append((\"create_followupX\","
+      }
+    ],
+    "预期红": "没覆盖的写接口不超过"
+  },
+  {
+    "script": "backend/write_smoke_check.py",
+    "改坏": "让 create_followup 只返回 ok 不写库(把 _insert 那一句吞掉)",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "    _insert(\"followup\",",
+        "new": "    (lambda *a, **k: None)(\"followup\","
+      }
+    ],
+    "预期红": "写接口真跑,且库里真的变了"
   }
 ]
