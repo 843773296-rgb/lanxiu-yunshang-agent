@@ -1206,10 +1206,98 @@
   },
   {
     "script": "backend/aftersale_rule_check.py",
-    "改坏": "把一单非判责夹具的维保挂到还没发货的订单上",
+    "改坏": "把一单维保所挂订单的状态从「完成」改成「待付款」并清掉完成时间(**只碰订单,不碰维保** —— 换维保的 order_id 会顺带弄红 R4a,那样测不出是哪条规则在起作用)",
     "sql": [
-      "UPDATE maintain SET order_id=(SELECT id FROM ordr WHERE shipped_at IS NULL OR shipped_at='' LIMIT 1) WHERE id=(SELECT m.id FROM maintain m WHERE m.id NOT IN (SELECT case_id FROM truth WHERE breakpoint='BP-03') LIMIT 1)"
+      "UPDATE ordr SET status='待付款', finished_at=NULL WHERE id=(SELECT order_id FROM maintain LIMIT 1)"
     ],
-    "预期红": "R5 维保不早于发货"
+    "预期红": "R5 维保只能发生在订单完成之后"
+  },
+  {
+    "script": "backend/popularity_check.py",
+    "改坏": "把「取消单不算数」那一支关掉(取消的也计进榜)",
+    "file": [
+      {
+        "path": "knowledge/popularity.py",
+        "old": "    return 状态 not in 不算数的订单状态",
+        "new": "    return True"
+      }
+    ],
+    "预期红": "① 取消单不进榜"
+  },
+  {
+    "script": "backend/popularity_check.py",
+    "改坏": "把维保率的分母下限改成 0(卖 2 件修 1 件也给 50%)",
+    "file": [
+      {
+        "path": "knowledge/popularity.py",
+        "old": "易损分母下限 = 10",
+        "new": "易损分母下限 = 0"
+      }
+    ],
+    "预期红": "④ 维保率 = 分子/分母"
+  },
+  {
+    "script": "backend/popularity_check.py",
+    "改坏": "把维度分布里「一件挂多个面料各计一次」改成只计第一个",
+    "file": [
+      {
+        "path": "knowledge/popularity.py",
+        "old": "        for v in 取维度(r) or []:\n            d = g.setdefault(v,",
+        "new": "        for v in (取维度(r) or [])[:1]:\n            d = g.setdefault(v,"
+      }
+    ],
+    "预期红": "⑤ 各档之和"
+  },
+  {
+    "script": "backend/popularity_check.py",
+    "改坏": "把显著性判据里的两倍噪声改成零(所有档都算突出)",
+    "file": [
+      {
+        "path": "knowledge/popularity.py",
+        "old": "        噪声 = 2 * (p * (1 - p) / n) ** 0.5",
+        "new": "        噪声 = 0.0"
+      }
+    ],
+    "预期红": "⑦ 判成「值得注意」的档"
+  },
+  {
+    "script": "backend/consent_check.py",
+    "改坏": "往 consent 表里写一个没定义过的 scope",
+    "sql": [
+      "UPDATE consent SET scope='顺手加的档' WHERE id=(SELECT id FROM consent LIMIT 1)"
+    ],
+    "预期红": "① 同意的用途在白名单里"
+  },
+  {
+    "script": "backend/consent_check.py",
+    "改坏": "删掉一个未成年着装人的监护人同意(身体数据那条留着)",
+    "sql": [
+      "DELETE FROM consent WHERE scope='未成年人' AND wearer_id=(SELECT wearer_id FROM consent WHERE scope='未成年人' LIMIT 1)"
+    ],
+    "预期红": "② 不满 14 岁且存了身体数据的"
+  },
+  {
+    "script": "backend/consent_check.py",
+    "改坏": "把 _consent_ok 的 scope 参数忽略掉(任一档同意就全放行)",
+    "file": [
+      {
+        "path": "backend/api.py",
+        "old": "SELECT 1 FROM consent WHERE wearer_id=? AND scope=? AND revoked_at IS NULL",
+        "new": "SELECT 1 FROM consent WHERE wearer_id=? AND ?<>'' AND revoked_at IS NULL"
+      }
+    ],
+    "预期红": "③ 有身体数据同意 ≠ 有营销触达同意"
+  },
+  {
+    "script": "backend/consent_check.py",
+    "改坏": "把 _consent_ok 里的 `revoked_at IS NULL` 删掉(撤回不再生效)",
+    "file": [
+      {
+        "path": "backend/api.py",
+        "old": "AND scope=? AND revoked_at IS NULL",
+        "new": "AND scope=? AND 1=1"
+      }
+    ],
+    "预期红": "④ 撤回之后"
   }
 ]

@@ -55,6 +55,8 @@ run "裁片用料占比 · 估出来的和版师给的不许长得一样" python
 run "方案引用 · 存编码不存名字,而且落到具体版型(否则算不出用料)" python3 backend/scheme_check.py
 run "售后与维保 · 业务硬规则(库允许≠业务允许)" python3 backend/aftersale_rule_check.py
 run "换货 · 五条规则(走审批/要寄回/同渠道/差价多退少补)" python3 backend/exchange_check.py
+run "受欢迎与易损 · 性质检查(相对指标不标真值)" python3 backend/popularity_check.py
+run "同意分档与撤回 · 一档不顶另一档,撤回真的走一遍" python3 backend/consent_check.py
 run "订单状态 · 定制品与标品两套状态必须分开" python3 backend/order_status_check.py
 run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 backend/role_check.py
 # 版师是第一个「有写工具,但只有一个」的角色 —— 它特有的两种失败
