@@ -68,7 +68,8 @@ def main():
         "SELECT a.id, a.kind, a.status, a.order_id, a.order_item_id, o.kind AS 订单类型"
         " FROM aftersale a LEFT JOIN ordr o ON o.id = a.order_id")]
     维保 = [dict(r) for r in c.execute(
-        "SELECT m.id, m.item, m.order_id, m.order_item_id, o.kind AS 订单类型"
+        "SELECT m.id, m.item, m.order_id, m.order_item_id, m.created,"
+        " o.kind AS 订单类型, o.shipped_at AS 发货时间, o.status AS 订单状态"
         " FROM maintain m LEFT JOIN ordr o ON o.id = m.order_id")]
 
     # ── R1 定制品没有退货、换货 ────────────────────────────────────
@@ -124,6 +125,44 @@ def main():
     查商品一致(维保, "maintain", "R4a 维保的商品是该订单里的商品")
     查商品一致(售后, "aftersale", "R4b 售后的商品是该订单里的商品")
 
+    # ── R5 维保不能发生在发货之前 ──────────────────────────────────
+    #
+    # ⚠️ **这一条不是业务说的,是我(助手)加的。** 业务原话只有「都绑定订单」
+    #    和「商品要统一」。标出来是因为它有代价,而付代价的人该知道为什么。
+    #
+    # 它值得留下的理由:一件还在生产的衣服报维保,业务上说不通,
+    # 而库里存得下 —— 这正是「库允许 ≠ 业务允许」。
+    #
+    # 它的代价:判责评测那 12 张夹具维保单里,**有 4 张挂在还没发货的订单上**
+    #    (MW73020 待审核 / MW73023 待发货 / MW73027 待审核 / MW73034 待生产)。
+    #    试过把那 4 张订单推进到已签收,**不行** —— `get_maintain` 的现场里
+    #    直接显示订单状态,推进一步输出就不再一字不差;MW73034 从待生产推到开裁
+    #    之后,白坯试衣的分类也会跟着变。
+    #
+    # 所以按 intent 里写死的顺序办:**改规则,不改夹具。**
+    # 判责夹具豁免这一条 —— 它们的价值在判责答案上,不在时间线上,
+    # 而那部分由判责评测自己守着。
+    #
+    # ⚠️ 豁免名单**从 truth 现查,不手抄** —— 手抄一份名单就是第二个来源,
+    #    哪天加了第 13 条判责用例,手抄那份不会跟着变,新夹具会被这条误拦。
+    判责夹具 = {r[0] for r in c.execute(
+        "SELECT case_id FROM truth WHERE breakpoint='BP-03'")}
+    早于发货 = []
+    for r in 维保:
+        if r["id"] in 判责夹具:
+            continue
+        发 = (r.get("发货时间") or "").strip()
+        申 = (r.get("created") or "").strip()
+        if not 发:
+            早于发货.append(f"{r['id']} 挂在还没发货的订单上(状态「{r.get('订单状态')}」)")
+        elif 申 and 申 < 发:
+            早于发货.append(f"{r['id']} 申请于 {申},而订单 {发} 才发货")
+    受检 = [r for r in 维保 if r["id"] not in 判责夹具]
+    ck("R5 维保不早于发货(判责夹具豁免)", not 早于发货, len(受检),
+       f"{早于发货[:3]}" if 早于发货 else
+       f"豁免 {len(判责夹具 & {r['id'] for r in 维保})} 张判责夹具 —— "
+       f"**这条规则是助手加的不是业务定的**,夹具的价值在判责答案上,不在时间线上")
+
     c.close()
     print("=" * 80)
     if FAIL:
@@ -145,6 +184,7 @@ def main():
      'R4a 维保的商品是该订单里的商品'),
     ('把一单售后的 order_item_id 清空(没写退的是哪一件)',
      'R4b 售后的商品是该订单里的商品'),
+    ('把一单**非判责夹具**的维保挂到一张还没发货的订单上', 'R5 维保不早于发货'),
 ]
 
 if __name__ == "__main__":

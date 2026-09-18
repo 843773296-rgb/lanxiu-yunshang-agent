@@ -946,15 +946,15 @@
   },
   {
     "script": "tools/doc_numbers_check.py",
-    "改坏": "把产品文档里的「59 个业务工具」改成 58(文档数字与代码脱节)",
+    "改坏": "把产品文档里的「4 个守卫」改成 5 —— **挑守卫数而不是工具数**:工具数每加一个工具就变,破坏点会失效(它失效过一次,而咬合第一关正是抓这个);守卫是四个 hook,几乎不动",
     "file": [
       {
         "path": "澜绣云裳agent-产品需求文档.md",
-        "old": "59 个业务工具",
-        "new": "58 个业务工具"
+        "old": "4 个守卫、22 项交付校验",
+        "new": "5 个守卫、22 项交付校验"
       }
     ],
-    "预期红": "工具总数"
+    "预期红": "守卫数"
   },
   {
     "script": "tools/doc_numbers_check.py",
@@ -1171,5 +1171,45 @@
       }
     ],
     "预期红": "写接口真跑,且库里真的变了"
+  },
+  {
+    "script": "backend/exchange_check.py",
+    "改坏": "把一单换货的 channel 改成和订单渠道不同的值(跨渠道调货)",
+    "sql": [
+      "UPDATE aftersale SET channel='跨渠道XX' WHERE kind='换货' AND id=(SELECT id FROM aftersale WHERE kind='换货' LIMIT 1)"
+    ],
+    "预期红": "③ 换货从买的那个渠道出货"
+  },
+  {
+    "script": "backend/exchange_check.py",
+    "改坏": "把一单已完成换货的 price_diff 清成 NULL(差价没算过)",
+    "sql": [
+      "UPDATE aftersale SET price_diff=NULL WHERE kind='换货' AND status='已完成'"
+    ],
+    "预期红": "④ 已完成的换货单"
+  },
+  {
+    "script": "backend/exchange_check.py",
+    "改坏": "把一单换货的 exchange_sku 改成库里没有的编码",
+    "sql": [
+      "UPDATE aftersale SET exchange_sku='NOPE-SKU' WHERE kind='换货' AND id=(SELECT id FROM aftersale WHERE kind='换货' LIMIT 1)"
+    ],
+    "预期红": "⑤ 换出去的那件是真实存在的 SKU"
+  },
+  {
+    "script": "backend/exchange_check.py",
+    "改坏": "把一单换货的状态改成不在状态机里的词",
+    "sql": [
+      "UPDATE aftersale SET status='拍脑袋态' WHERE kind='换货' AND id=(SELECT id FROM aftersale WHERE kind='换货' LIMIT 1)"
+    ],
+    "预期红": "① 换货单的状态在换货状态机里"
+  },
+  {
+    "script": "backend/aftersale_rule_check.py",
+    "改坏": "把一单非判责夹具的维保挂到还没发货的订单上",
+    "sql": [
+      "UPDATE maintain SET order_id=(SELECT id FROM ordr WHERE shipped_at IS NULL OR shipped_at='' LIMIT 1) WHERE id=(SELECT m.id FROM maintain m WHERE m.id NOT IN (SELECT case_id FROM truth WHERE breakpoint='BP-03') LIMIT 1)"
+    ],
+    "预期红": "R5 维保不早于发货"
   }
 ]
