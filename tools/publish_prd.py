@@ -13,7 +13,16 @@ _s = importlib.util.spec_from_file_location("fb", ROOT / "tools/feishu_board.py"
 fb = importlib.util.module_from_spec(_s); _s.loader.exec_module(fb)
 API, fp = fb.API, fb.fp
 
-标记 = ["【图一】系统协同架构", "【图二】写入控制机制", "【图三】数据流转地图"]
+# 图 ← 章节。**用章节号配对，不用「第几张」** ——
+# 靠序号配对时，两张图对调之后**都画得出来、都读得回、不报任何错**，
+# 只有人打开文档才看得出图放错了地方。这是「数量对上 ≠ 放对了」的又一例。
+图序 = ["2.1", "2.6", "3.3", "3.5"]
+标记文本 = {
+    "2.1": "【图一】系统协同架构",
+    "2.6": "【图二】写入控制机制",
+    "3.3": "【图三】数据流转地图",
+    "3.5": "【图四】一轮对话的运行过程",
+}
 
 def N(key, text, x, y, w, h, shape="round_rect", 色=None):
     return dict(key=key, text=text, x=x, y=y, w=w, h=h, shape=shape, 色=色)
@@ -72,20 +81,74 @@ def R(a, b, 标=None):
       dict(a="w", b="db", 标="写入生效", 起="top", 止="right"),
       E("u","tr"),
   ]),
+  # ── 图四:一轮对话的运行过程 ──────────────────────────────────
+  # 这张图的全部信息量在颜色上:紫=我们插进去的四个介入点,蓝=运行时框架转的。
+  # 三条回边(拦截理由 / 工具结果 / 退回重答)是「循环」二字的实体。
+  dict(节点=[
+      N("lg1","▨ 运行时框架托管",                    1500,   0, 320,  60, "rect", 色="托"),
+      N("lg2","▨ 本系统实现的介入点",                 1500,  80, 320,  60, "rect", 色="我"),
+      N("q",  "员工提问",                              300,    0, 400,  80),
+      N("h1", "① 开场注入\n当前日期 + 最近三条工作记录", 300,  150, 400, 100, 色="我"),
+      N("m",  "模型判断\n下一步做什么",                300,  330, 400,  90, 色="托"),
+      N("d1", "需要调用工具吗",                        280,  500, 440, 140, "diamond", 色="判"),
+      N("h2", "② 调用前约束\n白名单 · 权限预演 · 行为约束", 880, 510, 420, 110, 色="我"),
+      N("d2", "放行吗",                                880,  700, 420, 130, "diamond", 色="判"),
+      N("bk", "把拦截理由交回模型",                    1440,  715, 320, 100, 色="拒"),
+      N("ex", "工具执行",                              900,  900, 400,  80, 色="托"),
+      N("h3", "③ 调用后记录\n回填本次写入是否成功",     880, 1050, 420, 100, 色="我"),
+      N("ans","生成答复",                              300, 1020, 400,  80, 色="托"),
+      N("h4", "④ 交付前校验 22 项",                    280, 1180, 440, 140, "diamond", 色="我"),
+      N("re", "退回重答\n（只允许一次）",              -320, 1190, 320, 100, 色="拒"),
+      N("u",  "员工",                                  300, 1420, 400,  80, 色="过"),
+      N("tr", "每轮结构化记录",                        300, 1570, 400,  80, 色="记"),
+  ], 边=[
+      E("q","h1"), E("h1","m"), E("m","d1"),
+      R("d1","h2","需要"), E("h2","d2"),
+      R("d2","bk","拦截"),
+      dict(a="bk", b="m", 标="回边一 · 拦截理由", 起="top", 止="right", 标位=(1560, 420)),
+      E("d2","ex","放行"), E("ex","h3"),
+      dict(a="h3", b="m", 标="回边二 · 工具结果（这就是「轮」）", 起="left", 止="right",
+           标位=(960, 430)),
+      E("d1","ans","不需要"), E("ans","h4"),
+      dict(a="h4", b="re", 标="未通过", 起="left", 止="right"),
+      dict(a="re", b="m", 标="回边三 · 退回重答", 起="top", 止="left", 标位=(150, 700)),
+      E("h4","u","通过"), E("u","tr"),
+  ]),
 ]
 
 
 def 做飞书版():
-    src = (ROOT / "澜绣云裳agent-产品需求文档.md").read_text(encoding="utf-8")
-    块 = re.findall(r"```mermaid\n.*?\n```", src, re.S)
-    if len(块) != 3:
-        sys.exit(f"❌ 预期 3 张图，源文件里有 {len(块)} 个 mermaid 块")
-    for b, mk in zip(块, 标记):
-        src = src.replace(b, mk, 1)
-    out = pathlib.Path("/tmp/澜绣云裳agent-产品需求文档.md")
-    out.write_text(src, encoding="utf-8")
-    return out
+    """把每个 mermaid 块换成它所属章节的占位符。
 
+    先核对「每个图落在哪一章」和规格是否一致 —— 对不上直接停手，
+    因为图放错位置之后画板照样画得出来、读得回，没有任何一环会报错。
+    """
+    src = (ROOT / "澜绣云裳agent-产品需求文档.md").read_text(encoding="utf-8")
+    行 = src.split("\n")
+    当前, 命中, i = None, [], 0
+    while i < len(行):
+        m = re.match(r"^#{1,2} (\d+(?:\.\d+)?) ", 行[i])
+        if m:
+            当前 = m.group(1)
+        if 行[i].strip() == "```mermaid":
+            j = i + 1
+            while j < len(行) and 行[j].strip() != "```":
+                j += 1
+            命中.append((当前, i, j))
+            i = j
+        i += 1
+
+    落在 = [c for c, _, _ in 命中]
+    if 落在 != 图序:
+        sys.exit("❌ mermaid 块落在的章节是 %s，规格里写的是 %s。\n"
+                 "   图和章节对不上时两边都画得出来也不报错，所以这里停手。"
+                 % (落在, 图序))
+
+    for 章, a, b in reversed(命中):          # 从后往前，行号不失效
+        行[a:b + 1] = [标记文本[章]]
+    out = pathlib.Path("/tmp/澜绣云裳agent-产品需求文档.md")
+    out.write_text("\n".join(行), encoding="utf-8")
+    return out
 
 def 找标记(tok, doc):
     d = fb._call(tok, "GET", f"{API}/docx/v1/documents/{doc}/blocks/{doc}")
@@ -96,11 +159,10 @@ def 找标记(tok, doc):
         blk = (r.get("data") or {}).get("block") or {}
         txt = "".join(e.get("text_run", {}).get("content", "")
                       for e in (blk.get("text") or {}).get("elements", []))
-        for mk in 标记:
+        for 章, mk in 标记文本.items():
             if mk in txt:
-                位[mk] = i
+                位[章] = i
     return 位
-
 
 def main():
     md = 做飞书版()
@@ -117,27 +179,30 @@ def main():
     tok = fp.acquire_token()
     print("\n② 找占位段")
     位 = 找标记(tok, doc)
-    for mk in 标记:
-        print(f"   {mk}: {'第 '+str(位[mk])+' 个子块' if mk in 位 else '❌ 没找到'}")
-    if len(位) != 3:
+    for 章 in 图序:
+        有 = 章 in 位
+        print("   %s（§%s）: %s" % (标记文本[章], 章,
+                                  ("第 %d 个子块" % 位[章]) if 有 else "❌ 没找到"))
+    if len(位) != len(图序):
         sys.exit("❌ 占位段没找齐，停手")
 
     print("\n③ 插画板并画（从后往前）")
     出图 = []
-    for mk, g in sorted(zip(标记, 图), key=lambda x: -位[x[0]]):
-        blk, wid = fb.建画板(tok, doc, index=位[mk] + 1)
+    for 章, g in sorted(zip(图序, 图), key=lambda x: -位[x[0]]):
+        blk, wid = fb.建画板(tok, doc, index=位[章] + 1)
         n, e = fb.画(tok, wid, g["节点"], g["边"])
         回 = fb.读回(tok, wid)
-        print(f"   {mk}：图形 {n} / 连线 {e} / 读回 {len(回)} {'✅' if len(回)==n+e else '❌'}")
-        出图.append((mk, wid))
+        print("   %s：图形 %d / 连线 %d / 读回 %d %s"
+              % (标记文本[章], n, e, len(回), "✅" if len(回) == n + e else "❌"))
+        出图.append((章, wid))
 
     out = pathlib.Path(os.environ.get("BOARD_IMG_DIR", "/tmp"))
     print("\n④ 导出图片核对")
-    for i, (mk, wid) in enumerate(reversed(出图), 1):
-        p = fb.导出图片(tok, wid, out / f"prd{i}.jpg")
-        print(f"   {mk} → {p}（{p.stat().st_size} 字节）")
+    for i, (章, wid) in enumerate(reversed(出图), 1):
+        pth = fb.导出图片(tok, wid, out / ("prd%d.jpg" % i))
+        print("   %s → %s（%d 字节）" % (标记文本[章], pth, pth.stat().st_size))
 
-    print(f"\n✅ https://aqvi2xbk5kd.feishu.cn/docx/{doc}")
+    print("\n✅ https://aqvi2xbk5kd.feishu.cn/docx/%s" % doc)
 
 
 if __name__ == "__main__":

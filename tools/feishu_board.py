@@ -66,6 +66,11 @@ API = "https://open.feishu.cn/open-apis"
 配色 = {
     "拒": "#F7E8E8", "过": "#E4EFEA", "判": "#FBF0DC",
     "源": "#F6EEDF", "库": "#E2EAF6", "记": "#EFEFF2",
+    # Agent Loop 图专用:画的是**谁在做这一步**,不是这一步做什么。
+    # 这张图的全部信息量就在这条分界线上 —— 哪些是运行时框架替我们转的,
+    # 哪些是我们自己插进去的。不上色的话它和普通流程图长得一模一样。
+    "托": "#EDF4FB",   # 运行时框架托管
+    "我": "#E9E4F5",   # 本系统实现的介入点
 }
 
 
@@ -114,7 +119,8 @@ def 画(tok, wid, 节点, 边):
     """节点要自带 x/y/w/h。先画图形拿 id,再画连线 —— 顺序反了连线没东西可连。
 
     节点:dict(key, text, x, y, w, h, shape="round_rect", 色=None)
-    边  :dict(a, b, 标=None)
+    边  :dict(a, b, 标=None, 起="bottom", 止="top", 标位=None)
+          标位=(x, y) 显式摆标签,**回边一律要给** —— 中点公式只对相邻框准
     """
     # ⚠️ **分支标签不走 connector 的 caption。**
     # caption / caption.text / caption.data.text 三种写法接口都返回 0,
@@ -126,6 +132,15 @@ def 画(tok, wid, 节点, 边):
             continue
         a = next(n for n in 节点 if n["key"] == e["a"])
         b = next(n for n in 节点 if n["key"] == e["b"])
+        # ⚠️ **回边必须显式给 标位。** 下面那套中点公式假定两个框是相邻的;
+        # 回边跨了大半张图,它的中点落在哪儿跟曲线实际走哪儿没有关系 ——
+        # 实测三条回边的标签一条压在菱形上、两条飘在空白处,
+        # 而**接口全部返回成功、读回数量也全对**。只有导出图片才看得见。
+        if e.get("标位"):
+            cx, cy = e["标位"]
+            节点.append(dict(key=f"__标__{e['a']}_{e['b']}", text=e["标"], 标签=True,
+                            x=round(cx) - 130, y=round(cy), w=260, h=36, shape="rect"))
+            continue
         # 横向分支和纵向主链的标签摆法不一样:
         # 纵向摆在两框之间的空档,横向摆在连线上方。用同一套公式会摆到框里去。
         横 = abs((b["x"] + b["w"] / 2) - (a["x"] + a["w"] / 2)) > abs(b["y"] - a["y"])
