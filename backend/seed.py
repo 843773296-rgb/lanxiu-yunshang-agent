@@ -131,7 +131,11 @@ CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
   amount REAL, payable REAL, created TEXT, updated TEXT,
   prd_status TEXT, goods_amount REAL, freight REAL, received REAL, refund_status TEXT,
   addr TEXT, paid_at TEXT, audit_at TEXT, produced_at TEXT, shipped_at TEXT,
-  finished_at TEXT, cancelled_at TEXT, remark TEXT);
+  finished_at TEXT, cancelled_at TEXT, remark TEXT,
+  -- 这单从哪条方案来。可空:标品单、方案接入前的老单都没有。
+  -- ⚠️ 注释必须**单独占一行**:第一版写在列的同一行,后面紧跟的 `);` 被卷进了注释,
+  -- 这张表一直没闭合,下一句 CREATE 才报语法错 —— 报错位置和出错位置隔着一张表。
+  scheme_id TEXT);
 CREATE TABLE ordr_item(id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT, sku TEXT,
   name TEXT, tag TEXT, price REAL, qty INT,
   spu TEXT, base_amount REAL, custom_amount REAL, total REAL,
@@ -2364,6 +2368,10 @@ def run():
         ("SC2602","已保存","宋制褙子",    "绫",      "平绣",     "竹青","发簪"),
         ("SC2603","草稿",  "唐制齐胸襦裙","真丝素罗","苏绣",     "月白","披帛"),
         ("SC2604","已失效","明制马面裙",  "织金缎",  "织金",     "玄色",""),
+        # 和 SC2603 **同形制、只差工艺** —— 规范里「不带工艺就分不开」那条理由的活样本;
+        # 同时和 SC2601 **并行锁定**(业务 2026-09-18 拍板:同一客户可以多条同时锁定),
+        # 两条都不转单,所以「锁定 ≠ 已下单」也有正样本。
+        ("SC2605","已锁定","唐制齐胸襦裙","绫",      "平绣",     "藕荷","披帛"),
     ]:
         # 年月段和建单时间**取自同一个值**,不另写一个日期 —— 两个日期来源迟早对不上
         _created = ago(20)
@@ -2397,6 +2405,7 @@ def run():
                   " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (sid,_cid2,nm,st,_xzc[0],_mtc[0],",".join(_kfc),col,ps,
                    _pt[0],_adv_no(_sd),None,_created,ago(3)))
+
 
     # ── ③ 量体覆盖:让「本人」都有一套完整量体 ──────────────────────
     # 原来 104 个着装人只有 27 个有量体记录,而且每人只量了 5 或 9 项 ——
@@ -3041,6 +3050,52 @@ def run():
           f"(三个里只有一个被改过 —— 大多数建完就没人动)")
 
     c.executemany("INSERT INTO truth(case_id,breakpoint,root_cause,expected_action,expected_evidence,note) VALUES(?,?,?,?,?,?)", truths)
+
+    # ⚠️ **这一段必须放在 run() 的最后**,不能挨着方案那一段写。
+    # 第一版就挨着写,于是断言「找不到能指回方案的定制单」—— 而最终的库里明明有候选。
+    # 在副本里停在那一步逐个条件查:定制单 10 张、单件的 22 张,**商品有版型的 0 张** ——
+    # `product.pattern` 是 seed 更后面才填的。**「最终的库里有」不等于「跑到这一步时有」。**
+    # ── 一张定制单真的「从方案来」 ─────────────────────────────────────
+    # 订单加了 scheme_id,可库里原来**没有任何一张定制单指得回方案**
+    # (方案全挂在 C10000,而 C10000 只有一张标品单)。列加了也是空的 ——
+    # 对账检查会在一个空集合上全绿,**而空集合上所有性质都成立**。
+    #
+    # 做法:**从库里现有的一张合规定制单出发**,给它的客户建一条已锁定方案、订单指回去。
+    # 形制和版型取自订单上的商品,天然一致。**不新造订单** —— 新造定制单要同时满足
+    # 量体有效期、分部位选料对账、超期夹具这几条检查,雷区多,而且造出来的没被那些检查验过。
+    #
+    # 只挑**一件商品**的单:方案是「一件事」,三件商品的单指回一条方案本身就有歧义。
+    # 客户要避开夹具 —— 排除思路照 `run_journey.pick_customers`(反例夹具 / 合并用例 /
+    # 名下有售后维保押金的,那些是被评测真值引用的)。这里不能直接调它:
+    # **它另开连接,读不到 seed 还没提交的事务**。
+    _o = c.execute("""SELECT o.id, o.customer_id, o.created, o.advisor_no, p.pattern, pt.xz
+        FROM ordr o JOIN ordr_item i ON i.order_id=o.id JOIN product p ON p.spu=i.spu
+        JOIN pattern pt ON pt.code=p.pattern
+        WHERE o.kind='定制品订单' AND o.status IN ('待生产','生产中','已生产')
+          AND o.customer_id NOT LIKE 'E-%' AND o.customer_id NOT LIKE 'C21%' AND o.customer_id<>?
+          AND o.customer_id NOT IN (SELECT customer_id FROM aftersale WHERE customer_id IS NOT NULL)
+          AND o.customer_id NOT IN (SELECT customer_id FROM maintain WHERE customer_id IS NOT NULL)
+          AND o.customer_id NOT IN (SELECT customer_id FROM deposit WHERE customer_id IS NOT NULL)
+          AND (SELECT count(*) FROM ordr_item x WHERE x.order_id=o.id)=1
+        ORDER BY o.id LIMIT 1""", (_cid2,)).fetchone()
+    assert _o, "找不到一张能指回方案的定制单 —— 「订单指回方案」就没有可演示的数据"
+    _oid, _ocid, _ocr, _oadv, _opt, _oxz = _o
+    # ⚠️ 这一条的形制名是**从编码查出来的**(订单决定了形制,没有中文字面量可用),
+    # 所以它的「定制款」那一段和 naming.py 走的是同一条路 —— 这一段不构成独立验证。
+    # 工艺段和年月段仍然是独立的(字面量「平绣」、建单时间)。
+    _xzn = c.execute("SELECT name FROM xingzhi WHERE code=?", (_oxz,)).fetchone()[0]
+    _mt6 = c.execute("SELECT code FROM material WHERE name='绫'").fetchone()
+    _kf6 = c.execute("SELECT code FROM craft WHERE name='平绣' AND cat!='形制'").fetchone()
+    assert _mt6 and _kf6, "转单方案的面料/工艺在主数据里查不到"
+    # 先锁定、后下单:方案建于下单前一天
+    _scr = (date.fromisoformat(_ocr[:10]) - timedelta(days=1)).isoformat()
+    c.execute("INSERT INTO scheme(id,customer_id,name,status,xz,mt,kf,color,ps,"
+              "pattern,advisor_no,note,created,updated)"
+              " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+              ("SC2606", _ocid, f"{_xzn}·平绣·{_scr[:7]}", "已锁定", _oxz, _mt6[0], _kf6[0],
+               "石青", "", _opt, _oadv, None, _scr, _scr))
+    c.execute("UPDATE ordr SET scheme_id='SC2606' WHERE id=?", (_oid,))
+
     c.commit()
     print(f"已生成 {DB}")
     for t,label in [("customer","客户"),("deposit","押金"),("refund_trace","退款轨迹"),

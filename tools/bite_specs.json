@@ -1027,5 +1027,13 @@
       "UPDATE xingzhi SET name=name||' · 加长款' WHERE code=(SELECT xz FROM scheme LIMIT 1)"
     ],
     "预期红": "分隔符撞车"
+  },
+  {
+    "script": "fakedata/naming.py",
+    "改坏": "同一客户名下两条方案改成同名(消歧是这套规范的全部目的)",
+    "sql": [
+      "UPDATE scheme SET name=(SELECT name FROM scheme WHERE id='SC2601') WHERE id='SC2602'"
+    ],
+    "预期红": "重名"
   }
 ]
