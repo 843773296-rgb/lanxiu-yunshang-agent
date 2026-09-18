@@ -31,9 +31,19 @@ FAIL = []
 咬合 = [
     ('把一个方案的形制字段从编码改成中文名',
      '形制/面料/工艺/版型都是编码且存在'),
+    ('把那张订单的 scheme_id 改成一个不存在的方案号',
+     '订单指得回方案'),
+    ('把那张订单的 scheme_id 改成**另一个客户**的方案(两个 id 各自合法)',
+     '订单指得回方案'),
+    ('把被下过单的那条方案的状态从「已锁定」改成「草稿」',
+     '订单指得回方案'),
 ]
 
+DONE = []          # 跑过几条。**不写死** —— 写死的话加一条检查忘了改数字不会报错
+
+
 def ck(name, ok, n, msg=""):
+    DONE.append(name)
     print(f"  {'✅' if ok else '❌'} {name}(验了 {n} 个){'  ' + msg if msg else ''}")
     if not ok: FAIL.append(name)
     if n == 0:
@@ -98,12 +108,40 @@ def main():
        f"算不出的 {算不出}" if 算不出 else
        "**这是接这条边的用处** —— 原来方案报得出形制名,报不出用多少米料")
 
+    # ⑤ **订单指得回方案。** 这是「一件事」的另一半 ——
+    #    没有这条边,agent 看得见方案,却看不出这单是从哪条方案来的。
+    #    三件事一起验:指到的方案存在 / 两边是同一个客户 / 那条方案确实拍过板。
+    连 = [dict(r) for r in c.execute(
+        "SELECT id, customer_id, scheme_id FROM ordr WHERE scheme_id IS NOT NULL")]
+    断 = []
+    for o in 连:
+        sc = c.execute("SELECT id,customer_id,status FROM scheme WHERE id=?",
+                       (o["scheme_id"],)).fetchone()
+        if not sc:
+            断.append(f"订单 {o['id']} 指向的方案 {o['scheme_id']} 不存在")
+            continue
+        # **同一个客户** —— 这条防的是「两个 id 各自合法、连的不是同一件事」,
+        # 和上面第 ② 条(版型属于那个形制)是同一个形状的错。
+        if sc["customer_id"] != o["customer_id"]:
+            断.append(f"订单 {o['id']}(客户 {o['customer_id']})指向的方案 "
+                     f"{sc['id']} 属于客户 {sc['customer_id']} —— 两个 id 都合法,连错了人")
+            continue
+        # **被下过单的方案必须是已锁定。** 「已锁定」的定义就是客户拍板、准备下单生产;
+        # 草稿或已失效被下了单,不是状态不好看,是**拿一份没拍板(或已经作废)的配置去生产**。
+        if sc["status"] != "已锁定":
+            断.append(f"订单 {o['id']} 指向的方案 {sc['id']} 状态是「{sc['status']}」,"
+                     f"不是「已锁定」—— 没拍板的配置不该进生产")
+    ck("订单指得回方案,且是同一个客户、拍过板的那一条", not 断, len(连),
+       f"断的 {断[:2]}" if 断 else
+       "⚠️ 目前只有 1 张订单连着方案 —— **样本薄**,这条现在证明的是「这条边通了」,"
+       "不是「这条边到处都对」")
+
     c.close()
     print("=" * 80)
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 方案引用 4 条全过")
+    print(f"✅ 方案引用 {len(DONE)} 条全过")
     return 0
 
 

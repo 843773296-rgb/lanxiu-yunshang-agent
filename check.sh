@@ -120,6 +120,8 @@ run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judget
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py
 run "识图判分器 · 13 条对照用例" python3 agent/vision_eval_judgetest.py
 run "判责判分器 · 14 条对照用例" python3 agent/liability_eval_judgetest.py
+run "指代推进判分器 · 15 条对照用例" python3 agent/scheme_eval_judgetest.py
+run "指代推进 · 四类场景库里都挑得出样本" python3 agent/scheme_eval.py
 run "运维侧判分器 · 对照用例(含库存预警、白坯试衣)" python3 agent/ops_eval_judgetest.py
 run "复盘与漏斗判分器 · 31 条对照用例" python3 agent/report_eval_judgetest.py
 run "会员与审批判分器 · 30 条对照用例" python3 agent/member_eval_judgetest.py

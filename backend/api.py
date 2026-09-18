@@ -2591,6 +2591,18 @@ def get_order(order_id=None, customer=None):
     if not o: return {"error":f"没有订单 {order_id}"}
     o=o[0]
     cu=_rows("SELECT name,phone FROM customer WHERE id=?",o["customer_id"])
+    # **这一单是从哪条方案来的。** 顾问问「这单当初定的是什么工艺」时,
+    # 答案在方案上,不在订单行上 —— 订单行只有 SKU 和金额。
+    _sc = _rows("SELECT * FROM scheme WHERE id=?", o.get("scheme_id")) \
+        if o.get("scheme_id") else []
+    if _sc:
+        with _c() as _cc:
+            o["来自方案"] = _scheme_ref.展开(_cc, _sc[0])
+    elif o.get("kind") == "定制品订单":
+        # **定制单没挂方案,是一条要报出来的事,不是沉默。**
+        # 这类单的配置只存在于订单行和人的记忆里,查不到当初为什么这么定。
+        o["来自方案"] = None
+        o["方案缺口"] = "这是定制单,但没有关联方案 —— 当初的配置依据查不到"
     items=_rows("SELECT sku,name,tag,price,qty,spu,base_amount,custom_amount,total"
                 " FROM ordr_item WHERE order_id=?",order_id)
     af=_rows("SELECT id,kind,status,reason,amount,created FROM aftersale WHERE order_id=?",order_id)
@@ -2613,6 +2625,10 @@ def get_order(order_id=None, customer=None):
             "金额":dict(商品额=g,运费=f,订单额=a,应付=o["payable"],已收=o["received"],
                        退款状态=o["refund_status"]),
             "时间线":dict(tl),"订单行":items,"售后":af,
+            # ⚠️ 这个 return **重新拼了一个 dict**,往 `o` 上挂字段是挂不进来的 ——
+            # 写成功了、也不报错,只是没人看得见。第一版就是这么丢掉的。
+            "来自方案":o.get("来自方案"),
+            **({"方案缺口": o["方案缺口"]} if o.get("方案缺口") else {}),
             "勾稽异常":bad,
             "note":("勾稽有异常,**先核对再答复客户**" if bad else "金额与时间线勾稽一致")}
 
@@ -2699,6 +2715,15 @@ def get_scheme(scheme_id=None, customer=None, status=None):
         兄弟 = _rows("SELECT id,name,status FROM scheme WHERE customer_id=? AND id<>?"
                     " ORDER BY updated DESC", rs[0]["customer_id"], scheme_id)
         d["该客户的其他方案"] = 兄弟
+        # 这条方案下过哪些单。**空列表和「还没下单」是同一件事,要说出来** ——
+        # 不返回这个字段的话,「查过了没有」和「根本没查」在答复里长得一样。
+        单 = _rows("SELECT id,kind,status,amount,created FROM ordr WHERE scheme_id=?"
+                  " ORDER BY created", scheme_id)
+        d["由这条方案下的订单"] = 单
+        if not 单:
+            d["下单情况"] = ("这条方案还没有下过单。"
+                          + ("**已锁定不等于已下单** —— 客户拍过板,单还没开。"
+                             if d["状态"] == "已锁定" else ""))
         # **把「已锁定几条」直接算好摆出来。** 业务 2026-09-18 定了可以多条同时锁,
         # 于是「锁定那条」不再是一个能消歧的说法。让模型自己去数兄弟列表里有几条锁定,
         # 是把一个**它很容易数错、而且数错了看不出来**的活交给它。

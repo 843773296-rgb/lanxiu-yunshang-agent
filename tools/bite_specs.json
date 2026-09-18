@@ -1035,5 +1035,45 @@
       "UPDATE scheme SET name=(SELECT name FROM scheme WHERE id='SC2601') WHERE id='SC2602'"
     ],
     "预期红": "重名"
+  },
+  {
+    "script": "backend/scheme_check.py",
+    "改坏": "把那张订单的 scheme_id 指向一个不存在的方案号",
+    "sql": [
+      "UPDATE ordr SET scheme_id='SC9999' WHERE scheme_id IS NOT NULL"
+    ],
+    "预期红": "订单指得回方案"
+  },
+  {
+    "script": "backend/scheme_check.py",
+    "改坏": "把那张订单的 scheme_id 指向**另一个客户**的方案(两个 id 各自合法)",
+    "sql": [
+      "UPDATE ordr SET scheme_id='SC2601' WHERE scheme_id IS NOT NULL"
+    ],
+    "预期红": "订单指得回方案"
+  },
+  {
+    "script": "agent/scheme_eval_judgetest.py",
+    "改坏": "把「没查方案就答」那一轴关掉(不调 get_scheme 也算过)",
+    "file": [
+      {
+        "path": "agent/scheme_eval.py",
+        "old": "if \"get_scheme\" not in names:",
+        "new": "if False and \"get_scheme\" not in names:"
+      }
+    ],
+    "预期红": "该挂"
+  },
+  {
+    "script": "agent/scheme_eval_judgetest.py",
+    "改坏": "歧义场景放松成「只点一条也算对」",
+    "file": [
+      {
+        "path": "agent/scheme_eval.py",
+        "old": "        if len(真号) == 1:",
+        "new": "        if False and len(真号) == 1:"
+      }
+    ],
+    "预期红": "该挂"
   }
 ]

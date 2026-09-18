@@ -475,7 +475,9 @@ CREATE TABLE product_custom(spu TEXT PRIMARY KEY, xz TEXT, mt_opts TEXT, kf_opts
 CREATE TABLE scheme(id TEXT PRIMARY KEY, customer_id TEXT, name TEXT, status TEXT,
   -- ⚠️ 下面这四个字段**原来存的是名字**(「明制立领长衫」「云锦」),
   -- 而名字一改,所有历史方案的引用**当场断掉而且悄无声息**。
-  -- 现在存**编码**,名字要显示时去主数据取 —— 见 `knowledge/scheme_ref.py`。
+  -- 现在存**编码**,名字要显示时去主数据取 —— 口径在 `knowledge/scheme_ref.py`。
+  -- ⚠️ 这句话从写下那天起有一段时间指着一个**不存在的文件**(注释写了、模块没建),
+  -- 2026-09-18 才补上。**一条指着空气的注释比没有注释更糟** —— 照着去找的人会以为自己看漏了。
   -- 这和「订单靠活动名连活动」是同一个病,前几天刚修过一次。
   xz TEXT,        -- 形制编码 XZ**(不是形制名)
   mt TEXT,        -- 主料编码 MT**(不是面料名)
