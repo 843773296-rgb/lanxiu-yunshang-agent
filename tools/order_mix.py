@@ -634,7 +634,9 @@ def 写换货(c, 换, 插售后, 新单号):
 
 
 def 维保(c, rng, 排除, 判责, 改了的单, log):
-    """维保只挂**已经签收**的单(待完成 / 完成),报修在签收之后。
+    """维保只挂**已经完成**的单,报修在完成之后。
+    业务 2026-09-18:「维保申请还必须在用户订单完成之后,完成后才能有维保」。
+    (第一版挂的是「已签收」—— 待完成 / 完成 —— 那比业务说的松一档。)
     判责客户不加 —— 判责会数「这个客户的历史维修次数」。"""
     def issue_of(nm, kind):
         if kind == "标品订单":
@@ -658,10 +660,10 @@ def 维保(c, rng, 排除, 判责, 改了的单, log):
         目标 -= c.execute("SELECT COUNT(*) FROM maintain m JOIN ordr o ON o.id=m.order_id "
                         "WHERE o.kind=?", (kind,)).fetchone()[0]
         pool = [dict(r) for r in c.execute(
-            f"""SELECT o.id, o.customer_id, o.shop, o.advisor_no, o.shipped_at FROM ordr o
-                WHERE o.kind=? AND o.status IN ('待完成','完成')
+            f"""SELECT o.id, o.customer_id, o.shop, o.advisor_no, o.finished_at FROM ordr o
+                WHERE o.kind=? AND o.status='完成'
                   AND o.id IN (SELECT order_id FROM sim_batch)
-                  AND o.shipped_at <= ? ORDER BY o.id""",
+                  AND o.finished_at <= ? ORDER BY o.id""",
             (kind, ts(CUT - dt.timedelta(days=12))))]
         if kind == "标品订单":   # 只挑成衣 —— 配饰配上「拉链损坏」就是假现场
             pool = [o for o in pool if (c.execute(
@@ -676,10 +678,10 @@ def 维保(c, rng, 排除, 判责, 改了的单, log):
                 continue
             it = c.execute("SELECT id, name FROM ordr_item WHERE order_id=? ORDER BY id LIMIT 1",
                            (o["id"],)).fetchone()
-            t0 = P(o["shipped_at"]) + days(rng, 8, 90)
+            t0 = P(o["finished_at"]) + days(rng, 3, 80)
             if t0 > CUT:
                 t0 = CUT - days(rng, 0, 3)
-            if t0 < P(o["shipped_at"]) + dt.timedelta(days=4):
+            if t0 < P(o["finished_at"]) + dt.timedelta(days=1):
                 continue
             # 越早报修的越可能已经走完;状态和问题**各自独立**抽(E2:两者不许完全相关)
             老 = (CUT - t0).days > 20

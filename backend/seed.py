@@ -3177,6 +3177,59 @@ def run():
                "石青", "", _opt, _oadv, None, _scr, _scr))
     c.execute("UPDATE ordr SET scheme_id='SC2606' WHERE id=?", (_oid,))
 
+    # ── 判责夹具挂的订单:推到「已完成」(业务 2026-09-18:维保只能在订单完成之后)────
+    # 用户原话:「维保申请还必须在用户订单完成之后,完成后才能有维保」。
+    # 判责那 12 张维保单里只有 2 张挂在完成的单上 —— 其余挂在「待审核」「待生产」「已发货」上,
+    # 一件还没做出来的衣服来报修,现场本身不成立。
+    #
+    # 做法:**维保单一个字不动**,从报修日倒推订单时间线(完成 = 报修前 10 天),
+    # 订单改成「完成」。判责读的事实 —— 量体条数与方式、有没有交付告知、白坯试衣 ——
+    # 都不因此变化:这 12 件里只有 MW73034 那一件需要白坯试衣,它是「拉链损坏」,
+    # 工艺瑕疵的判法不看试衣。
+    #
+    # ⚠️ **下单那一刻要有有效量体**。C10017 只量过一次(08-12),而它「量体只有 3 项」
+    # 正是 MW73031「记录不全 · 我方免费改」的依据 —— **不许给它补量体**。
+    # 所以下单日不早于那次量体,工期压短来凑,不动量体。
+    # 一个随机数都不吃 —— 放在种子最后,多吃一个后面全部错位。
+    from datetime import datetime as _DT
+    def _tsf(x): return x.strftime("%Y-%m-%d %H:%M")
+    _fix_n = 0
+    for _mid, _mcr, _oid, _okind in c.execute(
+            "SELECT m.id, m.created, o.id, o.kind FROM maintain m JOIN ordr o ON o.id=m.order_id "
+            "WHERE m.id IN (SELECT ref_id FROM task WHERE type='售后判责') ORDER BY m.id").fetchall():
+        _F = min(_DT.strptime(_mcr[:16], "%Y-%m-%d %H:%M") - timedelta(days=10),
+                 _DT(2026, 9, 15, 15, 0))
+        _ship = _F - timedelta(days=8)
+        if _okind == "定制品订单":
+            _cr = _F - timedelta(days=41)
+            # 只要下单前**有一次**量体就行(有效期由 order_gate_check 另验)——
+            # 不是「必须晚于最近那次」:成人一年有效,四月量的七月照样能用
+            _had = c.execute(
+                "SELECT 1 FROM measure_rec m JOIN ordr_item i ON i.wearer_id=m.wearer_id "
+                "WHERE i.order_id=? AND m.measured_at<=?", (_oid, _tsf(_cr))).fetchone()
+            _first = c.execute(
+                "SELECT MIN(m.measured_at) FROM measure_rec m JOIN ordr_item i ON i.wearer_id=m.wearer_id "
+                "WHERE i.order_id=?", (_oid,)).fetchone()[0]
+            if not _had and _first:
+                _cr = _DT.strptime(_first[:16], "%Y-%m-%d %H:%M") + timedelta(hours=1)
+            _paid = _cr + timedelta(hours=2)
+            _audit = _paid + timedelta(days=1)
+            _prod = _F - timedelta(days=10)
+            assert (_prod - _audit).days >= 20, f"{_mid} 挂的定制单工期不到 20 天 —— 量体太晚,推不出合理的时间线"
+        else:
+            _cr = _ship - timedelta(days=1, hours=2)
+            _paid, _audit, _prod = _cr + timedelta(hours=1), None, None
+        c.execute("""UPDATE ordr SET status='完成', prd_status='已完成', created=?, paid_at=?,
+                     audit_at=?, produced_at=?, shipped_at=?, finished_at=?, cancelled_at=NULL,
+                     updated=?, received=amount WHERE id=?""",
+                  (_tsf(_cr), _tsf(_paid), _audit and _tsf(_audit), _prod and _tsf(_prod),
+                   _tsf(_ship), _tsf(_F), _tsf(_F), _oid))
+        # 交付告知在**交付时**签 —— 发货后三天。原来的签收日早于新的发货日,那是签了一件还没到手的衣服
+        c.execute("UPDATE delivery_notice SET signed_at=? || substr(signed_at, 11) WHERE order_id=?",
+                  ((_ship + timedelta(days=3)).date().isoformat(), _oid))
+        _fix_n += 1
+    print(f"  [判责夹具] {_fix_n} 张维保单挂的订单推到「完成」,维保单本身一个字没动")
+
     # ── 等级口径的边界夹具:「累计够黑金,近 12 个月只够银卡」────────────
     # 业务 2026-09-18 定了客户汇总**按订单重算**(tools/order_mix.py)。而订单只跨 7 个月,
     # 重算之后**人人的累计 = 近 12 个月** —— 「等级按滚动 12 个月算,不按累计」这条口径
