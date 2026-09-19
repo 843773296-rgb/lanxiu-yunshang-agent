@@ -129,11 +129,11 @@ node tools/hooks/push-then-ci.mjs        --selftest     # 18 条
 
 ```json
 { "matcher": "Bash", "hooks": [{ "type": "command",
-  "command": "/usr/local/bin/node /Users/eureka/.claude/hooks/commit-gate-exitcode.mjs",
+  "command": "node ~/.claude/hooks/commit-gate-exitcode.mjs",
   "timeout": 5, "statusMessage": "提交前门禁退出码检查" }] }        // 放 PreToolUse
 
 { "matcher": "Bash", "hooks": [{ "type": "command",
-  "command": "/usr/local/bin/node /Users/eureka/.claude/hooks/push-then-ci.mjs",
+  "command": "node ~/.claude/hooks/push-then-ci.mjs",
   "timeout": 20, "statusMessage": "查 CI 结果" }] }                 // 放 PostToolUse
 ```
 

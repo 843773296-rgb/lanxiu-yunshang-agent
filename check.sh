@@ -146,6 +146,7 @@ run "野外巡检 · 指纹粒度与行为观测" python3 agent/wild_run.py --se
 run "野外语料 · 多样性(够多≠够杂)" python3 agent/wild_corpus.py --selftest
 run "提交闸 · 退出码不许被吞(22 条咬合)" node tools/hooks/commit-gate-exitcode.mjs --selftest
 run "CI 提醒 · 报的是现在红绿不是历史(18 条咬合)" node tools/hooks/push-then-ci.mjs --selftest
+run "工具还是技能 · 新增工具时问一句该由谁判断(8 条)" node tools/hooks/tool-or-skill.mjs --selftest
 printf "\n%s\n" "────────────────────────────────────────"
 if [ $FAIL -eq 0 ]; then printf "\033[32m✅ 全部检查通过\033[0m\n"; else printf "\033[31m❌ 存在失败项\033[0m\n"; fi
 exit $FAIL

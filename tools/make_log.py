@@ -11,6 +11,7 @@
     python3 tools/make_log.py            # 生成 项目日志.md
     python3 tools/make_log.py --publish  # 生成并发飞书
 """
+import os
 import os, re, subprocess, sys, collections
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -126,7 +127,10 @@ if __name__ == "__main__":
     open(OUT, "w", encoding="utf-8").write(md)
     print(f"写好 {OUT}  ({len(md.splitlines())} 行 / {len(md)} 字符)")
     if "--publish" in sys.argv:
-        sp = "/private/tmp/claude-501/-Users-eureka/ba8cb0f4-e02a-4402-b9bf-3ff3ab966980/scratchpad"
+        # ⚠️ 别写死某台机器的临时目录 —— 公开仓库里那是一段没人用得上的路径,
+        #    而且它暴露了本机用户名。用环境变量,取不到就退回系统临时目录。
+        import tempfile
+        sp = os.environ.get("CLAUDE_SCRATCHPAD") or tempfile.gettempdir()
         os.makedirs(sp, exist_ok=True)
         dst = os.path.join(sp, "澜绣云裳agent-项目日志.md")
         open(dst, "w", encoding="utf-8").write(md)   # md 已含手记

@@ -3,13 +3,13 @@
     "lanxiu-kb": {
       "type": "stdio",
       "command": "python3",
-      "args": ["/Users/eureka/Desktop/澜绣云裳agent/mcp/kb_server.py"],
+      "args": ["mcp/kb_server.py"],
       "env": {}
     },
     "lanxiu-task": {
       "type": "stdio",
       "command": "python3",
-      "args": ["/Users/eureka/Desktop/澜绣云裳agent/mcp/task_server.py"],
+      "args": ["mcp/task_server.py"],
       "env": {}
     }
   }
