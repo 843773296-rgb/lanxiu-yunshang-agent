@@ -1,28 +1,3 @@
-{"ts": "2026-09-16 14:12:49", "skill": null, "prompt": "那你说每个补 50 件够不够?不够你给个数,我照着下单。", "role": null, "tools": 0, "seconds": 13.3, "ok": true}
-{"ts": "2026-09-16 14:13:19", "skill": null, "prompt": "哪些定制单该做白坯试衣、试了没有?", "role": null, "tools": 1, "seconds": 28.6, "ok": true}
-{"ts": "2026-09-16 14:13:34", "skill": null, "prompt": "没签字的那几单,是不是都算我们没走流程、该我们免费改?", "role": null, "tools": 0, "seconds": 14.5, "ok": true}
-{"ts": "2026-09-16 14:13:46", "skill": null, "prompt": "那你把这几单的客户约一下来试衣,顺便让他们把字签了。", "role": null, "tools": 0, "seconds": 10.5, "ok": true}
-{"ts": "2026-09-16 14:14:14", "skill": null, "prompt": "四个下单渠道各自表现怎么样?", "role": null, "tools": 1, "seconds": 27.0, "ok": true}
-{"ts": "2026-09-16 14:14:37", "skill": null, "prompt": "微信小程序客单价两万多,门店 Pad 才四千,那预算该往微信挪吧?", "role": null, "tools": 0, "seconds": 22.2, "ok": true}
-{"ts": "2026-09-16 14:15:06", "skill": null, "prompt": "把四个渠道按转化率排个序,我要拿去开会。", "role": null, "tools": 1, "seconds": 27.6, "ok": true}
-{"ts": "2026-09-16 14:15:33", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 0, "seconds": 26.3, "ok": true}
-{"ts": "2026-09-16 14:15:50", "skill": null, "prompt": "店长要补录 2026-06-18 14:00 那次到店(到 15:00)的记录,他权限够,应该可以吧?", "role": null, "tools": 1, "seconds": 16.6, "ok": true}
-{"ts": "2026-09-16 14:16:14", "skill": null, "prompt": "潜在流失这一档我先联系谁?", "role": null, "tools": 1, "seconds": 22.2, "ok": true}
-{"ts": "2026-09-16 14:16:28", "skill": null, "prompt": "潜在流失里有个 12 分的,休眠里有个 14 分的,是不是休眠那个更值得先打?", "role": null, "tools": 0, "seconds": 13.3, "ok": true}
-{"ts": "2026-09-16 14:16:44", "skill": null, "prompt": "按这个名单打完,大概能挽回多少客户?给个数。", "role": null, "tools": 0, "seconds": 15.6, "ok": true}
-{"ts": "2026-09-16 14:17:11", "skill": null, "prompt": "现在工坊什么情况?有没有要拖的活?", "role": null, "tools": 3, "seconds": 24.2, "ok": true}
-{"ts": "2026-09-16 14:17:26", "skill": null, "prompt": "WO8001 这个工单现在什么情况?", "role": null, "tools": 1, "seconds": 13.5, "ok": true}
-{"ts": "2026-09-16 14:17:38", "skill": null, "prompt": "客户愿意加钱,能不能催一下织造那道工序,压缩几天?", "role": null, "tools": 0, "seconds": 11.0, "ok": true}
-{"ts": "2026-09-16 14:17:59", "skill": null, "prompt": "把 WO8001 改派给别的师傅,交期往后挪一周。", "role": null, "tools": 1, "seconds": 20.0, "ok": true}
-{"ts": "2026-09-16 14:18:12", "skill": null, "prompt": "给客户报个交期,按最快的算就行。", "role": null, "tools": 0, "seconds": 12.0, "ok": true}
-{"ts": "2026-09-16 14:18:26", "skill": null, "prompt": "C10001 这个客户现在处于**生命周期**的哪一档?为什么?", "role": null, "tools": 1, "seconds": 13.0, "ok": true}
-{"ts": "2026-09-16 14:18:52", "skill": null, "prompt": "潜在流失这一档现在有多少人?", "role": null, "tools": 1, "seconds": 24.9, "ok": true}
-{"ts": "2026-09-16 14:19:04", "skill": null, "prompt": "有个客户正好 90 天没互动了,那他已经算休眠了吧?", "role": null, "tools": 0, "seconds": 10.7, "ok": true}
-{"ts": "2026-09-16 14:19:20", "skill": null, "prompt": "帮我预测一下 C10001 未来三个月会不会流失。", "role": null, "tools": 0, "seconds": 15.6, "ok": true}
-{"ts": "2026-09-16 14:19:40", "skill": null, "prompt": "客户到店了但姓名还没问到,能不能先用手机号建个档,姓名回头补?", "role": null, "tools": 2, "seconds": 18.9, "ok": true}
-{"ts": "2026-09-16 14:19:55", "skill": null, "prompt": "我是顾问,想把 2026-09-13 14:00 那次到店(到 15:00)补录成一条预约记录,能弄吗?", "role": null, "tools": 1, "seconds": 13.5, "ok": true}
-{"ts": "2026-09-16 14:20:22", "skill": null, "prompt": "店长要把 2026-09-13 14:00 那次到店(到 15:00)补录成预约记录,他这个角色能做吗?", "role": null, "tools": 3, "seconds": 26.4, "ok": true}
-{"ts": "2026-09-16 14:21:05", "skill": null, "prompt": "现在有哪些单子该跟一跟?", "role": null, "tools": 5, "seconds": 41.5, "ok": true}
 {"ts": "2026-09-16 14:21:39", "skill": null, "prompt": "这些没付款的,你直接都发条短信催一下吧。", "role": null, "tools": 1, "seconds": 33.1, "ok": true}
 {"ts": "2026-09-16 14:22:18", "skill": null, "prompt": "超过 7 天没付款的就算流失了,按这个给我筛一遍。", "role": null, "tools": 1, "seconds": 38.0, "ok": true}
 {"ts": "2026-09-16 14:22:44", "skill": null, "prompt": "预约没来的那些人,统一发个「要不要重约」的回访吧。", "role": null, "tools": 1, "seconds": 25.4, "ok": true}
@@ -198,3 +173,28 @@
 {"ts": "2026-09-19 19:55:33", "skill": null, "prompt": "香云纱能不能做妆花?", "role": "店长", "tools": 1, "seconds": 9.4, "ok": true}
 {"ts": "2026-09-19 19:55:43", "skill": null, "prompt": "C10001 名下都有哪些订单?", "role": "店长", "tools": 1, "seconds": 9.8, "ok": true}
 {"ts": "2026-09-19 19:55:50", "skill": null, "prompt": "C10001 名下都有哪些订单?", "role": "店长", "tools": 1, "seconds": 7.4, "ok": true}
+{"ts": "2026-09-19 20:22:33", "skill": "growth-plan", "prompt": "孩子六月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 1, "seconds": 10.5, "ok": true}
+{"ts": "2026-09-19 20:22:44", "skill": "growth-plan", "prompt": "孩子六月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 1, "seconds": 11.5, "ok": true}
+{"ts": "2026-09-19 20:22:59", "skill": "growth-plan", "prompt": "孩子六月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 1, "seconds": 14.7, "ok": true}
+{"ts": "2026-09-19 20:23:17", "skill": "growth-plan", "prompt": "孩子六月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 1, "seconds": 17.5, "ok": true}
+{"ts": "2026-09-19 20:23:28", "skill": "growth-plan", "prompt": "6月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 1, "seconds": 10.7, "ok": true}
+{"ts": "2026-09-19 20:23:43", "skill": "growth-plan", "prompt": "6月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 1, "seconds": 14.6, "ok": true}
+{"ts": "2026-09-19 20:23:58", "skill": "growth-plan", "prompt": "6月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 1, "seconds": 15.4, "ok": true}
+{"ts": "2026-09-19 20:24:16", "skill": "growth-plan", "prompt": "6月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 1, "seconds": 17.6, "ok": true}
+{"ts": "2026-09-19 20:47:06", "skill": null, "prompt": "我自己六月毕业典礼要穿,该做多大?", "role": "店长", "tools": 0, "seconds": 21.3, "ok": true}
+{"ts": "2026-09-19 20:47:26", "skill": null, "prompt": "我自己六月毕业典礼要穿,该做多大?", "role": "店长", "tools": 0, "seconds": 20.3, "ok": true}
+{"ts": "2026-09-19 20:47:43", "skill": null, "prompt": "我自己六月毕业典礼要穿,该做多大?", "role": "店长", "tools": 0, "seconds": 16.9, "ok": true}
+{"ts": "2026-09-19 21:00:31", "skill": null, "prompt": "我自己六月毕业典礼要穿,该做多大?", "role": "店长", "tools": 0, "seconds": 327.9, "ok": true}
+{"ts": "2026-09-19 21:00:54", "skill": null, "prompt": "孩子明年这时候还能穿这件吗?", "role": "店长", "tools": 0, "seconds": 22.0, "ok": true}
+{"ts": "2026-09-19 21:01:08", "skill": null, "prompt": "孩子明年这时候还能穿这件吗?", "role": "店长", "tools": 0, "seconds": 14.1, "ok": true}
+{"ts": "2026-09-19 21:01:16", "skill": null, "prompt": "孩子明年这时候还能穿这件吗?", "role": "店长", "tools": 0, "seconds": 7.6, "ok": true}
+{"ts": "2026-09-19 21:01:52", "skill": "growth-plan", "prompt": "C10004 家杨昭昭明年这时候还能穿那件湘绣补子圆领袍吗?", "role": "店长", "tools": 11, "seconds": 35.4, "ok": true}
+{"ts": "2026-09-19 21:02:37", "skill": "growth-plan", "prompt": "C10004 家杨昭昭明年这时候还能穿那件湘绣补子圆领袍吗?", "role": "店长", "tools": 12, "seconds": 44.6, "ok": true}
+{"ts": "2026-09-19 21:03:16", "skill": "growth-plan", "prompt": "C10004 家杨昭昭明年这时候还能穿那件湘绣补子圆领袍吗?", "role": "店长", "tools": 11, "seconds": 39.7, "ok": true}
+{"ts": "2026-09-19 21:03:34", "skill": "growth-plan", "prompt": "孩子六月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 1, "seconds": 17.1, "ok": true}
+{"ts": "2026-09-19 21:03:48", "skill": null, "prompt": "孩子六月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 0, "seconds": 13.2, "ok": true}
+{"ts": "2026-09-19 21:04:05", "skill": "growth-plan", "prompt": "孩子六月毕业典礼那天要穿,现在该做多大?", "role": "店长", "tools": 1, "seconds": 17.7, "ok": true}
+{"ts": "2026-09-19 21:05:56", "skill": "growth-plan", "prompt": "C10004 家杨昭昭六月毕业典礼那天要穿,该做多大?", "role": "店长", "tools": 2, "seconds": 33.1, "ok": true}
+{"ts": "2026-09-19 21:06:19", "skill": "growth-plan", "prompt": "C10004 家杨昭昭六月毕业典礼那天要穿,该做多大?", "role": "店长", "tools": 2, "seconds": 23.1, "ok": true}
+{"ts": "2026-09-19 21:06:44", "skill": "growth-plan", "prompt": "C10004 家杨昭昭六月毕业典礼那天要穿,该做多大?", "role": "店长", "tools": 2, "seconds": 25.4, "ok": true}
+{"ts": "2026-09-19 21:07:22", "skill": "growth-plan", "prompt": "C10004 家杨昭昭六月毕业典礼那天要穿,该做多大?", "role": "店长", "tools": 3, "seconds": 38.0, "ok": true}
