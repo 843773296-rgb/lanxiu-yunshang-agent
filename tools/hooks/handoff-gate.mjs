@@ -106,6 +106,40 @@ if (process.argv.includes("--selftest")) {
     env: { ...process.env, HANDOFF_GATE_STATE: join(D, "state") }, encoding: "utf8" });
   ck("⑨ 读不到用量就不拦(宁可漏也不瞎拦)", r9.status, 0);
 
+  // ── ⑩ 真实漏过的那个形状:交接在项目根,而会话跑在深层子目录 ──────
+  //
+  // 2026-09-19 漏了一次真的:会话的 cwd 是
+  //   交互设计师工具/capability-evolution/reaudit/repairs/<批次>/<轮次>
+  // 而 HANDOFF.md 在**第 5 层**的项目根上。第一版往上只走 4 层,没找到,
+  // 于是走了「这个项目不用交接」那条路 —— 只提醒不拦 ——
+  // 那个会话一路开到 96% 自动压缩,一句交接都没写。
+  //
+  // ⚠️ **上面九条当时全绿。** 它们每一条都把交接放在 cwd 里,
+  // 而真实项目的交接在项目根上、会话在子目录里跑。
+  // **测试覆盖的是我想到的形状,不是会发生的形状。**
+  const 仓 = join(D, "repo"); mkdirSync(join(仓, ".git"), { recursive: true });
+  const 仓交 = join(仓, "HANDOFF.md");
+  writeFileSync(仓交, "old"); { const t = new Date(2020, 0, 1); utimesSync(仓交, t, t); }
+  const 深 = join(仓, "a", "b", "c", "d", "e");   // 五层深,比第一版走的 4 层还深
+  mkdirSync(深, { recursive: true });
+  造(170_000);
+  ck("⑩ 交接在项目根、会话在深层子目录 → 照样拦得住", 跑("Stop", 深, "s10"), 2);
+  ck("   ↳ 拦的时候指的是项目根上那一份", 末.err.includes(仓交), true);
+
+  // ⑪ 在仓库里但没有交接:**不拦**(只读的顾问项目不能被逼着写文件),
+  //    但话要说清是「这个仓库里没有」,不能和「不在仓库里」混成一句。
+  const 空仓 = join(D, "emptyrepo"); mkdirSync(join(空仓, ".git"), { recursive: true });
+  const 空深 = join(空仓, "x", "y"); mkdirSync(空深, { recursive: true });
+  ck("⑪ 仓库里没有交接 → 不拦", 跑("Stop", 空深, "s11"), 0);
+  跑("UserPromptSubmit", 空深, "s11");
+  ck("   ↳ 但明说是「仓库里没有」,并给出关掉的办法",
+     末.out.includes("没有 HANDOFF.md") && 末.out.includes("no-handoff-gate"), true);
+
+  // ⑫ 不在任何仓库里:门禁彻底不介入,话也不一样
+  造(170_000);
+  跑("UserPromptSubmit", 空, "s12");
+  ck("⑫ 不在仓库里 → 说的是「不介入」,不跟上面那条混", 末.out.includes("不在任何 git 仓库"), true);
+
   rmSync(D, { recursive: true, force: true });
   if (败.length) { console.log(`❌ ${败.length} 条没过:${败.join("、")}`); process.exit(1); }
   console.log(`✅ 交接门禁 ${过} 条全过`); process.exit(0);
@@ -167,18 +201,39 @@ function 已占用() {
 // 没有的项目(比如只读的顾问会话)只提醒不拦 —— 一道会在正常工作里
 // 误拦的闸,迟早会被关掉。
 function 找交接() {
-  let d = cwd;
-  for (let i = 0; i < 4; i++) {
+  // ⚠️ **走到项目根,不数固定层数。**
+  //
+  // 2026-09-19 第一版写的是「往上走 4 层」,当天就漏了一次真的:
+  // 一个会话的工作目录是
+  //   交互设计师工具/capability-evolution/reaudit/repairs/<批次>/<轮次>
+  // 而 HANDOFF.md 在**第 5 层**的项目根上。它没找到,于是走了
+  // 「这个项目不用交接」那条路 —— **只提醒不拦** ——
+  // 结果那个会话一路开到 96% 自动压缩,一句交接都没写。
+  //
+  // 根因不是层数不够,是**判据用错了东西**:层数是目录的形状,
+  // 而「项目到哪儿为止」是仓库的事。git 根就是项目根,不用猜。
+  //
+  // 更要紧的是失败方式:**「没找到」和「这个项目不需要」原来长得一模一样**,
+  // 两者都走「不拦」。现在分成三种状态,见下面的返回值。
+  const 家 = homedir();
+  let d = cwd, 根 = null;
+  for (let i = 0; i < 24; i++) {
     if (existsSync(join(d, ".claude", "no-handoff-gate"))) return { 关掉: true };
     for (const n of ["HANDOFF.md", "HANDOFF.MD", "handoff.md"]) {
       const f = join(d, n);
-      if (existsSync(f)) return { 路径: f, mtime: statSync(f).mtimeMs };
+      if (existsSync(f)) return { 路径: f, mtime: statSync(f).mtimeMs, 根: 根 || d };
     }
+    // `.git` 可能是目录(普通仓库)也可能是文件(worktree / submodule),
+    // 两种都算根 —— existsSync 不区分,正好。
+    if (!根 && existsSync(join(d, ".git"))) 根 = d;
     const 上 = dirname(d);
-    if (上 === d) break;
+    if (上 === d || d === 家) break;    // 别走到家目录以外去
     d = 上;
   }
-  return {};
+  // 在仓库里却没有交接:**这和「不在仓库里」是两回事**。
+  // 但仍然不拦 —— 有些仓库是只读顾问项目(看得见、不该写),
+  // 逼它建文件是越界。这里只把话说明白,由人决定建不建。
+  return 根 ? { 仓库根: 根 } : {};
 }
 
 function 读状态() {
@@ -205,7 +260,13 @@ if (事件 === "PreCompact") {
   try {
     mkdirSync(状态目录, { recursive: true });
     appendFileSync(join(状态目录, "compactions.log"),
-      `${new Date().toISOString()}\t${会话}\t${inp.trigger || "?"}\t${报数}\t交接${交.路径 ? (新鲜 ? "新鲜" : "过期") : "没有"}\t${交.路径 || cwd}\n`);
+      // **三种状态要在台账里分得开。** 原来「找不到交接」和「这个项目不用交接」
+      // 都写成「交接没有」—— 而正是那一行掩盖了 2026-09-19 那次漏拦:
+      // 交接明明在项目根上,只是往上走的层数不够。
+      `${new Date().toISOString()}\t${会话}\t${inp.trigger || "?"}\t${报数}\t`
+      + (交.路径 ? `交接${新鲜 ? "新鲜" : "过期"}\t${交.路径}`
+         : 交.仓库根 ? `仓库里没有交接\t${交.仓库根}`
+         : `不在仓库里\t${cwd}`) + "\n");
   } catch { }
   写状态({ 拦过: 0 });                       // 压缩后重新计一轮
   process.exit(0);
@@ -216,8 +277,13 @@ if (事件 === "UserPromptSubmit") {
     // UserPromptSubmit 的 stdout 会作为上下文交给模型(官方明确写了这条)
     if (交.关掉) process.exit(0);
     if (!交.路径) {
-      console.log(`[交接门禁] ${报数}。这个项目里没有 HANDOFF.md,所以门禁只提醒不拦。`
-        + `如果这是个会跨多轮的项目,建议现在建一个(跑 handoff-before-compact 技能),否则压缩时的判断依据会丢。`);
+      // 在仓库里却没有交接,和根本不在仓库里,**不是一回事**,话要分开说。
+      // 仍然不拦:有些仓库是只读的顾问项目(看得见、不该写),逼它建文件是越界。
+      console.log(交.仓库根
+        ? `[交接门禁] ${报数}。仓库 ${交.仓库根} 里**没有 HANDOFF.md**,所以门禁只提醒不拦。`
+          + `这是个会跨多轮的项目,建议现在在仓库根上建一份(跑 handoff-before-compact 技能);`
+          + `如果这个项目确实不需要交接,放一个 ${交.仓库根}/.claude/no-handoff-gate 空文件,这条提醒就不再出现。`
+        : `[交接门禁] ${报数}。当前目录不在任何 git 仓库里,门禁不介入。`);
     } else {
       const 新鲜 = st.越线于 && 交.mtime > st.越线于;
       console.log(`[交接门禁] ${报数}${比 >= 阈值 ? `,已过 ${阈值 * 100}% 线` : ""}。`
