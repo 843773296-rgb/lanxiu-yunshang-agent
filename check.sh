@@ -75,6 +75,7 @@ run "会话归属 · 续聊不能续别人的(身份判得对也挡不住换历�
 run "花费闸 · 阈值够聊几轮 + 撞线说不说得清" ./agentsite/.venv/bin/python agentsite/budget_check.py
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
 run "技能形状 · 该有的段落齐不齐" ./agentsite/.venv/bin/python agentsite/skill_shape.py
+run "工具路由用例 · 点名的工具真的挂着(改了名就永远被跳过)" ./agentsite/.venv/bin/python agentsite/tool_eval.py --check
 run "读不读得出效果 · 判据本身要能被测" ./agentsite/.venv/bin/python agentsite/evalnoise_test.py
 run "能力清单 · 声明/文件/白名单三边一致" ./agentsite/.venv/bin/python agentsite/manifest.py
 run "RFM 评分 · 自测" python3 knowledge/rfm.py

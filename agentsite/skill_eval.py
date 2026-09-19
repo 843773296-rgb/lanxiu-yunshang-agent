@@ -87,6 +87,8 @@ def main():
                     help="用哪一档技能:own(自己的三个,默认)/ all(239 个)/ none。"
                          "**这一栏会记进结果文件** —— 不记的话,两次结果没法比:"
                          "分不清是改动的效果还是换了档")
+    ap.add_argument("--retry", type=int, default=2,
+                    help="跑崩了重试几次。**崩了不算答错了** —— 重试完还崩的单独计,不进准确率")
     ap.add_argument("--repeat", type=int, default=1,
                     help="每条跑几遍。**单跑一次是有噪声的** —— "
                          "同一个问法两次结果可能不一样,分不清「改坏了」和「抖了一下」")
@@ -111,13 +113,31 @@ def main():
         # 跑 N 遍,**记下每一遍的结果** —— 稳定性本身是个要看的东西:
         # 一个「有时触发有时不触发」的技能,比稳定不触发更难查,
         # 因为它偶尔会给你一个「已经好了」的假象。
-        got_all = []
+        got_all, 崩 = [], []
         for _ in range(max(1, a.repeat)):
-            try:
-                g1, _r = asyncio.run(_run_with_identity(sdk, c["prompt"], me, a.set))
-            except Exception as e:
-                g1 = f"ERR:{type(e).__name__}"
-            got_all.append(g1)
+            # ⚠️ **跑崩了不算答错了。** 2026-09-19 那次跑批暴露的:
+            # 连着五条抛 ResultError(之后自己恢复,明显是瞬时故障),
+            # 而它们被当成「触发结果」记进了准确率 ——
+            # 期望不触发的记成**误触发**,期望触发的记成**漏触发**。
+            # **「跑崩了」和「答错了」在准确率里长得一模一样。**
+            #
+            # 现在:崩了先重试;重试还崩就**单独记一类,不进准确率分母**,
+            # 并在汇总里明说有几条没测到。**没测到不叫通过,也不叫失败。**
+            g1 = None
+            for _t in range(a.retry + 1):
+                try:
+                    g1, _r = asyncio.run(_run_with_identity(sdk, c["prompt"], me, a.set))
+                    break
+                except Exception as e:
+                    g1 = f"ERR:{type(e).__name__}"
+            (崩 if str(g1).startswith("ERR:") else got_all).append(g1)
+        if not got_all:
+            print(f"  {R}✗{D} #{c['id']:<3} {c['prompt'][:30]:<32} "
+                  f"{R}{len(崩)} 遍全崩({崩[0]}),这条没测到{D}")
+            rows.append(dict(id=c["id"], prompt=c["prompt"], want=want, got=崩[0],
+                             ok=None, kind="没测到", hits=0, runs=0, wobbly=False,
+                             崩=len(崩)))
+            continue
         hits = sum(1 for x in got_all if x == want)
         got = got_all[0] if len(set(got_all)) == 1 else f"{got_all[0]}?{len(set(got_all))}种"
         ok = (hits == len(got_all))
@@ -139,12 +159,17 @@ def main():
         rows.append(dict(id=c["id"], prompt=c["prompt"], want=want, got=got, ok=ok,
                          kind=kind, hits=hits, runs=len(got_all), wobbly=wobbly))
 
-    ok_n = sum(1 for x in rows if x["ok"])
+    没测到 = [x for x in rows if x["kind"] == "没测到"]
+    rows_真 = [x for x in rows if x["kind"] != "没测到"]
+    ok_n = sum(1 for x in rows_真 if x["ok"])
     miss = [x for x in rows if x["kind"] == "漏触发"]
     over = [x for x in rows if x["kind"] == "误触发"]
     wrong = [x for x in rows if x["kind"] == "触发错了技能"]
     print("=" * 88)
-    print(f"  准确率 {ok_n}/{len(rows)}  ·  漏触发 {len(miss)}  ·  误触发 {len(over)}  ·  触发错技能 {len(wrong)}")
+    if 没测到:
+        print(f"  {R}没测到 {[x['id'] for x in 没测到]}{D} —— 重试完仍然抛异常,"
+              f"**不进准确率分母**。没测到不叫通过,也不叫失败")
+    print(f"  准确率 {ok_n}/{len(rows_真)}  ·  漏触发 {len(miss)}  ·  误触发 {len(over)}  ·  触发错技能 {len(wrong)}")
     print(f"  用时 {time.time()-t0:.0f} 秒")
     if miss:
         print(f"\n  {Y}漏触发的{D}(该走流程没走 —— 用户拿到的是随口答的东西):")
@@ -156,7 +181,8 @@ def main():
     os.makedirs(RUNS, exist_ok=True)
     if a.save:
         p = os.path.join(RUNS, f"{a.save}.json")
-        json.dump(dict(准确率=f"{ok_n}/{len(rows)}", 技能档=a.set,
+        json.dump(dict(准确率=f"{ok_n}/{len(rows_真)}", 技能档=a.set,
+                       没测到=[x["id"] for x in 没测到],
                        明细=rows, 技能哈希=_hashes()),
                   open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
         print(f"\n  已存基线:{p}")
