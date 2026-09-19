@@ -59,7 +59,7 @@ DB = os.path.join(ROOT, "backend", "lanxiu.db")
 
 SEED = 20260918
 BATCH = "order_mix/v1"
-CUT = dt.datetime(2026, 9, 15, 20, 0)      # 和 simulate_sales 同一个截止时刻
+CUT = dt.datetime(2026, 8, 31, 20, 0)      # 演示世界的「今天」收尾时刻,和 simulate_sales 同一个
 T = dt.date(2026, 8, 31)                   # 建库基准日:生命周期 / 闲置天数都按它算
 成年判定日 = dt.date(2026, 9, 12)           # 和 order_gate_check 的「今天」一致
 
@@ -355,12 +355,6 @@ def 分型(c, rng, 排除, log):
     rng.shuffle(退了)
     其余 = [s for s in sims if s["refund_status"] == "未退款"]
     rng.shuffle(其余)
-    # 越早下的单越可能已经做完 —— 定制品工期一个多月,九月下的单大多还在生产。
-    # 按下单月份给接受概率,让「完成」占到六成以上(规格 1.2b)
-    def 接受(s):   # 〔种下 S11〕
-        m = int(s["created"][5:7])
-        return rng.random() < {3: 1, 4: 1, 5: 0.9, 6: 0.75, 7: 0.35, 8: 0.1, 9: 0.05}.get(m, 0.5)
-
     计数 = {cid: 0 for cid in 人}
     改了, 失败 = [], 0
 
@@ -391,7 +385,10 @@ def 分型(c, rng, 排除, log):
         return cid, 顶, w, rng.choice(ok)
 
     改了的退款单 = 0
-    for s in 退了 + [x for x in 其余 if 接受(x)]:
+    # 原来按下单月份压接受率(越早越容易被抽中),为的是让定制完成率过六成 ——
+    # 那时订单只跨半年,九月下的单大多还在生产。铺满一年之后自然就过了,**不再压**:
+    # 压过的分布会被读成「定制订单逐月变少」这种假趋势
+    for s in 退了 + 其余:
         if len(改了) >= 要改:
             break
         if s["refund_status"] != "未退款" and 改了的退款单 >= 多退:

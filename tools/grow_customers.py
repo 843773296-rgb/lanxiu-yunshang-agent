@@ -48,7 +48,7 @@ SEED = 20260919
 # 所以是**一千上下的一个不整的数**,由固定种子定下来(重建多少次都是同一个数)
 目标客户数 = 1000 + random.Random(SEED).randrange(-60, 80)
 T = dt.date(2026, 8, 31)          # 建库基准日
-量体截止 = dt.date(2026, 9, 10)    # 量体不能在未来(C4)
+量体截止 = T                       # 演示世界的「今天」—— 量体不能晚于它
 
 SURN = "陈林黄张李王吴刘蔡杨赵周徐孙朱胡郭何高罗郑梁谢宋唐许韩冯邓曹彭曾肖田董潘袁蒋蔡余杜叶程魏苏吕丁沈任姚卢傅钟姜崔谭廖范汪陆金石戴贾韦夏邱方侯邹熊孟秦白江阎薛尹段雷黎史龙陶贺顾毛郝龚邵万钱严覃武戴莫孔向汤"
 GIVEN_F = ["雨桐", "知微", "书言", "子衿", "望舒", "青梧", "清禾", "若曦", "念安", "婉清", "芷若",
@@ -210,7 +210,7 @@ def main():
                        round(IDEAL[g]["MI01"] + off["MI01"], 1), "在用", created.isoformat()))
             stats["着装人"] += 1
             if rng.random() < 0.7:
-                m0 = max(created, dt.date(2025, 9, 20)) + dt.timedelta(days=rng.randrange(0, 60))
+                m0 = max(created, dt.date(2025, 5, 1)) + dt.timedelta(days=rng.randrange(0, 120))
                 if m0 <= 量体截止:
                     consent(wself, "身体数据", nm, "本人", m0.isoformat())
                     stats["量体次"] += measure(cid, wself, g, m0, rng.randrange(150, 260), off, shop)
@@ -226,7 +226,7 @@ def main():
                            round(IDEAL[sg]["MI01"] + soff["MI01"], 1), "在用", created.isoformat()))
                 stats["着装人"] += 1
                 if rng.random() < 0.5:
-                    m1 = max(created, dt.date(2025, 10, 1)) + dt.timedelta(days=rng.randrange(0, 90))
+                    m1 = max(created, dt.date(2025, 5, 1)) + dt.timedelta(days=rng.randrange(0, 150))
                     if m1 <= 量体截止:
                         consent(wsp, "身体数据", spn, "本人", m1.isoformat())
                         stats["量体次"] += measure(cid, wsp, sg, m1, rng.randrange(180, 300), soff, shop)
@@ -248,7 +248,7 @@ def main():
                     # 第一版只给量过体的孩子签,18 个没量过的孩子挂在档案里没有监护人同意,
                     # lifecycle_check 当场红:不满 14 周岁的个人信息,登记本身就要监护人点头
                     consent(wk, "未成年人", nm, rel, created.isoformat())
-                    k0 = max(created, dt.date(2025, 10, 1)) + dt.timedelta(days=rng.randrange(0, 60))
+                    k0 = max(created, dt.date(2025, 6, 1)) + dt.timedelta(days=rng.randrange(0, 90))
                     if k0 <= 量体截止:
                         consent(wk, "身体数据", nm, rel, k0.isoformat())
                         base = 88 + (k0 - kbd).days / 365.25 * 6.2

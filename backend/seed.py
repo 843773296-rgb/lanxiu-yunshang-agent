@@ -3196,6 +3196,27 @@ def run():
                "石青", "", _opt, _oadv, None, _scr, _scr))
     c.execute("UPDATE ordr SET scheme_id='SC2606' WHERE id=?", (_oid,))
 
+    # ── 商品上架日铺到过去一年(用户 2026-09-19:订单要「分散到过去一年内」)──────
+    # 原来上架日是按「第几个商品」往后排的(`ago(200 - i*4)`),排到后面就排进了未来 ——
+    # 库里有 2027 年才建档的商品。而模拟销量从上架日开始卖,于是订单只跨半年:
+    # 看不到冬天和春节,「近 12 个月」和「累计」永远相等。
+    #
+    # 做法:按编号给每个商品一个 40–420 天前的上架日,**只往前挪不往后挪** ——
+    # 往后挪的话,已有的订单和库存流水会变成「商品还没建档就卖出去了」(C3)。
+    # 一个随机数都不吃:放在种子最后,多吃一个后面全部错位。
+    _n_pd = 0
+    for _k, (_spu, _cr) in enumerate(c.execute(
+            "SELECT spu, created FROM product ORDER BY spu").fetchall()):
+        _D = 40 + (_k * 37) % 380
+        _new = T - timedelta(days=_D + 10)
+        _old = date.fromisoformat(_cr[:10]) if _cr else _new
+        _c2 = min(_old, _new)
+        _sh = min(_c2 + timedelta(days=10), T)
+        c.execute("UPDATE product SET created=?, on_shelf_at=CASE WHEN on_shelf_at IS NULL "
+                  "THEN NULL ELSE ? END WHERE spu=?", (_c2.isoformat(), _sh.isoformat(), _spu))
+        _n_pd += 1
+    print(f"  [上架日] {_n_pd} 个商品的上架日铺到过去一年(只往前挪)")
+
     # ── 判责夹具挂的订单:推到「已完成」(业务 2026-09-18:维保只能在订单完成之后)────
     # 用户原话:「维保申请还必须在用户订单完成之后,完成后才能有维保」。
     # 判责那 12 张维保单里只有 2 张挂在完成的单上 —— 其余挂在「待审核」「待生产」「已发货」上,

@@ -89,9 +89,14 @@ DB = os.path.join(ROOT, "backend", "lanxiu.db")
 
 BATCH = "simulate_sales/v1"
 SEED = 20260915
-END = dt.date(2026, 9, 15)          # 截止日。C4:已经发生的事不能在未来
+# 截止日 = 演示世界的「今天」(seed.py 的 T)。原来是 09-15 —— 于是库里有两个今天:
+# 会员 / 生命周期按 08-31 算,订单却造到了 09-15,客户档案上「最近互动 8 月 20 日」
+# 而订单列表里有他 9 月 10 日的单。**一个世界只能有一个「现在」**(用户 2026-09-19 定)。
+END = dt.date(2026, 8, 31)
+窗口 = 365                          # 用户:「分散到过去的多个日期时间,最好是过去一年内」
 CUT = dt.datetime.combine(END, dt.time(20, 0))
-ORDERS_PER_DAY = 230                # 全部 SPU 都在售时的日均单量(实际随上架逐步爬升)
+ORDERS_PER_DAY = 110                # 全部 SPU 都在售时的日均单量(实际随上架逐步爬升)
+# 230 → 110:订单从半年摊到一年,总量仍在两万五上下(用户拍板的量)
 # 原来是 35,理由是「能安全挂单的客户只有 31 个,单量越大人均越离谱」。
 # 2026-09-18 用户拍板客户 1000 / 订单约 2.5 万,`grow_customers.py` 补齐了人 ——
 # **先有人,再放量**:顺序反过来就是把 2.5 万单压在 31 个人头上。
@@ -256,7 +261,8 @@ def simulate(skus, ver, custs, rng):
             s["share"] = s["w"] / tw
             s["exp_day"] = K * heat[spu] * s["share"] * 1.18      # 期望日销件数(含多件)
 
-    start = min(v[0]["launch"] for v in live.values())
+    # 从一年前开始卖;更早上架的商品,首批货照样在它上架那天到(流水不早于建档)
+    start = max(min(v[0]["launch"] for v in live.values()), END - dt.timedelta(days=窗口 - 1))
     # 回购倾向:对数正态。σ 原来是 1.0 —— 客户放到九百多个之后,尾巴拉出一个
     # **半年 689 单**的人(一天近 4 单)。σ=0.45 时最能买的大约是均值的四五倍,像熟客不像批发
     loyal = {c["id"]: math.exp(rng.gauss(0, 0.45)) for c in custs}   # 〔种下 S8〕
@@ -335,6 +341,9 @@ def simulate(skus, ver, custs, rng):
 
     while ev:
         t, _, kind, kw = heapq.heappop(ev)
+        # 截止之后的事还没发生 —— 原来补货单会一直排到截止后两周,流水里出现了「未来」的入库
+        if t > CUT:
+            continue
         if kind == "到货":
             code = kw["code"]
             on_order[code] = 0
