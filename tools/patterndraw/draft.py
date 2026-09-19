@@ -131,6 +131,77 @@ def 取数(key, size):
                 kf=(pc["kf_opts"] if pc else "") or "")
 
 
+# ── 纹样(定位纹样 / 襕纹 / 绣样)────────────────────────────────────────
+# 用户 2026-09-19:「你没有把花纹纹样表示出来」。织金襕和刺绣是这类款的卖点,
+# 打版图只画两道虚线框,版师和织造、绣工都不知道织什么、绣哪、绣多大。
+# 行业里叫「定位纹样」:画出纹样线稿 + 纹样名 + 循环尺寸 / 外框尺寸 + 离边距离。
+# **纹样种类和商品图用同一个挑法**(backend/img.py 的 _hue 按款号定),图和版对得上。
+纹样色 = "#8a5a12"
+MOTIFS = ("云纹", "团花", "缠枝", "回纹")
+纹样全名 = {"云纹": "如意云纹", "团花": "团花", "缠枝": "缠枝莲", "回纹": "回纹"}
+
+
+def _纹样种(key, 名称):
+    if "团花" in 名称:
+        return "团花"
+    sys.path.insert(0, os.path.join(ROOT, "backend"))
+    import img as _img
+    return MOTIFS[_img._hue(key) % len(MOTIFS)]
+
+
+def _单元(kind, x, y, u):
+    """一个纹样单元的线稿(只描线),中心 (x,y),单元尺寸 u(mm)。"""
+    k = u / 20.0
+    if kind == "云纹":
+        return (f'<path d="M{x-9*k:.2f} {y+2*k:.2f} q{4.5*k:.2f} {-8*k:.2f} {9*k:.2f} 0 q{4.5*k:.2f} {-8*k:.2f} {9*k:.2f} 0 '
+                f'q{3*k:.2f} {5*k:.2f} {-2*k:.2f} {6*k:.2f}"/><circle cx="{x-9*k:.2f}" cy="{y+4.5*k:.2f}" r="{2.4*k:.2f}"/>')
+    if kind == "团花":
+        pet = "".join(f'<ellipse cx="{x:.2f}" cy="{y-5.2*k:.2f}" rx="{2.6*k:.2f}" ry="{4.6*k:.2f}" '
+                      f'transform="rotate({a} {x:.2f} {y:.2f})"/>' for a in range(0, 360, 45))
+        return pet + f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{2.6*k:.2f}"/><circle cx="{x:.2f}" cy="{y:.2f}" r="{9.5*k:.2f}"/>'
+    if kind == "缠枝":
+        return (f'<path d="M{x-10*k:.2f} {y+3*k:.2f} C{x-5*k:.2f} {y-9*k:.2f} {x+5*k:.2f} {y+9*k:.2f} {x+10*k:.2f} {y-3*k:.2f}"/>'
+                f'<ellipse cx="{x-3*k:.2f}" cy="{y-3*k:.2f}" rx="{2.2*k:.2f}" ry="{4*k:.2f}" transform="rotate(-35 {x-3*k:.2f} {y-3*k:.2f})"/>'
+                f'<ellipse cx="{x+4*k:.2f}" cy="{y+3*k:.2f}" rx="{2.2*k:.2f}" ry="{4*k:.2f}" transform="rotate(40 {x+4*k:.2f} {y+3*k:.2f})"/>'
+                f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{1.8*k:.2f}"/>')
+    return (f'<path d="M{x-7*k:.2f} {y+7*k:.2f} V{y-7*k:.2f} H{x+7*k:.2f} V{y+4*k:.2f} H{x-3.5*k:.2f} '
+            f'V{y-3.5*k:.2f} H{x+3.5*k:.2f}"/>')
+
+
+def 画襕(sh, x, y, w, h, kind, 循环, 名, cid):
+    """一条织金襕:上下边线(细实线)+ 纹样按循环排满 + 标注。x,y,w,h 都是图面 mm。"""
+    sh.el.append(f'<clipPath id="{cid}"><rect x="{x:.2f}" y="{y:.2f}" width="{w:.2f}" height="{h:.2f}"/></clipPath>')
+    sh.el.append(f'<rect x="{x:.2f}" y="{y:.2f}" width="{w:.2f}" height="{h:.2f}" fill="#f7eed9"/>')
+    sh.line(x, y, x + w, y, "thin"); sh.line(x, y + h, x + w, y + h, "thin")
+    step = cm(循环)
+    units = "".join(_单元(kind, x + step / 2 + i * step, y + h / 2, min(step, h) * 0.9)
+                    for i in range(int(w / step) + 2))
+    sh.el.append(f'<g clip-path="url(#{cid})" fill="none" stroke="{纹样色}" stroke-width="{THIN}">{units}</g>')
+    lab = f"{名} · 织金{纹样全名[kind]} · 带高 {h / S:g} · 循环 {循环:g}"
+    tw = len(lab) * 2.25
+    sh.el.append(f'<rect x="{x + w / 2 - tw / 2:.2f}" y="{y + h / 2 - 2.4:.2f}" width="{tw:.2f}" height="3.6" fill="#fff" opacity=".9"/>')
+    sh.text(x + w / 2, y + h / 2 + 0.6, lab, 2.1, "middle", color=纹样色)
+
+
+def 绣样(sh, cx, y0, w, h, 名):
+    """绣花定位:细虚线外框 + 折枝花线稿 + 外框尺寸 + 标注。"""
+    x0 = cx - w / 2
+    sh.rect(x0, y0, w, h, "dash")
+    k = min(w, h) / 40.0
+    cy = y0 + h * 0.55
+    art = [f'<path d="M{cx:.2f} {cy+16*k:.2f} C{cx-4*k:.2f} {cy+4*k:.2f} {cx+6*k:.2f} {cy-2*k:.2f} {cx+2*k:.2f} {cy-12*k:.2f}"/>']
+    for dx, dy, r in ((-6, 3, 4.5), (4, -6, 5.5), (2, -14, 3.8)):
+        px, py = cx + dx * k, cy + dy * k
+        art += [f'<ellipse cx="{px:.2f}" cy="{py - r*k*.6:.2f}" rx="{r*k*.5:.2f}" ry="{r*k*.85:.2f}" '
+                f'transform="rotate({a} {px:.2f} {py:.2f})"/>' for a in range(0, 360, 60)]
+        art.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="{r*k*.3:.2f}"/>')
+    for dx, dy, ang in ((-7, 10, -40), (5, 6, 35)):
+        px, py = cx + dx * k, cy + dy * k
+        art.append(f'<ellipse cx="{px:.2f}" cy="{py:.2f}" rx="{2.4*k:.2f}" ry="{5.2*k:.2f}" transform="rotate({ang} {px:.2f} {py:.2f})"/>')
+    sh.el.append(f'<g fill="none" stroke="{纹样色}" stroke-width="{THIN}">{"".join(art)}</g>')
+    sh.text(cx, y0 - 1.4, f"{名}定位 · 折枝花 · {w / S:g}×{h / S:g} · 居中", 2.1, "middle", color=纹样色)
+
+
 # ── 马面裙 ─────────────────────────────────────────────────────────────
 # 公式(来源:研究结论 §五,**来源互相矛盾处照实写**):
 #   每侧褶区成品宽 P = (W − 2B) / 2         W 成品腰围,B 马面宽
@@ -168,12 +239,18 @@ def draft_mamian(d, size):
     sh.dim(nx, ny, nx + nw, ny, f"B={B:g}", off=8)
     sh.dim(nx, ny, nx, ny + nh, f"L−腰高={身长:g}", off=8)
     sh.notch(nx + nw / 2, ny - cm(缝份["腰"]), True, 1)                  # 中点对位(前一个剪口)
-    for k in range(襕):                                                 # 襕位:膝襕 / 底襕
+    纹 = _纹样种(d["product"]["spu"] if d["product"] else d["pattern"]["code"], 名称)
+    循环 = 8.0
+    for k in range(襕):                                                 # 襕:膝襕 / 底襕,画出纹样
         yb = ny + nh - cm(10 + k * 32)
         hb = cm(8)
-        sh.line(nx, yb - hb, nx + nw, yb - hb, "dash"); sh.line(nx, yb, nx + nw, yb, "dash")
-        sh.text(nx + nw / 2, yb - hb / 2 + 1, ["底襕(织金)", "膝襕(织金)"][k], 2.4, "middle", color="#8a5a12")
+        画襕(sh, nx, yb - hb, nw, hb, 纹, 循环, ["底襕", "膝襕"][k], f"lan_m{k}")
         sh.dim(nx + nw, yb, nx + nw, ny + nh, f"{10 + k * 32:g}", off=-6)
+    if "绣" in d["kf"]:                                                 # 刺绣定位:马面正中
+        绣名 = next((w for w in ("苏绣", "粤绣", "湘绣", "蜀绣") if w in d["kf"]), "刺绣")
+        bw, bh = min(B - 8, 20), 24
+        绣样(sh, nx + nw / 2, ny + cm(8), cm(bw), cm(bh), 绣名)
+        sh.dim(nx + nw, ny, nx + nw, ny + cm(8), "8", off=-6)
     x = nx + nw + cm(缝份["边"]) + 16
     # ② 褶裥片 ×2(左右裙门之间)
     px, py, pw, ph = 裁片(sh, x, 24, 展开, 身长, "褶裥片", 2, 面料, 款号, size,
@@ -187,6 +264,9 @@ def draft_mamian(d, size):
             sh.line(x0 + 1, yy + 3, x0 + cm(2 * C) - 1, yy, "thin")
     sh.text(px + pw / 2, py + ph + cm(缝份["下摆"]) + 5, f"褶 {n} 个 · 褶面 {面宽:g} · 褶深 {C:g}(倒向待版师定)",
             2.4, "middle")
+    for k in range(襕):          # 织金襕是织在布上的,横跨整条裙 —— 褶裥片上同一高度也要有
+        yb = py + ph - cm(10 + k * 32)
+        画襕(sh, px, yb - cm(8), pw, cm(8), 纹, 循环, ["底襕", "膝襕"][k], f"lan_p{k}")
     # ③ 裙腰 ×1(对折裁)④ 系带 ×2
     yx = py + ph + cm(缝份["下摆"]) + 14
     腰长 = W + B
@@ -221,6 +301,11 @@ def draft_mamian(d, size):
         sh.line(lx, yy - 0.8, lx + 12, yy - 0.8, k); sh.text(lx + 15, yy, lab, 2.4)
     sh.grain(lx + 6, ly + 26, ly + 36); sh.text(lx + 15, ly + 32, "布纹线(经向,双箭头=无倒顺)", 2.4)
     sh.text(lx, ly + 44, f"缝份:边 {缝份['边']:g} · 腰 {缝份['腰']:g} · 下摆 {缝份['下摆']:g}", 2.4)
+    sh.el.append(f'<rect x="{lx}" y="{ly + 48}" width="12" height="4" fill="#f7eed9" stroke="{纹样色}" stroke-width="{THIN}"/>')
+    sh.text(lx + 15, ly + 51, f"织金襕(纹样按循环排满,织造前定)· 本款:{纹样全名[纹]}", 2.4)
+    if "绣" in d["kf"]:
+        sh.rect(lx, ly + 55, 12, 4, "dash")
+        sh.text(lx + 15, ly + 58, "绣花定位框(框内线稿为绣样示意)", 2.4)
     if 警告:
         wy0 = 18
         sh.el.append(f'<rect x="{bx}" y="{wy0}" width="120" height="{12 + 5.2 * len(警告) * 3}" fill="#fff4e5" stroke="#d97706" stroke-width="{THIN}"/>')
