@@ -1403,5 +1403,41 @@
       }
     ],
     "预期红": "同一件衣服按下单日算"
+  },
+  {
+    "script": "fakedata/planted.py",
+    "改坏": "删掉生成器里一处〔种下〕标记(改了生成器、忘了登记)",
+    "file": [
+      {
+        "path": "tools/simulate_sales.py",
+        "old": "   # 〔种下 S7〕",
+        "new": ""
+      }
+    ],
+    "预期红": "登记 ⇔ 代码标记"
+  },
+  {
+    "script": "fakedata/planted.py",
+    "改坏": "生成器里多标一条没登记的规律",
+    "file": [
+      {
+        "path": "tools/simulate_sales.py",
+        "old": "SIZE_W = {\"S\"",
+        "new": "# 〔种下 S99〕\nSIZE_W = {\"S\""
+      }
+    ],
+    "预期红": "登记 ⇔ 代码标记"
+  },
+  {
+    "script": "fakedata/planted.py",
+    "改坏": "把 S1 的维度关键词清空(提醒不再响)",
+    "file": [
+      {
+        "path": "fakedata/planted.py",
+        "old": "(\"面料\", \"易损\", \"维保率\", \"材质\"),",
+        "new": "(),"
+      }
+    ],
+    "预期红": "按面料看维保率时"
   }
 ]

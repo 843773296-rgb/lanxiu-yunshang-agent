@@ -166,7 +166,7 @@ def main():
 
         for i in range(要补):
             cid, aid = f"C{30000 + i}", f"U{30000 + i}"
-            g = "女" if rng.random() < 0.78 else "男"
+            g = "女" if rng.random() < 0.78 else "男"   # 〔种下 S13〕
             nm = name(g)
             ph = phone()
             shop = rng.choices(shops, weights=[5, 3, 2][:len(shops)])[0]

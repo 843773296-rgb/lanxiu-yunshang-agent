@@ -103,7 +103,7 @@ ID_BASE = 6488012800000000000       # 种子和旅程用 64880127197145600xx,不
 _冬 = (1.8, 1.6, 1.0, 0.6, 0.4, 0.3, 0.3, 0.4, 0.7, 1.1, 1.5, 1.9)
 _夏 = (0.4, 0.5, 0.9, 1.3, 1.6, 1.8, 1.8, 1.6, 1.1, 0.7, 0.5, 0.4)
 _春秋 = (0.7, 0.8, 1.3, 1.4, 1.1, 0.8, 0.7, 0.8, 1.2, 1.4, 1.1, 0.8)
-SEASON = {
+SEASON = {   # 〔种下 S3〕
     "C010102": _冬, "C010302": _冬, "C020201": _冬,                  # 袄 / 长衫长袄
     "C010101": _夏, "C010104": _夏, "C020202": _夏, "C010301": _夏,  # 襦衫 / 半臂 / 大袖衫
     "C040303": _夏,                                                   # 披帛
@@ -113,7 +113,7 @@ SEASON = {
 
 # ── 节日:节前一段时间需求抬高 ───────────────────────────────────────
 # ⚠️ **日期是按农历推的近似值,强度是编的** —— 这是需求形状的假设,不是历史销量。
-FESTIVALS = [  # (日子, 名字, 峰值倍数, 节前几天开始抬)
+FESTIVALS = [  # (日子, 名字, 峰值倍数, 节前几天开始抬)   # 〔种下 S4〕
     (dt.date(2025, 10, 1), "国庆", 1.5, 10),
     (dt.date(2025, 10, 6), "中秋", 1.4, 12),
     (dt.date(2026, 2, 17), "春节", 2.0, 21),
@@ -125,9 +125,9 @@ FESTIVALS = [  # (日子, 名字, 峰值倍数, 节前几天开始抬)
 ]
 
 # 尺码:M/L 大头。童装身高码、鞋码、均码各自在 SPU 内部平分。
-SIZE_W = {"S": 0.55, "M": 1.0, "L": 0.95, "XL": 0.5, "35": 0.5}
+SIZE_W = {"S": 0.55, "M": 1.0, "L": 0.95, "XL": 0.5, "35": 0.5}   # 〔种下 S5〕
 
-SOURCES = (("微信小程序", 45), ("官网", 25), ("门店 Pad", 20), ("客服代下单", 10))
+SOURCES = (("微信小程序", 45), ("官网", 25), ("门店 Pad", 20), ("客服代下单", 10))   # 〔种下 S9〕
 OPERATORS = ("60000008 魏欣新", "60000004 周恒东", "60000001 张静静")
 
 
@@ -248,7 +248,7 @@ def simulate(skus, ver, custs, rng):
     # 长尾:SPU 热度按打乱后的名次取 1/名次
     order = sorted(live)
     rng.shuffle(order)
-    heat = {spu: 1 / (i + 1) ** 0.9 for i, spu in enumerate(order)}
+    heat = {spu: 1 / (i + 1) ** 0.9 for i, spu in enumerate(order)}   # 〔种下 S6〕
     K = ORDERS_PER_DAY / sum(heat.values())
     for spu, ss in live.items():
         tw = sum(s["w"] for s in ss)
@@ -259,7 +259,7 @@ def simulate(skus, ver, custs, rng):
     start = min(v[0]["launch"] for v in live.values())
     # 回购倾向:对数正态。σ 原来是 1.0 —— 客户放到九百多个之后,尾巴拉出一个
     # **半年 689 单**的人(一天近 4 单)。σ=0.45 时最能买的大约是均值的四五倍,像熟客不像批发
-    loyal = {c["id"]: math.exp(rng.gauss(0, 0.45)) for c in custs}
+    loyal = {c["id"]: math.exp(rng.gauss(0, 0.45)) for c in custs}   # 〔种下 S8〕
     # **每个 SKU 一本台账。** 原来是一个 dict 自己加加减减、自己拼 before/after ——
     # 那段逻辑写错了不会有任何东西报,因为每一行单看都正常。
     帐 = {s["code"]: LG.台账(s["code"], 起始=0) for ss in live.values() for s in ss}
@@ -315,7 +315,7 @@ def simulate(skus, ver, custs, rng):
         act = [(spu, heat[spu] * m.get(ss[0]["category"], (1,) * 12)[d.month - 1])
                for spu, ss in live.items() if ss[0]["launch"] <= d]
         if act:
-            lam = K * sum(w for _, w in act) * festival(d) * (1.15 if d.weekday() >= 5 else 1.0)
+            lam = K * sum(w for _, w in act) * festival(d) * (1.15 if d.weekday() >= 5 else 1.0)   # 〔种下 S7〕
             for _ in range(poisson(rng, lam)):
                 t = dt.datetime.combine(d, dt.time(pick(rng, [(h, 3 if 19 <= h <= 22 else 2 if 12 <= h <= 14 else 1)
                                                               for h in range(9, 23)]),
