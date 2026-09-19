@@ -3640,18 +3640,22 @@ def plan_for_event(wearer_id, event_date, pattern, material,
                     "答案是一个窗口不是一个日期:早下单误差大,晚下单排不上。"}
 
 SHOP_SCHEMAS=[
- {"name":"my_tasks","description":"看**我自己的任务**。顾问只看得到派给自己的,店长看本店全部 —— 这是数据隔离,不是界面上少显示几行。可用 status 只看某一档(有效/完结/取消/无效)。问「我今天有什么事」「张三手上几件活」先调这个。",
+ {"name":"get_tasks","description":"**查任务 —— 四种问法一个口。** 不给参数=我自己的活;给 task_id=某一条的详情;scope=\"待分配\"=待分配池(客户约了时间但没自动派出去的,每条带 agent 的人选建议和依据,**建议不是决定**,要店长确认);scope=\"团队\" 或给 assignee=按人看(带每人在办件数、最近到期、在办明细,还会列出手上没活的人)。\n\n**范围跟身份走,隔离在查询层不在界面**:顾问只看得到派给自己的(知道单号也看不到别人的),店长看本店,总部看全部。⚠️ **「你看不到他的活」和「他没有活」是两回事**,返回里会分开说。status 可选只看某一档(有效/完结/取消/无效)。",
   "input_schema":{"type":"object","properties":{
-    "status":{"type":"string","description":"只看这一档:有效 / 完结 / 取消 / 无效。不传看全部。"}},"required":[]}},
- {"name":"task_types","description":"九种任务类型的**数据规范**:每种挂哪张单据(客户号/订单号/维保单号/售后单号/不挂)、谁能派、完成时要不要传现场照。**起草派任务之前先调这个** —— 类型决定了要填什么,填错会被拒。",
-  "input_schema":{"type":"object","properties":{},"required":[]}},
- {"name":"dispatch_pool","description":"**待分配池**:客户已经约了时间、但系统没能自动派单的任务。每条都带 agent 的人选建议和依据(接触史 / 时段冲突 / 负载)。只有店长看得到。**建议不是决定** —— 要店长确认才算派出去。",
-  "input_schema":{"type":"object","properties":{},"required":[]}},
- {"name":"team_tasks","description":"**本店每个顾问手上各有什么活** —— 店长看团队用这个。按人分组,带每个人的在办件数、最近到期时间和在办明细,还会列出手上没活的人和待分配的条数。给 assignee(工号或姓名)就只看那一个人。⚠️ 顾问调这个只看得到自己 —— 隔离在查询层。**「你看不到他的活」和「他没有活」是两回事**,工具会分开说。",
-  "input_schema":{"type":"object","properties":{
-    "assignee":{"type":"string","description":"只看这一个人,工号或姓名。不给则按人分组列全店。"},
+    "task_id":{"type":"string","description":"任务号,如 SC7029。给了就只看这一条。"},
+    "scope":{"type":"string","enum":["我的","团队","待分配"],"description":"看谁的。不传=我的。"},
+    "assignee":{"type":"string","description":"只看这一个人,工号或姓名(等同 scope=团队 再筛一个人)"},
     "status":{"type":"string","description":"只看这一档:有效 / 完结 / 取消 / 无效。不传看全部。"}},
    "required":[]}},
+ {"name":"get_member","description":"**查会员分层 —— 等级和生命周期一次给全。** 给 customer(客户号或姓名)返回这个人的**会员等级档**(凭什么、离下一档还差多少)和**生命周期档**(八档中的哪一档、凭什么、有没有人工覆盖);给 lifecycle 列这一档里有哪些人;再加 rank=true 按 **RFM 三维**排出「先联系谁」。\n\n⚠️ **这是两套各答各的判定,不要互相推导**:会员等级看的是滚动 12 个月的实付或完成单数(满足任一条即可,**不是「且」**,依据取客户档案上的 12 个月快照字段、**不是去订单表现算**);生命周期看的是多久没来,判定口径**全是含端边界**(第 90 天算活跃、第 91 天进休眠、第 181 天进潜在流失、第 366 天才算流失;实付满 15000 **含端**计高价值)—— 这些不要心算,直接看返回值。\n\n多条命中时**必须把命中列表一起说出来**,只报结论运营无从判断算得对不对。出现「提醒」字段说明库里存的值和按今天重算的不一致,照实说,不要替它选一个。**RFM 是相对分,只在返回的这一批人内部可比** —— 排序解决的是「先打给谁」,不是「谁更值钱」。**这是判定和排序,不是预测。**\n\n⚠️ 按姓名查会重名 —— 命中不止一个时不给等级明细,会明说要客户号。",
+  "input_schema":{"type":"object","properties":{
+    "customer":{"type":"string","description":"客户号(如 C10001)或姓名。姓名可能重名,重名时要改用客户号。"},
+    "lifecycle":{"type":"string","description":"按档位筛,如「潜在流失」「休眠」"},
+    "rank":{"type":"boolean","description":"true=在这一档里按 RFM 排出先联系谁"},
+    "limit":{"type":"number","description":"排序时返回前几名,默认 10,最多 40"}},
+   "required":[]}},
+ {"name":"task_types","description":"九种任务类型的**数据规范**:每种挂哪张单据(客户号/订单号/维保单号/售后单号/不挂)、谁能派、完成时要不要传现场照。**起草派任务之前先调这个** —— 类型决定了要填什么,填错会被拒。",
+  "input_schema":{"type":"object","properties":{},"required":[]}},
  {"name":"week_grid","description":"**排班用的格子**:一周里每个顾问哪天什么时段已经占了、哪几天完全没人排班、待分配还有几条。**排班之前必须先看这个** —— 不看就排,排出来的东西和正常任务长得一模一样,直到那天两个人同时约在一个时段。只有店长看得到。",
   "input_schema":{"type":"object","properties":{
     "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
@@ -3684,9 +3688,6 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "since":{"type":"string","description":"起始日,写 2026-08-01。不给就是不限。"},
     "until":{"type":"string","description":"截止日,写 2026-08-31。不给就是不限。"}},"required":[]}},
- {"name":"member_level","description":"**这个客户是哪一档会员、凭什么、离下一档还差多少。** 门槛按 level_cfg,是**滚动 12 个月**的实付或完成单数,满足**任一条**即可(不是「且」)。⚠️ 依据取客户档案上的 12 个月快照字段,**不是去订单表现算** —— 订单表只是个样本,现算会把大多数人算成 0 单 0 元。⚠️ **不要拿「累计实付」算等级**:累计算 106 个人里能对上 96 个,看起来就是对的,但那 10 个错的不会有任何地方报错。库里存的档和按门槛算的不一致时会给提醒 —— 那多半是人工调过档。",
-  "input_schema":{"type":"object","properties":{
-    "customer_id":{"type":"string","description":"客户号,如 C10001"}},"required":["customer_id"]}},
  {"name":"points_ledger","description":"**积分流水和对账。** ⚠️ 余额是「同一个事实两个来源」:既能从 balance 字段读,也能从流水累加,**必然漂**(这本账修过一次:中间余额曾被截断,现已重算为 0 处断点)。**对账不能取消** —— 只要两个来源都在就可能再漂。所以两个都给、照旧对账;真出现断点时**不替你选一个**,哪个对取决于是谁写错了。",
   "input_schema":{"type":"object","properties":{
     "customer_id":{"type":"string","description":"客户号,如 C10001"},
@@ -3721,16 +3722,12 @@ SHOP_SCHEMAS=[
  {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**重工订单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。⚠️ **「哪些款该试」这条线业务还没确认过**(知识库只写了「重工款强烈建议做」,没有数),每条结论都要带着这句话说出去。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
  {"name":"channel_compare","description":"**多渠道表现对比** —— 四个下单渠道(微信小程序/官网/门店 Pad/客服代下单)各自的单量、客单价、待付款占比、退款率、售后率。⚠️ **这张表不能用来比渠道,而它和真的渠道对比长得一模一样。** 原因不是数据少,是这一列怎么填上去的:种子订单是**按订单序号轮着发的**(`SRC[i % 4]`),模拟订单是**按固定权重独立抽的**,两种机制都让渠道和金额、状态、客户**统计独立** —— 任何渠道间差异都是这两个机制的产物,**不是渠道的表现**。⚠️ **渠道和活动 100% 共线**:每个渠道恰好对应一个活动,一一对应没有例外,所以「这个渠道转化好」和「这个活动效果好」在这批数据上**分不开**(这条同时影响 activity_roi)。⚠️ **客服代下单不是一个渠道**,是人工补录,背后可能是电话/微信/门店 —— 当渠道分析会得出假结论。⚠️ **不给渠道排名**:11 单的样本排不出名次,排了会被当成结论去调预算;每个比率后面都带着「**一单值多少个百分点**」。","input_schema":{"type":"object","properties":{"include_sim":{"type":"boolean","description":"是否把 3826 单模拟订单也算进来。默认 false —— 它们的渠道是抽出来的,算进来只会让表看起来更可信,不会更真"}}}},
  {"name":"recovery_queue","description":"**未成交挽回清单** —— 下了单没付钱的、约了没来的,各压着多少钱、压了多久、该按什么顺序跟。不传参数给两摊都要;传「待付款」或「预约」只要一摊。⚠️ **这个工具只出清单,不发任何东西** —— 发短信/微信/打电话是对外动作,按不按、怎么按是人的决定。⚠️ **它不划「超时」那条线**:定制品和标品的合理等待期本来就不一样,编一个数会把正常的单子算成流失。只排序不划线,按**金额 × 停留天数**排。⚠️ **三种未成行不许混成一类**:已取消是客户主动说了不来、爽约是没说就没来(**先确认人没事**)、已过期是系统判的(客户自己可能都不知道有这条预约)。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"待付款 或 预约;不传则两摊都给"}}}},
- {"name":"pattern_queue","description":"**版师的排队看板 —— 「今天该我核什么」。**不用传任何参数。把版师手上的活一次列全:裁片用料占比的进度(并按**影响面**排出先核哪几个 —— 挂多少商品、多少订单行已经按这个数备料)、推档有疑点的版型、「推得出但不作数」的尺码格子、配置页上架了却没有版型的定制品。**每一摊都报「总数 / 已完成 / 还剩」** —— 一摊显示 0 的时候要说得出是「做完了」还是「一条都没扫到」。版师进来第一句话就该调它。","input_schema":{"type":"object","properties":{}}},
+ {"name":"pattern_queue","description":"**版师的排队看板 —— 「今天该我核什么」。**不用传任何参数。把版师手上的活一次列全:裁片用料占比的进度(并按**影响面**排出先核哪几个 —— 挂多少商品、多少订单行已经按这个数备料)、推档有疑点的版型、「推得出但不作数」的尺码格子、配置页上架了却没有版型的定制品。**每一摊都报「总数 / 已完成 / 还剩」** —— 一摊显示 0 的时候要说得出是「做完了」还是「一条都没扫到」。版师进来第一句话就该调它。\n\n**传 pattern(认编码 PT06 和全名)就转看那一个版型的裁片用料占比明细**,每条带来源:`估算`(机器估的没人看过)/ `复核`(规则核过但这个数没人核过)/ `版师`(人核过数)/ `BOM`(明写的用量)——**三种可信度不许混为一谈**。还给出占比折合多少米:**版师判断的是米数不是百分比**,「袖片 15.7%」看不出对不对,「袖片 0.63 米」一眼就知道。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名。不传=看板(今天该核什么);传了=那一版的裁片明细。"}}}},
  {"name":"grading_audit","description":"**推档自检 —— 把「要核 1237 个数」压成「要核 12 条档差」。**尺码表全部是推出来的(基码值 + 档差 × 尺码序号),版师真正该核的只有基码和那 12 条档差。不传 pattern 给全局(扫了多少、哪几个版型有疑点、档差规则是什么);传 pattern 给这一个版型的逐部位明细:实际档差 / 规则档差 / **覆盖范围**(这个版型能做多大的人)/ 量纲体检 / 哪几项「推得出但不作数」。**判据是定义性的,不是阈值** —— 相邻码的差必须处处相等且等于档差表,不一致就是真的有一格不对。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全局"}}}},
- {"name":"piece_ratios","description":"**裁片用料占比** —— 版师核对用。不传 pattern 给全部版型的核对进度;传 pattern(认编码 PT06 和全名)给某个版型的明细。每条带**来源**:`估算`(机器估的没人看过)/ `复核`(规则核过一遍但这个数没人核过)/ `版师`(人核过数)/ `BOM`(明写的用量)。**三种可信度不许混为一谈。** 还给出占比折合多少米 —— **版师判断的是米数不是百分比**:「袖片 15.7%」看不出对不对,「袖片 0.63 米」一眼就知道。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全部版型的进度"}}}},
  {"name":"set_piece_ratio","description":"**改一片的用料占比,并标成「版师核过」**。改完这一片就锁住,不会再被估算覆盖;同版型其余**没核过**的片按比例重新归一,让总和回到 1,而**已核过的片不动** —— 人核过的数不许被自动调。ratio 填 0–1 之间的小数(0.25 = 25%)。**why 要写** —— 不写的话下次有人问「这个数为什么是这样」就查不到了。","input_schema":{"type":"object","properties":{"pattern":{"type":"string"},"piece":{"type":"string","description":"裁片名,如「袖片」"},"ratio":{"type":"number"},"why":{"type":"string","description":"为什么改成这个数"}},"required":["pattern","piece","ratio"]}},
  {"name":"my_workorders","description":"**我手上的工单**。工匠看自己的,工坊管事看本坊,总部运营看全部 —— 范围跟身份走。带**在制上限**和当前在制数:接不接得下一件,这两个数说了算,不用猜(上限是工艺约束 —— 手工活同时开太多件每件都慢,而且染色、绣线批次会串味)。逾期的排在最前。status 可选,写「在制/待开工/已完成」等。",
   "input_schema":{"type":"object","properties":{
     "status":{"type":"string","description":"只看某个状态的,不给就是全部"}},"required":[]}},
- {"name":"get_task","description":"看**一条任务**的详情。看不到别人的 —— 知道单号也看不到:顾问只能看派给自己的,店长能看本店的。",
-  "input_schema":{"type":"object","properties":{
-    "task_id":{"type":"string","description":"任务号,如 SC7029"}},"required":["task_id"]}},
  {"name":"assign_task","description":"**派一条任务**(真的写进去,立即生效)。只有店长及以上能派,只能派给本店在职顾问。type 见 task_types();ref_id 填什么由类型决定;assignee 写工号或姓名。⚠️ **动手之前先跟用户把人、时间、内容对一遍** —— 派错了和派对了在库里长得一模一样,等发现的时候顾问已经去做了。用户没说清派给谁就问,别挑一个「看起来合理」的人。",
   "input_schema":{"type":"object","properties":{
     "type":{"type":"string","description":"任务类型,九种之一,见 task_types()"},
@@ -3784,14 +3781,6 @@ SHOP_SCHEMAS=[
     "status":{"type":"string","description":"在制 / 已完成"},
     "ref":{"type":"string","description":"订单号"},
     "overdue":{"type":"boolean","description":"只看已逾期的"}},"required":[]}},
- {"name":"get_lifecycle","description":"查会员生命周期判定:某个客户属于八档中的哪一档(潜在/新客/活跃/高价值/忠诚/休眠/潜在流失/流失)、**凭什么判成这一档**、有没有被人工覆盖。也可按档位列人。\n\n**判定口径全是含端边界**:第 90 天算活跃、第 91 天进休眠、第 180 天仍休眠、第 181 天进潜在流失、第 365 天仍潜在流失、第 366 天才算流失;实付满 15000 **含端**计高价值。这些不要自己心算,直接看返回值。\n\n返回里「命中」是**全部**命中的条件,「生命周期」是按优先级取的那一个 —— **多条命中时必须把命中列表一起说出来**,只报结论运营无从判断算得对不对(实测四分之三的潜在流失客户同时命中多个条件)。出现「提醒」字段说明库里存的值和按今天重算的不一致,照实说,不要替它选一个。\n\n**这是判定不是预测**,不要拿它当流失概率用。",
-  "input_schema":{"type":"object","properties":{
-    "customer":{"type":"string","description":"客户号或姓名"},
-    "lifecycle":{"type":"string","description":"按档位筛,如「潜在流失」"}},"required":[]}},
- {"name":"get_member_priority","description":"回答「**同一档里先联系谁**」。给一个生命周期档位(如「潜在流失」),按 RFM 三维打分并排出优先次序,返回每个人的 R/F/M 分、合计分和**评分依据**。\n\n生命周期八档答的是「这个客户处在什么阶段」,答不了「潜在流失这 16 个人我先打给谁」—— 档内没有排序,而这正是运营每天要做的决定。\n\n**RFM 是相对分,只在返回的这一批人内部可比。** 不要拿两个档位的分数直接比,也不要说「他 RFM 12 分所以是优质客户」——换一批人同一个人的分数就变了。排序解决的是「先打给谁」,不是「谁更值钱」。\n\n**这是排序不是预测**,不代表联系了就能挽回。回答时把「评分依据」一起说出来,只给名次运营无从判断该不该信。",
-  "input_schema":{"type":"object","properties":{
-    "lifecycle":{"type":"string","description":"生命周期档位,如「潜在流失」「休眠」。不传则对全部客户排。"},
-    "limit":{"type":"number","description":"返回前几名,默认 10,最多 40"}},"required":[]}},
  {"name":"check_write","description":"问「**这件事业务允不允许做**」时用它。它会拿真正的校验器跑一遍,返回能不能做、错误码和理由。**不写库**。\n\n支持两类:`建档`(新建客户)和 `预约`(含补录)。fields 传要写的字段,再加一个 `role`(顾问 / 店长 / 总部运营)——**权限判定看角色**,比如「预约时间早于当前,仅店长及以上可补录」。\n\n**role 是查询条件,不是授权**:它回答的是「**如果是**这个角色,允不允许」,不是「你能不能」。所以顾问问「店长能不能补录」是正当的,你要答得了。不传 role 就按**最低权限(顾问)**算 —— 免得给出一个「你其实做不到」的乐观回答。**真要执行还得本人确实有那个角色,那一关在后台写接口上。**\n\n**顾问问「能不能先建档回头补姓名」「能不能把上周的到店补录成预约」这类问题,必须调这个,不许凭系统结构推断。** 数据库允许和业务允许是两回事:`customer.name` 在库里可空,而业务规则是姓名必填 —— 只看表结构会得出完全相反的结论。\n\n返回里出现「疑似重复」时,**要把那几条列给人看** —— 那条规则是「转店长确认」,不是「不能建」,而店长得看见凭什么。",
   "input_schema":{"type":"object","properties":{
     "action":{"type":"string","description":"建档 或 预约"},
@@ -3860,7 +3849,85 @@ def _masked(fn):
     return wrap
 
 
-TOOLS.update({"get_scheme":get_scheme,"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale,
+# ═══════════════════════════════════════════════════════════════════════
+# 合并后的查询口 —— **一个业务对象一个工具,靠参数分,不靠工具名分**
+#
+# 2026-09-19。官方那条判据:**「如果一个人类工程师都说不准某个场景该用
+# 哪个工具,AI 不可能做得更好」**。下面这三处原来是 9 个工具,而它们
+# 各自族内查的是同一摊数据、只是换了筛选条件 —— 那不是「工具多」,
+# 是**一件事被切成了好几件**。
+#
+# ⚠️ **合并的是「agent 看得见的工具面」,不是删实现。** 下面每一支都
+# 原样调用老函数:权限判定、脱敏、边界口径全在那些函数里,已经被
+# 门禁和咬合验过。重写一份等于把验过的东西作废重来。
+# ═══════════════════════════════════════════════════════════════════════
+
+def get_tasks(task_id=None, scope=None, assignee=None, status=None):
+    """查任务。**四种问法一个口**,给不同参数即可。
+
+    task_id → 某一条的详情;scope="待分配" → 待分配池(店长可见);
+    scope="团队" 或给 assignee → 按人看;都不给 → 我自己的。
+
+    范围隔离没有因为合并而变松:每一支仍然走原来那个函数,
+    而所有读任务的地方都走 `tasks.visible_scope` 一处判定。
+    """
+    if task_id:
+        return get_task(task_id)
+    s = (scope or "").strip()
+    if s in ("待分配", "待分配池", "pool"):
+        return dispatch_pool()
+    if s in ("团队", "全店", "team") or assignee:
+        return team_tasks(assignee=assignee, status=status)
+    return my_tasks(status=status)
+
+
+def get_member(customer=None, lifecycle=None, rank=False, limit=None):
+    """查会员分层。**会员等级和生命周期是两套判定**,问一个客户时一次给全 ——
+    原来要调两次才拼得出「这个客户值不值得跟」。
+
+    customer → 这个人的等级档 + 生命周期档;
+    lifecycle → 这一档里有哪些人;再加 rank=true → 这一档里先联系谁(RFM 排序)。
+    """
+    if lifecycle and rank:
+        return get_member_priority(lifecycle=lifecycle, limit=limit)
+    if customer:
+        lc = get_lifecycle(customer=customer)
+        if lc.get("error"):
+            return lc
+        rs = lc.get("rows") or []
+        # ⚠️ **命中一个和命中多个必须长得不一样。**
+        #    按姓名查是会重名的(库里「蔡青梧」就命中 3 个)。
+        #    默默取第一个的话,等级明细会安静地挂在错的人身上,
+        #    而**挂对了和挂错了在返回里一模一样**。
+        if len(rs) != 1:
+            return {**lc, "note": (lc.get("note") or "") +
+                    f" ⚠️ 这个说法命中 {len(rs)} 个客户,没法给等级明细 —— 给客户号(如 C10001)才行。"}
+        return {"客户": rs[0].get("name"), "客户号": rs[0].get("id"),
+                "会员等级": member_level(rs[0]["id"]),
+                "生命周期": rs[0],
+                "note": "会员等级看的是滚动 12 个月的钱和单数;生命周期看的是多久没来。"
+                        "**两套判定各答各的**,不要互相推导。"}
+    if lifecycle:
+        return get_lifecycle(lifecycle=lifecycle)
+    return {"error": "要么给 customer(某个人),要么给 lifecycle(某一档)"}
+
+
+def _pattern_queue(pattern=None):
+    """版师看板。不给参数 = 今天该核什么(整摊);给 pattern = 那个版型的裁片明细。
+
+    原来是两个工具,而看板里本来就汇总了裁片核对的进度 ——
+    **「看进度」和「看某一版的明细」是同一件事的两个粒度**,不是两件事。
+    """
+    if pattern:
+        return piece_ratios(pattern=pattern)
+    return pattern_queue()
+
+
+TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
+              # ⚠️ 老名字**留在 TOOLS 里**(边界审计和隔离检查按 TOOLS 逐个跑),
+              #    但已经从 SHOP_SCHEMAS 下架 —— **TOOLS 是实现登记册,
+              #    SCHEMAS 才是 agent 看得见的工具面**,要降的是后者。
+              "get_scheme":get_scheme,"get_order":get_order,"get_stock":get_stock,"get_aftersale":get_aftersale,
               "get_capacity":get_capacity,
               "get_wearer":get_wearer,"forecast_growth":forecast_growth,
               "plan_for_event":plan_for_event,"get_maintain":get_maintain,
@@ -3869,7 +3936,7 @@ TOOLS.update({"get_scheme":get_scheme,"get_order":get_order,"get_stock":get_stoc
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,

@@ -124,12 +124,68 @@ def main():
        "确认" in 注入 and "以客户说的为准" in 注入,
        "注入的是提示不是结论 —— 少了这句,模型会把 hook 的记忆当成人的确认")
 
+    # ═══ 压缩前守卫(第五个挂载点)═══════════════════════════════
+    # 判据和「当前方案」那条**一字不差**:按号取过的单条才算,列清单不算。
+    state5 = {}
+    h5 = 造hook(state5)
+    # **先验挂载点在不在,再用它。** 直接 h5["PreCompact"] 的话,
+    # 摘掉这一路会让自测**崩在 KeyError 上** —— 而崩溃和通过在退出码之外
+    # 长得一样(都没有 ❌ 那一行),咬合就咬不动了。
+    ck("⑤ 第五个挂载点 PreCompact 真的挂上了", "PreCompact" in h5,
+       f"现在挂着:{sorted(h5)}")
+    if "PreCompact" not in h5:
+        print("=" * 80); print(f"❌ {len(FAIL)} 条没过:{FAIL}"); return 1
+    pt5, pp5 = h5["PostToolUse"][0].hooks[0], h5["UserPromptSubmit"][0].hooks[0]
+    on_compact = h5["PreCompact"][0].hooks[0]
+
+    单号 = _一张订单号()
+    跑(pt5, {"tool_name": "mcp__shop__get_order",
+            "tool_input": {"order_id": 单号}, "tool_response": {}}, None, None)
+    ck("⑥ 按号取过订单 → 记成锚点",
+       (state5.get("锚点") or {}).get("订单号") == 单号,
+       f"锚点:{state5.get('锚点')}")
+
+    state6 = {}; h6 = 造hook(state6)
+    跑(h6["PostToolUse"][0].hooks[0],
+       {"tool_name": "mcp__shop__get_order",
+        "tool_input": {"customer": "C10000"}, "tool_response": {}}, None, None)
+    ck("⑦ 按客户列订单清单**不算**取过",
+       not (state6.get("锚点") or {}).get("订单号"),
+       "列清单里挑一条,是 hook 替模型挑 —— 而 hook 不出现在对话里,没人看得见它挑过"
+       if (state6.get("锚点") or {}).get("订单号") else "")
+
+    # ⑦ 压缩发生 → 下一轮注入警告 + 锚点
+    跑(on_compact, {"trigger": "auto"}, None, None)
+    r7 = 跑(pp5, {"prompt": "接着办"}, None, None)
+    注7 = (r7.get("hookSpecificOutput") or {}).get("additionalContext", "")
+    ck("⑧ 压缩之后的下一轮,注入压缩提醒和按号取过的单据",
+       "刚被压缩过" in 注7 and 单号 in 注7,
+       f"注入尾段:{注7[-110:]}")
+
+    # ⑧ 只注一轮 —— 注完这些号就又在对话里了,每轮重注是白花 token
+    r8 = 跑(pp5, {"prompt": "再接着办"}, None, None)
+    注8 = (r8.get("hookSpecificOutput") or {}).get("additionalContext", "")
+    ck("⑨ 只在压缩后的第一轮注,不每轮重注", "刚被压缩过" not in 注8)
+
+    # ⑨ 没压缩过就不许说「刚被压缩过」—— 凭空造出来的上下文比没有更糟
+    state9 = {}
+    r9 = 跑(造hook(state9)["UserPromptSubmit"][0].hooks[0], {"prompt": "今天有什么活"}, None, None)
+    ck("⑩ 没压缩过不注入压缩提醒",
+       "刚被压缩过" not in (r9.get("hookSpecificOutput") or {}).get("additionalContext", ""))
+
     print("=" * 80)
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 「当前方案」注入 4 条全过")
+    print("✅ 「当前方案」注入 + 压缩前守卫 10 条全过")
     return 0
+
+
+def _一张订单号():
+    """**按性质挑,不写死编号。** 写死的 id 会被一次合理的数据变更打断,
+    而打断时这里只会说「取不到样本」,像是功能坏了。"""
+    r = api._rows("SELECT id FROM ordr ORDER BY id LIMIT 1")
+    return r[0]["id"] if r else None
 
 
 def _一个方案号():
@@ -142,6 +198,9 @@ def _一个方案号():
 咬合 = [
     ('把 on_prompt 里注入当前方案那一段去掉', '① 按号取过一份方案之后'),
     ('让 post_tool 列清单时也记「当前方案」(替模型挑第一条)', '② 列清单不算「取过」'),
+    ('把 PreCompact 那一路从 make_hooks 的返回里摘掉', '⑤ 第五个挂载点'),
+    ('让锚点不看参数名、只看工具名就记(列清单也记)', '⑦ 按客户列订单清单'),
+    ('把 on_prompt 里的 state.pop("刚压缩过") 改成 state.get', '⑨ 只在压缩后的第一轮注'),
 ]
 
 if __name__ == "__main__":

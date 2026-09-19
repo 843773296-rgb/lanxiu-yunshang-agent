@@ -117,6 +117,22 @@ def main():
        "克隆下来就能跑 —— 漏提交一个脚本,门禁会红在「文件不存在」上,"
        "而那看起来像环境问题,不像有人漏提交了")
 
+    # ── 我们自己的技能,必须都进了版本库 ──────────────────────────
+    #    2026-09-19 漏过一次:技能写好了、登记了、形状检查也绿,
+    #    但 `.gitignore` 里那份**手写白名单**没加 —— 于是它在本地完全正常,
+    #    而仓库里一个字都没有。**「装了」和「提交了」长得一模一样**,
+    #    直到别人克隆下来发现技能不见了。
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "skills_own", os.path.join(ROOT, "agentsite", "skills_own.py"))
+    so = importlib.util.module_from_spec(spec); spec.loader.exec_module(so)
+    跟踪 = subprocess.run(["git", "ls-files", "agentsite/.claude/skills"],
+                        capture_output=True, text=True, cwd=ROOT).stdout
+    漏 = [n for n in so.OURS if f"agentsite/.claude/skills/{n}/" not in 跟踪]
+    ck("自己写的技能都进了版本库", not 漏, len(so.OURS),
+       f"没被 git 跟踪:{漏} —— 多半是 .gitignore 那份手写白名单漏了一行"
+       if 漏 else "**「装了」和「提交了」长得一模一样**,所以要单独验")
+
     print("=" * 80)
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")

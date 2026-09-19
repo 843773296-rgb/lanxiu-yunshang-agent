@@ -95,7 +95,7 @@ def main():
     if bad:
         print(f"{R}❌ 共缺 {bad} 段{D}")
         sys.exit(1)
-    print(f"{G}✅ 三份技能的段落都齐了{D}")
+    print(f"{G}✅ {len(skills_own.OURS)} 份技能的段落都齐了{D}")
 
 
 if __name__ == "__main__":

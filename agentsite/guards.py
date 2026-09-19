@@ -11,6 +11,7 @@
   PreToolUse        参数体检(客户说了「整幅」而模型传了「局部」→ 成本工期差 4 倍)
   PostToolUse       记下这一轮查过什么、查到了什么
   Stop              **交付前体检**,不合格打回重答
+  PreCompact        压缩前立旗;下一轮把按号取过的单据和「压缩会丢事实」的提醒注回去
 
 这就是这个项目一直在讲的那句话:
 **Tool 是模型想起来才用,Hook 是不管它想不想都执行。**
@@ -911,6 +912,18 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
     return None
 
 
+# 按号取单条的工具 → (那个号的参数名, 人话叫法)。
+# **只列「给了号就一定是单条」的那几个** —— 参数名本身就是判据,
+# 不必去猜返回结构;返回结构会随功能改,参数名不会。
+_锚点键 = {
+    "get_order":    ("order_id",    "订单号"),
+    "get_maintain": ("maintain_id", "维保单号"),
+    "get_wearer":   ("wearer_id",   "着装人号"),
+    "get_tasks":    ("task_id",     "任务号"),
+    "get_aftersale": ("order_id",   "售后关联订单号"),
+}
+
+
 def make_hooks(state):
     """state 是一个 dict,跨 hook 共享这一轮的上下文。"""
 
@@ -945,6 +958,21 @@ def make_hooks(state):
                        f"客户说「这个 / 刚才那套 / 就按这个」时,**默认指的是它**,"
                        f"但推进前仍要把号说出来让人确认。"
                        f"⚠️ 若客户提到的是别的方案,以客户说的为准,并重新查一次。")
+        # ── 刚被压缩过的那一轮,把锚点注回去 ─────────────────────
+        # **压缩是模型察觉不到的** —— 摘要读起来完整、自洽、没有窟窿,
+        # 所以它不会自己想起来「我是不是丢了个单号」。
+        # 只在压缩后的第一轮注:注完这些号就又在对话里了,每轮重注是白花 token。
+        if state.pop("刚压缩过", None):
+            锚 = state.get("锚点") or {}
+            ctx_add += ("\n\n[系统注入] ⚠️ **这轮对话刚被压缩过。**"
+                        "压缩保的是「读起来连贯」,不保「标识不丢」——"
+                        "**没有编号、却决定下一步的事实**(客户说过不要撞色、"
+                        "预算上限、哪天要穿)很可能已经不在了。"
+                        "推进任何写动作之前,把关键前提跟人再确认一遍。")
+            if 锚:
+                ctx_add += ("\n压缩前**按号取过**的单据:"
+                            + "、".join(f"{k} {v}" for k, v in 锚.items())
+                            + " —— 这些号以它们为准,不要凭记忆重写。")
         return {"hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
             "additionalContext": ctx_add}}
@@ -1000,6 +1028,19 @@ def make_hooks(state):
         if _n2 == "get_scheme" and isinstance(_out, dict) and _out.get("方案号"):
             state["当前方案"] = {"号": _out["方案号"], "名称": _out.get("名称"),
                               "状态": _out.get("状态"), "客户号": _out.get("客户号")}
+
+        # ── 记住这一轮**按号取过**的其它单据(锚点) ────────────────
+        # 方案号有专门的一格,但顾问一轮里还会按号取订单、维保单、着装人、任务 ——
+        # **这些号同样没有第二个地方存,一旦被压缩吃掉就只能靠模型记**。
+        #
+        # 判据和方案号那条**一字不差**:只有**给了那个号**的调用才算。
+        # 按客户列一串订单不算 —— 列清单里挑一条,是 hook 替模型挑,
+        # 而 hook 不出现在对话里,没人看得见它挑过。
+        k, 叫法 = _锚点键.get(_n2, (None, None))
+        if k:
+            v = (inp.get("tool_input") or {}).get(k)
+            if v:
+                state.setdefault("锚点", {})[叫法] = v
         return {}
 
     async def on_stop(inp, tool_use_id, ctx):
@@ -1014,12 +1055,25 @@ def make_hooks(state):
                 "reason": "交付前体检没过,请修正后重答:\n"
                           + "\n".join(f"· {b['msg']}" for b in bad)}
 
+    async def on_compact(inp, tool_use_id, ctx):
+        """压缩前。**这是唯一知道「压缩发生过」的地方** ——
+        压缩之后的模型读不出自己被压过,摘要看起来什么都不缺。
+
+        这里不做判断,只立一个旗:下一轮 on_prompt 看见它,
+        把锚点和那句警告注回去。判断留给模型,旗留给 hook ——
+        **hook 替模型做的判断不出现在对话里,没人看得见它做过。**
+        """
+        state["刚压缩过"] = True
+        state["压缩次数"] = state.get("压缩次数", 0) + 1
+        return {}
+
     from claude_agent_sdk import HookMatcher
     return {
         "UserPromptSubmit": [HookMatcher(hooks=[on_prompt])],
         "PreToolUse":       [HookMatcher(hooks=[pre_tool])],
         "PostToolUse":      [HookMatcher(hooks=[post_tool])],
         "Stop":             [HookMatcher(hooks=[on_stop])],
+        "PreCompact":       [HookMatcher(hooks=[on_compact])],
     }
 
 

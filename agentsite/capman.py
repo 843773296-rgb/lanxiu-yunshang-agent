@@ -39,7 +39,7 @@ import knowledge.capability as CAP
 
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
 SKILLS = os.path.join(HERE, ".claude", "skills")
-OURS = {"quote", "growth-plan", "roster"}      # 自己写的,不是从 Accio 拿的
+OURS = {"quote", "growth-plan", "roster", "deadline-rescue", "exchange"}      # 自己写的,不是从 Accio 拿的
 
 
 # ── 探针:每一条都必须拿得出证据 ────────────────────────────────

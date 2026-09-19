@@ -284,9 +284,9 @@ PATTERN_TOOLS = [
     # **进来第一句话就该调它。** 没有这个入口的时候,版师只能问某一个版型的
     # 某一件事,而「我手上到底有多少活、哪一件最该先做」系统一个字都没说 ——
     # **没有入口的能力等于没做。**
-    "mcp__shop__pattern_queue",     # 排队看板:今天该我核什么(按影响面排序)
+    "mcp__shop__pattern_queue",     # 排队看板:今天该我核什么(按影响面排序);
+                                    # 传 pattern 转看那一版的裁片占比明细(带来源和折合米数)
     "mcp__shop__grading_audit",     # 推档自检:1237 个数压成 12 条档差
-    "mcp__shop__piece_ratios",      # 看占比和核对进度(带来源和折合米数)
     "mcp__shop__set_piece_ratio",   # **唯一的写** —— 改占比并标「版师」
     "mcp__kb__kb_pattern",          # 版型和裁片
     "mcp__kb__kb_size",             # 成衣尺码表 —— 判米数要看尺寸
@@ -384,7 +384,7 @@ TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
 # 而管它的规矩 TK08 只写给后台运营 —— **工具给了、规矩没给**。
 # 它逼我决定这个工具归谁,而不是默认发给所有人。
 TASK_ONLY_TOOLS = [
-    "mcp__shop__get_lifecycle", "mcp__shop__get_member_priority",
+    "mcp__shop__get_member",   # 等级档 + 生命周期档 + 档内 RFM 排序,一个口
     # 「这件事业务允不允许做」—— 跑真校验器,不写库。
     # 加它是因为实测发现:没有它时模型会**编一套架构理由**说可以,
     # 而编造建立在真事实上(账户与门店档案确实分层),读起来完全可信。
@@ -396,9 +396,9 @@ TASK_ONLY_TOOLS = [
     #   ② 权限走 tasks.py 同一套判定 —— **和人在页面上点是同一份代码**,
     #      智能体不会因为是智能体而多一分权,也不会少一分
     #   ③ 每一笔都在台账里标明「智能体代 X 执行」,查得出是谁的主意
-    "mcp__shop__my_tasks", "mcp__shop__team_tasks", "mcp__shop__get_task",
-    "mcp__shop__monthly_review", "mcp__shop__appt_funnel", "mcp__shop__member_level", "mcp__shop__points_ledger", "mcp__shop__approval_queue", "mcp__shop__activity_roi", "mcp__shop__can_order", "mcp__shop__apply_adjust", "mcp__shop__decide_approval", "mcp__shop__week_grid", "mcp__shop__assign_batch", "mcp__shop__dispatch_batch",
-    "mcp__shop__task_types", "mcp__shop__dispatch_pool",
+    "mcp__shop__get_tasks",    # 我的 / 某一条 / 团队 / 待分配,靠参数分
+    "mcp__shop__monthly_review", "mcp__shop__appt_funnel", "mcp__shop__points_ledger", "mcp__shop__approval_queue", "mcp__shop__activity_roi", "mcp__shop__can_order", "mcp__shop__apply_adjust", "mcp__shop__decide_approval", "mcp__shop__week_grid", "mcp__shop__assign_batch", "mcp__shop__dispatch_batch",
+    "mcp__shop__task_types",
     "mcp__shop__assign_task", "mcp__shop__dispatch_task",
     "mcp__shop__reassign_task", "mcp__shop__finish_task",
     # 售后判责跑在这个角色上,而**判定表在 kb_tables 里**。
