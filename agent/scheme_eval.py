@@ -186,12 +186,91 @@ def 从库里挑场景(conn):
      '编了不存在的方案号'),
 ]
 
+# ── 题面:四类场景,每类一句顾问会真说的话 ──────────────────────────
+# **题面里不写方案号** —— 写了就等于把答案给它了,而这套评测要测的
+# 恰恰是「它自己能不能找对那一条」。
+问法 = {
+    "单条": "刚才那位客户的方案我们再确认一下,就按那个下单吧。",
+    "歧义": "客户说就按锁定的那个下单,你帮我确认一下是哪一份。",
+    "已失效": "客户提到去年那套没成的方案,说想按那个再做一次,可以吗?",
+    "草稿": "客户问她之前存的那套方案现在能不能直接下单?",
+}
+
+
+def 造题(场景):
+    """把场景变成一句话。**带上客户号,不带方案号** ——
+    顾问在真实场景里知道自己在跟谁说话,但不会背方案编号。"""
+    return (f"客户 {场景['客户']}。{问法[场景['kind']]}")
+
+
 if __name__ == "__main__":
+    # **两件事,两个入口。**
+    #
+    #   不带参数   只查「库里挑不挑得出四类场景」—— 纯读库,系统 python 就能跑,进门禁
+    #   --run     真跑模型 —— 要 venv、要花钱、结果有波动,**不进门禁**
+    #
+    # ⚠️ 这个拆分是被门禁逼出来的:第一版把真跑写在 `__main__` 顶上,
+    # 于是一个**只想数样本**的步骤死在「没有 .venv」上 ——
+    # 而那看起来像环境坏了,不像是我把两件事混进了一个入口。
+    #
+    # 真跑:
+    #   ANTHROPIC_MODEL=claude-haiku-4-5 LANXIU_PROVIDER=claude \
+    #     ./agentsite/.venv/bin/python agent/scheme_eval.py --run
     import sqlite3
     c = sqlite3.connect(os.path.join(HERE, "..", "backend", "lanxiu.db"))
     场景, 缺 = 从库里挑场景(c)
     c.close()
-    print(f"库里挑得出 {len(场景)} 类场景:{[s['kind'] for s in 场景]}")
+
+    if "--run" not in sys.argv:
+        print(f"库里挑得出 {len(场景)} 类场景:{[s['kind'] for s in 场景]}")
+        for g in 缺:
+            print(f"  ⚠️ {g}")
+        print("  (真跑模型请加 --run,并用 ./agentsite/.venv/bin/python)")
+        sys.exit(1 if 缺 else 0)
+
+    import asyncio
+    import time
+    sys.path.insert(0, os.path.join(HERE, "..", "agentsite"))
+    import sdk
+
     for g in 缺:
-        print(f"  ⚠️ {g}")
-    sys.exit(1 if 缺 else 0)
+        print(f"⚠️ {g}")
+
+    model = os.environ.get("ANTHROPIC_MODEL")
+    if not model:
+        # CLAUDE.md 第 4 节:**不指定模型直接拒跑** ——
+        # 默认模型取决于用哪种凭证,同一条命令在另一台机器上跑的是另一个模型,
+        # 而表格上完全看不出来。
+        print("❌ 必须显式指定 ANTHROPIC_MODEL —— 不指定时默认模型取决于凭证种类,"
+              "换台机器跑的就是另一个模型,而结果表上看不出来")
+        sys.exit(2)
+
+    print(f"指代推进评测 · {len(场景)} 题(四类场景)· 模型 {model}")
+    print("=" * 104)
+    ok_n, cost, rows = 0, 0.0, []
+    for 场 in 场景:
+        题 = 造题(场)
+        t0 = time.time()
+        r = asyncio.run(sdk.run("kb", 题, max_turns=10))
+        names = [x["tool"] for x in r["trajectory"]]
+        ok, why = judge(场, r["text"], names)
+        ok_n += ok
+        cost += r.get("cost_usd") or 0
+        rows.append(dict(kind=场["kind"], 题=题, 正确号=场.get("正确号"),
+                         候选号=场.get("候选号"), passed=ok, why=why,
+                         tools=",".join(n.split("__")[-1] for n in names),
+                         cost=r.get("cost_usd") or 0, text=r["text"]))
+        print(f"  {'✅' if ok else '❌'} {场['kind']:5s} {len(names)}调 "
+              f"{time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
+              f"  {'' if ok else why[0][:52]}")
+        for w in (why[1:] if not ok else []):
+            print(f"        {w[:92]}")
+    print("=" * 104)
+    print(f"通过 {ok_n}/{len(场景)}  |  总花费 ${cost:.4f}")
+    print("⚠️ **一轮不作数。** 这个项目为「拿单轮结果下结论」栽过三次 —— "
+          "跑第二轮,两个数一起写进表里。")
+    import evalrec
+    out = os.path.join(HERE, "scheme-eval-results.jsonl")
+    evalrec.dump(out, rows)
+    print(f"明细写到 {out}")
+    sys.exit(0 if ok_n == len(场景) else 1)

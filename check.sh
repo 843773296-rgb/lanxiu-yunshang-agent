@@ -64,6 +64,7 @@ run "受欢迎与易损 · 性质检查(相对指标不标真值)" python3 backe
 run "同意分档与撤回 · 一档不顶另一档,撤回真的走一遍" python3 backend/consent_check.py
 run "订单状态 · 定制品与标品两套状态必须分开" python3 backend/order_status_check.py
 run "演示数据集 · 形状(退款对得上 / 占比 / 面料有差异 / 汇总对得上 / 不是整数)" python3 backend/dataset_check.py
+run "种下的规律 · 登记和代码对得上(种进去的不许被当成发现)" python3 fakedata/planted.py
 run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 backend/role_check.py
 # 版师是第一个「有写工具,但只有一个」的角色 —— 它特有的两种失败
 # (给多了 / 给死了)在界面上长得一模一样,所以两个方向都得测。
