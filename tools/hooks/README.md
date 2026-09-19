@@ -1,12 +1,27 @@
-# 两道 hook:一道拦,一道报
+# 四道 hook:两道拦,两道报
 
 装在 `~/.claude/hooks/`,在 `~/.claude/settings.json` 里注册。仓库里这份是版本管理的副本。
-两道的自测都进了 `check.sh`,不进门禁的话用例会慢慢烂掉,**而烂掉的样子和好着的样子一模一样**。
+四道的自测都进了 `check.sh`,不进门禁的话用例会慢慢烂掉,**而烂掉的样子和好着的样子一模一样**。
 
 | 文件 | 事件 | 干什么 | 拦不拦 |
 |---|---|---|---|
 | `commit-gate-exitcode.mjs` | `PreToolUse` / `Bash` | 提交前门禁的退出码不许被吞掉 | **拦** |
 | `push-then-ci.mjs` | `PostToolUse` / `Bash` | push 完把 CI 结果推到眼前 | 不拦,只说话 |
+| `tool-or-skill.mjs` | `PostToolUse` / `Write·Edit` | 新增工具时问一句「该由谁判断」 | 不拦,只说话 |
+| `handoff-gate.mjs` | `Stop` + `UserPromptSubmit` + `PreCompact` | 上下文过 80% 且交接过期,不许收工 | **拦**(`Stop`) |
+
+> `handoff-gate.mjs` 是四道里唯一挂三个事件的。原因是**一个点管不住整件事**:
+> `UserPromptSubmit` 负责提前报数(到 65% 就说),`Stop` 是唯一拦得住的点
+> (官方:`Stop` 的 exit 2 = 不让它停、继续对话),`PreCompact` 负责在压缩
+> **真发生**时记一笔当时交接新不新鲜 —— 没有这一笔,就不知道门禁有没有白干。
+>
+> 它**不挂 `PostToolUse`**,因为那个点拦不住。**挂一个拦不住的点等于没挂。**
+>
+> 另外两件必须说清的事:
+> ① hook 的输入里**没有上下文用量**,这个数是从 transcript 的 `usage` 自己算的,
+>    `cache_read` 必须算进去 —— 它是读缓存不是「没花的钱」,那些 token 实实在在占着窗口。
+> ② **模型没法自己触发压缩**,`/compact` 只能由人键入。所以门禁能逼出交接,
+>    最后那句「建议现在输入 /compact」只能由模型说给人听。
 
 ---
 
