@@ -69,10 +69,21 @@ CREATE TABLE IF NOT EXISTS fitting(
   signed INT DEFAULT 0,
   signed_at TEXT,
   note TEXT);
+-- 看板按订单行逐件查试衣记录;没有这个索引,三千多件每件都翻一遍整张表
+CREATE INDEX IF NOT EXISTS ix_fitting_item ON fitting(item_id);
 """
 
 
 def 该试的行(c):
+    """见 `_该试的行`。三千多件逐件推工期,放进「一次查看」的记忆范围(leadtime.批量):
+    相容矩阵、工时表、现货、师傅、某一天的队在这一次里不会变。
+    **用 with 包,出错也会退出** —— 退不出去的话,常开的服务会一直读旧的。"""
+    import leadtime as _ltb
+    with _ltb.批量():
+        return _该试的行(c)
+
+
+def _该试的行(c):
     """对每条定制品订单行跑真的工期推算,看它该不该做白坯试衣。
 
     返回 (该试, 不必, 判不了) 三个列表。**判不了的留着,不猜。**

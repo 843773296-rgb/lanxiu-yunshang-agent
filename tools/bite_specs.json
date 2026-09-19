@@ -1439,5 +1439,17 @@
       }
     ],
     "预期红": "按面料看维保率时"
+  },
+  {
+    "script": "knowledge/leadtime.py",
+    "改坏": "退出「一次查看」时不清空记忆(常开的服务会一直读旧库存)",
+    "file": [
+      {
+        "path": "knowledge/leadtime.py",
+        "old": "        if _批量层 == 0:\n            _记.clear()",
+        "new": "        if _批量层 == 0:\n            pass"
+      }
+    ],
+    "预期红": "退出批量后记忆必须清空"
   }
 ]

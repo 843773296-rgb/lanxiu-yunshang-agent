@@ -38,6 +38,11 @@ def _d(x, default=None):
 
 def artisans(craft=None):
     """会做这个工艺的在职师傅。不传就是全部。"""
+    import leadtime
+    return leadtime.记住(("师傅", craft), lambda: _artisans(craft))
+
+
+def _artisans(craft=None):
     with _c() as c:
         rs = [dict(r) for r in c.execute("SELECT * FROM artisan WHERE status='在职' ORDER BY no")]
     if craft:
@@ -46,6 +51,12 @@ def artisans(craft=None):
 
 
 def load(from_date=None, 那天在做的=False):
+    import leadtime
+    d0 = _d(from_date) or dt.date.today()
+    return leadtime.记住(("队", d0.isoformat(), 那天在做的), lambda: _load(from_date, 那天在做的))
+
+
+def _load(from_date=None, 那天在做的=False):
     """每位师傅当前压着多少活、最早什么时候能接新的。
 
     `那天在做的=True`:看**那一天**的队 —— 那天已经开工、还没到交期的工单,

@@ -305,8 +305,15 @@ def main():
 
     print("\n【流式生成 · 省内存不能改变结果】")
     import sqlite3 as _sq
+    # **两条路径必须吃同一份输入。** 原来各自从真库拷一份,两次拷贝之间隔着几秒 ——
+    # 别的会话同时跑门禁时(生命周期检查会临时改库再还原),两份拷贝不一样,
+    # 「两条路径的 manifest 一样」偶发地红,**而红的原因是输入变了,不是生成器错了**。
+    # 先拍一张快照,两边都从快照拷。用 SQLite 的在线备份,拷的是一致的那一刻。
+    _snap = os.path.join(tmpd, "snapshot_for_stream.db")
+    _src = _sq.connect(os.path.join(ROOT, "backend", "lanxiu.db"))
+    _dst = _sq.connect(_snap); _src.backup(_dst); _dst.close(); _src.close()
     def _fill(path, use_sink):
-        shutil.copy(os.path.join(ROOT, "backend", "lanxiu.db"), path)
+        shutil.copy(_snap, path)
         c2 = S.connect(path)
         f5 = D.discover(c2, c2.reflect())
         p5 = P.build(f5, scale=0.3)

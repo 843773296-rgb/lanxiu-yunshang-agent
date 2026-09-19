@@ -41,10 +41,43 @@ def _cap():
     import capacity; return capacity
 
 
+# ── 一次查看内的记忆 ──────────────────────────────────────────────────
+# 白坯试衣看板要对**每一件**定制单推一遍工期(三千多件),而每推一件都把同样的东西
+# 重查一遍:相容矩阵(从 md 解析)、工时表、现货面料、师傅名单、某一天的队 ——
+# 一次看板 7 万多次数据库查询,门禁里调它的五项检查各慢 30–50 秒。
+# **这些东西在一次查看里不会变。** 所以只在 `with 批量():` 的范围内记住,
+# 出了这个范围就全清 —— 服务常开着,跨请求记住的话库存改了还读旧的。
+# 结果和不记完全一样;不在批量里调的,行为一个字不变。
+_批量层 = 0
+_记 = {}
+
+
+class 批量:
+    def __enter__(self):
+        global _批量层
+        _批量层 += 1
+        return self
+
+    def __exit__(self, *a):
+        global _批量层
+        _批量层 -= 1
+        if _批量层 == 0:
+            _记.clear()
+
+
+def 记住(key, fn):
+    """在批量范围内按 key 记住 fn() 的结果;不在批量里就每次现算。"""
+    if not _批量层:
+        return fn()
+    if key not in _记:
+        _记[key] = fn()
+    return _记[key]
+
+
 def dp_combo_tables():
     """工艺的「工序」从相容矩阵的属性表来 —— 那张表已经标好了织造/印染/刺绣/缝制。
     不在这里另存一份:同一个属性存两处,一定漂。"""
-    return derive_combo._tables()
+    return 记住(("相容矩阵",), derive_combo._tables)
 
 # 缝制段:基础天数 + 裁片数 × 系数 + 难度加成
 SEW_BASE, SEW_PER_PIECE = 5.0, 0.2
@@ -58,6 +91,10 @@ PANJIU = ("WL07", "WL60", "WL61")   # 盘扣类物料,按对数计工日
 
 def craft_days():
     """工艺工时表:编码 → (最少, 最多, 单位, 并行上限, 备注)"""
+    return 记住(("工时表",), _craft_days)
+
+
+def _craft_days():
     out = {}
     for line in dp._read(MD).split("\n"):
         c = [x.strip() for x in line.strip().strip("|").split("|")]
@@ -69,6 +106,10 @@ def craft_days():
 
 
 def _in_stock(crafts, names, exclude=None):
+    return 记住(("现货", tuple(crafts or ()), exclude), lambda: _in_stock_查(crafts, names, exclude))
+
+
+def _in_stock_查(crafts, names, exclude=None):
     """和这些工艺都相容、且当前有现货的面料。
 
     工期推算一直有条建议叫「改用现货面料可压缩 20 天」—— 在库里加上现货字段之前,
@@ -362,4 +403,23 @@ if __name__ == "__main__":
     print(f"  {g['产能缺口'][0][:70] if g['产能缺口'] else '(无)'}")
     assert g["产能缺口"], "没有师傅会的工艺必须报成产能缺口"
 
+    # ── 一次查看内的记忆:范围外现算、范围内只算一次、**出范围就清空(出错也清)** ──
+    #    最后那条最要紧:清不掉的话,常开的服务会一直读旧库存、旧师傅名单
+    n = [0]
+    def _f():
+        n[0] += 1; return n[0]
+    记住(("自测",), _f); 记住(("自测",), _f)
+    assert n[0] == 2, "批量之外不许记 —— 不在一次查看里,就该每次现查"
+    with 批量():
+        记住(("自测",), _f); 记住(("自测",), _f)
+    assert n[0] == 3, "批量之内同一个 key 只算一次"
+    assert not _记, "退出批量后记忆必须清空 —— 否则常开的服务一直读旧的"
+    try:
+        with 批量():
+            记住(("自测",), _f)
+            raise RuntimeError
+    except RuntimeError:
+        pass
+    assert not _记 and _批量层 == 0, "出错退出也必须清空、层数归零"
+    print("  一次查看内的记忆:范围外现算 / 范围内只算一次 / 出范围清空(出错也清)")
     print("\n✅ 工期推算自测通过")

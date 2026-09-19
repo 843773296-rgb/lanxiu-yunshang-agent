@@ -2793,7 +2793,8 @@ def get_capacity(craft=None, workdays=None, from_date=None):
 
 
 def _names():
-    return {r["code"]: r["name"] for r in _rows("SELECT code,name FROM craft")}
+    import leadtime
+    return leadtime.记住(("工艺名",), lambda: {r["code"]: r["name"] for r in _rows("SELECT code,name FROM craft")})
 
 
 def kb_pattern(xz=None):
@@ -3197,9 +3198,10 @@ def _白坯试衣(order_id, item_name, order_status):
     item = it[0]
 
     # 该不该试 —— **跑真的工期推算**,不在这儿另判一遍
-    mt = {r["name"]: r["code"] for r in
-          _rows("SELECT code,name FROM material WHERE width_cm IS NOT NULL")}
-    kfm = {r["name"]: r["code"] for r in _rows("SELECT code,name FROM craft")}
+    import leadtime as _ltb
+    mt = _ltb.记住(("带幅宽的料",), lambda: {r["name"]: r["code"] for r in
+          _rows("SELECT code,name FROM material WHERE width_cm IS NOT NULL")})
+    kfm = _ltb.记住(("工艺名→码",), lambda: {r["name"]: r["code"] for r in _rows("SELECT code,name FROM craft")})
     ch = _rows("SELECT kind,material,part FROM item_part_choice WHERE item_id=? "
                "ORDER BY id", item["id"])
     ks = sorted({kfm[x["material"]] for x in ch
@@ -3295,8 +3297,12 @@ def fitting_queue(order=None):
                "LEFT JOIN customer c ON c.id=o.customer_id "
                "WHERE o.kind='定制品订单'" + w + " ORDER BY i.id", *a)
     摊 = {}
-    for r in rs:
-        f = _白坯试衣(r["order_id"], r["name"], r["status"])
+    # 三千多件逐件推工期 —— 放进「一次查看」的记忆范围:相容矩阵、工时表、现货、
+    # 师傅名单、某一天的队在这一次里不会变,不必每件重查(结果一样,只是不重复查)
+    import leadtime as _ltb
+    with _ltb.批量():
+        _fs = [(r, _白坯试衣(r["order_id"], r["name"], r["status"])) for r in rs]
+    for r, f in _fs:
         st = f.get("归到哪一档")
         if st == "不必试" and not order:
             continue          # 不必试的不进看板 —— 一张 47 行的清单等于没排队
