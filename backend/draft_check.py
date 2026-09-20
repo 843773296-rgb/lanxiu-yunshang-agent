@@ -27,6 +27,8 @@ DB = os.path.join(HERE, "lanxiu.db")
     ("素面款也按哈希挑一个纹样画上去(图和口径各说各的)", "图上画的花按口径层来"),
     ("把纹样来源那段元数据从图里去掉(模拟漏标 —— 不许当成已核)", "每张图都声明了纹样来源"),
     ("把「推导」并进「已核」(猜出来的当成业务确认过的)", "图上标的来源就是口径判的那一档"),
+    ("图例里不再写明结构线是「按比例画的示意」(示意图和定稿图在纸上长得一样)",
+     "上衣画了结构线,并写明是示意"),
 ]
 失败 = []
 
@@ -156,6 +158,22 @@ def main():
         if g.get("provenance") != 应:
             一致.append(f"{r['name']}:图上标 {g.get('provenance')},口径判 {应}")
     报("图上标的来源就是口径判的那一档", not 一致, "、".join(一致[:2]) or "抽查 30 件")
+
+    # ⑥bis 上衣类必须画出结构线 —— **不画的话前片和后片在纸上长得一模一样**
+    # 只验「有没有画」和「标没标明是示意」,不验画得好不好(那验不了,得版师看)。
+    缺结构 = []
+    for pt in [x for x in 版型 if x not in ("PT04", "PT05")][:25]:
+        名 = {r["name"] for r in c.execute("SELECT name FROM pattern_piece WHERE pattern=?", (pt,))}
+        if not any(n.endswith("前片") for n in 名):
+            continue
+        sizes = [r["size"] for r in c.execute("SELECT DISTINCT size FROM size_spec WHERE pattern=?", (pt,))]
+        svg, _, _ = _draft.render(pt, "M" if "M" in sizes else (sizes[0] if sizes else "M"))
+        if "前领窝" not in svg or "肩线" not in svg:
+            缺结构.append(pt)
+        if "版师要重画" not in svg:
+            缺结构.append(f"{pt}(没写明结构线是示意)")
+    报("上衣画了结构线,并写明是示意", not 缺结构, "、".join(缺结构[:3]) or
+       "抽查到的上衣类版型都画了领窝 / 肩线,且图例写明「按比例画的示意,版师要重画」")
 
     # ⑦ 不存在的版型必须明确报错,不许画一张空图糊弄过去
     # 报错还要**报得清楚**:ValueError 且话里带着那个编码。

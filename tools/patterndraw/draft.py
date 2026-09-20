@@ -126,6 +126,54 @@ def 裁片(sh, x, y, w_cm, h_cm, 名, 数量, 面料, 款号, 号型, sa=None, f
     return nx, ny, nw, nh
 
 
+# ── 结构线:领窝 / 衽 / 开衩 ────────────────────────────────────────────
+# 上一版所有裁片都是**光秃秃的矩形**。矩形是对的(汉服是平面裁剪,裁片确实接近矩形),
+# 但**领窝、衽、开衩不画出来,版师看不出这是哪一片的什么位置** —— 前片和后片长得一模一样。
+#
+# ⚠️ **这些是「示意」不是「定稿」**,而且必须在图上写明:
+# 领窝深浅、衽的斜度这些是按比例画的,真要裁还得版师重画。
+# 不写明的话,**一张示意图和一张定稿图在纸上长得一样** —— 这是这个项目最常见的那种事故。
+领深 = {"交领": 8.0, "大襟": 7.0, "圆领": 7.5, "竖领": 6.0, "立领": 6.0, "对襟": 6.5, "方领": 7.0}
+
+
+def 结构线(sh, 名, nx, ny, nw, nh, 领型, 有开衩=False):
+    """在净样框里画结构线。返回这一片额外要标的说明(没有就空)。"""
+    说 = []
+    是前片 = 名.endswith("前片")
+    是后片 = 名.endswith("后片") or 名 == "背子"
+    if not (是前片 or 是后片):
+        return 说
+    d = cm(领深[领型]) * (0.95 if 是前片 else 0.42)       # 前领窝比后领窝深,这是常识也是结构
+    宽 = cm(领深[领型] * 0.8)
+    # 领窝:从上边靠「中线」那一侧挖出来。后片在左边对折 → 领窝在左上角;前片中线在右
+    if 是后片:
+        sh.el.append(f'<path d="M{nx:.2f} {ny+d:.2f} Q{nx:.2f} {ny:.2f} {nx+宽:.2f} {ny:.2f}" '
+                     f'fill="none" stroke="#1d1d1f" stroke-width="{THIN}"/>')
+        sh.text(nx + 宽 + 1.5, ny + 2.6, "后领窝", 2.0, color="#555")
+    else:
+        sh.el.append(f'<path d="M{nx+nw:.2f} {ny+d:.2f} Q{nx+nw:.2f} {ny:.2f} {nx+nw-宽:.2f} {ny:.2f}" '
+                     f'fill="none" stroke="#1d1d1f" stroke-width="{THIN}"/>')
+        sh.text(nx + nw - 宽 - 11, ny + 2.6, "前领窝", 2.0, color="#555")
+        if 领型 in ("交领", "大襟"):
+            # 衽:从领窝底斜到侧缝。**交领的衽压向右**(右衽)—— 图上标出来,别让车间裁反。
+            # 标注贴着线的**下端**放,别放中间 —— 中间是片名和面料那块,压上去两边都看不清。
+            x2, y2 = nx + nw * 0.16, ny + nh * 0.46
+            sh.line(nx + nw, ny + d, x2, y2, "dash")
+            # 标在**领窝和片名之间**那条空带里 —— 贴着线的下端放会压上片名那块白底
+            sh.text(nx + nw * 0.62, ny + d + 3.6, f"衽 · {领型}(右衽)", 1.9, "middle", color="#555")
+            说.append("衽的斜度按比例画,**右衽方向已标**:左襟压右襟")
+    if 有开衩:
+        sh.line(nx, ny + nh * 0.62, nx, ny + nh, "dash")
+        sh.line(nx + nw, ny + nh * 0.62, nx + nw, ny + nh, "dash")
+        sh.text(nx + 2, ny + nh * 0.66, "开衩起点", 2.1, color="#555")
+    # 肩线:十字型里前后本是连裁的,这里拆成两片 —— **把这件事写在图上**。
+    # 标在框**内**,不标在框外:框外那一行会撞上尺寸线和上一排的裁片。
+    sh.line(nx, ny, nx + nw, ny, "dashdot")
+    if nw > 34:
+        sh.text(nx + nw * 0.5, ny + 8.5, "肩线 · 十字型前后连裁时此处对折", 1.9, "middle", color="#888")
+    return 说
+
+
 def 取数(key, size):
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
     if key.startswith("PT"):
@@ -550,6 +598,11 @@ def draft_generic(d, size):
     for 名, qty, w, h, fold, f, px, py in 布局:
         sa = (缝份["边"], 缝份["边"], 缝份["下摆"] if h > 40 else 缝份["边"], 缝份["边"])
         nx, ny, nw, nh = 裁片(sh, px, py, w, h, 名, qty, 面料, 款号, size, sa=sa, fold=fold)
+        # 领窝 / 衽 / 开衩 / 肩线 —— 不画的话前片和后片在纸上长得一模一样
+        有衩 = any(p["name"] in ("开衩贴边", "侧摆", "摆片", "内摆") for p in d["pieces"])
+        for 说 in 结构线(sh, 名, nx, ny, nw, nh, g["领型"], 有衩):
+            if 说 not in 警告:
+                警告.append(说)
         sh.dim(nx, ny, nx + nw, ny, f"{w:.1f}", off=5)
         sh.dim(nx, ny, nx, ny + nh, f"{h:.1f}", off=5)
         for i, seg in enumerate([f[k:k + 34] for k in range(0, len(f), 34)][:2]):
@@ -589,6 +642,12 @@ def _标题栏(sh, d, size, 名称, 款号, g, 警告):
     sh.text(lx, ly + 38, f"缝份:边 {缝份['边']:g} · 下摆 {缝份['下摆']:g}", 2.4)
     _档 = sh.meta.get("provenance", "?")
     sh.text(lx, ly + 34, f"纹样来源:{_档}(本图只画裁片,不画纹样)", 2.3, color=纹样色)
+    # ⚠️ **必须写明**:领窝深浅、衽的斜度是按比例画的示意,不是定稿 ——
+    # 不写的话,一张示意图和一张定稿图在纸上长得一模一样
+    sh.line(lx, ly + 17.2, lx + 12, ly + 17.2, "dash")
+    sh.text(lx + 15, ly + 18, "结构线(领窝 / 衽 / 开衩)—— **按比例画的示意,版师要重画**".replace("**", ""), 2.3)
+    sh.line(lx, ly + 22.2, lx + 12, ly + 22.2, "dashdot")
+    sh.text(lx + 15, ly + 23, "肩线:十字型里前后连裁,此处本是对折线", 2.3)
     if 警告:
         sh.el.append(f'<rect x="{lx}" y="{ly + 42}" width="136" height="{8 + 5 * len(警告) * 2}" '
                      f'fill="#fff4e5" stroke="#d97706" stroke-width="{THIN}"/>')
