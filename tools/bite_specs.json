@@ -1731,5 +1731,18 @@
       }
     ],
     "预期红": "用到这些列名的表都登记了"
-  }
+  },
+
+ {
+  "script": "backend/roster_check.py",
+  "改坏": "把「没有排班记录」也当成休息(和已发布的休息合并成一种)",
+  "file": [
+   {
+    "path": "backend/roster.py",
+    "old": "            return False, \"UNSCHEDULED\", (",
+    "new": "            return False, \"OFF\", ("
+   }
+  ],
+  "预期红": "没排班 ≠ 没空"
+ }
 ]
