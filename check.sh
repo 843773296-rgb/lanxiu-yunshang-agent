@@ -56,6 +56,7 @@ run "简体闸 · 业务数据一律简体(外来文本进来前先查)" python3
 run "商机判断 · 24 条逐字稿(造的对话·纯规则版·只许升不许降)" python3 backend/opportunity_check.py
 run "排班 · 五种状态逐例标真值(没排班和休息长得一样)" python3 backend/roster_check.py
 run "客户归属 · 「有顾问」≠「有人管」(只查不改)" python3 backend/ownership_check.py
+run "成交归因 · 收入分成必须=100,影响力分成可以超(规则相反)" python3 backend/credit_check.py
 run "数据隔离 · A 顾问看不到 B 顾问(漏了不会报错)" python3 backend/isolation_check.py
 run "月度复盘 · 验性质不逐例标真值(相对指标标真值会过期)" python3 backend/review_check.py
 run "预约漏斗 · 嵌套/加总/最窄一环(后一环比前一环多=结构错)" python3 backend/funnel_check.py

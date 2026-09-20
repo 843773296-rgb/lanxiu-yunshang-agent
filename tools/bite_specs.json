@@ -1757,5 +1757,18 @@
    }
   ],
   "预期红": "离职的顾问名下还挂着客户"
+ },
+
+ {
+  "script": "backend/credit_check.py",
+  "改坏": "把影响力分成也拉进「总和必须 100」的校验(两种分成合成一种)",
+  "file": [
+   {
+    "path": "backend/credit.py",
+    "old": "            \"\"\"select order_id, sum(pct) s from deal_credit where kind=?\n               group by order_id having abs(s-100) > 0.01\"\"\", (收入分成,))]",
+    "new": "            \"\"\"select order_id, sum(pct) s from deal_credit where ?<>''\n               group by order_id having abs(s-100) > 0.01\"\"\", (收入分成,))]"
+   }
+  ],
+  "预期红": "收入分成每单加起来正好 100"
  }
 ]
