@@ -28,7 +28,7 @@ def cm(v):
 
 class Sheet:
     def __init__(self, w=420, h=297):
-        self.w, self.h, self.el = w, h, []
+        self.w, self.h, self.el, self.meta = w, h, [], {}
 
     def line(self, x1, y1, x2, y2, kind="thin"):
         st = {"thin": f'stroke-width="{THIN}"', "thick": f'stroke-width="{THICK}"',
@@ -80,9 +80,23 @@ class Sheet:
             self.el.append(f'<text x="{x-1.2:.2f}" y="{(y1+y2)/2:.2f}" font-size="2.4" text-anchor="middle" '
                            f'font-family="PingFang SC, sans-serif" transform="rotate(-90 {x-1.2:.2f} {(y1+y2)/2:.2f})">{label}</text>')
 
+    def 记(self, **kv):
+        """把「这张图凭什么这么画」写进**程序读得到的地方**。
+
+        图例是给人看的,挡不住读数据的程序:哪天有人拿这批图去跑识图评测,
+        他量到的是**占位纹样的识别率**,而报告上会写成「纹样识别准确率」——
+        **两者在报告上长得一模一样。**
+        (设计出自负责设计稿那条线的会话,2026-09-20。)"""
+        self.meta.update(kv)
+
     def svg(self):
+        # **缺省必须是错误,不是「当成已核」** —— 所以这里不给默认值,
+        # 没调用 `记()` 的图出来就没有这一段,而检查会红。
+        m = ("<motif " + " ".join(f'{k}="{v}"' for k, v in self.meta.items()) + "/>") if self.meta else ""
         return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.w}mm" height="{self.h}mm" '
-                f'viewBox="0 0 {self.w} {self.h}"><rect width="{self.w}" height="{self.h}" fill="#fff"/>'
+                f'viewBox="0 0 {self.w} {self.h}">'
+                + (f"<metadata>{m}</metadata>" if m else "")
+                + f'<rect width="{self.w}" height="{self.h}" fill="#fff"/>'
                 + "".join(self.el) + "</svg>")
 
 
@@ -151,6 +165,21 @@ MOTIFS = ("云纹", "团花", "缠枝", "回纹")
 可画 = {"云纹": "云纹", "团花": "团花", "缠枝": "缠枝", "回纹": "回纹",
         "折枝": "缠枝", "宝相花": "团花", "龟甲": "回纹", "联珠": "团花",
         "柿蒂": "团花", "海水江崖": "云纹", "暗花": "缠枝"}
+
+
+# 纹样来源的四态。**没有「缺省」这一档** —— 缺了就是检查红,不是当成已核。
+# 「推导」单独一档,不并进「已核」:按面料/工艺推出来的默认值**没人确认过**,
+# 而「业务确认过的缠枝」和「我们按云锦猜的缠枝」在图上长得一模一样。
+来源档 = {"商品名": "已核", "面料推导": "推导", "工艺推导": "推导",
+        "素面料": "无纹样", "待业务核": "占位"}
+
+
+def 纹样来源(名称, 面料="", 工艺=""):
+    """→ (纹样, 档, 依据)。档 ∈ 已核 / 推导 / 占位 / 无纹样"""
+    sys.path.insert(0, os.path.join(ROOT, "knowledge"))
+    import motif as _m
+    纹, 源, 依据 = _m.推(名称, 面料, 工艺)
+    return 纹, 来源档.get(源, "占位"), 依据
 
 
 def _纹样种(key, 名称, 面料="", 工艺=""):
@@ -252,12 +281,15 @@ def draft_mamian(d, size):
     面料 = d["mt"]
     襕 = 2 if "双襕" in 名称 else (1 if "襕" in 名称 or "织金" in d["kf"] else 0)
     纹 = _纹样种(d["product"]["spu"] if d["product"] else d["pattern"]["code"], 名称, 面料, d["kf"])
+    纹名, 纹档, 纹据 = 纹样来源(名称, 面料, d["kf"])
     if 纹 is None:                                   # 素面款:没有纹样就没有襕
         if 襕:
             警告.append(f"款名里有「襕」但面料是素织的({面料})—— **织金襕要有织花的底才织得上去**,请业务核")
         襕 = 0
 
     sh = Sheet()
+    sh.记(name=纹名, provenance=纹档, basis=纹据[:60].replace('"', "'"),
+         drawn=(纹样全名.get(纹) if 纹 else "无"))
     sh.rect(5, 5, 410, 287, "thick")                                    # 图框
     x = 18
     # ① 马面 ×2(前后各一,光面不打褶)
@@ -327,16 +359,19 @@ def draft_mamian(d, size):
         sh.line(lx, yy - 0.8, lx + 12, yy - 0.8, k); sh.text(lx + 15, yy, lab, 2.4)
     sh.grain(lx + 6, ly + 26, ly + 36); sh.text(lx + 15, ly + 32, "布纹线(经向,双箭头=无倒顺)", 2.4)
     sh.text(lx, ly + 44, f"缝份:边 {缝份['边']:g} · 腰 {缝份['腰']:g} · 下摆 {缝份['下摆']:g}", 2.4)
-    if 纹 is None:
-        sh.text(lx, ly + 51, "本款素面 —— 纹样口径判为「无纹样」,图上不画任何花", 2.4, color=纹样色)
+    # **图例这一句是从元数据渲染出来的,不是手写的。**
+    # 手写的话,哪天有人改了标记没改图例(或反过来),两者矛盾而各自看都正常 ——
+    # 就是 `LT05 裤装模版(停用)` 那条:同一件事说了两遍,迟早对不上。
+    说法 = {"已核": "纹样已由业务确认",
+          "推导": "**纹样是按面料 / 工艺推的默认值,没人确认过**",
+          "占位": "**本款纹样待业务核,图上这个是占位**",
+          "无纹样": "本款素面 —— 口径判为「无纹样」,图上不画任何花"}[纹档]
+    # 这一句**每张图都有**:纹样来源是「已核 / 推导 / 占位 / 无纹样」中的哪一档。
+    # 只在特殊情况下才打印的话,「这张图没写」就有两种含义了。
+    sh.text(lx, ly + 51, f"纹样来源:{纹档} —— {说法.replace('**', '')}", 2.3, color=纹样色)
     if 襕 and 纹:                 # 这一款没有襕就别在图例里立一条 —— 图例要和图上真有的东西对上
-        sh.el.append(f'<rect x="{lx}" y="{ly + 48}" width="12" height="4" fill="#f7eed9" stroke="{纹样色}" stroke-width="{THIN}"/>')
-        sys.path.insert(0, os.path.join(ROOT, "knowledge"))
-        import motif as _m
-        _纹, _源, _ = _m.推(名称, 面料, d["kf"])
-        sh.text(lx + 15, ly + 51,
-                f"织金襕 · 本款:{纹样全名[纹]}" +
-                (f"(纹样{_源},织造前定)" if _源 != _m.待核 else "(**本款纹样待业务核**,图上这个是占位)"), 2.4)
+        sh.el.append(f'<rect x="{lx}" y="{ly + 55}" width="12" height="4" fill="#f7eed9" stroke="{纹样色}" stroke-width="{THIN}"/>')
+        sh.text(lx + 15, ly + 58, f"织金襕 · 本款画的是:{纹样全名[纹]}", 2.4)
     if "绣" in d["kf"]:
         sh.rect(lx, ly + 55, 12, 4, "dash")
         sh.text(lx + 15, ly + 58, "绣花定位框(框内线稿为绣样示意)", 2.4)
@@ -507,6 +542,10 @@ def draft_generic(d, size):
         警告.append("裁片太多,一张 A3 排不下,图上只画了排得下的那些")
 
     sh = Sheet()
+    _纹名, _纹档, _纹据 = 纹样来源(名称, 面料, d["kf"])
+    # 通用画法现在不画纹样(只画裁片),但**仍然要声明** ——
+    # 「这张图没画纹样」和「这张图的纹样标记漏了」必须分得开
+    sh.记(name=_纹名, provenance=_纹档, basis=_纹据[:60].replace('"', "'"), drawn="无")
     sh.rect(5, 5, 410, 287, "thick")
     for 名, qty, w, h, fold, f, px, py in 布局:
         sa = (缝份["边"], 缝份["边"], 缝份["下摆"] if h > 40 else 缝份["边"], 缝份["边"])
@@ -548,6 +587,8 @@ def _标题栏(sh, d, size, 名称, 款号, g, 警告):
     sh.grain(lx + 6, ly + 22, ly + 30)
     sh.text(lx + 15, ly + 27, "布纹线(经向)", 2.4)
     sh.text(lx, ly + 38, f"缝份:边 {缝份['边']:g} · 下摆 {缝份['下摆']:g}", 2.4)
+    _档 = sh.meta.get("provenance", "?")
+    sh.text(lx, ly + 34, f"纹样来源:{_档}(本图只画裁片,不画纹样)", 2.3, color=纹样色)
     if 警告:
         sh.el.append(f'<rect x="{lx}" y="{ly + 42}" width="136" height="{8 + 5 * len(警告) * 2}" '
                      f'fill="#fff4e5" stroke="#d97706" stroke-width="{THIN}"/>')

@@ -25,6 +25,8 @@ DB = os.path.join(HERE, "lanxiu.db")
     ("查不到的版型不明说查不到(dict(None) 抛 TypeError)", "查不到的版型要报错"),
     ("标题栏不印规格(图上看不到这一号型到底是多少)", "图上印的规格就是库里的数"),
     ("素面款也按哈希挑一个纹样画上去(图和口径各说各的)", "图上画的花按口径层来"),
+    ("把纹样来源那段元数据从图里去掉(模拟漏标 —— 不许当成已核)", "每张图都声明了纹样来源"),
+    ("把「推导」并进「已核」(猜出来的当成业务确认过的)", "图上标的来源就是口径判的那一档"),
 ]
 失败 = []
 
@@ -109,7 +111,53 @@ def main():
             错纹.append(f"{r['name']}:口径判{纹},图上一朵花都没有")
     报("图上画的花按口径层来", not 错纹, "、".join(错纹[:2]) or "抽查 60 件")
 
-    # ⑥ 不存在的版型必须明确报错,不许画一张空图糊弄过去
+    # ⑥ 每张图都要**显式声明纹样来源**,四档之一,**不许缺省**
+    #
+    # 图例是给人看的,挡不住读数据的程序:拿这批图去跑识图评测,量到的可能是
+    # **占位纹样的识别率**,而报告上写的是「纹样识别准确率」—— 两者在报告上长得一样。
+    # 所以标记要放在程序读得到的地方(SVG 的 <metadata>),而且**缺省必须是错误**:
+    # 「这张图没有占位标记」和「这张图的占位标记漏了」,不标出来就长得一模一样。
+    # (设计来自负责设计稿那条线的会话。)
+    import re as _re
+    四档 = {"已核", "推导", "占位", "无纹样"}
+    缺, 错档 = [], []
+    for pt in 版型[:40]:
+        sizes = [r["size"] for r in c.execute(
+            "SELECT DISTINCT size FROM size_spec WHERE pattern=?", (pt,))]
+        svg, _, _ = _draft.render(pt, "M" if "M" in sizes else (sizes[0] if sizes else "M"))
+        m = _re.search(r'<motif ([^>]*)/>', svg)
+        if not m:
+            缺.append(pt)
+            continue
+        g = dict(_re.findall(r'(\w+)="([^"]*)"', m.group(1)))
+        if g.get("provenance") not in 四档:
+            错档.append(f"{pt}:{g.get('provenance')!r}")
+    报("每张图都声明了纹样来源", not 缺 and not 错档,
+       (f"没有声明的:{'、'.join(缺[:3])}" if 缺 else "") + ("；" if 缺 and 错档 else "")
+       + (f"档不认识:{'、'.join(错档[:2])}" if 错档 else "")
+       or f"抽查 {min(40, len(版型))} 个版型,四档(已核/推导/占位/无纹样)都在")
+
+    # 「推导」不许并进「已核」:按面料猜出来的和业务确认过的,图上长得一模一样
+    一致 = []
+    for r in c.execute("""SELECT p.spu,p.name,p.pattern,pc.mt_opts,pc.kf_opts FROM product p
+                          LEFT JOIN product_custom pc ON pc.spu=p.spu
+                          WHERE p.pattern IS NOT NULL AND p.pattern!='' ORDER BY p.spu LIMIT 30"""):
+        # **号型要按这个版型现读** —— 童装是 110–150,拿 M 去要会得到「缺号型数据」,
+        # 而那是检查自己写错了参数,不是被测的东西有问题
+        _sz = [x["size"] for x in c.execute(
+            "SELECT DISTINCT size FROM size_spec WHERE pattern=?", (r["pattern"],))]
+        if not _sz:
+            continue
+        svg, _, _ = _draft.render(r["spu"], "M" if "M" in _sz else _sz[0])
+        g = dict(_re.findall(r'(\w+)="([^"]*)"', _re.search(r'<motif ([^>]*)/>', svg).group(1)))
+        纹, 源, _ = _m.推(r["name"], r["mt_opts"] or "", r["kf_opts"] or "")
+        应 = {"商品名": "已核", "面料推导": "推导", "工艺推导": "推导",
+             "素面料": "无纹样", "待业务核": "占位"}[源]
+        if g.get("provenance") != 应:
+            一致.append(f"{r['name']}:图上标 {g.get('provenance')},口径判 {应}")
+    报("图上标的来源就是口径判的那一档", not 一致, "、".join(一致[:2]) or "抽查 30 件")
+
+    # ⑦ 不存在的版型必须明确报错,不许画一张空图糊弄过去
     # 报错还要**报得清楚**:ValueError 且话里带着那个编码。
     # 随便抛个 TypeError 也算「报错了」,但看的人不知道是版型不存在还是程序坏了。
     try:
