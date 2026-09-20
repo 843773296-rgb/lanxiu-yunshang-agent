@@ -1660,6 +1660,20 @@ async function productDetail(spu){
      判为「不可」的会在建库时自动剔除;<b>${d.custom.undef} 对「未定义」</b>说明相容矩阵还没录到这一格,
      须转工艺负责人确认,<b>不得自行推断</b>。</div>
    </div>`:""}
+   ${d.draft?`<div class="card"><div class="hd"><h3>打版图</h3>
+     <span class="n">${esc(d.draft.pattern)} · ${d.draft.pieces.length} 片</span></div>
+    <div style="padding:10px 24px 4px">
+      <div class="l" style="margin-bottom:6px">按号型出图 —— <b style="color:var(--ink)">点开即现画</b></div>
+      ${d.draft.sizes.map(z=>`<a class="pill p-blue" style="margin-right:6px;text-decoration:none"
+         href="${esc(d.draft.url[z])}" target="_blank">${esc(z)} 码</a>`).join("")}
+      <div style="margin-top:10px">${d.draft.pieces.map(x=>
+        `<span class="pill p-mut" style="margin-right:6px">${esc(x)}</span>`).join("")}</div>
+      <div class="note2" style="margin:10px 0 0"><b style="color:var(--ink)">图是现画的,不存盘</b> ——
+        版型改版或号型改了尺寸,下次打开就是新的。<b style="color:var(--bad)">存一份图片的话</b>,
+        库里改了而图没改,<b>旧图和新图长得一模一样</b>,车间照着旧图裁布才发现。
+        <br>图上印着每片的公式(如「宽=胸围/4+松量3」)和比例,<b style="color:var(--ink)">按 A3 横向打印</b>;
+        数据推不出合理值时,图上会有橙色的「版师请核」框 —— <b>那是提示核数据,不是图画错了</b>。</div>
+    </div></div>`:""}
    <div class="card"><div class="hd"><h3>规格与库存</h3><span class="n">${d.skus.length} 个 SKU</span></div>
     <table class="tb" style="margin-top:12px"><thead><tr><th style="width:52px">图</th>
     <th style="width:172px">商品编码(SKU)</th>

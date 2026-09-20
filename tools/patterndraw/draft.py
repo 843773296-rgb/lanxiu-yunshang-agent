@@ -7,7 +7,8 @@
 规范依据见同目录 `制版规范.md`。**这不是版师画的图,是按公式从库里的尺寸推出来的初版** ——
 公式写在图上(版师能逐条驳),数据推出不合理的值时在图上打警告,不静默画一张看着很对的图。
 
-现在支持的形制:明制马面裙(马面 + 褶裥片 + 裙腰 + 系带)。其余形制报「还没做」,不猜。
+马面裙有专画(襕位、绣位、褶位都画出来);其余形制按 `pattern_piece` 登记的裁片清单画,
+库里没登记裁片的版型报「画不了」,**不猜**。系统里走 `render()`,后台 `/pattern/<版型>-<号型>.svg`。
 """
 import os, sys, sqlite3, math, datetime as dt
 
@@ -122,6 +123,10 @@ def 取数(key, size):
         pt = p["pattern"]
     ptn = c.execute("SELECT p.*, z.name xzn FROM pattern p LEFT JOIN xingzhi z ON z.code=p.xz "
                     "WHERE p.code=?", (pt,)).fetchone()
+    # 查不到就**明说查不到**。不加这一句时,下一行 dict(None) 抛的是 TypeError,
+    # 调用方看到的是「NoneType is not iterable」—— 那句话不告诉任何人「这个版型库里没有」。
+    if not ptn:
+        raise ValueError(f"库里没有这个版型:{pt}")
     spec = {r["item"]: r["value"] for r in c.execute(
         "SELECT item,value FROM size_spec WHERE pattern=? AND size=?", (pt, size))}
     pieces = [dict(r) for r in c.execute("SELECT name,qty,note FROM pattern_piece WHERE pattern=?", (pt,))]
@@ -530,20 +535,29 @@ FAMILIES = [("马面裙", lambda d: {"马面", "褶裥片"} <= {p["name"] for p 
             ("按裁片清单", lambda d: bool(d["pieces"]), draft_generic)]
 
 
-def main():
-    key = sys.argv[1] if len(sys.argv) > 1 else "PT04"
-    size = sys.argv[2] if len(sys.argv) > 2 else "M"
-    out = sys.argv[3] if len(sys.argv) > 3 else f"/tmp/打版-{key}-{size}.svg"
+def render(key, size="M"):
+    """给系统调:返回 (svg 字符串, 画法名, 警告列表)。命令行和后台走同一条路,
+    **不另写一份** —— 两条路各画各的,迟早出现「页面上看到的」和「打印出来的」不一样。"""
     d = 取数(key, size)
     for nm, hit, fn in FAMILIES:
         if hit(d):
             sh, 警告 = fn(d, size)
-            open(out, "w", encoding="utf-8").write(sh.svg())
-            print(f"✅ {nm} · {d['pattern']['code']} · {size} → {out}")
-            for w in 警告:
-                print("  ⚠", w.replace("**", ""))
-            return
-    raise SystemExit(f"❌ 版型 {d['pattern']['code']}({d['pattern'].get('xzn')})的形制还没做 —— 不猜")
+            return sh.svg(), nm, 警告
+    raise ValueError(f"版型 {d['pattern']['code']}({d['pattern'].get('xzn')})没有登记裁片,画不了")
+
+
+def main():
+    key = sys.argv[1] if len(sys.argv) > 1 else "PT04"
+    size = sys.argv[2] if len(sys.argv) > 2 else "M"
+    out = sys.argv[3] if len(sys.argv) > 3 else f"/tmp/打版-{key}-{size}.svg"
+    try:
+        svg, nm, 警告 = render(key, size)
+    except ValueError as e:
+        raise SystemExit(f"❌ {e} —— 不猜")
+    open(out, "w", encoding="utf-8").write(svg)
+    print(f"✅ {nm} · {key} · {size} → {out}")
+    for w in 警告:
+        print("  ⚠", w.replace("**", ""))
 
 
 if __name__ == "__main__":

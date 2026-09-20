@@ -1463,5 +1463,41 @@
       }
     ],
     "预期红": "退出批量后记忆必须清空"
+  },
+  {
+    "script": "backend/draft_check.py",
+    "改坏": "商品页的打版图写死一个版型(不跟着这件商品自己的版型走)",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "            p[\"draft\"]=dict(pattern=p[\"pattern\"], sizes=_sz,",
+        "new": "            p[\"draft\"]=dict(pattern=\"PT04\", sizes=_sz,"
+      }
+    ],
+    "预期红": "商品页指的是自己的版型"
+  },
+  {
+    "script": "backend/draft_check.py",
+    "改坏": "查不到的版型不报错,返回一张空图",
+    "file": [
+      {
+        "path": "tools/patterndraw/draft.py",
+        "old": "    if not ptn:\n        raise ValueError(f\"库里没有这个版型:{pt}\")",
+        "new": "    if not ptn:\n        ptn = {}"
+      }
+    ],
+    "预期红": "查不到的版型要报错"
+  },
+  {
+    "script": "backend/draft_check.py",
+    "改坏": "标题栏不印规格(图上看不到这一号型到底是多少)",
+    "file": [
+      {
+        "path": "tools/patterndraw/draft.py",
+        "old": "            (\"规格\", f\"腰围 W {W:g} · 裙长 L {L:g} · 马面宽 B {B:g}\"),",
+        "new": "            (\"规格\", \"\"),"
+      }
+    ],
+    "预期红": "图上印的规格就是库里的数"
   }
 ]

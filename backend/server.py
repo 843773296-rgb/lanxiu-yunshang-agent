@@ -676,6 +676,20 @@ def product_detail(spu):
         p["part_fabric_cost"] = round(_sum, 2)
         p["part_cost_est"] = _估
     _c2p.close()
+    # ── 打版图 ──────────────────────────────────────────────────────
+    # **不存文件,给的是现画的地址**:版型或号型一改,图跟着改。
+    # 号型从 size_spec 现读 —— 写死 S/M/L 的话,童装(110–150)和均码就少一半。
+    p["draft"]=None
+    if p.get("pattern"):
+        _sz=[r["size"] for r in rows(
+            "SELECT DISTINCT size FROM size_spec WHERE pattern=? ORDER BY "
+            "CASE size WHEN 'S' THEN 1 WHEN 'M' THEN 2 WHEN 'L' THEN 3 WHEN 'XL' THEN 4 ELSE 5 END, size",
+            p["pattern"])]
+        _pc=rows("SELECT name,qty FROM pattern_piece WHERE pattern=? ORDER BY name",p["pattern"])
+        if _sz and _pc:
+            p["draft"]=dict(pattern=p["pattern"], sizes=_sz,
+                            pieces=[f"{r['name']}×{r['qty']}" for r in _pc],
+                            url={z:f"/pattern/{p['pattern']}-{z}.svg" for z in _sz})
     p["banner"]=读轮播图(p.get("img_detail"))
     p["intro_groups"]=读详情图(p.get("img_intro"))
     p["skus"]=rows("SELECT * FROM sku WHERE spu=? ORDER BY code",spu)
@@ -2105,6 +2119,27 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("content-type","image/svg+xml; charset=utf-8")
             self.send_header("cache-control","max-age=3600")
+            self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
+        # 打版图:现画不存盘 —— 版型和号型一改,图必须跟着改。
+        # 存成文件的话,库里改了尺寸而图还是旧的,**而旧图和新图长得一模一样**,
+        # 车间照着旧图裁布才发现。/pattern/PT04-M.svg,也收款号(/pattern/lxys_xxx-M.svg)。
+        if p.startswith("/pattern/") and p.endswith(".svg"):
+            import sys as _sys
+            _sys.path.insert(0, os.path.join(HERE,"..","tools","patterndraw"))
+            import draft as _draft
+            stem=p[len("/pattern/"):-4]; key,_,size=stem.rpartition("-")
+            try:
+                svg,_nm,_warn=_draft.render(key,size or "M")
+            except Exception as e:
+                b=str(e).encode("utf-8")
+                self.send_response(404); self.send_header("content-type","text/plain; charset=utf-8")
+                self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
+            b=svg.encode("utf-8")
+            self.send_response(200)
+            self.send_header("content-type","image/svg+xml; charset=utf-8")
+            # 警告也带在响应头里 —— 只画在图上的话,调接口的人看不到
+            if _warn:
+                self.send_header("x-draft-warnings",str(len(_warn)))
             self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
         if p=="/api/acceptance":
             # 验收器属于「异常场景与验收助手」那个项目,不在本仓库里。
