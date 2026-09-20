@@ -181,7 +181,10 @@ def main():
             if extra:
                 p.append(extra)
             out.append({"档": tier, "文件名": files[0], "SPU": spu, "商品名": nm, "图位": slot,
-                        "颜色": color, "提示词": ";".join(p) + "。", "同图文件": " ".join(files[1:])})
+                        "颜色": color, "提示词": ";".join(p) + "。", "同图文件": " ".join(files[1:]),
+                        # 批次文件里「这一款的底」只写一次,每张图只写它自己那一句 ——
+                        # 整段重复 6 遍要贴 6 遍,而人贴到第三遍就开始跳着贴了
+                        "_共同": ";".join(parts) + "。", "_单图": f"{说明};颜色:主色 {色(color)}。"})
 
         # ① 主图 —— 第一个颜色的 SKU 图和主图是同一张
         first = [s["img"] for s in sks if 实色(s["color"]) == 主色 and s["img"]]
@@ -201,39 +204,83 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     cols = ["档", "文件名", "SPU", "商品名", "图位", "颜色", "提示词", "同图文件"]
     with open(os.path.join(OUT, "出图清单-全部.csv"), "w", newline="", encoding="utf-8-sig") as f:  # 带 BOM,Excel 直接打开不乱码
-        w = csv.DictWriter(f, fieldnames=cols); w.writeheader(); w.writerows(out)
+        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        w.writeheader(); w.writerows(out)
 
-    # 主图单独一份 Markdown,方便逐条复制
-    主 = [o for o in out if o["图位"] == "main"]
-    with open(os.path.join(OUT, "出图清单-主图.md"), "w", encoding="utf-8") as f:
-        f.write(f"# 澜绣云裳 · 商品主图出图清单({len(主)} 条)\n\n先把《先读我》里的「统一要求」贴给 GPT 一次,再逐条贴下面的提示词。\n\n")
-        for i, o in enumerate(主, 1):
-            f.write(f"## {i}. {o['商品名']}\n\n存成:`{o['文件名']}`")
-            if o["同图文件"]:
-                f.write(f"(同一张再复制成:{o['同图文件']})")
-            f.write(f"\n\n```\n{o['提示词']}\n```\n\n")
+    # ── 按商品分批 ────────────────────────────────────────────────────
+    # 一款一整套(主图 + 背面 + 三张细节 + 其他颜色)一次出完,**不要按图位横着出** ——
+    # 同一款的几张图必须看着像同一件衣服,分几天出、中间隔着别的款,风格会飘。
+    # 批次按**卖得多的排前面**:出图是有成本的,先换掉客户看得最多的那些。
+    卖 = {r[0]: r[1] for r in c.execute("SELECT spu, COUNT(*) FROM ordr_item GROUP BY spu")}
+    每批 = int(os.environ.get("每批", 12))
+    序 = sorted({o["SPU"] for o in out}, key=lambda s: (-卖.get(s, 0), s))
+    批 = [序[i:i + 每批] for i in range(0, len(序), 每批)]
+    名字 = {o["SPU"]: o["商品名"] for o in out}
+    按款 = {}
+    for o in out:
+        按款.setdefault(o["SPU"], []).append(o)
+    图位序 = {"main": 0, "intro": 1, "d1": 2, "d2": 3, "d3": 4, "sku": 5}
+
+    进度 = []
+    for bi, spus in enumerate(批, 1):
+        张数 = sum(len(按款[s]) for s in spus)
+        with open(os.path.join(OUT, f"批次-{bi:02d}.md"), "w", encoding="utf-8") as f:
+            f.write(f"# 第 {bi} 批 / 共 {len(批)} 批 —— {len(spus)} 款 · {张数} 张\n\n"
+                    f"先把《00-先读我》里的「统一要求」贴给 GPT 一次(每开一个新对话都要贴)。\n"
+                    f"然后**一款一款来**:把一款底下的几条提示词依次发过去,这一款出完再下一款。\n"
+                    f"出好的图按每条写的文件名存,全放进同一个文件夹。\n\n")
+            for pi, spu in enumerate(spus, 1):
+                gs = sorted(按款[spu], key=lambda o: (图位序.get(o["图位"], 9), o["文件名"]))
+                f.write(f"---\n\n## {bi}-{pi} {名字[spu]}\n\n"
+                        f"`{spu}` · 这一款 {len(gs)} 张"
+                        + (f" · 历史售出 {卖.get(spu, 0)} 件\n\n" if 卖.get(spu) else "\n\n"))
+                f.write("**这一款的底(先发这一段)**\n\n```\n" + gs[0]["_共同"] + "\n```\n\n")
+                for gi, o in enumerate(gs, 1):
+                    f.write(f"**{gi})** 存成 `{o['文件名']}`")
+                    if o["同图文件"]:
+                        f.write(f" —— 同一张再复制成:{o['同图文件']}")
+                    f.write(f"\n\n```\n{o['_单图']}\n```\n\n")
+                f.write("> 第 1 张出好、你认可之后,**让它以第 1 张为参考**出后面几张 ——\n"
+                        "> 这几张要看着是同一件衣服,不是同一个款式的几件。\n\n")
+                进度.append(dict(批次=bi, 序号=f"{bi}-{pi}", SPU=spu, 商品名=名字[spu],
+                                 张数=len(gs), 历史售出=卖.get(spu, 0),
+                                 文件名="; ".join(x["文件名"] for x in gs), 出完了=""))
+    with open(os.path.join(OUT, "进度表.csv"), "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.DictWriter(f, fieldnames=["批次", "序号", "SPU", "商品名", "张数", "历史售出", "文件名", "出完了"])
+        w.writeheader(); w.writerows(进度)
 
     n = {t: sum(1 for o in out if o["档"] == t) for t in ("①主图", "②颜色图", "③细节图")}
     with open(os.path.join(OUT, "00-先读我.md"), "w", encoding="utf-8") as f:
         f.write(f"""# 澜绣云裳 · 商品出图清单
 
-由 `tools/export_image_prompts.py` 从商品库导出。共 {len(out)} 张图,分三档,**先出第一档就能替换掉现在的示意图**:
+由 `tools/export_image_prompts.py` 从商品库导出。**{len(序)} 款商品 · {len(out)} 张图 · 分 {len(批)} 批**,
+一款一整套(主图 + 背面 + 三张细节 + 其他颜色),一次出完一款。
 
-| 档 | 张数 | 说明 |
+| 一套里有什么 | 张数 | 说明 |
 |---|---|---|
-| ① 主图 | {n['①主图']} | 每款一张,正面全身。颜色和系统里第一个 SKU 一致 |
-| ② 颜色图 | {n['②颜色图']} | 同一款的其他颜色,各一张(同色不同尺码共用) |
-| ③ 细节图 | {n['③细节图']} | 面料特写 / 工艺特写 / 领袖结构 / 背面 |
+| 主图 | {n['①主图']} | 每款一张,正面全身。颜色和系统里第一个 SKU 一致 |
+| 介绍图(背面) | 见各款 | 和主图同一件、同一光线 |
+| 细节图 | {n['③细节图']} | 面料特写 / 工艺特写 / 领袖或裙腰结构 |
+| 颜色图 | {n['②颜色图']} | 这一款的其他颜色(同色不同尺码共用一张) |
+
+配饰和面料部件只有主图 + 两张细节(背面对它们没意义),所以每款 3–8 张不等。
 
 ## 怎么用
 
-1. 在 GPT 里先贴下面的「统一要求」一次。
-2. 打开 `出图清单-主图.md`,逐条复制代码框里的提示词发过去。
-3. 出好的图按「存成」那一栏的文件名保存,全放进同一个文件夹。
-   有「同一张再复制成」的,把这张图再复制几份、改成那些文件名(不用重新生成)。
-4. 放好之后告诉我文件夹在哪,我来接进系统。
+图按**商品**分好了批,`批次-01.md` 到 `批次-{len(批):02d}.md`,每批 {每批} 款。
+**卖得最多的排在第一批** —— 出图有成本,先换掉客户看得最多的那些。
 
-`出图清单-全部.csv` 是三档全部的表格(Excel 可直接打开),适合批量出图工具按行跑。
+1. 开一个新对话,先贴下面的「统一要求」(每开一个新对话都要贴一次)。
+2. 打开 `批次-01.md`,**一款一款来**:把这一款底下的几条提示词依次发过去,出完再下一款。
+3. 图按每条写的文件名存,全放进同一个文件夹。
+   有「同一张再复制成」的,把这张图复制几份改名就行,不用重新生成。
+4. 一批出完,在 `进度表.csv` 的「出完了」那一栏打个勾,下次从下一批接着来。
+5. 全部或一部分出完,告诉我文件夹在哪,我接进系统。
+
+⚠️ **一款的几张图要一次出完,别按图位横着出**(先出所有主图、改天再出所有细节图)——
+同一款的几张必须看着像同一件衣服,隔着别的款出,风格会飘,而**单看每一张都挑不出毛病**。
+
+`出图清单-全部.csv` 是全部 {len(out)} 张的表格(Excel 可直接打开),适合批量出图工具按行跑。
 
 ## 统一要求(贴一次)
 
