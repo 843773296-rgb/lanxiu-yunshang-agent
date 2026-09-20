@@ -301,8 +301,9 @@ def draft_mamian(d, size):
         sh.line(lx, yy - 0.8, lx + 12, yy - 0.8, k); sh.text(lx + 15, yy, lab, 2.4)
     sh.grain(lx + 6, ly + 26, ly + 36); sh.text(lx + 15, ly + 32, "布纹线(经向,双箭头=无倒顺)", 2.4)
     sh.text(lx, ly + 44, f"缝份:边 {缝份['边']:g} · 腰 {缝份['腰']:g} · 下摆 {缝份['下摆']:g}", 2.4)
-    sh.el.append(f'<rect x="{lx}" y="{ly + 48}" width="12" height="4" fill="#f7eed9" stroke="{纹样色}" stroke-width="{THIN}"/>')
-    sh.text(lx + 15, ly + 51, f"织金襕(纹样按循环排满,织造前定)· 本款:{纹样全名[纹]}", 2.4)
+    if 襕:                       # 这一款没有襕就别在图例里立一条 —— 图例要和图上真有的东西对上
+        sh.el.append(f'<rect x="{lx}" y="{ly + 48}" width="12" height="4" fill="#f7eed9" stroke="{纹样色}" stroke-width="{THIN}"/>')
+        sh.text(lx + 15, ly + 51, f"织金襕(纹样按循环排满,织造前定)· 本款:{纹样全名[纹]}", 2.4)
     if "绣" in d["kf"]:
         sh.rect(lx, ly + 55, 12, 4, "dash")
         sh.text(lx + 15, ly + 58, "绣花定位框(框内线稿为绣样示意)", 2.4)
@@ -316,7 +317,217 @@ def draft_mamian(d, size):
     return sh, 警告
 
 
-FAMILIES = [("马面裙", lambda d: {"马面", "褶裥片"} <= {p["name"] for p in d["pieces"]}, draft_mamian)]
+# ── 通用:按裁片清单画 ──────────────────────────────────────────────────
+# 43 个形制一个个手写画法是写不完的,而且写完也维护不动。改成**按 `pattern_piece` 里
+# 登记的裁片清单画** —— 库里说这个版型有哪几片,就画哪几片;每片的尺寸按下面这张
+# 公式表从号型推。库里加一个新版型,不用改这里的代码。
+#
+# ⚠️ 公式是**按汉服十字型平面结构推的初版**(依据 `制版规范.md` §五),不是版师的定稿:
+#   · 十字型:无肩缝、前后连裁、后中对折 —— 所以「后片 ×1」画成对折片
+#   · 通袖长是指尖到指尖,减去背宽(≈胸围/2)再对半,才是一只袖子的长
+#   · 交领要掩襟(前片比后片宽出一块),对襟不用
+# 每片上都印着自己的公式,版师能逐条驳。推不出来的(缺尺寸、不认识的片名)**在图上报出来,不猜**。
+布幅 = 50.0          # 传统织机幅宽,接袖的由来
+掩襟 = {"交领": 15.0, "大襟": 12.0, "圆领": 12.0, "竖领": 12.0, "立领": 12.0, "对襟": 0.0, "方领": 0.0}
+
+
+def _领型(xzn, pieces):
+    名 = set(pieces)
+    for k in ("立领", "竖领", "圆领", "方领"):
+        if k in xzn or k in 名:
+            return k
+    if "交领" in xzn or "大襟贴边" in 名:
+        return "交领" if "交领" in xzn else "大襟"
+    return "对襟"
+
+
+def 件表(名, g):
+    """一片 → (宽 cm, 高 cm, 面料, 对折边, 公式)。返回 None = 这一片的公式还没有,不猜。
+    g 是这一版型已经算好的量:半身宽、衣长、袖长…"""
+    # 缺的量一律当 0 传下去 —— 算出 0 的那片会被上面判成「缺号型数据」报出来,
+    # 而不是在这里整张表一起炸(一片缺数,其余片也画不成)
+    z = {k: (v or 0) for k, v in g.items() if isinstance(v, (int, float)) or v is None}
+    半 = z["半身"]; 衣长 = z["衣长"]; 领围 = z["领围"]
+    g = {**g, **z}
+    T = dict(
+        # 衣身:后片连裁对折,前片加掩襟
+        后片=(半, 衣长, "left", "宽=胸围/4+松量3(后中对折) 长=衣长"),
+        前片=(半 + g["掩"], 衣长, None, f"宽=胸围/4+3+掩襟{g['掩']:g}({g['领型']}) 长=衣长"),
+        袖片=(g["袖长"], g["袖肥"], None, "长=(通袖长−胸围/2)/2 宽=袖肥"),
+        大袖片=(g["袖长"], 55.0, None, "长=(通袖长−胸围/2)/2 宽=大袖 55"),
+        短袖片=(max(g["袖长"] * 0.35, 18.0), 34.0, None, "长=袖长×0.35(半臂) 宽=34"),
+        # 领与缘
+        领缘=(衣长 * 1.6 + 20, 12.0, None, "长=衣长×1.6+20(绕过领口通到下摆) 宽=12(对折 6)"),
+        袖缘=(g["袖肥"] * 2, 12.0, None, "长=袖肥×2 宽=12(对折 6)"),
+        立领=(领围 + 4, 10.0, None, "长=领围+4 高=10(对折 5)"),
+        竖领=(领围 + 4, 12.0, None, "长=领围+4 高=12(对折 6)"),
+        圆领=(领围 + 6, 8.0, None, "长=领围+6 宽=8"),
+        # 摆与贴边
+        摆片=(24.0, 衣长 * 0.55, None, "宽=24 长=衣长×0.55(两侧外摆)"),
+        内摆=(24.0, 衣长 * 0.5, None, "宽=24 长=衣长×0.5(道袍内摆)"),
+        侧摆=(20.0, 衣长 * 0.5, None, "宽=20 长=衣长×0.5"),
+        大襟贴边=(12.0, 衣长, None, "宽=12 长=衣长"),
+        门襟贴边=(8.0, 衣长, None, "宽=8 长=衣长"),
+        方领贴边=(领围 + 10, 8.0, None, "长=领围+10 宽=8"),
+        坦领贴边=(领围 + 10, 8.0, None, "长=领围+10 宽=8"),
+        开衩贴边=(6.0, 衣长 * 0.4, None, "宽=6 长=衣长×0.4"),
+        拉链贴边=(6.0, 50.0, None, "宽=6 长=50(隐形拉链 40+缩余)"),
+        补子位贴边=(40.0, 40.0, None, "补子 40×40(明制方补),位置:前胸中心、后背中心"),
+        横襕=(半 * 2, 20.0, None, "宽=胸围/2+6 高=20(襕衫横襕)"),
+        # 裙与裤
+        裙片=(g["裙片宽"], g["裙身"], None, g["裙片式"] or "缺腰围 / 裙长"),
+        裙腰=(g["腰长"], 12.0, None, "长=腰围+搭叠12 高=12(对折 6)"),
+        裙头=(g["腰长"], 12.0, None, "长=腰围+搭叠12 高=12(对折 6)"),
+        裤腰=(g["腰长"], 12.0, None, "长=腰围+搭叠12 高=12(对折 6)"),
+        裤前片=(g["裤宽"], g["裤长"], None, "宽=臀围/4+6 长=裤长"),
+        裤后片=(g["裤宽"] + 4, g["裤长"], None, "宽=臀围/4+10(后片加量) 长=裤长"),
+        系带=(100.0, 6.0, None, "长=100 宽=6(对折 3)"),
+        襳带=(120.0, 8.0, None, "长=120 宽=8(杂裾飘带)"),
+        垂髾=(22.0, 42.0, None, "三角燕尾,外接矩形 22×42;**按外框裁,尖角由版师定**"),
+        诃子=(g["半身"] * 2, 35.0, None, "宽=胸围/2+6 高=35(诃子围合上身)"),
+        腰接片=(g["腰长"] * 0.6, 14.0, None, "长=腰围×0.6+ 高=14(连衣裙腰接片)"),
+        背子=(半, 衣长, "left", "宽=胸围/4+3(后中对折) 长=衣长"),
+    )
+    # 同一形状换个名字:上襦 / 袄 / 上身,衣长各按自己那条量
+    for pre, ln, why in (("上襦", g["上襦长"], "上襦衣长"), ("袄", 衣长, "衣长"), ("上身", 衣长 * 0.45, "衣长×0.45(曳撒上身)")):
+        for base in ("前片", "后片"):
+            w, h, fold, f = T[base]
+            T[pre + base] = (w, ln, fold, f.replace("长=衣长", f"长={why}"))
+    # 曳撒下裳:马面 + 褶裥,按裙那套算
+    T["下裳马面"] = (g.get("马面宽") or 22.0, 衣长 * 0.55, None, "宽=马面宽(缺则 22) 长=衣长×0.55")
+    T["下裳褶裥"] = (g["裙片宽"], 衣长 * 0.55, None, "展开宽同裙片 长=衣长×0.55")
+    T["下裳"] = (g["裙片宽"], 衣长 * 0.55, None, "展开宽同裙片 长=衣长×0.55")
+    T["马面"] = (g.get("马面宽") or 22.0, g["裙身"], None, "宽=马面宽 长=裙长−腰高")
+    T["褶裥片"] = (g["裙片宽"], g["裙身"], None, g["裙片式"] or "缺腰围 / 裙长")
+    return T.get(名)
+
+
+def 量(d, size):
+    """把号型表翻成画图要用的量。缺哪条就是 None,画到需要它的片时才报。"""
+    sp = d["spec"]
+    xzn = d["pattern"].get("xzn") or d["pattern"].get("name") or ""
+    names = [p["name"] for p in d["pieces"]]
+    胸 = sp.get("胸围"); 衣长 = sp.get("衣长") or sp.get("上襦衣长"); 通袖 = sp.get("通袖长")
+    腰 = sp.get("裙腰围") or sp.get("腰围"); 裙长 = sp.get("裙长")
+    领型 = _领型(xzn, names)
+    半 = (胸 / 4 + 3) if 胸 else None
+    袖长 = max((通袖 - 胸 / 2) / 2, 20.0) if (通袖 and 胸) else None
+    裙份 = max(1, sum(p["qty"] for p in d["pieces"] if p["name"] in ("裙片", "褶裥片", "下裳褶裥", "下裳")))
+    估腰 = ""
+    if not 腰 and 胸:
+        腰, 估腰 = 胸 * 0.8, "(腰围库里没有,按胸围×0.8 估 —— 请版师核)"
+    if 腰:
+        展开 = 腰 * 2.2                                   # 褶裙常见 2–2.5 倍褶量,取 2.2
+        裙片宽 = min(布幅, 展开 / 裙份)
+        裙片式 = f"宽=腰围×2.2÷{裙份}片{估腰}(褶量 2.2 倍,不超布幅 {布幅:g}) 长=裙长−腰高6"
+    else:
+        裙片宽 = 裙片式 = None
+    # 连衣裙没有「裙长」这一条(只有衣长),裙片是腰接片以下那一截
+    裙身 = (裙长 - 6) if 裙长 else (衣长 * 0.55 if (衣长 and "腰接片" in names) else None)
+    if 裙长 is None and 裙身:
+        裙片式 = (裙片式 or "") + " ※长=衣长×0.55(连衣裙腰线以下,库里没有裙长)"
+    return dict(半身=半, 衣长=衣长, 上襦长=sp.get("上襦衣长") or 衣长, 领围=sp.get("领围") or (胸 and 胸 * 0.38),
+                袖长=袖长, 袖肥=(55.0 if "大袖" in xzn else 28.0), 掩=掩襟[领型], 领型=领型,
+                裙身=裙身, 裙片宽=裙片宽, 裙片式=裙片式,
+                腰长=(腰 + 12) if 腰 else None, 马面宽=sp.get("马面宽"),
+                裤宽=(sp.get("臀围") / 4 + 6) if sp.get("臀围") else None, 裤长=sp.get("裤长"), xzn=xzn)
+
+
+def draft_generic(d, size):
+    global S
+    g = 量(d, size)
+    警告 = []
+    件 = []
+    for p in sorted(d["pieces"], key=lambda p: p["name"]):
+        r = 件表(p["name"], g)
+        if not r:
+            警告.append(f"「{p['name']}」这一片的画法还没有,**图上没画** —— 别当成不需要这片")
+            continue
+        w, h, fold, f = r
+        if not w or not h:
+            警告.append(f"「{p['name']}」缺号型数据(要 {f.split(' ')[0]}),画不了")
+            continue
+        件.append((p["name"], p["qty"], w, h, fold, f))
+    if not 件:
+        raise SystemExit(f"❌ {d['pattern']['code']} 一片都画不出来:{'; '.join(警告) or '没有裁片登记'}")
+
+    款号 = d["product"]["spu"][-6:] if d["product"] else d["pattern"]["code"]
+    名称 = d["product"]["name"] if d["product"] else d["pattern"]["name"]
+    面料 = d["mt"]
+    # 排版:大片在前,一行行码;放不下就整体缩小重排(比例印在标题栏里)
+    for scale in (2.0, 1.6, 1.3, 1.05, 0.85, 0.7, 0.55, 0.45):
+        S = scale
+        布局, x, y, 行高, 放得下 = [], 16.0, 24.0, 0.0, True
+        for 名, qty, w, h, fold, f in sorted(件, key=lambda t: -t[3]):
+            W, H = cm(w) + cm(2) + 6, cm(h) + cm(4) + 9
+            if x + W > 404:
+                x, y, 行高 = 16.0, y + 行高 + 8, 0.0
+            if y + H > 196:
+                放得下 = False
+                break
+            布局.append((名, qty, w, h, fold, f, x, y))
+            x += W + 4
+            行高 = max(行高, H)
+        if 放得下:
+            break
+    if not 放得下:
+        警告.append("裁片太多,一张 A3 排不下,图上只画了排得下的那些")
+
+    sh = Sheet()
+    sh.rect(5, 5, 410, 287, "thick")
+    for 名, qty, w, h, fold, f, px, py in 布局:
+        sa = (缝份["边"], 缝份["边"], 缝份["下摆"] if h > 40 else 缝份["边"], 缝份["边"])
+        nx, ny, nw, nh = 裁片(sh, px, py, w, h, 名, qty, 面料, 款号, size, sa=sa, fold=fold)
+        sh.dim(nx, ny, nx + nw, ny, f"{w:.1f}", off=5)
+        sh.dim(nx, ny, nx, ny + nh, f"{h:.1f}", off=5)
+        for i, seg in enumerate([f[k:k + 34] for k in range(0, len(f), 34)][:2]):
+            sh.text(nx, ny + nh + cm(缝份["下摆"] if h > 40 else 缝份["边"]) + 4 + i * 3.4,
+                    seg.replace("**", ""), 2.2, color="#555")
+    _标题栏(sh, d, size, 名称, 款号, g, 警告)
+    return sh, 警告
+
+
+def _标题栏(sh, d, size, 名称, 款号, g, 警告):
+    sp = d["spec"]
+    规格 = " · ".join(f"{k} {v:g}" for k, v in sp.items())
+    bx, by = 16, 206
+    sh.rect(bx, by, 250, 80, "thick")
+    rows = [("款名", 名称[:28]),
+            ("款号 / 版型", f"{款号} / {d['pattern']['code']} v{d['pattern'].get('version') or 1} · {g['xzn']}"),
+            ("号型", f"{size}   领型:{g['领型']}"),
+            ("比例", f"1:{10 / S:.0f}(A3 横向)  单位 cm"),
+            ("规格", 规格[:60]),
+            ("结构", "十字型平面结构:无肩缝、后中对折、接袖按布幅 50"),
+            ("制图", f"系统按公式初版 · {dt.date.today().isoformat()} · 复核:____")]
+    for i, (k, v) in enumerate(rows):
+        yy = by + 9 + i * 10.2
+        sh.text(bx + 3, yy, k, 2.6, bold=True)
+        sh.text(bx + 32, yy, v, 2.5)
+        if i:
+            sh.line(bx, yy - 7, bx + 250, yy - 7, "thin")
+    lx, ly = 274, 212
+    sh.text(lx, ly, "图例", 2.8, bold=True)
+    for i, (k, lab) in enumerate((("thick", "毛样(裁剪线,含缝份)"), ("thin", "净样(完成线)"),
+                                  ("dashdot", "对折线(后中 / 腰)"))):
+        yy = ly + 5 + i * 5
+        sh.line(lx, yy - 0.8, lx + 12, yy - 0.8, k)
+        sh.text(lx + 15, yy, lab, 2.4)
+    sh.grain(lx + 6, ly + 22, ly + 30)
+    sh.text(lx + 15, ly + 27, "布纹线(经向)", 2.4)
+    sh.text(lx, ly + 38, f"缝份:边 {缝份['边']:g} · 下摆 {缝份['下摆']:g}", 2.4)
+    if 警告:
+        sh.el.append(f'<rect x="{lx}" y="{ly + 42}" width="136" height="{8 + 5 * len(警告) * 2}" '
+                     f'fill="#fff4e5" stroke="#d97706" stroke-width="{THIN}"/>')
+        sh.text(lx + 3, ly + 48, "⚠ 版师请核", 2.6, bold=True, color="#b45309")
+        k = 0
+        for w in 警告:
+            for seg in [w[j:j + 52] for j in range(0, len(w), 52)]:
+                sh.text(lx + 3, ly + 53 + k * 4.6, seg.replace("**", ""), 2.2, color="#7c2d12")
+                k += 1
+
+
+FAMILIES = [("马面裙", lambda d: {"马面", "褶裥片"} <= {p["name"] for p in d["pieces"]}, draft_mamian),
+            ("按裁片清单", lambda d: bool(d["pieces"]), draft_generic)]
 
 
 def main():
