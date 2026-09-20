@@ -1499,5 +1499,17 @@
       }
     ],
     "预期红": "图上印的规格就是库里的数"
+  },
+  {
+    "script": "backend/booking_check.py",
+    "改坏": "抹掉一条「已到店」预约的签到时间(状态还在,依据没了)",
+    "sql": ["UPDATE appointment SET checkin_ts=NULL WHERE id=(SELECT id FROM appointment WHERE status='已到店' AND checkin_ts IS NOT NULL ORDER BY id LIMIT 1)"],
+    "预期红": "到店 / 完成的预约都有签到时间"
+  },
+  {
+    "script": "backend/booking_check.py",
+    "改坏": "给一条「爽约」补上签到时间(人没来却签到了,爽约率就是假的)",
+    "sql": ["UPDATE appointment SET checkin_ts=datetime(start_ts,'-2 minutes') WHERE id=(SELECT id FROM appointment WHERE status='爽约' ORDER BY id LIMIT 1)"],
+    "预期红": "没到店的预约不许有签到时间"
   }
 ]

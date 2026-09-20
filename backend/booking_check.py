@@ -24,6 +24,10 @@ bad = 0
 咬合 = [
     ('把「绑的顾问离职了」那一支关掉(人走了,单子还挂在他名下)',
      '绑定的顾问已离职'),
+    ('抹掉一条「已到店」预约的签到时间(状态还在,依据没了)',
+     '到店 / 完成的预约都有签到时间'),
+    ('给一条「爽约」补上签到时间(人没来却签到了)',
+     '没到店的预约不许有签到时间'),
 ]
 
 def check(title, got, want, extra=""):
@@ -222,6 +226,28 @@ def main():
                    AND (s.shop IS NULL OR s.shop<>c.shop)""")[0]["n"]
     check("跨店绑定的客户数", str(cross), "0",
           "  ← 跨店绑定会让预约永远派不出去,却看不出是数据的错")
+
+    # ⑧ 签到时间 ⇔ 到店 —— 状态和它的依据必须对得上
+    #
+    # 「已到店」是门店 Pad 上点了签到才变过去的,签到时间就是这个状态的**依据**。
+    # 缺了它,预约详情页的时间轴上「到店签到」那一行直接消失,而页面不会报错 ——
+    # **一条没有签到时间的「已到店」,和一条正常的,在列表页上长得一模一样。**
+    # 实测过:建预约的代码有两处,带押金的那处写了签到时间,不带押金的那处传 None,
+    # 于是库里 7 条到店 / 完成的预约一条签到时间都没有,字段在、路径从来没被走过。
+    到 = q("SELECT COUNT(*) n FROM appointment WHERE status IN ('已到店','已完成')")[0]["n"]
+    缺 = q("SELECT COUNT(*) n FROM appointment WHERE status IN ('已到店','已完成') "
+           "AND (checkin_ts IS NULL OR checkin_ts='')")[0]["n"]
+    check("样本量:到店 / 完成的预约", "够" if 到 >= 5 else f"只有 {到} 条", "够",
+          "  ← 空集合上这条性质自动成立,**那不叫通过,叫没扫到东西**")
+    check("到店 / 完成的预约都有签到时间", f"{到 - 缺}/{到}", f"{到}/{到}")
+    多 = q("SELECT COUNT(*) n FROM appointment WHERE status NOT IN ('已到店','已完成') "
+           "AND checkin_ts IS NOT NULL")[0]["n"]
+    check("没到店的预约不许有签到时间", str(多), "0",
+          "  ← 「爽约」还带着签到时间的话,爽约率就是假的")
+    晚 = q("SELECT COUNT(*) n FROM appointment WHERE checkin_ts IS NOT NULL "
+           "AND checkin_ts > datetime(start_ts, '+2 hours')")[0]["n"]
+    check("签到时间落在预约时段附近", str(晚), "0",
+          "  ← 签到晚于预约两小时以上,多半是日期整体挪动时漏挪了这一列")
 
     print()
     if bad:
