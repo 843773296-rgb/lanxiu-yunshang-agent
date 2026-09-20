@@ -61,33 +61,53 @@ export function verdict(rawCommand) {
   const commit = COMMIT_RE.exec(command);
   if (!commit) return null;                       // 没提交动作，不关这道闸的事
 
-  // 取「离 commit 最近的、在它之前的」那个门禁。之后出现的门禁（比如写在 commit message 里的）不算。
-  let gate = null;
+  // ⚠️ **commit 之前的每一个门禁都要看,不是只看最近那个。**
+  //
+  // 2026-09-20 实际漏掉过一次,而且是我自己写的命令:
+  //     ./check.sh > log 2>&1; echo "退出码 $?"; ./tools/scan_secrets.sh && git commit ...
+  // 最近的门禁是 `scan_secrets.sh && commit` —— 合格,于是放行。
+  // 而前面那个被 `;` 断开的 `./check.sh` **根本没被检查**,当时它是红的。
+  //
+  // > **只要在最后接一个用 `&&` 连的轻量门禁,
+  // > 前面所有用 `;` 断开的重门禁都会被漏掉。**
+  //
+  // 这正是这道闸本来要防的那个形状 —— 它自己栽在了同一个形状上。
+  if (/\bpipefail\b/.test(command)) return null;   // 管道会传失败，退出码没丢
+
+  const gates = [];
   GATE_RE.lastIndex = 0;
   for (let m; (m = GATE_RE.exec(command)); ) {
-    if (m.index >= commit.index) break;
-    gate = m;
+    if (m.index >= commit.index) break;            // commit 之后的(比如写在 message 里的)不算
+    gates.push(m);
   }
-  if (!gate) return null;                          // 这条命令里没跑门禁 —— 无从判断，放行
+  if (!gates.length) return null;                  // 这条命令里没跑门禁 —— 无从判断，放行
 
-  const gateEnd = gate.index + gate[0].length;
-  const seg = command.slice(gateEnd, commit.index);
+  for (const gate of gates) {
+    const gateEnd = gate.index + gate[0].length;
+    const seg = command.slice(gateEnd, commit.index);
 
-  if (/\bpipefail\b/.test(command)) return null;   // 管道会传失败，退出码没丢
-  if (/\$\?/.test(seg)) return null;               // 显式接住了退出码
-  // 门禁在 if/while/until 的条件位：紧跟其后的 ; 是语法的一部分，不是丢弃
-  if (CONDITION_POS_RE.test(command.slice(0, gate.index + gate[0].length - gate[1].length))) return null;
+    // ⚠️ **「读了退出码」不等于「用退出码把关」。**
+    //    原来写的是 `if (/\$\?/.test(seg)) return null;  // 显式接住了退出码`,
+    //    而 `echo "退出码 $?"` 也匹配 —— 把它打印出来,然后无视它继续提交。
+    //    **这两种写法在字面上长得一模一样,而一个把关一个不把关。**
+    //    现在要求 `$?` 真的被**接住或拿去判断**:rc=$? / [ $? -eq 0 ] / if ... $? ...
+    if (/(?:^|[^<>])\b\w+=\$\?/.test(seg) || /\[\s*"?\$(?:\?|\{\?\})"?\s*(?:-eq|-ne|==|!=)/.test(seg)) continue;
 
-  const op = FIRST_OP_RE.exec(seg);
-  if (!op) return null;                            // 门禁和 commit 之间没有控制符，形状不认识，放行
-  if (op[0] === "&&") return null;                 // 通行证正常传递
-  if (op[0] === "||" && /\b(?:exit|return)\b/.test(seg)) return null; // `门禁 || exit 1` 是对的
+    // 门禁在 if/while/until 的条件位：紧跟其后的 ; 是语法的一部分，不是丢弃
+    if (CONDITION_POS_RE.test(command.slice(0, gate.index + gate[0].length - gate[1].length))) continue;
 
-  const 名字 = gate[1].replace(/\\/g, "");
-  const 形状 = op[0] === "|" ? `管道（退出码来自管道最后一段，不是 ${名字}）`
-             : op[0] === "||" ? `|| 分支（没有 exit，失败被咽下去了）`
-             : `${op[0] === "\n" ? "换行" : "分号"}（退出码被直接丢弃）`;
-  return { 名字, 形状 };
+    const op = FIRST_OP_RE.exec(seg);
+    if (!op) continue;                             // 门禁和 commit 之间没有控制符，形状不认识，放行
+    if (op[0] === "&&") continue;                  // 通行证正常传递
+    if (op[0] === "||" && /\b(?:exit|return)\b/.test(seg)) continue; // `门禁 || exit 1` 是对的
+
+    const 名字 = gate[1].replace(/\\/g, "");
+    const 形状 = op[0] === "|" ? `管道（退出码来自管道最后一段，不是 ${名字}）`
+               : op[0] === "||" ? `|| 分支（没有 exit，失败被咽下去了）`
+               : `${op[0] === "\n" ? "换行" : "分号"}（退出码被直接丢弃）`;
+    return { 名字, 形状 };                          // **任何一个门禁被断开,就拦**
+  }
+  return null;
 }
 
 function deny(v) {
@@ -138,6 +158,14 @@ if (process.argv.includes("--selftest")) {
       ["git commit -m x", false, "门禁在上一次调用里跑过，无从判断"],
       ["cat check.sh | head -40 && git commit -m x", false, "check.sh 是 cat 的参数，不是门禁"],
       ["python3 backend/stock_check.py | tail -5 && git commit -m x", true, "单项检查脚本，同样的形状"],
+
+      // ── 2026-09-20 真实漏网的那一条,以及它的两个变种 ──────────────
+      ['./check.sh > /tmp/g.log 2>&1; echo "退出码 $?"; ./tools/scan_secrets.sh && git commit -m x',
+       true, "**真实漏网**:最后接一个 && 连的轻量门禁,前面被 ; 断开的重门禁就被漏掉"],
+      ['./check.sh; echo "$?"; git commit -m x',
+       true, "把退出码**打印出来**然后无视它 —— 读了不等于用了"],
+      ['./check.sh > /tmp/g.log 2>&1; rc=$?; ./tools/scan_secrets.sh && [ $rc -eq 0 ] && git commit -m x',
+       false, "接住并拿去判断,这才算把关"],
       ["cat <<'EOF' > /tmp/x\nhello\nEOF\n./check.sh | tail -2 && git commit -m x", true, "heredoc 之后的真命令仍要拦"],
       ["cat backend/stock_check.py | head -20 && git commit -m x", false, "_check.py 是 cat 的参数，别误拦"],
       ["cat <<'PY' > /tmp/t.py\n./check.sh | tail -2 && git commit -m x\nPY", false, "heredoc 里是数据，bash 不执行 —— 真误拦过"],
