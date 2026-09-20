@@ -205,3 +205,131 @@ def 派得了吗(cust, 起, 止, db=DB):
         # 前者找人代接(客户仍归张三),后者要给客户定归属。
         return False, f"BOUND_BUT_{码2}", f"{why};**但** {why2}"
     return True, "OK", f"{why};{why2}"
+
+
+# ══════════════════════════════════════════════════════════════════
+# 排班权限(P5)+ 档期预留(P3)
+# ══════════════════════════════════════════════════════════════════
+
+# ── P5:排班权给店长 ──────────────────────────────────────────────
+#
+# 业务 2026-09-20:**排班权给店长,值班经理暂时先不做。**
+#
+# 设计稿里「编辑顾问」有个「值班经理」角色(而且删除按钮是灰的),
+# 看着像他有排班职责 —— **但那是设计稿,业务说本期不做**。
+# 按今天定的口径:设计稿只是大致结构,以讨论为准。
+排班角色 = ("店长",)
+
+
+def 能排班吗(staff_no, db=DB):
+    """(能不能, 人话)。**「查不到这个人」和「这个人没权限」分开** ——
+    前者是数据问题,后者是权限问题,下一步动作不同。"""
+    with sqlite3.connect(db) as c:
+        c.row_factory = sqlite3.Row
+        r = c.execute("select no,name,role,status from staff where no=?", (staff_no,)).fetchone()
+    if not r:
+        return False, f"工号「{staff_no}」员工表里没有 —— **这是数据问题,不是权限问题**"
+    if r["status"] != "启用":
+        return False, f"{r['name']} 已{r['status']},不能排班"
+    if r["role"] not in 排班角色:
+        return False, (f"{r['name']} 是{r['role']},排班权在{排班角色[0]}"
+                       f"(业务 2026-09-20:值班经理本期不做)")
+    return True, f"{r['name']}({r['role']})可以排班"
+
+
+# ── P3:点名的人没空 → 三步 ───────────────────────────────────────
+#
+# 业务 2026-09-20 给的完整流程:
+#   ① 报告没有空
+#   ② 询问是否换人接待
+#   ③ 如果被驳回,**追问下一次预约时间,提前把顾问空出来**
+#
+# 第 ③ 步是这条流程真正有价值的地方:它把一次「约不上」变成一次**预留**。
+预留状态 = ("预留中", "已转预约", "已过期", "已取消")
+
+
+def _世界的今天():
+    """**不是机器的今天** —— 机器的今天每过一天就变,重建就不可复现
+    (`tools/determinism_check.py` 扫这一条)。"""
+    from seed import TODAY
+    return TODAY
+
+
+def 建预留表(c):
+    # ⚠️ **预留和已预约必须分开。**
+    # 两者都让那个时段「不能再派别人」,但:
+    #     已预约  客户确认过,**大概率会来**
+    #     预留    口头承诺,**可能不来** —— 所以有过期时间
+    # 混在一起的后果:预留被当成确定的,**档期利用率悄悄掉下来**,
+    # 而看板上「档期占满了」和真的占满了长得一模一样。
+    c.execute("""create table if not exists slot_hold(
+                   id INTEGER primary key autoincrement,
+                   staff_no   TEXT not null references staff(no),
+                   customer_id TEXT references customer(id),
+                   d          TEXT not null,
+                   -- ⚠️ **只存日期,不存起止时分。**
+                   -- 预留的粒度和排班一致(按天不按小时)—— 班次就四种,
+                   -- 精确到分钟既没人填也没用。
+                   -- 而且假数据工厂给 start_t/end_t 造出过「结束早于开始」的数据,
+                   -- 弄脏了它自己推出的断言:**一个用不上的字段,还额外带来一类错**。
+                   reason     TEXT not null,
+                   status     TEXT not null,     -- 预留中/已转预约/已过期/已取消
+                   expires_at TEXT not null,     -- **必须有**,不许永久占着
+                   created_by TEXT, created TEXT)""")
+
+
+def 点名的人没空(cust, 点名工号, 起, 止, db=DB):
+    """业务定的三步,**一次性给顾问看**,他照着往下谈。
+
+    返回 (能不能派, 码, 一段人话)。**agent 只给参谋,不替客户做决定** ——
+    换人还是改时间由客户定,这里只把三个选项摆出来。
+    """
+    ok, 码, why = 时段在班(点名工号, 起, 止, db)
+    if ok:
+        return True, "ON", f"客户点名的顾问那个时段在班 —— 直接派给他"
+
+    with sqlite3.connect(db) as c:
+        c.row_factory = sqlite3.Row
+        r = c.execute("select name from staff where no=?", (点名工号,)).fetchone()
+    名 = r["name"] if r else 点名工号
+
+    话 = (f"**① 客户点名的 {名} 那个时段不在** —— {why}\n"
+          f"**② 问客户要不要换人接待**(本店同时段在班的顾问可派)\n"
+          f"**③ 如果客户坚持要 {名}:问他下次什么时候方便,"
+          f"**当场把 {名} 那个时段预留出来**(`slot_hold`),别让它又被占掉")
+    return False, f"REQUESTED_{码}", 话
+
+
+def 预留(staff_no, 起, 止, customer_id=None, reason="客户点名,改约下次",
+        有效天数=14, 操作人=None, db=DB, conn=None):
+    """把某个顾问的某个时段留给某个客户。
+
+    **有效期必填** —— 一个不会过期的预留,和一条被占死的档期,
+    在「那个时段能不能派人」这个问题上长得一模一样。
+    """
+    import datetime
+    d = 起[:10]
+    到期 = (datetime.date.fromisoformat(d) + datetime.timedelta(days=有效天数)).isoformat()
+    SQL = """insert into slot_hold(staff_no,customer_id,d,reason,
+                                   status,expires_at,created_by,created)
+             values(?,?,?,?,?,?,?,?)"""
+    行 = (staff_no, customer_id, d, reason, "预留中", 到期, 操作人, _世界的今天())
+    # conn 传进来就复用 —— 外层已持连接时再开一个会 `database is locked`
+    if conn is not None:
+        建预留表(conn); conn.execute(SQL, 行); return
+    with sqlite3.connect(db) as c:
+        建预留表(c); c.execute(SQL, 行)
+
+
+def 时段被预留了吗(staff_no, 起, 止=None, db=DB):
+    """这一天有没有被预留。**过期的不算** —— 那正是过期时间存在的理由。"""
+    d = 起[:10]
+    今 = _世界的今天()
+    with sqlite3.connect(db) as c:
+        c.row_factory = sqlite3.Row
+        建预留表(c)
+        r = c.execute("""select * from slot_hold where staff_no=? and d=? and status='预留中'
+                         and expires_at>=? limit 1""", (staff_no, d, 今)).fetchone()
+    if not r:
+        return False, None
+    return True, f"{d} 这个时段已预留给客户({r['reason']}),有效到 {r['expires_at']}"

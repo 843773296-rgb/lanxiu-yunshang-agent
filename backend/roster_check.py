@@ -20,6 +20,8 @@ bad = 0
 咬合 = [
     ('把「没有排班记录」也当成休息(和已发布的休息合并成一种)',
      '没排班 ≠ 没空'),
+    ('让排班权限也认顾问(业务定的是只给店长)',
+     '顾问不能排班'),
 ]
 
 
@@ -36,6 +38,7 @@ def main():
     from seed import TODAY
     c = sqlite3.connect(R.DB); c.row_factory = sqlite3.Row
     today = datetime.date.fromisoformat(TODAY)
+    globals()["TODAY_d"] = today
     本周一 = today - datetime.timedelta(days=today.weekday())
 
     print("\n\033[1m▸ 排班 · 五种状态逐例标真值(没排和休息长得一样)\033[0m")
@@ -91,6 +94,39 @@ def main():
         早 = f"{上班日} 08:00"
         ok, 码, _ = R.时段在班(no, 早, f"{上班日} 09:00")
         ck("在班 ≠ 那个点有空", 码, "OUT_OF_SHIFT", f"  ← 他是{名}({a}–{b}),预约在 08:00")
+
+    print("\n\033[1m▸ 排班权限(P5)+ 档期预留(P3)\033[0m")
+    print("  " + "=" * 80)
+    # P5:排班权给店长,值班经理本期不做
+    店长 = c.execute("select no from staff where role='店长' and status='启用' limit 1").fetchone()
+    顾问1 = c.execute("select no from staff where role='顾问' and status='启用' limit 1").fetchone()
+    if 店长:
+        ok, _ = R.能排班吗(店长["no"]); ck("店长能排班", ok, True)
+    if 顾问1:
+        ok, _ = R.能排班吗(顾问1["no"]); ck("顾问不能排班", ok, False,
+                                          "  ← 业务 2026-09-20:排班权给店长,值班经理本期不做")
+    ok, why = R.能排班吗("99999999")
+    ck("查不到的工号:说的是「数据问题」不是「没权限」", "数据问题" in why, True,
+       "  ← 两者都派不了,但**下一步动作不同**:一个修数据,一个找有权限的人")
+
+    # P3 第③步:预留 —— **和「已预约」必须分开**
+    R.建预留表(c)
+    c.execute("delete from slot_hold where reason like '自测%'")
+    if 顾问1:
+        日 = (TODAY_d + datetime.timedelta(days=3)).isoformat()
+        起, 止 = f"{日} 11:00", f"{日} 12:00"
+        R.预留(顾问1["no"], 起, 止, reason="自测:客户点名改约下次", 有效天数=14, conn=c)
+        c.commit()
+        有, 话 = R.时段被预留了吗(顾问1["no"], 起, 止)
+        ck("预留之后那个时段查得出来", 有, True, "  ← 否则「留了」等于没留")
+        # 过期的不算 —— **一个不会过期的预留,和一条被占死的档期,长得一模一样**
+        c.execute("update slot_hold set expires_at=? where reason like '自测%'",
+                  ((TODAY_d - datetime.timedelta(days=1)).isoformat(),))
+        c.commit()
+        有2, _ = R.时段被预留了吗(顾问1["no"], 起, 止)
+        ck("过期的预留不算占用", 有2, False,
+           "  ← **不会过期的预留 = 被占死的档期**,而看板上「排满了」长得一样")
+        c.execute("delete from slot_hold where reason like '自测%'"); c.commit()
 
     print("\n\033[1m▸ 排班 · 覆盖(没有样本不叫通过)\033[0m")
     print("  " + "=" * 80)

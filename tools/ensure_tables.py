@@ -42,6 +42,7 @@ import ownership, asr, credit, roster
     (asr, "建表", ["call_audio", "call_transcript"]),
     (credit, "建表", ["deal_credit"]),
     (roster, "建表", ["shift_tpl", "roster", "leave_req"]),
+    (roster, "建预留表", ["slot_hold"]),
 ]
 
 
