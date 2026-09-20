@@ -1648,68 +1648,88 @@
     ],
     "预期红": "读不出 rebuild.sh 里的步骤清单"
   },
-
- {
-  "script": "backend/revive_check.py",
-  "改坏": "把「相对他自己的节奏」换成一个固定天数阈值(180 天)",
-  "file": [
-   {
-    "path": "backend/revive.py",
-    "old": "        if 闲置 > 节奏 * 断节奏倍数:",
-    "new": "        if 闲置 > 180:"
-   }
-  ],
-  "预期红": "同样闲置 200 天,但他一年才来一次"
- },
- {
-  "script": "backend/revive_check.py",
-  "改坏": "把订单终态写成库里不存在的值(「已完成」而库里是「完成」)",
-  "file": [
-   {
-    "path": "backend/revive.py",
-    "old": "订单终态 = (\"完成\", \"取消\")",
-    "new": "订单终态 = (\"已完成\", \"已取消\")"
-   }
-  ],
-  "预期红": "订单终态都是库里真实存在的值"
- },
-
- {
-  "script": "backend/simplified.py",
-  "改坏": "往繁体字表里混进一个简繁同形的字(「面」)",
-  "file": [
-   {
-    "path": "backend/simplified.py",
-    "old": "    \"無為體積極線長遠親\"",
-    "new": "    \"無為體積極線長遠親面\""
-   }
-  ],
-  "预期红": "字表里混进了简繁同形的字"
- },
-
- {
-  "script": "backend/opportunity_check.py",
-  "改坏": "把「只看客户说的话」去掉(改成全文匹配,顾问说的也算)",
-  "file": [
-   {
-    "path": "backend/opportunity.py",
-    "old": "    话 = 客户说的(逐字稿)",
-    "new": "    话 = 逐字稿"
-   }
-  ],
-  "预期红": "只看客户说的话"
- },
-
- {
-  "script": "tools/backfill_scene.py",
-  "改坏": "把形制字段改回 coalesce(编码和名称混用)",
-  "file": [
-   {
-    "path": "tools/backfill_scene.py",
-    "old": "        select p.spu, coalesce(x.name, pc.xz) xz from product p",
-    "new": "        select p.spu, coalesce(t.xz, pc.xz) xz from product p"
-   }
-  ],
-  "预期红": "按形制推场合推出 0 条"
- }
+  {
+    "script": "backend/revive_check.py",
+    "改坏": "把「相对他自己的节奏」换成一个固定天数阈值(180 天)",
+    "file": [
+      {
+        "path": "backend/revive.py",
+        "old": "        if 闲置 > 节奏 * 断节奏倍数:",
+        "new": "        if 闲置 > 180:"
+      }
+    ],
+    "预期红": "同样闲置 200 天,但他一年才来一次"
+  },
+  {
+    "script": "backend/revive_check.py",
+    "改坏": "把订单终态写成库里不存在的值(「已完成」而库里是「完成」)",
+    "file": [
+      {
+        "path": "backend/revive.py",
+        "old": "订单终态 = (\"完成\", \"取消\")",
+        "new": "订单终态 = (\"已完成\", \"已取消\")"
+      }
+    ],
+    "预期红": "订单终态都是库里真实存在的值"
+  },
+  {
+    "script": "backend/simplified.py",
+    "改坏": "往繁体字表里混进一个简繁同形的字(「面」)",
+    "file": [
+      {
+        "path": "backend/simplified.py",
+        "old": "    \"無為體積極線長遠親\"",
+        "new": "    \"無為體積極線長遠親面\""
+      }
+    ],
+    "预期红": "字表里混进了简繁同形的字"
+  },
+  {
+    "script": "backend/opportunity_check.py",
+    "改坏": "把「只看客户说的话」去掉(改成全文匹配,顾问说的也算)",
+    "file": [
+      {
+        "path": "backend/opportunity.py",
+        "old": "    话 = 客户说的(逐字稿)",
+        "new": "    话 = 逐字稿"
+      }
+    ],
+    "预期红": "只看客户说的话"
+  },
+  {
+    "script": "tools/backfill_scene.py",
+    "改坏": "把形制字段改回 coalesce(编码和名称混用)",
+    "file": [
+      {
+        "path": "tools/backfill_scene.py",
+        "old": "        select p.spu, coalesce(x.name, pc.xz) xz from product p",
+        "new": "        select p.spu, coalesce(t.xz, pc.xz) xz from product p"
+      }
+    ],
+    "预期红": "按形制推场合推出 0 条"
+  },
+  {
+    "script": "backend/samekey_check.py",
+    "改坏": "把登记表里 product_custom.xz 的钥匙改成「编码」(而库里存的是名称)",
+    "file": [
+      {
+        "path": "backend/samekey_check.py",
+        "old": "    (\"product_custom\", \"xz\"): \"名称\",",
+        "new": "    (\"product_custom\", \"xz\"): \"编码\","
+      }
+    ],
+    "预期红": "每张表用的钥匙和登记的一致"
+  },
+  {
+    "script": "backend/samekey_check.py",
+    "改坏": "从登记表里删掉 pattern.xz(有表用了这个列名却没登记)",
+    "file": [
+      {
+        "path": "backend/samekey_check.py",
+        "old": "    (\"pattern\", \"xz\"): \"编码\",\n",
+        "new": ""
+      }
+    ],
+    "预期红": "用到这些列名的表都登记了"
+  }
 ]
