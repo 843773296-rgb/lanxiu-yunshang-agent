@@ -1547,5 +1547,17 @@
       }
     ],
     "预期红": "本期在用的纹样词命中 0"
+  },
+  {
+    "script": "backend/draft_check.py",
+    "改坏": "素面款也按哈希挑一个纹样画上去(打版图和纹样口径各说各的)",
+    "file": [
+      {
+        "path": "tools/patterndraw/draft.py",
+        "old": "    if 纹 == \"无纹样\":\n        return None",
+        "new": "    if 纹 == \"无纹样\" and False:\n        return None"
+      }
+    ],
+    "预期红": "图上画的花按口径层来"
   }
 ]

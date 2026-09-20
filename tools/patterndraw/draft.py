@@ -146,11 +146,28 @@ MOTIFS = ("云纹", "团花", "缠枝", "回纹")
 纹样全名 = {"云纹": "如意云纹", "团花": "团花", "缠枝": "缠枝莲", "回纹": "回纹"}
 
 
-def _纹样种(key, 名称):
-    if "团花" in 名称:
-        return "团花"
+# 画得出线稿的四种。口径层的词表有十二个 —— 画不出来的**退回哈希挑一个**,
+# 而不是画错:打版图上的纹样是给织造和绣工看的,标错了他们会照着织。
+可画 = {"云纹": "云纹", "团花": "团花", "缠枝": "缠枝", "回纹": "回纹",
+        "折枝": "缠枝", "宝相花": "团花", "龟甲": "回纹", "联珠": "团花",
+        "柿蒂": "团花", "海水江崖": "云纹", "暗花": "缠枝"}
+
+
+def _纹样种(key, 名称, 面料="", 工艺=""):
+    """纹样按**口径层**定(knowledge/motif.py),和商品出图清单、详情页说的是同一个花。
+    原来是按款号哈希挑的 —— 那时候库里没有纹样这一维,图上画什么全凭哈希,
+    于是同一款的打版图、商品图、页面文案各说各的,**而三处不会并排出现,没人发现**。"""
+    sys.path.insert(0, os.path.join(ROOT, "knowledge"))
     sys.path.insert(0, os.path.join(ROOT, "backend"))
+    import motif as _m
     import img as _img
+    纹, 源, _ = _m.推(名称, 面料, 工艺)
+    if 纹 == "无纹样":
+        return None          # 素面就是素面:**图上一朵花都不画**,也不退回哈希挑一个
+    if 纹 in 可画:
+        return 可画[纹]
+    # 推不出来(补子这类按品级定的)→ 图上不该硬画,但襕位总要有个纹 —— 退回哈希,
+    # 并且在图例里照实写「本款纹样待业务核」(见 draft_mamian 的图例)
     return MOTIFS[_img._hue(key) % len(MOTIFS)]
 
 
@@ -234,6 +251,11 @@ def draft_mamian(d, size):
     名称 = d["product"]["name"] if d["product"] else d["pattern"]["name"]
     面料 = d["mt"]
     襕 = 2 if "双襕" in 名称 else (1 if "襕" in 名称 or "织金" in d["kf"] else 0)
+    纹 = _纹样种(d["product"]["spu"] if d["product"] else d["pattern"]["code"], 名称, 面料, d["kf"])
+    if 纹 is None:                                   # 素面款:没有纹样就没有襕
+        if 襕:
+            警告.append(f"款名里有「襕」但面料是素织的({面料})—— **织金襕要有织花的底才织得上去**,请业务核")
+        襕 = 0
 
     sh = Sheet()
     sh.rect(5, 5, 410, 287, "thick")                                    # 图框
@@ -244,7 +266,6 @@ def draft_mamian(d, size):
     sh.dim(nx, ny, nx + nw, ny, f"B={B:g}", off=8)
     sh.dim(nx, ny, nx, ny + nh, f"L−腰高={身长:g}", off=8)
     sh.notch(nx + nw / 2, ny - cm(缝份["腰"]), True, 1)                  # 中点对位(前一个剪口)
-    纹 = _纹样种(d["product"]["spu"] if d["product"] else d["pattern"]["code"], 名称)
     循环 = 8.0
     for k in range(襕):                                                 # 襕:膝襕 / 底襕,画出纹样
         yb = ny + nh - cm(10 + k * 32)
@@ -306,9 +327,16 @@ def draft_mamian(d, size):
         sh.line(lx, yy - 0.8, lx + 12, yy - 0.8, k); sh.text(lx + 15, yy, lab, 2.4)
     sh.grain(lx + 6, ly + 26, ly + 36); sh.text(lx + 15, ly + 32, "布纹线(经向,双箭头=无倒顺)", 2.4)
     sh.text(lx, ly + 44, f"缝份:边 {缝份['边']:g} · 腰 {缝份['腰']:g} · 下摆 {缝份['下摆']:g}", 2.4)
-    if 襕:                       # 这一款没有襕就别在图例里立一条 —— 图例要和图上真有的东西对上
+    if 纹 is None:
+        sh.text(lx, ly + 51, "本款素面 —— 纹样口径判为「无纹样」,图上不画任何花", 2.4, color=纹样色)
+    if 襕 and 纹:                 # 这一款没有襕就别在图例里立一条 —— 图例要和图上真有的东西对上
         sh.el.append(f'<rect x="{lx}" y="{ly + 48}" width="12" height="4" fill="#f7eed9" stroke="{纹样色}" stroke-width="{THIN}"/>')
-        sh.text(lx + 15, ly + 51, f"织金襕(纹样按循环排满,织造前定)· 本款:{纹样全名[纹]}", 2.4)
+        sys.path.insert(0, os.path.join(ROOT, "knowledge"))
+        import motif as _m
+        _纹, _源, _ = _m.推(名称, 面料, d["kf"])
+        sh.text(lx + 15, ly + 51,
+                f"织金襕 · 本款:{纹样全名[纹]}" +
+                (f"(纹样{_源},织造前定)" if _源 != _m.待核 else "(**本款纹样待业务核**,图上这个是占位)"), 2.4)
     if "绣" in d["kf"]:
         sh.rect(lx, ly + 55, 12, 4, "dash")
         sh.text(lx + 15, ly + 58, "绣花定位框(框内线稿为绣样示意)", 2.4)

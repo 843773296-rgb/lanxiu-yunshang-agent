@@ -24,6 +24,7 @@ DB = os.path.join(HERE, "lanxiu.db")
     ("商品页的打版图写死一个版型(不跟着这件商品自己的版型走)", "商品页指的是自己的版型"),
     ("查不到的版型不明说查不到(dict(None) 抛 TypeError)", "查不到的版型要报错"),
     ("标题栏不印规格(图上看不到这一号型到底是多少)", "图上印的规格就是库里的数"),
+    ("素面款也按哈希挑一个纹样画上去(图和口径各说各的)", "图上画的花按口径层来"),
 ]
 失败 = []
 
@@ -91,7 +92,24 @@ def main():
             坏指.append(r["spu"])
     报("商品页指的是自己的版型", not 坏指, "、".join(坏指[:3]) or "抽查 40 件")
 
-    # ⑤ 不存在的版型必须明确报错,不许画一张空图糊弄过去
+    # ⑤ 图上画的花 = 口径层判的花(**不是各算各的**)
+    # 原来打版图按款号哈希挑纹样、商品图也按哈希挑,库里又没有这一维 ——
+    # 三处各说各的,而三处不会并排出现,没人发现。
+    sys.path.insert(0, os.path.join(ROOT, "knowledge"))
+    import motif as _m
+    错纹 = []
+    for r in c.execute("""SELECT p.spu,p.name,pc.mt_opts,pc.kf_opts FROM product p
+                          LEFT JOIN product_custom pc ON pc.spu=p.spu
+                          WHERE p.pattern IS NOT NULL AND p.pattern!='' ORDER BY p.spu LIMIT 60"""):
+        纹, 源, _ = _m.推(r["name"], r["mt_opts"] or "", r["kf_opts"] or "")
+        画 = _draft._纹样种(r["spu"], r["name"], r["mt_opts"] or "", r["kf_opts"] or "")
+        if 纹 == "无纹样" and 画 is not None:
+            错纹.append(f"{r['name']}:口径判素面,图上却画了{画}")
+        if 源 != _m.待核 and 纹 != "无纹样" and 画 is None:
+            错纹.append(f"{r['name']}:口径判{纹},图上一朵花都没有")
+    报("图上画的花按口径层来", not 错纹, "、".join(错纹[:2]) or "抽查 60 件")
+
+    # ⑥ 不存在的版型必须明确报错,不许画一张空图糊弄过去
     # 报错还要**报得清楚**:ValueError 且话里带着那个编码。
     # 随便抛个 TypeError 也算「报错了」,但看的人不知道是版型不存在还是程序坏了。
     try:

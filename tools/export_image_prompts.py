@@ -20,8 +20,9 @@
 import csv, os, re, sqlite3, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path[:0] = [os.path.join(ROOT, "backend"), os.path.join(ROOT, "tools")]
+sys.path[:0] = [os.path.join(ROOT, "backend"), os.path.join(ROOT, "tools"), os.path.join(ROOT, "knowledge")]
 import img as V1
+import motif as _motif
 
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/Desktop/澜绣云裳agent-商品出图清单")
@@ -52,6 +53,21 @@ STYLE = """你是汉服电商的商品摄影师。接下来我会逐条发商品
         (("云肩",), "云肩:平铺展开成圆形俯拍,四合如意的四瓣对称完整"),
         (("腰封", "革带", "宫绦", "披帛", "抹额", "方巾", "幞头"),
          "服饰配件:平铺俯拍,长条形的自然弯成 S 形放置,系带散开")]
+
+# 纹样名 → 怎么画。词是 knowledge/12-纹样.md 定的,这里只说画法
+纹样怎么画 = {
+    "云纹": "如意头连缀的云、带尾,多走在缘边和襕上",
+    "团花": "圆形适合纹样,团内填花,散点排布",
+    "缠枝": "枝蔓连绵不断、花叶相生,满地排布",
+    "折枝": "截取一枝,不连续,只在主要部位",
+    "宝相花": "多层花瓣放射对称的理想化大花",
+    "回纹": "直线折成的连续方格边饰,只走边",
+    "龟甲": "六边形连续骨架,格内填小花",
+    "联珠": "圆珠串成环,环内置主纹",
+    "柿蒂": "四瓣对称,置于领口肩部",
+    "海水江崖": "下摆一圈水波加山石",
+    "暗花": "同色提花,**不要用对比色**,只靠光泽差显出花形",
+}
 
 图位说明 = {
     "main": "主图:纯展示,只有这一件衣服,正面全身、居中、完整入画,不带任何细节小图和标注",
@@ -146,6 +162,14 @@ def main():
             parts.append("面料:" + 带外观(面料))
         if 工艺:
             parts.append("工艺:" + 带外观(工艺) + ",按这门工艺的真实外观表现,不要画成印花")
+        # 纹样:口径在 knowledge/motif.py,和打版图上画的那个花**同一个来源**。
+        # 推不出来的(补子这类按品级定的)**一个字都不写** —— 写一句猜的上去,
+        # 生图模型会照着画,而画出来的是一件错的事,图上又看不出是猜的。
+        纹, 纹源, _ = _motif.推(nm, "、".join(面料), "、".join(工艺))
+        if 纹 == "无纹样":
+            parts.append("纹样:素面,**整件没有任何花纹**,只靠面料本身的织纹和光泽,不要自行加花")
+        elif 纹源 != _motif.待核:
+            parts.append(f"纹样:{纹}({纹样怎么画[纹]})")
         if r["remark"] and r["remark"].startswith(("设计灵感", "风格定位")):
             parts.append(r["remark"].replace(":", ":", 1))
 
