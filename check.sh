@@ -20,11 +20,23 @@ FAIL=0
 # 「防止产生」和「防止使用」是两件事。两半都要堵:先清干净,再禁止写。
 find . -name __pycache__ -type d -not -path './agentsite/.venv/*' -exec rm -rf {} + 2>/dev/null
 export PYTHONDONTWRITEBYTECODE=1
+# ⚠️ **缩进用 awk 不用 sed。** macOS 自带的是 BSD sed,
+# 在 LANG=zh_CN.UTF-8 下处理某些中文输出会**断言失败直接 abort**:
+#
+#     Assertion failed: (advance > 0), function substitute, file process.c, line 462
+#     ./check.sh: line 23: 21292 Abort trap: 6   | sed 's/^/  /'
+#
+# 2026-09-20 两个会话各撞到一次。危险的半边在**失败分支** ——
+# 那里 sed 负责打印失败详情,它一崩就只剩一行「✗ 失败」,
+# **一个字的原因都没有**,而 FAIL=1 照样置上了。
+# 于是「查不出为什么红」会被当成「这条检查坏了」。
+#
+# awk 输出逐字一致(验过),而且喂它二进制垃圾也不崩。
 run(){ printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
   if "$@" > /tmp/chk.out 2>&1; then
-    tail -3 /tmp/chk.out | sed 's/^/  /'
+    tail -3 /tmp/chk.out | awk '{print "  " $0}'
   else
-    FAIL=1; sed 's/^/  /' /tmp/chk.out; printf "  \033[31m✗ 失败\033[0m\n"
+    FAIL=1; awk '{print "  " $0}' /tmp/chk.out; printf "  \033[31m✗ 失败\033[0m\n"
   fi }
 run "数据层 · truth 表隔离"   python3 backend/selftest.py
 run "员工登录 · 5 条自测" python3 backend/auth.py
