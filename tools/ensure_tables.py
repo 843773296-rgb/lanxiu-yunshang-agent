@@ -30,21 +30,26 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "backend"))
 DB = os.path.join(HERE, "..", "backend", "lanxiu.db")
 
+# ⚠️ **静态 import,不用 `__import__`。**
+# `tools/table_origin_check.py` 要从**文本**上看出「这张表是谁建的」——
+# 动态导入的话,那条检查扫不到,一张只在本地存在的表就会溜过去。
+# (写这行注释时它正好抓到了 cust_owner_log —— 当时这里还是 `__import__`。)
+import ownership, asr, credit, roster
+
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
-    ("ownership", "建表", ["cust_owner_log"]),
-    ("asr", "建表", ["call_audio", "call_transcript"]),
-    ("credit", "建表", ["deal_credit"]),
-    ("roster", "建表", ["shift_tpl", "roster", "leave_req"]),
+    (ownership, "建表", ["cust_owner_log"]),
+    (asr, "建表", ["call_audio", "call_transcript"]),
+    (credit, "建表", ["deal_credit"]),
+    (roster, "建表", ["shift_tpl", "roster", "leave_req"]),
 ]
 
 
 def main():
     c = sqlite3.connect(DB)
     建了 = []
-    for 模块名, 函数名, 表们 in 登记:
-        m = __import__(模块名)
-        getattr(m, 函数名)(c)
+    for 模块, 函数名, 表们 in 登记:
+        getattr(模块, 函数名)(c)
         建了 += 表们
     c.commit()
 

@@ -1770,5 +1770,18 @@
    }
   ],
   "预期红": "收入分成每单加起来正好 100"
+ },
+
+ {
+  "script": "tools/table_origin_check.py",
+  "改坏": "把 ensure_tables 里的 `import ownership` 去掉(那张表就没人建了)",
+  "file": [
+   {
+    "path": "tools/ensure_tables.py",
+    "old": "import ownership, asr, credit, roster",
+    "new": "import asr, credit, roster\nownership = __import__('ownership')"
+   }
+  ],
+  "预期红": "每张表都能从 rebuild.sh 建出来"
  }
 ]
