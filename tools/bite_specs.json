@@ -1511,5 +1511,41 @@
     "改坏": "给一条「爽约」补上签到时间(人没来却签到了,爽约率就是假的)",
     "sql": ["UPDATE appointment SET checkin_ts=datetime(start_ts,'-2 minutes') WHERE id=(SELECT id FROM appointment WHERE status='爽约' ORDER BY id LIMIT 1)"],
     "预期红": "没到店的预约不许有签到时间"
+  },
+  {
+    "script": "knowledge/motif.py",
+    "改坏": "把补子那一支放到推导后面(轮不到它,补子被按面料推出一个纹样)",
+    "file": [
+      {
+        "path": "knowledge/motif.py",
+        "old": "    if \"补子\" in 文:\n        return 待核, 待核,",
+        "new": "    if \"补子\" in 文 and False:\n        return 待核, 待核,"
+      }
+    ],
+    "预期红": "明制圆领袍(带补子)"
+  },
+  {
+    "script": "knowledge/motif.py",
+    "改坏": "素织料不再返回「无纹样」,改成推不出来(素面和待办分不开了)",
+    "file": [
+      {
+        "path": "knowledge/motif.py",
+        "old": "    if any(k in 文 for k in 素织):\n        return \"无纹样\", \"素面料\",",
+        "new": "    if any(k in 文 for k in 素织) and False:\n        return \"无纹样\", \"素面料\","
+      }
+    ],
+    "预期红": "「照水」素缎明制马面裙·阔褶"
+  },
+  {
+    "script": "knowledge/motif.py",
+    "改坏": "把「海水江崖」从预留挪进本期在用(库里必然一个都没有,而那和抽取规则坏了长得一样)",
+    "file": [
+      {
+        "path": "knowledge/motif.py",
+        "old": "预留 = (\"宝相花\", \"回纹\", \"龟甲\", \"海水江崖\", \"柿蒂\")",
+        "new": "预留 = (\"宝相花\", \"回纹\", \"龟甲\", \"柿蒂\")"
+      }
+    ],
+    "预期红": "本期在用的纹样词命中 0"
   }
 ]

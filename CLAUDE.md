@@ -50,7 +50,7 @@
 | `backend/` | **数据的家**。SQLite 57 张表 + 38 个页面的管理后台 + 状态机 + 写入规则 + 运维队列(`ops.py`) |
 | ↳ 账户与身份 | `account`(手机号唯一,可自设账号密码)。**账户在门店档案之上**:一个人一个账户,`customer` 可以有好几条 —— 那正是「客户合并」要处理的事 |
 | ↳ 用户生命周期 | `wearer` / `consent` / `growth_forecast` 三张表 + `lifecycle_check.py`。**身份绑 `account`,不绑 `customer`** —— 档案可能有多条,账户只有一个 |
-| `knowledge/` | **领域知识层**。11 篇手写知识 md + 7 个推导脚本(相容矩阵 / 版型推档 / BOM / 量体 / 工期 / 产能) |
+| `knowledge/` | **领域知识层**。14 篇手写知识 md + 7 个推导脚本(相容矩阵 / 版型推档 / BOM / 量体 / 工期 / 产能) |
 | `mcp/` | **三个 MCP 服务**:`kb`(知识库 10 个工具)/ `task`(任务 5 个)/ `shop`(店务 4 个)。裸手写 JSON-RPC,没用 SDK |
 | `agent/` | **V1 和 V2**,以及全部评测集、记录仪、判分器 |
 | `agentsite/` | **V3**。Claude Agent SDK 为内核,四个 Hook 全程把关,一个 `quote` Skill |
