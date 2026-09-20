@@ -68,3 +68,6 @@ agentsite/.sessions.json
 backend/drafts.json
 # 重建互斥标记(tools/rebuild.sh 写、结束时删)
 backend/.rebuilding
+
+# 出好的商品图(二进制,一批批地换,不进版本库)
+backend/static/

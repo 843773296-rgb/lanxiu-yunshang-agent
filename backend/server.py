@@ -2115,6 +2115,21 @@ class H(BaseHTTPRequestHandler):
         if p.startswith("/img/") and p.endswith(".svg"):
             import img as _img
             stem=p[len("/img/"):-4]; spu,_,variant=stem.rpartition("-")
+            # **有出好的真图就用真图,没有才现画示意图。**
+            # 出图是一批一批来的,所以这一层必须按「这一张有没有」判,不能按「这个功能开没开」——
+            # 按开关判的话,开了之后没出图的商品会开天窗,而页面不会报错,只是空着。
+            _gen=os.path.join(HERE,"static","img")
+            for _ext,_ct in ((".png","image/png"),(".jpg","image/jpeg"),
+                             (".jpeg","image/jpeg"),(".webp","image/webp")):
+                _f=os.path.join(_gen,stem+_ext)
+                if os.path.isfile(_f):
+                    b=open(_f,"rb").read()
+                    self.send_response(200)
+                    # ⚠️ 地址结尾是 .svg 而发出去的是 png —— **看 content-type 的是浏览器,不是后缀**。
+                    # 这么做是为了不动库里已经存着的那几千条图片地址(product.img_main 等)。
+                    self.send_header("content-type",_ct)
+                    self.send_header("cache-control","max-age=3600")
+                    self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
             b=_img.render(spu,variant).encode("utf-8")
             self.send_response(200)
             self.send_header("content-type","image/svg+xml; charset=utf-8")
