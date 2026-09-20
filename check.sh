@@ -52,6 +52,7 @@ run "生命周期口径 · 自测" python3 knowledge/lifecycle.py
 run "会员生命周期 · 14 条边界标注对账" python3 backend/member_check.py
 run "预约派单 · 逐例标真值(派错和派对长得一样)" python3 backend/booking_check.py
 run "促活判断 · 逐例标真值 + 覆盖报告(没有样本不叫通过)" python3 backend/revive_check.py
+run "简体闸 · 业务数据一律简体(外来文本进来前先查)" python3 backend/simplified.py
 run "数据隔离 · A 顾问看不到 B 顾问(漏了不会报错)" python3 backend/isolation_check.py
 run "月度复盘 · 验性质不逐例标真值(相对指标标真值会过期)" python3 backend/review_check.py
 run "预约漏斗 · 嵌套/加总/最窄一环(后一环比前一环多=结构错)" python3 backend/funnel_check.py

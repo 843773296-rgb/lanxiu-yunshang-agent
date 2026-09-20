@@ -66,7 +66,7 @@ flowchart TD
     M --> R["规矩<br/>50 条 · 按角色装配"]
     M --> G["闸<br/>读 / 写 / 答 三层"]
     T --> K["口径模块 25 个<br/><b>规矩写在这里，不在工具里</b>"]
-    K --> DB[("数据库<br/>70 张表")]
+    K --> DB[("数据库<br/>72 张表")]
 
     style K fill:#fff4e6,stroke:#e8912d,stroke-width:2px
     style DB fill:#eef4ff,stroke:#4a7fd4,stroke-width:2px
@@ -774,7 +774,7 @@ flowchart TD
 flowchart TD
     MD["<b>知识来源</b><br/>手写口径 14 份 md<br/>形制 · 面料 · 工艺<br/>相容矩阵 · 版型库 · BOM"]
     MD -->|"① 知识生成链<br/><b>单向，永不回写</b>"| DV["<b>推导</b><br/>把「人写的规则」<br/>变成「机器能查的表」"]
-    DV --> DB[("<b>数据库 70 张表</b><br/>四大主数据库<br/>＋ 运营数据")]
+    DV --> DB[("<b>数据库 72 张表</b><br/>四大主数据库<br/>＋ 运营数据")]
 
     DB -->|"② 读<br/>只读连接 ＋ 三把锁"| KJ["口径模块 25 个"]
     KJ --> MCP["<b>MCP</b><br/>kb 11 · shop 44 · task 5"]
