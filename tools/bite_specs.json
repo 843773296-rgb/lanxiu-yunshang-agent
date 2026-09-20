@@ -1732,56 +1732,64 @@
     ],
     "预期红": "用到这些列名的表都登记了"
   },
-
- {
-  "script": "backend/roster_check.py",
-  "改坏": "把「没有排班记录」也当成休息(和已发布的休息合并成一种)",
-  "file": [
-   {
-    "path": "backend/roster.py",
-    "old": "            return False, \"UNSCHEDULED\", (",
-    "new": "            return False, \"OFF\", ("
-   }
-  ],
-  "预期红": "没排班 ≠ 没空"
- },
-
- {
-  "script": "backend/ownership_check.py",
-  "改坏": "把「归属顾问已离职」那一支去掉(离职的也算有人管)",
-  "file": [
-   {
-    "path": "backend/ownership.py",
-    "old": "            if r[\"adv_status\"] != \"启用\":",
-    "new": "            if False and r[\"adv_status\"] != \"启用\":"
-   }
-  ],
-  "预期红": "离职的顾问名下还挂着客户"
- },
-
- {
-  "script": "backend/credit_check.py",
-  "改坏": "把影响力分成也拉进「总和必须 100」的校验(两种分成合成一种)",
-  "file": [
-   {
-    "path": "backend/credit.py",
-    "old": "            \"\"\"select order_id, sum(pct) s from deal_credit where kind=?\n               group by order_id having abs(s-100) > 0.01\"\"\", (收入分成,))]",
-    "new": "            \"\"\"select order_id, sum(pct) s from deal_credit where ?<>''\n               group by order_id having abs(s-100) > 0.01\"\"\", (收入分成,))]"
-   }
-  ],
-  "预期红": "收入分成每单加起来正好 100"
- },
-
- {
-  "script": "tools/table_origin_check.py",
-  "改坏": "把 ensure_tables 里的 `import ownership` 去掉(那张表就没人建了)",
-  "file": [
-   {
-    "path": "tools/ensure_tables.py",
-    "old": "import ownership, asr, credit, roster",
-    "new": "import asr, credit, roster\nownership = __import__('ownership')"
-   }
-  ],
-  "预期红": "每张表都能从 rebuild.sh 建出来"
- }
+  {
+    "script": "backend/roster_check.py",
+    "改坏": "把「没有排班记录」也当成休息(和已发布的休息合并成一种)",
+    "file": [
+      {
+        "path": "backend/roster.py",
+        "old": "            return False, \"UNSCHEDULED\", (",
+        "new": "            return False, \"OFF\", ("
+      }
+    ],
+    "预期红": "没排班 ≠ 没空"
+  },
+  {
+    "script": "backend/ownership_check.py",
+    "改坏": "把「归属顾问已离职」那一支去掉(离职的也算有人管)",
+    "file": [
+      {
+        "path": "backend/ownership.py",
+        "old": "            if r[\"adv_status\"] != \"启用\":",
+        "new": "            if False and r[\"adv_status\"] != \"启用\":"
+      }
+    ],
+    "预期红": "离职的顾问名下还挂着客户"
+  },
+  {
+    "script": "backend/credit_check.py",
+    "改坏": "把影响力分成也拉进「总和必须 100」的校验(两种分成合成一种)",
+    "file": [
+      {
+        "path": "backend/credit.py",
+        "old": "            \"\"\"select order_id, sum(pct) s from deal_credit where kind=?\n               group by order_id having abs(s-100) > 0.01\"\"\", (收入分成,))]",
+        "new": "            \"\"\"select order_id, sum(pct) s from deal_credit where ?<>''\n               group by order_id having abs(s-100) > 0.01\"\"\", (收入分成,))]"
+      }
+    ],
+    "预期红": "收入分成每单加起来正好 100"
+  },
+  {
+    "script": "tools/table_origin_check.py",
+    "改坏": "把 ensure_tables 里的 `import ownership` 去掉(那张表就没人建了)",
+    "file": [
+      {
+        "path": "tools/ensure_tables.py",
+        "old": "import ownership, asr, credit, roster",
+        "new": "import asr, credit, roster\nownership = __import__('ownership')"
+      }
+    ],
+    "预期红": "每张表都能从 rebuild.sh 建出来"
+  },
+  {
+    "script": "tools/doc_numbers_check.py",
+    "改坏": "把产品说明里「定制品里点明纹样的只有 12 个」改成 14(抄了全库口径的数)",
+    "file": [
+      {
+        "path": "澜绣云裳agent-产品说明.md",
+        "old": "真正点明纹样的只有 12 个",
+        "new": "真正点明纹样的只有 14 个"
+      }
+    ],
+    "预期红": "纹样已核数"
+  }
 ]
