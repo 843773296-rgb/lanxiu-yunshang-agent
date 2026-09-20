@@ -51,6 +51,16 @@ try:
 except Exception:
     _BASE_DAY = "2026-08-31"
 REAL, RAW = f"{G}真路径{D}", f"{Y}直插{D}"
+_BASE = datetime.date.fromisoformat(_BASE_DAY)
+
+# **种子。** 原来这个脚本一次种子都没设,全局 random 每次跑都不一样 ——
+# 于是同一份代码重建两次,数据不同:单号是随机取的,42 条旅程会占掉不同的号段,
+# 后面 order_mix 的随机流跟着偏移。实测两次重建 **3481 张订单的状态/日期/金额不同**,
+# 而取消单总数只差 12 —— **「净差 12」和「换掉 3481 单」在总数上长得一模一样**。
+# 代价是 CI 上有一条显著性检查间歇红:它判「哪几档维保率值得注意」,
+# 而最紧的一档离阈值只有 0.9% 余量,数据一抖就翻面。
+# **判据对着一个会动的东西量,红绿就不再有意义。**
+SEED = 20260920
 
 
 def _门店渠道():
@@ -147,6 +157,19 @@ def ex(sql, *a):
         c.execute(sql, a)
 
 
+def _抽(候选, n):
+    """从候选里抽 n 个。**抽样必须用带种子的 rng,不能用 SQL 的 `ORDER BY RANDOM()`** ——
+    后者不受 Python 种子管,于是同一份代码每次跑挑到的是不同的客户。
+
+    这是 2026-09-20 查出来的那个「重建不确定」的根:挑到的客户不同 → 造出的订单挂在
+    不同的人身上 → 后面按客户挑单改定制的那一步跟着偏 → **两次重建 3500 张订单的
+    状态、金额、归属都不一样**,而订单总数、客户数、维保数全都一模一样。
+    **总数相同掩盖了内容不同**,直到一条按比例判显著性的检查在 CI 上间歇变红。
+    """
+    候选 = sorted(候选, key=lambda r: r["id"])      # 先定序,再抽 —— 查询顺序本身不保证稳定
+    return random.sample(候选, min(n, len(候选)))
+
+
 def pick_customers(n):
     """挑能安全跑旅程的客户。
 
@@ -172,7 +195,7 @@ def pick_customers(n):
     **夹具被污染时不会报错** —— 它只是让某条评测下次给出一个不同的答案,
     而没人会想到去查是三周前一个造数据的脚本动的。
     """
-    return q("""SELECT c.id,c.name,c.phone,c.shop,c.advisor_no FROM customer c
+    候选 = q("""SELECT c.id,c.name,c.phone,c.shop,c.advisor_no FROM customer c
                 WHERE c.archived=0 AND c.phone NOT LIKE 'DELETED%'
                   AND c.name<>'已注销用户'
                   AND c.id NOT LIKE 'E-%'          -- 反例夹具
@@ -187,7 +210,8 @@ def pick_customers(n):
                        WHERE d.phone=c.phone AND d.archived=0) = 1   -- 一号一档
                   AND (SELECT COUNT(*) FROM schedule s
                        WHERE s.customer_id=c.id AND s.type='预约到店' AND s.status='有效') = 0
-                ORDER BY RANDOM() LIMIT ?""", n)
+                ORDER BY c.id""")
+    return _抽(候选, n)
 
 
 def pick_repeat(n):
@@ -201,7 +225,7 @@ def pick_repeat(n):
     额外要求:上一趟的订单已经走到终态 —— **一个客户不该同时有两张在制的定制单**,
     那在现实里也不成立(版师手上一件一件做)。
     """
-    return q("""SELECT c.id,c.name,c.phone,c.shop,c.advisor_no FROM customer c
+    候选 = q("""SELECT c.id,c.name,c.phone,c.shop,c.advisor_no FROM customer c
                 WHERE c.archived=0 AND c.phone NOT LIKE 'DELETED%'
                   AND c.name<>'已注销用户'
                   AND c.id NOT LIKE 'E-%' AND c.id NOT LIKE 'C21%'
@@ -220,7 +244,8 @@ def pick_repeat(n):
                   -- 上一趟的单已经收尾 —— 不该同时有两张在制的定制单
                   AND NOT EXISTS (SELECT 1 FROM ordr o WHERE o.customer_id=c.id
                                   AND o.status NOT IN ('完成','取消'))
-                ORDER BY RANDOM() LIMIT ?""", n)
+                ORDER BY c.id""")
+    return _抽(候选, n)
 
 
 def journey(cust, dry=False):
@@ -242,7 +267,7 @@ def _journey(cust, dry=False):
     """走完一条。返回每一环的结果。"""
     import booking, tasks, tasktypes as tt
     steps = []
-    now = datetime.datetime.now()
+    now = datetime.datetime.now()   # 真实时钟:book() 拒绝过去的时间,只能按真实的未来报;落点另算
 
     # ── ① 预约(真路径:客户手机端那条)────────────────────────────
     #
@@ -263,7 +288,9 @@ def _journey(cust, dry=False):
     # **「往过去挪」有个下界,而这个下界因客户而异。**
     _created = q("SELECT created FROM customer WHERE id=?", cust["id"])[0]["created"]
     try:
-        _room = (datetime.date.today() - datetime.date.fromisoformat(_created[:10])).days - 20
+        # 基准日用**演示世界的今天**,不是机器的今天 —— 后者每天都在变,
+        # 于是同一份代码今天和明天造出来的数据不一样
+        _room = (_BASE - datetime.date.fromisoformat(_created[:10])).days - 20
     except Exception:
         _room = 120
     # **两个下界会打架,打架时不许硬挑一个。**
@@ -282,10 +309,14 @@ def _journey(cust, dry=False):
                       f"往前只有 {_room} 天可挪,而一条完整旅程要 {需要天数} 天。"
                       f"**挪不到过去就会造出未来日期**"))
         return steps, None
-    span = random.randint(30, max(31, min(120, _room)))   # 这条旅程发生在多少天前
+    span = random.randint(30, max(31, min(120, _room)))   # 这条旅程发生在多少天前(相对基准日)
+    # **book() 要一个真实的未来时间**(它拒绝过去,那是对的),所以这里还是按机器的今天报;
+    # 但**落点不由它决定** —— 挪回去多少天 = 报的那天 − 目标落点,目标落点只看基准日和 span。
+    # 这样机器哪天跑,写进库的时间戳都一样。
     when = (now + datetime.timedelta(days=random.randint(2, 9))).replace(
         hour=random.choice([10, 11, 14, 15, 16]), minute=0, second=0, microsecond=0)
-    shift = datetime.timedelta(days=span + 9)   # 事后整体往前挪这么多
+    目标 = _BASE - datetime.timedelta(days=span)
+    shift = datetime.timedelta(days=(when.date() - 目标).days)
     if dry:
         steps.append(("① 预约", REAL, f"会调 booking.book({cust['phone']}, {when:%m-%d %H:%M})"))
         return steps, None
@@ -423,7 +454,8 @@ def _journey(cust, dry=False):
               JOIN product p ON p.spu=s.spu
               WHERE s.status='启用' AND p.kind='定制品'
                 AND EXISTS(SELECT 1 FROM part_option WHERE spu=s.spu AND kind='面料')
-              ORDER BY RANDOM() LIMIT 1""")
+              ORDER BY s.code""")          # 定序后用带种子的 rng 挑(见 _抽 上面那段)
+    sk = [random.choice(sk)] if sk else []
     if not sk:
         # **不静默退回一个编出来的 SKU。** 原来这里有个 `dict(code="SKU0001", …)`
         # 的兜底 —— 它指向一个**库里不存在的商品**,而下出来的单看起来完全正常。
@@ -506,7 +538,7 @@ def _journey(cust, dry=False):
     # 自己写就是第二份口径,而两份口径迟早不一致。
     import knowledge.lifecycle as _lc  # noqa
     inter = v_start.date()                      # 互动 = 上门那天
-    idle = max(0, (datetime.date.today() - inter).days)   # 这个值稍后会按基准日重算
+    idle = max(0, (_BASE - inter).days)         # 稍后还会按挪回过去之后的日期重算一遍
     row = q("SELECT * FROM customer WHERE id=?", cust["id"])[0]
     nr = dict(row, order_cnt=(row["order_cnt"] or 0) + 1,
               paid_amount=round((row["paid_amount"] or 0) + amt, 2),
@@ -540,18 +572,24 @@ def _journey(cust, dry=False):
     # C4 抓到过一条(8-09 下单、走 38 天、落到 9-16)。
     # 我盯着开头,而约束在结尾。
     _end = datetime.datetime.strptime(done, "%Y-%m-%d %H:%M")
-    _need = (_end.date() - datetime.date.today()).days + 3     # 终点至少要落到 3 天前
+    _need = (_end.date() - _BASE).days + 3     # 终点至少要落到基准日前 3 天
     if _need > shift.days:
         shift = datetime.timedelta(days=_need)
     # 但也不能挪过客户建档。两个下界**本来就不该打架** ——
     # 上面那道「放不下就跳过」已经把打架的客户挡在门外了。
     # 万一还是打架,**抛出来**,不要硬挑一个:硬挑的结果是
     # 一条日期落在未来的旅程,而它看起来和正常的一模一样。
-    if shift.days > (_room + 9):
+    # ⚠️ **这条判据要对着「落点」写,不能对着「挪了多少天」写。**
+    # 挪多少天里含着一段与业务无关的量:机器今天到基准日的距离(今天每过一天它就大一天)。
+    # 拿它和「建档到现在」比,是两把不同的尺子 —— 第一版就这么写的,
+    # 于是基准日锚定之后这条立刻误报:一条本来合规的旅程被判成打架,
+    # 抛异常中断,**而前面已经写进库的预约和量体留在了那儿,时间还没挪回过去**。
+    落点 = (when - shift).date()
+    建档 = datetime.date.fromisoformat(_created[:10])
+    if 落点 < 建档 + datetime.timedelta(days=20):
         raise AssertionError(
-            f"{cust['id']}:终点要挪 {shift.days} 天才到过去,"
-            f"而建档只允许挪 {_room + 9} 天 —— 两个下界打架。"
-            f"**这条客户不该被选中造旅程**,门口那道检查漏了")
+            f"{cust['id']}:整条旅程要落到 {落点},而客户 {建档} 才建档 —— "
+            f"落点不能早于建档。**这条客户不该被选中造旅程**,门口那道检查漏了")
     _sh = f"-{shift.days} days"
     for _t, _cols, _key in (
             ("appointment", ("start_ts", "end_ts", "checkin_ts"), f"id='{appt}'"),
@@ -568,11 +606,7 @@ def _journey(cust, dry=False):
     # 它是「建库那天的快照」这个口径(见 spec_check 的 C5)——
     # 我按今天算,和检查按基准日比,永远差 11 天。
     # 口径不统一时,两边各自都说得通,而对不上的时候不知道该改哪边。
-    try:
-        _base = datetime.date.fromisoformat(_BASE_DAY)
-    except Exception:
-        _base = datetime.date.today()
-    idle2 = max(0, (_base - inter2).days)
+    idle2 = max(0, (_BASE - inter2).days)
     nr2 = dict(nr, idle_days=idle2)
     lc2 = _lc.decide(nr2)["生命周期"]
     ex("UPDATE customer SET last_interact=?, idle_days=?, lifecycle=? WHERE id=?",
@@ -587,6 +621,7 @@ def _journey(cust, dry=False):
 
 
 def main():
+    random.seed(SEED)          # 见 SEED 上面那段:不设种子 = 每次重建数据都不一样
     n = 3
     dry = "--dry" in sys.argv
     for a in sys.argv[1:]:

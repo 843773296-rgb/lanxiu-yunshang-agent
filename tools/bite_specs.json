@@ -1503,13 +1503,17 @@
   {
     "script": "backend/booking_check.py",
     "改坏": "抹掉一条「已到店」预约的签到时间(状态还在,依据没了)",
-    "sql": ["UPDATE appointment SET checkin_ts=NULL WHERE id=(SELECT id FROM appointment WHERE status='已到店' AND checkin_ts IS NOT NULL ORDER BY id LIMIT 1)"],
+    "sql": [
+      "UPDATE appointment SET checkin_ts=NULL WHERE id=(SELECT id FROM appointment WHERE status='已到店' AND checkin_ts IS NOT NULL ORDER BY id LIMIT 1)"
+    ],
     "预期红": "到店 / 完成的预约都有签到时间"
   },
   {
     "script": "backend/booking_check.py",
     "改坏": "给一条「爽约」补上签到时间(人没来却签到了,爽约率就是假的)",
-    "sql": ["UPDATE appointment SET checkin_ts=datetime(start_ts,'-2 minutes') WHERE id=(SELECT id FROM appointment WHERE status='爽约' ORDER BY id LIMIT 1)"],
+    "sql": [
+      "UPDATE appointment SET checkin_ts=datetime(start_ts,'-2 minutes') WHERE id=(SELECT id FROM appointment WHERE status='爽约' ORDER BY id LIMIT 1)"
+    ],
     "预期红": "没到店的预约不许有签到时间"
   },
   {
@@ -1583,5 +1587,29 @@
       }
     ],
     "预期红": "接待任务:展示归企业、派单归客户"
+  },
+  {
+    "script": "tools/determinism_check.py",
+    "改坏": "在造数据的脚本里写回一句 SQL 的 ORDER BY RANDOM()(抽样不再受种子管)",
+    "file": [
+      {
+        "path": "tools/run_journey.py",
+        "old": "                ORDER BY c.id\"\"\")\n    return _抽(候选, n)",
+        "new": "                ORDER BY RANDOM()\"\"\")\n    return _抽(候选, n)"
+      }
+    ],
+    "预期红": "SQL 里不许用 RANDOM() 抽样"
+  },
+  {
+    "script": "tools/determinism_check.py",
+    "改坏": "把 run_journey 的 random.seed(SEED) 去掉(每次跑都不一样)",
+    "file": [
+      {
+        "path": "tools/run_journey.py",
+        "old": "    random.seed(SEED)          # 见 SEED 上面那段",
+        "new": "    pass                       # 见 SEED 上面那段"
+      }
+    ],
+    "预期红": "造数据的脚本都设了种子"
   }
 ]
