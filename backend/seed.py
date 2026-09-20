@@ -83,6 +83,17 @@ CREATE TABLE triage(
 CREATE TABLE shop(code TEXT PRIMARY KEY, name TEXT, status TEXT, manager TEXT,
   phone TEXT, province TEXT, addr TEXT, updated TEXT);
 CREATE TABLE staff(no TEXT PRIMARY KEY, name TEXT, role TEXT, shop TEXT, status TEXT,
+  -- 2026-09-20 加的两列,都是**分配 agent 要用而库里答不出来**的:
+  --
+  -- `hired_at` 入职日期 —— 没有它就**判断不出谁是新人**,
+  --   而「新人保底派单」那条规则(防马太效应:成交率高的人客户越来越多)做不了。
+  --   ⚠️ 空值不许当成「老员工」—— **「没填」和「入职很久」不是一回事**。
+  --
+  -- ⚠️ 本来还加了一列 `good_at`(擅长的形制),**业务 2026-09-20 答:顾问没有擅长的形制**,
+  --    所以撤掉了。留着的话就是一个**长得像开关却不控制任何事的字段** ——
+  --    这个项目已经有一个那样的了(`account.marketing_consent`,
+  --    「它只被显示和清零,没拦过任何东西」),不该再添一个。
+  hired_at TEXT,
   updated_by TEXT, updated TEXT,
   -- 登录凭据。**员工才是后台的使用者**,而原来只有消费者账户(account)有密码,
   -- 员工一个都没有 —— 于是「你是店长还是顾问」只能靠请求里自称的字符串。
@@ -128,6 +139,23 @@ CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
   -- 可空:名下多人而定不下来时**留空**,下单校验会报「判不了」——
   -- **判不了不等于可以**,不许挑一个候选顶上。
   wearer_id TEXT,
+  -- 这一单是**哪次预约带来的**。2026-09-20 加。
+  --
+  -- 加之前:26587 单里**没有一单能追溯到哪次接待** —— 于是
+  -- 「这次接待成没成」这个事实在库里根本不存在,成交率不管按谁算都一样算不出来。
+  -- 那不是「样本不够」,是**链路断了**。
+  --
+  -- ⚠️ **可空,而且大多数就该是空的**:小程序直接下单、到店直接买,
+  -- 本来就不经过预约。**「没经过预约」和「经过了但没记」都是空** ——
+  -- 所以配一个 `appt_src` 说明这个空是哪一种(见下)。
+  appt_id TEXT,
+  -- 空值的来路,**默认「未接入」**:
+  --     未接入  这一单生成时链路还没接 —— **不知道它经没经过预约**
+  --     无预约  确认过:小程序直接下单 / 到店直接买
+  --     已关联  appt_id 里有值
+  -- 不分开的话,「没经过预约」和「经过了但没记」都是空,
+  -- **而算成交率时前者该排除在分母外,后者是数据缺口** —— 处理方式相反。
+  appt_src TEXT NOT NULL DEFAULT '未接入',
   amount REAL, payable REAL, created TEXT, updated TEXT,
   prd_status TEXT, goods_amount REAL, freight REAL, received REAL, refund_status TEXT,
   addr TEXT, paid_at TEXT, audit_at TEXT, produced_at TEXT, shipped_at TEXT,
