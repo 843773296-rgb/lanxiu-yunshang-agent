@@ -1744,5 +1744,18 @@
    }
   ],
   "预期红": "没排班 ≠ 没空"
+ },
+
+ {
+  "script": "backend/ownership_check.py",
+  "改坏": "把「归属顾问已离职」那一支去掉(离职的也算有人管)",
+  "file": [
+   {
+    "path": "backend/ownership.py",
+    "old": "            if r[\"adv_status\"] != \"启用\":",
+    "new": "            if False and r[\"adv_status\"] != \"启用\":"
+   }
+  ],
+  "预期红": "离职的顾问名下还挂着客户"
  }
 ]
