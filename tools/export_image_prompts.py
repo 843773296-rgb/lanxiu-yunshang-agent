@@ -217,10 +217,30 @@ def main():
     # 批次按**卖得多的排前面**:出图是有成本的,先换掉客户看得最多的那些。
     卖 = {r[0]: r[1] for r in c.execute("SELECT spu, COUNT(*) FROM ordr_item GROUP BY spu")}
     每批 = int(os.environ.get("每批", 12))
+    # **已经出好的不再列进批次** —— 出图是一批批补的,清单每次重导都该只剩「还没出的」。
+    # 不剔掉的话,补到第三轮时人得自己记住哪些做过了,而**记错的代价是重复出一遍**。
+    # 判据是「这张图在不在」,不是「这一批标没标完成」—— 标记会忘,文件不会。
+    收图目录 = os.path.join(ROOT, "backend", "static", "img")
+    已出 = set()
+    if os.path.isdir(收图目录):
+        for f in os.listdir(收图目录):
+            stem = os.path.splitext(f)[0]
+            sp, _, v = stem.rpartition("-")
+            已出.add((sp, v))
+    out = [o for o in out if (o["SPU"], o["图位"] if o["图位"] != "sku"
+                              else os.path.splitext(o["文件名"])[0].rpartition("-")[2]) not in 已出]
+    if not out:
+        print("✅ 所有图都出齐了,没有要补的")
+    按款 = {}
     序 = sorted({o["SPU"] for o in out}, key=lambda s: (-卖.get(s, 0), s))
+    # 命令行也能给:`python3 tools/export_image_prompts.py <输出目录> --前 38`
+    上限 = int(os.environ.get("只要前几款", 0))       # 0 = 全部
+    if "--前" in sys.argv:
+        上限 = int(sys.argv[sys.argv.index("--前") + 1])
+    if 上限:
+        留 = set(序[:上限]); out = [o for o in out if o["SPU"] in 留]; 序 = 序[:上限]
     批 = [序[i:i + 每批] for i in range(0, len(序), 每批)]
     名字 = {o["SPU"]: o["商品名"] for o in out}
-    按款 = {}
     for o in out:
         按款.setdefault(o["SPU"], []).append(o)
     图位序 = {"main": 0, "intro": 1, "d1": 2, "d2": 3, "d3": 4, "sku": 5}

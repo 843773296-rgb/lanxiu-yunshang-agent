@@ -77,12 +77,23 @@ def main():
             s, _, v = os.path.splitext(f)[0].rpartition("-")
             if s in spus:
                 已存.setdefault(s, set()).add(v)
+    # **一套该有几张,按商品自己算** —— 配饰和面料部件没有背面图(平铺的东西没有背面),
+    # 出图清单本来就只给它们 主图 + 两张细节。拿服装那套标准去量,
+    # **它们会永远显示「缺 d3、intro」** —— 而那不是缺,是本来就不该有。
+    # 「还没出」和「不需要」长得一样的话,这份覆盖率报告就没法用来判断还差多少。
+    有版型 = {r[0] for r in c.execute(
+        "SELECT spu FROM product WHERE pattern IS NOT NULL AND pattern!=''")}
+
+    def 该有(spu):
+        return {"main", "intro", "d1", "d2", "d3"} if spu in 有版型 else {"main", "d1", "d2"}
+
     全 = {s: 已存.get(s, set()) | 有.get(s, set()) for s in set(已存) | set(有)}
-    齐 = [s for s, vs in 全.items() if {"main", "intro", "d1", "d2", "d3"} <= vs]
-    只有主图 = [s for s, vs in 全.items() if "main" in vs and s not in 齐]
-    print(f"\n覆盖:{len(全)}/{len(spus)} 款有图,其中 {len(齐)} 款整套齐了、{len(只有主图)} 款还缺细节图")
-    for s in 只有主图[:5]:
-        print(f"  · {名字.get(s, s)} 缺 {'、'.join(sorted({'main','intro','d1','d2','d3'} - 全[s]))}")
+    齐 = [s for s, vs in 全.items() if 该有(s) <= vs]
+    缺的 = {s: 该有(s) - vs for s, vs in 全.items() if s not in 齐}
+    print(f"\n覆盖:{len(全)}/{len(spus)} 款有图,其中 {len(齐)} 款整套齐了、{len(缺的)} 款还缺图")
+    for s, miss in list(缺的.items())[:5]:
+        print(f"  · {名字.get(s, s)} 缺 {'、'.join(sorted(miss))}")
+    print(f"  (配饰 / 面料部件一套是 3 张:主图 + 两张细节;服装是 5 张,多背面和领袖结构)")
 
 
 if __name__ == "__main__":
