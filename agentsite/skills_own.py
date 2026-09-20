@@ -29,7 +29,7 @@
 """
 
 # 我们自己写的、要对质量负责的技能
-OURS = ("quote", "growth-plan", "roster", "deadline-rescue", "exchange")
+OURS = ("quote", "growth-plan", "roster", "deadline-rescue", "exchange", "pattern-draft")
 
 # 从 Accio 提取的第三方技能:装了、注册了、能触发,但**不受我们的质量检查管**。
 # 它们的来源、体量和验证结果见 accio索引/README.md 和 agentsite/evals/runs/all239.json

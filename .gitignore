@@ -48,6 +48,7 @@ agentsite/.claude/skills/*
 !agentsite/.claude/skills/roster/
 !agentsite/.claude/skills/deadline-rescue/
 !agentsite/.claude/skills/exchange/
+!agentsite/.claude/skills/pattern-draft/
 
 # 任务附件(演示上传的图片)。**当初加这个功能时我以为写了这条,其实没写** ——
 # 47 个文件一直躺在未跟踪里。规则没写进去和写进去了,在 `git status` 上差得很远,
