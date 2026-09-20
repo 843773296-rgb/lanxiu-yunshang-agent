@@ -36,13 +36,32 @@ import os, re, subprocess, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 
-# 造数据的那几步(rebuild.sh 里的),只扫它们 —— 检查脚本里用 random 无所谓
-造数据 = ["backend/seed.py", "tools/run_journey.py", "tools/grow_customers.py",
-        "tools/simulate_sales.py", "tools/order_mix.py", "backend/seed_fitting.py"]
+def 造数据的步骤():
+    """**从 `rebuild.sh` 里现读,不在这儿手抄一份。**
+
+    手抄的话,别人往流水线末尾加一步(比如回填某个维度),这份清单不会跟着变 ——
+    于是**新加的那一步不受这条检查管**,而检查照样报绿。
+    「扫过了没问题」和「根本没扫它」在输出上长得一模一样,这个项目栽过好几次。
+    """
+    sh = open(os.path.join(ROOT, "tools", "rebuild.sh"), encoding="utf-8").read()
+    m = re.search(r'for STEP in (.+?); do', sh, re.S)
+    if not m:
+        raise SystemExit("❌ 读不出 rebuild.sh 里的步骤清单 —— "
+                         "**这条检查的覆盖面就是从那里来的**,读不到就不许假装扫过了")
+    out = []
+    for 段 in re.findall(r'"([^"]+)"', m.group(1)):
+        f = 段.split()[0]                     # "tools/run_journey.py 42" → 去掉参数
+        if f.endswith(".py") and os.path.isfile(os.path.join(ROOT, f)):
+            out.append(f)
+    return out
+
+
+造数据 = 造数据的步骤()
 
 咬合 = [
     ("在造数据的脚本里写回一句 SQL 的 ORDER BY RANDOM()", "SQL 里不许用 RANDOM() 抽样"),
     ("把 run_journey 的 random.seed(SEED) 去掉", "造数据的脚本都设了种子"),
+    ("把 rebuild.sh 里的步骤清单读法改坏(扫不到任何脚本)", "读不出 rebuild.sh 里的步骤清单"),
 ]
 
 失败 = []
@@ -113,6 +132,10 @@ def 扫():
         if re.search(r"date\.today\(\)|datetime\.now\(\)", 码):
             用今天.append(f)
 
+    # **先报覆盖面**:扫了哪几个脚本。样本量为 0 时所有性质自动成立 ——
+    # 「都合规」和「一个都没扫到」必须分得开。
+    报("扫到的步骤和 rebuild.sh 一致", len(造数据) >= 5,
+       f"{len(造数据)} 步:{'、'.join(os.path.basename(x) for x in 造数据)}")
     报("SQL 里不许用 RANDOM() 抽样", not 坏,
        "、".join(坏) if 坏 else f"扫了 {len(造数据)} 个造数据脚本 —— "
        "SQLite 的 RANDOM() **不受 Python 种子管**,抽样要先定序再用带种子的 rng 抽")

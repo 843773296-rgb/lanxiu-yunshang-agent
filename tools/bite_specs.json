@@ -1635,5 +1635,17 @@
       }
     ],
     "预期红": "图上标的来源就是口径判的那一档"
+  },
+  {
+    "script": "tools/determinism_check.py",
+    "改坏": "把 rebuild.sh 里步骤清单的读法改坏(一个脚本都扫不到,而检查照样报绿)",
+    "file": [
+      {
+        "path": "tools/determinism_check.py",
+        "old": "    m = re.search(r'for STEP in (.+?); do', sh, re.S)",
+        "new": "    m = re.search(r'for STEP in (NOPE.*?); do', sh, re.S)"
+      }
+    ],
+    "预期红": "读不出 rebuild.sh 里的步骤清单"
   }
 ]
