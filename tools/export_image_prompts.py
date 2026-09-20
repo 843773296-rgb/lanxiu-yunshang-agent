@@ -121,7 +121,8 @@ def main():
             面料 = [x.strip() for x in r["mt_opts"].split(",")][:1]
         else:
             面料 = 认名字(nm, 材)
-        工艺 = [x.strip() for x in (r["kf_opts"] or "").split(",")][:1] if r["kf_opts"] else 认名字(nm, 艺)
+        # 工艺取前两项 —— 样图那款是「苏绣,缂丝」,只取第一项的话图上就只有苏绣,缂丝没人画
+        工艺 = [x.strip() for x in (r["kf_opts"] or "").split(",")][:2] if r["kf_opts"] else 认名字(nm, 艺)[:2]
         工艺 = [x for x in 工艺 if x and x not in 面料]
 
         parts = [f"商品:{nm}"]
