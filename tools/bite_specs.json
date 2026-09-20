@@ -1559,5 +1559,17 @@
       }
     ],
     "预期红": "图上画的花按口径层来"
+  },
+  {
+    "script": "agent/vision_eval_judgetest.py",
+    "改坏": "评测取图也改成「有真图就用真图」(前提不再成立,而分数长得一样)",
+    "file": [
+      {
+        "path": "backend/img.py",
+        "old": "    out = os.path.join(CACHE, f\"{spu}-{variant}-{size}.png\")",
+        "new": "    _真 = os.path.join(HERE, \"static\", \"img\", f\"{spu}-{variant}.png\")\n    if os.path.isfile(_真):\n        return _真\n    out = os.path.join(CACHE, f\"{spu}-{variant}-{size}.png\")"
+      }
+    ],
+    "预期红": "评测前提:喂给模型的是合成图不是真照片"
   }
 ]
