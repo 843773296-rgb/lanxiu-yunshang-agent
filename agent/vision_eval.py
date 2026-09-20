@@ -82,6 +82,41 @@ def _pick():
 CASES = _pick()
 
 
+def 图指纹():
+    """喂给模型的那 6 张图的内容指纹。
+
+    **历史分数有有效期,而过期的样子和没过期一模一样。**
+    图一改(剪影按形制参数生成,改了参数就变),分数还是四个轴、还是 6/6,
+    没有任何地方会说「这次和上次不可比」。
+
+    指纹让这件事**机械可判**:哈希对不上就是对不上,不靠谁记得、不靠文件名起得对不对。
+    它不报错 —— 图本来就允许改;它只是把「历史分数到期了」说出来。
+    (做法出自负责商机那条线的会话,2026-09-20。)
+    """
+    import hashlib
+    h = hashlib.sha256()
+    for c in CASES:
+        h.update(c["spu"].encode())
+        h.update(img.render(c["spu"], "main").encode())
+    return h.hexdigest()[:16]
+
+
+def 上次的指纹():
+    """结果文件里最近一次记下的指纹。没有 = 那时候还没开始记,**不可比性未知**。"""
+    import json
+    f = os.path.join(HERE, "vision-eval-results.jsonl")
+    if not os.path.exists(f):
+        return None
+    for line in reversed(open(f, encoding="utf-8").read().splitlines()):
+        try:
+            v = json.loads(line).get("图指纹")
+        except Exception:
+            continue
+        if v:
+            return v
+    return None
+
+
 def 前提():
     """这套评测的**前提**:喂给模型的是那张**合成图**,不是真照片。
 
@@ -223,6 +258,12 @@ if __name__ == "__main__":
     # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
     # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。
     import evalrec
+    _fp = 图指纹()
+    for r in rows:
+        r["图指纹"] = _fp          # **分数和它量的那批图绑在一起**,否则下次没法判可比
     evalrec.dump(out, rows)
+    _上 = 上次的指纹()
+    if _上 and _上 != _fp:
+        print(f"⚠️ 图变了({_上} → {_fp})—— **这次的分数和上一轮不可比**,别放在同一张表里比")
     print(f"明细写到 {out}")
     sys.exit(0 if ok_n == len(rows) else 1)
