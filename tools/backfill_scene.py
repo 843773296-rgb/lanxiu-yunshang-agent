@@ -65,6 +65,59 @@ SCENES = [
 回填来源 = "回填默认"
 
 
+
+
+# ── 按形制体系推场合 ─────────────────────────────────────────────
+#
+# 依据是 `knowledge/01-形制.md` 那张表(手写的真相源),原文:
+#
+#     唐制 | 高腰、宽松、飘逸   | 写真、漫展、婚礼迎宾
+#     宋制 | 修身、清雅、日常感强 | 通勤、日常、茶会
+#     明制 | 端庄、挺括、仪式感强 | 婚礼、正式场合、家族合影
+#
+# ⚠️ **只用知识库明写的,不自己发挥。**
+# 「红色适合婚礼」这类是常识,但知识库里没写 —— 按颜色推场合这件事**没做**,
+# 等业务定。**猜出来的场合和查证过的场合,在库里长得一模一样。**
+#
+# 33/43 个形制名带朝代前缀,另外 10 个(大袖衫、半臂、百迭裙…)**没有体系信息** ——
+# 它们只保留默认的「旅拍写真」,**不瞎归一个体系**。
+体系场合 = {
+    "唐制": ["SC-OCC-01", "SC-OCC-03"],              # 旅拍写真 · 婚礼婚服(迎宾)
+    "宋制": ["SC-OCC-02"],                            # 日常通勤
+    "明制": ["SC-OCC-03", "SC-OCC-05"],              # 婚礼婚服 · 正式场合
+}
+推导来源 = "知识库推导"
+
+
+def 按形制推场合(c):
+    """商品 → 形制 → 体系 → 场合。返回挂上的条数。"""
+    c.execute("delete from product_scene where source=?", (推导来源,))
+    # 两条路径都要:标品走 pattern,定制品走 product_custom
+    # ⚠️ **`xz` 这个字段名,两张表存的是两种东西:**
+    #     pattern.xz         = 形制**编码**(XZ01)
+    #     product_custom.xz  = 形制**名称**(唐制齐胸襦裙)
+    # 两边都是字符串,`coalesce` 一混就分不出来 —— 第一版这么写,
+    # **255 个商品取出来全是编码,一个都匹配不上「唐制/宋制/明制」,
+    # 而查询不报错,只是推出 0 条**。
+    # 所以编码那一路要 join xingzhi 转成名称。
+    行 = list(c.execute("""
+        select p.spu, coalesce(x.name, pc.xz) xz from product p
+        left join pattern t on p.pattern = t.code
+        left join xingzhi x on x.code = t.xz
+        left join product_custom pc on pc.spu = p.spu
+        where substr(p.category,1,3) in ('C01','C02','C03')
+          and coalesce(x.name, pc.xz) is not null"""))
+    n = 0
+    for spu, xz in 行:
+        for 体系, 场合们 in 体系场合.items():
+            if xz.startswith(体系):
+                for 场 in 场合们:
+                    c.execute("""insert or ignore into product_scene(spu,scene,source,created)
+                                 values(?,?,?,?)""", (spu, 场, 推导来源, TODAY))
+                    n += 1
+                break
+    return n
+
 def main():
     c = sqlite3.connect(DB)
 
@@ -98,6 +151,8 @@ def main():
                   select spu, ?, ?, ? from product
                   where substr(category,1,3) in ({ph})""",
               (默认场合, 回填来源, TODAY, *成品服装))
+    # ── 3b. 按形制体系推场合(依据 knowledge/01-形制.md) ────────
+    推了 = 按形制推场合(c)
     c.commit()
 
     # ── 4. 自己证明干了活 ─────────────────────────────────────
@@ -121,7 +176,19 @@ def main():
     不适用 = q(f"""select count(*) from product
                    where substr(category,1,3) not in ({ph2})""", *适用场合)
 
+    # 推导的自检:**不能只有默认值那一个场合有货**。
+    # 第一版 `xz` 编码/名称混用时,推导恒出 0 条,而脚本照样报成功 ——
+    # **「推导没匹配上」和「本来就没有可推的」在结果上长得一模一样**,都是 0。
+    有货的场合 = q("select count(distinct scene) from product_scene")
+    if 推了 == 0:
+        sys.exit("❌ 按形制推场合推出 0 条 —— 多半是形制字段没对上(编码 vs 名称)")
+    if 有货的场合 <= 1:
+        sys.exit(f"❌ 只有 {有货的场合} 个场合下面有货 —— 推导没起作用,"
+                 f"而「客户说婚礼」会永远查不到货")
     print(f"  场合词表 {词表数} 条(本期在用 {在用数}、为扩展预留 {词表数-在用数})")
+    print(f"  按形制体系推了 {推了} 条(依据 knowledge/01-形制.md);"
+          f"**{有货的场合}/{词表数} 个场合下面有货** —— "
+          f"其余的**不是漏标,是知识库没写依据**(按颜色/工艺推场合等业务定)")
     print(f"  成品服装 {应挂} 个已挂「旅拍写真」;适用但待业务标注 {待标} 个;类目决定不适用 {不适用} 个")
     c.close()
 

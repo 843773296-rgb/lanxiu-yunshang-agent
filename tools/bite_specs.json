@@ -1698,5 +1698,18 @@
    }
   ],
   "预期红": "只看客户说的话"
+ },
+
+ {
+  "script": "tools/backfill_scene.py",
+  "改坏": "把形制字段改回 coalesce(编码和名称混用)",
+  "file": [
+   {
+    "path": "tools/backfill_scene.py",
+    "old": "        select p.spu, coalesce(x.name, pc.xz) xz from product p",
+    "new": "        select p.spu, coalesce(t.xz, pc.xz) xz from product p"
+   }
+  ],
+  "预期红": "按形制推场合推出 0 条"
  }
 ]
