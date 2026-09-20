@@ -18,6 +18,14 @@ import credit as C
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 bad = 0
 
+# 这套检查依赖的夹具前提(由 tools/backfill_fixtures.py 造)
+前提 = [
+    ("deal_credit", "source", "「人工填」「规则算」「算法算」三种都要有",
+     "三种来源算出来都是一个百分比,**长得一模一样** —— 不分开,换了算法就说不清哪条是哪种"),
+    ("deal_credit", "影响力分成的每单总和", "至少有一单超过 100%",
+     "**没有这种样本,一个把它当成「必须=100」的实现会全绿通过**"),
+]
+
 咬合 = [
     ('把影响力分成也按「总和必须 100」校验(两种分成合成一种)',
      '影响力分成可以超过 100%'),
@@ -76,11 +84,9 @@ def main():
 
     # ⑥ 来源都要能分开
     src = dict(c.execute("select source, count(*) from deal_credit group by source").fetchall())
-    print(f"\n  来源分布:{src}")
-    if len(src) == 1 and "规则算" in src:
-        print(f"  {Y}⚠{D} 只有「规则算」一种来源 —— 「人工填」和「算法算」**没有样本**,")
-        print(f"     那两条路径没验过。**一条永远不触发的分支,和一条正确的分支,"
-              f"在通过率上长得一样。**")
+    缺 = [k for k in ("人工填", "规则算", "算法算") if k not in src]
+    ck("三种来源都有样本", "都有" if not 缺 else f"缺 {'、'.join(缺)}", "都有",
+       f"  ← {src}。缺的话跑 tools/backfill_fixtures.py")
 
     print()
     if bad:

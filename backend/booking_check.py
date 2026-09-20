@@ -222,9 +222,18 @@ def main():
     print("  " + "=" * 76)
     # ⚠️ 这里原来是 `ON s.adv_code = substr(c.advisor,1,3)` ——
     # **靠截字符串前三位来连人**。名字列 2026-09-16 删了,现在是正经的引用。
+    # ⚠️ **排除 `FX-` 开头的测试夹具。**
+    # 2026-09-20 加了三个夹具客户(无主 / 坏工号 / 跨店),
+    # 为的是让 `ownership.py` 里那三条分支**有东西可测** ——
+    # **一条永远不触发的分支,和一条正确的分支,在通过率上长得一模一样。**
+    #
+    # 这里排除的只是 `FX-` 前缀那几条,**真实客户的跨店绑定照样会红** ——
+    # 这一条要守的是「演示数据里不该有跨店」,而夹具是故意的,不是数据错。
+    # (夹具由 tools/backfill_fixtures.py 造,依赖它的检查在自己的 `前提` 里声明了。)
     cross = q("""SELECT COUNT(*) n FROM customer c LEFT JOIN staff s
                  ON s.no = c.advisor_no
                  WHERE c.advisor_no IS NOT NULL AND c.advisor_no<>''
+                   AND c.id NOT LIKE 'FX-%'
                    AND (s.shop IS NULL OR s.shop<>c.shop)""")[0]["n"]
     check("跨店绑定的客户数", str(cross), "0",
           "  ← 跨店绑定会让预约永远派不出去,却看不出是数据的错")
