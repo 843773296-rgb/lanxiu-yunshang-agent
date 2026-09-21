@@ -32,6 +32,9 @@ DB = os.path.join(HERE, "lanxiu.db")
     ("商品页不再标图的来源(真图和示意图在页面上长得都挺正常)", "商品页标出图的来源"),
     ("去掉某处 count(pattern_piece) 旁边的「数的是登记行数」(一行当成一块)",
      "数裁片的地方都表过态"),
+    ("把某个成人款的商品名改成「童款…」(四个信号打架,而图会照成人画)",
+     "童装 / 成人的四个信号不打架"),
+    ("把钉住表里某一款的颜色改掉(图还是旧颜色,数据已经换了)", "钉住的颜色没被挪动"),
 ]
 失败 = []
 
@@ -235,6 +238,49 @@ def main():
     报("数裁片的地方都表过态(count 行数 / sum 块数)", not 漏标,
        "、".join(漏标[:3]) + " —— 加 `# 数的是登记行数` 或改用 SUM(qty)"
        if 漏标 else "扫了全仓 .py:count(*) 到 pattern_piece 的都写明了数的是行数")
+
+    # ⑥quinquies 大人还是小孩:四个信号必须一致,打架的要报出来
+    # 用户出图时发现的:「竹节」童款交领襦裙 —— 名字说童款,而性别字段、挂的版型、号型
+    # 三处都说成人。出图清单原来只看形制名,**静默判成成人比例**。
+    # 三比一也是矛盾:真正的问题是这条数据错了,**不该由出图清单替业务投票**。
+    打架 = []
+    for r in c.execute("""SELECT p.spu, p.name, p.gender, p.pattern, x.name AS xz FROM product p
+                          LEFT JOIN pattern pt ON pt.code=p.pattern
+                          LEFT JOIN xingzhi x ON x.code=pt.xz"""):
+        号 = [z[0] for z in c.execute(
+            "SELECT DISTINCT size FROM size_spec WHERE pattern=?", (r["pattern"],))] if r["pattern"] else []
+        信号 = {"形制": "童款" in (r["xz"] or ""), "性别": (r["gender"] or "") == "童",
+              "名字": "童款" in r["name"], "号型": any(z[:1].isdigit() for z in 号)}
+        if r["pattern"] and len(set(信号.values())) > 1:
+            打架.append(f"{r['name']}({'、'.join(k for k, v in 信号.items() if v)}说童装)")
+    报("童装 / 成人的四个信号不打架", not 打架,
+       "；".join(打架[:2]) + " —— **这不是出图的问题,是库里的数据错了**,要业务核"
+       if 打架 else "形制 / 性别 / 名字 / 号型 四处口径一致")
+
+    # ⑥sexies 已经出过图的款,颜色必须钉住
+    # 2026-09-21:为修两款童装的形制改了两行 seed,**38 款里 22 款换了颜色**,
+    # 其中 6 款用户已经照旧颜色出好了图 —— 因为颜色原来按**插入序号**算,改一行就整体挪位。
+    # 图一旦交付,**图上的颜色就是事实**:数据要跟着图走,不是反过来。
+    # 而对不上的时候**页面上看不出来** —— 客户看到的是图,系统按数据发货。
+    import json as _json
+    钉文件 = os.path.join(HERE, "图色钉住.json")
+    钉 = _json.load(open(钉文件, encoding="utf-8"))["钉住"] if os.path.exists(钉文件) else {}
+    有图 = {f.rpartition("-")[0] for f in os.listdir(os.path.join(HERE, "static", "img"))
+           if f.endswith(("-main.png", "-main.jpg", "-main.jpeg", "-main.webp"))}         if os.path.isdir(os.path.join(HERE, "static", "img")) else set()
+    报("样本量:已出图的款", len(有图) >= 1, f"{len(有图)} 款有图 · 钉住表里 {len(钉)} 条")
+    漏钉 = sorted(有图 - set(钉))
+    报("出过图的款都钉了颜色", not 漏钉, "、".join(漏钉[:3]) or
+       "**新收一批图之后要把它们的颜色钉上**,否则下次改 seed 就可能把它们的颜色挪走")
+    import img as _img
+    错色 = []
+    for spu, 应 in 钉.items():
+        r = c.execute("SELECT color FROM sku WHERE spu=? ORDER BY code LIMIT 1", (spu,)).fetchone()
+        实 = r["color"] if r else None
+        if 实 in ("定制", "默认", "", None):      # 定制品的颜色由 img.py 按款号挑
+            实 = _img.PALETTE[_img._hue(spu + "c") % len(_img.PALETTE)]
+        if 实 != 应:
+            错色.append(f"{spu}:钉的是{应},库里是{实}")
+    报("钉住的颜色没被挪动", not 错色, "；".join(错色[:3]) or f"{len(钉)} 款逐个对过")
 
     # ⑦ 不存在的版型必须明确报错,不许画一张空图糊弄过去
     # 报错还要**报得清楚**:ValueError 且话里带着那个编码。

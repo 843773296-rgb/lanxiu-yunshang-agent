@@ -105,6 +105,13 @@ def 认名字(text, names):
     return hit
 
 
+def 号型(pattern):
+    if not pattern:
+        return []
+    c = sqlite3.connect(DB)
+    return [r[0] for r in c.execute("SELECT DISTINCT size FROM size_spec WHERE pattern=?", (pattern,))]
+
+
 def 色(name):
     hexv = V1.colors().get(name) or V1.colors().get(name.replace("色", ""))
     return f"{name}({hexv})" if hexv else name
@@ -120,7 +127,7 @@ def main():
     外观 = {r[0]: r[1] for r in c.execute("SELECT name, brief FROM craft WHERE cat IN ('材质','工艺') AND brief!=''")}
     rows = c.execute("""
         SELECT p.spu, p.name, p.gender, p.kind, p.remark, cat.name AS cat,
-               pt.xz, xz.name AS xzname, pc.mt_opts, pc.kf_opts
+               p.pattern AS 版型, pt.xz, xz.name AS xzname, pc.mt_opts, pc.kf_opts
         FROM product p
         LEFT JOIN category cat ON cat.code = p.category
         LEFT JOIN pattern pt ON pt.code = p.pattern
@@ -151,7 +158,22 @@ def main():
                 parts.append(f"结构:{结构[r['xz']]}")
             else:
                 缺结构.append(r["xz"])
-            parts.append(f"穿着者:{'儿童' if '童款' in (r['xzname'] or '') else (r['gender'] or '女')}装,按{'儿童' if '童款' in (r['xzname'] or '') else '成人'}比例")
+            # 大人还是小孩:**四个信号一起看,打架就明说打架** ——
+            # 原来只看形制名,于是「童款交领襦裙」(名字说童款、形制挂的是成人版型)
+            # 被静默判成成人比例。用户出图时发现的。
+            # **不许投票决定**:三比一也是矛盾,真正的问题是这条数据错了,该报给业务核,
+            # 而不是由出图清单替业务挑一个 —— 挑错了,出来的图看着完全正常。
+            信号 = {"形制": "童" if "童款" in (r["xzname"] or "") else "成",
+                  "性别字段": "童" if (r["gender"] or "") == "童" else "成",
+                  "商品名": "童" if "童款" in nm else "成",
+                  "号型": "童" if any(z[:1].isdigit() for z in 号型(r["版型"])) else "成"}
+            if len(set(信号.values())) > 1:
+                打架 = "、".join(f"{k}说{'童装' if v == '童' else '成人'}" for k, v in 信号.items())
+                parts.append(f"⚠️ **这一款先别出**:库里的数据自相矛盾({打架})。"
+                             f"按哪种比例画要等业务核完,**不要自己挑一个** —— 挑错了图看着也正常")
+            else:
+                童 = 信号["形制"] == "童"
+                parts.append(f"穿着者:{'儿童' if 童 else (r['gender'] or '女')}装,按{'儿童' if 童 else '成人'}比例")
         else:
             # 先按商品名认,认不出再按品类 —— 团扇挂在「宫绦 / 玉佩」品类下,按品类会被当成首饰去拍
             摆 = next((how for keys, how in 摆法 if any(k in nm for k in keys)), None) \
