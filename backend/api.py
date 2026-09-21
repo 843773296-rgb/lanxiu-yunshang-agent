@@ -1610,9 +1610,12 @@ def pattern_queue():
     out, 活 = {}, []
 
     # ── ① 裁片用料占比 ────────────────────────────────────────────────
+    # 数的是登记行数(裁片**种类**数),不是要裁几块 —— 一片 qty=2 在表里也只有一行
     总片 = _rows("SELECT COUNT(*) n FROM pattern_piece WHERE ratio IS NOT NULL")[0]["n"]
+    # 数的是登记行数(裁片**种类**数),不是要裁几块 —— 一片 qty=2 在表里也只有一行
     已核 = _rows("SELECT COUNT(*) n FROM pattern_piece WHERE ratio_src='版师'")[0]["n"]
     全核完 = _rows(
+        # 数的是登记行数(裁片**种类**数),不是要裁几块 —— 一片 qty=2 在表里也只有一行
         "SELECT COUNT(*) n FROM (SELECT pattern FROM pattern_piece "
         "GROUP BY pattern HAVING SUM(CASE WHEN ratio_src='版师' THEN 0 ELSE 1 END)=0)")[0]["n"]
     # **影响面**:挂的商品数 + 已出过货的订单行数。两个都算,因为它们答的不是同一个问题

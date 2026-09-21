@@ -1840,17 +1840,28 @@
     ],
     "预期红": "两种来源都标,不是只标没出图的"
   },
-
- {
-  "script": "backend/touchpoint_check.py",
-  "改坏": "把量体的去重去掉(一次量体的十几条测量项各算一个触点)",
-  "file": [
-   {
-    "path": "backend/touchpoint.py",
-    "old": "                      group by substr(measured_at,1,10), measured_by_no\"\"\",",
-    "new": "                      group by id\"\"\","
-   }
-  ],
-  "预期红": "量体按「一次」算不按「一条」算"
- }
+  {
+    "script": "backend/touchpoint_check.py",
+    "改坏": "把量体的去重去掉(一次量体的十几条测量项各算一个触点)",
+    "file": [
+      {
+        "path": "backend/touchpoint.py",
+        "old": "                      group by substr(measured_at,1,10), measured_by_no\"\"\",",
+        "new": "                      group by id\"\"\","
+      }
+    ],
+    "预期红": "量体按「一次」算不按「一条」算"
+  },
+  {
+    "script": "backend/draft_check.py",
+    "改坏": "去掉某处 count(pattern_piece) 旁边的「数的是登记行数」(一行当成一块)",
+    "file": [
+      {
+        "path": "tools/make_todo.py",
+        "old": "        # 数的是登记行数(裁片**种类**数),不是要裁几块 —— 一片 qty=2 在表里也只有一行\n        n = c.execute(\"SELECT COUNT(*) FROM pattern_piece WHERE ratio IS NOT NULL\")",
+        "new": "        n = c.execute(\"SELECT COUNT(*) FROM pattern_piece WHERE ratio IS NOT NULL\")"
+      }
+    ],
+    "预期红": "数裁片的地方都表过态"
+  }
 ]

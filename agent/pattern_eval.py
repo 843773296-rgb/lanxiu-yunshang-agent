@@ -376,6 +376,7 @@ def main():
           f"  花费 ${sum(r.get('cost') or 0 for r in recs):.4f}")
 
     cx = sqlite3.connect(DBP)
+    # 数的是登记行数(裁片**种类**数),不是要裁几块 —— 一片 qty=2 在表里也只有一行
     改了 = cx.execute("SELECT COUNT(*) FROM pattern_piece WHERE ratio_src='版师'").fetchone()[0]
     for r in 快照:
         cx.execute("UPDATE pattern_piece SET ratio=?,ratio_src=?,ratio_by=?,"

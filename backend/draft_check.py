@@ -30,6 +30,8 @@ DB = os.path.join(HERE, "lanxiu.db")
     ("图例里不再写明结构线是「按比例画的示意」(示意图和定稿图在纸上长得一样)",
      "上衣画了结构线,并写明是示意"),
     ("商品页不再标图的来源(真图和示意图在页面上长得都挺正常)", "商品页标出图的来源"),
+    ("去掉某处 count(pattern_piece) 旁边的「数的是登记行数」(一行当成一块)",
+     "数裁片的地方都表过态"),
 ]
 失败 = []
 
@@ -195,6 +197,44 @@ def main():
     报("两种来源都标,不是只标没出图的",
        ">效果示意 · AI 生成<" in 页 and ">效果示意 · 现画<" in 页,
        "生成图标「效果示意 · AI 生成」,没出图的标「效果示意 · 现画」—— 判的是标签本身,不是 title 里的说明")
+
+    # ⑥quater 数裁片不许用 count(*) —— **一行不等于一块**
+    #
+    # `pattern_piece` 一行登记一种裁片,而 `qty` 是这种裁片要裁几块(前片 qty=2,左右各一)。
+    # 按行数算用料,前片会被算成一片。这一族今天在另一条线上也出现过:
+    # 量体一次十几个测量项各一行,按行数算的话量体以 10:1 淹没其他触点 ——
+    # **「一行」和「一次 / 一块」在计数上长得一样,而差出来的倍数不固定**(10:1 和 2:1)。
+    # 倍数不固定最要命:固定的话错了还能等比换算回来,不固定就只能逐条重算。
+    #
+    # 判据是静态的:凡是 count(*) 到这张表,要么改 sum(qty),
+    # 要么在同一行或上一行写明「数的是登记行数」——**逼调用方表态,而不是替他猜**。
+    标记 = "数的是登记行数"
+    漏标 = []
+    for 根, _, fs in os.walk(ROOT):
+        if any(x in 根 for x in (".git", "__pycache__", ".venv", "node_modules")):
+            continue
+        for f in fs:
+            if not f.endswith(".py"):
+                continue
+            路 = os.path.join(根, f)
+            try:
+                行 = open(路, encoding="utf-8").read().splitlines()
+            except Exception:
+                continue
+            for i, l in enumerate(行):
+                if "pattern_piece" not in l or not re.search(r"COUNT\s*\(\s*\*?\s*\)", l, re.I):
+                    continue
+                # ⚠️ **只看本行和上一行,不看下一行。**
+                # 第一版把下一行也算进来,于是**隔壁那条的标注替这条背了书**:
+                # 把某一行的标注删掉,检查照样绿(下面那行的标注被当成了它的)。
+                # 咬合当场抓到 —— 判据的窗口开大一格,就能漏掉整类破坏。
+                近 = (行[i - 1] if i else "") + " " + 行[i]
+                if 标记 in 近 or re.search(r"SUM\s*\(\s*qty", 近, re.I):
+                    continue
+                漏标.append(f"{os.path.relpath(路, ROOT)}:{i+1}")
+    报("数裁片的地方都表过态(count 行数 / sum 块数)", not 漏标,
+       "、".join(漏标[:3]) + " —— 加 `# 数的是登记行数` 或改用 SUM(qty)"
+       if 漏标 else "扫了全仓 .py:count(*) 到 pattern_piece 的都写明了数的是行数")
 
     # ⑦ 不存在的版型必须明确报错,不许画一张空图糊弄过去
     # 报错还要**报得清楚**:ValueError 且话里带着那个编码。

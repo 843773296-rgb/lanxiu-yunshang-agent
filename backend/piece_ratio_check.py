@@ -83,6 +83,7 @@ def main():
         "SELECT DISTINCT COALESCE(ratio_src,'(空)') FROM pattern_piece "
         "WHERE ratio IS NOT NULL")
         if r[0] not in ("估算", "复核", "版师")]
+    # 数的是登记行数(裁片**种类**数),不是要裁几块 —— 一片 qty=2 在表里也只有一行
     n2 = c.execute("SELECT COUNT(*) FROM pattern_piece WHERE ratio IS NOT NULL"
                    ).fetchone()[0]
     ck("每条占比都要标来源(估算 / 复核 / 版师)", not 野, n2,

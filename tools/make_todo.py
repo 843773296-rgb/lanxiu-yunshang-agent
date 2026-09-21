@@ -31,7 +31,9 @@ def 现算():
     """每一条待办**现在**的数 —— 键是 intent 的文件名。"""
     d, c = {}, _db()
     try:
+        # 数的是登记行数(裁片**种类**数),不是要裁几块 —— 一片 qty=2 在表里也只有一行
         n = c.execute("SELECT COUNT(*) FROM pattern_piece WHERE ratio IS NOT NULL").fetchone()[0]
+        # 数的是登记行数(裁片**种类**数),不是要裁几块 —— 一片 qty=2 在表里也只有一行
         k = c.execute("SELECT COUNT(*) FROM pattern_piece WHERE ratio_src='版师'").fetchone()[0]
         d["piece-ratio-review"] = f"**{k}/{n}** 片到「版师核过」档(其余全是「复核」:规则核过、数没核过)"
     except Exception: pass
