@@ -27,6 +27,12 @@ CI 上一条判「哪几档维保率值得注意」的检查间歇变红,而最�
   · 造数据的脚本里用**全局 random 却没有 seed** —— 每次跑都不一样
   · 拿**机器的今天**当基准(`date.today()` / `datetime.now()`)——
     今天每过一天就变一次,而这个项目的世界有自己固定的「今天」
+  · 用内置 `hash()` / `__hash__()` 去派生取值 —— **`str` 的哈希每个进程都不一样**
+    (PYTHONHASHSEED 默认随机)。2026-09-21 抓到一个真的:
+    `seed.py` 用 `abs(hash(sku编码))` 造供应商编码,**每重建一次 659 个 SKU 全换一批**,
+    而没有任何东西报错。和同一天那起「22 款商品换颜色」是同一个根因。
+    ⚠️ 这一条是**比对两次重建**才发现的,上面三条扫写法的规则一条都碰不到它 ——
+    扫写法只抓得到你已经知道的那几种写法。
 
 ⚠️ **扫写法抓不到全部。** 一条 `ORDER BY` 漏掉、一个 set 的遍历顺序被当成稳定的,
 这里都看不见 —— 所以留了 `--真建两次`,改完造数据的脚本要手动跑一次。
@@ -62,6 +68,7 @@ def 造数据的步骤():
     ("在造数据的脚本里写回一句 SQL 的 ORDER BY RANDOM()", "SQL 里不许用 RANDOM() 抽样"),
     ("把 run_journey 的 random.seed(SEED) 去掉", "造数据的脚本都设了种子"),
     ("把 rebuild.sh 里的步骤清单读法改坏(扫不到任何脚本)", "读不出 rebuild.sh 里的步骤清单"),
+    ("在造数据的脚本里拿内置 hash() 去派生一个取值", "造数据的脚本不用内置 hash()"),
 ]
 
 失败 = []
@@ -104,6 +111,7 @@ def 扫():
     坏 = []
     无种子 = []
     用今天 = []
+    用哈希 = []
     for f in 造数据:
         p = os.path.join(ROOT, f)
         if not os.path.isfile(p):
@@ -129,8 +137,16 @@ def 扫():
         有种子 = re.search(r"random\.seed\(|random\.Random\(", 码)
         if 用全局 and not 有种子:
             无种子.append(f)
-        if re.search(r"date\.today\(\)|datetime\.now\(\)", 码):
+        # Python 的时钟,和 **SQL 里的时钟** —— 后者原来一条都没扫。
+        # `backend/oplog.py` 写的是 `datetime('now','localtime')`,
+        # 扫 Python 那两个词一辈子也碰不到它。
+        if re.search(r"date\.today\(\)|datetime\.now\(\)"
+                     r"|datetime\s*\(\s*'now'|CURRENT_TIMESTAMP", 码, re.I):
             用今天.append(f)
+        # 内置 hash():**每个进程给的值都不一样**。`hashlib.sha256(...)` 是稳的,
+        # 所以只抓前面没有 `hashlib.`/`_hashlib.` 的那个 `hash(`。
+        if re.search(r"(?<![\w.])hash\(|(?<!_)\.__hash__\(", 码):
+            用哈希.append(f)
 
     # **先报覆盖面**:扫了哪几个脚本。样本量为 0 时所有性质自动成立 ——
     # 「都合规」和「一个都没扫到」必须分得开。
@@ -145,10 +161,42 @@ def 扫():
         print(f"     ℹ️ 豁免 {len(放行)} 行(写明了为什么要用真实时钟):")
         for x in 放行:
             print(f"        {x}")
+    报("造数据的脚本不用内置 hash()", not 用哈希,
+       ("、".join(用哈希) + " —— **`str` 的内置哈希每个进程都不一样**"
+        "(PYTHONHASHSEED 默认随机),重建一次换一批值,而不会报错。"
+        "要稳定摘要就用 `hashlib.sha256(x.encode())`") if 用哈希 else
+       "取值没有从内置 hash() 派生")
     报("不拿机器的今天当基准", not 用今天,
        ("、".join(用今天) + " —— 世界的『今天』写在 seed.py 的 TODAY,"
         "拿机器的今天会让同一份代码今天和明天造出不同的数据") if 用今天 else
        "基准日都取自 seed.py 的 TODAY")
+
+
+# ── 登记在案:这几列按设计**每次重建都该不一样** ──────────────────────
+#
+# 写成显式登记,不是「差异少就忽略」—— 后者会把新冒出来的漂移一起放过,
+# 而且**谁都不知道曾经放过了什么**。每次跑都会把它们打出来。
+每次都该变 = {
+    "account": {
+        "列": ("pwd_salt", "pwd_hash"),
+        "为什么": "每个账户一把独立的随机盐,是**安全属性**:"
+                  "盐固定下来,一张彩虹表就能同时打穿所有账户。"
+                  "demo 数据也不例外 —— 这份代码是会被人照抄的",
+    },
+    "staff": {
+        "列": ("pwd_salt", "pwd_hash"),
+        "为什么": "同 account —— 员工账号也是一账户一盐。"
+                  "⚠️ 这条是**第二次比对才补上的**:第一次只登记了 account,"
+                  "而 staff 的盐在同一次重建里也在变。"
+                  "**「同一类问题有几处」这件事,一处一处修是看不出来的**",
+    },
+    "op_log": {
+        "列": ("ts",),
+        "为什么": "操作台账记的是「这条操作**实际发生**的时刻」,"
+                  "而造库时那个时刻就是造库的时刻。"
+                  "把它钉成假时间,台账就不再是台账了",
+    },
+}
 
 
 def 真建两次():
@@ -165,26 +213,66 @@ def 真建两次():
         f = tempfile.mktemp(suffix=f"-{i}.db")
         shutil.copy2(db, f)
         快照.append(f)
+    import hashlib
     A, B = (sqlite3.connect(x) for x in 快照)
-    表 = [r[0] for r in A.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
-    差 = []
+    表 = [r[0] for r in A.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+
+    def 指纹(c, t, 跳过=()):
+        """逐行算摘要。
+
+        ⚠️ **别用 `quote(t.*)`** —— 那不是合法的 SQLite 语法,一跑就
+        `near "*": syntax error`。这一段原来就是那么写的,于是
+        `--真建两次` **一次都没成功跑起来过**:它既没红过也没绿过,只是抛异常,
+        而它被标着「手动跑」,所以没人发现。2026-09-21 真去跑的时候才知道。
+
+        > 那天它要是能跑,`seed.py` 里那个 `abs(hash(sku编码))`
+        > (每重建一次 659 个 SKU 的供应商编码全换一批)**早就被抓到了**。
+
+        代价:逐行读比 SQL 聚合慢。但这条本来就是「手动跑、约两分钟」的那一类,
+        **慢一点换它真的能跑**,划算。
+        """
+        列 = [r[1] for r in c.execute(f"PRAGMA table_info({t})")]
+        取 = [i for i, x in enumerate(列) if x not in 跳过]
+        h = hashlib.sha256()
+        n = 0
+        for row in c.execute(f'SELECT * FROM "{t}"'):
+            h.update(repr(tuple(row[i] for i in 取)).encode())
+            n += 1
+        return n, h.hexdigest()[:16]
+
+    差, 比过, 放过 = [], 0, []
     for t in 表:
         if t == "truth":
             continue
+        # **登记过的豁免**:这几列按设计每次重建都该不一样。
+        # 写成显式登记而不是「差异少就忽略」—— 后者会把新冒出来的漂移一起放过。
+        免 = 每次都该变.get(t)
+        if 免:
+            放过.append(f"{t}.{'/'.join(免['列'])}")
         try:
-            a = A.execute(f"SELECT COUNT(*), COALESCE(SUM(LENGTH(CAST(t.* AS TEXT))),0) FROM (SELECT * FROM {t}) t")
-        except Exception:
-            a = None
-        na = A.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-        nb = B.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            na, ha = 指纹(A, t, 免["列"] if 免 else ())
+            nb, hb = 指纹(B, t, 免["列"] if 免 else ())
+        except sqlite3.Error as e:
+            差.append(f"{t}:读不了({e})")
+            continue
+        比过 += 1
         if na != nb:
             差.append(f"{t}:行数 {na} vs {nb}")
-            continue
-        ha = A.execute(f"SELECT group_concat(x) FROM (SELECT quote(t.rowid)||quote(t.*) x FROM {t} t ORDER BY t.rowid)").fetchone()[0]
-        hb = B.execute(f"SELECT group_concat(x) FROM (SELECT quote(t.rowid)||quote(t.*) x FROM {t} t ORDER BY t.rowid)").fetchone()[0]
-        if ha != hb:
+        elif ha != hb:
             差.append(f"{t}:行数一样({na})而内容不同 —— **总数相同最容易掩盖内容不同**")
-    报("两次重建逐表一致", not 差, "；".join(差[:4]) if 差 else f"{len(表)} 张表全一致")
+    # 先报样本量:一张表都没比到时,「全一致」是空话
+    报("真的比到了表", 比过 >= 20, f"{比过} 张表逐行比过")
+    报("两次重建逐表一致", not 差, "；".join(差[:4]) if 差 else
+       f"{比过} 张表全一致(其中 {len(放过)} 张跳过了登记在案的列)")
+    # **豁免要一直看得见。** 一条没人再看的豁免和一个没修的 bug 长得一样。
+    for t, 免 in sorted(每次都该变.items()):
+        print(f"     ℹ️ 跳过 {t}.{'/'.join(免['列'])} —— {免['为什么']}")
+    多余 = [t for t in 每次都该变 if t not in 表]
+    报("登记的豁免都还指着存在的表", not 多余,
+       "、".join(多余) + " —— 表没了,这条登记该删" if 多余 else
+       f"{len(每次都该变)} 条登记都对得上")
 
 
 def main():

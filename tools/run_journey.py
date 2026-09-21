@@ -605,6 +605,22 @@ def _journey(cust, dry=False):
                       "shipped_at", "finished_at"), f"id='{oid}'")):
         sets = ", ".join(f"{c2}=datetime({c2}, '{_sh}')" for c2 in _cols)
         ex(f"UPDATE {_t} SET {sets} WHERE {_key}")
+
+    # ⚠️ **派单时间 / 上传时间的「时分秒」原来是机器的当前时刻。**
+    # 这两列由生产代码(`backend/tasks.py`)写下,它在真实业务里理当记 now();
+    # 但造库时跑的是**模拟过去**,于是库里躺着「2026-04-26 14:28:00」——
+    # **日期是模拟世界的,时分是这台机器此刻的**。两次重建隔一分钟,它就差一分钟。
+    #
+    # 2026-09-21 比对两次重建时查出来的。扫写法那几条一条都碰不到它:
+    # 时间不是这个脚本取的,是它调的生产代码取的。
+    #
+    # 只钉时分秒,不动日期 —— 日期是上面那段按落点算出来的,那部分本来就是确定的。
+    for _t, _c3, _key in (("schedule", "assigned_at", f"id IN ('{task}','{visit}')"),
+                          ("schedule_file", "uploaded_at", f"schedule_id='{visit}'")):
+        _r3 = random.Random(f"{SEED}::{_t}::{_key}")
+        _hm = f"{_r3.randint(9, 18):02d}:{_r3.randint(0, 59):02d}:00"
+        ex(f"UPDATE {_t} SET {_c3} = date({_c3}) || ' {_hm}' "
+           f"WHERE {_key} AND {_c3} IS NOT NULL")
     # 客户那三个字段也跟着挪,并按挪后的日期重算闲置天数
     inter2 = inter - shift
     # **idle_days 要按基准日算,不是按今天。**

@@ -34,6 +34,8 @@ FAIL = []
 # 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
 # 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
 咬合 = [
+    ("把「圆领袍」加回 XZ09 明制圆领袍的别名(它是通称,同时也是童款圆领袍、"
+     "唐制圆领襕袍的说法)", "通称不许当某一个形制的独占别名"),
     ('把一个商品连到一个不存在的版型上',
      '商品连的版型都真实存在'),
 ]
@@ -123,6 +125,38 @@ def main():
             "JOIN product p ON p.spu=pc.spu WHERE pc.xz IS NOT NULL AND pc.xz!=''"):
         if _xz not in _名:
             野xz.append(f"{_pn}:「{_xz}」在形制表里查不到")
+    # ⑤·前之二 **一个通称,不许被登记成某一个形制的独占别名。**
+    #    上面那条注释写着「圆领袍」这个别名是怎么来的:当年 XZ09 改名之后
+    #    留着它接住断链。接住了,**也顺带把歧义消掉了** —— 而那是副作用,
+    #    没有人是冲着消歧去的。
+    #
+    #    代价 2026-09-21 才显形:「圆领袍」同时是明制圆领袍、童款圆领袍的通称,
+    #    也是唐制圆领襕袍的口语说法。定制表里谁写通称,谁就被**悄悄判成明制**。
+    #    真撞上了一款:「女式圆领」唐制袍挂着唐制圆领襕袍的版,
+    #    而唐制膝部有横襕、明制没有,**版不一样,做出来是另一件衣服**。
+    #
+    #    > 一个通称被独占给某一个朝代,消掉的不是歧义,
+    #    > 是**「这里有歧义」这件事本身** —— 从此没有任何信号提示人去问。
+    #
+    #    判据不看词,看结构:**这个别名如果同时是两个以上形制名称的一部分,
+    #    它就是通称。** 43 个形制实测只命中这一条,零误报。
+    通称 = []
+    _全名 = [r[0] for r in c.execute("SELECT name FROM xingzhi")]
+    for _c2, _n2, _a2 in c.execute(
+            "SELECT code,name,alias FROM xingzhi WHERE alias IS NOT NULL AND alias!=''"):
+        for _al in [x.strip() for x in _a2.replace("、", ",").split(",") if x.strip()]:
+            命中 = [m for m in _全名 if _al in m]
+            if len(命中) >= 2:
+                通称.append(f"{_c2} {_n2} 的别名「{_al}」同时是 {len(命中)} 个形制的一部分"
+                            f"({'、'.join(命中[:3])})")
+    ck("通称不许当某一个形制的独占别名", not 通称,
+       c.execute("SELECT COUNT(*) FROM xingzhi WHERE alias IS NOT NULL AND alias!=''")
+        .fetchone()[0],
+       ("；".join(通称[:2]) + " —— **写通称的人会被悄悄判成其中一个**,"
+        "而解析成功和解析正确长得一模一样。别名只收真正的一对一别称,"
+        "通称要让它报「对应多条」" if 通称 else
+        "别名都是一对一的别称,没有通称混进来"))
+
     ck("product_custom.xz 都能解析到形制", not 野xz,
        c.execute("SELECT COUNT(*) FROM product_custom WHERE xz IS NOT NULL AND xz!=''")
         .fetchone()[0],
