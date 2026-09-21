@@ -474,12 +474,17 @@ def _journey(cust, dry=False):
     ST2PRD = {"待付款": "待付款", "待审核": "方案确认中", "待生产": "方案确认中",
               "生产中": "方案确认中", "已生产": "待发货", "待发货": "待发货",
               "已发货": "待收货", "待完成": "待收货", "完成": "已完成", "取消": "已关闭"}
+    # **这一单是哪次预约带来的** —— 业务 2026-09-21 拍板:定制品必须有预约,标品一律没有。
+    # 这条旅程走的正是「预约 → 上门 → 量体 → 下单」,所以它**挂得上**;
+    # 库里其余 3500 张定制单还挂不上,它们的 appt_src 留「未接入」——
+    # **「未接入」和「无预约」必须分开**:前者是链路没接(要补),后者是确认过不该有(要排除),
+    # 合成一个空值的话,两者看起来一样而处理方式相反。
     ex("""INSERT INTO ordr(id,customer_id,kind,status,advisor_no,shop,source,delivery,
           amount,payable,created,updated,prd_status,goods_amount,freight,received,
-          refund_status,paid_at)
-          VALUES(?,?,'定制品订单','待付款',?,?,?,'配送到店',?,?,?,?,?,?,0,?,'未退款',?)""",
+          refund_status,paid_at,appt_id,appt_src)
+          VALUES(?,?,'定制品订单','待付款',?,?,?,'配送到店',?,?,?,?,?,?,0,?,'未退款',?,?,'已关联')""",
        oid, cust["id"], adv["no"], cust["shop"], _门店渠道(),
-       amt, amt, created, created, ST2PRD["待付款"], sku["price"], amt, created)
+       amt, amt, created, created, ST2PRD["待付款"], sku["price"], amt, created, appt)
     # ⚠️ **下单时的版型版本是快照,不是现算。**
     # 版型改过之后回头看这一单,现算会给出**今天**那一版,
     # 而车间当初裁的是**那天**那一版 —— 两者在表上长得一模一样。
