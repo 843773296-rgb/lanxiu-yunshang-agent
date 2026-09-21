@@ -145,6 +145,8 @@ run "假数据工厂 · 行级稳定(同一批键换个顺序,值必须一样)" 
 run "假数据工厂 · 跨进程/跨日期可复现(换台机器换一天,数据一样)" python3 fakedata/repro.py
 run "假数据工厂 · 交付物锚定咬合(三条都咬得动)" python3 fakedata/anchor.py 自测
 run "交付物锚定 · 被外面消费过的值没被挪动" python3 fakedata/anchor.py 验 --db backend/lanxiu.db
+run "交付图清单咬合(缺了/变了/多了 三条都咬得动)" python3 tools/delivered_images.py 自测
+run "交付图清单 · 图不进版本库,指纹进(这台机器没图就明说)" python3 tools/delivered_images.py 验
 run "假数据工厂 · 跨字段一致咬合(三条都咬得动)" python3 fakedata/agree.py --自测
 run "假数据工厂 · 同类还有几处(咬合)" python3 fakedata/samekind.py 自测
 run "跨字段一致 · 同一个事实的几个落点不打架(不许投票)" python3 fakedata/agree.py --db backend/lanxiu.db
