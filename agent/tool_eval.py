@@ -465,13 +465,14 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(out), exist_ok=True)
     # **存答案原文。** 不存的话,失败了只能重跑才知道它到底说了什么 ——
     # 而重跑要花钱,还不一定复现。和 triage 存 ai_text 是同一个理由。
-    # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
-    # 这一套写的是 json 不是 jsonl,所以自己盖,不走 evalrec.dump。
+    # **每条记录盖上来路** —— 用 `evalrec.盖章()`,不自己拼。
+    # 这一套写的是 json 不是 jsonl,走不了 `evalrec.dump`,
+    # 但**章必须是同一份** —— 原来这里自己拼了 供应商/模型/跑于,
+    # 于是 2026-09-21 给 dump 加代码指纹时这一套拿不到,两份实现当场分家。
     import evalrec
-    _p, _m, _t = evalrec.供应商(), evalrec.模型(), __import__("datetime").datetime.now(
-        ).strftime("%Y-%m-%d %H:%M:%S")
+    _章 = evalrec.盖章()
     json.dump([dict(case=c, passed=o, why=w, tools=t, cost=k, text=x,
-                    usage=u, turns=n2, guard=g, 供应商=_p, 模型=_m, 跑于=_t)
+                    usage=u, turns=n2, guard=g, **_章)
                for c, o, w, t, k, x, u, n2, g in rows],
               open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
     print(f"明细写到 {out}")

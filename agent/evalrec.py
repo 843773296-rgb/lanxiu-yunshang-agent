@@ -57,6 +57,23 @@ def 模型():
     return os.environ.get("ANTHROPIC_MODEL", "claude(CLI 登录态)")
 
 
+def 盖章(记录=None):
+    """一条结果的来路:谁跑的、哪个模型、什么时候、**哪一版代码**。
+
+    抽出来是因为**有人抄过一份**:`agent/tool_eval.py` 写的是 json 不是 jsonl,
+    于是它自己拼了 `供应商/模型/跑于` —— 注释还写着「所以自己盖,不走 dump」。
+    2026-09-21 给 `dump()` 加代码指纹时,那一套**拿不到**,
+    两份实现当场分家,而分家时两边都看着很正常。
+
+    给了 `记录` 就返回盖好章的副本,不给就返回章本身。
+    """
+    章 = {"供应商": 供应商(), "模型": 模型(),
+          # 真实时钟:记的就是「这一轮什么时候跑的」
+          "跑于": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+          "代码": 代码()}
+    return dict(记录, **章) if 记录 is not None else 章
+
+
 def dump(path, recs):
     """把一轮结果写进 jsonl,**每条都盖上是谁跑的**。
 
@@ -64,8 +81,7 @@ def dump(path, recs):
     而**部分覆盖**(跑了一半停掉)的时候,文件头说的和内容里的就对不上了 ——
     这一天正好就是跑到一半被停的。
     """
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    p, m, c = 供应商(), 模型(), 代码()
+    章 = 盖章()
     with open(path, "w", encoding="utf-8") as fh:
         for r in recs:
             # ⚠️ **代码版本也要盖上。** 2026-09-21 发现:`代码()` 上面算出来了
@@ -74,7 +90,7 @@ def dump(path, recs):
             # 当天就撞上了它本该防住的那件事:一轮用**旧判据**跑出来的结果
             # 覆盖了基线,而文件上只有供应商/模型/日期,分不出判据换过。
             # 同一天 ≠ 同一份代码(见 `代码()` 的注释)。
-            r = dict(r); r.update(供应商=p, 模型=m, 跑于=now, 代码=c)
+            r = dict(r, **章)
             fh.write(json.dumps(r, ensure_ascii=False) + "\n")
     return path
 
