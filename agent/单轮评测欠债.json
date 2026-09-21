@@ -13,7 +13,6 @@
   "agent/role_eval.py",
   "agent/scheme_eval.py",
   "agent/tool_eval.py",
-  "agent/vision_eval.py",
   "agentsite/skill_eval.py",
   "agentsite/tool_eval.py"
  ]

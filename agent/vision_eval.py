@@ -234,36 +234,96 @@ if __name__ == "__main__":
     print(f"识图评测 · {len(todo)} 张 · 模型 {os.environ.get('ANTHROPIC_MODEL','claude-haiku-4-5')}")
     print("**测的不是认得准不准,是看不出来时会不会硬编。**")
     print("=" * 104)
-    ok_n, cost, rows = 0, 0.0, []
-    for c in todo:
-        try:
-            p = img.png(c["spu"])
-        except RuntimeError as e:
-            print(f"  ⚠️ {c['spu']} 渲染不了:{e}"); continue
-        t0 = time.time()
-        r = asyncio.run(sdk.run("kb", PROMPT, images=[p]))
-        names = [x["tool"] for x in r["trajectory"]]
-        ok, why = judge(c, r["text"], names, r.get("guard_violations"))
-        ok_n += ok; cost += r.get("cost_usd") or 0
-        rows.append(dict(spu=c["spu"], cat=c["cat"], kind=c["kind"], passed=ok,
-                         why=why, tools=",".join(n.split("__")[-1] for n in names),
-                         cost=r.get("cost_usd") or 0, text=r["text"]))
-        print(f"  {'✅' if ok else '❌'} {c['cat']:6s}({c['kind']}) {c['name'][:18]:20s} "
-              f"{len(names)}调 {time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
-              f"  {'' if ok else why[0][:48]}")
-        for w in (why[1:] if not ok else []): print(f"        {w[:92]}")
+
+    def 跑一轮():
+        """返回 (每张过没过, 每张的失败理由, 这一轮的明细, 这一轮花了多少)。"""
+        cost, rows = 0.0, []
+        for c in todo:
+            try:
+                p = img.png(c["spu"])
+            except RuntimeError as e:
+                # 渲染不了不是「答错」,但也**不能当没这题** ——
+                # 少一题会让通过率的分母悄悄变小,而报告上看不出来。
+                rows.append(dict(spu=c["spu"], cat=c["cat"], kind=c["kind"], passed=False,
+                                 why=[f"跑挂了:渲染不了:{e}"], tools="", cost=0, text=""))
+                print(f"  ⚠️ {c['spu']} 渲染不了:{e}"); continue
+            t0 = time.time()
+            try:
+                r = asyncio.run(sdk.run("kb", PROMPT, images=[p]))
+            except Exception as ex:
+                rows.append(dict(spu=c["spu"], cat=c["cat"], kind=c["kind"], passed=False,
+                                 why=[f"跑挂了:{type(ex).__name__}: {ex}"], tools="",
+                                 cost=0, text=""))
+                print(f"  ❌ {c['cat']:6s} 跑挂了:{type(ex).__name__}"); continue
+            names = [x["tool"] for x in r["trajectory"]]
+            ok, why = judge(c, r["text"], names, r.get("guard_violations"))
+            cost += r.get("cost_usd") or 0
+            rows.append(dict(spu=c["spu"], cat=c["cat"], kind=c["kind"], passed=ok,
+                             why=why, tools=",".join(n.split("__")[-1] for n in names),
+                             cost=r.get("cost_usd") or 0, text=r["text"]))
+            print(f"  {'✅' if ok else '❌'} {c['cat']:6s}({c['kind']}) {c['name'][:18]:20s} "
+                  f"{len(names)}调 {time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
+                  f"  {'' if ok else why[0][:48]}")
+            for w in (why[1:] if not ok else []): print(f"        {w[:92]}")
+        return ({r["spu"]: r["passed"] for r in rows},
+                {r["spu"]: r.get("why") or [] for r in rows},   # 失败理由,给 rounds 分类用
+                rows, cost)
+
+    # **跑两轮,报轮间抖动** —— 见 agent/rounds.py。
+    # 这一套尤其需要:它判的是「会不会硬编」,而硬编本身就是**概率性行为** ——
+    # 同一张图同一句提示,模型这次斩钉截铁、下次加个「需确认」,判据不变而分数翻面。
+    # 单轮报一个 5/6 出来,没人看得出那是不是抛硬币。
+    import rounds
+    轮数 = 1 if os.environ.get("LANXIU_一轮") else 2
+    多, 因, 明细, 花费 = [], [], None, 0.0
+    for _i in range(轮数):
+        if 轮数 > 1: print(f"  【第 {_i + 1} 轮】")
+        过, why, rows, c = 跑一轮()
+        多.append(过); 因.append(why); 明细 = rows; 花费 += c
+    ok_n = sum(1 for v in 多[-1].values() if v)
+    cost, rows = 花费, 明细
+
     print("=" * 104)
     print(f"通过 {ok_n}/{len(rows)}  |  总花费 ${cost:.4f}")
+
     out = os.path.join(HERE, "vision-eval-results.jsonl")
+    _fp = 图指纹()
+    _上 = 上次的指纹()
+    图变了 = bool(_上 and _上 != _fp)
+
+    # 基线取 git 里上一版的结果。⚠️ **图一变,基线就到期了** ——
+    # 分数还是四个轴、还是 6/6,而它量的已经是另一批图。
+    # 这里必须先判指纹再决定给不给基线:给了一个过期基线,
+    # `rounds.报()` 会一本正经地算「版本差」,而那个差是图变出来的。
+    基线 = None
+    if 图变了:
+        print(f"⚠️ 图变了({_上} → {_fp})—— **这次的分数和上一轮不可比**,"
+              f"下面不拿基线比(只报轮间抖动)")
+    else:
+        try:
+            import subprocess as _sp
+            _t = _sp.run(["git", "show", "HEAD:agent/vision-eval-results.jsonl"],
+                         capture_output=True, text=True,
+                         cwd=os.path.dirname(HERE)).stdout
+            _b = [json.loads(l) for l in _t.splitlines() if l.strip()]
+            if _b:
+                基线 = sum(1 for x in _b if x.get("passed"))
+                print(f"  (基线取自 git 里上一版结果:{基线}/{len(_b)})")
+        except Exception:
+            pass
+    rounds.报(多, 基线通过数=基线, 名="识图", 原因=因)
+
     # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
     # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。
     import evalrec
-    _fp = 图指纹()
     for r in rows:
         r["图指纹"] = _fp          # **分数和它量的那批图绑在一起**,否则下次没法判可比
-    evalrec.dump(out, rows)
-    _上 = 上次的指纹()
-    if _上 and _上 != _fp:
-        print(f"⚠️ 图变了({_上} → {_fp})—— **这次的分数和上一轮不可比**,别放在同一张表里比")
-    print(f"明细写到 {out}")
+    # ⚠️ **只跑了一部分时不许覆盖结果文件。**(照 growth_eval 的那条,同一个坑。)
+    # 「跑一部分」和「跑全部」写的是同一个文件,而文件上一点看不出区别。
+    if len(todo) < len(CASES):
+        print(f"⚠️ 这次只跑了 {len(todo)}/{len(CASES)} 张,**不写结果文件** —— "
+              f"部分结果覆盖完整基线之后,文件上看不出来。要更新基线请跑全部。")
+    else:
+        evalrec.dump(out, rows)
+        print(f"明细写到 {out}")
     sys.exit(0 if ok_n == len(rows) else 1)
