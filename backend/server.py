@@ -2448,8 +2448,24 @@ class H(BaseHTTPRequestHandler):
         n=int(self.headers.get("content-length") or 0)
         body=json.loads(self.rfile.read(n) or "{}") if n else {}
         if p=="/api/transit":
+            # ⚠️ **2026-09-20 修**:这个入口原来直接把请求体喂给 `transit()`,
+            # **没有取任何身份** —— 而 `transit()` 的 `actor` 默认是「魏欣新」。
+            # 后果:**一个没有 Cookie 的请求就能改商品状态,而审计记在一个真实员工头上。**
+            # (外部审阅在隔离环境里复现过:identity_checks=0、状态真的变了、
+            #  audit_actor='魏欣新'。)
+            #
+            # **「他真做了」和「没人登录但系统记成他」在审计日志里长得一模一样** ——
+            # 这正是这个项目反复栽的那个形状,而这次它落在了写入口上。
+            #
+            # 这里只修**身份**:没登录一律拒绝,操作人取自会话,不信任请求体。
+            # ⚠️ **权限(谁能走哪条边)还没做** —— 见下面那行注释,
+            # 「状态机允许这条边」不等于「当前这个人可以走它」。
+            _ut = _me(self)
+            if not _ut:
+                return self._send({"error": "请先登录", "code": "NO_AUTH"}, 401)
             return self._send(transit(body.get("machine"),body.get("target"),
-                                      body.get("to"),body.get("ctx") or {}))
+                                      body.get("to"),body.get("ctx") or {},
+                                      actor=_ut.get("name") or "?"))
         if p=="/api/scheme-check":
             # 只校验不落库,给页面做即时提示用。前端拿它染色,但它不是闸门。
             import scheme as _sch

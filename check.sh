@@ -39,6 +39,7 @@ run(){ printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
     FAIL=1; awk '{print "  " $0}' /tmp/chk.out; printf "  \033[31m✗ 失败\033[0m\n"
   fi }
 run "数据层 · truth 表隔离"   python3 backend/selftest.py
+run "写入口身份闸 · 没登录不许改业务数据(打 HTTP 层)" python3 backend/authgate_check.py
 run "员工登录 · 5 条自测" python3 backend/auth.py
 run "路由 · handler 必须真的存在" python3 backend/route_check.py
 run "只读入口冒烟 · 50 个入口真跑一遍(handler 存在≠跑得起来)" python3 backend/page_smoke_check.py

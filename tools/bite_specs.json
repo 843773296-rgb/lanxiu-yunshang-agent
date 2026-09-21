@@ -1863,5 +1863,25 @@
       }
     ],
     "预期红": "数裁片的地方都表过态"
+  },
+  {
+    "script": "backend/authgate_check.py",
+    "改坏": "把 /api/transit 的身份检查去掉(回到审阅发现漏洞时的样子)",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "            _ut = _me(self)\n            if not _ut:\n                return self._send({\"error\": \"请先登录\", \"code\": \"NO_AUTH\"}, 401)\n            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {},\n                                      actor=_ut.get(\"name\") or \"?\"))",
+        "new": "            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {}))"
+      }
+    ],
+    "预期红": "没登录的流转请求被拒"
+  },
+  {
+    "script": "backend/draft_check.py",
+    "改坏": "把钉住表里某一款的颜色改掉(图还是旧颜色,而数据已经换了 —— 页面上看不出来)",
+    "sql": [
+      "UPDATE sku SET color='玄色' WHERE spu='lxys_100451383'"
+    ],
+    "预期红": "钉住的颜色没被挪动"
   }
 ]
