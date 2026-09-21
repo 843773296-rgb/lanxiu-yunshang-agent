@@ -267,10 +267,18 @@ def main():
     钉 = _json.load(open(钉文件, encoding="utf-8"))["钉住"] if os.path.exists(钉文件) else {}
     有图 = {f.rpartition("-")[0] for f in os.listdir(os.path.join(HERE, "static", "img"))
            if f.endswith(("-main.png", "-main.jpg", "-main.jpeg", "-main.webp"))}         if os.path.isdir(os.path.join(HERE, "static", "img")) else set()
-    报("样本量:已出图的款", len(有图) >= 1, f"{len(有图)} 款有图 · 钉住表里 {len(钉)} 条")
-    漏钉 = sorted(有图 - set(钉))
-    报("出过图的款都钉了颜色", not 漏钉, "、".join(漏钉[:3]) or
-       "**新收一批图之后要把它们的颜色钉上**,否则下次改 seed 就可能把它们的颜色挪走")
+    # ⚠️ **「这台机器上没有图」不是不合格。** 图不进版本库(二进制、一批批换),
+    # 所以 CI 和新克隆上一张都没有 —— 第一版把「样本量 0」判成红,当场把 CI 弄红了。
+    # 但也不能默默跳过:**「验过了」和「没东西可验」要能分开**,所以照实打印。
+    if 有图:
+        报("出过图的款都钉了颜色", not sorted(有图 - set(钉)),
+           "、".join(sorted(有图 - set(钉))[:3]) or
+           f"{len(有图)} 款有图,都在钉住表里。**新收一批图之后要补钉**,"
+           "否则下次改 seed 可能把它们的颜色挪走")
+    else:
+        print(f"     ℹ️ 这台机器上没有商品图(CI / 新克隆都是这样),"
+              f"「出过图的款都钉了颜色」这一条**没东西可验**;"
+              f"钉住表里 {len(钉)} 条仍会逐条和库里对")
     import img as _img
     错色 = []
     for spu, 应 in 钉.items():
