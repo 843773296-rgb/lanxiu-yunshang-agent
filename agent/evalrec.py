@@ -68,7 +68,13 @@ def dump(path, recs):
     p, m, c = 供应商(), 模型(), 代码()
     with open(path, "w", encoding="utf-8") as fh:
         for r in recs:
-            r = dict(r); r.update(供应商=p, 模型=m, 跑于=now)
+            # ⚠️ **代码版本也要盖上。** 2026-09-21 发现:`代码()` 上面算出来了
+            # (`c`),而它**一个字都没写进记录** —— 一个「写好了但没接上」的防护,
+            # 和没有这个防护,在文件上长得一模一样。
+            # 当天就撞上了它本该防住的那件事:一轮用**旧判据**跑出来的结果
+            # 覆盖了基线,而文件上只有供应商/模型/日期,分不出判据换过。
+            # 同一天 ≠ 同一份代码(见 `代码()` 的注释)。
+            r = dict(r); r.update(供应商=p, 模型=m, 跑于=now, 代码=c)
             fh.write(json.dumps(r, ensure_ascii=False) + "\n")
     return path
 

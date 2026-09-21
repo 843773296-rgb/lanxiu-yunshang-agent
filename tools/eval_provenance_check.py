@@ -41,6 +41,8 @@ ROOT = os.path.dirname(HERE)
 FAIL = []
 
 咬合 = [
+    ("把 evalrec.dump 里 `代码=c` 那一项去掉(结果就分不出判据换过没有)",
+     "每条结果都盖着代码版本"),
     ("把 eval_compare 里读 evalrec 的那两行改回自己存一份 2",
      "对比工具是**取**这份口径,不是自己另存一份"),
     ("让 能不能当结论() 在模型不同时也返回可比",
@@ -107,6 +109,25 @@ def main():
         if len(家) > 1: 混.append(f"{os.path.basename(p)}:{sorted(家)}")
         别家 = 家 - {基线供应商}
         if 别家: 非基线.append(f"{os.path.basename(p)}:{sorted(别家)}")
+
+    # **代码版本也要盖上 —— 同一天 ≠ 同一份代码。**
+    # 2026-09-21 撞上了:一轮用**旧判据**跑出来的结果覆盖了基线,
+    # 而文件里只有供应商/模型/日期,**分不出判据换过**,
+    # 于是下次比对时那几题的差会被当成「模型变了」。
+    # `agent/evalrec.py` 的 `代码()` 早就写好了(注释里明写「同一天 ≠ 同一份代码」),
+    # 只是**算出来的值一个字都没写进记录** —— 一个写好了但没接上的防护,
+    # 和没有这个防护,在文件上长得一模一样。现在接上了,这条盯着它别再掉。
+    缺码 = []
+    for p2 in files:
+        rs2 = [r for r in 读(p2) if isinstance(r, dict) and "_fingerprint" not in r]
+        if rs2 and not any(r.get("代码") for r in rs2):
+            缺码.append(os.path.basename(p2))
+    ck("每条结果都盖着代码版本", not 缺码, len(files),
+       "、".join(缺码[:4]) + (f"  ……还有 {len(缺码) - 4} 份(共 {len(缺码)})"
+                             if len(缺码) > 4 else "")
+       + " —— **同一天 ≠ 同一份代码**:判据改过一版,结果却分不出来。"
+         "重跑一次这几套就会补上"
+       if 缺码 else "每份都记着是哪个提交跑的,判据换过就看得出来")
 
     ck("每条结果都记着是谁跑的", not 无, 条数,
        "；".join(无[:3]) if 无 else
