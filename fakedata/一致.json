@@ -1,0 +1,53 @@
+{
+ "说明": "同一个事实在库里的几个落点。**只报打架,不投票** —— 三比一也是矛盾,真正的结论是这条数据错了、要业务核。每个事实至少要有两个落点,只有一个落点的「事实」永远不打架,那不叫一致。「已知打架」是登记在案的缺口:业务还没判哪边对,不拿它拦门禁,但每次都打出来。而且**反向也查** —— 登记了却已经不打架的,要从登记里删掉。",
+ "事实": [
+  {
+   "名": "这一款给大人还是小孩穿",
+   "出处": "2026-09-21 用户出图时发现:「竹节」童款交领襦裙 —— 名字说童款,而性别、版型、号型三处都说成人。出图清单只看形制名,静默判成成人比例。",
+   "落点": [
+    {
+     "名": "形制",
+     "sql": "SELECT p.spu, CASE WHEN x.name LIKE '%童款%' THEN '童' ELSE '成' END FROM product p JOIN pattern pt ON pt.code=p.pattern LEFT JOIN xingzhi x ON x.code=pt.xz WHERE p.pattern IS NOT NULL AND p.pattern<>''"
+    },
+    {
+     "名": "性别字段",
+     "sql": "SELECT p.spu, CASE WHEN p.gender='童' THEN '童' ELSE '成' END FROM product p WHERE p.pattern IS NOT NULL AND p.pattern<>''"
+    },
+    {
+     "名": "商品名",
+     "sql": "SELECT p.spu, CASE WHEN p.name LIKE '%童款%' THEN '童' ELSE '成' END FROM product p WHERE p.pattern IS NOT NULL AND p.pattern<>''"
+    },
+    {
+     "名": "号型",
+     "sql": "SELECT p.spu, CASE WHEN EXISTS(SELECT 1 FROM size_spec s WHERE s.pattern=p.pattern AND substr(s.size,1,1) BETWEEN '0' AND '9') THEN '童' ELSE '成' END FROM product p WHERE p.pattern IS NOT NULL AND p.pattern<>''"
+    }
+   ]
+  },
+  {
+   "名": "这一款是什么形制",
+   "出处": "samekey_check 登记过:pattern.xz 存**编码**、product_custom.xz 存**名称**,两把钥匙。它只管「每张表用的钥匙和登记的一致」,**不管两边说的是不是同一件事** —— join 不会报错,只会返回空。这条补上那一半。",
+   "落点": [
+    {
+     "名": "定制表写的形制(名称,按别名归到编码)",
+     "sql": "SELECT pc.spu, COALESCE((SELECT x.code FROM xingzhi x WHERE x.name=pc.xz OR (','||REPLACE(COALESCE(x.alias,''),'、',',')||',') LIKE ('%,'||pc.xz||',%') LIMIT 1), '认不出:'||pc.xz) FROM product_custom pc"
+    },
+    {
+     "名": "挂的版型带的形制(编码)",
+     "sql": "SELECT p.spu, pt.xz FROM product p JOIN pattern pt ON pt.code=p.pattern"
+    }
+   ],
+   "已知打架": [
+    {
+     "键": "lxys_101005713",
+     "等谁": "业务(形制口径)",
+     "为什么还没修": "定制表写「圆领袍」(登记为明制圆领袍 XZ09 的别名),挂的版型却是唐制圆领襕袍 XZ28。唐制和明制的版差得远,不能替业务挑一边。"
+    },
+    {
+     "键": "lxys_100799819",
+     "等谁": "业务(形制口径)",
+     "为什么还没修": "定制表写「圆领袍」,挂的版型是明制道袍 XZ20 —— **道袍是交领,不是圆领**,这两个不是同一件衣服,必有一边录错了。"
+    }
+   ]
+  }
+ ]
+}
