@@ -397,7 +397,7 @@ TASK_ONLY_TOOLS = [
     #      智能体不会因为是智能体而多一分权,也不会少一分
     #   ③ 每一笔都在台账里标明「智能体代 X 执行」,查得出是谁的主意
     "mcp__shop__get_tasks",    # 我的 / 某一条 / 团队 / 待分配,靠参数分
-    "mcp__shop__monthly_review", "mcp__shop__appt_funnel", "mcp__shop__points_ledger", "mcp__shop__approval_queue", "mcp__shop__activity_roi", "mcp__shop__can_order", "mcp__shop__apply_adjust", "mcp__shop__decide_approval", "mcp__shop__week_grid", "mcp__shop__assign_batch", "mcp__shop__dispatch_batch",
+    "mcp__shop__monthly_review", "mcp__shop__appt_funnel", "mcp__shop__points_ledger", "mcp__shop__approval_queue", "mcp__shop__activity_roi", "mcp__shop__can_order", "mcp__shop__apply_adjust", "mcp__shop__decide_approval", "mcp__shop__week_grid", "mcp__shop__ownerless_list", "mcp__shop__assign_batch", "mcp__shop__dispatch_batch",
     "mcp__shop__task_types",
     "mcp__shop__assign_task", "mcp__shop__dispatch_task",
     "mcp__shop__reassign_task", "mcp__shop__finish_task",

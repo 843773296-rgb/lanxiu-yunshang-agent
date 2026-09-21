@@ -3663,6 +3663,10 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
     "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
+ {"name":"ownerless_list","description":"**谁实际上没人管** —— 注意「有归属顾问」和「有人管」不是一回事:一个停用的顾问名下还挂着客户,顾问字段**非空**,任何按「有没有顾问」筛的写法都查不出他们。\n\n返回五种码,**分开的全部理由是下一步不同**:`LEFT` 顾问已停用(店长重新指人)· `NONE` 还没归属(等分配)· `CROSS_SHOP` 顾问不在客户门店(转店还是转人)· `NO_SUCH` 工号员工表里没有(**数据要修**)· `NO_SHOP` 档案没填门店,**判不了跨没跨店**(数据要修)。⚠️ 后两种是数据问题不是业务问题,**对着它们建议「重新分配客户」是答错了**。⚠️ `NO_SHOP` 是「判不了」,不是「确认过没问题」。\n\n**只查不改** —— 改不改归属是店长的动作,这个工具不写任何一行。范围跟身份走:店长看本店,总部看全部,顾问看不到(返回值里写着「看的范围」是哪一段,**合计 0 不等于全店都有人管**)。code 可只看某一种码。另附「待确立归属」:到店接待完成、但归属还没确立的人数(业务定:归属在首次到店接待完成时确立)。",
+  "input_schema":{"type":"object","properties":{
+    "code":{"type":"string","description":"只看某一种或几种码,逗号分隔,如 LEFT,NO_SUCH。不给看全部。"},
+    "limit":{"type":"number","description":"清单最多返回几条,默认 50,最多 200"}},"required":[]}},
  {"name":"assign_batch","description":"**一次排一批任务**(排班用,真的写进去)。items 是列表,每条 {type, assignee, note, start, end, ref_id?, activity_code?},一次最多 20 条。**全过才写,一条不过就整批不写** —— 半途失败留下几条已排几条没排,比整批失败难收拾得多。而且它会检查**只有整体看才发现的冲突**:同一个人被排了两个重叠时段。⚠️ 排之前先 week_grid() 看现有占用,并把整张表念给用户确认。",
   "input_schema":{"type":"object","properties":{
     "items":{"type":"array","description":"要排的任务列表",
@@ -3926,6 +3930,52 @@ def _pattern_queue(pattern=None):
     return pattern_queue()
 
 
+def ownerless_list(code=None, limit=50):
+    """**谁实际上没人管** —— 归属字段非空不等于有人在管。
+
+    口径在 `knowledge/owner.py`,取数在 `backend/ownership.py`,
+    这里只做三件事:**取身份、按身份限范围、把「下一步」一起给出去**。
+
+    ⚠️ **这个工具一行都不写。** 业务定的边界:agent 只给参谋。
+    「这个客户的归属顾问已离职」是一个事实,摆出来;改不改是店长的动作 ——
+    他可能想等交接、想指给特定的人,也可能这个客户马上要复购不宜此时换人。
+    """
+    me = whoami()
+    if not me:
+        return dict(error="不知道现在是谁在问 —— 请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return dict(error=f"这是店长的清单,你是「{me.get('role')}」。"
+                          f"你自己名下的客户用 get_member 看。")
+    import ownership as _own
+    全部 = _own.明细()
+    # 店长看本店,总部看全部 —— 和 week_grid / get_tasks 同一套范围规矩。
+    店 = None if me.get("role") == "总部运营" else (me.get("shop") or "")
+    行 = [r for r in 全部 if 店 is None or (r.get("门店") or "") == 店]
+    范围 = "全部门店" if 店 is None else f"{店}(你的门店)"
+    if code:
+        码集 = {c.strip().upper() for c in str(code).replace("，", ",").split(",") if c.strip()}
+        行 = [r for r in 行 if r["码"] in 码集]
+    按码 = {}
+    for r in 行:
+        按码[r["码"]] = 按码.get(r["码"], 0) + 1
+    n = max(1, min(int(limit or 50), 200))
+    待 = [d for d in _own.待确立()
+          if 店 is None or (d.get("门店") or "") == 店]
+    return {
+        "看的范围": 范围,
+        "合计": len(行),
+        "按码": 按码,
+        # **每种码的下一步都摆出来** —— 分成几种码的全部理由就是动作不同,
+        # 只报码的话,读的人还得自己去翻这几个字母是什么意思。
+        "每种码该做什么": {c: _own._口径.下一步[c] for c in sorted(按码)},
+        "清单": [{"客户号": r["id"], "姓名": r["name"], "门店": r.get("门店"),
+                  "码": r["码"], "说法": r["说法"], "下一步": r["下一步"]} for r in 行[:n]],
+        "还有": max(0, len(行) - n),
+        "待确立归属": len(待),
+        "⚠️": "这个工具**只查不改**。归属要不要动、动给谁,是店长的业务动作。",
+    }
+
+
 TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               # ⚠️ 老名字**留在 TOOLS 里**(边界审计和隔离检查按 TOOLS 逐个跑),
               #    但已经从 SHOP_SCHEMAS 下架 —— **TOOLS 是实现登记册,
@@ -3940,7 +3990,8 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
               "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
-              "get_review_queue":get_review_queue})
+              "get_review_queue":get_review_queue,
+              "ownerless_list":ownerless_list})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

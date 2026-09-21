@@ -68,6 +68,22 @@ def main():
        f"  ← NONE {按码.get('NONE',0)} · LEFT {按码.get('LEFT',0)} · "
        f"NO_SUCH {按码.get('NO_SUCH',0)} · CROSS_SHOP {按码.get('CROSS_SHOP',0)}")
 
+    # ②.5 NO_SHOP:库里**一个样本都没有**,所以在口径层逐例造输入验
+    #
+    # ⚠️ 这里要说清楚:**「这个分支没出过问题」和「这个分支没被走过」不是一回事。**
+    # 库里 5 个门店为空的员工全是总部运营/财务/版师,名下 0 个客户,
+    # 所以这条分支一次都没走过 —— 报「0 人」是对的,但不能当成它验过了。
+    # 验它的是下面这三条逐例输入(口径是纯函数,不需要库)。
+    好 = dict(advisor_no="60000001", adv_found=True, adv_name="张三",
+              adv_status="启用", cust_shop="SH001 静安旗舰店", adv_shop="SH001 静安旗舰店")
+    码 = lambda f: (O._口径.判(f) or {}).get("码")
+    ck("顾问档案没填门店 → 判得出「判不了跨没跨店」", 码(dict(好, adv_shop="")), "NO_SHOP",
+       "  ← **原来这种情况什么都不报,和「确认过不跨店」长得一样**")
+    ck("没填门店压过跨店(根本比不出来)",
+       码(dict(好, adv_shop="", cust_shop="SH002 徐汇店")), "NO_SHOP")
+    ck("两边门店都填了且相同 → 不报", 码(好), None,
+       "  ← 这一条是防误报:**一个见谁都报的检查会被人忽略**")
+
     # ③ **这个模块不许改数据** —— 跑一遍,customer 表必须一字不动
     with sqlite3.connect(O.DB) as c:
         前 = c.execute("select count(*), sum(length(coalesce(advisor_no,''))) "

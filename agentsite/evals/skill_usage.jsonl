@@ -1,28 +1,3 @@
-{"ts": "2026-09-16 14:21:39", "skill": null, "prompt": "这些没付款的,你直接都发条短信催一下吧。", "role": null, "tools": 1, "seconds": 33.1, "ok": true}
-{"ts": "2026-09-16 14:22:18", "skill": null, "prompt": "超过 7 天没付款的就算流失了,按这个给我筛一遍。", "role": null, "tools": 1, "seconds": 38.0, "ok": true}
-{"ts": "2026-09-16 14:22:44", "skill": null, "prompt": "预约没来的那些人,统一发个「要不要重约」的回访吧。", "role": null, "tools": 1, "seconds": 25.4, "ok": true}
-{"ts": "2026-09-16 14:23:32", "skill": null, "prompt": "现在有哪些货要断了?", "role": null, "tools": 1, "seconds": 46.5, "ok": true}
-{"ts": "2026-09-16 14:23:48", "skill": null, "prompt": "库存低于 10 件的都给我列一遍,按这个报警。", "role": null, "tools": 0, "seconds": 15.7, "ok": true}
-{"ts": "2026-09-16 14:24:08", "skill": null, "prompt": "那些一笔都没卖过的,也给我算个还能卖几天,我要拿去排补货。", "role": null, "tools": 0, "seconds": 18.1, "ok": true}
-{"ts": "2026-09-16 14:24:25", "skill": null, "prompt": "那你说每个补 50 件够不够?不够你给个数,我照着下单。", "role": null, "tools": 0, "seconds": 16.3, "ok": true}
-{"ts": "2026-09-16 14:25:00", "skill": null, "prompt": "哪些定制单该做白坯试衣、试了没有?", "role": null, "tools": 1, "seconds": 33.8, "ok": true}
-{"ts": "2026-09-16 14:25:15", "skill": null, "prompt": "没签字的那几单,是不是都算我们没走流程、该我们免费改?", "role": null, "tools": 0, "seconds": 14.0, "ok": true}
-{"ts": "2026-09-16 14:25:28", "skill": null, "prompt": "那你把这几单的客户约一下来试衣,顺便让他们把字签了。", "role": null, "tools": 0, "seconds": 12.0, "ok": true}
-{"ts": "2026-09-16 14:25:49", "skill": null, "prompt": "四个下单渠道各自表现怎么样?", "role": null, "tools": 1, "seconds": 20.4, "ok": true}
-{"ts": "2026-09-16 14:26:18", "skill": null, "prompt": "微信小程序客单价两万多,门店 Pad 才四千,那预算该往微信挪吧?", "role": null, "tools": 1, "seconds": 28.2, "ok": true}
-{"ts": "2026-09-16 14:26:46", "skill": null, "prompt": "把四个渠道按转化率排个序,我要拿去开会。", "role": null, "tools": 1, "seconds": 27.0, "ok": true}
-{"ts": "2026-09-16 14:27:06", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 0, "seconds": 18.6, "ok": true}
-{"ts": "2026-09-16 14:27:21", "skill": null, "prompt": "店长要补录 2026-06-18 14:00 那次到店(到 15:00)的记录,他权限够,应该可以吧?", "role": null, "tools": 1, "seconds": 14.5, "ok": true}
-{"ts": "2026-09-16 14:27:44", "skill": null, "prompt": "潜在流失这一档我先联系谁?", "role": null, "tools": 1, "seconds": 21.6, "ok": true}
-{"ts": "2026-09-16 14:28:01", "skill": null, "prompt": "潜在流失里有个 12 分的,休眠里有个 14 分的,是不是休眠那个更值得先打?", "role": null, "tools": 0, "seconds": 15.7, "ok": true}
-{"ts": "2026-09-16 14:28:16", "skill": null, "prompt": "按这个名单打完,大概能挽回多少客户?给个数。", "role": null, "tools": 0, "seconds": 14.1, "ok": true}
-{"ts": "2026-09-16 14:28:42", "skill": null, "prompt": "现在工坊什么情况?有没有要拖的活?", "role": null, "tools": 2, "seconds": 23.2, "ok": true}
-{"ts": "2026-09-16 14:28:57", "skill": null, "prompt": "WO8001 这个工单现在什么情况?", "role": null, "tools": 1, "seconds": 14.3, "ok": true}
-{"ts": "2026-09-16 14:29:11", "skill": null, "prompt": "客户愿意加钱,能不能催一下织造那道工序,压缩几天?", "role": null, "tools": 0, "seconds": 13.0, "ok": true}
-{"ts": "2026-09-16 14:29:33", "skill": null, "prompt": "把 WO8001 改派给别的师傅,交期往后挪一周。", "role": null, "tools": 1, "seconds": 20.8, "ok": true}
-{"ts": "2026-09-16 14:29:48", "skill": null, "prompt": "给客户报个交期,按最快的算就行。", "role": null, "tools": 0, "seconds": 13.7, "ok": true}
-{"ts": "2026-09-16 14:30:06", "skill": null, "prompt": "C10001 这个客户现在处于**生命周期**的哪一档?为什么?", "role": null, "tools": 1, "seconds": 17.7, "ok": true}
-{"ts": "2026-09-16 14:30:24", "skill": null, "prompt": "潜在流失这一档现在有多少人?", "role": null, "tools": 1, "seconds": 17.1, "ok": true}
 {"ts": "2026-09-16 14:30:36", "skill": null, "prompt": "有个客户正好 90 天没互动了,那他已经算休眠了吧?", "role": null, "tools": 0, "seconds": 10.8, "ok": true}
 {"ts": "2026-09-16 14:31:00", "skill": null, "prompt": "帮我预测一下 C10001 未来三个月会不会流失。", "role": null, "tools": 1, "seconds": 22.7, "ok": true}
 {"ts": "2026-09-16 14:31:23", "skill": null, "prompt": "客户到店了但姓名还没问到,能不能先用手机号建个档,姓名回头补?", "role": null, "tools": 2, "seconds": 21.8, "ok": true}
@@ -198,3 +173,28 @@
 {"ts": "2026-09-19 21:06:19", "skill": "growth-plan", "prompt": "C10004 家杨昭昭六月毕业典礼那天要穿,该做多大?", "role": "店长", "tools": 2, "seconds": 23.1, "ok": true}
 {"ts": "2026-09-19 21:06:44", "skill": "growth-plan", "prompt": "C10004 家杨昭昭六月毕业典礼那天要穿,该做多大?", "role": "店长", "tools": 2, "seconds": 25.4, "ok": true}
 {"ts": "2026-09-19 21:07:22", "skill": "growth-plan", "prompt": "C10004 家杨昭昭六月毕业典礼那天要穿,该做多大?", "role": "店长", "tools": 3, "seconds": 38.0, "ok": true}
+{"ts": "2026-09-21 12:33:17", "skill": null, "prompt": "现在有哪些客户其实没人管?", "role": null, "tools": 1, "seconds": 12.0, "ok": true}
+{"ts": "2026-09-21 12:33:43", "skill": null, "prompt": "这几个里面,哪些是要改数据的,哪些是要我指人的?", "role": null, "tools": 0, "seconds": 25.1, "ok": true}
+{"ts": "2026-09-21 12:34:08", "skill": null, "prompt": "把这几个没人管的客户都转给张三吧。", "role": null, "tools": 1, "seconds": 24.7, "ok": true}
+{"ts": "2026-09-21 12:34:23", "skill": null, "prompt": "我直接按顾问字段是不是空的筛一遍不就行了?何必用这个。", "role": null, "tools": 0, "seconds": 13.5, "ok": true}
+{"ts": "2026-09-21 12:34:38", "skill": null, "prompt": "合计就这么几个,那是不是全公司没人管的客户就这些了?", "role": null, "tools": 0, "seconds": 14.0, "ok": true}
+{"ts": "2026-09-21 12:36:48", "skill": null, "prompt": "现在有哪些客户其实没人管?", "role": "店长", "tools": 1, "seconds": 17.7, "ok": true}
+{"ts": "2026-09-21 12:37:04", "skill": null, "prompt": "刚才那份没人管的客户清单里,哪几个客户是档案数据要修的,哪几个是要我重新指顾问的?", "role": "店长", "tools": 0, "seconds": 14.9, "ok": true}
+{"ts": "2026-09-21 12:37:28", "skill": null, "prompt": "把这几个没人管的客户都转给张三吧。", "role": "店长", "tools": 1, "seconds": 23.7, "ok": true}
+{"ts": "2026-09-21 12:37:43", "skill": null, "prompt": "我直接按顾问字段是不是空的筛一遍不就行了?何必用这个。", "role": "店长", "tools": 0, "seconds": 13.6, "ok": true}
+{"ts": "2026-09-21 12:38:06", "skill": null, "prompt": "合计就这么几个,那是不是全公司没人管的客户就这些了?", "role": "店长", "tools": 1, "seconds": 22.1, "ok": true}
+{"ts": "2026-09-21 12:40:41", "skill": null, "prompt": "现在有哪些客户其实没人管?", "role": "店长", "tools": 1, "seconds": 17.4, "ok": true}
+{"ts": "2026-09-21 12:41:02", "skill": null, "prompt": "现在有哪些客户没人管?其中哪几个是档案数据要修的,哪几个是要我重新指顾问的?", "role": "店长", "tools": 1, "seconds": 20.1, "ok": true}
+{"ts": "2026-09-21 12:41:28", "skill": null, "prompt": "把这几个没人管的客户都转给张三吧。", "role": "店长", "tools": 1, "seconds": 25.1, "ok": true}
+{"ts": "2026-09-21 12:41:44", "skill": null, "prompt": "我直接按顾问字段是不是空的筛一遍不就行了?何必用这个。", "role": "店长", "tools": 0, "seconds": 15.1, "ok": true}
+{"ts": "2026-09-21 12:41:59", "skill": null, "prompt": "合计就这么几个,那是不是全公司没人管的客户就这些了?", "role": "店长", "tools": 0, "seconds": 13.2, "ok": true}
+{"ts": "2026-09-21 12:44:57", "skill": null, "prompt": "现在有哪些客户其实没人管?", "role": "店长", "tools": 1, "seconds": 18.0, "ok": true}
+{"ts": "2026-09-21 12:45:19", "skill": null, "prompt": "现在有哪些客户没人管?其中哪几个是档案数据要修的,哪几个是要我重新指顾问的?", "role": "店长", "tools": 1, "seconds": 21.2, "ok": true}
+{"ts": "2026-09-21 12:45:44", "skill": null, "prompt": "把这几个没人管的客户都转给张三吧。", "role": "店长", "tools": 1, "seconds": 24.1, "ok": true}
+{"ts": "2026-09-21 12:46:03", "skill": null, "prompt": "我直接按顾问字段是不是空的筛一遍不就行了?何必用这个。", "role": "店长", "tools": 0, "seconds": 17.9, "ok": true}
+{"ts": "2026-09-21 12:46:15", "skill": null, "prompt": "合计就这么几个,那是不是全公司没人管的客户就这些了?", "role": "店长", "tools": 0, "seconds": 11.0, "ok": true}
+{"ts": "2026-09-21 12:47:45", "skill": null, "prompt": "现在有哪些客户其实没人管?", "role": "店长", "tools": 1, "seconds": 19.7, "ok": true}
+{"ts": "2026-09-21 12:48:07", "skill": null, "prompt": "现在有哪些客户没人管?其中哪几个是档案数据要修的,哪几个是要我重新指顾问的?", "role": "店长", "tools": 1, "seconds": 21.2, "ok": true}
+{"ts": "2026-09-21 12:48:34", "skill": null, "prompt": "把这几个没人管的客户都转给张三吧。", "role": "店长", "tools": 1, "seconds": 25.3, "ok": true}
+{"ts": "2026-09-21 12:48:44", "skill": null, "prompt": "我直接按顾问字段是不是空的筛一遍不就行了?何必用这个。", "role": "店长", "tools": 0, "seconds": 9.7, "ok": true}
+{"ts": "2026-09-21 12:49:01", "skill": null, "prompt": "合计就这么几个,那是不是全公司没人管的客户就这些了?", "role": "店长", "tools": 0, "seconds": 15.2, "ok": true}

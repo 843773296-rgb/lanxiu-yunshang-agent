@@ -162,7 +162,7 @@ run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/lead
 run "回答体检 · 人造用例(正反各半)" python3 agentsite/guards_test.py
 run "「当前方案」注入 · 列清单不算取过" ./agentsite/.venv/bin/python agentsite/scheme_hook_test.py
 run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py
-run "中文否定与子串 · 19 条(八次踩过的坑)" python3 agent/textmatch.py
+run "中文否定与子串 · 29 条(十次踩过的坑)" python3 agent/textmatch.py
 run "判分器自测 · 18 条人造用例" python3 agent/chat_eval_judgetest.py
 run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judgetest.py
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py
@@ -180,6 +180,7 @@ run "野外语料 · 多样性(够多≠够杂)" python3 agent/wild_corpus.py --
 run "提交闸 · 退出码不许被吞(22 条咬合)" node tools/hooks/commit-gate-exitcode.mjs --selftest
 run "CI 提醒 · 报的是现在红绿不是历史(18 条咬合)" node tools/hooks/push-then-ci.mjs --selftest
 run "工具还是技能 · 新增工具时问一句该由谁判断(8 条)" node tools/hooks/tool-or-skill.mjs --selftest
+run "归属口径 · 分开只因为下一步不同(15 条自测)" python3 knowledge/owner.py
 run "评测指纹 · 行数没变但内容改了,指纹也得变(7 条自测)" python3 agent/fingerprint.py --selftest
 run "首次启动 · 建出来的库要和在用的库一样全(5 条咬合)" python3 backend/initpath_check.py
 run "交接门禁 · 过 80% 不许收工;交接在项目根、会话在子目录也要找得到(15 条)" node tools/hooks/handoff-gate.mjs --selftest

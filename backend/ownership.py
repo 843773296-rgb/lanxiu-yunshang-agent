@@ -33,6 +33,11 @@ import os, sqlite3, sys, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+# 判定口径在 knowledge/owner.py,这里只取数 —— **口径不许在这里再抄一份**。
+# (模块叫 owner 不叫 ownership:和这个文件同名的话,`import ownership`
+#  会先找到这个文件自己,而「导入成功了」和「导入对了」长得一样。)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
+import owner as _口径
 DB = os.path.join(HERE, "lanxiu.db")
 
 # 归属确立/变更的依据 —— **必须记,因为将来一定有人问「凭什么是他的」**
@@ -54,36 +59,36 @@ def 建表(c):
 
 
 def 实际无人管理(db=DB):
-    """归属字段非空,但那个人管不了 —— 四种情况,**下一步动作不同,所以分开**。
+    """归属字段非空,但那个人管不了 —— **口径在 `knowledge/owner.py`,这里只取数**。
 
-        LEFT        顾问已停用/离职 → 进重分配队列
-        NO_SUCH     工号查无此人     → **数据要修**,不是业务问题
-        CROSS_SHOP  顾问不在客户所在门店 → 跨店,要么转店要么转人
-        NONE        归属为空         → 本来就无主,等分配
+    五种码(2026-09-21 从四种加到五种,多的是 NO_SHOP),
+    分开的唯一理由是**下一步动作不同**;码的含义和优先级看那个模块。
+    """
+    return [(r["id"], r["name"], r["码"], r["说法"]) for r in 明细(db)]
 
-    ⚠️ 四种在「有没有顾问」这个筛子下**长得一模一样**(三种是非空、一种是空),
-    而它们要做的事完全不同。
+
+def 明细(db=DB):
+    """同上,但带「下一步该做什么」—— 工具层要的是这一份。
+
+    **分成几种码的全部理由就是下一步不同**,所以给人/给模型看的那一份
+    必须把动作带上;只给一个码,读的人还得自己去翻这几个码是什么意思。
     """
     out = []
     with sqlite3.connect(db) as c:
         c.row_factory = sqlite3.Row
         for r in c.execute("""
             select cu.id, cu.name, cu.shop, cu.advisor_no, s.name adv_name,
-                   s.status adv_status, s.shop adv_shop
+                   s.status adv_status, s.shop adv_shop, s.no adv_no
             from customer cu left join staff s on s.no = cu.advisor_no"""):
-            adv = (r["advisor_no"] or "").strip()
-            if not adv:
-                out.append((r["id"], r["name"], "NONE", "还没有归属顾问")); continue
-            if r["adv_name"] is None:
-                out.append((r["id"], r["name"], "NO_SUCH",
-                            f"档案写的工号「{adv}」员工表里没有 —— **数据要修**")); continue
-            if r["adv_status"] != "启用":
-                out.append((r["id"], r["name"], "LEFT",
-                            f"归属顾问 {r['adv_name']} 已{r['adv_status']} —— "
-                            f"**离职不会把客户一起带走**,要重新指人")); continue
-            if r["shop"] and r["adv_shop"] and r["shop"] != r["adv_shop"]:
-                out.append((r["id"], r["name"], "CROSS_SHOP",
-                            f"客户在 {r['shop']},归属顾问在 {r['adv_shop']}"))
+            判 = _口径.判({"advisor_no": r["advisor_no"],
+                          # ⚠️ 用 `s.no is not None` 判「查到了没有」,**不用姓名** ——
+                          # 姓名为空的员工和不存在的员工,在 `adv_name is None` 下长得一样。
+                          "adv_found": r["adv_no"] is not None,
+                          "adv_name": r["adv_name"], "adv_status": r["adv_status"],
+                          "cust_shop": r["shop"], "adv_shop": r["adv_shop"]})
+            if 判:
+                out.append({"id": r["id"], "name": r["name"],
+                            "门店": r["shop"], **判})
     return out
 
 
@@ -96,7 +101,8 @@ def 待确立(db=DB):
         c.row_factory = sqlite3.Row
         建表(c)
         return [dict(r) for r in c.execute("""
-            select a.customer_id, cu.name, a.advisor_no 接待人, a.start_ts, a.status
+            select a.customer_id, cu.name, cu.shop 门店, a.advisor_no 接待人,
+                   a.start_ts, a.status
             from appointment a join customer cu on cu.id = a.customer_id
             where a.status in ('已到店','已完成')
               and not exists (select 1 from cust_owner_log g

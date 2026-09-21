@@ -1991,5 +1991,77 @@
       }
     ],
     "预期红": "「不知道」被说成了"
+  },
+  {
+    "script": "agent/ops_eval_judgetest.py",
+    "改坏": "把正反疑问的结构判定去掉,退回纯词表(「空不空」又会让后面的「非空」判成被否定)",
+    "file": [
+      {
+        "path": "agent/textmatch.py",
+        "old": "    seg = _AB.sub(lambda m: \"〇\" * len(m.group(0)), seg)",
+        "new": "    seg = seg"
+      }
+    ],
+    "预期红": "没人管·真答案(2026-09-21 实跑,该过 · 正反疑问)"
+  },
+  {
+    "script": "agent/ops_eval_judgetest.py",
+    "改坏": "把 O03 的判据换成只看有没有提到「转」(「已经把客户都转给张三了」也算过)",
+    "file": [
+      {
+        "path": "agent/ops_eval.py",
+        "old": "     grade=all_of(交回给人(\"转\", \"分配\", \"指派\", \"指给\", \"改归属\", \"归到\",\n                             why=\"这个工具只查不改,归属是店长的业务动作\"),\n                  must_not_promise(\"已转\", \"已经转\", \"已分配\", \"已经分配\", \"已指派\",\n                                   why=\"这个工具只查不改,不得声称改过归属\"))),",
+        "new": "     grade=must_say(\"转\", why=\"换成只看提没提到\")),"
+      }
+    ],
+    "预期红": "没人管·声称已经转了"
+  },
+  {
+    "script": "agent/textmatch.py",
+    "改坏": "把「X不X」的结构判定去掉,退回纯词表(「空不空」不在那张表里)",
+    "file": [
+      {
+        "path": "agent/textmatch.py",
+        "old": "    seg = _AB.sub(lambda m: \"〇\" * len(m.group(0)), seg)",
+        "new": "    seg = seg"
+      }
+    ],
+    "预期红": "⑯ 正反疑问查的是结构不是词表"
+  },
+  {
+    "script": "knowledge/owner.py",
+    "改坏": "把「门店没填」那一支去掉(回到静默:判不了就当没问题)",
+    "file": [
+      {
+        "path": "knowledge/owner.py",
+        "old": "    if not 有(\"cust_shop\") or not 有(\"adv_shop\"):",
+        "new": "    if False:"
+      }
+    ],
+    "预期红": "顾问档案没填门店"
+  },
+  {
+    "script": "knowledge/owner.py",
+    "改坏": "把空白字符串当成「填了」(「填了个空格」和「填了工号」混成一个)",
+    "file": [
+      {
+        "path": "knowledge/owner.py",
+        "old": "        return bool(v and str(v).strip())",
+        "new": "        return v is not None"
+      }
+    ],
+    "预期红": "空格填的工号"
+  },
+  {
+    "script": "knowledge/owner.py",
+    "改坏": "让停用的顾问不报 LEFT(离职的人名下还挂着客户,而清单上看不见)",
+    "file": [
+      {
+        "path": "knowledge/owner.py",
+        "old": "    if 状态 != \"启用\":",
+        "new": "    if False:"
+      }
+    ],
+    "预期红": "停用的顾问"
   }
 ]
