@@ -491,6 +491,28 @@ def cat_paths():
         out[code]="-".join(parts)
     return out
 
+def 图来源(spu):
+    """这一款的主图是**出好的真图**还是**现画的示意图**。
+
+    ⚠️ 页面上这两种长得都挺正常,不标的话半年后有人问「商品图做完了吗」,
+    他翻几页看到的都是图,会以为做完了 —— 而实际只有一小部分是真的。
+    **「没做」和「做了」必须在界面上分得开**,不能只有代码知道。
+    """
+    d = os.path.join(HERE, "static", "img")
+    for ext in (".png", ".jpg", ".jpeg", ".webp"):
+        if os.path.isfile(os.path.join(d, f"{spu}-main{ext}")):
+            return "生成图"          # AI 生成的效果图 —— **不是实物照片**,页面要标
+    return "示意图"                  # 按商品属性现画的剪影
+
+
+def 真图覆盖():
+    """→ (有真图的款数, 商品总数)。按**商品**算,不按张数 —— 一款缺一张,它的详情页就是混搭的。"""
+    n = 0
+    for r in rows("SELECT spu FROM product"):
+        n += 图来源(r["spu"]) == "生成图"
+    return n, rows("SELECT COUNT(*) c FROM product")[0]["c"]
+
+
 def product_list(q):
     kw=(q.get("q") or [""])[0].strip()
     f={k:(q.get(k) or [""])[0] for k in ("kind","status","category","gender")}
@@ -513,6 +535,10 @@ def product_list(q):
     d["facets"]=dict(kind=["标品","定制品"],status=["上架","下架"],
       gender=["女","男","童","通用"],category=_leaf)
     d["catnames"]=cat_paths()
+    for r in d["rows"]:
+        r["img_src"]=图来源(r["spu"])
+    有, 总 = 真图覆盖()
+    d["img_cover"]=dict(有=有, 总=总)
     return d
 
 # ── 图片字段的两种形状 ────────────────────────────────────────────────
@@ -690,6 +716,7 @@ def product_detail(spu):
             p["draft"]=dict(pattern=p["pattern"], sizes=_sz,
                             pieces=[f"{r['name']}×{r['qty']}" for r in _pc],
                             url={z:f"/pattern/{p['pattern']}-{z}.svg" for z in _sz})
+    p["img_src"]=图来源(spu)
     p["banner"]=读轮播图(p.get("img_detail"))
     p["intro_groups"]=读详情图(p.get("img_intro"))
     p["skus"]=rows("SELECT * FROM sku WHERE spu=? ORDER BY code",spu)

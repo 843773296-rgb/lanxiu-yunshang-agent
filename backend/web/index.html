@@ -1529,7 +1529,10 @@ async function productList(){
         <option value="">全部</option>${F.category.map(c=>`<option value="${esc(c)}" ${st.category===c?"selected":""}>${esc(d.catnames[c]||c)}</option>`).join("")}
       </select></div>${acts()}</div>
     <div class="ops"><button class="btn sol" data-newprod>+ 新建商品</button>
-      <button class="btn" data-exp-prd>导出</button></div>
+      <button class="btn" data-exp-prd>导出</button>
+      ${d.img_cover ? `<span class="n" style="margin-left:12px" title="有图的是 AI 生成的效果图,不是实物照片;其余是按商品属性现画的剪影">
+        商品图:<b style="color:var(--ink)">${d.img_cover.有}/${d.img_cover.总}</b> 款已出图
+        ·<span style="color:var(--ink3)"> 其余 ${d.img_cover.总-d.img_cover.有} 款用现画的示意图</span></span>` : ""}</div>
     <table class="tb" style="margin-top:14px"><thead><tr>
      <th style="width:44px"><span class="cb" data-cball></span></th>
      ${sortTh("SPU","spu",st,"150px")}${sortTh("商品名称","name",st)}
@@ -1571,7 +1574,10 @@ async function productDetail(spu){
   M.innerHTML=chrome([["首页","workbench"],["商品","products"],["商品库","products"],"商品详情"],`
    <div class="dh">${cover(d.name,d.kind)}<span class="no" style="margin-left:4px">${esc(d.name)}</span>
      <span class="pill ${PPILL[d.status]}">${esc(d.status)}</span>
-     <span class="pill ${d.kind==="定制品"?"p-warn":"p-blue"}">${esc(d.kind)}</span></div>
+     <span class="pill ${d.kind==="定制品"?"p-warn":"p-blue"}">${esc(d.kind)}</span>
+     ${d.img_src==="生成图"
+       ? `<span class="pill p-warn" title="AI 生成的效果图,不是实物照片 —— 上线前要么按实物拍摄替换,要么在商品页标注">效果示意 · AI 生成</span>`
+       : `<span class="pill p-mut" title="这一款还没有出图,页面上是按商品属性现画的剪影">效果示意 · 现画</span>`}</div>
    <div class="card"><div class="hd"><h3>基本信息:</h3>
      <span class="more" data-editprod>✎ 编辑</span></div>
     <div style="display:flex;gap:18px;padding:0 24px 4px;flex-wrap:wrap">
