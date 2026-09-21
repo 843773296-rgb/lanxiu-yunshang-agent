@@ -1,6 +1,9 @@
 {
  "说明": "门禁外的检查每次成功跑完记一条。**这个文件不拦任何东西**,它只是让「没人跑」和「跑过没事」分得开。",
  "跑过": {
-  "tools/determinism_check.py --真建两次": "2026-09-21 15:12"
+  "tools/determinism_check.py --真建两次": "2026-09-21 15:12",
+  "fakedata/pg_e2e.py": "2026-09-21 15:21",
+  "fakedata/mysql_e2e.py": "2026-09-21 15:22",
+  "fakedata/multistore_e2e.py": "2026-09-21 15:23"
  }
 }
