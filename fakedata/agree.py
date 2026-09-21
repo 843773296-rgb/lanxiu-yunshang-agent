@@ -57,14 +57,47 @@ def 跑一条(conn, 事实):
     """返回 (每个落点的 {键:值}, 出错的落点)。"""
     出, 坏 = {}, []
     for 点 in 事实["落点"]:
+        归 = 点.get("归一") or {}
+        if 点.get("取法模块"):
+            # `路径.py:函数名` —— 函数收一个连接,返回 {键: 值} 或 {键: {子键: 值}}。
+            # **为什么要有这个口子**:这个「事实」的判定往往已经在系统里有一份口径了
+            # (「这款是童装还是成人款」就在 knowledge/grading.py 里)。
+            # 在声明文件里用 SQL 再写一遍 = 造第二份实现,而两份分家时
+            # 检查会说绿、系统是另一个说法 —— 这正是这条检查要防的那件事本身。
+            try:
+                d = _调(点["取法模块"], conn)
+            except Exception as e:
+                坏.append(f'{点["名"]}:取法模块跑不了({e})')
+                continue
+            拿 = 点.get("取哪个")
+            if 拿:
+                d = {k: v[拿] for k, v in d.items() if isinstance(v, dict) and 拿 in v}
+            出[点["名"]] = {str(k): 归.get(str(v), v) for k, v in d.items()}
+            continue
         try:
             rows = conn.execute(点["sql"]).fetchall()
         except sqlite3.Error as e:
             坏.append(f'{点["名"]}:SQL 跑不了({e})')
             continue
-        归 = 点.get("归一") or {}
         出[点["名"]] = {str(k): 归.get(str(v), v) for k, v in rows}
     return 出, 坏
+
+
+_缓存 = {}
+
+
+def _调(取法模块, conn):
+    """装一次、缓存住 —— 一个事实的五个落点会指向同一个函数,别装五遍。"""
+    路径, _, 函数名 = 取法模块.partition(":")
+    if 取法模块 not in _缓存:
+        import importlib.util
+        full = 路径 if os.path.isabs(路径) else os.path.join(ROOT, 路径)
+        spec = importlib.util.spec_from_file_location("_取法_" + 函数名, full)
+        m = importlib.util.module_from_spec(spec)
+        sys.path.insert(0, os.path.dirname(full))
+        spec.loader.exec_module(m)
+        _缓存[取法模块] = getattr(m, 函数名)(conn)
+    return _缓存[取法模块]
 
 
 def 查(conn, 声明, 报=print):

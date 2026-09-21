@@ -3,25 +3,42 @@
  "事实": [
   {
    "名": "这一款给大人还是小孩穿",
-   "出处": "2026-09-21 用户出图时发现:「竹节」童款交领襦裙 —— 名字说童款,而性别、版型、号型三处都说成人。出图清单只看形制名,静默判成成人比例。",
+   "出处": "2026-09-21 用户出图时发现:「竹节」童款交领襦裙 —— 名字说童款,而性别、版型、号型三处都说成人。出图清单只看形制名,静默判成成人比例。 2026-09-21 补:加了第五个信号「品类」之后又查出一条(见已知打架)。",
    "落点": [
     {
      "名": "形制",
-     "sql": "SELECT p.spu, CASE WHEN x.name LIKE '%童款%' THEN '童' ELSE '成' END FROM product p JOIN pattern pt ON pt.code=p.pattern LEFT JOIN xingzhi x ON x.code=pt.xz WHERE p.pattern IS NOT NULL AND p.pattern<>''"
+     "取法模块": "knowledge/grading.py:各款年龄段信号",
+     "取哪个": "形制"
     },
     {
      "名": "性别字段",
-     "sql": "SELECT p.spu, CASE WHEN p.gender='童' THEN '童' ELSE '成' END FROM product p WHERE p.pattern IS NOT NULL AND p.pattern<>''"
+     "取法模块": "knowledge/grading.py:各款年龄段信号",
+     "取哪个": "性别字段"
     },
     {
      "名": "商品名",
-     "sql": "SELECT p.spu, CASE WHEN p.name LIKE '%童款%' THEN '童' ELSE '成' END FROM product p WHERE p.pattern IS NOT NULL AND p.pattern<>''"
+     "取法模块": "knowledge/grading.py:各款年龄段信号",
+     "取哪个": "商品名"
     },
     {
      "名": "号型",
-     "sql": "SELECT p.spu, CASE WHEN EXISTS(SELECT 1 FROM size_spec s WHERE s.pattern=p.pattern AND substr(s.size,1,1) BETWEEN '0' AND '9') THEN '童' ELSE '成' END FROM product p WHERE p.pattern IS NOT NULL AND p.pattern<>''"
+     "取法模块": "knowledge/grading.py:各款年龄段信号",
+     "取哪个": "号型"
+    },
+    {
+     "名": "品类",
+     "取法模块": "knowledge/grading.py:各款年龄段信号",
+     "取哪个": "品类"
     }
-   ]
+   ],
+   "已知打架": [
+    {
+     "键": "lxys_101069065",
+     "等谁": "业务(这款到底是童装还是成人款)",
+     "为什么还没修": "「男童」明制道袍 定制:品类 C030102 和商品名都说童装,而性别='男'、形制=明制道袍、号型=M/L/XL 三处都是成人。和 2026-09-21 用户发现的「竹节」那条是同一类 —— 童装挂了成人版型。**不许投票**:2 比 3 也是矛盾,必有一边录错了。"
+    }
+   ],
+   "注意": "五个落点**全部走同一份口径** `knowledge/grading.py:年龄段信号` —— 出图清单、门禁检查、这个引擎调的是同一个函数。原来三处各写一份,其中两份的词表都差了一个词(判「童款」而漏「男童」)。"
   },
   {
    "名": "这一款是什么形制",
@@ -46,6 +63,35 @@
      "键": "lxys_100799819",
      "等谁": "业务(形制口径)",
      "为什么还没修": "定制表写「圆领袍」,挂的版型是明制道袍 XZ20 —— **道袍是交领,不是圆领**,这两个不是同一件衣服,必有一边录错了。"
+    }
+   ]
+  },
+  {
+   "名": "这一款的适用性别",
+   "出处": "商品自己有 gender,它挂的版型也有 gender。2026-09-21 那两款童装的性别本来是从版型派生的,**后来被覆写了** —— 于是两边可以各说各的,而谁都不报错。",
+   "落点": [
+    {
+     "名": "商品自己写的性别",
+     "sql": "SELECT p.spu, p.gender FROM product p WHERE p.pattern IS NOT NULL AND p.pattern<>'' AND p.gender IS NOT NULL AND p.gender<>''"
+    },
+    {
+     "名": "它挂的版型写的性别",
+     "sql": "SELECT p.spu, pt.gender FROM product p JOIN pattern pt ON pt.code=p.pattern WHERE pt.gender IS NOT NULL AND pt.gender<>''"
+    }
+   ]
+  },
+  {
+   "名": "这一单的商品金额",
+   "出处": "表头有 goods_amount,明细有一行行的 base_amount。**两边不对的账在页面上看不出来** —— 订单页显示表头,对账单按明细算。26587 单实测零不符,所以这条现在是真绿,不是空转。",
+   "注意": "口径是试出来的,不是猜的:goods_amount 对的是 SUM(base_amount)(= SUM(price*qty)),**不是** SUM(total) —— total 含定制加价,amount 还含运费。第一版拿 SUM(total) 去比,26587 单里报 3542 条不符,而那不是数据坏了,是**我的尺子不对**。",
+   "落点": [
+    {
+     "名": "订单表头的商品额",
+     "sql": "SELECT id, CAST(ROUND(goods_amount,2) AS TEXT) FROM ordr WHERE goods_amount IS NOT NULL"
+    },
+    {
+     "名": "明细逐行加起来",
+     "sql": "SELECT order_id, CAST(ROUND(SUM(base_amount),2) AS TEXT) FROM ordr_item GROUP BY order_id"
     }
    ]
   }

@@ -10,6 +10,8 @@
 出得来、数对得上、指的是对的那个版型。
 """
 import os, re, sqlite3, sys
+import sys as _sys
+import json as _json
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -32,8 +34,14 @@ DB = os.path.join(HERE, "lanxiu.db")
     ("商品页不再标图的来源(真图和示意图在页面上长得都挺正常)", "商品页标出图的来源"),
     ("去掉某处 count(pattern_piece) 旁边的「数的是登记行数」(一行当成一块)",
      "数裁片的地方都表过态"),
-    ("把某个成人款的商品名改成「童款…」(四个信号打架,而图会照成人画)",
-     "童装 / 成人的四个信号不打架"),
+    ("把某个成人款的商品名改成「童款…」(信号打架,而图会照成人画)",
+     "童装 / 成人的五个信号不打架"),
+    # ⚠️ 这条原来写的是「四个信号」。2026-09-21 加了第五个信号(品类)之后,
+    # 检查改名了而咬合记录没跟着改 —— 门禁当场抓到:
+    # **「预期红的那一条」在脚本里找不到,那这条咬合记录就是失效的**,
+    # 而失效的咬合记录和有效的长得一模一样。
+    ("把 grading.年龄段信号 里的品类那一路去掉(「男童」明制道袍会重新变成四个信号一致地说成人)",
+     "童装 / 成人的五个信号不打架"),
     ("把钉住表里某一款的颜色改掉(图还是旧颜色,数据已经换了)", "钉住的颜色没被挪动"),
 ]
 失败 = []
@@ -239,30 +247,41 @@ def main():
        "、".join(漏标[:3]) + " —— 加 `# 数的是登记行数` 或改用 SUM(qty)"
        if 漏标 else "扫了全仓 .py:count(*) 到 pattern_piece 的都写明了数的是行数")
 
-    # ⑥quinquies 大人还是小孩:四个信号必须一致,打架的要报出来
+    # ⑥quinquies 大人还是小孩:五个信号必须一致,打架的要报出来
     # 用户出图时发现的:「竹节」童款交领襦裙 —— 名字说童款,而性别字段、挂的版型、号型
     # 三处都说成人。出图清单原来只看形制名,**静默判成成人比例**。
     # 三比一也是矛盾:真正的问题是这条数据错了,**不该由出图清单替业务投票**。
-    打架 = []
-    for r in c.execute("""SELECT p.spu, p.name, p.gender, p.pattern, x.name AS xz FROM product p
-                          LEFT JOIN pattern pt ON pt.code=p.pattern
-                          LEFT JOIN xingzhi x ON x.code=pt.xz"""):
-        号 = [z[0] for z in c.execute(
-            "SELECT DISTINCT size FROM size_spec WHERE pattern=?", (r["pattern"],))] if r["pattern"] else []
-        信号 = {"形制": "童款" in (r["xz"] or ""), "性别": (r["gender"] or "") == "童",
-              "名字": "童款" in r["name"], "号型": any(z[:1].isdigit() for z in 号)}
-        if r["pattern"] and len(set(信号.values())) > 1:
-            打架.append(f"{r['name']}({'、'.join(k for k, v in 信号.items() if v)}说童装)")
-    报("童装 / 成人的四个信号不打架", not 打架,
+    # 口径只有一份:`knowledge/grading.py:年龄段信号`。出图清单和假数据工厂的
+    # 一致性引擎调的是同一个函数。原来这里自己写了一份四信号,判的是「童款」——
+    # 于是「**男童**」明制道袍(品类说童装、名字说男童,而性别/形制/号型说成人)
+    # 被判成「四个信号一致地说成人」,检查一片绿。**枚举中文短语必输。**
+    _sys.path.insert(0, os.path.join(ROOT, "knowledge"))
+    import grading as _grading
+    # 已知打架的登记表和假数据工厂共用一份 —— 两份登记表会各自囤积,
+    # 而囤积的豁免和真豁免长得一模一样。
+    _一致 = os.path.join(ROOT, "fakedata", "一致.json")
+    认过 = set()
+    if os.path.exists(_一致):
+        for f in _json.load(open(_一致, encoding="utf-8"))["事实"]:
+            if "大人还是小孩" in f["名"]:
+                认过 = {x["键"] for x in (f.get("已知打架") or [])}
+    名字 = {r[0]: r[1] for r in c.execute("SELECT spu,name FROM product")}
+    信号们 = _grading.各款年龄段信号(c)
+    打架 = [f"{名字.get(k, k)}({'、'.join(n for n, v in sig.items() if v == '童')}说童装)"
+            for k, sig in 信号们.items()
+            if len(set(sig.values())) > 1 and k not in 认过]
+    报("童装 / 成人的五个信号不打架", not 打架,
        "；".join(打架[:2]) + " —— **这不是出图的问题,是库里的数据错了**,要业务核"
-       if 打架 else "形制 / 性别 / 名字 / 号型 四处口径一致")
+       if 打架 else f"形制 / 性别 / 名字 / 号型 / 品类 五处口径一致"
+       f"({len(信号们)} 款,另有 {len(认过)} 款登记为已知打架等业务判)")
 
     # ⑥sexies 已经出过图的款,颜色必须钉住
     # 2026-09-21:为修两款童装的形制改了两行 seed,**38 款里 22 款换了颜色**,
     # 其中 6 款用户已经照旧颜色出好了图 —— 因为颜色原来按**插入序号**算,改一行就整体挪位。
     # 图一旦交付,**图上的颜色就是事实**:数据要跟着图走,不是反过来。
     # 而对不上的时候**页面上看不出来** —— 客户看到的是图,系统按数据发货。
-    import json as _json
+    # (`_json` 在文件顶上导入 —— **函数里任何一处 `import` 都会让这个名字
+    #   在整个函数里变成局部的**,于是上面第一处使用会报 "not associated with a value")
     钉文件 = os.path.join(HERE, "图色钉住.json")
     钉 = _json.load(open(钉文件, encoding="utf-8"))["钉住"] if os.path.exists(钉文件) else {}
     有图 = {f.rpartition("-")[0] for f in os.listdir(os.path.join(HERE, "static", "img"))

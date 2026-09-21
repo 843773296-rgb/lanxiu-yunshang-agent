@@ -222,3 +222,58 @@ if __name__ == "__main__":
     print("✅" if 序号("110") is None else "❌ 又回到 .get(x, 0) 了")
     print("自测:领围 ≥ 胸围要报 —— ", end="")
     print("✅" if 体检({"领围": 100, "胸围": 96}) else "❌")
+
+
+# ── 大人还是小孩:五个信号 ──────────────────────────────────────────
+#
+# 这件事原来有**三份实现**:出图清单一份、draft_check 一份、
+# 假数据工厂的一致性声明一份。而三份里有两份**词表差了一个词** ——
+# 判的是「童款」,于是「**男童**」明制道袍被判成了成人款,
+# 五个信号里有两个说童装、三个说成人,而检查一片绿。
+#
+# 这是 CLAUDE.md 那条「判分器不许枚举中文短语,枚举必输」栽的第八次。
+# 真正的修法不是往词表里加「男童」,是**加一个不看文字的信号**。
+
+def 年龄段信号(形制名, 性别, 商品名, 品类, 尺码们):
+    """一款商品「给大人还是小孩穿」的五个信号,各自独立判,**不投票**。
+
+    返回 `{信号名: "童" / "成"}`。取值不一致 = 这条数据错了,要业务核 ——
+    **三比二也是矛盾**,不许由调用方挑一个多数派:挑错了,出来的图看着完全正常。
+
+    ⚠️ 五个里有两个在读中文(形制名、商品名),它们会一起瞎:
+    形制名叫「明制道袍」、商品名叫「男童…」时,前者说成人后者说童装。
+    **品类是唯一不看文字的那个** —— `C0301*` 这一支就是童装,
+    别的信号全读歪的时候只有它还睁着眼。
+    """
+    return {
+        "形制":   "童" if "童" in (形制名 or "") else "成",
+        "性别字段": "童" if (性别 or "") == "童" else "成",
+        # 只认一个字「童」。原来判的是「童款」—— 而「男童」不含「童款」。
+        "商品名": "童" if "童" in (商品名 or "") else "成",
+        # 童装是身高码(110/120/130/140),开头是数字;成人是 S/M/L/XL
+        "号型":   "童" if any(str(z)[:1].isdigit() for z in (尺码们 or [])) else "成",
+        "品类":   "童" if (品类 or "").startswith("C0301") else "成",
+    }
+
+
+def 各款年龄段信号(conn):
+    """**取数适配器**:整库跑一遍上面那个口径,返回 `{款号: {信号: 值}}`。
+
+    口径模块本来不该自己取数(见 CLAUDE.md 第 9 节:口径判定、工具取数)。
+    这里破一次例是因为**判定必须只有一份**:出图清单、门禁检查、
+    假数据工厂的一致性引擎三个调用方各自取数的话,
+    三份取数写法迟早各自长歪 —— 上一次就是这么长出「童款」那个词表洞的。
+    判定本身仍在上面那个纯函数里,这里只负责把行喂给它。
+    """
+    out = {}
+    尺码 = {}
+    for pt, sz in conn.execute("SELECT DISTINCT pattern, size FROM size_spec"):
+        尺码.setdefault(pt, []).append(sz)
+    for spu, name, gender, cat, pattern, xzname in conn.execute("""
+            SELECT p.spu, p.name, p.gender, p.category, p.pattern, x.name
+            FROM product p
+            LEFT JOIN pattern pt ON pt.code = p.pattern
+            LEFT JOIN xingzhi x ON x.code = pt.xz
+            WHERE p.pattern IS NOT NULL AND p.pattern <> ''"""):
+        out[spu] = 年龄段信号(xzname, gender, name, cat, 尺码.get(pattern, []))
+    return out

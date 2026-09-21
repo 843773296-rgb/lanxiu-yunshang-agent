@@ -18,6 +18,9 @@
   ③ 细节图:面料特写 / 工艺特写 / 领袖结构 / 背面
 """
 import csv, os, re, sqlite3, sys
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'knowledge'))
+import grading as _grading
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "backend"), os.path.join(ROOT, "tools"), os.path.join(ROOT, "knowledge")]
@@ -126,7 +129,7 @@ def main():
     # 面料 / 工艺的外观一句话(知识库里的 brief),让生图知道这门料 / 这门工艺长什么样
     外观 = {r[0]: r[1] for r in c.execute("SELECT name, brief FROM craft WHERE cat IN ('材质','工艺') AND brief!=''")}
     rows = c.execute("""
-        SELECT p.spu, p.name, p.gender, p.kind, p.remark, cat.name AS cat,
+        SELECT p.spu, p.name, p.gender, p.kind, p.remark, cat.name AS cat, p.category AS 品类,
                p.pattern AS 版型, pt.xz, xz.name AS xzname, pc.mt_opts, pc.kf_opts
         FROM product p
         LEFT JOIN category cat ON cat.code = p.category
@@ -163,10 +166,11 @@ def main():
             # 被静默判成成人比例。用户出图时发现的。
             # **不许投票决定**:三比一也是矛盾,真正的问题是这条数据错了,该报给业务核,
             # 而不是由出图清单替业务挑一个 —— 挑错了,出来的图看着完全正常。
-            信号 = {"形制": "童" if "童款" in (r["xzname"] or "") else "成",
-                  "性别字段": "童" if (r["gender"] or "") == "童" else "成",
-                  "商品名": "童" if "童款" in nm else "成",
-                  "号型": "童" if any(z[:1].isdigit() for z in 号型(r["版型"])) else "成"}
+            # 口径只有一份:`knowledge/grading.py`。门禁检查和假数据工厂的
+            # 一致性引擎调的是同一个函数 —— 原来这里自己写了一份,
+            # 判的是「童款」,于是「**男童**」明制道袍被判成了成人款。
+            信号 = _grading.年龄段信号(r["xzname"], r["gender"], nm,
+                                       r["品类"], 号型(r["版型"]))
             if len(set(信号.values())) > 1:
                 打架 = "、".join(f"{k}说{'童装' if v == '童' else '成人'}" for k, v in 信号.items())
                 parts.append(f"⚠️ **这一款先别出**:库里的数据自相矛盾({打架})。"
