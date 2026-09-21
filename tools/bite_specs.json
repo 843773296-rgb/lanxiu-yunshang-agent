@@ -1883,5 +1883,65 @@
       "UPDATE sku SET color='玄色' WHERE spu='lxys_100451383'"
     ],
     "预期红": "钉住的颜色没被挪动"
+  },
+  {
+    "script": "backend/initpath_check.py",
+    "改坏": "把 start.sh 的建库分支改回只跑 seed.py(15 步里的第 1 步)",
+    "file": [
+      {
+        "path": "start.sh",
+        "old": "./tools/rebuild.sh --fresh-only || {",
+        "new": "python3 backend/seed.py || {"
+      }
+    ],
+    "预期红": "start.sh 的建库分支没有走"
+  },
+  {
+    "script": "backend/initpath_check.py",
+    "改坏": "建库失败后不清掉半成品(下次启动的 [ -f ] 会把它当成建好的库)",
+    "file": [
+      {
+        "path": "start.sh",
+        "old": "    rm -f backend/lanxiu.db",
+        "new": "    true"
+      }
+    ],
+    "预期红": "没有清掉半成品"
+  },
+  {
+    "script": "backend/initpath_check.py",
+    "改坏": "让 --fresh-only 不再看库在不在(等于启动时能删掉用户的库)",
+    "file": [
+      {
+        "path": "tools/rebuild.sh",
+        "old": "  if [ -f backend/lanxiu.db ]; then",
+        "new": "  if false; then"
+      }
+    ],
+    "预期红": "没有拒绝:它开工建库了"
+  },
+  {
+    "script": "backend/initpath_check.py",
+    "改坏": "让 --fresh-only 无条件拒绝(看着也像「拦住了」,其实连新库都建不出来)",
+    "file": [
+      {
+        "path": "tools/rebuild.sh",
+        "old": "  if [ -f backend/lanxiu.db ]; then",
+        "new": "  if true; then"
+      }
+    ],
+    "预期红": "也拒绝了"
+  },
+  {
+    "script": "backend/initpath_check.py",
+    "改坏": "往步骤表里加一步却不改步数自校验(跑完照样打✅)",
+    "file": [
+      {
+        "path": "tools/rebuild.sh",
+        "old": "\"tools/make_todo.py\"; do",
+        "new": "\"tools/make_todo.py\" \"tools/xx.py\"; do"
+      }
+    ],
+    "预期红": "加了步骤没改计数"
   }
 ]
