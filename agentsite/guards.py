@@ -25,6 +25,20 @@ import datetime as dt, json, os, re, sys
 RE_MONEY = re.compile(r"(?:[¥￥]\s*|人民币\s*)([\d,]+(?:\.\d+)?)|([\d,]+(?:\.\d+)?)\s*元")
 RE_DAYS  = re.compile(r"(\d+(?:\.\d+)?)\s*(?:[-–—~至到]\s*(\d+(?:\.\d+)?)\s*)?(?:个)?(?:工作日|日历天|天|工日)")
 RE_SIZE  = re.compile(r"(?:推荐|建议|适合|应该穿|可以穿|选)\s*[「\"']?(S|M|L|XL|XXL|均码|\d{3})[」\"']?\s*码?")
+# 身体尺寸(厘米 / 身高体重)。**2026-09-21 补的,补的是 g1 的一个洞**:
+# g1 第一行是 `if not (monies or days): return None` —— 只有答案里出现**金额或工期**
+# 才往下查「有没有调工具」。而成长推算的答案给的是**身高厘米数**(171.7cm),
+# 既不是钱也不是天,于是那道体检**在第一行就放行了**。
+# 评测里实测到:模型有时候一个工具都没调、14.6 秒就答完一个身高预测
+# (正常轮次要 50 秒、调 2 个工具),而体检一路绿灯。
+# g1 的注释自己写着「『该查的没查就答』是工具变多之后最高频的失败」——
+# 那句话是对的,只是它当时只盖住了两类数字。
+RE_BODY = re.compile(r"(\d+(?:\.\d+)?)\s*(?:[-–—~至]\s*\d+(?:\.\d+)?\s*)?"
+                     r"(?:cm|CM|厘米|公分|kg|KG|公斤|千克)")
+# 身体尺寸类结论的信号词 —— 说到这些还给了厘米数,那一定是查过库才说得出来的
+BODY_W = ("身高", "成年", "长到", "围度", "胸围", "腰围", "臀围", "肩宽",
+          "通袖", "衣长", "体重", "尺寸", "量体", "档差", "号型")
+
 # 整单结论的信号词 —— 只有给总量时才要求调过对应的算账工具
 TOTAL_D  = ("整单", "总共", "一共", "交期", "工期", "多久", "大概要", "预计", "能拿到", "交付")
 TOTAL_M  = ("总价", "合计", "报价", "价格", "多少钱", "售价", "要花")
@@ -67,6 +81,14 @@ def _days(text):
     return out
 
 
+def _bodies(text):
+    out = []
+    for m in RE_BODY.finditer(text):
+        v = _num(m.group(1))
+        if v is not None: out.append((v, m.start()))
+    return out
+
+
 def _called(calls, name):
     return [c for c in calls if c.get("tool", "").endswith(name)]
 
@@ -84,9 +106,13 @@ def g1_no_source(text, calls):
     """给了数字结论,却没查过 —— **「该查的没查就答」是工具变多之后最高频的失败**,
     而它恰恰是评测集最难覆盖的:答案看起来完全正常,只是那个数字是编的。"""
     monies, days = _monies(text), _days(text)
-    if not (monies or days): return None
+    # 身体尺寸只在**贴着身体词**时才算(「留 5cm 折边」是做法不是查来的数)
+    bodies = [(v, i) for v, i in _bodies(text) if _near(text, i, BODY_W)]
+    if not (monies or days or bodies): return None
     if not calls:
-        return "答案里给了具体数字,但这一轮**一个工具都没调** —— 数字没有出处,不能这么答"
+        哪 = ("金额/工期" if (monies or days) else "身高/围度这类身体尺寸")
+        return (f"答案里给了具体数字({哪}),但这一轮**一个工具都没调** —— "
+                f"数字没有出处,不能这么答")
     for v, i in monies:
         if _near(text, i, TOTAL_M) and not _called(calls, "kb_bom"):
             return f"答案报了总价/报价(¥{v:g}),但没调 kb_bom 算过 —— 价格不能凭印象说"
