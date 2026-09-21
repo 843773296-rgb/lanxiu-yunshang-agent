@@ -1943,5 +1943,53 @@
       }
     ],
     "预期红": "加了步骤没改计数"
+  },
+  {
+    "script": "agent/fingerprint.py",
+    "改坏": "让指纹退回只数行数(行内容不进哈希)——「数据没变」和「行数没变但内容改了」又长成一个样",
+    "file": [
+      {
+        "path": "agent/fingerprint.py",
+        "old": "        h.update(json.dumps(row, ensure_ascii=False, default=str).encode(\"utf-8\"))",
+        "new": "        pass"
+      }
+    ],
+    "预期红": "指纹居然一样"
+  },
+  {
+    "script": "agent/fingerprint.py",
+    "改坏": "把缺的表记成 0(「这张表不存在」和「这张表是空的」混成一个)",
+    "file": [
+      {
+        "path": "agent/fingerprint.py",
+        "old": "            counts[t], 内容[t] = None, None",
+        "new": "            counts[t], 内容[t] = 0, None"
+      }
+    ],
+    "预期红": "缺的表没记成 None"
+  },
+  {
+    "script": "agent/fingerprint.py",
+    "改坏": "列名不进哈希(同样的值换了含义,当没改)",
+    "file": [
+      {
+        "path": "agent/fingerprint.py",
+        "old": "    h.update((\"\\x1f\".join(cols)).encode(\"utf-8\"))   # 加一列、改列名也算变",
+        "new": "    pass"
+      }
+    ],
+    "预期红": "列改名了,指纹一样"
+  },
+  {
+    "script": "agent/fingerprint.py",
+    "改坏": "把「这一维比不了」当成普通的「变了」(拿旧结果归因时会给出假结论)",
+    "file": [
+      {
+        "path": "agent/fingerprint.py",
+        "old": "            if na is None or nb is None:",
+        "new": "            if False:"
+      }
+    ],
+    "预期红": "「不知道」被说成了"
   }
 ]
