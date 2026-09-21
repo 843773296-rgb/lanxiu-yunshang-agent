@@ -108,6 +108,8 @@ run "RFM 评分 · 五条性质" python3 backend/rfm_check.py
 run "交接文档 · 四段必填是否齐全" python3 tools/make_handoff.py --check
 run "intent · 待办都点了名,「做完了」的判据真的在" python3 tools/intent_check.py
 run "咬合记录 · 最贵的那一步不许只在脑子里" python3 tools/bite_check.py
+run "截断的报告要说「还有几条」(只许少不许多)" python3 tools/truncation_check.py
+run "门禁外的检查多久没跑了(只报状态,永不拦)" python3 tools/runlog_check.py
 run "仓库自洽 · 工作区绿不等于仓库里那一版绿" python3 tools/repo_consistency_check.py
 run "评测题面 · 有指代就得有编号,或写明是故意的" python3 tools/case_check.py
 run "改动影响面 · 警示段落找不着就是正则漏了" python3 tools/impact.py --selftest
@@ -142,6 +144,7 @@ run "假数据工厂 · 跨进程/跨日期可复现(换台机器换一天,数�
 run "假数据工厂 · 交付物锚定咬合(三条都咬得动)" python3 fakedata/anchor.py 自测
 run "交付物锚定 · 被外面消费过的值没被挪动" python3 fakedata/anchor.py 验 --db backend/lanxiu.db
 run "假数据工厂 · 跨字段一致咬合(三条都咬得动)" python3 fakedata/agree.py --自测
+run "假数据工厂 · 同类还有几处(咬合)" python3 fakedata/samekind.py 自测
 run "跨字段一致 · 同一个事实的几个落点不打架(不许投票)" python3 fakedata/agree.py --db backend/lanxiu.db
 run "演示数据命名 · 方案名只许「定制款·工艺·年月」,不带人名" python3 fakedata/naming.py
 # ⚠️ 出处**对不对**是另一件事,由 tools/verify_sources.py 核(要联网,
@@ -180,6 +183,7 @@ run "野外语料 · 多样性(够多≠够杂)" python3 agent/wild_corpus.py --
 run "提交闸 · 退出码不许被吞(22 条咬合)" node tools/hooks/commit-gate-exitcode.mjs --selftest
 run "CI 提醒 · 报的是现在红绿不是历史(18 条咬合)" node tools/hooks/push-then-ci.mjs --selftest
 run "工具还是技能 · 新增工具时问一句该由谁判断(8 条)" node tools/hooks/tool-or-skill.mjs --selftest
+run "促活口径 · 时间相对他自己,没由头不进名单(25 条自测)" python3 knowledge/reactivate.py
 run "商机口径 · 分清是谁说的,别枚举中文说法(19 条自测)" python3 knowledge/oppo.py
 run "归属口径 · 分开只因为下一步不同(15 条自测)" python3 knowledge/owner.py
 run "评测指纹 · 行数没变但内容改了,指纹也得变(7 条自测)" python3 agent/fingerprint.py --selftest

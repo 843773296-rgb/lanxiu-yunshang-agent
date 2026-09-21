@@ -1,0 +1,112 @@
+{
+ "说明": "截断的报告要说「还有几条」—— **截断的和完整的长得一模一样。**\n\n    python3 tools/truncation_check.py          # 门禁:新增的一律红\n    python3 tools/truncation_check.py --登记     # 把现状写进欠债表(只在第一次用)",
+ "怎么还": "在那一处加一句「……还有 N 条(共 M)」,然后把这一条从下面删掉。**删不删由这个检查强制** —— 修好了还留着,它会红。",
+ "登记于": "2026-09-21",
+ "欠着的": {
+  "agentsite/capman_check.py": [
+   "bad3"
+  ],
+  "backend/activity_check.py": [
+   "例"
+  ],
+  "backend/advisor_write_check.py": [
+   "坏"
+  ],
+  "backend/draft_check.py": [
+   "一致",
+   "坏",
+   "坏指",
+   "打架",
+   "漏标",
+   "缺",
+   "缺结构",
+   "错",
+   "错档",
+   "错纹",
+   "错色"
+  ],
+  "backend/grading_check.py": [
+   "没标",
+   "没解释"
+  ],
+  "backend/img_check.py": [
+   "坏",
+   "待定",
+   "退"
+  ],
+  "backend/page_smoke_check.py": [
+   "坏"
+  ],
+  "backend/part_check.py": [
+   "坏",
+   "硬编"
+  ],
+  "backend/part_choice_check.py": [
+   "不可",
+   "多项",
+   "差",
+   "无项",
+   "空表",
+   "缺",
+   "缺艺",
+   "野"
+  ],
+  "backend/pattern_role_check.py": [
+   "脏"
+  ],
+  "backend/piece_ratio_check.py": [
+   "偏",
+   "坏",
+   "差",
+   "野"
+  ],
+  "backend/product_pattern_check.py": [
+   "名不齐",
+   "片不齐",
+   "通称",
+   "野xz",
+   "野裁"
+  ],
+  "backend/samekey_check.py": [
+   "不符",
+   "漏登记"
+  ],
+  "backend/source_check.py": [
+   "野"
+  ],
+  "backend/tool_input_check.py": [
+   "坏",
+   "坏2"
+  ],
+  "backend/xingzhi_check.py": [
+   "不一致"
+  ],
+  "fakedata/agree.py": [
+   "坏落点"
+  ],
+  "fakedata/repro.py": [
+   "坏哈希",
+   "坏时钟"
+  ],
+  "tools/bite_check.py": [
+   "坏"
+  ],
+  "tools/eval_provenance_check.py": [
+   "无",
+   "混",
+   "非基线"
+  ],
+  "tools/fixture_check.py": [
+   "死",
+   "缺"
+  ],
+  "tools/intent_check.py": [
+   "断",
+   "缺",
+   "野"
+  ],
+  "tools/repo_consistency_check.py": [
+   "对不上"
+  ]
+ }
+}
