@@ -110,6 +110,8 @@ run "intent · 待办都点了名,「做完了」的判据真的在" python3 too
 run "咬合记录 · 最贵的那一步不许只在脑子里" python3 tools/bite_check.py
 run "截断的报告要说「还有几条」(只许少不许多)" python3 tools/truncation_check.py
 run "门禁外的检查多久没跑了(只报状态,永不拦)" python3 tools/runlog_check.py
+run "评测轮次 · 调模型的评测不许只跑一轮(只许少不许多)" python3 agent/rounds_check.py
+run "轮次报告 · 单轮/抖动/可比,四种情形都说对话" python3 agent/rounds.py
 run "仓库自洽 · 工作区绿不等于仓库里那一版绿" python3 tools/repo_consistency_check.py
 run "评测题面 · 有指代就得有编号,或写明是故意的" python3 tools/case_check.py
 run "改动影响面 · 警示段落找不着就是正则漏了" python3 tools/impact.py --selftest
@@ -183,6 +185,7 @@ run "野外语料 · 多样性(够多≠够杂)" python3 agent/wild_corpus.py --
 run "提交闸 · 退出码不许被吞(22 条咬合)" node tools/hooks/commit-gate-exitcode.mjs --selftest
 run "CI 提醒 · 报的是现在红绿不是历史(18 条咬合)" node tools/hooks/push-then-ci.mjs --selftest
 run "工具还是技能 · 新增工具时问一句该由谁判断(8 条)" node tools/hooks/tool-or-skill.mjs --selftest
+run "排班口径 · 查不到记录只能表示「还没排」(18 条自测)" python3 knowledge/shift.py
 run "促活口径 · 时间相对他自己,没由头不进名单(25 条自测)" python3 knowledge/reactivate.py
 run "商机口径 · 分清是谁说的,别枚举中文说法(19 条自测)" python3 knowledge/oppo.py
 run "归属口径 · 分开只因为下一步不同(15 条自测)" python3 knowledge/owner.py

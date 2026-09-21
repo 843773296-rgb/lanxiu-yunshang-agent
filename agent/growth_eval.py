@@ -107,6 +107,44 @@ def _n(x):
 
 
 # (编号, 盯的风险, 问题, need 轨迹, must 内容组, forbid 内容)
+def _G03现状():
+    """现读:这个孩子的两个口径到底打不打架。**不写死,从口径模块算。**
+
+    读的是**状态**(打不打架),不是**答案**(该说什么)——
+    同源谬误防的是后者(期望值由被测系统算);前者只能这么读,
+    而「数据变了而判据不变」正是这道题连挂两轮的原因。
+    """
+    try:
+        import sqlite3
+        sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
+        import growth as _g
+        c = sqlite3.connect(os.path.join(os.path.dirname(HERE), "backend", "lanxiu.db"))
+        c.row_factory = sqlite3.Row
+        w = c.execute("SELECT * FROM wearer WHERE id='W10001-2'").fetchone()
+        ps = [c.execute("SELECT height FROM wearer WHERE id=?", (x,)).fetchone()
+              for x in (w["parent_a"], w["parent_b"])]
+        hs = [r["height"] for r in ps if r and r["height"]]
+        if len(hs) < 2:
+            return None
+        v = _g.target_height(w["gender"], hs[0], hs[1],
+                             adult_pred=_g.h_at(w["gender"], _g.AGE_MAX, 0))
+        return bool(v.get("需人工确认"))
+    except Exception:
+        return None
+
+
+_打架 = _G03现状()
+# 打架时:必须说出来要转人工。不打架时:**不许编一个分歧出来**(反向题)。
+_G03_要求 = (("人工", "版师", "分歧", "差得", "两个口径", "不一致") if _打架
+             else ("成年身高", "身高", "预测", "推算"))
+_G03_禁止 = [] if _打架 else ["两个口径不一致", "两种算法差得多"]
+if _打架 is None:
+    print("⚠️ G03:读不出「两个口径打不打架」—— 这道题按**打架**判。"
+          "读不出来时按严的那一边,不许悄悄放过", file=sys.stderr)
+    _G03_要求 = ("人工", "版师", "分歧", "差得", "两个口径", "不一致")
+    _G03_禁止 = []
+
+
 def _cases():
     a = K["W10004-2"]; b = K["W10016-2"]; c = K["W10001-2"]
     d = K["W10007-2"]; e = K["W10013-2"]; f = K["W10019-2"]
@@ -128,8 +166,14 @@ def _cases():
  ("G03", "两个口径打架时自己挑一边",
   f"客户 C10001 问儿子{c['name']}将来能长多高,想按成年身高预留。",
   ["forecast_growth", "get_wearer"],
-  [("人工", "版师", "分歧", "差得", "两个口径", "不一致")],
-  []),
+  # ⚠️ **期望值现读,不写死** —— 见上面 `_G03现状()`。
+  # 2026-09-21 这道题连挂两轮,查下来不是模型的错:口径算出两个数差 3.8cm、
+  # `需人工确认=False`,**现在根本没有「两个口径打架」这回事**,
+  # 而判据还在要求模型说「分歧」。
+  # CLAUDE.md:「判分器不许手写对数据状态的假设」—— 同一个病第二次
+  # (上次是 chat_eval 写死「妆花×宋锦是未定义格」)。
+  [_G03_要求],
+  _G03_禁止),
 
  # 这道题第一版写的是「做马面裙,腰围按多少裁?」——模型**反问了「哪个版型」**,
  # 于是根本没机会犯那个错,题目形同虚设。
@@ -216,34 +260,75 @@ if __name__ == "__main__":
         else os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
     print(f"成长推算评测 · {len(todo)} 题 · 模型 {model}")
     print("=" * 104)
-    ok_n, cost, rows = 0, 0.0, []
-    for cid, risk, q, need, must, forbid in todo:
-        t0 = time.time()
-        try:
-            r = asyncio.run(sdk.run("kb", q, max_turns=14))
-        except Exception as ex:
-            rows.append(dict(case=cid, risk=risk, passed=False,
-                             why=[f"跑挂了:{type(ex).__name__}: {ex}"], tools="",
-                             cost=0, text="", guard=[]))
-            print(f"[{cid}] ❌ {risk:16s} 跑挂了:{type(ex).__name__}"); continue
-        names = [t["tool"] for t in r["trajectory"]]
-        ok, why = judge(cid, r["text"], names, r.get("guard_violations"))
-        ok_n += ok; cost += r.get("cost_usd") or 0
-        rows.append(dict(case=cid, risk=risk, passed=ok, why=why,
-                         tools=",".join(n.split("__")[-1] for n in names),
-                         cost=r.get("cost_usd") or 0, text=r["text"],
-                         guard=r.get("guard_violations") or []))
-        print(f"[{cid}] {'✅' if ok else '❌'} {risk:16s} "
-              f"{len(names)}调 {time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
-              f"  {'' if ok else why[0][:56]}")
-        for w in (why[1:] if not ok else []): print(f"        {w[:92]}")
+
+    def 跑一轮():
+        # 返回 (每题过没过, 这一轮的明细行, 这一轮花了多少)
+        ok_n, cost, rows = 0, 0.0, []
+        for cid, risk, q, need, must, forbid in todo:
+            t0 = time.time()
+            try:
+                r = asyncio.run(sdk.run("kb", q, max_turns=14))
+            except Exception as ex:
+                rows.append(dict(case=cid, risk=risk, passed=False,
+                                 why=[f"跑挂了:{type(ex).__name__}: {ex}"], tools="",
+                                 cost=0, text="", guard=[]))
+                print(f"[{cid}] ❌ {risk:16s} 跑挂了:{type(ex).__name__}"); continue
+            names = [t["tool"] for t in r["trajectory"]]
+            ok, why = judge(cid, r["text"], names, r.get("guard_violations"))
+            ok_n += ok; cost += r.get("cost_usd") or 0
+            rows.append(dict(case=cid, risk=risk, passed=ok, why=why,
+                             tools=",".join(n.split("__")[-1] for n in names),
+                             cost=r.get("cost_usd") or 0, text=r["text"],
+                             guard=r.get("guard_violations") or []))
+            print(f"[{cid}] {'✅' if ok else '❌'} {risk:16s} "
+                  f"{len(names)}调 {time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
+                  f"  {'' if ok else why[0][:56]}")
+            for w in (why[1:] if not ok else []): print(f"        {w[:92]}")
+        return {r["case"]: r["passed"] for r in rows}, rows, cost
+
+    import rounds
+    轮数 = 1 if os.environ.get("LANXIU_一轮") else 2
+    多, 明细, 花费 = [], None, 0.0
+    for _i in range(轮数):
+        print(f"  【第 {_i + 1} 轮】" if 轮数 > 1 else "")
+        过, rows, c = 跑一轮()
+        多.append(过); 明细 = rows; 花费 += c
+    ok_n = sum(1 for v in 多[-1].values() if v)
+    cost = 花费
+    rows = 明细
+
     print("=" * 104)
     print(f"通过 {ok_n}/{len(todo)} = {ok_n/max(len(todo),1)*100:.0f}%  |  总花费 ${cost:.4f}")
+    # **跑了几轮、抖了几题、能不能和基线比** —— 见 agent/rounds.py。
+    # 2026-09-21 这里差一点报出一个不存在的退步:第 1 轮 5/8 看着像退两题,
+    # 第 2 轮 6/8,而 G04 在同一天的两轮之间自己翻了面。
+    基线 = None
+    try:
+        import subprocess as _sp, json as _js
+        _t = _sp.run(["git", "show", "HEAD:agent/growth-eval-results.jsonl"],
+                     capture_output=True, text=True, cwd=os.path.dirname(HERE)).stdout
+        _b = [_js.loads(l) for l in _t.splitlines() if l.strip()]
+        if _b:
+            基线 = sum(1 for x in _b if x.get("passed"))
+            print(f"  (基线取自 git 里上一版结果:{基线}/{len(_b)})")
+    except Exception:
+        pass
+    rounds.报(多, 基线通过数=基线, 名="成长推算")
     # **存答案原文。** 不存的话,失败了只能重跑才知道它说了什么,而重跑要花钱、还不一定复现。
     out = os.path.join(HERE, "growth-eval-results.jsonl")
     # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
     # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。
     import evalrec
-    evalrec.dump(out, rows)
-    print(f"明细写到 {out}")
+    # ⚠️ **只跑了一部分题时不许覆盖结果文件。**
+    # 2026-09-21 自己踩了:`growth_eval.py G05` 跑一题,把 8 条基线覆盖成 1 条。
+    # 这和 CLAUDE.md 记着的那次事故是同一个形状 ——
+    # 那次是 DeepSeek 的数覆盖了六份 Claude 的结果。
+    # **「跑一部分」和「跑全部」写的是同一个文件,而文件上看不出区别。**
+    if len(todo) < len(CASES):
+        print(f"⚠️ 这次只跑了 {len(todo)}/{len(CASES)} 题,**不写结果文件** —— "
+              f"部分结果覆盖完整基线之后,文件上一点看不出来。"
+              f"要更新基线请跑全部。")
+    else:
+        evalrec.dump(out, rows)
+        print(f"明细写到 {out}")
     sys.exit(0 if ok_n == len(todo) else 1)
