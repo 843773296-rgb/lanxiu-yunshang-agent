@@ -35,6 +35,7 @@
 选哪条边来断,优先选可空的、可信度低的 —— 断错了代价最小。
 """
 import os, sys, json, collections
+import datetime
 
 # 语义类型 → 生成器名。生成器的实现在 gen.py,这里只负责挑。
 SEM2GEN = {
@@ -260,7 +261,7 @@ def topo_order(tables, fks):
 
 def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN-",
           protect=None,
-          allow_no_pk=False):
+          allow_no_pk=False, 今天=None):
     counts = counts or {}
     names = tables or sorted(facts["tables"])
     fkmap = {}
@@ -275,6 +276,13 @@ def build(facts, seed=20260906, scale=1.0, counts=None, tables=None, marker="SYN
 
     plan = {"seed": seed, "dialect": facts["dialect"], "source": facts["source"],
             "中文库": facts.get("中文库", True),
+            # **这批数据的「今天」钉在方案里,不从机器上现取。**
+            # 生成器原来是 `hi = hi or datetime.date.today()` —— 同一个种子,
+            # 今天造的和明天造的所有日期整体差一天。而工厂自己的「同种子两次一致」
+            # 抓不到它:两次生成在同一个进程、同一天跑,**它问的是一个必然答对的问题**。
+            # 钉进方案之后,这份方案文件就是那批数据的完整说明:
+            # 谁拿着它、什么时候跑,造出来的都是同一批。
+            "今天": (今天 or datetime.date.today().isoformat()),   # 真实时钟:只在**出方案**这一刻取一次,取完就钉死
             # **记下当时是不是限定了表集。** 不记的话,下次拿这份方案查漂移,
             # 会把「人主动没选的表」报成「漏造的新表」—— 60 张表的库能刷 65 条提示,
             # 而**报多了人就不看了**,真正要紧的那几条被淹掉。

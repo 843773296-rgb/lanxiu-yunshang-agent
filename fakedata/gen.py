@@ -149,8 +149,25 @@ def _weighted(r, dist):
     keys = list(dist); w = [max(dist[k], 1e-6) for k in keys]
     return r.choices(keys, weights=w, k=1)[0]
 
+# **这批数据的「今天」。** 由 `generate()` 从方案里取,方案在出的那一刻就把它钉死了。
+# 为什么是模块级而不是层层传参:`_dt` 被 `_value` 和 `_fsm_fix` 两条路径调到,
+# 后者拿不到 plan 也拿不到 ctx —— 而「时间原点」这种东西**漏掉一处就等于没钉**,
+# 所以宁可用一个进程内的锚点,也不要一条参数链上少传一处还没人发现。
+_今天 = None
+
+
+def _锚日():
+    if _今天:
+        try: return datetime.date.fromisoformat(_今天[:10])
+        except ValueError: pass
+    # 方案里没钉(老方案文件)—— **明说,不静默退回机器的今天**
+    raise SystemExit("❌ 这份方案没有「今天」这一项,而日期列要拿它当上界。\n"
+                     "   退回机器的今天会让同一份方案今天和明天造出不同的数据。\n"
+                     "   办法:重新出一次方案(plan),它会把当天钉进去。")
+
+
 def _dt(r, lo=None, hi=None):
-    hi = hi or datetime.date.today()
+    hi = hi or _锚日()
     lo = lo or (hi - datetime.timedelta(days=730))
     d = lo + datetime.timedelta(days=r.randint(0, max(1, (hi - lo).days)))
     return d
@@ -405,6 +422,8 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
     一张 36 列的客户表通常只有 2-3 列被指过来,剩下的当场释放。
     """
     seed = plan["seed"]
+    global _今天
+    _今天 = plan.get("今天")
     保护 = plan.get("protect") or []
     edges = _EDGE_ZH if plan.get("中文库", True) else _EDGE_EN
     need = needed_columns(plan) if sink else None
