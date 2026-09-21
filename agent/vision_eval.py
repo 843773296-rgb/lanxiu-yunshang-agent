@@ -295,7 +295,7 @@ if __name__ == "__main__":
     # 分数还是四个轴、还是 6/6,而它量的已经是另一批图。
     # 这里必须先判指纹再决定给不给基线:给了一个过期基线,
     # `rounds.报()` 会一本正经地算「版本差」,而那个差是图变出来的。
-    基线 = None
+    基线, 基线来路 = None, None
     if 图变了:
         print(f"⚠️ 图变了({_上} → {_fp})—— **这次的分数和上一轮不可比**,"
               f"下面不拿基线比(只报轮间抖动)")
@@ -306,12 +306,20 @@ if __name__ == "__main__":
                          capture_output=True, text=True,
                          cwd=os.path.dirname(HERE)).stdout
             _b = [json.loads(l) for l in _t.splitlines() if l.strip()]
-            if _b:
+            _量过 = {x.get("spu") for x in _b}
+            _现 = {c["spu"] for c in todo}
+            if _b and (_量过 != _现):
+                print(f"  ℹ️ 基线和现在的款对不上,**不拿它比** —— "
+                      f"没量过 {sorted(_现 - _量过) or '(无)'}；"
+                      f"量过但现在没有的 {sorted(_量过 - _现) or '(无)'}")
+            elif _b:
                 基线 = sum(1 for x in _b if x.get("passed"))
+                # 来路一起递进去 —— 光给数字,rounds.报() 现在会拒收
+                基线来路 = {k: _b[0].get(k) for k in ("供应商", "模型", "代码")}
                 print(f"  (基线取自 git 里上一版结果:{基线}/{len(_b)})")
         except Exception:
             pass
-    rounds.报(多, 基线通过数=基线, 名="识图", 原因=因)
+    rounds.报(多, 基线通过数=基线, 名="识图", 原因=因, 基线来路=基线来路)
 
     # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
     # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。

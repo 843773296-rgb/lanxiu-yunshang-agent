@@ -304,20 +304,42 @@ if __name__ == "__main__":
     # **跑了几轮、抖了几题、能不能和基线比** —— 见 agent/rounds.py。
     # 2026-09-21 这里差一点报出一个不存在的退步:第 1 轮 5/8 看着像退两题,
     # 第 2 轮 6/8,而 G04 在同一天的两轮之间自己翻了面。
-    基线 = None
+    基线, 基线来路 = None, None
     try:
         import subprocess as _sp, json as _js
         _t = _sp.run(["git", "show", "HEAD:agent/growth-eval-results.jsonl"],
                      capture_output=True, text=True, cwd=os.path.dirname(HERE)).stdout
         _b = [_js.loads(l) for l in _t.splitlines() if l.strip()]
-        if _b:
+        _量过 = {x.get("case") for x in _b}
+        _现 = {c[0] for c in todo}
+        _缺, _多 = _现 - _量过, _量过 - _现
+        if not _b:
+            pass
+        elif len(todo) < len(CASES):
+            # ⚠️ **跑一部分,却拿全量基线比。**
+            # 写结果文件那里早就挡住了部分覆盖(下面几行),**而比较这里漏了** ——
+            # `多` 里是 1 题、`基线` 是 8,照样能算出「版本差 7」并一本正经地报。
+            # 识图评测补上了这半条,这里没有。**修一处不等于修一类。**
+            print(f"  ℹ️ 这次只跑了 {len(todo)}/{len(CASES)} 题 —— "
+                  f"**不拿基线比**(分母都不一样)")
+        elif _缺 or _多:
+            # 判据比的是**哪几道题**,不是**几道**:删一道又加一道会正好对上,
+            # 而那是两套不同的题。缺了 / 多了分开报 —— 下一步要查的地方不一样。
+            print(f"  ℹ️ 基线和现在的题对不上,**不拿它比** —— "
+                  + (f"它没量过 {sorted(_缺)}" if _缺 else "")
+                  + ("；" if _缺 and _多 else "")
+                  + (f"它量过但现在没有的 {sorted(_多)}" if _多 else ""))
+        else:
             基线 = sum(1 for x in _b if x.get("passed"))
+            # **来路一起递进去** —— 光有一个数字,`rounds.报()` 现在会拒收。
+            # 供应商/模型换了照样能相减,而两者在文件里长得一模一样。
+            基线来路 = {k: _b[0].get(k) for k in ("供应商", "模型", "代码")}
             print(f"  (基线取自 git 里上一版结果:{基线}/{len(_b)})")
     except Exception:
         pass
     # 传失败理由进去 —— **翻面按原因分类**:轨迹类是真信号(模型这次行为变了),
     # 内容类多半是判据太吃措辞。两边方向相反,合成一个「抖动 N 题」看不出区别。
-    rounds.报(多, 基线通过数=基线, 名="成长推算", 原因=因)
+    rounds.报(多, 基线通过数=基线, 名="成长推算", 原因=因, 基线来路=基线来路)
     # **存答案原文。** 不存的话,失败了只能重跑才知道它说了什么,而重跑要花钱、还不一定复现。
     out = os.path.join(HERE, "growth-eval-results.jsonl")
     # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。

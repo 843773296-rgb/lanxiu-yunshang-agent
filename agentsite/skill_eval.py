@@ -24,7 +24,8 @@ Accio 的实测结论是**漏触发是主要失败模式**,所以他们要求技
     ./agentsite/.venv/bin/python agentsite/skill_eval.py --save v1  # 存一版基线
     ./agentsite/.venv/bin/python agentsite/skill_eval.py --diff v1  # 和基线比
 
-跑一次约 15 条 × 30 秒。用 Claude(订阅内,边际成本为零)。
+跑一次约 25 条 × **2 遍** × 30 秒 ≈ 25 分钟。用 Claude(订阅内,边际成本为零)。
+**默认跑两遍**,报告会说清轮间抖了几条 —— 单跑一遍的数是一次抽样,不是结论。
 """
 import argparse, asyncio, json, os, sys, time
 
@@ -89,9 +90,19 @@ def main():
                          "分不清是改动的效果还是换了档")
     ap.add_argument("--retry", type=int, default=2,
                     help="跑崩了重试几次。**崩了不算答错了** —— 重试完还崩的单独计,不进准确率")
-    ap.add_argument("--repeat", type=int, default=1,
-                    help="每条跑几遍。**单跑一次是有噪声的** —— "
-                         "同一个问法两次结果可能不一样,分不清「改坏了」和「抖了一下」")
+    # ⚠️ **默认 2,不是 1。**(2026-09-22 改。原来默认 1。)
+    # 这个脚本此前**已经有**逐条重复 + wobbly + 对照组底噪 —— 机制比别的评测都细,
+    # 但默认关着。于是它日常吐出来的永远是一个**单次抽样的准确率**,
+    # 而报告上没有任何一个字说它只跑了一遍。
+    #
+    # > **一个默认关着的能力,和一个没有的能力,在报告上长得一模一样。**
+    #
+    # 代价是跑一次从 ~12 分钟变成 ~25 分钟。用 Claude 订阅内,边际成本为零;
+    # 而一个不知道自己是不是抛硬币的数,省下的那 12 分钟会在下游赔回来。
+    ap.add_argument("--repeat", type=int, default=2,
+                    help="每条跑几遍(默认 2)。**单跑一次是有噪声的** —— "
+                         "同一个问法两次结果可能不一样,分不清「改坏了」和「抖了一下」。"
+                         "要图快可以 --repeat 1,那时 rounds.报() 会明说不能下结论")
     a = ap.parse_args()
 
     spec = json.load(open(CASES, encoding="utf-8"))
@@ -108,13 +119,19 @@ def main():
           f"技能档 {a.set}({len(_il.import_module('sdk').skills_for(a.set))} 个)\033[0m")
     print("=" * 88)
     rows, t0 = [], time.time()
+    # 每一遍就是一轮 —— 攒成 rounds.py 要的形状 `[{用例: 过没过}, ...]`。
+    # 逐条重复和「跑两轮」量的是同一件事,只是交错着跑;
+    # 攒起来就能直接问那个问题:**这个差会不会被抖动淹掉。**
+    轮数 = max(1, a.repeat)
+    多轮 = [{} for _ in range(轮数)]
+    轮因 = [{} for _ in range(轮数)]
     for c in cases:
         want = c.get("expect")
         # 跑 N 遍,**记下每一遍的结果** —— 稳定性本身是个要看的东西:
         # 一个「有时触发有时不触发」的技能,比稳定不触发更难查,
         # 因为它偶尔会给你一个「已经好了」的假象。
-        got_all, 崩 = [], []
-        for _ in range(max(1, a.repeat)):
+        got_all, 崩, 每遍 = [], [], []
+        for _ in range(轮数):
             # ⚠️ **跑崩了不算答错了。** 2026-09-19 那次跑批暴露的:
             # 连着五条抛 ResultError(之后自己恢复,明显是瞬时故障),
             # 而它们被当成「触发结果」记进了准确率 ——
@@ -130,7 +147,31 @@ def main():
                     break
                 except Exception as e:
                     g1 = f"ERR:{type(e).__name__}"
+            每遍.append(g1)
             (崩 if str(g1).startswith("ERR:") else got_all).append(g1)
+
+        # ── 把这一条的每一遍记进对应那一轮 ────────────────────────────
+        # ⚠️ 崩掉的那一遍在两个地方待遇**不同,而且都是对的**:
+        #   准确率里 → **剔除**(不然把环境问题算成能力,2026-09-19 就是这么错的)
+        #   抖动报告里 → **留着记成没过**,理由写「跑挂了」
+        #     (rounds.py 有专门的「跑挂」一类)。剔掉的话,
+        #     「这一轮根本没跑完」会从抖动视图里**安静消失**,
+        #     那条用例看上去就成了「稳定地挂着」。
+        #
+        # 失败理由一律标 **轨迹类**,这不是偷懒 —— 是**结构上就只能是它**:
+        # `_skill_of()` 读的是工具调用的入参,**这把尺子根本不看模型说了什么**。
+        # 所以这里的翻面永远不可能是「判据太吃措辞」,只能是模型这次行为变了。
+        # 该改的是**技能描述**,不是判据。
+        for _i, _g in enumerate(每遍):
+            if str(_g).startswith("ERR:"):
+                多轮[_i][c["id"]] = False
+                轮因[_i][c["id"]] = [f"跑挂了:{_g}"]
+                continue
+            多轮[_i][c["id"]] = (_g == want)
+            if _g != want:
+                轮因[_i][c["id"]] = [
+                    f"轨迹:该触发 {want or '(不触发)'},实际 {_g or '(无)'}"]
+
         if not got_all:
             print(f"  {R}✗{D} #{c['id']:<3} {c['prompt'][:30]:<32} "
                   f"{R}{len(崩)} 遍全崩({崩[0]}),这条没测到{D}")
@@ -178,10 +219,65 @@ def main():
         print(f"\n  {Y}误触发的{D}(随口一问,拿回来一份三段式文档):")
         for x in over: print(f"    #{x['id']} 「{x['prompt'][:34]}」不该触发,却触发了 {x['got']}")
 
+    # ── 跑了几轮、抖了几条、能不能下结论 ──────────────────────────────
+    # 上面那行准确率是**最后一轮**的数。它自己说不出是不是抛硬币,
+    # 所以这里交给 agent/rounds.py 来说。
+    sys.path.append(os.path.join(ROOT, "agent"))
+    import rounds
+    # 基线:`--diff` 指的那一版。⚠️ **不可比的基线不许交出去。**
+    # 这和识图评测那条(图指纹对不上就不给基线)是**同一类**,不是同一处 ——
+    # 那边是「图换了」,这边是「技能档换了 / 只跑了一部分用例」。
+    # 交出去的话,rounds 会一本正经地算一个「版本差」,
+    # 而那个差是换档换出来的,**和一个真的版本差长得一模一样**。
+    基线, 基线来路 = None, None
+    if a.diff:
+        _p = os.path.join(RUNS, f"{a.diff}.json")
+        if os.path.exists(_p):
+            _b = json.load(open(_p, encoding="utf-8"))
+            _档 = _b.get("技能档")
+            _量过 = {x["id"] for x in _b.get("明细", []) if x.get("kind") != "没测到"}
+            _n = len(_量过)
+            _现 = {c["id"] for c in cases}
+            _缺, _多 = _现 - _量过, _量过 - _现
+            if _档 and _档 != a.set:
+                print(f"  ℹ️ 基线 {a.diff} 是 {_档} 档跑的,这次是 {a.set} 档 —— "
+                      f"**不拿它比**(换档的差和版本差长得一样)")
+            elif len(cases) != len(spec["cases"]):
+                print(f"  ℹ️ 这次只跑了 {len(cases)}/{len(spec['cases'])} 条 —— "
+                      f"**不拿基线比**(分母都不一样)")
+            elif _缺 or _多:
+                # 实测撞到:`baseline.json` 是**用例还只有 15 条**的时候存的,
+                # 而现在有 25 条。两个分母相减出来的「版本差」毫无意义,
+                # 而它**和一个真的版本差长得一模一样**。
+                # 题加了是好事,但**加题那一刻,所有老基线就到期了**
+                # (`agentsite/evals/runs/` 里十份,一份都对不上现在的 25 条)。
+                #
+                # 判据比的是**哪几条**,不是**几条** —— 只比数量的话,
+                # 「删一条又加一条」会正好对上,而那是两套完全不同的题。
+                # 缺了 / 多了**分开报**:缺了是老基线没量过,多了是题被删过,
+                # 两件事接下来要查的地方不一样。
+                print(f"  ℹ️ 基线 {a.diff} 和现在的用例对不上,**不拿它比** —— "
+                      + (f"它没量过 {len(_缺)} 条(#{'、#'.join(map(str, sorted(_缺)[:6]))}"
+                         + (f" ……还有 {len(_缺)-6} 条" if len(_缺) > 6 else "") + ")"
+                         if _缺 else "")
+                      + ("；" if _缺 and _多 else "")
+                      + (f"它量过但现在没有的 {len(_多)} 条" if _多 else ""))
+            elif _n:
+                基线 = sum(1 for x in _b.get("明细", []) if x.get("ok"))
+                基线来路 = _b.get("来路")      # 老文件没有 → rounds 会拒收,这是对的
+                print(f"  (基线取自 {a.diff}:{基线}/{_n})")
+    rounds.报(多轮, 基线通过数=基线, 名="技能触发", 原因=轮因, 基线来路=基线来路)
+
     os.makedirs(RUNS, exist_ok=True)
     if a.save:
         p = os.path.join(RUNS, f"{a.save}.json")
+        # **存基线时盖上来路**(供应商/模型/代码)—— 此前这一套自己拼 json、
+        # 不走 evalrec,于是 `runs/*.json` 十份里**没有一份记着是谁跑的**。
+        # 没来路的基线,rounds.报() 现在会拒收,而那是对的:
+        # DeepSeek 跑的和 Claude 跑的,在这个文件里长得一模一样。
+        import evalrec as _er
         json.dump(dict(准确率=f"{ok_n}/{len(rows_真)}", 技能档=a.set,
+                       来路=_er.盖章(), 重复遍数=轮数,
                        没测到=[x["id"] for x in 没测到],
                        明细=rows, 技能哈希=_hashes()),
                   open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
@@ -193,9 +289,28 @@ def main():
         base = json.load(open(p, encoding="utf-8"))
         old = {x["id"]: x for x in base["明细"]}
         oldh, newh = base.get("技能哈希") or {}, _hashes()
-        改了的技能 = {k for k, v in newh.items() if oldh.get(k) != v}
         print(f"\n  \033[1m和基线 {a.diff} 对比\033[0m")
-        print(f"    这期间改过的技能:{sorted(改了的技能) or '(一个都没改)'}")
+        # ⚠️ **老基线可能根本没记技能哈希**(`技能哈希` 是后来才加的字段)。
+        # 那时 `oldh` 是空字典,于是每一个技能的哈希都「对不上」,
+        # **236 个技能全被算成改过** —— 对照组当场清零,判断只好说「没有对照组」。
+        #
+        # 而它印出来的那句话是「这期间每份技能都改过」,**那是编的**:
+        # 真相是「不知道哪些改过」。两句话的下一步动作相反 ——
+        # 一个是「下次留一份不动的」,另一个是「这个基线做不了对照,换一版」。
+        # (2026-09-22 接多轮时顺手撞到,`--diff baseline` 一跑就刷了半屏技能名。)
+        if not oldh:
+            改了的技能 = None
+            print(f"    {Y}这期间改过的技能:**不知道** —— 基线 {a.diff} 没记技能哈希"
+                  f"(那时还没开始记)。{D}"
+                  f"\n      **这不等于「一个都没改」,也不等于「全改了」** ——"
+                  f"下面分不出对照组,读不出效果。要对照请换一版记了哈希的基线")
+        else:
+            改了的技能 = {k for k, v in newh.items() if oldh.get(k) != v}
+            _ks = sorted(改了的技能)
+            print(f"    这期间改过的技能:"
+                  + (f"{len(_ks)} 个 —— " + "、".join(_ks[:8])
+                     + (f"  ……**还有 {len(_ks)-8} 个**" if len(_ks) > 8 else "")
+                     if _ks else "(一个都没改)"))
         _ob = base.get("技能档")
         if _ob and _ob != a.set:
             print(f"    {R}⚠ 两次用的技能档不同({_ob} → {a.set})—— "
@@ -208,7 +323,21 @@ def main():
         # 而实测:文件一个字没动的技能,用例照样 ±1/3 地抖。
         def _grp(x):
             want = next((c.get("expect") for c in spec["cases"] if c["id"] == x["id"]), None)
-            return "改动组" if want in 改了的技能 else "对照组"
+            return "改动组" if want in (改了的技能 or ()) else "对照组"
+
+        if 改了的技能 is None:
+            # **分不了组就别硬分。** 全丢进「对照组」会得出一句
+            # 「对照组动了 N 条,这就是噪声底噪」—— 那是**把可能的真效果说成噪声**,
+            # 和上面那句「每份技能都改过」错得一样离谱,只是方向相反。
+            好 = [x for x in rows if x["ok"] and not old.get(x["id"], {}).get("ok")]
+            坏 = [x for x in rows if not x["ok"] and old.get(x["id"], {}).get("ok")]
+            print(f"\n    \033[1m整体\033[0m({len(rows)} 条)· 修好 {len(好)} · 变坏 {len(坏)}")
+            for x in 坏: print(f"      {R}↓{D} #{x['id']} 「{x['prompt'][:28]}」原来对,现在 {x['kind']}")
+            for x in 好: print(f"      {G}↑{D} #{x['id']} 「{x['prompt'][:28]}」原来错,现在对了")
+            print(f"\n    \033[1m判断\033[0m\n      {Y}**读不出效果** —— 基线没记技能哈希,"
+                  f"分不出对照组,上面这 {len(好)+len(坏)} 条变化里混着效果和抖动,"
+                  f"拆不开。换一版记了哈希的基线再比。{D}")
+            return
 
         for grp in ("改动组", "对照组"):
             好 = [x for x in rows if _grp(x) == grp and x["ok"] and not old.get(x["id"], {}).get("ok")]
