@@ -608,14 +608,34 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
         # 也不在写死的那张时间线表里,于是两套时间修正一条都没覆盖到它们,
         # 造出来 4 条「结束早于开始」的预约 —— 数据库照单全收,写接口当场拒绝。
         # 直连那条路对此完全无感,因为库里它们只是两个字符串。
-        pairs = []
+        #
+        # ⚠️ **断言按列名推,修正按类型推 —— 两边判据不一致就会漏。**
+        # 2026-09-21 bench 抓到:`shift_tpl.start_t / end_t` 是**时刻文本**
+        # (「09:00」这种,不是日期),于是下面这个 `gen in (date, datetime)`
+        # 把它们挡在外面,而**派生断言那边只看列名,照样给它们生成了
+        # 「end 不该早于 start」**。结果是工厂造出了自己断言不允许的数据 ——
+        # 报出来是「我弄脏的 1 条」,而那正是这个工具最不能出的错。
+        #
+        # 修法:日期那一类照旧往后推;**别的可比类型直接对调** ——
+        # 对调不改动任何取值,只换个位置,分布一个字都不变。
+        pairs, 对调 = [], []
         for c in cols:
             if "start" in c.lower():
                 e = c.lower().replace("start", "end")
                 m = next((x for x in cols if x.lower() == e), None)
-                if m and cols[c]["gen"] in ("date", "datetime") \
+                if not m:
+                    continue
+                if cols[c]["gen"] in ("date", "datetime") \
                    and cols[m]["gen"] in ("date", "datetime"):
                     pairs.append((c, m))
+                elif cols[c]["gen"] == cols[m]["gen"]:
+                    # 同类型的一对(时刻文本 / 数字区间都算),用对调兜住
+                    对调.append((c, m))
+        for a, b in 对调:
+            for row in rows:
+                x, y = row.get(a), row.get(b)
+                if x is not None and y is not None and str(y) < str(x):
+                    row[a], row[b] = y, x
         if pairs:
             for row in rows:
                 for a, b in pairs:

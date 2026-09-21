@@ -77,7 +77,12 @@ def run(scale, overlay=None, do_rollback=True, log=print, stream=False):
             "行每秒": int(rows / max(t.get("生成", 0) + t.get("灌入", 0)
                                       + t.get("生成+灌入(流式)", 0), .01)),
             "峰值内存MB": round(rss_mb(), 1), "manifestMB": round(mf, 2),
-            "库MB": round(dbmb, 1), "新违规": len(worse)}
+            # ⚠️ **只打个数字「1」是不够的** —— 2026-09-21 bench 连着三档都报
+            # 「新违规 1」,而不说是哪一条,于是它在报表上躺了很久没人去查。
+            # 查出来是真问题(`shift_tpl` 的时刻文本没被时间修正覆盖)。
+            # 一个只给数量不给名字的报告,和「还有 N 条没显示」是同一个病。
+            "库MB": round(dbmb, 1), "新违规": len(worse),
+            "新违规明细": [str(k)[:70] for k in worse][:3]}
 
 
 if __name__ == "__main__":
@@ -94,6 +99,8 @@ if __name__ == "__main__":
         rs.append(r)
         print(f'{r["scale"]:>6} {r["行数"]:>9,} {r["总秒"]:>7} {r["行每秒"]:>8,} '
               f'{r["峰值内存MB"]:>8} {r["manifestMB"]:>8}MB {r["库MB"]:>6} {r["新违规"]:>6}')
+        for x in r.get("新违规明细") or []:
+            print(f'        ⚠️ 弄脏了:{x}')
     print("\n各阶段耗时(秒):")
     ks = ["反射", "推断", "方案", "生成", "基线自检", "灌入", "生成+灌入(流式)",
           "灌后自检", "回滚"]

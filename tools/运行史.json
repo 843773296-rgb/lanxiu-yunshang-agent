@@ -4,6 +4,10 @@
   "tools/determinism_check.py --真建两次": "2026-09-21 15:12",
   "fakedata/pg_e2e.py": "2026-09-21 15:21",
   "fakedata/mysql_e2e.py": "2026-09-21 15:22",
-  "fakedata/multistore_e2e.py": "2026-09-21 15:23"
+  "fakedata/multistore_e2e.py": "2026-09-21 15:23",
+  "tools/verify_sources.py": "2026-09-21 15:37",
+  "backend/opportunity_eval.py": "2026-09-21 15:37",
+  "fakedata/bench.py": "2026-09-21 15:49",
+  "agent/growth_eval.py": "2026-09-21 15:50"
  }
 }
