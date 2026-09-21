@@ -2399,5 +2399,29 @@
       }
     ],
     "预期红": "接入率太低不给率"
+  },
+  {
+    "script": "knowledge/owner.py",
+    "改坏": "把「没查过有没有经手」当成「没经手过」(不知道被说成了没跟)",
+    "file": [
+      {
+        "path": "knowledge/owner.py",
+        "old": "    if 事实.get(\"归属人经手过\") is False and 事实.get(\"客户有动静\"):",
+        "new": "    if not 事实.get(\"归属人经手过\") and 事实.get(\"客户有动静\"):"
+      }
+    ],
+    "预期红": "没查这一项时不报"
+  },
+  {
+    "script": "knowledge/owner.py",
+    "改坏": "客户压根没动静时也报(一个见谁都报的检查:实测会报 76 个,全是没下过单的)",
+    "file": [
+      {
+        "path": "knowledge/owner.py",
+        "old": "    if 事实.get(\"归属人经手过\") is False and 事实.get(\"客户有动静\"):",
+        "new": "    if 事实.get(\"归属人经手过\") is False:"
+      }
+    ],
+    "预期红": "客户没动静时不报"
   }
 ]

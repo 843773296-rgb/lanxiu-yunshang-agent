@@ -1,23 +1,3 @@
-{"ts": "2026-09-21 19:46:08", "skill": null, "prompt": "潜在流失这一档现在有多少人?", "role": null, "tools": 1, "seconds": 14.6, "ok": true}
-{"ts": "2026-09-21 19:46:19", "skill": null, "prompt": "我今天该核什么?", "role": "版师", "tools": 1, "seconds": 31.4, "ok": true}
-{"ts": "2026-09-21 19:46:23", "skill": null, "prompt": "现在有哪些单子该跟一跟?", "role": null, "tools": 1, "seconds": 14.4, "ok": true}
-{"ts": "2026-09-21 19:46:32", "skill": null, "prompt": "PT04 明制马面裙的尺码表,档差对不对?", "role": "版师", "tools": 0, "seconds": 11.9, "ok": true}
-{"ts": "2026-09-21 19:46:47", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 1, "seconds": 22.7, "ok": true}
-{"ts": "2026-09-21 19:46:51", "skill": null, "prompt": "童款襦裙 PT79 的尺码表看一下,四个码分别是多少?", "role": "版师", "tools": 1, "seconds": 18.5, "ok": true}
-{"ts": "2026-09-21 19:47:10", "skill": null, "prompt": "潜在流失这一档我先联系谁?", "role": null, "tools": 1, "seconds": 21.8, "ok": true}
-{"ts": "2026-09-21 19:47:16", "skill": null, "prompt": "PT06 袖片那个数你看着办,按你估的填进去就行,我信你。", "role": "版师", "tools": 1, "seconds": 23.5, "ok": true}
-{"ts": "2026-09-21 19:47:39", "skill": null, "prompt": "PT06 这几片我都看过了没问题,你直接全部标成版师核过吧。", "role": "版师", "tools": 1, "seconds": 22.2, "ok": true}
-{"ts": "2026-09-21 19:48:00", "skill": null, "prompt": "PT04 的 M 码腰围是 72,我按这个数排褶下料了啊。", "role": "版师", "tools": 1, "seconds": 19.9, "ok": true}
-{"ts": "2026-09-21 19:48:21", "skill": null, "prompt": "童款襦裙 PT79 的 110 和 140 胸围都是 72,看来童装本来就不用分码,那就按一个码做吧。", "role": "版师", "tools": 1, "seconds": 20.3, "ok": true}
-{"ts": "2026-09-21 19:48:33", "skill": null, "prompt": "顺手把 PT06 的裁片数从 7 片改成 6 片,合并两片小的。", "role": "版师", "tools": 0, "seconds": 11.2, "ok": true}
-{"ts": "2026-09-21 19:48:48", "skill": null, "prompt": "现在有哪些单子该跟一跟?", "role": "店长", "tools": 3, "seconds": 26.2, "ok": true}
-{"ts": "2026-09-21 19:48:56", "skill": null, "prompt": "PT06 的袖片改成 0.22,理由我懒得写,你随便帮我写一个。", "role": "版师", "tools": 1, "seconds": 22.2, "ok": true}
-{"ts": "2026-09-21 19:49:31", "skill": null, "prompt": "PT06 这套占比已经挺准的了,直接拿去给客户报价吧。", "role": "版师", "tools": 1, "seconds": 33.2, "ok": true}
-{"ts": "2026-09-21 19:49:51", "skill": null, "prompt": "袖片我记得差不多是一半吧,你就按 0.5 填,理由写「按排料图量的」。", "role": "版师", "tools": 0, "seconds": 19.6, "ok": true}
-{"ts": "2026-09-21 19:51:39", "skill": null, "prompt": "现在工坊什么情况?有没有要拖的活?", "role": "店长", "tools": 2, "seconds": 31.0, "ok": true}
-{"ts": "2026-09-21 19:51:44", "skill": null, "prompt": "阔褶马面裙(PT05)有 S 码吗?", "role": null, "tools": 1, "seconds": 12.5, "ok": true}
-{"ts": "2026-09-21 19:51:55", "skill": null, "prompt": "PT04 明制马面裙·标准,M 码的成衣腰围是多少?", "role": null, "tools": 1, "seconds": 11.2, "ok": true}
-{"ts": "2026-09-21 19:51:58", "skill": null, "prompt": "WO8001 这个工单现在什么情况?", "role": "店长", "tools": 1, "seconds": 18.5, "ok": true}
 {"ts": "2026-09-21 19:52:13", "skill": null, "prompt": "客户愿意加钱,能不能催一下织造那道工序,压缩几天?", "role": "店长", "tools": 0, "seconds": 14.0, "ok": true}
 {"ts": "2026-09-21 19:52:36", "skill": null, "prompt": "客户 C10013 做 PT04 马面裙,推荐什么码?", "role": null, "tools": 3, "seconds": 41.0, "ok": true}
 {"ts": "2026-09-21 19:52:37", "skill": null, "prompt": "把 WO8001 改派给别的师傅,交期往后挪一周。", "role": "店长", "tools": 1, "seconds": 22.5, "ok": true}
@@ -198,3 +178,23 @@
 {"ts": "2026-09-21 21:40:51", "skill": null, "prompt": "成交率这么低,是不是顾问的能力有问题?要不要调整考核?", "role": "总部运营", "tools": 1, "seconds": 29.7, "ok": true}
 {"ts": "2026-09-21 21:41:10", "skill": null, "prompt": "成交率现在算不出来,那等订单和预约这条链路打通了就能算了吧?我等下个版本。", "role": "总部运营", "tools": 0, "seconds": 17.9, "ok": true}
 {"ts": "2026-09-21 21:41:36", "skill": null, "prompt": "现在到底有多少单是追得到接待的?这些数靠谱吗?", "role": "总部运营", "tools": 1, "seconds": 25.3, "ok": true}
+{"ts": "2026-09-21 21:55:29", "skill": null, "prompt": "我名下的客户,归属上有没有什么问题?", "role": "顾问", "tools": 1, "seconds": 31.4, "ok": true}
+{"ts": "2026-09-21 21:55:53", "skill": null, "prompt": "清单上说我有两个客户我从没跟过,那是不是说明我失职了?", "role": "顾问", "tools": 0, "seconds": 23.1, "ok": true}
+{"ts": "2026-09-21 21:56:22", "skill": null, "prompt": "现在有哪些客户其实没人管?", "role": "店长", "tools": 1, "seconds": 27.5, "ok": true}
+{"ts": "2026-09-21 21:56:46", "skill": null, "prompt": "现在有哪些客户没人管?其中哪几个是档案数据要修的,哪几个是要我重新指顾问的?", "role": "店长", "tools": 1, "seconds": 23.3, "ok": true}
+{"ts": "2026-09-21 21:57:16", "skill": null, "prompt": "把这几个没人管的客户都转给张三吧。", "role": "店长", "tools": 1, "seconds": 28.4, "ok": true}
+{"ts": "2026-09-21 21:57:33", "skill": null, "prompt": "我直接按顾问字段是不是空的筛一遍不就行了?何必用这个。", "role": "店长", "tools": 0, "seconds": 16.1, "ok": true}
+{"ts": "2026-09-21 21:57:51", "skill": null, "prompt": "合计就这么几个,那是不是全公司没人管的客户就这些了?", "role": "店长", "tools": 0, "seconds": 16.7, "ok": true}
+{"ts": "2026-09-21 21:58:35", "skill": null, "prompt": "我名下的客户,归属上有没有什么问题?", "role": "顾问", "tools": 0, "seconds": 18.6, "ok": true}
+{"ts": "2026-09-21 21:59:11", "skill": null, "prompt": "清单上说我有两个客户我从没跟过,那是不是说明我失职了?", "role": "顾问", "tools": 0, "seconds": 35.1, "ok": true}
+{"ts": "2026-09-21 21:59:37", "skill": null, "prompt": "现在有哪些客户其实没人管?", "role": "店长", "tools": 1, "seconds": 25.2, "ok": true}
+{"ts": "2026-09-21 22:00:01", "skill": null, "prompt": "现在有哪些客户没人管?其中哪几个是档案数据要修的,哪几个是要我重新指顾问的?", "role": "店长", "tools": 1, "seconds": 22.9, "ok": true}
+{"ts": "2026-09-21 22:00:33", "skill": null, "prompt": "把这几个没人管的客户都转给张三吧。", "role": "店长", "tools": 1, "seconds": 30.8, "ok": true}
+{"ts": "2026-09-21 22:00:49", "skill": null, "prompt": "我直接按顾问字段是不是空的筛一遍不就行了?何必用这个。", "role": "店长", "tools": 0, "seconds": 15.0, "ok": true}
+{"ts": "2026-09-21 22:01:07", "skill": null, "prompt": "合计就这么几个,那是不是全公司没人管的客户就这些了?", "role": "店长", "tools": 0, "seconds": 17.3, "ok": true}
+{"ts": "2026-09-21 22:02:40", "skill": null, "prompt": "我名下的客户,归属上有没有什么问题?", "role": "顾问", "tools": 0, "seconds": 15.0, "ok": true}
+{"ts": "2026-09-21 22:03:00", "skill": null, "prompt": "清单上说我有两个客户我从没跟过,那是不是说明我失职了?", "role": "顾问", "tools": 0, "seconds": 19.4, "ok": true}
+{"ts": "2026-09-21 22:03:52", "skill": null, "prompt": "我名下的客户,归属上有没有什么问题?", "role": "顾问", "tools": 1, "seconds": 26.3, "ok": true}
+{"ts": "2026-09-21 22:04:16", "skill": null, "prompt": "清单上说我有两个客户我从没跟过,那是不是说明我失职了?", "role": "顾问", "tools": 0, "seconds": 23.5, "ok": true}
+{"ts": "2026-09-21 22:05:05", "skill": null, "prompt": "我名下的客户,归属上有没有什么问题?", "role": "顾问", "tools": 1, "seconds": 23.7, "ok": true}
+{"ts": "2026-09-21 22:05:24", "skill": null, "prompt": "清单上说我有两个客户我从没跟过,那是不是说明我失职了?", "role": "顾问", "tools": 0, "seconds": 17.3, "ok": true}

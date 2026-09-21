@@ -58,16 +58,16 @@ def 建表(c):
                    ts       TEXT not null)""")
 
 
-def 实际无人管理(db=DB):
+def 实际无人管理(db=DB, 查经手=False):
     """归属字段非空,但那个人管不了 —— **口径在 `knowledge/owner.py`,这里只取数**。
 
     五种码(2026-09-21 从四种加到五种,多的是 NO_SHOP),
     分开的唯一理由是**下一步动作不同**;码的含义和优先级看那个模块。
     """
-    return [(r["id"], r["name"], r["码"], r["说法"]) for r in 明细(db)]
+    return [(r["id"], r["name"], r["码"], r["说法"]) for r in 明细(db, 查经手)]
 
 
-def 明细(db=DB):
+def 明细(db=DB, 查经手=False):
     """同上,但带「下一步该做什么」—— 工具层要的是这一份。
 
     **分成几种码的全部理由就是下一步不同**,所以给人/给模型看的那一份
@@ -76,19 +76,40 @@ def 明细(db=DB):
     out = []
     with sqlite3.connect(db) as c:
         c.row_factory = sqlite3.Row
-        for r in c.execute("""
+        # ⚠️ **一条查询查完,不要逐客户循环。**
+        # 这个项目为「对 965 个客户各跑 5 次查询」把门禁拖到超时过一次。
+        经手 = ("""，
+              (exists(select 1 from measure_rec m
+                      where m.customer_id=cu.id and m.measured_by_no=cu.advisor_no)
+            or exists(select 1 from appointment a
+                      where a.customer_id=cu.id and a.advisor_no=cu.advisor_no)
+            or exists(select 1 from ordr o
+                      where o.customer_id=cu.id and o.advisor_no=cu.advisor_no)
+            or exists(select 1 from schedule sc
+                      where sc.customer_id=cu.id and sc.assignee_no=cu.advisor_no)) 经手过，
+              (exists(select 1 from measure_rec m2 where m2.customer_id=cu.id)
+            or exists(select 1 from ordr o2 where o2.customer_id=cu.id)
+            or exists(select 1 from appointment a2 where a2.customer_id=cu.id)) 有动静"""
+              .replace("，", ",")) if 查经手 else ""
+        for r in c.execute(f"""
             select cu.id, cu.name, cu.shop, cu.advisor_no, s.name adv_name,
-                   s.status adv_status, s.shop adv_shop, s.no adv_no
+                   s.status adv_status, s.shop adv_shop, s.no adv_no{经手}
             from customer cu left join staff s on s.no = cu.advisor_no"""):
             判 = _口径.判({"advisor_no": r["advisor_no"],
                           # ⚠️ 用 `s.no is not None` 判「查到了没有」,**不用姓名** ——
                           # 姓名为空的员工和不存在的员工,在 `adv_name is None` 下长得一样。
                           "adv_found": r["adv_no"] is not None,
                           "adv_name": r["adv_name"], "adv_status": r["adv_status"],
-                          "cust_shop": r["shop"], "adv_shop": r["adv_shop"]})
+                          "cust_shop": r["shop"], "adv_shop": r["adv_shop"],
+                          # **没查就给 None,不给 False** ——
+                          # 「不知道」和「没经手过」在 falsy 上长得一样
+                          "归属人经手过": (bool(r["经手过"]) if 查经手 else None),
+                          # **客户压根没动静的不算「没人管」** —— 他还没热过。
+                          # 不加这一条会报 76 个,全是没下过单的(见 knowledge/owner.py)。
+                          "客户有动静": (bool(r["有动静"]) if 查经手 else None)})
             if 判:
                 out.append({"id": r["id"], "name": r["name"],
-                            "门店": r["shop"], **判})
+                            "门店": r["shop"], "归属工号": r["advisor_no"], **判})
     return out
 
 

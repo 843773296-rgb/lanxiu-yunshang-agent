@@ -3689,7 +3689,7 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号(如 C10001)或姓名。给了就深判这一个人(会调模型);不给就列候选清单。"},
     "limit":{"type":"number","description":"清单最多返回几条,默认 20,最多 100"}},"required":[]}},
- {"name":"ownerless_list","description":"**谁实际上没人管** —— 注意「有归属顾问」和「有人管」不是一回事:一个停用的顾问名下还挂着客户,顾问字段**非空**,任何按「有没有顾问」筛的写法都查不出他们。\n\n返回五种码,**分开的全部理由是下一步不同**:`LEFT` 顾问已停用(店长重新指人)· `NONE` 还没归属(等分配)· `CROSS_SHOP` 顾问不在客户门店(转店还是转人)· `NO_SUCH` 工号员工表里没有(**数据要修**)· `NO_SHOP` 档案没填门店,**判不了跨没跨店**(数据要修)。⚠️ 后两种是数据问题不是业务问题,**对着它们建议「重新分配客户」是答错了**。⚠️ `NO_SHOP` 是「判不了」,不是「确认过没问题」。\n\n**只查不改** —— 改不改归属是店长的动作,这个工具不写任何一行。范围跟身份走:店长看本店,总部看全部,顾问看不到(返回值里写着「看的范围」是哪一段,**合计 0 不等于全店都有人管**)。code 可只看某一种码。另附「待确立归属」:到店接待完成、但归属还没确立的人数(业务定:归属在首次到店接待完成时确立)。",
+ {"name":"ownerless_list","description":"**谁实际上没人管** —— **顾问问「我名下的客户有没有问题」也用这个**(会自动只看他名下那一份)。 —— 注意「有归属顾问」和「有人管」不是一回事:一个停用的顾问名下还挂着客户,顾问字段**非空**,任何按「有没有顾问」筛的写法都查不出他们。\n\n返回五种码,**分开的全部理由是下一步不同**:`LEFT` 顾问已停用(店长重新指人)· `NONE` 还没归属(等分配)· `CROSS_SHOP` 顾问不在客户门店(转店还是转人)· `NO_SUCH` 工号员工表里没有(**数据要修**)· `NO_SHOP` 档案没填门店,**判不了跨没跨店**(数据要修)。⚠️ 后两种是数据问题不是业务问题,**对着它们建议「重新分配客户」是答错了**。⚠️ `NO_SHOP` 是「判不了」,不是「确认过没问题」。\n\n`NEVER_TOUCHED` 归属人在系统里**没有一条经手记录**(⚠️ 这**不等于他没跟过** —— 微信电话没录进来就查不到;下一步是去确认是哪一种)。\n\n**只查不改** —— 改不改归属是店长的动作,这个工具不写任何一行。范围跟身份走:店长看本店,总部看全部,**顾问看自己名下那一份**(⚠️ 按定义他名下不会有 NONE/NO_SUCH/LEFT,所以**多半是空的**;空清单只说明「查了哪几类」那几类没有,**不等于一切正常**)(返回值里写着「看的范围」是哪一段,**合计 0 不等于全店都有人管**)。code 可只看某一种码。另附「待确立归属」:到店接待完成、但归属还没确立的人数(业务定:归属在首次到店接待完成时确立)。",
   "input_schema":{"type":"object","properties":{
     "code":{"type":"string","description":"只看某一种或几种码,逗号分隔,如 LEFT,NO_SUCH。不给看全部。"},
     "limit":{"type":"number","description":"清单最多返回几条,默认 50,最多 200"}},"required":[]}},
@@ -4487,15 +4487,22 @@ def ownerless_list(code=None, limit=50):
     me = whoami()
     if not me:
         return dict(error="不知道现在是谁在问 —— 请先登录")
-    if me.get("role") not in MANAGER_ROLES:
-        return dict(error=f"这是店长的清单,你是「{me.get('role')}」。"
-                          f"你自己名下的客户用 get_member 看。")
     import ownership as _own
-    全部 = _own.明细()
-    # 店长看本店,总部看全部 —— 和 week_grid / get_tasks 同一套范围规矩。
-    店 = None if me.get("role") == "总部运营" else (me.get("shop") or "")
-    行 = [r for r in 全部 if 店 is None or (r.get("门店") or "") == 店]
-    范围 = "全部门店" if 店 is None else f"{店}(你的门店)"
+    # 2026-09-21:**顾问也能看了,看的是自己名下那一份**。
+    # 原来只给店长和总部 —— 而「我名下的客户有没有问题」是顾问天天要问的。
+    全部 = _own.明细(查经手=True)
+    # 范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。
+    if me.get("role") in MANAGER_ROLES:
+        店 = None if me.get("role") == "总部运营" else (me.get("shop") or "")
+        行 = [r for r in 全部 if 店 is None or (r.get("门店") or "") == 店]
+        范围 = "全部门店" if 店 is None else f"{店}(你的门店)"
+    else:
+        # 顾问那一份:**只有他名下的**。
+        # ⚠️ 他自己名下的客户,按定义不会出现 NONE / NO_SUCH / LEFT
+        # (归属就是他,而他在职)—— 所以他这份清单**多半是空的**,
+        # 而「空」必须说清**查了哪几类**,不能说成「一切正常」。
+        行 = [r for r in 全部 if (r.get("归属工号") or "") == (me.get("no") or "?")]
+        店, 范围 = "", "你名下的客户"       # 店 留空:顾问那一份不按门店筛,按归属人筛
     if code:
         码集 = {c.strip().upper() for c in str(code).replace("，", ",").split(",") if c.strip()}
         行 = [r for r in 行 if r["码"] in 码集]
@@ -4503,9 +4510,14 @@ def ownerless_list(code=None, limit=50):
     for r in 行:
         按码[r["码"]] = 按码.get(r["码"], 0) + 1
     n = max(1, min(int(limit or 50), 200))
-    待 = [d for d in _own.待确立()
-          if 店 is None or (d.get("门店") or "") == 店]
-    return {
+    if me.get("role") in MANAGER_ROLES:
+        待 = [d for d in _own.待确立()
+              if 店 is None or (d.get("门店") or "") == 店]
+    else:
+        # 顾问那一份:**按接待人是不是他**筛,不按门店 —— 同一家店好几个顾问。
+        待 = [d for d in _own.待确立()
+              if (d.get("接待人") or "") == (me.get("no") or "?")]
+    out = {
         "看的范围": 范围,
         "合计": len(行),
         "按码": 按码,
@@ -4518,6 +4530,14 @@ def ownerless_list(code=None, limit=50):
         "待确立归属": len(待),
         "⚠️": "这个工具**只查不改**。归属要不要动、动给谁,是店长的业务动作。",
     }
+    if not 行:
+        # **「没查到」和「没有问题」要分开。**
+        # 空清单不许说成「一切正常」—— 它只说明**这几类问题**没有。
+        out["查了哪几类"] = list(_own._口径.下一步)
+        out["⚠️ 空清单是什么意思"] = (
+            "**只说明上面那几类问题你名下没有**,不等于客户都跟得好 —— "
+            "「他最近该不该联系」用 revive_list,「他之前谁接触过」用 customer_history。")
+    return out
 
 
 TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
