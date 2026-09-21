@@ -232,6 +232,8 @@ SHOP_TOOLS = [
     "mcp__shop__on_shift",
     # 成交归因:**两种分成校验规则相反**,一种必须 100,一种可以超 100。
     "mcp__shop__deal_credit",
+    # 客户接触史:**一次量体是一次触点,不是十几次**。
+    "mcp__shop__customer_history",
 ]
 
 # 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。

@@ -1845,9 +1845,9 @@
     "改坏": "把量体的去重去掉(一次量体的十几条测量项各算一个触点)",
     "file": [
       {
-        "path": "backend/touchpoint.py",
-        "old": "                      group by substr(measured_at,1,10), measured_by_no\"\"\",",
-        "new": "                      group by id\"\"\","
+        "path": "knowledge/journey.py",
+        "old": "        if t.get(\"类型\") not in 一次多行的类型:",
+        "new": "        if True:"
       }
     ],
     "预期红": "量体按「一次」算不按「一条」算"
@@ -2315,5 +2315,41 @@
       }
     ],
     "预期红": "没有触点不编"
+  },
+  {
+    "script": "knowledge/journey.py",
+    "改坏": "不再给量体去重(一次量体十几条记录被当成十几次触点)",
+    "file": [
+      {
+        "path": "knowledge/journey.py",
+        "old": "        if t.get(\"类型\") not in 一次多行的类型:",
+        "new": "        if True:"
+      }
+    ],
+    "预期红": "一次量体算一个触点"
+  },
+  {
+    "script": "knowledge/journey.py",
+    "改坏": "把「一个触点都没有」和「只有下单」合成一个码",
+    "file": [
+      {
+        "path": "knowledge/journey.py",
+        "old": "        return False, \"ONLY_ORDER\", (\"只有**下单**这一个点,前面的过程一条都没记 —— \"",
+        "new": "        return False, \"NO_TOUCH\", (\"只有**下单**这一个点,前面的过程一条都没记 —— \""
+      }
+    ],
+    "预期红": "只有下单算不出"
+  },
+  {
+    "script": "knowledge/journey.py",
+    "改坏": "排序时把没有时间的触点丢掉(旅程看起来还是完整的)",
+    "file": [
+      {
+        "path": "knowledge/journey.py",
+        "old": "    return sorted(触点 or [], key=键)",
+        "new": "    return sorted([x for x in (触点 or []) if x.get('时间')], key=键)"
+      }
+    ],
+    "预期红": "没有时间的不许丢"
   }
 ]

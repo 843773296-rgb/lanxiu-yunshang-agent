@@ -3663,6 +3663,10 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
     "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
+ {"name":"customer_history","description":"**这个客户之前谁接触过、做了什么** —— 五张表(预约/跟进/日程/量体/下单)里的触点连成按时间排的一条线。顾问打电话之前看一眼:上次是谁跟的、聊到哪儿了。\n\n⚠️ **一次量体是一次触点,不是十几次。** 一个客户一次量体会产生十几行记录(每个测量项一条),已按「日期+经手人」去重,备注里写着「14 个测量项」——**别说成接触了 14 次**。不去重的话量体会以 10:1 淹没其他触点,**而「他主要是来量体的」只是因为那张表行数最多**。\n\n⚠️ **线上没有不等于没联系过** —— 只包含系统里有记录的接触,微信/电话没录进来的不在里面。\n\n⚠️ 「没有触点」有三种,下一步不同:`NO_TOUCH` 库里一条过程都没有(**不是没人管他**,是没记过)· `ONLY_ORDER` 只有下单这一个点 · `NO_OWNER` 有触点但都没记经手人(**数据缺口**)。**重名时只给候选不给明细** —— 给错人的接触史比不给更糟。范围跟身份走:顾问看自己名下的,店长看本店。",
+  "input_schema":{"type":"object","properties":{
+    "customer":{"type":"string","description":"客户号(如 C10001)或姓名。姓名重名时会要你改用客户号。"},
+    "limit":{"type":"number","description":"最多列几个触点,默认 30,最多 100"}},"required":["customer"]}},
  {"name":"deal_credit","description":"**这一单谁有贡献,贡献多少。** 给 order 看某一单(还会按 W 型归因算一次影响力);给 staff 看某个人;都不给看范围内的概况。\n\n⚠️ **要害:两种分成不是一回事,不许相加也不许互相比较。**\n· **收入分成** 加起来**必须 100** —— 那是分钱(算提成)\n· **影响力分成** **可以超过 100** —— 那是记贡献,不是零和的\n一单可以同时是「收入:张三 70 + 李四 30」和「影响力:张三 100 + 李四 60 + 店长 40」。两者在库里长得一模一样(都是「某人 + 某个百分比」),所以**分两栏返回**。看到影响力加起来 200% **不要当成错误**。\n\n⚠️ **这不是成交率** —— 这一版只记录不算率(算率还缺「订单追得到哪次接待」,3511 张定制单标着「未接入」)。\n\n⚠️ 三种来源要分开:`人工填` / `规则算` / `算法算`(算法算必带版本)——三者算出来都是一个百分比,**可信度完全不同**。W 型的 30/30/30/10 是**行业惯例不是算出来的**,而且现在的旅程是造的,**证明的是算法跑得通,不是算得准**。\n\n⚠️ 「算不出来」不是「没有贡献」;「一条记录都没有」是**没记过归因**,不是没人有贡献。",
   "input_schema":{"type":"object","properties":{
     "order":{"type":"string","description":"订单号。给了会附带按 W 型归因算一次。"},
@@ -3674,11 +3678,11 @@ SHOP_SCHEMAS=[
     "date":{"type":"string","description":"哪天,YYYY-MM-DD。不给就是今天。"},
     "at":{"type":"string","description":"几点,如 15:00。给了会判这个时段落不落在他的班里。"},
     "days":{"type":"number","description":"概况看几天,默认 7,最多 14"}},"required":[]}},
- {"name":"revive_list","description":"**这些客户现在该不该联系,以及联系他说什么。** 回答的是两件事:**为什么是他,为什么是现在**。\n\n⚠️ **没有由头的不进名单 —— 哪怕他闲置 300 天。** 名单里每条都带「为什么是现在」(往年同期 / 生日临近 / 上一单该回访 / 维保没办完 / 断了自己的节奏),**报名单时必须带上** —— 只给一串名字,顾问打过去不知道说什么。\n\n⚠️ **「断了节奏」是相对他自己的**:一个每季度买一次的人闲置 200 天是异常,一个一年买一次的人闲置 200 天很正常。别说成「超过 X 天没买」。\n\n⚠️ 返回值里「这几个门槛是拍的」那一栏**是真的没有依据**(断节奏倍数/刚联系过/刚下过单),等真实数据校准 —— 别替它编理由。\n\n没进名单的五种,下一步完全不同:`JUST_BOUGHT` 刚买完 · `AFTERSALE` **先办售后** · `RECENT_CONTACT` 防骚扰 · `NO_REASON` 买过但眼下没由头 · `NOT_YET` **从没下过单**(归拉新不归促活)。**「该联系 0 个」不等于这些客户都不行。** 范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。",
+ {"name":"revive_list","description":"**这些客户现在该不该联系,以及联系他说什么。**\n\n⚠️ **问「通话里有没有生意」用 `call_opportunity`**(那个看的是逐字稿里客户提过什么偏好);这个看的是**该不该打这通电话**(由头/硬门槛)。两个问题都像「哪些客户值得跟进」,**给的是完全不同的两份名单**。 回答的是两件事:**为什么是他,为什么是现在**。\n\n⚠️ **没有由头的不进名单 —— 哪怕他闲置 300 天。** 名单里每条都带「为什么是现在」(往年同期 / 生日临近 / 上一单该回访 / 维保没办完 / 断了自己的节奏),**报名单时必须带上** —— 只给一串名字,顾问打过去不知道说什么。\n\n⚠️ **「断了节奏」是相对他自己的**:一个每季度买一次的人闲置 200 天是异常,一个一年买一次的人闲置 200 天很正常。别说成「超过 X 天没买」。\n\n⚠️ 返回值里「这几个门槛是拍的」那一栏**是真的没有依据**(断节奏倍数/刚联系过/刚下过单),等真实数据校准 —— 别替它编理由。\n\n没进名单的五种,下一步完全不同:`JUST_BOUGHT` 刚买完 · `AFTERSALE` **先办售后** · `RECENT_CONTACT` 防骚扰 · `NO_REASON` 买过但眼下没由头 · `NOT_YET` **从没下过单**(归拉新不归促活)。**「该联系 0 个」不等于这些客户都不行。** 范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。",
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号或姓名。给了就只看这一个人,并单列他的判断。"},
     "limit":{"type":"number","description":"名单最多返回几条,默认 20,最多 100"}},"required":[]}},
- {"name":"call_opportunity","description":"**这些通话里有没有值得跟进的生意。** 两种用法,代价差一个数量级:\n\n**不给 customer** = 清单,**只跑规则层**(免费、确定)。它只看「客户说了什么偏好 + 店里有没有对得上的货」,**分不出「想要」和「随口一提」** —— 实测 24 条里误报 7 条(约三成)。⚠️ **返回的是候选不是结论**,报给顾问时必须把这句话一起说,否则他会照着一个个打过去。\n\n**给了 customer**(客户号或姓名)= 这一个人深判,规则层 + 模型层,模型只回答一个问题:真想要还是随口一提。⚠️ **不要对整张清单逐个深判** —— 每条都是一次模型调用。\n\n⚠️ 「有逐字稿的通话」是 0,意思是这个范围里**根本没有录音**,不是「查过了没商机」——**「没有商机」和「没东西可判」是两回事**。\n\n四种「不是商机」的下一步不同:`NO_DIMENSION` 这通电话没话可跟进 · `NO_STOCK` 想要的现在给不了 · `JUST_MENTIONED` 随口一提 · `NO_CUSTOMER_LINE` **逐字稿里说话人没标**(数据问题,不是这个客户没戏)。范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。",
+ {"name":"call_opportunity","description":"**这些通话里有没有值得跟进的生意。** 它看的是**通话逐字稿**里客户提过什么偏好。\n\n⚠️ **问「今天该联系谁」用 `revive_list`**(那个回答的是「为什么是他、为什么是现在」);这个回答的是「他说过想要什么,而店里现在有」。两个问题都像「哪些客户值得跟进」,**给的是完全不同的两份名单**。 两种用法,代价差一个数量级:\n\n**不给 customer** = 清单,**只跑规则层**(免费、确定)。它只看「客户说了什么偏好 + 店里有没有对得上的货」,**分不出「想要」和「随口一提」** —— 实测 24 条里误报 7 条(约三成)。⚠️ **返回的是候选不是结论**,报给顾问时必须把这句话一起说,否则他会照着一个个打过去。\n\n**给了 customer**(客户号或姓名)= 这一个人深判,规则层 + 模型层,模型只回答一个问题:真想要还是随口一提。⚠️ **不要对整张清单逐个深判** —— 每条都是一次模型调用。\n\n⚠️ 「有逐字稿的通话」是 0,意思是这个范围里**根本没有录音**,不是「查过了没商机」——**「没有商机」和「没东西可判」是两回事**。\n\n四种「不是商机」的下一步不同:`NO_DIMENSION` 这通电话没话可跟进 · `NO_STOCK` 想要的现在给不了 · `JUST_MENTIONED` 随口一提 · `NO_CUSTOMER_LINE` **逐字稿里说话人没标**(数据问题,不是这个客户没戏)。范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。",
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号(如 C10001)或姓名。给了就深判这一个人(会调模型);不给就列候选清单。"},
     "limit":{"type":"number","description":"清单最多返回几条,默认 20,最多 100"}},"required":[]}},
@@ -3947,6 +3951,72 @@ def _pattern_queue(pattern=None):
     if pattern:
         return piece_ratios(pattern=pattern)
     return pattern_queue()
+
+
+def customer_history(customer=None, limit=30):
+    """**这个客户之前谁接触过、做了什么** —— 按时间排的一条线。
+
+    五张表里的触点(预约 / 跟进 / 日程 / 量体 / 下单)本来是散着的,
+    这里把它们连起来。顾问打电话之前看一眼:上次是谁跟的、聊到哪儿了。
+
+    ⚠️ **一次量体是一次触点,不是十几次。** 一个客户一次量体会产生十几行记录
+    (每个测量项一条),去重的口径在 `knowledge/journey.去重`。
+    不去重的话,量体会以 10:1 淹没其他触点 ——
+    **而「他主要是来量体的」只是因为那张表行数最多。**
+    """
+    me = whoami()
+    if not me:
+        return dict(error="不知道现在是谁在问 —— 请先登录")
+    if not customer:
+        return dict(error="要给一个客户号或姓名 —— 这个工具看的是**一个人**的经过")
+    import touchpoint as _tp
+    import sqlite3 as _sq
+    con = _sq.connect(f"file:{DB}?mode=ro", uri=True); con.row_factory = _sq.Row
+    try:
+        cs = [dict(r) for r in con.execute(
+            "SELECT id,name,shop,advisor_no FROM customer WHERE id=? OR name=?",
+            (customer, customer))]
+    finally:
+        con.close()
+    if not cs:
+        return dict(error=f"没有这个客户「{customer}」—— **这是数据问题,不是他没来过**")
+    if len(cs) > 1:
+        # **重名的时候不给明细** —— 给错人的接触史比不给更糟
+        return {"error": f"「{customer}」命中 {len(cs)} 个客户,要改用客户号",
+                "候选": [{"客户号": c["id"], "门店": c["shop"]} for c in cs[:5]]}
+    c0 = cs[0]
+    if me.get("role") in MANAGER_ROLES:
+        if me.get("role") != "总部运营" and me.get("shop") and c0["shop"] != me["shop"]:
+            return dict(error=f"{c0['name']} 在 {c0['shop']},不在你的门店")
+    elif (c0.get("advisor_no") or "") != (me.get("no") or "?"):
+        return dict(error=f"{c0['name']} 不在你名下 —— **这不是他没有接触记录**")
+
+    旅 = _tp.客户旅程(c0["id"])
+    能算, 码, 说 = _口径_journey().够不够算(旅)
+    n = max(1, min(int(limit or 30), 100))
+    近 = 旅[-1] if 旅 else None
+    return {
+        "客户": f"{c0['name']}({c0['id']})",
+        "触点数": len(旅),
+        "最近一次": ({"什么时候": 近.get("时间"), "干了什么": 近.get("类型"),
+                     "谁": 近.get("经手人"), "备注": 近.get("备注")} if 近 else None),
+        "按时间": [{"时间": x.get("时间"), "类型": x.get("类型"),
+                   "谁": x.get("经手人"), "备注": x.get("备注")} for x in 旅[:n]],
+        "还有": max(0, len(旅) - n),
+        "够不够算归因": {"能不能": 能算, "码": 码, "为什么": 说,
+                       "下一步": _口径_journey().下一步.get(码, "")},
+        "⚠️": ("**一次量体是一次触点,不是十几次**(已按 日期+经手人 去重)。"
+               "⚠️ 这条线只包含**系统里有记录的**接触 —— "
+               "微信、电话没录进来的不在里面,**「线上没有」不等于「没联系过」**。"),
+    }
+
+
+def _口径_journey():
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.dirname(
+        _o.path.abspath(__file__))), "knowledge"))
+    import journey
+    return journey
 
 
 def deal_credit(order=None, staff=None, limit=20):
@@ -4378,7 +4448,8 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "call_opportunity":call_opportunity,
               "revive_list":revive_list,
               "on_shift":on_shift,
-              "deal_credit":deal_credit})
+              "deal_credit":deal_credit,
+              "customer_history":customer_history})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

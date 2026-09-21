@@ -40,10 +40,11 @@ import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
+# 归一的口径(去重/排序/够不够算)在 knowledge/journey.py,这里只取数。
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
+import journey as _口径
 
-# 触点类型 → (来源表, 时间列, 经手人列)
-# **顺序即业务流程的典型顺序** —— 但真实旅程不一定按这个顺序走
-类型 = ["预约", "跟进", "日程", "量体", "下单"]
+类型 = _口径.类型          # 转发,不抄
 
 
 def _rows(sql, *a, db=DB):
@@ -74,27 +75,20 @@ def 客户旅程(customer_id, 截至=None, db=DB):
                    customer_id, 止, db=db):
         出.append(dict(类型="日程", 时间=r["ts"], 经手人=r["who"], 对象=r["id"], 备注=r["type"]))
 
-    # ⚠️ **量体要去重**:一次量体十几个测量项各一行,那是**一次**触点。
-    # 不去重的话量体会以 10:1 淹没其他触点,
-    # 而「量体贡献最大」只是因为它行数最多 —— **那不是发现,是计数方式**。
-    #
-    # ℹ 查过:7450 场量体里有 **97 场是多人的**(最多 8 人),占 1.3% —— 边缘情况。
-    #   按 (客户, 日期, 经手人) 去重会把那 97 场算成多个触点,
-    #   **对归因来说这是对的**(确实多人参与),所以不再合并。
-    for r in _rows("""select min(id) id, substr(measured_at,1,10) d,
-                             min(measured_at) ts, measured_by_no who, count(*) 项数
-                      from measure_rec where customer_id=? and measured_at<?
-                      group by substr(measured_at,1,10), measured_by_no""",
+    # ⚠️ **量体一次会产生十几行**(每个测量项一条)—— 那是**一次**触点。
+    # 这里取原始行,**去重的口径在 `knowledge/journey.去重`**:
+    # 放在这里用 GROUP BY 也能去,但那样这条判据就只存在于一句 SQL 里,
+    # **测不了,也没法和别处对账**。
+    for r in _rows("""select id, measured_at ts, measured_by_no who
+                      from measure_rec where customer_id=? and measured_at<?""",
                    customer_id, 止, db=db):
-        出.append(dict(类型="量体", 时间=r["ts"], 经手人=r["who"], 对象=r["id"],
-                      备注=f"{r['项数']} 个测量项"))
+        出.append(dict(类型="量体", 时间=r["ts"], 经手人=r["who"], 对象=r["id"], 备注=""))
 
     for r in _rows("""select id, created ts, advisor_no who, kind
                       from ordr where customer_id=? and created<?""", customer_id, 止, db=db):
         出.append(dict(类型="下单", 时间=r["ts"], 经手人=r["who"], 对象=r["id"], 备注=r["kind"]))
 
-    出.sort(key=lambda x: (x["时间"] or "", 类型.index(x["类型"])))
-    return 出
+    return _口径.归一(出)
 
 
 def 这一单之前(order_id, db=DB):
