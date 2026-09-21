@@ -283,9 +283,9 @@ def main():
     错色 = []
     for spu, 应 in 钉.items():
         r = c.execute("SELECT color FROM sku WHERE spu=? ORDER BY code LIMIT 1", (spu,)).fetchone()
-        实 = r["color"] if r else None
-        if 实 in ("定制", "默认", "", None):      # 定制品的颜色由 img.py 按款号挑
-            实 = _img.PALETTE[_img._hue(spu + "c") % len(_img.PALETTE)]
+        # **口径只有一份**:页面显示什么颜色由 img.商品颜色 说了算。
+        # 原来这里抄了一份同样的规则,两份分家时检查会说绿、页面是另一个色。
+        实 = _img.商品颜色(spu, r["color"] if r else None)
         if 实 != 应:
             错色.append(f"{spu}:钉的是{应},库里是{实}")
     报("钉住的颜色没被挪动", not 错色, "；".join(错色[:3]) or f"{len(钉)} 款逐个对过")

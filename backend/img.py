@@ -257,6 +257,35 @@ def _shape(cat, name=None):
 PALETTE = ["胭脂","藏青","竹青","月白","缃色","黛","赭","青碧","藕荷","秋香","靛青","玄色","茜色","天青"]
 
 
+def 商品颜色(spu, sku色):
+    """这一款在页面上和图上**实际显示**的颜色名。
+
+    定制品的 SKU 颜色列写的是「定制」,落不到色表 —— 按 SPU 从传统色里挑一个固定的,
+    免得 35 个定制品全是同一个兜底色。
+
+    ⚠️ **这条规则原来有两份实现**:这里一份,`backend/draft_check.py` 判
+    「钉住的颜色没被挪动」时又抄了一份。而它俩一旦分家,检查会说绿、页面是另一个色 ——
+    偏偏这条检查存在的理由就是「图和数据不许对不上」。收成一处。
+    """
+    if sku色 in ("定制", "默认", "") or sku色 is None:
+        return PALETTE[_hue(spu + "c") % len(PALETTE)]
+    return sku色
+
+
+def 各款颜色(conn):
+    """每一款实际显示的颜色 —— 给 `fakedata/anchor.py` 当取法用。
+
+    锚定要比的是「**消费方看到的那个值**」,而它常常不是某一列,是算出来的。
+    与其在锚文件里用 SQL 把规则重写一遍(那就是第二份实现),不如直接调这里。
+    """
+    out = {}
+    for (spu,) in conn.execute("SELECT spu FROM product"):
+        r = conn.execute("SELECT color FROM sku WHERE spu=? ORDER BY code LIMIT 1",
+                         (spu,)).fetchone()
+        out[spu] = 商品颜色(spu, r[0] if r else None)
+    return out
+
+
 def render(spu, variant):
     nm = spu; kind = ""; cat = ""; color = ""; mts = ""; kfs = ""
     try:
@@ -273,10 +302,7 @@ def render(spu, variant):
     except Exception:
         pass
 
-    # 定制品的 SKU 颜色写的是「定制」,落不到色表 ——
-    # 按 SPU 从传统色里挑一个固定的,免得 35 个定制品全是同一个兜底色
-    if color in ("定制", "默认", "") or color is None:
-        color = PALETTE[_hue(spu + "c") % len(PALETTE)]
+    color = 商品颜色(spu, color)
     # ⚠️ **兜底必须也是十六进制。** 原来兜底返回 `hsl(...)` 字符串,
     # 而下一行的 `_mix()` 只认 `#RRGGBB` —— 色表查不到就当场 ValueError,
     # **整张图渲染不出来**。一张颜色不准的图,比一张渲染不出来的图好得多。

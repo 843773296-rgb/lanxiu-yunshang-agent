@@ -139,6 +139,8 @@ run "数据规范 · 身份/关联/覆盖(对照 数据规范.md)" python3 backe
 run "假数据工厂 · 推断/生成/闸门/灌回滚(24 项)" python3 fakedata/selftest.py
 run "假数据工厂 · 行级稳定(同一批键换个顺序,值必须一样)" python3 fakedata/stable.py
 run "假数据工厂 · 跨进程/跨日期可复现(换台机器换一天,数据一样)" python3 fakedata/repro.py
+run "假数据工厂 · 交付物锚定咬合(三条都咬得动)" python3 fakedata/anchor.py 自测
+run "交付物锚定 · 被外面消费过的值没被挪动" python3 fakedata/anchor.py 验 --db backend/lanxiu.db
 run "演示数据命名 · 方案名只许「定制款·工艺·年月」,不带人名" python3 fakedata/naming.py
 # ⚠️ 出处**对不对**是另一件事,由 tools/verify_sources.py 核(要联网,
 #    所以不进这里 —— 依赖外部状态的检查放进门禁会变成随机拦路)。
