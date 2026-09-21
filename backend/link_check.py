@@ -91,6 +91,19 @@ def main():
               and not exists (select 1 from appointment a where a.id=o.appt_id)""")
     ck("预约号指得到真实的预约", 孤, 0)
 
+    # ⚠️ **预约必须早于下单** —— 并行会话提的,判据机械、不依赖谁记得。
+    #
+    # 为什么要这条:`run_journey` 写 appt_id 时,链路能成立**是因为那批旅程
+    # 本来就按「预约→上门→量体→下单」造的**。将来若有人改了步骤顺序,
+    # `appt_id` 就变成一个**挂着但没依据的值** ——
+    # 而「有依据的关联」和「挂着但没依据的关联」在库里长得一模一样,都是一个非空的 id。
+    #
+    # 这和「有归属顾问而那个人已经离职」是同一族:**字段还在,依据没了。**
+    倒 = q("""select count(*) from ordr o join appointment a on a.id=o.appt_id
+              where o.appt_src='已关联' and a.start_ts > o.created""")
+    ck("关联的预约早于下单", 倒, 0,
+       "  ← 预约在下单之后 = **拿结果解释原因**;也可能是造数据的步骤顺序被改了")
+
     # 定制品的缺口有多大 —— **这个数就是 P18 落地的工作量**
     缺口 = q("select count(*) from ordr where kind<>'标品订单' and appt_src='未接入'")
     if 缺口:
