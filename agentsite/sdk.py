@@ -234,6 +234,8 @@ SHOP_TOOLS = [
     "mcp__shop__deal_credit",
     # 客户接触史:**一次量体是一次触点,不是十几次**。
     "mcp__shop__customer_history",
+    # 成交率:**现在给不出数,而「给不出」和「低」是两回事**。
+    "mcp__shop__conversion_rate",
 ]
 
 # 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。

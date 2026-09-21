@@ -1810,8 +1810,8 @@
     "file": [
       {
         "path": "backend/link_check.py",
-        "old": "合法来路 = (\"未接入\", \"无预约\", \"已关联\")",
-        "new": "合法来路 = (\"无预约\", \"已关联\")"
+        "old": "合法来路 = (\"未接入\", \"无预约\", \"已关联\", \"推断关联\")",
+        "new": "合法来路 = (\"无预约\", \"已关联\", \"推断关联\")"
       }
     ],
     "预期红": "来路没有野值"
@@ -2351,5 +2351,53 @@
       }
     ],
     "预期红": "没有时间的不许丢"
+  },
+  {
+    "script": "knowledge/linkage.py",
+    "改坏": "多个到店接待时挑第一个(把「不知道是哪次」变成一个确定的答案)",
+    "file": [
+      {
+        "path": "knowledge/linkage.py",
+        "old": "    if len(到店) > 1:",
+        "new": "    if False:"
+      }
+    ],
+    "预期红": "多次到店不猜"
+  },
+  {
+    "script": "knowledge/linkage.py",
+    "改坏": "把推断出来的关联标成「已关联」(和记录下来的混成一种)",
+    "file": [
+      {
+        "path": "knowledge/linkage.py",
+        "old": "        return (\"推断关联\", \"INFERRED\",",
+        "new": "        return (\"已关联\", \"INFERRED\","
+      }
+    ],
+    "预期红": "推断关联不是已关联"
+  },
+  {
+    "script": "knowledge/linkage.py",
+    "改坏": "把「一条预约都没有」和「约过但没来」合成一个码",
+    "file": [
+      {
+        "path": "knowledge/linkage.py",
+        "old": "        return (\"未接入\", \"NO_VISIT\",",
+        "new": "        return (\"未接入\", \"NOT_RECORDED\","
+      }
+    ],
+    "预期红": "约过但都没来"
+  },
+  {
+    "script": "knowledge/linkage.py",
+    "改坏": "接入率再低也给成交率",
+    "file": [
+      {
+        "path": "knowledge/linkage.py",
+        "old": "    if 率 >= 接入率门槛:",
+        "new": "    if True:"
+      }
+    ],
+    "预期红": "接入率太低不给率"
   }
 ]

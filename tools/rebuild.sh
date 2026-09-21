@@ -92,7 +92,7 @@ fi
 DONE=0
 for STEP in "backend/seed.py" "tools/run_journey.py 42" "tools/grow_customers.py" "tools/simulate_sales.py" \
             "tools/order_mix.py" "backend/seed_fitting.py" "tools/backfill_scene.py" "tools/backfill_color.py" \
-            "tools/backfill_transcript.py" "tools/backfill_roster.py" "tools/backfill_credit.py" "tools/ensure_tables.py" "tools/backfill_fixtures.py" "tools/backfill_biz_fields.py" \
+            "tools/backfill_transcript.py" "tools/backfill_roster.py" "tools/backfill_credit.py" "tools/ensure_tables.py" "tools/backfill_fixtures.py" "tools/backfill_biz_fields.py" "tools/backfill_link.py" \
             "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
   python3 $STEP > /tmp/rebuild-step.out 2>&1 || {
@@ -105,8 +105,8 @@ for STEP in "backend/seed.py" "tools/run_journey.py 42" "tools/grow_customers.py
 done
 
 # **自己证明干了活。** 不加这一条的话,上面那个 bug 会一直以「✅」收场。
-if [ "$DONE" -ne 15 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 15 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 16 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 16 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"

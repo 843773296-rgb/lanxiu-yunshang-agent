@@ -40,7 +40,9 @@ bad = 0
      '每一单都说清了它和预约的关系'),
 ]
 
-合法来路 = ("未接入", "无预约", "已关联")
+# 2026-09-21 加了第四种:**推断出来的关联,不许和记录下来的长一样**。
+# 两者都能让成交率算出一个数,而可信度完全不同(口径见 knowledge/linkage.py)。
+合法来路 = ("未接入", "无预约", "已关联", "推断关联")
 
 
 def ck(t, got, want, extra=""):
@@ -71,11 +73,26 @@ def main():
         f"({','.join('?' * len(合法来路))})", 合法来路)]
     ck("来路没有野值", 野 or "无", "无", f"  ← 合法的只有 {合法来路}")
 
-    # ③ 已关联的必须真有 appt_id;有 appt_id 的必须标已关联
-    错1 = q("select count(*) from ordr where appt_src='已关联' and (appt_id is null or appt_id='')")
-    错2 = q("select count(*) from ordr where appt_id is not null and appt_id<>'' and appt_src<>'已关联'")
-    ck("标了「已关联」的真有预约号", 错1, 0)
-    ck("有预约号的都标了「已关联」", 错2, 0, "  ← 两头都要对,只查一头会漏")
+    # ③ 有关联的必须真有 appt_id;有 appt_id 的必须是某种关联
+    #
+    # ⚠️ 2026-09-21 加了「推断关联」之后,这两条都要认两种来路 ——
+    # **只认「已关联」的话,14 张推断出来的会被判成野值**,而它们是对的。
+    有关联 = ("已关联", "推断关联")
+    ph = ",".join("?" * len(有关联))
+    错1 = q(f"select count(*) from ordr where appt_src in ({ph}) "
+            f"and (appt_id is null or appt_id='')", *有关联)
+    错2 = q(f"select count(*) from ordr where appt_id is not null and appt_id<>'' "
+            f"and appt_src not in ({ph})", *有关联)
+    ck("标了关联的真有预约号", 错1, 0)
+    ck("有预约号的都标了某种关联", 错2, 0, "  ← 两头都要对,只查一头会漏")
+
+    # ③.5 **推断出来的关联,不许和记录下来的混成一种。**
+    # 两者都能让成交率算出一个数,而可信度完全不同 —— 所以库里必须分得开。
+    推 = q("select count(*) from ordr where appt_src='推断关联'")
+    记 = q("select count(*) from ordr where appt_src='已关联'")
+    ck("推断关联和已关联分得开", "分开" if 推 and 记 else f"推{推}/记{记}", "分开",
+       f"  ← 记录的 {记} 张 · 推断的 {推} 张。**混成一种的话,"
+       f"一个建立在推断上的成交率和一个真的长得一模一样**")
 
     # ④ **业务硬规则(2026-09-20):定制品必须有预约才能做,标品全部不用。**
     # 这条一下子把「26587 单全是未接入」变成了两类,而**分开之后成交率的分母才有意义**:
