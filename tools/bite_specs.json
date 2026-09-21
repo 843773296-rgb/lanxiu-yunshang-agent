@@ -1653,9 +1653,9 @@
     "改坏": "把「相对他自己的节奏」换成一个固定天数阈值(180 天)",
     "file": [
       {
-        "path": "backend/revive.py",
-        "old": "        if 闲置 > 节奏 * 断节奏倍数:",
-        "new": "        if 闲置 > 180:"
+        "path": "knowledge/reactivate.py",
+        "old": "    if 节奏 is not None and 闲置 is not None and 闲置 > 节奏 * 断节奏倍数:",
+        "new": "    if 节奏 is not None and 闲置 is not None and 闲置 > 180:"
       }
     ],
     "预期红": "同样闲置 200 天,但他一年才来一次"
@@ -1737,9 +1737,9 @@
     "改坏": "把「没有排班记录」也当成休息(和已发布的休息合并成一种)",
     "file": [
       {
-        "path": "backend/roster.py",
-        "old": "            return False, \"UNSCHEDULED\", (",
-        "new": "            return False, \"OFF\", ("
+        "path": "knowledge/shift.py",
+        "old": "        return False, \"UNSCHEDULED\", (",
+        "new": "        return False, \"OFF\", ("
       }
     ],
     "预期红": "没排班 ≠ 没空"
@@ -1821,7 +1821,7 @@
     "改坏": "让排班权限也认顾问(值班经理本期不做,而顾问从来就不该有)",
     "file": [
       {
-        "path": "backend/roster.py",
+        "path": "knowledge/shift.py",
         "old": "排班角色 = (\"店长\",)",
         "new": "排班角色 = (\"店长\", \"顾问\")"
       }
@@ -2195,5 +2195,77 @@
       }
     ],
     "预期红": "含糊地说「先别推」不点名门槛"
+  },
+  {
+    "script": "tools/bite_check.py",
+    "改坏": "把某条规格 old 里的代码改成一段工作区里不存在的文字(模拟「判定搬走了而规格没跟着搬」)",
+    "file": [
+      {
+        "path": "tools/bite_specs.json",
+        "old": "\"old\": \"    n = orders_12m or 0\"",
+        "new": "\"old\": \"    这段代码根本不存在 = 1\""
+      }
+    ],
+    "预期红": "在工作区里也找得到"
+  },
+  {
+    "script": "knowledge/shift.py",
+    "改坏": "把「没有排班记录」当成休息(还没排就说人家没空)",
+    "file": [
+      {
+        "path": "knowledge/shift.py",
+        "old": "        return False, \"UNSCHEDULED\", (",
+        "new": "        return False, \"OFF\", ("
+      }
+    ],
+    "预期红": "没排班 ≠ 休息"
+  },
+  {
+    "script": "knowledge/shift.py",
+    "改坏": "让草稿也能派单(店长还在调的班被拿去派单)",
+    "file": [
+      {
+        "path": "knowledge/shift.py",
+        "old": "    if r.get(\"status\") != 已发布:",
+        "new": "    if False:"
+      }
+    ],
+    "预期红": "草稿不能派"
+  },
+  {
+    "script": "knowledge/shift.py",
+    "改坏": "让请假不再压过已发布的上班(人不在却显示可派)",
+    "file": [
+      {
+        "path": "knowledge/shift.py",
+        "old": "    请 = 事实.get(\"请假种类\")",
+        "new": "    请 = None"
+      }
+    ],
+    "预期红": "请假压过已发布上班"
+  },
+  {
+    "script": "knowledge/shift.py",
+    "改坏": "把时段判成「只要那天上班就行」(早班的人被派了晚上的预约)",
+    "file": [
+      {
+        "path": "knowledge/shift.py",
+        "old": "    if 起hhmm >= a and 止hhmm <= b:",
+        "new": "    if True:"
+      }
+    ],
+    "预期红": "在班≠那个点有空"
+  },
+  {
+    "script": "knowledge/shift.py",
+    "改坏": "把「查无此人」当成「没权限」(数据问题被说成权限问题)",
+    "file": [
+      {
+        "path": "knowledge/shift.py",
+        "old": "        return False, \"这个工号员工表里没有 —— **这是数据问题,不是权限问题**\"",
+        "new": "        return False, \"没有排班权限\""
+      }
+    ],
+    "预期红": "查无此人不是没权限"
   }
 ]

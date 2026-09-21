@@ -188,6 +188,8 @@ ROOT = os.path.dirname(HERE)
      "没有咬合记录的脚本不超过"),
     ("把某条记录右边那句「预期红的那一条」改成一句脚本里不存在的话",
      "有咬合记录的,记录本身是对的"),
+    ("把某条规格 old 里的代码改成一段工作区里不存在的文字",
+     "在工作区里也找得到"),
 ]
 
 FAIL = []
@@ -263,6 +265,36 @@ def main():
        f"现在 {len(无)} 个 —— **涨了,新加的检查没带咬合记录**"
        if len(无) > 欠账上限 else
        f"{len(ss)} 个脚本,{len(有)} 个有记录、{len(无)} 个还欠着(上限 {欠账上限})")
+
+    # ── 规格指的那段代码,**在工作区里**要找得到 ─────────────────────
+    #
+    # 2026-09-21 一天之内栽了三次,全是同一个形状:
+    # 把某个模块的判定搬进 `knowledge/`,**而指着旧位置的咬合规格没跟着搬**。
+    #
+    # 已有的 `repo_consistency_check` 查的是「**HEAD 里那一版**自不自洽」——
+    # 它是对的,但它**只可能在提交之后红**:提交之前 HEAD 还是旧代码,
+    # 规格找得到。**「规格过期了」和「规格还对」在提交前长得一模一样。**
+    #
+    # 这一条查工作区,所以重构完当场就红,不用等 CI。
+    # 两条都要:一条护「我现在改的这一版」,一条护「仓库里那一版」。
+    import json as _js
+    漂 = []
+    _sp = os.path.join(ROOT, "tools", "bite_specs.json")
+    if os.path.exists(_sp):
+        _specs = _js.load(open(_sp, encoding="utf-8"))
+        for _x in _specs:
+            for _f in _x.get("file") or []:
+                _p = os.path.join(ROOT, _f.get("path", ""))
+                if not os.path.exists(_p):
+                    漂.append(f"{_f.get('path')} 这个文件不在了({_x['script']})")
+                    continue
+                if _f.get("old", "") not in open(_p, encoding="utf-8").read():
+                    漂.append(f"{_f.get('path')}:要改的那段找不到了 —— "
+                              f"**判定搬走了而规格没跟着搬**({_x['script']})")
+    ck("规格要改的那段,在工作区里也找得到(重构完当场红,不用等 CI)",
+       not 漂, len(_specs) if os.path.exists(_sp) else 0,
+       ("；".join(漂[:2]) + (f"(还有 {len(漂)-2} 条)" if len(漂) > 2 else "")) if 漂 else
+       "**一条指着不存在的代码的规格,和一条好规格,在清单里长得一模一样**")
 
     print(f"\n  ℹ 有记录的:{', '.join(os.path.basename(x) for x in 有)}")
     print("     **咬合本身也会失效,而且失效时和通过长得一样** —— "

@@ -50,19 +50,17 @@ import os, sqlite3, sys, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 DB = os.path.join(HERE, "lanxiu.db")
+# 判定口径在 knowledge/shift.py,这里只取数。
+# (名字避开 roster:同名的话 `import roster` 会先找到这个文件自己,
+#  而「导入成功了」和「导入对了」长得一样。)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
+import shift as _口径
 
 # ── ① 班次模板 ────────────────────────────────────────────────
-# 按天排不按小时:按小时店长不会填,而预约本来就是按时段来的。
-班次 = [
-    ("S1", "早班", "10:00", "16:00"),
-    ("S2", "晚班", "16:00", "22:00"),
-    ("S3", "全天", "10:00", "22:00"),
-    ("S0", "休息", None, None),
-]
-班次表 = {c: (n, a, b) for c, n, a, b in 班次}
-
-草稿, 已发布 = "草稿", "已发布"
-
+# 班次、草稿/已发布、排班角色 —— **只有一份,在口径模块里**,这里转发不抄。
+班次 = _口径.班次
+班次表 = _口径.班次表
+草稿, 已发布 = _口径.草稿, _口径.已发布
 
 def 建表(c):
     c.execute("""create table if not exists shift_tpl(
@@ -111,53 +109,32 @@ def 建表(c):
 
 
 # ── 查询:某人某天在不在班 ─────────────────────────────────────
-def 在班吗(staff_no, 日期, db=DB):
-    """返回 (能不能派, 码, 人话)。
-
-    **「不能派」有四种原因,不能合成一个** —— 它们的下一步动作不同:
-        UNSCHEDULED 还没排  → 催店长排班,**不是这个人没空**
-        DRAFT       草稿    → 等发布,别用
-        OFF         已发布休息 → 确实没空
-        LEAVE       请假    → 没空,**而且已派的单要重新分配**
-    """
+def 查排班事实(staff_no, 日期, db=DB):
+    """把口径要的那几样查出来。**这里一条判定都没有。**"""
     with sqlite3.connect(db) as c:
         c.row_factory = sqlite3.Row
         请 = c.execute("""select * from leave_req where staff_no=? and status='已批准'
-                          and d_from<=? and d_to>=? limit 1""", (staff_no, 日期, 日期)).fetchone()
-        if 请:
-            return False, "LEAVE", (f"{日期} 请假中({请['kind'] or '事假'})—— "
-                                    f"**已经派给他的单要重新分配**")
-        r = c.execute("select * from roster where staff_no=? and d=?", (staff_no, 日期)).fetchone()
-        if not r:
-            # **这一条是整套机制的命根子**:没有记录 = 还没排,不等于没空
-            return False, "UNSCHEDULED", (
-                f"{日期} 还没排班 —— **这不是「他没空」,是「排班还没出来」**;"
-                f"拿它当没空,会在店长还没排的时候给出一份看起来正常的推荐")
-        if r["status"] != 已发布:
-            return False, "DRAFT", f"{日期} 的排班还是草稿,**店长随时会改** —— 等发布"
-        if r["shift"] == "S0":
-            return False, "OFF", f"{日期} 已发布为休息"
-        名, a, b = 班次表.get(r["shift"], ("?", None, None))
-        return True, "ON", f"{日期} {名}({a}–{b})"
+                          and d_from<=? and d_to>=? limit 1""",
+                       (staff_no, 日期, 日期)).fetchone()
+        r = c.execute("select * from roster where staff_no=? and d=?",
+                      (staff_no, 日期)).fetchone()
+    return {"日期": 日期,
+            "请假种类": (请["kind"] or "事假") if 请 else None,
+            "排班": {"status": r["status"], "shift": r["shift"]} if r else None}
+
+
+def 在班吗(staff_no, 日期, db=DB):
+    """(能不能派, 码, 人话) —— **判定在 `knowledge/shift.py`**。
+
+    五个码的含义和下一步看那个模块。
+    """
+    return _口径.判在班(查排班事实(staff_no, 日期, db))
 
 
 def 时段在班(staff_no, 起, 止, db=DB):
     """预约时段落在他的班次里吗。起/止是 'YYYY-MM-DD HH:MM'。"""
-    日期 = 起[:10]
-    ok, 码, why = 在班吗(staff_no, 日期, db)
-    if not ok:
-        return False, 码, why
-    with sqlite3.connect(db) as c:
-        c.row_factory = sqlite3.Row
-        r = c.execute("select * from roster where staff_no=? and d=?", (staff_no, 日期)).fetchone()
-    名, a, b = 班次表.get(r["shift"], ("?", None, None))
-    if not a:
-        return False, "OFF", f"{日期} 休息"
-    h起, h止 = 起[11:16], 止[11:16]
-    if h起 >= a and h止 <= b:
-        return True, "ON", f"{日期} {名}({a}–{b}),预约 {h起}–{h止} 落在班内"
-    return False, "OUT_OF_SHIFT", (f"{日期} 他是{名}({a}–{b}),而预约是 {h起}–{h止} —— "
-                                   f"**在班 ≠ 那个点有空**")
+    事实 = 查排班事实(staff_no, 起[:10], db)
+    return _口径.判时段(事实, 起[11:16], 止[11:16])
 
 
 def 一周排了吗(shop, 周一, db=DB):
@@ -218,23 +195,15 @@ def 派得了吗(cust, 起, 止, db=DB):
 # 设计稿里「编辑顾问」有个「值班经理」角色(而且删除按钮是灰的),
 # 看着像他有排班职责 —— **但那是设计稿,业务说本期不做**。
 # 按今天定的口径:设计稿只是大致结构,以讨论为准。
-排班角色 = ("店长",)
+排班角色 = _口径.排班角色
 
 
 def 能排班吗(staff_no, db=DB):
-    """(能不能, 人话)。**「查不到这个人」和「这个人没权限」分开** ——
-    前者是数据问题,后者是权限问题,下一步动作不同。"""
+    """(能不能, 人话) —— 判定在口径模块。"""
     with sqlite3.connect(db) as c:
         c.row_factory = sqlite3.Row
         r = c.execute("select no,name,role,status from staff where no=?", (staff_no,)).fetchone()
-    if not r:
-        return False, f"工号「{staff_no}」员工表里没有 —— **这是数据问题,不是权限问题**"
-    if r["status"] != "启用":
-        return False, f"{r['name']} 已{r['status']},不能排班"
-    if r["role"] not in 排班角色:
-        return False, (f"{r['name']} 是{r['role']},排班权在{排班角色[0]}"
-                       f"(业务 2026-09-20:值班经理本期不做)")
-    return True, f"{r['name']}({r['role']})可以排班"
+    return _口径.判排班权(dict(r) if r else None)
 
 
 # ── P3:点名的人没空 → 三步 ───────────────────────────────────────

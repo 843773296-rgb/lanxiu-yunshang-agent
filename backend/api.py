@@ -3659,10 +3659,16 @@ SHOP_SCHEMAS=[
    "required":[]}},
  {"name":"task_types","description":"九种任务类型的**数据规范**:每种挂哪张单据(客户号/订单号/维保单号/售后单号/不挂)、谁能派、完成时要不要传现场照。**起草派任务之前先调这个** —— 类型决定了要填什么,填错会被拒。",
   "input_schema":{"type":"object","properties":{},"required":[]}},
- {"name":"week_grid","description":"**排班用的格子**:一周里每个顾问哪天什么时段已经占了、哪几天完全没人排班、待分配还有几条。**排班之前必须先看这个** —— 不看就排,排出来的东西和正常任务长得一模一样,直到那天两个人同时约在一个时段。只有店长看得到。",
+ {"name":"week_grid","description":"**日程占用的格子**(读的是任务/预约,**不是排班表**):一周里每个顾问哪天什么时段已经被占了、哪几天一条日程都没有、待分配还有几条。**排班之前必须先看这个** —— 不看就排,排出来的东西和正常任务长得一模一样,直到那天两个人同时约在一个时段。只有店长看得到。\n\n⚠️ **问「这一周的班排了没有」「某某那天上不上班」要用 `on_shift`**,不是这个。这里的「没有日程」只表示那个时段没被占,**不表示他那天上班**。",
   "input_schema":{"type":"object","properties":{
     "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
     "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
+ {"name":"on_shift","description":"**谁哪天上班,以及那个人那个时候能不能接。** 读的是**排班表**(上不上班、什么班次),**不是日程占用** —— 谁那个时段被任务占了要用 `week_grid`。 给 staff(+date,+at 如 \"15:00\")= 看这一个人;只给 date 或什么都不给 = 看本店未来几天的排班概况。\n\n⚠️ 这个工具存在的全部理由,是把「不上班」的**五种**分开,它们下一步完全不同:\n· `UNSCHEDULED` **还没排** —— **这不是「他没空」,是「排班还没出来」**,要去催店长排。⚠️ 别因为下周没记录就说「下周大家都有空」,那份推荐看起来完全正常而它建立在「还没排」上。\n· `DRAFT` 草稿 —— 店长还在调,**按它派的单会挂在错的人身上**,要等发布。\n· `OFF` 已发布休息 —— 确实没空。\n· `LEAVE` 请假 —— 没空,**而且已经派给他的单要重新分配**(请假是盖掉排班,排班表上他仍写着上班)。\n· `OUT_OF_SHIFT` **他这天上班但不在这个点**(早班的人接不了晚上的预约)。\n\n返回值里「还没排班的日子」单列出来 —— 混在「不上班」里店长就看不见自己漏排了哪几天。范围跟身份走:店长/顾问看本店,总部看全部;**「员工表里没这个人」和「不在你的门店」都不是「他没空」**。",
+  "input_schema":{"type":"object","properties":{
+    "staff":{"type":"string","description":"工号或姓名。给了就只看这一个人。"},
+    "date":{"type":"string","description":"哪天,YYYY-MM-DD。不给就是今天。"},
+    "at":{"type":"string","description":"几点,如 15:00。给了会判这个时段落不落在他的班里。"},
+    "days":{"type":"number","description":"概况看几天,默认 7,最多 14"}},"required":[]}},
  {"name":"revive_list","description":"**这些客户现在该不该联系,以及联系他说什么。** 回答的是两件事:**为什么是他,为什么是现在**。\n\n⚠️ **没有由头的不进名单 —— 哪怕他闲置 300 天。** 名单里每条都带「为什么是现在」(往年同期 / 生日临近 / 上一单该回访 / 维保没办完 / 断了自己的节奏),**报名单时必须带上** —— 只给一串名字,顾问打过去不知道说什么。\n\n⚠️ **「断了节奏」是相对他自己的**:一个每季度买一次的人闲置 200 天是异常,一个一年买一次的人闲置 200 天很正常。别说成「超过 X 天没买」。\n\n⚠️ 返回值里「这几个门槛是拍的」那一栏**是真的没有依据**(断节奏倍数/刚联系过/刚下过单),等真实数据校准 —— 别替它编理由。\n\n没进名单的五种,下一步完全不同:`JUST_BOUGHT` 刚买完 · `AFTERSALE` **先办售后** · `RECENT_CONTACT` 防骚扰 · `NO_REASON` 买过但眼下没由头 · `NOT_YET` **从没下过单**(归拉新不归促活)。**「该联系 0 个」不等于这些客户都不行。** 范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。",
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号或姓名。给了就只看这一个人,并单列他的判断。"},
@@ -3938,6 +3944,100 @@ def _pattern_queue(pattern=None):
     return pattern_queue()
 
 
+def on_shift(staff=None, date=None, at=None, days=7):
+    """**谁哪天上班,以及那个人那个时候能不能接。** 读的是**排班表**(上不上班、什么班次),**不是日程占用** —— 谁那个时段被任务占了要用 `week_grid`。
+
+    ⚠️ 这个工具存在的全部理由,是把「不上班」的**五种**分开:
+
+        未排        店长还没排到这一天 —— **这不是「他没空」,是「排班还没出来」**
+        草稿        店长还在调,随时会变 —— 按它派的单会挂在错的人身上
+        已发布休息  确实没空
+        请假        没空,**而且已经派给他的单要重新分配**
+        不在时段    他这天上班,但不在这个点(早班的人接不了晚上的预约)
+
+    **「查不到记录」只能表示「还没排」。** 拿它当没空,会在店长还没排下周班的时候,
+    给出一份「所有人下周都有空」的推荐 —— **而那个结论看起来完全正常**。
+    """
+    me = whoami()
+    if not me:
+        return dict(error="不知道现在是谁在问 —— 请先登录")
+    import roster as _rs, datetime as _dt
+    import sqlite3 as _sq
+    店 = None if me.get("role") == "总部运营" else (me.get("shop") or "")
+    范围 = "全部门店" if 店 is None else f"{店}(你的门店)"
+
+    # ── 某个人某一天(或某个时段)能不能接 ──────────────────────
+    if staff:
+        con = _sq.connect(f"file:{DB}?mode=ro", uri=True); con.row_factory = _sq.Row
+        try:
+            r = con.execute("SELECT no,name,role,shop,status FROM staff WHERE no=? OR name=?",
+                            (staff, staff)).fetchone()
+        finally:
+            con.close()
+        if not r:
+            # **「查无此人」和「他没空」不是一回事** —— 前者是数据问题。
+            return {"看的范围": 范围,
+                    "error": f"员工表里没有「{staff}」—— **这是数据问题,不是他没空**"}
+        # **范围跟身份走** —— 上面那句「看的范围」说的是本店,
+        # 而查人这一支原来不看门店,店长能查到别的店的人。
+        # **返回值上写着「你的门店」,实际却跨了店** —— 两者长得一样。
+        if 店 is not None and (r["shop"] or "") != 店:
+            return {"看的范围": 范围,
+                    "error": f"{r['name']} 在 {r['shop'] or '(没填门店)'},不在你的门店 —— "
+                             f"**这不是他没空,是你看不到他的排班**"}
+        d = date or _rs._世界的今天()          # 它返回的是字符串,不是 date
+        if at:
+            起 = f"{d} {at}"
+            止 = f"{d} {at}"
+            # 只给一个点的时候,按一小时算 —— 预约本来就是按时段
+            try:
+                h, m = at.split(":")
+                止 = f"{d} {int(h)+1:02d}:{m}"
+            except Exception:
+                pass
+            ok, 码, why = _rs.时段在班(r["no"], 起, 止)
+        else:
+            ok, 码, why = _rs.在班吗(r["no"], d)
+        return {"看的范围": 范围, "谁": f"{r['name']}({r['no']})", "哪天": d,
+                "能不能接": ok, "码": 码, "为什么": why,
+                "下一步": _rs._口径.下一步.get(码, "")}
+
+    # ── 一段时间的排班概况 ────────────────────────────────────
+    d0 = _dt.date.fromisoformat(date or _rs._世界的今天())
+    n = max(1, min(int(days or 7), 14))
+    con = _sq.connect(f"file:{DB}?mode=ro", uri=True); con.row_factory = _sq.Row
+    try:
+        people = [dict(x) for x in con.execute(
+            "SELECT no,name FROM staff WHERE role='顾问' AND status='启用'"
+            + ("" if 店 is None else " AND shop=?"), () if 店 is None else (店,))]
+    finally:
+        con.close()
+    每天 = []
+    未排的天 = []
+    for i in range(n):
+        d = (d0 + _dt.timedelta(days=i)).isoformat()
+        计 = {}
+        在班 = []
+        for p in people:
+            ok, 码, _ = _rs.在班吗(p["no"], d)
+            计[码] = 计.get(码, 0) + 1
+            if ok:
+                在班.append(p["name"])
+        每天.append({"日期": d, "按码": 计, "在班的": 在班})
+        if 计.get("UNSCHEDULED"):
+            未排的天.append(d)
+    return {
+        "看的范围": 范围,
+        "看了几个顾问": len(people),
+        "看了几天": n,
+        "每天": 每天,
+        # **这一栏要单独摆出来。** 「还没排」混在「不上班」里,
+        # 店长就看不见自己漏排了哪几天。
+        "⚠️ 还没排班的日子": 未排的天,
+        "每种码该做什么": _rs._口径.下一步,
+    }
+
+
 def revive_list(customer=None, limit=20):
     """**这些客户现在该不该联系,以及联系他说什么。**
 
@@ -4167,7 +4267,8 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,
-              "revive_list":revive_list})
+              "revive_list":revive_list,
+              "on_shift":on_shift})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

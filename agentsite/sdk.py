@@ -228,6 +228,8 @@ SHOP_TOOLS = [
     "mcp__shop__call_opportunity",
     # 促活:该不该联系、联系他说什么。**没有由头的不进名单。**
     "mcp__shop__revive_list",
+    # 排班:谁哪天上班。**「查不到记录」只能表示「还没排」。**
+    "mcp__shop__on_shift",
 ]
 
 # 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。
