@@ -80,31 +80,61 @@ EDGE_TEXT = _EDGE_ZH        # 默认中文;generate() 会按源库切换
 # 往日期列掺,时间线断言会红。**造出来的脏数据必须是合法的脏,不然灌不进去,等于没测。**
 EDGE_OK = ("text", "long_text", "cn_name", "address")
 
-def _edge_slots(r, n, kinds, rate):
-    """给每一种边界值**指定行号**,而不是每行掷一次骰子。
-
-    第一版是「每行 5% 概率掺一个随机边界值」。在真 MySQL 上跑完一看:
-    32 行客户里只中了一个 emoji,超长和前后空格一个都没出现。
-    **边界值的全部意义就是覆盖,而用概率去赌覆盖率,是把手段和目的搞反了。**
-    行数越少漏得越狠 —— 而小批量恰恰是人跑得最勤的那种。
-
-    改成:先算出这批数据能容下几个边界值(不超过 rate 的两倍,也不超过 25%),
-    然后**按种类轮着放**,保证在容得下的前提下每种至少出现一次。
-    位置由种子决定,所以仍然是确定性的。
-    """
-    # 两个目标会打架,都要满足:
-    #   (a) **覆盖** —— 每一种边界值至少出现一次(行数容得下的前提下)
-    #   (b) **比例** —— 大批量时脏数据要占到 rate,不然压力测试里它们等于不存在
-    # 所以:先按 (a) 定下保底条数,再按 (b) 往上加,位置轮着分配 ——
-    # 轮着分配天然保证了「先覆盖全,再各自加量」。
-    # 硬上限是四分之一:边界值再重要也不能喧宾夺主,不然它就不叫边界了。
-    guaranteed = min(len(kinds), max(1, n // 4))
-    total = max(guaranteed, min(int(n * rate), max(1, n // 4) * len(kinds)))
-    idx = list(range(n)); r.shuffle(idx)
-    return {idx[i]: kinds[i % len(kinds)] for i in range(min(total, n))}
-
 def rng_for(seed, *parts):
     return random.Random(f"{seed}::" + "::".join(str(p) for p in parts))
+
+
+# 「这一列是批级的」—— 它的取值**按设计**要看整批行,不只看自己这一行。
+# 写成显式清单而不是让 stable.py 扫出来:扫出来的清单会**把新冒出来的漂移当成现状接受**
+# (和 samekey_check 的登记表同一个道理)。新加一种批级写法就得加进来,否则 stable 报红。
+批级的 = {
+    "fk":  "引用密度形状:哪个父亲带几个孩子,要把 n 个孩子分完才知道",
+}
+# 列名前缀是这几个的,也是批级的(时间线 / 起止 / 锚点 / 时间序都在改写整批)
+批级改写 = ("__timeline", "__起止", "__锚点", "__时间序")
+
+
+def 行rng(seed, tname, cname, 键, *extra):
+    """**一行的值只由它自己的业务键决定,不由它在这批里排第几决定。**
+
+    原来是每列一个 rng 顺着抽:`r = rng_for(seed, 表, 列)` 然后 `for i, row in ...`。
+    列级是隔离的(加一张表不影响别的表),**行级不是** ——
+    往中间插一行、或者同一批键换个顺序,后面每一行的值全跟着挪。
+
+    这个形状在澜绣云裳真的炸过:商品图的颜色按 `插入序号 * 3 + hash(款号)` 取,
+    改了两行造数据的代码,**38 款里 22 款换了颜色,其中 6 款是已经交付出去的图**。
+    图在外面已经是事实了,数据却自己动了。
+
+    代价:每行一个 Random 对象。百万行时这是真实开销,但换来的是
+    「昨天复现 bug 的那批数据,今天加了几行之后还是那批」——
+    而这正是假数据存在的理由(见本文件开头「造完这批 bug 就不见了」)。
+    """
+    return rng_for(seed, tname, cname, "行", 键, *extra)
+
+
+def _边界_按键(seed, tname, cname, 键们, kinds, rate):
+    """边界值落在哪几行 —— **按键排名选,不按下标洗牌选。**
+
+    原来是 `idx=list(range(n)); r.shuffle(idx)`,选出来的是「第 3 行、第 17 行」——
+    同一批键换个顺序,脏数据就换了人。改成按 `(种子,表,列,键)` 给每个键算一个排名、
+    取前几名:**选谁不再看顺序**。
+
+    要同时满足的两个目标没变(这是上一版用一次真 MySQL 跑出来的教训:
+    每行 5% 概率去赌覆盖率,32 行客户里只中了一个 emoji):
+
+      (a) **覆盖** —— 每一种边界值至少出现一次(行数容得下的前提下)
+      (b) **比例** —— 大批量时脏数据要占到 rate,不然压力测试里它们等于不存在
+
+    先按 (a) 定保底条数,再按 (b) 往上加,种类轮着分配。
+    硬上限四分之一:边界值再重要也不能喧宾夺主,不然它就不叫边界了。
+    """
+    n = len(键们)
+    if not kinds or not n or not rate:
+        return {}
+    guaranteed = min(len(kinds), max(1, n // 4))
+    total = max(guaranteed, min(int(n * rate), max(1, n // 4) * len(kinds)))
+    排 = sorted(键们, key=lambda k: rng_for(seed, tname, cname, "边界", k).random())
+    return {k: kinds[i % len(kinds)] for i, k in enumerate(排[:min(total, n)])}
 
 def _lognormal(r, p50, p90):
     """按 p50/p90 拟合长尾。金额、时长都是长尾 —— 用均值造出来的数据全挤在中间,
@@ -285,7 +315,7 @@ def _depths(start, trans):
     return d
 
 
-def _fsm_fix(rows, cname, g, cols, r):
+def _fsm_fix(rows, cname, g, cols, 造rng):
     """把状态和时间戳绑在一起 —— 这是「语义像」和「结构像」的分界。
 
     统计层能造出「状态分布跟源库一样」的数据,但它是**逐列独立**抽的:
@@ -307,6 +337,8 @@ def _fsm_fix(rows, cname, g, cols, r):
     anchor_col = creation_col([c for c in cols if c not in ts.values()],
                               {c: cols[c]["gen"] for c in cols})
     for row in rows:
+        # **按这一行的键取 rng**,不是整批顺着抽 —— 见 `行rng` 的说明
+        r = 造rng(row.get("__键"))
         st = str(row.get(cname))
         must = dominators(start, trans, st) & set(ts)
         order = sorted(must, key=lambda x: depth.get(x, 99))
@@ -388,8 +420,18 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
 
         pkvals = _pk_values(plan, tname, tp, n) if pkcol else []
         if pkcol:
+            if plan.get("__键序") == "逆":
+                # 只给 stable.py 用:**同一批键换个顺序**再造一遍。
+                # 不是「多造一行」—— 追加在末尾时,前面每一行的流位置都没变,
+                # 按下标取值的列照样对得上,**测不出东西来**。要让同一个键落到不同的行位。
+                pkvals = list(reversed(pkvals))
             for i, row in enumerate(rows): row[pkcol] = pkvals[i]
             manifest[tname] = {"pk": pkcol, "values": pkvals}
+        # 这一行的**业务键** —— 下面每一列的取值都从它派生,而不是从 i 派生
+        键们 = pkvals if pkcol else [f"#{i}" for i in range(n)]
+        # 挂到行上:后面四段时间修正是 `for row in rows`,拿不到下标,
+        # 而它们**每一段都在按行序抽随机数** —— 不挂键就只能改一半。
+        for i, row in enumerate(rows): row["__键"] = 键们[i]
 
         for cname, g in cols.items():
             if cname == pkcol: continue
@@ -471,22 +513,25 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
                 states = [s for s in ({x for ab in g["transitions"] for x in ab}
                                       | set(g["start"]))]
                 w = {s: (g.get("dist") or {}).get(s, 0.01) for s in states}
-                for row in rows: row[cname] = _weighted(r, w)
+                for i, row in enumerate(rows):
+                    row[cname] = _weighted(行rng(seed, tname, cname, 键们[i]), w)
                 continue
 
             nr = g.get("null_rate") or 0
-            slots = (_edge_slots(rng_for(seed, tname, cname, "边界"), n,
-                                 [v for _n, v in edges], edge_rate)
+            # **按键选,不按下标选** —— 见 `_边界_按键` 和 `行rng`
+            slots = (_边界_按键(seed, tname, cname, 键们, [v for _n, v in edges], edge_rate)
                      if (g["gen"] in EDGE_OK and not g.get("unique") and edge_rate) else {})
             for i, row in enumerate(rows):
-                if nr and r.random() < nr:
+                键 = 键们[i]
+                rr = 行rng(seed, tname, cname, 键)
+                if nr and rr.random() < nr:
                     row[cname] = None; continue
                 ctx = row.setdefault("__ctx", {})
                 ctx["中文库"] = plan.get("中文库", True)
-                if i in slots:
-                    row[cname] = _cap(slots[i], g)
+                if 键 in slots:
+                    row[cname] = _cap(slots[键], g)
                 else:
-                    row[cname] = _cap(_value(g, r, ctx), g)
+                    row[cname] = _cap(_value(g, rr, ctx), g)
             if g.get("unique"):
                 # 和**库里已有的**比,不能只跟本次造的比 ——
                 # 灌进的是一张已经有数据的表,只在自己这批里去重是不够的。
@@ -513,8 +558,9 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
             keep = [grp["columns"].index(c) for c in gcols]
             tuples = [[t[i] for i in keep] for t, _w in grp["dist"]]
             weights = [w for _t, w in grp["dist"]]
-            rj = rng_for(seed, tname, "联合", "|".join(gcols))
-            for row in rows:
+            # 每行独立抽一个组合 —— 独立,所以能按键抽(不是批级的)
+            for i, row in enumerate(rows):
+                rj = 行rng(seed, tname, "联合", 键们[i], "|".join(gcols))
                 pick = rj.choices(tuples, weights=weights, k=1)[0]
                 for c, v in zip(gcols, pick): row[c] = v
 
@@ -522,20 +568,21 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
         # 时间线修正管的是「有值的那些先后对不对」。顺序反了会把状态机写的空值填回去。
         for cname, g in cols.items():
             if g["gen"] == "fsm":
-                _fsm_fix(rows, cname, g, cols, rng_for(seed, tname, cname, "状态机"))
+                _fsm_fix(rows, cname, g, cols,
+                         lambda 键, _c=cname: 行rng(seed, tname, _c, 键, "状态机"))
 
         # 时间线修正:让 created ≤ paid_at ≤ shipped_at ≤ …
         # 这一步不是锦上添花 —— 方案里自动派生的时间线断言,靠它才通得过。
         present = [c for c in TIME_ORDER if c in cols and cols[c]["gen"] in ("date", "datetime")]
         if len(present) > 1:
-            rt = rng_for(seed, tname, "__timeline")
             for row in rows:
                 last = None
                 for c in present:
                     v = row.get(c)
                     if v is None: continue
                     if last and str(v) < str(last):
-                        row[c] = _not_before(last, cols, c, rt, 20)
+                        row[c] = _not_before(last, cols, c,
+                                             行rng(seed, tname, "__timeline", row["__键"], c), 20)
                     last = row[c]
         # 起止成对的列:结束不得早于开始。
         # 这条是**接口照出来的**:预约表的 start_ts / end_ts 既不以 _at 结尾、
@@ -551,11 +598,12 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
                    and cols[m]["gen"] in ("date", "datetime"):
                     pairs.append((c, m))
         if pairs:
-            rp = rng_for(seed, tname, "__起止")
             for row in rows:
                 for a, b in pairs:
                     if row.get(a) and row.get(b) and str(row[b]) <= str(row[a]):
-                        row[b] = _not_before(row[a], cols, b, rp, 2, strict=True)
+                        row[b] = _not_before(row[a], cols, b,
+                                             行rng(seed, tname, "__起止", row["__键"], b),
+                                             2, strict=True)
 
         # 兜底:任何 *_at 都不该早于**建档时间那一列**(名字是推出来的,不写死)。
         # 状态机管得住它认领的那几列,管不住剩下的(synced_at / on_shelf_at / handled_at…)——
@@ -563,7 +611,6 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
         # 时间原点这件事得**全表统一**兜一次,不能指望每个局部规则各自记得。
         base_c = creation_col(list(cols), {c: cols[c]["gen"] for c in cols})
         if base_c:
-            rt = rng_for(seed, tname, "__锚点")
             ats = [c for c in cols if c != base_c and (c.endswith("_at") or c.endswith("_time"))
                    and cols[c]["gen"] in ("date", "datetime")]
             for row in rows:
@@ -572,7 +619,8 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
                 for c in ats:
                     v = row.get(c)
                     if v is None or str(v) >= str(base): continue
-                    row[c] = _not_before(base, cols, c, rt, 30)
+                    row[c] = _not_before(base, cols, c,
+                                         行rng(seed, tname, "__锚点", row["__键"], c), 30)
 
         # 源库统计出来的时间先后。**必须排在所有时间修正的最后。**
         #
@@ -585,7 +633,6 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
         # 多跑几遍:a≤b、b≤c 是一条链,一遍只推平相邻的一对,链长几步就要几遍。
         seq = tp.get("时间序") or []
         if seq:
-            rs = rng_for(seed, tname, "__时间序")
             for _pass in range(5):
                 for o in seq:
                     a, b = o["先"], o["后"]
@@ -593,9 +640,10 @@ def generate(plan, conn=None, edge_rate=0.05, sink=None, log=lambda *a: None):
                     if cols[b]["gen"] not in ("date", "datetime"): continue
                     for row in rows:
                         if row.get(a) and row.get(b) and str(row[b]) < str(row[a]):
-                            row[b] = _not_before(row[a], cols, b, rs, 10)
+                            row[b] = _not_before(row[a], cols, b,
+                                                 行rng(seed, tname, "__时间序", row["__键"], b), 10)
 
-        for row in rows: row.pop("__ctx", None)
+        for row in rows: row.pop("__ctx", None); row.pop("__键", None)
         if sink:
             sink(tname, rows)
             keep = need[tname]

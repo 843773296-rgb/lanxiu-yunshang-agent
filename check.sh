@@ -137,6 +137,7 @@ run "纹样口径 · 名字/面料/工艺推导,补子不许猜" python3 knowled
 run "用户生命周期 · 着装人/家庭/同意/过期量体" python3 backend/lifecycle_check.py
 run "数据规范 · 身份/关联/覆盖(对照 数据规范.md)" python3 backend/spec_check.py
 run "假数据工厂 · 推断/生成/闸门/灌回滚(24 项)" python3 fakedata/selftest.py
+run "假数据工厂 · 行级稳定(同一批键换个顺序,值必须一样)" python3 fakedata/stable.py
 run "演示数据命名 · 方案名只许「定制款·工艺·年月」,不带人名" python3 fakedata/naming.py
 # ⚠️ 出处**对不对**是另一件事,由 tools/verify_sources.py 核(要联网,
 #    所以不进这里 —— 依赖外部状态的检查放进门禁会变成随机拦路)。
@@ -174,6 +175,7 @@ run "野外语料 · 多样性(够多≠够杂)" python3 agent/wild_corpus.py --
 run "提交闸 · 退出码不许被吞(22 条咬合)" node tools/hooks/commit-gate-exitcode.mjs --selftest
 run "CI 提醒 · 报的是现在红绿不是历史(18 条咬合)" node tools/hooks/push-then-ci.mjs --selftest
 run "工具还是技能 · 新增工具时问一句该由谁判断(8 条)" node tools/hooks/tool-or-skill.mjs --selftest
+run "评测指纹 · 行数没变但内容改了,指纹也得变(7 条自测)" python3 agent/fingerprint.py --selftest
 run "首次启动 · 建出来的库要和在用的库一样全(5 条咬合)" python3 backend/initpath_check.py
 run "交接门禁 · 过 80% 不许收工;交接在项目根、会话在子目录也要找得到(15 条)" node tools/hooks/handoff-gate.mjs --selftest
 printf "\n%s\n" "────────────────────────────────────────"
