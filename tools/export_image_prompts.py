@@ -233,6 +233,13 @@ def main():
         print("✅ 所有图都出齐了,没有要补的")
     按款 = {}
     序 = sorted({o["SPU"] for o in out}, key=lambda s: (-卖.get(s, 0), s))
+    # 名次按**全库销量**算,不按这次剩下的重排 —— 出过的那些占着前面的名次,
+    # 剩下的从第 26 名开始,这样「第几名」在两次重导之间是同一个意思
+    全序 = [r[0] for r in c.execute(
+        """SELECT p.spu FROM product p LEFT JOIN
+           (SELECT spu, COUNT(*) n FROM ordr_item GROUP BY spu) s ON s.spu=p.spu
+           ORDER BY COALESCE(s.n,0) DESC, p.spu""")]
+    名次 = {spu: i for i, spu in enumerate(全序, 1)}
     # 命令行也能给:`python3 tools/export_image_prompts.py <输出目录> --前 38`
     上限 = int(os.environ.get("只要前几款", 0))       # 0 = 全部
     if "--前" in sys.argv:
@@ -240,23 +247,51 @@ def main():
     if 上限:
         留 = set(序[:上限]); out = [o for o in out if o["SPU"] in 留]; 序 = 序[:上限]
     批 = [序[i:i + 每批] for i in range(0, len(序), 每批)]
+    # 最后一批只剩零星几款就并进上一批 —— 一个只装 1 款的文件,打开的成本比它的内容还高
+    #
+    # ⚠️ **别写成 `批[-2] += 批.pop()`。** 负数下标在 pop 之后会重新解析:
+    # pop 把列表变短了,`-2` 指向的已经不是原来那一批 —— 于是两批内容重叠,
+    # 算出**同一个文件名**,后写的把先写的覆盖掉,而目录里只是少了一个文件,不报错。
+    if len(批) > 1 and len(批[-1]) <= 每批 * 0.4:
+        尾 = 批.pop()
+        批[-1] = 批[-1] + 尾
     名字 = {o["SPU"]: o["商品名"] for o in out}
     for o in out:
         按款.setdefault(o["SPU"], []).append(o)
     图位序 = {"main": 0, "intro": 1, "d1": 2, "d2": 3, "d3": 4, "sku": 5}
 
-    进度 = []
+    # **旧批次文件先归档,不直接删。**
+    # 2026-09-20 踩过:用户的 GPT 正按那份清单出图,我重导时把文件删了、编号还从 01 重排,
+    # 于是出现两个「批次-01」装着不同的东西。**那一刻它不是我的产物,是用户正在执行的工单。**
+    旧 = [f for f in os.listdir(OUT) if f.startswith("批次-") and f.endswith(".md")] if os.path.isdir(OUT) else []
+    if 旧:
+        存 = os.path.join(OUT, "旧清单")
+        os.makedirs(存, exist_ok=True)
+        for f in 旧:
+            os.replace(os.path.join(OUT, f), os.path.join(存, f))
+        print(f"   旧的 {len(旧)} 个批次文件已挪到「旧清单」文件夹(没删)")
+
+    进度, 写过 = [], set()
     for bi, spus in enumerate(批, 1):
         张数 = sum(len(按款[s]) for s in spus)
-        with open(os.path.join(OUT, f"批次-{bi:02d}.md"), "w", encoding="utf-8") as f:
-            f.write(f"# 第 {bi} 批 / 共 {len(批)} 批 —— {len(spus)} 款 · {张数} 张\n\n"
+        # 文件名带**名次区间**,不用「第几批」—— 编号会复用,名次不会。
+        # 「第 1 批」这个名字下一轮还会出现,而「第 26–37 名」永远指同一批货。
+        起, 止 = 名次[spus[0]], 名次[spus[-1]]
+        路径 = os.path.join(OUT, f"待出图-第{起}到{止}名.md")
+        # 同名就是算错了 —— **宁可当场报错,也别静默覆盖**:
+        # 覆盖之后目录里只是少一个文件,而少的那批货没有任何地方会提醒
+        if 路径 in 写过:
+            raise SystemExit(f"❌ 两批算出同一个文件名 {os.path.basename(路径)} —— 分批逻辑错了,不写")
+        写过.add(路径)
+        with open(路径, "w", encoding="utf-8") as f:
+            f.write(f"# 待出图 · 第 {起} 到 {止} 名(按历史销量)—— {len(spus)} 款 · {张数} 张\n\n"
                     f"**图存到这个文件夹:**\n\n    {存图}\n\n"
                     f"(文件夹已经建好了,直接往里放;文件名按每条写的来,别改)\n\n"
                     f"先把《00-先读我》里的「统一要求」贴给 GPT 一次(每开一个新对话都要贴)。\n"
                     f"然后**一款一款来**:把一款底下的几条提示词依次发过去,这一款出完再下一款。\n\n")
             for pi, spu in enumerate(spus, 1):
                 gs = sorted(按款[spu], key=lambda o: (图位序.get(o["图位"], 9), o["文件名"]))
-                f.write(f"---\n\n## {bi}-{pi} {名字[spu]}\n\n"
+                f.write(f"---\n\n## 第 {名次[spu]} 名 · {名字[spu]}\n\n"
                         f"`{spu}` · 这一款 {len(gs)} 张"
                         + (f" · 历史售出 {卖.get(spu, 0)} 件\n\n" if 卖.get(spu) else "\n\n"))
                 f.write("**这一款的底(先发这一段)**\n\n```\n" + gs[0]["_共同"] + "\n```\n\n")
@@ -267,7 +302,7 @@ def main():
                     f.write(f"\n\n```\n{o['_单图']}\n```\n\n")
                 f.write("> 第 1 张出好、你认可之后,**让它以第 1 张为参考**出后面几张 ——\n"
                         "> 这几张要看着是同一件衣服,不是同一个款式的几件。\n\n")
-                进度.append(dict(批次=bi, 序号=f"{bi}-{pi}", SPU=spu, 商品名=名字[spu],
+                进度.append(dict(批次=f"第{起}到{止}名", 序号=名次[spu], SPU=spu, 商品名=名字[spu],
                                  张数=len(gs), 历史售出=卖.get(spu, 0),
                                  文件名="; ".join(x["文件名"] for x in gs), 出完了=""))
     with open(os.path.join(OUT, "进度表.csv"), "w", newline="", encoding="utf-8-sig") as f:
@@ -292,8 +327,10 @@ def main():
 
 ## 怎么用
 
-图按**商品**分好了批,`批次-01.md` 到 `批次-{len(批):02d}.md`,每批 {每批} 款。
-**卖得最多的排在第一批** —— 出图有成本,先换掉客户看得最多的那些。
+图按**商品**分好了批,文件名是 `待出图-第 N 到 M 名.md`,每批 {每批} 款上下。
+**名次 = 历史销量排名**,卖得最多的在最前面 —— 出图有成本,先换掉客户看得最多的那些。
+⚠️ 文件名用名次不用「第几批」:**编号会复用,名次不会** ——
+「第 1 批」下一轮还会出现,而「第 26 到 37 名」永远指同一批货。
 
 **这两个文件夹都在桌面上,已经建好了:**
 
@@ -303,7 +340,7 @@ def main():
 | **出好的图放这儿** | `{存图}` |
 
 1. 开一个新对话,先贴下面的「统一要求」(每开一个新对话都要贴一次)。
-2. 打开 `批次-01.md`,**一款一款来**:把这一款底下的几条提示词依次发过去,出完再下一款。
+2. 打开名次最靠前的那个文件,**一款一款来**:把这一款底下的几条提示词依次发过去,出完再下一款。
 3. 图按每条写的文件名存,**全放进上面那个「出好的图」文件夹**,不用建子文件夹。
    有「同一张再复制成」的,把这张图复制几份改名就行,不用重新生成。
 4. 一批出完,在 `进度表.csv` 的「出完了」那一栏打个勾,下次从下一批接着来。
