@@ -3663,6 +3663,11 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
     "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
+ {"name":"deal_credit","description":"**这一单谁有贡献,贡献多少。** 给 order 看某一单(还会按 W 型归因算一次影响力);给 staff 看某个人;都不给看范围内的概况。\n\n⚠️ **要害:两种分成不是一回事,不许相加也不许互相比较。**\n· **收入分成** 加起来**必须 100** —— 那是分钱(算提成)\n· **影响力分成** **可以超过 100** —— 那是记贡献,不是零和的\n一单可以同时是「收入:张三 70 + 李四 30」和「影响力:张三 100 + 李四 60 + 店长 40」。两者在库里长得一模一样(都是「某人 + 某个百分比」),所以**分两栏返回**。看到影响力加起来 200% **不要当成错误**。\n\n⚠️ **这不是成交率** —— 这一版只记录不算率(算率还缺「订单追得到哪次接待」,3511 张定制单标着「未接入」)。\n\n⚠️ 三种来源要分开:`人工填` / `规则算` / `算法算`(算法算必带版本)——三者算出来都是一个百分比,**可信度完全不同**。W 型的 30/30/30/10 是**行业惯例不是算出来的**,而且现在的旅程是造的,**证明的是算法跑得通,不是算得准**。\n\n⚠️ 「算不出来」不是「没有贡献」;「一条记录都没有」是**没记过归因**,不是没人有贡献。",
+  "input_schema":{"type":"object","properties":{
+    "order":{"type":"string","description":"订单号。给了会附带按 W 型归因算一次。"},
+    "staff":{"type":"string","description":"工号或姓名,只看这个人的。"},
+    "limit":{"type":"number","description":"每一栏最多几条,默认 20,最多 100"}},"required":[]}},
  {"name":"on_shift","description":"**谁哪天上班,以及那个人那个时候能不能接。** 读的是**排班表**(上不上班、什么班次),**不是日程占用** —— 谁那个时段被任务占了要用 `week_grid`。 给 staff(+date,+at 如 \"15:00\")= 看这一个人;只给 date 或什么都不给 = 看本店未来几天的排班概况。\n\n⚠️ 这个工具存在的全部理由,是把「不上班」的**五种**分开,它们下一步完全不同:\n· `UNSCHEDULED` **还没排** —— **这不是「他没空」,是「排班还没出来」**,要去催店长排。⚠️ 别因为下周没记录就说「下周大家都有空」,那份推荐看起来完全正常而它建立在「还没排」上。\n· `DRAFT` 草稿 —— 店长还在调,**按它派的单会挂在错的人身上**,要等发布。\n· `OFF` 已发布休息 —— 确实没空。\n· `LEAVE` 请假 —— 没空,**而且已经派给他的单要重新分配**(请假是盖掉排班,排班表上他仍写着上班)。\n· `OUT_OF_SHIFT` **他这天上班但不在这个点**(早班的人接不了晚上的预约)。\n\n返回值里「还没排班的日子」单列出来 —— 混在「不上班」里店长就看不见自己漏排了哪几天。范围跟身份走:店长/顾问看本店,总部看全部;**「员工表里没这个人」和「不在你的门店」都不是「他没空」**。",
   "input_schema":{"type":"object","properties":{
     "staff":{"type":"string","description":"工号或姓名。给了就只看这一个人。"},
@@ -3942,6 +3947,110 @@ def _pattern_queue(pattern=None):
     if pattern:
         return piece_ratios(pattern=pattern)
     return pattern_queue()
+
+
+def deal_credit(order=None, staff=None, limit=20):
+    """**这一单谁有贡献,贡献多少。**
+
+    ⚠️ 这个工具的全部要害是:**两种分成不是一回事,不许相加也不许互相比较。**
+
+        收入分成    加起来**必须 100** —— 那是分钱(算提成)
+        影响力分成  **可以超过 100** —— 那是记贡献,不是零和的
+
+    一单 10 万可以同时是「收入:张三 70 + 李四 30」和
+    「影响力:张三 100 + 李四 60 + 店长 40」。两者在库里长得一模一样,
+    都是「某人 + 某个百分比」。
+
+    ⚠️ **这一版只记录,不算成交率。** 算率要先有「订单追得到哪次接待」
+    (3511 张定制单还标着「未接入」)和足够的触点数据。
+    """
+    me = whoami()
+    if not me:
+        return dict(error="不知道现在是谁在问 —— 请先登录")
+    import credit as _cd
+    import sqlite3 as _sq
+    con = _sq.connect(f"file:{DB}?mode=ro", uri=True); con.row_factory = _sq.Row
+    try:
+        # 范围跟身份走:顾问只看自己参与的,店长看本店的人,总部看全部。
+        if me.get("role") in MANAGER_ROLES:
+            if me.get("role") != "总部运营" and me.get("shop"):
+                人 = [r["no"] for r in con.execute(
+                    "SELECT no FROM staff WHERE shop=?", (me["shop"],))]
+                范围 = f"{me.get('shop')}(你的门店)"
+            else:
+                人, 范围 = None, "全部门店"
+        else:
+            人, 范围 = [me.get("no") or "?"], "你自己参与的单"
+        if staff:
+            r = con.execute("SELECT no FROM staff WHERE no=? OR name=?",
+                            (staff, staff)).fetchone()
+            if not r:
+                return {"看的范围": 范围,
+                        "error": f"员工表里没有「{staff}」—— **这是数据问题**"}
+            if 人 is not None and r["no"] not in 人:
+                return {"看的范围": 范围,
+                        "error": f"「{staff}」不在你的范围里 —— **这不是他没有贡献**"}
+            人 = [r["no"]]
+        where, args = [], []
+        if 人 is not None:
+            where.append(f"staff_no IN ({','.join('?' * len(人))})"); args += 人
+        if order:
+            where.append("order_id = ?"); args.append(order)
+        rows = [dict(x) for x in con.execute(
+            "SELECT * FROM deal_credit" + (" WHERE " + " AND ".join(where) if where else "")
+            + " ORDER BY order_id, kind, pct DESC", args)]
+    finally:
+        con.close()
+    if not rows:
+        return {"看的范围": 范围, "合计": 0,
+                "说明": ("这个范围里一条归因记录都没有。"
+                         "⚠️ **「没有贡献」和「没记过归因」不是一回事** —— 现在是后者。")}
+
+    两种 = {_cd.收入分成: [], _cd.影响力分成: []}
+    来源计 = {}
+    for r in rows:
+        两种.setdefault(r["kind"], []).append(r)
+        来源计[r["source"]] = 来源计.get(r["source"], 0) + 1
+    n = max(1, min(int(limit or 20), 100))
+    out = {
+        "看的范围": 范围,
+        "记录数": len(rows),
+        # **两种分开摆,而且各自带一句它是什么** —— 摆在一起就会被加起来。
+        "收入分成(总和必须=100,这是分钱)":
+            [{"单": r["order_id"], "谁": r["staff_no"], "角色": r["role"],
+              "占比": r["pct"], "来源": r["source"], "算法": r["method"]}
+             for r in 两种[_cd.收入分成][:n]],
+        "影响力分成(可以超过100,这是记贡献)":
+            [{"单": r["order_id"], "谁": r["staff_no"], "角色": r["role"],
+              "占比": r["pct"], "来源": r["source"], "算法": r["method"]}
+             for r in 两种[_cd.影响力分成][:n]],
+        "每种分成是什么": _cd._口径.下一步,
+        # **三种来源要分得开** —— 人填的、规则给的、算法算的,算出来都是一个百分比。
+        "按来源": 来源计,
+        "⚠️": ("**两种分成不许相加,也不许互相比较。** 一个是分钱(必须 100),"
+               "一个是记贡献(可以超 100)。"
+               "⚠️ **这不是成交率** —— 算率还缺「订单追得到哪次接待」那条链路。"),
+    }
+    if order:
+        try:
+            w = _cd.W型归因(order)
+        except Exception as e:
+            w = None
+            out["W型算不出来"] = f"{type(e).__name__}"
+        if w:
+            out["W型归因算出来的影响力"] = [
+                {"谁": a, "占比": b, "在哪几个节点": c} for a, b, c in w]
+            out["W型的前提"] = ("30/30/30/10 是**行业惯例,不是算出来的** —— "
+                               "换成 40/20/30/10 排序就可能变,所以入库要写明版本。"
+                               "⚠️ **造出来的旅程算出的分配,不能当成真实贡献。**")
+        elif w == []:
+            # **「算出来大家都是 0」和「压根没有触点」长得一模一样** —— 分开说
+            out["W型归因算出来的影响力"] = "这一单**没有可用的触点**,算不出来 —— 不是大家都没贡献"
+    异常 = _cd.收入分成对不对()
+    if 异常:
+        out["⚠️ 收入分成加起来不是 100 的单"] = 异常[:10]
+        out["还有几单不对"] = max(0, len(异常) - 10)
+    return out
 
 
 def on_shift(staff=None, date=None, at=None, days=7):
@@ -4268,7 +4377,8 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,
               "revive_list":revive_list,
-              "on_shift":on_shift})
+              "on_shift":on_shift,
+              "deal_credit":deal_credit})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

@@ -45,12 +45,13 @@ import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
+# 判定口径在 knowledge/attribution.py,这里只取数和写库。
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
+import attribution as _口径
 
-收入分成, 影响力分成 = "收入分成", "影响力分成"
-
-# 角色对应定制流程的节点 —— **W 型归因要用的就是这几个点**
-角色 = ("首次接待", "量体", "方案确认", "成交", "售后")
-来源 = ("人工填", "规则算", "算法算")
+# 下面这几个是**转发不是抄件** —— 两份常量会各自漂,而漂了照样跑得出数。
+收入分成, 影响力分成 = _口径.收入分成, _口径.影响力分成
+角色, 来源 = _口径.角色, _口径.来源
 
 
 def 建表(c):
@@ -71,18 +72,9 @@ def 记一笔(order_id, staff_no, kind, role, pct, source, method=None, basis=No
           ts=None, db=DB, conn=None):
     """conn 传进来就复用它 —— 批量灌数据时外层已经持着连接,
     再开一个会 `database is locked`(SQLite 不允许两个写连接)。"""
-    if kind not in (收入分成, 影响力分成):
-        raise ValueError(f"kind 必须是「{收入分成}」或「{影响力分成}」—— "
-                         f"**两者的校验规则相反,混了就全错**")
-    if role not in 角色:
-        raise ValueError(f"role 必须是 {角色} 之一")
-    if source not in 来源:
-        raise ValueError(f"source 必须是 {来源} 之一")
-    if source == "算法算" and not method:
-        # **换了算法之后,老数据和新数据混在一张表里谁也说不清** —— 所以必填
-        raise ValueError("source=算法算 时必须写明 method(算法名+版本)")
-    if pct <= 0 or pct > 100:
-        raise ValueError(f"pct 要在 (0,100],给的是 {pct}")
+    坏 = _口径.校验一笔(kind, role, source, pct, method)
+    if 坏:
+        raise ValueError(坏)
     import datetime
     ts = ts or datetime.date.today().isoformat()
     行 = (order_id, staff_no, kind, role, pct, source, method, basis, ts)
@@ -98,8 +90,11 @@ def 记一笔(order_id, staff_no, kind, role, pct, source, method=None, basis=No
 def 收入分成对不对(db=DB):
     """每一单的**收入分成**加起来必须是 100 —— 那是分蛋糕,不能多也不能少。
 
-    返回不等于 100 的那些单。**影响力分成不在这条规则里**。
+    返回不等于 100 的那些单。**影响力分成不在这条规则里**(口径在
+    `knowledge/attribution.总和该不该管`)—— 拿同一条规则去查它,
+    会把一整批本来就该超 100 的记录判成错的。
     """
+    assert _口径.总和该不该管(收入分成) and not _口径.总和该不该管(影响力分成)
     with sqlite3.connect(db) as c:
         return [(r[0], round(r[1], 2)) for r in c.execute(
             """select order_id, sum(pct) s from deal_credit where kind=?
@@ -145,52 +140,14 @@ if __name__ == "__main__":
 # 真实客户会绕弯、中断,而造出来的旅程一步不落。
 # 这个函数证明的是「算法跑得通」,不是「算得准」。
 
-W型权重 = {"首触": 30.0, "关键": 30.0, "成交": 30.0, "其余": 10.0}
-关键节点类型 = "量体"
+W型权重 = _口径.W型权重          # 转发,不抄
+关键节点类型 = _口径.关键节点类型
 
 
 def W型归因(order_id, db=DB):
-    """算这一单里每个人的影响力。返回 [(工号, 百分比, 角色)]。
-
-    **算不出来就返回空,不编** —— 没有触点的单子,
-    「算出来大家都是 0」和「压根没有触点」长得一模一样。
-    """
+    """算这一单里每个人的影响力 —— **算法在 `knowledge/attribution.W型分配`**,
+    这里只把触点旅程取出来。"""
     sys.path.insert(0, HERE)
     import touchpoint as T
     cid, 旅 = T.这一单之前(order_id, db=db)
-    if not 旅:
-        return []
-
-    有人的 = [x for x in 旅 if x["经手人"]]
-    if not 有人的:
-        return []
-
-    分 = {}
-    def 给(who, pct, role):
-        if not who:
-            return
-        cur = 分.get(who, [0.0, set()])
-        cur[0] += pct; cur[1].add(role); 分[who] = cur
-
-    给(有人的[0]["经手人"], W型权重["首触"], "首次接待")
-
-    关键 = [x for x in 有人的 if x["类型"] == 关键节点类型]
-    if 关键:
-        每人 = W型权重["关键"] / len(关键)
-        for x in 关键:
-            给(x["经手人"], 每人, "量体")
-    else:
-        # **没有量体这个节点时,那 30% 不许凭空分掉** —— 归给成交人,
-        # 并在角色里留痕,否则「有量体」和「没量体」的分配看起来一样
-        给(有人的[-1]["经手人"], W型权重["关键"], "成交(无量体节点)")
-
-    给(有人的[-1]["经手人"], W型权重["成交"], "成交")
-
-    中间 = [x for x in 有人的[1:-1] if x["类型"] != 关键节点类型]
-    if 中间:
-        每人 = W型权重["其余"] / len(中间)
-        for x in 中间:
-            给(x["经手人"], 每人, x["类型"])
-
-    return sorted(((who, round(v[0], 1), "/".join(sorted(v[1])))
-                   for who, v in 分.items()), key=lambda x: -x[1])
+    return _口径.W型分配(旅)

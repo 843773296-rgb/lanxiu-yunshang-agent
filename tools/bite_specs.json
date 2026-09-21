@@ -2267,5 +2267,53 @@
       }
     ],
     "预期红": "查无此人不是没权限"
+  },
+  {
+    "script": "knowledge/attribution.py",
+    "改坏": "把两种分成的校验写成同一个(影响力也被要求加起来 100)",
+    "file": [
+      {
+        "path": "knowledge/attribution.py",
+        "old": "    return kind == 收入分成",
+        "new": "    return True"
+      }
+    ],
+    "预期红": "影响力分成不许被要求等于 100"
+  },
+  {
+    "script": "knowledge/attribution.py",
+    "改坏": "让 source=算法算 不必写 method(换了算法之后老数据新数据分不开)",
+    "file": [
+      {
+        "path": "knowledge/attribution.py",
+        "old": "    if source == \"算法算\" and not method:",
+        "new": "    if False:"
+      }
+    ],
+    "预期红": "算法算必须写 method"
+  },
+  {
+    "script": "knowledge/attribution.py",
+    "改坏": "没有量体节点时把那 30% 凭空分掉(有量体和没量体的分配看起来一样)",
+    "file": [
+      {
+        "path": "knowledge/attribution.py",
+        "old": "        给(有人的[-1][\"经手人\"], W型权重[\"关键\"], \"成交(无量体节点)\")",
+        "new": "        pass"
+      }
+    ],
+    "预期红": "没有量体节点时"
+  },
+  {
+    "script": "knowledge/attribution.py",
+    "改坏": "让没有触点的单子也编一个分配出来",
+    "file": [
+      {
+        "path": "knowledge/attribution.py",
+        "old": "    if not 有人的:\n        return []",
+        "new": "    if not 有人的:\n        return [(\"编的\", 100.0, \"编的\")]"
+      }
+    ],
+    "预期红": "没有触点不编"
   }
 ]

@@ -185,6 +185,7 @@ run "野外语料 · 多样性(够多≠够杂)" python3 agent/wild_corpus.py --
 run "提交闸 · 退出码不许被吞(22 条咬合)" node tools/hooks/commit-gate-exitcode.mjs --selftest
 run "CI 提醒 · 报的是现在红绿不是历史(18 条咬合)" node tools/hooks/push-then-ci.mjs --selftest
 run "工具还是技能 · 新增工具时问一句该由谁判断(8 条)" node tools/hooks/tool-or-skill.mjs --selftest
+run "归因口径 · 两种分成的校验方向相反(26 条自测)" python3 knowledge/attribution.py
 run "排班口径 · 查不到记录只能表示「还没排」(18 条自测)" python3 knowledge/shift.py
 run "促活口径 · 时间相对他自己,没由头不进名单(25 条自测)" python3 knowledge/reactivate.py
 run "商机口径 · 分清是谁说的,别枚举中文说法(19 条自测)" python3 knowledge/oppo.py
