@@ -3663,6 +3663,10 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
     "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
+ {"name":"revive_list","description":"**这些客户现在该不该联系,以及联系他说什么。** 回答的是两件事:**为什么是他,为什么是现在**。\n\n⚠️ **没有由头的不进名单 —— 哪怕他闲置 300 天。** 名单里每条都带「为什么是现在」(往年同期 / 生日临近 / 上一单该回访 / 维保没办完 / 断了自己的节奏),**报名单时必须带上** —— 只给一串名字,顾问打过去不知道说什么。\n\n⚠️ **「断了节奏」是相对他自己的**:一个每季度买一次的人闲置 200 天是异常,一个一年买一次的人闲置 200 天很正常。别说成「超过 X 天没买」。\n\n⚠️ 返回值里「这几个门槛是拍的」那一栏**是真的没有依据**(断节奏倍数/刚联系过/刚下过单),等真实数据校准 —— 别替它编理由。\n\n没进名单的五种,下一步完全不同:`JUST_BOUGHT` 刚买完 · `AFTERSALE` **先办售后** · `RECENT_CONTACT` 防骚扰 · `NO_REASON` 买过但眼下没由头 · `NOT_YET` **从没下过单**(归拉新不归促活)。**「该联系 0 个」不等于这些客户都不行。** 范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。",
+  "input_schema":{"type":"object","properties":{
+    "customer":{"type":"string","description":"客户号或姓名。给了就只看这一个人,并单列他的判断。"},
+    "limit":{"type":"number","description":"名单最多返回几条,默认 20,最多 100"}},"required":[]}},
  {"name":"call_opportunity","description":"**这些通话里有没有值得跟进的生意。** 两种用法,代价差一个数量级:\n\n**不给 customer** = 清单,**只跑规则层**(免费、确定)。它只看「客户说了什么偏好 + 店里有没有对得上的货」,**分不出「想要」和「随口一提」** —— 实测 24 条里误报 7 条(约三成)。⚠️ **返回的是候选不是结论**,报给顾问时必须把这句话一起说,否则他会照着一个个打过去。\n\n**给了 customer**(客户号或姓名)= 这一个人深判,规则层 + 模型层,模型只回答一个问题:真想要还是随口一提。⚠️ **不要对整张清单逐个深判** —— 每条都是一次模型调用。\n\n⚠️ 「有逐字稿的通话」是 0,意思是这个范围里**根本没有录音**,不是「查过了没商机」——**「没有商机」和「没东西可判」是两回事**。\n\n四种「不是商机」的下一步不同:`NO_DIMENSION` 这通电话没话可跟进 · `NO_STOCK` 想要的现在给不了 · `JUST_MENTIONED` 随口一提 · `NO_CUSTOMER_LINE` **逐字稿里说话人没标**(数据问题,不是这个客户没戏)。范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。",
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号(如 C10001)或姓名。给了就深判这一个人(会调模型);不给就列候选清单。"},
@@ -3934,6 +3938,72 @@ def _pattern_queue(pattern=None):
     return pattern_queue()
 
 
+def revive_list(customer=None, limit=20):
+    """**这些客户现在该不该联系,以及联系他说什么。**
+
+    ⚠️ 这个工具回答的是「**为什么是他,为什么是现在**」两件事。
+    只按闲置天数筛的名单,顾问拿到也不知道说什么,打过去就是尬聊 ——
+    **所以没有由头的不进名单,哪怕他闲置 300 天。**
+
+    ⚠️ **三个门槛是拍的,不是算出来的**(断节奏倍数 / 刚联系过 / 刚下过单)。
+    返回值里会把它们列出来 —— **一个拍脑袋的门槛和一个有出处的门槛,
+    在数字上长得一模一样**,不标出来的话下游会把它当成结论。
+    """
+    me = whoami()
+    if not me:
+        return dict(error="不知道现在是谁在问 —— 请先登录")
+    import revive as _rv
+    import sqlite3 as _sq
+    today = _rv._today()
+    con = _sq.connect(f"file:{DB}?mode=ro", uri=True); con.row_factory = _sq.Row
+    try:
+        where, args = [], []
+        if me.get("role") in MANAGER_ROLES:
+            if me.get("role") != "总部运营" and me.get("shop"):
+                where.append("shop = ?"); args.append(me["shop"])
+            范围 = "全部门店" if me.get("role") == "总部运营" else f"{me.get('shop')}(你的门店)"
+        else:
+            where.append("advisor_no = ?"); args.append(me.get("no") or "?")
+            范围 = "你名下的客户"
+        if customer:
+            where.append("(id = ? OR name = ?)"); args += [customer, customer]
+        cs = [dict(r) for r in con.execute(
+            "SELECT * FROM customer" + (" WHERE " + " AND ".join(where) if where else ""), args)]
+    finally:
+        con.close()
+    if not cs:
+        return {"看的范围": 范围, "合计": 0,
+                "说明": "这个范围里没有客户" + ("(或者这个客户不在你的范围里)" if customer else "")}
+
+    待校准 = {k: getattr(_rv._口径, k) for k in _rv._口径.待校准}
+    要促, 不促 = [], {}
+    for c in cs:
+        判, 码, why = _rv.should_revive(c, today)
+        if 判:
+            要促.append({"客户": c.get("name"), "客户号": c.get("id"),
+                         "由头": 码, "为什么是现在": why})
+        else:
+            不促[码] = 不促.get(码, 0) + 1
+    n = max(1, min(int(limit or 20), 100))
+    out = {
+        "看的范围": 范围,
+        "看了几个客户": len(cs),
+        "该联系的": len(要促),
+        "名单": 要促[:n],
+        "还有": max(0, len(要促) - n),
+        # **不促的也要说清是哪一种** —— 「现在不是时候」和「这人没由头」
+        # 和「他还没热过」,下一步完全不同,而它们都是「不在名单里」。
+        "没进名单的": 不促,
+        "没进名单的该做什么": {c: _rv._口径.下一步[c] for c in sorted(不促) if c in _rv._口径.下一步},
+        "⚠️ 这几个门槛是拍的": 待校准,
+    }
+    if customer and len(cs) == 1:
+        判, 码, why = _rv.should_revive(cs[0], today)
+        out["这一个人"] = {"客户": cs[0].get("name"), "该不该联系": 判, "码": 码,
+                          "理由": why, "下一步": _rv._口径.下一步.get(码, "")}
+    return out
+
+
 def call_opportunity(customer=None, limit=20):
     """**这些通话里有没有值得跟进的生意。**
 
@@ -4096,7 +4166,8 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
-              "call_opportunity":call_opportunity})
+              "call_opportunity":call_opportunity,
+              "revive_list":revive_list})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

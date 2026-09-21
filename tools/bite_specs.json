@@ -2135,5 +2135,65 @@
       }
     ],
     "预期红": "备选·Q01 不说「候选」说「随口」"
+  },
+  {
+    "script": "knowledge/reactivate.py",
+    "改坏": "把「相对他自己的节奏」换成一个全局天数阈值(「他本来就买得少」和「他变了」混成一件事)",
+    "file": [
+      {
+        "path": "knowledge/reactivate.py",
+        "old": "    if 节奏 is not None and 闲置 is not None and 闲置 > 节奏 * 断节奏倍数:",
+        "new": "    if 节奏 is not None and 闲置 is not None and 闲置 > 180:"
+      }
+    ],
+    "预期红": "一年买一次的人闲置 200 天不算断"
+  },
+  {
+    "script": "knowledge/reactivate.py",
+    "改坏": "让「算不出节奏」当成节奏很慢(从没买过的被判成断了节奏)",
+    "file": [
+      {
+        "path": "knowledge/reactivate.py",
+        "old": "    n = orders_12m or 0",
+        "new": "    n = orders_12m or 1"
+      }
+    ],
+    "预期红": "12 个月 0 单算不出节奏"
+  },
+  {
+    "script": "knowledge/reactivate.py",
+    "改坏": "把「往年同期」的今年也算进去(理由会自相矛盾:今年买过又说今年没动静)",
+    "file": [
+      {
+        "path": "knowledge/reactivate.py",
+        "old": "    年份 = sorted({int(y) for y in (事实.get(\"往年同期年份\") or []) if int(y) < today.year})",
+        "new": "    年份 = sorted({int(y) for y in (事实.get(\"往年同期年份\") or [])})"
+      }
+    ],
+    "预期红": "往年同期不含今年"
+  },
+  {
+    "script": "knowledge/reactivate.py",
+    "改坏": "没有由头也让他进名单(闲置久本身当理由)",
+    "file": [
+      {
+        "path": "knowledge/reactivate.py",
+        "old": "        return False, \"NO_REASON\", (",
+        "new": "        return True, \"NO_REASON\", ("
+      }
+    ],
+    "预期红": "闲置 300 天但没由头,不进名单"
+  },
+  {
+    "script": "agent/ops_eval_judgetest.py",
+    "改坏": "把 R05 的判据从「点名售后」放回一个含「先」的大词表(任何一句拒绝都命中)",
+    "file": [
+      {
+        "path": "agent/ops_eval.py",
+        "old": "     grade=all_of(must_mention(\"售后\", \"未结\",\n                               why=\"有未结售后是**硬门槛**,推销是火上浇油 ——\"\n                                    \"**要点名是这道门槛拦住了它**,含糊地说「先别推」不算\"),",
+        "new": "     grade=all_of(must_say(\"售后\", \"先\", \"办完\", \"结\", \"处理完\",\n                               why=\"放回大词表\"),"
+      }
+    ],
+    "预期红": "含糊地说「先别推」不点名门槛"
   }
 ]

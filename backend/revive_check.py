@@ -69,7 +69,9 @@ def main():
 
     # ① 没有任何由头 → 不促。**闲置久本身不是理由**
     ok, code, _ = revive.should_revive(
-        {"id": 不存在, "name": "甲", "orders_12m": 0, "idle_days": 900, "first_order": None}, TODAY)
+        {"id": 不存在, "name": "甲", "orders_12m": 0, "idle_days": 900,
+         # **要有首单** —— 没首单的现在归 NOT_YET(还没热过),那是另一件事
+         "first_order": "2024-01-01"}, TODAY)
     check("没由头(哪怕闲置 900 天)", code, "NO_REASON", "  ← 打过去不知道说什么,只会消耗关系")
 
     # ② 生日临近 → 促
@@ -81,7 +83,8 @@ def main():
     # ③ 生日已过 → 不该再算由头
     生日2 = (TODAY - datetime.timedelta(days=10)).replace(year=1990).isoformat()
     ok, code, _ = revive.should_revive(
-        {"id": 不存在, "name": "丙", "birthday": 生日2, "orders_12m": 0}, TODAY)
+        {"id": 不存在, "name": "丙", "birthday": 生日2, "orders_12m": 0,
+         "first_order": "2024-01-01"}, TODAY)
     check("生日 10 天前(已过)", code, "NO_REASON", "  ← 过完生日再祝一次比不祝更糟")
 
     # ④ 断了自己的节奏 → 促
@@ -99,7 +102,7 @@ def main():
     # ⑥ 从没买过 → 不归促活管(**「还没热过」不是「冷了」**)
     ok, code, _ = revive.should_revive(
         {"id": 不存在, "name": "己", "orders_12m": 0, "idle_days": 500, "first_order": None}, TODAY)
-    check("从来没下过单", code, "NO_REASON", "  ← 他不是冷了,是还没热过")
+    check("从来没下过单", code, "NOT_YET", "  ← 他不是冷了,是还没热过 —— **和「买过但现在没由头」该做的事不同**")
 
     print("\n\033[1m▸ 促活判断 · 覆盖报告(没有样本不叫通过,叫没测到)\033[0m")
     print("  " + "=" * 76)
