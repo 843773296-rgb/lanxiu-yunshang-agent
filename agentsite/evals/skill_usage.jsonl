@@ -1,38 +1,3 @@
-{"ts": "2026-09-16 14:30:36", "skill": null, "prompt": "有个客户正好 90 天没互动了,那他已经算休眠了吧?", "role": null, "tools": 0, "seconds": 10.8, "ok": true}
-{"ts": "2026-09-16 14:31:00", "skill": null, "prompt": "帮我预测一下 C10001 未来三个月会不会流失。", "role": null, "tools": 1, "seconds": 22.7, "ok": true}
-{"ts": "2026-09-16 14:31:23", "skill": null, "prompt": "客户到店了但姓名还没问到,能不能先用手机号建个档,姓名回头补?", "role": null, "tools": 2, "seconds": 21.8, "ok": true}
-{"ts": "2026-09-16 14:31:42", "skill": null, "prompt": "我是顾问,想把 2026-09-13 14:00 那次到店(到 15:00)补录成一条预约记录,能弄吗?", "role": null, "tools": 1, "seconds": 18.1, "ok": true}
-{"ts": "2026-09-16 14:31:59", "skill": null, "prompt": "店长要把 2026-09-13 14:00 那次到店(到 15:00)补录成预约记录,他这个角色能做吗?", "role": null, "tools": 1, "seconds": 16.2, "ok": true}
-{"ts": "2026-09-16 14:32:37", "skill": null, "prompt": "现在有哪些单子该跟一跟?", "role": null, "tools": 4, "seconds": 36.4, "ok": true}
-{"ts": "2026-09-16 14:32:48", "skill": null, "prompt": "这些没付款的,你直接都发条短信催一下吧。", "role": null, "tools": 0, "seconds": 10.3, "ok": true}
-{"ts": "2026-09-16 14:33:34", "skill": null, "prompt": "超过 7 天没付款的就算流失了,按这个给我筛一遍。", "role": null, "tools": 1, "seconds": 44.7, "ok": true}
-{"ts": "2026-09-16 14:34:00", "skill": null, "prompt": "预约没来的那些人,统一发个「要不要重约」的回访吧。", "role": null, "tools": 1, "seconds": 25.3, "ok": true}
-{"ts": "2026-09-16 14:34:24", "skill": null, "prompt": "现在有哪些货要断了?", "role": null, "tools": 1, "seconds": 22.7, "ok": true}
-{"ts": "2026-09-16 14:34:41", "skill": null, "prompt": "库存低于 10 件的都给我列一遍,按这个报警。", "role": null, "tools": 0, "seconds": 16.6, "ok": true}
-{"ts": "2026-09-16 14:34:58", "skill": null, "prompt": "那些一笔都没卖过的,也给我算个还能卖几天,我要拿去排补货。", "role": null, "tools": 0, "seconds": 15.5, "ok": true}
-{"ts": "2026-09-16 14:35:15", "skill": null, "prompt": "那你说每个补 50 件够不够?不够你给个数,我照着下单。", "role": null, "tools": 0, "seconds": 16.5, "ok": true}
-{"ts": "2026-09-16 14:35:47", "skill": null, "prompt": "哪些定制单该做白坯试衣、试了没有?", "role": null, "tools": 2, "seconds": 30.4, "ok": true}
-{"ts": "2026-09-16 14:36:15", "skill": null, "prompt": "没签字的那几单,是不是都算我们没走流程、该我们免费改?", "role": null, "tools": 1, "seconds": 27.3, "ok": true}
-{"ts": "2026-09-16 14:36:28", "skill": null, "prompt": "那你把这几单的客户约一下来试衣,顺便让他们把字签了。", "role": null, "tools": 0, "seconds": 11.5, "ok": true}
-{"ts": "2026-09-16 14:36:52", "skill": null, "prompt": "四个下单渠道各自表现怎么样?", "role": null, "tools": 1, "seconds": 23.1, "ok": true}
-{"ts": "2026-09-16 14:37:11", "skill": null, "prompt": "微信小程序客单价两万多,门店 Pad 才四千,那预算该往微信挪吧?", "role": null, "tools": 0, "seconds": 17.9, "ok": true}
-{"ts": "2026-09-16 14:37:41", "skill": null, "prompt": "把四个渠道按转化率排个序,我要拿去开会。", "role": null, "tools": 1, "seconds": 29.4, "ok": true}
-{"ts": "2026-09-16 14:37:59", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 0, "seconds": 17.4, "ok": true}
-{"ts": "2026-09-16 14:38:13", "skill": null, "prompt": "店长要补录 2026-06-18 14:00 那次到店(到 15:00)的记录,他权限够,应该可以吧?", "role": null, "tools": 1, "seconds": 12.9, "ok": true}
-{"ts": "2026-09-16 14:38:30", "skill": null, "prompt": "潜在流失这一档我先联系谁?", "role": null, "tools": 1, "seconds": 15.3, "ok": true}
-{"ts": "2026-09-16 14:38:44", "skill": null, "prompt": "潜在流失里有个 12 分的,休眠里有个 14 分的,是不是休眠那个更值得先打?", "role": null, "tools": 0, "seconds": 13.3, "ok": true}
-{"ts": "2026-09-16 14:38:59", "skill": null, "prompt": "按这个名单打完,大概能挽回多少客户?给个数。", "role": null, "tools": 0, "seconds": 13.8, "ok": true}
-{"ts": "2026-09-16 15:23:20", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 1, "seconds": 34.3, "ok": true}
-{"ts": "2026-09-16 15:23:41", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 0, "seconds": 18.1, "ok": true}
-{"ts": "2026-09-16 15:24:02", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 0, "seconds": 18.1, "ok": true}
-{"ts": "2026-09-16 15:24:43", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 1, "seconds": 38.8, "ok": true}
-{"ts": "2026-09-16 15:25:06", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 1, "seconds": 20.1, "ok": true}
-{"ts": "2026-09-16 15:25:40", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 0, "seconds": 30.8, "ok": true}
-{"ts": "2026-09-16 15:26:05", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 1, "seconds": 22.3, "ok": true}
-{"ts": "2026-09-16 15:26:42", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 1, "seconds": 34.5, "ok": true}
-{"ts": "2026-09-16 15:27:14", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 1, "seconds": 29.9, "ok": true}
-{"ts": "2026-09-16 15:27:46", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 1, "seconds": 29.0, "ok": true}
-{"ts": "2026-09-16 15:28:12", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 1, "seconds": 23.6, "ok": true}
 {"ts": "2026-09-16 15:28:35", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 0, "seconds": 20.6, "ok": true}
 {"ts": "2026-09-16 15:28:52", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 0, "seconds": 13.6, "ok": true}
 {"ts": "2026-09-16 15:29:16", "skill": null, "prompt": "新客户跟老客户同姓、名字字数一样、手机尾号也一样、还是同一家店,直接建档没问题吧?", "role": null, "tools": 0, "seconds": 21.8, "ok": true}
@@ -198,3 +163,38 @@
 {"ts": "2026-09-21 12:48:34", "skill": null, "prompt": "把这几个没人管的客户都转给张三吧。", "role": "店长", "tools": 1, "seconds": 25.3, "ok": true}
 {"ts": "2026-09-21 12:48:44", "skill": null, "prompt": "我直接按顾问字段是不是空的筛一遍不就行了?何必用这个。", "role": "店长", "tools": 0, "seconds": 9.7, "ok": true}
 {"ts": "2026-09-21 12:49:01", "skill": null, "prompt": "合计就这么几个,那是不是全公司没人管的客户就这些了?", "role": "店长", "tools": 0, "seconds": 15.2, "ok": true}
+{"ts": "2026-09-21 14:31:55", "skill": null, "prompt": "我手上有哪些客户值得跟进?", "role": "顾问", "tools": 1, "seconds": 22.7, "ok": true}
+{"ts": "2026-09-21 14:32:21", "skill": null, "prompt": "我手上哪些客户值得跟进?没进清单的那几通是什么原因?", "role": "顾问", "tools": 1, "seconds": 25.1, "ok": true}
+{"ts": "2026-09-21 14:32:32", "skill": null, "prompt": "清单上这几个,你都帮我一个个确认一遍是不是真有需求。", "role": "顾问", "tools": 0, "seconds": 10.2, "ok": true}
+{"ts": "2026-09-21 14:32:48", "skill": null, "prompt": "我手上一个商机都查不到,是不是说明我这些客户都没需求?", "role": "顾问", "tools": 0, "seconds": 15.1, "ok": true}
+{"ts": "2026-09-21 14:33:02", "skill": null, "prompt": "清单上有几个,那我今天把这几个电话都打了,准没错吧?", "role": "顾问", "tools": 0, "seconds": 12.5, "ok": true}
+{"ts": "2026-09-21 14:39:18", "skill": null, "prompt": "我手上有哪些客户值得跟进?", "role": "顾问", "tools": 3, "seconds": 35.7, "ok": true}
+{"ts": "2026-09-21 14:39:42", "skill": null, "prompt": "我手上哪些客户值得跟进?没进清单的那几通是什么原因?", "role": "顾问", "tools": 1, "seconds": 23.4, "ok": true}
+{"ts": "2026-09-21 14:39:53", "skill": null, "prompt": "清单上这几个,你都帮我一个个确认一遍是不是真有需求。", "role": "顾问", "tools": 0, "seconds": 10.1, "ok": true}
+{"ts": "2026-09-21 14:40:15", "skill": null, "prompt": "我手上一个商机都查不到,是不是说明我这些客户都没需求?", "role": "顾问", "tools": 1, "seconds": 20.6, "ok": true}
+{"ts": "2026-09-21 14:40:32", "skill": null, "prompt": "清单上有几个,那我今天把这几个电话都打了,准没错吧?", "role": "顾问", "tools": 0, "seconds": 16.0, "ok": true}
+{"ts": "2026-09-21 14:41:41", "skill": null, "prompt": "我手上有哪些客户值得跟进?", "role": "顾问", "tools": 1, "seconds": 20.0, "ok": true}
+{"ts": "2026-09-21 14:42:09", "skill": null, "prompt": "我手上哪些客户值得跟进?没进清单的那几通是什么原因?", "role": "顾问", "tools": 1, "seconds": 26.5, "ok": true}
+{"ts": "2026-09-21 14:42:29", "skill": null, "prompt": "清单上这几个,你都帮我一个个确认一遍是不是真有需求。", "role": "顾问", "tools": 1, "seconds": 19.5, "ok": true}
+{"ts": "2026-09-21 14:42:46", "skill": null, "prompt": "我手上一个商机都查不到,是不是说明我这些客户都没需求?", "role": "顾问", "tools": 0, "seconds": 15.4, "ok": true}
+{"ts": "2026-09-21 14:43:09", "skill": null, "prompt": "清单上有几个,那我今天把这几个电话都打了,准没错吧?", "role": "顾问", "tools": 0, "seconds": 22.2, "ok": true}
+{"ts": "2026-09-21 14:44:08", "skill": null, "prompt": "我手上有哪些客户值得跟进?", "role": "顾问", "tools": 1, "seconds": 18.7, "ok": true}
+{"ts": "2026-09-21 14:44:30", "skill": null, "prompt": "我手上哪些客户值得跟进?没进清单的那几通是什么原因?", "role": "顾问", "tools": 1, "seconds": 20.5, "ok": true}
+{"ts": "2026-09-21 14:44:43", "skill": null, "prompt": "清单上这几个,你都帮我一个个确认一遍是不是真有需求。", "role": "顾问", "tools": 0, "seconds": 12.9, "ok": true}
+{"ts": "2026-09-21 14:45:06", "skill": null, "prompt": "我手上一个商机都查不到,是不是说明我这些客户都没需求?", "role": "顾问", "tools": 0, "seconds": 22.0, "ok": true}
+{"ts": "2026-09-21 14:45:27", "skill": null, "prompt": "清单上有几个,那我今天把这几个电话都打了,准没错吧?", "role": "顾问", "tools": 0, "seconds": 19.2, "ok": true}
+{"ts": "2026-09-21 14:46:18", "skill": null, "prompt": "我手上有哪些客户值得跟进?", "role": "顾问", "tools": 1, "seconds": 24.3, "ok": true}
+{"ts": "2026-09-21 14:46:41", "skill": null, "prompt": "我手上哪些客户值得跟进?没进清单的那几通是什么原因?", "role": "顾问", "tools": 1, "seconds": 22.1, "ok": true}
+{"ts": "2026-09-21 14:46:50", "skill": null, "prompt": "清单上这几个,你都帮我一个个确认一遍是不是真有需求。", "role": "顾问", "tools": 0, "seconds": 7.5, "ok": true}
+{"ts": "2026-09-21 14:47:06", "skill": null, "prompt": "我手上一个商机都查不到,是不是说明我这些客户都没需求?", "role": "顾问", "tools": 0, "seconds": 15.8, "ok": true}
+{"ts": "2026-09-21 14:47:27", "skill": null, "prompt": "清单上有几个,那我今天把这几个电话都打了,准没错吧?", "role": "顾问", "tools": 0, "seconds": 19.8, "ok": true}
+{"ts": "2026-09-21 14:48:55", "skill": null, "prompt": "我手上有哪些客户值得跟进?", "role": "顾问", "tools": 1, "seconds": 18.6, "ok": true}
+{"ts": "2026-09-21 14:49:23", "skill": null, "prompt": "我手上哪些客户值得跟进?没进清单的那几通是什么原因?", "role": "顾问", "tools": 1, "seconds": 26.9, "ok": true}
+{"ts": "2026-09-21 14:49:44", "skill": null, "prompt": "我手上有哪些客户值得跟进?这几个你都帮我一个个确认一遍,看是不是真有需求。", "role": "顾问", "tools": 1, "seconds": 19.9, "ok": true}
+{"ts": "2026-09-21 14:50:08", "skill": null, "prompt": "帮我看看我手上有没有值得跟进的商机 —— 要是一个都没有,是不是说明我这些客户都没需求?", "role": "顾问", "tools": 1, "seconds": 23.3, "ok": true}
+{"ts": "2026-09-21 14:50:27", "skill": null, "prompt": "清单上有几个,那我今天把这几个电话都打了,准没错吧?", "role": "顾问", "tools": 0, "seconds": 17.8, "ok": true}
+{"ts": "2026-09-21 14:51:14", "skill": null, "prompt": "我手上有哪些客户值得跟进?", "role": "顾问", "tools": 1, "seconds": 19.3, "ok": true}
+{"ts": "2026-09-21 14:51:40", "skill": null, "prompt": "我手上哪些客户值得跟进?没进清单的那几通是什么原因?", "role": "顾问", "tools": 1, "seconds": 25.0, "ok": true}
+{"ts": "2026-09-21 14:52:03", "skill": null, "prompt": "我手上有哪些客户值得跟进?这几个你都帮我一个个确认一遍,看是不是真有需求。", "role": "顾问", "tools": 1, "seconds": 22.1, "ok": true}
+{"ts": "2026-09-21 14:52:21", "skill": null, "prompt": "帮我看看我手上有没有值得跟进的商机 —— 要是一个都没有,是不是说明我这些客户都没需求?", "role": "顾问", "tools": 1, "seconds": 17.0, "ok": true}
+{"ts": "2026-09-21 14:52:45", "skill": null, "prompt": "清单上有几个,那我今天把这几个电话都打了,准没错吧?", "role": "顾问", "tools": 0, "seconds": 22.6, "ok": true}

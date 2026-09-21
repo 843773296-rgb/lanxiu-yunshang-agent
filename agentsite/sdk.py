@@ -224,6 +224,8 @@ SHOP_TOOLS = [
     "mcp__shop__get_order", "mcp__shop__get_stock", "mcp__shop__get_aftersale",
     # 售后判责的现场。只给事实不给结论 —— 结论必须由人确认。
     "mcp__shop__get_maintain",
+    # 商机:顾问看自己名下客户的通话,店长看本店。**规则层免费,深判才调模型**。
+    "mcp__shop__call_opportunity",
 ]
 
 # 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。

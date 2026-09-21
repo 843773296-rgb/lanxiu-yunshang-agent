@@ -3663,6 +3663,10 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
     "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
+ {"name":"call_opportunity","description":"**这些通话里有没有值得跟进的生意。** 两种用法,代价差一个数量级:\n\n**不给 customer** = 清单,**只跑规则层**(免费、确定)。它只看「客户说了什么偏好 + 店里有没有对得上的货」,**分不出「想要」和「随口一提」** —— 实测 24 条里误报 7 条(约三成)。⚠️ **返回的是候选不是结论**,报给顾问时必须把这句话一起说,否则他会照着一个个打过去。\n\n**给了 customer**(客户号或姓名)= 这一个人深判,规则层 + 模型层,模型只回答一个问题:真想要还是随口一提。⚠️ **不要对整张清单逐个深判** —— 每条都是一次模型调用。\n\n⚠️ 「有逐字稿的通话」是 0,意思是这个范围里**根本没有录音**,不是「查过了没商机」——**「没有商机」和「没东西可判」是两回事**。\n\n四种「不是商机」的下一步不同:`NO_DIMENSION` 这通电话没话可跟进 · `NO_STOCK` 想要的现在给不了 · `JUST_MENTIONED` 随口一提 · `NO_CUSTOMER_LINE` **逐字稿里说话人没标**(数据问题,不是这个客户没戏)。范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。",
+  "input_schema":{"type":"object","properties":{
+    "customer":{"type":"string","description":"客户号(如 C10001)或姓名。给了就深判这一个人(会调模型);不给就列候选清单。"},
+    "limit":{"type":"number","description":"清单最多返回几条,默认 20,最多 100"}},"required":[]}},
  {"name":"ownerless_list","description":"**谁实际上没人管** —— 注意「有归属顾问」和「有人管」不是一回事:一个停用的顾问名下还挂着客户,顾问字段**非空**,任何按「有没有顾问」筛的写法都查不出他们。\n\n返回五种码,**分开的全部理由是下一步不同**:`LEFT` 顾问已停用(店长重新指人)· `NONE` 还没归属(等分配)· `CROSS_SHOP` 顾问不在客户门店(转店还是转人)· `NO_SUCH` 工号员工表里没有(**数据要修**)· `NO_SHOP` 档案没填门店,**判不了跨没跨店**(数据要修)。⚠️ 后两种是数据问题不是业务问题,**对着它们建议「重新分配客户」是答错了**。⚠️ `NO_SHOP` 是「判不了」,不是「确认过没问题」。\n\n**只查不改** —— 改不改归属是店长的动作,这个工具不写任何一行。范围跟身份走:店长看本店,总部看全部,顾问看不到(返回值里写着「看的范围」是哪一段,**合计 0 不等于全店都有人管**)。code 可只看某一种码。另附「待确立归属」:到店接待完成、但归属还没确立的人数(业务定:归属在首次到店接待完成时确立)。",
   "input_schema":{"type":"object","properties":{
     "code":{"type":"string","description":"只看某一种或几种码,逗号分隔,如 LEFT,NO_SUCH。不给看全部。"},
@@ -3930,6 +3934,106 @@ def _pattern_queue(pattern=None):
     return pattern_queue()
 
 
+def call_opportunity(customer=None, limit=20):
+    """**这些通话里有没有值得跟进的生意。**
+
+    两种用法,**代价差一个数量级**,所以刻意分开:
+
+        不给 customer  → 清单。**只跑规则层**(免费、确定),给的是**候选**
+        给了 customer  → 这一个人深判。规则层 + 模型层,模型只回答一个问题:
+                         **客户是真想要,还是随口一提**
+
+    为什么清单不跑模型:一条逐字稿一次模型调用,清单动辄几十条。
+    而规则层的天花板已经量出来了 —— 24 条里误报 7 条,**全是同一个形状**:
+    「齐胸襦裙听起来不错啊,但是呢,我先不急着定」——有维度词、店里有货,
+    规则判商机,而他只是随口一提。
+
+    ⚠️ 所以清单里**约三成是随口一提**。这个数必须跟着清单一起给出去 ——
+    **一份没说明白的候选清单,和一份确认过的商机清单长得一模一样**,
+    顾问会照着它一个个打过去。
+    """
+    me = whoami()
+    if not me:
+        return dict(error="不知道现在是谁在问 —— 请先登录")
+    import opportunity as _op
+    import sqlite3 as _sq
+    con = _sq.connect(f"file:{DB}?mode=ro", uri=True); con.row_factory = _sq.Row
+    try:
+        # 范围跟身份走:顾问只看自己名下的客户,店长看本店,总部看全部。
+        # **和 get_tasks / ownerless_list 同一套规矩**,不在这儿自己另写一份。
+        where, args = [], []
+        if me.get("role") in MANAGER_ROLES:
+            if me.get("role") != "总部运营" and me.get("shop"):
+                where.append("cu.shop = ?"); args.append(me["shop"])
+            范围 = "全部门店" if me.get("role") == "总部运营" else f"{me.get('shop')}(你的门店)"
+        else:
+            where.append("cu.advisor_no = ?"); args.append(me.get("no") or "?")
+            范围 = "你名下的客户"
+        if customer:
+            where.append("(cu.id = ? OR cu.name = ?)"); args += [customer, customer]
+        rs = [dict(r) for r in con.execute(
+            "SELECT t.audio_id, t.text, cu.id cid, cu.name cname, cu.shop "
+            "FROM call_transcript t JOIN call_audio a ON a.id = t.audio_id "
+            "JOIN customer cu ON cu.id = a.customer_id"
+            + (" WHERE " + " AND ".join(where) if where else "")
+            + " ORDER BY a.created DESC", args)]
+    finally:
+        con.close()
+    if not rs:
+        return {"看的范围": 范围, "合计": 0,
+                "说明": ("这个范围里一条**有逐字稿的通话**都没有。"
+                         "⚠️ **「没有商机」和「没有录音」不是一回事** —— "
+                         "现在是后者:没东西可判。")}
+
+    if customer:
+        # 深判:一个人,连模型一起跑
+        出 = []
+        for r in rs[:3]:          # 最多三通,再多就该让人自己听了
+            try:
+                判, 码, why = _op.判断_带模型(r["text"])
+            except Exception as e:
+                # **「跑崩了」和「判成不是商机」长得一模一样** —— 分开报
+                出.append({"通话": r["audio_id"], "结果": "判不了",
+                           "为什么": f"模型这一层没跑通:{type(e).__name__}"})
+                continue
+            出.append({"通话": r["audio_id"], "是商机": 判,
+                       "码": 码 if not 判 else "有商机",
+                       "理由": why,
+                       "下一步": _op._口径.下一步.get(码 if not 判 else "有商机", "")})
+        return {"看的范围": 范围, "客户": f"{rs[0]['cname']}({rs[0]['cid']})",
+                "通话数": len(rs), "判了": len(出), "结果": 出,
+                "怎么判的": "规则层看客户说了什么偏好、店里有没有货;"
+                            "模型层只回答一个问题:真想要还是随口一提。"}
+
+    # 清单:只跑规则层
+    候选, 没进的 = [], {}
+    for r in rs:
+        判, 码, why = _op.判断(r["text"])
+        if 判:
+            候选.append({"客户": r["cname"], "客户号": r["cid"],
+                         "通话": r["audio_id"], "维度": 码, "理由": why})
+        else:
+            # **「没进清单」的原因要给出去。**
+            # 只给通过的那些,等于把「为什么这几通没进」变成一个答不上来的问题 ——
+            # 而管这个工具的规矩(TL34)讲的正是这四种码的下一步各不相同。
+            # **规矩引用一个角色拿不到的字段,模型只能自己编。**
+            没进的[码] = 没进的.get(码, 0) + 1
+    n = max(1, min(int(limit or 20), 100))
+    return {
+        "看的范围": 范围,
+        "有逐字稿的通话": len(rs),
+        "规则层筛出的候选": len(候选),
+        "候选": 候选[:n],
+        "还有": max(0, len(候选) - n),
+        "没进候选的": 没进的,
+        "没进候选的该做什么": {c: _op._口径.下一步[c] for c in sorted(没进的)},
+        "⚠️ 这是候选不是结论": (
+            "这一层只看「客户提到了什么 + 店里有没有货」,**分不出想要和随口一提**。"
+            f"实测 24 条里误报 7 条(约三成)。要确认某一个人,"
+            f"用 call_opportunity(customer=\"客户号\") —— 那一步会调模型判「真想要还是提一句」。"),
+    }
+
+
 def ownerless_list(code=None, limit=50):
     """**谁实际上没人管** —— 归属字段非空不等于有人在管。
 
@@ -3991,7 +4095,8 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
               "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
-              "ownerless_list":ownerless_list})
+              "ownerless_list":ownerless_list,
+              "call_opportunity":call_opportunity})
 TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,"kb_read":kb_read,
               "kb_combo":kb_combo,"kb_coverage":kb_coverage,
               "kb_pattern":kb_pattern,"kb_size":kb_size,"kb_bom":kb_bom,

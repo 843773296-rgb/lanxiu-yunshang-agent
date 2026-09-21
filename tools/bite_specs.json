@@ -1749,9 +1749,9 @@
     "改坏": "把「归属顾问已离职」那一支去掉(离职的也算有人管)",
     "file": [
       {
-        "path": "backend/ownership.py",
-        "old": "            if r[\"adv_status\"] != \"启用\":",
-        "new": "            if False and r[\"adv_status\"] != \"启用\":"
+        "path": "knowledge/owner.py",
+        "old": "    if 状态 != \"启用\":",
+        "new": "    if False:"
       }
     ],
     "预期红": "离职的顾问名下还挂着客户"
@@ -2063,5 +2063,77 @@
       }
     ],
     "预期红": "停用的顾问"
+  },
+  {
+    "script": "knowledge/oppo.py",
+    "改坏": "把多字色系整体拿去匹配(客户说「金色」对不上色系「金银」)",
+    "file": [
+      {
+        "path": "knowledge/oppo.py",
+        "old": "    return [色系] + [c + \"色\" for c in 色系]",
+        "new": "    return [色系]"
+      }
+    ],
+    "预期红": "金色也算"
+  },
+  {
+    "script": "knowledge/oppo.py",
+    "改坏": "把多字色系拆到单字(「盘金绣」里的「金」被判成颜色商机)",
+    "file": [
+      {
+        "path": "knowledge/oppo.py",
+        "old": "    return [色系] + [c + \"色\" for c in 色系]",
+        "new": "    return list(色系)"
+      }
+    ],
+    "预期红": "盘金绣不是颜色"
+  },
+  {
+    "script": "knowledge/oppo.py",
+    "改坏": "不按说话人切开(顾问介绍商品时提的颜色被当成客户的需求)",
+    "file": [
+      {
+        "path": "knowledge/oppo.py",
+        "old": "客户前缀 = r\"^(客户|顾客|王女士|李先生|客)\\s*[:：](.*)$\"",
+        "new": "客户前缀 = r\"^(.*?)[:：](.*)$\""
+      }
+    ],
+    "预期红": "顾问说的不算商机"
+  },
+  {
+    "script": "knowledge/oppo.py",
+    "改坏": "让被否定的维度词也算命中(「我不要红色」判成想要红色)",
+    "file": [
+      {
+        "path": "knowledge/oppo.py",
+        "old": "        命 = textmatch.says(客户话, 色字(色))",
+        "new": "        命 = textmatch.mentions(客户话, 色字(色))"
+      }
+    ],
+    "预期红": "不要红色"
+  },
+  {
+    "script": "agent/ops_eval_judgetest.py",
+    "改坏": "把 Q03 的「至少调一次」去掉(一次都没查、反问用户要清单,也算过)",
+    "file": [
+      {
+        "path": "agent/ops_eval.py",
+        "old": "     grade=all_of(need_tool(\"call_opportunity\"),\n                  调用次数不超过(\"call_opportunity\", 2,",
+        "new": "     grade=all_of(need_tool(),\n                  调用次数不超过(\"call_opportunity\", 2,"
+      }
+    ],
+    "预期红": "商机·一次都没查就问用户要清单"
+  },
+  {
+    "script": "agent/ops_eval_judgetest.py",
+    "改坏": "把 Q01 的 must_mention 换回 must_say(正确答案里的否定句被判成没说)",
+    "file": [
+      {
+        "path": "agent/ops_eval.py",
+        "old": "                  must_mention(\"候选\", \"不一定\", \"随口\", \"误报\", \"三成\", \"还要确认\", \"不是结论\",",
+        "new": "                  must_say(\"候选\", \"不一定\", \"随口\", \"误报\", \"三成\", \"还要确认\", \"不是结论\","
+      }
+    ],
+    "预期红": "备选·Q01 不说「候选」说「随口」"
   }
 ]
