@@ -284,15 +284,17 @@ if __name__ == "__main__":
                   f"{len(names)}调 {time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
                   f"  {'' if ok else why[0][:56]}")
             for w in (why[1:] if not ok else []): print(f"        {w[:92]}")
-        return {r["case"]: r["passed"] for r in rows}, rows, cost
+        return ({r["case"]: r["passed"] for r in rows},
+                {r["case"]: r.get("why") or [] for r in rows},   # 失败理由,给 rounds 分类用
+                rows, cost)
 
     import rounds
     轮数 = 1 if os.environ.get("LANXIU_一轮") else 2
-    多, 明细, 花费 = [], None, 0.0
+    多, 因, 明细, 花费 = [], [], None, 0.0
     for _i in range(轮数):
         print(f"  【第 {_i + 1} 轮】" if 轮数 > 1 else "")
-        过, rows, c = 跑一轮()
-        多.append(过); 明细 = rows; 花费 += c
+        过, why, rows, c = 跑一轮()
+        多.append(过); 因.append(why); 明细 = rows; 花费 += c
     ok_n = sum(1 for v in 多[-1].values() if v)
     cost = 花费
     rows = 明细
@@ -313,7 +315,9 @@ if __name__ == "__main__":
             print(f"  (基线取自 git 里上一版结果:{基线}/{len(_b)})")
     except Exception:
         pass
-    rounds.报(多, 基线通过数=基线, 名="成长推算")
+    # 传失败理由进去 —— **翻面按原因分类**:轨迹类是真信号(模型这次行为变了),
+    # 内容类多半是判据太吃措辞。两边方向相反,合成一个「抖动 N 题」看不出区别。
+    rounds.报(多, 基线通过数=基线, 名="成长推算", 原因=因)
     # **存答案原文。** 不存的话,失败了只能重跑才知道它说了什么,而重跑要花钱、还不一定复现。
     out = os.path.join(HERE, "growth-eval-results.jsonl")
     # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
