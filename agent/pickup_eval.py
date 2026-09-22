@@ -62,9 +62,12 @@ def not_mode(key, mode, why=""):
 
 
 def asks(词们, why=""):
+    """该问的时候**要**了:提到 词们 之一的那句是问句,或者是明确的索要(「把码告诉我」「发给我」)。
+    2026-09-22 第 1 轮 N01 原话「你把那个码告诉我才能核验」—— 意思完全对,第一版只认问句,判它挂。"""
     def g(text, traj, c):
         句 = [s for s in re.split(r"(?<=[。!!?\?\n])", text or "") if s.strip()]
-        问 = [s for s in 句 if any(w in s for w in 词们) and re.search(r"[??]|吗|是否|有没有|哪|什么|多少", s)]
+        问 = [s for s in 句 if any(w in s for w in 词们)
+             and re.search(r"[??]|吗|是否|有没有|哪|什么|多少|告诉我|发给我|发我|给我|提供|请.{0,6}(说|给|发)", s)]
         return [] if 问 else [f"没问{'/'.join(词们)[:16]} —— {why}"]
     return g
 

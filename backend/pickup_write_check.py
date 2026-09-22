@@ -21,6 +21,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("让 verify() 在码不对时也放行", "错的码 → 不签收"),
     ("让 not_fit() 把订单推进待完成", "不合身 → 订单状态不动"),
     ("让 ratify() 不查签收满没满 15 天", "签收不满 15 天 → 不许追认"),
+    ("让 get_order 的金额自检不算定制加价", "定制单查订单不报假的金额异常"),
 ]
 
 FAIL, N = [], [0]
@@ -66,6 +67,15 @@ def run(T):
     ck("签收不晚于完成、到店不早于发货", 晚 == 0, f"{晚} 单时间倒了")
 
     for m in (oplog, pw): m.DB = T
+    # ── 查订单不许报假的金额异常 ──
+    # 2026-09-22 签收评测:get_order 的金额自检没算定制加价,3542 张定制单张张报「勾稽异常」,
+    # 模型读到就停下来让店长先核金额 —— 到店代收、转寄一件都做不下去。签收流程第一步就是查单。
+    import api
+    api.DB = T
+    样 = [r[0] for r in c.execute("""SELECT o.id FROM ordr o JOIN ordr_item i ON i.order_id=o.id
+                                    WHERE o.kind='定制品订单' AND i.custom_amount>0 GROUP BY o.id LIMIT 30""")]
+    假 = [x for x in 样 if api.get_order(x).get("勾稽异常")]
+    ck("定制单查订单不报假的金额异常(定制加价算进订单额)", 样 and not 假, f"抽 {len(样)} 单,报异常 {len(假)} 单")
     # ── 闸在状态机上:没带核验结果 / 没有确认完成的人,一律拒(后台改状态也走这里)──
     import fsm
     ck("状态机:已发货 → 待完成 没带核验结果 → 拒", fsm.check("bk-order", "已发货", "待完成",

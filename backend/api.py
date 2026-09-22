@@ -2749,9 +2749,14 @@ def get_order(order_id=None, customer=None):
     # 勾稽自检
     bad=[]
     g,f,a=o["goods_amount"] or 0,o["freight"] or 0,o["amount"] or 0
-    if abs(g+f-a)>0.01: bad.append(f"商品额 {g} + 运费 {f} ≠ 订单额 {a}")
+    # ⚠️ **定制单的订单额 = 商品额(基础款价)+ 定制加价 + 运费**,定制加价记在订单行的 custom_amount 上。
+    # 原来只比「商品额 + 运费 = 订单额」,于是 **3542 张定制单张张报「勾稽异常」** —— 2026-09-22 签收评测里
+    # 模型读到这句就停下来让店长先核金额,正常的到店代收、转寄都做不下去。标品没有定制加价,式子不变。
+    cu_=round(sum(x["custom_amount"] or 0 for x in items),2)
+    if abs(g+cu_+f-a)>0.01:
+        bad.append(f"商品额 {g} + 定制加价 {cu_} + 运费 {f} ≠ 订单额 {a}" if cu_ else f"商品额 {g} + 运费 {f} ≠ 订单额 {a}")
     it=round(sum(x["total"] or 0 for x in items),2)
-    if items and abs(it-g)>0.01: bad.append(f"订单行合计 {it} ≠ 商品额 {g}")
+    if items and abs(it-(g+cu_))>0.01: bad.append(f"订单行合计 {it} ≠ 商品额 {g}" + (f" + 定制加价 {cu_}" if cu_ else ""))
     if (o["received"] or 0)>(o["payable"] or 0)+0.01:
         bad.append(f"已收 {o['received']} > 应付 {o['payable']}")
     tl=[(k,o[k]) for k in ("created","paid_at","audit_at","produced_at","shipped_at",
