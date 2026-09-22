@@ -15,11 +15,13 @@
   两个写口 open_order / confirm_order(新文件 backend/order_write.py)、造几张待确认的演示单;order_gate 从「超期」切到「有没有下单量体」。
   **写口主体已写好(未提交、未被引用)**:backend/order_write.py —— open_order(停在待确认)/ confirm_order(逐件过闸 →
   待审核,落 paid_at、received=amount)/ 过闸 / 需要的项(按版型尺码表要比对的部位)。
-  **等对方发「签收已提交」**(它在改 fsm / server.transit / api / sdk / guards / prompts / rebuild.sh 19 步,期间别碰、别 rebuild、别跑 check.sh),
-  然后:fsm 加「待确认」(只加 待确认→待审核〔ctx 下单过闸,fail closed,code=ORDER_GATE〕和 待确认→取消,别动对方签收那两条边)、
+  ✅ **对方签收已提交(fc3c7f0)、库已 rebuild(19 步)、服务已重启,文件都还给我了。** 现在直接接:fsm 加「待确认」(只加 待确认→待审核〔ctx 下单过闸,fail closed,code=ORDER_GATE〕和 待确认→取消,别动对方签收那两条边)、
   ORDER_PRD 待确认→待付款、server.transit 算下单过闸 ctx、api 挂 open_order / confirm_order(WRITE_TOOLS +2)、
-  sdk / guards / prompts(TL44?对方用了 TL43)、order_write_check(库副本)、DESIGN_TABS/TAB_MAP、member_order_check ST2PRD、
+  sdk / guards / prompts(**我的规矩编号从 TL46 起**,对方用了 TL43–45;P5 要求一工具一规矩)、order_write_check(库副本)、DESIGN_TABS/TAB_MAP、member_order_check ST2PRD、
   seed_fitting 开裁之前、recovery_queue 排除待确认、造几张待确认演示单、order_gate 切到下单量体;对方会替我写正负向评测。
+- 对方交代:① rebuild 19 步,再加步要把末尾 `-ne 19` 改成 20 ② fsm 里对方加了 FIT_GATE(已发货→待完成)/ COMPLETE_GATE
+  (待完成→完成),我的 ORDER_GATE 并排加 ③ 提交时文档口径模块数 34→35(order_place.py)④ **run_journey 往回挪时间的表清单里
+  没有 fitting** —— 白坯试衣记录的 ts / signed_at 按 v_start 算,可能是挪之前的「未来」时间;查 spec_check 有没有覆盖 fitting.ts,没有就补。
 - 09-22 下午用户报「智能助手打不开」:两个服务都没在跑(不是崩),./start.sh 拉起,js_smoke 过。
 - 两组工具合并:用户定**先不合并**。
 - 待办(已接):对方交来的产品技能 task-preflight(动手前预检 + 「可以开始吗?」二次确认),
