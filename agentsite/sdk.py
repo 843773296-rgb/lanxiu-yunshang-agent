@@ -230,7 +230,7 @@ def _mcp_all(py, env):
 
 # MCP 工具在 SDK 里的名字是 mcp__<服务名>__<工具名>
 KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
-            "mcp__kb__kb_tables", "mcp__kb__kb_coverage",
+            "mcp__kb__kb_tables",
             # 读原文:表里查不到、只在正文里的那些话(怎么洗、怎么存、为什么这么做)。
             # 原来模型一个字都读不到,于是遇到「为什么这么贵」只能凭训练知识讲,
             # 而 TL01 明写着不许 —— **规矩在,而它没有别的办法守**。

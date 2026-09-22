@@ -4842,8 +4842,8 @@ KB_SCHEMAS=[
  {"name":"kb_read","description":"**读知识库原文** —— 表里查不到、只在正文里的那些话:怎么洗怎么存、为什么这么做、客户问「为什么这么贵」时怎么答。**先不传 section 拿这一篇的小节目录,再指定小节取正文** —— 不给整篇,一次几百行会把后面真正该看的挤出去。doc 认编号(09)、文件名、或主题词(养护)。返回带**来源等级**:一节里混着几档时按**最低那一档**给对客口径;**正文里没有标记不代表它可靠,代表没人标过**。","input_schema":{"type":"object","properties":{"doc":{"type":"string","description":"篇:01–12 的编号、文件名、或主题词(如「养护」「版型库」)"},"section":{"type":"string","description":"小节标题(写一部分也认)。不传则给这一篇的小节目录"}}}},
  {"name":"kb_tables","description":"取全部决策表(6 张共 30 行:客户原话对照、选料决策、配饰形制搭配、配色易错、工期档位、售后争议判定)。顾问问「客户说了 X,我该推什么/避开什么/怎么处理」这类问题时**优先用这个**,而不是 kb_lookup。**直接不带参数调用即可**,取全部比挑一张更可靠。",
   "input_schema":{"type":"object","properties":{"topic":{"type":"string","description":"通常不要传。全部决策表合计只有 30 行,一次全取更可靠 —— 传了 topic 反而容易取错表。"}},"required":[]}},
- {"name":"kb_coverage","description":"查相容矩阵的完成度(共多少格、已定义多少、未定义多少)。",
-  "input_schema":{"type":"object","properties":{},"required":[]}},
+ # kb_coverage(相容矩阵完成度)2026-09-22 从模型可见的工具里拿掉:矩阵早已 2025 格全有结论,
+ # 这个数对顾问回答任何问题都没用,只是每轮多带一段说明(能力盘点)。函数留着 —— prompts_check 直接调它数格子。
  {"name":"kb_pattern","description":"查版型库:某个形制有哪些版型、每个版型分几个裁片、能出哪些尺码、改版难度多高。**客户问「这个能不能改尺寸/能不能做小码」时用这个。**某个尺码不在列表里,意味着这个版型裁不出来,不是缺货。",
   "input_schema":{"type":"object","properties":{
     "xz":{"type":"string","description":"形制名称或编码,如「明制马面裙」或 XZ03。不传则列出全部版型。"}},"required":[]}},

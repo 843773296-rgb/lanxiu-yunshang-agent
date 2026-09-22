@@ -25,7 +25,6 @@ CASES = {
          ("kb_combo",    {"craft": "苗绣", "material": "香云纱"}),
          ("kb_tables",   {}),
          ("kb_tables",   {"topic": "客户原话对照"}),
-         ("kb_coverage", {}),
         ("kb_pattern",  {"xz": "明制马面裙"}),
         ("kb_pattern",  {}),
         ("kb_pattern",  {"xz": "根本没有这个形制"}),
