@@ -1095,7 +1095,9 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
         if not re.match(r"^\d{4}-\d{2}-\d{2}$", d):
             return (f"event_date「{d}」不是 YYYY-MM-DD。"
                     "客户说「明年六月」时要先换算成具体日期再调。")
-        if d <= dt.date.today().isoformat():
+        # 「将来」按业务上的今天算(同上面注入的那句;机器的今天比演示世界晚,会把 9-10 的婚期当成过去拦掉)
+        from prompts import _TODAY as _业务今天
+        if d <= (_业务今天 or dt.date.today().isoformat()):
             return (f"用件日期 {d} 不在将来。倒推是往前排产,"
                     "过去的日子推不出窗口 —— 跟客户确认是哪一年。")
     # ── 第四条:客户说了「整幅」而工具传「局部」 ──────────────────────
@@ -1126,10 +1128,18 @@ def make_hooks(state):
 
     async def on_prompt(inp, tool_use_id, ctx):
         # 模型不知道今天几号 —— 工期倒推会算错,而且错得很自然,没人看得出来
+        # ⚠️ **注入的是业务上的今天(seed.TODAY),不是机器的今天。** 原来这里是 dt.date.today(),
+        # 而演示世界的今天是 8-31、机器是 9-22 —— 这一句每轮都命令模型「以 9-22 为准」,
+        # 正好和规矩 TL53 打架:工厂回传评测里逾期 3 天被说成 25 天(2026-09-22 查实)。
+        # 日期和 TL53 取自同一个源头(prompts._TODAY ← seed.TODAY),不另写一份。
+        # CLI 自己还会附一句「Today's date is <机器日期>」,关不掉 —— 所以这里要**明说**那个是机器的日期。
         state["prompt"] = inp.get("prompt", "")
         state["calls"] = []
-        ctx_add = (f"[系统注入] 今天是 {dt.date.today().isoformat()}。"
-                   "涉及日期的推算一律以这一天为准,不要自己猜今天几号。")
+        from prompts import _TODAY as _业务今天
+        ctx_add = (f"[系统注入] 业务上的今天是 {_业务今天}。运行环境里显示的日期是机器的日期,**不是这家店的今天**;"
+                   "涉及日期的推算一律以业务上的今天为准,工具返回里算好的天数照着说。"
+                   if _业务今天 else
+                   "[系统注入] 涉及日期的推算以工具返回里算好的为准;运行环境里显示的日期是机器的日期,不是这家店的今天。")
         # **每一轮都把日记塞进来(三条)。** 日记建起来之后有一阵只有写没有读,
         # 而没人读的日记和没有日记是一回事。
         # 原本想只在「重要动作」时注,判据当场就漏(「排下周的班」不含「排班」)——

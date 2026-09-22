@@ -199,6 +199,19 @@ def main():
     k3 = g._arg_key("assign_task", dict(reversed(list(A1.items()))))
     ck("键顺序不影响指纹", None if k1 == k3 else "顺序一变就认不出", False,)
 
+    print("\n\033[1m▸ 用件日期按业务上的今天判「在不在将来」\033[0m")
+    print("  " + "=" * 78)
+    # 09-22:原来按机器的今天判,演示世界的今天(8-31)比机器(9-22)早 —— 9-05 的婚期会被当成过去拦掉
+    import datetime as _dt
+    from prompts import _TODAY as 业务今天
+    后五天 = (_dt.date.fromisoformat(业务今天) + _dt.timedelta(days=5)).isoformat()
+    前一天 = (_dt.date.fromisoformat(业务今天) - _dt.timedelta(days=1)).isoformat()
+    PF = "mcp__kb__plan_for_event"
+    ck(f"业务今天之后 5 天({后五天})的婚期不拦", g.pre_tool_verdict(PF, {"event_date": 后五天, "wearer_id": "W1"},
+       "婚礼", READ, []), False)
+    ck(f"业务今天前一天({前一天})的婚期拦下", g.pre_tool_verdict(PF, {"event_date": 前一天, "wearer_id": "W1"},
+       "婚礼", READ, []), True)
+
     print()
     if bad:
         print(f"{R}❌ 闸有 {bad} 处不符合预期{D}")
