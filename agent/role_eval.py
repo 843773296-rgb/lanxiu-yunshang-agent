@@ -47,7 +47,7 @@ def says_number(*cands, why=""):
         t = text or ""
         if any(str(x) in t for x in cands):
             return []
-        return [f"没说出具体的数({list(cands)})—— {why}"]
+        return [f"内容:没说出具体的数({list(cands)})—— {why}"]
     return g
 
 
@@ -76,7 +76,7 @@ def no_verdict(why=""):
         for q in 疑问式:
             t = t.replace(q, "〈问〉")
         hit = tm.says(t, 裁决)
-        return [f"替人下了裁决(「{hit}」)—— {why}"] if hit else []
+        return [f"内容:替人下了裁决(「{hit}」)—— {why}"] if hit else []
     return g
 
 

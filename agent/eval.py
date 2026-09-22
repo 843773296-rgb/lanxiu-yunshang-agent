@@ -67,8 +67,8 @@ def hit(text, truth_rc, case_id=None):
         d = tm.decide(text, YES, NO)
         if d == want: return True, ""
         if d == "conflict":
-            return False, "同时说了合并和不合并 —— 结论不明确,不自动挑边"
-        if d is None: return False, "没给出明确的合并/不合并结论"
+            return False, "内容:同时说了合并和不合并 —— 结论不明确,不自动挑边"
+        if d is None: return False, "内容:没给出明确的合并/不合并结论"
         return False, ("判成了同一人,应为不合并" if want == "no" else "判成了不同人,应为合并")
 
     # ③ 售后判责(BP-03):**责任归谁**必须说清,而且要给依据。
@@ -91,13 +91,13 @@ def hit(text, truth_rc, case_id=None):
                "无责": ("无责", "不属于质量问题", "属正常特性", "不构成质量问题"),
                "分担": ("分担", "按合同", "双方")}[who]
         if not tm.mentions(text, WHO):
-            return False, f"没说清责任归谁(应为「{who}」)"
+            return False, f"内容:没说清责任归谁(应为「{who}」)"
         if not tm.mentions(text, acts):
-            return False, f"没给出处理方式(应含 {acts[0]})"
+            return False, f"内容:没给出处理方式(应含 {acts[0]})"
         # 依据:判责必须能追到那张表,否则就是拍脑袋
         if not tm.mentions(text, ("第五节", "返修判定", "判定表", "告知", "量体记录",
                                   "工艺瑕疵", "特性")):
-            return False, "没给判据 —— 判责必须说清依据哪一条,不能只给结论"
+            return False, "内容:没给判据 —— 判责必须说清依据哪一条,不能只给结论"
         return True, ""
 
     f = facts(case_id) if case_id else {}
@@ -105,18 +105,18 @@ def hit(text, truth_rc, case_id=None):
     # ② 金额超额:必须同时报出请求金额与原支付金额这两个真实数字
     if truth_rc == "退款金额超过可退额":
         if not nums_in(text, f.get("req"), f.get("paid")):
-            return False, f"没同时报出请求 {f.get('req')} 与原支付 {f.get('paid')} 两个金额"
+            return False, f"内容:没同时报出请求 {f.get('req')} 与原支付 {f.get('paid')} 两个金额"
         return True, ""
 
     # ③ 超时但实际已退:必须引到那条 out+success 的流水号,且不得真的建议再退一次
     if truth_rc == "渠道超时但实际已退":
         if f.get("out_id") and f["out_id"] not in text:
-            return False, f"没引到已成功的出账流水 {f['out_id']}"
+            return False, f"内容:没引到已成功的出账流水 {f['out_id']}"
         # 原来这里用的是自己那份 8 个词的正则、窗口只有 8 字 ——
         # 「**不得**重新发起退款」这类曾经被判成「真的建议了重发」。统一走 textmatch。
         for m in re.finditer(r"(再次|重新|重复)(发起|提交)?退款", text):
             if not tm.negated(text, m.start()):
-                return False, f"真的建议了「{m.group(0)}」"
+                return False, f"内容:真的建议了「{m.group(0)}」"
         return True, ""
 
     # ④ 其余三类没有可核对的数字,只认判别性词根
@@ -124,7 +124,7 @@ def hit(text, truth_rc, case_id=None):
              "审批未完成即发起": r"审批", "幂等号重复提交": r"幂等"}
     pat = ROOTS.get(truth_rc)
     if pat and re.search(pat, text): return True, ""
-    return False, f"未指向真因「{truth_rc}」"
+    return False, f"内容:未指向真因「{truth_rc}」"
 
 def truths():
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row

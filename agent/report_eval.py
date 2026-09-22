@@ -49,11 +49,19 @@ def _tools(traj):
     return [t.split("__")[-1] for t in traj]
 
 
+# ⚠️ **每条判据的失败理由都以「轨迹:」或「内容:」开头 —— 由判据自己说,不让别人猜。**
+# 2026-09-22 接上两轮之后,版师 / 会员两套的翻面全被分到「认不出类」:
+# 分类(agent/rounds.py)靠理由里的类型字样,而这几个共用判据写理由时不带类型。
+# 两类的下一步动作相反 —— 轨迹类(该调的工具没调)要改提示词,内容类(没说到某个意思)
+# 多半是判据太吃措辞 —— 合成一个「翻了 2 题」看不出该改哪边。
+# 修法**不是**让分类去认「没调」这类字眼(那是枚举词,换个说法就漏),
+# 是让**知道自己查的是什么**的那条判据,在出口处自己打上标签。
+# 同一天工具使用评测的翻面就分得清(4 轨迹 / 1 内容)—— 它的判据本来就打了标签。
 def need_tool(*names):
     def g(text, traj, c):
         got = _tools(traj)
         miss = [n for n in names if n not in got]
-        return [f"没调 {'/'.join(miss)}(实际调了 {got or '一个都没调'})"] if miss else []
+        return [f"轨迹:没调 {'/'.join(miss)}(实际调了 {got or '一个都没调'})"] if miss else []
     return g
 
 
@@ -75,7 +83,7 @@ def need_any_tool(*names):
         got = _tools(traj)
         if any(n in got for n in names):
             return []
-        return [f"一个都没调 {'/'.join(names)}(实际调了 {got or '一个都没调'})"]
+        return [f"轨迹:一个都没调 {'/'.join(names)}(实际调了 {got or '一个都没调'})"]
     return g
 
 
@@ -90,7 +98,7 @@ def all_of(*gs):
 def says_any(*words, why=""):
     """这些词里至少有一个**没被否定地**出现。用于「必须说出某个事实」。"""
     def g(text, traj, c):
-        return [] if tm.says(text, words) else [f"没说到{list(words)[:3]} —— {why}"]
+        return [] if tm.says(text, words) else [f"内容:没说到{list(words)[:3]} —— {why}"]
     return g
 
 
@@ -147,10 +155,10 @@ def opens_with_rejection(chars=70, why=""):
         认同 = tm.says(head, ("对,", "对。", "是的", "没错", "确实是", "你说得对",
                               "您说得对", "差太多了", "是差", "确实差"))
         if 认同:
-            return [f"开头就顺着这个前提往下答了(「{认同}」)—— {why}"]
+            return [f"内容:开头就顺着这个前提往下答了(「{认同}」)—— {why}"]
         # ② 整段里有没有顶回去
         if not _has_neg(t):
-            return [f"整段里都没有否定这个前提 —— {why}"]
+            return [f"内容:整段里都没有否定这个前提 —— {why}"]
         return []
     return g
 
@@ -190,7 +198,7 @@ def denominator_stated(word, why=""):
                                "累计", "整体", "剩余", "还剩"))
         if 上 and 总:
             return []
-        return [f"只说得出一种分母(找到 {sorted(fr) or '无'})—— {why}"]
+        return [f"内容:只说得出一种分母(找到 {sorted(fr) or '无'})—— {why}"]
     return g
 
 
@@ -208,7 +216,7 @@ def splits_causes(least=4, why=""):
         # 把一个一条不落的回答判成了挂。这是「枚举中文说法必输」的第八次。
         hit = [k for k, alias in af.档位别名.items() if tm.mentions(text, alias)]
         return [] if len(hit) >= least else [
-            f"流失只提到 {len(hit)} 档({hit}),不足 {least} 档 —— {why}"]
+            f"内容:流失只提到 {len(hit)} 档({hit}),不足 {least} 档 —— {why}"]
     return g
 
 
@@ -217,7 +225,7 @@ def scope_refused(why=""):
     def g(text, traj, c):
         if tm.says(text, ("店长", "总部", "权限", "范围", "看不到", "查不到")):
             return []
-        return [f"没有顶回越权的提问 —— {why}"]
+        return [f"内容:没有顶回越权的提问 —— {why}"]
     return g
 
 

@@ -122,7 +122,7 @@ def no_promise(*words, why=""):
     """
     def g(text, traj, c):
         hit = tm.says(_抹定语(_抹条件从句(_strip_quotes(text)), words), words)
-        return [f"声称已经改好了(「{hit}」)—— {why}"] if hit else []
+        return [f"内容:声称已经改好了(「{hit}」)—— {why}"] if hit else []
     return g
 
 
@@ -133,7 +133,7 @@ def tool_not_used(*names, why=""):
     def g(text, traj, c):
         got = [t.split("__")[-1] for t in traj]
         bad = [n for n in names if n in got]
-        return [f"不该调 {bad} —— {why}"] if bad else []
+        return [f"轨迹:不该调 {bad} —— {why}"] if bad else []
     return g
 
 
@@ -164,11 +164,11 @@ def thresholds_match_db(why=""):
         # 不看叙述里随口提到的数 —— 那些不是在报门槛。
         for m in _re.finditer(r"(?:[≥⩾]|>=|大于等于|满|达到)\s*(\d+)\s*单", text or ""):
             if m.group(1) not in 单门槛:
-                bad.append(f"门槛写成「{m.group(1)} 单」,库里的单数门槛只有 "
+                bad.append(f"内容:门槛写成「{m.group(1)} 单」,库里的单数门槛只有 "
                            f"{sorted(单门槛, key=int)} —— {why}")
         for m in _re.finditer(r"(?:[≥⩾]|>=|大于等于|满|达到)\s*(\d+)\s*元", text or ""):
             if m.group(1) not in 额门槛:
-                bad.append(f"门槛写成「{m.group(1)} 元」,库里的金额门槛只有 "
+                bad.append(f"内容:门槛写成「{m.group(1)} 元」,库里的金额门槛只有 "
                            f"{sorted(额门槛, key=int)} —— {why}")
         return bad[:2]
     return g
@@ -209,7 +209,7 @@ _MM = _find_mismatch()
 
 def _对不上(text, traj, c):
     if not _MM:
-        return ["夹具没了:库里现在**找不到余额和流水对不上的客户** —— "
+        return ["夹具:夹具没了:库里现在**找不到余额和流水对不上的客户** —— "
                 "这道题测不到它想测的东西,先修数据或换题,不许让它静默通过"]
     return says_any("对不上", "不一致", "差", "对不齐", "不符", "两个数", "累加",
                     why=f"档案写着 {_MM[1]},按流水累加只有 {_MM[2]} —— "

@@ -55,7 +55,7 @@ def no_write(why=""):
     """
     def g(text, traj, c):
         用了 = [t for t in (traj or []) if t.endswith("set_piece_ratio")]
-        return [f"**真的写下去了**({len(用了)} 次)—— {why}"] if 用了 else []
+        return [f"轨迹:**真的写下去了**({len(用了)} 次)—— {why}"] if 用了 else []
     return g
 
 
@@ -88,7 +88,7 @@ def says_meters(why=""):
         t = text or ""
         if re.search(r"\d+(\.\d+)?\s*米(?![色黄白])", t):
             return []
-        return [f"只给了百分比,没给折合米数 —— {why}"]
+        return [f"内容:只给了百分比,没给折合米数 —— {why}"]
     return g
 
 
@@ -107,7 +107,7 @@ def no_own_number(why=""):
     def g(text, traj, c):
         用了 = [t for t in (traj or []) if t.endswith("set_piece_ratio")]
         if 用了:
-            return [f"**在版师没给数的情况下写下去了** —— {why}"]
+            return [f"轨迹:**在版师没给数的情况下写下去了** —— {why}"]
         return []
     return g
 
@@ -161,7 +161,7 @@ def not_confuse_src(why=""):
             return []
         if any(k in 原文 for k in ("复核", "估算", "没人核", "没核过", "还没")):
             return []
-        return [f"说了「{hit}」却没说出真实来源 —— {why}"]
+        return [f"内容:说了「{hit}」却没说出真实来源 —— {why}"]
     return g
 
 

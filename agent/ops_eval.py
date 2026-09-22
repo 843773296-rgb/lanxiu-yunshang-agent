@@ -338,7 +338,7 @@ def lifecycle_is(cust):
     def g(text, traj, case):
         r = api.get_lifecycle(customer=cust)
         want = (r.get("rows") or [{}])[0].get("生命周期")
-        if not want: return ["判分器:库里查不到这个客户,夹具不成立"]
+        if not want: return ["夹具:判分器在库里查不到这个客户,夹具不成立"]
         said, pos = None, 10 ** 9
         for lc in _lc.PRIORITY:
             i = _concl_pos(text or "", lc)
