@@ -18,6 +18,7 @@ import os, re, shutil, sqlite3, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
 目的地 = os.path.join(ROOT, "backend", "static", "img")
+备份 = os.path.join(ROOT, "商品图备份")   # gitignore;核对:delivered_images.py 验 --在 商品图备份
 图位 = ("main", "intro", "d1", "d2", "d3") + tuple(f"sku{i}" for i in range(1, 20))
 可收 = (".png", ".jpg", ".jpeg", ".webp")
 
@@ -62,10 +63,14 @@ def main():
 
     if not dry:
         os.makedirs(目的地, exist_ok=True)
+        os.makedirs(备份, exist_ok=True)
         for path, (spu, v), f in 收:
             ext = os.path.splitext(f)[1].lower()
             shutil.copy2(path, os.path.join(目的地, f"{spu}-{v}{ext}"))
-        print(f"✅ 收进 {目的地}" if 收 else "没有可收的")
+            # 同时放一份进项目里的备份目录(用户 2026-09-22 定:备份留在项目文件夹内)。
+            # 图不进版本库,static/img 原来是唯一的一份 —— 桌面母本清掉之后更是如此。
+            shutil.copy2(path, os.path.join(备份, f"{spu}-{v}{ext}"))
+        print(f"✅ 收进 {目的地}(并备份到 {备份})" if 收 else "没有可收的")
         # **收完当场登记进交付图清单。** 原来收和登记是两步,2026-09-22 第五批只做了第一步,
         # 门禁「目录里没有未登记的图」红了 218 张,是另一个会话重建后跑门禁才撞上的。
         # 图不进版本库,清单是「这张图存在过、内容是这个」的唯一记录 —— 漏登记的那批,

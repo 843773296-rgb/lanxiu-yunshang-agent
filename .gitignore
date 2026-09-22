@@ -72,3 +72,7 @@ backend/.rebuilding
 
 # 出好的商品图(二进制,一批批地换,不进版本库)
 backend/static/
+
+# 商品图备份(用户 2026-09-22 要求留一份在项目里;和 backend/static/img 同样是二进制,不进版本库)
+# 核对完整性:python3 tools/delivered_images.py 验 --在 商品图备份
+商品图备份/
