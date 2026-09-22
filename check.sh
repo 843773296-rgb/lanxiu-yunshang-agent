@@ -186,6 +186,8 @@ run "识图判分器 · 13 条对照用例" python3 agent/vision_eval_judgetest.
 run "判责判分器 · 14 条对照用例" python3 agent/liability_eval_judgetest.py
 run "白坯试衣判分器 · 库状态看开没开裁 / 签没签,措辞只查两处结构" python3 agent/fitting_eval_judgetest.py
 run "量体录入判分器 · 库状态看写了哪几行 / 值 / 谁量的 / 绑没绑,措辞只查问没问" python3 agent/measure_eval_judgetest.py
+run "交付签收判分器 · 库状态看订单状态 / 码试错次数 / 到店 / 取件方式,措辞只查问没问" python3 agent/pickup_eval_judgetest.py
+run "下单判分器 · 库状态看开出的单 / 单的状态 / 旧量体改没改绑,措辞只查问给谁做" python3 agent/order_eval_judgetest.py
 run "评测判据 · 点名的工具必须在架上" python3 tools/judge_tool_names_check.py
 run "指代推进判分器 · 15 条对照用例" python3 agent/scheme_eval_judgetest.py
 run "指代推进 · 四类场景库里都挑得出样本" python3 agent/scheme_eval.py
