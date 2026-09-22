@@ -98,6 +98,7 @@ run "推档 · 1237 条尺码要核的是 12 条档差" python3 backend/grading_
 run "版师角色 · 唯一的写工具只能改占比,而且真的得能改" ./agentsite/.venv/bin/python backend/pattern_role_check.py
 run "会话归属 · 续聊不能续别人的(身份判得对也挡不住换历史)" python3 agentsite/sessions_check.py
 run "花费闸 · 阈值够聊几轮 + 撞线说不说得清" ./agentsite/.venv/bin/python agentsite/budget_check.py
+run "成本口径 · 项目算的钱要和官方计费规则对得上(期望值手抄官方价,不从价目表现算)" ./agentsite/.venv/bin/python agentsite/cost_check.py
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
 run "技能形状 · 该有的段落齐不齐" ./agentsite/.venv/bin/python agentsite/skill_shape.py
 run "工具路由用例 · 点名的工具真的挂着(改了名就永远被跳过)" ./agentsite/.venv/bin/python agentsite/tool_eval.py --check

@@ -172,10 +172,21 @@ def cost_of(usage, model, ts=None):
         return None            # 价目表里没有这个模型就不猜,宁可显示「—」
     if model in v1.DEEPSEEK_PRICE and v1.is_peak(ts):
         pr = {k: v * 2 for k, v in pr.items()}     # 分时定价只有 DeepSeek 有
+    # ⚠️ **2026-09-22 修过两处,修之前少算约三成**(Haiku 那一轮 29%、Sonnet 5 网站 32%):
+    #   ① 官方的 `input_tokens` **已经不含**缓存命中和缓存写入(查于 2026-09-22 官方文档:
+    #      「input_tokens — uncached tokens」),原来这里又减了一次缓存命中 —— V3 每条任务
+    #      未命中输入只有二十来个、缓存命中十几万,一减就是 0。DeepSeek 的兼容接口同一口径:
+    #      实测每条未命中 35,055 < 命中 43,834,若包含命中就不可能更小。
+    #   ② **缓存写入整个没算**。官方价是输入的 1.25 倍(5 分钟那档);DeepSeek 官方页只有
+    #      「命中 / 未命中」两档,写入按未命中价。
+    # 记录仪(agent/trace.py)自己那套算法一直是对的 —— 而 V3 为了「成本口径只有一处」
+    # 把这里的数传过去覆盖它。**收成一处是对的,收到了错的那一处。**
     cache = usage.get("cache_read_input_tokens", 0) or 0
-    inp = max((usage.get("input_tokens", 0) or 0) - cache, 0)   # 命中缓存的那部分单独计价
+    写 = usage.get("cache_creation_input_tokens", 0) or 0
+    inp = usage.get("input_tokens", 0) or 0
     out = usage.get("output_tokens", 0) or 0
-    return round((inp * pr["inp"] + cache * pr["cache"] + out * pr["out"]) / 1e6, 6)
+    写价 = pr["inp"] * (1.0 if model in v1.DEEPSEEK_PRICE else 1.25)
+    return round((inp * pr["inp"] + cache * pr["cache"] + 写 * 写价 + out * pr["out"]) / 1e6, 6)
 
 
 def mcp_config(me=None):
