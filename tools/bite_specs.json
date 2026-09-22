@@ -2587,5 +2587,17 @@
       }
     ],
     "预期红": "服务端只给名单里的工具"
+  },
+  {
+    "script": "knowledge/measure.py",
+    "改坏": "让 以哪次为准() 在这一件没有下单量体时退回用最近一次",
+    "file": [
+      {
+        "path": "knowledge/measure.py",
+        "old": "        绑 = [s for s in 亲 if s.get(\"订单行\") == 订单行]",
+        "new": "        绑 = [s for s in 亲 if s.get(\"订单行\") == 订单行] or 亲"
+      }
+    ],
+    "预期红": "订单行 10 没有下单量体 → None"
   }
 ]
