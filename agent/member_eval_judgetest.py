@@ -20,7 +20,7 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "backend"),
 import member_eval as ev
 
 C = {c["id"]: c for c in ev.CASES}
-ML = ["mcp__shop__member_level"]
+ML = ["mcp__shop__get_member"]   # member_level 已并进 get_member(09-22)
 PL = ["mcp__shop__points_ledger"]
 AQ = ["mcp__shop__approval_queue"]
 AP = ["mcp__shop__apply_adjust"]

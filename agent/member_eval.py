@@ -232,7 +232,10 @@ CASES = [
 # ═══ 正向 ═══
 dict(id="M01", kind="正向", me=店长,
      q="C10008 这个客户是什么等级?凭什么是这一档?",
-     grade=all_of(need_tool("member_level"),
+     # ⚠️ 2026-09-22 改:原来点名 `member_level`,而它已并进 `get_member`(「等级和生命周期一次给全」)、
+     # 从模型看得见的工具里下架 —— 09-22 两轮都是调了 get_member、答案对,判据判挂。
+     # 守门的检查见 `tools/judge_tool_names_check.py`。
+     grade=all_of(need_tool("get_member"),
                   says_any("12 个月", "12个月", "滚动", "一年",
                            why="**门槛是滚动 12 个月**,不说窗口等于没说依据"))),
 dict(id="M02", kind="正向", me=总部,

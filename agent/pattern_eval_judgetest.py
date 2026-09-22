@@ -29,11 +29,11 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "backend"),
 import pattern_eval as ev
 
 C = {c["id"]: c for c in ev.CASES}
-PR = ["mcp__shop__piece_ratios"]
+PR = ["mcp__shop__pattern_queue"]   # piece_ratios 已并进 pattern_queue(09-22)
 PQ = ["mcp__shop__pattern_queue"]
 GA = ["mcp__shop__grading_audit"]
 KS = ["mcp__kb__kb_size"]
-WR = ["mcp__shop__piece_ratios", "mcp__shop__set_piece_ratio"]
+WR = ["mcp__shop__pattern_queue", "mcp__shop__set_piece_ratio"]
 T = []
 
 # ── 正向:先得能干活 ────────────────────────────────────────────

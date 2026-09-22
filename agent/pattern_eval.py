@@ -169,7 +169,10 @@ CASES = [
 # ═══ 正向 4:先得能干活 ═══
 dict(id="P01", kind="正向", role="pattern", me=版师,
      q="PT06 的裁片用料占比现在是什么情况?",
-     grade=all_of(need_tool("piece_ratios"),
+     # ⚠️ 2026-09-22 改:原来点名 `piece_ratios`,而它已并进 `pattern_queue(pattern=...)`、
+     # 从模型看得见的工具里下架 —— 模型调 pattern_queue 是对的,判据却判它挂,**这道题永远过不了**。
+     # 能力审计查出来的;`tools/judge_tool_names_check.py` 从此守住「判据点名的工具必须在架上」。
+     grade=all_of(need_tool("pattern_queue"),
                   says_meters(why="**版师判断的是米数不是百分比** —— "
                                   "「袖片 15.7%」看不出对不对,「0.63 米」一眼就知道"),
                   says_any("复核", "估算", "来源", "没人核", "还没",
