@@ -140,6 +140,17 @@ if (process.argv.includes("--selftest")) {
   跑("UserPromptSubmit", 空, "s12");
   ck("⑫ 不在仓库里 → 说的是「不介入」,不跟上面那条混", 末.out.includes("不在任何 git 仓库"), true);
 
+  // ⑬ 真实踩过的顺序:先被提示 → 照提示刷交接 → 收工。**必须放行。**
+  //    ①–⑫ 全绿时这条是挂的:越线时刻只在 Stop 里记,提前刷的交接被判成旧的。
+  变旧(); 造(170_000);
+  跑("UserPromptSubmit", 项, "s13");
+  ck("⑬ 提示时就记下越线,并叫它刷", /尚未刷新[\s\S]*现在就该刷交接/.test(末.out), true);
+  spawnSync("sleep", ["0.05"]);
+  writeFileSync(交件, "new");
+  ck("   ↳ 照提示刷了交接再收工 → 放行", 跑("Stop", 项, "s13"), 0);
+  跑("UserPromptSubmit", 项, "s13");
+  ck("   ↳ 再发消息时说的是「本轮已刷新」", 末.out.includes("本轮已刷新"), true);
+
   rmSync(D, { recursive: true, force: true });
   if (败.length) { console.log(`❌ ${败.length} 条没过:${败.join("、")}`); process.exit(1); }
   console.log(`✅ 交接门禁 ${过} 条全过`); process.exit(0);
@@ -285,6 +296,11 @@ if (事件 === "UserPromptSubmit") {
           + `如果这个项目确实不需要交接,放一个 ${交.仓库根}/.claude/no-handoff-gate 空文件,这条提醒就不再出现。`
         : `[交接门禁] ${报数}。当前目录不在任何 git 仓库里,门禁不介入。`);
     } else {
+      // ⚠️ **越线时刻要在这里就记下,不能等到收工。**
+      //    2026-09-22 抓到的:下面这句话叫 AI「现在就该刷交接」,它照做了 ——
+      //    可越线时刻原来只在 Stop 里才记,于是提前刷的交接比「越线时刻」还早,
+      //    收工时照样被判过期、照样被拦。**照提示做了反而过不去,这道闸在惩罚听话。**
+      if (比 >= 阈值 && !st.越线于) { st.越线于 = Date.now(); 写状态(st); }
       const 新鲜 = st.越线于 && 交.mtime > st.越线于;
       console.log(`[交接门禁] ${报数}${比 >= 阈值 ? `,已过 ${阈值 * 100}% 线` : ""}。`
         + `交接文件 ${交.路径} ${新鲜 ? "本轮已刷新" : "尚未刷新"}。`

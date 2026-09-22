@@ -197,7 +197,7 @@ run "商机口径 · 分清是谁说的,别枚举中文说法(19 条自测)" pyt
 run "归属口径 · 分开只因为下一步不同(15 条自测)" python3 knowledge/owner.py
 run "评测指纹 · 行数没变但内容改了,指纹也得变(7 条自测)" python3 agent/fingerprint.py --selftest
 run "首次启动 · 建出来的库要和在用的库一样全(5 条咬合)" python3 backend/initpath_check.py
-run "交接门禁 · 过 80% 不许收工;交接在项目根、会话在子目录也要找得到(15 条)" node tools/hooks/handoff-gate.mjs --selftest
+run "交接门禁 · 过 80% 不许收工;交接在项目根、会话在子目录也要找得到;照提示提前刷了要放行(18 条)" node tools/hooks/handoff-gate.mjs --selftest
 printf "\n%s\n" "────────────────────────────────────────"
 if [ $FAIL -eq 0 ]; then printf "\033[32m✅ 全部检查通过\033[0m\n"; else printf "\033[31m❌ 存在失败项\033[0m\n"; fi
 exit $FAIL
