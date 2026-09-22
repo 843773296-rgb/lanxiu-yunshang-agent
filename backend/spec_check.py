@@ -161,7 +161,11 @@ _FUTURE = [("customer", "last_interact", "最近互动"),
            ("ordr", "paid_at", "付款时间"),
            ("ordr", "finished_at", "订单完成"),
            ("schedule", "assigned_at", "派单时间"),
-           ("followup", "created", "跟进时间")]
+           ("followup", "created", "跟进时间"),
+           # 09-22 补:造旅程往回挪时间时这三列漏了,落在 10 月,而这条当时没查它们所以没红
+           ("fitting", "ts", "白坯试衣时间"),
+           ("fitting", "signed_at", "试衣签字时间"),
+           ("ordr", "cut_at", "开裁时间")]
 _fut = []
 for _t, _col, _cn in _FUTURE:
     try:

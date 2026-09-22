@@ -663,7 +663,10 @@ def _journey(cust, dry=False):
             ("measure_rec", ("measured_at",), f"schedule_id='{visit}'"),
             ("schedule_file", ("uploaded_at",), f"schedule_id='{visit}'"),
             ("ordr", ("created", "updated", "paid_at", "audit_at", "produced_at",
-                      "shipped_at", "finished_at"), f"id='{oid}'"),
+                      "shipped_at", "finished_at", "cut_at"), f"id='{oid}'"),
+            # 白坯试衣记录和开裁时间也要一起挪 —— 09-22 加白坯那一步时漏了,31 条试衣落在 10 月、
+            # 开裁时间也在 10 月(对方会话提醒后查实;C4 当时没查这几列,所以没红 —— 已补上)
+            ("fitting", ("ts", "signed_at"), f"order_id='{oid}'"),
             # 交付签收的时间也要一起挪 —— 第一版漏了这两张表,31 单的签收落在挪之前的「未来」,
             # 比订单自己的完成日还晚(pickup_write_check「签收不晚于完成」当场抓到)
             ("pickup", ("arrived_at", "fit_at", "complete_at"), f"order_id='{oid}'"),
