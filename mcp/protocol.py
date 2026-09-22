@@ -14,7 +14,7 @@
 ⚠️ **stdout 只能有 JSON-RPC。** 任何 print / 日志都必须走 stderr ——
    往 stdout 打一行调试信息,客户端就会解析失败,而且报错信息完全看不出是这个原因。
 """
-import json, sys, traceback
+import json, os, sys, traceback
 
 LATEST = "2025-11-25"
 SUPPORTED = [LATEST, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"]
@@ -30,6 +30,16 @@ class Server:
         """tools: [(name, description, input_schema, fn), ...]"""
         self.name, self.version = name, version
         self.tools = {t[0]: t for t in tools}
+        # ── 按角色只挂这个角色的工具(2026-09-22)──────────────────────────
+        # 启动方把这个角色能用的工具名放进 LANXIU_TOOLS(逗号分隔)。不在名单里的
+        # **既不列出、也调不了** —— 原来三个服务不分角色整包挂上,按角色的名单只进了
+        # allowed_tools,而那不是排他白名单:后台运营调了只发给工坊的「算工期」,还据此作答;
+        # 财务(名义 5 个工具)每轮带的工具说明反而比后台运营(41 个)还多。
+        # 没设这个变量(自测、直连)就照旧全挂 —— 名单为空串时一个都不挂。
+        only = os.environ.get("LANXIU_TOOLS")
+        if only is not None:
+            keep = {x for x in only.split(",") if x}
+            self.tools = {k: v for k, v in self.tools.items() if k in keep}
 
     # ── JSON-RPC ────────────────────────────────────────────────
     def _ok(self, rid, result):

@@ -27,6 +27,8 @@
      "试了三次都没成"),
     ("把「写之前先读」表里批量分派的前置改回已下架的 dispatch_pool",
      "「写之前先读」点名的工具都在架上"),
+    ("让 MCP 服务端忽略 LANXIU_TOOLS(又整包挂上)",
+     "服务端只给名单里的工具"),
 ]
 
 import os, sys, json
@@ -156,6 +158,30 @@ def main():
     不是写口 = sorted(set(g.先读) - set(_api.WRITE_TOOLS))
     ck("「写之前先读」表的键都是真的写工具",
        None if not 不是写口 else f"不是写工具:{不是写口}", False,)
+    # ── 按角色挂工具:每个角色**实际挂上的**正好是它的名单(2026-09-22)──────
+    # 原来三个服务不分角色整包挂,名单只进了 allowed_tools(不排他)——模型看得见、调得动别的角色的工具,
+    # 每轮还要把全部工具说明带上。这两条守的是「挂上去的」和「名单」是同一个东西,且服务端真的只给名单里的。
+    import sdk as _sdk
+    差 = []
+    for _k in _sdk._ROLE_TOOLS:
+        挂 = {f"mcp__{服}__{t}" for 服, cfg in _sdk.mcp_config(None, _k).items()
+              for t in cfg["env"].get("LANXIU_TOOLS", "").split(",") if t}
+        名单 = {t for t in _sdk._tools_for(_k) if t.startswith("mcp__")}
+        if 挂 != 名单: 差.append((_k, sorted(挂 ^ 名单)[:3]))
+    ck("每个角色实际挂上的工具 == 它的名单", None if not 差 else f"对不上:{差}", False,)
+    _o.environ["LANXIU_TOOLS"] = "get_order"
+    try:
+        _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))), "mcp"))
+        from protocol import Server as _Srv
+        _sv = _Srv("t", "0", [("get_order", "", {"type": "object"}, lambda **a: 1),
+                             ("start_cutting", "", {"type": "object"}, lambda **a: 2)])
+        _调 = _sv.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                          "params": {"name": "start_cutting", "arguments": {}}})
+    finally:
+        _o.environ.pop("LANXIU_TOOLS", None)
+    ck("服务端只给名单里的工具:名单外的列不出、也调不动",
+       None if (set(_sv.tools) == {"get_order"} and _调["result"]["isError"]) else f"漏了:{list(_sv.tools)}",
+       False,)
     ck("闸的清单来自 api.WRITE_TOOLS",
        None if set(g._write_tools()) == set(_api.WRITE_TOOLS) else "对不上", False,)
     ck("漏斗不再手抄清单",

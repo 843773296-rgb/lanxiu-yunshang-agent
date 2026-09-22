@@ -447,12 +447,17 @@ if __name__ == "__main__":
     print(f"工具使用评测 · {len(todo)} 题 · 模型 {evalrec.模型()}")
     print("=" * 100)
 
+    # 工坊产能(get_capacity)是**故意**从顾问那边搬到工坊角色的(sdk.py 注释:TL13 原文写的就是「工坊问……」)。
+    # 这两道题原来按顾问跑也能过,靠的是「按角色发工具」没生效的漏洞(2026-09-22 能力盘点);
+    # 修好之后顾问手上没有它 —— **题该跟着工具走,而不是把工具再发回去**。
+    角色 = {"T12": "workshop", "T13": "workshop"}
+
     def 跑一轮():
         rows = []
         for cid, q, need, must, forbid in todo:
             t0 = time.time()
             try:
-                r = asyncio.run(sdk.run("kb", q, max_turns=14))
+                r = asyncio.run(sdk.run(角色.get(cid, "kb"), q, max_turns=14))
             except Exception as e:
                 rows.append(dict(case=cid, passed=False,
                                  why=[f"跑挂了:{type(e).__name__}: {e}"], tools="", cost=0,

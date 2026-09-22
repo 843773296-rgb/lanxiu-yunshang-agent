@@ -2575,5 +2575,17 @@
       }
     ],
     "预期红": "「写之前先读」点名的工具都在架上"
+  },
+  {
+    "script": "agentsite/gate_test.py",
+    "改坏": "让 MCP 服务端忽略 LANXIU_TOOLS(又整包挂上)",
+    "file": [
+      {
+        "path": "mcp/protocol.py",
+        "old": "        only = os.environ.get(\"LANXIU_TOOLS\")",
+        "new": "        only = None"
+      }
+    ],
+    "预期红": "服务端只给名单里的工具"
   }
 ]

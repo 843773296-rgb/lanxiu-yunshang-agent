@@ -189,15 +189,32 @@ def cost_of(usage, model, ts=None):
     return round((inp * pr["inp"] + cache * pr["cache"] + 写 * 写价 + out * pr["out"]) / 1e6, 6)
 
 
-def mcp_config(me=None):
+def mcp_config(me=None, kind=None):
     """把三个 MCP 服务挂上。工具面按用途分开,不给模型多余的选择。
 
     me:当前登录的人。**通过每个服务自己的 env 传,不改 os.environ** ——
     改全局的话,两个请求同时进来会互相串身份,而串了不会报错:
     甲的问题用乙的身份取数,答出来的东西看起来完全正常。
+
+    kind:角色。给了就**每个服务只挂这个角色的工具**(env 里的 LANXIU_TOOLS),
+    一个工具都没有的服务整个不挂。原来不分角色整包挂 61 个,按角色的名单只进了
+    allowed_tools(不排他)—— 模型看得见、也调得动别的角色的工具,
+    而且每轮都要把全部工具说明带上(2026-09-22 能力盘点:财务每轮多带约 2.1 万 token)。
     """
     py = sys.executable
     env = {"LANXIU_ME": json.dumps(me, ensure_ascii=False)} if me else {}
+    if kind is not None:
+        名单 = _tools_for(kind)
+        out = {}
+        for 服务, cfg in _mcp_all(py, env).items():
+            短 = [t.split("__", 2)[2] for t in 名单 if t.startswith(f"mcp__{服务}__")]
+            if 短:
+                out[服务] = {**cfg, "env": {**cfg["env"], "LANXIU_TOOLS": ",".join(短)}}
+        return out
+    return _mcp_all(py, env)
+
+
+def _mcp_all(py, env):
     return {
         "kb":   {"type": "stdio", "command": py,
                  "args": [os.path.join(ROOT, "mcp", "kb_server.py")], "env": env},
@@ -247,6 +264,9 @@ SHOP_TOOLS = [
     "mcp__shop__customer_history",
     # 成交率:**现在给不出数,而「给不出」和「低」是两回事**。
     "mcp__shop__conversion_rate",
+    # 「谁没人管」:描述第一句就写着「顾问问『我名下的客户有没有问题』也用这个」,
+    # 而它原来只发给后台运营 —— 顾问能用全靠「按角色发工具」没生效的漏洞(09-22 修掉)。
+    "mcp__shop__ownerless_list",
     # 登记白坯试衣 / 补签(写)。顾问陪客户试衣、店长也会陪,所以两个角色都要;
     # 陪同人从会话取 —— 规矩 TL40:签没签不许默认,签字不许撤销。
     "mcp__shop__record_fitting",
@@ -426,7 +446,7 @@ TASK_ONLY_TOOLS = [
     #      智能体不会因为是智能体而多一分权,也不会少一分
     #   ③ 每一笔都在台账里标明「智能体代 X 执行」,查得出是谁的主意
     "mcp__shop__get_tasks",    # 我的 / 某一条 / 团队 / 待分配,靠参数分
-    "mcp__shop__monthly_review", "mcp__shop__appt_funnel", "mcp__shop__points_ledger", "mcp__shop__approval_queue", "mcp__shop__activity_roi", "mcp__shop__can_order", "mcp__shop__apply_adjust", "mcp__shop__decide_approval", "mcp__shop__week_grid", "mcp__shop__ownerless_list", "mcp__shop__assign_batch", "mcp__shop__dispatch_batch",
+    "mcp__shop__monthly_review", "mcp__shop__appt_funnel", "mcp__shop__points_ledger", "mcp__shop__approval_queue", "mcp__shop__activity_roi", "mcp__shop__can_order", "mcp__shop__apply_adjust", "mcp__shop__decide_approval", "mcp__shop__week_grid", "mcp__shop__assign_batch", "mcp__shop__dispatch_batch",
     "mcp__shop__task_types",
     "mcp__shop__assign_task", "mcp__shop__dispatch_task",
     "mcp__shop__reassign_task", "mcp__shop__finish_task",
@@ -667,7 +687,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             f"{' · ' + me['shop'] if me.get('shop') else ''}。\n"
             f"他能看到什么、能做什么由工号决定 —— 工具已经按他的身份取数了,"
             f"你不需要(也不能)替他换个身份查。\n" if me else "")),
-        mcp_servers=mcp_config(me),
+        mcp_servers=mcp_config(me, kind),
         allowed_tools=_tools_for(kind),
         # ⚠️ **allowed_tools 不是排他白名单。**
         # 它管的是「哪些工具不用逐次批准」,不是「只有这些工具存在」——
