@@ -1526,8 +1526,15 @@ def guide_perf(q):
         # **看不出是坏了**。而且 LIKE 还会把「林岚岚」这样的名字一起数进来。
         no=a["no"]
         cust_n=rows("SELECT COUNT(*) c FROM customer WHERE advisor_no=?",no)[0]["c"]
-        od=rows("""SELECT COUNT(*) n, COALESCE(SUM(amount),0) amt FROM ordr
-                   WHERE advisor_no=? AND status IN ('已完成','待收货','待发货')""",no)[0]
+        # ⚠️ **业绩 = 已付款、没关闭的单,按实收加总**(后台 PRD 第 9 章口径,也是零售业通行的「净实收」)。
+        #    原来写的是 `status IN ('已完成','待收货','待发货')` —— 那是 **PRD 口径的名字**,
+        #    而 status 列存的是**设计稿口径**(完成 / 已发货 / 待完成……,见上面 TAB_MAP),
+        #    三个名字只对上一个「待发货」:全库 130 单、48.8 万,真实该算的约 2.5 万单、1.45 亿。
+        #    **名字对不上时 IN 不报错,只是悄悄少数** —— 页面上看就是「这个顾问业绩很少」。
+        #    所以按 prd_status 排除「待付款 / 已关闭」,而不是列举该算的:新增一个状态时宁可多算被看见,
+        #    也别漏算没人发现。钱用 received(实收),不用 amount(订单金额)—— 定金、部分付款时两者不同。
+        od=rows("""SELECT COUNT(*) n, COALESCE(SUM(received),0) amt FROM ordr
+                   WHERE advisor_no=? AND prd_status NOT IN ('待付款','已关闭')""",no)[0]
         apt=rows("SELECT COUNT(*) c FROM appointment WHERE advisor_no=?",no)[0]["c"]
         arr=rows("SELECT COUNT(*) c FROM appointment WHERE advisor_no=? AND status IN ('已到店','已完成')",no)[0]["c"]
         fu=rows("SELECT COUNT(*) c FROM followup WHERE advisor_no=?",no)[0]["c"]
@@ -1542,7 +1549,7 @@ def guide_perf(q):
     key=(q.get("sort") or ["amount"])[0]
     out.sort(key=lambda r:r.get(key,0) or 0,reverse=(q.get("dir") or ["desc"])[0]!="asc")
     return dict(rows=out,total=len(out),
-      note="原设计稿无导购业绩页面,本页按后台 PRD 第 9 章「数据指标口径」实现;销售额口径为实付金额,不含已关闭订单。")
+      note="原设计稿无导购业绩页面,本页按后台 PRD 第 9 章「数据指标口径」实现;销售额口径为实付金额,只算已付款的单,不含待付款和已关闭订单。")
 
 def stock_log_list(q):
     d=_simple("stock_log",q,["sku","spu","ref","operator"],{"id","ts","delta"},

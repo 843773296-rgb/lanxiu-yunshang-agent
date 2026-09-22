@@ -14,6 +14,8 @@ c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
 # 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
 # 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
 咬合 = [
+    ('把一张已付款订单的顾问工号改成不存在的人(这单的业绩没人认领)',
+     '导购业绩合计 ≠ 全库已付款未关闭的实收'),
     ('把一张订单的商品总额抬高 9 万(和各订单行之和对不上)',
      '≠ 各行基本金额之和'),
 ]
@@ -151,6 +153,20 @@ for r in q("""SELECT m.id, m.created mc, d.signed_at sa FROM maintain m
               JOIN delivery_notice d ON d.order_id = m.order_id WHERE m.created < d.signed_at"""):
     bad.append(f"维修工单 {r['id']} 报修({r['mc']})早于交付签收({r['sa']})")
 
+# ⑨ 导购业绩页的合计 = 全库「已付款、没关闭」订单的实收(2026-09-22 加)
+#    原来页面按 PRD 口径的状态名筛 status 列(存的是设计稿口径),只对上一个名字,
+#    全库只数到 130 单 / 48.8 万,真实约 2.5 万单 / 1.45 亿 —— **没有任何检查守着,所以没人发现**。
+#    这里直接调页面用的那个函数,对全库总数:状态名写错、钱取错列、单子挂到不存在的顾问,都会红。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import server as _srv
+_页 = _srv.guide_perf({})["rows"]
+_页单, _页钱 = sum(r["orders"] for r in _页), round(sum(r["amount"] for r in _页), 2)
+_库 = q("""SELECT COUNT(*) n, ROUND(COALESCE(SUM(received),0),2) amt FROM ordr
+          WHERE prd_status NOT IN ('待付款','已关闭')""")[0]
+if (_页单, _页钱) != (_库["n"], _库["amt"]):
+    bad.append(f"导购业绩合计 ≠ 全库已付款未关闭的实收:页面 {_页单} 单 / {_页钱},"
+               f"库里 {_库['n']} 单 / {_库['amt']} —— 状态名、金额列或顾问归属有一处对不上")
+
 print("会员与订单一致性检查\n" + "=" * 68)
 print(f"订单 {q('SELECT COUNT(*) n FROM ordr')[0]['n']} · 订单行 {q('SELECT COUNT(*) n FROM ordr_item')[0]['n']}"
       f" · 会员 {q('SELECT COUNT(*) n FROM customer')[0]['n']}"
@@ -161,4 +177,4 @@ if bad:
     for b in bad[:20]: print(f"  ❌ {b}")
     if len(bad) > 20: print(f"  … 另有 {len(bad)-20} 条")
     print(f"\n❌ {len(bad)} 处不一致"); sys.exit(1)
-print("\n✅ 状态映射、金额勾稽、时间顺序、等级门槛、积分行为、绑定关系 全部一致")
+print(f"\n✅ 状态映射、金额勾稽、时间顺序、等级门槛、积分行为、绑定关系、导购业绩合计({_页单} 单)全部一致")

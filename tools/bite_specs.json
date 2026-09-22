@@ -461,6 +461,14 @@
   },
   {
     "script": "backend/member_order_check.py",
+    "改坏": "把一张已付款订单的顾问工号改成不存在的人(这单的业绩没人认领)",
+    "sql": [
+      "UPDATE ordr SET advisor_no='99999999' WHERE id=(SELECT id FROM ordr WHERE prd_status NOT IN ('待付款','已关闭') LIMIT 1)"
+    ],
+    "预期红": "导购业绩合计 ≠ 全库已付款未关闭的实收"
+  },
+  {
+    "script": "backend/member_order_check.py",
     "改坏": "把一张订单的商品总额抬高 9 万(和各订单行之和对不上)",
     "sql": [
       "UPDATE ordr SET goods_amount=goods_amount+90000 WHERE id=(SELECT id FROM ordr WHERE goods_amount IS NOT NULL LIMIT 1)"
