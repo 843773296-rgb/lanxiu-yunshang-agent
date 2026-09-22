@@ -2599,5 +2599,29 @@
       }
     ],
     "预期红": "订单行 10 没有下单量体 → None"
+  },
+  {
+    "script": "backend/measure_write_check.py",
+    "改坏": "把量体录入的身体数据同意那道门去掉",
+    "file": [
+      {
+        "path": "backend/measure_write.py",
+        "old": "    if not ok:\n        return dict(ok=False, code=\"NO_CONSENT\",",
+        "new": "    if False:\n        return dict(ok=False, code=\"NO_CONSENT\","
+      }
+    ],
+    "预期红": "没有身体数据同意 → 拒"
+  },
+  {
+    "script": "backend/measure_write_check.py",
+    "改坏": "让绑订单行时不查「这一件是不是给这个人做的」",
+    "file": [
+      {
+        "path": "backend/measure_write.py",
+        "old": "        if 行[\"wearer_id\"] != wid:",
+        "new": "        if False:"
+      }
+    ],
+    "预期红": "那一件不是给这个人做的 → 拒"
   }
 ]

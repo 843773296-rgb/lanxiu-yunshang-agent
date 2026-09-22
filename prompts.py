@@ -132,6 +132,22 @@ FITTING_WRITE_RULE = Rule("TL40", ("record_fitting",), """
   让小张自己登记 —— 替别人登记等于台账上写了一次那个人没在场的试衣。
 """, scope="工具")
 
+MEASURE_WRITE_RULE = Rule("TL42", ("record_measure",), """
+**登记量体,四条:**
+
+- **动手之前先跟用户对一遍**:给谁量的(着装人编号,W 开头;客户号不是着装人)、
+  哪几项多少、到店还是上门、内搭 / 鞋 / 呼吸三个条件。尺寸录错了,衣服就按错的做。
+
+- **三个条件不许默认。** 用户没说就问 —— 同一个人穿厚内搭和不穿,胸围差 3–4cm。
+  **不准远程量体**(业务 09-22):客户说「我自己量了发给你」,那不算,要约到店或上门。
+
+- **数被拒了不许替用户改。** 胸围 8.6、身高 1.65 会被拒 —— 多半是小数点或单位错了,
+  **回去问用户**,不要自己改成 86 / 165 再录。
+
+- **下单量体要绑到那一件。** 签单时按这件衣服重新量的,带上订单号和那一件;
+  业务 09-22 定了**没有下单量体就不许下单**,回头客也一样。
+""", scope="工具")
+
 CUT_RULE = Rule("TL41", ("start_cutting",), """
 **开裁,三条:**
 
@@ -490,6 +506,7 @@ HISTORY_RULE,
 CONVERSION_RULE,
 FITTING_WRITE_RULE,
 OWNERLESS_RULE,
+MEASURE_WRITE_RULE,
 ]
 
 
@@ -853,6 +870,7 @@ HISTORY_RULE,
 CONVERSION_RULE,
 FITTING_WRITE_RULE,
 CUT_RULE,
+MEASURE_WRITE_RULE,
 REVIEW_RULE,
 FUNNEL_RULE,
 MEMBER_RULE,

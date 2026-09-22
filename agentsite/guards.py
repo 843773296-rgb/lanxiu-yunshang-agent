@@ -1031,6 +1031,12 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
             return ("新登记一轮试衣要写 `adjust`(改了哪几处,没改写「无需调整」)—— "
                     "只写「试了」的记录,出尺寸争议时说不清客户认可的是哪一版。"
                     "别替顾问编:回去问这一轮改了什么。")
+        # `record_measure`:三个量体条件(内搭 / 鞋 / 呼吸)**必须明说** —— 缺一件等于没量,
+        # 而模型最容易的做法是替顾问填一个「薄 / 赤足 / 平静呼气」。拦在调用之前,让它回去问。
+        if short == "record_measure" and not all(str(args.get(k) or "").strip()
+                                                  for k in ("inner", "shoe", "breath")):
+            return ("量体的三个条件(内搭 / 鞋 / 呼吸)**要问清楚,不许默认** —— "
+                    "同一个人穿厚内搭和不穿,胸围差 3–4cm;没记条件的尺寸,返修时判断不了是量错了还是穿法变了。")
         # `start_cutting` 被 MUSLIN_GATE 拒过之后,通用闸已经不许同参数重试;
         # 这里再挡一种:**没给单号就开裁**(开裁不可逆,不许让工具去猜是哪一单)。
         if short == "start_cutting" and not str(args.get("order_id") or "").strip():

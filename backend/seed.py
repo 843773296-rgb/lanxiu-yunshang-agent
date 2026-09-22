@@ -339,6 +339,11 @@ CREATE TABLE measure_rec(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT,
   -- 检查抓对了「有条边对不上」,但**推错了指向哪儿** —— 而它推错的方式
   -- 恰恰是我加列时的方式:**看名字**。命名撞车的代价在这儿现形。
   schedule_id TEXT,
+  -- 这批量体是**哪张单哪一件的下单量体**(ordr_item.id)。可空 —— 平时的量体不绑单。
+  -- 业务 2026-09-22:签单时按这件衣服重新量,**这一件以它为准;没有就不许下单**(knowledge/measure.py)。
+  -- ⚠️ 叫 order_item_id 不叫 item_id:这张表里 `item` 已经是「量体项」(MI01…),
+  -- 再来一个 item_id,读的人会以为是量体项的编号 —— 上面 schedule_id 那段记的就是这种命名撞车。
+  order_item_id INTEGER,
   -- 08-量体与版型.md 第四节:「每次量体必须记下三件事,**缺一件就等于没量**」——
   -- ①数值+单位 ②**量体条件** ③量体人+时间。前后两件早就有了,唯独缺第二件,
   -- 而文档专门写着它「最常漏」:同一个人穿厚内搭和不穿,胸围差 3–4cm,
