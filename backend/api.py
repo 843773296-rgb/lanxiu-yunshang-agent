@@ -4006,8 +4006,16 @@ def conversion_rate(shop=None):
             按人[r["name"]] = {"接待次数": r["接待"], "促成": r["成交"],
                               "按接待人算的率": f"{100*r['成交']/r['接待']:.0f}%" if r["接待"] else "—"}
         有归因 = con.execute(
-            "SELECT count(DISTINCT order_id) FROM deal_credit WHERE kind='影响力分成'"
+            "SELECT count(DISTINCT order_id) FROM deal_credit WHERE method='W型归因 v1·全量'"
         ).fetchone()[0]
+        归因人 = {}
+        for r in con.execute("""select s.name, s.shop, round(sum(d.pct)/100.0, 1) x
+                                from deal_credit d join staff s on s.no=d.staff_no
+                                where d.method='W型归因 v1·全量' and s.role='顾问'
+                                group by d.staff_no order by x desc"""):
+            if 店 and r["shop"] != 店:
+                continue
+            归因人[r["name"]] = r["x"]
     finally:
         con.close()
     if not 单:
@@ -4032,8 +4040,12 @@ def conversion_rate(shop=None):
         "② 按归因算(业务要的那个)": {
             "覆盖": f"{有归因}/{len(单)} 张定制单有影响力分成记录",
             "能不能用": 有归因 >= len(单) * 口径.接入率门槛,
-            "缺什么": ("W 型归因**还没全量回填** —— 算法有了(knowledge/attribution.py)、"
-                      "触点也有了,只是没对全部定制单跑过一遍。这一步是纯计算,不用等业务。"),
+            "每人的归因成交数(单)": 归因人,
+            "这个数是什么": ("每张单按 W 型把「1 单」拆给参与的人,加起来就是他**贡献了几单** —— "
+                           "**不是率**。30/30/30/10 是惯例不是算出来的,触点是造的。"),
+            "⚠️ 为什么还没给率": ("接待和成交**不是一对一**(一次接待后面可以跟好几张单),"
+                               "拿单数除接待次数会超过 100%。**分母是「接待过几个客户」"
+                               "还是「接待了几次」,要业务定** —— 两个会给出不同的数。"),
         },
         "⚠️ 最要紧的一句": (
             "**两个数都像成交率,而它们回答的是不同的问题。** "

@@ -2435,5 +2435,17 @@
       }
     ],
     "预期红": "远程量体不增加"
+  },
+  {
+    "script": "backend/link_check.py",
+    "改坏": "把 W 型覆盖那条查询里的 method 写错(一条都查不到,贡献凭空消失)",
+    "file": [
+      {
+        "path": "backend/link_check.py",
+        "old": "算 = q(\"select count(distinct order_id) from deal_credit where method='W型归因 v1·全量'\")",
+        "new": "算 = q(\"select count(distinct order_id) from deal_credit where method='W型归因 v2'\")"
+      }
+    ],
+    "预期红": "挂了接待的定制单都有 W 型影响力"
   }
 ]
