@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
 import api as backend
 import fsm, rules
 import lifecycle as _lc     # 生命周期口径的唯一源头,页面不再自己抄一份
+import stockalert as _sa     # 「快没了」件数线的唯一源头(业务 2026-09-22 定 ≤5),页面不再自己写一个数
 import auth                     # 员工登录:**角色只从服务端会话取,不从请求体读**
 
 
@@ -768,10 +769,10 @@ def stock_list(q):
                JOIN product p ON s.spu=p.spu ORDER BY s.code""")
     for r in rs: r["avail"]=r["stock"]-r["locked"]
     if kw: rs=[r for r in rs if kw in r["code"] or kw in r["pname"]]
-    if low=="是": rs=[r for r in rs if r["avail"]<=5]
+    if low=="是": rs=[r for r in rs if r["avail"]<=_sa.快没了_件数]
     rs=_sort(rs,q,{"code","stock","avail","price"})
     d=_page(rs,q); d["facets"]=dict(low=["是","否"])
-    d["alert"]=len([r for r in rows("SELECT stock,locked FROM sku") if r["stock"]-r["locked"]<=5])
+    d["alert"]=len([r for r in rows("SELECT stock,locked FROM sku") if r["stock"]-r["locked"]<=_sa.快没了_件数])
     return d
 
 def measure_items(q):

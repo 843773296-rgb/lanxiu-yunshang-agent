@@ -149,11 +149,19 @@ def main():
     ck("一人一天只有一个班次", "是" if 重 == 0 else f"{重} 个人天重复", "是",
        "  ← 数据库不挡这个(工厂造不出复合唯一约束的表),**靠这条检查挡**")
 
-    # 合规:每人每周至少休一天
-    坏 = q(f"""select count(*) from (
-                 select staff_no, strftime('%W', d) w, sum(shift='S0') s
-                 from roster where status=? group by staff_no, w having s=0)""", R.已发布)
-    ck("每人每周至少休一天", "是" if 坏 == 0 else f"{坏} 个人周没休", "是")
+    # 合规:每人每周至少休 N 天 —— N 从口径模块取(业务 2026-09-22 确认 N=1),
+    # 逐个人周交给 `R.这一周合规吗()` 判,**不在检查里另写一遍规则**
+    import sqlite3 as _sq
+    _c = _sq.connect(R.DB)
+    周们 = {}
+    for 工号, w, 班 in _c.execute("""select staff_no, strftime('%W', d), shift from roster
+                                      where status=?""", (R.已发布,)):
+        周们.setdefault((工号, w), []).append(班)
+    _c.close()
+    坏 = [k for k, v in 周们.items() if not R.这一周合规吗(v)[0]]
+    ck(f"每人每周至少休 {R.每周至少休几天} 天(验了 {len(周们)} 个人周)",
+       "是" if (周们 and not 坏) else (f"{len(坏)} 个人周不合规" if 坏 else "没有已发布的班 —— 没东西可验"),
+       "是")
 
     print()
     if bad:
