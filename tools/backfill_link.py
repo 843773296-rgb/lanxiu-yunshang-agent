@@ -20,6 +20,7 @@
     试衣场次     328 场
     预约到店       7 条
     → 定制单 3542 张,**100% 在下单前都有接待记录**
+    (**09-22 再定:远程量体不算** —— 排除之后是 3403/3542,139 张没有合规接待)
 
 **「接待没记」是我用错了定义,不是业务缺流程。**
 记在这儿:**一个定义错了的判断,和一个数据真的缺了的判断,在结论上长得一模一样**
@@ -56,9 +57,13 @@ def 接待场次(c):
         出.setdefault(cid, {})[(日, (人 or "").strip(), 证)] = \
             {"日期": 日, "经手人": (人 or "").strip(), "证据": 证, "方式": 方式}
 
-    for r in c.execute("""select customer_id, substr(measured_at,1,10) d,
-                                 measured_by_no, method
-                          from measure_rec group by 1,2,3,4"""):
+    # ⚠️ **只收「亲自服务」的量体** —— 业务 2026-09-22:不准远程量体,
+    # 必须顾问亲自服务(到店或上门)。远程量体不算接待。
+    ph2 = ",".join("?" * len(_口径.亲自服务的量体方式))
+    for r in c.execute(f"""select customer_id, substr(measured_at,1,10) d,
+                                  measured_by_no, method
+                           from measure_rec where method in ({ph2})
+                           group by 1,2,3,4""", _口径.亲自服务的量体方式):
         收(r[0], r[1], r[2], "量体", r[3])
     for r in c.execute("""select o.customer_id, substr(f.ts,1,10) d, f.advisor_no
                           from fitting f join ordr o on o.id=f.order_id group by 1,2,3"""):
