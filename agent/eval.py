@@ -154,37 +154,49 @@ def main():
     T, pv = truths(), v1.provider()
     tasks = pick(n1, n2)
     print(f"供应商 {pv['id']} / 模型 {pv['model']} / {len(tasks)} 道题\n" + "=" * 92, flush=True)
-    recs = []
-    for i, t in enumerate(tasks, 1):
-        if t["type"] == "财务人工任务":
-            prompt, case, bp = v1.BP01.format(ref=t["ref_id"]), t["ref_id"], "BP-01"
-        else:
-            a, b = t["ref_id"].split("|")
-            prompt, case, bp = v1.BP02.format(a=a, b=b), t["id"][1:], "BP-02"
-        tr = T.get(case, {})
-        try:
-            r = v1.run_case(pv, prompt, purpose=("退款定因" if bp=="BP-01" else "客户合并"))
-        except Exception as e:
-            r = dict(finding=None, error=str(e)[:160])
-        f = r.get("finding")
-        text = json.dumps(f, ensure_ascii=False) if f else ""
-        ok, why = hit(text, tr.get("root_cause", ""), case) if f else (False, r.get("error", "未提交"))
-        r.update(case=case, bp=bp, truth=tr.get("root_cause"), passed=ok, judge=why,
-                 expected_action=tr.get("expected_action"))
-        recs.append(r)
-        print(f"[{i:2d}] {'✅' if ok else '❌'} {case:10s} {bp}  "
-              f"真因 {str(tr.get('root_cause'))[:12]:12s} "
-              f"{r.get('calls','-'):>2}调 {r.get('seconds','-'):>5}s "
-              f"${r.get('cost_local',0):.4f}  {why[:34]}", flush=True)
-        time.sleep(1.5)                             # 让一让额度
-    with open(os.path.join(HERE, "eval-results.jsonl"), "w", encoding="utf-8") as fh:
-        for r in recs: fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    def 跑一轮():
+        recs = []
+        for i, t in enumerate(tasks, 1):
+            if t["type"] == "财务人工任务":
+                prompt, case, bp = v1.BP01.format(ref=t["ref_id"]), t["ref_id"], "BP-01"
+            else:
+                a, b = t["ref_id"].split("|")
+                prompt, case, bp = v1.BP02.format(a=a, b=b), t["id"][1:], "BP-02"
+            tr = T.get(case, {})
+            try:
+                r = v1.run_case(pv, prompt, purpose=("退款定因" if bp=="BP-01" else "客户合并"))
+            except Exception as e:
+                r = dict(finding=None, error=str(e)[:160])
+            f = r.get("finding")
+            text = json.dumps(f, ensure_ascii=False) if f else ""
+            ok, why = (hit(text, tr.get("root_cause", ""), case) if f
+                       else (False, f"跑挂了:{r.get('error', '未提交')}" if r.get("error")
+                             else "未提交"))
+            r.update(case=case, bp=bp, truth=tr.get("root_cause"), passed=ok, judge=why,
+                     expected_action=tr.get("expected_action"))
+            recs.append(r)
+            print(f"[{i:2d}] {'✅' if ok else '❌'} {case:10s} {bp}  "
+                  f"真因 {str(tr.get('root_cause'))[:12]:12s} "
+                  f"{r.get('calls','-'):>2}调 {r.get('seconds','-'):>5}s "
+                  f"${r.get('cost_local',0):.4f}  {why[:34]}", flush=True)
+            time.sleep(1.5)                             # 让一让额度
+        return recs
+
+    # **跑两轮、判基线来路、部分不写** —— 见 rounds.跑并收尾。
+    # ⚠️ 这一份原来**连来路章都没盖**:直接 json.dump,文件里没有供应商/模型/代码,
+    # 于是它的基线永远不可比(rounds 会拒收)。走共用件后默认用 evalrec.dump,章就盖上了。
+    # 全集 = 默认题量(12 + 8)挑出来的那批;命令行传小了就是部分跑,不许覆盖。
+    import rounds
+    全集 = len(pick(12, 8))
+    recs, _ = rounds.跑并收尾(跑一轮, 名="V1 退款定因/客户合并", 键="case", 理由="judge",
+                              结果文件=os.path.join(HERE, "eval-results.jsonl"),
+                              全集数=全集, 本轮数=len(tasks))
     p = sum(r["passed"] for r in recs)
     print("=" * 92)
-    print(f"命中 {p}/{len(recs)} = {p/len(recs)*100:.0f}%  |  "
-          f"总成本 ${sum(r.get('cost_local',0) for r in recs):.4f}  |  "
-          f"总调用 {sum(r.get('calls',0) for r in recs)} 次  |  "
-          f"总耗时 {sum(r.get('seconds',0) for r in recs):.0f}s")
+    print(f"最后一轮 命中 {p}/{len(recs)} = {p/max(len(recs),1)*100:.0f}%  |  "
+          f"成本 ${sum(r.get('cost_local',0) for r in recs):.4f}  |  "
+          f"调用 {sum(r.get('calls',0) for r in recs)} 次  |  "
+          f"耗时 {sum(r.get('seconds',0) for r in recs):.0f}s(最后一轮)")
 
 def rescore():
     """只重判,不重跑模型 —— 模型结果已存盘,改评分规则不用再花钱。"""

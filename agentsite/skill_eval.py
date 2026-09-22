@@ -269,7 +269,12 @@ def main():
     rounds.报(多轮, 基线通过数=基线, 名="技能触发", 原因=轮因, 基线来路=基线来路)
 
     os.makedirs(RUNS, exist_ok=True)
-    if a.save:
+    if a.save and len(cases) < len(spec["cases"]):
+        # ⚠️ **只跑了一部分时不许存基线** —— `--only 8 --save v2` 会存出一份
+        # 只有一条的「基线」,下次 `--diff v2` 拿它比全量,文件上看不出来。
+        # (工具路由那一套同一处同一个洞,一起补的。)
+        print(f"\n  ⚠️ 这次只跑了 {len(cases)}/{len(spec['cases'])} 条,**不存基线 {a.save}**")
+    elif a.save:
         p = os.path.join(RUNS, f"{a.save}.json")
         # **存基线时盖上来路**(供应商/模型/代码)—— 此前这一套自己拼 json、
         # 不走 evalrec,于是 `runs/*.json` 十份里**没有一份记着是谁跑的**。

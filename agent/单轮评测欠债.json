@@ -2,16 +2,5 @@
  "说明": "调模型的评测里,还没接多轮 + 轮间抖动的那些。**只许少不许多**;改好一个就从这里删一条,删不删由 agent/rounds_check.py 强制。",
  "怎么还": "把主循环包成 `跑一轮()`,跑两轮,最后 `rounds.报(多轮, 基线通过数=...)`。参考 agent/growth_eval.py。",
  "登记于": "2026-09-21",
- "欠着的": [
-  "agent/chat_eval.py",
-  "agent/eval.py",
-  "agent/member_eval.py",
-  "agent/ops_eval.py",
-  "agent/pattern_eval.py",
-  "agent/report_eval.py",
-  "agent/role_eval.py",
-  "agent/scheme_eval.py",
-  "agent/tool_eval.py",
-  "agentsite/tool_eval.py"
- ]
+ "欠着的": []
 }

@@ -57,6 +57,10 @@ G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
      "给了基线却没给来路时要拒收,不许照样比"),
     ("把 `if not 能比:` 改成 `if False and not 能比:`",
      "换了供应商/模型的基线不许拿来比"),
+    ("把 跑并收尾 里 `if 本轮数 < 全集数:` 改成 `if False:`",
+     "共用收尾:只跑了一部分时不许写结果文件"),
+    ("把 `[r[理由]] if isinstance(r.get(理由), str)` 改成 `list(r.get(理由) or [])`",
+     "理由是字符串时也要分得了类"),
 ]
 
 
@@ -206,6 +210,104 @@ def 报(多轮, 基线通过数=None, 名="", 日志=print, 原因=None,
     return True
 
 
+# ── 共用收尾:跑几轮 → 取基线并判来路 → 报告 → 部分不写 ────────────────
+#
+# 2026-09-22 抽出来。这一段在 growth / vision / liability / skill 四个评测里
+# **各抄了一遍**,而每抄一遍都漏过东西:
+#   · growth 挡了「部分覆盖」的写,却没挡「部分比较」的比
+#   · vision / liability 当初都没挡部分覆盖(三处各修一次,见 partial_write_check)
+#   · 四处取基线,**没有一处判过来路**,直到 `报()` 开始拒收
+# 剩下十个评测要是再各抄一遍,就是第十四份 —— **修一处不等于修一类**,
+# 而一段逻辑有十四份拷贝,就注定有一份是漏的。
+#
+# 各评测只交出「跑一轮」:返回这一轮的明细行(每行有用例键、过没过、理由)。
+# 其余的 —— 几轮、基线、来路、部分不写、报告 —— 都在这里,**只写一次,咬合一次**。
+
+def _取基线(结果文件, 键, 过, 本轮键, 全集数, 本轮数, 日志=print):
+    """从 git 里上一版结果文件取基线。**不可比就不交出去**,并说清哪一样不可比。
+
+    返回 (基线通过数, 基线来路);不可比时两个都是 None。
+    """
+    import json, subprocess
+    根 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    相对 = os.path.relpath(os.path.abspath(结果文件), 根)
+    try:
+        t = subprocess.run(["git", "show", f"HEAD:{相对}"], capture_output=True,
+                           text=True, cwd=根).stdout
+    except Exception:
+        return None, None
+    # 两种格式都认:jsonl(一行一条)和整份 JSON 数组(agent/tool_eval 写的是后者)。
+    # ⚠️ 只按行解析的话,JSON 数组**一行都读不出来**,于是安静地报「没给基线」——
+    # 而「这份评测没有基线」和「这份基线我读不懂」,在报告上长得一模一样。
+    try:
+        整份 = json.loads(t) if t.strip() else None
+    except Exception:
+        整份 = None
+    候选 = 整份 if isinstance(整份, list) else []
+    if not 候选:
+        for l in t.splitlines():
+            try:
+                候选.append(json.loads(l))
+            except Exception:
+                continue
+    行 = [x for x in 候选 if isinstance(x, dict) and 键 in x]   # 跳过指纹头之类没有用例键的行
+    if not 行:
+        return None, None
+    if 本轮数 < 全集数:
+        日志(f"  ℹ️ 这次只跑了 {本轮数}/{全集数} 题 —— **不拿基线比**(分母都不一样)")
+        return None, None
+    量过 = {x[键] for x in 行}
+    缺, 多 = set(本轮键) - 量过, 量过 - set(本轮键)
+    if 缺 or 多:
+        # 比的是**哪几道**不是**几道**:删一道又加一道会正好对上
+        日志(f"  ℹ️ 基线和现在的题对不上,**不拿它比** —— "
+             + (f"它没量过 {sorted(map(str, 缺))[:6]}" if 缺 else "")
+             + ("；" if 缺 and 多 else "")
+             + (f"它量过但现在没有的 {sorted(map(str, 多))[:6]}" if 多 else ""))
+        return None, None
+    n = sum(1 for x in 行 if x.get(过))
+    日志(f"  (基线取自 git 里上一版结果:{n}/{len(行)})")
+    return n, {k: 行[0].get(k) for k in ("供应商", "模型", "代码")}
+
+
+def 跑并收尾(一轮, *, 名, 结果文件, 全集数, 本轮数, 键="id", 过="passed", 理由="why",
+             写=None, 轮数=None, 日志=print):
+    """跑 `轮数` 轮(默认 2;设了 `LANXIU_一轮` 就 1),然后把收尾一次做完。
+
+    `一轮()` 返回这一轮的明细行列表。`写(结果文件, 行们)` 默认走 `evalrec.dump`;
+    带指纹头之类的评测传自己的写法进来。
+
+    返回 (最后一轮的明细, 每轮 {键: 过没过})。
+    """
+    if 轮数 is None:
+        轮数 = 1 if os.environ.get("LANXIU_一轮") else 2
+    多, 因, 最后 = [], [], []
+    for i in range(轮数):
+        if 轮数 > 1:
+            日志(f"  【第 {i + 1} 轮】")
+        行们 = 一轮() or []
+        多.append({r[键]: bool(r.get(过)) for r in 行们})
+        # 理由有的评测是列表、有的是一句字符串(chat_eval 的 `judge`)——
+        # 字符串直接 list() 会被拆成一个个字,分类就全认不出了
+        因.append({r[键]: ([r[理由]] if isinstance(r.get(理由), str)
+                           else list(r.get(理由) or [])) for r in 行们})
+        最后 = 行们
+    基线, 来路 = _取基线(结果文件, 键, 过, [r[键] for r in 最后], 全集数, 本轮数, 日志)
+    报(多, 基线通过数=基线, 名=名, 原因=因, 基线来路=来路, 日志=日志)
+    # ⚠️ **只跑了一部分时不许覆盖结果文件** —— 「跑一部分」和「跑全部」
+    # 写的是同一个文件,而文件上一点看不出区别。
+    if 本轮数 < 全集数:
+        日志(f"  ⚠️ 这次只跑了 {本轮数}/{全集数} 题,**不写结果文件** —— "
+             f"部分结果覆盖完整基线之后,文件上看不出来。要更新基线请跑全部。")
+    else:
+        if 写 is None:
+            import evalrec
+            写 = evalrec.dump
+        写(结果文件, 最后)
+        日志(f"  明细写到 {结果文件}")
+    return 最后, 多
+
+
 def 自测():
     """咬合:三种情形各自都要说对话。"""
     import io, contextlib
@@ -296,6 +398,37 @@ def 自测():
     if "不拿它当基线" not in out or "这个对比有意义" in out:
         坏.append("换了供应商/模型的基线不许拿来比")
 
+    # ⑪ 共用收尾:部分跑**不许**调写;全量跑才写;默认跑两轮
+    import tempfile
+    _写过 = []
+    _f = os.path.join(tempfile.mkdtemp(), "不在git里-results.jsonl")
+    _次 = []
+    def _一轮():
+        _次.append(1)
+        return [{"id": "A", "passed": True, "why": []}]
+    抓(lambda: 跑并收尾(_一轮, 名="t", 结果文件=_f, 全集数=3, 本轮数=1,
+                        写=lambda p, r: _写过.append(p), 轮数=2))
+    if _写过:
+        坏.append("共用收尾:只跑了一部分时不许写结果文件")
+    if len(_次) != 2:
+        坏.append("共用收尾:要真跑两轮")
+    抓(lambda: 跑并收尾(_一轮, 名="t", 结果文件=_f, 全集数=1, 本轮数=1,
+                        写=lambda p, r: _写过.append(p), 轮数=2))
+    if not _写过:
+        坏.append("共用收尾:跑全了要写结果文件")
+
+    # ⑫ 理由是字符串也得分得了类(不许被 list() 拆成单字)
+    # **直接走共用件**,不许手搭 `原因` 去喂 報() —— 那样测不到共用件里那一行。
+    # (第一版就是手搭的,自测照样绿,而被修的那一行一次都没执行。)
+    _轮 = [0]
+    def _翻一轮():
+        _轮[0] += 1
+        return [{"id": "A", "passed": _轮[0] == 1, "judge": "轨迹:没调工具"}]
+    _, out = 抓(lambda: 跑并收尾(_翻一轮, 名="t", 结果文件=_f, 全集数=1, 本轮数=1,
+                                理由="judge", 写=lambda p, r: None, 轮数=2))
+    if "轨迹类** 1 题" not in out:
+        坏.append("理由是字符串时也要分得了类")
+
     # ④ 没给基线 → 不许编结论
     _, out = 抓(lambda: 报([{"A": True}] * 2))
     if "不比就不编结论" not in out:
@@ -305,11 +438,11 @@ def 自测():
     for x in 坏:
         print(f"  ✗ {x}")
     if not 坏:
-        print("  ✓ 十条都说对了话:单轮 / 抖动≥版本差 / 稳定可比 / 0 题翻面 / 无基线 / "
+        print("  ✓ 十二条都说对了话:单轮 / 抖动≥版本差 / 稳定可比 / 0 题翻面 / 无基线 / "
               "**翻面按原因分类(轨迹类 vs 内容类)** / "
               "**没抖也没变 ≠ 差别被淹掉**(两边下一步动作相反)/ "
-              "**没来路的基线拒收** / 代码变了说归不了因 / 换了供应商不许比")
-    print((f"{R}❌ 轮次咬合 {len(坏)} 条不过{D}") if 坏 else f"{G}✅ 轮次咬合:十条都咬得动{D}")
+              "**没来路的基线拒收** / 代码变了说归不了因 / 换了供应商不许比 / **共用收尾:部分不写、全量才写、真跑两轮**")
+    print((f"{R}❌ 轮次咬合 {len(坏)} 条不过{D}") if 坏 else f"{G}✅ 轮次咬合:十二条都咬得动{D}")
     return 1 if 坏 else 0
 
 

@@ -205,6 +205,12 @@ def main():
 
     rows, 崩 = [], 0
     t0 = time.time()
+    # 每一遍就是一轮 —— 攒成 rounds.py 要的形状,好问那个问题:**这个差会不会被抖动淹掉**。
+    # (这一套 `--repeat` 默认就是 2,但它此前只在每条后面印「命中 1/2」,
+    #  **从没把两遍合起来问过一次「整体抖了几条」** —— 逐条看都有数,合起来没人算。)
+    轮数 = max(1, a.repeat)
+    多轮 = [{} for _ in range(轮数)]
+    轮因 = [{} for _ in range(轮数)]
     for c in cases:
         # **先说清楚这一版里哪些期望是够得着的。** 合并前只有老名字在,
         # 合并后只有新名字在 —— 同一份题面两边都能跑,但期望不都成立。
@@ -221,6 +227,18 @@ def main():
                 except Exception as e:
                     r = {"__err": f"{type(e).__name__}"}
             每遍.append(r if "__err" not in r else r)
+        # 逐遍记进对应那一轮。崩了的那遍记「跑挂了」(rounds 有专门一类);
+        # 没崩的一律标**轨迹类** —— 这把尺子只看走过哪些工具,
+        # 不看模型说了什么,所以这里的翻面**结构上只可能是模型这次走法变了**。
+        for _i, x in enumerate(每遍):
+            if "__err" in x:
+                多轮[_i][c["id"]] = False
+                轮因[_i][c["id"]] = [f"跑挂了:{x['__err']}"]
+                continue
+            _e = 评一次(dict(c, 期望=够得着), x)
+            多轮[_i][c["id"]] = bool(_e["命中"])
+            if not _e["命中"]:
+                轮因[_i][c["id"]] = [f"轨迹:期望 {[e['工具'] for e in 够得着]},走过 {_e['走过的']}"]
         好 = [x for x in 每遍 if "__err" not in x]
         坏 = len(每遍) - len(好)
         崩 += 坏
@@ -263,14 +281,44 @@ def main():
     if 没: print(f"  {R}没测到 {没}{D} —— **没测到不叫通过,也不叫失败**;共崩 {崩} 遍")
     print(f"  用时 {time.time()-t0:.0f} 秒")
 
+    # ── 跑了几轮、抖了几条、能不能和基线比 ──────────────────────────────
+    sys.path.append(os.path.join(ROOT, "agent"))
+    import rounds, evalrec
+    基线, 基线来路 = None, None
+    if a.diff:
+        _p = os.path.join(RUNS, f"tool_{a.diff}.json")
+        if os.path.exists(_p):
+            _b = json.load(open(_p, encoding="utf-8"))
+            _量过 = {x["id"] for x in _b.get("明细", []) if not x.get("跳过") and not x.get("没测到")}
+            _现 = {x["id"] for x in 真}
+            if len(cases) < len(spec["cases"]):
+                print(f"  ℹ️ 这次只跑了 {len(cases)}/{len(spec['cases'])} 条 —— **不拿基线比**")
+            elif _量过 != _现:
+                print(f"  ℹ️ 基线 {a.diff} 和现在的用例对不上,**不拿它比** —— "
+                      f"没量过 {sorted(_现 - _量过)[:6]};量过但现在没有的 {sorted(_量过 - _现)[:6]}")
+            else:
+                基线 = sum(1 for x in _b["明细"] if x.get("ok"))
+                基线来路 = _b.get("来路")        # 老文件没有 → rounds 会拒收,这是对的
+                print(f"  (基线取自 {a.diff}:{基线}/{len(_量过)})")
+    rounds.报(多轮, 基线通过数=基线, 名="工具路由", 原因=轮因, 基线来路=基线来路)
+
     if a.save:
-        os.makedirs(RUNS, exist_ok=True)
-        p = os.path.join(RUNS, f"tool_{a.save}.json")
-        json.dump(dict(标记=a.label, 挂着工具数=len(有),
-                       命中=f"{ok_n}/{len(真)}", 首调即中=f"{首_n}/{遍_n}",
-                       明细=rows), open(p, "w", encoding="utf-8"),
-                  ensure_ascii=False, indent=1)
-        print(f"\n  已存:{p}")
+        # ⚠️ **只跑了一部分时不许存基线** —— `--only 3 --save v2` 会存出一份
+        # 只有一条的「基线」,名字叫 v2,下次 `--diff v2` 拿它比全量,文件上看不出来。
+        # 存的时候**盖上来路**:此前 `runs/tool_*.json` 连模型都没记,
+        # DeepSeek 跑的和 Claude 跑的在文件里长得一模一样。
+        if len(cases) < len(spec["cases"]):
+            print(f"\n  ⚠️ 这次只跑了 {len(cases)}/{len(spec['cases'])} 条,**不存基线 {a.save}** —— "
+                  f"部分结果存成基线之后,文件上看不出来")
+        else:
+            os.makedirs(RUNS, exist_ok=True)
+            p = os.path.join(RUNS, f"tool_{a.save}.json")
+            json.dump(dict(标记=a.label, 挂着工具数=len(有), 来路=evalrec.盖章(),
+                           重复遍数=轮数,
+                           命中=f"{ok_n}/{len(真)}", 首调即中=f"{首_n}/{遍_n}",
+                           明细=rows), open(p, "w", encoding="utf-8"),
+                      ensure_ascii=False, indent=1)
+            print(f"\n  已存:{p}")
     if a.diff:
         p = os.path.join(RUNS, f"tool_{a.diff}.json")
         if not os.path.exists(p):

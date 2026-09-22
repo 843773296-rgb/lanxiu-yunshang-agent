@@ -75,7 +75,7 @@ def 算多轮(src):
     for n in ast.walk(树):
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) \
            and isinstance(n.func.value, ast.Name) and n.func.value.id == "rounds" \
-           and n.func.attr in ("报", "跑"):
+           and n.func.attr in ("报", "跑", "跑并收尾"):
             return True
         # `for 轮 in (1, 2)` / `for _ in range(2)` 这种,循环体里得真有调用
         if isinstance(n, ast.For):

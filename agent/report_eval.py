@@ -346,35 +346,39 @@ def main():
     print(f"复盘与漏斗评测 · {len(cs)} 题("
           f"正向 {sum(1 for c in cs if c['kind']=='正向')} / "
           f"负向 {sum(1 for c in cs if c['kind']=='负向')})\n" + "=" * 100, flush=True)
-    recs = []
-    for c in cs:
-        try:
-            r = asyncio.run(sdk.run(c["role"], c["q"], max_turns=12, me=c.get("me") or 店长))
-            text, traj = r["text"], [x["tool"] for x in r["trajectory"]]
-        except Exception as e:
-            text, traj, r = "", [], {"error": f"{type(e).__name__}: {e}"[:160]}
-        bad = c["grade"](text, traj, c) if text else [r.get("error", "无回答")]
-        for v in (r.get("guard_violations") or []):
-            bad.append(f"体检:{v.get('check')} {str(v.get('msg'))[:40]}")
-        ok = not bad
-        recs.append(dict(id=c["id"], role=c["role"], 身份=(c.get("me") or 店长)["role"], kind=c["kind"], q=c["q"],
-                         passed=ok, why=bad, tools=",".join(_tools(traj)),
-                         cost=r.get("cost_usd"), text=text))
-        who = (c.get("me") or 店长)["role"]
-        print(f"  {'✅' if ok else '❌'} {c['id']} {c['kind']} [{who:8s}] "
-              f"{','.join(_tools(traj))[:30]:32s} {('' if ok else bad[0])[:48]}", flush=True)
-        time.sleep(1)
-    # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
-    # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。
-    import evalrec
-    evalrec.dump(os.path.join(HERE, "report-eval-results.jsonl"), recs)
+    def 跑一轮():
+        recs = []
+        for c in cs:
+            try:
+                r = asyncio.run(sdk.run(c["role"], c["q"], max_turns=12, me=c.get("me") or 店长))
+                text, traj = r["text"], [x["tool"] for x in r["trajectory"]]
+            except Exception as e:
+                text, traj, r = "", [], {"error": f"{type(e).__name__}: {e}"[:160]}
+            bad = (c["grade"](text, traj, c) if text
+                   else [f"跑挂了:{r.get('error', '无回答')}"])
+            for v in (r.get("guard_violations") or []):
+                bad.append(f"体检:{v.get('check')} {str(v.get('msg'))[:40]}")
+            ok = not bad
+            recs.append(dict(id=c["id"], role=c["role"], 身份=(c.get("me") or 店长)["role"], kind=c["kind"], q=c["q"],
+                             passed=ok, why=bad, tools=",".join(_tools(traj)),
+                             cost=r.get("cost_usd"), text=text))
+            who = (c.get("me") or 店长)["role"]
+            print(f"  {'✅' if ok else '❌'} {c['id']} {c['kind']} [{who:8s}] "
+                  f"{','.join(_tools(traj))[:30]:32s} {('' if ok else bad[0])[:48]}", flush=True)
+            time.sleep(1)
+        return recs
+
+    # **跑两轮、判基线来路、部分不写** —— 全在 rounds.跑并收尾 里,只写一次。
+    import rounds
+    recs, _ = rounds.跑并收尾(跑一轮, 名="复盘与漏斗",
+                              结果文件=os.path.join(HERE, "report-eval-results.jsonl"),
+                              全集数=len(CASES), 本轮数=len(cs))
     p = sum(r["passed"] for r in recs)
     print("=" * 100)
-    print(f"通过 {p}/{len(recs)}  ("
+    print(f"最后一轮 通过 {p}/{len(recs)}  ("
           f"正向 {sum(r['passed'] for r in recs if r['kind']=='正向')}/{sum(1 for r in recs if r['kind']=='正向')} · "
           f"负向 {sum(r['passed'] for r in recs if r['kind']=='负向')}/{sum(1 for r in recs if r['kind']=='负向')})"
-          f"  花费 ${sum(r.get('cost') or 0 for r in recs):.4f}")
-
+          f"  花费 ${sum(r.get('cost') or 0 for r in recs):.4f}(最后一轮)")
 
 if __name__ == "__main__":
     main()

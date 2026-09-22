@@ -247,30 +247,44 @@ if __name__ == "__main__":
 
     print(f"指代推进评测 · {len(场景)} 题(四类场景)· 模型 {model}")
     print("=" * 104)
-    ok_n, cost, rows = 0, 0.0, []
-    for 场 in 场景:
-        题 = 造题(场)
-        t0 = time.time()
-        r = asyncio.run(sdk.run("kb", 题, max_turns=10))
-        names = [x["tool"] for x in r["trajectory"]]
-        ok, why = judge(场, r["text"], names)
-        ok_n += ok
-        cost += r.get("cost_usd") or 0
-        rows.append(dict(kind=场["kind"], 题=题, 正确号=场.get("正确号"),
-                         候选号=场.get("候选号"), passed=ok, why=why,
-                         tools=",".join(n.split("__")[-1] for n in names),
-                         cost=r.get("cost_usd") or 0, text=r["text"]))
-        print(f"  {'✅' if ok else '❌'} {场['kind']:5s} {len(names)}调 "
-              f"{time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
-              f"  {'' if ok else why[0][:52]}")
-        for w in (why[1:] if not ok else []):
-            print(f"        {w[:92]}")
+    def 跑一轮():
+        rows = []
+        for 场 in 场景:
+            题 = 造题(场)
+            t0 = time.time()
+            try:
+                r = asyncio.run(sdk.run("kb", 题, max_turns=10))
+            except Exception as ex:
+                rows.append(dict(kind=场["kind"], 题=题, passed=False,
+                                 why=[f"跑挂了:{type(ex).__name__}: {ex}"],
+                                 tools="", cost=0, text=""))
+                print(f"  ❌ {场['kind']:5s} 跑挂了:{type(ex).__name__}")
+                continue
+            names = [x["tool"] for x in r["trajectory"]]
+            ok, why = judge(场, r["text"], names)
+            rows.append(dict(kind=场["kind"], 题=题, 正确号=场.get("正确号"),
+                             候选号=场.get("候选号"), passed=ok, why=why,
+                             tools=",".join(n.split("__")[-1] for n in names),
+                             cost=r.get("cost_usd") or 0, text=r["text"]))
+            print(f"  {'✅' if ok else '❌'} {场['kind']:5s} {len(names)}调 "
+                  f"{time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
+                  f"  {'' if ok else why[0][:52]}")
+            for w in (why[1:] if not ok else []):
+                print(f"        {w[:92]}")
+        return rows
+
+    # 原来这里印一句「⚠️ 一轮不作数,跑第二轮」—— **知道,但没做成结构**,
+    # 于是每次跑都只跑一轮,再印一遍那句提醒。提醒会被忽略,而忽略了看不出来。
+    # 现在走 rounds.跑并收尾:两轮、判基线来路、部分不写。
+    #
+    # ⚠️ 这一套的「全集」是**四类场景**,不是 `len(场景)` ——
+    # 场景是从库里现挑的,挑不齐时 `场景` 会少一类。拿「挑到几类」当全集,
+    # 缺了一类的那次跑照样会**把四类的基线冲成三类**,而文件上看不出来。
+    import rounds
+    rows, _ = rounds.跑并收尾(跑一轮, 名="指代推进", 键="kind",
+                              结果文件=os.path.join(HERE, "scheme-eval-results.jsonl"),
+                              全集数=len(场景) + len(缺), 本轮数=len(场景))
+    ok_n = sum(1 for r in rows if r["passed"])
     print("=" * 104)
-    print(f"通过 {ok_n}/{len(场景)}  |  总花费 ${cost:.4f}")
-    print("⚠️ **一轮不作数。** 这个项目为「拿单轮结果下结论」栽过三次 —— "
-          "跑第二轮,两个数一起写进表里。")
-    import evalrec
-    out = os.path.join(HERE, "scheme-eval-results.jsonl")
-    evalrec.dump(out, rows)
-    print(f"明细写到 {out}")
+    print(f"最后一轮 通过 {ok_n}/{len(场景)}  |  花费 ${sum(r.get('cost') or 0 for r in rows):.4f}")
     sys.exit(0 if ok_n == len(场景) else 1)

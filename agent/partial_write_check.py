@@ -194,6 +194,18 @@ def 欠着吗(src):
     污 = _筛选名(树)
     if not 污:
         return False, "不能只跑一部分(argv 没有流进任何变量)", False
+    # 交给共用收尾 `rounds.跑并收尾(...)` 写的:守卫在它里面(有咬合),
+    # 这里只查一件事 —— **`本轮数` 真的接到了筛选变量上**。
+    # 传一个写死的数进去(`本轮数=6`),守卫就形同虚设,而调用看上去一模一样。
+    for n in ast.walk(树):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) \
+           and isinstance(n.func.value, ast.Name) and n.func.value.id == "rounds" \
+           and n.func.attr == "跑并收尾":
+            本 = next((k.value for k in n.keywords if k.arg == "本轮数"), None)
+            if 本 is None or not (_名字们(本) & 污):
+                return True, ("交给 rounds.跑并收尾 写,但 `本轮数` **没接到筛选变量上**"
+                              f"(第 {n.lineno} 行)—— 部分跑时守卫不会触发"), False
+            return False, "写结果交给 rounds.跑并收尾(守卫在里面,本轮数接着筛选变量)", True
     写 = _写结果的调用(树)
     if not 写:
         return False, "不写结果文件", False

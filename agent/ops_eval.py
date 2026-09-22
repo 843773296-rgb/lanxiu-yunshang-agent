@@ -1155,49 +1155,54 @@ def main():
     print(f"运维侧评测 · {len(cs)} 题("
           f"正向 {sum(1 for c in cs if c['kind']=='正向')} / "
           f"负向 {sum(1 for c in cs if c['kind']=='负向')})\n" + "=" * 100, flush=True)
-    recs = []
-    for c in cs:
-        try:
-            # ⚠️ **身份要跟着题目走。**
-            # 原来这里从不传 `me`,于是 `whoami()` 一直是 None ——
-            # 任何按身份限范围的工具(week_grid / ownerless_list / my_tasks)
-            # 只会回一句「请先登录」,而模型**照实转述这句话**,
-            # 看起来像是它答错了。第一次跑 O01/O03 就是这么挂的:
-            # **「工具用不了」和「模型没答对」在成绩单上长得一模一样。**
-            r = asyncio.run(sdk.run(c["role"], c["q"], max_turns=12,
-                                    me=c.get("me") or 默认身份))
-            text, traj = r["text"], [x["tool"] for x in r["trajectory"]]
-        except Exception as e:
-            text, traj, r = "", [], {"error": f"{type(e).__name__}: {e}"[:160]}
-        bad = c["grade"](text, traj, c) if text else [r.get("error", "无回答")]
-        for v in (r.get("guard_violations") or []):
-            bad.append(f"体检:{v.get('check')} {str(v.get('msg'))[:40]}")
-        ok = not bad
-        recs.append(dict(id=c["id"], role=c["role"], kind=c["kind"], q=c["q"],
-                         passed=ok, why=bad, tools=",".join(x.split("__")[-1] for x in traj),
-                         cost=r.get("cost_usd"), text=text))
-        print(f"  {'✅' if ok else '❌'} {c['id']} {c['kind']} [{c['role']:8s}] "
-              f"{','.join(x.split('__')[-1] for x in traj)[:34]:36s} "
-              f"{('' if ok else bad[0])[:44]}", flush=True)
-        time.sleep(1)
-    # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
-    # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。
-    import evalrec
-    # ⚠️ **只跑了几题就不许覆盖基线。**
-    # 原来不管跑几题都写同一个文件 —— 跑一条 O01 会把 16 条的基线冲成 1 条,
-    # 而那个文件看起来和一次完整评测**长得一模一样**(同样的字段、同样的格式),
-    # 下次拿它做归因会得出「分数从 16/16 掉到 1/1」这种假结论。
-    out = "ops-eval-results.jsonl" if not 挑 else "ops-eval-results.partial.jsonl"
-    evalrec.dump(os.path.join(HERE, out), recs)
+    def 跑一轮():
+        recs = []
+        for c in cs:
+            try:
+                # ⚠️ **身份要跟着题目走。**
+                # 原来这里从不传 `me`,于是 `whoami()` 一直是 None ——
+                # 任何按身份限范围的工具(week_grid / ownerless_list / my_tasks)
+                # 只会回一句「请先登录」,而模型**照实转述这句话**,
+                # 看起来像是它答错了。第一次跑 O01/O03 就是这么挂的:
+                # **「工具用不了」和「模型没答对」在成绩单上长得一模一样。**
+                r = asyncio.run(sdk.run(c["role"], c["q"], max_turns=12,
+                                        me=c.get("me") or 默认身份))
+                text, traj = r["text"], [x["tool"] for x in r["trajectory"]]
+            except Exception as e:
+                text, traj, r = "", [], {"error": f"{type(e).__name__}: {e}"[:160]}
+            bad = (c["grade"](text, traj, c) if text
+                   else [f"跑挂了:{r.get('error', '无回答')}"])
+            for v in (r.get("guard_violations") or []):
+                bad.append(f"体检:{v.get('check')} {str(v.get('msg'))[:40]}")
+            ok = not bad
+            recs.append(dict(id=c["id"], role=c["role"], kind=c["kind"], q=c["q"],
+                             passed=ok, why=bad, tools=",".join(x.split("__")[-1] for x in traj),
+                             cost=r.get("cost_usd"), text=text))
+            print(f"  {'✅' if ok else '❌'} {c['id']} {c['kind']} [{c['role']:8s}] "
+                  f"{','.join(x.split('__')[-1] for x in traj)[:34]:36s} "
+                  f"{('' if ok else bad[0])[:44]}", flush=True)
+            time.sleep(1)
+        return recs
+
+    # **跑两轮、判基线来路、部分不写** —— 见 rounds.跑并收尾。
+    # ⚠️ 原来的「部分跑写到 `.partial.jsonl`」**保留** —— 那一招比「不写」更好:
+    # 部分跑的原文也值得留着看,只是**不许碰基线**。共用件管全量那份,
+    # 部分跑的结果照旧落到旁边那个文件。
+    # (`partial_write_check` 第一版就是在这一份上误报的:合法的第二种写法。)
+    import rounds, evalrec
+    recs, _ = rounds.跑并收尾(跑一轮, 名="运维侧",
+                              结果文件=os.path.join(HERE, "ops-eval-results.jsonl"),
+                              全集数=len(CASES), 本轮数=len(cs))
     if 挑:
-        print(f"  ℹ 只跑了 {len(cs)} 题,结果写在 {out} —— **基线没被动**")
+        out = os.path.join(HERE, "ops-eval-results.partial.jsonl")
+        evalrec.dump(out, recs)
+        print(f"  ℹ 只跑了 {len(cs)} 题,最后一轮写在 {os.path.basename(out)} —— **基线没被动**")
     p = sum(r["passed"] for r in recs)
     print("=" * 100)
-    print(f"通过 {p}/{len(recs)}  ("
+    print(f"最后一轮 通过 {p}/{len(recs)}  ("
           f"正向 {sum(r['passed'] for r in recs if r['kind']=='正向')}/{sum(1 for r in recs if r['kind']=='正向')} · "
           f"负向 {sum(r['passed'] for r in recs if r['kind']=='负向')}/{sum(1 for r in recs if r['kind']=='负向')})"
-          f"  花费 ${sum(r.get('cost') or 0 for r in recs):.4f}")
-
+          f"  花费 ${sum(r.get('cost') or 0 for r in recs):.4f}(最后一轮)")
 
 if __name__ == "__main__":
     main()

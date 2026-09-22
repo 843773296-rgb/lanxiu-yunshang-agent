@@ -310,52 +310,69 @@ def main():
     only = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "rescore" else None
     cs = [c for c in CASES if not only or c["id"] == only]
     print(f"工艺顾问助手评测 · {len(cs)} 题(正向 {len(POS)} / 负向 {len(NEGA)})\n" + "=" * 96, flush=True)
-    recs = []
-    for i, c in enumerate(cs, 1):
-        try: r = chat.ask(c["q"])
-        except Exception as e: r = dict(answer="", trajectory=[], error=str(e)[:160])
-        ok, why = (c["grade"](r) if r.get("answer") else (False, r.get("error", "无回答")))
-        r.update(id=c["id"], q=c["q"], kind=c["kind"], passed=ok, judge=why)
-        r.pop("messages", None)
-        recs.append(r)
-        tools = "→".join(t["tool"] for t in r["trajectory"]) or "(没调工具)"
-        print(f"[{i:2d}] {'✅' if ok else '❌'} {c['id']} {c['kind']} "
-              f"{r.get('calls','-')}调 {r.get('seconds','-')}s ${r.get('cost_local',0):.4f} "
-              f"| {tools[:44]:44s} | {why[:34]}", flush=True)
-        time.sleep(1.2)
-    # 头一行落**指纹**:提示词 / 判分器 / 题目 / 数据 / 模型。
-    # 没有它,下次分数变了只能靠猜是哪一维动了 —— 这周为此花了三轮消融。
-    # 见 agent/fingerprint.py,归因:python3 agent/fingerprint.py 归因 旧.jsonl 新.jsonl
-    fp = fingerprint.snapshot(
-        role="kb", have={t["name"] for t in chat.tools()},
-        judge_src=(os.path.abspath(__file__),), cases=cs,
-        model=(recs[0].get("model") if recs else None),
-        provider=os.environ.get("LANXIU_PROVIDER") or "默认")
-    # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
-    # 指纹那一行留在最前面(fingerprint.py 按它归因),后面才是逐条结果。
-    import evalrec
-    evalrec.dump(os.path.join(HERE, "chat-eval-results.jsonl"),
-                 [{"_fingerprint": fp}] + list(recs))
+    def 跑一轮():
+        recs = []
+        for i, c in enumerate(cs, 1):
+            try: r = chat.ask(c["q"])
+            except Exception as e: r = dict(answer="", trajectory=[], error=str(e)[:160])
+            ok, why = (c["grade"](r) if r.get("answer")
+                       else (False, f"跑挂了:{r.get('error', '无回答')}"))
+            r.update(id=c["id"], q=c["q"], kind=c["kind"], passed=ok, judge=why)
+            r.pop("messages", None)
+            recs.append(r)
+            tools = "→".join(t["tool"] for t in r["trajectory"]) or "(没调工具)"
+            print(f"[{i:2d}] {'✅' if ok else '❌'} {c['id']} {c['kind']} "
+                  f"{r.get('calls','-')}调 {r.get('seconds','-')}s ${r.get('cost_local',0):.4f} "
+                  f"| {tools[:44]:44s} | {why[:34]}", flush=True)
+            time.sleep(1.2)
+        return recs
+
+    def 写(路径, recs):
+        # 头一行落**指纹**:提示词 / 判分器 / 题目 / 数据 / 模型。
+        # 没有它,下次分数变了只能靠猜是哪一维动了 —— 这周为此花了三轮消融。
+        # 见 agent/fingerprint.py,归因:python3 agent/fingerprint.py 归因 旧.jsonl 新.jsonl
+        fp = fingerprint.snapshot(
+            role="kb", have={t["name"] for t in chat.tools()},
+            judge_src=(os.path.abspath(__file__),), cases=cs,
+            model=(recs[0].get("model") if recs else None),
+            provider=os.environ.get("LANXIU_PROVIDER") or "默认")
+        # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
+        # 指纹那一行留在最前面(fingerprint.py 按它归因),后面才是逐条结果。
+        import evalrec
+        evalrec.dump(路径, [{"_fingerprint": fp}] + list(recs))
+
+    # **跑两轮、判基线来路、部分不写** —— 全在 rounds.跑并收尾 里。
+    # 原来的保护是「子集进指纹」(覆盖了也看得出来);现在部分跑干脆不写,
+    # 两道防线叠着 —— 指纹照样记,只是部分跑的那份不再落盘。
+    import rounds
+    recs, _ = rounds.跑并收尾(跑一轮, 名="工艺顾问", 理由="judge", 写=写,
+                              结果文件=os.path.join(HERE, "chat-eval-results.jsonl"),
+                              全集数=len(CASES), 本轮数=len(cs))
     p = sum(r["passed"] for r in recs)
     pp = sum(r["passed"] for r in recs if r["kind"] == "正向")
     pn = sum(r["passed"] for r in recs if r["kind"] == "负向")
     print("=" * 96)
-    print(f"总命中 {p}/{len(recs)} = {p/len(recs)*100:.0f}%   "
+    print(f"最后一轮 总命中 {p}/{len(recs)} = {p/max(len(recs),1)*100:.0f}%   "
           f"(正向 {pp}/{sum(1 for r in recs if r['kind']=='正向')} · "
           f"负向 {pn}/{sum(1 for r in recs if r['kind']=='负向')})   "
-          f"成本 ${sum(r.get('cost_local',0) for r in recs):.4f}")
+          f"成本 ${sum(r.get('cost_local',0) for r in recs):.4f}(最后一轮)")
 
 def rescore():
     p = os.path.join(HERE, "chat-eval-results.jsonl")
-    recs = [x for l in open(p, encoding="utf-8")
-            if not (x := json.loads(l)).get("_fingerprint")]
+    全 = [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
+    # ⚠️ **指纹头要原样留着。** 原来这里把 `_fingerprint` 那行滤掉之后,
+    # 下面重写文件时**只写回了逐条结果** —— 重判一次,指纹就没了,
+    # `fingerprint.py 归因` 再也读不到这份文件是哪一版题目、哪一版判据跑的。
+    # (2026-09-22 接多轮时顺手看到。重判改的是判据,**恰恰是最需要指纹记下来的那一维**。)
+    头 = [x for x in 全 if x.get("_fingerprint")]
+    recs = [x for x in 全 if not x.get("_fingerprint")]
     by = {c["id"]: c for c in CASES}; ch = 0
     for r in recs:
         ok, why = (by[r["id"]]["grade"](r) if r.get("answer") else (False, r.get("error", "无回答")))
         if ok != r["passed"]: ch += 1
         r["passed"], r["judge"] = ok, why
     with open(p, "w", encoding="utf-8") as fh:
-        for r in recs: fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+        for r in 头 + recs: fh.write(json.dumps(r, ensure_ascii=False) + "\n")
     print(f"重判 {len(recs)} 条,翻转 {ch} 条 · 命中 {sum(r['passed'] for r in recs)}/{len(recs)}")
     for r in recs:
         print(f"  {'✅' if r['passed'] else '❌'} {r['id']} {r['kind']} {r['q'][:26]:26s} {r['judge'][:46]}")

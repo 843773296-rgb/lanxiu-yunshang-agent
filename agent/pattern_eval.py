@@ -345,48 +345,63 @@ def main():
                        "FROM pattern_piece").fetchall()
     _cx.close()
 
-    recs = []
-    for c in cs:
+    def _还原():
+        """把占比表还原到跑之前,返回这一轮期间「版师」来源的写了几行。"""
+        cx = sqlite3.connect(DBP)
+        # 数的是登记行数(裁片**种类**数),不是要裁几块 —— 一片 qty=2 在表里也只有一行
+        改了 = cx.execute("SELECT COUNT(*) FROM pattern_piece WHERE ratio_src='版师'").fetchone()[0]
+        for r in 快照:
+            cx.execute("UPDATE pattern_piece SET ratio=?,ratio_src=?,ratio_by=?,"
+                       "ratio_at=?,ratio_why=? WHERE pattern=? AND name=?",
+                       (r[2], r[3], r[4], r[5], r[6], r[0], r[1]))
+        cx.commit(); cx.close()
+        return 改了
+
+    def 跑一轮():
+        recs = []
         try:
-            r = asyncio.run(sdk.run(c["role"], c["q"], max_turns=12, me=c["me"]))
-            text, traj = r["text"], [x["tool"] for x in r["trajectory"]]
-        except Exception as e:
-            text, traj, r = "", [], {"error": f"{type(e).__name__}: {e}"[:160]}
-        bad = c["grade"](text, traj, c) if text else [r.get("error", "无回答")]
-        for v in (r.get("guard_violations") or []):
-            bad.append(f"体检:{v.get('check')} {str(v.get('msg'))[:40]}")
-        ok = not bad
-        recs.append(dict(id=c["id"], kind=c["kind"], 身份=c["me"]["role"],
-                         role=c["role"], q=c["q"], passed=ok, why=bad,
-                         tools=",".join(x.split("__")[-1] for x in traj),
-                         cost=r.get("cost_usd"), text=text))
-        print(f"  {'✅' if ok else '❌'} {c['id']} {c['kind']} "
-              f"{','.join(x.split('__')[-1] for x in traj)[:30]:32s} "
-              f"{('' if ok else bad[0])[:44]}", flush=True)
-        time.sleep(1)
-    # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
-    # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。
-    import evalrec
-    evalrec.dump(os.path.join(HERE, "pattern-eval-results.jsonl"), recs)
+            for c in cs:
+                try:
+                    r = asyncio.run(sdk.run(c["role"], c["q"], max_turns=12, me=c["me"]))
+                    text, traj = r["text"], [x["tool"] for x in r["trajectory"]]
+                except Exception as e:
+                    text, traj, r = "", [], {"error": f"{type(e).__name__}: {e}"[:160]}
+                bad = (c["grade"](text, traj, c) if text
+                       else [f"跑挂了:{r.get('error', '无回答')}"])
+                for v in (r.get("guard_violations") or []):
+                    bad.append(f"体检:{v.get('check')} {str(v.get('msg'))[:40]}")
+                ok = not bad
+                recs.append(dict(id=c["id"], kind=c["kind"], 身份=c["me"]["role"],
+                                 role=c["role"], q=c["q"], passed=ok, why=bad,
+                                 tools=",".join(x.split("__")[-1] for x in traj),
+                                 cost=r.get("cost_usd"), text=text))
+                print(f"  {'✅' if ok else '❌'} {c['id']} {c['kind']} "
+                      f"{','.join(x.split('__')[-1] for x in traj)[:30]:32s} "
+                      f"{('' if ok else bad[0])[:44]}", flush=True)
+                time.sleep(1)
+        finally:
+            # ⚠️ **每一轮结束都还原,不是全跑完才还原。**
+            # 原来只跑一轮,「跑完还原」就够了。跑两轮之后,第一轮被诱导写脏的占比表
+            # 会原样留给第二轮 —— **第二轮测的就是另一道题了**,而两轮的分数照样并排放着,
+            # 抖动报告会把「库被改过」读成「模型抖了」。
+            # 放在 finally 里:一轮跑到一半抛异常,库也得回去。
+            改了 = _还原()
+            print(f"  (占比表已还原到跑之前的样子" +
+                  (f" —— 这一轮期间它真的写下去了 {改了} 次,**那本身就是挂了的证据**)"
+                   if 改了 else ")"))
+        return recs
+
+    # **跑两轮、判基线来路、部分不写** —— 全在 rounds.跑并收尾 里,只写一次。
+    import rounds
+    recs, _ = rounds.跑并收尾(跑一轮, 名="版师",
+                              结果文件=os.path.join(HERE, "pattern-eval-results.jsonl"),
+                              全集数=len(CASES), 本轮数=len(cs))
     p = sum(r["passed"] for r in recs)
     print("=" * 100)
-    print(f"通过 {p}/{len(recs)}  ("
+    print(f"最后一轮 通过 {p}/{len(recs)}  ("
           f"正向 {sum(r['passed'] for r in recs if r['kind']=='正向')}/{sum(1 for r in recs if r['kind']=='正向')} · "
           f"负向 {sum(r['passed'] for r in recs if r['kind']=='负向')}/{sum(1 for r in recs if r['kind']=='负向')})"
-          f"  花费 ${sum(r.get('cost') or 0 for r in recs):.4f}")
-
-    cx = sqlite3.connect(DBP)
-    # 数的是登记行数(裁片**种类**数),不是要裁几块 —— 一片 qty=2 在表里也只有一行
-    改了 = cx.execute("SELECT COUNT(*) FROM pattern_piece WHERE ratio_src='版师'").fetchone()[0]
-    for r in 快照:
-        cx.execute("UPDATE pattern_piece SET ratio=?,ratio_src=?,ratio_by=?,"
-                   "ratio_at=?,ratio_why=? WHERE pattern=? AND name=?",
-                   (r[2], r[3], r[4], r[5], r[6], r[0], r[1]))
-    cx.commit(); cx.close()
-    print(f"  (占比表已还原到跑之前的样子" +
-          (f" —— 评测期间它真的写下去了 {改了} 次,**那本身就是挂了的证据**)"
-           if 改了 else ")"))
-
+          f"  花费 ${sum(r.get('cost') or 0 for r in recs):.4f}(最后一轮)")
 
 
 if __name__ == "__main__":

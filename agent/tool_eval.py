@@ -440,40 +440,54 @@ if __name__ == "__main__":
     only = [a for a in sys.argv[1:] if a.startswith("T")]
     todo = [c for c in CASES if not only or c[0] in only]
     import sdk
-    print(f"工具使用评测 · {len(todo)} 题 · 模型 {os.environ.get('DEEPSEEK_MODEL','deepseek-v4-pro')}")
-    print("=" * 100)
-    ok_n, cost, rows = 0, 0.0, []
-    for cid, q, need, must, forbid in todo:
-        t0 = time.time()
-        try:
-            r = asyncio.run(sdk.run("kb", q, max_turns=14))
-        except Exception as e:
-            rows.append((cid, False, [f"跑挂了:{type(e).__name__}: {e}"], "", 0, "", {}, 0, [])); continue
-        names = [t["tool"] for t in r["trajectory"]]
-        ok, why = judge(cid, r["text"], names, r.get("guard_violations"))
-        ok_n += ok; cost += r.get("cost_usd") or 0
-        rows.append((cid, ok, why, ",".join(n.split("__")[-1] for n in names),
-                     r.get("cost_usd") or 0, r["text"], r.get("usage") or {},
-                     r.get("answer_turns"), r.get("guard_violations") or []))
-        print(f"[{cid}] {'✅' if ok else '❌'} {q[:34]:36s} "
-              f"{len(names)}调 {time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}  "
-              f"{'' if ok else why[0][:52]}")
-        for w in (why[1:] if not ok else []): print(f"        {w[:88]}")
-    print("=" * 100)
-    print(f"通过 {ok_n}/{len(todo)} = {ok_n/max(len(todo),1)*100:.0f}%  |  总花费 ${cost:.4f}")
-    out = os.path.join(HERE, "..", ".feynman", "tool-eval.json")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    # **存答案原文。** 不存的话,失败了只能重跑才知道它到底说了什么 ——
-    # 而重跑要花钱,还不一定复现。和 triage 存 ai_text 是同一个理由。
-    # **每条记录盖上来路** —— 用 `evalrec.盖章()`,不自己拼。
-    # 这一套写的是 json 不是 jsonl,走不了 `evalrec.dump`,
-    # 但**章必须是同一份** —— 原来这里自己拼了 供应商/模型/跑于,
-    # 于是 2026-09-21 给 dump 加代码指纹时这一套拿不到,两份实现当场分家。
     import evalrec
-    _章 = evalrec.盖章()
-    json.dump([dict(case=c, passed=o, why=w, tools=t, cost=k, text=x,
-                    usage=u, turns=n2, guard=g, **_章)
-               for c, o, w, t, k, x, u, n2, g in rows],
-              open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print(f"明细写到 {out}")
+    print(f"工具使用评测 · {len(todo)} 题 · 模型 {evalrec.模型()}")
+    print("=" * 100)
+
+    def 跑一轮():
+        rows = []
+        for cid, q, need, must, forbid in todo:
+            t0 = time.time()
+            try:
+                r = asyncio.run(sdk.run("kb", q, max_turns=14))
+            except Exception as e:
+                rows.append(dict(case=cid, passed=False,
+                                 why=[f"跑挂了:{type(e).__name__}: {e}"], tools="", cost=0,
+                                 text="", usage={}, turns=0, guard=[]))
+                print(f"[{cid}] ❌ 跑挂了:{type(e).__name__}"); continue
+            names = [t["tool"] for t in r["trajectory"]]
+            ok, why = judge(cid, r["text"], names, r.get("guard_violations"))
+            rows.append(dict(case=cid, passed=ok, why=why,
+                             tools=",".join(n.split("__")[-1] for n in names),
+                             cost=r.get("cost_usd") or 0, text=r["text"],
+                             usage=r.get("usage") or {}, turns=r.get("answer_turns"),
+                             guard=r.get("guard_violations") or []))
+            print(f"[{cid}] {'✅' if ok else '❌'} {q[:34]:36s} "
+                  f"{len(names)}调 {time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}  "
+                  f"{'' if ok else why[0][:52]}")
+            for w in (why[1:] if not ok else []): print(f"        {w[:88]}")
+        return rows
+
+    def 写(路径, rows):
+        # **存答案原文。** 不存的话,失败了只能重跑才知道它到底说了什么 ——
+        # 而重跑要花钱,还不一定复现。和 triage 存 ai_text 是同一个理由。
+        # **每条记录盖上来路** —— 用 `evalrec.盖章()`,不自己拼。
+        # 这一套写的是 json 不是 jsonl,走不了 `evalrec.dump`,
+        # 但**章必须是同一份** —— 原来这里自己拼了 供应商/模型/跑于,
+        # 于是 2026-09-21 给 dump 加代码指纹时这一套拿不到,两份实现当场分家。
+        os.makedirs(os.path.dirname(路径), exist_ok=True)
+        _章 = evalrec.盖章()
+        json.dump([dict(r, **_章) for r in rows],
+                  open(路径, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+
+    # **跑两轮、判基线来路、部分不写** —— 见 rounds.跑并收尾。
+    # 原来 `tool_eval.py T03` 跑一题会把整份明细冲成一条。
+    import rounds
+    rows, _ = rounds.跑并收尾(跑一轮, 名="工具使用", 键="case", 写=写,
+                              结果文件=os.path.join(HERE, "..", ".feynman", "tool-eval.json"),
+                              全集数=len(CASES), 本轮数=len(todo))
+    ok_n = sum(1 for r in rows if r["passed"])
+    print("=" * 100)
+    print(f"最后一轮 通过 {ok_n}/{len(todo)} = {ok_n/max(len(todo),1)*100:.0f}%  |  "
+          f"花费 ${sum(r.get('cost') or 0 for r in rows):.4f}")
     sys.exit(0 if ok_n == len(todo) else 1)

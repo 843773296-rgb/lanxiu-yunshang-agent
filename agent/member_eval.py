@@ -365,37 +365,45 @@ def main():
     print(f"会员 / 审批评测 · {len(cs)} 题("
           f"正向 {sum(1 for c in cs if c['kind']=='正向')} / "
           f"负向 {sum(1 for c in cs if c['kind']=='负向')})\n" + "=" * 100, flush=True)
-    recs = []
-    with 不许留痕():
-        for c in cs:
-            try:
-                r = asyncio.run(sdk.run("task", c["q"], max_turns=12, me=c["me"]))
-                text, traj = r["text"], [x["tool"] for x in r["trajectory"]]
-            except Exception as e:
-                text, traj, r = "", [], {"error": f"{type(e).__name__}: {e}"[:160]}
-            bad = c["grade"](text, traj, c) if text else [r.get("error", "无回答")]
-            for v in (r.get("guard_violations") or []):
-                bad.append(f"体检:{v.get('check')} {str(v.get('msg'))[:40]}")
-            ok = not bad
-            recs.append(dict(id=c["id"], kind=c["kind"], 身份=c["me"]["role"], q=c["q"],
-                             passed=ok, why=bad,
-                             tools=",".join(x.split("__")[-1] for x in traj),
-                             cost=r.get("cost_usd"), text=text))
-            print(f"  {'✅' if ok else '❌'} {c['id']} {c['kind']} [{c['me']['role']:5s}] "
-                  f"{','.join(x.split('__')[-1] for x in traj)[:30]:32s} "
-                  f"{('' if ok else bad[0])[:46]}", flush=True)
-            time.sleep(1)
-    # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
-    # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。
-    import evalrec
-    evalrec.dump(os.path.join(HERE, "member-eval-results.jsonl"), recs)
+    def 跑一轮():
+        recs = []
+        # ⚠️ **留痕保护包在每一轮里,不是包在两轮外面。**
+        # 这一套会真的提审批单 —— 包在外面的话,第一轮提的单会留给第二轮,
+        # 第二轮看到「已经有一张待审的单了」,**测的就是另一道题**,
+        # 而两轮分数照样并排放着,翻面会被读成「模型抖了」。
+        with 不许留痕():
+            for c in cs:
+                try:
+                    r = asyncio.run(sdk.run("task", c["q"], max_turns=12, me=c["me"]))
+                    text, traj = r["text"], [x["tool"] for x in r["trajectory"]]
+                except Exception as e:
+                    text, traj, r = "", [], {"error": f"{type(e).__name__}: {e}"[:160]}
+                bad = (c["grade"](text, traj, c) if text
+                       else [f"跑挂了:{r.get('error', '无回答')}"])
+                for v in (r.get("guard_violations") or []):
+                    bad.append(f"体检:{v.get('check')} {str(v.get('msg'))[:40]}")
+                ok = not bad
+                recs.append(dict(id=c["id"], kind=c["kind"], 身份=c["me"]["role"], q=c["q"],
+                                 passed=ok, why=bad,
+                                 tools=",".join(x.split("__")[-1] for x in traj),
+                                 cost=r.get("cost_usd"), text=text))
+                print(f"  {'✅' if ok else '❌'} {c['id']} {c['kind']} [{c['me']['role']:5s}] "
+                      f"{','.join(x.split('__')[-1] for x in traj)[:30]:32s} "
+                      f"{('' if ok else bad[0])[:46]}", flush=True)
+                time.sleep(1)
+        return recs
+
+    # **跑两轮、判基线来路、部分不写** —— 全在 rounds.跑并收尾 里,只写一次。
+    import rounds
+    recs, _ = rounds.跑并收尾(跑一轮, 名="会员/审批",
+                              结果文件=os.path.join(HERE, "member-eval-results.jsonl"),
+                              全集数=len(CASES), 本轮数=len(cs))
     p = sum(r["passed"] for r in recs)
     print("=" * 100)
-    print(f"通过 {p}/{len(recs)}  ("
+    print(f"最后一轮 通过 {p}/{len(recs)}  ("
           f"正向 {sum(r['passed'] for r in recs if r['kind']=='正向')}/{sum(1 for r in recs if r['kind']=='正向')} · "
           f"负向 {sum(r['passed'] for r in recs if r['kind']=='负向')}/{sum(1 for r in recs if r['kind']=='负向')})"
-          f"  花费 ${sum(r.get('cost') or 0 for r in recs):.4f}")
-
+          f"  花费 ${sum(r.get('cost') or 0 for r in recs):.4f}(最后一轮)")
 
 if __name__ == "__main__":
     main()
