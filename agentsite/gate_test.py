@@ -25,6 +25,8 @@
      "一模一样的参数再试"),
     ("把重试上限从 3 改成 99(试了三次也不拦)",
      "试了三次都没成"),
+    ("把「写之前先读」表里批量分派的前置改回已下架的 dispatch_pool",
+     "「写之前先读」点名的工具都在架上"),
 ]
 
 import os, sys, json
@@ -124,9 +126,9 @@ def main():
     ck("看过格子再排班", g.pre_tool_verdict(B, {"items": []}, "排下周班",
        ["mcp__shop__week_grid"], []), False)
     ck("没看池子就批量分派", g.pre_tool_verdict("mcp__shop__dispatch_batch", {"items": []},
-       "把待分配的都派了", [], []), True, "dispatch_pool")
+       "把待分配的都派了", [], []), True, "get_tasks")
     ck("看过池子再分派", g.pre_tool_verdict("mcp__shop__dispatch_batch", {"items": []},
-       "把待分配的都派了", ["mcp__shop__dispatch_pool"], []), False)
+       "把待分配的都派了", ["mcp__shop__get_tasks"], []), False)
     # **单条动作不受这条管** —— 判宽了会天天拦正常的活
     ck("单条派任务不要求先看格子", g.pre_tool_verdict(W, A1, "派一条", READ, []), False)
 
@@ -134,7 +136,7 @@ def main():
     print("  " + "=" * 78)
     for t in ("Bash", "Write", "Read", "Task", "WebFetch"):
         ck(f"{t}", g.pre_tool_verdict(t, {}, "随便", [], []), True)
-    ck("读工具不受写闸管", g.pre_tool_verdict("mcp__shop__my_tasks", {}, "把这三条都派了", [],
+    ck("读工具不受写闸管", g.pre_tool_verdict("mcp__shop__get_tasks", {}, "把这三条都派了", [],
        [att("assign_task", A1, ok=True)]), False)
 
     print("\n\033[1m▸ 写工具清单只有一个来源\033[0m")
@@ -144,6 +146,16 @@ def main():
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "backend"))
     import api as _api, funnel as _fn, inspect as _in
+    # ── 「写之前先读」表里点名的工具,必须真的挂在模型能调的架子上 ─────────
+    # 09-19 合并工具时 dispatch_pool / member_level / piece_ratios 改了名,前置要求没跟着改,
+    # 三个写口从此永远调不成,而这里一直绿 —— 因为以前这里测的也是那几个旧名字。
+    架上 = {x["name"] for x in _api.SHOP_SCHEMAS + _api.KB_SCHEMAS + _api.SCHEMAS}
+    没在架上 = sorted({n for ns in g.先读.values() for n in ns} - 架上)
+    ck("「写之前先读」点名的工具都在架上",
+       None if not 没在架上 else f"不在架上:{没在架上}", False,)
+    不是写口 = sorted(set(g.先读) - set(_api.WRITE_TOOLS))
+    ck("「写之前先读」表的键都是真的写工具",
+       None if not 不是写口 else f"不是写工具:{不是写口}", False,)
     ck("闸的清单来自 api.WRITE_TOOLS",
        None if set(g._write_tools()) == set(_api.WRITE_TOOLS) else "对不上", False,)
     ck("漏斗不再手抄清单",

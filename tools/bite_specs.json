@@ -2563,5 +2563,17 @@
       "DELETE FROM fitting WHERE note LIKE '%旅程脚本%'"
     ],
     "预期红": "经系统开裁的单,每一件都过了闸(已试已签或不必试)"
+  },
+  {
+    "script": "agentsite/gate_test.py",
+    "改坏": "把「写之前先读」表里批量分派的前置改回已下架的 dispatch_pool",
+    "file": [
+      {
+        "path": "agentsite/guards.py",
+        "old": "    \"dispatch_batch\":  (\"get_tasks\",),",
+        "new": "    \"dispatch_batch\":  (\"dispatch_pool\",),"
+      }
+    ],
+    "预期红": "「写之前先读」点名的工具都在架上"
   }
 ]

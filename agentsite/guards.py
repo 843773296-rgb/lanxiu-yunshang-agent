@@ -841,6 +841,30 @@ def _looks_compound(prompt):
     return bool(_COMPOUND.search(prompt or ""))
 
 
+# ── 写之前必须先读哪个工具(集中一张表,代码照表判)──────────────────────
+#
+# 原来这几条前置要求散在下面各自的 if 里,**点名的是工具的旧名字**:
+# 2026-09-19 工具 60→54 合并时,dispatch_pool / member_level / piece_ratios 并进了
+# get_tasks / get_member / pattern_queue,而这里没跟着改 —— 于是批量分派、提等级积分、
+# 改裁片占比这三个写工具的前置条件**永远满足不了**,它们一次都调不成(2026-09-22 能力盘点实测)。
+# gate_test 当时没红:它核对的是代码里的实现清单,不是模型真能调的工具。
+#
+# 现在集中在这张表里,`gate_test` 逐个验「表里点名的工具必须在架上」——
+# 以后再合并工具,漏改的名字当场红,不会再静默锁死一个写口。
+先读 = {
+    "assign_batch":    ("week_grid",),              # 排班前先看整周格子
+    "dispatch_batch":  ("get_tasks",),              # 分派前先看待分配池(原 dispatch_pool,已并进 get_tasks)
+    "assign_task":     ("task_types",),             # 派任务前先看类型规范
+    "decide_approval": ("approval_queue",),         # 批之前先看这张单
+    "apply_adjust":    ("get_member", "points_ledger"),  # 提等级/积分调整前先看现状(原 member_level)
+    "set_piece_ratio": ("pattern_queue",),          # 改占比前先看这一片(原 piece_ratios)
+}
+
+
+def _读了(short, 读过):
+    return any(n in 读过 for n in 先读.get(short, ()))
+
+
 def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None):
     """PreToolUse 的判定逻辑,**纯函数版**。返回拦截理由,None = 放行。
 
@@ -937,20 +961,18 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
         # 而 Accio 的实测结论是这类约束「召回不足」:模型会把它当成一个大流程顺着执行。
         # 不看现有占用就排,排出来的东西和正常任务长得一模一样,
         # 直到那天两个人同时约在一个时段。
-        if short == "assign_batch" and "week_grid" not in " ".join(
-                x if isinstance(x, str) else "" for x in (state_reads or [])):
+        读过 = " ".join(x if isinstance(x, str) else "" for x in (state_reads or []))
+        if short == "assign_batch" and not _读了(short, 读过):
             return ("排班之前先调 `week_grid()` 看现有占用 —— "
                     "**不看就排,排出来的东西和正常任务长得一模一样**,"
                     "直到那天两个人同时约在一个时段。"
                     "它还会告诉你哪几天完全没人排班,那一项不看整周摊开是发现不了的。")
-        if short == "dispatch_batch" and "dispatch_pool" not in " ".join(
-                x if isinstance(x, str) else "" for x in (state_reads or [])):
-            return ("批量分派之前先调 `dispatch_pool()` —— "
+        if short == "dispatch_batch" and not _读了(short, 读过):
+            return ("批量分派之前先调 `get_tasks` 看**待分配池** —— "
                     "**你得先知道池子里有哪些、系统建议派给谁**,"
                     "否则你分派的依据是自己猜的,而猜出来的负责人和真的在库里长得一样。")
 
-        if short == "assign_task" and "task_types" not in " ".join(
-                x if isinstance(x, str) else "" for x in (state_reads or [])):
+        if short == "assign_task" and not _读了(short, 读过):
             return ("派任务之前先调 `task_types()` 看类型规范 —— "
                     "类型决定挂哪张单据、完成时要不要传图。**没查就派**,"
                     "派出去的东西和正常任务长得一模一样,错了也看不出来。")
@@ -961,15 +983,14 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
         # 通用闸(尝试台账、一次只做一件)覆盖得到它们,
         # **但「先看再做」这类工具专属的约束一条都没有** ——
         # 而这两个动作恰恰最怕盲做。
-        读过 = " ".join(x if isinstance(x, str) else "" for x in (state_reads or []))
-        if short == "decide_approval" and "approval_queue" not in 读过:
+        if short == "decide_approval" and not _读了(short, 读过):
             return ("批之前先调 `approval_queue()` 把这张单看一遍 —— "
                     "**批一张没看过的单就是盲批**。批注写「同意」很容易,"
                     "而出事之后要查的正是「当时看了什么」;"
                     "什么都没看的话,那条批注是编的。")
         if short == "apply_adjust" and args.get("kind") in ("等级调整", "积分调整") \
-                and "member_level" not in 读过 and "points_ledger" not in 读过:
-            return (f"给客户提「{args.get('kind')}」之前,先调 `member_level()` "
+                and not _读了(short, 读过):
+            return (f"给客户提「{args.get('kind')}」之前,先调 `get_member()` "
                     f"或 `points_ledger()` 看他现在是什么状况 —— "
                     f"**不看现状就提调整,理由只能是编的**。"
                     f"而且很多时候一查就发现不用调:门槛是**滚动 12 个月**,"
@@ -985,8 +1006,8 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
         #   ② **没写理由不许改** —— 工具那边也拒,这里再拦一道:
         #      工具拒了模型会**换个参数重试**,而重试三次里有一次碰巧带上理由,
         #      那条理由就是为了过校验编的。拦在调用之前,模型只能回去问版师。
-        if short == "set_piece_ratio" and "piece_ratios" not in 读过:
-            return ("改占比之前先调 `piece_ratios(pattern=...)` 看这一片现在是多少、"
+        if short == "set_piece_ratio" and not _读了(short, 读过):
+            return ("改占比之前先调 `pattern_queue(pattern=...)` 看这一片现在是多少、"
                     "来源是什么 —— **没看就改,等于拿一个数覆盖另一个数,"
                     "而你不知道被覆盖的那个是机器估的还是版师核过的**。"
                     "顺带也能看到折合米数,版师判断的是米数不是百分比。")

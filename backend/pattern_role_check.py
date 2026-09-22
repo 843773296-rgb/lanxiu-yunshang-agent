@@ -250,17 +250,19 @@ def main():
        "**给多余的字段,它就会去用** —— 这个项目在 allowed_tools 上栽过")
 
     # ── ⑤ 闸也要两个方向 ──────────────────────────────────────────────
+    # ⚠️ 「看过」喂的必须是**模型真能调的**工具名。这里原来喂的是已下架的 piece_ratios,
+    # 而闸要的也是 piece_ratios —— 两边一起错,于是一直绿,盖住了「版师改占比永远调不成」(09-22 查出)。
     v1 = guards.pre_tool_verdict("mcp__shop__set_piece_ratio",
                                  dict(pattern="PT06", piece="袖片", ratio=0.3, why="量过"),
                                  prompt="把袖片改成 0.3", state_reads=[], state_writes=[])
     v2 = guards.pre_tool_verdict("mcp__shop__set_piece_ratio",
                                  dict(pattern="PT06", piece="袖片", ratio=0.3, why=""),
                                  prompt="把袖片改成 0.3",
-                                 state_reads=["piece_ratios"], state_writes=[])
+                                 state_reads=["pattern_queue"], state_writes=[])
     v3 = guards.pre_tool_verdict("mcp__shop__set_piece_ratio",
                                  dict(pattern="PT06", piece="袖片", ratio=0.3, why="量过"),
                                  prompt="把袖片改成 0.3",
-                                 state_reads=["piece_ratios"], state_writes=[])
+                                 state_reads=["pattern_queue"], state_writes=[])
     ck("没先看过就改 → 拦下", bool(v1), 1, "" if v1 else "**放行了**")
     ck("没写理由 → 拦下", bool(v2), 1, "" if v2 else "**放行了**")
     ck("看过了、理由也写了 → 放行", v3 is None, 1,
