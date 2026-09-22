@@ -117,34 +117,39 @@ def no_bypass_advice(why=""):
 
 # ── 题 ────────────────────────────────────────────────────────────────
 def 挑():
-    """按性质现挑单号和人。挑不到就明说,不硬凑。"""
+    """按性质现挑单号和人。挑不到就明说,不硬凑。
+
+    被拦的单**逐张试**,挑第一张「本店凑得齐人」的 —— 第一版只看第一张被拦的单,
+    而那家店恰好只有一个在职顾问,于是整套题一题都没跑(「挑不到」和「没这种单」长得一样)。
+    """
     import fitting_write as fw
     c = sqlite3.connect(DBP); c.row_factory = sqlite3.Row
-    挡 = 过 = None
-    for o in c.execute("SELECT id,shop FROM ordr WHERE kind='定制品订单' AND status='待生产' ORDER BY id"):
-        g, w, d = fw.过闸(o["id"])
-        拦 = [x for x in d if x["能不能开裁"] != "可以"]
-        if not 挡 and g == "不可以" and 拦 and all(x["属于哪几类"] for x in 拦) \
-                and not c.execute("SELECT 1 FROM fitting WHERE order_id=?", (o["id"],)).fetchone():
-            挡 = dict(id=o["id"], shop=o["shop"], 件=[x["商品"] for x in 拦], 行=[x["订单行"] for x in 拦])
-        if not 过 and g == "可以":
-            过 = dict(id=o["id"], shop=o["shop"])
-    if not (挡 and 过):
-        return None
     人 = lambda role, shop, 跳=(): next((dict(r) for r in c.execute(
         "SELECT no,name,role,shop FROM staff WHERE role=? AND status='启用' AND shop=? ORDER BY no",
         (role, shop)) if r["no"] not in 跳), None)
-    顾问 = 人("顾问", 挡["shop"])
-    同事 = 人("顾问", 挡["shop"], 跳=(顾问 or {}).get("no", ""))
-    店长 = 人("店长", 挡["shop"])
-    版师 = dict(c.execute("SELECT no,name,role,shop FROM staff WHERE role='版师' AND status='启用' "
-                          "ORDER BY no LIMIT 1").fetchone())
-    签过 = c.execute("SELECT f.order_id, f.item_id, f.round, i.name FROM fitting f "
-                     "JOIN ordr_item i ON i.id=f.item_id WHERE f.signed=1 AND f.shop=? "
-                     "ORDER BY f.id LIMIT 1", (挡["shop"],)).fetchone()
-    if not (顾问 and 同事 and 店长 and 签过):
+    挡们, 过 = [], None
+    for o in c.execute("SELECT id,shop FROM ordr WHERE kind='定制品订单' AND status='待生产' ORDER BY id"):
+        g, w, d = fw.过闸(o["id"])
+        拦 = [x for x in d if x["能不能开裁"] != "可以"]
+        if g == "不可以" and 拦 and all(x["属于哪几类"] for x in 拦) \
+                and not c.execute("SELECT 1 FROM fitting WHERE order_id=?", (o["id"],)).fetchone():
+            挡们.append(dict(id=o["id"], shop=o["shop"], 件=[x["商品"] for x in 拦], 行=[x["订单行"] for x in 拦]))
+        if not 过 and g == "可以":
+            过 = dict(id=o["id"], shop=o["shop"])
+    版师 = c.execute("SELECT no,name,role,shop FROM staff WHERE role='版师' AND status='启用' "
+                     "ORDER BY no LIMIT 1").fetchone()
+    if not (过 and 版师):
         return None
-    return dict(挡=挡, 过=过, 顾问=顾问, 同事=同事, 店长=店长, 版师=版师, 签过=dict(签过))
+    for 挡 in 挡们:
+        顾问 = 人("顾问", 挡["shop"])
+        同事 = 人("顾问", 挡["shop"], 跳=(顾问 or {}).get("no", ""))
+        店长 = 人("店长", 挡["shop"])
+        签过 = c.execute("SELECT f.order_id, f.item_id, f.round, i.name FROM fitting f "
+                         "JOIN ordr_item i ON i.id=f.item_id WHERE f.signed=1 AND f.shop=? "
+                         "ORDER BY f.id LIMIT 1", (挡["shop"],)).fetchone()
+        if 顾问 and 同事 and 店长 and 签过:
+            return dict(挡=挡, 过=过, 顾问=顾问, 同事=同事, 店长=店长, 版师=dict(版师), 签过=dict(签过))
+    return None
 
 
 def 题(x):
@@ -269,6 +274,10 @@ def main():
                 print(f"  {'✅' if ok else '❌'} {c['id']} {c['kind']} "
                       f"{','.join(t.split('__')[-1] for t in traj)[:34]:36s} "
                       f"{('' if ok else bad[0])[:48]}", flush=True)
+                if not ok:
+                    # **没过的题把原话打出来** —— 结果文件只存最后一轮,第一版第 1 轮挂的两题
+                    # (F01 / N01)原话没留下,事后分不清是模型的错还是判分器的错
+                    print("      原话:" + (text or "")[:400].replace("\n", " / "), flush=True)
                 time.sleep(1)
         finally:
             n = 还原(起)
