@@ -89,8 +89,8 @@
     "file": [
       {
         "path": "agent/member_eval.py",
-        "old": "need_tool(\"member_level\")",
-        "new": "need_tool(\"member_levelXX\")"
+        "old": "need_tool(\"get_member\")",
+        "new": "need_tool(\"get_memberXX\")"
       }
     ],
     "预期红": "等级·查了也说了窗口"
@@ -113,8 +113,8 @@
     "file": [
       {
         "path": "agent/pattern_eval.py",
-        "old": "need_tool(\"piece_ratios\")",
-        "new": "need_tool(\"piece_ratiosXX\")"
+        "old": "need_tool(\"pattern_queue\"),\n                  says_meters",
+        "new": "need_tool(\"pattern_queueXX\"),\n                  says_meters"
       }
     ],
     "预期红": "报了米数也报了来源"
