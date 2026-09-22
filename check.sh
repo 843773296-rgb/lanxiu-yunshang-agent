@@ -119,7 +119,7 @@ run "评测题面 · 有指代就得有编号,或写明是故意的" python3 too
 run "改动影响面 · 警示段落找不着就是正则漏了" python3 tools/impact.py --selftest
 run "评测夹具 · 写死了对象就得声明前提,而前提得成立" python3 tools/fixture_check.py
 run "状态流转引擎 · 17 个用例" python3 backend/fsm.py
-run "写入校验规则 · 10 个用例" python3 backend/rules.py
+run "写入校验规则 · 11 个用例" python3 backend/rules.py
 run "控件审计 · 死控件检查"    python3 backend/ui_audit.py
 run "页面内联 JS · 语法(两个站都扫)" python3 agentsite/js_check.py
 run "前端 · 引用的元素必须存在" python3 agentsite/ref_check.py

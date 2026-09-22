@@ -472,7 +472,7 @@ async function loadDash(){
   $("#scope").textContent=`待办 ${b.待办} · 超时 ${b.已超时}`;
   kpi("#kpis",[[b.待办?"warn":"good","待办",b.待办,`共 ${b.总量} 条,已销账 ${b.已销账}`],
     [b.已超时?"bad":"good","已超时",b.已超时,`临期还有 ${b.临期} 条`],
-    [b.最久未处理小时>72?"bad":"","最久等待",b.最久未处理小时+"h","财务 24h / 合并 48h / 判责 36h"],
+    [b.最久那条已超时?"bad":"","最久等待",b.最久未处理小时+"h","按那一条自己的时效:财务 24h / 合并 48h / 判责 36h"],
     ["","等你复核",b.待复核,`还有 ${b.未研判} 条没研判`]]);
   $("#dashrows").innerHTML=q.rows.length?q.rows.slice(0,8).map(x=>
     `<tr><td class="num">${esc(x.task_id)}</td><td>${esc(x.type)}</td><td class="num">${x.waited_h}h</td>
@@ -667,7 +667,7 @@ async function loadHealth(){
   const h=await (await fetch("/api/ops-health")).json();
   kpi("#hkpis",[["","研判总数",h.研判总数,`已销账 ${h.已销账}`],
     ["","采纳率",h.采纳率,`改判率 ${h.改判率}`],
-    [h.协议失败数?"warn":"good","协议失败率",h.协议失败率,`${h.协议失败数} 条没解析出四段`],
+    [!h.研判总数?"":h.协议失败数?"bad":"good","协议失败率",h.协议失败率,`${h.协议失败数} 条没解析出四段`],
     ["","单条均价",h.单条均价!=null?"$"+Number(h.单条均价).toFixed(4):"—","按真实单价重算,不是 SDK 报的"]]);
 }
 

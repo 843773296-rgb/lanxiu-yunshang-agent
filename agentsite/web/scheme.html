@@ -172,7 +172,8 @@ function render(){
       <span class="t">${t}</span><span class="hint">${hint}</span></div>
       <div class="opts" data-g="${k}">${items.map(o=>{
         const on = multi ? SEL[k].includes(o.name) : SEL[k]===o.name;
-        const bad = ISS.find(i=>i.pair && i.pair.startsWith(o.name+" ×"));
+        // 冲突的两边都标(业务 2026-09-22 确认,附录 A-177)—— 只标左边的话,先选面料的顾问从面料一侧看不出冲突
+        const bad = ISS.find(i=>i.pair && (i.pair.startsWith(o.name+" ×") || i.pair.endsWith("× "+o.name)));
         const cls = bad ? (bad.level==="block"?"bad":"warn") : "";
         return `<button class="opt ${cls}" data-g="${k}" data-v="${esc(o.name)}" aria-pressed="${on}">${esc(o.name)}${
           o.src?`<span class="src">${o.src}</span>`:""}</button>`;}).join("")}</div></div>`;

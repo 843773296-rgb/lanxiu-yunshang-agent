@@ -368,7 +368,7 @@ def main():
         probe = api.member_level("C10008")
     if probe.get("error"):
         print(f"❌ 身份没接上:{probe['error']}"); return
-    prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "deepseek(默认)"
+    prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "claude(默认)"
     print(f"供应商:{prov}" + ("   ⚠️ **这是按量计费的**,开发验证请设 LANXIU_PROVIDER=claude"
                               if "deepseek" in prov else ""))
     print(f"会员 / 审批评测 · {len(cs)} 题("

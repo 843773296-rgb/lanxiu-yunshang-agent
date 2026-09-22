@@ -36,15 +36,39 @@ def tools():
     return v1._tools("kb")
 
 
-def ask(question, history=None, max_turns=8):
-    """问一句,返回 (答案文本, 轨迹, 用量)。history 为 [(role, content)] 列表。"""
+KEEP_TOOL_ROUNDS = 3     # 历史里保留最近几轮的工具返回原文,更早的换成一句占位(省钱、防截断)
+
+
+def _trim_history(history):
+    """多轮历史**带上查到的数据**(业务 2026-09-22 确认,附录 A-238)。
+
+    原来只带双方说过的话 —— 顾问追问「刚才那个依据号是什么」时,助手只能重查或凭自己的转述答,
+    而凭转述答正是「看起来完全合理的错」。工具调用和结果**成对**带回去(不成对 API 会拒),
+    只把最近 KEEP_TOOL_ROUNDS 轮之前的工具返回换成一句占位。
+    """
+    msgs = [{"role": r, "content": c} for r, c in (history or [])]
+    # 从一条纯文字的用户提问开始,不从半截工具结果开始
+    while msgs and not (msgs[0]["role"] == "user" and isinstance(msgs[0]["content"], str)):
+        msgs.pop(0)
+    rounds = [i for i, m in enumerate(msgs)
+              if m["role"] == "user" and isinstance(m["content"], list)]
+    for i in rounds[:-KEEP_TOOL_ROUNDS] if len(rounds) > KEEP_TOOL_ROUNDS else []:
+        msgs[i] = {"role": "user", "content": [
+            dict(b, content="(早前查询的结果,已省略;需要时重新查)") if b.get("type") == "tool_result" else b
+            for b in msgs[i]["content"]]}
+    return msgs
+
+
+def ask(question, history=None, max_turns=10):
+    """问一句,返回 (答案文本, 轨迹, 用量)。history 为 [(role, content)] 列表,content 可以是工具块列表。
+
+    max_turns 10:评测里「立领款对哪个尺寸最敏感」正好用满原来的 8 轮(业务 2026-09-22 确认放到 10,附录 A-237)。
+    """
     pv = v1.provider()
-    msgs = []
-    for role, content in (history or []):
-        msgs.append({"role": role, "content": content})
+    msgs = _trim_history(history)
     msgs.append({"role": "user", "content": question})
 
-    tin = tout = tcache = 0; calls = 0; traj = []; t0 = time.time(); answer = ""
+    tin = tout = tcache = 0; calls = 0; traj = []; t0 = time.time(); answer = ""; truncated = False
     for _ in range(max_turns):
         resp = v1.call(pv, dict(model=pv["model"], max_tokens=pv.get("max_tokens", 1500), system=system()[0],
                                 tools=tools(), messages=msgs),
@@ -71,12 +95,17 @@ def ask(question, history=None, max_turns=8):
             results.append({"type": "tool_result", "tool_use_id": blk["id"],
                             "content": json.dumps(out, ensure_ascii=False)})
         msgs.append({"role": "user", "content": results})
+    else:
+        # 查到上限还没查完:**明说**,别把半截思路当结论(附录 A-237)
+        truncated = True
+        answer = (answer + "\n\n" if answer else "") + \
+            f"(已经查了 {calls} 次资料还没查完,以上是目前的结论,可能不完整。)"
 
     p = v1.price_now(pv)               # 分时定价:高峰 ×2
     cost = (tin * p["inp"] + tcache * p["cache"] + tout * p["out"]) / 1_000_000
     return dict(answer=answer, trajectory=traj, calls=calls, seconds=round(time.time() - t0, 1),
                 input=tin, output=tout, cost_local=round(cost, 6), model=pv["model"],
-                messages=[m for m in msgs if isinstance(m.get("content"), str)])
+                truncated=truncated, messages=msgs)
 
 
 def _brief(name, out):

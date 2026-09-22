@@ -3924,7 +3924,35 @@ NOTICE_NAME = {"N1": "N1 面料特性", "N2": "N2 色差与掉色", "N3": "N3 �
                "N4": "N4 洗护方式", "N5": "N5 尺寸容差", "N6": "N6 工期与延期"}
 
 GIRTH = {"胸围", "腰围", "臀围", "领围", "胸上围", "臂围"}
-FIT_BUFFER = 7      # 交付到穿之间留的试穿与小改天数
+FIT_BUFFER = 7      # 交付到穿之间留的试穿与小改天数(业务 2026-09-22 确认,附录 A-24)
+FAR_DAYS = 60       # 离最晚下单日超过这么多天:推算跨度太长,改推换商品(业务 2026-09-22 确认)
+# 尺寸宽容的形制 —— 现在下单也不怕长个:08-量体与版型.md「报废风险 · 低」那几类(大袖衫、半臂、比甲、
+# 方领对襟短衫、披风),加上童款襦裙(01-形制.md:系带改为松紧或魔术贴)。立领、马面裙这类贴体款不推。
+TOLERANT_XZ_ADULT = ("XZ05", "XZ06", "XZ18", "XZ22", "XZ24")
+TOLERANT_XZ_CHILD = ("XZ39",)
+
+
+def _换商品建议(age, gender, 穿那天身高, size):
+    """离下单还远时推荐换商品,两种都给(业务 2026-09-22):
+    ① 先推**尺寸宽容的定制款** —— 现在下单也不怕长个;② 家长不想定制,再推**现货标品**,按穿那天推算的尺码挑。"""
+    child = age is not None and age < 14
+    xz = TOLERANT_XZ_CHILD if child else TOLERANT_XZ_ADULT
+    q = ",".join("?" * len(xz))
+    定制 = _rows(f"""SELECT p.spu, p.name, pt.name 版型 FROM product p JOIN pattern pt ON pt.code=p.pattern
+                    WHERE p.kind='定制品' AND p.status<>'下架' AND pt.xz IN ({q}) ORDER BY p.spu LIMIT 3""", *xz)
+    if child:
+        # 童装现货按身高分档(110 / 120 / …),取不小于穿那天身高的最近一档
+        档 = str(min(150, max(110, -(-int(穿那天身高) // 10) * 10))) if 穿那天身高 else None
+        现货 = _rows("""SELECT p.spu, p.name, s.size 尺码, SUM(s.stock - COALESCE(s.locked,0)) 可售 FROM product p
+                      JOIN sku s ON s.spu=p.spu WHERE p.kind='标品' AND p.gender='童' AND s.size=?
+                      AND s.stock - COALESCE(s.locked,0) > 0 GROUP BY p.spu ORDER BY 可售 DESC LIMIT 3""", 档) if 档 else []
+    else:
+        现货 = _rows("""SELECT p.spu, p.name, s.size 尺码, SUM(s.stock - COALESCE(s.locked,0)) 可售 FROM product p
+                      JOIN sku s ON s.spu=p.spu WHERE p.kind='标品' AND p.gender IN (?, '通用') AND s.size=?
+                      AND s.stock - COALESCE(s.locked,0) > 0 GROUP BY p.spu ORDER BY 可售 DESC LIMIT 3""", gender or "女", size) if size else []
+    return {"先推 · 尺寸宽容的定制款": 定制 or "没有合适的在售款",
+            "家长不想定制 · 现货标品": 现货 or "这个尺码现在没有现货",
+            "为什么": "离下单还远,现在定制要拿更旧的量体推更长的跨度;宽容款现在做不怕长个,现货不存在量体过期"}
 
 def plan_for_event(wearer_id, event_date, pattern, material,
                    crafts=None, scope="局部", today=None):
@@ -3996,10 +4024,13 @@ def plan_for_event(wearer_id, event_date, pattern, material,
     if e["过期"]:
         warn.append(f"现有量体已过 {e['已过天数']} 天(上限 {e['允许天数']}),"
                     f"**这次推算是拿一份无效记录做的,只能当参考**")
-    if (latest - today).days > 60:
-        warn.append(f"离最晚下单日还有 {(latest - today).days} 天 —— "
-                    f"**现在不要下单**:早下单等于用更旧的量体、推更长的跨度,误差更大。"
-                    f"等到 {remeasure} 前后复量再下")
+    换商品 = None
+    if (latest - today).days > FAR_DAYS:
+        # 原来是劝「现在不要下单」—— 业务 2026-09-22 改成**推荐换商品**,两种都给(附录 A-24)
+        换商品 = _换商品建议(age, w.get("gender"), fc["预测身高"], size)
+        warn.append(f"离最晚下单日还有 {(latest - today).days} 天 —— 现在定制这一款,"
+                    f"要拿更旧的量体推更长的跨度,误差更大。**推荐换商品**:先推尺寸宽容的定制款,"
+                    f"不想定制就推现货标品(见「换商品建议」);坚持要这一款,就等到 {remeasure} 前后复量再下")
     if fc["跨突增期"]:
         warn.append("这段跨过突增窗口,身高区间已放宽近一倍,**务必按上限留折边**")
 
@@ -4012,7 +4043,7 @@ def plan_for_event(wearer_id, event_date, pattern, material,
             "工期最快": lead.get("最快天数"), "工期最慢": lead.get("最慢天数"),
             "赶得上": lead.get("赶得上"),
             "留成长量": growth.allowance(fc["长高"]),
-            "限定": fc["限定"], "提醒": warn,
+            "限定": fc["限定"], "提醒": warn, "换商品建议": 换商品,
             "说明": "选码用的是**穿那天的预测身高**,不是今天的身高。"
                     "答案是一个窗口不是一个日期:早下单误差大,晚下单排不上。"}
 
@@ -4226,7 +4257,7 @@ SHOP_SCHEMAS=[
     "maintain_id":{"type":"string","description":"维修工单号,如 MW73020"},
     "customer":{"type":"string","description":"客户号或姓名"},
     "status":{"type":"string","description":"如「待确认」「处理中」"}},"required":[]}},
- {"name":"plan_for_event","description":"场景倒推 —— 客户说「明年六月毕业礼要穿」时用这个。它把四个互相咬着的约束一次算完:①选码用**穿的那天**的预测身高,不是今天的;②下单太晚排不上产能;③**下单太早也不行** —— 用的量体更旧、推算跨度更长,误差更大;④下单前必须有没过期的量体。所以返回的是一个**窗口**:建议复量日 + 最晚下单日,不是单个日期。「尺码是否跨档」为真时说明围度区间横跨两个码,**按大的做并留折边** —— 小了没法救,大了能收。返回的「提醒」和「限定」必须一并说给客户。",
+ {"name":"plan_for_event","description":"场景倒推 —— 客户说「明年六月毕业礼要穿」时用这个。它把四个互相咬着的约束一次算完:①选码用**穿的那天**的预测身高,不是今天的;②下单太晚排不上产能;③**下单太早也不行** —— 用的量体更旧、推算跨度更长,误差更大;④下单前必须有没过期的量体。所以返回的是一个**窗口**:建议复量日 + 最晚下单日,不是单个日期。「尺码是否跨档」为真时说明围度区间横跨两个码,**按大的做并留折边** —— 小了没法救,大了能收。离最晚下单日超过 60 天时会带「换商品建议」:先推尺寸宽容的定制款,家长不想定制再推现货标品 —— **两种都要说**;客户坚持要原款,就按窗口等到复量日前后再下。返回的「提醒」和「限定」必须一并说给客户。",
   "input_schema":{"type":"object","properties":{
     "wearer_id":{"type":"string","description":"着装人编号"},
     "event_date":{"type":"string","description":"要穿的那天,YYYY-MM-DD"},

@@ -75,7 +75,10 @@ def provider():
          「客户发张照片问这是什么形制/什么面料」
     不加开关的话,谁的 key 先被找到就用谁,这在对比实验里是致命的。
     """
-    force = os.environ.get("LANXIU_PROVIDER", "").lower()
+    # **没设开关时默认 Claude**,只有明说 LANXIU_PROVIDER=deepseek 才走 DeepSeek
+    # (业务 2026-09-22 确认,附录 A-233)。原来是「先找 DeepSeek 凭证」—— 和 09-15「一律用 Claude,
+    # 包括正式评测」正好相反,忘设开关就花 DeepSeek 的钱,已经误花过一次。
+    force = os.environ.get("LANXIU_PROVIDER", "").lower() or "claude"
     k = None if force == "claude" else os.environ.get("DEEPSEEK_API_KEY")
     if not k and force != "claude":
         _kf=os.path.expanduser("~/.deepseek-key")
@@ -184,7 +187,7 @@ def system_task():
 def run_case(pv, prompt, max_turns=12, purpose="人工任务"):
     msgs=[{"role":"user","content":prompt}]
     tools=_tools("task",[SUBMIT])
-    tin=tout=tcache=0; calls=0; t0=time.time(); finding=None; traj=[]; last_text=""
+    tin=tout=tcache=0; calls=0; t0=time.time(); finding=None; traj=[]; last_text=""; truncated=False
     for _t in range(max_turns):
         resp=call(pv,dict(model=pv["model"],max_tokens=pv.get("max_tokens",2000),
                           system=system_task()[0],tools=tools,messages=msgs),
@@ -213,11 +216,15 @@ def run_case(pv, prompt, max_turns=12, purpose="人工任务"):
                             "content":json.dumps(out,ensure_ascii=False)})
         msgs.append({"role":"user","content":results})
         if finding: break
+    else:
+        truncated=True
     p=price_now(pv)                    # 分时定价:高峰 ×2
     cost=(tin*p["inp"]+tcache*p["cache"]+tout*p["out"])/1_000_000
     return dict(finding=finding,text=last_text,calls=calls,input=tin,output=tout,cache=tcache,
                 cost_local=round(cost,6),cost_source=pv["id"],
-                seconds=round(time.time()-t0,1),trajectory=traj)
+                seconds=round(time.time()-t0,1),trajectory=traj,
+                # 查到上限还没查完 —— 不标出来的话,半截思路会被当成结论(附录 A-237)
+                truncated=truncated)
 
 BP01="""任务类型:财务人工任务
 押金单号:{ref}
@@ -260,8 +267,12 @@ def one(task_id):
     t=t[0]
     if t["type"]=="售后判责": prompt=BP03.format(ref=t["ref_id"])
     elif t["type"]=="财务人工任务": prompt=BP01.format(ref=t["ref_id"])
-    else:
+    elif t["type"]=="客户合并确认":
         a,b=t["ref_id"].split("|"); prompt=BP02.format(a=a,b=b)
+    else:
+        # 不认识的类型就拒(fail closed)。原来 else 一律当合并单 —— 09-02 只有两类时 else 就等于「另一类」,
+        # 后来加了判责没跟着改,再加一类就会被悄悄当成合并单去跑(附录 A-221)
+        print(json.dumps({"error":f"不认识这类工单:{t['type']},转人工"},ensure_ascii=False)); return
     try:
         pv=provider(); r=run_case(pv,prompt); r["task_id"]=task_id
     except Exception as e:

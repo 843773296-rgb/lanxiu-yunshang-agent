@@ -290,15 +290,21 @@ def 点名的人没空(cust, 点名工号, 起, 止, db=DB):
 
 
 def 预留(staff_no, 起, 止, customer_id=None, reason="客户点名,改约下次",
-        有效天数=14, 操作人=None, db=DB, conn=None):
+        有效天数=3, 操作人=None, db=DB, conn=None):
     """把某个顾问的某个时段留给某个客户。
 
     **有效期必填** —— 一个不会过期的预留,和一条被占死的档期,
     在「那个时段能不能派人」这个问题上长得一模一样。
+
+    **有效期从「留下预留的那天」算,不从「预留的那一天」算**(业务 2026-09-22 确认,附录 A-32)。
+    原来是「预留那天 + 14 天」—— 到期日永远在那一天之后,等于一直占到那天过完,
+    「过期释放」从来没起过作用。现在:留下之后 3 天客户还不确认,就放掉给别人。
     """
     import datetime
     d = 起[:10]
-    到期 = (datetime.date.fromisoformat(d) + datetime.timedelta(days=有效天数)).isoformat()
+    到期 = (datetime.date.fromisoformat(_世界的今天()[:10])
+            + datetime.timedelta(days=有效天数)).isoformat()
+    到期 = min(到期, d)            # 预留的那一天本身过了,留着也没意义
     SQL = """insert into slot_hold(staff_no,customer_id,d,reason,
                                    status,expires_at,created_by,created)
              values(?,?,?,?,?,?,?,?)"""

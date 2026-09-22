@@ -42,12 +42,15 @@ def validate_customer(d, existing, actor_role="顾问"):
     if same:
         return False,"DUP_PHONE",\
           f"手机号与客户 {same[0]['id']}({same[0]['name']})完全相同,按 PRD 6.2 阻止新建",same
-    # 规则二:姓名 + 尾号 + 门店高度相似 → 转店长确认,不直接建
+    # 规则二:姓名相似 + 尾号相同 → 转店长确认,不直接建。**不限门店**(业务 2026-09-22 确认,附录 A-65):
+    # 要防的正是「同一个人在两家店各建一次档」,只查同店等于没防。「同姓同字数」不收窄 ——
+    # 有 4 位尾号兜着,实测误报极少(同店撞上的概率约 0.04%)。
     sus=[c for c in existing if sim_name(c.get("name"),name)
-         and norm_phone(c.get("phone"))[-4:]==phone[-4:] and c.get("shop")==shop]
+         and norm_phone(c.get("phone"))[-4:]==phone[-4:]]
     if sus:
+        跨店 = "" if sus[0].get("shop")==shop else f"(在 {sus[0].get('shop') or '别的门店'})"
         return False,"NEED_REVIEW",\
-          f"与客户 {sus[0]['id']}({sus[0]['name']})姓名相似、尾号与门店相同,须由店长确认后建档",sus
+          f"与客户 {sus[0]['id']}({sus[0]['name']}){跨店}姓名相似、尾号相同,须由店长确认后建档",sus
     return True,"OK","",[]
 
 # 前端 PRD 11.6:到店至少提前 2 小时,上门量体至少提前 24 小时
@@ -133,8 +136,10 @@ if __name__=="__main__":
       ({"name":"张三","phone":"136 0000 0511","shop":"SH001"},"手机号标准化后重复"),
       ({"name":"蔡青云","phone":"13911110511","shop":"SH002 徐汇店"},"姓名相似+尾号+门店相同"),
       ({"name":"李四","phone":"13812345678","shop":"SH001"},"正常"),
+      # 业务 2026-09-22(附录 A-65):要防的是同一个人在两家店各建一次档 —— 跨店也得转店长
+      ({"name":"蔡青云","phone":"13911110511","shop":"SH001 静安店"},"姓名相似+尾号相同,门店不同"),
     ]
-    EXP_C=["NEED_NAME","BAD_PHONE","DUP_PHONE","NEED_REVIEW","OK"]
+    EXP_C=["NEED_NAME","BAD_PHONE","DUP_PHONE","NEED_REVIEW","OK","NEED_REVIEW"]
     bad=0
     print("客户录入校验\n"+"="*70)
     for (d,t),exp in zip(cases,EXP_C):

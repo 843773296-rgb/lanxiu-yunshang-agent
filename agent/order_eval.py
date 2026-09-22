@@ -201,7 +201,7 @@ def main():
     cs = [c for c in CASES if not only or c["id"] in only.split(",")]
     import asyncio, sdk
     import measure_write as mw, order_write as ow, oplog
-    prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "deepseek(默认)"
+    prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "claude(默认)"
     print(f"供应商:{prov}" + ("   ⚠️ **按量计费**,开发验证请设 LANXIU_PROVIDER=claude" if "deepseek" in prov else ""))
     print(f"下单评测 · {len(cs)} 题(正向 {sum(1 for c in cs if c['kind']=='正向')} / "
           f"负向 {sum(1 for c in cs if c['kind']=='负向')})· 客户 {x['一人']['cid']} · 着装人 {x['一人']['wid']}\n"

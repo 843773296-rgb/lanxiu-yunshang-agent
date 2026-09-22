@@ -121,10 +121,12 @@ let ME=null, TYPES=[];
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 // "2026-09-15 14:00" 里的 - 在 Safari 上 new Date 解不了,换成 /
 const dt=s=>s?new Date(String(s).replace(/-/g,"/")):null;
-const isToday=d=>{const n=new Date();return d&&d.toDateString()===n.toDateString()};
+// 「今天」和「逾期」都用服务端给的(演示世界的今天),不用平板自己的时钟;逾期按天算,和月度复盘一致(附录 A-169)
+let TODAY=null;
+const isToday=s=>!!TODAY&&String(s||"").slice(0,10)===TODAY;
 
 function card(r){
-  const d=dt(r.start_ts||r.end_ts), late=r.status==="有效"&&dt(r.end_ts)<new Date();
+  const d=dt(r.start_ts||r.end_ts), late=!!r.逾期;
   const done=r.status!=="有效";
   return `<div class="t ${done?"done":""}">
     <div class="hd">
@@ -157,18 +159,19 @@ async function load(){
     try{ TYPES=(await(await fetch("/api/task-types")).json()).rows||[] }catch(e){ TYPES=[] }
   }
   const d=await(await fetch("/api/my-tasks")).json();
+  TODAY=d.today||null;
   // 顾问端只关心**自己要做的事**。店长打开这一页,看到的也只是他自己名下的,
   // 全店的在 /tasks —— 一个屏幕回答一个问题。
   const mine=(d.rows||[]).filter(x=>x.assignee_no===ME.no);
   const live=mine.filter(x=>x.status==="有效");
-  const today=live.filter(x=>isToday(dt(x.start_ts)));
+  const today=live.filter(x=>isToday(x.start_ts));
   $("#k1").textContent=today.length;
   $("#k2").textContent=live.length;
-  $("#k3").textContent=live.filter(x=>dt(x.end_ts)<new Date()).length;
+  $("#k3").textContent=live.filter(x=>x.逾期).length;
 
   $("#today").innerHTML=today.length?today.map(card).join("")
     :`<div class="empty">今天没有安排</div>`;
-  const later=live.filter(x=>!isToday(dt(x.start_ts)));
+  const later=live.filter(x=>!isToday(x.start_ts));
   $("#later").innerHTML=later.length?later.map(card).join("")
     :`<div class="empty">之后暂时没有</div>`;
   for(const b of document.querySelectorAll(".fin")){

@@ -508,7 +508,12 @@ def my_tasks(me, status=None):
             by = rows("SELECT name,role FROM staff WHERE no=?", src)
             r["派任务的人"] = (f"{by[0]['name']}({by[0]['role']})" if by
                             else f"工号 {src}(员工表里查不到这个人)")
-    return dict(scope=scope, hit=len(rs), rows=rs)
+    # 「逾期」按天算、用演示世界的今天,由服务端给 —— 不让页面用设备时钟自己算
+    # (业务 2026-09-22 确认,附录 A-169:和月度复盘同一个口径;今天到期的不算逾期)
+    from seed import TODAY
+    for r in rs:
+        r["逾期"] = r.get("status") == "有效" and bool(r.get("end_ts")) and r["end_ts"][:10] < TODAY
+    return dict(scope=scope, hit=len(rs), rows=rs, today=TODAY)
 
 
 def reassign(d, me):

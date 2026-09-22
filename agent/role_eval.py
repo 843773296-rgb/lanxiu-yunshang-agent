@@ -187,7 +187,7 @@ def main():
         probe = api.my_workorders()
     if probe.get("error"):
         print(f"❌ 身份没接上:{probe['error']}"); return
-    prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "deepseek(默认)"
+    prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "claude(默认)"
     print(f"供应商:{prov}" + ("   ⚠️ **按量计费**,开发验证请设 LANXIU_PROVIDER=claude"
                               if "deepseek" in prov else ""))
     print(f"工匠 / 财务评测 · {len(cs)} 题("

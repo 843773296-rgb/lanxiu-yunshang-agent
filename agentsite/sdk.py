@@ -139,7 +139,8 @@ def _env(provider=None, model=None):
     要**主动清掉**上一次设过的两个变量 —— 同一个进程里先跑 DeepSeek 再跑 Claude,
     不清就会带着 DeepSeek 的 base_url 去打 Claude。
     """
-    prov = (provider or os.environ.get("LANXIU_PROVIDER", "")).lower()
+    # 没设开关时默认 Claude(业务 2026-09-22 确认,附录 A-233)—— 只有明说 deepseek 才走按量计费的那家
+    prov = (provider or os.environ.get("LANXIU_PROVIDER", "")).lower() or "claude"
     if prov == "claude":
         for v in ("ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY"):
             os.environ.pop(v, None)

@@ -329,7 +329,7 @@ def main():
         probe = api.pattern_queue()
     if not (probe.get("该核的活")):
         print(f"❌ 身份或数据没接上:{probe}"); return
-    prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "deepseek(默认)"
+    prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "claude(默认)"
     print(f"供应商:{prov}" + ("   ⚠️ **按量计费**,开发验证请设 LANXIU_PROVIDER=claude"
                               if "deepseek" in prov else ""))
     print(f"版师评测 · {len(cs)} 题("

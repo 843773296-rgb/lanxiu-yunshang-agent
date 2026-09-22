@@ -141,7 +141,7 @@ function msg(el,text,ok){el.className="msg "+(ok?"ok":"no");el.textContent=text}
 
 function tag(r){
   if(r.status==="有效"){
-    const late=r.end_ts&&dt(r.end_ts)<new Date();
+    const late=!!r.逾期;      // 服务端按天、按演示世界的今天算(附录 A-169)
     return `<span class="tag ${late?"late":"live"}">${late?"逾期":"进行中"}</span>`;
   }
   return `<span class="tag ${r.status==="完结"?"done":""}">${esc(r.status)}</span>`;

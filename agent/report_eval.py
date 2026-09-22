@@ -348,7 +348,7 @@ def main():
         print(f"❌ 身份没接上,工具说:{probe['error']}")
         print("   **先修这个,别跑模型** —— 跑出来的全是「请先登录」")
         return
-    prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "deepseek(默认)"
+    prov = os.environ.get("LANXIU_PROVIDER", "").lower() or "claude(默认)"
     print(f"供应商:{prov}" + ("   ⚠️ **这是按量计费的**,开发验证请设 LANXIU_PROVIDER=claude"
                               if "deepseek" in prov else ""))
     print(f"复盘与漏斗评测 · {len(cs)} 题("

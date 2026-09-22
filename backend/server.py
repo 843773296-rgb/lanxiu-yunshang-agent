@@ -1100,7 +1100,11 @@ def invite_list(q):
     d["batches"]=rows("""SELECT batch, activity, COUNT(*) n,
       SUM(status='已使用') used, SUM(status='未使用') unused, SUM(status='已作废') void
       FROM invite_code GROUP BY batch,activity ORDER BY batch""")
-    for b in d["batches"]: b["act_name"]=names.get(b["activity"],b["activity"])
+    for b in d["batches"]:
+        b["act_name"]=names.get(b["activity"],b["activity"])
+        # 核销率 = 已使用 ÷(总数 − 已作废)—— 作废的码没发到客户手里(业务 2026-09-22 确认,附录 A-184)
+        发出 = b["n"] - (b["void"] or 0)
+        b["rate"] = round((b["used"] or 0) / 发出 * 100) if 发出 else None
     return d
 
 def page_list(q):
@@ -1584,14 +1588,19 @@ def guide_perf(q):
         # 是上面那个数的**子集**,不是另一套业绩:同样按实收、同样排除待付款 / 已关闭。
         dn=rows("""SELECT COUNT(*) n, COALESCE(SUM(received),0) amt FROM ordr
                    WHERE advisor_no=? AND prd_status='已完成'""",no)[0]
-        apt=rows("SELECT COUNT(*) c FROM appointment WHERE advisor_no=?",no)[0]["c"]
+        # 到店率的分母:**已经到时间、没被取消**的预约(业务 2026-09-22 确认,附录 A-183)。
+        # 原来是全部预约 —— 取消的、还没确认的都算进去,9 个顾问全部标黄,标了等于没标。
+        # 已过期 = 客户一直没确认、系统到点作废的,不是顾问没请来人,也不算。
+        from seed import TODAY as _T
+        apt=rows("""SELECT COUNT(*) c FROM appointment WHERE advisor_no=?
+                    AND (status IN ('已到店','已完成','爽约') OR (status='已预约' AND start_ts<?))""",no,_T)[0]["c"]
         arr=rows("SELECT COUNT(*) c FROM appointment WHERE advisor_no=? AND status IN ('已到店','已完成')",no)[0]["c"]
         fu=rows("SELECT COUNT(*) c FROM followup WHERE advisor_no=?",no)[0]["c"]
         sc=rows("SELECT COUNT(*) c FROM schedule WHERE advisor_no=?",no)[0]["c"]
         scd=rows("SELECT COUNT(*) c FROM schedule WHERE advisor_no=? AND status='完结'",no)[0]["c"]
         out.append(dict(no=a["no"],name=a["name"],shop=a["shop"],cust=cust_n,
           orders=od["n"],amount=od["amt"],done_orders=dn["n"],done_amount=dn["amt"],appt=apt,arrived=arr,
-          arrive_rate=round(arr/apt*100) if apt else 0,
+          arrive_rate=round(arr/apt*100) if apt else None,     # 没有预约不给率,页面不标色
           followup=fu,task=sc,task_done=scd,
           task_rate=round(scd/sc*100) if sc else 0,
           avg=round(od["amt"]/od["n"],2) if od["n"] else 0))
@@ -2631,8 +2640,10 @@ class H(BaseHTTPRequestHandler):
             import chat as _chat
             q=(body.get("q") or "").strip()
             if not q: return self._send(dict(error="问题是空的"),400)
+            # 历史带上工具调用和结果(附录 A-238);裁剪交给 chat._trim_history —— 按条数硬切会把
+            # 工具调用和它的结果切开,API 会拒。这里只限总量,防有人塞一大包进来。
             hist=[(m["role"],m["content"]) for m in (body.get("history") or [])
-                  if m.get("role") in ("user","assistant") and isinstance(m.get("content"),str)][-8:]
+                  if m.get("role") in ("user","assistant") and isinstance(m.get("content"),(str,list))][-40:]
             try: return self._send(_chat.ask(q, hist))
             except Exception as e: return self._send(dict(error=str(e)[:300]),500)
         if p=="/api/login":

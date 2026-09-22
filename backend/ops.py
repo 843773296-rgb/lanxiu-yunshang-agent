@@ -115,6 +115,9 @@ def backlog():
         总量=len(q), 待办=len(todo), 已销账=len(q) - len(todo),
         已超时=len(over), 临期=len([x for x in todo if x["level"] == "临期"]),
         最久未处理小时=round(max([x["waited_h"] for x in todo], default=0), 1),
+        # 「最久那条」超没超它**那一类自己的**时效 —— 页面按这个标红,不再用一条统一的 72 小时
+        # (业务 2026-09-22 确认,附录 A-166:同一屏两张卡用两把尺子,会出现「已超时」红、「最久等待」不红)
+        最久那条已超时=bool(todo) and max(todo, key=lambda x: x["waited_h"])["level"] == "已超时",
         按状态=by_state, 按类型=by_type,
         待复核=len([x for x in todo if x["state"] == "待复核"]),
         未研判=len([x for x in todo if x["state"] == "未研判"]),

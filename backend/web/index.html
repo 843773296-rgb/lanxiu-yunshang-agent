@@ -654,10 +654,21 @@ function trendChart(t){
    ${t.map((d,i)=>`<text x="${cx(i)}" y="${H_-8}" text-anchor="middle" font-size="9.5"
      fill="var(--ink4)">${d.d.slice(5)}</text>`).join("")}</svg>`;
 }
+/* 要挽回的那几类(潜在流失 / 休眠 / 流失)永远单独成一块,不按人数合进「其他」(业务 2026-09-22 确认,附录 A-181)——
+   它们人少,按人数取前几名正好被合掉,而那是店长首页最该看到的人。其余按人数取前 3,剩下合成「其他」,最多 5 块 */
+const RISK=["潜在流失","休眠","流失"];
+/* 活动费用:花到 80% 标黄(快超了,控量)、超过 100% 标红(已超支,要追责补预算);
+   预算填 0 却已经在花钱的直接红(业务 2026-09-22 确认,附录 A-182)。原来一条 90% 分不出这两件事 */
+function costTone(budget,cost,rate){
+  if(!budget) return cost>0?"color:var(--bad);font-weight:600":"";
+  return rate>100?"color:var(--bad);font-weight:600":rate>=80?"color:var(--warn)":"";
+}
 function donut(rows0){
   const tot0=rows0.reduce((a,b)=>a+b.n,0);
-  const top=rows0.slice(0,4), rest=rows0.slice(4);
-  const rows=rest.length? top.concat([{l:"其他 "+rest.length+" 类",n:rest.reduce((a,b)=>a+b.n,0)}]) : top;
+  const risk=rows0.filter(d=>RISK.includes(d.l)), norm=rows0.filter(d=>!RISK.includes(d.l));
+  const top=norm.slice(0,3), rest=norm.slice(3);
+  let rows=rest.length? top.concat([{l:"其他 "+rest.length+" 类",n:rest.reduce((a,b)=>a+b.n,0)}]) : top;
+  if(risk.length) rows=rows.concat([{l:"需挽回("+risk.map(d=>d.l+" "+d.n).join(" / ")+")",n:risk.reduce((a,b)=>a+b.n,0)}]);
   const tot=tot0, C=["#3381FF","#5495FF","#8AB6FF","#B0CEFF","#DDE7F7"];
   const R=54,r=34,cx=68,cy=76; let ang=-Math.PI/2, seg="";
   rows.forEach((d,i)=>{const a=d.n/tot*Math.PI*2, e=ang+a, big=a>Math.PI?1:0;
@@ -1053,11 +1064,18 @@ let CT={tab:"跟进记录"};
 let TABS=[{k:"workbench",t:"工作台",v:"workbench",a:null,fixed:1}];
 let ACTIVE="workbench";
 function tabKey(v,a){return a?v+"/"+a:v}
+/* 上限 9 个,保留工作台;超了关**最久没看的**那个,不是最早打开的(业务 2026-09-22 确认,附录 A-189)——
+   来回对照的两个客户详情常常正是最早开的,按打开顺序关会先关掉正在用的 */
+let SEEN=0;
 function openTab(v,a,title){
   const k=tabKey(v,a);
   if(!TABS.some(x=>x.k===k)) TABS.push({k,t:title||v,v,a});
   else { const t=TABS.find(x=>x.k===k); if(title) t.t=title; }
-  ACTIVE=k; if(TABS.length>9) TABS.splice(1,1);   /* 上限 9 个,保留工作台 */
+  ACTIVE=k; TABS.find(x=>x.k===k).seen=++SEEN;
+  if(TABS.length>9){
+    let j=-1; TABS.forEach((x,i)=>{ if(i>0&&x.k!==ACTIVE&&(j<0||(x.seen||0)<(TABS[j].seen||0))) j=i });
+    if(j>0) TABS.splice(j,1);
+  }
 }
 function closeTab(k,ev){
   if(ev) ev.stopPropagation();
@@ -1076,7 +1094,7 @@ function renderTabs(){
     <rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/></svg></span>`;
   el.querySelectorAll("[data-tk]").forEach(e=>e.onclick=ev=>{
     if(ev.target.closest("[data-tx]")) return;
-    const t=TABS.find(x=>x.k===e.dataset.tk); if(t){ACTIVE=t.k; view(t.v,t.a,1)}});
+    const t=TABS.find(x=>x.k===e.dataset.tk); if(t){ACTIVE=t.k; t.seen=++SEEN; view(t.v,t.a,1)}});
   el.querySelectorAll("[data-tx]").forEach(e=>e.onclick=ev=>closeTab(e.dataset.tx,ev));
   el.querySelector("[data-closeother]").onclick=()=>{
     TABS=TABS.filter(t=>t.fixed||t.k===ACTIVE); renderTabs()};
@@ -1996,7 +2014,7 @@ async function activityList(){
       <td><span class="pill p-mut">${esc(r.kind)}</span></td>
       <td class="mono" style="font-size:12px">${esc(r.start_d)} ~ ${esc(r.end_d)}</td>
       <td class="mono">¥${money(r.budget)}</td>
-      <td class="mono" style="${r.rate>90?"color:var(--bad);font-weight:600":""}">¥${money(r.cost)}
+      <td class="mono" style="${costTone(r.budget,r.cost,r.rate)}">¥${money(r.cost)}
         <span style="color:var(--ink3);font-size:11.5px"> ${r.rate}%</span></td>
       <td class="mono">${r.signup}</td><td class="mono">${r.orders}</td>
       <td class="mono">${r.codes||"—"}</td>
@@ -2021,7 +2039,7 @@ async function activityDetail(code){
      <div><div class="l">起止日期</div><div class="v mono">${esc(d.start_d)} ~ ${esc(d.end_d)}</div></div>
      <div><div class="l">创建时间</div><div class="v mono">${esc(d.created)}</div></div>
      <div><div class="l">预算</div><div class="v mono">¥${money(d.budget)}</div></div>
-     <div><div class="l">已用费用</div><div class="v mono" style="${d.rate>90?"color:var(--bad)":""}">¥${money(d.cost_total)} (${d.rate}%)</div></div>
+     <div><div class="l">已用费用</div><div class="v mono" style="${costTone(d.budget,d.cost_total,d.rate)}">¥${money(d.cost_total)} (${d.rate}%)</div></div>
      <div><div class="l">报名人数</div><div class="v mono">${d.signup}</div></div>
      <div><div class="l">带来订单</div><div class="v mono">${d.orders}</div></div>
    </div></div>
@@ -2067,7 +2085,7 @@ async function inviteList(){
      ${d.batches.map(b=>`<tr><td class="mono">${esc(b.batch)}</td><td>${esc(b.act_name)}</td>
       <td class="mono">${b.n}</td><td class="mono">${b.used}</td>
       <td class="mono">${b.unused}</td><td class="mono">${b.void}</td>
-      <td class="mono">${Math.round(b.used/b.n*100)}%</td></tr>`).join("")}
+      <td class="mono">${b.rate==null?"—":b.rate+"%"}</td></tr>`).join("")}
     </tbody></table></div>
    <div class="card">
     <div class="form">${fld("邀请码","q",st,null,"请输入")}
@@ -2540,7 +2558,7 @@ async function perfPage(){
         <span style="color:var(--ink3);font-size:11.5px">(${r.done_orders} 单)</span></td>
       <td class="mono">¥${money(r.avg)}</td>
       <td class="mono">${r.appt} / ${r.arrived}</td>
-      <td class="mono" style="${r.arrive_rate<50?"color:var(--warn)":""}">${r.arrive_rate}%</td>
+      <td class="mono" style="${r.arrive_rate!=null&&r.arrive_rate<50?"color:var(--warn)":""}">${r.arrive_rate==null?"—":r.arrive_rate+"%"}</td>
       <td class="mono" style="${r.task_rate<50?"color:var(--warn)":""}">${r.task_rate}%
         <span style="color:var(--ink3);font-size:11.5px">(${r.task_done}/${r.task})</span></td>
       </tr>`).join("")}

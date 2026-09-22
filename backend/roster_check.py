@@ -115,10 +115,14 @@ def main():
     if 顾问1:
         日 = (TODAY_d + datetime.timedelta(days=3)).isoformat()
         起, 止 = f"{日} 11:00", f"{日} 12:00"
-        R.预留(顾问1["no"], 起, 止, reason="自测:客户点名改约下次", 有效天数=14, conn=c)
+        R.预留(顾问1["no"], 起, 止, reason="自测:客户点名改约下次", conn=c)
         c.commit()
         有, 话 = R.时段被预留了吗(顾问1["no"], 起, 止)
         ck("预留之后那个时段查得出来", 有, True, "  ← 否则「留了」等于没留")
+        到期 = c.execute("select expires_at from slot_hold where reason like '自测%'").fetchone()[0]
+        ck("预留从留下那天起 3 天到期(不是从预留的那一天往后算)",
+           到期 == (TODAY_d + datetime.timedelta(days=3)).isoformat(), True,
+           f"  ← 到期 {到期}。业务 09-22:从那一天往后算的话,到期永远在那天之后,过期释放从不生效")
         # 过期的不算 —— **一个不会过期的预留,和一条被占死的档期,长得一模一样**
         c.execute("update slot_hold set expires_at=? where reason like '自测%'",
                   ((TODAY_d - datetime.timedelta(days=1)).isoformat(),))
