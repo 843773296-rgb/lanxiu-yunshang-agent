@@ -570,6 +570,27 @@ def _journey(cust, dry=False):
                 steps.append(("⑧ 推进", REAL, f"{R}卡在 {st}:{rr.get('reason','')[:40]}{D}"))
                 return steps, None
             continue
+        # ── 生产和发货只认工厂回传(业务 2026-09-22)—— 旅程也照真路径走:由模拟工厂发回传、
+        #    接收写口收下后推状态。闸上线后还直接 transit,这里第一次重建就会卡在「生产中」。
+        #    时间先按机器时钟收(和 transit 落的一样),下面按剧本回填、再随整条旅程挪回过去。
+        if st in ("已生产", "待发货", "已发货"):
+            import factory_inbox as _fi
+            _fi.ensure()
+            # 时间取这张单自己的开裁时间(transit 落的),**不自己取机器时钟** —— 重建可复现检查查这一条;
+            # 反正下面会按剧本回填
+            _now = str(q("SELECT cut_at FROM ordr WHERE id=?", oid)[0]["cut_at"])[:16]
+            _事 = {"已生产": "完工", "待发货": "质检通过", "已发货": "发出"}[st]
+            _msgs = ([dict(消息号=f"J{oid}-接", 订单号=oid, 事件="接单", 时间=_now, 工厂="旅程工厂",
+                          承诺完工日=_now[:10])]
+                     if st == "已生产" else [])
+            _msgs.append(dict(消息号=f"J{oid}-{_事}", 订单号=oid, 事件=_事, 时间=_now, 工厂="旅程工厂",
+                              **({"物流单号": f"SFJ{oid[-8:]}"} if _事 == "发出" else {})))
+            for _m in _msgs:
+                rr = _fi.收(_m, _now[:10], actor="旅程脚本")
+                if rr["结论"] != "收下":
+                    steps.append(("⑧ 推进", REAL, f"{R}工厂回传没收下({_事}):{rr['理由'][:40]}{D}"))
+                    return steps, None
+            continue
         rr = _srv.transit("bk-order", oid, st, {"by": "旅程脚本", "actor_no": adv["no"]})
         if not rr.get("ok"):
             steps.append(("⑧ 推进", REAL, f"{R}卡在 {st}:{rr.get('reason','')[:40]}{D}"))
@@ -588,6 +609,15 @@ def _journey(cust, dry=False):
        (_发 + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M"),
        (_发 + datetime.timedelta(days=3, minutes=5)).strftime("%Y-%m-%d %H:%M"),
        (_发 + datetime.timedelta(days=4)).strftime("%Y-%m-%d %H:%M"), oid)
+    # 工厂回传的时间也对齐到剧本:接单 = 开裁后 20 小时,完工 = 生产时间,质检 = 生产后 1 天,发出 = 发货时间
+    _产 = v_start + datetime.timedelta(days=day - 12)
+    for _e, _t in (("接单", v_start + datetime.timedelta(days=_裁日, hours=20)), ("完工", _产),
+                   ("质检通过", _产 + datetime.timedelta(days=1)),
+                   ("发出", v_start + datetime.timedelta(days=day - 6))):
+        ex("UPDATE factory_msg SET at=?, received_at=? WHERE order_id=? AND event=?",
+           _t.strftime("%Y-%m-%d %H:%M"), _t.strftime("%Y-%m-%d %H:%M"), oid, _e)
+    ex("UPDATE factory_msg SET promise_date=date(?) WHERE order_id=? AND event='接单'",
+       (v_start + datetime.timedelta(days=_裁日 + 40)).strftime("%Y-%m-%d"), oid)
     # 开裁时间也按剧本回填(transit 落的是「现在」)—— 放在已生产之前
     ex("UPDATE ordr SET cut_at=? WHERE id=? AND cut_at IS NOT NULL",
        (v_start + datetime.timedelta(days=_裁日)).strftime("%Y-%m-%d %H:%M"), oid)
@@ -670,9 +700,13 @@ def _journey(cust, dry=False):
             # 交付签收的时间也要一起挪 —— 第一版漏了这两张表,31 单的签收落在挪之前的「未来」,
             # 比订单自己的完成日还晚(pickup_write_check「签收不晚于完成」当场抓到)
             ("pickup", ("arrived_at", "fit_at", "complete_at"), f"order_id='{oid}'"),
-            ("fit_code", ("issued_at", "used_at", "expires_at"), f"order_id='{oid}'")):
+            ("fit_code", ("issued_at", "used_at", "expires_at"), f"order_id='{oid}'"),
+            # 工厂回传(09-22 加)—— 同上,漏了就是「工厂下个月才完工、订单上个月就完成了」
+            ("factory_msg", ("at", "received_at"), f"order_id='{oid}'")):
         sets = ", ".join(f"{c2}=datetime({c2}, '{_sh}')" for c2 in _cols)
         ex(f"UPDATE {_t} SET {sets} WHERE {_key}")
+    ex(f"UPDATE factory_msg SET promise_date=date(promise_date, '{_sh}') WHERE order_id='{oid}' "
+       "AND promise_date IS NOT NULL")
 
     # ⚠️ **派单时间 / 上传时间的「时分秒」原来是机器的当前时刻。**
     # 这两列由生产代码(`backend/tasks.py`)写下,它在真实业务里理当记 now();
@@ -730,14 +764,22 @@ def main():
     print(f"\n{B}跑 {len(custs)} 条完整旅程{D}"
           f"{'(试跑,不写库)' if dry else ''}")
     print("=" * 86)
-    done = []
+    done, 卡住 = [], []
     for c in custs:
         print(f"\n{B}▸ {c['name']}({c['id']}) · {c['shop']} · 归属 {c['advisor_no']}{D}")
         steps, out = journey(c, dry)
         for name, kind, txt in steps:
             print(f"    {kind}  {name:10s} {txt}")
         if out: done.append(out)
+        if any(n.startswith("⑧") and "卡在" in t or "没收下" in t for n, _, t in steps):
+            卡住.append(c["id"])
 
+    # **订单推进卡住要让整步失败。** 09-22 工厂回传上线那次:31 条旅程全卡在「生产中」
+    # (接单回传被按秒比成倒挂),而这一步照样退出 0、重建照样打「✅ 完成」——
+    # 卡住只打一行红字,淹在几百行输出里。「挪不到过去」那种跳过是设计内的,不算卡住。
+    if 卡住:
+        print(f"\n{R}❌ {len(卡住)} 条旅程卡在订单推进上:{卡住[:5]} —— 流程变了、造数据的这一步没跟上{D}")
+        sys.exit(1)
     if dry: return
     print("\n" + "=" * 86)
     print(f"{B}跑完 {len(done)}/{len(custs)} 条{D}")

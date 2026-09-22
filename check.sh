@@ -165,6 +165,8 @@ run "量体口径 · 按次登记、订单以绑定的下单量体为准、缺�
 run "量体录入写口 · 权限 / 同意 / 校验 / 下单量体绑定(在库副本上跑)" python3 backend/measure_write_check.py
 run "下单口径 · 逐件判下单量体(没有 / 早于开单 / 缺项不可以,判不了不当可以)" python3 knowledge/order_place.py
 run "下单写口 · 开单停待确认、没量不许确认、后台绕不过、确认即付款(在库副本上跑)" python3 backend/order_write_check.py
+run "工厂回传口径 · 重复只记一次、来早了暂存、未来/倒挂拒收、该催(判不了不推)" python3 knowledge/factory_feed.py
+run "工厂回传写口 · 生产和发货只认回传、乱序能放行、后台推不动、该催的都在(在库副本上跑)" python3 backend/factory_inbox_check.py
 run "白坯试衣 · 「没走流程」和「走了没拿到确认」不许混成一个" python3 backend/muslin_check.py
 run "白坯试衣写口 · 开裁那道闸会拦、后台改状态也绕不过、签字撤不掉(在库副本上跑)" python3 backend/fitting_write_check.py
 run "交付签收口径 · 6 位码只认一单用一次、追认满 15 天要理由、不合身判责不默认顾客" python3 knowledge/pickup.py

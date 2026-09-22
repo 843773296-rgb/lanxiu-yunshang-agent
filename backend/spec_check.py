@@ -127,6 +127,11 @@ REF = {"customer_id": "customer", "order_id": "ordr", "account_id": "account",
        "self_wearer_id": "wearer", "parent_a": "wearer", "parent_b": "wearer"}
 tabs = [t[0] for t in c.execute("SELECT name FROM sqlite_master WHERE type='table'")
         if not t[0].startswith("sqlite")]
+# **本来就该对不上的那几行**,按行豁免(不是按列整列放过):
+# 工厂回传收件箱里的订单号是**工厂报的**,「查无此单」正是要挂异常、留底给人去核的 ——
+# 只豁免挂了异常的那几行,收下的回传照样要对得上真订单
+REF_OK = {("factory_msg", "order_id"): "result='挂异常'",
+          ("factory_outbox", "order_id"): "flaw='查无此单'"}
 dangling = []
 for t in tabs:
     cols = [x[1] for x in c.execute(f"PRAGMA table_info({t})")]
@@ -134,8 +139,10 @@ for t in tabs:
         ref = REF.get(col)
         if not ref or ref not in tabs or ref == t: continue
         pk = [x[1] for x in c.execute(f"PRAGMA table_info({ref})")][0]
+        免 = REF_OK.get((t, col))
         n = c.execute(f"SELECT count(*) FROM {t} WHERE {col} IS NOT NULL "
-                      f"AND {col} NOT IN (SELECT {pk} FROM {ref})").fetchone()[0]
+                      f"AND {col} NOT IN (SELECT {pk} FROM {ref})"
+                      + (f" AND NOT ({免})" if 免 else "")).fetchone()[0]
         if n: dangling.append({"表": f"{t}.{col}", "指向": ref, "对不上": n})
 rule("B2", "全库没有悬空引用", dangling, "指向不存在的对象")
 
