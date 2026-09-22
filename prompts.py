@@ -151,6 +151,31 @@ MEASURE_WRITE_RULE = Rule("TL42", ("record_measure",), """
 
 # 交付签收(业务 2026-09-22)。**一条工具级规矩只挂一个工具**(prompts_check P5)——
 # 三个写工具各一条,共同的那句「签收 = 顾客确认试穿合身」各自说一遍,不互相引用。
+OPEN_ORDER_RULE = Rule("TL46", ("open_order",), """
+**开单,三条:**
+
+- **开单还不算下单。** 开完停在「待确认」;业务 09-22 定的顺序是
+  **先开单 → 给每一件量下单量体并绑到这一件 → 再确认下单**。开完要把下一步告诉用户,不许说「已下单」。
+
+- **每一件都要知道给谁做。** 用户只说了客户、没说这件是给本人还是孩子,**就问**,
+  不要自己挑一个着装人 —— 下单量体量的必须是穿这件的人。
+
+- **动手之前先对一遍**:哪位客户、哪几件、每件给谁做、各几件。
+""", scope="工具")
+
+CONFIRM_ORDER_RULE = Rule("TL47", ("confirm_order",), """
+**确认下单,三条:**
+
+- **确认即已付款**(业务 09-22):定制单确认后直接进「待审核」,不走「待付款」。
+  所以动手之前先跟用户确认单号,并确认客户已经付了款。
+
+- **过不了闸就确认不了。** 每一件都要有**为它重新量的**下单量体(开单之后量的、绑在这一件上的、
+  够做这件衣服的);**用以前的量体顶上不行**,回头客也一样。
+
+- **被拒了不许换个说法再试**,也不许建议「先确认、量体回头补」。
+  把返回里卡住的是哪几件、缺什么原样告诉用户,下一步是去量、去绑。
+""", scope="工具")
+
 PICKUP_RULE = Rule("TL43", ("record_pickup",), """
 **交付签收的三个动作(到店代收 / 取件方式 / 不合身),三条:**
 
@@ -535,6 +560,8 @@ CONVERSION_RULE,
 FITTING_WRITE_RULE,
 OWNERLESS_RULE,
 MEASURE_WRITE_RULE,
+OPEN_ORDER_RULE,
+CONFIRM_ORDER_RULE,
 PICKUP_RULE,
 FIT_CODE_RULE,
 RATIFY_RULE,
@@ -902,6 +929,8 @@ CONVERSION_RULE,
 FITTING_WRITE_RULE,
 CUT_RULE,
 MEASURE_WRITE_RULE,
+OPEN_ORDER_RULE,
+CONFIRM_ORDER_RULE,
 PICKUP_RULE,
 FIT_CODE_RULE,
 RATIFY_RULE,

@@ -2631,5 +2631,53 @@
       "DELETE FROM measure_rec WHERE order_item_id=(SELECT MIN(order_item_id) FROM measure_rec WHERE order_item_id IS NOT NULL)"
     ],
     "预期红": "没有下单量体的定制单不超过上限"
+  },
+  {
+    "script": "backend/order_write_check.py",
+    "改坏": "把订单状态机上的下单量体闸去掉(待确认→待审核不再看过闸结果)",
+    "file": [
+      {
+        "path": "backend/fsm.py",
+        "old": "        if (mid,frm,to)==(\"bk-order\",\"待确认\",\"待审核\") and ctx.get(\"下单过闸\")!=\"可以\":",
+        "new": "        if (mid,frm,to)==(\"bk-order\",\"待确认\",\"待审核\") and False:"
+      }
+    ],
+    "预期红": "后台改状态同样被拦(不能绕)"
+  },
+  {
+    "script": "backend/order_write_check.py",
+    "改坏": "让开单不要求每一件指明给谁做",
+    "file": [
+      {
+        "path": "backend/order_write.py",
+        "old": "        if not wid:\n            return dict(ok=False, code=\"NEED_WEARER\",",
+        "new": "        if False:\n            return dict(ok=False, code=\"NEED_WEARER\","
+      }
+    ],
+    "预期红": "没说给谁做 → 拒"
+  },
+  {
+    "script": "knowledge/order_place.py",
+    "改坏": "让 逐件判() 在下单量体早于开单时放行(拿旧量体顶上)",
+    "file": [
+      {
+        "path": "knowledge/order_place.py",
+        "old": "    if str(s[\"时间\"] or \"\") < str(开单时间 or \"\"):",
+        "new": "    if False:"
+      }
+    ],
+    "预期红": "下单量体早于开单 → 不可以"
+  },
+  {
+    "script": "knowledge/order_place.py",
+    "改坏": "让 整单() 把「判不了」当成「可以」",
+    "file": [
+      {
+        "path": "knowledge/order_place.py",
+        "old": "    if 疑:\n        return \"判不了\",",
+        "new": "    if 疑:\n        return \"可以\","
+      }
+    ],
+    "预期红": "一件判不了、其余可以 → 整单判不了"
   }
 ]

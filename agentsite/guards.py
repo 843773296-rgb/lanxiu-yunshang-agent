@@ -1033,6 +1033,13 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
                     "别替顾问编:回去问这一轮改了什么。")
         # `record_measure`:三个量体条件(内搭 / 鞋 / 呼吸)**必须明说** —— 缺一件等于没量,
         # 而模型最容易的做法是替顾问填一个「薄 / 赤足 / 平静呼气」。拦在调用之前,让它回去问。
+        # 下单:确认之后就算已付款、进审核 —— 不许让工具去猜是哪一单;开单每一件都要指明给谁做
+        if short == "confirm_order" and not str(args.get("order_id") or "").strip():
+            return "确认下单要给订单号 —— 确认之后就算已付款、进审核,不许让工具去猜是哪一单。先跟用户确认单号。"
+        if short == "open_order" and any(not str((x or {}).get("wearer_id") or "").strip()
+                                         for x in (args.get("items") or [{}])):
+            return ("开单时每一件都要指明给谁做(wearer_id)—— 下单量体量的必须是穿这件的人。"
+                    "回去问用户这件是给谁做的,**不要自己挑一个着装人**。")
         if short == "record_measure" and not all(str(args.get(k) or "").strip()
                                                   for k in ("inner", "shoe", "breath")):
             return ("量体的三个条件(内搭 / 鞋 / 呼吸)**要问清楚,不许默认** —— "

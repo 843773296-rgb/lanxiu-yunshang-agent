@@ -272,6 +272,8 @@ SHOP_TOOLS = [
     "mcp__shop__record_fitting",
     # 量体录入(写)。顾问 / 店长;量体人从会话取 —— 规矩 TL42:三个条件必须明说,给谁量的要对上。
     "mcp__shop__record_measure",
+    # 下单(写):开单停在待确认 / 确认下单(过下单量体那道闸)。顾问 / 店长;规矩 TL46 / TL47。
+    "mcp__shop__open_order", "mcp__shop__confirm_order",
     # 交付签收(写)。顾问 / 店长;经手人从会话取 —— 规矩 TL43–45:码只认用户说出来的那个,不合身不算签收,
     # 完成要顾客确认、追认要满 15 天写理由。
     "mcp__shop__record_pickup", "mcp__shop__verify_fit_code", "mcp__shop__ratify_complete",
