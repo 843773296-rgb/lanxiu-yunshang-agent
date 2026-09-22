@@ -53,7 +53,7 @@ def main():
 
 
 def run(T):
-    import oplog, pickup_write as pw
+    import oplog, pickup_write as pw, repair_write as rw, seed_repair
     c = sqlite3.connect(T); c.row_factory = sqlite3.Row
     有表 = c.execute("SELECT 1 FROM sqlite_master WHERE name='pickup'").fetchone()
     ck("库里有交付签收那张表(重建跑过 seed_pickup)", bool(有表))
@@ -66,7 +66,10 @@ def run(T):
                       WHERE p.fit_at > COALESCE(o.finished_at, '9999') OR p.arrived_at < o.shipped_at""").fetchone()[0]
     ck("签收不晚于完成、到店不早于发货", 晚 == 0, f"{晚} 单时间倒了")
 
-    for m in (oplog, pw): m.DB = T
+    # ⚠️ 登记「不合身」会顺手建返修单(repair_write)—— **它的库也要指到副本上**。
+    # 第一版漏了这一个,检查每跑一次就往真库写一张返修单(19:46 那张 MX…237 就是这么来的)。
+    for m in (oplog, pw, rw): m.DB = T
+    seed_repair.main(T)
     # ── 查订单不许报假的金额异常 ──
     # 2026-09-22 签收评测:get_order 的金额自检没算定制加价,3542 张定制单张张报「勾稽异常」,
     # 模型读到就停下来让店长先核金额 —— 到店代收、转寄一件都做不下去。签收流程第一步就是查单。
