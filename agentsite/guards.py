@@ -71,6 +71,20 @@ UNKNOWN  = ("查不到", "未录入", "没有录入", "尚未录入", "转工艺
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agent"))
 import re as _re
 import textmatch as tm      # noqa: E402
+
+
+def _业务今天():
+    """业务上的今天(prompts._TODAY ← seed.TODAY)。**自己把仓库根放进 sys.path 再导** ——
+    623b8e6 第一版在函数里直接 `from prompts import`,scheme_hook_test 那种只带 agentsite 的进程里
+    报 ModuleNotFoundError,钩子整个炸掉(对方会话 check.sh 抓到)。导不到就返回 None,调用方退回说法。"""
+    根 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if 根 not in sys.path:
+        sys.path.append(根)
+    try:
+        from prompts import _TODAY
+        return _TODAY
+    except Exception:
+        return None
 # 判「不可」的说法 —— 答案里没有这类断言时,g4 不该开火
 DENY = ("不可", "做不了", "不能做", "不行", "没法做", "做不出", "无法做", "做不到")
 
@@ -1096,8 +1110,7 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
             return (f"event_date「{d}」不是 YYYY-MM-DD。"
                     "客户说「明年六月」时要先换算成具体日期再调。")
         # 「将来」按业务上的今天算(同上面注入的那句;机器的今天比演示世界晚,会把 9-10 的婚期当成过去拦掉)
-        from prompts import _TODAY as _业务今天
-        if d <= (_业务今天 or dt.date.today().isoformat()):
+        if d <= (_业务今天() or dt.date.today().isoformat()):
             return (f"用件日期 {d} 不在将来。倒推是往前排产,"
                     "过去的日子推不出窗口 —— 跟客户确认是哪一年。")
     # ── 第四条:客户说了「整幅」而工具传「局部」 ──────────────────────
@@ -1135,10 +1148,10 @@ def make_hooks(state):
         # CLI 自己还会附一句「Today's date is <机器日期>」,关不掉 —— 所以这里要**明说**那个是机器的日期。
         state["prompt"] = inp.get("prompt", "")
         state["calls"] = []
-        from prompts import _TODAY as _业务今天
-        ctx_add = (f"[系统注入] 业务上的今天是 {_业务今天}。运行环境里显示的日期是机器的日期,**不是这家店的今天**;"
+        _今 = _业务今天()
+        ctx_add = (f"[系统注入] 业务上的今天是 {_今}。运行环境里显示的日期是机器的日期,**不是这家店的今天**;"
                    "涉及日期的推算一律以业务上的今天为准,工具返回里算好的天数照着说。"
-                   if _业务今天 else
+                   if _今 else
                    "[系统注入] 涉及日期的推算以工具返回里算好的为准;运行环境里显示的日期是机器的日期,不是这家店的今天。")
         # **每一轮都把日记塞进来(三条)。** 日记建起来之后有一阵只有写没有读,
         # 而没人读的日记和没有日记是一回事。
