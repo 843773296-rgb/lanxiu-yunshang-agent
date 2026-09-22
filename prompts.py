@@ -201,6 +201,40 @@ RATIFY_RULE = Rule("TL45", ("ratify_complete",), """
   理由要是真的联系过顾客(「已电话联系,顾客表示没问题」),不许替用户编一个。
 """, scope="工具")
 
+
+# 报修(业务 2026-09-22)。一条工具级规矩只挂一个工具(P5)。
+REPAIR_NEW_RULE = Rule("TL48", ("create_repair",), """
+**新建返修单,两条:**
+
+- **一张单有好几件,要问是哪一件** —— 不替用户挑第一件;判责要看这一件的下单量体,挑错了钱就收错了人。
+- 返回里的判责建议**不是结论**,说的时候要说「建议,由店长确认」。签收时顾客确认过试穿合身的,
+  之后的尺寸问题建议顾客承担;开线、掉扣这类工艺瑕疵不在此列。
+""", scope="工具")
+
+REPAIR_DECIDE_RULE = Rule("TL49", ("decide_repair",), """
+**店长判责,三条(业务 2026-09-22):**
+
+- **谁承担、返修还是重做,都由店长定** —— 版师是总部的人,不在店里拍板。只照用户(店长)说的填,
+  **不许按判责建议替店长定**。
+- **判给顾客的,先录预估费用、记下顾客同意付费,才能开工** —— 改下去的衣服没有回头路。
+  顾客同意要写凭据(「顾客电话同意 300 元」),没说顾客同意就别填同意。
+- 没同意时判责先记下,单子停在「待确认」—— 这是对的,不是出错。
+""", scope="工具")
+
+REPAIR_STEP_RULE = Rule("TL50", ("advance_repair",), """
+**推进返修单,一条:**
+
+- 一次只推一档,推之前确认这一步真的发生了(衣服收回来了、送修了、修好回店了)。
+  修好回店后要顾客试穿、输码核验才算完成 —— 不许说「已完成」。
+""", scope="工具")
+
+REPAIR_RETURN_RULE = Rule("TL51", ("verify_repair_return",), """
+**返修件回店签收,一条:**
+
+- 和交付签收同一套码:顾客试穿修好的衣服合身,在手机上点「试穿合身」拿 6 位码交给导购。
+  **码只能是用户说出来的那一个** —— 不许编、不许猜;「顾客说改好了挺合身」不是码。
+""", scope="工具")
+
 CUT_RULE = Rule("TL41", ("start_cutting",), """
 **开裁,三条:**
 
@@ -565,6 +599,10 @@ CONFIRM_ORDER_RULE,
 PICKUP_RULE,
 FIT_CODE_RULE,
 RATIFY_RULE,
+REPAIR_NEW_RULE,
+REPAIR_DECIDE_RULE,
+REPAIR_STEP_RULE,
+REPAIR_RETURN_RULE,
 ]
 
 
@@ -934,6 +972,10 @@ CONFIRM_ORDER_RULE,
 PICKUP_RULE,
 FIT_CODE_RULE,
 RATIFY_RULE,
+REPAIR_NEW_RULE,
+REPAIR_DECIDE_RULE,
+REPAIR_STEP_RULE,
+REPAIR_RETURN_RULE,
 REVIEW_RULE,
 FUNNEL_RULE,
 MEMBER_RULE,

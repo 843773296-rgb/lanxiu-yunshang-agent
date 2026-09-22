@@ -277,6 +277,10 @@ SHOP_TOOLS = [
     # 交付签收(写)。顾问 / 店长;经手人从会话取 —— 规矩 TL43–45:码只认用户说出来的那个,不合身不算签收,
     # 完成要顾客确认、追认要满 15 天写理由。
     "mcp__shop__record_pickup", "mcp__shop__verify_fit_code", "mcp__shop__ratify_complete",
+    # 报修(写)。顾问 / 店长;判责只有店长能过(写口里管)—— 规矩 TL48–51:哪一件不清楚要问、
+    # 谁承担和返修还是重做只照用户说的填、顾客同意要凭据、码只认用户说出来的那个。
+    "mcp__shop__create_repair", "mcp__shop__decide_repair", "mcp__shop__advance_repair",
+    "mcp__shop__verify_repair_return",
 ]
 
 # 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。

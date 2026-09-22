@@ -366,7 +366,9 @@ WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task",
                # 交付签收(业务 09-22):到店代收 / 取件方式 / 不合身、核验 6 位码签收、顾问追认完成
                "record_pickup", "verify_fit_code", "ratify_complete",
                # 下单(业务 09-22):先开单停在待确认 → 量下单量体绑到那一件 → 确认下单(过闸,即已付款)
-               "open_order", "confirm_order")
+               "open_order", "confirm_order",
+               # 报修(业务 09-22):新建返修单、店长判责(顾客同意才开工)、推进、回店输码签收
+               "create_repair", "decide_repair", "advance_repair", "verify_repair_return")
 
 
 MANAGER_ROLES = ("店长", "总部运营")
@@ -2288,6 +2290,49 @@ def ratify_complete(order_id, reason):
     return r
 
 
+def create_repair(order_id, issue, item=None):
+    """**新建返修单**(真的写进去),停在「待确认」等店长判责。顾问 / 店长,本店的单。
+    一张单有好几件而没说哪一件,返回「哪一件?」—— 不替用户挑。"""
+    import repair_write as rw
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在报修 —— 请先登录")
+    r = rw.create(dict(order_id=order_id, item=item, issue=issue), me)
+    if r.get("ok"): _agent_log(me, "REPAIR_NEW", r.get("reason", ""))
+    return r
+
+
+def decide_repair(maintain_id, liable, plan, fee_est=None, customer_agreed=False, agree_note=None):
+    """**店长判责**(真的写进去):谁承担(顾客 / 企业)、返修还是重做;判给顾客的要录预估费用,
+    记顾客同意要写凭据。判完了才进「待入库」。**只有店长能判**(业务 09-22)。"""
+    import repair_write as rw
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在判责 —— 请先登录")
+    r = rw.decide(dict(maintain_id=maintain_id, liable=liable, plan=plan, fee_est=fee_est,
+                       customer_agreed=customer_agreed, agree_note=agree_note), me)
+    if r.get("ok"): _agent_log(me, r.get("code", "REPAIR_DECIDE"), r.get("reason", ""))
+    return r
+
+
+def advance_repair(maintain_id):
+    """**推进返修单一档**(真的写进去):待入库 → 待处理 → 处理中 → 待签收。完成要顾客输码,这里不给。"""
+    import repair_write as rw
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在推进 —— 请先登录")
+    r = rw.advance(dict(maintain_id=maintain_id), me)
+    if r.get("ok"): _agent_log(me, "REPAIR_STEP", r.get("reason", ""))
+    return r
+
+
+def verify_repair_return(maintain_id, code):
+    """**返修件回店签收**(真的写进去):输入顾客给的 6 位码,通过 → 已完成。码只能是用户说出来的那一个。"""
+    import repair_write as rw
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在核验 —— 请先登录")
+    r = rw.verify_return(dict(maintain_id=maintain_id, code=code), me)
+    if r.get("ok"): _agent_log(me, "REPAIR_DONE", r.get("reason", ""))
+    return r
+
+
 def start_cutting(order_id):
     """**开裁**:把一张定制单从「待生产」推进到「生产中」(真的写进去)。只有版师能开。
 
@@ -3747,9 +3792,19 @@ def get_maintain(maintain_id=None, customer=None, status=None):
                    "LEFT JOIN product_custom pc ON pc.spu=oi.spu "
                    "WHERE oi.order_id=? AND oi.name=?", m["order_id"], m["item"])
         nt = _rows("SELECT * FROM delivery_notice WHERE order_id=?", m["order_id"])
-        ms = _rows("SELECT DISTINCT method FROM measure_rec WHERE customer_id=?", m["customer_id"])
-        n_item = _rows("SELECT count(*) n FROM measure_rec WHERE customer_id=?",
-                       m["customer_id"])[0]["n"]
+        # ⚠️ **量体只认这一件的下单量体,按着装人取**(业务 09-22:订单以下单量体为准)。
+        # 原来按客户号数条数 —— 一家几口的尺寸全算进来,孩子的单拿着妈妈量过的条数判「记录完整」;
+        # 而且下单之后又量过的也混在里面。没绑下单量体就是**判不了**,不拿别的量体顶:
+        # 判责取决于「成衣和留存数据对不对得上」,拿错一次量体就是收错了人的钱。
+        _it = _rows("SELECT wearer_id FROM ordr_item WHERE id=?", m.get("order_item_id")) \
+            if m.get("order_item_id") else []
+        if _it and _it[0]["wearer_id"]:
+            _值, _方式, _话 = _以哪次为准(_it[0]["wearer_id"], m["order_item_id"])
+        else:
+            _值, _方式, _话 = {}, None, ("这张返修单**没挂到订单里的哪一件**,核对不了下单量体" if not _it
+                                         else "这一件**没定给谁做**,核对不了下单量体")
+        ms = [{"method": _方式}] if _方式 else []
+        n_item = len(_值)
         hist = _rows("SELECT count(*) n FROM maintain WHERE customer_id=? AND id<>?",
                      m["customer_id"], m["id"])[0]["n"]
         d = {"工单": m["id"], "状态": m["status"], "客户": f"{m['customer_id']} {m['cname'] or ''}".strip(),
@@ -3777,7 +3832,12 @@ def get_maintain(maintain_id=None, customer=None, status=None):
                        # 业务 09-22:不准远程量体,判责表里「远程 → 按合同分担」那一行也删了。
                        # 这里只报「是不是都是顾问亲自量的」—— 不是的话那条记录本身就违规,要人看
                        "都是顾问亲自量的": all(x["method"] in ("到店", "上门") for x in ms) if ms else None,
-                       **_量体完整性(m["customer_id"], n_item)}),
+                       "以哪次为准": _话,
+                       # 挂到了哪一件、定了给谁做,却**没有下单量体** —— 那就是记录缺失(0 项),
+                       # 按判定表「量体记录缺失」那一行走(我方:没按规矩量);**不拿别的场次顶**。
+                       # 连哪一件 / 给谁做都不知道,才是真的判不了。
+                       **(_量体完整性(m["customer_id"], n_item) if (_值 or (_it and _it[0]["wearer_id"]))
+                          else {"完整性": "判不了 —— " + _话})}),
              # 代码要翻成名称。原来只给「N1,N2,N3」,模型看得见却看不懂 ——
              # 它会说「需要人工查出 N1-N6 具体条目」,**而那正是它该自己拿到的东西**。
              "交付告知签收": (dict(已告知条目=[NOTICE_NAME.get(x, x)
@@ -4023,6 +4083,10 @@ SHOP_SCHEMAS=[
  {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**定制单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。**哪些款必须试(业务 09-22 定)**:重工、全定制(顾问亲自量的尺寸判出)、婚服(商品挂了「婚礼婚服」场合标签)三类命中任一即必试;没命中但有一类判不了 → 判不了,**不当成不必试**;重工的两个门槛(装饰工序最慢 ≥25 天 / 单项工艺起步 ≥12 天)业务 09-22 确认。**开裁这道闸会拦**:该试的要试过、而且客户签了字,整单才许开裁 —— 看板里「待开裁的单」列出每张待生产单能不能裁、卡在哪。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
  {"name":"record_pickup","description":"**交付签收的三个动作(真的写进去)**:action=「到店代收」(**工厂的货到了门店、顾客还没来** —— 这一步只是门店收货入库,不涉及顾客,也不是签收;定制单「已发货」指的是工厂发往门店,不是寄给顾客)/「取件方式」(mode=到店取 或 转寄;**转寄要 tracking_no**,业务 09-22:顾问先邀约顾客到店取,实在来不了才转寄)/「不合身」(顾客试了不合身 → **不算签收**,订单状态不动,转返修;issue 写清哪里不合身)。只能动本店的单,经手人就是你自己(不收工号)。「不合身」时 matches_record(成衣和订单留存数据对得上吗)、other_defect(有没有别的瑕疵)、our_fault(查出来是「导购」或「打版」的问题)都是**查出来的事实,不知道就别填** —— 返回的判责建议(对得上且无别的瑕疵 → 顾客承担、收费;导购 / 打版问题 → 企业承担、免费)**不是结论,由售后负责人确认**。⚠️ 动手前先跟用户对一遍单号和动作。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"action":{"type":"string","enum":["到店代收","取件方式","不合身"]},"mode":{"type":"string","enum":["到店取","转寄"]},"tracking_no":{"type":"string"},"issue":{"type":"string"},"matches_record":{"type":"boolean"},"other_defect":{"type":"boolean"},"our_fault":{"type":"string","enum":["导购","打版"]}},"required":["order_id","action"]}},
  {"name":"verify_fit_code","description":"**核验顾客给的 6 位码 = 签收(真的写进去)**:通过后订单「已发货 → 待完成」。业务 09-22:**签收 = 顾客确认试穿合身** —— 顾客在手机上点「试穿合身」拿到 6 位码交给导购,导购输入核验;到店取和转寄都走这个码。**码只能是用户这句话里说出来的那一个,不许编、不许猜、不许「先填个试试」** —— 输错会记次数,5 次作废。完成之后要**顾客自己确认**,顾客一直不确认,签收满 15 天顾问才能写理由追认(ratify_complete)。⚠️ 动手前先跟用户对一遍单号和码。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"code":{"type":"string","description":"顾客给的 6 位码,原样照抄用户说的"}},"required":["order_id","code"]}},
+ {"name":"create_repair","description":"**新建返修单(真的写进去)**,停在「待确认」等店长判责。顾问或店长,本店的单。issue 写清哪里要修(「下摆开线」「腰围紧 2cm」)。**一张单有好几件时 item 必填**(订单行号或商品名)—— 没说哪一件就问,不替用户挑。返回里带一个**判责建议**(不是结论):按返修判定表 + 这一件的下单量体;签收时顾客确认过试穿合身的,之后的尺寸问题建议顾客承担(工艺瑕疵不在此列)。交付签收登记「不合身」时系统会自动建返修单,不用再建。⚠️ 动手前先跟用户对一遍单号、哪一件、什么问题。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"issue":{"type":"string"},"item":{"type":"string","description":"订单行号或商品名;一张单多件时必填"}},"required":["order_id","issue"]}},
+ {"name":"decide_repair","description":"**店长判责(真的写进去)**:liable = 顾客 / 企业,plan = 返修 / 重做 —— **都由店长定**(业务 09-22:版师是总部的人,不在店里拍板)。判给顾客的要填 fee_est(预估费用),**顾客同意付费之后**才能开工:customer_agreed=true 时 agree_note 必填(凭据,比如「顾客电话同意 300 元」)。判完了(企业承担,或顾客承担且录了费用、顾客同意了)才从「待确认」进「待入库」;没同意就先记下判责、停在待确认。**谁承担、返修还是重做、顾客同没同意,都只能照用户说的填,不许替店长定、不许默认。**","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"},"liable":{"type":"string","enum":["顾客","企业"]},"plan":{"type":"string","enum":["返修","重做"]},"fee_est":{"type":"number"},"customer_agreed":{"type":"boolean"},"agree_note":{"type":"string"}},"required":["maintain_id","liable","plan"]}},
+ {"name":"advance_repair","description":"**推进返修单一档(真的写进去)**:待入库 → 待处理(衣服收回来了)→ 处理中(送修)→ 待签收(修好回店)。顾问或店长,本店的单。还在「待确认」的要先等店长判责;「待签收 → 已完成」要顾客试穿输码(verify_repair_return),这里不给。⚠️ 动手前先跟用户确认单号和这一步真的发生了。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"}},"required":["maintain_id"]}},
+ {"name":"verify_repair_return","description":"**返修件回店签收(真的写进去)**:顾客试穿修好的衣服合身,在手机上点「试穿合身」拿 6 位码交给导购,导购输入核验通过才算完成(业务 09-22:和交付签收同一套码)。**码只能是用户这句话里说出来的那一个,不许编、不许猜** —— 输错记次数,5 次作废。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"},"code":{"type":"string"}},"required":["maintain_id","code"]}},
  {"name":"ratify_complete","description":"**顾问追认完成(真的写进去)**:签收满 15 天顾客还没在手机上确认完成,顾问写理由(比如「已电话联系,顾客表示没问题」)把订单「待完成 → 完成」。**不满 15 天不行、没写理由不行** —— 业务 09-22:完成由顾客确认,追认是兜底,不是替顾客点。⚠️ 动手前先跟用户确认理由是真的联系过。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"reason":{"type":"string"}},"required":["order_id","reason"]}},
  {"name":"open_order","description":"**开一张定制单(真的写进去)**,停在「待确认」—— 还没生效。顾问或店长用,只给本店客户开。items 每一件写 spu(或 sku)、wearer_id(**给谁做,必填** —— 下单量体量的必须是穿这件的人)、qty。只开定制单,标品流程不变。开完的**下一步**:给每一件量下单量体并绑到这一件(record_measure 带 order_id + item),再 confirm_order。⚠️ 动手前先跟用户对一遍:哪位客户、哪几件、每件给谁做。","input_schema":{"type":"object","properties":{"customer_id":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"spu":{"type":"string"},"sku":{"type":"string"},"wearer_id":{"type":"string"},"qty":{"type":"integer"}}}}},"required":["customer_id","items"]}},
  {"name":"confirm_order","description":"**确认下单(真的写进去)**:待确认 → 待审核。业务 09-22:**定制单确认即已付款**,不走「待付款」。**逐件过闸**:每一件都要有绑在它上面的、开单之后量的、够做这件衣服的下单量体;有一件不过就整单拒绝,返回里列出是哪几件、缺什么(没有下单量体 / 早于开单 / 缺哪几项 / 着装人没定)。被拒了**不要换个说法再试**,把缺什么告诉用户,去量、去绑。⚠️ 动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
@@ -4915,7 +4979,7 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

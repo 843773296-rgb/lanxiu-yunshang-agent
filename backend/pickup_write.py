@@ -193,7 +193,15 @@ def not_fit(d, me):
         c.execute("UPDATE pickup SET fit_result='不合身' WHERE order_id=?", (o["id"],))
     log_op(me["name"], "pickup", o["id"], "—", "不合身", True, "NOT_FIT",
            f"{me['name']} 登记订单 {o['id']} 试穿不合身:{说明[:60]};判责建议 {谁}", {"role": me["role"]})
+    # 业务 09-22:不合身直接转返修 —— 自动建一张返修单(来源「签收不合身」),等店长判责
+    import repair_write as _rw
+    _单件 = rows("SELECT id FROM ordr_item WHERE order_id=? ORDER BY id", o["id"])
+    返修 = _rw.create(dict(order_id=o["id"], item=d.get("item") or (str(_单件[0]["id"]) if len(_单件) == 1 else None),
+                          issue=说明, 不合身事实=dict(matches_record=d.get("matches_record"),
+                                                  other_defect=d.get("other_defect"), our_fault=d.get("our_fault"))),
+                     me, 来源="签收不合身")
     return dict(ok=True, code="NOT_FIT", 订单=o["id"], 不合身=说明, 判责建议=谁, 处理建议=怎么办,
+                返修单=返修.get("返修单"), 返修单没建成=(None if 返修.get("ok") else 返修.get("reason")),
                 reason=f"已登记试穿不合身,**不算签收**,订单状态不动。判责建议:{话}。**建议不是结论,由售后负责人确认。**"
                        "下一步转返修(报修新建)")
 

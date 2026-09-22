@@ -1052,6 +1052,23 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
             if not _码 or _码 not in _说:
                 return ("试穿合身码**只能是顾客给的、用户说出来的那一个** —— 用户这句话里没有这串数字。"
                         "别编、别猜:回去问用户顾客给的 6 位码是多少。")
+        # `verify_repair_return`:同交付签收 —— 码只能是用户这句话里说出来的
+        if short == "verify_repair_return":
+            _码 = "".join(ch for ch in str(args.get("code") or "") if ch.isdigit())
+            _说 = "".join(ch for ch in str(prompt or "") if ch.isdigit())
+            if not _码 or _码 not in _说:
+                return ("返修件签收的码**只能是顾客给的、用户说出来的那一个** —— 用户这句话里没有这串数字。"
+                        "回去问用户顾客给的 6 位码是多少。")
+        # `decide_repair`:谁承担、返修还是重做**只能照用户说的填** —— 模型最容易的做法是按判责建议替店长定
+        if short == "decide_repair":
+            _p = str(prompt or "")
+            if str(args.get("plan") or "") not in _p:
+                return (f"返修还是重做要**店长说**(业务 09-22)—— 用户这句话里没说「{args.get('plan')}」。"
+                        "别按建议替店长定,回去问。")
+            if not any(w in _p for w in ("顾客", "客户", "企业", "我们", "门店", "公司", "店里")):
+                return "谁承担要**店长说**(顾客 / 企业)—— 用户这句话里没说。别按判责建议替店长定,回去问。"
+            if args.get("customer_agreed") and not str(args.get("agree_note") or "").strip():
+                return "记「顾客同意付费」要写凭据(比如「顾客电话同意 300 元」)—— 回去问用户顾客是怎么同意的。"
         # `ratify_complete`:追认要写理由 —— 没有理由的追认等于替顾客点了完成
         if short == "ratify_complete" and not str(args.get("reason") or "").strip():
             return "追认完成要写理由(比如「已电话联系,顾客表示没问题」)—— 回去问用户联系过顾客没有。"
