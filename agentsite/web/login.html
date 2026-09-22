@@ -82,7 +82,8 @@ $("#f").addEventListener("submit", async ev=>{
     if(d.ok){
       // 登录成功不停在这一页 —— 回到进来时想去的地方
       const back=new URLSearchParams(location.search).get("back");
-      location.href = back && back.startsWith("/") ? back : "/";
+      // 只许站内路径:「//外站」「/\外站」浏览器都当成跳到别的网站,一律不认
+      location.href = back && /^\/(?![\/\\])/.test(back) ? back : "/";
       return;
     }
     err(d.reason || d.error || "登录失败");
