@@ -270,6 +270,12 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
         cur=r[0]["status"]; ctx.setdefault("kind",r[0]["kind"])
         # 标品不走方案审核和生产 —— 把这条写进 ctx,拒绝时的话才说得具体
         ctx.setdefault("amount",r[0]["amount"])
+        # 开裁要过白坯试衣那道闸 —— **在这里算,不信调用方传进来的结论**
+        # (传进来的「可以」谁都能写)。算法和智能体那条写口是同一个函数。
+        if to=="生产中" and r[0]["kind"]=="定制品订单":
+            import fitting_write as _fw
+            _g, _w, _ = _fw.过闸(target)
+            ctx["白坯过闸"], ctx["白坯过闸_为什么"] = _g, _w
     elif mid=="fe-scheme":
         r=rows("SELECT * FROM scheme WHERE id=?",target)
         if not r: return {"error":"定制方案不存在"}
@@ -298,6 +304,10 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
             c.execute("UPDATE ordr SET prd_status=?,updated=datetime('now','localtime') WHERE id=?",
                       (fsm.ORDER_PRD.get(to, to), target))
             # 几个到点就该落的时间戳 —— 不落的话「什么时候发的货」只能靠 op_log 翻
+            if to=="生产中":
+                # 开裁记录:它决定这一单按白坯新规还是旧规判(knowledge/muslin.适用新规)
+                c.execute("UPDATE ordr SET cut_at=datetime('now','localtime'),cut_by=? WHERE id=?",
+                          (ctx.get("actor_no") or actor, target))
             _stamp={"已生产":"produced_at","已发货":"shipped_at","完成":"finished_at",
                     "取消":"cancelled_at"}.get(to)
             if _stamp:

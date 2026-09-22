@@ -95,7 +95,7 @@ run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 
 # (给多了 / 给死了)在界面上长得一模一样,所以两个方向都得测。
 # 要 venv 的解释器:这条检查 import sdk 取角色工具清单,不手抄一份。
 run "推档 · 1237 条尺码要核的是 12 条档差" python3 backend/grading_check.py
-run "版师角色 · 唯一的写工具只能改占比,而且真的得能改" ./agentsite/.venv/bin/python backend/pattern_role_check.py
+run "版师角色 · 写工具只有改占比和开裁两个,而且真的得能改" ./agentsite/.venv/bin/python backend/pattern_role_check.py
 run "会话归属 · 续聊不能续别人的(身份判得对也挡不住换历史)" python3 agentsite/sessions_check.py
 run "花费闸 · 阈值够聊几轮 + 撞线说不说得清" ./agentsite/.venv/bin/python agentsite/budget_check.py
 run "成本口径 · 项目算的钱要和官方计费规则对得上(期望值手抄官方价,不从价目表现算)" ./agentsite/.venv/bin/python agentsite/cost_check.py
@@ -162,6 +162,7 @@ run "顾问名字 · 页面上那一栏有名字,而且对得上" python3 backen
 run "来源等级 · 声称可溯源的得真溯得了源" python3 backend/source_check.py
 run "库存预警 · 算不出可售天数的不许算出一个数来" python3 backend/stock_check.py
 run "白坯试衣 · 「没走流程」和「走了没拿到确认」不许混成一个" python3 backend/muslin_check.py
+run "白坯试衣写口 · 开裁那道闸会拦、后台改状态也绕不过、签字撤不掉(在库副本上跑)" python3 backend/fitting_write_check.py
 run "多渠道对比 · 数算得对,而这张表不能用来比渠道" python3 backend/channel_check.py
 run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/eval_provenance_check.py
 run "判据词表 · 声称有备选,就得验过一条备选" python3 tools/vocab_check.py
@@ -177,6 +178,8 @@ run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judget
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py
 run "识图判分器 · 13 条对照用例" python3 agent/vision_eval_judgetest.py
 run "判责判分器 · 14 条对照用例" python3 agent/liability_eval_judgetest.py
+run "白坯试衣判分器 · 库状态看开没开裁 / 签没签,措辞只查两处结构" python3 agent/fitting_eval_judgetest.py
+run "评测判据 · 点名的工具必须在架上" python3 tools/judge_tool_names_check.py
 run "指代推进判分器 · 15 条对照用例" python3 agent/scheme_eval_judgetest.py
 run "指代推进 · 四类场景库里都挑得出样本" python3 agent/scheme_eval.py
 run "运维侧判分器 · 对照用例(含库存预警、白坯试衣)" python3 agent/ops_eval_judgetest.py

@@ -247,6 +247,9 @@ SHOP_TOOLS = [
     "mcp__shop__customer_history",
     # 成交率:**现在给不出数,而「给不出」和「低」是两回事**。
     "mcp__shop__conversion_rate",
+    # 登记白坯试衣 / 补签(写)。顾问陪客户试衣、店长也会陪,所以两个角色都要;
+    # 陪同人从会话取 —— 规矩 TL40:签没签不许默认,签字不许撤销。
+    "mcp__shop__record_fitting",
 ]
 
 # 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。
@@ -310,7 +313,10 @@ PATTERN_TOOLS = [
     "mcp__shop__pattern_queue",     # 排队看板:今天该我核什么(按影响面排序);
                                     # 传 pattern 转看那一版的裁片占比明细(带来源和折合米数)
     "mcp__shop__grading_audit",     # 推档自检:1237 个数压成 12 条档差
-    "mcp__shop__set_piece_ratio",   # **唯一的写** —— 改占比并标「版师」
+    "mcp__shop__set_piece_ratio",   # 写 —— 改占比并标「版师」
+    # 写 —— 开裁(待生产 → 生产中)。**闸在订单状态机上**:白坯该试没试 / 没签字整单拒绝。
+    # 版型定了才能裁,所以归版师;规矩 TL41:被拒不许换说法再试。
+    "mcp__shop__start_cutting",
     "mcp__kb__kb_pattern",          # 版型和裁片
     "mcp__kb__kb_size",             # 成衣尺码表 —— 判米数要看尺寸
     "mcp__kb__kb_bom",              # BOM:内衬和辅料的实际用量,可交叉验

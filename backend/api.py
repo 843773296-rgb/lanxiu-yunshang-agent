@@ -358,7 +358,9 @@ WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task",
                # `funnel`(漏斗记它走了写路径)一起管住。
                # 上一版它没进来,于是它是**唯一一个没人管的写口**,
                # 而边界审计只能靠名字里有没有 `set_` 猜它存在。
-               "set_piece_ratio")
+               "set_piece_ratio",
+               # 白坯试衣(业务 09-22):登记试衣 / 补签(顾问、店长),开裁(版师,过白坯那道闸)
+               "record_fitting", "start_cutting")
 
 
 MANAGER_ROLES = ("店长", "总部运营")
@@ -2216,6 +2218,40 @@ def finish_task(task_id, summary):
     return r
 
 
+def record_fitting(order_id, item, adjust="", signed=False, round=None, note=""):
+    """**登记一轮白坯试衣**(真的写进去)。顾问 / 店长,只能登记本店订单。
+
+    陪同人就是登录的人 —— **不收工号参数**,收了就能替别人登记一次自己没陪的试衣。
+    `round` 不给是新的一轮;给已有轮次且 signed=True 是**补签**(签字不许撤销)。
+
+    ⚠️ **动手之前先跟用户对一遍**:哪张单、哪一件、改了哪几处、客户签没签。
+    签字是责任转移点 —— 记成「签了」而客户其实没签,出尺寸争议时门店会拿着一张不存在的底牌。
+    """
+    import fitting_write as fw
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在登记 —— 请先登录")
+    r = fw.record(dict(order_id=order_id, item=item, adjust=adjust, signed=signed,
+                       round=round, note=note), me)
+    if r.get("ok"): _agent_log(me, r.get("code", "FIT"), r.get("reason", ""))
+    return r
+
+
+def start_cutting(order_id):
+    """**开裁**:把一张定制单从「待生产」推进到「生产中」(真的写进去)。只有版师能开。
+
+    **过不了白坯试衣那道闸就拒绝**(业务 09-22):单里有一件该试没试、试了没签字、
+    或判不了该不该试而又没试过,整单不许裁。拒绝时会列出是哪几件、缺什么。
+
+    ⚠️ **动手之前先跟用户确认单号** —— 开裁不可逆,裁下去就没有回头路。
+    """
+    import fitting_write as fw
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在开裁 —— 请先登录")
+    r = fw.start_cutting(dict(order_id=order_id), me)
+    if r.get("ok"): _agent_log(me, "CUT", r.get("reason", ""))
+    return r
+
+
 def check_write(action, fields=None):
     """**这件事业务允不允许做** —— 不写库,只跑一遍真正的校验器。
 
@@ -3174,7 +3210,42 @@ def _量体完整性(customer_id, 已有):
     return {"完整性": 话}
 
 
-def _白坯试衣(order_id, item_name, order_status):
+def _亲量档位(wearer_id, pattern_code):
+    """这个人穿这个版型,按**顾问亲自量**的尺寸判出的档位(标准码 / 调号 / 全定制)。
+
+    只认到店 / 上门量体 —— 业务 09-22 明令不准远程量体,远程量的尺寸不算数
+    (和接待的定义同一个口径,`knowledge/linkage.亲自服务的量体方式`)。
+    每个量体项取最近一次。**量不到就返回 None**,不按身高体重猜 ——
+    「不知道体型标不标准」和「体型标准」是两件事,前者要让必试判成「判不了」。
+    """
+    if not wearer_id or not pattern_code:
+        return None
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "knowledge"))
+    import fitting, linkage
+    亲 = linkage.亲自服务的量体方式
+    ms = {}
+    for r in _rows("SELECT i.name, r.value, r.method, r.measured_at FROM measure_rec r "
+                   "JOIN measure_item i ON i.code=r.item WHERE r.wearer_id=? "
+                   f"AND r.method IN ({','.join('?' * len(亲))}) ORDER BY r.measured_at",
+                   wearer_id, *亲):
+        ms[r["name"]] = (r["value"], r["method"])
+    if not ms:
+        return None
+    p = _rows("SELECT code,xz,sizes FROM pattern WHERE code=?", pattern_code)
+    if not p or not p[0]["sizes"]:
+        return None
+    p = p[0]
+    specs = {}
+    for r in _rows("SELECT size,item,value FROM size_spec WHERE pattern=?", p["code"]):
+        specs.setdefault(r["size"], {})[r["item"]] = r["value"]
+    fs = [r["feature"] for r in _rows("SELECT feature FROM body_feature WHERE wearer_id=?", wearer_id)]
+    mth = next(iter(ms.values()))[1]
+    out = fitting.recommend({k: v[0] for k, v in ms.items()}, p["code"], p["sizes"].split(","),
+                            specs, p["xz"], mth, fs)
+    return out.get("档位")
+
+
+def _白坯试衣(order_id, item_name, order_status, item_id=None, 假设未开裁=False):
     """这一单的白坯试衣现场。**只给事实,不给判责结论。**
 
     ⚠️ 和量体记录那一栏是同一条教训:**不许只给一个数让人自己去推。**
@@ -3191,9 +3262,13 @@ def _白坯试衣(order_id, item_name, order_status):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import seed_fitting as _sf
 
-    it = _rows("SELECT i.id, i.name, p.pattern FROM ordr_item i "
-               "LEFT JOIN product p ON p.spu=i.spu "
-               "WHERE i.order_id=? AND i.name=?", order_id, item_name)
+    # 有行号就按行号取 —— 一家人订同款时同名商品不止一件,按名字取会串到别人那件上
+    it = (_rows("SELECT i.id, i.name, i.spu, i.wearer_id, p.pattern FROM ordr_item i "
+                "LEFT JOIN product p ON p.spu=i.spu WHERE i.id=? AND i.order_id=?", item_id, order_id)
+          if item_id else
+          _rows("SELECT i.id, i.name, i.spu, i.wearer_id, p.pattern FROM ordr_item i "
+                "LEFT JOIN product p ON p.spu=i.spu "
+                "WHERE i.order_id=? AND i.name=?", order_id, item_name))
     if not it:
         return {"note": "订单行里没有同名商品,查不到试衣记录"}
     item = it[0]
@@ -3222,13 +3297,33 @@ def _白坯试衣(order_id, item_name, order_status):
         该, why = _mu.按配置判(item["pattern"], mt[主["material"]], ks, scope,
                                None, _names(), on=_od)
 
+    # ── 业务 09-22:三类必试(重工 / 全定制 / 婚服),新规挂在「开裁」这个动作上 ──
+    重工, 重工_为什么 = 该, why
+    开裁 = False if 假设未开裁 else _sf.开裁了吗(order_status)
+    系统开裁 = bool((_rows("SELECT cut_at FROM ordr WHERE id=?", order_id) or [{}])[0].get("cut_at"))
+    新规 = _mu.适用新规(开裁, 系统开裁)
+    档位 = _亲量档位(item["wearer_id"], item["pattern"]) if 新规 else None
+    _场合 = _rows("SELECT scene FROM product_scene WHERE spu=?", item["spu"]) if item["spu"] else []
+    婚服 = (any(r["scene"] == "SC-OCC-03" for r in _场合) if _场合 else None) if 新规 else None
+    if 新规 is None:
+        该, why, 中 = None, "**判不了** —— 不知道这一单开没开裁,也就不知道按新规还是旧规判", []
+    else:
+        该, why, 中 = _mu.必试(重工, 档位, 婚服, 新规)
+        if 重工_为什么 and "重工" in 中: why += ";重工:" + 重工_为什么
+
     recs = _rows("SELECT * FROM fitting WHERE item_id=? ORDER BY round", item["id"])
     签 = any(r["signed"] for r in recs)
-    st = _mu.归档(该, _sf.开裁了吗(order_status), bool(recs), 签)
+    st = _mu.归档(该, 开裁, bool(recs), 签)
 
     return _nz({
         "该不该做白坯试衣": 该, "凭什么": why,
-        "订单开没开裁": _sf.开裁了吗(order_status),
+        "属于哪几类": 中 or None,
+        "按哪套规矩": (None if 新规 is None else
+                       "新规(业务 09-22:重工 / 全定制 / 婚服)" if 新规 else
+                       "旧规(系统接管开裁之前就裁了,只看重工 —— 不追溯)"),
+        "量体判出的档位": 档位,
+        "是不是婚服": 婚服,
+        "订单开没开裁": 开裁,
         "有几条试衣记录": len(recs),
         "客户签字了吗": 签 if recs else None,
         "记录": [{"第几轮": r["round"], "时间": r["ts"], "陪同工号": r["advisor_no"],
@@ -3343,17 +3438,32 @@ def fitting_queue(order=None):
                             "流程没走到。提前准备,别等客户找上门",
             "明细": [x["商品"] for x in 越线],
         }
-    out["⚠️ 这道闸现在拦不住任何东西"] = (
-        "「该做试衣的不许进裁剪」这条**只是口径和看板,不是运行时的拦截** —— "
-        "系统里没有任何写工具会推进订单进裁剪,所以没有东西可拦。"
-        "**「有一道闸」和「有一个会拦的闸」是两件事**,而它们在代码里长得一模一样。")
-    out["⚠️ 哪些款该试,业务还没确认"] = _mu.门槛_依据
+    # ── 开裁那道闸(业务 09-22 起真的会拦)────────────────────────────
+    # 原来这里写的是「这道闸现在拦不住任何东西」—— 系统里没有写口会把订单推进裁剪。
+    # 现在开裁走 start_cutting / 后台改状态,两条路都过订单状态机上的同一道闸。
+    if not order:
+        import fitting_write as _fw
+        待 = {"可以": [], "不可以": [], "判不了": []}
+        for o in _rows("SELECT id FROM ordr WHERE kind='定制品订单' AND status='待生产' ORDER BY id"):
+            g, w, _ = _fw.过闸(o["id"])
+            待.setdefault(g, []).append({"订单": o["id"], "为什么": w})
+        out["待开裁的单"] = {
+            "是什么": "「待生产」的定制单现在能不能开裁 —— **该试的要试过、而且客户签了字**才许裁(业务 09-22)",
+            **{k: {"单数": len(v), "明细": v} for k, v in 待.items() if v},
+        }
+    out["开裁这道闸"] = (
+        "**会拦**:定制单从「待生产」进「生产中」(开裁),不管从后台点还是由版师在助手里开,"
+        "都过订单状态机上的同一道闸 —— 单里有一件该试没试、试了没签字、或判不了该不该试而又没试过,**整单不许裁**(判不了的先试一轮并签字就能裁)。"
+        "裁剪按单排,裁一半等于把没过闸那件也推上裁床。")
+    out["哪些款必须试"] = _mu.范围_依据
+    out["⚠️ 重工那条的门槛"] = _mu.门槛_依据
     out["⚠️ 「没记录」和「没签字」不是一回事"] = (
         "**该试没试**是流程没走(判**我方**),**已试未签**是流程走了确认没拿到"
         "(回落到量体记录)。两者在一张表上都是「没有签字」,而判责方向相反 —— "
         "**不许拿「查不到记录」当成「没签字」。**")
     out["这个工具不改任何东西"] = (
-        "约试衣、催签字是**人的动作**。这里只说「该跟哪一单、凭什么」。")
+        "约试衣、催签字是**人的动作**。这里只说「该跟哪一单、凭什么」。"
+        "登记试衣和签字用 record_fitting(顾问 / 店长),开裁用 start_cutting(版师)。")
     return _nz(out)
 
 
@@ -3753,7 +3863,9 @@ SHOP_SCHEMAS=[
     "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
    "required":["customer_id"]}},
  {"name":"stock_alert","description":"**库存预警** —— 哪些 SKU 要断了、哪些**看着有货其实一件都发不出**(在手有货但全被订单占用)、哪些在压货。805 个 SKU 全有库存数而在这之前没有任何工具会说「这个要断了」。⚠️ **在手 ≠ 可用**:客户问「还有货吗」要的是 **可用 = 在手 − 已占用**,只报在手会让客户白等。⚠️ **它给不出可售天数,而且会直说给不出**:全库有销量的只有 71/797 个 SKU、每个只有一笔、订单只跨 18 天,**一笔销售画不出速度** —— 这时候任何一个可售天数都是编的,而编出来的数会让采购按它去补货。**不许把「算不出」说成 0 天,也不许退回成「低于 N 件就预警」假装算得出。** ⚠️ **这个工具不补货**:补多少、什么时候补是采购的决定。⚠️ 只看成品 SKU,**面料库存是另一摊**。","input_schema":{"type":"object","properties":{"scope":{"type":"string","description":"发不出 / 断货 / 快没了 / 卖不动;不传则全给"}}}},
- {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**重工订单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。⚠️ **「哪些款该试」这条线业务还没确认过**(知识库只写了「重工款强烈建议做」,没有数),每条结论都要带着这句话说出去。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
+ {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**定制单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。**哪些款必须试(业务 09-22 定)**:重工、全定制(顾问亲自量的尺寸判出)、婚服(商品挂了「婚礼婚服」场合标签)三类命中任一即必试;没命中但有一类判不了 → 判不了,**不当成不必试**;重工那条的两个门槛数仍是推导的。**开裁这道闸会拦**:该试的要试过、而且客户签了字,整单才许开裁 —— 看板里「待开裁的单」列出每张待生产单能不能裁、卡在哪。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
+ {"name":"record_fitting","description":"**登记一轮白坯试衣(真的写进去)**。顾问或店长用,只能登记本店订单;陪同人就是你自己(不收工号)。item 填订单行号或商品名(一张单里同名多件时必须给行号)。adjust 写这一轮改了哪几处(没改写「无需调整」,不许空);signed 客户当场签字就填 true。**补签**:客户后来才签,给 round(已有的轮次号)并 signed=true;**签字不能撤销**。⚠️ 客户没签字之前,这一件所在的整张单**不许开裁**(业务 09-22)。⚠️ **动手前先跟用户对一遍**哪张单、哪一件、改了什么、签没签 —— 签字是责任转移点,记错了等于给门店一张不存在的底牌。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"item":{"type":"string","description":"订单行号或商品名"},"adjust":{"type":"string","description":"这一轮改了哪几处;没改写「无需调整」"},"signed":{"type":"boolean","description":"客户签字了吗"},"round":{"type":"integer","description":"只在补签时给:要补签的那一轮"},"note":{"type":"string"}},"required":["order_id","item"]}},
+ {"name":"start_cutting","description":"**开裁(真的写进去)**:把一张定制单从「待生产」推进到「生产中」。只有版师能用。**要先过白坯试衣这道闸**(业务 09-22):单里每一件该试的都试过、而且客户签了字,才许开裁;有一件没过就整单拒绝,返回里列出是哪几件、缺什么(没试 / 没签 / 判不了该不该试又没试过 —— 判不了的先试一轮并签字就能裁)。被拒时**不要换个说法再试**,把卡在哪告诉用户,让顾问去约试衣或补签。⚠️ **开裁不可逆**,动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
  {"name":"channel_compare","description":"**多渠道表现对比** —— 四个下单渠道(微信小程序/官网/门店 Pad/客服代下单)各自的单量、客单价、待付款占比、退款率、售后率。⚠️ **这张表不能用来比渠道,而它和真的渠道对比长得一模一样。** 原因不是数据少,是这一列怎么填上去的:种子订单是**按订单序号轮着发的**(`SRC[i % 4]`),模拟订单是**按固定权重独立抽的**,两种机制都让渠道和金额、状态、客户**统计独立** —— 任何渠道间差异都是这两个机制的产物,**不是渠道的表现**。⚠️ **渠道和活动 100% 共线**:每个渠道恰好对应一个活动,一一对应没有例外,所以「这个渠道转化好」和「这个活动效果好」在这批数据上**分不开**(这条同时影响 activity_roi)。⚠️ **客服代下单不是一个渠道**,是人工补录,背后可能是电话/微信/门店 —— 当渠道分析会得出假结论。⚠️ **不给渠道排名**:11 单的样本排不出名次,排了会被当成结论去调预算;每个比率后面都带着「**一单值多少个百分点**」。","input_schema":{"type":"object","properties":{"include_sim":{"type":"boolean","description":"是否把 3826 单模拟订单也算进来。默认 false —— 它们的渠道是抽出来的,算进来只会让表看起来更可信,不会更真"}}}},
  {"name":"recovery_queue","description":"**未成交挽回清单** —— 下了单没付钱的、约了没来的,各压着多少钱、压了多久、该按什么顺序跟。不传参数给两摊都要;传「待付款」或「预约」只要一摊。⚠️ **这个工具只出清单,不发任何东西** —— 发短信/微信/打电话是对外动作,按不按、怎么按是人的决定。⚠️ **它不划「超时」那条线**:定制品和标品的合理等待期本来就不一样,编一个数会把正常的单子算成流失。只排序不划线,按**金额 × 停留天数**排。⚠️ **三种未成行不许混成一类**:已取消是客户主动说了不来、爽约是没说就没来(**先确认人没事**)、已过期是系统判的(客户自己可能都不知道有这条预约)。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"待付款 或 预约;不传则两摊都给"}}}},
  {"name":"pattern_queue","description":"**版师的排队看板 —— 「今天该我核什么」。**不用传任何参数。把版师手上的活一次列全:裁片用料占比的进度(并按**影响面**排出先核哪几个 —— 挂多少商品、多少订单行已经按这个数备料)、推档有疑点的版型、「推得出但不作数」的尺码格子、配置页上架了却没有版型的定制品。**每一摊都报「总数 / 已完成 / 还剩」** —— 一摊显示 0 的时候要说得出是「做完了」还是「一条都没扫到」。版师进来第一句话就该调它。\n\n**传 pattern(认编码 PT06 和全名)就转看那一个版型的裁片用料占比明细**,每条带来源:`估算`(机器估的没人看过)/ `复核`(规则核过但这个数没人核过)/ `版师`(人核过数)/ `BOM`(明写的用量)——**三种可信度不许混为一谈**。还给出占比折合多少米:**版师判断的是米数不是百分比**,「袖片 15.7%」看不出对不对,「袖片 0.63 米」一眼就知道。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名。不传=看板(今天该核什么);传了=那一版的裁片明细。"}}}},
@@ -4640,7 +4752,7 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"record_fitting":record_fitting,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

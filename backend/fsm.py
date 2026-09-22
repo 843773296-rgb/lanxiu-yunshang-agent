@@ -128,6 +128,15 @@ def check(mid, frm, to, ctx=None):
             return False,"NEED_APPROVAL",APPROVAL[key]
         if key in APPROVAL and ctx.get("amount",0)>=1000 and "财务" not in str(ctx.get("approved_by","")):
             return False,"NEED_FINANCE",f"单笔 ¥{ctx['amount']:,.2f} ≥ 1000,须增加财务复核"
+        # ⚠️ **定制单开裁前必须过白坯试衣这道闸**(业务 2026-09-22)。
+        #    闸放在状态机上、而不是只放在开裁那个写口里 —— 后台有一个通用的「改状态」入口
+        #    (server.transit),只拦写口的话,从后台点一下就绕过去了。
+        #    **没带过闸结果的一律拒绝**(fail closed):哪个入口忘了算,就哪个入口开不了裁,
+        #    而不是悄悄放行。过闸怎么算在 backend/fitting_write.过闸。
+        if (mid,frm,to)==("bk-order","待生产","生产中") and ctx.get("kind","定制品订单")=="定制品订单" \
+                and ctx.get("白坯过闸")!="可以":
+            return False,"MUSLIN_GATE",(ctx.get("白坯过闸_为什么")
+                or "定制单开裁前必须过白坯试衣这道闸:该试的要试过并且客户签了字 —— 这次流转没带过闸结果,一律拒绝")
         if mid=="bk-task" and to=="完结" and not (ctx.get("summary") or "").strip():
             return False,"NEED_SUMMARY","日程任务完成需填写总结"
         if mid=="bk-task" and to=="取消" and not (ctx.get("reason") or "").strip():
@@ -163,6 +172,9 @@ if __name__=="__main__":
       (("bk-order","待审核","待付款",{}),  False, "反向 —— 已经审了不能退回没付款"),
       (("bk-order","生产中","取消",{}),    False, "开工后取消 —— 料已经裁了,那是退款不是改状态"),
       (("bk-order","待生产","取消",{}),    True,  "开工前可以取消"),
+      (("bk-order","待生产","生产中",{}),  False, "开裁没带白坯过闸结果 —— 一律拒绝(不许悄悄放行)"),
+      (("bk-order","待生产","生产中",{"白坯过闸":"不可以"}), False, "白坯没过闸不许开裁"),
+      (("bk-order","待生产","生产中",{"白坯过闸":"可以"}),   True,  "过了白坯那道闸才许开裁"),
       (("bk-order","完成","待发货",{}),    False, "终态再动"),
       (("bk-order","取消","待付款",{}),    False, "终态再动"),
     ]

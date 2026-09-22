@@ -60,9 +60,10 @@ def main():
     单 = list(c.execute("""select id, customer_id, created from ordr
                            where kind='定制品订单' and appt_src='接待关联'"""))
     点 = 全部触点(c)
-    # **世界的今天,不是机器的今天** —— 否则同一份代码今天和明天造出不同的数据,
-    # 重建就不可复现(determinism_check 当场抓到了第一版)。
-    from seed import TODAY as 今
+    # 分成记录的时间 = **这张单的下单时间** —— 功劳是在成交那一刻定的。
+    # 第一版写的是演示世界的「今天」(seed.TODAY,为了不用机器时钟),
+    # 而库里有一批模拟订单下在今天之后,于是 225 条分成比它的订单还早(数据规范 C3 抓到)。
+    # 取订单自己的时间,既不依赖机器时钟,也不会早于订单。
     行, 空 = [], 0
     for oid, cid, created in 单:
         前 = [x for x in 点.get(cid, []) if (x["时间"] or "") < (created or "")]
@@ -74,7 +75,7 @@ def main():
             坏 = _归因.校验一笔(_归因.影响力分成, 主, "算法算", pct, METHOD)
             if 坏:
                 sys.exit(f"❌ {oid} 的一笔过不了校验:{坏}")
-            行.append((oid, who, _归因.影响力分成, 主, pct, "算法算", METHOD, roles, 今))
+            行.append((oid, who, _归因.影响力分成, 主, pct, "算法算", METHOD, roles, created))
     c.executemany("""insert into deal_credit
                      (order_id,staff_no,kind,role,pct,source,method,basis,created)
                      values(?,?,?,?,?,?,?,?,?)""", 行)

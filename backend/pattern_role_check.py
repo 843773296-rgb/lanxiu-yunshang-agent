@@ -92,8 +92,10 @@ def main():
     tools = sdk._ROLE_TOOLS["pattern"]()
     短 = [t.rsplit("__", 1)[-1] for t in tools]
     写 = sorted(set(短) & set(api.WRITE_TOOLS))
-    ck("版师手上只有一个写工具", 写 == ["set_piece_ratio"], len(短),
-       f"实际是 {写}" if 写 != ["set_piece_ratio"] else
+    # 09-22 起版师多了一个写:开裁(start_cutting,过白坯试衣那道闸)。
+    # 这条钉的仍是「**只有这几个,不多给**」—— 名单现算、期望手写,多一个少一个都红。
+    ck("版师手上的写工具正好是改占比和开裁两个", 写 == ["set_piece_ratio", "start_cutting"], len(短),
+       f"实际是 {写}" if 写 != ["set_piece_ratio", "start_cutting"] else
        "**从 sdk 和 api 两边现算,不手抄** —— 抄一份当天就开始漂")
 
     # 越权的反面:版型 / 商品 / 订单的写口一个都不该在他手上。
@@ -227,7 +229,7 @@ def main():
         "kb_read":       lambda: api.kb_read("10", "六、放松量与量体项映射"),
     }
     读工具 = [t.rsplit("__", 1)[-1] for t in tools
-              if t.rsplit("__", 1)[-1] != "set_piece_ratio"]
+              if t.rsplit("__", 1)[-1] not in api.WRITE_TOOLS]
     漏 = [n for n in 读工具 if n not in 跑法]
     ck("版师的每个读工具都被真跑过一遍", not 漏, len(读工具),
        f"没跑到 {漏} —— **没跑过的工具,它返回什么没人知道**" if 漏 else

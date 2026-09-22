@@ -2463,5 +2463,109 @@
       }
     ],
     "预期红": "挂了接待的定制单都有 W 型影响力"
+  },
+  {
+    "script": "backend/fitting_write_check.py",
+    "改坏": "把订单状态机上的白坯闸去掉(待生产→生产中不再看过闸结果)",
+    "file": [
+      {
+        "path": "backend/fsm.py",
+        "old": "                and ctx.get(\"白坯过闸\")!=\"可以\":",
+        "new": "                and False:"
+      }
+    ],
+    "预期红": "后台改状态同样被拦(不能绕)"
+  },
+  {
+    "script": "backend/fitting_write_check.py",
+    "改坏": "让后台改状态时直接把过闸结果写成「可以」(不真算)",
+    "file": [
+      {
+        "path": "backend/server.py",
+        "old": "            ctx[\"白坯过闸\"], ctx[\"白坯过闸_为什么\"] = _g, _w",
+        "new": "            ctx[\"白坯过闸\"], ctx[\"白坯过闸_为什么\"] = \"可以\", _w"
+      }
+    ],
+    "预期红": "后台改状态同样被拦(不能绕)"
+  },
+  {
+    "script": "backend/fitting_write_check.py",
+    "改坏": "拆掉「签字不能撤销」那道拦截",
+    "file": [
+      {
+        "path": "backend/fitting_write.py",
+        "old": "        if not signed:\n            return dict(ok=False, code=\"NO_UNSIGN\",",
+        "new": "        if False:\n            return dict(ok=False, code=\"NO_UNSIGN\","
+      }
+    ],
+    "预期红": "给已有轮次却不签 → 拒(签字不能撤销)"
+  },
+  {
+    "script": "backend/fitting_write_check.py",
+    "改坏": "让 能不能开裁() 在试了没签时放行",
+    "file": [
+      {
+        "path": "knowledge/muslin.py",
+        "old": "    if not 签了吗:\n        return (\"不可以\", \"**试了但客户还没签字**",
+        "new": "    if False:\n        return (\"不可以\", \"**试了但客户还没签字**"
+      }
+    ],
+    "预期红": "试了没签 → 仍被拦"
+  },
+  {
+    "script": "backend/fitting_write_check.py",
+    "改坏": "把顾问也加进开裁角色",
+    "file": [
+      {
+        "path": "backend/fitting_write.py",
+        "old": "开裁角色 = (\"版师\",)",
+        "new": "开裁角色 = (\"版师\", \"顾问\")"
+      }
+    ],
+    "预期红": "顾问不能开裁"
+  },
+  {
+    "script": "backend/muslin_check.py",
+    "改坏": "把看板上「开裁这道闸」那段说明删掉",
+    "file": [
+      {
+        "path": "backend/api.py",
+        "old": "    out[\"开裁这道闸\"] = (",
+        "new": "    out[\"开裁这道闸_删\"] = ("
+      }
+    ],
+    "预期红": "看板要说清开裁这道闸会拦"
+  },
+  {
+    "script": "agent/fitting_eval_judgetest.py",
+    "改坏": "让 asks_signed 不再认「吗」这种问句",
+    "file": [
+      {
+        "path": "agent/fitting_eval.py",
+        "old": "re.search(\"[?\\uff1f]|吗|是否|有没有|签了没|还是没\", s)",
+        "new": "re.search(\"[?\\uff1f]|是否|有没有|签了没|还是没\", s)"
+      }
+    ],
+    "预期红": "只靠「吗」、没带问号 → 过"
+  },
+  {
+    "script": "agent/fitting_eval_judgetest.py",
+    "改坏": "让 no_bypass_advice 不看否定(劝阻也当成建议)",
+    "file": [
+      {
+        "path": "agent/fitting_eval.py",
+        "old": "if i >= 0 and not tm.negated(t, i, both_sides=True):",
+        "new": "if i >= 0:"
+      }
+    ],
+    "预期红": "劝阻「不能先裁后补」→ 过"
+  },
+  {
+    "script": "backend/muslin_check.py",
+    "改坏": "把旅程在开裁前真登记的试衣记录删掉(造样本脚本整表清空时就是这样)",
+    "sql": [
+      "DELETE FROM fitting WHERE note LIKE '%旅程脚本%'"
+    ],
+    "预期红": "经系统开裁的单,每一件都过了闸(已试已签或不必试)"
   }
 ]

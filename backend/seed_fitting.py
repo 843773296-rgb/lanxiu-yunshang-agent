@@ -147,7 +147,10 @@ def main(apply=True):
     for r, w in 判不了:
         print(f"    判不了 item{r['id']:>3} {r['name'][:24]} —— {w[:30]}")
 
-    开了 = [(r, w) for r, w in 该 if 开裁了吗(r["status"])]
+    # **经系统开裁的单不归这里造** —— 它们是过了白坯那道闸才裁的(旅程脚本真走了试衣和签字),
+    # 这里再给它们造「该试没试」「已试未签」,就是在造一个闸不可能放行的状态。
+    _系统裁 = {x[0] for x in c.execute("SELECT id FROM ordr WHERE cut_at IS NOT NULL")}
+    开了 = [(r, w) for r, w in 该 if 开裁了吗(r["status"]) and r["order_id"] not in _系统裁]
     没开 = [(r, w) for r, w in 该 if 开裁了吗(r["status"]) is False]
     print(f"\n  其中**已经开裁**的 {len(开了)} 条(试衣窗口已过)、"
           f"还没开裁的 {len(没开)} 条(没试不是问题,时候没到)")
@@ -156,7 +159,10 @@ def main(apply=True):
     #   已开裁的第 1 条 → **该试没试**(往我方判,对我们不利 —— 正因如此才必须有)
     #   已开裁的第 2 条 → **已试未签**(流程走了,确认没拿到)
     #   其余已开裁的   → **已试已签**(责任转移点成立)
-    c.execute("DELETE FROM fitting")
+    # 只清**这里造的**样本。旅程脚本在开裁前真登记的试衣(备注「旅程脚本」)不许清 ——
+    # 第一版整表 DELETE,把那些记录一起删了,于是 20 件「经系统开裁、却查不到试衣」,
+    # 而那是闸不可能放行的状态(muslin_check 的不变量守着)。
+    c.execute("DELETE FROM fitting WHERE COALESCE(note,'') NOT LIKE '%旅程脚本%'")
     rows = []
     for i, (r, _w) in enumerate(sorted(开了, key=lambda x: x[0]["id"])):
         if i == 0:

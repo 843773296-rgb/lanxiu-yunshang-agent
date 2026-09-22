@@ -996,6 +996,26 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
                     "别自己替版师编一个理由:回去问他是量的、照排料图算的、"
                     "还是比着老版定的。")
 
+        # ── 白坯试衣那两个写工具的闸(业务 09-22)──────────────────────
+        # `record_fitting` 最怕的是**默认「签了」**:签字是责任转移点,
+        # 记成签了而客户没签,门店出争议时拿着一张不存在的底牌。
+        # 工具那边 signed 缺省是 False,模型不传就记成「没签」—— 那也不行:
+        # 用户可能说过签了,模型漏传,台账上就少了一张真的底牌。**签没签必须明说。**
+        if short == "record_fitting" and "signed" not in args:
+            return ("`signed` 没给 —— **客户签没签字必须明说,不许默认**。"
+                    "签字是责任转移点:默认「没签」会让一张真签过的单开不了裁,"
+                    "默认「签了」会给门店一张不存在的底牌。回去问清楚再登记。")
+        if short == "record_fitting" and args.get("round") in (None, "") \
+                and not str(args.get("adjust") or "").strip():
+            return ("新登记一轮试衣要写 `adjust`(改了哪几处,没改写「无需调整」)—— "
+                    "只写「试了」的记录,出尺寸争议时说不清客户认可的是哪一版。"
+                    "别替顾问编:回去问这一轮改了什么。")
+        # `start_cutting` 被 MUSLIN_GATE 拒过之后,通用闸已经不许同参数重试;
+        # 这里再挡一种:**没给单号就开裁**(开裁不可逆,不许让工具去猜是哪一单)。
+        if short == "start_cutting" and not str(args.get("order_id") or "").strip():
+            return ("开裁要给订单号 —— **开裁不可逆**,不许让工具去猜是哪一单。"
+                    "先跟版师确认单号。")
+
     # ── 第二条:拿客户号当着装人编号 ──────────────────────────────────
     if name.endswith(("plan_for_event", "forecast_growth", "get_wearer")):
         w = args.get("wearer_id") or ""

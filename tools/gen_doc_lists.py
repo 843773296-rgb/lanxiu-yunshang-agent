@@ -21,8 +21,8 @@ import api
     "客户与订单": ["get_scheme", "get_order", "can_order", "get_wearer", "recovery_queue", "activity_roi",
                 "channel_compare"],
     "库存与产能": ["get_stock", "stock_alert", "get_capacity", "get_workorder", "my_workorders"],
-    "版师相关":   ["pattern_queue", "grading_audit", "set_piece_ratio"],
-    "定制与售后": ["fitting_queue", "get_aftersale", "get_maintain", "get_review_queue"],
+    "版师相关":   ["pattern_queue", "grading_audit", "set_piece_ratio", "start_cutting"],
+    "定制与售后": ["fitting_queue", "record_fitting", "get_aftersale", "get_maintain", "get_review_queue"],
     "推算与校验": ["plan_for_event", "forecast_growth", "check_write"],
 }
 

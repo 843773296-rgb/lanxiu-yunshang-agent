@@ -521,7 +521,32 @@ def _journey(cust, dry=False):
     day = 0
     for st in PATH:
         day += random.randint(2, 6)
-        rr = _srv.transit("bk-order", oid, st, {"by": "旅程脚本"})
+        if st == "生产中":
+            _裁日 = day
+            # ── 开裁前的白坯试衣(业务 2026-09-22:该试的要试过、客户签了字才许开裁)──
+            # 闸挂在订单状态机上,**这条旅程也得照着走**:闸上线那天第一次重建,
+            # 这里就被拦在「生产中」,脚本崩在半路 —— 时间没挪回过去,留下一批未来日期
+            # (数据规范 C4 / A15 当场红)。**真路径的好处就在这:流程一变,造数据的人先撞上。**
+            # 该试的由上门那位顾问登记一轮、客户签字;时间按剧本回填,不用机器时钟。
+            import fitting_write as _fw, seed_fitting as _sfit
+            # 试衣表是 seed_fitting(第 7 步)建的,旅程跑在它前面 —— **用同一份建表语句**先建上,
+            # 不另抄一份表结构(第一版没建,这里「no such table」崩在半路,又留下一批未来日期)
+            with sqlite3.connect(DB) as _cx: _cx.executescript(_sfit.DDL)
+            _g, _w, _明细 = _fw.过闸(oid)
+            if _g in ("不可以", "判不了"):
+                # 判不了该不该试的也先试 —— 门店拿不准时本来就该先试一轮(已试已签即放行)
+                _试 = (v_start + datetime.timedelta(days=day - 1)).strftime("%Y-%m-%d %H:%M")
+                for _x in _明细:
+                    if _x["能不能开裁"] == "可以": continue
+                    _r = _fw.record(dict(order_id=oid, item=str(_x["订单行"]),
+                                         adjust="无需调整", signed=True, note="旅程脚本"), adv)
+                    if _r.get("ok"):
+                        ex("UPDATE fitting SET ts=?, signed_at=? WHERE item_id=? AND round=?",
+                           _试, _试, _x["订单行"], _r["第几轮"])
+                steps.append(("⑦½ 白坯试衣", REAL, f"该试 {sum(1 for x in _明细 if x['能不能开裁'] != '可以')} 件"
+                              f"({'、'.join(sorted({k for x in _明细 for k in (x.get('属于哪几类') or [])}))})"
+                              f",{adv['name']} 陪试、客户签字"))
+        rr = _srv.transit("bk-order", oid, st, {"by": "旅程脚本", "actor_no": adv["no"]})
         if not rr.get("ok"):
             steps.append(("⑧ 推进", REAL, f"{R}卡在 {st}:{rr.get('reason','')[:40]}{D}"))
             return steps, None
@@ -530,6 +555,9 @@ def _journey(cust, dry=False):
     ex("""UPDATE ordr SET updated=?,produced_at=?,shipped_at=?,finished_at=? WHERE id=?""",
        done, (v_start + datetime.timedelta(days=day - 12)).strftime("%Y-%m-%d %H:%M"),
        (v_start + datetime.timedelta(days=day - 6)).strftime("%Y-%m-%d %H:%M"), done, oid)
+    # 开裁时间也按剧本回填(transit 落的是「现在」)—— 放在已生产之前
+    ex("UPDATE ordr SET cut_at=? WHERE id=? AND cut_at IS NOT NULL",
+       (v_start + datetime.timedelta(days=_裁日)).strftime("%Y-%m-%d %H:%M"), oid)
     # ── 客户档案跟着动:三个字段必须一起对 ──────────────────────────
     # 第一版只更了 order_cnt / paid_amount / last_interact,栽了两处:
     #

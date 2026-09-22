@@ -175,6 +175,14 @@ CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
   prd_status TEXT, goods_amount REAL, freight REAL, received REAL, refund_status TEXT,
   addr TEXT, paid_at TEXT, audit_at TEXT, produced_at TEXT, shipped_at TEXT,
   finished_at TEXT, cancelled_at TEXT, remark TEXT,
+  -- ── 开裁记录(2026-09-22 加)──────────────────────────────────────
+  -- 谁、什么时候把这单从「待生产」推进到「生产中」。**只有经系统开裁的单才有值**
+  -- (版师的 start_cutting / 后台改状态,两条路都过白坯试衣那道闸)。
+  -- ⚠️ 它决定这单按白坯**新规还是旧规**判(knowledge/muslin.适用新规):
+  -- 有值 = 过了闸才裁的 → 新规;已开裁却没值 = 系统接管开裁之前就裁了 → 旧规,不追溯判我方。
+  -- 所以**种子数据里不许给老单补这一列** —— 补了就把闸上线前裁的单冒充成过了闸。
+  cut_at TEXT,
+  cut_by TEXT,
   -- 这单从哪条方案来。可空:标品单、方案接入前的老单都没有。
   -- ⚠️ 注释必须**单独占一行**:第一版写在列的同一行,后面紧跟的 `);` 被卷进了注释,
   -- 这张表一直没闭合,下一句 CREATE 才报语法错 —— 报错位置和出错位置隔着一张表。
