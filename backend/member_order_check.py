@@ -16,6 +16,8 @@ c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
 咬合 = [
     ('把一张已付款订单的顾问工号改成不存在的人(这单的业绩没人认领)',
      '导购业绩合计 ≠ 全库已付款未关闭的实收'),
+    ('把一张已完成订单的顾问工号改成不存在的人(已交付那一列漏记)',
+     '「其中已交付完成」≠ 全库已完成订单的实收'),
     ('把一张订单的商品总额抬高 9 万(和各订单行之和对不上)',
      '≠ 各行基本金额之和'),
 ]
@@ -163,6 +165,15 @@ _页 = _srv.guide_perf({})["rows"]
 _页单, _页钱 = sum(r["orders"] for r in _页), round(sum(r["amount"] for r in _页), 2)
 _库 = q("""SELECT COUNT(*) n, ROUND(COALESCE(SUM(received),0),2) amt FROM ordr
           WHERE prd_status NOT IN ('待付款','已关闭')""")[0]
+# 「其中已交付完成」必须是子集,且合计等于全库已完成订单的实收
+_完单, _完钱 = sum(r["done_orders"] for r in _页), round(sum(r["done_amount"] for r in _页), 2)
+_库完 = q("SELECT COUNT(*) n, ROUND(COALESCE(SUM(received),0),2) amt FROM ordr WHERE prd_status='已完成'")[0]
+if (_完单, _完钱) != (_库完["n"], _库完["amt"]):
+    bad.append(f"导购业绩「其中已交付完成」≠ 全库已完成订单的实收:页面 {_完单} 单 / {_完钱},"
+               f"库里 {_库完['n']} 单 / {_库完['amt']}")
+for r in _页:
+    if r["done_orders"] > r["orders"] or r["done_amount"] > r["amount"] + 0.005:
+        bad.append(f"顾问 {r['no']} 的「其中已交付完成」比业绩本身还大 —— 子集超过了全集")
 if (_页单, _页钱) != (_库["n"], _库["amt"]):
     bad.append(f"导购业绩合计 ≠ 全库已付款未关闭的实收:页面 {_页单} 单 / {_页钱},"
                f"库里 {_库['n']} 单 / {_库['amt']} —— 状态名、金额列或顾问归属有一处对不上")

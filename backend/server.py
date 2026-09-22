@@ -1535,13 +1535,17 @@ def guide_perf(q):
         #    也别漏算没人发现。钱用 received(实收),不用 amount(订单金额)—— 定金、部分付款时两者不同。
         od=rows("""SELECT COUNT(*) n, COALESCE(SUM(received),0) amt FROM ordr
                    WHERE advisor_no=? AND prd_status NOT IN ('待付款','已关闭')""",no)[0]
+        # 其中已交付完成 —— 不少门店的提成要等交付完成才结算(业务 2026-09-22 要加这一列)。
+        # 是上面那个数的**子集**,不是另一套业绩:同样按实收、同样排除待付款 / 已关闭。
+        dn=rows("""SELECT COUNT(*) n, COALESCE(SUM(received),0) amt FROM ordr
+                   WHERE advisor_no=? AND prd_status='已完成'""",no)[0]
         apt=rows("SELECT COUNT(*) c FROM appointment WHERE advisor_no=?",no)[0]["c"]
         arr=rows("SELECT COUNT(*) c FROM appointment WHERE advisor_no=? AND status IN ('已到店','已完成')",no)[0]["c"]
         fu=rows("SELECT COUNT(*) c FROM followup WHERE advisor_no=?",no)[0]["c"]
         sc=rows("SELECT COUNT(*) c FROM schedule WHERE advisor_no=?",no)[0]["c"]
         scd=rows("SELECT COUNT(*) c FROM schedule WHERE advisor_no=? AND status='完结'",no)[0]["c"]
         out.append(dict(no=a["no"],name=a["name"],shop=a["shop"],cust=cust_n,
-          orders=od["n"],amount=od["amt"],appt=apt,arrived=arr,
+          orders=od["n"],amount=od["amt"],done_orders=dn["n"],done_amount=dn["amt"],appt=apt,arrived=arr,
           arrive_rate=round(arr/apt*100) if apt else 0,
           followup=fu,task=sc,task_done=scd,
           task_rate=round(scd/sc*100) if sc else 0,
@@ -1549,7 +1553,7 @@ def guide_perf(q):
     key=(q.get("sort") or ["amount"])[0]
     out.sort(key=lambda r:r.get(key,0) or 0,reverse=(q.get("dir") or ["desc"])[0]!="asc")
     return dict(rows=out,total=len(out),
-      note="原设计稿无导购业绩页面,本页按后台 PRD 第 9 章「数据指标口径」实现;销售额口径为实付金额,只算已付款的单,不含待付款和已关闭订单。")
+      note="原设计稿无导购业绩页面,本页按后台 PRD 第 9 章「数据指标口径」实现;销售额口径为实付金额,只算已付款的单,不含待付款和已关闭订单;「其中已交付完成」是它的一部分,只算订单已完成的,供按交付结算提成时参考。")
 
 def stock_log_list(q):
     d=_simple("stock_log",q,["sku","spu","ref","operator"],{"id","ts","delta"},

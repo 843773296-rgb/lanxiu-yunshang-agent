@@ -2513,6 +2513,7 @@ async function perfPage(){
    <div class="row r-4" style="margin-bottom:14px">
     ${[["顾问人数",d.rows.length,"人"],
        ["销售额合计",money(d.rows.reduce((a,b)=>a+b.amount,0)),"元"],
+       ["其中已交付完成",money(d.rows.reduce((a,b)=>a+b.done_amount,0)),"元"],
        ["订单合计",d.rows.reduce((a,b)=>a+b.orders,0),"单"],
        ["跟进合计",d.rows.reduce((a,b)=>a+b.followup,0),"条"]].map(([l,v,u])=>
       `<div class="card"><div class="bd" style="padding:15px 18px">
@@ -2525,7 +2526,7 @@ async function perfPage(){
     <table class="tb" style="margin-top:12px"><thead><tr>
      <th style="width:120px">工号</th><th style="width:110px">姓名</th><th>归属门店</th>
      <th style="width:90px">客户数</th><th style="width:90px">订单</th>
-     <th style="width:140px">销售额</th><th style="width:120px">客单价</th>
+     <th style="width:140px">销售额</th><th style="width:150px">其中已交付完成</th><th style="width:120px">客单价</th>
      <th style="width:130px">预约/到店</th><th style="width:110px">到店率</th>
      <th style="width:110px">任务完成率</th></tr></thead><tbody>
      ${d.rows.map(r=>`<tr><td class="mono">${esc(r.no)}</td><td>${esc(r.name)}</td>
@@ -2534,6 +2535,8 @@ async function perfPage(){
         <span class="mono">¥${money(r.amount)}</span>
         <span style="flex:1;height:5px;background:var(--tile);border-radius:99px;min-width:34px">
           <i style="display:block;height:100%;width:${(r.amount/max*100).toFixed(0)}%;background:var(--blue2);border-radius:99px"></i></span></div></td>
+      <td class="mono">¥${money(r.done_amount)}
+        <span style="color:var(--ink3);font-size:11.5px">(${r.done_orders} 单)</span></td>
       <td class="mono">¥${money(r.avg)}</td>
       <td class="mono">${r.appt} / ${r.arrived}</td>
       <td class="mono" style="${r.arrive_rate<50?"color:var(--warn)":""}">${r.arrive_rate}%</td>
