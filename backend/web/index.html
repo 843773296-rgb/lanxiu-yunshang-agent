@@ -1085,7 +1085,9 @@ const ROLES=["顾问","店长","总部运营"];
 function setRole(r){ROLE=r;localStorage.setItem("lx_role",r);
   const el=document.getElementById("roleTxt"); if(el)el.textContent=r;}
 
-let CAL={y:2026,m:8};
+// 演示世界的「今天」—— 必须与 backend/seed.py 的 TODAY 同一天,不用浏览器时钟
+const DEMO_TODAY="2026-08-31", DT=DEMO_TODAY.split("-").map(Number);
+let CAL={y:DT[0],m:DT[1]};
 function calendar(marks){
   const Y=CAL.y,Mo=CAL.m, first=new Date(Y,Mo-1,1), days=new Date(Y,Mo,0).getDate();
   const lead=first.getDay(), prevD=new Date(Y,Mo-1,0).getDate();
@@ -1100,8 +1102,8 @@ function calendar(marks){
    <table><thead><tr>${wk.map(w=>`<th>${w}</th>`).join("")}</tr></thead><tbody>`;
   for(let i=0;i<cells.length;i+=7){
     html+="<tr>"+cells.slice(i,i+7).map(c=>{
-      const key=`2026-08-${String(c.d).padStart(2,"0")}`, m=!c.out&&marks[key];
-      return `<td class="${c.out?"out":""} ${!c.out&&c.d===31?"today2":""}">
+      const key=`${Y}-${String(Mo).padStart(2,"0")}-${String(c.d).padStart(2,"0")}`, m=!c.out&&marks[key];
+      return `<td class="${c.out?"out":""} ${!c.out&&key===DEMO_TODAY?"today2":""}">
         <span class="dnum">${c.d}</span>${m?`<span class="mk" style="background:${m}"></span>`:""}</td>`}).join("")+"</tr>";
   }
   return html+"</tbody></table></div>";
@@ -1257,7 +1259,7 @@ async function custDetail(cid){
   M.querySelectorAll("[data-tab]").forEach(e=>e.onclick=()=>{CT.tab=e.dataset.tab; custDetail(cid)});
   M.querySelectorAll("[data-cal]").forEach(e=>e.onclick=()=>{
     const d=+e.dataset.cal;
-    if(d===0){CAL={y:2026,m:8}} else {CAL.m+=d; if(CAL.m>12){CAL.m=1;CAL.y++} if(CAL.m<1){CAL.m=12;CAL.y--}}
+    if(d===0){CAL={y:DT[0],m:DT[1]}} else {CAL.m+=d; if(CAL.m>12){CAL.m=1;CAL.y++} if(CAL.m<1){CAL.m=12;CAL.y--}}
     custDetail(cid)});
   M.querySelectorAll("[data-edit]").forEach(e=>e.onclick=()=>formEditCustomer(c,()=>custDetail(cid)));
   M.querySelectorAll("[data-fu]").forEach(e=>e.onclick=()=>formFollowup(cid,()=>custDetail(cid)));
