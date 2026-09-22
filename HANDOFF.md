@@ -1,34 +1,19 @@
-## 🧭 2026-09-22 晚:量体录入完成;下一步「下单」写口
+## 🧭 2026-09-22 晚:下单写口已提交;对方在跑评测窗口
 
-- 已提交:量体口径(e336aac)、量体录入写口 record_measure(7ce5e2d,写工具 12)、
-  **每件定制单绑下单量体、判档只认它**(9573de3)—— 业务纠正过我:**订单没有退路**,没绑就是违规、如实报;
-  只有「没下单、看人」时才取最近一整次(缺项不拼)。rebuild 18 步(第 8 步 backfill_order_measure)。
-  3548/3559 件有下单量体;没有的 11 件 = 着装人没定 3 + 反例夹具 8,检查钉上限只许降。
-- ⚠️ **下一步第一个动作:「下单」写口**(分工:我做下单;对方做交付签收 + 报修新建,对方先加 pickup / fit_code 两表并自己 rebuild)
-  业务已定(09-22):**先开单(订单里有这一件)→ 再量 → 量完绑到这一件 → 确认下单**;
-  **新增订单状态「待确认」**(开单后停这,不进业绩、不催付款、可直接取消);**付款默认在确认时已完成 ——
-  定制单确认后跳过「待付款」直接进「待审核」**(确认时落 paid_at;标品流程不变)。fsm 边:待确认→待审核(带过闸 ctx)、待确认→取消。
-  口径已写:knowledge/order_place.py(逐件判:标品过 / 着装人没定→判不了 / 没下单量体、早于开单、缺项→不可以 /
-  版型项未知→判不了;整单:有不可以→不可以,有判不了→判不了),**自测 11 条过,还没提交**(等对方评测跑完才能跑 check.sh)。
-  要改:fsm 加「待确认」(→待付款 带过闸 ctx,fail closed;→取消)、ORDER_PRD 映射(建议映射到 PRD「待付款」使业绩自动排除,
-  但未成交挽回要按 status 排除待确认)、server DESIGN_TABS/TAB_MAP、member_order_check ST2PRD、seed_fitting 开裁之前、
-  两个写口 open_order / confirm_order(新文件 backend/order_write.py)、造几张待确认的演示单;order_gate 从「超期」切到「有没有下单量体」。
-  **写口主体已写好(未提交、未被引用)**:backend/order_write.py —— open_order(停在待确认)/ confirm_order(逐件过闸 →
-  待审核,落 paid_at、received=amount)/ 过闸 / 需要的项(按版型尺码表要比对的部位)。
-  ✅ **对方签收已提交(fc3c7f0)、库已 rebuild(19 步)、服务已重启,文件都还给我了。** 现在直接接:fsm 加「待确认」(只加 待确认→待审核〔ctx 下单过闸,fail closed,code=ORDER_GATE〕和 待确认→取消,别动对方签收那两条边)、
-  ORDER_PRD 待确认→待付款、server.transit 算下单过闸 ctx、api 挂 open_order / confirm_order(WRITE_TOOLS +2)、
-  sdk / guards / prompts(**我的规矩编号从 TL46 起**,对方用了 TL43–45;P5 要求一工具一规矩)、order_write_check(库副本)、DESIGN_TABS/TAB_MAP、member_order_check ST2PRD、
-  seed_fitting 开裁之前、recovery_queue 排除待确认、造几张待确认演示单、order_gate 切到下单量体;对方会替我写正负向评测。
-- 对方交代:① rebuild 19 步,再加步要把末尾 `-ne 19` 改成 20 ② fsm 里对方加了 FIT_GATE(已发货→待完成)/ COMPLETE_GATE
-  (待完成→完成),我的 ORDER_GATE 并排加 ③ 提交时文档口径模块数 34→35(order_place.py)④ **run_journey 往回挪时间的表清单里
-  没有 fitting** —— 白坯试衣记录的 ts / signed_at 按 v_start 算,可能是挪之前的「未来」时间;查 spec_check 有没有覆盖 fitting.ts,没有就补。
-- 09-22 下午用户报「智能助手打不开」:两个服务都没在跑(不是崩),./start.sh 拉起,js_smoke 过。
-- 两组工具合并:用户定**先不合并**。
-- 待办(已接):对方交来的产品技能 task-preflight(动手前预检 + 「可以开始吗?」二次确认),
-  草稿 ~/.claude/skills/prompt-preflight/产品版-task-preflight.md;接入清单见对方 19:xx 消息(skills_own.OURS、
-  skill_shape / skills_check、触发评测加例、测常驻 token)。**排在定制线三件之后。**
-- 能力优化剩:删 1 合 2(对方可能要先跑运营评测,问过了);技能补丁等用户执行。
-- 教训:别人跑评测时不改共享运行时代码;PRD 只做局部替换;造数新增步骤要避开反例夹具(fix_order_measure.夹具着装人集 + 量体不全的判责反例)。
+- 已提交:下单写口(9db5a2a)—— fsm 加「待确认」(待确认→待审核 ORDER_GATE fail closed、待确认→取消;
+  ORDER_PRD 待确认→待付款所以不进业绩);**定制单确认即已付款,跳过待付款**;open_order / confirm_order
+  (backend/order_write.py,口径 knowledge/order_place.py);写工具 17、规矩 TL46/47;order_write_check 16 条。
+  另修:造旅程往回挪时间漏了 fitting.ts/signed_at 和 ordr.cut_at(fcc8547,C4 补查这三列)。
+- **现在是对方的评测窗口**(签收评测 + 下单评测 order_eval.py + 运营重跑,约 40 分钟):
+  **期间不改共享运行代码、不 rebuild、不跑 check.sh**,等对方发「评测跑完」。
+- ⚠️ **下一步第一个动作(窗口之后)**:造几张停在「待确认」的演示单(能确认的 / 被拦的各有),
+  放 rebuild 新一步(现 19 步,末尾 `-ne 19` 要改 20),造数要避开反例夹具;然后看对方下单评测结果、把真跑原话钉回判分器对照。
+- 定制线剩下:报修新建(对方做)、生产各档推进(已生产 / 发货各自没有正规写口,只能后台通用改状态)、
+  订单行上记「想要的长度」→ 做「长度差多了提示改长短」、order_gate 老「超期」口径与新规衔接。
+- 待接:task-preflight 产品技能(对方草稿 ~/.claude/skills/prompt-preflight/产品版-task-preflight.md,
+  含「可以开始吗?」二次确认);技能被拦补丁 `.wip-muslin/apply_skill_guard.py` 等用户执行。
+- 教训:别人跑评测时不改共享运行时代码;PRD 只做局部替换;造数新增步骤避开反例夹具;
+  rebuild 期间别人读库会读到半成品(对方 17:08 撞上过)—— rebuild 前先打招呼。
 
 ---
 
