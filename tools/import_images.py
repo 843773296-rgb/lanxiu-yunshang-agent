@@ -66,6 +66,14 @@ def main():
             ext = os.path.splitext(f)[1].lower()
             shutil.copy2(path, os.path.join(目的地, f"{spu}-{v}{ext}"))
         print(f"✅ 收进 {目的地}" if 收 else "没有可收的")
+        # **收完当场登记进交付图清单。** 原来收和登记是两步,2026-09-22 第五批只做了第一步,
+        # 门禁「目录里没有未登记的图」红了 218 张,是另一个会话重建后跑门禁才撞上的。
+        # 图不进版本库,清单是「这张图存在过、内容是这个」的唯一记录 —— 漏登记的那批,
+        # 一旦目录丢了就无从核对。一步做完,就没有「收了忘登记」这个中间态。
+        if 收:
+            import subprocess
+            subprocess.run([sys.executable, os.path.join(ROOT, "tools", "delivered_images.py"), "登记"],
+                           check=True)
 
     # 覆盖率:按商品算,不按张数 —— **一个商品缺一张,它的详情页就是混搭的**
     有 = {}
