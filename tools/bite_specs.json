@@ -2623,5 +2623,13 @@
       }
     ],
     "预期红": "那一件不是给这个人做的 → 拒"
+  },
+  {
+    "script": "backend/measure_write_check.py",
+    "改坏": "删掉一件定制单的下单量体(造数步骤漏补)",
+    "sql": [
+      "DELETE FROM measure_rec WHERE order_item_id=(SELECT MIN(order_item_id) FROM measure_rec WHERE order_item_id IS NOT NULL)"
+    ],
+    "预期红": "没有下单量体的定制单不超过上限"
   }
 ]

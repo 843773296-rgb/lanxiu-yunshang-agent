@@ -2997,13 +2997,8 @@ def kb_fit(customer, pattern, wearer=None):
                                JOIN account a ON a.id=k.account_id WHERE k.id=?""", cu["id"])
                        or [{}])[0].get("w")
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","knowledge"))
-    import linkage as _lk
-    _亲 = _lk.亲自服务的量体方式
-    ms, mth = {}, "到店"
-    for r in _rows("SELECT i.name, r.value, r.method FROM measure_rec r JOIN measure_item i ON i.code=r.item"
-                   f" WHERE r.wearer_id=? AND r.method IN ({','.join('?'*len(_亲))})"
-                   " ORDER BY r.measured_at, r.id", _wid0, *_亲):
-        ms[r["name"]] = r["value"]; mth = r["method"]          # 同一项取最近一次
+    ms, mth, _依据 = _以哪次为准(_wid0)          # 最近一整次亲自量的,缺项不拼(业务 09-22)
+    mth = mth or "到店"
     if not ms:
         return {"error":f"{cu['name']}" + (f"(着装人 {_wid0})" if _wid0 else "") + " 没有顾问亲自量的量体记录",
                 "档位":"需补量",
@@ -3244,7 +3239,29 @@ def _量体完整性(customer_id, 已有):
     return {"完整性": 话}
 
 
-def _亲量档位(wearer_id, pattern_code):
+def _以哪次为准(wearer_id, order_item_id=None):
+    """这个人(这一件)以哪一次量体为准 —— 口径在 knowledge/measure.以哪次为准(业务 09-22)。
+    返回 ({量体项: 值}, 方式, 一句话);没有就 ({}, None, 为什么)。
+
+    **给了订单行:只认绑在这一件上的下单量体,没有就是没有** —— 业务 09-22:「每一个订单都需要有
+    绑定的下单量体数据」。不退回用别的场次:退回去的话,一张违规的单会拿着别的尺寸照常判档、照常过闸,
+    **违规就被盖住了**(第一版这么写过,当场被业务纠正)。
+    没给订单行(还没下单,顾问拿某个人先看看穿什么码):取最近一整次亲自量的,**缺项不从更早的场次拼**。
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "knowledge"))
+    import measure as _ms
+    记 = [dict(着装人=r["wearer_id"], 时间=r["measured_at"], 量体人=r["measured_by_no"], 方式=r["method"],
+              项=r["name"], 值=r["value"], 订单行=r["order_item_id"])
+         for r in _rows("SELECT r.wearer_id, r.measured_at, r.measured_by_no, r.method, r.value, "
+                        "r.order_item_id, i.name FROM measure_rec r JOIN measure_item i ON i.code=r.item "
+                        "WHERE r.wearer_id=?", wearer_id)] if wearer_id else []
+    场 = _ms.场次(记)
+    s, 话 = (_ms.以哪次为准(场, 订单行=order_item_id) if order_item_id is not None
+             else _ms.以哪次为准(场))
+    return ((s or {}).get("值们") or {}), (s or {}).get("方式"), 话
+
+
+def _亲量档位(wearer_id, pattern_code, order_item_id=None):
     """这个人穿这个版型,按**顾问亲自量**的尺寸判出的档位(标准码 / 调号 / 全定制)。
 
     只认到店 / 上门量体 —— 业务 09-22 明令不准远程量体,远程量的尺寸不算数
@@ -3255,16 +3272,11 @@ def _亲量档位(wearer_id, pattern_code):
     if not wearer_id or not pattern_code:
         return None
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "knowledge"))
-    import fitting, linkage
-    亲 = linkage.亲自服务的量体方式
-    ms = {}
-    for r in _rows("SELECT i.name, r.value, r.method, r.measured_at FROM measure_rec r "
-                   "JOIN measure_item i ON i.code=r.item WHERE r.wearer_id=? "
-                   f"AND r.method IN ({','.join('?' * len(亲))}) ORDER BY r.measured_at",
-                   wearer_id, *亲):
-        ms[r["name"]] = (r["value"], r["method"])
-    if not ms:
+    import fitting
+    值们, 方式, _ = _以哪次为准(wearer_id, order_item_id)
+    if not 值们:
         return None
+    ms = {k: (v, 方式) for k, v in 值们.items()}
     p = _rows("SELECT code,xz,sizes FROM pattern WHERE code=?", pattern_code)
     if not p or not p[0]["sizes"]:
         return None
@@ -3337,7 +3349,7 @@ def _白坯试衣(order_id, item_name, order_status, item_id=None, 假设未开�
     开裁 = False if 假设未开裁 else _sf.开裁了吗(order_status)
     系统开裁 = bool((_rows("SELECT cut_at FROM ordr WHERE id=?", order_id) or [{}])[0].get("cut_at"))
     新规 = _mu.适用新规(开裁, 系统开裁)
-    档位 = _亲量档位(item["wearer_id"], item["pattern"]) if 新规 else None
+    档位 = _亲量档位(item["wearer_id"], item["pattern"], item["id"]) if 新规 else None
     _场合 = _rows("SELECT scene FROM product_scene WHERE spu=?", item["spu"]) if item["spu"] else []
     婚服 = (any(r["scene"] == "SC-OCC-03" for r in _场合) if _场合 else None) if 新规 else None
     if 新规 is None:

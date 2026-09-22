@@ -18,6 +18,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
 咬合 = [
     ("把量体录入的身体数据同意那道门去掉", "没有身体数据同意 → 拒"),
     ("让绑订单行时不查「这一件是不是给这个人做的」", "那一件不是给这个人做的 → 拒"),
+    ("删掉一件定制单的下单量体(造数步骤漏补)", "没有下单量体的定制单不超过上限"),
 ]
 
 FAIL, N = [], [0]
@@ -47,8 +48,21 @@ def main():
     print(f"\033[32m✅ 量体录入写口 {N[0]} 条全过\033[0m")
 
 
+# **没有下单量体的定制单件数上限** —— 业务 09-22:「每一个订单都需要有绑定的下单量体数据」。
+# 现在 11 件:着装人没定的 3 件(不猜给谁量)+ 故意留的反例 8 件(超期量体 / 量体记录不全)。
+# 只许降不许涨:哪个造数步骤又造出没绑下单量体的定制单,这里当场红。
+没下单量体上限 = 11
+
+
 def run(T):
     import api, oplog, measure_write as mw, measure
+    _c0 = sqlite3.connect(T)
+    缺 = _c0.execute("""SELECT COUNT(*) FROM ordr_item i JOIN ordr o ON o.id=i.order_id
+                        WHERE o.kind='定制品订单'
+                          AND NOT EXISTS(SELECT 1 FROM measure_rec m WHERE m.order_item_id=i.id)""").fetchone()[0]
+    _c0.close()
+    ck("没有下单量体的定制单不超过上限(业务 09-22:每一个订单都要有)", 缺 <= 没下单量体上限,
+       f"{缺} 件(上限 {没下单量体上限},只许降)")
     for m in (api, oplog, mw): m.DB = T
     c = sqlite3.connect(T); c.row_factory = sqlite3.Row
     # **按性质挑人,不钉死编号**:一个有身体数据同意的成年着装人,名下有一件定制单是给他做的

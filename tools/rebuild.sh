@@ -95,7 +95,7 @@ DONE=0
 # 标签还没挂的话婚服判不出、闸判「判不了」、旅程卡在待生产,**时间没挪回过去,留下一批未来日期**
 # (数据规范 C4 / A15 当场红)。场合标签只依赖商品和知识库,放前面不缺任何输入。
 for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42" "tools/grow_customers.py" "tools/simulate_sales.py" \
-            "tools/order_mix.py" "backend/seed_fitting.py" "tools/backfill_color.py" \
+            "tools/order_mix.py" "tools/backfill_order_measure.py" "backend/seed_fitting.py" "tools/backfill_color.py" \
             "tools/backfill_transcript.py" "tools/backfill_roster.py" "tools/backfill_credit.py" "tools/ensure_tables.py" "tools/backfill_fixtures.py" "tools/backfill_biz_fields.py" "tools/backfill_link.py" "tools/backfill_wattr.py" \
             "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
@@ -109,8 +109,8 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
 done
 
 # **自己证明干了活。** 不加这一条的话,上面那个 bug 会一直以「✅」收场。
-if [ "$DONE" -ne 17 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 17 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 18 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 18 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"
