@@ -157,7 +157,19 @@ CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
   --               (两者都能让成交率算出一个数,而可信度完全不同)
   -- 不分开的话,「没经过预约」和「经过了但没记」都是空,
   -- **而算成交率时前者该排除在分母外,后者是数据缺口** —— 处理方式相反。
+  --     接待关联  挂到了一次**接待场次**(量体 / 白坯试衣 / 预约到店)
+  --               —— 2026-09-22 业务说清:接待的证据是这三样,不是只有预约
   appt_src TEXT NOT NULL DEFAULT '未接入',
+  -- ── 挂到哪一次接待(2026-09-22 加)────────────────────────────────
+  -- 前一版只认「预约到店」当接待,全库只有 7 条,于是算出「追不到,要业务改流程」。
+  -- **那个结论错在定义**:业务说「量体数据就是顾问接待留下来的」,
+  -- 而且「白坯试衣是接待环节里比较靠后的一环」。按这个定义 100% 的定制单都追得到。
+  --
+  -- ⚠️ 接待场次是**派生**的,不是一张表:(客户, 日期, 经手人)。
+  -- 所以这里存的是那三样,**不是一个 id** —— 编一个 id 出来会让人以为有那张表。
+  recept_at   TEXT,   -- 哪一天
+  recept_by   TEXT,   -- 谁接待的(**不等于「谁促成的」**,后者要看归因)
+  recept_evi  TEXT,   -- 证据:量体 / 白坯试衣 / 预约到店
   amount REAL, payable REAL, created TEXT, updated TEXT,
   prd_status TEXT, goods_amount REAL, freight REAL, received REAL, refund_status TEXT,
   addr TEXT, paid_at TEXT, audit_at TEXT, produced_at TEXT, shipped_at TEXT,

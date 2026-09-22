@@ -3663,7 +3663,7 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
     "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
- {"name":"conversion_rate","description":"**成交率现在能不能算,缺口在哪。** 业务要的就是这个数,而现在**给不出**。\n\n⚠️ **「算不了」不是「成交率低」。** 返回 `能不能算: false` 的意思是**没有能算的样本**(只有 1.3% 的定制单追得到是哪次接待促成的),不是率很低。这两句话在一个没有数字的回答里长得一模一样,**而它们让人做完全不同的事**。\n\n⚠️ **绝对不要自己拿订单数除一除编一个率出来** —— 它和一个真的成交率长得一模一样。\n\n缺口按原因分,三种下一步完全不同:`NOT_RECORDED` **一条预约记录都没有**(3397 张,大头)—— **是接待没记,不是链路没接**,要业务把「到店接待」落一条记录,**不是改代码** · `NO_VISIT` 约过但都没来(这单本来就不是接待带来的)· `AMBIGUOUS` 下单前有多次到店(要人工确认)。\n\n⚠️ 已经追得到的那批里,`RECORDED` 是系统记下来的、`INFERRED` 是**按「下单前恰好一次到店接待」猜的** —— **可信度完全不同,报的时候要分开说**。接入率门槛 0.6 是**拍的**,返回值里标着待校准。",
+ {"name":"conversion_rate","description":"**成交率:两个数,一个是业务要的,一个不是。**\n\n⚠️ 2026-09-22 之前这个工具说「算不了」—— **那是因为「接待」被定义错了**(只认「预约到店」,全库 7 条)。业务说清之后(**量体 / 白坯试衣 / 预约到店都是接待**),**3542 张定制单 100% 追得到是哪次接待**。\n\n**① 按接待人算** —— 每次接待后面有没有跟着成交。算得出,**但业务明说过这样算不对**:「成交率是长期一对一营销的结果,不能因为某一次就算在某人身上」;而且 1501/3542 的单,**接待人和订单顾问不是同一个人**。\n\n**② 按归因算(业务要的那个)** —— 按影响力分成汇总。现在只覆盖 60/3542,缺的是把 W 型归因**全量回填**一遍 —— **这一步是纯计算,不用等业务**,别说成「等业务补数据」。\n\n⚠️ **两个数都像成交率,而它们回答的是不同的问题** —— 报数必须说清是哪一个。⚠️ **绝对不要自己拿订单数除一除编一个率**。⚠️ 现在的挂接是**下单前最近一次**接待,「取最近一次」是**默认不是业务拍的**。",
   "input_schema":{"type":"object","properties":{
     "shop":{"type":"string","description":"只看某个门店。不给就按你的身份来(店长看本店,总部看全部)。"}},"required":[]}},
  {"name":"customer_history","description":"**这个客户之前谁接触过、做了什么** —— 五张表(预约/跟进/日程/量体/下单)里的触点连成按时间排的一条线。顾问打电话之前看一眼:上次是谁跟的、聊到哪儿了。\n\n⚠️ **一次量体是一次触点,不是十几次。** 一个客户一次量体会产生十几行记录(每个测量项一条),已按「日期+经手人」去重,备注里写着「14 个测量项」——**别说成接触了 14 次**。不去重的话量体会以 10:1 淹没其他触点,**而「他主要是来量体的」只是因为那张表行数最多**。\n\n⚠️ **线上没有不等于没联系过** —— 只包含系统里有记录的接触,微信/电话没录进来的不在里面。\n\n⚠️ 「没有触点」有三种,下一步不同:`NO_TOUCH` 库里一条过程都没有(**不是没人管他**,是没记过)· `ONLY_ORDER` 只有下单这一个点 · `NO_OWNER` 有触点但都没记经手人(**数据缺口**)。**重名时只给候选不给明细** —— 给错人的接触史比不给更糟。范围跟身份走:顾问看自己名下的,店长看本店。",
@@ -3957,20 +3957,19 @@ def _pattern_queue(pattern=None):
 
 
 def conversion_rate(shop=None):
-    """**成交率现在能不能算,缺口在哪。**
+    """**成交率:两种算法,一个是你要的,一个不是。**
 
-    业务 2026-09-20 要的就是这个数。算率的前提是「这一单追得到是哪次接待促成的」,
-    而 2026-09-21 查库的结果是:**追不到**。
+    ⚠️ 2026-09-22 之前这个工具说「算不了」—— **那是因为「接待」被定义错了**:
+    只认「预约到店」(全库 7 条)。业务说清之后(量体/白坯试衣/预约到店都是接待),
+    **3542 张定制单 100% 追得到是哪次接待**。
 
-        定制单 3511 张标「未接入」
-        其中下单前有过到店接待记录的    14 张
-        全库「已到店 / 已完成」的预约     7 条
+    但**追得到接待 ≠ 知道谁促成的**,所以有两个数:
 
-    ⚠️ **所以现在给不出成交率,而这不是「成交率低」** ——
-    是**没有能算的样本**。这两句话在一个空结果上长得一模一样。
+        按接待人算    每次接待后面有没有跟着成交。**算得出,但业务说过这样算不对**
+                      ——「成交率是长期一对一营销的结果,不能因为某一次就算在某人身上」
+        按归因算      按影响力分成汇总。**这才是业务要的**,但现在只覆盖一小部分单
 
-    ⚠️ 更要紧的:**缺口不是「链路没接」,是「接待没记」。**
-    前者是写代码,后者是业务改流程 —— 报这个数的时候不能混。
+    两个数都像成交率,**而它们回答的是不同的问题**。
     """
     me = whoami()
     if not me:
@@ -3985,55 +3984,61 @@ def conversion_rate(shop=None):
         if 店:
             w.append("cu.shop = ?"); a.append(店)
         单 = [dict(r) for r in con.execute(
-            "SELECT o.id, o.customer_id, o.created, o.appt_src FROM ordr o "
+            "SELECT o.id, o.appt_src, o.recept_by, o.advisor_no FROM ordr o "
             "JOIN customer cu ON cu.id=o.customer_id WHERE " + " AND ".join(w), a)]
-        # 预约只有 75 条,**一次读进来**,不要逐单查 ——
-        # 逐单查是几千次查询,这个项目为「逐客户循环」把门禁拖到超时过。
-        约 = {}
-        for r in con.execute("SELECT id, customer_id, start_ts, status FROM appointment"):
-            约.setdefault(r["customer_id"], []).append(dict(r))
+        # 按接待人:他做的接待场次里,有几次后面跟了成交
+        按人 = {}
+        for r in con.execute("""
+            with 场 as (select distinct customer_id, substr(measured_at,1,10) d,
+                               measured_by_no who from measure_rec
+                        union select distinct o.customer_id, substr(f.ts,1,10), f.advisor_no
+                              from fitting f join ordr o on o.id=f.order_id),
+                 成 as (select recept_by who, recept_at d, customer_id
+                        from ordr where appt_src='接待关联')
+            select s.name, s.shop, count(*) 接待, sum(case when exists(
+                     select 1 from 成 where 成.who=场.who and 成.d=场.d
+                       and 成.customer_id=场.customer_id) then 1 else 0 end) 成交
+            from 场 join staff s on s.no=场.who
+            where s.role='顾问' group by 场.who order by 接待 desc"""):
+            if 店 and r["shop"] != 店:
+                continue
+            按人[r["name"]] = {"接待次数": r["接待"], "促成": r["成交"],
+                              "按接待人算的率": f"{100*r['成交']/r['接待']:.0f}%" if r["接待"] else "—"}
+        有归因 = con.execute(
+            "SELECT count(DISTINCT order_id) FROM deal_credit WHERE kind='影响力分成'"
+        ).fetchone()[0]
     finally:
         con.close()
     if not 单:
         return {"看的范围": 范围, "能不能算": False,
                 "为什么": "这个范围里一张定制单都没有 —— **没东西可算,不是率低**"}
-
-    按码 = {}
-    可用 = 0
-    for o in 单:
-        if o["appt_src"] in ("已关联", "推断关联"):
-            按码["RECORDED" if o["appt_src"] == "已关联" else "INFERRED"] = \
-                按码.get("RECORDED" if o["appt_src"] == "已关联" else "INFERRED", 0) + 1
-            可用 += 1
-            continue
-        前 = [x for x in 约.get(o["customer_id"], [])
-              if (x.get("start_ts") or "") < (o.get("created") or "")]
-        _, 码, _, _ = 口径.判(前)
-        按码[码] = 按码.get(码, 0) + 1
+    可用 = sum(1 for o in 单 if o["appt_src"] == "接待关联")
     能, 说 = 口径.能不能算成交率(可用, len(单))
-    out = {
+    不同人 = sum(1 for o in 单
+                if o["appt_src"] == "接待关联" and (o["recept_by"] or "") != (o["advisor_no"] or ""))
+    return {
         "看的范围": 范围,
         "定制单": len(单),
         "追得到接待的": 可用,
         "能不能算": 能,
         "为什么": 说,
-        # **缺口按原因分**,因为三种的下一步完全不同 ——
-        # 一个总数说不出该去做什么。
-        "缺口按原因": 按码,
-        "每种该做什么": {k: 口径.下一步[k] for k in sorted(按码) if k in 口径.下一步},
-        "⚠️ 这几个门槛是拍的": {k: getattr(口径, k) for k in 口径.待校准},
+        "① 按接待人算": 按人,
+        "⚠️ 但这个数业务说过不对": (
+            "业务 2026-09-20 原话:**「成交率毕竟是一个长期一对一营销的结果,"
+            "不能因为某一次就算在某人身上」**。"
+            f"而且 {不同人}/{可用} 的单,**接待人和订单上的顾问不是同一个人** —— "
+            "按接待人算,等于把这些单算在只接待过一次的人头上。"),
+        "② 按归因算(业务要的那个)": {
+            "覆盖": f"{有归因}/{len(单)} 张定制单有影响力分成记录",
+            "能不能用": 有归因 >= len(单) * 口径.接入率门槛,
+            "缺什么": ("W 型归因**还没全量回填** —— 算法有了(knowledge/attribution.py)、"
+                      "触点也有了,只是没对全部定制单跑过一遍。这一步是纯计算,不用等业务。"),
+        },
+        "⚠️ 最要紧的一句": (
+            "**两个数都像成交率,而它们回答的是不同的问题。** "
+            "①问「这次接待成没成」,②问「这个人对这些成交贡献了多少」—— "
+            "业务要的是②。报数时必须说清是哪一个。"),
     }
-    if not 能:
-        out["⚠️ 最要紧的一句"] = (
-            "**这不是「成交率低」,是「算不了」。** 而且缺口的大头是 "
-            f"`NOT_RECORDED`({按码.get('NOT_RECORDED', 0)} 张)—— "
-            "**接待压根没记**,那要业务把「到店接待」落一条记录,不是改代码。")
-    if 按码.get("INFERRED"):
-        out["⚠️ 其中推断出来的"] = (
-            f"{按码['INFERRED']} 张是按「下单前恰好一次到店接待」**推断**的,"
-            f"不是系统记下来的。**算率时要和记录的那批分开说** —— "
-            f"两者都能让率算出一个数,可信度完全不同。")
-    return out
 
 
 def _口径_linkage():

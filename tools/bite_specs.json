@@ -1806,12 +1806,12 @@
   },
   {
     "script": "backend/link_check.py",
-    "改坏": "从「合法来路」里去掉「未接入」(等于把「不知道」这一档取消了)",
+    "改坏": "从「合法来路」里去掉「接待关联」(3542 张单的来路一下子变成野值)",
     "file": [
       {
-        "path": "backend/link_check.py",
-        "old": "合法来路 = (\"未接入\", \"无预约\", \"已关联\", \"推断关联\")",
-        "new": "合法来路 = (\"无预约\", \"已关联\", \"推断关联\")"
+        "path": "knowledge/linkage.py",
+        "old": "来路 = (\"未接入\", \"无预约\", \"已关联\", \"推断关联\", \"接待关联\")",
+        "new": "来路 = (\"未接入\", \"无预约\", \"已关联\", \"推断关联\")"
       }
     ],
     "预期红": "来路没有野值"
@@ -2353,54 +2353,6 @@
     "预期红": "没有时间的不许丢"
   },
   {
-    "script": "knowledge/linkage.py",
-    "改坏": "多个到店接待时挑第一个(把「不知道是哪次」变成一个确定的答案)",
-    "file": [
-      {
-        "path": "knowledge/linkage.py",
-        "old": "    if len(到店) > 1:",
-        "new": "    if False:"
-      }
-    ],
-    "预期红": "多次到店不猜"
-  },
-  {
-    "script": "knowledge/linkage.py",
-    "改坏": "把推断出来的关联标成「已关联」(和记录下来的混成一种)",
-    "file": [
-      {
-        "path": "knowledge/linkage.py",
-        "old": "        return (\"推断关联\", \"INFERRED\",",
-        "new": "        return (\"已关联\", \"INFERRED\","
-      }
-    ],
-    "预期红": "推断关联不是已关联"
-  },
-  {
-    "script": "knowledge/linkage.py",
-    "改坏": "把「一条预约都没有」和「约过但没来」合成一个码",
-    "file": [
-      {
-        "path": "knowledge/linkage.py",
-        "old": "        return (\"未接入\", \"NO_VISIT\",",
-        "new": "        return (\"未接入\", \"NOT_RECORDED\","
-      }
-    ],
-    "预期红": "约过但都没来"
-  },
-  {
-    "script": "knowledge/linkage.py",
-    "改坏": "接入率再低也给成交率",
-    "file": [
-      {
-        "path": "knowledge/linkage.py",
-        "old": "    if 率 >= 接入率门槛:",
-        "new": "    if True:"
-      }
-    ],
-    "预期红": "接入率太低不给率"
-  },
-  {
     "script": "knowledge/owner.py",
     "改坏": "把「没查过有没有经手」当成「没经手过」(不知道被说成了没跟)",
     "file": [
@@ -2423,5 +2375,53 @@
       }
     ],
     "预期红": "客户没动静时不报"
+  },
+  {
+    "script": "knowledge/linkage.py",
+    "改坏": "把「只有一次接待」和「有多次挂最近一次」合成一个码(看不出哪些是默认猜的)",
+    "file": [
+      {
+        "path": "knowledge/linkage.py",
+        "old": "    if len(有人的) == 1:",
+        "new": "    if False:"
+      }
+    ],
+    "预期红": "只有一次接待"
+  },
+  {
+    "script": "knowledge/linkage.py",
+    "改坏": "多次接待时挑第一次而不是最近一次(默认换了,而结论看起来一样)",
+    "file": [
+      {
+        "path": "knowledge/linkage.py",
+        "old": "    末 = 有人的[-1]",
+        "new": "    末 = 有人的[0]"
+      }
+    ],
+    "预期红": "挂的是最后那一次,不是第一次"
+  },
+  {
+    "script": "knowledge/linkage.py",
+    "改坏": "把「有记录但没记经手人」当成「一条记录都没有」",
+    "file": [
+      {
+        "path": "knowledge/linkage.py",
+        "old": "        if 接待:",
+        "new": "        if False:"
+      }
+    ],
+    "预期红": "有接待但没记经手人"
+  },
+  {
+    "script": "knowledge/linkage.py",
+    "改坏": "接入率再低也给成交率",
+    "file": [
+      {
+        "path": "knowledge/linkage.py",
+        "old": "    if 率 >= 接入率门槛:",
+        "new": "    if True:"
+      }
+    ],
+    "预期红": "接入率太低不给率"
   }
 ]
