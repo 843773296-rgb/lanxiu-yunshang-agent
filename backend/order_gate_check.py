@@ -257,7 +257,11 @@ def main():
                                  p.category cat, o.customer_id
                           FROM ordr_item i JOIN product p ON p.spu=i.spu
                           JOIN ordr o ON o.id=i.order_id
-                          WHERE p.kind='定制品' AND i.wearer_id IS NOT NULL"""):
+                          WHERE p.kind='定制品' AND i.wearer_id IS NOT NULL
+                            -- 走开单写口开的单,着装人是**顾问当面指定的**(业务 09-22:每一件都要说给谁做),
+                            -- 不是按品类树回填的 —— 这条查的是回填规则,管不到它们(名下两位女士时回填「定不了」,
+                            -- 顾问却知道是给谁做)
+                            AND o.id NOT IN (SELECT target FROM op_log WHERE machine='ordr' AND code='OPEN')"""):
         n8 += 1
         ws = [tuple(x) for x in c.execute(
             "SELECT id,name,gender,birthday FROM wearer WHERE customer_id=? "

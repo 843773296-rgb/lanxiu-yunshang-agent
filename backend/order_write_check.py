@@ -15,6 +15,8 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
 咬合 = [
     ("把订单状态机上的下单量体闸去掉(待确认→待审核不再看过闸结果)", "后台改状态同样被拦(不能绕)"),
     ("让开单不要求每一件指明给谁做", "没说给谁做 → 拒"),
+    ("重建时不造待确认的演示单(去掉 seed_pending_orders 那一步)", "演示库里有能确认的待确认单,也有被拦的"),
+    ("删掉查订单里定制单「已发货」的状态说明", "查已发货的定制单会说明「工厂发往门店、还没到顾客手里」"),
 ]
 
 FAIL, N = [], [0]
@@ -69,6 +71,11 @@ def run(T):
                     "ORDER BY no LIMIT 1", (w["shop"],)).fetchone()
     别店 = dict(别店) if 别店 else None
 
+    # 演示库里要有停在「待确认」的活用例,**两面都有**(重建第 20 步 seed_pending_orders 造的)——
+    # 只剩能确认的,页面上就看不到闸拦人;只剩被拦的,就看不到确认成功那一支
+    待 = [ow.过闸(x[0])[0] for x in c.execute("SELECT id FROM ordr WHERE status='待确认'")]
+    ck("演示库里有能确认的待确认单,也有被拦的", "可以" in 待 and any(g != "可以" for g in 待),
+       f"{len(待)} 张:能确认 {待.count('可以')}、被拦 {sum(g != '可以' for g in 待)}")
     with api.as_user(顾问): r = api.open_order(w["cid"], [{"spu": p["spu"]}])
     ck("没说给谁做 → 拒", r.get("code") == "NEED_WEARER", r.get("reason"))
     if 别店:
@@ -86,9 +93,18 @@ def run(T):
     with api.as_user(顾问): r = api.open_order(w["cid"], [{"spu": p["spu"], "wearer_id": w["wid"]}])
     ck("开单 → 停在待确认", r.get("ok") and r.get("状态") == "待确认", r.get("reason"))
     oid = r.get("订单"); 行 = (r.get("件") or [{}])[0].get("id")
+    快 = c.execute("SELECT i.pattern_version, o.source FROM ordr_item i JOIN ordr o ON o.id=i.order_id "
+                  "WHERE i.id=?", (行,)).fetchone()
+    ck("开单记下版型版本快照(版型改过之后才对得上当初那一版)", 快 and 快[0] is not None, 快 and 快[0])
+    ck("渠道写法和字典一致(「门店 Pad」)", 快 and 快[1] == "门店 Pad", 快 and 快[1])
     ck("待确认的单不进 PRD 已付口径(映射到待付款)",
        c.execute("SELECT prd_status FROM ordr WHERE id=?", (oid,)).fetchone()[0] == "待付款")
 
+    ck("查待确认的单会说明「还不算下单」", "不算下单" in (api.get_order(oid).get("状态说明") or ""))
+    发 = c.execute("SELECT id FROM ordr WHERE kind='定制品订单' AND status='已发货' LIMIT 1").fetchone()
+    if 发:
+        ck("查已发货的定制单会说明「工厂发往门店、还没到顾客手里」",
+           "工厂发往门店" in (api.get_order(发[0]).get("状态说明") or ""))
     with api.as_user(顾问): r = api.confirm_order(oid)
     ck("没量下单量体就确认 → 拒", r.get("code") == "ORDER_GATE", r.get("reason"))
     r = server.transit("bk-order", oid, "待审核", {}, actor="检查")

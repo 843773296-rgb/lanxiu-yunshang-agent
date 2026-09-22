@@ -51,6 +51,8 @@ def main():
 # **没有下单量体的定制单件数上限** —— 业务 09-22:「每一个订单都需要有绑定的下单量体数据」。
 # 现在 11 件:着装人没定的 3 件(不猜给谁量)+ 故意留的反例 8 件(超期量体 / 量体记录不全)。
 # 只许降不许涨:哪个造数步骤又造出没绑下单量体的定制单,这里当场红。
+# **「待确认」的单不算**:开了单还没确认下单,还没量是正常的 —— 那正是确认下单那道闸要拦的
+# (重建第 20 步故意造了几张「没量」的待确认单做活用例)。
 没下单量体上限 = 11
 
 
@@ -58,7 +60,7 @@ def run(T):
     import api, oplog, measure_write as mw, measure
     _c0 = sqlite3.connect(T)
     缺 = _c0.execute("""SELECT COUNT(*) FROM ordr_item i JOIN ordr o ON o.id=i.order_id
-                        WHERE o.kind='定制品订单'
+                        WHERE o.kind='定制品订单' AND o.status!='待确认'
                           AND NOT EXISTS(SELECT 1 FROM measure_rec m WHERE m.order_item_id=i.id)""").fetchone()[0]
     _c0.close()
     ck("没有下单量体的定制单不超过上限(业务 09-22:每一个订单都要有)", 缺 <= 没下单量体上限,

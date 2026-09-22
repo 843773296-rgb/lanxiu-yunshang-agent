@@ -127,14 +127,18 @@ def open_order(d, me):
     with sqlite3.connect(DB) as c:
         c.execute("""INSERT INTO ordr(id,customer_id,kind,status,advisor_no,shop,source,delivery,amount,payable,
                      created,updated,prd_status,goods_amount,freight,received,refund_status,appt_src)
-                     VALUES(?,?,'定制品订单','待确认',?,?,'门店Pad','配送到店',?,?,?,?,?,?,0,0,'未退款','未接入')""",
+                     VALUES(?,?,'定制品订单','待确认',?,?,'门店 Pad','配送到店',?,?,?,?,?,?,0,0,'未退款','未接入')""",
                   (oid, cid, me["no"], me.get("shop"), amt, amt, now, now,
                    fsm.ORDER_PRD.get("待确认", "待付款"), amt))
+        # **版型版本在开单这一刻记下快照**(grading_check 查)—— 现算给的是今天那一版,
+        # 版型改过之后就对不上当初量的、裁的是哪一版
         for s, wid, q in 行们:
+            pv = c.execute("SELECT version FROM pattern WHERE code=?", (s["pattern"],)).fetchone() \
+                if s["pattern"] else None
             c.execute("""INSERT INTO ordr_item(order_id,sku,name,tag,price,qty,spu,base_amount,custom_amount,total,
-                         wearer_id) VALUES(?,?,?,'定制品',?,?,?,?,0,?,?)""",
+                         wearer_id,pattern_version,pattern_version_src) VALUES(?,?,?,'定制品',?,?,?,?,0,?,?,?,?)""",
                       (oid, s["sku"], s["name"], s["price"], q, s["spu"], (s["price"] or 0) * q,
-                       (s["price"] or 0) * q, wid))
+                       (s["price"] or 0) * q, wid, pv[0] if pv else None, "开单时记的" if pv else None))
     log_op(me["name"], "ordr", oid, "—", "待确认", True, "OPEN",
            f"{me['name']} 给 {cid} 开定制单 {oid},{len(行们)} 件,停在待确认", {"role": me["role"]})
     明 = rows("SELECT id, name, wearer_id FROM ordr_item WHERE order_id=? ORDER BY id", oid)
