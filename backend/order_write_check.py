@@ -15,6 +15,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
 咬合 = [
     ("把订单状态机上的下单量体闸去掉(待确认→待审核不再看过闸结果)", "后台改状态同样被拦(不能绕)"),
     ("让开单不要求每一件指明给谁做", "没说给谁做 → 拒"),
+    ("让开单不查衣服和穿的人对不对得上", "衣服和穿的人对不上(如女款开给男士)→ 拒"),
     ("重建时不造待确认的演示单(去掉 seed_pending_orders 那一步)", "演示库里有能确认的待确认单,也有被拦的"),
     ("删掉查订单里定制单「已发货」的状态说明", "查已发货的定制单会说明「工厂发往门店、还没到顾客手里」"),
 ]
@@ -58,10 +59,16 @@ def run(T):
                                   AND k.revoked_at IS NULL)
                        AND EXISTS(SELECT 1 FROM staff s WHERE s.role='顾问' AND s.status='启用' AND s.shop=cu.shop)
                      ORDER BY w.id LIMIT 1""").fetchone()
-    p = c.execute("""SELECT p.spu, p.pattern FROM product p JOIN sku s ON s.spu=p.spu
-                     WHERE p.kind='定制品' AND p.pattern IS NOT NULL
-                       AND EXISTS(SELECT 1 FROM size_spec z WHERE z.pattern=p.pattern)
-                     ORDER BY p.spu LIMIT 1""").fetchone()
+    # 款要**和这个人对得上**(业务 09-22:女款不开给男士)—— 按口径挑,不钉死编号;再挑一件对不上的做反例
+    import order_place, fix_order_measure as FX
+    候选 = c.execute("""SELECT DISTINCT p.spu, p.pattern, p.gender, p.category FROM product p JOIN sku s ON s.spu=p.spu
+                       WHERE p.kind='定制品' AND p.pattern IS NOT NULL
+                         AND EXISTS(SELECT 1 FROM size_spec z WHERE z.pattern=p.pattern)
+                       ORDER BY p.spu""").fetchall()
+    配 = lambda x: order_place.穿的人对不对(x["gender"], FX.顶级品类(c, x["category"]), w["gender"],
+                                        ow._周岁(w["birthday"], ow._now()))[0] if w else None
+    p = next((x for x in 候选 if 配(x) == "可以"), None)
+    错配 = next((x for x in 候选 if 配(x) == "不可以"), None)
     标 = c.execute("SELECT spu FROM product WHERE kind!='定制品' ORDER BY spu LIMIT 1").fetchone()
     ck("有合适的着装人和定制款", bool(w and p))
     if not (w and p): return
@@ -84,6 +91,9 @@ def run(T):
     if 标:
         with api.as_user(顾问): r = api.open_order(w["cid"], [{"spu": 标["spu"], "wearer_id": w["wid"]}])
         ck("标品不走这个入口", r.get("code") == "NOT_CUSTOM", r.get("reason"))
+    if 错配:
+        with api.as_user(顾问): r = api.open_order(w["cid"], [{"spu": 错配["spu"], "wearer_id": w["wid"]}])
+        ck("衣服和穿的人对不上(如女款开给男士)→ 拒", r.get("code") == "WEARER_MISMATCH", r.get("reason"))
 
     # 开单前先录一次量体 —— 拿来顶「下单量体」应当被拒
     需要 = ow.需要的项(p["pattern"])

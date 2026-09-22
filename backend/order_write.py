@@ -13,7 +13,8 @@
 ## 谁能做什么
 
   开单      顾问 / 店长,只给**本店**客户开;每一件定制款都要指明给谁做(着装人)——
-            下单量体量的必须是穿这件的人,不知道是谁就没法量
+            下单量体量的必须是穿这件的人,不知道是谁就没法量;
+            **衣服和穿的人要对得上**(女款不开给男士、童装不开给大人,order_place.穿的人对不对)
   确认下单  顾问 / 店长;**逐件过闸**(order_place.逐件判),有一件不过整单不许确认;
             闸同时挂在订单状态机的「待确认 → 待审核」上,后台改状态也绕不过(同开裁那道闸)
 """
@@ -21,7 +22,7 @@ import os, sys, sqlite3, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
-sys.path.insert(0, os.path.join(HERE, "..", "knowledge"))
+sys.path[:0] = [HERE, os.path.join(HERE, "..", "knowledge")]
 from oplog import log_op
 
 下单角色 = ("顾问", "店长")
@@ -41,6 +42,15 @@ def _deny(me, code, reason, key="—"):
 
 def _now():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
+def _周岁(birthday, on):
+    """某天的周岁;生日没登记返回 None(不猜)。"""
+    try:
+        b = datetime.date.fromisoformat(str(birthday)[:10]); d = datetime.date.fromisoformat(str(on)[:10])
+    except (TypeError, ValueError):
+        return None
+    return d.year - b.year - ((d.month, d.day) < (b.month, b.day))
 
 
 def 需要的项(pattern_code):
@@ -104,7 +114,8 @@ def open_order(d, me):
     行们 = []
     for x in items:
         key = str(x.get("sku") or x.get("spu") or "").strip()
-        s = rows("SELECT s.code sku, s.spu, s.price, p.name, p.kind, p.pattern FROM sku s JOIN product p ON p.spu=s.spu "
+        s = rows("SELECT s.code sku, s.spu, s.price, p.name, p.kind, p.pattern, p.gender, p.category "
+                 "FROM sku s JOIN product p ON p.spu=s.spu "
                  "WHERE s.code=? OR s.spu=? ORDER BY s.code LIMIT 1", key, key)
         if not s:
             return dict(ok=False, code="NO_SKU", reason=f"没有商品「{key}」")
@@ -115,9 +126,17 @@ def open_order(d, me):
         if not wid:
             return dict(ok=False, code="NEED_WEARER",
                         reason=f"「{s['name']}」要指明给谁做(着装人)—— 下单量体量的必须是穿这件的人")
-        w = rows("SELECT id FROM wearer WHERE id=? AND customer_id=?", wid, cid)
+        w = rows("SELECT id, name, gender, birthday FROM wearer WHERE id=? AND customer_id=?", wid, cid)
         if not w:
             return dict(ok=False, code="BAD_WEARER", reason=f"着装人 {wid} 不是客户 {cid} 名下的")
+        # **衣服和穿的人要对得上**(业务 09-22「肯定要」):女款不能开给男士、童装不能开给大人……
+        # 口径在 order_place.穿的人对不对;判不了(没登记性别 / 生日)也当拦
+        import order_place, fix_order_measure as _fx
+        with sqlite3.connect(DB) as _c:
+            顶 = _fx.顶级品类(_c, s["category"])
+        g, why = order_place.穿的人对不对(s["gender"], 顶, w[0]["gender"], _周岁(w[0]["birthday"], _now()))
+        if g != "可以":
+            return _deny(me, "WEARER_MISMATCH", f"「{s['name']}」开给 {w[0]['name'] or wid}:{why}", cid)
         qty = int(x.get("qty") or 1)
         行们.append((s, wid, qty))
     mx = rows("SELECT MAX(CAST(id AS INTEGER)) m FROM ordr")[0]["m"] or 0

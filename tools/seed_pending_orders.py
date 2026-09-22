@@ -30,7 +30,7 @@ import os, sys, sqlite3, contextlib
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowledge"), HERE, ROOT]
-import order_write as ow, measure_write as mw, body_gen as B
+import order_write as ow, measure_write as mw, body_gen as B, order_place, fix_order_measure as FX
 from seed import TODAY
 from fix_order_measure import 夹具着装人集
 
@@ -54,7 +54,7 @@ def main():
     if c.execute("SELECT COUNT(*) FROM ordr WHERE status='待确认'").fetchone()[0]:
         print("  库里已经有待确认的单,不重复造"); return
     # 挂了版型、有尺码表的定制款,取两款(两件那张单用)
-    款 = [r for r in c.execute("""SELECT p.spu, p.pattern FROM product p
+    款 = [r for r in c.execute("""SELECT p.spu, p.pattern, p.gender, p.category FROM product p
                                  WHERE p.kind='定制品' AND p.pattern IS NOT NULL
                                    AND EXISTS(SELECT 1 FROM sku s WHERE s.spu=p.spu)
                                    AND EXISTS(SELECT 1 FROM size_spec z WHERE z.pattern=p.pattern)
@@ -86,7 +86,12 @@ def main():
         顾问 = dict(c.execute("SELECT no,name,role,shop FROM staff WHERE no=?", (r["adv"],)).fetchone())
         开 = f"{TODAY[:8]}{int(TODAY[8:]) - 2 + k % 3:02d} {10 + k}:00"
         量 = 开[:11] + f"{10 + k}:30"
-        件 = [款[k % len(款)]] + ([款[(k + 1) % len(款)]] if 种 == "两件一件没量" else [])
+        # 款要和这个人对得上(业务 09-22:女款不开给男士、童装不开给大人)—— 从对得上的里面轮着挑
+        配 = [p for p in 款 if order_place.穿的人对不对(
+            p["gender"], FX.顶级品类(c, p["category"]), r["gender"], ow._周岁(r["birthday"], 开))[0] == "可以"]
+        if len(配) < 2:
+            print(f"  ❌ 给 {r['wid']} 挑不出两件对得上的款"); sys.exit(1)
+        件 = [配[k % len(配)]] + ([配[(k + 1) % len(配)]] if 种 == "两件一件没量" else [])
         with 拨钟(开):
             o = ow.open_order({"customer_id": r["cid"],
                                "items": [{"spu": p["spu"], "wearer_id": r["wid"]} for p in 件]}, 顾问)
