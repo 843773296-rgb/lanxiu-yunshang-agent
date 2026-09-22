@@ -433,7 +433,7 @@ const MENU=[
  {k:"mkt",i:"mkt",t:"营销",subs:[["activities","营销活动"],["invites","邀请码管理"]]},
  {k:"goods",i:"goods",t:"商品",subs:[["products","商品库"],["categories","品类管理"],
    ["stock","库存查询"],["stocklog","库存变更日志"]]},
- {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"]]},
+ {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"],["factory","工厂回传"]]},
  {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"]]},
  {k:"sys",i:"sys",t:"系统",subs:[["approvals","审批中心"],["staff","权限管理"],["syscodes","系统编码"],
    ["downloads","下载中心"],["oplog","操作日志"]]}];
@@ -460,7 +460,7 @@ const CRUMB_ROUTE={"首页":"workbench","客户管理":"customers","客户档案
   "业务内容":"mtpls","量体配置":"mitems","量体模版":"mtpls","内容管理":"contents",
   "营销":"activities","营销活动":"activities","邀请码管理":"invites",
   "页面":"pages","页面配置":"pages","系统编码":"syscodes","下载中心":"downloads","审批中心":"approvals","会员等级":"levels","客户标签管理":"tags",
-  "售后工单":"aftersales","维保工单":"maintains","导购业绩":"perf","库存变更日志":"stocklog","工艺知识库":"kb",
+  "售后工单":"aftersales","维保工单":"maintains","工厂回传":"factory","导购业绩":"perf","库存变更日志":"stocklog","工艺知识库":"kb",
   "客户合并确认":"merge","客户预约":"appts","客户生命周期类型":"lifecycle",
   "消费与售后":"finance","押金退款异常":"finance","系统":"oplog","操作日志":"oplog"};
 function chrome(crumbs,body){
@@ -486,7 +486,7 @@ const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合
   activities:"营销活动",invites:"邀请码管理",pages:"页面配置",
   syscodes:"系统编码",downloads:"下载中心",approvals:"审批中心",
   levels:"会员等级",tags:"客户标签管理",
-  aftersales:"售后工单",maintains:"维保工单",perf:"导购业绩",stocklog:"库存变更日志",kb:"工艺知识库"};
+  aftersales:"售后工单",maintains:"维保工单",factory:"工厂回传",perf:"导购业绩",stocklog:"库存变更日志",kb:"工艺知识库"};
 async function view(v,arg,fromTab){
   CUR=(["task","cust","appt"].includes(v)?CUR:v); renderNav();
   if(!fromTab){
@@ -535,6 +535,7 @@ async function route(v,arg){
   if(v==="aftersales")return afterList();
   if(v==="maintains") return maintainList();
   if(v==="perf")      return perfPage();
+  if(v==="factory")   return factoryPage();
   if(v==="stocklog")  return stockLog();
   if(v==="kb")        return kbPage();
   if(v==="aftersale") return afterDetail(arg);
@@ -2543,6 +2544,41 @@ async function perfPage(){
       <td class="mono" style="${r.task_rate<50?"color:var(--warn)":""}">${r.task_rate}%
         <span style="color:var(--ink3);font-size:11.5px">(${r.task_done}/${r.task})</span></td>
       </tr>`).join("")}
+    </tbody></table>
+    <div class="note2" style="margin:0 24px 20px">${esc(d.note)}</div></div>`);
+}
+
+// 工厂回传(业务 09-22:生产和发货只认工厂回传,门店不推)—— 该催的单 + 收件箱里要人看的回传
+async function factoryPage(){
+  const d=await get("/api/factory-feed");
+  const RP={"挂异常":"p-bad","拒收":"p-warn","暂存":"p-blue","重复":"p-mut","收下":"p-ok"};
+  M.innerHTML=chrome([["首页","workbench"],"消费与售后","工厂回传"],`
+   <div class="row r-4" style="margin-bottom:14px">
+    ${[["该催工厂",d.chase.length,"单"],["挂异常",d.stat["挂异常"]||0,"条"],
+       ["拒收",d.stat["拒收"]||0,"条"],["暂存(来早了)",d.stat["暂存"]||0,"条"]].map(([l,v,u])=>
+      `<div class="card"><div class="bd" style="padding:15px 18px">
+       <div style="font-size:12.5px;color:var(--ink2)">${l}</div>
+       <div class="mono" style="font-size:22px;font-weight:600;color:var(--blue);margin-top:5px">${v}<small style="font-size:12px;color:var(--ink2);font-weight:400;margin-left:3px">${u}</small></div>
+      </div></div>`).join("")}
+   </div>
+   <div class="card" style="margin-bottom:14px"><div class="hd"><h3>该催工厂的单</h3>
+     <span class="n">开工超过 3 天没回接单,或过了承诺完工日还没完工 · 截至 ${esc(d.today)}</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:200px">订单</th><th style="width:140px">门店</th><th style="width:110px">顾问</th>
+     <th style="width:120px">生产方</th><th>为什么</th></tr></thead><tbody>
+     ${d.chase.map(r=>`<tr><td class="mono">${esc(r.订单)}</td><td>${esc(r.门店)}</td>
+      <td class="mono">${esc(r.顾问)}</td><td>${esc(r.生产方||"未接单")}</td><td>${esc(r.为什么)}</td></tr>`).join("")
+      ||`<tr><td colspan="5" style="color:var(--ink3)">没有该催的单</td></tr>`}
+    </tbody></table></div>
+   <div class="card"><div class="hd"><h3>要人看的回传</h3>
+     <span class="n">挂异常 / 拒收 / 暂存 —— 收下和重复的不列</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:200px">订单</th><th style="width:90px">回传</th><th style="width:120px">生产方</th>
+     <th style="width:140px">工厂报的时间</th><th style="width:90px">处理</th><th>为什么</th></tr></thead><tbody>
+     ${d.look.map(r=>`<tr><td class="mono">${esc(r.order_id)}</td><td>${esc(r.event)}</td>
+      <td>${esc(r.factory||"")}</td><td class="mono">${esc(r.at||"")}</td>
+      <td><span class="pill ${RP[r.result]||"p-mut"}">${esc(r.result)}</span></td><td>${esc(r.reason||"")}</td></tr>`).join("")
+      ||`<tr><td colspan="6" style="color:var(--ink3)">没有要人看的回传</td></tr>`}
     </tbody></table>
     <div class="note2" style="margin:0 24px 20px">${esc(d.note)}</div></div>`);
 }

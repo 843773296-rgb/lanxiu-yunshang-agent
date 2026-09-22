@@ -74,7 +74,7 @@ def SQL(s): return ("SQL", s)
     # ── 列表页与只读视图:空查询 = 用户刚打开那一页 ──────────────────
     "activity_list":    [({},)], "aftersale_list":  [({},)], "appt_list_q":   [({},)],
     "approval_list":    [({},)], "content_list":    [({},)], "customer_list": [({},)],
-    "download_list":    [({},)], "guide_perf":      [({},)], "invite_list":   [({},)],
+    "download_list":    [({},)], "guide_perf":      [({},)], "factory_feed_page": [({},)], "invite_list":   [({},)],
     "kb_search":        [({},)], "maintain_list":   [({},)], "measure_items": [({},)],
     "measure_tpls":     [({},)], "order_list":      [({},)], "page_list":     [({},)],
     "product_list":     [({},)], "schedule_list":   [({},)], "shop_list":     [({},)],

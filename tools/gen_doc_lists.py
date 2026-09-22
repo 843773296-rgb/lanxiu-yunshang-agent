@@ -22,7 +22,7 @@ import api
                 "channel_compare"],
     "库存与产能": ["get_stock", "stock_alert", "get_capacity", "get_workorder", "my_workorders"],
     "版师相关":   ["pattern_queue", "grading_audit", "set_piece_ratio", "start_cutting"],
-    "定制与售后": ["fitting_queue", "record_fitting", "get_aftersale", "get_maintain", "get_review_queue"],
+    "定制与售后": ["fitting_queue", "factory_chase", "record_fitting", "get_aftersale", "get_maintain", "get_review_queue"],
     "推算与校验": ["plan_for_event", "forecast_growth", "check_write"],
 }
 

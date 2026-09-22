@@ -1541,6 +1541,25 @@ def maintain_list(q):
     d["readonly"]=True
     return d
 
+def factory_feed_page(q):
+    """工厂回传页(业务 09-22:生产和发货只认工厂回传)。该催清单 + 收件箱里要人看的那几条。
+    「今天」按演示世界的今天(seed.TODAY),不按机器时钟 —— 和造数据、判超期用的是同一天。"""
+    import factory_inbox as _fi
+    from seed import TODAY
+    _fi.ensure()
+    chase = _fi.该催清单(TODAY)
+    for x in chase:
+        接 = rows("SELECT factory FROM factory_msg WHERE order_id=? AND event='接单' AND result='收下' LIMIT 1", x["订单"])
+        x["生产方"] = 接[0]["factory"] if 接 else None
+    stat = {r["result"]: r["n"] for r in rows("SELECT result, COUNT(*) n FROM factory_msg GROUP BY result")}
+    look = rows("SELECT order_id, event, factory, at, result, reason FROM factory_msg "
+                "WHERE result IN ('挂异常','拒收','暂存') ORDER BY at DESC LIMIT 200")
+    return dict(today=TODAY, chase=chase, stat=stat, look=look,
+                note="生产和发货是工厂回传的事实,门店和后台不能手动推(订单状态机只认收下了的回传)。"
+                     "生产方有自有工坊和外发工厂两种,谁接的单谁报;别家报、车间工单还在制却报完工,都挂异常等人核。"
+                     "现在没接真的供应链系统,回传由模拟工厂发出。")
+
+
 def guide_perf(q):
     """导购业绩:按顾问聚合。原设计稿无此页面,按后台 PRD 第 9 章数据指标口径实现。"""
     advs=rows("SELECT no,name,role,shop FROM staff WHERE role='顾问' ORDER BY no")
@@ -2466,6 +2485,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/aftersales": return self._send(aftersale_list(Q))
         if p=="/api/maintains": return self._send(maintain_list(Q))
         if p=="/api/guide-perf": return self._send(guide_perf(Q))
+        if p=="/api/factory-feed": return self._send(factory_feed_page(Q))
         if p=="/api/stock-log": return self._send(stock_log_list(Q))
         if p=="/api/kb": return self._send(kb_search(Q))
         if p=="/api/kb-matrix": return self._send(combo_matrix())

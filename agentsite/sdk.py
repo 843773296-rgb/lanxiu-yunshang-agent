@@ -281,6 +281,9 @@ SHOP_TOOLS = [
     # 谁承担和返修还是重做只照用户说的填、顾客同意要凭据、码只认用户说出来的那个。
     "mcp__shop__create_repair", "mcp__shop__decide_repair", "mcp__shop__advance_repair",
     "mcp__shop__verify_repair_return",
+    # 该催工厂 / 工厂回传(只读)。生产和发货只认工厂回传,门店不推 —— 门店要知道哪几单该去催。
+    # 顾问问「我哪些单该催」、店长看本店,两个角色都要;规矩 TL52:不许建议后台改状态、不替工厂补数据。
+    "mcp__shop__factory_chase",
 ]
 
 # 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。
