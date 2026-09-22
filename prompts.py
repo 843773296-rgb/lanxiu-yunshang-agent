@@ -58,6 +58,26 @@ class Rule:
         self.text, self.scope = text.strip(), scope
 
 
+# ── 业务上的「今天」(三个角色都发)────────────────────────────────────
+# 2026-09-22 工厂回传评测:工具返回里写着「离承诺完工日已经过了 3 天」,模型两轮分别说成
+# 「过期一个月」「已晚 25 天」—— 它拿运行环境给的**真实日期**(9-22)去减,而演示世界的今天是 8-31。
+# 所有「逾期几天 / 还剩几天」的回答都有这个隐患,不只工厂回传。
+# 日期从 backend/seed.py 的 TODAY 读(**同一个源头**,不在这里再写一遍);读不到就只发「以工具算好的为准」,不猜日期。
+import re as _re, os as _os
+try:
+    _TODAY = _re.search(r'^TODAY\s*=\s*"(\d{4}-\d{2}-\d{2})"', open(_os.path.join(
+        _os.path.dirname(_os.path.abspath(__file__)), "backend", "seed.py"), encoding="utf-8").read(), _re.M).group(1)
+except Exception:
+    _TODAY = None
+DATE_RULE = Rule("TL53", (), f"""
+**业务上的今天是 {_TODAY}。** 你从运行环境里看到的日期是机器的日期,**不是这家店的今天**,
+算「逾期几天、还剩几天、多久没来」一律以 {_TODAY} 为准;**工具返回里已经算好的天数照着说,不要自己拿今天去减**。
+""") if _TODAY else Rule("TL53", (), """
+**算「逾期几天、还剩几天」以工具返回里算好的为准,不要自己拿运行环境里的日期去减** ——
+那是机器的日期,不是这家店的今天。
+""")
+
+
 # ── 汉服工艺顾问助手 ─────────────────────────────────────────────────
 KB_HEAD = """你是澜绣云裳的汉服工艺顾问助手,服务对象是**客户顾问和运营同学**——
 他们懂客户、不懂工艺,需要你把工艺知识翻译成能对客户说的话。
@@ -442,7 +462,7 @@ OPPORTUNITY_RULE = Rule("TL34", ("call_opportunity",), """
 """, scope="工具")
 
 
-KB_RULES = [
+KB_RULES = [DATE_RULE,
 Rule("TL01", (), """
 **只说知识库里查到的。** 每一个关于工艺、面料、形制、配饰的具体结论,
 都必须先调工具查到,不得凭训练知识作答。你的训练知识可以用来理解问题,不能用来回答问题。
@@ -877,7 +897,7 @@ GRADING_RULE = Rule("TL26", ("grading_audit", "pattern_queue"), """
   这个岗位的活就是核对,而**一个把对方的数直接当前提的助手,核不了任何东西**。
 """)
 
-TASK_RULES = [PATTERN_RULE,
+TASK_RULES = [DATE_RULE, PATTERN_RULE,
 Rule("TL28", ("recovery_queue",), """
 **未成交挽回,三条:**
 
@@ -1109,7 +1129,7 @@ WORKSHOP_FOOT = """
 **先说结论(接得下 / 接不下 / 要等多久),再说卡在哪一环,最后说能不能救。**
 逾期和瓶颈永远放最前面。一般 5 行以内。"""
 
-WORKSHOP_RULES = [
+WORKSHOP_RULES = [DATE_RULE,
 WO_RULE,   # 工单是工坊的事 —— 原来它写在 TASK_RULES 里,
            # 于是工坊挂了 my_workorders 却拿不到管它的规矩
 

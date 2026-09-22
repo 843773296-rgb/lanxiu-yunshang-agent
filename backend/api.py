@@ -2840,8 +2840,24 @@ def get_order(order_id=None, customer=None):
 
 
 def _工厂回传(oid):
-    import factory_inbox as _fi
-    return _fi.回传记录(oid, db=DB)
+    """回传记录 + **按演示世界的今天算好的进度**。
+    09-22 评测:这里原来只给记录,模型拿机器的真实日期去算「晚了多久」,说成「过期一个月」(实际 3 天)——
+    **日期差由这里算好给它,不让它自己拿今天去减。**"""
+    import factory_inbox as _fi, factory_feed as _K, datetime as _d
+    from seed import TODAY
+    记 = _fi.回传记录(oid, db=DB)
+    with _c() as c:
+        o = c.execute("SELECT status, cut_at, audit_at FROM ordr WHERE id=?", (oid,)).fetchone()
+    接 = next((r for r in 记 if r["回传"] == "接单" and r["处理"] == "收下"), None)
+    要催, 为什么 = _K.该催(o[0] if o else None, 接["承诺完工日"] if 接 else None, bool(接),
+                        (o[1] or o[2]) if o else None, TODAY)
+    进度 = {"截至(演示世界的今天)": TODAY, "该不该催": "该催" if 要催 else "不用催"}
+    if 为什么: 进度["为什么"] = 为什么
+    if 接 and 接["承诺完工日"]:
+        差 = (_d.date.fromisoformat(TODAY) - _d.date.fromisoformat(str(接["承诺完工日"])[:10])).days
+        进度["承诺完工日"] = 接["承诺完工日"]
+        进度["离承诺完工日"] = (f"已经过了 {差} 天" if 差 > 0 else f"还有 {-差} 天" if 差 < 0 else "就是今天")
+    return {"进度": 进度, "记录": 记}
 
 
 def get_stock(spu=None, sku=None, material=None, craft=None):

@@ -21,6 +21,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("让接收写口不再回头放行暂存的回传", "完工到了 → 暂存的质检通过被放行,订单到待发货"),
     ("生产时间记成收到消息的时间,不记工厂报的时间", "生产时间记的是工厂报的时间"),
     ("接收写口不再把接单方传给口径", "接单的是检查厂,别家报完工 → 挂异常,订单不动"),
+    ("查订单只给回传记录,不给算好的进度", "查订单带出按今天算好的「离承诺完工日已经过了几天」"),
 ]
 
 FAIL, N = [], [0]
@@ -77,6 +78,16 @@ def 数据(D):
     毛病 = {r[0] for r in c.execute("SELECT DISTINCT flaw FROM factory_outbox WHERE flaw!=''")}
     少 = {"重复发", "换号重发", "乱序:质检先到", "发出没单号", "未来时间", "时间倒挂", "查无此单", "已取消的单", "别家报完工", "车间在制却报完工"} - 毛病
     ck("十种毛病每种都有样本(没样本那一支等于没测)", not 少, 少 or "")
+    # 查订单带出按演示世界今天算好的进度 —— 09-22 评测:原来只给记录,模型拿机器日期算成「过期一个月」(实际 3 天)
+    import api
+    过 = c.execute("SELECT order_id, promise_date FROM factory_msg WHERE event='接单' AND result='收下' "
+                  "AND promise_date < ? AND order_id IN (SELECT id FROM ordr WHERE status='生产中') LIMIT 1",
+                  (今天,)).fetchone()
+    if 过:
+        import datetime as _d
+        差 = (_d.date.fromisoformat(今天) - _d.date.fromisoformat(过[1][:10])).days
+        进 = (api.get_order(过[0]).get("工厂回传") or {}).get("进度") or {}
+        ck("查订单带出按今天算好的「离承诺完工日已经过了几天」", 进.get("离承诺完工日") == f"已经过了 {差} 天", 进)
     c.close()
 
 

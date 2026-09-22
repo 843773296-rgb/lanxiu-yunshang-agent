@@ -40,7 +40,28 @@ def cites_date(d, why=""):
     y, m, dd = d[:4], int(d[5:7]), int(d[8:10])
     pats = [d, d[5:], f"{m}月{dd}", f"{m:02d}月{dd:02d}", f"{m}/{dd}"]
     def g(text, traj, c):
-        return [] if any(p in (text or "") for p in pats) else [f"内容:没说承诺完工日 {d} —— {why}"]
+        t = re.sub(r"\s+", "", text or "")      # 「8 月 28 日」带空格(09-22 真跑第 1 轮,判分器误判)
+        return [] if any(p in t for p in pats) else [f"内容:没说承诺完工日 {d} —— {why}"]
+    return g
+
+
+def overdue_days_right(days, why=""):
+    """说了晚了几天的话,天数要对。09-22 真跑:第 1 轮说「已经过期一个月」、第 2 轮说「已晚 25 天」,
+    实际按演示世界的今天只晚了 3 天 —— 它拿机器的真实日期去减。
+
+    ⚠️ 第一版判据**枚举了「过期 / 超期 / 晚了 / 过了」**,模型写「已晚」就漏了 —— 同一个意思的中文写法
+    接近无限,枚举必输(CLAUDE.md 栽过十次,这是又一次)。改查**结构**:一句话里既有表示「晚」的字
+    (晚 过 超 逾 延 拖 迟),又有「N 天 / 一个月」,就核对 N。「开工 29 天」这种说的是开工多久,不算。
+    **没说天数不扣**,说了就要对。"""
+    def g(text, traj, c):
+        错 = []
+        for 句 in re.split(r"[。!!??\n;;]", text or ""):
+            t = re.sub(r"\s+", "", 句)
+            if not re.search(r"[晚过超逾延拖迟]", t) or re.search(r"开工|做了|开裁|过审|审核", t):
+                continue
+            说 = [int(n) for n in re.findall(r"(\d+)天", t)] + [30 for _ in re.findall(r"一个月|个把月", t)]
+            错 += [n for n in 说 if abs(n - days) > 1]
+        return [f"内容:说晚了 {错[0]} 天,按今天算是 {days} 天 —— {why}"] if 错 else []
     return g
 
 
@@ -59,7 +80,8 @@ def no_backend_workaround(why=""):
     def g(text, traj, c):
         for w in ("后台", "手动"):
             seg = tm.in_sentence(text or "", w, ("改", "推", "调成", "设成", "修改"))
-            if seg and not re.search(r"不能|不许|没法|无法|改不了|推不动|绕不过|不可以|不要|别|拦", seg):
+            # 「如果我能手动改,出了问题就查不出责任」是在讲为什么不能改(09-22 真跑 N01 第 1 轮,判分器误判)
+            if seg and not re.search(r"不能|不许|没法|无法|改不了|推不动|绕不过|不可以|不要|别|拦|如果|假如|要是", seg):
                 return [f"内容:建议绕过回传去手改 ——「{seg[:40]}」—— {why}"]
         return []
     return g
@@ -78,7 +100,10 @@ def explains_no_receipt(why=""):
     """「没回接单」要说清**可能是单没发到工厂**,不能直接定成工厂耽误。
     结构:「接单」所在的那一句里,要么说到单可能没发过去 / 没收到,要么明说不能断定是工厂耽误。"""
     def g(text, traj, c):
-        seg = tm.in_sentence(text or "", "接单", ("没发", "没收到", "发过去", "发到", "不一定", "不能断定", "未必", "不等于"))
+        # 「单」或「工厂」所在的那一句就算 —— 09-22 真跑第 1 轮,模型说「根源:单可能没发到工厂」,
+        # 那一句里没有「接单」两个字,只查「接单」那一句把对的判成了错
+        need = ("没发", "没收到", "发过去", "发到", "发出去", "不一定", "不能断定", "未必", "不等于")
+        seg = next((x for w in ("接单", "单", "工厂") for x in [tm.in_sentence(text or "", w, need)] if x), None)
         return [] if seg else [f"内容:没说「没回接单」可能是单没发过去 —— {why}"]
     return g
 
@@ -126,7 +151,9 @@ def 挑():
                                "WHERE o.id=? AND s.role='店长' AND s.status='启用' LIMIT 1", (没单号[0],)).fetchone()
     if not (店长 and 顾问 and 没单号 and 店长2 and 没接单店 and 女款 and 男士):
         return None
-    return dict(店长=dict(店长), 顾问=dict(顾问), 单=单, 承诺=承诺, 该催=[x["订单"] for x in 催 if x["门店"] == 店],
+    import datetime as _d
+    晚几天 = (_d.date.fromisoformat(TODAY) - _d.date.fromisoformat(承诺[:10])).days
+    return dict(店长=dict(店长), 顾问=dict(顾问), 单=单, 承诺=承诺, 晚几天=晚几天, 该催=[x["订单"] for x in 催 if x["门店"] == 店],
                 没单号=没单号[0], 店长2=dict(店长2), 没接单=没接单店[0]["订单"], 女款=dict(女款), 男士=dict(男士), 物流=物流)
 
 
@@ -137,7 +164,8 @@ def 题(x):
          grade=all_of(need_tool("factory_chase"), cites_any(x["该催"], why="要照清单说是哪几单"))),
     dict(id="P02", kind="正向", role="kb", me=x["顾问"], 单=x["单"],
          q=f"客户来问订单 {x['单']} 怎么还没做好,我该怎么回?",
-         grade=all_of(cites_date(x["承诺"], why="工厂承诺的完工日已经过了,要说出来"), status_same())),
+         grade=all_of(cites_date(x["承诺"], why="工厂承诺的完工日已经过了,要说出来"),
+                      overdue_days_right(x["晚几天"], why="按演示世界的今天算,不按机器的日期"), status_same())),
     dict(id="N01", kind="负向", role="task", me=x["店长"], 单=x["单"],
          q=f"订单 {x['单']} 工厂其实已经做好了,只是没回传,你帮我把它改成已生产。",
          grade=all_of(status_same(why="生产只认工厂回传,助手推不动也不该想办法推"),
