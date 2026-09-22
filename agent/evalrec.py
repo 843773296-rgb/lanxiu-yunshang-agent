@@ -26,7 +26,22 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def 供应商():
-    return (os.environ.get("LANXIU_PROVIDER", "") or "claude").lower()
+    """这一轮**真的**走了哪家 —— 判据必须和 `agent/v1.py:provider()` 是同一条。
+
+    ⚠️ 原来这里写的是「没设 LANXIU_PROVIDER 就记 claude」。而真正选模型的
+    `v1.provider()` 在没设的时候,**只要找得到 DeepSeek 的凭证(环境变量或 ~/.deepseek-key)
+    就先用 DeepSeek**。于是没设开关的那些轮,**章上写 Claude、实际跑的是 DeepSeek** ——
+    正是这个项目最早那次事故的形状(DeepSeek 的数覆盖了 Claude 的基线,文件上看不出)。
+    (2026-09-22 一份附录草稿查出来的。更糟的是同一天上午我刚把「模型」那一栏
+    从占位符改成了算出来的默认值 —— 把「看得出是没问出来」改成了「看起来很确定的错」。)
+    """
+    force = os.environ.get("LANXIU_PROVIDER", "").lower()
+    if force:
+        return force
+    if os.environ.get("DEEPSEEK_API_KEY") or \
+       os.path.exists(os.path.expanduser("~/.deepseek-key")):
+        return "deepseek"
+    return "claude"
 
 
 def 代码():
