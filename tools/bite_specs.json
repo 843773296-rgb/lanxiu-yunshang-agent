@@ -617,15 +617,15 @@
   },
   {
     "script": "knowledge/fitting.py",
-    "改坏": "把腰围的放松量从 2 改成 8(净体腰围推出来的码整体偏一档)",
+    "改坏": "把国标女装 L 码的净体腰围从 72 改成 80(该有的净体整体偏一档)",
     "file": [
       {
-        "path": "knowledge/10-版型库.md",
-        "old": "| 腰围 | 围度 | 2 |",
-        "new": "| 腰围 | 围度 | 8 |"
+        "path": "knowledge/fitting.py",
+        "old": "\"L\": (88, 72, 94)",
+        "new": "\"L\": (88, 80, 94)"
       }
     ],
-    "预期红": "腰围偏 4cm,但换成 L 码就合上了"
+    "预期红": "腰围偏 5cm,但换成 L 码就合上了"
   },
   {
     "script": "mcp/parity.py",
@@ -2442,15 +2442,11 @@
   },
   {
     "script": "backend/link_check.py",
-    "改坏": "把远程量体的欠账上限压低一条(模拟「又多出一条远程量体」)——棘轮必须当场红",
-    "file": [
-      {
-        "path": "backend/link_check.py",
-        "old": "    远程上限 = 1255",
-        "new": "    远程上限 = 1254"
-      }
+    "改坏": "往库里插一条远程量体(数据工厂又造出了远程)",
+    "sql": [
+      "INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by_no,measured_at,method) SELECT customer_id,tpl,item,value,measured_by_no,measured_at,'远程' FROM measure_rec LIMIT 1"
     ],
-    "预期红": "远程量体不增加"
+    "预期红": "一条远程量体都不许有"
   },
   {
     "script": "backend/link_check.py",

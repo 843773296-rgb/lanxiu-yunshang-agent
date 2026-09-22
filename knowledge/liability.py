@@ -115,13 +115,11 @@ def classify(issue):
     return None
 
 
-def judge(issue, notified=None, measure_full=None, measure_remote=False,
-          试衣状态=None):
+def judge(issue, notified=None, measure_full=None, 试衣状态=None):
     """按第五节判责。返回 dict,判不出来时 rule=None(交给人/模型)。
 
     notified      特性类才用:交付时有没有**书面告知**过这一条
     measure_full  尺寸类才用:量体记录是否完整且相符
-    measure_remote 远程量体 → 按合同分担
     试衣状态       尺寸类才用,取值见 `muslin.状态`:
                   已试已签 / 该试没试 / 已试未签 / 不必试
 
@@ -134,8 +132,7 @@ def judge(issue, notified=None, measure_full=None, measure_remote=False,
 
     一个人到店穿过白坯、当场确认合身并签了字,之后再说尺寸不对,
     **这时候量体记录全不全已经不重要了** —— 他自己验收过。
-    也因此它优先于「远程量体」:那一行讲的是**量的方式**,
-    而他已经亲自试穿过,方式不再是争点。
+    (原来还有一行「远程量体 → 按合同分担」,2026-09-22 业务定不准远程量体,那一行删了。)
 
     ## 「该试而没试」往**我方**判,这也是有意的
 
@@ -165,8 +162,6 @@ def judge(issue, notified=None, measure_full=None, measure_remote=False,
         if 试衣状态 == "该试没试":
             return _pick("该做白坯试衣而没做",
                          "这一单该做白坯试衣而没做 —— **流程没走到,是我方的**")
-        if measure_remote:
-            return _pick("远程量体", "这次是远程量体,按合同分担,优先于记录是否完整")
         if measure_full is None:
             d["依据"] = "尺寸类要先查量体记录完不完整,现在查不到 —— 转人工"
             return d
@@ -215,8 +210,8 @@ if __name__ == "__main__":
     ck("尺寸偏差 + 记录完整 → 客方收费改", b["责任"] == "客方", str(b["责任"]))
     c2 = judge("尺寸需调整", measure_full=False)
     ck("尺寸偏差 + 记录不全 → 我方免费改", c2["责任"] == "我方", str(c2["责任"]))
-    r = judge("尺寸需调整", measure_full=True, measure_remote=True)
-    ck("远程量体优先于记录完整", "分担" in (r["责任"] or ""), str(r["责任"]))
+    ck("判责表里不再有「远程量体」那一行(业务 09-22 删了)",
+       not any("远程" in row[0] for row in table()), str([row[0] for row in table()])[:60])
     d1 = judge("面料起球", notified=True)
     ck("特性类已告知 → 无责", d1["责任"] == "无责", str(d1["责任"]))
     d2 = judge("面料起球", notified=False)
@@ -227,8 +222,6 @@ if __name__ == "__main__":
     ck("试衣已签 → 客方(**压过「量体记录不全」**)", f1["责任"] == "客方", str(f1["责任"]))
     f2 = judge("尺寸需调整", measure_full=True, 试衣状态="该试没试")
     ck("该试没试 → 我方(**压过「量体记录完整」**)", f2["责任"] == "我方", str(f2["责任"]))
-    f3 = judge("尺寸需调整", measure_full=True, measure_remote=True, 试衣状态="已试已签")
-    ck("试衣已签也压过「远程量体」", f3["责任"] == "客方", str(f3["责任"]))
     f4 = judge("尺寸需调整", measure_full=True, 试衣状态="已试未签")
     ck("试了没签 → 回落到量体记录", f4["责任"] == "客方" and "试衣" not in (f4["依据"] or ""),
        str(f4["依据"])[:40])

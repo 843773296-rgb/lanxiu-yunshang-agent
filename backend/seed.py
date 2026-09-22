@@ -1164,7 +1164,7 @@ def run():
           ("江苏省","苏州市","姑苏区"),("河北省","衡水市","武邑县"),("广东省","广州市","越秀区"),
           ("北京市","北京市","朝阳区"),("四川省","成都市","锦江区")]
     REM=["偏好素雅低饱和,忌大面积撞色","婚期 10 月,需倒推工期","对香云纱气味敏感,已书面告知",
-         "有两次远程量体记录,公差按合同约定","习惯微信沟通,电话常不接",None,None,None]
+         "上门量体两次,尺寸已和客户逐项确认","习惯微信沟通,电话常不接",None,None,None]
     allc=[r[0] for r in c.execute("SELECT id FROM customer ORDER BY id")]
     # D1:**地址串必须和省市一致**。原来 addr 一律生成成「上海市…」,
     # 而 province/city 另外按下标分配 —— 于是出现「浙江省杭州市」的人住在「上海市浦区」,
@@ -1540,7 +1540,7 @@ def run():
     REMARKS = ["风格定位:典雅日常款,适合春夏通勤、拍照、节日穿搭",
                "设计灵感:以山间晨雾与清霜为主题,整体低饱和、轻盈雅致",
                "面料说明:实物色以打样色卡为准,批次间存在轻微色差",
-               "服务说明:支持到店量体与远程视频量体,远程量体公差另行约定"]
+               "服务说明:支持到店量体与上门量体(顾问亲自服务,不提供远程量体)"]
 
     def _img(spu, n):        # 图片按 SPU 生成,服务端出图,不占仓库体积
         return f"/img/{spu}-{n}.svg"
@@ -1966,7 +1966,8 @@ def run():
                       "measured_by_no,measured_at,method,cond_inner,cond_shoe,cond_breath) "
                       "VALUES(?,?,?,?,?,?,?,?,?,?)",
               (cid,tpl,it,round(IDEAL[it]+random.uniform(-6,6),1),_mn,
-               f"2026-0{6+k%3}-1{k%9} 14:30", "远程" if k%5==3 else "到店",
+               # 业务 09-22:不准远程量体,必须顾问亲自服务(到店 / 上门)。原来每 5 个里有 1 个远程。
+               f"2026-0{6+k%3}-1{k%9} 14:30", "上门" if k%5==3 else "到店",
                ["无","薄","厚"][k%3], ["赤足","平底","高跟"][k%3], "平静呼气"))
     # 体型特征:每 4 个客户里有 1 个记了 —— 记了的必须走全定制,与差值无关
     FEAT=[("溜肩","肩斜大于常规 3°,标准版肩部会起空"),
@@ -2394,7 +2395,7 @@ def run():
     # 下面这几条是照着客户的真实量体画像挑的(序号 = 定制单序号):
     #   5  → 记录完整且到店  → 客方收费改
     #   18 → 量体不足 4 项    → 我方免费改
-    #   3  → 有远程量体      → 按合同分担
+    #   3  → (原「有远程量体 → 按合同分担」,09-22 业务删了那一行;这一单按记录完整度判)
     #   7  → 特性类 + 无签收  → 我方让步
     #   10 → 特性类 + 有签收  → 无责解释
     FORCE = {5: ("尺寸需调整", "待确认"), 18: ("尺寸需调整", "待处理"),
@@ -2644,22 +2645,28 @@ def run():
     _ITEMS = [r[0] for r in c.execute("SELECT code FROM measure_item ORDER BY code")]
     _BASE = {"MI01":165,"MI02":52,"MI03":86,"MI04":68,"MI05":92,"MI06":38,"MI07":56,
              "MI08":110,"MI09":98,"MI10":34,"MI11":26,"MI12":100,"MI13":80,"MI14":180}
-    for _i, _w2 in enumerate(c.execute("""SELECT w.id, w.customer_id, w.gender, w.height
+    # ⚠️ 量体值走 `body_gen`(按性别 / 年龄 / 身高造),**不再抄 _BASE 那张固定表** ——
+    # 原来围度一律 86 / 68 / 92 / 38,只有长度按身高缩放,男女老少一样,
+    # 约 65% 的定制单被判成全定制(2026-09-22)。_BASE 只留给模板里 body_gen 不造的项(马面宽度)。
+    import body_gen as _bg
+    for _i, _w2 in enumerate(c.execute("""SELECT w.id, w.customer_id, w.gender, w.height, w.birthday
                                           FROM wearer w WHERE w.relation='本人'
                                             AND NOT EXISTS(SELECT 1 FROM measure_rec m
                                                            WHERE m.wearer_id=w.id)
                                           ORDER BY w.id""").fetchall()):
-        _wid, _cid, _g, _h = _w2
+        _wid, _cid, _g, _h, _bd = _w2
         _d = (T - timedelta(days=20 + (_i * 13) % 300)).isoformat()
-        _mth = "远程" if _i % 6 == 4 else "到店"
+        # 业务 09-22:不准远程量体。原来每 6 个里有 1 个远程,改成上门(顾问亲自上门量)。
+        _mth = "上门" if _i % 6 == 4 else "到店"
         _in, _sh = ["无","薄","厚"][_i % 3], ["赤足","平底","高跟"][_i % 3]
+        _体, _ = _bg.按编码(_g, _bg.周岁(_bd, _d), _h, _wid)
         for _it in _ITEMS:
-            _base = _BASE.get(_it, 60) * ((_h or 165) / 165 if _it in ("MI01","MI08","MI09","MI12","MI14") else 1)
+            _v = _体.get(_it, _BASE.get(_it, 60))
             _mn = _adv_any2()[1]
             c.execute("""INSERT INTO measure_rec(customer_id,tpl,item,value,
                          measured_by_no,measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath)
                          VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                      (_cid, "MT01", _it, round(_base + ((_i * 7 + 稳定哈希(_it) % 11) % 9) - 4, 1),
+                      (_cid, "MT01", _it, round(_v, 1),
                        _mn, f"{_d} 14:30", _mth, _wid,
                        _in, _sh, "平静呼气"))
 
@@ -2673,10 +2680,24 @@ def run():
     #
     # ①:挑一个「到店量体 + 尺寸类在办工单」的客户,把量体删到 3 项。
     #    现实里这就是「量体没量完就下了单」,不罕见。
+    # ⚠️ **挑名下只有一个着装人的客户。** 判责数的是「这个客户有几条量体」,
+    # 而后面的造数步骤(fix_order_measure)会给**同一客户名下别的着装人**补一整套 ——
+    # 于是本人删到 3 项、家人补上 14 项,客户级合计 17 项,「记录不全」的夹具悄悄变回「完整」。
+    # 「只有一个着装人」在挑的那一刻成立不够 —— 名下有童装单的,后面会补建孩子,所以也要排除。
+    # 真值(标的是不全)和规则(算出完整)对不上。
+    # 原来靠「没有远程量体」这一条碰巧躲开了这种客户;09-22 远程量体全改成线下后,那条挑不出区别,
+    # 就撞上了 —— **一个碰巧成立的条件,和一个真的在守着什么的条件,长得一样**。
     _sp = c.execute("""SELECT m.customer_id FROM maintain m
                        WHERE m.issue='尺寸需调整' AND m.status IN ('待确认','待处理','处理中')
-                         AND NOT EXISTS(SELECT 1 FROM measure_rec r
-                                        WHERE r.customer_id=m.customer_id AND r.method='远程')
+                         AND (SELECT count(*) FROM wearer w WHERE w.customer_id=m.customer_id) = 1
+                         -- 名下订单全是和本人同性别的成人款(或通用款):不然后面会为童装 /
+                         -- 异性别那几单补建一个着装人并量全套,夹具照样被补回完整
+                         AND NOT EXISTS(SELECT 1 FROM ordr o JOIN ordr_item i ON i.order_id=o.id
+                                        JOIN product p ON p.spu=i.spu
+                                        WHERE o.customer_id=m.customer_id
+                                          AND p.gender NOT IN ('通用',
+                                              (SELECT w.gender FROM wearer w
+                                               WHERE w.customer_id=m.customer_id AND w.relation='本人')))
                        ORDER BY m.id DESC LIMIT 1""").fetchone()
     assert _sp, "没有「到店 + 尺寸类在办」的客户可做反例 —— 判责规则会缺用例"
     c.execute("""DELETE FROM measure_rec WHERE customer_id=? AND item NOT IN
@@ -2772,8 +2793,6 @@ def run():
                           ORDER BY id""").fetchall():
         mid, oid, cid, item, issue, st = m
         notified = c.execute("SELECT 1 FROM delivery_notice WHERE order_id=?", (oid,)).fetchone()
-        remote = c.execute("SELECT 1 FROM measure_rec WHERE customer_id=? AND method='远程'",
-                           (cid,)).fetchone()
         n_meas = c.execute("SELECT count(*) FROM measure_rec WHERE customer_id=?",
                            (cid,)).fetchone()[0]
         if issue in _CRAFT:
@@ -2781,9 +2800,8 @@ def run():
             act = "免费返修,不向客户收费"
             ev = f"「{issue}」属工艺瑕疵(09 第五节第 1 行)"
         elif issue in _SIZE:
-            if remote:
-                rc, act = "远程量体偏差 · 按合同分担", "按合同约定分担返修费用"
-                ev = "该客户量体方式含「远程」,09 第五节第 4 行优先于记录是否完整"
+            # 「远程量体偏差 · 按合同分担」那一行 2026-09-22 业务删掉了:不准远程量体,
+            # 这种单就不该有。真值这边跟着删,口径那边(09 第五节 / liability.py)同步删。
             # ⚠️⚠️ **这个 4 在这儿是故意重复的,不许改成调 `liability.量体完整`。**
             #
             # 我 2026-09-15 改过一次,理由是「口径要有单一来源」—— **套错了地方**,
@@ -2798,7 +2816,7 @@ def run():
             # 而且绿得毫无意义。这就是 `pinned_check` 里写的**同源谬误**:
             # **期望值如果是用被测系统本身算出来的,这个检查只能抓数据漂移,
             # 抓不到实现错误。**
-            elif n_meas >= 4:
+            if n_meas >= 4:
                 rc, act = "尺寸偏差 · 记录完整 · 客方收费改", "收费改,出示量体记录"
                 ev = f"到店量体 {n_meas} 项,记录完整且相符(09 第五节第 2 行)"
             else:

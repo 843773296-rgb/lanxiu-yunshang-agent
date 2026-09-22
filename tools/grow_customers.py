@@ -144,7 +144,8 @@ def main():
             tpl = items_tpl or rng.choice(sorted(TPL_ITEMS))
             while d <= 量体截止 and n < 4:
                 who = rng.choice(adv[shop])
-                how = "远程" if rng.random() < 0.12 else "到店"
+                # 业务 09-22:不准远程量体,必须顾问亲自服务。原来 12% 远程,改成上门
+                how = "上门" if rng.random() < 0.12 else "到店"
                 cond = (rng.choice(["无", "薄", "厚"]), rng.choice(["赤足", "平底", "高跟"]))
                 if kid_h:        # 孩子:量五项,身高随时间长
                     h = kid_h + (d - start).days / 365 * 6

@@ -240,15 +240,19 @@ def ensure_wearers(conn, today="2026-09-12", verbose=True):
         建档 = (c.execute("SELECT created FROM customer WHERE id=?", (cid,)).fetchone()
                 or [None])[0]
         at = 挑量体日(day, days, 建档) + " 14:30"
+        # 量体值按这个人造(性别 / 年龄 / 身高)—— **不再用 BASE 固定围度**:
+        # 原来男女老少胸围都是 86,孩子也套成人围度,约 65% 定制单被判全定制(2026-09-22)
+        import body_gen as _bg
+        _体, _ = _bg.按编码(sex, _bg.周岁(bd, day), h, wid)
         for i, item in enumerate(ITEMS):
-            v = BASE[item] * (h / 165 if item in ("MI01", "MI08", "MI09", "MI12", "MI14") else 1)
+            v = _体.get(item, BASE[item])
             # ⚠️ 这里原来往 **名字列**里写了一个**工号**(`"60000008"`)——
             # 一列装两种东西,而它们在表上长得一模一样(都是一串字符)。
             # 名字归名字列、工号归工号列,名字从花名册取。
             c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,"
                       "measured_by_no,measured_at,method,wearer_id,cond_inner,cond_shoe,"
                       "cond_breath) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                      (cid, "MT01", item, round(v + (i % 5) - 2, 1),
+                      (cid, "MT01", item, round(v, 1),
                        _量体人,
                        at, "到店", wid, "薄", "赤足", "平静呼气"))
         建 += 1
@@ -428,12 +432,14 @@ def enforce_rows(conn, verbose=True):
             挪 += 1
         else:
             h = w["height"] or 165.0
+            import body_gen as _bg
+            _体, _ = _bg.按编码(w["gender"], _bg.周岁(w["birthday"], 新), w["height"], wid)
             for i, item in enumerate(ITEMS):
-                v = BASE[item] * (h / 165 if item in ("MI01", "MI08", "MI09", "MI12", "MI14") else 1)
+                v = _体.get(item, BASE[item])
                 c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,"
                           "measured_by_no,measured_at,method,wearer_id,cond_inner,cond_shoe,cond_breath) "
                           "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                          (r["customer_id"], "MT01", item, round(v + (i % 5) - 2, 1),
+                          (r["customer_id"], "MT01", item, round(v, 1),
                            _量体人,
                            f"{新} 14:30", "到店", wid, "薄", "赤足", "平静呼气"))
             补 += 1

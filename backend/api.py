@@ -2967,14 +2967,25 @@ def kb_fit(customer, pattern, wearer=None):
     p=_rows("SELECT code,name,xz,sizes,tpl FROM pattern WHERE code=? OR name=?",pattern,pattern)
     if not p: return {"error":f"没有版型「{pattern}」"}
     p=p[0]
-    ms={r["name"]:r["value"] for r in _rows(
-        "SELECT i.name,r.value FROM measure_rec r JOIN measure_item i ON i.code=r.item"
-        " WHERE r.customer_id=?",cu["id"])}
+    # ⚠️ **量体按着装人取,取最近一次,只认顾问亲自量的**(2026-09-22 修)。
+    # 原来按 customer_id 取:一条档案下 2–4 个人的量体混进一个字典、后写的覆盖先写的 ——
+    # 孩子会拿到妈妈的腰围;方式也是按客户 LIMIT 1 取的。161 个客户名下有多人量体。
+    # 体型特征那一半早就按着装人取了(见下),量体这一半当时漏了。
+    _wid0 = wearer or (_rows("""SELECT a.self_wearer_id w FROM customer k
+                               JOIN account a ON a.id=k.account_id WHERE k.id=?""", cu["id"])
+                       or [{}])[0].get("w")
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","knowledge"))
+    import linkage as _lk
+    _亲 = _lk.亲自服务的量体方式
+    ms, mth = {}, "到店"
+    for r in _rows("SELECT i.name, r.value, r.method FROM measure_rec r JOIN measure_item i ON i.code=r.item"
+                   f" WHERE r.wearer_id=? AND r.method IN ({','.join('?'*len(_亲))})"
+                   " ORDER BY r.measured_at, r.id", _wid0, *_亲):
+        ms[r["name"]] = r["value"]; mth = r["method"]          # 同一项取最近一次
     if not ms:
-        return {"error":f"{cu['name']} 没有量体记录","档位":"需补量",
-                "note":"没量过体就不能推荐尺码,**不要按身高体重猜**。"}
-    mth=(_rows("SELECT method FROM measure_rec WHERE customer_id=? LIMIT 1",cu["id"]) or
-         [{"method":"到店"}])[0]["method"]
+        return {"error":f"{cu['name']}" + (f"(着装人 {_wid0})" if _wid0 else "") + " 没有顾问亲自量的量体记录",
+                "档位":"需补量",
+                "note":"没量过体就不能推荐尺码,**不要按身高体重猜**;远程量的尺寸业务不认(09-22)。"}
     # ⚠️ **体型特征必须按着装人取,不能按客户档案取。**
     # 原来读的是 customer_id,而一条档案下可能有 3 个人 ——
     # 妈妈的「溜肩」会被算到 3 岁儿子头上,而规则是「有明显体型特征即全定制」,
@@ -2987,7 +2998,8 @@ def kb_fit(customer, pattern, wearer=None):
     specs={}
     for r in _rows("SELECT size,item,value FROM size_spec WHERE pattern=?",p["code"]):
         specs.setdefault(r["size"],{})[r["item"]]=r["value"]
-    out=fitting.recommend(ms,p["code"],p["sizes"].split(","),specs,p["xz"],mth,fs)
+    _sx = (_rows("SELECT gender FROM wearer WHERE id=?", _wid) or [{}])[0].get("gender") if _wid else None
+    out=fitting.recommend(ms,p["code"],p["sizes"].split(","),specs,p["xz"],mth,fs,sex=_sx)
     out.update(客户=cu["name"],版型=p["name"])
     return out
 
@@ -3188,7 +3200,7 @@ def forecast_growth(wearer_id, target_date=None, months=12):
 # 现场包括四样,少一样就判不了:
 #   ① 这件是什么(面料 / 工艺 / 什么时候交付的)
 #   ② 客户报的问题是什么
-#   ③ 量体记录全不全、是到店还是远程 —— 尺寸类判责全看这个
+#   ③ 量体记录全不全、是不是顾问亲自量的 —— 尺寸类判责全看这个
 #   ④ 交付时有没有书面告知过 —— 特性类判责全看这个
 def _量体完整性(customer_id, 已有):
     """这位客户的量体**全不全** —— 门槛在 `knowledge/liability.py`,这里只取数。
@@ -3240,8 +3252,9 @@ def _亲量档位(wearer_id, pattern_code):
         specs.setdefault(r["size"], {})[r["item"]] = r["value"]
     fs = [r["feature"] for r in _rows("SELECT feature FROM body_feature WHERE wearer_id=?", wearer_id)]
     mth = next(iter(ms.values()))[1]
+    _sx = (_rows("SELECT gender FROM wearer WHERE id=?", wearer_id) or [{}])[0].get("gender")
     out = fitting.recommend({k: v[0] for k, v in ms.items()}, p["code"], p["sizes"].split(","),
-                            specs, p["xz"], mth, fs)
+                            specs, p["xz"], mth, fs, sex=_sx)
     return out.get("档位")
 
 
@@ -3619,7 +3632,9 @@ def get_maintain(maintain_id=None, customer=None, status=None):
              # 该算的在工具里算完 —— 「空表和量过但都是 0 在纸上长得一样」
              # 说的也是这件事。
              "量体记录": _nz({"条数": n_item, "方式": [x["method"] for x in ms],
-                       "是否远程": any(x["method"] == "远程" for x in ms),
+                       # 业务 09-22:不准远程量体,判责表里「远程 → 按合同分担」那一行也删了。
+                       # 这里只报「是不是都是顾问亲自量的」—— 不是的话那条记录本身就违规,要人看
+                       "都是顾问亲自量的": all(x["method"] in ("到店", "上门") for x in ms) if ms else None,
                        **_量体完整性(m["customer_id"], n_item)}),
              # 代码要翻成名称。原来只给「N1,N2,N3」,模型看得见却看不懂 ——
              # 它会说「需要人工查出 N1-N6 具体条目」,**而那正是它该自己拿到的东西**。
@@ -3639,9 +3654,9 @@ def get_maintain(maintain_id=None, customer=None, status=None):
                     "「交付告知签收」为 null 表示**没有书面告知记录** —— "
                     "特性类问题(起球/色差/掉色/勾丝)在这种情况下按「我方,让步处理」;"
                     "尺寸类问题**先看「白坯试衣」**:已试已签 → 客方收费改"
-                    "(他本人穿过并认可了,**压过量体记录、也压过远程量体**);"
+                    "(他本人穿过并认可了,**压过量体记录**);"
                     "该试没试 → **我方**免费改(流程没走到)。"
-                    "试了没签或不必试,才回落到「量体记录」完不完整、是不是远程量的。"
+                    "试了没签或不必试,才回落到「量体记录」完不完整。"
                     "**结论必须由人确认后执行,你只出草稿。**"}
 
 # ── 场景倒推 ────────────────────────────────────────────────────────────
@@ -3706,8 +3721,8 @@ def plan_for_event(wearer_id, event_date, pattern, material,
         specs.setdefault(r["size"], {})[r["item"]] = r["value"]
     import fitting
     szs = pr["sizes"].split(",")
-    r_lo = fitting.recommend(lo_ms, pr["code"], szs, specs, pr["xz"])
-    r_hi = fitting.recommend(hi_ms, pr["code"], szs, specs, pr["xz"])
+    r_lo = fitting.recommend(lo_ms, pr["code"], szs, specs, pr["xz"], sex=w.get("gender"))
+    r_hi = fitting.recommend(hi_ms, pr["code"], szs, specs, pr["xz"], sex=w.get("gender"))
     size_lo, size_hi = r_lo.get("推荐尺码"), r_hi.get("推荐尺码")
     span = size_lo != size_hi
     size = size_hi if span else size_lo    # 跨码时按大的做,靠折边收回来
@@ -3944,7 +3959,7 @@ SHOP_SCHEMAS=[
     "account":{"type":"string","description":"**手机号**(账户主标识,最常用)、账户号或自设账号"},
     "customer":{"type":"string","description":"门店客户号或姓名"},
     "wearer_id":{"type":"string","description":"着装人编号,如 W10001-2"}},"required":[]}},
- {"name":"get_maintain","description":"查售后维修工单的**现场**。客户说「衣服起球了 / 开线了 / 尺寸不对」时用。返回这件是什么(形制/可选面料/可选工艺)、客户报的问题、**量体记录全不全、是到店还是远程量的**、**交付时有没有书面告知签收**、以及该客户历史维修次数。\n\n**这个工具只给事实,不给判责结论** —— 判定表要另外调 kb_tables 取「售后争议判定」,并对照 09-养护与售后.md 第五节。两条关键判据:①「交付告知签收」为 null 表示**没有书面告知记录**,特性类问题(起球/色差/掉色/勾丝)在这种情况下按「我方,让步处理」,已告知则「无责,解释 + 提供保养服务」;② 尺寸类问题看量体记录完不完整、是不是**远程**量的(远程按合同分担)。\n\n**结论必须由人确认后执行,你只出草稿。** 不要直接对客户承诺免费返修或赔付金额。",
+ {"name":"get_maintain","description":"查售后维修工单的**现场**。客户说「衣服起球了 / 开线了 / 尺寸不对」时用。返回这件是什么(形制/可选面料/可选工艺)、客户报的问题、**量体记录全不全、是不是顾问亲自量的**(业务 09-22 不准远程量体)、**交付时有没有书面告知签收**、以及该客户历史维修次数。\n\n**这个工具只给事实,不给判责结论** —— 判定表要另外调 kb_tables 取「售后争议判定」,并对照 09-养护与售后.md 第五节。两条关键判据:①「交付告知签收」为 null 表示**没有书面告知记录**,特性类问题(起球/色差/掉色/勾丝)在这种情况下按「我方,让步处理」,已告知则「无责,解释 + 提供保养服务」;② 尺寸类问题看量体记录完不完整、是不是**远程**量的(远程按合同分担)。\n\n**结论必须由人确认后执行,你只出草稿。** 不要直接对客户承诺免费返修或赔付金额。",
   "input_schema":{"type":"object","properties":{
     "maintain_id":{"type":"string","description":"维修工单号,如 MW73020"},
     "customer":{"type":"string","description":"客户号或姓名"},

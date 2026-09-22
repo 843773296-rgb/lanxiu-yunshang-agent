@@ -19,6 +19,44 @@ MD_PT = os.path.join(HERE, "10-版型库.md")
 MD_MS = os.path.join(HERE, "08-量体与版型.md")
 TOL_FIT, TOL_ADJ, REMOTE_RELAX = 2.0, 5.0, 1.0
 
+# ── 围度放松量按版型基码反推(业务 2026-09-22 定)──────────────────────
+#
+# 原来围度放松量全局一个数(胸 16 / 腰 2 / 臀 8 / 裙腰 18)。圆领袍、大袖衫这种宽松形制
+# 实际放松 30 上下,于是**正常身材一律判成全定制**;童装裙腰也按成人余量算。
+# 演示库里约 65% 定制单判成全定制,一半以上是这个原因(另一半是长度,见下)。
+#
+# 现在:**这个码的成衣尺寸 − 国标同号净体**,就是这个版型在这个码上的放松量 ——
+# 宽松款自动得到大余量,贴体款自动得到小余量,不用给每个版型手写一张表。
+# 国标净体取 GB/T 1335 的中间体(女 160/84A 系、男 170/88A 系、童按身高码约 0.4×身高+12)。
+# ⚠️ **这几个国标数是近似值,要版师核**;码名认不出(不是 S–XXL、也不是身高码)就退回原表。
+国标净体 = {
+    "女": {"S": (80, 64, 86), "M": (84, 68, 90), "L": (88, 72, 94), "XL": (92, 76, 98), "XXL": (96, 80, 102)},
+    "男": {"S": (84, 70, 86), "M": (88, 74, 90), "L": (92, 78, 94), "XL": (96, 82, 98), "XXL": (100, 86, 102)},
+}
+国标_依据 = ("围度放松量 = 这个码的成衣尺寸 − 国标同号净体(GB/T 1335 中间体近似:"
+            "女 160/84A、男 170/88A 系,童按身高码 ≈0.4×身高+12)。**国标数是近似值,要版师核**。")
+
+
+def 净体(size, sex=None):
+    """国标同号净体 {胸围, 腰围, 臀围, 胸上围};认不出的码返回 None(退回原放松量表)。"""
+    sz = str(size).strip().upper()
+    if sz.isdigit() and 80 <= int(sz) <= 170:            # 童装按身高码
+        h = int(sz); c = 0.4 * h + 12
+        return {"胸围": c, "腰围": c - 5, "臀围": c + 4, "胸上围": c - 2}
+    t = 国标净体.get("男" if sex == "男" else "女", {}).get(sz)
+    if not t: return None
+    return {"胸围": t[0], "腰围": t[1], "臀围": t[2], "胸上围": t[0] - 4}
+
+
+# ── 长度只作参考,不判全定制(业务 2026-09-22 定)───────────────────────
+# 长度类量的是「客户想要多长」(10-版型库.md 第六节),而**同一个人买不同款,想要的长度本来就不同**
+# (褙子衣长 90、长衫 118)。一个人只存一套长度,拿去比所有款,总有几件对不上 ——
+# 演示库里平均一人买 4–5 件,长度原因占了全定制的一大半。长度差多了是「改长短」,不是体型问题。
+只作参考的长度 = ("通袖长", "衣长", "裙长", "裤长", "袖长")
+# ⚠️ 「差多了提示改长短」**这次没做**:一个人只存一套长度,而他买的几件款式想要的长度本来就不同 ——
+# 实测门槛取 5cm 时 87% 的件都会带这句、取 10cm 仍有 79%,**一句每件都有的提示等于没有**。
+# 要做得等订单上按每一件记「想要的长度」。现在长度仍列在明细里(关键=False),只是不参与判档、不发提示。
+
 # ── 一条**拍过板的决定**,不是待办 ────────────────────────────────────
 #
 # 系统对体型特征只做一件事:**判成「全定制」**,然后就交给人。
@@ -49,8 +87,8 @@ TOL_FIT, TOL_ADJ, REMOTE_RELAX = 2.0, 5.0, 1.0
 # 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
 # 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
 咬合 = [
-    ('把腰围的放松量从 2 改成 8(净体腰围推出来的码整体偏一档)',
-     '腰围偏 4cm,但换成 L 码就合上了'),
+    ('把国标女装 L 码的净体腰围从 72 改成 80(该有的净体整体偏一档)',
+     '腰围偏 5cm,但换成 L 码就合上了'),
 ]
 
 def ease():
@@ -77,28 +115,33 @@ def key_sizes():
     return out
 
 
-def recommend(measures, pattern, sizes, specs, xz_code, method="到店", features=()):
+def recommend(measures, pattern, sizes, specs, xz_code, method="到店", features=(), sex=None):
     """measures: {量体项名: 值};specs: {尺码: {部位: 成衣值}}。返回推荐与逐项明细。"""
     E, K = ease(), key_sizes()
     keys = K.get(xz_code, [])
     tol = TOL_FIT + (REMOTE_RELAX if method == "远程" else 0)
     rows, skipped = [], []
 
-    def target(part, wear):
-        """成衣尺寸 → 该穿这件衣服的人体尺寸。齐胸襦裙的裙腰围要对胸上围,不是腰围。"""
+    def target(part, wear, sz=None):
+        """成衣尺寸 → 该穿这件衣服的人体尺寸。齐胸襦裙的裙腰围要对胸上围,不是腰围。
+        围度的放松量按这个码的国标净体反推(见 `国标净体`);认不出码就用原表。"""
         t = E.get(part)
         if not t or t[0] is None:
             return None, None, (t[3] if t else "放松量表里没有这个部位")
         typ, allow, item, _ = t
         if part == "裙腰围" and xz_code == "XZ01":
             item = "胸上围"                       # 齐胸的裙头系在胸上,不是腰上
+        if typ == "围度":
+            std = 净体(sz, sex) if sz is not None else None
+            if std and item in std:
+                return round(std[item], 1), item, None   # 该有的净体就是国标同号净体
         return round(wear - allow, 1), item, None
 
     per_size = {}
     for sz, parts in specs.items():
         det = []
         for part, wear in parts.items():
-            body, item, why = target(part, wear)
+            body, item, why = target(part, wear, sz)
             if body is None:
                 if sz == list(specs)[0]: skipped.append(dict(部位=part, 原因=why))
                 continue
@@ -109,7 +152,7 @@ def recommend(measures, pattern, sizes, specs, xz_code, method="到店", feature
                 continue
             det.append(dict(部位=part, 量体项=item, 成衣=wear, 应有净体=body,
                             客户=got, 差=round(got - body, 1),
-                            关键=item in keys))
+                            关键=item in keys and part not in 只作参考的长度))
         if det: per_size[sz] = det
 
     if not per_size:
@@ -124,12 +167,15 @@ def recommend(measures, pattern, sizes, specs, xz_code, method="到店", feature
                     note="**不要凭现有尺寸猜码** —— 请客户补量,或改用有这些项的量体模版。")
 
     def score(det):
-        k = [abs(d["差"]) for d in det if d["关键"]] or [abs(d["差"]) for d in det]
-        return (max(k), sum(abs(d["差"]) for d in det))
+        # 关键项(长度已除外)优先;没有关键项时比**非长度**的项 —— 大袖衫的关键尺寸只有
+        # 通袖长、衣长两项长度,退回「全部项」的话长度又被算进来了
+        k = ([abs(d["差"]) for d in det if d["关键"]]
+             or [abs(d["差"]) for d in det if d["部位"] not in 只作参考的长度] or [0.0])
+        return (max(k), sum(abs(d["差"]) for d in det if d["部位"] not in 只作参考的长度))
 
     best = min(per_size, key=lambda s: score(per_size[s]))
     det = per_size[best]
-    worst = max(det, key=lambda d: (d["关键"], abs(d["差"])))
+    worst = max(det, key=lambda d: (d["关键"], d["部位"] not in 只作参考的长度, abs(d["差"])))
     mx = score(det)[0]
 
     if features:
@@ -152,6 +198,7 @@ def recommend(measures, pattern, sizes, specs, xz_code, method="到店", feature
                 改版量=(特体修版量_为什么是空的 if features else None),
                 note="系统只给建议,**最终由版师定**。"
                      + (f"关键尺寸 {unchecked} 系统比不了,须人工确认。" if unchecked else "")
+                     + "长度(衣长 / 通袖长 / 裙长 / 裤长 / 袖长)只作参考,不参与判档 —— 按客户想要的长度记。"
                      + ("  ⚠️ 这是特体:系统能说的到「要出专属版」为止,"
                         "**具体改哪儿、改多少不在知识库里**,不要替版师给数。"
                         if features else ""))
@@ -178,14 +225,16 @@ if __name__ == "__main__":
     specs = {}
     for r in con.execute("SELECT size,item,value FROM size_spec WHERE pattern='PT04'"):
         specs.setdefault(r["size"], {})[r["item"]] = r["value"]
-    # PT04 的净体腰围:S 66 / M 70 / L 74 / XL 78;净体裙长:94 / 96 / 98 / 100
+    # PT04 的应有净体腰围(2026-09-22 起按国标同号净体):S 64 / M 68 / L 72 / XL 76;
+    # 裙长只作参考,不参与判档(一个人买不同款,想要的长度本来就不同)
     # 注意**它会先挑最合适的码,再判档位** —— 所以「腰围偏 3cm」不等于「差 3cm」,
     # 换个码可能就合上了。这正是推荐尺码该干的事,别把它当成单纯的公差检查。
     CASES = [
-        ({"腰围": 70.0, "裙长": 96.0}, "标准码", "正好是 M 码的净体尺寸"),
-        ({"腰围": 74.0, "裙长": 96.0}, "标准码", "腰围偏 4cm,但换成 L 码就合上了 —— 不需要改版"),
-        ({"腰围": 70.0, "裙长": 101.0}, "调号",  "裙长比任何一个码都长,腰围又卡在 M/L 之间"),
-        ({"腰围": 90.0, "裙长": 96.0},  "全定制", "腰围超出全部尺码 12cm"),
+        ({"腰围": 68.0, "裙长": 96.0}, "标准码", "正好是 M 码的净体尺寸"),
+        ({"腰围": 73.0, "裙长": 96.0}, "标准码", "腰围偏 5cm,但换成 L 码就合上了 —— 不需要改版"),
+        ({"腰围": 70.0, "裙长": 110.0}, "标准码", "裙长比任何一个码都长 —— 长度只作参考,不因此判调号/全定制"),
+        ({"腰围": 79.0, "裙长": 96.0},  "调号",  "腰围比最大码还大 3cm —— 在标准版上微调"),
+        ({"腰围": 90.0, "裙长": 96.0},  "全定制", "腰围超出全部尺码 14cm"),
     ]
     for m, expect, desc in CASES:
         r = recommend(m, "PT04", None, specs, "XZ03")
@@ -196,12 +245,26 @@ if __name__ == "__main__":
     r = recommend({"腰围": 70.0, "裙长": 96.0}, "PT04", None, specs, "XZ03", features=["溜肩"])
     print(f"  {'✅' if r['档位']=='全定制' else '❌'} 尺寸正好但有溜肩 → {r['档位']}  {r['理由']}")
     assert r["档位"] == "全定制", "有体型特征就必须全定制"
-    m = {"腰围": 70.0, "裙长": 98.9}
+    m = {"腰围": 78.7, "裙长": 96.0}
     a = recommend(m, "PT04", None, specs, "XZ03", method="到店")
     b = recommend(m, "PT04", None, specs, "XZ03", method="远程")
     print(f"  {'✅' if (a['档位'],b['档位'])==('调号','标准码') else '❌'} "
           f"同一组尺寸:到店判「{a['档位']}」,远程判「{b['档位']}」(公差放宽 1cm)")
     assert (a["档位"], b["档位"]) == ("调号", "标准码"), (a["档位"], b["档位"], a["最大差"])
+
+    # ── 宽松款:正常身材不许判全定制(2026-09-22 修的那个病)──────────────
+    # PT31 圆领袍 M 码成衣胸围 118;原来全局放松量 16 → 「该有的净体」102 ——
+    # 一个胸围 88 的正常男士差 14,判全定制。宽松款的放松量本来就大,按国标 M 码净体 88 比才对。
+    sp3 = {}
+    for r0 in con.execute("SELECT size,item,value FROM size_spec WHERE pattern='PT31'"):
+        sp3.setdefault(r0["size"], {})[r0["item"]] = r0["value"]
+    if sp3:
+        r = recommend({"胸围": 88.0, "腰围": 74.0, "臀围": 90.0, "肩宽": 44.0, "领围": 37.0,
+                       "通袖长": 175.0, "衣长": 105.0}, "PT31", None, sp3, "XZ09", sex="男")
+        ok = r["档位"] != "全定制"
+        print(f"\n  {'✅' if ok else '❌'} 宽松圆领袍 + 正常身材男士(胸 88)→ {r['推荐尺码']} 码 / {r['档位']}"
+              f"  (原来全局放松量会判全定制)")
+        assert ok, f"宽松款正常身材又被判成全定制了:{r['理由']}"
 
     print("\n齐胸襦裙的裙腰围必须对胸上围:")
     sp2 = {}

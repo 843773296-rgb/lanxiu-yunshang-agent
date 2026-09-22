@@ -364,17 +364,20 @@ def _journey(cust, dry=False):
     steps.append(("③ 上门", REAL, f"{visit} 派给 {adv['name']} · {v_start:%m-%d %H:%M}"))
 
     # ── ④ 量体数据(⚠️ 直插:没有写接口)────────────────────────
-    w = q("SELECT id,name,height FROM wearer WHERE customer_id=? ORDER BY id LIMIT 1", cust["id"])
+    w = q("SELECT id,name,height,gender,birthday FROM wearer WHERE customer_id=? ORDER BY id LIMIT 1", cust["id"])
     wid = w[0]["id"] if w else None
     tpl = random.choice(["LT01", "LT02", "LT03"])
     items = q("SELECT code,name,unit FROM measure_item WHERE status='启用' AND required=1 ORDER BY sort")
-    base = dict(MI01=random.uniform(158, 178), MI02=random.uniform(48, 72),
-                MI03=random.uniform(82, 98), MI04=random.uniform(66, 84),
-                MI05=random.uniform(88, 102))
     mt = (v_start + datetime.timedelta(minutes=40)).strftime("%Y-%m-%d %H:%M")
+    # 量体值按这个人造(body_gen)。原来只有前五项有范围,**其余一律 30–60 之间随手取** ——
+    # 通袖长 45、衣长 38 这种数进了库,判档位时全判全定制(2026-09-22)。
+    import body_gen as _bg
+    _体, _ = _bg.按编码((w[0]["gender"] if w else None) or "女",
+                         _bg.周岁(w[0]["birthday"], mt) if w else None,
+                         (w[0]["height"] if w else None), wid or cust["id"])
     n_item = 0
     for it in items:
-        val = round(base.get(it["code"], random.uniform(30, 60)), 1)
+        val = round(_体.get(it["code"], random.uniform(30, 60)), 1)
         ex("""INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by_no,
               measured_at,
               method,wearer_id,cond_inner,cond_shoe,cond_breath,schedule_id)

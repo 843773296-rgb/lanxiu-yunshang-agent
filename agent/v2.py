@@ -336,8 +336,7 @@ def _(s):
     m = w["量体记录"]
     got = _lia.judge(issue=w["客户报的问题"],
                      notified=bool(w["交付告知签收"]),
-                     measure_full=(m["条数"] >= 4),
-                     measure_remote=m["是否远程"])
+                     measure_full=(m["条数"] >= 4))
     if not got["判得出"]:
         s.update(rule_decided=False, root_cause="规则判不出", confidence="低",
                  action=f"转人工:{got['依据']}", evidence=f"问题「{w['客户报的问题']}」归类失败")
