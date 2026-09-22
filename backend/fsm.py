@@ -137,6 +137,18 @@ def check(mid, frm, to, ctx=None):
                 and ctx.get("白坯过闸")!="可以":
             return False,"MUSLIN_GATE",(ctx.get("白坯过闸_为什么")
                 or "定制单开裁前必须过白坯试衣这道闸:该试的要试过并且客户签了字 —— 这次流转没带过闸结果,一律拒绝")
+        # ⚠️ **定制单签收要顾客确认试穿合身**(业务 2026-09-22):「已发货 → 待完成」只认核验通过的
+        #    6 位码。闸放在状态机上,后台通用的改状态入口也绕不过(server.transit 从 pickup 表现算,
+        #    不信调用方传的结论)。**没带核验结果的一律拒绝**(fail closed),同 MUSLIN_GATE。
+        if (mid,frm,to)==("bk-order","已发货","待完成") and ctx.get("kind","定制品订单")=="定制品订单" \
+                and ctx.get("试穿合身")!="已核验":
+            return False,"FIT_GATE",("定制单签收要顾客确认试穿合身:顾客在手机上点「试穿合身」拿到 6 位码,"
+                                     "导购输入核验通过才算签收 —— 这次流转没带核验结果,一律拒绝")
+        # 完成要顾客确认,或签收满 15 天后顾问写理由追认(业务 2026-09-22)
+        if (mid,frm,to)==("bk-order","待完成","完成") and ctx.get("kind","定制品订单")=="定制品订单" \
+                and ctx.get("完成确认") not in ("顾客","顾问追认"):
+            return False,"COMPLETE_GATE",("定制单完成要顾客自己确认;顾客一直不确认,签收满 15 天后由顾问写理由追认 —— "
+                                          "这次流转两样都没有,一律拒绝")
         if mid=="bk-task" and to=="完结" and not (ctx.get("summary") or "").strip():
             return False,"NEED_SUMMARY","日程任务完成需填写总结"
         if mid=="bk-task" and to=="取消" and not (ctx.get("reason") or "").strip():

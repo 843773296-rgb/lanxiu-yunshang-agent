@@ -1037,6 +1037,21 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
                                                   for k in ("inner", "shoe", "breath")):
             return ("量体的三个条件(内搭 / 鞋 / 呼吸)**要问清楚,不许默认** —— "
                     "同一个人穿厚内搭和不穿,胸围差 3–4cm;没记条件的尺寸,返修时判断不了是量错了还是穿法变了。")
+        # `verify_fit_code`:码**只能是用户这句话里说出来的** —— 模型最容易的做法是编一个 6 位数
+        #  「先试试」,而输错会记次数、5 次作废,编一次就烧掉顾客一次机会。数字对不上用户原话就拦。
+        if short == "verify_fit_code":
+            _码 = "".join(ch for ch in str(args.get("code") or "") if ch.isdigit())
+            _说 = "".join(ch for ch in str(prompt or "") if ch.isdigit())
+            if not _码 or _码 not in _说:
+                return ("试穿合身码**只能是顾客给的、用户说出来的那一个** —— 用户这句话里没有这串数字。"
+                        "别编、别猜:回去问用户顾客给的 6 位码是多少。")
+        # `ratify_complete`:追认要写理由 —— 没有理由的追认等于替顾客点了完成
+        if short == "ratify_complete" and not str(args.get("reason") or "").strip():
+            return "追认完成要写理由(比如「已电话联系,顾客表示没问题」)—— 回去问用户联系过顾客没有。"
+        # `record_pickup` 不合身:要写清哪里不合身 —— 返修和判责都看这一句
+        if short == "record_pickup" and str(args.get("action") or "") == "不合身" \
+                and not str(args.get("issue") or "").strip():
+            return "登记不合身要写清哪里不合身(比如「腰围紧 2cm」)—— 回去问用户。"
         # `start_cutting` 被 MUSLIN_GATE 拒过之后,通用闸已经不许同参数重试;
         # 这里再挡一种:**没给单号就开裁**(开裁不可逆,不许让工具去猜是哪一单)。
         if short == "start_cutting" and not str(args.get("order_id") or "").strip():

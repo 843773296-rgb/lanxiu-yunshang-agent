@@ -276,6 +276,11 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
             import fitting_write as _fw
             _g, _w, _ = _fw.过闸(target)
             ctx["白坯过闸"], ctx["白坯过闸_为什么"] = _g, _w
+        # 签收 / 完成的闸同理:**从 pickup 表现算**,传进来的「已核验」谁都能写
+        if to in ("待完成","完成") and r[0]["kind"]=="定制品订单":
+            _p = rows("SELECT fit_result, complete_by FROM pickup WHERE order_id=?", target)
+            ctx["试穿合身"] = "已核验" if _p and _p[0]["fit_result"]=="合身" else None
+            ctx["完成确认"] = _p[0]["complete_by"] if _p else None
     elif mid=="fe-scheme":
         r=rows("SELECT * FROM scheme WHERE id=?",target)
         if not r: return {"error":"定制方案不存在"}

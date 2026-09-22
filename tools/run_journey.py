@@ -549,6 +549,27 @@ def _journey(cust, dry=False):
                 steps.append(("⑦½ 白坯试衣", REAL, f"该试 {sum(1 for x in _明细 if x['能不能开裁'] != '可以')} 件"
                               f"({'、'.join(sorted({k for x in _明细 for k in (x.get('属于哪几类') or [])}))})"
                               f",{adv['name']} 陪试、客户签字"))
+        # ── 交付签收(业务 2026-09-22):到店代收 → 顾客手机点「试穿合身」拿码 → 导购核验 → 待完成;
+        #    完成由顾客确认。闸挂在状态机上,**旅程也照真路径走**,不然第一次重建就卡在「已发货」。
+        #    签收表是 seed_pickup 建的,旅程跑在它前面 —— 用同一份建表语句先建上(同白坯试衣)。
+        if st in ("待完成", "完成"):
+            import pickup_write as _pw, seed_pickup as _spk
+            with sqlite3.connect(DB) as _cx: _cx.executescript(_spk.DDL)
+            _尾 = (q("SELECT phone_tail FROM customer WHERE id=(SELECT customer_id FROM ordr WHERE id=?)", oid)
+                  or [{"phone_tail": ""}])[0]["phone_tail"]
+            if st == "待完成":
+                _pw.arrive({"order_id": oid}, adv)
+                _pw.set_mode({"order_id": oid, "mode": "到店取"}, adv)
+                _码 = _pw.customer_issue_code(oid, _尾).get("试穿合身码")
+                rr = _pw.verify({"order_id": oid, "code": _码 or ""}, adv)
+                steps.append(("⑧½ 交付签收", REAL, f"到店代收、顾客试穿合身、{adv['name']} 核验签收"
+                              if rr.get("ok") else f"签收没过:{rr.get('reason','')[:30]}"))
+            else:
+                rr = _pw.customer_complete(oid, _尾)
+            if not rr.get("ok"):
+                steps.append(("⑧ 推进", REAL, f"{R}卡在 {st}:{rr.get('reason','')[:40]}{D}"))
+                return steps, None
+            continue
         rr = _srv.transit("bk-order", oid, st, {"by": "旅程脚本", "actor_no": adv["no"]})
         if not rr.get("ok"):
             steps.append(("⑧ 推进", REAL, f"{R}卡在 {st}:{rr.get('reason','')[:40]}{D}"))
@@ -558,6 +579,15 @@ def _journey(cust, dry=False):
     ex("""UPDATE ordr SET updated=?,produced_at=?,shipped_at=?,finished_at=? WHERE id=?""",
        done, (v_start + datetime.timedelta(days=day - 12)).strftime("%Y-%m-%d %H:%M"),
        (v_start + datetime.timedelta(days=day - 6)).strftime("%Y-%m-%d %H:%M"), done, oid)
+    # 签收时间也按剧本回填:到店 = 发货后 2 天,试穿合身 = 发货后 3 天,完成 = 完成日
+    _发 = v_start + datetime.timedelta(days=day - 6)
+    ex("UPDATE pickup SET arrived_at=?, fit_at=?, complete_at=? WHERE order_id=?",
+       (_发 + datetime.timedelta(days=2)).strftime("%Y-%m-%d %H:%M"),
+       (_发 + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M"), done, oid)
+    ex("UPDATE fit_code SET issued_at=?, used_at=?, expires_at=? WHERE order_id=?",
+       (_发 + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M"),
+       (_发 + datetime.timedelta(days=3, minutes=5)).strftime("%Y-%m-%d %H:%M"),
+       (_发 + datetime.timedelta(days=4)).strftime("%Y-%m-%d %H:%M"), oid)
     # 开裁时间也按剧本回填(transit 落的是「现在」)—— 放在已生产之前
     ex("UPDATE ordr SET cut_at=? WHERE id=? AND cut_at IS NOT NULL",
        (v_start + datetime.timedelta(days=_裁日)).strftime("%Y-%m-%d %H:%M"), oid)
@@ -633,7 +663,11 @@ def _journey(cust, dry=False):
             ("measure_rec", ("measured_at",), f"schedule_id='{visit}'"),
             ("schedule_file", ("uploaded_at",), f"schedule_id='{visit}'"),
             ("ordr", ("created", "updated", "paid_at", "audit_at", "produced_at",
-                      "shipped_at", "finished_at"), f"id='{oid}'")):
+                      "shipped_at", "finished_at"), f"id='{oid}'"),
+            # 交付签收的时间也要一起挪 —— 第一版漏了这两张表,31 单的签收落在挪之前的「未来」,
+            # 比订单自己的完成日还晚(pickup_write_check「签收不晚于完成」当场抓到)
+            ("pickup", ("arrived_at", "fit_at", "complete_at"), f"order_id='{oid}'"),
+            ("fit_code", ("issued_at", "used_at", "expires_at"), f"order_id='{oid}'")):
         sets = ", ".join(f"{c2}=datetime({c2}, '{_sh}')" for c2 in _cols)
         ex(f"UPDATE {_t} SET {sets} WHERE {_key}")
 

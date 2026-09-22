@@ -148,6 +148,34 @@ MEASURE_WRITE_RULE = Rule("TL42", ("record_measure",), """
   业务 09-22 定了**没有下单量体就不许下单**,回头客也一样。
 """, scope="工具")
 
+
+# 交付签收(业务 2026-09-22)。**一条工具级规矩只挂一个工具**(prompts_check P5)——
+# 三个写工具各一条,共同的那句「签收 = 顾客确认试穿合身」各自说一遍,不互相引用。
+PICKUP_RULE = Rule("TL43", ("record_pickup",), """
+**交付签收的三个动作(到店代收 / 取件方式 / 不合身),三条:**
+
+- **先邀约顾客到店取**,实在来不了才转寄;转寄要物流单号。
+- **不合身不算签收**,订单不动,转返修。判责建议(对得上留存数据且没别的瑕疵 → 顾客承担、收费;
+  导购 / 打版的问题 → 企业承担、免费)**不是结论**,说的时候要说「建议,由售后负责人确认」。
+- 对不对得上留存数据、有没有别的瑕疵是**查出来的事实,没查就别填、别说**。
+""", scope="工具")
+
+FIT_CODE_RULE = Rule("TL44", ("verify_fit_code",), """
+**核验试穿合身码 = 签收,两条(业务 2026-09-22):**
+
+- **签收 = 顾客确认试穿合身。** 顾客在手机上点「试穿合身」拿到 6 位码交给导购,导购核验通过才算签收;
+  到店取和转寄都走这个码。**码只能是用户说出来的那一个** —— 不许编、不许猜、不许先填个试试,
+  输错会记次数,5 次作废,烧掉的是顾客的机会。
+- **不许替顾客说「合身」。** 用户说「客户说挺好的」「应该没问题」,那不是码 —— 要码。
+""", scope="工具")
+
+RATIFY_RULE = Rule("TL45", ("ratify_complete",), """
+**追认完成,一条(业务 2026-09-22):**
+
+- **完成要顾客自己确认。** 顾客一直不确认,签收满 15 天顾问才能写理由追认 —— 追认是兜底,不是替顾客点;
+  理由要是真的联系过顾客(「已电话联系,顾客表示没问题」),不许替用户编一个。
+""", scope="工具")
+
 CUT_RULE = Rule("TL41", ("start_cutting",), """
 **开裁,三条:**
 
@@ -507,6 +535,9 @@ CONVERSION_RULE,
 FITTING_WRITE_RULE,
 OWNERLESS_RULE,
 MEASURE_WRITE_RULE,
+PICKUP_RULE,
+FIT_CODE_RULE,
+RATIFY_RULE,
 ]
 
 
@@ -871,6 +902,9 @@ CONVERSION_RULE,
 FITTING_WRITE_RULE,
 CUT_RULE,
 MEASURE_WRITE_RULE,
+PICKUP_RULE,
+FIT_CODE_RULE,
+RATIFY_RULE,
 REVIEW_RULE,
 FUNNEL_RULE,
 MEMBER_RULE,
