@@ -111,6 +111,7 @@ run "咬合记录 · 最贵的那一步不许只在脑子里" python3 tools/bite
 run "截断的报告要说「还有几条」(只许少不许多)" python3 tools/truncation_check.py
 run "门禁外的检查多久没跑了(只报状态,永不拦)" python3 tools/runlog_check.py
 run "评测轮次 · 调模型的评测不许只跑一轮(只许少不许多)" python3 agent/rounds_check.py
+run "部分覆盖 · 跑一部分题不许覆盖完整基线(只许少不许多)" python3 agent/partial_write_check.py
 run "轮次报告 · 单轮/抖动/可比,四种情形都说对话" python3 agent/rounds.py
 run "仓库自洽 · 工作区绿不等于仓库里那一版绿" python3 tools/repo_consistency_check.py
 run "评测题面 · 有指代就得有编号,或写明是故意的" python3 tools/case_check.py

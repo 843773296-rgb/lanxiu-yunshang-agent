@@ -5,7 +5,6 @@
  "欠着的": [
   "agent/chat_eval.py",
   "agent/eval.py",
-  "agent/liability_eval.py",
   "agent/member_eval.py",
   "agent/ops_eval.py",
   "agent/pattern_eval.py",

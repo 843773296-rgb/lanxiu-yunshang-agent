@@ -156,27 +156,96 @@ if __name__ == "__main__":
         else os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
     print(f"售后判责评测 · {len(todo)} 题(六种判责结论全覆盖)· 模型 {model}")
     print("=" * 104)
-    ok_n, cost, rows = 0, 0.0, []
-    for c in todo:
-        t0 = time.time()
-        r = asyncio.run(sdk.run("task", PROMPT.format(mid=c["case_id"]), max_turns=14))
-        names = [x["tool"] for x in r["trajectory"]]
-        ok, why = judge(c, r["text"], names, r.get("guard_violations"))
-        ok_n += ok; cost += r.get("cost_usd") or 0
-        rows.append(dict(case=c["case_id"], truth=c["root_cause"], passed=ok, why=why,
-                         tools=",".join(n.split("__")[-1] for n in names),
-                         cost=r.get("cost_usd") or 0, text=r["text"],
-                         guard=r.get("guard_violations") or []))
-        print(f"  {'✅' if ok else '❌'} {c['case_id']} {c['root_cause']:30s} "
-              f"{len(names)}调 {time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
-              f"  {'' if ok else why[0][:44]}")
-        for w in (why[1:] if not ok else []): print(f"        {w[:92]}")
+
+    def 跑一轮():
+        """返回 (每题过没过, 每题的失败理由, 这一轮的明细, 这一轮花了多少)。"""
+        cost, rows = 0.0, []
+        for c in todo:
+            t0 = time.time()
+            try:
+                r = asyncio.run(sdk.run("task", PROMPT.format(mid=c["case_id"]),
+                                        max_turns=14))
+            except Exception as ex:
+                # **跑挂了不算答错了** —— rounds.py 有专门的「跑挂」一类,
+                # 先看是不是环境问题,别当能力波动。
+                rows.append(dict(case=c["case_id"], truth=c["root_cause"], passed=False,
+                                 why=[f"跑挂了:{type(ex).__name__}: {ex}"], tools="",
+                                 cost=0, text="", guard=[]))
+                print(f"  ❌ {c['case_id']} {c['root_cause']:30s} "
+                      f"跑挂了:{type(ex).__name__}")
+                continue
+            names = [x["tool"] for x in r["trajectory"]]
+            ok, why = judge(c, r["text"], names, r.get("guard_violations"))
+            cost += r.get("cost_usd") or 0
+            rows.append(dict(case=c["case_id"], truth=c["root_cause"], passed=ok, why=why,
+                             tools=",".join(n.split("__")[-1] for n in names),
+                             cost=r.get("cost_usd") or 0, text=r["text"],
+                             guard=r.get("guard_violations") or []))
+            print(f"  {'✅' if ok else '❌'} {c['case_id']} {c['root_cause']:30s} "
+                  f"{len(names)}调 {time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
+                  f"  {'' if ok else why[0][:44]}")
+            for w in (why[1:] if not ok else []): print(f"        {w[:92]}")
+        return ({r["case"]: r["passed"] for r in rows},
+                {r["case"]: r.get("why") or [] for r in rows},
+                rows, cost)
+
+    # **跑两轮,报轮间抖动** —— 见 agent/rounds.py。
+    # 这一套的翻面尤其要分清两类:「没调 kb_tables」是**轨迹类**(模型这次没去查判定表,
+    # 该改提示词),「没说清责任归谁」多半是**内容类**(判据吃措辞)——
+    # 而合成一个「抖动 N 题」看不出区别,两边该改的地方相反。
+    import rounds
+    轮数 = 1 if os.environ.get("LANXIU_一轮") else 2
+    多, 因, 明细, 花费 = [], [], None, 0.0
+    for _i in range(轮数):
+        if 轮数 > 1: print(f"  【第 {_i + 1} 轮】")
+        过, why, rows, c = 跑一轮()
+        多.append(过); 因.append(why); 明细 = rows; 花费 += c
+    ok_n = sum(1 for v in 多[-1].values() if v)
+    cost, rows = 花费, 明细
+
     print("=" * 104)
     print(f"通过 {ok_n}/{len(todo)}  |  总花费 ${cost:.4f}")
+
+    # 基线取 git 里上一版结果。**不可比的基线不许交给判官** ——
+    # 交出去的话它会算出一个「版本差」,而那个差可能是换题/换模型换出来的。
+    基线, 基线来路 = None, None
+    try:
+        import subprocess as _sp
+        _t = _sp.run(["git", "show", "HEAD:agent/liability-eval-results.jsonl"],
+                     capture_output=True, text=True, cwd=os.path.dirname(HERE)).stdout
+        _b = [json.loads(l) for l in _t.splitlines() if l.strip()]
+        _量过 = {x.get("case") for x in _b}
+        _现 = {c["case_id"] for c in todo}
+        if not _b:
+            pass
+        elif len(todo) < len(CASES):
+            print(f"  ℹ️ 这次只跑了 {len(todo)}/{len(CASES)} 题 —— "
+                  f"**不拿基线比**(分母都不一样)")
+        elif _量过 != _现:
+            # ⚠️ 这一套的题**是从 truth 表现挑的**(六种判责结论各取一条),
+            # 业务补一条标注就会多一道题、换一个单号。
+            # 比的是**哪几道**不是**几道**:换掉一道又补一道会正好对上。
+            print(f"  ℹ️ 基线和现在的题对不上,**不拿它比** —— "
+                  f"没量过 {sorted(_现 - _量过) or '(无)'}；"
+                  f"量过但现在没有的 {sorted(_量过 - _现) or '(无)'}")
+        else:
+            基线 = sum(1 for x in _b if x.get("passed"))
+            基线来路 = {k: _b[0].get(k) for k in ("供应商", "模型", "代码")}
+            print(f"  (基线取自 git 里上一版结果:{基线}/{len(_b)})")
+    except Exception:
+        pass
+    rounds.报(多, 基线通过数=基线, 名="售后判责", 原因=因, 基线来路=基线来路)
+
     out = os.path.join(HERE, "liability-eval-results.jsonl")
     # **每条记录盖上是谁跑的** —— 见 agent/evalrec.py。
     # 原来不盖,于是 DeepSeek 的数覆盖了 Claude 的基线而没人看得出来。
     import evalrec
-    evalrec.dump(out, rows)
-    print(f"明细写到 {out}")
+    # ⚠️ **只跑了一部分题时不许覆盖结果文件。**(同一个形状的第三处。)
+    # 「跑一部分」和「跑全部」写的是同一个文件,而文件上一点看不出区别。
+    if len(todo) < len(CASES):
+        print(f"⚠️ 这次只跑了 {len(todo)}/{len(CASES)} 题,**不写结果文件** —— "
+              f"部分结果覆盖完整基线之后,文件上看不出来。要更新基线请跑全部。")
+    else:
+        evalrec.dump(out, rows)
+        print(f"明细写到 {out}")
     sys.exit(0 if ok_n == len(todo) else 1)

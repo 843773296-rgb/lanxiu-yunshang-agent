@@ -51,10 +51,37 @@ def 代码():
 
 
 def 模型():
+    """这一轮**真的**用了哪个模型。
+
+    ⚠️ 原来这里在没设 `ANTHROPIC_MODEL` 时返回字符串 `"claude(CLI 登录态)"` ——
+    **那是个占位符,不是模型名。** 2026-09-22 接上「拒收没来路的基线」之后
+    当场撞到:售后判责跑完,判官说「模型不同(claude(CLI 登录态) vs
+    claude-haiku-4-5)——不拿它当基线」。而两轮**很可能就是同一个模型**,
+    因为钥匙串登录态的默认值正是 haiku-4.5。
+
+    > 一个记了占位符的来路章,和一个记了真名字的来路章,在文件上都「有值」。
+    > 直到你拿它去比。
+
+    后果是:**凡是没显式指定模型跑出来的基线,永远当不了基线** ——
+    而这正是本机最常见的跑法(月租、不设环境变量)。
+
+    所以这里把默认值**算出来**,判据和 `agent/v1.py:provider()` 同一条:
+    有 `ANTHROPIC_API_KEY`(按量计费)→ opus-5;走钥匙串登录态(月租)→ haiku-4.5。
+    ⚠️ **两条分支的默认值不一样**,所以不能只写一个 —— 这一条 CLAUDE.md 专门记过:
+    「同一条命令换台机器跑出来的是另一个模型的数」。
+
+    ⚠️ 已经写进文件的老记录**不会跟着变** —— 它们还是占位符,
+    所以老基线仍然会被拒收。要恢复可比,得用新章完整跑一轮。
+    """
     p = 供应商()
     if p == "deepseek":
         return os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
-    return os.environ.get("ANTHROPIC_MODEL", "claude(CLI 登录态)")
+    m = os.environ.get("ANTHROPIC_MODEL")
+    if m:
+        return m
+    # 和 v1.provider() 同一条判据:凭证路径决定默认模型
+    return ("claude-opus-5" if os.environ.get("ANTHROPIC_API_KEY")
+            else "claude-haiku-4-5")
 
 
 def 盖章(记录=None):

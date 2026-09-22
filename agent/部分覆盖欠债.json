@@ -1,0 +1,14 @@
+{
+ "说明": "能只跑一部分题、却无条件覆盖结果文件的评测。**只许少不许多**;加了守卫就从这里删一条,删不删由 agent/partial_write_check.py 强制。",
+ "怎么还": "写结果文件那一步包一层 `if len(todo) < len(CASES): 明说不写 else: 写`。参考 agent/growth_eval.py 结尾。",
+ "登记于": "2026-09-22",
+ "欠着的": [
+  "agent/member_eval.py",
+  "agent/pattern_eval.py",
+  "agent/report_eval.py",
+  "agent/role_eval.py",
+  "agent/tool_eval.py",
+  "agentsite/skill_eval.py",
+  "agentsite/tool_eval.py"
+ ]
+}
