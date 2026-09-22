@@ -13,7 +13,14 @@
   要改:fsm 加「待确认」(→待付款 带过闸 ctx,fail closed;→取消)、ORDER_PRD 映射(建议映射到 PRD「待付款」使业绩自动排除,
   但未成交挽回要按 status 排除待确认)、server DESIGN_TABS/TAB_MAP、member_order_check ST2PRD、seed_fitting 开裁之前、
   两个写口 open_order / confirm_order(新文件 backend/order_write.py)、造几张待确认的演示单;order_gate 从「超期」切到「有没有下单量体」。
-  **等:对方评测跑完(约 70 分钟,期间不改运行代码、不跑 check.sh、不 rebuild)+ 对方 pickup 表提交后才碰 seed.py / rebuild.sh。**
+  **写口主体已写好(未提交、未被引用)**:backend/order_write.py —— open_order(停在待确认)/ confirm_order(逐件过闸 →
+  待审核,落 paid_at、received=amount)/ 过闸 / 需要的项(按版型尺码表要比对的部位)。
+  **等对方发「签收已提交」**(它在改 fsm / server.transit / api / sdk / guards / prompts / rebuild.sh 19 步,期间别碰、别 rebuild、别跑 check.sh),
+  然后:fsm 加「待确认」(只加 待确认→待审核〔ctx 下单过闸,fail closed,code=ORDER_GATE〕和 待确认→取消,别动对方签收那两条边)、
+  ORDER_PRD 待确认→待付款、server.transit 算下单过闸 ctx、api 挂 open_order / confirm_order(WRITE_TOOLS +2)、
+  sdk / guards / prompts(TL44?对方用了 TL43)、order_write_check(库副本)、DESIGN_TABS/TAB_MAP、member_order_check ST2PRD、
+  seed_fitting 开裁之前、recovery_queue 排除待确认、造几张待确认演示单、order_gate 切到下单量体;对方会替我写正负向评测。
+- 09-22 下午用户报「智能助手打不开」:两个服务都没在跑(不是崩),./start.sh 拉起,js_smoke 过。
 - 两组工具合并:用户定**先不合并**。
 - 待办(已接):对方交来的产品技能 task-preflight(动手前预检 + 「可以开始吗?」二次确认),
   草稿 ~/.claude/skills/prompt-preflight/产品版-task-preflight.md;接入清单见对方 19:xx 消息(skills_own.OURS、
