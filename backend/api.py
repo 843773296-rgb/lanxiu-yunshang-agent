@@ -3665,7 +3665,10 @@ SHOP_SCHEMAS=[
     "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
  {"name":"conversion_rate","description":"**成交率:两个数,一个是业务要的,一个不是。**\n\n⚠️ 2026-09-22 之前这个工具说「算不了」—— **那是因为「接待」被定义错了**(只认「预约到店」,全库 7 条)。业务说清之后(**到店/上门量体、白坯试衣、预约到店都是接待;远程量体不算**),**3403/3542 张定制单追得到是哪次接待**。\n\n**① 按接待人算** —— 每次接待后面有没有跟着成交。算得出,**但业务明说过这样算不对**:「成交率是长期一对一营销的结果,不能因为某一次就算在某人身上」;而且 1501/3542 的单,**接待人和订单顾问不是同一个人**。\n\n**② 按归因算(业务要的那个)** —— 按影响力分成汇总。已按业务 09-22 定的口径给出:**按客户算不按接待次数**(门店 = 成交客户 ÷ 亲自接待过的客户;顾问 = W 型份额之和 ÷ 他亲自接待过的客户),多张单算 1 个成交客户,**暂不分周期**。\n\n⚠️ **两个数都像成交率,而它们回答的是不同的问题** —— 报数必须说清是哪一个。⚠️ **绝对不要自己拿订单数除一除编一个率**。⚠️ 现在的挂接是**下单前最近一次**接待,「取最近一次」是**默认不是业务拍的**。",
   "input_schema":{"type":"object","properties":{
-    "shop":{"type":"string","description":"只看某个门店。不给就按你的身份来(店长看本店,总部看全部)。"}},"required":[]}},
+    "shop":{"type":"string","description":"只看某个门店。不给就按你的身份来(店长看本店,总部看全部)。"},
+    "mode":{"type":"string","enum":["同期","队列"],"description":"统计周期口径。不给=不分周期(全部数据)。**长周期生意看队列**:同期会把「这个月接待、下个月下单」的客户算成没成交。"},
+    "month":{"type":"string","description":"哪个月,YYYY-MM。给了 mode 才用;不给就是当月(可能还没满 N 天,率偏低)。"},
+    "n_days":{"type":"number","description":"队列口径的 N:首次接待后几天内下单算成交。默认 90(覆盖约八成成交);可改 30/60。"}},"required":[]}},
  {"name":"customer_history","description":"**这个客户之前谁接触过、做了什么** —— 五张表(预约/跟进/日程/量体/下单)里的触点连成按时间排的一条线。顾问打电话之前看一眼:上次是谁跟的、聊到哪儿了。\n\n⚠️ **一次量体是一次触点,不是十几次。** 一个客户一次量体会产生十几行记录(每个测量项一条),已按「日期+经手人」去重,备注里写着「14 个测量项」——**别说成接触了 14 次**。不去重的话量体会以 10:1 淹没其他触点,**而「他主要是来量体的」只是因为那张表行数最多**。\n\n⚠️ **线上没有不等于没联系过** —— 只包含系统里有记录的接触,微信/电话没录进来的不在里面。\n\n⚠️ 「没有触点」有三种,下一步不同:`NO_TOUCH` 库里一条过程都没有(**不是没人管他**,是没记过)· `ONLY_ORDER` 只有下单这一个点 · `NO_OWNER` 有触点但都没记经手人(**数据缺口**)。**重名时只给候选不给明细** —— 给错人的接触史比不给更糟。范围跟身份走:顾问看自己名下的,店长看本店。",
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号(如 C10001)或姓名。姓名重名时会要你改用客户号。"},
@@ -3956,7 +3959,7 @@ def _pattern_queue(pattern=None):
     return pattern_queue()
 
 
-def conversion_rate(shop=None):
+def conversion_rate(shop=None, mode=None, month=None, n_days=None):
     """**成交率:两种算法,一个是你要的,一个不是。**
 
     ⚠️ 2026-09-22 之前这个工具说「算不了」—— **那是因为「接待」被定义错了**:
@@ -4024,6 +4027,21 @@ def conversion_rate(shop=None):
             各单.setdefault(cid, {}).setdefault(oid, {})[who] = pct
         人 = {r["no"]: (r["name"], r["shop"]) for r in con.execute(
             "select no, name, shop from staff where role='顾问'")}
+        # 分期口径要带日期的明细
+        接待列表 = [(c, d, w) for c, d, w in con.execute("""
+            select customer_id, substr(measured_at,1,10), measured_by_no from measure_rec
+              where method in ('到店','上门')
+            union select o.customer_id, substr(f.ts,1,10), f.advisor_no
+              from fitting f join ordr o on o.id=f.order_id
+            union select customer_id, substr(start_ts,1,10), advisor_no from appointment
+              where status in ('已到店','已完成')""") if c and d and w]
+        _单 = {}
+        for oid, cid, d, who, pct in con.execute("""
+            select d.order_id, o.customer_id, substr(o.created,1,10), d.staff_no, d.pct
+            from deal_credit d join ordr o on o.id=d.order_id
+            where d.method='W型归因 v1·全量'"""):
+            _单.setdefault(oid, [cid, d, {}])[2][who] = pct
+        订单列表 = [tuple(v) for v in _单.values()]
     finally:
         con.close()
     if not 单:
@@ -4056,6 +4074,34 @@ def conversion_rate(shop=None):
         "⚠️ 前提": "W 型 30/30/30/10 是惯例不是算出来的;**触点和订单都是造的数据**,"
                     "这个数证明口径跑得通,不是真实成交率",
     }
+    if mode:
+        import seed as _seed
+        N = int(n_days or _归.默认N)
+        月 = month or _seed.TODAY[:7]
+        店接待 = [x for x in 接待列表 if x[2] in 人 and (not 店 or 人[x[2]][1] == 店)]
+        try:
+            结 = _归.分期成交率(店接待, 订单列表, mode, 月, _seed.TODAY, N)
+        except ValueError as e:
+            return dict(error=str(e))
+        a, b = 结["门店"]
+        业务口径 = {
+            "口径": f"{mode}口径 · {月}" + (f" · N={N} 天" if mode == "队列" else ""),
+            "门店成交率": f"{100*a/b:.0f}%" if b else "—",
+            "门店怎么算的": (f"{a} ÷ {b} —— " + (
+                f"{月} 被亲自接待过的客户里,当月下了定制单的" if mode == "同期" else
+                f"首次亲自接待在 {月} 的客户里,{N} 天内下了定制单的")),
+            "顾问成交率": {人[w][0]: {"分母客户": n, "归因成交份额": round(x, 1),
+                                    "成交率": f"{100*x/n:.0f}%" if n else "—"}
+                         for w, (x, n) in sorted(结["顾问"].items(), key=lambda kv: -kv[1][1])},
+            "同期和队列的区别": ("同期:这个月接待、下个月才下单的客户,这个月算没成交 —— "
+                              "**长周期生意会被系统性压低**。队列:按首次接待归月,看 N 天内成没成。"),
+        }
+        if 结["未成熟"]:
+            业务口径["⚠️ 这一批还没到 N 天"] = ("有客户首次接待到今天还不满 N 天 —— **率会偏低**,"
+                                            "那不是没成交,是还没到时候。看已经满 N 天的月份更准。")
+        if mode == "队列" and not n_days:
+            业务口径["N 为什么是 90"] = ("**业务 09-22 确认**。行业惯例让 N 覆盖约八成最终成交(P80);演示数据里 "
+                                        "30 天只覆盖 52%,90 天覆盖 77%。**真实数据来了要重定**。")
     能, 说 = 口径.能不能算成交率(可用, len(单))
     不同人 = sum(1 for o in 单
                 if o["appt_src"] == "接待关联" and (o["recept_by"] or "") != (o["advisor_no"] or ""))
