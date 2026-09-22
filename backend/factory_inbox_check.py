@@ -20,6 +20,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("把订单状态机上的工厂回传闸去掉(生产中→已生产不再看有没有回传)", "后台直接改「生产中→已生产」被拦(只认工厂回传)"),
     ("让接收写口不再回头放行暂存的回传", "完工到了 → 暂存的质检通过被放行,订单到待发货"),
     ("生产时间记成收到消息的时间,不记工厂报的时间", "生产时间记的是工厂报的时间"),
+    ("接收写口不再把接单方传给口径", "接单的是检查厂,别家报完工 → 挂异常,订单不动"),
 ]
 
 FAIL, N = [], [0]
@@ -74,8 +75,8 @@ def 数据(D):
                          "AND got!=expect THEN 1 ELSE 0 END) FROM factory_outbox").fetchone()
     ck("模拟工厂那一批每条都和它记的预期对得上", tot and not bad, f"{tot} 条,对不上 {bad or 0}")
     毛病 = {r[0] for r in c.execute("SELECT DISTINCT flaw FROM factory_outbox WHERE flaw!=''")}
-    少 = {"重复发", "换号重发", "乱序:质检先到", "发出没单号", "未来时间", "时间倒挂", "查无此单", "已取消的单"} - 毛病
-    ck("八种毛病每种都有样本(没样本那一支等于没测)", not 少, 少 or "")
+    少 = {"重复发", "换号重发", "乱序:质检先到", "发出没单号", "未来时间", "时间倒挂", "查无此单", "已取消的单", "别家报完工", "车间在制却报完工"} - 毛病
+    ck("十种毛病每种都有样本(没样本那一支等于没测)", not 少, 少 or "")
     c.close()
 
 
@@ -104,6 +105,10 @@ def 活写口(T):
     ck("接单 → 收下,订单不动", fi.收(M("C1", "接单", "2026-08-20 09:00", 承诺完工日="2026-09-20"), 今天)["结论"] == "收下"
        and c.execute("SELECT status FROM ordr WHERE id=?", (oid,)).fetchone()[0] == "生产中")
     ck("回了接单、没过承诺日 → 不在该催清单里", oid not in {x["订单"] for x in fi.该催清单(今天)})
+    # 谁接的单谁报(自有工坊和外发工厂都有,业务 09-22)
+    ck("接单的是检查厂,别家报完工 → 挂异常,订单不动",
+       fi.收(dict(M("Cx", "完工", "2026-08-27 10:00"), 工厂="别家厂"), 今天)["结论"] == "挂异常"
+       and c.execute("SELECT status FROM ordr WHERE id=?", (oid,)).fetchone()[0] == "生产中")
     ck("质检通过比完工先到 → 暂存", fi.收(M("C2", "质检通过", "2026-08-29 10:00"), 今天)["结论"] == "暂存")
     ck("完工早于开工 → 拒收(时间倒挂)",
        fi.收(M("C0", "完工", "2020-01-01 10:00"), 今天)["结论"] == "拒收")
@@ -120,7 +125,7 @@ def 活写口(T):
     ck("发出带物流单号 → 订单到已发货,发货时间是工厂报的", r["结论"] == "收下" and st[0] == "已发货"
        and str(st[1]).startswith("2026-08-30 10:00"), st)
     ck("收件箱每条都留底(拒收的也在)",
-       c.execute("SELECT COUNT(*) FROM factory_msg WHERE order_id=?", (oid,)).fetchone()[0] == 8)
+       c.execute("SELECT COUNT(*) FROM factory_msg WHERE order_id=?", (oid,)).fetchone()[0] == 9)
     c.close()
 
 

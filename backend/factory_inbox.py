@@ -100,7 +100,14 @@ def _判并落(c, 号, 今天, actor):
         "SELECT msg_id FROM factory_msg WHERE msg_id!=? AND result IS NOT NULL AND result!='暂存'", (号,))}
     收过步 = {r[0] for r in c.execute(
         "SELECT event FROM factory_msg WHERE order_id=? AND result='收下' AND msg_id!=?", (m["order_id"], 号))}
-    结论, 理由, 推到 = K.判一条(消息, _订单(c, m["order_id"]), 收过号, 收过步, 今天)
+    接 = c.execute("SELECT factory FROM factory_msg WHERE order_id=? AND event='接单' AND result='收下' "
+                  "AND msg_id!=? ORDER BY at LIMIT 1", (m["order_id"], 号)).fetchone()
+    try:
+        在制 = bool(c.execute("SELECT 1 FROM workorder WHERE ref=? AND status='在制'", (m["order_id"],)).fetchone())
+    except sqlite3.OperationalError:                   # 没有车间工单表的库(检查用的小库)
+        在制 = False
+    结论, 理由, 推到 = K.判一条(dict(消息, 工厂=m["factory"]), _订单(c, m["order_id"]), 收过号, 收过步, 今天,
+                             接单方=接[0] if 接 else None, 车间在制=在制)
     if 结论 == "收下" and 推到:
         # 先记成收下,状态机那道闸才查得到它;推不动再改回异常
         c.execute("UPDATE factory_msg SET result='收下', reason=? WHERE msg_id=?", (理由, 号)); c.commit()
