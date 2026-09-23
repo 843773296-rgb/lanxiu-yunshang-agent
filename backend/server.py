@@ -285,7 +285,7 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
         if to in ("已生产","待发货","已发货") and r[0]["kind"]=="定制品订单":
             import factory_inbox as _fi
             # 传 server 自己的库路径 —— 检查在副本上跑时只改了 server.DB,闸要查同一个库
-            ctx["工厂回传"] = "有" if _fi.有收下的回传(target, to, db=DB) else None
+            ctx["工厂回传"] = "有" if _fi.状态撑得住吗(target, to, db=DB) else None
         # 签收 / 完成的闸同理:**从 pickup 表现算**,传进来的「已核验」谁都能写
         if to in ("待完成","完成") and r[0]["kind"]=="定制品订单":
             _p = rows("SELECT fit_result, complete_by FROM pickup WHERE order_id=?", target)

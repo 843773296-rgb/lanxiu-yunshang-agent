@@ -24,6 +24,7 @@
     已取消的单      工厂还在做一张取消了的单          → 挂异常
     别家报完工      接单的是甲家,报完工的是乙家        → 挂异常(谁接的单谁报)
     车间在制却报完工 车间工单还没做完就报完工         → 挂异常
+    件不属于这张单  报的订单行号不是这张单的          → 拒收
     该回没回        开工好几天连接单都没回 / 过了承诺日还没完工 → 不发消息,该催清单里要有它
 
 **预期是它自己记的,不是调接收写口算的** —— 调写口算预期就是同源谬误:写口错了,预期跟着错。
@@ -32,7 +33,9 @@
 """
 import hashlib, datetime as dt
 
-工期天 = (28, 42)          # 承诺工期区间(开工 → 完工),和库里历史单「审核到完工」平均 33 天对得上
+# 两个数**业务 2026-09-23 确认**(原为提议值):承诺工期 28–42 天(和库里历史单「审核到完工」平均 33 天对得上)、
+# 回执宽限 3 天(开工 3 天没回接单就该催)
+工期天 = (28, 42)
 回执宽限天 = 3
 
 
@@ -162,8 +165,58 @@ def 今日回传(c, 今天, 上限=None):
     if 取消:
         out.append((dict(消息号=f"X{取消[0]}-取消", 订单号=取消[0], 事件="完工", 时间=_s(今 - dt.timedelta(days=2)),
                          工厂=_工厂(取消[0])), "已取消的单", "挂异常"))
-    # ── 要先收下接单才测得到的两种:放在这一批最后 ──
+    # ── 要先收下接单才测得到的几种:放在这一批最后 ──
     尾 = []
+    # **分批发货**(业务 09-23):挑一张多件的单,先发一件、再发其余 —— 演示库里要有真的两个包裹。
+    # ⚠️ 生产中的单**全是单件**(实测),所以从「已生产」里挑:那种单历史回传里已经报过完工,
+    # 这里接着报质检和发出即可。挑不到就不造 —— **不硬凑**,检查那头会因为没有活用例而红。
+    多件 = c.execute("""SELECT i.order_id, o.status, COUNT(*) n FROM ordr_item i JOIN ordr o ON o.id=i.order_id
+                        WHERE o.kind='定制品订单' AND o.status IN ('生产中','已生产')
+                        GROUP BY i.order_id HAVING n>=2 ORDER BY o.status DESC, i.order_id LIMIT 1""").fetchone()
+    if 多件:
+        oid, 状态 = 多件[0], 多件[1]
+        件们 = [r[0] for r in c.execute("SELECT id FROM ordr_item WHERE order_id=? ORDER BY id", (oid,))]
+        开 = _t(c.execute("SELECT COALESCE(cut_at,audit_at,produced_at) FROM ordr WHERE id=?", (oid,)).fetchone()[0])
+        厂 = c.execute("SELECT factory FROM factory_msg WHERE order_id=? AND event='接单' AND result='收下' "
+                      "LIMIT 1", (oid,)).fetchone()
+        厂 = 厂[0] if 厂 else _工厂(oid)
+        t0 = min(开 + dt.timedelta(days=20), 今 - dt.timedelta(days=3))
+        步 = ([("完工", 件们)] if 状态 == "生产中" else []) + \
+             [("质检通过", 件们[:1]), ("发出", 件们[:1]), ("质检通过", 件们[1:]), ("发出", 件们[1:])]
+        if 状态 == "生产中":
+            尾.append((dict(消息号=f"B{oid}-接", 订单号=oid, 事件="接单", 时间=_s(开 + dt.timedelta(hours=20)),
+                            工厂=厂, 承诺完工日=_s(开 + dt.timedelta(days=30))[:10]), "分批:接单", "收下"))
+        第一个发出 = None
+        for k, (事, 批) in enumerate(步):
+            m = dict(消息号=f"B{oid}-{k}", 订单号=oid, 事件=事, 时间=_s(t0 + dt.timedelta(hours=6 * k)),
+                     工厂=厂, 件=批)
+            if 事 == "发出":
+                m["物流单号"] = _单号(oid) + f"-{k}"
+                第一个发出 = 第一个发出 or m["消息号"]
+            尾.append((m, f"分批:{事} {len(批)} 件", "收下"))
+        # 顺带造一条更正(改快递单号)—— 更正只能改时间和快递单号
+        if 第一个发出:
+            尾.append((dict(消息号=f"B{oid}-改", 订单号=oid, 事件="更正", 时间=_s(今 - dt.timedelta(days=1)),
+                            工厂=厂, 原消息号=第一个发出, 新物流单号=_单号(oid) + "-FIX"), "更正快递单号", "收下"))
+    # **撤回**:挑一张刚收下完工的单,工厂撤回那条 —— 订单状态不自动退
+    撤 = [m for m, 毛病, e in 正常 if m.get("事件") == "完工" and e == "收下"]
+    if 撤:
+        m0 = 撤[-1]
+        尾.append((dict(消息号=f"X{m0['订单号']}-撤", 订单号=m0["订单号"], 事件="撤回",
+                        时间=_s(今 - dt.timedelta(hours=6)), 工厂=m0.get("工厂"), 原消息号=m0["消息号"]),
+                   "撤回一条完工", "收下"))
+    # **件不属于这张单**:工厂把别家的行号报了过来
+    if 单们:
+        o0 = 单们[0][0]
+        尾.append((dict(消息号=f"X{o0}-外件", 订单号=o0, 事件="完工", 时间=_s(今 - dt.timedelta(days=1)),
+                        工厂=_工厂(o0), 件=[99999999]), "件不属于这张单", "拒收"))
+    # **整批延期**:挑两张还在生产中、已接单没完工的单
+    延 = [m["订单号"] for m, 毛病, e in 正常 if m.get("事件") == "接单" and e == "收下"
+         and not any(x.get("订单号") == m["订单号"] and x.get("事件") == "完工" for x, _, _ in 正常)][:2]
+    for o in 延:
+        尾.append((dict(消息号=f"D{o}-延", 订单号=o, 事件="延期", 时间=_s(今 - dt.timedelta(days=2)),
+                        工厂=_工厂(o), 承诺完工日=_s(今 + dt.timedelta(days=12))[:10], 原因="染厂停产检修"),
+                   "整批延期", "收下"))
     未完 = [m["订单号"] for m, 毛病, e in 正常 if m.get("事件") == "接单" and e == "收下"
            and not any(x.get("订单号") == m["订单号"] and x.get("事件") == "完工" for x, _, _ in 正常)]
     有工单 = [o for o in 未完 if 在制.get(o)]

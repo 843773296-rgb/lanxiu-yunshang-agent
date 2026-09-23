@@ -55,8 +55,28 @@ def main():
                   (m["消息号"], m["订单号"], m["事件"], m["时间"], m.get("物流单号"), m.get("承诺完工日"),
                    m.get("工厂"), m["时间"]))
         n += 1
-    c.commit(); c.close()
-    print(f"  补历史回传 {n} 条")
+    # **老单补件清单和包裹**(业务 09-23:分批发货之前的单,如实记成「一次性发出的一个包裹」)——
+    # 不补的话这些单在按件汇总的新规下一件都没进度,页面和签收侧都要写两套逻辑。
+    c.executescript("""
+      INSERT INTO factory_msg_item(msg_id,item_id)
+        SELECT m.msg_id, i.id FROM factory_msg m JOIN ordr_item i ON i.order_id=m.order_id
+        WHERE m.result='收下' AND m.event IN ('完工','质检通过','发出')
+          AND NOT EXISTS(SELECT 1 FROM factory_msg_item x WHERE x.msg_id=m.msg_id);
+      INSERT INTO pkg(pkg_id,order_id,tracking_no,shipped_at,status,msg_id,created)
+        SELECT 'P0-'||m.msg_id, m.order_id, m.tracking_no, m.at,
+               CASE WHEN o.status IN ('待完成','完成') THEN '已签收' ELSE '到店' END, m.msg_id, m.at
+        FROM factory_msg m JOIN ordr o ON o.id=m.order_id
+        WHERE m.event='发出' AND m.result='收下' AND m.void_at IS NULL
+          AND NOT EXISTS(SELECT 1 FROM pkg p WHERE p.msg_id=m.msg_id);
+      INSERT INTO pkg_item(pkg_id,item_id)
+        SELECT p.pkg_id, i.item_id FROM pkg p JOIN factory_msg_item i ON i.msg_id=p.msg_id
+        WHERE NOT EXISTS(SELECT 1 FROM pkg_item x WHERE x.pkg_id=p.pkg_id);
+    """)
+    c.commit()
+    补件 = c.execute("SELECT COUNT(*) FROM factory_msg_item").fetchone()[0]
+    包 = c.execute("SELECT COUNT(*) FROM pkg").fetchone()[0]
+    c.close()
+    print(f"  补历史回传 {n} 条;件清单 {补件} 行;老单补出 {包} 个包裹(一单一个)")
 
     # ② 今天这一批
     c = sqlite3.connect(DB)
@@ -84,7 +104,8 @@ def main():
     预催 = {m["订单号"] for m, _, e in 批 if e == "该催"}
     if 催 != 预催:
         错.append(("该催清单", "", f"{len(预催)} 张", f"{len(催)} 张(多 {len(催 - 预催)}、少 {len(预催 - 催)})"))
-    for k in ("重复发", "换号重发", "乱序:质检先到", "发出没单号", "未来时间", "时间倒挂", "查无此单", "已取消的单", "别家报完工", "车间在制却报完工"):
+    for k in ("重复发", "换号重发", "乱序:质检先到", "发出没单号", "未来时间", "时间倒挂", "查无此单", "已取消的单",
+              "别家报完工", "车间在制却报完工", "件不属于这张单", "整批延期", "撤回一条完工", "更正快递单号"):
         if not 计[k]:
             错.append((k, "", "至少 1 条", "0 条 —— 这一支没样本,等于没测"))
     with sqlite3.connect(DB) as c:
@@ -101,6 +122,14 @@ def main():
         print(f"  ❌ {len(错)} 条和模拟工厂记的预期对不上:")
         for x in 错[:10]: print(f"     {x}")
         sys.exit(1)
+    with sqlite3.connect(DB) as c:
+        包, 多包 = c.execute("SELECT COUNT(*), SUM(n>1) FROM (SELECT order_id, COUNT(*) n FROM pkg "
+                            "WHERE void_at IS NULL GROUP BY order_id)").fetchone()
+        延 = c.execute("SELECT COUNT(*) FROM factory_delay").fetchone()[0]
+        撤 = c.execute("SELECT COUNT(*) FROM factory_msg WHERE void_at IS NOT NULL").fetchone()[0]
+    if not 多包:
+        print("  ❌ 一张分批发货(两个包裹)的单都没造出来 —— 这一支没活用例"); sys.exit(1)
+    print(f"  包裹:{包} 张单有包裹,其中 {多包} 张是分批发的;延期通知 {延} 条;被撤回作废 {撤} 条")
     print(f"  ✅ 每条都和预期对得上;该催 {len(催)} 张")
 
 
