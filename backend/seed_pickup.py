@@ -50,9 +50,27 @@ CREATE TABLE IF NOT EXISTS pickup(
   ratify_note TEXT);                        -- 追认必须写理由
 CREATE TABLE IF NOT EXISTS fit_code(
   -- 顾客在手机端点「试穿合身」拿到的 6 位码。**库里只存哈希**,明文只给顾客。
+  -- order_id 这一列是**码的键**:订单签收放单号、返修放 "R:返修单号"、包裹放 "P:包裹号" —— 三者同一张表不串。
   order_id TEXT, code_hash TEXT, issued_at TEXT, expires_at TEXT,
   used_at TEXT, tries INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS ix_fit_code_order ON fit_code(order_id);
+-- ── 分批发货(业务 2026-09-23)────────────────────────────────────────────
+-- 工厂可以分几个包裹发,**每个包裹独立**:各自到店、各自取件方式、各自一个码。
+-- 包裹本身(件清单、快递单号、发出时间)在 pkg / pkg_item,由工厂侧维护,这一侧只读。
+CREATE TABLE IF NOT EXISTS pkg_pickup(
+  pkg_id TEXT PRIMARY KEY, order_id TEXT,
+  arrived_at TEXT, received_by TEXT,        -- 这个包裹到店、哪位顾问代收
+  mode TEXT, forwarded_at TEXT, tracking_no TEXT);   -- 到店取 / 转寄(转寄要单号)
+CREATE INDEX IF NOT EXISTS ix_pkg_pickup_order ON pkg_pickup(order_id);
+-- **签收落到「件」**:业务 2026-09-23 定,一个包裹里两件合身一件不合身时,
+-- 合身的当场让顾客拿走、不合身那件留店转返修 —— 所以签收记录不能按包裹记,要按件记。
+CREATE TABLE IF NOT EXISTS pickup_item(
+  order_item_id INTEGER PRIMARY KEY, order_id TEXT, pkg_id TEXT,
+  fit_result TEXT,                          -- 合身 / 不合身 / NULL(还没试)
+  fit_at TEXT, fit_verified_by TEXT,        -- 核验通过的时间、输码的导购
+  issue TEXT, maintain_id TEXT);            -- 不合身时:哪里不合身、转出去的返修单号
+CREATE INDEX IF NOT EXISTS ix_pickup_item_order ON pickup_item(order_id);
+CREATE INDEX IF NOT EXISTS ix_pickup_item_pkg ON pickup_item(pkg_id);
 """
 
 
@@ -72,6 +90,37 @@ def _t(s):
 
 def _f(t):
     return t.strftime("%Y-%m-%d %H:%M") if t else None
+
+
+def _铺到包裹和件(c):
+    """把**订单级**的老签收记录铺到**包裹**和**件**上(业务 2026-09-23 改成分批发货之后补的)。
+
+    老记录是一单一行(那时候还没有包裹)。工厂侧已经给每张老单补了恰好一个包裹,
+    所以这里按包裹把同一行抄下去、再按件铺开:**每件的签收结果就是那一单当时的结果**。
+    ⚠️ 只补**还没有**记录的(INSERT OR IGNORE 之外还先查一遍)—— 旅程脚本真走过签收的单,
+    它写的是真记录,不许被这一步盖掉。
+    """
+    有包 = {r[0] for r in c.execute("SELECT pkg_id FROM pkg_pickup")}
+    有件 = {r[0] for r in c.execute("SELECT order_item_id FROM pickup_item")}
+    包行, 件行 = [], []
+    for p in c.execute("""SELECT k.pkg_id, k.order_id, u.arrived_at, u.received_by, u.mode, u.forwarded_at,
+                                 u.tracking_no, u.fit_result, u.fit_at, u.fit_verified_by
+                          FROM pkg k JOIN pickup u ON u.order_id=k.order_id
+                          WHERE k.void_at IS NULL ORDER BY k.pkg_id""").fetchall():
+        if p["pkg_id"] not in 有包 and p["arrived_at"]:
+            包行.append((p["pkg_id"], p["order_id"], p["arrived_at"], p["received_by"],
+                        p["mode"], p["forwarded_at"], p["tracking_no"]))
+        if not p["fit_result"]:
+            continue                     # 还没试穿的单,件上也不该有结果
+        for (it,) in c.execute("SELECT item_id FROM pkg_item WHERE pkg_id=?", (p["pkg_id"],)):
+            if it in 有件:
+                continue
+            件行.append((it, p["order_id"], p["pkg_id"], p["fit_result"], p["fit_at"], p["fit_verified_by"]))
+    c.executemany("INSERT OR IGNORE INTO pkg_pickup(pkg_id,order_id,arrived_at,received_by,mode,forwarded_at,"
+                  "tracking_no) VALUES(?,?,?,?,?,?,?)", 包行)
+    c.executemany("INSERT OR IGNORE INTO pickup_item(order_item_id,order_id,pkg_id,fit_result,fit_at,"
+                  "fit_verified_by) VALUES(?,?,?,?,?,?)", 件行)
+    return len(包行), len(件行)
 
 
 def main(db=None):
@@ -112,7 +161,10 @@ def main(db=None):
     c.executemany("INSERT OR IGNORE INTO pickup(order_id,arrived_at,received_by,mode,forwarded_at,tracking_no,"
                   "fit_result,fit_at,fit_verified_by,complete_at,complete_by,ratify_note) "
                   "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", 行们)
+    c.commit()
+    包, 件 = _铺到包裹和件(c)
     c.commit(); c.close()
+    print(f"分批发货:按包裹补了 {包} 行取件记录、按件补了 {件} 行签收记录(业务 09-23:签收落到件)")
     print(f"交付签收:补了 {len(行们)} 行(旅程真走过签收的 {len(已有)} 单原样留着)—— 待完成 {计['待完成']} / 完成 {计['完成']}"
           f"(其中转寄 {计['转寄']});"
           f"已发货到店 {计['已发货·到店']}、还在路上 {计['已发货·在路上']}")
@@ -124,11 +176,25 @@ def main(db=None):
          "已发货·到店": c.execute("""SELECT COUNT(*) FROM pickup p JOIN ordr o ON o.id=p.order_id
                                    WHERE o.status='已发货'""").fetchone()[0],
          "已发货·在路上": c.execute("""SELECT COUNT(*) FROM ordr o WHERE o.kind='定制品订单' AND o.status='已发货'
-                                     AND NOT EXISTS(SELECT 1 FROM pickup p WHERE p.order_id=o.id)""").fetchone()[0]}
+                                     AND NOT EXISTS(SELECT 1 FROM pickup p WHERE p.order_id=o.id)""").fetchone()[0],
+         # 分批发的单要有活用例 —— 一单一个包裹的话,「每个包裹一个码」这一支永远测不到
+         "分批发的单": c.execute("""SELECT COUNT(*) FROM (SELECT order_id FROM pkg WHERE void_at IS NULL
+                                   GROUP BY order_id HAVING COUNT(*)>1)""").fetchone()[0],
+         "按件签收记录": c.execute("SELECT COUNT(*) FROM pickup_item WHERE fit_result='合身'").fetchone()[0]}
+    # 已经签收过的包裹,**每一件都要有按件的签收记录** —— 对方(工厂侧)验不了这条,归这边验。
+    # 缺了的话「整单签收完了没有」会把没记录的件当成没签收,整单永远进不了待完成。
+    漏 = c.execute("""SELECT COUNT(*) FROM pkg k JOIN pkg_item i ON i.pkg_id=k.pkg_id
+                     JOIN pickup u ON u.order_id=k.order_id
+                     WHERE k.void_at IS NULL AND u.fit_result IS NOT NULL
+                       AND NOT EXISTS(SELECT 1 FROM pickup_item t WHERE t.order_item_id=i.item_id)""").fetchone()[0]
     c.close()
     for k in 全:
         if not 全[k]:
             print(f"  ❌ 「{k}」一条都没有 —— 那一支没有活用例"); sys.exit(1)
+    print("  覆盖:" + " / ".join(f"{k} {v}" for k, v in 全.items()))
+    if 漏:
+        print(f"  ❌ 有 {漏} 件在已签收的包裹里,却没有按件的签收记录 —— 整单永远进不了待完成"); sys.exit(1)
+    print("  ✅ 已签收包裹里的每一件都有按件记录")
 
 
 if __name__ == "__main__":

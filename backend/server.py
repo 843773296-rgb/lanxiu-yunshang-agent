@@ -289,7 +289,15 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
         # 签收 / 完成的闸同理:**从 pickup 表现算**,传进来的「已核验」谁都能写
         if to in ("待完成","完成") and r[0]["kind"]=="定制品订单":
             _p = rows("SELECT fit_result, complete_by FROM pickup WHERE order_id=?", target)
-            ctx["试穿合身"] = "已核验" if _p and _p[0]["fit_result"]=="合身" else None
+            # 分批发货之后(业务 09-23)签收落到**件**:未作废包裹里的每一件都要签收合身。
+            # 一件都没有(老数据没铺到件)时退回看订单级那一行 —— 否则历史单会被判成没签收。
+            _it = rows("""SELECT i.item_id, t.fit_result FROM pkg k JOIN pkg_item i ON i.pkg_id=k.pkg_id
+                          LEFT JOIN pickup_item t ON t.order_item_id=i.item_id
+                          WHERE k.order_id=? AND k.void_at IS NULL""", target)
+            if _it:
+                ctx["试穿合身"] = "已核验" if all(x["fit_result"]=="合身" for x in _it) else None
+            else:
+                ctx["试穿合身"] = "已核验" if _p and _p[0]["fit_result"]=="合身" else None
             ctx["完成确认"] = _p[0]["complete_by"] if _p else None
     elif mid=="fe-scheme":
         r=rows("SELECT * FROM scheme WHERE id=?",target)
@@ -1558,9 +1566,25 @@ def factory_feed_page(q):
     stat = {r["result"]: r["n"] for r in rows("SELECT result, COUNT(*) n FROM factory_msg GROUP BY result")}
     look = rows("SELECT order_id, event, factory, at, result, reason FROM factory_msg "
                 "WHERE result IN ('挂异常','拒收','暂存') ORDER BY at DESC LIMIT 200")
-    return dict(today=TODAY, chase=chase, stat=stat, look=look,
+    # 延期待通知(业务 09-23:顾问通知完点「已通知」,不点的话这份清单只进不出)
+    told = rows("""SELECT d.id, d.order_id, d.old_promise, d.new_promise, d.reason, d.at, o.shop, o.advisor_no
+                   FROM factory_delay d JOIN ordr o ON o.id=d.order_id
+                   WHERE d.told_at IS NULL AND o.status NOT IN ('取消','完成') ORDER BY d.at DESC LIMIT 100""")
+    # 人工回退(发错件 / 到店返工)—— **一直留着**,页面上看得到这张单倒退过
+    back = rows("""SELECT r.order_id, r.at, r.cause, r.note, r.frm, r.too, r.freight, s.name by_name
+                   FROM order_rollback r LEFT JOIN staff s ON s.no=r.by_no ORDER BY r.at DESC LIMIT 100""")
+    # 包裹:在途和到店的(已签收的在签收那一侧看)
+    pkgs = rows("""SELECT p.pkg_id, p.order_id, p.tracking_no, p.shipped_at, p.arrived_at, p.status,
+                          (SELECT COUNT(*) FROM pkg_item i WHERE i.pkg_id=p.pkg_id) n, o.shop
+                   FROM pkg p JOIN ordr o ON o.id=p.order_id
+                   WHERE p.void_at IS NULL AND p.status IN ('在途','到店') ORDER BY p.shipped_at DESC LIMIT 100""")
+    分批 = rows("SELECT COUNT(*) n FROM (SELECT order_id FROM pkg WHERE void_at IS NULL "
+               "GROUP BY order_id HAVING COUNT(*)>1)")[0]["n"]
+    return dict(today=TODAY, chase=chase, stat=stat, look=look, told=told, back=back, pkgs=pkgs, 分批=分批,
                 note="生产和发货是工厂回传的事实,门店和后台不能手动推(订单状态机只认收下了的回传)。"
-                     "生产方有自有工坊和外发工厂两种,谁接的单谁报;别家报、车间工单还在制却报完工,都挂异常等人核。"
+                     "生产方有自有工坊和外发工厂两种,谁接的单谁报,不许转厂;别家报、车间工单还在制却报完工,都挂异常等人核。"
+                     "可以分批发货,每个包裹独立;发错件 / 到店发现要返工由店长人工回退,运费公司承担;"
+                     "工厂延期后按新的完工日判超期,但原承诺日和延期次数一直留着。"
                      "现在没接真的供应链系统,回传由模拟工厂发出。")
 
 

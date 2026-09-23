@@ -2245,12 +2245,13 @@ def record_fitting(order_id, item, adjust="", signed=False, round=None, note="")
 
 
 def record_pickup(order_id, action, mode=None, tracking_no=None, issue=None,
-                  matches_record=None, other_defect=None, our_fault=None):
+                  matches_record=None, other_defect=None, our_fault=None, pkg=None, item=None):
     """**交付签收的三个动作**(真的写进去):到店代收 / 取件方式 / 不合身。顾问 / 店长,只能动本店的单。
 
     action  「到店代收」—— 工厂发到店,这一单到了(只认已发货的定制单)
             「取件方式」—— mode = 到店取 / 转寄;转寄要 tracking_no(物流单号)
-            「不合身」  —— 顾客试了不合身,**不算签收**,订单不动;issue 写清哪里不合身。
+            「不合身」  —— 顾客试了某一件不合身,**那一件不算签收**,留店转返修;issue 写清哪里不合身。
+                          item 指哪一件(包裹里不止一件时必须给,不替用户挑)。
                           matches_record / other_defect / our_fault 是**查出来的事实**,不知道就别填 ——
                           填了会影响判责建议,而建议最后由人确认
     """
@@ -2258,7 +2259,8 @@ def record_pickup(order_id, action, mode=None, tracking_no=None, issue=None,
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁在操作 —— 请先登录")
     d = dict(order_id=order_id, mode=mode, tracking_no=tracking_no, issue=issue,
-             matches_record=matches_record, other_defect=other_defect, our_fault=our_fault)
+             matches_record=matches_record, other_defect=other_defect, our_fault=our_fault,
+             pkg=pkg, item=item)
     fn = {"到店代收": pw.arrive, "取件方式": pw.set_mode, "不合身": pw.not_fit}.get((action or "").strip())
     if not fn:
         return dict(ok=False, code="BAD_ACTION", reason="action 只认「到店代收 / 取件方式 / 不合身」")
@@ -2267,7 +2269,7 @@ def record_pickup(order_id, action, mode=None, tracking_no=None, issue=None,
     return r
 
 
-def verify_fit_code(order_id, code):
+def verify_fit_code(order_id, code, pkg=None):
     """**核验顾客给的 6 位码 = 签收**(真的写进去):订单「已发货 → 待完成」。顾问 / 店长,本店的单。
 
     码是顾客在手机上点「试穿合身」拿到的,**只能是顾客给的、用户说出来的那一个** —— 不许编、不许猜。
@@ -2275,7 +2277,7 @@ def verify_fit_code(order_id, code):
     import pickup_write as pw
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁在核验 —— 请先登录")
-    r = pw.verify(dict(order_id=order_id, code=code), me)
+    r = pw.verify(dict(order_id=order_id, code=code, pkg=pkg), me)
     if r.get("ok"): _agent_log(me, "SIGN", r.get("reason", ""))
     return r
 
@@ -4162,13 +4164,13 @@ SHOP_SCHEMAS=[
  {"name":"stock_alert","description":"**库存预警** —— 哪些 SKU 要断了、哪些**看着有货其实一件都发不出**(在手有货但全被订单占用)、哪些在压货。805 个 SKU 全有库存数而在这之前没有任何工具会说「这个要断了」。⚠️ **在手 ≠ 可用**:客户问「还有货吗」要的是 **可用 = 在手 − 已占用**,只报在手会让客户白等。⚠️ **它给不出可售天数,而且会直说给不出**:全库有销量的只有 71/797 个 SKU、每个只有一笔、订单只跨 18 天,**一笔销售画不出速度** —— 这时候任何一个可售天数都是编的,而编出来的数会让采购按它去补货。**不许把「算不出」说成 0 天,也不许退回成「低于 N 件就预警」假装算得出。** ⚠️ **这个工具不补货**:补多少、什么时候补是采购的决定。⚠️ 只看成品 SKU,**面料库存是另一摊**。","input_schema":{"type":"object","properties":{"scope":{"type":"string","description":"发不出 / 断货 / 快没了 / 卖不动;不传则全给"}}}},
  {"name":"factory_chase","description":"**该催工厂的单 + 要人看的工厂回传**(只读)。定制单的生产和发货**只认工厂回传**(自有工坊和外发工厂都有,谁接的单谁报),门店和后台都不能手动推状态。这里列出:① 该催的单 —— 开工超过 3 天工厂没回接单(单可能没发过去),或过了工厂承诺的完工日还没完工(该先告诉顾客会晚),带生产方、承诺完工日、归属顾问、是不是你的;② 要人看的回传 —— 挂异常(查无此单、单已取消、别家报了这张单、车间工单还在制却报完工)/ 拒收(缺物流单号、时间不对)/ 暂存(来早了,等前一条)。店长看本店,总部运营看全部。顾问问「我有哪些单该去催工厂」「这单怎么还没做好」也用这个。","input_schema":{"type":"object","properties":{}}},
  {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**定制单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。**哪些款必须试(业务 09-22 定)**:重工、全定制(顾问亲自量的尺寸判出)、婚服(商品挂了「婚礼婚服」场合标签)三类命中任一即必试;没命中但有一类判不了 → 判不了,**不当成不必试**;重工的两个门槛(装饰工序最慢 ≥25 天 / 单项工艺起步 ≥12 天)业务 09-22 确认。**开裁这道闸会拦**:该试的要试过、而且客户签了字,整单才许开裁 —— 看板里「待开裁的单」列出每张待生产单能不能裁、卡在哪。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
- {"name":"record_pickup","description":"**交付签收的三个动作(真的写进去)**:action=「到店代收」(**工厂的货到了门店、顾客还没来** —— 这一步只是门店收货入库,不涉及顾客,也不是签收;定制单「已发货」指的是工厂发往门店,不是寄给顾客)/「取件方式」(mode=到店取 或 转寄;**转寄要 tracking_no**,业务 09-22:顾问先邀约顾客到店取,实在来不了才转寄)/「不合身」(顾客试了不合身 → **不算签收**,订单状态不动,转返修;issue 写清哪里不合身)。只能动本店的单,经手人就是你自己(不收工号)。「不合身」时 matches_record(成衣和订单留存数据对得上吗)、other_defect(有没有别的瑕疵)、our_fault(查出来是「导购」或「打版」的问题)都是**查出来的事实,不知道就别填** —— 返回的判责建议(对得上且无别的瑕疵 → 顾客承担、收费;导购 / 打版问题 → 企业承担、免费)**不是结论,由售后负责人确认**。⚠️ 动手前先跟用户对一遍单号和动作。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"action":{"type":"string","enum":["到店代收","取件方式","不合身"]},"mode":{"type":"string","enum":["到店取","转寄"]},"tracking_no":{"type":"string"},"issue":{"type":"string"},"matches_record":{"type":"boolean"},"other_defect":{"type":"boolean"},"our_fault":{"type":"string","enum":["导购","打版"]}},"required":["order_id","action"]}},
- {"name":"verify_fit_code","description":"**核验顾客给的 6 位码 = 签收(真的写进去)**:通过后订单「已发货 → 待完成」。业务 09-22:**签收 = 顾客确认试穿合身** —— 顾客在手机上点「试穿合身」拿到 6 位码交给导购,导购输入核验;到店取和转寄都走这个码。**码只能是用户这句话里说出来的那一个,不许编、不许猜、不许「先填个试试」** —— 输错会记次数,5 次作废。完成之后要**顾客自己确认**,顾客一直不确认,签收满 15 天顾问才能写理由追认(ratify_complete)。⚠️ 动手前先跟用户对一遍单号和码。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"code":{"type":"string","description":"顾客给的 6 位码,原样照抄用户说的"}},"required":["order_id","code"]}},
+ {"name":"record_pickup","description":"**交付签收的三个动作(真的写进去)**:action=「到店代收」(**工厂的货到了门店、顾客还没来** —— 这一步只是门店收货入库,不涉及顾客,也不是签收;定制单「已发货」指的是工厂发往门店,不是寄给顾客)/「取件方式」(mode=到店取 或 转寄;**转寄要 tracking_no**,业务 09-22:顾问先邀约顾客到店取,实在来不了才转寄)/「不合身」(顾客试了**某一件**不合身 → 那一件不算签收、留店转返修,同包裹里合身的件照常签收拿走;issue 写清哪里不合身,item 指哪一件)。**分批发货(业务 09-23)**:一张单可能分几个包裹,每个包裹各自到店、各自取件方式、各自一个码 —— 单子不止一个包裹时要给 pkg(包裹号),不给会反问,**不许替用户挑一个**。只能动本店的单,经手人就是你自己(不收工号)。「不合身」时 matches_record(成衣和订单留存数据对得上吗)、other_defect(有没有别的瑕疵)、our_fault(查出来是「导购」或「打版」的问题)都是**查出来的事实,不知道就别填** —— 返回的判责建议(对得上且无别的瑕疵 → 顾客承担、收费;导购 / 打版问题 → 企业承担、免费)**不是结论,由售后负责人确认**。⚠️ 动手前先跟用户对一遍单号和动作。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"action":{"type":"string","enum":["到店代收","取件方式","不合身"]},"pkg":{"type":"string","description":"包裹号。一单分了好几个包裹时必须给"},"item":{"type":"string","description":"订单行号(哪一件)。登记不合身时,包裹里不止一件就必须给"},"mode":{"type":"string","enum":["到店取","转寄"]},"tracking_no":{"type":"string"},"issue":{"type":"string"},"matches_record":{"type":"boolean"},"other_defect":{"type":"boolean"},"our_fault":{"type":"string","enum":["导购","打版"]}},"required":["order_id","action"]}},
+ {"name":"verify_fit_code","description":"**核验顾客给的 6 位码 = 签收(真的写进去)**:通过后**这个包裹里还没登记不合身的件**全部签收,顾客可以拿走;**整单所有未作废包裹的每一件都签收合身**,订单才「已发货 → 待完成」(业务 09-23 分批发货)。业务 09-22:**签收 = 顾客确认试穿合身** —— 顾客在手机上点「试穿合身」拿到 6 位码交给导购,导购输入核验;到店取和转寄都走这个码。**码只能是用户这句话里说出来的那一个,不许编、不许猜、不许「先填个试试」** —— 输错会记次数,5 次作废。完成之后要**顾客自己确认**,顾客一直不确认,签收满 15 天顾问才能写理由追认(ratify_complete)。⚠️ 动手前先跟用户对一遍单号和码。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"code":{"type":"string","description":"顾客给的 6 位码,原样照抄用户说的"},"pkg":{"type":"string","description":"包裹号。**一个包裹一个码**,一单分了好几个包裹时必须给"}},"required":["order_id","code"]}},
  {"name":"create_repair","description":"**新建返修单(真的写进去)**,停在「待确认」等店长判责。顾问或店长,本店的单。issue 写清哪里要修(「下摆开线」「腰围紧 2cm」)。**一张单有好几件时 item 必填**(订单行号或商品名)—— 没说哪一件就问,不替用户挑。返回里带一个**判责建议**(不是结论):按返修判定表 + 这一件的下单量体;签收时顾客确认过试穿合身的,之后的尺寸问题建议顾客承担(工艺瑕疵不在此列)。交付签收登记「不合身」时系统会自动建返修单,不用再建。⚠️ 动手前先跟用户对一遍单号、哪一件、什么问题。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"issue":{"type":"string"},"item":{"type":"string","description":"订单行号或商品名;一张单多件时必填"}},"required":["order_id","issue"]}},
  {"name":"decide_repair","description":"**店长判责(真的写进去)**:liable = 顾客 / 企业,plan = 返修 / 重做 —— **都由店长定**(业务 09-22:版师是总部的人,不在店里拍板)。判给顾客的要填 fee_est(预估费用),**顾客同意付费之后**才能开工:customer_agreed=true 时 agree_note 必填(凭据,比如「顾客电话同意 300 元」)。判完了(企业承担,或顾客承担且录了费用、顾客同意了)才从「待确认」进「待入库」;没同意就先记下判责、停在待确认。**谁承担、返修还是重做、顾客同没同意,都只能照用户说的填,不许替店长定、不许默认。**","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"},"liable":{"type":"string","enum":["顾客","企业"]},"plan":{"type":"string","enum":["返修","重做"]},"fee_est":{"type":"number"},"customer_agreed":{"type":"boolean"},"agree_note":{"type":"string"}},"required":["maintain_id","liable","plan"]}},
  {"name":"advance_repair","description":"**推进返修单一档(真的写进去)**:待入库 → 待处理(衣服收回来了)→ 处理中(送修)→ 待签收(修好回店)。顾问或店长,本店的单。还在「待确认」的要先等店长判责;「待签收 → 已完成」要顾客试穿输码(verify_repair_return),这里不给。⚠️ 动手前先跟用户确认单号和这一步真的发生了。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"}},"required":["maintain_id"]}},
  {"name":"verify_repair_return","description":"**返修件回店签收(真的写进去)**:顾客试穿修好的衣服合身,在手机上点「试穿合身」拿 6 位码交给导购,导购输入核验通过才算完成(业务 09-22:和交付签收同一套码)。**码只能是用户这句话里说出来的那一个,不许编、不许猜** —— 输错记次数,5 次作废。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"},"code":{"type":"string"}},"required":["maintain_id","code"]}},
- {"name":"ratify_complete","description":"**顾问追认完成(真的写进去)**:签收满 15 天顾客还没在手机上确认完成,顾问写理由(比如「已电话联系,顾客表示没问题」)把订单「待完成 → 完成」。**不满 15 天不行、没写理由不行** —— 业务 09-22:完成由顾客确认,追认是兜底,不是替顾客点。⚠️ 动手前先跟用户确认理由是真的联系过。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"reason":{"type":"string"}},"required":["order_id","reason"]}},
+ {"name":"ratify_complete","description":"**顾问追认完成(真的写进去)**:**最后一件**签收满 15 天顾客还没在手机上确认完成,顾问写理由(比如「已电话联系,顾客表示没问题」)把订单「待完成 → 完成」。**不满 15 天不行、没写理由不行** —— 业务 09-22:完成由顾客确认,追认是兜底,不是替顾客点。⚠️ 动手前先跟用户确认理由是真的联系过。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"reason":{"type":"string"}},"required":["order_id","reason"]}},
  {"name":"open_order","description":"**开一张定制单(真的写进去)**,停在「待确认」—— 还没生效。顾问或店长用,只给本店客户开。items 每一件写 spu(或 sku)、wearer_id(**给谁做,必填** —— 下单量体量的必须是穿这件的人)、qty。只开定制单,标品流程不变。开完的**下一步**:给每一件量下单量体并绑到这一件(record_measure 带 order_id + item),再 confirm_order。⚠️ 动手前先跟用户对一遍:哪位客户、哪几件、每件给谁做。","input_schema":{"type":"object","properties":{"customer_id":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"spu":{"type":"string"},"sku":{"type":"string"},"wearer_id":{"type":"string"},"qty":{"type":"integer"}}}}},"required":["customer_id","items"]}},
  {"name":"confirm_order","description":"**确认下单(真的写进去)**:待确认 → 待审核。业务 09-22:**定制单确认即已付款**,不走「待付款」。**逐件过闸**:每一件都要有绑在它上面的、开单之后量的、够做这件衣服的下单量体;有一件不过就整单拒绝,返回里列出是哪几件、缺什么(没有下单量体 / 早于开单 / 缺哪几项 / 着装人没定)。被拒了**不要换个说法再试**,把缺什么告诉用户,去量、去绑。⚠️ 动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
  {"name":"record_measure","description":"**登记一次量体(真的写进去)**。顾问或店长用,只能录本店客户的着装人;量体人就是你自己(不收工号)。wearer_id 是着装人编号(W 开头,客户号 C 开头的不是)。values 形如 {\"胸围\":86,\"腰围\":68}。method 只认「到店 / 上门」—— 业务 09-22 **不准远程量体**。inner(内搭:无/薄/厚/单层内衣)、shoe(鞋:赤足/平底/高跟)、breath(呼吸:平静呼气)**三个都必填,缺一件就等于没量**。数值超出人体合理范围会被拒(多半是单位或小数点录错),**不替你改**。**下单量体**:签单时按这件衣服重新量,给 order_id + item(订单行号或商品名),这一件就以这次为准;业务 09-22 定了**没有下单量体就不许下单**。要先有「身体数据」同意(未满 14 岁还要监护人同意)。⚠️ 动手前先跟用户对一遍:给谁量的、哪几项多少、到店还是上门、三个条件、是不是某一件的下单量体 —— 尺寸录错,衣服就按错的做。","input_schema":{"type":"object","properties":{"wearer_id":{"type":"string"},"values":{"type":"object","description":"{量体项名: 数值}"},"method":{"type":"string","enum":["到店","上门"]},"inner":{"type":"string"},"shoe":{"type":"string"},"breath":{"type":"string"},"order_id":{"type":"string","description":"只在下单量体时给"},"item":{"type":"string","description":"订单行号或商品名,只在下单量体时给"}},"required":["wearer_id","values","method","inner","shoe","breath"]}},

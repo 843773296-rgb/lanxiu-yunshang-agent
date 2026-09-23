@@ -115,7 +115,10 @@ def run(T):
     ck("还没到店就要码 → 顾客拿不到", pw.customer_issue_code(oid, 尾)["code"] == "NOT_READY")
     r = pw.arrive({"order_id": oid}, 顾问)
     ck("已发货的定制单 → 登记到店代收", r["ok"], r.get("reason"))
-    ck("代收人记的是登录的人", c.execute("SELECT received_by FROM pickup WHERE order_id=?", (oid,)).fetchone()[0] == 顾问["no"])
+    ck("代收人记的是登录的人(按包裹记)", c.execute("SELECT received_by FROM pkg_pickup WHERE order_id=?",
+                                                     (oid,)).fetchone()[0] == 顾问["no"])
+    ck("包裹状态跟着到店改", c.execute("SELECT status FROM pkg WHERE order_id=? AND void_at IS NULL",
+                                       (oid,)).fetchone()[0] == "到店")
     ck("转寄不写物流单号 → 拒", pw.set_mode({"order_id": oid, "mode": "转寄"}, 顾问)["code"] == "NO_TRACKING")
     ck("转寄写了单号 → 行", pw.set_mode({"order_id": oid, "mode": "转寄", "tracking_no": "SF123"}, 顾问)["ok"])
     # ── 码 ──
@@ -123,24 +126,42 @@ def run(T):
     r = pw.customer_issue_code(oid, 尾)
     码 = r.get("试穿合身码")
     ck("顾客点试穿合身 → 拿到 6 位码", bool(码) and len(码) == 6, r.get("reason"))
+    包号 = r.get("包裹")
+    ck("码按包裹出(键是 P:包裹号,和返修的 R: 不串)", bool(包号) and bool(
+        c.execute("SELECT 1 FROM fit_code WHERE order_id=?", (f"P:{包号}",)).fetchone()))
     ck("库里只存哈希,不存明文", not c.execute("SELECT 1 FROM fit_code WHERE code_hash LIKE ?", (f"%{码}%",)).fetchone()
        and not c.execute("SELECT 1 FROM op_log WHERE reason LIKE ? OR ctx LIKE ?", (f"%{码}%", f"%{码}%")).fetchone())
     错 = "000000" if 码 != "000000" else "111111"
     r = pw.verify({"order_id": oid, "code": 错}, 顾问)
     ck("错的码 → 不签收", not r["ok"] and 状态(oid) == "已发货", r.get("reason"))
-    ck("输错一次记下来", c.execute("SELECT tries FROM fit_code WHERE order_id=? ORDER BY rowid DESC", (oid,)).fetchone()[0] == 1)
-    # ── 不合身:不算签收 ──
-    r = pw.not_fit({"order_id": oid, "issue": "腰围紧 2cm", "matches_record": True, "other_defect": False}, 顾问)
-    ck("不合身 → 订单状态不动", r["ok"] and 状态(oid) == "已发货", r.get("reason"))
-    ck("不合身 → 给判责建议(数据对得上、没别的瑕疵 → 顾客)", r.get("判责建议") == "顾客")
+    ck("输错一次记下来", c.execute("SELECT tries FROM fit_code WHERE order_id=? ORDER BY rowid DESC",
+                                   (f"P:{包号}",)).fetchone()[0] == 1)
     ck("不合身不写说明 → 拒", pw.not_fit({"order_id": oid}, 顾问)["code"] == "NO_ISSUE")
-    # 改完再试:顾客重新拿码
+    # 顾客重新拿码(上一个码输错过一次,没用掉)
     码 = pw.customer_issue_code(oid, 尾)["试穿合身码"]
     r = pw.verify({"order_id": oid, "code": 码[:3] + " " + 码[3:]}, 顾问)
     ck("对的码 → 签收,订单进待完成", r["ok"] and 状态(oid) == "待完成", r.get("reason"))
     p = dict(c.execute("SELECT * FROM pickup WHERE order_id=?", (oid,)).fetchone())
     ck("签收记下核验人和时间,结果是合身", p["fit_result"] == "合身" and p["fit_verified_by"] == 顾问["no"] and p["fit_at"])
+    件 = [dict(x) for x in c.execute("SELECT * FROM pickup_item WHERE order_id=?", (oid,))]
+    ck("签收落到件:每一件都有一行、都记了核验人", 件 and all(x["fit_result"] == "合身" and x["fit_verified_by"] == 顾问["no"]
+                                                           for x in 件), f"{len(件)} 件")
     ck("同一个码不能再用", not pw.verify({"order_id": oid, "code": 码}, 顾问)["ok"])
+    # ── 不合身:那一件不算签收,订单不动(单独用一张单 —— 登记过不合身的件进了返修,
+    #    之后要走返修回店那条路,不该再被交付签收的码签掉)──
+    o2 = c.execute("""SELECT o.id, o.shop FROM ordr o WHERE o.kind='定制品订单' AND o.status='已发货'
+                      AND NOT EXISTS(SELECT 1 FROM pkg_pickup p WHERE p.order_id=o.id)
+                      AND (SELECT COUNT(*) FROM pkg k WHERE k.order_id=o.id AND k.void_at IS NULL)=1
+                      ORDER BY o.id LIMIT 1""").fetchone()
+    ck("有第二张已发货、还没到店的单(验不合身用)", bool(o2))
+    if o2:
+        顾3 = 人("顾问", o2["shop"])
+        pw.arrive({"order_id": o2["id"]}, 顾3)
+        r = pw.not_fit({"order_id": o2["id"], "issue": "腰围紧 2cm", "matches_record": True,
+                        "other_defect": False}, 顾3)
+        ck("不合身 → 订单状态不动", r["ok"] and 状态(o2["id"]) == "已发货", r.get("reason"))
+        ck("不合身 → 给判责建议(数据对得上、没别的瑕疵 → 顾客)", r.get("判责建议") == "顾客")
+        ck("不合身 → 自动建返修单(来源:签收不合身)", bool(r.get("返修单")), r.get("返修单没建成"))
     # ── 完成 ──
     r = pw.ratify({"order_id": oid, "reason": "打过电话"}, 顾问)
     ck("签收不满 15 天 → 不许追认", not r["ok"] and 状态(oid) == "待完成", r.get("reason"))
@@ -159,6 +180,61 @@ def run(T):
         ck("满 15 天、写了理由 → 追认完成", r["ok"] and 状态(q["id"]) == "完成", r.get("reason"))
         ck("追认记下理由和「顾问追认」", c.execute("SELECT complete_by, ratify_note FROM pickup WHERE order_id=?",
                                                     (q["id"],)).fetchone()[0] == "顾问追认")
+
+    # ── 分批发货(业务 2026-09-23):按包裹签收、按件签收 ──────────────────
+    分 = c.execute("""SELECT o.id, o.shop, k.phone_tail FROM ordr o JOIN customer k ON k.id=o.customer_id
+                     WHERE o.kind='定制品订单' AND o.status='已发货'
+                       AND (SELECT COUNT(*) FROM pkg p WHERE p.order_id=o.id AND p.void_at IS NULL)>1
+                     ORDER BY o.id LIMIT 1""").fetchone()
+    多件 = c.execute("""SELECT o.id, o.shop, k.phone_tail, p.pkg_id FROM ordr o JOIN customer k ON k.id=o.customer_id
+                       JOIN pkg p ON p.order_id=o.id AND p.void_at IS NULL
+                       WHERE o.kind='定制品订单' AND o.status='已发货'
+                         AND (SELECT COUNT(*) FROM pkg_item i WHERE i.pkg_id=p.pkg_id)>1
+                         AND NOT EXISTS(SELECT 1 FROM pickup_item t WHERE t.pkg_id=p.pkg_id)
+                       ORDER BY o.id LIMIT 1""").fetchone()
+    ck("库里有分批发的单(不止一个包裹)", bool(分), "没有的话「一个包裹一个码」这一支没有活用例")
+    if 分:
+        顾 = 人("顾问", 分["shop"])
+        ck("分批发的单不说包裹号 → 反问,不替用户挑", pw.arrive({"order_id": 分["id"]}, 顾)["code"] == "WHICH_PKG")
+        包们 = [r[0] for r in c.execute("""SELECT pkg_id FROM pkg WHERE order_id=? AND void_at IS NULL
+                                           ORDER BY (status='在途') DESC, pkg_id""", (分["id"],))]
+        已到 = bool(c.execute("SELECT 1 FROM pkg_pickup WHERE pkg_id=?", (包们[0],)).fetchone())
+        ck("库里没有的包裹号 → 拒", pw.arrive({"order_id": 分["id"], "pkg": "P000000-999999"}, 顾)["code"] == "NO_SUCH_PKG")
+        r = pw.arrive({"order_id": 分["id"], "pkg": 包们[0]}, 顾)
+        ck("说了包裹号 → 这一个包裹登记到店", r["ok"] or (已到 and r["code"] == "ALREADY"), r.get("reason"))
+        if r.get("ok"):
+            ck("到店时提醒还有包裹在路上", bool(r.get("还在路上的包裹")), r.get("还在路上的包裹"))
+        ck("同一个包裹登记两次 → 拒", pw.arrive({"order_id": 分["id"], "pkg": 包们[0]}, 顾)["code"] == "ALREADY")
+        pw.set_mode({"order_id": 分["id"], "pkg": 包们[0], "mode": "到店取"}, 顾)
+        码2 = pw.customer_issue_code(分["id"], 分["phone_tail"], pkg=包们[0]).get("试穿合身码")
+        ck("顾客按包裹领码", bool(码2))
+        r = pw.verify({"order_id": 分["id"], "pkg": 包们[0], "code": 码2}, 顾)
+        ck("签收了第一个包裹 → 那几件签收,**订单不动**(还有包裹没到)",
+           r["ok"] and 状态(分["id"]) == "已发货", r.get("reason"))
+        ck("返回里说清还差什么", "没签收" in str(r.get("还差什么") or ""), r.get("还差什么"))
+        ck("这个包裹的码不能拿去签另一个包裹",
+           not pw.verify({"order_id": 分["id"], "pkg": 包们[1], "code": 码2}, 顾)["ok"])
+    if 多件:
+        顾2 = 人("顾问", 多件["shop"])
+        pw.arrive({"order_id": 多件["id"], "pkg": 多件["pkg_id"]}, 顾2)
+        r = pw.not_fit({"order_id": 多件["id"], "pkg": 多件["pkg_id"], "issue": "腰围紧 2cm"}, 顾2)
+        ck("一个包裹好几件、没说哪一件 → 反问", r["code"] == "WHICH_ITEM", r.get("reason"))
+        件们 = [x[0] for x in c.execute("SELECT item_id FROM pkg_item WHERE pkg_id=? ORDER BY item_id",
+                                        (多件["pkg_id"],))]
+        r = pw.not_fit({"order_id": 多件["id"], "pkg": 多件["pkg_id"], "item": str(件们[0]),
+                        "issue": "腰围紧 2cm", "matches_record": True, "other_defect": False}, 顾2)
+        ck("登记某一件不合身 → 建返修单,订单不动",
+           r["ok"] and r.get("返修单") and 状态(多件["id"]) == "已发货", r.get("reason"))
+        ck("不合身那一件记到件上,带返修单号",
+           (c.execute("SELECT fit_result, maintain_id FROM pickup_item WHERE order_item_id=?",
+                      (件们[0],)).fetchone() or ("", ""))[0] == "不合身")
+        码3 = pw.customer_issue_code(多件["id"], 多件["phone_tail"], pkg=多件["pkg_id"]).get("试穿合身码")
+        r = pw.verify({"order_id": 多件["id"], "pkg": 多件["pkg_id"], "code": 码3}, 顾2)
+        ck("核验码 → 合身的那几件签收拿走,不合身那件不签收",
+           r["ok"] and r.get("这次签收几件") == len(件们) - 1, r.get("reason"))
+        ck("不合身那件仍然是不合身(没被顺手签掉)",
+           c.execute("SELECT fit_result FROM pickup_item WHERE order_item_id=?", (件们[0],)).fetchone()[0] == "不合身")
+        ck("还有件在返修 → 整单不进待完成", 状态(多件["id"]) == "已发货")
 
 
 if __name__ == "__main__":

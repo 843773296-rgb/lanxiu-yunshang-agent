@@ -605,6 +605,18 @@ def _journey(cust, dry=False):
     ex("UPDATE pickup SET arrived_at=?, fit_at=?, complete_at=? WHERE order_id=?",
        (_发 + datetime.timedelta(days=2)).strftime("%Y-%m-%d %H:%M"),
        (_发 + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M"), done, oid)
+    # 分批发货(09-23):按包裹、按件的那两张表也要一起回填 —— 漏了就是「件的签收时间在未来」
+    ex("UPDATE pkg_pickup SET arrived_at=? WHERE order_id=?",
+       (_发 + datetime.timedelta(days=2)).strftime("%Y-%m-%d %H:%M"), oid)
+    ex("UPDATE pickup_item SET fit_at=? WHERE order_id=? AND fit_at IS NOT NULL",
+       (_发 + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M"), oid)
+    ex("UPDATE pkg SET arrived_at=? WHERE order_id=? AND arrived_at IS NOT NULL",
+       (_发 + datetime.timedelta(days=2)).strftime("%Y-%m-%d %H:%M"), oid)
+    ex("""UPDATE fit_code SET issued_at=?, used_at=?, expires_at=?
+          WHERE order_id IN (SELECT 'P:'||pkg_id FROM pkg WHERE order_id=?)""",
+       (_发 + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M"),
+       (_发 + datetime.timedelta(days=3, minutes=5)).strftime("%Y-%m-%d %H:%M"),
+       (_发 + datetime.timedelta(days=4)).strftime("%Y-%m-%d %H:%M"), oid)
     ex("UPDATE fit_code SET issued_at=?, used_at=?, expires_at=? WHERE order_id=?",
        (_发 + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M"),
        (_发 + datetime.timedelta(days=3, minutes=5)).strftime("%Y-%m-%d %H:%M"),
@@ -700,7 +712,12 @@ def _journey(cust, dry=False):
             # 交付签收的时间也要一起挪 —— 第一版漏了这两张表,31 单的签收落在挪之前的「未来」,
             # 比订单自己的完成日还晚(pickup_write_check「签收不晚于完成」当场抓到)
             ("pickup", ("arrived_at", "fit_at", "complete_at"), f"order_id='{oid}'"),
-            ("fit_code", ("issued_at", "used_at", "expires_at"), f"order_id='{oid}'"),
+            # 分批发货(09-23)的三张表同理 —— 码的键是「P:包裹号」,不是订单号,按订单号挪会漏掉它们
+            ("pkg_pickup", ("arrived_at", "forwarded_at"), f"order_id='{oid}'"),
+            ("pickup_item", ("fit_at",), f"order_id='{oid}'"),
+            ("pkg", ("shipped_at", "arrived_at", "created"), f"order_id='{oid}'"),
+            ("fit_code", ("issued_at", "used_at", "expires_at"),
+             f"order_id='{oid}' OR order_id IN (SELECT 'P:'||pkg_id FROM pkg WHERE order_id='{oid}')"),
             # 工厂回传(09-22 加)—— 同上,漏了就是「工厂下个月才完工、订单上个月就完成了」
             ("factory_msg", ("at", "received_at"), f"order_id='{oid}'")):
         sets = ", ".join(f"{c2}=datetime({c2}, '{_sh}')" for c2 in _cols)
