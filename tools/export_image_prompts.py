@@ -337,6 +337,18 @@ def main():
                 进度.append(dict(批次=f"第{起}到{止}名", 序号=名次[spu], SPU=spu, 商品名=名字[spu],
                                  张数=len(gs), 历史售出=卖.get(spu, 0),
                                  文件名="; ".join(x["文件名"] for x in gs), 出完了=""))
+    # **这一轮没写到的旧清单也要归档**(不删)。2026-09-23 踩过:分批改成平均切之后文件名跟着变,
+    # 上面那步只认旧命名「批次-*.md」,于是目录里新旧两套「待出图」并排躺着 ——
+    # 用户的 GPT 照着哪一份出都不算错,而**两份的名次区间是重叠的**,出重了没人会发现。
+    留 = [f for f in os.listdir(OUT)
+         if f.startswith("待出图-") and f.endswith(".md")
+         and os.path.join(OUT, f) not in 写过]
+    if 留:
+        存 = os.path.join(OUT, "旧清单"); os.makedirs(存, exist_ok=True)
+        for f in 留:
+            os.replace(os.path.join(OUT, f), os.path.join(存, f))
+        print(f"   这一轮没重出的 {len(留)} 份旧清单已挪到「旧清单」文件夹(没删):{'、'.join(sorted(留))}")
+
     with open(os.path.join(OUT, "进度表.csv"), "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=["批次", "序号", "SPU", "商品名", "张数", "历史售出", "文件名", "出完了"])
         w.writeheader(); w.writerows(进度)
