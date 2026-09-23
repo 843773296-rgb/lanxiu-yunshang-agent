@@ -86,7 +86,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 .cfgbtn2:hover{border-color:#c9cace}
 .cfgbtn2.warn{color:#b4232a;border-color:#eccfd1}
 #cfgbtn.on{color:var(--ink);border-color:#c9cace;background:var(--chip)}
-#currole{font-size:13.5px;font-weight:600;padding:4px 11px;border-radius:8px;
+#currole{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;
+  font-size:13.5px;font-weight:600;padding:4px 11px;border-radius:8px;
   background:var(--chip);white-space:nowrap}
 
 /* ── 消息流 ───────────────────────────────────────────────── */
@@ -218,12 +219,18 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 
 <div id="main">
   <div id="top">
-    <span id="currole" title="角色在新建会话时定死,之后不变"></span>
-    <button class="tbtn" id="switch">换助手</button>
+    <!-- **当前助手本身就是入口**(2026-09-23 用户反馈:找不到在哪儿选助手)——
+         原来这里是一个不可点的标签,旁边一个小字「换助手」,夹在设置 / 任务 / 面板中间,看不见。 -->
+    <button id="currole" title="点这里换一个助手(换助手 = 开新会话)"></button>
     <!-- **模型和技能档位收进设置。** 它们是调参用的,不是干活用的:
          每天都要看见,而一个月用不到一次。
          工具栏上留下的每一项,都该是「这一轮要用的」。 -->
-    <button class="tbtn" id="cfgbtn" title="模型 · 技能档位">设置</button>
+    <!-- **模型放回顶栏**(2026-09-23 用户反馈:选不了 Claude / DeepSeek)——
+         之前收进「设置」,理由是「调参用的,不该天天占工具栏」;而实际用的人要**当场换供应商**
+         (订阅内的 Claude vs 按量计费的 DeepSeek),埋在二级页里等于没有。
+         **控件只保留这一处**,设置里只留说明 —— 两个下拉迟早不同步。 -->
+    <select id="model" title="换模型不新开会话,续着问"><option>载入中…</option></select>
+    <button class="tbtn" id="cfgbtn" title="技能档位 · 数据 · 关于">设置</button>
     <span id="kindhint"></span>
     <span class="sp"></span>
     <a class="tbtn" href="/tasks">任务</a>
@@ -253,8 +260,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
           <div class="cfgitem">
             <div class="t"><b>模型</b>
               <p>换模型<b>不新开会话</b> —— 续着问,让它接着上文回答。
-                 清单从后端拿,能选的 = 有单价的。</p></div>
-            <div class="c"><select id="model"><option>载入中…</option></select></div>
+                 清单从后端拿,能选的 = 有单价的。<b>Claude 是订阅内,DeepSeek 按量计费</b>。</p></div>
+            <div class="c" style="color:var(--dim);font-size:12.5px">在**顶栏**选 →</div>
           </div>
           <div class="cfgitem">
             <div class="t"><b>想深多少</b>
@@ -761,7 +768,7 @@ $("#ov").onclick = e => { if(e.target.id === "ov") closeOv(); };
 
 /* ── 事件绑定 ─────────────────────────────────────────────── */
 $("#newbtn").onclick = () => { PICKING = true; drawSide(); drawStream(); };
-$("#switch").onclick = () => { PICKING = true; drawStream(); };
+$("#currole").onclick = () => { PICKING = true; drawStream(); };
 $("#gallery").onclick = () => { PICKING = true; drawStream(); };
 $("#send").onclick = ask;
 $("#stop").onclick = () => { if(RUNNING) RUNNING.abort(); };
@@ -772,9 +779,9 @@ $("#q").addEventListener("keydown", e => {
 document.addEventListener("keydown", e => { if(e.key === "Escape") closeOv(); });
 function syncHint(){
   const c = cur(); const R = (c && KINDS[c.kind]) || {};
-  // 顶栏显示**当前角色**(不可改),换角色走「切换角色」——
-  // 角色在新建会话时定死,界面不该做成一个随手能拨的下拉。
-  $("#currole").textContent = `${R.emoji || ""} ${R.name || "未选"}`;
+  // 顶栏显示**当前角色**,点它就去选助手屏(换助手 = 开新会话,不是就地切换)——
+  // 角色仍然在新建会话时定死;**改的是入口显不显眼**,不是改成随手能拨的下拉。
+  $("#currole").textContent = (R.name ? `${R.emoji || ""} ${R.name}` : "选一个助手") + "  ▾";
   $("#currole").style.color = R.color || "";
   $("#kindhint").textContent = R.who || "";
   // 占位符带上角色名 —— 让人一眼知道自己在跟谁说话
