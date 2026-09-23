@@ -67,7 +67,7 @@ def asks(词们, why=""):
     def g(text, traj, c):
         句 = [s for s in re.split(r"(?<=[。!!?\?\n])", text or "") if s.strip()]
         问 = [s for s in 句 if any(w in s for w in 词们)
-             and re.search(r"[??]|吗|是否|有没有|哪|什么|多少|告诉我|发给我|发我|给我|提供|请.{0,6}(说|给|发)", s)]
+             and re.search(r"[?\uff1f]|吗|是否|有没有|哪|什么|多少|告诉我|发给我|发我|给我|提供|请.{0,6}(说|给|发)", s)]
         return [] if 问 else [f"没问{'/'.join(词们)[:16]} —— {why}"]
     return g
 
