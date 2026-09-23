@@ -909,6 +909,21 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
     # 实跑抓到过:allowed_tools **不是排他白名单**,配上 bypassPermissions 之后
     # CLI 的内置工具(Bash / Write / Task …)照样在场,模型自己去开了 Bash。
     # 「模型没用」和「模型不能用」是两回事 —— 安全边界不能建在前者上。
+    # ── 自家技能放行(2026-09-22,用户执行)──────────────────────────────
+    # 这一条原来连 `Skill` 也一起拦了:35 次技能触发 33 次同一轮被拦下,
+    # 报价 / 工期救援 / 换货等**自家技能的正文从来没加载过**,而技能评测只看模型「想不想调」,
+    # 所以一直没人发现。放行**只限 skills_own.OURS**:第三方技能照旧拦 ——
+    # 它们和汉服门店无关,放进来就是给模型多余的选择。
+    if name == "Skill":
+        _sk = str((args or {}).get("skill") or (args or {}).get("command") or "").strip().lstrip("/")
+        try:
+            from skills_own import OURS as _OURS
+        except Exception:
+            _OURS = ()
+        if _sk in _OURS:
+            return None
+        return (f"技能「{_sk or '?'}」不是本系统自家的技能,已拦下。"
+                f"能用的只有:{'、'.join(_OURS)}。")
     if name and not name.startswith("mcp__"):
         return (f"工具「{name}」不在本系统挂载的 MCP 工具里,已拦下。"
                 "这个助手**只能用挂载的只读业务工具**,不能读写文件、"
