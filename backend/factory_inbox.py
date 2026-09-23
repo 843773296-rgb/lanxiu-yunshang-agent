@@ -74,6 +74,13 @@ CREATE TABLE IF NOT EXISTS order_rollback(
   id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT, at TEXT, by_no TEXT,
   cause TEXT, note TEXT, frm TEXT, too TEXT, freight TEXT);
 CREATE INDEX IF NOT EXISTS ix_rollback_order ON order_rollback(order_id);
+CREATE TABLE IF NOT EXISTS order_event(
+  -- **订单日志里那些没有自己的表的事件**(业务 09-23:每个订单一条独立日志)。
+  -- 签收那一侧(包裹到店、取件方式、某件签收合身 / 不合身、顾客确认完成)往这里写,调 记事件()。
+  -- 状态变化、工厂回传、人工回退、延期各有自己的表,**不往这儿抄第二份** —— 抄了就会两份不一致。
+  id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT, at TEXT,
+  pkg_id TEXT, item_id INTEGER, action TEXT, by_no TEXT, note TEXT);
+CREATE INDEX IF NOT EXISTS ix_order_event ON order_event(order_id);
 """
 
 
@@ -388,6 +395,20 @@ def 标记已通知(delay_id, me, db=None):
     return dict(ok=True, code="TOLD", 订单=d["order_id"], reason="已记下:你已经把延期告诉顾客了")
 
 
+def 记事件(order_id, 动作, 时间=None, 包裹=None, 订单行=None, 经手人=None, 一句话="", db=None):
+    """往订单日志里记一条**没有自己的表**的事件(签收那一侧用)。
+
+    动作举例:包裹到店代收 / 取件方式 / 某件签收合身 / 某件不合身 / 顾客确认完成 / 顾问追认。
+    时间不给就用现在;**时间由调用方给**才对得上演示世界的日子。
+    """
+    c = _c(db); ensure(c)
+    c.execute("""INSERT INTO order_event(order_id,at,pkg_id,item_id,action,by_no,note)
+                 VALUES(?,?,?,?,?,?,?)""",
+              (order_id, 时间 or _now(), 包裹, int(订单行) if 订单行 else None, 动作, 经手人, 一句话))
+    c.commit(); c.close()
+    return dict(ok=True)
+
+
 def 回传记录(order_id, db=None):
     c = _c(db); ensure(c)
     rs = [dict(r) for r in c.execute(
@@ -431,6 +452,12 @@ def 订单日志(order_id, db=None):
     for r in c.execute("SELECT at, by_no, cause, note, frm, too FROM order_rollback WHERE order_id=? ORDER BY at",
                        (order_id,)):
         行.append(dict(时间=r["at"], 谁=r["by_no"], 什么=f"人工回退({r['cause']}):{r['frm']}→{r['too']}",
+                       说明=r["note"], 允许=True))
+    for r in c.execute("SELECT at, pkg_id, item_id, action, by_no, note FROM order_event WHERE order_id=? "
+                       "ORDER BY at", (order_id,)):
+        行.append(dict(时间=r["at"], 谁=r["by_no"] or "—", 什么=r["action"]
+                       + (f"(包裹 {r['pkg_id']})" if r["pkg_id"] else "")
+                       + (f"(第 {r['item_id']} 行)" if r["item_id"] else ""),
                        说明=r["note"], 允许=True))
     for r in c.execute("SELECT at, old_promise, new_promise, reason, told_at, told_by FROM factory_delay "
                        "WHERE order_id=? ORDER BY at", (order_id,)):
