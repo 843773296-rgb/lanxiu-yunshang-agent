@@ -47,6 +47,37 @@ def 说明(名):
     return ""
 
 
+def 判据里的答案(名):
+    """从评测脚本里**现取**每道题的标准答案 —— 判据里写着「要说到什么、不许做什么」,那就是答案。
+
+    为什么现取而不是手抄:手抄一份会和判据漂开,而**漂了之后读的人不知道该信哪份**;
+    更糟的是判据改了、答案没改,于是文档上写着的「标准答案」已经不是判分时用的那一条。
+    手写的 `期望=` 优先(工厂那套是手写的,话说得更像人话)。
+    """
+    出 = {}
+    for 候 in (f"{名}_eval.py", f"{名.replace('-', '_')}_eval.py"):
+        fp = os.path.join(ROOT, "agent", 候)
+        if not os.path.exists(fp):
+            continue
+        src = open(fp, encoding="utf-8").read()
+        # 按 dict(id="..." 切块,块内收集 need_tool(...) 和 why="..."
+        块 = re.split(r'dict\(\s*id\s*=\s*"([^"]+)"', src)
+        for i in range(1, len(块) - 1, 2):
+            题号, 体 = 块[i], 块[i + 1]
+            体 = 体[:体.find("\n    dict(") if "\n    dict(" in 体 else len(体)]
+            工具 = re.findall(r'need_tool\(([^)]*)\)', 体)
+            工具 = [x.strip('"\' ') for g in 工具 for x in g.split(",") if x.strip(' "\'')]
+            要 = re.findall(r'why\s*=\s*[f]?"([^"]{4,200})"', 体)
+            片 = []
+            if 工具:
+                片.append("要调 " + "、".join(dict.fromkeys(工具)))
+            片 += [x.replace("**", "") for x in dict.fromkeys(要)]
+            if 片:
+                出[题号] = ";".join(片)
+        break
+    return 出
+
+
 def 历次(套们):
     """把这一次的结果并进**历次成绩**(agent/eval-history.jsonl),再读回来。
 
@@ -118,7 +149,8 @@ def main():
     按题, 按套 = 历次(套)
     缺答案 = []
     for s in 套:
-        有答案 = sum(1 for r in s["题"].values() if r.get("期望"))
+        _判 = 判据里的答案(s["名"])
+        有答案 = sum(1 for k, r in s["题"].items() if r.get("期望") or _判.get(str(k)))
         if 有答案 < len(s["题"]):
             缺答案.append((s["中文"], len(s["题"]) - 有答案))
         L += ["---", "", f"## {s['中文']}", "",
@@ -138,11 +170,14 @@ def main():
                 L.append(f"| {d} | {sum(1 for x in xs if x['过'])}/{len(xs)} "
                          f"({sum(1 for x in xs if x['过']) * 100 // max(len(xs), 1)}%) |")
             L.append("")
+        判据 = _判
         L += ["| 题号 | 正/负 | 题目(用户会怎么说这句话) | 标准答案:它该答出什么 | 最近一次 | 历次 | 没过的话是为什么 |",
               "|---|---|---|---|---|---|---|"]
         for k, r in s["题"].items():
             q = re.sub(r"\s+", " ", str(r.get("q") or r.get("prompt") or ""))[:170]
-            ans = re.sub(r"\s+", " ", str(r.get("期望") or "")) or "*(还没写标准答案)*"
+            自动 = 判据.get(str(k), "")
+            ans = re.sub(r"\s+", " ", str(r.get("期望") or "")) \
+                or (自动 + "  *(从判据现取)*" if 自动 else "*(还没写标准答案)*")
             why = "、".join(str(x) for x in (r.get("why") or []))[:110] if not r.get("passed") else ""
             h = 按题.get((s["名"], str(k)), [])
             历 = f"{sum(1 for x in h if x['过'])}/{len(h)}" if h else "—"
