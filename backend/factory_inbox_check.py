@@ -72,6 +72,10 @@ def 数据(D):
             缺 += 1
             if len(例) < 3: 例.append((oid[-6:], st, 少))
     ck("过了生产的定制单,每一步都有收下的工厂回传撑着", n > 0 and not 缺, f"验了 {n} 张;缺的 {缺} 张 {例}")
+    同号 = c.execute("""SELECT COUNT(*) FROM (SELECT order_id, tracking_no FROM pkg
+                         WHERE void_at IS NULL AND tracking_no IS NOT NULL
+                         GROUP BY order_id, tracking_no HAVING COUNT(*)>1)""").fetchone()[0]
+    ck("同一张单的两个包裹不共用一个快递单号", 同号 == 0, f"{同号} 组")
     无号 = c.execute("SELECT COUNT(*) FROM factory_msg WHERE event='发出' AND result='收下' "
                     "AND COALESCE(tracking_no,'')=''").fetchone()[0]
     ck("收下的发出回传都带物流单号", 无号 == 0, 无号)
@@ -89,13 +93,16 @@ def 数据(D):
         包 = [r[0] for r in c.execute("SELECT pkg_id FROM pkg WHERE order_id=? AND void_at IS NULL", (oid,))]
         件 = c.execute("SELECT COUNT(*) FROM pkg_item WHERE pkg_id IN (%s)" % ",".join("?" * len(包)), 包).fetchone()[0]
         行 = c.execute("SELECT COUNT(*) FROM ordr_item WHERE order_id=?", (oid,)).fetchone()[0]
-        if len(包) != 1 or 件 != 行:
+        if not 包 or 件 != 行:
             坏 += 1
             if len(例) < 3: 例.append((oid[-6:], f"{len(包)} 个包裹 / 包里 {件} 件 / 订单 {行} 件"))
-    ck("老单恰好补出一个包裹,包裹里的件 = 订单行", n老 > 0 and not 坏, f"验了 {n老} 张;对不上 {坏} 张 {例}")
+    ck("老单的包裹里的件加起来 = 订单行(多件的拆成两个包裹)", n老 > 0 and not 坏,
+       f"验了 {n老} 张;对不上 {坏} 张 {例}")
     多 = c.execute("SELECT COUNT(*) FROM (SELECT order_id FROM pkg WHERE void_at IS NULL "
                   "GROUP BY order_id HAVING COUNT(*)>1)").fetchone()[0]
-    ck("有分批发货的活用例(一张单两个包裹)", 多 > 0, f"{多} 张")
+    # **不止一张** —— 只有一张的话,任何一次动到它,页面夹具、写口检查、签收评测题一起失去样本,
+    # 而红出来的理由指不到真凶(2026-09-24 实测:一次误写真库就让两边同时红)
+    ck("分批发货的活用例不止一张(单点样本会让两边一起红)", 多 >= 3, f"{多} 张")
     漏 = c.execute("""SELECT COUNT(*) FROM pkg p WHERE p.void_at IS NULL
                       AND NOT EXISTS(SELECT 1 FROM pkg_item i WHERE i.pkg_id=p.pkg_id)""").fetchone()[0]
     ck("没有空包裹(里面一件都没有)", 漏 == 0, 漏)
