@@ -58,6 +58,9 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 #ev .kv{display:flex;gap:8px;margin:2px 0}#ev .kv span:first-child{color:var(--dim);min-width:72px}
 #ev .toolrow{border:1px solid var(--line);border-radius:8px;background:#fff;padding:7px 9px;margin:6px 0}
 #ev .toolrow code{font-size:11.5px;color:var(--dim);word-break:break-all}
+#ev .toolrow .ret{margin-top:6px;font-size:11.5px;color:var(--dim)}
+#ev .toolrow .ret pre{margin:4px 0 0;padding:6px 7px;background:var(--side);border-radius:6px;
+  font-size:11px;line-height:1.55;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-all;color:var(--ink)}
 #ev .empty{color:var(--dim);padding:10px 0}
 #ev textarea{width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;
   border:1px solid var(--line);border-radius:8px;resize:vertical;min-height:64px}
@@ -780,6 +783,40 @@ function drawEv(){
   $("#evt2").classList.toggle("on", EVTAB === "子助手");
   $("#evbody").innerHTML = EVTAB === "证据" ? evEvidence() : evSub();
   if(EVTAB === "子助手") bindSub();
+  else 补返回值();
+}
+
+/* 工具**返回了什么** —— 从树状记录仪(.feynman/spans.jsonl)按 trace 号取。
+   先画出框架再异步填,**不让一次网络请求挡住整个面板**:
+   取不到的时候要留下一句话说清是取不到,而不是留一个空位 ——
+   空位和「这个工具没返回东西」长得一模一样。 */
+async function 补返回值(){
+  const c = cur();
+  const last = c && [...(c.msgs || [])].reverse().find(m => m.role === "assistant" && !m.error);
+  const tid = last && last.trace_id;
+  const rows = [...document.querySelectorAll("#evbody .toolrow")];
+  if(!tid || !rows.length) return;
+  let spans = [];
+  try{
+    const r = await fetch("/spans?trace=" + encodeURIComponent(tid)).then(r => r.json());
+    spans = (r.spans || []).filter(s => (s.attr || {})["gen_ai.operation.name"] === "execute_tool");
+  }catch(e){
+    rows.forEach(el => { const d = el.querySelector(".ret");
+      if(d) d.textContent = "返回值取不到:" + e.message; });
+    return;
+  }
+  // 按顺序对位:轨迹和 span 都是按调用先后排的,同名工具可能调好几次,
+  // **不能按工具名去 find** —— 那样三次 kb_read 会全都显示第一次的返回值。
+  rows.forEach((el, i) => {
+    const d = el.querySelector(".ret"); if(!d) return;
+    const sp = spans[i];
+    if(!sp){ d.textContent = "(这一次的返回值没记到)"; return; }
+    const v = (sp.attr || {})["gen_ai.tool.call.result"];
+    const 截 = (sp.attr || {})["lanxiu.result.truncated"];
+    d.innerHTML = `<b>返回</b> <span class="dim">${sp.duration_ms}ms</span>`
+      + `<pre>${esc(typeof v === "string" ? v : JSON.stringify(v, null, 1))}</pre>`
+      + (截 ? `<span class="dim">(太长,只记了前一段)</span>` : "");
+  });
 }
 function evEvidence(){
   const c = cur();
@@ -793,7 +830,8 @@ function evEvidence(){
       ? Object.entries(t.args).map(([k, v]) =>
           `${esc(k)}=${esc(String(typeof v === "object" ? JSON.stringify(v) : v).slice(0, 60))}`).join(" · ")
       : "(没带参数)";
-    return `<div class="toolrow"><b>${esc(n)}</b><br><code>${a}</code></div>`;
+    return `<div class="toolrow" data-tool="${esc(n)}"><b>${esc(n)}</b><br><code>${a}</code>
+      <div class="ret">${last.trace_id ? "返回值读取中…" : "(这一轮没记 trace,看不到返回值)"}</div></div>`;
   }).join("") || `<div class="empty">这一轮<b>一个工具都没调</b> —— 结论没有取数撑着,要当心。</div>`;
   const 体检 = (last.guard_violations || []).map(v =>
     `<div class="toolrow">${esc(v.check || "")} · ${esc(String(v.msg || "").slice(0, 90))}</div>`).join("");
@@ -814,9 +852,10 @@ function evEvidence(){
      <div class="kv"><span>花费</span><span>${last.cost_usd != null ? "$" + Number(last.cost_usd).toFixed(4) : "—"}</span></div>
    </div>
    ${体检 ? `<div class="grp"><h4>交付前体检打回过</h4>${体检}</div>` : ""}
-   <div class="grp"><h4>还看不到的</h4>
-     <div class="empty">工具<b>返回了什么</b>这里还列不出来(轨迹里只有工具名和参数)——
-       要看返回值得在钩子里把结果收下来,记在待办里。</div>
+   <div class="grp"><h4>这一轮的 trace</h4>
+     <div class="kv"><span>trace</span><span>${last.trace_id
+       ? `<a href="/debug" target="_blank">${esc(String(last.trace_id).slice(0,12))} —— 去调试后台看每一步</a>`
+       : "没记(这条是记录仪上线前的老对话)"}</span></div>
    </div>`;
 }
 function evSub(){
