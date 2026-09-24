@@ -1069,6 +1069,19 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
                                          for x in (args.get("items") or [{}])):
             return ("开单时每一件都要指明给谁做(wearer_id)—— 下单量体量的必须是穿这件的人。"
                     "回去问用户这件是给谁做的,**不要自己挑一个着装人**。")
+        # `record_measure`:**尺寸数值只能是用户说出来的** —— 这是所有「编一个值」里最贵的一种:
+        #  编出来的尺寸会被拿去裁布,而布裁下去没有回头路;台账上它和真量的长得一模一样。
+        #  判的是结构不是词:每个数值的数字串必须在用户这句话里出现过。
+        #  ⚠️ 偏错的代价不对称 —— 误拦只是多问一句,漏放是照着编的尺寸裁了一件衣服。
+        if short == "record_measure":
+            _说 = str(prompt or "")
+            _编 = [f"{k} {v}" for k, v in (args.get("values") or {}).items()
+                   if str(v).rstrip("0").rstrip(".") not in _说.replace(" ", "")
+                   and str(v) not in _说]
+            if _编:
+                return (f"这几个尺寸用户没说过:{'、'.join(_编[:3])} —— **量体值只能照用户报的填**,"
+                        "别按身高体型推一个。编出来的尺寸会被拿去裁布,而台账上它和真量的长得一样。"
+                        "回去问用户每一项量出来是多少。")
         if short == "record_measure" and not all(str(args.get(k) or "").strip()
                                                   for k in ("inner", "shoe", "breath")):
             return ("量体的三个条件(内搭 / 鞋 / 呼吸)**要问清楚,不许默认** —— "
@@ -1098,6 +1111,11 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
                 return "谁承担要**店长说**(顾客 / 企业)—— 用户这句话里没说。别按判责建议替店长定,回去问。"
             if args.get("customer_agreed") and not str(args.get("agree_note") or "").strip():
                 return "记「顾客同意付费」要写凭据(比如「顾客电话同意 300 元」)—— 回去问用户顾客是怎么同意的。"
+            # 预估费用**只能是用户说出来的数** —— 顾客是照着这个数同意付费的,编一个就是替店长定价
+            _费 = str(args.get("fee_est") or "").strip()
+            if _费 and _费.rstrip("0").rstrip(".") not in _p.replace(" ", "") and _费 not in _p:
+                return (f"预估费用 {_费} 用户这句话里没说 —— **收多少要店长报**,顾客是照着这个数同意付费的。"
+                        "别按经验估一个,回去问。")
         # `ratify_complete`:追认要写理由 —— 没有理由的追认等于替顾客点了完成
         if short == "ratify_complete" and not str(args.get("reason") or "").strip():
             return "追认完成要写理由(比如「已电话联系,顾客表示没问题」)—— 回去问用户联系过顾客没有。"

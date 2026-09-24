@@ -199,6 +199,31 @@ def main():
     k3 = g._arg_key("assign_task", dict(reversed(list(A1.items()))))
     ck("键顺序不影响指纹", None if k1 == k3 else "顺序一变就认不出", False,)
 
+    print("\n\033[1m▸ 凭据类的值:只能是用户说出来的,模型不许自己生成\033[0m")
+    print("  " + "=" * 78)
+    # 2026-09-24:签收评测抓到模型自己编了一个物流单号(用户只说「帮我转寄」)。
+    # 同一个形状扫下来还有两处:**量体的尺寸数值**(编出来的会被拿去裁布)、**返修的预估费用**。
+    RM = "mcp__shop__record_measure"
+    条件 = dict(inner="薄", shoe="赤足", breath="平静呼气")
+    ck("用户报了尺寸 → 放行",
+       g.pre_tool_verdict(RM, dict(wearer_id="W1", values={"胸围": 88, "腰围": 72}, **条件),
+                          "给 W1 量了胸围 88、腰围 72,薄内搭赤足平静呼气,登记", READ, []), False)
+    ck("模型自己编了一个尺寸 → 拦",
+       g.pre_tool_verdict(RM, dict(wearer_id="W1", values={"胸围": 88, "腰围": 72}, **条件),
+                          "给 W1 量了胸围 88,薄内搭赤足平静呼气,登记", READ, []), True, "没说过")
+    ck("小数点写法不同(72.0 对 72)不误拦",
+       g.pre_tool_verdict(RM, dict(wearer_id="W1", values={"腰围": 72.0}, **条件),
+                          "腰围 72,薄内搭赤足平静呼气", READ, []), False)
+    DR = "mcp__shop__decide_repair"
+    基 = dict(maintain_id="MT1", liable="顾客", plan="返修", customer_agreed=True,
+             agree_note="顾客电话同意 300 元")
+    ck("用户报了费用 → 放行",
+       g.pre_tool_verdict(DR, dict(基, fee_est=300), "这件判顾客承担,返修,预估 300 元,顾客电话同意 300 元",
+                          READ, []), False)
+    ck("模型自己估了一个费用 → 拦",
+       g.pre_tool_verdict(DR, dict(基, fee_est=500), "这件判顾客承担,返修,顾客电话同意 300 元",
+                          READ, []), True, "没说")
+
     print("\n\033[1m▸ 用件日期按业务上的今天判「在不在将来」\033[0m")
     print("  " + "=" * 78)
     # 09-22:原来按机器的今天判,演示世界的今天(8-31)比机器(9-22)早 —— 9-05 的婚期会被当成过去拦掉
