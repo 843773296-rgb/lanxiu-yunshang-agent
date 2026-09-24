@@ -642,8 +642,8 @@ def _journey(cust, dry=False):
     # 在页面和助手那里,reason 是**给人看的那一句**,所以错的是被人读到的那一半。
     _承 = (v_start + datetime.timedelta(days=_裁日 + 40)).strftime("%Y-%m-%d")
     ex("UPDATE factory_msg SET promise_date=date(?) WHERE order_id=? AND event='接单'", _承, oid)
-    ex("UPDATE factory_msg SET reason=? WHERE order_id=? AND event='接单' AND reason LIKE '工厂接单,承诺%'",
-       f"工厂接单,承诺 {_承} 完工", oid)
+    # (这里**不再**同步 reason —— 下面整条旅程还会再挪一次时间,
+    #  同步放在最后统一做,见「收尾归一」)
     # 开裁时间也按剧本回填(transit 落的是「现在」)—— 放在已生产之前
     ex("UPDATE ordr SET cut_at=? WHERE id=? AND cut_at IS NOT NULL",
        (v_start + datetime.timedelta(days=_裁日)).strftime("%Y-%m-%d %H:%M"), oid)
@@ -738,6 +738,14 @@ def _journey(cust, dry=False):
         ex(f"UPDATE {_t} SET {sets} WHERE {_key}")
     ex(f"UPDATE factory_msg SET promise_date=date(promise_date, '{_sh}') WHERE order_id='{oid}' "
        "AND promise_date IS NOT NULL")
+    # ── 收尾归一:**复述 promise_date 的那句话,从 promise_date 现取** ──────
+    # ⚠️ 这一段挪时间的地方有**两处**动 promise_date(上面按剧本回填一次、这里整体挪一次),
+    # 而 reason 里写着「工厂接单,承诺 X 完工」。逐处去同步的结果是:
+    # 我补了第一处,第二处照样把它们挪散 —— 2026-09-24 从零重建时 31 条对不上。
+    # **所以不逐处同步,在最后统一按字段重写一遍** —— 以后再加第三处挪动也不会漏。
+    ex("UPDATE factory_msg SET reason='工厂接单,承诺 '||promise_date||' 完工' "
+       f"WHERE order_id='{oid}' AND event='接单' AND promise_date IS NOT NULL "
+       "AND reason LIKE '工厂接单,承诺%'")
 
     # ⚠️ **派单时间 / 上传时间的「时分秒」原来是机器的当前时刻。**
     # 这两列由生产代码(`backend/tasks.py`)写下,它在真实业务里理当记 now();

@@ -27,10 +27,10 @@ import datetime as dt, os, sqlite3, sys
 # 这个脚本的「红」是它跑完之后 backend/spec_check.py 的 C4 还红着 ——
 # 所以咬合点在:**挪的范围少一样,就会留下自相矛盾的数据**。
 咬合 = [
-    ("只把 finished_at 改小,不挪同一单的其它时间点(会造出「发货晚于完成」)",
-     "整条时间线一起往回挪"),
-    ("挪订单但不挪量体(去掉 measure_rec 那一步 —— 接待会挂到别的量体上)",
-     "跟着一起挪"),
+    ("只把 finished_at 改小,不动同一单的其它时间点(会造出「发货晚于完成」)",
+     "先后关系全保住"),
+    ("改回整体平移(不按比例压缩)——第一条回传会跑到下单之前",
+     "条回传早于下单"),
 ]
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -38,13 +38,18 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "backend"))
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
 
-列 = {"ordr": (["recept_at", "created", "updated", "paid_at", "audit_at", "produced_at",
-                "shipped_at", "finished_at", "cut_at"], "id"),
+# ⚠️ **只挪生产交付这一段,不碰下单之前的那几列。**
+# `created / recept_at / paid_at / audit_at` 往回挪的话,「下单量体必须在下单之前」
+# 这条硬规矩当场破:2026-09-24 从零重建时两张单变成「下单之前没有任何量体记录」。
+# 生产段整体往回挪不会破坏内部先后(它们之间隔着 8~10 天,而挪动量最多 15 天),
+# 也不会跑到 created 之前(created 到 produced 隔着 30~40 天)。
+列 = {"ordr": (["updated", "produced_at", "shipped_at", "finished_at", "cut_at"], "id"),
       "factory_msg": (["at", "received_at", "promise_date"], "order_id"),
       "pkg": (["shipped_at", "arrived_at", "created"], "order_id"),
       "pickup": (["arrived_at", "forwarded_at", "fit_at", "complete_at"], "order_id"),
       "order_event": (["at"], "order_id"),
-      "fitting": (["ts", "signed_at"], "order_id")}
+      # fitting 是**开裁之前**的事,跟着生产段往回挪会跑到下单之前 —— 不动
+      }
 
 # ⚠️ **接待日不能单独钉住,也不能单独挪。**
 # 「这一单挂的是哪次接待」是按**同一天 + 同一个人**认的(backend/link_check.py)。
@@ -54,38 +59,62 @@ DB = os.path.join(ROOT, "backend", "lanxiu.db")
 
 
 def 修(db=DB, 说=print):
+    """把这几张单的时间线**按比例压进「下单 → 昨天」**。
+
+    ⚠️ **为什么是压缩不是平移。**
+    第一版是整体往回挪 N 天。挪完之后 7 张单的第一条工厂回传全都跑到了下单**之前**
+    (最多早 14 天)—— 因为接单紧跟着开裁、离下单很近,而挪动量比那个间隔还大。
+    换句话说:**这几张单的时间线本来就长到装不进「今天之前」**,平移必然顶穿开头。
+
+    所以改成把 [下单, 原完成] 这一段线性压进 [下单, 昨天]:
+      · 先后关系全保住(单调映射)
+      · 一个时间点都不会跑到下单之前
+      · 代价是**这几单的各阶段时长会被压短** —— 7 张演示单,说清楚就好,
+        不能为了保住时长去破坏「不早于下单」这条硬规矩。
+    """
     from seed import TODAY
     今 = dt.date.fromisoformat(TODAY)
     c = sqlite3.connect(db)
-    坏 = [(r[0], r[1]) for r in c.execute(
-        "select id, finished_at from ordr where finished_at is not null "
+    坏 = [(r[0], r[1], r[2]) for r in c.execute(
+        "select id, finished_at, created from ordr where finished_at is not null "
         "and substr(finished_at,1,10)>?", (TODAY,))]
     if not 坏:
         说("  没有「完成日在今天之后」的单,不动。"); c.close(); return 0
     n = 0
-    for oid, fin in 坏:
-        天 = (dt.date.fromisoformat(fin[:10]) - 今).days + 1     # 挪到昨天完成
+    for oid, fin, 下单 in 坏:
+        起 = dt.date.fromisoformat((下单 or fin)[:10])
+        原 = (dt.date.fromisoformat(fin[:10]) - 起).days
+        目标 = (今 - dt.timedelta(days=1) - 起).days
+        if 原 <= 0 or 目标 <= 0: continue
+        比 = 目标 / 原
         for t, (cols, 键) in 列.items():
             try: have = [d[1] for d in c.execute(f'pragma table_info("{t}")')]
             except sqlite3.Error: continue
             use = [x for x in cols if x in have]
             if not use or 键 not in have: continue
-            c.execute(f'update "{t}" set ' + ",".join(
-                f'"{k}"=CASE WHEN "{k}" IS NULL THEN NULL ELSE date("{k}", ?)||substr("{k}",11) END'
-                for k in use) + f' where "{键}"=?', (*[f"-{天} days"] * len(use), oid))
-            n += 1
-        # 这一单挂着的那次量体,跟着一起挪 —— 不挪的话接待就挂断了
-        r0 = c.execute("select recept_at, recept_by, customer_id from ordr where id=?", (oid,)).fetchone()
-        if r0 and r0[0] and r0[1]:
-            c.execute("update measure_rec set measured_at=date(measured_at,?)||substr(measured_at,11) "
-                      "where customer_id=? and measured_by_no=? and substr(measured_at,1,10)=?",
-                      (f"-{天} days", r0[2], r0[1], r0[0][:10]))
+            rows = c.execute(f'select rowid, {",".join(chr(34)+x+chr(34) for x in use)} '
+                             f'from "{t}" where "{键}"=?', (oid,)).fetchall()
+            for r in rows:
+                上 = {}
+                for k, v in zip(use, r[1:]):
+                    if not v: continue
+                    try: d0 = dt.date.fromisoformat(str(v)[:10])
+                    except ValueError: continue
+                    新日 = 起 + dt.timedelta(days=round((d0 - 起).days * 比))
+                    上[k] = 新日.isoformat() + str(v)[10:]
+                if 上:
+                    c.execute(f'update "{t}" set ' + ",".join(f'"{k}"=?' for k in 上)
+                              + " where rowid=?", (*上.values(), r[0]))
+                    n += 1
     c.commit()
     剩 = c.execute("select count(*) from ordr where finished_at is not null "
                    "and substr(finished_at,1,10)>?", (TODAY,)).fetchone()[0]
+    早 = c.execute("select count(*) from factory_msg f join ordr o on o.id=f.order_id "
+                   "where f.received_at < o.created").fetchone()[0]
     c.close()
-    说(f"  {len(坏)} 张单整条时间线往回挪(共 {n} 次更新);还剩 {剩} 张")
-    return 剩
+    说(f"  {len(坏)} 张单的时间线压进「下单 → 昨天」(共 {n} 行);"
+       f"还剩 {剩} 张完成日在未来、{早} 条回传早于下单")
+    return 剩 + 早
 
 
 # ── 名字里嵌着年月的,跟着 created 走 ────────────────────────────
