@@ -1,56 +1,167 @@
-<!doctype html><html lang="zh"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>澜绣云裳agent · 项目解读报告</title><style>
-:root{--ground:#EFEFF2;--paper:#FFF;--paper-2:#F6F6F9;--line:#DCDCE4;--line-2:#E9E9F0;
- --ink:#15171C;--ink-2:#4E525E;--ink-3:#82879A;--dye:#2B3F7A;--dye-soft:#E4E8F4;
- --pass:#1C6448;--fail:#9C3222;--warn:#7E5714;
- --mono:ui-monospace,SFMono-Regular,Menlo,"Courier New",monospace;
- --sans:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;}
-@media(prefers-color-scheme:dark){:root{--ground:#0E1015;--paper:#161922;--paper-2:#1D212C;
- --line:#2A2F3D;--line-2:#232733;--ink:#E7E9EF;--ink-2:#A7ADBE;--ink-3:#767D92;
- --dye:#93A9E4;--dye-soft:#1A2140;--pass:#63C79E;--fail:#EC9481;--warn:#DFB25C;}}
-*{box-sizing:border-box}
-body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15.5px;
- line-height:1.75;margin:0;-webkit-font-smoothing:antialiased}
-.wrap{max-width:820px;margin:0 auto;padding:44px 26px 90px}
-h1{font-size:30px;font-weight:600;letter-spacing:-.022em;line-height:1.22;margin:0 0 6px}
-h2{font-size:22px;font-weight:600;margin:46px 0 14px;padding-top:20px;border-top:1px solid var(--line);letter-spacing:-.015em}
-h3{font-size:17px;font-weight:600;margin:30px 0 10px}
-h4{font-size:15px;font-weight:600;margin:22px 0 8px;color:var(--ink-2)}
-p{margin:11px 0}
-ul,ol{margin:11px 0;padding-left:22px}li{margin:5px 0}
-hr{border:none;border-top:1px solid var(--line);margin:34px 0}
-code{font-family:var(--mono);font-size:12.5px;background:var(--paper-2);padding:1px 5px;
- border-radius:3px;border:1px solid var(--line-2)}
-pre{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:14px 16px;
- overflow-x:auto;margin:14px 0}
-pre code{background:none;border:none;padding:0;font-size:12px;line-height:1.6}
-blockquote{border-left:3px solid var(--dye);background:var(--dye-soft);margin:16px 0;
- padding:12px 16px;border-radius:0 4px 4px 0;color:var(--ink-2);font-size:14.5px}
-blockquote strong{color:var(--ink)}
-.tw{overflow-x:auto;margin:16px 0;border:1px solid var(--line);border-radius:5px;background:var(--paper)}
-table{border-collapse:collapse;width:100%;min-width:440px}
-th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--line-2);font-size:14px;vertical-align:top}
-tbody tr:last-child td{border-bottom:none}
-thead th{background:var(--paper-2);font-size:12px;font-weight:600;color:var(--ink-3);
- letter-spacing:.04em;border-bottom:1px solid var(--line)}
-a{color:var(--dye)}
-strong{font-weight:600}
-</style></head>
-<body><div class="wrap"><h1>澜绣云裳agent · 项目解读报告</h1><p>第 12 版 · 2026-09-16 · 本次变化:<strong>检查本身也会坏,而坏掉的样子和正常的一模一样</strong></p><blockquote>第 10 版说「没有分母的『没问题』不是信息」。<br>第 11 版说「数有了、分母也有了,<strong>但量它的那把尺不对</strong>」。<br>这一版说的是再下一层:<strong>尺子对了,可它会在你不看的时候坏掉——而坏掉的尺子读数正常。</strong><br>触发这一版的是六天里反复出现的同一个形状:<br>· 一条判据把「当时的数据长什么样」编了进去 —— 数据一变,它开始<strong>冤枉正确答案</strong>,而且<strong>红得理直气壮</strong><br>· 一条咬合记录的名字对不上 —— 记录退化成一句没人核的话,<strong>而记录看起来是有的</strong><br>· 一条检查一直绿着 —— 因为它要查的那几条路<strong>根本没被走过</strong><br>· 交接文档写着「库是可再生的」—— <strong>从来没有人试过</strong><br>· 同一份口径散在两个文件里 —— 错的那份一直是一句<strong>看起来很权威</strong>的错话<br>上一版的口号是「量之前,先问这把尺量的是不是那个东西」。<br>这一版要加一句:<strong>「然后每隔一阵,回头问一次这把尺还准不准。」</strong></blockquote><hr><h2>一、项目由哪几块组成</h2><p>结构和第 11 版一样,是四层。变的是<strong>每一层都长胖了</strong>:</p><pre><code>   客户手机端     /m       自助预约(唯一不用登录的入口)
+<!doctype html><meta charset="utf-8"><title>澜绣云裳agent · 项目解读报告 第 13 版</title><style>body{max-width:900px;margin:40px auto;padding:0 20px;font:15px/1.85 -apple-system,"PingFang SC",sans-serif;color:#1a1b1e}
+h1{font-size:26px;border-bottom:2px solid #2f5bff;padding-bottom:10px}h2{font-size:20px;margin-top:38px;color:#2f5bff}
+h3{font-size:16px;margin-top:26px}table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14px}
+th,td{border:1px solid #e3e5ea;padding:8px 10px;text-align:left;vertical-align:top}th{background:#f6f7f9;font-weight:600}
+blockquote{border-left:3px solid #e8912d;background:#fffaf3;margin:14px 0;padding:10px 16px;color:#4a4c52}
+pre{background:#f6f7f9;padding:14px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.6}
+code{background:#f0f1f4;padding:1px 5px;border-radius:4px;font-size:13px}hr{border:0;border-top:1px solid #e3e5ea;margin:30px 0}
+li{margin:4px 0}b{color:#111}</style>
+<h1>澜绣云裳agent · 项目解读报告</h1>
+<p>第 13 版 · 2026-09-24 · 本次变化:<b>这一周把四条业务硬规矩从「提示词里说说」搬到了「状态机上拦住」;而同一周的四次翻车,全都来自我们自己搭的脚手架</b></p>
+<blockquote>第 12 版说的是「尺子会在你不看的时候坏掉」。</blockquote>
+<p>&gt;</p>
+<blockquote>这一版说的是<b>尺子之外的东西</b>:我们自己往模型上下文里塞的那句话、我们自己写的检查、</blockquote>
+<blockquote>我们自己造的演示数据、我们自己的判分器 —— 这四样都不是业务代码,都是<b>为了保证质量而搭的脚手架</b>,</blockquote>
+<blockquote>而这一周的四次翻车,没有一次来自业务代码,<b>全部来自脚手架</b>:</blockquote>
+<p>&gt;</p>
+<blockquote>· 我们自己的钩子每轮往模型上下文里塞「今天是〈机器日期〉,一律以这一天为准」——</blockquote>
+<blockquote>  而演示世界的今天比机器早三周。结果:逾期 3 天被答成「已晚 25 天」,而且<b>读起来完全合理</b></blockquote>
+<blockquote>· 我们自己的守卫把「使用技能」整个拦掉了,于是<b>自家 6 个技能的正文从来没被加载过</b>,</blockquote>
+<blockquote>  而技能评测只看「模型想不想调」,所以一直显示正常</blockquote>
+<blockquote>· 我们自己的写冒烟检查<b>写进了真库</b>(把唯一一张分批发的单退了一档),</blockquote>
+<blockquote>  于是两边的夹具同时失去样本,而两处红都显示「取不到样本」,<b>谁也看不出真凶</b></blockquote>
+<blockquote>· 我们自己的判分器把全角问号写成了半角,于是模型<b>问了</b>也被判成「没问」,四套评测同时中招</blockquote>
+<p>&gt;</p>
+<blockquote>上一版的结论是「每隔一阵回头问一次这把尺还准不准」。</blockquote>
+<blockquote>这一版要加的是:<b>脚手架也是系统的一部分,而且它坏掉的时候,业务代码看起来是好的。</b></blockquote>
+<hr>
+<h2>一、项目由哪几块组成 + 工程体检</h2>
+<h3>结构:四层没变,量变了</h3>
+<pre>
+   客户手机端 /m      自助预约、试穿合身码(唯一不用登录的入口)
         ↓
-   ┌──────────────────────────────────────────────┐
-   │  智能助手(对话)                                │
-   │     54 个工具(上一版 25 个)· 49 条铁律          │
-   │     ↑ 登录之后,你是谁决定你能看到什么、能做什么     │
-   └──────────────────────────────────────────────┘
-        ↓                        ↓
-   顾问 pad 端 /pad         店长台 /tasks
+   智能助手(对话)     5 个角色各拿各的工具:门店顾问 / 版师核料 / 工坊排产 / 后台运营 / 全能
         ↓
-   ┌──────────────────────────────────────────────┐
-   │  后台 38 页:任务 / 客户 / 订单 / 工坊 / 知识库      │
-   └──────────────────────────────────────────────┘
+   工具层 73 个       读 52 · 写 21 —— 写的那 21 个全部登记在册
         ↓
-   ┌──────────────────────────────────────────────┐
-   │  口径层 27 个模块 —— **判断住在这里,工具只取数**    │
-   └──────────────────────────────────────────────┘</code></pre><h3>这六天新长出来的三块业务能力</h3><div class="tw"><table><thead><tr><th>能力</th><th>它替人回答的问题</th><th>而它最值钱的一句话是</th></tr></thead><tbody><tr><td><strong>库存预警</strong></td><td>哪些货要断了、哪些<strong>看着有货其实发不出</strong></td><td>算不出可售天数时,<strong>说「算不出」</strong></td></tr><tr><td><strong>白坯试衣</strong></td><td>哪些重工单该试衣、试了没、<strong>客户签字没</strong></td><td>签字是<strong>责任转移点</strong>,比量体记录硬</td></tr><tr><td><strong>多渠道对比</strong></td><td>四个下单渠道各自什么表现</td><td><strong>这张表不能用来比渠道</strong>(见第四节)</td></tr></tbody></table></div><h3>七环体检</h3><div class="tw"><table><thead><tr><th>环</th><th>判</th><th>现场证据</th></tr></thead><tbody><tr><td><strong>需求</strong></td><td>✅</td><td>19 份 <code>intent/</code>,每份写明「明确不做什么」;而且有检查盯着<strong>自称做完的必须点名门禁里真在跑的那条检查</strong></td></tr><tr><td><strong>架构</strong></td><td>✅</td><td>27 个口径模块,判断和取数分家。今天又清掉一处分裂:「该不该试衣」原来是工期函数体里一个<strong>连名字都没有的局部变量</strong></td></tr><tr><td><strong>实现</strong></td><td>✅</td><td>密钥扫描干净;push 前强制扫</td></tr><tr><td><strong>验证</strong></td><td>✅</td><td>门禁 <strong>95 项</strong>(上一版 33)、10 套评测、<strong>13 套检查有咬合记录</strong></td></tr><tr><td><strong>部署</strong></td><td>⚠️</td><td>CI 有了(每次 push 自动跑),<strong>但它的说明里还写着「check.sh 有 33 项」</strong> —— 实际 95。<strong>文档漂了,而这份文档正是讲「靠人记得的事迟早有一次不记得」的那份</strong></td></tr><tr><td><strong>运维</strong></td><td>❌</td><td><strong>库不可再生</strong>。交接文档写着「一把生成……别去抢救某个特定的库文件」,实测照做门禁红 <strong>26 项</strong>。今天已改掉那句话并登记</td></tr><tr><td><strong>迭代</strong></td><td>✅</td><td>六天 <strong>142 个提交</strong>,提交信息写的是「为什么」不是「改了什么」</td></tr></tbody></table></div><hr><h2>二、AI 架构:还是第三代,而这一版它长出了「围栏的围栏」</h2><h3>哪一代</h3><p><strong>第三代(Harness,给 Agent 配电脑)</strong>,证据没变:模型自己决定调哪个工具、调几次,循环由 SDK 接管,项目只负责划边界。</p><p>新的证据是<strong>边界变厚了</strong>:9 个写工具、49 条铁律、四个 Hook。</p><h3>这一代的特点(用你的项目说)</h3><p><strong>第一代是你写路径,第三代是你写围栏。</strong></p><p>打个比方:第一代像给司机画一条线,让他照着开;第三代像修一条有护栏的路,司机自己选怎么开,<strong>但开不出去</strong>。</p><p>代价是:<strong>护栏修错了,你不会立刻知道</strong>。第一代画错线,车当场撞墙;第三代护栏有个缺口,<strong>要等司机正好往那个方向开才暴露</strong>。</p><p>这个项目为这件事栽过两次(都记在台账里),而这六天它以一种新形式又来了一次——</p><h3>⚠️ 这一版真正的新东西:<strong>围栏本身也会坏,而坏掉的围栏看起来是好的</strong></h3><p>六天里同一个形状出现了五次:</p><div class="tw"><table><thead><tr><th>出的什么事</th><th>而它看起来像什么</th></tr></thead><tbody><tr><td>一条检查一直绿</td><td><strong>像「没问题」</strong>(真相:它要查的那几条路根本没被走过)</td></tr><tr><td>一条咬合记录名字对不上</td><td><strong>像「测过了」</strong>(真相:按名字去脚本里找,找不到)</td></tr><tr><td>一条判据把旧数据假设编了进去</td><td><strong>像「抓到问题了」</strong>(真相:它在冤枉一个正确答案)</td></tr><tr><td>文档说「库是可再生的」</td><td><strong>像一条可靠的指引</strong>(真相:从没人试过)</td></tr><tr><td>同一份口径散在两处</td><td><strong>像两份权威说明</strong>(真相:其中一份是错的)</td></tr></tbody></table></div><p>所以这六天有<strong>一半以上的工作,是给检查本身加检查</strong>:</p><ul><li>查<strong>咬合记录对不对</strong>(记录里写的那条检查,脚本里真的有吗)</li><li>查<strong>判据的备选说法验过没有</strong>(声称有备选,那就至少验过一条)</li><li>查<strong>夹具的前提还成不成立</strong>(这套题依赖的世界,变了没有)</li><li>查<strong>写数据的路径对不对</strong>(不只查已有的数据对不对)</li><li>查<strong>口径只有一处</strong>(不许两个文件各存一份)</li></ul><h3>升代四问的第四问:还能往哪走</h3><p><strong>这一版的答案不是「升代」。</strong> 你已经在第三代,而下一步不是换架构,是:</p><blockquote><strong>让已经有的围栏,自己变得可信。</strong></blockquote><p>理由很直接:一个不可信的围栏<strong>比没有围栏更危险</strong>——没有围栏时人会小心,有围栏时人会放手。</p><hr><h2>三、Prompt:1.4 万字符,而它的组装方式解决了一个老问题</h2><p>任务助手那一侧现在是 <strong>26 条铁律 / 10139 字符</strong>,知识助手 <strong>16 条 / 3967 字符</strong>。</p><p>它的组装方式值得单说:<strong>每条铁律声明自己依赖哪个工具,按工具清单自动装配</strong>。</p><ul><li>加了工具 → 相关铁律自动进来</li><li>没挂的工具 → 对应铁律自动不发</li></ul><p>这解决的是一个具体的坑:<strong>提示词让模型去调一个它根本没有的工具</strong>。</p><p>⚠️ 而这六天暴露了这套机制的一个新缝:</p><blockquote>一条铁律可以<strong>挂在一个会过期的前提下面</strong>。</blockquote><p>具体是:「不许用件数阈值」这条,被写成了「<strong>算不出可售天数时</strong>……不许拿件数阈值顶上去」。写的时候全库一个商品都算不出,没问题。数据补上之后 292 个算得出了——<strong>前提不成立,这条规矩自己就失效了</strong>,而提示词一个字都没变。</p><p>已经把它拆成一条<strong>不带前提</strong>的独立铁律。</p><hr><h2>四、检索与评测</h2><h3>a. 检索</h3><p>项目有知识库(15 篇 md + 结构化表),但用的不是向量检索,是<strong>结构化查询 + 白名单读正文</strong>。这个选择对:知识库是<strong>有编号、有条目</strong>的,不是一堆散文——<strong>不该用 RAG 的地方用了 RAG,是这一层最常见的错</strong>。</p><h3>b. 评测 —— 这一版的主题在这里</h3><p><strong>你现在有的</strong>:10 套评测、几百条题、判分器对照 72 条、来路记录(每条结果盖着「谁跑的/哪个模型/哪份代码」)。</p><p><strong>而这一版要讲的是三件新事:</strong></p><h4>① 同一份代码、同一个模型,跑两次分数不一样</h4><p>两处独立量到:</p><div class="tw"><table><thead><tr><th>哪套</th><th>两轮结果</th></tr></thead><tbody><tr><td>运维侧评测(31 题)</td><td><strong>29/31 → 27/31</strong>,而且<strong>错的题完全不重合</strong></td></tr><tr><td>三代对比(6 题)</td><td>V1 <strong>6/6 → 5/6</strong>、V3 <strong>6/6 → 5/6</strong>,<strong>挂的不是同一题</strong>;V2 <strong>两轮都 6/6</strong></td></tr></tbody></table></div><p>V2 为什么稳?<strong>因为它每条只调 1 次模型——调用越少,抖动面越小。</strong></p><p>这条路径不提供「固定随机种子」这类开关,<strong>波动消不掉,只能承认</strong>。</p><blockquote>⚠️ 这件事对你这个身份特别要紧:<strong>你以后每一次说「这一版比上一版好」,都要先问一句「好的那几分,超过抖动了吗」。</strong></blockquote><h4>② 一张表可能被两种方式骗,而它长得一样</h4><div class="tw"><table><thead><tr><th>骗法</th><th>表上看起来</th></tr></thead><tbody><tr><td><strong>噪音</strong>(条件没变,数自己晃)</td><td>一个数变成另一个数</td></tr><tr><td><strong>条件换了</strong>(换了模型/换了代码)</td><td>一个数变成另一个数</td></tr></tbody></table></div><p>今天把这两条口径<strong>收拢到了一处</strong>。而合并当场兑现了价值:两份说法一碰,<strong>我原来写的那条被发现说错了一半</strong>(默认模型不是一个值,是两个——取决于用哪种凭证)。</p><blockquote><strong>散着的时候,那句错话会一直是一份看起来很权威的错话。</strong></blockquote><h4>③ 一道题可以把「当时的数据长什么样」悄悄编进去</h4><p>已经讲过。补一句它的<strong>反面</strong>:</p><p>这个项目一直防的是「<strong>夹具比现实宽容</strong>」(测了一个比真实世界更容易的场景,于是满分是假的)。</p><p>而这次是它的反面:<strong>判据比现实严苛,测了一个已经不存在的世界</strong>——一份标准答案被判成违规。</p><p><strong>后者更难发现,因为红色看起来总像是尽职。</strong></p><hr><h2>五、建议你接下来学什么</h2><h3>① 「一次跑分不是一个测量」——把它变成动作</h3><p><strong>现在的状态</strong>:知道了波动至少 ±2,也钉进了工具。<strong>但那个 2 是只跑两次量出来的</strong>,而且是拿 31 题那套量的——套到调用更密的评测上不成立。</p><p><strong>该做的一件事</strong>:挑一套评测,<strong>同一版连跑五次</strong>,看分数的散布。这件事只花机器时间,不花你的时间,但它把「±2」从一个猜测变成一个数。</p><p>出处:Anthropic《Building effective agents》里关于评测的部分(一手)。</p><h3>② 「检查自己坏了怎么办」——这是你已经在做、但还没系统化的事</h3><p><strong>现在的状态</strong>:13 套检查有咬合记录,<strong>而 82 套还没有</strong>(上限钉着,只许降不许涨)。</p><p>「咬合」是这个项目自己发明的说法,业内叫 <strong>mutation testing(变异测试)</strong>:故意把代码改坏,看测试会不会红。不会红的测试,<strong>等于没有</strong>。</p><p><strong>该学的</strong>:这个概念本身有成熟工具和文献,值得看一眼别人怎么做的——你已经在用它,但你可能不知道它有名字。</p><h3>③ 「可再生」是一条工程底线,不是一句文档</h3><p><strong>现在的状态</strong>:库不可再生,已登记。</p><p>这件事在软件工程里有个名字叫 <strong>reproducible build / 可复现环境</strong>。它的价值不在「方便」,在:<strong>你没法回到一个已知正确的状态,就没法判断任何改动是好是坏</strong>。</p><p>这也是为什么它排在这儿——<strong>它在下面托着上面那两条</strong>:跑五次看散布,前提是五次跑的是同一个世界。</p><hr><h2>附:这一版没变的</h2><ul><li>架构还是第三代,没有升代计划(也不需要)</li><li>密钥、边界、权限隔离这几块一直是绿的</li><li>「口径进 knowledge/,工具只取数」这条分层没有松动</li><li>提示词的唯一源头还是 <code>prompts.py</code>,没有出现第二份</li></ul><h2>附:这一版新欠的账</h2><div class="tw"><table><thead><tr><th>欠什么</th><th>记在哪</th></tr></thead><tbody><tr><td>库不可再生(重建红 26 项)</td><td><code>intent/db-not-regenerable.md</code></td></tr><tr><td>演示数据三个窟窿(客户维度不能用)</td><td><code>intent/demo-data-gaps.md</code></td></tr><tr><td>82 套检查还没有咬合记录</td><td><code>tools/bite_check.py</code> 的上限</td></tr><tr><td>23 条判据的备选说法没验过</td><td><code>tools/vocab_check.py</code> 的下限</td></tr><tr><td>CI 说明里的「33 项」已经漂到 95</td><td>本报告</td></tr></tbody></table></div></div></body></html>
+   业务口径 37 个模块  判定规则只住在这里,工具只负责取数
+        ↓
+   数据 91 张表       SQLite,由固定种子确定性生成,23 步重建
+</pre>
+<p><b>现在的规模</b>(现算,2026-09-24):344 个 Python 文件 / 9.0 万行(不含依赖)· git 676 次提交,</p>
+<p><b>其中 312 次是最近一周的</b> · <code>check.sh</code> 里 172 条检查 · 23 套评测结果存档在版本库里。</p>
+<h3>这一周新长出来的那一段:生产和交付</h3>
+<p>以前订单走到「待生产」之后,后面几档是<b>在后台手点</b>过去的。这一周补完了:</p>
+<table>
+<tr><th>环节</th><th>现在靠什么成立</th></tr>
+<tr><td>开裁</td><td>该试白坯的试过、<b>客户签了字</b>才许裁</td></tr>
+<tr><td>生产 / 发货</td><td><b>只认工厂回传</b>,门店和后台都推不动;可以分批发货,每个包裹独立</td></tr>
+<tr><td>发错件 / 到店返工</td><td><b>只有店长能人工回退</b>,必须写理由,运费公司承担</td></tr>
+<tr><td>工厂撤回 / 更正</td><td>只能改时间和快递单号;撤回<b>不自动退订单状态</b></td></tr>
+<tr><td>整批延期</td><td>按新完工日判超期,<b>原承诺日和延期次数一直留着</b></td></tr>
+<tr><td>到店签收</td><td>按<b>件</b>签收:合身的当场拿走,不合身那件留店转返修</td></tr>
+</table>
+<h3>七环体检</h3>
+<table>
+<tr><th>环</th><th>判定</th><th>现场证据</th></tr>
+<tr><td><b>需求</b></td><td>✅</td><td>业务口径写进 <code>knowledge/</code> 而不是聊天记录:这一周新增 <code>factory_feed.py</code>(工厂回传)、<code>order_place.py</code>(下单)、<code>muslin.py</code>(白坯)。每条规矩都标着「业务 09-22 / 09-23 确认」,<b>哪条是业务定的、哪条是我提的建议值,分得开</b></td></tr>
+<tr><td><b>架构</b></td><td>✅</td><td>判定和取数分层没破:工具只取数,判定在口径模块(37 个)。新加的工厂回传严格照这个分:<code>knowledge/factory_feed.py</code> 不碰库、不取当前日期,<code>backend/factory_inbox.py</code> 只负责落库</td></tr>
+<tr><td><b>实现</b></td><td>✅</td><td>8 道闸挂在<b>订单状态机</b>上,不是挂在入口里:白坯、下单量体、签收、完成、返修两道、工厂回传、人工回退。<b>后台那个通用「改状态」入口绕不过它们</b></td></tr>
+<tr><td><b>验证</b></td><td>⚠️</td><td>172 条检查 + 23 套评测。但这一周有四次是<b>脚手架自己坏了</b>(见开头)。新功能的检查是齐的(工厂回传 44 条、下单 22 条、签收 57 条),<b>评测还没跟上</b>:分批发货、人工回退、撤回更正、延期通知,四样一道评测题都没有</td></tr>
+<tr><td><b>部署</b></td><td>⚠️</td><td>两条命令能起;CI 每次从零建库跑门禁。<b>这一周红过三次,全是「本地绿、CI 从零红」</b> —— 本地留着历次产物,CI 不留,两者只在「从零建得起来」这件事上分岔</td></tr>
+<tr><td><b>运维</b></td><td>✅</td><td>每张订单有<b>独立日志</b>:状态变化、每条工厂回传(<b>含被拒收和作废的</b>)、人工回退、延期、按件签收,按时间排成一条</td></tr>
+<tr><td><b>迭代</b></td><td>✅</td><td>676 次提交,每次写清「为什么这么改、踩了什么坑」;产品需求文档里 <b>81 条难点记录、243 条算法记录</b>(现算)</td></tr>
+</table>
+<p><b>体检里最值得说的一条:</b> 「验证」这一环从 ⚠️ 到 ✅ 的距离,不在于再加多少条检查,</p>
+<p>而在于<b>检查本身有没有人验</b>。这一周的四次翻车里,有三次是检查/判分器/造数自己的问题,</p>
+<p>而它们在出事前都显示「绿」。</p>
+<hr>
+<h2>二、AI 架构在哪一代</h2>
+<h3>哪一代:三代同仓,主力在第三代</h3>
+<ul>
+<li><b>第一代(直接调用)</b>:<code>agent/v1.py</code> —— 自己写循环、自己判要不要调工具、自己执行。</li>
+<li><b>第二代(工作流编排)</b>:<code>agent/v2.py</code> —— 流程显式建成图,大部分节点是纯规则,<b>每条只调 1 次模型</b>。</li>
+<li><b>第三代(Harness)</b>:<code>agentsite/sdk.py</code> —— 模型自己规划,循环、工具、预算、钩子由 harness 管。</li>
+</ul>
+<p><b>这个项目真正少见的地方不是做了第三代,是三代在同一个仓库、同一批题上可以横着比。</b></p>
+<h3>这一代的特点,以及这一周暴露的代价</h3>
+<p>第三代把「循环怎么转」交给了别人,换来的是模型能自己规划多步。代价这一周结结实实撞到两次:</p>
+<p>1. <b>上下文不是你一个人在写。</b> 除了你的系统提示词,harness 和你自己的钩子都会往里塞东西。</p>
+<p>   这一周那个「晚 3 天说成晚 25 天」,根因就是<b>我们自己的钩子</b>每轮注入机器日期,</p>
+<p>   而且用的是命令口气,<b>压过了后加的规矩</b>。</p>
+<p>   &gt; 一句话:<b>第三代里,「模型看到了什么」不再等于「我写了什么」。</b></p>
+<p>2. <b>工具越多,每次调用越贵。</b> 记录仪现算:9 月 17 日以来 2043 次调用,合计约 \$51.6(估算),</p>
+<p>   第三代单次调用<b>平均缓存命中 17 万 token</b>、单次约 \$0.029。</p>
+<p>   而第二代大部分节点根本不调模型。</p>
+<p>   &gt; <b>「加一个工具」的代价不在那个工具上,在此后每一次调用上</b> —— 而功能测试里完全看不见。</p>
+<h3>升代能得到什么 / 最小迁移路径</h3>
+<p>这个项目不需要升代,它已经在第三代。真正的下一步是<b>把第三代用对</b>:</p>
+<ul>
+<li><b>该停在第二代的别硬上第三代</b>:步骤能提前枚举的活(比如排班、批量派工),第二代更可控更便宜。</li>
+<li><b>把「谁往上下文里写东西」管起来</b>:现在没有任何东西会发现「两处注入互相打架」——</li>
+</ul>
+<p>  日期那次是靠评测里一句原话露出来的。<b>这是我建议的下一个练习。</b></p>
+<hr>
+<h2>三、prompt 在哪、怎么拼的</h2>
+<ul>
+<li><b>单一源头</b>:根目录 <code>prompts.py</code>,71 条规矩,<b>按工具装配</b> —— 挂了哪个工具,就发管它的那条规矩;</li>
+</ul>
+<p>  没挂的不发(结构检查 P6 强制)。</p>
+<ul>
+<li><b>按角色发工具</b>:门店顾问 37 个、后台运营 53 个、工坊 7 个、版师 9 个。</li>
+</ul>
+<p>  以前是整包发,一个角色能看见别人的工具。</p>
+<ul>
+<li><b>这一周新加的规矩</b>:确认下单等于登记已收款(不清楚付没付先问)、工厂回传那三条(不许建议后台手改、</li>
+</ul>
+<p>  不替工厂补数据、催工厂是人的动作)、业务上的今天是哪天。</p>
+<h3>一次调用的成本账(现算,9 月 17 日以来)</h3>
+<table>
+<tr><th></th><th>第三代</th></tr>
+<tr><td>调用次数</td><td>1696 次</td></tr>
+<tr><td>单次缓存命中</td><td>平均 <b>16.97 万 token</b></td></tr>
+<tr><td>单次成本</td><td>平均 <b>\$0.0288</b></td></tr>
+</table>
+<p><b>缓存命中越高不代表越省</b> —— 它说明每次都把同一大坨东西(工具定义 + 规矩)重新带上一遍。</p>
+<p>省钱的办法不是加缓存,是<b>少带</b>:按角色发工具就是这么省下来的,而这个收益<b>至今没有专门测过</b></p>
+<p>(🔮 预计财务那条线每轮省两万 token 左右 —— <b>没验</b>)。</p>
+<hr>
+<h2>四、检索与评测现状</h2>
+<p><b>检索</b>:这个项目没有向量检索,知识库是手写的 14 篇 md + 推导脚本生成的派生数据,</p>
+<p>工具按结构查表。<b>这是对的选择</b> —— 业务问的是「这个工艺能不能配这个面料」,</p>
+<p>答案要能说出依据、能对账,不是「找几段相似的话」。</p>
+<p><b>评测</b>:23 套结果存档在版本库里。这一周跑过的:</p>
+<table>
+<tr><th>评测</th><th>两轮</th><th>说明</th></tr>
+<tr><td>工厂回传</td><td>6/6 · 6/6</td><td>这一周新写的</td></tr>
+<tr><td>交付签收</td><td>7/9 · 9/9</td><td></td></tr>
+<tr><td>量体录入</td><td>7/8 · 7/8</td><td>判分器修好后比修前高一题</td></tr>
+<tr><td>成长推算</td><td>6/8 · 7/8</td><td>挂的两题都是「一个工具都没调就答」</td></tr>
+<tr><td>会员</td><td>11/12</td><td></td></tr>
+</table>
+<p><b>评测这一环最该补的两处:</b></p>
+<p>1. <b>四样新功能一道题都没有</b>:分批发货、人工回退、撤回更正、延期通知。</p>
+<p>   现在只有代码层面的检查(44 条),<b>没测过真模型会不会用错</b> ——</p>
+<p>   比如有人对助手说「帮我把这单退回去」,它会不会照做而不看是谁在说话。</p>
+<p>2. <b>技能放行之后的基线要重新认</b>:2026-09-23 之前所有评测跑的都是「技能没生效」的版本。</p>
+<p>   那些分数不作废,但<b>和以后的数不可比</b>,文档里要注明日期。</p>
+<hr>
+<h2>五、建议接下来学什么</h2>
+<h3>① 上下文注入的冲突检测(最该做的)</h3>
+<p><b>为什么</b>:这一周最贵的一次翻车,不是模型不行,是<b>我们自己往上下文里塞的两句话互相打架</b>,</p>
+<p>而系统里没有任何东西会发现这件事 —— 它是靠评测里一句「现在 9 月 22 日」露出来的。</p>
+<p><b>练习</b>:给项目加一条检查 —— 把所有往模型上下文里注入内容的地方列出来(系统提示词、</p>
+<p>开场注入、技能正文、工具描述),看有没有两处对<b>同一件事</b>给出不同指令。</p>
+<p>先从最容易冲突的三类入手:日期、权限、数值口径。</p>
+<p><b>出处</b>:Anthropic《Effective context engineering for AI agents》(官方工程博客,一手)。</p>
+<h3>② 「意图」和「效果」是两个评测对象</h3>
+<p><b>为什么</b>:技能被拦那件事挂了很久没人发现,**因为评测测的是「模型想不想调这个技能」,</p>
+<p>而不是「技能真的加载之后答得对不对」**。前者是意图,后者是效果,两者可以长期背离。</p>
+<p><b>练习</b>:挑一个技能(比如报价),写两道题:一道测它该不该触发,一道测<b>触发之后</b></p>
+<p>产出的报价单有没有把该说的都说了。跑两轮,看两个数是不是同涨同跌。</p>
+<p><b>出处</b>:Anthropic《Agent Skills》文档(一手);评测方法部分见 <code>references/evals-map.md</code>。</p>
+<h3>③ 脚手架的隔离:检查不许写真库</h3>
+<p><b>为什么</b>:这一周同一个形状踩了两次 —— 一次是签收那边的检查往真库写了返修单,</p>
+<p>一次是我的写冒烟把真库的订单退了一档。根因都是「把模块指到测试副本」时<b>漏了用到时才加载的模块</b>。</p>
+<p><b>练习</b>:写一条&quot;检查的检查&quot; —— 跑完所有检查之后,比对真库的关键表行数有没有变。</p>
+<p>变了就红,并且报出是哪一条检查干的。</p>
+<p><b>出处</b>:这条是经验判断,没有权威出处。</p>
+<hr>
+<h2>附:这一版之后,项目还欠着什么</h2>
+<ul>
+<li>助手里还没有:订单日志问答、待通知延期、人工回退(<b>页面上有,助手不会</b>)</li>
+<li>工厂侧四样新功能的评测题</li>
+<li>运营那套 68 题在技能放行后还没重跑(最可能看出技能效果的一套)</li>
+<li>语音识别:业务定了维持现状,五层方案先不做</li>
+<li>上线前要换掉开发者个人账户(现在助手上下文里带着账户邮箱)</li>
+</ul>

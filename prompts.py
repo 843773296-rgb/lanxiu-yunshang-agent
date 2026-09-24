@@ -33,6 +33,10 @@
 class Rule:
     """一条铁律。
 
+    管:  这条**给模型定了哪件事的口径**(日期 / 权限归属 / 金额 / 时效……)。
+         同一件事被两处管着而没人知道 —— 那正是 2026-09-22 那次「晚 3 天说成晚 25 天」的形状:
+         规矩说以 8-31 为准、每轮注入说以机器日期为准,谁也不知道另一处存在。
+         登记之后由 tools/context_conflict_check.py 机械地查「这件事有几个人在说」。
     needs:装了这些工具才发这条 —— 让模型去调一个它没有的工具,它会开始编。
     avoid:装了这些工具就**不**发这条 —— 同一件事换了机制,说法就得换。
           例:V1 用 submit_finding 交结构化结果,V3 出纯文本,
@@ -52,10 +56,10 @@ class Rule:
       现有 20 题评测在 6 道负向题上单跑一遍的波动就有 ±2,分辨不出这种量级的差别。
       改它的理由是「规矩该放在它管的东西旁边」,不是「实测涨分」。
     """
-    __slots__ = ("id", "needs", "avoid", "text", "scope")
-    def __init__(self, id, needs, text, avoid=(), scope="铁律"):
+    __slots__ = ("id", "needs", "avoid", "text", "scope", "管")
+    def __init__(self, id, needs, text, avoid=(), scope="铁律", 管=()):
         self.id, self.needs, self.avoid = id, tuple(needs), tuple(avoid)
-        self.text, self.scope = text.strip(), scope
+        self.text, self.scope, self.管 = text.strip(), scope, tuple(管)
 
 
 # ── 业务上的「今天」(三个角色都发)────────────────────────────────────
@@ -69,7 +73,7 @@ try:
         _os.path.dirname(_os.path.abspath(__file__)), "backend", "seed.py"), encoding="utf-8").read(), _re.M).group(1)
 except Exception:
     _TODAY = None
-DATE_RULE = Rule("TL53", (), f"""
+DATE_RULE = Rule("TL53", (), 管=("日期",), text=f"""
 **业务上的今天是 {_TODAY}。** 你从运行环境里看到的日期是机器的日期,**不是这家店的今天**,
 算「逾期几天、还剩几天、多久没来」一律以 {_TODAY} 为准;**工具返回里已经算好的天数照着说,不要自己拿今天去减**。
 """) if _TODAY else Rule("TL53", (), """
