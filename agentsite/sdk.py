@@ -330,6 +330,7 @@ SHOP_TOOLS = [
     # 该催工厂 / 工厂回传(只读)。生产和发货只认工厂回传,门店不推 —— 门店要知道哪几单该去催。
     # 顾问问「我哪些单该催」、店长看本店,两个角色都要;规矩 TL52:不许建议后台改状态、不替工厂补数据。
     "mcp__shop__factory_chase",
+    "mcp__shop__orders_by_date",
     # 订单日志(只读):这张单发生过什么 —— 顾客问「为什么晚了」时,被拒收和作废的回传往往才是答案。规矩 TL54
     "mcp__shop__order_log",
     # 工厂延期待通知 + 通知完标一下(写)。规矩 TL55:你不联系顾客;「已通知」只有用户说了才标
@@ -992,6 +993,14 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             "lanxiu.compacted": state.get("压缩次数") or None,
             # 输出 token 分不到步上时,在根上说清楚为什么 —— 面板照着这句显示「—」
             "lanxiu.usage.output_split_unavailable": _对账,
+            # ── 一次咨询的两头:进去的是什么、出来的是什么 ──────────────
+            # 中间那段(工具调了什么、返回了什么)已经在子 span 里了,
+            # 缺的一直是这两头 —— 而「它凭什么这么说」恰恰要靠两头夹着中间看。
+            "lanxiu.prompt": (prompt if isinstance(prompt, str) else "(带图)"),
+            "lanxiu.context_injected": state.get("注入原文"),
+            "lanxiu.answer": text or None,
+            "lanxiu.answer_all": ("\n\n".join(turns) if len(turns) > 1 else None),
+            "lanxiu.rules_n": len(getattr(_pr, "rules_for", lambda *a: [])(kind)) if False else None,
         }, 出错=(getattr(res, "errors", None) or "is_error")
              if getattr(res, "is_error", False) else None)
         _树.落盘()

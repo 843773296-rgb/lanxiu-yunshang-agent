@@ -1,0 +1,132 @@
+<title>AI 调控中心</title>
+<!--SHELL-->
+<style>
+.hub{display:grid;grid-template-columns:184px 1fr;gap:16px;align-items:start}
+@media(max-width:860px){.hub{grid-template-columns:1fr}}
+.side{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:7px;position:sticky;top:64px}
+.side a{display:block;padding:7px 10px;border-radius:4px;font-size:13.5px;color:var(--ink-2);text-decoration:none}
+.side a:hover{background:var(--paper-2);color:var(--dye)}
+.side a.on{background:var(--dye-soft);color:var(--dye);font-weight:600}
+.side a.no{color:var(--ink-3)}
+.side .h{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+ color:var(--ink-3);padding:9px 10px 4px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:13px 15px;border-top:2px solid var(--line)}
+.kpi .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.kpi .v{font-family:var(--mono);font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.35}
+.kpi .n{font-size:12px;color:var(--ink-3);line-height:1.5}
+table.l{width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);border-radius:5px}
+table.l th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
+ color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.l td{padding:6px 10px;border-bottom:1px solid var(--line-2);font-size:12.8px;vertical-align:top}
+table.l tr.r{cursor:pointer}table.l tr.r:hover{background:var(--paper-2)}
+table.l tr.r.on{background:var(--dye-soft)}
+td.mono,.mono{font-family:var(--mono);font-size:11.8px}
+.seg{background:var(--paper);border:1px solid var(--line);border-radius:5px;margin-top:14px;padding:13px 15px}
+.seg h3{margin:0 0 3px;font-size:14.5px}
+.seg .why{font-size:12.5px;color:var(--ink-2);margin:0 0 9px}
+.seg .kv{margin:8px 0}
+.seg .kv .k{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-bottom:3px}
+.seg .kv pre{margin:0;background:var(--paper-2);border:1px solid var(--line-2);border-radius:4px;
+ padding:8px 10px;font-family:var(--mono);font-size:11.6px;line-height:1.66;white-space:pre-wrap;
+ word-break:break-word;max-height:330px;overflow:auto}
+.mods{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:12px}
+.mod{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:13px 15px;border-left:3px solid var(--pass)}
+.mod.no{border-left-color:var(--ink-3);background:var(--paper-2)}
+.mod h3{margin:0 0 3px;font-size:14.5px}
+.mod p{margin:0 0 7px;font-size:12.8px;color:var(--ink-2);line-height:1.6}
+.mod .row{font-size:12.4px;line-height:1.7;margin:4px 0;display:flex;gap:7px}
+.mod .row b{flex:none;font-family:var(--mono);font-size:10px;padding:1px 5px;border-radius:3px;height:fit-content;margin-top:3px}
+.mod .row.y b{background:var(--pass-soft);color:var(--pass);border:1px solid var(--pass)}
+.mod .row.n b{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn)}
+</style>
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">AI 调控中心 · 自己调试用</span></div>
+  <h1 id="h1">这个助手现在什么样</h1>
+  <p class="deck" id="deck">左边挑一个模块。每个模块是一张列表，<b>点一行看那一条的全部完整信息</b>。</p>
+</header>
+<section>
+<div class="hub">
+  <nav class="side" id="nav"></nav>
+  <div id="main"><div class="sub">读取中…</div></div>
+</div>
+</section>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>(s??"").toString().replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+const md=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`(.+?)`/g,"<code class='mono'>$1</code>");
+const 美=v=>{ if(v==null||v==="") return "(空)";
+  if(typeof v==="object") return JSON.stringify(v,null,1);
+  const t=String(v).trim(); if(t[0]==="{"||t[0]==="["){try{return JSON.stringify(JSON.parse(t),null,1)}catch(e){}}
+  return String(v); };
+const MODS=[["runs","咨询"],["tools","工具调用"],["cost","模型调用与成本"],["guards","守卫与拦截"],
+            ["skills","技能"],["evals","评测"],["ops","操作台账"]];
+const NO=[["prompts","提示词版本"],["retrieval","知识库检索"],["finetune","训练数据准备"]];
+const mod=(location.pathname.split("/")[2]||"");
+
+$("#nav").innerHTML=`<div class="h">总览</div><a href="/ai" class="${mod?"":"on"}">全部模块</a>
+  <div class="h">有数据</div>`+MODS.map(([k,n])=>`<a href="/ai/${k}" class="${mod===k?"on":""}">${n}</a>`).join("")
+  +`<div class="h">还没有</div>`+NO.map(([k,n])=>`<a href="/ai/${k}" class="no ${mod===k?"on":""}">${n}</a>`).join("")
+  +`<div class="h">别的页</div><a href="/debug">单次运行树</a><a href="/experiments">实验对比</a>`;
+
+if(!mod) 总览(); else if(NO.some(([k])=>k===mod)) 还没有(); else 模块(mod);
+
+async function 总览(){
+  const d=await fetch("/ai/overview").then(r=>r.json());
+  if(d.error){ $("#main").innerHTML="读不到："+esc(d.error); return; }
+  const k=d.跑;
+  $("#main").innerHTML=`<div class="kpis">`+[
+    ["今天调了几次",k.今日次数,`累计 ${k.累计次数} 次`],
+    ["今天花了","$"+k.今日花费,`累计 $${k.累计花费}`],
+    ["记下的咨询",k.树,`${k.span} 个 span`],
+    ["模块",`${d.做了}/9`,`${d.没做} 个还没有`]].map(([a,b,c])=>
+      `<div class="kpi"><div class="k">${esc(a)}</div><div class="v">${esc(b)}</div><div class="n">${esc(c)}</div></div>`).join("")
+    +`</div><p class="sub">业务今天 <b>${esc(d.今天||"—")}</b>，机器 <b>${esc(d.机器今天)}</b>。`
+    +(d.今天===d.机器今天?"一致（世界每天平移到当天）。":" ⚠️ <b>对不上</b>，今天还没跑 <code class='mono'>tools/shift_world.py</code>。")
+    +`</p><div class="mods">`+d.模块.map(m=>`<div class="mod ${m.状态==="还没有"?"no":""}">
+      <h3>${m.号}. ${esc(m.名)}</h3><p>${esc(m.问)}</p>
+      ${m.有?`<div class="row y"><b>有</b><span>${md(m.有)}</span></div>`:""}
+      ${m.缺?`<div class="row n"><b>缺</b><span>${md(m.缺)}</span></div>`:""}</div>`).join("")+`</div>`;
+}
+
+function 还没有(){
+  const n=(NO.find(([k])=>k===mod)||[])[1];
+  fetch("/ai/overview").then(r=>r.json()).then(d=>{
+    const m=(d.模块||[]).find(x=>x.名===n)||{};
+    $("#h1").textContent=n; $("#deck").innerHTML="<b>还没有这个模块。</b>下面写清它要回答什么、缺了它会怎样。";
+    $("#main").innerHTML=`<div class="seg"><h3>${esc(n)}</h3>
+      <p class="why">${esc(m.问||"")}</p>
+      <div class="kv"><div class="k">为什么还没有 / 做之前要先定什么</div>
+        <pre>${md(m.缺||"—")}</pre></div></div>`;
+  });
+}
+
+async function 模块(k){
+  const n=(MODS.find(([x])=>x===k)||[])[1]||k;
+  $("#h1").textContent=n;
+  const d=await fetch("/ai/data?mod="+encodeURIComponent(k)).then(r=>r.json());
+  const rows=d.rows||[];
+  if(!rows.length){ $("#main").innerHTML=`<p class="sub">这个模块还没有数据。</p>`; return; }
+  const cols=Object.keys(rows[0]).filter(c=>c!=="id");
+  $("#deck").innerHTML=`共 <b>${rows.length}</b> 条（最新在上）。<b>点一行看那一条的全部完整信息。</b>`;
+  $("#main").innerHTML=`<table class="l"><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(r=>`<tr class="r" data-id="${esc(r.id)}">${cols.map(c=>
+      `<td class="${typeof r[c]==="number"||/^[\w:.$-]+$/.test(String(r[c]??""))?"mono":""}">${esc(String(r[c]??"").slice(0,90))}</td>`).join("")}</tr>`).join("")}</tbody></table>
+    <div id="det"></div>`;
+  document.querySelectorAll("tr.r").forEach(tr=>tr.onclick=()=>详情(k,tr.dataset.id,tr));
+}
+
+async function 详情(k,id,tr){
+  document.querySelectorAll("tr.r").forEach(x=>x.classList.toggle("on",x===tr));
+  const d=await fetch(`/ai/data?mod=${encodeURIComponent(k)}&id=${encodeURIComponent(id)}`).then(r=>r.json());
+  if(d.错){ $("#det").innerHTML=`<div class="seg">${esc(d.错)}</div>`; return; }
+  $("#det").innerHTML=(d.段||[]).map(s=>`<div class="seg">
+      <h3>${esc(s.名)}</h3><p class="why">${md(s.说||"")}</p>
+      ${(s.内容||[]).map(([kk,vv])=>`<div class="kv"><div class="k">${esc(kk)}</div>
+        <pre>${esc(美(vv))}</pre></div>`).join("")}</div>`).join("")
+    + (k==="runs"?`<div class="seg"><a href="/debug">在调用树里看这一次 →</a></div>`:"");
+  $("#det").scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+</script>

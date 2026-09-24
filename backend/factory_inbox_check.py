@@ -28,7 +28,15 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
 ]
 
 FAIL, N = [], [0]
-今天 = "2026-08-31"
+import sys as _s, os as _o
+_s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+from seed import TODAY as 今天      # 世界的今天,不写死(2026-09-24 起世界每天平移)
+# ⚠️ **人造用例有自己的「今天」,而且必须写死。**
+# 下面那些用例里的消息时间是硬编码的(「2026-08-20 接单、承诺 09-20」),
+# 它们和一个固定的今天是一整套 —— 跟着世界走的话,同一批用例每天的含义都不同,
+# 「发出时间晚于今天 → 拒收」今天成立、明天就不成立了。
+# **判真实数据用世界的今天,判人造用例用用例自己的今天** —— 两者是两回事。
+用例今天 = "2026-08-31"
 
 
 def ck(name, ok, extra=""):
@@ -120,6 +128,18 @@ def 数据(D):
         差 = (_d.date.fromisoformat(今天) - _d.date.fromisoformat(过[1][:10])).days
         进 = (api.get_order(过[0]).get("工厂回传") or {}).get("进度") or {}
         ck("查订单带出按今天算好的「离承诺完工日已经过了几天」", 进.get("离承诺完工日") == f"已经过了 {差} 天", 进)
+
+    # ── 说明里复述的日期,必须等于同一行的字段 ───────────────────────
+    # 2026-09-24 平移演示世界时露出来:两张不同的单,reason 里写着**同一个**完工日,
+    # 而那天正是造数据那天的机器日期。根因是 run_journey 先按机器时钟把回传收下来、
+    # 再按剧本回填 promise_date,**却没回填复述它的那句话**。
+    # reason 是页面和助手给人看的那一句 —— 所以错的正是被人读到的那一半,
+    # 而结构化字段是对的,任何按字段做的检查都查不出来。
+    坏 = c.execute("""SELECT COUNT(*) FROM factory_msg WHERE event='接单'
+                      AND promise_date IS NOT NULL AND reason LIKE '工厂接单,承诺%'
+                      AND reason <> '工厂接单,承诺 '||promise_date||' 完工'""").fetchone()[0]
+    ck("回传说明里的完工日 = 同一行的 promise_date", 坏 == 0,
+       f"{坏} 条对不上 —— **改了字段没改复述它的那句话**,两者会静默分家")
     c.close()
 
 
@@ -132,39 +152,39 @@ def 活写口(T):
                      WHERE o.kind='定制品订单' AND o.status='生产中'
                        AND NOT EXISTS(SELECT 1 FROM factory_msg f WHERE f.order_id=o.id)
                        AND julianday(?) - julianday(COALESCE(o.cut_at, o.audit_at)) > 5
-                     ORDER BY o.id LIMIT 1""", (今天,)).fetchone()
+                     ORDER BY o.id LIMIT 1""", (用例今天,)).fetchone()
     ck("有一张工厂还没回过消息的生产中定制单", bool(r))
     if not r: return
     oid, 开 = r
     别 = c.execute("""SELECT o.id FROM ordr o WHERE o.kind='定制品订单' AND o.status='生产中' AND o.id!=?
                       AND NOT EXISTS(SELECT 1 FROM factory_msg f WHERE f.order_id=o.id AND f.result='收下'
                                      AND f.event='完工') ORDER BY o.id LIMIT 1""", (oid,)).fetchone()
-    ck("没回接单、开工超过 3 天 → 在该催清单里", oid in {x["订单"] for x in fi.该催清单(今天)})
+    ck("没回接单、开工超过 3 天 → 在该催清单里", oid in {x["订单"] for x in fi.该催清单(用例今天)})
     if 别:
         x = server.transit("bk-order", 别[0], "已生产", {"by": "检查"}, actor="检查")
         ck("后台直接改「生产中→已生产」被拦(只认工厂回传)", x.get("code") == "FACTORY_GATE", x.get("reason"))
 
     M = lambda 号, 事, t, **k: dict(消息号=号, 订单号=oid, 事件=事, 时间=t, 工厂="检查厂", **k)
     server.DB = T
-    ck("接单 → 收下,订单不动", fi.收(M("C1", "接单", "2026-08-20 09:00", 承诺完工日="2026-09-20"), 今天)["结论"] == "收下"
+    ck("接单 → 收下,订单不动", fi.收(M("C1", "接单", "2026-08-20 09:00", 承诺完工日="2026-09-20"), 用例今天)["结论"] == "收下"
        and c.execute("SELECT status FROM ordr WHERE id=?", (oid,)).fetchone()[0] == "生产中")
-    ck("回了接单、没过承诺日 → 不在该催清单里", oid not in {x["订单"] for x in fi.该催清单(今天)})
+    ck("回了接单、没过承诺日 → 不在该催清单里", oid not in {x["订单"] for x in fi.该催清单(用例今天)})
     # 谁接的单谁报(自有工坊和外发工厂都有,业务 09-22)
     ck("接单的是检查厂,别家报完工 → 挂异常,订单不动",
-       fi.收(dict(M("Cx", "完工", "2026-08-27 10:00"), 工厂="别家厂"), 今天)["结论"] == "挂异常"
+       fi.收(dict(M("Cx", "完工", "2026-08-27 10:00"), 工厂="别家厂"), 用例今天)["结论"] == "挂异常"
        and c.execute("SELECT status FROM ordr WHERE id=?", (oid,)).fetchone()[0] == "生产中")
-    ck("质检通过比完工先到 → 暂存", fi.收(M("C2", "质检通过", "2026-08-29 10:00"), 今天)["结论"] == "暂存")
+    ck("质检通过比完工先到 → 暂存", fi.收(M("C2", "质检通过", "2026-08-29 10:00"), 用例今天)["结论"] == "暂存")
     ck("完工早于开工 → 拒收(时间倒挂)",
-       fi.收(M("C0", "完工", "2020-01-01 10:00"), 今天)["结论"] == "拒收")
-    r = fi.收(M("C3", "完工", "2026-08-28 15:00"), 今天)
+       fi.收(M("C0", "完工", "2020-01-01 10:00"), 用例今天)["结论"] == "拒收")
+    r = fi.收(M("C3", "完工", "2026-08-28 15:00"), 用例今天)
     st = c.execute("SELECT status, produced_at FROM ordr WHERE id=?", (oid,)).fetchone()
     ck("完工到了 → 暂存的质检通过被放行,订单到待发货", r["结论"] == "收下" and st[0] == "待发货", st)
     ck("生产时间记的是工厂报的时间", str(st[1]).startswith("2026-08-28 15:00"), st[1])
-    ck("同一个消息号再发 → 重复", fi.收(M("C3", "完工", "2026-08-28 15:00"), 今天)["结论"] == "重复")
-    ck("同一步换个号再发 → 重复", fi.收(M("C3b", "完工", "2026-08-28 15:00"), 今天)["结论"] == "重复")
-    ck("发出没带物流单号 → 拒收", fi.收(M("C4", "发出", "2026-08-30 10:00"), 今天)["结论"] == "拒收")
-    ck("发出时间晚于今天 → 拒收", fi.收(M("C5", "发出", "2026-09-05 10:00", 物流单号="SF1"), 今天)["结论"] == "拒收")
-    r = fi.收(M("C6", "发出", "2026-08-30 10:00", 物流单号="SF123"), 今天)
+    ck("同一个消息号再发 → 重复", fi.收(M("C3", "完工", "2026-08-28 15:00"), 用例今天)["结论"] == "重复")
+    ck("同一步换个号再发 → 重复", fi.收(M("C3b", "完工", "2026-08-28 15:00"), 用例今天)["结论"] == "重复")
+    ck("发出没带物流单号 → 拒收", fi.收(M("C4", "发出", "2026-08-30 10:00"), 用例今天)["结论"] == "拒收")
+    ck("发出时间晚于今天 → 拒收", fi.收(M("C5", "发出", "2026-09-05 10:00", 物流单号="SF1"), 用例今天)["结论"] == "拒收")
+    r = fi.收(M("C6", "发出", "2026-08-30 10:00", 物流单号="SF123"), 用例今天)
     st = c.execute("SELECT status, shipped_at FROM ordr WHERE id=?", (oid,)).fetchone()
     ck("发出带物流单号 → 订单到已发货,发货时间是工厂报的", r["结论"] == "收下" and st[0] == "已发货"
        and str(st[1]).startswith("2026-08-30 10:00"), st)
@@ -195,17 +215,17 @@ def 活写口(T):
     ck("回退这件事留了痕(订单日志里看得到)",
        any("人工回退" in x["什么"] for x in fi.订单日志(oid, db=T)))
     # 回退之后工厂重发:**不作废的话这里会被判成「这几件收过了」**
-    r = fi.收(M("C7", "发出", "2026-08-30 12:00", 物流单号="SF777"), 今天)
+    r = fi.收(M("C7", "发出", "2026-08-30 12:00", 物流单号="SF777"), 用例今天)
     ck("回退后工厂重新报发出 → 收下(不会被当成重复)", r["结论"] == "收下", r["理由"])
 
     # ── 撤回 / 更正 ────────────────────────────────────────────────
-    r = fi.收(dict(消息号="C8", 订单号=oid, 事件="撤回", 时间="2026-08-30 13:00", 工厂="检查厂", 原消息号="C7"), 今天)
+    r = fi.收(dict(消息号="C8", 订单号=oid, 事件="撤回", 时间="2026-08-30 13:00", 工厂="检查厂", 原消息号="C7"), 用例今天)
     st = c.execute("SELECT status FROM ordr WHERE id=?", (oid,)).fetchone()[0]
     ck("工厂撤回一条发出 → 收下,那条作废,**订单状态不自动退**", r["结论"] == "收下" and st == "已发货", st)
     ck("撤回把包裹也作废了",
        c.execute("SELECT COUNT(*) FROM pkg WHERE order_id=? AND void_at IS NULL", (oid,)).fetchone()[0] == 0)
     r = fi.收(dict(消息号="C9", 订单号=oid, 事件="更正", 时间="2026-08-30 14:00", 工厂="检查厂",
-                  原消息号="C3", 新时间="2026-08-28 16:00"), 今天)
+                  原消息号="C3", 新时间="2026-08-28 16:00"), 用例今天)
     ck("工厂更正完工时间 → 收下并改掉那条", r["结论"] == "收下"
        and c.execute("SELECT at FROM factory_msg WHERE msg_id='C3'").fetchone()[0] == "2026-08-28 16:00", r["理由"])
 
@@ -218,13 +238,13 @@ def 活写口(T):
         r = fi.收(dict(消息号="C10", 订单号=o2, 事件="延期", 时间="2026-08-30 09:00",
                       工厂=c.execute("SELECT factory FROM factory_msg WHERE order_id=? AND event='接单' "
                                     "AND result='收下' LIMIT 1", (o2,)).fetchone()[0],
-                      承诺完工日="2026-09-25", 原因="染厂停产检修"), 今天)
+                      承诺完工日="2026-09-25", 原因="染厂停产检修"), 用例今天)
         ck("工厂报延期 → 收下,记下原承诺日", r["结论"] == "收下"
            and c.execute("SELECT old_promise FROM factory_delay WHERE order_id=?", (o2,)).fetchone() is not None,
            r["理由"])
         待 = fi.待通知清单(店长["shop"], db=T)
         ck("延期的单进「待通知顾客」清单", any(x["order_id"] == o2 for x in 待), len(待))
-        ck("延期到以后 → 不再算该催", o2 not in {x["订单"] for x in fi.该催清单(今天, 店长["shop"], db=T)})
+        ck("延期到以后 → 不再算该催", o2 not in {x["订单"] for x in fi.该催清单(用例今天, 店长["shop"], db=T)})
         did = [x["id"] for x in 待 if x["order_id"] == o2][0]
         ck("顾问标记已通知 → 从清单里出去", fi.标记已通知(did, 顾问, db=T).get("ok")
            and not any(x["order_id"] == o2 for x in fi.待通知清单(店长["shop"], db=T)))

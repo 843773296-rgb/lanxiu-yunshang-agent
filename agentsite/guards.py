@@ -1193,7 +1193,11 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
             return (f"event_date「{d}」不是 YYYY-MM-DD。"
                     "客户说「明年六月」时要先换算成具体日期再调。")
         # 「将来」按业务上的今天算(同上面注入的那句;机器的今天比演示世界晚,会把 9-10 的婚期当成过去拦掉)
-        if d <= (_业务今天() or dt.date.today().isoformat()):
+        # ⚠️ `_业务今天()` 返回的是 **(今天, 差几天)** 两个值 ——
+        # 2026-09-24 改成带「差几天」之后,这里漏了跟上,当场 TypeError。
+        # 和今天查出的那两处数据错是同一个形状(一处改了、引用它的地方没跟上),
+        # 只不过代码会崩,数据不会。
+        if d <= (_业务今天()[0] or dt.date.today().isoformat()):
             return (f"用件日期 {d} 不在将来。倒推是往前排产,"
                     "过去的日子推不出窗口 —— 跟客户确认是哪一年。")
     # ── 第四条:客户说了「整幅」而工具传「局部」 ──────────────────────
@@ -1241,7 +1245,8 @@ def make_hooks(state):
         # ⚠️ **注入的是业务上的今天(seed.TODAY),不是机器的今天。** 原来这里是 dt.date.today(),
         # 而演示世界的今天是 8-31、机器是 9-22 —— 这一句每轮都命令模型「以 9-22 为准」,
         # 正好和规矩 TL53 打架:工厂回传评测里逾期 3 天被说成 25 天(2026-09-22 查实)。
-        # 日期和 TL53 取自同一个源头(prompts._TODAY ← seed.TODAY),不另写一份。
+        # 日期取自库里的世界日期(seed.TODAY ← world_meta),不另写一份。
+        # TL53 已经不发日期了 —— 它现在只管「别自己拿日期去减」。
         # CLI 自己还会附一句「Today's date is <机器日期>」,关不掉 —— 所以这里要**明说**那个是机器的日期。
         state["prompt"] = inp.get("prompt", "")
         state["calls"] = []
@@ -1303,6 +1308,10 @@ def make_hooks(state):
                 ctx_add += ("\n压缩前**按号取过**的单据:"
                             + "、".join(f"{k} {v}" for k, v in 锚.items())
                             + " —— 这些号以它们为准,不要凭记忆重写。")
+        # **把这一轮真正注进去的原文留下来。**
+        # 调试后台要回答「它凭什么这么说」,而上下文正是第一手依据 ——
+        # 以前只有代码里能看到这段话长什么样,出问题时没人能复现它当时看到的是哪一版。
+        state["注入原文"] = ctx_add
         return {"hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
             "additionalContext": ctx_add}}

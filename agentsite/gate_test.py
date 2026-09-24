@@ -228,7 +228,14 @@ def main():
     print("  " + "=" * 78)
     # 09-22:原来按机器的今天判,演示世界的今天(8-31)比机器(9-22)早 —— 9-05 的婚期会被当成过去拦掉
     import datetime as _dt
-    from prompts import _TODAY as 业务今天
+    # ⚠️ 2026-09-24 改源头:日期不再由 prompts 发(TL53 现在只管「别自己算」),
+    # 这家店的今天在库里(world_meta ← seed.TODAY)。
+    # **一处改了,引用它的地方要跟上** —— 这次是崩在 fromisoformat(None) 上,
+    # 崩了反而好:同一个形状换在数据上就是静默不一致(今天查出的 reason 和 scheme.name 两处)。
+    import sys as _sys, os as _os
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.dirname(
+        _os.path.abspath(__file__))), "backend"))
+    from seed import TODAY as 业务今天
     后五天 = (_dt.date.fromisoformat(业务今天) + _dt.timedelta(days=5)).isoformat()
     前一天 = (_dt.date.fromisoformat(业务今天) - _dt.timedelta(days=1)).isoformat()
     PF = "mcp__kb__plan_for_event"

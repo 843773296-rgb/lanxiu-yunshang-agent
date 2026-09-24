@@ -68,7 +68,14 @@ PAGES = {"/": "station.html", "/panels": "panels.html",
          # 站内导航里不挂它:挂上去店员就会点进来,然后看见一堆看不懂的东西。
          "/debug": "debug.html",
          # 实验对比:同一套题两个版本并排。**先判对比成不成立,再给分。**
-         "/experiments": "experiments.html"}
+         "/experiments": "experiments.html",
+         # AI 调控中心:九个模块的总览。**没做的模块不给入口** —— 见 aihub.py 的自测
+         "/ai": "ai.html"}
+# 调控中心的模块页都用同一份 ai.html(左侧自带模块栏,按路径决定显示哪一摊)——
+# **九个模块抄九份 HTML 的话,改一处框架就得改九处**,而漏的那处不会报错。
+PAGES.update({f"/ai/{k}": "ai.html" for k in
+              ("runs", "cost", "tools", "guards", "skills", "evals", "ops",
+               "prompts", "retrieval", "finetune")})
 
 sys.path.insert(0, HERE)
 import sdk, sessions
@@ -163,6 +170,22 @@ class H(BaseHTTPRequestHandler):
         if p == "/models":
             # 清单由 sdk 从**单价表**长出来,页面不许自己写死一份
             return self._send({"rows": sdk.models(), "default": sdk.default_model_id()})
+        if p == "/ai/data":
+            try:
+                import aihub
+                q = {k: unquote(v) for k, v in
+                     (x.split("=", 1) for x in (urlparse(self.path).query or "").split("&") if "=" in x)}
+                m = q.get("mod", "")
+                if q.get("id"): return self._send(aihub.一条(m, q["id"]))
+                return self._send({"rows": aihub.列表(m)})
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
+        if p == "/ai/overview":
+            try:
+                import aihub
+                return self._send(aihub.概览())
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p.startswith("/exp/"):
             # 实验对比的数据口。版本来自 **git**(一次提交 = 一次跑的存档),
             # 所以这里不碰库、也不另存一份历史 —— 两份历史一定会漂。

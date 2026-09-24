@@ -3646,6 +3646,88 @@ def factory_chase():
                     "告诉顾客会晚),由人去做;挂异常 / 拒收的回传照「为什么」去跟工厂核,别替工厂补数据。"}
 
 
+# 「下一周的订单」到底查哪一列 —— 四个字段是四份完全不同的单子
+_订单日期列 = {
+    "下单": ("created",      "客户下单的时间"),
+    "完工": ("produced_at",  "工厂报完工的时间(定制单才有)"),
+    "发货": ("shipped_at",   "发出的时间"),
+    "交付": ("finished_at",  "到客户手上 / 订单完成的时间"),
+}
+
+
+def orders_by_date(direction=None, days=7, field="下单", limit=50):
+    """**按时间段列订单** —— 「下周有哪些单要交付」「上周下了多少单」这类问法。
+
+    ⚠️ **「下一周」是歧义的,这个工具不替人猜**(业务 2026-09-24 定):
+
+        往后 7 天   今天到 7 天后   —— 「下周要交付的」「接下来一周要发的货」
+        往前 7 天   7 天前到今天   —— 「最近一周下了多少单」「这一周做了多少生意」
+
+    两种读法的单子几乎没有交集,而猜错的表现是**给出一份看起来很正常的清单**,
+    没有任何地方会提示这不是他要的那一批。所以 direction 不给就返回「判不了」,
+    **并且把两种读法各有多少单一起给出来** —— 让人一眼就能选,而不是被空手打回。
+
+    field 决定查哪一列(下单 / 完工 / 发货 / 交付)。四列是四份不同的单子:
+    同一张单「下单」在上个月、「交付」在下周。默认按下单日,**并且在返回里说清用的是哪一列**。
+
+    范围跟身份走:顾问只看自己的,店长看本店,总部运营看全部。
+    「今天」用这家店的今天(seed.TODAY ← 库里的 world_meta),不是机器时钟。
+    """
+    from seed import TODAY
+    import datetime as _dt
+    me = whoami()
+    if not me:
+        return {"error": "没有登录身份,不知道看哪家店"}
+    if field not in _订单日期列:
+        return {"error": f"field 只能是 {'/'.join(_订单日期列)},你给的是「{field}」",
+                "说明": {k: v[1] for k, v in _订单日期列.items()}}
+    col, 释 = _订单日期列[field]
+    今 = _dt.date.fromisoformat(TODAY)
+    天 = max(1, min(int(days or 7), 366))
+
+    where, args = [], []
+    if me.get("role") == "顾问":
+        where.append("advisor_no=?"); args.append(me.get("no"))
+    elif me.get("role") != "总部运营":
+        where.append("shop=?"); args.append(me.get("shop"))
+    条 = (" AND " + " AND ".join(where)) if where else ""
+
+    def 数(起, 止):
+        with _c() as c:
+            return c.execute(f'SELECT COUNT(*) FROM ordr WHERE "{col}" IS NOT NULL '
+                             f'AND "{col}">=? AND "{col}"<=?{条}',
+                             (起.isoformat(), 止.isoformat() + " 23:59:59", *args)).fetchone()[0]
+
+    往后起, 往后止 = 今, 今 + _dt.timedelta(days=天)
+    往前起, 往前止 = 今 - _dt.timedelta(days=天), 今
+    if direction not in ("往后", "往前", "future", "past"):
+        return {"判不了": f"「{天} 天」要往哪边数,没说清 —— 这两种读法的单子几乎没有交集",
+                "今天": TODAY, "按哪一列": f"{field}({col}:{释})",
+                "候选": [
+                    {"direction": "往后", "含义": f"{往后起} ~ {往后止}(今天到 {天} 天后)",
+                     "有多少单": 数(往后起, 往后止)},
+                    {"direction": "往前", "含义": f"{往前起} ~ {往前止}({天} 天前到今天)",
+                     "有多少单": 数(往前起, 往前止)}],
+                "note": "**不替你挑一个** —— 猜错的表现是给出一份看起来很正常的清单,"
+                        "而没有任何地方会提示这不是你要的那一批。把 direction 定下来再调一次。"}
+    往后 = direction in ("往后", "future")
+    起, 止 = (往后起, 往后止) if 往后 else (往前起, 往前止)
+    with _c() as c:
+        rs = [dict(zip(("订单", "客户", "类型", "状态", "金额", "门店", "顾问", field),
+                       r)) for r in c.execute(
+            f'SELECT id, customer_id, kind, status, amount, shop, advisor_no, "{col}" FROM ordr '
+            f'WHERE "{col}" IS NOT NULL AND "{col}">=? AND "{col}"<=?{条} '
+            f'ORDER BY "{col}" {"ASC" if 往后 else "DESC"} LIMIT ?',
+            (起.isoformat(), 止.isoformat() + " 23:59:59", *args, max(1, min(int(limit or 50), 200))))]
+    return {"今天": TODAY, "方向": "往后" if 往后 else "往前",
+            "区间": f"{起} ~ {止}", "按哪一列": f"{field}({col}:{释})",
+            "范围": ("我自己的" if me.get("role") == "顾问"
+                    else ("全部门店" if me.get("role") == "总部运营" else me.get("shop"))),
+            "单数": len(rs), "明细": rs,
+            "note": f"按「{field}」这一列排的。同一张单「下单」和「交付」差着好几周,"
+                    f"要的是另一头就换 field 再调一次。"}
+
+
 def fitting_queue(order=None):
     """**白坯试衣看板** —— 哪些单该试、试了没有、签没签字。
 
@@ -4242,6 +4324,7 @@ SHOP_SCHEMAS=[
  {"name":"delay_pending","description":"**工厂延期了、还没告诉顾客的单**(只读)。带原定完工日、延到什么时候、为什么、归属顾问、是不是你的。**联系顾客是对外动作,由人去做**;通知完用 mark_delay_told 标一下,不标这份清单只进不出。","input_schema":{"type":"object","properties":{}}},
  {"name":"mark_delay_told","description":"**(写)记下「已经把延期告诉顾客了」。** 只标本店的;标之前要跟用户确认他真的通知过了 —— 标错了这张单就从清单里消失,顾客再也等不到那个电话。","input_schema":{"type":"object","properties":{"delay_id":{"type":"integer"}},"required":["delay_id"]}},
  {"name":"rollback_order","description":"**(写)人工回退**:工厂发错件(退回等发货)/ 到店发现要返工(退回生产中,算重新生产)。**只有店长能点**,必须写清哪件不对、怎么发现的;运费公司承担。这是系统里唯一能让订单往回走的口子,回退记录一直留着。cause 只能是「发错件」或「到店返工」,note 写理由。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"cause":{"type":"string","enum":["发错件","到店返工"]},"note":{"type":"string"}},"required":["order_id","cause","note"]}},
+ {"name":"orders_by_date","description":"**按时间段列订单**(只读)。「下周有哪些单要交付」「最近一周下了多少单」这类问法用它 —— 这是唯一一个不用先给订单号或客户号就能列单的入口。\n\n⚠️ **「下一周」是歧义的,这个工具不替人猜**:`direction` 要么「往后」(今天→N 天后,问的是接下来要发生什么)、要么「往前」(N 天前→今天,问的是刚过去这段做了多少)。不给 direction 它会返回「判不了」,并把两种读法各有多少单一起给你 —— **把这两个数原样告诉用户让他选**,不要自己挑一个:两种读法的单子几乎没有交集,而猜错的表现是一份看起来很正常的清单,没有任何地方会提示这不是他要的那一批。\n\n`field` 决定查哪一列:**下单 / 完工 / 发货 / 交付**,四列是四份不同的单子(同一张单「下单」在上个月、「交付」在下周)。用户说「下周要交的货」是**交付**,说「这周下了多少单」是**下单**;拿不准就问。默认按下单日,返回里会写明用的是哪一列。\n\n`days` 默认 7。范围跟身份走:顾问只看自己的,店长看本店,总部运营看全部。","input_schema":{"type":"object","properties":{"direction":{"type":"string","enum":["往后","往前"],"description":"往后=今天到 N 天后;往前=N 天前到今天。不给会返回判不了"},"days":{"type":"integer","description":"几天,默认 7"},"field":{"type":"string","enum":["下单","完工","发货","交付"],"description":"按哪一列的时间算,默认下单"},"limit":{"type":"integer","description":"最多返回几条,默认 50"}}}},
  {"name":"factory_chase","description":"**该催工厂的单 + 要人看的工厂回传**(只读)。定制单的生产和发货**只认工厂回传**(自有工坊和外发工厂都有,谁接的单谁报),门店和后台都不能手动推状态。这里列出:① 该催的单 —— 开工超过 3 天工厂没回接单(单可能没发过去),或过了工厂承诺的完工日还没完工(该先告诉顾客会晚),带生产方、承诺完工日、归属顾问、是不是你的;② 要人看的回传 —— 挂异常(查无此单、单已取消、别家报了这张单、车间工单还在制却报完工)/ 拒收(缺物流单号、时间不对)/ 暂存(来早了,等前一条)。店长看本店,总部运营看全部。顾问问「我有哪些单该去催工厂」「这单怎么还没做好」也用这个。","input_schema":{"type":"object","properties":{}}},
  {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**定制单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。**哪些款必须试(业务 09-22 定)**:重工、全定制(顾问亲自量的尺寸判出)、婚服(商品挂了「婚礼婚服」场合标签)三类命中任一即必试;没命中但有一类判不了 → 判不了,**不当成不必试**;重工的两个门槛(装饰工序最慢 ≥25 天 / 单项工艺起步 ≥12 天)业务 09-22 确认。**开裁这道闸会拦**:该试的要试过、而且客户签了字,整单才许开裁 —— 看板里「待开裁的单」列出每张待生产单能不能裁、卡在哪。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
  {"name":"record_pickup","description":"**交付签收的三个动作(真的写进去)**:action=「到店代收」(**工厂的货到了门店、顾客还没来** —— 这一步只是门店收货入库,不涉及顾客,也不是签收;定制单「已发货」指的是工厂发往门店,不是寄给顾客)/「取件方式」(mode=到店取 或 转寄;**转寄要 tracking_no**,业务 09-22:顾问先邀约顾客到店取,实在来不了才转寄)/「不合身」(顾客试了**某一件**不合身 → 那一件不算签收、留店转返修,同包裹里合身的件照常签收拿走;issue 写清哪里不合身,item 指哪一件)。**分批发货(业务 09-23)**:一张单可能分几个包裹,每个包裹各自到店、各自取件方式、各自一个码 —— 单子不止一个包裹时要给 pkg(包裹号),不给会反问,**不许替用户挑一个**。只能动本店的单,经手人就是你自己(不收工号)。「不合身」时 matches_record(成衣和订单留存数据对得上吗)、other_defect(有没有别的瑕疵)、our_fault(查出来是「导购」或「打版」的问题)都是**查出来的事实,不知道就别填** —— 返回的判责建议(对得上且无别的瑕疵 → 顾客承担、收费;导购 / 打版问题 → 企业承担、免费)**不是结论,由售后负责人确认**。⚠️ 动手前先跟用户对一遍单号和动作。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"action":{"type":"string","enum":["到店代收","取件方式","不合身"]},"pkg":{"type":"string","description":"包裹号。一单分了好几个包裹时必须给"},"item":{"type":"string","description":"订单行号(哪一件)。登记不合身时,包裹里不止一件就必须给"},"mode":{"type":"string","enum":["到店取","转寄"]},"tracking_no":{"type":"string"},"issue":{"type":"string"},"matches_record":{"type":"boolean"},"other_defect":{"type":"boolean"},"our_fault":{"type":"string","enum":["导购","打版"]}},"required":["order_id","action"]}},
@@ -5142,7 +5225,7 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

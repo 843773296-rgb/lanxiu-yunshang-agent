@@ -633,8 +633,17 @@ def _journey(cust, dry=False):
                    ("发出", v_start + datetime.timedelta(days=day - 6))):
         ex("UPDATE factory_msg SET at=?, received_at=? WHERE order_id=? AND event=?",
            _t.strftime("%Y-%m-%d %H:%M"), _t.strftime("%Y-%m-%d %H:%M"), oid, _e)
-    ex("UPDATE factory_msg SET promise_date=date(?) WHERE order_id=? AND event='接单'",
-       (v_start + datetime.timedelta(days=_裁日 + 40)).strftime("%Y-%m-%d"), oid)
+    # ⚠️ **改了 promise_date,就得改复述它的那句话。**
+    # 收() 落库时 reason 写的是「工厂接单,承诺 <当时那个值> 完工」,而当时那个值
+    # 是机器时钟的今天(上面 584 行 `承诺完工日=_now[:10]`,先收下再按剧本回填)。
+    # 只更字段不更 reason 的话,**同一行里结构化字段和它自己的说明对不上** ——
+    # 2026-09-24 平移世界时露出来:两张不同的单,说明里写着同一个完工日,
+    # 而那个日子正是造数据那天的机器日期。
+    # 在页面和助手那里,reason 是**给人看的那一句**,所以错的是被人读到的那一半。
+    _承 = (v_start + datetime.timedelta(days=_裁日 + 40)).strftime("%Y-%m-%d")
+    ex("UPDATE factory_msg SET promise_date=date(?) WHERE order_id=? AND event='接单'", _承, oid)
+    ex("UPDATE factory_msg SET reason=? WHERE order_id=? AND event='接单' AND reason LIKE '工厂接单,承诺%'",
+       f"工厂接单,承诺 {_承} 完工", oid)
     # 开裁时间也按剧本回填(transit 落的是「现在」)—— 放在已生产之前
     ex("UPDATE ordr SET cut_at=? WHERE id=? AND cut_at IS NOT NULL",
        (v_start + datetime.timedelta(days=_裁日)).strftime("%Y-%m-%d %H:%M"), oid)

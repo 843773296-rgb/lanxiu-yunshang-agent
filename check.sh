@@ -6,7 +6,7 @@ if [ -f backend/.rebuilding ] && kill -0 "$(cat backend/.rebuilding)" 2>/dev/nul
   echo "⏸  库正在重建(pid $(cat backend/.rebuilding)),这时候跑出来的红不代表任何东西 —— 等它跑完再跑"
   exit 3
 fi
-FAIL=0
+FAIL=0; BAD=0; CRASH=0
 # .pyc 缓存的坑,踩过两次,**两次是同一个坑的两半**:
 #
 #   第一半(不写):咬合测试把某个模块改坏又在**同一秒内**改回来,而文件大小正好没变 ——
@@ -32,11 +32,22 @@ export PYTHONDONTWRITEBYTECODE=1
 # 于是「查不出为什么红」会被当成「这条检查坏了」。
 #
 # awk 输出逐字一致(验过),而且喂它二进制垃圾也不崩。
+# ⚠️ **「判定不过」和「根本没跑完」要分开数。**
+# 2026-09-24:我自己 grep 输出里的「❌」来判断门禁绿不绿,而 gate_test 崩在
+# TypeError 上 —— **崩溃不打印那个字**,于是「0 个 ❌」被我读成了全绿,
+# 是并行会话发消息才知道是红的。
+# 崩了和判定不过,下一步完全不同:一个是「这条检查压根没验过」,
+# 一个是「验了,不合格」。收尾行把两个数分开报。
 run(){ printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
   if "$@" > /tmp/chk.out 2>&1; then
     tail -3 /tmp/chk.out | awk '{print "  " $0}'
   else
-    FAIL=1; awk '{print "  " $0}' /tmp/chk.out; printf "  \033[31m✗ 失败\033[0m\n"
+    FAIL=1; awk '{print "  " $0}' /tmp/chk.out
+    if grep -qE 'Traceback \(most recent call last\)|^[A-Za-z]*Error:|command not found|No such file' /tmp/chk.out; then
+      CRASH=$((CRASH + 1)); printf "  \033[31m✗ 崩了(这条检查没验过)\033[0m\n"
+    else
+      BAD=$((BAD + 1)); printf "  \033[31m✗ 失败\033[0m\n"
+    fi
   fi }
 run "数据层 · truth 表隔离"   python3 backend/selftest.py
 run "写入口身份闸 · 没登录不许改业务数据(打 HTTP 层)" python3 backend/authgate_check.py
@@ -139,6 +150,9 @@ run "树状记录仪 · 自测(抹凭据/截断/排树/孤儿不丢)" python3 ag
 run "树状记录仪结构 · 接没接上、树是不是树、凭据没进日志(8 条咬合)" python3 agent/spans_check.py
 run "实验对比 · 先判对比成不成立再给分(题号字段各套不同/换模型拒收)" python3 agent/compare.py --selftest
 run "页面骨架 · 一块放错父容器,框架正常但内容被顶出可视区(2 条咬合)" python3 agentsite/layout_check.py
+run "AI 调控中心 · 没做的模块不给假入口;咨询详情五段齐(21 条自测)" python3 agentsite/aihub.py --selftest
+run "演示世界的日期 · 世界跟着真实日期走,库说的和数据实际的要对得上(4 条咬合)" python3 tools/shift_world.py --check
+run "完成日不许在未来 · 旅程排到今天之后的单要挪回来" python3 tools/clamp_future_done.py
 run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py
 run "相容矩阵 · 2025 格推导/对账/落库" python3 knowledge/derive_combo.py
 run "版型库与 BOM · 推档/裁片/物料对账" python3 knowledge/derive_pattern.py
@@ -222,5 +236,10 @@ run "评测指纹 · 行数没变但内容改了,指纹也得变(7 条自测)" p
 run "首次启动 · 建出来的库要和在用的库一样全(5 条咬合)" python3 backend/initpath_check.py
 run "交接门禁 · 过 80% 不许收工;交接在项目根、会话在子目录也要找得到;照提示提前刷了要放行(18 条)" node tools/hooks/handoff-gate.mjs --selftest
 printf "\n%s\n" "────────────────────────────────────────"
-if [ $FAIL -eq 0 ]; then printf "\033[32m✅ 全部检查通过\033[0m\n"; else printf "\033[31m❌ 存在失败项\033[0m\n"; fi
+if [ $FAIL -eq 0 ]; then printf "\033[32m✅ 全部检查通过\033[0m\n"
+else
+  printf "\033[31m❌ 判定不过 %d 条 · 崩了 %d 条\033[0m\n" "$BAD" "$CRASH"
+  [ "$CRASH" -gt 0 ] && printf "   \033[31m崩了的那几条**一条都没验过**\033[0m —— 和「验了不合格」不是一回事,先修崩的\n"
+  printf "   ⚠️ **判绿看退出码,别数输出里的 ❌** —— 崩溃 / 超时 / 没跑到底,这三种都不打印那个字\n"
+fi
 exit $FAIL

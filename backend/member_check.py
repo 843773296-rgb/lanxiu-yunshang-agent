@@ -34,7 +34,14 @@ if not rows:
     print("❌ 一条 BP-05 用例都取不到 —— 种子数据的口径变了,先看 seed.py"); sys.exit(1)
 
 import datetime as dt
-T = dt.date(2026, 8, 31)     # 种子的基准日。**判定不取当前日期**,所以对账可复现。
+# ⚠️ **从 seed 读,不要在这里抄一个日期。**
+# 2026-09-24 世界改成跟着真实日期走之后,这里写死的 2026-08-31 让人工调整的
+# 30 天时效窗算错了 —— E-A4-02「35 天前调的(已超窗)」被算成 11 天前,于是
+# 判定仍然沿用人工标注。**数据是对的,尺子停在了过去。**
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from seed import TODAY as _T0
+T = dt.date.fromisoformat(_T0)   # 世界的今天(库里的 world_meta);判定不取机器时钟,所以对账可复现
 # ── 咬合记录 ──────────────────────────────────────────────────────────
 # 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
 # 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后

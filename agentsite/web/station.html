@@ -15,6 +15,9 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 #side{width:264px;flex:none;background:var(--side);border-right:1px solid var(--line);
   display:flex;flex-direction:column;height:100vh}
 #side header{padding:18px 16px 10px}
+#side #aihub{margin-top:auto;display:block;padding:11px 16px;border-top:1px solid var(--line);
+  font-size:13px;color:var(--dim);text-decoration:none;flex:none}
+#side #aihub:hover{background:#fff;color:var(--ink)}
 #side h1{margin:0 0 14px;font-size:15px;font-weight:600;letter-spacing:.02em}
 #side h1 small{display:block;font-weight:400;font-size:11px;color:var(--dim);letter-spacing:0}
 #newbtn{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:9px;
@@ -244,6 +247,10 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
     <button id="gallery">☰ 全部助手</button>
   </header>
   <div id="convs"></div>
+  <!-- 调试入口放在左栏**底部**:用户 2026-09-24 要的「从左侧侧边栏进」。
+       放底部而不是顶部,是因为这一栏的主角是会话列表 ——
+       而这个入口一天点一两次,顶部的位置该留给天天点的东西。 -->
+  <a id="aihub" href="/ai" title="trace / span / 判分器 —— 自己调试用,不是给门店的">⚙ AI 调控中心</a>
 </div>
 
 <div id="main">
@@ -830,7 +837,7 @@ function evEvidence(){
       ? Object.entries(t.args).map(([k, v]) =>
           `${esc(k)}=${esc(String(typeof v === "object" ? JSON.stringify(v) : v).slice(0, 60))}`).join(" · ")
       : "(没带参数)";
-    return `<div class="toolrow" data-tool="${esc(n)}"><b>${esc(n)}</b><br><code>${a}</code>
+    return `<div class="toolrow"><b>${esc(n)}</b><br><code>${a}</code>
       <div class="ret">${last.trace_id ? "返回值读取中…" : "(这一轮没记 trace,看不到返回值)"}</div></div>`;
   }).join("") || `<div class="empty">这一轮<b>一个工具都没调</b> —— 结论没有取数撑着,要当心。</div>`;
   const 体检 = (last.guard_violations || []).map(v =>

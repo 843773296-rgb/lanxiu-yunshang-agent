@@ -169,6 +169,16 @@ rule("B3", "着装人的账户 == 它建档门店档案的账户",
      "**「指向存在的对象」不等于「指向对的对象」** —— 错位那次指的也是真实客户,"
      "只有两条路径对账才抓得到")
 
+# ⚠️ **从 seed 直接导,不要用正则去抠源码里的字面量。**
+# 原来这里是 `re.search(r'TODAY\s*=\s*"..."')`。2026-09-24 把 TODAY 改成
+# 从库里读之后,那个正则**再也匹配不到**,于是静默退回写死的 2026-08-31 ——
+# 检查照常跑、照常打印一个基准日,只是那个日子已经不是世界的今天了。
+# **一个 except 里退回硬编码的兜底,和没有兜底一样危险**:它让失败长得像成功。
+try:
+    from seed import TODAY as _BASE
+except Exception as _e:
+    raise SystemExit(f"读不到 seed.TODAY({_e})—— 这条检查的基准日没有第二个来源,不猜")
+
 # ── C4:**已经发生的事,时间不能在未来** ────────────────────────────
 # C3 查的是「不早于创建时间」,不查「不晚于今天」—— 而我刚在这上面栽了:
 # 造数据时拿**订单完成日**去填客户的「最近互动」,而订单完成在一个月后,
@@ -185,7 +195,10 @@ _FUTURE = [("customer", "last_interact", "最近互动"),
            ("ordr", "paid_at", "付款时间"),
            ("ordr", "finished_at", "订单完成"),
            ("schedule", "assigned_at", "派单时间"),
-           ("followup", "created", "跟进时间"),
+           # ⚠️ 这一列原来写的是 `followup.created`,而表里根本没有这个列 ——
+           # 外面那个 `except: pass` 把 OperationalError 吞了,于是**「跟进时间」这一项
+           # 从加进来那天起就没查过一次**,而 C4 一直打勾。2026-09-24 把 pass 改掉后当场露出来。
+           ("followup", "ts", "跟进时间"),
            # 09-22 补:造旅程往回挪时间时这三列漏了,落在 10 月,而这条当时没查它们所以没红
            ("fitting", "ts", "白坯试衣时间"),
            ("fitting", "signed_at", "试衣签字时间"),
@@ -194,10 +207,19 @@ _fut = []
 for _t, _col, _cn in _FUTURE:
     try:
         _fut += [dict(表=f"{_t}.{_col}", 说明=_cn, id=r[0], 时间=r[1]) for r in c.execute(
+            # ⚠️ **拿世界的今天比,不是机器时钟。**
+            # 原来这里是 `date('now','localtime')`。演示世界钉在 2026-08-31 那阵,
+            # 机器时钟比世界早了三周,于是「完成日在世界的未来」这种记录**一律测不出来** ——
+            # 7 张旅程单就这么藏了很久。世界改成跟着真实日期走之后当场露了出来。
             f"SELECT id,{_col} FROM {_t} WHERE {_col} IS NOT NULL "
-            f"AND substr({_col},1,10) > date('now','localtime') LIMIT 3")]
-    except Exception:
-        pass
+            f"AND substr({_col},1,10) > ? LIMIT 3", (_BASE,))]
+    except Exception as _e:
+        # ⚠️ **不许 `pass`。** 原来这里是空的 —— 于是查询一旦写坏(比如某张表还没建),
+        # 这一列就悄悄不查了,而 C4 照样打勾。2026-09-24 我自己改这段时当场踩中:
+        # 库里明明有 7 张「完成日在未来」的单,检查却是绿的。
+        # **被吞掉的异常,和「查过了没问题」在输出上完全一样。**
+        _fut.append(dict(表=f"{_t}.{_col}", 说明=_cn, id="(查不了)",
+                         时间=f"{type(_e).__name__}: {_e}"))
 rule("C4", "已经发生的事,时间不能在未来", _fut,
      "**未来日期在单条记录上完全合法** —— 格式对、类型对、不早于创建时间,"
      "只有和「今天」比才看得出来。而生命周期按「多久没互动」算,"
@@ -221,14 +243,6 @@ rule("C4", "已经发生的事,时间不能在未来", _fut,
 #
 # 改成在**基准日**上比:谁写的 idle_days,就用谁的那天当基准。
 # 种子写的用种子的基准日;旅程脚本写的用它写入那天(它自己会把两者一起算)。
-_BASE = "2026-08-31"          # 和 seed.py 的 T 同一个值
-try:
-    import re as _re
-    _seed = open(os.path.join(HERE, "seed.py"), encoding="utf-8").read()
-    _m = _re.search(r'TODAY\s*=\s*"(\d{4}-\d{2}-\d{2})"', _seed)
-    if _m: _BASE = _m.group(1)      # **从 seed 读,不在这儿抄一份**
-except Exception:
-    pass
 _incons = [dict(客户=r[0], 最近互动=r[1], idle_days=r[2], 生命周期=r[3],
                 按基准日应为=r[4], 基准日=_BASE)
            for r in c.execute("""
