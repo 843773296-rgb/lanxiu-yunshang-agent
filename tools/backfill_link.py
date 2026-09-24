@@ -90,7 +90,7 @@ def main():
         "SELECT id, customer_id, created FROM ordr WHERE kind='定制品订单'")]
     场 = 接待场次(c)
 
-    按码, 要写 = {}, []
+    按码, 要写, 要撤 = {}, [], []
     for o in 单:
         前 = [x for x in 场.get(o["customer_id"], [])
               if (x["日期"] or "") < (o.get("created") or "")]
@@ -98,9 +98,21 @@ def main():
         按码[码] = 按码.get(码, 0) + 1
         if 挂:
             要写.append((挂["日期"], 挂["经手人"], 挂["证据"], 来路, o["id"]))
+        else:
+            要撤.append((来路, o["id"]))
 
     c.executemany("UPDATE ordr SET recept_at=?, recept_by=?, recept_evi=?, appt_src=? "
                   "WHERE id=?", 要写)
+    # ── 不该挂的要**撤掉** ────────────────────────────────────────
+    # ⚠️ 这个脚本原来**只会加,不会撤** —— 判出来不该挂的,它什么都不做,
+    # 于是上一次挂上的那条一直留着。以前没人改过日期,所以这个缺陷一直没露;
+    # 2026-09-24 世界整体平移之后,有一张单的接待日不再对得上任何一次量体,
+    # 它从「该挂」变成「不该挂」,而库里那条旧的还在 —— 自检当场 3546 vs 3547。
+    #
+    # **「重算」如果只会往上加,它就不是重算,是追加。**
+    # 两者在第一次跑的时候长得一模一样,只有在输入变了之后才分得开。
+    c.executemany("UPDATE ordr SET recept_at=NULL, recept_by=NULL, recept_evi=NULL, appt_src=? "
+                  "WHERE id=? AND appt_src='接待关联'", 要撤)
     c.commit()
 
     # ── 自检:写进去的和判出来的要对得上 ────────────────────────
