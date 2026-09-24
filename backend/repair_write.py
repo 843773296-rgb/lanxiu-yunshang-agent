@@ -19,7 +19,7 @@
 判责取决于「成衣和留存数据对不对得上」,拿错一次量体就是收错了人的钱。
 量体按**着装人**取,不按客户号取(一家人的尺寸不许混,同 kb_fit 那次)。
 """
-import os, sys, sqlite3, datetime
+import os, sys, sqlite3, datetime, json as _json
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
@@ -80,8 +80,12 @@ def _找件(order_id, item):
     return hit[0], None
 
 
-def 判责建议(来源, issue, order_item_id, 不合身事实=None):
-    """给店长看的**建议**,不是结论。返回 dict。"""
+def 判责建议(来源, issue, order_item_id, 不合身事实=None, 尺寸差=None):
+    """给店长看的**建议**,不是结论。返回 dict。
+
+    尺寸差  {部位: 差多少厘米} —— 顾问量了成衣和量体的差才有。业务 09-24:超公差我方免费返修,
+            **这一支排在「签收已确认合身」前面**;量不出来就不传,判定会往下走,不会乱判。
+    """
     import liability, pickup
     量, 量话 = 下单量体(order_item_id)
     if 来源 == "签收不合身":
@@ -95,8 +99,16 @@ def 判责建议(来源, issue, order_item_id, 不合身事实=None):
     签 = rows("SELECT fit_result FROM pickup WHERE order_id=?", oid) if oid else []
     # 没有下单量体 = 记录缺失(我方没按规矩量),不是「拿别的量体顶」;连给谁做都不知道才判不了
     有人 = bool((rows("SELECT wearer_id FROM ordr_item WHERE id=?", order_item_id) or [{}])[0].get("wearer_id"))
+    # 举证时间窗(业务 09-24)要知道什么时候签收的、今天是哪天 —— **今天用演示世界的今天**,
+    # 不用机器时钟(09-23 踩过:助手拿机器日期算天数,把 3 天说成 25 天)
+    from seed import TODAY as _今天
+    签于 = ((rows("SELECT MAX(fit_at) t FROM pickup_item WHERE order_id=? AND fit_result='合身'", oid)
+            or [{}])[0].get("t") if oid else None)
+    if not 签于 and oid:
+        签于 = (rows("SELECT fit_at FROM pickup WHERE order_id=?", oid) or [{}])[0].get("fit_at")
     j = liability.judge(issue, measure_full=(True if 量 else (False if 有人 else None)),
-                        签收合身=bool(签 and 签[0]["fit_result"] == "合身"))
+                        签收合身=bool(签 and 签[0]["fit_result"] == "合身"),
+                        尺寸差=尺寸差, 签收于=签于, 今天=_今天)
     谁 = {"我方": "企业", "客方": "顾客"}.get(j.get("责任"), "判不了")
     return dict(建议责任方=谁, 建议处理=j.get("处理") or "转人工", 为什么=j.get("依据") or "",
                 归类=j.get("归类"), 下单量体=量话)
@@ -125,7 +137,11 @@ def create(d, me, 来源="售后"):
                   (mid, d.get("order_id"), it["customer_id"], it["name"], "待确认", issue, it["shop"],
                    me["no"], now, now, "澜绣", it["id"]))
         c.execute("INSERT INTO maintain_decision(maintain_id, source) VALUES(?,?)", (mid, 来源))
-    建议 = 判责建议(来源, issue, it["id"], d.get("不合身事实"))
+        if d.get("尺寸差"):
+            # 实测差是**报修单的事实**(顾问量出来的),挂在 maintain 上;判责记录只记「谁判的、判成什么」
+            c.execute("UPDATE maintain SET 尺寸差=? WHERE id=?",
+                      (_json.dumps(d.get("尺寸差"), ensure_ascii=False), mid))
+    建议 = 判责建议(来源, issue, it["id"], d.get("不合身事实"), d.get("尺寸差"))
     log_op(me["name"], "maintain", mid, "—", "待确认", True, "REPAIR_NEW",
            f"{me['name']} 新建返修单 {mid}({来源}):订单 {d.get('order_id')}「{it['name']}」{issue[:40]}",
            {"role": me["role"]})
@@ -154,7 +170,27 @@ def decide(d, me):
     记录 = dict(判责人=me["no"], 责任方=d.get("liable"), 处理=d.get("plan"),
                预估费用=d.get("fee_est"), 顾客同意于=_now() if 同意 else None)
     能, 话 = repair.判完了没有(记录)
+    # ── 金额授权(业务 2026-09-24)──────────────────────────────────────
+    # 管的是**我方要出的钱**(免费返修的成本、赔付),不是收顾客的钱。
+    # ≤1000 店长直接定;1000–5000 报总部批了才能开工;>5000 走专项,店长和总部都不能直接定。
+    批 = (d.get("approved_by") or "").strip()
+    授权话 = None
+    if 能 and d.get("liable") == "企业":
+        import liability as _lb
+        谁, 授权话 = _lb.谁能拍板(d.get("fee_est") or 0)
+        if 谁 == "专项" :
+            能, 话 = False, (授权话 + " —— 这张单停在「待确认」,按专项流程走,别在这儿定")
+        elif 谁 == "总部" and not 批:
+            能, 话 = False, (授权话 + ";填上批准人(approved_by)和批准说明再来")
+        elif 谁 == "总部" and 批 and not (d.get("approve_note") or "").strip():
+            return dict(ok=False, code="NO_APPROVE_NOTE",
+                        reason="记「总部批了」要写批准说明(谁、什么时候、批了多少)—— 没有说明的批准等于没批")
+        elif 谁 == "总部" and 批 == me["no"]:
+            return dict(ok=False, code="SELF_APPROVE",
+                        reason="判责人不能是批准人 —— 同一个人既判又批,这条授权线等于没有")
     with sqlite3.connect(DB) as c:
+        c.execute("UPDATE maintain_decision SET approved_by=?, approve_note=? WHERE maintain_id=?",
+                  (批 or None, (d.get("approve_note") or "").strip() or None, m["id"]))
         c.execute("UPDATE maintain_decision SET liable=?, plan=?, fee_est=?, customer_agreed_at=?, agree_note=?, "
                   "decided_by=?, decided_at=? WHERE maintain_id=?",
                   (d.get("liable"), d.get("plan"), d.get("fee_est"), 记录["顾客同意于"], 凭据 or None,

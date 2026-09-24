@@ -2305,14 +2305,16 @@ def create_repair(order_id, issue, item=None):
     return r
 
 
-def decide_repair(maintain_id, liable, plan, fee_est=None, customer_agreed=False, agree_note=None):
+def decide_repair(maintain_id, liable, plan, fee_est=None, customer_agreed=None, agree_note=None,
+                  approved_by=None, approve_note=None):
     """**店长判责**(真的写进去):谁承担(顾客 / 企业)、返修还是重做;判给顾客的要录预估费用,
     记顾客同意要写凭据。判完了才进「待入库」。**只有店长能判**(业务 09-22)。"""
     import repair_write as rw
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁在判责 —— 请先登录")
     r = rw.decide(dict(maintain_id=maintain_id, liable=liable, plan=plan, fee_est=fee_est,
-                       customer_agreed=customer_agreed, agree_note=agree_note), me)
+                       customer_agreed=customer_agreed, agree_note=agree_note,
+                       approved_by=approved_by, approve_note=approve_note), me)
     if r.get("ok"): _agent_log(me, r.get("code", "REPAIR_DECIDE"), r.get("reason", ""))
     return r
 
@@ -3877,6 +3879,18 @@ def channel_compare(include_sim=False):
     return _nz(out)
 
 
+def _签收日期(order_id):
+    """这一单什么时候签收的 —— 按件签收之后取**最后一件**合身的时间,没有就退回订单级那一行。"""
+    r = _rows("SELECT MAX(fit_at) t FROM pickup_item WHERE order_id=? AND fit_result='合身'", order_id)
+    return (r[0]["t"] if r else None) or (
+        (_rows("SELECT fit_at FROM pickup WHERE order_id=?", order_id) or [{}])[0].get("fit_at"))
+
+
+def _seed_today():
+    from seed import TODAY
+    return TODAY
+
+
 def get_maintain(maintain_id=None, customer=None, status=None):
     """售后维修工单的现场。**只给事实,判责结论要另外查判定表。**"""
     where, args = [], []
@@ -3952,6 +3966,15 @@ def get_maintain(maintain_id=None, customer=None, status=None):
              # 「**他本人穿过并且认可了**」—— 两句话在判责时的分量完全不同。
              "白坯试衣": _白坯试衣(m["order_id"], m["item"],
                                    (o[0]["status"] if o else None)),
+             # ── 业务 2026-09-24 加的两个事实 ──────────────────────────────
+             # **实测差**:顾问量的成衣和量体的差({"腰围": 4})。超公差 → 我方免费返修,
+             # 而且**这一支排在「签收已确认合身」前面**;**没量就是没量**,不填不等于在公差内。
+             "实测尺寸差": json.loads(m["尺寸差"]) if m.get("尺寸差") else None,
+             "公差表": {"领围": 1.0, "胸围": 1.5, "腰围": 1.5, "衣长": 2.0, "裙长": 2.0, "通袖长": 2.0},
+             # **签收日期 + 今天**:证据不全时按 6 个月举证时间窗判(6 个月内默认我方)。
+             # 今天用**演示世界的今天**,不用机器时钟 —— 09-23 栽过一次。
+             "签收日期": _签收日期(m["order_id"]),
+             "今天": _seed_today(),
              "该客户历史维修次数": hist}
         out.append(d)
     return {"hit": len(rows), "工单": out,
@@ -4224,7 +4247,7 @@ SHOP_SCHEMAS=[
  {"name":"record_pickup","description":"**交付签收的三个动作(真的写进去)**:action=「到店代收」(**工厂的货到了门店、顾客还没来** —— 这一步只是门店收货入库,不涉及顾客,也不是签收;定制单「已发货」指的是工厂发往门店,不是寄给顾客)/「取件方式」(mode=到店取 或 转寄;**转寄要 tracking_no**,业务 09-22:顾问先邀约顾客到店取,实在来不了才转寄)/「不合身」(顾客试了**某一件**不合身 → 那一件不算签收、留店转返修,同包裹里合身的件照常签收拿走;issue 写清哪里不合身,item 指哪一件)。**分批发货(业务 09-23)**:一张单可能分几个包裹,每个包裹各自到店、各自取件方式、各自一个码 —— 单子不止一个包裹时要给 pkg(包裹号),不给会反问,**不许替用户挑一个**。只能动本店的单,经手人就是你自己(不收工号)。「不合身」时 matches_record(成衣和订单留存数据对得上吗)、other_defect(有没有别的瑕疵)、our_fault(查出来是「导购」或「打版」的问题)都是**查出来的事实,不知道就别填** —— 返回的判责建议(对得上且无别的瑕疵 → 顾客承担、收费;导购 / 打版问题 → 企业承担、免费)**不是结论,由售后负责人确认**。⚠️ 动手前先跟用户对一遍单号和动作。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"action":{"type":"string","enum":["到店代收","取件方式","不合身"]},"pkg":{"type":"string","description":"包裹号。一单分了好几个包裹时必须给"},"item":{"type":"string","description":"订单行号(哪一件)。登记不合身时,包裹里不止一件就必须给"},"mode":{"type":"string","enum":["到店取","转寄"]},"tracking_no":{"type":"string"},"issue":{"type":"string"},"matches_record":{"type":"boolean"},"other_defect":{"type":"boolean"},"our_fault":{"type":"string","enum":["导购","打版"]}},"required":["order_id","action"]}},
  {"name":"verify_fit_code","description":"**核验顾客给的 6 位码 = 签收(真的写进去)**:通过后**这个包裹里还没登记不合身的件**全部签收,顾客可以拿走;**整单所有未作废包裹的每一件都签收合身**,订单才「已发货 → 待完成」(业务 09-23 分批发货)。业务 09-22:**签收 = 顾客确认试穿合身** —— 顾客在手机上点「试穿合身」拿到 6 位码交给导购,导购输入核验;到店取和转寄都走这个码。**码只能是用户这句话里说出来的那一个,不许编、不许猜、不许「先填个试试」** —— 输错会记次数,5 次作废。完成之后要**顾客自己确认**,顾客一直不确认,签收满 15 天顾问才能写理由追认(ratify_complete)。⚠️ 动手前先跟用户对一遍单号和码。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"code":{"type":"string","description":"顾客给的 6 位码,原样照抄用户说的"},"pkg":{"type":"string","description":"包裹号。**一个包裹一个码**,一单分了好几个包裹时必须给"}},"required":["order_id","code"]}},
  {"name":"create_repair","description":"**新建返修单(真的写进去)**,停在「待确认」等店长判责。顾问或店长,本店的单。issue 写清哪里要修(「下摆开线」「腰围紧 2cm」)。**一张单有好几件时 item 必填**(订单行号或商品名)—— 没说哪一件就问,不替用户挑。返回里带一个**判责建议**(不是结论):按返修判定表 + 这一件的下单量体;签收时顾客确认过试穿合身的,之后的尺寸问题建议顾客承担(工艺瑕疵不在此列)。交付签收登记「不合身」时系统会自动建返修单,不用再建。⚠️ 动手前先跟用户对一遍单号、哪一件、什么问题。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"issue":{"type":"string"},"item":{"type":"string","description":"订单行号或商品名;一张单多件时必填"}},"required":["order_id","issue"]}},
- {"name":"decide_repair","description":"**店长判责(真的写进去)**:liable = 顾客 / 企业,plan = 返修 / 重做 —— **都由店长定**(业务 09-22:版师是总部的人,不在店里拍板)。判给顾客的要填 fee_est(预估费用),**顾客同意付费之后**才能开工:customer_agreed=true 时 agree_note 必填(凭据,比如「顾客电话同意 300 元」)。判完了(企业承担,或顾客承担且录了费用、顾客同意了)才从「待确认」进「待入库」;没同意就先记下判责、停在待确认。**谁承担、返修还是重做、顾客同没同意,都只能照用户说的填,不许替店长定、不许默认。**","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"},"liable":{"type":"string","enum":["顾客","企业"]},"plan":{"type":"string","enum":["返修","重做"]},"fee_est":{"type":"number"},"customer_agreed":{"type":"boolean"},"agree_note":{"type":"string"}},"required":["maintain_id","liable","plan"]}},
+ {"name":"decide_repair","description":"**店长判责(真的写进去)**:liable = 顾客 / 企业,plan = 返修 / 重做 —— **都由店长定**(业务 09-22:版师是总部的人,不在店里拍板)。判给顾客的要填 fee_est(预估费用),**顾客同意付费之后**才能开工:customer_agreed=true 时 agree_note 必填(凭据,比如「顾客电话同意 300 元」)。判完了(企业承担,或顾客承担且录了费用、顾客同意了)才从「待确认」进「待入库」;没同意就先记下判责、停在待确认。**谁承担、返修还是重做、顾客同没同意,都只能照用户说的填,不许替店长定、不许默认。**\n\n**金额授权(业务 09-24)**:判给**企业**承担时,fee_est 是**我方要出的钱**。≤1000 店长直接定;1000–5000 要总部批(填 approved_by 批准人工号 + approve_note 批准说明),**没批就停在待确认**;>5000 走专项,店长和总部都不能在这儿定。**批准人不能是判责的店长自己**。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"},"liable":{"type":"string","enum":["顾客","企业"]},"plan":{"type":"string","enum":["返修","重做"]},"fee_est":{"type":"number","description":"判给顾客=收顾客多少钱;判给企业=我方要出多少钱(授权档看这个数)"},"customer_agreed":{"type":"boolean"},"agree_note":{"type":"string"},"approved_by":{"type":"string","description":"总部批准人的工号(我方支出 1000–5000 时必填)"},"approve_note":{"type":"string","description":"批准说明:谁、什么时候、批了多少"}},"required":["maintain_id","liable","plan"]}},
  {"name":"advance_repair","description":"**推进返修单一档(真的写进去)**:待入库 → 待处理(衣服收回来了)→ 处理中(送修)→ 待签收(修好回店)。顾问或店长,本店的单。还在「待确认」的要先等店长判责;「待签收 → 已完成」要顾客试穿输码(verify_repair_return),这里不给。⚠️ 动手前先跟用户确认单号和这一步真的发生了。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"}},"required":["maintain_id"]}},
  {"name":"verify_repair_return","description":"**返修件回店签收(真的写进去)**:顾客试穿修好的衣服合身,在手机上点「试穿合身」拿 6 位码交给导购,导购输入核验通过才算完成(业务 09-22:和交付签收同一套码)。**码只能是用户这句话里说出来的那一个,不许编、不许猜** —— 输错记次数,5 次作废。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"},"code":{"type":"string"}},"required":["maintain_id","code"]}},
  {"name":"ratify_complete","description":"**顾问追认完成(真的写进去)**:**最后一件**签收满 15 天顾客还没在手机上确认完成,顾问写理由(比如「已电话联系,顾客表示没问题」)把订单「待完成 → 完成」。**不满 15 天不行、没写理由不行** —— 业务 09-22:完成由顾客确认,追认是兜底,不是替顾客点。⚠️ 动手前先跟用户确认理由是真的联系过。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"reason":{"type":"string"}},"required":["order_id","reason"]}},

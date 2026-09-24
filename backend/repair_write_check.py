@@ -19,6 +19,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
 
 咬合 = [
     ("让 _找件() 在没说哪一件时挑第一件", "一张单好几件、没说哪件 → 反问"),
+    ("把金额授权那一档去掉(谁能拍板 一律返回店长)", "我方出 1200、没总部批 → 停在待确认"),
     ("让 decide() 不查顾客同意就放进待入库", "判给顾客、没同意 → 停在待确认"),
     ("去掉状态机上的返修开工闸", "状态机:没判完 → 拒"),
 ]
@@ -94,6 +95,44 @@ def run(T):
     r = rw.decide({"maintain_id": 修, "liable": "顾客", "plan": "返修", "fee_est": 300,
                    "customer_agreed": True, "agree_note": "顾客电话同意 300 元"}, 店长)
     ck("判给顾客、录了费用、同意有凭据 → 进待入库", r["ok"] and 状(修) == "待入库", r.get("reason"))
+    # ── 金额授权(业务 2026-09-24:管的是**我方要出的钱**)────────────────────
+    # 挑另一张单来验 —— 上面那张已经判完进了待入库,授权闸只在「待确认」这一步上
+    另 = c.execute("""SELECT o.id FROM ordr o WHERE o.shop=? AND o.kind='定制品订单' AND o.status='完成'
+                     AND (SELECT COUNT(*) FROM ordr_item i WHERE i.order_id=o.id)=1
+                     AND o.id<>? ORDER BY o.id LIMIT 1""", (shop, 一件["id"])).fetchone()
+    ck("有第二张完成单(验金额授权用)", bool(另))
+    if 另:
+        r2 = rw.create({"order_id": 另[0], "issue": "下摆开线"}, 顾问)
+        授 = r2.get("返修单")
+        ck("建第二张返修单", bool(授), r2.get("reason"))
+        r = rw.decide({"maintain_id": 授, "liable": "企业", "plan": "返修", "fee_est": 800}, 店长)
+        ck("我方出 800(≤1000)→ 店长直接定,进待入库", r["ok"] and 状(授) == "待入库", r.get("reason"))
+        r3 = rw.create({"order_id": 另[0], "issue": "袖口脱线"}, 顾问)
+        授2 = r3.get("返修单")
+        r = rw.decide({"maintain_id": 授2, "liable": "企业", "plan": "重做", "fee_est": 1200}, 店长)
+        ck("我方出 1200、没总部批 → 停在待确认", r["ok"] and 状(授2) == "待确认", r.get("reason"))
+        ck("说清了要报总部", "总部" in str(r.get("reason") or ""), r.get("reason"))
+        r = rw.decide({"maintain_id": 授2, "liable": "企业", "plan": "重做", "fee_est": 1200,
+                       "approved_by": 店长["no"], "approve_note": "总部批了 1200"}, 店长)
+        ck("批准人就是判责的店长自己 → 拒", r.get("code") == "SELF_APPROVE", r.get("reason"))
+        总部 = c.execute("SELECT no FROM staff WHERE role='总部运营' AND status='启用' LIMIT 1").fetchone()
+        if 总部:
+            r = rw.decide({"maintain_id": 授2, "liable": "企业", "plan": "重做", "fee_est": 1200,
+                           "approved_by": 总部[0]}, 店长)
+            ck("批了却没写批准说明 → 拒", r.get("code") == "NO_APPROVE_NOTE", r.get("reason"))
+            r = rw.decide({"maintain_id": 授2, "liable": "企业", "plan": "重做", "fee_est": 1200,
+                           "approved_by": 总部[0], "approve_note": "总部王工 09-24 批 1200"}, 店长)
+            ck("总部批了、写了说明 → 进待入库", r["ok"] and 状(授2) == "待入库", r.get("reason"))
+        r4 = rw.create({"order_id": 另[0], "issue": "前襟开线"}, 顾问)
+        授3 = r4.get("返修单")
+        r = rw.decide({"maintain_id": 授3, "liable": "企业", "plan": "重做", "fee_est": 6000,
+                       "approved_by": (总部[0] if 总部 else "x"), "approve_note": "批了"}, 店长)
+        ck("我方出 6000(>5000)→ 走专项,批了也不许在这儿定", r["ok"] and 状(授3) == "待确认", r.get("reason"))
+        ck("说清了走专项", "专项" in str(r.get("reason") or ""), r.get("reason"))
+        r = rw.decide({"maintain_id": 授3, "liable": "顾客", "plan": "返修", "fee_est": 6000,
+                       "customer_agreed": True, "agree_note": "顾客同意 6000"}, 店长)
+        ck("同样 6000 但判给顾客 → 不受授权档管(那是收顾客的钱)", r["ok"] and 状(授3) == "待入库", r.get("reason"))
+
     # ── 推进 ──
     for 到 in ("待处理", "处理中", "待签收"):
         r = rw.advance({"maintain_id": 修}, 顾问)

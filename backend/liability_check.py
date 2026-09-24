@@ -55,10 +55,26 @@ def facts(mid):
     #  不是让每个取数的地方都各写一套 —— 那只会漂。)
     o = api._rows("SELECT status FROM ordr WHERE id=?", m["order_id"])
     f = api._白坯试衣(m["order_id"], m["item"], o[0]["status"] if o else None)
+    # ── 2026-09-24 加的两个事实:实测尺寸差、什么时候签收的 ─────────────────
+    # 不取这两个的话,新加的三行判据(超公差 / 公差内 / 证据不全+6 个月内)
+    # **在这套对账里永远走不到** —— 同 2026-09-15 白坯试衣那次,这个文件开头就在防这件事。
+    import json as _json
+    尺寸差 = None
+    if m.get("尺寸差"):
+        try:
+            尺寸差 = _json.loads(m["尺寸差"])
+        except (ValueError, TypeError):
+            尺寸差 = None
+    签于 = api._rows("SELECT MAX(fit_at) t FROM pickup_item WHERE order_id=? AND fit_result='合身'",
+                     m["order_id"])
+    签于 = (签于[0]["t"] if 签于 else None) or (
+        (api._rows("SELECT fit_at FROM pickup WHERE order_id=?", m["order_id"]) or [{}])[0].get("fit_at"))
+    from seed import TODAY as _今天
     return dict(issue=m["issue"],
                 notified=notified,
                 measure_full=(len(ms) >= 4),
-                试衣状态=f.get("归到哪一档"))
+                试衣状态=f.get("归到哪一档"),
+                尺寸差=尺寸差, 签收于=签于, 今天=_今天)
 
 
 # 人工标注用的那套话术 → liability.py 的 (责任, 处理关键词)
@@ -76,6 +92,12 @@ EXPECT = {
     "尺寸偏差 · 该试没试 · 我方免费改":    ("我方", "免费改"),
     "尺寸偏差 · 记录完整 · 客方收费改":    ("客方", "收费改"),
     "尺寸偏差 · 记录不全 · 我方免费改":    ("我方", "免费改"),
+    # ── 2026-09-24 业务拍板加的三行(09 md 五之二:公差、举证时间窗)──────────
+    # ⚠️ 同上:**现在一条在办工单都没命中**,所以下面会把它们列进「没有用例」那一栏。
+    # 列出来是有意的 —— 一条新加的规则如果连出现在这张表里都不出现,
+    # 它错了也永远不会被发现(比藏起来更危险的是:看起来这张表全绿)。
+    "尺寸偏差 · 超出公差 · 我方免费返修":  ("我方", "免费返修"),
+    "尺寸偏差 · 公差内 · 客方收费改":      ("客方", "收费改"),
     "特性类已告知 · 无责解释":             ("无责", "解释"),
     "特性类未告知 · 我方让步":             ("我方", "让步"),
 }
