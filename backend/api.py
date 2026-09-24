@@ -368,7 +368,9 @@ WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task",
                # 下单(业务 09-22):先开单停在待确认 → 量下单量体绑到那一件 → 确认下单(过闸,即已付款)
                "open_order", "confirm_order",
                # 报修(业务 09-22):新建返修单、店长判责(顾客同意才开工)、推进、回店输码签收
-               "create_repair", "decide_repair", "advance_repair", "verify_repair_return")
+               "create_repair", "decide_repair", "advance_repair", "verify_repair_return",
+               # 工厂回传(业务 09-23):延期通知完标一下、店长人工回退(发错件 / 到店返工)
+               "mark_delay_told", "rollback_order")
 
 
 MANAGER_ROLES = ("店长", "总部运营")
@@ -3558,6 +3560,57 @@ def _白坯试衣(order_id, item_name, order_status, item_id=None, 假设未开�
 
 
 
+def order_log(order_id=None):
+    """**这张单发生过什么** —— 状态变化、每条工厂回传(含被拒收和作废的)、人工回退、延期、按件签收,
+    按时间排成一条。业务 09-23:「每个订单都会有独立日志」。只读。"""
+    import factory_inbox as _fi
+    me = whoami()
+    if not me:
+        return {"error": "没有登录身份"}
+    oid = (order_id or "").strip()
+    o = _rows("SELECT id, shop, status, kind FROM ordr WHERE id=?", oid)
+    if not o:
+        return {"error": f"没有订单 {oid}"}
+    if me.get("role") != "总部运营" and o[0]["shop"] != me.get("shop"):
+        return {"error": f"这张单在「{o[0]['shop']}」,只能看本店的"}
+    _fi.ensure()
+    return {"订单": oid, "现在是": o[0]["status"], "日志": _fi.订单日志(oid, db=DB),
+            "包裹": _fi.包裹们(oid, db=DB),
+            "note": "**被拒收、被作废的回传也在里面** —— 只留成功的,出了事最想知道的那几条恰好都不在。"}
+
+
+def delay_pending():
+    """**工厂延期了、还没告诉顾客的单。** 通知完用 mark_delay_told 记一下。只读。"""
+    import factory_inbox as _fi
+    me = whoami()
+    if not me:
+        return {"error": "没有登录身份"}
+    _fi.ensure()
+    shop = None if me.get("role") == "总部运营" else me.get("shop")
+    rs = _fi.待通知清单(shop, db=DB)
+    for x in rs:
+        x["是你的"] = x.get("advisor_no") == me.get("no")
+    return {"范围": shop or "全部门店", "条数": len(rs), "明细": rs,
+            "note": "**联系顾客是对外动作,由人做** —— 这里给的是「该跟哪几单、原定什么时候、延到什么时候」。"
+                    "通知完记得用 mark_delay_told 标一下,不标的话这份清单只进不出。"}
+
+
+def mark_delay_told(delay_id=None):
+    """(写)顾问通知完顾客,标一下。"""
+    import factory_inbox as _fi
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在标记 —— 请先登录")
+    return _fi.标记已通知(delay_id, me, db=DB)
+
+
+def rollback_order(order_id=None, cause=None, note=None):
+    """(写)**人工回退**:工厂发错件 / 到店发现要返工。只有店长能点,必须写清为什么。"""
+    import factory_inbox as _fi
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在回退 —— 请先登录")
+    return _fi.人工回退((order_id or "").strip(), (cause or "").strip(), (note or "").strip(), me, db=DB)
+
+
 def factory_chase():
     """**该催工厂的单 + 要人看的工厂回传。** 生产和发货只认工厂回传(业务 09-22),门店不推 ——
     门店能做的是**知道哪几单该去催**:开工超过 3 天工厂没回接单(单可能没发过去),
@@ -4162,6 +4215,10 @@ SHOP_SCHEMAS=[
     "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
    "required":["customer_id"]}},
  {"name":"stock_alert","description":"**库存预警** —— 哪些 SKU 要断了、哪些**看着有货其实一件都发不出**(在手有货但全被订单占用)、哪些在压货。805 个 SKU 全有库存数而在这之前没有任何工具会说「这个要断了」。⚠️ **在手 ≠ 可用**:客户问「还有货吗」要的是 **可用 = 在手 − 已占用**,只报在手会让客户白等。⚠️ **它给不出可售天数,而且会直说给不出**:全库有销量的只有 71/797 个 SKU、每个只有一笔、订单只跨 18 天,**一笔销售画不出速度** —— 这时候任何一个可售天数都是编的,而编出来的数会让采购按它去补货。**不许把「算不出」说成 0 天,也不许退回成「低于 N 件就预警」假装算得出。** ⚠️ **这个工具不补货**:补多少、什么时候补是采购的决定。⚠️ 只看成品 SKU,**面料库存是另一摊**。","input_schema":{"type":"object","properties":{"scope":{"type":"string","description":"发不出 / 断货 / 快没了 / 卖不动;不传则全给"}}}},
+ {"name":"order_log","description":"**这张单发生过什么**(只读)。状态变化、每一条工厂回传(**被拒收和作废的也在里面**)、人工回退、工厂延期、按件签收,按时间排成一条;还带这张单的包裹清单(分批发货时一个包裹一条)。顾客问「我的衣服到哪了」「为什么晚了」、店长查「这单为什么退回去过」都用它。只能看本店的单(总部运营看全部)。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
+ {"name":"delay_pending","description":"**工厂延期了、还没告诉顾客的单**(只读)。带原定完工日、延到什么时候、为什么、归属顾问、是不是你的。**联系顾客是对外动作,由人去做**;通知完用 mark_delay_told 标一下,不标这份清单只进不出。","input_schema":{"type":"object","properties":{}}},
+ {"name":"mark_delay_told","description":"**(写)记下「已经把延期告诉顾客了」。** 只标本店的;标之前要跟用户确认他真的通知过了 —— 标错了这张单就从清单里消失,顾客再也等不到那个电话。","input_schema":{"type":"object","properties":{"delay_id":{"type":"integer"}},"required":["delay_id"]}},
+ {"name":"rollback_order","description":"**(写)人工回退**:工厂发错件(退回等发货)/ 到店发现要返工(退回生产中,算重新生产)。**只有店长能点**,必须写清哪件不对、怎么发现的;运费公司承担。这是系统里唯一能让订单往回走的口子,回退记录一直留着。cause 只能是「发错件」或「到店返工」,note 写理由。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"cause":{"type":"string","enum":["发错件","到店返工"]},"note":{"type":"string"}},"required":["order_id","cause","note"]}},
  {"name":"factory_chase","description":"**该催工厂的单 + 要人看的工厂回传**(只读)。定制单的生产和发货**只认工厂回传**(自有工坊和外发工厂都有,谁接的单谁报),门店和后台都不能手动推状态。这里列出:① 该催的单 —— 开工超过 3 天工厂没回接单(单可能没发过去),或过了工厂承诺的完工日还没完工(该先告诉顾客会晚),带生产方、承诺完工日、归属顾问、是不是你的;② 要人看的回传 —— 挂异常(查无此单、单已取消、别家报了这张单、车间工单还在制却报完工)/ 拒收(缺物流单号、时间不对)/ 暂存(来早了,等前一条)。店长看本店,总部运营看全部。顾问问「我有哪些单该去催工厂」「这单怎么还没做好」也用这个。","input_schema":{"type":"object","properties":{}}},
  {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**定制单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。**哪些款必须试(业务 09-22 定)**:重工、全定制(顾问亲自量的尺寸判出)、婚服(商品挂了「婚礼婚服」场合标签)三类命中任一即必试;没命中但有一类判不了 → 判不了,**不当成不必试**;重工的两个门槛(装饰工序最慢 ≥25 天 / 单项工艺起步 ≥12 天)业务 09-22 确认。**开裁这道闸会拦**:该试的要试过、而且客户签了字,整单才许开裁 —— 看板里「待开裁的单」列出每张待生产单能不能裁、卡在哪。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
  {"name":"record_pickup","description":"**交付签收的三个动作(真的写进去)**:action=「到店代收」(**工厂的货到了门店、顾客还没来** —— 这一步只是门店收货入库,不涉及顾客,也不是签收;定制单「已发货」指的是工厂发往门店,不是寄给顾客)/「取件方式」(mode=到店取 或 转寄;**转寄要 tracking_no**,业务 09-22:顾问先邀约顾客到店取,实在来不了才转寄)/「不合身」(顾客试了**某一件**不合身 → 那一件不算签收、留店转返修,同包裹里合身的件照常签收拿走;issue 写清哪里不合身,item 指哪一件)。**分批发货(业务 09-23)**:一张单可能分几个包裹,每个包裹各自到店、各自取件方式、各自一个码 —— 单子不止一个包裹时要给 pkg(包裹号),不给会反问,**不许替用户挑一个**。只能动本店的单,经手人就是你自己(不收工号)。「不合身」时 matches_record(成衣和订单留存数据对得上吗)、other_defect(有没有别的瑕疵)、our_fault(查出来是「导购」或「打版」的问题)都是**查出来的事实,不知道就别填** —— 返回的判责建议(对得上且无别的瑕疵 → 顾客承担、收费;导购 / 打版问题 → 企业承担、免费)**不是结论,由售后负责人确认**。⚠️ 动手前先跟用户对一遍单号和动作。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"action":{"type":"string","enum":["到店代收","取件方式","不合身"]},"pkg":{"type":"string","description":"包裹号。一单分了好几个包裹时必须给"},"item":{"type":"string","description":"订单行号(哪一件)。登记不合身时,包裹里不止一件就必须给"},"mode":{"type":"string","enum":["到店取","转寄"]},"tracking_no":{"type":"string"},"issue":{"type":"string"},"matches_record":{"type":"boolean"},"other_defect":{"type":"boolean"},"our_fault":{"type":"string","enum":["导购","打版"]}},"required":["order_id","action"]}},
@@ -5062,7 +5119,7 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

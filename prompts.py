@@ -283,6 +283,41 @@ FACTORY_CHASE_RULE = Rule("TL52", ("factory_chase",), """
 - **你不联系工厂,也不联系顾客。** 催工厂、告诉顾客会晚都是对外动作,由人去做 —— 你给的是「该跟哪几单、凭什么」。
 """, scope="工具")
 
+ORDER_LOG_RULE = Rule("TL54", ("order_log",), """
+**查一张单发生过什么,两条:**
+
+- **被拒收、被作废的回传也在日志里** —— 顾客问「为什么晚了」时,那几条往往才是答案
+  (工厂报错了被拒、店长退回过一次)。**别只挑成功的那几条说。**
+- 日志里的时间是**工厂报的时间**,不是我们收到的时间;延期过的单,原定完工日和延了几次都在里面,
+  **说延期要说「原定 X、延到 Y、第几次」**,只说新日子等于替工厂把前面几次抹掉了。
+""", scope="工具")
+
+DELAY_PENDING_RULE = Rule("TL55", ("delay_pending",), """
+**工厂延期待通知,两条:**
+
+- **你不联系顾客。** 打电话、发消息是对外动作 —— 这里给的是「该跟哪几单、原定什么时候、延到什么时候」。
+- 跟顾客怎么说由顾问定,但**别把话说满** —— 新的完工日是工厂承诺的,不是我们能保证的;
+  报日子要**连着原定的一起说**,延过几次也说出来。
+""", scope="工具")
+
+DELAY_TOLD_RULE = Rule("TL57", ("mark_delay_told",), """
+**记「已通知顾客」,一条:**
+
+- **只有用户说他通知过了才标。** 标错了这张单就从清单里消失,顾客再也等不到那个电话。
+  不确定就问一句:「你已经跟这位顾客说过了吗?」—— 别拿「我刚把话术给你了」当成他说过了。
+""", scope="工具")
+
+ROLLBACK_RULE = Rule("TL56", ("rollback_order",), """
+**人工回退(发错件 / 到店要返工),三条:**
+
+- **只有店长能点。** 你是顾问身份时不要调它,写口会拒 —— 回去请店长确认。
+- **原因和理由只能照用户说的填。** 「发错件」和「到店返工」退到的地方不一样
+  (前者退回等发货,后者退回生产中重新做);理由要写清**哪一件不对、怎么发现的**。
+  **编一句「发错件」和真有一件发错,在库里长得一模一样**,而这条记录会一直留着。
+- **动手之前先对一遍单号和原因。** 回退会作废工厂已报的那几步,工厂要重新报;
+  运费公司承担,这是笔真花的钱。
+""", scope="工具")
+
 CUT_RULE = Rule("TL41", ("start_cutting",), """
 **开裁,三条:**
 
@@ -652,6 +687,10 @@ REPAIR_DECIDE_RULE,
 REPAIR_STEP_RULE,
 REPAIR_RETURN_RULE,
 FACTORY_CHASE_RULE,
+ORDER_LOG_RULE,
+DELAY_PENDING_RULE,
+DELAY_TOLD_RULE,
+ROLLBACK_RULE,
 ]
 
 
@@ -1026,6 +1065,10 @@ REPAIR_DECIDE_RULE,
 REPAIR_STEP_RULE,
 REPAIR_RETURN_RULE,
 FACTORY_CHASE_RULE,
+ORDER_LOG_RULE,
+DELAY_PENDING_RULE,
+DELAY_TOLD_RULE,
+ROLLBACK_RULE,
 REVIEW_RULE,
 FUNNEL_RULE,
 MEMBER_RULE,
