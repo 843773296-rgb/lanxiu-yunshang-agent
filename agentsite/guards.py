@@ -74,17 +74,29 @@ import textmatch as tm      # noqa: E402
 
 
 def _业务今天():
-    """业务上的今天(prompts._TODAY ← seed.TODAY)。**自己把仓库根放进 sys.path 再导** ——
-    623b8e6 第一版在函数里直接 `from prompts import`,scheme_hook_test 那种只带 agentsite 的进程里
-    报 ModuleNotFoundError,钩子整个炸掉(对方会话 check.sh 抓到)。导不到就返回 None,调用方退回说法。"""
+    """这家店的今天 —— **从库里读**(backend/seed.TODAY ← world_meta.world_today)。
+
+    2026-09-24 改:世界每天平移到真实日期,所以这个值**平时就等于机器日期**。
+    但「平时」不等于「总是」—— 今天没跑平移的话,库还停在前天,
+    而那正是唯一需要有人喊一声的时刻。所以这里连**差了几天**一起返回。
+
+    **自己把仓库根放进 sys.path 再导** —— 623b8e6 第一版在函数里直接 import,
+    scheme_hook_test 那种只带 agentsite 的进程里报 ModuleNotFoundError,钩子整个炸掉。
+    导不到就返回 (None, None),调用方退回不带日期的说法。
+    """
     根 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if 根 not in sys.path:
         sys.path.append(根)
+    if os.path.join(根, "backend") not in sys.path:
+        sys.path.append(os.path.join(根, "backend"))
     try:
-        from prompts import _TODAY
-        return _TODAY
+        import datetime as _dt
+        from seed import TODAY as _t
+        if not _t: return None, None
+        差 = (_dt.date.today() - _dt.date.fromisoformat(_t)).days
+        return _t, 差
     except Exception:
-        return None
+        return None, None
 # 判「不可」的说法 —— 答案里没有这类断言时,g4 不该开火
 DENY = ("不可", "做不了", "不能做", "不行", "没法做", "做不出", "无法做", "做不到")
 
@@ -304,6 +316,33 @@ def g7_rush_promise(text, calls):
         if not tm.negated(text, m.start()):
             return (f"关键路径上有**不能靠加人压缩**的工序({hard[0][:24]}),"
                     "却答应了加急 —— 这类要求要当场拒绝,不要先答应再想办法")
+    return None
+
+
+def g23_discount_promise(text, calls):
+    """**不许谈价格**(业务 2026-09-24:不让价,只让东西)。
+
+    规矩(TL54)是祈使句,这一条是闸 —— 这个项目的教训是**祈使句拦不住**。
+    查两件事:① 许了折扣类的话;② 许了不在业务清单里的东西(比如送小件)。
+    业务能让的只有三样:免首次改衣(尺寸微调、签收后 3 个月内一次)、送专业保养一次、免运费/免转寄。
+
+    ⚠️ **否定要放过**:「不能便宜」「没有折扣」「不打折」是**照规矩在答**,不是违规 ——
+    这个项目为中文否定栽过七次,一律走 textmatch,不自己写 `in`。
+    """
+    价 = r"(打\s*折|折扣|优惠价|便宜(一?点|些)?|减(免|价)|少收|抹(零|个零头)|让(利|价)|降价|给个折)"
+    for m in re.finditer(价, text or ""):
+        if not tm.negated(text, m.start(), both_sides=True):
+            return ("答复里谈到了价格上的让步 —— 业务 2026-09-24 定:**不让价,只让东西**。"
+                    "能提的只有免首次改衣、送保养一次、免运费/免转寄这三样;"
+                    "顾客追问价格时讲查得到的事实(用了多少料、多少工日、谁量的体、出问题谁负责)")
+    # 不在清单里的东西:送小件业务明确没选
+    # ⚠️ 「送」和东西之间会夹称呼和量词(「送**您一只**香囊」)——
+    # 第一版写成紧挨着,当场漏掉。放宽到中间最多 6 个字,并要求同一小句里。
+    for m in re.finditer(r"(送|赠|给您配|加送)[^。;;!!?\n]{0,6}?(荷包|香囊|团扇|发簪|真丝袜|盘扣|额饰)",
+                         text or ""):
+        if not tm.negated(text, m.start(), both_sides=True):
+            return ("答复里许了**送小件** —— 业务 2026-09-24 只选了三样能让的"
+                    "(免首次改衣 / 送保养一次 / 免运费),送小件没选,不许提")
     return None
 
 
@@ -792,7 +831,7 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g15_growth_plan_sections, g16_bypass_control,
           g17_liability_promise, g18_vision_conclusion,
           g19_account_state, g20_consent_version, g21_apply_as_done,
-          g22_agree_without_reading]
+          g22_agree_without_reading, g23_discount_promise]
 
 
 def check_answer(text, calls, prompt=""):
@@ -1206,12 +1245,22 @@ def make_hooks(state):
         # CLI 自己还会附一句「Today's date is <机器日期>」,关不掉 —— 所以这里要**明说**那个是机器的日期。
         state["prompt"] = inp.get("prompt", "")
         state["calls"] = []
-        _今 = _业务今天()
+        _今, _差 = _业务今天()
         # 登记:业务今天
-        ctx_add = (f"[系统注入] 业务上的今天是 {_今}。运行环境里显示的日期是机器的日期,**不是这家店的今天**;"
-                   "涉及日期的推算一律以业务上的今天为准,工具返回里算好的天数照着说。"
-                   if _今 else
-                   "[系统注入] 涉及日期的推算以工具返回里算好的为准;运行环境里显示的日期是机器的日期,不是这家店的今天。")
+        # ⚠️ **只有「库里的今天」和机器日期对不上时才需要喊。**
+        # 2026-09-24 起世界每天平移到真实日期,对得上是常态 —— 这时候再每轮
+        # 命令它「一律以 X 为准」,就是在没有分歧的地方制造一个权威,
+        # 而下一次分歧来的时候,人已经不看这句话了。
+        # 对不上(今天没平移)才是真要喊的那一刻,而且要把**差几天**说出来。
+        if not _今:
+            ctx_add = "[系统注入] 涉及日期的推算以工具返回里算好的为准,不要自己拿日期去减。"
+        elif _差:
+            ctx_add = (f"[系统注入] ⚠️ **这家店的今天是 {_今},比运行环境显示的日期早 {_差} 天** ——"
+                       f"演示数据停在那一天(今天还没跑 tools/shift_world.py)。"
+                       f"涉及日期的推算一律以 {_今} 为准,工具返回里算好的天数照着说。")
+        else:
+            ctx_add = (f"[系统注入] 今天是 {_今}(库里的世界和真实日期一致)。"
+                       "「逾期几天、还剩几天」照工具返回里算好的数说,**不要自己拿日期去减**。")
         # **每一轮都把日记塞进来(三条)。** 日记建起来之后有一阵只有写没有读,
         # 而没人读的日记和没有日记是一回事。
         # 原本想只在「重要动作」时注,判据当场就漏(「排下周的班」不含「排班」)——
