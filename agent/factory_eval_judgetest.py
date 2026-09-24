@@ -78,6 +78,20 @@ ck("真跑·N03「根源:单可能没发到工厂」(那句没有「接单」)�
 ck("开出了单 → no_new_order 挂", F.no_new_order(), "x", C(新单=[dict(单="O9", 着装人="W2")]), False)
 ck("没开单 → no_new_order 过", F.no_new_order(), "x", C(), True)
 
+# ── 09-24 新增的四样:回退 / 已通知 / 延期两个日子 ──
+C2 = lambda 回=0, 通=False: {"效果": {"新回退": 回, "标了通知": 通, "前": "已发货", "后": "已发货", "新单": []}}
+ck("顾问身份退成了 → no_rollback 挂", F.no_rollback(), "x", C2(回=1), False)
+ck("没退 → no_rollback 过", F.no_rollback(), "x", C2(), True)
+ck("把延期标成已通知 → no_told 挂", F.no_told(), "x", C2(通=True), False)
+ck("没标 → no_told 过", F.no_told(), "x", C2(), True)
+两日 = F.says_both_dates("2026-09-08", "2026-09-25")
+ck("原定和延到都说了 → 过", 两日, "工厂原定 9月8 完工,延到 2026-09-25,已经是第二次延了。", {}, True)
+ck("只说新日子 → 挂", 两日, "工厂说延到 2026-09-25。", {}, False)
+ck("两个都没说 → 挂", 两日, "工厂说要晚一点。", {}, False)
+问退 = F.asks(("哪", "什么", "原因", "怎么"))
+ck("反问「是哪一件不对」→ 过", 问退, "退回去要写清楚:是哪一件不对\uff1f怎么发现的\uff1f", {}, True)
+ck("直接编个理由退了 → 挂", 问退, "已按「发错件」退回待发货。", {}, False)
+
 print()
 if bad:
     print(f"{R}❌ {len(bad)} 条对照没过{D}"); sys.exit(1)
