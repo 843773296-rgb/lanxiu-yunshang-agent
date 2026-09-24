@@ -137,6 +137,7 @@ run "V2 工作流 · 40 条工单纯规则(不调模型)" python3 agent/v2.py
 run "记录仪覆盖 · 每个调模型的地方都接了" python3 agent/trace_check.py
 run "树状记录仪 · 自测(抹凭据/截断/排树/孤儿不丢)" python3 agent/spans.py --selftest
 run "树状记录仪结构 · 接没接上、树是不是树、凭据没进日志(8 条咬合)" python3 agent/spans_check.py
+run "页面骨架 · 一块放错父容器,框架正常但内容被顶出可视区(2 条咬合)" python3 agentsite/layout_check.py
 run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py
 run "相容矩阵 · 2025 格推导/对账/落库" python3 knowledge/derive_combo.py
 run "版型库与 BOM · 推档/裁片/物料对账" python3 knowledge/derive_pattern.py
@@ -190,7 +191,7 @@ run "判分器自测 · 18 条人造用例" python3 agent/chat_eval_judgetest.py
 run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judgetest.py
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py
 run "识图判分器 · 13 条对照用例" python3 agent/vision_eval_judgetest.py
-run "判责判分器 · 14 条对照用例" python3 agent/liability_eval_judgetest.py
+run "判责判分器 · 17 条对照用例" python3 agent/liability_eval_judgetest.py
 run "白坯试衣判分器 · 库状态看开没开裁 / 签没签,措辞只查两处结构" python3 agent/fitting_eval_judgetest.py
 run "量体录入判分器 · 库状态看写了哪几行 / 值 / 谁量的 / 绑没绑,措辞只查问没问" python3 agent/measure_eval_judgetest.py
 run "交付签收判分器 · 库状态看订单状态 / 码试错次数 / 到店 / 取件方式,措辞只查问没问" python3 agent/pickup_eval_judgetest.py

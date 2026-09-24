@@ -268,12 +268,6 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   <!-- 设置浮层。**收起来不等于藏起来** —— 当前值要显示在按钮旁边的提示里,
        否则「这一轮用的是哪档技能」变成看不见的状态,
        而它恰恰是会改变回答的那种设置。 -->
-  <div id="ev">
-  <header><b>这一轮凭什么这么说</b><button class="tbtn" id="evclose">收起</button></header>
-  <div class="tabs"><button id="evt1" class="on">证据</button><button id="evt2">子助手</button></div>
-  <div class="body" id="evbody"></div>
-</div>
-
 <div id="cfg" hidden>
     <div id="cfgnav">
       <button class="back" id="cfgback">← 返回对话</button>
@@ -403,6 +397,19 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
     <div id="hint"></div><div class="wrap"><div id="novis"></div></div>
     <div id="disclaim"></div>
   </div>
+</div>
+
+<!-- ⚠️ **这一块必须是 #main 的兄弟,不能放进 #main 里面。**
+     它的样式是按「body 这一行的第三列」写的:`width` 控制开合、`height:100vh`、`flex:none`。
+     2026-09-24 我第一次加它时放进了 #main —— 而 #main 是 `flex-direction:column`,
+     于是这块 `height:100vh` 的东西**整屏占满**,把聊天流和输入框整个顶出可视区:
+     用户发的字不显示、回答也不显示,**而页面框架看起来完全正常**。
+     侧栏自己也跑到了左边(列布局里它从左边缘起)。
+     **同一段 CSS,放在行里是右侧栏,放在列里是一堵墙。** -->
+<div id="ev">
+  <header><b>这一轮凭什么这么说</b><button class="tbtn" id="evclose">收起</button></header>
+  <div class="tabs"><button id="evt1" class="on">证据</button><button id="evt2">子助手</button></div>
+  <div class="body" id="evbody"></div>
 </div>
 
 <div id="ov"><div id="ovp"><button id="ovx">×</button><div id="ovc"></div></div></div>
