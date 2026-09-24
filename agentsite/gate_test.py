@@ -212,6 +212,21 @@ def main():
     ck(f"业务今天前一天({前一天})的婚期拦下", g.pre_tool_verdict(PF, {"event_date": 前一天, "wearer_id": "W1"},
        "婚礼", READ, []), True)
 
+    # ── 转寄的物流单号只能照抄用户的(2026-09-24 评测抓到模型编了一个 SF2321616818)──
+    print("\n\033[1m▸ 转寄 · 单号不许编\033[0m")
+    print("  " + "=" * 78)
+    RP = "mcp__shop__record_pickup"
+    寄 = lambda 号: {"order_id": "O1", "action": "取件方式", "mode": "转寄", "tracking_no": 号}
+    ck("单号是用户说的 → 放行", g.pre_tool_verdict(RP, 寄("SF1234567890"),
+       "顾客来不了,帮我转寄,单号 SF1234567890", READ, []), False)
+    ck("单号用户没说过 → 拦下", g.pre_tool_verdict(RP, 寄("SF2321616818"),
+       "顾客来不了店里,帮我转寄给她。", READ, []), True, "照抄")
+    ck("没给单号 → 拦下", g.pre_tool_verdict(RP, 寄(""), "帮我转寄", READ, []), True, "照抄")
+    ck("单号夹了空格、大小写不同 → 放行", g.pre_tool_verdict(RP, 寄("sf 1234 567890"),
+       "转寄,单号 SF1234567890", READ, []), False)
+    ck("到店取不受这条管", g.pre_tool_verdict(RP, {"order_id": "O1", "action": "取件方式", "mode": "到店取"},
+       "顾客到店取", READ, []), False)
+
     print()
     if bad:
         print(f"{R}❌ 闸有 {bad} 处不符合预期{D}")

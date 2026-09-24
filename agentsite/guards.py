@@ -1101,6 +1101,17 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
         # `ratify_complete`:追认要写理由 —— 没有理由的追认等于替顾客点了完成
         if short == "ratify_complete" and not str(args.get("reason") or "").strip():
             return "追认完成要写理由(比如「已电话联系,顾客表示没问题」)—— 回去问用户联系过顾客没有。"
+        # `record_pickup` 转寄:**物流单号只能是用户说出来的那一个**(2026-09-24 评测抓到)。
+        # 那一轮用户只说「顾客来不了,帮我转寄」,模型回答「已定为转寄,物流单号 SF2321616818」——
+        # **号是它编的**。写口只管「转寄必须有单号」,编一个照样能过;而寄丢了按这个号查,查无此单。
+        # 和试穿合身码那条是同一个形状:**凭据类的值不许模型生成**。
+        if short == "record_pickup" and str(args.get("action") or "") == "取件方式" \
+                and str(args.get("mode") or "") == "转寄":
+            _号 = "".join(ch for ch in str(args.get("tracking_no") or "") if ch.isalnum()).upper()
+            _说 = "".join(ch for ch in str(prompt or "") if ch.isalnum()).upper()
+            if not _号 or _号 not in _说:
+                return ("转寄的物流单号**只能照抄用户给的那一个** —— 用户这句话里没有这个单号。"
+                        "别编、别猜:回去问他快递单号是多少,没单号就先别改成转寄。")
         # `record_pickup` 不合身:要写清哪里不合身 —— 返修和判责都看这一句
         if short == "record_pickup" and str(args.get("action") or "") == "不合身" \
                 and not str(args.get("issue") or "").strip():
