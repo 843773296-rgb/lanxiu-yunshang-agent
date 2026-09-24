@@ -1553,6 +1553,23 @@ def maintain_list(q):
     d["readonly"]=True
     return d
 
+def order_log_page(oid):
+    """一张单的日志(业务 09-23:每个订单一条独立日志)。
+    状态变化、每条工厂回传(含被拒和作废的)、人工回退、延期、签收侧的事件,按时间排成一条。"""
+    import factory_inbox as _fi
+    _fi.ensure()
+    o = rows("SELECT id, customer_id, kind, status, prd_status, shop, advisor_no, created, amount FROM ordr "
+             "WHERE id=?", (oid or "").strip())
+    if not o:
+        return {"error": f"没有订单 {oid}"}
+    o = o[0]
+    cu = rows("SELECT name FROM customer WHERE id=?", o["customer_id"])
+    items = rows("SELECT id, name, qty, wearer_id FROM ordr_item WHERE order_id=? ORDER BY id", o["id"])
+    return dict(order=o, 客户=(cu[0]["name"] if cu else o["customer_id"]), 订单行=items,
+                日志=_fi.订单日志(o["id"]), 包裹=_fi.包裹们(o["id"]),
+                note="被拒收、被作废的回传也在里面 —— 只留成功的,出了事最想知道的那几条恰好都不在。")
+
+
 def factory_feed_page(q):
     """工厂回传页(业务 09-22:生产和发货只认工厂回传)。该催清单 + 收件箱里要人看的那几条。
     「今天」按演示世界的今天(seed.TODAY),不按机器时钟 —— 和造数据、判超期用的是同一天。"""
@@ -2519,6 +2536,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/maintains": return self._send(maintain_list(Q))
         if p=="/api/guide-perf": return self._send(guide_perf(Q))
         if p=="/api/factory-feed": return self._send(factory_feed_page(Q))
+        if p.startswith("/api/order-log/"): return self._send(order_log_page(p.split("/api/order-log/")[1]))
         if p=="/api/stock-log": return self._send(stock_log_list(Q))
         if p=="/api/kb": return self._send(kb_search(Q))
         if p=="/api/kb-matrix": return self._send(combo_matrix())

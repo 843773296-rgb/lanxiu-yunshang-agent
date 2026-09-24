@@ -70,6 +70,10 @@ def SQL(s): return ("SQL", s)
     "customer_detail":  [(SQL("SELECT customer_id FROM measure_rec LIMIT 1"),)],
     "appt_detail":      [(SQL("SELECT id FROM appointment LIMIT 1"),)],
     "craft_doc":        [(SQL("SELECT id FROM ordr WHERE kind='定制品订单' LIMIT 1"),)],
+    # 订单日志:**挑一张分批发的单**(两个包裹)—— 一单一个包裹的老单跑不到「多包裹」那条路
+    "order_log_page":   [(SQL("SELECT order_id FROM pkg WHERE void_at IS NULL GROUP BY order_id "
+                              "HAVING COUNT(*)>1 LIMIT 1"),),
+                         (SQL("SELECT id FROM ordr WHERE kind='定制品订单' AND status='完成' LIMIT 1"),)],
 
     # ── 列表页与只读视图:空查询 = 用户刚打开那一页 ──────────────────
     "activity_list":    [({},)], "aftersale_list":  [({},)], "appt_list_q":   [({},)],

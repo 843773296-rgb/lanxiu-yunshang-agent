@@ -490,7 +490,8 @@ const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合
 async function view(v,arg,fromTab){
   CUR=(["task","cust","appt"].includes(v)?CUR:v); renderNav();
   if(!fromTab){
-    const t = v==="task" ? (arg||"").startsWith("TMERGE") ? "合并 "+arg : "退款 "+arg
+    const t = v==="orderlog" ? "订单日志 …"+String(arg||"").slice(-6)
+            : v==="task" ? (arg||"").startsWith("TMERGE") ? "合并 "+arg : "退款 "+arg
             : v==="cust" ? "客户 "+arg : v==="appt" ? "预约 "+arg
             : (TAB_TITLE[v]||v)+(arg?" "+arg:"");
     openTab(v,arg,t);
@@ -519,6 +520,7 @@ async function route(v,arg){
   if(v==="categories")return categoryPage();
   if(v==="stock")    return stockList();
   if(v==="craftdoc") return craftDoc(a);
+  if(v==="orderlog") return orderLog(a);
   if(v==="mitems")   return measureItems();
   if(v==="mtpls")    return measureTpls();
   if(v==="contents") return contentList();
@@ -2566,14 +2568,55 @@ async function perfPage(){
     <div class="note2" style="margin:0 24px 20px">${esc(d.note)}</div></div>`);
 }
 
+// 订单日志(业务 09-23:每个订单一条独立日志)——
+// 状态变化、每条工厂回传(**含被拒和作废的**)、人工回退、延期、签收侧的事件,按时间排成一条。
+// 只留成功的那些,出了事最想知道的几条恰好都不在。
+async function orderLog(oid){
+  const d=await get("/api/order-log/"+encodeURIComponent(oid));
+  if(d.error){ M.innerHTML=chrome([["首页","workbench"],"消费与售后","订单日志"],
+    `<div class="card"><div class="bd">${esc(d.error)}</div></div>`); return; }
+  const o=d.order;
+  M.innerHTML=chrome([["首页","workbench"],["消费与售后","orders"],"订单日志"],`
+   <div class="card" style="margin-bottom:14px"><div class="hd"><h3>${esc(o.id)}</h3>
+     <span class="n">${esc(d.客户)} · ${esc(o.shop||"")} · ${esc(o.kind||"")} · 现在是「${esc(o.status||"")}」· ¥${money(o.amount)}</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:70px">行</th><th>商品</th><th style="width:70px">数量</th>
+     <th style="width:140px">给谁做</th></tr></thead><tbody>
+     ${d.订单行.map(r=>`<tr><td class="mono">${r.id}</td><td>${esc(r.name||"")}</td>
+      <td class="mono">${r.qty}</td><td class="mono">${esc(r.wearer_id||"—")}</td></tr>`).join("")}
+    </tbody></table></div>
+   ${d.包裹.length?`<div class="card" style="margin-bottom:14px"><div class="hd"><h3>包裹 ${d.包裹.length} 个</h3>
+     <span class="n">分批发货时一个包裹一条,各自签收</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:170px">包裹</th><th style="width:150px">快递单号</th><th style="width:140px">发出</th>
+     <th style="width:140px">到店</th><th style="width:80px">状态</th><th>里面有哪几件</th></tr></thead><tbody>
+     ${d.包裹.map(p=>`<tr><td class="mono">${esc(p.包裹)}</td><td class="mono">${esc(p.快递单号||"")}</td>
+      <td class="mono">${esc(p.发出||"")}</td><td class="mono">${esc(p.到店||"—")}</td>
+      <td><span class="pill ${p.状态==="已作废"?"p-bad":p.状态==="已签收"?"p-ok":"p-blue"}">${esc(p.状态||"")}</span></td>
+      <td>${p.件.map(x=>esc(x.商品)).join("、")}</td></tr>`).join("")}
+    </tbody></table></div>`:""}
+   <div class="card"><div class="hd"><h3>这张单发生过什么</h3>
+     <span class="n">${d.日志.length} 条 · 按时间排 · 被拒收和作废的也在里面</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:140px">什么时候</th><th style="width:130px">谁</th><th style="width:230px">做了什么</th>
+     <th>说明</th></tr></thead><tbody>
+     ${d.日志.map(r=>`<tr${r.允许?"":' style="background:#fff8f8"'}>
+      <td class="mono">${esc(r.时间||"")}</td><td>${esc(r.谁||"")}</td>
+      <td>${r.允许?"":'<span class="pill p-bad" style="margin-right:6px">没通过</span>'}${esc(r.什么||"")}</td>
+      <td style="color:var(--ink2)">${esc((r.说明||"").slice(0,160))}</td></tr>`).join("")
+      ||`<tr><td colspan="4" style="color:var(--ink3)">这张单还没有日志</td></tr>`}
+    </tbody></table>
+    <div class="note2" style="margin:0 24px 20px">${esc(d.note)}</div></div>`);
+}
+
 // 工厂回传(业务 09-22:生产和发货只认工厂回传,门店不推)—— 该催的单 + 收件箱里要人看的回传
 async function factoryPage(){
   const d=await get("/api/factory-feed");
   const RP={"挂异常":"p-bad","拒收":"p-warn","暂存":"p-blue","重复":"p-mut","收下":"p-ok"};
   M.innerHTML=chrome([["首页","workbench"],"消费与售后","工厂回传"],`
    <div class="row r-4" style="margin-bottom:14px">
-    ${[["该催工厂",d.chase.length,"单"],["挂异常",d.stat["挂异常"]||0,"条"],
-       ["拒收",d.stat["拒收"]||0,"条"],["暂存(来早了)",d.stat["暂存"]||0,"条"]].map(([l,v,u])=>
+    ${[["该催工厂",d.chase.length,"单"],["延期待通知",d.told.length,"单"],
+       ["挂异常",d.stat["挂异常"]||0,"条"],["在途/到店包裹",d.pkgs.length,"个"]].map(([l,v,u])=>
       `<div class="card"><div class="bd" style="padding:15px 18px">
        <div style="font-size:12.5px;color:var(--ink2)">${l}</div>
        <div class="mono" style="font-size:22px;font-weight:600;color:var(--blue);margin-top:5px">${v}<small style="font-size:12px;color:var(--ink2);font-weight:400;margin-left:3px">${u}</small></div>
@@ -2584,21 +2627,54 @@ async function factoryPage(){
     <table class="tb" style="margin-top:12px"><thead><tr>
      <th style="width:200px">订单</th><th style="width:140px">门店</th><th style="width:110px">顾问</th>
      <th style="width:120px">生产方</th><th>为什么</th></tr></thead><tbody>
-     ${d.chase.map(r=>`<tr><td class="mono">${esc(r.订单)}</td><td>${esc(r.门店)}</td>
+     ${d.chase.map(r=>`<tr><td class="mono"><a href="#" data-log="${esc(r.订单)}">${esc(r.订单)}</a></td><td>${esc(r.门店)}</td>
       <td class="mono">${esc(r.顾问)}</td><td>${esc(r.生产方||"未接单")}</td><td>${esc(r.为什么)}</td></tr>`).join("")
       ||`<tr><td colspan="5" style="color:var(--ink3)">没有该催的单</td></tr>`}
     </tbody></table></div>
+   <div class="card" style="margin-bottom:14px"><div class="hd"><h3>延期待通知顾客</h3>
+     <span class="n">工厂延期了、顾问还没告诉顾客的单 · 通知完在助手或页面上点「已通知」</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:200px">订单</th><th style="width:140px">门店</th><th style="width:100px">顾问</th>
+     <th style="width:210px">完工日</th><th>原因</th></tr></thead><tbody>
+     ${d.told.map(r=>`<tr><td class="mono"><a href="#" data-log="${esc(r.order_id)}">${esc(r.order_id)}</a></td><td>${esc(r.shop)}</td>
+      <td class="mono">${esc(r.advisor_no||"")}</td>
+      <td class="mono">${esc(r.old_promise||"原无")} → <b>${esc(r.new_promise||"")}</b></td>
+      <td>${esc(r.reason||"")}</td></tr>`).join("")
+      ||`<tr><td colspan="5" style="color:var(--ink3)">没有待通知的</td></tr>`}
+    </tbody></table></div>
+   <div class="card" style="margin-bottom:14px"><div class="hd"><h3>在路上和已到店的包裹</h3>
+     <span class="n">可以分批发货 · 每个包裹独立签收 · 其中 ${d.分批} 张单是分批发的</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:170px">包裹</th><th style="width:200px">订单</th><th style="width:70px">件数</th>
+     <th style="width:150px">快递单号</th><th style="width:140px">发出</th><th style="width:140px">到店</th>
+     <th style="width:80px">状态</th></tr></thead><tbody>
+     ${d.pkgs.slice(0,30).map(r=>`<tr><td class="mono">${esc(r.pkg_id)}</td><td class="mono">${esc(r.order_id)}</td>
+      <td class="mono">${r.n}</td><td class="mono">${esc(r.tracking_no||"")}</td>
+      <td class="mono">${esc(r.shipped_at||"")}</td><td class="mono">${esc(r.arrived_at||"—")}</td>
+      <td><span class="pill ${r.status==="到店"?"p-ok":"p-blue"}">${esc(r.status||"")}</span></td></tr>`).join("")
+      ||`<tr><td colspan="7" style="color:var(--ink3)">没有在途或到店的包裹</td></tr>`}
+    </tbody></table></div>
+   ${d.back.length?`<div class="card" style="margin-bottom:14px"><div class="hd"><h3>人工回退过的单</h3>
+     <span class="n">发错件 / 到店发现要返工 · 只有店长能点 · 运费公司承担</span></div>
+    <table class="tb" style="margin-top:12px"><thead><tr>
+     <th style="width:200px">订单</th><th style="width:140px">什么时候</th><th style="width:110px">谁</th>
+     <th style="width:110px">为什么</th><th style="width:150px">退回</th><th>说明</th></tr></thead><tbody>
+     ${d.back.map(r=>`<tr><td class="mono">${esc(r.order_id)}</td><td class="mono">${esc(r.at||"")}</td>
+      <td>${esc(r.by_name||"")}</td><td><span class="pill p-warn">${esc(r.cause||"")}</span></td>
+      <td class="mono">${esc(r.frm||"")} → ${esc(r.too||"")}</td><td>${esc(r.note||"")}</td></tr>`).join("")}
+    </tbody></table></div>`:""}
    <div class="card"><div class="hd"><h3>要人看的回传</h3>
      <span class="n">挂异常 / 拒收 / 暂存 —— 收下和重复的不列</span></div>
     <table class="tb" style="margin-top:12px"><thead><tr>
      <th style="width:200px">订单</th><th style="width:90px">回传</th><th style="width:120px">生产方</th>
      <th style="width:140px">工厂报的时间</th><th style="width:90px">处理</th><th>为什么</th></tr></thead><tbody>
-     ${d.look.map(r=>`<tr><td class="mono">${esc(r.order_id)}</td><td>${esc(r.event)}</td>
+     ${d.look.map(r=>`<tr><td class="mono"><a href="#" data-log="${esc(r.order_id)}">${esc(r.order_id)}</a></td><td>${esc(r.event)}</td>
       <td>${esc(r.factory||"")}</td><td class="mono">${esc(r.at||"")}</td>
       <td><span class="pill ${RP[r.result]||"p-mut"}">${esc(r.result)}</span></td><td>${esc(r.reason||"")}</td></tr>`).join("")
       ||`<tr><td colspan="6" style="color:var(--ink3)">没有要人看的回传</td></tr>`}
     </tbody></table>
     <div class="note2" style="margin:0 24px 20px">${esc(d.note)}</div></div>`);
+  M.querySelectorAll("[data-log]").forEach(e=>e.onclick=ev=>{ev.preventDefault();view("orderlog",e.dataset.log)});
 }
 
 Q.slg={page:1,per:15};
