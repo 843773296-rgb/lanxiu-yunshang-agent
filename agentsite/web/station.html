@@ -38,6 +38,32 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 
 /* ── 右侧主区 ─────────────────────────────────────────────── */
 #main{flex:1;display:flex;flex-direction:column;height:100vh;min-width:0}
+/* ── 右侧边栏:证据 + 子助手(2026-09-24 用户要的)───────────────────────
+   两个页签。**证据**回答「凭什么这么说」:这一轮调了哪些工具、拿到什么、
+   注入了什么上下文、谁在问、花了多少。**子助手**把一件子任务派给另一个角色,
+   结果留在侧栏,要用再并回主对话 —— 换角色本来要开新会话,侧栏让你不用丢掉当前这条。 */
+#ev{width:0;flex:none;border-left:1px solid var(--line);background:var(--side);
+  display:flex;flex-direction:column;height:100vh;overflow:hidden;transition:width .16s}
+#ev.on{width:380px}
+@media(max-width:1180px){#ev.on{width:320px}}
+#ev header{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex:none}
+#ev header b{font-size:13px;flex:1}
+#ev .tabs{display:flex;gap:6px;padding:8px 12px 0}
+#ev .tabs button{font:inherit;font-size:12px;padding:5px 12px;border:1px solid var(--line);
+  border-radius:8px;background:#fff;cursor:pointer;color:var(--dim)}
+#ev .tabs button.on{color:var(--ink);font-weight:600;border-color:var(--ink3,#b9bcc4)}
+#ev .body{flex:1;overflow:auto;padding:12px 14px;font-size:12.5px;line-height:1.75}
+#ev .grp{margin-bottom:14px}
+#ev .grp h4{font-size:12px;color:var(--dim);margin:0 0 6px;font-weight:600}
+#ev .kv{display:flex;gap:8px;margin:2px 0}#ev .kv span:first-child{color:var(--dim);min-width:72px}
+#ev .toolrow{border:1px solid var(--line);border-radius:8px;background:#fff;padding:7px 9px;margin:6px 0}
+#ev .toolrow code{font-size:11.5px;color:var(--dim);word-break:break-all}
+#ev .empty{color:var(--dim);padding:10px 0}
+#ev textarea{width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;
+  border:1px solid var(--line);border-radius:8px;resize:vertical;min-height:64px}
+#ev select{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;width:100%}
+#ev .out{background:#fff;border:1px solid var(--line);border-radius:8px;padding:9px 10px;margin-top:8px;
+  white-space:pre-wrap;max-height:40vh;overflow:auto}
 #top{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--line);flex:none}
 #me{font-size:12px;color:var(--dim);padding-left:2px}
 #top select{font:inherit;font-size:13px;padding:5px 26px 5px 10px;border:1px solid var(--line);
@@ -231,6 +257,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
          **控件只保留这一处**,设置里只留说明 —— 两个下拉迟早不同步。 -->
     <select id="model" title="换模型不新开会话,续着问"><option>载入中…</option></select>
     <button class="tbtn" id="cfgbtn" title="技能档位 · 数据 · 关于">设置</button>
+    <button class="tbtn" id="evbtn" title="证据 · 子助手">证据 ▸</button>
     <span id="kindhint"></span>
     <span class="sp"></span>
     <a class="tbtn" href="/tasks">任务</a>
@@ -241,7 +268,13 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   <!-- 设置浮层。**收起来不等于藏起来** —— 当前值要显示在按钮旁边的提示里,
        否则「这一轮用的是哪档技能」变成看不见的状态,
        而它恰恰是会改变回答的那种设置。 -->
-  <div id="cfg" hidden>
+  <div id="ev">
+  <header><b>这一轮凭什么这么说</b><button class="tbtn" id="evclose">收起</button></header>
+  <div class="tabs"><button id="evt1" class="on">证据</button><button id="evt2">子助手</button></div>
+  <div class="body" id="evbody"></div>
+</div>
+
+<div id="cfg" hidden>
     <div id="cfgnav">
       <button class="back" id="cfgback">← 返回对话</button>
       <h4>这一轮怎么答</h4>
@@ -613,6 +646,7 @@ function drawStream(){
    限额和后端一致(四张、每张 6MB、四种格式)。**两边都要拦** ——
    前端拦是为了让人立刻知道为什么不行,后端拦是因为前端拦不住绕过去的请求。 */
 const MAX_IMGS = 4, MAX_BYTES = 6 * 1024 * 1024;
+let ME = {};      // 当前登录人(/api/me 拿到之后填)
 const OKMIME = ["image/png","image/jpeg","image/gif","image/webp"];
 let PEND = [];   // [{name, url}] —— url 是 data URL,直接发给后端
 
@@ -714,9 +748,111 @@ async function ask(){
   if(r && r.session_id) c.session = r.session_id;
   c.msgs.push(r && r.error ? {role:"assistant", error: r.error} : Object.assign({role:"assistant"}, r));
   c.at = Date.now(); save(); drawSide(); drawStream();
+  if($("#ev").classList.contains("on")) drawEv();   // 侧栏开着就跟着刷新证据
 }
 
 /* ── 「?」教学层 ─────────────────────────────────────────── */
+/* ── 右侧边栏:证据 + 子助手(2026-09-24)───────────────────────
+   **证据这一栏回答「凭什么」,不是「结果是什么」**。结果在左边;右边要能让人自己核:
+   调了哪些工具、给了什么参数、谁在问、用的哪个模型、体检有没有打回。
+   ⚠️ 工具**返回了什么**现在还列不出来 —— 轨迹里只有工具名和参数。要看返回值得在钩子里
+   把结果收下来,那是运行时改动,等评测跑完再做。**写在界面上,免得看的人以为这里已经全了。** */
+let EVTAB = "证据";
+const 注入登记 = [["业务今天", "日期 —— 这里是权威,规矩只是复述"],
+                  ["工作日记", "最近三条,只给背景不定口径"],
+                  ["当前方案", "这一轮说的是哪一份方案"],
+                  ["压缩提醒", "压缩后把按号取过的单据注回去"]];
+
+function evOpen(on){
+  $("#ev").classList.toggle("on", on);
+  $("#evbtn").textContent = on ? "证据 \u25c2" : "证据 \u25b8";
+  if(on) drawEv();
+}
+function drawEv(){
+  $("#evt1").classList.toggle("on", EVTAB === "证据");
+  $("#evt2").classList.toggle("on", EVTAB === "子助手");
+  $("#evbody").innerHTML = EVTAB === "证据" ? evEvidence() : evSub();
+  if(EVTAB === "子助手") bindSub();
+}
+function evEvidence(){
+  const c = cur();
+  const last = c && [...(c.msgs || [])].reverse().find(m => m.role === "assistant" && !m.error);
+  if(!last) return `<div class="empty">还没有回答。问一句之后,这里会列出它<b>凭什么</b>这么说。</div>`;
+  const R = KINDS[c.kind] || {};
+  const traj = last.trajectory || [];
+  const 工具 = traj.map(t => {
+    const n = String(t.tool || "").split("__").pop();
+    const a = t.args && Object.keys(t.args).length
+      ? Object.entries(t.args).map(([k, v]) =>
+          `${esc(k)}=${esc(String(typeof v === "object" ? JSON.stringify(v) : v).slice(0, 60))}`).join(" · ")
+      : "(没带参数)";
+    return `<div class="toolrow"><b>${esc(n)}</b><br><code>${a}</code></div>`;
+  }).join("") || `<div class="empty">这一轮<b>一个工具都没调</b> —— 结论没有取数撑着,要当心。</div>`;
+  const 体检 = (last.guard_violations || []).map(v =>
+    `<div class="toolrow">${esc(v.check || "")} · ${esc(String(v.msg || "").slice(0, 90))}</div>`).join("");
+  return `
+   <div class="grp"><h4>谁在问 · 看得到什么</h4>
+     <div class="kv"><span>身份</span><span>${esc(ME.name || "")} · ${esc(ME.role || "")} · ${esc(ME.shop || "—")}</span></div>
+     <div class="kv"><span>助手</span><span>${esc(R.name || c.kind)} · ${R.tools || "?"} 个工具 · ${R.rules || "?"} 条规矩</span></div>
+     <div class="kv"><span>范围</span><span>工具按工号取数,看不到别店的单</span></div>
+   </div>
+   <div class="grp"><h4>这一轮调了什么(${traj.length} 次)</h4>${工具}</div>
+   <div class="grp"><h4>每轮都注入的上下文</h4>
+     ${注入登记.map(x => `<div class="kv"><span>${esc(x[0])}</span><span>${esc(x[1])}</span></div>`).join("")}
+     <div class="empty" style="padding-top:6px">同一件事只许一处说了算 —— 门禁里有条检查盯着;两处打架时,贴着你这句话的那处会赢。</div>
+   </div>
+   <div class="grp"><h4>这一次花了什么</h4>
+     <div class="kv"><span>模型</span><span>${esc(last.model || c.model || "—")}</span></div>
+     <div class="kv"><span>耗时</span><span>${last.seconds != null ? last.seconds + " 秒" : "—"}</span></div>
+     <div class="kv"><span>花费</span><span>${last.cost_usd != null ? "$" + Number(last.cost_usd).toFixed(4) : "—"}</span></div>
+   </div>
+   ${体检 ? `<div class="grp"><h4>交付前体检打回过</h4>${体检}</div>` : ""}
+   <div class="grp"><h4>还看不到的</h4>
+     <div class="empty">工具<b>返回了什么</b>这里还列不出来(轨迹里只有工具名和参数)——
+       要看返回值得在钩子里把结果收下来,记在待办里。</div>
+   </div>`;
+}
+function evSub(){
+  const c = cur();
+  const 可选 = (ROLES || []).filter(r => r.kind !== (c && c.kind));
+  return `
+   <div class="grp"><h4>派一件事给别的助手</h4>
+     <div class="empty" style="padding:0 0 8px">换助手本来要开新会话。这里派出去的是<b>一次性</b>的子任务:
+       它自己跑、结果留在侧栏,要用再并回左边这条对话。</div>
+     <select id="subkind">${可选.map(r => `<option value="${esc(r.kind)}">${esc(r.emoji || "")} ${esc(r.name)} · ${esc(r.who || "")}</option>`).join("")}</select>
+     <textarea id="subq" placeholder="要它做什么?(比如:PT06 立领长衫每一片吃多少布?)"></textarea>
+     <button class="tbtn" id="subgo" style="margin-top:8px">派出去</button>
+     <div id="subout"></div>
+   </div>`;
+}
+function bindSub(){
+  const b = $("#subgo"); if(!b) return;
+  b.onclick = async () => {
+    const q = ($("#subq").value || "").trim(); if(!q) return;
+    const kind = $("#subkind").value;
+    b.disabled = true; b.textContent = "在跑…";
+    $("#subout").innerHTML = `<div class="out">派给「${esc((KINDS[kind]||{}).name||kind)}」了,等它回…</div>`;
+    let r;
+    try{
+      r = await (await fetch("/run", {method:"POST", headers:{"content-type":"application/json"},
+        body: JSON.stringify({kind, prompt: q, model: (cur()||{}).model || null,
+                              skills: "own", effort: "medium"})})).json();
+    }catch(e){ r = {error: "请求失败:" + e.message}; }
+    b.disabled = false; b.textContent = "派出去";
+    if(!r || r.error){ $("#subout").innerHTML = `<div class="out">没跑成:${esc((r&&r.error)||"")}</div>`; return; }
+    const 调 = (r.trajectory || []).map(t => String(t.tool||"").split("__").pop()).join(" · ") || "没调工具";
+    $("#subout").innerHTML = `<div class="out">${esc(r.text || "")}</div>
+      <div class="kv" style="margin-top:6px"><span>它查了</span><span>${esc(调)}</span></div>
+      <div class="kv"><span>花费</span><span>${r.cost_usd != null ? "$" + Number(r.cost_usd).toFixed(4) : "—"}</span></div>
+      <button class="tbtn" id="submerge" style="margin-top:8px">把结论放进输入框</button>`;
+    $("#submerge").onclick = () => {
+      $("#q").value = ($("#q").value ? $("#q").value + "\n\n" : "")
+        + `【${(KINDS[kind]||{}).name||kind}的回答】\n` + (r.text || "");
+      $("#q").focus(); evOpen(false);
+    };
+  };
+}
+
 const TEACH = [
  ["它凭什么可信",
   "每一个关于工艺、面料、形制的具体结论**都必须先查库**,不许凭训练知识作答。" +
@@ -769,6 +905,10 @@ $("#ov").onclick = e => { if(e.target.id === "ov") closeOv(); };
 /* ── 事件绑定 ─────────────────────────────────────────────── */
 $("#newbtn").onclick = () => { PICKING = true; drawSide(); drawStream(); };
 $("#currole").onclick = () => { PICKING = true; drawStream(); };
+$("#evbtn").onclick = () => evOpen(!$("#ev").classList.contains("on"));
+$("#evclose").onclick = () => evOpen(false);
+$("#evt1").onclick = () => { EVTAB = "证据"; drawEv(); };
+$("#evt2").onclick = () => { EVTAB = "子助手"; drawEv(); };
 $("#gallery").onclick = () => { PICKING = true; drawStream(); };
 $("#send").onclick = ask;
 $("#stop").onclick = () => { if(RUNNING) RUNNING.abort(); };
@@ -945,6 +1085,7 @@ async function loadMe(){
       return;
     }
     const u = await r.json();
+    ME = u;                   // 侧栏「证据」要显示「谁在问、看得到什么」
     $("#me").textContent = `${u.name} · ${u.role}`;
     $("#me").title = `${u.name}(${u.no})· ${u.role}${u.shop ? " · " + u.shop : ""}`;
     bindStore(u.no);          // **会话列表要等身份到了才读**
