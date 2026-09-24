@@ -610,6 +610,11 @@ def _journey(cust, dry=False):
        (_发 + datetime.timedelta(days=2)).strftime("%Y-%m-%d %H:%M"), oid)
     ex("UPDATE pickup_item SET fit_at=? WHERE order_id=? AND fit_at IS NOT NULL",
        (_发 + datetime.timedelta(days=3)).strftime("%Y-%m-%d %H:%M"), oid)
+    # 包裹自己的时间也按剧本回填 —— **它落的是机器时间**(工厂回传那一刻 `_now()`),
+    # 而整条旅程最后会把所有时间往回挪同一个量:机器时间被挪走之后落在订单创建之前,
+    # 于是「包裹比订单还早发出」。数据规范 09-24 当场抓到 31 条(pkg.shipped_at / created 早于 ordr.created)。
+    ex("UPDATE pkg SET shipped_at=?, created=? WHERE order_id=?",
+       _发.strftime("%Y-%m-%d %H:%M"), _发.strftime("%Y-%m-%d %H:%M"), oid)
     ex("UPDATE pkg SET arrived_at=? WHERE order_id=? AND arrived_at IS NOT NULL",
        (_发 + datetime.timedelta(days=2)).strftime("%Y-%m-%d %H:%M"), oid)
     ex("""UPDATE fit_code SET issued_at=?, used_at=?, expires_at=?

@@ -92,6 +92,15 @@ def _f(t):
     return t.strftime("%Y-%m-%d %H:%M") if t else None
 
 
+def _有包裹表(c):
+    """包裹表由**工厂那一步**建(seed_factory_feed,在重建里排在本步之后)。
+    第一次重建跑到这里时它还不存在 —— 那时候只补订单级的签收记录,
+    等工厂那步把包裹造出来之后,本脚本会被再跑一次(`--铺到包裹`)把记录铺到包裹和件上。
+    **不是「有就补、没有就算了」** —— 没补上的话「整单签收完了没有」会把每一件都当成没签收。
+    """
+    return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pkg'").fetchone())
+
+
 def _铺到包裹和件(c):
     """把**订单级**的老签收记录铺到**包裹**和**件**上(业务 2026-09-23 改成分批发货之后补的)。
 
@@ -162,9 +171,10 @@ def main(db=None):
                   "fit_result,fit_at,fit_verified_by,complete_at,complete_by,ratify_note) "
                   "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", 行们)
     c.commit()
-    包, 件 = _铺到包裹和件(c)
+    包, 件 = _铺到包裹和件(c) if _有包裹表(c) else (0, 0)
     c.commit(); c.close()
-    print(f"分批发货:按包裹补了 {包} 行取件记录、按件补了 {件} 行签收记录(业务 09-23:签收落到件)")
+    if 包 or 件:
+        print(f"分批发货:按包裹补了 {包} 行取件记录、按件补了 {件} 行签收记录(业务 09-23:签收落到件)")
     print(f"交付签收:补了 {len(行们)} 行(旅程真走过签收的 {len(已有)} 单原样留着)—— 待完成 {计['待完成']} / 完成 {计['完成']}"
           f"(其中转寄 {计['转寄']});"
           f"已发货到店 {计['已发货·到店']}、还在路上 {计['已发货·在路上']}")
@@ -177,16 +187,17 @@ def main(db=None):
                                    WHERE o.status='已发货'""").fetchone()[0],
          "已发货·在路上": c.execute("""SELECT COUNT(*) FROM ordr o WHERE o.kind='定制品订单' AND o.status='已发货'
                                      AND NOT EXISTS(SELECT 1 FROM pickup p WHERE p.order_id=o.id)""").fetchone()[0],
-         # 分批发的单要有活用例 —— 一单一个包裹的话,「每个包裹一个码」这一支永远测不到
-         "分批发的单": c.execute("""SELECT COUNT(*) FROM (SELECT order_id FROM pkg WHERE void_at IS NULL
-                                   GROUP BY order_id HAVING COUNT(*)>1)""").fetchone()[0],
-         "按件签收记录": c.execute("SELECT COUNT(*) FROM pickup_item WHERE fit_result='合身'").fetchone()[0]}
+         }
+
     # 已经签收过的包裹,**每一件都要有按件的签收记录** —— 对方(工厂侧)验不了这条,归这边验。
     # 缺了的话「整单签收完了没有」会把没记录的件当成没签收,整单永远进不了待完成。
-    漏 = c.execute("""SELECT COUNT(*) FROM pkg k JOIN pkg_item i ON i.pkg_id=k.pkg_id
+    漏 = 0 if not _有包裹表(c) else c.execute("""SELECT COUNT(*) FROM pkg k JOIN pkg_item i ON i.pkg_id=k.pkg_id
                      JOIN pickup u ON u.order_id=k.order_id
                      WHERE k.void_at IS NULL AND u.fit_result IS NOT NULL
                        AND NOT EXISTS(SELECT 1 FROM pickup_item t WHERE t.order_item_id=i.item_id)""").fetchone()[0]
+    if not _有包裹表(c):
+        print("  ℹ️ 包裹表还没建(工厂那一步在本步之后)—— 这一轮只补订单级记录,"
+              "铺到包裹和件由重建里的 `seed_pickup.py --铺到包裹` 那一步做")
     c.close()
     for k in 全:
         if not 全[k]:
@@ -197,5 +208,27 @@ def main(db=None):
     print("  ✅ 已签收包裹里的每一件都有按件记录")
 
 
+def 铺(db=None):
+    """重建里工厂那一步之后再跑一次:把订单级的签收记录铺到包裹和件上。"""
+    c = sqlite3.connect(db or os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
+    c.executescript(DDL)
+    if not _有包裹表(c):
+        print("❌ 包裹表还不在 —— 这一步要排在工厂那一步之后"); sys.exit(1)
+    包, 件 = _铺到包裹和件(c); c.commit()
+    漏 = c.execute("""SELECT COUNT(*) FROM pkg k JOIN pkg_item i ON i.pkg_id=k.pkg_id
+                     JOIN pickup u ON u.order_id=k.order_id
+                     WHERE k.void_at IS NULL AND u.fit_result IS NOT NULL
+                       AND NOT EXISTS(SELECT 1 FROM pickup_item t WHERE t.order_item_id=i.item_id)""").fetchone()[0]
+    分 = c.execute("""SELECT COUNT(*) FROM (SELECT order_id FROM pkg WHERE void_at IS NULL
+                     GROUP BY order_id HAVING COUNT(*)>1)""").fetchone()[0]
+    c.close()
+    print(f"分批发货:按包裹补了 {包} 行取件记录、按件补了 {件} 行签收记录;分批发的单 {分} 张")
+    if 漏:
+        print(f"  ❌ 有 {漏} 件在已签收的包裹里却没有按件记录 —— 整单永远进不了待完成"); sys.exit(1)
+    if not 分:
+        print("  ❌ 一张分批发的单都没有 —— 「一个包裹一个码」那一支没有活用例"); sys.exit(1)
+    print("  ✅ 已签收包裹里的每一件都有按件记录")
+
+
 if __name__ == "__main__":
-    main()
+    铺() if "--铺到包裹" in sys.argv else main()

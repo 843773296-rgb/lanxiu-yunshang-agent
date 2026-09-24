@@ -89,10 +89,12 @@ def run(T):
        {"kind": "定制品订单"})[1] == "COMPLETE_GATE")
     ck("状态机:标品不走这两道闸", fsm.check("bk-order", "已发货", "待完成", {"kind": "标品订单"})[0])
     # **按性质挑,不钉死编号**:一张已发货、还没登记到店的定制单
+    # **挑一单一个包裹的** —— 分批发的单要说清哪个包裹(下面单独验),主流程这一段不该撞上它
     o = c.execute("""SELECT o.id, o.shop, o.customer_id, k.phone_tail FROM ordr o JOIN customer k ON k.id=o.customer_id
                      WHERE o.kind='定制品订单' AND o.status='已发货'
+                       AND (SELECT COUNT(*) FROM pkg g WHERE g.order_id=o.id AND g.void_at IS NULL)=1
                        AND NOT EXISTS(SELECT 1 FROM pickup p WHERE p.order_id=o.id) ORDER BY o.id LIMIT 1""").fetchone()
-    ck("有一张已发货、还没到店的定制单", bool(o))
+    ck("有一张已发货、还没到店、一个包裹的定制单", bool(o))
     if not o: return
     人 = lambda role, 店: (lambda x: dict(x) if x else None)(c.execute(
         "SELECT no,name,role,shop FROM staff WHERE role=? AND status='启用' AND shop=? ORDER BY no LIMIT 1",

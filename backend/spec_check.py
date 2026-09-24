@@ -131,7 +131,11 @@ tabs = [t[0] for t in c.execute("SELECT name FROM sqlite_master WHERE type='tabl
 # 工厂回传收件箱里的订单号是**工厂报的**,「查无此单」正是要挂异常、留底给人去核的 ——
 # 只豁免挂了异常的那几行,收下的回传照样要对得上真订单
 REF_OK = {("factory_msg", "order_id"): "result='挂异常'",
-          ("factory_outbox", "order_id"): "flaw='查无此单'"}
+          ("factory_outbox", "order_id"): "flaw='查无此单'",
+          # 码表的 order_id 是**键**不是外键:订单签收放单号、返修放 "R:返修单号"、
+          # 包裹放 "P:包裹号"(业务 09-23 分批发货,一个包裹一个码)。三种码共用一张表,
+          # 带前缀的那两种在这里豁免 —— 但**不是放过**:下面 B2b 各自查它们指的真表。
+          ("fit_code", "order_id"): "order_id LIKE 'R:%' OR order_id LIKE 'P:%'"}
 dangling = []
 for t in tabs:
     cols = [x[1] for x in c.execute(f"PRAGMA table_info({t})")]
@@ -145,6 +149,19 @@ for t in tabs:
                       + (f" AND NOT ({免})" if 免 else "")).fetchone()[0]
         if n: dangling.append({"表": f"{t}.{col}", "指向": ref, "对不上": n})
 rule("B2", "全库没有悬空引用", dangling, "指向不存在的对象")
+
+# 上面豁免掉的带前缀的码,在这里**各自查它指的那张表** —— 豁免不等于放过,
+# 否则「P:」后面跟个不存在的包裹号也没人管,而核验时只会说「没有码」,看不出是数据烂了。
+带前缀的码 = []
+if "pkg" in tabs:
+    带前缀的码 += [{"表": "fit_code(P: 包裹码)", "指向": "pkg", "对不上": n} for n in
+                   [c.execute("""SELECT count(*) FROM fit_code WHERE order_id LIKE 'P:%'
+                                 AND substr(order_id,3) NOT IN (SELECT pkg_id FROM pkg)""").fetchone()[0]] if n]
+if "maintain" in tabs:
+    带前缀的码 += [{"表": "fit_code(R: 返修码)", "指向": "maintain", "对不上": n} for n in
+                   [c.execute("""SELECT count(*) FROM fit_code WHERE order_id LIKE 'R:%'
+                                 AND substr(order_id,3) NOT IN (SELECT id FROM maintain)""").fetchone()[0]] if n]
+rule("B2b", "带前缀的码(P: 包裹 / R: 返修)也指得到真东西", 带前缀的码, "码的键指向不存在的对象")
 
 rule("B3", "着装人的账户 == 它建档门店档案的账户",
      q("""SELECT w.id FROM wearer w JOIN customer k ON k.id=w.customer_id
