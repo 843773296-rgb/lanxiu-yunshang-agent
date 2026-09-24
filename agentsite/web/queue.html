@@ -92,10 +92,38 @@ async function load(){
 function fld(k,v,dim){return `<div class="fld"><div class="k">${k}</div>
   <div class="v${dim?" dim":""}">${v?esc(v):"—"}</div></div>`;}
 
+// 把筛选切到某一档(不重复写三处 aria-pressed)
+function 切档(s){
+  state=s;
+  $("#seg").querySelectorAll("button").forEach(x=>
+    x.setAttribute("aria-pressed", x.dataset.s===s ? "true" : "false"));
+}
+
 async function open_(tid){
   sel=tid; render();
-  const x=rows.find(r=>r.task_id===tid);
-  if(!x) return;
+  let x=rows.find(r=>r.task_id===tid);
+  // ⚠️ **找不到不许静默返回。**
+  // 刚研判完的那条会从「未研判」这一档里消失(它变成了「待复核」),
+  // 于是原来这里 `if(!x) return;` 什么也不做 —— 而上面的提示写着「研判完成,请复核」。
+  // 结果就是:**提示说完成了,页面上却没有任何可以复核的地方**,
+  // 而且看起来不像出错,像是这个功能本来就到此为止。(用户 2026-09-24 当场撞到。)
+  if(!x){
+    const q=await fetch("/api/ops-queue").then(r=>r.json()).catch(()=>({rows:[]}));
+    x=(q.rows||[]).find(r=>r.task_id===tid);
+    if(x){                                  // 在别的档里 —— 把档切过去,并说一句为什么跳了
+      切档(x.done?"已销账":"待复核");
+      await load();
+      $("#msg").textContent=`已跳到「${state}」—— ${tid} 研判完就从「未研判」挪过来了`;
+      sel=tid; render();
+      x=rows.find(r=>r.task_id===tid);
+    }
+  }
+  if(!x){
+    $("#panel").innerHTML=`<div class="hd"><span class="id">${esc(tid)}</span></div>
+      <div class="bd"><div class="empty">这条工单在队列里找不到了。<br>
+      可能已被别人销账,或者它不在任何一档里 —— 点「全部」再找一次。</div></div>`;
+    return;
+  }
   const hd=`<span class="id">${esc(x.task_id)}</span>
     <span class="tag ${LV[x.level]}">${esc(x.level)}</span>
     <span class="tag">${esc(x.type)}</span>
@@ -155,22 +183,35 @@ window.resolve=async(id,decision,rc,ac,nt)=>{
 };
 window.runOne=async(tid)=>{
   $("#msg").textContent="跑这一条中…";
-  await fetch("/run-triage",{method:"POST",headers:{"content-type":"application/json"},
-    body:JSON.stringify({task_id:tid})}).then(r=>r.json());
-  await load(); open_(tid); $("#msg").textContent="研判完成,请复核";
+  const r=await fetch("/run-triage",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({task_id:tid})}).then(r=>r.json()).catch(e=>({error:e+""}));
+  if(r&&r.error){ $("#msg").textContent="研判失败:"+r.error; return; }
+  $("#msg").textContent="研判完成,请复核";
+  await load();
+  await open_(tid);      // ← 要 await:它可能要换一档才找得到这条
 };
 $("#run").onclick=async(e)=>{
   if(e.target.id==="n") return;
   const b=$("#run"); b.disabled=true; $("#msg").textContent="智能体在跑……";
   const r=await fetch("/run-batch",{method:"POST",headers:{"content-type":"application/json"},
     body:JSON.stringify({n:+$("#n").value||3})}).then(r=>r.json()).catch(e=>({error:e+""}));
+  b.disabled=false;
+  const 跑了=(r.done||[]).length;
+  // 批量跑完也一样:在「未研判」档里跑,跑完的那几条会当场消失 ——
+  // 列表只是变短,看不出它们去哪了。跑出东西来就把档切到「待复核」。
+  if(!r.error && 跑了 && state==="未研判") 切档("待复核");
+  await load();
   $("#msg").textContent=r.error?("失败:"+r.error):
-    `研判 ${(r.done||[]).length} 条,失败 ${(r.failed||[]).length} 条,$${(r.cost||0).toFixed(4)}`;
-  b.disabled=false; await load();
+    `研判 ${跑了} 条,失败 ${(r.failed||[]).length} 条,$${(r.cost||0).toFixed(4)}`
+    + (state==="待复核"?" —— 已跳到「待复核」,在这一档里签字":"");
+  // 打开**刚跑完的那一条**,不是列表第一条 —— 列表第一条很可能是还没研判的,
+  // 那会让人以为「跑了等于没跑」。open_ 自己会在找不到时换一档。
+  const 头=(r.done||[])[0];
+  if(!r.error && 头 && 头.task_id) await open_(头.task_id);
 };
 $("#seg").querySelectorAll("button").forEach(b=>b.onclick=()=>{
   $("#seg").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));
-  b.setAttribute("aria-pressed","true"); state=b.dataset.s; sel=null; load();
+  切档(b.dataset.s); sel=null; load();
   $("#panel").innerHTML=`<div class="hd"><span class="id">选一条工单</span></div>
     <div class="bd"><div class="empty">左边点一行。</div></div>`;
 });
