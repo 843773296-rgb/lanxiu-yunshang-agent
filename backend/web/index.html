@@ -2635,24 +2635,26 @@ async function factoryPage(){
      <span class="n">工厂延期了、顾问还没告诉顾客的单 · 通知完在助手或页面上点「已通知」</span></div>
     <table class="tb" style="margin-top:12px"><thead><tr>
      <th style="width:200px">订单</th><th style="width:140px">门店</th><th style="width:100px">顾问</th>
-     <th style="width:210px">完工日</th><th>原因</th></tr></thead><tbody>
+     <th style="width:210px">完工日</th><th>原因</th><th style="width:96px"></th></tr></thead><tbody>
      ${d.told.map(r=>`<tr><td class="mono"><a href="#" data-log="${esc(r.order_id)}">${esc(r.order_id)}</a></td><td>${esc(r.shop)}</td>
       <td class="mono">${esc(r.advisor_no||"")}</td>
       <td class="mono">${esc(r.old_promise||"原无")} → <b>${esc(r.new_promise||"")}</b></td>
-      <td>${esc(r.reason||"")}</td></tr>`).join("")
-      ||`<tr><td colspan="5" style="color:var(--ink3)">没有待通知的</td></tr>`}
+      <td>${esc(r.reason||"")}</td>
+      <td><button class="btn gray" style="height:26px;padding:0 10px;font-size:12px" data-told="${r.id}">已通知顾客</button></td></tr>`).join("")
+      ||`<tr><td colspan="6" style="color:var(--ink3)">没有待通知的</td></tr>`}
     </tbody></table></div>
    <div class="card" style="margin-bottom:14px"><div class="hd"><h3>在路上和已到店的包裹</h3>
      <span class="n">可以分批发货 · 每个包裹独立签收 · 其中 ${d.分批} 张单是分批发的</span></div>
     <table class="tb" style="margin-top:12px"><thead><tr>
      <th style="width:170px">包裹</th><th style="width:200px">订单</th><th style="width:70px">件数</th>
      <th style="width:150px">快递单号</th><th style="width:140px">发出</th><th style="width:140px">到店</th>
-     <th style="width:80px">状态</th></tr></thead><tbody>
+     <th style="width:80px">状态</th><th style="width:130px"></th></tr></thead><tbody>
      ${d.pkgs.slice(0,30).map(r=>`<tr><td class="mono">${esc(r.pkg_id)}</td><td class="mono">${esc(r.order_id)}</td>
       <td class="mono">${r.n}</td><td class="mono">${esc(r.tracking_no||"")}</td>
       <td class="mono">${esc(r.shipped_at||"")}</td><td class="mono">${esc(r.arrived_at||"—")}</td>
-      <td><span class="pill ${r.status==="到店"?"p-ok":"p-blue"}">${esc(r.status||"")}</span></td></tr>`).join("")
-      ||`<tr><td colspan="7" style="color:var(--ink3)">没有在途或到店的包裹</td></tr>`}
+      <td><span class="pill ${r.status==="到店"?"p-ok":"p-blue"}">${esc(r.status||"")}</span></td>
+      <td><button class="btn gray" style="height:26px;padding:0 10px;font-size:12px" data-back="${esc(r.order_id)}">发错件 / 要返工</button></td></tr>`).join("")
+      ||`<tr><td colspan="8" style="color:var(--ink3)">没有在途或到店的包裹</td></tr>`}
     </tbody></table></div>
    ${d.back.length?`<div class="card" style="margin-bottom:14px"><div class="hd"><h3>人工回退过的单</h3>
      <span class="n">发错件 / 到店发现要返工 · 只有店长能点 · 运费公司承担</span></div>
@@ -2675,6 +2677,35 @@ async function factoryPage(){
     </tbody></table>
     <div class="note2" style="margin:0 24px 20px">${esc(d.note)}</div></div>`);
   M.querySelectorAll("[data-log]").forEach(e=>e.onclick=ev=>{ev.preventDefault();view("orderlog",e.dataset.log)});
+  // 顾问点「已通知顾客」—— 不点的话这份清单只进不出,两天后就没人看了
+  M.querySelectorAll("[data-told]").forEach(e=>e.onclick=async()=>{
+    e.disabled=true; e.textContent="记下中…";
+    const r=await post("/api/delay-told",{delay_id:Number(e.dataset.told)});
+    if(r&&r.ok){ factoryPage(); }
+    else { e.disabled=false; e.textContent="已通知顾客"; alert((r&&r.reason)||"没记下来"); }
+  });
+  // 店长人工回退:**内联一行表单**,不弹窗 —— 原因和理由都要,理由不写写口会拒
+  M.querySelectorAll("[data-back]").forEach(e=>e.onclick=()=>{
+    const tr=e.closest("tr"), oid=e.dataset.back;
+    if(tr.nextElementSibling && tr.nextElementSibling.dataset.form==="1") return;
+    const f=document.createElement("tr"); f.dataset.form="1";
+    f.innerHTML=`<td colspan="8" style="background:var(--tile);padding:12px 14px">
+      <b>回退 ${esc(oid)}</b>
+      <select class="bkc" style="margin:0 8px;padding:4px 8px">
+        <option value="发错件">工厂发错件 → 退回等发货</option>
+        <option value="到店返工">到店发现要返工 → 退回生产中(重新生产)</option></select>
+      <input class="bkn" placeholder="哪件不对、怎么发现的(必填)" style="width:300px;padding:4px 8px">
+      <button class="btn sol bkgo" style="height:28px;padding:0 14px;font-size:12px" style="margin-left:8px">确认回退</button>
+      <span style="color:var(--ink3);margin-left:10px">只有店长能点 · 运费公司承担 · 这张单会一直留着回退记录</span></td>`;
+    tr.after(f);
+    f.querySelector(".bkgo").onclick=async()=>{
+      const b=f.querySelector(".bkgo"); b.disabled=true; b.textContent="回退中…";
+      const r=await post("/api/factory-rollback",{order_id:oid,
+        cause:f.querySelector(".bkc").value, note:f.querySelector(".bkn").value});
+      if(r&&r.ok){ factoryPage(); }
+      else { b.disabled=false; b.textContent="确认回退"; alert((r&&r.reason)||"回退没成"); }
+    };
+  });
 }
 
 Q.slg={page:1,per:15};

@@ -1553,6 +1553,30 @@ def maintain_list(q):
     d["readonly"]=True
     return d
 
+def factory_rollback(body, me):
+    """店长人工回退(发错件 / 到店发现要返工,业务 09-23)。
+    **me 由路由从登录态取**(`_me(self)`),不读请求体里的 role —— 也是为了能在库副本上跑冒烟。"""
+    import factory_inbox as _fi
+    if not me:
+        return dict(ok=False, code="NO_LOGIN", reason="请先登录 —— 回退要记是谁点的")
+    # ⚠️ **db=DB**:跟着 server 自己的库走。不传的话写口认它自己的默认路径 ——
+    # 写冒烟在库副本上跑时,这两个接口会**写进真库**(2026-09-24 当场撞上:真库里多了一条回退)。
+    return _fi.人工回退((body.get("order_id") or "").strip(), (body.get("cause") or "").strip(),
+                      (body.get("note") or "").strip(), me, db=DB)
+
+
+def delay_told(body, me):
+    """顾问点「已通知顾客」(业务 09-23)。不点的话这份清单只进不出,两天后就没人看了。"""
+    import factory_inbox as _fi
+    if not me:
+        return dict(ok=False, code="NO_LOGIN", reason="请先登录 —— 要记下是谁通知的")
+    try:
+        did = int(body.get("delay_id"))
+    except (TypeError, ValueError):
+        return dict(ok=False, code="BAD_ID", reason="没说是哪一条延期记录")
+    return _fi.标记已通知(did, me, db=DB)      # db=DB 同上:别写进真库
+
+
 def order_log_page(oid):
     """一张单的日志(业务 09-23:每个订单一条独立日志)。
     状态变化、每条工厂回传(含被拒和作废的)、人工回退、延期、签收侧的事件,按时间排成一条。"""
@@ -2761,6 +2785,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(create_appointment(body, _actor_of(self), _role_of(self)))
         if p=="/api/followup-create":
             return self._send(create_followup(body, _actor_of(self)))
+        if p=="/api/factory-rollback": return self._send(factory_rollback(body, _me(self)))
+        if p=="/api/delay-told":       return self._send(delay_told(body, _me(self)))
         if p=="/api/download-create":
             return self._send(create_download(body.get("kind"),body.get("filters")))
         if p=="/api/product-save":

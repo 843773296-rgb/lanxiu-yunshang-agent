@@ -159,7 +159,32 @@ def 用例表():
     单 = 取("SELECT id,customer_id FROM ordr LIMIT 1")
     任 = 取("SELECT id FROM task WHERE status<>'已完成' LIMIT 1") if 有表("task") else None
 
+    # 工厂回传那两个(业务 09-23):回退只有店长能点、延期通知要顾问点「已通知」。
+    # **参数现取**:一张有在途 / 到店包裹的已发货定制单、它所在门店的店长;取不到就不造这两条用例。
+    回 = 取("""SELECT o.id, o.shop FROM ordr o JOIN pkg p ON p.order_id=o.id
+               WHERE o.kind='定制品订单' AND o.status='已发货' AND p.void_at IS NULL LIMIT 1""") \
+        if 有表("pkg") else None
+    延 = 取("SELECT id FROM factory_delay WHERE told_at IS NULL LIMIT 1") if 有表("factory_delay") else None
+
     出 = []
+    if 回:
+        店长 = 取("SELECT no,name,role,shop FROM staff WHERE role='店长' AND status='启用' AND shop=? LIMIT 1",
+                 回["shop"])
+        if 店长:
+            出.append(("factory_rollback",
+                       lambda s, _o=回, _m=dict(店长): s.factory_rollback(
+                           {"order_id": _o["id"], "cause": "发错件", "note": "冒烟:发来的不是这一单的衣服"},
+                           _m),
+                       "order_rollback"))
+    if 延:
+        顾问 = 取("""SELECT s.no,s.name,s.role,s.shop FROM staff s JOIN ordr o ON o.shop=s.shop
+                     JOIN factory_delay d ON d.order_id=o.id
+                     WHERE d.id=? AND s.role='顾问' AND s.status='启用' LIMIT 1""", 延["id"])
+        if 顾问:
+            出.append(("delay_told",
+                       lambda s, _d=延, _m=dict(顾问): s.delay_told({"delay_id": _d["id"]}, _m),
+                       # 「已通知」是**改**已有那条(told_at),不是加一行 —— 这里看它往操作日志里记没记
+                       "op_log"))
     if 客:
         # create_followup(d, actor) —— d 里要 customer_id + content
         出.append(("create_followup",
@@ -281,8 +306,13 @@ def 指到副本():
     """
     import importlib
     # 先把写路径上会用到的模块都 import 进来,否则 sys.modules 里没有就扫不到
+    # ⚠️ **用到时才 import 的模块必须先在这里点名。** 扫的是 sys.modules,没加载过就扫不到,
+    #    而扫不到的那个会**写进真库**:2026-09-24 factory_inbox 就是这么漏的(真库里多了一条人工回退)。
+    #    凡是带自己的 DB 常量的写口,都加进来。
     for m in ("server", "api", "oplog", "ops", "tasks", "auth", "files",
-              "booking", "img", "appt_expire"):
+              "booking", "img", "appt_expire",
+              "factory_inbox", "order_write", "measure_write", "fitting_write",
+              "pickup_write", "repair_write"):
         try:
             importlib.import_module(m)
         except Exception:

@@ -318,6 +318,7 @@ def 人工回退(order_id, 原因, 理由, me, db=None):
               (_now(), f"人工回退:{原因}", order_id))
     c.commit()
     import server
+    if db: server.DB = db          # 副本上跑时,状态机也要走同一个库
     rr = server.transit("bk-order", order_id, 目标,
                         {"by": "人工回退", "人工回退": me.get("role"), "回退原因": 原因}, actor=me.get("name"))
     if not rr.get("ok"):
