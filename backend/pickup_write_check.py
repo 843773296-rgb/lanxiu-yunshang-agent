@@ -205,7 +205,9 @@ def run(T):
         r = pw.arrive({"order_id": 分["id"], "pkg": 包们[0]}, 顾)
         ck("说了包裹号 → 这一个包裹登记到店", r["ok"] or (已到 and r["code"] == "ALREADY"), r.get("reason"))
         if r.get("ok"):
-            ck("到店时提醒还有包裹在路上", bool(r.get("还在路上的包裹")), r.get("还在路上的包裹"))
+            # 判据是「这一单还没签收完」而不是「还在路上」—— 另一个包裹到了店、顾客还没来试穿,
+            # 整单同样没完(09-24:按在途算时,seed 把另一个包裹登记成到店,这条就误红了)
+            ck("到店时提醒这一单还有包裹没签收", bool(r.get("这单还没签收的包裹")), r.get("这单还没签收的包裹"))
         ck("同一个包裹登记两次 → 拒", pw.arrive({"order_id": 分["id"], "pkg": 包们[0]}, 顾)["code"] == "ALREADY")
         pw.set_mode({"order_id": 分["id"], "pkg": 包们[0], "mode": "到店取"}, 顾)
         码2 = pw.customer_issue_code(分["id"], 分["phone_tail"], pkg=包们[0]).get("试穿合身码")

@@ -205,11 +205,18 @@ def arrive(d, me):
     _记事(o["id"], "包裹到店代收", now, k["pkg_id"], None, me, f"{me['name']} 代收包裹 {k['pkg_id']}({k['件数']} 件)")
     log_op(me["name"], "pickup", k["pkg_id"], "—", "到店", True, "ARRIVE",
            f"{me['name']} 代收订单 {o['id']} 的包裹 {k['pkg_id']}", {"role": me["role"]})
-    剩 = [x for x in _包们(o["id"]) if x["pkg_id"] != k["pkg_id"] and x["status"] == "在途"]
+    # **看的是「还没签收完」,不是「还在路上」**:另一个包裹可能已经到店、只是顾客还没来试穿 ——
+    # 那同样说明整单没完。按在途算的话,两个包裹都到了店就不再提醒,而那时候整单一件都还没签收。
+    剩 = [x for x in _包们(o["id"]) if x["pkg_id"] != k["pkg_id"]
+         and not all(y["fit_result"] == "合身" for y in _包里的件(x["pkg_id"]))]
+    在途 = [x["pkg_id"] for x in 剩 if x["status"] == "在途"]
     return dict(ok=True, code="ARRIVE", 订单=o["id"], 包裹=k["pkg_id"], 这个包裹几件=k["件数"],
-                到店时间=now, 代收人=me["no"], 还在路上的包裹=[x["pkg_id"] for x in 剩] or None,
+                到店时间=now, 代收人=me["no"],
+                这单还没签收的包裹=[x["pkg_id"] for x in 剩] or None, 其中还在路上=在途 or None,
                 reason="已登记到店代收。下一步:约顾客到店取;实在来不了再转寄"
-                       + (f"。⚠️ 这一单还有 {len(剩)} 个包裹在路上,**整单要每一件都签收合身才算完**" if 剩 else ""))
+                       + (f"。⚠️ 这一单还有 {len(剩)} 个包裹没签收"
+                          + (f"(其中 {len(在途)} 个还在路上)" if 在途 else "(都已到店,等顾客试穿)")
+                          + ",**整单要每一件都签收合身才算完**" if 剩 else ""))
 
 
 def set_mode(d, me):

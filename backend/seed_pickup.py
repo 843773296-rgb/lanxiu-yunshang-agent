@@ -101,6 +101,11 @@ def _有包裹表(c):
     return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='pkg'").fetchone())
 
 
+def _多包裹(c, oid):
+    return c.execute("SELECT COUNT(*) FROM pkg WHERE order_id=? AND void_at IS NULL",
+                     (oid,)).fetchone()[0] > 1
+
+
 def _铺到包裹和件(c):
     """把**订单级**的老签收记录铺到**包裹**和**件**上(业务 2026-09-23 改成分批发货之后补的)。
 
@@ -117,8 +122,14 @@ def _铺到包裹和件(c):
                           FROM pkg k JOIN pickup u ON u.order_id=k.order_id
                           WHERE k.void_at IS NULL ORDER BY k.pkg_id""").fetchall():
         if p["pkg_id"] not in 有包 and p["arrived_at"]:
+            # 转寄的老单拆成几个包裹之后,**物流单号要一个包裹一个** —— 订单级只存了一个,
+            # 原样抄给每个包裹就成了「两个包裹同一个快递单」,现实里不会有,
+            # 而这种数据在页面上看不出问题,只有去查快递时才发现对不上(业务 09-24 拆历史回传时补的)。
+            单号 = p["tracking_no"]
+            if 单号 and _多包裹(c, p["order_id"]):
+                单号 = f"SF{_稳(p['pkg_id'], 10 ** 10):010d}"
             包行.append((p["pkg_id"], p["order_id"], p["arrived_at"], p["received_by"],
-                        p["mode"], p["forwarded_at"], p["tracking_no"]))
+                        p["mode"], p["forwarded_at"], 单号))
         if not p["fit_result"]:
             continue                     # 还没试穿的单,件上也不该有结果
         for (it,) in c.execute("SELECT item_id FROM pkg_item WHERE pkg_id=?", (p["pkg_id"],)):
@@ -208,6 +219,31 @@ def main(db=None):
     print("  ✅ 已签收包裹里的每一件都有按件记录")
 
 
+def _分批的活用例(c):
+    """分批发的单要有**能接着往下走**的样本(同 seed_fitting 的「为覆盖而选」)。
+
+    工厂造出来的分批单,包裹一开始都是「在途」—— 于是「一个包裹一个码」「一个包裹好几件、
+    问哪一件」这两支在评测和写口检查里都挑不到单子。这里给分批单里**有好几件的那个包裹**
+    登记到店代收,**另一个故意留在途** —— 「还有包裹在路上」本身就是要测的那一支。
+    """
+    补 = 0
+    for o in c.execute("""SELECT k.order_id, MAX(o.advisor_no) adv FROM pkg k JOIN ordr o ON o.id=k.order_id
+                          WHERE k.void_at IS NULL AND o.status='已发货'
+                          GROUP BY k.order_id HAVING COUNT(*)>1""").fetchall():
+        多 = c.execute("""SELECT k.pkg_id, k.shipped_at FROM pkg k WHERE k.order_id=? AND k.void_at IS NULL
+                         AND NOT EXISTS(SELECT 1 FROM pkg_pickup u WHERE u.pkg_id=k.pkg_id)
+                         ORDER BY (SELECT COUNT(*) FROM pkg_item i WHERE i.pkg_id=k.pkg_id) DESC,
+                                  k.pkg_id LIMIT 1""", (o["order_id"],)).fetchone()
+        if not 多:
+            continue
+        到 = _f((_t(多["shipped_at"]) or _t(TODAY)) + datetime.timedelta(days=2, hours=3))
+        c.execute("INSERT OR IGNORE INTO pkg_pickup(pkg_id,order_id,arrived_at,received_by,mode) "
+                  "VALUES(?,?,?,?,'到店取')", (多["pkg_id"], o["order_id"], 到, o["adv"]))
+        c.execute("UPDATE pkg SET arrived_at=?, status='到店' WHERE pkg_id=?", (到, 多["pkg_id"]))
+        补 += 1
+    return 补
+
+
 def 铺(db=None):
     """重建里工厂那一步之后再跑一次:把订单级的签收记录铺到包裹和件上。"""
     c = sqlite3.connect(db or os.path.join(HERE, "lanxiu.db")); c.row_factory = sqlite3.Row
@@ -215,14 +251,23 @@ def 铺(db=None):
     if not _有包裹表(c):
         print("❌ 包裹表还不在 —— 这一步要排在工厂那一步之后"); sys.exit(1)
     包, 件 = _铺到包裹和件(c); c.commit()
+    补 = _分批的活用例(c); c.commit()
     漏 = c.execute("""SELECT COUNT(*) FROM pkg k JOIN pkg_item i ON i.pkg_id=k.pkg_id
                      JOIN pickup u ON u.order_id=k.order_id
                      WHERE k.void_at IS NULL AND u.fit_result IS NOT NULL
                        AND NOT EXISTS(SELECT 1 FROM pickup_item t WHERE t.order_item_id=i.item_id)""").fetchone()[0]
     分 = c.execute("""SELECT COUNT(*) FROM (SELECT order_id FROM pkg WHERE void_at IS NULL
                      GROUP BY order_id HAVING COUNT(*)>1)""").fetchone()[0]
-    c.close()
-    print(f"分批发货:按包裹补了 {包} 行取件记录、按件补了 {件} 行签收记录;分批发的单 {分} 张")
+    c0 = c
+    print(f"分批发货:按包裹补了 {包} 行取件记录、按件补了 {件} 行签收记录;分批发的单 {分} 张"
+          + (f",其中 {补} 张的一个包裹登记了到店(另一个留在途,「还有包裹在路上」要有活用例)" if 补 else ""))
+    活 = c0.execute("""SELECT COUNT(*) FROM pkg k JOIN pkg_pickup u ON u.pkg_id=k.pkg_id
+                      JOIN ordr o ON o.id=k.order_id WHERE o.status='已发货' AND k.void_at IS NULL
+                        AND (SELECT COUNT(*) FROM pkg_item i WHERE i.pkg_id=k.pkg_id)>1
+                        AND NOT EXISTS(SELECT 1 FROM pickup_item t WHERE t.pkg_id=k.pkg_id)""").fetchone()[0]
+    if not 活:
+        print("  ❌ 没有「已到店、还没签收、里面不止一件」的包裹 —— 「问哪一件不合身」那一支没有活用例")
+        sys.exit(1)
     if 漏:
         print(f"  ❌ 有 {漏} 件在已签收的包裹里却没有按件记录 —— 整单永远进不了待完成"); sys.exit(1)
     if not 分:
