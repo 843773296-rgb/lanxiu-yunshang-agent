@@ -1,0 +1,128 @@
+<title>调试后台 · trace</title>
+<!--SHELL-->
+<style>
+.dbg{display:grid;grid-template-columns:330px 1fr;gap:16px;align-items:start}
+@media(max-width:900px){.dbg{grid-template-columns:1fr}}
+.runs{background:var(--paper);border:1px solid var(--line);border-radius:5px;max-height:78vh;overflow:auto}
+.run{padding:10px 13px;border-bottom:1px solid var(--line-2);cursor:pointer;font-size:13px}
+.run:hover{background:var(--paper-2)}
+.run.on{background:var(--dye-soft);border-left:3px solid var(--dye);padding-left:10px}
+.run .t{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.run .r{font-weight:600}
+.run .n{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.run.err{border-left:3px solid var(--fail);padding-left:10px}
+.pane{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:14px 16px}
+.pane+.pane{margin-top:12px}
+.sp{display:grid;grid-template-columns:1fr 210px 86px;gap:8px;align-items:center;
+ padding:4px 0;border-bottom:1px solid var(--line-2);cursor:pointer;font-size:13px}
+.sp:hover{background:var(--paper-2)}
+.sp.on{background:var(--dye-soft)}
+.sp .nm{font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp .ms{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:9px;background:var(--line-2);border-radius:2px;position:relative}
+.bar i{position:absolute;top:0;bottom:0;border-radius:2px;background:var(--dye);min-width:2px}
+.bar i.tool{background:var(--pass)}.bar i.err{background:var(--fail)}
+.kv{display:grid;grid-template-columns:minmax(150px,auto) 1fr;gap:3px 12px;font-size:12.5px}
+.kv b{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);font-weight:500}
+.kv span{font-family:var(--mono);font-size:12px;word-break:break-all}
+pre.io{background:var(--paper-2);border:1px solid var(--line-2);border-radius:4px;padding:10px 12px;
+ font-family:var(--mono);font-size:11.5px;line-height:1.6;max-height:340px;overflow:auto;white-space:pre-wrap;margin:6px 0 0}
+.tag{font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:3px;background:var(--paper-2);color:var(--ink-2);border:1px solid var(--line-2)}
+.tag.err{background:var(--fail-soft);color:var(--fail);border-color:var(--fail)}
+.tag.warn{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+.stat{display:flex;gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.stat b{color:var(--ink);font-weight:600}
+</style>
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">trace / span · 自己调试用</span></div>
+  <h1>调试后台</h1>
+  <p class="deck">一次提问 = 一棵 <b>trace</b>,每一步 = 一个 <b>span</b>。字段名照
+  <b>OpenTelemetry 的 GenAI 语义约定</b>,不做业务话翻译 ——
+  这一版是给开发自己看的,给门店的那一版另做。
+  <br>数据来自 <code class="mono">.feynman/spans.jsonl</code>(不进版本库)。
+  <b>工具的参数和返回值都在这里</b> —— 这是旧记录仪没有的那一半。</p>
+</header>
+
+<section>
+  <p class="sub" id="hint">读取中…</p>
+  <div class="dbg">
+    <div class="runs" id="runs"></div>
+    <div>
+      <div class="pane" id="meta"><span class="sub">左边选一次运行。</span></div>
+      <div class="pane"><h2 style="margin-bottom:4px">时间线与调用树</h2>
+        <p class="sub" style="font-size:12.5px;margin-bottom:10px">
+        条的长度是<b>等待时长</b>(从上一步结束到这条消息到手),<b>不是模型的生成时长</b> ——
+        网络和排队都算在里面。SDK 不给服务端时间戳,这是拿得到的最接近的东西。</p>
+        <div id="tree"><span class="sub">—</span></div></div>
+      <div class="pane" id="span"><span class="sub">点上面任意一步,看它的输入和输出。</span></div>
+    </div>
+  </div>
+</section>
+</div>
+<script>
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[<&]/g,c=>({'<':'&lt;','&':'&amp;'}[c]));
+let 当前=null, spans=[];
+const 美化=v=>{ if(v==null) return '—';
+  if(typeof v==='object') return JSON.stringify(v,null,2);
+  const t=String(v).trim(); if(t[0]==='{'||t[0]==='['){ try{return JSON.stringify(JSON.parse(t),null,2)}catch(e){} }
+  return String(v); };
+
+async function 列表(){
+  const r=await fetch('/spans?limit=60').then(r=>r.json());
+  if(r.error){ $('#hint').innerHTML='读不到:'+esc(r.error); return; }
+  const rows=r.rows||[];
+  $('#hint').innerHTML=rows.length? `最近 <b>${rows.length}</b> 次运行(新的在上)。`
+    : '还没有记录。跑一次助手就会有 —— 树状记录仪只记通过 Agent SDK(第三代)那条路径。';
+  $('#runs').innerHTML=rows.map(x=>`<div class="run${x.出错&&x.出错.length?' err':''}" data-t="${x.trace}">
+    <div class="t">${esc(x.ts)}</div>
+    <div class="r">${esc(x.角色||'—')} <span class="tag">${esc(x.模型||'')}</span></div>
+    <div class="n">${x.耗时秒}s · $${x.成本} · 模型 ${x.模型调用} · 工具 ${x.工具调用}${x.拦?' · <span class="tag warn">被体检打回</span>':''}</div>
+  </div>`).join('');
+  document.querySelectorAll('.run').forEach(e=>e.onclick=()=>打开(e.dataset.t));
+  if(rows.length) 打开(rows[0].trace);
+}
+
+async function 打开(tid){
+  document.querySelectorAll('.run').forEach(e=>e.classList.toggle('on',e.dataset.t===tid));
+  const r=await fetch('/spans?trace='+encodeURIComponent(tid)).then(r=>r.json());
+  spans=r.spans||[]; if(!spans.length) return;
+  const 根=spans.find(s=>!s.parent_span_id)||spans[0], a=根.attr||{}, 账=r.账||{};
+  $('#meta').innerHTML=`<div class="stat">
+      <span>trace <b>${esc(tid.slice(0,16))}</b></span><span>会话 <b>${esc(a['gen_ai.conversation.id']||'—')}</b></span>
+      <span>耗时 <b>${账.耗时秒}s</b></span><span>成本 <b>$${账.成本}</b></span>
+      <span>模型调用 <b>${账.模型调用}</b></span><span>工具调用 <b>${账.工具调用}</b></span>
+      <span>缓存命中 <b>${(账.缓存命中||0).toLocaleString()}</b></span></div>
+    <div class="kv" style="margin-top:10px">${Object.entries(a).filter(([k,v])=>v!=null&&v!=='')
+      .map(([k,v])=>`<b>${esc(k)}</b><span>${esc(String(v).slice(0,300))}</span>`).join('')}</div>`;
+  // 瀑布:横轴是整棵树的时间窗
+  const t0=Math.min(...spans.map(s=>s.start)), t1=Math.max(...spans.map(s=>s.end||s.start)), 宽=Math.max(t1-t0,.001);
+  const 有=new Set(spans.map(s=>s.span_id)), 子={};
+  spans.forEach(s=>{const p=有.has(s.parent_span_id)?s.parent_span_id:null;(子[p]=子[p]||[]).push(s)});
+  const 行=[]; (function 走(p,d){ (子[p]||[]).sort((x,y)=>x.start-y.start).forEach(s=>{行.push([d,s]);走(s.span_id,d+1)}) })(null,0);
+  $('#tree').innerHTML=行.map(([d,s])=>{
+    const op=(s.attr||{})['gen_ai.operation.name']||'', 左=(s.start-t0)/宽*100, 长=Math.max(((s.end||s.start)-s.start)/宽*100,.6);
+    return `<div class="sp" data-s="${s.span_id}">
+      <div class="nm" style="padding-left:${d*14}px">${s.status==='error'?'✗ ':''}${esc(s.name)}</div>
+      <div class="bar"><i class="${s.status==='error'?'err':op==='execute_tool'?'tool':''}" style="left:${左}%;width:${长}%"></i></div>
+      <div class="ms">${s.duration_ms}ms</div></div>`}).join('');
+  document.querySelectorAll('.sp').forEach(e=>e.onclick=()=>看一步(e.dataset.s));
+  当前=tid; 看一步((行[0]||[])[1]?.span_id);
+}
+
+function 看一步(sid){
+  document.querySelectorAll('.sp').forEach(e=>e.classList.toggle('on',e.dataset.s===sid));
+  const s=spans.find(x=>x.span_id===sid); if(!s) return;
+  const a=s.attr||{}, 参=a['gen_ai.tool.call.arguments'], 返=a['gen_ai.tool.call.result'];
+  const 其它=Object.entries(a).filter(([k])=>!k.startsWith('gen_ai.tool.call.arg')&&!k.startsWith('gen_ai.tool.call.res'));
+  $('#span').innerHTML=`<h2 style="margin-bottom:8px">${esc(s.name)}
+      <span class="tag${s.status==='error'?' err':''}">${esc(s.status)}</span>
+      <span class="tag">${s.duration_ms}ms</span></h2>
+    <div class="kv">${其它.filter(([k,v])=>v!=null&&v!=='').map(([k,v])=>
+      `<b>${esc(k)}</b><span>${esc(Array.isArray(v)?v.join(', '):String(v).slice(0,300))}</span>`).join('')}</div>
+    ${参!=null?`<h3 style="font-size:13px;margin:14px 0 0">gen_ai.tool.call.arguments</h3><pre class="io">${esc(美化(参))}</pre>`:''}
+    ${返!=null?`<h3 style="font-size:13px;margin:14px 0 0">gen_ai.tool.call.result</h3><pre class="io">${esc(美化(返))}</pre>`:''}
+    ${(参==null&&返==null)?'<p class="sub" style="margin-top:10px">这一步没有工具参数/返回值(它是一次模型调用或整轮的根)。</p>':''}`;
+}
+列表();
+</script>

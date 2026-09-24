@@ -62,7 +62,11 @@ PAGES = {"/": "station.html", "/panels": "panels.html",
          "/chat": "chat.html", "/scheme": "scheme.html",
          "/workbench": "workbench.html", "/acceptance": "acceptance.html",
          # 着装人的身体生命周期 —— 和会员生命周期(新客/沉默/流失)不是一回事
-         "/wearers": "wearers.html"}
+         "/wearers": "wearers.html",
+         # /debug 是**给自己调试用的**,不给门店 —— 术语照业内(trace / span / 判分器),
+         # 不做业务话翻译、不藏技术字段。门店那一版以后另做,别混成一个。
+         # 站内导航里不挂它:挂上去店员就会点进来,然后看见一堆看不懂的东西。
+         "/debug": "debug.html"}
 
 sys.path.insert(0, HERE)
 import sdk, sessions
@@ -157,6 +161,30 @@ class H(BaseHTTPRequestHandler):
         if p == "/models":
             # 清单由 sdk 从**单价表**长出来,页面不许自己写死一份
             return self._send({"rows": sdk.models(), "default": sdk.default_model_id()})
+        if p.startswith("/spans"):
+            # 调试后台的数据口。**读文件,不入库** —— 这份日志是运行时产物,
+            # 进库就得跟着做迁移和备份,而它本来就是随时可以删的。
+            try:
+                sys.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+                import spans as _sp
+                q = dict(qp.split("=", 1) for qp in (urlparse(self.path).query or "").split("&") if "=" in qp)
+                tid = unquote(q.get("trace", ""))
+                棵 = _sp.读(限=int(q.get("limit", "40")) if not tid else None)
+                if tid:
+                    rows = 棵.get(tid) or []
+                    return self._send({"trace": tid, "spans": rows,
+                                       "账": _sp.一棵的账(rows) if rows else None})
+                out = []
+                for k, v in 棵.items():
+                    根 = next((x for x in v if not x.get("parent_span_id")), v[0])
+                    a = 根.get("attr") or {}
+                    out.append(dict(trace=k, ts=根.get("ts"), 角色=根.get("角色"),
+                                    模型=根.get("模型"), status=根.get("status"),
+                                    问=a.get("lanxiu.prompt_chars"),
+                                    拦=a.get("lanxiu.guard.blocked"), **_sp.一棵的账(v)))
+                return self._send({"rows": list(reversed(out))})
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p == "/healthz":
             return self._send({"ok": True, "backend": BACKEND, "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")})
         self._send({"error": "no route"}, code=404)

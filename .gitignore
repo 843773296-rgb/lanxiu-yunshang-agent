@@ -12,6 +12,11 @@ backend/lanxiu.db
 # 记录仪日志(体积会涨,且含调用内容)
 llm-trace.jsonl
 .feynman/llm-trace.jsonl
+# 树状记录仪(agent/spans.py)。**比上面那份敏感得多** ——
+# 它按设计就记工具的参数和返回值,而返回值里是客户档案、订单、量体数据。
+# 凭据类键名在写的时候已经抹掉,但**客户资料本身是记着的**,所以一律不进版本库。
+.feynman/spans.jsonl
+.feynman/spans.jsonl.1
 
 # 说明:agent/*-results.jsonl 是评测结果,**要进版本库** ——
 # 它们是「这个版本的模型在这套题上考了多少分」的历史,是可比对的度量记录,不是临时产物。

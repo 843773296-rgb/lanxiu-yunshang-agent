@@ -135,6 +135,8 @@ run "MCP · 通道等价(不调模型)" python3 mcp/parity.py
 run "V1 循环 · 离线自测"       python3 agent/offline_test.py
 run "V2 工作流 · 40 条工单纯规则(不调模型)" python3 agent/v2.py
 run "记录仪覆盖 · 每个调模型的地方都接了" python3 agent/trace_check.py
+run "树状记录仪 · 自测(抹凭据/截断/排树/孤儿不丢)" python3 agent/spans.py --selftest
+run "树状记录仪结构 · 接没接上、树是不是树、凭据没进日志(8 条咬合)" python3 agent/spans_check.py
 run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py
 run "相容矩阵 · 2025 格推导/对账/落库" python3 knowledge/derive_combo.py
 run "版型库与 BOM · 推档/裁片/物料对账" python3 knowledge/derive_pattern.py

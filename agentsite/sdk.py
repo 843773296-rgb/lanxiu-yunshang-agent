@@ -31,6 +31,9 @@ except ModuleNotFoundError as _e:      # noqa: E402
 import guards   # noqa: E402
 sys.path.insert(0, os.path.join(ROOT, "agent"))
 import trace       # noqa: E402  记录仪:**和 V1 共用同一份**,写同一个文件、同一套字段
+import spans as _spans   # noqa: E402  树状记录仪(agent/spans.py):一次提问记成一棵 trace。
+# **两份都写,谁也不替谁**:trace.jsonl 一次提问一行,是跨代际比趋势的历史数据,
+# 格式一改就断;spans.jsonl 是树,回答「这一步的输入输出是什么、钱花在哪一步」。
 # 两代分开记就没法横向对比了,而「一代 vs 三代到底差多少」这个问题
 # 只有手上同时有两套实现的人答得了 —— 别把这个优势浪费在格式不一致上。
 
@@ -152,6 +155,48 @@ def _env(provider=None, model=None):
     os.environ["ANTHROPIC_BASE_URL"] = "https://api.deepseek.com/anthropic"
     os.environ["ANTHROPIC_API_KEY"] = k
     return model or os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
+
+
+def _价表里的名字(m):
+    """把响应里的模型名对到价目表的键上。
+
+    响应报的是 `claude-haiku-4-5-20251001`,价目表里是 `claude-haiku-4-5` ——
+    对不上的后果不是报错,是**单步成本一律显示 None**,而总额那一栏还是对的。
+    这种「局部静默为空」最难发现,所以这里对不上就砍掉日期后缀再试一次,
+    **还对不上就返回 None,不猜价**(猜出来的单价会让人按错的量级做决策)。
+    """
+    import re as _re
+    sys.path.insert(0, os.path.join(ROOT, "agent"))
+    import v1
+    if not m: return None
+    if m in v1.PRICE or m in v1.DEEPSEEK_PRICE: return m
+    去日期 = _re.sub(r"-\d{8}$", "", m)
+    return 去日期 if (去日期 in v1.PRICE or 去日期 in v1.DEEPSEEK_PRICE) else None
+
+
+def _tool_result_text(content):
+    """把 ToolResultBlock 的 content 拆成能看的东西。
+
+    它有三种形状(SDK 不保证统一):字符串、[{"type":"text","text":...}]、别的。
+    **三种都要接住** —— 接不住的那种会在面板上显示成 `[<object at 0x...>]`,
+    而那正是出问题那次最想看的一条。
+    """
+    if content is None or isinstance(content, (str, dict)): 
+        pass
+    elif isinstance(content, list):
+        out = []
+        for b in content:
+            if isinstance(b, dict):
+                out.append(b.get("text") if b.get("type") == "text" else b)
+            else:
+                out.append(getattr(b, "text", None) or repr(b))
+        content = out[0] if len(out) == 1 else out
+    if isinstance(content, str):
+        t = content.strip()
+        if t[:1] in "{[":
+            try: return json.loads(t)     # 我们的工具返回的是 JSON,解开了才好看
+            except Exception: pass
+    return content
 
 
 def cost_of(usage, model, ts=None):
@@ -759,6 +804,28 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 客户会看到「Stop hook feedback: ...」。**最终答案取最后一段。**
     turns, traj, usage, cost, res = [], [], {}, None, None
     t0 = time.time()
+    # ── 树状记录仪:开一棵 ───────────────────────────────────────────
+    # **根 span 现在就开**,不等结果 —— 跑崩了的那一轮恰恰是最需要看的,
+    # 而「成功之后才记」的记录仪在出事的时候正好是空的。
+    _pv0 = (provider or os.environ.get("LANXIU_PROVIDER") or "claude").lower()
+    _树 = _spans.一棵树(角色=(ROLE_META.get(kind) or {}).get("name", kind),
+                        会话号=resume, 模型=model, 供应商=_pv0)
+    _根 = _树.开("invoke_agent", f"invoke_agent {(ROLE_META.get(kind) or {}).get('name', kind)}",
+                 属性={"gen_ai.agent.name": (ROLE_META.get(kind) or {}).get("name", kind),
+                      "gen_ai.conversation.id": resume,
+                      "gen_ai.request.model": model,
+                      "gen_ai.request.max_tokens": None,
+                      "lanxiu.gen": "V3", "lanxiu.kind": kind,
+                      "lanxiu.effort": eff,
+                      "lanxiu.role": (me or {}).get("role"),
+                      "lanxiu.skills": ",".join(skills) if skills else None,
+                      "lanxiu.prompt_chars": len(prompt) if isinstance(prompt, str) else None})
+    _当前模型span = _根        # 工具挂在「是哪次模型调用要的它」下面
+    _工具span = {}             # tool_use_id → span_id,等返回值回来时对得上
+    _模型span = {}             # message_id → span_id,**一次调用分几条消息发,要合成一个**
+    # 「这一步花了多久」= 从上一件事结束到这条消息到手。SDK 不给服务端时间戳,
+    # 所以**这是等待时长,不是模型的生成时长** —— 网络和排队都算在里面,别拿它判模型快慢。
+    _上次时刻 = t0
     _p = _stream_once(prompt, images) if images else prompt
     # 预算闸是**抛异常**出来的,不是在结果里带个字段 ——
     # 所以必须在这儿接住。接不住的话它会一路冒到 app.py 的兜底 except,
@@ -768,8 +835,52 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     try:
         async for m in query(prompt=_p, options=opts):
             cls = type(m).__name__
+            _now = time.time()
             if cls == "AssistantMessage":
                 cur = ""
+                # 这条消息是主助手的还是子助手(Task)吐出来的 ——
+                # parent_tool_use_id 有值就说明它在某个工具里面,挂到那个工具下面去。
+                # **不挂的话子助手的调用会平铺在根上**,看起来像主助手自己调的。
+                _父 = _工具span.get(getattr(m, "parent_tool_use_id", None)) or _根
+                # ⚠️ **一次模型调用会分成好几条 AssistantMessage 发过来**(文字一条、
+                # 要调工具一条),它们共用同一个 message_id。按消息开 span 的话,
+                # 两次调用会显示成四次 —— 而「调了几次模型」正是成本账的分母。
+                # 所以按 message_id 认:同一个号只开一个 chat span。
+                _mid = getattr(m, "message_id", None)
+                if _mid and _mid in _模型span:
+                    _当前模型span = _模型span[_mid]
+                    # 同一次调用的后续消息**有时**带着真的输出 token(前面那条只有 1)——
+                    # 带了就补上去,别浪费。补不到就维持「拿不到」的标记,不编。
+                    _出2 = (getattr(m, "usage", None) or {}).get("output_tokens") or 0
+                    _sp = _树.找(_当前模型span)
+                    if _出2 > 1 and _sp and not _sp["attr"].get("gen_ai.usage.output_tokens"):
+                        _sp["attr"]["gen_ai.usage.output_tokens"] = _出2
+                        _sp["attr"].pop("lanxiu.usage.output_unknown", None)
+                else:
+                    _u = getattr(m, "usage", None) or {}
+                    # ⚠️ **单条消息里的 output_tokens 不是真值**:流式开头报的恒等于 1
+                    # (实测 2026-09-24:两次调用都报 1,而整轮实际输出 934)。
+                    # 输入和缓存那三个是真的(和整轮汇总对得上),所以**只记真的那几个**,
+                    # 输出留空并标明拿不到 —— 记一个假的 1 上去,比空着糟得多:
+                    # 空着看得出「这里没有数」,记 1 看起来像「这步几乎没输出」。
+                    _出 = _u.get("output_tokens")
+                    _可信 = dict(_u)
+                    if (_出 or 0) <= 1: _可信.pop("output_tokens", None)   # 1 是流式开头的占位,不是真值
+                    _m名 = _价表里的名字(getattr(m, "model", None) or model)
+                    _当前模型span = _树.一次模型调用(
+                        父=_父, 模型=getattr(m, "model", None) or model,
+                        usage=_可信,
+                        花费=None,      # 单步总价算不出(缺输出 token),只给下面的输入侧
+                        消息号=_mid, 起=_上次时刻)
+                    _树.收(_当前模型span, 止=_now, 属性={
+                        # 输入侧的钱**是算得准的**,而且在这个项目里它就是大头
+                        # (这一轮:缓存写入 8.9 万 token vs 输出 934)。
+                        "lanxiu.cost_usd.input_side": cost_of(
+                            dict(_可信, output_tokens=0), _m名) if _m名 else None,
+                        "lanxiu.usage.output_unknown": True if (_出 or 0) <= 1 else None,
+                        "lanxiu.price_model": _m名,
+                    })
+                    if _mid: _模型span[_mid] = _当前模型span
                 for b in getattr(m, "content", []) or []:
                     bt = type(b).__name__
                     if bt == "TextBlock" and getattr(b, "text", ""):
@@ -777,7 +888,23 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                     elif bt == "ToolUseBlock":
                         traj.append({"tool": getattr(b, "name", "?"),
                                      "args": getattr(b, "input", {})})
+                        _tu = getattr(b, "id", None)
+                        _sid = _树.一次工具调用(
+                            父=_当前模型span, 工具=(getattr(b, "name", "?") or "?").rsplit("__", 1)[-1],
+                            参数=getattr(b, "input", {}), 调用号=_tu, 起=_now)
+                        if _tu: _工具span[_tu] = _sid
                 if cur.strip(): turns.append(cur)
+                _上次时刻 = _now
+            elif cls == "UserMessage":
+                # 工具的返回值是以 user 角色回流的 —— **这是唯一拿得到返回值的地方**。
+                # 证据面板缺的就是它:以前只记了「调了哪个工具、传了什么参数」。
+                for b in getattr(m, "content", []) or []:
+                    if type(b).__name__ != "ToolResultBlock": continue
+                    _sid = _工具span.get(getattr(b, "tool_use_id", None))
+                    if not _sid: continue
+                    _树.工具回来了(_sid, _tool_result_text(getattr(b, "content", None)),
+                                   出错=bool(getattr(b, "is_error", False)), 止=_now)
+                    _上次时刻 = _now
             elif cls == "ResultMessage":
                 usage = getattr(m, "usage", None) or {}
                 cost = getattr(m, "total_cost_usd", None)
@@ -825,6 +952,51 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         if price and peak: price = {k: v * 2 for k, v in price.items()}
     except Exception:
         price, peak = None, False
+    # ── 树状记录仪:收根、落盘 ──────────────────────────────────────
+    # 放在 try 里:**记录仪坏了不许让业务跟着坏**(和下面漏斗埋点同一条规矩)。
+    try:
+        # ── 对账:每步的输出 token 加起来,和整轮的总数对不对 ──────────────
+        # **对不上就一个都不记。** 流式发过来的 usage 在不同时刻是半截的
+        # (实测:同一次调用先报 1,后报 3,而整轮真实输出 934)。
+        # 留着一个「看起来合理」的 3,面板上就成了「这一步几乎没输出」——
+        # 而真相是「这个数我们根本拿不到」。**空着看得出没有,错数看不出错。**
+        _chat = [x for x in _树.spans
+                 if x["attr"].get("gen_ai.operation.name") == "chat"]
+        _分 = sum(x["attr"].get("gen_ai.usage.output_tokens") or 0 for x in _chat)
+        _总 = (usage or {}).get("output_tokens") or 0
+        if _chat and (_分 == 0 or _总 == 0 or abs(_分 - _总) > max(2, _总 * 0.02)):
+            for x in _chat:
+                x["attr"].pop("gen_ai.usage.output_tokens", None)
+                x["attr"]["lanxiu.usage.output_unknown"] = True
+            _对账 = f"分步 {_分} vs 整轮 {_总},对不上,已抹掉分步值"
+        else:
+            _对账 = None
+        _树.元["会话号"] = getattr(res, "session_id", None) or resume
+        _树.收(_根, 属性={
+            "gen_ai.conversation.id": getattr(res, "session_id", None) or resume,
+            "gen_ai.response.finish_reasons": [getattr(res, "stop_reason", None)]
+                if getattr(res, "stop_reason", None) else None,
+            "gen_ai.usage.input_tokens": (usage or {}).get("input_tokens"),
+            "gen_ai.usage.output_tokens": (usage or {}).get("output_tokens"),
+            "gen_ai.usage.cache_read_input_tokens": (usage or {}).get("cache_read_input_tokens"),
+            "gen_ai.usage.cache_creation_input_tokens": (usage or {}).get("cache_creation_input_tokens"),
+            "lanxiu.cost_usd": real,
+            "lanxiu.sdk_cost_usd": cost,          # SDK 自报的,记着但不当依据(虚高几十倍)
+            "lanxiu.num_turns": getattr(res, "num_turns", None),
+            "lanxiu.tool_calls": len(traj),
+            "lanxiu.answer_turns": len(turns),
+            "lanxiu.budget_hit": True if budget_hit else None,
+            "lanxiu.guard.blocked": bool(state.get("violations")) or None,
+            "lanxiu.guard.checks": [v["check"] for v in (state.get("violations") or [])] or None,
+            "lanxiu.guard.blocked_tools": state.get("blocked_tools") or None,
+            "lanxiu.compacted": state.get("压缩次数") or None,
+            # 输出 token 分不到步上时,在根上说清楚为什么 —— 面板照着这句显示「—」
+            "lanxiu.usage.output_split_unavailable": _对账,
+        }, 出错=(getattr(res, "errors", None) or "is_error")
+             if getattr(res, "is_error", False) else None)
+        _树.落盘()
+    except Exception as _e:
+        print(f"⚠️ [spans] 树状记录仪写失败(不影响这次回答):{_e}", file=sys.stderr, flush=True)
     trace.record(
         gen="V3", model=model, purpose={"kb": "工艺顾问", "task": "人工任务研判"}.get(kind, kind),
         usage=usage, latency_ms=ms, price=price, peak=peak, cache_on=True,
@@ -833,6 +1005,10 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         turn=getattr(res, "num_turns", None),
         error=(getattr(res, "errors", None) or None) if getattr(res, "is_error", False) else None,
         extra=dict(
+            # 两份日志的连接键。**实测这一轮四个数完全对得上**
+            # (输入 20 / 输出 774 / 缓存命中 216276 / $0.025926)——
+            # 记上号之后,以后哪天对不上,能立刻指着同一轮的两份记录看是谁错了。
+            trace_id=getattr(_树, "tid", None),
             tool_calls=len(traj),
             answer_turns=len(turns),
             guard_blocked=bool(state.get("violations")),
@@ -871,6 +1047,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                 budget_limit=_max_usd(provider),
                 trajectory=traj, seconds=round(time.time() - t0, 1),
                 session_id=getattr(res, "session_id", None),
+                trace_id=getattr(_树, "tid", None),   # 调试后台凭它定位这一次运行
                 usage=usage, sdk_cost_usd=cost, cost_usd=real, model=model,
                 # 被体检打回过几次、因为什么 —— 这两个数要落进研判台账,
                 # 它们是「模型有多不听话」的直接度量,比事后抽样评测灵敏得多
