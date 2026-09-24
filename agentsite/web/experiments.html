@@ -1,0 +1,130 @@
+<title>实验对比 · 两个版本</title>
+<!--SHELL-->
+<style>
+.pick{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.pick select{font-family:var(--mono);font-size:12.5px;padding:5px 8px;border:1px solid var(--line);
+ border-radius:4px;background:var(--paper);color:var(--ink);max-width:430px}
+.pick label{font-size:12.5px;color:var(--ink-3);font-family:var(--mono)}
+.verdict{border:1px solid var(--line);border-left:4px solid var(--ink-3);border-radius:5px;
+ background:var(--paper);padding:14px 16px;margin-bottom:14px}
+.verdict.ok{border-left-color:var(--pass)}.verdict.no{border-left-color:var(--warn)}
+.verdict.err{border-left-color:var(--fail)}
+.verdict h2{margin:0 0 4px;font-size:17px}
+.verdict .sayings{font-family:var(--mono);font-size:12px;line-height:1.85;color:var(--ink-2);
+ white-space:pre-wrap;margin-top:10px;border-top:1px solid var(--line-2);padding-top:9px}
+.sides{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+@media(max-width:760px){.sides{grid-template-columns:1fr}}
+.side{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:12px 14px}
+.side h3{margin:0 0 6px;font-size:13px;font-family:var(--mono);color:var(--ink-3)}
+.side .score{font-family:var(--mono);font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
+.side .m{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);line-height:1.75}
+table.q{width:100%;border-collapse:collapse;background:var(--paper);border:1px solid var(--line);border-radius:5px}
+table.q th{text-align:left;font-family:var(--mono);font-size:11px;letter-spacing:.08em;
+ text-transform:uppercase;color:var(--ink-3);padding:8px 10px;border-bottom:1px solid var(--line)}
+table.q td{padding:7px 10px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:top}
+table.q tr.r{cursor:pointer}table.q tr.r:hover{background:var(--paper-2)}
+.chip{font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:3px;border:1px solid var(--line-2);background:var(--paper-2)}
+.chip.up{background:var(--pass-soft);color:var(--pass);border-color:var(--pass)}
+.chip.dn{background:var(--fail-soft);color:var(--fail);border-color:var(--fail)}
+.chip.tr{background:var(--warn-soft);color:var(--warn);border-color:var(--warn)}
+pre.io{background:var(--paper-2);border:1px solid var(--line-2);border-radius:4px;padding:9px 11px;
+ font-family:var(--mono);font-size:11.5px;line-height:1.62;max-height:300px;overflow:auto;white-space:pre-wrap;margin:6px 0 0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:760px){.two{grid-template-columns:1fr}}
+</style>
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">实验对比 · 自己调试用</span></div>
+  <h1>两个版本，同一套题</h1>
+  <p class="deck">这一页<b>先判这个对比成不成立，再给分</b>。
+  改完提示词人只想问「好了还是坏了」，而这个项目为「拿两个数直接相减」栽过五次 ——
+  最贵的一次是单轮 7/8 → 5/8 被当成退步，回头查一个根本不存在的退化。
+  <br>三个前置问题：<b>是同一个模型跑的吗</b> · <b>版本差顶得过轮内抖动吗</b> ·
+  <b>翻面的是判据吃措辞还是行为真变了</b>（这两者的修法相反）。
+  <br>版本来自 <code class="mono">git</code>：一次提交 = 一次跑的存档，每行自带谁跑的、哪个模型、哪一版代码。
+  <br>要看<b>单次运行</b>每一步的输入输出，去 <a href="/debug">调试后台</a>。</p>
+</header>
+
+<section>
+  <div class="pick">
+    <label>题集</label><select id="suite"></select>
+    <label>旧版（基线）</label><select id="a"></select>
+    <label>新版</label><select id="b"></select>
+    <button class="pri" id="go">比</button>
+    <span class="sub" style="margin:0;font-size:12.5px" id="msg"></span>
+  </div>
+  <div id="out"></div>
+</section>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>(s??"").toString().replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+let 版本=[], 结果=null;
+const 好坏={有意义:"ok",没变化:"ok",被淹:"no",单轮:"no",换了模型:"no",来路不明:"no"};
+
+async function 载套(){
+  const r=await fetch("/exp/suites").then(r=>r.json());
+  $("#suite").innerHTML=(r.rows||[]).map(x=>
+    `<option value="${esc(x.文件)}"${x.版本数<2?" disabled":""}>${esc(x.套)} · ${x.版本数} 个版本${x.版本数<2?"（只有一版，比不了）":""}</option>`).join("");
+  const 默=(r.rows||[]).find(x=>x.版本数>=2);
+  if(默){ $("#suite").value=默.文件; await 载版本(); }
+}
+async function 载版本(){
+  $("#msg").textContent="读 git 历史…";
+  const r=await fetch("/exp/versions?suite="+encodeURIComponent($("#suite").value)).then(r=>r.json());
+  版本=r.rows||[]; $("#msg").textContent=`${版本.length} 个版本`;
+  const opt=版本.map(v=>`<option value="${v.sha}">${esc(v.提交日期)} · ${v.过}/${v.题数} · ${esc(v.模型||"模型没记")} · ${esc(v.短)}</option>`).join("");
+  $("#a").innerHTML=opt; $("#b").innerHTML=opt;
+  // 默认拿**上一版当基线**、最新那版当新版 —— 最常问的就是「我刚改完，比上一次如何」
+  $("#b").selectedIndex=0; $("#a").selectedIndex=Math.min(1,版本.length-1);
+}
+async function 比(){
+  $("#msg").textContent="比中…";
+  const r=await fetch(`/exp/compare?suite=${encodeURIComponent($("#suite").value)}&a=${$("#a").value}&b=${$("#b").value}`).then(r=>r.json());
+  $("#msg").textContent="";
+  结果=r;
+  if(r.错||r.error){
+    $("#out").innerHTML=`<div class="verdict err"><h2>比不了</h2><div>${esc(r.错||r.error)}</div></div>`;
+    return;
+  }
+  const 侧=(标,x)=>`<div class="side"><h3>${标} · ${esc(x.短||x.sha.slice(0,7))}</h3>
+    <div class="score">${x.过}<span style="font-size:15px;color:var(--ink-3)">/${x.题数}</span></div>
+    <div class="m">模型 ${esc(x.模型||"没记")} · ${esc(x.供应商||"—")}<br>
+      代码 ${esc(x.代码||"没记")}<br>跑于 ${esc(x.跑于||"—")}<br>
+      ${x.轮数} 轮${x.轮数>1?` · 轮内翻面 ${x.轮内翻面} 题 · 各轮 ${(x.各轮过||[]).join(" / ")}`:"（单轮，下不了结论）"}</div></div>`;
+  const 行=x=>{
+    const c=x.变化==="变好"?"up":x.变化==="变坏"?"dn":"";
+    return `<tr class="r" data-id="${esc(x.id)}">
+      <td class="mono">${esc(x.id)}</td>
+      <td>${esc((x.题面||"").slice(0,54))}</td>
+      <td>${x.A过?"✅":"❌"}</td><td>${x.B过?"✅":"❌"}</td>
+      <td>${x.变化==="一致"?'<span class="chip">一致</span>':`<span class="chip ${c}">${esc(x.变化)}</span>`}</td>
+      <td>${x.类?`<span class="chip ${x.类==="轨迹"?"tr":""}">${esc(x.类)}类</span>`:"—"}</td></tr>
+      <tr id="d-${esc(x.id)}" style="display:none"><td colspan="6">
+        <div class="two">
+          <div><b>旧版</b> ${x.A过?"过":"挂"} · 工具 ${esc(x.A工具||"—")}
+            <pre class="io">${esc((x.A理由||[]).join("\n")||"(没有理由，说明它过了)")}</pre></div>
+          <div><b>新版</b> ${x.B过?"过":"挂"} · 工具 ${esc(x.B工具||"—")}
+            <pre class="io">${esc((x.B理由||[]).join("\n")||"(没有理由，说明它过了)")}</pre></div>
+        </div></td></tr>`;
+  };
+  const 变了=r.逐题.filter(x=>x.变化!=="一致"), 一致=r.逐题.filter(x=>x.变化==="一致");
+  $("#out").innerHTML=`
+    <div class="verdict ${好坏[r.结论]||""}">
+      <h2>${esc(r.结论)}${r.可比?"":" —— 这个对比下不了结论"}</h2>
+      <div style="font-size:13.5px;color:var(--ink-2)">${esc(r.结论说||"")}</div>
+      <div class="sayings">${esc((r.判词||[]).join("\n"))}</div></div>
+    <div class="sides">${侧("旧版（基线）",r.A)}${侧("新版",r.B)}</div>
+    <p class="sub">共有 ${r.共有} 题 · <b>变好 ${r.变好.length}</b> · <b>变坏 ${r.变坏.length}</b>
+      ${(r.只甲.length||r.只乙.length)?` · ⚠ 题集不一样（旧版多 ${r.只甲.length} 题、新版多 ${r.只乙.length} 题），分数别直接相减`:""}
+      　点任意一行看两边挂在哪。</p>
+    <table class="q"><thead><tr><th>题号</th><th>题面</th><th>旧</th><th>新</th><th>变化</th><th>翻面属于</th></tr></thead>
+      <tbody>${变了.map(行).join("")}${一致.map(行).join("")}</tbody></table>`;
+  document.querySelectorAll("tr.r").forEach(tr=>tr.onclick=()=>{
+    const d=document.getElementById("d-"+tr.dataset.id);
+    if(d) d.style.display = d.style.display==="none" ? "table-row" : "none";
+  });
+}
+$("#suite").onchange=载版本; $("#go").onclick=比;
+载套();
+</script>

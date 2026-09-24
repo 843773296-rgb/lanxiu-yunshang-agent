@@ -66,7 +66,9 @@ PAGES = {"/": "station.html", "/panels": "panels.html",
          # /debug 是**给自己调试用的**,不给门店 —— 术语照业内(trace / span / 判分器),
          # 不做业务话翻译、不藏技术字段。门店那一版以后另做,别混成一个。
          # 站内导航里不挂它:挂上去店员就会点进来,然后看见一堆看不懂的东西。
-         "/debug": "debug.html"}
+         "/debug": "debug.html",
+         # 实验对比:同一套题两个版本并排。**先判对比成不成立,再给分。**
+         "/experiments": "experiments.html"}
 
 sys.path.insert(0, HERE)
 import sdk, sessions
@@ -161,6 +163,30 @@ class H(BaseHTTPRequestHandler):
         if p == "/models":
             # 清单由 sdk 从**单价表**长出来,页面不许自己写死一份
             return self._send({"rows": sdk.models(), "default": sdk.default_model_id()})
+        if p.startswith("/exp/"):
+            # 实验对比的数据口。版本来自 **git**(一次提交 = 一次跑的存档),
+            # 所以这里不碰库、也不另存一份历史 —— 两份历史一定会漂。
+            try:
+                sys.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+                import compare as _cp
+                q = {k: unquote(v) for k, v in
+                     (x.split("=", 1) for x in (urlparse(self.path).query or "").split("&") if "=" in x)}
+                if p == "/exp/suites":
+                    out = []
+                    for x in _cp.套们():
+                        n = len(_cp._git("log", "--format=%H", "--", x["文件"]).strip().splitlines())
+                        out.append(dict(x, 版本数=n))
+                    return self._send({"rows": sorted(out, key=lambda r: -r["版本数"])})
+                if p == "/exp/versions":
+                    return self._send({"rows": _cp.版本们(q.get("suite", ""))})
+                if p == "/exp/compare":
+                    r = _cp.比(q.get("suite", ""), q.get("a", ""), q.get("b", ""))
+                    # 结论那一句的解释也从模块出,**页面不许自己抄一份**
+                    r["结论说"] = _cp.结论说.get(r.get("结论"), "")
+                    return self._send(r)
+                return self._send({"error": "no route"}, code=404)
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p.startswith("/spans"):
             # 调试后台的数据口。**读文件,不入库** —— 这份日志是运行时产物,
             # 进库就得跟着做迁移和备份,而它本来就是随时可以删的。
