@@ -202,8 +202,8 @@ ck("状态码语义齐(401/403/404/409/422/429/5xx)",
 # ── ⑨ 生成的契约文档必须是最新的 ──────────────────────────────────
 # 有生成器不等于文档是最新的。**一份漂着的契约文档比没有更糟**:
 # 读的人会照着它实现,而它描述的已经不是代码里那一套了。
-# 判据里**剔掉版本那一行** —— 它带 git 短哈希和 dirty 标记,每次提交都会变,
-# 拿它当判据的话这条检查会在每次提交后误报,而误报久了人就开始无视它。
+# ⚠️ 生成器里**刻意不写 git 哈希和时间**:写了的话文档每次提交后都会变脏,
+# 而一个永远脏的生成文件会训练人忽略「脏」。所以这里可以整份直接比。
 import importlib.util as _iu
 _g = os.path.join(ROOT, "tools", "gen_contract_doc.py")
 _spec = _iu.spec_from_file_location("gen_contract_doc", _g)
@@ -215,11 +215,9 @@ else:
     _旧 = open(_doc, encoding="utf-8").read()
     _m.写()                                     # 重新生成一份
     _新 = open(_doc, encoding="utf-8").read()
-    def _去版本(t):
-        return "\n".join(l for l in t.splitlines() if not l.startswith("> 代码 `"))
     ck("契约文档是最新的(它是生成的,改了契约要重跑生成器)",
-       _去版本(_旧) == _去版本(_新), len(_新.splitlines()),
-       "" if _去版本(_旧) == _去版本(_新) else "内容和现在的契约对不上 —— 跑 gen_contract_doc.py")
+       _旧 == _新, len(_新.splitlines()),
+       "" if _旧 == _新 else "内容和现在的契约对不上 —— 跑 python3 tools/gen_contract_doc.py")
 
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 if 挂:

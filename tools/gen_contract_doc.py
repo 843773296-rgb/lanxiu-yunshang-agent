@@ -6,7 +6,7 @@
 所以这份文档只有一个来源:`services/api/app/contract/`。
 `tools/spec_coverage.py` 会验它是不是最新的(和待办清单那条一个道理)。
 """
-import os, sys, subprocess
+import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -16,21 +16,17 @@ import entities as EN, perms as PM, states as ST, errors as ER
 出 = os.path.join(ROOT, "docs", "契约.md")
 
 
-def 代码版本():
-    try:
-        h = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT,
-                           capture_output=True, text=True, timeout=5).stdout.strip()
-        脏 = subprocess.run(["git", "status", "--porcelain"], cwd=ROOT,
-                            capture_output=True, text=True, timeout=5).stdout.strip()
-        return (h or "未提交") + ("+dirty" if 脏 else "")
-    except Exception:
-        return "未知"
+# ⚠️ **这份文档里刻意不写生成时间和 git 短哈希。**
+# 第一版写了,结果是:每次提交之后哈希就变,文档立刻又「脏」——
+# 而一个**永远脏的生成文件会训练人忽略「脏」这件事**,
+# 于是真正该被注意的那次改动也就没人看见了。
+# 「这份文档对应哪一版代码」由 git 自己回答(它和代码在同一个提交里)。
 
 
 def 写():
     L = ["# 开发契约(生成的,不要手改)", "",
          "> 来源:`services/api/app/contract/`。改契约请改那里,然后 `python3 tools/gen_contract_doc.py`。",
-         f"> 代码 `{代码版本()}` · 实体 {len(EN.实体表)} 个 · 状态机 {len(ST.状态机表)} 条 · "
+         f"> 实体 {len(EN.实体表)} 个 · 状态机 {len(ST.状态机表)} 条 · "
          f"能力 {len(PM.能力们)} 条 · 约束 {sum(len(e['约束']) for e in EN.实体表)} 条", "",
          "手写的表会和代码分家,**而分家时两边都看着很正常** —— 所以这份是生成的。", ""]
 
