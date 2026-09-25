@@ -60,10 +60,48 @@ if notier:
 if only_md:
     print(f"ℹ️  文档里有、表里还没有({len(only_md)}) —— 待入库,不算错:")
     print("     " + " ".join(only_md))
+# ── 决策表:md 里的表格,和库里 kb_table 那份对得上吗 ──────────────────
+# ⚠️ **这一条是补票买的。** 2026-09-24 给「返修判定」那张表加了第四列「来路」,
+# md 改了、`liability.py` 也跟着改了,但**库里那份是播种时定死的** ——
+# 于是 `kb_tables` 送给模型的一直是三列的旧表,**来路那一列模型一天都没看到**。
+# 09-25 真跑评测才发现:模型照旧口径把「签收已确认合身」判成客方收费,
+# 而那时新加的公差优先那句话还没送到它眼前。
+# **md 是唯一源头,而「唯一源头」只有在派生数据跟着重灌时才成立。**
+import json as _json
+try:
+    import kb as _kb2
+    _md = {t_: (h, r) for t_, h, r, _f in _kb2.tables()}
+    _cur = conn.execute("SELECT topic, head, rows FROM kb_table").fetchall() \
+        if "conn" in dir() else None
+except Exception as _e:
+    _md, _cur = None, None
+if _md is None:
+    print("⚠️ 决策表这一条没跑起来 —— 当成没验,不当成通过")
+    bad += 1
+else:
+    import sqlite3 as _s3, os as _os
+    _c = _s3.connect(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)),
+                                   "..", "backend", "lanxiu.db"))
+    _db = {r[0]: (_json.loads(r[1]), _json.loads(r[2]))
+           for r in _c.execute("SELECT topic, head, rows FROM kb_table")}
+    _c.close()
+    _差 = []
+    for t_ in sorted(set(_md) | set(_db)):
+        if t_ not in _db: _差.append(f"{t_}:md 里有,库里没有")
+        elif t_ not in _md: _差.append(f"{t_}:库里有,md 里没有")
+        elif list(_md[t_][0]) != list(_db[t_][0]):
+            _差.append(f"{t_}:表头对不上(md {_md[t_][0]} vs 库 {_db[t_][0]})")
+        elif [list(x) for x in _md[t_][1]] != [list(x) for x in _db[t_][1]]:
+            _差.append(f"{t_}:行内容对不上(md {len(_md[t_][1])} 行 / 库 {len(_db[t_][1])} 行)")
+    print(f"  {'✅' if not _差 else '❌'} 决策表和 md 对得上(验了 {len(_md)} 张)"
+          f"{'' if not _差 else ' —— md 改了而派生表没重灌,模型看到的还是旧表'}")
+    for x in _差[:4]: print(f"     {x}")
+    bad += len(_差)
+
 print()
 if bad:
     print(f"❌ {bad} 处不一致"); sys.exit(1)
-print("✅ 知识库与 craft 表一致")
+print("✅ 知识库与 craft 表一致,决策表也和 md 对得上")
 
 # ── 咬合记录 ──────────────────────────────────────────────────────────
 # 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
@@ -72,4 +110,6 @@ print("✅ 知识库与 craft 表一致")
 咬合 = [
     ('把库里一种工艺改名(知识库里写的和 craft 表对不上)',
      '名称不一致'),
+    ('给 09 md 的返修判定表加一行(md 改了而派生表没重灌)',
+     '决策表和 md 对得上'),
 ]
