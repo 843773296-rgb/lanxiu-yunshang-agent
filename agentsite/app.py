@@ -42,7 +42,7 @@ def _save_images(items):
         out.append(fp)
     return out, d
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, unquote, quote
+from urllib.parse import urlparse, unquote, quote, parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND = os.environ.get("LANXIU_BACKEND", "http://127.0.0.1:8760")
@@ -109,6 +109,13 @@ def _who(handler):
         return d if d.get("no") else None
     except Exception:
         return None
+
+
+# ── 单条试运行的结果暂存 ──────────────────────────────────────────
+# 两边各跑一次真模型,一共四十秒上下 —— **同步返回会把浏览器挂住**,
+# 所以开线程跑、拿号轮询。存在进程内就够了:它是「刚刚那一次」的结果,
+# 不是要留档的东西(要留档的走「跑验证集 → 记一次」那条路,那边才有来路)。
+_试跑结果 = {}
 
 
 class H(BaseHTTPRequestHandler):
@@ -231,6 +238,41 @@ class H(BaseHTTPRequestHandler):
         if p == "/ai/nav":
             import aihub
             return self._send(aihub.左栏())
+        if p == "/ai/tryone":
+            # 列这一套现在有哪几道题。**每次都重挑夹具** —— 题面里的单号是现挑的,
+            # 写死的 id 会被一次合理的数据变更打断。
+            try:
+                import sys as _s
+                _s.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+                import tryone as _t
+                套 = (parse_qs(urlparse(self.path).query).get("套") or ["workshop"])[0]
+                return self._send(dict(套表=_t.套表, **_t.列题(套)))
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
+        if p == "/ai/tryone-result":
+            号 = (parse_qs(urlparse(self.path).query).get("号") or [""])[0]
+            r = _试跑结果.get(号)
+            if r is None: return self._send({"状态": "没这个号"}, code=404)
+            return self._send(r)
+        if p == "/ai/knobs":
+            # 旋钮表**从 knobs.py 现读**,不在这儿抄一份 ——
+            # 页面上的旋钮和后端真正读的旋钮必须是同一张表,
+            # 抄一份出来就会漂,而漂了之后页面上那个就是假旋钮。
+            try:
+                import sys as _s
+                _s.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+                import knobs as _kn
+                出 = [{k: v for k, v in x.items()} for x in _kn.旋钮表]
+                工具 = {}
+                try:
+                    import sdk as _sdk
+                    for 角 in ("all", "kb", "task", "workshop", "finance"):
+                        工具[角] = [t.rsplit("__", 1)[-1] for t in _sdk._tools_for(角)]
+                except Exception as e:
+                    工具 = {"_取不到": f"{type(e).__name__}: {e}"}
+                return self._send({"旋钮": 出, "工具": 工具, "落点核对": _kn.落点核对()})
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p == "/ai/overview":
             try:
                 import aihub
@@ -383,25 +425,6 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 r["judge"] = f"判分失败:{e}"
             return self._send(r)
-        if p == "/ai/knobs":
-            # 旋钮表**从 knobs.py 现读**,不在这儿抄一份 ——
-            # 页面上的旋钮和后端真正读的旋钮必须是同一张表,
-            # 抄一份出来就会漂,而漂了之后页面上那个就是假旋钮。
-            try:
-                import sys as _s
-                _s.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
-                import knobs as _kn
-                出 = [{k: v for k, v in x.items()} for x in _kn.旋钮表]
-                工具 = {}
-                try:
-                    import sdk as _sdk
-                    for 角 in ("all", "kb", "task", "workshop", "finance"):
-                        工具[角] = [t.rsplit("__", 1)[-1] for t in _sdk._tools_for(角)]
-                except Exception as e:
-                    工具 = {"_取不到": f"{type(e).__name__}: {e}"}
-                return self._send({"旋钮": 出, "工具": 工具, "落点核对": _kn.落点核对()})
-            except Exception as e:
-                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p == "/ai/candidate":
             # 提示词候选的**写口**:新建 / 存正文 / 采纳 / 跑验证集。
             # ⚠️ **判定一条都不在这儿重写** —— 全部转给 tools/prompt_candidate.py,
@@ -462,6 +485,28 @@ class H(BaseHTTPRequestHandler):
                                        "note": "已经写回 prompts.py。**跑一遍门禁再提交** —— "
                                                "提示词有结构检查(按工具装配、编号唯一、"
                                                "定义了的规矩都要被装上)。"})
+                if 动 == "试跑一条":
+                    # ⚠️ 开线程跑,**立刻返回一个号** —— 页面拿号轮询。
+                    import sys as _s3, threading as _th, uuid as _uu
+                    _s3.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+                    import tryone as _t
+                    套, 题号 = body.get("套") or "workshop", body.get("题号") or ""
+                    跑号 = _uu.uuid4().hex[:8]
+                    _试跑结果[跑号] = {"状态": "跑着", "题号": 题号}
+                    def _干(跑号=跑号, 套=套, 题号=题号, 方案=号):
+                        # **一律走 Claude**(月租,不额外花钱)—— 这是业务拍过板的,
+                        # 不是技术偏好。见 CLAUDE.md 第 4 节。
+                        os.environ["LANXIU_PROVIDER"] = "claude"
+                        try:
+                            r = _t.试跑(套, 题号, 方案 or None)
+                            r["状态"] = "好了"
+                        except Exception as e:
+                            r = {"状态": "崩了", "error": f"{type(e).__name__}: {e}"}
+                        _试跑结果[跑号] = r
+                    _th.Thread(target=_干, daemon=True).start()
+                    return self._send({"ok": True, "跑号": 跑号,
+                                       "note": "两边各跑一次真模型,四十秒上下。"
+                                               "**跑完看的是差异,不是分数。**"})
                 if 动 == "跑验证集":
                     套 = body.get("套") or "agent/factory_eval.py"
                     环 = dict(os.environ, LANXIU_PROMPT_CANDIDATE=号, LANXIU_PROVIDER="claude")

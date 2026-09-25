@@ -63,6 +63,10 @@ run "提示词 · 单一源头与按工具装配" python3 tools/prompts_check.py
 # 「页面上的旋钮不许是假的」—— 每个旋钮声明的落点必须真的被后端读到。
 # 假旋钮(界面能拧、后端不读)比没有这个功能糟:拖动它什么都不变,而人会以为自己在调。
 run "调参旋钮 · 落点真接上了、只许收窄不许放宽(5 条咬合)" python3 agent/knobs_check.py
+# 2026-09-25 真踩到:三个读接口写进了 do_POST,而页面用 GET 取 ——
+# **浏览器里整块功能加载不出来,而后端和所有静态检查都正常**。
+# 「路由写错处理器」和「路由压根没写」,在 do_GET 里看起来一模一样。
+run "页面 fetch 的地址 · 后端接得住,而且在对的那个处理器里(2 条咬合)" python3 agentsite/fetch_route_check.py
 run "上下文注入 · 有没有两处在管同一件事(打架时贴着用户消息的那处会赢)" python3 tools/context_conflict_check.py
 run "生命周期口径 · 自测" python3 knowledge/lifecycle.py
 run "会员生命周期 · 14 条边界标注对账" python3 backend/member_check.py

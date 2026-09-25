@@ -636,5 +636,16 @@ $("#agq").addEventListener("keydown",e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlK
 
 chips();
 say("ai","我是工艺顾问。**只说知识库里查到的**,查不到会直说。\n上面可以切换到研判助手。");
-loadDash();
+/* ⚠️ 这里原来写的是 `loadDash()` —— 那是**已删掉的面板页**里的函数(它填 #kpis /
+   #dashrows / #queuerows,那些元素在这一页一个都没有)。拆页那次**把调用带过来了、
+   函数没带过来**,于是浏览器在这一行抛 ReferenceError,而这一页自己的两个加载器
+   `loadFab()` / `loadHealth()` **定义了却从来没被调用过**。
+   表现:面料树是空的、右上角那个小标签永远停在「加载中」—— 而后端完全正常。
+   `js_smoke` 抓到的就是这一行(2026-09-25)。 */
+loadFab().then(()=>{
+  // #scope 原来靠 loadDash 填,函数没了之后它就一直挂着「加载中」。
+  // **一个永远不会被填上的占位符,比没有这个占位符糟** —— 它在说谎。
+  $("#scope").textContent=`面料 ${FAB.length} 种`;
+}).catch(e=>{ $("#scope").textContent="面料没加载出来"; });
+loadHealth().catch(()=>{});
 </script>

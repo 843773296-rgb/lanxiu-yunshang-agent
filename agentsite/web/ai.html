@@ -217,11 +217,66 @@ function 收旋钮(){
   return 出;
 }
 
+
+/* ── 单条试运行（2026-09-25）────────────────────────────────────────
+   改完旋钮只能跑整套题的话，一次要几分钟 —— 而**调优的手感来自快速来回**：
+   拧一下 → 看这一题变没变 → 再拧。
+   ⚠️ 产物一律叫「差异」，不叫「分数」：一条题各跑一次，两边的差别里
+   混着模型自己的抖动。这个项目为「拿单轮结果下结论」栽过三次。 */
+let _套表=null;
+async function 试运行台(号){
+  const r=await fetch("/ai/tryone?套=workshop").then(r=>r.json());
+  _套表=r.套表||[];
+  return `<div class="ed" id="tryone"><h3>▶ 单条试运行 · ${esc(号)}</h3>
+    <p class="sub" style="margin:0 0 8px;font-size:12.5px">
+      挑一道题，<b>默认跑一遍、这个方案跑一遍</b>，左右摆着看。两边用<b>同一份夹具</b>。<br>
+      <b style="color:var(--warn,#b8860b)">看的是差异，不是分数</b> ——
+      一条题各跑一次，两边的差别里混着模型自己的抖动。要下结论走下面的「跑验证集」。</p>
+    <label>哪一套</label>
+    <select id="t-suite">${_套表.map(x=>`<option value="${esc(x.键)}">${esc(x.名)}</option>`).join("")}</select>
+    <label>哪一道题　<span style="color:var(--ink-3);font-weight:400">
+      题面里的单号是<b>现挑的</b>，不是写死的 —— 所以每次打开可能是另一张单</span></label>
+    <div class="rulepick" id="t-cases" style="max-height:190px"></div>
+    <div id="t-fix" class="sub" style="font-size:12px;margin:4px 0"></div>
+    <div class="btns"><button class="pri" id="t-go">试跑这一条</button>
+      <span class="msg" id="t-msg"></span></div>
+    <div id="t-out"></div></div>`;
+}
+async function 画题(套){
+  const r=await fetch("/ai/tryone?套="+encodeURIComponent(套)).then(r=>r.json());
+  if(r.error){ $("#t-cases").innerHTML=`<div class="sub" style="padding:6px;color:var(--fail)">${esc(r.error)}</div>`;
+    $("#t-fix").textContent=""; return; }
+  $("#t-cases").innerHTML=(r.题||[]).map((c,i)=>`<label><input type="radio" name="tc"
+     value="${esc(c.id)}"${i===0?" checked":""}>
+    <span class="rid">${esc(c.id)}</span>
+    <span><b>${esc(c.kind)}</b> · ${esc((c.q||"").slice(0,70))}…</span></label>`).join("")
+    ||`<div class="sub" style="padding:6px">这一套挑不到题</div>`;
+  // **夹具要看得见** —— 两次试跑挑到不同的单时，你得分得清是旋钮起了作用还是换了张单
+  $("#t-fix").innerHTML="这一轮挑到的夹具："+Object.entries(r.夹具||{})
+    .map(([k,v])=>`${esc(k)}=<code>${esc(v)}</code>`).join("　");
+}
+function 画一边(名,s){
+  if(!s) return "";
+  const 工=(s.轨迹||[]).map(t=>t.工具);
+  return `<div style="flex:1;min-width:0">
+    <div style="font-weight:600;margin-bottom:4px">${esc(名)}</div>
+    <div class="sub" style="font-size:12px;margin-bottom:6px">
+      ${s.秒}s · 调了 ${工.length} 个工具 · ${s.用量&&s.用量.成本?"$"+(+s.用量.成本).toFixed(4):"—"}
+      · 这一次<b>${s.这次过了?"过":"挂"}</b></div>
+    ${工.length?`<div class="sub" style="font-size:12px;margin-bottom:6px">工具：${工.map(t=>`<code>${esc(t)}</code>`).join("、")}</div>`
+      :`<div class="sub" style="font-size:12px;margin-bottom:6px">（一个工具都没调）</div>`}
+    <pre class="io" style="max-height:280px;white-space:pre-wrap">${esc(s.回答||s.挂||"")}</pre>
+    ${(s.判据说||[]).length?`<div class="sub" style="font-size:12px;margin-top:5px;color:var(--fail)">
+      判据说：${esc(s.判据说[0])}</div>`:""}
+    <div class="sub" style="font-size:11.5px;margin-top:4px">${esc(s.还原||"")}</div></div>`;
+}
+
 /* 候选详情:正文可改、能跑验证、能采纳 —— **入口在页面上,不在命令行**。 */
 async function 候选编辑(号,d){
   const 原=d.原始||{}, 改=原.改||{}, 拷=原.拷自||{}, 验=(原.验证||[]);
   const 旋H=await 旋钮台(号, 原.旋钮);
-  $("#det").innerHTML=旋H+`
+  const 试H=await 试运行台(号);
+  $("#det").innerHTML=旋H+试H+`
     <div class="ed"><h3>改正文 · ${esc(号)}</h3>
       <p class="sub" style="margin:0;font-size:12.5px">${esc(原.为什么||"(没写为什么)")}</p>
       ${Object.keys(改).map(rid=>`
@@ -263,6 +318,39 @@ async function 候选编辑(号,d){
   $("#c-save").onclick=async()=>{
     const 正={}; $("#det").querySelectorAll("textarea[data-rid]").forEach(t=>正[t.dataset.rid]=t.value);
     await 发({动作:"存正文",正文:正});
+  };
+  await 画题("workshop");
+  $("#t-suite").onchange=e=>画题(e.target.value);
+  $("#t-go").onclick=async()=>{
+    const 题号=($("#det").querySelector('input[name="tc"]:checked')||{}).value;
+    const tm=$("#t-msg");
+    if(!题号){ tm.textContent="先挑一道题。"; return; }
+    $("#t-go").disabled=true; tm.textContent="两边各跑一次真模型，四十秒上下…";
+    const r=await fetch("/ai/candidate",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({号,动作:"试跑一条",套:$("#t-suite").value,题号})}).then(r=>r.json());
+    if(r.error){ $("#t-go").disabled=false; tm.innerHTML=`<b style="color:var(--fail)">${esc(r.error)}</b>`; return; }
+    // 轮询 —— 同步等四十秒会把浏览器挂住
+    const 起=Date.now();
+    const poll=async()=>{
+      const d=await fetch("/ai/tryone-result?号="+r.跑号).then(x=>x.json());
+      if(d.状态==="跑着"){ tm.textContent=`跑着…（${Math.round((Date.now()-起)/1000)}s）`;
+        return setTimeout(poll,2000); }
+      $("#t-go").disabled=false;
+      if(d.状态==="崩了"||d.error){ tm.innerHTML=`<b style="color:var(--fail)">${esc(d.error||"崩了")}</b>`; return; }
+      tm.textContent="";
+      $("#t-out").innerHTML=`
+        <div class="seg" style="margin-top:12px"><h3>差异</h3>
+          <ul style="margin:4px 0 0;padding-left:18px">${(d.差异||[]).map(x=>`<li>${md(x)}</li>`).join("")}</ul>
+          <p class="why" style="margin-top:8px">${md(d.判词||"")}</p></div>
+        <div class="seg"><h3>${esc(d.题.id)} · ${esc(d.题.kind)} · ${esc(d.题.身份||"")}</h3>
+          <p class="why">问的是：${esc(d.题.q)}</p>
+          <p class="why">期望：${esc(d.题.期望||"")}</p>
+          <div style="display:flex;gap:16px;margin-top:10px">
+            ${画一边("默认（源头那一份）",d.左)}
+            ${画一边("这个方案"+((d.旋钮说||[]).length?"（"+d.旋钮说.join("；")+"）":""),d.右)}
+          </div></div>`;
+    };
+    setTimeout(poll,2000);
   };
   const km=$("#k-msg");
   $("#k-save").onclick=async()=>{
