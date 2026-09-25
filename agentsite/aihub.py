@@ -48,6 +48,15 @@ def _今天():
         return None
 
 
+def _候选数():
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import prompt_candidate as _pc
+        return len(_pc.列表())
+    except Exception:
+        return 0
+
+
 def 概览():
     """总览:今天跑了多少 + 九个模块各自的状态。"""
     今 = _今天()
@@ -112,11 +121,11 @@ def 概览():
              缺="页面上还看不到题面 —— 现在靠 tools/export_evals.py 导成文档发飞书",
              去=None, 状态="有"),
         dict(号=7, 名="提示词版本", 问="这一版提示词和上一版差在哪、分数动了没有",
-             有=None,
-             缺="**还没有**。做之前先立规矩:改提示词必须走「候选版本 → 跑验证集 → "
-                "并排比分 → 采纳才落回源头」,**不许直接改线上那份** —— "
-                "直接改的话,分数变了也说不清是哪一处改动带来的",
-             去=None, 状态="还没有"),
+             有=(f"{_候选数()} 份候选。走的是「候选版本 → 跑验证集 → 并排比分 → "
+                 f"采纳才落回源头」,**不许直接改线上那份**;"
+                 f"候选**只在显式指定时生效**,没跑过验证集不许采纳"),
+             缺="并排比分还在 /experiments 那页,没并到这儿来",
+             去="/ai/prompts", 状态="有"),
         dict(号=8, 名="知识库检索", 问="它为什么给出这条依据、有没有该命中却没命中的",
              有=None,
              缺="**还没有**。这一栏是给下一步的营销 SOP 铺路:SOP **入库时就得带结构**"
@@ -238,8 +247,8 @@ def 细目():
 # ⚠️ **「排序」这一段要照实说没有。** 这个项目的知识库是结构化查表,没有向量召回、
 # 也没有重排。给它放一个空面板,和「有重排但这次没触发」在界面上长得一模一样,
 # 而这两件事的下一步完全不同(一个是去做,一个是去查为什么没触发)。
-模块表 = ["runs", "cost", "tools", "guards", "skills", "evals", "ops"]
-没做的 = {"prompts": "提示词版本", "retrieval": "知识库检索", "finetune": "训练数据准备"}
+模块表 = ["runs", "cost", "tools", "guards", "skills", "evals", "ops", "prompts"]
+没做的 = {"retrieval": "知识库检索", "finetune": "训练数据准备"}
 
 
 def _库():
@@ -297,6 +306,16 @@ def 列表(mod, 限=200):
         return [dict(id=f"{r.get('套')}|{r.get('题')}|{r.get('跑于')}", 套=r.get("套"),
                      题=r.get("题"), 跑于=r.get("跑于"), 模型=r.get("模型"),
                      过="✅" if r.get("过") else "❌") for r in rs][::-1][:限]
+    if mod == "prompts":
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import prompt_candidate as _pc
+        return [dict(id=x["号"], 候选=x["号"], 改了="、".join(x["改了"]),
+                     真改了="是" if x["动过"] else "**还没改**",
+                     验证次数=x["验证次数"],
+                     最近分数=(f"{x['最近']['过']}/{x['最近']['题数']}" if x.get("最近") else "—"),
+                     采纳="已采纳" if x["采纳于"] else "",
+                     为什么=(x["为什么"] or "")[:40], 建于=x["建于"])
+                for x in _pc.列表()][::-1][:限]
     if mod == "ops":
         c = _库()
         cols = [d[1] for d in c.execute("pragma table_info(op_log)")]
@@ -357,6 +376,35 @@ def 一条(mod, ident):
                         f"命中缓存 {a.get('gen_ai.usage.cache_read_input_tokens')} · "
                         f"出 {a.get('gen_ai.usage.output_tokens')}")]),
         ], 原始=根)
+    if mod == "prompts":
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import prompt_candidate as _pc
+        try: d = _pc._读(ident)
+        except SystemExit as e: return {"错": str(e)}
+        现 = _pc._规矩()
+        差 = []
+        for rid, 新 in (d.get("改") or {}).items():
+            旧 = (d.get("拷自") or {}).get(rid, "")
+            if 新.strip() == 旧.strip():
+                差.append((rid, "(和拷出去时一样 —— **还没改**,改了再跑验证集)")); continue
+            警 = ("\n\n⚠️ **源头已经被人动过**(和拷出去那一版不同)—— 采纳前要重新拷"
+                  if rid in 现 and 现[rid].text.strip() != 旧.strip() else "")
+            差.append((rid, "\n".join(_pc._差(旧, 新)) + 警))
+        return dict(id=ident, 段=[
+            dict(名="① 为什么改", 说="改一版提示词总得说得出图什么",
+                 内容=[("为什么", d.get("为什么")), ("建于", d.get("建于")),
+                       ("改了哪几条", "、".join((d.get("改") or {}).keys()))]),
+            dict(名="② 差在哪", 说="和拷出去那一版逐行比", 内容=差),
+            dict(名="③ 跑过几次验证集", 说="**分数要追得到是哪一版跑的**",
+                 内容=[(f"{v['时间']} · {v['结果文件']}",
+                        f"{v['过']}/{v['题数']} · 模型 {v.get('模型')} · 代码 {v.get('代码')}")
+                       for v in (d.get("验证") or [])]
+                      or [("还没跑过", "**没跑过验证集不许采纳** —— 绕过这一步之后,"
+                                      "它和「直接改源头」一模一样")]),
+            dict(名="④ 采纳了没有", 说="采纳 = 落回 prompts.py",
+                 内容=[("采纳于", d.get("采纳于") or "还没有"),
+                       ("怎么采纳", f"python3 tools/prompt_candidate.py 采纳 {ident}")]),
+        ], 原始=d)
     # 其余模块:**把那一行的所有字段原样给出来**,不挑不藏
     for r in 列表(mod, 限=5000):
         if str(r.get("id")) == str(ident):

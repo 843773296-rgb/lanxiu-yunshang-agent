@@ -151,6 +151,7 @@ run "树状记录仪结构 · 接没接上、树是不是树、凭据没进日�
 run "实验对比 · 先判对比成不成立再给分(题号字段各套不同/换模型拒收)" python3 agent/compare.py --selftest
 run "页面骨架 · 一块放错父容器,框架正常但内容被顶出可视区(2 条咬合)" python3 agentsite/layout_check.py
 run "AI 调控中心 · 没做的模块不给假入口;咨询详情五段齐(21 条自测)" python3 agentsite/aihub.py --selftest
+run "提示词候选 · 不指定就用源头、找不到就抛、没验证不许采纳(7 条自测)" python3 tools/prompt_candidate.py --selftest
 run "演示世界的日期 · 世界跟着真实日期走,库说的和数据实际的要对得上(4 条咬合)" python3 tools/shift_world.py --check
 run "完成日不许在未来 · 旅程排到今天之后的单要挪回来" python3 tools/clamp_future_done.py
 run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py

@@ -12,6 +12,11 @@ backend/lanxiu.db
 # 记录仪日志(体积会涨,且含调用内容)
 llm-trace.jsonl
 .feynman/llm-trace.jsonl
+# 提示词候选版本 —— **本机工作态**,不进版本库。
+# 采纳之后改动落在 prompts.py 里(那一份要进),候选文件本身只是过程草稿;
+# 进了版本库反而会让人以为「候选也是源头的一部分」,而它恰恰是「还没算数的那一版」。
+.feynman/prompt_candidates/
+
 # 每日平移的运行日志 —— 运行时痕迹,不进版本库(要回答的是「它今天跑没跑」,不是历史)
 .feynman/daily-shift.log
 .feynman/daily-shift.out

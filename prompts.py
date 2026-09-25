@@ -1398,13 +1398,51 @@ ROLES = {"all": (ALL_HEAD, ALL_RULES, ALL_FOOT),
          "pattern": (PATTERN_HEAD, PATTERN_RULES, PATTERN_FOOT)}
 
 
+# ── 候选版本:改提示词**不许直接改这个文件** ─────────────────────────
+# 业务/工程纪律(2026-09-24 定):候选版本 → 跑验证集 → 并排比分 → **采纳才落回源头**。
+# 直接改线上那份的话,分数变了也说不清是哪一处改动带来的 ——
+# 而且改坏了没有第二份可以比。
+#
+# 机制:环境变量 `LANXIU_PROMPT_CANDIDATE=<候选号>` 指定一份覆盖文件,
+# 装配时按稳定编号替换那几条的正文。**只在显式指定时生效**,默认永远是源头这一份。
+#
+# ⚠️ **找不到 / 读不动就当场抛,不许静默退回源头。**
+# 「套了候选」和「没套上候选」跑出来的分数会被当成同一件事比 ——
+# 而这正是这个项目今天栽过好几次的那个形状:失败被表示成了成功。
+import os as _os2
+_候选目录 = _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)),
+                           ".feynman", "prompt_candidates")
+
+
+def 候选覆盖():
+    """{稳定编号: 新正文} —— 没指定候选就返回空。"""
+    号 = _os2.environ.get("LANXIU_PROMPT_CANDIDATE", "").strip()
+    if not 号: return {}
+    import json as _json
+    f = _os2.path.join(_候选目录, f"{号}.json")
+    if not _os2.path.exists(f):
+        raise RuntimeError(f"指定了候选提示词 {号},但找不到 {f} —— "
+                           f"**不退回源头**:套没套上候选,跑出来的分数含义完全不同")
+    d = _json.load(open(f, encoding="utf-8"))
+    改 = d.get("改", {})
+    if not 改:
+        raise RuntimeError(f"候选 {号} 里一条都没改 —— 那它和源头没区别,别拿去比")
+    return 改
+
+
 def assemble(role, have):
     """按调用方**实际挂了哪些工具/能力**装配提示词。
 
     have:工具名集合,外加能力标记(目前只有「图片」)。
     返回 (提示词文本, [装上的稳定编号])。
+
+    指定了 `LANXIU_PROMPT_CANDIDATE` 时,那几条按候选的正文发 —— 见上面的说明。
     """
     head, rules, foot = ROLES[role]
+    覆 = 候选覆盖()
+    if 覆:
+        rules = [Rule(r.id, r.needs, 覆.get(r.id, r.text), avoid=r.avoid,
+                      scope=r.scope, 管=r.管) if r.id in 覆 else r for r in rules]
     have = set(have)
     picked = [r for r in rules
               if all(n in have for n in r.needs) and not any(n in have for n in r.avoid)]
