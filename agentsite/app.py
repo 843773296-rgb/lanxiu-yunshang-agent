@@ -195,6 +195,20 @@ class H(BaseHTTPRequestHandler):
             # 它从这儿取同一份清单渲染左栏入口 —— 而不是自己手写一份。
             import nav as _nav
             return self._send({"rows": [dict(路=a, 名=b, 说=c) for a, b, c in _nav.顶栏]})
+        if p == "/ai/rules":
+            # 77 条规矩的清单 —— 页面上要能挑、能看现在的正文。
+            # **不在页面里抄一份** :唯一来源是 prompts.py。
+            try:
+                import sys as _s
+                _s.path.insert(0, os.path.dirname(HERE))
+                import prompts as _pr
+                rs = {r.id: r for _, r in _pr.all_rules(unique=True)}
+                return self._send({"rows": [
+                    dict(id=k, 正文=v.text.strip(), 挂在=list(v.needs) or ["所有角色"],
+                         管=list(getattr(v, "管", ())), 类型=v.scope)
+                    for k, v in sorted(rs.items())]})
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p == "/ai/nav":
             import aihub
             return self._send(aihub.左栏())
@@ -350,6 +364,65 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 r["judge"] = f"判分失败:{e}"
             return self._send(r)
+        if p == "/ai/candidate":
+            # 提示词候选的**写口**:新建 / 存正文 / 采纳 / 跑验证集。
+            # ⚠️ **判定一条都不在这儿重写** —— 全部转给 tools/prompt_candidate.py,
+            # 那边守着三条硬规矩(找不到候选当场抛 / 只在显式指定时生效 /
+            # 没验证记录不许采纳 + 采纳时核对源头还是不是当初那一版)。
+            # 页面只是入口,不是第二套规矩。
+            try: body = json.loads(raw or b"{}")
+            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
+            try:
+                import sys as _s, json as _j, subprocess as _sp
+                _s.path.insert(0, os.path.join(os.path.dirname(HERE), "tools"))
+                _s.path.insert(0, os.path.dirname(HERE))
+                import prompt_candidate as _pc
+                动 = body.get("动作")
+                号 = (body.get("号") or "").strip()
+                if 动 == "新建":
+                    改 = [x for x in (body.get("改") or []) if x]
+                    if not 号 or not 改:
+                        return self._send({"error": "要给候选起个号,并且至少选一条规矩"})
+                    if os.path.exists(os.path.join(_pc.目录, f"{号}.json")):
+                        return self._send({"error": f"候选 {号} 已经有了 —— 换个号,"
+                                                    f"别覆盖(覆盖会把之前的验证记录一起抹掉)"})
+                    _pc.新建(号, 改, body.get("为什么") or "")
+                    return self._send({"ok": True, "号": 号})
+                if 动 == "存正文":
+                    d = _pc._读(号)
+                    正 = body.get("正文") or {}
+                    动过 = [k for k, v in 正.items() if k in (d.get("改") or {})]
+                    for k in 动过: d["改"][k] = v if (v := 正[k]) else d["改"][k]
+                    _pc._写(号, d)
+                    return self._send({"ok": True, "改了": 动过})
+                if 动 == "采纳":
+                    改了 = _pc.采纳(号)
+                    return self._send({"ok": True, "落回": 改了,
+                                       "note": "已经写回 prompts.py。**跑一遍门禁再提交** —— "
+                                               "提示词有结构检查(按工具装配、编号唯一、"
+                                               "定义了的规矩都要被装上)。"})
+                if 动 == "跑验证集":
+                    套 = body.get("套") or "agent/factory_eval.py"
+                    环 = dict(os.environ, LANXIU_PROMPT_CANDIDATE=号, LANXIU_PROVIDER="claude")
+                    日 = os.path.join(os.path.dirname(HERE), ".feynman", f"验证-{号}.log")
+                    os.makedirs(os.path.dirname(日), exist_ok=True)
+                    f = open(日, "w", encoding="utf-8")
+                    _sp.Popen([os.path.join(os.path.dirname(HERE), "agentsite", ".venv", "bin", "python"),
+                               os.path.join(os.path.dirname(HERE), 套)],
+                              cwd=os.path.dirname(HERE), env=环, stdout=f, stderr=f)
+                    return self._send({"ok": True, "在跑": 套, "日志": 日,
+                                       "note": "**跑在后台**(要调真模型,几分钟)。跑完回来点「记一次」——"
+                                               "记的时候会把那次的模型和代码版本一起存下,"
+                                               "**分数要追得到是哪一版跑的**。"})
+                if 动 == "记一次":
+                    d = _pc.记一次(号, body.get("结果文件") or "")
+                    return self._send({"ok": True, "验证": d.get("验证")})
+                return self._send({"error": f"不认识的动作:{动}"})
+            except SystemExit as e:
+                # prompt_candidate 用 sys.exit 拒绝 —— 那句话就是拒绝的理由,原样给页面
+                return self._send({"ok": False, "error": str(e)})
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p in ("/run-triage", "/run-batch"):
             # 平台的主循环:从积压队列里取任务 → 跑智能体 → **结果落后台的库**。
             # 和 /run-task(展示件)的区别只有一句话:那个跑完显示就没了,这个跑完留在队列里等人销账。

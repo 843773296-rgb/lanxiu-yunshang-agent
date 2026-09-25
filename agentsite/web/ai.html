@@ -22,6 +22,24 @@ table.l td{padding:6px 10px;border-bottom:1px solid var(--line-2);font-size:12.8
 table.l tr.r{cursor:pointer}table.l tr.r:hover{background:var(--paper-2)}
 table.l tr.r.on{background:var(--dye-soft)}
 td.mono,.mono{font-family:var(--mono);font-size:11.8px}
+.ed{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:14px 16px;margin-bottom:14px}
+.ed h3{margin:0 0 8px;font-size:15px}
+.ed label{display:block;font-size:12px;color:var(--ink-3);margin:9px 0 3px;font-family:var(--mono)}
+.ed input,.ed select,.ed textarea{width:100%;font:inherit;font-size:13px;padding:6px 9px;
+ border:1px solid var(--line);border-radius:4px;background:var(--paper-2);color:var(--ink)}
+.ed textarea{font-family:var(--mono);font-size:12px;line-height:1.7;min-height:130px;resize:vertical}
+.ed .btns{display:flex;gap:8px;margin-top:11px;align-items:center;flex-wrap:wrap}
+.ed button{font:inherit;font-size:13px;padding:6px 14px;border-radius:5px;border:1px solid var(--line);
+ background:var(--paper-2);color:var(--ink);cursor:pointer}
+.ed button.pri{background:var(--dye);border-color:var(--dye);color:#fff;font-weight:600}
+.ed button:disabled{opacity:.5;cursor:default}
+.ed .msg{font-size:12.5px;color:var(--ink-2);margin-left:4px}
+.rulepick{max-height:210px;overflow:auto;border:1px solid var(--line-2);border-radius:4px;padding:6px}
+.rulepick label{display:flex;gap:7px;align-items:flex-start;margin:0;padding:4px 5px;border-radius:4px;
+ font-family:var(--sans);font-size:12.5px;color:var(--ink);cursor:pointer}
+.rulepick label:hover{background:var(--paper-2)}
+.rulepick input{width:auto;margin-top:3px}
+.rulepick .rid{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);flex:none;width:50px}
 .seg{background:var(--paper);border:1px solid var(--line);border-radius:5px;margin-top:14px;padding:13px 15px}
 .seg h3{margin:0 0 3px;font-size:14.5px}
 .seg .why{font-size:12.5px;color:var(--ink-2);margin:0 0 9px}
@@ -76,6 +94,109 @@ async function 画左栏(){
   +`<div class="h">别的页</div><a href="/debug">单次运行树</a><a href="/experiments">实验对比</a>`;
 }
 
+
+/* ── 新建候选(用户 2026-09-25:「我岂不是不能手动配置提示词」)──────────
+   原来这一页是**只读**的:候选只能在命令行建、正文要手改 JSON 文件。
+   而这个项目的用户不读代码也不用终端 —— **对他来说那等于没有入口**。
+   ⚠️ 判定一条都不在页面里重写:新建/存正文/采纳全转给 tools/prompt_candidate.py,
+   那边守着三条硬规矩(找不到候选当场抛、只在显式指定时生效、没验证记录不许采纳)。 */
+async function 新建框(){
+  if(document.getElementById("newc")) return;
+  const R=await fetch("/ai/rules").then(r=>r.json()).catch(()=>({rows:[]}));
+  const rs=R.rows||[];
+  const box=document.createElement("div"); box.className="ed"; box.id="newc";
+  box.innerHTML=`<h3>＋ 新建候选</h3>
+    <p class="sub" style="margin:0 0 6px;font-size:12.5px">
+      改提示词<b>不许直接改线上那份</b>：先建候选 → 跑验证集 → 并排比分 → <b>采纳才落回源头</b>。
+      直接改的话，分数变了也说不清是哪一处改动带来的，而且改坏了没有第二份可以比。</p>
+    <label>给它起个号（自己认得出就行，比如 TL53-更短）</label>
+    <input id="nc-id" placeholder="候选号">
+    <label>为什么改（这句话以后是你唯一能想起动机的地方）</label>
+    <input id="nc-why" placeholder="比如：TL53 现在 4 行，想试试压到 2 行会不会更管用">
+    <label>改哪几条规矩（共 ${rs.length} 条）</label>
+    <input id="nc-q" placeholder="筛一下：输入编号或正文里的词…" style="margin-bottom:6px">
+    <div class="rulepick" id="nc-rules"></div>
+    <div class="btns"><button class="pri" id="nc-go">建候选</button>
+      <span class="msg" id="nc-msg"></span></div>`;
+  $("#main").prepend(box);
+  const 画=(q="")=>{
+    const t=(q||"").trim().toLowerCase();
+    $("#nc-rules").innerHTML=rs.filter(r=>!t||r.id.toLowerCase().includes(t)||r.正文.toLowerCase().includes(t))
+      .map(r=>`<label><input type="checkbox" value="${esc(r.id)}">
+        <span class="rid">${esc(r.id)}</span>
+        <span>${esc(r.正文.replace(/\s+/g," ").slice(0,80))}…
+          <span style="color:var(--ink-3)">· 挂在 ${esc((r.挂在||[]).join("、"))}</span></span></label>`).join("")
+      ||`<div class="sub" style="padding:6px">没有匹配的规矩</div>`;
+  };
+  画();
+  $("#nc-q").oninput=e=>画(e.target.value);
+  $("#nc-go").onclick=async()=>{
+    const 号=$("#nc-id").value.trim();
+    const 改=[...$("#nc-rules").querySelectorAll("input:checked")].map(x=>x.value);
+    const m=$("#nc-msg");
+    if(!号||!改.length){ m.textContent="要起个号，并且至少选一条规矩。"; return; }
+    $("#nc-go").disabled=true; m.textContent="建中…";
+    const r=await fetch("/ai/candidate",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({动作:"新建",号,改,为什么:$("#nc-why").value.trim()})}).then(r=>r.json());
+    $("#nc-go").disabled=false;
+    if(r.error){ m.textContent="没建成："+r.error; return; }
+    m.textContent="建好了，点下面那一行改正文。";
+    const box2=document.getElementById("newc"); if(box2) box2.remove();
+    模块("prompts");
+  };
+}
+
+/* 候选详情:正文可改、能跑验证、能采纳 —— **入口在页面上,不在命令行**。 */
+async function 候选编辑(号,d){
+  const 原=d.原始||{}, 改=原.改||{}, 拷=原.拷自||{}, 验=(原.验证||[]);
+  $("#det").innerHTML=`
+    <div class="ed"><h3>改正文 · ${esc(号)}</h3>
+      <p class="sub" style="margin:0;font-size:12.5px">${esc(原.为什么||"(没写为什么)")}</p>
+      ${Object.keys(改).map(rid=>`
+        <label>${esc(rid)}　<span style="color:var(--ink-3)">改完点保存</span></label>
+        <textarea data-rid="${esc(rid)}">${esc(改[rid])}</textarea>
+        <details style="margin-top:5px"><summary class="sub" style="font-size:12px;cursor:pointer">
+          看源头那一版（拷出去时长这样）</summary>
+          <pre class="io">${esc(拷[rid]||"")}</pre></details>`).join("")}
+      <div class="btns">
+        <button class="pri" id="c-save">保存正文</button>
+        <select id="c-suite" style="width:auto">
+          <option value="agent/factory_eval.py|agent/factory-eval-results.jsonl">工厂回传 11 题</option>
+          <option value="agent/workshop_eval.py|agent/workshop-eval-results.jsonl">自有工坊报工 6 题</option>
+          <option value="agent/measure_eval.py|agent/measure-eval-results.jsonl">量体录入 8 题</option>
+          <option value="agent/ops_eval.py|agent/ops-eval-results.jsonl">运维侧 68 题</option>
+        </select>
+        <button id="c-run">跑验证集</button>
+        <button id="c-note">记一次</button>
+        <button id="c-adopt">采纳（落回源头）</button>
+        <span class="msg" id="c-msg"></span></div>
+      <p class="sub" style="margin:10px 0 0;font-size:12px">
+        <b>没跑过验证集不许采纳</b> —— 绕过这一步之后，它和「直接改源头」一模一样。
+        已经跑过 <b>${验.length}</b> 次${验.length?"："+验.map(v=>`${esc(v.时间)} ${v.过}/${v.题数}`).join("、"):""}。</p>
+    </div>` + (d.段||[]).map(s=>`<div class="seg">
+      <h3>${esc(s.名)}</h3><p class="why">${md(s.说||"")}</p>
+      ${(s.内容||[]).map(([kk,vv])=>`<div class="kv"><div class="k">${esc(kk)}</div>
+        <pre>${esc(美(vv))}</pre></div>`).join("")}</div>`).join("");
+  const m=$("#c-msg");
+  const 发=async b=>{
+    m.textContent="…";
+    const r=await fetch("/ai/candidate",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify(Object.assign({号},b))}).then(r=>r.json());
+    // **拒绝的理由原样显示** —— 那句话就是下一步该干什么
+    m.innerHTML=r.error?`<b style="color:var(--fail)">${esc(r.error)}</b>`
+      :esc(r.note||"好了");
+    return r;
+  };
+  const 套=()=>$("#c-suite").value.split("|");
+  $("#c-save").onclick=async()=>{
+    const 正={}; $("#det").querySelectorAll("textarea[data-rid]").forEach(t=>正[t.dataset.rid]=t.value);
+    await 发({动作:"存正文",正文:正});
+  };
+  $("#c-run").onclick=()=>发({动作:"跑验证集",套:套()[0]});
+  $("#c-note").onclick=()=>发({动作:"记一次",结果文件:套()[1]});
+  $("#c-adopt").onclick=async()=>{ const r=await 发({动作:"采纳"}); if(r&&r.ok) 模块("prompts"); };
+}
+
 画左栏().then(() => {
   if(!mod) 总览(); else if(NO.some(([k])=>k===mod)) 还没有(); else 模块(mod);
 });
@@ -113,6 +234,7 @@ function 还没有(){
 async function 模块(k){
   const n=(MODS.find(([x])=>x===k)||[])[1]||k;
   $("#h1").textContent=n;
+  if(k==="prompts") await 新建框();
   const d=await fetch("/ai/data?mod="+encodeURIComponent(k)).then(r=>r.json());
   const rows=d.rows||[];
   if(!rows.length){ $("#main").innerHTML=`<p class="sub">这个模块还没有数据。</p>`; return; }
@@ -129,6 +251,7 @@ async function 详情(k,id,tr){
   document.querySelectorAll("tr.r").forEach(x=>x.classList.toggle("on",x===tr));
   const d=await fetch(`/ai/data?mod=${encodeURIComponent(k)}&id=${encodeURIComponent(id)}`).then(r=>r.json());
   if(d.错){ $("#det").innerHTML=`<div class="seg">${esc(d.错)}</div>`; return; }
+  if(k==="prompts"){ await 候选编辑(id,d); return; }
   $("#det").innerHTML=(d.段||[]).map(s=>`<div class="seg">
       <h3>${esc(s.名)}</h3><p class="why">${md(s.说||"")}</p>
       ${(s.内容||[]).map(([kk,vv])=>`<div class="kv"><div class="k">${esc(kk)}</div>

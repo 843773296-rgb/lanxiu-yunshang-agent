@@ -97,7 +97,10 @@ def audit(src):
     naked = []
     for m in re.finditer(r'<button(?![^>]*(?:data-|onclick|disabled))([^>]*)>(.*?)</button>', s, re.S):
         attrs, inner = m.group(1), m.group(2)
-        bid = re.search(r'id="(\w+)"', attrs)
+        # ⚠️ `\w+` 匹配不到带连字符的 id(`c-save` / `nc-go`)—— 2026-09-25 实测:
+        # 五个真有绑定的按钮被报成死控件。**检查抓不到它没见过的形状**,
+        # 而这次「没见过的形状」只是 id 里有个短横。
+        bid = re.search(r'id="([\w-]+)"', attrs)
         if bid and bid.group(1) in ids: continue          # 由 getElementById 绑定
         # 或者被 querySelector("#xx") / querySelectorAll("#xx …") 选中 —— 一样是真绑定
         if bid and ("#" + bid.group(1)) in sel_txt: continue
