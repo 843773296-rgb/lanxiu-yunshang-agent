@@ -60,6 +60,9 @@ run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write
 run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py
 run "边界审计 · 每条保证真的攻击一次" python3 backend/boundary_audit.py
 run "提示词 · 单一源头与按工具装配" python3 tools/prompts_check.py
+# 「页面上的旋钮不许是假的」—— 每个旋钮声明的落点必须真的被后端读到。
+# 假旋钮(界面能拧、后端不读)比没有这个功能糟:拖动它什么都不变,而人会以为自己在调。
+run "调参旋钮 · 落点真接上了、只许收窄不许放宽(5 条咬合)" python3 agent/knobs_check.py
 run "上下文注入 · 有没有两处在管同一件事(打架时贴着用户消息的那处会赢)" python3 tools/context_conflict_check.py
 run "生命周期口径 · 自测" python3 knowledge/lifecycle.py
 run "会员生命周期 · 14 条边界标注对账" python3 backend/member_check.py

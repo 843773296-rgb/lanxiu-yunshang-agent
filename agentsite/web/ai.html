@@ -105,7 +105,7 @@ async function 新建框(){
   const R=await fetch("/ai/rules").then(r=>r.json()).catch(()=>({rows:[]}));
   const rs=R.rows||[];
   const box=document.createElement("div"); box.className="ed"; box.id="newc";
-  box.innerHTML=`<h3>＋ 新建候选</h3>
+  box.innerHTML=`<h3>＋ 新建调参方案</h3>
     <p class="sub" style="margin:0 0 6px;font-size:12.5px">
       改提示词<b>不许直接改线上那份</b>：先建候选 → 跑验证集 → 并排比分 → <b>采纳才落回源头</b>。
       直接改的话，分数变了也说不清是哪一处改动带来的，而且改坏了没有第二份可以比。</p>
@@ -113,10 +113,12 @@ async function 新建框(){
     <input id="nc-id" placeholder="候选号">
     <label>为什么改（这句话以后是你唯一能想起动机的地方）</label>
     <input id="nc-why" placeholder="比如：TL53 现在 4 行，想试试压到 2 行会不会更管用">
-    <label>改哪几条规矩（共 ${rs.length} 条）</label>
+    <label>改哪几条规矩（共 ${rs.length} 条）<span style="color:var(--ink-3);font-weight:400">
+      —— 一条都不选也行：那就是个<b>纯旋钮方案</b>，提示词按源头发，差异全落在旋钮上，
+      <b>控制变量最干净的一种</b></span></label>
     <input id="nc-q" placeholder="筛一下：输入编号或正文里的词…" style="margin-bottom:6px">
     <div class="rulepick" id="nc-rules"></div>
-    <div class="btns"><button class="pri" id="nc-go">建候选</button>
+    <div class="btns"><button class="pri" id="nc-go">建方案</button>
       <span class="msg" id="nc-msg"></span></div>`;
   $("#main").prepend(box);
   const 画=(q="")=>{
@@ -134,22 +136,92 @@ async function 新建框(){
     const 号=$("#nc-id").value.trim();
     const 改=[...$("#nc-rules").querySelectorAll("input:checked")].map(x=>x.value);
     const m=$("#nc-msg");
-    if(!号||!改.length){ m.textContent="要起个号，并且至少选一条规矩。"; return; }
+    // 一条规矩都不选是**允许的** —— 那是纯旋钮方案(只把 effort 调高、
+    // 只收掉两个工具),提示词按源头发,差异全落在旋钮上
+    if(!号){ m.textContent="先给它起个号。"; return; }
     $("#nc-go").disabled=true; m.textContent="建中…";
     const r=await fetch("/ai/candidate",{method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify({动作:"新建",号,改,为什么:$("#nc-why").value.trim()})}).then(r=>r.json());
+      body:JSON.stringify({动作:"新建",号,改,为什么:$("#nc-why").value.trim(),
+        // 空的占位旋钮:让「一条规矩都没选」的纯旋钮方案建得起来,
+        // 建完在详情页的旋钮台上拧
+        旋钮:改.length?null:{"effort":"high"}})}).then(r=>r.json());
     $("#nc-go").disabled=false;
     if(r.error){ m.textContent="没建成："+r.error; return; }
-    m.textContent="建好了，点下面那一行改正文。";
+    m.textContent=改.length?"建好了，点下面那一行改正文。"
+      :"建好了（纯旋钮方案）。点下面那一行，在🎛旋钮台上拧。";
     const box2=document.getElementById("newc"); if(box2) box2.remove();
     模块("prompts");
   };
 }
 
+
+/* ── 旋钮台（用户 2026-09-25：「没办法手动配置训练我想要的功能」）──────────
+   原来这套系统只有**一个**能拧的地方：提示词文字。effort / 轮数 / 模型 /
+   挂哪些工具 / 要不要体检 / 要不要注入日期 —— 全是代码里的默认值，
+   **在代码里是参数，在产品上不存在**。
+   ⚠️ 旋钮表**从 /ai/knobs 现读**，页面里不抄第二份：抄出来就会漂，
+   而漂了之后页面上那个旋钮就是假的（拖动它什么都不会变）。 */
+let _旋表=null, _工具=null;
+async function 旋钮台(号, 现){
+  if(!_旋表){ const r=await fetch("/ai/knobs").then(r=>r.json());
+    _旋表=r.旋钮||[]; _工具=r.工具||{}; }
+  现=现||{};
+  const 控=k=>{
+    const v=(k.名 in 现)?现[k.名]:k.默认;
+    if(k.类型==="枚举") return `<select data-kn="${esc(k.名)}">${k.取值.map(o=>
+      `<option value="${esc(o)}"${o===v?" selected":""}>${esc(o)}${o===k.默认?"（默认）":""}</option>`).join("")}</select>`;
+    if(k.类型==="开关") return `<select data-kn="${esc(k.名)}">
+      <option value="true"${v!==false?" selected":""}>开${k.默认===true?"（默认）":""}</option>
+      <option value="false"${v===false?" selected":""}>关${k.默认===false?"（默认）":""}</option></select>`;
+    if(k.类型==="整数") return `<input type="number" data-kn="${esc(k.名)}" value="${esc(v)}"
+      min="${k.取值[0]}" max="${k.取值[1]}" style="width:90px">`;
+    if(k.类型==="工具子集"){
+      const 全=(_工具["all"]||[]), 选=new Set(v||全);
+      return `<div class="sub" style="font-size:12px;margin:2px 0 4px">
+        当前角色挂着 <b>${全.length}</b> 个。<b>只能收窄，不能放宽</b>
+        —— 收窄是调优，放宽是拆安全边界。</div>
+        <div class="rulepick" style="max-height:150px">${全.map(t=>
+        `<label><input type="checkbox" data-tool="${esc(t)}"${选.has(t)?" checked":""}> ${esc(t)}</label>`).join("")}</div>`;
+    }
+    return `<input data-kn="${esc(k.名)}" value="${esc(v==null?"":v)}" placeholder="留空＝默认">`;
+  };
+  return `<div class="ed" id="knobs"><h3>🎛 旋钮 · ${esc(号)}</h3>
+    <p class="sub" style="margin:0 0 8px;font-size:12.5px">
+      每个旋钮都标了<b>落点</b>（改了它，后端哪一行会读到）。
+      <b>没有温度滑块，是故意的</b> —— 这条路径根本不传采样参数，
+      放一个就是假旋钮：拖动它回答不会变，而你会以为自己在调。</p>
+    ${_旋表.map(k=>`<div style="margin:0 0 12px">
+      <label>${esc(k.中文)}　<code style="font-size:11px;color:var(--ink-3)">${esc(k.名)}</code>
+        ${k.松?`<b style="color:var(--warn,#b8860b);font-size:11.5px">· 放松约束：可以试，不许采纳</b>`:""}</label>
+      ${控(k)}
+      <div class="sub" style="font-size:12px;margin-top:4px">${md(k.说明||"")}
+        <span style="color:var(--ink-3)">落点：<code>${esc(k.落点)}</code></span></div></div>`).join("")}
+    <div class="btns"><button class="pri" id="k-save">保存旋钮</button>
+      <span class="msg" id="k-msg"></span></div></div>`;
+}
+function 收旋钮(){
+  const 出={};
+  document.querySelectorAll("#knobs [data-kn]").forEach(e=>{
+    let v=e.value;
+    if(v==="true") v=true; else if(v==="false") v=false;
+    else if(e.type==="number") v=parseInt(v,10);
+    else if(v==="") v=null;
+    出[e.dataset.kn]=v;
+  });
+  const 盒=document.querySelectorAll("#knobs [data-tool]");
+  if(盒.length){
+    const 选=[...盒].filter(b=>b.checked).map(b=>b.dataset.tool);
+    // 全选＝没收窄，就不往方案里写（方案里只留**真动过的**）
+    出["工具"]= (选.length===盒.length)?null:选;
+  }
+  return 出;
+}
+
 /* 候选详情:正文可改、能跑验证、能采纳 —— **入口在页面上,不在命令行**。 */
 async function 候选编辑(号,d){
   const 原=d.原始||{}, 改=原.改||{}, 拷=原.拷自||{}, 验=(原.验证||[]);
-  $("#det").innerHTML=`
+  const 旋H=await 旋钮台(号, 原.旋钮);
+  $("#det").innerHTML=旋H+`
     <div class="ed"><h3>改正文 · ${esc(号)}</h3>
       <p class="sub" style="margin:0;font-size:12.5px">${esc(原.为什么||"(没写为什么)")}</p>
       ${Object.keys(改).map(rid=>`
@@ -191,6 +263,16 @@ async function 候选编辑(号,d){
   $("#c-save").onclick=async()=>{
     const 正={}; $("#det").querySelectorAll("textarea[data-rid]").forEach(t=>正[t.dataset.rid]=t.value);
     await 发({动作:"存正文",正文:正});
+  };
+  const km=$("#k-msg");
+  $("#k-save").onclick=async()=>{
+    km.textContent="…";
+    const r=await fetch("/ai/candidate",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({号,动作:"存旋钮",旋钮:收旋钮()})}).then(r=>r.json());
+    // **拒绝的理由原样显示,不清洗** —— 把非法旋钮悄悄改成合法的,
+    // 跑出来的那一轮就不是你配的那一轮了
+    km.innerHTML=r.error?`<b style="color:var(--fail)">${esc(r.error)}</b>`
+      :esc(((r.说明||[]).join("；")||"和默认一样，没记")+(r.note?" · "+r.note:""));
   };
   $("#c-run").onclick=()=>发({动作:"跑验证集",套:套()[0]});
   $("#c-note").onclick=()=>发({动作:"记一次",结果文件:套()[1]});

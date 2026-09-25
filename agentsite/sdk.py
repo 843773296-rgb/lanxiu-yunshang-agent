@@ -721,8 +721,28 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     CLI 自己存着这条会话的完整记录,给它 session_id 就接着往下走,
     前面几轮的上下文还能命中缓存。返回值里带 session_id,前端存着下轮送回来。
     """
+    # ── 调参方案的旋钮在这里生效 ──────────────────────────────────
+    # **必须在 model/opts 算出来之前**:旋钮如果在 ClaudeAgentOptions 构造之后才套,
+    # 它就是个假旋钮 —— 页面上显示「已生效」,而真正发出去的还是默认值。
+    # 这个项目在 allowed_tools 上栽过同一个形状的跟头(以为封住了,其实没封)。
+    _旋话 = []
+    try:
+        import knobs as _kn
+        _参 = dict(effort=effort, max_turns=max_turns, model_name=model_name, guard=guard)
+        _参, _旋话 = _kn.应用(_参, 可用工具=_tools_for(kind))
+        effort, max_turns = _参["effort"], _参["max_turns"]
+        model_name, guard = _参["model_name"], _参["guard"]
+        _收窄 = _参.get("_工具收窄")
+        _注日期 = _参.get("_注日期", True)
+    except ImportError:
+        _收窄, _注日期 = None, True
+    # ⚠️ 校验失败**不吞** —— 配错的旋钮悄悄退回默认,比报错糟得多:
+    # 那一轮跑的不是你以为的配置,而分数差会被归因到别处。
+
     model = _env(provider, model_name)
     state = {}
+    if _旋话:
+        state["旋钮"] = _旋话      # 进轨迹,让台账上看得见这一轮是拧过的
     # ── 为什么这里是 effort 而不是 temperature ──────────────────────
     #
     # **Agent SDK 的 48 个参数里没有 `temperature`,也没有 `top_p` / `seed`。**
@@ -743,7 +763,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         eff = EFFORT_DEFAULT          # 认不出就退回默认,**不报错也不瞎传**
     opts = ClaudeAgentOptions(
         effort=eff,
-        hooks=guards.make_hooks(state) if guard else None,
+        hooks=guards.make_hooks(state, 注日期=_注日期) if guard else None,
         max_budget_usd=_max_usd(provider),
         # 身份写进提示词,是为了让模型**知道该怎么称呼和该问谁**;
         # 但取数的权限不靠这句话 —— 那是 MCP 服务的 env 管的。
@@ -756,7 +776,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             f"他能看到什么、能做什么由工号决定 —— 工具已经按他的身份取数了,"
             f"你不需要(也不能)替他换个身份查。\n" if me else "")),
         mcp_servers=mcp_config(me, kind),
-        allowed_tools=_tools_for(kind),
+        allowed_tools=(_收窄 or _tools_for(kind)),   # 旋钮只许收窄 —— 放宽在 knobs.校验 里当场抛
         # ⚠️ **allowed_tools 不是排他白名单。**
         # 它管的是「哪些工具不用逐次批准」,不是「只有这些工具存在」——
         # 配上 permission_mode="bypassPermissions" 之后,CLI 的内置工具
@@ -819,6 +839,9 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                       "gen_ai.request.max_tokens": None,
                       "lanxiu.gen": "V3", "lanxiu.kind": kind,
                       "lanxiu.effort": eff,
+                      # **拧过的旋钮进 span** —— 不记的话,两轮分数不同时归不了因,
+                      # 而「归不了因的实验」和「没做实验」价值一样
+                      **({"lanxiu.knobs": "; ".join(_旋话)} if _旋话 else {}),
                       "lanxiu.role": (me or {}).get("role"),
                       "lanxiu.skills": ",".join(skills) if skills else None,
                       "lanxiu.prompt_chars": len(prompt) if isinstance(prompt, str) else None})

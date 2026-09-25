@@ -383,6 +383,25 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 r["judge"] = f"判分失败:{e}"
             return self._send(r)
+        if p == "/ai/knobs":
+            # 旋钮表**从 knobs.py 现读**,不在这儿抄一份 ——
+            # 页面上的旋钮和后端真正读的旋钮必须是同一张表,
+            # 抄一份出来就会漂,而漂了之后页面上那个就是假旋钮。
+            try:
+                import sys as _s
+                _s.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+                import knobs as _kn
+                出 = [{k: v for k, v in x.items()} for x in _kn.旋钮表]
+                工具 = {}
+                try:
+                    import sdk as _sdk
+                    for 角 in ("all", "kb", "task", "workshop", "finance"):
+                        工具[角] = [t.rsplit("__", 1)[-1] for t in _sdk._tools_for(角)]
+                except Exception as e:
+                    工具 = {"_取不到": f"{type(e).__name__}: {e}"}
+                return self._send({"旋钮": 出, "工具": 工具, "落点核对": _kn.落点核对()})
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p == "/ai/candidate":
             # 提示词候选的**写口**:新建 / 存正文 / 采纳 / 跑验证集。
             # ⚠️ **判定一条都不在这儿重写** —— 全部转给 tools/prompt_candidate.py,
@@ -400,13 +419,36 @@ class H(BaseHTTPRequestHandler):
                 号 = (body.get("号") or "").strip()
                 if 动 == "新建":
                     改 = [x for x in (body.get("改") or []) if x]
-                    if not 号 or not 改:
-                        return self._send({"error": "要给候选起个号,并且至少选一条规矩"})
+                    旋 = body.get("旋钮") or {}
+                    if not 号 or (not 改 and not 旋):
+                        return self._send({"error": "要给方案起个号,并且至少改一条规矩**或**拧一个旋钮"})
                     if os.path.exists(os.path.join(_pc.目录, f"{号}.json")):
                         return self._send({"error": f"候选 {号} 已经有了 —— 换个号,"
                                                     f"别覆盖(覆盖会把之前的验证记录一起抹掉)"})
-                    _pc.新建(号, 改, body.get("为什么") or "")
+                    _pc.新建(号, 改, body.get("为什么") or "", 旋钮=旋)
                     return self._send({"ok": True, "号": 号})
+                if 动 == "存旋钮":
+                    # ⚠️ 校验**在这儿做,而且失败就返回错误** —— 不清洗、不过滤。
+                    # 把一个非法旋钮悄悄改成合法的,跑出来的那一轮就不是你配的那一轮了。
+                    import sys as _s2
+                    _s2.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+                    import knobs as _kn
+                    d = _pc._读(号)
+                    可用 = None
+                    try:
+                        import sdk as _sdk
+                        可用 = _sdk._tools_for(body.get("角色") or "all")
+                        可用 = [t.rsplit("__", 1)[-1] for t in 可用]
+                    except Exception: pass
+                    try:
+                        干净, 松, 话 = _kn.校验(body.get("旋钮") or {}, 可用)
+                    except ValueError as e:
+                        return self._send({"error": str(e)})
+                    d["旋钮"] = 干净
+                    _pc._写(号, d)
+                    return self._send({"ok": True, "旋钮": 干净, "松": 松, "说明": 话,
+                                       "note": ("这个方案里有**放松约束**的旋钮 —— "
+                                                "可以拿它跑实验,但不许采纳成新默认。") if 松 else ""})
                 if 动 == "存正文":
                     d = _pc._读(号)
                     正 = body.get("正文") or {}
