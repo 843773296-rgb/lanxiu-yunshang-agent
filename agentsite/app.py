@@ -53,12 +53,11 @@ PORT = int(os.environ.get("AGENTSITE_PORT", "8770"))
 # 首页是**一个通用对话助手**,不是导航页也不是多屏工作台。
 # 之前那版单壳多屏(值班台/研判队列/面料学堂/着装人/健康 + 「?」教学层)
 # 整体挪到 /panels 保住了 —— 里面的教学内容是攒出来的,不能因为换个形态就丢。
-PAGES = {"/": "station.html", "/panels": "panels.html",
-         # 登录与任务:登录态是**后台**发的 session cookie,本站只转发不解读
+PAGES = {"/": "station.html", # 登录与任务:登录态是**后台**发的 session cookie,本站只转发不解读
          "/login": "login.html", "/tasks": "tasks.html",
          # /m 是**客户**用的(手机端自助预约,不登录);/pad 是顾问在平板上看单子的
          "/m": "m.html", "/pad": "pad.html",
-         "/duty": "duty.html", "/queue": "queue.html", "/health": "health.html",
+         "/fabric": "fabric.html", "/duty": "duty.html", "/queue": "queue.html", "/health": "health.html",
          "/scheme": "scheme.html",
          "/workbench": "workbench.html", "/acceptance": "acceptance.html",
          # 着装人的身体生命周期 —— 和会员生命周期(新客/沉默/流失)不是一回事
@@ -196,6 +195,9 @@ class H(BaseHTTPRequestHandler):
             # 它从这儿取同一份清单渲染左栏入口 —— 而不是自己手写一份。
             import nav as _nav
             return self._send({"rows": [dict(路=a, 名=b, 说=c) for a, b, c in _nav.顶栏]})
+        if p == "/ai/nav":
+            import aihub
+            return self._send(aihub.左栏())
         if p == "/ai/overview":
             try:
                 import aihub

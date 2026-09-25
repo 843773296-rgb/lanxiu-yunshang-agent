@@ -61,17 +61,24 @@ const 美=v=>{ if(v==null||v==="") return "(空)";
   if(typeof v==="object") return JSON.stringify(v,null,1);
   const t=String(v).trim(); if(t[0]==="{"||t[0]==="["){try{return JSON.stringify(JSON.parse(t),null,1)}catch(e){}}
   return String(v); };
-const MODS=[["runs","咨询"],["tools","工具调用"],["cost","模型调用与成本"],["guards","守卫与拦截"],
-            ["skills","技能"],["evals","评测"],["ops","操作台账"]];
-const NO=[["prompts","提示词版本"],["retrieval","知识库检索"],["finetune","训练数据准备"]];
+// ⚠️ 分组**从服务端取**,页面不写第二份。
+// 2026-09-25 用户截图发现:提示词版本做完了,左栏还挂在「还没有」——
+// 因为这里原来是两行写死的清单,而真正的来源在 aihub.py。**一份数据两处维护,必漂。**
+let MODS=[], NO=[];
 const mod=(location.pathname.split("/")[2]||"");
 
-$("#nav").innerHTML=`<div class="h">总览</div><a href="/ai" class="${mod?"":"on"}">全部模块</a>
+async function 画左栏(){
+  const d=await fetch("/ai/nav").then(r=>r.json()).catch(()=>({有:[],没有:[]}));
+  MODS=(d.有||[]).map(x=>[x.键,x.名]); NO=(d.没有||[]).map(x=>[x.键,x.名]);
+  $("#nav").innerHTML=`<div class="h">总览</div><a href="/ai" class="${mod?"":"on"}">全部模块</a>
   <div class="h">有数据</div>`+MODS.map(([k,n])=>`<a href="/ai/${k}" class="${mod===k?"on":""}">${n}</a>`).join("")
   +`<div class="h">还没有</div>`+NO.map(([k,n])=>`<a href="/ai/${k}" class="no ${mod===k?"on":""}">${n}</a>`).join("")
   +`<div class="h">别的页</div><a href="/debug">单次运行树</a><a href="/experiments">实验对比</a>`;
+}
 
-if(!mod) 总览(); else if(NO.some(([k])=>k===mod)) 还没有(); else 模块(mod);
+画左栏().then(() => {
+  if(!mod) 总览(); else if(NO.some(([k])=>k===mod)) 还没有(); else 模块(mod);
+});
 
 async function 总览(){
   const d=await fetch("/ai/overview").then(r=>r.json());

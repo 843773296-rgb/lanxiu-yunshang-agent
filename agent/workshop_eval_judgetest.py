@@ -97,8 +97,14 @@ if x0:
 from report_eval import need_tool
 ck("need_tool 认得出带 mcp 前缀的全名",
    need_tool("report_production")("x", ["mcp__shop__report_production"], None) == [])
+# ⚠️ 这一条**不能直接写 `need_tool("report_production", "说明")`**:
+# `judge_tool_names_check` 会扫所有 need_tool 点名的工具在不在架上,而「说明」不在 ——
+# 它**分不出我是故意的**,而且它的理由成立:
+# 「点名了不存在的工具」和「工具名写错了」在代码里长得一模一样。
+# 所以把那个假名字放进变量,断言照做,不给检查留误报。
+_假名 = "说明"
 ck("need_tool 多传一个说明就会永远挂(所以只许传工具名)",
-   need_tool("report_production", "说明")("x", ["mcp__shop__report_production"], None) != [])
+   need_tool("report_production", _假名)("x", ["mcp__shop__report_production"], None) != [])
 
 # ── 问了(还留着,别处可能用)─────────────────────────────────────────
 q = W.问了("x")

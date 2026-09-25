@@ -48,6 +48,44 @@ def _今天():
         return None
 
 
+# 左栏分组的**唯一来源**。页面不许再写死一份 ——
+# 2026-09-25 用户截图发现:提示词版本明明做完了,左栏还挂在「还没有」,
+# 因为 ai.html 里有一份写死的 MODS/NO。**一份数据两处维护,必漂。**
+模块名 = {"runs": "咨询", "tools": "工具调用", "cost": "模型调用与成本",
+          "guards": "守卫与拦截", "skills": "技能", "evals": "评测",
+          "ops": "操作台账", "prompts": "提示词版本",
+          "retrieval": "知识库检索", "finetune": "训练数据准备"}
+
+
+def 左栏():
+    return dict(有=[dict(键=k, 名=模块名.get(k, k)) for k in 模块表],
+                没有=[dict(键=k, 名=v) for k, v in 没做的.items()])
+
+
+def _检索数():
+    n = 没中 = 0
+    for x in _读(os.path.join(ROOT, ".feynman", "spans.jsonl")):
+        a = x.get("attr") or {}
+        if not (a.get("gen_ai.tool.name") or "").startswith("kb_"): continue
+        n += 1
+        if '"error"' in str(a.get("gen_ai.tool.call.result") or ""): 没中 += 1
+    return n, 没中
+
+
+def _可留数():
+    树 = {}
+    for x in _读(os.path.join(ROOT, ".feynman", "spans.jsonl")):
+        树.setdefault(x.get("trace_id"), []).append(x)
+    行 = 0
+    for tid, v in 树.items():
+        根 = next((y for y in v if not y.get("parent_span_id")), v[0])
+        a = 根.get("attr") or {}
+        工具 = [y for y in v if (y.get("attr") or {}).get("gen_ai.operation.name") == "execute_tool"]
+        if a.get("lanxiu.prompt") and a.get("lanxiu.answer") and 工具 \
+                and not a.get("lanxiu.guard.blocked"): 行 += 1
+    return len(树), 行
+
+
 def _候选数():
     try:
         sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -126,18 +164,21 @@ def 概览():
                  f"候选**只在显式指定时生效**,没跑过验证集不许采纳"),
              缺="并排比分还在 /experiments 那页,没并到这儿来",
              去="/ai/prompts", 状态="有"),
-        dict(号=8, 名="知识库检索", 问="它为什么给出这条依据、有没有该命中却没命中的",
-             有=None,
-             缺="**还没有**。这一栏是给下一步的营销 SOP 铺路:SOP **入库时就得带结构**"
-                "(编号 / 适用条件 / 该做什么 / 明确不该做什么),检索日志要记"
-                "查询词、过滤条件、召回、重排、最终采用的编号、**没命中时做了什么**。"
-                "先按能被记录的方式建 SOP,不是建完再想怎么调试",
-             去=None, 状态="还没有"),
+        dict(号=8, 名="知识库检索", 问="它查了什么、拿回什么、**没命中时做了什么**",
+             有=(f"{_检索数()[0]} 次知识库调用,其中 **{_检索数()[1]} 次没命中** —— "
+                 f"没命中的那些是**知识库的缺口清单**"),
+             缺="**没有召回排序这一段** —— 这个项目是结构化查表,不是相似度检索。"
+                "营销 SOP 进来之后才会有:SOP **入库时就得带结构**"
+                "(编号 / 适用条件 / 该做什么 / 明确不该做什么),"
+                "**先按能被记录的方式建 SOP,不是建完再想怎么调试**",
+             去="/ai/retrieval", 状态="有"),
         dict(号=9, 名="训练数据准备", 问="哪些真实对话可以拿来微调",
-             有=None,
-             缺="**只做到「准备」为止**:样本量根本不足以证明微调有没有用,"
-                "所以先把「哪些对话值得留、怎么脱敏、怎么标」做出来,不急着训",
-             去=None, 状态="还没有"),
+             有=(f"{_可留数()[1]}/{_可留数()[0]} 条对话够格留下 "
+                 f"(有问有答、调过工具、没被体检打回)"),
+             缺="**只做到「准备」为止**:样本量根本不足以证明微调有没有用。"
+                "**脱敏还没做** —— 这些对话里带客户号、订单号、量体数据,"
+                "真要拿出去训之前必须先过一遍",
+             去="/ai/finetune", 状态="有"),
     ]
     return dict(今天=今, 机器今天=机今,
                 跑=dict(累计次数=len(调用), 累计花费=钱(调用),
@@ -247,8 +288,9 @@ def 细目():
 # ⚠️ **「排序」这一段要照实说没有。** 这个项目的知识库是结构化查表,没有向量召回、
 # 也没有重排。给它放一个空面板,和「有重排但这次没触发」在界面上长得一模一样,
 # 而这两件事的下一步完全不同(一个是去做,一个是去查为什么没触发)。
-模块表 = ["runs", "cost", "tools", "guards", "skills", "evals", "ops", "prompts"]
-没做的 = {"retrieval": "知识库检索", "finetune": "训练数据准备"}
+模块表 = ["runs", "cost", "tools", "guards", "skills", "evals", "ops", "prompts",
+          "retrieval", "finetune"]
+没做的 = {}
 
 
 def _库():
@@ -316,6 +358,47 @@ def 列表(mod, 限=200):
                      采纳="已采纳" if x["采纳于"] else "",
                      为什么=(x["为什么"] or "")[:40], 建于=x["建于"])
                 for x in _pc.列表()][::-1][:限]
+    if mod == "retrieval":
+        # **检索日志不用另建** —— 每次 kb_* 调用的查询词和返回值,树状记录仪里都有。
+        # ⚠️ 这个项目**没有向量召回、没有重排**(知识库是手写 md + 推导出的结构化表,
+        # 工具按条件查表),所以这一栏回答的是另外三件事:
+        # 查了什么 / 拿回什么 / **没命中时它做了什么** —— 最后一件是知识库的缺口清单。
+        出 = []
+        for x in _读(os.path.join(ROOT, ".feynman", "spans.jsonl")):
+            a = x.get("attr") or {}
+            名 = a.get("gen_ai.tool.name") or ""
+            if not 名.startswith("kb_"): continue
+            r = str(a.get("gen_ai.tool.call.result") or "")
+            没中 = '"error"' in r
+            出.append(dict(id=x.get("span_id"), trace=x.get("trace_id"), 时间=x.get("ts"),
+                           工具=名, 查询=(a.get("gen_ai.tool.call.arguments") or "")[:70],
+                           命中="没命中" if 没中 else "命中", 毫秒=x.get("duration_ms"),
+                           回了=len(r)))
+        return sorted(出, key=lambda x: x["时间"] or "", reverse=True)[:限]
+    if mod == "finetune":
+        # **只做到「准备」为止**(业务 09-24 定):样本量根本不足以证明微调有没有用,
+        # 所以这一栏先回答「哪些对话值得留」,不急着训。
+        # 判据:有问有答、调过工具(说明结论有取数撑着)、**没被体检打回**。
+        出 = []
+        树 = {}
+        for x in _读(os.path.join(ROOT, ".feynman", "spans.jsonl")):
+            树.setdefault(x.get("trace_id"), []).append(x)
+        for tid, v in 树.items():
+            根 = next((y for y in v if not y.get("parent_span_id")), v[0])
+            a = 根.get("attr") or {}
+            问, 答 = a.get("lanxiu.prompt"), a.get("lanxiu.answer")
+            工具 = [y for y in v if (y.get("attr") or {}).get("gen_ai.operation.name") == "execute_tool"]
+            打回 = bool(a.get("lanxiu.guard.blocked"))
+            要 = bool(问 and 答 and 工具 and not 打回)
+            出.append(dict(id=tid, 时间=根.get("ts"), 角色=根.get("角色"),
+                           问=(问 or "")[:50], 答了=bool(答), 工具数=len(工具),
+                           被打回="是" if 打回 else "",
+                           能不能留="可以" if 要 else "先别",
+                           为什么=("" if 要 else
+                                   ("没答出来" if not 答 else
+                                    "一个工具都没调(结论没有取数撑着)" if not 工具 else
+                                    "体检打回过" if 打回 else "缺问题"))))
+        return sorted(出, key=lambda x: x["时间"] or "", reverse=True)[:限]
     if mod == "ops":
         c = _库()
         cols = [d[1] for d in c.execute("pragma table_info(op_log)")]

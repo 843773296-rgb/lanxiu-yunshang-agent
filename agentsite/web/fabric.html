@@ -1,5 +1,4 @@
-<title>澜绣云裳 · 智能工作站</title>
-<nav class="sitenav"><!--NAV--></nav>
+<title>面料学堂</title>
 <style>
 :root{
   --bg:#F5F7FA; --surface:#FFFFFF; --surface2:#F0F3F8;
@@ -235,16 +234,10 @@ aside.agent.off{display:none}
 @media(max-width:900px){aside.agent{display:none}.nav{gap:0}.nav button{padding:6px 9px;font-size:13px}}
 </style>
 
+<nav class="sitenav"><!--NAV--></nav>
 <div class="topbar">
-  <div class="brand"><span class="seal">澜</span><b>澜绣云裳</b></div>
+  <div class="brand"><span class="seal">澜</span><b>面料学堂</b></div>
   <span class="scopechip" id="scope">加载中</span>
-  <nav class="nav" id="nav">
-    <button data-s="dash" class="on">值班台</button>
-    <button data-s="queue">研判队列</button>
-    <button data-s="fabric">面料学堂</button>
-    <button data-s="wearer">着装人</button>
-    <button data-s="health">智能体健康</button>
-  </nav>
   <div class="topbtns">
     <button class="qbtn" id="help" title="这一屏在讲什么">?</button>
     <button class="ghostbtn" id="theme">主题</button>
@@ -255,31 +248,14 @@ aside.agent.off{display:none}
 <div class="shell">
 <main><div class="wrap">
 
-  <section class="screen on" data-s="dash">
-    <div class="pagehead"><h1>值班台</h1><span class="why">今天还剩多少件 · 超时几件 · 最久等了多久</span></div>
-    <div class="grid k4" id="kpis"></div>
-    <div class="card cardpad" style="margin-top:14px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-        <b>队列最前面</b><span class="pill" id="qhint">超时优先</span>
-        <button class="ghostbtn" id="run3" style="margin-left:auto">让智能体研判 3 条</button>
-      </div>
-      <div class="scroll"><table>
-        <thead><tr><th>工单</th><th>类型</th><th>等待</th><th>时效</th><th>状态</th><th>智能体判的根因</th></tr></thead>
-        <tbody id="dashrows"><tr><td colspan="6">加载中…</td></tr></tbody>
-      </table></div>
-      <div style="font-size:12.3px;color:var(--faint);margin-top:8px" id="runmsg"></div>
-    </div>
-  </section>
-
-  <section class="screen" data-s="queue">
-    <div class="pagehead"><h1>研判队列</h1><span class="why">智能体交草稿,你采纳 / 改判 / 升级</span></div>
-    <div class="card cardpad"><div class="scroll"><table>
-      <thead><tr><th>工单</th><th>类型</th><th>等待</th><th>时效</th><th>状态</th><th>根因</th><th>置信度</th></tr></thead>
-      <tbody id="queuerows"><tr><td colspan="7">加载中…</td></tr></tbody>
-    </table></div></div>
-  </section>
-
-  <section class="screen" data-s="fabric">
+  <!-- 原来这个 section 带着一个切视图用的 data- 标记(名字不在这儿原样写,
+       **写出来会被控件审计当成一个真控件** —— 今天第三次撞上这个形状了:
+       _shell.txt 注释里写占位符被真替换、bite_check 的示例被当成真记录,
+       共同点是**说明某个标记的那句话本身就含有那个标记**,而扫描器分不出注释和代码),
+     而那套开关已经随着另外四个视图一起删了。留着它的后果是:
+     **控件审计把它当成一个没绑定的控件**(点了没反应),而页面看起来完全正常。
+     删元素要连引用一起删,删机制也要连标记一起删。 -->
+<section class="screen on">
     <div class="ltabs" id="ltabs">
       <button data-l="learn" class="on">面料学习</button>
       <button data-l="card">速记卡</button>
@@ -307,23 +283,7 @@ aside.agent.off{display:none}
     </div>
   </section>
 
-  <section class="screen" data-s="wearer">
-    <div class="pagehead"><h1>着装人</h1><span class="why">谁付钱,和衣服穿在谁身上,是两回事</span></div>
-    <div class="grid k4" id="wkpis"></div>
-    <div class="card cardpad" style="margin-top:14px"><div class="scroll"><table>
-      <thead><tr><th>账户</th><th>手机号</th><th>联系</th><th>账户状态</th><th>姓名</th><th>关系</th><th>性别</th><th>年龄</th><th>最近身高</th><th>上次量体</th><th>状态</th><th>同意</th></tr></thead>
-      <tbody id="wrows"><tr><td colspan="12">加载中…</td></tr></tbody>
-    </table></div></div>
-  </section>
-
-  <section class="screen" data-s="health">
-    <div class="pagehead"><h1>智能体健康</h1><span class="why">采纳率掉下来,不用等投诉</span></div>
-    <div class="grid k4" id="hkpis"></div>
-  </section>
-
-</div></main>
-
-<aside class="agent" id="agent">
+  <aside class="agent" id="agent">
   <div class="aghead">
     <span class="seal" style="width:24px;height:24px;font-size:14px;border-radius:6px">✦</span>
     <span class="t">智能体</span>
@@ -434,13 +394,11 @@ const CHIPS={kb:["香云纱能做妆花吗","云锦备料要多久","客户说�
 
 /* ── 屏切换 ─────────────────────────────────────────────────────── */
 let SCR="dash";
-function show(s){
-  SCR=s;
-  document.querySelectorAll(".screen").forEach(x=>x.classList.toggle("on",x.dataset.s===s));
-  document.querySelectorAll("#nav button").forEach(b=>b.classList.toggle("on",b.dataset.s===s));
-  if(s==="fabric") loadFab(); if(s==="wearer") loadWearer(); if(s==="health") loadHealth();
-}
-$("#nav").addEventListener("click",e=>{const b=e.target.closest("button"); if(b) show(b.dataset.s);});
+/* 原来那套「切五个视图」的开关没用了 —— 这一页只剩面料学堂一个视图。
+   ⚠️ **删元素要连引用一起删**:HTML 剥干净了、JS 没剥,引用会指向不存在的 id,
+   而那是**运行时才炸、炸完整段脚本停在那儿** —— 页面看起来正常,功能死一半。
+   2026-09-25 从 panels 拆这一页时,ref_check 抓到 18 处这种引用。 */
+
 
 /* ── 教学层 ─────────────────────────────────────────────────────── */
 function openTeach(){
@@ -467,35 +425,8 @@ function kpi(box,items){
   $(box).innerHTML=items.map(([cls,k,v,n])=>
     `<div class="card cardpad kpi ${cls}"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="n">${esc(n)}</div></div>`).join("");
 }
-async function loadDash(){
-  const [b,q]=await Promise.all([fetch("/api/ops-backlog").then(r=>r.json()),
-                                 fetch("/api/ops-queue?state=待办").then(r=>r.json())]);
-  $("#scope").textContent=`待办 ${b.待办} · 超时 ${b.已超时}`;
-  kpi("#kpis",[[b.待办?"warn":"good","待办",b.待办,`共 ${b.总量} 条,已销账 ${b.已销账}`],
-    [b.已超时?"bad":"good","已超时",b.已超时,`临期还有 ${b.临期} 条`],
-    [b.最久那条已超时?"bad":"","最久等待",b.最久未处理小时+"h","按那一条自己的时效:财务 24h / 合并 48h / 判责 36h"],
-    ["","等你复核",b.待复核,`还有 ${b.未研判} 条没研判`]]);
-  $("#dashrows").innerHTML=q.rows.length?q.rows.slice(0,8).map(x=>
-    `<tr><td class="num">${esc(x.task_id)}</td><td>${esc(x.type)}</td><td class="num">${x.waited_h}h</td>
-     <td><span class="pill ${LV[x.level]||""}">${esc(x.level)}</span></td><td>${esc(x.state)}</td>
-     <td>${x.ai_root_cause?esc(x.ai_root_cause):'<span style="color:var(--faint)">—</span>'}</td></tr>`).join("")
-    :`<tr><td colspan="6">队列见底了。</td></tr>`;
-  $("#queuerows").innerHTML=q.rows.map(x=>
-    `<tr><td class="num">${esc(x.task_id)}</td><td>${esc(x.type)}</td><td class="num">${x.waited_h}h</td>
-     <td><span class="pill ${LV[x.level]||""}">${esc(x.level)}</span></td><td>${esc(x.state)}</td>
-     <td>${x.ai_root_cause?esc(x.ai_root_cause):"—"}</td>
-     <td>${x.ai_confidence?`<span class="pill ${CF[x.ai_confidence]||""}">${x.ai_confidence}</span>`:"—"}</td></tr>`).join("");
-}
-$("#run3").addEventListener("click",async()=>{
-  const b=$("#run3"); b.disabled=true; $("#runmsg").textContent="智能体在跑…… 每条要查 2–4 次数据,别关页面。";
-  try{
-    const r=await (await fetch("/run-batch",{method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify({n:3})})).json();
-    $("#runmsg").textContent=`研判了 ${(r.done||[]).length} 条,花了 $${(r.cost||0).toFixed(4)}。`;
-    await loadDash();
-  }catch(e){ $("#runmsg").textContent="跑失败:"+e; }
-  b.disabled=false;
-});
+
+
 
 /* ── 面料学堂:左树 + 教学卡 + 速记卡 + 练习 ─────────────────────── */
 const HUE={香云纱:"#4A3B2A",云锦:"#8C4356",素罗:"#E3EAE0",宋锦:"#2E4E7E",妆花:"#9D2933",
@@ -652,18 +583,7 @@ async function loadFab(){
 }
 
 /* ── 着装人 / 健康度 ────────────────────────────────────────────── */
-async function loadWearer(){
-  const r=await (await fetch("/api/wearers")).json(), rows=r.rows;
-  const kid=rows.filter(x=>x.年龄!=null&&x.年龄<18).length, due=rows.filter(x=>x.该复量).length;
-  kpi("#wkpis",[["","着装人",rows.length,"挂在账号下的人,不是账号数"],
-    ["","未成年",kid,"这个模块真正要管的对象"],
-    [due?"warn":"good","该复量",due,"超期的量体是无效值"],
-    [(r.需人工确认||[]).length?"warn":"good","需人工确认",(r.需人工确认||[]).length,"遗传身高与推算差 >8cm"]]);
-  $("#wrows").innerHTML=rows.map(x=>`<tr><td class="mono">${esc(x.账户?.账户||"—")}${(x.账户?.关联门店档案||0)>1?' <span class="pill warn">2 条档案</span>':""}</td><td class="mono">${esc(x.账户?.手机号||"—")}</td><td>${esc(x.账户?.联系方式偏好||"—")}</td><td>${x.账户?.状态&&x.账户.状态!=="正常"?`<span class="pill crit">${esc(x.账户.状态)}</span>`:x.账户?.协议需重新取得同意?'<span class="pill warn">协议待重签</span>':'<span class="pill ok">正常</span>'}</td><td>${esc(x.姓名)}</td><td>${esc(x.关系)}</td><td>${esc(x.性别)}</td>
-    <td class="num">${x.年龄??"—"}</td><td class="num">${x.最近身高??"—"}</td><td class="num">${esc(x.量体日||"—")}</td>
-    <td>${x.该复量?`<span class="pill crit">该复量 超期${x.超期天数}天</span>`:x.量体日?'<span class="pill ok">有效</span>':'<span class="pill">未量体</span>'}</td>
-    <td>${x.身体数据同意==="有效"?'<span class="pill ok">有效</span>':'<span class="pill crit">缺失</span>'}</td></tr>`).join("");
-}
+
 async function loadHealth(){
   const h=await (await fetch("/api/ops-health")).json();
   kpi("#hkpis",[["","研判总数",h.研判总数,`已销账 ${h.已销账}`],
