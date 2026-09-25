@@ -1594,6 +1594,63 @@ def order_log_page(oid):
                 note="被拒收、被作废的回传也在里面 —— 只留成功的,出了事最想知道的那几条恰好都不在。")
 
 
+def 自有工坊待报工(me):
+    """这个人现在能报哪几件(业务 2026-09-25)。
+
+    ⚠️ **只列自有工坊的单。** 外发工厂的单谁都不许替它报 —— 那条规矩在
+    knowledge/factory_feed.能不能报工() 里判,而这里**连列都不列** ——
+    列出来再拒,等于让人点了才知道不行;不列,人一眼就知道这不是他的活。
+    (两种都不会出错,但一种让人白点一次。)
+
+    工匠只看自己名下的在制件,店长看本店,总部运营看全部。
+    """
+    import factory_inbox as _fi
+    from seed import TODAY
+    _fi.ensure()
+    角色 = (me or {}).get("role")
+    if 角色 not in ("工匠", "店长", "总部运营"):
+        return dict(rows=[], today=TODAY, 说明="只有工匠和店长能报工 —— 报工的是做这件活的人",
+                    能报=False)
+    条, 参 = [], []
+    if 角色 == "工匠":
+        条.append("w.artisan=?"); 参.append((me or {}).get("no"))
+    elif 角色 == "店长":
+        条.append("o.shop=?"); 参.append((me or {}).get("shop"))
+    where = (" AND " + " AND ".join(条)) if 条 else ""
+    rs = rows(f"""SELECT o.id, o.shop, o.status, o.prd_status, w.id wo, w.artisan, w.craft,
+                         w.due_date, f.promise_date
+                  FROM ordr o
+                  JOIN factory_msg f ON f.order_id=o.id AND f.event='接单' AND f.result='收下'
+                                    AND f.factory='自有工坊'
+                  LEFT JOIN workorder w ON w.ref=o.id AND w.status='在制'
+                  WHERE o.kind='定制品订单'
+                    AND o.status IN ('生产中','已生产','待发货'){where}
+                  ORDER BY f.promise_date LIMIT 60""", *参)
+    # ⚠️ 上面是 `*参` 不是 `tuple(参)`:`rows(sql, *a)` 收的是**散开的参数**,
+    # 传元组会被当成**一个**参数绑进去(ProgrammingError: type 'tuple' is not supported)。
+    # 而注释也不能写在那段三引号 SQL 里面 —— SQLite 会把 `#` 当成非法记号。
+    # 下一步该报什么 —— 按订单现在这一档现算,**不让人猜**
+    下一步 = {"生产中": "完工", "已生产": "质检通过", "待发货": "发出"}
+    for r in rs:
+        r["下一步"] = 下一步.get(r["status"])
+        r["要单号"] = r["下一步"] == "发出"
+    return dict(rows=rs, today=TODAY, 能报=True, 角色=角色,
+                说明=("只列**自有工坊**的单 —— 外发工厂的单只能工厂自己回传,"
+                      "这里连列都不列;工匠只看自己名下的在制件。"))
+
+
+def 工坊报工(body, me):
+    import factory_inbox as _fi
+    from seed import TODAY
+    oid = (body.get("order_id") or "").strip()
+    事 = (body.get("event") or "").strip()
+    if 事 not in ("完工", "质检通过", "发出"):
+        return dict(ok=False, reason="event 只能是 完工 / 质检通过 / 发出")
+    r = _fi.报工(oid, 事, me, 件=body.get("item"),
+                 物流单号=body.get("tracking_no"), db=DB, 今天=TODAY)
+    return dict(ok=(r["结论"] == "收下"), 结论=r["结论"], reason=r["理由"], 效果=r.get("效果"))
+
+
 def factory_feed_page(q):
     """工厂回传页(业务 09-22:生产和发货只认工厂回传)。该催清单 + 收件箱里要人看的那几条。
     「今天」按演示世界的今天(seed.TODAY),不按机器时钟 —— 和造数据、判超期用的是同一天。"""
@@ -2553,6 +2610,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/maintains": return self._send(maintain_list(Q))
         if p=="/api/guide-perf": return self._send(guide_perf(Q))
         if p=="/api/factory-feed": return self._send(factory_feed_page(Q))
+        if p=="/api/workshop-todo": return self._send(自有工坊待报工(_me(self)))
         if p.startswith("/api/order-log/"): return self._send(order_log_page(p.split("/api/order-log/")[1]))
         if p=="/api/stock-log": return self._send(stock_log_list(Q))
         if p=="/api/kb": return self._send(kb_search(Q))
@@ -2779,6 +2837,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/followup-create":
             return self._send(create_followup(body, _actor_of(self)))
         if p=="/api/factory-rollback": return self._send(factory_rollback(body, _me(self)))
+        if p=="/api/workshop-report": return self._send(工坊报工(body, _me(self)))
         if p=="/api/delay-told":       return self._send(delay_told(body, _me(self)))
         if p=="/api/download-create":
             return self._send(create_download(body.get("kind"),body.get("filters")))

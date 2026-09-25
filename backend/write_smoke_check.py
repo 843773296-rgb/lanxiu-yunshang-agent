@@ -167,6 +167,20 @@ def 用例表():
     延 = 取("SELECT id FROM factory_delay WHERE told_at IS NULL LIMIT 1") if 有表("factory_delay") else None
 
     出 = []
+    # 自有工坊报工(2026-09-25):**它推订单状态,是写。**
+    # 判据看 factory_msg 多没多一条 —— 报工成功必然落一条回传。
+    工坊 = 取("""SELECT o.id, o.shop FROM ordr o
+                 JOIN factory_msg f ON f.order_id=o.id AND f.event='接单'
+                                   AND f.result='收下' AND f.factory='自有工坊'
+                 WHERE o.kind='定制品订单' AND o.status='生产中' LIMIT 1""")
+    if 工坊:
+        坊店长 = 取("SELECT no,name,role,shop FROM staff WHERE role='店长' AND status='启用' "
+                    "AND shop=? LIMIT 1", 工坊["shop"])
+        if 坊店长:
+            出.append(("工坊报工",
+                       lambda s, _o=工坊, _m=dict(坊店长): s.工坊报工(
+                           {"order_id": _o["id"], "event": "完工"}, _m),
+                       "factory_msg"))
     if 回:
         店长 = 取("SELECT no,name,role,shop FROM staff WHERE role='店长' AND status='启用' AND shop=? LIMIT 1",
                  回["shop"])

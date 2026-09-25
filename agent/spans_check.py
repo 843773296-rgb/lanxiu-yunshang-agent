@@ -121,10 +121,17 @@ def 扫凭据(棵们):
             for k, v in (s.get("attr") or {}).items():
                 if _sp.凭据键.search(str(k)) and v != _sp.抹了:
                     中.append(f"{s['name']} 的 {k}")
-                # 值里也扫一遍键名(参数和返回值是字符串,里面嵌着原始 JSON)
-                if isinstance(v, str) and _sp.凭据键.search(v):
-                    # 抹过的会留下痕迹,留了痕迹就算合格
-                    if _sp.抹了 not in v: 中.append(f"{s['name']} 的 {k} 的值里")
+                # ⚠️ **只扫键名,不扫值。**
+                # 原来这里也拿同一个词表去扫值,2026-09-25 当场误报:
+                # 消息号 `msg_011CfPWdjUUEiNqqoXJ9HAHQ` 里的 `PWd` 撞上了 `pwd`。
+                # 这是词表判据的第三种死法(前两种今天也撞过:写太宽、写太窄)——
+                # **子串误撞**:任何足够长的随机串都会撞上任何足够短的词。
+                #
+                # 而在值里扫凭据这件事**本来就做不对**:
+                # 凭据的值长什么样没有特征(它就是一串随机字符),而随机 ID 也是。
+                # 真正的防线在上游 —— 凭据压根不经工具层(那是硬规矩),
+                # 键名抹掉是第二道,这份日志不进版本库是第三道。
+                # 一条天天喊狼的检查最后会被人关掉,而那时连第二道也没了。
     return 中
 
 
@@ -208,6 +215,20 @@ def _自测():
     def 改_凭据():
         d = copy.deepcopy(好); d["t1"][2]["attr"]["密码"] = "x"; return 扫凭据(d)
     咬("日志里写了凭据键名", 改_凭据, "密码")
+    def 改_随机号():
+        # ⚠️ 2026-09-25 实测:`msg_011CfPWdjUUEiNqqoXJ9HAHQ` 里的 `PWd` 撞上 `pwd`。
+        # **随机 ID 不许被当成凭据** —— 扫值必误报,所以只扫键名。
+        d = copy.deepcopy(好)
+        d["t1"][1]["attr"]["gen_ai.response.id"] = "msg_011CfPWdjUUEiNqqoXJ9HAHQ"
+        d["t1"][2]["attr"]["gen_ai.tool.call.result"] = '{"单号":"SFsecret123","盐":"x"}'
+        return 扫凭据(d)
+    # ⚠️ 这一条和别的咬合**方向相反**:别的是「改坏了要红」,
+    # 这条是「**这样不算坏,不许红**」—— 误报和漏报的代价一样大:
+    # 一条天天喊狼的检查最后会被人关掉,而那时连这道防线也没了。
+    _r = 改_随机号()
+    过.append(not _r)
+    print(f"  {'✅' if not _r else '❌'} 咬合「随机 ID 里的字母不算凭据(只扫键名)」→ "
+          f"{_r or '没红,对'}")
     def 改_没落盘():
         return ["少了:" + k for k, v in 接上了吗(
             "import spans\n_spans.一棵树()\n.开('invoke_agent x')\n").items() if not v]

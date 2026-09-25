@@ -57,6 +57,12 @@ DB = os.path.join(HERE, "lanxiu.db")
 def SQL(s): return ("SQL", s)
 
 # 入口 → 一组参数。一个入口可以有多组(export_csv 四种导出各算一次)。
+# 取一整行当 dict —— 身份参数要的是 {no,name,role,shop},不是单个值。
+# **和 SQL 同一种形状**(二元组),解析也在同一处 —— 我第一版自造了一个类,
+# 而取参那段只认二元组,于是三条用例全抛 AttributeError。
+def SQL行(s): return ("SQL行", s)
+
+
 用例 = {
     # ── 详情页:参数是一个真实 id ───────────────────────────────────
     "task_detail":      [(SQL("SELECT id FROM task LIMIT 1"),)],
@@ -79,6 +85,13 @@ def SQL(s): return ("SQL", s)
     "activity_list":    [({},)], "aftersale_list":  [({},)], "appt_list_q":   [({},)],
     "approval_list":    [({},)], "content_list":    [({},)], "customer_list": [({},)],
     "download_list":    [({},)], "guide_perf":      [({},)], "factory_feed_page": [({},)], "invite_list":   [({},)],
+    # 自有工坊待报工(2026-09-25):入参是**身份**,不是单据号 —— 三种身份各跑一次,
+    # 因为它的范围是跟身份走的(工匠只看自己名下、店长看本店、顾问压根报不了),
+    # **只验一种身份等于没验隔离**。
+    "自有工坊待报工": [
+        (SQL行("SELECT no,name,role,shop FROM staff WHERE role='店长' AND status='启用' LIMIT 1"),),
+        (SQL行("SELECT no,name,role,shop FROM staff WHERE role='工匠' AND status='启用' LIMIT 1"),),
+        (SQL行("SELECT no,name,role,shop FROM staff WHERE role='顾问' AND status='启用' LIMIT 1"),)],
     "kb_search":        [({},)], "maintain_list":   [({},)], "measure_items": [({},)],
     "measure_tpls":     [({},)], "order_list":      [({},)], "page_list":     [({},)],
     "product_list":     [({},)], "schedule_list":   [({},)], "shop_list":     [({},)],
@@ -168,12 +181,15 @@ def main():
             真参 = []
             缺 = False
             for a in args:
-                if isinstance(a, tuple) and len(a) == 2 and a[0] == "SQL":
-                    row = c.execute(a[1]).fetchone()
+                if isinstance(a, tuple) and len(a) == 2 and a[0] in ("SQL", "SQL行"):
+                    cur = c.execute(a[1]); row = cur.fetchone()
                     if not row or row[0] is None:
                         坏.append(f"{fn}:库里取不到真参数(`{a[1]}`)—— **拿不到样本不算通过**")
                         缺 = True; break
-                    真参.append(row[0])
+                    # SQL行:**按游标的列名自己组 dict** —— 这个连接没开 row_factory,
+                    # 取回来的是普通元组,`dict(row)` 会炸。
+                    真参.append(dict(zip([d[0] for d in cur.description], row))
+                                if a[0] == "SQL行" else row[0])
                 else:
                     真参.append(a)
             if 缺:

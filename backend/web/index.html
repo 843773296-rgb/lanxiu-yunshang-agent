@@ -2629,6 +2629,10 @@ async function factoryPage(){
        <div class="mono" style="font-size:22px;font-weight:600;color:var(--blue);margin-top:5px">${v}<small style="font-size:12px;color:var(--ink2);font-weight:400;margin-left:3px">${u}</small></div>
       </div></div>`).join("")}
    </div>
+   <div class="card" style="margin-bottom:14px" id="wsbox"><div class="hd"><h3>自有工坊报工</h3>
+     <span class="n">生产和发货只认回传;自有工坊没有外部系统会推,所以由做活的人报 ·
+       <b>只列自有工坊的单</b> —— 外发工厂的单只能工厂自己回传,这里连列都不列</span></div>
+     <div id="wsbody" style="padding:12px 0"><span style="color:var(--ink3)">读取中…</span></div></div>
    <div class="card" style="margin-bottom:14px"><div class="hd"><h3>该催工厂的单</h3>
      <span class="n">开工超过 3 天没回接单,或过了承诺完工日还没完工 · 截至 ${esc(d.today)}</span></div>
     <table class="tb" style="margin-top:12px"><thead><tr>
@@ -2713,6 +2717,41 @@ async function factoryPage(){
       else { b.disabled=false; b.textContent="确认回退"; alert((r&&r.reason)||"回退没成"); }
     };
   });
+  // ── 自有工坊报工 ────────────────────────────────────────────────
+  // **下一步该报什么由服务端按订单现在那一档现算** —— 不让人从三个里挑。
+  // 挑错的话闸会拒(来早了暂存、来晚了重复),而人会以为是系统有毛病。
+  (async () => {
+    const w = await get("/api/workshop-todo");
+    const box = document.getElementById("wsbody");
+    if (!box) return;
+    if (!w.能报) { box.innerHTML = `<span style="color:var(--ink3)">${esc(w.说明||"")}</span>`; return; }
+    if (!(w.rows||[]).length) {
+      box.innerHTML = `<span style="color:var(--ink3)">现在没有自有工坊在做的件。${esc(w.说明||"")}</span>`;
+      return; }
+    box.innerHTML = `<table class="tb"><thead><tr>
+       <th style="width:200px">订单</th><th style="width:110px">现在</th><th style="width:110px">下一步</th>
+       <th style="width:110px">工匠</th><th style="width:120px">承诺完工</th><th>动作</th></tr></thead><tbody>
+      ${w.rows.map(r=>`<tr><td class="mono"><a href="#" data-log="${esc(r.id)}">${esc(r.id)}</a></td>
+        <td>${esc(r.status)}</td><td><b>${esc(r.下一步||"—")}</b></td>
+        <td class="mono">${esc(r.artisan||"未派工")}</td><td class="mono">${esc(r.promise_date||"")}</td>
+        <td>${r.下一步?`${r.要单号?`<input class="in wstn" data-o="${esc(r.id)}" placeholder="快递单号" style="width:130px;margin-right:6px">`:""}
+          <button class="btn sol wsgo" data-o="${esc(r.id)}" data-e="${esc(r.下一步)}">报「${esc(r.下一步)}」</button>`:"—"}</td>
+       </tr>`).join("")}</tbody></table>
+      <div style="margin-top:8px;font-size:12.5px;color:var(--ink2)" id="wsmsg">${esc(w.说明)}</div>`;
+    box.querySelectorAll(".wsgo").forEach(b => b.onclick = async () => {
+      const oid = b.dataset.o, ev = b.dataset.e;
+      const tn = box.querySelector(`.wstn[data-o="${oid}"]`);
+      b.disabled = true;
+      const r = await post("/api/workshop-report",
+        {order_id: oid, event: ev, tracking_no: tn ? tn.value.trim() : undefined});
+      const m = document.getElementById("wsmsg");
+      // **结论和理由都原样显示** —— 被拒收/挂异常时,理由就是下一步该干什么;
+      // 只说「失败」的话人只能去猜。
+      if (m) m.innerHTML = `<b>${esc(r.结论||"")}</b> ${esc(r.reason||"")}`;
+      if (r && r.ok) factoryPage(); else b.disabled = false;
+    });
+  })();
+
 }
 
 Q.slg={page:1,per:15};
