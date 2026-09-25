@@ -218,6 +218,49 @@ function 收旋钮(){
 }
 
 
+
+/* ── 并排比分（2026-09-25）────────────────────────────────────────
+   「跑验证集 → 记一次」之后，比两版分数原来还得去别的页面。
+   ⚠️ 接口直接复用 /exp/versions 和 /exp/compare，**页面里不抄第二份判词**：
+   结论那一句的解释从 compare.结论说 出，抄一份出来就会漂。
+   基线选历史上任一次提交，新版固定是**工作区那一份** —— 也就是这个方案刚跑出来的那次。 */
+async function 比分台(号, 验){
+  // 默认套：这个方案最近一次验证用的那个结果文件（没验证过就留空让人挑）
+  const 近=(验||[]).slice(-1)[0];
+  const rs=await fetch("/exp/suites").then(r=>r.json()).catch(()=>({rows:[]}));
+  const 套们=(rs.rows||[]);
+  const 默认=近&&近.结果文件 ? 套们.find(x=>x.文件===近.结果文件) : null;
+  return `<div class="ed" id="cmp"><h3>⇄ 并排比分 · ${esc(号)}</h3>
+    <p class="sub" style="margin:0 0 8px;font-size:12.5px">
+      基线挑历史上任一次提交，<b>新版固定是工作区那一份</b> —— 也就是这个方案刚跑出来的那次。<br>
+      <b>三样全同、只有方案不同</b>（同供应商 / 同模型 / 同一份代码）是控制变量<b>最干净</b>的一种对照：
+      代码差是「这中间所有改动的合力」，方案差是「就这一处」。</p>
+    <label>哪一套题</label>
+    <select id="cmp-suite">${套们.map(x=>
+      `<option value="${esc(x.文件)}"${默认&&默认.文件===x.文件?" selected":""}>${esc(x.套)}（${x.版本数} 个版本）</option>`).join("")}</select>
+    <label>基线是哪一次</label>
+    <select id="cmp-a"><option value="">载入中…</option></select>
+    <div class="btns"><button class="pri" id="cmp-go">比一下</button>
+      <span class="msg" id="cmp-msg"></span></div>
+    <div id="cmp-out"></div></div>`;
+}
+async function 画版本(){
+  const f=$("#cmp-suite").value;
+  const r=await fetch("/exp/versions?suite="+encodeURIComponent(f)).then(r=>r.json()).catch(()=>({rows:[]}));
+  $("#cmp-a").innerHTML=(r.rows||[]).map(v=>
+    `<option value="${esc(v.sha)}">${esc(v.短)} · ${v.过}/${v.题数} · ${esc(v.跑于||v.提交日期||"")}`
+    + `${v.方案?" · 方案 "+esc(v.方案):" · 不挂方案"}${v.模型?" · "+esc(v.模型):""}</option>`).join("")
+    ||`<option value="">这套还没有提交过的版本</option>`;
+}
+function 比分行(x){
+  const 色={变好:"good",变坏:"bad",一致:""}[x.变化]||"";
+  return `<tr><td class="num">${esc(x.id)}</td>
+    <td>${esc((x.题面||"").slice(0,54))}…</td>
+    <td>${x.A过?"过":"挂"}</td><td>${x.B过?"过":"挂"}</td>
+    <td><span class="pill ${色}">${esc(x.变化)}</span></td>
+    <td>${x.类?esc(x.类):'<span style="color:var(--faint)">—</span>'}</td></tr>`;
+}
+
 /* ── 单条试运行（2026-09-25）────────────────────────────────────────
    改完旋钮只能跑整套题的话，一次要几分钟 —— 而**调优的手感来自快速来回**：
    拧一下 → 看这一题变没变 → 再拧。
@@ -276,7 +319,8 @@ async function 候选编辑(号,d){
   const 原=d.原始||{}, 改=原.改||{}, 拷=原.拷自||{}, 验=(原.验证||[]);
   const 旋H=await 旋钮台(号, 原.旋钮);
   const 试H=await 试运行台(号);
-  $("#det").innerHTML=旋H+试H+`
+  const 比H=await 比分台(号, 验);
+  $("#det").innerHTML=旋H+试H+比H+`
     <div class="ed"><h3>改正文 · ${esc(号)}</h3>
       <p class="sub" style="margin:0;font-size:12.5px">${esc(原.为什么||"(没写为什么)")}</p>
       ${Object.keys(改).map(rid=>`
@@ -318,6 +362,36 @@ async function 候选编辑(号,d){
   $("#c-save").onclick=async()=>{
     const 正={}; $("#det").querySelectorAll("textarea[data-rid]").forEach(t=>正[t.dataset.rid]=t.value);
     await 发({动作:"存正文",正文:正});
+  };
+  await 画版本();
+  $("#cmp-suite").onchange=画版本;
+  $("#cmp-go").onclick=async()=>{
+    const f=$("#cmp-suite").value, a=$("#cmp-a").value, cm=$("#cmp-msg");
+    if(!a){ cm.textContent="先挑一个基线版本。"; return; }
+    cm.textContent="比着…";
+    // b 留空 = 工作区那一份（方案刚跑出来的那次）
+    const d=await fetch(`/exp/compare?suite=${encodeURIComponent(f)}&a=${encodeURIComponent(a)}&b=`)
+      .then(r=>r.json());
+    if(d.error||d.错){ cm.innerHTML=`<b style="color:var(--fail)">${esc(d.error||d.错)}</b>`;
+      $("#cmp-out").innerHTML=""; return; }
+    cm.textContent="";
+    const 变了=(d.逐题||[]).filter(x=>x.变化!=="一致"), 同=(d.逐题||[]).filter(x=>x.变化==="一致");
+    const 侧=(名,v)=>`<div style="flex:1"><div style="font-weight:600">${esc(名)}</div>
+      <div class="sub" style="font-size:12px">${v.过}/${v.题数} · ${esc(v.模型||"—")}
+      · 代码 ${esc((v.代码||"—")).slice(0,9)} · ${v.方案?"方案 <b>"+esc(v.方案)+"</b>":"不挂方案"}
+      ${v.旋钮?"<br>拧的是："+esc(v.旋钮):""}</div></div>`;
+    $("#cmp-out").innerHTML=`
+      <div class="seg" style="margin-top:12px">
+        <h3>${d.可比?"":"⚠ "}${esc(d.结论||"")}</h3>
+        <p class="why">${md(d.结论说||"")}</p>
+        <div style="display:flex;gap:16px;margin:10px 0">${侧("基线",d.A)}${侧("这个方案（工作区）",d.B)}</div>
+        <pre class="io" style="white-space:pre-wrap">${esc((d.判词||[]).join("\n"))}</pre></div>
+      <div class="seg"><h3>逐题</h3>
+        <p class="sub" style="font-size:12.5px">共有 ${d.共有} 题 ·
+          <b>变好 ${(d.变好||[]).length}</b> · <b>变坏 ${(d.变坏||[]).length}</b>
+          ${(d.只甲||[]).length||(d.只乙||[]).length?` · ⚠ 题集不一样（基线多 ${(d.只甲||[]).length} 题、新版多 ${(d.只乙||[]).length} 题），<b>分数别直接相减</b>`:""}</p>
+        <table class="q"><thead><tr><th>题号</th><th>题面</th><th>基线</th><th>方案</th><th>变化</th><th>翻面属于</th></tr></thead>
+          <tbody>${变了.map(比分行).join("")}${同.map(比分行).join("")}</tbody></table></div>`;
   };
   await 画题("workshop");
   $("#t-suite").onchange=e=>画题(e.target.value);
