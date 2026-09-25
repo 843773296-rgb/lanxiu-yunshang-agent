@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 每天 06:10 把演示世界挪到当天。装法见 tools/daily_shift.sh 顶上的说明。
+     · StartCalendarInterval:**机器睡着时错过了,醒来会补跑一次** —— 这正是要的
+     · RunAtLoad 不开:装的那一刻别顺手改数据库,装和跑是两件事 -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.lanxiu.daily-shift</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__PROJECT__/tools/daily_shift.sh</string>
+  </array>
+  <key>StartCalendarInterval</key><dict>
+    <key>Hour</key><integer>6</integer>
+    <key>Minute</key><integer>10</integer>
+  </dict>
+  <key>StandardOutPath</key><string>__PROJECT__/.feynman/daily-shift.out</string>
+  <key>StandardErrorPath</key><string>__PROJECT__/.feynman/daily-shift.out</string>
+  <key>WorkingDirectory</key><string>__PROJECT__</string>
+</dict></plist>

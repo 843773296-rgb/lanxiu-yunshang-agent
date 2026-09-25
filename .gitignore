@@ -12,6 +12,10 @@ backend/lanxiu.db
 # 记录仪日志(体积会涨,且含调用内容)
 llm-trace.jsonl
 .feynman/llm-trace.jsonl
+# 每日平移的运行日志 —— 运行时痕迹,不进版本库(要回答的是「它今天跑没跑」,不是历史)
+.feynman/daily-shift.log
+.feynman/daily-shift.out
+
 # 树状记录仪(agent/spans.py)。**比上面那份敏感得多** ——
 # 它按设计就记工具的参数和返回值,而返回值里是客户档案、订单、量体数据。
 # 凭据类键名在写的时候已经抹掉,但**客户资料本身是记着的**,所以一律不进版本库。
