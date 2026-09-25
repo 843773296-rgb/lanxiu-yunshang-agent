@@ -378,7 +378,14 @@ h1{font-size:18px;margin:0 0 3px;font-weight:600}
 @media(max-width:1120px){.info,.form{grid-template-columns:repeat(2,1fr)}}
 .info .l{font-size:12.5px;color:var(--ink3)} .info .v{font-size:14px;margin-top:4px}
 .sub{color:var(--ink3);font-size:12.5px;margin:0 0 16px}
+/* ── 并进同一个平台(用户 2026-09-25 定)────────────────────────────
+   这份页面原来住在 :8760,是「另一个平台」。现在由 :8770 一起吐出来,
+   顶上挂同一条导航(由 agentsite/nav.py 现渲染)。
+   ⚠️ 这份文件**不拷到 agentsite 去** —— 拷一份的那天起两份就开始漂,而漂了不报错。
+   `.wrap` 的高度要把那条导航减掉,否则底部会多出一条滚动。 */
+.wrap{min-height:calc(100vh - 130px)}
 </style></head><body>
+<nav class="sitenav"><!--NAV--></nav>
 
 <div class="top">
   <div class="logo"><span class="mk">

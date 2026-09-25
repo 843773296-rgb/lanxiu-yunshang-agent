@@ -469,3 +469,74 @@ def 订单日志(order_id, db=None):
                        允许=True))
     c.close()
     return sorted(行, key=lambda x: str(x["时间"] or ""))
+
+
+# ── 自有工坊报工(业务 2026-09-25)─────────────────────────────────────
+# 1333 张定制单的生产方是自有工坊,而自有工坊**没有外部系统会推回传** —— 得有活人来报。
+#
+# ⚠️ **走同一个收件箱,不另开一条路。**
+# 一旦自有工坊有自己的通道,「生产和发货只认工厂回传」这条硬规矩就有了后门,
+# 而后门在页面上看不出来:两条路都会让订单往前走,只是其中一条没人守着。
+# 所以这个函数只做三件事:判这个人能不能报 → 拼一条标准回传 → 交给 收() 判。
+# **判定、去重、乱序暂存、状态推进,一个字都不在这里重写。**
+def 报工(order_id, 事件, me, 件=None, 物流单号=None, db=None, 今天=None):
+    """自有工坊报工。me 要带 role / no / shop。返回和 收() 同样的 {结论, 理由, 效果}。"""
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))),
+                                   "knowledge"))
+    import factory_feed as _kb
+    if db: globals()["DB"] = db
+    if 今天 is None:
+        from seed import TODAY as 今天
+    oid = (order_id or "").strip()
+    c = _c(); ensure(c)
+    o = c.execute("SELECT id, shop, status FROM ordr WHERE id=?", (oid,)).fetchone()
+    if not o:
+        c.close(); return dict(结论="拒收", 理由=f"没有订单 {oid}", 效果=None)
+    # 生产方从**接单回传**看 —— 订单表上没有这一列,而「谁接的单谁报」是这条规矩的依据
+    接 = c.execute("SELECT factory FROM factory_msg WHERE order_id=? AND event='接单' "
+                   "AND result='收下' ORDER BY at LIMIT 1", (oid,)).fetchone()
+    生产方 = 接[0] if 接 else None
+    # 这一件挂在谁名下 —— 工匠只报自己的那件
+    工匠 = None
+    if 件:
+        w = c.execute("SELECT artisan FROM workorder WHERE ref=? AND status='在制' LIMIT 1",
+                      (str(件),)).fetchone()
+        工匠 = w[0] if w else None
+    if not 工匠:
+        w = c.execute("SELECT artisan FROM workorder WHERE ref=? LIMIT 1", (oid,)).fetchone()
+        工匠 = w[0] if w else None
+    本店 = (me or {}).get("shop") == o[1]
+    c.close()
+    行, 为什么 = _kb.能不能报工((me or {}).get("role"), (me or {}).get("no"),
+                               生产方, 件的工匠=工匠, 本店吗=本店)
+    if not 行:
+        return dict(结论="拒收", 理由=为什么, 效果=None)
+    if 事件 == "发出" and not (物流单号 or "").strip():
+        return dict(结论="拒收", 理由="报「发出」要带快递单号 —— 没单号的发出,门店查不到货在哪",
+                    效果=None)
+    # ── 报「完工」= 这件活做完了,**同一个动作把工单也收掉** ─────────────
+    # 不这么做的话:闸会判「车间工单还在制却报完工」→ 挂异常(2026-09-25 实测),
+    # 而对自有工坊来说,报工的人和做活的人**是同一个人** —— 让他为同一件事操作两遍,
+    # 迟早有一遍忘掉,于是库里同时存着「已完工的回传」和「还在制的工单」。
+    #
+    # 那条闸本身是对的(它防的是外发工厂乱报),所以**不是放宽闸,是让两处一起动**:
+    # 一份事实的两种表示,要么从对方现算,要么同一个动作一起写 ——
+    # 两边各自维护的,一定会漂。
+    if 事件 == "完工":
+        c2 = _c()
+        try:
+            n = c2.execute("UPDATE workorder SET status='已完成' WHERE status='在制' AND ref IN "
+                           "(SELECT id FROM ordr_item WHERE order_id=?) ", (oid,)).rowcount
+            n += c2.execute("UPDATE workorder SET status='已完成' WHERE status='在制' AND ref=?",
+                            (oid,)).rowcount
+            c2.commit()
+        finally:
+            c2.close()
+    # 消息号带上报的人和时刻:**同一个人同一分钟报两次算重复**,由 收() 去重
+    号 = f"W{oid}-{事件}-{(me or {}).get('no')}-{str(今天)[:10]}-{len(str(件) or '整单')}"
+    消息 = dict(消息号=号, 订单号=oid, 事件=事件, 时间=str(今天)[:10] + " 12:00",
+                工厂="自有工坊", 报的人=(me or {}).get("no"))
+    if 件: 消息["件"] = [str(件)]
+    if 物流单号: 消息["物流单号"] = 物流单号
+    return 收(消息, str(今天)[:10], actor=f"自有工坊报工·{(me or {}).get('no')}")

@@ -15,9 +15,12 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 #side{width:264px;flex:none;background:var(--side);border-right:1px solid var(--line);
   display:flex;flex-direction:column;height:100vh}
 #side header{padding:18px 16px 10px}
-#side #aihub{margin-top:auto;display:block;padding:11px 16px;border-top:1px solid var(--line);
-  font-size:13px;color:var(--dim);text-decoration:none;flex:none}
-#side #aihub:hover{background:#fff;color:var(--ink)}
+#side #plat{margin-top:auto;flex:none;border-top:1px solid var(--line);padding:8px 10px 12px;
+  display:flex;flex-wrap:wrap;gap:4px}
+#side #plat b{width:100%;font-size:10.5px;letter-spacing:.1em;color:var(--dim);
+  font-weight:500;padding:2px 6px 4px;text-transform:uppercase}
+#side #plat a{font-size:12.5px;color:var(--dim);text-decoration:none;padding:4px 8px;border-radius:6px}
+#side #plat a:hover{background:#fff;color:var(--ink)}
 #side h1{margin:0 0 14px;font-size:15px;font-weight:600;letter-spacing:.02em}
 #side h1 small{display:block;font-weight:400;font-size:11px;color:var(--dim);letter-spacing:0}
 #newbtn{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:9px;
@@ -247,10 +250,12 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
     <button id="gallery">☰ 全部助手</button>
   </header>
   <div id="convs"></div>
-  <!-- 调试入口放在左栏**底部**:用户 2026-09-24 要的「从左侧侧边栏进」。
-       放底部而不是顶部,是因为这一栏的主角是会话列表 ——
-       而这个入口一天点一两次,顶部的位置该留给天天点的东西。 -->
-  <a id="aihub" href="/ai" title="trace / span / 判分器 —— 自己调试用,不是给门店的">⚙ AI 调控中心</a>
+  <!-- 平台入口放在左栏**底部**(用户 2026-09-24 要「从左侧侧边栏进」)。
+       ⚠️ **这一页不挂那条横向顶栏。** 它是 body:flex 的整屏布局(会话列表 | 主区 | 证据栏),
+       塞一条横条进去会把聊天流顶出可视区 —— 2026-09-24 就这么坏过一次。
+       所以这一页用左栏给入口,而其余 16 个页面用共享顶栏,顶栏第一项「对话」指回这里。
+       **用户抱怨的「进平台就回不来 chat」,修的是那一项**(它以前写着「值班台」却指向这里)。 -->
+  <div id="plat"></div>
 </div>
 
 <div id="main">
@@ -959,6 +964,14 @@ $("#ov").onclick = e => { if(e.target.id === "ov") closeOv(); };
 $("#newbtn").onclick = () => { PICKING = true; drawSide(); drawStream(); };
 $("#currole").onclick = () => { PICKING = true; drawStream(); };
 $("#evbtn").onclick = () => evOpen(!$("#ev").classList.contains("on"));
+
+/* 左栏底部那一排平台入口 —— **从 /nav 拿同一份清单**,不在这儿手写第二份。
+   手写的那天起它就开始漂:2026-09-25 查出来四个页面各写了一份导航,全是 7 项的旧版。 */
+fetch("/nav").then(r => r.json()).then(d => {
+  const 除自己 = (d.rows || []).filter(x => x.路 !== "/");
+  $("#plat").innerHTML = "<b>运维平台</b>" + 除自己.map(x =>
+    `<a href="${x.路}" title="${esc(x.说)}">${esc(x.名)}</a>`).join("");
+}).catch(() => { $("#plat").innerHTML = '<b>运维平台</b><a href="/duty">值班台</a>'; });
 $("#evclose").onclick = () => evOpen(false);
 $("#evt1").onclick = () => { EVTAB = "证据"; drawEv(); };
 $("#evt2").onclick = () => { EVTAB = "子助手"; drawEv(); };

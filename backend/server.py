@@ -2500,17 +2500,10 @@ class H(BaseHTTPRequestHandler):
             return self._send(_sch.options())
         if p=="/api/schemes":
             return self._send(scheme_list())
-        if p=="/api/chat-eval":
-            f=os.path.join(HERE,"..","agent","chat-eval-results.jsonl")
-            if not os.path.exists(f): return self._send(dict(rows=[]))
-            rs=[json.loads(l) for l in open(f,encoding="utf-8")]
-            return self._send(dict(total=len(rs),passed=sum(r.get("passed") for r in rs),
-                pos=sum(1 for r in rs if r["kind"]=="正向"),
-                pos_ok=sum(r.get("passed") for r in rs if r["kind"]=="正向"),
-                neg=sum(1 for r in rs if r["kind"]=="负向"),
-                neg_ok=sum(r.get("passed") for r in rs if r["kind"]=="负向"),
-                cost=round(sum(r.get("cost_local",0) for r in rs),4),
-                model=rs[0].get("model") if rs else None, rows=rs))
+        # `/api/chat-eval` **已删**(2026-09-25):它只服务 chat.html 那个页面,
+        # 而那个页面已经删了(station 支持全部五个角色,它只有一个)。
+        # 评测分数现在在 AI 调控中心的「评测」那一栏,数据从 agent/*-results.jsonl 现取。
+        # ⚠️ 留这条注释是为了**别让人以为这个接口丢了** —— 它是撤的,不是漏的。
         if p=="/api/agent-eval":
             f=os.path.join(HERE,"..","agent","eval-results.jsonl")
             if not os.path.exists(f): return self._send(dict(rows=[]))

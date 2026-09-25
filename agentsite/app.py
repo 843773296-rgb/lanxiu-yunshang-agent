@@ -59,7 +59,7 @@ PAGES = {"/": "station.html", "/panels": "panels.html",
          # /m 是**客户**用的(手机端自助预约,不登录);/pad 是顾问在平板上看单子的
          "/m": "m.html", "/pad": "pad.html",
          "/duty": "duty.html", "/queue": "queue.html", "/health": "health.html",
-         "/chat": "chat.html", "/scheme": "scheme.html",
+         "/scheme": "scheme.html",
          "/workbench": "workbench.html", "/acceptance": "acceptance.html",
          # 着装人的身体生命周期 —— 和会员生命周期(新客/沉默/流失)不是一回事
          "/wearers": "wearers.html",
@@ -70,7 +70,14 @@ PAGES = {"/": "station.html", "/panels": "panels.html",
          # 实验对比:同一套题两个版本并排。**先判对比成不成立,再给分。**
          "/experiments": "experiments.html",
          # AI 调控中心:九个模块的总览。**没做的模块不给入口** —— 见 aihub.py 的自测
-         "/ai": "ai.html"}
+         "/ai": "ai.html",
+         # ── 业务后台并进来(用户 2026-09-25 定:真合成一个平台)──────────────
+         # 它原来是 :8760 上的一张单页,靠 `/api/*` 取数;而本站**已经把 /api 和 /img
+         # 双向反代过去了(cookie 也转)**,所以整套页面搬到这个端口上不用改一行 ——
+         # 这也是「合成一个」能当天做完的原因:两个服务不合,**门面合成一个**。
+         # ⚠️ 页面文件仍然住在 backend/web/ —— **不拷一份过来**:
+         # 拷一份的那天起,两份就开始漂,而漂了不会报错。
+         "/ops": "../../backend/web/index.html"}
 # 调控中心的模块页都用同一份 ai.html(左侧自带模块栏,按路径决定显示哪一摊)——
 # **九个模块抄九份 HTML 的话,改一处框架就得改九处**,而漏的那处不会报错。
 PAGES.update({f"/ai/{k}": "ai.html" for k in
@@ -148,7 +155,7 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         p = _u(unquote(urlparse(self.path).path))
         if p in PAGES:
-            f = os.path.join(HERE, "web", PAGES[p])
+            f = os.path.normpath(os.path.join(HERE, "web", PAGES[p]))
             if not os.path.exists(f): return self._send({"error": f"缺页面 {PAGES[p]}"}, code=404)
             html = open(f, encoding="utf-8").read()
             # 配色、导航、表格样式只有一份(web/_shell.txt),页面里写 <!--SHELL--> 占位。
@@ -156,6 +163,10 @@ class H(BaseHTTPRequestHandler):
             if "<!--SHELL-->" in html:
                 html = html.replace("<!--SHELL-->", open(
                     os.path.join(HERE, "web", "_shell.txt"), encoding="utf-8").read())
+            # 导航由 nav.py 现渲染 —— **单一来源**,页面里不许各写一份
+            if "<!--NAV-->" in html:
+                import nav as _nav
+                html = html.replace("<!--NAV-->", _nav.顶栏html(当前=p))
             self._send(html.encode(), "text/html; charset=utf-8"); return
         if p.startswith("/api/") or p.startswith("/img/"): return self._proxy("GET")
         if p == "/roles":
@@ -180,6 +191,11 @@ class H(BaseHTTPRequestHandler):
                 return self._send({"rows": aihub.列表(m)})
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
+        if p == "/nav":
+            # 导航清单的**唯一来源**。station 那一页布局特殊、不挂横向顶栏,
+            # 它从这儿取同一份清单渲染左栏入口 —— 而不是自己手写一份。
+            import nav as _nav
+            return self._send({"rows": [dict(路=a, 名=b, 说=c) for a, b, c in _nav.顶栏]})
         if p == "/ai/overview":
             try:
                 import aihub

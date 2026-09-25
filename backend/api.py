@@ -370,7 +370,11 @@ WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task",
                # 报修(业务 09-22):新建返修单、店长判责(顾客同意才开工)、推进、回店输码签收
                "create_repair", "decide_repair", "advance_repair", "verify_repair_return",
                # 工厂回传(业务 09-23):延期通知完标一下、店长人工回退(发错件 / 到店返工)
-               "mark_delay_told", "rollback_order")
+               "mark_delay_told", "rollback_order",
+               # 自有工坊报工(业务 09-25):它把订单一路推到已发货,**是写**。
+               # 走的是工厂回传那个收件箱,但动的是真状态 —— 不登记的话它就是
+               # 「唯一一个没人管的写口」(set_piece_ratio 当年正是这么漏的)。
+               "report_production")
 
 
 MANAGER_ROLES = ("店长", "总部运营")
@@ -3655,6 +3659,30 @@ _订单日期列 = {
 }
 
 
+def report_production(order_id=None, event=None, item=None, tracking_no=None):
+    """**(写)自有工坊报工** —— 工匠报自己做的那件,店长报本店。
+
+    业务 2026-09-25 定。1333 张定制单的生产方是自有工坊,而自有工坊没有外部系统
+    会推回传 —— 得有活人报。**走的是和外发工厂完全同一个收件箱、同一套判定**:
+    去重、乱序暂存、状态推进一个字都没另写。
+
+    ⚠️ **外发工厂的单谁都不许替它报。** 工厂没回传,真相就是「工厂还没报」,
+    而不是「我们知道它做完了」——替它报一条,订单往前走了,工厂那边什么都没发生。
+    """
+    from seed import TODAY
+    import factory_inbox as _fi
+    me = whoami()
+    if not me: return {"error": "没有登录身份,不知道你是谁、能报哪些件"}
+    if not order_id: return {"error": "要给订单号"}
+    if event not in ("完工", "质检通过", "发出"):
+        return {"error": "event 只能是 完工 / 质检通过 / 发出",
+                "说明": "接单/撤回/更正/延期不是报工 —— 那几样是工厂侧的动作"}
+    r = _fi.报工(order_id, event, me, 件=item, 物流单号=tracking_no, 今天=TODAY)
+    return {"结论": r["结论"], "理由": r["理由"], "效果": r.get("效果"),
+            "note": "报工和工厂回传走同一个收件箱 —— 被拒收/挂异常的也留着痕,"
+                    "照「理由」去处理,别换个说法再报一次。"}
+
+
 def orders_by_date(direction=None, days=7, field="下单", limit=50):
     """**按时间段列订单** —— 「下周有哪些单要交付」「上周下了多少单」这类问法。
 
@@ -4324,6 +4352,7 @@ SHOP_SCHEMAS=[
  {"name":"delay_pending","description":"**工厂延期了、还没告诉顾客的单**(只读)。带原定完工日、延到什么时候、为什么、归属顾问、是不是你的。**联系顾客是对外动作,由人去做**;通知完用 mark_delay_told 标一下,不标这份清单只进不出。","input_schema":{"type":"object","properties":{}}},
  {"name":"mark_delay_told","description":"**(写)记下「已经把延期告诉顾客了」。** 只标本店的;标之前要跟用户确认他真的通知过了 —— 标错了这张单就从清单里消失,顾客再也等不到那个电话。","input_schema":{"type":"object","properties":{"delay_id":{"type":"integer"}},"required":["delay_id"]}},
  {"name":"rollback_order","description":"**(写)人工回退**:工厂发错件(退回等发货)/ 到店发现要返工(退回生产中,算重新生产)。**只有店长能点**,必须写清哪件不对、怎么发现的;运费公司承担。这是系统里唯一能让订单往回走的口子,回退记录一直留着。cause 只能是「发错件」或「到店返工」,note 写理由。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"cause":{"type":"string","enum":["发错件","到店返工"]},"note":{"type":"string"}},"required":["order_id","cause","note"]}},
+ {"name":"report_production","description":"**(写)自有工坊报工**:这几件做完了 / 质检过了 / 发出去了。**工匠报自己做的那件,店长报本店**;顾问和版师报不了(不在生产环节)。\n\n⚠️ **外发工厂的单谁都不许替它报** —— 工厂没回传,真相就是「工厂还没报」,而不是「我们知道它做完了」。替它报一条,订单往前走了,而工厂那边什么都没发生。工具会自己查这张单的生产方,不是自有工坊就拒。\n\n和工厂回传**走同一个收件箱、同一套判定**:重复只记一次、来早了暂存、报「发出」必须带快递单号、车间工单还在制却报完工会挂异常(报完工会顺手把工单收掉)。被拒收或挂异常时**照「理由」去处理,不要换个说法再报一次** —— 每次都会留痕。\n\nevent:完工 / 质检通过 / 发出。item 给订单行号(只报某一件),不给就是整单。发出要传 tracking_no。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"event":{"type":"string","enum":["完工","质检通过","发出"]},"item":{"type":"string","description":"订单行号;不给就是整单"},"tracking_no":{"type":"string","description":"报「发出」时必填"}},"required":["order_id","event"]}},
  {"name":"orders_by_date","description":"**按时间段列订单**(只读)。「下周有哪些单要交付」「最近一周下了多少单」这类问法用它 —— 这是唯一一个不用先给订单号或客户号就能列单的入口。\n\n⚠️ **「下一周」是歧义的,这个工具不替人猜**:`direction` 要么「往后」(今天→N 天后,问的是接下来要发生什么)、要么「往前」(N 天前→今天,问的是刚过去这段做了多少)。不给 direction 它会返回「判不了」,并把两种读法各有多少单一起给你 —— **把这两个数原样告诉用户让他选**,不要自己挑一个:两种读法的单子几乎没有交集,而猜错的表现是一份看起来很正常的清单,没有任何地方会提示这不是他要的那一批。\n\n`field` 决定查哪一列:**下单 / 完工 / 发货 / 交付**,四列是四份不同的单子(同一张单「下单」在上个月、「交付」在下周)。用户说「下周要交的货」是**交付**,说「这周下了多少单」是**下单**;拿不准就问。默认按下单日,返回里会写明用的是哪一列。\n\n`days` 默认 7。范围跟身份走:顾问只看自己的,店长看本店,总部运营看全部。","input_schema":{"type":"object","properties":{"direction":{"type":"string","enum":["往后","往前"],"description":"往后=今天到 N 天后;往前=N 天前到今天。不给会返回判不了"},"days":{"type":"integer","description":"几天,默认 7"},"field":{"type":"string","enum":["下单","完工","发货","交付"],"description":"按哪一列的时间算,默认下单"},"limit":{"type":"integer","description":"最多返回几条,默认 50"}}}},
  {"name":"factory_chase","description":"**该催工厂的单 + 要人看的工厂回传**(只读)。定制单的生产和发货**只认工厂回传**(自有工坊和外发工厂都有,谁接的单谁报),门店和后台都不能手动推状态。这里列出:① 该催的单 —— 开工超过 3 天工厂没回接单(单可能没发过去),或过了工厂承诺的完工日还没完工(该先告诉顾客会晚),带生产方、承诺完工日、归属顾问、是不是你的;② 要人看的回传 —— 挂异常(查无此单、单已取消、别家报了这张单、车间工单还在制却报完工)/ 拒收(缺物流单号、时间不对)/ 暂存(来早了,等前一条)。店长看本店,总部运营看全部。顾问问「我有哪些单该去催工厂」「这单怎么还没做好」也用这个。","input_schema":{"type":"object","properties":{}}},
  {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**定制单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。**哪些款必须试(业务 09-22 定)**:重工、全定制(顾问亲自量的尺寸判出)、婚服(商品挂了「婚礼婚服」场合标签)三类命中任一即必试;没命中但有一类判不了 → 判不了,**不当成不必试**;重工的两个门槛(装饰工序最慢 ≥25 天 / 单项工艺起步 ≥12 天)业务 09-22 确认。**开裁这道闸会拦**:该试的要试过、而且客户签了字,整单才许开裁 —— 看板里「待开裁的单」列出每张待生产单能不能裁、卡在哪。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
@@ -5225,7 +5254,7 @@ TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"report_production":report_production,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

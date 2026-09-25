@@ -331,6 +331,7 @@ SHOP_TOOLS = [
     # 顾问问「我哪些单该催」、店长看本店,两个角色都要;规矩 TL52:不许建议后台改状态、不替工厂补数据。
     "mcp__shop__factory_chase",
     "mcp__shop__orders_by_date",
+    "mcp__shop__report_production",
     # 订单日志(只读):这张单发生过什么 —— 顾客问「为什么晚了」时,被拒收和作废的回传往往才是答案。规矩 TL54
     "mcp__shop__order_log",
     # 工厂延期待通知 + 通知完标一下(写)。规矩 TL55:你不联系顾客;「已通知」只有用户说了才标

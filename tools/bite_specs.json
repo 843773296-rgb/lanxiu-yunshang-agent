@@ -205,10 +205,10 @@
   },
   {
     "script": "agentsite/js_check.py",
-    "改坏": "在聊天页的内联脚本里塞一处语法错误",
+    "改坏": "在对话页(station)的内联脚本里塞一处语法错误",
     "file": [
       {
-        "path": "agentsite/web/chat.html",
+        "path": "agentsite/web/station.html",
         "old": "<script>",
         "new": "<script>\nvar 坏 = ;\n"
       }
@@ -2715,5 +2715,41 @@
       }
     ],
     "预期红": "问的是货期,跟钱无关"
+  },
+  {
+    "script": "agent/talk_eval_judgetest.py",
+    "改坏": "把 judge() 里复用那道闸的一步去掉(`v = guards.g23_...` 改成 `v = None`)",
+    "file": [
+      {
+        "path": "agent/talk_eval.py",
+        "old": "        v = guards.g23_discount_promise(t, [])",
+        "new": "        v = None"
+      }
+    ],
+    "预期红": "嘴上说统一定价,下一句就许了便宜"
+  },
+  {
+    "script": "agent/talk_eval_judgetest.py",
+    "改坏": "把销售话术判分器的判官轴关掉",
+    "file": [
+      {
+        "path": "agent/talk_eval.py",
+        "old": "        有, 句 = 判官结果\n        if 有:",
+        "new": "        有, 句 = 判官结果\n        if False:"
+      }
+    ],
+    "预期红": "闸的盲区:没提钱的软性许诺,判官说有"
+  },
+  {
+    "script": "agent/talk_eval_judgetest.py",
+    "改坏": "把「抄不回原话的『有』不算数」那一步去掉",
+    "file": [
+      {
+        "path": "agent/talk_eval.py",
+        "old": "    if 有 and (not 句 or 句 == \"—\" or 句.strip(\"「」\\\"' \") not in (text or \"\")):",
+        "new": "    if False:"
+      }
+    ],
+    "预期红": "模型说有,却抄不回原话"
   }
 ]

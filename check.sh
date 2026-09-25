@@ -150,6 +150,7 @@ run "树状记录仪 · 自测(抹凭据/截断/排树/孤儿不丢)" python3 ag
 run "树状记录仪结构 · 接没接上、树是不是树、凭据没进日志(8 条咬合)" python3 agent/spans_check.py
 run "实验对比 · 先判对比成不成立再给分(题号字段各套不同/换模型拒收)" python3 agent/compare.py --selftest
 run "页面骨架 · 一块放错父容器,框架正常但内容被顶出可视区(2 条咬合)" python3 agentsite/layout_check.py
+run "导航 · 每个页面都有入口,而且入口只有一个来源(2 条咬合)" python3 agentsite/nav_check.py
 run "AI 调控中心 · 没做的模块不给假入口;咨询详情五段齐(21 条自测)" python3 agentsite/aihub.py --selftest
 run "提示词候选 · 不指定就用源头、找不到就抛、没验证不许采纳(7 条自测)" python3 tools/prompt_candidate.py --selftest
 run "演示世界的日期 · 世界跟着真实日期走,库说的和数据实际的要对得上(4 条咬合)" python3 tools/shift_world.py --check
@@ -219,6 +220,7 @@ run "指代推进 · 四类场景库里都挑得出样本" python3 agent/scheme_
 run "运维侧判分器 · 对照用例(含库存预警、白坯试衣)" python3 agent/ops_eval_judgetest.py
 run "复盘与漏斗判分器 · 31 条对照用例" python3 agent/report_eval_judgetest.py
 run "会员与审批判分器 · 30 条对照用例" python3 agent/member_eval_judgetest.py
+run "销售话术判分器 · 25 条对照用例(含判官抄不回原话就不算数)" python3 agent/talk_eval_judgetest.py
 run "工匠与财务判分器 · 27 条对照用例" python3 agent/role_eval_judgetest.py
 run "版师判分器 · 38 条对照用例" python3 agent/pattern_eval_judgetest.py
 run "野外巡检 · 指纹粒度与行为观测" python3 agent/wild_run.py --selftest

@@ -1,6 +1,7 @@
 <title>单条试跑</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
-<style>
+<style>/* .sitenav 的样式由 agentsite/nav.py 统一发 */
+
 :root{
   --ground:#EFEFF2; --paper:#FFFFFF; --paper-2:#F6F6F9; --line:#DCDCE4; --line-2:#E9E9F0;
   --ink:#15171C; --ink-2:#4E525E; --ink-3:#82879A;
@@ -108,31 +109,10 @@ footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);font-si
 footer code{font-family:var(--mono);font-size:11.5px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
-<nav class="sitenav">
-  <a class="brand" href="/">澜绣云裳 · 智能运维平台</a>
-  <a href="/" data-p="/">值班台</a>
-  <a href="/queue" data-p="/queue">研判队列</a>
-  <a href="/health" data-p="/health">智能体健康</a>
-  <a href="/chat" data-p="/chat">工艺顾问</a>
-  <a href="/scheme" data-p="/scheme">方案配置</a>
-  <a href="/workbench" data-p="/workbench">单条试跑</a>
-  <a href="/acceptance" data-p="/acceptance">回归验收</a>
-  <span class="core">内核 Claude Agent SDK · 工具经 MCP 挂载</span>
-</nav>
+<nav class="sitenav"><!--NAV--></nav>
 <style>
-.sitenav{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 26px;height:52px;
- background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;
- font-family:var(--sans);font-size:13.5px;margin:0 -26px 0}
-.sitenav a{color:var(--ink-2);text-decoration:none;padding:6px 12px;border-radius:4px}
-.sitenav a:hover{background:var(--paper-2);color:var(--dye)}
-.sitenav a[aria-current]{background:var(--dye-soft);color:var(--dye);font-weight:600}
-.sitenav .brand{font-weight:600;color:var(--ink);margin-right:10px;padding-left:0}
-.sitenav .core{margin-left:auto;color:var(--ink-3);font-size:11.5px;font-family:var(--mono)}
-.sitenav .back{color:var(--ink-3);font-size:12.5px}
 body>.wrap{padding-top:0}
 </style>
-<script>document.querySelectorAll(".sitenav a[data-p]").forEach(a=>{
-  if(a.dataset.p===location.pathname)a.setAttribute("aria-current","page")});</script>
 <div class="wrap">
 
 <header class="top">
