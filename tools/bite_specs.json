@@ -2679,5 +2679,41 @@
       }
     ],
     "预期红": "一件判不了、其余可以 → 整单判不了"
+  },
+  {
+    "script": "agentsite/guards_test.py",
+    "改坏": "把 g23 词表里「让利」那一支退回紧写法(`让(利|价)`,中间夹字就配不上)",
+    "file": [
+      {
+        "path": "agentsite/guards.py",
+        "old": "          r\"|让\\s*(一?点|些|个)?\\s*(利|价)|降价|给个折)\")",
+        "new": "          r\"|让(利|价)|降价|给个折)\")"
+      }
+    ],
+    "预期红": "「让**点**利」—— 中间夹了程度词"
+  },
+  {
+    "script": "agentsite/guards_test.py",
+    "改坏": "把 g23 第二层(软性让价)的循环喂空串,整层失效",
+    "file": [
+      {
+        "path": "agentsite/guards.py",
+        "old": "    for m in re.finditer(许诺, text or \"\"):",
+        "new": "    for m in re.finditer(许诺, \"\"):"
+      }
+    ],
+    "预期红": "把价格推给店长 —— **一个折扣词都没有**"
+  },
+  {
+    "script": "agentsite/guards_test.py",
+    "改坏": "把 g23 第三层(许的是什么)的白名单判断改成永假 —— 证明它真在承重",
+    "file": [
+      {
+        "path": "agentsite/guards.py",
+        "old": "        if tm.in_clause(text, m.group(0), 可以许的):      # ③ 许的是能让的那三样",
+        "new": "        if False:      # ③ 许的是能让的那三样"
+      }
+    ],
+    "预期红": "问的是货期,跟钱无关"
   }
 ]
