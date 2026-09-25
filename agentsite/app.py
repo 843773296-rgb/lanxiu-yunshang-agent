@@ -195,6 +195,25 @@ class H(BaseHTTPRequestHandler):
             # 它从这儿取同一份清单渲染左栏入口 —— 而不是自己手写一份。
             import nav as _nav
             return self._send({"rows": [dict(路=a, 名=b, 说=c) for a, b, c in _nav.顶栏]})
+        if p.startswith("/ai/export-finetune"):
+            # 训练数据导出。**默认脱敏,而且脱不动就不给** ——
+            # 一份没脱干净的训练集流出去,是追不回来的。
+            try:
+                import aihub
+                q = {k: unquote(v) for k, v in
+                     (x.split("=", 1) for x in (urlparse(self.path).query or "").split("&") if "=" in x)}
+                行, 换, 种 = aihub.导出训练数据(只要够格=q.get("全部") != "1", 脱=True)
+                body = "\n".join(json.dumps(
+                    {"messages": r["messages"]}, ensure_ascii=False) for r in 行).encode()
+                self.send_response(200)
+                self.send_header("content-type", "application/x-ndjson; charset=utf-8")
+                self.send_header("content-disposition",
+                                 'attachment; filename="finetune.jsonl"')
+                self.send_header("x-redacted", f"{换} spans over {种} ids")
+                self.send_header("content-length", str(len(body)))
+                self.end_headers(); self.wfile.write(body); return
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p == "/ai/rules":
             # 77 条规矩的清单 —— 页面上要能挑、能看现在的正文。
             # **不在页面里抄一份** :唯一来源是 prompts.py。

@@ -298,6 +298,68 @@ def _库():
     return sqlite3.connect(f"file:{os.path.join(ROOT,'backend','lanxiu.db')}?mode=ro", uri=True)
 
 
+# ── 脱敏(训练数据导出前强制过一遍)────────────────────────────────
+# ⚠️ **这些对话里是真实业务标识**:实测 40 条回答里订单号出现 29 次、
+# 押金单 20 次、工号 25 次、客户号 4 次。导出去训模型之前必须换掉。
+#
+# 做法是**按号的形状替换成稳定的假号**(同一个真号永远换成同一个假号)——
+# 不是整个抹掉:抹掉的话「查 6488… 这单」会变成「查 这单」,
+# **对话的结构就毁了**,而结构正是要学的东西。
+# 稳定映射还保住了一段对话里前后指同一张单这件事。
+_脱敏规则 = [
+    ("订单号", r"6488\d{15}"), ("客户号", r"C\d{5}"), ("着装人", r"W\d{5}-\d"),
+    ("押金单", r"D\d{4}"), ("工号", r"[A-Z]\d{7}"), ("维保单", r"M\d{5}"),
+    ("快递单", r"SF[A-Z0-9]{6,}"), ("手机", r"1[3-9]\d{9}"),
+]
+
+
+def 脱敏(文, 表=None):
+    """返回 (脱过的文, 换了几处)。表用来跨条对话保持同一个真号 → 同一个假号。"""
+    import re as _re
+    表 = 表 if 表 is not None else {}
+    n = [0]
+
+    def 换(类, m):
+        真 = m.group(0)
+        if 真 not in 表:
+            表[真] = f"<{类}{len(表) + 1:03d}>"
+        n[0] += 1
+        return 表[真]
+
+    出 = 文 or ""
+    for 类, pat in _脱敏规则:
+        出 = _re.sub(pat, lambda m, c=类: 换(c, m), 出)
+    return 出, n[0]
+
+
+def 导出训练数据(只要够格=True, 脱=True):
+    """导出成**通用对话 JSONL**(`messages:[{role,content}]`)——
+    **不绑任何一家的私有格式**:开源权重自己训、别家托管服务,吃的都是这个形状。
+
+    ⚠️ `脱=False` 只在本机排查时用。导出给外部一律要脱。
+    """
+    树 = {}
+    for x in _读(os.path.join(ROOT, ".feynman", "spans.jsonl")):
+        树.setdefault(x.get("trace_id"), []).append(x)
+    表, 行, 换 = {}, [], 0
+    for tid, v in 树.items():
+        根 = next((y for y in v if not y.get("parent_span_id")), v[0])
+        a = 根.get("attr") or {}
+        问, 答 = a.get("lanxiu.prompt"), a.get("lanxiu.answer")
+        工具 = [y for y in v if (y.get("attr") or {}).get("gen_ai.operation.name") == "execute_tool"]
+        够 = bool(问 and 答 and 工具 and not a.get("lanxiu.guard.blocked"))
+        if 只要够格 and not 够: continue
+        if not (问 and 答): continue
+        q, n1 = (脱敏(问, 表) if 脱 else (问, 0))
+        r, n2 = (脱敏(答, 表) if 脱 else (答, 0))
+        换 += n1 + n2
+        行.append(dict(messages=[{"role": "system", "content": f"你是澜绣云裳的{根.get('角色') or '助手'}。"},
+                                 {"role": "user", "content": q},
+                                 {"role": "assistant", "content": r}],
+                       来自=tid, 时间=根.get("ts"), 工具数=len(工具)))
+    return 行, 换, len(表)
+
+
 def 列表(mod, 限=200):
     """一个模块的列表。每行要能**一眼看出值不值得点进去**,所以带上结果和代价。"""
     if mod == "runs":

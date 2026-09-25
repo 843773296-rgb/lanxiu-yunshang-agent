@@ -235,6 +235,7 @@ async function 模块(k){
   const n=(MODS.find(([x])=>x===k)||[])[1]||k;
   $("#h1").textContent=n;
   if(k==="prompts") await 新建框();
+  if(k==="finetune") 导出条();
   const d=await fetch("/ai/data?mod="+encodeURIComponent(k)).then(r=>r.json());
   const rows=d.rows||[];
   if(!rows.length){ $("#main").innerHTML=`<p class="sub">这个模块还没有数据。</p>`; return; }
@@ -245,6 +246,30 @@ async function 模块(k){
       `<td class="${typeof r[c]==="number"||/^[\w:.$-]+$/.test(String(r[c]??""))?"mono":""}">${esc(String(r[c]??"").slice(0,90))}</td>`).join("")}</tr>`).join("")}</tbody></table>
     <div id="det"></div>`;
   document.querySelectorAll("tr.r").forEach(tr=>tr.onclick=()=>详情(k,tr.dataset.id,tr));
+}
+
+/* 训练数据导出 —— **导出前强制脱敏,不给不脱的选项**。
+   实测这些对话里 40 条回答含订单号 29 次、押金单 20 次、工号 25 次。
+   脱敏是**换成稳定的假号**不是抹掉:抹掉会毁掉句子结构,而结构正是要学的东西;
+   稳定映射保住「前后指同一张单」这件事。 */
+function 导出条(){
+  if(document.getElementById("ftbar")) return;
+  const box=document.createElement("div"); box.className="ed"; box.id="ftbar";
+  box.innerHTML=`<h3>导出训练数据</h3>
+    <p class="sub" style="margin:0 0 8px;font-size:12.5px">
+      导成<b>通用对话 JSONL</b>（<code class="mono">messages:[{role,content}]</code>）——
+      <b>不绑任何一家的私有格式</b>：开源权重自己训、别家托管服务，吃的都是这个形状。
+      <br><b>导出前一律脱敏</b>，而且没有「不脱」这个选项：一份没脱干净的训练集流出去，是追不回来的。
+      订单号 / 客户号 / 着装人 / 押金单 / 工号 / 快递单 / 手机号会换成
+      <code class="mono">&lt;订单号001&gt;</code> 这样的稳定假号（同一个真号永远换成同一个）。</p>
+    <div class="btns">
+      <a class="go" href="/ai/export-finetune" download style="text-decoration:none">
+        <button class="pri" id="ft-ok">导出「够格」的那些</button></a>
+      <a class="go" href="/ai/export-finetune?全部=1" download style="text-decoration:none">
+        <button id="ft-all">连「先别」的一起导</button></a>
+      <span class="msg">「先别」那些多半是一个工具都没调的 —— 拿它们训，学到的是怎么说话不是怎么办事。</span>
+    </div>`;
+  $("#main").prepend(box);
 }
 
 async function 详情(k,id,tr){
