@@ -323,6 +323,206 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "redacted_diff", "request_id"],
       ["**追加写入,普通编辑不许删**(§15.4)",
        "Diff 要脱敏:审计本身不该变成一条泄露通道"]),
+
+    # ═══ 以下是 Workflow 与 Agent 后台规格 §16.3 的增量 ═══════════════
+    #
+    # ## 一条贯穿这一段的注意事项:**JSONB 里的引用,数据库拦不住**
+    #
+    # 这一段里有好几处「确切版本引用」是存在 JSONB 数组里的:
+    # `agent_versions.tools` 是一串 tool_version_id,`execution_runs.definition_ref`
+    # 是一个 {kind,id,version_id} 对象。**这些引用没有外键。**
+    #
+    # 规格 §16.3 最后一句给了退路:「所有引用都要有项目/组织约束**或等效服务端验证**」。
+    # 选 JSONB 是因为一个 Agent 版本引用 N 个工具版本,拆成连接表会让「冻结一个版本」
+    # 变成写好几张表 —— 而那正是不可变对象最怕的事(写一半)。
+    #
+    # **代价要写在这里,不能只记在脑子里**:这几处必须由服务端在冻结时逐个验
+    # (存在、同项目、有权限、能力兼容),而且**它是真的会被漏掉的那一类** ——
+    # 因为漏了之后,库里那一行看起来完全正常。前一轮的攻击测试里,
+    # 「项目级表根本没有指向 projects 的外键」就是这么活下来的。
+
+    # ① Workflow
+    E("workflows", "工作流", 项目级, 可改,
+      ["name", "purpose", "owner", "tags", "draft_revision", "validation_status",
+       "status"],
+      ["**不能跨项目引用**;**名称不等于执行 ID**(§16.3)—— "
+       "node_id 和 workflow id 稳定,改名不影响任何引用",
+       "draft_revision 给乐观锁用:两个人同时编一张图,后写的会悄悄盖掉前一个"]),
+    E("workflow_versions", "工作流版本", 子对象, 不可变,
+      ["workflow_id", "version_no", "definition_schema_version", "nodes", "edges",
+       "logical_hash", "dependencies", "layout", "input_schema", "output_schema",
+       "change_note"],
+      ["**图校验必须过**才能冻结;依赖一起冻结(§16.3)",
+       "**布局坐标不参与 logical_hash**(§16.3、附录 A-9)—— "
+       "自动布局挪一遍位置不该看起来像改了执行逻辑。"
+       "坐标仍然存在这张表上(否则看历史版本的画布只能看到一团重叠的节点),"
+       "但它进不了哈希:哈希的输入清单在 contract/dsl.py 的 规范化() 里,"
+       "**按位置剥,不按名字剥**",
+       "`nodes` / `edges` 里的 tool_version_id、prompt_version_id 这些引用"
+       "**没有外键** —— 冻结时必须服务端逐个验(见这一段开头)"],
+      依赖=["workflows"]),
+
+    # ② Agent
+    E("agents", "智能体", 项目级, 可改,
+      ["name", "purpose", "owner", "tags", "draft_revision", "validation_status",
+       "status"],
+      ["和 Workflow 共用对象基础能力(草稿/版本/校验/引用关系)(§16.3)",
+       "**不按工具数量给 Agent 打「能力强弱分」**(§9.1)—— "
+       "工具数只表示授权候选集合的规模"]),
+    E("agent_versions", "智能体版本", 子对象, 不可变,
+      ["agent_id", "version_no", "prompt_version_id", "connection_version_id",
+       "task_template", "tools", "context_policy", "limits", "output_schema",
+       "completion_criteria", "incomplete_strategy", "execution_strategy",
+       "input_schema", "content_hash", "change_note"],
+      ["工具与策略都是**确切版本**;**已发布内容不可修改**(§16.3)",
+       "**limits 是结构化状态,不是提示词里的一句话**(§9.5)—— "
+       "硬权限、批准记录、步骤计数、剩余额度存在这里,"
+       "靠模型摘要保存的上限等于没有上限",
+       "context_policy.long_term_memory **首版默认关闭**(§9.5):"
+       "未经审核就持久化的错误事实会跨任务传染",
+       "`tools` 是 JSONB 里的一串 tool_version_id —— **没有外键**,冻结时服务端逐个验"],
+      依赖=["agents", "prompt_versions", "connection_versions"]),
+
+    # ③ 工具 / 连接 / 指南 / 规则
+    E("tool_definitions", "工具", 项目级, 可改,
+      ["name", "purpose", "side_effect_type", "adapter", "owner", "draft_revision",
+       "status"],
+      ["**未注册的工具名一律拒绝**(§9.4)—— 不能让模型凭一个名字临时发网络请求",
+       "**风险变化要出新版本**(§16.3):一个工具从只读变成会写东西,"
+       "而引用它的 Agent 还指着老的说明 —— 那份说明现在是错的"]),
+    E("tool_versions", "工具版本", 子对象, 不可变,
+      ["tool_definition_id", "version_no", "model_description", "input_schema",
+       "output_schema", "side_effect_type", "allowed_scopes", "confirmation_policy",
+       "idempotency_strategy", "external_status_lookup", "timeout_seconds",
+       "retry_policy", "redaction", "secret_ref", "connection_id",
+       "server_bound_arguments", "pollable", "content_hash"],
+      ["**服务端绑定参数**(输出目录 / project_id / 允许的文档库)"
+       "模型参数不许覆盖(§9.4)",
+       "**pollable 要显式声明**(§10.3):相同参数的重复读取可能是合法轮询,"
+       "「调用两次就算无进展」会把正常轮询判成失控 —— "
+       "反过来,不声明就默认可轮询也会放过真的失控",
+       "**不可逆写入必须有 confirmation_policy**;落点在 dsl.可以执行吗()",
+       "redaction 说清哪些字段在 Trace 和导出里要脱敏"],
+      依赖=["tool_definitions", "capability_connections"]),
+    E("capability_connections", "工具连接", 项目级, 可改,
+      ["name", "adapter", "allowed_endpoints", "secret_ref", "capability_snapshot",
+       "status", "owner", "last_health_at", "health_detail"],
+      ["**密钥不返回、不在前端回显**(§11.2);凭证轮换记审计,"
+       "但**密钥内容不混入版本哈希** —— 混进去哈希本身就变成一条侧信道",
+       "**停用即时生效**(§16.3):正在跑的 Run 也要被拦,"
+       "不能等它跑完 —— 「停用」如果只对新 Run 生效,那它不叫停用",
+       "**连接发现新工具不自动增加生产 Agent 的权限**(§11.2)—— "
+       "MCP 发现回来的说明和返回值仍然是外部输入,要先审"]),
+    E("skill_versions", "Skill 指南版本", 项目级, 不可变,
+      ["name", "purpose", "version_no", "instructions", "applicable_conditions",
+       "dependencies", "file_manifest", "review_status", "load_mode",
+       "content_hash"],
+      ["**指南不授予权限**(§11.3、§16.3)—— 「启用了指南」被读成「给了脚本权限」"
+       "是这一块最容易出的误解;首版只支持 Markdown 指南和**只读**参考文件",
+       "**按需加载要记实际加载了什么、什么时候加载的**(§11.3)—— "
+       "只显示「已挂载」的话,没人知道模型到底读到了没有",
+       "Skill **不是微调,也不保证模型一定遵循**"]),
+    E("policy_versions", "规则策略版本", 项目级, 不可变,
+      ["name", "purpose", "version_no", "rule_template", "params", "trigger_point",
+       "failure_strategy", "test_cases", "content_hash"],
+      ["**策略由后端运行**(§11.4):首版只开白名单规则模板 + 配置参数,"
+       "**不开放网页任意代码**",
+       "界面要写清「**指令约定**」和「**程序强制**」的区别 —— "
+       "提示词里写「不要删文件」是约定,规则拦住 delete 才是强制"]),
+
+    # ④ 运行
+    E("execution_runs", "执行运行", 项目级, 可改,
+      ["kind", "definition_ref", "release_ref", "input_snapshot", "definition_hash",
+       "principal", "status", "limits", "parent_run_id", "environment",
+       "execution_mode", "completion_reason", "quality_evaluation_status",
+       "started_at", "ended_at", "deadline_at", "current_step_id", "output_ref",
+       "usage_snapshot", "checkpoint_seq", "pause_requested", "cancel_requested",
+       "idempotency_key", "trace_id"],
+      ["**完整快照**:启动时固定发布清单和输入(§3.2);"
+       "**正在执行的 Run 保持原版本**,但当前权限和停用开关**仍须实时检查**",
+       "**status 和 quality_evaluation_status 是两件事**(§16.4):"
+       "`succeeded` 只表示「定义要求的执行和确定性输出检查过了」,"
+       "**不表示里面的事实都对**",
+       "**execution_mode 分 mock/live**(§14.1)—— 一份 mock 跑出来的报告"
+       "和真实报告在数据形状上一模一样,唯一的区别就是这个字段",
+       "parent_run_id:子调用的额度和费用**计入父任务**,"
+       "不是每嵌套一层重新拿一份完整预算(§13.2)",
+       "**`definition_ref` / `release_ref` 是 JSONB,没有外键** —— 见这一段开头"],
+      依赖=["applications", "release_manifests", "traces"]),
+    E("run_steps", "运行步骤", 子对象, 可改,
+      ["execution_run_id", "node_id", "kind", "iteration_path", "attempt",
+       "execution_key", "logical_action_id", "input_ref", "output_ref", "status",
+       "branch_key", "skipped_reason", "started_at", "ended_at", "error_code",
+       "error_detail", "span_id"],
+      ["**每次 attempt 保留一行,不覆盖旧结果**(§16.3、§8)—— "
+       "「同一个节点重试了三次」和「它只跑了一次」必须能分出来",
+       "**execution_key 含 (Run, node_id, 循环路径, 列表项, 尝试次数)**(§8);"
+       "**逻辑副作用键不因普通传输重试而改变** —— 网络重发不该变成第二次写入",
+       "**`skipped` 和 `failed` 不是一回事**(§8):未激活的支路既不阻塞汇合,"
+       "也不能作为「完成了的工作」计入"],
+      依赖=["execution_runs"]),
+    E("run_checkpoints", "运行检查点", 子对象, 只追加,
+      ["execution_run_id", "seq", "state_ref", "content_hash", "engine_version"],
+      ["**只追加,用户不能任意替换**;恢复时**必须匹配引擎版本**(§16.3)—— "
+       "换了执行内核还去读旧检查点,恢复出来的状态是什么没人知道",
+       "检查点保存的是**位置和计数**,不是「把历史文本重新原样塞给模型」(§9.5)",
+       "**重试计数、循环计数、模型回合和费用不因恢复归零**(§17.3)"],
+      依赖=["execution_runs"], 内容寻址=True),
+    E("tool_invocations", "工具调用", 子对象, 可改,
+      ["run_step_id", "tool_version_id", "side_effect_type", "arguments_hash",
+       "approval_ref", "idempotency_key", "logical_action_id", "external_id",
+       "outcome", "status", "execution_mode", "result_ref", "intent_at",
+       "responded_at", "duration_ms", "error_code", "error_detail",
+       "needs_human_check"],
+      ["**先登记 intent 再调外部,收到响应再登记结果**(§17.3)—— "
+       "进程死在这两步之间时去**核实**,不盲重放",
+       "**参数摘要和审批绑定**(§12.2):批准 A 之后改成 B,旧批准失效",
+       "**needs_human_check 不是终态**:对方没有幂等也没有查询能力时,"
+       "禁止自动重复不可逆动作 —— 但也不许把它显示成「已结束」"],
+      依赖=["run_steps", "tool_versions"]),
+
+    # ⑤ 人工介入
+    E("human_requests", "人工请求", 子对象, 可改,
+      ["execution_run_id", "run_step_id", "kind", "payload_ref", "allowed_fields",
+       "candidate_roles", "status", "expires_at", "arguments_hash",
+       "tool_version_id", "target_ref", "risk_note"],
+      ["**一次请求只能被处理一次**(§16.3);重复提交同一决定要幂等,"
+       "另一个人已经处理过则返回冲突和最新状态(§12.2)",
+       "**参数改变则旧批准失效** —— 批准绑定的是"
+       "(项目, Run, step, 工具版本, 目标资源, 参数摘要, 申请 revision, 截止时间, 批准人)",
+       "**审批者必须对那个对象有权限**,不是「有审批角色」就行;"
+       "**模型不能批准自己**(§9.6)",
+       "**等待不占用 Worker**(§12.4):挂起时释放租约,靠事件恢复"],
+      依赖=["execution_runs", "tool_versions"]),
+    E("human_decisions", "人工决定", 子对象, 只追加,
+      ["human_request_id", "actor", "decision", "edited_fields", "request_revision",
+       "reason", "at", "idempotency_key"],
+      ["**只追加,不能直接改历史决定**(§16.3)",
+       "**「批准」只产生批准记录** —— 真正执行时仍然再查一遍权限和工具当前可用性"
+       "(§12.2)。权限撤回或项目停用之后,老批准记录**不能**恢复写操作",
+       "编辑过字段要重新检查权限、参数和额度,并保存前后 Diff;"
+       "**系统安全字段、密钥和对象归属不可编辑**"],
+      依赖=["human_requests"], 内容寻址=False),
+    E("run_events", "运行事件", 子对象, 只追加,
+      ["execution_run_id", "seq", "event_type", "step_id", "payload_ref", "payload",
+       "occurred_at"],
+      ["**seq 在 Run 内单调唯一,SSE 可按 after_seq 补发**(§16.3、§17.2)",
+       "**事件只表达已记录的事实**(§17.2):"
+       "**不能在外部返回成功之前先发 tool.succeeded** —— "
+       "一个提前发出的成功事件会让前端和读日志的人都认为那件事做完了",
+       "前端按 seq 去重补齐,**不用消息到达顺序猜运行进度**"],
+      依赖=["execution_runs"], 内容寻址=False),
+
+    # ⑥ 图草稿与布局(§16.3 最后一行)
+    E("graph_drafts", "图草稿与布局", 子对象, 可改,
+      ["workflow_id", "agent_id", "definition", "layout", "validation_report"],
+      ["**定义与 UI 布局分开**(§16.3):布局改动不产生新语义版本",
+       "一行只挂 workflow 或 agent 之一(两列都可空)。"
+       "⚠️ **这条「二选一」数据库拦不住** —— 要 CHECK 约束才行,"
+       "而这里的表是从登记派生的、暂不支持 CHECK。"
+       "所以它现在靠服务端校验,**写在这里是因为它是个会被忘掉的约定**",
+       "**浏览器离线时本地未提交的修改不能伪装成已保存**(§5.2)"],
+      依赖=["workflows", "agents"]),
 ]
 
 _按名 = {e["名"]: e for e in 实体表}

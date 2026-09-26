@@ -46,7 +46,33 @@
     ("_manifest",      "JSONB",       "清单(file_manifest)"),
     ("_schema",        "JSONB",       "JSON Schema(variable_schema / output_schema)"),
     ("_snapshot",      "JSONB",       "快照:建任务时固化,之后改配置不影响它"),
-    ("_policy",        "TEXT",        "策略名"),
+    # ⚠️ **这一条在 Workflow/Agent 规格进来之后翻过面:TEXT → JSONB。**
+    # 老域里 `_policy` 是个名字(`retention_policy` = "30d"、`data_egress_policy` = "deny");
+    # 编排域里它一律是结构化对象 —— `retry_policy` = {可重试类型, 次数, 退避}、
+    # `confirmation_policy` = {谁批, 什么情况下要批}、`idempotency_strategy` = {键怎么算}。
+    # 两个老字段在 显式类型 里被钉成 TEXT(显式优先于后缀),所以翻这一条**不会动到它们** ——
+    # 而 spec_coverage 里有一条断言专门钉这件事:**翻了面不许把老字段悄悄带走**。
+    ("_policy",        "JSONB",       "策略对象(重试 / 确认 / 幂等 / 上下文)"),
+    ("_strategy",      "JSONB",       "策略对象(失败 / 无法完成 / 执行方式)"),
+    ("_criteria",      "JSONB",       "判据清单(完成条件)"),
+    ("_template",      "TEXT",        "模板文本(任务目标 / 规则模板)"),
+    ("_revision",      "BIGINT",      "版本号(draft_revision / request_revision):"
+                                     "乐观锁靠它,**不是时间戳**"),
+    ("_note",          "TEXT",        "备注(变更说明 / 风险说明)"),
+    ("_description",   "TEXT",        "说明文字(模型可见的工具说明)"),
+    ("_type",          "TEXT",        "类型枚举(side_effect_type / event_type)"),
+    ("_fields",        "JSONB",       "字段清单(允许编辑 / 实际编辑了哪些)"),
+    ("_roles",         "JSONB",       "角色清单(候选审批人)"),
+    ("_scopes",        "JSONB",       "允许的对象范围"),
+    ("_endpoints",     "JSONB",       "允许的端点白名单"),
+    ("_conditions",    "JSONB",       "适用条件"),
+    ("_cases",         "JSONB",       "测试用例"),
+    ("_report",        "JSONB",       "报告(校验报告)"),
+    ("_arguments",     "JSONB",       "参数(服务端绑定参数)"),
+    ("_lookup",        "JSONB",       "查询能力声明(external_status_lookup):"
+                                     "**没有它就承诺不了 exactly-once**"),
+    ("_seconds",       "INTEGER",     "秒(超时 / 期限)"),
+    ("_ms",            "INTEGER",     "毫秒(耗时)"),
     ("_override",      "JSONB",       "覆盖项(acl_override)"),
     ("_digest",        "TEXT",        "镜像 digest:**固定它,不用 latest 标签**"),
     ("_key",           "TEXT",        "键(object_key / event_key / idempotency_key)"),
@@ -92,7 +118,26 @@
     "param_update_method": "TEXT", "base_model": "TEXT", "pipeline_type": "TEXT",
     "source_info": "JSONB", "effective_at": "TIMESTAMPTZ",
     "candidate_ref": "JSONB", "baseline_ref": "JSONB", "target_ref": "JSONB",
+    # ⚠️ 这两个**必须留在这儿**:`_policy` 后缀已经翻成 JSONB,
+    # 它们靠「显式优先于后缀」才保住 TEXT。删掉这两行不会报错 ——
+    # 只会让库里两列从 TEXT 变成 JSONB,而迁移跑得好好的。
     "data_egress_policy": "TEXT", "retention_policy": "TEXT",
+    # ── Workflow / Agent 编排域的增量 ────────────────────────────────
+    # 图定义本体:节点、连线、布局、草稿定义
+    "nodes": "JSONB", "edges": "JSONB", "layout": "JSONB", "definition": "JSONB",
+    "dependencies": "JSONB", "tags": "JSONB",
+    # Agent 版本上的结构化部分
+    "tools": "JSONB", "limits": "JSONB", "redaction": "JSONB",
+    "instructions": "TEXT", "trigger_point": "TEXT",
+    # ⚠️ `_ref` 后缀是 TEXT(指针:secret_ref / payload_ref / state_ref)。
+    # 这两个是**带类型的引用**({kind, id, version_id}),和 candidate_ref /
+    # baseline_ref / target_ref 一样钉成 JSONB。
+    "definition_ref": "JSONB", "release_ref": "JSONB",
+    # 运行与人工介入
+    "principal": "TEXT",        # 执行身份:**不由用户输入字段指定**(§6.1)
+    "decision": "TEXT", "outcome": "TEXT", "attempt": "INTEGER",
+    # **声明式的能力开关**:不声明可轮询,就不能拿「调用两次」判失控(§10.3)
+    "pollable": "BOOLEAN",
     # ⚠️ 下面这几个是**跑了一遍派生才发现认不出的** —— 约定没覆盖到,所以点名。
     # 这正是「不给兜底」的收益:它们本来会被默默建成 TEXT,而 amount 建成 TEXT
     # 的后果是钱能被写进字符串,而且排序按字典序。

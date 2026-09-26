@@ -128,7 +128,13 @@ def _跑一次prompt(c, job, 打点):
             created_at, created_by)
         values (:i,:o,:p,:ek,:t,'generate',:q,'token','CNY', null, false, :src,
                 now(), :u)
-        on conflict (event_key) do nothing
+        -- ⚠️ 冲突目标是 **(project_id, event_key)**,不是 event_key 单列。
+        -- 唯一约束从单列改成带 project_id 之后,这一行 ON CONFLICT 当场编译不过
+        -- (PostgreSQL 要求冲突目标**精确匹配**一个唯一约束)——
+        -- 那次红是好的:它逼着这个调用点跟着改。
+        -- 反过来想:要是当时**加**一条复合约束而**留着**单列那条,
+        -- 这里一个字都不用改,而跨项目撞键那个漏一点没修好。
+        on conflict (project_id, event_key) do nothing
     """), {"i": _新("ul"), "o": job["organization_id"], "p": job["project_id"],
            "ek": f"{job['id']}:generate", "t": trace,
            "q": r["usage"]["input_tokens"] + r["usage"]["output_tokens"],

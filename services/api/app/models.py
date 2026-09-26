@@ -56,19 +56,63 @@ def _列(字段, 范围内=False):
 
 
 # 规格 §18「索引建议」那一段,落成代码。
+#
+# ## ⚠️ 项目范围内的唯一约束**必须带上 project_id**
+#
+# 第一版这里写的是 `"prompt_versions": [("key", "content_hash")]` —— 没带 project_id。
+# 而项目级表的主键是 `(project_id, id)`:**id 只在项目内唯一**。
+# 于是那条约束悄悄变成了一条**跨项目**的约束:
+# A 项目冻结了一条内容为 X 的 Prompt,B 项目再冻结一份一模一样的就撞唯一键 ——
+# 报错里还带着另一个项目的那一行,**连「那份内容存在」都泄露了**。
+#
+# 这类漏是复合主键的连带后果,而且它**不报错**:同一个项目里跑测试永远撞不到。
+# 规矩:**凡是拿 id / key 做唯一键的,都要先带 project_id**;
+# 例外只有供应商给的全局 ID(`external_id`)—— 那个本来就是全局唯一的,
+# 带上 project_id 反而会放过「两个项目登记同一个外部任务」。
+# 判据落在 tools/spec_coverage.py 的「项目内的唯一约束都带了 project_id」那条,
+# 豁免数量有写死的上限。
 _额外唯一 = {
-    # 任务外部 ID 唯一 + 幂等键唯一 —— **这两条是防重复训练/重复计费的命根子**
-    "training_jobs": [("idempotency_key",), ("external_id",)],
-    "jobs": [("idempotency_key",)],
+    # 任务幂等键 —— **防重复训练/重复计费的命根子**。项目内唯一就够:
+    # 幂等键是客户端给的,两个项目用同一个字符串是正常的。
+    "training_jobs": [("project_id", "idempotency_key"), ("external_id",)],
+    "jobs": [("project_id", "idempotency_key")],
     # 费用事件唯一键:唯一用量事件防重复计费
-    "usage_ledger": [("event_key",)],
-    # 版本内容哈希:同一份内容不该出现两个版本行
-    "prompt_versions": [("key", "content_hash")],
-    "document_versions": [("document_id", "content_hash")],
-    "dataset_versions": [("dataset_id", "content_hash")],
-    "release_manifests": [("application_id", "content_hash")],
+    "usage_ledger": [("project_id", "event_key")],
+    # 版本内容哈希:同一份内容不该在**同一个项目里**出现两个版本行
+    "prompt_versions": [("project_id", "key", "content_hash")],
+    "document_versions": [("project_id", "document_id", "content_hash")],
+    "dataset_versions": [("project_id", "dataset_id", "content_hash")],
+    "release_manifests": [("project_id", "application_id", "content_hash")],
     # 任务事件按 job 内 seq 单调:SSE 续传靠它,重号会让客户端丢事件或重放
-    "job_events": [("job_id", "seq")],
+    "job_events": [("project_id", "job_id", "seq")],
+
+    # ── Workflow / Agent 编排域 ─────────────────────────────────────
+    # 版本号在父对象内单调:两个 v3 会让「生产引用哪一版」这句话失去意义
+    "workflow_versions": [("project_id", "workflow_id", "version_no")],
+    "agent_versions": [("project_id", "agent_id", "version_no")],
+    "tool_versions": [("project_id", "tool_definition_id", "version_no")],
+    "skill_versions": [("project_id", "name", "version_no")],
+    "policy_versions": [("project_id", "name", "version_no")],
+    # **运行事件 seq 在 Run 内单调唯一** —— SSE 按 after_seq 补发靠它(§17.2);
+    # 重号会让前端丢事件,而丢掉的恰好可能是那条 tool.approval_required
+    "run_events": [("project_id", "execution_run_id", "seq")],
+    "run_checkpoints": [("project_id", "execution_run_id", "seq")],
+    # **唯一执行键**(§8):(Run, node_id, 循环路径, 列表项, 尝试次数)算出来的键。
+    # 它是「同一个节点不被执行两次」在数据库层的落点 —— 不靠调度器记得。
+    "run_steps": [("project_id", "execution_key")],
+    # **逻辑动作键唯一**(§17.3):传输重试复用同一行,不是插第二行。
+    # 这一条唯一约束就是「恢复后不重复写」的地基 —— 没有它,
+    # 幂等只存在于代码的 if 里,而进程可以死在那个 if 之前。
+    "tool_invocations": [("project_id", "logical_action_id"),
+                         ("project_id", "idempotency_key")],
+    "execution_runs": [("project_id", "idempotency_key")],
+    # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,
+    # 第二个撞唯一键 → 返回冲突和最新状态,而不是两条都记下来。
+    # 「要求补充」之后 revision 前进,于是下一轮还能再批 —— 这正是想要的。
+    "human_decisions": [("project_id", "human_request_id", "request_revision")],
+    # 一个对象一份草稿。PostgreSQL 把多个 NULL 当互不相同,所以
+    # (project_id, workflow_id) 唯一**不会**妨碍一堆 workflow_id 为空的 agent 草稿。
+    "graph_drafts": [("project_id", "workflow_id"), ("project_id", "agent_id")],
 }
 
 

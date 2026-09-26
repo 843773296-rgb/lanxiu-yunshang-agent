@@ -57,7 +57,10 @@ export type Capability =
   | "生产审核/发布/回滚"
   | "查看敏感输入/独立测试答案"
   | "配置密钥与预算"
-  | "查看审计";
+  | "查看审计"
+  | "改编排草稿"
+  | "运行编排测试"
+  | "审批工具动作";
 
 /* ── 接口:路径 + 它要的权限 ───────────────────────── */
 
@@ -84,7 +87,7 @@ export const ENDPOINTS = [
   { method: "GET", path: "/model-connections", summary: "模型连接列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/model-connections", summary: "建模型连接", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/model-connections/{id}/probe", summary: "探测连接", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
-  { method: "GET", path: "/prompts", summary: "Prompt 清单", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/prompts", summary: "Prompt 列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/prompts", summary: "建 Prompt", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/prompts/{id}/draft", summary: "改草稿", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/prompts/{id}/versions", summary: "从草稿发正式版本", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -131,6 +134,43 @@ export const ENDPOINTS = [
   { method: "GET", path: "/memberships", summary: "成员与权限", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/memberships", summary: "加成员/改权限", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/audit-events", summary: "审计记录", capability: "查看审计", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/workflows", summary: "工作流列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/workflows", summary: "建工作流", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/workflows/{id}", summary: "工作流详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/workflows/{id}/draft", summary: "改图草稿", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/workflows/{id}/validate", summary: "校验图", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/workflows/{id}/versions", summary: "冻结图版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/agents", summary: "Agent 列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/agents", summary: "建 Agent", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/agents/{id}", summary: "Agent 详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/agents/{id}/draft", summary: "改 Agent 草稿", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/agents/{id}/validate", summary: "校验 Agent", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/agents/{id}/versions", summary: "冻结 Agent 版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/tools", summary: "工具目录", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/tools", summary: "注册工具", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/tools/{id}/draft", summary: "改工具草稿", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/tools/{id}/versions", summary: "冻结工具版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/capability-connections", summary: "工具连接列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/capability-connections", summary: "建工具连接", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/skills", summary: "Skill 指南列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/skills", summary: "建 Skill 指南", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/skills/{id}/versions", summary: "冻结指南版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/policies", summary: "规则策略列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/policies", summary: "建规则策略", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/execution-runs", summary: "发起一次运行", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "POST", path: "/node-tests", summary: "从选中节点测试", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "GET", path: "/execution-runs", summary: "运行列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/execution-runs/{id}", summary: "运行详情", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/execution-runs/{id}/events", summary: "运行事件(SSE)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/execution-runs/{id}/pause", summary: "请求暂停", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: true },
+  { method: "POST", path: "/execution-runs/{id}/resume", summary: "继续", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: true },
+  { method: "POST", path: "/execution-runs/{id}/cancel", summary: "请求取消", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: true },
+  { method: "POST", path: "/execution-runs/{id}/reconcile", summary: "核实外部状态", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "POST", path: "/execution-runs/{id}/steps/{step_id}/retry", summary: "安全重试这一步", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "POST", path: "/execution-runs/{id}/fork-test", summary: "从历史点另开调试", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "GET", path: "/human-requests", summary: "人工待办列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/human-requests/{id}", summary: "待办详情", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 50 条接口 · 11 条异步 · 12 条要幂等键 · 4 条要 If-Match */
+/** 共 87 条接口 · 19 条异步 · 21 条要幂等键 · 11 条要 If-Match */

@@ -16,13 +16,13 @@ doctor:        ## 探本机依赖:PG / pgvector / Redis / Node / Python
 	@bash tools/doctor.sh
 
 contract:      ## 只跑契约覆盖检查(不需要数据库)
-	@python3 tools/spec_coverage.py
+	@./.venv/bin/python tools/spec_coverage.py
 
 bootstrap:     ## 装依赖 + 起基础服务 + 迁移
 	@bash tools/bootstrap.sh
 
 test:          ## 确定性单测与集成测试(**报实际跑了几项**)
-	@python3 tools/spec_coverage.py
+	@./.venv/bin/python tools/spec_coverage.py
 	@echo ""
 	@echo "▸ 契约和库是否一致(alembic check)"
 	@cd services/api && DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
@@ -55,9 +55,9 @@ migrate:       ## 改了契约之后:生成迁移(需要 -m "说明")
 		../../.venv/bin/alembic revision --autogenerate -m "$(m)"
 
 gen:           ## 重跑所有生成器(契约文档 + OpenAPI + 前端 TS 类型)
-	@python3 tools/gen_contract_doc.py
-	@python3 tools/gen_openapi.py
-	@python3 tools/gen_ts_types.py
+	@./.venv/bin/python tools/gen_contract_doc.py
+	@./.venv/bin/python tools/gen_openapi.py
+	@./.venv/bin/python tools/gen_ts_types.py
 
 dev:           ## 起 API + 页面(http://127.0.0.1:8801)
 	@bash tools/dev.sh
