@@ -245,9 +245,23 @@ def _落效果(c, m, 效果, 今天, actor):
         if 效果["到"] == "已发出":                      # 发出 = 一个包裹
             n = c.execute("SELECT COUNT(*) FROM pkg").fetchone()[0] + 1
             pid = f"P{int(oid[-6:]) if oid[-6:].isdigit() else 0:06d}-{n:06d}"
+            # ⚠️ **`created` 取这条包裹自己的发货时刻,不取「现在」。**
+            #
+            # 这不是第十一个「机器时钟写口」—— `_now()` 已经是修好的世界时钟了,
+            # 它的**日期**那一半是对的。错的是**时刻**那一半:
+            # `当下()` = 世界日期 + **机器时刻**,而业务时刻(到店 15:00、发货 12:00)
+            # 是造数按剧本排的。**同一天之内,这两种时刻没有可比的先后。**
+            #
+            # 09-26 实测:重建时真实时间 20:55 → `created 20:55` 晚于
+            # 同一条包裹的 `arrived_at 15:00`,于是「包裹建档晚于包裹到店」。
+            # 前三条判据全都放行,因为这个写口用的**确实是**世界时钟 ——
+            # 它们问的是「用的是不是机器时钟」,而这里是另一种错。
+            #
+            # `tools/seed_factory_feed.py` 那条老单补包裹的语句**本来就是对的**
+            # (`created = m.at`),两边现在一致了。
             c.execute("""INSERT INTO pkg(pkg_id,order_id,tracking_no,shipped_at,status,msg_id,created)
                          VALUES(?,?,?,?,'在途',?,?)""",
-                      (pid, oid, m["tracking_no"], m["at"], m["msg_id"], _now()))
+                      (pid, oid, m["tracking_no"], m["at"], m["msg_id"], m["at"]))
             for x in 效果["件"]:
                 c.execute("INSERT INTO pkg_item(pkg_id,item_id) VALUES(?,?)", (pid, int(x)))
             c.commit()
