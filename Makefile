@@ -6,7 +6,7 @@
 # 一个打印「✅ 完成」却什么都没做的 target,比没有这个 target 糟得多:
 # 它会让人以为这一步过了。
 SHELL := /bin/bash
-.PHONY: help bootstrap dev seed-demo test test-e2e test-live contract doctor migrate gen
+.PHONY: help bootstrap dev seed-demo test test-e2e test-live contract doctor migrate gen worker worker-once
 
 help:
 	@echo "可用:"
@@ -32,10 +32,22 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_project_isolation.py
 	@echo ""
+	@echo "▸ 任务租约:**真的让两个 worker 去抢**(并发/接手/重试/心跳,16 条)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_worker_lease.py
+	@echo ""
 	@echo "⚠️ test 跑的是**不需要起服务**的那部分(契约层 + 数据层)。"
 	@echo "   接口和页面的闭环在 make test-e2e(要先 make dev)。"
 	@echo "   **两个都绿也不代表「系统可用」** —— Worker / 知识链 / 训练链 / 发布链"
 	@echo "   都还没实现,见 README 的「现在做到哪了」。"
+
+worker:        ## 起后台 Worker(一直跑)
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python workers/worker.py
+
+worker-once:   ## Worker 跑一轮就退(测试/CI 用)
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python workers/worker.py --一轮
 
 migrate:       ## 改了契约之后:生成迁移(需要 -m "说明")
 	@test -n "$(m)" || { echo '要写说明:make migrate m="加了什么"' >&2; exit 1; }
@@ -50,9 +62,10 @@ gen:           ## 重跑所有生成器(契约文档 + OpenAPI + 前端 TS 类�
 dev:           ## 起 API + 页面(http://127.0.0.1:8801)
 	@bash tools/dev.sh
 
-seed-demo:
-	@echo "❌ 未实现:还没有数据模型迁移,没法灌演示数据(§17.4 第 2 步)。" >&2
-	@exit 1
+seed-demo:     ## 灌合成演示数据(**只在开发环境,重复跑不增加对象**)
+	@APP_ENV=development \
+	 DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python services/api/app/seed_demo.py
 
 test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 三页页面冒烟(要先 make dev)
 	@echo "▸ 接口闭环与**禁止行为**(35 条:跨项目、权限、乐观锁、幂等、脱敏、未知费用)"

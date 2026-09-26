@@ -145,6 +145,16 @@ ck("**同一个幂等键再打一次 → 返回同一个任务,不新建**",
    r2.get("job_id") == r1.get("job_id"), f"{r1.get('job_id')} vs {r2.get('job_id')}")
 
 # ── 8. 任务详情:脱敏 + 字段级权限 + 未知费用 ──────────────────────
+# ⚠️ **这一节原来假设 API 返回时结果已经有了** —— 那是改成真异步之前的行为。
+# 现在 API 只受理(202 + 排队中),**要先让 worker 跑一轮**才有 trace。
+# 这一族错很典型:测试把「当前实现」当成了「该有的行为」,
+# 于是实现往对的方向改了之后,测试反而红 —— 而红的理由完全指错方向
+# (它报的是「脱敏没生效」,真相是「还没跑」)。
+import subprocess as _sp0
+_ROOT0 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PY0 = os.path.join(_ROOT0, ".venv", "bin", "python")
+_sp0.run([_PY0, os.path.join(_ROOT0, "workers", "worker.py"), "--一轮"],
+         capture_output=True, text=True, timeout=120, cwd=_ROOT0)
 c, j = 打("GET", P + f"/jobs/{r1['job_id']}", "U002")
 ck("任务详情拿得到", c == 200 and j["status"], j.get("status"))
 ck("**终态要明确标出来**(「不确定」不能被当成结束)", j.get("是终态吗") is True)
@@ -177,6 +187,66 @@ ck("**成功率那张卡明说它不代表回答对不对**",
 ck("费用未覆盖数量单独一张卡(未知不混进已知费用里)",
    "费用未覆盖数量" in 卡)
 
+# ── ⑩ 真异步:API 只受理,Worker 才跑(§19.1 / §19.3)───────────────
+import subprocess as _sp
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PY = os.path.join(_ROOT, ".venv", "bin", "python")
+
+键3 = uuid.uuid4().hex
+c, r3 = 打("POST", P + "/prompt-runs", "U002",
+          {"prompt_id": pid, "变量": {"article": "端到端异步测试", "audience": "PM"}},
+          头={"Idempotency-Key": 键3})
+ck("**API 只受理:返回「排队中」,resource 有了但 trace 还没有**",
+   c == 202 and r3["status"] == "排队中" and r3.get("trace_id") is None, r3)
+c, j3 = 打("GET", P + f"/jobs/{r3['job_id']}", "U002")
+ck("这时候任务还**不是终态**(一个模型都没调)",
+   j3["status"] == "排队中" and j3["是终态吗"] is False, j3["status"])
+ck("事件里那条是「已受理」不是「开始」(两个开始会让人分不清真起点)",
+   [e["kind"] for e in j3["事件"]] == ["已受理"], [e["kind"] for e in j3["事件"]])
+
+_sp.run([_PY, os.path.join(_ROOT, "workers", "worker.py"), "--一轮"],
+        capture_output=True, text=True, timeout=120, cwd=_ROOT)
+c, j4 = 打("GET", P + f"/jobs/{r3['job_id']}", "U002")
+ck("Worker 跑完 → 已完成,而且是终态", j4["status"] == "已完成" and j4["是终态吗"], j4["status"])
+种 = [e["kind"] for e in j4["事件"]]
+ck("事件是一条完整的链(已受理 → 开始 → 展开模板 → 调模型 → 完成)",
+   种 == ["已受理", "开始", "展开模板", "调模型", "完成"], 种)
+ck("seq 连续没断号(断号 = 有事件没写进来,而界面上看不出来)",
+   [e["seq"] for e in j4["事件"]] == list(range(1, len(种) + 1)),
+   [e["seq"] for e in j4["事件"]])
+用4 = (j4.get("结果") or {}).get("用量") or []
+ck("费用仍然是「未知」而不是 0(mock 没有真实计价)",
+   用4 and 用4[0]["amount_known"] is False, 用4[0] if 用4 else "没有用量")
+
+# ── ⑪ 幂等:重复投递不重跑模型 ────────────────────────────────────
+# Outbox 的设计**保证**会有重复投递(§17.1),所以这条不是「尽量」。
+_前 = None
+c, jb = 打("GET", P + f"/jobs/{r3['job_id']}", "U002")
+_前 = (jb.get("结果") or {}).get("trace_id")
+# 把任务掰回「排队中」,让 worker 再捞一次同一条
+import urllib.request as _ur
+_sp.run([_PY, "-c", f'''
+import os, sys
+sys.path.insert(0, os.path.join({_ROOT!r}, "services", "api", "app"))
+from sqlalchemy import text
+from db import 事务
+with 事务() as c:
+    c.execute(text("""update jobs set status='排队中', lease_owner=null,
+        lease_until=null, next_retry_at=null where project_id=:p and id=:i"""),
+        {{"p": {A!r}, "i": {r3["job_id"]!r}}})
+'''], capture_output=True, text=True, timeout=60, cwd=_ROOT)
+out = _sp.run([_PY, os.path.join(_ROOT, "workers", "worker.py"), "--一轮"],
+              capture_output=True, text=True, timeout=120, cwd=_ROOT)
+c, j5 = 打("GET", P + f"/jobs/{r3['job_id']}", "U002")
+后 = (j5.get("结果") or {}).get("trace_id")
+ck("**重复投递 → 幂等命中,不重跑模型(trace 还是同一个)**", 后 == _前, f"{_前} vs {后}")
+ck("而且事件里留了痕(「跳过」那一条说清了为什么)",
+   any(e["kind"] == "跳过" for e in j5["事件"]),
+   [e["kind"] for e in j5["事件"]])
+
+
+# ⚠️ **汇总必须在最后。** 往 `sys.exit()` 后面追加的断言**永远不会跑**,
+# 而它们不跑的时候,总数看起来只是「没变」—— 我 2026-09-26 就这么加了两节白的。
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 if 挂:
     for x in 挂: print("   ·", x)

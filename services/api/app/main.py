@@ -522,57 +522,44 @@ async def 跑一次(project_id: str, request: Request,
         job, run, trace = _新id("job"), _新id("run"), _新id("tr")
         c.execute(text("""
             insert into jobs (id, organization_id, project_id, type, target_ref, status,
-                attempts, idempotency_key, created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,'prompt_run',:t,'执行中',1,:k, now(), :u, now(), 1)
+                attempts, max_attempts, snapshot_hash, idempotency_key,
+                created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,'prompt_run',:t,'排队中',0,3,:sh,:k, now(), :u, now(), 1)
         """), {"i": job, "o": me.org_id, "p": project_id,
-               "t": json.dumps({"run_id": run, "prompt_id": pid}, ensure_ascii=False),
+               "t": json.dumps({"run_id": run, "prompt_id": pid, "变量": 变量},
+                               ensure_ascii=False),
+               # 快照哈希:提交时那份配置 —— 任务建好之后改 Prompt 不影响它。
+               # **「我改了配置所以结果不同」和「同一份配置结果不稳」是两回事。**
+               "sh": _哈希({"messages": d["messages"], "变量": d["variable_schema"],
+                          "参数": d["params"], "输入": 变量}),
                "k": idempotency_key, "u": me.user_id})
         c.execute(text("""
             insert into job_events (id, organization_id, project_id, job_id, seq, kind,
                 payload, at, created_at, created_by)
-            values (:i,:o,:p,:j,1,'开始', :pl, now(), now(), :u)
+            values (:i,:o,:p,:j,1,'已受理', :pl, now(), now(), :u)
         """), {"i": _新id("je"), "o": me.org_id, "p": project_id, "j": job,
-               "pl": json.dumps({"阶段": "展开模板"}, ensure_ascii=False), "u": me.user_id})
-
-        # mock 适配器同步就返回了 —— **但接口形态仍然是异步的**:
-        # 真实模型不会同步返回,把它做成同步接口的话,接真模型那天前端要重写
-        r = _mock生成(dict(d), 变量)
-        c.execute(text("""
-            insert into traces (id, organization_id, project_id, session_id, request_id,
-                application_id, environment, started_at, ended_at, end_reason,
-                created_at, created_by)
-            values (:i,:o,:p,:s,:rq, null, :e, now(), now(), :er, now(), :u)
-        """), {"i": trace, "o": me.org_id, "p": project_id, "s": run, "rq": job,
-               "e": CFG.APP_ENV, "er": r["finish_reason"], "u": me.user_id})
-        c.execute(text("""
-            insert into spans (id, organization_id, project_id, trace_id, parent_span_id,
-                stage, input_ref, output_ref, started_at, ended_at, created_at, created_by)
-            values (:i,:o,:p,:t,null,'generate',:ir,:orf, now(), now(), now(), :u)
-        """), {"i": _新id("sp"), "o": me.org_id, "p": project_id, "t": trace,
-               "ir": json.dumps({"展开后模板": r["展开后模板"]}, ensure_ascii=False),
-               "orf": json.dumps({"text": r["text"], "execution_mode": r["execution_mode"]},
-                                 ensure_ascii=False), "u": me.user_id})
-        # 费用:mock 没有真实计价 → **amount_known=false,不写 0**
-        c.execute(text("""
-            insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
-                resource, quantity, unit, currency, amount, amount_known, source,
-                created_at, created_by)
-            values (:i,:o,:p,:ek,:t,'generate',:q,'token','CNY', null, false, 'mock',
-                    now(), :u)
-        """), {"i": _新id("ul"), "o": me.org_id, "p": project_id,
-               "ek": f"{job}:generate", "t": trace,
-               "q": r["usage"]["input_tokens"] + r["usage"]["output_tokens"], "u": me.user_id})
-        c.execute(text("""
-            update jobs set status='已完成', updated_at=now(), revision=revision+1
-             where project_id=:p and id=:i"""), {"p": project_id, "i": job})
-        c.execute(text("""
-            insert into job_events (id, organization_id, project_id, job_id, seq, kind,
-                payload, at, created_at, created_by)
-            values (:i,:o,:p,:j,2,'完成', :pl, now(), now(), :u)
-        """), {"i": _新id("je"), "o": me.org_id, "p": project_id, "j": job,
-               "pl": json.dumps({"trace_id": trace, "execution_mode": "mock"},
+               # ⚠️ 这一条是「**已受理**」,不是「开始」——
+               # 到这一刻一个模型都还没调。写「开始」的话事件流上会出现两个开始
+               # (API 一个、worker 一个),而**读事件的人分不清哪个是真的起点**,
+               # 于是「从提交到真的开跑等了多久」这个数就没法算了。
+               "pl": json.dumps({"阶段": "排队", "说明": "已受理,等 worker 捞"},
                                 ensure_ascii=False), "u": me.user_id})
-    return _异步(job, run, project_id, status="已完成", trace_id=trace)
+
+        # ── Job + Outbox **在同一个事务里** ────────────────────────
+        # 规格 §18 / §19.3。如果「写库」和「发队列」是两件独立的事,
+        # 它们之间一定有窗口:写库成功但没发出去 → 任务永远不会被跑,
+        # 而库里它是「排队中」;发出去但写库回滚 → worker 捞到一个幽灵。
+        # **两个方向的错都难查,因为库和队列各自看起来都自洽。**
+        import sys as _s4
+        _s4.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jobs"))
+        import outbox as _OB
+        _OB.入箱(c, org=me.org_id, 项目=project_id, job_id=job, topic="prompt_run",
+                payload={"run_id": run, "prompt_id": pid}, 新id=_新id("ob"))
+    # ⚠️ **到这里任务只是「排队中」,一个模型都还没调。**
+    # 这正是 202 的含义 —— 规格 §19.1:「异步动作返回 202 与 job_id,
+    # **不能返回「已经训练完成」**」。Worker 捞到之后才真的跑。
+    return _异步(job, run, project_id, status="排队中")
+
 
 
 @app.get(前缀 + "/jobs/{job_id}")
@@ -613,6 +600,64 @@ def 任务详情(project_id: str, job_id: str, me: 身份 = Depends(要权限("�
             "attempts": j["attempts"], "target_ref": t,
             "事件": [dict(x) for x in ev], "结果": tr,
             "演示模式": CFG.演示模式()}
+
+
+@app.get(前缀 + "/jobs/{job_id}/events")
+def 任务事件流(project_id: str, job_id: str, from_seq: int = Query(0, ge=0),
+             me: 身份 = Depends(要权限("查看有权配置"))):
+    """SSE。**按 seq 续传** —— 断线重连把上次收到的最后一个 seq 传进来。
+
+    ⚠️ 为什么不用时间戳当游标:同一毫秒可以有两条事件,而
+    **跳过一条和本来就没有那一条,在界面上长得一模一样**。
+
+    ⚠️ 规格 §19.2:「**实时结果重新鉴权**」—— 授权在这个请求上判过一次,
+    而流会开着很久。所以每一轮推送前**重新查一次成员记录**:
+    权限被撤回之后,一条还开着的流不该继续送数据。
+    """
+    from fastapi.responses import StreamingResponse
+    import sys as _s5, time as _t5
+    _s5.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "jobs"))
+    import events as _EV
+
+    def 流():
+        seq = int(from_seq)
+        止 = _t5.time() + 120                # 上限两分钟,别让连接无限挂着
+        while _t5.time() < 止:
+            with 连接() as c:
+                # **重新鉴权**:成员记录还在吗
+                仍然有权 = c.execute(text("""
+                    select 1 from memberships
+                     where user_id=:u and status='active'
+                       and (project_id=:p or project_id is null) limit 1"""),
+                    {"u": me.user_id, "p": project_id}).first()
+                if not 仍然有权:
+                    yield ("event: 无权\ndata: " + json.dumps(
+                        {"说明": "权限已被撤回 —— 流到此为止(实时结果要重新鉴权)"},
+                        ensure_ascii=False) + "\n\n")
+                    return
+                批 = _EV.读(c, project_id, job_id, 从seq=seq)
+                j = c.execute(text("select status from jobs where project_id=:p and id=:i"),
+                              {"p": project_id, "i": job_id}).first()
+            for e in 批:
+                seq = e["seq"]
+                yield ("event: 进度\ndata: " + json.dumps(
+                    {"seq": e["seq"], "kind": e["kind"], "payload": e["payload"],
+                     "at": str(e["at"])}, ensure_ascii=False) + "\n\n")
+            if j and j[0] in ST.找("job")["终态"]:
+                yield ("event: 结束\ndata: " + json.dumps(
+                    {"status": j[0], "最后seq": seq}, ensure_ascii=False) + "\n\n")
+                return
+            if not j:
+                yield "event: 没有这个任务\ndata: {}\n\n"
+                return
+            _t5.sleep(0.4)
+        yield ("event: 超时\ndata: " + json.dumps(
+            {"说明": "流开了两分钟,断开 —— 带上 from_seq 再连,不会丢事件",
+             "最后seq": seq}, ensure_ascii=False) + "\n\n")
+
+    return StreamingResponse(流(), media_type="text/event-stream",
+                             headers={"cache-control": "no-cache",
+                                      "x-accel-buffering": "no"})
 
 
 # ── 静态页面 ───────────────────────────────────────────────────────

@@ -32,6 +32,12 @@
     ("_ref",           "TEXT",        "引用(如 secret_ref):**只存引用,不存内容**"),
     ("_hash",          "TEXT",        "内容哈希,认出「同一份内容」靠它"),
     ("_count",         "INTEGER",     "计数"),
+    ("_attempts",      "INTEGER",     "次数上限(max_attempts)"),
+    ("_code",          "TEXT",        "错误代码:**要能分「该不该重试」** —— "
+                                     "格式错误/权限不足/预算禁止不许盲重试"),
+    ("_detail",        "JSONB",       "错误细节(不进 code,因为 code 要能被当枚举用)"),
+    ("_check",         "BOOLEAN",     "「要不要人来看」的标记(needs_human_check)。"
+                                     "⚠️ 它**不是终态** —— 把它当成结束会让人去重跑"),
     ("_no",            "INTEGER",     "序号(version_no)"),
     ("_amount",        "NUMERIC(20,6)", "金额:**绝不用浮点** —— 钱的舍入误差会累积成对不上的账"),
     ("_known",         "BOOLEAN",     "「这个值知不知道」:配合 amount/value 用,**未知 ≠ 零**"),
