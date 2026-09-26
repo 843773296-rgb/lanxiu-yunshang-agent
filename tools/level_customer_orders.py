@@ -46,8 +46,17 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowled
                 os.path.join(ROOT, "fakedata")]
 import order_mix as OM
 
-上限 = 50          # 业务 2026-09-26:超过 50 单的算峰
-DB = OM.DB
+# ── 目标形状(业务 2026-09-26 定)────────────────────────────────────
+# **不再是「单点上限」,是「分布形状」。** 为什么换:削到 50 之后
+# 最多 162 → 109,而**中位数从 28 涨到 50** —— 尖峰削掉了,整体被顶平,
+# 比削峰前更不像真的。业务原话是要「没有 162 单这种离谱值」,
+# 而那该约束**形状**,不该约束**单点**(并行会话提的角度,业务采纳)。
+形状 = [(0.80, 5), (0.95, 15)]     # 八成客户 ≤5 单、九成半 ≤15 单
+上限 = 15                          # 给「还差多少」的日志用;判绿看上面那两条
+# 长尾的阶梯:按「第几档占多少人、每人几单」铺配额。
+# ⚠️ 这组数**是拍脑袋的** —— 服装零售的常见回购形状,没有真实数据来源。
+# 业务 2026-09-26 说「你拿数据定,别问我」,所以写明出处,以后有真数据就换。
+阶梯 = [(0.60, 1, 3), (0.20, 4, 5), (0.15, 6, 15), (0.05, 16, 60)]
 
 
 def 接不了的(c):
@@ -101,73 +110,99 @@ def 世界今天():
     return d if isinstance(d, dt.date) else dt.date.fromisoformat(str(d))
 
 
+def 配额(n人, n单, rng):
+    """按阶梯给 n 人铺配额,总数**正好等于** n 单。返回一个降序的配额列表。
+
+    做法:先按阶梯给每人抽一个配额,再把总数对齐到 n 单(多了从大头减、少了往大头加)。
+    ⚠️ **不许用「平均分 + 随机扰动」** —— 那样出来的是钟形,不是长尾,
+    而钟形正是这次要摆脱的那个形状(削峰之后的中位数 50 就是钟形的峰)。
+    """
+    q = []
+    for 占比, lo, hi in 阶梯:
+        for _ in range(int(n人 * 占比)):
+            q.append(rng.randint(lo, hi))
+    while len(q) < n人: q.append(rng.randint(1, 3))
+    q = q[:n人]
+    q.sort(reverse=True)
+    # 对齐总数:多了从最大的开始减,少了往最大的开始加 —— 长尾的头本来就该吸收余量
+    diff = n单 - sum(q)
+    i = 0
+    while diff and q:
+        if diff > 0:
+            q[i % len(q)] += 1; diff -= 1
+        else:
+            if q[i % len(q)] > 1: q[i % len(q)] -= 1; diff += 1
+            elif all(x <= 1 for x in q): break
+        i += 1
+    q.sort(reverse=True)
+    return q
+
+
 def 干(c, log=print, dry=False, 基准=None):
+    """**按长尾形状重排「订单归谁」。**
+
+    只动 `ordr.customer_id`,不动订单本身。四条硬约束(每一条都是踩过才加的):
+      ① 不碰夹具(`order_mix.受保护客户` + 判责客户)—— 名单**扫**出来,不手抄
+      ② 只搬干净的标品单(挂着着装人 / 售后 / 维保的不搬)
+      ③ **同店**(现在门店全一致,是个不变量)
+      ④ 接收方**建档日 ≤ 这一单的下单日**(C3),且不是注销 / 匿名化的客户
+    """
     受保护 = OM.受保护客户(c)
     受保护.update({k: "名下有判责工单" for k in OM.判责客户(c)})
-    # ⚠️ **两种「保护」不是一回事,混成一个集合当场出事(2026-09-26 实测)**:
-    #   ① **夹具**(`受保护客户` + `判责客户`)—— 连**汇总都不许重算**,
-    #      因为有的夹具「答案」就是 level / lifecycle 那一列本身。
-    #   ② **不能当接收方**(账户在注销中 / 已注销)—— 只是不许接没完成的单(A15),
-    #      它的汇总该照实算。
-    # 我第一版把 ② 也塞进「不许重算」,于是那 4 个客户**订单在名下、汇总却是旧的**,
-    # `dataset_check` 当场报「客户的单数和名下订单对不上(存 2 单,订单算出 15 单)」。
-    # **一个集合承担两种含义,代价是它在其中一种含义上一定会错。**
-    夹具 = dict(受保护)                      # ① 连汇总都不许动
-    受保护.update({k: "账户在注销中 / 已注销:接了没完成的单会破 A15" for k in 接不了的(c)})
-    不许重算 = set(夹具)                      # ② 只是不能当接收方,汇总照算
-    单数 = {r["id"]: r["n"] for r in c.execute(
-        "SELECT k.id, COUNT(o.id) n FROM customer k "
-        "LEFT JOIN ordr o ON o.customer_id=k.id GROUP BY k.id")}
+    夹具 = dict(受保护)
+    受保护.update({k: "账户在注销中 / 已注销 / 已匿名化:接了单会破 A15" for k in 接不了的(c)})
+    不许重算 = set(夹具)
+
     店 = {r["id"]: r["shop"] for r in c.execute("SELECT id, shop FROM customer")}
     建档 = {r["id"]: (r["created"] or "")[:10] for r in c.execute("SELECT id, created FROM customer")}
+    import random as _r
+    rng = _r.Random(20260926)          # 固定种子 —— 重建多少次都是同一个形状
 
-    搬了, 明细 = 0, []
+    搬了 = 0
     for shop in sorted(set(店.values())):
-        本店 = [cid for cid in sorted(单数) if 店[cid] == shop]
-        峰 = [cid for cid in 本店 if 单数[cid] > 上限 and cid not in 受保护]
-        受 = [(单数[cid], cid) for cid in 本店
-              if cid not in 受保护 and 单数[cid] < 上限]
-        heapq.heapify(受)
-        for cid in 峰:
-            单们 = 可搬的单(c, cid)
-            要搬 = 单数[cid] - 上限
-            if len(单们) < 要搬:
-                # **不硬搬**:干净的标品单不够削到上限时,只削到够,并把这件事说出来
-                log(f"  ⚠️ {cid} 要搬 {要搬} 单,而干净的标品单只有 {len(单们)} 单 —— 只搬这些")
-                要搬 = len(单们)
-            下单日 = {r[0]: (r[1] or "")[:10] for r in c.execute(
-                "SELECT id, created FROM ordr WHERE customer_id=?", (cid,))}
-            for oid in 单们[:要搬]:
-                # **按单挑**:接收方的建档日必须 ≤ 这一单的下单日(C3)。
-                # 挑不到就跳过这一单 —— **宁可少削一点,也不制造「订单比客户还老」**。
-                退 = []
-                to = None
-                while 受:
-                    n, cand = heapq.heappop(受)
-                    if 建档.get(cand, "9999") <= 下单日.get(oid, ""):
-                        to = cand; break
-                    退.append((n, cand))
-                for x in 退: heapq.heappush(受, x)
-                if to is None:
-                    continue
-                if not dry:
-                    c.execute("UPDATE ordr SET customer_id=? WHERE id=?", (to, oid))
-                单数[cid] -= 1; 单数[to] += 1; 搬了 += 1
-                明细.append((oid, cid, to))
-                if 单数[to] < 上限: heapq.heappush(受, (单数[to], to))
-    log(f"  {'(只看不写)' if dry else ''}搬了 {搬了} 单")
-    if 明细[:3]:
-        for oid, a, b in 明细[:3]: log(f"    例:{oid}  {a} → {b}")
+        # 这一店的可搬单(干净标品)和它们的下单日
+        可搬 = [(r[0], (r[1] or "")[:10]) for r in c.execute(
+            """SELECT o.id, o.created FROM ordr o WHERE o.shop=? AND o.kind='标品订单'
+                 AND o.wearer_id IS NULL
+                 AND o.id NOT IN (SELECT order_id FROM aftersale WHERE order_id IS NOT NULL)
+                 AND o.id NOT IN (SELECT order_id FROM maintain  WHERE order_id IS NOT NULL)
+               ORDER BY o.created, o.id""", (shop,))]
+        受 = [cid for cid in sorted(店) if 店[cid] == shop and cid not in 受保护]
+        if not 可搬 or not 受: continue
+        # 已经钉住的(不可搬的单)算进每个人的底数 —— 配额要在它之上铺
+        底 = {cid: 0 for cid in 受}
+        for r in c.execute("SELECT customer_id, COUNT(*) n FROM ordr WHERE shop=? GROUP BY customer_id",
+                           (shop,)):
+            if r[0] in 底: 底[r[0]] = 0        # 底数只记不可搬的,下面单独算
+        for r in c.execute(
+                """SELECT customer_id, COUNT(*) n FROM ordr o WHERE shop=? AND NOT (
+                     o.kind='标品订单' AND o.wearer_id IS NULL
+                     AND o.id NOT IN (SELECT order_id FROM aftersale WHERE order_id IS NOT NULL)
+                     AND o.id NOT IN (SELECT order_id FROM maintain  WHERE order_id IS NOT NULL))
+                   GROUP BY customer_id""", (shop,)):
+            if r[0] in 底: 底[r[0]] = r[1]
+        q = 配额(len(受), len(可搬), rng)
+        # 配额分给谁:**建档早的人排前面拿大配额** —— 老客户回购多,而且 C3 要求它建档得够早
+        受.sort(key=lambda x: (建档.get(x, "9999"), x))
+        剩 = {cid: max(0, q[i] - 底[cid]) for i, cid in enumerate(受)}
+        # 按单分配:老单优先给建档最早、还有配额的人
+        游标 = 0
+        for oid, 日 in 可搬:
+            到 = None
+            for k in range(len(受)):
+                cid = 受[(游标 + k) % len(受)]
+                if 剩.get(cid, 0) > 0 and 建档.get(cid, "9999") <= 日:
+                    到 = cid; 游标 = (游标 + k + 1) % len(受); break
+            if 到 is None: continue          # 没人接得了这一单(C3)—— 留在原处,不硬搬
+            if not dry:
+                c.execute("UPDATE ordr SET customer_id=? WHERE id=?", (到, oid))
+            剩[到] -= 1; 搬了 += 1
+    log(f"  {'(只看不写)' if dry else ''}按长尾形状重排了 {搬了} 单")
     if not dry:
         修不了 = 修C3(c, 受保护, log)
-        # ⚠️ **重算的基准日要用世界的今天,不是 order_mix 写死的建库基准日。**
-        # `order_mix.T = 2026-08-31`(建库那天),而世界已经走到 09-26 ——
-        # 拿 08-31 算出来的闲置天数,和 spec_check 的 C5(按世界今天比)**差 26 天**,
-        # 于是 C5 当场红。这不是 order_mix 的错,是它那个常量在「世界会走」之后就过期了。
         OM.T = 基准 or OM.T
-        log(f"  重算基准日:{OM.T}(世界的今天,不是建库那天 {OM.__dict__.get('_原T', '')})")
-        if 搬了 or 修不了 == 0:
-            OM.重算(c, 不许重算, log)        # **只跳夹具**,注销类的汇总照实算
+        log(f"  重算基准日:{OM.T}(世界的今天,不是建库那天)")
+        OM.重算(c, 不许重算, log)
     return 搬了, 受保护
 
 
@@ -214,21 +249,24 @@ def 修C3(c, 受保护, log=print):
     return 修不了
 
 
+def 形状现状(c):
+    """返回 (有单人数, 每档实际百分位, 中位, 最多)。**判绿用的是百分位,不是单点。**"""
+    n = sorted(r[0] for r in c.execute("SELECT COUNT(*) FROM ordr GROUP BY customer_id"))
+    if not n: return 0, {}, 0, 0
+    实际 = {}
+    for 分位, 目标 in 形状:
+        k = int(len(n) * 分位)
+        实际[分位] = (n[min(k, len(n) - 1)], 目标)
+    import statistics as st
+    return len(n), 实际, st.median(n), n[-1]
+
+
 def 自查(c, 受保护, log=print):
     坏 = []
-    # ⚠️ **「还有人超过上限」不算失败。** 第一版把它当硬失败 → 整轮回滚,
-    # 于是从零重建时(客户建档日和订单下单日的分布更紧)**一单都没削成**,
-    # 而已经搬对的那些也跟着扔了。
-    # 办不到的原因是实打实的:C3 要求接收方**建档日 ≤ 这一单的下单日**,
-    # 而有空位的恰恰是最新建档的那批客户 —— 老订单搬不到「那时还没开户」的人名下。
-    # 所以这一条改成**报实情**,由门禁那条棘轮(`backend/order_spread_check.py`)盯着「只许降不许涨」。
-    多 = [(r[0], r[1]) for r in c.execute(
-        "SELECT customer_id, COUNT(*) n FROM ordr GROUP BY customer_id "
-        "HAVING n>? ORDER BY n DESC", (上限,))]
-    if 多:
-        log(f"  ℹ️ 还有 {len(多)} 个客户超过 {上限} 单(最多 {多[0][1]},{多[0][0]})—— "
-            f"**搬不动的原因是 C3**:接收方的建档日必须 ≤ 这一单的下单日,"
-            f"而有空位的是最新建档的那批人。**这不算失败**,交给门禁那条棘轮盯着")
+    人, 实际, 中位, 最多 = 形状现状(c)
+    for 分位, (真, 目标) in sorted(实际.items()):
+        if 真 > 目标:
+            坏.append(f"{分位:.0%} 分位是 {真} 单,目标 ≤{目标}")
     跨店 = c.execute("SELECT COUNT(*) FROM ordr o JOIN customer k ON k.id=o.customer_id "
                      "WHERE o.shop<>k.shop").fetchone()[0]
     if 跨店: 坏.append(f"{跨店} 单的门店和客户的门店对不上 —— 这个不变量被破了")
@@ -236,12 +274,12 @@ def 自查(c, 受保护, log=print):
         WHERE o.wearer_id IS NOT NULL AND o.wearer_id NOT IN
               (SELECT id FROM wearer WHERE customer_id=k.id)""").fetchone()[0]
     if 脏: 坏.append(f"{脏} 单的着装人不属于这一单的客户")
-    # ⚠️ 这句话原来写死成「没有人超过 N 单」,而上面刚报了「还有 97 个超过」——
-    # **同一次输出里两句话互相打脸**。改成照实说最多多少。
-    最多 = c.execute("SELECT MAX(n) FROM (SELECT COUNT(*) n FROM ordr GROUP BY customer_id)"
-                    ).fetchone()[0]
-    log("  自查:" + ("、".join(坏) if 坏 else
-                    f"最多 {最多} 单(削峰目标 {上限});门店一致;着装人都属本人"))
+    匿 = c.execute("""SELECT COUNT(*) FROM ordr WHERE customer_id IN
+        (SELECT id FROM customer WHERE phone LIKE 'DELETED-%')""").fetchone()[0]
+    if 匿: 坏.append(f"{匿} 单挂在已匿名化的客户名下")
+    log(f"  自查:有单 {人} 人 · 中位 {中位:.0f} · 最多 {最多} · "
+        + " · ".join(f"{p:.0%}分位 {真}(目标 ≤{目}) " for p, (真, 目) in sorted(实际.items()))
+        + ("—— " + "、".join(坏) if 坏 else "—— 形状达标;门店一致;着装人都属本人;匿名化名下无单"))
     return not 坏
 
 

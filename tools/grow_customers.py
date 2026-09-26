@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""补客户 —— 把客户盘子从 108 个补到 1000 个。
+"""补客户 —— 把客户盘子补到约 8100 个(业务 2026-09-26 从 1000 改上来,理由见 `目标客户数`)。
 
 ## 为什么要补
 
@@ -46,7 +46,17 @@ DB = os.path.join(ROOT, "backend", "lanxiu.db")
 SEED = 20260919
 # 用户拍板「客户 1000」,又说「数量别是 5000、100 这种,要有随机性,看起来真实」——
 # 所以是**一千上下的一个不整的数**,由固定种子定下来(重建多少次都是同一个数)
-目标客户数 = 1000 + random.Random(SEED).randrange(-60, 80)
+#
+# ⚠️ **2026-09-26 业务改了这个数:1000 → 约 8100。** 理由是算术,不是偏好:
+# 3 家店一年 32499 单(含电商标品),摊在 968 个客户头上是**人均 33.6 单** ——
+# 一个顾客一年买 33 次汉服,点进他的订单历史一眼假。
+# 而业务这次定的目标是**分布形状**(八成客户 ≤5 单、九成半 ≤15 单),
+# 而形状受平均数限制:要让八成人 ≤5 单,人均必须压到 4 左右 ——
+# **人均只有两种动法:加客户,或者砍订单。**
+# 摆过的代价:砍订单会毁掉库存预警(砍到 14% 之后只剩 85 个 SKU 还有 ≥10 条销量,
+# 可售天数就成了噪声);而**订单总量本身站得住** —— 站不住的是客户数。
+# 所以选的是加客户。**订单总量一分没动。**
+目标客户数 = 8100 + random.Random(SEED).randrange(-60, 80)
 T = dt.date(2026, 8, 31)          # 建库基准日
 量体截止 = T                       # 演示世界的「今天」—— 量体不能晚于它
 
@@ -87,7 +97,7 @@ def rollback(c):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="补客户到 1000 个(可按前缀回滚)")
+    ap = argparse.ArgumentParser(description="补客户到约 8100 个(可按前缀回滚)")
     ap.add_argument("--rollback", action="store_true")
     a = ap.parse_args()
     c = sqlite3.connect(DB)
@@ -110,6 +120,17 @@ def main():
                    {r[0] for r in c.execute("SELECT phone FROM phone_alias")}
         # **名字不重** —— 同名会进「疑似重复客户」的队列,那是客户合并用例的地盘
         用过的名 = {r[0] for r in c.execute("SELECT name FROM customer")}
+        重名数 = 0          # 兜底用掉几次 —— 收尾时报出来,别让它静默发生
+        # ⚠️ **容量先算,不够就当场退出** —— 这一条是补票买的:
+        # 名字池原来只有 6000 种组合,而目标提到 8065 之后它**永远取不完**,
+        # 表现是烧了 26 分钟 CPU 还在跑,看起来只像「补八千个客户比较慢」。
+        # **取不到的时候应该喊,不该一直试。**
+        名字池 = len(SURN) * (len(GIVEN_F) ** 2 + len(GIVEN_M) ** 2 +
+                            len(GIVEN_F) + len(GIVEN_M))
+        if 目标客户数 > 名字池 * 0.6:
+            sys.exit(f"❌ 名字池只有 {名字池} 种组合,目标客户数 {目标客户数} 太接近它 —— "
+                     f"拒绝开跑(再往上就会变成越来越长的拒绝采样)。"
+                     f"要么加姓 / 加名,要么把目标数降下来。")
         tpls = {r["code"]: r for r in c.execute("SELECT code, status FROM measure_tpl")}
         TPL_ITEMS = {"LT01": ["MI01", "MI02", "MI03", "MI13", "MI04", "MI05", "MI06", "MI14", "MI09"],
                      "LT02": ["MI01", "MI02", "MI04", "MI05", "MI09"],
@@ -125,12 +146,29 @@ def main():
                     用过的号.add(p)
                     return p
 
+        # ⚠️ **这里原来是一个会死循环的拒绝采样。** 名字池只有
+        # `len(SURN) * (len(GIVEN_F) + len(GIVEN_M))` = **6000** 种组合,
+        # 而 2026-09-26 把目标客户数提到 8065 之后,它**永远取不完** ——
+        # 表现不是报错,是**一直转**:实测烧了 26 分钟 CPU 还在跑,
+        # 看起来只像「补 8000 个客户比较慢」。
+        # **一个不会报错、只会一直转的容量上限,和「慢」长得一模一样。**
+        #
+        # 两处修:
+        #   ① **双字名**(中文本来就以双字名为主),池子从 6000 涨到 ~36 万 —— 够用很多年
+        #   ② **兜底**:试够次数就允许重名并记一笔。同名同姓在真实客户里本来就有
+        #      (「客户合并」那套功能存在的理由正是它),所以重名不算脏数据;
+        #      **但死循环是**。
         def name(g):
-            while True:
-                n = rng.choice(SURN) + rng.choice(GIVEN_F if g == "女" else GIVEN_M)
+            池 = GIVEN_F if g == "女" else GIVEN_M
+            for 第 in range(200):
+                名 = rng.choice(池) if 第 % 3 == 0 else rng.choice(池) + rng.choice(池)
+                n = rng.choice(SURN) + 名
                 if n not in 用过的名:
                     用过的名.add(n)
                     return n
+            nonlocal 重名数
+            重名数 += 1
+            return rng.choice(SURN) + rng.choice(池) + rng.choice(池)
 
         def consent(wid, scope, by, rel, at):
             nonlocal n_cs
