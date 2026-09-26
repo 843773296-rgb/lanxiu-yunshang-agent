@@ -87,6 +87,18 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 三页页面冒烟(要
 	  else echo "  ⚠️ 演示库里没有工作流 —— 先 make seed-demo 或在页面上建一个。"; \
 	       echo "     **这不叫通过,这叫没测到**"; exit 1; fi
 	@echo ""
+	@echo "▸ Agent 配置页:**结构对账**(连接下拉框项数 + 能力那一栏)"
+	@A=$$(./.venv/bin/python -c "import json,urllib.request as u; \
+		r=u.Request('http://127.0.0.1:8801/api/v1/projects/project_demo_a/agents', \
+		headers={'X-Dev-User':'U002'}); d=json.load(u.urlopen(r)); \
+		print(d['items'][0]['id'] if d['items'] else '')" 2>/dev/null); \
+	  if [ -n "$$A" ]; then node tests/e2e/page_smoke.js "$(HASH)/agent/$$A" 2>&1 | tail -2; \
+	  else echo "  ⚠️ 演示库里没有 Agent —— 在页面上建一个。**这不叫通过,这叫没测到**"; \
+	       exit 1; fi
+	@echo ""
+	@for h in '#/agents' '#/tools'; do \
+		printf "  %-12s " "$$h"; node tests/e2e/page_smoke.js "$$h" 2>&1 | tail -1; done
+	@echo ""
 	@echo "⚠️ 页面冒烟跑的是**加载路径**,不是视觉 —— 它证明「取到数并渲染了」,"
 	@echo "   不证明「排版对」。视觉要人打开 http://127.0.0.1:8801 看。"
 

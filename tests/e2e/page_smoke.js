@@ -133,6 +133,37 @@ setTimeout(() => {
       }).catch((e) => { console.log("  ⚠️ 结构对账没跑成:" + e.message); });
   }
 
+  /* Agent 配置页的结构对账 —— 同一条道理:**「有内容」不等于「填上了」**。
+   * 一个连接下拉框渲染成空的(只有「(没选)」那一项)在字数上完全正常,
+   * 而它的表现是「这个 Agent 选不了模型」—— 而人会去怀疑接口。
+   * 数量从**接口返回的可选项**里数,不从页面自己数。 */
+  if (/^#\/agent\//.test(global.location.hash)) {
+    const aid = decodeURIComponent(global.location.hash.slice(8));
+    realFetch(`${基址}/api/v1/projects/project_demo_a/agents/${aid}`,
+              { headers: { "X-Dev-User": "U002" } })
+      .then((r) => r.json()).then((d) => {
+        const body = 写过.get("body") || "";
+        const 坏 = [];
+        // 下拉框:可选连接数 + 一个「(没选)」
+        const opt = (body.match(/<option /g) || []).length;
+        const 应 = (d["可选连接"] || []).length + 1;
+        if (opt !== 应)
+          坏.push(`连接下拉框 ${opt} 项,接口给了 ${应 - 1} 条连接(+1 个「没选」)`);
+        // **能力那一栏必须写出来**:附录 D.2「不按模型家族名字推断兼容」
+        if (!/原生工具调用/.test(body))
+          坏.push("连接那一栏没写「原生工具调用」—— "
+                  + "**那一栏显示的必须是探测回来的能力,不是模型叫什么**(附录 D.2)");
+        if (坏.length) {
+          console.log("=".repeat(70));
+          坏.forEach((e) => console.log("  ❌ " + e));
+          console.log("❌ Agent 配置页是个空壳");
+          process.exit(1);
+        }
+        console.log(`  Agent 页结构对账:连接下拉框 ${opt} 项(含「没选」),`
+          + `能力那一栏写了「原生工具调用」`);
+      }).catch((e) => { console.log("  ⚠️ 结构对账没跑成:" + e.message); });
+  }
+
   const 写过的 = new Set(填过.map(([k]) => k));
   const 占位 = 填过.filter(([k, v]) => {
     if (!/加载中|undefined|NaN|\[object Object\]/.test(v)) return false;

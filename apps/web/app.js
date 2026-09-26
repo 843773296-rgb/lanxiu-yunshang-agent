@@ -71,8 +71,8 @@ const 导航 = [
   ["#/prompts", "Prompt 管理", true],
   ["grp", "编排"],
   ["#/workflows", "工作流 Workflow", true, true],
-  ["#/agents", "智能体 Agent", false, true],
-  ["#/tools", "工具与能力", false, true],
+  ["#/agents", "智能体 Agent", true, true],
+  ["#/tools", "工具与能力", true, true],
   ["#/human", "人工待办", false, true],
   ["grp", "知识与 RAG"],
   ["#/kb", "知识库", false, true],
@@ -1056,6 +1056,401 @@ async function 页_运行详情(rid) {
       不会在外部返回成功之前先发一条成功事件。seq 在 Run 内单调,断线能按 seq 续。</div>`;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 智能体 Agent(规格 §9)与工具目录(§11.1)
+ * ══════════════════════════════════════════════════════════════════
+ *
+ * ## 这两页刻意做成什么样
+ *
+ * ① **工具数旁边写着它不是能力分**(§9.1:「不按工具数量给 Agent 打能力强弱分」)。
+ *    一个显示「工具数 7」的列表天然会被读成「它比那个 3 的强」——
+ *    而它只表示授权候选集合的规模。
+ *
+ * ② **模型连接那一栏直接显示「原生工具调用:支持 / 没声明」**。
+ *    §9.3 要能力检查,附录 D.2 补了「**不按模型家族名字推断兼容**」——
+ *    所以这里不显示模型叫什么,显示**探测回来的能力**。
+ *    选一条「没声明」的连接,点校验会当场被挡住并说清为什么。
+ *
+ * ③ **运行限制每一条旁边写着它的强制执行位置和落地没落地**(§9.6 那一栏)。
+ *    一个只存在于表单里、没有任何地方读的上限,**和没有这条限制一模一样** ——
+ *    而界面上它是填好的。所以这里把「已落地 / 还没落地」显示出来。
+ *
+ * ④ 那几个默认值(回合 8 / 工具 12 / 期限 180 秒)标着「**设计初值**」——
+ *    §9.6 结尾:「当前没有性能或模型优劣的实测结论」。
+ */
+async function 页_agent列表() {
+  $("#main").innerHTML = `<div class="crumb">编排 / 智能体</div>
+    <div class="head"><div><h1>智能体 Agent</h1>
+      <div class="sub">模型自己决定下一步做什么,<b>而程序校验、执行、记录和限制它</b>。
+        模型说「调用工具」是请求 —— 真正执行的是服务端的工具网关。</div></div>
+      <div><button class="pri" id="new">新建 Agent</button></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  $("#new").onclick = 弹_新建agent;
+  try {
+    const d = await 请求(`${P()}/agents`);
+    if (!d.items.length) {
+      const s = 状态("", "还没有 Agent",
+        "新建一个 —— 模板会预填**一条声明了支持原生工具调用的连接**、"
+        + "两个演示工具(搜索 / 写报告)和一组限制初值。\n\n"
+        + "模板**只预填草稿**:不调模型、不绑生产环境。",
+        { 文: "新建 Agent", 做: 弹_新建agent });
+      $("#list").innerHTML = s.html; s.挂(); return;
+    }
+    $("#list").innerHTML = `<table><thead><tr>
+      <th>名称</th><th>用途</th><th>模型连接</th><th>工具数</th>
+      <th>最新冻结版本</th><th>生产引用版本</th><th>校验状态</th><th></th>
+      </tr></thead><tbody>`
+      + d.items.map((r) => `<tr>
+        <td><a href="#/agent/${encodeURIComponent(r.id)}">${esc(r["名称"])}</a></td>
+        <td>${esc(r["用途"] || "—")}</td>
+        <td class="k">${esc(r["模型连接"] || "没选")}</td>
+        <td title="${esc(r["工具数说明"])}">${r["工具数"]}
+            <span class="k">个候选</span></td>
+        <td>${r["最新冻结版本"] ? `<span class="pill">${esc(r["最新冻结版本"])}</span>`
+              : `<span class="k">还没冻结过</span>`}</td>
+        <td><span class="stale" title="${esc(r["生产引用说明"])}">还没接</span></td>
+        <td>${r["校验状态"] === "通过" ? `<span class="pill ok">通过</span>`
+              : `<span class="pill warn">${esc(r["校验状态"])}</span>`}</td>
+        <td><a href="#/agent/${encodeURIComponent(r.id)}">配置</a></td>
+      </tr>`).join("") + `</tbody></table>
+      <div class="note"><b>「工具数」那一栏只表示授权候选集合的规模</b> ——
+        规格 §9.1 明写<b>不按工具数量给 Agent 打能力强弱分</b>。
+        一个显示 7 的会被读成「比那个 3 的强」,而那两件事没有关系。</div>`;
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+function 弹_新建agent() {
+  const 名 = prompt("Agent 名称:");
+  if (!名) return;
+  请求(`${P()}/agents`, { method: "POST", body: JSON.stringify({ 名称: 名 }) })
+    .then((d) => { location.hash = `#/agent/${encodeURIComponent(d.id)}`; })
+    .catch((e) => alert(`${e.体?.code || "出错"}:${e.message}\n\n下一步:${e.体?.advice || "—"}`));
+}
+
+let agent态 = null;
+
+async function 页_agent配置(aid) {
+  const d = await 请求(`${P()}/agents/${encodeURIComponent(aid)}`);
+  agent态 = { aid, ...d, 脏: false, Tab: "行为", 事件: [], 跑结果: null };
+  画_agent();
+}
+
+function 画_agent() {
+  const g = agent态, cfg = g["草稿"]["配置"] || {};
+  const 报 = g["草稿"]["上次校验报告"];
+  const tabs = ["行为", "工具与知识", "权限与限制", "调试", "版本"];
+  $("#main").innerHTML = `
+    <div class="crumb"><a href="#/agents">智能体</a> / ${esc(g["名称"])}</div>
+    <div class="head"><div><h1>${esc(g["名称"])}</h1>
+      <div class="sub">草稿 r${g["草稿"]["revision"]}
+        ${g.脏 ? `<span class="stale">有未保存的改动</span>` : ""}</div></div>
+      <div><button id="v">校验</button><button id="run">试运行</button>
+        <button class="pri" id="freeze">冻结为新版本</button></div></div>
+    <div class="filters">${tabs.map((t) =>
+      `<button data-tab="${t}" class="${g.Tab === t ? "pri" : ""}">${t}</button>`).join("")}</div>
+    <div id="body"></div>
+    <div class="footbar"><span id="fb">${報状态(报, g.脏)}</span>
+      <span class="grow"></span><button id="save">保存草稿</button></div>`;
+  $("#v").onclick = 做_校验agent;
+  $("#run").onclick = 做_跑agent;
+  $("#freeze").onclick = 做_冻结agent;
+  $("#save").onclick = 做_存agent;
+  document.querySelectorAll("[data-tab]").forEach((b) => {
+    b.onclick = () => { agent态.Tab = b.dataset.tab; 画_agent(); };
+  });
+  画_agent正文();
+}
+
+function 報状态(报, 脏) {
+  if (脏) return "<b>有未保存的改动</b> —— 保存草稿不影响任何已冻结版本,也不影响生产。";
+  if (!报) return "还没校验过 —— <b>客户端看起来没问题不代替服务端校验</b>。";
+  return 报["通过"] ? "上次校验:<b>通过</b>"
+    : `上次校验:<b>${报["阻断数"]} 条阻断</b> / ${报["警告数"]} 条警告`;
+}
+
+function 字段(标, 键, 值, 说明, 多行) {
+  const v = 值 === undefined || 值 === null ? ""
+    : (typeof 值 === "object" ? JSON.stringify(值, null, 1) : String(值));
+  return `<div class="fieldrow"><label>${esc(标)}</label>
+    ${多行 ? `<textarea data-k="${esc(键)}" rows="${多行}">${esc(v)}</textarea>`
+           : `<input data-k="${esc(键)}" value="${esc(v)}">`}</div>
+    ${说明 ? `<div class="note">${md(说明)}</div>` : ""}`;
+}
+
+function 画_agent正文() {
+  const g = agent态, cfg = g["草稿"]["配置"] || {};
+  const 问 = (报 => (报?.问题 || []))(g["草稿"]["上次校验报告"]);
+  const 报错块 = 问.length ? `<div class="err" style="padding:10px;margin-bottom:12px">
+      ${问.map((p) => `<div style="margin-bottom:6px">
+        <b>${esc(p.code)}</b> ${p.field_path ? `<code>${esc(p.field_path)}</code>` : ""}
+        <br>${md(p["消息"])}<br><span class="k">怎么改:${md(p["建议"])}</span></div>`).join("")}
+    </div>` : "";
+  if (g.Tab === "行为") {
+    $("#body").innerHTML = 报错块 + `<div class="card">
+      <h4>模型连接</h4>
+      <div class="fieldrow"><label>connection_version_id</label>
+        <select data-k="connection_version_id">
+          <option value="">(没选)</option>
+          ${g["可选连接"].map((c) => `<option value="${esc(c.id)}"
+            ${cfg.connection_version_id === c.id ? "selected" : ""}>
+            ${esc(c["名称"])} · 原生工具调用:${c["原生工具调用"] ? "支持" : "没声明"}
+            · ${esc(c["模式"] || "?")}</option>`).join("")}
+        </select></div>
+      <div class="note">这一栏显示的是<b>探测回来的能力</b>,不是模型叫什么名字。
+        规格附录 D.2:<b>不按模型家族名字推断兼容</b> —— 能不能按契约调工具是按型号来的。
+        选一条「没声明」的,点校验会当场被挡住。</div>
+      </div>
+      <div class="card">${字段("目标模板", "task_template", cfg.task_template,
+        "**和长期角色指令分开**(§9.3):这一次要交付什么,绑运行输入。", 3)}
+        ${字段("指令(工作原则)", "instructions", cfg.instructions,
+        "引用 Prompt 版本;**局部覆盖必须进版本 Diff**(§9.3)—— "
+        + "一段只存在于某处覆盖里的提示词,在版本对比上看不见。", 3)}
+        ${字段("输入 Schema", "input_schema", cfg.input_schema, "", 4)}
+        ${字段("输出契约", "output_schema", cfg.output_schema,
+        "**结构校验不能代替事实质量**(§9.3);声明的文件必须确实存在且可访问。", 6)}
+        ${字段("完成判据", "completion_criteria", cfg.completion_criteria,
+        "**必要证据里点名的字段必须真的在输出契约里** —— "
+        + "一条点名了不存在字段的判据永远查不到东西,而它在界面上是填好的。", 3)}
+        ${字段("无法完成策略", "incomplete_strategy", cfg.incomplete_strategy,
+        "明确哪些情况允许部分完成;**不把所有结果统一显示成成功**(§9.3)。", 2)}
+      </div>`;
+  } else if (g.Tab === "工具与知识") {
+    const 选中 = new Set((cfg.tools || []).map((t) => (t.tool_version_id || t)));
+    $("#body").innerHTML = 报错块 + `<div class="card"><h4>工具(勾选=授权给它)</h4>
+      <table><thead><tr><th></th><th>工具</th><th>版本</th><th>读写类型</th>
+        <th>要确认</th><th>能查外部状态</th><th>可轮询</th>
+        <th>服务端绑定参数</th></tr></thead><tbody>`
+      + g["可选工具"].map((t) => `<tr>
+        <td><input type="checkbox" data-tool="${esc(t.id)}"
+            ${选中.has(t.id) ? "checked" : ""}></td>
+        <td><b>${esc(t["名称"])}</b><div class="k">${esc(t["模型可见说明"] || "")}</div></td>
+        <td class="k">${esc(t["版本"])}</td>
+        <td>${t["读写类型"] === "只读" ? `<span class="pill">只读</span>`
+              : `<span class="pill warn">${esc(t["读写类型"])}</span>`}</td>
+        <td>${t["要确认吗"] ? "是" : `<span class="k">否</span>`}</td>
+        <td>${t["能查外部状态吗"] ? "是" : `<span class="k">否</span>`}</td>
+        <td>${t["可轮询吗"] ? "是" : `<span class="k">否</span>`}</td>
+        <td class="k">${esc((t["服务端绑定参数"] || []).join(", ") || "—")}</td>
+      </tr>`).join("") + `</tbody></table>
+      <div class="note"><b>服务端绑定参数模型看不见,也不接受它传入</b>(§9.4)——
+        输出目录、project_id、允许的文档库由服务端定。
+        判据是「模型<b>提到</b>了这个键」,不是「值不一样」:
+        它恰好填对了一次也不放行,因为<b>「这次值是对的」不是一条安全性质</b>。<br>
+        <b>不可逆写入必须有确认策略</b>,而且<b>模型不能批准自己</b>(§9.6)。</div>
+      </div>
+      <div class="card"><h4>上下文与记忆</h4>
+      ${字段("context_policy", "context_policy", cfg.context_policy, "", 3)}
+      <div class="note"><b>长期记忆首版关闭</b>(§9.5)——
+        未经审核就持久化的错误事实会跨任务传染,而作用域、保留期限、撤回都还没实现。<br>
+        资料里的指令<b>是资料,不是授权</b>:一句「忽略之前的规则」改不了 allowed_scopes。</div>
+      </div>`;
+    $("#body").querySelectorAll("[data-tool]").forEach((b) => {
+      b.onchange = () => {
+        const 现 = new Set((agent态["草稿"]["配置"].tools || [])
+          .map((t) => (t.tool_version_id || t)));
+        if (b.checked) 现.add(b.dataset.tool); else 现.delete(b.dataset.tool);
+        agent态["草稿"]["配置"].tools = [...现];
+        agent态.脏 = true; $("#fb").innerHTML = 報状态(null, true);
+      };
+    });
+  } else if (g.Tab === "权限与限制") {
+    $("#body").innerHTML = 报错块 + `<div class="card"><h4>运行限制</h4>
+      ${字段("limits", "limits", cfg.limits, "", 5)}
+      <div class="note">界面上那几个数字(回合 8 / 工具 12 / 期限 180 秒)是
+        <b>设计初值</b> —— 规格 §9.6 结尾:<b>当前没有性能或模型优劣的实测结论</b>,
+        真实任务要靠评测再定。人工确认场景的等待截止时间<b>不能照搬这几个秒数</b>。</div>
+      </div>
+      <div class="card"><h4>每条限制在哪儿被强制执行</h4>
+      <table><thead><tr><th>限制</th><th>单位</th><th>强制执行位置</th>
+        <th>落地了吗</th></tr></thead><tbody>`
+      + g["运行限制说明"].map((l) => `<tr>
+        <td><b>${esc(l["中文"])}</b><div class="k">${md(l["说明"])}</div></td>
+        <td class="k">${esc(l["单位"])}</td>
+        <td><code style="font-size:11px">${esc(l["强制执行位置"])}</code></td>
+        <td>${l["已落地"] ? `<span class="pill ok">已落地</span>`
+              : `<span class="pill warn">还没落地</span>`}</td>
+      </tr>`).join("") + `</tbody></table>
+      <div class="note"><b>为什么把「落地了吗」显示出来</b>:一个只存在于表单里、
+        没有任何地方读的上限,<b>和没有这条限制一模一样</b> —— 而界面上它是填好的。
+        标「还没落地」的那几条,现在<b>拦不住任何东西</b>。</div>
+      </div>`;
+  } else if (g.Tab === "调试") {
+    const r = g.跑结果;
+    $("#body").innerHTML = `<div class="two">
+      <div class="card"><h4>本次任务</h4>
+        ${字段("输入", "__输入", g.调试输入 || { products: ["甲", "乙"] }, "", 4)}
+        <div class="note">输入<b>在调用前按 Schema 校验</b> ——
+          §C.2「信息缺失」那一行要的是「询问或拦截,<b>不猜输入</b>」。</div>
+      </div>
+      <div class="card"><h4>这一次跑成什么样</h4>
+        ${r ? `<div class="kpi">${esc(r["执行状态中文"] || r["执行状态"])}</div>
+          <div class="k">停止原因 <code>${esc(r["停止原因"] || "—")}</code>
+            · 任务达标 <b>${esc(r["任务达标"])}</b></div>
+          <div class="note">${md(r["达标说明"] || "")}</div>
+          <pre style="font-size:12px;white-space:pre-wrap">${esc(JSON.stringify(r["输出"], null, 1))}</pre>
+          <div class="k">用量 ${esc(JSON.stringify(r["用量"] || {}))}</div>
+          <a href="#/wfrun/${encodeURIComponent(r.id)}">看完整运行详情 →</a>`
+          : `<div class="k">还没跑过。点右上「试运行」——
+              它返回 <b>202 排队中</b>,一个模型都还没调。</div>`}
+      </div></div>
+      <div class="card"><h4>真实回合与工具调用</h4>
+      ${(g.事件 || []).length ? (g.事件 || []).map((e) => `<div style="font-size:12px">
+          <span class="k">${esc(String(e.seq).padStart(2, "0"))}</span>
+          <code>${esc(e["类型"])}</code>
+          <span class="k">${esc(JSON.stringify(e["载荷"] || {}).slice(0, 150))}</span></div>`).join("")
+        : `<div class="k">跑一次就有了。</div>`}
+      <div class="note"><b>看这里能回答「它为什么没用那个工具」</b>:
+        <code>agent.adapters</code> 说清接了哪些没接哪些;
+        <code>tool.rejected</code> 说清被哪道闸挡了;
+        <code>llm.tool_request_ignored</code> 说清「模型想调但这不是 Agent 节点」。<br>
+        <b>不承诺展示模型的内部思考过程</b>(§14.3)—— 只记可观察的输入、动作、结果。</div>
+      </div>`;
+    const t = $("#body").querySelector('[data-k="__输入"]');
+    if (t) t.onchange = () => {
+      try { agent态.调试输入 = JSON.parse(t.value); }
+      catch (e) { alert(`输入不是合法 JSON:${e.message}`); }
+    };
+  } else {
+    $("#body").innerHTML = g["版本们"].length
+      ? `<table><thead><tr><th>版本</th><th>内容哈希</th><th>变更说明</th>
+          <th>冻结于</th><th>冻结人</th></tr></thead><tbody>`
+        + g["版本们"].map((v) => `<tr><td><span class="pill">${esc(v["版本"])}</span></td>
+            <td><code>${esc(v["内容哈希"])}</code></td>
+            <td>${esc(v["变更说明"] || "")}</td>
+            <td class="k">${esc((v["冻结于"] || "").slice(0, 16).replace("T", " "))}</td>
+            <td class="k">${esc(v["冻结人"] || "")}</td></tr>`).join("")
+        + `</tbody></table><div class="note">冻结了<b>不等于发布了</b>。
+            工具和策略都固定成确切版本 —— <b>新 Agent 版本不会自动替换正在使用它的
+            生产流程</b>(§3.2)。</div>`
+      : `<div class="k">还没冻结过版本。</div>`;
+  }
+  // 表单字段回写
+  $("#body").querySelectorAll("[data-k]").forEach((el) => {
+    if (el.dataset.k.startsWith("__")) return;
+    el.onchange = () => {
+      const k = el.dataset.k, v = el.value.trim();
+      const cfg2 = agent态["草稿"]["配置"];
+      if (!v) { delete cfg2[k]; }
+      else if (v[0] === "{" || v[0] === "[") {
+        try { cfg2[k] = JSON.parse(v); }
+        catch (e) { alert(`${k} 不是合法 JSON:${e.message}\n\n没保存这一项。`); return; }
+      } else { cfg2[k] = v; }
+      agent态.脏 = true; $("#fb").innerHTML = 報状态(null, true);
+    };
+  });
+}
+
+async function 做_存agent() {
+  try {
+    const d = await 请求(`${P()}/agents/${encodeURIComponent(agent态.aid)}/draft`, {
+      method: "PATCH", headers: { "If-Match": String(agent态["草稿"]["revision"]) },
+      body: JSON.stringify({ 配置: agent态["草稿"]["配置"] }),
+    });
+    agent态["草稿"]["revision"] = d.revision;
+    agent态.脏 = false;
+    // 改过就把上次的校验报告作废 —— **一份对着旧配置的报告比没有报告更糟**
+    agent态["草稿"]["上次校验报告"] = null;
+    画_agent();
+  } catch (e) {
+    if (e.码 === 409) {
+      alert(`版本冲突:${e.message}\n\n下一步:${e.体?.advice || ""}`);
+      return 路由();
+    }
+    alert(`${e.体?.code || "出错"}:${e.message}\n\n下一步:${e.体?.advice || "—"}`);
+  }
+}
+
+async function 做_校验agent() {
+  if (agent态.脏) await 做_存agent();
+  try {
+    agent态["草稿"]["上次校验报告"] =
+      await 请求(`${P()}/agents/${encodeURIComponent(agent态.aid)}/validate`,
+                { method: "POST" });
+    画_agent();
+  } catch (e) { alert(`${e.体?.code || "出错"}:${e.message}`); }
+}
+
+async function 做_冻结agent() {
+  const 说明 = prompt("变更说明(必填)——「这一版改了什么、为什么」。");
+  if (说明 === null) return;
+  if (agent态.脏) await 做_存agent();
+  try {
+    const d = await 请求(`${P()}/agents/${encodeURIComponent(agent态.aid)}/versions`,
+      { method: "POST", body: JSON.stringify({ 变更说明: 说明 }) });
+    alert(`冻结成 ${d["版本"]}。\n\n内容哈希 ${d["内容哈希"].slice(0, 26)}…\n\n${d.note}`);
+    return 路由();
+  } catch (e) {
+    const b = e.体 || {};
+    alert(`${b.code || "出错"}:${e.message}\n\n下一步:${b.advice || "—"}`
+      + (b.field_errors ? "\n\n" + Object.entries(b.field_errors)
+          .map(([k, v]) => `· ${k}:${v}`).join("\n") : ""));
+    if (b.code === "VALIDATION") return 做_校验agent();
+  }
+}
+
+async function 做_跑agent() {
+  if (agent态.脏) await 做_存agent();
+  const 输入 = agent态.调试输入 || { products: ["甲", "乙"] };
+  try {
+    const d = await 请求(`${P()}/agent-runs`, {
+      method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ agent_id: agent态.aid, 输入 }),
+    });
+    agent态.Tab = "调试"; 画_agent();
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 600));
+      let r;
+      try { r = await 请求(`${P()}/execution-runs/${encodeURIComponent(d.resource_id)}`); }
+      catch (e) { continue; }
+      agent态.事件 = r["事件"] || [];
+      if (r["是终态吗"]) { agent态.跑结果 = r; 画_agent(); return; }
+      画_agent正文();
+    }
+    alert("轮询了 12 秒还没到终态。**这不代表它失败了** —— "
+      + "可能 Worker 没起来(make dev 会一起起)。");
+  } catch (e) {
+    const b = e.体 || {};
+    alert(`${b.code || "出错"}:${e.message}\n\n下一步:${b.advice || "—"}`
+      + (b.field_errors ? "\n\n" + Object.entries(b.field_errors)
+          .map(([k, v]) => `· ${k}:${v}`).join("\n") : ""));
+    if (b.code === "VALIDATION") return 做_校验agent();
+  }
+}
+
+/* ── 工具目录(§11.1)──────────────────────────────────────────── */
+async function 页_工具目录() {
+  $("#main").innerHTML = `<div class="crumb">编排 / 工具与能力</div>
+    <div class="head"><div><h1>工具目录</h1>
+      <div class="sub"><b>未注册的工具名一律拒绝</b>(§9.4)——
+        不能让模型凭一个名字临时发网络请求。</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/tools`);
+    if (!d.items.length) {
+      $("#list").innerHTML = 状态("", "还没有注册工具",
+        "`make seed-demo` 会灌两个演示工具(搜索 / 写报告)。").html;
+      return;
+    }
+    $("#list").innerHTML = `<table><thead><tr><th>名称</th><th>用途</th>
+      <th>读写类型</th><th>接入方式</th><th>最新版本</th><th>状态</th>
+      </tr></thead><tbody>`
+      + d.items.map((r) => `<tr>
+        <td><b>${esc(r["名称"])}</b></td><td>${esc(r["用途"] || "—")}</td>
+        <td>${r["读写类型"] === "只读" ? `<span class="pill">只读</span>`
+              : `<span class="pill warn">${esc(r["读写类型"])}</span>`}</td>
+        <td class="k">${esc(r["接入方式"])}</td>
+        <td>${r["最新版本"] ? `<span class="pill">${esc(r["最新版本"])}</span>`
+              : `<span class="k">还没冻结版本</span>`}</td>
+        <td class="k">${esc(r["状态"])}</td></tr>`).join("")
+      + `</tbody></table>
+      <div class="note">工具执行只走<b>一个入口</b>(工具网关),门上六道闸:
+        注册 → 服务端绑定 → Schema → 对象范围 → 确认 → 幂等。<br>
+        <b>「注册工具」这个按钮还没做</b> —— 接口有了(<code>POST /tools</code>,
+        它<b>不收可执行代码</b>,只收「哪个适配器 + 什么 Schema + 什么风险级别」),
+        页面上的表单没做。<b>不摆一个点了没反应的按钮。</b></div>`;
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
 /* ── 路由 ─────────────────────────────────────────────────────── */
 async function 路由() {
   画侧栏();
@@ -1068,6 +1463,9 @@ async function 路由() {
     if (h === "#/workflows") return await 页_工作流列表();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
     if (h.startsWith("#/wfrun/")) return await 页_运行详情(decodeURIComponent(h.slice(8)));
+    if (h === "#/agents") return await 页_agent列表();
+    if (h.startsWith("#/agent/")) return await 页_agent配置(decodeURIComponent(h.slice(8)));
+    if (h === "#/tools") return await 页_工具目录();
     $("#main").innerHTML = 状态("", "这一页还没实现",
       "规格里有它,**入口保留着** —— 不能因为还没做就把需求删掉。").html;
   } catch (e) {
