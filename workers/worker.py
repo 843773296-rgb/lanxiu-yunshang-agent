@@ -279,6 +279,236 @@ def _跑一张工作流(c, job, 打点):
             "走过的路径": 结果["走过的路径"], "跳过的节点": 结果["跳过的节点"]}
 
 
+@处理("agent_run")
+def _跑一个agent(c, job, 打点):
+    """跑一次 Agent。**照 `_跑一张工作流` 的形状** —— 进门先看是不是已经终态。
+
+    ## 这里和 Workflow 那条最大的不同:**账本落在 tool_invocations 表上**
+
+    §17.3 要的是「每次写动作**先登记 intent**……收到响应后登记结果」。
+    执行器和网关都只认一个**很小的账本接口**(查 / 登记意图 / 标已提交 / 登记结果),
+    所以这里给它一个贴着 `tool_invocations` 表的实现。
+    夹具测试给的是内存版 —— **同一个接口两个实现**,而测试那一份和运行时是两份记录。
+    """
+    import json as _j
+    t = job["target_ref"] or {}
+    run_id = t.get("run_id")
+    r = c.execute(text("""select * from execution_runs
+                         where project_id=:p and id=:i for update"""),
+                  {"p": job["project_id"], "i": run_id}).mappings().first()
+    if not r:
+        raise 干不了("RUN_NOT_FOUND", {"run_id": run_id})
+    if r["status"] in ("succeeded", "incomplete", "failed", "cancelled", "expired"):
+        return {"run_id": run_id, "已经是终态": r["status"]}
+
+    import sys as _s
+    _rt = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "services", "api", "app", "runtime")
+    _app = os.path.dirname(_rt)
+    for _p in (_rt, os.path.join(_app, "contract"), _app,
+               os.path.join(_app, "jobs")):
+        _s.path.insert(0, _p)
+    import agent_loop as AL
+    import tool_gateway as TG
+    import agents_api as AA
+    import dsl as _DS
+
+    来源 = r["definition_ref"] or {}
+    if 来源.get("kind") == "agent_version":
+        v = c.execute(text("""select * from agent_versions
+                             where project_id=:p and id=:i"""),
+                      {"p": job["project_id"], "i": 来源["version_id"]}).mappings().first()
+        cfg = {k: v[k] for k in ("prompt_version_id", "connection_version_id",
+                                 "task_template", "tools", "context_policy", "limits",
+                                 "output_schema", "completion_criteria",
+                                 "incomplete_strategy", "execution_strategy",
+                                 "input_schema")}
+    else:
+        d = c.execute(text("""select * from graph_drafts
+                             where project_id=:p and agent_id=:i"""),
+                      {"p": job["project_id"], "i": 来源["id"]}).mappings().first()
+        cfg = (d["definition"] if d else None) or {}
+    if _DS.逻辑哈希(cfg) != r["definition_hash"]:
+        # **配置在排队期间被改过** —— 不静默跑新的那一份(和 Workflow 同一条道理)
+        raise 干不了("DEFINITION_CHANGED_WHILE_QUEUED",
+                   {"受理时": (r["definition_hash"] or "")[:26],
+                    "现在": _DS.逻辑哈希(cfg)[:26],
+                    "怎么办": "重新发起一次运行 —— 旧的这次保留,它记的是受理时那一版"})
+
+    # 指令:Agent 版本引用的是 Prompt 的**确切版本**
+    pv = c.execute(text("""select messages from prompt_versions
+                         where project_id=:p and id=:i"""),
+                   {"p": job["project_id"], "i": cfg.get("prompt_version_id")}
+                   ).mappings().first()
+    cfg = dict(cfg, instructions=((pv["messages"] or {}).get("system") if pv else "")
+                                 or cfg.get("instructions") or "")
+
+    # ⚠️ 目录按**版本 ID** 建键 —— 因为 `cfg["tools"]` 里就是版本 ID(§16.3:
+    # Agent 版本引用工具的**确切版本**)。「版本 ID → 名字」的换算在 agent_loop
+    # 里做,那里也查同名撞车。
+    # 第一版这里按名字建键,于是 agent_loop 拿版本 ID 一个都查不到 ——
+    # 表现是 **Agent 一个工具都不用**,而人会去改提示词、换模型、调温度。
+    # 抓到它的是 agent_loop 里那条 `agent.tool_missing` 事件(它**没有静默跳过**)。
+    目录 = AA._工具目录(c, job["project_id"], cfg.get("tools") or [])
+    工具名们 = sorted(契["name"] for 契 in 目录.values())
+
+    c.execute(text("""update execution_runs set status='running', updated_at=now()
+                      where project_id=:p and id=:i"""),
+              {"p": job["project_id"], "i": run_id})
+    打点("开始执行", {"工具": 工具名们, "上限": cfg.get("limits")})
+
+    # ── 账本:贴着 tool_invocations 表 ─────────────────────────────
+    class 表账本:
+        def __init__(self):
+            self.条目, self.顺序 = {}, []
+            self.步骤id = _新("rs")
+            c.execute(text("""
+                insert into run_steps (id, organization_id, project_id,
+                    execution_run_id, node_id, kind, iteration_path, attempt,
+                    execution_key, status, started_at, created_at, created_by,
+                    updated_at, revision)
+                values (:i,:o,:p,:r,'agent','agent','/',1,:ek,'running',
+                        now(), now(), :u, now(), 1)
+                on conflict (project_id, execution_key) do nothing
+            """), {"i": self.步骤id, "o": job["organization_id"],
+                   "p": job["project_id"], "r": run_id,
+                   "ek": f"{run_id}:agent:/:1", "u": 我是谁})
+
+        def 查(self, aid):
+            r2 = c.execute(text("""select * from tool_invocations
+                                  where project_id=:p and logical_action_id=:a"""),
+                           {"p": job["project_id"], "a": aid}).mappings().first()
+            if not r2:
+                return None
+            return dict(状态=r2["status"], 工具=r2["outcome"],
+                        参数摘要=r2["arguments_hash"], 幂等键=r2["idempotency_key"],
+                        结果=r2["result_ref"] and _j.loads(r2["result_ref"]))
+
+        def 登记意图(self, aid, *, 工具, 参数摘要, 幂等键):
+            c.execute(text("""
+                insert into tool_invocations (id, organization_id, project_id,
+                    run_step_id, side_effect_type, arguments_hash, idempotency_key,
+                    logical_action_id, outcome, status, execution_mode, intent_at,
+                    created_at, created_by, updated_at, revision)
+                values (:i,:o,:p,:s,null,:h,:k,:a,:t,'intent_registered','mock',
+                        now(), now(), :u, now(), 1)
+                on conflict (project_id, logical_action_id) do nothing
+            """), {"i": _新("ti"), "o": job["organization_id"], "p": job["project_id"],
+                   "s": self.步骤id, "h": 参数摘要, "k": 幂等键, "a": aid, "t": 工具,
+                   "u": 我是谁})
+            self.顺序.append(aid)
+            self.条目[aid] = dict(状态="intent_registered", 工具=工具,
+                                参数摘要=参数摘要, 幂等键=幂等键, 结果=None)
+            return True
+
+        def 标已提交(self, aid):
+            c.execute(text("""update tool_invocations set status='submitted',
+                                  updated_at=now()
+                              where project_id=:p and logical_action_id=:a"""),
+                      {"p": job["project_id"], "a": aid})
+
+        def 登记结果(self, aid, *, 状态, 结果=None, 错误码=None):
+            c.execute(text("""
+                update tool_invocations
+                   set status=:st, result_ref=:rr, error_code=:ec,
+                       needs_human_check=:nh, responded_at=now(), updated_at=now()
+                 where project_id=:p and logical_action_id=:a
+            """), {"st": 状态,
+                   "rr": _j.dumps(结果, ensure_ascii=False) if 结果 else None,
+                   "ec": 错误码,
+                   # **待核实 ≠ 终态**:标成需要人看,但不写成失败
+                   "nh": (状态 == "needs_verification"),
+                   "p": job["project_id"], "a": aid})
+            if aid in self.条目:
+                self.条目[aid]["状态"] = 状态
+                self.条目[aid]["结果"] = 结果
+
+    账 = 表账本()
+    事件序号 = [1]
+
+    def 记事(种类, 载荷):
+        事件序号[0] += 1
+        c.execute(text("""
+            insert into run_events (id, organization_id, project_id, execution_run_id,
+                seq, event_type, payload, occurred_at, created_at, created_by)
+            values (:i,:o,:p,:r,:s,:k,:pl, now(), now(), :u)
+        """), {"i": _新("re"), "o": job["organization_id"], "p": job["project_id"],
+               "r": run_id, "s": 事件序号[0], "k": 种类,
+               "pl": _j.dumps(载荷, ensure_ascii=False, default=str), "u": 我是谁})
+
+    # ── mock 模型:**脚本化的,而且它自己说自己是 mock** ─────────────
+    轮 = [0]
+
+    def _mock模型(消息们, 工具定义们):
+        轮[0] += 1
+        只读的 = [t["name"] for t in 工具定义们
+                 if t.get("side_effect_type") == _DS.只读]
+        if 轮[0] == 1 and 只读的:
+            return {"tool_calls": [{"id": f"call_{轮[0]}", "name": 只读的[0],
+                                    "arguments": {"q": "官方资料"}}],
+                    "usage": {"input_tokens": 20, "output_tokens": 30}}
+        return {"finish": {"report": "[mock] 这是一份合成报告,**不代表真实智能能力**",
+                           "evidence_refs": ["https://example.com/official"],
+                           "unknown_items": ["价格(mock 没有真实来源)"]},
+                "usage": {"input_tokens": 20, "output_tokens": 40}}
+
+    def _mock只读工具(参数):
+        return {"items": [{"title": "官方页", "url": "https://example.com/official"}],
+                "execution_mode": "mock"}
+
+    适配器 = {"model": _mock模型}
+    for 名, 契 in 目录.items():
+        # 只给只读工具接 mock 实现;**写工具默认不接** ——
+        # §14.1:「对有写能力的测试,**默认替换模拟适配器并显示替换清单**」。
+        # 这里更保守:干脆不接,于是网关会报 ADAPTER_MISSING,**而那是要被看见的**。
+        if 契["side_effect_type"] == _DS.只读:
+            适配器[契["adapter"]] = _mock只读工具
+    记事("agent.adapters", {
+        "接了": [k for k in 适配器 if k != "model"],
+        "没接": [契["adapter"] for 契 in 目录.values()
+                if 契["side_effect_type"] != _DS.只读],
+        "为什么": "**写工具默认不接 mock 实现** —— 网关会报 ADAPTER_MISSING,"
+                 "而那是要被看见的(§14.1:写动作测试要显示替换清单)"})
+
+    结果 = AL.跑一个agent(
+        cfg, r["input_snapshot"] or {}, 适配器=适配器, 工具目录=目录,
+        有效范围={"paths": [], "hosts": ["*.example.com"], "ids": []},
+        账本=账, 记事=记事,
+        # **产物在不在由调用方判** —— 这一版没有对象存储适配,所以一律「不在」。
+        # 于是任何声明了 artifacts 的 finish 都会被核验挡住,**这是对的**:
+        # 「我已保存报告」在没有存储的环境里本来就不可能成立。
+        产物在吗=lambda ref: False,
+        批准查询=None, run_id=run_id)
+    打点("执行完", {"状态": 结果["execution_status"]})
+
+    c.execute(text("""update run_steps set status=:st, ended_at=now(), updated_at=now()
+                      where project_id=:p and execution_run_id=:r and node_id='agent'"""),
+              {"st": ("succeeded" if 结果["execution_status"] == "succeeded"
+                      else "failed"), "p": job["project_id"], "r": run_id})
+    c.execute(text("""
+        update execution_runs
+           set status=:st, completion_reason=:cr, output_ref=:out, usage_snapshot=:us,
+               ended_at=now(), updated_at=now(), revision=revision+1
+         where project_id=:p and id=:i
+    """), {"st": 结果["execution_status"], "cr": 结果["completion_reason"],
+           "out": _j.dumps(结果["output"], ensure_ascii=False),
+           "us": _j.dumps(结果["usage"], ensure_ascii=False),
+           "p": job["project_id"], "i": run_id})
+    c.execute(text("""
+        insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
+            resource, quantity, unit, currency, amount, amount_known, source,
+            created_at, created_by)
+        values (:i,:o,:p,:ek,:t,'generate',:q,'call','CNY', null, false, 'mock',
+                now(), :u)
+        on conflict (project_id, event_key) do nothing
+    """), {"i": _新("ul"), "o": job["organization_id"], "p": job["project_id"],
+           "ek": f"{run_id}:agent", "t": r["trace_id"],
+           "q": 结果["usage"]["模型回合"], "u": 我是谁})
+    return {"run_id": run_id, "执行状态": 结果["execution_status"],
+            "停止原因": 结果["completion_reason"], "用量": 结果["usage"],
+            "核验问题": 结果["validation_results"][:3]}
+
+
 class _打点器:
     """每一步:写事件 + 续租 + 把取消令牌读回来。"""
     def __init__(self, c, job):

@@ -119,20 +119,47 @@ def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账
     最大回合 = 限.get("max_model_turns", 8)
     最大工具 = 限.get("max_tool_attempts", 12)
 
-    工具定义们 = []
-    for 名 in 配置.get("tools") or []:
-        契 = (工具目录 or {}).get(名)
+    # ── 两套键:配置引用**确切版本**,模型看到的是**名字** ──────────────
+    #
+    # 规格 §16.3 要求 Agent 版本引用工具的**确切版本**,所以 `配置["tools"]` 里是
+    # 版本 ID;而模型按 `name` 发工具请求,所以网关的目录必须按名字建键。
+    # **这两套键必须在一个地方显式换算** —— 分散在调用方各自换,
+    # 就会出现「worker 按名字建目录、配置按版本引用」这种对不上(栽过一次:
+    # 表现是 Agent 一个工具都不用,而人会去改提示词、换模型、调温度)。
+    #
+    # 约定:`工具目录` 的键和 `配置["tools"]` 里的元素**是同一套**
+    # (测试里都是名字,Worker 里都是版本 ID)。这里只负责把它翻成名字键。
+    工具定义们, 网关目录 = [], {}
+    撞名 = []
+    for 引用 in 配置.get("tools") or []:
+        键 = 引用.get("tool_version_id") if isinstance(引用, dict) else 引用
+        契 = (工具目录 or {}).get(键)
         if 契 is None:
-            # **配置里点了一个不存在的工具** —— 这在冻结版本时本该被拦住。
-            # 能走到这里说明有东西绕过了校验:报出来,不静默少给一个工具
-            # (静默少给的表现是「Agent 不会用那个工具」,而人会去改提示词)。
-            记事("agent.tool_missing", {"name": 名})
+            # **配置里点了一个目录里没有的工具** —— 这在冻结版本时本该被拦住。
+            # 能走到这里说明有东西绕过了校验:**报出来,不静默少给一个工具**。
+            # 静默少给的表现是「Agent 不会用那个工具」,而人会去改提示词。
+            # ⚠️ 上面那个键换算的 bug 正是被这条事件抓到的。
+            记事("agent.tool_missing", {"引用": 键,
+                                      "目录里有的": sorted(工具目录 or {})[:8]})
             continue
+        名 = 契.get("name") or 键
+        if 名 in 网关目录:
+            撞名.append(名)
+        网关目录[名] = 契
         工具定义们.append({"name": 名,
                         "description": 契.get("model_description"),
                         "input_schema": 契.get("input_schema"),
                         # **模型看不见服务端绑定参数**(§9.4)
                         "side_effect_type": 契.get("side_effect_type")})
+    if 撞名:
+        # 模型按名字调工具 —— 两个版本同名,**它调到哪个取决于字典顺序**。
+        记事("agent.tool_name_clash", {"撞了": sorted(set(撞名))})
+        return dict(execution_status="failed", completion_reason="tool_unavailable",
+                    output=None, artifacts=[], evidence_refs=[],
+                    validation_results=[f"授权的工具里有同名的:{sorted(set(撞名))} —— "
+                                        f"模型按名字调,调到哪个取决于字典顺序"],
+                    usage={"模型回合": 0, "工具尝试": 0}, unknown_items=[],
+                    quality_evaluation_status="未评", 账本条目=[])
 
     消息们 = [{"role": "system", "content": 配置.get("instructions") or ""},
              {"role": "user", "content": {"任务": 配置.get("task_template"),
@@ -203,7 +230,7 @@ def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账
                 # 自己 `G.参数摘要(调["arguments"])` 算一遍的话,算出来的是
                 # 「模型给的那份」,而网关比的是「实参」(含服务端绑定参数)——
                 # 于是合法批准永远匹配不上。栽过一次。
-                契 = (工具目录 or {}).get(调.get("name")) or {}
+                契 = 网关目录.get(调.get("name")) or {}
                 摘 = G.执行参数摘要(契, 调.get("arguments") or {})
                 键 = (调.get("name"), 摘)
                 if 键 in 被拒过:
@@ -217,7 +244,7 @@ def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账
                     回传 = None
                     break
                 try:
-                    r = G.执行(调, 工具目录=工具目录, 有效范围=有效范围,
+                    r = G.执行(调, 工具目录=网关目录, 有效范围=有效范围,
                              批准=(批准查询(调, 摘) if 批准查询 else None),
                              账本=账本, 适配器=适配器, 记事=记事,
                              逻辑动作id=f"{run_id}:{调.get('name')}:{摘[:16]}",

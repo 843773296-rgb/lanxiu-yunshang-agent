@@ -157,6 +157,100 @@ def 跑():
                                                   "(附录 D.2)"},
                                          ensure_ascii=False),
                        "h": f"mockhash_{p}"})
+        # ── 第二条连接:**声明支持原生工具调用** ──────────────────────
+        # 两条连接是有意的:一条支持、一条不支持。
+        # 于是「§9.3 的原生工具调用能力检查」在界面上**能被看见** ——
+        # 在 Agent 配置里选那条不支持的,校验会当场挡住并说清为什么。
+        # 附录 D.2:「**不按模型家族名字推断兼容**」—— 这两条连接的差别
+        # 只在 capabilities 上,名字上看不出来,**而那正是重点**。
+        for p in (A, B):
+            c.execute(text("""
+                insert into model_connections (id, organization_id, project_id, purpose,
+                    adapter, display_name, status, created_at, created_by, updated_at, revision)
+                values (:i,:o,:p,'generate','MockToolModelProvider',
+                        '演示用 mock 工具调用连接','active', now(),'seed', now(), 1)
+                on conflict (project_id, id) do nothing"""),
+                      {"i": f"mc_tool_{p}", "o": ORG, "p": p})
+            c.execute(text("""
+                insert into connection_versions (id, organization_id, project_id,
+                    connection_id, endpoint, secret_ref, capabilities, config_hash,
+                    revision, created_at, created_by, updated_at)
+                values (:i,:o,:p,:c,'mock://tools','secret://none',:cap,:h,1,
+                        now(),'seed', now())
+                on conflict (project_id, id) do nothing"""),
+                      {"i": f"cv_tool_{p}", "o": ORG, "p": p, "c": f"mc_tool_{p}",
+                       "cap": json.dumps({"execution_mode": "mock",
+                                          "支持的参数": ["temperature", "max_tokens"],
+                                          "原生工具调用": True,
+                                          "说明": "合成适配器 —— **不代表真实智能能力**"
+                                                  "(附录 D.2)"},
+                                         ensure_ascii=False),
+                       "h": f"mocktoolhash_{p}"})
+
+        # ── 两个演示工具:一个只读、一个不可逆写入 ────────────────────
+        # 不可逆那个是为了让「确认闸」和「ADAPTER_MISSING」都能被看见:
+        # Worker 的 mock 只给只读工具接实现,**写工具故意不接** ——
+        # 于是网关会报 ADAPTER_MISSING,而那是要被看见的(§14.1)。
+        工具们 = [
+            dict(id="tool_search", 名="search", 用途="按关键词搜官方资料",
+                 级="read_only", 适配器="MockSearch",
+                 说明="按关键词搜官方资料,返回带来源的条目。**价格找不到就返回 null,不要编**",
+                 入={"type": "object",
+                     "properties": {"q": {"type": "string", "minLength": 1}},
+                     "required": ["q"], "additionalProperties": False},
+                 出={"type": "object", "properties": {"items": {"type": "array"}}},
+                 范围={"hosts": ["*.example.com"], "受管参数": []},
+                 确认=None, 绑定={}, 查外部={"supported": True}, 可轮询=True),
+            dict(id="tool_write_report", 名="write_report",
+                 用途="把报告写进已授权目录下的一个文件",
+                 级="irreversible", 适配器="MockWriteFile",
+                 说明="把报告写到一个文件。**路径只能在已授权目录下**",
+                 入={"type": "object",
+                     "properties": {"path": {"type": "string"},
+                                    "content": {"type": "string"}},
+                     "required": ["path", "content"], "additionalProperties": False},
+                 出={"type": "object",
+                     "properties": {"artifact_ref": {"type": "string"}}},
+                 范围={"paths": ["/out"], "受管参数": ["path"]},
+                 确认={"谁批": "approver",
+                       "为什么": "不可逆写入 —— 批准绑定参数摘要(§12.2)"},
+                 # **服务端绑定**:输出根目录不让模型碰(§9.4)
+                 绑定={"root": "/out"},
+                 查外部={"supported": True}, 可轮询=False),
+        ]
+        for t in 工具们:
+            c.execute(text("""
+                insert into tool_definitions (id, organization_id, project_id, name,
+                    purpose, side_effect_type, adapter, owner, draft_revision, status,
+                    created_at, created_by, updated_at, revision)
+                values (:i,:o,:p,:n,:pu,:se,:ad,'seed',1,'active', now(),'seed', now(), 1)
+                on conflict (project_id, id) do nothing"""),
+                      {"i": t["id"], "o": ORG, "p": A, "n": t["名"], "pu": t["用途"],
+                       "se": t["级"], "ad": t["适配器"]})
+            c.execute(text("""
+                insert into tool_versions (id, organization_id, project_id,
+                    tool_definition_id, version_no, model_description, input_schema,
+                    output_schema, side_effect_type, allowed_scopes,
+                    confirmation_policy, idempotency_strategy, external_status_lookup,
+                    timeout_seconds, retry_policy, redaction, server_bound_arguments,
+                    pollable, content_hash, created_at, created_by)
+                values (:i,:o,:p,:t,1,:md,:isc,:osc,:se,:sc,:cp,:ids,:esl,30,:rp,
+                        '{}'::jsonb,:sba,:pl,:h, now(),'seed')
+                on conflict (project_id, id) do nothing"""),
+                      {"i": f"tv_{t['名']}", "o": ORG, "p": A, "t": t["id"],
+                       "md": t["说明"],
+                       "isc": json.dumps(t["入"], ensure_ascii=False),
+                       "osc": json.dumps(t["出"], ensure_ascii=False),
+                       "se": t["级"],
+                       "sc": json.dumps(t["范围"], ensure_ascii=False),
+                       "cp": json.dumps(t["确认"], ensure_ascii=False) if t["确认"] else None,
+                       "ids": json.dumps({"键": "logical_action_id"}, ensure_ascii=False),
+                       "esl": json.dumps(t["查外部"], ensure_ascii=False),
+                       "rp": json.dumps({"可重试": ["TIMEOUT"], "次数": 2},
+                                        ensure_ascii=False),
+                       "sba": json.dumps(t["绑定"], ensure_ascii=False),
+                       "pl": t["可轮询"], "h": f"seedtoolhash_{t['名']}"})
+
         # Prompt 正式版本:Workflow 的 LLM 节点要引用**确切版本**,不是草稿。
         #
         # ⚠️ **version_no 要算 max+1,不能写死 1。**
@@ -183,7 +277,8 @@ def 跑():
     with 事务() as c:
         n = {t: c.execute(text(f"select count(*) from {t}")).scalar()
              for t in ("organizations", "projects", "memberships", "prompt_drafts",
-                       "model_connections", "connection_versions", "prompt_versions")}
+                       "model_connections", "connection_versions", "prompt_versions",
+                       "tool_definitions", "tool_versions")}
     return n
 
 

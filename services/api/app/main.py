@@ -123,7 +123,9 @@ def _审计(c, me, action, target, result="ok", reason=None, diff=None):
 # 单独一个文件。**一个越长的 handler 文件越容易长出第二套规矩** ——
 # 而这里的纪律是「权限从 contract/perms.py 判、状态问 contract/states.py」。
 import workflows_api as _WF
+import agents_api as _AG
 app.include_router(_WF.router)
+app.include_router(_AG.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

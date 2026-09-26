@@ -532,3 +532,167 @@ def 报告(问题们):
              "而服务端校验通过也只说明**定义**合法 —— 不说明模型答得对、"
              "也不说明外部服务可用(附录 A-1 的局限)",
     )
+
+
+# ══════════════════════════════════════════════════════════════════
+# Agent 配置校验(规格 §9.3、§9.4、§9.5、§9.6、附录 D.2)
+# ══════════════════════════════════════════════════════════════════
+#
+# ## 和图校验不同的地方:这里大半的判据是「**这个声明有没有落点**」
+#
+# 一张图配错了,跑一次就看得出来(节点没激活、变量取不到值)。
+# 一个 Agent 配错了**跑一次看不出来** —— 它会输出一段看起来挺像的文字。
+# 所以这里的判据集中在「声明和现实对不对得上」:
+#
+#   · 「必要证据」里点名的字段,在 output_schema 里**存在吗**?
+#     不存在的话,那条判据永远查不到东西,而它在界面上是填好的。
+#   · 选的模型连接**声明了支持原生工具调用吗**?
+#     §9.3 要「原生工具调用能力检查」,附录 D.2 补了一句
+#     「**不按模型家族名字推断兼容**」—— 能不能按契约调工具是按型号来的,
+#     而「它是个大模型所以应该行」是这一块最贵的假设。
+#   · 给了会做不可逆写入的工具,配了确认策略吗?
+#
+# > **一个永远查不到东西的判据,和没有这条判据,在界面上长得一模一样。**
+def 校验Agent(配置, *, 依赖存在=None, 连接能力=None, 工具目录=None, 项目上限=None):
+    """返回问题清单。`连接能力(connection_version_id) -> dict` 由调用方给。"""
+    出 = []
+    if not isinstance(配置, dict):
+        return [问(阻断, "AGENT_NOT_OBJECT", "Agent 配置不是一个对象",
+                  "检查提交的 JSON 顶层形状")]
+    跳过 = []
+
+    # ① 必填
+    for f, 中文 in (("connection_version_id", "模型连接版本"),
+                   ("prompt_version_id", "指令 Prompt 版本"),
+                   ("task_template", "目标模板"),
+                   ("output_schema", "输出契约"),
+                   ("limits", "运行限制")):
+        v = 配置.get(f)
+        if not v:
+            出.append(问(阻断, "AGENT_MISSING", f"缺 {中文}",
+                       f"在「行为配置」里把 {中文} 填上", field_path=f))
+
+    # ② 引用存在(按项目范围查,由调用方提供)
+    if 依赖存在 is None:
+        跳过.append("引用的依赖存不存在(调用方没给查询能力)")
+    else:
+        for f in ("connection_version_id", "prompt_version_id"):
+            v = 配置.get(f)
+            if v and not 依赖存在(f, v):
+                出.append(问(阻断, "REF_NOT_FOUND",
+                           f"{f} = {v} 不存在、无权访问或已撤回",
+                           "换一个当前项目里有权访问的版本", field_path=f))
+        for i, t in enumerate(配置.get("tools") or []):
+            tv = t.get("tool_version_id") if isinstance(t, dict) else t
+            if tv and not 依赖存在("tool_version_id", tv):
+                出.append(问(阻断, "REF_NOT_FOUND",
+                           f"工具版本 {tv} 不存在或无权使用",
+                           "在「工具与知识」里重新选一个已注册的工具版本",
+                           field_path=f"tools[{i}]"))
+
+    # ③ **原生工具调用能力检查**(§9.3 + 附录 D.2)
+    cv = 配置.get("connection_version_id")
+    if 连接能力 is None:
+        跳过.append("模型连接的能力(调用方没给探测结果)—— "
+                    "**这一条不查等于按名字推断兼容**")
+    elif cv:
+        能力 = 连接能力(cv) or {}
+        要工具 = bool(配置.get("tools"))
+        if 要工具 and not 能力.get("原生工具调用"):
+            出.append(问(阻断, "MODEL_NO_TOOL_CALLING",
+                       f"这个模型连接**没有声明支持原生工具调用**,"
+                       f"而这个 Agent 给了 {len(配置.get('tools') or [])} 个工具",
+                       "换一个声明了支持的连接,或者把工具全去掉做一个纯生成 Agent。"
+                       "**不按模型家族名字推断兼容**(附录 D.2)—— "
+                       "能不能按契约调工具是按型号来的;"
+                       "连接的 capabilities 要靠**探测**填,不是靠猜",
+                       field_path="connection_version_id"))
+        if 能力.get("execution_mode") == "mock" and not 能力.get("原生工具调用"):
+            出.append(问(警告, "MOCK_CONNECTION",
+                       "这是一条 mock 连接 —— 跑出来的结果不代表真实智能能力",
+                       "生产发布会拒绝 mock 产物和 mock 验收报告(§19.4)"))
+
+    # ④ 工具:不可逆写入必须有确认策略
+    for i, t in enumerate(配置.get("tools") or []):
+        tv = t.get("tool_version_id") if isinstance(t, dict) else t
+        契 = (工具目录 or {}).get(tv) or {}
+        if 契.get("side_effect_type") == DS.不可逆 and not 契.get("confirmation_policy"):
+            出.append(问(阻断, "TOOL_NO_CONFIRMATION",
+                       f"工具 {tv} 会做**不可逆写入**,但没有确认策略",
+                       "在工具版本上配 confirmation_policy —— "
+                       "**不可逆写入必须有绑定了参数摘要的人工确认**(§12.2),"
+                       "而且**模型不能批准自己**(§9.6)",
+                       field_path=f"tools[{i}]"))
+
+    # ⑤ 运行限制:必须有,而且必须是正数
+    限 = 配置.get("limits") or {}
+    for k, 中文 in (("max_model_turns", "最大模型回合数"),
+                   ("max_tool_attempts", "最大工具调用数"),
+                   ("deadline_seconds", "总执行期限")):
+        v = 限.get(k)
+        if v is None:
+            出.append(问(阻断, "LIMIT_MISSING", f"没配 {中文}",
+                       f"在「权限与限制」里填 {中文} —— "
+                       f"**没有上限的自主循环没有已知的最坏情况**",
+                       field_path=f"limits.{k}"))
+        elif not isinstance(v, int) or isinstance(v, bool) or v <= 0:
+            出.append(问(阻断, "LIMIT_INVALID", f"{中文} 要是正整数,现在是 {v!r}",
+                       "填一个正整数", field_path=f"limits.{k}"))
+    if 项目上限:
+        超 = [k for k, v in 限.items()
+              if k in 项目上限 and isinstance(v, (int, float))
+              and isinstance(项目上限.get(k), (int, float)) and v > 项目上限[k]]
+        for k in 超:
+            出.append(问(阻断, "LIMIT_EXCEEDS_PROJECT",
+                       f"{k}({限[k]})超过了项目策略上限({项目上限[k]})",
+                       "**运行预算和授权不由配置里的用户字段任意提升**(§16.5)",
+                       field_path=f"limits.{k}"))
+
+    # ⑥ 输出契约:必需字段不能空 —— 否则「完成」没有判据
+    osc = 配置.get("output_schema") or {}
+    必需 = osc.get("required") or []
+    props = osc.get("properties") or {}
+    if osc and not 必需:
+        出.append(问(阻断, "OUTPUT_NO_REQUIRED",
+                   "输出契约里一个必需字段都没有",
+                   "至少声明一个必需字段 —— **一个什么都不要求的输出契约,"
+                   "让「模型说完成了」直接变成「完成了」**(§10.2)",
+                   field_path="output_schema.required"))
+
+    # ⑦ **完成判据点名的字段必须真的存在**
+    # 这一条是这整段里最容易被漏掉、也最像「已经在查了」的那种:
+    # 一条点名了不存在字段的判据**永远查不到东西**,而它在界面上是填好的。
+    判 = 配置.get("completion_criteria") or {}
+    for 键 in 判.get("必要证据") or []:
+        if 键 not in props:
+            出.append(问(阻断, "CRITERION_FIELD_MISSING",
+                       f"完成判据要求 {键!r} 非空,但输出契约里没有这个字段",
+                       f"要么在 output_schema.properties 里加上 {键},"
+                       f"要么把它从必要证据里去掉 —— "
+                       f"**一条永远查不到东西的判据,和没有这条判据长得一模一样**",
+                       field_path="completion_criteria.必要证据"))
+    for 动作 in 判.get("必须做的动作") or []:
+        名们 = [(t.get("tool_version_id") if isinstance(t, dict) else t)
+               for t in (配置.get("tools") or [])]
+        名们 += [((工具目录 or {}).get(x) or {}).get("name") for x in 名们]
+        if 动作 not in [x for x in 名们 if x]:
+            出.append(问(阻断, "CRITERION_TOOL_MISSING",
+                       f"完成判据要求必须执行 {动作!r},但这个 Agent 没有这个工具",
+                       "把那个工具授权给它,或者改判据 —— "
+                       "**要求一个它做不到的动作,等于这个 Agent 永远不可能达标**",
+                       field_path="completion_criteria.必须做的动作"))
+
+    # ⑧ 长期记忆首版必须关闭(§9.5)
+    ctx = 配置.get("context_policy") or {}
+    if ctx.get("long_term_memory") not in (None, "disabled"):
+        出.append(问(阻断, "LTM_NOT_SUPPORTED",
+                   "长期记忆首版不支持",
+                   "把 context_policy.long_term_memory 设成 disabled —— "
+                   "**未经审核就持久化的错误事实会跨任务传染**,"
+                   "而作用域、保留期限、撤回都还没实现(§9.5)",
+                   field_path="context_policy.long_term_memory"))
+
+    for s in 跳过:
+        出.append(问(警告, "CHECK_SKIPPED", f"这一类没查:{s}",
+                   "补上查询能力再跑一遍;**跳过的检查不能写成通过**(§C.4)"))
+    return 出

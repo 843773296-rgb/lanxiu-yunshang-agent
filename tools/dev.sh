@@ -19,11 +19,19 @@ export DATABASE_URL="${DATABASE_URL:-postgresql+psycopg://$USER@localhost:5432/a
 PORT="${PORT:-8801}"
 NO_WORKER="${NO_WORKER:-}"
 
+# ⚠️ **先清掉上一轮的孤儿 Worker。**
+# 这个脚本以前在末尾 `exec uvicorn` —— **exec 把 shell 整个换掉,EXIT trap
+# 随着 shell 一起消失了**,于是那个「API 退出时带走 Worker」的 trap 从来没生效过。
+# 症状正好是那段注释里写的:孤儿 Worker 在后台抢租约,
+# 下次调试看到「任务被一个不存在的进程拿走了」——
+# 而注释让人以为已经防住了。**一个自己声称做了清理、实际没做的脚本,比没有清理更糟。**
+# 现在两头都改:①起之前先清 ②末尾不用 exec(见文件末尾)。
+pkill -f "workers/worker.py" 2>/dev/null && echo "▸ 清掉了上一轮遗留的 Worker"
+
 if [ -z "$NO_WORKER" ]; then
   ./.venv/bin/python workers/worker.py > /tmp/aimc-worker.log 2>&1 &
   WPID=$!
-  # API 退出时把 Worker 一起带走 —— 留一个孤儿 Worker 在后台抢租约,
-  # 下次调试时会看到「任务被一个不存在的进程拿走了」
+  # API 退出时把 Worker 一起带走。**这个 trap 只有在不 exec 的情况下才生效。**
   trap 'kill '"$WPID"' 2>/dev/null' EXIT INT TERM
   echo "▸ Worker 起来了(pid $WPID),日志:/tmp/aimc-worker.log"
   echo "  不想起它:NO_WORKER=1 make dev"
@@ -41,4 +49,7 @@ echo "⚠️ 页面上现在有的是工作台 / Prompt 列表 / Prompt 详情�
 echo "   **Workflow 画布和 Agent 配置页还没建**(见 README 的九个组件落点表)。"
 echo ""
 cd services/api/app
-exec ../../../.venv/bin/uvicorn main:app --host 127.0.0.1 --port "$PORT" --reload
+# ⚠️ **不用 exec。** exec 会把这个 shell 换成 uvicorn,而上面那个 EXIT trap
+# 是挂在这个 shell 上的 —— 换掉之后 trap 不存在了,Worker 变成孤儿。
+# 这里多留一个 shell 进程的代价,换的是「退出时真的把 Worker 带走」。
+../../../.venv/bin/uvicorn main:app --host 127.0.0.1 --port "$PORT" --reload
