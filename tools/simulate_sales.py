@@ -76,6 +76,7 @@ spec_check C3 要求流水时间不早于商品建档,而上架前卖货本来�
 留着是因为它们说的是**这一步自己**不做 —— 那两件事现在由 order_mix 做)。
 回滚时会先调 `order_mix.回滚()`,把叠在这批上的那一层撤干净。
 """
+import bisect as _bisect
 import os, sys, math, heapq, random, sqlite3, argparse, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -337,6 +338,18 @@ def simulate(skus, ver, custs, rng):
         d += dt.timedelta(days=1)
 
     pool = sorted(custs, key=lambda c: c["created"] or "")
+    # ⚠️ **下面这两个预算是性能修复,不是优化癖。** 原来「挑客户」那一步每下一单都要
+    # ① 把全部客户过滤一遍(建档早于今天的)② 重建一遍权重表 —— **O(订单 × 客户)**。
+    # 客户 968 的时候看不出来;2026-09-26 业务把客户提到 8065 之后,
+    # 这一步从**不到 3 分钟涨到 12.5 分钟**(8065 × 约 2.4 万单 ≈ 1.9 亿次),
+    # 整条 CI 从 11 分变成 27 分。
+    # `pool` 本来就按建档日排好序 → 合格集合是个**前缀** → 二分拿到边界、
+    # 前缀和上再二分挑人,每单 O(log n)。
+    # **随机数只取一次,和原来完全一样** —— 所以确定性不变(同种子同结果)。
+    _建档日 = [(c["created"] or "")[:10] for c in pool]
+    _累忠诚 = [0.0]
+    for _c in pool:
+        _累忠诚.append(_累忠诚[-1] + loyal[_c["id"]])
     oid = [ID_BASE]
 
     while ev:
@@ -367,10 +380,14 @@ def simulate(skus, ver, custs, rng):
                 log(t, code, "退货入库", qty, kw["ref"])
         elif kind == "下单":
             # 客户:建档早于下单的才挑得到(C3),老客更常回购
-            ok = [c for c in pool if (c["created"] or "")[:10] <= t.strftime("%Y-%m-%d")]
-            if not ok:
+            # 合格的是 pool 的**前缀**(pool 按建档日排序)—— 二分拿边界,别再过滤一遍
+            k = _bisect.bisect_right(_建档日, t.strftime("%Y-%m-%d"))
+            if not k:
                 continue
-            cust = pick(rng, [(c, loyal[c["id"]]) for c in ok])
+            # 和原来那个 `pick` 逐个减权重的语义**完全一致**:找第一个累计权重 ≥ r*总权重 的人
+            _x = rng.random() * _累忠诚[k]
+            _i = _bisect.bisect_left(_累忠诚, _x, 1, k + 1)
+            cust = pool[min(_i, k) - 1]
             lines = {}
             for spu in kw["spus"]:
                 ss = live[spu]
