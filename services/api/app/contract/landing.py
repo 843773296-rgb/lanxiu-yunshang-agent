@@ -73,12 +73,12 @@ AGENT链 = "Agent 最小链"
     C("Definition Compiler", "定义编译器",
       "把允许的版本化定义编译成可执行图和节点配置",
       "**不把用户文本当 Python/JS eval**;模型不生成可执行后端代码",
-      "services/api/app/runtime/compiler.py::编译", False, 最小链),
+      "services/api/app/runtime/compiler.py::编译", True, 最小链),
 
     C("Workflow Runner", "流程执行器",
       "调度预设路径、控制流、节点状态和检查点",
       "通过统一 NodeRunner / Tool Gateway 调用能力",
-      "services/api/app/runtime/runner.py::推进", False, 最小链),
+      "services/api/app/runtime/runner.py::跑一张图", True, 最小链),
 
     C("Agent Runtime", "Agent 运行时",
       "组装上下文、模型回合、解释合法工具请求、检查终止",
@@ -105,8 +105,14 @@ AGENT链 = "Agent 最小链"
 # **写死的欠账上限。** 每落地一个就减一,**只许降不许涨**。
 #   9 → 8:Definition Validator 落地(图校验 + 支配关系数据流分析,
 #         判据在 fixtures/orchestration/图校验夹具.json,17 张图集合相等)。
+#   8 → 6:Definition Compiler + Workflow Runner 落地(受限白名单编译 + 单线执行,
+#         判据在 tests/orchestration/test_execution.py:预期激活路径手写、
+#         模型响应脚本化、**模型调用次数由 mock 那一侧数**)。
+#         ⚠️ 落地的是**最小链**:开始/LLM/检索/工具/条件/转换/汇合/结束。
+#         循环、列表迭代、并行、人工等待、检查点恢复**都还没有** ——
+#         节点登记表里那四个标着「未实现」,校验器会当场挡住用了它们的图。
 # ⚠️ 不许写成 len(...) —— 见模块开头。
-未落地组件上限 = 8
+未落地组件上限 = 6
 
 _按名 = {c["名"]: c for c in 组件表}
 
