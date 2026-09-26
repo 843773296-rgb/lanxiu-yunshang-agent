@@ -186,37 +186,60 @@ def 今日回传(c, 今天, 上限=None):
     # 它的闸(回传时间晚于今天)排在这几道之前。
     # **一个靠检查顺序活着的用例不是稳的**,所以两条一起修。
     #
-    # 修法三条:
-    #   ① 排掉**车间工单还在制**的单 —— 这是真正命中的那道闸;
-    #   ② 只挑**有「收下」的接单回传**的单,而且工厂名**从那条回传读** ——
-    #      `_工厂()` 按哈希算厂名是「同一个事实两个来源」,
-    #      这次它碰巧一致,但它随时会不一致;
+    # ## 修法(第二版:第一版多加了一个条件,而那个条件在生成时刻永远不成立)
+    #
+    # ⚠️ **第一版还要求「这张单有收下的接单回传」,那条件是错的** ——
+    # 它来自我那个已被证伪的根因(以为是厂名不一致)。后果:
+    # 生产中的单的接单回传**全是模拟工厂这一批自己发的**(`T{oid}-接`),
+    # 「补历史」那一批只覆盖已经过了生产的单 —— 生产中的**一张都没有**。
+    # 而 `今日回传()` 跑的时候那些 `T…-接` **还没写进库**:它们是它自己的产出。
+    # 于是生成时刻候选池是空的,三支一起没样本。
+    #
+    # **我本地验证时看到的 353 张「有接单回传」,是上一轮跑完留下的产物。**
+    # 这就是「本地留着历次产物、从零跑没有」那条 —— 我今天写进过两份交接,
+    # 然后自己栽在同一处。
+    #
+    # 而那个条件**本来就不需要**:`判一条()` 里那道闸写的是
+    # `if 事 != "接单" and 接单方 and 消息.工厂 != 接单方` ——
+    # **接单方为 None 时整条跳过**。而这一批(`out`)在 `return out + 正常 + 尾` 的**最前面**,
+    # 那时候接单方还不知道。
+    # (对照:末尾 `尾` 里那条「别家报完工」能成立,**恰恰因为它排在正常批之后** ——
+    #  那时 `T…-接` 已经写进去了,接单方才已知。**这条顺序事实很容易被忘掉。**)
+    #
+    # 所以只留一个条件:
+    #   ① 排掉**车间工单还在制**的单 —— 这是真正命中的那道闸
+    #      (「车间在制却报完工 → 挂异常」排在倒挂检查之前);
+    #   ② 工厂名**有历史就读历史,没有就按哈希算** —— 两个世界都对;
     #   ③ 两条用例用**两张不同的单**,免得后一条被判成「这一步收过了 → 重复」。
-    # 挑不到就**不造** —— 下面「十四种毛病每种都有样本」那条检查会因为
-    # 没有活用例而红,而那正是该发生的事(**不硬凑**)。
-    有接单 = c.execute("""SELECT o.id, o.cut_at, o.audit_at, m.factory
-                          FROM ordr o
-                          JOIN factory_msg m ON m.order_id = o.id
-                           AND m.event = '接单' AND m.result = '收下' AND m.void_at IS NULL
-                         WHERE o.kind='定制品订单' AND o.status='生产中'
-                           AND (o.cut_at IS NOT NULL OR o.audit_at IS NOT NULL)
-                           AND NOT EXISTS (SELECT 1 FROM workorder w
-                                            WHERE w.ref = o.id AND w.status = '在制')
-                         GROUP BY o.id ORDER BY o.id""").fetchall()
-    if len(有接单) >= 2:
-        # 第一张给「未来时间」,第二张给「时间倒挂」—— 两张不同的单,
-        # 免得倒挂那条被判成「这一步收过了 → 重复」(那也是一条靠顺序的脆弱假设)
-        a, _, _, a厂 = 有接单[0]
+    # 挑不到就**不造** —— 「十四种毛病每种都有样本」那条检查会因为没有活用例而红,
+    # 而那正是该发生的事(**不硬凑**)。**这次就是它抓到的。**
+    可用 = c.execute("""SELECT o.id, o.cut_at, o.audit_at, m.factory
+                        FROM ordr o
+                        LEFT JOIN factory_msg m ON m.order_id = o.id
+                         AND m.event = '接单' AND m.result = '收下' AND m.void_at IS NULL
+                       WHERE o.kind='定制品订单' AND o.status='生产中'
+                         AND (o.cut_at IS NOT NULL OR o.audit_at IS NOT NULL)
+                         AND NOT EXISTS (SELECT 1 FROM workorder w
+                                          WHERE w.ref = o.id AND w.status = '在制')
+                       GROUP BY o.id ORDER BY o.id""").fetchall()
+    if len(可用) >= 2:
+        a, _, _, a厂 = 可用[0]
         out.append((dict(消息号=f"X{a}-未来", 订单号=a, 事件="完工",
-                         时间=_s(今 + dt.timedelta(days=5)), 工厂=a厂),
-                    "未来时间", "拒收"))
-        b, b切, b审, b厂 = 有接单[1]
+                         时间=_s(今 + dt.timedelta(days=5)),
+                         工厂=a厂 or _工厂(a)), "未来时间", "拒收"))
+        b, b切, b审, b厂 = 可用[1]
         b开 = _t(b切 or b审)
         out.append((dict(消息号=f"X{b}-倒挂", 订单号=b, 事件="完工",
-                         时间=_s(b开 - dt.timedelta(days=3)), 工厂=b厂),
-                    "时间倒挂", "拒收"))
-        out.append((dict(消息号="X-查无此单", 订单号="9999999999999999999", 事件="完工",
-                         时间=_s(今 - dt.timedelta(days=1)), 工厂="苏州绣坊"), "查无此单", "挂异常"))
+                         时间=_s(b开 - dt.timedelta(days=3)),
+                         工厂=b厂 or _工厂(b)), "时间倒挂", "拒收"))
+    # ⚠️ **「查无此单」不挂在任何一张单上,所以它不进上面那个 if。**
+    # 第一版我把它一起关在里面了 —— 于是一个和客户数、和候选池**完全无关**的用例,
+    # 跟着那两支一起消失。并行会话一眼看出「查无此单按说和客户数无关」,
+    # 那句话正是定位到这个 if 的入口。
+    # **一个用例的前提应该只包含它真的需要的东西。**
+    out.append((dict(消息号="X-查无此单", 订单号="9999999999999999999", 事件="完工",
+                     时间=_s(今 - dt.timedelta(days=1)), 工厂="苏州绣坊"),
+                "查无此单", "挂异常"))
     取消 = c.execute("SELECT id FROM ordr WHERE kind='定制品订单' AND status='取消' AND audit_at IS NOT NULL "
                     "ORDER BY id LIMIT 1").fetchone()
     if 取消:
