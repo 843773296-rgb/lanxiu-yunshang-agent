@@ -83,12 +83,12 @@ AGENT链 = "Agent 最小链"
     C("Agent Runtime", "Agent 运行时",
       "组装上下文、模型回合、解释合法工具请求、检查终止",
       "**不绕过 Tool Gateway;不把模型输出当已执行**",
-      "services/api/app/runtime/agent_loop.py::跑一轮", False, AGENT链),
+      "services/api/app/runtime/agent_loop.py::跑一个agent", True, AGENT链),
 
     C("Tool Gateway", "工具网关",
       "Schema、当前权限、确认、幂等、连接与错误映射",
       "**所有 Workflow/Agent 工具调用的唯一执行入口**",
-      "services/api/app/runtime/tool_gateway.py::执行", False, AGENT链),
+      "services/api/app/runtime/tool_gateway.py::执行", True, AGENT链),
 
     C("Run Coordinator", "运行协调器",
       "创建、排队、租约、人工等待、恢复、取消、事件 —— "
@@ -110,6 +110,11 @@ AGENT链 = "Agent 最小链"
 # **写死的欠账上限。** 每落地一个就减一,**只许降不许涨**。
 #   9 → 8:Definition Validator 落地(图校验 + 支配关系数据流分析,
 #         判据在 fixtures/orchestration/图校验夹具.json,17 张图集合相等)。
+#   5 → 3:Tool Gateway + Agent Runtime 落地(六道闸:注册 → 服务端绑定 →
+#         Schema → 范围 → 确认 → 幂等;判据在 tests/orchestration/test_agent_tools.py
+#         的 43 条,**真值落在独立账本和独立文件系统上,不听运行时自报**)。
+#         ⚠️ 落地的是**最小链**:人工确认走的是「调用方给一条批准记录」这个接口,
+#         真正的人工待办流程(human_requests / 检查点 / 释放租约)还没有。
 #   6 → 5:Workflow Editor 落地(画布 + 节点库 + 右侧配置面板 + 底部校验问题,
 #         **拖拽不是唯一操作方法**:节点库有「加入」按钮、面板有 X/Y 输入框、
 #         画布上 Tab + 方向键能挪节点。判据在 tests/e2e/page_smoke.js 的
@@ -122,7 +127,7 @@ AGENT链 = "Agent 最小链"
 #         循环、列表迭代、并行、人工等待、检查点恢复**都还没有** ——
 #         节点登记表里那四个标着「未实现」,校验器会当场挡住用了它们的图。
 # ⚠️ 不许写成 len(...) —— 见模块开头。
-未落地组件上限 = 5
+未落地组件上限 = 3
 
 _按名 = {c["名"]: c for c in 组件表}
 
