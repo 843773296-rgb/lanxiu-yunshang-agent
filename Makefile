@@ -6,7 +6,8 @@
 # 一个打印「✅ 完成」却什么都没做的 target,比没有这个 target 糟得多:
 # 它会让人以为这一步过了。
 SHELL := /bin/bash
-.PHONY: help bootstrap dev seed-demo test test-e2e test-live contract doctor migrate gen worker worker-once
+.PHONY: help bootstrap dev seed-demo test test-e2e test-live contract doctor migrate gen worker worker-once \
+        test-orchestration test-orchestration-e2e test-orchestration-live
 
 help:
 	@echo "可用:"
@@ -80,4 +81,29 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 三页页面冒烟(要
 
 test-live:
 	@echo "❌ 未实现:外部调用还没接。**缺资源要报告跳过,不算通过**(§17.5)。" >&2
+	@exit 1
+
+# ── 编排(Workflow 与 Agent 后台规格 §18)─────────────────────────────
+# 规格点名了这四个命令。**它们不改变原命令的含义**:原来的 test / test-e2e
+# 照样跑原来那些,这三个只跑编排那一层。
+
+test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不需要数据库)
+	@./.venv/bin/python tools/spec_coverage.py
+	@echo ""
+	@echo "▸ DSL 语义:**判据是一张手写的真值表**,不是从实现跑出来的"
+	@./.venv/bin/python tests/orchestration/test_dsl_semantics.py
+	@echo ""
+	@echo "⚠️ 这一层证明的是「**契约和语义**对」,不证明「流程跑得起来」——"
+	@echo "   执行器、校验器、画布都还没落地(见 contract/landing.py 的九个组件)。"
+
+test-orchestration-e2e:   ## 编排端到端:建图 → 校验 → 试运行 → 冻结 → 发布
+	@echo "❌ 未实现:执行链还没落地(规格 §18 的第 2—6 阶段)。" >&2
+	@echo "   现在能跑的:make test-orchestration(契约 + 语义)。" >&2
+	@echo "   **一个打印「完成」却什么都没跑的 target,比没有这个 target 糟得多。**" >&2
+	@exit 1
+
+test-orchestration-live:  ## 编排真实联调:真模型 + 真工具 + 真连接
+	@echo "❌ 未实现:没有真实模型连接和工具授权。" >&2
+	@echo "   规格 §18:「live 必须有真实连接和测试授权;**未配置则明确跳过," >&2
+	@echo "   不能计入成功**」。" >&2
 	@exit 1
