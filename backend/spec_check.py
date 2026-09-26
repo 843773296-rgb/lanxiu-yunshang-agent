@@ -196,14 +196,14 @@ except Exception as _e:
 import worldclock as _WC
 _FUTURE = _WC.已发生的时间列
 _fut = []
-for _t, _col, _cn in _FUTURE:
+for _t, _col, _cn, _pk in _FUTURE:
     try:
         _fut += [dict(表=f"{_t}.{_col}", 说明=_cn, id=r[0], 时间=r[1]) for r in c.execute(
             # ⚠️ **拿世界的今天比,不是机器时钟。**
             # 原来这里是 `date('now','localtime')`。演示世界钉在 2026-08-31 那阵,
             # 机器时钟比世界早了三周,于是「完成日在世界的未来」这种记录**一律测不出来** ——
             # 7 张旅程单就这么藏了很久。世界改成跟着真实日期走之后当场露了出来。
-            f"SELECT id,{_col} FROM {_t} WHERE {_col} IS NOT NULL "
+            f"SELECT {_pk},{_col} FROM {_t} WHERE {_col} IS NOT NULL "
             f"AND substr({_col},1,10) > ? LIMIT 3", (_BASE,))]
     except Exception as _e:
         # ⚠️ **不许 `pass`。** 原来这里是空的 —— 于是查询一旦写坏(比如某张表还没建),

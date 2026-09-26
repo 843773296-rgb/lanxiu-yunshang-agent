@@ -97,7 +97,20 @@ def ensure(c=None, db=None):
 
 
 def _now():
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    """**世界的当下**,不是机器的当下。
+
+    ⚠️ 2026-09-26 查实的一条:这里原来是 `datetime.datetime.now()`。
+    从零重建时它写下机器的 09-26,而当时世界还停在造数锚点 **08-31**;
+    随后 `shift_world` 把世界从 08-31 挪到 09-26(**+26 天**),
+    于是 `pkg.created` / `ordr.updated` 变成了 **2026-10-22** —— 落在世界的未来。
+    12 条包裹是这么来的,是假数据工厂的基线断言把它照出来的。
+
+    ⚠️ `backend/worldclock_check.py` **当时没抓到这个文件**,因为
+    `pkg.created` 不在「已发生的事」清单里 —— **检查的范围之外就是盲区**。
+    现在 `pkg.created` / `ordr.updated` 都登记进去了。
+    """
+    import worldclock
+    return worldclock.当下().strftime("%Y-%m-%d %H:%M")
 
 
 def 件进度(c, oid):

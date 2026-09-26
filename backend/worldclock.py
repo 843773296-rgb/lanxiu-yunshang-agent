@@ -69,16 +69,35 @@ def 差几天(d):
 # ⚠️ 只列**已经发生**的事实(互动过了、量过了、付过了、派过了)。
 # **计划类字段本来就该在未来**(预约开始、任务截止、承诺交期),不在这份清单里 ——
 # 把它们混进来的后果是每天的平移都会被自己拦住。
+#
+# 每条是 (表, 列, 说明, **主键列**)。
+# ⚠️ 主键列必须写出来:第一版是三元组、查询里写死 `SELECT id`,
+# 而 `pkg` 的主键叫 `pkg_id`、`order_event` 压根没有单列主键 ——
+# 加进来之后 C4 报「查不了:no such column: id」。
+# 那次**没有静默通过**(C4 的「不许 pass」救了一次),但如果它当时是 `except: pass`,
+# 这两列就会悄悄进入清单却从来没被查过 —— 而清单看起来是齐的。
 已发生的时间列 = [
-    ("customer", "last_interact", "最近互动"),
-    ("measure_rec", "measured_at", "量体时间"),
-    ("ordr", "paid_at", "付款时间"),
-    ("ordr", "finished_at", "订单完成"),
-    ("schedule", "assigned_at", "派单时间"),
-    ("followup", "ts", "跟进时间"),
-    ("fitting", "ts", "白坯试衣时间"),
-    ("fitting", "signed_at", "试衣签字时间"),
-    ("ordr", "cut_at", "开裁时间"),
+    ("customer", "last_interact", "最近互动", "id"),
+    ("measure_rec", "measured_at", "量体时间", "id"),
+    ("ordr", "paid_at", "付款时间", "id"),
+    ("ordr", "finished_at", "订单完成", "id"),
+    ("schedule", "assigned_at", "派单时间", "id"),
+    ("followup", "ts", "跟进时间", "id"),
+    ("fitting", "ts", "白坯试衣时间", "id"),
+    ("fitting", "signed_at", "试衣签字时间", "id"),
+    ("ordr", "cut_at", "开裁时间", "id"),
+    # 2026-09-26 补进来的两列 —— **并行会话指出来的,而它指对了**:
+    # `pkg.created` 在正常行里等于 `shipped_at`(包裹发出那一刻建的档),
+    # 是**已经发生的事**。它当时不在这份清单里,所以:
+    #   · spec_check 的 C4 查不到它
+    #   · shift_world 的平移前置闸也看不见它
+    # 12 条 `created=2026-10-22` 是靠**假数据工厂的基线断言**
+    # (`pkg.arrived_at 不该早于 created`)才照出来的 ——
+    # **一条清单漏掉的列,就是两道闸同时的盲区。**
+    ("pkg", "created", "包裹建档", "pkg_id"),
+    ("ordr", "updated", "订单最后更新", "id"),
+    # order_event 没有单列主键 —— 用 rowid(SQLite 每张表都有)
+    ("order_event", "at", "订单事件发生时间", "rowid"),
 ]
 
 
@@ -108,10 +127,10 @@ def 分类(conn, 基准=None, 每列上限=3):
     """
     基准 = str(基准 or 今天())[:10]
     未来行, 缺表, 查不了 = [], [], []
-    for t, col, cn in 已发生的时间列:
+    for t, col, cn, pk in 已发生的时间列:
         try:
             for r in conn.execute(
-                    f"SELECT id,{col} FROM {t} WHERE {col} IS NOT NULL "
+                    f"SELECT {pk},{col} FROM {t} WHERE {col} IS NOT NULL "
                     f"AND substr({col},1,10) > ? LIMIT {int(每列上限)}", (基准,)):
                 未来行.append(dict(表=f"{t}.{col}", 说明=cn, id=r[0], 时间=r[1]))
         except Exception as e:

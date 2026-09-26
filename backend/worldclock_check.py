@@ -148,7 +148,7 @@ for fn in sorted(os.listdir(HERE)):
     命中 = set()
     for m in _写语句.finditer(t):
         表, 尾 = m.group(1), m.group(2)
-        for tb, col, cn in 对们:
+        for tb, col, cn, _pk in 对们:
             if 表 == tb and re.search(r"\b" + re.escape(col) + r"\b", 尾):
                 命中.add(f"{tb}.{col}({cn})")
     if not 命中: continue
