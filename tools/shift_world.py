@@ -169,6 +169,50 @@ def 平移(db=DB, 到=None, 说=print):
     # **只挪这次真的扫到的那几列。** 登记表里写着、库里却没有的(列改过名、
     # 或者这是个还没建全的库),不许照着名字去 update —— 那会当场炸,
     # 而且炸在事务中间。登记表里多出来的另报,见下面那句 warn。
+    # ── 动手之前:已经在未来的记录,**不许被继续往后推** ──────────────
+    # 2026-09-26 踩到:一条按机器时钟写的 schedule.assigned_at 落在世界的未来,
+    # 平移把它**又往后挪了一天** —— 这个 bug **不会自愈**:平移每跑一次就多推一天。
+    # 而第二天的红看起来和今天一样,于是真正的原因(某个写口用了机器时钟)
+    # 会被当成「数据又漂了」。
+    #
+    # ⚠️ 判据**调 worldclock.未来记录()**,不去解析 spec_check 的输出。
+    # 第一版就是解析文本的,而它挂在 `❌  C4`(两个空格)上 ——
+    # 实际输出是一个空格,**闸整个没生效,还让并行会话去追了一个不存在的 bug**。
+    # 判据贴着别人的排版,就是贴着一件随时会变的事。
+    _sys_path_added = False
+    try:
+        _b = os.path.join(ROOT, "backend")
+        if _b not in sys.path: sys.path.insert(0, _b); _sys_path_added = True
+        import worldclock as _WC
+        _分 = _WC.分类(c, 基准=现)
+        # ⚠️ **这道闸只拦一件事:真的有「已经发生的事」落在未来。**
+        # 「表/列查不了」**不在这道闸的职责里** —— 那是「清单和库对不上」,
+        # 归 spec_check 的 C4(它在真库上会红,而且必须红:被吞掉的异常和
+        # 「查过了没问题」在输出上完全一样)。
+        #
+        # 第一版把两件事混成一条,结果这个脚本的**自测被自己的闸拦住了**:
+        # 合成夹具只有 4 张表、列也不全,于是「查不了」一大片 ——
+        # 而那只说明夹具小,不说明有未来记录。
+        # **一道闸兼办两件事,它就会在其中一件上判错。**
+        未来 = _分["未来行"]
+        没查到 = len(_分["缺表"]) + len(_分["查不了"])
+        if 没查到:
+            说(f"  ℹ 有 {没查到} 列这次没查到(表或列不在 —— 夹具、还没建全的库,"
+              f"或者清单和库对不上)。**这不代表那几列没问题** ——"
+              f"清单对不对由 spec_check 的 C4 管")
+    except Exception as _e:
+        # 查不了**不静默放行** —— 说清楚是「没查」,不是「没问题」
+        说(f"  ⚠ 平移前的「未来记录」检查没跑起来({type(_e).__name__}: {_e})—— "
+          f"**这不代表没有未来记录,只代表没查**")
+        未来 = []
+    if 未来:
+        c.close()
+        return dict(错=("平移前发现 %d 条「已经发生的事」落在世界的未来:%s。"
+                       "平移会把它们**再往后推 %d 天**,而这个 bug 不会自愈。"
+                       "先修写它的那个口 —— 判据是:那一列会不会被平移;"
+                       "会的话必须用 backend/worldclock.py 的世界时钟写。"
+                       % (len(未来), 未来[:3], 天)))
+
     该挪文字 = [x for x in 混 if x in 文字里也挪]
     丢 = [x for x in 文字里也挪 if x not in 混]
     if 丢: 说(f"  ⚠ 登记过却没扫到的文字列:{丢} —— 列改名了?还是这批数据里恰好没有日期?")
@@ -341,6 +385,39 @@ if __name__ == "__main__":
     for i, a in enumerate(sys.argv):
         if a in ("--到", "--to") and i + 1 < len(sys.argv): 到 = sys.argv[i + 1]
     到 = 到 or os.environ.get("LANXIU_SEED_TODAY") or date.today().isoformat()   # 真实时钟:同上,CI 和复现靠 LANXIU_SEED_TODAY 钉住
+
+    # ── 互斥标记 ──────────────────────────────────────────────────
+    # ⚠️ 这一条是并行会话(eureka-c5)2026-09-26 指出来的,而它是对的:
+    # 这个脚本一次要重写 **115 个日期列 / 32 万个值**,中途被别人读到的库
+    # 是**平移到一半的库** —— 而「库坏了」和「库正在被平移」长得一模一样。
+    # `tools/rebuild.sh` 早就有 `.rebuilding` 标记,这里一直没有;
+    # 而「谁都能直接敲这一行」和 09-18 栽的那三次是同一形状:
+    # **调用方的守卫只护得住调用方。**
+    标记 = os.path.join(os.path.dirname(DB), ".shifting")
+    老 = None
+    if os.path.exists(标记):
+        try: 老 = int(open(标记).read().strip())
+        except Exception: 老 = None
+    if 老 is not None:
+        活着 = True
+        try: os.kill(老, 0)
+        except (ProcessLookupError, PermissionError): 活着 = (老 is not None and False)
+        except Exception: 活着 = True
+        if 活着:
+            print(f"❌ 另一个平移正在跑(pid {老})—— 两个同时改同一个库,"
+                  f"只会得到一个日期对不上的库,而它看起来完全正常")
+            sys.exit(1)
+        # 进程没了但标记还在 = 上一次被中断了。**这时候库可能是半平移的**,
+        # 所以不静默接着跑:让人先跑 --check 看一眼。
+        print(f"⚠️ 有一个残留的平移标记(pid {老} 已经不在了)——"
+              f"**上一次可能被中断在一半**。\n"
+              f"   先跑 `python3 tools/shift_world.py --check` 看世界自不自洽;"
+              f"确认没问题再删掉 {标记} 重跑。")
+        sys.exit(1)
+    open(标记, "w").write(str(os.getpid()))
+    import atexit as _atexit
+    _atexit.register(lambda: os.path.exists(标记) and os.remove(标记))
+
     print(f"把演示世界平移到 {到}")
     print("=" * 76)
     r = 平移(到=到)

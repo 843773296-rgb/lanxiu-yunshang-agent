@@ -26,6 +26,19 @@ from oplog import log_op
 MANAGER_ROLES = ("店长", "总部运营")
 
 
+
+def _wnow():
+    """**世界的当下**(格式化好的),不是机器的当下。
+
+    ⚠️ 这个文件原来有 **6 处内联** `datetime.datetime.now().strftime(...)`,
+    其中一处写的是 `schedule.assigned_at` —— 而那正是 2026-09-26 让门禁 C4 红掉、
+    并且被每日平移**一天一天往未来推**的那一列。
+    内联 6 处的问题不只是重复:**改对其中 5 处、漏掉 1 处,和全都没改
+    在门禁上的表现是一样的**(只要那一处恰好没被跑到)。所以收成一个口。
+    """
+    import worldclock
+    return worldclock.当下().strftime("%Y-%m-%d %H:%M")
+
 def rows(sql, *a):
     with sqlite3.connect(DB) as c:
         c.row_factory = sqlite3.Row
@@ -188,7 +201,7 @@ def assign_task(d, me):
     st = (d.get("start") or "").replace("T", " ").strip()
     en = (d.get("end") or d.get("due") or "").replace("T", " ").strip()
     if not en: return dict(ok=False, code="NEED_END", reason="结束时间必填 —— 没有截止时间的任务不会被做")
-    if not st: st = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    if not st: st = _wnow()
     try:
         t0 = datetime.datetime.fromisoformat(st); t1 = datetime.datetime.fromisoformat(en)
     except ValueError:
@@ -212,7 +225,7 @@ def assign_task(d, me):
                      VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
                   (sid, kind, him["no"], cid,
                    st, en, him.get("shop"), to, me["no"],
-                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), note, ac, ref_id))
+                   _wnow(), note, ac, ref_id))
 
     # 派单附件 —— 存不下的**逐张回报**,不要笼统说「部分失败」。
     import files as _f
@@ -276,7 +289,7 @@ def dispatch(d, me):
     sg = _bk.suggest(t)
     with sqlite3.connect(DB) as c:
         c.execute("UPDATE schedule SET assignee_no=?,assigned_by=?,assigned_at=?,advisor_no=? WHERE id=?",
-                  (to, me["no"], datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                  (to, me["no"], _wnow(),
                    him["no"], sid))
     adopted = bool(sg and sg["no"] == to)
     tail = ("(采纳了建议)" if adopted else
@@ -372,7 +385,7 @@ def assign_batch(items, me):
                            f"改好再排一次。")
 
     n = rows("SELECT COUNT(*) c FROM schedule")[0]["c"]
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = _wnow()
     made = []
     with _sq.connect(DB) as c:
         for k, a in enumerate(plan, 1):
@@ -459,7 +472,7 @@ def dispatch_batch(items, me):
         return dict(ok=False, code="BATCH_REJECT", 逐条=bad,
                     reason=f"这批 {len(items)} 条里有 {len(bad)} 处不行,**整批都没写**。改好再来一次。")
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = _wnow()
     made = []
     with _sq.connect(DB) as c:
         for a in plan:
@@ -566,7 +579,7 @@ def reassign(d, me):
     old = rows("SELECT name FROM staff WHERE no=?", t["assignee_no"])
     old_name = old[0]["name"] if old else t["assignee_no"]
     him = allowed[to]
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = _wnow()
     with sqlite3.connect(DB) as c:
         c.execute("UPDATE schedule SET assignee_no=?,advisor_no=?,assigned_by=?,assigned_at=?,"
                   "reassigned_from=?,reassign_reason=?,reassigned_at=? WHERE id=?",

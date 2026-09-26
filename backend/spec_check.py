@@ -190,19 +190,11 @@ except Exception as _e:
 #
 # 只查**已经发生**的事实(互动过了、量过了、付过了);
 # 计划类的字段(预约开始、任务截止、交期)本来就该在未来,不在这条里。
-_FUTURE = [("customer", "last_interact", "最近互动"),
-           ("measure_rec", "measured_at", "量体时间"),
-           ("ordr", "paid_at", "付款时间"),
-           ("ordr", "finished_at", "订单完成"),
-           ("schedule", "assigned_at", "派单时间"),
-           # ⚠️ 这一列原来写的是 `followup.created`,而表里根本没有这个列 ——
-           # 外面那个 `except: pass` 把 OperationalError 吞了,于是**「跟进时间」这一项
-           # 从加进来那天起就没查过一次**,而 C4 一直打勾。2026-09-24 把 pass 改掉后当场露出来。
-           ("followup", "ts", "跟进时间"),
-           # 09-22 补:造旅程往回挪时间时这三列漏了,落在 10 月,而这条当时没查它们所以没红
-           ("fitting", "ts", "白坯试衣时间"),
-           ("fitting", "signed_at", "试衣签字时间"),
-           ("ordr", "cut_at", "开裁时间")]
+# ⚠️ 这份清单**挪到 backend/worldclock.py 了**(2026-09-26)——
+# 因为 tools/shift_world.py 也要用同一份知识:平移之前得知道「有没有记录已经在未来」。
+# 抄一份给平移的话,两份会各自漂,而漂的表现是「C4 红着但平移放行」,看不出是清单不同步。
+import worldclock as _WC
+_FUTURE = _WC.已发生的时间列
 _fut = []
 for _t, _col, _cn in _FUTURE:
     try:

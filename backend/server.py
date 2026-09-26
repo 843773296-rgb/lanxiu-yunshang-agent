@@ -13,6 +13,26 @@ import stockalert as _sa     # 「快没了」件数线的唯一源头(业务 20
 import auth                     # 员工登录:**角色只从服务端会话取,不从请求体读**
 
 
+
+def _wnow():
+    """**世界的当下**(格式化好的),不是机器的当下。
+
+    ⚠️ 2026-09-26:`backend/worldclock_check.py` 扫出这个文件写了
+    `customer.last_interact` / `ordr.cut_at` / `ordr.finished_at` ——
+    这几列都会被 `tools/shift_world.py` 平移,而它们当时用的是机器时钟。
+    后果:记录落在机器的今天、世界停在别的日子,然后每日平移把它**又往后挪一天**,
+    **平移每跑一次多推一天,永远不会自愈**(booking.py 就是这么让门禁 C4 红的)。
+    判据:那一列会不会被平移;会的话就必须用世界时钟写。
+    """
+    import worldclock
+    return worldclock.当下()
+
+
+def _wtoday():
+    """世界的今天(ISO 字符串)。"""
+    import worldclock
+    return worldclock.今天().isoformat()
+
 def _me(handler):
     """从 Cookie 里的 token 换出当前登录的员工。没登录返回 None。
 
@@ -1136,7 +1156,7 @@ def download_list(q):
 def create_download(kind,filters,actor="魏欣新"):
     import datetime
     n=rows("SELECT COUNT(*) c FROM download_task")[0]["c"]
-    did=f"DL{datetime.datetime.now():%y%m%d}{n+1:04d}"
+    did=f"DL{_wnow():%y%m%d}{n+1:04d}"
     cnt={"客户档案":lambda:customer_list({"per":["1"]})["total"],
          "操作日志":lambda:len(op_logs(100000)),
          "商品库":lambda:product_list({"per":["1"]})["total"],
@@ -1144,8 +1164,8 @@ def create_download(kind,filters,actor="魏欣新"):
     with sqlite3.connect(DB) as c:
         c.execute("INSERT INTO download_task VALUES(?,?,?,?,?,?,?,?,?)",
           (did,kind,filters or "全部","已完成",cnt,max(1,cnt//8),"60000008",
-           datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-           (datetime.datetime.now()+datetime.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M")))
+           _wnow().strftime("%Y-%m-%d %H:%M"),
+           (_wnow()+datetime.timedelta(hours=24)).strftime("%Y-%m-%d %H:%M")))
     log_op(actor,"download",did,"—","已完成",True,"EXPORT",
            f"{kind} 导出 {cnt} 行,筛选:{filters or '全部'};下载链接 24 小时后失效",{})
     return dict(ok=True,code="EXPORT",id=did,
@@ -1278,7 +1298,7 @@ def create_customer(d, actor="魏欣新", _role=None):
                      VALUES(?,?,?,?,?,?,'潜在','普通',?,0,0,?,?,0,0)""",
                   (cid, d.get("name"), ph, (ph or "")[-4:], d.get("shop"),
                    顾问工号(d.get("advisor")),
-                   datetime.date.today().isoformat(), d.get("addr"), d.get("birthday")))
+                   _wtoday(), d.get("addr"), d.get("birthday")))
     log_op(actor, "customer", cid, "—", "潜在", True, "CREATE",
            f"新建客户 {d.get('name')};生命周期初始为「潜在」(无完成订单)", {"role": role})
     return dict(ok=True, code="CREATE", id=cid,
@@ -1294,7 +1314,7 @@ def create_appointment(d, actor="魏欣新", _role=None):
         log_op(actor, "appointment", "-", "—", "新建", False, code, why, {"role": role})
         return dict(ok=False, code=code, reason=why)
     n = rows("SELECT COUNT(*) c FROM appointment")[0]["c"]
-    aid = f"AP{datetime.datetime.now():%y%m%d}{n + 1:04d}"
+    aid = f"AP{_wnow():%y%m%d}{n + 1:04d}"
     # 列名以**表**为准:appointment 是 start_ts / end_ts,不是 appt_at。
     # 校验读的也是 d["start"] / d["end"](见 rules.validate_appointment),两头对齐。
     _insert("appointment",
@@ -1317,12 +1337,12 @@ def create_followup(d, actor="魏欣新"):
     if not rows("SELECT id FROM customer WHERE id=?", d["customer_id"]):
         return dict(ok=False, code="NO_CUSTOMER", reason=f"客户 {d['customer_id']} 不存在")
     n = rows("SELECT COUNT(*) c FROM followup")[0]["c"]
-    fid = f"FU{datetime.datetime.now():%y%m%d}{n + 1:04d}"
+    fid = f"FU{_wnow():%y%m%d}{n + 1:04d}"
     # followup 的列是 id / customer_id / appt_id / ts / channel / content / advisor
     _insert("followup",
             {"id": fid, "customer_id": d["customer_id"],
              "appt_id": d.get("appt_id"),
-             "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+             "ts": _wnow().strftime("%Y-%m-%d %H:%M"),
              "channel": d.get("channel") or "电话",
              "content": d.get("content") or d.get("note"),
              "advisor": d.get("advisor")},
@@ -1436,7 +1456,7 @@ def import_customers(text,actor="魏欣新",role="顾问",dry=True):
             for ln,nm,why2 in review:
                 c.execute("INSERT OR IGNORE INTO task VALUES(?,?,?,?,?,?)",
                   (f"TIMP-{batch}-{ln}","客户合并确认",f"导入第 {ln} 行|{nm}","待处理",
-                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),why2))
+                   _wnow().strftime("%Y-%m-%d %H:%M"),why2))
     log_op(actor,"import",batch,"—","导入",True,"IMPORT",
       f"批次 {batch}:成功 {len(good)}、跳过 {len(skip)}、错误 {len(err)}、待人工确认 {len(review)}"
       + ("(试算,未写入)" if dry else ""),{"role":role})

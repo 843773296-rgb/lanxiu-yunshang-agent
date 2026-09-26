@@ -59,6 +59,10 @@ run "产品文档 · 写死的数字和代码对账(文档变假时不会报错)
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
 run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py
 run "边界审计 · 每条保证真的攻击一次" python3 backend/boundary_audit.py
+# 2026-09-26:booking.py 用机器时钟写 schedule.assigned_at,而世界停在别的日子;
+# 平移把它一天一天往未来推 —— **这个 bug 不会自愈**,而 C4 抓到的只是症状。
+# 这条抓原因:写「已发生的事」那几列的地方,必须用 backend/worldclock.py。
+run "世界时钟 · 写已发生的事不许用机器时钟(4 条咬合)" python3 backend/worldclock_check.py
 run "提示词 · 单一源头与按工具装配" python3 tools/prompts_check.py
 # 「页面上的旋钮不许是假的」—— 每个旋钮声明的落点必须真的被后端读到。
 # 假旋钮(界面能拧、后端不读)比没有这个功能糟:拖动它什么都不变,而人会以为自己在调。

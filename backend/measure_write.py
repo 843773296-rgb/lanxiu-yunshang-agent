@@ -41,7 +41,16 @@ def _deny(me, code, reason, key="—"):
 
 
 def _now():
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    """**世界的当下**,不是机器的当下。
+
+    ⚠️ 2026-09-26:`backend/booking.py` 的同名函数用的是机器时钟,写出来的
+    `schedule.assigned_at` 落在机器的今天、而世界停在别的日子,然后每日平移
+    把它**又往后挪一天** —— 这个 bug **不会自愈**,平移每跑一次就多推一天。
+    `backend/worldclock_check.py` 扫出这个文件是同一个形状,一起修。
+    判据:那一列会不会被 shift_world 平移;会的话就必须用世界时钟写。
+    """
+    import worldclock
+    return worldclock.当下().strftime("%Y-%m-%d %H:%M")
 
 
 def _周岁(birthday, on):

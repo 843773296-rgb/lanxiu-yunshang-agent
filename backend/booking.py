@@ -80,7 +80,17 @@ MAX_PENDING = 3          # 同一个手机号最多挂 3 张没做完的预约
 OPEN_HOUR = (10, 21)     # 门店营业时间,预约只能落在这个区间
 
 
-def _now(): return datetime.datetime.now()
+def _now():
+    """**世界的当下**,不是机器的当下。
+
+    ⚠️ 这里原来是 `datetime.datetime.now()`。后果不是「差一天」那么简单:
+    它写出来的 `schedule.assigned_at` 落在**机器**的今天,而演示世界停在别的日子;
+    然后每日平移把这条记录**跟着往后挪** —— 于是它落到世界的未来,
+    而且**平移每跑一次就多推一天,永远不会自愈**。
+    2026-09-26 被门禁 C4 抓到(SC7002 的派单时间跑到了 09-27)。
+    """
+    import worldclock
+    return worldclock.当下()
 
 
 def book(d):
