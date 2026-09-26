@@ -60,6 +60,15 @@ def 拒绝吗(c, 语句, **值):
         return True, str(e.orig).split("\n")[0][:110]
 
 
+# ⚠️ **跑前先拍数。** 第一版断言「跑完 organizations == 0」——
+# 那假设了一个空库,而 `make seed-demo` 之后库里本来就有演示数据,
+# 于是这条检查变红,**而它报的理由是「攻击测试没还原」,完全指错了方向**。
+# 判据要贴着「我有没有留下东西」,不是「库是不是空的」。
+with eng.connect() as _c0:
+    前计数 = {t: _c0.execute(text(f"select count(*) from {t}")).scalar()
+             for t in ("organizations", "projects", "traces", "spans", "scores",
+                       "training_jobs", "evaluations")}
+
 with eng.begin() as c:
     org, A, B = 摆两个项目(c)
     T = M.表们
@@ -143,8 +152,10 @@ with eng.begin() as c:
     c.rollback()
 
 with eng.connect() as c:
-    残 = c.execute(text("select count(*) from organizations")).scalar()
-ck("跑完库里没留下测试数据(攻击测试写脏了不还原,下一轮结论就不可信)", 残 == 0, f"organizations={残}")
+    后计数 = {t: c.execute(text(f"select count(*) from {t}")).scalar() for t in 前计数}
+多出来 = {t: 后计数[t] - 前计数[t] for t in 前计数 if 后计数[t] != 前计数[t]}
+ck("跑完库里没多出东西(攻击测试写脏了不还原,下一轮结论就不可信)",
+   not 多出来, 多出来 or f"{len(前计数)} 张表的行数和跑之前一样")
 
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 sys.exit(1 if 挂 else 0)

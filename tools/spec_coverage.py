@@ -41,6 +41,7 @@ import endpoints as EP, adapters as AD
     ("改了接口表但不重跑 gen_openapi.py",    "OpenAPI 是最新的"),
     ("把异步操作的 202 换成 200「已完成」",   "异步操作都返回 202"),
     ("把错误体的 advice 从必填改成可选",      "错误体把 advice 和 retryable 设成必填"),
+    ("改了接口表但不重跑 gen_ts_types.py",    "前端 TS 类型是最新的"),
     ("给某个只追加实体加上 revision 字段", "只追加的实体不许有 revision/归档"),
     ("让「已冻结」能走回「编辑中」",       "冻结/不可变的状态不许回退"),
     ("把「状态待核实」列进终态",           "「不确定」不许当终态"),
@@ -317,6 +318,31 @@ else:
     # 列表信封 total 允许 null —— 「未知」不许被压成 0
     _t = _oa["components"]["schemas"]["ListEnvelope"]["properties"]["total"]["type"]
     ck("列表 total 允许 null(未知不许写成 0)", "null" in _t, 1, _t)
+
+# ── ⑪ 前端 TS 类型也是生成的,必须最新 ──────────────────────────────
+# 前端手写一份 interface = 把契约抄第三遍。三份会各自漂,而**漂的时候编译还是过的**:
+# 后端把一个字段改成可空,前端的 interface 上它仍然是必填,
+# 于是那个 undefined 一路跑到渲染才炸,而报错指向的地方离原因很远。
+_ts_gen = os.path.join(ROOT, "tools", "gen_ts_types.py")
+_spec3 = _iu.spec_from_file_location("gen_ts_types", _ts_gen)
+_m3 = _iu.module_from_spec(_spec3); _spec3.loader.exec_module(_m3)
+_ts = os.path.join(ROOT, "packages", "contracts", "api.ts")
+if not os.path.exists(_ts):
+    ck("前端 TS 类型已生成", False, 1, "跑 python3 tools/gen_ts_types.py")
+else:
+    _旧3 = open(_ts, encoding="utf-8").read()
+    _m3.写()
+    _新3 = open(_ts, encoding="utf-8").read()
+    ck("前端 TS 类型是最新的(生成的,改了契约要重跑 gen_ts_types.py)",
+       _旧3 == _新3, len(_新3.splitlines()),
+       "" if _旧3 == _新3 else "和现在的契约对不上 —— 跑 make gen")
+    # 每条接口都要带 capability —— 前端据此决定按钮显示成「无权」还是隐藏,
+    # **但那只是提示**:授权由服务端每次请求执行(规格 §5.2 明确禁止拿禁用按钮当授权)
+    # ⚠️ 数 `capability: ` 会把**类型声明**那一行也数进去(`capability: Capability;`),
+    # 于是 51 ≠ 50。判据要贴着「数据行」:只有数据行的值是字符串字面量。
+    _有cap = len(re.findall(r'capability:\s*"', _新3))
+    ck("TS 里每条接口都带 capability(前端据此给提示,**不是授权**)",
+       _有cap == len(EP.接口表), _有cap, f"{_有cap} 条数据行 vs 接口 {len(EP.接口表)} 条")
 
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 if 挂:

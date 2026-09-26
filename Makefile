@@ -32,30 +32,38 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_project_isolation.py
 	@echo ""
-	@echo "⚠️ 跑到的是【契约层 + 数据层】。API / Worker / Web 还没实现,"
-	@echo "   所以 test 通过不代表「系统可用」—— 见 README 的「现在做到哪了」。"
+	@echo "⚠️ test 跑的是**不需要起服务**的那部分(契约层 + 数据层)。"
+	@echo "   接口和页面的闭环在 make test-e2e(要先 make dev)。"
+	@echo "   **两个都绿也不代表「系统可用」** —— Worker / 知识链 / 训练链 / 发布链"
+	@echo "   都还没实现,见 README 的「现在做到哪了」。"
 
 migrate:       ## 改了契约之后:生成迁移(需要 -m "说明")
 	@test -n "$(m)" || { echo '要写说明:make migrate m="加了什么"' >&2; exit 1; }
 	@cd services/api && DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		../../.venv/bin/alembic revision --autogenerate -m "$(m)"
 
-gen:           ## 重跑所有生成器(契约文档 + OpenAPI)
+gen:           ## 重跑所有生成器(契约文档 + OpenAPI + 前端 TS 类型)
 	@python3 tools/gen_contract_doc.py
 	@python3 tools/gen_openapi.py
+	@python3 tools/gen_ts_types.py
 
-dev:
-	@echo "❌ 未实现:API / Web / Worker 还没建(规格 §17.4 第 3–5 步)。" >&2
-	@echo "   现在能跑的是 make contract 和 make doctor。" >&2
-	@exit 1
+dev:           ## 起 API + 页面(http://127.0.0.1:8801)
+	@bash tools/dev.sh
 
 seed-demo:
 	@echo "❌ 未实现:还没有数据模型迁移,没法灌演示数据(§17.4 第 2 步)。" >&2
 	@exit 1
 
-test-e2e:
-	@echo "❌ 未实现:没有页面可跑端到端(§17.4 第 3 步之后)。" >&2
-	@exit 1
+test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 三页页面冒烟(要先 make dev)
+	@echo "▸ 接口闭环与**禁止行为**(35 条:跨项目、权限、乐观锁、幂等、脱敏、未知费用)"
+	@./.venv/bin/python tests/e2e/test_api_flow.py
+	@echo ""
+	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径**(不是只看语法)"
+	@for h in '#/workbench' '#/prompts' '#/runs'; do \
+		printf "  %-14s " "$$h"; node tests/e2e/page_smoke.js "$$h" 2>&1 | tail -1; done
+	@echo ""
+	@echo "⚠️ 页面冒烟跑的是**加载路径**,不是视觉 —— 它证明「取到数并渲染了」,"
+	@echo "   不证明「排版对」。视觉要人打开 http://127.0.0.1:8801 看。"
 
 test-live:
 	@echo "❌ 未实现:外部调用还没接。**缺资源要报告跳过,不算通过**(§17.5)。" >&2

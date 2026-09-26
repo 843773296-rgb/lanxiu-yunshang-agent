@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>AI 管理后台</title>
+<meta name="viewport" content="width=1280">
+<link rel="stylesheet" href="/static/app.css">
+</head><body>
+<div id="top">
+  <span class="brand">AI 管理后台</span>
+  <select id="who" title="开发身份模式:身份从请求头来"></select>
+  <select id="proj" title="切项目会清掉旧项目的对象选择并重新校验权限"></select>
+  <!-- 生产环境**加文字标签和明显边框,不只用颜色**(§4) -->
+  <span id="env" class="envtag">development</span>
+  <span class="grow"></span>
+  <span class="vtag" id="whoami"></span>
+</div>
+<div id="demo" style="display:none"></div>
+<nav id="side"></nav>
+<main id="main"><div class="state">加载中…</div></main>
+<script src="/static/app.js"></script>
+</body></html>

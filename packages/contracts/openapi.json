@@ -4065,7 +4065,7 @@
             "description": "服务问题"
           }
         },
-        "summary": "Prompt 列表",
+        "summary": "Prompt 清单",
         "tags": [
           "Prompt 管理"
         ],
