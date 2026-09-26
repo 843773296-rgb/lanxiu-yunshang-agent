@@ -22,6 +22,16 @@
 #   grow_customers.py 客户补到 1000 个(账户 / 着装人 / 同意 / 量体都齐)—— **先有人,再放量**
 #   simulate_sales.py 6 个月标品销量(库存预警要它才算得出可售天数)
 #   order_mix.py     把其中一批改成定制单 + 重建售后/换货/维保 + 客户汇总按订单重算
+#   clamp_future_done.py  把「状态是完成、完工日却在今天之后」的单**整条时间线**挪回来
+#                    ⚠️ **必须排在 shift_world 之前。** 它原来只由 shift_world 事后调用,
+#                    而并行会话 2026-09-26 新加的「平移前置闸」挡在平移之前 ——
+#                    于是从零重建会卡住:修它的工具排在拦它的闸后面。
+#                    (种子里那 7 张单的完工日来自一个写死的 2026-09-15 上限,
+#                     而锚点是 08-31;直接改那个上限会破「量体→投产 ≥20 天」那条 assert,
+#                     真正晚的是那几条量体记录 —— 所以这一轮靠事后压,不动造数。)
+#   level_customer_orders.py  削峰:把「一个人买了 162 次」摊给同店少单客户
+#                    (业务 2026-09-26 定。**排在最后、shift_world 之前** ——
+#                     它要读客户建档日和订单下单日比大小,得等所有造单的步骤都跑完)
 #                    (业务 2026-09-18 的数据集规格,intent/order-aftersale-dataset.md)
 #   seed_fitting.py  白坯试衣记录(要先有定制订单行)
 #   make_todo.py     待办清单(从 intent/ 生成)
@@ -77,7 +87,7 @@ if [ "$FRESH_ONLY" = 1 ]; then
     echo "   真要重建,请直接敲 ./tools/rebuild.sh(它会先说清楚要删什么,并留 3 秒反悔)。"
     exit 1
   fi
-  echo "📦 首次建库:下面 24 步**全跑完**才算建好,少一步都会让某几张表空着。"
+  echo "📦 首次建库:下面 26 步**全跑完**才算建好,少一步都会让某几张表空着。"
 else
   echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
   sleep 3
@@ -98,6 +108,7 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
             "tools/order_mix.py" "tools/backfill_order_measure.py" "backend/seed_fitting.py" "backend/seed_pickup.py" "backend/seed_repair.py" "tools/backfill_color.py" \
             "tools/backfill_transcript.py" "tools/backfill_roster.py" "tools/backfill_credit.py" "tools/ensure_tables.py" "tools/backfill_fixtures.py" "tools/backfill_biz_fields.py" "tools/backfill_link.py" "tools/backfill_wattr.py" \
             "tools/seed_factory_feed.py" "backend/seed_pickup.py --铺到包裹" "tools/seed_pending_orders.py" \
+            "tools/level_customer_orders.py" "tools/clamp_future_done.py" \
             "tools/shift_world.py" "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
   python3 $STEP > /tmp/rebuild-step.out 2>&1 || {
@@ -110,8 +121,8 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
 done
 
 # **自己证明干了活。** 不加这一条的话,上面那个 bug 会一直以「✅」收场。
-if [ "$DONE" -ne 24 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 24 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 26 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 26 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"

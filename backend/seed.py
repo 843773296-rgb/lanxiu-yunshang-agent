@@ -2527,15 +2527,36 @@ def run():
 
     # ── 库存变更日志(后台 PRD 第 8 章:关键写操作均可查询操作人、时间、前后值和业务编号)──
     KINDS=[("入库",1),("订单占用",-1),("订单释放",1),("退货入库",1),("盘点调整",0),("报损",-1)]
-    skus=[r for r in c.execute("SELECT code,spu,stock FROM sku ORDER BY code")]
+    # ⚠️ **这条链记的是「可用」(= 在手 − 已占用),不是在手。**(口径:`knowledge/stockalert.流水记的是`)
+    # 怎么推出来的:kind 里**没有「发货出库」** —— 发货时在手和占用各减一样多、可用不变,
+    # 所以不记流水是对的;倒过来说,这条链只可能记可用。
+    #
+    # 2026-09-26 业务点头改的:原来 `before` 是拿 `sku.stock`(**在手**)反推的,
+    # 于是 **47/60 个 SKU 的链尾和可用对不上**,`backend/stock_check.py` 那条上限 47 就是这么来的。
+    # 不是谁记错了账,是**这张表从来没说过自己记的是哪个量** —— 两种读法在表上长得一模一样,
+    # 都是一串加加减减的整数。
+    skus=[tuple(r) for r in c.execute(
+        "SELECT code,spu,stock,COALESCE(locked,0) FROM sku ORDER BY code")]
+    def _可用(sk): return max(0, sk[2]-sk[3])
     ops=["60000001 张静静","60000004 周恒东","60000008 魏欣新","系统"]
+    用过=set()
     for i in range(60):
-        sk=skus[i%len(skus)]
         kd,sign=KINDS[i%6]
         amt=random.randint(1,12)
         delta=amt*sign if sign else random.choice([-3,-2,2,3])
-        before=max(0,sk[2]-delta*((i//len(skus))+1))
-        after=max(0,before+delta)
+        # 链尾必须落在可用上 → `before = 可用 − delta` 不能是负的。
+        # 所以**正向变动要挑一个「减得起」的 SKU**:从 i%len 往后扫第一个可用 ≥ delta、
+        # 且还没用过的。⚠️ 这个扫描**一个随机数都不多消耗** —— 否则整库就不确定了
+        # (`random` 的调用顺序一变,后面所有造数跟着变,而那看起来只像「数据又刷新了一遍」)。
+        j=i%len(skus)
+        for k in range(len(skus)):
+            cand=(j+k)%len(skus)
+            if cand in 用过: continue
+            if delta<=0 or _可用(skus[cand])>=delta: j=cand; break
+        用过.add(j)
+        sk=skus[j]
+        after=_可用(sk)                     # 链尾 = 这个 SKU 现在的可用
+        before=after-delta
         day=8+(i%22)
         c.execute("""INSERT INTO stock_log(sku,spu,kind,delta,before_n,after_n,ref,operator,ts,note)
                      VALUES(?,?,?,?,?,?,?,?,?,?)""",
@@ -3419,6 +3440,15 @@ def run():
     for _mid, _mcr, _oid, _okind in c.execute(
             "SELECT m.id, m.created, o.id, o.kind FROM maintain m JOIN ordr o ON o.id=m.order_id "
             "WHERE m.id IN (SELECT ref_id FROM task WHERE type='售后判责') ORDER BY m.id").fetchall():
+        # ⚠️ **这个上限写死成 2026-09-15,而造数锚点 T 是 2026-08-31** ——
+        # 于是 7 张单的完工日落在锚点之后:status 已经是「完成」,完工那天还没到。
+        # 2026-09-26 试过把它 clamp 到「锚点前一天」,**当场破了下面那条更强的约束**:
+        # 这几张单的 `_cr`(下单)是从**已有的量体记录**倒推的,量体本来就晚;
+        # 把完工往前拉,量体 → 投产之间就不够 20 天,assert 直接拦住。
+        # **真正晚的是那几条量体记录**,不是这个上限 —— 动它要改量体造数,不在这一轮范围里。
+        # 现在靠 `tools/clamp_future_done.py` 事后压回去(它本来就是干这个的),
+        # ⚠️ 而那个工具在 `rebuild.sh` 里排在 `shift_world` **之后** ——
+        # 并行会话新加的「平移前置闸」挡在它前面,所以从零重建时要**先压再平移**。
         _F = min(_DT.strptime(_mcr[:16], "%Y-%m-%d %H:%M") - timedelta(days=10),
                  _DT(2026, 9, 15, 15, 0))
         _ship = _F - timedelta(days=8)

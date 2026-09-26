@@ -2775,5 +2775,29 @@
       }
     ],
     "预期红": "决策表和 md 对得上"
+  },
+  {
+    "script": "backend/order_spread_check.py",
+    "改坏": "把单客户订单数的棘轮上限从 109 调到 50(库里现在最多 109,当场越过)",
+    "file": [
+      {
+        "path": "backend/order_spread_check.py",
+        "old": "最多单数上限 = 109",
+        "new": "最多单数上限 = 50"
+      }
+    ],
+    "预期红": "单客户订单数没涨"
+  },
+  {
+    "script": "backend/order_spread_check.py",
+    "改坏": "把「已匿名化」的判据换成匹配正常手机号(那些客户名下真的有单)",
+    "file": [
+      {
+        "path": "backend/order_spread_check.py",
+        "old": "            WHERE k.phone LIKE 'DELETED-%'",
+        "new": "            WHERE k.phone LIKE '1%'"
+      }
+    ],
+    "预期红": "已匿名化的客户名下没有订单"
   }
 ]
