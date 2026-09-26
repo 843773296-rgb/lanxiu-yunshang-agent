@@ -28,6 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
 sys.path.insert(0, os.path.join(HERE, "..", "knowledge"))
 from oplog import log_op
+import worldclock
 
 导购角色 = ("顾问", "店长")
 
@@ -39,7 +40,19 @@ def rows(sql, *a):
 
 
 def _now():
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    """**世界的当下**,不是机器时钟。
+
+    ⚠️ 这里原来是 `datetime.datetime.now()` —— 而它写出去的九处全是**演示世界的业务时间**:
+    签收完成时间、包裹到店、取件方式、按件签收、追认满没满 15 天、试穿码的有效期。
+    世界停在别的日子时,这些记录就落在世界的未来;随后日期平移把它们**再往后推一截**,
+    而这个 bug **不会自愈**(并行会话 2026-09-26 在别的写口上查出过同一个形状,那是第六个,这是第七个)。
+
+    实测:从零重建之后 `order_event.at` 有 **124 条**落在未来 —— 就是从这里来的。
+    ⚠️ 顺带一件值得记的:并行会话的 `worldclock_check.py` 扫的是**直接写那几列的代码**,
+    而这里**不直接写** `order_event` —— 它把时间算好传给 `factory_inbox.记事件()`。
+    **「谁算时间」和「谁写那一列」不是同一个模块时,按代码扫的检查会看不见。**
+    """
+    return worldclock.当下().strftime("%Y-%m-%d %H:%M")
 
 
 def _deny(me, code, reason, key="—"):
