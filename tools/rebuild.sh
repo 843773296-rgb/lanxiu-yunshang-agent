@@ -108,7 +108,7 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
             "tools/order_mix.py" "tools/backfill_order_measure.py" "backend/seed_fitting.py" "backend/seed_pickup.py" "backend/seed_repair.py" "tools/backfill_color.py" \
             "tools/backfill_transcript.py" "tools/backfill_roster.py" "tools/backfill_credit.py" "tools/ensure_tables.py" "tools/backfill_fixtures.py" "tools/backfill_biz_fields.py" "tools/backfill_link.py" "tools/backfill_wattr.py" \
             "tools/seed_factory_feed.py" "backend/seed_pickup.py --铺到包裹" "tools/seed_pending_orders.py" \
-            "tools/level_customer_orders.py" "tools/clamp_future_done.py" \
+            "tools/clamp_future_done.py" "tools/level_customer_orders.py" \
             "tools/shift_world.py" "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
   python3 $STEP > /tmp/rebuild-step.out 2>&1 || {
