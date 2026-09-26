@@ -27,8 +27,17 @@ Tool Gateway / Run Coordinator ……),每行还写了「边界」。这是一�
 """
 import os
 
-_根 = os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__)))))   # 仓库根
+# 仓库根:这个文件在 services/api/app/contract/ 下面,所以要往上**五层**
+# (contract → app → api → services → 仓库根)。
+# ⚠️ 第一版只写了四层,于是 _根 指到 `<仓库>/services`,落点核对报的是
+# 「validator.py 不存在」—— 而文件明明在。
+# **「路径算错了」和「文件真的不存在」在这条报错上长得一模一样**,
+# 所以下面 落点核对() 里把它真的去看的那个绝对路径一起打出来。
+# 同一个坑在这个项目里栽过一次(静态目录少算一层 dirname,表现成 404)。
+_根 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))))))
+assert os.path.isdir(os.path.join(_根, "services", "api", "app")), (
+    f"仓库根算错了:{_根} —— 这个断言比一条「文件不存在」的报错有用得多")
 
 
 def C(名, 中文, 职责, 边界, 落点, 已落地, 阶段):
@@ -59,7 +68,7 @@ AGENT链 = "Agent 最小链"
     C("Definition Validator", "定义校验器",
       "校验图、Schema、变量可用性、依赖与权限",
       "**服务端权威**;前端可用同源生成的 Schema 提速,但不代替它",
-      "services/api/app/runtime/validator.py::校验", False, 最小链),
+      "services/api/app/runtime/validator.py::校验", True, 最小链),
 
     C("Definition Compiler", "定义编译器",
       "把允许的版本化定义编译成可执行图和节点配置",
@@ -93,9 +102,11 @@ AGENT链 = "Agent 最小链"
       "services/api/app/runtime/eval_adapter.py::跑一题", False, 混合发布),
 ]
 
-# **写死的欠账上限。** 现在 9 个全未落地(契约阶段本该如此)。
-# 每落地一个就减一。⚠️ 不许写成 len(...) —— 见模块开头。
-未落地组件上限 = 9
+# **写死的欠账上限。** 每落地一个就减一,**只许降不许涨**。
+#   9 → 8:Definition Validator 落地(图校验 + 支配关系数据流分析,
+#         判据在 fixtures/orchestration/图校验夹具.json,17 张图集合相等)。
+# ⚠️ 不许写成 len(...) —— 见模块开头。
+未落地组件上限 = 8
 
 _按名 = {c["名"]: c for c in 组件表}
 
@@ -121,7 +132,10 @@ def 落点核对():
         路, _, 符号 = c["落点"].partition("::")
         f = os.path.join(_根, 路)
         if not os.path.exists(f):
-            坏.append(f"{c['名']} 标了已落地,但 {路} 不存在")
+            # **把绝对路径打出来。** 只说「{路} 不存在」的话,
+            # 「我把路径算错了」和「文件真的还没写」这两件完全不同的事,
+            # 在报错上是同一句话。
+            坏.append(f"{c['名']} 标了已落地,但找不到文件:{f}")
             continue
         if 符号 and 符号 not in open(f, encoding="utf-8").read():
             坏.append(f"{c['名']} 标了已落地,但 {路} 里找不到 `{符号}`")

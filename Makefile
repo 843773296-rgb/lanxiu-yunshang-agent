@@ -93,8 +93,12 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ DSL 语义:**判据是一张手写的真值表**,不是从实现跑出来的"
 	@./.venv/bin/python tests/orchestration/test_dsl_semantics.py
 	@echo ""
-	@echo "⚠️ 这一层证明的是「**契约和语义**对」,不证明「流程跑得起来」——"
-	@echo "   执行器、校验器、画布都还没落地(见 contract/landing.py 的九个组件)。"
+	@echo "▸ 图校验:**17 张图,期望阻断码手写在夹具里,判据是集合相等**(多报也算错)"
+	@./.venv/bin/python tests/orchestration/test_graph_validation.py
+	@echo ""
+	@echo "⚠️ 这一层证明的是「**契约、语义和图校验**对」,不证明「流程跑得起来」——"
+	@echo "   编译器、执行器、工具网关、画布都还没落地"
+	@echo "   (见 contract/landing.py:九个组件里落地了 1 个)。"
 
 test-orchestration-e2e:   ## 编排端到端:建图 → 校验 → 试运行 → 冻结 → 发布
 	@echo "❌ 未实现:执行链还没落地(规格 §18 的第 2—6 阶段)。" >&2

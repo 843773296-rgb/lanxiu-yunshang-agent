@@ -76,7 +76,7 @@ _调用相关 = {"timeout_seconds", "retryable_errors", "max_retries"}
 
 
 def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=(), 说明="",
-      可含子图=False, 唯一=False):
+      可含子图=False, 唯一=False, 必填=()):
     """登记一个节点类型。
 
     `中文` 必须和规格 §6.1 那张表的第一列**一字不差** —— 覆盖检查拿它对账,
@@ -101,9 +101,17 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
         raise ValueError(
             f"节点 {名} 会发外部调用,却把 {多} 标成不适用 —— "
             f"那它超时之后没有任何策略可依,只能挂在那里")
+    # **必填的配置字段必须是这个节点声明过的配置字段。** 拼错一个名字,
+    # 那条「必填」就永远查不到东西 —— 而校验器看起来「已经在查了」。
+    野必填 = [f for f in 必填 if f not in 配置]
+    if 野必填:
+        raise ValueError(
+            f"节点 {名} 把 {野必填} 标成必填,但它们不在这个节点的配置字段里 —— "
+            f"**拼错的字段名会让这条必填静默失效**")
     return dict(名=名, 中文=中文, 端口=list(端口), 配置=list(配置),
                 调用外部=bool(调用外部), 实现=实现, 不适用=list(不适用),
-                说明=说明, 可含子图=bool(可含子图), 唯一=bool(唯一))
+                说明=说明, 可含子图=bool(可含子图), 唯一=bool(唯一),
+                必填=list(必填))
 
 
 # ── 节点登记表(对齐规格 §6.1 那张表的每一行)────────────────────────
@@ -113,6 +121,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
       调用外部=False, 实现=已实现, 唯一=True,
       不适用=["timeout_seconds", "retryable_errors", "max_retries",
               "bindings", "required_capability"],
+      必填=["input_schema"],
       说明="每个顶层 Workflow **唯一一个**开始。"
            "**认证身份不由用户字段指定**(§6.1)—— 输入里写一个 user_id 就换身份,"
            "那整套授权等于不存在;身份来自认证上下文,走「系统注入」"),
@@ -122,6 +131,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
                               "bindings", "sampling_params", "output_schema",
                               "max_output_tokens", "repair_policy"],
       调用外部=True, 实现=已实现,
+      必填=["connection_version_id", "prompt_version_id", "output_schema"],
       说明="**普通 LLM 节点不自动执行它提出的工具调用**(§6.1)—— 模型返回一个工具请求,"
            "这里只把它当一条「模型说想调工具」的记录。要真调工具得用 Agent 节点或工具节点。"
            "这条区分是 Workflow 和 Agent 的分界线本身。"
@@ -131,6 +141,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
       端口=[成功, 失败], 配置=["knowledge_base_id", "index_build_id",
                               "retrieval_config_version_id", "bindings", "filters"],
       调用外部=True, 实现=已实现,
+      必填=["knowledge_base_id", "retrieval_config_version_id"],
       说明="**权限过滤由服务端强制**(§6.1)—— 检索结果里夹一篇他无权看的文档,"
            "就是一次越权读取,而它长得像一条普通证据。"
            "复用原有 RAG 后台,不在这儿重做一套"),
@@ -139,6 +150,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
       端口=[成功, 失败], 配置=["tool_version_id", "arguments", "connection_id",
                               "confirmation_policy", "idempotency_strategy"],
       调用外部=True, 实现=已实现,
+      必填=["tool_version_id"],
       说明="执行前过四道:Schema、对象授权、确认、幂等(§6.1)。"
            "**服务端绑定参数不许被模型或前端覆盖** —— 输出目录、project_id、允许的库"),
 
@@ -146,6 +158,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
       端口=[分支], 配置=["branches", "else_policy"],
       调用外部=False, 实现=已实现,
       不适用=["timeout_seconds", "retryable_errors", "max_retries", "output_schema"],
+      必填=["branches", "else_policy"],
       说明="**首个匹配的分支生效**,顺序即优先级;"
            "**必须配 ELSE 或显式终止策略**(§6.1)—— 没有兜底的条件在运行时是一条死路,"
            "而它在画布上看不出来"),
@@ -154,6 +167,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
       端口=[成功, 失败], 配置=["operations", "output_schema"],
       调用外部=False, 实现=已实现,
       不适用=["timeout_seconds", "retryable_errors", "max_retries"],
+      必填=["operations", "output_schema"],
       说明="**白名单转换,不许把任意 Python/JS 放进表达式直接执行**(§6.1、§17.4)。"
            "一个能 eval 的字段就是一条远程代码执行通道,而它在界面上只是个文本框"),
 
@@ -161,6 +175,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
       端口=[成功], 配置=["candidates", "output_field", "optional_policy"],
       调用外部=False, 实现=已实现,
       不适用=["timeout_seconds", "retryable_errors", "max_retries"],
+      必填=["candidates", "output_field"],
       说明="条件分支**只取实际激活的那一路**;类型要兼容。"
            "未激活的支路既不阻塞汇合,也不算「完成了的工作」(§8)"),
 
@@ -169,6 +184,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
                                    "failure_policy"],
       调用外部=False, 实现=未实现, 可含子图=True,
       不适用=["timeout_seconds", "retryable_errors", "max_retries"],
+      必填=["branches", "max_concurrency", "wait_policy"],
       说明="**首版等全部必需支路结束;不得完成一个就宣告整组成功**(§6.1)。"
            "每条支路写**独立状态命名空间** —— 并发写同一个全局字段的结果取决于调度顺序,"
            "而那不是确定语义"),
@@ -177,6 +193,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
       端口=[循环体, 循环出, 失败], 配置=["condition", "loop_state", "max_iterations"],
       调用外部=False, 实现=未实现, 可含子图=True,
       不适用=["timeout_seconds", "retryable_errors", "max_retries"],
+      必填=["condition", "max_iterations"],
       说明="**先判断后执行**(while 语义):进入条件为 false 时**零次执行**。"
            "循环计数和轮间状态进检查点,**恢复不清零**(§6.3)—— 清零的计数等于没有上限。"
            "达到上限但任务没达标,返回**受限停止**,不是成功"),
@@ -186,6 +203,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
                                        "item_failure_policy"],
       调用外部=False, 实现=未实现, 可含子图=True,
       不适用=["timeout_seconds", "retryable_errors", "max_retries"],
+      必填=["array_binding", "item_failure_policy"],
       说明="**输出保持输入索引**(§6.3):并发完成顺序不同,但第 3 项的结果必须在第 3 位。"
            "失败项**保留占位和原因**,不默默删除 —— 删掉一项会让后面全体错位,"
            "而错位之后的数据看起来完全正常"),
@@ -195,6 +213,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
                               "candidate_roles", "expires_at_policy"],
       调用外部=False, 实现=已实现,
       不适用=["timeout_seconds", "retryable_errors", "max_retries"],
+      必填=["request_kind", "candidate_roles", "expires_at_policy"],
       说明="**等待不占用 Worker**(§6.1、§12.4):挂起时释放租约,靠事件恢复。"
            "一个挂在那里等人批的后台线程,等的是小时级 —— 那不是等待,那是泄漏。"
            "审批者必须**对那个对象**有权限,不是「有审批角色」就行"),
@@ -203,6 +222,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
       端口=[成功, 失败], 配置=["agent_version_id", "task_binding", "input_mapping",
                               "allowed_capabilities", "sub_limits", "allow_human_wait"],
       调用外部=True, 实现=已实现,
+      必填=["agent_version_id", "task_binding", "sub_limits"],
       说明="**不能放大父流程的权限/预算**(§6.1、§13.2)—— 有效权限取交集,"
            "子任务消耗计入父任务额度。每嵌套一层重新拿一份完整预算,"
            "等于预算上限可以靠嵌套无限突破。"
@@ -212,12 +232,18 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
       端口=[], 配置=["bindings", "output_schema", "terminal_policy"],
       调用外部=False, 实现=已实现,
       不适用=["timeout_seconds", "retryable_errors", "max_retries"],
+      # ⚠️ **`bindings` 不列必填。** 列了的话,一个 bindings 为空的结束节点会被报
+      # **两条**:「缺必填配置 bindings」+「输出 Schema 里 summary 是必需的但没映射」。
+      # 后者说清了缺的是哪个字段,前者只是噪音 —— 而人会先去修第一条。
+      # 「一个错报两条」是校验器最容易得的病,判据用集合相等才抓得出来。
+      必填=["output_schema"],
       说明="必需字段**必须有合法来源**(§6.1);"
            "**「返回成功」和「任务达标」分开记** —— 一个返回了 200 的流程可能什么都没做成"),
 
     N("subworkflow", "子工作流",
       端口=[成功, 失败], 配置=["workflow_version_id", "input_mapping", "sub_limits"],
       调用外部=True, 实现=未实现,
+      必填=["workflow_version_id", "input_mapping"],
       说明="只能引**已冻结**的子流程;**静态依赖图禁止递归引用**(§13.2)。"
            "运行时另设嵌套深度上限 —— 静态图拦不住动态构造出来的深度"),
 ]
