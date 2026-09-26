@@ -125,9 +125,65 @@ def 跑():
                     '[]'::jsonb,'{}'::jsonb,'{}'::jsonb,1, now(),'seed', now())
             on conflict (project_id, id) do nothing"""),
                   {"i": "pr_article_summary_b", "o": ORG, "p": B})
+        # ── 模型连接(mock)──────────────────────────────────────────
+        # ⚠️ 没有这一段的话,**Workflow 的 LLM 节点根本配不出来** ——
+        # 它必填 connection_version_id,而演示数据里一条连接都没有。
+        # 当时表现成:建一张图 → 点校验 → 两条「缺必填配置」,而人以为是模板坏了。
+        #
+        # **这条连接是 mock 的,而且它自己说自己是 mock**:capabilities 里写着
+        # execution_mode=mock。规格 §19.4:mock 和真实实现同一个契约,
+        # 正因为无缝,标记才是必需的 —— 否则「我们测过了」这句话没有含义。
+        for p in (A, B):
+            c.execute(text("""
+                insert into model_connections (id, organization_id, project_id, purpose,
+                    adapter, display_name, status, created_at, created_by, updated_at, revision)
+                values (:i,:o,:p,'generate','MockModelProvider','演示用 mock 生成连接',
+                        'active', now(),'seed', now(), 1)
+                on conflict (project_id, id) do nothing"""),
+                      {"i": f"mc_mock_{p}", "o": ORG, "p": p})
+            c.execute(text("""
+                insert into connection_versions (id, organization_id, project_id,
+                    connection_id, endpoint, secret_ref, capabilities, config_hash,
+                    revision, created_at, created_by, updated_at)
+                values (:i,:o,:p,:c,'mock://local','secret://none',:cap,:h,1,
+                        now(),'seed', now())
+                on conflict (project_id, id) do nothing"""),
+                      {"i": f"cv_mock_{p}", "o": ORG, "p": p, "c": f"mc_mock_{p}",
+                       # **不存密钥明文**,只存引用(§18)。
+                       "cap": json.dumps({"execution_mode": "mock",
+                                          "支持的参数": ["temperature", "max_tokens"],
+                                          "原生工具调用": False,
+                                          "说明": "合成适配器 —— **不代表真实智能能力**"
+                                                  "(附录 D.2)"},
+                                         ensure_ascii=False),
+                       "h": f"mockhash_{p}"})
+        # Prompt 正式版本:Workflow 的 LLM 节点要引用**确切版本**,不是草稿。
+        #
+        # ⚠️ **version_no 要算 max+1,不能写死 1。**
+        # 第一版写死 1,而这个 key 已经有 v1 了 —— 于是同一个 key 出现两个 v1。
+        # 库里**拦不住**这件事(唯一约束是 (project_id, key, content_hash),
+        # 没有 (project_id, key, version_no)),所以它安静地活了下来。
+        # 抓到它的是一条**看起来无关**的端到端断言:那条断言拿「版本条数+1」
+        # 当「最大版本号+1」的替身,而这两个数只在版本号**密集且唯一**时才相等。
+        # 报出来的理由是「版本号没前进一格」,而真相是「演示数据里有两个 v1」——
+        # **又一次指错方向。** 所以这次连同那条缺失的唯一约束一起补上。
+        c.execute(text("""
+            insert into prompt_versions (id, organization_id, project_id, key, version_no,
+                messages, variable_schema, output_schema, params, content_hash,
+                created_at, created_by, updated_at, revision)
+            select :i,:o,:p, d.key,
+                   coalesce((select max(v.version_no) from prompt_versions v
+                              where v.project_id=:p and v.key=d.key), 0) + 1,
+                   d.messages, d.variable_schema, d.output_schema, d.params,
+                   'seedhash_article_summary', now(),'seed', now(), 1
+              from prompt_drafts d where d.project_id=:p and d.id='pr_article_summary'
+            on conflict (project_id, id) do nothing"""),
+                  {"i": "pv_seed_article_summary", "o": ORG, "p": A})
+
     with 事务() as c:
         n = {t: c.execute(text(f"select count(*) from {t}")).scalar()
-             for t in ("organizations", "projects", "memberships", "prompt_drafts")}
+             for t in ("organizations", "projects", "memberships", "prompt_drafts",
+                       "model_connections", "connection_versions", "prompt_versions")}
     return n
 
 

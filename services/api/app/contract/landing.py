@@ -58,7 +58,7 @@ AGENT链 = "Agent 最小链"
     C("Workflow Editor", "流程画布编辑器",
       "React Flow 画布、节点表单、引用选择、Diff 和校验展示",
       "**只编辑定义,不执行生产任务**",
-      "apps/web/app.js::编排画布", False, 最小链),
+      "apps/web/app.js::页_画布", True, 最小链),
 
     C("Agent Editor", "Agent 配置编辑器",
       "模型、目标、工具、上下文、限制、输出表单",
@@ -91,7 +91,12 @@ AGENT链 = "Agent 最小链"
       "services/api/app/runtime/tool_gateway.py::执行", False, AGENT链),
 
     C("Run Coordinator", "运行协调器",
-      "创建、排队、租约、人工等待、恢复、取消、事件",
+      "创建、排队、租约、人工等待、恢复、取消、事件 —— "
+      "**「创建 + 排队 + 事件」已经在 workflows_api.发起运行 里了**"
+      "(Job + Outbox 同事务,run_events 按 seq 追加);"
+      "**还没有的是**:暂停/继续/取消、检查点恢复、人工等待时释放租约、"
+      "核实外部状态。这几件是它职责的大头,所以这一行**仍然算未落地** —— "
+      "把「一部分做了」记成「落地了」,是这张表最容易失效的方式",
       "队列可重复投递;**不重复实现节点图调度** —— "
       "一个 Run 只能有一个权威状态驱动者(§16.1)",
       "services/api/app/runtime/coordinator.py::受理", False, 最小链),
@@ -105,6 +110,11 @@ AGENT链 = "Agent 最小链"
 # **写死的欠账上限。** 每落地一个就减一,**只许降不许涨**。
 #   9 → 8:Definition Validator 落地(图校验 + 支配关系数据流分析,
 #         判据在 fixtures/orchestration/图校验夹具.json,17 张图集合相等)。
+#   6 → 5:Workflow Editor 落地(画布 + 节点库 + 右侧配置面板 + 底部校验问题,
+#         **拖拽不是唯一操作方法**:节点库有「加入」按钮、面板有 X/Y 输入框、
+#         画布上 Tab + 方向键能挪节点。判据在 tests/e2e/page_smoke.js 的
+#         「画布结构对账」:节点数/连线数/「加入」按钮数 vs 接口返回的定义 ——
+#         **「有内容」不等于「画出来了」**,一个空 <svg> 在字数上完全正常)。
 #   8 → 6:Definition Compiler + Workflow Runner 落地(受限白名单编译 + 单线执行,
 #         判据在 tests/orchestration/test_execution.py:预期激活路径手写、
 #         模型响应脚本化、**模型调用次数由 mock 那一侧数**)。
@@ -112,7 +122,7 @@ AGENT链 = "Agent 最小链"
 #         循环、列表迭代、并行、人工等待、检查点恢复**都还没有** ——
 #         节点登记表里那四个标着「未实现」,校验器会当场挡住用了它们的图。
 # ⚠️ 不许写成 len(...) —— 见模块开头。
-未落地组件上限 = 6
+未落地组件上限 = 5
 
 _按名 = {c["名"]: c for c in 组件表}
 

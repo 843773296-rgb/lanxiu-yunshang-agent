@@ -142,6 +142,143 @@ def _跑一次prompt(c, job, 打点):
     return {"trace_id": trace, "execution_mode": r["execution_mode"]}
 
 
+@处理("workflow_run")
+def _跑一张工作流(c, job, 打点):
+    """跑一次 Workflow。**照 `_跑一次prompt` 的形状**:
+    进门第一件事查现有结果(Outbox 保证会有重复投递),每推进一步打点。
+
+    ## 为什么这里不重新校验、不重新编译
+
+    接口层(`workflows_api.发起运行`)已经编译过了 —— 配置错了要**当场**知道,
+    而不是排队等一会儿再看到一条「失败」。这里重新编译一次是为了拿到执行计划
+    (计划本身没存库),但**校验结论以接口那次为准**:
+    execution_runs.definition_hash 记的是那一次的逻辑哈希,
+    如果这里算出来不一样,说明**定义在排队期间被改过** —— 那要报出来,
+    不能悄悄跑新的那份(§12.3:「继续执行不把暂停期间更新的 Prompt 静默装入旧 Run」,
+    同一条道理)。
+    """
+    import json as _j
+    t = job["target_ref"] or {}
+    run_id = t.get("run_id")
+    r = c.execute(text("""select * from execution_runs
+                         where project_id=:p and id=:i for update"""),
+                  {"p": job["project_id"], "i": run_id}).mappings().first()
+    if not r:
+        raise 干不了("RUN_NOT_FOUND", {"run_id": run_id})
+    if r["status"] in ("succeeded", "incomplete", "failed", "cancelled", "expired"):
+        # **已经跑完了** —— 重复投递是正常故障场景,不重做
+        return {"run_id": run_id, "已经是终态": r["status"]}
+
+    import sys as _s
+    _rt = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "services", "api", "app", "runtime")
+    _s.path.insert(0, _rt)
+    _s.path.insert(0, os.path.join(os.path.dirname(_rt), "contract"))
+    import compiler as CP
+    import runner as RN
+
+    来源 = r["definition_ref"] or {}
+    if 来源.get("kind") == "workflow_version":
+        v = c.execute(text("""select * from workflow_versions
+                             where project_id=:p and id=:i"""),
+                      {"p": job["project_id"], "i": 来源["version_id"]}).mappings().first()
+        定义 = {"definition_schema_version": v["definition_schema_version"],
+                "kind": "workflow", "nodes": v["nodes"], "edges": v["edges"],
+                "input_schema": v["input_schema"], "output_schema": v["output_schema"]}
+    else:
+        d = c.execute(text("""select * from graph_drafts
+                             where project_id=:p and workflow_id=:i"""),
+                      {"p": job["project_id"], "i": 来源["id"]}).mappings().first()
+        定义 = (d["definition"] if d else None) or {}
+    打点("取到定义", {"来源": 来源})
+
+    try:
+        计划 = CP.编译(定义, 依赖存在=lambda 种类, i: True)
+    except CP.编译失败 as e:
+        raise 干不了("COMPILE_FAILED",
+                      {"阻断": [p["code"] for p in e.问题们][:6]})
+    if 计划["逻辑哈希"] != r["definition_hash"]:
+        # **定义在排队期间被改过。** 不静默跑新的那一份 ——
+        # 那会让这次运行的结果和 execution_runs 上记的哈希对不上,
+        # 而对不上的那一刻没有任何地方说过为什么。
+        raise 干不了("DEFINITION_CHANGED_WHILE_QUEUED",
+                      {"受理时": (r["definition_hash"] or "")[:26],
+                       "现在": 计划["逻辑哈希"][:26],
+                       "怎么办": "重新发起一次运行 —— 旧的这次保留,它记的是受理时那一版"})
+
+    c.execute(text("""update execution_runs set status='running', updated_at=now()
+                      where project_id=:p and id=:i"""),
+              {"p": job["project_id"], "i": run_id})
+    打点("开始执行", {"节点数": len(计划["节点"])})
+
+    def _mock_llm(cfg, 实参):
+        # **mock 适配器**。和真实适配器同一个契约,但 execution_mode=mock ——
+        # 一份 mock 跑出来的报告和真实报告在数据形状上一模一样,
+        # 唯一的区别就是这个字段(§19.4)。
+        文 = f"[mock:{cfg.get('prompt_version_id')}] " + \
+             " / ".join(f"{k}={str(v)[:40]}" for k, v in sorted(实参.items()))
+        return {"text": 文, "lang": "zh", "execution_mode": "mock",
+                "usage": {"input_tokens": 12, "output_tokens": 34},
+                "finish_reason": "stop"}
+
+    事件序号 = [1]
+
+    def 记事(种类, 载荷):
+        事件序号[0] += 1
+        c.execute(text("""
+            insert into run_events (id, organization_id, project_id, execution_run_id,
+                seq, event_type, payload, occurred_at, created_at, created_by)
+            values (:i,:o,:p,:r,:s,:k,:pl, now(), now(), :u)
+        """), {"i": _新("re"), "o": job["organization_id"], "p": job["project_id"],
+               "r": run_id, "s": 事件序号[0], "k": 种类,
+               "pl": _j.dumps(载荷, ensure_ascii=False, default=str), "u": 我是谁})
+
+    结果 = RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _mock_llm},
+                    记事=记事, run_id=run_id, 上限=r["limits"] or {},
+                    系统={"project_id": job["project_id"]})
+    打点("执行完", {"状态": 结果["执行状态"]})
+
+    for s in 结果["步骤"]:
+        c.execute(text("""
+            insert into run_steps (id, organization_id, project_id, execution_run_id,
+                node_id, kind, iteration_path, attempt, execution_key, status,
+                branch_key, skipped_reason, error_code, error_detail, output_ref,
+                started_at, ended_at, created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:r,:n,:k,'/',:a,:ek,:st,:bk,:sr,:ec,:ed,null,
+                    now(), now(), now(), :u, now(), 1)
+            on conflict (project_id, execution_key) do nothing
+        """), {"i": _新("rs"), "o": job["organization_id"], "p": job["project_id"],
+               "r": run_id, "n": s["node_id"], "k": s["kind"], "a": s.get("attempt", 1),
+               "ek": s["execution_key"], "st": s["status"],
+               "bk": s.get("branch_key"), "sr": s.get("skipped_reason"),
+               "ec": s.get("error_code"),
+               "ed": _j.dumps(s.get("error_detail"), ensure_ascii=False)
+                     if s.get("error_detail") else None,
+               "u": 我是谁})
+    c.execute(text("""
+        update execution_runs
+           set status=:st, completion_reason=:cr, output_ref=:out,
+               usage_snapshot=:us, ended_at=now(), updated_at=now(), revision=revision+1
+         where project_id=:p and id=:i
+    """), {"st": 结果["执行状态"], "cr": 结果["完成原因"],
+           "out": _j.dumps(结果["输出"], ensure_ascii=False),
+           "us": _j.dumps(结果["用量"], ensure_ascii=False),
+           "p": job["project_id"], "i": run_id})
+    # 费用:mock 没有真实计价 → **amount_known=false,不写 0**
+    c.execute(text("""
+        insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
+            resource, quantity, unit, currency, amount, amount_known, source,
+            created_at, created_by)
+        values (:i,:o,:p,:ek,:t,'generate',:q,'call','CNY', null, false, 'mock',
+                now(), :u)
+        on conflict (project_id, event_key) do nothing
+    """), {"i": _新("ul"), "o": job["organization_id"], "p": job["project_id"],
+           "ek": f"{run_id}:workflow", "t": r["trace_id"],
+           "q": 结果["用量"]["模型调用"], "u": 我是谁})
+    return {"run_id": run_id, "执行状态": 结果["执行状态"],
+            "走过的路径": 结果["走过的路径"], "跳过的节点": 结果["跳过的节点"]}
+
+
 class _打点器:
     """每一步:写事件 + 续租 + 把取消令牌读回来。"""
     def __init__(self, c, job):

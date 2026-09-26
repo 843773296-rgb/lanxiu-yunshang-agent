@@ -79,7 +79,13 @@ _额外唯一 = {
     # 费用事件唯一键:唯一用量事件防重复计费
     "usage_ledger": [("project_id", "event_key")],
     # 版本内容哈希:同一份内容不该在**同一个项目里**出现两个版本行
-    "prompt_versions": [("project_id", "key", "content_hash")],
+    # ⚠️ **两条,不是一条。** content_hash 那条防「同一份内容出现两个版本行」;
+    # version_no 这条防「同一个 key 出现两个 v1」—— 后者原来是**缺的**,
+    # 于是一段写死 version_no=1 的演示数据安静地造出了两个 v1,
+    # 而抓到它的是一条测别的事情的断言(它拿「版本条数」当「最大版本号」的替身)。
+    # 「版本号唯一且密集」是一堆地方都在隐含依赖的不变量 —— 依赖它就该钉住它。
+    "prompt_versions": [("project_id", "key", "content_hash"),
+                        ("project_id", "key", "version_no")],
     "document_versions": [("project_id", "document_id", "content_hash")],
     "dataset_versions": [("project_id", "dataset_id", "content_hash")],
     "release_manifests": [("project_id", "application_id", "content_hash")],

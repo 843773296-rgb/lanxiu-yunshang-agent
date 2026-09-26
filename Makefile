@@ -6,6 +6,8 @@
 # 一个打印「✅ 完成」却什么都没做的 target,比没有这个 target 糟得多:
 # 它会让人以为这一步过了。
 SHELL := /bin/bash
+# `#` 在 make 的配方里要用变量传,直接写 `\#` 会把反斜杠一起带给 shell
+HASH := \#
 .PHONY: help bootstrap dev seed-demo test test-e2e test-live contract doctor migrate gen worker worker-once \
         test-orchestration test-orchestration-e2e test-orchestration-live
 
@@ -73,8 +75,17 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 三页页面冒烟(要
 	@./.venv/bin/python tests/e2e/test_api_flow.py
 	@echo ""
 	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径**(不是只看语法)"
-	@for h in '#/workbench' '#/prompts' '#/runs'; do \
+	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows'; do \
 		printf "  %-14s " "$$h"; node tests/e2e/page_smoke.js "$$h" 2>&1 | tail -1; done
+	@echo ""
+	@echo "▸ 画布页:**结构对账**(节点数/连线数/「加入」按钮数 vs 接口返回的定义)"
+	@W=$$(./.venv/bin/python -c "import json,urllib.request as u; \
+		r=u.Request('http://127.0.0.1:8801/api/v1/projects/project_demo_a/workflows', \
+		headers={'X-Dev-User':'U002'}); d=json.load(u.urlopen(r)); \
+		print(d['items'][0]['id'] if d['items'] else '')" 2>/dev/null); \
+	  if [ -n "$$W" ]; then node tests/e2e/page_smoke.js "$(HASH)/workflow/$$W" 2>&1 | tail -2; \
+	  else echo "  ⚠️ 演示库里没有工作流 —— 先 make seed-demo 或在页面上建一个。"; \
+	       echo "     **这不叫通过,这叫没测到**"; exit 1; fi
 	@echo ""
 	@echo "⚠️ 页面冒烟跑的是**加载路径**,不是视觉 —— 它证明「取到数并渲染了」,"
 	@echo "   不证明「排版对」。视觉要人打开 http://127.0.0.1:8801 看。"

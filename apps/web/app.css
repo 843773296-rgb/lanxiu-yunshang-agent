@@ -139,3 +139,48 @@ summary{cursor:pointer;font-size:13px;color:var(--pri)}
 .note{font-size:12.5px;color:var(--ink2);background:#f7f8fa;border-left:3px solid var(--faint);
   padding:8px 10px;margin:8px 0}
 .note.warn{background:#fff7e8;border-left-color:#ffcf8b}
+
+/* ── Workflow 画布(规格 §5.1)────────────────────────────────────
+ * 布局初值:节点库 220px、右侧面板 360px、中间自适应(规格里写的是「建议初值」)。
+ * ⚠️ **拖拽不是唯一操作方法**(§3.3)—— 节点库里每个节点有「加入」按钮,
+ * 右侧面板有 X/Y 数字输入框,画布上可以用 Tab + 方向键。
+ * 一个只能拖的画布,键盘用户和读屏用户完全用不了。 */
+.wfwrap { display: grid; grid-template-columns: 220px 1fr 360px; gap: 0;
+          border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+          min-height: 460px; }
+.wflib { border-right: 1px solid var(--line); padding: 12px; overflow: auto;
+         background: var(--card); }
+.wflib h4 { margin: 12px 0 6px; font-size: 12px; color: var(--ink3);
+            letter-spacing: .04em; }
+.wflib .nd { display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+             border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px;
+             background: var(--bg); font-size: 13px; }
+.wflib .nd.off { opacity: .55; }
+.wflib .nd button { margin-left: auto; font-size: 11px; padding: 2px 8px; }
+.wfcanvas { position: relative; overflow: auto; background:
+            repeating-linear-gradient(0deg, #fff 0 23px, #f2f3f5 23px 24px),
+            repeating-linear-gradient(90deg, transparent 0 23px, #f2f3f5 23px 24px);
+            min-height: 460px; }
+.wfcanvas svg { display: block; }
+.wfnode { position: absolute; width: 176px; border: 1px solid var(--line);
+          border-radius: 8px; background: var(--card); padding: 8px 10px;
+          font-size: 12px; cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.wfnode:focus { outline: 2px solid var(--pri); outline-offset: 2px; }
+.wfnode.sel { border-color: var(--pri); box-shadow: 0 0 0 2px var(--pri-bg); }
+.wfnode.bad { border-color: var(--fail); }
+.wfnode .t { font-weight: 600; }
+.wfnode .k { color: var(--ink3); font-size: 11px; }
+.wfnode .miss { color: var(--fail); font-size: 11px; margin-top: 4px; }
+.wfpanel { border-left: 1px solid var(--line); padding: 12px; overflow: auto;
+           background: var(--card); }
+.wfbottom { border-top: 1px solid var(--line); background: var(--card);
+            max-height: 240px; overflow: auto; }
+.wfbottom .tabs { display: flex; gap: 4px; padding: 8px 12px 0; }
+.wfbottom .tabs button.on { border-color: var(--pri); color: var(--pri); }
+.wfbottom .body { padding: 8px 12px 12px; }
+.issue { display: block; width: 100%; text-align: left; border: 1px solid var(--line);
+         border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; background: var(--bg);
+         font-size: 12px; cursor: pointer; }
+.issue.b { border-left: 3px solid var(--fail); }
+.issue.w { border-left: 3px solid var(--warn); }
+.issue .c { font-family: ui-monospace, monospace; color: var(--ink3); }
