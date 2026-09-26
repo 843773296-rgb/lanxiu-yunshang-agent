@@ -251,7 +251,11 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
       ["session_id", "request_id", "application_id", "release_manifest_id",
        "environment", "started_at", "ended_at", "end_reason"],
       ["记的是**实际收到什么**:清单版本要落在 trace 上,不能事后去查「当时是哪一版」",
-       "**不承诺展示模型完整的内部思考过程**(§2)"]),
+       "**不承诺展示模型完整的内部思考过程**(§2)",
+       "⚠️ **application_id / release_manifest_id 必须有复合外键** —— "
+       "攻击测试里「拿 A 项目的应用 ID 在 B 项目下建 trace」原来是能写进去的,"
+       "因为这个实体一开始没登记依赖,于是一个外键都没建"],
+      依赖=["applications", "release_manifests"]),
     E("spans", "阶段", 子对象, 只追加,
       ["trace_id", "parent_span_id", "stage", "input_ref", "output_ref",
        "started_at", "ended_at", "error"],
@@ -315,7 +319,15 @@ _按名 = {e["名"]: e for e in 实体表}
 
 def 该有的通用字段(e):
     出 = ["id"]
-    if e["范围"] == 项目级: 出 += ["organization_id", "project_id"]
+    # ⚠️ **「挂父级」的表也要带 project_id。** 第一版没带,后果是建表直接失败:
+    # 项目级父表的主键是 (project_id, id),而子表的外键只有 parent_id ——
+    # PostgreSQL 要求被引用列必须唯一,`traces.id` 单独并不唯一。
+    #
+    # 而这不只是让外键能建起来:规格 §18 要的是「跨对象引用使用**包含项目范围**
+    # 的外键」。子表自己带 project_id,「拿 A 项目的 ID 到 B 项目下引用」
+    # 在**数据库层**就不成立 —— 不靠每个 handler 记得检查。
+    # 顺带也让按项目过滤不必每次 join 回父表。
+    if e["范围"] in (项目级, 子对象): 出 += ["organization_id", "project_id"]
     if e["范围"] == 组织级: 出 += ["organization_id"]
     出 += ["created_at", "created_by"]
     if e["可变性"] != 只追加:

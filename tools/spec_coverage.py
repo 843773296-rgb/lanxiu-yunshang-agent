@@ -24,6 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, os.path.join(ROOT, "services", "api", "app", "contract"))
 import entities as EN, perms as PM, states as ST, errors as ER
+import endpoints as EP, adapters as AD
 
 规格目录 = os.path.join(ROOT, "docs", "规格")
 
@@ -34,6 +35,12 @@ import entities as EN, perms as PM, states as ST, errors as ER
     ("把 E() 返回值里的 范围理由 去掉",     "不按项目隔离的实体都写了理由"),
     ("让 traces 变成组织级",               "运行记录/用量/审计/版本/样本这些必须在项目范围内"),
     ("改了契约但不重跑生成器",             "契约文档是最新的"),
+    ("从 endpoints.接口表 删掉一条规格点名的端点", "规格 §19.2 点名的端点都登记了"),
+    ("把某条异步接口的 幂等 改成 False",     "接口契约自检过"),
+    ("让 可以发布吗() 放过没标模式的产物",   "没标 execution_mode 也挡"),
+    ("改了接口表但不重跑 gen_openapi.py",    "OpenAPI 是最新的"),
+    ("把异步操作的 202 换成 200「已完成」",   "异步操作都返回 202"),
+    ("把错误体的 advice 从必填改成可选",      "错误体把 advice 和 retryable 设成必填"),
     ("给某个只追加实体加上 revision 字段", "只追加的实体不许有 revision/归档"),
     ("让「已冻结」能走回「编辑中」",       "冻结/不可变的状态不许回退"),
     ("把「状态待核实」列进终态",           "「不确定」不许当终态"),
@@ -199,6 +206,51 @@ ck("**错误体里带凭据类词就抛**(错误信息是常见的泄露通道)"
 ck("状态码语义齐(401/403/404/409/422/429/5xx)",
    {401, 403, 404, 409, 422, 429, 500} <= set(ER.状态语义), len(ER.状态语义))
 
+# ── ⑦b 接口:规格 §19.2 点名的端点都登记了 ──────────────────────
+# 规格那张表的「示例端点」列里,端点写在反引号里(可能一格好几条,用 ；分开)。
+_i = 文.find("### 19.2 必须实现的接口组")
+_段 = 文[_i:_i + 4000] if _i >= 0 else ""
+规格端点 = sorted({m for m in re.findall(r"`(/[a-z0-9{}/_-]+)`", _段)})
+登记端点 = {a["路径"] for a in EP.接口表}
+def _同(p):
+    # 规格里写 `/{id}/probe` 这种省略了资源名的简写,按后缀匹配
+    return any(x == p or x.endswith(p) for x in 登记端点)
+漏端点 = [p for p in 规格端点 if not _同(p)]
+ck("规格 §19.2 点名的端点都登记了", not 漏端点, len(规格端点),
+   f"漏了:{漏端点}" if 漏端点 else "")
+坏接口 = EP.校验()
+ck("接口契约自检过(权限点名有效、异步要幂等、PATCH 要乐观锁、能力都被引用)",
+   not 坏接口, len(EP.接口表), 坏接口[:2])
+# 异步动作**不许**声称同步完成 —— 信封字段少一个,前端就得去猜
+ck("异步信封字段齐(job_id/status/resource_id/status_url/trace_id)",
+   set(EP.异步信封字段) == {"job_id", "status", "resource_id", "status_url", "trace_id"},
+   len(EP.异步信封字段))
+ck("列表信封是 items/next_cursor/total(total 未知要给 null,不许给 0)",
+   EP.列表信封字段 == ["items", "next_cursor", "total"], len(EP.列表信封字段))
+
+# ── ⑦c 适配器:规格 §19.4 点名的都登记了,而且必留字段不许少 ───────
+# ⚠️ 第一版用正则在一个「前 3000 字」的窗口里捞 `| Xxx |`,
+# 结果把别处表格里的 **UI** 也捞了进来 —— 报「漏了 UI 这个适配器」。
+# 修的是判据不是开豁免:改用上面那个**按小节抽第一张表**的 表格行(),
+# 它遇到表格结束就停,不会漂到下一节。
+规格适配器 = [x for x in 表格行(文, "### 19.4 适配器契约")
+              if re.fullmatch(r"[A-Z][A-Za-z]+", x)]
+登记适配器 = {a["名"] for a in AD.适配器表}
+漏适配器 = [x for x in 规格适配器 if x not in 登记适配器]
+ck("规格 §19.4 点名的适配器都登记了", not 漏适配器, len(规格适配器),
+   f"漏了:{漏适配器}" if 漏适配器 else "")
+无必留 = [a["名"] for a in AD.适配器表 if not a["必留"]]
+ck("每个适配器都写了「必须保留的结果」(出错之后唯一能定位问题的东西)",
+   not 无必留, len(AD.适配器表), 无必留)
+# ⚠️ 发布闸:mock 和没标模式**都要挡**。「未知不等于安全」——
+# 一个没标模式的产物,最可能的情况正是「它是 mock 但没人标」。
+行1, _ = AD.可以发布吗([("产物", AD.LIVE), ("报告", AD.LIVE)])
+行2, 挡2 = AD.可以发布吗([("产物", AD.LIVE), ("报告", AD.MOCK)])
+行3, 挡3 = AD.可以发布吗([("产物", None)])
+ck("全 live 才放行发布", 行1, 1)
+ck("**报告是 mock 就挡**(生产发布拒绝 mock 验收报告)", not 行2 and 挡2, 1)
+ck("**没标 execution_mode 也挡**(未知不等于安全)", not 行3 and 挡3, 1)
+
 # ── ⑨ 生成的契约文档必须是最新的 ──────────────────────────────────
 # 有生成器不等于文档是最新的。**一份漂着的契约文档比没有更糟**:
 # 读的人会照着它实现,而它描述的已经不是代码里那一套了。
@@ -218,6 +270,53 @@ else:
     ck("契约文档是最新的(它是生成的,改了契约要重跑生成器)",
        _旧 == _新, len(_新.splitlines()),
        "" if _旧 == _新 else "内容和现在的契约对不上 —— 跑 python3 tools/gen_contract_doc.py")
+
+# ── ⑩ OpenAPI:是最新的,而且结构上守着那几条契约 ──────────────────
+import json as _json
+_oa_gen = os.path.join(ROOT, "tools", "gen_openapi.py")
+_spec2 = _iu.spec_from_file_location("gen_openapi", _oa_gen)
+_m2 = _iu.module_from_spec(_spec2); _spec2.loader.exec_module(_m2)
+_oa_path = os.path.join(ROOT, "packages", "contracts", "openapi.json")
+if not os.path.exists(_oa_path):
+    ck("OpenAPI 已生成", False, 1, "跑 python3 tools/gen_openapi.py")
+else:
+    _旧2 = open(_oa_path, encoding="utf-8").read()
+    _m2.建()
+    _新2 = open(_oa_path, encoding="utf-8").read()
+    ck("OpenAPI 是最新的(生成的,改了契约要重跑 gen_openapi.py)",
+       _旧2 == _新2, len(_json.loads(_新2)["paths"]),
+       "" if _旧2 == _新2 else "和现在的契约对不上 —— 跑 python3 tools/gen_openapi.py")
+
+    _oa = _json.loads(_新2)
+    _ops = [(p_, m_, o_) for p_, v_ in _oa["paths"].items() for m_, o_ in v_.items()]
+    # **每条操作都要写 x-权限** —— 授权不该只存在于代码里
+    _无权 = [f"{m_.upper()} {p_}" for p_, m_, o_ in _ops if not o_.get("x-权限")]
+    ck("每条操作都在契约里写明要哪条权限", not _无权, len(_ops), _无权[:3])
+    # 幂等 / 乐观锁 要落成真的 header 参数,不能只在登记表里标着
+    def _有头(o_, 名):
+        return any(x.get("name") == 名 and x.get("in") == "header" and x.get("required")
+                   for x in o_.get("parameters", []))
+    _该幂等 = {(a["方法"].lower(), EP.前缀 + a["路径"]) for a in EP.接口表 if a["幂等"]}
+    _实幂等 = {(m_, p_) for p_, m_, o_ in _ops if _有头(o_, "Idempotency-Key")}
+    ck("登记表说要幂等键的,OpenAPI 里真的有这个必填头",
+       _该幂等 == _实幂等, len(_该幂等), sorted(_该幂等 ^ _实幂等)[:2])
+    _该锁 = {(a["方法"].lower(), EP.前缀 + a["路径"]) for a in EP.接口表 if a["乐观锁"]}
+    _实锁 = {(m_, p_) for p_, m_, o_ in _ops if _有头(o_, "If-Match")}
+    ck("登记表说要乐观锁的,OpenAPI 里真的有 If-Match 必填头",
+       _该锁 == _实锁, len(_该锁), sorted(_该锁 ^ _实锁)[:2])
+    # **异步的一律 202,而且不许出现 200「已完成」** —— 那就是用假完成冒充执行
+    _异步路径 = {(a["方法"].lower(), EP.前缀 + a["路径"]) for a in EP.接口表
+                if a["形态"] == EP.异步}
+    _坏异步 = [f"{m_.upper()} {p_}" for p_, m_, o_ in _ops
+              if (m_, p_) in _异步路径 and "202" not in o_["responses"]]
+    ck("异步操作都返回 202(不许拿 200「已完成」冒充执行)", not _坏异步,
+       len(_异步路径), _坏异步[:3])
+    # 错误体必填字段:advice 和 retryable 不许是可选
+    _e = _oa["components"]["schemas"]["Error"]["required"]
+    ck("错误体把 advice 和 retryable 设成必填", {"advice", "retryable"} <= set(_e), len(_e), _e)
+    # 列表信封 total 允许 null —— 「未知」不许被压成 0
+    _t = _oa["components"]["schemas"]["ListEnvelope"]["properties"]["total"]["type"]
+    ck("列表 total 允许 null(未知不许写成 0)", "null" in _t, 1, _t)
 
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 if 挂:

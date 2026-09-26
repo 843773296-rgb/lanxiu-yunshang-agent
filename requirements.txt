@@ -1,0 +1,5 @@
+# 直接依赖(版本区间);**锁定的完整清单在 requirements.lock**。
+# 规格 §17.4 结尾:「开发时锁定可兼容的依赖版本并提交 lockfile」。
+sqlalchemy>=2.0,<2.1
+alembic>=1.13,<2
+psycopg[binary]>=3.1,<4
