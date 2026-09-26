@@ -10,6 +10,8 @@ DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lanxiu.db")
 
 def log_op(actor, mid, target, frm, to, ok, code, reason, ctx):
     with sqlite3.connect(DB) as c:
+        # 真实时钟:操作台账记「谁在什么时候真的点了这一下」—— 那是运维痕迹,
+        # 不是演示世界里的事。用世界时钟反而会让台账对不上真实的排查时间线。
         c.execute("INSERT INTO op_log(ts,actor,machine,target,frm,too,allowed,code,reason,ctx)"
                   " VALUES(datetime('now','localtime'),?,?,?,?,?,?,?,?,?)",
                   (actor, mid, target, frm, to, 1 if ok else 0, code, reason,

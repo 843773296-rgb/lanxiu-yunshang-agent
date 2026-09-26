@@ -14,6 +14,29 @@ import auth                     # 员工登录:**角色只从服务端会话取,
 
 
 
+
+def _conn(path=None):
+    """连库,并注册 `wnow()` / `wtoday()` 两个 SQL 函数(**世界时钟**)。
+
+    ⚠️ 为什么用自定义 SQL 函数,而不是把时间当参数传进去:
+    这个文件里有 **16 处**把时间写在 SQL 字符串里(`wnow()`)。
+    改成绑定参数要动十几处参数元组,每一处都是一次出错机会;
+    而注册一个同名函数只需把 SQL 里那个调用换掉,**参数元组一个都不用动**。
+
+    ⚠️ 这一族 2026-09-26 查了一整天,而**这一处是第十个,也是最难扫到的一个**:
+    并行会话从格式上认出来的 —— 那 49 条 `ordr.updated` 带**秒**(`%H:%M:%S`),
+    而所有 `_now()` 都是 `%H:%M`,**带秒的只有 SQL 里的 `datetime('now')` 产生得出来**。
+    我那条「模块的时间源不许是机器时钟」的判据扫的是 `def _now/...` 的函数体,
+    **SQL 字符串里的时间函数它看不见** —— 这是那条判据的第二个盲区。
+    """
+    import sqlite3 as _s3, sys as _sy, os as _o
+    _sy.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+    import worldclock as _wc
+    c = _s3.connect(path or DB)
+    c.create_function("wnow", 0, lambda: _wc.当下().strftime("%Y-%m-%d %H:%M:%S"))
+    c.create_function("wtoday", 0, lambda: _wc.今天().isoformat())
+    return c
+
 def _wnow():
     """**世界的当下**(格式化好的),不是机器的当下。
 
@@ -85,7 +108,7 @@ DB=os.path.join(HERE,"lanxiu.db")
 DRAFTS=os.path.join(HERE,"drafts.json")
 
 def rows(sql,*a):
-    c=sqlite3.connect(DB); c.row_factory=sqlite3.Row
+    c=_conn(); c.row_factory=sqlite3.Row
     try: return [dict(r) for r in c.execute(sql,a)]
     finally: c.close()
 
@@ -182,7 +205,7 @@ def set_draft_status(tid,status,note=""):
     return d[tid]
 
 def ensure_oplog():
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS op_log(
           id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, actor TEXT, machine TEXT,
           target TEXT, frm TEXT, too TEXT, allowed INT, code TEXT, reason TEXT, ctx TEXT)""")
@@ -194,7 +217,7 @@ from oplog import log_op   # noqa: E402
 
 
 def ensure_editlog():
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS edit_log(
           id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, actor TEXT,
           actor_no TEXT, obj TEXT, target TEXT, title TEXT, source TEXT,
@@ -232,7 +255,9 @@ def log_edit(actor, actor_no, obj, target, title, changes, source="后台"):
         changes = [{"字段": "(无)", "改前": "", "改后": "",
                     "说明": "这次提交没有改动任何字段"}]
         title = title + "(无改动)"
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
+        # 真实时钟:编辑台账记「谁在什么时候真的改了这一下」—— 那是运维痕迹,
+        # 不是演示世界里的事。和 oplog.py 的 op_log.ts 同一条理由。
         c.execute("INSERT INTO edit_log(ts,actor,actor_no,obj,target,title,source,changes)"
                   " VALUES(datetime('now','localtime'),?,?,?,?,?,?,?)",
                   (actor, actor_no, obj, target, title, source,
@@ -334,7 +359,7 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
          "bk-product":"product","bk-activity":"activity","bk-page":"page","bk-download":"download_task",
          "bk-order":"ordr","fe-scheme":"scheme"}[mid]
     key={"bk-shop":"code","bk-product":"spu","bk-activity":"code","bk-page":"code"}.get(mid,"id")
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute(f"UPDATE {tbl} SET status=? WHERE {key}=?",(to,target))
         if mid=="bk-task" and to=="完结":
             c.execute("UPDATE schedule SET summary=? WHERE id=?",(ctx.get("summary") or "",target))
@@ -344,21 +369,21 @@ def transit(mid, target, to, ctx, actor="魏欣新"):
             # **prd_status 由 status 派生,不单独流转。**
             # 让两套口径各自走,就是同一个事实两个来源 —— 而它们不一致时
             # 对账检查会红在「数据错」上,实际错的是「谁该跟着谁」。
-            c.execute("UPDATE ordr SET prd_status=?,updated=datetime('now','localtime') WHERE id=?",
+            c.execute("UPDATE ordr SET prd_status=?,updated=wnow() WHERE id=?",
                       (fsm.ORDER_PRD.get(to, to), target))
             # 几个到点就该落的时间戳 —— 不落的话「什么时候发的货」只能靠 op_log 翻
             if to=="生产中":
                 # 开裁记录:它决定这一单按白坯新规还是旧规判(knowledge/muslin.适用新规)
-                c.execute("UPDATE ordr SET cut_at=datetime('now','localtime'),cut_by=? WHERE id=?",
+                c.execute("UPDATE ordr SET cut_at=wnow(),cut_by=? WHERE id=?",
                           (ctx.get("actor_no") or actor, target))
             _stamp={"已生产":"produced_at","已发货":"shipped_at","完成":"finished_at",
                     "取消":"cancelled_at"}.get(to)
             if _stamp:
-                c.execute(f"UPDATE ordr SET {_stamp}=datetime('now','localtime') WHERE id=?",(target,))
+                c.execute(f"UPDATE ordr SET {_stamp}=wnow() WHERE id=?",(target,))
         if mid=="bk-deposit" and to=="退款处理中":
             c.execute("""INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,
                          resp_code,resp_msg,idem_key)
-                         SELECT ?,COALESCE(MAX(attempt),0)+1,datetime('now','localtime'),'微信支付',
+                         SELECT ?,COALESCE(MAX(attempt),0)+1,wnow(),'微信支付',
                          (SELECT amount FROM deposit WHERE id=?),'PENDING','处理中',?
                          FROM refund_trace WHERE deposit_id=?""",(target,target,ctx.get("idem_key"),target))
     # 商品的上下架也要进**资料编辑日志** —— 设计稿那块日志里写着「商品上架/下架」。
@@ -379,8 +404,8 @@ def adjust_lifecycle(cid,to,reason,actor="魏欣新"):
     r=rows("SELECT lifecycle,matched FROM customer WHERE id=?",cid)
     if not r: return {"error":"客户不存在"}
     cur=r[0]["lifecycle"]
-    with sqlite3.connect(DB) as c:
-        c.execute("UPDATE customer SET lifecycle=?,manual_lc=?,manual_at=date('now','localtime') WHERE id=?",
+    with _conn() as c:
+        c.execute("UPDATE customer SET lifecycle=?,manual_lc=?,manual_at=wtoday() WHERE id=?",
                   (to,to,cid))
     log_op(actor,"bk-lifecycle",cid,cur,to,True,"MANUAL",
            f"人工调整,30 天内优先。原因:{reason or '未填写'}",{"reason":reason})
@@ -393,7 +418,7 @@ def close_task(tid,result,note,actor="魏欣新"):
         log_op(actor,"task",tid,r[0]["status"],result,False,"TERMINAL",
                f"任务已是「{r[0]['status']}」,不可重复关闭",{})
         return dict(ok=False,code="TERMINAL",reason=f"任务已是「{r[0]['status']}」,不可重复关闭")
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute("UPDATE task SET status=?,summary=? WHERE id=?",(result,note,tid))
     log_op(actor,"task",tid,"待处理",result,True,"CLOSE",note or "",{})
     return dict(ok=True,code="CLOSE",reason=f"任务已关闭:{result}")
@@ -419,7 +444,7 @@ def merge_transit(tid, to, note, actor="魏欣新", role="顾问"):
         conflicts=[]
         for f in ("phone","addr","shop","advisor_no","level"):
             if ra[f]!=rb[f]: conflicts.append(f"{f}: 取自 {fresh['id']}")
-        with sqlite3.connect(DB) as c:
+        with _conn() as c:
             # 合并标签、量体、跟进、预约、购买记录 → 关联迁移到主档
             c.execute("UPDATE appointment SET customer_id=? WHERE customer_id=?",(main["id"],dup["id"]))
             c.execute("UPDATE followup    SET customer_id=? WHERE customer_id=?",(main["id"],dup["id"]))
@@ -440,7 +465,7 @@ def merge_transit(tid, to, note, actor="魏欣新", role="顾问"):
         return dict(ok=True,code="MERGED",
           reason=f"已合并:保留 {main['id']}(建档最早),{dup['id']} 转归档;"
                  f"冲突字段 {len(conflicts)} 项取自 {fresh['id']};订单与积分仅建立关联,未累计")
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute("UPDATE task SET status=?,summary=? WHERE id=?",(to,note or "",tid))
     MSG={"待总部审批":"已提交总部运营审批","已核验":"已标记为非同一人,不再进入待核验队列",
          "已驳回":"总部运营已驳回,退回店长重新核验"}
@@ -724,7 +749,7 @@ def product_detail(spu):
                         "knowledge", "part.py")
     _sp = _ilu.spec_from_file_location("part", _ps); _part = _ilu.module_from_spec(_sp)
     _sp.loader.exec_module(_part)
-    _c2p = sqlite3.connect(DB)
+    _c2p = _conn()
     _po = rows("SELECT part,material,sort FROM part_option WHERE spu=? "
                "AND kind='面料' ORDER BY sort,material", spu)
     _by = {}
@@ -931,7 +956,7 @@ def toggle(table,key,val,col="status",on="启用",off="停用",actor="魏欣新"
         if why:
             log_op(actor,table,val,cur,to,False,"TOGGLE_BLOCKED",why[:80],{})
             return dict(ok=False,code="TOGGLE_BLOCKED",reason=why)
-    with sqlite3.connect(DB) as c: c.execute(f"UPDATE {table} SET {col}=? WHERE {key}=?",(to,val))
+    with _conn() as c: c.execute(f"UPDATE {table} SET {col}=? WHERE {key}=?",(to,val))
     log_op(actor,table,val,cur,to,True,"TOGGLE",f"{table} 状态切换",{})
     return dict(ok=True,code="TOGGLE",frm=cur,to=to,reason=f"已从「{cur}」切换为「{to}」")
 
@@ -977,7 +1002,7 @@ def save_measure_item(d,actor="魏欣新",role="顾问"):
                                f"**所有历史数值的含义全变了,而数值一个都没动**,"
                                f"没有任何东西会报错。"
                                f"真要换单位:新建一个项 + 把历史数据换算迁过去")
-        with sqlite3.connect(DB) as c:
+        with _conn() as c:
             c.execute("UPDATE measure_item SET name=?,unit=?,required=?,sort=?,note=? "
                       "WHERE code=?",(nm,unit,req,srt,d.get("note") or "",code))
         ch=[{"字段":k2,"改前":str(o[k1] or ""),"改后":str(v2)}
@@ -1000,7 +1025,7 @@ def save_measure_item(d,actor="魏欣新",role="顾问"):
     code=f"MI{n:02d}"
     while rows("SELECT 1 FROM measure_item WHERE code=?",code):
         n+=1; code=f"MI{n:02d}"
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute("INSERT INTO measure_item VALUES(?,?,?,?,?,'启用',?)",
                   (code,nm,unit,req,srt,d.get("note") or ""))
     log_edit(actor,d.get("actor_no"),"测量项",code,"创建测量项",
@@ -1161,7 +1186,7 @@ def create_download(kind,filters,actor="魏欣新"):
          "操作日志":lambda:len(op_logs(100000)),
          "商品库":lambda:product_list({"per":["1"]})["total"],
          "交易查询":lambda:order_list({"per":["1"]})["total"]}.get(kind,lambda:0)()
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute("INSERT INTO download_task VALUES(?,?,?,?,?,?,?,?,?)",
           (did,kind,filters or "全部","已完成",cnt,max(1,cnt//8),"60000008",
            _wnow().strftime("%Y-%m-%d %H:%M"),
@@ -1197,7 +1222,7 @@ def _insert(table, vals, required):
     **崩溃是好事,静默丢数据不是。** 现在必填列不在表里就直接抛,
     在开发期第一次调用就会炸出来,而不是在某天有人问「这条预约几点」时才发现。
     """
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         cols = {x[1] for x in c.execute(f"PRAGMA table_info({table})")}
         miss = [k for k in required if k not in cols]
         if miss:
@@ -1249,7 +1274,7 @@ def resolve_combo(d, actor="魏欣新", _role=None):
     cur = rows("SELECT verdict,rule FROM craft_combo WHERE craft=? AND material=?", ck, mk)
     if not cur: return dict(ok=False, code="NO_CELL", reason=f"矩阵里没有 {ck} × {mk} 这一格")
     old = cur[0]
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute("UPDATE craft_combo SET verdict=?,reason=?,rule='人工确认',src_type='demo' "
                   "WHERE craft=? AND material=?", (v, d["reason"], ck, mk))
     log_op(actor, "combo", f"{cname}×{mname}", old["verdict"], v, True, "RESOLVE",
@@ -1288,7 +1313,7 @@ def create_customer(d, actor="魏欣新", _role=None):
     ph = rules.norm_phone(d.get("phone"))
     n = rows("SELECT COUNT(*) c FROM customer")[0]["c"]
     cid = f"C{10000 + n + 1}"
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         # ⚠️ **工号也要写。** 表单里填的是显示串,而库里要存的是引用。
         # 认不出来时 `顾问工号` 返回 None —— **不挑一个最像的**:
         # 挑错的话这条客户会挂到另一个顾问名下,而页面上完全正常。
@@ -1409,7 +1434,7 @@ def update_customer(cid,d,actor="魏欣新",role="顾问"):
                addr=d.get("addr"),birthday=d.get("birthday")).items()
           if v and str(old.get(k))!=str(v)]
     if not diff: return dict(ok=True,code="NOCHANGE",reason="没有字段发生变化")
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute("""UPDATE customer SET name=COALESCE(?,name),phone=?,phone_tail=?,
                      shop=COALESCE(?,shop),advisor_no=COALESCE(?,advisor_no),
                      addr=COALESCE(?,addr),birthday=COALESCE(?,birthday) WHERE id=?""",
@@ -1440,19 +1465,19 @@ def import_customers(text,actor="魏欣新",role="顾问",dry=True):
     batch=f"IMP{datetime.datetime.now():%y%m%d%H%M%S}"
     if not dry:
         n=rows("SELECT COUNT(*) c FROM customer")[0]["c"]
-        with sqlite3.connect(DB) as c:
+        with _conn() as c:
             for j,(ln,d) in enumerate(good):
                 nid=f"C{40000+n+j}"
                 c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,
                   advisor_no,lifecycle,
                   level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,
                   first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at)
-                  VALUES(?,?,?,?,?,?,'潜在','普通',date('now','localtime'),0,0,date('now','localtime'),
+                  VALUES(?,?,?,?,?,?,'潜在','普通',wtoday(),0,0,wtoday(),
                   '','',0,NULL,0,0,0,0,'潜在',NULL,NULL)""",
                   (nid,d["name"],d["phone"],d["phone"][-4:],d["shop"],
                    顾问工号(d["advisor"])))
         # 疑似重复进人工确认队列
-        with sqlite3.connect(DB) as c:
+        with _conn() as c:
             for ln,nm,why2 in review:
                 c.execute("INSERT OR IGNORE INTO task VALUES(?,?,?,?,?,?)",
                   (f"TIMP-{batch}-{ln}","客户合并确认",f"导入第 {ln} 行|{nm}","待处理",
@@ -1483,8 +1508,8 @@ def apply_approval(kind,target,payload,note,actor="魏欣新",role="顾问"):
     pre={"等级调整":"AP-LV","积分调整":"AP-PT","客户转移":"AP-TR"}.get(kind,"AP-XX")
     n=rows("SELECT COUNT(*) c FROM approval WHERE kind=?",kind)[0]["c"]+1
     aid=f"{pre}-{n:03d}"
-    with sqlite3.connect(DB) as c:
-        c.execute("INSERT OR REPLACE INTO approval VALUES(?,?,?,?,?,?,datetime('now','localtime'),NULL,NULL,?)",
+    with _conn() as c:
+        c.execute("INSERT OR REPLACE INTO approval VALUES(?,?,?,?,?,?,wnow(),NULL,NULL,?)",
                   (aid,kind,target,_j.dumps(payload,ensure_ascii=False),"待审批",actor,note))
     log_op(actor,"bk-approval",aid,"—","待审批",True,"APPLY",f"{kind} · {target} · {note}",{"role":role})
     return dict(ok=True,code="APPLY",id=aid,
@@ -1500,7 +1525,7 @@ def decide_approval(aid,to,note,actor="魏欣新",role="顾问"):
     pl=_j.loads(a["payload"] or "{}")
     applied=""
     if to=="已通过":
-        with sqlite3.connect(DB) as c:
+        with _conn() as c:
             if a["kind"]=="等级调整":
                 c.execute("UPDATE customer SET level=? WHERE id=?",(pl.get("to"),a["target"]))
                 applied=f";已将 {a['target']} 等级调整为「{pl.get('to')}」"
@@ -1516,8 +1541,8 @@ def decide_approval(aid,to,note,actor="魏欣新",role="顾问"):
                               [(_to,i) for i in ids])
                 applied=f";已将 {len(ids)} 位客户转至 {pl.get('to_advisor')},未完成预约同步迁移"
         log_op(actor,a["kind"],a["target"],"审批通过","已执行",True,"APPLIED",applied.lstrip(";"),{})
-    with sqlite3.connect(DB) as c:
-        c.execute("UPDATE approval SET status=?,decided_by=?,decided_at=datetime('now','localtime'),note=? WHERE id=?",
+    with _conn() as c:
+        c.execute("UPDATE approval SET status=?,decided_by=?,decided_at=wnow(),note=? WHERE id=?",
                   (to,actor,(a["note"] or "")+" | 审批:"+(note or ""),aid))
     return dict(ok=True,code=to,reason=f"审批单 {aid} {to}"+applied)
 
@@ -1880,7 +1905,7 @@ def save_product(d,actor="魏欣新",role="顾问"):
         n=rows("SELECT COUNT(*) c FROM product")[0]["c"]
         spu=f"lxys_{900000000+n*7919:09d}"[:14]
     old=rows("SELECT * FROM product WHERE spu=?",spu)
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         if old:
             # **这条 SET 子句和下面的「写入覆盖的字段」必须一模一样**,
             # `edit_log_check` 第一条盯着 —— 不一样的话日志就会撒谎。
@@ -1890,7 +1915,7 @@ def save_product(d,actor="魏欣新",role="顾问"):
                          commission_type=COALESCE(?,commission_type),
                          commission_val=COALESCE(?,commission_val),
                          remark=COALESCE(?,remark),img_main=COALESCE(?,img_main),
-                         updated=datetime('now','localtime') WHERE spu=?""",
+                         updated=wnow() WHERE spu=?""",
                       (name,cat,kind,price,tpl,tagp,d.get("unit") or None,gd,
                        int(pts) if pts is not None else None,ct,comv,
                        d.get("remark"),d.get("img_main") or None,spu))
@@ -1900,8 +1925,8 @@ def save_product(d,actor="魏欣新",role="顾问"):
                 (spu,name,category,kind,status,base_price,template,created,updated,cover,
                  tag_price,unit,gender,points,commission_type,commission_val,remark,
                  img_main,img_detail,img_intro)
-                VALUES(?,?,?,?,'下架',?,?,datetime('now','localtime'),
-                       datetime('now','localtime'),?,?,?,?,?,?,?,?,?,?,?)""",
+                VALUES(?,?,?,?,'下架',?,?,wnow(),
+                       wnow(),?,?,?,?,?,?,?,?,?,?,?)""",
                       (spu,name,cat,kind,price,tpl,name[:2],
                        round(price*1.12,2),d.get("unit") or "件",d.get("gender") or "女",
                        int(price*100),d.get("commission_type") or "按比例",
@@ -1967,7 +1992,7 @@ def save_block(d,actor="魏欣新"):
     act=d.get("act"); page=d.get("page")
     if not rows("SELECT 1 FROM page WHERE code=?",page): return {"error":"页面不存在"}
     bs=rows("SELECT * FROM page_block WHERE page=? ORDER BY sort",page)
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         if act=="add":
             if len(bs)>=10: return dict(ok=False,code="TOO_MANY",reason="单页最多 10 个内容区块")
             c.execute("INSERT INTO page_block(page,sort,kind,title,cfg) VALUES(?,?,?,?,?)",
@@ -1990,7 +2015,7 @@ def save_block(d,actor="魏欣新"):
             for k,bid in enumerate(ids,1): c.execute("UPDATE page_block SET sort=? WHERE id=?",(k,bid))
             msg=f"区块 {d.get('id')} {'下移' if d.get('dir')=='down' else '上移'}"
         else: return dict(ok=False,code="BAD_ACT",reason="未知操作")
-        c.execute("UPDATE page SET updated=datetime('now','localtime'),status='草稿' WHERE code=? AND status='已发布'",(page,))
+        c.execute("UPDATE page SET updated=wnow(),status='草稿' WHERE code=? AND status='已发布'",(page,))
     log_op(actor,"page_block",page,"—",act,True,"BLOCK",msg,{})
     return dict(ok=True,code="BLOCK",reason=msg+";页面已回到草稿状态,需重新发布")
 
@@ -2047,9 +2072,9 @@ def save_template(d,actor="魏欣新",role="顾问"):
                                "。**移掉之后那批记录会指向一个模版不再包含的项** —— "
                                "既不算错也不算对,而报表上完全正常。"
                                "要停用整个模版请走「停用」(可逆),移项不可逆")
-        with sqlite3.connect(DB) as c:
+        with _conn() as c:
             c.execute("UPDATE measure_tpl SET name=?,descr=?,"
-                      "updated=datetime('now','localtime') WHERE code=?",
+                      "updated=wnow() WHERE code=?",
                       (nm,d.get("descr") or "",code))
             c.execute("DELETE FROM tpl_item WHERE tpl=?",(code,))
             for j,it in enumerate(items,1):
@@ -2072,8 +2097,8 @@ def save_template(d,actor="魏欣新",role="顾问"):
 
     n=rows("SELECT COUNT(*) c FROM measure_tpl")[0]["c"]+1
     code=f"MT{n:02d}"
-    with sqlite3.connect(DB) as c:
-        c.execute("INSERT INTO measure_tpl VALUES(?,?,?,'启用','60000008',datetime('now','localtime'))",
+    with _conn() as c:
+        c.execute("INSERT INTO measure_tpl VALUES(?,?,?,'启用','60000008',wnow())",
                   (code,nm,d.get("descr") or ""))
         for j,it in enumerate(items,1):
             c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it,j))
@@ -2103,7 +2128,7 @@ def del_template(d,actor="魏欣新",role="顾问"):
                            + (f"(例如 {'、'.join(ps)})" if ps else "")
                            + f",已有 {imp['量体记录']} 条量体记录用过。"
                              f"**要停用请走「停用」** —— 停用是可逆的,删是不可逆的")
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute("DELETE FROM tpl_item WHERE tpl=?",(code,))
         c.execute("DELETE FROM measure_tpl WHERE code=?",(code,))
     log_edit(actor,d.get("actor_no"),"量体模板",code,"删除量体模板",
@@ -2123,7 +2148,7 @@ def save_syscode(d,actor="魏欣新",role="顾问"):
     pre={"订单来源":"SC-ORD","配送方式":"SC-DLV","预约方式":"SC-APT","退款失败码":"SC-REF"}.get(d["category"],"SC-OTH")
     n=rows("SELECT COUNT(*) c FROM sys_code WHERE category=?",d["category"])[0]["c"]+1
     code=f"{pre}-{n:02d}"
-    with sqlite3.connect(DB) as c:
+    with _conn() as c:
         c.execute("INSERT INTO sys_code VALUES(?,?,?,?,?,'启用',?)",
                   (code,d["category"],d["name"],d["val"],n,d.get("note") or ""))
     log_op(actor,"sys_code",code,"—","新建",True,"CREATE",f"{d['category']} · {d['name']}={d['val']}",{"role":role})
@@ -2134,8 +2159,8 @@ def save_content(d,actor="魏欣新"):
     if not ti: return dict(ok=False,code="NEED_TITLE",reason="标题必填")
     n=rows("SELECT COUNT(*) c FROM content")[0]["c"]
     code=f"CT{100+n}"
-    with sqlite3.connect(DB) as c:
-        c.execute("INSERT INTO content VALUES(?,?,?,'草稿',?,'60000009',date('now','localtime'),0)",
+    with _conn() as c:
+        c.execute("INSERT INTO content VALUES(?,?,?,'草稿',?,'60000009',wtoday(),0)",
                   (code,ti,d.get("kind") or "品牌故事",d.get("channel") or "小程序首页"))
     log_op(actor,"content",code,"—","新建",True,"CREATE",ti,{})
     return dict(ok=True,code="CREATE",reason=f"内容 {code} 已创建,状态为草稿")
@@ -2696,7 +2721,7 @@ class H(BaseHTTPRequestHandler):
                     reason="选中的组合里有「不可」项,不能保存",issues=iss),409)
             sid=body.get("id") or f"SC{int(__import__('time').time())%100000:05d}"
             cur=rows("SELECT status FROM scheme WHERE id=?",sid)
-            with sqlite3.connect(DB) as c:
+            with _conn() as c:
                 if cur:
                     if cur[0]["status"]!="草稿" and cur[0]["status"]!="已保存":
                         return self._send(dict(ok=False,code="NOT_EDITABLE",
@@ -2879,7 +2904,7 @@ class H(BaseHTTPRequestHandler):
                        f"客户转移须由店长及以上操作,当前角色:{role}",{})
                 return self._send(dict(ok=False,code="WRONG_ROLE",
                     reason=f"客户转移须由店长及以上操作,当前角色:{role}"))
-            with sqlite3.connect(DB) as c:
+            with _conn() as c:
                 _adv_no = 顾问工号(adv)
                 for i in ids: c.execute("UPDATE customer SET advisor_no=? WHERE id=?",(_adv_no,i))
                 c.executemany("UPDATE appointment SET advisor_no=? WHERE customer_id=? AND status='已预约'",
@@ -2890,7 +2915,7 @@ class H(BaseHTTPRequestHandler):
                 reason=f"{len(ids)} 位客户已转至 {adv},未完成预约同步迁移"))
         if p=="/api/task-note":
             tid=body.get("id"); nt=body.get("note") or ""
-            with sqlite3.connect(DB) as c:
+            with _conn() as c:
                 c.execute("UPDATE task SET summary=? WHERE id=?",(nt,tid))
             log_op("魏欣新","task",tid,"—","备注",True,"NOTE",nt[:80],{})
             return self._send(dict(ok=True,code="NOTE",reason="备注已保存"))

@@ -48,7 +48,24 @@ def _rows(sql, *a):
 
 
 def now():
-    return dt.datetime.now().replace(microsecond=0)
+    """**世界的当下**,不是机器的当下。
+
+    ⚠️ 2026-09-26 第八个。这个文件里它有三处用途,而**第一处的错最直接**:
+
+        out, n = [], now()
+        waited_h = (n - created).total_seconds() / 3600     # created 来自 task 表
+
+    `task.created` 是**世界数据**(会被 shift_world 平移)。拿机器时间去减它,
+    算出来的「等了几小时」就是错的 —— 而它在页面上是个很正常的数字,
+    没有任何地方会报错。这和「生命周期按多久没互动算」是同一族。
+
+    另两处(`triage.created` / `handled_at`)也会被平移,机器时钟写进去之后
+    会被一天天推进未来。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+    import worldclock
+    return worldclock.当下().replace(microsecond=0)
 
 
 def _dt(s):

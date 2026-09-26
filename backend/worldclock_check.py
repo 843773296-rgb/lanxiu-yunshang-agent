@@ -40,6 +40,48 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import worldclock as WC
 
+# ── 第二条判据:**模块的时间源不许是机器时钟** ────────────────────
+#
+# 并行会话 2026-09-26 指出第一条判据的盲区,而他指对了:
+# 第一条扫的是「**谁直接写那几列**」,而 `pickup_write` 把时间算好之后
+# **传给 `factory_inbox.记事件()`** 去写 —— 算时间的和写那一列的不是同一个模块,
+# 按写入扫的检查看不见它。它因此漏掉了第七个写口(124 条日期错的订单事件)。
+#
+# 顺着这句话换一头想:**真正的缺陷不是「谁写那一列」,是「这个模块的时间源是机器时钟」。**
+# 一个模块只要有个 `_now()` 返回机器时间,它写到哪儿、传给谁都会出错 ——
+# 而「模块有没有一个机器时钟的时间源」**扫得到,而且比扫写入简单**。
+#
+# 换这一头之后当场又多抓到两个(ops.py / repair_write.py),它们都不直接写清单里的列。
+时间源名 = re.compile(r"^\s*def\s+(_?now|_?today|当下|今天|_?业务今天|_?世界今天)\s*\(")
+# 这些文件的时间源**本来就该是机器时钟**,逐个写明理由。
+时间源豁免 = {
+    "worldclock.py": "它就是那个换算的地方 —— 世界按天平移,一天之内的钟点是真的,"
+                     "所以 `当下()` 必须读机器的时刻。这里不用机器时钟就没人能用世界时钟",
+    "auth.py": "会话创建/过期记的是真实世界的事(见下面 豁免 里的同一条理由)",
+}
+时间源上限 = 2          # **写死**(不是 len(...))—— 见下面棘轮那段
+
+# ── 第三条判据:**SQL 字符串里的时间函数也是机器时钟** ──────────────
+#
+# 并行会话 2026-09-26 从**格式**上认出第十个:那 49 条 `ordr.updated` 带**秒**
+# (`%H:%M:%S`),而所有 `_now()` 都是 `%H:%M` —— **带秒的只有 SQL 里的
+# `datetime('now','localtime')` 产生得出来**。`backend/server.py` 有 16 处。
+#
+# 前两条判据都扫不到它:
+#   · 第一条扫「谁直接写那几列」—— 它确实直接写,但写在 SQL 字符串里,
+#     而第一条找的是表名+列名同现,SQL 里正好同现…… 却**没有机器时钟的函数调用**可匹配
+#     (`datetime('now')` 不长得像 `datetime.now()`)。
+#   · 第二条扫 `def _now/...` 的函数体 —— 这里**压根没有 _now()**,时间写在 SQL 里。
+#
+# **判据的盲区不是漏了某个文件,是漏了某种「时间的写法」。**
+#
+# 粒度按**站点**,不按文件:`server.py` 里 `edit_log.ts` 那一处是**该**用机器时钟的
+# (编辑台账记真实世界)。放行靠这个仓库已有的标注惯例 —— 同行或上一行写
+# `真实时钟`,并说明为什么。文件级豁免会把同一个文件里该管的那十几处一起放掉。
+_SQL机器时钟 = re.compile(r"datetime\s*\(\s*['\"]now['\"]|date\s*\(\s*['\"]now['\"]|CURRENT_TIMESTAMP",
+                        re.I)
+_真实时钟标 = re.compile(r"真实时钟")
+
 咬合 = [
     ("把 booking.py 的 _now() 改回 datetime.datetime.now()", "写「已发生的事」那几列时用世界时钟"),
     ("往豁免里多加一条",                                      "豁免不许囤积"),
@@ -80,9 +122,20 @@ def 只留代码(源):
         if t.type == tokenize.COMMENT:
             要涂.append(t)
         elif t.type == tokenize.STRING and 上一个 in (
-                None, tokenize.NEWLINE, tokenize.NL, tokenize.INDENT, tokenize.DEDENT):
+                None, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT):
             要涂.append(t)                      # 独立成句的字符串 = docstring
-        if t.type not in (tokenize.COMMENT,):
+        # ⚠️ **NL 不算「前一个 token」。** NL 是**非逻辑换行**:空行,以及
+        # **括号内的换行**。而隐式字符串拼接正好长这样:
+        #
+        #     c.execute("INSERT INTO op_log(...)"
+        #               " VALUES(datetime('now'),?)")
+        #
+        # 第二段字符串前面是 NL,把 NL 算进「docstring 的前驱」的话,
+        # **它会被当成 docstring 涂白** —— 于是所有多行 SQL 都在判据的视野之外,
+        # 不只是这一条新判据,前两条也一样瞎。
+        # 2026-09-26 查第十个时踩到:判据扫出 0 处,而原文里明明有 3 处。
+        # 真正的 docstring 前驱是 NEWLINE(逻辑换行)/ INDENT / DEDENT / 文件开头。
+        if t.type not in (tokenize.COMMENT, tokenize.NL):
             上一个 = t.type
     for t in 要涂:
         (r1, c1), (r2, c2) = t.start, t.end
@@ -167,6 +220,76 @@ ck("真的扫到了写这些列的地方(一个都没扫到 = 判据坏了,不�
 
 ck(f"豁免不许囤积(上限 {上限},要加就得连这行一起改)", len(豁免) <= 上限, len(豁免),
    sorted(豁免))
+
+# ── 第二条判据:模块的时间源 ────────────────────────────────────────
+坏源, 扫源, 源们 = [], 0, []
+for fn in sorted(os.listdir(HERE)):
+    if not fn.endswith(".py") or fn.endswith("_check.py"): continue
+    if fn == "seed.py": continue          # 造数用自己的基准日 T(确定性)
+    代码 = 只留代码(open(os.path.join(HERE, fn), encoding="utf-8").read())
+    if 代码 is None:
+        坏源.append(f"{fn}:剥注释时解析失败 —— **不当它通过**"); continue
+    行 = 代码.splitlines()
+    for i, l in enumerate(行):
+        m = 时间源名.match(l)
+        if not m: continue
+        扫源 += 1
+        源们.append(f"{fn}::{m.group(1)}")
+        # ⚠️ **不能用固定行数的窗口。** 第一版扫 `def` 之后 16 行,
+        # 而 `ops.now()` 的 docstring 有十几行 —— **我自己写的那段解释
+        # 把 `return` 挤出了窗口**,于是把它改回机器时钟,检查照样绿。
+        # 咬合抓到的。固定窗口的判据会随着注释变长而悄悄失效,
+        # 而失效时和通过长得一模一样。
+        # 现在扫到**下一个同级或更外层的 def/class** 为止 —— 那才是函数体。
+        缩 = len(l) - len(l.lstrip())
+        尾 = len(行)
+        for k in range(i + 1, len(行)):
+            x = 行[k]
+            if not x.strip(): continue
+            c2 = len(x) - len(x.lstrip())
+            if c2 <= 缩 and re.match(r"\s*(def|class)\s", x):
+                尾 = k; break
+        体 = "\n".join(行[i:尾])
+        if _机器时钟.search(体) and fn not in 时间源豁免:
+            坏源.append(f"{fn}:{i+1} def {m.group(1)}() 返回机器时钟")
+
+ck("**模块的时间源不许是机器时钟**(它写到哪儿、传给谁都会出错)",
+   not 坏源, 扫源, 坏源[:3])
+ck("真的扫到了时间源(一个都没扫到 = 判据坏了,不是全都对)", 扫源 >= 6, 扫源, 源们[:6])
+ck(f"时间源豁免不许囤积(上限 {时间源上限})", len(时间源豁免) <= 时间源上限,
+   len(时间源豁免), sorted(时间源豁免))
+幽2 = [k for k in 时间源豁免 if not os.path.exists(os.path.join(HERE, k))]
+ck("时间源豁免指向的文件都还在", not 幽2, len(时间源豁免), 幽2)
+
+# ── 第三条判据:SQL 字符串里的时间函数 ──────────────────────────────
+坏SQL, 扫SQL, 放行 = [], 0, 0
+for 目录 in (HERE, os.path.join(ROOT, "tools"), os.path.join(ROOT, "knowledge"),
+            os.path.join(ROOT, "mcp"), os.path.join(ROOT, "agentsite")):
+    if not os.path.isdir(目录): continue
+    for fn in sorted(os.listdir(目录)):
+        if not fn.endswith(".py"): continue
+        if fn.endswith("_check.py") or fn == "worldclock_check.py": continue
+        路 = os.path.join(目录, fn)
+        原 = open(路, encoding="utf-8").read()
+        代码 = 只留代码(原)
+        if 代码 is None: continue
+        原行, 码行 = 原.splitlines(), 代码.splitlines()
+        for i, l in enumerate(码行):
+            if not _SQL机器时钟.search(l): continue
+            扫SQL += 1
+            # 同行或**前三行**有「真实时钟」标注 → 放行。
+            # ⚠️ 标注写在注释里,而 `代码` 已经把注释涂白了 —— 所以必须看**原文**。
+            # 涂白是**同长度替换**(不删行),所以行号一一对应,`原行[i]` 就是同一行。
+            # 第一版只看前两行,而这里的标注是两行注释 + 一行代码,差一行 —— 于是不放行。
+            窗 = "\n".join(原行[max(0, i - 3):i + 1])
+            if _真实时钟标.search(窗):
+                放行 += 1; continue
+            坏SQL.append(f"{os.path.relpath(路, ROOT)}:{i+1} {l.strip()[:60]}")
+
+ck("**SQL 字符串里的时间函数也不许是机器时钟**(它绕过前两条判据)",
+   not 坏SQL, 扫SQL, 坏SQL[:3])
+ck("真的扫到了 SQL 里的时间函数(一个都没扫到 = 判据坏了)", 扫SQL >= 2, 扫SQL,
+   f"其中 {放行} 处带「真实时钟」标注放行")
 无理由 = [k for k, v in 豁免.items() if len((v or "").strip()) < 10]
 ck("每条豁免都写了理由", not 无理由, len(豁免), 无理由)
 幽灵 = [k for k in 豁免 if not os.path.exists(os.path.join(HERE, k))]

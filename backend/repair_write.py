@@ -36,7 +36,17 @@ def rows(sql, *a):
 
 
 def _now():
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    """**世界的当下**,不是机器的当下。
+
+    ⚠️ 2026-09-26 第九个:这里原来是 `datetime.datetime.now()`。它写出去的是
+    返修单时间、**顾客同意于**、试穿码有效期 —— 全是演示世界的业务时间。
+    机器时钟写进去之后,平移会把它一天天推进未来(这一族已经栽过八次)。
+
+    ⚠️ 抓到它的**不是**「谁写那几列」那条判据(它不直接写清单里的列),
+    是换了一头的那条:**模块的时间源不许是机器时钟**。
+    """
+    import worldclock
+    return worldclock.当下().strftime("%Y-%m-%d %H:%M")
 
 
 def _deny(me, code, reason, key="—"):
