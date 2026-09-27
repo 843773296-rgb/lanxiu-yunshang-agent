@@ -99,6 +99,11 @@
 # 显式覆盖 —— 不符合后缀约定的字段,在这里点名。
 # **这张表短,说明约定管得住大多数**;它变长就说明约定该改了。
 显式类型 = {
+    # ⚠️ `embedding` 和 `dim` 是 2026-09-27 为 `embeddings` 表加的。
+    # `embedding` **不能靠后缀推**:它没有后缀,而且它是这套登记里
+    # 第一个不是 SQL 标准类型的列 —— 维度写死在类型里(见 entities.py 那段注释)。
+    # `dim` 同理:三个字母,套不上任何后缀约定。
+    "embedding": "VECTOR(1536)", "dim": "INTEGER",
     "id": "TEXT", "name": "TEXT", "status": "TEXT", "role": "TEXT",
     "purpose": "TEXT", "adapter": "TEXT", "endpoint": "TEXT", "revision": "BIGINT",
     "messages": "JSONB", "params": "JSONB", "capabilities": "JSONB",

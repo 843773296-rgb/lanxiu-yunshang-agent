@@ -33,10 +33,38 @@ from sqlalchemy import (MetaData, Table, Column, Text, Integer, BigInteger, Bool
                         Numeric, TIMESTAMP, Index, UniqueConstraint,
                         ForeignKeyConstraint, PrimaryKeyConstraint)
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import UserDefinedType
 
 metadata = MetaData()
 
+class _向量(UserDefinedType):
+    """pgvector 的 `vector(n)`。**故意不 import pgvector 那个包。**
+
+    CI 的 `admin` job 只装 sqlalchemy(实测 0.24 秒跑完 93 条契约检查),
+    契约层多一个依赖就会让它在 CI 里直接炸。
+    而契约层的职责是**说清结构** —— 说清「这一列是 1536 维向量」
+    不需要一个能算向量的库。
+
+    ⚠️ 维度写在类型里是有意的:插错维度**当场报错**。
+    无维度的 `vector` 列允许 3 维和 4 维躺在同一张表里(量过,一声不响),
+    而混维度的索引算出来的距离没有意义 —— 那是不报错的那种坏。
+    """
+
+    cache_ok = True
+
+    def __init__(self, 维度):
+        if not isinstance(维度, int) or isinstance(维度, bool) or 维度 <= 0:
+            raise ValueError(f"向量维度要是正整数,给的是 {维度!r} —— "
+                             f"**不许缺省**:没有维度的 vector 列建不了索引,"
+                             f"而且允许混维度")
+        self.维度 = 维度
+
+    def get_col_spec(self, **kw):
+        return f"vector({self.维度})"
+
+
 _映 = {
+    "VECTOR(1536)": lambda: _向量(1536),
     "TEXT": lambda: Text(),
     "INTEGER": lambda: Integer(),
     "BIGINT": lambda: BigInteger(),
@@ -78,6 +106,12 @@ _额外唯一 = {
     "jobs": [("project_id", "idempotency_key")],
     # 费用事件唯一键:唯一用量事件防重复计费
     "usage_ledger": [("project_id", "event_key")],
+    # 向量:同一段文本 + 同一个模型 **只存一份**。
+    # 这条约束就是「已完成片段不重复 Embedding」(§19.3)在**跨构建**层面的地基:
+    # 检索配置改了要新建构建,但那次新建的向量可以全部复用 —— 一次都不用重跑。
+    # ⚠️ 不带 `dim`:维度由 `model_id` 决定,把它放进唯一键等于承认
+    # 「同一个模型可以产两种维度」,那正是要防的事。
+    "embeddings": [("project_id", "text_hash", "model_id")],
     # 版本内容哈希:同一份内容不该在**同一个项目里**出现两个版本行
     # ⚠️ **两条,不是一条。** content_hash 那条防「同一份内容出现两个版本行」;
     # version_no 这条防「同一个 key 出现两个 v1」—— 后者原来是**缺的**,

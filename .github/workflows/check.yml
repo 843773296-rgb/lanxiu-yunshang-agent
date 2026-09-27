@@ -101,7 +101,7 @@ jobs:
   #
   # ## 这里跑「不要数据库」的那些
   #
-  #   编排:DSL 语义 · 图校验 · 执行语义 · 知识链 · 索引计划 · Agent 对抗
+  #   编排:DSL 语义 · 图校验 · 执行语义 · 知识链 · 索引计划 · Embedding · Agent 对抗
   #        **纯标准库**,系统 python3 直接跑,不装任何东西(实测 0.4 秒)
   #   契约覆盖:只多一个 sqlalchemy,**不要 psycopg、不要库**(实测 0.24 秒)
   #
@@ -154,7 +154,7 @@ jobs:
           # zsh 允许中文变量名。**「本地能跑」和「CI 能跑」的差别可以只是一个 shell。**
           rc=0
           for t in test_dsl_semantics test_graph_validation test_execution test_agent_tools \
-                   test_knowledge_chain test_index_plan; do
+                   test_knowledge_chain test_index_plan test_embedder; do
             echo "▸ $t"
             PYTHONPATH="$PP" python3 "tests/orchestration/$t.py" || rc=1
           done
@@ -210,7 +210,7 @@ jobs:
           # ⚠️ **这里不写总条数。** 上面各条测试自己打印了各自的条数,
           # 在这儿手抄一个汇总数,加一组测试就会变成假话 —— 而没有任何检查会红。
           echo "✅ 这个 job 跑完了,零数据库。跑的是:"
-          echo "   契约覆盖 · DSL 语义 · 图校验 · 执行语义 · 知识链 · 索引计划 · Agent 对抗"
+          echo "   契约覆盖 · DSL 语义 · 图校验 · 执行语义 · 知识链 · 索引计划 · Embedding · Agent 对抗"
           echo "   (每组的条数看上面各自的输出)"
           echo ""
           echo "⚠️ **没跑**:跨项目攻击 / 租约攻击 / 端到端 / 编排端到端 / 六页冒烟"

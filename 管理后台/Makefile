@@ -39,6 +39,11 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_worker_lease.py
 	@echo ""
+	@echo "▸ 向量约束:**真的插坏数据**(混维度/假向量id/重复文本/跨项目引用)"
+	@echo "  「能用约束表达的不要用判据表达」是个声称 —— 这里去攻击它"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_vector_constraints.py
+	@echo ""
 	@echo "⚠️ test 跑的是**不需要起服务**的那部分(契约层 + 数据层)。"
 	@echo "   接口和页面的闭环在 make test-e2e(要先 make dev)。"
 	@echo "   **两个都绿也不代表「系统可用」** —— Worker / 知识链 / 训练链 / 发布链"
@@ -149,6 +154,10 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 知识链:解析 + 切片,**判据是「证据链真的能指回原文」**(跑真语料)"
 	@./.venv/bin/python tests/orchestration/test_knowledge_chain.py
 	@echo ""
+	@echo "▸ Embedding 适配器:**mock 向量比 mock 文本危险** —— 它的相似度看起来很正常"
+	@echo "  (跨进程确定性用子进程验;那条咬合必须真的改文件,monkeypatch 咬不住)"
+	@./.venv/bin/python tests/orchestration/test_embedder.py
+	@echo ""
 	@echo "▸ 索引计划:检查点 + 输入指纹 —— **这一组的坏法全是不报错的**"
 	@echo "  (跳过没向量的片段/在变过的输入上续做/从 20 个候选里挑 50 个)"
 	@./.venv/bin/python tests/orchestration/test_index_plan.py
@@ -162,6 +171,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "   还没落地:人工待办流程、Agent 配置页;"
 	@echo "   **检查点恢复只有判断那一半**(index_plan.py 决定跳过谁、要不要新建),"
 	@echo "   Worker 的 index_build 处理器还没写 —— 判断对不代表恢复真跑得起来。"
+	@echo "   ⚠️ 而且查出一件拦路的:worker.py 把处理器**整个包在一个事务里**,"
+	@echo "   所以写多少检查点都会在崩溃时一起回滚。**检查点的前提是它能被提交** ——"
+	@echo "   index_build 必须在独立连接上分批提交(见 index_plan.py 开头那段)。"
 	@echo "   (见 contract/landing.py:九个组件里落地了 6 个)。"
 
 test-orchestration-e2e:   ## 编排端到端:建图 → 校验 → 试运行 → 冻结 → 发布
