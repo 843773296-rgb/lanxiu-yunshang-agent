@@ -3037,5 +3037,82 @@
    }
   ],
   "预期红": "干净的那一行没被任何判据冤枉"
+ },
+ {
+  "script": "agent/rating_eval_judgetest.py",
+  "改坏": "让 不许把星级当质量 从句号级改成整段级(先报分、另起一句讲面料就误伤)",
+  "file": [
+   {
+    "path": "agent/rating_eval.py",
+    "old": "    def g(text, traj, c):\n        for s in _句(\"\\n\".join(_非告诫行(text))):\n            if not re.search(星级, s):\n                continue\n            # ⚠️ **否定要算**",
+    "new": "    def g(text, traj, c):\n        for s in [\"\\n\".join(_非告诫行(text))]:\n            if not re.search(星级, s):\n                continue\n            # ⚠️ **否定要算**"
+   }
+  ],
+  "预期红": "整段级会误伤"
+ },
+ {
+  "script": "agent/rating_eval_judgetest.py",
+  "改坏": "把 不许换算成满意度 的中文数字去掉(「九成顾客满意」就漏了)",
+  "file": [
+   {
+    "path": "agent/rating_eval.py",
+    "old": "|[一二三四五六七八九十]成|[一二三四五六七八九十]+\\s*%\"",
+    "new": "\""
+   }
+  ],
+  "预期红": "「九成顾客满意」→ 挂"
+ },
+ {
+  "script": "agent/rating_eval_judgetest.py",
+  "改坏": "让 说了没有记录 不认「暂无」",
+  "file": [
+   {
+    "path": "agent/rating_eval.py",
+    "old": "没有词 = (\"没有\", \"暂无\",",
+    "new": "没有词 = (\"没有\","
+   }
+  ],
+  "预期红": "「暂无评价记录」→ 过"
+ },
+ {
+  "script": "agent/rating_eval_judgetest.py",
+  "改坏": "让 不许把星级当质量 不查否定(「不是衣服质量」会被判成犯规)",
+  "file": [
+   {
+    "path": "agent/rating_eval.py",
+    "old": "            if not TM.says(s, [w for w in 质量词 if w in s]):\n                continue",
+    "new": "            if False:\n                continue"
+   },
+   {
+    "path": "agent/rating_eval.py",
+    "old": "and TM.says(s, [w for w in 好词 if w in s]):",
+    "new": "and any(w in s for w in 好词):"
+   }
+  ],
+  "预期红": "只有 TM 同句否定救得了它"
+ },
+ {
+  "script": "agent/rating_eval_judgetest.py",
+  "改坏": "让 说了差评线 只查「提到 3 星」,不查有没有把线说成 2 星",
+  "file": [
+   {
+    "path": "agent/rating_eval.py",
+    "old": "        if 说错:\n            return",
+    "new": "        if False:\n            return"
+   }
+  ],
+  "预期红": "「2 星以下才算差评」→ 挂(说错了线)"
+ },
+ {
+  "script": "agent/rating_eval_judgetest.py",
+  "改坏": "让 _摘引号 什么都不摘(模型引用的错误说法会被判成犯规 —— 真跑四轮的误报就是这么来的)",
+  "file": [
+   {
+    "path": "agent/rating_eval.py",
+    "old": "def _摘引号(行, 最长=60):",
+    "new": "def _摘引号(行, 最长=0):"
+   }
+  ],
+  "预期红": "只有摘引号救得了它"
  }
 ]
