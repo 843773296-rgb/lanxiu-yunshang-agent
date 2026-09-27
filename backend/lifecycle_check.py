@@ -247,6 +247,25 @@ if __name__ == "__main__":
          "(SELECT min(id) FROM wearer WHERE relation IN ('子','女'))",
          None),
     ]
+    # ⚠️ **咬合在库的临时副本上做,不碰真库。**
+    #
+    # 原来是在真库上**原地改坏再改回来**。2026-09-27 它真的漏了一次:
+    # `W10001-2` 的生日被留在 `2027-01-01`,于是**这条咬合从此永远不会红** ——
+    # 注入的问题早就在基线里了(`1 → 1`),而它看起来只是「体检没抓到」,
+    # 像是判据坏了,而实际是**上一次的破坏没清干净**。
+    #
+    # `tools/bite_run.py` 的文档早就写下了这条:
+    # > 「在副本里做,不碰主工作区。常有并行会话在同一个仓库上干活;
+    # >  在原地改坏再改回来,中间那一瞬别人可能正好读到、甚至提交。」
+    #
+    # 而「恢复失败」和「恢复成功」在输出上一模一样 —— 下一次跑才看得出来,
+    # 那时候已经分不清是谁弄坏的。**副本一关就没了,不需要恢复这回事。**
+    import shutil as _sh, tempfile as _tf
+    _d = _tf.mkdtemp(prefix="lifebite-")
+    _t = os.path.join(_d, "lanxiu.db")
+    _src = sqlite3.connect(DB); _dst = sqlite3.connect(_t)
+    _src.backup(_dst); _src.close(); _dst.close()
+    c = sqlite3.connect(_t); c.row_factory = sqlite3.Row
     ok = True
     for name, break_sql, fix_sql in trials:
         snap = {r["id"]: dict(r) for r in c.execute("SELECT * FROM wearer")} if fix_sql is None else None
@@ -263,7 +282,9 @@ if __name__ == "__main__":
                 c.execute("UPDATE wearer SET birthday=? WHERE id=?", (row["birthday"], wid))
         c.commit()
     left = len(structural(c))
-    print(f"  {'✅' if left == 0 else '❌'} 咬合后数据已复原(剩余结构性错误 {left} 条)")
+    print(f"  {'✅' if left == 0 else '❌'} 咬合后副本里的数据已复原(剩余结构性错误 {left} 条)")
+    c.close(); _sh.rmtree(_d, ignore_errors=True)
+    print("     (整段咬合跑在库的临时副本上 —— **真库一行都没动**)")
 
     print("\n" + "=" * 84)
     if bad or not ok or left:

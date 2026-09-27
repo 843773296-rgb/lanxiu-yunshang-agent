@@ -21,8 +21,13 @@
 import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path[:0] = [HERE, os.path.join(HERE, "..", "knowledge")]
+ROOT = os.path.dirname(HERE)
+sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), os.path.join(ROOT, "tools")]
 import rating as R
+import backfill_rating as SR   # **形状的那几个数只写一处** —— 在造数脚本里
+# ⚠️ 名字是 `backfill_rating` 不是 `seed_rating`:后者和 `backend/seed_rating.py`(建表)
+# 撞名,而 `sys.path` 里 backend 在前 —— `import seed_rating` 会**安静地**取到建表那个,
+# 直到读 `门店均分` 才炸。**两个同名模块,谁在前面谁赢,而且不报错。**
 
 DB = os.path.join(HERE, "lanxiu.db")
 工单类型 = "评价差评"
@@ -135,6 +140,56 @@ def 查一遍(c, 前缀=""):
     return n
 
 
+def 查形状(c, n):
+    """**铺完必须有东西盯着形状。**
+
+    业务 2026-09-27 拍的是「门店拉开差距 + 最近三个月上升」,而那个形状
+    **会被悄悄弄平**:下一次造数改个参数、或者某个脚本重写了 rating,
+    门店三个数变得一样 —— 而页面上还是一串 4.5 左右的数字,**看不出来**。
+
+    这条检查当天就抓到过两次:① 月趋势写成相对加成,**趋势根本没造出来**
+    (7月 4.50 → 9月 4.56,而 5 月 4.66 比 9 月还高);② 星级分布的插值锚点太窄,
+    门店差距被**静默夹平**(4.63/4.45/4.30,而拍的是 4.7/4.5/4.2)。
+
+    ⚠️ 目标值**从 `tools/seed_rating.py` 读**,不在这儿抄一份 ——
+    抄一份就会各自漂,而漂的表现是「检查绿着但形状已经不是业务拍的那个」。
+    ⚠️ 判据留了余量(±0.15):每月每店只有一两百条,星级采样的标准误约 0.05,
+    **卡太死会天天红,而检查天天红人就不看了。**
+    """
+    容差 = 0.15
+    店 = {r["shop"]: (r["n"], r["a"]) for r in c.execute(
+        """SELECT o.shop, COUNT(*) n, AVG(r.star) a FROM rating r
+           JOIN ordr o ON o.id=r.order_id GROUP BY o.shop""")}
+    for shop, 目标 in sorted(SR.门店均分.items()):
+        got = 店.get(shop)
+        if not got:
+            ck(f"{shop} 有评价", False, 0, "这家店一条评价都没有"); continue
+        ck(f"{shop} 平均分贴着业务拍的 {目标}(±{容差})",
+           abs(got[1] - 目标) <= 容差, got[0], f"实际 {got[1]:.2f}")
+    if len(店) >= 2:
+        分 = sorted(x[1] for x in 店.values())
+        拍 = sorted(SR.门店均分.values())
+        应差 = 拍[-1] - 拍[0]
+        ck(f"门店之间真的拉开了差距(业务拍的跨度 {应差:.1f},至少要有它的六成)",
+           (分[-1] - 分[0]) >= 应差 * 0.6, len(店),
+           f"实际跨度 {分[-1]-分[0]:.2f} —— **三家店一样的话,铁律说的「门店之间可以比」"
+           f"在数据上没有对象**")
+    月 = {r["ym"]: (r["n"], r["a"]) for r in c.execute(
+        """SELECT substr(rated_at,1,7) ym, COUNT(*) n, AVG(star) a FROM rating
+           GROUP BY ym""")}
+    有的 = sorted(m for m in SR.月目标 if m in 月)
+    if len(有的) >= 2:
+        头, 尾 = 有的[0], 有的[-1]
+        应升 = SR.月目标[尾] - SR.月目标[头]
+        ck(f"最近几个月是**上升**的({头}→{尾},业务拍的升 {应升:.2f},至少要有它的一半)",
+           (月[尾][1] - 月[头][1]) >= 应升 * 0.5, 月[头][0] + 月[尾][0],
+           f"实际 {月[头][1]:.2f} → {月[尾][1]:.2f}(升 {月[尾][1]-月[头][1]:+.2f})")
+    ck("差评占比在一成上下(业务知情:当面难给差评,所以分数偏高)",
+       0.03 <= (lambda x: x)(c.execute(
+           "SELECT 1.0*SUM(star<=?)/COUNT(*) FROM rating", (R.差评线,)).fetchone()[0]) <= 0.25,
+       n, f"实际 {c.execute('SELECT 1.0*SUM(star<=?)/COUNT(*) FROM rating',(R.差评线,)).fetchone()[0]:.1%}")
+
+
 def 合成夹具自证():
     """造几行故意坏掉的数据,确认每条判据**真的会红**。
 
@@ -217,6 +272,8 @@ def main():
         print("\n  \033[33mℹ 评价表现在是空的(业务 2026-09-27:造数先别铺)—— "
               "**上面那几条一条数据都没扫到**。\033[0m")
         print("    「没扫到东西」不是「都通过」。判据有没有在干活,靠下面那半证明。")
+    if n:
+        查形状(c, n)
     没红 = 合成夹具自证()
     FAIL.extend(没红)
     print("=" * 92)
@@ -229,6 +286,8 @@ def main():
 
 
 咬合 = [
+    ("把 seed_rating.门店均分 三家店都改成 4.5(门店差距被弄平)", "门店之间真的拉开了差距"),
+    ("把 seed_rating.月目标 三个月都改成 4.5(趋势被弄平)", "最近几个月是**上升**的"),
     ("让 没签收就评了() 只查签收于 IS NULL(不比先后)", "没签收就评了"),
     ("让 差评没进清单() 把 star<= 改成 star<(3 星就漏了)", "差评没进清单"),
     ("让 两处状态打架() 只看 task.status,不看 rating.handled_at(它会抓到别的行)", "两处状态打架"),

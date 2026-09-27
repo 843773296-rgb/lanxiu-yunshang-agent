@@ -99,9 +99,17 @@ def run(T):
 
     # ── 闸:**签收之前**一律不许评 ────────────────────────────────────
     包 = c.execute("SELECT pkg_id FROM pkg WHERE order_id=? AND void_at IS NULL", (oid,)).fetchone()["pkg_id"]
+    # ⚠️ 基线**取当前行数**,不假设「表是空的」。
+    # 2026-09-27 踩到:这两条原来写的是 `COUNT(*) FROM rating == 0` ——
+    # 那天铺了 1646 条演示评价,检查当场红。
+    # **它依赖的是「这张表恰好还没造数」这个偶然事实**,而那种依赖
+    # 在造数那天才会暴露,看起来像功能坏了。判据该问的是
+    # 「**这一次被拒之后有没有多出来一行**」,不是「全表是不是空的」。
+    基线 = c.execute("SELECT COUNT(*) FROM rating").fetchone()[0]
+    没多 = lambda: c.execute("SELECT COUNT(*) FROM rating").fetchone()[0] == 基线
     r = rt.customer_rate(oid, 尾, 5, "很好", pkg=包)
     ck("没签收 → 不许评", not r["ok"] and r["code"] == "CANNOT_RATE", r.get("reason"))
-    ck("被拒的时候一行都没写进去", c.execute("SELECT COUNT(*) FROM rating").fetchone()[0] == 0)
+    ck("被拒的时候一行都没写进去", 没多(), f"基线 {基线} 条")
 
     # 走真实签收流程:到店 → 顾客出码 → 导购核验
     pw.arrive({"order_id": oid}, 顾问)
@@ -118,7 +126,7 @@ def run(T):
     ck("6 星 → 拒,而且不夹成 5 星", rt.customer_rate(oid, 尾, 6)["code"] == "BAD_STAR")
     ck("0 星 → 拒", rt.customer_rate(oid, 尾, 0)["code"] == "BAD_STAR")
     ck("半星 → 拒", rt.customer_rate(oid, 尾, 4.5)["code"] == "BAD_STAR")
-    ck("还是一行都没写进去(被拒的都没落库)", c.execute("SELECT COUNT(*) FROM rating").fetchone()[0] == 0)
+    ck("还是一行都没写进去(被拒的都没落库)", 没多(), f"基线 {基线} 条")
     r = rt.customer_rate(oid, 尾, 5, "导购很细心")
     ck("签收之后 5 星 → 收下", r["ok"], r.get("reason"))
     行 = c.execute("SELECT * FROM rating WHERE pkg_id=?", (包,)).fetchone()

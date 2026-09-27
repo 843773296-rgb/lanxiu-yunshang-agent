@@ -416,8 +416,17 @@ if __name__ == "__main__":
     # 合并工单被关掉,两条档案里已经没有可比对的字段)。
     # 让它留在评测集里,它就是一条永远无真值的用例 ——
     # 而无真值在通过条件里是被容忍的,于是它会**静默地一直通过**。
-    tasks = api._rows("SELECT id,type,ref_id FROM task "
-                      "WHERE status IS NULL OR status<>'已关闭' ORDER BY id")
+    # ⚠️ **只取这份评测实现了的那三种工单。**
+    # 2026-09-27 踩到:这里原来是「所有未关闭的工单」全表扫。而 `task` 是**共用的
+    # 待处理清单**(售后判责 / 客户合并 / 财务人工任务),那天往里加了一个新 type
+    # 「评价差评」—— 它落到客户合并那条流程上,`s["case_ref"].split("|")` 当场崩。
+    #
+    # > **一张共用的清单,加一个新 type,会打到所有「全表扫 + 按 type 分流」的消费者。**
+    # > 而这份评测只实现了三条流程,它**本来就不该**对第四种工单有意见。
+    实现了的 = ("售后判责", "客户合并确认", "财务人工任务")
+    tasks = api._rows(
+        "SELECT id,type,ref_id FROM task WHERE (status IS NULL OR status<>'已关闭') "
+        f"AND type IN ({','.join('?' * len(实现了的))}) ORDER BY id", *实现了的)
     import truthdb
     truths = truthdb.by_case()   # 评测侧自己的只读连接,不借工具层
 
