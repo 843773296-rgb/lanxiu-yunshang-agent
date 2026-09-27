@@ -35,6 +35,7 @@ DB = os.path.join(HERE, "..", "backend", "lanxiu.db")
 # 动态导入的话,那条检查扫不到,一张只在本地存在的表就会溜过去。
 # (写这行注释时它正好抓到了 cust_owner_log —— 当时这里还是 `__import__`。)
 import ownership, asr, credit, roster, seed_rating
+import seed_quote
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -47,6 +48,9 @@ import ownership, asr, credit, roster, seed_rating
     # 挂在这里而不是新加一步 —— 它正是这份文档说的那种「只查不改、没有 backfill 脚本」的表,
     # 没有任何别的一步会建它,而**本地建过就一直在,CI 每次从零**。
     (seed_rating, "建表", ["rating"]),
+    # 报价表(2026-09-27):**只建表,不铺数据** —— 报价是 skill 真跑出来的东西,
+    # 造一批假报价等于给评测喂一批没人报过的价。
+    (seed_quote, "建表", ["quote"]),
 ]
 
 

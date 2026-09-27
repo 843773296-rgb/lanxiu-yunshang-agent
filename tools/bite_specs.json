@@ -3294,5 +3294,147 @@
    }
   ],
   "预期红": "最坏 import 顺序下"
+ },
+ {
+  "script": "knowledge/quote.py",
+  "改坏": "让 齐不齐() 用 `if not 报价.get(k)` 判缺项(物料成本 0 会被判成缺项)",
+  "file": [
+   {
+    "path": "knowledge/quote.py",
+    "old": "    缺 = [k for k in 必须齐的 if 报价.get(k) is None or 报价.get(k) == \"\"]",
+    "new": "    缺 = [k for k in 必须齐的 if not 报价.get(k)]"
+   }
+  ],
+  "预期红": "物料成本是 0 不算缺项"
+ },
+ {
+  "script": "knowledge/quote.py",
+  "改坏": "让 作数的那条() 不看方案状态(已失效的方案上报价照样作数)",
+  "file": [
+   {
+    "path": "knowledge/quote.py",
+    "old": "    if 方案状态 in 不作数的方案状态:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "已失效的方案上,报价不作数"
+ },
+ {
+  "script": "knowledge/quote.py",
+  "改坏": "让 作数的那条() 报过多次时不说「报过几次」",
+  "file": [
+   {
+    "path": "knowledge/quote.py",
+    "old": "        话 += (f\" —— ⚠️ **这份方案一共报过 {n} 次**",
+    "new": "        话 += (f\" —— (这份方案报过 {0} 次"
+   }
+  ],
+  "预期红": "报过多次要说出来"
+ },
+ {
+  "script": "knowledge/quote.py",
+  "改坏": "让 能不能出单() 在可行性「不可」时也放行",
+  "file": [
+   {
+    "path": "knowledge/quote.py",
+    "old": "    if 报价[\"可行性\"] == \"不可\":",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "可行性不可 → 不出报价单"
+ },
+ {
+  "script": "knowledge/quote.py",
+  "改坏": "让 作数的那条() 只按「报于」排(同一分钟两条,结果取决于传入顺序)",
+  "file": [
+   {
+    "path": "knowledge/quote.py",
+    "old": "    好 = sorted([q for q in 全 if not q.get(\"作废于\")],\n               key=lambda q: (str(q[\"报于\"]), str(q.get(\"id\") or \"\")))",
+    "new": "    好 = sorted([q for q in 全 if not q.get(\"作废于\")], key=lambda q: str(q[\"报于\"]))"
+   }
+  ],
+  "预期红": "同一分钟报两次,结果和传入顺序无关"
+ },
+ {
+  "script": "backend/quote_write_check.py",
+  "改坏": "让 落一次报价() 不查 能不能出单()(可行性「不可」也会放过去,而写口兜底只拦缺项)",
+  "file": [
+   {
+    "path": "backend/quote_write.py",
+    "old": "    能, 话 = Q.能不能出单(d)\n    if not 能:",
+    "new": "    能, 话 = Q.能不能出单(d)\n    if False:"
+   }
+  ],
+  "预期红": "可行性「不可」→ 不出报价单"
+ },
+ {
+  "script": "backend/quote_write_check.py",
+  "改坏": "让 落一次报价() 覆盖上一条而不是新插一行(把业务拍的「报价是事件」悄悄废掉)",
+  "file": [
+   {
+    "path": "backend/quote_write.py",
+    "old": "        c.execute(\"\"\"INSERT INTO quote(",
+    "new": "        c.execute(\"\"\"INSERT OR REPLACE INTO quote("
+   },
+   {
+    "path": "backend/quote_write.py",
+    "old": "    qid = f\"Q{s['id']}-{戳}-{序:02d}\"",
+    "new": "    qid = f\"Q{s['id']}\""
+   }
+  ],
+  "预期红": "报两次 = 两行,不覆盖"
+ },
+ {
+  "script": "backend/quote_write_check.py",
+  "改坏": "让 作废一条报价() 不要求写原因",
+  "file": [
+   {
+    "path": "backend/quote_write.py",
+    "old": "    能, 话 = Q.能不能作废(条, d.get(\"原因\"))\n    if not 能:",
+    "new": "    能, 话 = Q.能不能作废(条, d.get(\"原因\"))\n    if False:"
+   }
+  ],
+  "预期红": "作废不写原因 → 拒"
+ },
+ {
+  "script": "backend/quote_write_check.py",
+  "改坏": "让 落一次报价() 给已失效的方案也能报",
+  "file": [
+   {
+    "path": "backend/quote_write.py",
+    "old": "    if s[\"status\"] in Q.不作数的方案状态:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "已失效的方案 → 不许再报价"
+ },
+ {
+  "script": "backend/quote_write_check.py",
+  "改坏": "让 落一次报价() 用机器时钟写 quoted_at",
+  "file": [
+   {
+    "path": "backend/quote_write.py",
+    "old": "    return worldclock.当下().strftime(\"%Y-%m-%d %H:%M\")",
+    "new": "    import datetime as _d; return _d.datetime(2020,1,1).strftime(\"%Y-%m-%d %H:%M\")"
+   }
+  ],
+  "预期红": "报价时间用的是世界时钟"
+ },
+ {
+  "script": "backend/quote_write_check.py",
+  "改坏": "把写口那层「缺项兜底」去掉,同时保留 能不能出单()(证明兜底那一层真的在承重)",
+  "file": [
+   {
+    "path": "backend/quote_write.py",
+    "old": "    缺 = [k for k in Q.必须齐的 if d.get(k) is None or d.get(k) == \"\"]\n    if 缺:",
+    "new": "    缺 = []\n    if 缺:"
+   },
+   {
+    "path": "knowledge/quote.py",
+    "old": "    缺 = [k for k in 必须齐的 if 报价.get(k) is None or 报价.get(k) == \"\"]",
+    "new": "    缺 = []"
+   }
+  ],
+  "预期红": "缺一样 → 不许落库"
  }
 ]

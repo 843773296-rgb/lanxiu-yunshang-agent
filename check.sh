@@ -103,6 +103,8 @@ run "分部位可选料 · 部位从裁片归并,报价口径要跟着出" pytho
 run "订单部位选择 · 什么钱都要有对应的记录" python3 backend/part_choice_check.py
 run "裁片用料占比 · 估出来的和版师给的不许长得一样" python3 backend/piece_ratio_check.py
 run "方案引用 · 存编码不存名字,而且落到具体版型(否则算不出用料)" python3 backend/scheme_check.py
+run "报价口径 · 报价是事件不是状态、算错了作废不改(31 条自测)" python3 knowledge/quote.py
+run "报价写口 · 五样缺一不许落库、报两次两行、作废留痕(库副本)" python3 backend/quote_write_check.py
 run "售后与维保 · 业务硬规则(库允许≠业务允许)" python3 backend/aftersale_rule_check.py
 run "换货 · 五条规则(走审批/要寄回/同渠道/差价多退少补)" python3 backend/exchange_check.py
 run "受欢迎与易损 · 性质检查(相对指标不标真值)" python3 backend/popularity_check.py

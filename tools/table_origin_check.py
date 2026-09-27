@@ -66,7 +66,14 @@ def 扫建表(路径, 已看=None, 深度=0):
     # 于是「由逗号 import 的第二个模块建的表」在这条检查眼里是**隐形的**。
     # 这个洞一直没露出来,因为前面那几个模块碰巧还有自己的 backfill 脚本在建同样的表 ——
     # **一个被别的路顺手盖住的盲区,和没有盲区长得一模一样。**
-    for m in re.finditer(r"^\s*import\s+([\w\s,]+)|^\s*from\s+(\w+)\s+import", src, re.M):
+    # ⚠️ **`[^\S\n]` 而不是 `\s`** —— `\s` 匹配换行,会把**下一行的 import 吃掉**。
+    # 2026-09-27 踩到两次,同一个正则、同一族盲区:
+    #   ① 上午:`import\s+(\w+)` **只认逗号列表里的第一个**模块名;
+    #   ② 下午:改成 `[\w\s,]+` 之后,`import a, b`\n`import c` 里的 c
+    #      被并进上一行当成 b 的一部分丢掉了 —— 于是 `seed_quote` 建的表看起来没人建。
+    # **它对「一行」的定义和 Python 对「一行」的定义不一样**,而症状是「那张表没人建」。
+    for m in re.finditer(r"^[^\S\n]*import[^\S\n]+([\w,][\w\s,]*?)[^\S\n]*$"
+                         r"|^[^\S\n]*from[^\S\n]+(\w+)[^\S\n]+import", src, re.M):
         名们 = [x.strip().split()[0] for x in (m.group(1) or "").split(",") if x.strip()] \
                or ([m.group(2)] if m.group(2) else [])          # `import x as y` 只取 x
         for 名 in 名们:
