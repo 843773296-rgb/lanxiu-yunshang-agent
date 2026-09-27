@@ -142,6 +142,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不需要数据库)
 	@./.venv/bin/python tools/spec_coverage.py
 	@echo ""
+	@echo "▸ SQL 字符串体检:注释里的绑定参数 / 缺 cast 的位置"
+	@echo "  **判据不自己实现词法,问 SQLAlchemy** —— 第一版自己写正则,15/17 是误报"
+	@./.venv/bin/python tools/sql_lint.py
+	@echo ""
 	@echo "▸ DSL 语义:**判据是一张手写的真值表**,不是从实现跑出来的"
 	@./.venv/bin/python tests/orchestration/test_dsl_semantics.py
 	@echo ""

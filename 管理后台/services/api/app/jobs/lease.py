@@ -189,9 +189,18 @@ def 收尾(conn, 项目, job_id, 我是谁, 到, *, error_code=None, error_detai
         return False, "租约已经不在你手上(过期或被接手)—— **不许覆盖别人的结果**"
     if 取消未生效原因:
         # 取消请求和自然完成并发:**保留真实终态,并记下取消为什么没生效**(§11.5)
+        #
+        # ⚠️ `cast(:r as text)` 不能省。`jsonb_build_object` 收 `any`,给不出类型约束,
+        # PostgreSQL 报 `could not determine data type of parameter $1`。
+        # **这一行原来没有 cast,一走到就炸** —— 而它在一个罕见分支里:
+        # 只有「用户点了取消、任务正好自然完成」时才走。
+        # 后果不是少记一条说明,是 `收尾` 抛异常 → 外层当成「崩了」→
+        # **退回重试 → 把一个已经做完的任务再跑一遍**(重复计费)。
+        # 抓到它的是 `tools/sql_lint.py`(它第一次跑就抓到了这一条)——
+        # **罕见分支里的必炸只能靠静态检查抓**:它不需要那个分支被走到。
         conn.execute(text("""
             update jobs set error_detail = coalesce(error_detail,'{}'::jsonb)
-                   || jsonb_build_object('取消未生效原因', :r)
+                   || jsonb_build_object('取消未生效原因', cast(:r as text))
              where project_id=:p and id=:i"""),
             {"r": 取消未生效原因, "p": 项目, "i": job_id})
     return True, "好了"

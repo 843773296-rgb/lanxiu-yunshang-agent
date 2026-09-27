@@ -177,7 +177,7 @@ jobs:
       # 顺带量到一件:探的时候装到的是 sqlalchemy **2.1.1**,而
       # `管理后台/requirements.lock` 钉的是 2.0.54 —— **这 93 条不挑版本**。
       # 所以这里**不钉版本**:钉了就得跟着 lock 一起维护,而它们不需要同步。
-      - name: 契约覆盖 93 条(装 sqlalchemy,仍然不要数据库)
+      - name: 契约覆盖 + SQL 字符串体检(装 sqlalchemy,仍然不要数据库)
         working-directory: 管理后台
         run: |
           pip install --quiet sqlalchemy
@@ -188,7 +188,15 @@ jobs:
               if '.venv' in root or '__pycache__' in root: continue
               if any(f.endswith('.py') for f in fs): ps.append(os.path.abspath(root))
           print(':'.join(sorted(set(ps))))")"
-          PYTHONPATH="$PP" python3 tools/spec_coverage.py
+          rc=0
+          PYTHONPATH="$PP" python3 tools/spec_coverage.py || rc=1
+          echo ""
+          # SQL 字符串体检也在这一步 —— 它**故意**依赖 sqlalchemy:
+          # 判据是「问 SQLAlchemy 认出了哪些绑定参数」,不是自己写正则
+          # (第一版自己写,17 处里 15 处是误报)。
+          # ⚠️ `|| rc=1` 不能省 —— 后面还有一条命令,不带它最后那条绿就把这条的红盖掉。
+          PYTHONPATH="$PP" python3 tools/sql_lint.py || rc=1
+          exit $rc
 
       # ── 还没接的,写下来 ────────────────────────────────────────────
       #
@@ -210,7 +218,8 @@ jobs:
           # ⚠️ **这里不写总条数。** 上面各条测试自己打印了各自的条数,
           # 在这儿手抄一个汇总数,加一组测试就会变成假话 —— 而没有任何检查会红。
           echo "✅ 这个 job 跑完了,零数据库。跑的是:"
-          echo "   契约覆盖 · DSL 语义 · 图校验 · 执行语义 · 知识链 · 索引计划 · Embedding · Agent 对抗"
+          echo "   契约覆盖 · SQL 体检 · DSL 语义 · 图校验 · 执行语义 · 知识链 · 索引计划"
+          echo "   · Embedding · Agent 对抗"
           echo "   (每组的条数看上面各自的输出)"
           echo ""
           echo "⚠️ **没跑**:跨项目攻击 / 租约攻击 / 端到端 / 编排端到端 / 六页冒烟"

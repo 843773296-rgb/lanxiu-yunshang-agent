@@ -159,10 +159,52 @@ with eng.connect() as c:
 ck("**租约没过期但心跳停了 → 认得出「卡住」**(只有租约的话它看起来正常)",
    any(x["id"] == j5 for x in 卡), [x["id"] for x in 卡])
 
+# ── ⑨ 取消请求和自然完成并发:**记「取消为什么没生效」这条路要真走得通** ──
+#
+# ⚠️ 这一条是 2026-09-27 补的,起因是 `tools/sql_lint.py` 第一次跑就抓到
+# `收尾(取消未生效原因=…)` 里那句 `jsonb_build_object('…', :r)` **缺 cast** ——
+# 一走到就报 `could not determine data type of parameter`。
+#
+# 它活了那么久是因为形状:**罕见分支里的必炸**。
+# 只有「用户点了取消、任务正好自然完成」时才走到,而那个并发窗口
+# 在任何一次普通测试里都不会出现。
+#
+# 而后果不是「少记一条说明」:`收尾` 抛异常 → 外层当成「崩了」→
+# **退回重试 → 把一个已经做完的任务再跑一遍**(重复计费)。
+# 所以这里要走**整条调用链**,不是只测那段 SQL —— sql_lint 管 SQL 形状,
+# 这一条管「这个函数真的能用」。
+with eng.begin() as c:
+    j6 = 建任务(c, 类型="取消并发")
+with eng.begin() as c:
+    L.取一个(c, "worker-取消", 类型="取消并发", 项目=PROJ)
+    # 用户点了取消 —— 但任务这一刻已经跑完了
+    c.execute(text("update jobs set cancel_requested = true"
+                   " where project_id=:p and id=:i"), {"p": PROJ, "i": j6})
+炸了 = None
+try:
+    with eng.begin() as c:
+        ok, 说 = L.收尾(c, PROJ, j6, "worker-取消", "已完成",
+                      取消未生效原因="任务在收到取消前已经完成 —— 保留真实终态")
+except Exception as e:
+    炸了 = f"{type(e).__name__}: {str(e).split(chr(10))[0][:70]}"
+    ok, 说 = False, "抛了"
+ck("**取消未生效时收尾不抛异常**(抛了会被当成「崩了」→ 退回重试 → 重复计费)",
+   炸了 is None and ok, 炸了 or 说)
+with eng.connect() as c:
+    r = c.execute(text("select status, error_detail from jobs"
+                       " where project_id=:p and id=:i"), {"p": PROJ, "i": j6}
+                  ).mappings().first()
+ck("**保留真实终态「已完成」,不谎报成已取消**(§11.5)",
+   r and r["status"] == "已完成", r and r["status"])
+ck("取消为什么没生效**记下来了**(不然事后分不清「取消失败」和「没人点过取消」)",
+   r and (r["error_detail"] or {}).get("取消未生效原因"),
+   r and (r["error_detail"] or {}).get("取消未生效原因"))
+
 # ── 还原 ────────────────────────────────────────────────────────
 with eng.begin() as c:
     c.execute(text("delete from jobs where project_id=:p and type in "
-                   "('抢一条','状态机','重试','重试2','卡住','测试')"), {"p": PROJ})
+                   "('抢一条','状态机','重试','重试2','卡住','测试','取消并发')"),
+              {"p": PROJ})
 with eng.connect() as c:
     后 = c.execute(text("select count(*) from jobs where project_id=:p"),
                    {"p": PROJ}).scalar()
