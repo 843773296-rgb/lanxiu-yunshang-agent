@@ -119,10 +119,27 @@ def 退避秒(attempts, 基=2.0, 上限=300.0):
 
 
 # ── 租约 ────────────────────────────────────────────────────────────
-def 取一个(conn, 我是谁, 类型=None, 项目=None):
+def 取一个(conn, 我是谁, 类型=None, 项目=None, 能处理的类型们=None):
     """抢一条可跑的任务。**一条 UPDATE 完成「挑 + 占」**。
 
     `FOR UPDATE SKIP LOCKED` 让并发的 worker 各挑不同的行,而不是排队等同一行。
+
+    ## ⚠️ `能处理的类型们`:只捞我认得的(2026-09-27 加)
+
+    在这之前,一个**旧 Worker** 捞到它不认识的类型会判成「没有处理器」→
+    **失败(终态)**。那个选择原本是对的(「一个被跳过的任务会一直停在排队中,
+    而『没人处理』和『排在后面』在界面上长得一模一样」),
+    但它没考虑**滚动升级**:有些 Worker 认识新类型、有些不认识。
+
+    今天这件事咬了两次,第二次的形状更坏:
+    `uploads_api.py` 顶上有一句模块级的 `ST.找("upload")`,
+    而旧 Worker 进程里的 `states.py` 是加这个状态机**之前**那一份 ——
+    于是一个 `prompt_run`(**完全无关的类型**)崩在一句状态机查表上。
+    **跨进程的模块级断言,会在一个与它无关的地方炸。**
+
+    所以现在:捞的时候就按能处理的类型过滤。
+    **不静默**那一半由调用方保证(`worker.py` 每轮报「排队里有我不认识的类型」)——
+    光过滤不报,就又回到「没人处理和排在后面长得一样」。
     """
     条件 = ["status in ('排队中','执行中')",
             "(lease_until is null or lease_until < now())",
@@ -132,6 +149,18 @@ def 取一个(conn, 我是谁, 类型=None, 项目=None):
     参 = {"me": 我是谁, "lease": 租约秒}
     if 类型: 条件.append("type = :t"); 参["t"] = 类型
     if 项目: 条件.append("project_id = :p"); 参["p"] = 项目
+    if 能处理的类型们 is not None:
+        # ⚠️ **空清单要拦住,不能当成「不过滤」。**
+        # 一个处理器一个都没注册的 Worker,过滤条件如果被当成「不限」,
+        # 它会捞到所有任务然后全判「没有处理器」→ 全变失败。
+        # 这正是这个参数要防的那件事,而空清单是它最坏的一种。
+        类们 = sorted(set(能处理的类型们))
+        if not 类们:
+            raise ValueError(
+                "`能处理的类型们` 是空的 —— **不当成「不过滤」**:"
+                "一个没注册任何处理器的 Worker 会捞到全部任务然后全判失败")
+        条件.append("type = any(:kinds)")
+        参["kinds"] = 类们
     r = conn.execute(text(f"""
         with 候选 as (
             select organization_id, project_id, id from jobs
@@ -277,3 +306,32 @@ def 捞回卡住的(conn, 项目=None, 心跳超时秒=None):
                attempts, stage
           from jobs where {' and '.join(w)} order by heartbeat_at
     """), 参).mappings()]
+
+
+def 排队里没人认领的类型(conn, 能处理的类型们, 项目=None):
+    """排队里有哪些类型是**这个 Worker 不认识**的。返回 [(类型, 条数)]。
+
+    ⚠️ 这是 `取一个(能处理的类型们=…)` 的**另一半**。
+    只过滤不报,就回到了「没人处理」和「排在后面」长得一样 ——
+    而那正是当初选「判失败」而不是「跳过」的理由。
+
+    两半合起来才是对的:**不毒死别人的任务,但自己说清有活干不了。**
+    """
+    类们 = sorted(set(能处理的类型们 or ()))
+    条件 = ["status in ('排队中','执行中')",
+            "(lease_until is null or lease_until < now())",
+            "cancel_requested is not true",
+            "needs_human_check is not true"]
+    参 = {}
+    if 类们:
+        条件.append("type <> all(:kinds)")
+        参["kinds"] = 类们
+    if 项目:
+        条件.append("project_id = :p")
+        参["p"] = 项目
+    rs = conn.execute(text(f"""
+        select type, count(*) n from jobs
+         where {' and '.join(条件)}
+         group by type order by type
+    """), 参).all()
+    return [(t, n) for t, n in rs]

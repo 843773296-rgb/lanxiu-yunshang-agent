@@ -85,6 +85,54 @@ def _text调用们(路):
             yield a.lineno, a.value
 
 
+def _execute调用们(路):
+    """找 `…execute(text("…"), {…})` 里**字面量字典**那一对,产出
+    (行号, sql, 给的键集合)。
+
+    ⚠️ **只在字典是字面量时才比。** 参数是变量(`**参数`、`p` 这种)时
+    静态看不出来 —— 这时候**不报**,而不是报「可能漏了」:
+    一条会在正常代码上误报的规则,会让人开始整体忽略这个检查
+    (第一版的参数范围规则就是这么错的,连错两版)。
+    """
+    try:
+        树 = ast.parse(open(路, encoding="utf-8").read(), filename=路)
+    except SyntaxError:
+        return                         # 语法错已经在 _text调用们 里报过
+    for n in ast.walk(树):
+        if not isinstance(n, ast.Call):
+            continue
+        f = n.func
+        名 = f.attr if isinstance(f, ast.Attribute) else (
+            f.id if isinstance(f, ast.Name) else None)
+        if 名 != "execute" or len(n.args) < 2:
+            continue
+        第一 = n.args[0]
+        # 第一个参数必须是 text("…")
+        if not (isinstance(第一, ast.Call) and (
+                (isinstance(第一.func, ast.Name) and 第一.func.id == "text") or
+                (isinstance(第一.func, ast.Attribute) and 第一.func.attr == "text"))):
+            continue
+        if not 第一.args or not (isinstance(第一.args[0], ast.Constant)
+                                and isinstance(第一.args[0].value, str)):
+            continue
+        sql = 第一.args[0].value
+        第二 = n.args[1]
+        if not isinstance(第二, ast.Dict):
+            continue                    # 不是字面量字典 → 静态看不出来,**不报**
+        if any(k is None for k in 第二.keys):
+            continue                    # 有 `**其它` → 键不全,**不报**
+        键 = set()
+        for k in 第二.keys:
+            if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                键.add(k.value)
+            else:
+                键 = None                # 有算出来的键 → **不报**
+                break
+        if 键 is None:
+            continue
+        yield 第一.args[0].lineno, sql, 键
+
+
 def _括号内(s, 开括号位置):
     """返回 `(` 到配平的 `)` 之间那段(不含括号本身)。
 
@@ -105,6 +153,36 @@ def _括号内(s, 开括号位置):
 
 
 def 查一个文件(路):
+    # ── 绑定名 vs 调用点给的键。**硬错** ─────────────────────────────
+    # 2026-09-27 加。起因:`insert into knowledge_bases … :by` 而参数字典里
+    # 没给 `by` —— SQLAlchemy 当场抛(它没有悄悄填 NULL,这是好事),
+    # 而接口返回的是 500 INTERNAL,读起来像「服务端坏了」。
+    #
+    # ⚠️ 这一族是 `text()` 那几条规则**看不到**的:它们只看 SQL 字符串,
+    # 看不到调用点。而「SQL 里的绑定名 vs 同一次调用里给的键」是纯静态可比的。
+    #
+    # ⚠️ **只比字面量字典**,变量/`**展开`/算出来的键一律不报 ——
+    # 一条会在正常代码上误报的规则,会让人开始整体忽略这个检查。
+    for 行号, sql, 给的 in _execute调用们(路):
+        try:
+            要的 = set(_text(sql)._bindparams.keys())
+        except Exception:
+            continue                   # text() 都过不了的,下面那轮会报
+        缺 = sorted(要的 - 给的)
+        if 缺:
+            硬错.append((路, 行号,
+                        f"SQL 里有 {['`:' + x + '`' for x in 缺]} 而这次调用**没给** —— "
+                        f"SQLAlchemy 会当场抛,接口返回 500,"
+                        f"读起来像「服务端坏了」"))
+        多 = sorted(给的 - 要的)
+        if 多:
+            # 多给的不会炸,但它**几乎总是改 SQL 时漏改的痕迹**:
+            # 要么这个参数本该被用上(那就是少了一个条件),要么它是残留。
+            硬错.append((路, 行号,
+                        f"这次调用给了 {多} 而 SQL 里没有用 —— "
+                        f"多给不会炸,但它几乎总是改 SQL 时漏改的痕迹:"
+                        f"要么少了一个条件,要么是残留"))
+
     for 行号, sql in _text调用们(路):
         # **问 SQLAlchemy**:它认出了哪些绑定参数
         try:

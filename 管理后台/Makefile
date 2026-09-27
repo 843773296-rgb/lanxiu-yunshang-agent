@@ -107,6 +107,11 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  ⚠️ 其中一条会**真调一次 Claude 精排**(月租额度);另一条走 要精排=false 不花钱"
 	@./.venv/bin/python tests/e2e/test_knowledge_flow.py
 	@echo ""
+	@echo "▸ 知识库写入端到端(M2):**「片段进库不等于能检索」有代码兜着**"
+	@echo "  (幂等靠内容哈希 / 输入变了新建构建 / 第一次建索引必须显式给模型)"
+	@echo "  ⚠️ 其中一条会真调一次 Claude 精排(月租额度)"
+	@./.venv/bin/python tests/e2e/test_knowledge_write_flow.py
+	@echo ""
 	@echo "▸ 文件上传端到端:**「上传成功不等于内容可用」有代码兜着**(§17.1)"
 	@echo "  (已上传的 能引用吗=false / 坏文件是 200+通过=false / 校验失败是终态)"
 	@./.venv/bin/python tests/e2e/test_upload_flow.py
@@ -159,6 +164,7 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	@./.venv/bin/python tests/e2e/test_orchestration_flow.py 2>&1 | tail -2
 	@./.venv/bin/python tests/e2e/test_knowledge_flow.py 2>&1 | tail -2
 	@./.venv/bin/python tests/e2e/test_upload_flow.py 2>&1 | tail -2
+	@./.venv/bin/python tests/e2e/test_knowledge_write_flow.py 2>&1 | tail -2
 	@echo ""
 	@echo "▸ 页面冒烟(它取哪些接口,也记在同一本账上)"
 	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' \
@@ -197,6 +203,10 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 精排的判据:**零依赖,不发一个请求**(CI 里没有 Claude 凭据)"
 	@echo "  挡 LLM 的三种编法:编编号 / 漏候选 / 编引文。0 分免引文是有意的"
 	@./.venv/bin/python tests/orchestration/test_reranker.py
+	@echo ""
+	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
+	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
+	@./.venv/bin/python tests/orchestration/test_ingest.py
 	@echo ""
 	@echo "▸ 上传校验:**校验真的调解析器** —— 自己发明一套判断,两套迟早不一致"
 	@echo "  (松了→坏文件在库里是「已校验」,建索引时炸而错误指向解析器)"

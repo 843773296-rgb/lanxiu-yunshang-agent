@@ -211,6 +211,61 @@ with eng.connect() as c:
 ck("跑完库里没多出任务(攻击测试写脏了不还原,下一轮结论就不可信)", 后 == 前,
    f"{前} → {后}")
 
+# ── ⑧ 只捞自己认得的类型 —— **旧 Worker 不许毒死新类型的任务** ────────
+#
+# 2026-09-27 修的。在这之前,一个旧 Worker 捞到不认识的类型会判
+# 「没有处理器」→ **失败(终态)**。当天咬了两次,第二次毒的是一个
+# **完全无关**的 `prompt_run`:`uploads_api.py` 顶上一句模块级
+# `ST.找("upload")`,而旧进程里的 `states.py` 没有那个状态机 ——
+# **跨进程的模块级断言,会在一个与它无关的地方炸。**
+#
+# ⚠️ 这一组要证明**两半**都成立:不毒死 + 不静默。
+#    只证第一半的话,这个改动就退化成「静默跳过」,
+#    而那正是当初选「判失败」要避免的。
+with eng.begin() as c:
+    未来 = 建任务(c, 类型="未来才有的类型")
+    老的 = 建任务(c, 类型="测试")
+
+with eng.begin() as c:
+    r = L.取一个(c, "认得测试的worker", 能处理的类型们=["测试"])
+ck("**只捞我认得的** —— 拿到的是「测试」那条,不是「未来才有的类型」",
+   r is not None and r["id"] == 老的, (r or {}).get("type"))
+
+with eng.begin() as c:
+    没人认领 = L.排队里没人认领的类型(c, ["测试"], 项目=PROJ)
+名单 = dict(没人认领)
+ck("**而且不静默** —— 排队里那个不认识的类型被报出来了",
+   "未来才有的类型" in 名单, 没人认领)
+ck("报的是条数,不只是「有」(一条和一百条要人做的判断不一样)",
+   名单.get("未来才有的类型", 0) >= 1, 名单)
+ck("我认得的那个类型**不在**没人认领的名单里(证明不是把所有类型都报出来)",
+   "测试" not in 名单, 名单)
+
+with eng.begin() as c:
+    st = c.execute(text("select status, attempts from jobs where project_id=:p and id=:i"),
+                   {"p": PROJ, "i": 未来}).first()
+ck("那条不认识的任务**还是「排队中」、attempts 还是 0** —— 没被毒死",
+   st[0] == "排队中" and st[1] == 0, st)
+
+# 空清单要拦住 —— 一个没注册处理器的 Worker 不能因为「清单空」就捞到全部
+try:
+    with eng.begin() as c:
+        L.取一个(c, "没有处理器的worker", 能处理的类型们=[])
+    ck("空清单 → 抛(**不当成「不过滤」**)", False, "没抛!它会捞到全部然后全判失败")
+except ValueError as e:
+    ck("空清单 → 当场抛(**不当成「不过滤」**:"
+       "没注册处理器的 Worker 会捞到全部任务然后全判失败)", True, str(e)[:70])
+
+# 不传这个参数时行为不变(老调用点不受影响)
+with eng.begin() as c:
+    r2 = L.取一个(c, "不过滤的worker", 项目=PROJ)
+ck("不传 `能处理的类型们` → 行为不变(老调用点不受影响)", r2 is not None,
+   (r2 or {}).get("type"))
+
+with eng.begin() as c:
+    c.execute(text("delete from jobs where project_id=:p and id = any(:ids)"),
+              {"p": PROJ, "ids": [未来, 老的]})
+
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 if 挂:
     for x in 挂: print("   ·", x)

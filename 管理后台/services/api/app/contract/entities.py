@@ -148,10 +148,25 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
       ["knowledge_base_id", "source_info", "acl_override", "disabled_at"],
       ["**内容版本与权限状态分开** —— 停用一篇文档不该改它的历史版本"],
       依赖=["knowledge_bases"]),
+    # `source_info` 是 2026-09-27 加的(M2)。**为了消掉一列有两个含义这件事:**
+    # `object_key` 在 `tools/ingest_lanxiu.py` 灌的那批里是**仓库内相对路径**,
+    # 在界面上传来的那批里是**对象存储键**。
+    #
+    # 今天没有任何代码读这一列(正文在 `chunks` 里),所以矛盾是**潜伏的** ——
+    # 它会咬第一个想读原文的人(「查看原文」、重新切片),
+    # 而那时报出来的是「文件不存在」,根因却是这一列有两个含义。
+    #
+    # ⚠️ **它必须在版本上,不在文档上。** 同一篇文档完全可以第一版是脚本灌的、
+    # 第二版是界面传的。放在 `documents` 上就等于假设一篇文档所有版本来源相同,
+    # 而那个假设失效时**不报错**,只是读原文时读错一个文件。
     E("document_versions", "文档版本", 子对象, 不可变,
-      ["document_id", "object_key", "content_hash", "effective_at", "revision"],
+      ["document_id", "object_key", "content_hash", "effective_at", "revision",
+       "source_info"],
       ["原文放对象存储,库里只存键和哈希",
-       "content_hash 决定「这份资料变没变」,不靠文件名也不靠时间"],
+       "content_hash 决定「这份资料变没变」,不靠文件名也不靠时间",
+       "**`source_info.存储` 说明 `object_key` 是哪种键** —— "
+       "对象存储键 / 仓库相对路径。没有这个字段的行 `knowledge/ingest.py` "
+       "**当场抛,不猜**:猜对了没人知道,猜错了报出来的是「文件不存在」"],
       依赖=["documents"]),
     # `chunker_version` / `parser_version` 是 2026-09-27 加的。**为了消掉一个
     # 会静默失效的假设:** 索引构建的输入指纹要含切片器版本(否则续做会产出
