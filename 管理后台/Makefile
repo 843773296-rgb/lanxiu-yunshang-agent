@@ -149,13 +149,19 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 知识链:解析 + 切片,**判据是「证据链真的能指回原文」**(跑真语料)"
 	@./.venv/bin/python tests/orchestration/test_knowledge_chain.py
 	@echo ""
+	@echo "▸ 索引计划:检查点 + 输入指纹 —— **这一组的坏法全是不报错的**"
+	@echo "  (跳过没向量的片段/在变过的输入上续做/从 20 个候选里挑 50 个)"
+	@./.venv/bin/python tests/orchestration/test_index_plan.py
+	@echo ""
 	@echo "▸ Agent 与工具网关:**43 条对抗**(幻造工具名/参数越权/路径穿越/虚报完成/"
 	@echo "  审批换参数/文档注入/崩溃后重复写)—— 真值落在**独立账本和独立文件系统**上"
 	@./.venv/bin/python tests/orchestration/test_agent_tools.py
 	@echo ""
 	@echo "⚠️ 这一层跑的是**不接数据库、不接真模型**的那部分。"
 	@echo "   它证明「图校验、执行语义和工具边界对」,**不证明接口和页面通**(那在 test-e2e)。"
-	@echo "   还没落地:人工待办流程、检查点恢复、Agent 配置页"
+	@echo "   还没落地:人工待办流程、Agent 配置页;"
+	@echo "   **检查点恢复只有判断那一半**(index_plan.py 决定跳过谁、要不要新建),"
+	@echo "   Worker 的 index_build 处理器还没写 —— 判断对不代表恢复真跑得起来。"
 	@echo "   (见 contract/landing.py:九个组件里落地了 6 个)。"
 
 test-orchestration-e2e:   ## 编排端到端:建图 → 校验 → 试运行 → 冻结 → 发布

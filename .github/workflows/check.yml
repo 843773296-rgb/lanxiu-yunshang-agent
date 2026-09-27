@@ -99,11 +99,19 @@ jobs:
   # 那条上限 09-26 刚被顶爆过一次(客户数 ×8 让 simulate_sales 占了 14 分 25 秒),
   # 往里加东西是拿一条刚刚修好的上限去赌。独立 job 并行跑,总墙钟时间不变。
   #
-  # ## 这里跑「不要数据库」的那 186 条
+  # ## 这里跑「不要数据库」的那些
   #
-  #   编排四组 93 条:DSL 语义 14 · 图校验 18 · 执行语义 18 · Agent 对抗 43
-  #                  **纯标准库**,系统 python3 直接跑,不装任何东西(实测 0.4 秒)
-  #   契约覆盖 93 条:只多一个 sqlalchemy,**不要 psycopg、不要库**(实测 0.24 秒)
+  #   编排:DSL 语义 · 图校验 · 执行语义 · 知识链 · 索引计划 · Agent 对抗
+  #        **纯标准库**,系统 python3 直接跑,不装任何东西(实测 0.4 秒)
+  #   契约覆盖:只多一个 sqlalchemy,**不要 psycopg、不要库**(实测 0.24 秒)
+  #
+  # ⚠️ **这段注释里不写总条数了。** 原来写着「186 条 / 编排四组 93 条」——
+  # 加了知识链 16 条和索引计划 31 条之后,两个数字都成了假的,而
+  # **没有任何一处会因为它们过期而报红**:每条测试自己打印条数,
+  # 汇总数字是手抄的。写死的数字和实际会漂,漂了不报错 ——
+  # 那就不如不写。(和 `landing.py` 的上限、`progress_report.py` 的下限不同:
+  #  那两处写死是**故意的棘轮**,防止跟着实际数量一起涨;
+  #  这里是**事实陈述**,事实陈述写死就是会过期。)
   #
   # ⚠️ **「没跑什么」在 job 末尾用 echo 打出来,不只写在这段注释里** ——
   # 注释在 CI 页面上**看不见**,而「这个 job 绿不等于剩下那些也绿」
@@ -145,7 +153,8 @@ jobs:
           # 本地咬合没第一时间抓到它,因为**本地是 zsh、CI 是 bash** ——
           # zsh 允许中文变量名。**「本地能跑」和「CI 能跑」的差别可以只是一个 shell。**
           rc=0
-          for t in test_dsl_semantics test_graph_validation test_execution test_agent_tools test_knowledge_chain; do
+          for t in test_dsl_semantics test_graph_validation test_execution test_agent_tools \
+                   test_knowledge_chain test_index_plan; do
             echo "▸ $t"
             PYTHONPATH="$PP" python3 "tests/orchestration/$t.py" || rc=1
           done
@@ -198,10 +207,15 @@ jobs:
       - name: 说清这个 job **没**跑什么
         working-directory: 管理后台
         run: |
-          echo "✅ 这个 job 跑了 202 条(编排五组 109 + 契约覆盖 93),零数据库。"
-          echo "⚠️ **没跑**:跨项目攻击 7 / 租约攻击 16 / 端到端 44 / 编排端到端 44"
-          echo "   / 六页冒烟 —— 它们要 PostgreSQL + 迁移 + seed(+ 起服务),留在本地。"
-          echo "   **这个 job 绿不等于那 111 条也绿。**"
+          # ⚠️ **这里不写总条数。** 上面各条测试自己打印了各自的条数,
+          # 在这儿手抄一个汇总数,加一组测试就会变成假话 —— 而没有任何检查会红。
+          echo "✅ 这个 job 跑完了,零数据库。跑的是:"
+          echo "   契约覆盖 · DSL 语义 · 图校验 · 执行语义 · 知识链 · 索引计划 · Agent 对抗"
+          echo "   (每组的条数看上面各自的输出)"
           echo ""
-          echo "逐项进度看 管理后台/docs/实现进度.md(make progress 生成):"
-          echo "   87 条接口 · 实现 24 · 验过 23 —— 主规格做了不到三成。"
+          echo "⚠️ **没跑**:跨项目攻击 / 租约攻击 / 端到端 / 编排端到端 / 六页冒烟"
+          echo "   —— 它们要 PostgreSQL + 迁移 + seed(+ 起服务),留在本地。"
+          echo "   **这个 job 绿不等于那些也绿。**"
+          echo ""
+          echo "逐项进度看 管理后台/docs/实现进度.md(make progress 生成)——"
+          echo "   那份是现算的,**不要在这儿复述它的数字**(复述一次就开始漂)。"
