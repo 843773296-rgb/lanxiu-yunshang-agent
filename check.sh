@@ -208,6 +208,7 @@ run "交付签收写口 · 码核验才签收、不合身订单不动、完成�
 run "报修口径 · 店长判完、顾客同意才开工" python3 knowledge/repair.py
 run "评价口径 · 没签收不许评、≤3 星算差评自动进待处理清单(44 条自测)" python3 knowledge/rating.py
 run "评价写口 · 闸读签收记录不读订单状态、差评自动进 task 清单(库副本)" python3 backend/rating_write_check.py
+run "评价数据 · 没签收就评/差评没进清单/两处状态打架(9 条判据在合成夹具上自证)" python3 backend/rating_check.py
 run "报修写口 · 哪一件不猜、店长判责、同意要凭据、回店输码才完成(在库副本上跑)" python3 backend/repair_write_check.py
 run "多渠道对比 · 数算得对,而这张表不能用来比渠道" python3 backend/channel_check.py
 run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/eval_provenance_check.py

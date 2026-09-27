@@ -2967,5 +2967,75 @@
    }
   ],
   "预期红": "三列都登记进了 worldclock.已发生的时间列"
+ },
+ {
+  "script": "backend/rating_check.py",
+  "改坏": "让 没签收就评了() 只查「签收于 IS NULL」,不比先后(评价早于签收就漏了)",
+  "file": [
+   {
+    "path": "backend/rating_check.py",
+    "old": "         WHERE 签收于 IS NULL OR r.rated_at < 签收于\"\"\")]",
+    "new": "         WHERE 签收于 IS NULL\"\"\")]"
+   },
+   {
+    "path": "backend/rating_check.py",
+    "old": "    评(\"PB\")                                                      # 没签收就评了",
+    "new": "    签(\"PB\", \"2026-09-20 17:00\"); 评(\"PB\")                          # 评价早于签收"
+   }
+  ],
+  "预期红": "没签收就评了"
+ },
+ {
+  "script": "backend/rating_check.py",
+  "改坏": "让 差评没进清单() 把 star<=差评线 改成 star<差评线(3 星就漏了)",
+  "file": [
+   {
+    "path": "backend/rating_check.py",
+    "old": "         WHERE r.star<=? AND (r.task_id IS NULL",
+    "new": "         WHERE r.star<? AND (r.task_id IS NULL"
+   },
+   {
+    "path": "backend/rating_check.py",
+    "old": "签(\"PD\"); 评(\"PD\", star=2)",
+    "new": "签(\"PD\"); 评(\"PD\", star=3)"
+   }
+  ],
+  "预期红": "差评没进清单"
+ },
+ {
+  "script": "backend/rating_check.py",
+  "改坏": "让 两处状态打架() 只看 task.status,不看 rating.handled_at",
+  "file": [
+   {
+    "path": "backend/rating_check.py",
+    "old": "AND t.status='待处理' AND r.handled_at IS NOT NULL\"\"\")]",
+    "new": "AND t.status='已关闭'\"\"\")]"
+   }
+  ],
+  "预期红": "两处状态打架"
+ },
+ {
+  "script": "backend/rating_check.py",
+  "改坏": "让 好评却挂了工单() 直接返回空(反向那一半不查了)",
+  "file": [
+   {
+    "path": "backend/rating_check.py",
+    "old": "    return [dict(r) for r in c.execute(\n        \"SELECT pkg_id, star, task_id FROM rating WHERE star>? AND task_id IS NOT NULL \"",
+    "new": "    return []\n    return [dict(r) for r in c.execute(\n        \"SELECT pkg_id, star, task_id FROM rating WHERE star>? AND task_id IS NOT NULL \""
+   }
+  ],
+  "预期红": "好评却挂了工单"
+ },
+ {
+  "script": "backend/rating_check.py",
+  "改坏": "把合成夹具里那行干净数据改成 star=9(判据该冤枉它)",
+  "file": [
+   {
+    "path": "backend/rating_check.py",
+    "old": "    签(\"PA\"); 评(\"PA\")",
+    "new": "    签(\"PA\"); 评(\"PA\", star=9)"
+   }
+  ],
+  "预期红": "干净的那一行没被任何判据冤枉"
  }
 ]
