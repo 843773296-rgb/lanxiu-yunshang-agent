@@ -1,0 +1,2122 @@
+{
+  "说明": [
+    "图校验夹具(规格附录 C.3「图夹具」那一行)。",
+    "每个 case 的 `期望阻断` 是**手写的** —— 照规格 §7.2 逐条列,不是跑校验器抄回来的。",
+    "附录 C.3 的要求原话:「真值来源:**独立人工预期路径,不由编译器生成**」。",
+    "判据是**集合相等**:少报一个是漏,多报一个也是错(多报会让人去修没坏的地方)。",
+    "前两个是**正向对照**:没有它们,下面每条『非法图被拦住』都可能只是证明了『校验器什么都拦』。"
+  ],
+  "夹具": {
+    "合法_最小链": {
+      "为什么": "规格 §16.5 那张最小图:开始 → LLM → 结束。**这是正向对照** —— 没有它,下面每一条『非法图被拦住』都可能只是证明了『校验器什么都拦』",
+      "期望阻断": [],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "name": "文章总结",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "article": {
+                  "source": "input",
+                  "pointer": "/article"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "合法_分支经汇合取值": {
+      "为什么": "规格 §7.2 说『条件分支通过**显式汇合**消除不确定来源』。两条分支各自产出,汇到 merge,再由 merge 往下 —— 这条必须放行,否则校验器会把唯一正确的写法也拦掉",
+      "期望阻断": [],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "detect",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "lang",
+            "type": "condition",
+            "config": {
+              "branches": [
+                {
+                  "key": "zh",
+                  "when": {
+                    "op": "equals",
+                    "left": {
+                      "source": "node",
+                      "node_id": "detect",
+                      "pointer": "/lang"
+                    },
+                    "right": {
+                      "source": "constant",
+                      "value": "zh"
+                    }
+                  }
+                },
+                {
+                  "key": "en",
+                  "when": {
+                    "op": "equals",
+                    "left": {
+                      "source": "node",
+                      "node_id": "detect",
+                      "pointer": "/lang"
+                    },
+                    "right": {
+                      "source": "constant",
+                      "value": "en"
+                    }
+                  }
+                }
+              ],
+              "else_policy": "fail"
+            }
+          },
+          {
+            "id": "zh_sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "en_sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "merge",
+            "type": "merge",
+            "config": {
+              "candidates": [
+                {
+                  "source": "node",
+                  "node_id": "zh_sum",
+                  "pointer": "/text"
+                },
+                {
+                  "source": "node",
+                  "node_id": "en_sum",
+                  "pointer": "/text"
+                }
+              ],
+              "output_field": "summary"
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "merge",
+                  "pointer": "/summary"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "detect",
+            "port": "success"
+          },
+          {
+            "source": "detect",
+            "target": "lang",
+            "port": "success"
+          },
+          {
+            "source": "lang",
+            "target": "zh_sum",
+            "port": "branch",
+            "branch_key": "zh"
+          },
+          {
+            "source": "lang",
+            "target": "en_sum",
+            "port": "branch",
+            "branch_key": "en"
+          },
+          {
+            "source": "zh_sum",
+            "target": "merge",
+            "port": "success"
+          },
+          {
+            "source": "en_sum",
+            "target": "merge",
+            "port": "success"
+          },
+          {
+            "source": "merge",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_跨分支直接取值": {
+      "为什么": "规格 §5.2 举的那个例子本身:『报告节点读取了**只在英文分支生成**的变量』。translate 这个节点**存在**,所以按名字找的校验器会说合法 —— 而中文那一路根本不会跑到它。这是这个校验器存在的主要理由",
+      "期望阻断": [
+        "BIND_MAYBE_MISSING"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "detect",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "lang",
+            "type": "condition",
+            "config": {
+              "branches": [
+                {
+                  "key": "zh",
+                  "when": {
+                    "op": "equals",
+                    "left": {
+                      "source": "node",
+                      "node_id": "detect",
+                      "pointer": "/lang"
+                    },
+                    "right": {
+                      "source": "constant",
+                      "value": "zh"
+                    }
+                  }
+                },
+                {
+                  "key": "en",
+                  "when": {
+                    "op": "equals",
+                    "left": {
+                      "source": "node",
+                      "node_id": "detect",
+                      "pointer": "/lang"
+                    },
+                    "right": {
+                      "source": "constant",
+                      "value": "en"
+                    }
+                  }
+                }
+              ],
+              "else_policy": "fail"
+            }
+          },
+          {
+            "id": "zh_sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "translate",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "report",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "t": {
+                  "source": "node",
+                  "node_id": "translate",
+                  "pointer": "/text"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "report",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "detect",
+            "port": "success"
+          },
+          {
+            "source": "detect",
+            "target": "lang",
+            "port": "success"
+          },
+          {
+            "source": "lang",
+            "target": "zh_sum",
+            "port": "branch",
+            "branch_key": "zh"
+          },
+          {
+            "source": "lang",
+            "target": "translate",
+            "port": "branch",
+            "branch_key": "en"
+          },
+          {
+            "source": "zh_sum",
+            "target": "report",
+            "port": "success"
+          },
+          {
+            "source": "translate",
+            "target": "report",
+            "port": "success"
+          },
+          {
+            "source": "report",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_顶层反向连线造环": {
+      "为什么": "§5.2:『顶层不允许任意反向连线造环』。反向连线**没有上限也没有计数** —— 循环要用有界循环容器表达",
+      "期望阻断": [
+        "GRAPH_CYCLE"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "a",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "a",
+            "port": "success"
+          },
+          {
+            "source": "a",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "a",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_重复稳定ID": {
+      "为什么": "§7.2 第一行。id 重复之后『按 id 找到的那个』取决于遍历顺序 —— 那不是确定语义",
+      "期望阻断": [
+        "NODE_DUP_ID"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p2",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_悬空连线": {
+      "为什么": "§7.2 第一行。连线指着一个不存在的节点",
+      "期望阻断": [
+        "EDGE_DANGLING"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "ghost",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_条件没有兜底": {
+      "为什么": "§6.1:『必须配置 ELSE 或显式终止策略』。没有兜底的条件在运行时是一条死路,**而它在画布上看不出来**",
+      "期望阻断": [
+        "COND_NO_ELSE"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "detect",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "lang",
+            "type": "condition",
+            "config": {
+              "branches": [
+                {
+                  "key": "zh",
+                  "when": {
+                    "op": "equals",
+                    "left": {
+                      "source": "node",
+                      "node_id": "detect",
+                      "pointer": "/lang"
+                    },
+                    "right": {
+                      "source": "constant",
+                      "value": "zh"
+                    }
+                  }
+                },
+                {
+                  "key": "en",
+                  "when": {
+                    "op": "equals",
+                    "left": {
+                      "source": "node",
+                      "node_id": "detect",
+                      "pointer": "/lang"
+                    },
+                    "right": {
+                      "source": "constant",
+                      "value": "en"
+                    }
+                  }
+                }
+              ],
+              "else_policy": "branch"
+            }
+          },
+          {
+            "id": "zh_sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "en_sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "merge",
+            "type": "merge",
+            "config": {
+              "candidates": [
+                {
+                  "source": "node",
+                  "node_id": "zh_sum",
+                  "pointer": "/text"
+                },
+                {
+                  "source": "node",
+                  "node_id": "en_sum",
+                  "pointer": "/text"
+                }
+              ],
+              "output_field": "summary"
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "merge",
+                  "pointer": "/summary"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "detect",
+            "port": "success"
+          },
+          {
+            "source": "detect",
+            "target": "lang",
+            "port": "success"
+          },
+          {
+            "source": "lang",
+            "target": "zh_sum",
+            "port": "branch",
+            "branch_key": "zh"
+          },
+          {
+            "source": "lang",
+            "target": "en_sum",
+            "port": "branch",
+            "branch_key": "en"
+          },
+          {
+            "source": "zh_sum",
+            "target": "merge",
+            "port": "success"
+          },
+          {
+            "source": "en_sum",
+            "target": "merge",
+            "port": "success"
+          },
+          {
+            "source": "merge",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_两个开始节点": {
+      "为什么": "§6.1:每个顶层 Workflow 唯一一个开始。两个入口的话『执行从哪儿开始』不确定",
+      "期望阻断": [
+        "GRAPH_MULTI_START"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "start2",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object"
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "start2",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_没有结束节点": {
+      "为什么": "§7.2 第一行。没有出口的流程跑到哪儿算完?",
+      "期望阻断": [
+        "GRAPH_NO_END"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_结束节点走不到": {
+      "为什么": "§7.2:『不可达必需节点』。结束走不到 = 这条流程没有出口,而画布上它在那儿",
+      "期望阻断": [
+        "NODE_UNREACHABLE"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_把密钥绑进模型节点": {
+      "为什么": "§7.1:密钥引用**绝不进模型上下文**。进过一次提示词,它就已经进过日志、Trace,可能进过导出文件 —— 而『模型没说出来』不等于『没泄露』",
+      "期望阻断": [
+        "BIND_SECRET_INTO_MODEL"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "k": {
+                  "source": "secret",
+                  "secret_ref": "sr1"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_用了未实现的节点": {
+      "为什么": "§6.1 结尾:『阶段中未完成的节点标未实现,**不得摆空按钮冒充可用**』。让它能冻结、能发布,然后运行时才发现跑不了 —— 比现在拦住贵得多。顺带钉一条 CONTAINER_EMPTY:这个 loop 容器里是**空的**,而空容器跑起来什么都不做 —— 这一条是「集合相等」判据抓出来的漏报",
+      "期望阻断": [
+        "NODE_NOT_IMPLEMENTED",
+        "CONTAINER_EMPTY"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "lp",
+            "type": "loop",
+            "config": {
+              "condition": {
+                "op": "length_gt",
+                "left": {
+                  "source": "input",
+                  "pointer": "/items"
+                },
+                "right": 0
+              },
+              "max_iterations": 5
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "lp",
+            "port": "success"
+          },
+          {
+            "source": "lp",
+            "target": "sum",
+            "port": "loop_exit"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_节点上有没登记的配置字段": {
+      "为什么": "§16.5:『所有节点 Schema 由版本化契约注册表声明,**不能接收任意自由字段**』。一个从来没被读过的配置项,和一个坏了的配置项,在界面上长得一模一样",
+      "期望阻断": [
+        "NODE_UNKNOWN_CONFIG"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "temperature_hack": 0.9
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_开始节点上摆了个超时设置": {
+      "为什么": "§6:『**不能出现全节点通用却不生效的设置**』。开始节点什么都不调用,它上面那个『单次超时 30 秒』是假的 —— 而它看起来和 LLM 上那个一模一样",
+      "期望阻断": [
+        "NODE_INAPPLICABLE_FIELD"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object"
+              },
+              "timeout_seconds": 30
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_引用了不存在的节点": {
+      "为什么": "§5.2:复制节点之后忘记改引用是最常见的来源",
+      "期望阻断": [
+        "BIND_NODE_NOT_FOUND"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "x": {
+                  "source": "node",
+                  "node_id": "没这个",
+                  "pointer": "/t"
+                }
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_结束节点漏了必需输出": {
+      "为什么": "§6.1:『必需字段必须有合法来源』。**『返回成功』和『任务达标』是两件事**,而缺一个必需字段连前者都不成立",
+      "期望阻断": [
+        "END_MISSING_OUTPUT"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {}
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
+    "非法_绑定写成了模板字符串": {
+      "为什么": "§7.1:『绑定方式采用可视化选择器,底层存**结构化引用**;文案中的 {{...}} 只是展示,**不把引用与自由代码混合**』",
+      "期望阻断": [
+        "BIND_NOT_STRUCTURED"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "article": "{{input.article}}"
+              }
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "sum",
+                  "pointer": "/text"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "sum",
+            "port": "success"
+          },
+          {
+            "source": "sum",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    }
+  }
+}

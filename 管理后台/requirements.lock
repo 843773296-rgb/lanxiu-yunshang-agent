@@ -1,0 +1,7 @@
+alembic==1.20.0
+Mako==1.4.3
+MarkupSafe==3.0.3
+psycopg==3.3.6
+psycopg-binary==3.3.6
+SQLAlchemy==2.0.54
+typing_extensions==4.16.0
