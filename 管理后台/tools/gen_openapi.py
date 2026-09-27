@@ -136,7 +136,7 @@ def 建():
 
     doc = {
         "openapi": "3.1.0",
-        "info": {"title": "AI 管理后台 API", "version": "0.1.0",
+        "info": {"title": "澜绣云裳 AI 管理后台 API", "version": "0.1.0",
                  "description":
                      "从 `services/api/app/contract/` 生成,**不要手改**。\n\n"
                      "契约在前、代码在后:让 FastAPI 从 handler 反推 OpenAPI 的话,"

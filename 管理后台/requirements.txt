@@ -1,5 +1,16 @@
 # 直接依赖(版本区间);**锁定的完整清单在 requirements.lock**。
 # 规格 §17.4 结尾:「开发时锁定可兼容的依赖版本并提交 lockfile」。
+#
+# ⚠️ **2026-09-27 补上 fastapi / uvicorn —— 它们原来根本不在这儿。**
+# 后台是 FastAPI 跑的,而旧那份 lock 里只有 sqlalchemy / alembic / psycopg。
+# 旧目录的 `.venv` 能跑,是因为当初有人 ad-hoc `pip install fastapi uvicorn` ——
+# **而 lock 从没记上**。于是「照 lock 从零装一个环境」跑不起这个后台。
+#
+# 在旧位置永远发现不了:那里的 venv 一直在。
+# **换个位置就等于做了一次「从零」** —— 搬进澜绣仓库的第一件事就是它当场炸了。
+# 这和「本地留着历次产物、CI 每次从零」是同一族。
 sqlalchemy>=2.0,<2.1
 alembic>=1.13,<2
 psycopg[binary]>=3.1,<4
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1

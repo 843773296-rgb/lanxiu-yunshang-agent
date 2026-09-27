@@ -36,7 +36,7 @@ if _坏:
     for x in _坏: print("   ·", x, file=sys.stderr)
     raise SystemExit(1)
 
-app = FastAPI(title="AI 管理后台 API", version="0.1.0", docs_url="/api/docs",
+app = FastAPI(title="澜绣云裳 AI 管理后台 API", version="0.1.0", docs_url="/api/docs",
               openapi_url="/api/openapi-live.json")
 前缀 = "/api/v1/projects/{project_id}"
 
