@@ -224,6 +224,43 @@ ck("空 body → 422 EMPTY_BODY", 码 == 422 and (r or {}).get("code") == "EMPTY
 ck("它还是「待上传」(没产生一条「已上传的空文件」)",
    bool(这条) and 这条[0]["状态"] == "待上传", 这条[:1])
 
+print("▸ ⑭ 界面用到的字段,接口真的返回")
+# ⚠️ **为什么要这一组。** `page_smoke.js` 只验「页面加载路径跑通」——
+# 它不点按钮,所以 `走三步()` 里那三次调用**没有任何测试覆盖**。
+# 而那里最容易的错法是**引一个接口不返回的字段名**:
+# JS 取到 undefined 不报错,界面上只是那一格空着 ——
+# 今天已经踩过一次同形状的(`引文可信` 判据标记了而界面看不到)。
+#
+# 所以这里不跑浏览器,而是**从 app.js 里把字段名抠出来,和真响应对一遍**。
+import re as _re
+_js = open(os.path.join(os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))), "apps", "web", "app.js"),
+    encoding="utf-8").read()
+_i = _js.index("async function 走三步()")
+_j = _js.index("async function 页_知识库()")
+_段 = _js[_js.index("function 画上传表("):_j]
+# 只看 `x["字段"]` 这种取法(中文字段名)
+_用到的 = set(_re.findall(r'\["([^"\]]*[\u4e00-\u9fff][^"\]]*)"\]', _段))
+_噪声 = {"规则", "为什么", "块数", "理由们", "规则全集", "细节", "没过的规则",
+        "收到字节数", "状态", "通过", "能引用吗", "校验详情", "上传地址", "能引用的"}
+# 把三条响应合起来当「接口真的返回的键」
+码, _a = 打("POST", P + "/uploads", 体={"file_name": "字段对账.md", "byte_count": len(好字节)})
+# ⚠️ **三步的响应都要算进来。** 第一版漏了 PUT 那一步,
+# 于是它报「界面引了一个接口不返回的字段」而那个字段其实是 PUT 返回的 ——
+# 判据漏一个数据来源,报出来的样子和真 bug 一模一样。
+码, _b = 打("PUT", _a["上传地址"], 原始=好字节)
+码, _c = 打("POST", f"{P}/uploads/{_a['id']}/complete")
+码, _l = 打("GET", P + "/uploads?limit=1")
+_有的 = set(_a) | set(_b) | set(_c) | set(_l) | set((_c.get("校验详情") or {}))
+_有的 |= set(((_c.get("校验详情") or {}).get("细节") or {}))
+_有的 |= set(_l["items"][0]) if _l.get("items") else set()
+_有的 |= {"规则", "为什么"}          # 理由们 里每一项的键
+_缺 = sorted(x for x in _用到的 if x not in _有的)
+ck(f"界面引的 {len(_用到的)} 个中文字段全都在真响应里",
+   not _缺, f"缺:{_缺}" if _缺 else sorted(_用到的))
+ck("而这一组本身要能咬:清单不是空的(空清单会让它永远绿)",
+   len(_用到的) >= 8, len(_用到的))
+
 print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}")
 if 挂:
     for x in 挂:

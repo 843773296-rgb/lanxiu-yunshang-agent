@@ -216,13 +216,12 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@echo "⚠️ 这一层跑的是**不接数据库、不接真模型**的那部分。"
 	@echo "   它证明「图校验、执行语义和工具边界对」,**不证明接口和页面通**(那在 test-e2e)。"
-	@echo "   还没落地:人工待办流程、Agent 配置页;"
-	@echo "   **检查点恢复只有判断那一半**(index_plan.py 决定跳过谁、要不要新建),"
-	@echo "   Worker 的 index_build 处理器还没写 —— 判断对不代表恢复真跑得起来。"
-	@echo "   ⚠️ 而且查出一件拦路的:worker.py 把处理器**整个包在一个事务里**,"
-	@echo "   所以写多少检查点都会在崩溃时一起回滚。**检查点的前提是它能被提交** ——"
-	@echo "   index_build 必须在独立连接上分批提交(见 index_plan.py 开头那段)。"
-	@echo "   (见 contract/landing.py:九个组件里落地了 6 个)。"
+	@echo "   还没落地:人工待办流程、Agent 配置页(见 contract/landing.py)。"
+	@echo "   ⚠️ **这里原来有三行写死的进度,已经过期了,所以删掉**:"
+	@echo "      它写着「Worker 的 index_build 处理器还没写」和「事务模型拦着检查点」——"
+	@echo "      两件 09-27 都做完了。**跑完的检查末尾播一段过期的欠账,"
+	@echo "      比不播糟**:它会让下一个人去做一件已经做完的事。"
+	@echo "      要看还欠什么就跑 make progress(那份是生成的)。"
 
 test-orchestration-e2e:   ## 编排端到端:建图 → 校验 → 试运行 → 冻结 → 发布
 	@echo "❌ 未实现:执行链还没落地(规格 §18 的第 2—6 阶段)。" >&2
