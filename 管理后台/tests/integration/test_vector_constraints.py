@@ -83,7 +83,10 @@ def 拒绝吗(连, sql, **值):
         return True, str(getattr(e, "orig", e)).split("\n")[0][:110]
 
 
-维度 = 1536
+# ⚠️ **512,跟着 `embeddings.embedding` 的列类型走**(2026-09-27 从 1536 改过来,
+# 因为用户拍了本地模型 BGE-small-zh-v1.5)。
+# 下面「插 3 维 / 插 768 维被拒」那两条仍然有效 —— 它们要的是「≠ 列维度」。
+维度 = 512
 真向量 = "[" + ",".join(["0.1"] * 维度) + "]"
 
 # ⚠️ **不用 `eng.begin()`。** 它在正常退出时 **commit** ——
@@ -139,7 +142,7 @@ try:
               {"i": embB, "o": org, "p": pb, "h": "文本哈希B", "d": 维度, "v": 真向量})
 
     print("▸ ① 维度不对的向量(混维度的索引 → 距离算出来没有意义)")
-    for 坏维度, 描述 in ((3, "3 维"), (768, "768 维,换了模型那种")):
+    for 坏维度, 描述 in ((3, "3 维"), (1536, "1536 维,换模型前那种")):
         坏 = "[" + ",".join(["0.1"] * 坏维度) + "]"
         行, 说 = 拒绝吗(c, "insert into embeddings (id, organization_id, project_id,"
                           " text_hash, model_id, dim, embedding, created_at)"

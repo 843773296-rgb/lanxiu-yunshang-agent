@@ -34,7 +34,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, os.path.join(ROOT, "services", "api", "app"))
 
+sys.path.insert(0, os.path.join(ROOT, "services", "api", "app", "knowledge"))
+
 from sqlalchemy import create_engine, text   # noqa: E402
+import embedder as _MOCK                     # noqa: E402
+
+# ⚠️ **从适配器读,不写死。** 换模型时(1536 → 512 已经发生过一次)
+# 这个夹具自动跟着走 —— 写死的数字会让一个正确的约束看起来像 bug。
+维度常量 = _MOCK.维度
 
 URL = os.environ.get("DATABASE_URL") or \
     "postgresql+psycopg://" + os.environ.get("USER", "") + "@localhost:5432/aimc_dev"
@@ -53,7 +60,14 @@ def 新(p):
     return f"{p}_{uuid.uuid4().hex[:10]}"
 
 
-def 摆一个构建(c, org, proj, kb, *, 配置哈希="cfg-t", 模型="emb-mock", 维度=1536,
+# ⚠️ **维度 512,不是 1536。** 2026-09-27 改过一次 —— 用户拍了本地模型
+# BGE-small-zh-v1.5(512 维),`embeddings.embedding` 列类型跟着改了。
+# 这个夹具写死 1536 的时候**当场红了**,报的是 `EMBEDDER_UNAVAILABLE`
+# (适配器选择器核对「构建声明的维度」和「适配器实际产的维度」)——
+# **那是「维度写死在列类型上」这个决定在兑现价值**:维度一变,
+# 每一个写死它的地方都报错。无维度的 `vector` 列会让这两个测试继续绿,
+# 而库里开始混两种维度。
+def 摆一个构建(c, org, proj, kb, *, 配置哈希="cfg-t", 模型="emb-mock", 维度=None,
            candidate_k=50, final_chunk_limit=8):
     rc = 新("rc")
     c.execute(text("""insert into retrieval_config_versions
@@ -63,6 +77,7 @@ def 摆一个构建(c, org, proj, kb, *, 配置哈希="cfg-t", 模型="emb-mock"
         values (:i,:o,:p, cast(:rm as jsonb), :ck, 4000, :fl, :ch, 1, now(), 'test')"""),
               {"i": rc, "o": org, "p": proj, "rm": json.dumps(["vector"]),
                "ck": candidate_k, "fl": final_chunk_limit, "ch": 配置哈希})
+    维度 = 维度常量 if 维度 is None else 维度
     ib = 新("ib")
     c.execute(text("""insert into index_builds
         (id, organization_id, project_id, knowledge_base_id,
@@ -114,6 +129,36 @@ with eng.begin() as c:
 
 ck("语料已经在库里(先跑 `python tools/ingest_lanxiu.py`)", bool(kb) and 片段数 > 0,
    f"知识库 {kb} · {片段数} 个片段")
+
+# ── 开跑前先看库干不干净 ────────────────────────────────────────────
+#
+# ⚠️ 这一条是 2026-09-27 补的,起因:同一个文件**两次跑结果不同** ——
+# 第一次红、第二次绿,而中间我什么都没改。根因是手工试跑留下的
+# 非终态 job 和别的模型的向量,`跑worker()` 会捞到它们。
+#
+# **在一个脏状态上跑出来的结论不可信,而它和干净状态下的输出长得一模一样。**
+# 所以这里当场报出来 —— 报「库里有遗留」比报一条含糊的失败有用得多。
+# (这和并行会话那条「咬合要在副本里做」同族:那条说的是写,这条说的是**读也需要干净**。)
+with eng.connect() as c:
+    脏job = c.execute(text("""select id, status from jobs
+                             where project_id=:p and type='index_build'
+                               and status not in ('已完成','失败','已取消')"""),
+                     {"p": proj}).mappings().all()
+    脏向量 = c.execute(text("""select model_id, count(*) n from embeddings
+                             where project_id=:p group by 1"""),
+                     {"p": proj}).mappings().all()
+ck("开跑前没有**非终态的 index_build 任务**(有的话 `跑worker()` 会先捞到它,"
+   "而这个文件的结论就不可信了)",
+   not 脏job, [dict(x) for x in 脏job] or "干净")
+ck("开跑前 `embeddings` 是空的(别的模型留下的向量会让「复用 0/71」那条算错)",
+   not 脏向量, [dict(x) for x in 脏向量] or "干净")
+if 脏job or 脏向量:
+    print("\n❌ 库不干净 —— **先清再跑**,不在脏状态上出结论:")
+    print("   psql -d aimc_dev -c \"delete from index_members; delete from embeddings;")
+    print("     delete from job_events where job_id in (select id from jobs")
+    print("       where type='index_build'); delete from jobs where type='index_build';")
+    print("     delete from index_builds; delete from retrieval_config_versions;\"")
+    sys.exit(1)
 if not kb or not 片段数:
     print("\n❌ 没有语料,后面都测不了 —— **这不叫通过,叫没东西可测**")
     sys.exit(1)
@@ -133,8 +178,12 @@ ck("构建走到「已就绪」", st and st["status"] == "已就绪", st and st[
 ck(f"成员数 == 片段数({片段数})—— **集合相等,不是「至少写了一条」**"
    "(少了就有内容检索不到,而那在界面上和「知识库里就这么点」长得一样)",
    n1 == 片段数, n1)
+# ⚠️ `or ""` 不能省:`input_hash` 是**可空列**,`.get(k, "")` 在值为 None 时
+# 返回 None(不是默认值),然后 `[:26]` 当场 TypeError ——
+# 而那是**判据失败时用来解释原因的代码**。它一炸,真正的失败就被盖住了:
+# 你看到 TypeError,而根因在别处。**报告失败的代码自己炸掉,比失败本身更难查。**
 ck("输入指纹落库了(没有它,下次就判不出输入变没变)", bool(st and st["input_hash"]),
-   (st or {}).get("input_hash", "")[:26])
+   ((st or {}).get("input_hash") or "(空)")[:26])
 with eng.connect() as c:
     空向量 = c.execute(text("""select count(*) from index_members im
                               where im.project_id=:p and im.index_build_id=:b
@@ -192,12 +241,15 @@ try:
                     " where project_id=:p and id=:i"), {"p": proj, "i": ib4})
     # 独立事务:写一个向量并**提交**(处理器分批写入就是这么做的)
     with eng.begin() as 内:
+        # ⚠️ 维度**跟着列类型走**,别写死。2026-09-27 这里写死过 1536,
+        # 改成 vector(512) 之后当场 `expected 512 dimensions, not 1536` ——
+        # 那是约束在工作,而夹具过期了。用 `维度常量` 免得再犯。
         内.execute(text("""insert into embeddings (id, organization_id, project_id,
                 text_hash, model_id, dim, embedding, created_at, created_by, revision)
-                values (:i,:o,:p,:h,'emb-探针',1536,
+                values (:i,:o,:p,:h,'emb-探针',:d,
                         cast(:v as vector), now(), 'test', 1)"""),
                   {"i": 探针, "o": org, "p": proj, "h": "探针" + uuid.uuid4().hex[:8],
-                   "v": "[" + ",".join(["0.01"] * 1536) + "]"})
+                   "d": 维度常量, "v": "[" + ",".join(["0.01"] * 维度常量) + "]"})
     raise RuntimeError("故意让外层失败 —— 模拟处理器中途崩掉")
 except RuntimeError:
     tx.rollback()

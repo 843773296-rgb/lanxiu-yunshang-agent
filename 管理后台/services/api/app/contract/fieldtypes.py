@@ -103,7 +103,18 @@
     # `embedding` **不能靠后缀推**:它没有后缀,而且它是这套登记里
     # 第一个不是 SQL 标准类型的列 —— 维度写死在类型里(见 entities.py 那段注释)。
     # `dim` 同理:三个字母,套不上任何后缀约定。
-    "embedding": "VECTOR(1536)", "dim": "INTEGER",
+    #
+    # ⚠️⚠️ **512,不是 1536。** 2026-09-27 当天改过一次:
+    # 首版按 OpenAI 的 1536 建的(那时只有 mock 向量),而用户拍了本地模型
+    # BGE-small-zh-v1.5,它的 hidden_size 是 **512**(读 config.json,不是猜的)。
+    #
+    # 这次改动正是「维度写死在列类型上」那个决定的**代价兑现** ——
+    # 而它是个**会报错**的代价:插错维度当场被 PostgreSQL 拒
+    # (实测 `expected N dimensions, not M`)。
+    # 对面那个方案(无维度的 vector 列)允许 3 维和 4 维躺在同一张表里,
+    # 混维度的索引算出来的距离没有意义,而且**一声不响**。
+    # **下次换模型还要这么来一次,那是有意的。**
+    "embedding": "VECTOR(512)", "dim": "INTEGER",
     "id": "TEXT", "name": "TEXT", "status": "TEXT", "role": "TEXT",
     "purpose": "TEXT", "adapter": "TEXT", "endpoint": "TEXT", "revision": "BIGINT",
     "messages": "JSONB", "params": "JSONB", "capabilities": "JSONB",

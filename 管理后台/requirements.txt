@@ -14,3 +14,19 @@ alembic>=1.13,<2
 psycopg[binary]>=3.1,<4
 fastapi>=0.115,<1
 uvicorn[standard]>=0.30,<1
+
+# ── 真 Embedding(2026-09-27 加)───────────────────────────────────
+# 用户拍了本地模型 BGE-small-zh-v1.5,理由是查出来的事实:
+# **Anthropic 和 DeepSeek 都不提供 embedding API**
+# (实测 DeepSeek 的 /models 只有两个文本生成模型,/embeddings 返回 404)。
+# 本地跑:不花钱、离线、**知识库内容不出这台机器**。
+#
+# ⚠️ 这两个**只有管理后台的本地开发和 make test 需要**。
+# CI 的 admin job **故意不装它们** —— 那里跑 `embedder.py` 的 mock,
+# 因为模型文件(96 MB)不进 git,而一个新克隆在下载之前也得能跑测试。
+#
+# ⚠️ 实际占用比轮子大得多:onnxruntime 解压后 80M、它拉的 numpy 34M、
+# tokenizers 9.5M、tokenizers 拉的 huggingface-hub + hf-xet 15M ——
+# **「下载多少」和「装完占多少」是两件事**,合计约 143M。
+onnxruntime>=1.30
+tokenizers>=0.23

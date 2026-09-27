@@ -326,7 +326,7 @@ def _建一次索引(c, job, 打点):
     if _kn not in _s.path:
         _s.path.insert(0, _kn)
     import index_plan as IP
-    import embedder as EMB
+    import adapters as AD
 
     t = job["target_ref"] or {}
     build_id = t.get("index_build_id")
@@ -355,6 +355,15 @@ def _建一次索引(c, job, 打点):
         return {"index_build_id": build_id, "已经是终态": b["status"]}
 
     模型 = b["embedding_model_id"] or "emb-mock"
+    # ⚠️ **按模型 id 选适配器,认不出的当场抛,不退回 mock。**
+    # 退回 mock 会把「模型没配好」翻译成「效果不好」——
+    # 后者让人去调参数,而根因在配置上。
+    # 维度也在这儿核:构建声明的和适配器实际产的必须一致
+    # (不核的话向量会被 PostgreSQL 拒,而那时错误里只有维度、没有模型名)。
+    try:
+        EMB = AD.选(模型, 期望维度=b["embedding_dim"])
+    except (AD.认不出这个模型, AD.维度对不上) as e:
+        raise 干不了("EMBEDDER_UNAVAILABLE", {"模型": 模型, "为什么": str(e)[:300]})
     维度 = b["embedding_dim"] or EMB.维度
 
     # ── ① 输入:知识库下**每篇文档的最新版本**的片段 ────────────────────
@@ -472,7 +481,10 @@ def _建一次索引(c, job, 打点):
         if 打点.取消了:
             # 已经提交的那些批**留着** —— 那是检查点,不是垃圾。
             raise 取消了()
-        向量们 = EMB.算([文本表[x["id"]] for x in 批], 模型id=模型, 期望维度=维度)
+        # ⚠️ `用途="文档"` —— BGE 是**非对称**的:查询端要加前缀、文档端不加,
+        # 而搞错**效果明显下降而不报任何错**。检索那头传的是 `用途="查询"`。
+        向量们 = EMB.算([文本表[x["id"]] for x in 批], 用途="文档",
+                      模型id=模型, 期望维度=维度)
         with 事务() as c2:          # ← 独立连接,提交后就是检查点
             for 片, v in zip(批, 向量们):
                 # 跨构建复用:同一段文本 + 同一个模型只算一次
@@ -535,7 +547,10 @@ def _建一次索引(c, job, 打点):
               {"p": job["project_id"], "i": build_id})
     return {"index_build_id": build_id, "片段数": len(片段们), "成员数": 最终,
             "新算向量": 写了, "复用向量": 复用了, "输入指纹": 指纹[:26],
-            "是mock": True}
+            # ⚠️ **别写死 True。** 上一版这里是字面量 `True`,而那会在接上
+            # 真模型之后**继续报「是 mock」** —— 一个说自己是假的真结果,
+            # 和一个说自己是真的假结果一样糟:两种都让人不再相信这个字段。
+            "模型": 模型, "是mock": not AD.是真的吗(模型)}
 
 
 @处理("agent_run")

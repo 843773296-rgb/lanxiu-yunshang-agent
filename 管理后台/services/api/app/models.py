@@ -64,7 +64,7 @@ class _向量(UserDefinedType):
 
 
 _映 = {
-    "VECTOR(1536)": lambda: _向量(1536),
+    "VECTOR(512)": lambda: _向量(512),
     "TEXT": lambda: Text(),
     "INTEGER": lambda: Integer(),
     "BIGINT": lambda: BigInteger(),

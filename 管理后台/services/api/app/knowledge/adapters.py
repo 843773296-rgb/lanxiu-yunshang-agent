@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Embedding 适配器登记表。**按模型 id 选,认不出的当场抛。**
+
+## 为什么不给「默认退回 mock」
+
+那会让一份**随机相似度**的检索结果看起来像真的。
+mock 向量从文本哈希派生,语义完全无感知(实测:两段人读起来毫无关系的话
+余弦 -0.0032,而那和「两段相近的话」是同一个分布)——
+而它算出的相似度是个**看起来很正常的数字**(0.83),人会拿它当效果读。
+
+> **一个认不出模型就退回 mock 的选择器,等于把「模型没配好」
+> 翻译成「效果不好」。** 后者会让人去调参数,而根因在配置上。
+
+## 两个适配器,一个契约
+
+    emb-mock            零依赖,纯标准库。**CI 只有它** ——
+                        admin job 只装 sqlalchemy,跑不了 onnxruntime,
+                        而模型文件不进 git
+    bge-small-zh-v1.5   真模型,onnxruntime 本机跑,离线,512 维
+
+输出**同一个契约**,唯一区别是 `是mock` 字段(§19.4 的做法:
+一份 mock 跑出来的报告和真实报告在数据形状上一模一样,唯一区别就是那个字段)。
+
+⚠️ 两个的 `算()` 签名也**完全一样**,包括 mock 自己不需要的 `用途` ——
+否则「在 mock 下跑通了」会掩盖「换真实现就漏参数」。
+"""
+import os
+import sys
+
+_这 = os.path.dirname(os.path.abspath(__file__))
+if _这 not in sys.path:
+    sys.path.insert(0, _这)
+
+# 模型 id → (模块名, 一句话它是什么)
+登记 = {
+    "emb-mock": ("embedder",
+                 "mock:从文本哈希派生,**语义无感知**。零依赖,CI 用的是它"),
+    "bge-small-zh-v1.5": ("embedder_bge",
+                          "真模型:BGE 中文小模型,onnxruntime 本机跑,离线,512 维"),
+}
+
+
+class 认不出这个模型(Exception):
+    """模型 id 不在登记表里。**当场抛,不退回 mock。**"""
+
+
+class 维度对不上(Exception):
+    """适配器的维度和构建声明的不一样。"""
+
+
+def 选(模型id, *, 期望维度=None):
+    """返回那个适配器模块。
+
+    `期望维度` 给了就核一遍 —— **构建声明的维度和适配器实际产的维度
+    必须一致**。不核的话,向量会以另一个维度写进 `vector(512)` 列、
+    被 PostgreSQL 拒(实测 `expected 512 dimensions, not N`),
+    而那时错误信息里只有维度,没有「是哪个模型」。
+    """
+    if 模型id not in 登记:
+        raise 认不出这个模型(
+            f"没登记过 Embedding 模型 {模型id!r} —— 现有 {sorted(登记)}。\n"
+            f"       **不默认退回 mock**:那会让一份随机相似度的检索结果"
+            f"看起来像真的,而人会拿那个数字当效果读。\n"
+            f"       要加就在 `knowledge/adapters.py` 的 `登记` 里写明,"
+            f"并且说清它的维度")
+    模块名, _ = 登记[模型id]
+    try:
+        模块 = __import__(模块名)
+    except ImportError as e:
+        raise 认不出这个模型(
+            f"模型 {模型id!r} 的适配器 {模块名} import 不了:{e} —— "
+            f"**不退回 mock**") from e
+    if 期望维度 is not None and 模块.维度 != 期望维度:
+        raise 维度对不上(
+            f"构建声明 {期望维度} 维,而 {模型id} 产 {模块.维度} 维 —— "
+            f"**不许截断也不许补零**:截断丢信息,补零造假信息,"
+            f"两种都会让检索算出一个看起来正常的错数字。"
+            f"换模型要新建构建(输入指纹里有模型 id 和维度)")
+    return 模块
+
+
+def 是真的吗(模型id):
+    """这个模型产的是真向量还是 mock。**给界面用** ——
+    一份 mock 的检索结果必须能被看出来。"""
+    if 模型id not in 登记:
+        return None          # 认不出 ≠ 是 mock,也 ≠ 是真的
+    return 模型id != "emb-mock"

@@ -39,6 +39,13 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_worker_lease.py
 	@echo ""
+	@echo "▸ 真 Embedding(BGE-small-zh-v1.5,onnxruntime 本机跑):"
+	@echo "  **判据是语义有效性,不是形状** —— 四档层级必须成立"
+	@echo "  (相同 > 同义 > 同主题 > 无关;pooling 错、前缀错都会让中间两档塌一起)"
+	@echo "  ⚠️ 要模型文件:`bash tools/fetch_model.sh`(96 MB,不进 git)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_embedder_bge.py
+	@echo ""
 	@echo "▸ 索引构建:**真起 Worker 跑一轮**(端到端/跨构建复用/重复投递/"
 	@echo "  **检查点机制**/已完成跳过/0 片段不许静默成功)"
 	@echo "  ⚠️ 检查点那条是**机制级**证明:外层事务回滚,独立事务写的还在 ——"
@@ -168,6 +175,10 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ Embedding 适配器:**mock 向量比 mock 文本危险** —— 它的相似度看起来很正常"
 	@echo "  (跨进程确定性用子进程验;那条咬合必须真的改文件,monkeypatch 咬不住)"
 	@./.venv/bin/python tests/orchestration/test_embedder.py
+	@echo ""
+	@echo "▸ 精排的判据:**零依赖,不发一个请求**(CI 里没有 Claude 凭据)"
+	@echo "  挡 LLM 的三种编法:编编号 / 漏候选 / 编引文。0 分免引文是有意的"
+	@./.venv/bin/python tests/orchestration/test_reranker.py
 	@echo ""
 	@echo "▸ 索引计划:检查点 + 输入指纹 —— **这一组的坏法全是不报错的**"
 	@echo "  (跳过没向量的片段/在变过的输入上续做/从 20 个候选里挑 50 个)"

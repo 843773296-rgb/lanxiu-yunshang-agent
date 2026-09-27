@@ -7,3 +7,11 @@ dist/
 .object-store/
 requirements.lock.bak
 .venv/
+
+# ── 本地 Embedding 模型(不进 git)────────────────────────────────
+# BGE-small-zh-v1.5 的 ONNX 权重,90.5 MB 二进制。
+# **不进版本库**:大二进制会让每次克隆都变慢,而且它是可重下的
+# (来源和校验和记在 tools/fetch_model.sh 里 —— 那份才该进 git)。
+# ⚠️ 缺文件时 `embedder_bge.py` **当场报错**,不静默退回 mock ——
+# 「退回 mock」会让一份随机相似度的检索结果看起来像真的。
+.models/
