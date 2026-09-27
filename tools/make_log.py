@@ -8,14 +8,19 @@
 > 想要好日志,就得在提交的那一刻把话说清楚。
 
 用法:
-    python3 tools/make_log.py            # 生成 项目日志.md
+    python3 tools/make_log.py            # 生成 澜绣云裳agent-项目日志.md
     python3 tools/make_log.py --publish  # 生成并发飞书
 """
 import os
 import os, re, subprocess, sys, collections
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "项目日志.md")
+# ⚠️ 文件名**必须带项目名**。2026-09-27 发飞书时发现它一直叫「项目日志」——
+# 而 `tools/feishu_publish.py` 的 `prune_same_name()` 会**按文件名清掉同名旧文档**,
+# 那个飞书文件夹不止这一个项目在用。也就是说:哪天别的项目也有一份「项目日志」,
+# 这边一发就把它**静默删掉**了 —— 没有报错,只是那份文档不在了。
+# (这次没造成损失:发布输出里没有「已清理同名旧文档」,说明那个文件夹里原本没有同名的。)
+OUT = os.path.join(ROOT, "澜绣云裳agent-项目日志.md")
 SEP = "\x1e"      # 记录分隔符,用不可见字符,免得撞上正文里的符号
 
 
@@ -102,11 +107,11 @@ def build():
 # HANDOFF.md 那边早就写清了同一条(「自动区一律不许手写 —— 手写会漂」),
 # 我在这边犯了它。
 #
-# 手写的东西放 `项目日志-手记.md`,生成时**原样接在自动区后面**。
+# 手写的东西放 `澜绣云裳agent-项目日志-手记.md`,生成时**原样接在自动区后面**。
 # 放在单独文件而不是靠标记切分:标记会被人删掉、会被编辑器改掉,
 # 而一个独立文件不会因为谁多按了一次回车就消失。
 NOTES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                     "项目日志-手记.md")
+                     "澜绣云裳agent-项目日志-手记.md")
 
 
 def with_notes(md):
