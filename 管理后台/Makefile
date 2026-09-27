@@ -39,6 +39,13 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_worker_lease.py
 	@echo ""
+	@echo "▸ 索引构建:**真起 Worker 跑一轮**(端到端/跨构建复用/重复投递/"
+	@echo "  **检查点机制**/已完成跳过/0 片段不许静默成功)"
+	@echo "  ⚠️ 检查点那条是**机制级**证明:外层事务回滚,独立事务写的还在 ——"
+	@echo "  场景级要「跑到一半 kill -9」,而那会变成偶发红,偶发红最后都被忽略"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_index_build.py
+	@echo ""
 	@echo "▸ 向量约束:**真的插坏数据**(混维度/假向量id/重复文本/跨项目引用)"
 	@echo "  「能用约束表达的不要用判据表达」是个声称 —— 这里去攻击它"
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \

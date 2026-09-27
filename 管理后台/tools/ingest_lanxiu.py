@@ -146,13 +146,18 @@ def 导一份(c, org, proj, kb, 文件名):
     解析 = P.解析(原文, 文件名=文件名)
     切 = C.切(解析, 文档版本id=dv)
     for p in 切["片段们"]:
+        # ⚠️ **切它的版本要记在行上。** 索引构建的输入指纹要用它 ——
+        # 从代码常量读会隐含「库里的片段是当前版本切的」这个假设,
+        # 而那个假设失效时**不报错**(见 chunks 的契约注释)。
         c.execute(text("""insert into chunks
             (id, organization_id, project_id, document_version_id, section_path,
-             ordinal, text, text_hash, token_count, created_at, created_by)
-            values (:i,:o,:pj,:v,:sp,:ord,:t,:th,:tc, now(), 'ingest')"""),
+             ordinal, text, text_hash, token_count,
+             chunker_version, parser_version, created_at, created_by)
+            values (:i,:o,:pj,:v,:sp,:ord,:t,:th,:tc,:cv,:pv, now(), 'ingest')"""),
                   {"i": 新("ch"), "o": org, "pj": proj, "v": dv,
                    "sp": p["section_path"], "ord": p["ordinal"], "t": p["text"],
-                   "th": p["text_hash"], "tc": p["token_count"]})
+                   "th": p["text_hash"], "tc": p["token_count"],
+                   "cv": 切["切片器版本"], "pv": 切["解析器版本"]})
     警 = ("  ⚠️ " + " / ".join(解析["警告"])) if 解析["警告"] else ""
     return (f"{文件名}:新版本 v{最大 + 1}({解析['块们'] and len(解析['块们'])} 块 → "
             f"{len(切['片段们'])} 片段,丢掉 {解析['丢掉的块数']} 块){警}")

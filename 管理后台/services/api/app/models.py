@@ -106,6 +106,14 @@ _额外唯一 = {
     "jobs": [("project_id", "idempotency_key")],
     # 费用事件唯一键:唯一用量事件防重复计费
     "usage_ledger": [("project_id", "event_key")],
+    # 索引成员:**同一个片段在一个构建里只出现一次。**
+    # ⚠️ 这不是防御性编程,是 **Outbox 语义的必要配套** ——
+    # `worker.py` 开头就写着「Outbox 的设计**保证**会有重复投递」,
+    # 而没有这条约束,重复投递会造出两条同 (build, chunk) 的成员行:
+    # `index_plan.算待做()` 会把同一个片段算两次,「陈旧成员」体检也会误报。
+    # 有了它,写入才能用 `on conflict do nothing`(PostgreSQL 要求冲突目标
+    # **精确匹配**一个唯一约束)。
+    "index_members": [("project_id", "index_build_id", "chunk_id")],
     # 向量:同一段文本 + 同一个模型 **只存一份**。
     # 这条约束就是「已完成片段不重复 Embedding」(§19.3)在**跨构建**层面的地基:
     # 检索配置改了要新建构建,但那次新建的向量可以全部复用 —— 一次都不用重跑。
@@ -236,6 +244,13 @@ def _建一张(e):
         Index("ix_traces_started_app", t.c.started_at.desc(), t.c.application_id)
     if "content_hash" in 字段:
         Index(f"ix_{名}_hash", t.c.content_hash)
+    if 名 == "index_builds":
+        # 「这份输入有没有构建过」—— 续做判定(§19.3)的主查询走它。
+        # ⚠️ 这条**必须和迁移里那条同名同列**:少声明它,`alembic check` 会说
+        # 「检测到新的 remove_index」—— 那是好的红,它逼着契约和迁移对齐。
+        # (2026-09-27 就是这么红的一次:我在迁移里建了索引,契约里忘了声明。)
+        Index("ix_index_builds_proj_kb_input", t.c.project_id,
+              t.c.knowledge_base_id, t.c.input_hash)
     return t
 
 

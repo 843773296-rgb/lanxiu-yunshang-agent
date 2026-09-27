@@ -279,6 +279,265 @@ def _跑一张工作流(c, job, 打点):
             "走过的路径": 结果["走过的路径"], "跳过的节点": 结果["跳过的节点"]}
 
 
+# 一批多少个片段。**不是随便定的**:批是检查点的粒度 ——
+# 批大一点省往返,批小一点崩溃时少重算。20 个片段(真语料一批约 1.2 万字)
+# 在 mock 下毫秒级,接真 Embedding API 时也在单次请求的常见上限内。
+索引批大小 = 20
+
+
+@处理("index_build")
+def _建一次索引(c, job, 打点):
+    """建一次向量索引(规格 §19.3)。
+
+    ## ⚠️⚠️ 这个处理器和别的三个不一样:**片段的写入走独立事务**
+
+    `跑一轮()` 把处理器整个包在**一个** `with 事务() as c:` 里。
+    对秒级的任务(prompt_run / workflow_run / agent_run)那样正好;
+    但对这个任务,那意味着 **写了 100 个向量然后崩了,全部回滚** ——
+    `index_members` 在崩溃后是空的,于是 `index_plan.算待做()`
+    永远算出「全部待做」。
+
+    > **判据对、代码对,而整件事不成立。检查点的前提是它能被提交。**
+
+    所以向量和成员用 `事务()` 开**独立连接**,每批提交一次。
+    代价必须先说清:
+
+      · **「job 失败」和「库里没东西」不再等价** —— 一个失败的构建会留下
+        已经算好的向量。**那正是检查点**,不是垃圾。任何清理逻辑、
+        任何「重跑前先清干净」的假设都得知道这件事。
+      · 独立事务**只碰 `embeddings` 和 `index_members`,绝不碰 `index_builds`** ——
+        外层事务对 `index_builds` 那一行持有 `for update` 锁,
+        独立连接去改它会死锁。构建状态一律走外层的 `c`。
+
+    ## 检查点是 `index_members` 本身,不是计数器
+
+    没有「已完成片段数」这种列。计数器和产物会漂(写了 100 条成员而计数停在 80),
+    **而漂了不报错**。`index_members` 里的行就是真相。
+
+    ## 跨构建复用向量
+
+    向量的身份是 `(project_id, text_hash, model_id)`(唯一约束钉着)。
+    所以「检索配置改了 → 新建构建」那次新建**一个向量都不用重算** ——
+    这里在 Embedding 之前先按 text_hash 查一次。
+    """
+    import sys as _s
+    _kn = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "services", "api", "app", "knowledge")
+    if _kn not in _s.path:
+        _s.path.insert(0, _kn)
+    import index_plan as IP
+    import embedder as EMB
+
+    t = job["target_ref"] or {}
+    build_id = t.get("index_build_id")
+    # ⚠️⚠️ **这里不能加 `for update`。** 踩过,而且表现是**永久挂起而不是报错**:
+    #
+    # 外层事务对 `index_builds` 那一行加排他锁之后,下面分批写入用的独立事务
+    # 插 `index_members` 时,**外键检查要对父行加 `FOR KEY SHARE` 锁** ——
+    # 于是它被**我自己的外层事务**阻塞,谁也动不了。
+    #
+    # 我在这个函数的文档里写了「独立事务绝不碰 `index_builds`」,以为够了 ——
+    # **但外键让它间接碰了。**「不碰那张表」和「不碰那一行」是两件事,
+    # 而外键把后者变成了前者管不住的。
+    #
+    # 而 `for update` 在这里本来就是多余的:同一个构建不会被两个 Worker
+    # 同时处理 —— **那个保护由 job 租约提供**(`lease.取一个` 的
+    # `for update skip locked` + `lease_owner` 条件更新)。
+    # (`_跑一张工作流` 也用了 `for update`,那条留着:它不开独立事务,
+    #  不会有这个交互。改它没有收益,而无谓的改动会带来无谓的风险。)
+    b = c.execute(text("""select * from index_builds
+                          where project_id=:p and id=:i"""),
+                  {"p": job["project_id"], "i": build_id}).mappings().first()
+    if not b:
+        raise 干不了("NOT_FOUND", {"index_build_id": build_id})
+    if b["status"] in ("已就绪", "失败", "已取消"):
+        # **已经跑完了** —— 重复投递是正常故障场景,不重做
+        return {"index_build_id": build_id, "已经是终态": b["status"]}
+
+    模型 = b["embedding_model_id"] or "emb-mock"
+    维度 = b["embedding_dim"] or EMB.维度
+
+    # ── ① 输入:知识库下**每篇文档的最新版本**的片段 ────────────────────
+    # 为什么是最新版本:旧版本的片段留着做历史证据链(片段绑文档版本),
+    # 但索引只索引当前内容 —— 否则同一段话的两个版本会在检索里各占一个名额。
+    片段们 = c.execute(text("""
+        with latest as (
+            select dv.document_id as doc, max(dv.revision) as rev
+              from document_versions dv
+              join documents d on d.project_id = dv.project_id
+                              and d.id = dv.document_id
+             where dv.project_id = :p and d.knowledge_base_id = :kb
+               and d.disabled_at is null
+             group by dv.document_id
+        )
+        select ch.id, ch.text, ch.text_hash, ch.section_path, ch.ordinal,
+               ch.document_version_id, ch.chunker_version, ch.parser_version
+          from chunks ch
+          join document_versions dv on dv.project_id = ch.project_id
+                                   and dv.id = ch.document_version_id
+          join latest l on l.doc = dv.document_id and l.rev = dv.revision
+         where ch.project_id = :p
+         order by ch.document_version_id, ch.ordinal
+    """), {"p": job["project_id"], "kb": b["knowledge_base_id"]}).mappings().all()
+    if not 片段们:
+        # **不静默成功。** 一个 0 个片段的「已就绪」索引,检索时永远返回空,
+        # 而界面上它和「知识库里就这么点东西」长得一模一样。
+        raise 干不了("NO_CHUNKS",
+                      {"knowledge_base_id": b["knowledge_base_id"],
+                       "怎么办": "先导入文档并切片(tools/ingest_lanxiu.py),"
+                                "再发起构建 —— **0 个片段的索引不算建成了**"})
+    打点("取到输入", {"阶段": "collect", "片段数": len(片段们)})
+
+    # ── ② 版本一致性:**混着切的片段不许进同一个索引** ──────────────────
+    # 片段记着切它的版本(`chunks.chunker_version`)。一批 seg-1 一批 seg-2
+    # 混在一个索引里,边界不一样 —— 检索照样跑,只是答得怪,**而且不报错**。
+    切版本 = {x["chunker_version"] for x in 片段们}
+    解版本 = {x["parser_version"] for x in 片段们}
+    if len(切版本) > 1 or len(解版本) > 1:
+        raise 干不了("MIXED_CHUNKER_VERSION",
+                      {"切片器版本": sorted(map(str, 切版本)),
+                       "解析器版本": sorted(map(str, 解版本)),
+                       "怎么办": "把这些文档版本重新切一遍(同一个版本),再建索引 —— "
+                                "**边界不一样的片段混在一个索引里,检索答得怪而不报错**"})
+    if None in 切版本 or None in 解版本:
+        # 空不等于「和当前一样」。见 chunks 的契约注释:填错的版本号比空的更糟,
+        # 而空的这里要当场拦住,不猜一个。
+        raise 干不了("CHUNKER_VERSION_MISSING",
+                      {"怎么办": "这些片段没记下切它的版本 —— **不猜一个当前值**:"
+                                "猜错会让指纹说「输入没变」而实际边界已经不同。"
+                                "重新切一遍(导入脚本现在会记)"})
+
+    # ── ③ 输入指纹 → 续做还是新建(§19.3)────────────────────────────
+    指纹 = IP.输入指纹(
+        知识库id=b["knowledge_base_id"],
+        文档版本id们=sorted({x["document_version_id"] for x in 片段们}),
+        检索配置版本id=b["retrieval_config_version_id"],
+        embedding模型id=模型, embedding维度=维度,
+        # **从片段实际记的版本读**,不从代码常量读 —— 后者隐含
+        # 「库里的片段是当前版本切的」这个假设,而它失效时不报错。
+        切片器版本=切版本.pop(), 解析器版本=解版本.pop())
+    动作, 为什么 = IP.该新建还是续做(
+        构建=dict(输入指纹=b["input_hash"], status=b["status"]),
+        现在的指纹=指纹)
+    打点("续做判定", {"阶段": "fingerprint", "动作": 动作, "为什么": 为什么})
+    if 动作 == "新建" and b["input_hash"]:
+        # 指纹变过 = 输入在排队期间被改过。**不静默跑新的那一份** ——
+        # 那会让这个构建的结果和它记的指纹对不上,而对不上的那一刻
+        # 没有任何地方说过为什么(和 workflow 那条 DEFINITION_CHANGED 同一道理)。
+        raise 干不了("INPUT_CHANGED_WHILE_QUEUED",
+                      {"受理时": (b["input_hash"] or "")[:26], "现在": 指纹[:26],
+                       "为什么": 为什么,
+                       "怎么办": "发起一次新的构建 —— 旧的这次保留,它记的是受理时那一版"})
+    if not b["input_hash"]:
+        c.execute(text("""update index_builds set input_hash=:h, updated_at=now(),
+                          revision=coalesce(revision,0)+1
+                          where project_id=:p and id=:i"""),
+                  {"h": 指纹, "p": job["project_id"], "i": build_id})
+
+    # ── ④ 已经做完的跳过(检查点)────────────────────────────────────
+    成员行 = c.execute(text("""
+        select im.chunk_id, im.embedding_id, e.dim as 维
+          from index_members im
+          left join embeddings e on e.project_id = im.project_id
+                                and e.id = im.embedding_id
+         where im.project_id = :p and im.index_build_id = :b
+    """), {"p": job["project_id"], "b": build_id}).mappings().all()
+    计划 = IP.算待做(
+        目标片段们=[dict(id=x["id"], text_hash=x["text_hash"]) for x in 片段们],
+        成员们=[dict(chunk_id=m["chunk_id"], embedding_id=m["embedding_id"],
+                    **{"embedding维度": m["维"]}) for m in 成员行],
+        期望维度=维度)
+    打点("算出待做", {"阶段": "plan", "待做": len(计划["待做"]),
+                   "已完成": len(计划["已完成"]), "要重做": len(计划["要重做"]),
+                   "指纹体检": 计划["指纹体检"]})
+    if 计划["陈旧成员"]:
+        # 指纹自己的体检红了 —— **不继续**。索引里有不属于这一版输入的片段,
+        # 说明指纹漏了一项真实输入,而那正是混血索引的入口。
+        raise 干不了("FINGERPRINT_INCOMPLETE",
+                      {"陈旧片段": 计划["陈旧成员"][:5],
+                       "说明": 计划["指纹体检"]})
+
+    文本表 = {x["id"]: x["text"] for x in 片段们}
+    哈希表 = {x["id"]: x["text_hash"] for x in 片段们}
+    待做 = 计划["待做"]
+    c.execute(text("""update index_builds set status='向量化中', updated_at=now(),
+                      revision=coalesce(revision,0)+1
+                      where project_id=:p and id=:i"""),
+              {"p": job["project_id"], "i": build_id})
+
+    # ── ⑤ 分批:算向量 → **独立事务写入并提交** → 打点 ──────────────────
+    写了, 复用了 = 0, 0
+    for 起 in range(0, len(待做), 索引批大小):
+        批 = 待做[起:起 + 索引批大小]
+        if 打点.取消了:
+            # 已经提交的那些批**留着** —— 那是检查点,不是垃圾。
+            raise 取消了()
+        向量们 = EMB.算([文本表[x["id"]] for x in 批], 模型id=模型, 期望维度=维度)
+        with 事务() as c2:          # ← 独立连接,提交后就是检查点
+            for 片, v in zip(批, 向量们):
+                # 跨构建复用:同一段文本 + 同一个模型只算一次
+                eid = c2.execute(text("""select id from embeddings
+                                         where project_id=:p and text_hash=:h
+                                           and model_id=:m"""),
+                                 {"p": job["project_id"], "h": v["text_hash"],
+                                  "m": 模型}).scalar()
+                if eid:
+                    复用了 += 1
+                else:
+                    eid = _新("emb")
+                    c2.execute(text("""
+                        insert into embeddings (id, organization_id, project_id,
+                            text_hash, model_id, dim, embedding,
+                            created_at, created_by, revision)
+                        values (:i,:o,:p,:h,:m,:d, cast(:v as vector), now(), :u, 1)
+                        on conflict (project_id, text_hash, model_id) do nothing
+                    """), {"i": eid, "o": job["organization_id"],
+                           "p": job["project_id"], "h": v["text_hash"], "m": 模型,
+                           "d": v["维度"], "v": EMB.成SQL文本(v["向量"]), "u": 我是谁})
+                    # on conflict 命中时上面那条什么都没插 —— 把真正在库里的那个 id 读回来。
+                    # (并发的另一个 Worker 可能刚插了同一段文本。)
+                    eid = c2.execute(text("""select id from embeddings
+                                             where project_id=:p and text_hash=:h
+                                               and model_id=:m"""),
+                                     {"p": job["project_id"], "h": v["text_hash"],
+                                      "m": 模型}).scalar()
+                    写了 += 1
+                c2.execute(text("""
+                    insert into index_members (id, organization_id, project_id,
+                        index_build_id, chunk_id, embedding_id, created_at, created_by)
+                    values (:i,:o,:p,:b,:c,:e, now(), :u)
+                    on conflict (project_id, index_build_id, chunk_id) do nothing
+                """), {"i": _新("im"), "o": job["organization_id"],
+                       "p": job["project_id"], "b": build_id, "c": 片["id"],
+                       "e": eid, "u": 我是谁})
+        # 打点在批**提交之后** —— 报的是已经落地的数,不是打算做的数
+        打点("一批写完", {"阶段": "embed", "这批": len(批),
+                       "累计新算": 写了, "累计复用": 复用了})
+
+    # ── ⑥ 收尾:成员数要和目标片段数一致 ─────────────────────────────
+    c.execute(text("""update index_builds set status='写索引中', updated_at=now(),
+                      revision=coalesce(revision,0)+1
+                      where project_id=:p and id=:i"""),
+              {"p": job["project_id"], "i": build_id})
+    最终 = c.execute(text("""select count(*) from index_members
+                            where project_id=:p and index_build_id=:b"""),
+                    {"p": job["project_id"], "b": build_id}).scalar()
+    if 最终 != len(片段们):
+        # **集合相等判据,不是「至少写了一条」。** 少了就是有片段检索不到,
+        # 多了说明写重了(而唯一约束应该已经拦住)—— 两种都不该报成功。
+        raise 干不了("INDEX_INCOMPLETE",
+                      {"片段数": len(片段们), "成员数": 最终,
+                       "说明": "成员数和片段数不一致 —— **少了就有内容检索不到**,"
+                              "而那在界面上和「知识库里就这么点」长得一样"})
+    c.execute(text("""update index_builds set status='已就绪', updated_at=now(),
+                      revision=coalesce(revision,0)+1
+                      where project_id=:p and id=:i"""),
+              {"p": job["project_id"], "i": build_id})
+    return {"index_build_id": build_id, "片段数": len(片段们), "成员数": 最终,
+            "新算向量": 写了, "复用向量": 复用了, "输入指纹": 指纹[:26],
+            "是mock": True}
+
+
 @处理("agent_run")
 def _跑一个agent(c, job, 打点):
     """跑一次 Agent。**照 `_跑一张工作流` 的形状** —— 进门先看是不是已经终态。
