@@ -83,3 +83,59 @@ jobs:
       # 真实数由 check.sh 自己数出来打在日志里。
       - name: 全套检查
         run: ./check.sh
+
+  # ── 管理后台:**独立一个 job,不塞进上面那个** ──────────────────────────
+  #
+  # 2026-09-27 并行会话把「澜绣云裳 AI 管理后台」子树合并进 `管理后台/`,
+  # 并问要不要把它那批检查接进门禁。**接,但不进上面那个 job。**
+  #
+  # 理由不是时间(量过:这 93 条是 0.4 秒),是**报告要能回答「谁红了」**:
+  # 两套东西挤在一个 job 里,红的时候第一眼分不清是澜绣的数据勾稽红了
+  # 还是管理后台的图校验红了 —— 而那是 CI 报告唯一要回答的问题。
+  # 同族的教训就在昨天:那次超时被标成 `cancelled` 而不是 `failed`,
+  # **报告给不出「红在哪」,人就只能猜**。
+  #
+  # 顺带一个好处:上面那个 job 的 `timeout-minutes: 20` **一点没被动**。
+  # 那条上限 09-26 刚被顶爆过一次(客户数 ×8 让 simulate_sales 占了 14 分 25 秒),
+  # 往里加东西是拿一条刚刚修好的上限去赌。独立 job 并行跑,总墙钟时间不变。
+  #
+  # ## 这里只跑「零依赖」的那 93 条,另 93 条契约检查**没接**
+  #
+  #   接了:DSL 语义 14 · 图校验 18 · 执行语义 18 · Agent 对抗 43  = 93 条
+  #         **纯标准库**,系统 python3 直接跑,不装任何东西(实测 0.4 秒)
+  #   没接:契约覆盖 93 条 —— `tools/spec_coverage.py` 要 import `models`,
+  #         而它要 **sqlalchemy**;以及跨项目 7 / 租约 16 / 端到端 88,那些要
+  #         **PostgreSQL + alembic 迁移 + seed**。
+  #
+  # ⚠️ **「没接」要写出来,因为绿了之后没人会去数少了哪些。**
+  # 一个跑了 93 条的绿勾,和一个跑了 186 条的绿勾,在页面上长得一模一样。
+  # 要接契约那 93 条,只需在这个 job 里加一步装 sqlalchemy —— 留着,等有人真需要。
+  admin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      # PYTHONPATH 现算,不手抄目录清单 —— 抄一份就会在他们挪目录时漂,
+      # 而漂的表现是 `ModuleNotFoundError`,读起来像「代码坏了」而不是「路径过期了」。
+      - name: 编排层四组(零依赖,纯标准库)
+        working-directory: 管理后台
+        run: |
+          PP="$(python3 -c "
+          import os
+          ps=[]
+          for root, ds, fs in os.walk('.'):
+              if '.venv' in root or '__pycache__' in root: continue
+              if any(f.endswith('.py') for f in fs): ps.append(os.path.abspath(root))
+          print(':'.join(sorted(set(ps))))")"
+          红=0
+          for t in test_dsl_semantics test_graph_validation test_execution test_agent_tools; do
+            echo "▸ $t"
+            PYTHONPATH="$PP" python3 "tests/orchestration/$t.py" || 红=1
+          done
+          # **一条都不许被吞** —— for 循环里 `||` 之后必须自己把红带出来,
+          # 不然最后一条绿就把前面的红盖掉了(退出码只剩最后那条的)。
+          exit $红
