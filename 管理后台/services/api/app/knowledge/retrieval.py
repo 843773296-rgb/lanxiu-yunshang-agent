@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""检索:向量召回 → Claude 精排 → 按预算截断 → 出证据链。
+
+规格 §9.5:「必须看到**整条链路**:原问、改写、候选、融合分、选片、证据、Trace」。
+所以这里返回的不是一个答案,是**一条能被复核的链** ——
+每一步的中间结果都留着,因为「为什么是这几段」是这个功能的主要价值。
+
+## 为什么召回和精排都要,而且顺序不能换
+
+真语料上实测过一次(71 个片段,问「客户给了差评要怎么处理」):
+
+    向量召回第 1 名:  | # | 要做的 | 判据 / 验法 |    ← 一个**表格头**,0.6849
+    向量召回第 2 名:  ≤3 星算差评;差评自动进待处理清单   ← 真答案,0.6329
+
+    Claude 精排:     真答案 9/10,表格头 **0/10**
+
+embedding 的病是**短的、抽象的文本在语义空间里占据中心位置**,
+而中心位置对任何查询都有中等相似度。它不报错 —— 检索永远返回 N 条。
+
+**召回负责「别漏」,精排负责「排对」。** 两个换不了:
+精排读不了 71 段全文(贵且慢),召回排不对(上面那个例子)。
+
+## ⚠️ 首版没有的东西,写在这儿而不是等人发现
+
+  · **查询改写**(§9.5 的「改写」)—— 没做。返回里 `改写` 恒为 None
+    并带一句说明,**不是空字符串** ——「没做」和「改写结果是空」要分得开
+  · **关键词召回 / 融合**(`recall_modes` 里的 keyword / hybrid)—— 没做。
+    配置里要了 keyword 会**当场报错**,不静默退化成只走向量
+    (静默退化会让人以为融合在生效)
+  · **向量索引**(hnsw)—— 没建。71 个片段顺序扫够用,上真量之前必须补
+"""
+import os
+import sys
+
+_这 = os.path.dirname(os.path.abspath(__file__))
+if _这 not in sys.path:
+    sys.path.insert(0, _这)
+
+from sqlalchemy import text   # noqa: E402
+
+import adapters as AD          # noqa: E402
+import index_plan as IP        # noqa: E402
+import reranker as RR          # noqa: E402
+
+检索器版本 = "retrieve-1"
+# 一个片段粗估多少 token。⚠️ 和 `chunker._粗估token` 同一个粗估,
+# **不许拿它算钱** —— 真实 token 要问 tokenizer,而各模型不一样。
+_每字token = 0.6
+
+
+class 检索不了(Exception):
+    """配置或索引不满足检索的前提。**当场抛,不降级** ——
+    一个降级过的检索结果和一个正常结果长得一样。"""
+
+
+def 证据串(片段):
+    """「业务拍板 · 2026-09-27 / 一、什么时候请评价 · 第 3 段」
+
+    ⚠️ 这不是装饰。顾问要能**照着它翻回原文核对** ——
+    而一个查不回去的引用比没有引用糟:它看起来有出处。
+    """
+    return f"{片段['section_path']} · 第 {片段['ordinal']} 段"
+
+
+def 检索(conn, *, 项目, 构建id, 问题, 要精排=True):
+    """跑一次检索。返回规格 §9.5 要的整条链路。
+
+    ⚠️ `conn` 由调用方给 —— 这个模块**不自己开连接**:
+    检索要和调用方在同一个事务里看到同一份数据
+    (否则「刚建好的索引查不到」这种事会变成偶发)。
+    """
+    if not (问题 or "").strip():
+        raise 检索不了("问题是空的 —— 空查询的向量没有意义,"
+                     "而它会返回一批「离原点最近」的片段,看起来像正常结果")
+
+    b = conn.execute(text("""select ib.*, rc.recall_modes, rc.candidate_k, rc.fusion,
+                                   rc.rerank, rc.context_budget_tokens,
+                                   rc.final_chunk_limit
+                              from index_builds ib
+                              left join retrieval_config_versions rc
+                                on rc.project_id = ib.project_id
+                               and rc.id = ib.retrieval_config_version_id
+                             where ib.project_id=:p and ib.id=:i"""),
+                    {"p": 项目, "i": 构建id}).mappings().first()
+    if not b:
+        raise 检索不了(f"没有这个索引构建:{构建id}")
+    if b["status"] != "已就绪":
+        # **不在没建好的索引上检索。** 那会返回一批不完整的结果,
+        # 而「索引只建了一半」和「知识库里就这么点」在界面上长得一样。
+        raise 检索不了(f"索引还不是「已就绪」,现在是「{b['status']}」—— "
+                     f"**不在没建好的索引上检索**:结果会不完整,"
+                     f"而那和「知识库里就这么点」长得一样")
+
+    配置 = dict(recall_modes=b["recall_modes"], candidate_k=b["candidate_k"],
+              fusion=b["fusion"], rerank=b["rerank"],
+              context_budget_tokens=b["context_budget_tokens"],
+              final_chunk_limit=b["final_chunk_limit"])
+    问题们 = IP.校验检索配置(配置)
+    if 问题们:
+        raise 检索不了(f"检索配置不合格:{问题们}")
+    模式 = list(配置["recall_modes"] or [])
+    没做的 = [m for m in 模式 if m != "vector"]
+    if 没做的:
+        # **不静默退化成只走向量。** 那会让人以为融合在生效。
+        raise 检索不了(
+            f"配置里要了 {没做的},而这一版**只做了 vector** —— "
+            f"不静默退化成只走向量:那会让人以为融合在生效。"
+            f"要么把 `recall_modes` 改成 ['vector'],要么先实现关键词召回")
+
+    EMB = AD.选(b["embedding_model_id"], 期望维度=b["embedding_dim"])
+    # ⚠️ `用途="查询"` —— BGE 非对称:查询加前缀、文档不加,搞错不报错
+    q = EMB.算([问题], 用途="查询")[0]
+
+    候选们 = conn.execute(text("""
+        select ch.id, ch.text, ch.section_path, ch.ordinal, ch.text_hash,
+               ch.token_count, ch.document_version_id,
+               1 - (e.embedding <=> cast(:v as vector)) as 相似度
+          from index_members im
+          join chunks ch on ch.project_id = im.project_id and ch.id = im.chunk_id
+          join embeddings e on e.project_id = im.project_id
+                           and e.id = im.embedding_id
+         where im.project_id = :p and im.index_build_id = :b
+         order by e.embedding <=> cast(:v as vector)
+         limit :k
+    """), {"v": EMB.成SQL文本(q["向量"]), "p": 项目, "b": 构建id,
+           "k": 配置["candidate_k"]}).mappings().all()
+    候选 = [dict(x) for x in 候选们]
+    if not 候选:
+        # 索引已就绪但一个成员都没有 —— 那本该在构建时被
+        # `INDEX_INCOMPLETE` 拦住。走到这儿说明有别的路径写了坏数据。
+        raise 检索不了(
+            f"索引 {构建id} 是「已就绪」但一个成员都查不到 —— "
+            f"这本该在构建时被 INDEX_INCOMPLETE 拦住,**去查是谁写的**")
+
+    链 = dict(
+        原问=问题,
+        # ⚠️ **None 而不是空字符串** ——「没做」和「改写结果是空」要分得开
+        改写=None,
+        改写说明="查询改写(§9.5)**这一版没做** —— 直接用原问算向量",
+        召回方式=模式,
+        候选=[dict(id=c["id"], 相似度=round(c["相似度"], 4),
+                 证据=证据串(c), 文=c["text"][:200]) for c in 候选],
+        召回数=len(候选),
+        embedding=dict(模型=b["embedding_model_id"], 维度=b["embedding_dim"],
+                       是mock=q["是mock"], 适配器版本=q["适配器版本"]),
+        检索器版本=检索器版本,
+    )
+
+    # ── 精排 ────────────────────────────────────────────────────────
+    if not 要精排:
+        排好 = [dict(**c, 分数=None, 引文=None) for c in 候选]
+        链["精排"] = dict(做了=False,
+                       为什么="调用方传了 `要精排=False` —— "
+                             "⚠️ 只走向量的排序**不可靠**:实测一个表格头"
+                             "排到了第 1 名(0.6849),而真答案第 2(0.6329)")
+    else:
+        出 = RR.精排(问题, [dict(id=c["id"], text=c["text"],
+                              section_path=c["section_path"],
+                              ordinal=c["ordinal"]) for c in 候选])
+        分表 = {x["id"]: x for x in 出["排好的"]}
+        排好 = [dict(**c, 分数=分表[c["id"]]["分数"], 引文=分表[c["id"]]["引文"])
+              for c in 候选]
+        排好.sort(key=lambda x: (-(x["分数"] or 0), -x["相似度"]))
+        链["精排"] = dict(做了=True, 模型=出["模型"], 用量=出["用量"],
+                       精排器版本=出["精排器版本"], 是mock=出["是mock"])
+
+    # ── 截断:**两个上限都要,取更严的那个** ──────────────────────────
+    # `final_chunk_limit` 管条数,`context_budget_tokens` 管总量。
+    # 只看条数会在片段特别长时爆预算;只看预算会在片段特别短时塞太多条。
+    限条 = 配置["final_chunk_limit"]
+    限token = 配置["context_budget_tokens"]
+    选中, 累计, 跳过的 = [], 0, []
+    截断原因 = None
+    for x in 排好:
+        if len(选中) >= 限条:
+            截断原因 = f"到条数上限 {限条}(final_chunk_limit)"
+            break
+        t = x["token_count"] or int(len(x["text"]) * _每字token)
+        if 累计 + t > 限token:
+            # ⚠️ **跳过它继续看后面的,不 break。**
+            #
+            # 上一版这里是 `break` —— 遇到第一个放不下的就停。而按相关性排序时
+            # **第 1 名恰好是个长片段是很常见的**:实测 260 token 的预算下,
+            # 第 1 名 327 token 放不下 → 整个循环立刻退出 → **选了 0 片**,
+            # 尽管后面有 55 token 的能放。
+            #
+            # `break` 和 `continue` 的差别是「遇到放不下的就停」和
+            # 「跳过它继续」—— 前者会因为**一个**大片段丢掉后面**所有**能放的。
+            #
+            # ⚠️⚠️ 但跳过**必须报出来**(下面 `因为太大跳过的`):
+            # 「最相关的那条因为太大没进去」会静默发生,
+            # 而人看到的是一组**看起来正常**的结果。
+            跳过的.append(dict(id=x["id"], token=t, 证据=证据串(x),
+                            分数=x["分数"], 相似度=round(x["相似度"], 4)))
+            截断原因 = (f"到上下文预算 {限token}(context_budget_tokens),"
+                     f"已用 {累计};有 {len(跳过的)} 片因为太大被跳过")
+            continue
+        选中.append(x)
+        累计 += t
+
+    # ⚠️ **一片都放不进去 → 当场报,不返回一个空结果。**
+    #
+    # 「检索返回 0 片」和「知识库里没有相关内容」在界面上**长得一模一样**。
+    # 而候选是按向量取的、这里已经确认非空,所以选片为 0 **一定**是预算配置问题,
+    # 不可能是「没有相关内容」—— 那就不该让它看起来像后者。
+    #
+    # (这是测试跑出来的:`预算=100 / 限片=4` 合法通过了配置校验
+    #  (100 ≥ 4×20),但真片段平均 92 token、最大 327,第一片就放不下。
+    #  `校验检索配置` 那条 `预算 < 限片×20` 是个**静态下限**,
+    #  它看不到片段的实际长度。)
+    if not 选中:
+        最小片 = min((x["token_count"] or int(len(x["text"]) * _每字token))
+                   for x in 排好)
+        raise 检索不了(
+            f"上下文预算 {限token} token **一片都放不下**"
+            f"(候选里最小的那片 {最小片} token,而全部 {len(排好)} 片都超了)"
+            f"—— 检索会返回空,"
+            f"而「返回空」和「知识库里没有」在界面上长得一样。\n"
+            f"       把 `context_budget_tokens` 调到至少 {最小片 * 2} 左右,"
+            f"或者把片段切小一点。\n"
+            f"       ⚠️ `校验检索配置` 的 `预算 < 限片×20` 是**静态下限**,"
+            f"它看不到片段的实际长度 —— 所以配置能通过校验而这里仍然放不下")
+
+    链["选片"] = [dict(id=x["id"], 相似度=round(x["相似度"], 4), 分数=x["分数"],
+                    引文=x["引文"], 证据=证据串(x), 文=x["text"]) for x in 选中]
+    链["选了几片"] = len(选中)
+    # ⚠️ 被跳过的要在链里**看得见** —— 见上面那段。
+    链["因为太大跳过的"] = 跳过的
+    if 跳过的:
+        链["跳过说明"] = (
+            f"{len(跳过的)} 片因为放不进剩余预算被跳过,**其中可能有最相关的那条** "
+            f"(最大 {max(x['token'] for x in 跳过的)} token)。"
+            f"要它们进来就调大 `context_budget_tokens`,或者把片段切小")
+    链["用了多少token"] = 累计
+    链["token是粗估"] = True          # ⚠️ **不许拿它算钱**
+    # ⚠️ 截断要**说出来**。静默截断的后果是:被截掉的那几段和没检索到长得一样。
+    链["截断"] = 截断原因 or "没截断(全部选中的都放进去了)"
+    return 链

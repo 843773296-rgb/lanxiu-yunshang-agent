@@ -53,6 +53,12 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_index_build.py
 	@echo ""
+	@echo "▸ 检索链:召回 → 截断 → 证据链(`要精排=False`,**不花 API 额度**)"
+	@echo "  精排的**判据**在编排层(零依赖),精排的**效果**在 make test-live ——"
+	@echo "  **只有第三层要花钱,而前两层覆盖了绝大部分会坏的地方**"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_retrieval.py
+	@echo ""
 	@echo "▸ 向量约束:**真的插坏数据**(混维度/假向量id/重复文本/跨项目引用)"
 	@echo "  「能用约束表达的不要用判据表达」是个声称 —— 这里去攻击它"
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \

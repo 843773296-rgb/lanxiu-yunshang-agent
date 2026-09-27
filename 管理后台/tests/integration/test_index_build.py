@@ -98,15 +98,62 @@ def 摆一个构建(c, org, proj, kb, *, 配置哈希="cfg-t", 模型="emb-mock"
     return ib, jid
 
 
-def 跑worker():
+def 跑worker(*, 允许失败码=None):
     """真起一个 Worker 进程跑一轮。**不在测试进程里直接调处理器** ——
     那样测不到「处理器在 `跑一轮` 的事务安排下能不能工作」,
     而那正是检查点成立与否的所在。"""
-    p = subprocess.run(
-        [os.path.join(ROOT, ".venv", "bin", "python"),
-         os.path.join(ROOT, "workers", "worker.py"), "--一轮", "--type", "index_build"],
-        capture_output=True, text=True, cwd=ROOT, timeout=180,
-        env={**os.environ, "DATABASE_URL": URL})
+    # ⚠️ **先记下已经失败的,只报本次新增的。**
+    # 查「库里所有失败的 job」太宽:上一轮留下的(比如上次在这儿红了、
+    # 清理没执行)会被重复报告,而人分不清那是新的还是旧的 —— 于是开始忽略它。
+    with eng.connect() as _c0:
+        跑之前失败的 = {r[0] for r in _c0.execute(text(
+            "select id from jobs where type='index_build' and status='失败'"))}
+    p = subprocess.run([os.path.join(ROOT, ".venv", "bin", "python"),
+                        os.path.join(ROOT, "workers", "worker.py"),
+                        "--一轮", "--type", "index_build"],
+                       capture_output=True, text=True, cwd=ROOT, timeout=300,
+                       env={**os.environ, "DATABASE_URL": URL})
+    # ⚠️ **检查 Worker 到底成没成。** 不检查的代价实测过:
+    # Worker 崩了(`TypeError`),而测试只在后面表现为「索引还是排队中」——
+    # 那条信息指向的是**索引状态**,不是「Worker 崩了」。
+    # 我为此查了三轮,而答案在 `jobs.error_detail` 里躺着。
+    #
+    # **一个不检查被调用方是否成功的测试辅助函数,会把根因藏起来。**
+    if p.returncode != 0:
+        raise AssertionError(
+            f"Worker 进程退出码 {p.returncode} —— **不是「索引没建好」,是 Worker 崩了**\n"
+            f"       stdout: {p.stdout[-400:]}\n       stderr: {p.stderr[-400:]}")
+    with eng.connect() as _c:
+        # ⚠️ **不只查 status='失败'。**
+        #
+        # 「退回重试」把 job 设回**「排队中」**(加一个 `next_retry_at` 退避)——
+        # 所以一个跑失败了的 job 看起来像「还没跑」。
+        # **「排队中」有两种含义:从没跑过,和跑失败了正在等退避重试**,
+        # 而它们长得一模一样。区分它们的是 `attempts > 0`。
+        #
+        # (踩过:测试报「索引还不是已就绪」,而 Worker 其实跑了、失败了、
+        #  退回重试了 —— 那条信息指向索引状态,根因在 job_events 里。)
+        坏 = [x for x in _c.execute(text(
+            """select j.id, j.status, j.attempts, j.error_code, j.error_detail,
+                      (select payload from job_events e
+                        where e.job_id=j.id order by e.seq desc limit 1) 最后事件
+                 from jobs j
+                where j.type='index_build'
+                  and (j.status='失败' or (j.status='排队中' and j.attempts > 0))
+                order by j.updated_at desc limit 8""")).mappings().all()
+              if x["id"] not in 跑之前失败的]
+    # ⚠️ **调用方声明它预期哪个错误码**,而不是笼统忽略所有失败。
+    # 后者会让「我故意制造的那个失败」和「一个意外的崩溃」都通过。
+    意外 = [x for x in 坏 if x["error_code"] != 允许失败码]
+    if 意外:
+        raise AssertionError(
+            f"有 index_build 任务**意外**失败了(预期的是 {允许失败码!r})"
+            f" —— **这不是「索引没就绪」**:\n"
+            + "\n".join(
+                f"       {x['id']} [{x['status']}, 试了 {x['attempts']} 次] "
+                f"{x['error_code']} {str(x['error_detail'])[:160]}\n"
+                f"         最后一条事件:{str(x['最后事件'])[:200]}"
+                for x in 意外))
     return p.stdout + p.stderr
 
 
@@ -301,7 +348,9 @@ with eng.begin() as c:
             values (:i,:o,:p,'空知识库(测试用)','active', now(), 'test', 1)"""),
               {"i": 空kb, "o": org, "p": proj})
     ib6, j6 = 摆一个构建(c, org, proj, 空kb, 配置哈希="cfg-t6")
-出6 = 跑worker()
+# ⚠️ 这一组**故意**让构建失败,所以要声明预期的错误码 ——
+# 笼统忽略失败会让一个意外的崩溃也通过。
+出6 = 跑worker(允许失败码="NO_CHUNKS")
 ck("没有片段 → 报 `NO_CHUNKS`,**不是「已就绪」**"
    "(一个 0 个片段的就绪索引,检索永远返回空,而那和「库里就这么点」长得一样)",
    "NO_CHUNKS" in 出6, [l for l in 出6.split("\n") if "NO_CHUNKS" in l][:1] or 出6[-150:])
