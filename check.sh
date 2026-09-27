@@ -206,6 +206,7 @@ run "白坯试衣写口 · 开裁那道闸会拦、后台改状态也绕不过�
 run "交付签收口径 · 6 位码只认一单用一次、追认满 15 天要理由、不合身判责不默认顾客" python3 knowledge/pickup.py
 run "交付签收写口 · 码核验才签收、不合身订单不动、完成要顾客确认或追认(在库副本上跑)" python3 backend/pickup_write_check.py
 run "报修口径 · 店长判完、顾客同意才开工" python3 knowledge/repair.py
+run "评价口径 · 没签收不许评、≤3 星算差评自动进待处理清单(44 条自测)" python3 knowledge/rating.py
 run "报修写口 · 哪一件不猜、店长判责、同意要凭据、回店输码才完成(在库副本上跑)" python3 backend/repair_write_check.py
 run "多渠道对比 · 数算得对,而这张表不能用来比渠道" python3 backend/channel_check.py
 run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/eval_provenance_check.py
