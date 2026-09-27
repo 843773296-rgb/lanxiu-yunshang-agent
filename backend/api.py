@@ -378,6 +378,8 @@ WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task",
 
 
 MANAGER_ROLES = ("店长", "总部运营")
+import datetime as _dt
+import worldclock as _wc
 
 
 def my_tasks(status=None):
@@ -2057,6 +2059,71 @@ def task_types():
                       "谁能派": "店长" if i["route"] == "manager" else "有归属顾问就自动派,没有则 agent 建议+店长确认",
                       "完成要传现场照": i["needs_photo"], "说明": i["desc"]}
                      for i in tt.BY_NAME.values()])
+
+
+def bad_ratings(status="待处理"):
+    """**差评清单** —— 签收后顾客给了 ≤3 星、要人跟的那些。只有店长看得到。
+
+    业务 2026-09-27:差评**自动进待处理清单**(就是 `task` 表,`type='评价差评'`),
+    **归店长跟,不进顾问考核**。所以顾问这里看不到东西 ——
+    给顾问看只会让他以为该自己去处理,而这件事业务明确交给店长了。
+    """
+    import rating as _R          # 评价口径:差评线、是差评()、这个星级能说明什么()
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在问 —— 请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return dict(说明="差评由店长跟进,你是顾问,这里看不到东西 —— 业务 2026-09-27 定的",
+                    条数=0, 差评=[])
+    本店 = None if me["role"] == "总部运营" else me.get("shop")
+    sql = ("""SELECT t.id 工单, t.status 状态, r.pkg_id 包裹, r.order_id 订单, r.star 星,
+                     r.note 顾客说, r.rated_at 评于, r.star_before 原来几星,
+                     r.handled_at 处理于, r.handle_note 处理记录, o.shop 门店,
+                     k.name 客户
+                FROM task t JOIN rating r ON r.task_id=t.id
+                LEFT JOIN ordr o ON o.id=r.order_id
+                LEFT JOIN customer k ON k.id=r.customer_id
+               WHERE t.type='评价差评'""" + ("" if status in (None, "全部") else " AND t.status=?"))
+    a = () if status in (None, "全部") else (status,)
+    rs = _rows(sql + " ORDER BY r.rated_at DESC LIMIT 60", *a)
+    if 本店: rs = [x for x in rs if x.get("门店") == 本店]
+    for x in rs:
+        if x.get("原来几星") is not None:
+            x["⚠️ 顾客改过"] = f"原来 {x['原来几星']} 星,后来改成 {x['星']} 星 —— **清单不撤**"
+    return _nz(dict(条数=len(rs), 按什么算差评=f"≤{_R.差评线} 星(业务 2026-09-27 定,不是常见的 ≤2)",
+                    关掉要什么="**必须写处理记录** —— 「看过了」不算处理完",
+                    差评=rs))
+
+
+def rating_overview(days=30):
+    """**评价概况**:最近多少天、多少条、平均几星、差评几条。只有店长看得到。
+
+    ⚠️ **返回里必须带上「这个数不能说明什么」** —— 这不是客套话,是这个指标的性质:
+    业务定了「签收当场就请评价」,于是顾客是在**店里、导购面前、衣服还没穿过**时评的。
+    所以它衡量的是**交付体验**,而且**系统性偏高**。
+    把它读成「衣服质量」或者「95% 的人满意」都是错的,而这种错在数字上看不出来 ——
+    4.8 分长得和任何别的 4.8 分一模一样。口径在 `knowledge/rating.这个星级能说明什么()`。
+    """
+    import rating as _R
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在问 —— 请先登录")
+    if me.get("role") not in MANAGER_ROLES:
+        return dict(说明="评价概况只给店长看(业务 2026-09-27:不进顾问考核)", 条数=0)
+    本店 = None if me["role"] == "总部运营" else me.get("shop")
+    起 = (_wc.今天() - _dt.timedelta(days=int(days or 30))).isoformat()
+    rs = _rows("""SELECT r.star, r.rated_at, o.shop FROM rating r
+                  LEFT JOIN ordr o ON o.id=r.order_id WHERE substr(r.rated_at,1,10)>=?""", 起)
+    if 本店: rs = [x for x in rs if x.get("shop") == 本店]
+    if not rs:
+        return dict(说明=f"最近 {days} 天这里没有评价记录 —— "
+                        "**「没有评价」和「评价都很好」是两件事**,别当成后者", 条数=0,
+                    起=起)
+    星们 = [x["star"] for x in rs if x["star"] is not None]
+    差 = [x for x in 星们 if _R.是差评(x)]
+    能说, 不能说 = _R.这个星级能说明什么()
+    return dict(起=起, 条数=len(rs), 平均=round(sum(星们) / len(星们), 2),
+                各星几条={f"{n}星": sum(1 for x in 星们 if x == n) for n in range(5, 0, -1)},
+                差评几条=len(差), 差评占比=f"{len(差)/len(星们):.0%}",
+                这个数能说明什么=能说, 这个数不能说明什么=不能说)
 
 
 def dispatch_pool():
@@ -4302,6 +4369,12 @@ SHOP_SCHEMAS=[
         "activity_code":{"type":"string","description":"绑定活动,可不填"}},
         "required":["type","assignee","note","start","end"]}}},
    "required":["items"]}},
+ {"name":"bad_ratings","description":"**差评清单**:签收后顾客给了 ≤3 星、还要人跟的那些(工单、包裹、订单、几星、顾客原话、有没有处理过)。status 可给「待处理」「已关闭」「全部」,不给就是待处理。**只有店长看得到**(业务 2026-09-27:差评归店长跟,不进顾问考核)。⚠️ 关掉一条**必须写处理记录**,「看过了」不算处理完。⚠️ 顾客把差评改成好评的,**清单里那条不撤** —— 撤掉就看不出「差评被处理好了」和「从来没有差评」的区别,返回里会标「顾客改过」。",
+  "input_schema":{"type":"object","properties":{
+    "status":{"type":"string","description":"待处理 / 已关闭 / 全部,默认待处理"}},"required":[]}},
+ {"name":"rating_overview","description":"**评价概况**:最近多少天多少条、平均几星、各星几条、差评几条占多少。days 默认 30。**只有店长看得到**。⚠️ 返回里带着「这个数能说明什么 / 不能说明什么」,**照着说,别自己改口径**:业务定的是「签收当场就请评价」,顾客是在店里、导购面前、**衣服还没穿过**时评的 —— 所以它衡量的是**交付体验**,不是衣服好不好;而且当面难给差评,分数**系统性偏高**,不能和行业基线比、也不能说成「几成顾客满意」。⚠️ 没有评价记录时说「没有记录」,**别说成「评价都很好」**。",
+  "input_schema":{"type":"object","properties":{
+    "days":{"type":"integer","description":"往前看多少天,默认 30"}},"required":[]}},
  {"name":"dispatch_batch","description":"**一次把待分配池里的几条单分出去**(真的写进去)。items 是 [{task_id, assignee?}],不给 assignee 就采纳 dispatch_pool 给的建议,一次最多 20 条。**全过才写,一条不过整批不写。** 用户说「把待分配的都派了」「这几条都分下去」时用这个 —— assign_batch 是**新建**任务的,派不了已经存在的单。",
   "input_schema":{"type":"object","properties":{
     "items":{"type":"array","description":"要分派的单",
@@ -5241,7 +5314,8 @@ def ownerless_list(code=None, limit=50):
     return out
 
 
-TOOLS.update({"get_tasks":get_tasks,"get_member":get_member,
+TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
+              "get_tasks":get_tasks,"get_member":get_member,
               # ⚠️ 老名字**留在 TOOLS 里**(边界审计和隔离检查按 TOOLS 逐个跑),
               #    但已经从 SHOP_SCHEMAS 下架 —— **TOOLS 是实现登记册,
               #    SCHEMAS 才是 agent 看得见的工具面**,要降的是后者。
