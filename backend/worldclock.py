@@ -98,6 +98,13 @@ def 差几天(d):
     ("ordr", "updated", "订单最后更新", "id"),
     # order_event 没有单列主键 —— 用 rowid(SQLite 每张表都有)
     ("order_event", "at", "订单事件发生时间", "rowid"),
+    # 2026-09-27 建评价表时**当场登记**,不等它漏一次:
+    # `shift_world` 是扫列的,这三列自动就会被平移 —— 所以它们必须用世界时钟写;
+    # 而这份清单是**手写的**,不登记就是 C4 和平移前置闸**同时的盲区**
+    # (上面 `pkg.created` 那一段记的就是漏掉之后会怎样)。
+    ("rating", "rated_at", "顾客评价时间", "pkg_id"),
+    ("rating", "edited_at", "顾客改评价时间", "pkg_id"),
+    ("rating", "handled_at", "店长处理差评时间", "pkg_id"),
 ]
 
 

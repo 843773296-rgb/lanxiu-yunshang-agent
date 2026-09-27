@@ -2883,5 +2883,89 @@
    }
   ],
   "预期红": "顾问不能替顾客评"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "让 customer_rate() 不问签收就收下评价(闸那道 if 短路掉)",
+  "file": [
+   {
+    "path": "backend/rating_write.py",
+    "old": "    能, 话 = R.能不能评(件, _now(), 评过了吗=bool(_评过的(pid)), 来源=来源_顾客)\n    if not 能:",
+    "new": "    能, 话 = R.能不能评(件, _now(), 评过了吗=bool(_评过的(pid)), 来源=来源_顾客)\n    if False:"
+   }
+  ],
+  "预期红": "没签收 → 不许评"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "把 差评线 从 3 改成 2(3 星就不建工单了 —— 业务定的是 ≤3)",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "差评线 = 3",
+    "new": "差评线 = 2"
+   }
+  ],
+  "预期红": "3 星是差评 → 自动进 task 清单"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "让 close_bad_rating() 不要求处理记录",
+  "file": [
+   {
+    "path": "backend/rating_write.py",
+    "old": "    能, 话 = R.待办能不能关(d.get(\"note\"))\n    if not 能:",
+    "new": "    能, 话 = R.待办能不能关(d.get(\"note\"))\n    if False:"
+   }
+  ],
+  "预期红": "关差评不写处理记录 → 拒"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "让 close_bad_rating() 放开角色(顾问也能关)",
+  "file": [
+   {
+    "path": "backend/rating_write.py",
+    "old": "    if me.get(\"role\") not in 店长角色:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "顾问关差评 → 拒"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "让 customer_edit_rating() 在差评改好评时把工单关掉(撤出清单)",
+  "file": [
+   {
+    "path": "backend/rating_write.py",
+    "old": "            c.execute(\"UPDATE task SET summary=? WHERE id=?\",\n                      (f\"顾客后来改成 {n} 星(原 {旧['star']} 星差评,清单不撤)\", tid))",
+    "new": "            c.execute(\"UPDATE task SET status='已关闭', summary=? WHERE id=?\",\n                      (f\"顾客后来改成 {n} 星(原 {旧['star']} 星差评,清单不撤)\", tid))"
+   }
+  ],
+  "预期红": "差评改好评 → 工单不撤,还在待处理"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "在 seed_rating 的建表里加一句 ALTER,给 rating 加个 status 列(状态存两处)",
+  "file": [
+   {
+    "path": "backend/seed_rating.py",
+    "old": "CREATE INDEX IF NOT EXISTS ix_rating_task  ON rating(task_id);",
+    "new": "CREATE INDEX IF NOT EXISTS ix_rating_task  ON rating(task_id);\nALTER TABLE rating ADD COLUMN status TEXT;"
+   }
+  ],
+  "预期红": "rating 表没有 status 列"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "把 worldclock.已发生的时间列 里 rating 那三行去掉(C4 和平移闸同时瞎掉)",
+  "file": [
+   {
+    "path": "backend/worldclock.py",
+    "old": "    (\"rating\", \"rated_at\", \"顾客评价时间\", \"pkg_id\"),",
+    "new": "    # (\"rating\", \"rated_at\", \"顾客评价时间\", \"pkg_id\"),"
+   }
+  ],
+  "预期红": "三列都登记进了 worldclock.已发生的时间列"
  }
 ]
