@@ -131,11 +131,77 @@ jobs:
               if '.venv' in root or '__pycache__' in root: continue
               if any(f.endswith('.py') for f in fs): ps.append(os.path.abspath(root))
           print(':'.join(sorted(set(ps))))")"
-          红=0
+          # ⚠️ **变量名必须是 ASCII。** 这一版原来写的是 `红=0` / `|| 红=1` / `exit $红`
+          # —— 逻辑是对的,但 **bash 不接受中文变量名**:
+          #   `红=0` 被当成命令 → `command not found`(只吐到 stderr)
+          #   `$红` 展开成乱码 → `exit: numeric argument required` → 退出码 **255**
+          #
+          # 这个错的形状值得记:**它在全绿的时候完全看不出来** ——
+          # 每条测试都退 0,那两行 `command not found` 淹在日志里,job 是绿的。
+          # 而真有一条红的时候它**碰巧也会红**(255),只是**红的理由完全指错方向**:
+          # 报的是「参数不是数字」,不是「哪条测试红了」。
+          # 而这条注释本来防的正是「最后一条绿盖掉前面的红」。
+          #
+          # 本地咬合没第一时间抓到它,因为**本地是 zsh、CI 是 bash** ——
+          # zsh 允许中文变量名。**「本地能跑」和「CI 能跑」的差别可以只是一个 shell。**
+          rc=0
           for t in test_dsl_semantics test_graph_validation test_execution test_agent_tools; do
             echo "▸ $t"
-            PYTHONPATH="$PP" python3 "tests/orchestration/$t.py" || 红=1
+            PYTHONPATH="$PP" python3 "tests/orchestration/$t.py" || rc=1
           done
-          # **一条都不许被吞** —— for 循环里 `||` 之后必须自己把红带出来,
+          # **一条都不许被吞** —— for 循环里 `||` 之后必须自己把失败带出来,
           # 不然最后一条绿就把前面的红盖掉了(退出码只剩最后那条的)。
-          exit $红
+          exit $rc
+
+      # ── 契约覆盖那 93 条:**只多一个 sqlalchemy,不要数据库** ──────────
+      #
+      # 上一版没接,理由是「`tools/spec_coverage.py` import models,而它要 sqlalchemy」。
+      # 量过了:**只装 sqlalchemy 就够** —— `models.py` 只用它**构建 metadata**
+      # (`sqlalchemy.dialects.postgresql.JSONB` 是 core 的一部分),
+      # **不连库、不要 psycopg**。
+      #
+      # ⚠️ 这个数是量出来的,不是估的:`pip install sqlalchemy` 之后
+      # `spec_coverage.py` 跑 **0.24 秒**。
+      # (上一轮我估「加进去大概只多几十秒」,实测差了约 50 倍 ——
+      #  这个仓库的习惯是先量再说,我那次是猜的。)
+      #
+      # 顺带量到一件:探的时候装到的是 sqlalchemy **2.1.1**,而
+      # `管理后台/requirements.lock` 钉的是 2.0.54 —— **这 93 条不挑版本**。
+      # 所以这里**不钉版本**:钉了就得跟着 lock 一起维护,而它们不需要同步。
+      - name: 契约覆盖 93 条(装 sqlalchemy,仍然不要数据库)
+        working-directory: 管理后台
+        run: |
+          pip install --quiet sqlalchemy
+          PP="$(python3 -c "
+          import os
+          ps=[]
+          for root, ds, fs in os.walk('.'):
+              if '.venv' in root or '__pycache__' in root: continue
+              if any(f.endswith('.py') for f in fs): ps.append(os.path.abspath(root))
+          print(':'.join(sorted(set(ps))))")"
+          PYTHONPATH="$PP" python3 tools/spec_coverage.py
+
+      # ── 还没接的,写下来 ────────────────────────────────────────────
+      #
+      # ⚠️ **绿了之后没人会去数。** 一个跑了 93 条的绿勾和一个跑了 186 条的绿勾,
+      # 在页面上长得一模一样 —— 所以「没接哪些」必须写在这儿。
+      #
+      # 现在这个 job 跑:编排四组 93 条 + 契约覆盖 93 条 = **186 条**。
+      # **还没接的**(都要 PostgreSQL + alembic 迁移 + seed,所以留在本地):
+      #   · 跨项目攻击 7 条      tests/integration/test_project_isolation.py
+      #   · 任务租约攻击 16 条   tests/integration/test_worker_lease.py
+      #   · 端到端 44 条         tests/e2e/test_api_flow.py          (要先起服务)
+      #   · 编排端到端 44 条     tests/e2e/test_orchestration_flow.py(要先起服务)
+      #   · 六页页面冒烟 + 画布/Agent 页结构对账(要 node + 起服务)
+      # 也就是说:**这个 job 绿 ≠ 那 111 条也绿**。它证明的是
+      # 「契约、DSL 语义、图校验、执行语义、工具边界」这五层从零跑得起来。
+      - name: 说清这个 job **没**跑什么
+        working-directory: 管理后台
+        run: |
+          echo "✅ 这个 job 跑了 186 条(编排四组 93 + 契约覆盖 93),零数据库。"
+          echo "⚠️ **没跑**:跨项目攻击 7 / 租约攻击 16 / 端到端 44 / 编排端到端 44"
+          echo "   / 六页冒烟 —— 它们要 PostgreSQL + 迁移 + seed(+ 起服务),留在本地。"
+          echo "   **这个 job 绿不等于那 111 条也绿。**"
+          echo ""
+          echo "逐项进度看 管理后台/docs/实现进度.md(make progress 生成):"
+          echo "   87 条接口 · 实现 24 · 验过 23 —— 主规格做了不到三成。"
