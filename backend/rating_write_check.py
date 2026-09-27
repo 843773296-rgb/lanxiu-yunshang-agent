@@ -124,7 +124,7 @@ def run(T):
     行 = c.execute("SELECT * FROM rating WHERE pkg_id=?", (包,)).fetchone()
     ck("评价落在包裹上,带着单号和客户", 行 and 行["order_id"] == oid and 行["customer_id"] == o["customer_id"])
     ck("来源记的是顾客小程序(顾问不能替顾客评)", 行["src"] == rt.来源_顾客)
-    ck("经手顾问记下来了(店长要能查是谁经手的,但不进考核)", 行["advisor"] == 顾问["no"])
+    ck("经手顾问记下来了(店长要能查是谁经手的,但不进考核)", 行["advisor_no"] == 顾问["no"])
     ck("评价时间用的是**世界时钟**,不是机器时钟",
        str(行["rated_at"])[:10] == worldclock.今天().isoformat(),
        f"写出来是 {行['rated_at']},世界的今天是 {worldclock.今天()}")

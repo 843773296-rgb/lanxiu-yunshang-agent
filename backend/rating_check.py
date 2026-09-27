@@ -156,7 +156,7 @@ def 合成夹具自证():
         c.execute("INSERT INTO pickup_item VALUES(?,?,'合身',?)", (abs(hash(pkg)) % 10**8, pkg, at))
     def 评(pkg, **kw):
         d = dict(pkg_id=pkg, order_id="O1", customer_id=1, star=5, note="x",
-                 rated_at="2026-09-20 16:00", src=好, advisor="S1", edit_cnt=0,
+                 rated_at="2026-09-20 16:00", src=好, advisor_no="S1", edit_cnt=0,
                  edited_at=None, star_before=None, task_id=None,
                  handled_at=None, handled_by=None, handle_note=None)
         d.update(kw)

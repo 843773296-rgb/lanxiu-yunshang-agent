@@ -37,9 +37,16 @@ CREATE TABLE IF NOT EXISTS rating(
   star INTEGER,                             -- 1-5,整数。**不收半星、不夹范围**(超了是提交端的 bug)
   note TEXT, rated_at TEXT,
   src TEXT,                                 -- 来源,只认「顾客小程序」—— 顾问不能替顾客评
-  -- 经手顾问工号:**记下来但不进考核**(业务 2026-09-27)。记的原因是店长要能查是谁经手的;
+  -- 经手顾问**工号**:记下来但不进考核(业务 2026-09-27)。记的原因是店长要能查是谁经手的;
   -- 一旦要进考核,必须同时做防刷 —— 见 knowledge/rating.进考核前要做什么()
-  advisor TEXT,
+  --
+  -- ⚠️ 列名是 `advisor_no` 不是 `advisor`。第一版叫 `advisor`,CI 当场红 ——
+  -- 这个库里 `advisor` 是**名字列**的名字,而名字列 2026-09-16 已全库删除
+  -- (`backend/advisor_write_check.py` 反着守它:谁在 INSERT 里写回 advisor 谁红)。
+  -- 我往一个按约定表示「名字」的列名里塞了**工号**,检查抓得对:
+  -- **列名说的是一件事,里面装的是另一件事** —— 而这在页面上看不出来,
+  -- 直到有人按名字去 JOIN 员工表,一行都对不上。
+  advisor_no TEXT,
   edit_cnt INTEGER DEFAULT 0, edited_at TEXT, star_before INTEGER,
   -- 差评挂的工单号(task 表里那一行)。**status 不在这儿** —— 只看 task.status
   task_id TEXT,

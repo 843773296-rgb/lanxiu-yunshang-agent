@@ -172,7 +172,7 @@ def 差评待办(星, 评语, order_id, pkg_id, 评于, 顾问=None):
         return None
     return dict(kind="评价差评", order_id=order_id, pkg_id=pkg_id, star=int(星),
                 note=(str(评语 or "").strip() or "(顾客没写评语)"), rated_at=评于,
-                advisor=顾问, owner="店长", status="待处理",
+                advisor_no=顾问, owner="店长", status="待处理",
                 why=f"{星} 星(≤{差评线} 算差评)—— 业务 2026-09-27 定:自动进待处理清单,店长跟")
 
 
@@ -311,7 +311,7 @@ if __name__ == "__main__":
     行 = 差评待办(2, " 等了两周 ", "O1", "PK1", "2026-09-27 15:10", 顾问="S007")
     ck("差评自动落一行待办", lambda: 行 and 行["status"] == "待处理")
     ck("待办归店长,不归顾问", lambda: 行["owner"] == "店长")
-    ck("顾问记下来(店长要能查是谁经手的)", lambda: 行["advisor"] == "S007")
+    ck("顾问记下来(店长要能查是谁经手的)", lambda: 行["advisor_no"] == "S007")
     ck("评语两头的空格去掉", lambda: 行["note"] == "等了两周")
     ck("没写评语也要落,不留空", lambda: 差评待办(1, "", "O1", "PK1", "t")["note"] == "(顾客没写评语)")
     ck("4 星不落待办", lambda: 差评待办(4, "还行", "O1", "PK1", "t") is None)

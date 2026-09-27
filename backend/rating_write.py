@@ -156,7 +156,7 @@ def customer_rate(order_id, phone_tail, star, note=None, pkg=None):
     待办 = R.差评待办(n, note, o["id"], pid, now, 顾问=顾问)
     with sqlite3.connect(DB) as c:
         tid = _建工单(c, pid, 待办) if 待办 else None
-        c.execute("""INSERT INTO rating(pkg_id,order_id,customer_id,star,note,rated_at,src,advisor,
+        c.execute("""INSERT INTO rating(pkg_id,order_id,customer_id,star,note,rated_at,src,advisor_no,
                                         edit_cnt,task_id) VALUES(?,?,?,?,?,?,?,?,0,?)""",
                   (pid, o["id"], o["customer_id"], n, (str(note or "").strip() or None),
                    now, 来源_顾客, 顾问, tid))
