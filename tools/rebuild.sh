@@ -22,6 +22,18 @@
 #   grow_customers.py 客户补到 1000 个(账户 / 着装人 / 同意 / 量体都齐)—— **先有人,再放量**
 #   simulate_sales.py 6 个月标品销量(库存预警要它才算得出可售天数)
 #   order_mix.py     把其中一批改成定制单 + 重建售后/换货/维保 + 客户汇总按订单重算
+#   backfill_rating.py    铺签收后的顾客评价
+#                         ⚠️⚠️ **必须排在 shift_world 之后。** 2026-09-27 CI 连红两次:
+#                         `seed.py` 重建之后世界回到**建库基准日 2026-08-31**,
+#                         而 shift_world 才把它挪到真实的今天(+27 天)。
+#                         排在平移之前的话,造数看到的「今天」是 08-31 ——
+#                         它按「8 月」给月度目标,随后平移把那批评价**挪成了 9 月**,
+#                         **而目标是按 8 月给的**。业务拍的「三个月上升」当场被抹掉大半
+#                         (设计升 0.30,实现只有 0.10~0.18)。
+#                         这是「签收月 vs 评价月」那个错的**第三个位置**:
+#                         前两次在一个文件里,这一次藏在**步骤顺序**里。
+#                         机械防线见 `backend/rating_check.py` 的
+#                         「造数之后世界没有再被平移过」那一条。
 #   clamp_future_done.py  把「有已发生的事落在今天之后」的单**整条时间线**挪回来
 #                         ⚠️ 2026-09-27 扩了判据:原来只认「完工日在未来」,
 #                         而「**签收**在未来」是另一种未来(19 个包裹),它一张也选不到
@@ -110,8 +122,8 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
             "tools/order_mix.py" "tools/backfill_order_measure.py" "backend/seed_fitting.py" "backend/seed_pickup.py" "backend/seed_repair.py" "tools/backfill_color.py" \
             "tools/backfill_transcript.py" "tools/backfill_roster.py" "tools/backfill_credit.py" "tools/ensure_tables.py" "tools/backfill_fixtures.py" "tools/backfill_biz_fields.py" "tools/backfill_link.py" "tools/backfill_wattr.py" \
             "tools/seed_factory_feed.py" "backend/seed_pickup.py --铺到包裹" "tools/seed_pending_orders.py" \
-            "tools/clamp_future_done.py" "tools/level_customer_orders.py" "tools/backfill_rating.py" \
-            "tools/shift_world.py" "tools/make_todo.py"; do
+            "tools/clamp_future_done.py" "tools/level_customer_orders.py" \
+            "tools/shift_world.py" "tools/backfill_rating.py" "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
   python3 $STEP > /tmp/rebuild-step.out 2>&1 || {
     echo "  ❌ 这一步失败了,后面的不跑 —— **跳过一步不会报错,只会让某几张表空着**"

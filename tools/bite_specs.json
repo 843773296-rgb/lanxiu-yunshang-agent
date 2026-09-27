@@ -3234,5 +3234,41 @@
    }
   ],
   "预期红": "夹具里**真的有**签收月和评价月不同的行"
+ },
+ {
+  "script": "backend/rating_check.py",
+  "改坏": "让 评语和星级对不上() 只查一个方向(差评挂好评语查、好评挂差评语不查)",
+  "file": [
+   {
+    "path": "backend/rating_check.py",
+    "old": "        elif not R.是差评(r[\"star\"]) and r[\"note\"] in 差句:",
+    "new": "        elif False:"
+   }
+  ],
+  "预期红": "评语和星级对不上"
+ },
+ {
+  "script": "tools/backfill_rating.py --selftest",
+  "改坏": "让「顾客改评价」那一步不换评语(改成差评了评语还是好评那句)",
+  "file": [
+   {
+    "path": "tools/backfill_rating.py",
+    "old": "            if R.是差评(星) != R.是差评(原星):",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "评语和星级"
+ },
+ {
+  "script": "tools/backfill_rating.py --selftest",
+  "改坏": "让造数不记「它用的是哪天的世界日期」(顺序那道守卫就没有依据了)",
+  "file": [
+   {
+    "path": "tools/backfill_rating.py",
+    "old": "    c.execute(\"INSERT OR REPLACE INTO world_meta VALUES('rating_built_on',?)\", (今s,))",
+    "new": "    pass"
+   }
+  ],
+  "预期红": "记下了造数时的世界日期"
  }
 ]

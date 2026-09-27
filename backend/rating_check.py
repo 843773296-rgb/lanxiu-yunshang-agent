@@ -24,6 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), os.path.join(ROOT, "tools")]
 import rating as R
+import worldclock
 import backfill_rating as SR   # **形状的那几个数只写一处** —— 在造数脚本里
 # ⚠️ 名字是 `backfill_rating` 不是 `seed_rating`:后者和 `backend/seed_rating.py`(建表)
 # 撞名,而 `sys.path` 里 backend 在前 —— `import seed_rating` 会**安静地**取到建表那个,
@@ -110,6 +111,27 @@ def 来源不对(c):
         "SELECT pkg_id, src FROM rating WHERE src IS NULL OR src<>?", (R.来源_顾客 if hasattr(R, "来源_顾客") else "顾客小程序",))]
 
 
+def 评语和星级对不上(c):
+    """好评评语挂在差评上(或反过来)。
+
+    ⚠️ 2026-09-27 真出过:待处理清单上有一条 `3 星 · 「到店取很方便」`。
+    根因是造数**先挑评语、后改星级**(「顾客改评价」那一步),
+    于是一条 5 星带着好评评语被改成 3 星,评语没跟着换。
+    **而这条数据在页面上看起来完全正常**:一个星级、一句话,各自都合法 ——
+    只有把两样放在一起看才看得出矛盾。
+    """
+    好句 = set(SR.好评评语)
+    差句 = {x for v in SR.差评评语.values() for x in v}
+    坏 = []
+    for r in c.execute("SELECT pkg_id, star, note FROM rating "
+                       "WHERE note IS NOT NULL AND note<>''"):
+        if R.是差评(r["star"]) and r["note"] in 好句:
+            坏.append(dict(pkg_id=r["pkg_id"], star=r["star"], note=r["note"], 错="差评挂好评语"))
+        elif not R.是差评(r["star"]) and r["note"] in 差句:
+            坏.append(dict(pkg_id=r["pkg_id"], star=r["star"], note=r["note"], 错="好评挂差评语"))
+    return 坏
+
+
 def 改过却没留痕(c):
     return [dict(r) for r in c.execute(
         "SELECT pkg_id, edit_cnt, star_before, edited_at FROM rating "
@@ -122,13 +144,14 @@ def 改过却没留痕(c):
 该抓谁 = {"没签收就评了": "PB", "星级不合法": "PC", "差评没进清单": "PD",
          "好评却挂了工单": "PE", "工单没有对应的评价": "PF",
          "关了却没写处理记录": "PG", "两处状态打架": "PH",
-         "来源不对": "PI", "改过却没留痕": "PJ"}
+         "来源不对": "PI", "改过却没留痕": "PJ", "评语和星级对不上": "PL"}
 
 判据 = [("没签收就评了", 没签收就评了), ("星级不合法", 星级不合法),
        ("差评没进清单", 差评没进清单), ("好评却挂了工单", 好评却挂了工单),
        ("工单没有对应的评价", 工单没有对应的评价),
        ("关了却没写处理记录", 关了却没写处理记录),
        ("两处状态打架", 两处状态打架), ("来源不对", 来源不对),
+       ("评语和星级对不上", 评语和星级对不上),
        ("改过却没留痕", 改过却没留痕)]
 
 
@@ -266,6 +289,11 @@ def 合成夹具自证():
                                     handled_at="2026-09-21 10:00")  # 两处状态打架
     签("PI"); 评("PI", src="导购端")                                # 来源不对
     签("PJ"); 评("PJ", edit_cnt=1)                                 # 改过却没留痕
+    签("PK"); 评("PK", star=2, note=SR.好评评语[0])                 # 差评挂了好评评语
+    # ⚠️ **两个方向各一行。** 第一版只有 PK(差评挂好评语),于是
+    # 「只查一个方向」那个攻击**改坏了却没红** —— 夹具里没有反向那一行,攻击没有对象。
+    签("PL"); 评("PL", star=5,
+               note=sorted(SR.差评评语)[0] and SR.差评评语[sorted(SR.差评评语)[0]][0])  # 好评挂差评语
     c.commit()
 
     print("\n  合成夹具自证:每条判据**真的会红,而且红的是指定那一行**")
@@ -302,6 +330,21 @@ def main():
     ck("库里有评价表(ensure_tables 跑过)", bool(有表), 1)
     if not 有表:
         print("\n\033[31m❌ 表都没有,后面的一条都没验\033[0m"); sys.exit(1)
+    # ── 造数之后世界没有再被平移过 ────────────────────────────────────
+    # ⚠️ 这一条防的是**步骤顺序**,而顺序是最容易被挪回去的东西。
+    # 2026-09-27 CI 连红两次:`backfill_rating.py` 在 rebuild 里排在 `shift_world` 之前,
+    # 于是它按「平移前的月」给目标(世界当时停在建库基准日 2026-08-31),
+    # 而平移 +27 天把那批评价挪成了 9 月 —— **月份标签变了,目标没变**。
+    # 业务拍的「三个月上升」被抹掉大半(设计 0.30,实现只剩 0.10~0.18)。
+    # 「签收月 vs 评价月」那个错的第三个位置:前两次在一个文件里,这次藏在顺序里。
+    建于 = (c.execute("SELECT v FROM world_meta WHERE k='rating_built_on'").fetchone()
+           or [None])[0]
+    现在 = str(worldclock.今天())
+    ck("造数之后世界没有再被平移过(月份标签还是造数时那些)", 建于 == 现在, 1,
+       f"造数时世界停在 {建于},现在是 {现在} —— "
+       f"**`tools/backfill_rating.py` 必须排在 `tools/shift_world.py` 之后**"
+       if 建于 != 现在 else f"两边都是 {现在}")
+
     n = 查一遍(c)
     if n == 0:
         print("\n  \033[33mℹ 评价表现在是空的(业务 2026-09-27:造数先别铺)—— "
@@ -326,6 +369,18 @@ def main():
     # 而且改 `门店均分` 会**同时改掉这份检查的期望值**(它就是从那儿读的)。
     # 规格见 bite_specs.json 里 script 为 `tools/backfill_rating.py --selftest` 的那几条。
     ("(形状那几条的咬合挂在 backfill_rating 的自测上)", "门店之间真的拉开了差距"),
+    ("让 评语和星级对不上() 只查一个方向", "评语和星级对不上"),
+    # ⚠️ 「造数之后世界没有再被平移过」这一条**没有可重放的文件级咬合** ——
+    # 咬合**不重新造数**,改造数脚本改不了库里那个 `rating_built_on`;
+    # 而它守的是 **rebuild 的步骤顺序**,那要真跑一次重建才动得了。
+    # 它是怎么被验的,写在这儿(**比一条假咬合有用**):
+    #   · **真实事故验过**:CI 连红两次(合并升 +0.10 / +0.175,而设计是 0.30),
+    #     根因正是 backfill_rating 排在 shift_world 之前;
+    #   · **改顺序之后从零重建**,同一条判据 +0.27,回到设计值附近;
+    #   · 它依赖的那个机制(造数记下自己用的世界日期)**有咬合**,
+    #     在 `tools/backfill_rating.py --selftest` 上(「记下了造数时的世界日期」)。
+    ("(顺序那条:文件级咬合打不到,见上面注释里它是怎么验的)",
+     "造数之后世界没有再被平移过"),
     ("让 没签收就评了() 只查签收于 IS NULL(不比先后)", "没签收就评了"),
     ("让 差评没进清单() 把 star<= 改成 star<(3 星就漏了)", "差评没进清单"),
     ("让 两处状态打架() 只看 task.status,不看 rating.handled_at(它会抓到别的行)", "两处状态打架"),
