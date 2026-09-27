@@ -103,8 +103,12 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  **这一份是为了把「我手敲 curl 验过」变成可重跑的断言** —— 它第一次跑就抓到一个 500"
 	@./.venv/bin/python tests/e2e/test_orchestration_flow.py
 	@echo ""
+	@echo "▸ 知识与 RAG 端到端:三条接口 + **整条链路**(§9.5)"
+	@echo "  ⚠️ 其中一条会**真调一次 Claude 精排**(月租额度);另一条走 要精排=false 不花钱"
+	@./.venv/bin/python tests/e2e/test_knowledge_flow.py
+	@echo ""
 	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径**(不是只看语法)"
-	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows'; do \
+	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/kb' '#/retrieval'; do \
 		printf "  %-14s " "$$h"; node tests/e2e/page_smoke.js "$$h" 2>&1 | tail -1; done
 	@echo ""
 	@echo "▸ 画布页:**结构对账**(节点数/连线数/「加入」按钮数 vs 接口返回的定义)"
@@ -149,9 +153,11 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	@echo "▸ 跑端到端(它打过哪些路由,账本上说)"
 	@./.venv/bin/python tests/e2e/test_api_flow.py 2>&1 | tail -2
 	@./.venv/bin/python tests/e2e/test_orchestration_flow.py 2>&1 | tail -2
+	@./.venv/bin/python tests/e2e/test_knowledge_flow.py 2>&1 | tail -2
 	@echo ""
 	@echo "▸ 页面冒烟(它取哪些接口,也记在同一本账上)"
-	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' '$(HASH)/agents' '$(HASH)/tools'; do \
+	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' \
+	          '$(HASH)/agents' '$(HASH)/tools' '$(HASH)/kb' '$(HASH)/retrieval'; do \
 		node tests/e2e/page_smoke.js "$$h" >/dev/null 2>&1 || true; done
 	@echo "▸ 生成报告"
 	@AIMC_TRACE_ROUTES=/tmp/aimc-routes.log ./.venv/bin/python tools/progress_report.py

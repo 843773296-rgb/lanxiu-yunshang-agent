@@ -75,8 +75,8 @@ const 导航 = [
   ["#/tools", "工具与能力", true, true],
   ["#/human", "人工待办", false, true],
   ["grp", "知识与 RAG"],
-  ["#/kb", "知识库", false, true],
-  ["#/retrieval", "检索实验室", false, true],
+  ["#/kb", "知识库", true, true],
+  ["#/retrieval", "检索实验室", true, true],
   ["#/datasets", "数据集", false],
   ["grp", "微调训练"],
   ["#/training", "训练任务", false, true],
@@ -1452,6 +1452,215 @@ async function 页_工具目录() {
 }
 
 /* ── 路由 ─────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════
+ * 知识与 RAG(规格 §9)
+ *
+ * ## 这两页要回答的问题不一样
+ *
+ *   知识库    「资料进来了没有、索引建好了没有、**现在能不能检索**」
+ *   检索实验室 「问一句话,**整条链路**是怎么走到那几段的」(§9.5)
+ *
+ * ⚠️ **「有片段」不等于「能检索」。** 一个有 71 个片段、0 个就绪索引的知识库,
+ * 检索时返回的是空 —— 而那和「知识库里就这么点东西」在界面上长得一样。
+ * 所以列表里「能不能检索」是一列显式的东西,不让人从 0 里猜。
+ * ══════════════════════════════════════════════════════════════════ */
+
+function _mock标(是mock) {
+  // ⚠️ mock 向量算出的相似度是个**看起来很正常的数字**(0.83),人会拿它当效果读。
+  // 所以这个标记要一路传到界面上,不只写在文档里。
+  if (是mock === null || 是mock === undefined) return "";
+  return 是mock
+    ? `<span class="tag crit" title="mock 向量从文本哈希派生,**语义无感知** —— 相似度不代表语义">⚠️ mock 向量</span>`
+    : `<span class="tag ok" title="真模型(本机 onnxruntime,离线)">真向量</span>`;
+}
+
+async function 页_知识库() {
+  const 头 = `<div class="crumb">知识与 RAG</div>
+    <div class="head"><div><h1>知识库</h1>
+      <div class="sub">资料、片段、索引。**有片段不等于能检索** —— 要有一个「已就绪」的索引。</div>
+    </div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/knowledge-bases`); }
+  catch (e) { const s = 错误块(e, 页_知识库); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  if (!d.items.length) {
+    $("#main").innerHTML = 头 + 状态("", "这个项目还没有知识库",
+      "导入资料的接口(`POST /uploads`)**还没做** —— 现在的语料是用 "
+      + "`tools/ingest_lanxiu.py` 直接灌进库的(澜绣的业务拍板记录)。\n\n"
+      + "**保留这一页是有意的**:规格里有它。").html;
+    return;
+  }
+  $("#main").innerHTML = 头 + `<table><thead><tr>
+      <th>知识库</th><th class="num">文档</th><th class="num">片段</th>
+      <th>能检索吗</th><th>索引</th><th></th></tr></thead><tbody>`
+    + d.items.map((r) => `<tr>
+        <td><b>${esc(r.name)}</b><div class="k">${esc(r.id)}</div></td>
+        <td class="num">${r["文档数"]}</td>
+        <td class="num">${r["片段数"]}</td>
+        <td>${r["能检索吗"]
+              ? `<span class="tag ok">能</span>`
+              : `<span class="tag crit">不能</span>
+                 <div class="k">${esc(r["为什么不能检索"] || "")}</div>`}</td>
+        <td>${r["就绪索引数"]} 个已就绪 ${_mock标(r["索引是mock吗"])}
+            ${r["索引模型"] ? `<div class="k">${esc(r["索引模型"])}</div>` : ""}</td>
+        <td><button data-kb="${esc(r.id)}">看索引</button>
+            ${r["能检索吗"] ? `<button data-try="${esc(r.id)}">去检索</button>` : ""}</td>
+      </tr>`).join("")
+    + `</tbody></table>
+       <div class="note">⚠️ **「片段数」是资料切出来的条数,不是索引里的条数。**
+         两个对不上就说明索引不完整 —— 而一个不完整的索引检索时只是「少返回几条」,
+         **不报错**。点「看索引」能看到每次构建的成员数。</div>`;
+  $("#main").querySelectorAll("[data-kb]").forEach((b) => {
+    b.onclick = () => { location.hash = "#/kb/" + encodeURIComponent(b.dataset.kb); };
+  });
+  $("#main").querySelectorAll("[data-try]").forEach((b) => {
+    b.onclick = () => { location.hash = "#/retrieval"; };
+  });
+}
+
+async function 页_索引构建(kbId) {
+  const 头 = `<div class="crumb"><a href="#/kb">知识库</a> · 索引构建</div>
+    <div class="head"><div><h1>索引构建</h1>
+      <div class="sub">每次构建的状态、模型、成员数、输入指纹。</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/knowledge-bases/${encodeURIComponent(kbId)}/index-builds`); }
+  catch (e) { const s = 错误块(e, () => 页_索引构建(kbId)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 头2 = `<div class="crumb"><a href="#/kb">知识库</a> · ${esc(d["知识库"].name)}</div>
+    <div class="head"><div><h1>索引构建</h1>
+      <div class="sub">每次构建的状态、模型、成员数、输入指纹。</div></div></div>`;
+  if (!d.items.length) {
+    $("#main").innerHTML = 头2 + 状态("", "还没建过索引",
+      "建索引的接口(`POST /knowledge-bases/{id}/index-builds`)**还没做** —— "
+      + "现在是直接派 `index_build` 任务建的。\n\n"
+      + "⚠️ 没有索引时检索返回空,**而那和「知识库里没有」长得一样**。").html;
+    return;
+  }
+  $("#main").innerHTML = 头2 + `<table><thead><tr>
+      <th>构建</th><th>状态</th><th>模型</th><th class="num">成员</th>
+      <th>输入指纹</th></tr></thead><tbody>`
+    + d.items.map((r) => `<tr>
+        <td class="num">${esc(r.id)}<div class="k">${esc(r.created_at || "")}</div></td>
+        <td><span class="tag ${r.status === "已就绪" ? "ok" : (r.status === "失败" ? "crit" : "warn")}">${esc(r.status)}</span></td>
+        <td>${esc(r.embedding_model_id || "—")} ${r.embedding_dim ? `<span class="k">${r.embedding_dim} 维</span>` : ""}
+            ${_mock标(r["是mock吗"])}</td>
+        <td class="num">${r["成员数"]}</td>
+        <td class="k">${esc(r["输入指纹短"] || "**没记**")}</td>
+      </tr>`).join("")
+    + `</tbody></table>
+       <div class="note">**输入指纹**覆盖:文档版本集合 + 检索配置 + Embedding 模型与维度
+         + 切片器版本 + 解析器版本。少一项就会在**变过的输入上续做** ——
+         产出一半旧边界一半新边界的索引,而它**不报错**,只是答得怪(§19.3)。
+         <br>⚠️ 指纹那一栏写「没记」的是这个字段加上之前建的 ——
+         它们会被强制重建,**因为「没记」不等于「一样」**。</div>`;
+}
+
+async function 页_检索实验室() {
+  const 头 = `<div class="crumb">知识与 RAG</div>
+    <div class="head"><div><h1>检索实验室</h1>
+      <div class="sub">问一句话,看**整条链路**怎么走到那几段(§9.5)。</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let kbs;
+  try { kbs = await 请求(`${P()}/knowledge-bases`); }
+  catch (e) { const s = 错误块(e, 页_检索实验室); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 可用 = kbs.items.filter((x) => x["能检索吗"]);
+  if (!可用.length) {
+    $("#main").innerHTML = 头 + 状态("", "没有能检索的知识库",
+      "要有一个**「已就绪」的索引**才能检索。\n\n"
+      + kbs.items.map((x) => `· ${x.name}:${x["为什么不能检索"] || ""}`).join("\n"),
+      { 文: "去知识库", 做: () => { location.hash = "#/kb"; } }).html;
+    const b = $("#st-act"); if (b) b.onclick = () => { location.hash = "#/kb"; };
+    return;
+  }
+  // 取第一个能检索的知识库的已就绪索引
+  let builds = { items: [] };
+  try { builds = await 请求(`${P()}/knowledge-bases/${encodeURIComponent(可用[0].id)}/index-builds`); }
+  catch (e) { /* 下面会显示「没有可用索引」 */ }
+  const 就绪 = builds.items.filter((x) => x.status === "已就绪");
+  $("#main").innerHTML = 头 + `<div class="card"><div class="body">
+      <label class="k">索引</label>
+      <select id="rt-ib">${就绪.map((x) => `<option value="${esc(x.id)}">${esc(x.id)} · ${esc(x.embedding_model_id || "")} ${x["是mock吗"] ? "(mock)" : ""}</option>`).join("")}</select>
+      <label class="k" style="margin-left:10px">问题</label>
+      <input id="rt-q" style="width:44%" placeholder="客户给了差评要怎么处理"
+             value="客户给了差评要怎么处理">
+      <label class="k" style="margin-left:10px">
+        <input type="checkbox" id="rt-rr" checked> Claude 精排</label>
+      <button id="rt-go" style="margin-left:10px">检索</button>
+      <div class="note">⚠️ 勾着精排会**真调一次 Claude**(几百毫秒到两秒),用量记在记录仪里。
+        去掉勾只走向量 —— **那个排序不可靠**:实测一个表格头排到过第 1 名(0.6849),
+        而真答案第 2(0.6329)。</div>
+    </div></div><div id="rt-out"></div>`;
+  const 跑 = async () => {
+    const ib = $("#rt-ib") ? $("#rt-ib").value : "";
+    const q = ($("#rt-q").value || "").trim();
+    const rr = $("#rt-rr").checked;
+    $("#rt-out").innerHTML = `<div class="state">检索中${rr ? "(要调一次模型,稍等)" : ""}…</div>`;
+    let d;
+    try {
+      d = await 请求(`${P()}/retrieval-tests`, {
+        method: "POST", body: JSON.stringify({ 索引构建id: ib, 问题: q, 要精排: rr }),
+      });
+    } catch (e) { const s = 错误块(e, 跑); $("#rt-out").innerHTML = s.html; s.挂(); return; }
+    $("#rt-out").innerHTML = 画链路(d);
+  };
+  $("#rt-go").onclick = 跑;
+  $("#rt-q").onkeydown = (e) => { if (e.key === "Enter") 跑(); };
+  await 跑();
+}
+
+function 画链路(d) {
+  const 行 = (k, v, n) => `<tr><td class="k">${esc(k)}</td><td>${v}${n ? `<div class="k">${n}</div>` : ""}</td></tr>`;
+  const 链 = `<div class="card"><div class="k" style="padding:8px 10px 0">整条链路(§9.5)</div>
+    <table><tbody>
+    ${行("原问", esc(d["原问"]))}
+    ${行("改写", d["改写"] === null
+          ? `<span class="tag">没做</span>`
+          : esc(d["改写"]),
+          md(d["改写说明"] || ""))}
+    ${行("召回", `${d["召回数"]} 条候选 · ${esc((d["召回方式"] || []).join("、"))}`)}
+    ${行("向量", `${esc(d["embedding"]["模型"])} · ${d["embedding"]["维度"]} 维 ${_mock标(d["embedding"]["是mock"])}`)}
+    ${行("精排", d["精排"]["做了"]
+          ? `${esc(d["精排"]["模型"] || "")} · ${(d["精排"]["用量"] || {}).input_tokens || "?"} in / ${(d["精排"]["用量"] || {}).output_tokens || "?"} out`
+          : `<span class="tag warn">没做</span>`,
+          d["精排"]["做了"] ? "" : md(d["精排"]["为什么"] || ""))}
+    ${行("截断", esc(d["截断"]))}
+    ${行("选片", `${d["选了几片"]} 片 · ${d["用了多少token"]} token`,
+          d["token是粗估"] ? "token 数是**粗估** —— 不许拿它算钱" : "")}
+    </tbody></table></div>`;
+
+  const 警 = [];
+  if (d["引文没通过校验的"]) 警.push(md(d["引文说明"] || ""));
+  if (d["因为太大跳过的"] && d["因为太大跳过的"].length) 警.push(md(d["跳过说明"] || ""));
+
+  const 片 = `<div class="card"><div class="k" style="padding:8px 10px 0">选中的片段(按精排分数)</div>
+    ${d["选片"].map((x) => `<div class="body" style="border-top:1px solid var(--line)">
+      <div>
+        ${x["分数"] === null ? `<span class="tag">未精排</span>`
+                            : `<span class="tag ${x["分数"] >= 7 ? "ok" : (x["分数"] >= 4 ? "warn" : "crit")}">${x["分数"]}/10</span>`}
+        <span class="k">向量 ${x["相似度"]}</span>
+        <b style="margin-left:8px">${esc(x["证据"])}</b>
+      </div>
+      ${x["引文"] ? `<div style="margin:4px 0">
+          ${x["引文可信"] === false
+            ? `<span class="tag crit" title="${esc(x["引文问题"] || "")}">⚠️ 引文不可信</span> `
+            : ``}
+          引文「${esc(x["引文"])}」
+          ${x["引文可信"] === false
+            ? `<div class="k">**这句话在片段里找不到**(模型改写了原话)——
+                 分数仍然保留,但它给的**理由不可信**。引文的用处是让人照着它
+                 在原文里搜到那一句,搜不到就等于没有。</div>` : ""}
+        </div>` : ""}
+      <div class="k" style="white-space:pre-wrap">${esc((x["文"] || "").slice(0, 300))}</div>
+    </div>`).join("")}</div>`;
+
+  return 链
+    + (警.length ? `<div class="note warn">${警.join("<br>")}</div>` : "")
+    + 片
+    + `<div class="note">**证据串**(「业务拍板 · 2026-09-27 / 二、几星算差评 · 第 4 段」)
+        不是装饰 —— 顾问要能**照着它翻回原文核对**。
+        一个查不回去的引用比没有引用糟:它看起来有出处。</div>`;
+}
+
 async function 路由() {
   画侧栏();
   const h = location.hash || "#/workbench";
@@ -1466,6 +1675,9 @@ async function 路由() {
     if (h === "#/agents") return await 页_agent列表();
     if (h.startsWith("#/agent/")) return await 页_agent配置(decodeURIComponent(h.slice(8)));
     if (h === "#/tools") return await 页_工具目录();
+    if (h === "#/kb") return await 页_知识库();
+    if (h.startsWith("#/kb/")) return await 页_索引构建(decodeURIComponent(h.slice(5)));
+    if (h === "#/retrieval") return await 页_检索实验室();
     $("#main").innerHTML = 状态("", "这一页还没实现",
       "规格里有它,**入口保留着** —— 不能因为还没做就把需求删掉。").html;
   } catch (e) {

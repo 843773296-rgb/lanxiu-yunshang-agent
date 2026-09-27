@@ -155,8 +155,10 @@ if _路由账:
 # 而这里的纪律是「权限从 contract/perms.py 判、状态问 contract/states.py」。
 import workflows_api as _WF
 import agents_api as _AG
+import knowledge_api as _KB
 app.include_router(_WF.router)
 app.include_router(_AG.router)
+app.include_router(_KB.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

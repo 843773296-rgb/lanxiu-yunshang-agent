@@ -44,9 +44,32 @@ import endpoints as EP  # noqa: E402
 
 账本 = os.environ.get("AIMC_TRACE_ROUTES",
                     os.path.join("/tmp", "aimc-routes.log"))
-_handler文件 = ["services/api/app/main.py",
-               "services/api/app/workflows_api.py",
-               "services/api/app/agents_api.py"]
+# ⚠️ **自动发现,不手写清单。**
+#
+# 上一版是手写的三个文件名。2026-09-27 加了 `knowledge_api.py`(知识与 RAG 的三条接口),
+# 而进度表**静默认不出它** —— 症状是「那三条显示没做」,
+# 指向的是**接口**,而根因在**扫描范围**。
+#
+# > **一份手写的文件清单是个会漂的替身。**
+#
+# 多扫无害:没有路由装饰器的文件不产生条目。而漏扫会静默少报,
+# 那正是这份报告最不该做的事(它存在的理由就是「别把没做的说成做了」,
+# 反过来「把做了的说成没做」同样是假话)。
+def _找handler文件():
+    出 = []
+    根目录 = os.path.join(ROOT, "services", "api", "app")
+    for dp, dn, fn in os.walk(根目录):
+        dn[:] = [d for d in dn if d not in ("__pycache__", ".venv")]
+        for f in sorted(fn):
+            if f.endswith(".py"):
+                出.append(os.path.relpath(os.path.join(dp, f), ROOT))
+    # **样本量下限**:扫不到东西就是路径写错了,而那会让报告说「一条都没实现」
+    assert len(出) >= 5, (
+        f"只扫到 {len(出)} 个 .py({根目录})—— **这不叫「没有 handler」,叫没扫到文件**")
+    return 出
+
+
+_handler文件 = _找handler文件()
 
 未实现, 未验, 验过 = "未实现", "已实现未验", "已实现且验过"
 
@@ -189,8 +212,8 @@ def 写():
 # 所以把下限写死。⚠️ **写死成数字,不是 `len(...)` 算出来的** ——
 # 从被测的东西自己算出下限,那个下限会跟着一起跌(同源谬误,这个仓库栽过)。
 # 往上调这两个数是**做完一件事的收尾动作**,而调它会在 review 里被看见。
-实现下限 = 24
-验过下限 = 23
+实现下限 = 27   # 2026-09-27 夜:+3(知识与 RAG 的三条接口)
+验过下限 = 26   # 同上 —— **写死的数字,不许用 len(...) 现算**(同源谬误)
 
 
 def 棘轮():

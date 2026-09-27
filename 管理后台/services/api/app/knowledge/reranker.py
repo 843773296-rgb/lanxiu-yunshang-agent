@@ -49,33 +49,33 @@ import os
 import subprocess
 import time
 
-# 管理后台自己的记录仪 —— 见 knowledge/trace.py 的文件头。
+# 管理后台自己的记录仪 —— 见 knowledge/llmtrace.py 的文件头。
 #
-# ⚠️⚠️ **Python 标准库里也有一个 `trace` 模块**(跟踪代码执行的那个)。
-# 如果它先被 import,`sys.modules["trace"]` 就是标准库那个,
-# 于是下面的 `trace.record(...)` 变成 **AttributeError** ——
-# 而且**只在某些 import 顺序下发生**,那是最难查的一类失败。
+# ⚠️ **名字叫 `llmtrace` 不叫 `trace`,这是有意的。**
+# Python 标准库里有一个 `trace` 模块(跟踪代码执行的那个)。它先被 import 的话,
+# `sys.modules["trace"]` 就是标准库那个,于是 `trace.record(...)` 变成
+# **AttributeError** —— 而且**只在某些 import 顺序下发生**,那是最难查的一类。
 #
-# 不改名是有意的:`agent/trace_check.py` 按 `import trace` / `from trace import`
-# 认「接了记录仪」,而那条检查是对的(它抓到了这个文件没接记录仪)。
-# 所以保留 `import trace`,**撞车时按路径重新加载我们那个**。
+# 第一版我叫它 `trace`,撞上了就按路径重新加载(修补)。并行会话指出一个缝:
+# **那只修了本模块里的名字,`sys.modules["trace"]` 还是标准库那个** ——
+# 下一个在这儿写调模型代码的人照样撞。
 #
-# ⚠️ 澜绣的 `agent/trace.py` 有完全一样的风险,只是还没撞上过 —— 已告知那条线。
-import trace
+# > **绕过一个不该存在的冲突,和让冲突不存在,是两件事。** 后者少一段代码、少一个缝。
+#
+# (`agent/trace_check.py` 的正则认 `(?:llm)?trace`,所以改名后仍然认得出;
+#  那边也同步改成了 `llmtrace`。)
+import llmtrace as trace
 
-if not hasattr(trace, "record"):
-    import importlib.util as _ilu
-    _记录仪路径 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trace.py")
-    _spec = _ilu.spec_from_file_location("aimc_trace", _记录仪路径)
-    trace = _ilu.module_from_spec(_spec)
-    _spec.loader.exec_module(trace)
-    assert hasattr(trace, "record"), (
-        f"{_记录仪路径} 里没有 record() —— 记录仪坏了,"
-        f"而没有记录仪的模型调用**花费和耗时是黑的**")
-
-精排器版本 = "claude-rerank-1"
+精排器版本 = "claude-rerank-2"
 默认模型 = "claude-haiku-4-5"
 分数上限 = 10
+# 一次最多排多少条。**不是随便定的**:实测 50 条时提示词 7736 token、
+# 输出要 6000+ token,而 `max_tokens` 写死 2000 时**输出被截断** ——
+# 症状是「模型漏掉了全部候选」,而根因在配置上。
+精排最多几条 = 20
+# 每条打分大约要多少输出 token(index + score + quote + JSON 结构)。
+# 量出来的:12 条用了 1441 token ≈ 120/条。留一倍余量。
+_每条输出token = 240
 
 
 class 没有凭据(Exception):
@@ -169,9 +169,16 @@ _提示 = """你在给一个知识库的检索结果做精排。
 - 回答了问题的一部分,给中分(4-6)
 - 直接、完整地回答了问题,给高分(7-{上限})
 
-每一条都要有「引文」:从那条片段里**原样抄**一个短语(5-20 字)。
-**必须是片段里真有的字,不许改写、不许翻译、不许总结。**
-**宁可引短一点,也不要补标点或闭合括号** —— 引一段连续的原文就行。
+每一条都要有「引文」:从那条片段里**原样抄一段连续的字**(5-20 字)。
+
+⚠️ **这是复制粘贴,不是转述。** 具体说:
+- **一个标点都不许改** —— 括号还是括号、顿号还是顿号,不要换成逗号
+- **不许跳过中间的字** —— 「A、B、C」不能引成「A、C」
+- **不许补** —— 引到括号中间就停在那儿,不要自己闭合它
+- **不许去掉 `**` 之类的标记** —— 连着抄下来就行,我这边会处理
+
+**引短一点永远是对的。** 5 个字的准确引文比 20 个字的转述有用 ——
+这条引文的用处是让人**照着它在原文里搜到那一句**,搜不到就等于没有。
 
 必须对**全部 {条数} 条**都打分,一条不漏、不多。"""
 
@@ -311,12 +318,21 @@ def 精排(问题, 候选们, *, 模型=None, 上限=None):
                      "「没召回到」和「排完是空的」是两件事")
     模型 = 模型 or os.environ.get("RERANK_MODEL") or 默认模型
     上限 = 上限 or 分数上限
+    # ⚠️ **精排有候选上限。** 读 50 条 × 600 字又贵又慢
+    # (实测 50 条时提示词 7736 token、输出要 6000+),而收益在前几十条就饱和了。
+    # 超出的**不参与精排**,由调用方按向量分数排在后面 —— 而那件事要说出来。
+    多少条 = min(len(候选们), 精排最多几条)
+    没排的 = 候选们[多少条:]
+    候选们 = 候选们[:多少条]
 
     编号到候选 = {i + 1: c for i, c in enumerate(候选们)}
     候选文 = "\n\n".join(
         f"[{i}] {c['text'][:600]}" for i, c in 编号到候选.items())
     体 = {
-        "model": 模型, "max_tokens": 2000,
+        # ⚠️ **`max_tokens` 按条数算,不写死。**
+        # 写死 2000 时 50 个候选的输出被截断,而 tool_use 的 JSON 截断之后
+        # `results` 解析成空 —— 报出来是「漏掉了全部候选」,**指向模型而不是配置**。
+        "model": 模型, "max_tokens": max(1024, 多少条 * _每条输出token),
         "tools": [{**_打分工具, "input_schema": {
             **_打分工具["input_schema"]}}],
         "tool_choice": {"type": "tool", "name": "score_candidates"},
@@ -353,6 +369,17 @@ def 精排(问题, 候选们, *, 模型=None, 上限=None):
         raise 精排失败(f"API 报错:{str(d['error'].get('message'))[:200]}")
     _记(True, 用量=d.get("usage") or {}, 细节={"候选数": len(候选们)})
 
+    # ⚠️ **先看有没有被截断。** 截断之后 tool_use 的 JSON 是不完整的,
+    # 解析出来 `results` 可能是空或缺项 —— 而那会被下面的判据报成
+    # 「模型漏掉了全部候选」,**把人引向模型行为而根因在 max_tokens 上**。
+    if d.get("stop_reason") == "max_tokens":
+        _记(False, 用量=d.get("usage") or {}, 细节={"stop_reason": "max_tokens"})
+        raise 精排失败(
+            f"**输出被截断了**(stop_reason=max_tokens,给了 "
+            f"{体['max_tokens']} token,{多少条} 个候选)—— "
+            f"这不是「模型漏掉了候选」,是 `max_tokens` 不够。"
+            f"调大 `_每条输出token` 或调小 `精排最多几条`")
+
     块们 = [b for b in d.get("content", []) if b.get("type") == "tool_use"]
     if not 块们:
         # 模型没调工具 —— **不去解析它的自由文本**。
@@ -363,5 +390,16 @@ def 精排(问题, 候选们, *, 模型=None, 上限=None):
     打分们 = 块们[0].get("input", {}).get("results") or []
 
     出 = 校验打分(打分们, 编号到候选, 上限=上限)
+    # ⚠️ 超出上限没参与精排的那些,**要说出来** ——
+    # 不说的话,调用方看到的是一批「排好的」,而其中一部分根本没被排过。
+    for c in 没排的:
+        出.append(dict(id=c["id"], 分数=None, 引文=None, 原序=None,
+                      引文可信=None, 引文问题=None, 没参与精排=True,
+                      text=c["text"], **{k: v for k, v in c.items()
+                                         if k not in ("id", "text")}))
+    for x in 出:
+        x.setdefault("没参与精排", False)
     return dict(排好的=出, 用量=d.get("usage") or {},
-                模型=d.get("model") or 模型, 精排器版本=精排器版本, 是mock=False)
+                模型=d.get("model") or 模型, 精排器版本=精排器版本, 是mock=False,
+                精排了几条=多少条, 没参与精排的=len(没排的),
+                精排上限=精排最多几条)
