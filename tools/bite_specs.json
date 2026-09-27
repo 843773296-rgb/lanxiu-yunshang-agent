@@ -3114,5 +3114,53 @@
    }
   ],
   "预期红": "只有摘引号救得了它"
+ },
+ {
+  "script": "tools/clamp_future_done.py --selftest",
+  "改坏": "把选单条件改回只认 finished_at 在未来(「签收在未来」那一类一张也选不到)",
+  "file": [
+   {
+    "path": "tools/clamp_future_done.py",
+    "old": "        最晚 = 未来.get(oid)",
+    "new": "        最晚 = None"
+   }
+  ],
+  "预期红": "**签收在未来**也要挪"
+ },
+ {
+  "script": "tools/clamp_future_done.py --selftest",
+  "改坏": "去掉分钟粒度那道底线(按天挪、保留原时刻 → 回传落在同一天却早于下单那一刻)",
+  "file": [
+   {
+    "path": "tools/clamp_future_done.py",
+    "old": "                    if 下单 and 新 < str(下单)[:16]:\n                        新 = str(下单)[:16]",
+    "new": "                    if False:\n                        新 = str(下单)[:16]"
+   }
+  ],
+  "预期红": "回传不许早于下单那一刻"
+ },
+ {
+  "script": "tools/clamp_future_done.py --selftest",
+  "改坏": "让在办的单也被压缩(finished_at 是 NULL 的那种)",
+  "file": [
+   {
+    "path": "tools/clamp_future_done.py",
+    "old": "        if not fin and oid not in 签收未来:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "**还在办**的单不动它"
+ },
+ {
+  "script": "tools/clamp_future_done.py --selftest",
+  "改坏": "把按件/按包裹那两张表从列表里去掉(只挪整单那一张)",
+  "file": [
+   {
+    "path": "tools/clamp_future_done.py",
+    "old": "      \"pickup_item\": ([\"fit_at\"], \"order_id\"),",
+    "new": "      # \"pickup_item\": ([\"fit_at\"], \"order_id\"),"
+   }
+  ],
+  "预期红": "**签收在未来**也要挪"
  }
 ]

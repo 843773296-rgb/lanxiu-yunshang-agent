@@ -204,6 +204,7 @@ run "工厂回传写口 · 生产和发货只认回传、乱序能放行、后�
 run "白坯试衣 · 「没走流程」和「走了没拿到确认」不许混成一个" python3 backend/muslin_check.py
 run "白坯试衣写口 · 开裁那道闸会拦、后台改状态也绕不过、签字撤不掉(在库副本上跑)" python3 backend/fitting_write_check.py
 run "交付签收口径 · 6 位码只认一单用一次、追认满 15 天要理由、不合身判责不默认顾客" python3 knowledge/pickup.py
+run "未来记录回挪 · 自测(签收在未来也算、分钟粒度不许早于下单、在办的单不动)" python3 tools/clamp_future_done.py --selftest
 run "交付签收写口 · 码核验才签收、不合身订单不动、完成要顾客确认或追认(在库副本上跑)" python3 backend/pickup_write_check.py
 run "报修口径 · 店长判完、顾客同意才开工" python3 knowledge/repair.py
 run "评价口径 · 没签收不许评、≤3 星算差评自动进待处理清单(44 条自测)" python3 knowledge/rating.py
