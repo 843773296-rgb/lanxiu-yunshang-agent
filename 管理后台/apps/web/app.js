@@ -75,6 +75,7 @@ const 导航 = [
   ["#/tools", "工具与能力", true, true],
   ["#/human", "人工待办", false, true],
   ["grp", "知识与 RAG"],
+  ["#/uploads", "加资料", true, true],
   ["#/kb", "知识库", true, true],
   ["#/retrieval", "检索实验室", true, true],
   ["#/datasets", "数据集", false],
@@ -1474,20 +1475,138 @@ function _mock标(是mock) {
     : `<span class="tag ok" title="真模型(本机 onnxruntime,离线)">真向量</span>`;
 }
 
+/* ── 加资料(上传三步)─────────────────────────────────────────────
+ * ⚠️ **这一页的全部价值是让「上传成功不等于内容可用」看得见**(规格 §17.1)。
+ *
+ * 界面上最容易犯的错是进度条走到 100% 就显示「成功」—— 那时候字节确实到了,
+ * 而**内容还没被校验过**。于是用户以为资料能用了,直到建索引时报「解析失败」,
+ * 而他会以为是解析器坏了。
+ *
+ * 所以这一页把三步分开显示,而且**第二步结束时明确写「还不能用」**:
+ *
+ *     ① 要地址   POST /uploads              → 待上传
+ *     ② 传字节   PUT  /uploads/{id}/bytes   → 已上传(**还不能引用**)
+ *     ③ 校验     POST /uploads/{id}/complete → 已校验 / 校验失败
+ *
+ * 校验没过是 **200 + 通过=false**,不是请求出错 —— 所以这里不能走 错误块(),
+ * 要把「哪条规则没过、为什么」显示出来。一个坏文件不是一次失败的请求。 */
+const _上传状态色 = { "待上传": "", "已上传": "warn", "已校验": "ok",
+                  "校验失败": "crit", "已放弃": "" };
+
+async function 页_加资料() {
+  const 头 = `<div class="crumb">知识与 RAG</div>
+    <div class="head"><div><h1>加资料</h1>
+      <div class="sub">选文件 → 传 → **服务端校验**。只有「已校验」才算能用的文件引用(§17.1)。</div>
+    </div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/uploads?limit=50`); }
+  catch (e) { const s = 错误块(e, 页_加资料); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+
+  $("#main").innerHTML = 头 + `
+    <div class="card">
+      <div class="lbl">选一个文件</div>
+      <input type="file" id="f" accept=".md,.markdown,.txt">
+      <button class="pri" id="go">上传并校验</button>
+      <div class="note">收 `.md` / `.markdown` / `.txt`,单个不超过 5 MB。
+        **PDF 和扫描件要 OCR,这一版没接** —— 会在第一步就被拒,不会让你白传一遍。</div>
+      <div id="步"></div>
+    </div>
+    <h2>传过的</h2>
+    <div id="表"></div>`;
+  画上传表(d);
+  $("#go").onclick = 走三步;
+}
+
+function 画上传表(d) {
+  const t = $("#表");
+  if (!d.items.length) { t.innerHTML = `<div class="state">还没传过东西</div>`; return; }
+  t.innerHTML = `<table><thead><tr>
+      <th>文件</th><th>状态</th><th>能引用吗</th><th class="num">字节</th>
+      <th>没过的规则</th></tr></thead><tbody>`
+    + d.items.map((r) => `<tr>
+        <td><b>${esc(r.file_name || "")}</b><div class="k">${esc(r.id)}</div></td>
+        <td><span class="tag ${_上传状态色[r["状态"]] || ""}">${esc(r["状态"])}</span></td>
+        <td>${r["能引用吗"] ? `<span class="tag ok">能</span>`
+                            : `<span class="tag crit">不能</span>`}</td>
+        <td class="num">${r.byte_count == null ? "—" : r.byte_count}</td>
+        <td>${((r["校验详情"] || {})["没过的规则"] || []).map(esc).join("、") || "—"}</td>
+      </tr>`).join("")
+    + `</tbody></table>
+       <div class="note">⚠️ **「能引用的」通常少于总数**(这里 ${d["能引用的"]} / ${d.total})。
+         校验失败的那些**留着不删**:一条「传过但没通过」的记录是证据 ——
+         删掉之后用户只会再传一次同一个坏文件。</div>`;
+}
+
+async function 走三步() {
+  const 文件 = $("#f").files[0];
+  const 步 = $("#步");
+  if (!文件) { 步.innerHTML = `<div class="state err"><h3>先选一个文件</h3></div>`; return; }
+  const 画 = (行们) => { 步.innerHTML = `<div class="note">` + 行们.join("<br>") + `</div>`; };
+  const 记 = [];
+  const 说 = (t) => { 记.push(t); 画(记); };
+  try {
+    // ① 要地址。**byte_count 必填** —— 不声明就检不出截断上传
+    说("① 要上传地址…");
+    const a = await 请求(`${P()}/uploads`, {
+      method: "POST",
+      body: JSON.stringify({ file_name: 文件.name, byte_count: 文件.size,
+                             content_type: 文件.type || null }),
+    });
+    说(`　拿到了,状态 <b>${esc(a["状态"])}</b>(还什么都没传)`);
+
+    // ② 传字节。**这一步之后不许显示「成功」** —— 字节到了不等于内容可用
+    说("② 传字节…");
+    const r2 = await fetch(a["上传地址"], {
+      method: "PUT", headers: { "X-Dev-User": 我, "content-type": "application/octet-stream" },
+      body: 文件,
+    });
+    const b2 = await r2.json().catch(() => null);
+    if (!r2.ok) { const e = new Error((b2 && b2.message) || `HTTP ${r2.status}`);
+                  e.体 = b2 || {}; e.码 = r2.status; throw e; }
+    说(`　字节到了(${b2["收到字节数"]} 字节),状态 <b>${esc(b2["状态"])}</b> —— `
+       + `<b>还不能引用</b>,要过校验`);
+
+    // ③ 校验。**没过是 200 + 通过=false**,不是请求出错
+    说("③ 服务端校验(算哈希、严格解码、真的调一次解析器)…");
+    const c = await 请求(`${P()}/uploads/${encodeURIComponent(a.id)}/complete`,
+                        { method: "POST" });
+    if (c["通过"]) {
+      说(`　<b>已校验 —— 现在才算文件引用</b>。哈希 <code>`
+         + esc(String(c.content_hash).slice(0, 26)) + `…</code>,`
+         + `切出 ${(c["校验详情"] || {})["细节"]?.["块数"]} 块`);
+    } else {
+      const 详 = c["校验详情"] || {};
+      说(`　<b>校验没过</b>(而请求本身是成功的 —— 一个坏文件不是一次失败的请求):`);
+      (详["理由们"] || []).forEach((x) => 说(`　· <b>${esc(x["规则"])}</b>:${esc(x["为什么"])}`));
+      说(`　查了这些规则:${(详["规则全集"] || []).map(esc).join("、")}`);
+      说(`　<b>这是终态</b> —— 同一个坏文件重传还是坏的;要传新文件请再走一遍`);
+    }
+    画上传表(await 请求(`${P()}/uploads?limit=50`));
+  } catch (e) {
+    const s = 错误块(e, null);
+    步.innerHTML = 记.map((x) => `<div class="note">${x}</div>`).join("") + s.html;
+  }
+}
+
 async function 页_知识库() {
   const 头 = `<div class="crumb">知识与 RAG</div>
     <div class="head"><div><h1>知识库</h1>
       <div class="sub">资料、片段、索引。**有片段不等于能检索** —— 要有一个「已就绪」的索引。</div>
-    </div></div>`;
+    </div><div><a href="#/uploads"><button>加资料</button></a></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
   try { d = await 请求(`${P()}/knowledge-bases`); }
   catch (e) { const s = 错误块(e, 页_知识库); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
   if (!d.items.length) {
-    $("#main").innerHTML = 头 + 状态("", "这个项目还没有知识库",
-      "导入资料的接口(`POST /uploads`)**还没做** —— 现在的语料是用 "
-      + "`tools/ingest_lanxiu.py` 直接灌进库的(澜绣的业务拍板记录)。\n\n"
-      + "**保留这一页是有意的**:规格里有它。").html;
+    // ⚠️ 这段话原来写着「导入资料的接口还没做」。**做完了就要改** ——
+    // 一句过期的说明比没有说明糟:它会让人不去试那条已经能用的路。
+    const s0 = 状态("", "这个项目还没有知识库",
+      "先去「加资料」把文件传上来(**传完还要过服务端校验才算能用**)。\n\n"
+      + "现有语料是 `tools/ingest_lanxiu.py` 直接灌的(澜绣的业务拍板记录);"
+      + "**把上传变成文档版本、再建索引**那几条接口还没做(M2)。",
+      { 文: "去加资料", 做: () => { location.hash = "#/uploads"; } });
+    $("#main").innerHTML = 头 + s0.html; s0.挂();
     return;
   }
   $("#main").innerHTML = 头 + `<table><thead><tr>
@@ -1675,6 +1794,7 @@ async function 路由() {
     if (h === "#/agents") return await 页_agent列表();
     if (h.startsWith("#/agent/")) return await 页_agent配置(decodeURIComponent(h.slice(8)));
     if (h === "#/tools") return await 页_工具目录();
+    if (h === "#/uploads") return await 页_加资料();
     if (h === "#/kb") return await 页_知识库();
     if (h.startsWith("#/kb/")) return await 页_索引构建(decodeURIComponent(h.slice(5)));
     if (h === "#/retrieval") return await 页_检索实验室();

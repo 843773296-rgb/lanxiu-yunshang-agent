@@ -9389,6 +9389,126 @@
       }
     },
     "/api/v1/projects/{project_id}/uploads": {
+      "get": {
+        "description": "`能引用的` 通常小于 total —— 只有 `已校验` 算文件引用",
+        "operationId": "get_uploads",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListEnvelope"
+                }
+              }
+            },
+            "description": "分页列表"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "上传列表(含校验失败的)",
+        "tags": [
+          "知识与 RAG"
+        ],
+        "x-字段权限": [],
+        "x-审计": false,
+        "x-权限": "查看有权配置"
+      },
       "post": {
         "description": "**服务端校验之后才算文件引用** —— 上传成功不等于内容可用",
         "operationId": "post_uploads",
@@ -9494,9 +9614,10 @@
         "x-权限": "改 Prompt/知识候选"
       }
     },
-    "/api/v1/projects/{project_id}/uploads/{id}/complete": {
-      "post": {
-        "operationId": "post_uploads_id_complete",
+    "/api/v1/projects/{project_id}/uploads/{id}/bytes": {
+      "put": {
+        "description": "**偏离**:首版没有对象存储,所以自己当接收端。接了 S3 之后这条接口消失,上传地址变成预签名 URL",
+        "operationId": "put_uploads_id_bytes",
         "parameters": [
           {
             "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
@@ -9514,11 +9635,106 @@
             "schema": {
               "type": "string"
             }
+          }
+        ],
+        "responses": {
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "把字节传上来",
+        "tags": [
+          "知识与 RAG"
+        ],
+        "x-字段权限": [],
+        "x-审计": false,
+        "x-权限": "改 Prompt/知识候选"
+      }
+    },
+    "/api/v1/projects/{project_id}/uploads/{id}/complete": {
+      "post": {
+        "description": "**校验没过不是 4xx** —— 返回 200 + `通过=false`:请求本身成功了(确实校验了并存下了结论)。判成 4xx 前端会当「请求出错」重试,而重试一万次结论都一样 ——**一个坏文件不是一次失败的请求**",
+        "operationId": "post_uploads_id_complete",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           },
           {
-            "description": "**必填**。相同键相同请求返回原任务;相同键不同请求返回 409。超时重发一次的代价是重复烧 GPU 或重复计费",
-            "in": "header",
-            "name": "Idempotency-Key",
+            "in": "path",
+            "name": "id",
             "required": true,
             "schema": {
               "type": "string"

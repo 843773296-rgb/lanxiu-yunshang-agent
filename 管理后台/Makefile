@@ -107,8 +107,12 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  ⚠️ 其中一条会**真调一次 Claude 精排**(月租额度);另一条走 要精排=false 不花钱"
 	@./.venv/bin/python tests/e2e/test_knowledge_flow.py
 	@echo ""
+	@echo "▸ 文件上传端到端:**「上传成功不等于内容可用」有代码兜着**(§17.1)"
+	@echo "  (已上传的 能引用吗=false / 坏文件是 200+通过=false / 校验失败是终态)"
+	@./.venv/bin/python tests/e2e/test_upload_flow.py
+	@echo ""
 	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径**(不是只看语法)"
-	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/kb' '#/retrieval'; do \
+	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' '#/kb' '#/retrieval'; do \
 		printf "  %-14s " "$$h"; node tests/e2e/page_smoke.js "$$h" 2>&1 | tail -1; done
 	@echo ""
 	@echo "▸ 画布页:**结构对账**(节点数/连线数/「加入」按钮数 vs 接口返回的定义)"
@@ -154,10 +158,12 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	@./.venv/bin/python tests/e2e/test_api_flow.py 2>&1 | tail -2
 	@./.venv/bin/python tests/e2e/test_orchestration_flow.py 2>&1 | tail -2
 	@./.venv/bin/python tests/e2e/test_knowledge_flow.py 2>&1 | tail -2
+	@./.venv/bin/python tests/e2e/test_upload_flow.py 2>&1 | tail -2
 	@echo ""
 	@echo "▸ 页面冒烟(它取哪些接口,也记在同一本账上)"
 	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' \
-	          '$(HASH)/agents' '$(HASH)/tools' '$(HASH)/kb' '$(HASH)/retrieval'; do \
+	          '$(HASH)/agents' '$(HASH)/tools' '$(HASH)/uploads' '$(HASH)/kb' \
+	          '$(HASH)/retrieval'; do \
 		node tests/e2e/page_smoke.js "$$h" >/dev/null 2>&1 || true; done
 	@echo "▸ 生成报告"
 	@AIMC_TRACE_ROUTES=/tmp/aimc-routes.log ./.venv/bin/python tools/progress_report.py
@@ -191,6 +197,14 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 精排的判据:**零依赖,不发一个请求**(CI 里没有 Claude 凭据)"
 	@echo "  挡 LLM 的三种编法:编编号 / 漏候选 / 编引文。0 分免引文是有意的"
 	@./.venv/bin/python tests/orchestration/test_reranker.py
+	@echo ""
+	@echo "▸ 上传校验:**校验真的调解析器** —— 自己发明一套判断,两套迟早不一致"
+	@echo "  (松了→坏文件在库里是「已校验」,建索引时炸而错误指向解析器)"
+	@./.venv/bin/python tests/orchestration/test_upload_rules.py
+	@echo ""
+	@echo "▸ 对象存储适配器:**键逃不出根目录**(用路径段比,startswith 会漏)+ 原子写"
+	@echo "  它是 README 里「接 S3 时只换实现」那句话的唯一落地"
+	@./.venv/bin/python tests/orchestration/test_storage.py
 	@echo ""
 	@echo "▸ 索引计划:检查点 + 输入指纹 —— **这一组的坏法全是不报错的**"
 	@echo "  (跳过没向量的片段/在变过的输入上续做/从 20 个候选里挑 50 个)"

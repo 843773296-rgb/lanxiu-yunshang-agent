@@ -156,9 +156,11 @@ if _路由账:
 import workflows_api as _WF
 import agents_api as _AG
 import knowledge_api as _KB
+import uploads_api as _UP
 app.include_router(_WF.router)
 app.include_router(_AG.router)
 app.include_router(_KB.router)
+app.include_router(_UP.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

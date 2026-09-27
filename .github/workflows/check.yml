@@ -153,8 +153,19 @@ jobs:
           # 本地咬合没第一时间抓到它,因为**本地是 zsh、CI 是 bash** ——
           # zsh 允许中文变量名。**「本地能跑」和「CI 能跑」的差别可以只是一个 shell。**
           rc=0
+          # ⚠️ 这张清单是**手抄的**,加了新测试要记得加进来 ——
+          # 漏一个的表现是「CI 全绿而那组从来没跑过」,而那比红更糟。
+          #
+          # ⚠️ 2026-09-27 夜发现 `test_reranker` **一直漏在外面**。
+          # 我第一版注释写的是「它要 Claude 凭据,CI 里没有」——**那是错的**:
+          # 那份测试自己的文件头就写着「零依赖,不发一个请求」,实测纯标准库退 0。
+          # 它不是被有意排除的,是被漏掉的。
+          #
+          # 这一条值得记:**手抄的清单会漏,而漏掉的项和「跑过并通过」在 CI 上长得一样。**
+          # (`tools/progress_report.py` 里那份 handler 清单踩过同一个坑,已改成自动发现。)
           for t in test_dsl_semantics test_graph_validation test_execution test_agent_tools \
-                   test_knowledge_chain test_index_plan test_embedder; do
+                   test_knowledge_chain test_index_plan test_embedder test_reranker \
+                   test_upload_rules test_storage; do
             echo "▸ $t"
             PYTHONPATH="$PP" python3 "tests/orchestration/$t.py" || rc=1
           done

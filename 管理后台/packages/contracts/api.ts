@@ -94,7 +94,9 @@ export const ENDPOINTS = [
   { method: "POST", path: "/prompt-runs", summary: "Prompt 调试跑一次", capability: "运行评测", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/runs/{id}", summary: "看一次运行", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/uploads", summary: "要一个受限上传地址", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
-  { method: "POST", path: "/uploads/{id}/complete", summary: "上传完成,服务端校验", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "PUT", path: "/uploads/{id}/bytes", summary: "把字节传上来", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/uploads/{id}/complete", summary: "上传完成,服务端校验", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/uploads", summary: "上传列表(含校验失败的)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/knowledge-bases", summary: "知识库列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/knowledge-bases", summary: "建知识库", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/knowledge-bases/{id}/documents", summary: "加资料", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -174,4 +176,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 88 条接口 · 19 条异步 · 21 条要幂等键 · 11 条要 If-Match */
+/** 共 90 条接口 · 19 条异步 · 20 条要幂等键 · 11 条要 If-Match */
