@@ -119,6 +119,37 @@ def _审计(c, me, action, target, result="ok", reason=None, diff=None):
            "rs": reason, "d": json.dumps(diff, ensure_ascii=False) if diff else None})
 
 
+# ── 路由记账(只在环境变量打开时生效)──────────────────────────────
+#
+# ## 为什么要它,以及它比「扫测试文件」强在哪
+#
+# 规格 §20 要求交付报告逐项写「**已实现且验证 / 已实现未验证 / 未实现**」,
+# 并且「禁止用『所有页面都有了』代替完整功能验收」。
+#
+# 要算出「已实现**且验证**」就得知道「哪几条接口真的被测试打过」。
+# 最省事的算法是**在测试文件里搜这条路径的字符串** —— 而那个判据比它声称的弱:
+# 一条只是被注释提到、或者拼在某个没被执行的分支里的路径,也会算「验过」。
+#
+# 所以这里改成**运行时记账**:记 FastAPI **实际匹配到的路由模板**
+# (`request.scope["route"].path`,不是原始 URL —— 后者带具体 ID,归不了类)。
+# 于是「验过」= **测试真的打过这条路径**,而不是「某个文件里提到过它」。
+#
+# ⚠️ 它仍然**不证明断言是对的**:打过一次和「行为被断言对了」是两件事。
+# 这条限制写在生成的报告里,不靠读的人自己想起来。
+_路由账 = os.environ.get("AIMC_TRACE_ROUTES")
+if _路由账:
+    @app.middleware("http")
+    async def _记路由(request: Request, call_next):
+        resp = await call_next(request)
+        r = request.scope.get("route")
+        路 = getattr(r, "path", None)
+        if 路:
+            with open(_路由账, "a", encoding="utf-8") as f:
+                f.write(f"{request.method} {路} {resp.status_code}\n")
+        return resp
+    print(f"▸ 路由记账开着,写到 {_路由账}", file=sys.stderr)
+
+
 # ── 编排接口(Workflow 与 Agent 后台规格 §17.1)────────────────────
 # 单独一个文件。**一个越长的 handler 文件越容易长出第二套规矩** ——
 # 而这里的纪律是「权限从 contract/perms.py 判、状态问 contract/states.py」。

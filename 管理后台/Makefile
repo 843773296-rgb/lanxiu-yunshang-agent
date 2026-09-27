@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 # `#` 在 make 的配方里要用变量传,直接写 `\#` 会把反斜杠一起带给 shell
 HASH := \#
-.PHONY: help bootstrap dev seed-demo test test-e2e test-live contract doctor migrate gen worker worker-once \
+.PHONY: help bootstrap dev seed-demo test test-e2e test-live contract doctor migrate gen worker worker-once progress \
         test-orchestration test-orchestration-e2e test-orchestration-live
 
 help:
@@ -70,9 +70,13 @@ seed-demo:     ## 灌合成演示数据(**只在开发环境,重复跑不增加�
 	 DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python services/api/app/seed_demo.py
 
-test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 三页页面冒烟(要先 make dev)
-	@echo "▸ 接口闭环与**禁止行为**(35 条:跨项目、权限、乐观锁、幂等、脱敏、未知费用)"
+test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 make dev)
+	@echo "▸ 接口闭环与**禁止行为**(44 条:跨项目、权限、乐观锁、幂等、脱敏、未知费用)"
 	@./.venv/bin/python tests/e2e/test_api_flow.py
+	@echo ""
+	@echo "▸ 编排端到端(44 条:建图→校验→冻结→试运行→Worker;Agent 那一条同理)"
+	@echo "  **这一份是为了把「我手敲 curl 验过」变成可重跑的断言** —— 它第一次跑就抓到一个 500"
+	@./.venv/bin/python tests/e2e/test_orchestration_flow.py
 	@echo ""
 	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径**(不是只看语法)"
 	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows'; do \
@@ -109,6 +113,26 @@ test-live:
 # ── 编排(Workflow 与 Agent 后台规格 §18)─────────────────────────────
 # 规格点名了这四个命令。**它们不改变原命令的含义**:原来的 test / test-e2e
 # 照样跑原来那些,这三个只跑编排那一层。
+
+progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时记账真跑一遍测试**
+	@echo "▸ 起带路由记账的 API(账本 /tmp/aimc-routes.log)"
+	@rm -f /tmp/aimc-routes.log
+	@lsof -ti:8801 | xargs kill -9 2>/dev/null || true
+	@pkill -f "workers/worker.py" 2>/dev/null || true
+	@sleep 2
+	@AIMC_TRACE_ROUTES=/tmp/aimc-routes.log nohup bash tools/dev.sh > /tmp/devlog.txt 2>&1 & sleep 8
+	@echo "▸ 跑端到端(它打过哪些路由,账本上说)"
+	@./.venv/bin/python tests/e2e/test_api_flow.py 2>&1 | tail -2
+	@./.venv/bin/python tests/e2e/test_orchestration_flow.py 2>&1 | tail -2
+	@echo ""
+	@echo "▸ 页面冒烟(它取哪些接口,也记在同一本账上)"
+	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' '$(HASH)/agents' '$(HASH)/tools'; do \
+		node tests/e2e/page_smoke.js "$$h" >/dev/null 2>&1 || true; done
+	@echo "▸ 生成报告"
+	@AIMC_TRACE_ROUTES=/tmp/aimc-routes.log ./.venv/bin/python tools/progress_report.py
+	@echo ""
+	@echo "⚠️ 「验过」= 测试**真的打过这条路由**,不是「测试文件里提到过」。"
+	@echo "   但**打过一次不等于断言对** —— 这份报告回答「有没有被碰过」,不回答「对不对」。"
 
 test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不需要数据库)
 	@./.venv/bin/python tools/spec_coverage.py

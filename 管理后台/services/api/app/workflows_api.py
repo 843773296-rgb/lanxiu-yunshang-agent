@@ -517,6 +517,25 @@ async def 发起运行(project_id: str, request: Request,
 @router.get(前缀 + "/execution-runs")
 def 运行列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
            workflow_id: str = Query(default=None), limit: int = Query(20, ge=1, le=100)):
+    """运行列表。
+
+    ## 两个坑记在这儿(都不能写进下面那段 SQL 里)
+
+    ⚠️ **① `:w` 必须显式 `cast(... as text)`。** 不转的话 PostgreSQL 推断不出它的类型
+    (两次出现都在定不了类型的位置:`is null`,以及和 JSONB 取出来的 text 比较),
+    直接 500 `AmbiguousParameter`。
+
+    这条 bug 活下来的原因值得记:我手敲 curl 验的时候**只测了详情,没测不带参数的
+    列表** —— 列表是最容易被认为「不用测」的那种接口,它看起来只是把详情少显示
+    几个字段。抓到它的是 `docs/实现进度.md`:那份报告不问「你觉得验过了吗」,
+    它问「测试**打过**这条路由吗」,而 10 条没打过的里第一条就藏着这个 500。
+
+    ⚠️ **② 上面这段说明不能写成 SQL 注释。** 第一版我把它写进 `text()` 里的
+    `--` 注释,而注释里有个中文冒号 —— **SQLAlchemy 把 `:那份报告不问` 当成了
+    绑定参数名**,于是报「A value is required for bind parameter '那份报告不问'」。
+    `text()` 里的 `--` 对 SQLAlchemy **不透明**,它只认 `:name` 这个词法。
+    **SQL 字符串里不许出现 `:` 开头的自然语言。**
+    """
     with 连接() as c:
         rs = c.execute(text("""
             select id, kind, definition_ref, status, completion_reason,
@@ -524,7 +543,8 @@ def 运行列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                    started_at, ended_at, trace_id
               from execution_runs
              where project_id=:p
-               and (:w is null or definition_ref->>'id' = :w)
+               and (cast(:w as text) is null
+                    or definition_ref->>'id' = cast(:w as text))
              order by started_at desc limit :n
         """), {"p": project_id, "w": workflow_id, "n": limit}).mappings().all()
         总 = c.execute(text("select count(*) from execution_runs where project_id=:p"),
