@@ -146,6 +146,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 执行:**预期激活路径手写 + 模型响应脚本化**(模型调用次数由 mock 那侧数)"
 	@./.venv/bin/python tests/orchestration/test_execution.py
 	@echo ""
+	@echo "▸ 知识链:解析 + 切片,**判据是「证据链真的能指回原文」**(跑真语料)"
+	@./.venv/bin/python tests/orchestration/test_knowledge_chain.py
+	@echo ""
 	@echo "▸ Agent 与工具网关:**43 条对抗**(幻造工具名/参数越权/路径穿越/虚报完成/"
 	@echo "  审批换参数/文档注入/崩溃后重复写)—— 真值落在**独立账本和独立文件系统**上"
 	@./.venv/bin/python tests/orchestration/test_agent_tools.py

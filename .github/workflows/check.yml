@@ -145,7 +145,7 @@ jobs:
           # 本地咬合没第一时间抓到它,因为**本地是 zsh、CI 是 bash** ——
           # zsh 允许中文变量名。**「本地能跑」和「CI 能跑」的差别可以只是一个 shell。**
           rc=0
-          for t in test_dsl_semantics test_graph_validation test_execution test_agent_tools; do
+          for t in test_dsl_semantics test_graph_validation test_execution test_agent_tools test_knowledge_chain; do
             echo "▸ $t"
             PYTHONPATH="$PP" python3 "tests/orchestration/$t.py" || rc=1
           done
@@ -198,7 +198,7 @@ jobs:
       - name: 说清这个 job **没**跑什么
         working-directory: 管理后台
         run: |
-          echo "✅ 这个 job 跑了 186 条(编排四组 93 + 契约覆盖 93),零数据库。"
+          echo "✅ 这个 job 跑了 202 条(编排五组 109 + 契约覆盖 93),零数据库。"
           echo "⚠️ **没跑**:跨项目攻击 7 / 租约攻击 16 / 端到端 44 / 编排端到端 44"
           echo "   / 六页冒烟 —— 它们要 PostgreSQL + 迁移 + seed(+ 起服务),留在本地。"
           echo "   **这个 job 绿不等于那 111 条也绿。**"
