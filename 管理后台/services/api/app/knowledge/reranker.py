@@ -47,6 +47,31 @@ urllib 会证书校验失败(项目里所有 HTTP 都走 curl)。
 import json
 import os
 import subprocess
+import time
+
+# 管理后台自己的记录仪 —— 见 knowledge/trace.py 的文件头。
+#
+# ⚠️⚠️ **Python 标准库里也有一个 `trace` 模块**(跟踪代码执行的那个)。
+# 如果它先被 import,`sys.modules["trace"]` 就是标准库那个,
+# 于是下面的 `trace.record(...)` 变成 **AttributeError** ——
+# 而且**只在某些 import 顺序下发生**,那是最难查的一类失败。
+#
+# 不改名是有意的:`agent/trace_check.py` 按 `import trace` / `from trace import`
+# 认「接了记录仪」,而那条检查是对的(它抓到了这个文件没接记录仪)。
+# 所以保留 `import trace`,**撞车时按路径重新加载我们那个**。
+#
+# ⚠️ 澜绣的 `agent/trace.py` 有完全一样的风险,只是还没撞上过 —— 已告知那条线。
+import trace
+
+if not hasattr(trace, "record"):
+    import importlib.util as _ilu
+    _记录仪路径 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trace.py")
+    _spec = _ilu.spec_from_file_location("aimc_trace", _记录仪路径)
+    trace = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(trace)
+    assert hasattr(trace, "record"), (
+        f"{_记录仪路径} 里没有 record() —— 记录仪坏了,"
+        f"而没有记录仪的模型调用**花费和耗时是黑的**")
 
 精排器版本 = "claude-rerank-1"
 默认模型 = "claude-haiku-4-5"
@@ -303,16 +328,30 @@ def 精排(问题, 候选们, *, 模型=None, 上限=None):
     for h in _凭据():
         参 += ["-H", h]
     参 += ["-d", json.dumps(体, ensure_ascii=False)]
+    _t0 = time.time()
     r = subprocess.run(参, capture_output=True, text=True)
+    _耗时 = int((time.time() - _t0) * 1000)
+
+    def _记(成功, 用量=None, 细节=None):
+        # ⚠️ **每一条出口都要记**,包括失败的那些 ——
+        # 只记成功的调用会让「失败花掉的时间」变成黑的,
+        # 而那正是排查「为什么这么慢」时最需要的数。
+        trace.record(用途="知识检索精排", 模型=模型, 用量=用量,
+                     耗时毫秒=_耗时, 成功=成功, 是mock=False, 细节=细节)
+
     if r.returncode != 0:
+        _记(False, 细节={"curl退出码": r.returncode})
         # ⚠️ 只报 curl 的退出码和 stderr,**不回显请求体**(它带着 header)
         raise 精排失败(f"curl 失败(退出码 {r.returncode}):{r.stderr.strip()[:200]}")
     try:
         d = json.loads(r.stdout)
     except json.JSONDecodeError:
+        _记(False, 细节={"为什么": "返回的不是 JSON"})
         raise 精排失败(f"返回的不是 JSON:{r.stdout[:200]}")
     if "error" in d:
+        _记(False, 细节={"API报错": str(d["error"].get("message"))[:120]})
         raise 精排失败(f"API 报错:{str(d['error'].get('message'))[:200]}")
+    _记(True, 用量=d.get("usage") or {}, 细节={"候选数": len(候选们)})
 
     块们 = [b for b in d.get("content", []) if b.get("type") == "tool_use"]
     if not 块们:
