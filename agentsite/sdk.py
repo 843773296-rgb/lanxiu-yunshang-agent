@@ -30,7 +30,8 @@ except ModuleNotFoundError as _e:      # noqa: E402
         "  没有 .venv 就先 ./start.sh 建一次。") from None
 import guards   # noqa: E402
 sys.path.insert(0, os.path.join(ROOT, "agent"))
-import trace       # noqa: E402  记录仪:**和 V1 共用同一份**,写同一个文件、同一套字段
+import llmtrace as trace   # noqa: E402  记录仪:**和 V1 共用同一份**,写同一个文件、同一套字段
+# ⚠️ 模块名**不叫 trace** —— 和标准库的 trace 同名会被它挡住(见 agent/llmtrace.py 文件头)
 import spans as _spans   # noqa: E402  树状记录仪(agent/spans.py):一次提问记成一棵 trace。
 # **两份都写,谁也不替谁**:trace.jsonl 一次提问一行,是跨代际比趋势的历史数据,
 # 格式一改就断;spans.jsonl 是树,回答「这一步的输入输出是什么、钱花在哪一步」。

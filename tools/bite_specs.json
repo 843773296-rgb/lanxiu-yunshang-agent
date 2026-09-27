@@ -3270,5 +3270,29 @@
    }
   ],
   "预期红": "记下了造数时的世界日期"
+ },
+ {
+  "script": "agent/trace_check.py",
+  "改坏": "把 IMPORT_TRACE 正则里的 (?:llm)? 去掉(改名之后它认不出记录仪了)",
+  "file": [
+   {
+    "path": "agent/trace_check.py",
+    "old": "r\"^\\s*(?:import\\s+(?:llm)?trace\\b|from\\s+(?:llm)?trace\\s+import|\"",
+    "new": "r\"^\\s*(?:import\\s+trace\\b|from\\s+trace\\s+import|\""
+   }
+  ],
+  "预期红": "有调用点没接记录仪"
+ },
+ {
+  "script": "agent/trace_check.py",
+  "改坏": "让「最坏 import 顺序」那条判据去查 trace 而不是 llmtrace(等于模块改回同名)",
+  "file": [
+   {
+    "path": "agent/trace_check.py",
+    "old": "          \"import llmtrace\\n\"\n          \"assert hasattr(llmtrace, 'record'), '拿到的不是记录仪:' + llmtrace.__file__\\n\"",
+    "new": "          \"import trace as llmtrace\\n\"\n          \"assert hasattr(llmtrace, 'record'), '拿到的不是记录仪:' + llmtrace.__file__\\n\""
+   }
+  ],
+  "预期红": "最坏 import 顺序下"
  }
 ]

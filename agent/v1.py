@@ -5,7 +5,7 @@ HTTP 一律走 curl(本机 Python 的 TLS 校验会被中间人拦截失败)。
 记录仪同时记 cost_usd(供应商口径)与 cost_local(按当前单价自算),用 cost_source 标明该信哪个。
 """
 import json, os, subprocess, sys, time
-import trace as _trace
+import llmtrace as _trace   # 记录仪。**不叫 trace**:会被标准库同名模块挡住,见 llmtrace.py 文件头
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","backend"))
 import api as backend
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","mcp"))

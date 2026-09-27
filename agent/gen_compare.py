@@ -127,7 +127,7 @@ if __name__ == "__main__":
     # 于是两次对比表之间根本不可比 —— V1 从 $0.021 变成 $0.0065,
     # 可能只是后来跑了很多便宜调用,不是任何东西变好了。
     # 记下开跑前的行数,跑完只统计新增的那几行。
-    import trace as _t0
+    import llmtrace as _t0
     _base = sum(1 for _ in open(_t0.LOG, encoding="utf-8")) if os.path.exists(_t0.LOG) else 0
     print(f"三代横向对比 · {len(tasks)} 条工单 · 模型 {pv['model']}")
     print("=" * 92)
@@ -150,7 +150,7 @@ if __name__ == "__main__":
 
     print("=" * 92)
     # 成本从记录仪里取 —— 三代都记在同一个文件、同一套字段,这时候就用上了
-    import trace as _t, json as _j
+    import llmtrace as _t, json as _j
     by = _t.summary()["by_gen"]
     # 只读本轮新增的那些记录,按代汇总 —— 这才是可以跨版本比的那个数
     _new = []
