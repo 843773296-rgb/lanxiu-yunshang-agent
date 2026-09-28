@@ -3592,5 +3592,35 @@
    }
   ],
   "预期红": "一个自由文本字段都没有"
+ },
+ {
+  "script": "backend/supplier_check.py",
+  "改坏": "给一家面料商填上返工率(两类的质量指标串了)",
+  "db": "UPDATE supplier SET defect_rate=0.05 WHERE code='SUP-FAB-01'",
+  "预期红": "面料只填色差"
+ },
+ {
+  "script": "backend/supplier_check.py",
+  "改坏": "给一个自己做的工艺挂上供应商(判据逼出假数据)",
+  "db": "UPDATE craft SET supplier_code='SUP-OEM-01' WHERE code=(SELECT code FROM craft WHERE supplier_code IS NULL LIMIT 1)",
+  "预期红": "自己做的工艺没被挂上"
+ },
+ {
+  "script": "backend/supplier_check.py",
+  "改坏": "把某个面料指向一个 supplier 表里没有的码(指向空处的引用)",
+  "db": "UPDATE material SET supplier_code='SUP-XXX' WHERE code=(SELECT code FROM material LIMIT 1)",
+  "预期红": "指向的都是真的那几家"
+ },
+ {
+  "script": "backend/supplier_check.py",
+  "改坏": "把标品改回「一个 SKU 一个供应商」(恢复 659 那个形状)",
+  "db": "UPDATE sku SET supplier_code='SUP-'||code WHERE supplier_code IS NOT NULL",
+  "预期红": "标品的供应商是**少数几家**"
+ },
+ {
+  "script": "backend/supplier_check.py",
+  "改坏": "把**一个**里料改挂主料商(⚠️ 只改一行 —— 全改的话同类目还是一家,打不破这条)",
+  "db": "UPDATE material SET supplier_code='SUP-FAB-01' WHERE code=(SELECT code FROM material WHERE cat='里料' LIMIT 1)",
+  "预期红": "面料是**按类目**分给供应商的"
  }
 ]

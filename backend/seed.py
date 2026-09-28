@@ -237,6 +237,35 @@ CREATE TABLE sku(code TEXT PRIMARY KEY, spu TEXT, spec TEXT, color TEXT, size TE
   -- 位置参数插入多一列会**静默错位**(值整体挪一格而不报错)——
   -- `save_product` 里为 product 表留着同一条教训的注释。
   supplier_code TEXT);
+-- ── 供应商(业务 2026-09-24 拍:**有,而且分两类**)────────────────────────
+--
+-- 原来没有这张表,而 `sku.supplier_code` 有 659 个值、**659 个 SKU 对应 659 个不同的码**
+-- —— 一个 SKU 一个供应商,那是假数据的痕迹。**一个指向空处的引用**:
+-- 字段长得像外键,而它指向的东西不存在,于是采购、比价、供应商评估三块都做不起来,
+-- 却没有任何东西会报错。
+--
+-- 业务定的两类,**分法不是「按行业」而是「按我们怎么跟」**:
+--   面料   —— 我们买料。跟的是**到货工期**和**批次色差**
+--   外发   —— 我们把活发出去(缂丝/妆花/苏绣,以及标品成衣代工)。跟的是**交期**和**返工率**
+-- 两类的工期和质量都要跟,但**跟的不是同一个指标** —— 合成一个「综合评分」会把
+-- 「料到得慢」和「绣错了」压成同一个数,而这两件事的下一步完全不同。
+--
+-- ⚠️ **标品成品供应商归在「外发」里**(成衣代工)。这是落地时的解读,不是业务原话:
+-- 业务只说了面料和外发两类,而标品是进的货,总得有个来处。
+-- 要是业务认为它该单独算一类,改这里的 kind 就行。
+CREATE TABLE supplier(
+  code TEXT PRIMARY KEY,
+  name TEXT,
+  kind TEXT,                   -- 面料 / 外发
+  scope TEXT,                  -- 主营:他们供什么(给人看的一句话)
+  contact TEXT, phone TEXT, region TEXT,
+  lead_days INT,               -- 正常工期(天)。**不是承诺,是历史均值**
+  moq TEXT,                    -- 起订量(面料按米/匹,外发按件)
+  -- 质量:两类各跟各的,**不合成一个分**
+  defect_rate REAL,            -- 外发:返工率(0~1)。面料这一列为空
+  color_var REAL,              -- 面料:批次色差(ΔE)。外发这一列为空
+  since TEXT, status TEXT,     -- 合作起始 / 合作中·观察中·已停用
+  note TEXT);
 CREATE TABLE measure_item(code TEXT PRIMARY KEY, name TEXT, unit TEXT, required INT,
   sort INT, status TEXT, note TEXT);
 CREATE TABLE measure_tpl(code TEXT PRIMARY KEY, name TEXT, descr TEXT, status TEXT,
@@ -500,7 +529,12 @@ CREATE TABLE stock_log(id INTEGER PRIMARY KEY AUTOINCREMENT, sku TEXT, spu TEXT,
   kind TEXT, delta INT, before_n INT, after_n INT, ref TEXT, operator TEXT, ts TEXT, note TEXT);
 CREATE TABLE craft(code TEXT PRIMARY KEY, name TEXT, cat TEXT, alias TEXT,
   brief TEXT, detail TEXT, fit TEXT, lead_days TEXT, cost_level TEXT,
-  src_type TEXT, src_url TEXT, src_name TEXT);
+  src_type TEXT, src_url TEXT, src_name TEXT,
+  -- 外发给谁做(业务 2026-09-24:外发加工是供应商的两类之一)。
+  -- ⚠️ **空是正常的,而且是多数** —— 168 个工艺里只有缂丝/妆花/苏绣真外发,
+  -- 其余自己做。所以判据不能写成「这一列不许为空」,
+  -- 要判的是「**该挂的挂了、不该挂的没挂**」两头。
+  supplier_code TEXT);
 CREATE TABLE craft_combo(craft TEXT, material TEXT, verdict TEXT, reason TEXT, src_type TEXT, rule TEXT);
 -- ── 四大库之三、之四:版型库 与 BOM 库 ──
 -- 款式库 = product / category,工艺库 = craft + craft_combo(已有);
@@ -548,6 +582,8 @@ CREATE TABLE size_spec(pattern TEXT, size TEXT, item TEXT, value REAL,
 -- 主料行的 name 从 craft 表取,ref_craft 指回去 —— 面料名不在物料表里存第二遍
 CREATE TABLE material(code TEXT PRIMARY KEY, name TEXT, cat TEXT, spec TEXT, width_cm REAL,
   unit TEXT, price REAL, loss_rate REAL, lead_days INT, ref_craft TEXT, src_type TEXT,
+  supplier_code TEXT,          -- 从哪家进的料(业务 2026-09-24:面料供应商)
+
   -- 现货米数。**没有这个字段,工期推算那条「改用现货面料可压缩 20 天」就是空话** ——
   -- 系统根本不知道哪些面料有现货。越贵的料现货越少,这是真实的:压着钱的东西没人多囤。
   stock_qty REAL DEFAULT 0);
@@ -3292,27 +3328,106 @@ def run():
     print(f"  [部位选择] 给 {_n_ch} 条订单行明细"
           f"(**加价之和 = 订单行已有的 custom_amount**,不是重算)")
 
+    # ── 供应商:10 家(业务 2026-09-24 拍「有,分两类」;09-28 补「做 10 个」)──
+    #
+    # ⚠️ **这 10 家是手写的,不是数据工坊造的。** 工坊擅长「从库里挖关系、批量造」,
+    # 而供应商是**主数据**:它被 659 个 SKU、135 种面料、4 个外发工艺引用,
+    # 而且「缂丝只能发给会缂丝的工坊」这种约束**挖不出来** ——
+    # 库里原来连这张表都没有,没有东西可供它推断。
+    # 工坊在这件事上的用处是**验**(`protect` 扫哪些行碰不得、`census` 核分布),不是造。
+    供应商们 = [
+        # 面料 5 家 —— 跟到货工期和批次色差
+        ("SUP-FAB-01", "苏州云锦堂丝绸", "面料", "真丝主料:塔夫、双宫、素绉缎",
+         "周云锦", "0512-6620****", "江苏苏州", 12, "20 米/色", None, 1.2, "2023-04", "合作中",
+         "主料大户,色差控制稳;梅雨季工期会拖"),
+        ("SUP-FAB-02", "杭州锦瑟织造", "面料", "提花与暗纹主料:织金、妆花缎坯布",
+         "沈瑟", "0571-8812****", "浙江杭州", 18, "30 米/色", None, 2.4, "2024-01", "合作中",
+         "提花起订量高,小单要拼单"),
+        ("SUP-FAB-03", "绍兴柯桥里料行", "面料", "里料、衬料:电力纺、粘合衬、马尾衬",
+         "陈柯", "0575-8433****", "浙江绍兴", 7, "50 米", None, 3.1, "2022-09", "合作中",
+         "便宜、快,色差偏大 —— 里料看不见,**能接受**"),
+        ("SUP-FAB-04", "南通辅料汇", "面料", "辅料:线、扣件、盘扣、松紧",
+         "吴汇", "0513-8571****", "江苏南通", 5, "起订 500 元", None, 0.8, "2023-11", "合作中",
+         "杂项一站配齐,单价略高"),
+        ("SUP-FAB-05", "义乌礼盒包装", "面料", "包装耗材:礼盒、绵纸、防尘袋",
+         "李义", "0579-8532****", "浙江义乌", 9, "200 个", None, 0.5, "2025-03", "观察中",
+         "去年换过一次印刷厂,**批次质量还在看**"),
+        # 外发 5 家 —— 跟交期和返工率
+        ("SUP-OEM-01", "苏州缂丝工作室 · 沈氏", "外发", "缂丝(非遗级,只接整幅)",
+         "沈缂", "0512-6745****", "江苏苏州", 45, "1 件起", 0.06, None, "2021-06", "合作中",
+         "**全店唯一能做缂丝的**,排期常满,不能催"),
+        ("SUP-OEM-02", "南京云锦妆花坊", "外发", "妆花织造(非遗级)",
+         "顾云", "025-8360****", "江苏南京", 38, "1 件起", 0.09, None, "2022-03", "合作中",
+         "妆花配色要来回打样,工期看着长其实一半在等确认"),
+        ("SUP-OEM-03", "苏绣绣娘合作社", "外发", "苏绣:补子、袖缘、领抹",
+         "吴绣娘", "0512-6598****", "江苏苏州", 21, "3 件起", 0.12, None, "2023-08", "合作中",
+         "**返工率是五家里最高的** —— 绣样口径靠口头传,画清楚就降下来"),
+        ("SUP-OEM-04", "杭州成衣代工厂", "外发", "标品成衣代工:马面裙、褙子、短袄",
+         "张衣", "0571-8877****", "浙江杭州", 15, "50 件/款", 0.03, None, "2022-11", "合作中",
+         "**标品那批货就是这儿做的**(sku.supplier_code 指向它)"),
+        ("SUP-OEM-05", "嘉兴配饰工坊", "外发", "配饰:发簪、璎珞、荷包、宫绦",
+         "钱配", "0573-8266****", "浙江嘉兴", 11, "20 件", 0.05, None, "2024-06", "合作中",
+         "小件快,复杂件做不了"),
+    ]
+    c.executemany(
+        "INSERT OR REPLACE INTO supplier(code,name,kind,scope,contact,phone,region,"
+        "lead_days,moq,defect_rate,color_var,since,status,note) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", 供应商们)
+    print(f"  [供应商] {len(供应商们)} 家"
+          f"(面料 {sum(1 for x in 供应商们 if x[2]=='面料')} · "
+          f"外发 {sum(1 for x in 供应商们 if x[2]=='外发')})"
+          f" —— **两类跟的指标不同**:面料跟色差,外发跟返工率")
+
+    # ── 面料挂供应商 ────────────────────────────────────────────────
+    # 按 `material.cat` 分,**不是随机分** —— 分错了的表现是「里料从主料商进」,
+    # 而那种错在数据上完全合法,只有懂业务的人看得出来。
+    _料归属 = {"主料": "SUP-FAB-01", "里料": "SUP-FAB-03", "衬料": "SUP-FAB-03",
+              "线": "SUP-FAB-04", "扣件": "SUP-FAB-04", "辅料": "SUP-FAB-04",
+              "装饰": "SUP-FAB-02", "包装": "SUP-FAB-05", "耗材": "SUP-FAB-05"}
+    _n_m = 0
+    for _code, _cat in c.execute("SELECT code, cat FROM material").fetchall():
+        _sup = _料归属.get(_cat)
+        if _sup:
+            c.execute("UPDATE material SET supplier_code=? WHERE code=?", (_sup, _code))
+            _n_m += 1
+    print(f"  [面料供应商] {_n_m}/135 种面料挂上了(按类目分,不是随机分)")
+
+    # ── 外发工艺挂工坊 ──────────────────────────────────────────────
+    # ⚠️ **只有真要外发的工艺才挂。** 缝制、锁边这些自己做,挂上供应商就是假的 ——
+    # 而「自己做」和「还没填供应商」在一个可空字段上长得一模一样,
+    # 所以下面那条检查判的是「**该挂的挂了、不该挂的没挂**」两头,不是只判非空。
+    _外发 = {"KF01": "SUP-OEM-01", "KF02": "SUP-OEM-02", "KF03": "SUP-OEM-03"}
+    _n_c = 0
+    for _cc, _ss in _外发.items():
+        if c.execute("SELECT 1 FROM craft WHERE code=?", (_cc,)).fetchone():
+            c.execute("UPDATE craft SET supplier_code=? WHERE code=?", (_ss, _cc))
+            _n_c += 1
+    print(f"  [外发工艺] {_n_c} 个工艺挂上了工坊(缂丝/妆花/苏绣 —— **只有这几个真外发**)")
+
     # ── 供应商编码:只给**标品**造 ──────────────────────────────────
     # **定制品没有供应商编码** —— 它不是从供应商进的货,是自己做的。
     # 一刀切地每个 SKU 都给一个,那是假的:
     # 「没有供应商编码」和「还没填供应商编码」是两回事,而**前者是正常的**。
+    #
+    # ⚠️ **2026-09-28 改:原来这里给每个标品 SKU 造一个独立的 `SUP-{6位数}`** ——
+    # 659 个 SKU 对应 659 个不同的码,**一个 SKU 一个供应商**,那是假数据的痕迹。
+    # 业务 09-24 拍了「供应商有,分两类」之后,标品成品归「外发·成衣代工」,
+    # 所以这里改成**指向真的那一家**。
+    # 留下的教训照旧写着(下面那段关于内置 hash 的):即使值现在是常量,
+    # **那个坑本身没有消失** —— 哪天有人再按 SKU 分供应商,还会踩。
     _n_sup = 0
     for _sk, _kd in c.execute("SELECT s.code, p.kind FROM sku s "
                               "JOIN product p ON p.spu=s.spu").fetchall():
         if _kd != "标品":
             continue
-        # ⚠️ **不许用内置 `hash()`。** 原来这里写的是 `abs(hash(_sk))` ——
-        # 而 `str` 的内置哈希**每个进程都不一样**(PYTHONHASHSEED 随机),
-        # 于是每重建一次,659 个 SKU 的供应商编码全换一批,**而没有任何东西报错**。
-        # 2026-09-21 比对两次重建时查出来的;和同一天那起「22 款商品换颜色」
-        # 是同一个根因(那次是 `str.__hash__()`)。
-        # 稳的做法:拿内容算一个确定的摘要。
-        _h = 稳定哈希(_sk)
+        # ⚠️ **不许用内置 `hash()`。**(历史教训,留着 —— 见上面那段)
+        # `str` 的内置哈希每个进程都不一样(PYTHONHASHSEED 随机),
+        # 于是每重建一次编码全换一批,**而没有任何东西报错**。
         c.execute("UPDATE sku SET supplier_code=? WHERE code=?",
-                  (f"SUP-{_h % 900000 + 100000}", _sk))
+                  ("SUP-OEM-04", _sk))
         _n_sup += 1
-    print(f"  [供应商编码] 给 {_n_sup} 个标品 SKU 造了编码"
-          f"(定制品不给 —— **它不是进的货,是自己做的**)")
+    print(f"  [供应商编码] {_n_sup} 个标品 SKU → SUP-OEM-04(杭州成衣代工厂)"
+          f";定制品不给 —— **它不是进的货,是自己做的**")
 
     # ── 资料编辑日志:给演示数据造一批 ──────────────────────────────
     # **不造的话,商品详情页上那块日志永远是空的** —— 而空的那块看起来像
