@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "con
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge"))
 
 import json as _json
+import os as _os
 import uuid as _uuid
 
 from fastapi import APIRouter, Depends, Header, Query, Request
@@ -47,6 +48,7 @@ import parser as PS
 import retrieval as RT
 import reranker as RR
 import storage as OS_
+import usage as UG
 from db import 连接, 事务
 from deps import 身份, 要权限, _错
 
@@ -201,7 +203,89 @@ async def 检索实验室(project_id: str, request: Request,
                       "精排返回的东西不合契约(编号对不上 / 引文是编的)。"
                       "**没有降级成按原顺序** —— 那会让故障和结论长得一样。"
                       "可以传 `要精排=false` 先看召回")
+
+    # ── 记账:**真花过钱的那次,要在库里留下一行** ────────────────────
+    # ⚠️ 这一步失败**不许把检索结果吞掉** —— 人已经等到答案了,
+    # 而记账是我们内部的事。但也**不许静默**:记不上账的调用是黑的。
+    # (和澜绣那条 A2「上报失败不影响业务但必须留痕」同一个形状。)
+    链["记账"] = 记一次精排的账(project_id, me, 链)
     return 链
+
+
+def 记一次精排的账(project_id, me, 链):
+    """把这一次精排的 token 用量写进 `usage_ledger`。返回一段能显示的说明。
+
+    ## 为什么写在这里而不是 reranker 里
+
+    `reranker.py` 不开连接、不碰库 —— 它是纯调用 + 纯判据。
+    账本要在**事务**里写(契约:用量账目只追加、靠 event_key 防重复计费),
+    而事务是接口层的事。
+
+    ## trace 和账本一起写
+
+    `usage_ledger.trace_id` 2026-09-28 补了真外键,所以这里必须先有 trace ——
+    **一笔查不到出处的钱,在总额里和真的一样**。
+    """
+    精 = (链 or {}).get("精排") or {}
+    if not 精.get("做了"):
+        return {"记了吗": False, "为什么": "这次没调精排(要精排=false),没有花销可记"}
+    if 精.get("是mock"):
+        # mock 也记 —— 但 source='mock',界面上要能一眼看出这笔不是真的
+        pass
+    try:
+        with 事务() as c:
+            org = c.execute(text("select organization_id from projects where id=:p"),
+                            {"p": project_id}).scalar()
+            tid = _新id("tr")
+            c.execute(text("""
+                insert into traces (id, organization_id, project_id, request_id,
+                    environment, started_at, ended_at, end_reason, created_at, created_by)
+                values (:i,:o,:p,:rq,:e, now(), now(), 'completed', now(), :u)"""),
+                      {"i": tid, "o": org, "p": project_id, "rq": tid,
+                       "e": _os.environ.get("APP_ENV", "development"), "u": me.user_id})
+            c.execute(text("""
+                insert into spans (id, organization_id, project_id, trace_id, stage,
+                    output_ref, started_at, ended_at, created_at, created_by)
+                values (:i,:o,:p,:t,'rerank', cast(:orf as jsonb), now(), now(), now(), :u)"""),
+                      {"i": _新id("sp"), "o": org, "p": project_id, "t": tid,
+                       "orf": _json.dumps({"模型": 精.get("模型"),
+                                           "精排了几条": 精.get("精排了几条"),
+                                           "精排器版本": 精.get("精排器版本")},
+                                          ensure_ascii=False), "u": me.user_id})
+            折 = UG.折成账目(用量=精.get("用量"), 模型=精.get("模型"),
+                          提供方="anthropic", 资源=UG.精排,
+                          事件键=f"{tid}:rerank", trace_id=tid,
+                          是mock=bool(精.get("是mock")))
+            for 行 in 折["行们"]:
+                c.execute(text("""
+                    insert into usage_ledger (id, organization_id, project_id, event_key,
+                        trace_id, resource, quantity, unit, currency, amount,
+                        amount_known, source, created_at, created_by)
+                    values (:i,:o,:p,:ek,:t,:res,:q,:u,:cur,:amt,:ak,:src, now(), :by)
+                    on conflict (project_id, event_key) do nothing"""),
+                          {"i": _新id("ul"), "o": org, "p": project_id,
+                           "ek": 行["event_key"], "t": 行["trace_id"],
+                           "res": 行["resource"], "q": 行["quantity"], "u": 行["unit"],
+                           "cur": 行["currency"], "amt": 行["amount"],
+                           "ak": 行["amount_known"], "src": 行["source"],
+                           "by": me.user_id})
+    except UG.用量不对 as e:
+        # **不吞** —— 但也不让它把检索结果一起毁掉
+        return {"记了吗": False, "为什么": f"用量不合格,没记账:{str(e)[:200]}"}
+    except Exception as e:
+        return {"记了吗": False,
+                "为什么": f"记账失败({type(e).__name__}: {str(e)[:160]})—— "
+                        f"**检索结果是好的,但这次调用的花销在库里是黑的**。要人看"}
+    出 = {"记了吗": True, "trace_id": tid, "写了几行": len(折["行们"]),
+         "金额已知吗": 折["金额已知吗"],
+         "token合计": sum(r["quantity"] for r in 折["行们"])}
+    if 折["为什么不知道"]:
+        出["为什么金额未知"] = 折["为什么不知道"]
+    if 折["认不出的档"]:
+        # ⚠️ **认不出的档要报出来,不吞掉** —— 供应商加了一档新计费时,
+        # 它的 token 一分钱都不会被算进来,而总额看起来完全正常。
+        出["认不出的用量档"] = 折["认不出的档"]
+    return 出
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -586,3 +670,102 @@ def 上一次的模型(c, 项目, 知识库id):
                             and archived_at is null
                           order by created_at desc limit 1"""),
                      {"p": 项目, "k": 知识库id}).scalar()
+
+
+# ══════════════════════════════════════════════════════════════════════
+# M3:用量与成本(§17.1「用量与成本」那一组)
+#
+# ⚠️ 工作台上早就有「已知费用」和「费用未覆盖数量」两张卡,而且设计是对的
+# (未覆盖的那些明说「钱是未知,不是 0」)。这条接口要答的是**那两张卡答不了**的:
+#
+#     这笔钱是**谁花的**、花在**哪一次调用**上。
+#
+# 只有总额的话,「门店助手今天花了多少」这个问题答不出来 ——
+# 而那正是并行会话 A1 上报字段里「**调用方不能省**」的同一件事。
+# ══════════════════════════════════════════════════════════════════════
+
+
+@router.get(前缀 + "/usage")
+def 用量与成本(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
+          小时: int = Query(24, ge=1, le=24 * 90),
+          limit: int = Query(50, ge=1, le=200)):
+    """用量账目。**按「谁花的」分组,不是只给一个总额。**
+
+    ⚠️ **未知要显示「未知」,不许显示 0**(契约:`amount_known=False`)。
+    0 和未知在报表上差别巨大:0 意味着「跑了但不花钱」,
+    未知意味着「花了多少还不知道」。
+    """
+    with 连接() as c:
+        总 = c.execute(text("""
+            select count(*) 行数,
+                   coalesce(sum(quantity), 0) token数,
+                   coalesce(sum(amount) filter (where amount_known), 0) 已知金额,
+                   count(*) filter (where not amount_known) 金额未知的行数,
+                   count(distinct trace_id) 调用次数
+              from usage_ledger
+             where project_id=:p and created_at > now() - (:h || ' hours')::interval
+        """), {"p": project_id, "h": 小时}).mappings().first()
+        # ⚠️ **按 resource + source 分组** —— `resource` 是花在什么上
+        # (rerank / embed / generate),`source` 是谁提供的(anthropic / mock)。
+        # 两者都要:一份 mock 的用量和真的在数据形状上一模一样,
+        # 不分开的话「这个月花了多少」里混着一堆根本没花钱的 mock 调用。
+        分组 = c.execute(text("""
+            select resource, source,
+                   count(*) 行数, sum(quantity) token数,
+                   count(distinct trace_id) 调用次数,
+                   coalesce(sum(amount) filter (where amount_known), 0) 已知金额,
+                   count(*) filter (where not amount_known) 金额未知的行数
+              from usage_ledger
+             where project_id=:p and created_at > now() - (:h || ' hours')::interval
+             group by resource, source
+             order by sum(quantity) desc
+        """), {"p": project_id, "h": 小时}).mappings().all()
+        明细 = c.execute(text("""
+            select u.id, u.created_at, u.resource, u.source, u.quantity, u.unit,
+                   u.amount, u.amount_known, u.currency, u.trace_id, u.event_key,
+                   s.stage, cast(s.output_ref as text) 产出
+              from usage_ledger u
+              left join spans s
+                on s.project_id = u.project_id and s.trace_id = u.trace_id
+             where u.project_id=:p
+               and u.created_at > now() - (:h || ' hours')::interval
+             order by u.created_at desc
+             limit :n
+        """), {"p": project_id, "h": 小时, "n": limit}).mappings().all()
+
+    def _对外(r):
+        d = dict(r)
+        # ⚠️ **`金额` 这一项:未知就是 None,前端负责显示「未知」。**
+        # 在这里填 0 的话,前端无论怎么写都救不回来了 ——
+        # **一个被压成 0 的未知,在下游任何一层都分不出来。**
+        d["金额"] = float(d["amount"]) if d["amount_known"] and d["amount"] is not None else None
+        d["金额是未知吗"] = not d["amount_known"]
+        d["是mock吗"] = (d["source"] == "mock")
+        d["档"] = (d["event_key"] or "").rsplit(":", 1)[-1] or None
+        return d
+
+    真花钱的 = [g for g in 分组 if g["source"] != "mock"]
+    return {
+        "时间范围": f"最近 {小时} 小时",
+        "合计": {
+            "调用次数": 总["调用次数"] or 0,
+            "token数": int(总["token数"] or 0),
+            "已知金额": float(总["已知金额"] or 0),
+            "金额未知的行数": 总["金额未知的行数"] or 0,
+        },
+        # ⚠️ 这一句是这条接口的**重点**:总额里有多少是「不知道」。
+        # 不说的话,「已知金额 0.00」会被读成「这段时间没花钱」。
+        "总额可信吗": ("可信" if not (总["金额未知的行数"] or 0) else
+                  f"**不可信** —— {总['金额未知的行数']} 行的金额是未知的。"
+                  f"已知金额 {float(总['已知金额'] or 0)} **不是这段时间的花销**,"
+                  f"它只是其中算得出来的那部分"),
+        "为什么会有未知": ("" if not (总["金额未知的行数"] or 0) else
+                    "库里还没有任何价目表快照(`pricing_versions` 是空的)—— "
+                    "**token 数是已知的,补一份价目表就能重算**。"
+                    "⚠️ 不编一个单价填进去:一个自信的错金额比「未知」糟得多"),
+        "按用途": [dict(g) for g in 分组],
+        "真花过钱的用途数": len(真花钱的),
+        "items": [_对外(r) for r in 明细],
+        "next_cursor": None,
+        "total": 总["行数"] or 0,
+    }

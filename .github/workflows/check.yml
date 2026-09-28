@@ -165,7 +165,7 @@ jobs:
           # (`tools/progress_report.py` 里那份 handler 清单踩过同一个坑,已改成自动发现。)
           for t in test_dsl_semantics test_graph_validation test_execution test_agent_tools \
                    test_knowledge_chain test_index_plan test_embedder test_reranker \
-                   test_upload_rules test_storage; do
+                   test_upload_rules test_storage test_usage; do
             echo "▸ $t"
             PYTHONPATH="$PP" python3 "tests/orchestration/$t.py" || rc=1
           done

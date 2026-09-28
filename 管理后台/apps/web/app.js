@@ -84,7 +84,7 @@ const 导航 = [
   ["#/artifacts", "模型产物", false, true],
   ["#/evals", "评测中心", false],
   ["#/runs", "运行记录", true],
-  ["#/usage", "用量与成本", false],
+  ["#/usage", "用量与成本", true],
   ["grp", "设置"],
   ["#/members", "成员与权限", false, true],
   ["#/audit", "审计记录", false, true],
@@ -1475,6 +1475,95 @@ function _mock标(是mock) {
     : `<span class="tag ok" title="真模型(本机 onnxruntime,离线)">真向量</span>`;
 }
 
+/* ── 用量与成本 ───────────────────────────────────────────────────
+ * ⚠️ **这一页唯一不能做错的事:未知不许显示成 0。**
+ *
+ * 0 和未知在报表上差别巨大:0 意味着「跑了但不花钱」,
+ * 未知意味着「花了多少还不知道」。而一个被压成 0 的未知,
+ * **在下游任何一层都分不出来** —— 所以接口给的就是 null,这里也不许填 0。
+ *
+ * 第二件:**mock 的用量和真的分开显示。**
+ * 一份 mock 的用量在数据形状上和真的一模一样,混在一起之后
+ * 「这个月花了多少」里就掺着一堆根本没花钱的调用。 */
+// 照工作台那套类名画卡(`.cards` / `.card.kpi` / `.n.unknown`)——
+// **不另起一套**:两套卡片样式迟早长得不一样,而「未知」那个灰掉的样式
+// 正是工作台已经做对的地方。
+function _卡(名, 值, 未知, 分母, 来源) {
+  const v = 未知 ? `<div class="n unknown">未知</div>`
+                 : `<div class="n">${esc(值)}</div>`;
+  return `<div class="card kpi"><div class="k">${esc(名)}</div>${v}
+    <div class="meta">${分母 ? esc(分母) + "<br>" : ""}来源:${esc(来源)}</div></div>`;
+}
+
+function _钱(x) {
+  // ⚠️ `x == null` 同时接住 null 和 undefined。写成 `x === null` 的话,
+  // 一个字段名拼错(拿到 undefined)会显示成 `undefined`,而不是「未知」——
+  // 那种时候更该显示「未知」,因为我们确实不知道。
+  return x == null ? `<span class="tag warn">未知</span>` : `$${x.toFixed(4)}`;
+}
+
+async function 页_用量与成本() {
+  const 头 = `<div class="crumb">用量与成本</div>
+    <div class="head"><div><h1>用量与成本</h1>
+      <div class="sub">谁花的、花在哪次调用上。**未知显示「未知」,不显示 0。**</div>
+    </div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/usage`); }
+  catch (e) { const s = 错误块(e, 页_用量与成本); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+
+  const 合 = d["合计"] || {};
+  const 不可信 = (合["金额未知的行数"] || 0) > 0;
+  $("#main").innerHTML = 头 + `
+    <div class="cards">
+      ${_卡("调用次数", 合["调用次数"], false, d["时间范围"], "usage_ledger 表")}
+      ${_卡("token 数", (合["token数"] || 0).toLocaleString(), false,
+            "所有用途合计（真的和 mock 都算）", "usage_ledger 表")}
+      ${_卡("这段时间花了多少", 合["已知金额"], 不可信,
+            不可信 ? `${合["金额未知的行数"]} 行算不出金额` : "全部算得出",
+            "usage_ledger 表")}
+    </div>
+    ${不可信 ? `<div class="state err"><h3>总额不可信</h3><p>${md(d["总额可信吗"])}</p>
+       <p>${md(d["为什么会有未知"])}</p></div>` : ""}
+
+    <h2>按用途</h2>
+    <div class="note">⚠️ **「谁提供的」要和「用途」一起看** ——
+      一份 mock 的用量在数据形状上和真的一模一样。
+      这段时间里**真花过钱的用途有 ${d["真花过钱的用途数"]} 个**。</div>
+    <table><thead><tr><th>用途</th><th>谁提供的</th>
+        <th class="num">调用</th><th class="num">token</th>
+        <th class="num">金额</th></tr></thead><tbody>`
+    + (d["按用途"] || []).map((g) => `<tr>
+        <td><b>${esc(g.resource)}</b></td>
+        <td>${g.source === "mock"
+              ? `<span class="tag">mock · 没花钱</span>`
+              : `<span class="tag ok">${esc(g.source)}</span>`}</td>
+        <td class="num">${g["调用次数"]}</td>
+        <td class="num">${Number(g["token数"]).toLocaleString()}</td>
+        <td class="num">${g["金额未知的行数"] > 0
+              ? `<span class="tag warn">未知</span><div class="k">${g["金额未知的行数"]} 行</div>`
+              : `$${Number(g["已知金额"]).toFixed(4)}`}</td>
+      </tr>`).join("")
+    + `</tbody></table>
+
+    <h2>明细</h2>
+    <table><thead><tr><th>时间</th><th>用途</th><th>档</th>
+        <th class="num">数量</th><th class="num">金额</th>
+        <th>哪次调用</th></tr></thead><tbody>`
+    + (d.items || []).map((r) => `<tr>
+        <td class="k">${esc(String(r.created_at).slice(5, 19).replace("T", " "))}</td>
+        <td>${esc(r.resource)} ${r["是mock吗"] ? `<span class="tag">mock</span>` : ""}</td>
+        <td class="k">${esc(r["档"] || "")}</td>
+        <td class="num">${Number(r.quantity).toLocaleString()} ${esc(r.unit)}</td>
+        <td class="num">${_钱(r["金额"])}</td>
+        <td class="k">${esc(r.trace_id || "")}</td>
+      </tr>`).join("")
+    + `</tbody></table>
+       <div class="note">⚠️ **每次调用写几行,不是一行** —— token 分
+         input / output / cache 几档记,因为**它们的单价差一个数量级**。
+         合成一个数之后,补上价目表也算不回来了。</div>`;
+}
+
 /* ── 加资料(上传三步)─────────────────────────────────────────────
  * ⚠️ **这一页的全部价值是让「上传成功不等于内容可用」看得见**(规格 §17.1)。
  *
@@ -1794,6 +1883,7 @@ async function 路由() {
     if (h === "#/agents") return await 页_agent列表();
     if (h.startsWith("#/agent/")) return await 页_agent配置(decodeURIComponent(h.slice(8)));
     if (h === "#/tools") return await 页_工具目录();
+    if (h === "#/usage") return await 页_用量与成本();
     if (h === "#/uploads") return await 页_加资料();
     if (h === "#/kb") return await 页_知识库();
     if (h.startsWith("#/kb/")) return await 页_索引构建(decodeURIComponent(h.slice(5)));

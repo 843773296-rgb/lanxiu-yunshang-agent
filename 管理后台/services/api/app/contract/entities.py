@@ -367,12 +367,26 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
       依赖=["traces"]),
 
     # ⑩ 用量与费用
+    # ⚠️ `依赖=["traces"]` 是 2026-09-28 加的 —— 在这之前 `trace_id` **不是外键**,
+    # 于是那一列可以填任何字符串,而**没有任何一层会发现**。
+    # (和 `index_members.embedding_id` 指向一张不存在的表是同一个形状,
+    #  那次也是补真外键解决的。)
+    #
+    # 一条账目的 `trace_id` 指向空处的后果:算账时它照样被计入总额,
+    # 而点进去看「这笔钱花在哪次调用上」**查不到** ——
+    # 钱是真的,而它的出处是假的。
+    #
+    # > 能用约束表达的,不要用判据表达:外键在**每次 INSERT** 上生效,
+    # > 判据只在有人调用时生效。
+    # 加之前量过:现有 96 行 trace_id 全部指向真 trace,0 行为空、0 行悬空。
     E("usage_ledger", "用量账目", 项目级, 只追加,
       ["event_key", "trace_id", "resource", "quantity", "unit", "currency",
        "pricing_version_id", "amount", "amount_known", "source"],
       ["**唯一用量事件防重复计费**(§18):event_key 唯一约束",
        "**unknown 区分 zero** —— amount_known=False 时前端显示「未知」,**不许显示 0**",
-       "外部账单有延迟,费用上限**不得宣称绝对零超支**(§11.5)"]),
+       "外部账单有延迟,费用上限**不得宣称绝对零超支**(§11.5)",
+       "**`trace_id` 是真外键** —— 一笔查不到出处的钱,在总额里和真的一样"],
+      依赖=["traces"]),
     E("pricing_versions", "价格版本", 全局级, 不可变,
       ["provider", "model_id", "unit_prices", "currency", "effective_at",
        "content_hash"],
