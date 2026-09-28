@@ -2437,6 +2437,122 @@
         "x-权限": "改训练样本"
       }
     },
+    "/api/v1/projects/{project_id}/datasets/{id}/export": {
+      "get": {
+        "description": "八道闸(空集 / 脱敏策略没声明 / 脱敏器没选型 / 同组跨分集 / 非训练档 / 没复核 / mock 产物 / **敏感信息检测**)。**一条不剩时返回 422 而不是空文件** —— 空的 .jsonl 看起来是成功的,而下游会拿它去训练。⚠️ 敏感信息那道是**隔离不是脱敏**,而且**零命中不放行**:放行要求来源在覆盖已验证的白名单里(零命中只说明检测器没找到)",
+        "operationId": "get_datasets_id_export",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "详情"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "导出训练数据",
+        "tags": [
+          "数据集"
+        ],
+        "x-字段权限": [
+          "查看敏感输入/独立测试答案"
+        ],
+        "x-审计": true,
+        "x-权限": "改训练样本"
+      }
+    },
     "/api/v1/projects/{project_id}/datasets/{id}/samples/{sample_id}": {
       "patch": {
         "operationId": "patch_datasets_id_samples_sample_id",

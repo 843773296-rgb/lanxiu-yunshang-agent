@@ -109,6 +109,7 @@ export const ENDPOINTS = [
   { method: "POST", path: "/datasets", summary: "建数据集", capability: "改训练样本", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/datasets/{id}/samples/{sample_id}", summary: "改样本", capability: "改训练样本", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/datasets/{id}/versions", summary: "冻结数据集", capability: "改训练样本", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/datasets/{id}/export", summary: "导出训练数据", capability: "改训练样本", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/training-jobs", summary: "训练任务列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/training-jobs", summary: "提交训练", capability: "提交真实训练", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/training-jobs/{id}", summary: "训练详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -180,4 +181,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 94 条接口 · 19 条异步 · 22 条要幂等键 · 11 条要 If-Match */
+/** 共 95 条接口 · 19 条异步 · 22 条要幂等键 · 11 条要 If-Match */

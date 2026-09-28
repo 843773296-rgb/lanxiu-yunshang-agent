@@ -95,16 +95,29 @@ def main():
 
     份 = {d["名字"]: d for d in 体["数据集"]}
     需要的 = ["导出能过的那一份", "声明了需要脱敏的那一份", "同一组跨了分集的那一份",
-            "全是 mock 产物的那一份", "训练档但没复核的那一份", "一个样本都没有的那一份"]
+            "全是 mock 产物的那一份", "训练档但没复核的那一份", "一个样本都没有的那一份",
+            "来源没做过覆盖验证的那一份", "里面真带客户信息的那一份",
+            "全部都带客户信息的那一份"]
     缺 = [n for n in 需要的 if n not in 份]
     if 缺:
         print(f"     缺这几份种子:{缺} —— 先 `python3 tools/seed_datasets.py`")
         sys.exit(1)
 
-    for n in 需要的[1:]:
+    # ⚠️ 这两份**不在这一组**:
+    #   · 「里面真带客户信息的那一份」能导出,只是会隔离掉命中的两条
+    #   · 「全部都带客户信息的那一份」列表上看是能导出的 —— **而这是诚实的**:
+    #     内容级那道闸要逐条读 content,列表只拿形状,判不了。
+    #     所以列表必须**明说还有一道**(下面单独有一条断言),
+    #     而不是假装自己判全了。
+    内容级的 = ("里面真带客户信息的那一份", "全部都带客户信息的那一份")
+    for n in [x for x in 需要的[1:] if x not in 内容级的]:
         ck(f"列表上「{n}」标着导不出来,并说了卡在哪",
            份[n]["能导出吗"] is False and 份[n]["卡在哪"], 份[n]["能导出吗"])
     ck("列表上「导出能过的那一份」标着能导出", 份[需要的[0]]["能导出吗"] is True)
+    for n in 内容级的:
+        ck(f"「{n}」列表说能导出,**但明说还有一道看内容的闸**",
+           份[n]["能导出吗"] is True and 份[n].get("还有一道看内容的闸"),
+           份[n].get("还有一道看内容的闸"))
 
     # ── 一点五、建数据集:**不给脱敏策略也能建,但要当场说清后果** ────────
     #    「先建起来再补声明」是正常顺序,真正不能含糊的是**导出那一刻**。
@@ -185,6 +198,61 @@ def main():
        "MOCK" in (头.get("content-disposition") or ""), 头.get("content-disposition"))
     ck("x-contains-mock: yes", 头.get("x-contains-mock") == "yes", 头.get("x-contains-mock"))
     ck("审计里记了这次 mock 导出", _审计有("dataset.export", d["id"]))
+
+    # ── 五点五、第八道闸:敏感信息检测(方案 B 受限首版)─────────────
+    #
+    # ⚠️ 这一组守的是用户 2026-09-28 明确纠正的那一条:
+    # **零命中不等于没有敏感信息** —— 它只说明这几个检测器没找到。
+    # 所以放行不靠「扫了一遍干净」,靠**来源在覆盖已验证的白名单里**。
+    d = 份["里面真带客户信息的那一份"]
+    码, 文, 头 = 打("GET", f"{P}/datasets/{d['id']}/export", 要文本=True)
+    ck("带客户信息的那份 → 200(**隔离命中的,放行干净的**,不是整批拒)", 码 == 200, 码)
+    行 = [l for l in 文.strip().split("\n") if l.strip()]
+    ck("三条里只放行了一条", len(行) == 1 and 头.get("x-sample-count") == "1",
+       (len(行), 头.get("x-sample-count")))
+    ck("隔离了两条", 头.get("x-quarantined") == "2", 头.get("x-quarantined"))
+    ck("**说清是哪一类命中的**(手机号 / 称呼式姓名)",
+       "phone" in (头.get("x-quarantined-by") or "")
+       and "name-honorific" in (头.get("x-quarantined-by") or ""),
+       头.get("x-quarantined-by"))
+    # 头只能 latin-1 —— 所以类别名用 ASCII 代号,中文留在审计和 422 正文里
+    ck("隔离相关的响应头全是 ASCII",
+       all(str(头.get(k, "")).isascii()
+           for k in ("x-quarantined", "x-quarantined-by", "x-quarantine-detail")),
+       [头.get(k) for k in ("x-quarantined", "x-quarantined-by")])
+    ck("放行的那一条里没有手机号",
+       行 and "13912345678" not in 行[0], 行[0][:40] if 行 else "")
+    ck("审计里记了这次导出(隔离了谁、为什么在那儿)", _审计有("dataset.export", d["id"]))
+
+    # ⚠️ **零命中也不放行** —— 这条是这一版最容易被写回去的地方
+    d = 份["来源没做过覆盖验证的那一份"]
+    码, 体, _ = 打("GET", f"{P}/datasets/{d['id']}/export")
+    ck("来源没做过覆盖验证 → 422(**即使一条都没命中**)",
+       码 == 422 and (体 or {}).get("code") == "CANNOT_EXPORT",
+       (码, (体 or {}).get("code")))
+    理由 = " ".join(((体 or {}).get("field_errors") or {}).get("闸", []))
+    ck("拒的理由说的是「没做过覆盖验证」,不是「命中了敏感信息」",
+       "覆盖验证" in 理由 and "零命中" in 理由, 理由[:80])
+    ck("这条闸在**列表上**也说得出来(界面承诺的和接口做的要一致)",
+       d["能导出吗"] is False and any("覆盖验证" in x for x in (d["卡在哪"] or [])),
+       d["卡在哪"])
+
+    # 全部命中 → 一条不剩 → **不返回空文件**
+    d = 份["全部都带客户信息的那一份"]
+    码, 体, _ = 打("GET", f"{P}/datasets/{d['id']}/export")
+    ck("两条全命中 → 422 ALL_QUARANTINED(**不返回空的 .jsonl**)",
+       码 == 422 and (体 or {}).get("code") == "ALL_QUARANTINED",
+       (码, (体 or {}).get("code")))
+    隔 = ((体 or {}).get("field_errors") or {}).get("隔离", [])
+    ck("逐条说清是哪一类命中的", len(隔) == 2 and all("命中" in x for x in 隔),
+       [x[:44] for x in 隔])
+
+    # **对照**:同样零命中、但来源在白名单里的,要放得出去 ——
+    # 没有这一条,一个「什么都不放行」的实现照样能让上面全绿。
+    d = 份["导出能过的那一份"]
+    码, 文, 头 = 打("GET", f"{P}/datasets/{d['id']}/export", 要文本=True)
+    ck("对照:来源 seed、零命中 → 照样放行(闸不是一刀切)",
+       码 == 200 and 头.get("x-quarantined") == "0", (码, 头.get("x-quarantined")))
 
     # ── 六、改样本:乐观锁 + 当场报跨分集 ────────────────────────────
     d = 份["同一组跨了分集的那一份"]

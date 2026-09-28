@@ -52,6 +52,7 @@ from db import 连接, 事务
 from deps import 身份, 要权限, _错
 import evals
 import training
+import redact as RD
 
 router = APIRouter()
 前缀 = "/api/v1/projects/{project_id}"
@@ -122,6 +123,15 @@ def 数据集列表(project_id: str, me: 身份 = Depends(要权限("查看有�
                 "样本数": 账["总数"], "分档": 账["分档"],
                 "能导出吗": not 拒,
                 "卡在哪": 拒 or None,
+                # ⚠️ **列表判不了最后那道闸。** 它要逐条读 `content`,
+                # 而列表只拿形状(读了内容再不用,只是给自己留一个把原文写进日志的机会)。
+                # 所以这里**明说还有一道** —— 不说的话「能导出=true」就是个
+                # 会被 422 打脸的承诺,而那正是今天已经踩过三次的
+                # 「界面承诺的和接口做的不是一回事」。
+                "还有一道看内容的闸": (
+                    "导出时会逐条扫敏感信息(手机号/身份证/邮箱/地址/称呼式姓名),"
+                    "命中的那几条会被隔离;全命中时整批拒。列表不读内容,所以判不了这一道"
+                    if not 拒 else None),
             })
     return {"条数": len(出), "数据集": 出,
             "note": ("**列表不给样本内容** —— 独立测试档的内容要那条专项授权。"
@@ -358,6 +368,36 @@ def 导出训练数据(project_id: str, dsid: str,
              order by id limit :lim"""),
             {"p": project_id, "d": dsid, "ids": [s["id"] for s in 能],
              "lim": 导出上限}).mappings()]
+
+    # ── 第八道闸:敏感信息检测(方案 B 受限首版,用户 2026-09-28 拍板)──
+    #
+    # ⚠️ **这一道不脱敏,它只隔离。** 检出来的那一条**不给**,并说清是哪一类命中的。
+    # 而且它有三档不是两档 —— 第三档是用户当天明确纠正的:
+    #
+    # > **零命中不等于没有敏感信息。** 它只说明这几个检测器没找到。
+    #
+    # 所以「扫了一遍没命中」**不构成放行理由**:放行要求这条样本的 `source`
+    # 在**覆盖已验证的来源**白名单里(`redact.覆盖已验证的来源`)。
+    # 其余来源即使零命中也隔离 —— 不是因为它们一定有,
+    # 而是因为没人验证过检测器在那种数据上的覆盖率。
+    #
+    # 覆盖报告(**漏检和误拦分开报**)在 `tools/redact_coverage.py`。
+    可扫 = [{"id": r["id"], "source": r.get("source"),
+            "文本": _json.dumps(r["content"], ensure_ascii=False)} for r in 行们]
+    放行, 隔离, 隔离账 = RD.分拣(可扫)
+    放行集 = {x["id"] for x in 放行}
+    行们 = [r for r in 行们 if r["id"] in 放行集]
+    if not 行们:
+        # 又一次「一条不剩」—— 同样**不返回空文件**。
+        raise _错(422, "ALL_QUARANTINED",
+                  "过完敏感信息检测,**一条都不剩**",
+                  "看 `field_errors.隔离` 每一条的原因。"
+                  "来源没做过覆盖验证的,要先跑 `tools/redact_coverage.py` "
+                  "做覆盖验证、再把来源加进 `redact.覆盖已验证的来源`——"
+                  "**零命中不等于没有敏感信息**",
+                  field_errors={"隔离": [f"{x['id']}:{x['为什么']}" for x in 隔离[:20]],
+                                "账": "、".join(f"{k} {v}" for k, v in 隔离账.items())})
+
     体 = "\n".join(_json.dumps(
         {"id": r["id"], "content": r["content"]}, ensure_ascii=False)
         for r in 行们)
@@ -365,7 +405,11 @@ def 导出训练数据(project_id: str, dsid: str,
     with 事务() as c:
         _审计(c, me, "dataset.export",
               {"dataset_id": dsid, "条数": len(行们), "含mock": 有mock,
-               "脱敏策略": 策略[:120]},
+               "脱敏策略": 策略[:120],
+               # ⚠️ **隔离了哪几条、为什么,进审计。** 响应头装不下(只能 latin-1),
+               # 而「为什么少了三条」是事后唯一查得到的地方。
+               "隔离": [{"id": x["id"], "原因": x["为什么"][:80]} for x in 隔离[:50]],
+               "隔离账": 隔离账},
               reason=("显式要了 mock" if 有mock else None))
     头 = {
         "content-disposition":
@@ -375,6 +419,12 @@ def 导出训练数据(project_id: str, dsid: str,
         "x-redacted": "0 (policy=no-redaction-needed)",
         "x-sample-count": str(len(行们)),
         "x-contains-mock": "yes" if 有mock else "no",
+        # ⚠️ 这两个头的值**必须是 ASCII** —— 所以用 `redact.代号` 里的英文代号,
+        # 中文类别名留在审计记录和 422 的正文里。
+        "x-quarantined": str(隔离账["被隔离"]),
+        "x-quarantined-by": (",".join(f"{k}={v}" for k, v in
+                                      sorted(隔离账["隔离代号计数"].items())) or "none"),
+        "x-quarantine-detail": "see audit event dataset.export",
     }
     return Response(content=体, media_type="application/x-ndjson; charset=utf-8",
                     headers=头)

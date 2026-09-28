@@ -248,6 +248,11 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  `$$红` 展开成空,exit 拿不到数字退 255 —— 而红的理由完全指错方向"
 	@./.venv/bin/python tools/shell_lint.py
 	@echo ""
+	@echo "▸ 敏感信息检测覆盖:**漏检和误拦分开报**(用户 2026-09-28 要求)"
+	@echo "  合成一个准确率等于让一次泄露和一条样本互相抵消 —— 两种错的代价完全不对称"
+	@echo "  ⚠️ 已知盲区内的漏检**不计入红**,但逐条列出来:盲区是待办,不是免责声明"
+	@./.venv/bin/python tools/redact_coverage.py
+	@echo ""
 	@echo "▸ SQL 列名体检:**问 information_schema,不猜列名**"
 	@echo "  (同一天栽了四次「没查就写 SQL」:三次猜类型、一次猜列名)"
 	@./.venv/bin/python tools/sql_columns_check.py
