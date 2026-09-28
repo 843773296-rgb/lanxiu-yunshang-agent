@@ -112,6 +112,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  ⚠️ 其中一条会真调一次 Claude 精排(月租额度)"
 	@./.venv/bin/python tests/e2e/test_knowledge_write_flow.py
 	@echo ""
+	@echo "▸ 运行控制端到端:**「请求」不是「已经」**(pause→pause_requested)"
+	@echo "  (把「请求暂停」写成「已暂停」→ 界面显示已停而模型还在跑、钱还在花)"
+	@./.venv/bin/python tests/e2e/test_runctl_flow.py
+	@echo ""
 	@echo "▸ 用量与上报链端到端(M3 + A1 接收端):**未知不是 0**、幂等不重复计费"
 	@echo "  (「门店助手今天花了多少」答得出来 —— 那是 A1 存在的全部理由)"
 	@./.venv/bin/python tests/e2e/test_usage_flow.py
@@ -170,6 +174,7 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	@./.venv/bin/python tests/e2e/test_upload_flow.py 2>&1 | tail -2
 	@./.venv/bin/python tests/e2e/test_knowledge_write_flow.py 2>&1 | tail -2
 	@./.venv/bin/python tests/e2e/test_usage_flow.py 2>&1 | tail -2
+	@./.venv/bin/python tests/e2e/test_runctl_flow.py 2>&1 | tail -2
 	@echo ""
 	@echo "▸ 页面冒烟(它取哪些接口,也记在同一本账上)"
 	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' \
