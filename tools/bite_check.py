@@ -218,7 +218,7 @@ def main():
     print("咬合记录 · 检查")
     print("=" * 84)
     ss = 脚本()
-    有, 无, 坏 = [], [], []
+    有, 无, 坏, 读不了 = [], [], [], []
     for m in ss:
         t = open(os.path.join(ROOT, m), encoding="utf-8").read()
         # ⚠️ **用 AST 取模块级赋值,不用正则。**
@@ -232,8 +232,29 @@ def main():
                 if (isinstance(node, ast.Assign)
                         and any(getattr(x, "id", None) == "咬合" for x in node.targets)
                         and isinstance(node.value, ast.List)):
-                    条 = [(e.elts[0].value, e.elts[1].value) for e in node.value.elts
-                          if isinstance(e, ast.Tuple) and len(e.elts) == 2]
+                    # ⚠️ **只认字面字符串。**2026-09-28 崩过一次:
+                    # 有人在咬合列表里写了 `f"..."`(而且根本没有插值,纯手滑),
+                    # f-string 在 AST 里是 `JoinedStr`,**没有 `.value`** ——
+                    # 整份检查 `AttributeError` 当场崩掉。
+                    #
+                    # 崩了和判不过下一步完全不同:崩的那一下**不留台账**,
+                    # 也不告诉调用方是哪个文件哪一条有问题,只丢一个堆栈。
+                    # 这正是这个项目反复说的「**崩了 ≠ 判错了**」——
+                    # 所以这里不是「让它别崩」,是**让它把读不了的那一条说出来**。
+                    条 = []
+                    for e in node.value.elts:
+                        if not (isinstance(e, ast.Tuple) and len(e.elts) == 2):
+                            continue
+                        两 = [x.value if isinstance(x, ast.Constant) else None
+                              for x in e.elts]
+                        if None in 两:
+                            读不了.append(
+                                f"{m}:咬合列表里有一条不是字面字符串"
+                                f"(拼出来的 / f-string —— 静态读不了,"
+                                f"而**读不了就等于这条咬合不存在**):"
+                                f"{ast.dump(e.elts[两.index(None)])[:80]}")
+                            continue
+                        条.append((两[0], 两[1]))
         except SyntaxError:
             坏.append(f"{m}:语法错,读不出来"); continue
         if 条 is None:
@@ -257,6 +278,15 @@ def main():
         if 缺: 坏.append(f"{m}:预期红的那一条在脚本里找不到 {缺[:1]}")
         else: 有.append(m)
 
+    # ⚠️ **「读不了」单独一条,不并进「坏」。** 两者下一步不同:
+    # 「坏」是记录写错了(预期红的那句话脚本里没有)—— 改那条记录;
+    # 「读不了」是记录**根本没被读进来** —— 这一条咬合等于不存在,
+    # 而它在「有咬合记录的文件」那个计数里**看起来还是有的**。
+    ck("咬合列表每一条都是字面字符串(f-string / 拼出来的静态读不了,等于这条咬合不存在)",
+       not 读不了, len(读不了) or len(有),
+       ("；".join(读不了[:2])
+        + (f" ……还有 {len(读不了) - 2} 条(共 {len(读不了)})" if len(读不了) > 2 else "")
+        ) if 读不了 else "都是字面量,没有一条是拼出来的")
     ck("有咬合记录的,记录本身是对的(预期红的那条真的在脚本里)", not 坏, len(有) + len(坏),
        "；".join(坏[:2]) if 坏 else
        "**只写「测过了」和没写是一回事** —— 要写清改坏的是什么、该红的是哪一条")

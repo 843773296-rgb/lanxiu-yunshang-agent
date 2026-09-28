@@ -3436,5 +3436,53 @@
    }
   ],
   "预期红": "缺一样 → 不许落库"
+ },
+ {
+  "script": "backend/rating_view_check.py",
+  "改坏": "把「前端残月剔掉」的条件改成恒真(窗口切出来的残月又进了趋势)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "f\"{k}-01\" >= 起 and _月末(k) <= 今",
+    "new": "True and _月末(k) <= 今"
+   }
+  ],
+  "预期红": "被窗口切开的那个残月"
+ },
+ {
+  "script": "backend/rating_view_check.py",
+  "改坏": "把「当月不参与趋势」的条件改成恒真(没走完的月当了趋势终点)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "f\"{k}-01\" >= 起 and _月末(k) <= 今",
+    "new": "f\"{k}-01\" >= 起 and True"
+   }
+  ],
+  "预期红": "当月"
+ },
+ {
+  "script": "backend/rating_view_check.py",
+  "改坏": "去掉 rating_overview 的店长身份闸(顾问也看得到评价概况)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if me.get(\"role\") not in MANAGER_ROLES:\n        return dict(说明=\"评价概况只给店长看",
+    "new": "    if False:\n        return dict(说明=\"评价概况只给店长看"
+   }
+  ],
+  "预期红": "顾问看不到评价概况"
+ },
+ {
+  "script": "backend/rating_view_check.py",
+  "改坏": "只有一个自然月时也返回按月字典(报一个内容为空的「趋势」)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if len(月们) >= 2:\n        out[\"按月\"] = 按月",
+    "new": "    if len(月们) >= 1:\n        out[\"按月\"] = 按月"
+   }
+  ],
+  "预期红": "窗口只落在一个月里时"
  }
 ]
