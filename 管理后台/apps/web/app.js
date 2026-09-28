@@ -84,7 +84,8 @@ const 导航 = [
   ["#/training", "训练任务", false, true],
   ["#/artifacts", "模型产物", false, true],
   ["#/health", "智能体健康", true, true],
-  ["#/evals", "评测中心", false],
+  ["#/evals", "评测中心", true],
+  ["#/compare", "实验对比", true, true],
   ["#/runs", "运行记录", true],
   ["#/traces", "调用链", true, true],
   ["#/usage", "用量与成本", true],
@@ -1478,6 +1479,109 @@ function _mock标(是mock) {
     : `<span class="tag ok" title="真模型(本机 onnxruntime,离线)">真向量</span>`;
 }
 
+/* ── 评测中心 / 回归验收(M4:/acceptance 重建)────────────────────────
+ * ⚠️ **「有分数」不等于「能当结论」。** 规格 §18 要求四个东西同时在场:
+ * 候选 + 基线 + 冻结的数据版本 + 记录在案的判据版本。
+ * 缺任何一个,跑出来的数**看起来仍然是个分数** —— 而那是这一页的核心危险。 */
+async function 页_评测中心() {
+  const 头 = `<div class="crumb">评测中心</div>
+    <div class="head"><div><h1>回归验收</h1>
+      <div class="sub">改完之后跑一遍,看有没有退步。**有分数 ≠ 能当结论。**</div>
+    </div><div><a href="#/compare"><button>实验对比</button></a></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/evaluations`); }
+  catch (e) { const s = 错误块(e, 页_评测中心); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  if (!d.items.length) {
+    $("#main").innerHTML = 头 + 状态("", "还没有评测实验",
+      "跑 `tools/seed_evals.py` 可以灌一组示例。").html;
+    return;
+  }
+  $("#main").innerHTML = 头 + `<table><thead><tr>
+      <th>候选</th><th>基线</th><th class="num">题</th>
+      <th>数据集版本</th><th>判据</th><th>能当结论吗</th></tr></thead><tbody>`
+    + d.items.map((r) => `<tr>
+        <td><b>${esc((r.candidate_ref || {})["名"] || r.id)}</b>
+          <div class="k">${esc(r.id)}</div></td>
+        <td>${r["有基线吗"] ? esc((r.baseline_ref || {})["名"] || "有")
+                            : `<span class="tag crit">没有基线</span>`}</td>
+        <td class="num">${r["题数"]}</td>
+        <td class="k">${esc(String(r.dataset_version_id || "—").slice(-10))}</td>
+        <td class="k">${esc(r.scorer_version || "—")}</td>
+        <td>${r["能当结论吗"] ? `<span class="tag ok">能</span>`
+              : `<span class="tag crit">不能</span>
+                 <div class="k">${esc(r["为什么不能当结论"] || "")}</div>`}</td>
+      </tr>`).join("")
+    + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
+}
+
+/* ── 实验对比(M5:/experiments 重建)──────────────────────────────────
+ * ⚠️ **先判可比,再给数。** 两轮用了不同的数据集版本或判据版本时,
+ * 这里**不显示分数** —— 并排两个不可比的数比不显示糟得多:
+ * 读的人会算出一个差值,而那个差值可能全来自题目或评分方式。 */
+async function 页_实验对比() {
+  const 头 = `<div class="crumb"><a href="#/evals">评测中心</a> · 实验对比</div>
+    <div class="head"><div><h1>实验对比</h1>
+      <div class="sub">同一套题两个版本并排。**不可比时不给分数。**</div>
+    </div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/evaluations`); }
+  catch (e) { const s = 错误块(e, 页_实验对比); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  if (d.items.length < 2) {
+    $("#main").innerHTML = 头 + 状态("", "至少要两个评测实验才能对比",
+      `现在有 ${d.items.length} 个。`).html;
+    return;
+  }
+  const 选 = (id) => d.items.map((r) =>
+    `<option value="${esc(r.id)}">${esc((r.candidate_ref || {})["名"] || r.id)}</option>`).join("");
+  $("#main").innerHTML = 头 + `
+    <div class="card">
+      <div class="lbl">甲</div><select id="ea">${选()}</select>
+      <div class="lbl">乙</div><select id="eb">${选()}</select>
+      <button class="pri" id="cmp">对比</button>
+    </div><div id="res"></div>`;
+  $("#eb").selectedIndex = Math.min(1, d.items.length - 1);
+  $("#cmp").onclick = async () => {
+    const res = $("#res");
+    res.innerHTML = `<div class="note">对比中…</div>`;
+    try {
+      // ⚠️ 参数名是 `a` / `b`(ASCII)—— 中文参数名每个调用方都得记得编码,
+      // 而忘了的表现是「接口没返回」不是报错。
+      const r = await 请求(`${P()}/evaluations/compare`
+        + `?a=${encodeURIComponent($("#ea").value)}`
+        + `&b=${encodeURIComponent($("#eb").value)}`);
+      if (!r["可比吗"]) {
+        res.innerHTML = `<div class="state err"><h3>不可比,所以这里不给分数</h3>
+          <p>${md(r["为什么"])}</p><p>${md(r.note || "")}</p></div>`;
+        return;
+      }
+      const 名 = (x) => esc((x.candidate_ref || {})["名"] || x.id);
+      const 维 = new Set();
+      Object.values(r["分数"]).forEach((m) => Object.keys(m).forEach((k) => 维.add(k)));
+      res.innerHTML = `<div class="note">${md("**" + r["为什么"] + "**")}</div>
+        <table><thead><tr><th>维度</th><th>${名(r["甲"])}</th><th>${名(r["乙"])}</th>
+          <th>差</th></tr></thead><tbody>`
+        + [...维].map((k) => {
+            const A = (r["分数"][r["甲"].id] || {})[k] || {};
+            const B = (r["分数"][r["乙"].id] || {})[k] || {};
+            const 格 = (v) => v["均分是未知吗"]
+              ? `<span class="tag warn">未知</span>`
+              : `${v["均分"]} <div class="k">${v["已知几条"]} 条已打分`
+                + (v["没打分几条"] ? ` · ${v["没打分几条"]} 条没打分` : "") + `</div>`;
+            const 可算 = !A["均分是未知吗"] && !B["均分是未知吗"];
+            return `<tr><td><b>${esc(k)}</b></td><td>${格(A)}</td><td>${格(B)}</td>
+              <td>${可算 ? (B["均分"] - A["均分"] >= 0 ? "+" : "")
+                          + Math.round((B["均分"] - A["均分"]) * 10000) / 10000
+                        : `<span class="tag warn">算不出</span>`}</td></tr>`;
+          }).join("")
+        + `</tbody></table><div class="note">${md(r.note || "")}</div>`;
+    } catch (e) {
+      const s = 错误块(e, null); res.innerHTML = s.html;
+    }
+  };
+}
+
 /* ── 单条试跑(M4:/workbench 重建)────────────────────────────────────
  * ⚠️ **接口早就有了**(`POST /prompt-runs`,实现并验过),缺的只是界面。
  * 所以这一页不是「重建一个功能」,是「把一个已有能力接出来」。
@@ -2085,6 +2189,8 @@ async function 路由() {
     if (h === "#/workbench") return await 页_工作台();
     if (h === "#/prompts") return await 页_prompt列表();
     if (h.startsWith("#/prompt/")) return await 页_prompt详情(decodeURIComponent(h.slice(9)));
+    if (h === "#/evals") return await 页_评测中心();
+    if (h === "#/compare") return await 页_实验对比();
     if (h === "#/tryout") return await 页_单条试跑();
     if (h === "#/traces") return await 页_调用链();
     if (h.startsWith("#/trace/")) return await 页_调用树(decodeURIComponent(h.slice(8)));

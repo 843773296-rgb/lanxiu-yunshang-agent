@@ -121,7 +121,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_upload_flow.py
 	@echo ""
 	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径**(不是只看语法)"
-	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' '#/kb' '#/retrieval' '#/usage' '#/traces' '#/health' '#/tryout'; do \
+	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' '#/kb' '#/retrieval' '#/usage' '#/traces' '#/health' '#/tryout' '#/evals' '#/compare'; do \
 		printf "  %-14s " "$$h"; node tests/e2e/page_smoke.js "$$h" 2>&1 | tail -1; done
 	@echo ""
 	@echo "▸ 画布页:**结构对账**(节点数/连线数/「加入」按钮数 vs 接口返回的定义)"
@@ -175,6 +175,7 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' \
 	          '$(HASH)/agents' '$(HASH)/tools' '$(HASH)/uploads' '$(HASH)/kb' \
 	          '$(HASH)/usage' '$(HASH)/traces' '$(HASH)/health' '$(HASH)/tryout' \
+	          '$(HASH)/evals' '$(HASH)/compare' \
 	          '$(HASH)/retrieval'; do \
 		node tests/e2e/page_smoke.js "$$h" >/dev/null 2>&1 || true; done
 	@echo "▸ 生成报告"
@@ -219,6 +220,10 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  (CI 第一步故意什么都不装;而这件事在 2026-09-27 之前只是一句注释,"
 	@echo "   于是它红了两次而**本地是绿的** —— 本地 venv 里有 sqlalchemy)"
 	@./.venv/bin/python tools/check_zero_dep.py
+	@echo ""
+	@echo "▸ 评测判断:**防泄漏 / 可比性 / 没打分不参与平均**(四件坏法都不报错)"
+	@echo "  (同一组样本跨分集 → 分数虚高而每一步看起来都正常)"
+	@./.venv/bin/python tests/orchestration/test_evals.py
 	@echo ""
 	@echo "▸ 脱敏:**形状不是截断** —— 截到 100 字,那 100 字仍然是原文"
 	@echo "  (而原文第一句往往正是最敏感的那句:客户姓名、订单号通常在开头)"

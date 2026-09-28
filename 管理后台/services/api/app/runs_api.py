@@ -359,3 +359,116 @@ def 智能体健康(project_id: str, me: 身份 = Depends(要权限("查看有�
                   f"它们进得了总数,进不了「改了配置之后采纳率变没变」")
     出["说明"] = " / ".join(说)
     return 出
+
+
+# ══════════════════════════════════════════════════════════════════════
+# M4/M5 最后两页:回归验收 + 实验对比(评测中心)
+#
+# ⚠️ **「回归验收」不是「跑一遍看分数」。** 规格 §18 要求四个东西同时在场:
+# 候选 + 基线 + 冻结的数据版本 + 记录在案的判据版本。
+# 缺任何一个,跑出来的数**看起来仍然是个分数** —— 而那是这一组的核心危险:
+# 不可比的两个数放在一起,读的人会当成「涨了 / 跌了」。
+# ══════════════════════════════════════════════════════════════════════
+
+import evals as EV
+
+
+@router.get(前缀 + "/evaluations")
+def 评测列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
+         limit: int = Query(30, ge=1, le=200)):
+    """评测实验列表。
+
+    ⚠️ 契约给这条登记了字段权限「查看敏感输入/独立测试答案」——
+    **独立测试集的题面和标准答案要额外授权**:
+    一套独立验收集的答案一旦被人看到,它就再也不能当独立验收用了。
+    所以这里只给实验的**元信息**,不给任何题面。
+    """
+    with 连接() as c:
+        rs = c.execute(text("""
+            select e.id, e.candidate_ref, e.baseline_ref, e.dataset_version_id,
+                   e.scorer_version, e.status, e.job_id, e.created_at,
+                   (select count(*) from evaluation_items i
+                     where i.project_id=e.project_id and i.evaluation_id=e.id) 题数
+              from evaluations e
+             where e.project_id=:p and e.archived_at is null
+             order by e.created_at desc limit :n
+        """), {"p": project_id, "n": limit}).mappings().all()
+    出 = []
+    for r in rs:
+        d = dict(r)
+        # ⚠️ **「有没有基线」是显式字段。** 没有基线的分数不能当结论,
+        # 而一个只显示分数的列表会让人把它当结论用。
+        d["有基线吗"] = bool(d["baseline_ref"])
+        d["能当结论吗"] = bool(d["baseline_ref"]) and bool(d["dataset_version_id"]) \
+            and bool(d["scorer_version"])
+        if not d["能当结论吗"]:
+            缺 = [名 for 名, v in (("基线", d["baseline_ref"]),
+                                 ("数据集版本", d["dataset_version_id"]),
+                                 ("判据版本", d["scorer_version"])) if not v]
+            d["为什么不能当结论"] = (
+                f"缺 {'、'.join(缺)} —— 没有基线的分数不能当结论;"
+                f"没有冻结的数据版本,两轮跑的不是同一套题;"
+                f"没有判据版本,换了判据的两轮不可比")
+        出.append(d)
+    return {"items": 出, "next_cursor": None, "total": len(出),
+            "note": ("**「有分数」不等于「能当结论」** —— 四个东西要同时在场:"
+                     "候选、基线、冻结的数据版本、判据版本")}
+
+
+@router.get(前缀 + "/evaluations/compare")
+def 实验对比(project_id: str, a: str = Query(..., description="甲:第一个评测实验 id"),
+         b: str = Query(..., description="乙:第二个评测实验 id"),
+         me: 身份 = Depends(要权限("查看有权配置"))):
+    """同一套题两个版本并排(M5 的实验对比)。
+
+    ⚠️ **查询参数名用 `a` / `b`,不用「甲」「乙」。**
+    中文参数名能用,但**每个调用方都得记得编码它**,而忘了的表现是
+    「接口没返回」不是报错 —— 今天这一族第四次
+    (HTTP 头、bash 变量名、Anthropic 工具名、查询参数)。
+    > **凡是要过一层协议的标识符,一律 ASCII。**
+    > 内部字段名用中文没问题(它们只在 JSON body 里),出问题的一直是标识符。
+
+    ⚠️ **先判可比,再给数。** 两轮用了不同的数据集版本或判据版本时,
+    这里**不给对比结果** —— 给一个「不可比」和理由。
+
+    并排显示两个不可比的数,比不显示糟得多:
+    读的人会算出一个差值,而那个差值可能全来自题目或评分方式。
+    """
+    with 连接() as c:
+        rs = c.execute(text("""
+            select id, candidate_ref, baseline_ref, dataset_version_id,
+                   scorer_version, status
+              from evaluations
+             where project_id=:p and id = any(:ids) and archived_at is null
+        """), {"p": project_id, "ids": [a, b]}).mappings().all()
+    表 = {r["id"]: dict(r) for r in rs}
+    缺 = [i for i in (a, b) if i not in 表]
+    if 缺:
+        raise _错(404, "NOT_FOUND", f"没有这些评测实验:{缺}", "回评测列表重新选两个")
+    能, 为什么 = EV.可比吗(表[a], 表[b])
+    出 = {"甲": 表[a], "乙": 表[b], "可比吗": 能, "为什么": 为什么}
+    if not 能:
+        # ⚠️ **不给分数。** 见 docstring:并排两个不可比的数,
+        # 读的人会算出一个差值,而那个差值可能全来自题目或评分方式。
+        出["note"] = ("**不可比,所以这里不给分数对比。** "
+                      "给了的话读的人会算出一个差值,而那个差值"
+                      "可能全来自题目或评分方式,不是模型的差别")
+        return 出
+    with 连接() as c:
+        分 = c.execute(text("""
+            select i.evaluation_id, s.id, s.dimension, s.value, s.value_known,
+                   s.supersedes_score_id
+              from scores s
+              join evaluation_items i
+                on i.project_id=s.project_id and i.id=s.evaluation_item_id
+             where s.project_id=:p and i.evaluation_id = any(:ids)
+        """), {"p": project_id, "ids": [a, b]}).mappings().all()
+    汇 = {}
+    for 谁 in (a, b):
+        这些 = [dict(x) for x in 分 if x["evaluation_id"] == 谁]
+        # **人工改判是新增一条并指向被取代的那条** —— 算当前分要把被取代的排掉
+        汇[谁] = EV.汇总分数(EV.有效分数(这些))
+    出["分数"] = 汇
+    出["note"] = ("**「没打分」不参与平均** —— 把它当 0 会让一个只评了一半的实验"
+                  "看起来分数腰斩,而真相是另一半没测")
+    return 出

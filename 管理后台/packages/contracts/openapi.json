@@ -3260,6 +3260,112 @@
         "x-权限": "运行评测"
       }
     },
+    "/api/v1/projects/{project_id}/evaluations/compare": {
+      "get": {
+        "description": "**不可比时不给分数** —— 给了的话那个差值会被当成模型的差别",
+        "operationId": "get_evaluations_compare",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "详情"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "实验对比(同一套题两个版本并排)",
+        "tags": [
+          "评测中心"
+        ],
+        "x-字段权限": [],
+        "x-审计": false,
+        "x-权限": "查看有权配置"
+      }
+    },
     "/api/v1/projects/{project_id}/evaluations/{id}/reviews": {
       "post": {
         "description": "复核是**新增一条评分并指向被取代的那条**,**不许改 raw_output**(§18「原始结果不被复核覆盖」)",

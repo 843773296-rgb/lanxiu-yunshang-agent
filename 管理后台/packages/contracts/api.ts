@@ -119,6 +119,7 @@ export const ENDPOINTS = [
   { method: "POST", path: "/feedback", summary: "应用层上报一次人工判读", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/agent-health", summary: "智能体健康(采纳率)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/evaluations", summary: "评测列表", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/evaluations/compare", summary: "实验对比(同一套题两个版本并排)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/evaluations", summary: "建评测", capability: "运行评测", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "POST", path: "/evaluations/{id}/reviews", summary: "人工复核", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/applications", summary: "应用列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -179,4 +180,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 93 条接口 · 19 条异步 · 22 条要幂等键 · 11 条要 If-Match */
+/** 共 94 条接口 · 19 条异步 · 22 条要幂等键 · 11 条要 If-Match */
