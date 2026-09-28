@@ -140,6 +140,112 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/projects/{project_id}/agent-health": {
+      "get": {
+        "description": "**没有判读时采纳率是「未知」不是 0** —— 0 意味着「一条都没被采纳」,未知意味着「还没有人判过」",
+        "operationId": "get_agent-health",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "详情"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "智能体健康(采纳率)",
+        "tags": [
+          "评测中心"
+        ],
+        "x-字段权限": [],
+        "x-审计": false,
+        "x-权限": "查看有权配置"
+      }
+    },
     "/api/v1/projects/{project_id}/agents": {
       "get": {
         "description": "工具数只表示**授权候选集合的规模**,**不是能力强弱分**(§9.1)",
@@ -4504,6 +4610,121 @@
         "x-字段权限": [],
         "x-审计": true,
         "x-权限": "运行编排测试"
+      }
+    },
+    "/api/v1/projects/{project_id}/feedback": {
+      "post": {
+        "description": "**采纳率不是质量分** —— 上线之后没有标准答案(线上问题不在评测集里),能拿到的只有「人采纳了没有」,而采纳率高也可能是因为人懒得改",
+        "operationId": "post_feedback",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "**必填**。相同键相同请求返回原任务;相同键不同请求返回 409。超时重发一次的代价是重复烧 GPU 或重复计费",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已创建"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "应用层上报一次人工判读",
+        "tags": [
+          "评测中心"
+        ],
+        "x-字段权限": [],
+        "x-审计": false,
+        "x-权限": "运行评测"
       }
     },
     "/api/v1/projects/{project_id}/human-requests": {

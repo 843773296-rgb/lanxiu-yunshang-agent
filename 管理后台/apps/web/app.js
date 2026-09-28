@@ -69,6 +69,7 @@ const 导航 = [
   ["#/apps", "应用与发布", false],
   ["#/conns", "模型与连接", false],
   ["#/prompts", "Prompt 管理", true],
+  ["#/tryout", "单条试跑", true, true],
   ["grp", "编排"],
   ["#/workflows", "工作流 Workflow", true, true],
   ["#/agents", "智能体 Agent", true, true],
@@ -82,8 +83,10 @@ const 导航 = [
   ["grp", "微调训练"],
   ["#/training", "训练任务", false, true],
   ["#/artifacts", "模型产物", false, true],
+  ["#/health", "智能体健康", true, true],
   ["#/evals", "评测中心", false],
   ["#/runs", "运行记录", true],
+  ["#/traces", "调用链", true, true],
   ["#/usage", "用量与成本", true],
   ["grp", "设置"],
   ["#/members", "成员与权限", false, true],
@@ -1475,6 +1478,189 @@ function _mock标(是mock) {
     : `<span class="tag ok" title="真模型(本机 onnxruntime,离线)">真向量</span>`;
 }
 
+/* ── 单条试跑(M4:/workbench 重建)────────────────────────────────────
+ * ⚠️ **接口早就有了**(`POST /prompt-runs`,实现并验过),缺的只是界面。
+ * 所以这一页不是「重建一个功能」,是「把一个已有能力接出来」。
+ *
+ * ⚠️ **调试也花钱。** 那条接口要「运行评测」权限,不是因为它危险,
+ * 是因为它真的会调模型 —— 一个不过额度闸的调试入口,
+ * 会让「只是试一下」变成一笔没人预期的账。
+ *
+ * ⚠️ **202 不是答案。** 接口返回任务信封,不直接给结果 ——
+ * 页面要如实显示「排队中」,而不是转个圈假装在等结果:
+ * 一个用假进度冒充执行的界面,在任务卡住时看起来完全正常。 */
+async function 页_单条试跑() {
+  const 头 = `<div class="crumb">Prompt 管理</div>
+    <div class="head"><div><h1>单条试跑</h1>
+      <div class="sub">拿一条真输入试一次。**调试也花钱**,所以要过额度闸。</div>
+    </div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let ps;
+  try { ps = await 请求(`${P()}/prompts?limit=50`); }
+  catch (e) { const s = 错误块(e, 页_单条试跑); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  if (!(ps.items || []).length) {
+    $("#main").innerHTML = 头 + 状态("", "这个项目还没有 Prompt",
+      "先去「Prompt 管理」建一条。").html;
+    return;
+  }
+  $("#main").innerHTML = 头 + `
+    <div class="card">
+      <div class="lbl">选一条 Prompt</div>
+      <select id="pp">${ps.items.map((p) =>
+        `<option value="${esc(p.id)}">${esc(p.name || p.key || p.id)}</option>`).join("")}</select>
+      <div class="lbl">变量(JSON)</div>
+      <textarea id="vv" rows="4">{}</textarea>
+      <button class="pri" id="go">试跑一次</button>
+      <div class="note">⚠️ **这一次真的会调模型。** 返回的是任务信封(202),
+        不是答案 —— 下面显示的是**真实状态**,不是假进度条。</div>
+      <div id="步"></div>
+    </div>`;
+  $("#go").onclick = async () => {
+    const 步 = $("#步");
+    let 变量;
+    try { 变量 = JSON.parse($("#vv").value || "{}"); }
+    catch (e) {
+      步.innerHTML = `<div class="state err"><h3>变量不是合法 JSON</h3>
+        <p>${esc(String(e.message))}</p></div>`;
+      return;
+    }
+    步.innerHTML = `<div class="note">派任务中…</div>`;
+    try {
+      // 幂等键为这一次点击生成 —— 超时重发不会跑第二遍(也不会多花一次钱)
+      const 键 = "tryout-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+      const r = await 请求(`${P()}/prompt-runs`, {
+        method: "POST", headers: { "Idempotency-Key": 键 },
+        body: JSON.stringify({ prompt_id: $("#pp").value, 变量 }),
+      });
+      步.innerHTML = `<div class="note">
+        派出去了:任务 <code>${esc(r.job_id)}</code>,状态 <b>${esc(r.status)}</b><br>
+        ${md("**202 —— 一个模型都还没调完。**"
+             + "这是任务信封,不是答案;要看结果去运行记录。")}
+        ${r.note ? "<br>" + md(r.note) : ""}</div>
+        <a href="#/runs"><button>去运行记录看</button></a>`;
+    } catch (e) {
+      const s = 错误块(e, null);
+      步.innerHTML = s.html;
+    }
+  };
+}
+
+/* ── 调用链(M5:/debug 在管理后台重建)──────────────────────────────
+ * ⚠️ **重建不是搬。** 澜绣那一页读的是澜绣自己的 span 表,
+ * 这里读的是管理后台自己的 `traces` / `spans` —— 而那两张表
+ * 2026-09-28 之前基本是空的,是精排记账和 A1 上报让它们有了真内容。 */
+async function 页_调用链() {
+  const 头 = `<div class="crumb">运行记录</div>
+    <div class="head"><div><h1>调用链</h1>
+      <div class="sub">每一次运行的调用树。**看得到 trace 不等于看得到原文。**</div>
+    </div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/traces?limit=50`); }
+  catch (e) { const s = 错误块(e, 页_调用链); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  if (!d.items.length) {
+    $("#main").innerHTML = 头 + 状态("", "还没有运行记录",
+      "跑一次检索实验室,或者让门店助手上报一次调用(A1)。").html;
+    return;
+  }
+  $("#main").innerHTML = 头 + `<table><thead><tr>
+      <th>什么时候</th><th>调用方</th><th class="num">步</th>
+      <th class="num">token</th><th class="num">金额</th><th>结果</th><th></th>
+    </tr></thead><tbody>`
+    + d.items.map((r) => `<tr>
+        <td class="k">${esc(String(r.started_at).slice(5, 19).replace("T", " "))}
+          <div class="k">${esc(r.id)}</div></td>
+        <td>${r["调用方"] ? esc(r["调用方"]) : `<span class="tag warn">没标调用方</span>`}</td>
+        <td class="num">${r["步数"]}${r["出错的步数"]
+            ? ` <span class="tag crit">${r["出错的步数"]} 步出错</span>` : ""}</td>
+        <td class="num">${Number(r["token数"]).toLocaleString()}</td>
+        <td class="num">${_钱(r["金额"])}</td>
+        <td>${r["成功吗"] ? `<span class="tag ok">${esc(r.end_reason || "完成")}</span>`
+                          : `<span class="tag crit">${esc(r.end_reason || "失败")}</span>`}</td>
+        <td><button data-tr="${esc(r.id)}">看调用树</button></td>
+      </tr>`).join("")
+    + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
+  $("#main").querySelectorAll("[data-tr]").forEach((b) => {
+    b.onclick = () => { location.hash = "#/trace/" + encodeURIComponent(b.dataset.tr); };
+  });
+}
+
+async function 页_调用树(tid) {
+  const 头 = `<div class="crumb"><a href="#/traces">调用链</a> · 调用树</div>
+    <div class="head"><div><h1>调用树</h1>
+      <div class="sub">${esc(tid)}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/traces/${encodeURIComponent(tid)}`); }
+  catch (e) { const s = 错误块(e, () => 页_调用树(tid)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 脱 = !d["看得到原文吗"];
+  $("#main").innerHTML = 头
+    + (d.note ? `<div class="note ${脱 ? "" : "warn"}">${md(d.note)}</div>` : "")
+    + `<div class="cards">
+        ${_卡("步数", d["步数"], false, d["被截断了"] ? "被截断了" : "全部", "spans 表")}
+        ${_卡("原文", 脱 ? "看不到" : "看得到", 脱,
+              脱 ? "要「查看敏感输入/独立测试答案」授权" : "你有这条专项授权", "字段权限")}
+      </div>
+    <h2>用量</h2>`
+    + ((d["用量"] || []).length
+        ? `<table><thead><tr><th>用途</th><th>谁提供的</th><th>调用方</th>
+             <th class="num">token</th><th class="num">金额</th></tr></thead><tbody>`
+          + d["用量"].map((u) => `<tr><td>${esc(u.resource)}</td>
+              <td>${u.provider ? esc(u.provider) : `<span class="tag">mock</span>`}</td>
+              <td>${esc(u.caller || "—")}</td>
+              <td class="num">${Number(u["token数"]).toLocaleString()}</td>
+              <td class="num">${u["金额未知的行数"] > 0
+                    ? `<span class="tag warn">未知</span>`
+                    : `$${Number(u["已知金额"]).toFixed(4)}`}</td></tr>`).join("")
+          + `</tbody></table>`
+        : `<div class="state">这次运行没有用量记录</div>`)
+    + `<h2>每一步</h2>`
+    + (d["步们"] || []).map((s2, i) => `<div class="card">
+        <div class="k">${i + 1}. ${esc(s2.stage)}
+          ${s2["出错了吗"] ? `<span class="tag crit">出错</span>` : ""}</div>
+        <pre class="k">${esc(JSON.stringify(
+            脱 ? {入: s2["入_形状"], 出: s2["出_形状"], 错: s2["错_形状"]}
+               : {入: s2["入"], 出: s2["出"], 错: s2["错"]}, null, 1))}</pre>
+      </div>`).join("");
+}
+
+/* ── 智能体健康(M4:/health 重建)────────────────────────────────────
+ * ⚠️ **采纳率不是质量分。** 上线之后没有标准答案(线上问题不在评测集里),
+ * 能拿到的只有「人采纳了没有」—— 而采纳率高也可能是因为人懒得改。
+ * 这一页最重要的事是把这个区别写在脸上。 */
+async function 页_智能体健康() {
+  const 头 = `<div class="crumb">评测中心</div>
+    <div class="head"><div><h1>智能体健康</h1>
+      <div class="sub">上线之后**没有标准答案** —— 能拿到的是采纳率,而它不是质量分。</div>
+    </div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/agent-health`); }
+  catch (e) { const s = 错误块(e, 页_智能体健康); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 未知 = d["采纳率是未知吗"];
+  $("#main").innerHTML = 头 + `
+    <div class="cards">
+      ${_卡("采纳率", 未知 ? "" : d["采纳率"] + "%", 未知,
+            `${d["判读数"]} 条人工判读`, "feedback 表")}
+      ${_卡("改判率", 未知 ? "" : d["改判率"] + "%", 未知,
+            "**改判最有价值** —— 它能回流成评测样本", "feedback 表")}
+      ${_卡("覆盖率", d["这段时间的调用数"]
+              ? Math.round(d["判读数"] * 1000 / d["这段时间的调用数"]) / 10 + "%"
+              : "", !d["这段时间的调用数"],
+            `${d["这段时间的调用数"]} 次调用里有判读的`, "traces + feedback")}
+    </div>
+    <div class="note warn">${md(d["说明"] || "")}</div>
+    <h2>判读分档</h2>`
+    + ((d["分档"] || []).length
+        ? `<table><thead><tr><th>判读</th><th class="num">条数</th></tr></thead><tbody>`
+          + d["分档"].map((x) => `<tr><td>${esc(x["判读"])}</td>
+              <td class="num">${x.n}</td></tr>`).join("")
+          + `</tbody></table>`
+        : `<div class="state"><h3>还没有人工判读</h3>
+             <p>${md("澜绣那边接上 A3 上报(`POST /feedback`)之后,这里才会有数。"
+                     + "**现在显示「未知」而不是 0** —— 0 意味着「一条都没被采纳」。")}</p></div>`);
+}
+
 /* ── 用量与成本 ───────────────────────────────────────────────────
  * ⚠️ **这一页唯一不能做错的事:未知不许显示成 0。**
  *
@@ -1899,6 +2085,10 @@ async function 路由() {
     if (h === "#/workbench") return await 页_工作台();
     if (h === "#/prompts") return await 页_prompt列表();
     if (h.startsWith("#/prompt/")) return await 页_prompt详情(decodeURIComponent(h.slice(9)));
+    if (h === "#/tryout") return await 页_单条试跑();
+    if (h === "#/traces") return await 页_调用链();
+    if (h.startsWith("#/trace/")) return await 页_调用树(decodeURIComponent(h.slice(8)));
+    if (h === "#/health") return await 页_智能体健康();
     if (h === "#/runs") return await 页_运行记录();
     if (h === "#/workflows") return await 页_工作流列表();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
