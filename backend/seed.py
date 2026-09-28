@@ -1178,7 +1178,15 @@ def run():
     import kb as _kb
     CRAFTS = _kb.load()
 
-    for row in CRAFTS: c.execute("INSERT INTO craft VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",row)
+    # ⚠️ **具名列,不用位置参数。** 2026-09-28 踩了本文件自己写着的那条教训:
+    # 给 craft 加 `supplier_code` 之后,这里还是 `VALUES(?×12)` ——
+    # CI 从零重建当场炸 `table craft has 13 columns but 12 values were supplied`。
+    # **本地一直是绿的**,因为我是在现有库上 ALTER + UPDATE,从没跑过这条 INSERT。
+    # > 本地绿和 CI 绿的差别,可以只是「这条路本地根本没走过」。
+    # 而且这次算走运:列数不等会当场报错;**要是恰好相等,值会整体挪一格而不报错**。
+    for row in CRAFTS:
+        c.execute("INSERT INTO craft(code,name,cat,alias,brief,detail,fit,lead_days,"
+                  "cost_level,src_type,src_url,src_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", row)
     # 决策表:顾问问的多是「客户说 X 我推什么」,这类答案在 md 里是表格不是条目
     for topic,head,rws,fn in _kb.tables():
         c.execute("INSERT INTO kb_table VALUES(?,?,?,?)",
@@ -1219,7 +1227,10 @@ def run():
         base = 400 if pr < 60 else 220 if pr < 150 else 90 if pr < 300 else 30 if pr < 700 else 0
         qty = 0.0 if base == 0 and (_dp.materials(_names).index(m) % 3) else round(
             base * (0.4 + (稳定哈希(m["code"]) % 100) / 100), 1)
-        c.execute("INSERT INTO material VALUES(?,?,?,?,?,?,?,?,?,?,'demo',?)",
+        # 具名列 —— 同上,`material` 2026-09-28 也加了 `supplier_code`
+        c.execute("INSERT INTO material(code,name,cat,spec,width_cm,unit,price,loss_rate,"
+                  "lead_days,ref_craft,src_type,stock_qty) "
+                  "VALUES(?,?,?,?,?,?,?,?,?,?,'demo',?)",
                   (m["code"], m["name"], m["cat"], m["spec"], m["width_cm"], m["unit"],
                    m["price"], m["loss"], m["lead"], m["ref_craft"], qty))
     for b in _dp.pattern_bom():
