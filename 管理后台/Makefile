@@ -121,7 +121,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_upload_flow.py
 	@echo ""
 	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径**(不是只看语法)"
-	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' '#/kb' '#/retrieval' '#/usage' '#/traces' '#/health' '#/tryout' '#/evals' '#/compare'; do \
+	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' '#/kb' '#/retrieval' '#/usage' '#/traces' '#/health' '#/tryout' '#/evals' '#/compare' '#/human'; do \
 		printf "  %-14s " "$$h"; node tests/e2e/page_smoke.js "$$h" 2>&1 | tail -1; done
 	@echo ""
 	@echo "▸ 画布页:**结构对账**(节点数/连线数/「加入」按钮数 vs 接口返回的定义)"
@@ -175,7 +175,7 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' \
 	          '$(HASH)/agents' '$(HASH)/tools' '$(HASH)/uploads' '$(HASH)/kb' \
 	          '$(HASH)/usage' '$(HASH)/traces' '$(HASH)/health' '$(HASH)/tryout' \
-	          '$(HASH)/evals' '$(HASH)/compare' \
+	          '$(HASH)/evals' '$(HASH)/compare' '$(HASH)/human' \
 	          '$(HASH)/retrieval'; do \
 		node tests/e2e/page_smoke.js "$$h" >/dev/null 2>&1 || true; done
 	@echo "▸ 生成报告"
@@ -191,6 +191,10 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  踩过三次,其中一次在**全绿时完全看不出来**:`红=0` 被当成命令,"
 	@echo "  `$$红` 展开成空,exit 拿不到数字退 255 —— 而红的理由完全指错方向"
 	@./.venv/bin/python tools/shell_lint.py
+	@echo ""
+	@echo "▸ SQL 列名体检:**问 information_schema,不猜列名**"
+	@echo "  (同一天栽了四次「没查就写 SQL」:三次猜类型、一次猜列名)"
+	@./.venv/bin/python tools/sql_columns_check.py
 	@echo ""
 	@echo "▸ SQL 字符串体检:注释里的绑定参数 / 缺 cast 的位置"
 	@echo "  **判据不自己实现词法,问 SQLAlchemy** —— 第一版自己写正则,15/17 是误报"
@@ -220,6 +224,11 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  (CI 第一步故意什么都不装;而这件事在 2026-09-27 之前只是一句注释,"
 	@echo "   于是它红了两次而**本地是绿的** —— 本地 venv 里有 sqlalchemy)"
 	@./.venv/bin/python tools/check_zero_dep.py
+	@echo ""
+	@echo "▸ 人工审批:**一道拦得住但没有放行入口的闸,是做了一半的机制**"
+	@echo "  (模型不能自批 / 过期在点批准那一刻比 / 没设过期≠永不过期 /"
+	@echo "   候选角色里得真有人能审,否则请求建出来就没人能批而列表上看着正常)"
+	@./.venv/bin/python tests/orchestration/test_approvals.py
 	@echo ""
 	@echo "▸ 评测判断:**防泄漏 / 可比性 / 没打分不参与平均**(四件坏法都不报错)"
 	@echo "  (同一组样本跨分集 → 分数虚高而每一步看起来都正常)"

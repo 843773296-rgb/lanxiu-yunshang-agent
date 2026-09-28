@@ -74,7 +74,7 @@ const 导航 = [
   ["#/workflows", "工作流 Workflow", true, true],
   ["#/agents", "智能体 Agent", true, true],
   ["#/tools", "工具与能力", true, true],
-  ["#/human", "人工待办", false, true],
+  ["#/human", "人工待办", true, true],
   ["grp", "知识与 RAG"],
   ["#/uploads", "加资料", true, true],
   ["#/kb", "知识库", true, true],
@@ -1479,6 +1479,136 @@ function _mock标(是mock) {
     : `<span class="tag ok" title="真模型(本机 onnxruntime,离线)">真向量</span>`;
 }
 
+/* ── 人工待办 ────────────────────────────────────────────────────
+ * ⚠️ 契约里两条**界面设计**的约束,不是技术约束:
+ *
+ *   ① **列表上不许有批准按钮**(§12.1)——
+ *      批量批准的界面会让人按「全选」,而那正是不该发生的事
+ *   ② **看不到要批准什么的批准按钮,是一个走过场的闸**(§12.1)——
+ *      详情必须显示具体工具、脱敏参数、影响对象、必要证据
+ *
+ * 这两条把审批从一个流程变成一个**需要理解才能完成的动作**。
+ * 做得「方便」在这里是错的。 */
+async function 页_人工待办() {
+  const 头 = `<div class="crumb">人工待办</div>
+    <div class="head"><div><h1>人工待办</h1>
+      <div class="sub">不可逆写入要人点头。**列表上没有批准按钮,这是有意的。**</div>
+    </div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/human-requests`); }
+  catch (e) { const s = 错误块(e, 页_人工待办); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  if (!d.items.length) {
+    $("#main").innerHTML = 头 + 状态("", "没有待办",
+      "Agent 请求不可逆写入时会在这里出现。").html;
+    return;
+  }
+  $("#main").innerHTML = 头 + `<table><thead><tr>
+      <th>要做什么</th><th>状态</th><th>截止</th><th>你能处理吗</th><th></th>
+    </tr></thead><tbody>`
+    + d.items.map((r) => `<tr>
+        <td>${esc(r.risk_note || r.kind || r.id)}
+          <div class="k">${esc(r.id)}</div>
+          ${r["有人能批吗"] === false
+            ? `<div class="k"><span class="tag crit">没人能批</span>
+                 ${esc(r["没人能批的原因"] || "")}</div>` : ""}</td>
+        <td><span class="tag ${r.status === "pending" ? "warn"
+              : r.status === "approved" ? "ok" : ""}">${esc(r.status)}</span></td>
+        <td class="k">${r.expires_at
+              ? esc(String(r.expires_at).slice(5, 16).replace("T", " "))
+              : `<span class="tag crit">没设截止</span>`}
+          ${r["过期了吗"] === true ? `<span class="tag crit">已过期</span>` : ""}</td>
+        <td>${r["还能处理吗"] ? `<span class="tag ok">能</span>`
+              : `<span class="tag">不能</span>
+                 <div class="k">${esc(String(r["为什么不能处理"] || "").slice(0, 60))}</div>`}</td>
+        <td><button data-hr="${esc(r.id)}">看详情</button></td>
+      </tr>`).join("")
+    + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
+  $("#main").querySelectorAll("[data-hr]").forEach((b) => {
+    b.onclick = () => { location.hash = "#/human/" + encodeURIComponent(b.dataset.hr); };
+  });
+}
+
+async function 页_待办详情(hid) {
+  const 头 = `<div class="crumb"><a href="#/human">人工待办</a> · 详情</div>
+    <div class="head"><div><h1>待办详情</h1>
+      <div class="sub">${esc(hid)}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/human-requests/${encodeURIComponent(hid)}`); }
+  catch (e) { const s = 错误块(e, () => 页_待办详情(hid)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 证 = d["证据"] || {};
+  const 工 = d["具体工具"];
+  $("#main").innerHTML = 头
+    + `<div class="note">${md(d.note || "")}</div>
+    <h2>要批准什么</h2>
+    <div class="card">
+      <div class="k">影响对象</div>
+      <pre class="k">${esc(JSON.stringify(d["影响对象"], null, 1))}</pre>
+      <div class="k">具体工具</div>
+      <pre class="k">${工 ? esc(JSON.stringify(工, null, 1)) : "(没绑工具版本)"}</pre>
+      <div class="k">参数${d["看得到原文吗"] ? "（原文）" : "（已脱敏）"}</div>
+      <pre class="k">${esc(JSON.stringify(d["脱敏参数"], null, 1))}</pre>
+    </div>
+    <h2>证据</h2>
+    <table><tbody>`
+    + Object.entries(证).map(([k, v]) =>
+        `<tr><td class="k">${esc(k)}</td><td>${esc(JSON.stringify(v))}</td></tr>`).join("")
+    + `</tbody></table>
+    <h2>决定</h2>`
+    + (d["你能处理吗"]
+        ? `<div class="card">
+             <div class="lbl">理由（驳回必填）</div>
+             <textarea id="why" rows="2"></textarea>
+             <div class="lbl">改字段（JSON，只许改 ${esc(JSON.stringify(d["允许编辑的字段"]))}）</div>
+             <textarea id="edits" rows="2">{}</textarea>
+             <button class="pri" id="ap">批准</button>
+             <button id="rj">驳回</button>
+             <button id="info">要求补充</button>
+             <div class="note">⚠️ **批准只产生批准记录,不等于已执行** ——
+               真正执行时还要再查一遍权限和工具当前可用性。</div>
+             <div id="res"></div>
+           </div>`
+        : `<div class="state err"><h3>你不能处理这条</h3>
+             <p>${md(d["为什么"] || "")}</p></div>`)
+    + `<h2>决定历史</h2>`
+    + ((d["决定历史"] || []).length
+        ? `<table><thead><tr><th>谁</th><th>怎么判的</th><th>那时的 rev</th>
+             <th>理由</th></tr></thead><tbody>`
+          + d["决定历史"].map((x) => `<tr><td>${esc(x.actor)}</td>
+              <td><span class="tag">${esc(x.decision)}</span></td>
+              <td class="num">${x.request_revision}</td>
+              <td>${esc(x.reason || "")}</td></tr>`).join("")
+          + `</tbody></table>`
+        : `<div class="state">还没有人处理过</div>`);
+  if (!d["你能处理吗"]) return;
+  const 发 = async (决定) => {
+    const res = $("#res");
+    let edits;
+    try { edits = JSON.parse($("#edits").value || "{}"); }
+    catch (e) {
+      res.innerHTML = `<div class="state err"><h3>改字段不是合法 JSON</h3></div>`; return;
+    }
+    res.innerHTML = `<div class="note">提交中…</div>`;
+    try {
+      const r = await 请求(`${P()}/human-requests/${encodeURIComponent(hid)}/decisions`, {
+        method: "POST",
+        headers: { "Idempotency-Key": "hd-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8) },
+        body: JSON.stringify({ decision: 决定,
+                               request_revision: (d["请求"] || {}).revision,
+                               reason: $("#why").value || null, edits }),
+      });
+      res.innerHTML = `<div class="note">${esc(r.decision)} →
+        <b>${esc(r["当前状态"])}</b>（rev ${r["新的 revision"]}）<br>
+        ${md(r.note || "")}</div>`;
+      setTimeout(() => 页_待办详情(hid), 1200);
+    } catch (e) { const s = 错误块(e, null); res.innerHTML = s.html; }
+  };
+  $("#ap").onclick = () => 发("approved");
+  $("#rj").onclick = () => 发("rejected");
+  $("#info").onclick = () => 发("info_requested");
+}
+
 /* ── 评测中心 / 回归验收(M4:/acceptance 重建)────────────────────────
  * ⚠️ **「有分数」不等于「能当结论」。** 规格 §18 要求四个东西同时在场:
  * 候选 + 基线 + 冻结的数据版本 + 记录在案的判据版本。
@@ -2193,6 +2323,8 @@ async function 路由() {
     if (h === "#/workbench") return await 页_工作台();
     if (h === "#/prompts") return await 页_prompt列表();
     if (h.startsWith("#/prompt/")) return await 页_prompt详情(decodeURIComponent(h.slice(9)));
+    if (h === "#/human") return await 页_人工待办();
+    if (h.startsWith("#/human/")) return await 页_待办详情(decodeURIComponent(h.slice(8)));
     if (h === "#/evals") return await 页_评测中心();
     if (h === "#/compare") return await 页_实验对比();
     if (h === "#/tryout") return await 页_单条试跑();
