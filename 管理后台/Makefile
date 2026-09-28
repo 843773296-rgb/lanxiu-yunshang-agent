@@ -186,6 +186,11 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不需要数据库)
 	@./.venv/bin/python tools/spec_coverage.py
 	@echo ""
+	@echo "▸ Shell 体检:**bash 不接受中文变量名**(本地 zsh 接受,CI 的 bash 不接受)"
+	@echo "  踩过三次,其中一次在**全绿时完全看不出来**:`红=0` 被当成命令,"
+	@echo "  `$$红` 展开成空,exit 拿不到数字退 255 —— 而红的理由完全指错方向"
+	@./.venv/bin/python tools/shell_lint.py
+	@echo ""
 	@echo "▸ SQL 字符串体检:注释里的绑定参数 / 缺 cast 的位置"
 	@echo "  **判据不自己实现词法,问 SQLAlchemy** —— 第一版自己写正则,15/17 是误报"
 	@./.venv/bin/python tools/sql_lint.py
