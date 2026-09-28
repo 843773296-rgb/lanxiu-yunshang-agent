@@ -165,7 +165,7 @@ jobs:
           # (`tools/progress_report.py` 里那份 handler 清单踩过同一个坑,已改成自动发现。)
           for t in test_dsl_semantics test_graph_validation test_execution test_agent_tools \
                    test_knowledge_chain test_index_plan test_embedder test_reranker \
-                   test_upload_rules test_storage test_ingest; do
+                   test_upload_rules test_storage; do
             echo "▸ $t"
             PYTHONPATH="$PP" python3 "tests/orchestration/$t.py" || rc=1
           done
@@ -201,6 +201,16 @@ jobs:
           print(':'.join(sorted(set(ps))))")"
           rc=0
           PYTHONPATH="$PP" python3 tools/spec_coverage.py || rc=1
+          echo ""
+          # ⚠️ `test_ingest` 在**这一步**而不是上面那一步:它测的是
+          # `knowledge/ingest.py` 的纯逻辑,而那个模块 import sqlalchemy
+          # (它同时管写库)。放上面会报 ModuleNotFoundError ——
+          # 2026-09-27 真的红过两次,而**本地是绿的**:本地 venv 里有 sqlalchemy。
+          # > 「本地能跑」和「CI 能跑」的差别可以只是一个装了的包。
+          # 现在 `tools/check_zero_dep.py` 用系统 python3 把那一步真跑一遍,
+          # 于是这件事在本地就能发现(进了 make test-orchestration)。
+          echo "▸ test_ingest(要 sqlalchemy,所以在这一步)"
+          PYTHONPATH="$PP" python3 tests/orchestration/test_ingest.py || rc=1
           echo ""
           # SQL 字符串体检也在这一步 —— 它**故意**依赖 sqlalchemy:
           # 判据是「问 SQLAlchemy 认出了哪些绑定参数」,不是自己写正则

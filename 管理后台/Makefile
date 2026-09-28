@@ -204,6 +204,11 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  挡 LLM 的三种编法:编编号 / 漏候选 / 编引文。0 分免引文是有意的"
 	@./.venv/bin/python tests/orchestration/test_reranker.py
 	@echo ""
+	@echo "▸ 「零依赖」真的零依赖吗 —— **用系统 python3 把 CI 那一步跑一遍**"
+	@echo "  (CI 第一步故意什么都不装;而这件事在 2026-09-27 之前只是一句注释,"
+	@echo "   于是它红了两次而**本地是绿的** —— 本地 venv 里有 sqlalchemy)"
+	@./.venv/bin/python tools/check_zero_dep.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py
