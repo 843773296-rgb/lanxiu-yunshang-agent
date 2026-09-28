@@ -148,6 +148,26 @@ def 折成账目(*, 用量, 模型, 提供方, 资源=精排, 价目=None, 事�
 #
 # ⚠️ 这个函数**要连接不开连接**:事务边界是调用方的事
 # (调用方可能要把账和别的写入放进同一个事务)。
+def 查价目(c, *, 提供方, 模型):
+    """查这个模型的价目表快照。**查不到就是 None,不退回一个近似的。**
+
+    退回「同供应商的另一个模型」的坏法:它算出来的数**看起来完全正常**,
+    而它用的是别的模型的单价 —— 并行会话实测过跨供应商用错价目表
+    会差 24 倍、135 倍,而它不报错。
+
+    ⚠️ 取**最新一版**(effective_at 最大)。契约:「计价要用当时那一版价格的
+    快照,不用现价回算」—— 严格说该按调用时间选那一刻生效的版本,
+    而现在只有一版,所以取最新等价。**这一点是已知缺口**:
+    等真有第二版时,这里要改成按 `created_at` 选。
+    """
+    from sqlalchemy import text as _t
+    r = c.execute(_t("""select unit_prices, id from pricing_versions
+                       where provider=:pv and model_id=:m and archived_at is null
+                       order by effective_at desc limit 1"""),
+                  {"pv": 提供方, "m": 模型}).mappings().first()
+    return (dict(r["unit_prices"]), r["id"]) if r else (None, None)
+
+
 def 写进库(c, *, 组织, 项目, 谁, 用量, 模型, 提供方, 资源, 事件键, trace_id,
         是mock=False, 调用方=None, 世界日期=None, 价目=None, _新id=None):
     """把一次调用折成账目并写进 `usage_ledger`。返回一段能显示的说明。
@@ -155,6 +175,11 @@ def 写进库(c, *, 组织, 项目, 谁, 用量, 模型, 提供方, 资源, 事�
     `c` 是**已经在事务里**的连接。`_新id` 是造 id 的函数(调用方给)。
     """
     from sqlalchemy import text as _t
+    价目版本id = None
+    if 价目 is None and not 是mock:
+        # ⚠️ **mock 不查价目表。** mock 没有供应商,也没花钱 ——
+        # 给它配一个单价会让它在「参考价」里冒充一笔真花销。
+        价目, 价目版本id = 查价目(c, 提供方=提供方, 模型=模型)
     折 = 折成账目(用量=用量, 模型=模型, 提供方=提供方, 资源=资源, 价目=价目,
                 事件键=事件键, trace_id=trace_id, 是mock=是mock,
                 调用方=调用方, 世界日期=世界日期)
@@ -163,9 +188,10 @@ def 写进库(c, *, 组织, 项目, 谁, 用量, 模型, 提供方, 资源, 事�
         写了 += c.execute(_t("""
             insert into usage_ledger (id, organization_id, project_id, event_key,
                 trace_id, resource, quantity, unit, currency, amount, amount_known,
-                source, provider, caller, world_date, created_at, created_by)
+                source, provider, caller, world_date, pricing_version_id,
+                created_at, created_by)
             values (:i,:o,:p,:ek,:t,:res,:q,:u,:cur,:amt,:ak,:src,:prov,:call,:wd,
-                    now(), :by)
+                    :pvid, now(), :by)
             -- ⚠️ 冲突目标是 **(project_id, event_key)**,精确匹配那条唯一约束。
             -- `do nothing` 是防重复计费的那一半:同一个事件重复上报不加钱。
             on conflict (project_id, event_key) do nothing"""),
@@ -173,9 +199,14 @@ def 写进库(c, *, 组织, 项目, 谁, 用量, 模型, 提供方, 资源, 事�
              "t": 行["trace_id"], "res": 行["resource"], "q": 行["quantity"],
              "u": 行["unit"], "cur": 行["currency"], "amt": 行["amount"],
              "ak": 行["amount_known"], "src": 行["source"], "prov": 行["provider"],
-             "call": 行["caller"], "wd": 行["world_date"], "by": 谁}).rowcount
+             "call": 行["caller"], "wd": 行["world_date"], "by": 谁,
+             "pvid": 价目版本id}).rowcount
     出 = {"写了几行": 写了, "本该几行": len(折["行们"]),
-         "金额已知吗": 折["金额已知吗"],
+         # ⚠️ **叫「参考价」不叫「费用」。** 用户 2026-09-28 定的:
+         # 计量按 token 算,价格只给参考。真账单还受批量折扣、协议价、
+         # 账单延迟、DeepSeek 时段浮动影响,这里一概不管。
+         # > **一个被当成账单用的估算,比没有估算糟。**
+         "参考价算得出吗": 折["金额已知吗"], "价目表版本": 价目版本id,
          "token合计": sum(r["quantity"] for r in 折["行们"])}
     if 写了 < len(折["行们"]):
         # ⚠️ **重复上报要报出来,不当成成功。** 它多半是对的(网络重发),
@@ -185,7 +216,7 @@ def 写进库(c, *, 组织, 项目, 谁, 用量, 模型, 提供方, 资源, 事�
         出["说明"] = ("这个事件键之前已经记过账了 —— **没有重复计费**。"
                    "如果你以为这是第一次上报,那说明上一次其实成功了")
     if 折["为什么不知道"]:
-        出["为什么金额未知"] = 折["为什么不知道"]
+        出["为什么参考价算不出"] = 折["为什么不知道"]
     if 折["认不出的档"]:
         出["认不出的用量档"] = 折["认不出的档"]
     return 出

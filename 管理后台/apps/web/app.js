@@ -1678,7 +1678,7 @@ async function 页_调用链() {
         <td class="num">${r["步数"]}${r["出错的步数"]
             ? ` <span class="tag crit">${r["出错的步数"]} 步出错</span>` : ""}</td>
         <td class="num">${Number(r["token数"]).toLocaleString()}</td>
-        <td class="num">${_钱(r["金额"])}</td>
+        <td class="num">${_参考价(r["参考价"])}</td>
         <td>${r["成功吗"] ? `<span class="tag ok">${esc(r.end_reason || "完成")}</span>`
                           : `<span class="tag crit">${esc(r.end_reason || "失败")}</span>`}</td>
         <td><button data-tr="${esc(r.id)}">看调用树</button></td>
@@ -1785,7 +1785,11 @@ function _卡(名, 值, 未知, 分母, 来源) {
     <div class="meta">${分母 ? esc(分母) + "<br>" : ""}来源:${esc(来源)}</div></div>`;
 }
 
-function _钱(x) {
+// ⚠️ 这个函数叫 `_参考价` 不叫 `_钱` —— 用户 2026-09-28 定的:
+// **计量按 token 算,价格只给参考**。界面上一律写「参考价」不写「费用」,
+// 因为真账单还受批量折扣、协议价、账单延迟、DeepSeek 时段浮动影响。
+// > 一个被当成账单用的估算,比没有估算糟。
+function _参考价(x) {
   // ⚠️ `x == null` 同时接住 null 和 undefined。写成 `x === null` 的话,
   // 一个字段名拼错(拿到 undefined)会显示成 `undefined`,而不是「未知」——
   // 那种时候更该显示「未知」,因为我们确实不知道。
@@ -1803,18 +1807,18 @@ async function 页_用量与成本() {
   catch (e) { const s = 错误块(e, 页_用量与成本); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
 
   const 合 = d["合计"] || {};
-  const 不可信 = (合["金额未知的行数"] || 0) > 0;
+  const 不可信 = (合["算不出参考价的行数"] || 0) > 0;
   $("#main").innerHTML = 头 + `
     <div class="cards">
       ${_卡("调用次数", 合["调用次数"], false, d["时间范围"], "usage_ledger 表")}
       ${_卡("token 数", (合["token数"] || 0).toLocaleString(), false,
             "所有用途合计（真的和 mock 都算）", "usage_ledger 表")}
-      ${_卡("这段时间花了多少", 合["已知金额"], 不可信,
-            不可信 ? `${合["金额未知的行数"]} 行算不出金额` : "全部算得出",
+      ${_卡("参考价(不是账单)", 合["参考价"], 不可信,
+            不可信 ? `${合["算不出参考价的行数"]} 行算不出金额` : "全部算得出",
             "usage_ledger 表")}
     </div>
-    ${不可信 ? `<div class="state err"><h3>总额不可信</h3><p>${md(d["总额可信吗"])}</p>
-       <p>${md(d["为什么会有未知"])}</p></div>` : ""}
+    ${不可信 ? `<div class="state err"><h3>总额不可信</h3><p>${md(d["参考价怎么读"])}</p>
+       <p>${md(d["为什么有算不出的"])}</p></div>` : ""}
 
     <h2>按调用方 —— **谁花的**</h2>
     <div class="note">⚠️ 这一张是 A1 上报链存在的**全部理由**。
@@ -1868,7 +1872,7 @@ async function 页_用量与成本() {
         <td>${esc(r.resource)} ${r["是mock吗"] ? `<span class="tag">mock</span>` : ""}</td>
         <td class="k">${esc(r["档"] || "")}</td>
         <td class="num">${Number(r.quantity).toLocaleString()} ${esc(r.unit)}</td>
-        <td class="num">${_钱(r["金额"])}</td>
+        <td class="num">${_参考价(r["参考价"])}</td>
         <td class="k">${esc(r.trace_id || "")}</td>
       </tr>`).join("")
     + `</tbody></table>

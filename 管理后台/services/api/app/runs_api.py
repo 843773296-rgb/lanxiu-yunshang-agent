@@ -107,13 +107,13 @@ def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看�
         d = dict(r)
         # ⚠️ **金额未知就是 None,不是 0**(和 `/usage` 同一条规矩)。
         # 在这里填 0 的话,列表按金额排序会把「不知道花了多少」的排在最便宜那头。
-        d["金额"] = (float(d["已知金额"]) if not d["金额未知的行数"] else None)
-        d["金额是未知吗"] = bool(d["金额未知的行数"])
+        d["参考价"] = (float(d["已知金额"]) if not d["金额未知的行数"] else None)
+        d["参考价算不出吗"] = bool(d["金额未知的行数"])
         d["成功吗"] = (d["end_reason"] not in ("failed", "error"))
         出.append(d)
     return {"items": 出, "next_cursor": None, "total": len(出),
-            "note": ("**「金额未知」不是 0** —— 库里还没有价目表快照。"
-                     "按金额排序时未知的那些不参与排序")}
+            "note": ("**「参考价」是按标价估的,不是账单。** 计量的硬事实是 token;"
+                     "算不出参考价的那些显示「—」而不是 0")}
 
 
 @router.get(前缀 + "/traces/{trace_id}")

@@ -156,6 +156,32 @@ ck("三种资源都是 ASCII(它们进 `usage_ledger.resource` 列)",
    all(x.isascii() for x in (U.精排, U.向量化, U.生成)),
    [U.精排, U.向量化, U.生成])
 
+print("▸ ⑨ 参考价:**按标价估的,不是账单**(2026-09-28 查的真价)")
+# 价从这两处查的:
+#   Claude    https://platform.claude.com/docs/en/about-claude/pricing
+#   DeepSeek  https://api-docs.deepseek.com/quick_start/pricing
+海ku = {"input_tokens": 1.0 / 1_000_000, "output_tokens": 5.0 / 1_000_000,
+       "cache_read_input_tokens": 0.10 / 1_000_000, "currency": "USD"}
+r9 = U.折成账目(用量={"input_tokens": 1_000_000, "output_tokens": 1_000_000},
+             模型="claude-haiku-4-5", 提供方="anthropic", 事件键="k9", 价目=海ku)
+金 = {x["档"]: x["amount"] for x in r9["行们"]}
+ck("一百万 input → $1.00", 金["input_tokens"] == 1.0, 金)
+ck("一百万 output → $5.00", 金["output_tokens"] == 5.0, 金)
+ck("**单位是「每 token 多少钱」不是「每百万」** —— "
+   "存成每百万的话折账要多一次除法,而那次除法迟早有人漏掉",
+   海ku["input_tokens"] < 0.001)
+
+深 = {"input_tokens": 1.32 / 1_000_000, "output_tokens": 3.96 / 1_000_000,
+     "currency": "USD"}
+r10 = U.折成账目(用量={"input_tokens": 1_000_000}, 模型="deepseek-v4-pro",
+              提供方="deepseek", 事件键="k10", 价目=深)
+ck("DeepSeek 取**高峰价**($1.32,非高峰是一半)—— "
+   "取便宜那边会让人低估成本,而低估的代价比高估大",
+   r10["行们"][0]["amount"] == 1.32, r10["行们"][0]["amount"])
+ck("**两家的单价不一样,所以必须按供应商查表** —— "
+   "跨供应商用错价目表实测差过 24 倍、135 倍,而它不报错",
+   海ku["input_tokens"] != 深["input_tokens"])
+
 print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}")
 if 挂:
     for x in 挂:
