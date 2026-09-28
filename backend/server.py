@@ -2711,7 +2711,8 @@ class H(BaseHTTPRequestHandler):
                                      model=body.get("model"), usage=body.get("usage"),
                                      guard_blocked=body.get("guard_blocked"),
                                      guard_violations=body.get("guard_violations"),
-                                     answer_turns=body.get("answer_turns") or 1)
+                                     answer_turns=body.get("answer_turns") or 1,
+                                     trace_id=body.get("trace_id"))
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
             return self._send(dict(ok=True, triage_id=tid, row=_ops.get_triage(tid)))

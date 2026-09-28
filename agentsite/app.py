@@ -591,7 +591,11 @@ class H(BaseHTTPRequestHandler):
             usage=r.get("usage"), latency_ms=ms, model=r.get("model"),
             guard_blocked=r.get("guard_blocked"),
             guard_violations=r.get("guard_violations"),
-            answer_turns=r.get("answer_turns")))
+            answer_turns=r.get("answer_turns"),
+            # ⚠️ 这一条 2026-09-28 补。`sdk.run()` 一直返回 trace_id,
+            # 而这里**从来没往后台传** —— 库里每条研判都答不出它是哪一次调用的产物。
+            # 缺了它,A3 的判读回流挂不到具体调用上(见 backend/seed.py 那一列的注释)。
+            trace_id=r.get("trace_id")))
         row = saved.get("row") or {}
         return dict(task_id=tid, triage_id=saved.get("triage_id"),
                     root_cause=row.get("ai_root_cause"), confidence=row.get("ai_confidence"),

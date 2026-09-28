@@ -3484,5 +3484,113 @@
    }
   ],
   "预期红": "窗口只落在一个月里时"
+ },
+ {
+  "script": "agent/feedback_report_check.py",
+  "改坏": "删掉 判读别名 里 已采纳→采纳(内部状态名发不出去)",
+  "file": [
+   {
+    "path": "agent/feedback_report.py",
+    "old": "判读别名 = {\"已采纳\": \"采纳\", \"已改判\": \"改判\", \"已升级\": \"升级\", \"已作废\": \"作废\"}",
+    "new": "判读别名 = {\"已改判\": \"改判\", \"已升级\": \"升级\", \"已作废\": \"作废\"}"
+   }
+  ],
+  "预期红": "内部每一个销账状态都能归一"
+ },
+ {
+  "script": "agent/feedback_report_check.py",
+  "改坏": "让 _判读() 认不出时返回 None(「认不出」混进「没传」)",
+  "file": [
+   {
+    "path": "agent/feedback_report.py",
+    "old": "    return 判读别名.get(v, v)",
+    "new": "    return 判读别名.get(v)"
+   }
+  ],
+  "预期红": "这两种说的"
+ },
+ {
+  "script": "agent/feedback_report_check.py",
+  "改坏": "让 缺什么() 不再检查两个 trace(挂不上的判读被当成正常)",
+  "file": [
+   {
+    "path": "agent/feedback_report.py",
+    "old": "    if not (载荷.get(\"trace_id\") or 载荷.get(\"外部trace\")):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "两个 trace 都没有"
+ },
+ {
+  "script": "agent/feedback_report_check.py",
+  "改坏": "把 ops.resolve 的 外部trace 改回现编的 triage#N(格式合法但那边匹配不到)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "外部trace=t.get(\"trace_id\"),",
+    "new": "外部trace=f\"triage#{triage_id}\","
+   }
+  ],
+  "预期红": "外部trace 传的是"
+ },
+ {
+  "script": "agent/feedback_report_check.py",
+  "改坏": "让 排队() 只接住 ZeroDivisionError(真出错就往外抛,销账跟着挂)",
+  "file": [
+   {
+    "path": "agent/feedback_report.py",
+    "old": "        return 键\n    except Exception as e:",
+    "new": "        return 键\n    except ZeroDivisionError as e:"
+   }
+  ],
+  "预期红": "投递箱写不进去时"
+ },
+ {
+  "script": "agent/feedback_report_check.py",
+  "改坏": "让 A3 和 A1 共用同一个投递箱文件(两条链的积压混着数)",
+  "file": [
+   {
+    "path": "agent/feedback_report.py",
+    "old": "箱 = os.path.join(ROOT, \".feynman\", \"feedback-outbox.jsonl\")",
+    "new": "箱 = os.path.join(ROOT, \".feynman\", \"usage-outbox.jsonl\")"
+   }
+  ],
+  "预期红": "投递箱和 A1 的"
+ },
+ {
+  "script": "agent/feedback_report_check.py",
+  "改坏": "让形状闸放行中文(truth 的内容就能顺着上报流出去)",
+  "file": [
+   {
+    "path": "agent/feedback_report.py",
+    "old": "    if not 值.isascii():",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "truth.root_cause"
+ },
+ {
+  "script": "agent/feedback_report_check.py",
+  "改坏": "让 缺什么() 不再要求显式传 有结论(采纳率的分母被算错)",
+  "file": [
+   {
+    "path": "agent/feedback_report.py",
+    "old": "    if 载荷.get(\"有结论\") is None:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "忘传 `有结论`"
+ },
+ {
+  "script": "agent/feedback_report_check.py",
+  "改坏": "在 ops.resolve 的上报里加回 说明=root_cause(开一个评测答案的出口)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "                判读=decision,",
+    "new": "                判读=decision, 说明=root_cause,"
+   }
+  ],
+  "预期红": "一个自由文本字段都没有"
  }
 ]

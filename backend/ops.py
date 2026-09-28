@@ -324,22 +324,28 @@ def confidence(trajectory, parsed, need_tools=2):
 
 def save_triage(task_id, breakpoint, case_id, text, trajectory,
                 cost=None, latency_ms=None, model=None, usage=None,
-                guard_blocked=False, guard_violations=None, answer_turns=1):
+                guard_blocked=False, guard_violations=None, answer_turns=1,
+                trace_id=None):
+    """⚠️ `trace_id` 2026-09-28 补:它一直在 `sdk.run()` 的返回里,
+    但到这一跳就丢了 —— 于是库里每条研判都答不出「它是哪一次调用的产物」。
+    没有它,A3 的判读回流只能进总数,挂不到具体调用上。**空值合法,不许拿别的顶上。**"""
     p = parse_draft(text)
     conf = confidence(trajectory, p)
     with _c() as c:
         cur = c.execute(
             "INSERT INTO triage(task_id,breakpoint,case_id,created,ai_root_cause,ai_action,"
             "ai_evidence,ai_confidence,ai_text,tool_calls,cost,latency_ms,model,"
-            "in_tokens,out_tokens,cache_read,guard_blocked,guard_violations,answer_turns,status)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'待复核')",
+            "in_tokens,out_tokens,cache_read,guard_blocked,guard_violations,answer_turns,"
+            "trace_id,status)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'待复核')",
             (task_id, breakpoint, case_id, now().strftime("%Y-%m-%d %H:%M:%S"),
              p["ai_root_cause"], p["ai_action"], p["ai_evidence"], conf, text,
              len(trajectory or []), cost, latency_ms, model,
              (usage or {}).get("input_tokens"), (usage or {}).get("output_tokens"),
              (usage or {}).get("cache_read_input_tokens"),
              1 if guard_blocked else 0,
-             json.dumps(guard_violations or [], ensure_ascii=False), answer_turns))
+             json.dumps(guard_violations or [], ensure_ascii=False), answer_turns,
+             trace_id))
         c.execute("UPDATE task SET status='待复核', summary=? WHERE id=?",
                   (p["ai_root_cause"][:60] or "(未解析出根因)", task_id))
         return cur.lastrowid
@@ -414,6 +420,45 @@ def resolve(triage_id, decision, handler, root_cause=None, action=None, note=Non
                            note or "", f"{handler} 于 {ts} 改判回流"))
                 flowed = True
             if flowed: c.execute("UPDATE triage SET into_eval=1 WHERE id=?", (triage_id,))
+    # ── A3:把这条判读投给管理后台(投本地箱,不在这里发 HTTP)────────────
+    # ⚠️ 和 A1 同一条规矩(A2):**绝不能把销账这件事搞挂**。
+    # 销账是业务动作,上报是附加的 —— 所以库先写完(上面那个 with 已经出块提交),
+    # 再投递,而且整段包在 try 里,`排队()` 自己内部也不抛。
+    #
+    # 为什么在这里而不在页面那一头:**这里是唯一一处真正改状态的地方**。
+    # 挂在按钮上的话,以后多一个入口(批量销账、脚本改判)就漏一条,
+    # 而漏了不会报错 —— 只会让采纳率静静地偏低。
+    try:
+        import sys as _s, os as _os
+        _s.path.insert(0, _os.path.join(_os.path.dirname(_os.path.dirname(
+            _os.path.abspath(__file__))), "agent"))
+        import feedback_report as _fb, worldclock as _wc1
+        # ⚠️ **`外部trace` 传的必须是 sdk 那个 trace id,不是 `triage#N`。**
+        # 两个字段的定义不一样:`trace_id` 是**接收端**在 A1 上报时返回的号,
+        # `外部trace` 是**我们这边**的号。而 A1 上报时传的 `外部trace` 正是 sdk trace id ——
+        # 两边要 join 得上,A3 就必须传**同一个值**。
+        # 传 `triage#N` 的话格式完全合法、接收端也收得下,但它在那边**匹配不到任何东西**,
+        # 于是这条判读看起来挂上了、实际只进了总数。**「挂错了」比「没挂」更难发现。**
+        # `trace_id` 这里给不了:那是接收端 201 返回里的号,销账这一刻我们手上没有。
+        # ⚠️ **不传 root_cause / action / note —— 一个字都不传。**
+        # 判「已改判」时 `root_cause` 正是上面写进 `truth` 的那个值,而 `truth` 是评测答案。
+        # 顺着上报流出去 = 评测集泄露,而**评测集一旦泄露就不能再当评测集**。
+        # 所以只传结构化的事实:谁、什么判读、智能体说没说话、回流了没有。
+        # (发送端那边还有一道形状闸:附带值只收 bool/int/None/短 ASCII。**两道都要**,
+        #  因为这一处是「不传」,那一处是「传了也进不去」——
+        #  只有一道的话,下一个在这里加字段的人不会知道有这条规矩。)
+        _fb.排队(trace_id=None, 外部trace=t.get("trace_id"),
+                判读=decision,
+                # 智能体这一次到底说没说话。**显式给,不让它默认** ——
+                # 连根因都没给的那种(confidence 判「低」那条路),人处置了也不算改判。
+                有结论=bool((t.get("ai_root_cause") or "").strip()),
+                附带={"triage": str(triage_id)[:24],   # 短 ASCII,过得了形状闸
+                     "回流了": bool(flowed),
+                     "与建库标注冲突": bool(conflict),
+                     "置信度": {"高": 3, "中": 2, "低": 1}.get(t.get("ai_confidence"), 0)},
+                世界日期=str(_wc1.今天()))
+    except Exception:
+        pass                       # 上报出任何事都不许影响销账
     return dict(triage_id=triage_id, decision=decision, 回流评测集=flowed, 与建库标注冲突=conflict)
 
 

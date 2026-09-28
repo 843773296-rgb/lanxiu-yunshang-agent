@@ -75,6 +75,16 @@ CREATE TABLE triage(
   -- 比事后抽样评测灵敏得多,因为它是全量的。
   guard_blocked INT DEFAULT 0, guard_violations TEXT, answer_turns INT DEFAULT 1,
 
+  -- 这一次调用在记录仪里的号。**2026-09-28 补的列,补的理由值得写下来:**
+  -- `sdk.run()` 的返回里一直带着 `trace_id`,但到 `/api/ops-triage` 那一跳就**丢了** ——
+  -- 于是库里每一条研判都答不出「它是哪一次模型调用的产物」。
+  -- 平时看不出来(页面不显示它),直到要把「人采纳了没有」回流给管理后台(分工 A3):
+  -- **没有这个号,一条判读挂不到任何一次调用上**,只能进总数,
+  -- 进不了「改了配置之后采纳率变没变」—— 而那是这件事的全部理由。
+  -- ⚠️ 空值合法(记录仪上线前的老行、以及记录仪自己挂掉那几次),
+  --    但**空值不许拿别的东西顶上** —— 猜一个号会把判读挂到别人的调用上。
+  trace_id TEXT,
+
   status TEXT,                 -- 待复核 / 已采纳 / 已改判 / 已升级
   human_root_cause TEXT, human_action TEXT, human_note TEXT,
   handler TEXT, handled_at TEXT,
