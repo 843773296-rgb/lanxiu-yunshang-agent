@@ -34,7 +34,8 @@ BODY = os.environ.get("TRACE_BODY") == "1"
 
 def record(*, model, purpose, usage, latency_ms, price, finish_reason=None,
            turn=None, attempt=0, error=None, body=None, resp_text=None, cache_on=False,
-           peak=False, gen="V1", cost_est=None, extra=None):
+           peak=False, gen="V1", cost_est=None, extra=None,
+           provider=None, is_mock=None, resource="generate"):
     """gen: 哪一代架构调的(V1 手写循环 / V3 Agent Harness)。
 
     **两代必须写进同一个文件、同一套字段** —— 否则做不了横向对比,
@@ -73,6 +74,24 @@ def record(*, model, purpose, usage, latency_ms, price, finish_reason=None,
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     with open(LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    # ── A1:往管理后台上报一条(投本地箱,不在这里发 HTTP)────────────────
+    # ⚠️ **这一步绝不能把主流程搞挂**(分工 A2)。所以:
+    #   · 只写一行本地文件,不发网络请求 —— 热路径上一个往返都不加
+    #   · 整段包在 try 里,而 `排队()` 自己内部也不抛
+    #   · `provider` / `is_mock` **由调用方传,这里不猜** ——
+    #     只有发请求那一处知道真的走了谁、是不是 mock。
+    #     猜出来的值和真的长得一样,而错了没人看得出来。
+    # 日志那一行**先写完**再上报:上报是附加的,日志是本地唯一的真相。
+    try:
+        import usage_report as _ur
+        try:
+            import worldclock as _wc0
+            世 = str(_wc0.今天())
+        except Exception:
+            世 = None          # 取不到世界日期就留空,**不拿真实今天顶上**
+        _ur.排队(row, 供应商=provider, 是mock=is_mock, 资源=resource, 世界日期=世)
+    except Exception:
+        pass                   # 连 import 都失败也不许影响业务
     return row
 
 

@@ -12,6 +12,13 @@ backend/lanxiu.db
 # 记录仪日志(体积会涨,且含调用内容)
 llm-trace.jsonl
 .feynman/llm-trace.jsonl
+# 用量上报的投递箱 / 确认账 / 留痕 —— **本机运行态**,和记录仪日志同一性质。
+# ⚠️ 进了版本库的下场很具体:两个人各自的投递队列会在 merge 时互相覆盖,
+# 而**幂等键是一次性的** —— 覆盖掉的那些既不会被发出去,也不会出现在「还剩几条」里,
+# 于是「丢了几条」这个数本身变成假的,而 A2 要的就是这个数。
+.feynman/usage-outbox.jsonl
+.feynman/usage-sent.jsonl
+.feynman/usage-report-errors.jsonl
 # 提示词候选版本 —— **本机工作态**,不进版本库。
 # 采纳之后改动落在 prompts.py 里(那一份要进),候选文件本身只是过程草稿;
 # 进了版本库反而会让人以为「候选也是源头的一部分」,而它恰恰是「还没算数的那一版」。

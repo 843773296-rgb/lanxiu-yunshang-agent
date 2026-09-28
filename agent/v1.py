@@ -134,7 +134,10 @@ def call(pv, body, retries=6, purpose="未标注", turn=None, cache=None, gen="V
         def _rec(**kw):
             # gen 由调用方传:V2 的工作流也走这个函数发请求,
             # 但它必须记成 V2,否则三代对照表就把它算进 V1 里了。
+            # A1 上报的三个字段:**从 provider() 拿,不从模型名猜** ——
+            # 模型名和供应商是两件事,而猜错了成本口径整个是错的(实测差过 135 倍)。
             try: _trace.record(gen=gen,model=pv.get("model"),purpose=purpose,price=price_now(pv),
+                               provider=pv.get("id"),is_mock=False,resource="generate",
                                latency_ms=ms,turn=turn,attempt=att,body=body,
                                cache_on=not isinstance(body.get("system"),str),
                                peak=(pv.get("id")=="deepseek" and is_peak()),**kw)

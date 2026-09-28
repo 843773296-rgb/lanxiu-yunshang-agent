@@ -1040,6 +1040,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         print(f"⚠️ [spans] 树状记录仪写失败(不影响这次回答):{_e}", file=sys.stderr, flush=True)
     trace.record(
         gen="V3", model=model, purpose={"kb": "工艺顾问", "task": "人工任务研判"}.get(kind, kind),
+        # A1 上报要这三个。**显式传,不让记录仪猜** —— 只有这里知道真的走了谁。
+        provider="anthropic", is_mock=False, resource="generate",
         usage=usage, latency_ms=ms, price=price, peak=peak, cache_on=True,
         cost_est=real,                      # 成本口径只有一处:sdk.cost_of()
         finish_reason=getattr(res, "stop_reason", None),
