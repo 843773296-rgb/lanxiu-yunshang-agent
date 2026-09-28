@@ -60,7 +60,22 @@ def 归一用量(用量):
     它的 token **一分钱都不会被算进来**,而总额看起来完全正常。
     """
     用量 = dict(用量 or {})
-    出 = {k: int(用量.pop(k)) for k in token档 if 用量.get(k) is not None}
+    # ⚠️ **值为 0 的档不算一档。** Claude 每次都返回
+    # `cache_creation_input_tokens: 0` / `cache_read_input_tokens: 0`(没用缓存),
+    # 而第一版把每个**出现过**的档都写一行 —— 于是账本里多出一堆 quantity=0 的账。
+    #
+    # 这个文件自己写着「**不写一条 quantity=0 的账**:0 意味着「跑了但没花」」,
+    # 而那条规矩当时只拦住「整次调用一个档都没有」,没拦住「某一档是 0」。
+    # > **规矩只在它想到的那一层生效。**
+    #
+    # 0 的档不该占一行:它给报表添噪音,而且一条 `quantity=0, amount=null`
+    # 的账读起来像「花了未知的钱」,实际是「这一档没用上」。
+    出 = {k: int(用量.pop(k)) for k in token档
+         if 用量.get(k) is not None and int(用量[k]) != 0}
+    # 把 0 的那些也从剩余里摘掉 —— 它们是**认得出的档**,只是这次是 0,
+    # 报进「认不出的档」会是假警报。
+    for k in token档:
+        用量.pop(k, None)
     # ⚠️ **剩下的一律报出来,不管是不是数字。**
     # 第一版只收 `isinstance(v, (int, float))` 的,于是 Claude 返回里那层嵌套的
     # `cache_creation: {ephemeral_5m_input_tokens, ephemeral_1h_input_tokens}`
@@ -74,7 +89,7 @@ def 归一用量(用量):
 
 
 def 折成账目(*, 用量, 模型, 提供方, 资源=精排, 价目=None, 事件键, trace_id=None,
-          是mock=False):
+          是mock=False, 调用方=None, 世界日期=None):
     """一次调用 → 要写进 `usage_ledger` 的那几行(不写库)。
 
     `价目` 是 `pricing_versions` 里那一份的 `unit_prices`(dict),**给 None 就是没有**。
@@ -106,7 +121,14 @@ def 折成账目(*, 用量, 模型, 提供方, 资源=精排, 价目=None, 事�
             # ⚠️ **算不出就写 None,不写 0**(契约:unknown 区分 zero)
             amount=(round(n * 单价, 6) if 有价 else None),
             amount_known=bool(有价),
-            source=("mock" if 是mock else (提供方 or "unknown")),
+            # ⚠️ **`source` 是执行模式,不是供应商。** 这两件事混在一列里过
+            # (2026-09-28 migration 60c49c3174eb 修的),而混了不报错:
+            # 「mock」和「anthropic」并排在同一列里,看起来像两个供应商。
+            source=("mock" if 是mock else "live"),
+            # mock **没有供应商** —— 留 None 不填 "mock":填了之后它会在
+            # 「按供应商」的报表里冒充一个供应商,而它一分钱都没花。
+            provider=(None if 是mock else (提供方 or None)),
+            caller=调用方, world_date=世界日期,
             档=档, 模型=模型))
 
     为什么 = None
@@ -116,3 +138,54 @@ def 折成账目(*, 用量, 模型, 提供方, 资源=精排, 价目=None, 事�
                 if 价目 is None else f"价目表里缺这几档的单价:{缺}")
         为什么 += " —— **token 数是已知的,补一份价目表就能重算**"
     return dict(行们=行们, 认不出的档=认不出, 金额已知吗=金额已知, 为什么不知道=为什么)
+
+
+
+# ── 写库:**只有这一处** ──────────────────────────────────────────────
+# 2026-09-28 抽出来的。在这之前只有检索那条路在写账本,而 A1 上报接口
+# 马上就是第二个写入方 —— **两个写入方迟早分叉**,而分叉的表现是
+# 两批账用了不同的 `source` 含义(这个错刚刚真发生过一次)。
+#
+# ⚠️ 这个函数**要连接不开连接**:事务边界是调用方的事
+# (调用方可能要把账和别的写入放进同一个事务)。
+def 写进库(c, *, 组织, 项目, 谁, 用量, 模型, 提供方, 资源, 事件键, trace_id,
+        是mock=False, 调用方=None, 世界日期=None, 价目=None, _新id=None):
+    """把一次调用折成账目并写进 `usage_ledger`。返回一段能显示的说明。
+
+    `c` 是**已经在事务里**的连接。`_新id` 是造 id 的函数(调用方给)。
+    """
+    from sqlalchemy import text as _t
+    折 = 折成账目(用量=用量, 模型=模型, 提供方=提供方, 资源=资源, 价目=价目,
+                事件键=事件键, trace_id=trace_id, 是mock=是mock,
+                调用方=调用方, 世界日期=世界日期)
+    写了 = 0
+    for 行 in 折["行们"]:
+        写了 += c.execute(_t("""
+            insert into usage_ledger (id, organization_id, project_id, event_key,
+                trace_id, resource, quantity, unit, currency, amount, amount_known,
+                source, provider, caller, world_date, created_at, created_by)
+            values (:i,:o,:p,:ek,:t,:res,:q,:u,:cur,:amt,:ak,:src,:prov,:call,:wd,
+                    now(), :by)
+            -- ⚠️ 冲突目标是 **(project_id, event_key)**,精确匹配那条唯一约束。
+            -- `do nothing` 是防重复计费的那一半:同一个事件重复上报不加钱。
+            on conflict (project_id, event_key) do nothing"""),
+            {"i": _新id("ul"), "o": 组织, "p": 项目, "ek": 行["event_key"],
+             "t": 行["trace_id"], "res": 行["resource"], "q": 行["quantity"],
+             "u": 行["unit"], "cur": 行["currency"], "amt": 行["amount"],
+             "ak": 行["amount_known"], "src": 行["source"], "prov": 行["provider"],
+             "call": 行["caller"], "wd": 行["world_date"], "by": 谁}).rowcount
+    出 = {"写了几行": 写了, "本该几行": len(折["行们"]),
+         "金额已知吗": 折["金额已知吗"],
+         "token合计": sum(r["quantity"] for r in 折["行们"])}
+    if 写了 < len(折["行们"]):
+        # ⚠️ **重复上报要报出来,不当成成功。** 它多半是对的(网络重发),
+        # 但「重发了」和「第一次就写进去了」是两件事 ——
+        # 上报方需要知道自己发了两遍,否则它会以为自己只发过一次。
+        出["重复的行数"] = len(折["行们"]) - 写了
+        出["说明"] = ("这个事件键之前已经记过账了 —— **没有重复计费**。"
+                   "如果你以为这是第一次上报,那说明上一次其实成功了")
+    if 折["为什么不知道"]:
+        出["为什么金额未知"] = 折["为什么不知道"]
+    if 折["认不出的档"]:
+        出["认不出的用量档"] = 折["认不出的档"]
+    return 出

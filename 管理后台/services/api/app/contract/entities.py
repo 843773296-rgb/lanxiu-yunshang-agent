@@ -379,13 +379,37 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     # > 能用约束表达的,不要用判据表达:外键在**每次 INSERT** 上生效,
     # > 判据只在有人调用时生效。
     # 加之前量过:现有 96 行 trace_id 全部指向真 trace,0 行为空、0 行悬空。
+    # ⚠️ `provider` / `caller` / `world_date` 是 2026-09-28 加的。**起因是一个我自己犯的错:**
+    #
+    # `source` 这一列当时有**两个含义** —— Worker 写的 100 行是 `execution_mode`
+    # (mock / live,是不是真跑的),而我前一天写的 12 行塞的是**提供方**(anthropic)。
+    # 两种值都是合法字符串,分组查询照样出结果,只是「mock」和「anthropic」
+    # 被并排列在同一列里,**看起来像两个供应商**。
+    #
+    # (这正是前一天修 `document_versions.object_key` 时写下的那句话:
+    #  「一列有两个含义而没人知道,比缺一列糟得多」—— 写完第二天自己跳进去了。
+    #  **写在注释里对当下不起作用,起作用的是检查。**)
+    #
+    # Worker 的含义在先,所以 `source` 归还给「执行模式」,缺的维度各给一列:
+    #
+    #   `provider`    谁提供的(anthropic / deepseek)。**成本必须按供应商算** ——
+    #                 并行会话实测 SDK 的总价跨供应商差过 24 倍、135 倍
+    #   `caller`      **谁花的**(门店助手 / 检索实验室 / 试跑)。没有它,
+    #                 「门店助手今天花了多少」答不出来,只答得出「一共花了多少」
+    #   `world_date`  演示世界里的日期。门店助手跑在演示世界(停在某一天),
+    #                 而记录的时间戳是真实时间 —— **两个时钟混在一张表里而且不报错**
     E("usage_ledger", "用量账目", 项目级, 只追加,
       ["event_key", "trace_id", "resource", "quantity", "unit", "currency",
-       "pricing_version_id", "amount", "amount_known", "source"],
+       "pricing_version_id", "amount", "amount_known", "source",
+       "provider", "caller", "world_date"],
       ["**唯一用量事件防重复计费**(§18):event_key 唯一约束",
        "**unknown 区分 zero** —— amount_known=False 时前端显示「未知」,**不许显示 0**",
        "外部账单有延迟,费用上限**不得宣称绝对零超支**(§11.5)",
-       "**`trace_id` 是真外键** —— 一笔查不到出处的钱,在总额里和真的一样"],
+       "**`trace_id` 是真外键** —— 一笔查不到出处的钱,在总额里和真的一样",
+       "**`source` 是执行模式(mock/live),`provider` 才是供应商** —— "
+       "这两件事混在一列里过,而混了不报错",
+       "**`caller` 不能省** —— 没有它只答得出「一共花了多少」,"
+       "答不出「门店助手花了多少」"],
       依赖=["traces"]),
     E("pricing_versions", "价格版本", 全局级, 不可变,
       ["provider", "model_id", "unit_prices", "currency", "effective_at",

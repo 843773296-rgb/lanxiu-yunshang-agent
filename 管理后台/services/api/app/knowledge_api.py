@@ -252,23 +252,15 @@ def 记一次精排的账(project_id, me, 链):
                                            "精排了几条": 精.get("精排了几条"),
                                            "精排器版本": 精.get("精排器版本")},
                                           ensure_ascii=False), "u": me.user_id})
-            折 = UG.折成账目(用量=精.get("用量"), 模型=精.get("模型"),
-                          提供方="anthropic", 资源=UG.精排,
-                          事件键=f"{tid}:rerank", trace_id=tid,
-                          是mock=bool(精.get("是mock")))
-            for 行 in 折["行们"]:
-                c.execute(text("""
-                    insert into usage_ledger (id, organization_id, project_id, event_key,
-                        trace_id, resource, quantity, unit, currency, amount,
-                        amount_known, source, created_at, created_by)
-                    values (:i,:o,:p,:ek,:t,:res,:q,:u,:cur,:amt,:ak,:src, now(), :by)
-                    on conflict (project_id, event_key) do nothing"""),
-                          {"i": _新id("ul"), "o": org, "p": project_id,
-                           "ek": 行["event_key"], "t": 行["trace_id"],
-                           "res": 行["resource"], "q": 行["quantity"], "u": 行["unit"],
-                           "cur": 行["currency"], "amt": 行["amount"],
-                           "ak": 行["amount_known"], "src": 行["source"],
-                           "by": me.user_id})
+            # ⚠️ 写库走 `usage.写进库` —— **只有那一处**。
+            # A1 上报接口是第二个写入方,而两个写入方迟早分叉
+            # (分叉的表现刚刚真发生过一次:两批账用了不同的 `source` 含义)。
+            折 = UG.写进库(c, 组织=org, 项目=project_id, 谁=me.user_id,
+                        用量=精.get("用量"), 模型=精.get("模型"),
+                        提供方="anthropic", 资源=UG.精排,
+                        事件键=f"{tid}:rerank", trace_id=tid,
+                        是mock=bool(精.get("是mock")),
+                        调用方="检索实验室", _新id=_新id)
     except UG.用量不对 as e:
         # **不吞** —— 但也不让它把检索结果一起毁掉
         return {"记了吗": False, "为什么": f"用量不合格,没记账:{str(e)[:200]}"}
@@ -276,16 +268,7 @@ def 记一次精排的账(project_id, me, 链):
         return {"记了吗": False,
                 "为什么": f"记账失败({type(e).__name__}: {str(e)[:160]})—— "
                         f"**检索结果是好的,但这次调用的花销在库里是黑的**。要人看"}
-    出 = {"记了吗": True, "trace_id": tid, "写了几行": len(折["行们"]),
-         "金额已知吗": 折["金额已知吗"],
-         "token合计": sum(r["quantity"] for r in 折["行们"])}
-    if 折["为什么不知道"]:
-        出["为什么金额未知"] = 折["为什么不知道"]
-    if 折["认不出的档"]:
-        # ⚠️ **认不出的档要报出来,不吞掉** —— 供应商加了一档新计费时,
-        # 它的 token 一分钱都不会被算进来,而总额看起来完全正常。
-        出["认不出的用量档"] = 折["认不出的档"]
-    return 出
+    return {"记了吗": True, "trace_id": tid, **折}
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -710,19 +693,37 @@ def 用量与成本(project_id: str, me: 身份 = Depends(要权限("查看有�
         # 两者都要:一份 mock 的用量和真的在数据形状上一模一样,
         # 不分开的话「这个月花了多少」里混着一堆根本没花钱的 mock 调用。
         分组 = c.execute(text("""
-            select resource, source,
+            select resource, source, provider,
                    count(*) 行数, sum(quantity) token数,
                    count(distinct trace_id) 调用次数,
                    coalesce(sum(amount) filter (where amount_known), 0) 已知金额,
                    count(*) filter (where not amount_known) 金额未知的行数
               from usage_ledger
              where project_id=:p and created_at > now() - (:h || ' hours')::interval
-             group by resource, source
+             group by resource, source, provider
+             order by sum(quantity) desc
+        """), {"p": project_id, "h": 小时}).mappings().all()
+        # ⚠️ **按调用方分组 —— 这是 A1 存在的全部理由。**
+        # 只有「按用途」的话,「门店助手今天花了多少」答不出来:
+        # 门店助手和管理后台自己的调用混在同一个 resource 里。
+        按调用方 = c.execute(text("""
+            select coalesce(caller, '(没标调用方)') 调用方, source, provider,
+                   count(distinct trace_id) 调用次数, sum(quantity) token数,
+                   count(*) filter (where not amount_known) 金额未知的行数,
+                   coalesce(sum(amount) filter (where amount_known), 0) 已知金额
+              from usage_ledger
+             where project_id=:p and created_at > now() - (:h || ' hours')::interval
+             group by 1, 2, 3
              order by sum(quantity) desc
         """), {"p": project_id, "h": 小时}).mappings().all()
         明细 = c.execute(text("""
             select u.id, u.created_at, u.resource, u.source, u.quantity, u.unit,
                    u.amount, u.amount_known, u.currency, u.trace_id, u.event_key,
+                   -- ⚠️ 这三列是 2026-09-28 加的,而这条 SELECT 是加之前写的 ——
+                   -- 于是 `caller` 在库里好好存着,**接口一个字都没传出去**。
+                   -- 「一个标记了却传不出去的判据,等于没有判据」的又一例:
+                   -- 写库那一侧全对,而看的人什么也看不到。
+                   u.provider, u.caller, u.world_date,
                    s.stage, cast(s.output_ref as text) 产出
               from usage_ledger u
               left join spans s
@@ -764,8 +765,169 @@ def 用量与成本(project_id: str, me: 身份 = Depends(要权限("查看有�
                     "**token 数是已知的,补一份价目表就能重算**。"
                     "⚠️ 不编一个单价填进去:一个自信的错金额比「未知」糟得多"),
         "按用途": [dict(g) for g in 分组],
+        "按调用方": [dict(g) for g in 按调用方],
         "真花过钱的用途数": len(真花钱的),
         "items": [_对外(r) for r in 明细],
         "next_cursor": None,
         "total": 总["行数"] or 0,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════
+# A1 接收端:门店助手(应用层)上报一次模型调用
+#
+# ⚠️ **方向是单向的:澜绣推,管理后台收。** 管理后台绝不反过来查澜绣的库 ——
+# 那会让两个台互相依赖,而「谁先起来」这种问题会在部署时才暴露。
+#
+# ⚠️ **这条接口不在规格 §17.1 的表里**,是 2026-09-28 按交割文档 A1 加的。
+# 登记进契约表而不是偷偷加:没登记的接口不会出现在任何清单里。
+# ══════════════════════════════════════════════════════════════════════
+
+# 允许上报的资源类型。**白名单,不是随便什么字符串都收** ——
+# 收了之后它会出现在「按用途」的报表里,而一个拼错的类型看起来像一种新用途。
+_可上报的资源 = {UG.精排, UG.向量化, UG.生成}
+
+
+@router.post(前缀 + "/model-calls", status_code=201)
+async def 上报一次模型调用(project_id: str, request: Request,
+                 idempotency_key: str = Header(default=None, alias="Idempotency-Key"),
+                 me: 身份 = Depends(要权限("运行评测"))):
+    """应用层上报一次模型调用(A1)。
+
+    入参:
+        {调用方, 模型, 供应商, 资源?, 用量{input_tokens,...},
+         耗时毫秒?, 成功?, 是mock?, 世界日期?, 外部trace?}
+
+    ## ⚠️ 要 Idempotency-Key,而且它就是账本的事件键
+
+    上报链的第一条规矩是**上报失败不能影响业务**(A2)——
+    于是上报方会重试。重试必须不重复计费,所以幂等键是必须的。
+
+    **它由上报方给**,因为只有上报方知道「这两次上报是不是同一次调用」。
+    服务端生成的话,每次重试都是一个新事件,账上就多一笔。
+
+    ## 「调用方」不能省
+
+    没有它,管理后台收到一堆调用记录而分不清哪些是门店助手的、
+    哪些是它自己的 —— **「门店助手今天花了多少」这个问题答不出来**,
+    只答得出「一共花了多少」。
+
+    ## 「世界日期」为什么要
+
+    门店助手跑在**演示世界**里(世界停在某一天),而这条记录的时间戳是
+    **真实时间**。两个时钟混在一张表里,**而且不报错** ——
+    看到「这条调用发生在 09-28」时,答不出它指的是哪个 09-28。
+
+    ⚠️ 不给就是 None,**服务端不拿今天顶上** —— 猜一个日期比没有日期糟:
+    没有日期时人知道自己不知道,猜出来的日期看起来像真的。
+    """
+    if not idempotency_key:
+        raise _错(409, "IDEMPOTENCY_KEY_REQUIRED", "要带 Idempotency-Key",
+                  "它就是账本的事件键,**由上报方给** —— 只有你知道"
+                  "「这两次上报是不是同一次调用」。服务端生成的话,"
+                  "每次重试都会变成一笔新账")
+    体 = await request.json()
+    调用方 = (体.get("调用方") or "").strip()
+    模型 = (体.get("模型") or "").strip()
+    供应商 = (体.get("供应商") or "").strip() or None
+    资源 = (体.get("资源") or UG.生成).strip()
+    用量 = 体.get("用量") or {}
+    是mock = bool(体.get("是mock"))
+    成功 = 体.get("成功")
+    成功 = True if 成功 is None else bool(成功)
+    世界日期 = (体.get("世界日期") or "").strip() or None
+    耗时毫秒 = 体.get("耗时毫秒")
+    外部trace = (体.get("外部trace") or "").strip() or None
+
+    坏 = {}
+    if not 调用方:
+        坏["调用方"] = ("必填 —— 没有它,「门店助手今天花了多少」答不出来,"
+                     "只答得出「一共花了多少」")
+    if not 模型:
+        坏["模型"] = "必填 —— 不同模型的单价差一个数量级"
+    if not 是mock and not 供应商:
+        坏["供应商"] = ("真跑的调用必须给供应商 —— **成本要按供应商算**。"
+                     "实测跨供应商用错价目表会差 24 倍以上,而它不报错")
+    if 资源 not in _可上报的资源:
+        坏["资源"] = (f"只收 {sorted(_可上报的资源)} —— **不收任意字符串**:"
+                   f"一个拼错的类型会在报表里看起来像一种新用途")
+    if 世界日期:
+        import re as _re
+        if not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", 世界日期):
+            坏["世界日期"] = "要 YYYY-MM-DD(它是演示世界的**日历日**,不是时刻)"
+    if 坏:
+        raise _错(422, "VALIDATION", "上报的字段不合格",
+                  "按 `澜绣云裳agent-两个台的功能交割.md` 里 A1 那一节的字段清单发",
+                  field_errors=坏)
+
+    with 事务() as c:
+        org = c.execute(text("select organization_id from projects where id=:p"),
+                        {"p": project_id}).scalar()
+        # 幂等:同一个键已经上报过 → **返回原来那条,不新建 trace**。
+        # ⚠️ 只查账本不够 —— 一次失败的调用没有账目(没有 token),
+        # 但它照样该是幂等的。所以查的是 `traces.request_id`。
+        老 = c.execute(text("""select id from traces
+                             where project_id=:p and request_id=:k
+                             order by created_at limit 1"""),
+                       {"p": project_id, "k": idempotency_key}).scalar()
+        if 老:
+            return {"trace_id": 老, "记了吗": False,
+                    "note": ("**同一个幂等键 → 返回原记录,没有重复计费。**"
+                             "如果你以为这是第一次上报,那说明上一次其实成功了")}
+        tid = _新id("tr")
+        c.execute(text("""
+            insert into traces (id, organization_id, project_id, request_id,
+                environment, started_at, ended_at, end_reason, created_at, created_by)
+            values (:i,:o,:p,:rq,:e, now(), now(), :er, now(), :u)"""),
+                  {"i": tid, "o": org, "p": project_id, "rq": idempotency_key,
+                   "e": _os.environ.get("APP_ENV", "development"),
+                   # ⚠️ 失败的调用也要记 —— 只记成功的会让「失败花掉的时间」
+                   # 变成黑的,而那正是排查「为什么这么慢」时最需要的数。
+                   "er": ("completed" if 成功 else "failed"), "u": me.user_id})
+        c.execute(text("""
+            insert into spans (id, organization_id, project_id, trace_id, stage,
+                input_ref, output_ref, started_at, ended_at, created_at, created_by, error)
+            values (:i,:o,:p,:t,:st, cast(:ir as jsonb), cast(:orf as jsonb),
+                    now(), now(), now(), :u, cast(:err as jsonb))"""),
+                  {"i": _新id("sp"), "o": org, "p": project_id, "t": tid,
+                   "st": 资源,
+                   "ir": _json.dumps({"调用方": 调用方, "世界日期": 世界日期,
+                                      "外部trace": 外部trace}, ensure_ascii=False),
+                   "orf": _json.dumps({"模型": 模型, "供应商": 供应商,
+                                       "耗时毫秒": 耗时毫秒, "是mock": 是mock},
+                                      ensure_ascii=False),
+                   "u": me.user_id,
+                   # ⚠️ `spans.error` 是 **JSONB 列**,不是 TEXT。
+                   # 第一版塞了个裸字符串,PostgreSQL 报
+                   # `invalid input syntax for type json` —— 而它**只在失败路径上炸**:
+                   # 成功的调用 error=None 一路绿。
+                   #
+                   # 这个错要是没被测到,表现会是:门店助手上报失败调用时收到 500,
+                   # 于是按 A2 的规矩不影响业务、静默重试、永远失败 ——
+                   # **失败调用的记录一条都不会有,而所有人都以为这条链是通的。**
+                   # (同一族第三次:罕见分支里的必炸。)
+                   "err": (None if 成功 else _json.dumps(
+                       {"为什么": "上报方标记这次调用失败",
+                        "谁说的": "应用层上报(A1)——**不是管理后台判的**"},
+                       ensure_ascii=False))})
+        记账 = None
+        try:
+            记账 = UG.写进库(c, 组织=org, 项目=project_id, 谁=me.user_id,
+                          用量=用量, 模型=模型, 提供方=供应商, 资源=资源,
+                          事件键=idempotency_key, trace_id=tid, 是mock=是mock,
+                          调用方=调用方, 世界日期=世界日期, _新id=_新id)
+        except UG.用量不对 as e:
+            # ⚠️ **没有用量不算上报失败。** 一次失败的调用本来就没有 token,
+            # 而它的「发生过、失败了、花了多少时间」仍然值得记 ——
+            # trace 和 span 已经写进去了。
+            记账 = {"记了吗": False, "为什么": str(e)[:220]}
+    出 = {"trace_id": tid, "记了吗": bool(记账 and 记账.get("写了几行")),
+          "记账": 记账, "调用方": 调用方, "世界日期": 世界日期}
+    if not 成功:
+        出["note"] = ("**这次调用标了失败,而记录照样留下了** —— "
+                      "只记成功的调用会让「失败花掉的时间」变成黑的")
+    if 世界日期 is None:
+        出["提醒"] = ("没给世界日期 —— 这条记录只有真实时间戳。"
+                    "**服务端不拿今天顶上**:猜一个日期看起来像真的,"
+                    "而没有日期时人知道自己不知道")
+    return 出

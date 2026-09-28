@@ -51,14 +51,31 @@ ck("说清为什么不知道,而且点明「补一份价目表就能重算」",
    r["为什么不知道"])
 
 print("▸ ② token 分档:一次调用写几行,不合成一个数")
-ck("四档都在的返回 → 4 行", len(r["行们"]) == 4, [x["档"] for x in r["行们"]])
+# ⚠️ **真用量里那两档缓存正好是 0**(这次没用缓存),而 0 的档不占行(见 ②b)。
+# 所以测「多档」要用一份**四档都非零**的用量,否则这条断言测的是别的东西。
+用了缓存的 = {"input_tokens": 100, "output_tokens": 20,
+          "cache_creation_input_tokens": 7, "cache_read_input_tokens": 3}
+r多 = U.折成账目(用量=用了缓存的, 模型="m", 提供方="anthropic", 事件键="tr_y:rerank")
+ck("四档都非零 → 4 行", len(r多["行们"]) == 4, [x["档"] for x in r多["行们"]])
 ck("event_key 带档名(一次调用几行,键不能撞)",
-   len({x["event_key"] for x in r["行们"]}) == len(r["行们"]),
-   [x["event_key"] for x in r["行们"]])
-ck("每行的 event_key 都以事件键开头", all(x["event_key"].startswith("tr_x:rerank:")
-                                   for x in r["行们"]))
+   len({x["event_key"] for x in r多["行们"]}) == 4,
+   [x["event_key"] for x in r多["行们"]])
+ck("每行的 event_key 都以事件键开头",
+   all(x["event_key"].startswith("tr_y:rerank:") for x in r多["行们"]))
 ck("**不合成一个数**:因为档的单价差一个数量级,合了就补不回来",
-   len({x["档"] for x in r["行们"]}) == 4)
+   len({x["档"] for x in r多["行们"]}) == 4)
+
+print("▸ ②b **值为 0 的档不占一行** —— 这个文件自己的规矩,补到了这一层")
+# 第一版把每个**出现过**的档都写一行,于是 Claude 每次返回的两个 0 缓存档
+# 各占一行 —— 账本里多出一堆 `quantity=0, amount=null` 的账,
+# 读起来像「花了未知的钱」,实际是「这一档没用上」。
+# > **规矩只在它想到的那一层生效。**
+ck("真用量(两档缓存是 0)→ 只有 2 行", len(r["行们"]) == 2,
+   [(x["档"], x["quantity"]) for x in r["行们"]])
+ck("没有任何一行 quantity 是 0", all(x["quantity"] != 0 for x in r["行们"]))
+ck("**0 的档不会被报成「认不出」**(它是认得出的档,只是这次是 0)",
+   not ({"cache_creation_input_tokens", "cache_read_input_tokens"}
+        & set(r["认不出的档"])), r["认不出的档"])
 
 print("▸ ③ 认不出的档要报出来 —— 不管它是什么形状")
 ck("嵌套 dict 的 `cache_creation` **被报出来**(第一版在这儿漏掉了)",
@@ -107,12 +124,31 @@ try:
 except U.用量不对:
     ck("没给事件键 → 抛(**它是防重复计费的唯一凭据,不许自动生成**)", True)
 
-print("▸ ⑥ mock 的标出来")
+print("▸ ⑥ `source` 是执行模式,`provider` 才是供应商 —— **这两件事混在一列里过**")
+# 2026-09-28:`source` 当时有两个含义(Worker 写 execution_mode、精排写提供方),
+# 两种值都是合法字符串,分组查询照样出结果,**只是看起来像两个供应商**。
+# migration 60c49c3174eb 把它们分开了。这一组守着别再混回去。
 r5 = U.折成账目(用量=真用量, 模型="emb-mock", 提供方="anthropic", 事件键="k4", 是mock=True)
-ck("是mock=True → source 是 mock(界面上要一眼看出这笔不是真的)",
-   all(x["source"] == "mock" for x in r5["行们"]))
+ck("是mock → source='mock'", all(x["source"] == "mock" for x in r5["行们"]))
+ck("**而 provider 是 None,不是 'mock'** —— 填了它会在「按供应商」的报表里"
+   "冒充一个供应商,而它一分钱都没花",
+   all(x["provider"] is None for x in r5["行们"]),
+   [x["provider"] for x in r5["行们"]])
 r6 = U.折成账目(用量=真用量, 模型="m", 提供方="anthropic", 事件键="k5")
-ck("不是 mock → source 是提供方", all(x["source"] == "anthropic" for x in r6["行们"]))
+ck("不是 mock → source='live'(执行模式)", all(x["source"] == "live" for x in r6["行们"]))
+ck("而 provider='anthropic'(供应商)", all(x["provider"] == "anthropic" for x in r6["行们"]))
+ck("**两列的值不许相等** —— 相等就说明又混回去了",
+   all(x["source"] != x["provider"] for x in r6["行们"]))
+
+print("▸ ⑧ 调用方和世界日期 —— 并行会话要的那两个")
+r7 = U.折成账目(用量=真用量, 模型="m", 提供方="deepseek", 事件键="k6",
+             调用方="门店助手:值班研判", 世界日期="2026-09-28")
+ck("caller 传下去了(**没有它只答得出「一共花了多少」**)",
+   all(x["caller"] == "门店助手:值班研判" for x in r7["行们"]))
+ck("world_date 传下去了(演示世界的钟和真实时钟是两个)",
+   all(x["world_date"] == "2026-09-28" for x in r7["行们"]))
+ck("不给就是 None,**不拿今天顶上** —— 猜一个日期比没有日期糟",
+   all(x["caller"] is None and x["world_date"] is None for x in r6["行们"]))
 
 print("▸ ⑦ 资源类型和契约对齐,不另立一套")
 ck("默认资源是 rerank", r["行们"][0]["resource"] == U.精排 == "rerank")

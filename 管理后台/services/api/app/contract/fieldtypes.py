@@ -115,6 +115,15 @@
     # 混维度的索引算出来的距离没有意义,而且**一声不响**。
     # **下次换模型还要这么来一次,那是有意的。**
     "embedding": "VECTOR(512)", "dim": "INTEGER",
+    # ⚠️ `provider` / `caller` / `world_date` 是 2026-09-28 为 `usage_ledger` 加的。
+    # 三个都套不上后缀约定,而这套登记**不给 TEXT 兜底** ——
+    # 那条规矩今天当场拦住了我一次,是对的。
+    #
+    # `world_date` 用 **DATE 不是 TIMESTAMP**:它是演示世界里的**日历日**
+    # (世界停在某一天),不是某个时刻。存成 timestamp 会让它带上一个
+    # 无意义的 00:00:00,而那个零点看起来像真的时刻 ——
+    # **一个假装自己有精度的值,比一个粗一点的值危险。**
+    "provider": "TEXT", "caller": "TEXT", "world_date": "DATE",
     "id": "TEXT", "name": "TEXT", "status": "TEXT", "role": "TEXT",
     "purpose": "TEXT", "adapter": "TEXT", "endpoint": "TEXT", "revision": "BIGINT",
     "messages": "JSONB", "params": "JSONB", "capabilities": "JSONB",

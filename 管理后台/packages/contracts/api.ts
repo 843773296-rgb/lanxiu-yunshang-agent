@@ -131,6 +131,7 @@ export const ENDPOINTS = [
   { method: "GET", path: "/traces/{id}", summary: "运行详情(脱敏)", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/jobs/{id}", summary: "任务详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/jobs/{id}/events", summary: "任务事件(SSE)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/model-calls", summary: "应用层上报一次模型调用", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/usage", summary: "用量与成本", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/budgets", summary: "预算", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/budgets", summary: "设预算", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -176,4 +177,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 90 条接口 · 19 条异步 · 20 条要幂等键 · 11 条要 If-Match */
+/** 共 91 条接口 · 19 条异步 · 21 条要幂等键 · 11 条要 If-Match */

@@ -29,7 +29,7 @@ import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "contract"))
 import entities as EN, fieldtypes as FT
 
-from sqlalchemy import (MetaData, Table, Column, Text, Integer, BigInteger, Boolean,
+from sqlalchemy import (Date, MetaData, Table, Column, Text, Integer, BigInteger, Boolean,
                         Numeric, TIMESTAMP, Index, UniqueConstraint,
                         ForeignKeyConstraint, PrimaryKeyConstraint)
 from sqlalchemy.dialects.postgresql import JSONB
@@ -72,6 +72,11 @@ _映 = {
     "JSONB": lambda: JSONB(),
     "NUMERIC(20,6)": lambda: Numeric(20, 6),
     "TIMESTAMPTZ": lambda: TIMESTAMP(timezone=True),
+    # ⚠️ **DATE 不是 TIMESTAMPTZ。** 2026-09-28 为 `usage_ledger.world_date` 加的:
+    # 那是演示世界里的**日历日**,不是某个时刻。用 timestamp 存会让它带上一个
+    # 无意义的 00:00:00,而那个零点看起来像真的时刻 ——
+    # **一个假装自己有精度的值,比一个粗一点的值危险。**
+    "DATE": lambda: Date(),
 }
 
 

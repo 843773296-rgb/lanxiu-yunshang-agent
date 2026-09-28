@@ -112,6 +112,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  ⚠️ 其中一条会真调一次 Claude 精排(月租额度)"
 	@./.venv/bin/python tests/e2e/test_knowledge_write_flow.py
 	@echo ""
+	@echo "▸ 用量与上报链端到端(M3 + A1 接收端):**未知不是 0**、幂等不重复计费"
+	@echo "  (「门店助手今天花了多少」答得出来 —— 那是 A1 存在的全部理由)"
+	@./.venv/bin/python tests/e2e/test_usage_flow.py
+	@echo ""
 	@echo "▸ 文件上传端到端:**「上传成功不等于内容可用」有代码兜着**(§17.1)"
 	@echo "  (已上传的 能引用吗=false / 坏文件是 200+通过=false / 校验失败是终态)"
 	@./.venv/bin/python tests/e2e/test_upload_flow.py
@@ -165,6 +169,7 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	@./.venv/bin/python tests/e2e/test_knowledge_flow.py 2>&1 | tail -2
 	@./.venv/bin/python tests/e2e/test_upload_flow.py 2>&1 | tail -2
 	@./.venv/bin/python tests/e2e/test_knowledge_write_flow.py 2>&1 | tail -2
+	@./.venv/bin/python tests/e2e/test_usage_flow.py 2>&1 | tail -2
 	@echo ""
 	@echo "▸ 页面冒烟(它取哪些接口,也记在同一本账上)"
 	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' \

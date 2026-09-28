@@ -1526,6 +1526,27 @@ async function 页_用量与成本() {
     ${不可信 ? `<div class="state err"><h3>总额不可信</h3><p>${md(d["总额可信吗"])}</p>
        <p>${md(d["为什么会有未知"])}</p></div>` : ""}
 
+    <h2>按调用方 —— **谁花的**</h2>
+    <div class="note">⚠️ 这一张是 A1 上报链存在的**全部理由**。
+      只有「按用途」的话,门店助手和管理后台自己的调用混在同一个用途里,
+      **「门店助手今天花了多少」答不出来**,只答得出「一共花了多少」。</div>
+    <table><thead><tr><th>调用方</th><th>谁提供的</th><th>模式</th>
+        <th class="num">调用</th><th class="num">token</th>
+        <th class="num">金额</th></tr></thead><tbody>`
+    + (d["按调用方"] || []).map((g) => `<tr>
+        <td><b>${esc(g["调用方"])}</b></td>
+        <td>${g.provider ? esc(g.provider) : `<span class="k">—</span>`}</td>
+        <td>${g.source === "mock"
+              ? `<span class="tag">mock · 没花钱</span>`
+              : `<span class="tag ok">live</span>`}</td>
+        <td class="num">${g["调用次数"]}</td>
+        <td class="num">${Number(g["token数"]).toLocaleString()}</td>
+        <td class="num">${g["金额未知的行数"] > 0
+              ? `<span class="tag warn">未知</span>`
+              : `$${Number(g["已知金额"]).toFixed(4)}`}</td>
+      </tr>`).join("")
+    + `</tbody></table>
+
     <h2>按用途</h2>
     <div class="note">⚠️ **「谁提供的」要和「用途」一起看** ——
       一份 mock 的用量在数据形状上和真的一模一样。
@@ -1547,11 +1568,13 @@ async function 页_用量与成本() {
     + `</tbody></table>
 
     <h2>明细</h2>
-    <table><thead><tr><th>时间</th><th>用途</th><th>档</th>
+    <table><thead><tr><th>时间</th><th>调用方</th><th>用途</th><th>档</th>
         <th class="num">数量</th><th class="num">金额</th>
         <th>哪次调用</th></tr></thead><tbody>`
     + (d.items || []).map((r) => `<tr>
-        <td class="k">${esc(String(r.created_at).slice(5, 19).replace("T", " "))}</td>
+        <td class="k">${esc(String(r.created_at).slice(5, 19).replace("T", " "))}
+            ${r.world_date ? `<div class="k">世界 ${esc(r.world_date)}</div>` : ""}</td>
+        <td>${r.caller ? esc(r.caller) : `<span class="tag warn">没标调用方</span>`}</td>
         <td>${esc(r.resource)} ${r["是mock吗"] ? `<span class="tag">mock</span>` : ""}</td>
         <td class="k">${esc(r["档"] || "")}</td>
         <td class="num">${Number(r.quantity).toLocaleString()} ${esc(r.unit)}</td>
