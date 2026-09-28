@@ -2415,20 +2415,6 @@ class H(BaseHTTPRequestHandler):
             if _warn:
                 self.send_header("x-draft-warnings",str(len(_warn)))
             self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
-        if p=="/api/acceptance":
-            # 验收器属于「异常场景与验收助手」那个项目,不在本仓库里。
-            # 这条边是跨项目的,所以要么明确找到,要么明确报错 —— 不能静默失败。
-            import time as _t
-            _tool=os.environ.get("ACCEPTANCE_TOOL",
-                    os.path.join(HERE,"..","..","异常场景与验收助手","tools"))
-            if not os.path.isfile(os.path.join(_tool,"acceptance.py")):
-                return self._send(dict(error="验收器不在这个项目里。它属于「异常场景与验收助手」,"
-                    f"当前找的位置:{os.path.abspath(_tool)};可用 ACCEPTANCE_TOOL 指定。"
-                    "本页显示的是上一次跑批的存档结果。"),503)
-            sys.path.insert(0, _tool); os.environ.setdefault("TARGET", os.path.join(HERE,".."))
-            import acceptance as _acc
-            _t0=_t.time(); _rows=_acc.run(); _ms=(_t.time()-_t0)*1000
-            return self._send(dict(rows=_rows, summary=_acc.summary(_rows), ms=round(_ms,1)))
         if p=="/api/workbench": return self._send(workbench())
         if p.startswith("/api/task/"): return self._send(task_detail(p.split("/api/task/")[1]))
         if p=="/api/lifecycle": 
@@ -2556,15 +2542,6 @@ class H(BaseHTTPRequestHandler):
             return self._send(_api.plan_for_event(g("w"), g("d"), g("p","PT04"),
                                                   g("m","云锦"), cs, g("s","局部")))
         if p=="/api/fit-customers": return self._send(backend.fit_customers())
-        if p=="/api/agent-tasks":
-            _T=_truths()
-            _out=[]
-            for t in backend.list_tasks(None,"待处理"):
-                cid = t["ref_id"] if t["type"]=="财务人工任务" else t["id"][1:]
-                _out.append(dict(id=t["id"], type=t["type"], ref=t["ref_id"],
-                                 bp="BP-01" if t["type"]=="财务人工任务" else "BP-02",
-                                 has_truth=cid in _T))
-            return self._send(dict(rows=_out))
         if p=="/api/agent-run":
             import time as _t
             tid=(Q.get("task") or [None])[0]
@@ -2590,32 +2567,11 @@ class H(BaseHTTPRequestHandler):
                                 expected_evidence=tr.get("expected_evidence"),
                                 note=tr.get("note")))
             return self._send(r)
-        if p=="/api/agent-negative":
-            f=os.path.join(HERE,"..","agent","negative-results.jsonl")
-            if not os.path.exists(f): return self._send(dict(rows=[]))
-            _nr=[json.loads(l) for l in open(f,encoding="utf-8")]
-            return self._send(dict(rows=_nr, passed=sum(r.get("passed") for r in _nr),
-                                   total=len(_nr),
-                                   cost=round(sum(r.get("cost_local",0) for r in _nr),4)))
         if p=="/api/scheme-options":
             import scheme as _sch
             return self._send(_sch.options())
         if p=="/api/schemes":
             return self._send(scheme_list())
-        # `/api/chat-eval` **已删**(2026-09-25):它只服务 chat.html 那个页面,
-        # 而那个页面已经删了(station 支持全部五个角色,它只有一个)。
-        # 评测分数现在在 AI 调控中心的「评测」那一栏,数据从 agent/*-results.jsonl 现取。
-        # ⚠️ 留这条注释是为了**别让人以为这个接口丢了** —— 它是撤的,不是漏的。
-        if p=="/api/agent-eval":
-            f=os.path.join(HERE,"..","agent","eval-results.jsonl")
-            if not os.path.exists(f): return self._send(dict(rows=[]))
-            # 不要叫 rows —— 那会把整个 do_GET 里的模块级 rows() 函数遮蔽掉,
-            # 后加的任何路由一用 rows() 就 UnboundLocalError,而且表现为连接重置不是 500
-            _er=[json.loads(l) for l in open(f,encoding="utf-8")]
-            return self._send(dict(rows=_er, passed=sum(r.get("passed") for r in _er),
-                                   total=len(_er),
-                                   cost=round(sum(r.get("cost_local",0) for r in _er),4),
-                                   model=_er[0].get("model") if _er else None))
         if p.startswith("/api/export/"):
             kind=p.split("/api/export/")[1]
             data=export_csv(kind,Q).encode("utf-8-sig")
@@ -2759,11 +2715,6 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
             return self._send(dict(ok=True, triage_id=tid, row=_ops.get_triage(tid)))
-        if p=="/api/ops-reparse":
-            # 解析规则改了之后重算历史条目。不重新调模型 —— ai_text 全文都存着。
-            import ops as _ops
-            f=_ops.reparse(only_failed=not body.get("all"))
-            return self._send(dict(ok=True, 重算=len(f), rows=f))
         if p=="/api/ops-resolve":
             # 值班同学销账。改判会回流评测集 —— 这是整套东西唯一的自我改进通路。
             import ops as _ops
@@ -2787,16 +2738,6 @@ class H(BaseHTTPRequestHandler):
             import scheme as _sc
             return self._send(_sc.estimate(body.get("xz"),body.get("mt"),body.get("kf"),
                                            body.get("pt"),body.get("size")))
-        if p=="/api/judge":
-            # 给「单条试跑」页用:它跑智能体,判分和标注答案留在后台(数据的家在这)。
-            # 依旧遵守隔离:truth 只在**跑完之后**读,绝不进模型上下文。
-            _ev=_eval(); case=(body.get("case") or "").strip(); txt=body.get("text") or ""
-            tr=_truths().get(case)
-            if not tr: return self._send(dict(error=f"没有 {case} 的标注答案"),404)
-            ok,why=_ev.hit(txt,tr.get("root_cause",""),case)
-            return self._send(dict(passed=ok,judge=why,truth=dict(
-                root_cause=tr.get("root_cause"),expected_action=tr.get("expected_action"),
-                expected_evidence=tr.get("expected_evidence"),note=tr.get("note"))))
         if p=="/api/chat":
             sys.path.insert(0, os.path.join(HERE,"..","agent"))
             import chat as _chat

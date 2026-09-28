@@ -57,19 +57,12 @@ PAGES = {"/": "station.html", # 登录与任务:登录态是**后台**发的 ses
          "/login": "login.html", "/tasks": "tasks.html",
          # /m 是**客户**用的(手机端自助预约,不登录);/pad 是顾问在平板上看单子的
          "/m": "m.html", "/pad": "pad.html",
-         "/fabric": "fabric.html", "/duty": "duty.html", "/queue": "queue.html", "/health": "health.html",
+         "/fabric": "fabric.html", "/duty": "duty.html", "/queue": "queue.html",
          "/scheme": "scheme.html",
-         "/workbench": "workbench.html", "/acceptance": "acceptance.html",
          # 着装人的身体生命周期 —— 和会员生命周期(新客/沉默/流失)不是一回事
          "/wearers": "wearers.html",
-         # /debug 是**给自己调试用的**,不给门店 —— 术语照业内(trace / span / 判分器),
-         # 不做业务话翻译、不藏技术字段。门店那一版以后另做,别混成一个。
-         # 站内导航里不挂它:挂上去店员就会点进来,然后看见一堆看不懂的东西。
-         "/debug": "debug.html",
-         # 实验对比:同一套题两个版本并排。**先判对比成不成立,再给分。**
-         "/experiments": "experiments.html",
-         # AI 调控中心:九个模块的总览。**没做的模块不给入口** —— 见 aihub.py 的自测
-         "/ai": "ai.html",
+         # ⚠️ 2026-09-28:`/workbench` `/acceptance` `/health` `/ai` `/debug` `/experiments`
+         # 这六页**删掉了**,替代品在管理后台(见下面 `已搬走`)。删的过程写在 nav.py。
          # ── 业务后台并进来(用户 2026-09-25 定:真合成一个平台)──────────────
          # 它原来是 :8760 上的一张单页,靠 `/api/*` 取数;而本站**已经把 /api 和 /img
          # 双向反代过去了(cookie 也转)**,所以整套页面搬到这个端口上不用改一行 ——
@@ -77,11 +70,47 @@ PAGES = {"/": "station.html", # 登录与任务:登录态是**后台**发的 ses
          # ⚠️ 页面文件仍然住在 backend/web/ —— **不拷一份过来**:
          # 拷一份的那天起,两份就开始漂,而漂了不会报错。
          "/ops": "../../backend/web/index.html"}
-# 调控中心的模块页都用同一份 ai.html(左侧自带模块栏,按路径决定显示哪一摊)——
-# **九个模块抄九份 HTML 的话,改一处框架就得改九处**,而漏的那处不会报错。
-PAGES.update({f"/ai/{k}": "ai.html" for k in
-              ("runs", "cost", "tools", "guards", "skills", "evals", "ops",
-               "prompts", "retrieval", "finetune")})
+# ── 搬走了的六页:**留一层「去哪了」,不是 404** ──────────────────────────
+#
+# 2026-09-28 用户拍的:删页面,但旧地址保留一层提示,两三周后再把这层也撤掉。
+# 理由是门店同学里有人把这些地址收藏了,而 **404 只会让人以为系统坏了** ——
+# 它不区分「这个功能搬走了」和「这个站出故障了」,而这两件事下一步完全不同。
+#
+# ⚠️ 状态码用 **410 Gone,不是 200**:410 的意思正是「这个资源曾经在,被有意移除了」。
+# 用 200 的话,对**任何机器**来说搬走的页和还在的页长得一模一样 ——
+# 而这个项目反复在做的就是别让两件事长得一样。人看到的是同一段话,机器分得开。
+#
+# 到期撤掉这层的时候,连这个字典一起删。
+已搬走 = {
+    "/workbench":   ("单条试跑",     "#/tryout"),
+    "/acceptance":  ("回归验收",     "#/evals"),
+    "/health":      ("智能体健康",   "#/health"),
+    "/debug":       ("调试后台",     "#/traces"),
+    "/experiments": ("实验对比",     "#/compare"),
+    "/ai":          ("AI 调控中心",  "#/traces"),
+}
+AI模块页 = {f"/ai/{k}" for k in
+           ("runs", "cost", "tools", "guards", "skills", "evals", "ops",
+            "prompts", "retrieval", "finetune")}
+搬走于 = "2026-09-28"
+后台地址 = os.environ.get("LANXIU_ADMIN_URL") or "澜绣云裳 AI 管理后台"
+
+
+def 搬走了的页(路径):
+    """旧地址的提示页。返回 (html 字节, 410)。"""
+    名, 去 = 已搬走[路径]
+    return (f"""<!doctype html><meta charset="utf-8"><title>{名} 已搬家</title>
+<style>body{{font-family:-apple-system,"PingFang SC",sans-serif;max-width:640px;
+margin:14vh auto;padding:0 24px;color:#2b2b2b;line-height:1.9}}
+h1{{font-size:20px;margin:0 0 18px}} code{{background:#f4f2ee;padding:2px 6px;border-radius:3px}}
+.q{{color:#8a8a8a;font-size:13px;margin-top:28px;border-top:1px solid #e8e5e0;padding-top:14px}}</style>
+<h1>「{名}」已经搬到 AI 管理后台</h1>
+<p>这个页面 <code>{路径}</code> 在 {搬走于} 从工作台移走了 ——
+<b>不是坏了</b>,是换了地方。</p>
+<p>新位置:{后台地址} 的 <code>{去}</code></p>
+<p>工作台从现在起<b>只放门店每天要用的业务功能</b>(对话 / 值班 / 研判 /
+面料学堂 / 方案 / 着装人 / 后台运营);调 AI 的那一摊整体在管理后台。</p>
+<p class="q">这段提示是临时的,过两三周会撤掉。把新地址存一下。</p>""".encode(), 410)
 
 sys.path.insert(0, HERE)
 import sdk, sessions
@@ -160,6 +189,14 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = _u(unquote(urlparse(self.path).path))
+        # 搬走的六页(含 /ai 底下那十个模块页)—— 给一句「去哪了」,不给 404。
+        # ⚠️ **按模块名逐个列,不用 `startswith("/ai/")`**:后者会把
+        # `/ai/export-finetune` 这种**数据口**也吞掉,而那个能力还留着(见下面它的注释)。
+        # 「前缀匹配」在这里是个陷阱 —— 页面路径和数据口挤在同一个前缀下。
+        _旧 = p if p in 已搬走 else ("/ai" if p in AI模块页 else None)
+        if _旧:
+            体, 码 = 搬走了的页(_旧)
+            return self._send(体, "text/html; charset=utf-8", code=码)
         if p in PAGES:
             f = os.path.normpath(os.path.join(HERE, "web", PAGES[p]))
             if not os.path.exists(f): return self._send({"error": f"缺页面 {PAGES[p]}"}, code=404)
@@ -187,21 +224,19 @@ class H(BaseHTTPRequestHandler):
         if p == "/models":
             # 清单由 sdk 从**单价表**长出来,页面不许自己写死一份
             return self._send({"rows": sdk.models(), "default": sdk.default_model_id()})
-        if p == "/ai/data":
-            try:
-                import aihub
-                q = {k: unquote(v) for k, v in
-                     (x.split("=", 1) for x in (urlparse(self.path).query or "").split("&") if "=" in x)}
-                m = q.get("mod", "")
-                if q.get("id"): return self._send(aihub.一条(m, q["id"]))
-                return self._send({"rows": aihub.列表(m)})
-            except Exception as e:
-                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p == "/nav":
             # 导航清单的**唯一来源**。station 那一页布局特殊、不挂横向顶栏,
             # 它从这儿取同一份清单渲染左栏入口 —— 而不是自己手写一份。
             import nav as _nav
             return self._send({"rows": [dict(路=a, 名=b, 说=c) for a, b, c in _nav.顶栏]})
+        # ⚠️ **这一个没跟着六页一起删。**
+        # 用户 2026-09-28 拍的是「页面和接口一起删」,而这个接口**不只属于那六页** ——
+        # 它是「导出微调训练数据(默认脱敏)」这个能力本身,而队友的六页对照表里
+        # **没有它的去处**:/ai 拆成了 trace/span → #/traces、判分器 → #/evals,
+        # 导出训练数据两边都不是。
+        # 删掉 = 拿走一个没有替代品的功能,而那正是 nav.py 当初不肯直接删页面的理由。
+        # 现在它没有界面入口了(ai.html 已删),但按 URL 还调得通。
+        # ⬜ 待办:问队友这个能力去哪 —— 要么管理后台接,要么在工作台留个入口。
         if p.startswith("/ai/export-finetune"):
             # 训练数据导出。**默认脱敏,而且脱不动就不给** ——
             # 一份没脱干净的训练集流出去,是追不回来的。
@@ -235,9 +270,6 @@ class H(BaseHTTPRequestHandler):
                     for k, v in sorted(rs.items())]})
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
-        if p == "/ai/nav":
-            import aihub
-            return self._send(aihub.左栏())
         if p == "/ai/tryone":
             # 列这一套现在有哪几道题。**每次都重挑夹具** —— 题面里的单号是现挑的,
             # 写死的 id 会被一次合理的数据变更打断。
@@ -271,12 +303,6 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     工具 = {"_取不到": f"{type(e).__name__}: {e}"}
                 return self._send({"旋钮": 出, "工具": 工具, "落点核对": _kn.落点核对()})
-            except Exception as e:
-                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
-        if p == "/ai/overview":
-            try:
-                import aihub
-                return self._send(aihub.概览())
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p.startswith("/exp/"):
@@ -391,40 +417,6 @@ class H(BaseHTTPRequestHandler):
                 return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)
             finally:
                 if tmpdir: shutil.rmtree(tmpdir, ignore_errors=True)
-        if p == "/run-task":
-            # 智能体工作台:本站跑智能体(Agent SDK),判分和标注答案交给后台 ——
-            # 数据的家在后台,不在这边复制一份判分逻辑。
-            try: body = json.loads(raw or b"{}")
-            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
-            tid = body.get("task_id")
-            try:
-                tasks = json.loads(urllib.request.urlopen(BACKEND + "/api/agent-tasks", timeout=30).read())["rows"]
-            except Exception as e:
-                return self._send({"error": f"后台连不上:{e}"}, code=502)
-            t = next((x for x in tasks if x["id"] == tid), None)
-            if not t: return self._send({"error": "任务不存在"}, code=404)
-            if t["bp"] == "BP-01":
-                case = t["ref"]
-                prompt = (f"任务类型:财务人工任务\n押金单号:{t['ref']}\n\n"
-                          "这笔押金退款已连续失败并转入人工处理。请查清失败的根本原因,"
-                          "给出建议的处理动作,并列出支撑结论的证据。")
-            else:
-                a, b2 = t["ref"].split("|"); case = t["id"][1:]
-                prompt = (f"任务类型:客户合并确认\n两条疑似重复的客户档案:{a} 和 {b2}\n\n"
-                          "请判断是否为同一客户,给出合并或不合并的建议,并逐项列出比对依据。")
-            try:
-                r = asyncio.run(sdk.run("task", prompt))
-            except Exception as e:
-                return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)
-            r.update(task_id=tid, case=case, bp=t["bp"], prompt=prompt)
-            try:
-                jr = urllib.request.Request(BACKEND + "/api/judge", method="POST",
-                        data=json.dumps({"case": case, "text": r["text"]}).encode(),
-                        headers={"content-type": "application/json"})
-                r.update(json.loads(urllib.request.urlopen(jr, timeout=30).read()))
-            except Exception as e:
-                r["judge"] = f"判分失败:{e}"
-            return self._send(r)
         if p == "/ai/candidate":
             # 提示词候选的**写口**:新建 / 存正文 / 采纳 / 跑验证集。
             # ⚠️ **判定一条都不在这儿重写** —— 全部转给 tools/prompt_candidate.py,
@@ -531,7 +523,8 @@ class H(BaseHTTPRequestHandler):
                 return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
         if p in ("/run-triage", "/run-batch"):
             # 平台的主循环:从积压队列里取任务 → 跑智能体 → **结果落后台的库**。
-            # 和 /run-task(展示件)的区别只有一句话:那个跑完显示就没了,这个跑完留在队列里等人销账。
+            # 它和「单条试跑」的区别只有一句话:那个跑完显示就没了,这个跑完留在队列里等人销账。
+            # (单条试跑那条路 2026-09-28 移交管理后台 `#/tryout`,本站的 /run-task 已删。)
             try: body = json.loads(raw or b"{}")
             except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
             ids = body.get("task_ids") or ([body["task_id"]] if body.get("task_id") else [])
@@ -556,8 +549,10 @@ class H(BaseHTTPRequestHandler):
     def _triage_one(self, tid):
         """跑一条并落库。抛异常由调用方收集 —— 批量里一条挂掉不该拖垮整批。"""
         import time as _t
-        # 从 ops 队列取,不从 /api/agent-tasks 取 —— 后者只列「待处理」,
+        # 从 ops 队列取。**别改成只列「待处理」的那种取法** ——
         # 一条工单研判过一次就变「待复核」,再想重跑就找不到了。
+        # (原来这儿对比的是后台 /api/agent-tasks,那个接口 2026-09-28 随
+        #  单条试跑页一起删了;留着一条指向不存在接口的注释比没注释更误导。)
         q = json.loads(urllib.request.urlopen(
             BACKEND + "/api/ops-queue", timeout=30).read())["rows"]
         t = next((x for x in q if x["task_id"] == tid), None)

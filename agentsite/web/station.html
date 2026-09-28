@@ -865,8 +865,11 @@ function evEvidence(){
    </div>
    ${体检 ? `<div class="grp"><h4>交付前体检打回过</h4>${体检}</div>` : ""}
    <div class="grp"><h4>这一轮的 trace</h4>
+     <!-- 2026-09-28:/debug 已移交管理后台(#/traces),这里不再给链接 ——
+          **trace id 本身仍然显示**,它是去那边查的凭据;
+          链到一个已经搬走的页面,比不给链接更糟。 -->
      <div class="kv"><span>trace</span><span>${last.trace_id
-       ? `<a href="/debug" target="_blank">${esc(String(last.trace_id).slice(0,12))} —— 去调试后台看每一步</a>`
+       ? `${esc(String(last.trace_id).slice(0,12))} —— 去 AI 管理后台的运行记录查这一次`
        : "没记(这条是记录仪上线前的老对话)"}</span></div>
    </div>`;
 }
