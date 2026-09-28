@@ -298,8 +298,17 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
                              where project_id=:p and idempotency_key=:k"""),
                        {"p": project_id, "k": idempotency_key}).mappings().first()
         if 老:
-            return {"id": 老["id"], "记了吗": False, "decision": 老["decision"],
-                    "当前状态": d["status"],
+            # ⚠️ **两条路径的字段名和含义必须一样。**
+            # 上一版这里返回 `id = 决定行的 id`,而新建那条返回 `id = 待办的 id` ——
+            # **同一个接口、同一个字段名、两种 id**,而两种都长得像合法 id。
+            # 存下这个 `id` 再拿去查的调用方会一半 404,而另一半正常。
+            # (这就是「一个名字两个含义」那一族,只是这次长在响应体上。)
+            # 所以改成两个名字各指一件事,**不再有裸 `id`**。
+            # 顺带:`新的 revision` 也补上 —— 前端在读它,重放时拿不到会显示
+            # 「rev undefined」,而那个不报错。
+            return {"待办id": req_id, "决定id": 老["id"], "记了吗": False,
+                    "decision": 老["decision"], "当前状态": d["status"],
+                    "新的 revision": d["revision"],
                     "note": "**同一个幂等键 → 返回原决定,没有记第二条**"}
         # ⚠️ **乐观锁在权限判断之前**:revision 对不上说明别人已经处理过了,
         # 这时候该报「有人先处理了」,而不是报「你没权限」——
@@ -338,13 +347,14 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
         新状态 = {AP.已批准: AP.已批准, AP.已驳回: AP.已驳回,
                AP.要求补充: AP.要求补充}[决定]
         新rev = int(d["revision"] or 0) + 1
+        did = _新id("hd")
         c.execute(text("""
             insert into human_decisions (id, organization_id, project_id,
                 human_request_id, actor, decision, edited_fields, request_revision,
                 reason, at, idempotency_key, created_at, created_by)
             values (:i,:o,:p,:r,:a,:dec, cast(:ed as jsonb), :rev, :why, now(), :k,
                     now(), :by)"""),
-                  {"i": _新id("hd"), "o": d["organization_id"], "p": project_id,
+                  {"i": did, "o": d["organization_id"], "p": project_id,
                    "r": req_id, "a": me.user_id, "dec": 决定,
                    "ed": _json.dumps(改了什么, ensure_ascii=False) if 改了什么 else None,
                    # ⚠️ 记的是**被处理时那一版**的 revision,不是新的 ——
@@ -357,8 +367,8 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
                            where project_id=:p and id=:i and revision=:old"""),
                   {"st": 新状态, "rev": 新rev, "p": project_id, "i": req_id,
                    "old": d["revision"]})
-    出 = {"id": req_id, "记了吗": True, "decision": 决定, "当前状态": 新状态,
-          "新的 revision": 新rev, "处理人": me.user_id}
+    出 = {"待办id": req_id, "决定id": did, "记了吗": True, "decision": 决定,
+          "当前状态": 新状态, "新的 revision": 新rev, "处理人": me.user_id}
     if 决定 == AP.已批准:
         出["note"] = ("**批准只产生批准记录,不等于已执行**(§12.2)—— "
                       "真正执行时还要再查一遍权限和工具当前可用性。"

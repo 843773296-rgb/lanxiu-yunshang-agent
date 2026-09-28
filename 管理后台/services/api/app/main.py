@@ -160,6 +160,7 @@ import uploads_api as _UP
 import runs_api as _RUN
 import human_api as _HM
 import runctl as _RC
+import datasets_api as _DS
 app.include_router(_WF.router)
 app.include_router(_AG.router)
 app.include_router(_KB.router)
@@ -167,6 +168,7 @@ app.include_router(_UP.router)
 app.include_router(_RUN.router)
 app.include_router(_HM.router)
 app.include_router(_RC.router)
+app.include_router(_DS.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

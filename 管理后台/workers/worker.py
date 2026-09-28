@@ -894,7 +894,13 @@ def main():
     类型 = None
     for i, a in enumerate(sys.argv):
         if a == "--type" and i + 1 < len(sys.argv): 类型 = sys.argv[i + 1]
-    print(f"worker 起来了:{我是谁}" + (f"(只跑 {类型})" if 类型 else ""))
+    # ⚠️ **`flush=True` 不能省。** 输出重定向到文件时 Python 会缓冲 stdout,
+    # 于是这一行要等缓冲区满了才落盘 —— **就绪信号存在,却观测不到**。
+    # 代价很具体:`make progress` 原来只等「进程在不在」,而进程在 ≠ 已经在收活,
+    # 于是第一个端到端里 Worker 那组间歇性地挂,而**报告照样生成**
+    # (那一轮「验过」少算 5 条,报告自己看起来完全正常)。
+    # 一个观测不到的就绪信号,和没有就绪信号是一回事。
+    print(f"worker 起来了:{我是谁}" + (f"(只跑 {类型})" if 类型 else ""), flush=True)
     空转 = 0
     while True:
         with 事务() as c:

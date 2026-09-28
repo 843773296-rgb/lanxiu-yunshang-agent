@@ -120,6 +120,15 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (「门店助手今天花了多少」答得出来 —— 那是 A1 存在的全部理由)"
 	@./.venv/bin/python tests/e2e/test_usage_flow.py
 	@echo ""
+	@echo "▸ 交割四条接口(调用链详情 / A3 接收端 / 实验对比 / 人工待办)"
+	@echo "  **「验过」= 有可重跑的断言打过,不是「有人手工 curl 过一次」** —— 这一份补的正是那笔虚账"
+	@./.venv/bin/python tests/e2e/test_handover_flow.py
+	@echo ""
+	@echo "▸ 数据集与训练导出端到端(§17.4 微调链前半段):**七道闸,每道一条**"
+	@echo "  (过完闸一条不剩 → 422 而不是 200+空文件;声明了要脱而脱敏器没选型 → 不给不脱的版本)"
+	@echo "  ⚠️ 要先 python3 tools/seed_datasets.py 铺那六份「每份专考一道闸」的数据集"
+	@./.venv/bin/python tests/e2e/test_datasets_flow.py
+	@echo ""
 	@echo "▸ 文件上传端到端:**「上传成功不等于内容可用」有代码兜着**(§17.1)"
 	@echo "  (已上传的 能引用吗=false / 坏文件是 200+通过=false / 校验失败是终态)"
 	@./.venv/bin/python tests/e2e/test_upload_flow.py
@@ -163,18 +172,60 @@ test-live:
 progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时记账真跑一遍测试**
 	@echo "▸ 起带路由记账的 API(账本 /tmp/aimc-routes.log)"
 	@rm -f /tmp/aimc-routes.log
+# ⚠️ **旧的 worker 日志也要清。** 不清的话上一轮那句「worker 起来了」还在,
+# 就绪判据在新 worker 还没起来时就当场成立 —— 一条**恒为真**的就绪判据。
+	@: > /tmp/aimc-worker.log
 	@lsof -ti:8801 | xargs kill -9 2>/dev/null || true
 	@pkill -f "workers/worker.py" 2>/dev/null || true
 	@sleep 2
-	@AIMC_TRACE_ROUTES=/tmp/aimc-routes.log nohup bash tools/dev.sh > /tmp/devlog.txt 2>&1 & sleep 8
+	@AIMC_TRACE_ROUTES=/tmp/aimc-routes.log nohup bash tools/dev.sh > /tmp/devlog.txt 2>&1 & \
+	  printf "  等服务和 Worker 就绪 "; ok=0; \
+	  for i in $$(seq 1 60); do \
+	    if curl -sf -m 2 http://127.0.0.1:8801/api/healthz >/dev/null 2>&1 \
+	       && grep -q "worker 起来了" /tmp/aimc-worker.log 2>/dev/null; then ok=1; break; fi; \
+	    printf "."; sleep 1; \
+	  done; \
+	  if [ "$$ok" != 1 ]; then echo " 60 秒还没就绪 —— 看 /tmp/devlog.txt"; exit 1; fi; \
+	  echo " 就绪"
 	@echo "▸ 跑端到端(它打过哪些路由,账本上说)"
-	@./.venv/bin/python tests/e2e/test_api_flow.py 2>&1 | tail -2
-	@./.venv/bin/python tests/e2e/test_orchestration_flow.py 2>&1 | tail -2
-	@./.venv/bin/python tests/e2e/test_knowledge_flow.py 2>&1 | tail -2
-	@./.venv/bin/python tests/e2e/test_upload_flow.py 2>&1 | tail -2
-	@./.venv/bin/python tests/e2e/test_knowledge_write_flow.py 2>&1 | tail -2
-	@./.venv/bin/python tests/e2e/test_usage_flow.py 2>&1 | tail -2
-	@./.venv/bin/python tests/e2e/test_runctl_flow.py 2>&1 | tail -2
+	@./.venv/bin/python tests/e2e/test_api_flow.py > /tmp/prog-test_api_flow.log 2>&1 \
+	  || { echo "  ❌ test_api_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_api_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_api_flow.log
+	@./.venv/bin/python tests/e2e/test_orchestration_flow.py > /tmp/prog-test_orchestration_flow.log 2>&1 \
+	  || { echo "  ❌ test_orchestration_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_orchestration_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_orchestration_flow.log
+	@./.venv/bin/python tests/e2e/test_knowledge_flow.py > /tmp/prog-test_knowledge_flow.log 2>&1 \
+	  || { echo "  ❌ test_knowledge_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_knowledge_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_knowledge_flow.log
+	@./.venv/bin/python tests/e2e/test_upload_flow.py > /tmp/prog-test_upload_flow.log 2>&1 \
+	  || { echo "  ❌ test_upload_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_upload_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_upload_flow.log
+	@./.venv/bin/python tests/e2e/test_knowledge_write_flow.py > /tmp/prog-test_knowledge_write_flow.log 2>&1 \
+	  || { echo "  ❌ test_knowledge_write_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_knowledge_write_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_knowledge_write_flow.log
+	@./.venv/bin/python tests/e2e/test_usage_flow.py > /tmp/prog-test_usage_flow.log 2>&1 \
+	  || { echo "  ❌ test_usage_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_usage_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_usage_flow.log
+	@./.venv/bin/python tests/e2e/test_runctl_flow.py > /tmp/prog-test_runctl_flow.log 2>&1 \
+	  || { echo "  ❌ test_runctl_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_runctl_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_runctl_flow.log
+	@./.venv/bin/python tests/e2e/test_handover_flow.py > /tmp/prog-test_handover_flow.log 2>&1 \
+	  || { echo "  ❌ test_handover_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_handover_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_handover_flow.log
+	@./.venv/bin/python tools/seed_datasets.py > /tmp/prog-seed.log 2>&1 \
+	  || { echo "  ❌ 铺数据集挂了"; tail -12 /tmp/prog-seed.log; exit 1; }
+	@./.venv/bin/python tests/e2e/test_datasets_flow.py > /tmp/prog-test_datasets_flow.log 2>&1 \
+	  || { echo "  ❌ test_datasets_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_datasets_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_datasets_flow.log
 	@echo ""
 	@echo "▸ 页面冒烟(它取哪些接口,也记在同一本账上)"
 	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' \
