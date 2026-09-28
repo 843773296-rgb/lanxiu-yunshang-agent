@@ -352,6 +352,16 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     E("applications", "应用", 项目级, 可改,
       ["name", "pipeline_type"],
       ["首版只有「Prompt 生成」和「RAG 问答」两种流水线(§3 结尾)"]),
+    # ⚠️ 2026-09-28 新加。**候选配置和发布清单是两张表。**
+    # 发布清单是「不可变」的(写下不许改,靠内容哈希认同一份);
+    # 而候选天天在改 —— 塞进同一张表的话,那张表**同时是可变的和不可变的**,
+    # 而「这一行能不能改」要靠 `approval` 是不是空来推。一张表两个含义。
+    E("application_drafts", "应用候选配置", 子对象, 可改,
+      ["application_id", "definition"],
+      ["候选里挑的每一项依赖**都是确切版本的 id**,不是「最新」",
+       "一个应用**只有一份候选**(唯一约束)—— 两份的话「出发布」出的是哪一份?",
+       "改候选**不影响正在跑的那一版**:要切生产得出清单、审核、再发布"],
+      依赖=["applications"]),
     E("release_manifests", "发布清单", 项目级, 不可变,
       ["application_id", "prompt_version_id", "connection_version_id",
        "index_build_id", "retrieval_config_version_id", "model_artifact_id",

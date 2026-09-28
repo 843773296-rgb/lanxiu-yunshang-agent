@@ -120,6 +120,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (「门店助手今天花了多少」答得出来 —— 那是 A1 存在的全部理由)"
 	@./.venv/bin/python tests/e2e/test_usage_flow.py
 	@echo ""
+	@echo "▸ 应用与发布端到端(§17.4-9):**「哪一版在给用户跑」**"
+	@echo "  (清单全是确切版本 / 生产只认审过的 / 指针原子 / 回滚是新动作不是改历史)"
+	@./.venv/bin/python tests/e2e/test_release_flow.py
+	@echo ""
 	@echo "▸ 微调训练链端到端(§17.4):**四个状态之间的三道边界**"
 	@echo "  (训练完成 → 有产物 → 产物可用 → 在服务用户;合成任意两个,界面上看起来都正常)"
 	@echo "  ⚠️ 要先 python3 tools/seed_training.py —— 它会补一个 trainer,"
@@ -223,6 +227,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_runctl_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_runctl_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_runctl_flow.log
+	@./.venv/bin/python tests/e2e/test_release_flow.py > /tmp/prog-test_release_flow.log 2>&1 \
+	  || { echo "  ❌ test_release_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_release_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_release_flow.log
 	@./.venv/bin/python tools/seed_training.py > /tmp/prog-seedtr.log 2>&1 \
 	  || { echo "  ❌ 铺训练夹具挂了"; tail -12 /tmp/prog-seedtr.log; exit 1; }
 	@./.venv/bin/python tests/e2e/test_training_flow.py > /tmp/prog-test_training_flow.log 2>&1 \
