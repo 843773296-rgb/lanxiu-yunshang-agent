@@ -151,7 +151,30 @@ def queue(state=None):
         sla = SLA_HOURS.get(t["type"], DEFAULT_SLA)
         tr = latest.get(t["id"])
         st = "未研判" if not tr else tr["status"]
-        done = st in DECISIONS
+        # ── done 有**两个权威来源**(业务 2026-09-28 拍板,见业务拍板-20260927 第四条)──
+        #
+        #     done = triage 有结论(已采纳/已改判/已升级) 或 task.status='已关闭'
+        #
+        # 为什么两个都要:它们说的是**不同的事**。
+        #   · triage 有结论 → 研判走完了,有人给了处理意见
+        #   · task 已关闭   → 这件事结束了,**而它可能从来没走过研判**
+        # 只认前者,会让 201 条早已关闭的工单永远挂在待办上(实测 271 → 56);
+        # 只认后者,会让研判完但没人去关单的那些被当成还没处理。
+        #
+        # ⚠️ **同时报「凭什么销账」,不把两者压成一个布尔值。**
+        # 压平之后「研判过并采纳了」和「工单被关掉但一条研判都没走过」
+        # 长得一模一样 —— 而后者要人看一眼:它可能是对的(有些事不需要研判),
+        # 也可能是有人直接关单了事。**一个数不够表达两种闭环。**
+        研判有结论 = st in DECISIONS
+        工单已关闭 = (t["status"] == "已关闭")
+        done = 研判有结论 or 工单已关闭
+        凭什么 = None
+        if 研判有结论 and 工单已关闭:
+            凭什么 = "研判有结论且工单已关闭"
+        elif 研判有结论:
+            凭什么 = "研判有结论(工单还没关)"
+        elif 工单已关闭:
+            凭什么 = "工单已关闭(**没走过研判**)"
         if done:                       # 已销账的不再计时效
             level, left = "已销账", None
         else:
@@ -160,7 +183,8 @@ def queue(state=None):
         out.append(dict(
             task_id=t["id"], type=t["type"], ref=t["ref_id"], created=t["created"],
             waited_h=round(waited_h, 1), sla_h=sla, left_h=None if left is None else round(left, 1),
-            level=level, state=st, done=done,
+            level=level, state=st, done=done, 凭什么销账=凭什么,
+            研判有结论=研判有结论, 工单已关闭=工单已关闭,
             triage_id=tr["id"] if tr else None,
             ai_root_cause=tr["ai_root_cause"] if tr else None,
             ai_confidence=tr["ai_confidence"] if tr else None,
@@ -197,6 +221,22 @@ def backlog():
         # **一个数不够表达「要处理但不算账」。**
         已超时_含不考核=len(over_全部), 临期_含不考核=len(临期_全部),
         不进考核的类型=sorted(不进考核的类型),
+        # ⚠️ **超时的是哪几类,要报出来。**
+        # 2026-09-28 改 done 判据之后剩 55 条超时,其中 51 条集中在
+        # 售后判责 / 客户合并 / 财务 —— 那三类**一条研判都没有**。
+        # 那是既有状况,不是评价功能带来的。
+        # 只给一个「已超时 55」的数字,店长会去逐条翻;
+        # 报了分布,他一眼看出「这是三类活没人接」而不是「55 件散单」。
+        # **一个总数不足以让人知道下一步该做什么。**
+        已超时_按类型=dict(sorted(
+            ((k, sum(1 for x in over_全部 if x["type"] == k))
+             for k in {x["type"] for x in over_全部}),
+            key=lambda kv: -kv[1])),
+        # 销账的依据分布 —— 「没走过研判就关掉」有多少,是个要看的数
+        销账依据=dict(sorted(
+            ((k, sum(1 for x in q if x["凭什么销账"] == k))
+             for k in {x["凭什么销账"] for x in q if x["凭什么销账"]}),
+            key=lambda kv: -kv[1])),
         # ⚠️ **把时效表也报出来,前端别手抄。**
         # `duty.html` 原来写死「财务 24h / 判责 36h / 合并 48h」——
         # 加了「评价差评 72h」之后那句话就漂了,而**漂了不报错**:
@@ -569,5 +609,47 @@ if __name__ == "__main__":
     for 名, 真 in 咬:
         print(f"     {'✅' if 真 else '❌'} 咬合:{名}")
     assert all(真 for _, 真 in 咬), "时效声明判据的咬合没过 —— **没红过的检查等于没有**"
+
+    # ── done 判据的两个来源 —— **其中一个目前是空的,所以它需要断言** ────────
+    #
+    # 业务 2026-09-28 拍板:`done = triage 有结论 或 task.status='已关闭'`。
+    #
+    # ⚠️ 实测:201 条销账**全部**来自「工单已关闭」,`triage 有结论` 命中 0 条。
+    # 也就是说这条判据现在完全靠 `task.status`。这不是错 ——
+    # 但它意味着:**只写 `task.status` 那一半,现在看起来完全一样**。
+    # 而一个「目前用不上的分支」正是以后悄悄失效也没人发现的那种。
+    #
+    # 所以这里判的不是「两个来源都有命中」(那会逼数据造假),
+    # 而是**两个来源都还连着**:各自单独算一遍,和合起来的对得上。
+    q = queue()
+    只看研判 = [x for x in q if x["研判有结论"]]
+    只看关闭 = [x for x in q if x["工单已关闭"]]
+    合起来 = [x for x in q if x["done"]]
+    assert len(合起来) == len({x["task_id"] for x in 只看研判 + 只看关闭}), (
+        f"done 的两个来源合起来对不上:研判 {len(只看研判)} + 关闭 {len(只看关闭)} "
+        f"≠ 并集 {len(合起来)} —— **说明 done 的算法和这两个字段脱钩了**")
+    assert all(x["凭什么销账"] for x in 合起来), (
+        "有销账的条目没写「凭什么销账」—— "
+        "**一个不说依据的结论,事后分不清「研判过」和「直接关单」**")
+    assert all(x["凭什么销账"] is None for x in q if not x["done"]), (
+        "没销账的条目却写了销账依据")
+    b3 = backlog()
+    assert sum(b3["销账依据"].values()) == len(合起来), (
+        f"销账依据的分布加起来 {sum(b3['销账依据'].values())} "
+        f"≠ 销账数 {len(合起来)} —— 分布漏了一档")
+    assert sum(b3["已超时_按类型"].values()) == b3["已超时_含不考核"], (
+        f"超时按类型加起来 {sum(b3['已超时_按类型'].values())} "
+        f"≠ 已超时_含不考核 {b3['已超时_含不考核']} —— 分布漏了一类")
+    没走研判就关的 = sum(v for k, v in b3["销账依据"].items() if "没走过研判" in k)
+    print(f"\n  ✅ done 判据两个来源都连着:研判有结论 {len(只看研判)}、"
+          f"工单已关闭 {len(只看关闭)}、销账合计 {len(合起来)}")
+    if 没走研判就关的:
+        print(f"     ℹ️ 其中 {没走研判就关的} 条是「**没走过研判就关掉**」—— "
+              f"不算错(有些事不需要研判),但这个数要有人看一眼")
+    if not 只看研判:
+        print(f"     ⚠️ `triage 有结论` 这一半**目前命中 0 条** —— "
+              f"判据完全靠 task.status。它没坏,但**只写一半现在看起来一样**,"
+              f"所以上面那条断言守的是「两个来源都还连着」")
+    print(f"     超时分布:{b3['已超时_按类型']}")
 
     print("\n✅ 数据层自测通过")
