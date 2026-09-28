@@ -41,10 +41,31 @@ from db import 连接
 
 
 def 数一下():
+    """⚠️ **必须排掉已归档的。**
+
+    第一版没排,于是它报「排队中 39 条」,而那 39 条**全是已归档的** ——
+    测试自己的清理机制就是「归档 + 标记 cancel_requested」,
+    而每一条真实代码路径(`jobs/lease.py` 领活、界面列表)都带 `archived_at is null`。
+
+    ⚠️ 我照着那个假数字**编了一个自洽的解释**:「『请求取消』不是终态,
+    而没有任何东西会把它推进终态」—— 那个解释不但说得通,还**正好呼应**
+    我当天在写的运行控制主题(「请求」不是「已经」),
+    **所以我没去查是谁写的**,直接当成产品缺陷写进了交接。
+
+    > CLAUDE.md 第 7.8 条:**不符合预期的数会被查,符合预期的数会被信。**
+    > 这是它的变体 —— 正好印证你当前想法的现象,会被直接收下。
+
+    归档的条数**单独报**,不混进积压:两者下一步完全不同
+    (一个是等它跑完,一个是压根不用管)。
+    """
     with 连接() as c:
         rs = dict(c.execute(text("""select status, count(*) from jobs
-                                  where project_id=:p group by status"""),
-                            {"p": 项目}).all())
+                                  where project_id=:p and archived_at is null
+                                  group by status"""), {"p": 项目}).all())
+        归 = c.execute(text("""select count(*) from jobs
+                             where project_id=:p and archived_at is not null"""),
+                       {"p": 项目}).scalar()
+    rs["_已归档"] = 归
     return rs
 
 
@@ -56,8 +77,12 @@ def main():
 
     起 = 数一下()
     堆 = 起.get("排队中", 0) + 起.get("执行中", 0)
-    print(f"  队列:排队中 {起.get('排队中', 0)} · 执行中 {起.get('执行中', 0)}"
+    print(f"  队列(**只数没归档的**):排队中 {起.get('排队中', 0)}"
+          f" · 执行中 {起.get('执行中', 0)}"
           f" · 已完成 {起.get('已完成', 0)} · **失败 {起.get('失败', 0)}**")
+    if 起.get("_已归档"):
+        print(f"     另有 {起['_已归档']} 条**已归档**(多是端到端跑完自己清的)——"
+              f"不算积压,也不用管")
     if 起.get("失败", 0):
         print(f"     ⚠️ {起['失败']} 个失败的活是终态,不影响等待 —— "
               f"**但不报就等于没有**:它们和 0 个失败在「排队中=0」上长得一样")
