@@ -1,0 +1,121 @@
+{
+ "说明": "INSERT 要写具名列 —— **列数恰好相等而顺序错了,是不报错的。**\n\n    python3 tools/insert_shape_check.py          # 门禁\n    python3 tools/insert_shape_check.py --登记     # 把现存的位置参数写进欠债表(只在第一次用)",
+ "怎么还": "把那几处改成 `INSERT INTO 表(列1,列2,…) VALUES(…)`,再把处数减掉(减到 0 删掉那张表)。**减不减由这个检查强制** —— 改好了还留着,它会红。",
+ "登记于": "2026-09-28",
+ "欠着的": {
+  "agent/fingerprint.py": {
+   "craft": 1
+  },
+  "agent/pickup_eval.py": {
+   "pickup": 1,
+   "pickup_item": 1,
+   "pkg_pickup": 1
+  },
+  "backend/advisor_write_check.py": {
+   "{…}": 1
+  },
+  "backend/rating_check.py": {
+   "pickup_item": 1,
+   "task": 1
+  },
+  "backend/seed.py": {
+   "account": 1,
+   "activity": 1,
+   "approval": 1,
+   "artisan": 1,
+   "body_feature": 1,
+   "category": 1,
+   "consent": 1,
+   "content": 1,
+   "craft_bom": 1,
+   "craft_combo": 1,
+   "deposit": 3,
+   "download_task": 1,
+   "invite_code": 1,
+   "kb_table": 1,
+   "level_cfg": 1,
+   "measure_item": 1,
+   "measure_tpl": 1,
+   "page": 1,
+   "part_option": 3,
+   "pattern_bom": 1,
+   "payment_flow": 4,
+   "phone_alias": 1,
+   "product_custom": 2,
+   "shop": 1,
+   "sys_code": 1,
+   "tag": 1,
+   "task": 3,
+   "tpl_item": 1,
+   "wearer": 1,
+   "workorder": 2,
+   "xingzhi": 1
+  },
+  "backend/server.py": {
+   "approval": 1,
+   "content": 1,
+   "download_task": 1,
+   "measure_item": 1,
+   "measure_tpl": 1,
+   "sys_code": 1,
+   "task": 1,
+   "tpl_item": 2
+  },
+  "fakedata/agree.py": {
+   "p": 1
+  },
+  "fakedata/anchor.py": {
+   "product": 2
+  },
+  "fakedata/generalize.py": {
+   "account": 1,
+   "order_line": 1,
+   "purchase_order": 1,
+   "support_ticket": 1
+  },
+  "fakedata/selftest.py": {
+   "cust": 1,
+   "item": 1,
+   "mark": 1,
+   "ordr": 3,
+   "person": 1,
+   "shop": 1
+  },
+  "knowledge/derive_xingzhi.py": {
+   "xingzhi": 1
+  },
+  "tools/backfill_rating.py": {
+   "customer": 1,
+   "ordr": 1,
+   "pickup_item": 1,
+   "pkg": 1,
+   "world_meta": 1
+  },
+  "tools/clamp_future_done.py": {
+   "factory_msg": 2,
+   "ordr": 4,
+   "pickup": 1,
+   "pickup_item": 1
+  },
+  "tools/grow_customers.py": {
+   "account": 1,
+   "consent": 1,
+   "wearer": 3
+  },
+  "tools/order_mix.py": {
+   "order_mix_batch": 1
+  },
+  "tools/shift_world.py": {
+   "color_family": 1,
+   "edit_log": 1,
+   "factory_msg": 1,
+   "ordr": 2,
+   "world_meta": 4,
+   "新表": 1
+  },
+  "tools/simulate_sales.py": {
+   "sim_batch": 1,
+   "sim_batch_sku": 1
+  }
+ }
+}

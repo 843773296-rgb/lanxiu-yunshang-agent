@@ -2688,11 +2688,18 @@ class H(BaseHTTPRequestHandler):
                                ",".join(body.get("kf") or []),body.get("color"),
                                ",".join(body.get("ps") or []),_now(),sid))
                 else:
-                    c.execute("INSERT INTO scheme VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    # ⚠️ 具名列。原来是 `VALUES(?×13)`,而 `scheme` 加了 `pattern` 之后是 14 列 ——
+                    # **前台新建方案这条路一直在抛 500**,没有任何检查红过(insert_shape_check 首跑抓到)。
+                    # 顺带:顾问原来写死显示串「A01 林岚」,而这一列存的是工号(和 seed 同一处修法)。
+                    # 前台没选版型就留空 —— 「还没定版型」在库里本来就是 NULL,不猜一个默认的。
+                    c.execute("INSERT INTO scheme(id,customer_id,name,status,xz,mt,kf,color,ps,"
+                              "pattern,advisor_no,note,created,updated)"
+                              " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                               (sid,body.get("customer_id"),body.get("name") or "未命名方案","已保存",
                                body.get("xz"),body.get("mt"),",".join(body.get("kf") or []),
                                body.get("color"),",".join(body.get("ps") or []),
-                               "A01 林岚",None,_now(),_now()))
+                               body.get("pattern") or None,顾问工号(body.get("advisor") or "A01 林岚"),
+                               None,_now(),_now()))
             log_op("魏欣新","fe-scheme",sid,(cur[0]["status"] if cur else "-"),"已保存",True,"OK",
                    ";".join(f"{i.get('pair','')} {i['kind']}" for i in iss) or "无问题",{})
             return self._send(dict(ok=True,id=sid,issues=iss))

@@ -3622,5 +3622,53 @@
   "改坏": "把**一个**里料改挂主料商(⚠️ 只改一行 —— 全改的话同类目还是一家,打不破这条)",
   "db": "UPDATE material SET supplier_code='SUP-FAB-01' WHERE code=(SELECT code FROM material WHERE cat='里料' LIMIT 1)",
   "预期红": "面料是**按类目**分给供应商的"
+ },
+ {
+  "script": "tools/insert_shape_check.py",
+  "改坏": "把 derive_xingzhi 里 `INSERT INTO xingzhi VALUES(?,?,?,?,?)` 删掉一个 ?",
+  "file": [
+   {
+    "path": "knowledge/derive_xingzhi.py",
+    "old": "INSERT INTO xingzhi VALUES(?,?,?,?,?)",
+    "new": "INSERT INTO xingzhi VALUES(?,?,?,?)"
+   }
+  ],
+  "预期红": "列数和建表语句对得上"
+ },
+ {
+  "script": "tools/insert_shape_check.py",
+  "改坏": "把 server.py 新建方案那句具名 INSERT 的表名改成不存在的 `schemex`",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "\"INSERT INTO scheme(id,customer_id,name,status,xz,mt,kf,color,ps,\"",
+    "new": "\"INSERT INTO schemex(id,customer_id,name,status,xz,mt,kf,color,ps,\""
+   }
+  ],
+  "预期红": "每处 INSERT 都找得到建表语句"
+ },
+ {
+  "script": "tools/insert_shape_check.py",
+  "改坏": "在 server.py 新建方案那段加一句 `INSERT INTO scheme VALUES(?×14)`(列数对得上,只是位置参数)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            log_op(\"魏欣新\",\"fe-scheme\",sid,",
+    "new": "            _ = \"INSERT INTO scheme VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)\"\n            log_op(\"魏欣新\",\"fe-scheme\",sid,"
+   }
+  ],
+  "预期红": "没有新增的位置参数 INSERT"
+ },
+ {
+  "script": "tools/insert_shape_check.py",
+  "改坏": "把 derive_xingzhi 那句改成具名列、但不删欠债表",
+  "file": [
+   {
+    "path": "knowledge/derive_xingzhi.py",
+    "old": "INSERT INTO xingzhi VALUES(?,?,?,?,?)",
+    "new": "INSERT INTO xingzhi(code,name,alias,key_sizes,src_type) VALUES(?,?,?,?,?)"
+   }
+  ],
+  "预期红": "欠债表里的都还欠着"
  }
 ]
