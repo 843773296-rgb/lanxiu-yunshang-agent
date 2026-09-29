@@ -3778,5 +3778,29 @@
    }
   ],
   "预期红": "印染晾晒类不计工日,报在「未含」里"
+ },
+ {
+  "script": "knowledge/margin.py",
+  "改坏": "把璎珞项圈(C040302)从进价率表里删掉",
+  "file": [
+   {
+    "path": "knowledge/margin.py",
+    "old": "\"C040302\": \"金属首饰\",\n",
+    "new": "\n"
+   }
+  ],
+  "预期红": "进价率档:璎珞项圈按三级类目认成金属(不被二级「颈肩饰」带走)"
+ },
+ {
+  "script": "knowledge/margin.py",
+  "改坏": "让 名字里的面料() 单字名排到别名前面",
+  "file": [
+   {
+    "path": "knowledge/margin.py",
+    "old": "    for a in sorted(简, key=len, reverse=True):\n        if a in 商品名:\n            return 简[a], \"别名\"",
+    "new": "    for m in 主料:\n        if len(m) == 1 and m in 商品名:\n            return m, \"单字名\"\n    for a in sorted(简, key=len, reverse=True):\n        if a in 商品名:\n            return 简[a], \"别名\""
+   }
+  ],
+  "预期红": "面料:别名和单字都在时认别名(「绫纹」莨绸短衫 → 香云纱,不是绫)"
  }
 ]

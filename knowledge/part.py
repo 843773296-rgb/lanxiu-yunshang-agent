@@ -284,3 +284,18 @@ def 部位用料(conn, 版型码, 部位):
     "**混着估的和核过的,整体只能当估的用**。"
     "估算偏低的风险仍在,所以报价单上要保留这句话;"
     "但它已经比「整件按最贵的料算」贴近实价得多。")
+
+
+def 认名字(text, names):
+    """商品名里出现的面料 / 工艺名(长的优先,认到的短名如果是长名的一部分就不要)。
+
+    出图清单(tools/export_image_prompts.py)和标品进价(knowledge/margin.py)共用这一份:
+    **图上画的料和成本算的料必须是同一种。**
+    """
+    import re as _re
+    hit = []
+    for n in sorted({x for x in names if x}, key=len, reverse=True):
+        for part in _re.split(r"\s*/\s*", n):          # 「绢 / 电力纺」这种按斜杠拆开认
+            if len(part) >= 2 and part in text and not any(part in h for h in hit):
+                hit.append(part)
+    return hit

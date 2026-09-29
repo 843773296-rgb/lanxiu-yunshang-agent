@@ -101,14 +101,10 @@ def 形制结构():
     return out
 
 
-def 认名字(text, names):
-    """商品名里出现的面料 / 工艺名(长的优先,认到的短名如果是长名的一部分就不要)"""
-    hit = []
-    for n in sorted({x for x in names if x}, key=len, reverse=True):
-        for part in re.split(r"\s*/\s*", n):          # 「绢 / 电力纺」这种按斜杠拆开认
-            if len(part) >= 2 and part in text and not any(part in h for h in hit):
-                hit.append(part)
-    return hit
+# 认名字挪到了 knowledge/part.py —— 标品进价(knowledge/margin.py)也要从商品名认面料,
+# **两边必须认出同一种料**:图上画的是它,成本也按它算。分成两份迟早认得不一样。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge"))
+from part import 认名字  # noqa: E402
 
 
 def 号型(pattern):

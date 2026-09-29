@@ -3318,6 +3318,30 @@ def run():
         _n_rp += 1
     print(f"  [定制款按成本定价] {_n_rp} 款 = 标准配置(物料 + 人工上限)× {_mg.定价系数}")
 
+    # ── 手写标品补进价(业务 2026-09-29「补啊」)──────────────────────────────
+    # 生成的标品在插入时就存了进价;**手写的那批**(STD 清单)只写了名字价格尺码,没记面料。
+    # 面料从商品名认 —— 和出图清单**同一个函数**,图上画的料就是成本算的料。
+    # 名字里一点线索都没有的,按形制定位挑一种(和生成商品同一条 `_tier`),**标明是造的**。
+    # 配饰 / 手工件 / 西式:售价 × 进价率(按子类,demo)。
+    _主料价 = sorted((r[1], r[0]) for r in c.execute("SELECT name, price FROM material WHERE cat='主料'"))
+    _n_cp, _n_no, _n_zao = 0, [], 0
+    for _spu, _nm, _g in c.execute(
+            "SELECT DISTINCT p.spu, p.name, p.gender FROM product p JOIN sku s ON s.spu=p.spu "
+            "WHERE p.kind='标品' AND s.cost_price IS NULL ORDER BY p.spu").fetchall():
+        _lo, _hi = _tier(_nm, _g)
+        _候 = [n for pr, n in _主料价 if _lo <= pr <= _hi] or [n for _, n in _主料价]
+        _兜 = _候[稳定哈希(_spu) % len(_候)]
+        _cp, _how = _mg.标品进价(c, _spu, 兜底面料=_兜)
+        if _cp is None:
+            _n_no.append(f"{_nm}({_how})")
+            continue
+        _n_zao += "造" in _how
+        c.execute("UPDATE sku SET cost_price=? WHERE spu=? AND cost_price IS NULL", (_cp, _spu))
+        _n_cp += 1
+    print(f"  [标品补进价] {_n_cp} 款(其中面料按定位挑的 {_n_zao} 款)"
+          + (f";**算不出 {len(_n_no)} 款**:{'、'.join(_n_no[:4])}"
+             + (f" ……还有 {len(_n_no) - 4} 款" if len(_n_no) > 4 else "") if _n_no else ""))
+
     # ── 订单行上每个部位实际选了什么 ────────────────────────────────
     # ⚠️ **加价之和必须等于已经记着的 `custom_amount`。**
     # 那个数早就在订单上了(客户付过款),所以这里不是「重新算一遍」,

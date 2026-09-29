@@ -298,6 +298,111 @@ def 标准配置(conn, spu):
     return 面, sorted(艺)
 
 
+# 没有版型、没有物料清单的标品(配饰、手工件、西式套装)—— **进价率**,按子类(用户 2026-09-29)。
+# ⚠️ demo:拍脑袋的数,有真实采购价时整表替换。同一子类内毛利是常数,子类之间才有差别。
+进价率 = {"金属首饰": 0.35, "布艺刺绣": 0.45, "西式": 0.45}
+进价率_来源 = "demo"
+_品类到进价率档 = {"C040101": "金属首饰", "C040102": "金属首饰", "C040302": "金属首饰",
+                 "C0402": "布艺刺绣", "C040301": "布艺刺绣", "C040303": "布艺刺绣", "C0404": "布艺刺绣",
+                 "C0502": "布艺刺绣", "C0503": "布艺刺绣", "C0601": "西式"}
+
+
+def 进价率档(品类码):
+    码 = 品类码 or ""
+    for n in (7, 5):                          # 先认三级类目,再认二级
+        if 码[:n] in _品类到进价率档:
+            return _品类到进价率档[码[:n]]
+    return None
+
+
+def 名字里的面料(conn, 商品名):
+    """标品从商品名里认面料 —— 和出图清单**同一个函数**(`part.认名字`),图上画的就是它。
+
+    认不出全名时再认:材质别名(「莨绸」→ 香云纱)、去掉「真丝」前缀的名字(「素罗」→ 真丝素罗)。
+    返回 (面料名, 怎么认的);认不出返回 (None, None)。
+    """
+    import part as _part
+    主料 = [r[0] for r in conn.execute("SELECT name FROM material WHERE cat='主料'")]
+    中 = _part.认名字(商品名, 主料)
+    if 中:
+        全 = next((m for m in 主料 if 中[0] in m.split(" / ") or m == 中[0]), 中[0])
+        return 全, "名字"
+    简 = {}
+    for n, al in conn.execute("SELECT name, alias FROM craft WHERE cat='材质'"):
+        if n not in 主料:
+            continue
+        for a in re.split(r"[、;;,,]", al or ""):
+            a = a.strip()
+            if len(a) >= 2 and "`" not in a and "见" not in a:
+                简.setdefault(a, n)
+        if n.startswith("真丝") and len(n) >= 4:
+            简.setdefault(n[2:].strip(), n)
+    for a in sorted(简, key=len, reverse=True):
+        if a in 商品名:
+            return 简[a], "别名"
+    # 再认**核心名的片段**:全名去掉「真丝」前缀、括号、「·」后的规格,得到核心名;
+    # 商品名里出现核心名开头两个字(「双宫」→ 双宫绸、「乔其」→ 真丝乔其纱),
+    # 或核心名里任意连续三个字(「暗纹缎」→ 提花暗纹缎),就算认出。长的核心名优先
+    def _核(m):
+        m = re.sub(r"[((][^))]*[))]", "", m.split(" · ")[0].split(" / ")[0]).strip()
+        return m[2:] if m.startswith("真丝") and len(m) > 3 else m
+    for m in sorted(主料, key=lambda x: -len(_核(x))):
+        核 = _核(m)
+        if (len(核) >= 2 and 核 in 商品名) or (len(核) >= 3 and (
+                核[:2] in 商品名 or any(核[i:i + 3] in 商品名 for i in range(len(核) - 2)))):
+            return m, "核心名片段"
+    # 最后才认**单字**面料名(绫、绡)—— 「认名字」要求至少两个字,所以「绫影」「真丝绡」认不出。
+    # 放最后:单字最容易误中,只在前面都认不出时才用
+    for m in 主料:
+        if len(m) == 1 and m in 商品名:
+            return m, "单字名"
+    return None, None
+
+
+def 标品进价(conn, spu, 兜底面料=None):
+    """标品的进货单价。返回 (元, 怎么来的);算不出返回 (None, 原因)。
+
+    · 有版型的服装:物料(面料从名字认,认不出用调用方给的兜底)+ 按件代工费
+    · 按「米」卖的面料:对应面料的单价
+    · 其余(配饰、手工件、西式):售价 × 进价率(按子类)
+    """
+    import derive_pattern as dp
+    r = conn.execute("SELECT name, pattern, category, unit, base_price FROM product WHERE spu=?",
+                     (spu,)).fetchone()
+    if not r:
+        return None, "没有这个商品"
+    名, 版型, 品类, 单位, 售价 = r
+    if (品类 or "").startswith("C0501") and 单位 == "米":
+        料, 怎么 = 名字里的面料(conn, 名)
+        价 = (conn.execute("SELECT price FROM material WHERE name=?", (料,)).fetchone() or [None])[0] if 料 else None
+        return (round(价, 2), f"面料单价({料})") if 价 is not None else (None, "面料认不出")
+    if 版型:
+        料, 怎么 = 名字里的面料(conn, 名)
+        if not 料 and 兜底面料:
+            料, 怎么 = 兜底面料, "按形制定位挑的(造)"
+        码 = (conn.execute("SELECT code FROM material WHERE name=?", (料,)).fetchone() or [None])[0] if 料 else None
+        费 = 代工费(品类)
+        if not 码:
+            return None, "面料认不出"
+        if 费 is None:
+            return None, "品类没有代工档"
+        p = next((x for x in dp.patterns() if x["code"] == 版型), None)
+        if not p:
+            return None, f"没有版型 {版型}"
+        艺码 = 工艺编码表(conn)
+        import part as _part
+        艺 = [艺码[x] for x in _part.认名字(名, list(艺码)) if x in 艺码]
+        est = dp.estimate(版型, p["sizes"][min(1, len(p["sizes"]) - 1)], 码, 艺,
+                          craft_names={k: n for n, k in 艺码.items()})
+        if est.get("error"):
+            return None, est["error"]
+        return round(est["物料成本"] + 费, 2), f"物料(面料{怎么}认的:{料})+ 代工费"
+    档 = 进价率档(品类)
+    if 档 and 售价:
+        return round(售价 * 进价率[档], 2), f"售价 × 进价率({档} {进价率[档]:.0%},demo)"
+    return None, "没有版型,品类也没有进价率档"
+
+
 def 一单_从库(conn, 订单, 非遗集=None, 工时表=None, 编码表=None):
     """从库里算一单的毛利区间。返回 dict(毛利=(按人工上限, 按人工下限), 实收, 成本, 人工来源, 未含, 缺)。
 
@@ -380,6 +485,8 @@ def 一单_从库(conn, 订单, 非遗集=None, 工时表=None, 编码表=None):
     ("让 折扣这条管着东西吗(0) 返回 True", "0 条折扣 → 说出来是空跑"),
     ("让 工艺人工() 不去重(同种工艺按出现次数算)", "同种工艺整件算一次(传两遍平绣,人工不翻倍)"),
     ("让 工艺人工() 把日历天也按工日算", "印染晾晒类不计工日,报在「未含」里"),
+    ("把璎珞项圈(C040302)从进价率表里删掉", "进价率档:璎珞项圈按三级类目认成金属(不被二级「颈肩饰」带走)"),
+    ("让 名字里的面料() 单字名排到别名前面", "面料:别名和单字都在时认别名(「绫纹」莨绸短衫 → 香云纱,不是绫)"),
 ]
 
 
@@ -484,6 +591,27 @@ if __name__ == "__main__":
     ck("苏绣按非遗 800:8–20 工日 → 6400–16000", lambda: 工艺人工(["KF03"], 遗)[:2] == (6400.0, 16000.0))
     ck("款式价 = (物料 + 人工上限) × 2.5,取整到十元", lambda: 款式价(1000, 7000) == 20000)
     ck("款式价缺物料 → None,不按 0 算", lambda: 款式价(None, 7000) is None)
+
+    # ── 标品进价:进价率档 + 从商品名认面料 ──
+    ck("进价率档:簪钗 → 金属首饰", lambda: 进价率档("C040101") == "金属首饰")
+    ck("进价率档:璎珞项圈按三级类目认成金属(不被二级「颈肩饰」带走)", lambda: 进价率档("C040302") == "金属首饰")
+    ck("进价率档:云肩 → 布艺刺绣", lambda: 进价率档("C040301") == "布艺刺绣")
+    ck("进价率档:汉服成衣不走进价率(它们有版型,按物料 + 代工)", lambda: 进价率档("C010201") is None)
+    import sqlite3 as _sq
+    _c = _sq.connect(":memory:")
+    _c.executescript("CREATE TABLE material(name TEXT, cat TEXT, price REAL, code TEXT);"
+                     "CREATE TABLE craft(name TEXT, cat TEXT, alias TEXT);"
+                     "INSERT INTO material(name,cat,price,code) VALUES('织金缎','主料',1,'A'),('双宫绸','主料',1,'B'),"
+                     "('棉绸(人棉)','主料',1,'C'),('绫','主料',1,'D'),('香云纱','主料',1,'E');"
+                     "INSERT INTO craft(name,cat,alias) VALUES('香云纱','材质','莨绸、拷绸');")
+    ck("面料:名字里有全名就认全名", lambda: 名字里的面料(_c, "「金襕」织金缎马面裙") == ("织金缎", "名字"))
+    ck("面料:别名(莨绸 → 香云纱)", lambda: 名字里的面料(_c, "「夏至」莨绸短衫") == ("香云纱", "别名"))
+    ck("面料:核心名开头两字(双宫 → 双宫绸)", lambda: 名字里的面料(_c, "「双宫」明制道袍") == ("双宫绸", "核心名片段"))
+    ck("面料:括号里的不算核心名(棉绸 → 棉绸(人棉))", lambda: 名字里的面料(_c, "「棉绸」抹胸")[0] == "棉绸(人棉)")
+    ck("面料:单字名最后才认(绫影 → 绫)", lambda: 名字里的面料(_c, "「绫影」百迭裙") == ("绫", "单字名"))
+    ck("面料:别名和单字都在时认别名(「绫纹」莨绸短衫 → 香云纱,不是绫)",
+       lambda: 名字里的面料(_c, "「绫纹」莨绸短衫") == ("香云纱", "别名"))
+    ck("面料:一点线索都没有 → 认不出,不猜", lambda: 名字里的面料(_c, "「玄圭」圆领袍") == (None, None))
 
     print("\n覆盖率 · 从库里现量(只报不判)")
     _实测()
