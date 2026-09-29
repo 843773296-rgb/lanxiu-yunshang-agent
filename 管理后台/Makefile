@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 # `#` 在 make 的配方里要用变量传,直接写 `\#` 会把反斜杠一起带给 shell
 HASH := \#
-.PHONY: help bootstrap dev seed-demo test test-e2e test-live contract doctor migrate gen worker worker-once progress \
+.PHONY: help bootstrap dev seed-demo test test-e2e test-browser test-live contract doctor migrate gen worker worker-once progress \
         test-orchestration test-orchestration-e2e test-orchestration-live
 
 help:
@@ -20,12 +20,20 @@ doctor:        ## 探本机依赖:PG / pgvector / Redis / Node / Python
 
 contract:      ## 只跑契约覆盖检查(不需要数据库)
 	@./.venv/bin/python tools/spec_coverage.py
+	@echo ""
+	@./.venv/bin/python tools/test_registry_check.py
 
 bootstrap:     ## 装依赖 + 起基础服务 + 迁移
 	@bash tools/bootstrap.sh
 
 test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@./.venv/bin/python tools/spec_coverage.py
+	@echo ""
+	@./.venv/bin/python tools/test_registry_check.py
+	@echo ""
+	@echo "▸ 铺数据的脚本跑得起第二遍吗(**要库,所以不在 contract 里**)"
+	@echo "  ⚠️ 它会**重铺 seed 夹具**并跑两份端到端 —— 要先 make dev"
+	@./.venv/bin/python tools/seed_rerun_check.py
 	@echo ""
 	@echo "▸ 契约和库是否一致(alembic check)"
 	@cd services/api && DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
@@ -95,9 +103,30 @@ seed-demo:     ## 灌合成演示数据(**只在开发环境,重复跑不增加�
 	 DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python services/api/app/seed_demo.py
 
+# ── 真浏览器:**故意不进 test-e2e,也不进 CI** ───────────────────────────
+# ⚠️ 这个目标是 2026-09-29 补的。`tests/e2e/test_upload_page_firefox.py`
+# 早就写好了,文件头上明写「单独 `make test-browser`」——
+# **而那个目标当时并不存在**,文件也从没提交过。
+# 也就是说:一份写得很细的测试,**没有任何入口能跑它** ——
+# 那和没有这份测试是一回事,只是它在目录里躺着,看起来像有覆盖。
+#
+# 它为什么不进门禁,文件头里写清了:要可见的 Firefox 窗口
+# (headless 下 Firefox 156 卡在一个关不掉的模态框上)、要 selenium
+# (**故意不进 requirements.lock** —— 钉进去 CI 也会去装)。
+test-browser:  ## 真浏览器点一遍「加资料」页(要 Firefox + selenium + make dev)
+	@echo "▸ 真浏览器(Firefox + Selenium):「加资料」页的三步链路"
+	@echo "  ⚠️ 会在屏幕上**弹一个 Firefox 窗口** —— 所以它不在 test-e2e 里"
+	@echo "  ⚠️ 要 selenium(不在 requirements.lock 里):"
+	@echo "     ./.venv/bin/pip install selenium"
+	@./.venv/bin/python tests/e2e/test_upload_page_firefox.py
+
 test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 make dev)
 	@echo "▸ 接口闭环与**禁止行为**(44 条:跨项目、权限、乐观锁、幂等、脱敏、未知费用)"
 	@./.venv/bin/python tests/e2e/test_api_flow.py
+	@echo ""
+	@echo "▸ 任务事件流 SSE(17 条:按 seq 续传、终态要发结束、流开着也重新鉴权)"
+	@echo "  **全后台最后一条「已实现未验」** —— 主要在打「空流和什么都没发生长得一样」"
+	@./.venv/bin/python tests/e2e/test_job_events_sse.py
 	@echo ""
 	@echo "▸ 编排端到端(44 条:建图→校验→冻结→试运行→Worker;Agent 那一条同理)"
 	@echo "  **这一份是为了把「我手敲 curl 验过」变成可重跑的断言** —— 它第一次跑就抓到一个 500"
@@ -140,13 +169,6 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (清单全是确切版本 / 生产只认审过的 / 指针原子 / 回滚是新动作不是改历史)"
 	@./.venv/bin/python tests/e2e/test_release_flow.py
 	@echo ""
-	@echo "▸ 微调训练链端到端(§17.4):**四个状态之间的三道边界**"
-	@echo "  (训练完成 → 有产物 → 产物可用 → 在服务用户;合成任意两个,界面上看起来都正常)"
-	@echo "  ⚠️ 要先 python3 tools/seed_training.py —— 它会补一个 trainer,"
-	@echo "     没有他这一组**一条都跑不起来**(demo 项目原来一个 trainer 都没有)"
-	@./.venv/bin/python tools/seed_training.py > /dev/null
-	@./.venv/bin/python tests/e2e/test_training_flow.py
-	@echo ""
 	@echo "▸ 交割四条接口(调用链详情 / A3 接收端 / 实验对比 / 人工待办)"
 	@echo "  **「验过」= 有可重跑的断言打过,不是「有人手工 curl 过一次」** —— 这一份补的正是那笔虚账"
 	@./.venv/bin/python tests/e2e/test_handover_flow.py
@@ -154,7 +176,23 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 数据集与训练导出端到端(§17.4 微调链前半段):**七道闸,每道一条**"
 	@echo "  (过完闸一条不剩 → 422 而不是 200+空文件;声明了要脱而脱敏器没选型 → 不给不脱的版本)"
 	@echo "  ⚠️ 要先 python3 tools/seed_datasets.py 铺那六份「每份专考一道闸」的数据集"
+	@./.venv/bin/python tools/seed_datasets.py > /dev/null
 	@./.venv/bin/python tests/e2e/test_datasets_flow.py
+	@echo ""
+# ⚠️ **训练那一份必须排在数据集那一份之后。** 它要一个**已经冻结的数据集版本**,
+# 而冻结是 `test_datasets_flow` 干的 —— 这条依赖以前没写在顺序上:
+# 训练排在前面,靠的是**上一轮跑剩下的残留**。
+# 2026-09-29 修 `seed_datasets.py` 的清理顺序时顺手把残留清掉了,这条依赖当场露出来:
+# `test_training_flow` 报「没有固化过的数据集版本」。
+# > 一条靠残留成立的顺序,在第一次从零跑的那天才会露出来 ——
+# > 而在开发机上它和「真的没有依赖」长得一模一样。
+	@echo "▸ 微调训练链端到端(§17.4):**四个状态之间的三道边界**"
+	@echo "  (训练完成 → 有产物 → 产物可用 → 在服务用户;合成任意两个,界面上看起来都正常)"
+	@echo "  ⚠️ 要先 python3 tools/seed_training.py —— 它会补一个 trainer,"
+	@echo "     没有他这一组**一条都跑不起来**(demo 项目原来一个 trainer 都没有)"
+	@echo "  ⚠️ **排在数据集那一份之后**:它要一个已冻结的数据集版本"
+	@./.venv/bin/python tools/seed_training.py > /dev/null
+	@./.venv/bin/python tests/e2e/test_training_flow.py
 	@echo ""
 	@echo "▸ 文件上传端到端:**「上传成功不等于内容可用」有代码兜着**(§17.1)"
 	@echo "  (已上传的 能引用吗=false / 坏文件是 200+通过=false / 校验失败是终态)"
@@ -219,6 +257,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_api_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_api_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_api_flow.log
+	@./.venv/bin/python tests/e2e/test_job_events_sse.py > /tmp/prog-test_job_events_sse.log 2>&1 \
+	  || { echo "  ❌ test_job_events_sse 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_job_events_sse.log; exit 1; }
+	@tail -1 /tmp/prog-test_job_events_sse.log
 	@./.venv/bin/python tests/e2e/test_orchestration_flow.py > /tmp/prog-test_orchestration_flow.log 2>&1 \
 	  || { echo "  ❌ test_orchestration_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_orchestration_flow.log; exit 1; }
@@ -263,12 +305,6 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_release_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_release_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_release_flow.log
-	@./.venv/bin/python tools/seed_training.py > /tmp/prog-seedtr.log 2>&1 \
-	  || { echo "  ❌ 铺训练夹具挂了"; tail -12 /tmp/prog-seedtr.log; exit 1; }
-	@./.venv/bin/python tests/e2e/test_training_flow.py > /tmp/prog-test_training_flow.log 2>&1 \
-	  || { echo "  ❌ test_training_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
-	       tail -24 /tmp/prog-test_training_flow.log; exit 1; }
-	@tail -2 /tmp/prog-test_training_flow.log
 	@./.venv/bin/python tests/e2e/test_handover_flow.py > /tmp/prog-test_handover_flow.log 2>&1 \
 	  || { echo "  ❌ test_handover_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_handover_flow.log; exit 1; }
@@ -279,6 +315,14 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_datasets_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_datasets_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_datasets_flow.log
+# ⚠️ 训练那一份**必须排在数据集之后** —— 它要一个已冻结的数据集版本,
+# 而冻结是 test_datasets_flow 干的。理由见 test-e2e 里同一处的注释。
+	@./.venv/bin/python tools/seed_training.py > /tmp/prog-seedtr.log 2>&1 \
+	  || { echo "  ❌ 铺训练夹具挂了"; tail -12 /tmp/prog-seedtr.log; exit 1; }
+	@./.venv/bin/python tests/e2e/test_training_flow.py > /tmp/prog-test_training_flow.log 2>&1 \
+	  || { echo "  ❌ test_training_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_training_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_training_flow.log
 	@echo ""
 	@echo "▸ 页面冒烟(它取哪些接口,也记在同一本账上)"
 	@for h in '$(HASH)/workbench' '$(HASH)/prompts' '$(HASH)/runs' '$(HASH)/workflows' \
