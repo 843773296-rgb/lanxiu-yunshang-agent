@@ -3207,45 +3207,45 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-29 10:01。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-29 13:58。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 97cb6e7 · 2026-09-29 · 评价表按业内补五样:分项/标签/图片视频/匿名/追评 —— 全都守着「交付体验」 |
-| 代码量 | 507 个 Python 文件 / 103494 行(不含 .venv) |
+| 最新提交 | d526bde · 2026-09-29 · 管理后台:最后一条「已实现未验」清掉 —— 95 验过 / 0 未验 / 0 未实现 |
+| 代码量 | 521 个 Python 文件 / 103792 行(不含 .venv) |
 | 验收 | `./check.sh` 共 203 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
 **未提交的改动:**
 
 ```
-M .gitignore
- M HANDOFF.md
- M agent/eval-history.jsonl
+M agent/eval-history.jsonl
  M agent/growth-eval-results.jsonl
  M agent/measure-eval-results.jsonl
  M agent/member-eval-results.jsonl
  M agent/ops-eval-results.partial.jsonl
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M tools/cron_health_check.py
- M tools/daily_shift.sh
- M tools/install_world_cron.sh
+ M backend/seed.py
+ M knowledge/margin.py
+ M tools/bite_specs.json
+ M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
+ M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/HANDOFF.md"
 ?? .wip-muslin/
 ?? data/lanxiu.db
-?? "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_upload_page_firefox.py"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-97cb6e7 评价表按业内补五样:分项/标签/图片视频/匿名/追评 —— 全都守着「交付体验」
-3215724 每日平移装成定时任务 —— 而且装的时候把「它挂了没人知道」一起堵上
-65442da 毛利口径落地 knowledge/margin.py —— 口径写对了,但现在只算得出 1 单
-29844a5 刷交接:两个同名 adapters 的地雷,以及根 check.sh 现在不能当通行证
-393e270 模型与连接三条:碰凭据的那一组(74/73)
+d526bde 管理后台:最后一条「已实现未验」清掉 —— 95 验过 / 0 未验 / 0 未实现
+fb4bbd8 刷交接:收图 246 → 279 款、274 分 SKU 与那次 CI 红,毛利链做了一半停在哪
+906308c 修 CI:274 的第二个 SKU 用「靛青」不用「靛蓝」—— 色名得在颜色归属表里
+7faf188 收第 281–285 名的图:5 款 29 张,补钉颜色
+723ed40 管理后台:常驻 Worker 的日志边跑边落 —— 报了,但报到了一个读不出来的地方
 ```
 <!--/AUTO-->
 ## 一句话在做什么
