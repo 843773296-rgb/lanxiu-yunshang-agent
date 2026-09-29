@@ -120,6 +120,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (「门店助手今天花了多少」答得出来 —— 那是 A1 存在的全部理由)"
 	@./.venv/bin/python tests/e2e/test_usage_flow.py
 	@echo ""
+	@echo "▸ 设置组端到端(§15.3/§15.4):**审计终于读得出来了**"
+	@echo "  (前面十几块写的留痕 / 不能授予自己没有的权限 / 不许去掉最后一个能管权限的人 / 预算 0 不是不限)"
+	@./.venv/bin/python tests/e2e/test_settings_flow.py
+	@echo ""
 	@echo "▸ 模型与连接端到端(§17.4-5):**碰凭据的那一组**"
 	@echo "  (明文当场拒不是收下后忽略 / 错误不回显 / 列表只给形状 / 没探过的发生产被拦)"
 	@./.venv/bin/python tests/e2e/test_connections_flow.py
@@ -231,6 +235,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_runctl_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_runctl_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_runctl_flow.log
+	@./.venv/bin/python tests/e2e/test_settings_flow.py > /tmp/prog-test_settings_flow.log 2>&1 \
+	  || { echo "  ❌ test_settings_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_settings_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_settings_flow.log
 	@./.venv/bin/python tests/e2e/test_connections_flow.py > /tmp/prog-test_connections_flow.log 2>&1 \
 	  || { echo "  ❌ test_connections_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_connections_flow.log; exit 1; }
