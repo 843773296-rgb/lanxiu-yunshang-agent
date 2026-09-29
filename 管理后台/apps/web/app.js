@@ -66,8 +66,8 @@ function 错误块(e, 重试) {
  * 规格 §3:「不能因为没有 GPU,就从需求中删除微调模块」。 */
 const 导航 = [
   ["#/workbench", "工作台", true],
-  ["#/apps", "应用与发布", false],
-  ["#/conns", "模型与连接", false],
+  ["#/apps", "应用与发布", true],
+  ["#/conns", "模型与连接", true],
   ["#/prompts", "Prompt 管理", true],
   ["#/tryout", "单条试跑", true, true],
   ["grp", "编排"],
@@ -79,10 +79,10 @@ const 导航 = [
   ["#/uploads", "加资料", true, true],
   ["#/kb", "知识库", true, true],
   ["#/retrieval", "检索实验室", true, true],
-  ["#/datasets", "数据集", false],
+  ["#/datasets", "数据集", true],
   ["grp", "微调训练"],
-  ["#/training", "训练任务", false, true],
-  ["#/artifacts", "模型产物", false, true],
+  ["#/training", "训练任务", true, true],
+  ["#/artifacts", "模型产物", true, true],
   ["#/health", "智能体健康", true, true],
   ["#/evals", "评测中心", true],
   ["#/compare", "实验对比", true, true],
@@ -90,8 +90,8 @@ const 导航 = [
   ["#/traces", "调用链", true, true],
   ["#/usage", "用量与成本", true],
   ["grp", "设置"],
-  ["#/members", "成员与权限", false, true],
-  ["#/audit", "审计记录", false, true],
+  ["#/members", "成员与权限", true, true],
+  ["#/audit", "审计记录", true, true],
 ];
 function 画侧栏() {
   const cur = location.hash || "#/workbench";
@@ -2331,6 +2331,259 @@ function 画链路(d) {
         一个查不回去的引用比没有引用糟:它看起来有出处。</div>`;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 2026-09-29 补的七页 —— 侧栏上原来点不开的那七个
+ * ══════════════════════════════════════════════════════════════════
+ *
+ * 这七页对应的接口是 09-28~29 两天做的(数据集/训练/发布/连接/设置/工具)。
+ * **接口有了不等于人能用** —— 在这之前,这 65 条接口大部分只能用 curl 看。
+ *
+ * 每一页只突出**一条**最要紧的事,而不是把字段铺满:
+ *
+ *   审计    → 前面十几块写的留痕,终于读得出来
+ *   应用    → **哪一版在给用户跑**(不是「有哪些应用」)
+ *   连接    → 密钥**只给形状**;谁**还没探过** capabilities
+ *   成员    → 他**实际能做什么**(不只是角色名)
+ *   数据集  → **能不能导出,卡在哪**
+ *   训练    → **是不是 mock 跑的**(三值:是/否/说不清)
+ *   产物    → 这一份**能不能部署,还差什么**
+ */
+
+async function 页_审计记录() {
+  $("#main").innerHTML = `<div class="crumb">设置 / 审计记录</div>
+    <div class="head"><div><h1>审计记录</h1>
+      <div class="sub"><b>只追加,不许删也不许改</b>(§15.4)——
+        一个能删审计的接口,会让审计在最需要它的那一刻正好是空的。</div></div></div>
+    <div class="note">按动作筛:<select id="f-act"><option value="">全部</option></select>
+      <button class="btn" id="f-go">看</button></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  const 拉 = async (动作) => {
+    try {
+      const q = 动作 ? `?action=${encodeURIComponent(动作)}&days=30` : "?days=30";
+      const d = await 请求(`${P()}/audit-events${q}`);
+      const sel = $("#f-act");
+      if (sel && sel.options.length <= 1) {
+        (d["这个范围里的动作分布"] || []).forEach((x) => {
+          const o = document.createElement("option");
+          o.value = x["动作"]; o.textContent = `${x["动作"]}(${x["次数"]})`;
+          sel.appendChild(o);
+        });
+      }
+      if (!d["记录"].length) {
+        // ⚠️ 「本来就没有」和「被筛掉了」分开说 —— 接口已经分好了,这里照搬。
+        $("#list").innerHTML = 状态("", "这个范围里没有记录", d.note || "").html;
+        return;
+      }
+      $("#list").innerHTML = `<table><thead><tr><th>什么时候</th><th>谁</th>
+        <th>做了什么</th><th>对象</th><th>结果</th><th>为什么</th></tr></thead><tbody>`
+        + d["记录"].map((r) => `<tr>
+          <td class="k">${esc(String(r["什么时候"] || "").slice(0, 19))}</td>
+          <td>${esc(r["谁"] || "—")}</td>
+          <td><b>${esc(r["做了什么"])}</b></td>
+          <td class="k">${esc(JSON.stringify(r["对象"] || {}).slice(0, 60))}</td>
+          <td>${r["结果"] === "ok" ? `<span class="pill">ok</span>`
+                : `<span class="pill warn">${esc(r["结果"] || "—")}</span>`}</td>
+          <td class="k">${esc((r["为什么"] || "—").slice(0, 70))}</td></tr>`).join("")
+        + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
+    } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+  };
+  await 拉("");
+  const go = $("#f-go"); if (go) go.onclick = () => 拉($("#f-act").value);
+}
+
+async function 页_应用与发布() {
+  $("#main").innerHTML = `<div class="crumb">发布 / 应用</div>
+    <div class="head"><div><h1>应用与发布</h1>
+      <div class="sub">这一页回答的是 <b>哪一版在给用户跑</b> ——
+        不是「有哪些应用」。</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/applications`);
+    if (!d["应用"].length) {
+      $("#list").innerHTML = 状态("", "还没有应用",
+        "建一个应用之后,给它挑齐依赖、出一份发布清单、审核、再发布 ——"
+        + "**清单里全是确切版本,不许出现「用最新的那个」**。").html;
+      return;
+    }
+    $("#list").innerHTML = `<table><thead><tr><th>应用</th><th>流水线</th>
+      <th>生产在跑哪一版</th><th>预发</th><th>测试</th><th>候选</th>
+      </tr></thead><tbody>`
+      + d["应用"].map((r) => {
+        const 指 = r["各环境指着哪一版"] || {};
+        // ⚠️ 空的时候写「**还没有任何一版在跑**」,不写「—」——
+        // 一个「—」会被读成「线上没在用」,而两者完全不是一回事。
+        const 格 = (e) => 指[e]
+          ? `<code>${esc(指[e])}</code>`
+          : `<span class="k">还没有任何一版在跑</span>`;
+        return `<tr><td><b>${esc(r["名字"])}</b><div class="k">${esc(r.id)}</div></td>
+          <td class="k">${esc(r["流水线"])}</td>
+          <td>${格("production")}</td><td>${格("staging")}</td><td>${格("test")}</td>
+          <td>${r["候选能出清单吗"] ? `<span class="pill">可以出清单</span>`
+                : `<span class="pill warn">还差 ${(r["候选还差什么"] || []).length} 项</span>`}
+            ${(r["候选还差什么"] || []).length
+              ? `<div class="k">${esc((r["候选还差什么"] || [])[0].slice(0, 46))}</div>` : ""}
+          </td></tr>`; }).join("")
+      + `</tbody></table><div class="note">${md(d.note || "")}<br>
+        <b>发布这几步页面上还没做</b>(出清单 / 审核 / 切指针 / 回滚)——
+        接口都有了,<b>不摆点了没反应的按钮</b>。</div>`;
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+async function 页_模型与连接() {
+  $("#main").innerHTML = `<div class="crumb">设置 / 模型与连接</div>
+    <div class="head"><div><h1>模型与连接</h1>
+      <div class="sub"><b>密钥只给形状,不给内容</b> ——
+        也不做截断:截到前几个字,那几个字仍然是原文。</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/model-connections`);
+    if (!d["连接"].length) {
+      $("#list").innerHTML = 状态("", "还没有模型连接",
+        "**用途要分开**(生成 / Embedding / 重排 / 微调推理)—— 共用一条的话,"
+        + "换生成模型会顺手把 Embedding 也换掉,而已经建好的索引会全部不可比。").html;
+      return;
+    }
+    $("#list").innerHTML = `<table><thead><tr><th>用途</th><th>名字</th>
+      <th>适配器</th><th>密钥</th><th>探过 capabilities 吗</th><th>状态</th>
+      </tr></thead><tbody>`
+      + d["连接"].map((r) => {
+        const v = (r["配置版本"] || [])[0] || {};
+        const k = v["密钥"] || {};
+        return `<tr><td><b>${esc(r["用途中文"] || r["用途"])}</b></td>
+          <td>${esc(r["名字"] || "—")}</td><td class="k">${esc(r["适配器"])}</td>
+          <td>${k["配了吗"]
+            ? `<span class="pill">${esc(k["存在哪"])}·${k["长度"]} 字</span>`
+            : `<span class="pill warn">没配</span>`}</td>
+          <td>${v["探过吗"] ? `<span class="pill">探过了</span>`
+            : `<span class="pill warn">还没探过</span>`}</td>
+          <td class="k">${esc(r["状态"])}</td></tr>`; }).join("")
+      + `</tbody></table><div class="note">${md(d.note || "")}<br>
+        ⚠️ <b>「没探过」不等于「支持一切」</b> —— 不探的话,不支持的参数会在
+        几天后某次真实调用上变成一个说不清的 400。<b>发到生产的清单要求它探过。</b></div>`;
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+async function 页_成员与权限() {
+  $("#main").innerHTML = `<div class="crumb">设置 / 成员与权限</div>
+    <div class="head"><div><h1>成员与权限</h1>
+      <div class="sub">给的是 <b>他实际能做什么</b>,不只是角色名 ——
+        「可授权」那一档<b>默认是关闭的</b>,而角色名上看不出关没关。</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/memberships`);
+    $("#list").innerHTML = `<table><thead><tr><th>工号</th><th>角色</th>
+      <th>这条生效吗</th><th>专项授权</th><th>实际能做的</th></tr></thead><tbody>`
+      + d["成员"].map((r) => `<tr>
+        <td><b>${esc(r["工号"])}</b></td>
+        <td>${esc(r["角色中文"] || r["角色"])}<div class="k">${esc(r["角色"])}</div></td>
+        <td>${r["这条生效吗"] ? `<span class="pill">生效</span>`
+              : `<span class="pill warn">不生效(登录那一步查不到)</span>`}</td>
+        <td class="k">${esc((r["专项授权"] || []).join("、") || "—")}</td>
+        <td>${(r["实际能做的"] || []).map((x) =>
+              `<span class="pill">${esc(x)}</span>`).join(" ")}</td></tr>`).join("")
+      + `</tbody></table><div class="note">${md(d.note || "")}<br>
+        <b>能改权限的:</b> ${esc((d["能改权限的"] || []).join("、") || "(一个都没有)")}
+        —— ⚠️ <b>不许把最后一个能改权限的人去掉</b>:
+        改完就没人能改权限了,而那个状态<b>从接口这一侧救不回来</b>。</div>`;
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+async function 页_数据集() {
+  $("#main").innerHTML = `<div class="crumb">微调 / 数据集</div>
+    <div class="head"><div><h1>数据集</h1>
+      <div class="sub">这一页回答 <b>能不能导出、卡在哪</b> ——
+        而「能导出吗」是<b>现算</b>的,不是存的字段(存的会漂)。</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/datasets`);
+    if (!d["数据集"].length) {
+      $("#list").innerHTML = 状态("", "还没有数据集", d.note || "").html;
+      return;
+    }
+    $("#list").innerHTML = `<table><thead><tr><th>数据集</th><th>样本</th>
+      <th>分档</th><th>冻结过几版</th><th>能导出吗</th></tr></thead><tbody>`
+      + d["数据集"].map((r) => `<tr>
+        <td><b>${esc(r["名字"])}</b><div class="k">${esc(r.id)}</div></td>
+        <td>${r["样本数"]}</td>
+        <td class="k">${esc(Object.entries(r["分档"] || {})
+              .map(([k, v]) => `${k} ${v}`).join("、") || "—")}</td>
+        <td>${r["冻结过几版"]}</td>
+        <td>${r["能导出吗"] ? `<span class="pill">可以</span>`
+              : `<span class="pill warn">不行</span>`}
+          ${(r["卡在哪"] || []).length
+            ? `<div class="k">${esc((r["卡在哪"] || [])[0].slice(0, 54))}</div>` : ""}
+          ${r["还有一道看内容的闸"]
+            ? `<div class="k">⚠️ ${esc(r["还有一道看内容的闸"].slice(0, 54))}</div>` : ""}
+        </td></tr>`).join("")
+      + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+async function 页_训练任务() {
+  $("#main").innerHTML = `<div class="crumb">微调 / 训练任务</div>
+    <div class="head"><div><h1>训练任务</h1>
+      <div class="sub"><b>训练目标和参数更新方式是两个维度</b> ——
+        SFT/DPO 是目标,LoRA/全量是更新方式,不是三选一。</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/training-jobs`);
+    if (!d["任务"].length) {
+      $("#list").innerHTML = 状态("", "还没有训练任务",
+        "提交训练要 **trainer 角色**(或拿了专项授权的 admin)—— "
+        + "而且**幂等键是硬要求**:超时重发一次 = 再烧一遍 GPU。").html;
+      return;
+    }
+    $("#list").innerHTML = `<table><thead><tr><th>任务</th><th>状态</th>
+      <th>基座</th><th>训练目标</th><th>参数更新方式</th><th>是 mock 跑的吗</th>
+      </tr></thead><tbody>`
+      + d["任务"].map((r) => `<tr>
+        <td class="k">${esc(r.id)}</td>
+        <td>${esc(r.status)}${r["请求取消了吗"]
+              ? ` <span class="pill warn">请求取消中</span>` : ""}</td>
+        <td class="k">${esc(r["基座模型"] || "—")}</td>
+        <td>${esc(r["训练目标"] || "—")}</td>
+        <td>${esc(r["参数更新方式"] || "—")}</td>
+        <td>${r["是mock跑的"] === true ? `<span class="pill warn">mock</span>`
+              : r["是mock跑的"] === false ? `<span class="pill">真实</span>`
+              : `<span class="pill warn">说不清</span>`}</td></tr>`).join("")
+      + `</tbody></table><div class="note">${md(d.note || "")}<br>
+        ⚠️ <b>「说不清」不是「不是」</b> —— 说不清的产物<b>不许部署</b>。</div>`;
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+async function 页_模型产物() {
+  $("#main").innerHTML = `<div class="crumb">微调 / 模型产物</div>
+    <div class="head"><div><h1>模型产物</h1>
+      <div class="sub"><b>训练完成只代表得到产物</b> ——
+        有产物 → 产物可用(校验过) → 在服务用户,是三件不同的事。</div></div></div>
+    <div id="list"><div class="state">加载中…</div></div>`;
+  try {
+    const d = await 请求(`${P()}/model-artifacts`);
+    if (!d["产物"].length) {
+      $("#list").innerHTML = 状态("", "还没有登记产物",
+        "登记产物时 `usable` **一律从 false 起**,而且那个接口**不收这个参数** —— "
+        + "收了就等于让调用方自己说「我校验过了」。").html;
+      return;
+    }
+    $("#list").innerHTML = `<table><thead><tr><th>产物</th><th>种类</th>
+      <th>基座</th><th>标了可用吗</th><th>是 mock 训练的吗</th><th>还差什么</th>
+      </tr></thead><tbody>`
+      + d["产物"].map((r) => `<tr>
+        <td class="k">${esc(r.id)}</td><td>${esc(r["种类"])}</td>
+        <td class="k">${esc(r["基座模型"] || "—")}</td>
+        <td>${r["标了可用吗"] ? `<span class="pill">可用</span>`
+              : `<span class="pill warn">没标可用</span>`}</td>
+        <td>${r["是mock训练的"] === true ? `<span class="pill warn">mock</span>`
+              : r["是mock训练的"] === false ? `<span class="pill">真实</span>`
+              : `<span class="pill warn">说不清</span>`}</td>
+        <td class="k">${esc(((r["还差什么"] || [])[0] || "—").slice(0, 50))}</td>
+        </tr>`).join("")
+      + `</tbody></table><div class="note">${md(d.note || "")}<br>
+        ⚠️ 部署三道闸:<b>没标可用</b> / <b>mock 训练的</b> /
+        <b>说不清是不是 mock</b> —— 三种都拦,而它们在这张表上长得几乎一样。</div>`;
+  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
 async function 路由() {
   画侧栏();
   const h = location.hash || "#/workbench";
@@ -2358,6 +2611,13 @@ async function 路由() {
     if (h === "#/kb") return await 页_知识库();
     if (h.startsWith("#/kb/")) return await 页_索引构建(decodeURIComponent(h.slice(5)));
     if (h === "#/retrieval") return await 页_检索实验室();
+    if (h === "#/audit") return await 页_审计记录();
+    if (h === "#/apps") return await 页_应用与发布();
+    if (h === "#/conns") return await 页_模型与连接();
+    if (h === "#/members") return await 页_成员与权限();
+    if (h === "#/datasets") return await 页_数据集();
+    if (h === "#/training") return await 页_训练任务();
+    if (h === "#/artifacts") return await 页_模型产物();
     $("#main").innerHTML = 状态("", "这一页还没实现",
       "规格里有它,**入口保留着** —— 不能因为还没做就把需求删掉。").html;
   } catch (e) {
