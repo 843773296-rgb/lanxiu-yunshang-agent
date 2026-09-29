@@ -1662,6 +1662,11 @@ def run():
                            f"GG{_i:03d}{k:02d}", round(random.uniform(0.2,1.8),2),
                            round(random.uniform(0.002,0.02),4), int(price*100), _img(spu,f"sku{k}")))
     from fix_product_pattern import 多件词 as _多件词
+    # 定制品加色规格 —— 商品名 → [(颜色, 为什么)]。**只在这里登记,别处不许另开第二个 SKU。**
+    # 「蓝印花布」百迭裙:出图清单给了藕荷(分配颜色时没看工艺),出图侧照清单出了藕荷、
+    # 又按蓝印花布本色另出了一套蓝白。用户 2026-09-29:两版都留,分 SKU。
+    # ⚠️ 这是这个库里**第一个**有两个 SKU 的定制品;其余定制品颜色仍是下单时按部位选。
+    定制加色 = {"「蓝印花布」宋制百迭裙": [("靛蓝", "蓝印花布本色(蓝白),用户 2026-09-29 定分 SKU")]}
     for nm, cat, price, gender, xz, mts, kfs, lead, tpl in CUS:
         _i += 1
         spu = f"lxys_{100000000+_i*7919:09d}"[:14]
@@ -1696,6 +1701,13 @@ def run():
         c.execute("INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,collar,size_no,spec_code,weight_kg,volume_m3,points,img) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (f"{spu}-01", spu, "定制/定制", "定制", "定制", float(price), 0, 0, "启用",
                    None, None, f"GG{_i:03d}01", None, None, int(price*100), _img(spu,"sku1")))
+        # 定制品**加色规格**:只有下面登记的款才有第二个 SKU(其余定制品一律只有一个「定制」)。
+        # 按商品名认,不按 spu —— spu 由插入顺序算出来,前面加一行商品就全挪位。
+        for _k2, (_col2, _why2) in enumerate(定制加色.get(nm, []), 2):
+            c.execute("INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,collar,size_no,spec_code,weight_kg,volume_m3,points,img) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (f"{spu}-{_k2:02d}", spu, f"{_col2}/定制", _col2, "定制", float(price), 0, 0, "启用",
+                       None, None, f"GG{_i:03d}{_k2:02d}", None, None, int(price*100),
+                       _img(spu, f"sku{_k2}")))
 
     # ── 商品(生成部分):由版型 × 相容矩阵长出来 ─────────────────────────
     # 手写的清单覆盖不了 82 个版型 —— 库扩容了商品跟不上,页面上就会出现
