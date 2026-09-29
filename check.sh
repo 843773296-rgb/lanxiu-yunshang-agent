@@ -212,6 +212,7 @@ run "交付签收写口 · 码核验才签收、不合身订单不动、完成�
 run "报修口径 · 店长判完、顾客同意才开工" python3 knowledge/repair.py
 run "供应商 · 两类质量不合成一个分/自己做的工艺不许挂供应商/不是一个SKU一家(14 条)" python3 backend/supplier_check.py
 run "评价口径 · 没签收不许评、≤3 星算差评自动进待处理清单(44 条自测)" python3 knowledge/rating.py
+run "毛利口径 · 缺一项就算不出、毛利率和覆盖率绑着报(24 条自测)" python3 knowledge/margin.py
 run "评价写口 · 闸读签收记录不读订单状态、差评自动进 task 清单(库副本)" python3 backend/rating_write_check.py
 run "评价造数 · 门店差距/趋势/不静默夹逼(合成夹具自证)" python3 tools/backfill_rating.py --selftest
 run "评价数据 · 没签收就评/差评没进清单/两处状态打架(9 条判据在合成夹具上自证)" python3 backend/rating_check.py

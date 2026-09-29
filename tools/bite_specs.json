@@ -3670,5 +3670,53 @@
    }
   ],
   "预期红": "欠债表里的都还欠着"
+ },
+ {
+  "script": "knowledge/margin.py",
+  "改坏": "让 一单() 缺物料成本时按 0 算",
+  "file": [
+   {
+    "path": "knowledge/margin.py",
+    "old": "    if 物料成本 is None:\n        缺.append(\"物料成本\")",
+    "new": "    if 物料成本 is None:\n        物料成本 = 0"
+   }
+  ],
+  "预期红": "缺物料成本 → 毛利算不出,不按 0 算"
+ },
+ {
+  "script": "knowledge/margin.py",
+  "改坏": "把 汇总() 那句话里的「基于 n / 共 N 单」删掉",
+  "file": [
+   {
+    "path": "knowledge/margin.py",
+    "old": "**基于 {n} / 共 {N} 单**,",
+    "new": ""
+   }
+  ],
+  "预期红": "毛利率的那句话里带着基于几单"
+ },
+ {
+  "script": "knowledge/margin.py",
+  "改坏": "把 非遗工艺() 的判据改成认「非遗关联」也算",
+  "file": [
+   {
+    "path": "knowledge/margin.py",
+    "old": "\\*\\*非遗\\*\\*\\s*[::]",
+    "new": "\\*\\*非遗(?:关联)?\\*\\*\\s*[::]"
+   }
+  ],
+  "预期红": "「非遗关联」不算非遗级"
+ },
+ {
+  "script": "knowledge/margin.py",
+  "改坏": "让 折扣这条管着东西吗(0) 返回 True",
+  "file": [
+   {
+    "path": "knowledge/margin.py",
+    "old": "    if not 有折扣的单数:\n        return False,",
+    "new": "    if not 有折扣的单数:\n        return True,"
+   }
+  ],
+  "预期红": "0 条折扣 → 说出来是空跑"
  }
 ]
