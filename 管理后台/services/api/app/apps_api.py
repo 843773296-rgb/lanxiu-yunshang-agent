@@ -326,7 +326,19 @@ async def 发布(project_id: str, rid: str, request: Request,
         if isinstance(审核, str):
             try: 审核 = _json.loads(审核)
             except Exception: 审核 = None
-        问 = RL.可以发布吗(环境=环境, 清单=r, 审核=审核)
+        # 这份清单钉的那个连接配置版本,探过 capabilities 没有。
+        # ⚠️ **三值**:查不到那一行 → None(不判这一条),而不是 False ——
+        # 「没有这个版本」和「有但没探过」下一步不同。
+        探过 = None
+        if r and r.get("connection_version_id"):
+            cv = c.execute(text("""select capabilities from connection_versions
+                                 where project_id=:p and id=:i"""),
+                           {"p": project_id,
+                            "i": r["connection_version_id"]}).mappings().first()
+            if cv:
+                import connections as _CN
+                探过 = _CN.探过吗(dict(cv))
+        问 = RL.可以发布吗(环境=环境, 清单=r, 审核=审核, 连接探过吗=探过)
         if 问:
             _审计(c, me, "release.deploy.blocked",
                   {"release_id": rid, "environment": 环境},

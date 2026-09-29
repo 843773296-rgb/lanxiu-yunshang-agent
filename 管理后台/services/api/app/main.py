@@ -163,6 +163,7 @@ import runctl as _RC
 import datasets_api as _DS
 import training_api as _TR
 import apps_api as _AP
+import connections_api as _CN
 app.include_router(_WF.router)
 app.include_router(_AG.router)
 app.include_router(_KB.router)
@@ -173,6 +174,7 @@ app.include_router(_RC.router)
 app.include_router(_DS.router)
 app.include_router(_TR.router)
 app.include_router(_AP.router)
+app.include_router(_CN.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────
