@@ -1,38 +1,67 @@
 #!/usr/bin/env bash
-# 每天把演示世界挪到当天 —— 定时任务调的就是这一行。
+# 每天把演示世界挪到今天。**给 launchd 跑的,没人看着。**
 #
-# 为什么需要它:数据不挪的话每天往后落一天,而**落的过程没有任何提示** ——
-# 直到有人问「下周有哪些单」,发现一条都没有。那正是 2026-09-24 用户撞到的事。
+# ⚠️⚠️ **这个文件里的变量名一律 ASCII。** bash 不接受中文变量名 ——
+# 写 `日志=...` 会当场 syntax error。这个仓库为这条栽过四次
+# (tools/fetch_model.sh、CI 里的 `红=0`、管理后台的 gen_fresh.sh、还有一次)。
+# **本机是 zsh、launchd 跑的是 sh/bash,而 zsh 允许中文变量名** ——
+# 「我敲着能跑」和「定时任务能跑」的差别可以只是一个 shell。
 #
-# 四条刻意的设计:
-#   ① **可反复跑**:已经在今天就什么都不做(shift_world 自己判,差 0 天直接返回)
-#   ② **重建进行中就让开**:两个进程同时写同一个库,只会得到一个半成品
-#   ③ **跑完自己核一遍**:挪完要世界自洽(库说的那天 = 数据实际的那天),
-#      不自洽就以非零退出 —— 定时任务的失败**默认是没人看的**,所以要留在日志里
-#   ④ 日志**带时间戳、只追加**:要回答的是「它到底有没有跑」,而不是「最后一次怎么样」
-set -u
-cd "$(dirname "$0")/.." || exit 1
-LOG=".feynman/daily-shift.log"
-mkdir -p .feynman
-say(){ printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG"; }
+# ## 为什么不是一行 `python3 tools/shift_world.py`
+#
+# **一个静默失败的定时任务,比没有定时任务更糟。**
+# 没有的时候人知道要手动跑;装了之后人以为世界每天在跟着。
+#
+# 而 `shift_world.py --check` 要等到**落后 14 天**才判红 ——
+# 也就是说任务挂了,两周内没有任何信号。
+#
+# 所以这个包装做三件事:
+#   ① 每次**都**记一个「尝试过」的时间戳(哪怕这次啥也没挪)
+#   ② 成功了再记一个「成功过」的时间戳
+#   ③ 失败就退非 0,并把原因留在日志里
+#
+# ⚠️ **两个时间戳,不是一个。** 它们分开的理由是两种失败下一步完全不同:
+#   · 「尝试过」也旧了  → **任务根本没在跑**(没装上 / 被卸了 / 机器一直关机)→ 去修任务
+#   · 「尝试过」是新的、「成功过」是旧的 → **在跑但每次都失败** → 去看日志
+# 只记一个的话,这两种在那个时间戳上长得一模一样。
+set -uo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT" || exit 1
 
-if [ -f backend/.rebuilding ]; then
-  say "跳过:有重建在跑(backend/.rebuilding 还在)"; exit 0
-fi
-if [ ! -f backend/lanxiu.db ]; then
-  say "跳过:还没有库(没重建过)"; exit 0
+STATE_DIR="$ROOT/.feynman"
+LOG="$STATE_DIR/world-shift.log"
+TRIED="$STATE_DIR/world-shift-tried"
+OK="$STATE_DIR/world-shift-ok"
+mkdir -p "$STATE_DIR"
+
+TS="$(date '+%Y-%m-%d %H:%M:%S')"
+# ① 先记「尝试过」—— **在干活之前记**。放到后面记的话,
+#    脚本挂在中途时这个时间戳也不会更新,于是「没在跑」和「跑了但挂了」又混在一起。
+date '+%Y-%m-%dT%H:%M:%S' > "$TRIED"
+
+{
+  echo "──── $TS 开始 ────"
+  # 先看世界自不自洽。不自洽的时候**不要挪** ——
+  # 往一个半平移的库上再挪一次,只会得到一个更说不清的库。
+  if ! python3 tools/shift_world.py --check > "$STATE_DIR/world-shift-check.out" 2>&1; then
+    echo "❌ --check 不过,**这次不挪**。下面是 check 的输出:"
+    tail -20 "$STATE_DIR/world-shift-check.out"
+    echo "   (人要看一眼:python3 tools/shift_world.py --check)"
+    exit 1
+  fi
+  python3 tools/shift_world.py
+} >> "$LOG" 2>&1
+RC=$?
+
+if [ "$RC" -eq 0 ]; then
+  date '+%Y-%m-%dT%H:%M:%S' > "$OK"
+  echo "✅ $TS 平移完成" >> "$LOG"
+else
+  echo "❌ $TS 平移失败(退出码 $RC)—— **「成功过」那个时间戳没有更新**" >> "$LOG"
 fi
 
-say "开始"
-if OUT=$(python3 tools/shift_world.py 2>&1); then
-  printf '%s\n' "$OUT" | sed 's/^/    /' >> "$LOG"
-else
-  printf '%s\n' "$OUT" | sed 's/^/    /' >> "$LOG"
-  say "❌ 平移失败"; exit 1
+# 日志留最近 2000 行就够。不截的话它会一直长,而一个没人读的日志长到多大都一样。
+if [ -f "$LOG" ]; then
+  tail -n 2000 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
 fi
-if OUT2=$(python3 tools/shift_world.py --check 2>&1); then
-  say "✅ 完成,世界自洽"
-else
-  printf '%s\n' "$OUT2" | sed 's/^/    /' >> "$LOG"
-  say "❌ 挪完了但世界不自洽 —— 去看上面那几行"; exit 1
-fi
+exit "$RC"

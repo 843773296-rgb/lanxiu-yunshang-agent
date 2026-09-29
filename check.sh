@@ -169,6 +169,14 @@ run "自有工坊报工判分器 · 15 条人造对照(话说得漂亮但手动�
 run "AI 调控中心 · 没做的模块不给假入口;咨询详情五段齐(21 条自测)" python3 agentsite/aihub.py --selftest
 run "提示词候选 · 不指定就用源头、找不到就抛、没验证不许采纳(7 条自测)" python3 tools/prompt_candidate.py --selftest
 run "演示世界的日期 · 世界跟着真实日期走,库说的和数据实际的要对得上(4 条咬合)" python3 tools/shift_world.py --check
+# ⚠️ 上面那条判的是**数据**落后了没有,而它要落后 **14 天**才判红 ——
+# 也就是说每日平移那个定时任务挂了之后,**两周内没有任何信号**,
+# 而这两周里每个人都以为世界在跟着真实日期走。
+# 下面这条判的是**任务本身还在不在跑**,而且把两种失败分开:
+# 「装了却没在跑」去修任务,「在跑但每次失败」去看日志。
+# ⚠️ **没装不算红** —— CI 和别人的机器上本来就没有这个任务,
+# 而一条永远红的检查和一条永远绿的检查一样没用。
+run "每日平移的定时任务还在不在跑(没装不算红;装了却不跑、跑了但没成功过都算红)" python3 tools/cron_health_check.py
 run "完成日不许在未来 · 旅程排到今天之后的单要挪回来" python3 tools/clamp_future_done.py
 run "知识库 · 与 craft 表一致"  python3 knowledge/check_kb.py
 run "相容矩阵 · 2025 格推导/对账/落库" python3 knowledge/derive_combo.py
