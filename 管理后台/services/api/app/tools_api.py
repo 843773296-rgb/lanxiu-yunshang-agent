@@ -53,6 +53,10 @@ from sqlalchemy import text
 from db import 连接, 事务
 from deps import 身份, 要权限, _错
 import capabilities as CAP
+# ⚠️ `dsl` 在 `contract/` 下,靠 sys.path 找到 —— 和 `agents_api.py` 同一条。
+# 补这一行是因为我从那边抄了 `DS.副作用表` 而没抄导入:
+# **抄一行用法不抄它的前提,表现是一个 NameError,而它只在走到那条路径时才炸。**
+import dsl as DS
 import connections as CN          # 复用 `_定位符` 那套密钥引用判据
 
 router = APIRouter()
@@ -83,6 +87,87 @@ def _引用形状(secret_ref):
 
 
 # ── 工具草稿与版本 ──────────────────────────────────────────────
+@router.get(前缀 + "/tools/{tid}")
+def 工具详情(project_id: str, tid: str,
+         me: 身份 = Depends(要权限("查看有权配置"))):
+    """一个工具:草稿(**带 `draft_revision`**)+ 已冻结的版本历史。
+
+    ⚠️ **这条接口是 2026-09-29 补的,补的是一个洞而不是一个需求。**
+    `PATCH /tools/{id}/draft` 的错误提示写着
+    「把**工具详情**里的 `draft_revision` 放进 If-Match 头再提交」——
+    而**「工具详情」这个接口当时不存在**,`GET /tools` 也不给 revision。
+
+    > 一句指着不存在的页面的错误提示,比不给提示更糟:
+    > 它让人去做一件做不到的事,而那句话本身读起来完全合理。
+
+    于是「改工具草稿」在界面上**做不起来** —— 不是前端没写,
+    是它拿不到必须带的那个值。同一天同一个洞在发布链和运行控制上各有一处,
+    所以补了判据 `tools/ifmatch_reachable_check.py` 盯这一整类。
+
+    ⚠️ 顺带把 **`风险变大了吗`** 也算在这儿,和改草稿那条一致 ——
+    让界面自己去比两个副作用等级的话,那条规矩就变成每个前端各实现一遍,
+    而**它们会在某一天不一致,且不一致的表现是界面上少一句警告**。
+    """
+    with 连接() as c:
+        d = c.execute(text("""select * from tool_definitions
+                             where project_id=:p and id=:i and archived_at is null"""),
+                      {"p": project_id, "i": tid}).mappings().first()
+        if not d:
+            raise _错(404, "NOT_FOUND", f"没有工具 {tid}", "回工具目录重新进入")
+        d = dict(d)
+        # ⚠️ **列名查过再写。** 第一版我写的是 `contract_hash` 和
+        # `requires_confirmation` —— 两个都不存在(真实列是 `content_hash`
+        # 和 `confirmation_policy`),于是这条接口 **500**。
+        # 「没查表结构就写」这一族今天第 10 次;而它只在走到这条路径时才炸,
+        # 别的路径全绿。
+        版本们 = [dict(r) for r in c.execute(text("""
+            select version_no, side_effect_type, content_hash, confirmation_policy,
+                   pollable, created_at, created_by
+              from tool_versions
+             where project_id=:p and tool_definition_id=:i
+             order by version_no desc"""), {"p": project_id, "i": tid}).mappings()]
+    级中文 = {x["名"]: x["中文"] for x in DS.副作用表}
+    上一版 = 版本们[0] if 版本们 else None
+    风险变大 = bool(上一版) and CAP.风险变大了吗(
+        上一版["side_effect_type"], d.get("side_effect_type"))
+    return {
+        "id": d["id"], "名称": d.get("name"), "状态": d.get("status"),
+        # ⚠️ **`draft_revision` 是改草稿的 If-Match,`revision` 不是。**
+        # 两个数都在这一行上,是为了让拿错的人一眼看见还有另一个 ——
+        # 只给一个的话,界面会把手边那个塞进 If-Match,换来一个
+        # 409「这份草稿已经被改过」,而它读起来像「别人改过了」。
+        "draft_revision": d.get("draft_revision") or 0,
+        "revision": d.get("revision"),
+        "草稿": {
+            "用途": d.get("purpose"), "读写类型": d.get("side_effect_type"),
+            "读写类型中文": 级中文.get(d.get("side_effect_type"),
+                                d.get("side_effect_type")),
+            "接入方式": d.get("adapter"), "负责人": d.get("owner"),
+            # ⚠️ `tool_definitions` 上**没有**「要确认吗」和凭据这两样 ——
+            # 它们在**版本**上(`confirmation_policy` / `secret_ref`)。
+            # 我照着模型连接那张表想当然写了,500 才发现。
+            # 这件事本身有意义:**确认策略和凭据是跟着冻结版本走的**,
+            # 而不是跟着草稿走 —— 改草稿改不动一个已经冻结的版本要不要确认。
+            "revision": d.get("draft_revision") or 0,
+        },
+        "版本历史": [{
+            "版本": f"v{v['version_no']}", "version_no": v["version_no"],
+            "读写类型": 级中文.get(v["side_effect_type"], v["side_effect_type"]),
+            "内容哈希": v.get("content_hash"),
+            "确认策略": v.get("confirmation_policy"),
+            "能轮询吗": v.get("pollable"),
+            "冻结时间": v["created_at"].isoformat() if v.get("created_at") else None,
+            "冻结的人": v.get("created_by"),
+        } for v in 版本们],
+        "风险变大了吗": 风险变大,
+        "note": ("**改草稿的 `If-Match` 认 `draft_revision`**,不是 `revision` —— "
+                 "两个数都在这儿,是为了让拿错的人一眼看见还有另一个。"
+                 + ("　⚠️ **草稿比最新冻结版风险更大** —— 冻结时必须出新版本:"
+                    "引用它的 Agent 还指着老说明,而那份说明现在是错的"
+                    if 风险变大 else "")),
+    }
+
+
 @router.patch(前缀 + "/tools/{tid}/draft")
 async def 改工具草稿(project_id: str, tid: str, request: Request,
                if_match: str = Header(default=None, alias="If-Match"),

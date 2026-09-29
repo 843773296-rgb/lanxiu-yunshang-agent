@@ -593,6 +593,12 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
         return "***(要「查看敏感输入/独立测试答案」专项授权)" if v else v
     return {
         "id": r["id"], "执行状态": r["status"],
+        # ⚠️ **revision 必须给出来。** 暂停 / 继续 / 取消三条接口都要拿它做
+        # `If-Match`(见 `runctl.py::_要键和锁`),而在这之前**任何读接口都不给** ——
+        # 于是那三个动作在界面上**做不起来**:不是前端没写,是它拿不到必须带的值。
+        # 2026-09-29 补的;同一天同一个洞在发布链和工具草稿上各有一处。
+        # 判据 `tools/ifmatch_reachable_check.py` 现在盯着这件事。
+        "revision": r["revision"],
         "执行状态中文": ST.找("execution_run")["中文状态"].get(r["status"], r["status"]),
         "是终态吗": r["status"] in ST.找("execution_run")["终态"],
         "停止原因": r["completion_reason"],

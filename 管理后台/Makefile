@@ -31,6 +31,11 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@echo ""
 	@./.venv/bin/python tools/test_registry_check.py
 	@echo ""
+	@echo "▸ 要 If-Match 的写接口,**界面拿得到那个 revision 吗**(要服务在跑)"
+	@echo "  ⚠️ 契约覆盖看「登记的都实现了吗」,端到端看「接口对不对」——"
+	@echo "     **没有一条看「界面拿得到它要带的东西吗」**,而那一族的表现是界面做不起来"
+	@./.venv/bin/python tools/ifmatch_reachable_check.py
+	@echo ""
 	@echo "▸ 铺数据的脚本跑得起第二遍吗(**要库,所以不在 contract 里**)"
 	@echo "  ⚠️ 它会**重铺 seed 夹具**并跑两份端到端 —— 要先 make dev"
 	@./.venv/bin/python tools/seed_rerun_check.py

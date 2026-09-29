@@ -142,6 +142,41 @@ def main():
        码 == 201, 码)
 
     # ── 一、草稿:改副作用是允许的,拦在冻结那一步 ─────────────────────
+    # ── 工具详情:**改草稿的 If-Match 得有地方拿** ─────────────────────
+    # ⚠️ 这一组是 2026-09-29 补的,补的是一个洞:
+    # `PATCH /tools/{id}/draft` 的错误提示写着「把**工具详情**里的
+    # `draft_revision` 放进 If-Match 头」—— 而**那个接口当时不存在**,
+    # `GET /tools` 也不给 revision。于是改工具草稿在界面上做不起来:
+    # 不是前端没写,是它拿不到必须带的那个值。
+    # > 一句指着不存在的页面的错误提示,比不给提示更糟。
+    print("\n▸ 工具详情(补的洞:改草稿的 If-Match 原来没地方拿)")
+    码, det, _ = 打("GET", f"{P}/tools/{tid}")
+    ck("工具详情 → 200", 码 == 200 and (det or {}).get("id") == tid, 码)
+    ck("**给了 `draft_revision`** —— 它才是改草稿的 If-Match",
+       isinstance((det or {}).get("draft_revision"), int),
+       (det or {}).get("draft_revision"))
+    # ⚠️ 两个数都要在,而且要**分得开**。只给一个的话界面会把手边那个塞进
+    # If-Match,换来一个 409「这份草稿已经被改过」—— 而它读起来像「别人改过了」。
+    ck("`revision` 也在,而且和 `draft_revision` **是两个字段**"
+       "(混起来的表现是一个读起来像「别人改过了」的 409)",
+       "revision" in (det or {}) and "draft_revision" in (det or {}),
+       {"draft_revision": (det or {}).get("draft_revision"),
+        "revision": (det or {}).get("revision")})
+    ck("草稿那一栏里也带着同一个数(界面从哪一层读都拿得到)",
+       ((det or {}).get("草稿") or {}).get("revision")
+       == (det or {}).get("draft_revision"),
+       ((det or {}).get("草稿") or {}).get("revision"))
+    ck("版本历史给出来了(没有它就挑不出「回到哪一版」)",
+       isinstance((det or {}).get("版本历史"), list)
+       and len((det or {}).get("版本历史")) >= 1,
+       len((det or {}).get("版本历史") or []))
+    ck("**`风险变大了吗` 由服务端算**(让界面自己比两个副作用等级的话,"
+       "那条规矩就变成每个前端各实现一遍,而不一致的表现是界面少一句警告)",
+       "风险变大了吗" in (det or {}), (det or {}).get("风险变大了吗"))
+    码, 体, _ = 打("GET", f"{P}/tools/tool_nope_xyz")
+    ck("不存在的工具 → 404", 码 == 404, 码)
+    码, 体, _ = 打("GET", f"/api/v1/projects/project_demo_b/tools/{tid}")
+    ck("换项目号 → 404(不确认「它在别的项目里存在」)", 码 == 404, 码)
     码, d, _ = 打("PATCH", f"{P}/tools/{tid}/draft", {"side_effect_type": "write",
                                                   "乱七八糟": 1},
                 头={"If-Match": str(rev)})
@@ -265,6 +300,44 @@ def main():
                                           "参数": {}, "触发点": "调用前",
                                           "命中之后": "拦住"}, 谁="U002")
     ck("editor 建规则 → 403(要「配置密钥与预算」)", 码 == 403, 码)
+
+    # ── 闭环:拿详情里那个数去改草稿,必须改得动 ────────────────────────
+    # ⚠️ **这一条放在最后是有原因的。** 我先把它放在详情那一组里,
+    # 结果它把 `draft_revision` 用掉了(1 → 2),而后面几条原有的断言
+    # **写死了 `If-Match: 1`** —— 于是三条无关的断言一起红,
+    # 而红的理由指向那几条本身。
+    # (写死一个会漂的值,代价不是「不严谨」,是**下一个人改动别处时被它咬一口**。)
+    #
+    # 少了这一条,上面那几条只证明「有这个字段」,不证明「它是对的那个数」——
+    # 而一个字段在、值是错的判据,和没有判据差不多。
+    print("\n▸ 闭环:详情给的那个数,真能用来改草稿")
+    码, det2, _ = 打("GET", f"{P}/tools/{tid}")
+    码, 闭, _ = 打("PATCH", f"{P}/tools/{tid}/draft", {"owner": "闭环测试"},
+                头={"If-Match": str((det2 or {}).get("draft_revision"))})
+    ck("拿详情里现读的 `draft_revision` 去改草稿 → **200** "
+       "(这一条才证明那个数是对的,不只是「有这个字段」)",
+       码 == 200, {"码": 码, "带的": (det2 or {}).get("draft_revision")})
+    码, 体, _ = 打("PATCH", f"{P}/tools/{tid}/draft", {"owner": "x"},
+                头={"If-Match": str((det2 or {}).get("revision"))})
+    # ⚠️ **量出来的事实:工具这里两个数一直相等。**
+    # 第一版我写的是「拿另一个 revision 去改 → 409」,而它在这一轮
+    # 靠 `None == None` 蒙绿过一次;改成诚实版之后,它说出了真相 ——
+    # `draft_revision` 和 `revision` 在**同一个 UPDATE 里一起涨**
+    # (`draft_revision=:_r, revision=revision+1`),所以它们一直相等。
+    #
+    # 这件事比那条 409 更值得记住:
+    # > **两个数恰好相等的时候,拿错一个也不会报错** ——
+    # > 于是那个错会一直藏着,直到某天它们分开(比如有别的路径只涨 revision)。
+    #
+    # 运行时拦不住这种拿错,所以唯一的防线是**接口明确说清该用哪一个**。
+    # 这一条就盯那句话在不在 —— 它比一条测不出来的 409 有用。
+    两数 = ((det2 or {}).get("draft_revision"), (det2 or {}).get("revision"))
+    ck("两个数都给出来了(而且现在它们一起涨 —— "
+       "**所以拿错也不会报错,只能靠说明拦**)",
+       all(isinstance(x, int) for x in 两数), {"两数": 两数})
+    ck("**note 里明说认哪一个**(运行时拦不住拿错,这是唯一的防线)",
+       "draft_revision" in ((det2 or {}).get("note") or ""),
+       ((det2 or {}).get("note") or "")[:70])
 
     清掉()
     print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}(咬合建的已清)")

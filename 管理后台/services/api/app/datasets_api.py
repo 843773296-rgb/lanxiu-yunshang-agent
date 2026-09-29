@@ -175,6 +175,98 @@ async def 建数据集(project_id: str, request: Request,
                      "声明的写法:`无需脱敏:<理由>`,或者描述它需要脱什么")}
 
 
+@router.get(前缀 + "/datasets/{dsid}/samples")
+def 样本列表(project_id: str, dsid: str,
+         me: 身份 = Depends(要权限("查看有权配置")),
+         limit: int = Query(50, ge=1, le=200),
+         review_status: str = Query(None),
+         split: str = Query(None)):
+    """一个数据集里的样本。**每条带自己的 `revision`。**
+
+    ⚠️ **这条接口是 2026-09-29 补的,补的是一个洞。**
+    `PATCH .../samples/{id}` 的错误提示写着
+    「把**样本详情**里的 revision 放进 If-Match 头再提交」——
+    而**「样本详情」这个接口当时不存在**,连列样本的接口都没有。
+    唯一能读到样本的是导出,而导出在脱敏器没选型之前是 501。
+
+    > 一句指着不存在的页面的错误提示,比不给提示更糟:
+    > 它让人去做一件做不到的事,而那句话本身读起来完全合理。
+
+    ## ⚠️ 默认**不给原文**
+
+    样本是**真实客户对话**(姓名、手机号、地址、体型尺寸)。所以:
+
+      · 基础权限(`查看有权配置`)能看到的是**形状和标注**:
+        分集、复核状态、内容哈希、字数、revision —— 足够做「改哪一条」这个动作。
+      · 原文要那条字段级授权(`查看敏感输入/独立测试答案`),
+        和导出那条同一个判据。
+
+    **不做截断。** 截到前几个字,那几个字仍然是原文 ——
+    而「截断过」会让人以为它安全了。给的是**字数**,不是开头几个字。
+
+    这一条的理由和导出那条一字不差:基础权限管的是「能不能改这个数据集」,
+    而内容本身是另一回事;只判前者的话,一个能改样本的人就能把全部原文带走。
+    """
+    看原文, 为什么 = me.能("查看敏感输入/独立测试答案")
+    with 连接() as c:
+        if not c.execute(text("""select 1 from datasets
+                               where project_id=:p and id=:i"""),
+                         {"p": project_id, "i": dsid}).first():
+            raise _错(404, "NOT_FOUND", f"没有数据集 {dsid}", "回数据集列表重新进入")
+        条件 = ["project_id=:p", "dataset_id=:d", "archived_at is null"]
+        参 = {"p": project_id, "d": dsid, "n": limit}
+        if review_status:
+            条件.append("review_status=:rs"); 参["rs"] = review_status
+        if split:
+            条件.append("split=:sp"); 参["sp"] = split
+        总 = c.execute(text(f"""select count(*) from samples
+                              where {' and '.join(条件)}"""), 参).scalar()
+        rs = [dict(r) for r in c.execute(text(f"""
+            select id, revision, split, review_status, group_id, source,
+                   content_hash, content, created_at, updated_at
+              from samples where {' and '.join(条件)}
+             order by created_at limit :n"""), 参).mappings()]
+
+    def _内容(v):
+        # ⚠️ **三种情况要长得不一样**:有原文且给看 / 有原文但不给看 / 本来就是空的。
+        # 把后两种画成同一个东西,是「空文件看起来像成功」那一族:
+        # 一条空样本和一条被挡住的样本,下一步完全不同。
+        文 = _json.dumps(v, ensure_ascii=False) if not isinstance(v, str) else v
+        if not v:
+            return {"有内容吗": False, "字数": 0,
+                    "说明": "**这条样本本身是空的** —— 不是被挡住了"}
+        if 看原文:
+            return {"有内容吗": True, "字数": len(文), "原文": v}
+        return {"有内容吗": True, "字数": len(文),
+                "原文": None,
+                "说明": ("要 `查看敏感输入/独立测试答案` 专项授权才给原文。"
+                        "**这里不做截断** —— 截到前几个字,那几个字仍然是原文,"
+                        f"而「截断过」会让人以为它安全了。{为什么 or ''}")}
+
+    return {
+        "条数": len(rs), "总数": 总,
+        "样本们": [{
+            "id": r["id"],
+            # ⚠️ 改这条样本的 `If-Match` 就是它 —— 不是数据集的 revision。
+            # 两者混起来的表现是 409「这条样本已经被改过」,
+            # 而它读起来像「别人改过了」。
+            "revision": r["revision"],
+            "分集": r["split"], "复核状态": r["review_status"],
+            "组": r["group_id"], "来源": r["source"],
+            "内容哈希": r["content_hash"],
+            "内容": _内容(r["content"]),
+            "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None,
+        } for r in rs],
+        "看得到原文吗": bool(看原文),
+        "note": ("每条的 `revision` 就是改它时要带的 `If-Match` —— "
+                 "**不是数据集的 revision**。"
+                 + ("" if 看原文 else
+                    "　⚠️ 你现在**看不到原文**(要 `查看敏感输入/独立测试答案`)—— "
+                    "给的是字数和哈希,足够做「改哪一条」这个动作;"
+                    "**没有截断版**,因为截到前几个字那几个字仍然是原文")),
+    }
+
+
 @router.patch(前缀 + "/datasets/{dsid}/samples/{sid}")
 async def 改样本(project_id: str, dsid: str, sid: str, request: Request,
             if_match: str = Header(default=None, alias="If-Match"),
