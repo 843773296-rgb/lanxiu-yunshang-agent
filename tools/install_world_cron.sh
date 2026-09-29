@@ -88,7 +88,7 @@ else
   echo "   自己跑一次:launchctl bootstrap gui/\$(id -u) \"$PLIST\""
   exit 1
 fi
-echo "   每天 $(printf '%02d:%02d' $HOUR $MINUTE) 跑一次;日志 .feynman/world-shift.log"
+echo "   每天 $(printf '%02d:%02d' $HOUR $MINUTE) 跑一次;日志 .feynman/daily-shift.log"
 echo "   卸载:bash tools/install_world_cron.sh --卸"
 echo
 看

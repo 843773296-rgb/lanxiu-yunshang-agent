@@ -103,7 +103,5 @@ backend/static/
 # 每日平移的运行态(机器本地,不进版本库)——
 # 进了版本库的话,两台机器的「上次成功过」会互相覆盖,
 # 而那个时间戳是判断「定时任务还在不在跑」的唯一依据。
-.feynman/world-shift.log
 .feynman/world-shift-tried
 .feynman/world-shift-ok
-.feynman/world-shift-check.out

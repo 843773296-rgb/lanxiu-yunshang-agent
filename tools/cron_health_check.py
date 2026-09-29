@@ -45,7 +45,7 @@ from datetime import datetime
 态 = os.path.join(根, ".feynman")
 尝试 = os.path.join(态, "world-shift-tried")
 成功 = os.path.join(态, "world-shift-ok")
-日志 = os.path.join(态, "world-shift.log")
+日志 = os.path.join(态, "daily-shift.log")
 # 「装了多久」用 plist 的 mtime 答 —— 装上之后到第一次跑之间有个窗口,
 # 而这个窗口里「装了还没到点」和「根本没装」在标记上长得一模一样。
 PLIST = os.path.expanduser("~/Library/LaunchAgents/com.lanxiu.worldshift.plist")
