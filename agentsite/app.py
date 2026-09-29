@@ -191,7 +191,7 @@ class H(BaseHTTPRequestHandler):
         p = _u(unquote(urlparse(self.path).path))
         # 搬走的六页(含 /ai 底下那十个模块页)—— 给一句「去哪了」,不给 404。
         # ⚠️ **按模块名逐个列,不用 `startswith("/ai/")`**:后者会把
-        # `/ai/export-finetune` 这种**数据口**也吞掉,而那个能力还留着(见下面它的注释)。
+        # `/ai/rules` 这种**数据口**也吞掉(`/ai/export-finetune` 当初就差点这样被误删)。
         # 「前缀匹配」在这里是个陷阱 —— 页面路径和数据口挤在同一个前缀下。
         _旧 = p if p in 已搬走 else ("/ai" if p in AI模块页 else None)
         if _旧:
@@ -229,33 +229,16 @@ class H(BaseHTTPRequestHandler):
             # 它从这儿取同一份清单渲染左栏入口 —— 而不是自己手写一份。
             import nav as _nav
             return self._send({"rows": [dict(路=a, 名=b, 说=c) for a, b, c in _nav.顶栏]})
-        # ⚠️ **这一个没跟着六页一起删。**
-        # 用户 2026-09-28 拍的是「页面和接口一起删」,而这个接口**不只属于那六页** ——
-        # 它是「导出微调训练数据(默认脱敏)」这个能力本身,而队友的六页对照表里
-        # **没有它的去处**:/ai 拆成了 trace/span → #/traces、判分器 → #/evals,
-        # 导出训练数据两边都不是。
-        # 删掉 = 拿走一个没有替代品的功能,而那正是 nav.py 当初不肯直接删页面的理由。
-        # 现在它没有界面入口了(ai.html 已删),但按 URL 还调得通。
-        # ⬜ 待办:问队友这个能力去哪 —— 要么管理后台接,要么在工作台留个入口。
+        # 导出微调训练数据 —— **2026-09-29 删了**,能力归管理后台 `GET /datasets/{id}/export`。
+        # 删之前核过一件事:那边的闸遇到「声明了需要脱敏」的数据集会拒绝(脱敏器还没选型),
+        # 而澜绣的对话全是真单号 —— 所以**眼下全项目没有一处能导出脱敏后的训练集**。
+        # 用户拍的:照删,脱敏规则留在 `aihub.脱敏` 当选型候选。
+        # 旧地址给 410 + 去处,不给 404 —— 和六页同一条理由:404 不区分「搬走了」和「站坏了」。
+        # 两三周后连同 `已搬走` 一起删。
         if p.startswith("/ai/export-finetune"):
-            # 训练数据导出。**默认脱敏,而且脱不动就不给** ——
-            # 一份没脱干净的训练集流出去,是追不回来的。
-            try:
-                import aihub
-                q = {k: unquote(v) for k, v in
-                     (x.split("=", 1) for x in (urlparse(self.path).query or "").split("&") if "=" in x)}
-                行, 换, 种 = aihub.导出训练数据(只要够格=q.get("全部") != "1", 脱=True)
-                body = "\n".join(json.dumps(
-                    {"messages": r["messages"]}, ensure_ascii=False) for r in 行).encode()
-                self.send_response(200)
-                self.send_header("content-type", "application/x-ndjson; charset=utf-8")
-                self.send_header("content-disposition",
-                                 'attachment; filename="finetune.jsonl"')
-                self.send_header("x-redacted", f"{换} spans over {种} ids")
-                self.send_header("content-length", str(len(body)))
-                self.end_headers(); self.wfile.write(body); return
-            except Exception as e:
-                return self._send({"error": f"{type(e).__name__}: {e}"}, code=500)
+            return self._send({"error": "导出训练数据已搬到管理后台:GET /datasets/{id}/export",
+                               "注意": "那边声明了需要脱敏的数据集,在脱敏器选型之前会被拒绝"},
+                              code=410)
         if p == "/ai/rules":
             # 77 条规矩的清单 —— 页面上要能挑、能看现在的正文。
             # **不在页面里抄一份** :唯一来源是 prompts.py。

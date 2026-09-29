@@ -298,7 +298,11 @@ def _库():
     return sqlite3.connect(f"file:{os.path.join(ROOT,'backend','lanxiu.db')}?mode=ro", uri=True)
 
 
-# ── 脱敏(训练数据导出前强制过一遍)────────────────────────────────
+# ── 脱敏(原来是训练数据导出前强制过一遍)──────────────────────────
+# ⚠️ **2026-09-29 导出删了,这套规则故意留着。** 导出搬到了管理后台
+# (`GET /datasets/{id}/export`),而那边「脱敏器还没选型」(正则 / 白名单 / 模型三条路),
+# 声明了要脱的数据集一律不放行。这套是**正则路线**里唯一跑通过的一份,
+# 连同下面的实测数,是那次选型的候选和证据 —— 删了就得重新量一遍。
 # ⚠️ **这些对话里是真实业务标识**:实测 40 条回答里订单号出现 29 次、
 # 押金单 20 次、工号 25 次、客户号 4 次。导出去训模型之前必须换掉。
 #
@@ -330,34 +334,6 @@ def 脱敏(文, 表=None):
     for 类, pat in _脱敏规则:
         出 = _re.sub(pat, lambda m, c=类: 换(c, m), 出)
     return 出, n[0]
-
-
-def 导出训练数据(只要够格=True, 脱=True):
-    """导出成**通用对话 JSONL**(`messages:[{role,content}]`)——
-    **不绑任何一家的私有格式**:开源权重自己训、别家托管服务,吃的都是这个形状。
-
-    ⚠️ `脱=False` 只在本机排查时用。导出给外部一律要脱。
-    """
-    树 = {}
-    for x in _读(os.path.join(ROOT, ".feynman", "spans.jsonl")):
-        树.setdefault(x.get("trace_id"), []).append(x)
-    表, 行, 换 = {}, [], 0
-    for tid, v in 树.items():
-        根 = next((y for y in v if not y.get("parent_span_id")), v[0])
-        a = 根.get("attr") or {}
-        问, 答 = a.get("lanxiu.prompt"), a.get("lanxiu.answer")
-        工具 = [y for y in v if (y.get("attr") or {}).get("gen_ai.operation.name") == "execute_tool"]
-        够 = bool(问 and 答 and 工具 and not a.get("lanxiu.guard.blocked"))
-        if 只要够格 and not 够: continue
-        if not (问 and 答): continue
-        q, n1 = (脱敏(问, 表) if 脱 else (问, 0))
-        r, n2 = (脱敏(答, 表) if 脱 else (答, 0))
-        换 += n1 + n2
-        行.append(dict(messages=[{"role": "system", "content": f"你是澜绣云裳的{根.get('角色') or '助手'}。"},
-                                 {"role": "user", "content": q},
-                                 {"role": "assistant", "content": r}],
-                       来自=tid, 时间=根.get("ts"), 工具数=len(工具)))
-    return 行, 换, len(表)
 
 
 def 列表(mod, 限=200):
