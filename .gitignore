@@ -105,3 +105,6 @@ backend/static/
 # 而那个时间戳是判断「定时任务还在不在跑」的唯一依据。
 .feynman/world-shift-tried
 .feynman/world-shift-ok
+
+# 换库前的旧库备份(2026-09-29 起;几十 MB 的二进制,不进版本库。确认新库没问题后可以删)
+库备份/
