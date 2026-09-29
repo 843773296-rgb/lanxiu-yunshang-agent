@@ -30,9 +30,6 @@ code{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
 .envtag.prod{border:2px solid var(--fail);color:var(--fail);font-weight:600;
   background:#ffece8}
 /* 演示模式横幅:一个看不出自己在演示模式的界面,会让人拿编的结果当真的 */
-#demo{background:#fff7e8;border-bottom:1px solid #ffcf8b;color:#7d4e00;
-  padding:6px 16px;font-size:12.5px;position:fixed;top:var(--top);left:0;right:0;z-index:19}
-#demo b{color:#a34d00}
 
 /* ── 侧栏 ─────────────────────────────────────────────────────── */
 #side{position:fixed;top:var(--top);bottom:0;left:0;width:var(--side);
@@ -184,3 +181,8 @@ summary{cursor:pointer;font-size:13px;color:var(--pri)}
 .issue.b { border-left: 3px solid var(--fail); }
 .issue.w { border-left: 3px solid var(--warn); }
 .issue .c { font-family: ui-monospace, monospace; color: var(--ink3); }
+
+/* 演示模式的标记 —— 2026-09-29 从占一行的黄条改成顶栏上的一小块。
+   规格第 3 条要的是「醒目标记」,不是「占一行」。
+   ⚠️ 接口里那个 `演示模式` 字段一个字没动,`test_api_flow` 验的是它。 */
+.envtag.demo-env{background:#fff7e8;border-color:#ffcf8b;color:#7d4e00;font-weight:600}

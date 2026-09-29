@@ -120,9 +120,24 @@ async function 画顶栏() {
     $("#env").textContent = h.env;
     $("#env").className = "envtag" + (h.env === "production" ? " prod" : "");
     if (h.演示模式) {
+      // ⚠️ 2026-09-29 用户要求**去掉那条占满一行的黄条**。
+      //
+      // 规格第 3 条(实施必须遵守)写的是「演示模式……和**醒目标记**」,
+      // 所以这里不是把标记删干净,而是**换了个不占一行的地方**:
+      // 顶栏那个环境标签后面挂一句话,鼠标停上去有全文。
+      //
+      // ⚠️ **接口里那个标记一个字没动**(`/api/healthz` 的 `演示模式` /
+      // `演示说明`),`test_api_flow` 那条断言验的正是它 ——
+      // 所以那条判据仍然验着真东西,没有变成一条守着空气的绿检查。
+      // > **把界面上的提示删掉、而判据还在绿着,比两个都删掉更糟** ——
+      // > 它让人以为还有人在看着。
       document.body.classList.add("demo");
-      $("#demo").style.display = "";
-      $("#demo").innerHTML = `⚠️ <b>演示模式</b>:${md(h.演示说明 || "")}`;
+      const t = $("#env");
+      if (t) {
+        t.classList.add("demo-env");
+        t.title = "演示模式:" + (h.演示说明 || "").replace(/\*\*/g, "");
+        t.textContent = h.env + " · 演示";
+      }
     }
   }
   let ps = [];
