@@ -41,6 +41,66 @@ def 打(方法, 路径, 用户=None, 体=None, 头=None):
 
 P = f"/api/v1/projects/{A}"
 
+# ── 怎么「等 Worker」:等到**这一条**到终态,不是等一轮 drain 返回 ────────
+# ⚠️ 这一节原来写的是「`worker.py --一轮` 跑一趟,然后立刻断言『已完成』」。
+# 那不是等待,那是**赌**:
+#
+#   `取一个()` 的 SQL 明确跳过 `lease_until > now()` 的行 ——
+#   也就是**已经被别的 Worker 租走的**那些。开发机上 `make dev`
+#   起了一个常驻 Worker,它可能先把这条抢走;这时候 `--一轮` 捞不到东西,
+#   于是**立刻打印一行启动信息就退出**,而任务还停在「执行中」。
+#
+# 2026-09-29 确定性地复现过:先让另一个 owner 租走那条,再跑 `--一轮`,
+# 它只输出 `worker 起来了:...` 就退,任务状态是「执行中」——
+# 测试在这一刻断言「已完成」,于是红,而它报的理由是
+# 「Worker 跑完 → 已完成」失败,**离真因(被别人租着)隔了好几层**。
+#
+# 队列空的时候常驻 Worker 毫秒级跑完,所以单独跑从来是绿的;
+# 连跑 15 份、队列有积压的时候它慢,于是间歇性红 ——
+# **一条会假红的判据,会把人教会忽略它**,那时它连真的那次也拦不住。
+#
+# 所以判据换成结构性的那个:**「我这一条到终态了吗」**。
+# 两件事必须同时成立,少一件这个改动就变成了「把红改绿」:
+#   ① 每轮都再踢一次 Worker —— CI 上没有常驻 Worker,光等是等不到的;
+#   ② 等不到要**响亮地失败并且带上最后看到的状态** ——
+#      「等到了」和「等超时了」必须长得不一样。
+import subprocess as _sp
+import time as _time
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PY = os.path.join(_ROOT, ".venv", "bin", "python")
+
+
+def 踢一轮():
+    """让 Worker 把当前能捞到的都跑完。**捞不到不代表没活** —— 见上面那段。"""
+    return _sp.run([_PY, os.path.join(_ROOT, "workers", "worker.py"), "--一轮"],
+                   capture_output=True, text=True, timeout=120, cwd=_ROOT)
+
+
+def 等到终态(job_id, 谁="U002", 秒=60):
+    """踢 Worker,**等到这一条自己说它是终态**。等不到就抛,不静默放过。
+
+    返回任务详情。`秒` 是**上限**不是窗口:到了就抛,而且抛的时候
+    把最后看到的状态和事件链一起说出来 —— 不然下一个人只看到
+    「等超时了」,还得自己再查一遍它卡在哪。
+    """
+    起 = _time.time()
+    最后 = None
+    while True:
+        踢一轮()
+        c, j = 打("GET", P + f"/jobs/{job_id}", 谁)
+        if c == 200 and j.get("是终态吗") is True:
+            return j
+        最后 = (c, j)
+        if _time.time() - 起 > 秒:
+            状 = (最后[1] or {}).get("status")
+            事 = [e.get("kind") for e in ((最后[1] or {}).get("事件") or [])]
+            raise AssertionError(
+                f"等了 {秒} 秒 {job_id} 还没到终态:status={状!r} 事件={事}。"
+                f"**这不是等待窗口不够** —— 要么 Worker 没在跑,"
+                f"要么它卡在某一阶段;去看 /tmp/aimc-worker.log")
+        _time.sleep(0.3)
+
+
 # ── 0. 服务活着,而且**演示模式醒目** ──────────────────────────────
 c, h = 打("GET", "/api/healthz")
 ck("服务活着", c == 200, h)
@@ -150,13 +210,8 @@ ck("**同一个幂等键再打一次 → 返回同一个任务,不新建**",
 # 这一族错很典型:测试把「当前实现」当成了「该有的行为」,
 # 于是实现往对的方向改了之后,测试反而红 —— 而红的理由完全指错方向
 # (它报的是「脱敏没生效」,真相是「还没跑」)。
-import subprocess as _sp0
-_ROOT0 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_PY0 = os.path.join(_ROOT0, ".venv", "bin", "python")
-_sp0.run([_PY0, os.path.join(_ROOT0, "workers", "worker.py"), "--一轮"],
-         capture_output=True, text=True, timeout=120, cwd=_ROOT0)
-c, j = 打("GET", P + f"/jobs/{r1['job_id']}", "U002")
-ck("任务详情拿得到", c == 200 and j["status"], j.get("status"))
+j = 等到终态(r1["job_id"])
+ck("任务详情拿得到", bool(j["status"]), j.get("status"))
 ck("**终态要明确标出来**(「不确定」不能被当成结束)", j.get("是终态吗") is True)
 段 = (j.get("结果") or {}).get("阶段") or []
 ck("U002 没有专项授权 → **实际发送内容是脱敏的**",
@@ -188,25 +243,40 @@ ck("费用未覆盖数量单独一张卡(未知不混进已知费用里)",
    "费用未覆盖数量" in 卡)
 
 # ── ⑩ 真异步:API 只受理,Worker 才跑(§19.1 / §19.3)───────────────
-import subprocess as _sp
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_PY = os.path.join(_ROOT, ".venv", "bin", "python")
-
 键3 = uuid.uuid4().hex
 c, r3 = 打("POST", P + "/prompt-runs", "U002",
           {"prompt_id": pid, "变量": {"article": "端到端异步测试", "audience": "PM"}},
           头={"Idempotency-Key": 键3})
 ck("**API 只受理:返回「排队中」,resource 有了但 trace 还没有**",
    c == 202 and r3["status"] == "排队中" and r3.get("trace_id") is None, r3)
+# ⚠️ 这两条原来是**对着一个瞬态**断言的:POST 完立刻 GET,要求这时候
+# status 还得是「排队中」、事件表里**只有**「已受理」一条。
+#
+# 改掉它不是因为量到了它红,而是因为**它断言的东西本来就不由它决定**:
+# 开发机上 `make dev` 起了一个常驻 Worker,任务一进队列它就可能捞走。
+# 2026-09-29 量过它抢占同一条任务的延迟:**0.25 秒 / 1.5 秒 / 超过 2.75 秒**
+# (`worker.py` 的 `main()` 有退避 `sleep(min(5.0, 0.2*空转))`,所以差十倍)。
+# 这个延迟目前比 POST→GET 之间那几毫秒长得多,所以这两条**平时是绿的** ——
+# 但绿的原因是「常驻慢了一步」,不是「这个性质成立」。
+#
+# ⚠️ **我试过把它压红,没压出来**(0.15 秒一条地灌队列、新旧两版各连跑 5 遍,
+# 旧版也全绿)。所以别把下面的改动读成「这就是那条假红的真因」——
+# **真因是另一个,已经确定性复现了,见文件顶上 `等到终态` 那一段**。
+# 这里改的是同一类形状的第二处:一条断言瞬态的判据,靠的是「别人慢了一步」,
+# 而那是环境给的,不是代码保证的。**加等待还会让它更容易红**(等得越久越可能已完成),
+# 所以只能把判据换成任何时刻都成立的那个:
+#   ① 「API 没同步跑模型」这件事,**POST 的响应自己就说清了**
+#      (202 + 排队中 + 没有 trace)—— 那一条在上面已经断过,race-free。
+#   ② 「已受理不是开始」要的是**起点唯一**:链的第一条永远是「已受理」,
+#      而且它**只出现一次**。这个性质在任务跑完之后照样成立。
 c, j3 = 打("GET", P + f"/jobs/{r3['job_id']}", "U002")
-ck("这时候任务还**不是终态**(一个模型都没调)",
-   j3["status"] == "排队中" and j3["是终态吗"] is False, j3["status"])
-ck("事件里那条是「已受理」不是「开始」(两个开始会让人分不清真起点)",
-   [e["kind"] for e in j3["事件"]] == ["已受理"], [e["kind"] for e in j3["事件"]])
+种3 = [e["kind"] for e in j3["事件"]]
+ck("事件链的**第一条**是「已受理」(起点要唯一 —— 两个开始会让人分不清真起点)",
+   种3[:1] == ["已受理"], 种3)
+ck("「已受理」**只出现一次**(受理两次 = 同一个请求被当成两件事)",
+   种3.count("已受理") == 1, 种3)
 
-_sp.run([_PY, os.path.join(_ROOT, "workers", "worker.py"), "--一轮"],
-        capture_output=True, text=True, timeout=120, cwd=_ROOT)
-c, j4 = 打("GET", P + f"/jobs/{r3['job_id']}", "U002")
+j4 = 等到终态(r3["job_id"])
 ck("Worker 跑完 → 已完成,而且是终态", j4["status"] == "已完成" and j4["是终态吗"], j4["status"])
 种 = [e["kind"] for e in j4["事件"]]
 ck("事件是一条完整的链(已受理 → 开始 → 展开模板 → 调模型 → 完成)",
@@ -235,9 +305,7 @@ with 事务() as c:
         lease_until=null, next_retry_at=null where project_id=:p and id=:i"""),
         {{"p": {A!r}, "i": {r3["job_id"]!r}}})
 '''], capture_output=True, text=True, timeout=60, cwd=_ROOT)
-out = _sp.run([_PY, os.path.join(_ROOT, "workers", "worker.py"), "--一轮"],
-              capture_output=True, text=True, timeout=120, cwd=_ROOT)
-c, j5 = 打("GET", P + f"/jobs/{r3['job_id']}", "U002")
+j5 = 等到终态(r3["job_id"])
 后 = (j5.get("结果") or {}).get("trace_id")
 ck("**重复投递 → 幂等命中,不重跑模型(trace 还是同一个)**", 后 == _前, f"{_前} vs {后}")
 ck("而且事件里留了痕(「跳过」那一条说清了为什么)",

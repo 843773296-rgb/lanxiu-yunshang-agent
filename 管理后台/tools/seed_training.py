@@ -84,6 +84,22 @@ def main():
         任务 = {}
         for 名, 适配器 in (("真", "真实适配器"), ("mock", "mock")):
             jid = f"tj_seed_{名}"
+            # ⚠️ **先删引用方,再删被引用方。** 顺序反了这个脚本就只能跑一次:
+            # `deployments.model_artifact_id` 上有外键 `fk_deployments_model_artifact`,
+            # 而 `test_training_flow` 自己会 POST 几条部署。于是
+            #   · 第一次跑:还没有部署 → 过
+            #   · 之后每一次:撞外键 → **整条 `make test-e2e` 当场死在第 4 份上**
+            # 而报出来的是 `ForeignKeyViolation`,离真因(「seed 不可重复跑」)很远。
+            # 2026-09-29 就是这么红的,当时记的是「间歇性假红」—— 它不是间歇的,
+            # 是**第二次起必红**;「单独跑过」那次刚好是库干净的第一次。
+            #
+            # 外键本身是对的,别拿 CASCADE 去糊:生产上正该拦住
+            # 「删掉一个还在被部署引用的产物」。要改的是清理顺序。
+            c.execute(text("""delete from deployments
+                 where project_id=:p
+                   and model_artifact_id in (select id from model_artifacts
+                                              where project_id=:p and training_job_id=:i)"""),
+                      {"p": 项目, "i": jid})
             c.execute(text("delete from model_artifacts where project_id=:p and training_job_id=:i"),
                       {"p": 项目, "i": jid})
             c.execute(text("delete from training_jobs where project_id=:p and id=:i"),
