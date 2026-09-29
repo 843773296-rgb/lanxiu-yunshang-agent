@@ -3754,5 +3754,29 @@
    }
   ],
   "预期红": "已有的老表补完列,和从零建的列一致"
+ },
+ {
+  "script": "knowledge/margin.py",
+  "改坏": "让 工艺人工() 不去重(同种工艺按出现次数算)",
+  "file": [
+   {
+    "path": "knowledge/margin.py",
+    "old": "    for k in sorted(set(x for x in 工艺们 if x)):\n        d = D.get(k)",
+    "new": "    for k in [x for x in 工艺们 if x]:\n        d = D.get(k)"
+   }
+  ],
+  "预期红": "同种工艺整件算一次(传两遍平绣,人工不翻倍)"
+ },
+ {
+  "script": "knowledge/margin.py",
+  "改坏": "让 工艺人工() 把日历天也按工日算",
+  "file": [
+   {
+    "path": "knowledge/margin.py",
+    "old": "        if 单位 != \"工日\":\n            未含.append(k)\n            continue\n",
+    "new": ""
+   }
+  ],
+  "预期红": "印染晾晒类不计工日,报在「未含」里"
  }
 ]

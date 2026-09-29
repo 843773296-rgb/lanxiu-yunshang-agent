@@ -229,6 +229,9 @@ CREATE TABLE sku(code TEXT PRIMARY KEY, spu TEXT, spec TEXT, color TEXT, size TE
   price REAL, stock INT, locked INT, status TEXT,
   collar TEXT, size_no TEXT, spec_code TEXT, weight_kg REAL, volume_m3 REAL,
   points INT, img TEXT,
+  -- **进货单价**(标品)= 物料 + 按件代工费(业务 2026-09-29;代工费是 demo 数,见 knowledge/margin.py)。
+  -- 定制品不填 —— 它的成本按每单的配置现算,不是一个固定进价。**空 = 算不出,不是 0 元**
+  cost_price REAL,
   -- **供应商编码** —— 设计稿销售信息表里有这一列。
   -- 我们自己的 SKU 码是内部的,供应商那边有他们自己的一套;
   -- **对不上号的话,采购单和入库单只能靠人肉比对**。
@@ -1720,6 +1723,7 @@ def run():
     #   售价 —— 由 BOM 算出物料成本再乘系数,**每个价格都追得到它的用料**
     # 这是四大库真正接上的地方:版型定用量,矩阵定能不能,BOM 定多少钱。
     import derive_pattern as _dpg
+    import margin as _mg          # 标品进货单价 / 定制款按成本定价(业务 2026-09-29)
     _CAT_BY_KW = [("马面","C010201"),("褶裙","C010201"),("旋裙","C010202"),("百迭","C010202"),
                   ("三裥","C010202"),("诃子","C010203"),("襦裙","C010203"),("齐胸","C010203"),
                   ("大袖","C010301"),("杂裾","C010301"),("披风","C010302"),("长衫","C010302"),
@@ -1836,12 +1840,16 @@ def run():
                 _col = 钉住.get(spu) or PALETTE_SKU[_色hue(spu) % len(PALETTE_SKU)]
                 for k, sz in enumerate(sizes[:4], 1):
                     stock = random.randint(0, 60)
-                    c.execute("INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,collar,size_no,spec_code,weight_kg,volume_m3,points,img) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    # 进货单价 = 生成这一款时算过的物料成本 + 按件代工费(业务 2026-09-29)。
+                    # 物料就是上面定价用的那个 `cost` —— 同一个数,不另算一遍
+                    _dg = _mg.代工费(cat)
+                    c.execute("INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,collar,size_no,spec_code,weight_kg,volume_m3,points,img,cost_price) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                               (f"{spu}-{k:02d}", spu, f"{_col}/{sz}", _col, sz,
                                float(price), stock, random.randint(0, min(3, stock)) if stock else 0,
                                "启用", None, None, f"GG{_i:03d}{k:02d}",
                                round(random.uniform(0.2,1.8),2), round(random.uniform(0.002,0.02),4),
-                               int(price*100), _img(spu,f"sku{k}")))
+                               int(price*100), _img(spu,f"sku{k}"),
+                               round(cost + _dg, 2) if (_dg is not None and est.get("物料成本")) else None))
 
     # ── 订单(设计稿「订单管理-订单列表」「交易查询-买家付款」)────────────────
     # 放在商品之后 —— 订单行要引用真实 SPU。原来放在商品之前,只能硬编码一批
@@ -3286,6 +3294,29 @@ def run():
                 _n_po += 1
     print(f"  [分部位可选料] {_n_sp} 个定制品铺了 {_n_po} 条"
           f"(每个部位先给全部整件可选料 —— **不自动拆,那是编数据**)")
+
+    # ── 定制款按成本定价(业务 2026-09-29)──────────────────────────────
+    # 原来是「物料成本 × 3.2」—— **系数里没有人工**,于是按拍板的工价
+    # (普通 300 / 非遗级 800 元/工日)一算,过半的定制单光人工就超过实收。
+    # 现在:**按款**定价,款式价 = 标准配置(不加价的那种料 + 这款的工艺)的
+    # (物料 + 人工上限)× 2.5。换料换工艺走部位加价 —— 所以每单毛利会因配置偏离标准而不同,
+    # **这才是毛利分析要看的东西**(按单定价会把每单毛利做成常数 60%)。
+    # 必须在这里:部位选项刚铺好,而后面 order_mix / run_journey 都按 base_price 出单。
+    # ⚠️ 这一步**之前**已经生成的定制单(seed 自己的夹具单)保持原价 —— 那是别人的真值。
+    _遗 = _mg.非遗工艺()
+    _n_rp = 0
+    for _spu, _pc in c.execute("SELECT spu, pattern FROM product WHERE kind='定制品' "
+                               "AND pattern IS NOT NULL ORDER BY spu").fetchall():
+        _面, _艺 = _mg.标准配置(c, _spu)
+        _cst = _mg.一件的成本(c, _pc, _面, _艺, _遗)
+        _np = _mg.款式价(_cst["物料"], _cst["人工"][1])
+        if not _np:
+            continue
+        c.execute("UPDATE product SET base_price=?, tag_price=?, points=? WHERE spu=?",
+                  (float(_np), round(_np * 1.12, 2), int(_np * 100), _spu))
+        c.execute("UPDATE sku SET price=?, points=? WHERE spu=?", (float(_np), int(_np * 100), _spu))
+        _n_rp += 1
+    print(f"  [定制款按成本定价] {_n_rp} 款 = 标准配置(物料 + 人工上限)× {_mg.定价系数}")
 
     # ── 订单行上每个部位实际选了什么 ────────────────────────────────
     # ⚠️ **加价之和必须等于已经记着的 `custom_amount`。**
