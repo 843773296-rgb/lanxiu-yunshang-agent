@@ -12,7 +12,7 @@
 
 ⚠️ 用完把库还原 —— **攻击测试写脏了不还原,下一轮的结论就不可信了**。
 """
-import os, sys, time, uuid
+import io, json, os, sys, time, uuid
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path[:0] = [os.path.join(ROOT, "services", "api", "app"),
@@ -265,6 +265,63 @@ ck("不传 `能处理的类型们` → 行为不变(老调用点不受影响)", 
 with eng.begin() as c:
     c.execute(text("delete from jobs where project_id=:p and id = any(:ids)"),
               {"p": PROJ, "ids": [未来, 老的]})
+
+# ── ⑩ 常驻 Worker 的日志要**边跑边落**,不是退出时才落 ────────────────
+# ⚠️ **这一条必须在 Worker 还活着的时候读日志。**
+#
+# 进程退出会把缓冲区冲掉,所以「跑完再读文件」这种写法在**坏代码上也是绿的** ——
+# 那就是一条永远不会红的判据,比没有判据更糟(它在清单上是绿的)。
+#
+# 要守的性质:`tools/dev.sh` 把常驻 Worker 重定向到 /tmp/aimc-worker.log,
+# 而重定向之后 Python 默认块缓冲 stdout(约 8KB)。2026-09-29 撞到的后果是:
+# 常驻 Worker 活了快两小时、处理了上百条任务,**日志里只有两行** ——
+# 「我干了什么」和两条 ⚠️ 警告全躺在缓冲区里。其中一条警告
+# (「排队里有我处理不了的类型」)正是 `跑一轮()` 指望的那「不静默」的一半。
+# 修法是在 `main()` 里 `sys.stdout.reconfigure(line_buffering=True)` ——
+# **钉住缓冲策略,而不是要求每个 print 都记得 flush=True**。
+# 这一条就是盯着那个 reconfigure 别被删掉。
+import subprocess, tempfile
+
+with eng.begin() as c:
+    日志任务 = 建任务(c, 类型="prompt_run")
+    # 借一条已完成的 prompt_run 的 target_ref,让它真的跑得起来
+    src = c.execute(text("""select target_ref, snapshot_hash from jobs
+        where project_id=:p and type='prompt_run' and status='已完成'
+        order by created_at desc limit 1"""), {"p": PROJ}).mappings().first()
+    if src:
+        # ⚠️ jsonb 列**不能塞 dict**(读出来是 dict,写回去要 json.dumps + cast)——
+        # 这一族今天栽了十次,`tools/jsonb_cast_check.py` 就是为它写的。
+        c.execute(text("""update jobs set target_ref=cast(:t as jsonb), snapshot_hash=:h
+            where project_id=:p and id=:i"""),
+                  {"t": json.dumps(src["target_ref"], ensure_ascii=False),
+                   "h": src["snapshot_hash"], "p": PROJ, "i": 日志任务})
+
+日志路 = os.path.join(tempfile.mkdtemp(), "worker.log")
+with open(日志路, "w") as f:
+    子 = subprocess.Popen([sys.executable, os.path.join(ROOT, "workers", "worker.py")],
+                         stdout=f, stderr=subprocess.STDOUT, cwd=ROOT)
+try:
+    起 = time.time()
+    行们 = []
+    while time.time() - 起 < 25:
+        time.sleep(0.4)
+        行们 = io.open(日志路, encoding="utf-8", errors="replace").read().splitlines()
+        if any(日志任务[-8:] in x for x in 行们):
+            break
+    ck("常驻 Worker 处理完一条,**在它还活着的时候**日志里就有那一行 "
+       "(退出时才落 = 出事那天没有审计)",
+       any(日志任务[-8:] in x for x in 行们),
+       行们[-2:] if 行们 else "日志是空的")
+    ck("而且就绪信号那一行也在(它是 `make progress` 的等待判据)",
+       any("worker 起来了" in x for x in 行们), 行们[:1])
+finally:
+    子.terminate()
+    try: 子.wait(timeout=10)
+    except Exception: 子.kill()
+    with eng.begin() as c:
+        c.execute(text("delete from job_events where job_id=:i"), {"i": 日志任务})
+        c.execute(text("delete from jobs where project_id=:p and id=:i"),
+                  {"p": PROJ, "i": 日志任务})
 
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 if 挂:

@@ -49,7 +49,13 @@ import sys
 
 这 = os.path.dirname(os.path.abspath(__file__))
 根 = os.path.dirname(这)
-扫的目录 = ["services/api/app", "workers", "tools"]
+# ⚠️ **`tests` 是 2026-09-29 加进来的。**
+# 在这之前只扫 services/workers/tools —— 而「JSONB 列塞裸串/塞 dict」这一族
+# 今天栽了**十次**,其中两次就发生在**测试和一次性脚本里**,判据一次都没响:
+# 它扫不到那儿。
+# > 一条只盯着生产代码的判据,拦不住从测试那扇门进来的同一个错。
+# 加上之后覆盖从 402 段 SQL 涨到 522 段(+30%),说不清仍是 1 段、零新增失败。
+扫的目录 = ["services/api/app", "workers", "tools", "tests"]
 
 try:
     from sqlalchemy import text as _text
