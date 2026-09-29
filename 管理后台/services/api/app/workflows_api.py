@@ -569,6 +569,42 @@ def 运行列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
     return {"items": 出, "next_cursor": None, "total": 总}
 
 
+# 控制动作 → 它要把状态推到哪。**从状态机现读,不手抄一张表。**
+_控制动作表 = (
+    ("pause", "请求暂停", "pause_requested"),
+    ("resume", "继续", "queued"),
+    ("cancel", "请求取消", "cancel_requested"),
+)
+
+
+def _控制动作们(当前):
+    """现在这个状态上,哪几个控制动作是合法的。
+
+    ⚠️ **`cancel` 有两条路**:有些状态直接走到 `cancelled`(还没开跑,
+    没有在途调用要掐),有些走到 `cancel_requested`。两条都算「能取消」——
+    `runctl.py` 里那段逻辑就是这么判的,这里跟它一致。
+    少判一条的表现是:界面藏掉一个其实能用的「取消」按钮,而没人知道为什么。
+    """
+    机 = ST.找("execution_run")
+    去的地方 = set(机["流转"].get(当前) or [])
+    出 = []
+    for 名, 中文, 目标 in _控制动作表:
+        能 = 目标 in 去的地方
+        if 名 == "cancel" and not 能:
+            能 = "cancelled" in 去的地方
+        出.append({"动作": 名, "中文": 中文, "现在能吗": 能,
+                   "为什么不能": (None if 能 else
+                              f"状态机里「{当前}」走不到「{目标}」—— "
+                              f"它现在能去的是 {sorted(去的地方) or '哪儿都去不了(终态)'}")})
+    # ⚠️ `reconcile` 单独列:它**不改状态**(只去问一次外部系统),
+    # 所以只要不是终态就能做 —— 和上面三个的判据不是一回事。
+    出.append({"动作": "reconcile", "中文": "核实外部状态",
+               "现在能吗": 当前 not in 机["终态"],
+               "为什么不能": (None if 当前 not in 机["终态"]
+                          else "已经是终态了,没有外部状态要核实")})
+    return 出
+
+
 @router.get(前缀 + "/execution-runs/{rid}")
 def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查看有权配置"))):
     看原文, _ = me.能("查看敏感输入/独立测试答案")
@@ -599,6 +635,19 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
         # 2026-09-29 补的;同一天同一个洞在发布链和工具草稿上各有一处。
         # 判据 `tools/ifmatch_reachable_check.py` 现在盯着这件事。
         "revision": r["revision"],
+        # ⚠️ **哪几个控制动作现在合法,由接口算,不让界面自己推。**
+        #
+        # 2026-09-29:页面控制按钮第一版**四个一起摆**,而 `queued` 的运行
+        # 点「请求暂停」会回 `BAD_TRANSITION`(状态机只允许从 `running` 走)。
+        # 那正是我在按钮那段注释里写的毛病:
+        # > **「点了没用」比「没有这个按钮」更费时间** ——
+        # > 它让人以为还能操作,然后花时间去找为什么没反应。
+        #
+        # 为什么不让前端按状态自己判:那等于把状态机在前端**再抄一遍**,
+        # 而抄件会漂 —— 漂的表现是界面上摆着一个不合法的按钮,
+        # 或者藏掉一个其实能用的,**两者都不报错**。
+        # 所以这里从 `states.py` 现读,前端只管照着摆。
+        "可执行的控制动作": _控制动作们(r["status"]),
         "执行状态中文": ST.找("execution_run")["中文状态"].get(r["status"], r["status"]),
         "是终态吗": r["status"] in ST.找("execution_run")["终态"],
         "停止原因": r["completion_reason"],

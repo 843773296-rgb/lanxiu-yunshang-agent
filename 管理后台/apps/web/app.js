@@ -1020,6 +1020,136 @@ async function 轮询运行(rid) {
 }
 
 /* ── 运行详情 ─────────────────────────────────────────────────── */
+/* ── 运行控制:暂停 / 继续 / 取消 / 核实外部状态 ────────────────────────
+ *
+ * ⚠️ 这四个动作**全都要幂等键,而前三个还要 revision**(乐观锁)。
+ * 两个人同时点「取消」和「继续」时,少了乐观锁的那一个会**悄悄覆盖**另一个 ——
+ * 而两边都收到「成功」。
+ *
+ * ⚠️ **`revision` 是 2026-09-29 才有地方拿的。** 在那之前
+ * `GET /execution-runs/{id}` 不给它,于是这三个动作在界面上**做不起来** ——
+ * 不是前端没写,是它拿不到必须带的那个值。
+ *
+ * ⚠️ 状态名一律**不在前端翻译**:`pause_requested` 是「请求暂停」而不是
+ * 「已暂停」,而这两件事差得很远(在途的调用未必立刻停)。
+ * 服务端返回的 `status` 原样显示 + 一句人话说明,**不自己编一套中文**:
+ * 前端编一套的话,它和状态机会漂,而漂的表现是**界面上说停了、实际还在跑**。
+ */
+const 运行控制 = {
+  async 暂停(rid, revision) { return await _控(rid, "pause", revision); },
+  async 继续(rid, revision) { return await _控(rid, "resume", revision); },
+  async 取消(rid, revision) { return await _控(rid, "cancel", revision); },
+  async 核实(rid) {
+    // 核实外部状态**不要乐观锁**(它不改状态,只去问一次外部系统),但要幂等键。
+    return await 请求(
+      `${P()}/execution-runs/${encodeURIComponent(rid)}/reconcile`,
+      { method: "POST", headers: { "Idempotency-Key": 新键() },
+        body: JSON.stringify({}) });
+  },
+};
+async function _控(rid, 动作, revision) {
+  // ⚠️ **revision 为空时当场报错,不发请求。**
+  // 发出去的话服务端会回 422「要给 revision(或 If-Match 头)」——
+  // 那句话是对的,但它让人以为是接口的问题,而真相是这一页没读到那个数。
+  // 而且一条被拒的请求会在审计里留一行读不懂的失败。
+  if (revision == null) {
+    const e = new Error("这次运行的 revision 读不到 —— "
+      + "运行详情接口应该给它(2026-09-29 补的)");
+    e.体 = { code: "NO_RUN_REVISION",
+             advice: "刷新一次;还是这样就是详情接口没返回 revision" };
+    e.码 = 0;
+    throw e;
+  }
+  return await 请求(
+    `${P()}/execution-runs/${encodeURIComponent(rid)}/${动作}`,
+    { method: "POST",
+      headers: { "Idempotency-Key": 新键(), "If-Match": String(revision) },
+      body: JSON.stringify({}) });
+}
+if (typeof globalThis !== "undefined") globalThis.运行控制 = 运行控制;
+
+/* 按钮怎么摆:**终态就不摆**,而且说清为什么。
+ *
+ * ⚠️ 摆一个点了回「这次运行已经结束了」的按钮,和不摆是两件事:
+ * 前者让人以为还能操作,而**「点了没用」比「没有这个按钮」更费时间**。
+ * 所以终态时那一栏写的是状态本身,不是一排灰按钮。
+ */
+function 运行控制按钮(d) {
+  if (d["是终态吗"]) {
+    return `<span class="pill">已经是终态(${esc(d["执行状态中文"] || d["执行状态"])})
+      —— <b>没有可执行的控制动作</b></span>`;
+  }
+  const 能控 = 我的角色 === "admin" || 我的角色 === "editor"
+    || 我的角色 === "trainer" || 我的角色 === "approver";
+  if (!能控) {
+    return `<span class="k">控制这次运行要「运行编排测试」这条能力 ——
+      你现在是 <b>${esc(我的角色 || "?")}</b>,<b>所以这里不摆按钮</b></span>`;
+  }
+  // ⚠️ revision 拿不到就**明说**,不摆一个注定 422 的按钮。
+  if (d["revision"] == null) {
+    return `<span class="pill warn">读不到这次运行的 <code>revision</code> ——
+      <b>控制动作要拿它做 If-Match</b>,所以这里不摆按钮(多半是详情接口没返回它)</span>`;
+  }
+  // ⚠️ **只摆现在合法的那几个,不合法的说清为什么。**
+  //
+  // 第一版四个一起摆,而 `queued` 的运行点「请求暂停」会回 `BAD_TRANSITION`
+  // (状态机只允许从 `running` 走)—— 正是上面那段注释里写的毛病。
+  //
+  // 合法与否**由接口算**(`可执行的控制动作`),不在这儿按状态自己判:
+  // 那等于把状态机在前端再抄一遍,而抄件会漂 ——
+  // 漂的表现是界面上摆着一个不合法的按钮、或者藏掉一个其实能用的,
+  // **两者都不报错**。
+  const 动作们 = d["可执行的控制动作"];
+  if (!Array.isArray(动作们)) {
+    // ⚠️ 接口没给这一栏时**不猜**。猜的话就回到了「前端抄一份状态机」。
+    return `<span class="pill warn">详情接口没给 <code>可执行的控制动作</code> ——
+      <b>所以这里不摆按钮</b>:摆哪几个要由接口算,前端猜等于把状态机抄一遍</span>`;
+  }
+  const 能的 = 动作们.filter((a) => a["现在能吗"]);
+  const 不能的 = 动作们.filter((a) => !a["现在能吗"]);
+  return (能的.map((a) => `<button data-rc="${esc(a["动作"])}"${
+      a["动作"] === "reconcile" ? ' class="k"' : ""}>${esc(a["中文"])}</button>`).join(" ")
+    || `<span class="k">现在没有可做的控制动作</span>`)
+    + (不能的.length
+      ? `<div class="k" style="margin-top:4px">现在做不了:${
+          不能的.map((a) => `${esc(a["中文"])}（${esc(a["为什么不能"] || "")}）`).join("；")
+        }</div>` : "")
+    + `<div class="k" style="margin-top:4px">revision ${esc(d["revision"])}
+      —— 控制动作拿它做 If-Match(**两个人同时点,后到的不许悄悄覆盖先到的**)</div>`;
+}
+
+function 挂运行控制(rid, d) {
+  document.querySelectorAll("[data-rc]").forEach((b) => {
+    b.onclick = async () => {
+      const 动 = b.dataset.rc;
+      b.disabled = true;
+      if ($("#rcmsg")) $("#rcmsg").innerHTML = `<div class="state"><p>提交中…</p></div>`;
+      try {
+        const r = 动 === "reconcile"
+          ? await 运行控制.核实(rid)
+          : await 运行控制[{ pause: "暂停", resume: "继续", cancel: "取消" }[动]](
+              rid, d["revision"]);
+        // ⚠️ **原样显示服务端给的 status 和说明,不自己翻译。**
+        // 前端编一套中文的话,它和状态机会漂 ——
+        // 而漂的表现是**界面上说停了、实际还在跑**。
+        if ($("#rcmsg")) {
+          $("#rcmsg").innerHTML = `<div class="state"><p>
+            <code>${esc(r.status || "")}</code>
+            ${r["改了吗"] === false ? "（<b>没有改动</b>）" : ""}
+            ${md(r.note || r["说明"] || "")}</p></div>`;
+        }
+        await 页_运行详情(rid);
+      } catch (e) {
+        if ($("#rcmsg")) {
+          const s2 = 错误块(e, null);
+          $("#rcmsg").innerHTML = s2.html;
+        }
+        b.disabled = false;
+      }
+    };
+  });
+}
+
 async function 页_运行详情(rid) {
   const d = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}`);
   const 步 = d["步骤"] || [];
@@ -1027,7 +1157,10 @@ async function 页_运行详情(rid) {
     <div class="crumb"><a href="#/workflows">工作流</a> / 运行 ${esc(rid)}</div>
     <div class="head"><div><h1>运行详情</h1>
       <div class="sub">定义来源 <code>${esc(JSON.stringify(d["定义来源"] || {}))}</code></div>
-    </div></div>
+    </div>
+      <div>${运行控制按钮(d)}</div>
+    </div>
+    <div id="rcmsg"></div>
     <div class="cards">
       <div class="card"><div class="kpi">${esc(d["执行状态中文"])}</div>
         <div class="k">执行状态 <code>${esc(d["执行状态"])}</code>
@@ -1078,6 +1211,9 @@ async function 页_运行详情(rid) {
         <span class="k">${esc(JSON.stringify(e["载荷"] || {}).slice(0, 160))}</span></div>`).join("")}
     <div class="note">事件<b>只表达已记录的事实</b>(§17.2)——
       不会在外部返回成功之前先发一条成功事件。seq 在 Run 内单调,断线能按 seq 续。</div>`;
+  // ⚠️ 事件要在 innerHTML 写完**之后**挂 —— 写之前挂的话那些按钮还不存在,
+  // 而 `querySelectorAll` 返回空数组**不报错**:表现是「点了没反应」。
+  挂运行控制(rid, d);
 }
 
 /* ══════════════════════════════════════════════════════════════════

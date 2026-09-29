@@ -129,6 +129,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 接口闭环与**禁止行为**(44 条:跨项目、权限、乐观锁、幂等、脱敏、未知费用)"
 	@./.venv/bin/python tests/e2e/test_api_flow.py
 	@echo ""
+	@echo "▸ 运行控制四个动作**在页面代码里真走一遍**(20 条)"
+	@echo "  ⚠️ 这四个是**出事那天唯一的手段**;合法与否由接口算 —— 前端猜等于把状态机抄一遍"
+	@node tests/e2e/test_runctl_page_actions.js
+	@echo ""
 	@echo "▸ 模型与连接两个动作**在页面代码里真走一遍**(18 条)"
 	@echo "  ⚠️ 含一条**源码级**断言:表单里除了「引用」框,不许有任何像凭据的输入框"
 	@echo "     —— 摆一个再靠后端拒,等于把「已经出事了」往后挪一步"
@@ -271,6 +275,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_api_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_api_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_api_flow.log
+	@node tests/e2e/test_runctl_page_actions.js > /tmp/prog-test_runctl_page_actions.log 2>&1 \
+	  || { echo "  ❌ test_runctl_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_runctl_page_actions.log; exit 1; }
+	@tail -2 /tmp/prog-test_runctl_page_actions.log
 	@node tests/e2e/test_conn_page_actions.js > /tmp/prog-test_conn_page_actions.log 2>&1 \
 	  || { echo "  ❌ test_conn_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_conn_page_actions.log; exit 1; }
