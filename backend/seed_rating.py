@@ -50,7 +50,17 @@ CREATE TABLE IF NOT EXISTS rating(
   edit_cnt INTEGER DEFAULT 0, edited_at TEXT, star_before INTEGER,
   -- 差评挂的工单号(task 表里那一行)。**status 不在这儿** —— 只看 task.status
   task_id TEXT,
-  handled_at TEXT, handled_by TEXT, handle_note TEXT);
+  handled_at TEXT, handled_by TEXT, handle_note TEXT,
+  -- ── 2026-09-29 按业内补的几样(口径在 knowledge/rating.py,**全是交付体验的一部分**)──
+  -- 分项:准时 / 合身 / 导购 / 包装,1-5 选填。**没评是 NULL,不是 0 星**。
+  -- 这四项是 `这个星级能说明什么()` 早就承诺了的,原来表里只有一个总分给不出来。
+  star_ontime INTEGER, star_fit INTEGER, star_service INTEGER, star_package INTEGER,
+  tags TEXT,                                -- 快捷标签,顿号分隔。只收 rating.快捷标签 词表里的
+  media TEXT,                               -- 图片/视频,JSON 数组 [{类型,地址}]
+  anonymous INTEGER DEFAULT 0,              -- 1 = **只对外匿名**;店长照样看得到是谁(差评要跟进)
+  -- 追评:**穿过之后**的那句话。不带星,不改 star,不进差评清单 ——
+  -- 星级衡量交付那一刻,「穿了两周起球了」是另一件事,放这里而不是混进星级
+  followup_note TEXT, followup_at TEXT);
 CREATE INDEX IF NOT EXISTS ix_rating_order ON rating(order_id);
 CREATE INDEX IF NOT EXISTS ix_rating_star  ON rating(star);
 CREATE INDEX IF NOT EXISTS ix_rating_task  ON rating(task_id);
@@ -66,9 +76,32 @@ def 建表(c=None):
     """
     if c is None or isinstance(c, str):
         with sqlite3.connect(c or DB) as cx:
-            cx.executescript(DDL)
+            _建(cx)
     else:
-        c.executescript(DDL)
+        _建(c)
+
+
+def _建(c):
+    # ⚠️ **先建表、再补列、最后建索引。** 一次 executescript(DDL) 的话,
+    # 老库缺的列要是被索引引用,会在补列之前就崩(`no such column`)——
+    # 写 rating_write_check 那条「老表补列」时当场撞到的。
+    表, 索引 = DDL.split("\nCREATE INDEX", 1)
+    c.executescript(表)
+    _补列(c)
+    c.executescript("CREATE INDEX" + 索引)
+
+
+# 2026-09-29 补的列。`CREATE TABLE IF NOT EXISTS` 在**已有的库**上什么都不做 ——
+# 新列只会出现在从零重建的库里,而本地库和 CI 库从此长得不一样(eb3af41 那次就是反过来栽的)。
+# 所以已有的表要逐列补。**列清单从 DDL 里现取**,不另抄一份 —— 抄一份就会有一天漏一列。
+def _补列(c):
+    import re
+    有 = {r[1] for r in c.execute("PRAGMA table_info(rating)")}
+    体 = re.search(r"CREATE TABLE IF NOT EXISTS rating\((.*?)\);", re.sub(r"--[^\n]*", "", DDL), re.S).group(1)
+    for 段 in 体.split(","):
+        字 = 段.split()
+        if len(字) >= 2 and 字[0] not in 有:
+            c.execute(f"ALTER TABLE rating ADD COLUMN {' '.join(字)}")
 
 
 def main():

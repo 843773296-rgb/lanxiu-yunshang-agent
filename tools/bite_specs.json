@@ -2966,7 +2966,7 @@
     "new": "    # (\"rating\", \"rated_at\", \"顾客评价时间\", \"pkg_id\"),"
    }
   ],
-  "预期红": "三列都登记进了 worldclock.已发生的时间列"
+  "预期红": "四列时间都登记进了 worldclock.已发生的时间列"
  },
  {
   "script": "backend/rating_check.py",
@@ -3718,5 +3718,41 @@
    }
   ],
   "预期红": "0 条折扣 → 说出来是空跑"
+ },
+ {
+  "script": "knowledge/rating.py",
+  "改坏": "在 快捷标签 里加一个挂在「面料」上的「面料手感好」",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "\"包装用心\": (\"包装\", \"+\"),",
+    "new": "\"包装用心\": (\"包装\", \"+\"), \"面料手感好\": (\"面料\", \"+\"),"
+   }
+  ],
+  "预期红": "每个快捷标签都挂在四个分项之一上"
+ },
+ {
+  "script": "knowledge/rating.py",
+  "改坏": "把 追评改星级吗 改成 True",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "追评改星级吗 = False",
+    "new": "追评改星级吗 = True"
+   }
+  ],
+  "预期红": "追评不改星级"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "把 seed_rating._建() 里的补列去掉",
+  "file": [
+   {
+    "path": "backend/seed_rating.py",
+    "old": "    c.executescript(表)\n    _补列(c)\n",
+    "new": "    c.executescript(表)\n"
+   }
+  ],
+  "预期红": "已有的老表补完列,和从零建的列一致"
  }
 ]

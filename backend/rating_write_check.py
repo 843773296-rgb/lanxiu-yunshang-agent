@@ -31,8 +31,9 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("让 customer_edit_rating() 在差评改好评时把工单关掉", "差评改好评 → 工单不撤,还在待处理"),
     ("在 seed_rating 的建表里加一句 ALTER,给 rating 加个 status 列",
      "rating 表没有 status 列(状态只存 task 上)"),
+    ("把 seed_rating._建() 里的补列去掉", "已有的老表补完列,和从零建的列一致"),
     ("把 worldclock.已发生的时间列 里 rating 那三行去掉",
-     "三列都登记进了 worldclock.已发生的时间列"),
+     "四列时间都登记进了 worldclock.已发生的时间列"),
 ]
 
 FAIL, N = [], [0]
@@ -73,10 +74,24 @@ def run(T):
     # ── 不变量:状态只存一处 ──────────────────────────────────────────
     列 = [r["name"] for r in c.execute("PRAGMA table_info(rating)")]
     ck("库里有评价表", bool(列))
+    # ⚠️ 老库**自己造**,不拿真库副本当老库:真库补过列之后,拿它验「补列」永远是绿的 ——
+    # 咬合改坏 `_补列` 也红不了(破坏点不可观测)。
+    # 崩了也算**这一条**红 —— 不让一个异常把整份检查带崩、后面该红的那条没机会打印
+    try:
+        _新 = sqlite3.connect(":memory:"); seed_rating.建表(_新)
+        _老 = sqlite3.connect(":memory:"); _老.execute("CREATE TABLE rating(pkg_id TEXT PRIMARY KEY, star INTEGER)")
+        seed_rating.建表(_老); seed_rating.建表(_老)      # 跑两遍:补过的不许再补
+        _新列 = [r[1] for r in _新.execute("PRAGMA table_info(rating)")]
+        _老列 = [r[1] for r in _老.execute("PRAGMA table_info(rating)")]
+        _对, _说 = sorted(_老列) == sorted(_新列), f"老表 {len(_老列)} 列、新表 {len(_新列)} 列,差 {sorted(set(_新列) ^ set(_老列))}"
+    except Exception as e:
+        _对, _说 = False, f"补列时崩了:{type(e).__name__}: {e}"
+    ck("已有的老表补完列,和从零建的列一致(分项/标签/媒体/匿名/追评)", _对,
+       _说 + " —— `CREATE TABLE IF NOT EXISTS` 在已有的库上什么都不做,新列只会出现在从零重建的库里")
     ck("rating 表没有 status 列(状态只存 task 上)", "status" not in 列,
        "两处都存的话,「工单关了但评价那行还是待处理」这种漂**不会报错**,只会让两个页面显示不同的东西")
-    ck("三列都登记进了 worldclock.已发生的时间列(C4 和平移闸都读它)",
-       {("rating", "rated_at"), ("rating", "edited_at"), ("rating", "handled_at")}
+    ck("四列时间都登记进了 worldclock.已发生的时间列(C4 和平移闸都读它)",
+       {("rating", "rated_at"), ("rating", "edited_at"), ("rating", "handled_at"), ("rating", "followup_at")}
        <= {(t, col) for t, col, _, _ in worldclock.已发生的时间列},
        "不登记就是两道闸同时的盲区 —— pkg.created 上次就是这么漏的")
 
