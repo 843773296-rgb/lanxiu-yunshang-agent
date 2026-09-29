@@ -186,3 +186,10 @@ summary{cursor:pointer;font-size:13px;color:var(--pri)}
    规格第 3 条要的是「醒目标记」,不是「占一行」。
    ⚠️ 接口里那个 `演示模式` 字段一个字没动,`test_api_flow` 验的是它。 */
 .envtag.demo-env{background:#fff7e8;border-color:#ffcf8b;color:#7d4e00;font-weight:600}
+
+/* 左右对照里**两边不同**的那一行。
+ * ⚠️ 2026-09-29:我在 app.js 里先引了 `.warn-row`,而它当时**不存在** ——
+ * 引一个不存在的类 CSS 不报错,只是那一行安静地不高亮,
+ * 而「改了」这件事正是那张对照表唯一要传达的东西。
+ * **一个引用不存在的样式类,和忘了标记是一回事,只是它在代码里看着像做了。** */
+tr.warn-row td{background:#fff7e8}

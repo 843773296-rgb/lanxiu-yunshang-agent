@@ -45,6 +45,29 @@
     ("evaluation_id", "评测实验"),
 )
 
+# 每个依赖项指向哪张表。**填的时候就能拦住「这个版本号不存在」。**
+#
+# ⚠️ 2026-09-29 加的,修的是一个 500:候选里填一个不存在的版本号,
+# `PATCH .../draft` **愉快地收下了(200)**,到出清单那一刻才炸 ——
+# 而炸出来的是 `IntegrityError` → **500**,错误里只有
+# 「这是服务端问题,把 trace_id 给运维」,一个字都没说是哪个字段填错了。
+#
+# 当时踩到的具体形状:把 **Prompt 的 id** 当成 **Prompt 版本的 id** 填了进去
+# (`GET /prompts` 返回的是 Prompt,不是版本)—— 两者前缀不同而肉眼很像。
+#
+# 这正是这个仓库反复写过的那个形状:
+# > 放行的话,坏东西会在**下一步**才炸,而那时错误指向别的地方。
+# (`test_knowledge_write_flow` 里那条「拿没校验的上传去加资料 → 也 422」
+#  的理由一字不差:「放行的话坏文件会在建索引时才炸,而那时错误指向解析器」。)
+依赖项所在的表 = {
+    "prompt_version_id": "prompt_versions",
+    "connection_version_id": "connection_versions",
+    "index_build_id": "index_builds",
+    "retrieval_config_version_id": "retrieval_config_versions",
+    "model_artifact_id": "model_artifacts",
+    "evaluation_id": "evaluations",
+}
+
 # 哪些依赖对哪种流水线是必须的。
 # ⚠️ **按流水线分,而不是「全都必填」** —— 一个 Prompt 生成应用没有知识索引,
 # 硬要它填的话,人只会随便填一个,而那比不填糟得多:

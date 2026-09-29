@@ -66,8 +66,14 @@ def main():
         print(f"  {R}❌ 找不到 {e2e目录} —— **路径不对不是通过**{D}")
         return 1
 
+    # ⚠️ **`.js` 也要算。** 第一版只扫 `.py`,而 `tests/e2e/` 下有 JS 测试
+    # (页面接线那一份就是)—— 于是这条判据**盖不住它**:
+    # 一份只挂在 `test-e2e` 里的 JS 测试,路由不进 progress 的账本,
+    # 而那正是这条判据存在的理由。
+    # > 一条按扩展名选目标的判据,漏掉一种扩展名就等于漏掉那一整类。
     文件们 = sorted(f for f in os.listdir(e2e目录)
-                  if f.startswith("test_") and f.endswith(".py"))
+                  if f.startswith("test_") and (f.endswith(".py")
+                                                or f.endswith(".js")))
     if not 文件们:
         # ⚠️ 空集合上所有性质都成立。扫到 0 份就是路径错了,而那会让这条判据全过。
         print(f"  {R}❌ 一份端到端测试都没扫到 —— **扫不到东西不是通过**{D}")

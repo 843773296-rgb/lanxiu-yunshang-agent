@@ -25,6 +25,9 @@ let 我 = localStorage.getItem("aimc.user") || "U002";
 let 项目 = localStorage.getItem("aimc.proj") || "";
 let 环境 = "development";
 let 能力 = [];          // 当前身份在当前项目有哪些能力(服务端给的)
+let 我的角色 = "";      // ⚠️ **只用来决定「摆不摆按钮 + 说不说为什么」**。
+                        // 规格 §5.2:「不可把「禁用前端按钮」当后端授权」——
+                        // 真拦截在服务端每个请求上,这里错了也只是多一个 403。
 
 /* ── 请求 ─────────────────────────────────────────────────────────
  * 失败一律走错误契约:code / message / advice。
@@ -160,6 +163,7 @@ async function 画顶栏() {
   };
   const me = ps.find((p) => p.id === 项目);
   能力 = (me && me.special_grants) || [];
+  我的角色 = (me && me.role) || "";
   $("#whoami").textContent = `${我} · ${(me && me.role) || "?"}`;
   return true;
 }
@@ -2415,7 +2419,8 @@ async function 页_应用与发布() {
         const 格 = (e) => 指[e]
           ? `<code>${esc(指[e])}</code>`
           : `<span class="k">还没有任何一版在跑</span>`;
-        return `<tr><td><b>${esc(r["名字"])}</b><div class="k">${esc(r.id)}</div></td>
+        return `<tr><td><a href="#/app/${encodeURIComponent(r.id)}"><b>${esc(r["名字"])}</b></a>
+            <div class="k">${esc(r.id)}</div></td>
           <td class="k">${esc(r["流水线"])}</td>
           <td>${格("production")}</td><td>${格("staging")}</td><td>${格("test")}</td>
           <td>${r["候选能出清单吗"] ? `<span class="pill">可以出清单</span>`
@@ -2424,9 +2429,365 @@ async function 页_应用与发布() {
               ? `<div class="k">${esc((r["候选还差什么"] || [])[0].slice(0, 46))}</div>` : ""}
           </td></tr>`; }).join("")
       + `</tbody></table><div class="note">${md(d.note || "")}<br>
-        <b>发布这几步页面上还没做</b>(出清单 / 审核 / 切指针 / 回滚)——
-        接口都有了,<b>不摆点了没反应的按钮</b>。</div>`;
+        <b>点应用名进详情</b> —— 发布那四步(出清单 / 审核 / 切指针 / 回滚)在那一页。</div>`;
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+/* ── 应用详情:发布那条链**能点了**(§13.3)────────────────────────────
+ *
+ * 这一页之前只有「看」:列表告诉你哪一版在跑,而出清单 / 审核 / 切指针 / 回滚
+ * 四步都只能用 curl。补它之前先补了三条读接口 —— 那条链原来**只写不读**:
+ * 清单 id 只在 POST 的响应里出现一次,刷新页面就找不回来。
+ *
+ * ⚠️ 这一页有**两个 revision,而且不通用**:
+ *   · `候选revision`        → 改候选(PATCH draft)的 If-Match
+ *   · `各环境[e].revision`  → 发布(切指针)的 If-Match
+ * 拿错一个就是 409,而 409 读起来像「别人改过了」。所以下面两处**分别取**,
+ * 并且在界面上把它们**分开显示** —— 一个界面上看不见的数,人只会去猜。
+ *
+ * ⚠️ 危险动作不用 `confirm()`,用**页内两步确认**。理由不是风格:
+ *   · confirm 的那句话里放不进「从哪一版切到哪一版」,而那正是要确认的东西;
+ *   · 模态框会**挡住自动化**(冒烟一点它就卡住),而这一页正是要被冒烟打的。
+ */
+const 依赖中文 = {
+  prompt_version_id: "Prompt 版本",
+  connection_version_id: "模型连接版本",
+  index_build_id: "知识索引构建",
+  retrieval_config_version_id: "检索配置版本",
+  model_artifact_id: "模型产物",
+  evaluation_id: "评测实验",
+};
+const 环境们 = ["test", "staging", "production"];
+
+/* 一次点击一个幂等键。
+ * ⚠️ **不能在渲染时生成**:那样「点了没反应又点一次」会带着**新键**过去,
+ * 于是同一个动作被当成两件事 —— 而发布和回滚正是最不该重复的两个。 */
+const 新键 = () => (crypto.randomUUID ? crypto.randomUUID()
+  : String(Date.now()) + Math.random());
+
+function 值格(v) {
+  return v ? `<code>${esc(v)}</code>` : `<span class="k">没挑</span>`;
+}
+
+/* ── 发布链的四个动作:**抽出来,因为接线本身要能被测** ────────────────
+ *
+ * 最容易错的不是按钮长什么样,是「**哪个 revision 放进哪个头**」:
+ *   · 改候选要 `候选revision`,切指针要 `各环境[e].revision` —— 拿错就是 409,
+ *     而 409 读起来像「别人改过了」;
+ *   · 发布和回滚都要幂等键,而键要**一次点击一个**(渲染时生成的话,
+ *     「点了没反应再点一次」会带着新键过去,同一个动作被当成两件事);
+ *   · 第一次绑定某个环境时**没有 revision 可带**,硬塞一个是另一种错。
+ *
+ * 这些事埋在 onclick 里的时候,**只有真浏览器点得到它们** ——
+ * 而真浏览器那一份(test_upload_page_firefox.py)要弹窗口、不进门禁。
+ * 抽成独立函数之后,`tests/e2e/test_release_page_actions.js` 可以直接调它们,
+ * 打的是**真接口**,验的是**真接线**。
+ *
+ * ⚠️ 挂到 globalThis 是**为了能被测**,不是图方便:冒烟夹具用
+ * `new Function(src)()` 跑这份源码,里面的函数声明是**局部的**,外面调不到。
+ */
+const 发布链动作 = {
+  async 出清单(aid) {
+    return await 请求(`${P()}/applications/${encodeURIComponent(aid)}/releases`,
+      { method: "POST" });
+  },
+  async 审核(rid, 结论, 理由) {
+    return await 请求(`${P()}/releases/${encodeURIComponent(rid)}/reviews`,
+      { method: "POST",
+        body: JSON.stringify({ 结论, 理由: (理由 || "").trim() || null }) });
+  },
+  async 发布(rid, 环境, 指针revision) {
+    const 头 = { "Idempotency-Key": 新键() };
+    // ⚠️ **有绑定才带 If-Match。** 第一次绑定时没有 revision 可带 ——
+    // 硬塞一个的话服务端会拿它去和一行不存在的记录比,那是另一种错。
+    if (指针revision != null) 头["If-Match"] = String(指针revision);
+    return await 请求(`${P()}/releases/${encodeURIComponent(rid)}/deploy`,
+      { method: "POST", headers: 头, body: JSON.stringify({ 环境 }) });
+  },
+  async 回滚(aid, 回到哪一版, 环境) {
+    return await 请求(`${P()}/applications/${encodeURIComponent(aid)}/rollbacks`,
+      { method: "POST", headers: { "Idempotency-Key": 新键() },
+        body: JSON.stringify({ 回到哪一版, 环境 }) });
+  },
+  async 改候选(aid, 补丁, 候选revision) {
+    // ⚠️ **这里原来有一个走不到的兜底**:「候选revision 为 null 时不带 If-Match,
+    // 因为第一次 PATCH 是把草稿建出来」。量过之后发现那是错的 ——
+    //   · `POST /applications` **同时**就把草稿建出来了(revision 1);
+    //   · `PATCH .../draft` **无条件**要 If-Match(不带就 409 IF_MATCH_REQUIRED)。
+    // 所以那个分支永远走不到;而它真被触发的那天,它做的事
+    // (不带 If-Match 发出去)会换来一个**读不懂的 409**。
+    // > 一个走不到的兜底,在它终于被触发的那天做的是错的事。
+    // 现在改成**当场说清**:null 只可能是草稿行丢了(数据异常)。
+    if (候选revision == null) {
+      const e = new Error("这个应用的候选(草稿)读不到 revision —— "
+        + "建应用时就该建出草稿,所以这多半是数据异常,不是「还没建」");
+      e.体 = { code: "NO_DRAFT_REVISION",
+               advice: "刷新一次;还是这样就要看 application_drafts 里有没有这一行" };
+      e.码 = 0;
+      throw e;
+    }
+    return await 请求(`${P()}/applications/${encodeURIComponent(aid)}/draft`,
+      { method: "PATCH", headers: { "If-Match": String(候选revision) },
+        body: JSON.stringify(补丁) });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.发布链动作 = 发布链动作;
+
+async function 页_应用详情(aid) {
+  $("#main").innerHTML = `<div class="crumb">发布 / 应用 /
+      <a href="#/apps">列表</a></div>
+    <div class="head"><div><h1 id="t">应用</h1>
+      <div class="sub">这一页能**做**发布那四步 ——
+        出清单 / 审核 / 切指针 / 回滚。</div></div></div>
+    <div id="msg"></div>
+    <div id="body"><div class="state">加载中…</div></div>`;
+  await 画应用详情(aid);
+}
+
+function 报(文, 坏) {
+  $("#msg").innerHTML = 文
+    ? `<div class="state ${坏 ? "err" : ""}"><p>${md(文)}</p></div>` : "";
+}
+
+/* 把服务端逐条给的「闸」显示出来。
+ * ⚠️ 只显示 message 的话,人看到的是「这份清单不能发到这个环境」——
+ * 而**为什么**在 field_errors.闸 里,一条一条写着。少显示它等于把最有用的部分丢了。 */
+function 闸文(e) {
+  const b = e.体 || {};
+  const 闸 = (b.field_errors || {})["闸"] || [];
+  return `**${esc(b.code || "出错了")}** · ${esc(e.message)}`
+    + (闸.length ? "\n\n" + 闸.map((x) => "· " + x).join("\n") : "")
+    + (b.advice ? `\n\n**下一步:**${b.advice}` : "");
+}
+
+async function 画应用详情(aid) {
+  try {
+    const [d, h] = await Promise.all([
+      请求(`${P()}/applications/${encodeURIComponent(aid)}`),
+      请求(`${P()}/applications/${encodeURIComponent(aid)}/releases`),
+    ]);
+    $("#t").textContent = d["名字"] || aid;
+    const 环 = d["各环境"] || {};
+    const 候 = d["候选"] || {};
+    const 生产清单 = ((环.production || {})["那一版的内容"]) || null;
+    const 能发 = 我的角色 === "approver" || 我的角色 === "admin";
+    const 能改 = 我的角色 === "editor" || 我的角色 === "admin";
+
+    /* 左:当前生产清单   右:候选清单(§13.3 那张图) */
+    const 对照 = Object.keys(依赖中文).map((k) => {
+      const 左 = 生产清单 ? 生产清单[k] : null;
+      const 右 = 候[k] || null;
+      // ⚠️ 只在**两边都有值且不同**时标「改了」。
+      // 左边为空时不标 —— 那是「还没有任何一版在跑」,不是「改了」。
+      const 变 = 生产清单 && 左 !== 右;
+      return `<tr${变 ? ' class="warn-row"' : ""}>
+        <td class="k">${esc(依赖中文[k])}</td>
+        <td>${值格(左)}</td>
+        <td>${值格(右)}${变 ? ` <span class="pill warn">改了</span>` : ""}</td></tr>`;
+    }).join("");
+
+    const 指针行 = 环境们.map((e) => {
+      const v = 环[e];
+      return `<tr><td class="k">${esc(e)}</td>
+        <td>${v && v["指着哪一版"] ? `<code>${esc(v["指着哪一版"])}</code>`
+          : `<span class="k">还没有任何一版在跑</span>`}</td>
+        <td class="k">${v && v.revision != null ? `revision ${v.revision}`
+          : `<span class="k">没有绑定</span>`}</td></tr>`;
+    }).join("");
+
+    const 候选块 = d["候选能出清单吗"]
+      ? `<span class="pill">候选可以出清单</span>`
+      : `<span class="pill warn">候选还差 ${(d["候选还差什么"] || []).length} 项</span>
+         <ul class="k">${(d["候选还差什么"] || [])
+            .map((x) => `<li>${md(x)}</li>`).join("")}</ul>`;
+
+    const 历史 = (h["清单们"] || []);
+    const 历史行 = 历史.length ? 历史.map((m) => {
+      const 审 = m["审核"] || null;
+      // ⚠️ **「审过了」和「审的是这一份」画成两种,不合成一个。**
+      // 合成一个的后果很具体:改完候选另出一份清单之后,界面上仍然写着「已审核」,
+      // 而那一份**没人审过** —— 而它和真的审过在界面上长得一模一样。
+      const 审格 = !审
+        ? `<span class="k">还没审</span>`
+        : m["这次审核还算数吗"]
+          ? `<span class="pill ok">审核通过 · 算数</span>
+             <div class="k">${esc(审["审核人"] || "")}${
+               审["理由"] ? " · " + esc(审["理由"]) : ""}</div>`
+          : `<span class="pill warn">审过,但**不算这一份**</span>
+             <div class="k">${md(m["为什么"] || "")}</div>`;
+      const 在线 = m["哪些环境指着它"] || [];
+      const 动作 = [];
+      if (能发 && !审) 动作.push(`<button data-act="review" data-id="${esc(m.id)}">审核…</button>`);
+      if (能发 && m["这次审核还算数吗"]) {
+        动作.push(`<button data-act="deploy" data-id="${esc(m.id)}">发到…</button>`);
+      }
+      if (能发 && 在线.length === 0 && 历史.some((x) => (x["哪些环境指着它"] || []).length)) {
+        动作.push(`<button data-act="rollback" data-id="${esc(m.id)}">回滚到这一版</button>`);
+      }
+      return `<tr><td><code>${esc(m.id)}</code>
+          <div class="k">${esc(String(m["出清单时间"] || "").slice(0, 19))}
+            · ${esc(m["出清单的人"] || "")}</div></td>
+        <td>${审格}</td>
+        <td>${在线.length ? 在线.map((e) =>
+            `<span class="pill ok">${esc(e)}</span>`).join(" ")
+          : `<span class="k">从来没上过线</span>`}</td>
+        <td>${动作.join(" ") || `<span class="k">—</span>`}</td></tr>`;
+    }).join("") : `<tr><td colspan="4" class="k">还没出过任何一份清单</td></tr>`;
+
+    $("#body").innerHTML = `
+      <h2>各环境现在指着哪一版</h2>
+      <table><thead><tr><th>环境</th><th>指着哪一版</th>
+        <th>指针 revision(发布要用它做 If-Match)</th></tr></thead>
+        <tbody>${指针行}</tbody></table>
+
+      <h2>左:当前生产清单　右:候选清单</h2>
+      <table><thead><tr><th>依赖</th><th>生产在跑的</th><th>候选</th>
+        </tr></thead><tbody>${对照}</tbody></table>
+      <div class="note">${候选块}
+        <div class="k">候选 revision:${d["候选revision"] == null
+          ? "<b>读不到 —— 多半是草稿行丢了(数据异常)</b>"
+          : d["候选revision"]}　—　
+          <b>这个数和上面那个指针 revision 不是一个</b>,各自独立地涨</div>
+        ${d["候选能出清单吗"] && 能改
+          ? `<div style="margin-top:8px"><button class="pri" id="b-freeze">出一份发布清单(冻结依赖)</button></div>`
+          : !能改
+            ? `<div class="k" style="margin-top:8px">你现在是 <b>${esc(我的角色 || "?")}</b>,
+                出清单要 <b>改 Prompt/知识候选</b> 这条能力 —— <b>所以这里不摆按钮</b>,
+                摆一个点了 403 的按钮只是把拒绝往后挪一步</div>`
+            : ""}
+      </div>
+
+      <h2>清单历史（新的在前）</h2>
+      <table><thead><tr><th>清单</th><th>审核</th><th>哪些环境指着它</th>
+        <th>动作</th></tr></thead><tbody>${历史行}</tbody></table>
+      <div class="note">${md(h.note || "")}<br>
+        <b>回滚是一次新的部署动作,不是把历史改回去</b> ——
+        改历史的后果很具体:「上周二在跑哪一版」会变成<b>现在这一版</b>,
+        而那正是回滚之后最需要问的问题。
+        ${能发 ? "" : `<br><span class="k">你现在是 <b>${esc(我的角色 || "?")}</b>,
+          审核 / 发布 / 回滚要 <b>生产审核/发布/回滚</b> 这条能力 ——
+          <b>所以那几个按钮不摆</b></span>`}</div>
+      <div id="panel"></div>`;
+
+    if ($("#b-freeze")) {
+      $("#b-freeze").onclick = async () => {
+        $("#b-freeze").disabled = true; 报("出清单…");
+        try {
+          const r = await 发布链动作.出清单(aid);
+          报(r["新建了吗"]
+            ? `出了新清单 \`${r.id}\` —— **写下就不许改**。要发生产还得先审核,`
+              + `而审核认的是这一份的内容哈希`
+            : `**没有新建** —— ${r.note || "依赖组合和已有的一份完全一样"}`);
+          await 画应用详情(aid);
+        } catch (e) { 报(闸文(e), true); $("#b-freeze").disabled = false; }
+      };
+    }
+    document.querySelectorAll("[data-act]").forEach((b) => {
+      b.onclick = () => 开面板(aid, b.dataset.act, b.dataset.id, 环, 历史);
+    });
+  } catch (e) {
+    const s = 错误块(e, () => 画应用详情(aid));
+    $("#body").innerHTML = s.html; s.挂();
+  }
+}
+
+/* 页内两步确认。**先把「要改什么」摆出来,再给确认按钮。** */
+function 开面板(aid, 动作, rid, 环, 历史) {
+  报("");
+  const 环选 = 环境们.map((e) => {
+    const v = 环[e] || {};
+    return `<option value="${e}">${e} —— 现在 ${v["指着哪一版"]
+      ? v["指着哪一版"] : "还没有任何一版在跑"}</option>`;
+  }).join("");
+
+  if (动作 === "review") {
+    $("#panel").innerHTML = `<div class="state">
+      <h3>审核清单 <code>${esc(rid)}</code></h3>
+      <p>${md("⚠️ **审核记的是「审的哪一份内容」,不是一个布尔** —— "
+        + "这一份是不可变的,所以审过就永远算数;而改完候选另出一份,**那一份要重新审**。")}</p>
+      <p><label>理由(驳回时**必须**写清 —— 一句「不通过」下一个人不知道该改什么)<br>
+        <input id="p-why" style="width:min(460px,90%)" placeholder="依赖都对得上 / 评测没覆盖 X 场景"></label></p>
+      <p><button class="pri" data-go="通过">确认:审核通过</button>
+         <button data-go="驳回">确认:驳回</button>
+         <button data-go="">取消</button></p></div>`;
+    document.querySelectorAll("[data-go]").forEach((b) => {
+      b.onclick = async () => {
+        const 结论 = b.dataset.go;
+        if (!结论) { $("#panel").innerHTML = ""; return; }
+        报("提交审核…");
+        try {
+          const r = await 发布链动作.审核(rid, 结论, $("#p-why").value);
+          报(`审核记下了:**${esc(r["结论"])}** · 审的哈希 \`${esc(r["审的哈希"])}\``);
+          $("#panel").innerHTML = ""; await 画应用详情(aid);
+        } catch (e) { 报(闸文(e), true); }
+      };
+    });
+    return;
+  }
+
+  if (动作 === "deploy") {
+    $("#panel").innerHTML = `<div class="state">
+      <h3>把环境指针切到 <code>${esc(rid)}</code></h3>
+      <p>${md("⚠️ **指针切换是原子的**,而且会带上当前指针的 `If-Match` —— "
+        + "两个人同时发布不同版本时,**后到的那个会悄悄覆盖先到的,而两边都收到成功**。")}</p>
+      <p><label>发到哪个环境<br><select id="p-env">${环选}</select></label></p>
+      <p id="p-diff" class="k"></p>
+      <p><button class="pri" data-go="1">确认发布</button>
+         <button data-go="">取消</button></p></div>`;
+    const 画差 = () => {
+      const e = $("#p-env").value;
+      const 从 = (环[e] || {})["指着哪一版"];
+      $("#p-diff").innerHTML = 从
+        ? `${esc(e)}:<code>${esc(从)}</code> → <code>${esc(rid)}</code>`
+          + `（If-Match = ${(环[e] || {}).revision}）`
+        : `${esc(e)}:<b>还没有任何一版在跑</b> → <code>${esc(rid)}</code>`
+          + `（第一次绑定,不带 If-Match）`;
+    };
+    $("#p-env").onchange = 画差; 画差();
+    document.querySelectorAll("[data-go]").forEach((b) => {
+      b.onclick = async () => {
+        if (!b.dataset.go) { $("#panel").innerHTML = ""; return; }
+        const e = $("#p-env").value;
+        const rev = (环[e] || {}).revision;
+        b.disabled = true; 报("发布…");
+        try {
+          const r = await 发布链动作.发布(rid, e, rev);
+          报(`**${esc(r["环境"])}** 的指针切了:`
+            + `${r["从"] ? `\`${esc(r["从"])}\`` : "（原来没有）"} → \`${esc(r["到"])}\``
+            + `\n\n${r.note || ""}`);
+          $("#panel").innerHTML = ""; await 画应用详情(aid);
+        } catch (e2) { 报(闸文(e2), true); b.disabled = false; }
+      };
+    });
+    return;
+  }
+
+  if (动作 === "rollback") {
+    const 在线的 = 历史.filter((x) => (x["哪些环境指着它"] || []).length);
+    $("#panel").innerHTML = `<div class="state">
+      <h3>回滚到 <code>${esc(rid)}</code></h3>
+      <p>${md("⚠️ **回滚是一次新的部署动作,不是把历史改回去。** "
+        + "改历史的后果很具体:「上周二在跑哪一版」会变成**现在这一版** —— "
+        + "而那正是回滚之后最需要问的问题。")}</p>
+      <p class="k">现在在线的:${在线的.length
+        ? 在线的.map((x) => `<code>${esc(x.id)}</code>(${
+            (x["哪些环境指着它"] || []).join("/")})`).join("、")
+        : "没有任何一版在跑 —— **那就没有可回滚的**"}</p>
+      <p><label>回滚哪个环境<br><select id="p-env">${环选}</select></label></p>
+      <p><button class="pri" data-go="1">确认回滚</button>
+         <button data-go="">取消</button></p></div>`;
+    document.querySelectorAll("[data-go]").forEach((b) => {
+      b.onclick = async () => {
+        if (!b.dataset.go) { $("#panel").innerHTML = ""; return; }
+        b.disabled = true; 报("回滚…");
+        try {
+          const r = await 发布链动作.回滚(aid, rid, $("#p-env").value);
+          报(`回滚提交了:${JSON.stringify(r).slice(0, 200)}`);
+          $("#panel").innerHTML = ""; await 画应用详情(aid);
+        } catch (e2) { 报(闸文(e2), true); b.disabled = false; }
+      };
+    });
+  }
 }
 
 async function 页_模型与连接() {
@@ -2613,6 +2974,7 @@ async function 路由() {
     if (h === "#/retrieval") return await 页_检索实验室();
     if (h === "#/audit") return await 页_审计记录();
     if (h === "#/apps") return await 页_应用与发布();
+    if (h.startsWith("#/app/")) return await 页_应用详情(decodeURIComponent(h.slice(6)));
     if (h === "#/conns") return await 页_模型与连接();
     if (h === "#/members") return await 页_成员与权限();
     if (h === "#/datasets") return await 页_数据集();

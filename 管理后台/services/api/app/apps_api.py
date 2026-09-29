@@ -188,17 +188,25 @@ def 应用详情(project_id: str, aid: str,
         # 2026-09-29 写测试时当场栽了一次:拿应用的 revision 去改候选 → 409。
         # 这是和上面那个指针 revision **一模一样的洞** ——
         # 一个界面上必须有、而任何读接口都拿不到的数。
-        # 为什么不给 0 当默认:**还没有草稿**和**草稿在第 0 版**下一步不同,
-        # 前者要先 PATCH 建出来(不带 If-Match),后者要带 If-Match。
-        # 三值:没有草稿 → null。
+        #
+        # ⚠️ **null 不是「还没有草稿」这个正常状态,是数据异常。**
+        # 这条注释的第一版写的是「为 null = 还没有草稿(第一次 PATCH 不带 If-Match)」——
+        # 而 `建应用` 会**同时**插入草稿行(revision 1),`PATCH draft` 又
+        # **无条件要求 If-Match**(不带就 409 IF_MATCH_REQUIRED)。
+        # 也就是说那个状态**根本不会出现**,而按它写出来的前端分支永远走不到。
+        # > 一段描述不存在状态的说明,会让下一个人照着它写出走不到的分支 ——
+        # > 而那个分支真被触发的那天,它做的事是错的。
+        # 所以现在它的含义是:**草稿行丢了**(数据异常),界面该当场说出来,
+        # 而不是拿它去猜一个「第一次」。
         "候选revision": (草 or {}).get("revision"),
         "候选能出清单吗": not 问,
         "候选还差什么": 问 or None,
         "note": ("**这一页有两个 revision,别混。** "
                  "`各环境[环境].revision` 是发布(切指针)要带的 `If-Match`;"
                  "`候选revision` 是改候选要带的那个 —— 它们各自独立地涨。"
-                 "`候选revision` 为 null = **还没有草稿**(第一次 PATCH 不带 If-Match),"
-                 "和「草稿在第 0 版」不是一回事。"
+                 "`候选revision` 为 null = **草稿行丢了(数据异常)** —— "
+                 "建应用时就会建出草稿(revision 1),而改候选**无条件要 If-Match**,"
+                 "所以正常情况下它永远是个数字。"
                  "`各环境` 为空 = 这个应用**还没有任何一版在跑**,"
                  "和「跑的是最新那一版」完全不是一回事"),
     }
@@ -352,6 +360,45 @@ async def 改候选配置(project_id: str, aid: str, request: Request,
                       "刷新看一眼别人改了什么再合并;**不要直接覆盖**")
         新定义 = dict(d["definition"] or {})
         新定义.update({k: (str(v).strip() or None) for k, v in 改.items()})
+
+        # ── **填的时候就查这个版本号在不在** ────────────────────────────
+        # ⚠️ 不查的后果是一个 500:候选收下一个不存在的版本号(200),
+        # 到 `POST .../releases` 那一刻撞外键 → `IntegrityError` → **500**,
+        # 而错误体里只有「这是服务端问题,把 trace_id 给运维」——
+        # **一个字都没说是哪个字段填错了**。
+        # 2026-09-29 页面接线测试第一次跑就撞到:我把 **Prompt 的 id**
+        # 当成 **Prompt 版本的 id** 填了进去(`GET /prompts` 返回的是 Prompt,
+        # 不是版本)—— 两个前缀不同而肉眼很像。
+        #
+        # > 放行的话,坏东西会在**下一步**才炸,而那时错误指向别的地方。
+        #
+        # `latest` 这类占位不在这儿拦 —— `可以出候选吗()` 专门管它,
+        # 而且那条的措辞比「不存在」有用得多(「不许出现『用最新的那个』」)。
+        坏 = {}
+        for k, v in 改.items():
+            值 = (str(v).strip() or None) if v is not None else None
+            if not 值 or 值 == "latest":
+                continue
+            表 = RL.依赖项所在的表.get(k)
+            if not 表:
+                continue
+            # ⚠️ 表名来自**写死的映射**,不是请求里的字符串 —— 拼进 SQL 的东西
+            # 只能是我自己写下的那几个名字。
+            在 = c.execute(text(f"select 1 from {表} "
+                              f"where project_id=:p and id=:i limit 1"),
+                          {"p": project_id, "i": 值}).first()
+            if not 在:
+                坏[k] = (f"`{值}` 在 {表} 里找不到 —— "
+                        f"填的是不是**别的东西的 id**?"
+                        f"(比如把 Prompt 的 id 当成 Prompt 版本的 id)")
+        if 坏:
+            raise _错(422, "DEPENDENCY_NOT_FOUND",
+                      "候选里有填不存在的版本号",
+                      "按下面每一条改。**在这里拦住是有意的** —— "
+                      "放过去的话它会在出清单那一刻撞外键,"
+                      "报成一个 500,而那时错误指向服务端而不是这个字段",
+                      field_errors=坏)
+
         新rev = int(d["revision"]) + 1
         c.execute(text("""update application_drafts
                              set definition=cast(:d as jsonb), revision=:r,
