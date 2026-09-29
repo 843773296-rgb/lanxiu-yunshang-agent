@@ -2790,6 +2790,72 @@ function 开面板(aid, 动作, rid, 环, 历史) {
   }
 }
 
+/* ── 模型与连接:建连接 + 探 capabilities ──────────────────────────────
+ *
+ * ⚠️ **这一页最要紧的一条:只收 `secret_ref`,不收明文。**
+ * 表单上**没有「密钥」输入框**,而且这不是遗漏 ——
+ * 服务端那条闸会把「名字像凭据而且给了值」的字段当场拒掉,理由是:
+ * > 明文一旦进过请求体,它就已经进过日志、进过 APM、可能进过错误上报;
+ * > **换个字段名重发也救不回来那一次。**
+ * 所以界面上也不给那个口子:摆一个明文框、再靠后端拒,
+ * 等于把「已经出事了」往后挪一步。
+ *
+ * ⚠️ 用途和适配器的选项**从接口来,不在前端硬编**。
+ * 硬编的代价不是难看,是它和契约会漂 —— 漂的表现是
+ * 界面上少一个能用的选项、或者多一个已经不支持的,**两者都不报错**。
+ * 而适配器接口明说了**不是穷尽清单**(契约只登记了族),
+ * 所以这里画成「输入框 + 已在用的那几个当快捷填」,**不画下拉框** ——
+ * 下拉框会让人以为不在里面的就不能用。
+ */
+const 连接动作 = {
+  async 建(体) {
+    return await 请求(`${P()}/model-connections`,
+      { method: "POST", body: JSON.stringify(体) });
+  },
+  async 探(cid) {
+    // ⚠️ 探测是**异步 + 花钱**(要真打一次模型端点),所以带幂等键。
+    return await 请求(
+      `${P()}/model-connections/${encodeURIComponent(cid)}/probe`,
+      { method: "POST", headers: { "Idempotency-Key": 新键() } });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.连接动作 = 连接动作;
+
+function 页_连接表单(d) {
+  const 用途们 = d["可选用途"] || [];
+  const 适 = d["适配器怎么填"] || {};
+  const 能配 = 我的角色 === "admin";
+  if (!能配) {
+    return `<div class="note"><b>建连接要「配置密钥与预算」这条能力</b> ——
+      你现在是 <b>${esc(我的角色 || "?")}</b>,<b>所以这里不摆表单</b>:
+      摆一个填完被 403 的表单,只是把拒绝往后挪一步。</div>`;
+  }
+  const 选项 = 用途们.map((u) => `<option value="${esc(u["值"])}"${
+    u["这个项目占了吗"] ? " disabled" : ""}>${esc(u["中文"])}（${esc(u["值"])}）${
+    u["这个项目占了吗"] ? ` —— 已经有 ${(u["占着的那几条"] || []).length} 条在用`
+      : ""}</option>`).join("");
+  const 快捷 = (适["这个项目已经在用的"] || [])
+    .map((a) => `<button data-fill="${esc(a)}" class="k">${esc(a)}</button>`).join(" ");
+  return `<div class="state">
+    <h3>建一条连接</h3>
+    <p class="k">${md(适["⚠️"] || "")}</p>
+    <p><label>用途<br><select id="c-use">${选项}</select></label></p>
+    <p><label>适配器（${md(适["规则"] || "")}）<br>
+      <input id="c-ad" style="width:min(320px,90%)" placeholder="MockModelProvider">
+      </label><br>${快捷 ? `<span class="k">已经在用的：</span>${快捷}` : ""}</p>
+    <p><label>endpoint<br>
+      <input id="c-ep" style="width:min(420px,90%)" placeholder="mock://local"></label></p>
+    <p><label>密钥<b>引用</b>（不是密钥本身）<br>
+      <input id="c-sr" style="width:min(420px,90%)" placeholder="secret://vault/xxx">
+      </label></p>
+    <p class="k">⚠️ <b>这里只收引用,没有明文密钥的输入框</b> ——
+      明文一旦进过请求体,它就已经进过日志、进过 APM、可能进过错误上报;
+      <b>换个字段名重发也救不回来那一次</b>。</p>
+    <p><label>名字（可不填）<br>
+      <input id="c-nm" style="width:min(320px,90%)"></label></p>
+    <p><button class="pri" id="c-go">建这条连接</button></p></div>`;
+}
+
 async function 页_模型与连接() {
   $("#main").innerHTML = `<div class="crumb">设置 / 模型与连接</div>
     <div class="head"><div><h1>模型与连接</h1>
@@ -2817,11 +2883,58 @@ async function 页_模型与连接() {
             : `<span class="pill warn">没配</span>`}</td>
           <td>${v["探过吗"] ? `<span class="pill">探过了</span>`
             : `<span class="pill warn">还没探过</span>`}</td>
-          <td class="k">${esc(r["状态"])}</td></tr>`; }).join("")
+          <td class="k">${esc(r["状态"])}
+            ${我的角色 === "admin"
+              ? `<br><button data-probe="${esc(r.id)}" class="k">探一下</button>` : ""}
+          </td></tr>`; }).join("")
       + `</tbody></table><div class="note">${md(d.note || "")}<br>
         ⚠️ <b>「没探过」不等于「支持一切」</b> —— 不探的话,不支持的参数会在
-        几天后某次真实调用上变成一个说不清的 400。<b>发到生产的清单要求它探过。</b></div>`;
+        几天后某次真实调用上变成一个说不清的 400。<b>发到生产的清单要求它探过。</b>
+        ${(d["⚠️同用途多条"] || []).map((x) => `<br><br>${md(x)}`).join("")}</div>`
+      + `<div id="msg2"></div>` + 页_连接表单(d);
+    挂连接事件(d);
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+function 报2(文, 坏) {
+  if ($("#msg2")) {
+    $("#msg2").innerHTML = 文
+      ? `<div class="state ${坏 ? "err" : ""}"><p>${md(文)}</p></div>` : "";
+  }
+}
+
+function 挂连接事件(d) {
+  document.querySelectorAll("[data-fill]").forEach((b) => {
+    b.onclick = () => { if ($("#c-ad")) $("#c-ad").value = b.dataset.fill; };
+  });
+  document.querySelectorAll("[data-probe]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true; 报2("探 capabilities…");
+      try {
+        const r = await 连接动作.探(b.dataset.probe);
+        报2(`探测提交了:${esc(JSON.stringify(r).slice(0, 180))}`);
+        await 页_模型与连接();
+      } catch (e) { 报2(闸文(e), true); b.disabled = false; }
+    };
+  });
+  if (!$("#c-go")) return;
+  $("#c-go").onclick = async () => {
+    const 体 = {
+      用途: $("#c-use").value,
+      适配器: ($("#c-ad").value || "").trim(),
+      endpoint: ($("#c-ep").value || "").trim(),
+      secret_ref: ($("#c-sr").value || "").trim(),
+    };
+    const 名 = ($("#c-nm").value || "").trim();
+    if (名) 体["名字"] = 名;
+    $("#c-go").disabled = true; 报2("建连接…");
+    try {
+      const r = await 连接动作.建(体);
+      报2(`建好了 \`${esc(r.id || "")}\` —— **下一步是探一次 capabilities**:`
+        + `不探的话「没探过」会在发布那一刻把它挡住`);
+      await 页_模型与连接();
+    } catch (e) { 报2(闸文(e), true); $("#c-go").disabled = false; }
+  };
 }
 
 async function 页_成员与权限() {
