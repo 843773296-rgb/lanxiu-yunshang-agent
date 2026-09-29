@@ -120,6 +120,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (「门店助手今天花了多少」答得出来 —— 那是 A1 存在的全部理由)"
 	@./.venv/bin/python tests/e2e/test_usage_flow.py
 	@echo ""
+	@echo "▸ 最后七条端到端(调试四条 + 评测两条 + 改片段):**调试出来的不许冒充正式的**"
+	@echo "  (不计端到端通过 / 写工具换模拟并给清单 / fork 是新 Run / 复核不覆盖 / 改片段出新候选)"
+	@./.venv/bin/python tests/e2e/test_debug_evals_flow.py
+	@echo ""
 	@echo "▸ 工具与能力端到端(§11/§16.3):**风险变大必须出新版本**"
 	@echo "  (只读→会写而旧说明还在被引用 / 密钥只给形状 / 指南不授予权限 / 白名单不是黑名单)"
 	@./.venv/bin/python tests/e2e/test_tools_flow.py
@@ -239,6 +243,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_runctl_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_runctl_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_runctl_flow.log
+	@./.venv/bin/python tests/e2e/test_debug_evals_flow.py > /tmp/prog-test_debug_evals_flow.log 2>&1 \
+	  || { echo "  ❌ test_debug_evals_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_debug_evals_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_debug_evals_flow.log
 	@./.venv/bin/python tests/e2e/test_tools_flow.py > /tmp/prog-test_tools_flow.log 2>&1 \
 	  || { echo "  ❌ test_tools_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_tools_flow.log; exit 1; }

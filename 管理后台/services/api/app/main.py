@@ -166,6 +166,8 @@ import apps_api as _AP
 import connections_api as _CN
 import settings_api as _SET
 import tools_api as _TL
+import debug_api as _DBG
+import evals_api as _EVA
 app.include_router(_WF.router)
 app.include_router(_AG.router)
 app.include_router(_KB.router)
@@ -179,6 +181,8 @@ app.include_router(_AP.router)
 app.include_router(_CN.router)
 app.include_router(_SET.router)
 app.include_router(_TL.router)
+app.include_router(_DBG.router)
+app.include_router(_EVA.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────
