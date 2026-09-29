@@ -79,6 +79,22 @@ def 一个(表, 条件=""):
                          {"p": 项目}).scalar()
 
 
+def 别的一个(表, 排除):
+    """挑一个 id,**不在 `排除` 里**。挑不到返回 None(让断言去说它空跑)。
+
+    ⚠️ 为什么不用 `一个()` 随手挑:清单的内容哈希是按六个依赖算的,
+    随手挑到一个已经用过的组合,接口会正确地返回「没新建」——
+    **而那时红的是我的步骤,不是接口**。
+    """
+    排除 = {x for x in (排除 or set()) if x}
+    with 连接() as c:
+        for r in c.execute(text(f"select id from {表} where project_id=:p limit 50"),
+                           {"p": 项目}):
+            if r[0] not in 排除:
+                return r[0]
+    return None
+
+
 def 指针(aid, 环境):
     with 连接() as c:
         return c.execute(text("""select release_manifest_id from environment_bindings
@@ -241,6 +257,112 @@ def main():
     ck("列表上直接看得到各环境指着哪一版",
        bool(行) and 行[0]["各环境指着哪一版"].get("production") == rid,
        行[0]["各环境指着哪一版"] if 行 else None)
+
+    # ── 八、三条读接口:这条链**读得出来**才做得成界面 ─────────────────
+    # ⚠️ 这三条是 2026-09-29 补的。在那之前这一组 8 条接口**只有 1 条 GET**,
+    # 也就是说发布链**只写不读**:清单 id 只在 POST 的响应里出现一次,
+    # 刷新页面就找不回来;而发布要的 `If-Match`(指针 revision)
+    # **任何接口都没暴露** —— `_指针们()` 读到了它,列表接口把它丢掉了。
+    # 于是这条链在界面上做不起来,只能用 curl 一口气打完。
+    #
+    # 规格 §13.3 点名要的:「左:当前生产清单 / 右:候选清单」「查看完整 Diff」
+    # 「中:… 回滚目标」、回滚时「展示旧版本可用性」—— 全都要读得到。
+    # > **按登记表对账是穷尽的,前提是登记表自己对。**
+    print("\n▸ 八、三条读接口(补登记的 §13.3 那几条)")
+    码, det = 打("GET", f"{P}/applications/{aid}")
+    ck("应用详情 → 200", 码 == 200 and (det or {}).get("id") == aid, 码)
+    环 = (det or {}).get("各环境") or {}
+    ck("**指针的 revision 给出来了** —— 它就是发布要带的 If-Match,"
+       "拿不到就只能不带,而那正是「后到的悄悄覆盖先到的」那条路",
+       isinstance((环.get("production") or {}).get("revision"), int),
+       环.get("production"))
+    ck("而且带上了那一版的**内容**(§13.3 要的「左:当前生产清单」——"
+       "只给一个 id 的话左边那栏没东西可画)",
+       isinstance((环.get("production") or {}).get("那一版的内容"), dict),
+       (环.get("production") or {}).get("那一版的内容"))
+    码, 体 = 打("GET", f"{P}/applications/app_根本没有这个")
+    ck("不存在的应用 → 404", 码 == 404, 码)
+
+    码, hist = 打("GET", f"{P}/applications/{aid}/releases")
+    ck("清单历史 → 200,而且**新的在前**", 码 == 200 and (hist or {}).get("条数", 0) >= 2,
+       (hist or {}).get("条数"))
+    清单们 = (hist or {}).get("清单们") or []
+    ck("每一行都说清**哪些环境指着它**(空 = 这一份从来没上过线)",
+       all("哪些环境指着它" in x for x in 清单们),
+       [(x["id"][-6:], x["哪些环境指着它"]) for x in 清单们])
+    ck("在线那一份标着 production", any("production" in (x["哪些环境指着它"] or [])
+                                   for x in 清单们),
+       [(x["id"][-6:], x["哪些环境指着它"]) for x in 清单们])
+
+    码, one = 打("GET", f"{P}/releases/{rid}")
+    ck("清单详情 → 200", 码 == 200 and (one or {}).get("id") == rid, 码)
+    ck("**算出了「这次审核还算不算数」**,不是只把 approval 原样丢出来 ——"
+       "「审过了」和「审的是这一份」在界面上长得一样,而后者才是判据",
+       (one or {}).get("这次审核还算数吗") is True,
+       {"算数": (one or {}).get("这次审核还算数吗"),
+        "为什么": (one or {}).get("为什么")})
+    码, 体 = 打("GET", f"{P}/releases/rel_根本没有这个")
+    ck("不存在的清单 → 404", 码 == 404, 码)
+    码, 体 = 打("GET", f"{P}/releases/{rid}", 谁="U003")
+    ck("viewer **读得到**(「不能改」不等于「不能看」)", 码 == 200, 码)
+    码, 体 = 打("GET", f"/api/v1/projects/project_demo_b/releases/{rid}")
+    ck("换项目号 → 404(不确认「它在别的项目里存在」)", 码 == 404, 码)
+
+    # ── 九、旧审核不许跟到新清单上 ───────────────────────────────────
+    # ⚠️ 这一条是这三条读接口里**唯一一条界面上看不出来的**,所以必须打。
+    # 审核记的是「审的哪一份内容」(比内容哈希),而不是一个布尔。
+    # 存成 `approved=true` 的话,「改完再发」这条路就是通的**而且不报错** ——
+    # 表现是线上跑着一份没人审过的东西,而界面上写着「已审核」。
+    print("\n▸ 九、改完候选另出一份 → **旧审核不跟过来**")
+    # ⚠️ **这一页有两个 revision,别混** —— 我写这段的时候当场栽了一次:
+    # 拿应用的 `revision` 去改候选 → 409。改候选认的是**草稿自己那个**。
+    # 顺手把这件事变成一条断言:两个数**必须分得开**,
+    # 否则界面上随手拿一个就是 409,而 409 读起来像「别人改过了」。
+    ck("详情里给了 `候选revision`(改候选的 If-Match 认这个,"
+       "不是应用的 revision —— 两个数各自独立地涨)",
+       isinstance((det or {}).get("候选revision"), int),
+       {"候选revision": (det or {}).get("候选revision"),
+        "应用revision": (det or {}).get("revision")})
+    码, 体 = 打("PATCH", f"{P}/applications/{aid}/draft",
+              {"prompt_version_id": PV},
+              头={"If-Match": str((det or {}).get("revision"))})
+    ck("拿**应用的** revision 去改候选 → 409(两个数不通用)",
+       码 == 409 or (det or {}).get("候选revision") == (det or {}).get("revision"),
+       {"码": 码, "拿的是": (det or {}).get("revision")})
+
+    # ⚠️ 换一个**这个应用从来没用过**的 Prompt 版本 —— 从历史里现算,不随手挑一个。
+    # 第一版我随手加了个 `evaluation_id`,结果那个组合**恰好等于一份已经存在
+    # 而且审过的清单**,于是接口正确地返回「没新建」(同样的内容两个清单号,
+    # 「发布的是哪一份」就有两个答案),而我的断言指着接口说它错了。
+    # > 判据是对的,我的步骤不对 —— 这一族今天第四次。
+    用过的 = {(x.get("清单") or {}).get("prompt_version_id") for x in 清单们}
+    新PV = 别的一个("prompt_versions", 用过的)
+    ck("找得到一个**这个应用没用过**的 Prompt 版本(找不到的话下面几条是空跑)",
+       bool(新PV), {"用过的": sorted(x for x in 用过的 if x), "挑中": 新PV})
+    码, d2 = 打("PATCH", f"{P}/applications/{aid}/draft",
+              {"prompt_version_id": 新PV},
+              头={"If-Match": str((det or {}).get("候选revision"))})
+    ck("拿**候选的** revision 去改 → 200", 码 == 200, 码)
+    码, 新清单 = 打("POST", f"{P}/applications/{aid}/releases")
+    新id = (新清单 or {}).get("id")
+    ck("依赖变了 → **另出一份新清单**(不是改原来那一份)",
+       码 == 201 and (新清单 or {}).get("新建了吗") is True and 新id != rid,
+       {"新建了吗": (新清单 or {}).get("新建了吗"), "同一份吗": 新id == rid})
+    码, n1 = 打("GET", f"{P}/releases/{新id}")
+    ck("新清单上 **这次审核还算数吗 = false**(旧审核没跟过来)",
+       (n1 or {}).get("这次审核还算数吗") is False,
+       {"算数": (n1 or {}).get("这次审核还算数吗"), "为什么": (n1 or {}).get("为什么")})
+    ck("而且**说清了为什么**(「还没审」/「审的是驳回」/「审的是另一份内容」"
+       "—— 三种下一步完全不同)",
+       bool((n1 or {}).get("为什么")), (n1 or {}).get("为什么"))
+    码, o1 = 打("GET", f"{P}/releases/{rid}")
+    ck("**老清单的审核照样算数**(清单不可变 —— 一旦审过就永远算数)",
+       (o1 or {}).get("这次审核还算数吗") is True,
+       (o1 or {}).get("为什么"))
+    码, 体 = 打("POST", f"{P}/releases/{新id}/deploy", {"环境": "production"},
+              谁=发布员, 头={"Idempotency-Key": K()})
+    ck("拿这份**没审过**的清单发生产 → 422(生产只认审过的)",
+       码 == 422 and (体 or {}).get("code") == "CANNOT_DEPLOY", 码)
 
     print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}")
     if 挂:

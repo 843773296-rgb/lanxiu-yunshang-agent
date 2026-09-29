@@ -86,6 +86,21 @@ def _取草稿(c, project_id, aid):
     return dict(r) if r else None
 
 
+def _审核体(原):
+    """把 `release_manifests.approval` 读成 dict(或 None)。
+
+    ⚠️ 这个转换原来**写在发布那条接口里面**,而三条读接口也要它 ——
+    各自再写一遍的话,「审核长什么样」就有了四份实现,
+    而它们会在某一天不一致,**且不一致的表现是界面上少显示一句话**。
+    """
+    if isinstance(原, str):
+        try:
+            return _json.loads(原)
+        except Exception:
+            return None
+    return 原 or None
+
+
 def _指针们(c, project_id, aid):
     return {r["environment"]: dict(r) for r in c.execute(text("""
         select environment, release_manifest_id, revision
@@ -122,6 +137,150 @@ def 应用列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
     return {"条数": len(出), "应用": 出,
             "note": ("`各环境指着哪一版` 为空 = **这个应用还没有任何一版在跑** —— "
                      "和「跑的是最新的那一版」完全不是一回事")}
+
+
+@router.get(前缀 + "/applications/{aid}")
+def 应用详情(project_id: str, aid: str,
+         me: 身份 = Depends(要权限("查看有权配置"))):
+    """一个应用的详情。**各环境指针连 revision 一起给。**
+
+    ⚠️ **revision 必须给出来,这不是顺手加的字段。**
+    `POST /releases/{id}/deploy` 用它做 `If-Match`;而在这条接口之前,
+    这个数**任何地方都拿不到**(`_指针们()` 读到了它,列表接口把它丢掉了)。
+    拿不到就只能不带 `If-Match` 发 —— 而那正是
+    「两个人同时发布不同版本、后到的悄悄覆盖先到的、**两边都收到成功**」那条路。
+    """
+    with 连接() as c:
+        a = c.execute(text("""select id, name, pipeline_type, revision, created_at
+                             from applications
+                            where project_id=:p and id=:i and archived_at is null"""),
+                      {"p": project_id, "i": aid}).mappings().first()
+        if not a:
+            raise _错(404, "NOT_FOUND", f"没有应用 {aid}", "回列表重新进入")
+        a = dict(a)
+        指 = _指针们(c, project_id, aid)
+        草 = _取草稿(c, project_id, aid)
+        定义 = (草 or {}).get("definition") or {}
+        问 = RL.可以出候选吗(流水线=a["pipeline_type"], 草稿=定义)
+        # 每个环境现在指着哪一份,以及**那一份是什么内容** ——
+        # 规格 §13.3 要的是「左:当前生产清单 / 右:候选清单」,
+        # 只给一个 id 的话左边那栏没东西可画。
+        环境们 = {}
+        for e, v in 指.items():
+            清单 = None
+            if v.get("release_manifest_id"):
+                m = c.execute(text("""select * from release_manifests
+                                     where project_id=:p and id=:i"""),
+                              {"p": project_id,
+                               "i": v["release_manifest_id"]}).mappings().first()
+                if m:
+                    清单 = {k: dict(m).get(k) for k, _ in RL.依赖项}
+            环境们[e] = {"指着哪一版": v.get("release_manifest_id"),
+                       "revision": v.get("revision"),
+                       "那一版的内容": 清单}
+    return {
+        "id": a["id"], "名字": a["name"], "流水线": a["pipeline_type"],
+        "revision": a["revision"],
+        "各环境": 环境们 or None,
+        "候选": {k: (定义.get(k) or None) for k, _ in RL.依赖项},
+        # ⚠️ **草稿有它自己的 revision,和应用的 revision 不是一个数。**
+        # 改候选(`PATCH .../draft`)的 `If-Match` 认的是**这一个**。
+        # 2026-09-29 写测试时当场栽了一次:拿应用的 revision 去改候选 → 409。
+        # 这是和上面那个指针 revision **一模一样的洞** ——
+        # 一个界面上必须有、而任何读接口都拿不到的数。
+        # 为什么不给 0 当默认:**还没有草稿**和**草稿在第 0 版**下一步不同,
+        # 前者要先 PATCH 建出来(不带 If-Match),后者要带 If-Match。
+        # 三值:没有草稿 → null。
+        "候选revision": (草 or {}).get("revision"),
+        "候选能出清单吗": not 问,
+        "候选还差什么": 问 or None,
+        "note": ("**这一页有两个 revision,别混。** "
+                 "`各环境[环境].revision` 是发布(切指针)要带的 `If-Match`;"
+                 "`候选revision` 是改候选要带的那个 —— 它们各自独立地涨。"
+                 "`候选revision` 为 null = **还没有草稿**(第一次 PATCH 不带 If-Match),"
+                 "和「草稿在第 0 版」不是一回事。"
+                 "`各环境` 为空 = 这个应用**还没有任何一版在跑**,"
+                 "和「跑的是最新那一版」完全不是一回事"),
+    }
+
+
+@router.get(前缀 + "/applications/{aid}/releases")
+def 发布清单历史(project_id: str, aid: str,
+           me: 身份 = Depends(要权限("查看有权配置"))):
+    """这个应用出过的发布清单,新的在前。
+
+    ⚠️ 每一行都带 **「这次审核还算不算数」** 和 **「哪些环境现在指着它」**。
+
+    为什么不只给 `approval` 原样:审核记的是「**审的哪一份内容**」(比内容哈希),
+    界面自己去比哈希的话,那条规矩就变成了每个前端各实现一遍 ——
+    **一条只写在一个地方的规矩,拦不住第二个读它的人**。
+    """
+    with 连接() as c:
+        if not c.execute(text("""select 1 from applications
+                               where project_id=:p and id=:i and archived_at is null"""),
+                         {"p": project_id, "i": aid}).first():
+            raise _错(404, "NOT_FOUND", f"没有应用 {aid}", "回列表重新进入")
+        指反 = {}
+        for e, v in _指针们(c, project_id, aid).items():
+            if v.get("release_manifest_id"):
+                指反.setdefault(v["release_manifest_id"], []).append(e)
+        出 = []
+        for m in c.execute(text("""select * from release_manifests
+                                 where project_id=:p and application_id=:a
+                                 order by created_at desc"""),
+                           {"p": project_id, "a": aid}).mappings():
+            m = dict(m)
+            算数, 为什么 = RL.审核还算数吗(审核=_审核体(m.get("approval")),
+                                   清单内容哈希=m.get("content_hash"))
+            出.append({
+                "id": m["id"], "内容哈希": m.get("content_hash"),
+                "出清单时间": m.get("created_at"), "出清单的人": m.get("created_by"),
+                "审核": _审核体(m.get("approval")),
+                "这次审核还算数吗": 算数, "为什么": None if 算数 else 为什么,
+                "哪些环境指着它": 指反.get(m["id"]) or None,
+                "清单": {k: m.get(k) for k, _ in RL.依赖项},
+            })
+    return {"条数": len(出), "清单们": 出,
+            "note": ("`哪些环境指着它` 为空 = **这一份从来没上过线**(或者已经被换下来了)。"
+                     "`这次审核还算数吗` 判的是「**审的是不是这一份**」,"
+                     "不是「审过没有」—— 清单是不可变的,所以一旦审过就永远算数;"
+                     "而另出一份新清单要**重新审**")}
+
+
+@router.get(前缀 + "/releases/{rid}")
+def 发布清单详情(project_id: str, rid: str,
+           me: 身份 = Depends(要权限("查看有权配置"))):
+    """一份发布清单。**含审核结论,以及那次审核还算不算数。**
+
+    ⚠️ 只把 `approval` 原样丢出去的话,界面上只能显示「审过了」——
+    而「审过了」和「审的是这一份」不是一回事,
+    **这两者在界面上长得一模一样,而后者才是生产能不能发的判据**。
+    """
+    with 连接() as c:
+        m = c.execute(text("""select * from release_manifests
+                             where project_id=:p and id=:i"""),
+                      {"p": project_id, "i": rid}).mappings().first()
+        if not m:
+            raise _错(404, "NOT_FOUND", f"没有发布清单 {rid}",
+                      "回应用详情重新进入")
+        m = dict(m)
+        审核 = _审核体(m.get("approval"))
+        算数, 为什么 = RL.审核还算数吗(审核=审核, 清单内容哈希=m.get("content_hash"))
+        指着它的 = [e for e, v in _指针们(c, project_id, m["application_id"]).items()
+                 if v.get("release_manifest_id") == rid]
+    return {
+        "id": m["id"], "application_id": m["application_id"],
+        "内容哈希": m.get("content_hash"),
+        "出清单时间": m.get("created_at"), "出清单的人": m.get("created_by"),
+        "清单": {k: m.get(k) for k, _ in RL.依赖项},
+        "审核": 审核,
+        "这次审核还算数吗": 算数, "为什么": None if 算数 else 为什么,
+        "哪些环境指着它": 指着它的 or None,
+        "note": ("**清单写下就不许改** —— 所以这一份的内容哈希永远是这个,"
+                 "一旦审过就永远算数。改候选会另出一份新清单,那一份要重新审。"
+                 "`这次审核还算数吗` 是 false 时,`为什么` 说清是"
+                 "「还没审」「审的是驳回」还是「审的是另一份内容」"),
+    }
 
 
 @router.post(前缀 + "/applications", status_code=201)
@@ -322,10 +481,7 @@ async def 发布(project_id: str, rid: str, request: Request,
                              where project_id=:p and id=:i"""),
                       {"p": project_id, "i": rid}).mappings().first()
         r = dict(r) if r else None
-        审核 = (r or {}).get("approval")
-        if isinstance(审核, str):
-            try: 审核 = _json.loads(审核)
-            except Exception: 审核 = None
+        审核 = _审核体((r or {}).get("approval"))
         # 这份清单钉的那个连接配置版本,探过 capabilities 没有。
         # ⚠️ **三值**:查不到那一行 → None(不判这一条),而不是 False ——
         # 「没有这个版本」和「有但没探过」下一步不同。

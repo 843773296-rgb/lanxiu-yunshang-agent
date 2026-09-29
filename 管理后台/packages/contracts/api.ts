@@ -124,6 +124,9 @@ export const ENDPOINTS = [
   { method: "POST", path: "/evaluations", summary: "建评测", capability: "运行评测", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "POST", path: "/evaluations/{id}/reviews", summary: "人工复核", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/applications", summary: "应用列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/applications/{id}", summary: "应用详情(各环境指针**带 revision**)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/applications/{id}/releases", summary: "发布清单历史", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/releases/{id}", summary: "发布清单详情(含审核结论)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/applications", summary: "建应用", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/applications/{id}/draft", summary: "改应用候选配置", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/applications/{id}/releases", summary: "出发布候选(冻结依赖)", capability: "生产审核/发布/回滚", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -181,4 +184,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 95 条接口 · 19 条异步 · 22 条要幂等键 · 11 条要 If-Match */
+/** 共 98 条接口 · 19 条异步 · 22 条要幂等键 · 11 条要 If-Match */
