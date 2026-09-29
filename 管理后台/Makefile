@@ -129,6 +129,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 接口闭环与**禁止行为**(44 条:跨项目、权限、乐观锁、幂等、脱敏、未知费用)"
 	@./.venv/bin/python tests/e2e/test_api_flow.py
 	@echo ""
+	@echo "▸ 样本页改样本**在页面代码里真走一遍**(17 条)"
+	@echo "  ⚠️ 它同时是一条**安全边界**:断的是「接口有没有给原文」,不是「界面有没有显示」"
+	@node tests/e2e/test_sample_page_actions.js
+	@echo ""
 	@echo "▸ 运行控制四个动作**在页面代码里真走一遍**(20 条)"
 	@echo "  ⚠️ 这四个是**出事那天唯一的手段**;合法与否由接口算 —— 前端猜等于把状态机抄一遍"
 	@node tests/e2e/test_runctl_page_actions.js
@@ -167,10 +171,6 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (「门店助手今天花了多少」答得出来 —— 那是 A1 存在的全部理由)"
 	@./.venv/bin/python tests/e2e/test_usage_flow.py
 	@echo ""
-	@echo "▸ 最后七条端到端(调试四条 + 评测两条 + 改片段):**调试出来的不许冒充正式的**"
-	@echo "  (不计端到端通过 / 写工具换模拟并给清单 / fork 是新 Run / 复核不覆盖 / 改片段出新候选)"
-	@./.venv/bin/python tests/e2e/test_debug_evals_flow.py
-	@echo ""
 	@echo "▸ 工具与能力端到端(§11/§16.3):**风险变大必须出新版本**"
 	@echo "  (只读→会写而旧说明还在被引用 / 密钥只给形状 / 指南不授予权限 / 白名单不是黑名单)"
 	@./.venv/bin/python tests/e2e/test_tools_flow.py
@@ -196,6 +196,15 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  ⚠️ 要先 python3 tools/seed_datasets.py 铺那六份「每份专考一道闸」的数据集"
 	@./.venv/bin/python tools/seed_datasets.py > /dev/null
 	@./.venv/bin/python tests/e2e/test_datasets_flow.py
+	@echo ""
+# ⚠️ **评测那一份必须排在数据集之后。** 它要一个**已冻结的数据集版本**,
+# 而冻结是 `test_datasets_flow` 干的 —— 和训练那一份同一条依赖。
+# 这是今天第三次修「靠残留成立的顺序」(前两次是训练、数据集自己的 seed):
+# 一份测试依赖**另一份测试的产物**,而在开发机上残留一直在,
+# 于是它和「真的没有依赖」长得一模一样。
+	@echo "▸ 最后七条端到端(调试四条 + 评测两条 + 改片段):**调试出来的不许冒充正式的**"
+	@echo "  (不计端到端通过 / 写工具换模拟并给清单 / fork 是新 Run / 复核不覆盖 / 改片段出新候选)"
+	@./.venv/bin/python tests/e2e/test_debug_evals_flow.py
 	@echo ""
 # ⚠️ **训练那一份必须排在数据集那一份之后。** 它要一个**已经冻结的数据集版本**,
 # 而冻结是 `test_datasets_flow` 干的 —— 这条依赖以前没写在顺序上:
@@ -275,6 +284,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_api_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_api_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_api_flow.log
+	@node tests/e2e/test_sample_page_actions.js > /tmp/prog-test_sample_page_actions.log 2>&1 \
+	  || { echo "  ❌ test_sample_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_sample_page_actions.log; exit 1; }
+	@tail -2 /tmp/prog-test_sample_page_actions.log
 	@node tests/e2e/test_runctl_page_actions.js > /tmp/prog-test_runctl_page_actions.log 2>&1 \
 	  || { echo "  ❌ test_runctl_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_runctl_page_actions.log; exit 1; }
@@ -315,10 +328,6 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_runctl_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_runctl_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_runctl_flow.log
-	@./.venv/bin/python tests/e2e/test_debug_evals_flow.py > /tmp/prog-test_debug_evals_flow.log 2>&1 \
-	  || { echo "  ❌ test_debug_evals_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
-	       tail -24 /tmp/prog-test_debug_evals_flow.log; exit 1; }
-	@tail -2 /tmp/prog-test_debug_evals_flow.log
 	@./.venv/bin/python tests/e2e/test_tools_flow.py > /tmp/prog-test_tools_flow.log 2>&1 \
 	  || { echo "  ❌ test_tools_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_tools_flow.log; exit 1; }
@@ -345,6 +354,11 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_datasets_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_datasets_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_datasets_flow.log
+# ⚠️ 评测那一份**排在数据集之后** —— 它要一个已冻结的数据集版本。理由见 test-e2e 里同一处。
+	@./.venv/bin/python tests/e2e/test_debug_evals_flow.py > /tmp/prog-test_debug_evals_flow.log 2>&1 \
+	  || { echo "  ❌ test_debug_evals_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_debug_evals_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_debug_evals_flow.log
 # ⚠️ 训练那一份**必须排在数据集之后** —— 它要一个已冻结的数据集版本,
 # 而冻结是 test_datasets_flow 干的。理由见 test-e2e 里同一处的注释。
 	@./.venv/bin/python tools/seed_training.py > /tmp/prog-seedtr.log 2>&1 \

@@ -258,6 +258,12 @@ def 样本列表(project_id: str, dsid: str,
             "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None,
         } for r in rs],
         "看得到原文吗": bool(看原文),
+        # ⚠️ **改样本的表单要填什么,由接口给。** 前端硬编一份的话它和契约会漂 ——
+        # 漂的表现是界面上少一个能选的、或者多一个会被 422 拒的,**两者都不报错**。
+        "可选分集": list(evals.分集),
+        "可选复核状态": list(evals.复核状态们),
+        "组怎么填": ("**没有白名单** —— 它是业务自己起的分组名。"
+                 "同一组的样本不许跨分集(那会让独立测试集和训练集出现同源题)"),
         "note": ("每条的 `revision` 就是改它时要带的 `If-Match` —— "
                  "**不是数据集的 revision**。"
                  + ("" if 看原文 else
@@ -304,8 +310,12 @@ async def 改样本(project_id: str, dsid: str, sid: str, request: Request,
                           "检查提交的 JSON 形状")
             改["content"] = _json.dumps(c2, ensure_ascii=False)
             改["content_hash"] = _哈希(c2)
+        # ⚠️ **复核状态原来是 `None`(任意字符串都收)。** 2026-09-29 补上白名单 ——
+        # 理由和审核那条接口一字不差:一个拼错的值会**自成一档**,
+        # 而列表、筛选、统计照样工作,只是那条样本从此哪一档都不属于。
+        # 「组」不设白名单是**有意的**:它是业务自己起的分组名,没有固定集合。
         for 中, 英, 白 in (("分集", "split", evals.分集),
-                          ("复核状态", "review_status", None),
+                          ("复核状态", "review_status", evals.复核状态们),
                           ("组", "group_id", None)):
             if 中 in 体 or 英 in 体:
                 v = 体.get(中, 体.get(英))

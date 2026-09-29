@@ -45,21 +45,30 @@ const { ck, 组, 结束, 状 } = 桩.计分(该跑几组);
   try {
     // ── ① 详情里拿得到 revision ──────────────────────────────────
     组("① 详情里拿得到 `revision`(2026-09-29 才有的)");
-    const [码L, L] = await 桩.直打("GET", `${P}/execution-runs`, null, "U001");
-    const 运行们 = ((L || {}).items || []);
-    ck("运行列表拿得到", 码L === 200 && 运行们.length > 0, 运行们.length);
-    // ⚠️ 挑一个**非终态**的 —— 拿终态的来验控制动作会全被拒,
-    // 而那时红的理由是「已经结束了」,和接线对不对无关。
-    let 目标 = null, 详 = null;
-    for (const r of 运行们) {
-      const [, one] = await 桩.直打("GET",
-        `${P}/execution-runs/${encodeURIComponent(r.id)}`, null, "U001");
-      if (one && one["是终态吗"] === false) { 目标 = r.id; 详 = one; break; }
-    }
-    ck("找得到一个**非终态**的运行(找不到的话下面三组是空跑 —— "
-       + "拿终态的来验控制动作会全被拒,而那时红的理由和接线无关)",
-       Boolean(目标), 目标);
+    // ⚠️ **自己发起一次运行,不挑现成的。**
+    //
+    // 第一版是「从列表里挑一个非终态的」,而这一份每跑一次就把一个运行
+    // **推成终态** —— 跑几遍就没得挑了,`make progress` 当场红。
+    // (判据本身没错:它拒绝在「挑不到」时蒙混过关,红得对。
+    //  错的是测试**消耗共享资源** —— 和连接那一页同一条规矩:
+    //  **自己建夹具,别动现成的**。)
+    const [码W, W] = await 桩.直打("GET", `${P}/workflows`, null, "U001");
+    const wf = ((W || {}).items || [])[0];
+    ck("找得到一个工作流当夹具(找不到的话下面全是空跑)", Boolean(wf), wf && wf.id);
+    if (!wf) { 结束(弹过); return; }
+    const [码N, 新运行] = await 桩.直打("POST", `${P}/execution-runs`,
+      { workflow_id: wf.id, 输入: {}, 模式: "mock" }, "U001",
+      { "Idempotency-Key": "rc" + Date.now().toString(16)
+        + Math.random().toString(16).slice(2, 8) });
+    ck("自己发起一次运行 → 拿到 id",
+       (码N === 201 || 码N === 202) && 新运行 && (新运行.id || 新运行.resource_id),
+       { 码: 码N, id: 新运行 && (新运行.id || 新运行.resource_id) });
+    const 目标 = 新运行 && (新运行.id || 新运行.resource_id);
     if (!目标) { 结束(弹过); return; }
+    const [, 详] = await 桩.直打("GET",
+      `${P}/execution-runs/${encodeURIComponent(目标)}`, null, "U001");
+    ck("它现在**不是终态**(刚发起的,还没人跑它)",
+       (详 || {})["是终态吗"] === false, (详 || {})["执行状态"]);
     ck("详情里给了 `revision`(**控制动作拿它做 If-Match**;"
        + "拿不到就只能不带,而那正是「后到的悄悄覆盖先到的」那条路)",
        typeof (详 || {}).revision === "number", (详 || {}).revision);

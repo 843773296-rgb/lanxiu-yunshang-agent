@@ -3114,7 +3114,9 @@ async function 页_数据集() {
       <th>分档</th><th>冻结过几版</th><th>能导出吗</th></tr></thead><tbody>`
       + d["数据集"].map((r) => `<tr>
         <td><b>${esc(r["名字"])}</b><div class="k">${esc(r.id)}</div></td>
-        <td>${r["样本数"]}</td>
+        <td>${r["样本数"]
+          ? `<a href="#/samples/${encodeURIComponent(r.id)}">${r["样本数"]}</a>`
+          : `<span class="k">0</span>`}</td>
         <td class="k">${esc(Object.entries(r["分档"] || {})
               .map(([k, v]) => `${k} ${v}`).join("、") || "—")}</td>
         <td>${r["冻结过几版"]}</td>
@@ -3127,6 +3129,141 @@ async function 页_数据集() {
         </td></tr>`).join("")
       + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+/* ── 数据集 / 样本:看一条、改一条 ────────────────────────────────────
+ *
+ * ⚠️ **原文默认看不到,而这一页不去绕它。**
+ * 样本是真实客户对话(姓名/手机/地址/尺寸)。接口给的是形状和标注
+ * (分集、复核状态、内容哈希、**字数**、revision),原文要那条字段级授权。
+ * 所以这一页:
+ *   · 没有授权时显示**字数**,并明说为什么看不到 —— **不显示截断版**:
+ *     截到前几个字,那几个字仍然是原文,而「截断过」会让人以为它安全了;
+ *   · 「本来是空的」和「被挡住了」**画成两种** —— 下一步完全不同。
+ *
+ * ⚠️ 改样本的 `If-Match` 认的是**那条样本自己的 revision**,
+ * 不是数据集的。混起来的表现是 409「这条样本已经被改过」,
+ * 而它读起来像「别人改过了」。
+ */
+const 样本动作 = {
+  async 改(dsid, sid, 补丁, 样本revision) {
+    // ⚠️ revision 为空时当场报错,不发请求 —— 服务端会回
+    // 409 IF_MATCH_REQUIRED,而那句话让人以为是接口的问题。
+    if (样本revision == null) {
+      const e = new Error("这条样本读不到 revision —— 样本列表应该给它");
+      e.体 = { code: "NO_SAMPLE_REVISION",
+               advice: "刷新一次;还是这样就是列表接口没返回 revision" };
+      e.码 = 0;
+      throw e;
+    }
+    return await 请求(
+      `${P()}/datasets/${encodeURIComponent(dsid)}`
+      + `/samples/${encodeURIComponent(sid)}`,
+      { method: "PATCH", headers: { "If-Match": String(样本revision) },
+        body: JSON.stringify(补丁) });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.样本动作 = 样本动作;
+
+async function 页_样本(dsid) {
+  $("#main").innerHTML = `<div class="crumb">评测 /
+      <a href="#/datasets">数据集</a> / 样本</div>
+    <div class="head"><div><h1>样本</h1>
+      <div class="sub"><b>原文默认看不到</b> —— 样本是真实客户对话。
+        给的是形状和标注,<b>不给截断版</b>:截到前几个字,那几个字仍然是原文。</div>
+    </div></div>
+    <div id="smsg"></div>
+    <div id="slist"><div class="state">加载中…</div></div>`;
+  await 画样本(dsid);
+}
+
+async function 画样本(dsid) {
+  try {
+    const d = await 请求(`${P()}/datasets/${encodeURIComponent(dsid)}/samples`);
+    const 样本们 = d["样本们"] || [];
+    if (!样本们.length) {
+      $("#slist").innerHTML = 状态("", "这个数据集里一个样本都没有",
+        "**空的导出文件看起来是成功的** —— 所以导出那道闸会先拦住它。").html;
+      return;
+    }
+    const 分集选项 = (d["可选分集"] || []);
+    const 复核选项 = (d["可选复核状态"] || []);
+    const 能改 = 我的角色 === "annotator" || 我的角色 === "admin"
+      || 我的角色 === "editor";
+    $("#slist").innerHTML = `<div class="note">
+        ${d["看得到原文吗"]
+          ? `<b>你有「查看敏感输入」授权,下面显示原文。</b>`
+          : `<b>你看不到原文</b>(要「查看敏感输入/独立测试答案」专项授权)——
+             下面给的是字数和哈希,<b>足够做「改哪一条」这个动作</b>。`}
+        <br>${md(d.note || "")}</div>
+      <table><thead><tr><th>样本</th><th>分集</th><th>复核状态</th><th>组</th>
+        <th>内容</th><th>改</th></tr></thead><tbody>`
+      + 样本们.map((s) => {
+        const 内 = s["内容"] || {};
+        // ⚠️ 三种情况三种画法:给看 / 不给看 / 本来就是空的。
+        const 内格 = !内["有内容吗"]
+          ? `<span class="k">这条本身是空的</span>`
+          : 内["原文"] != null
+            ? `<code style="font-size:11px">${esc(
+                 JSON.stringify(内["原文"]).slice(0, 80))}</code>`
+            : `<span class="k">${内["字数"]} 字 · 被挡住(没授权)</span>`;
+        return `<tr><td><code style="font-size:11px">${esc(s.id)}</code>
+            <div class="k">revision ${esc(s["revision"])}
+              —— <b>改它的 If-Match 认这个</b></div></td>
+          <td>${能改
+            ? `<select data-sp="split" data-sid="${esc(s.id)}">${
+                分集选项.map((x) => `<option${x === s["分集"] ? " selected" : ""}
+                  >${esc(x)}</option>`).join("")}</select>`
+            : esc(s["分集"] || "—")}</td>
+          <td>${能改
+            ? `<select data-sp="review" data-sid="${esc(s.id)}">${
+                复核选项.map((x) => `<option${x === s["复核状态"] ? " selected" : ""}
+                  >${esc(x)}</option>`).join("")}</select>`
+            : esc(s["复核状态"] || "—")}</td>
+          <td class="k">${esc(s["组"] || "—")}</td>
+          <td>${内格}</td>
+          <td>${能改
+            ? `<button data-save="${esc(s.id)}" data-rev="${esc(s["revision"])}"
+                >保存</button>`
+            : `<span class="k">要「改训练样本」</span>`}</td></tr>`;
+      }).join("")
+      + `</tbody></table>
+        <div class="note">⚠️ <b>改一条已经被冻结版本引用过的样本是允许的</b> ——
+          而且不会动那个版本,因为冻结<b>固化了内容</b>。
+          如果冻结只存指针,这里每改一次都会<b>悄悄改掉历史上那一版评测用的题</b>,
+          于是「同一批题、换个配置、分数变没变」这个问题就问不成了 ——
+          <b>而那个变化不会报错,只会让两次的分数不可比而看起来可比</b>。
+          ${能改 ? "" : `<br>你现在是 <b>${esc(我的角色 || "?")}</b>,
+            改样本要「改训练样本」这条能力 —— <b>所以这里不摆表单</b>。`}</div>`;
+    document.querySelectorAll("[data-save]").forEach((b) => {
+      b.onclick = async () => {
+        const sid = b.dataset.save;
+        const 补 = {};
+        const g = (名) => document.querySelector(
+          `[data-sp="${名}"][data-sid="${sid}"]`);
+        if (g("split")) 补["分集"] = g("split").value;
+        if (g("review")) 补["复核状态"] = g("review").value;
+        b.disabled = true;
+        if ($("#smsg")) $("#smsg").innerHTML = `<div class="state"><p>保存中…</p></div>`;
+        try {
+          // ⚠️ revision 从**这一行的 data-rev** 拿,不是从某个全局变量 ——
+          // 一页上有好多条样本,各自的 revision 各自涨。
+          const r = await 样本动作.改(dsid, sid, 补, Number(b.dataset.rev));
+          if ($("#smsg")) {
+            $("#smsg").innerHTML = `<div class="state"><p>改好了 ——
+              revision ${esc(r["revision"])}${md(r.note ? "。" + r.note : "")}</p></div>`;
+          }
+          await 画样本(dsid);
+        } catch (e) {
+          if ($("#smsg")) $("#smsg").innerHTML = 错误块(e, null).html;
+          b.disabled = false;
+        }
+      };
+    });
+  } catch (e) {
+    const s = 错误块(e, () => 画样本(dsid));
+    $("#slist").innerHTML = s.html; s.挂();
+  }
 }
 
 async function 页_训练任务() {
@@ -3227,6 +3364,7 @@ async function 路由() {
     if (h === "#/conns") return await 页_模型与连接();
     if (h === "#/members") return await 页_成员与权限();
     if (h === "#/datasets") return await 页_数据集();
+    if (h.startsWith("#/samples/")) return await 页_样本(decodeURIComponent(h.slice(10)));
     if (h === "#/training") return await 页_训练任务();
     if (h === "#/artifacts") return await 页_模型产物();
     $("#main").innerHTML = 状态("", "这一页还没实现",
