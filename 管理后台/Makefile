@@ -120,6 +120,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (「门店助手今天花了多少」答得出来 —— 那是 A1 存在的全部理由)"
 	@./.venv/bin/python tests/e2e/test_usage_flow.py
 	@echo ""
+	@echo "▸ 工具与能力端到端(§11/§16.3):**风险变大必须出新版本**"
+	@echo "  (只读→会写而旧说明还在被引用 / 密钥只给形状 / 指南不授予权限 / 白名单不是黑名单)"
+	@./.venv/bin/python tests/e2e/test_tools_flow.py
+	@echo ""
 	@echo "▸ 设置组端到端(§15.3/§15.4):**审计终于读得出来了**"
 	@echo "  (前面十几块写的留痕 / 不能授予自己没有的权限 / 不许去掉最后一个能管权限的人 / 预算 0 不是不限)"
 	@./.venv/bin/python tests/e2e/test_settings_flow.py
@@ -235,6 +239,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_runctl_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_runctl_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_runctl_flow.log
+	@./.venv/bin/python tests/e2e/test_tools_flow.py > /tmp/prog-test_tools_flow.log 2>&1 \
+	  || { echo "  ❌ test_tools_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_tools_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_tools_flow.log
 	@./.venv/bin/python tests/e2e/test_settings_flow.py > /tmp/prog-test_settings_flow.log 2>&1 \
 	  || { echo "  ❌ test_settings_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_settings_flow.log; exit 1; }
@@ -289,6 +297,11 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  合成一个准确率等于让一次泄露和一条样本互相抵消 —— 两种错的代价完全不对称"
 	@echo "  ⚠️ 已知盲区内的漏检**不计入红**,但逐条列出来:盲区是待办,不是免责声明"
 	@./.venv/bin/python tools/redact_coverage.py
+	@echo ""
+	@echo "▸ JSONB 列写裸串:**今天栽了八次的那一族**"
+	@echo "  `sql_columns_check` 只查列名不查类型 —— 那条已知盲区两天里放过去 8 次同一个错"
+	@echo "  ⚠️ 判据改了三版才咬得住:盯错不变量 → 留的口子正好放过真 bug → 收紧过头又漏"
+	@./.venv/bin/python tools/jsonb_cast_check.py
 	@echo ""
 	@echo "▸ SQL 列名体检:**问 information_schema,不猜列名**"
 	@echo "  (同一天栽了四次「没查就写 SQL」:三次猜类型、一次猜列名)"

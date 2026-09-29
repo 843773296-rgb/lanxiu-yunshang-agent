@@ -122,23 +122,30 @@ def _跑一次prompt(c, job, 打点):
                {"text": r["text"], "execution_mode": r["execution_mode"]},
                ensure_ascii=False), "u": 我是谁})
     # 费用:mock 没有真实计价 → **amount_known=false,不写 0**
-    c.execute(text("""
-        insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
-            resource, quantity, unit, currency, amount, amount_known, source,
-            created_at, created_by)
-        values (:i,:o,:p,:ek,:t,'generate',:q,'token','CNY', null, false, :src,
-                now(), :u)
-        -- ⚠️ 冲突目标是 **(project_id, event_key)**,不是 event_key 单列。
-        -- 唯一约束从单列改成带 project_id 之后,这一行 ON CONFLICT 当场编译不过
-        -- (PostgreSQL 要求冲突目标**精确匹配**一个唯一约束)——
-        -- 那次红是好的:它逼着这个调用点跟着改。
-        -- 反过来想:要是当时**加**一条复合约束而**留着**单列那条,
-        -- 这里一个字都不用改,而跨项目撞键那个漏一点没修好。
-        on conflict (project_id, event_key) do nothing
-    """), {"i": _新("ul"), "o": job["organization_id"], "p": job["project_id"],
-           "ek": f"{job['id']}:generate", "t": trace,
-           "q": r["usage"]["input_tokens"] + r["usage"]["output_tokens"],
-           "src": r["execution_mode"], "u": 我是谁})
+    # ⚠️ **值为 0 的档不算一档 —— 0 的时候一行都不写。**
+    # 2026-09-29 端到端抓到一条 `quantity=0, amount=null` 的账,而它回答不了任何问题:
+    # 既不是「花了 0」(mock 本来就不计价),也不是「用了 0 个 token」(那次调用真的发生过)。
+    # 账本里多一行说不清的账比少一行糟 —— 按供应商/按模型的报表会把它算进分母。
+    # ⚠️ 同一条规矩 `knowledge/usage.py` 里早就有,而 Worker 有**自己的写入口**,
+    # 规矩没跟过来 —— **一条只写在一个写入口上的规矩,拦不住第二个写入口**。
+    if (r["usage"]["input_tokens"] + r["usage"]["output_tokens"]) or 0:
+        c.execute(text("""
+            insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
+                resource, quantity, unit, currency, amount, amount_known, source,
+                created_at, created_by)
+            values (:i,:o,:p,:ek,:t,'generate',:q,'token','CNY', null, false, :src,
+                    now(), :u)
+            -- ⚠️ 冲突目标是 **(project_id, event_key)**,不是 event_key 单列。
+            -- 唯一约束从单列改成带 project_id 之后,这一行 ON CONFLICT 当场编译不过
+            -- (PostgreSQL 要求冲突目标**精确匹配**一个唯一约束)——
+            -- 那次红是好的:它逼着这个调用点跟着改。
+            -- 反过来想:要是当时**加**一条复合约束而**留着**单列那条,
+            -- 这里一个字都不用改,而跨项目撞键那个漏一点没修好。
+            on conflict (project_id, event_key) do nothing
+        """), {"i": _新("ul"), "o": job["organization_id"], "p": job["project_id"],
+               "ek": f"{job['id']}:generate", "t": trace,
+               "q": r["usage"]["input_tokens"] + r["usage"]["output_tokens"],
+               "src": r["execution_mode"], "u": 我是谁})
     return {"trace_id": trace, "execution_mode": r["execution_mode"]}
 
 
@@ -265,16 +272,23 @@ def _跑一张工作流(c, job, 打点):
            "us": _j.dumps(结果["用量"], ensure_ascii=False),
            "p": job["project_id"], "i": run_id})
     # 费用:mock 没有真实计价 → **amount_known=false,不写 0**
-    c.execute(text("""
-        insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
-            resource, quantity, unit, currency, amount, amount_known, source,
-            created_at, created_by)
-        values (:i,:o,:p,:ek,:t,'generate',:q,'call','CNY', null, false, 'mock',
-                now(), :u)
-        on conflict (project_id, event_key) do nothing
-    """), {"i": _新("ul"), "o": job["organization_id"], "p": job["project_id"],
-           "ek": f"{run_id}:workflow", "t": r["trace_id"],
-           "q": 结果["用量"]["模型调用"], "u": 我是谁})
+    # ⚠️ **值为 0 的档不算一档 —— 0 的时候一行都不写。**
+    # 2026-09-29 端到端抓到一条 `quantity=0, amount=null` 的账,而它回答不了任何问题:
+    # 既不是「花了 0」(mock 本来就不计价),也不是「用了 0 个 token」(那次调用真的发生过)。
+    # 账本里多一行说不清的账比少一行糟 —— 按供应商/按模型的报表会把它算进分母。
+    # ⚠️ 同一条规矩 `knowledge/usage.py` 里早就有,而 Worker 有**自己的写入口**,
+    # 规矩没跟过来 —— **一条只写在一个写入口上的规矩,拦不住第二个写入口**。
+    if (结果["用量"]["模型调用"]) or 0:
+        c.execute(text("""
+            insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
+                resource, quantity, unit, currency, amount, amount_known, source,
+                created_at, created_by)
+            values (:i,:o,:p,:ek,:t,'generate',:q,'call','CNY', null, false, 'mock',
+                    now(), :u)
+            on conflict (project_id, event_key) do nothing
+        """), {"i": _新("ul"), "o": job["organization_id"], "p": job["project_id"],
+               "ek": f"{run_id}:workflow", "t": r["trace_id"],
+               "q": 结果["用量"]["模型调用"], "u": 我是谁})
     return {"run_id": run_id, "执行状态": 结果["执行状态"],
             "走过的路径": 结果["走过的路径"], "跳过的节点": 结果["跳过的节点"]}
 
@@ -768,16 +782,23 @@ def _跑一个agent(c, job, 打点):
            "out": _j.dumps(结果["output"], ensure_ascii=False),
            "us": _j.dumps(结果["usage"], ensure_ascii=False),
            "p": job["project_id"], "i": run_id})
-    c.execute(text("""
-        insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
-            resource, quantity, unit, currency, amount, amount_known, source,
-            created_at, created_by)
-        values (:i,:o,:p,:ek,:t,'generate',:q,'call','CNY', null, false, 'mock',
-                now(), :u)
-        on conflict (project_id, event_key) do nothing
-    """), {"i": _新("ul"), "o": job["organization_id"], "p": job["project_id"],
-           "ek": f"{run_id}:agent", "t": r["trace_id"],
-           "q": 结果["usage"]["模型回合"], "u": 我是谁})
+    # ⚠️ **值为 0 的档不算一档 —— 0 的时候一行都不写。**
+    # 2026-09-29 端到端抓到一条 `quantity=0, amount=null` 的账,而它回答不了任何问题:
+    # 既不是「花了 0」(mock 本来就不计价),也不是「用了 0 个 token」(那次调用真的发生过)。
+    # 账本里多一行说不清的账比少一行糟 —— 按供应商/按模型的报表会把它算进分母。
+    # ⚠️ 同一条规矩 `knowledge/usage.py` 里早就有,而 Worker 有**自己的写入口**,
+    # 规矩没跟过来 —— **一条只写在一个写入口上的规矩,拦不住第二个写入口**。
+    if (结果["usage"]["模型回合"]) or 0:
+        c.execute(text("""
+            insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
+                resource, quantity, unit, currency, amount, amount_known, source,
+                created_at, created_by)
+            values (:i,:o,:p,:ek,:t,'generate',:q,'call','CNY', null, false, 'mock',
+                    now(), :u)
+            on conflict (project_id, event_key) do nothing
+        """), {"i": _新("ul"), "o": job["organization_id"], "p": job["project_id"],
+               "ek": f"{run_id}:agent", "t": r["trace_id"],
+               "q": 结果["usage"]["模型回合"], "u": 我是谁})
     return {"run_id": run_id, "执行状态": 结果["execution_status"],
             "停止原因": 结果["completion_reason"], "用量": 结果["usage"],
             "核验问题": 结果["validation_results"][:3]}
