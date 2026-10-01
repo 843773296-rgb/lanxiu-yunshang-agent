@@ -3209,13 +3209,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-09-29 15:13。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-01 19:11。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 50b896d · 2026-09-29 · 管理后台:运行控制能点了(暂停 / 继续 / 取消 / 核实)—— 而且只摆现在合法的那几个 |
-| 代码量 | 522 个 Python 文件 / 103955 行(不含 .venv) |
+| 最新提交 | 2ef58ad · 2026-10-01 · 定时任务健康检查:它在真出事的时候**打了绿灯** —— 补上读 launchd 自己的日志 |
+| 代码量 | 522 个 Python 文件 / 104169 行(不含 .venv) |
 | 验收 | `./check.sh` 共 203 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
@@ -3227,29 +3227,32 @@ M agent/eval-history.jsonl
  M agent/measure-eval-results.jsonl
  M agent/member-eval-results.jsonl
  M agent/ops-eval-results.partial.jsonl
+ M agent/ops_eval.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
+ M backend/api.py
+ M backend/ops.py
+ M backend/rating_view_check.py
  M backend/seed.py
+ M backend/stock_check.py
  M knowledge/margin.py
- M knowledge/part.py
+ M knowledge/stockalert.py
+ M prompts.py
  M tools/bite_specs.json
- M tools/export_image_prompts.py
+ M tools/simulate_sales.py
  M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
- M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
  M "\347\256\241\347\220\206\345\220\216\345\217\260/HANDOFF.md"
-?? .wip-muslin/
-?? data/lanxiu.db
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-50b896d 管理后台:运行控制能点了(暂停 / 继续 / 取消 / 核实)—— 而且只摆现在合法的那几个
-9180607 管理后台:模型与连接那一页能点了(建连接 / 探 capabilities)
-5931113 刷交接:「界面拿不到它要带的那个值」这一类,以及两条关于断言的教训
-31d2dbb 管理后台:把「界面拿不到它要带的那个值」这一类洞一次扫完 —— 又找出三处
-9a4f514 毛利整条链:定制款按成本定价、标品有进价、毛利从库里按单算
+2ef58ad 定时任务健康检查:它在真出事的时候**打了绿灯** —— 补上读 launchd 自己的日志
+ab96e62 管理后台:模型产物能部署了(5/6)—— 并查出四状态链第三步**没有门**
+4165e69 管理后台:工具那两页能点了(注册 / 改草稿 / 冻结版本)—— 4/6
+0eb48ad 管理后台:样本那一页能改了 —— 顺带补上一个「任意字符串都收」的白名单
+78b92f5 刷交接:毛利链做完、本机库已换新定价(服务要重启才看得到)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
