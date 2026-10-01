@@ -3862,5 +3862,25 @@
    }
   ],
   "预期红": "与 craft / measure_tpl 对不上"
+ },
+ {
+  "script": "backend/grading_check.py",
+  "改坏": "把库里 PT79 每个码都改成 130 码那组数(童装档差没接上的样子)",
+  "sql": [
+   "UPDATE size_spec SET value=(SELECT s2.value FROM size_spec s2 WHERE s2.pattern=size_spec.pattern AND s2.item=size_spec.item AND s2.size='130') WHERE pattern='PT79'"
+  ],
+  "预期红": "童款的各个身高码推出的数不全一样"
+ },
+ {
+  "script": "backend/grading_check.py",
+  "改坏": "把童装基码身高改成 120(推导变了、库没重灌)",
+  "file": [
+   {
+    "path": "knowledge/grading.py",
+    "old": "童装基码身高 = 130\n",
+    "new": "童装基码身高 = 120\n"
+   }
+  ],
+  "预期红": "库里的尺码表 = 推导结果"
  }
 ]

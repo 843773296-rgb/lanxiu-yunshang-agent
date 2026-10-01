@@ -133,6 +133,16 @@ def size_specs():
         # 而且没有任何地方会报。`.get(键, 0)` 是最安静的一种失败:
         # 它把「查不到」变成一个看起来完全正常的数。
         体系 = _g.尺码体系未定义(p["sizes"])
+        # 童款(身高码):按行业规范推(2026-10-01),每格都带来源说明 —— 推得出,但未经版师核
+        if 体系 and all(_g.是身高码(z) for z in p["sizes"]):
+            性 = _g.童款性别(p["name"])
+            for sz in p["sizes"]:
+                for item, v in base.get(p["code"], {}).items():
+                    值, 注 = _g.童装值(v, item, sz, 性)
+                    if 值 is None:
+                        值, 注 = v, f"{体系}({注})"
+                    out.append((p["code"], sz, item, 值, 参考.get(item) or 注))
+            continue
         for sz in p["sizes"]:
             n = _g.序号(sz)
             if n is None:

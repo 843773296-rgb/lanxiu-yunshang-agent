@@ -41,6 +41,8 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge")]
 # 两样都要 —— 只写「测过了」和没写是一回事,而咬合本身也会失效
 # (这个项目栽过四次:注入没进视野 / 破坏点不可观测 / 用了已知占位符 / 攻击跑不起来)。
 咬合 = [
+    ("把库里 PT79 每个码都改成 130 码那组数", "童款的各个身高码推出的数不全一样"),
+    ("把童装基码身高改成 120(推导变了、库没重灌)", "库里的尺码表 = 推导结果"),
     ("把 grading.py 的关键词「褶裥」窄回「褶裥片」(等价于 PT23 没被标上)",
      "有褶裥片的版型,腰围一个不漏地标了「仅供参考」"),
     ("把 grading.序号() 改回 .get(x, 0)",
@@ -140,6 +142,24 @@ def main():
        "；".join(没标[:3]) if 没标 else
        f"{未知} 用身高码 —— **`.get(尺码, 0)` 会把它们全算成 M,"
        f"四个码推出同一组数,而且不报错**")
+    # 童款按行业规范推(2026-10-01):原来四个码推出**同一组数**而且不报错 —— 这条钉住它不许回去
+    同组 = []
+    for code in 未知:
+        组 = {}
+        for sz, it, v in c.execute("SELECT size,item,value FROM size_spec WHERE pattern=?", (code,)):
+            组.setdefault(it, set()).add(v)
+        if 组 and all(len(vs) == 1 for vs in 组.values()):
+            同组.append(code)
+    ck("童款的各个身高码推出的数不全一样(110 和 140 的孩子不该拿同一张尺码表)", not 同组, len(未知),
+       f"{同组} 每个码都是同一组数 —— 童装档差没接上" if 同组 else "")
+    # 库里的尺码表 = 推导结果:2026-10-01 改了童装推档,库没刷新,所有检查照样全过 —— 没有一条拿库和推导对账
+    import derive_pattern as _dp
+    推 = {(a, b, it): v for a, b, it, v, _ in _dp.size_specs()}
+    库 = {(r["pattern"], r["size"], r["item"]): r["value"] for r in
+          c.execute("SELECT pattern,size,item,value FROM size_spec")}
+    差 = [k for k in 推 if 库.get(k) != 推[k]] + [k for k in 库 if k not in 推]
+    ck("库里的尺码表 = 推导结果(改了推档规则就要重灌)", not 差, len(推),
+       f"{len(差)} 格对不上,例 {差[:3]}" if 差 else "")
     ck("`序号()` 认不出来时返回 None 而不是 0", g.序号("110") is None, 1,
        "" if g.序号("110") is None else "**又回到 .get(x, 0) 了**")
 
