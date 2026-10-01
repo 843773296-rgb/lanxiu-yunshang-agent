@@ -1472,7 +1472,8 @@ def stock_alert(scope=None):
     # 全被算成卖出去了 —— 「下过单」和「卖掉了」长得一模一样。
     # 哪些算,在 `stockalert.卖掉了()` 里,不在这儿拍。
     卖过, 没算 = {}, {}
-    for r in _rows("SELECT i.sku, i.qty, o.status, o.refund_status "
+    逐日 = {}          # sku → {日期: 件数} —— 补货点要日销量的波动,压货要最后一次卖出是哪天
+    for r in _rows("SELECT i.sku, i.qty, o.status, o.refund_status, substr(o.created,1,10) d "
                    "FROM ordr_item i JOIN ordr o ON o.id=i.order_id "
                    "WHERE i.sku IS NOT NULL AND i.sku<>''"):
         算, 为啥 = _sa.卖掉了(r["status"], r["refund_status"])
@@ -1487,7 +1488,13 @@ def stock_alert(scope=None):
         a = 卖过.setdefault(r["sku"], [0, 0])
         a[0] += 1
         a[1] += r["qty"] or 0
+        if r["d"]:
+            dd = 逐日.setdefault(r["sku"], {})
+            dd[r["d"]] = dd.get(r["d"], 0) + (r["qty"] or 0)
     卖过 = {k: tuple(v) for k, v in 卖过.items()}
+    # 交期取这个 SKU 的供应商登记的天数 —— 不写死;没登记的,补货点就明说算不出
+    交期 = {r["code"]: r["lead_days"] for r in _rows(
+        "SELECT s.code, sp.lead_days FROM sku s LEFT JOIN supplier sp ON sp.code=s.supplier_code")}
 
     rs = _rows("SELECT s.code, s.spu, s.spec, s.color, s.size, s.price, "
                "  s.stock, s.locked, s.status, p.name pname, p.status pstatus, "
@@ -1511,6 +1518,18 @@ def stock_alert(scope=None):
         天, 为什么 = _sa.可售天数(r["stock"], r["locked"], 笔, 件, 窗)
         if 天 is None and 窗 is None and 窗说:
             为什么 = 窗说
+        # 补货点:窗口里每天卖了几件(没卖的天记 0,要算进波动)
+        补, 补说 = None, None
+        if 窗 and 窗起:
+            d0 = _dt.date.fromisoformat(窗起[:10])
+            dd = 逐日.get(r["code"], {})
+            序 = [dd.get((d0 + _dt.timedelta(days=k)).isoformat(), 0) for k in range(窗)]
+            补, 补说 = _sa.补货点(序, 交期.get(r["code"]))
+        # 压货:从**数据的最后一天**往回数多少天没卖出过一件(从没卖过的,从上架日算)
+        末 = max(逐日.get(r["code"], {}) or [None]) if 逐日.get(r["code"]) else (r["shelf"] or "")[:10]
+        没卖 = ((_dt.date.fromisoformat(止) - _dt.date.fromisoformat(末)).days
+                if (末 and 止 and 末 <= 止) else None)
+        压, 压说 = _sa.压货(没卖) if _sa.可用(r["stock"], r["locked"]) > 0 else (None, None)
         摊.setdefault(档位, []).append(_nz({
             "SKU": r["code"], "商品": r["pname"], "规格": r["spec"],
             "颜色": r["color"], "尺码": r["size"], "价格": r["price"],
@@ -1528,6 +1547,11 @@ def stock_alert(scope=None):
                                   "它卖得动,而现在一件都发不出"
                                   if 天 == 0 else None),
             "⚠️": 窗说 if (窗说 and 窗 is not None) else None,
+            "补货点": 补 if 补 is not None else 补说,
+            "补货点怎么算的": 补说 if 补 is not None else None,
+            "该补了": (("是 —— 可用 {} 件 ≤ 补货点 {} 件".format(_sa.可用(r["stock"], r["locked"]), 补))
+                      if (补 is not None and _sa.可用(r["stock"], r["locked"]) <= 补) else None),
+            "压货": 压, "压货说明": 压说,
             "说明": 话,
         }))
 
@@ -1547,7 +1571,7 @@ def stock_alert(scope=None):
         "快没了": f"可用 ≤ {_sa.快没了_件数} 件,**而且它卖得动**。"
                   f"这条件数线是**业务 2026-09-22 定的**(后台库存列表页用的是同一个数)。"
                   "档内按可售天数从急到缓排 —— 「可用 2 件、能撑 60 天」比「可用 5 件、能撑 3 天」缓得多;"
-                  "**「低于几天算该补」那条线仍是补货点,补货点是采购的决定**,这里不替它划。",
+                  "**该不该补看补货点**(见「到了补货点的」那一栏,可用件数多于 5 的也在里面)。",
         "卖不动": "有货,而**一件都没卖过** —— 这不是缺货风险,是压货",
     }
     def _排(x):
@@ -1569,14 +1593,34 @@ def stock_alert(scope=None):
             **({"（只列了前 30 个）": f"共 {len(lst)} 个"} if len(lst) > 30 else {}),
         })
 
-    out["⚠️ 为什么没有可售天数"] = (
-        f"有销量的只有 {len(卖过)}/{len(rs) - 停用} 个 SKU,"
-        f"而且**最多的一个也只有 {max((v[0] for v in 卖过.values()), default=0)} 笔**"
-        f"(一笔画不出速度:「每 18 天卖 1 件」和「碰巧卖了 1 件」数据上一样),"
-        f"订单只跨 {跨天} 天(而且每个 SKU 按**自己上架后**那段算,只会更短)。这样算出来的可售天数**不是指标,是装饰** —— "
-        "而一个编出来的天数会让采购按它去补货。"
-        "**缺的是:每个 SKU 有过若干笔销售、订单跨度够长。**"
-        "在那之前这里只报算得出的事实,不凑数。")
+    # ⚠️ 原来这里**固定**输出一句「为什么没有可售天数 —— 是装饰不是指标」,写于全库只有 71 个 SKU
+    # 各卖 1 件的时候。数据长到一整年之后它还在说,**而同一个工具已经在给出可售天数了**。
+    # 改成按现状说:算得出多少、算不出的为什么。**一句写死的结论,会比它描述的数据活得久。**
+    out["可售天数算得出多少"] = (
+        f"{能算}/{len(rs) - 停用} 个 SKU 算得出(统计区间 {跨天} 天,每个 SKU 按**自己上架后**那段算)。"
+        "其余的**算不出**:一件没卖过、或只卖过一笔 —— 一笔画不出速度,照实说算不出,不凑数。")
+    到点 = [x for k in 摊 for x in 摊[k] if x.get("该补了")]
+    out["到了补货点的"] = _nz({
+        "个数": len(到点),
+        "是什么": (f"可用 ≤ 补货点。补货点 = 交期内平均销量 + 安全库存(缺货容忍 {_sa.服务水平:.0%},"
+                  f"{_sa.服务水平_来源});交期取供应商登记的天数。"
+                  "**它回答「什么时候该补」,补多少件仍是采购的决定。**"),
+        "明细": sorted(到点, key=lambda x: (x["可用"] - x["补货点"]))[:30],
+        **({"（只列了前 30 个）": f"共 {len(到点)} 个"} if len(到点) > 30 else {}),
+    })
+    压 = {}
+    for k in 摊:
+        for x in 摊[k]:
+            if x.get("压货"):
+                压.setdefault(x["压货"], []).append(x)
+    out["压货"] = _nz({
+        "是什么": "按多少天没卖出过一件分档(" + " / ".join(f"≥{d} 天{n}" for d, n in _sa.压货档) +
+                  f";{_sa.压货档_来源})。天数从数据的最后一天往回数。**只提醒,不自动改价。**",
+        **{n: f"{len(压.get(n, []))} 个" + (":" + "、".join(f"{x['商品']}({x['规格']})" for x in 压[n][:5])
+                                           + (f" ……还有 {len(压[n]) - 5} 个" if len(压[n]) > 5 else "")
+                                           if 压.get(n) else "")
+           for _, n in _sa.压货档},
+    })
     out["算进销量的"] = {
         "订单行": sum(v[0] for v in 卖过.values()),
         "有销量的 SKU": len(卖过),
@@ -1596,9 +1640,8 @@ def stock_alert(scope=None):
             "note": "**「下过单」和「卖掉了」是两件事。** 这些行不算销量,"
                     "但列在这儿 —— 少算了什么要看得见。",
         }
-    out["⚠️ 这个工具不补货"] = (
-        "补多少、什么时候补是**采购的决定**。"
-        "而且补货点要销量数据和「缺货一次的代价」撑着,两样现在都没有。")
+    out["⚠️ 补多少件不归这个工具"] = (
+        "补货点回答「什么时候该补」;**补多少件、找谁补是采购的决定**,这里不给订货量。")
     out["面料不在这儿"] = ("这个工具只看成品 SKU。面料库存(135 种,4 种没现货)"
                           "影响的是**定制品工期**,是另一摊。")
     return _nz(out)
@@ -2109,7 +2152,8 @@ def rating_overview(days=30):
     if me.get("role") not in MANAGER_ROLES:
         return dict(说明="评价概况只给店长看(业务 2026-09-27:不进顾问考核)", 条数=0)
     本店 = None if me["role"] == "总部运营" else me.get("shop")
-    起 = (_wc.今天() - _dt.timedelta(days=int(days or 30))).isoformat()
+    # `days=0` 是「只看今天」,不是「没传」—— 原来写 `int(days or 30)`,传 0 会悄悄变成 30 天
+    起 = (_wc.今天() - _dt.timedelta(days=int(30 if days is None else days))).isoformat()
     rs = _rows("""SELECT r.star, r.rated_at, o.shop FROM rating r
                   LEFT JOIN ordr o ON o.id=r.order_id WHERE substr(r.rated_at,1,10)>=?""", 起)
     if 本店: rs = [x for x in rs if x.get("shop") == 本店]
@@ -2150,7 +2194,7 @@ def rating_overview(days=30):
     月们 = sorted({str(x["rated_at"])[:7] for x in rs if x.get("rated_at")})
     按月 = {k: _一组([x for x in rs if str(x.get("rated_at"))[:7] == k]) for k in 月们}
 
-    out = dict(起=起, 窗口=f"最近 {int(days or 30)} 天", 条数=len(rs),
+    out = dict(起=起, 窗口=f"最近 {int((30 if days is None else days))} 天", 条数=len(rs),
                平均=round(sum(星们) / len(星们), 2),
                各星几条={f"{n}星": sum(1 for x in 星们 if x == n) for n in range(5, 0, -1)},
                差评几条=len(差), 差评占比=f"{len(差)/len(星们):.0%}")
@@ -2206,7 +2250,7 @@ def rating_overview(days=30):
                        f"窗口从 {起} 才开始,这个月只进来了一部分 —— **不能当趋势的起点**"))
                 for k in 残}
     else:
-        out["按月"] = (f"这个窗口({int(days or 30)} 天)只落在 {月们[0] if 月们 else '同一个月'},"
+        out["按月"] = (f"这个窗口({int((30 if days is None else days))} 天)只落在 {月们[0] if 月们 else '同一个月'},"
                      "**看不出趋势** —— 要看趋势把 days 放大(比如 120)")
 
     out["怎么读这份表"] = ["每个平均后面都有条数 —— **条数小的那个平均别当结论**",
@@ -3461,7 +3505,7 @@ def get_wearer(customer=None, wearer_id=None, account=None):
     """着装人档案:一个账号下都有谁、各自量体到什么时候、哪些该复量了。"""
     import growth
     from datetime import date
-    today = date(2026, 8, 31)
+    today = _wc.今天()  # 世界的今天(world_meta),不写死 —— 2026-10-01 写死的 08-31 让量体过期判反了
     if wearer_id:
         ws = [w for w in [_wearer(wearer_id)] if w]
     elif account:
@@ -3509,7 +3553,7 @@ def forecast_growth(wearer_id, target_date=None, months=12):
     """推算某着装人到某天的身高与留量建议。**不给围度点估计。**"""
     import growth
     from datetime import date, timedelta
-    today = date(2026, 8, 31)
+    today = _wc.今天()  # 世界的今天(world_meta),不写死 —— 2026-10-01 写死的 08-31 让量体过期判反了
     w = _wearer(wearer_id)
     if not w: return {"error": f"着装人 {wearer_id} 不存在"}
     if not _consent_ok(w["id"]):
@@ -4304,7 +4348,7 @@ def plan_for_event(wearer_id, event_date, pattern, material,
     """场景倒推:为某个日子做一件衣服,什么时候复量、什么时候下单、按多高做。"""
     import growth
     from datetime import date, timedelta
-    today = date.fromisoformat(today) if today else date(2026, 8, 31)
+    today = date.fromisoformat(today) if today else _wc.今天()  # 世界的今天(world_meta),不写死 —— 2026-10-01 写死的 08-31 让量体过期判反了
     ev = date.fromisoformat(event_date)
     if ev <= today: return {"error": "用件日期已经过了"}
 
@@ -4510,7 +4554,7 @@ SHOP_SCHEMAS=[
     "kind":{"type":"string","description":"定制品订单 / 标品订单,默认定制品订单"},
     "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
    "required":["customer_id"]}},
- {"name":"stock_alert","description":"**库存预警** —— 哪些 SKU 要断了、哪些**看着有货其实一件都发不出**(在手有货但全被订单占用)、哪些在压货。805 个 SKU 全有库存数而在这之前没有任何工具会说「这个要断了」。⚠️ **在手 ≠ 可用**:客户问「还有货吗」要的是 **可用 = 在手 − 已占用**,只报在手会让客户白等。⚠️ **它给不出可售天数,而且会直说给不出**:全库有销量的只有 71/797 个 SKU、每个只有一笔、订单只跨 18 天,**一笔销售画不出速度** —— 这时候任何一个可售天数都是编的,而编出来的数会让采购按它去补货。**不许把「算不出」说成 0 天,也不许退回成「低于 N 件就预警」假装算得出。** ⚠️ **这个工具不补货**:补多少、什么时候补是采购的决定。⚠️ 只看成品 SKU,**面料库存是另一摊**。","input_schema":{"type":"object","properties":{"scope":{"type":"string","description":"发不出 / 断货 / 快没了 / 卖不动;不传则全给"}}}},
+ {"name":"stock_alert","description":"**库存预警** —— 哪些 SKU 要断了、哪些**看着有货其实一件都发不出**(在手有货但全被订单占用)、哪些在压货。805 个 SKU 全有库存数而在这之前没有任何工具会说「这个要断了」。⚠️ **在手 ≠ 可用**:客户问「还有货吗」要的是 **可用 = 在手 − 已占用**,只报在手会让客户白等。⚠️ **可售天数和补货点按每个 SKU 自己的销量算,算不出的会直说**(一件没卖过、或只卖过一笔 —— 一笔画不出速度)。**不许把「算不出」说成 0 天,也不许退回成「低于 N 件就预警」。** 补货点 = 交期内平均销量 + 安全库存(缺货容忍 95%,业务定),回答「什么时候该补」;**补多少件是采购的决定**。另报压货:多少天没卖出过一件,按 90 / 180 / 365 天分档,只提醒不改价。⚠️ 只看成品 SKU,**面料库存是另一摊**。","input_schema":{"type":"object","properties":{"scope":{"type":"string","description":"发不出 / 断货 / 快没了 / 卖不动;不传则全给"}}}},
  {"name":"order_log","description":"**这张单发生过什么**(只读)。状态变化、每一条工厂回传(**被拒收和作废的也在里面**)、人工回退、工厂延期、按件签收,按时间排成一条;还带这张单的包裹清单(分批发货时一个包裹一条)。顾客问「我的衣服到哪了」「为什么晚了」、店长查「这单为什么退回去过」都用它。只能看本店的单(总部运营看全部)。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
  {"name":"delay_pending","description":"**工厂延期了、还没告诉顾客的单**(只读)。带原定完工日、延到什么时候、为什么、归属顾问、是不是你的。**联系顾客是对外动作,由人去做**;通知完用 mark_delay_told 标一下,不标这份清单只进不出。","input_schema":{"type":"object","properties":{}}},
  {"name":"mark_delay_told","description":"**(写)记下「已经把延期告诉顾客了」。** 只标本店的;标之前要跟用户确认他真的通知过了 —— 标错了这张单就从清单里消失,顾客再也等不到那个电话。","input_schema":{"type":"object","properties":{"delay_id":{"type":"integer"}},"required":["delay_id"]}},

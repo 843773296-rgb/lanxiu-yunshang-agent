@@ -147,15 +147,21 @@ def 活写口(T):
     import factory_inbox as fi, server, oplog
     for m in (fi, server, oplog): m.DB = T
     c = sqlite3.connect(T)
-    # 按性质挑:一张工厂还没回过任何消息、开工超过 3 天的生产中定制单
-    r = c.execute("""SELECT o.id, COALESCE(o.cut_at, o.audit_at) FROM ordr o
+    # 按性质挑:一张工厂还没回过任何消息的生产中定制单,**然后在副本里把它的开工日挪到用例时间线上**。
+    # ⚠️ 原来是挑「按**用例今天**算、开工超过 5 天」的真实单 —— 真实单跟着世界每天往后平移,
+    # 用例今天写死在 08-31,2026-10-01 起一张都挑不出来了(CI 当天红)。
+    # **真实数据和人造时间线混在一个判据里,就会被日期拆开。** 这里是副本,改它不碰真库。
+    r = c.execute("""SELECT o.id FROM ordr o
                      WHERE o.kind='定制品订单' AND o.status='生产中'
                        AND NOT EXISTS(SELECT 1 FROM factory_msg f WHERE f.order_id=o.id)
-                       AND julianday(?) - julianday(COALESCE(o.cut_at, o.audit_at)) > 5
-                     ORDER BY o.id LIMIT 1""", (用例今天,)).fetchone()
+                     ORDER BY o.id LIMIT 1""").fetchone()
     ck("有一张工厂还没回过消息的生产中定制单", bool(r))
     if not r: return
-    oid, 开 = r
+    import datetime as _dt
+    开 = (_dt.date.fromisoformat(用例今天) - _dt.timedelta(days=10)).isoformat() + " 10:00"
+    c.execute("UPDATE ordr SET cut_at=?, audit_at=COALESCE(audit_at, ?) WHERE id=?", (开, 开, r[0]))
+    c.commit()
+    oid = r[0]
     别 = c.execute("""SELECT o.id FROM ordr o WHERE o.kind='定制品订单' AND o.status='生产中' AND o.id!=?
                       AND NOT EXISTS(SELECT 1 FROM factory_msg f WHERE f.order_id=o.id AND f.result='收下'
                                      AND f.event='完工') ORDER BY o.id LIMIT 1""", (oid,)).fetchone()

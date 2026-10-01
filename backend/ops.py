@@ -489,7 +489,8 @@ def order_block(wearer_id, today=None):
         _o.path.abspath(__file__))), "knowledge"))
     import growth
     from datetime import date
-    today = today or date(2026, 8, 31)
+    import worldclock as _wc
+    today = today or _wc.今天()  # 世界的今天(world_meta),不写死 —— 2026-10-01 写死的 08-31 让量体过期判反了
     w = _rows("SELECT * FROM wearer WHERE id=?", wearer_id)
     if not w: return {"放行": False, "原因": f"着装人 {wearer_id} 不存在"}
     w = w[0]

@@ -87,6 +87,7 @@ _真实时钟标 = re.compile(r"真实时钟")
     ("往豁免里多加一条",                                      "豁免不许囤积"),
     ("把豁免的理由清空",                                      "每条豁免都写了理由"),
     ("往豁免里写一个不存在的文件名",                          "豁免指向的文件都还在"),
+    ("把 api.get_wearer 的 today 改回 date(2026, 8, 31)",       "运行时的「今天」不许写死成某一天"),
 ]
 
 _机器时钟 = re.compile(r"datetime\.now\(\)|datetime\.datetime\.now\(\)|"
@@ -436,6 +437,66 @@ ck("真的扫到了写这些列的地方(一个都没扫到 = 判据坏了,不�
    扫序 >= 2, 扫序, f"涉及 {len(命中列)} 列:{sorted(命中列)[:5]}")
 
 # 数据层:同一份登记的另一个读者。**在库里真的查一遍。**
+# ── 运行时的「今天」不许写死成某一天(2026-10-01)────────────────────────
+# 世界从 09-24 起每天平移到真实的今天,而 api.get_wearer / forecast_growth / ops.order_block
+# 里还写着 `today = date(2026, 8, 31)`(平移之前数据钉在那天,那时是对的)。
+# 于是**数据每天往后挪、「今天」钉着不动** —— 09-29 那个孩子量体过了 181 天算过期,
+# 10-01 数据挪了两天、「今天」没挪,变成 179 天不过期:**下单拦截悄悄失效**,CI 当天红。
+# 上面几条管「机器时钟」,管不到「写死一个日期」—— 两个都是「今天从哪来」的错,方向相反。
+# 判据走 AST:给叫 today / 今天 / 今 的名字赋值(含 `x or 字面量` 的兜底)、或参数默认值,
+# 值里出现日期字面量就红。**自测块(`if __name__ == "__main__"`)不管** —— 人造用例有自己的今天。
+import ast as _ast
+_今名 = {"today", "今天", "今", "TODAY", "_today"}
+_日期串 = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def _有日期字面量(节点):
+    for n in _ast.walk(节点):
+        if isinstance(n, _ast.Constant) and isinstance(n.value, str) and _日期串.match(n.value):
+            return True
+        if (isinstance(n, _ast.Call) and getattr(n.func, "attr", getattr(n.func, "id", "")) in ("date", "datetime")
+                and len(n.args) >= 3 and all(isinstance(a, _ast.Constant) and isinstance(a.value, int) for a in n.args[:3])):
+            return True
+    return False
+
+
+坏今, 扫今 = [], 0
+_范围 = [(HERE, lambda f: not f.endswith("_check.py") and not f.startswith(("seed", "fix_", "backfill")))]
+for _d in ("knowledge", "agentsite", "mcp"):
+    _范围.append((os.path.join(ROOT, _d), lambda f: not f.startswith(("derive_", "seed"))))
+for _目录, _要 in _范围:
+    for fn in sorted(os.listdir(_目录)):
+        if not fn.endswith(".py") or not _要(fn): continue
+        try:
+            _树 = _ast.parse(open(os.path.join(_目录, fn), encoding="utf-8").read())
+        except Exception:
+            坏今.append(f"{fn}:解析失败 —— **不当它通过**"); continue
+        _自测 = set()
+        for n in _ast.walk(_树):
+            if ((isinstance(n, _ast.If) and isinstance(n.test, _ast.Compare)
+                    and getattr(n.test.left, "id", "") == "__name__")
+                    or (isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))
+                        and ("自测" in n.name or "test" in n.name.lower()))):
+                _自测 |= {id(x) for x in _ast.walk(n)}
+        for n in _ast.walk(_树):
+            if id(n) in _自测: continue
+            if isinstance(n, (_ast.Assign, _ast.AnnAssign)):
+                目 = n.targets if isinstance(n, _ast.Assign) else [n.target]
+                if any(getattr(t, "id", None) in _今名 for t in 目) and n.value is not None:
+                    扫今 += 1
+                    if _有日期字面量(n.value):
+                        坏今.append(f"{os.path.relpath(os.path.join(_目录, fn), ROOT)}:{n.lineno}")
+            if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                a = n.args
+                for arg, d in zip(a.args[len(a.args) - len(a.defaults):], a.defaults):
+                    if arg.arg in _今名:
+                        扫今 += 1
+                        if _有日期字面量(d):
+                            坏今.append(f"{os.path.relpath(os.path.join(_目录, fn), ROOT)}:{n.lineno} 参数默认值")
+ck("运行时的「今天」不许写死成某一天(世界每天平移,写死的那天会和数据越错越远)",
+   not 坏今, 扫今, 坏今[:4] + ([f"……还有 {len(坏今) - 4} 处"] if len(坏今) > 4 else []))
+ck("真的扫到了给「今天」赋值的地方(一个都没扫到 = 判据坏了,不是全都对)", 扫今 >= 3, 扫今)
+
 _db = os.path.join(HERE, "lanxiu.db")
 if not os.path.exists(_db):
     ck("库在,能查先后关系", False, 1, f"{_db} 不存在 —— **这不叫通过,叫没查**")

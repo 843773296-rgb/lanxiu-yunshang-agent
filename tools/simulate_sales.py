@@ -208,6 +208,7 @@ def rollback(c, quiet=False):
     c.execute("DELETE FROM ordr_item WHERE order_id IN (SELECT order_id FROM sim_batch)")
     c.execute("DELETE FROM ordr WHERE id IN (SELECT order_id FROM sim_batch)")
     c.execute("DELETE FROM stock_log WHERE ref LIKE 'SIM-%'")
+    c.execute("DELETE FROM stock_log WHERE ref LIKE 'OPEN-%'")      # 期初补录,见 补期初()
     c.execute("DROP TABLE IF EXISTS sim_batch_sku")
     c.execute("DROP TABLE sim_batch")
     if not quiet:
@@ -636,6 +637,32 @@ def report(c):
     return 1 if bad else 0
 
 
+def 补期初(c):
+    """有库存、却**一条流水都没有**的 SKU,补一条期初入库(业务 2026-09-29 定)。
+
+    上线库存系统时的标准做法:每个 SKU 一条「期初」,数量等于当时的可用,之后的流水都从它接。
+    ⚠️ **这条链记的是可用(在手 − 已占用),不是在手** —— 口径在 `stockalert.流水记的是`。
+    停用的不补:停用的 SKU 本来就不该有货可卖,补了流水会让它看起来是活的。
+    时间取上架日(没有就取建品日)—— 期初得在这个 SKU 所有别的事之前。
+    """
+    rows = c.execute("""SELECT s.code, s.spu, s.stock, s.locked,
+                               COALESCE(p.on_shelf_at, p.created) t
+                        FROM sku s JOIN product p ON p.spu=s.spu
+                        WHERE s.status<>'停用' AND COALESCE(s.stock,0) > 0
+                          AND NOT EXISTS (SELECT 1 FROM stock_log l WHERE l.sku=s.code)
+                        ORDER BY s.code""").fetchall()
+    for code, spu, stock, locked, t in rows:
+        可用 = (stock or 0) - (locked or 0)
+        c.execute("""INSERT INTO stock_log(sku,spu,kind,delta,before_n,after_n,ref,operator,ts,note)
+                     VALUES(?,?,'入库',?,0,?,?,'系统',?,?)""",
+                  (code, spu, 可用, 可用, f"OPEN-{code}", t,
+                   "期初入库(补录):这个 SKU 原来有库存却一条流水都没有"))
+    # ⚠️ 备注里**不写日期**。第一版写了「业务 2026-09-29」,shift_world 当场拒跑:
+    # 一列里混着日期就得登记它跟不跟着平移 —— 而「哪天定的」是函数注释该说的,不是每行流水该说的
+    print(f"  [期初] 有库存没流水的 {len(rows)} 个 SKU 补了期初入库")
+    return len(rows)
+
+
 def main():
     ap = argparse.ArgumentParser(description="模拟标品销量(可回滚)")
     ap.add_argument("--dry", action="store_true")
@@ -666,6 +693,7 @@ def main():
             print("(--dry:没写库)")
             return
         write(c, orders, logs, final, skus)
+        补期初(c)
     sys.exit(report(conn()))
 
 

@@ -3342,6 +3342,23 @@ def run():
           + (f";**算不出 {len(_n_no)} 款**:{'、'.join(_n_no[:4])}"
              + (f" ……还有 {len(_n_no) - 4} 款" if len(_n_no) > 4 else "") if _n_no else ""))
 
+    # ── 标品卖一件亏一件的,按成本 × 系数改价(业务 2026-09-29)─────────────────
+    # 手写标品的价当初没对过面料单价:织金缎 / 云锦 / 漳缎这几款售价比进价还低。
+    # 只纠这一种,售价高于进价的手写价是业务标的,不动。必须在出单之前(后面几步按 sku.price 出单)。
+    _n_jj = []
+    for _spu, _nm, _bp, _cp in c.execute(
+            "SELECT p.spu, p.name, p.base_price, MAX(s.cost_price) FROM product p JOIN sku s ON s.spu=p.spu "
+            "WHERE p.kind='标品' GROUP BY p.spu ORDER BY p.spu").fetchall():
+        _np = _mg.标品纠价(_cp, _bp)
+        if not _np:
+            continue
+        c.execute("UPDATE product SET base_price=?, tag_price=?, points=? WHERE spu=?",
+                  (float(_np), round(_np * 1.12, 2), int(_np * 100), _spu))
+        c.execute("UPDATE sku SET price=?, points=? WHERE spu=?", (float(_np), int(_np * 100), _spu))
+        _n_jj.append(f"{_nm} {int(_bp)}→{_np}")
+    print(f"  [标品纠价] 售价低于进价的 {len(_n_jj)} 款改成 进价 × {_mg.定价系数}"
+          + (f":{'、'.join(_n_jj[:5])}" + (f" ……还有 {len(_n_jj) - 5} 款" if len(_n_jj) > 5 else "") if _n_jj else ""))
+
     # ── 订单行上每个部位实际选了什么 ────────────────────────────────
     # ⚠️ **加价之和必须等于已经记着的 `custom_amount`。**
     # 那个数早就在订单上了(客户付过款),所以这里不是「重新算一遍」,
