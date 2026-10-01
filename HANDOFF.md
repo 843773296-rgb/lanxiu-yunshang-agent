@@ -40,6 +40,25 @@
 **只落在新加的 supplier_code 列上**,夹具依赖的老列没动;真值引用的表没碰。
 ⚠️ census 对 10 行的供应商表**什么都没量**(全被低频抑制)—— 不是核过了。
 
+### ②quater 10-01:四件做完、**没提交**,正在干净克隆上验从零重建
+
+工作区里这批是一起验的(13 个文件,见下),**干净克隆从零重建 + 全套检查过了才提交**:
+
+    标品纠价      售价低于进价的标品 → 进价 × 2.5(用户定按建议系数)。5 款:织金缎马面裙 3480→9700 等
+    补货点 / 压货  stockalert.补货点()(交期内日均 × 交期 + z·σ·√交期,服务水平 95%)、压货()(90/180/365 天)
+                  库存工具输出「到了补货点的」「压货」两栏;**一并改掉了一族过期的说法**:工具输出的
+                  「可售天数是装饰」、工具描述里的「71/797 个 SKU」、规矩 TL29「你不补货」、ops_eval K4 的理由
+    期初流水      simulate_sales.补期初():有库存没流水的 20 个 SKU 补一条入库(备注**不许带日期**,shift_world 会拒跑)
+    10-01 日期红  **主干 CI 当天也红,不是我的改动造成的**。根因:世界每天平移到真实今天,而
+                  api.get_wearer / forecast_growth / plan_for_event、ops.order_block 里写死 `today = date(2026,8,31)`
+                  → 数据往后挪、今天不动 → 量体过期判反、下单拦截失效。已改读 worldclock.今天();
+                  rating_view_check 的「3 天不可能跨月」(1 号 2 号是假的)、factory_inbox_check 拿真实单配写死的用例今天,
+                  也都修了;worldclock_check 新加「运行时的今天不许写死成某一天」(AST,自测块除外)+ 咬合
+
+文件:agent/ops_eval.py backend/{api,factory_inbox_check,ops,rating_view_check,seed,stock_check,worldclock_check}.py
+knowledge/{margin,stockalert}.py prompts.py tools/{bite_specs.json,simulate_sales.py}
+⚠️ 验证要在**当天日期**的干净克隆上从零重建 —— 本机库是 09-29 重建、被每日平移挪过的,两者红的不一样。
+
 ### ②ter 09-29 下午:收图 + 毛利链停在哪
 
 **收图**:第 249–285 名 33 款(4+1 包,分批从一包 24 款变成 1–5 款一包,按名次和文件名认、不受影响),
@@ -3209,20 +3228,21 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-01 19:11。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-01 19:33。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 2ef58ad · 2026-10-01 · 定时任务健康检查:它在真出事的时候**打了绿灯** —— 补上读 launchd 自己的日志 |
-| 代码量 | 522 个 Python 文件 / 104169 行(不含 .venv) |
+| 最新提交 | 31bebb7 · 2026-10-01 · 刷交接:六页表单 5/6,两件要业务拍板,以及那条定时任务判据的教训 |
+| 代码量 | 522 个 Python 文件 / 104238 行(不含 .venv) |
 | 验收 | `./check.sh` 共 203 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
 **未提交的改动:**
 
 ```
-M agent/eval-history.jsonl
+M HANDOFF.md
+ M agent/eval-history.jsonl
  M agent/growth-eval-results.jsonl
  M agent/measure-eval-results.jsonl
  M agent/member-eval-results.jsonl
@@ -3231,28 +3251,27 @@ M agent/eval-history.jsonl
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
  M backend/api.py
+ M backend/factory_inbox_check.py
  M backend/ops.py
  M backend/rating_view_check.py
  M backend/seed.py
  M backend/stock_check.py
+ M backend/worldclock_check.py
  M knowledge/margin.py
  M knowledge/stockalert.py
  M prompts.py
  M tools/bite_specs.json
- M tools/simulate_sales.py
- M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/HANDOFF.md"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+31bebb7 刷交接:六页表单 5/6,两件要业务拍板,以及那条定时任务判据的教训
 2ef58ad 定时任务健康检查:它在真出事的时候**打了绿灯** —— 补上读 launchd 自己的日志
 ab96e62 管理后台:模型产物能部署了(5/6)—— 并查出四状态链第三步**没有门**
 4165e69 管理后台:工具那两页能点了(注册 / 改草稿 / 冻结版本)—— 4/6
 0eb48ad 管理后台:样本那一页能改了 —— 顺带补上一个「任意字符串都收」的白名单
-78b92f5 刷交接:毛利链做完、本机库已换新定价(服务要重启才看得到)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
