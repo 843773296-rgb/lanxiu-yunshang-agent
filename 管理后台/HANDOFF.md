@@ -21,6 +21,102 @@
 16 个提交连历史用 `git subtree add` 并进澜绣仓库(合并提交 `8c71621`)。
 旧目录留了块路牌 `已搬走.md`,**别在那儿继续改**。
 
+## 🧭 2026-10-01 夜 · 端到端**进 CI 了**(那 773 条从来没在 CI 里跑过)
+
+### 下一个人从这两件接着做
+
+1. **两件要业务拍板的**(标可用要什么证据 / 建连接那道闸盯错了不变量)。
+2. `make test` 整体还红在 `test_index_build` 的「**库不干净**」前提检查 ——
+   那几条排队中的 `index_build` 是**归档的测试残留**,它自己要求「先清再跑」。
+   不是 bug,但得有人决定怎么清(或者让那条前提检查排掉已归档的)。
+
+### ⚠️ 这个 job 第一次跑就抓出一个藏了两天的真问题(已修)
+
+`admin-e2e` 红在 `alembic check` —— **库和契约声明不一致**,从 **09-29** 起。
+**本地也一直是红的**:`alembic check` 装在 `make test` 里,
+而我跑的是 `contract` / `test-e2e` / `progress`。
+> **一条判据装在一个我从来没跑过的目标里,等于没装。**
+
+而那个 job 的价值正在这儿:它**从零建库**,我本地那个库是历次迁移叠出来的。
+
+补了四处契约漏声明:`datasets.redaction_policy`(**钉成 TEXT** ——
+`_policy` 后缀被约定成 JSONB,而代码存的是一句话)、
+`dataset_versions.frozen_samples`、以及 `deployments` 和 `application_drafts`
+各一条唯一约束。
+
+### ⚠️⚠️ 最该记住的:**autogenerate 差点删掉两条真约束**
+
+拿 `alembic revision --autogenerate` 对齐时,**前两版都扔了**:
+· 第一版要**删掉那两条唯一约束** —— 幂等的全部依靠 +
+  「一个应用只有一份候选」那句话的落点
+· 第二版要把**四列改成可空**(`deployments.status/environment/
+  model_artifact_id`、`application_drafts.application_id`)
+
+> **autogenerate 做的是「让库跟上模型」—— 模型漏声明的时候,
+> 它会安静地删掉一条真约束。** 照着跑一遍,库是「对齐」了,
+> 而那两件事没了,**一句话都不会报**。
+
+所以顺序是:**先补声明,再生成迁移**。
+新增的机制:`fieldtypes.按表必填`(按表点名 —— `status` 在部署上必填,
+在别的表上可以为空,加进全局会把那些表一起钉死)。
+
+### 这一轮我栽的两次(都写进注释了)
+
+· 去掉 `deployments` 那三列之前我说「查过,没有任何代码读它们」——
+  **那句话只对「读」成立**,而 `POST /deployments` 的 INSERT 一直在写它们
+  (列名分行写,grep 没抓到)。`make test` 当场红了四条。
+  > **「没人读它」不等于「没人写它」** —— 而我把前者当成了后者的证据。
+· `nav_smoke_check` **命中了描述它自己的那句注释** ——
+  它按字面量搜 Makefile 里的 hash,而我在注释里照抄了一个例子。
+  这个仓库在密钥扫描上栽过三次同一个形状(规则文件匹配自己)。
+  **要举例就描述它,别照抄。**
+
+### ① `admin-e2e`:独立一个 job,带 `pgvector/pgvector:pg17`
+
+⚠️ **不能用官方 `postgres` 镜像** —— 知识索引那几张表上有 `vector` 列,
+官方镜像里没这个扩展,而缺扩展的表现是 `alembic upgrade` 建表时炸、
+报「type vector does not exist」,**读起来像迁移写错了**。
+
+流程:装 `requirements.lock`(不是 `.txt`)→ 建库 + 迁移 + `alembic check`
+→ 灌六份 seed → 起 API + Worker **等到就绪**(不是 sleep 固定秒数)
+→ `make test-e2e-ci` → 两条要服务在跑的判据。
+
+### ② `make test-e2e-ci`:排掉三份,**并且明说排了什么**
+
+· `test_knowledge_flow` / `test_knowledge_write_flow` 各有一条
+  **会真调 Claude 精排**(月租额度),CI 里没凭据
+· `test_upload_page_firefox` 要可见的 Firefox 窗口
+
+目标末尾**和** job 末尾都用 echo 打出来 ——
+注释在 CI 页面上**看不见**,而「这个 job 绿不等于端到端全验过」
+正是读 CI 的人需要看见的一句。
+
+### ③ 判据:**不许从两个名单之间漏掉**
+
+`test_registry_check` 扩了一条:每一份要么在 `E2E_CI`/`E2E_CI_JS` 里,
+要么在**写明理由**的 `CI跳过` 表里。
+> **排掉一份是个决定,漏掉一份是个事故** —— 而它们在 Makefile 上长得一样:
+> 加进了 `test-e2e`(本地跑得到)、没加进 `E2E_CI`(CI 不跑它),**两边都是绿的**。
+
+### ④ 页面冒烟抽成 `page-smoke`,又修掉**两处**吞退出码
+
+抽出来是为了两个目标共用 —— 不抽就是**第二份会漂的名单**,
+而 `nav_smoke_check` 在整个 Makefile 里搜 hash 字面量,
+两份里只要有一份全就通过,于是「CI 版少打了三页」它看不出来。
+
+抽的时候发现画布页和 Agent 页那两段**也是 `| tail -2` 吞退出码** ——
+和前面修的那处是**同一个毛病的第二、第三处**。
+
+### ⑤ 两件「本地先验过才提交」
+
+· **uvicorn 的起法我第一版是猜的**(`-m uvicorn app.main:app --app-dir`),
+  而 `dev.sh` 是 `cd services/api/app && uvicorn main:app`。
+  猜错的表现是 `ModuleNotFoundError`,**读起来像代码坏了**。
+  本地实测过那一行再提交 —— **不让 CI 替我试错**。
+· CI 要跑的六个 seed 脚本 + 四个关键依赖都确认在。
+
+---
+
 ## 🧭 2026-10-01 夜 · 页面冒烟**能判对错了**,而它原来红了也不会拦
 
 交接上一版记的欠账是「页面冒烟分不出这一页对不对」。动手之后发现
