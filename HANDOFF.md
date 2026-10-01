@@ -3220,13 +3220,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-01 20:06。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-01 20:33。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | c2df15b · 2026-10-01 · 管理后台:成员与权限能改了 —— **六页表单做完(6/6)** |
-| 代码量 | 522 个 Python 文件 / 104249 行(不含 .venv) |
+| 最新提交 | c920119 · 2026-10-01 · 管理后台:页面冒烟能判对错了 —— 而且它原来**红了也不会拦** |
+| 代码量 | 523 个 Python 文件 / 104294 行(不含 .venv) |
 | 验收 | `./check.sh` 共 203 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
@@ -3238,32 +3238,30 @@ M agent/eval-history.jsonl
  M agent/measure-eval-results.jsonl
  M agent/member-eval-results.jsonl
  M agent/ops-eval-results.partial.jsonl
- M agent/ops_eval.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M backend/api.py
- M backend/factory_inbox_check.py
- M backend/ops.py
- M backend/rating_view_check.py
- M backend/seed.py
- M backend/stock_check.py
- M backend/worldclock_check.py
- M knowledge/margin.py
- M knowledge/stockalert.py
- M prompts.py
- M tools/backfill_rating.py
+ M "knowledge/03-\345\267\245\350\211\272.md"
+ M "knowledge/04-\351\205\215\351\245\260.md"
+ M knowledge/check_kb.py
+ M knowledge/kb.py
  M tools/bite_specs.json
+ M tools/verify_sources.py
+ M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/HANDOFF.md"
+?? .feynman/world-shift-launchd.log
+?? .wip-muslin/
+?? data/lanxiu.db
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+c920119 管理后台:页面冒烟能判对错了 —— 而且它原来**红了也不会拦**
+718faa0 刷交接:10-01 那批已提交;记下评价月目标写死月份这颗雷
+2676b2d 修 10-01 全局红(写死的「今天」)+ 补货点 / 压货 / 期初流水 / 标品纠价
+ce9f252 刷交接:六页表单做完(6/6),以及五处「界面要的东西读接口不给」
 c2df15b 管理后台:成员与权限能改了 —— **六页表单做完(6/6)**
-422828d 刷交接:四件做完未提交、10-01 日期红的根因(写死的今天)
-31bebb7 刷交接:六页表单 5/6,两件要业务拍板,以及那条定时任务判据的教训
-2ef58ad 定时任务健康检查:它在真出事的时候**打了绿灯** —— 补上读 launchd 自己的日志
-ab96e62 管理后台:模型产物能部署了(5/6)—— 并查出四状态链第三步**没有门**
 ```
 <!--/AUTO-->
 ## 一句话在做什么
