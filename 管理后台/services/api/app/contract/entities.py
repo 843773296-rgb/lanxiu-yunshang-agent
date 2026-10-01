@@ -258,10 +258,19 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
 
     # ⑤ 数据集
     E("datasets", "数据集", 项目级, 可改,
-      ["name", "format", "purpose"],
+      # ⚠️ `redaction_policy` 是 2026-09-29 的迁移加进库的,**而契约里漏了声明** ——
+      # 于是 `alembic check` 从那天起一直红,而我**从来没跑过它**
+      # (它装在 `make test` 里,我跑的是 contract / test-e2e / progress)。
+      # > 一条判据装在一个我从来没跑过的目标里,等于没装。
+      # CI 的 `admin-e2e` job 第一次跑就把它抓出来了 —— 那是加那个 job 的价值。
+      ["name", "format", "purpose", "redaction_policy"],
       ["用途(训练 / 验证 / 独立测试)和格式分开登记"]),
     E("dataset_versions", "数据集冻结版本", 子对象, 不可变,
-      ["dataset_id", "split_map", "content_hash", "sample_count", "revision"],
+      # ⚠️ `frozen_samples` 就是上面那条约束(「冻结时要固化内容,不能只存一个指针」)
+      # 的落点 —— 同样是 09-29 加进库而契约漏了声明的。
+      # **一条写在约束里却没有列承载它的规矩,实现之后也没人知道它实现了。**
+      ["dataset_id", "split_map", "content_hash", "sample_count", "revision",
+       "frozen_samples"],
       ["**冻结版本不能被样本后续编辑改变**(§18)—— 冻结时要固化内容,不能只存一个指针",
        "分集(训练/验证/独立测试)在冻结时定,之后不许重分"],
       依赖=["datasets"]),

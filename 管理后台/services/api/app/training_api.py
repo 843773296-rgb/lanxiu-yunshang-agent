@@ -514,12 +514,21 @@ async def 部署产物(project_id: str, request: Request,
             证据 = {"产物": aid, "环境": 环境, "是mock训练的": 是mock,
                   "产物校验于": str(a.get("verified_at")),
                   "内容哈希": a.get("content_hash"), "放行人": me.user_id}
+            # ⚠️ **不写 `updated_at` / `revision` / `archived_at`** ——
+            # 2026-10-01 把那三列从库里去掉了:这张表声明的是**只追加**,
+            # 而 revision/updated_at 和那个设计相矛盾
+            # (一次部署是**事件**不是版本,没有「第二版」可言)。
+            #
+            # ⚠️ 去掉之前我说「查过,没有任何代码读这三列」——
+            # **那句话只对「读」成立**,而这条 INSERT 一直在写它们。
+            # 列名分行写,我的 grep 没抓到。
+            # > **「没人读它」不等于「没人写它」** ——
+            # > 而我把前者当成了后者的证据,`make test` 当场红了四条。
             c.execute(text("""insert into deployments
                 (id, organization_id, project_id, model_artifact_id, environment,
-                 status, idempotency_key, gate_evidence, created_at, created_by,
-                 updated_at, revision)
+                 status, idempotency_key, gate_evidence, created_at, created_by)
                 values (:i,:o,:p,:a,:e,'部署请求中',:k, cast(:g as jsonb),
-                        now(), :by, now(), 1)"""),
+                        now(), :by)"""),
                       {"i": did, "o": a["organization_id"], "p": project_id,
                        "a": aid, "e": 环境, "k": idempotency_key,
                        "g": _json.dumps(证据, ensure_ascii=False), "by": me.user_id})
