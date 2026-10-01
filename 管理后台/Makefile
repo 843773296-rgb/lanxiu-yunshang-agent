@@ -237,17 +237,23 @@ test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 mak
 	@echo "     看 Makefile 里 `E2E_CI跳过`;`test_registry_check` 验「没有谁从两个名单之间漏掉」"
 	@./.venv/bin/python tools/seed_datasets.py > /dev/null
 	@./.venv/bin/python tools/seed_training.py > /dev/null
+# ⚠️ **失败时把输出贴全,不 `tail` 截。**
+# 第一版截 12 行,而挂的详情(每条断言的 `补`)在更前面 ——
+# 于是 CI 上只看到「挂: 某条断言」而**看不到它拿到的是什么值**,
+# 下一轮只能靠猜。和上一轮那个 `set -e` 是同一条:
+# > **一个红了却看不到为什么的步骤,等于让人自己去猜。**
+# 绿的时候仍然只打一行 —— 全贴会把日志淹掉,而那也是一种看不见。
 	@rc=0; \
 	for t in $(E2E_CI); do \
 		printf "  %-30s " "$$t"; \
 		out=$$(./.venv/bin/python tests/e2e/$$t 2>&1); \
-		if [ $$? -ne 0 ]; then rc=1; echo "❌"; echo "$$out" | tail -12; \
+		if [ $$? -ne 0 ]; then rc=1; echo "❌"; echo "$$out"; \
 		else echo "$$out" | tail -1; fi; \
 	done; \
 	for t in $(E2E_CI_JS); do \
 		printf "  %-30s " "$$t"; \
 		out=$$(node tests/e2e/$$t 2>&1); \
-		if [ $$? -ne 0 ]; then rc=1; echo "❌"; echo "$$out" | tail -12; \
+		if [ $$? -ne 0 ]; then rc=1; echo "❌"; echo "$$out"; \
 		else echo "$$out" | tail -2 | head -1; fi; \
 	done; \
 	if [ $$rc -ne 0 ]; then echo "  ❌ 有端到端没过"; exit 1; fi
