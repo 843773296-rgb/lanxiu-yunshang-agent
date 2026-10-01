@@ -3199,14 +3199,14 @@ def run():
     _n_rt = 0
     for _pt2, in c.execute("SELECT code FROM pattern").fetchall():
         for _nm2, _q2, _rt, _why2 in _pr.版型占比(c, _pt2):
-            # 标「复核」——**规则核过了,数没核过**。
-            # 不标「版师」:那是撒谎;也不标「估算」:规则确实过了一遍独立检验。
-            # **三种可信度要分得开**,报价上按最低的那一档提示。
-            c.execute("UPDATE pattern_piece SET ratio=?, ratio_src='复核' "
+            # 标「行业规范」(2026-10-01;原来是「复核」)—— **规则逐条对过行业通行的面积计算法,数没人核过**。
+            # 不标「版师」:那是撒谎(用户 09-29:没有版师 → 按行业规范生成,不许冒充版师)。
+            # **可信度要分得开**,报价上按最低的那一档提示。对照见 knowledge/piece_ratio.py 文件头
+            c.execute("UPDATE pattern_piece SET ratio=?, ratio_src='行业规范' "
                       "WHERE pattern=? AND name=? AND ratio_src IS NULL",
                       (_rt, _pt2, _nm2))
             _n_rt += 1
-    print(f"  [裁片用料占比] 估了 {_n_rt} 条(来源标「复核」:规则核过、数没核过)"
+    print(f"  [裁片用料占比] 估了 {_n_rt} 条(来源标「行业规范」:规则对过行业面积法、数没核过)"
           f" —— **版师核过的不会被覆盖**")
 
     # ── 版型版本:每个版型一条 v1,订单行回填快照 ──────────────────────
