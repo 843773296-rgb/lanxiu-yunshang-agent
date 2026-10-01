@@ -182,12 +182,34 @@ async def 改工具草稿(project_id: str, tid: str, request: Request,
         raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match",
                   "把工具详情里的 `draft_revision` 放进 If-Match 头再提交")
     体 = await request.json()
+    # ⚠️ **中文键和英文键都收 —— 2026-10-01 补的,补的是一处分叉。**
+    #
+    # `POST /tools`(建工具)收的是**中文**键(名称 / 读写类型 / 接入方式),
+    # 而这条改草稿原来**只收英文列名** —— 同一组接口里一半中文一半英文,
+    # 而**没有任何东西拦着这种分叉**(这条当天就记在交接的「已知未修」里)。
+    #
+    # 代价不是难看:界面得**记住哪条用哪套**,而记错的表现是
+    # 422「没有要改的字段 · 不认识的键:['用途']」——
+    # 那句话读起来像「这个字段不能改」,而真相是「这条接口要英文名」。
+    # 2026-10-01 页面接线测试第一次跑就撞到这儿。
+    #
+    # 为什么**不是**改成只收中文:英文列名是现有调用方(端到端测试、
+    # 可能的脚本)在用的,单方面换掉会把它们一起弄坏 ——
+    # **收两种是兼容,收一种是迁移**,而迁移要先知道谁在调。
+    中文别名 = {"名称": "name", "用途": "purpose",
+              "读写类型": "side_effect_type", "接入方式": "adapter",
+              "负责人": "owner"}
     可改 = {"name", "purpose", "side_effect_type", "adapter", "owner"}
-    改 = {k: v for k, v in 体.items() if k in 可改}
-    野 = sorted(set(体) - 可改)
+    改 = {}
+    for k, v in 体.items():
+        键 = 中文别名.get(k, k)
+        if 键 in 可改:
+            改[键] = v
+    野 = sorted(k for k in 体 if 中文别名.get(k, k) not in 可改)
     if not 改:
         raise _错(422, "VALIDATION", "没有要改的字段",
-                  f"可改的是 {sorted(可改)}",
+                  f"可改的是 {sorted(可改)}(中文名也收:"
+                  f"{sorted(中文别名)})",
                   field_errors={"不认识的键": 野} if 野 else None)
     with 事务() as c:
         d = c.execute(text("""select * from tool_definitions

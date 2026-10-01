@@ -1578,6 +1578,228 @@ async function 做_跑agent() {
 }
 
 /* ── 工具目录(§11.1)──────────────────────────────────────────── */
+/* ── 工具与能力:注册工具 / 改草稿 / 冻结版本 ──────────────────────────
+ *
+ * ⚠️ **接口不收可执行代码。** 表单上没有「代码」输入框,只有
+ * 「哪个适配器 + 什么风险级别 + 什么用途」—— 适配器是**仓库里已有的实现**。
+ * 这和模型连接那一页「只收引用不收明文」是同一个形状:
+ * **界面上不开那个口子,而不是开了再靠后端拒。**
+ *
+ * ⚠️ **风险变大必须出新版本。** 改草稿时服务端会算 `风险变大了吗`,
+ * 而这一页**原样显示那个结论,不自己比两个等级** ——
+ * 自己比的话那条规矩就变成每个前端各实现一遍,
+ * 而不一致的表现是**界面上少一句警告**。
+ *
+ * ⚠️ 改草稿的 `If-Match` 认 **`draft_revision`**,不是 `revision`。
+ * 这两个数在工具上**一直相等**(同一个 UPDATE 里一起涨),
+ * 所以拿错也不会报错 —— 运行时拦不住,只能靠 note 明说该用哪一个。
+ */
+const 工具动作 = {
+  async 注册(体) {
+    return await 请求(`${P()}/tools`,
+      { method: "POST", body: JSON.stringify(体) });
+  },
+  async 改草稿(tid, 补丁, draft_revision) {
+    if (draft_revision == null) {
+      const e = new Error("这个工具读不到 draft_revision —— 工具详情应该给它");
+      e.体 = { code: "NO_DRAFT_REVISION",
+               advice: "刷新一次;注意**认的是 draft_revision,不是 revision**" };
+      e.码 = 0;
+      throw e;
+    }
+    return await 请求(`${P()}/tools/${encodeURIComponent(tid)}/draft`,
+      { method: "PATCH", headers: { "If-Match": String(draft_revision) },
+        body: JSON.stringify(补丁) });
+  },
+  async 冻结版本(tid, 体) {
+    // ⚠️ **冻结是另一张表单,不是一个按钮。** 闸要的是:
+    // 给模型的说明、入参 schema、(会写的工具还要)幂等策略。
+    // 第一版我只传了一个「变更说明」—— 而**这条接口压根不收那个字段**,
+    // 它是个摆设。一个被静默忽略的入参,和一个生效了的入参,
+    // **在响应上长得一模一样**。
+    return await 请求(`${P()}/tools/${encodeURIComponent(tid)}/versions`,
+      { method: "POST", body: JSON.stringify(体 || {}) });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.工具动作 = 工具动作;
+
+function 页_工具表单(d) {
+  const 能改 = 我的角色 === "editor" || 我的角色 === "admin";
+  if (!能改) {
+    return `<div class="note">注册工具要「改编排草稿」这条能力 ——
+      你现在是 <b>${esc(我的角色 || "?")}</b>,<b>所以这里不摆表单</b>。</div>`;
+  }
+  const 级们 = d["可选读写类型"] || [];
+  const 接 = d["接入方式怎么填"] || {};
+  const 快捷 = (接["这个项目已经在用的"] || [])
+    .map((a) => `<button data-tfill="${esc(a)}" class="k">${esc(a)}</button>`).join(" ");
+  return `<div class="state">
+    <h3>注册一个工具</h3>
+    <p class="k">${md(接["⚠️"] || "")}</p>
+    <p><label>名称<br><input id="t-name" style="width:min(320px,90%)"></label></p>
+    <p><label>用途（给模型看的说明）<br>
+      <input id="t-purpose" style="width:min(420px,90%)"></label></p>
+    <p><label>读写类型<br><select id="t-se">${
+      级们.map((x) => `<option value="${esc(x["值"])}">${esc(x["中文"])}（${
+        esc(x["值"])}）</option>`).join("")}</select></label>
+      <br><span class="k">⚠️ <b>没标级别的工具一律被网关挡住</b>（未知不等于安全）</span></p>
+    <p><label>接入方式（适配器名）<br>
+      <input id="t-ad" style="width:min(320px,90%)" placeholder="MockSearch"></label>
+      <br>${快捷 ? `<span class="k">已经在用的：</span>${快捷}` : ""}</p>
+    <p class="k">⚠️ <b>这里没有「代码」输入框</b> ——
+      接口<b>不收可执行代码</b>,适配器是仓库里已有的实现。</p>
+    <p><button class="pri" id="t-go">注册</button></p></div>`;
+}
+
+async function 页_工具详情(tid) {
+  $("#main").innerHTML = `<div class="crumb">编排 /
+      <a href="#/tools">工具与能力</a> / 详情</div>
+    <div class="head"><div><h1 id="tt">工具</h1>
+      <div class="sub"><b>草稿改不动已经冻结的版本</b> ——
+        而引用这个工具的 Agent 认的是<b>版本</b>,不是草稿。</div></div></div>
+    <div id="tdmsg"></div>
+    <div id="tdbody"><div class="state">加载中…</div></div>`;
+  await 画工具详情(tid);
+}
+
+async function 画工具详情(tid) {
+  try {
+    const [d, 目录] = await Promise.all([
+      请求(`${P()}/tools/${encodeURIComponent(tid)}`),
+      请求(`${P()}/tools`),
+    ]);
+    $("#tt").textContent = d["名称"] || tid;
+    const 草 = d["草稿"] || {};
+    const 版本们 = d["版本历史"] || [];
+    const 级们 = 目录["可选读写类型"] || [];
+    const 能改 = 我的角色 === "editor" || 我的角色 === "admin";
+    // ⚠️ **风险变大这个结论由服务端给,这一页只负责显示。**
+    // 自己比两个等级的话,那条规矩就变成每个前端各实现一遍,
+    // 而不一致的表现是**界面上少一句警告**。
+    const 风险警告 = d["风险变大了吗"]
+      ? `<div class="note warn"><b>⚠️ 草稿比最新冻结版风险更大</b> ——
+          冻结时<b>必须出新版本</b>:引用它的 Agent 还指着老说明,
+          <b>而那份说明现在是错的</b>。</div>`
+      : "";
+    $("#tdbody").innerHTML = `${风险警告}
+      <h2>草稿</h2>
+      <table><tbody>
+        <tr><td class="k">用途</td><td>${能改
+          ? `<input id="d-purpose" style="width:min(420px,90%)"
+              value="${esc(草["用途"] || "")}">`
+          : esc(草["用途"] || "—")}</td></tr>
+        <tr><td class="k">读写类型</td><td>${能改
+          ? `<select id="d-se">${级们.map((x) => `<option value="${esc(x["值"])}"${
+              x["值"] === 草["读写类型"] ? " selected" : ""}>${esc(x["中文"])}（${
+              esc(x["值"])}）</option>`).join("")}</select>`
+          : esc(草["读写类型中文"] || 草["读写类型"] || "—")}</td></tr>
+        <tr><td class="k">接入方式</td><td><code>${esc(草["接入方式"] || "—")}</code>
+          <span class="k">（接口不收可执行代码，这里也不给改）</span></td></tr>
+        <tr><td class="k">draft_revision</td>
+          <td><code>${esc(d["draft_revision"])}</code>
+            <span class="k">—— <b>改草稿的 If-Match 认这个</b>，不是下面那个
+              <code>revision</code>（${esc(d["revision"])}）。
+              这两个数现在<b>一起涨、一直相等</b>，<b>所以拿错也不会报错</b> ——
+              运行时拦不住，只能靠这句话拦。</span></td></tr>
+      </tbody></table>
+      ${能改 ? `<p><button class="pri" id="d-save">保存草稿</button></p>
+        <h2>冻结成新版本</h2>
+        <div class="note">⚠️ <b>冻结固化的是「给模型看的那一份」</b> ——
+          模型靠说明决定要不要调这个工具，靠 schema 知道传什么。
+          <b>这些不在草稿里</b>（草稿管的是名字/用途/风险级别/适配器），
+          每次冻结都要重新给 —— 因为<b>它们是版本的内容，不是工具的属性</b>。</div>
+        <p><label>给模型的说明（<b>必填</b>）<br>
+          <textarea id="f-desc" rows="2" style="width:min(520px,95%)"
+            >${esc(草["用途"] || "")}</textarea></label>
+          <br><span class="k">没有它，模型只能靠工具名猜</span></p>
+        <p><label>入参 schema（<b>必填</b>，JSON）<br>
+          <textarea id="f-in" rows="3" style="width:min(520px,95%)"
+            >{"type":"object","properties":{}}</textarea></label>
+          <br><span class="k">没有它，「模型传错了参数」和「工具自己坏了」分不开</span></p>
+        <p><label>出参 schema（可不填，JSON）<br>
+          <textarea id="f-out" rows="2" style="width:min(520px,95%)"></textarea></label></p>
+        <p><label>幂等策略（<b>会写的工具必填</b>）<br>
+          <input id="f-idem" style="width:min(420px,90%)"
+            placeholder="按 (工具, 对象, 执行键) 去重"></label></p>
+        <p><button class="pri" id="d-freeze">冻结</button></p>`
+        : `<div class="note">改草稿 / 冻结要「改编排草稿」这条能力 ——
+          你现在是 <b>${esc(我的角色 || "?")}</b>，<b>所以这里不摆按钮</b>。</div>`}
+      <h2>版本历史（${版本们.length}）</h2>
+      <table><thead><tr><th>版本</th><th>读写类型</th><th>确认策略</th>
+        <th>能轮询吗</th><th>内容哈希</th><th>冻结</th></tr></thead><tbody>`
+      + (版本们.length ? 版本们.map((v) => `<tr>
+          <td><b>${esc(v["版本"])}</b></td>
+          <td>${esc(v["读写类型"])}</td>
+          <td class="k">${esc(v["确认策略"] || "—")}</td>
+          <td class="k">${v["能轮询吗"] ? "能" : `<span class="k">没声明</span>`}</td>
+          <td><code style="font-size:11px">${esc(
+            String(v["内容哈希"] || "").slice(0, 12))}</code></td>
+          <td class="k">${esc(String(v["冻结时间"] || "").slice(0, 19))}
+            · ${esc(v["冻结的人"] || "")}</td></tr>`).join("")
+        : `<tr><td colspan="6" class="k">还没冻结过版本 ——
+            <b>没有版本的工具,Agent 引用不了</b></td></tr>`)
+      + `</tbody></table>
+      <div class="note">${md(d.note || "")}</div>`;
+    if ($("#d-save")) {
+      $("#d-save").onclick = async () => {
+        $("#d-save").disabled = true; 报工具("保存草稿…");
+        try {
+          const r = await 工具动作.改草稿(tid, {
+            用途: ($("#d-purpose").value || "").trim() || null,
+            读写类型: $("#d-se").value,
+          }, d["draft_revision"]);
+          报工具(`改好了(draft_revision ${esc(r["draft_revision"])})`
+            + `${r["风险变大了吗"] ? " —— **风险变大了,冻结时必须出新版本**" : ""}`
+            + `${md(r.note ? "。" + r.note : "")}`);
+          await 画工具详情(tid);
+        } catch (e) { 报工具(闸文(e), true); $("#d-save").disabled = false; }
+      };
+    }
+    if ($("#d-freeze")) {
+      $("#d-freeze").onclick = async () => {
+        $("#d-freeze").disabled = true; 报工具("冻结…");
+        try {
+          // ⚠️ JSON **在这儿解析,解析不了就当场说** ——
+          // 直接把字符串发出去的话,服务端会回「入参 schema 没给」,
+          // 而那句话让人以为是没填,真相是**填了但不是合法 JSON**。
+          const 读json = (id, 名) => {
+            const t = ($(id).value || "").trim();
+            if (!t) return null;
+            try { return JSON.parse(t); } catch (e2) {
+              const err = new Error(`${名}不是合法 JSON:${e2.message}`);
+              // ⚠️ JS 不像 Python 会自动拼相邻字符串 —— 少一个 `+` 就是语法错。
+              err.体 = { code: "BAD_JSON",
+                         advice: "**这是本地解析失败,还没发出去** —— "
+                                 + "和服务端说「没给」不是一回事" };
+              err.码 = 0;
+              throw err;
+            }
+          };
+          const 体 = {
+            给模型的说明: ($("#f-desc").value || "").trim(),
+            入参: 读json("#f-in", "入参 schema"),
+            出参: 读json("#f-out", "出参 schema"),
+            幂等策略: ($("#f-idem").value || "").trim() || null,
+          };
+          const r = await 工具动作.冻结版本(tid, 体);
+          报工具(`冻结了 ${esc(JSON.stringify(r).slice(0, 160))}`);
+          await 画工具详情(tid);
+        } catch (e) { 报工具(闸文(e), true); $("#d-freeze").disabled = false; }
+      };
+    }
+  } catch (e) {
+    const s = 错误块(e, () => 画工具详情(tid));
+    $("#tdbody").innerHTML = s.html; s.挂();
+  }
+}
+
+function 报工具(文, 坏) {
+  if ($("#tdmsg")) {
+    $("#tdmsg").innerHTML = 文
+      ? `<div class="state ${坏 ? "err" : ""}"><p>${md(文)}</p></div>` : "";
+  }
+}
+
 async function 页_工具目录() {
   $("#main").innerHTML = `<div class="crumb">编排 / 工具与能力</div>
     <div class="head"><div><h1>工具目录</h1>
@@ -1595,7 +1817,8 @@ async function 页_工具目录() {
       <th>读写类型</th><th>接入方式</th><th>最新版本</th><th>状态</th>
       </tr></thead><tbody>`
       + d.items.map((r) => `<tr>
-        <td><b>${esc(r["名称"])}</b></td><td>${esc(r["用途"] || "—")}</td>
+        <td><a href="#/tool/${encodeURIComponent(r.id)}"><b>${esc(r["名称"])}</b></a>
+          </td><td>${esc(r["用途"] || "—")}</td>
         <td>${r["读写类型"] === "只读" ? `<span class="pill">只读</span>`
               : `<span class="pill warn">${esc(r["读写类型"])}</span>`}</td>
         <td class="k">${esc(r["接入方式"])}</td>
@@ -1605,10 +1828,42 @@ async function 页_工具目录() {
       + `</tbody></table>
       <div class="note">工具执行只走<b>一个入口</b>(工具网关),门上六道闸:
         注册 → 服务端绑定 → Schema → 对象范围 → 确认 → 幂等。<br>
-        <b>「注册工具」这个按钮还没做</b> —— 接口有了(<code>POST /tools</code>,
-        它<b>不收可执行代码</b>,只收「哪个适配器 + 什么 Schema + 什么风险级别」),
-        页面上的表单没做。<b>不摆一个点了没反应的按钮。</b></div>`;
+        <b>点工具名进详情</b>可以改草稿、冻结版本。
+        注册在下面 —— <code>POST /tools</code> <b>不收可执行代码</b>,
+        只收「哪个适配器 + 什么风险级别 + 什么用途」。</div>`
+      + `<div id="tmsg"></div>` + 页_工具表单(d);
+    挂工具表单();
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+function 挂工具表单() {
+  document.querySelectorAll("[data-tfill]").forEach((b) => {
+    b.onclick = () => { if ($("#t-ad")) $("#t-ad").value = b.dataset.tfill; };
+  });
+  if (!$("#t-go")) return;
+  $("#t-go").onclick = async () => {
+    const 体 = {
+      名称: ($("#t-name").value || "").trim(),
+      用途: ($("#t-purpose").value || "").trim() || null,
+      读写类型: $("#t-se").value,
+      接入方式: ($("#t-ad").value || "").trim(),
+    };
+    $("#t-go").disabled = true;
+    if ($("#tmsg")) $("#tmsg").innerHTML = `<div class="state"><p>注册中…</p></div>`;
+    try {
+      const r = await 工具动作.注册(体);
+      if ($("#tmsg")) {
+        $("#tmsg").innerHTML = `<div class="state"><p>注册好了
+          <code>${esc(r.id || "")}</code> —— **下一步是冻结一个版本**:
+          草稿改不动已经冻结的版本,而引用它的 Agent 认的是版本
+          ${md(r.note ? "。" + r.note : "")}</p></div>`;
+      }
+      await 页_工具目录();
+    } catch (e) {
+      if ($("#tmsg")) $("#tmsg").innerHTML = 错误块(e, null).html;
+      $("#t-go").disabled = false;
+    }
+  };
 }
 
 /* ── 路由 ─────────────────────────────────────────────────────── */
@@ -3353,6 +3608,7 @@ async function 路由() {
     if (h === "#/agents") return await 页_agent列表();
     if (h.startsWith("#/agent/")) return await 页_agent配置(decodeURIComponent(h.slice(8)));
     if (h === "#/tools") return await 页_工具目录();
+    if (h.startsWith("#/tool/")) return await 页_工具详情(decodeURIComponent(h.slice(7)));
     if (h === "#/usage") return await 页_用量与成本();
     if (h === "#/uploads") return await 页_加资料();
     if (h === "#/kb") return await 页_知识库();
