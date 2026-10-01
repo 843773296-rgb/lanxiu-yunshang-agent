@@ -256,3 +256,146 @@ jobs:
           echo ""
           echo "逐项进度看 管理后台/docs/实现进度.md(make progress 生成)——"
           echo "   那份是现算的,**不要在这儿复述它的数字**(复述一次就开始漂)。"
+
+  # ── 管理后台的**端到端**:带 PostgreSQL + pgvector ──────────────────────
+  #
+  # ⚠️ 2026-10-01 加的。在这之前**那 773 条端到端在 CI 里一条都没跑过** ——
+  # 上面那个 `admin` job 只跑「不要数据库」的那些(编排四组 + 契约)。
+  # 也就是说本地 773 条全绿,而 CI **从来没验过它们**。
+  # 而这正是本仓 CI 提示里那句话说的:
+  # > 本地留着历次跑出来的产物,CI 每次从零 ——
+  # > 两者**只有在「从零建得起来」这件事上会分岔**。
+  #
+  # **独立一个 job**,和 `admin` / `check` 一样 —— 理由同 `admin` 那段:
+  # 报告要能回答「谁红了」。而且这一个要起数据库和两个进程,
+  # 它红的原因和前两个完全不是一类。
+  #
+  # ⚠️ 它跑的是 `make test-e2e-ci`,**不是 `test-e2e`** ——
+  # 排掉两份要真调 Claude 精排的(月租额度;CI 里没凭据)和一份要真浏览器的。
+  # 排掉哪几份、为什么,写在 `tools/test_registry_check.py` 的 `CI跳过` 里,
+  # 而那条判据会验「**没有谁从两个名单之间漏掉**」——
+  # 排掉一份是个决定,**漏掉一份是个事故**,而它们在 Makefile 上长得一样。
+  admin-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        # ⚠️ 用 `pgvector/pgvector` 而不是官方 `postgres` 镜像 ——
+        # 知识索引那几张表上有 `vector` 列,官方镜像里**没有这个扩展**,
+        # 而缺扩展的表现是 `alembic upgrade` 在建表那一步炸,
+        # 报的是「type vector does not exist」,读起来像迁移写错了。
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: aimc_dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:ci@localhost:5432/aimc_dev
+      APP_ENV: development
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 装依赖(照 requirements.lock,不是 requirements.txt)
+        working-directory: 管理后台
+        run: |
+          python3 -m venv .venv
+          ./.venv/bin/pip install -q --upgrade pip
+          # ⚠️ 装**锁文件**。装 requirements.txt 的话 CI 和本地可能装到不同版本,
+          # 而那时「CI 红了」和「代码坏了」分不开。
+          ./.venv/bin/pip install -q -r requirements.lock
+
+      - name: 建库 + 迁移 + 验契约和库一致
+        working-directory: 管理后台
+        run: |
+          # pgvector 扩展:镜像里有,但要在这个库上 `create extension`。
+          ./.venv/bin/python -c "
+          import os
+          from sqlalchemy import create_engine, text
+          e = create_engine(os.environ['DATABASE_URL'])
+          with e.begin() as c:
+              c.execute(text('create extension if not exists vector'))
+          print('pgvector 启用了')"
+          cd services/api && ../../.venv/bin/alembic upgrade head
+          # ⚠️ `alembic check` 验的是「契约和库一致」—— 它和 upgrade 不是一回事:
+          # upgrade 只说迁移跑完了,check 说**跑完之后的库和模型对得上**。
+          ../../.venv/bin/alembic check
+
+      - name: 灌演示数据 + 夹具
+        working-directory: 管理后台
+        run: |
+          ./.venv/bin/python services/api/app/seed_demo.py
+          ./.venv/bin/python tools/seed_datasets.py
+          ./.venv/bin/python tools/seed_training.py
+          ./.venv/bin/python tools/seed_evals.py
+          ./.venv/bin/python tools/seed_human_requests.py
+          ./.venv/bin/python tools/seed_pricing.py
+
+      - name: 起 API + Worker,**等到就绪**(不是等固定秒数)
+        working-directory: 管理后台
+        run: |
+          : > /tmp/aimc-worker.log
+          # ⚠️ **起法要和 `tools/dev.sh` 一致** —— 它是 `cd services/api/app`
+          # 之后 `uvicorn main:app`,不是 `-m uvicorn app.main:app --app-dir`。
+          # 我第一版照后者写(猜的),而猜错的表现是 `ModuleNotFoundError`,
+          # 读起来像代码坏了。**本地实测过这一行再提交**,不让 CI 替我试错。
+          nohup ./.venv/bin/python workers/worker.py > /tmp/aimc-worker.log 2>&1 &
+          ( cd services/api/app && \
+            nohup ../../../.venv/bin/uvicorn main:app \
+              --host 127.0.0.1 --port 8801 > /tmp/aimc-api.log 2>&1 & )
+          # ⚠️ **等到就绪,不是 sleep 固定秒数。**
+          # 固定窗口在 CI 上必然有一天不够 —— 而那时红的理由是
+          # 「连不上服务」,离真因(还没起来)只有一步,却会让人去查代码。
+          ok=0
+          for i in $(seq 1 60); do
+            if curl -sf -m 2 http://127.0.0.1:8801/api/healthz >/dev/null 2>&1 \
+               && grep -q "worker 起来了" /tmp/aimc-worker.log 2>/dev/null; then
+              ok=1; break; fi
+            sleep 1
+          done
+          if [ "$ok" != 1 ]; then
+            echo "❌ 60 秒还没就绪"; echo "--- api ---"; tail -40 /tmp/aimc-api.log
+            echo "--- worker ---"; tail -40 /tmp/aimc-worker.log; exit 1; fi
+          echo "✅ 服务和 Worker 都就绪了"
+
+      - name: 端到端(CI 版)+ 页面冒烟 + 行级对账
+        working-directory: 管理后台
+        run: make test-e2e-ci
+
+      - name: 要服务在跑才能验的那几条判据
+        working-directory: 管理后台
+        run: |
+          rc=0
+          ./.venv/bin/python tools/ifmatch_reachable_check.py || rc=1
+          ./.venv/bin/python tools/seed_rerun_check.py || rc=1
+          exit $rc
+
+      - name: 挂了就把两个日志尾部贴出来
+        if: failure()
+        working-directory: 管理后台
+        run: |
+          echo "--- api ---"; tail -60 /tmp/aimc-api.log || true
+          echo "--- worker ---"; tail -60 /tmp/aimc-worker.log || true
+
+      - name: 说清这个 job **没跑**什么
+        if: always()
+        run: |
+          # ⚠️ 「没跑什么」要**用 echo 打出来**,不只写在注释里 ——
+          # 注释在 CI 页面上**看不见**,而「这个 job 绿不等于端到端全验过」
+          # 正是读 CI 的人需要看见的一句。
+          echo "⚠️ 这个 job **没跑**:"
+          echo "   · test_knowledge_flow / test_knowledge_write_flow 里"
+          echo "     那两条**会真调 Claude 精排**的(月租额度,CI 里没凭据)"
+          echo "   · test_upload_page_firefox(要可见的 Firefox 窗口)"
+          echo "   · 要真 Embedding 模型的那些(.models/ 96MB,不进 git)"
+          echo "   **所以这个 job 绿 ≠ 端到端全验过了。**"

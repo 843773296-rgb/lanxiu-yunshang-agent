@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 # `#` 在 make 的配方里要用变量传,直接写 `\#` 会把反斜杠一起带给 shell
 HASH := \#
-.PHONY: help bootstrap dev seed-demo test test-e2e test-browser test-live contract doctor migrate gen worker worker-once progress \
+.PHONY: help bootstrap dev seed-demo test test-e2e test-e2e-ci page-smoke test-browser test-live contract doctor migrate gen worker worker-once progress \
         test-orchestration test-orchestration-e2e test-orchestration-live
 
 help:
@@ -127,6 +127,133 @@ test-browser:  ## 真浏览器点一遍「加资料」页(要 Firefox + selenium
 	@echo "     ./.venv/bin/pip install selenium"
 	@./.venv/bin/python tests/e2e/test_upload_page_firefox.py
 
+# ── 页面冒烟:**抽成独立目标,`test-e2e` 和 `test-e2e-ci` 共用** ──────────
+# ⚠️ 不抽的话就是**第二份会漂的名单** —— 而 `nav_smoke_check` 只认一处:
+# 它在整个 Makefile 里搜 `'#/xxx'` 字面量,两份名单里只要有一份全就通过,
+# 于是「CI 版少打了三页」这件事它看不出来。
+page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
+	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径** + **行级对账**"
+	@echo "  ⚠️ 对账断的是「接口给的每一条,身份都在页面上」——"
+	@echo "     **「渲染了」不等于「渲的是那些东西」**(漏渲几条在字数上完全正常)"
+# ⚠️ **这一段 2026-10-01 修过两处,两处都让它一直是「只看不拦」的:**
+#
+# ① 原来写的是 `node ... | tail -1` —— **管道吞退出码**:整个 shell 的状态
+#    是 `tail` 的(永远 0),于是**页面冒烟红了也不会让这个目标红**。
+#    这一族在这个项目里已经第五六次了。现在用 `rc` 收退出码、循环完再 exit。
+#    (变量名必须是 ASCII —— bash 不接受中文变量名,CI 里栽过一次:
+#     `红=0` 被当成命令,`$红` 展开成乱码 → 退出码 255。)
+#
+# ② 名单里**少了七页**:apps / conns / members / datasets / training /
+#    artifacts / audit —— 也就是我 09-29 新建的那七页,
+#    **在门禁里从来没被冒烟打过**。我手动打过,而那不算。
+#    现在补上,并且有 `nav_smoke_check.py` 盯着「能点开的页都要在这儿」。
+# ⚠️ **这里不许写 `set -e`。** 我第一版写了,而它让错误详情**永远打印不出来**:
+# `out=$$(node ...)` 一失败就立刻退出 shell,后面那句
+# `if [ $$? -ne 0 ]; then ... echo "$$out" | tail -6` 根本走不到 ——
+# 门禁确实红了(这是对的),但它**只打印一个页面名就死了**。
+# > 一个红了却不说为什么的门禁,等于让人自己去猜。
+# 所以靠显式的 `rc` 收口,不靠 `set -e`。
+	@rc=0; \
+	for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' \
+	         '#/kb' '#/retrieval' '#/usage' '#/traces' '#/health' '#/tryout' \
+	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' \
+	         '#/datasets' '#/training' '#/artifacts' '#/audit'; do \
+		printf "  %-14s " "$$h"; \
+		out=$$(node tests/e2e/page_smoke.js "$$h" 2>&1); \
+		if [ $$? -ne 0 ]; then rc=1; echo "❌ 挂了"; echo "$$out" | tail -6; \
+		else echo "$$out" | tail -2 | tr '\n' ' '; echo ""; fi; \
+	done; \
+	if [ $$rc -ne 0 ]; then echo "  ❌ 有页面冒烟没过"; exit 1; fi
+	@echo ""
+	@echo "▸ 画布页:**结构对账**(节点数/连线数/「加入」按钮数 vs 接口返回的定义)"
+	@W=$$(./.venv/bin/python -c "import json,urllib.request as u; \
+		r=u.Request('http://127.0.0.1:8801/api/v1/projects/project_demo_a/workflows', \
+		headers={'X-Dev-User':'U002'}); d=json.load(u.urlopen(r)); \
+		print(d['items'][0]['id'] if d['items'] else '')" 2>/dev/null); \
+	  if [ -n "$$W" ]; then out=$$(node tests/e2e/page_smoke.js "$(HASH)/workflow/$$W" 2>&1); \
+	    if [ $$? -ne 0 ]; then echo "❌"; echo "$$out" | tail -8; exit 1; fi; \
+	    echo "$$out" | tail -2; \
+	  else echo "  ⚠️ 演示库里没有工作流 —— 先 make seed-demo 或在页面上建一个。"; \
+	       echo "     **这不叫通过,这叫没测到**"; exit 1; fi
+	@echo ""
+	@echo "▸ Agent 配置页:**结构对账**(连接下拉框项数 + 能力那一栏)"
+	@A=$$(./.venv/bin/python -c "import json,urllib.request as u; \
+		r=u.Request('http://127.0.0.1:8801/api/v1/projects/project_demo_a/agents', \
+		headers={'X-Dev-User':'U002'}); d=json.load(u.urlopen(r)); \
+		print(d['items'][0]['id'] if d['items'] else '')" 2>/dev/null); \
+	  if [ -n "$$A" ]; then out=$$(node tests/e2e/page_smoke.js "$(HASH)/agent/$$A" 2>&1); \
+	    if [ $$? -ne 0 ]; then echo "❌"; echo "$$out" | tail -8; exit 1; fi; \
+	    echo "$$out" | tail -2; \
+	  else echo "  ⚠️ 演示库里没有 Agent —— 在页面上建一个。**这不叫通过,这叫没测到**"; \
+	       exit 1; fi
+	@echo ""
+# ⚠️ 这两页原来也是 `| tail -1`(**同一个吞退出码的毛病,第二处**)。
+	@rc=0; for h in '#/agents' '#/tools'; do \
+		printf "  %-12s " "$$h"; \
+		out=$$(node tests/e2e/page_smoke.js "$$h" 2>&1); \
+		if [ $$? -ne 0 ]; then rc=1; echo "❌"; echo "$$out" | tail -6; \
+		else echo "$$out" | tail -2 | tr '\n' ' '; echo ""; fi; \
+	done; if [ $$rc -ne 0 ]; then exit 1; fi
+	@echo ""
+	@echo "⚠️ 页面冒烟跑的是**加载路径**,不是视觉 —— 它证明「取到数并渲染了」,"
+	@echo "   不证明「排版对」。视觉要人打开 http://127.0.0.1:8801 看。"
+	@echo ""
+
+# ── CI 版端到端:**只跑不花钱、不要本地模型的那些** ─────────────────────
+#
+# ⚠️ 2026-10-01 加的。在这之前**端到端那 773 条在 CI 里一条都没跑过** ——
+# CI 的 `admin` job 只跑不要数据库的那些(编排四组 + 契约)。
+# 也就是说本地 773 条全绿,而 CI 从来没验过它们:
+# **本地绿不等于 CI 绿,而两者只有在「从零建得起来」这件事上会分岔。**
+#
+# 和 `test-e2e` 的差别**只有一处**:排掉两份要真调 Claude 的。
+# 排掉哪几份、为什么,在 `E2E_CI跳过` 里写着,
+# 而 `tools/test_registry_check.py` 会验「每一份都在两个名单之一里」——
+# **一个新测试不许从两个名单之间漏掉**。
+#
+# ⚠️ 顺序和 `test-e2e` 一致(数据集要排在训练和评测之前)——
+# 那条依赖的理由写在 `test-e2e` 里同一处。
+E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py \
+          test_upload_flow.py test_usage_flow.py test_runctl_flow.py \
+          test_connections_flow.py test_release_flow.py \
+          test_datasets_flow.py test_debug_evals_flow.py \
+          test_training_flow.py test_handover_flow.py \
+          test_tools_flow.py test_settings_flow.py
+
+E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
+             test_sample_page_actions.js test_tool_page_actions.js \
+             test_artifact_page_actions.js test_member_page_actions.js \
+             test_release_page_actions.js
+
+test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
+	@echo "▸ 端到端(CI 版):$(words $(E2E_CI)) 份 Python + $(words $(E2E_CI_JS)) 份 JS"
+	@echo "  ⚠️ **排掉了两份要真调 Claude 的** —— 排掉哪几份、为什么,"
+	@echo "     看 Makefile 里 `E2E_CI跳过`;`test_registry_check` 验「没有谁从两个名单之间漏掉」"
+	@./.venv/bin/python tools/seed_datasets.py > /dev/null
+	@./.venv/bin/python tools/seed_training.py > /dev/null
+	@rc=0; \
+	for t in $(E2E_CI); do \
+		printf "  %-30s " "$$t"; \
+		out=$$(./.venv/bin/python tests/e2e/$$t 2>&1); \
+		if [ $$? -ne 0 ]; then rc=1; echo "❌"; echo "$$out" | tail -12; \
+		else echo "$$out" | tail -1; fi; \
+	done; \
+	for t in $(E2E_CI_JS); do \
+		printf "  %-30s " "$$t"; \
+		out=$$(node tests/e2e/$$t 2>&1); \
+		if [ $$? -ne 0 ]; then rc=1; echo "❌"; echo "$$out" | tail -12; \
+		else echo "$$out" | tail -2 | head -1; fi; \
+	done; \
+	if [ $$rc -ne 0 ]; then echo "  ❌ 有端到端没过"; exit 1; fi
+	@echo ""
+	@$(MAKE) --no-print-directory page-smoke
+	@echo ""
+	@echo "⚠️ **这一轮没跑的**(CI 里跑不了,不是忘了):"
+	@echo "   · test_knowledge_flow.py / test_knowledge_write_flow.py ——"
+	@echo "     它们有一条**会真调 Claude 精排**(月租额度),CI 里没凭据"
+	@echo "   · test_upload_page_firefox.py —— 要可见的 Firefox 窗口(make test-browser)"
+	@echo "   **这几条只有本地跑过** —— 别把这个 job 绿了读成「端到端全验过了」"
+
 test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 make dev)
 	@echo "▸ 接口闭环与**禁止行为**(44 条:跨项目、权限、乐观锁、幂等、脱敏、未知费用)"
 	@./.venv/bin/python tests/e2e/test_api_flow.py
@@ -241,62 +368,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (已上传的 能引用吗=false / 坏文件是 200+通过=false / 校验失败是终态)"
 	@./.venv/bin/python tests/e2e/test_upload_flow.py
 	@echo ""
-	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径** + **行级对账**"
-	@echo "  ⚠️ 对账断的是「接口给的每一条,身份都在页面上」——"
-	@echo "     **「渲染了」不等于「渲的是那些东西」**(漏渲几条在字数上完全正常)"
-# ⚠️ **这一段 2026-10-01 修过两处,两处都让它一直是「只看不拦」的:**
-#
-# ① 原来写的是 `node ... | tail -1` —— **管道吞退出码**:整个 shell 的状态
-#    是 `tail` 的(永远 0),于是**页面冒烟红了也不会让这个目标红**。
-#    这一族在这个项目里已经第五六次了。现在用 `rc` 收退出码、循环完再 exit。
-#    (变量名必须是 ASCII —— bash 不接受中文变量名,CI 里栽过一次:
-#     `红=0` 被当成命令,`$红` 展开成乱码 → 退出码 255。)
-#
-# ② 名单里**少了七页**:apps / conns / members / datasets / training /
-#    artifacts / audit —— 也就是我 09-29 新建的那七页,
-#    **在门禁里从来没被冒烟打过**。我手动打过,而那不算。
-#    现在补上,并且有 `nav_smoke_check.py` 盯着「能点开的页都要在这儿」。
-# ⚠️ **这里不许写 `set -e`。** 我第一版写了,而它让错误详情**永远打印不出来**:
-# `out=$$(node ...)` 一失败就立刻退出 shell,后面那句
-# `if [ $$? -ne 0 ]; then ... echo "$$out" | tail -6` 根本走不到 ——
-# 门禁确实红了(这是对的),但它**只打印一个页面名就死了**。
-# > 一个红了却不说为什么的门禁,等于让人自己去猜。
-# 所以靠显式的 `rc` 收口,不靠 `set -e`。
-	@rc=0; \
-	for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' \
-	         '#/kb' '#/retrieval' '#/usage' '#/traces' '#/health' '#/tryout' \
-	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' \
-	         '#/datasets' '#/training' '#/artifacts' '#/audit'; do \
-		printf "  %-14s " "$$h"; \
-		out=$$(node tests/e2e/page_smoke.js "$$h" 2>&1); \
-		if [ $$? -ne 0 ]; then rc=1; echo "❌ 挂了"; echo "$$out" | tail -6; \
-		else echo "$$out" | tail -2 | tr '\n' ' '; echo ""; fi; \
-	done; \
-	if [ $$rc -ne 0 ]; then echo "  ❌ 有页面冒烟没过"; exit 1; fi
-	@echo ""
-	@echo "▸ 画布页:**结构对账**(节点数/连线数/「加入」按钮数 vs 接口返回的定义)"
-	@W=$$(./.venv/bin/python -c "import json,urllib.request as u; \
-		r=u.Request('http://127.0.0.1:8801/api/v1/projects/project_demo_a/workflows', \
-		headers={'X-Dev-User':'U002'}); d=json.load(u.urlopen(r)); \
-		print(d['items'][0]['id'] if d['items'] else '')" 2>/dev/null); \
-	  if [ -n "$$W" ]; then node tests/e2e/page_smoke.js "$(HASH)/workflow/$$W" 2>&1 | tail -2; \
-	  else echo "  ⚠️ 演示库里没有工作流 —— 先 make seed-demo 或在页面上建一个。"; \
-	       echo "     **这不叫通过,这叫没测到**"; exit 1; fi
-	@echo ""
-	@echo "▸ Agent 配置页:**结构对账**(连接下拉框项数 + 能力那一栏)"
-	@A=$$(./.venv/bin/python -c "import json,urllib.request as u; \
-		r=u.Request('http://127.0.0.1:8801/api/v1/projects/project_demo_a/agents', \
-		headers={'X-Dev-User':'U002'}); d=json.load(u.urlopen(r)); \
-		print(d['items'][0]['id'] if d['items'] else '')" 2>/dev/null); \
-	  if [ -n "$$A" ]; then node tests/e2e/page_smoke.js "$(HASH)/agent/$$A" 2>&1 | tail -2; \
-	  else echo "  ⚠️ 演示库里没有 Agent —— 在页面上建一个。**这不叫通过,这叫没测到**"; \
-	       exit 1; fi
-	@echo ""
-	@for h in '#/agents' '#/tools'; do \
-		printf "  %-12s " "$$h"; node tests/e2e/page_smoke.js "$$h" 2>&1 | tail -1; done
-	@echo ""
-	@echo "⚠️ 页面冒烟跑的是**加载路径**,不是视觉 —— 它证明「取到数并渲染了」,"
-	@echo "   不证明「排版对」。视觉要人打开 http://127.0.0.1:8801 看。"
+	@$(MAKE) --no-print-directory page-smoke
 
 test-live:
 	@echo "❌ 未实现:外部调用还没接。**缺资源要报告跳过,不算通过**(§17.5)。" >&2

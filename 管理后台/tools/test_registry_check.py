@@ -119,8 +119,38 @@ def main():
             return 1
         段[名] = "\n".join(段[名])
 
+    # ── 还要验第三件:**CI 版那个名单也不许漏人** ──────────────────────
+    #
+    # ⚠️ 2026-10-01 加的。`test-e2e-ci` 只跑「不花钱、不要本地模型」的那些,
+    # 而排掉哪几份是写在 `Makefile` 的 `E2E_CI` / `E2E_CI_JS` 里的 ——
+    # **一个新测试会从两个名单之间漏掉**:
+    # 加进了 `test-e2e`(所以本地跑得到)、没加进 `E2E_CI`(所以 CI 不跑它),
+    # 而**两边都是绿的**。
+    # > 排掉一份是个决定,**漏掉一份是个事故** —— 而它们在 Makefile 上长得一样。
+    #
+    # 所以:每一份要么在 `E2E_CI`/`E2E_CI_JS` 里,要么在下面这张
+    # **写明理由**的 CI 跳过表里。
+    CI跳过 = {
+        "test_knowledge_flow.py":
+            "第 ④ 组**会真调一次 Claude 精排**(月租额度)—— CI 里没凭据,"
+            "而「CI 只跑不花钱的」是这个项目的规矩",
+        "test_knowledge_write_flow.py":
+            "第 ⑥ 条同上(真调 Claude 精排)",
+        "test_upload_page_firefox.py":
+            "要可见的 Firefox 窗口 + selenium —— 本地 `make test-browser`",
+    }
+    CI名单 = ""
+    for 变量 in ("E2E_CI", "E2E_CI_JS"):
+        m2 = re.search(rf"^{变量} :?=(.*?)(?=\n[A-Za-z#]|\n\n)", 正文, re.M | re.S)
+        if not m2:
+            print(f"  {R}❌ Makefile 里找不到 `{变量}` —— "
+                  f"**定位不到不是通过**{D}")
+            return 1
+        CI名单 += m2.group(1)
+
     漏 = []
     跳 = []
+    CI漏 = []
     for f in 文件们:
         if f in 例外:
             跳.append((f, 例外[f]))
@@ -128,6 +158,29 @@ def main():
         缺 = [名 for 名, t in 段.items() if f not in t]
         if 缺:
             漏.append((f, 缺))
+        if f not in CI名单 and f not in CI跳过:
+            CI漏.append(f)
+
+    幽灵CI = [f for f in CI跳过 if f not in 文件们]
+    if 幽灵CI:
+        print(f"  {R}❌ CI 跳过表里这几个文件不存在了:{幽灵CI}{D}")
+        return 1
+    if CI跳过:
+        print(f"  {Y}⚠️ CI 里**明说不跑**的 {len(CI跳过)} 份"
+              f"(**点名跳过,不是没看见**):{D}")
+        for f, 为什么 in CI跳过.items():
+            print(f"     · {f} —— {为什么}")
+    if CI漏:
+        print(f"\n  {R}❌ 这 {len(CI漏)} 份**既不在 CI 名单里,也没写明为什么不跑**:{D}")
+        for f in CI漏:
+            print(f"     {f}")
+        print(f"     加进 Makefile 的 `E2E_CI`/`E2E_CI_JS`,"
+              f"或者写进这个脚本的 `CI跳过` 并**说清为什么**。")
+        print(f"     ⚠️ **排掉一份是个决定,漏掉一份是个事故** ——"
+              f"而它们在 Makefile 上长得一样:")
+        print(f"     加进了 `test-e2e`(本地跑得到)、没加进 `E2E_CI`(CI 不跑它),"
+              f"**两边都是绿的**。")
+        return 1
 
     # ⚠️ 例外一律**打印出来**。一个静悄悄的例外名单,和没有判据差不多。
     if 跳:
