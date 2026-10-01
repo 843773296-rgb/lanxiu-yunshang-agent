@@ -40,6 +40,19 @@
 **只落在新加的 supplier_code 列上**,夹具依赖的老列没动;真值引用的表没碰。
 ⚠️ census 对 10 行的供应商表**什么都没量**(全被低频抑制)—— 不是核过了。
 
+### ②quinque 10-01 下午:溯源 39 → 22 ✅(d360781);队列剩三件
+
+**已做完、已提交**:毛利整条链 · 标品补进价 / 纠价 · 补货点 + 压货 · 期初流水 · 10-01 日期全局红 · 溯源 17 条。
+**CI 2676b2d 起回绿**。本机库 10-01 换成了新重建的(旧库在 `库备份/`)。
+
+**队列剩下的(用户 09-29 都拍过板,不用再问)**:
+1. **版型三张表 + 391 条裁片占比**:调研行业规范生成(童装号型 GB/T 1335.3 / 里衬料常见门幅 / 制版教材修版量)。
+   新来源档「行业规范推算」,**不许写成 ratio_src='版师'**;判完成标准改认这一档
+2. **销售话术**:我来写,每条标 demo;source_check 的 demo 上限要给话术**单开类别**,不放宽通用上限
+3. **评价月目标写死 7/8/9 月**(11 月起「最近三个月」就错了)—— 连同它的自测夹具一起改
+
+溯源没收的 22 条为什么没收,写在 `intent/knowledge-source-debt.md`,下次补先看那里,别重查。
+
 ### ②quater 10-01:四件做完 ✅ 已提交(2676b2d),当天日期干净克隆从零重建 + 全套检查过
 
     标品纠价 / 补货点 + 压货 / 期初流水 / 10-01 日期全局红 —— 详见提交说明
@@ -3220,34 +3233,27 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-01 20:33。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-01 20:49。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | c920119 · 2026-10-01 · 管理后台:页面冒烟能判对错了 —— 而且它原来**红了也不会拦** |
-| 代码量 | 523 个 Python 文件 / 104294 行(不含 .venv) |
+| 最新提交 | d360781 · 2026-10-01 · 溯源欠账 39 → 22:上网逐条查,收 17 条,每条现抓页面核过 |
+| 代码量 | 523 个 Python 文件 / 104295 行(不含 .venv) |
 | 验收 | `./check.sh` 共 203 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
 **未提交的改动:**
 
 ```
-M agent/eval-history.jsonl
+M HANDOFF.md
+ M agent/eval-history.jsonl
  M agent/growth-eval-results.jsonl
  M agent/measure-eval-results.jsonl
  M agent/member-eval-results.jsonl
  M agent/ops-eval-results.partial.jsonl
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M "knowledge/03-\345\267\245\350\211\272.md"
- M "knowledge/04-\351\205\215\351\245\260.md"
- M knowledge/check_kb.py
- M knowledge/kb.py
- M tools/bite_specs.json
- M tools/verify_sources.py
- M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/HANDOFF.md"
 ?? .feynman/world-shift-launchd.log
 ?? .wip-muslin/
 ?? data/lanxiu.db
@@ -3257,11 +3263,11 @@ M agent/eval-history.jsonl
 **最近 5 次提交:**
 
 ```
+d360781 溯源欠账 39 → 22:上网逐条查,收 17 条,每条现抓页面核过
+f951ce9 CI:给管理后台的端到端加一个带 PostgreSQL 的 job —— 那 773 条**从来没在 CI 里跑过**
+a6b7fa8 刷交接:页面冒烟能判对错了,以及它原来红了也不会拦
 c920119 管理后台:页面冒烟能判对错了 —— 而且它原来**红了也不会拦**
 718faa0 刷交接:10-01 那批已提交;记下评价月目标写死月份这颗雷
-2676b2d 修 10-01 全局红(写死的「今天」)+ 补货点 / 压货 / 期初流水 / 标品纠价
-ce9f252 刷交接:六页表单做完(6/6),以及五处「界面要的东西读接口不给」
-c2df15b 管理后台:成员与权限能改了 —— **六页表单做完(6/6)**
 ```
 <!--/AUTO-->
 ## 一句话在做什么
