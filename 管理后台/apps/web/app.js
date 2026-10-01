@@ -3553,6 +3553,50 @@ async function 页_训练任务() {
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
 }
 
+/* ── 模型产物:部署 ────────────────────────────────────────────────
+ *
+ * ⚠️ **三道闸要分开显示,而不是合成一个「不能部署」。**
+ * 没标可用 / mock 训练的 / **说不清是不是 mock** —— 三种都拦,
+ * 而它们在列表上长得几乎一样,下一步却完全不同:
+ * 第一种去校验,第二种换真训练,第三种**先把来路查清**。
+ * 「未知不是『不是』」这条就靠第三种撑着。
+ *
+ * ⚠️ **「标可用」这一步没有接口**(2026-10-01 查出来的):
+ * `verified_at` 整个仓库只有 seed 写过。所以这一页**明说这件事**,
+ * 而不是摆一个点了没用的「标可用」按钮 ——
+ * **「点了没用」比「没有这个按钮」更费时间。**
+ */
+const 产物动作 = {
+  async 部署(aid, 环境) {
+    return await 请求(`${P()}/deployments`,
+      { method: "POST", headers: { "Idempotency-Key": 新键() },
+        body: JSON.stringify({ 产物: aid, 环境 }) });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.产物动作 = 产物动作;
+
+function 挂产物事件() {
+  document.querySelectorAll("[data-dep]").forEach((b) => {
+    b.onclick = async () => {
+      const aid = b.dataset.dep;
+      const sel = document.querySelector(`[data-env="${aid}"]`);
+      b.disabled = true;
+      if ($("#amsg")) $("#amsg").innerHTML = `<div class="state"><p>部署中…</p></div>`;
+      try {
+        const r = await 产物动作.部署(aid, sel ? sel.value : "");
+        if ($("#amsg")) {
+          $("#amsg").innerHTML = `<div class="state"><p>部署提交了:
+            ${esc(JSON.stringify(r).slice(0, 220))}</p></div>`;
+        }
+        await 页_模型产物();
+      } catch (e) {
+        if ($("#amsg")) $("#amsg").innerHTML = 错误块(e, null).html;
+        b.disabled = false;
+      }
+    };
+  });
+}
+
 async function 页_模型产物() {
   $("#main").innerHTML = `<div class="crumb">微调 / 模型产物</div>
     <div class="head"><div><h1>模型产物</h1>
@@ -3567,8 +3611,12 @@ async function 页_模型产物() {
         + "收了就等于让调用方自己说「我校验过了」。").html;
       return;
     }
+    // ⚠️ 环境白名单**从接口来**(`training.部署环境` 现读),不在这儿硬编。
+    const 环境们 = d["可选部署环境"] || [];
+    const 能部署 = 我的角色 === "approver" || 我的角色 === "admin";
     $("#list").innerHTML = `<table><thead><tr><th>产物</th><th>种类</th>
-      <th>基座</th><th>标了可用吗</th><th>是 mock 训练的吗</th><th>还差什么</th>
+      <th>基座</th><th>标了可用吗</th><th>是 mock 训练的吗</th>
+      <th>标可用还差什么</th><th>部署还差什么（<b>两栏别混</b>）</th><th>部署</th>
       </tr></thead><tbody>`
       + d["产物"].map((r) => `<tr>
         <td class="k">${esc(r.id)}</td><td>${esc(r["种类"])}</td>
@@ -3578,11 +3626,33 @@ async function 页_模型产物() {
         <td>${r["是mock训练的"] === true ? `<span class="pill warn">mock</span>`
               : r["是mock训练的"] === false ? `<span class="pill">真实</span>`
               : `<span class="pill warn">说不清</span>`}</td>
-        <td class="k">${esc(((r["还差什么"] || [])[0] || "—").slice(0, 50))}</td>
+        <td class="k">${(r["标可用还差什么"] || []).length
+            ? (r["标可用还差什么"] || []).map((x) =>
+                `<div>· ${md(x.slice(0, 90))}</div>`).join("")
+            : `<span class="pill ok">能标可用</span>`}</td>
+        <td class="k">${(r["部署还差什么"] || []).length
+            ? (r["部署还差什么"] || []).map((x) =>
+                `<div>· ${md(x.slice(0, 90))}</div>`).join("")
+            : `<span class="pill ok">三道闸都过了</span>`}</td>
+        <td>${能部署 && r["能部署吗"]
+            ? `<select data-env="${esc(r.id)}">${环境们.map((e) =>
+                `<option>${esc(e)}</option>`).join("")}</select>
+               <button data-dep="${esc(r.id)}">部署</button>`
+            : 能部署
+              ? `<span class="k">闸没过,不摆按钮</span>`
+              : `<span class="k">要「生产审核/发布/回滚」</span>`}</td>
         </tr>`).join("")
       + `</tbody></table><div class="note">${md(d.note || "")}<br>
         ⚠️ 部署三道闸:<b>没标可用</b> / <b>mock 训练的</b> /
-        <b>说不清是不是 mock</b> —— 三种都拦,而它们在这张表上长得几乎一样。</div>`;
+        <b>说不清是不是 mock</b> —— 三种都拦,而它们在这张表上长得几乎一样,
+        <b>下一步却完全不同</b>:第一种去校验,第二种换真训练,
+        第三种<b>先把来路查清</b>。所以上面那一栏<b>逐条列出来</b>,不合成一句。
+        ${d["⚠️两栏别混"] ? `<br><br>${md(d["⚠️两栏别混"])}` : ""}
+        ${d["⚠️标可用这一步还没有接口"]
+          ? `<br><br>${md(d["⚠️标可用这一步还没有接口"])}`
+          : ""}</div>`
+      + `<div id="amsg"></div>`;
+    挂产物事件();
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
 }
 
