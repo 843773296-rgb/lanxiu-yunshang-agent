@@ -25,11 +25,15 @@ for fn in sorted(f for f in os.listdir(HERE) if f.endswith(".md")):
         if code not in tiered: notier.append((code, name.strip(), fn))
 
 entries = {r[0]: (r[1], r[9], "") for r in kb.load()}
+# 出处两列也要对:2026-10-01 往 md 补了出处,库没刷新,这份检查照样说「一致」——
+# **它比的列里没有出处**,于是 md 和库在出处上分了家而它看不见
+出处md = {r[0]: (r[10], r[11]) for r in kb.load()}
 
 db = {}
 if os.path.exists(DB):
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
     db = {r["code"]: (r["name"], r["src_type"]) for r in c.execute("SELECT code,name,src_type FROM craft")}
+    出处db = {r["code"]: (r["src_url"], r["src_name"]) for r in c.execute("SELECT code,src_url,src_name FROM craft")}
 
 only_md = sorted(set(entries) - set(db))
 only_db = sorted(set(db) - set(entries))
@@ -38,6 +42,8 @@ for code in sorted(set(entries) & set(db)):
     mn, mt, _ = entries[code]; dn, dt = db[code]
     if mn != dn: name_bad.append((code, mn, dn))
     if mt != dt: tier_bad.append((code, mt, dt))
+出处_bad = [(code, 出处md[code], 出处db.get(code)) for code in sorted(set(entries) & set(db))
+           if 出处md[code] != 出处db.get(code)] if db else []
 
 print(f"知识库 {len([f for f in os.listdir(HERE) if f.endswith('.md')])} 个文件 · "
       f"{len(entries)} 个条目 · craft 表 {len(db)} 条")
@@ -54,6 +60,10 @@ if name_bad:
 if tier_bad:
     bad += len(tier_bad); print(f"❌ 来源等级不一致({len(tier_bad)}) —— 以文档为准,须回改 seed.py:")
     for c_, m, d in tier_bad: print(f"     {c_} 文档 {m} vs 表 {d}")
+if 出处_bad:
+    bad += len(出处_bad); print(f"❌ 出处不一致({len(出处_bad)}) —— md 补了出处、库没刷新(或反过来):")
+    for c_, m, d in 出处_bad[:5]: print(f"     {c_} 文档 {m} vs 表 {d}")
+    if len(出处_bad) > 5: print(f"     ……还有 {len(出处_bad) - 5} 条")
 if notier:
     bad += len(notier); print(f"❌ 缺来源标注({len(notier)}) —— 每条知识都必须标 public/scale/demo:")
     for c_, n, f in notier: print(f"     {c_} {n}  ({f})")
@@ -110,6 +120,7 @@ print("✅ 知识库与 craft 表一致,决策表也和 md 对得上")
 咬合 = [
     ('把库里一种工艺改名(知识库里写的和 craft 表对不上)',
      '名称不一致'),
+    ('把 md 里 KF38 灰缬的出处链接改掉、库不动', '出处不一致'),
     ('给 09 md 的返修判定表加一行(md 改了而派生表没重灌)',
      '决策表和 md 对得上'),
 ]

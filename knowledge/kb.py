@@ -41,6 +41,17 @@ def load():
                     u = re.search(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", v)
                     if u: cur["url"] = u.group(0).rstrip(").,")
                     cur["src"] = "中国非物质文化遗产网"
+                elif k == "出处":
+                    # `- **出处**:出处名:页面上应出现的标题 → 链接`(2026-10-01)
+                    # ⚠️ 原来只认「非遗」字段和「→ 链接」,而且**不管链接指向哪儿,出处名一律记成
+                    # 中国非物质文化遗产网** —— 补国家标准、博物馆的出处时会被记错名字。
+                    # 页面标题写出来,是给 tools/verify_sources.py 去抓页面比对的(期望值手写、实际值现抓)
+                    左, _, 右 = v.partition("→")
+                    u = re.search(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", 右)
+                    名 = re.split(r"[::]", 左.strip(), maxsplit=1)[0].strip()
+                    if u and 名:
+                        cur["url"] = u.group(0).rstrip(").,")
+                        cur["src"] = 名
                 cur["extra"].append(f"{k}:{v}")
             elif line.strip().startswith("→ http") and cur.get("url") is None:
                 u = re.match(r"→\s*(https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+)", line.strip())

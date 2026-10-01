@@ -3838,5 +3838,17 @@
    }
   ],
   "预期红": "运行时的「今天」不许写死成某一天"
+ },
+ {
+  "script": "knowledge/check_kb.py",
+  "改坏": "把 md 里 KF38 灰缬的出处链接改掉、库不动",
+  "file": [
+   {
+    "path": "knowledge/03-工艺.md",
+    "old": "- **出处**:中国丝绸博物馆:丝路之缬 → https://www.chinasilkmuseum.com/yz/info_18.aspx?itemid=25774",
+    "new": "- **出处**:中国丝绸博物馆:丝路之缬 → https://www.chinasilkmuseum.com/yz/info_18.aspx?itemid=99999"
+   }
+  ],
+  "预期红": "出处不一致"
  }
 ]

@@ -91,6 +91,13 @@ def 条目():
         for i, line in enumerate(lines):
             m = re.match(r"^###\s+((?:XZ|MT|KF|PS|SE)\d{2})\s+(.+?)\s+`\w+`\s*$", line.strip())
             if m: code, name = m.group(1), m.group(2)
+            # 2026-10-01 新写法:`- **出处**:出处名:页面上应出现的标题 → 链接` —— 期望值就写在同一行
+            mc = re.match(r"^-\s*\*\*出处\*\*\s*[::]\s*(.+?)\s*→\s*(https?://\S+)", line.strip())
+            if mc:
+                左 = mc.group(1)
+                标题 = re.split(r"[::]", 左, maxsplit=1)[1].strip() if re.search(r"[::]", 左) else None
+                out.append((fn, code, name, ("出处", 标题), mc.group(2).rstrip(").,")))
+                continue
             if not line.strip().startswith("→ http"): continue
             url = re.search(r"(https?://\S+)", line).group(1).rstrip(").,")
             # 往回找这一条出处说的是什么项目
@@ -127,6 +134,23 @@ def main():
           f"实际值现抓** —— 两边不同源,才抓得到实现错误。\n")
     坏, 疑 = [], []
     for fn, code, name, 项目, url in rows:
+        if isinstance(项目, tuple):            # 「出处」字段:标题或正文里出现写明的那个标题就算对
+            标 = 项目[1]
+            页 = _get(url)
+            if not 页:
+                疑.append((code, name, url, "抓不到(可能被限流)"))
+                print(f"  ⚠ {code} {name:10} **抓不到,不代表链接坏了** —— 隔一会儿单独再跑一次:{url}")
+                continue
+            正文 = html.unescape(re.sub(r"<[^>]+>", " ", 页))
+            if not 标:
+                疑.append((code, name, url, "出处没写页面标题")); print(f"  ⚠ {code} {name:10} 出处没写页面标题")
+            elif 标 in 正文 or 标.replace(" ", "") in 正文.replace(" ", ""):
+                print(f"  ✅ {code} {name:10} 出处写「{标}」 → 页面里有")
+            else:
+                print(f"  ❌ {code} {name:10} 出处写「{标}」 → 页面里**没有**这几个字")
+                坏.append((code, name, 标, url, "(页面里找不到)"))
+            time.sleep(1.2)
+            continue
         t = 页面标题(url)
         if t is None:
             疑.append((code, name, url, "抓不到(可能被限流)"))
