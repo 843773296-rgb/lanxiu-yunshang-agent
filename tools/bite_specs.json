@@ -3850,5 +3850,17 @@
    }
   ],
   "预期红": "出处不一致"
+ },
+ {
+  "script": "knowledge/derive_pattern.py",
+  "改坏": "把 md 里领底呢的幅宽删掉",
+  "file": [
+   {
+    "path": "knowledge/11-物料与BOM.md",
+    "old": "| WL42 | 领底呢 | 衬料 | 立领定型,幅宽 150cm |",
+    "new": "| WL42 | 领底呢 | 衬料 | 立领定型 |"
+   }
+  ],
+  "预期红": "与 craft / measure_tpl 对不上"
  }
 ]

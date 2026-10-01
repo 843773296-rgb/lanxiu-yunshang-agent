@@ -28,6 +28,7 @@ _CACHE = {}
 咬合 = [
     ('从库里删掉一种工艺(推导出来的 BOM 引用一个不存在的工艺)',
      '与 craft / measure_tpl 对不上'),
+    ('把 md 里领底呢的幅宽删掉(里衬料没幅宽)', '与 craft / measure_tpl 对不上'),
 ]
 
 def _memo(fn):
@@ -165,7 +166,12 @@ def _materials(pairs):
                         width_cm=float(c[1]), unit="米", price=float(c[2]),
                         loss=_num(c[3]) / 100, lead=int(c[4]), ref_craft=c[0]))
     for c in _tbl(t, 8, "WL"):
-        out.append(dict(code=c[0], name=c[1], cat=c[2], spec=c[3], width_cm=None,
+        # 辅料的幅宽从规格里读(「幅宽 114cm」「宽 2cm」)。⚠️ 原来一律填 None ——
+        # md 里 20 种里衬料**19 种写着幅宽**,而库里全是空的,这事还被记成「要等版师给」的待办(2026-10-01 查出)。
+        # 读不出来就是 None(没写),不猜一个数
+        _w = re.search(r"(?:幅宽|宽)\s*(\d+(?:\.\d+)?)\s*cm", c[3] or "")
+        out.append(dict(code=c[0], name=c[1], cat=c[2], spec=c[3],
+                        width_cm=float(_w.group(1)) if _w else None,
                         unit=c[4], price=float(c[5]), loss=_num(c[6]) / 100,
                         lead=int(c[7]), ref_craft=None))
     return out
@@ -319,6 +325,10 @@ if __name__ == "__main__":
         for code in sorted(mt):
             if code not in {m["code"] for m in ms}:
                 bad.append(f"材质 {code} 没有幅宽/单价/损耗,kb_bom 算不了")
+        # ③bis 里料 / 衬料也得有幅宽 —— 2026-10-01 前解析器对它们一律填空,md 里写着也读不进来
+        for m in ms:
+            if m["cat"] in ("里料", "衬料") and not m["width_cm"]:
+                bad.append(f"{m['cat']} {m['code']} {m['name']} 没有幅宽(规格里写「幅宽 Ncm」或带状的「宽 Ncm」)")
         # ④ 工艺附加用料引用的工艺必须存在
         for x in cb:
             if x["craft"] not in kf: bad.append(f"工艺附加用料引用了不存在的工艺 {x['craft']}")
