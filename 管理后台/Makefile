@@ -22,6 +22,8 @@ contract:      ## 只跑契约覆盖检查(不需要数据库)
 	@./.venv/bin/python tools/spec_coverage.py
 	@echo ""
 	@./.venv/bin/python tools/test_registry_check.py
+	@echo ""
+	@./.venv/bin/python tools/nav_smoke_check.py
 
 bootstrap:     ## 装依赖 + 起基础服务 + 迁移
 	@bash tools/bootstrap.sh
@@ -239,9 +241,38 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (已上传的 能引用吗=false / 坏文件是 200+通过=false / 校验失败是终态)"
 	@./.venv/bin/python tests/e2e/test_upload_flow.py
 	@echo ""
-	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径**(不是只看语法)"
-	@for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' '#/kb' '#/retrieval' '#/usage' '#/traces' '#/health' '#/tryout' '#/evals' '#/compare' '#/human'; do \
-		printf "  %-14s " "$$h"; node tests/e2e/page_smoke.js "$$h" 2>&1 | tail -1; done
+	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径** + **行级对账**"
+	@echo "  ⚠️ 对账断的是「接口给的每一条,身份都在页面上」——"
+	@echo "     **「渲染了」不等于「渲的是那些东西」**(漏渲几条在字数上完全正常)"
+# ⚠️ **这一段 2026-10-01 修过两处,两处都让它一直是「只看不拦」的:**
+#
+# ① 原来写的是 `node ... | tail -1` —— **管道吞退出码**:整个 shell 的状态
+#    是 `tail` 的(永远 0),于是**页面冒烟红了也不会让这个目标红**。
+#    这一族在这个项目里已经第五六次了。现在用 `rc` 收退出码、循环完再 exit。
+#    (变量名必须是 ASCII —— bash 不接受中文变量名,CI 里栽过一次:
+#     `红=0` 被当成命令,`$红` 展开成乱码 → 退出码 255。)
+#
+# ② 名单里**少了七页**:apps / conns / members / datasets / training /
+#    artifacts / audit —— 也就是我 09-29 新建的那七页,
+#    **在门禁里从来没被冒烟打过**。我手动打过,而那不算。
+#    现在补上,并且有 `nav_smoke_check.py` 盯着「能点开的页都要在这儿」。
+# ⚠️ **这里不许写 `set -e`。** 我第一版写了,而它让错误详情**永远打印不出来**:
+# `out=$$(node ...)` 一失败就立刻退出 shell,后面那句
+# `if [ $$? -ne 0 ]; then ... echo "$$out" | tail -6` 根本走不到 ——
+# 门禁确实红了(这是对的),但它**只打印一个页面名就死了**。
+# > 一个红了却不说为什么的门禁,等于让人自己去猜。
+# 所以靠显式的 `rc` 收口,不靠 `set -e`。
+	@rc=0; \
+	for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' \
+	         '#/kb' '#/retrieval' '#/usage' '#/traces' '#/health' '#/tryout' \
+	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' \
+	         '#/datasets' '#/training' '#/artifacts' '#/audit'; do \
+		printf "  %-14s " "$$h"; \
+		out=$$(node tests/e2e/page_smoke.js "$$h" 2>&1); \
+		if [ $$? -ne 0 ]; then rc=1; echo "❌ 挂了"; echo "$$out" | tail -6; \
+		else echo "$$out" | tail -2 | tr '\n' ' '; echo ""; fi; \
+	done; \
+	if [ $$rc -ne 0 ]; then echo "  ❌ 有页面冒烟没过"; exit 1; fi
 	@echo ""
 	@echo "▸ 画布页:**结构对账**(节点数/连线数/「加入」按钮数 vs 接口返回的定义)"
 	@W=$$(./.venv/bin/python -c "import json,urllib.request as u; \
