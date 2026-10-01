@@ -46,6 +46,22 @@ from datetime import datetime
 尝试 = os.path.join(态, "world-shift-tried")
 成功 = os.path.join(态, "world-shift-ok")
 日志 = os.path.join(态, "daily-shift.log")
+# launchd 自己的 stdout/stderr。**脚本跑不起来的时候,只有这里有证据。**
+#
+# ⚠️ 2026-10-01 这条判据在真出事的时候**打了绿灯**,补的就是这个洞:
+# launchd 在 05:10 跑了两次,两次都 `Operation not permitted`
+# (macOS 把桌面目录保护起来了,launchd agent 要「完全磁盘访问权限」)——
+# **脚本一行都没执行**,所以 `world-shift-tried` / `-ok` 两个标记
+# 一个字都没动,还停在 9-29。而容忍是两天,10-01 减 9-29 正好等于 2,
+# `> 2` 不成立 → 判据说「✅ 任务在跑 · 最近成功过」。
+#
+# > **一个只读「脚本自己写的标记」的健康检查,
+# > 看不见「脚本根本没跑起来」。**
+#
+# 代价当天就来了:世界日期停在 9-29 而真实日期是 10-01,
+# 根 `check.sh` 里 7 条带时间的业务判据全红(「已经发生的事,时间不能在未来」
+# 「量体超期 → 下单被拦」……),而**没有一条指向定时任务**。
+LAUNCHD日志 = os.path.join(态, "world-shift-launchd.log")
 # 「装了多久」用 plist 的 mtime 答 —— 装上之后到第一次跑之间有个窗口,
 # 而这个窗口里「装了还没到点」和「根本没装」在标记上长得一模一样。
 PLIST = os.path.expanduser("~/Library/LaunchAgents/com.lanxiu.worldshift.plist")
@@ -127,6 +143,33 @@ def main():
                   f"看日志:{os.path.relpath(日志, 根)}")
     else:
         print(f"  {G}✅ 最近成功过{D}  上一次成功:{o.isoformat(' ', 'minutes')}")
+
+    # ── 看一眼 launchd 自己的输出 ──────────────────────────────────────
+    # launchd 只在**有输出**的时候往这儿写,而这个脚本正常跑完是不出声的 ——
+    # 所以「这个文件里有东西、而且比上一次成功还新」= **失败过而没人知道**。
+    if os.path.exists(LAUNCHD日志) and os.path.getsize(LAUNCHD日志) > 0:
+        日志时 = datetime.fromtimestamp(os.path.getmtime(LAUNCHD日志))
+        # ⚠️ 比的是「**比上一次成功新**」,不是「有没有内容」——
+        # 一次早就修好的旧失败留在日志里,不该让判据一直红
+        # (**会误报的判据会把人教会忽略它**)。
+        if o is None or 日志时 > o:
+            尾 = ""
+            try:
+                尾 = open(LAUNCHD日志, encoding="utf-8",
+                         errors="replace").read().strip().splitlines()[-3:]
+                尾 = " / ".join(x.strip() for x in 尾)[:260]
+            except Exception:
+                尾 = "(日志读不出来)"
+            坏.append(f"**launchd 报过错,而且比上一次成功还新** —— "
+                      f"日志时间 {日志时.isoformat(' ', 'minutes')},"
+                      f"上一次成功 "
+                      f"{o.isoformat(' ', 'minutes') if o else '(从来没有)'}。\n"
+                      f"       最后几行:{尾}\n"
+                      f"       ⚠️ 脚本跑不起来的时候,两个标记文件**一个字都不会动** ——"
+                      f"所以光看标记会说「一切正常」。"
+                      f"\n       常见原因:macOS 把目录保护起来了"
+                      f"(`Operation not permitted`)—— launchd agent 要在"
+                      f"「系统设置 → 隐私与安全性 → 完全磁盘访问权限」里放行 `/bin/bash`")
 
     for x in 坏:
         print(f"  {R}❌ {x}{D}")
