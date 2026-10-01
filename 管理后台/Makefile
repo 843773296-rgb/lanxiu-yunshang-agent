@@ -129,6 +129,11 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 接口闭环与**禁止行为**(44 条:跨项目、权限、乐观锁、幂等、脱敏、未知费用)"
 	@./.venv/bin/python tests/e2e/test_api_flow.py
 	@echo ""
+	@echo "▸ 成员与权限**在页面代码里真走一遍**(26 条)"
+	@echo "  ⚠️ 这一页最硬的闸拦的不是「做错了」,是**「做完之后没法回头」** ——"
+	@echo "     不许把最后一个能改权限的人降下来(降了没人能加回来,而界面上什么都不报)"
+	@node tests/e2e/test_member_page_actions.js
+	@echo ""
 	@echo "▸ 模型产物部署**在页面代码里真走一遍**(16 条:三道闸各一条)"
 	@echo "  ⚠️ 三道闸在列表上长得几乎一样,**下一步却完全不同** ——"
 	@echo "     没标可用去校验 / mock 的换真训练 / **说不清的先把来路查清**"
@@ -293,6 +298,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_api_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_api_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_api_flow.log
+	@node tests/e2e/test_member_page_actions.js > /tmp/prog-test_member_page_actions.log 2>&1 \
+	  || { echo "  ❌ test_member_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_member_page_actions.log; exit 1; }
+	@tail -2 /tmp/prog-test_member_page_actions.log
 	@node tests/e2e/test_artifact_page_actions.js > /tmp/prog-test_artifact_page_actions.log 2>&1 \
 	  || { echo "  ❌ test_artifact_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_artifact_page_actions.log; exit 1; }

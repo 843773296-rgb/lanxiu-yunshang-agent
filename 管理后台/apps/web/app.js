@@ -3328,6 +3328,104 @@ function 挂连接事件(d) {
   };
 }
 
+/* ── 成员与权限:加成员 / 改角色与专项授权 ─────────────────────────────
+ *
+ * ⚠️ **这一页最硬的一条闸和别的都不一样。**
+ * 别的闸拦「你做错了」,这一道拦「**你做完之后没法回头**」:
+ * 不许把项目里**最后一个能改权限的人**降下来 —— 降了之后
+ * 没有任何人能把权限加回来,而那一刻**界面上什么都不会报**。
+ * 所以这一页把「现在有几个人能改权限」**显式写出来**,
+ * 只剩一个的时候**标出来** —— 一个只在被拒那一刻才出现的警告,来得太晚。
+ *
+ * ⚠️ **`可授权` 那一档默认是关闭的。** 一个角色「可以被授权某条能力」
+ * 和「默认就有它」是两件事,而**角色名上完全看不出来**。
+ * 所以专项授权那一栏只列接口给的 `可授权的能力` ——
+ * 把 12 条全列出来的话,大部分填了会被闸拒。
+ *
+ * ⚠️ **这个接口是「加成员 / 改权限」同一个口。** 同一个工号再 POST 一次
+ * 就是改他 —— 所以表单上那个按钮写的是「保存」而不是「新增」:
+ * 写「新增」会让人以为改权限要去别处找。
+ */
+const 成员动作 = {
+  async 保存(工号, 角色, 专项授权) {
+    return await 请求(`${P()}/memberships`,
+      { method: "POST",
+        body: JSON.stringify({ 工号, 角色, 专项授权: 专项授权 || [] }) });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.成员动作 = 成员动作;
+
+function 页_成员表单(d, 预填) {
+  const 能配 = 我的角色 === "admin";
+  if (!能配) {
+    return `<div class="note">改成员权限要「配置密钥与预算」这条能力 ——
+      你现在是 <b>${esc(我的角色 || "?")}</b>,<b>所以这里不摆表单</b>:
+      摆一个填完被 403 的表单,只是把拒绝往后挪一步。</div>`;
+  }
+  const 角色们 = d["可选角色"] || [];
+  const 可授权 = d["可授权的能力"] || [];
+  const p = 预填 || {};
+  const 已有 = new Set(p["专项授权"] || []);
+  return `<div class="state">
+    <h3>${p["工号"] ? `改 ${esc(p["工号"])} 的权限` : "加一个成员"}</h3>
+    <p class="k">${md(d["⚠️可授权是默认关的"] || "")}</p>
+    <p><label>工号<br><input id="m-uid" style="width:min(220px,80%)"
+      value="${esc(p["工号"] || "")}"${p["工号"] ? " readonly" : ""}></label>
+      ${p["工号"] ? `<span class="k">（同一个工号再提交一次就是改他 ——
+        <b>加成员和改权限是同一个口</b>）</span>` : ""}</p>
+    <p><label>角色<br><select id="m-role">${角色们.map((r) =>
+      `<option value="${esc(r["值"])}"${r["值"] === p["角色"] ? " selected" : ""}
+        >${esc(r["中文"])}（${esc(r["值"])}）</option>`).join("")}</select></label></p>
+    <p>专项授权（<b>只列可授权的那几条</b>）<br>
+      ${可授权.map((c, i) => `<label style="display:inline-block;margin-right:10px">
+        <input type="checkbox" data-grant="${i}" value="${esc(c)}"${
+          已有.has(c) ? " checked" : ""}> ${esc(c)}</label>`).join("")}</p>
+    <p><button class="pri" id="m-go">保存</button>
+      ${p["工号"] ? `<button id="m-cancel">取消</button>` : ""}</p></div>`;
+}
+
+function 挂成员事件(d) {
+  document.querySelectorAll("[data-edit]").forEach((b) => {
+    b.onclick = () => {
+      const 行 = (d["成员"] || []).find((x) => x["工号"] === b.dataset.edit);
+      if ($("#mform")) $("#mform").innerHTML = 页_成员表单(d, 行);
+      挂成员事件(d);
+    };
+  });
+  if ($("#m-cancel")) {
+    $("#m-cancel").onclick = () => {
+      if ($("#mform")) $("#mform").innerHTML = 页_成员表单(d, null);
+      挂成员事件(d);
+    };
+  }
+  if (!$("#m-go")) return;
+  $("#m-go").onclick = async () => {
+    const 专 = [];
+    document.querySelectorAll("[data-grant]").forEach((c) => {
+      if (c.checked) 专.push(c.value);
+    });
+    const uid = ($("#m-uid").value || "").trim();
+    $("#m-go").disabled = true;
+    if ($("#mmsg")) $("#mmsg").innerHTML = `<div class="state"><p>保存中…</p></div>`;
+    try {
+      const r = await 成员动作.保存(uid, $("#m-role").value, 专);
+      if ($("#mmsg")) {
+        $("#mmsg").innerHTML = `<div class="state"><p>保存了 ——
+          <b>实际能做的</b>:${esc(((r["实际能做的"] || []).join("、")) || "—")}
+          ${md(r.note ? "。" + r.note : "")}</p></div>`;
+      }
+      await 页_成员与权限();
+    } catch (e) {
+      // ⚠️ **闸的每一条都要显示出来。** 这一页的闸里有一条
+      // 「你是最后一个能改权限的人」—— 只显示 message 的话
+      // 人看到的是「改不了」,而**为什么**在 field_errors.闸 里。
+      if ($("#mmsg")) $("#mmsg").innerHTML = `<div class="state err">
+        <p>${md(闸文(e))}</p></div>`;
+      $("#m-go").disabled = false;
+    }
+  };
+}
+
 async function 页_成员与权限() {
   $("#main").innerHTML = `<div class="crumb">设置 / 成员与权限</div>
     <div class="head"><div><h1>成员与权限</h1>
@@ -3337,7 +3435,8 @@ async function 页_成员与权限() {
   try {
     const d = await 请求(`${P()}/memberships`);
     $("#list").innerHTML = `<table><thead><tr><th>工号</th><th>角色</th>
-      <th>这条生效吗</th><th>专项授权</th><th>实际能做的</th></tr></thead><tbody>`
+      <th>这条生效吗</th><th>专项授权</th><th>实际能做的</th><th>改</th>
+      </tr></thead><tbody>`
       + d["成员"].map((r) => `<tr>
         <td><b>${esc(r["工号"])}</b></td>
         <td>${esc(r["角色中文"] || r["角色"])}<div class="k">${esc(r["角色"])}</div></td>
@@ -3345,11 +3444,24 @@ async function 页_成员与权限() {
               : `<span class="pill warn">不生效(登录那一步查不到)</span>`}</td>
         <td class="k">${esc((r["专项授权"] || []).join("、") || "—")}</td>
         <td>${(r["实际能做的"] || []).map((x) =>
-              `<span class="pill">${esc(x)}</span>`).join(" ")}</td></tr>`).join("")
+              `<span class="pill">${esc(x)}</span>`).join(" ")}</td>
+        <td>${我的角色 === "admin"
+            ? `<button data-edit="${esc(r["工号"])}">改权限</button>`
+            : `<span class="k">要「配置密钥与预算」</span>`}</td></tr>`).join("")
       + `</tbody></table><div class="note">${md(d.note || "")}<br>
-        <b>能改权限的:</b> ${esc((d["能改权限的"] || []).join("、") || "(一个都没有)")}
-        —— ⚠️ <b>不许把最后一个能改权限的人去掉</b>:
-        改完就没人能改权限了,而那个状态<b>从接口这一侧救不回来</b>。</div>`;
+        <b>能改权限的（${(d["能改权限的"] || []).length} 人）:</b>
+        ${esc((d["能改权限的"] || []).join("、") || "(一个都没有)")}
+        ${(d["能改权限的"] || []).length <= 1
+          ? `<br><b>⚠️ 只剩一个人能改权限</b> —— 把他降下来之后
+             <b>没有任何人能把权限加回来</b>,而那一刻界面上什么都不会报。
+             <b>先加一个再动他。</b>`
+          : ""}
+        <br>⚠️ <b>不许把最后一个能改权限的人去掉</b>:
+        别的闸拦「做错了」,<b>这一道拦「做完之后没法回头」</b> ——
+        那个状态<b>从接口这一侧救不回来</b>。</div>`
+      + `<div id="mmsg"></div><div id="mform"></div>`;
+    if ($("#mform")) $("#mform").innerHTML = 页_成员表单(d, null);
+    挂成员事件(d);
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
 }
 
