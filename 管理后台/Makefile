@@ -201,7 +201,18 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 # 后者会被 make 当成命令**回显到输出里**,第一版就是那样,
 # 于是门禁日志里混进了七行注释。
 	@echo "▸ 澜绣项目(第一个真实项目):Prompt 页**真的渲出那 79 条铁律吗**"
-	@out=$$(AIMC_USER=U001 AIMC_PROJECT=project_lanxiu \
+# ⚠️ **先看项目在不在,再跑页面。** 不先看的话,「数据没导入」会被报成
+# 「页面挂了」—— 而那会把人送去查一个没坏的页面(今天这条撞过两次:
+# 一次是 404 被当成接口坏了,一次是空列表被当成渲染坏了)。
+	@n=$$(./.venv/bin/python -c "import json,urllib.request as u; \
+		r=u.Request('http://127.0.0.1:8801/api/v1/projects', \
+		headers={'X-Dev-User':'U001'}); d=json.load(u.urlopen(r)); \
+		print(sum(1 for p in d['items'] if p['id']=='project_lanxiu'))" 2>/dev/null); \
+	  if [ "$$n" != "1" ]; then \
+	    echo "  ❌ 后台里没有 \`project_lanxiu\` —— **这是数据没导入,不是页面坏了**"; \
+	    echo "     跑 \`python3 tools/import_lanxiu_prompts.py\`(CI 里在「灌演示数据」那一步)"; \
+	    exit 1; fi; \
+	  out=$$(AIMC_USER=U001 AIMC_PROJECT=project_lanxiu \
 		node tests/e2e/page_smoke.js '#/prompts' 2>&1); \
 	  if [ $$? -ne 0 ]; then echo "  ❌ 挂了"; echo "$$out"; exit 1; fi; \
 	  echo "$$out" | tail -2 | tr '\n' ' '; echo ""

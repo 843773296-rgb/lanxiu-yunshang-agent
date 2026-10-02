@@ -371,6 +371,13 @@ jobs:
           # 底座(固定 id + do nothing,所以跑第二遍不会多一条)。
           # 于是这里不再需要容错 —— **口子关掉,失败就是失败。**
           ./.venv/bin/python tools/seed_human_requests.py --做
+          # ⚠️ **把澜绣那 79 条铁律导进来** —— 10-02 加。
+          # 它建 `project_lanxiu`(后台第一个真实项目)并导入
+          # `prompts.py` 的 79 条 Rule。页面冒烟里有一段专跑这个项目,
+          # **不导的话那一段在 CI 上必红** —— 而它报出来会像「页面渲错了」。
+          # 这个脚本**默认就写**(要只看用 `--看`),所以没有
+          # 「默认 dry-run 而且退出 0」那个坑。
+          ./.venv/bin/python tools/import_lanxiu_prompts.py
 
       - name: 起 API + Worker,**等到就绪**(不是等固定秒数)
         working-directory: 管理后台
