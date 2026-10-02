@@ -40,13 +40,40 @@ global.document = {
 global.window = { addEventListener() {} };
 global.location = { hash: process.argv[2] || "#/workbench" };
 global.localStorage = {
-  _d: {}, getItem(k) { return this._d[k] ?? null; },
+  // ⚠️ 允许从环境变量预置身份和项目 —— **为了能验「换个身份看另一个项目」**。
+  // 不能预置的话,页面桩永远跑默认身份(U002)能看到的那个项目,
+  // 而**一个新建的项目默认不被任何冒烟盖住**(和「新页面不被冒烟盖住」同形)。
+  _d: Object.fromEntries([
+    ["aimc.user", process.env.AIMC_USER], ["aimc.proj", process.env.AIMC_PROJECT],
+  ].filter(([, v]) => v)),
+  getItem(k) { return this._d[k] ?? null; },
   setItem(k, v) { this._d[k] = String(v); }, removeItem(k) { delete this._d[k]; },
 };
 global.crypto = { randomUUID: () => "11111111-2222-3333-4444-555555555555" };
 global.alert = (m) => errs.push("alert():" + m);
 global.confirm = () => true;
 global.prompt = () => null;
+// ⚠️ **对账要比「同一个身份看同一个项目」** —— 别硬编(2026-10-02 改)。
+//
+// 原来三处都硬编 `project_demo_a` + 自己挑一个身份。那时只有演示项目,
+// 所以从来没错位过。10-02 导入澜绣那 79 条铁律、建了 `project_lanxiu`
+// 之后,这件事变成了一个**靠巧合成立**的对账:
+//   · 页面桩的默认身份是 U002(`app.js` 里 `let 我 = … || "U002"`)
+//   · 而我只给 admin 建了澜绣的成员 —— 于是 U002 看不到澜绣,
+//     页面仍然渲 demo_a,对账也查 demo_a,**碰巧一致**
+//
+// 两层脆弱:
+//   ① **项目错位** —— U002 哪天被加进澜绣,页面渲澜绣而对账查 demo_a,
+//      报出来是「这几条的 id 没出现在页面上」,**看起来像页面渲错了**
+//   ② **身份错位** —— 页面用 U002 渲、对账用 U001 查。权限不同的话
+//      U001 看得到的条数更多,于是对账说「这几条没渲」而页面完全正确
+//
+// > **一条对账如果不是比「同一个身份看同一个项目」,它迟早会报一个假错。**
+//
+// 页面正好把这两样都写进了 localStorage(`aimc.proj` / `aimc.user`),
+// 而桩的 localStorage 是可读的 —— 所以直接取页面实际用的那两个值。
+const 页面用的项目 = () => localStorage.getItem("aimc.proj") || "project_demo_a";
+const 页面用的身份 = () => localStorage.getItem("aimc.user") || "U002";
 const realFetch = global.fetch;
 let 请求数 = 0, 请求们 = [];
 global.fetch = (u, o) => {
@@ -103,8 +130,8 @@ setTimeout(() => {
   if (/^#\/workflow\//.test(global.location.hash)) {
     const wid = decodeURIComponent(global.location.hash.slice(11));
     const 结构错 = [];
-    realFetch(`${基址}/api/v1/projects/project_demo_a/workflows/${wid}`,
-              { headers: { "X-Dev-User": "U002" } })
+    realFetch(`${基址}/api/v1/projects/${页面用的项目()}/workflows/${wid}`,
+              { headers: { "X-Dev-User": 页面用的身份() } })
       .then((r) => r.json()).then((d) => {
         const 定义 = (d["草稿"] || {})["定义"] || { nodes: [], edges: [] };
         const cv = 写过.get("cv") || "";
@@ -139,8 +166,8 @@ setTimeout(() => {
    * 数量从**接口返回的可选项**里数,不从页面自己数。 */
   if (/^#\/agent\//.test(global.location.hash)) {
     const aid = decodeURIComponent(global.location.hash.slice(8));
-    realFetch(`${基址}/api/v1/projects/project_demo_a/agents/${aid}`,
-              { headers: { "X-Dev-User": "U002" } })
+    realFetch(`${基址}/api/v1/projects/${页面用的项目()}/agents/${aid}`,
+              { headers: { "X-Dev-User": 页面用的身份() } })
       .then((r) => r.json()).then((d) => {
         const body = 写过.get("body") || "";
         const 坏 = [];
@@ -210,8 +237,8 @@ setTimeout(() => {
   const 声明 = 对账表[global.location.hash];
   if (声明) {
     const 全文 = [...写过.values()].join("\n");
-    realFetch(`${基址}/api/v1/projects/project_demo_a${声明.接口}`,
-              { headers: { "X-Dev-User": "U001" } })
+    realFetch(`${基址}/api/v1/projects/${页面用的项目()}${声明.接口}`,
+              { headers: { "X-Dev-User": 页面用的身份() } })
       .then((r) => r.json()).then((d) => {
         const 列 = (d || {})[声明.列表];
         const 坏 = [];

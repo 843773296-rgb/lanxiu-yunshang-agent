@@ -52,6 +52,14 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@echo "  ⚠️ 它会**重铺 seed 夹具**并跑两份端到端 —— 要先 make dev"
 	@./.venv/bin/python tools/seed_rerun_check.py
 	@echo ""
+	# ⚠️ **这条要数据库,所以挂 `test` 不挂 `contract`。**
+	# `contract` 那一组是「不需要数据库」的 —— 放进去会让它在没库的机器上红,
+	# 而那种红会和真问题混在一张报告里。
+	# > 一条装在跑不起来的地方的判据,和没装一样。
+	@echo "▸ 后台里的铁律和 `prompts.py` 一致吗(要库)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tools/lanxiu_prompt_sync_check.py
+	@echo ""
 	@echo "▸ 契约和库是否一致(alembic check)"
 	@cd services/api && DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		../../.venv/bin/alembic check 2>&1 | tail -1
@@ -180,6 +188,23 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 		else echo "$$out" | tail -2 | tr '\n' ' '; echo ""; fi; \
 	done; \
 	if [ $$rc -ne 0 ]; then echo "  ❌ 有页面冒烟没过"; exit 1; fi
+	@echo ""
+# ⚠️ **澜绣项目要单独跑一遍** —— 2026-10-02 加。
+# 上面那个循环跑的是「默认身份(U002)看到的那个项目」。而 10-02 建的
+# `project_lanxiu`(澜绣那 79 条铁律)**只给了 admin 成员** ——
+# 于是 U002 看不到它,上面 21 页全绿,而**整个澜绣项目一条断言都没有**。
+# > **一个新建的项目默认不被任何冒烟盖住**
+# > —— 和「一个新页面默认不被冒烟盖住」完全同形,而这次更隐蔽:
+# > 门禁全绿,因为它们跑的是另一个项目。
+#
+# ⚠️ 行首要用 make 注释(`#` 顶格),不是 tab 开头的 shell 注释 ——
+# 后者会被 make 当成命令**回显到输出里**,第一版就是那样,
+# 于是门禁日志里混进了七行注释。
+	@echo "▸ 澜绣项目(第一个真实项目):Prompt 页**真的渲出那 79 条铁律吗**"
+	@out=$$(AIMC_USER=U001 AIMC_PROJECT=project_lanxiu \
+		node tests/e2e/page_smoke.js '#/prompts' 2>&1); \
+	  if [ $$? -ne 0 ]; then echo "  ❌ 挂了"; echo "$$out"; exit 1; fi; \
+	  echo "$$out" | tail -2 | tr '\n' ' '; echo ""
 	@echo ""
 	@echo "▸ 画布页:**结构对账**(节点数/连线数/「加入」按钮数 vs 接口返回的定义)"
 	@W=$$(./.venv/bin/python -c "import json,urllib.request as u; \
