@@ -187,9 +187,26 @@ ck("语料已经在库里(先跑 `python tools/ingest_lanxiu.py`)", bool(kb) and
 # 所以这里当场报出来 —— 报「库里有遗留」比报一条含糊的失败有用得多。
 # (这和并行会话那条「咬合要在副本里做」同族:那条说的是写,这条说的是**读也需要干净**。)
 with eng.connect() as c:
+    # ⚠️ **还要排掉「已经被取消过的」和「已归档的」**(2026-10-02 补)。
+    #
+    # 原来只按 `status` 排除三个终态。而 `test_knowledge_write_flow` 的
+    # `清干净()` 把它派的任务标成 **`cancel_requested=true` + 归档**,
+    # **没有改 `status`** —— 两者是不同的列。
+    #
+    # 于是这条前提检查看到 179 条 `status='排队中'` 的记录就报「库不干净」,
+    # 而它们**全部已被取消 + 已归档**(10-02 实查:179/179)。
+    #
+    # > **「请求取消」和「状态已取消」是两件事** ——
+    # > 而一条只看状态的检查,会把 179 条已经处理过的记录当成待办。
+    #
+    # 这个形状今天撞了四次(三次是我查库时忘了 `archived_at is null`,
+    # 这一次是判据自己忘了)。`跑worker()` 不会捞已取消/已归档的任务,
+    # 所以排掉它们不会让这条检查变松。
     脏job = c.execute(text("""select id, status from jobs
                              where project_id=:p and type='index_build'
-                               and status not in ('已完成','失败','已取消')"""),
+                               and status not in ('已完成','失败','已取消')
+                               and coalesce(cancel_requested, false) = false
+                               and archived_at is null"""),
                      {"p": proj}).mappings().all()
     脏向量 = c.execute(text("""select model_id, count(*) n from embeddings
                              where project_id=:p group by 1"""),
