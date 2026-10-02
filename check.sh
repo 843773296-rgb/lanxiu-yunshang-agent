@@ -239,7 +239,7 @@ run "回答体检 · 人造用例(正反各半)" python3 agentsite/guards_test.p
 run "「当前方案」注入 · 列清单不算取过" ./agentsite/.venv/bin/python agentsite/scheme_hook_test.py
 run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py
 run "中文否定与子串 · 29 条(十次踩过的坑)" python3 agent/textmatch.py
-run "判分器自测 · 18 条人造用例" python3 agent/chat_eval_judgetest.py
+run "判分器自测 · 人造用例(两个方向)" python3 agent/chat_eval_judgetest.py
 run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judgetest.py
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py
 run "识图判分器 · 13 条对照用例" python3 agent/vision_eval_judgetest.py

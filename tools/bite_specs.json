@@ -3902,5 +3902,41 @@
    "UPDATE pattern_piece SET ratio_src='复核' WHERE rowid=(SELECT MIN(rowid) FROM pattern_piece WHERE ratio IS NOT NULL)"
   ],
   "预期红": "占比全部到了「行业规范」档或以上"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "把 13 篇某段「我们家怎么说」标题上的 `demo` 去掉",
+  "file": [
+   {
+    "path": "knowledge/13-销售话术.md",
+    "old": "### 我们家怎么说 · 「为什么这么贵」 `demo`",
+    "new": "### 我们家怎么说 · 「为什么这么贵」"
+   }
+  ],
+  "预期红": "话术每一段「我们家怎么说」都带来源标记"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "在 13 篇末尾再加一段标 demo 的「我们家怎么说」",
+  "file": [
+   {
+    "path": "knowledge/13-销售话术.md",
+    "old": "## 七、不能说的话 `demo`",
+    "new": "### 我们家怎么说 · 多编的一段 `demo`\n\n## 七、不能说的话 `demo`"
+   }
+  ],
+  "预期红": "话术里 demo 的段数不超过"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "让 kb_read 对话术那篇也给通用 demo 口径(「对客户:不能」)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "if fn.startswith(\"13-\") and 低 == \"demo\":",
+    "new": "if False:"
+   }
+  ],
+  "预期红": "话术的 demo 口径是「思路不是台词」"
  }
 ]
