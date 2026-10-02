@@ -204,6 +204,61 @@ def 工具详情(project_id: str, tid: str,
                 # ⚠️ `agent_version_id` 为空的清单(历史清单永远是 NULL)
                 # 在这里**自然不计入** —— join 不上就是没绑 Agent,
                 # 那正是它该有的语义,不是漏算。
+                # ── 规格 §8.2「配套关系」那一页要的 ────────────────────
+                #
+                # ⚠️ 配套关系存在**工具组版本**里(`companion_map`),
+                # 不在工具版本上 —— 所以这一页回答的是:
+                # **这个工具出现在哪些组里,而在那些组里它配着谁。**
+                #
+                # ⚠️⚠️ **「必不可少」和「配套」是两件事:**
+                #   · `必不可少吗` = **这一轮必须给它**(A-5 的预算先放必需的)
+                #   · 配套 = **给它就得一起给谁**
+                # 混起来的话,一个「可选但有配套」的工具会被当成必需的,
+                # 于是预算在它身上先花掉 —— 而那不是它该占的位置。
+                # ⚠️ **「我在这一组里是不是必不可少、我配着谁」由服务端算。**
+                # 第一版只返回整份 `member_manifest` 和 `companion_map`,
+                # 让页面自己去找「我是哪一条」—— 而页面**不知道当前版本的 id**
+                # (返回里只有 `version_no`)。于是我在前端瞎拼匹配条件。
+                # > 一段在前端猜「我是哪一条」的代码,
+                # > **比一个多返回两个字段的接口脆弱得多**。
+                # 这个仓库有现成的原则:「风险变大这个结论**由服务端给**,
+                # 那一页只负责显示」—— 同一条。
+                "在哪些组里": [
+                    {
+                        "组名": r["组名"], "组id": r["组id"],
+                        "组版本": r["组版本"],
+                        # 我在这一组里的那一条
+                        "这一轮必须给它吗": next(
+                            (bool(m.get("必不可少吗"))
+                             for m in (r["成员"] or [])
+                             if isinstance(m, dict)
+                             and m.get("tool_version_id") == vid), None),
+                        "加载角色": next(
+                            (m.get("加载角色") for m in (r["成员"] or [])
+                             if isinstance(m, dict)
+                             and m.get("tool_version_id") == vid), None),
+                        # 给它就得一起给谁
+                        "给它就得一起给谁": (r["配套"] or {}).get(vid) or [],
+                        # 反过来:谁一旦被给,就得带上我
+                        "谁需要它一起": sorted(
+                            k for k, v in (r["配套"] or {}).items()
+                            if isinstance(v, list) and vid in v),
+                    }
+                    for r in c.execute(text(
+                        """select g.name as 组名, g.id as 组id,
+                                  v.version_no as 组版本,
+                                  v.member_manifest as 成员,
+                                  v.companion_map as 配套
+                             from tool_group_versions v
+                             join tool_groups g
+                               on g.project_id=v.project_id
+                              and g.id=v.tool_group_id
+                            where v.project_id=:p
+                              and v.member_manifest @> cast(:s as jsonb)
+                            order by g.name, v.version_no desc"""),
+                        {"p": project_id,
+                         "s": _json.dumps([{"tool_version_id": vid}],
+                                          ensure_ascii=False)}).mappings()],
                 "在生产上吗": c.execute(text(
                     """select count(*) > 0 from environment_bindings eb
                         join release_manifests rm

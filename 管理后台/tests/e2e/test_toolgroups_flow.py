@@ -115,11 +115,26 @@ def 造一个同名工具():
 
 
 def 清掉():
+    """⚠️ **按名字删,不按 id 前缀。**
+
+    第一版按 `tg_t{尾}%` 删 —— 而组的 id 是**服务端生成的**
+    (`tg_` + 随机 hex),对不上那个前缀。
+    > 一个按 id 前缀清理的收尾,在 id 由服务端生成时**什么都删不掉** ——
+    > 而它不报错。
+
+    发现它的方式:做「配套关系」那一页时接口报「在 5 个组里」,
+    而真实的只有 1 个 —— 另外 4 个是历次测试的残留。
+    (今天第五次撞「跑得起第二遍」和「不留垃圾」是两件事。)
+
+    组名带 `尾` 所以认得出来。**先删版本再删组** —— 外键 RESTRICT。
+    """
     with 事务() as c:
-        c.execute(text("delete from tool_group_versions where project_id=:p "
-                       "and tool_group_id like :n"), {"p": 项目, "n": f"tg_t{尾}%"})
-        c.execute(text("delete from tool_groups where project_id=:p and id like :n"),
-                  {"p": 项目, "n": f"tg_t{尾}%"})
+        c.execute(text("""delete from tool_group_versions where project_id=:p
+                        and tool_group_id in (select id from tool_groups
+                          where project_id=:p and name like :n)"""),
+                  {"p": 项目, "n": f"%{尾}"})
+        c.execute(text("delete from tool_groups where project_id=:p and name like :n"),
+                  {"p": 项目, "n": f"%{尾}"})
         c.execute(text("delete from tool_versions where project_id=:p and id=:i"),
                   {"p": 项目, "i": 同名版本})
         c.execute(text("delete from tool_definitions where project_id=:p and id=:i"),
