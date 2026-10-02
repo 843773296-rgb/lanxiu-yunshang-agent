@@ -194,9 +194,9 @@ def recheck_cycle(sex, age, weight_delta_kg=0.0, pregnant=False):
     if age >= AGE_MAX:
         if abs(weight_delta_kg) > 5: return 0, "成人体重变化 >5kg:立即复量(围度变化远大于身高)"
         return 365, "成人:12 个月"
-    if age < 3: return 90, "0–3 岁:一年长 8–12cm,三个月就跨码"
+    if age < 3: return 90, "0–3 岁:第一年约长 25cm、第二年 12–13cm,三个月就跨码"
     lo, hi = SPURT.get(sex, (99, 99))
-    if lo <= age <= hi: return 120, f"突增期({lo}–{hi} 岁):年增可达 8–10cm,误差最大的一段"
+    if lo <= age <= hi: return 120, f"突增期({lo}–{hi} 岁):年增女孩 7–10cm、男孩 8–12cm,误差最大的一段"
     if age < 12: return 180, "3–12 岁:年增 5–7cm"
     return 180, "突增期结束–18 岁:增速回落但未停"
 
