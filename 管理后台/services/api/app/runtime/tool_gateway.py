@@ -172,6 +172,71 @@ def 校验Schema(值, schema, 路="") -> list:
     return 错
 
 
+def 检查契约Schema(schema, 路="") -> list:
+    """只看**契约本身**合不合法,不需要任何值。返回错误清单(空 = 过)。
+
+    ## 为什么要有它(2026-10-02 加)
+
+    `校验Schema(值, schema)` 要有一个值才跑得起来 —— 它是**调用时**那道闸。
+    于是「这份契约用了校验器不支持的关键字」这件事,
+    **一直要等到模型第一次真的调用它那一刻才被发现**:
+
+        界面上保存成功 → 冻结成版本成功 → 绑进 Agent 成功 → 发布成功
+        → 模型第一次调用 → 网关报「不支持的关键字」
+
+    而那时报出来的是**「工具调用失败」**,不是「这个 Schema 当初就不该被接受」。
+    第三份规格 §8.3 的最后一句说的正是这件事:
+    > 「现有网关为有限 Schema 校验实现。首版不能默认任意 JSON Schema 都被支持;
+    > **界面必须用真实能力清单校验,不能静默忽略约束。**」
+
+    ## ⚠️ 为什么放在这个文件里,和 `_支持的关键字` 挨着
+
+    **那份清单只能有一份。** 冻结那头自己抄一份的话,
+    它迟早和校验器真支持的那份漂开 —— 而漂开的表现就是上面那条链:
+    冻结接受了,调用拒绝。
+    > **一份被抄成两处的清单,它的两份会在谁都没改它的那天开始不一致。**
+    (同一条教训在这个仓库里栽过:前端硬编部署环境、冒烟名单抄第二份。)
+    """
+    if not isinstance(schema, dict):
+        return [f"{路 or '根'}:Schema 要是个对象,给的是 "
+                f"{type(schema).__name__}"]
+    错 = []
+    野 = sorted(set(schema) - _支持的关键字)
+    if 野:
+        错.append(f"{路 or '根'}:用了这个校验器**不支持**的关键字 {野} —— "
+                f"认得的只有 {sorted(_支持的关键字)}。"
+                f"**不静默忽略**:被忽略的约束和生效的约束长得一样")
+    t = schema.get("type")
+    if t is not None and t not in _类型:
+        错.append(f"{路 or '根'}:认不出的 type {t!r} —— "
+                f"认得的只有 {sorted(_类型)}")
+    # `required` 里点名的字段,`properties` 里得有 —— 不然它永远填不上。
+    props = schema.get("properties")
+    if props is not None and not isinstance(props, dict):
+        错.append(f"{路 or '根'}/properties:要是个对象")
+        props = None
+    req = schema.get("required")
+    if req is not None:
+        if not isinstance(req, list):
+            错.append(f"{路 or '根'}/required:要是个数组")
+        elif props is not None:
+            缺 = [k for k in req if k not in props]
+            if 缺:
+                # ⚠️ 这一条不是 JSON Schema 标准要求的,是这里加的。
+                # 标准允许 required 点名一个没在 properties 里声明的字段,
+                # 而在**工具契约**里那等于「必填一个模型不知道怎么填的参数」——
+                # 表现是每次调用都被拒,而契约本身看起来完全正常。
+                错.append(f"{路 or '根'}:`required` 点名了 {缺},"
+                        f"而 `properties` 里没有它们 —— "
+                        f"**那是一个模型不知道怎么填的必填参数**")
+    # 递归:子属性和数组项
+    for k, v in (props or {}).items():
+        错 += 检查契约Schema(v, f"{路}/{k}")
+    if "items" in schema:
+        错 += 检查契约Schema(schema["items"], f"{路}/items")
+    return 错
+
+
 # ── 对象范围(allowed_scopes)──────────────────────────────────────
 #
 # 规格 §17.4:「HTTP/MCP/网页读取执行**域名、重定向和最终目标**检查,

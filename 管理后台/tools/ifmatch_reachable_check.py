@@ -90,6 +90,34 @@ P = f"{基址}/api/v1/projects/{项目}"
     "POST /human-requests/{id}/decisions": dict(
         取id=("/human-requests", "items[0].id"),
         读="/human-requests/{id}", 字段="请求.revision"),
+    # ── 契约登记了、**实现还没落地**的 ────────────────────────────
+    # ⚠️ **为什么要有这一档(2026-10-02 加)。**
+    # 这条判据是**运行时**判据 —— 它真去打接口。而规格的实施是分阶段的:
+    # 第一阶段只登记契约,实现在后面的阶段。
+    # 第一版没有这一档,于是那两个新登记的 PATCH 一进契约就把 CI 打红,
+    # 报的是「没登记 revision 从哪儿来」——
+    # > **一个把「还没做」和「做错了」报成同一条红的判据,
+    # > 会让人去修一个还没写的东西。**
+    # 而这两件事下一步完全不同:前者是「等那个阶段」,后者是「现在就补读接口」。
+    #
+    # ⚠️ 这一档**会自己过期**,不用人记着删:
+    # 判据先探一下那个读接口在不在(404 = 还没实现)。
+    #   · 标了待实现 + 真的 404 → 黄字提示,不红
+    #   · 标了待实现 + **接口已经有了** → **红**(该填真实来源了)
+    # 所以它和 `fk_dep_check` 的豁免同形:**两个方向都会红。**
+    # 一条留着不管的「待实现」标记,会在接口真做出来那天**悄悄放行它**。
+    "PATCH /tool-groups/{id}/draft": dict(
+        取id=("/tool-groups", "items[0].id"),
+        读="/tool-groups/{id}", 字段="草稿.revision",
+        待实现="2026-10-02 契约登记(第三份规格 §14.2),实现在规格 §16 "
+               "第三阶段「固定工具组」。读接口的契约已经一起登记了,"
+               "所以到那一步不会再出现「指着一个不存在的接口」那个洞"),
+    "PATCH /tool-selection-policies/{id}/draft": dict(
+        取id=("/tool-selection-policies", "items[0].id"),
+        读="/tool-selection-policies/{id}", 字段="草稿.revision",
+        待实现="2026-10-02 契约登记(第三份规格 §14.2),实现在规格 §16 "
+               "第四阶段「关键词筛选」"),
+
     "PATCH /tools/{id}/draft": dict(
         取id=("/tools", "items[0].id"),
         读="/tools/{id}", 字段="草稿.revision",
@@ -114,15 +142,33 @@ P = f"{基址}/api/v1/projects/{项目}"
 }
 
 
-def 打(路):
+def 打(路, 要码=False):
+    """`要码=True` 时返回 (状态码, 体)。
+
+    ⚠️ **判「接口在不在」必须看状态码,不能看「解析得出 JSON 吗」。**
+    2026-10-02 当场踩了:给这条判据加「待实现」档时,我用 `打(路) is not None`
+    判接口存在 —— 而**404 的错误响应体也是 JSON**,
+    于是两个根本没实现的接口被判成「已经有了」。
+    > 一个把 404 的 JSON 错误体当成「接口存在」的探测,
+    > 和一个真的探到了接口的探测,**在返回值上长得一模一样**。
+    (这正是这条判据本身在防的那类错 —— 而我在给它加档位时又犯了一次。)
+    """
     out = subprocess.run(
-        ["curl", "-s", "-m", "20", "-H", f"X-Dev-User: {谁}", 基址 + 路
+        ["curl", "-s", "-m", "20",
+         *(["-w", "\n%{http_code}"] if 要码 else []),
+         "-H", f"X-Dev-User: {谁}", 基址 + 路
          if 路.startswith("/api") else P + 路],
         capture_output=True, text=True).stdout
+    码 = None
+    if 要码:
+        行 = (out or "").rsplit("\n", 1)
+        if len(行) == 2 and 行[1].strip().isdigit():
+            out, 码 = 行[0], int(行[1].strip())
     try:
-        return json.loads(out or "null")
+        体 = json.loads(out or "null")
     except Exception:
-        return None
+        体 = None
+    return (码, 体) if 要码 else 体
 
 
 def 走(体, 路径):
@@ -179,8 +225,38 @@ def main():
               f"接口全有了而界面做不起来。")
         return 1
 
+    坏, 待实现过期 = [], []
+    # ⚠️ **先把「待实现」那几条挑出来单独处理。** 它们不进 `坏`,
+    # 但如果接口其实已经有了,它们要进 `待实现过期` —— 那也是红。
+    for 写, cfg in list(名单.items()):
+        if not cfg.get("待实现"):
+            continue
+        列路, _ = cfg["取id"]
+        # ⚠️ **看状态码,不看「解析得出 JSON 吗」** —— 见 `打()` 那段注释。
+        码, _体 = 打(列路, 要码=True)
+        if 码 == 200:
+            # 列表接口真的通了 → 实现落地了 → 这个标记该拿掉了
+            待实现过期.append((写, 列路, 码))
+        else:
+            print(f"  {Y}⏳ {写} —— **契约登记了,实现还没落地**{D}")
+            print(f"       {cfg['待实现']}")
+            print(f"       (探过 `GET {列路}`:HTTP {码} → 确认还没实现。"
+                  f"**这一档会自己过期** —— 它返回 200 那天这条就红)")
+
+    if 待实现过期:
+        print(f"\n  {R}❌ 这 {len(待实现过期)} 条标着「待实现」,"
+              f"而接口**已经有了**:{D}")
+        for 写, 列路, 码 in 待实现过期:
+            print(f"     · {写}(`GET {列路}` 返回 {码})")
+        print(f"     把 `待实现` 换成真实的 `读` / `字段` 登记 —— "
+              f"一条留着不管的「待实现」标记,"
+              f"**会在接口真做出来那天悄悄放行它**。")
+        return 1
+
     坏 = []
     for 写, cfg in 名单.items():
+        if cfg.get("待实现"):
+            continue
         标 = ""
         rid = None
         if "{id}" in cfg["读"]:
