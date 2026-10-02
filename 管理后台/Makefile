@@ -156,6 +156,21 @@ test-browser:  ## 真浏览器点一遍「加资料」页(要 Firefox + selenium
 # 它按那个形状搜整个 Makefile,两份名单里只要有一份全就通过,
 # 于是「CI 版少打了三页」这件事它看不出来。
 page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
+# ⚠️ **这两条判据挪到这儿来了(2026-10-02)** —— 它们原来只在 `make test` 里。
+# 而它们**要服务在跑**,`make test` 不保证这件事;`test-e2e` 正是
+# 「服务在跑」那个目标。后果已经兑现过两次:
+#   · 10-01 `alembic check` 装在 `make test` 里,而我跑 contract/test-e2e ——
+#     它从 09-29 起一直红而我不知道
+#   · 10-02 `ifmatch_reachable_check` 同一个形状,**一天拦我两次**,
+#     两次都是在 CI 上才红
+# > **一条判据装在一个我从来没跑过的目标里,等于没装。**
+	@echo "▸ 要 If-Match 的写接口,**界面拿得到那个 revision 吗**"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tools/ifmatch_reachable_check.py
+	@echo ""
+	@echo "▸ 侧栏能点开的页,冒烟打过吗"
+	@./.venv/bin/python tools/nav_smoke_check.py
+	@echo ""
 	@echo "▸ 页面冒烟:用最小 DOM 桩**真跑加载路径** + **行级对账**"
 	@echo "  ⚠️ 对账断的是「接口给的每一条,身份都在页面上」——"
 	@echo "     **「渲染了」不等于「渲的是那些东西」**(漏渲几条在字数上完全正常)"

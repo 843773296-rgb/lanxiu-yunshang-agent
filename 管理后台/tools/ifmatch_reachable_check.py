@@ -118,6 +118,26 @@ P = f"{基址}/api/v1/projects/{项目}"
         待实现="2026-10-02 契约登记(第三份规格 §14.2),实现在规格 §16 "
                "第四阶段「关键词筛选」"),
 
+    # ⚠️ 2026-10-02 补登记 —— **这条判据当天第二次拦住我**。
+    # 第一次是工具筛选那两个 PATCH(契约登记了、实现还没落地 → 进了「待实现」档),
+    # 这次是旋钮方案的 PATCH(**实现已经落地了**,所以要填真实来源)。
+    # 样例 id 来自 `基线-默认` 那个方案 —— `import_lanxiu_prompts.py` 建的,
+    # 而它**有业务理由**:没有基线就没法说「改了旋钮之后好了多少」。
+    # 不建的话这条判据会报「拿不到样例 id(列表可能是空的)」—— 那也不算通过。
+    "PATCH /knob-plans/{key}/draft": dict(
+        取id=("/knob-plans", "items[0].方案号"),
+        读="/knob-plans/{id}", 字段="draft_revision",
+        # ⚠️ **这一条要在澜绣那个项目上验。** 这条判据默认跑
+        # `project_demo_a`(那 12 条接口的数据在那儿),而旋钮方案
+        # **只在 `project_lanxiu` 下存在**。
+        # 不指定的话它报的是「拿不到样例 id(列表可能是空的)」——
+        # > 一条跑在**另一个项目**上的判据,报出来是「拿不到数据」,
+        # > 而数据好好地在别的项目里。
+        # (同一个错位今天第三次:页面冒烟硬编项目、行级对账硬编身份。)
+        项目="project_lanxiu",
+        说明="2026-10-02:旋钮方案的乐观锁。方案号就是 key(它也是文件名),"
+             "所以读接口的路径参数是方案号而不是一个 id"),
+
     "PATCH /tools/{id}/draft": dict(
         取id=("/tools", "items[0].id"),
         读="/tools/{id}", 字段="草稿.revision",
@@ -142,7 +162,7 @@ P = f"{基址}/api/v1/projects/{项目}"
 }
 
 
-def 打(路, 要码=False):
+def 打(路, 要码=False, 项目覆盖=None):
     """`要码=True` 时返回 (状态码, 体)。
 
     ⚠️ **判「接口在不在」必须看状态码,不能看「解析得出 JSON 吗」。**
@@ -153,11 +173,14 @@ def 打(路, 要码=False):
     > 和一个真的探到了接口的探测,**在返回值上长得一模一样**。
     (这正是这条判据本身在防的那类错 —— 而我在给它加档位时又犯了一次。)
     """
+    # ⚠️ `项目覆盖` 让某一条在**另一个项目**上验 —— 见 `名单` 里
+    # `PATCH /knob-plans/{key}/draft` 那条的注释。
+    基 = (f"{基址}/api/v1/projects/{项目覆盖}" if 项目覆盖 else P)
     out = subprocess.run(
         ["curl", "-s", "-m", "20",
          *(["-w", "\n%{http_code}"] if 要码 else []),
          "-H", f"X-Dev-User: {谁}", 基址 + 路
-         if 路.startswith("/api") else P + 路],
+         if 路.startswith("/api") else 基 + 路],
         capture_output=True, text=True).stdout
     码 = None
     if 要码:
@@ -233,7 +256,7 @@ def main():
             continue
         列路, _ = cfg["取id"]
         # ⚠️ **看状态码,不看「解析得出 JSON 吗」** —— 见 `打()` 那段注释。
-        码, _体 = 打(列路, 要码=True)
+        码, _体 = 打(列路, 要码=True, 项目覆盖=cfg.get("项目"))
         if 码 == 200:
             # 列表接口真的通了 → 实现落地了 → 这个标记该拿掉了
             待实现过期.append((写, 列路, 码))
@@ -259,9 +282,10 @@ def main():
             continue
         标 = ""
         rid = None
+        项 = cfg.get("项目")
         if "{id}" in cfg["读"]:
             列路, id路 = cfg["取id"]
-            体 = 打(列路)
+            体 = 打(列路, 项目覆盖=项)
             ok, 值, 断 = 走(体 or {}, id路)
             if not ok:
                 # ⚠️ **拿不到 id ≠ 通过。** 列表是空的时候这一条什么都没验到,
@@ -271,7 +295,7 @@ def main():
                 continue
             rid = 值
         读路 = cfg["读"].replace("{id}", str(rid or ""))
-        体 = 打(读路)
+        体 = 打(读路, 项目覆盖=项)
         if 体 is None:
             坏.append((写, f"`GET {读路}` 打不通或不是 JSON"))
             continue

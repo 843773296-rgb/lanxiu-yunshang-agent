@@ -209,6 +209,35 @@ def main():
                       {"i": f"mb_lanxiu_{uid}", "o": org, "p": 项目id, "u": uid})
         新成员 = 管理员们
 
+        # ── 基线方案:「什么都不改」那一份 ────────────────────────────
+        # ⚠️ **这不是为了喂判据,它有业务理由。**
+        # 规格 §13.2 讲「全部加载」时的原话:「**保留作为旧配置兼容及对比基线**」。
+        # 同一个道理在旋钮上:
+        # > **没有基线,就没法说「改了旋钮之后好了多少」。**
+        # 而它的旋钮值就是 `knobs.默认()` 里非 None 的那几个 ——
+        # 也就是**现在实际在跑的那一份**的快照。
+        #
+        # 顺带也解决一件事:`ifmatch_reachable_check` 要从
+        # `/knob-plans` 列表取一个样例 id 去验「界面拿得到 revision 吗」,
+        # 而 CI 是从零建库 —— 一个方案都没有的话那条判据
+        # **什么都没验到**(它自己明说这不算通过)。
+        try:
+            from agent import knobs as _K
+            默认 = {k: v for k, v in (_K.默认() or {}).items() if v is not None}
+        except Exception:
+            默认 = {}
+        c.execute(_t("""insert into knob_plans
+            (id, organization_id, project_id, key, params, owner, status,
+             change_note, draft_revision, created_at, created_by,
+             updated_at, revision)
+            values (:i,:o,:p,'基线-默认', cast(:pa as jsonb), 'import', 'active',
+                    :cn, 1, now(),'import', now(), 1)
+            on conflict do nothing"""),
+                  {"i": "kp_基线-默认", "o": org, "p": 项目id,
+                   "pa": json.dumps(默认, ensure_ascii=False),
+                   "cn": "**基线:什么都不改**(`knobs.默认()` 的快照)—— "
+                         "没有基线就没法说「改了旋钮之后好了多少」"})
+
         # ② 79 条
         for i in sorted(全):
             r, 角色们 = 全[i], 用它的[i]
