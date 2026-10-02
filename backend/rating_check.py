@@ -214,10 +214,16 @@ def 查形状(c, n):
     店月 = {(r["shop"], r["ym"]): (r["n"], r["a"]) for r in c.execute(
         """SELECT o.shop, substr(r.rated_at,1,7) ym, COUNT(*) n, AVG(r.star) a
              FROM rating r JOIN ordr o ON o.id=r.order_id GROUP BY 1,2""")}
-    有的 = sorted(SR.月目标)
+    # 月份按**造数那天**的世界日期现算(造数和检查同一个口径);
+    # 「造数之后世界没再平移过」由下面 rating_built_on 那条守着。没记就退回今天。
+    import datetime as _dt
+    _建 = c.execute("SELECT v FROM world_meta WHERE k='rating_built_on'").fetchone() \
+        if c.execute("SELECT 1 FROM sqlite_master WHERE name='world_meta'").fetchone() else None
+    月目标 = SR.月目标_于(_dt.date.fromisoformat(_建[0]) if _建 else worldclock.今天())
+    有的 = sorted(月目标)
     if len(有的) >= 2:
         头, 尾 = 有的[0], 有的[-1]
-        应升 = SR.月目标[尾] - SR.月目标[头]
+        应升 = 月目标[尾] - 月目标[头]
         差们 = []
         for shop in sorted(SR.门店均分):
             a, b = 店月.get((shop, 头)), 店月.get((shop, 尾))

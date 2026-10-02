@@ -65,14 +65,32 @@ DB = os.path.join(ROOT, "backend", "lanxiu.db")
 # 这是「造了但没盯着」的标准形态:我以为造出了趋势,其实没有,
 # **而它在页面上看不出来** —— 一串 4.5 左右的数字。
 # 修法:改成绝对目标 + 把跨度加到 0.3,并且**加一道检查盯住它**(rating_check 的形状那几条)。
-月目标 = {"2026-07": 4.35, "2026-08": 4.50, "2026-09": 4.65}
-月基线 = 4.45                    # 这三个月之前的月份用它 —— 让「最近三个月上升」真的成立
+#
+# ⚠️ **月份相对世界今天现算,不写死。** 原来写死 `{"2026-07":…, "2026-08":…, "2026-09":…}` ——
+# 演示世界每天平移到真实今天,到 11 月「最近三个月」就成了 8/9/10 月,
+# 而写死的那三个月会变成「三个月前那段在涨、最近两个月平着」,**趋势悄悄挪走了,不报错**。
+# 取「今天所在月之前的三个**完整**月」:当月没走完,本来就不参与趋势(rating_view_check 也这么切)。
+月目标_值 = (4.35, 4.50, 4.65)   # 从早到晚,业务 2026-09-27 拍的形状(方案 C)
+
+
+def 月目标_于(今):
+    """今天所在月之前的三个完整月 → 各自的目标。例:今天 10-02 → 07 / 08 / 09。"""
+    out = {}
+    for 前, v in zip(range(len(月目标_值), 0, -1), 月目标_值):
+        y, m = 今.year, 今.month - 前
+        while m <= 0:
+            m += 12; y -= 1
+        out[f"{y:04d}-{m:02d}"] = v
+    return out
+
+
+月基线 = 4.45                    # 这三个月之前的月份(和当月)用它 —— 让「最近三个月上升」真的成立
 # 门店偏移相对**全年的平均月目标**算,不手写。
 # ⚠️ 原来手写 `全店基准 = 4.5`,而全年有 9 个月走 4.45 的基线、三个月 4.35/4.50/4.65 ——
 # 全年平均约 4.46,**每家店都系统性偏低 0.04**。杭州店拍的 4.2 本就贴着容差下沿(±0.15),
 # 世界每天平移、抽样跟着变,2026-10-01 那天的抽样掉出下沿 0.01,门禁红。
 # **两个应该相等的数分两处写,差的那 0.04 不会报错,只会让最紧的那家店某天突然红。**
-全店基准 = round((月基线 * (12 - len(月目标)) + sum(月目标.values())) / 12, 4)
+全店基准 = round((月基线 * (12 - len(月目标_值)) + sum(月目标_值)) / 12, 4)
 改过的比例 = 0.03                # 多少条评价被顾客改过一次(24 小时内)
 # ── 差评关掉的概率:**按年龄递增** ─────────────────────────────────────
 # ⚠️ 第一版是一个固定的 90%,结果 **13 条差评挂了 90 天以上、最老 279 天**。
@@ -166,6 +184,7 @@ def 铺(db=DB, 说=print):
     rng = random.Random(种子)
     今 = worldclock.今天()
     今s = 今.isoformat()
+    月目标 = 月目标_于(今)            # 跟着世界今天走(见模块顶上那段)
     c = sqlite3.connect(db); c.row_factory = sqlite3.Row
 
     # 先清掉自己造的 —— 可反复跑
@@ -331,9 +350,9 @@ def 铺(db=DB, 说=print):
         店[r["shop"]] = (r["n"], r["a"])
         说(f"    {r['shop']:18s} {r['n']:5d} 条  平均 {r['a']:.2f}"
           f"(业务拍的 {门店均分.get(r['shop'], 默认均分)})")
-    说("  最近三个月(业务拍的 7月 4.35 → 8月 4.50 → 9月 4.65 这个方向):")
+    说("  最近三个完整月(业务拍的方向:" + " → ".join(f"{k} {v}" for k, v in 月目标.items()) + "):")
     for r in c.execute("""SELECT substr(rated_at,1,7) ym, COUNT(*) n, AVG(star) a FROM rating
-                          WHERE rated_at>='2026-07' GROUP BY ym ORDER BY ym"""):
+                          WHERE rated_at>=? GROUP BY ym ORDER BY ym""", (min(月目标),)):
         说(f"    {r['ym']}  {r['n']:4d} 条  平均 {r['a']:.2f}")
     if _夹过:
         说(f"  ⚠️ 有 {len(_夹过)} 次目标超出星级分布能表达的范围,被夹到边界"
@@ -419,12 +438,18 @@ def _自测():
     c.commit(); c.close()
 
     import types
-    _s = types.ModuleType("seed"); _s.TODAY = "2026-09-27"
+    # 夹具的「今天」= 10 月初:三个完整月正好是上面铺的 07 / 08 / 09。
+    # (原来是 09-27,配的是写死的月目标;月目标改成相对今天之后,09-27 的三个完整月是 06/07/08,夹具就对不上了)
+    夹具今天 = "2026-10-05"
+    _s = types.ModuleType("seed"); _s.TODAY = 夹具今天
     sys.modules["seed"] = _s
     import importlib; importlib.reload(worldclock)
     说过 = []
     rc = 铺(db=p, 说=说过.append)
     ck("铺得出来(退出码 0)", rc == 0, 说过[:1])
+    跨年 = sorted(月目标_于(dt.date(2027, 1, 15)))
+    ck("月目标跟着世界今天走,跨年也对(2027-01 → 去年 10/11/12 月)",
+       跨年 == ["2026-10", "2026-11", "2026-12"], 跨年)
     c = sqlite3.connect(p); c.row_factory = sqlite3.Row
     店 = {r["shop"]: r["a"] for r in c.execute(
         """select o.shop, avg(r.star) a from rating r join ordr o on o.id=r.order_id
@@ -441,6 +466,7 @@ def _自测():
     店月 = {(r["shop"], r["ym"]): (r["n"], r["a"]) for r in c.execute(
         """select o.shop, substr(r.rated_at,1,7) ym, count(*) n, avg(r.star) a from rating r
            join ordr o on o.id=r.order_id group by 1,2""")}
+    月目标 = 月目标_于(dt.date.fromisoformat(夹具今天))
     有 = sorted(月目标)
     应升 = 月目标[有[-1]] - 月目标[有[0]]
     差们 = []
@@ -479,11 +505,11 @@ def _自测():
         "select count(*) from rating where star<=? and task_id is null", (R.差评线,)
     ).fetchone()[0] == 0)
     建于 = (c.execute("select v from world_meta where k='rating_built_on'").fetchone() or [None])[0]
-    ck("记下了造数时的世界日期(顺序那道守卫靠它)", 建于 == "2026-09-27",
+    ck("记下了造数时的世界日期(顺序那道守卫靠它)", 建于 == 夹具今天,
        f"记的是 {建于} —— `rating_check` 的「造数之后世界没有再被平移过」靠这个值,"
        f"不记就等于那道守卫没有依据")
     ck("一条都没落在世界的未来", c.execute(
-        "select count(*) from rating where substr(rated_at,1,10)>'2026-09-27'").fetchone()[0] == 0)
+        "select count(*) from rating where substr(rated_at,1,10)>?", (夹具今天,)).fetchone()[0] == 0)
     c.close()
     print()
     if 挂:
@@ -506,6 +532,8 @@ def _自测():
     ("让造数不记「它用的是哪天的世界日期」", "记下了造数时的世界日期"),
     ("把星级分布的插值锚点收窄回 4.14~4.75(两头目标被静默夹掉)", "没有发生静默夹逼"),
     ("让差评不建工单(差评躺在表里,不进待处理清单)", "差评都建了工单"),
+    ("把造数用的月目标写死回某一天(世界平移后趋势挪走)", "**按店配对合并后**在上升"),
+    ("让月目标把没走完的当月也算成完整月", "跨年也对"),
 ]
 
 if __name__ == "__main__":

@@ -3938,5 +3938,29 @@
    }
   ],
   "预期红": "话术的 demo 口径是「思路不是台词」"
+ },
+ {
+  "script": "tools/backfill_rating.py --selftest",
+  "改坏": "把造数用的月目标写死回某一天(世界平移后趋势挪走)",
+  "file": [
+   {
+    "path": "tools/backfill_rating.py",
+    "old": "    月目标 = 月目标_于(今)            # 跟着世界今天走(见模块顶上那段)",
+    "new": "    月目标 = 月目标_于(dt.date(2026, 9, 27))"
+   }
+  ],
+  "预期红": "**按店配对合并后**在上升"
+ },
+ {
+  "script": "tools/backfill_rating.py --selftest",
+  "改坏": "让月目标把没走完的当月也算成完整月",
+  "file": [
+   {
+    "path": "tools/backfill_rating.py",
+    "old": "for 前, v in zip(range(len(月目标_值), 0, -1), 月目标_值):",
+    "new": "for 前, v in zip(range(len(月目标_值) - 1, -1, -1), 月目标_值):"
+   }
+  ],
+  "预期红": "跨年也对"
  }
 ]
