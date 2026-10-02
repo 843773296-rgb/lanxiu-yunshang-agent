@@ -34,6 +34,7 @@
 
 ⚠️ 前提 `make dev`。连不上就退非 0,不静默跳过。
 """
+import hashlib
 import json
 import os
 import sys
@@ -41,6 +42,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+
+尾 = uuid.uuid4().hex[:8]
 
 _根 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(_根, "services", "api", "app"))
@@ -82,42 +85,94 @@ from db import 事务, 连接                # noqa: E402
 
 
 def 造一条待办():
-    """直接写库造前提 —— **这是测试夹具,不是接口能做的事**。
+    """直接写库造前提:一条 `execution_run` + 一条 pending 待办。**全链自建。**
 
-    ⚠️ **自己造一条,不用库里现成的 pending。** 用现成的话这一份跑一次
-    就消耗掉一条(批准是终态),跑三次之后它开始报「没有待办」——
+    ⚠️ **不消耗库里现成的 pending。** 用现成的话这一份跑一次就消耗掉一条
+    (批准是终态),跑三次之后它开始报「没有待办」——
     而那种红看起来像功能坏了。**判据不许依赖会被自己消耗掉的资源。**
+
+    ## ⚠️ 2026-10-02 改掉的三件(上一版只做到「不消耗」)
+
+    **(一) 它还是要「读」一条现成的 pending 当模板。** 于是在 CI 上
+    (**从零建库**)库里一条 pending 都没有,它 `sys.exit(1)` ——
+    **整份测试一条断言都不跑**,而报出来的是「先跑 seed_human_requests.py」。
+    那份 seed 在 CI 里**注定灌不上**:它要求库里先有一次 `execution_run`,
+    而运行是测试跑出来的,灌数据那一步必然还没有。
+    > 「不消耗别人的数据」和「不读别人的数据」**是两件事**。
+
+    **(二) 照抄的那条是随机的** —— `limit 1` 不带 `order by`。
+    而 seed 的六条里**故意有一条「没人能批」**(候选角色 `["editor","viewer"]`)。
+    哪天抄到那一条,批准那条断言就会红 —— **而那种红看起来像功能坏了**。
+    所以这里把角色**写死**成正常那条的 `["approver", "admin"]`,不靠运气。
+
+    **(三) 它不清理。** 本地库里积到了 42 条 `hr_test_*`
+    (48 条待办里只有 6 条是真 seed 的),`human_decisions` 同样 42 条。
+    每次用新 id,所以「跑得起第二遍」是绿的 —— 而它一直在往库里堆。
+    > **「跑得起第二遍」和「不留垃圾」是两件事**,而第一条绿着的时候
+    > 第二条完全看不见。现在 `清掉待办()` 在收尾里删。
     """
-    rid = f"hr_test_{uuid.uuid4().hex[:8]}"
+    rid = f"hr_test_{尾}"
+    运行id = f"run_test_{尾}"
+    载荷 = {"path": "/out/报价单-李明明.pdf",
+           "content": "云锦礼服定制报价:九米料,工期五个月……" * 12,
+           # ⚠️ **故意放一个 `secret_ref`** —— 详情接口该把它显示成
+           # `<已脱敏>`。照抄 seed 的蓝本,这样两条路验的是同一件事。
+           "secret_ref": "conn:deepseek#key"}
     with 事务() as c:
         org = c.execute(text("select organization_id from projects where id=:p"),
                         {"p": 项目}).scalar()
-        样 = c.execute(text("""select execution_run_id, run_step_id, kind, payload_ref,
-                                   allowed_fields, candidate_roles, arguments_hash,
-                                   tool_version_id, target_ref, risk_note
-                              from human_requests
-                             where project_id=:p and status='pending' limit 1"""),
-                       {"p": 项目}).mappings().first()
-        if not 样:
-            print("     库里没有 pending 的待办可照抄 —— 先 python3 tools/seed_human_requests.py")
-            sys.exit(1)
+        # `tool_version_id` 有外键 → `tool_versions`。**只读一条,不消耗它**
+        # (工具版本不是终态资源)。拿不到就留 None —— 它可空。
+        tv = c.execute(text("""select id from tool_versions where project_id=:p
+                             order by created_at limit 1"""), {"p": 项目}).scalar()
+        # ⚠️ `trace_id` 留空:它可空,而造一条 trace 只为满足外键没意义。
+        c.execute(text("""insert into execution_runs
+            (id, organization_id, project_id, kind, status, execution_mode,
+             created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,'agent','running','live', now(),'test', now(), 1)"""),
+                  {"i": 运行id, "o": org, "p": 项目})
+        # ⚠️ `payload_ref` 这一列是 **TEXT**(不是 JSONB)—— 塞 json 串,
+        # 不要 `cast(... as jsonb)`。seed 那边写的是 cast,它靠一次隐式转换
+        # 落进 text 列;这里直接给串,少一次转换也少一个会漂的地方。
         c.execute(text("""insert into human_requests (id, organization_id, project_id,
-                              execution_run_id, run_step_id, kind, payload_ref,
+                              execution_run_id, kind, payload_ref,
                               allowed_fields, candidate_roles, status, expires_at,
                               arguments_hash, tool_version_id, target_ref, risk_note,
                               created_at, created_by, updated_at, revision)
-                         values (:i,:o,:p,:r,:s,:k,:pr, cast(:af as jsonb),
-                                 cast(:cr as jsonb), 'pending', now() + interval '2 days',
-                                 :ah,:tv, cast(:tr as jsonb), :rn, now(), 'test', now(), 1)"""),
-                  {"i": rid, "o": org, "p": 项目,
-                   "r": 样["execution_run_id"], "s": 样["run_step_id"], "k": 样["kind"],
-                   "pr": 样["payload_ref"],
-                   "af": json.dumps(样["allowed_fields"], ensure_ascii=False),
-                   "cr": json.dumps(样["candidate_roles"], ensure_ascii=False),
-                   "ah": 样["arguments_hash"], "tv": 样["tool_version_id"],
-                   "tr": json.dumps(样["target_ref"], ensure_ascii=False),
-                   "rn": 样["risk_note"]})
+                         values (:i,:o,:p,:r,'tool_write',:pr,
+                                 cast(:af as jsonb), cast(:cr as jsonb),
+                                 'pending', now() + interval '6 hours',
+                                 :ah,:tv, cast(:tg as jsonb), :rn,
+                                 now(), 'test', now(), 1)"""),
+                  {"i": rid, "o": org, "p": 项目, "r": 运行id,
+                   "pr": json.dumps(载荷, ensure_ascii=False),
+                   "af": json.dumps(["content"], ensure_ascii=False),
+                   # **写死**,不照抄 —— 见上面 (二)。
+                   "cr": json.dumps(["approver", "admin"], ensure_ascii=False),
+                   "ah": "sha256:" + hashlib.sha256(
+                       json.dumps(载荷, ensure_ascii=False,
+                                  sort_keys=True).encode()).hexdigest(),
+                   "tv": tv,
+                   "tg": json.dumps({"资源": "/out/报价单-李明明.pdf",
+                                     "动作": "写文件"}, ensure_ascii=False),
+                   "rn": "[夹具] 往 /out 写一个客户可见的报价单 —— "
+                         "**不可逆**:写出去之后顾客可能已经看到了"})
     return rid
+
+
+def 清掉待办():
+    """删掉这一轮造的待办、它的决定行和那条运行。**按外键顺序。**
+
+    ⚠️ 顺序错了的后果是收尾里抛一个 FK 错 —— 而**失败发生在收尾里,
+    最容易被当成没事**(主体断言已经打完绿勾了)。
+    """
+    with 事务() as c:
+        c.execute(text("delete from human_decisions where project_id=:p "
+                       "and human_request_id=:i"), {"p": 项目, "i": f"hr_test_{尾}"})
+        c.execute(text("delete from human_requests where project_id=:p and id=:i"),
+                  {"p": 项目, "i": f"hr_test_{尾}"})
+        c.execute(text("delete from execution_runs where project_id=:p and id=:i"),
+                  {"p": 项目, "i": f"run_test_{尾}"})
 
 
 def 两个实验(同不同):
@@ -269,7 +324,8 @@ def main():
        (((详2 or {}).get("请求") or {}).get("status"),
         len((详2 or {}).get("决定历史") or [])))
 
-    print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}")
+    清掉待办()
+    print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}(夹具已清)")
     if 挂:
         for x in 挂:
             print("   挂:", x)
