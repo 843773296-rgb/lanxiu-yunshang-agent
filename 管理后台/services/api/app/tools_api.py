@@ -126,9 +126,25 @@ def 工具详情(project_id: str, tid: str,
         # 和 `confirmation_policy`),于是这条接口 **500**。
         # 「没查表结构就写」这一族今天第 10 次;而它只在走到这条路径时才炸,
         # 别的路径全绿。
+        # ⚠️⚠️ **逐列点名,绝不 `select *`。**
+        # `tool_versions` 上有 **`secret_ref`** —— 凭据引用。
+        # > **凭据绝不写进任何返回值或异常。**
+        # `select *` 会在「有人往这张表加一列」的那天把它带出去,
+        # 而那天**没有任何东西会红**。逐列点名让「多返回一列」
+        # 变成一个要有人写下来的动作。
+        #
+        # 下面这批是 2026-10-02 为规格 §8.2 的「输入与输出」和
+        # 「执行与权限」两个页签加的 —— 原来只给 7 列,
+        # 而那两页要的「参数表 / 对象范围 / 幂等 / 超时 / 脱敏」一个都没有。
         版本们 = [dict(r) for r in c.execute(text("""
             select version_no, side_effect_type, content_hash, confirmation_policy,
-                   pollable, created_at, created_by
+                   pollable, created_at, created_by,
+                   model_description, input_schema, output_schema,
+                   allowed_scopes, idempotency_strategy, timeout_seconds,
+                   redaction, server_bound_arguments, external_status_lookup,
+                   connection_id, retry_policy,
+                   -- ⚠️ **只报「配了没配」,不给值。** 见上面那段红线。
+                   (secret_ref is not null) as 配了凭据吗
               from tool_versions
              where project_id=:p and tool_definition_id=:i
              order by version_no desc"""), {"p": project_id, "i": tid}).mappings()]
@@ -164,7 +180,32 @@ def 工具详情(project_id: str, tid: str,
             "能轮询吗": v.get("pollable"),
             "冻结时间": v["created_at"].isoformat() if v.get("created_at") else None,
             "冻结的人": v.get("created_by"),
+            # ── 规格 §8.2「输入与输出」那一页要的 ──────────────────
+            "给模型的说明": v.get("model_description"),
+            "入参": v.get("input_schema"),
+            "出参": v.get("output_schema"),
+            # ⚠️ **服务端绑定参数单独一栏**(规格 §8.2:「服务端绑定另区展示」)。
+            # 它和「模型能填的参数」混在一张表里是危险的:
+            # 模型看不到也改不了这些,而界面上并排摆着会让人以为它们一样 ——
+            # 于是有人把一个该服务端绑的字段写进 `input_schema`,
+            # **那一刻模型就能覆盖它了**。
+            "服务端绑定的参数": v.get("server_bound_arguments"),
+            # ── 规格 §8.2「执行与权限」那一页要的 ────────────────
+            "对象范围": v.get("allowed_scopes"),
+            "幂等策略": v.get("idempotency_strategy"),
+            "超时秒": v.get("timeout_seconds"),
+            "脱敏": v.get("redaction"),
+            "查外部状态": v.get("external_status_lookup"),
+            "连接": v.get("connection_id"),
+            "重试策略": v.get("retry_policy"),
+            # ⚠️ **只说配了没配,不给凭据引用本身。**
+            # 规格 §11.2 / 这个仓库的红线:**凭据绝不经返回值出去**。
+            "配了凭据吗": bool(v.get("配了凭据吗")),
         } for v in 版本们],
+        "⚠️凭据不出返回值": "版本上有 `secret_ref`,这条接口**只报配了没配** —— "
+                        "凭据(以及它的引用)不经任何返回值出去。"
+                        "查询也是逐列点名的:`select *` 会在有人加一列的那天"
+                        "把它带出去,**而那天没有任何东西会红**",
         "风险变大了吗": 风险变大,
         # ⚠️ **把校验器真支持的关键字给出来,让界面不硬编**(2026-10-02 加)。
         #

@@ -1709,6 +1709,73 @@ async function 画工具详情(tid) {
       : `<div class="note warn">⚠️ <b>接口没给「可用的Schema关键字」</b> ——
           那这一页就没法替你先挡一遍。<b>这不是「随便填都行」</b>：
           冻结时服务端仍然会拦，只是你要到那一步才知道。</div>`;
+    // ── 规格 §8.2 的「输入与输出」+「执行与权限」两页 ────────────────
+    //
+    // ⚠️ **只渲最新那一版。** 规格那张表把它们画成两个独立页签,
+    // 而首版不做页签切换:七个页签里有三个要还没实现的接口
+    // (配套关系要 `companion_map`、引用与运行要查哪些 Agent 引用它)——
+    // **摆七个壳子、三个是空的,比摆两个满的糟**:
+    // 空页签让人以为「这里没东西」,而真相是「这里还没做」。
+    // 没做的那几个在下面**明写未实现**(仓库的规矩:
+    // 「还没实现的入口保留但标未实现,不藏起来」)。
+    const 新版 = 版本们[0] || null;
+    const 看得到原文 = 能力.includes("查看敏感输入/独立测试答案");
+    const JSON块 = (o) => o
+      ? `<pre style="margin:4px 0;padding:6px 8px;background:#f7f8fa;
+           border-left:3px solid var(--faint);font-size:11.5px;
+           overflow:auto;max-height:200px">${esc(
+             JSON.stringify(o, null, 1))}</pre>`
+      : `<span class="k">—</span>`;
+    const 最新版区 = !新版 ? "" : `
+      <h2>最新版本（${esc(新版["版本"])}）· 输入与输出</h2>
+      <table><tbody>
+        <tr><td class="k">给模型的说明</td>
+          <td>${esc(新版["给模型的说明"] || "—")}</td></tr>
+        <tr><td class="k">入参 schema</td><td>${JSON块(新版["入参"])}</td></tr>
+        <tr><td class="k">出参 schema</td><td>${JSON块(新版["出参"])}
+          ${新版["出参"] ? "" : `<span class="k">没声明出参 ——
+            <b>「工具返回了什么」就只能靠读结果猜</b></span>`}</td></tr>
+        <tr><td class="k">服务端绑定的参数</td><td>${
+          看得到原文 ? JSON块(新版["服务端绑定的参数"])
+          : `<span class="k">按权限脱敏（要「查看敏感输入」这条专项授权）</span>`}
+          <div class="note">⚠️ <b>单独一栏，不和入参混在一张表里</b> ——
+            模型看不到也改不了这些。并排摆会让人以为它们一样，
+            于是有人把该服务端绑的字段写进入参 schema，
+            <b>那一刻模型就能覆盖它了</b>。</div></td></tr>
+      </tbody></table>
+      <h2>最新版本 · 执行与权限</h2>
+      <table><tbody>
+        <tr><td class="k">读写类型</td><td>${esc(新版["读写类型"] || "—")}</td></tr>
+        <tr><td class="k">连接</td><td>${新版["连接"]
+          ? `<code>${esc(新版["连接"])}</code>` : `<span class="k">没绑连接</span>`}
+          ${新版["配了凭据吗"]
+            ? `<span class="pill ok">配了凭据</span>`
+            : `<span class="pill">没配凭据</span>`}
+          <span class="k">—— <b>只报配了没配，凭据本身不出返回值</b></span></td></tr>
+        <tr><td class="k">对象范围</td><td>${JSON块(新版["对象范围"])}
+          ${新版["对象范围"] ? "" : `<span class="k">没限范围 ——
+            <b>那它能碰的就是适配器能碰的全部</b></span>`}</td></tr>
+        <tr><td class="k">确认策略</td><td>${JSON块(新版["确认策略"])}</td></tr>
+        <tr><td class="k">幂等策略</td><td>${JSON块(新版["幂等策略"])}
+          ${新版["幂等策略"] ? "" : `<span class="k">没声明 ——
+            <b>超时重发会把同一件事做两遍</b></span>`}</td></tr>
+        <tr><td class="k">超时</td><td>${新版["超时秒"] != null
+          ? esc(新版["超时秒"]) + " 秒" : `<span class="k">没设</span>`}</td></tr>
+        <tr><td class="k">重试策略</td><td>${JSON块(新版["重试策略"])}</td></tr>
+        <tr><td class="k">脱敏</td><td>${JSON块(新版["脱敏"])}
+          ${新版["脱敏"] ? "" : `<span class="k">没声明 ——
+            <b>这个工具的参数和返回会原样进 Trace 和导出</b></span>`}</td></tr>
+        <tr><td class="k">能轮询吗</td><td>${新版["能轮询吗"] ? "能"
+          : `<span class="k">没声明 —— 「调用两次」会被当成无进展</span>`}</td></tr>
+        <tr><td class="k">查外部状态</td><td>${JSON块(新版["查外部状态"])}</td></tr>
+      </tbody></table>
+      <div class="note"><b>规格 §8.2 那七个页签，这里做了两个</b>（输入与输出、
+        执行与权限）。<b>还没做的三个</b>：配套关系（要
+        <code>tool_group_versions.companion_map</code>，表建了接口还没实现）、
+        引用与运行（要查哪些 Agent / 工具组 / 筛选策略引用它）、
+        版本差异（现在只列版本，不比两版之间改了什么）。
+        <br>⚠️ <b>没摆空壳子是有意的</b>：空页签让人以为「这里没东西」，
+        而真相是「这里还没做」。</div>`;
     const 风险警告 = d["风险变大了吗"]
       ? `<div class="note warn"><b>⚠️ 草稿比最新冻结版风险更大</b> ——
           冻结时<b>必须出新版本</b>:引用它的 Agent 还指着老说明,
@@ -1758,6 +1825,7 @@ async function 画工具详情(tid) {
         <p><button class="pri" id="d-freeze">冻结</button></p>`
         : `<div class="note">改草稿 / 冻结要「改编排草稿」这条能力 ——
           你现在是 <b>${esc(我的角色 || "?")}</b>，<b>所以这里不摆按钮</b>。</div>`}
+      ${最新版区}
       <h2>版本历史（${版本们.length}）</h2>
       <table><thead><tr><th>版本</th><th>读写类型</th><th>确认策略</th>
         <th>能轮询吗</th><th>内容哈希</th><th>冻结</th></tr></thead><tbody>`
