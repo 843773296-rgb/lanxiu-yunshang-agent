@@ -269,6 +269,52 @@ def 跑():
                        "sba": json.dumps(t["绑定"], ensure_ascii=False),
                        "pl": t["可轮询"], "h": f"seedtoolhash_{t['名']}"})
 
+        # ── 演示工具组:一个只读 + 一个会写(2026-10-02 加)────────────────
+        #
+        # ⚠️ **它有业务理由,不是为了喂判据。**
+        # 规格 §9 要工具组是「**稳定搭配**」。而演示项目这两个工具
+        # (搜索 = 只读、写报告 = 不可逆)正是最常见的那种搭配:
+        # **先查后写**。配套关系也有自然落点:写报告之前该先搜一下。
+        # > 一个为了喂判据而存在的数据,和一个有业务理由的数据 ——
+        # > **前者会在下次清理时被删掉**。
+        #
+        # 顺带也解决一件事:`ifmatch_reachable_check` 要从 `/tool-groups`
+        # 列表取一个样例 id 去验「界面拿得到 revision 吗」,
+        # 而 CI 是**从零建库** —— 一个组都没有的话那条判据
+        # **什么都没验到**(它自己明说这不算通过)。
+        c.execute(text("""insert into tool_groups
+            (id, organization_id, project_id, name, purpose, owner, status,
+             draft_revision, created_at, created_by, updated_at, revision)
+            values ('tg_先查后写',:o,:p,'先查后写',
+                    '最常见的搭配:先搜一下再写报告。'
+                    '一个只读 + 一个不可逆,正好也是配套关系的落点',
+                    'seed','active', 1, now(),'seed', now(), 1)
+            on conflict (project_id, id) do nothing"""),
+                  {"o": ORG, "p": A})
+        # ⚠️ **连一个冻结版本一起铺** —— 没有版本的组 Agent 引用不了,
+        # 而「有组没版本」和「没有组」在 Agent 配置页上长得一样。
+        c.execute(text("""insert into tool_group_versions
+            (id, organization_id, project_id, tool_group_id, version_no,
+             member_manifest, companion_map, content_hash, change_note,
+             created_at, created_by, updated_at, revision)
+            values ('tgv_先查后写_v1',:o,:p,'tg_先查后写',1,
+                    cast(:mm as jsonb), cast(:cm as jsonb),
+                    'seedtgvhash_先查后写',
+                    '首版:搜索(只读)+ 写报告(不可逆),写之前先搜',
+                    now(),'seed', now(), 1)
+            on conflict (project_id, id) do nothing"""),
+                  {"o": ORG, "p": A,
+                   "mm": json.dumps([
+                       {"tool_version_id": "tv_search", "加载角色": "常驻",
+                        "必不可少吗": True},
+                       {"tool_version_id": "tv_write_report",
+                        "加载角色": "候选", "必不可少吗": False},
+                   ], ensure_ascii=False),
+                   # 写报告之前该先搜 —— **单向,不成环**
+                   # (成环的话预算算法会反复把两个都算进同一组)。
+                   "cm": json.dumps({"tv_write_report": ["tv_search"]},
+                                    ensure_ascii=False)})
+
         # Prompt 正式版本:Workflow 的 LLM 节点要引用**确切版本**,不是草稿。
         #
         # ⚠️ **version_no 要算 max+1,不能写死 1。**
