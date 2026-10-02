@@ -74,15 +74,56 @@ def main():
         当 = ("在期内" if exp and exp > 现 else
              ("**已过期**" if exp else "**没设截止时间**"))
         print(f"   · {名:<12} status={st:<9} {当:<16} 候选角色 {角色}")
+    # ⚠️ **没有运行就自己造一条底座,不再退 1。**
+    #
+    # 原来是 `if not run: return 1`。那在 CI 上**注定触发**:待办挂在一次
+    # `execution_run` 上(外键),而**运行是测试跑出来的** —— 灌数据这一步
+    # 必然还没有。于是 10-02 之前 CI 里这一步一直失败、被 `|| echo` 兜着,
+    # 而它底下 `test_handover_flow` **整份测试一条断言都不跑**。
+    #
+    # 连带还塌了两处(拿掉一份数据时,**知道「谁读它」比知道「谁写它」难**):
+    #   · `#/human` 页面冒烟只能走空列表那条路 ——
+    #     「列表上有数据」那条渲染路径 CI 从来没盖住
+    #   · `ifmatch_reachable_check` 拿不到样例待办,于是
+    #     `POST /human-requests/{id}/decisions` 那条**什么都没验到**
+    #     (判据自己明说了这件事,没有蒙绿 —— 它是对的)
+    #
+    # 造一条 `running` 的底座是安全的:库里 running 本来就是常态(本地 48 条),
+    # 而且仓库里没有盯「卡住的运行」的判据。**固定 id + do nothing**,
+    # 所以跑第二遍不会多出一条(`seed_rerun_check` 盯着这件事)。
+    底座 = "run_seed_待办底座"
     if not run:
-        print("\n⚠️ 库里没有 execution_run —— 待办要挂在一次运行上(外键)")
-        return 1
+        print(f"\n▸ 库里没有 execution_run —— 真跑时**自己造一条底座** `{底座}`"
+              f"(待办要挂在运行上,外键)")
     if not a.做:
         print("\n**这是 dry-run,一行都没写。** 加 `--做` 才真的写")
         return 0
 
     写了 = 0
     with 事务() as c:
+        if not run:
+            # ⚠️ 造在 `--做` **之后** —— dry-run 一行都不许写。
+            c.execute(text("""insert into execution_runs
+                (id, organization_id, project_id, kind, status, execution_mode,
+                 created_at, created_by, updated_at, revision)
+                values (:i,:o,:p,'agent','running','live', now(),'seed', now(), 1)
+                on conflict do nothing"""), {"i": 底座, "o": org, "p": proj})
+            run = 底座
+        # ⚠️ **先清自己铺过的,再铺。** seed 的语义是「把库铺成这个样子」,
+        # 不是「每次追加一批」。原来用 `新("hr")` 随机 id、没有去重,
+        # **每跑一次堆 6 条** —— 而 `seed_rerun_check` 一直是绿的,
+        # 因为它看的是**退出码**,不是「跑完库里有几条」。
+        # > **「跑得起第二遍」和「不留垃圾」是两件事。**
+        # (同一天在 `test_handover_flow` 的夹具上撞过一次:那边堆了 42 条。)
+        #
+        # 只清 `created_by='seed'` 的 —— 测试自己造的那些带 `hr_test_` 前缀,
+        # 由那份测试自己收尾,**这里不许替它清**(替别人清会掩盖它漏清)。
+        c.execute(text("""delete from human_decisions where project_id=:p
+                        and human_request_id in (select id from human_requests
+                            where project_id=:p and created_by='seed')"""),
+                  {"p": proj})
+        c.execute(text("delete from human_requests where project_id=:p "
+                       "and created_by='seed'"), {"p": proj})
         for 名, st, exp, 角色 in 计划:
             载荷 = {"path": "/out/报价单-李明明.pdf",
                    "content": "云锦礼服定制报价:九米料,工期五个月……" * 12,
@@ -97,8 +138,12 @@ def main():
                     created_at, created_by, updated_at, revision)
                 values (:i,:o,:p,:r,'tool_write', cast(:pl as jsonb),
                         cast(:af as jsonb), cast(:cr as jsonb), :st, :exp, :h, :tv,
-                        cast(:tg as jsonb), :rn, now(), 'seed', now(), 1)"""),
-                      {"i": 新("hr"), "o": org, "p": proj, "r": run,
+                        cast(:tg as jsonb), :rn, now(), 'seed', now(), 1)
+                -- 主键是 (project_id, id)。上面已经先清过,这条是**第二道**:
+                -- 清理哪天被改坏了,这里也不会插出重复。
+                on conflict (project_id, id) do nothing"""),
+                      {"i": "hr_seed_" + hashlib.md5(名.encode()).hexdigest()[:8],
+                       "o": org, "p": proj, "r": run,
                        "pl": json.dumps(载荷, ensure_ascii=False),
                        "af": json.dumps(["content"], ensure_ascii=False),
                        "cr": json.dumps(角色, ensure_ascii=False),

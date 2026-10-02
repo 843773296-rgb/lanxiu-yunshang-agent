@@ -97,11 +97,20 @@ def 找全部seed脚本():
         if not os.path.isdir(full):
             continue
         for f in sorted(os.listdir(full)):
-            # ⚠️ **把自己排掉。** 这个文件也叫 `seed_*.py`,于是第一版
-            # 一跑就把**判据自己**报成了「没登记的 seed 脚本」。
-            # 这个形状在这个仓库里反复出现过(密钥扫描的规则文件匹配自己、
-            # 文档匹配自己)—— **一个按名字选目标的判据,会选中自己**。
-            if f == os.path.basename(__file__):
+            # ⚠️ **把判据排掉 —— 不只是把「自己」排掉。**
+            # 这个文件也叫 `seed_*.py`,于是第一版一跑就把**判据自己**
+            # 报成了「没登记的 seed 脚本」。这个形状在这个仓库里反复出现过
+            # (密钥扫描的规则文件匹配自己、文档匹配自己)——
+            # **一个按名字选目标的判据,会选中自己。**
+            #
+            # 2026-10-02 又中一次,而且是另一种形状:那一版排的是
+            # `f == basename(__file__)` —— **只排掉自己这一个文件**。
+            # 于是新加的 `tools/seed_flag_check.py` 一进来就被报成
+            # 「没登记的 seed 脚本」,CI 当场红。
+            # > 它防的是「选中自己」,而真正的规则是
+            # > **「判据不是被测对象」**。排掉一个文件名只解决那一个实例。
+            # 所以改成按后缀排掉所有 `*_check.py`(这也顺带覆盖了自己)。
+            if f.endswith("_check.py"):
                 continue
             if f.startswith("seed_") and f.endswith(".py"):
                 出.append(os.path.join(d, f).replace(os.sep, "/"))
