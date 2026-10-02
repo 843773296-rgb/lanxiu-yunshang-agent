@@ -191,6 +191,32 @@ def 工具详情(project_id: str, tid: str,
                         where project_id=:p
                           and loaded_version_ids @> cast(:s as jsonb)"""),
                     {"p": project_id, "s": 一串}).scalar(),
+                # ⚠️⚠️ **这一条才是「停用它会不会影响线上」的答案。**
+                #
+                # 走的是:**环境指针 → 发布清单 → Agent 版本 → tools**。
+                # 不能只查「哪些发布清单记了这个 Agent 版本」——
+                # > 「有一份清单记着它」和「**生产正指着那一份**」是两件事,
+                # > 而一份三个月前回滚掉的清单照样记着它。
+                #
+                # 生产在跑哪一版的**真相源是 `environment_bindings`**
+                # (规格:「指针变更原子化」「生产指针只认审核过的清单」)。
+                #
+                # ⚠️ `agent_version_id` 为空的清单(历史清单永远是 NULL)
+                # 在这里**自然不计入** —— join 不上就是没绑 Agent,
+                # 那正是它该有的语义,不是漏算。
+                "在生产上吗": c.execute(text(
+                    """select count(*) > 0 from environment_bindings eb
+                        join release_manifests rm
+                          on rm.project_id = eb.project_id
+                         and rm.id = eb.release_manifest_id
+                        join agent_versions av
+                          on av.project_id = rm.project_id
+                         and av.id = rm.agent_version_id
+                       where eb.project_id = :p
+                         and eb.environment = 'production'
+                         and eb.archived_at is null
+                         and av.tools @> cast(:s as jsonb)"""),
+                    {"p": project_id, "s": 一串}).scalar(),
             }
     级中文 = {x["名"]: x["中文"] for x in DS.副作用表}
     上一版 = 版本们[0] if 版本们 else None
@@ -248,14 +274,18 @@ def 工具详情(project_id: str, tid: str,
             # ── 规格 §8.2「引用与运行」那一页要的 ──────────────────
             "谁在用它": 引用.get(v["version_no"]) or {},
         } for v in 版本们],
-        "⚠️答不出的": (
-            "**「生产现在跑哪一版 Agent」这个库答不出来** —— "
-            "`release_manifests` 记了 prompt / 连接 / 索引 / 检索配置 / "
-            "模型产物的确切版本,**唯独没有 Agent 版本那一列**。"
-            "所以上面的「谁在用它」给的是**所有** Agent 版本的计数,"
-            "**分不出有没有一个在生产上**。"
-            "停用一个工具之前要确认这件事的话,现在只能去看发布记录 —— "
-            "而那是个该补的契约缺口,不是这一页能解决的"),
+        # ⚠️ 这一句 10-02 换过:原来写的是「这个库答不出『生产跑哪一版 Agent』」,
+        # 那是真的 —— `release_manifests` 当时**没有 Agent 版本那一列**。
+        # 用户拍了「要补」,于是补了(迁移 `14979be496d5`),现在答得出了。
+        # 留着这段注释是因为:**一个曾经答不出的问题,下一个人会以为还答不出**。
+        "⚠️在生产上吗怎么算的": (
+            "走的是**环境指针 → 发布清单 → Agent 版本 → tools** —— "
+            "而不是「哪些发布清单记了它」。"
+            "> 「有一份清单记着它」和「**生产正指着那一份**」是两件事,"
+            "而一份三个月前回滚掉的清单照样记着它。"
+            "⚠️ 历史清单的 `agent_version_id` 是 **NULL**(那一列 10-02 才加),"
+            "它们**自然不计入** —— join 不上就是没绑 Agent,"
+            "那正是它该有的语义,不是漏算"),
         "⚠️凭据不出返回值": "版本上有 `secret_ref`,这条接口**只报配了没配** —— "
                         "凭据(以及它的引用)不经任何返回值出去。"
                         "查询也是逐列点名的:`select *` 会在有人加一列的那天"

@@ -30,6 +30,14 @@ const P = 桩.P(项目);
 const 根 = path.join(__dirname, "..", "..");
 const src = fs.readFileSync(path.join(根, "apps", "web", "app.js"), "utf8");
 
+// execSync 返回 Buffer;`stdio: "pipe"` 时 stdout 在返回值里。
+// ⚠️ 不设 `stdio` 的话子进程的输出会直接打到终端而**拿不到** ——
+// 于是「python 跑了」和「我读到了它的输出」是两件事。
+function execSyncOut(exec, 代码) {
+  return exec(`./.venv/bin/python -c "${代码.replace(/"/g, '\\"')}"`,
+              { cwd: 根, stdio: "pipe" });
+}
+
 const 该跑几组 = 6;
 const { ck, 组, 结束, 状 } = 桩.计分(该跑几组);
 
@@ -297,15 +305,103 @@ const 工具名 = `页面接线工具-${尾}`;
        + "(前者是配置,后者是这个工具真的进过模型输入)",
        页文2.includes("真被加载过") || 页文2.includes("被真实运行加载过"),
        页文2.includes("被真实运行加载过"));
+    // ── 「在生产上吗」:**必须验正例,否则它可能恒为 false** ──────────
+    //
+    // ⚠️⚠️ 这一组是这一页最该守的。10-02 实测:**所有历史发布清单的
+    // `agent_version_id` 都是 NULL**(那一列当天才加)——
+    // 于是那条 join 一条都接不上,**它必然返回 false**。
+    // > 一个恒为 false 的判断,和一个正确算出 false 的判断,
+    // > **在返回值上长得一模一样**。
+    // 所以这里**造一条真的生产引用**,断言它变成 true,然后还原。
+    ck("「在生产上吗」这个字段在(对照:下面几条才有意义)",
+       typeof 用它的["在生产上吗"] === "boolean", 用它的["在生产上吗"]);
+    // ⚠️ **真造一条正例** —— 测试能连库(收尾那段就在跑 python)。
+    // 只验 false 太弱:现在所有历史清单那一列都是 NULL,
+    // 所以 false 可能只是 join 一条都接不上。
+    const { execSync: _exec } = require("child_process");
+    const _py = (代码) => String(execSyncOut(_exec, 代码)).trim();
+    // 先断「现在是 false」—— 这一条防的是「join 把不该算的算进来」
+    // (漏了 `environment='production'` 或漏了 `archived_at is null`)。
+    ck("现在库里**没有**绑了 Agent 的生产清单,所以这一条该是 **false**"
+       + "(它要是 true,说明那条 join 把不该算的算进来了 —— "
+       + "比如漏了 `environment='production'` 或漏了 `archived_at is null`)",
+       用它的["在生产上吗"] === false, 用它的["在生产上吗"]);
+    // ── 真正例:把一条生产清单指向一个用了这个工具的 Agent 版本 ──────
+    let 正例结果 = null, 正例还原 = false;
+    try {
+      const 出 = _py(`
+import os,sys
+sys.path.insert(0, os.path.join('services','api','app'))
+from sqlalchemy import text
+from db import 事务
+with 事务() as c:
+    av = c.execute(text("""select id from agent_versions
+        where project_id=:p and tools is not null
+          and tools::text <> '[]' limit 1"""), {'p': '${项目}'}).scalar()
+    rel = c.execute(text("""select rm.id from environment_bindings eb
+        join release_manifests rm on rm.project_id=eb.project_id
+         and rm.id=eb.release_manifest_id
+        where eb.project_id=:p and eb.environment='production'
+          and eb.archived_at is null and rm.agent_version_id is null
+        limit 1"""), {'p': '${项目}'}).scalar()
+    if av and rel:
+        c.execute(text("""update release_manifests set agent_version_id=:a
+            where project_id=:p and id=:r"""),
+            {'a': av, 'p': '${项目}', 'r': rel})
+    print((av or '') + '|' + (rel or ''))
+`);
+      const [av, rel] = 出.split("\n").pop().split("|");
+      if (av && rel) {
+        正例还原 = rel;
+        // 那个 Agent 版本用的是 seed 的工具版本,不是我造的 ——
+        // 所以要查它用的那个工具,再问那个工具「在生产上吗」。
+        const [, 详7] = await 桩.直打("GET", `${P}/tools/tool_search`, null, "U002");
+        正例结果 = (((详7 || {})["版本历史"] || [])[0]
+                 || {})["谁在用它"]?.["在生产上吗"];
+      }
+    } catch (e) { 正例结果 = "造正例失败:" + String(e.message).slice(0, 80); }
+    ck("**造一条真的生产引用 → 它变成 true**"
+       + "(只验 false 太弱:现在所有历史清单那一列都是 NULL,"
+       + "false 可能只是 join 一条都接不上 —— "
+       + "**而恒为 false 和正确算出 false 在返回值上长得一样**)",
+       正例结果 === true, 正例结果);
+    // ⚠️ **还原。** 不还原的话下一轮别的测试会看到一条
+    // 「生产绑了 Agent」的清单,而那不是真实状态。
+    if (正例还原) {
+      try {
+        _py(`
+import os,sys
+sys.path.insert(0, os.path.join('services','api','app'))
+from sqlalchemy import text
+from db import 事务
+with 事务() as c:
+    c.execute(text("""update release_manifests set agent_version_id=null
+        where project_id=:p and id=:r"""),
+        {'p': '${项目}', 'r': '${正例还原}'})
+print('还原了')
+`);
+      } catch (e) {
+        // ⚠️ **还原失败要红。** 留一条假的生产引用,会让下一轮
+        // 「在生产上吗」那条断言在一个不真实的状态上出结论。
+        ck("还原那条生产引用(**还原失败要红** —— "
+           + "留着它会让下一轮在一个不真实的状态上出结论)",
+           false, String(e.message).slice(0, 100));
+      }
+    }
+
+    ck("**说清了「在生产上吗」是怎么算的**"
+       + "(走环境指针 → 清单 → Agent 版本,而不是「哪些清单记了它」)",
+       String((详6 || {})["⚠️在生产上吗怎么算的"] || "").includes("环境指针"),
+       String((详6 || {})["⚠️在生产上吗怎么算的"] || "").slice(0, 40));
+
     // ⚠️ **这一条盯的是「它说出了自己答不出什么」。**
     // 整个库里没有任何一处记着「生产现在跑哪一版 Agent」——
     // `release_manifests` 唯独没有那一列。不写出来的话,
     // 这一页看起来像是回答了「停用会不会影响线上」。
-    ck("**明写了这一页答不出「生产跑哪一版 Agent」**"
-       + "(不写的话它看起来像回答了「停用会不会影响线上」)",
-       String((详6 || {})["⚠️答不出的"] || "").includes("生产")
-       && 页文2.includes("答不出"),
-       String((详6 || {})["⚠️答不出的"] || "").slice(0, 46));
+    ck("页面上渲出了「在生产上吗」那一行"
+       + "(停用之前要看的就是这一个)",
+       页文2.includes("在生产上") || 页文2.includes("生产"),
+       页文2.includes("在生产上"));
 
     ck("页面上明写了**还没做哪几个页签**"
        + "(空壳子让人以为「这里没东西」,而真相是「这里还没做」)",

@@ -374,11 +374,37 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     E("release_manifests", "发布清单", 项目级, 不可变,
       ["application_id", "prompt_version_id", "connection_version_id",
        "index_build_id", "retrieval_config_version_id", "model_artifact_id",
-       "evaluation_id", "approval", "content_hash", "revision"],
+       "evaluation_id", "approval", "content_hash", "revision",
+       # ⚠️ **2026-10-02 补的,补的是一个洞。**
+       #
+       # 这张清单记了 prompt / 连接 / 索引 / 检索配置 / 模型产物的确切版本,
+       # **唯独没有 Agent 版本** —— 而 Agent 版本里装着 `tools`
+       # (它能用哪些工具)。
+       #
+       # 后果是具体的:做工具详情那一页时要回答
+       # 「**停用这个工具会不会影响线上**」,而**整个库答不出来**
+       # (实查:全库带 agent 字样的列只有 `agent_versions.agent_id`
+       #  和 `graph_drafts.agent_id`)。
+       #
+       # > 一张自称「完整依赖清单」的表,少一样就答不全它自己承诺的问题。
+       #
+       # ⚠️⚠️ **这一列为空 = 那次发布没绑 Agent**,不是「数据坏了」。
+       # 清单是**不可变**的 —— 已有的清单这一列永远是 NULL,不可能回去补。
+       # 读成「数据坏了」然后报错的话,**所有历史发布记录会一起失效**,
+       # 而建表、迁移、`alembic check` 全是绿的。
+       # (今天第二次做这个决定:`agent_versions.tool_loading_type`
+       #  那一列定的是「空 = 全部加载」,同一个形状。)
+       "agent_version_id"],
       ["**完整依赖清单,全部是确切版本**(实施必须遵守第 1 条)——"
        "不许出现「用最新的那个」",
-       "**不把任意模块的「最新版本」静默用于生产**(§2)"],
-      依赖=["applications", "prompt_versions", "release_manifests"]),
+       "**不把任意模块的「最新版本」静默用于生产**(§2)",
+       "**`agent_version_id` 为空 = 那次发布没绑 Agent**,不是数据坏了 —— "
+       "清单不可变,历史清单那一列永远是 NULL",
+       "⚠️ **「有一份清单记着它」不等于「生产正指着那一份」** —— "
+       "生产在跑哪一版的真相源是 `environment_bindings`(环境指针),"
+       "而一份三个月前回滚掉的清单照样记着它"],
+      依赖=["applications", "prompt_versions", "release_manifests",
+          "agent_versions"]),
     E("environment_bindings", "环境指针", 项目级, 可改,
       ["application_id", "environment", "release_manifest_id", "revision"],
       ["**指针变更原子化**(§18);PATCH 要 expected_revision",

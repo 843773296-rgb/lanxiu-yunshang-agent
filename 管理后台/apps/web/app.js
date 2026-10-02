@@ -1771,6 +1771,18 @@ async function 画工具详情(tid) {
       </tbody></table>
       <h2>最新版本 · 引用与运行</h2>
       <table><tbody>
+        <tr><td class="k"><b>在生产上吗</b></td>
+          <td>${(新版["谁在用它"] || {})["在生产上吗"]
+            ? `<span class="pill fail">在生产上</span>
+               <b>停用它会当场影响线上</b>`
+            : `<span class="pill ok">不在生产上</span>
+               <span class="k">—— 但下面那些引用仍然要看</span>`}
+          <div class="note">走的是 <b>环境指针 → 发布清单 → Agent 版本</b>，
+            不是「哪些清单记了它」——
+            <b>一份三个月前回滚掉的清单照样记着它</b>。
+            ⚠️ 2026-10-02 之前发布清单<b>没有 Agent 版本那一列</b>，
+            所以那之前的清单这一栏算不出来（它们不计入，
+            <b>join 不上就是没绑 Agent</b>）。</div></td></tr>
         <tr><td class="k">被 Agent 版本引用</td>
           <td><b>${esc((新版["谁在用它"] || {})["Agent 版本"] ?? "—")}</b> 个
           ${((新版["谁在用它"] || {})["Agent 版本"] || 0) > 0
