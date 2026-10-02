@@ -337,11 +337,22 @@ jobs:
           ./.venv/bin/python services/api/app/seed_demo.py
           ./.venv/bin/python tools/seed_datasets.py
           ./.venv/bin/python tools/seed_training.py
-          ./.venv/bin/python tools/seed_pricing.py
-          # ⚠️ **`seed_evals.py` 默认是 dry-run** —— 不加 `--做` 它一行都不写,
-          # 而**退出码是 0**。第一版我漏了这个参数,于是那一步「成功」了而什么都没灌。
+          # ⚠️ **三份 seed 脚本默认是 dry-run** —— 不加 `--做` 它们一行都不写,
+          # 而**退出码是 0**:`seed_pricing` / `seed_evals` / `seed_human_requests`。
           # > 一个默认不写、而且退出 0 的脚本,和一个写成功的脚本,
           # > **在 CI 日志的绿勾上长得一模一样**。
+          #
+          # 这条栽过两次。10-01 我修了 `seed_evals` 那一份,**而没问
+          # 「还有哪几份是这个形状的」** —— 于是 10-02 又撞了两份:
+          #   · `seed_pricing` 没灌 → `test_usage_flow` 挂 3 条,
+          #     而报出来的是「没有 deepseek/deepseek-v4-pro 的价目表快照」
+          #     (看起来像模型名错了,其实是整张表空的)
+          #   · `seed_human_requests` 没灌 → `test_handover_flow` 红,
+          #     **而我上一轮把它误诊成「从零建库没有 execution_run」**
+          # > **单点修复和规则修复的差别,就在「还有哪几份」这一问上。**
+          # 现在有 `tools/seed_flag_check.py` 盯着这件事(门禁里),
+          # 它比对 workflow 的调用行和脚本的 `--做` 参数。
+          ./.venv/bin/python tools/seed_pricing.py --做
           ./.venv/bin/python tools/seed_evals.py --做
           # ⚠️ **待办夹具要先有一次 `execution_run`**(它挂在运行上,外键)——
           # 而 CI 是**从零建库**,这时候库里一次运行都没有,这个脚本会退 1。
@@ -352,7 +363,7 @@ jobs:
           # 待办那份夹具只被 `#/human` 这一页用,而空列表那条路
           # **恰好被行级对账验着**(它要求空列表必须有一句人话)。
           # 所以灌不上不影响这个 job 要回答的问题。
-          ./.venv/bin/python tools/seed_human_requests.py \
+          ./.venv/bin/python tools/seed_human_requests.py --做 \
             || echo "⚠️ 待办夹具没灌(库里还没有 execution_run)—— **这是预期的**:
                从零建库时还没有运行可挂。`#/human` 会走空列表那条路,
                而行级对账要求空列表有一句人话,所以那条路是验着的。"

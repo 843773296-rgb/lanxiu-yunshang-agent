@@ -24,6 +24,8 @@ contract:      ## 只跑契约覆盖检查(不需要数据库)
 	@./.venv/bin/python tools/test_registry_check.py
 	@echo ""
 	@./.venv/bin/python tools/nav_smoke_check.py
+	@echo ""
+	@./.venv/bin/python tools/seed_flag_check.py
 
 bootstrap:     ## 装依赖 + 起基础服务 + 迁移
 	@bash tools/bootstrap.sh
@@ -32,6 +34,10 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@./.venv/bin/python tools/spec_coverage.py
 	@echo ""
 	@./.venv/bin/python tools/test_registry_check.py
+	@echo ""
+	# ⚠️ 这条**不需要数据库**,放这儿是因为「装在一个我从来没跑过的目标里
+	# 等于没装」—— `contract` 和 `test` 都挂上,两边我都会跑。
+	@./.venv/bin/python tools/seed_flag_check.py
 	@echo ""
 	@echo "▸ 要 If-Match 的写接口,**界面拿得到那个 revision 吗**(要服务在跑)"
 	@echo "  ⚠️ 契约覆盖看「登记的都实现了吗」,端到端看「接口对不对」——"

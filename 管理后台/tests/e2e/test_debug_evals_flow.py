@@ -87,19 +87,85 @@ def 造一条判分器分数(评测id):
     return 项id, 分id
 
 
+def 造一条文档片段():
+    """夹具:造一条 `documents` + 一条 `document_versions`。跑完自己清。
+
+    ## ⚠️ 为什么自己造,而不是 `一个("document_versions")` 取最新一条
+
+    原来那样写。在 CI 上(**从零建库**)它取到的是 `None` —— 于是 URL 变成
+    `/document-versions/None/revisions`,接口老实地回了 404,
+    而**报出来的样子是「改片段这个接口坏了」**。我对着那条 404 猜了一整轮。
+    > **一个把自己的错报成被测对象的错的判据,会把人送去查一个没坏的东西。**
+
+    本地从来撞不到:我那个库里躺着 200 条历次上传的残留。而且
+    **没有任何 seed 脚本灌 `document_versions`** —— 它只来自上传那条路,
+    而 `test_upload_flow` 跑在这份前面、**并且收尾清掉了自己的夹具**。
+    > **一条靠残留成立的顺序,在第一次从零跑的那天才会露出来。**
+
+    造出来的 id 直接拿去用,**不再过 `一个()`** —— 过一遍的话它仍然可能
+    取到残留里更新的某一条,于是本地测的还是别人的数据。
+    """
+    文档id, 版本id = f"doc_t{尾}", f"dv_t{尾}"
+    with 事务() as c:
+        org = c.execute(text("select organization_id from projects where id=:p"),
+                        {"p": 项目}).scalar()
+        # ⚠️ `knowledge_base_id` 留空:它可空,而填一个不存在的会撞外键。
+        c.execute(text("""insert into documents
+            (id, organization_id, project_id, created_at, created_by,
+             updated_at, revision)
+            values (:i,:o,:p, now(),'test', now(), 1)
+            on conflict do nothing"""),
+                  {"i": 文档id, "o": org, "p": 项目})
+        # ⚠️ `source_info` 是 **JSONB** —— 塞裸串会存成一个 JSON 字符串而不是
+        # 对象,而它读出来长得很像对象。这个仓库在这上面栽过十次,
+        # 所以这里显式 `cast(... as jsonb)` 配 `json.dumps`。
+        c.execute(text("""insert into document_versions
+            (id, organization_id, project_id, document_id, object_key,
+             content_hash, effective_at, source_info,
+             created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:d,:k,:h, now(), cast(:si as jsonb),
+                    now(),'test', now(), 1)
+            on conflict do nothing"""),
+                  {"i": 版本id, "o": org, "p": 项目, "d": 文档id,
+                   "k": f"test/{尾}/工期说明.md", "h": f"h_t{尾}",
+                   "si": json.dumps({"来路": "test_debug_evals_flow 的夹具"},
+                                    ensure_ascii=False)})
+    return 文档id, 版本id
+
+
 def 清掉():
     with 事务() as c:
         c.execute(text("delete from scores where project_id=:p and "
                        "evaluation_item_id like :n"), {"p": 项目, "n": f"ei_t{尾}"})
         c.execute(text("delete from evaluation_items where project_id=:p and id like :n"),
                   {"p": 项目, "n": f"ei_t{尾}"})
+        # ⚠️ 按 **document_id** 删版本,不按 id 前缀 ——
+        # 「改片段」那个接口**新建的那一版** id 是服务端生成的,不带 `_t{尾}`。
+        # 按前缀删会把它留下来,而留下来的那条顶着 RESTRICT 外键,
+        # 下一句删 documents 就会失败(**而失败发生在收尾里,最容易被当成没事**)。
+        c.execute(text("delete from document_versions where project_id=:p "
+                       "and document_id=:d"), {"p": 项目, "d": f"doc_t{尾}"})
+        c.execute(text("delete from documents where project_id=:p and id=:d"),
+                  {"p": 项目, "d": f"doc_t{尾}"})
 
 
 def main():
     print("\n\033[1m▸ 最后七条 · 调试出来的不许冒充正式的\033[0m")
     R = 一个("execution_runs")
     V = 一个("dataset_versions", "and frozen_samples is not null")
-    DV = 一个("document_versions")
+    # ⚠️ **夹具拿不到就当场说清,别带着 `None` 去打接口。**
+    # 带着 `None` 打出来是一条 404 —— 那是**我这份测试的错,报成了接口的错**。
+    for 名, 值, 从哪来 in (("execution_runs", R, "seed_demo / 编排层跑过一次"),
+                      ("dataset_versions(有 frozen_samples 的)", V,
+                       "tools/seed_datasets.py")):
+        if 值 is None:
+            ck(f"⚠️ 夹具缺了:`{名}` 一条都没有 —— "
+               f"**这是夹具的问题,不是接口的问题**(来源:{从哪来})", False, None)
+            print(f"\n❌ 过 {len(过)} / 挂 {len(挂)}(夹具不全,**没往下跑**)")
+            for x in 挂: print("   挂:", x)
+            return 1
+    # `document_versions` **自己造** —— 见 `造一条文档片段()` 里的那段。
+    _, DV = 造一条文档片段()
 
     # ── 一、看一次运行:原文按字段授权 ──────────────────────────────
     码, a = 打("GET", f"{P}/runs/{R}", 谁="U002")
@@ -229,8 +295,17 @@ def main():
         新老版 = c.execute(text("select content_hash, object_key from document_versions "
                              "where project_id=:p and id=:i"),
                         {"p": 项目, "i": DV}).first()
-    ck("**旧那一版一个字没动**(已建好的索引引的就是它)",
-       tuple(老版) == tuple(新老版), (tuple(老版), tuple(新老版)))
+    # ⚠️ **先断「两边都查到了」再比。** 原来直接 `tuple(老版)`,
+    # 查不到时抛 `TypeError: 'NoneType' object is not iterable` ——
+    # 于是整份测试**带着 traceback 死在这里**,后面那条断言一个没跑,
+    # 而日志上看到的是一个 Python 崩栈,不是「某条断言挂了」。
+    ck("旧那一版在库里查得到(**查不到就别比了** —— 比的是两个 None 的话,"
+       "`None == None` 会让这条**蒙绿**)",
+       老版 is not None and 新老版 is not None,
+       (老版 is not None, 新老版 is not None))
+    if 老版 is not None and 新老版 is not None:
+        ck("**旧那一版一个字没动**(已建好的索引引的就是它)",
+           tuple(老版) == tuple(新老版), (tuple(老版), tuple(新老版)))
     ck("而且报出「旧那版还被几个索引引用着」(这就是不许原地改的理由)",
        isinstance((rev or {}).get("旧那一版还被几个索引引用着"), int),
        (rev or {}).get("旧那一版还被几个索引引用着"))
