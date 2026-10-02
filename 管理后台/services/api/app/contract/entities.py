@@ -602,6 +602,89 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "不能等它跑完 —— 「停用」如果只对新 Run 生效,那它不叫停用",
        "**连接发现新工具不自动增加生产 Agent 的权限**(§11.2)—— "
        "MCP 发现回来的说明和返回值仍然是外部输入,要先审"]),
+    # ── 工具筛选与按需加载(2026-10-02 第三份规格 §14.1)────────────────
+    # ⚠️ **这六个对象的分界线是「谁决定它」**,见那份规格 §3 的状态表:
+    #   已登记 → Agent 允许范围 → 当前可用 → 本轮候选 → 实际加载 → 实际调用
+    # 工具组和策略决定的是**前两格**(配置);快照和筛选决定记的是**后三格**
+    # (运行时发生过什么)。混成一个对象的话,
+    # 「这个 Agent 可以用它」和「这一轮给模型看了它」就分不开了 ——
+    # 而规格 §3 明写:**「本轮未加载」不等于「无权限」;
+    # 「筛选得分高」不授予权限。**
+    E("tool_groups", "工具组", 项目级, 可改,
+      ["name", "purpose", "owner", "status", "draft_revision"],
+      ["**组只是一份搭配,不是一份授权**(规格 §3)—— "
+       "Agent 绑定了某个组版本,执行权仍要过 `tool_gateway` 的实时查验",
+       "**停用组不回收模型已经见过的说明**:历史加载记录照留,"
+       "而后续执行必须被拦 —— 这两件事要分开记"]),
+    E("tool_group_versions", "工具组版本", 子对象, 不可变,
+      ["tool_group_id", "version_no", "member_manifest", "companion_map",
+       "content_hash", "change_note"],
+      ["**成员是确切的 tool_version_id,不是工具名**(规格 §3)—— "
+       "指向工具名的话,工具出了新版本这一组的行为就悄悄变了",
+       "`member_manifest` 一条一条写「加载角色 + 必不可少吗」:"
+       "**「这组里有它」和「这一轮必须给它」是两件事**(A-5 按必要性先放必需的)",
+       "`companion_map` 的配套关系**要能查出环**(A-4)—— "
+       "A 配套 B、B 配套 A 的话,预算算法会反复把两个都算进同一组",
+       "**同名校验在冻结时做**:两个工具版本在模型眼里同名,"
+       "模型发出的调用就分不清是哪一个 —— 而它看起来只是少了一个工具"],
+      依赖=["tool_groups", "tool_versions"]),
+    E("tool_selection_policies", "筛选策略", 项目级, 可改,
+      ["name", "purpose", "owner", "status", "draft_revision"],
+      ["**策略必须评测过才能进生产**(规格 §4.1)—— "
+       "换一套筛选规则会改变模型看得见什么,而那件事在接口上一声不响"]),
+    E("tool_selection_policy_versions", "筛选策略版本", 子对象, 不可变,
+      ["tool_selection_policy_id", "version_no", "selection_mode",
+       "catalog_snapshot_ref", "default_group_version_ref", "limits",
+       "loading_type", "empty_result_action", "catalog_error_action",
+       "independent_router_enabled", "candidate_cache_enabled",
+       "release_criteria", "content_hash", "change_note"],
+      ["**身份、真实授权、密钥、对象范围不进这里**(规格 §14.3)—— "
+       "它们由服务端绑定;放进策略就等于放进了模型可填的参数",
+       "`limits` 的初值见规格 §14.3(候选 5 / 新增定义 4000 token / "
+       "活动 12000 / 补搜 2 次 / 超时 3000ms)—— **是设计初值,不是实测出来的**",
+       "**`empty_result_action` 和 `catalog_error_action` 要分开**:"
+       "「目录里没有合适的工具」和「目录本身取不到」下一步完全不同 —— "
+       "前者该补搜或停止,后者该退回固定组;合成一个的话,"
+       "一次索引故障会被当成「这个任务没有可用工具」",
+       "**`candidate_cache_enabled` 首版关闭**(A-7):"
+       "缓存命中也只复用候选 ID,权限、启停和版本仍要实时复核"],
+      依赖=["tool_selection_policies"]),
+    E("tool_catalog_snapshots", "工具目录快照", 项目级, 不可变,
+      ["catalog_hash", "tool_version_ids", "tokenizer_ref", "embedder_ref",
+       "status", "build_detail", "activated_at"],
+      ["**只有 ready 的快照能被绑定**(规格 §14.4),切指针要原子完成 —— "
+       "半建好的索引被绑上去,表现是「某些工具搜不到」而不是报错",
+       "**分词器/向量器版本要冻结在快照里**(A-7):"
+       "换了分词实现而快照哈希不变,同一个查询会召回不同的工具,"
+       "而两次运行的记录看起来完全一致",
+       "**索引可重建,它不是真值** —— 真值是 `tool_versions`;"
+       "重建不该改变任何一次历史运行的记录"]),
+    E("selection_decisions", "筛选决定", 子对象, 可改,
+      # ⚠️ 这两个列名**是全称,不是 `policy_version_id` / `catalog_snapshot_id`**。
+      # 外键是从依赖表名推列名的(`models.py`),短名推不出来 ——
+      # 而推不出来的表现是**静默不建外键**:
+      # > 一个没有外键的引用列,和一个有外键的引用列,
+      # > **在表结构上长得一模一样** —— 直到某天它存进一个不存在的版本 id。
+      # 第一版我就是写了短名,`alembic check` 的输出里那两列干干净净地
+      # 没有 ForeignKey,而六张表全都「建对了」。
+      ["execution_run_id", "run_step_id", "tool_selection_policy_version_id",
+       "tool_catalog_snapshot_id", "capability_query", "normalized_query",
+       "candidate_ids", "loaded_version_ids", "budget_detail",
+       "not_loaded_detail", "authz_fingerprint_hash", "status", "error_code",
+       "rediscovery_no", "parent_decision_id"],
+      ["**每一阶段的证据都留着,后一阶段不覆盖前一阶段**(规格 §14.4:"
+       "requested → eligible → ranked → loaded,或 empty/blocked/failed)—— "
+       "只留最终结果的话,「漏召回」和「召回了但没加载」长得一模一样,"
+       "而这两种的下一步完全不同(改索引 vs 改预算)",
+       "**`empty` 不是 `failed`**:「没有合适的工具」是一个有效答案,"
+       "把它记成请求失败,会让人去查一个没坏的接口",
+       "**补搜另起一行并指向父决定**(`parent_decision_id`),"
+       "不覆盖首次候选 —— 否则「第一次就漏了」这件事再也查不出来",
+       "**`authz_fingerprint_hash` 不存明文**(A-7):"
+       "它是用来判「换了身份就不能复用候选」的,哈希不是加密"],
+      依赖=["execution_runs", "run_steps", "tool_selection_policy_versions",
+          "tool_catalog_snapshots"]),
+
     E("skill_versions", "Skill 指南版本", 项目级, 不可变,
       ["name", "purpose", "version_no", "instructions", "applicable_conditions",
        "dependencies", "file_manifest", "review_status", "load_mode",

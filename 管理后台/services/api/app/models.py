@@ -108,6 +108,24 @@ def _列(字段, 范围内=False, 表=None):
 # 带上 project_id 反而会放过「两个项目登记同一个外部任务」。
 # 判据落在 tools/spec_coverage.py 的「项目内的唯一约束都带了 project_id」那条,
 # 豁免数量有写死的上限。
+# ── 依赖 → 用哪个列建外键:**点名,因为推不出来** ────────────────────────
+# 外键默认从依赖表名推列名(`model_connections` → `model_connection_id`)。
+# 推不出来的两种情况:
+#   ① **同一个列名指向两张不同的父表** —— `connection_id` 在
+#      `tool_versions` 指 capability_connections、在 `connection_versions`
+#      指 model_connections。靠列名永远分不开,只能点名。
+#   ② 引用存在 JSONB 里(`definition_ref` / `release_ref` /
+#      `member_manifest`)—— 那种加不了外键,靠冻结时的服务端校验,
+#      理由写在 `tools/fk_dep_check.py` 的豁免表里。
+#
+# ⚠️ ① 这两处 2026-10-02 之前**一直没有外键**,而 entities 里依赖是声明着的。
+# > 「我声明了依赖所以有外键」和「我声明了依赖但列名推不出来所以没外键」,
+# > **在登记表上长得一模一样。**
+_依赖列 = {
+    ("tool_versions", "capability_connections"): "connection_id",
+    ("connection_versions", "model_connections"): "connection_id",
+}
+
 _额外唯一 = {
     # 任务幂等键 —— **防重复训练/重复计费的命根子**。项目内唯一就够:
     # 幂等键是客户端给的,两个项目用同一个字符串是正常的。
@@ -242,8 +260,18 @@ def _建一张(e):
         # (memberships 同时把 projects 列成依赖,于是生成了两个 fk_memberships_projects)
         if 父 in ("projects", "organizations"): continue
         父字段 = f"{父.rstrip('s')}_id" if not 父.endswith("ies") else 父[:-3] + "y_id"
-        # 只在这张表真的有那个列时才建外键 —— 登记表里字段名各异,不硬凑
-        候选 = [c for c in (父字段, f"{父[:-1]}_id") if c in 字段]
+        # ⚠️ **先查显式映射** —— 见文件末尾 `_依赖列` 那段。
+        # 按表名推列名推不出「同一个列名指向两张不同父表」的情况
+        # (`connection_id` 在 `tool_versions` 指 capability_connections、
+        #  在 `connection_versions` 指 model_connections),
+        # 而推不出来的表现是下面那句 `continue` —— **静默不建外键**。
+        # 2026-10-02 查出来这两处因此**一直没有外键**(库里实测:
+        # 46 行有效引用、0 行坏引用,所以补外键是安全的收紧)。
+        # 盯这件事的判据是 `tools/fk_dep_check.py`:
+        # 每一处「声明了依赖却没建成外键」都要在那里点名 + 写理由。
+        显式 = _依赖列.get((名, 父))
+        候选 = ([显式] if 显式 and 显式 in 字段
+              else [c for c in (父字段, f"{父[:-1]}_id") if c in 字段])
         if not 候选: continue
         本列 = 候选[0]
         父有项目 = "project_id" in EN.该有的通用字段(父e)

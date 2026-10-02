@@ -88,6 +88,18 @@
     ("_errors",        "JSONB",       "字段级错误"),
     ("_version",       "TEXT",        "外部版本号(scorer_version / parser_version)"),
     ("_mode",          "TEXT",        "模式(execution_mode=mock/live)"),
+    # ── 下面三条是 2026-10-02 为「工具筛选与按需加载」那份规格加的 ──────
+    ("_action",        "TEXT",        "枚举动作(empty_result_action="
+                                      "rediscover_then_stop):**是枚举不是对象** —— "
+                                      "写成 JSONB 的话「没结果怎么办」会变成一段"
+                                      "没人能当枚举查的配置"),
+    ("_enabled",       "BOOLEAN",     "开关(independent_router_enabled)。"
+                                      "⚠️ 不要起名 `xxx_flag` 然后存字符串:"
+                                      "`\"false\"` 在 Python 里是真的"),
+    ("_query",         "TEXT",        "检索查询文本(capability_query / "
+                                      "normalized_query)。规范化那一份单独存 —— "
+                                      "A-6 的「无进展」判定比的是规范化后的,"
+                                      "只留原文的话每次大小写不同都算新查询"),
     ("_status",        "TEXT",        "状态:取值由 contract/states.py 管,**不在数据库里写死枚举** —— "
                                      "加一个状态不该需要一次迁移"),
     ("_by",            "TEXT",        "操作者"),
@@ -245,7 +257,16 @@ class 认不出字段(Exception):
 
 
 def 类型(字段):
-    """返回 PostgreSQL 类型。**认不出就抛** —— 不返回 TEXT 兜底。"""
+    """返回 PostgreSQL 类型。**认不出就抛** —— 不返回 TEXT 兜底。
+
+    ⚠️ **整名优先于后缀,而这一条 2026-10-02 当场救了一次。**
+    那天为新规格加 `_action` → TEXT 后缀,而 `tool_versions.redaction`
+    **正好以 `action` 结尾、而且是 JSONB** —— 它靠整名显式登记保住了
+    (`audit_events.action` 同理,它本来就是 TEXT)。
+    如果 `redaction` 当初没被点名,这个改动会把它在新库上建成 TEXT,
+    > **而建表成功那一刻,一个错的类型和一个对的类型长得一模一样。**
+    加新后缀之前先查一遍库里有哪些列会被它命中 —— 那次查出了这两个。
+    """
     if 字段 in 显式类型:
         return 显式类型[字段]
     for 后缀, t, _ in sorted(后缀约定, key=lambda x: -len(x[0])):
