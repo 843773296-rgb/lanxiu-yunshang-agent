@@ -2815,7 +2815,10 @@ def kb_read(doc=None, section=None):
             # 第一版只扫正文行,于是三节带着 demo 标的小节全报「没有标记」——
             # 而「没有标记」会被读成「这节不是演示数据」,**正好读反**。
             "小节": [{"标题": x["标题"], "行数": len(x["行"]),
-                      "来源标记": 档(x["标题"] + "\n" + "\n".join(x["行"]))[0] or None}
+                      "来源标记": 档(x["标题"] + "\n" + "\n".join(x["行"]))[0] or None,
+                      # 超过一次能给的长度时,把三级标题列出来 —— 不列的话模型不知道能取哪几条
+                      **({"三级标题": [l[4:].strip() for l in x["行"] if l.startswith("### ")]}
+                         if len("\n".join(x["行"])) > 6000 else {})}
                      for x in 节],
             "note": "传 `section`(小节标题,写一部分也认)取正文。"
                     "**不给整篇** —— 一次吐几百行会把后面真正该看的挤出去。",
@@ -2823,6 +2826,17 @@ def kb_read(doc=None, section=None):
     k = section.strip()
     命中 = [x for x in 节 if k == x["标题"]] or \
            [x for x in 节 if k in x["标题"]]
+    # 二级标题找不到时认**三级标题**(`### `)—— 截断提示让模型「指定更细的小节(三级标题)」,
+    # 而原来只认二级标题:**提示指的那条路不通**。2026-10-02 扩容后详解一节上万字,不认三级标题就只读得到开头
+    if not 命中:
+        for x in 节:
+            小, 当前 = [], None
+            for l in x["行"]:
+                if l.startswith("### "):
+                    当前 = {"标题": l[4:].strip(), "行": [], "上级": x["标题"]}; 小.append(当前)
+                elif 当前 is not None:
+                    当前["行"].append(l)
+            命中 += [y for y in 小 if k == y["标题"] or k in y["标题"]]
     if not 命中:
         return {"error": f"「{fn}」里没有「{section}」这一节",
                 "有这几节": [x["标题"] for x in 节]}

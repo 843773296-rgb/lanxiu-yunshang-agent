@@ -106,17 +106,20 @@ def 条目():
             m = re.match(r"^###\s+((?:XZ|MT|KF|PS|SE)\d{2})\s+(.+?)\s+`\w+`\s*$", line.strip())
             if m: code, name = m.group(1), m.group(2)
             # 竞品篇没有编码,一条一个 `### 标题`;要点里的数字也要在页面上原样出现(数是这一篇的全部价值)
-            if fn.startswith("16-") and line.startswith("### "):
-                code, name, 数字 = "竞品", line[4:].strip(), []
+            # 不带编号的 `### 标题`(竞品篇的条目、各篇末尾「讲给顾客听」的详解)—— 一条一个标题,
+            # 要点里的数字也要在页面上原样出现
+            详解 = line.startswith("### ") and not m
+            if 详解:
+                code, name, 数字 = ("竞品" if fn.startswith("16-") else "详解"), line[4:].strip(), []
             mk = re.match(r"^-\s*要点\s*[::]\s*(.+)$", line.strip())
-            if fn.startswith("16-") and mk:
+            if code in ("竞品", "详解") and mk:
                 数字 = re.findall(r"\d+(?:\.\d+)?", mk.group(1))
             # 2026-10-01 新写法:`- **出处**:出处名:页面上应出现的标题 → 链接` —— 期望值就写在同一行
             mc = re.match(r"^-\s*\*\*出处\*\*\s*[::]\s*(.+?)\s*→\s*(https?://\S+)", line.strip())
             if mc:
                 左 = mc.group(1)
                 标题 = re.split(r"[::]", 左, maxsplit=1)[1].strip() if re.search(r"[::]", 左) else None
-                out.append((fn, code, name, ("出处", 标题, tuple(数字) if fn.startswith("16-") else ()),
+                out.append((fn, code, name, ("出处", 标题, tuple(数字) if code in ("竞品", "详解") else ()),
                             mc.group(2).rstrip(").,")))
                 continue
             if not line.strip().startswith("→ http"): continue

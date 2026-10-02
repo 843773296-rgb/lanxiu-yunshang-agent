@@ -53,8 +53,8 @@ def _tables():
         if c[0].startswith("KF") and len(c) >= 8:
             kf[c[0]] = dict(name=c[1], stage=c[2], sheet=c[3] == "是", pierce=c[4],
                             weight=c[5], heat=c[6] == "是", light=c[7] == "是",
-                            # 灰缬是拔染,**必须深底才拔得出白花** —— 和别的印染工艺正好相反。
-                            # 加这一列而不是给它开个特例分支:特例写在代码里,下一个人看不见。
+                            # 「需深底」这一列原来只为灰缬开(当时以为它是拔染);2026-10-02 查实灰缬是**防染**,
+                            # 这一列现在全为「否」,R6b 撤销。列留着:真有拔染工艺进来时它还用得上。
                             dark="是" in c[8] if len(c) > 8 else False)
         elif c[0].startswith("MT") and len(c) >= 11:
             mt[c[0]] = dict(name=c[1], tension=c[2], thick=c[3], coated=c[4] == "有",
@@ -89,8 +89,6 @@ def judge(k, m):
             return "不可", f"{m['name']}已织入纹样或已染整,再染会毁掉原有效果", "R4"
         if m["fiber"] == "化纤":
             return "不可", f"{k['name']}用传统植物染料,上不了{m['name']}这类化学纤维,须改走分散染料的工业工艺", "R5b"
-        if k["dark"] and m["ground"] != "深":
-            return "不可", f"{k['name']}是拔染,要在深色底上拔出白花,{m['name']}底色不够深", "R6b"
         if m["ground"] == "深" and not k["dark"]:
             return "不可", f"{m['name']}底色深,压不出{k['name']}的染色纹样", "R6"
         return "可", f"{m['name']}为素色可后染底料,适合{k['name']}", "—"
@@ -154,7 +152,7 @@ if __name__ == "__main__":
     print(f"    16 格人工确认中,与规则不一致 {bad} 格(人工优先,规则不覆盖)")
     print()
     print("  规则命中:")
-    ALL = ["R0","R1","R2","R3","R4","R5b","R6","R7","R8","R9","R10","R11","R12","R13","R14","R6b"]
+    ALL = ["R0","R1","R2","R3","R4","R5b","R6","R7","R8","R9","R10","R11","R12","R13","R14"]
     hit = collections.Counter(r[4] for r in rows)
     for r in ALL:
         print(f"    {r:4s} {hit.get(r,0):3d}" + ("   ← 0 命中,这条规则从没被验证过" if not hit.get(r) else ""))
