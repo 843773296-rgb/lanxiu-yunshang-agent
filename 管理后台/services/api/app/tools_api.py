@@ -148,6 +148,50 @@ def 工具详情(project_id: str, tid: str,
               from tool_versions
              where project_id=:p and tool_definition_id=:i
              order by version_no desc"""), {"p": project_id, "i": tid}).mappings()]
+        # ── 规格 §8.2「引用与运行」:**谁在用这个工具** ──────────────────
+        #
+        # ⚠️ 为什么这一页要紧:规格 §8.1 的行操作里有「停用」。
+        # 而**停用一个工具之前必须知道谁在用它** ——
+        # > 一个能停用、而不告诉你「谁在引用它」的界面,
+        # > 把一个**可预见**的后果变成了一个意外。
+        #
+        # ⚠️ **按版本分别报,不合成一个总数。**
+        # 「这个工具被 85 个 Agent 版本引用」听起来很具体,
+        # 而它答不出「停用 v1 行不行」—— 而那才是人要做的决定。
+        #
+        # ⚠️⚠️ **一个答不出来的问题,明写出来**(见下面 `⚠️答不出的`):
+        # 「**生产现在跑哪一版 Agent**」整个库里没有任何一处记着 ——
+        # `release_manifests` 记了 prompt / 连接 / 索引 / 检索配置 /
+        # 模型产物的确切版本,**唯独没有 Agent 版本**。
+        # 于是「停用这个工具会不会影响线上」在库这一层就答不出来。
+        # 不写出来的话,这一页看起来像是回答了那个问题。
+        引用 = {}
+        for v in 版本们:
+            vid = c.execute(text("""select id from tool_versions
+                                   where project_id=:p and tool_definition_id=:t
+                                     and version_no=:n"""),
+                           {"p": project_id, "t": tid,
+                            "n": v["version_no"]}).scalar()
+            if not vid:
+                continue
+            一串 = _json.dumps([vid], ensure_ascii=False)
+            成员 = _json.dumps([{"tool_version_id": vid}], ensure_ascii=False)
+            引用[v["version_no"]] = {
+                "Agent 版本": c.execute(text(
+                    """select count(*) from agent_versions
+                        where project_id=:p and tools @> cast(:s as jsonb)"""),
+                    {"p": project_id, "s": 一串}).scalar(),
+                "工具组版本": c.execute(text(
+                    """select count(*) from tool_group_versions
+                        where project_id=:p
+                          and member_manifest @> cast(:s as jsonb)"""),
+                    {"p": project_id, "s": 成员}).scalar(),
+                "被加载过几次": c.execute(text(
+                    """select count(*) from selection_decisions
+                        where project_id=:p
+                          and loaded_version_ids @> cast(:s as jsonb)"""),
+                    {"p": project_id, "s": 一串}).scalar(),
+            }
     级中文 = {x["名"]: x["中文"] for x in DS.副作用表}
     上一版 = 版本们[0] if 版本们 else None
     风险变大 = bool(上一版) and CAP.风险变大了吗(
@@ -201,7 +245,17 @@ def 工具详情(project_id: str, tid: str,
             # ⚠️ **只说配了没配,不给凭据引用本身。**
             # 规格 §11.2 / 这个仓库的红线:**凭据绝不经返回值出去**。
             "配了凭据吗": bool(v.get("配了凭据吗")),
+            # ── 规格 §8.2「引用与运行」那一页要的 ──────────────────
+            "谁在用它": 引用.get(v["version_no"]) or {},
         } for v in 版本们],
+        "⚠️答不出的": (
+            "**「生产现在跑哪一版 Agent」这个库答不出来** —— "
+            "`release_manifests` 记了 prompt / 连接 / 索引 / 检索配置 / "
+            "模型产物的确切版本,**唯独没有 Agent 版本那一列**。"
+            "所以上面的「谁在用它」给的是**所有** Agent 版本的计数,"
+            "**分不出有没有一个在生产上**。"
+            "停用一个工具之前要确认这件事的话,现在只能去看发布记录 —— "
+            "而那是个该补的契约缺口,不是这一页能解决的"),
         "⚠️凭据不出返回值": "版本上有 `secret_ref`,这条接口**只报配了没配** —— "
                         "凭据(以及它的引用)不经任何返回值出去。"
                         "查询也是逐列点名的:`select *` 会在有人加一列的那天"
