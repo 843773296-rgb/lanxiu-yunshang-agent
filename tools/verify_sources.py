@@ -37,7 +37,8 @@ import os, re, sys, json, subprocess, urllib.parse, time, html
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KN = os.path.join(HERE, "..", "knowledge")
-MDS = ("02-面料.md", "03-工艺.md", "01-形制.md", "04-配饰.md", "16-竞品与行业.md")
+MDS = ("02-面料.md", "03-工艺.md", "01-形制.md", "04-配饰.md", "16-竞品与行业.md",
+       "05-颜色.md", "08-量体与版型.md", "09-养护与售后.md", "12-成长与生命周期.md")   # 后四篇:扩容第二轮(2026-10-02)
 
 
 def _get(url, timeout=25, 重试=2):
@@ -55,6 +56,18 @@ def _get(url, timeout=25, 重试=2):
         r = subprocess.run(["curl", "-sL", "--compressed", "-A", "Mozilla/5.0", "-m", str(timeout), url],
                            capture_output=True)
         b = r.stdout or b""
+        # PDF(故宫的研究文章正文只在 PDF 里):抽文字再比。没装 pymupdf 的机器上当「抓不到」,不当「链接坏了」
+        if b[:5] == b"%PDF-":
+            try:
+                import pymupdf
+                with pymupdf.open(stream=b, filetype="pdf") as d:
+                    t = "\n".join(pg.get_text() for pg in d)
+                if len(t) > 500:
+                    return t
+            except Exception:
+                pass
+            time.sleep(1.5 * (i + 1))
+            continue
         cs = re.search(rb"charset=[\"']?([\w-]+)", b[:4000])
         try:
             t = b.decode((cs.group(1).decode() if cs else "utf-8"), errors="replace")
