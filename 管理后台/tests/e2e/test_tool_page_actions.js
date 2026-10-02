@@ -30,7 +30,7 @@ const P = 桩.P(项目);
 const 根 = path.join(__dirname, "..", "..");
 const src = fs.readFileSync(path.join(根, "apps", "web", "app.js"), "utf8");
 
-const 该跑几组 = 4;
+const 该跑几组 = 5;
 const { ck, 组, 结束, 状 } = 桩.计分(该跑几组);
 
 const 尾 = Math.random().toString(16).slice(2, 8);
@@ -197,6 +197,55 @@ const 工具名 = `页面接线工具-${尾}`;
        && new Set(((详4 || {})["版本历史"] || [])
             .map((x) => x["读写类型"])).size === 2,
        ((详4 || {})["版本历史"] || []).map((x) => `${x["版本"]}=${x["读写类型"]}`));
+
+    // ── ⑤ Schema 关键字清单:**页面用接口给的那一份,不硬编** ──────────
+    //
+    // ⚠️ 第一版我把这一组插在 `finally` 里(收尾之后)——
+    // 而收尾已经把那个工具清掉了,于是接口返回 0 个关键字,
+    // 报出来是「接口没给」。**而接口给得好好的。**
+    // > 一个插在收尾之后的断言,它量的是「清理干净了吗」,
+    // > 不是它想量的那件事 —— 而两者在失败信息上长得一样。
+    组("⑤ 那份 Schema 关键字清单,**真的渲进页面了吗**");
+    const 清单 = (详4 || {})["可用的Schema关键字"] || [];
+    ck("接口给了 `可用的Schema关键字`(对照:下面几条才有意义)",
+       清单.length >= 8, 清单.length);
+    // ⚠️ **这一条是这一组的要点。**
+    // 10-02 后端给出了那份清单 + 一句「别硬编」,而**当天没有任何界面在用它** ——
+    // > 一个给出来却没人用的字段,和没给,**在界面上长得一样**。
+    // 所以这里断「它真的印在页面上」,不是「接口给了」。
+    // ⚠️ **这个测试装桩时 hash 是 `#/tools`(列表页)—— 详情页没被渲过。**
+    // 第一版我直接读 `#tdbody`,拿到空串,报出来是「页面上没有那些关键字」。
+    // > 一条验「详情页渲了什么」的断言,放在一个不渲染详情页的测试里 ——
+    // > 它报的是「页面上没有」,**而页面根本没被渲过**。
+    // 所以这里**真渲一遍**(`app.js` 为此暴露了 `画工具详情`)。
+    //
+    // 桩提供的是 `document.querySelector("#id")`,**没有 `getElementById`** ——
+    // 第一版我用了后者,`is not a function`。
+    if (typeof globalThis.画工具详情 !== "function") {
+      ck("app.js 把 `画工具详情` 暴露出来了(**验渲染要有入口**)", false, null);
+    } else {
+      await globalThis.画工具详情(tid);
+    }
+    const 主 = document.querySelector("#tdbody");
+    const 页文 = (主 && 主.innerHTML) || "";
+    const 渲出来的 = 清单.filter((k) => 页文.includes(k));
+    ck("**清单里的每一个都出现在页面上**"
+       + "(「渲染了」不等于「渲的是那些东西」)",
+       清单.length > 0 && 渲出来的.length === 清单.length,
+       `${渲出来的.length}/${清单.length}`);
+    ck("页面上说了「**界面不硬编**」(说明在,下一个人才知道不该抄一份)",
+       页文.includes("不硬编"), 页文.includes("不硬编"));
+    // ⚠️ **源码级:页面里不许写死关键字清单。**
+    // 渲出来了不代表它是从接口来的 —— 一份硬编的清单也会渲出来,
+    // 而它会和后端漂。所以这一条盯的是**源码**。
+    const 页段 = src.slice(src.indexOf("async function 画工具详情("),
+                         src.indexOf("async function 页_工具目录("));
+    const 硬编了 = ["minLength", "maxItems", "additionalProperties"]
+      .filter((k) => 页段.includes(`"${k}"`) || 页段.includes(`'${k}'`));
+    ck("页面源码里**没有写死**那些关键字"
+       + "(硬编的那份会和后端漂,而漂开时界面放过去的 Schema "
+       + "会在模型第一次真的调用那一刻才失败)",
+       硬编了.length === 0, 硬编了);
   } catch (e) {
     ck(`跑到「${状.走过[状.走过.length - 1] || "开头"}」就抛了:${e.message}`,
        false, (e.体 && JSON.stringify(e.体).slice(0, 160))
