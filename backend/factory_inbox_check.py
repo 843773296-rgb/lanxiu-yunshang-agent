@@ -151,9 +151,12 @@ def 活写口(T):
     # ⚠️ 原来是挑「按**用例今天**算、开工超过 5 天」的真实单 —— 真实单跟着世界每天往后平移,
     # 用例今天写死在 08-31,2026-10-01 起一张都挑不出来了(CI 当天红)。
     # **真实数据和人造时间线混在一个判据里,就会被日期拆开。** 这里是副本,改它不碰真库。
+    # ⚠️ 还要**车间没有在制工单** —— 有在制工单的单报完工会挂异常(绣片 / 手绘没交),后面那串用例全跟着走偏。
+    # 原来没写这条,是挑到的那张碰巧没有;2026-10-02 加 SKU 让数据挪位,挑到了一张有在制工单的,12 条连锁红
     r = c.execute("""SELECT o.id FROM ordr o
                      WHERE o.kind='定制品订单' AND o.status='生产中'
                        AND NOT EXISTS(SELECT 1 FROM factory_msg f WHERE f.order_id=o.id)
+                       AND NOT EXISTS(SELECT 1 FROM workorder w WHERE w.ref=o.id AND w.status='在制')
                      ORDER BY o.id LIMIT 1""").fetchone()
     ck("有一张工厂还没回过消息的生产中定制单", bool(r))
     if not r: return

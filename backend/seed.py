@@ -1664,6 +1664,23 @@ def run():
                            collar, (str(155+5*(k%4)) if sz in ("S","M","L","XL") else None),
                            f"GG{_i:03d}{k:02d}", round(random.uniform(0.2,1.8),2),
                            round(random.uniform(0.002,0.02),4), int(price*100), _img(spu,f"sku{k}")))
+    # 标品加色 —— 出图 AB 双版本的标品(用户 2026-10-02 定分 SKU)。
+    # ⚠️ **不往上面 STD 的颜色列表里加**:那个循环每个 SKU 都要抽随机数(库存 / 锁定 / 重量),
+    # 多一个颜色就让后面所有随机值整体挪位 —— 订单、库存全变,而且不报错。这里库存按稳定哈希定。
+    标品加色 = {"真丝香云纱 面料(米白)": [("玄色", "香云纱本色(正面乌黑、反面棕),用户 2026-10-02 定分 SKU")]}
+    for _nm3, _加 in 标品加色.items():
+        _r3 = c.execute("SELECT p.spu, p.base_price, s.size, s.collar, (SELECT COUNT(*) FROM sku WHERE spu=p.spu) n "
+                        "FROM product p JOIN sku s ON s.spu=p.spu WHERE p.name=? ORDER BY s.code LIMIT 1",
+                        (_nm3,)).fetchone()
+        if not _r3:
+            raise SystemExit(f"标品加色:找不到「{_nm3}」—— 名字改了要同步改这里")
+        _sp3, _pr3, _sz3, _cl3, _n3 = _r3
+        for _k3, (_col3, _why3) in enumerate(_加, _n3 + 1):
+            _st3 = 稳定哈希(f"{_sp3}-{_col3}") % 60
+            c.execute("INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,collar,size_no,spec_code,weight_kg,volume_m3,points,img) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (f"{_sp3}-{_k3:02d}", _sp3, f"{_col3}/{_sz3}", _col3, _sz3, float(_pr3), _st3, 0,
+                       "启用", _cl3, None, f"GG{(int(_sp3[5:]) - 100000000) // 7919:03d}{_k3:02d}", 0.3, 0.004,
+                       int(_pr3 * 100), _img(_sp3, f"sku{_k3}")))
     from fix_product_pattern import 多件词 as _多件词
     # 定制品加色规格 —— 商品名 → [(颜色, 为什么)]。**只在这里登记,别处不许另开第二个 SKU。**
     # 「蓝印花布」百迭裙:出图清单给了藕荷(分配颜色时没看工艺),出图侧照清单出了藕荷、
@@ -1671,7 +1688,18 @@ def run():
     # ⚠️ 这是这个库里**第一个**有两个 SKU 的定制品;其余定制品颜色仍是下单时按部位选。
     # ⚠️ 色名必须是 `tools/backfill_color.py` 映射表里有的(那一步从零重建时会查)。
     # 第一版写了「靛蓝」—— 表里没有,**本地往现库插一行是绿的,CI 从零重建当场红**;表里现成的是「靛青」。
-    定制加色 = {"「蓝印花布」宋制百迭裙": [("靛青", "蓝印花布本色(蓝白),用户 2026-09-29 定分 SKU")]}
+    定制加色 = {"「蓝印花布」宋制百迭裙": [("靛青", "蓝印花布本色(蓝白),用户 2026-09-29 定分 SKU")],
+                # 下面 5 款是生成器长出来的(名字由版型 + 雅号 + 主料拼成)。出图侧照清单色出了一套,
+                # 又按工艺本色出了一套(AB 双版本);用户 2026-10-02 定:照 274 分 SKU
+                "「山鸣」真丝素罗明制贴里·加长":    [("靛青", "蓝印花布本色(蓝白),用户 2026-10-02 定分 SKU")],
+                "「月白」竹节棉明制马面裙·标准":    [("靛青", "蓝夹缬本色(蓝白),用户 2026-10-02 定分 SKU")],
+                "「陌上」绫宋制对襟短衫·标准":      [("靛青", "蓝夹缬本色(蓝白),用户 2026-10-02 定分 SKU")],
+                "「南薰」绡晋制交领襦裙·加长":      [("玄色", "晒莨本色(正面乌亮),用户 2026-10-02 定分 SKU")],
+                "「青隐」塔夫绸(生丝)宋制上襦·标准": [("玄色", "晒莨本色(正面乌亮),用户 2026-10-02 定分 SKU")]}
+    # 生成款改工艺 —— 商品名 → 改成的工艺("" = 素面)。
+    # 「青隐」诃子裙被生成器配上了「补子」,而补子是明制官服的东西,不上诃子裙;出图侧照清单出的图是素面诃子裙。
+    # 用户 2026-10-02 定:工艺改成素面。只改挂的工艺,名字 / 面料 / 颜色不动(名字里不带工艺)。
+    生成改工艺 = {"「青隐」绡唐制诃子裙·标准": ""}
     for nm, cat, price, gender, xz, mts, kfs, lead, tpl in CUS:
         _i += 1
         spu = f"lxys_{100000000+_i*7919:09d}"[:14]
@@ -1815,7 +1843,7 @@ def run():
                                   ensure_ascii=False)))
             if kind == "定制品":
                 c.execute("INSERT INTO product_custom VALUES(?,?,?,?,?,?)",
-                          (spu, _xz_name.get(ptxz, ptn), ",".join(mts), kf,
+                          (spu, _xz_name.get(ptxz, ptn), ",".join(mts), 生成改工艺.get(nm, kf),
                            est.get("备料天") and f"{est['备料天']}–{est['备料天']+20} 天" or "30–45 天",
                            f"由版型 {ptc} 生成;物料成本 ¥{cost} × {coef} 定价,"
                            f"备料卡在{est.get('最长备料项')}"))
@@ -1823,6 +1851,12 @@ def run():
                           (f"{spu}-01", spu, "定制/定制", "定制", "定制", float(price), 0, 0,
                            "启用", None, None, f"GG{_i:03d}01", None, None,
                            int(price*100), _img(spu,"sku1")))
+                # 加色规格(见 定制加色)—— 和手写定制款同一套,**不消耗随机数**(库存 0,定制品本来不备货)
+                for _k2, (_col2, _why2) in enumerate(定制加色.get(nm, []), 2):
+                    c.execute("INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,status,collar,size_no,spec_code,weight_kg,volume_m3,points,img) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                              (f"{spu}-{_k2:02d}", spu, f"{_col2}/定制", _col2, "定制", float(price), 0, 0,
+                               "启用", None, None, f"GG{_i:03d}{_k2:02d}", None, None,
+                               int(price*100), _img(spu, f"sku{_k2}")))
             else:
                 # ⚠️ **颜色列不许填面料。** 第一版这里写的是 `mts[0]`(面料名),
                 # 于是 80 个生成商品的 `sku.color` 是「双宫绸」「竹节棉」「苎麻 · 细支」——
