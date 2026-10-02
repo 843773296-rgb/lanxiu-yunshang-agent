@@ -378,6 +378,14 @@ jobs:
           # 这个脚本**默认就写**(要只看用 `--看`),所以没有
           # 「默认 dry-run 而且退出 0」那个坑。
           ./.venv/bin/python tools/import_lanxiu_prompts.py
+          # ⚠️ **把澜绣的语料导进知识库** —— 10-02 加(搬家说明第三条待办)。
+          # 两批:`业务决策/`(口径原文)和 `knowledge/`(手写领域知识)。
+          # **项目要点名** —— 这个脚本原来是「导进第一个」,而那取决于
+          # 建项目的顺序;09-27 那 5 篇业务拍板就是这么落进演示项目的。
+          # 不导的话 `lanxiu_kb_sync_check` 在 CI 上会红,
+          # **而它报出来会像「判据坏了」** —— 所以这一步和那条判据是一对。
+          ./.venv/bin/python tools/ingest_lanxiu.py --批次 业务拍板 --项目 project_lanxiu
+          ./.venv/bin/python tools/ingest_lanxiu.py --批次 领域知识 --项目 project_lanxiu
 
       - name: 起 API + Worker,**等到就绪**(不是等固定秒数)
         working-directory: 管理后台

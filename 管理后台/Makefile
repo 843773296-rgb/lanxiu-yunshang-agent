@@ -60,6 +60,10 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tools/lanxiu_prompt_sync_check.py
 	@echo ""
+	@echo "▸ 后台知识库和仓库里的 md 一致吗(要库)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tools/lanxiu_kb_sync_check.py
+	@echo ""
 	@echo "▸ 契约和库是否一致(alembic check)"
 	@cd services/api && DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		../../.venv/bin/alembic check 2>&1 | tail -1
@@ -215,7 +219,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 # ⚠️ 行首要用 make 注释(`#` 顶格),不是 tab 开头的 shell 注释 ——
 # 后者会被 make 当成命令**回显到输出里**,第一版就是那样,
 # 于是门禁日志里混进了七行注释。
-	@echo "▸ 澜绣项目(第一个真实项目):Prompt 页**真的渲出那 79 条铁律吗**"
+	@echo "▸ 澜绣项目(第一个真实项目):Prompt 页 + 知识页**真的渲出那些东西吗**"
 # ⚠️ **先看项目在不在,再跑页面。** 不先看的话,「数据没导入」会被报成
 # 「页面挂了」—— 而那会把人送去查一个没坏的页面(今天这条撞过两次:
 # 一次是 404 被当成接口坏了,一次是空列表被当成渲染坏了)。
@@ -227,10 +231,15 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	    echo "  ❌ 后台里没有 \`project_lanxiu\` —— **这是数据没导入,不是页面坏了**"; \
 	    echo "     跑 \`python3 tools/import_lanxiu_prompts.py\`(CI 里在「灌演示数据」那一步)"; \
 	    exit 1; fi; \
-	  out=$$(AIMC_USER=U001 AIMC_PROJECT=project_lanxiu \
-		node tests/e2e/page_smoke.js '#/prompts' 2>&1); \
-	  if [ $$? -ne 0 ]; then echo "  ❌ 挂了"; echo "$$out"; exit 1; fi; \
-	  echo "$$out" | tail -2 | tr '\n' ' '; echo ""
+	  rc=0; \
+	  for h in '#/prompts' '#/kb'; do \
+	    printf "  %-12s " "$$h"; \
+	    out=$$(AIMC_USER=U001 AIMC_PROJECT=project_lanxiu \
+		node tests/e2e/page_smoke.js "$$h" 2>&1); \
+	    if [ $$? -ne 0 ]; then rc=1; echo "❌ 挂了"; echo "$$out"; \
+	    else echo "$$out" | tail -1 | tr '\n' ' '; echo ""; fi; \
+	  done; \
+	  if [ $$rc -ne 0 ]; then echo "  ❌ 澜绣项目的页面冒烟没过"; exit 1; fi
 	@echo ""
 	@echo "▸ 画布页:**结构对账**(节点数/连线数/「加入」按钮数 vs 接口返回的定义)"
 	@W=$$(./.venv/bin/python -c "import json,urllib.request as u; \

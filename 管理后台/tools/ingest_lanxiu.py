@@ -42,8 +42,55 @@ from sqlalchemy import create_engine, text   # noqa: E402
 import parser as P                            # noqa: E402
 import chunker as C                           # noqa: E402
 
-语料目录 = os.path.join(澜绣, "业务决策")
-知识库名 = "澜绣业务拍板"
+# ── 能导哪几批语料:**点名,不扫整个仓库** ─────────────────────────────
+#
+# ⚠️ 2026-10-02 之前这两个是**硬编**的(只能导 `业务决策/`)。
+# 而搬家说明(`已搬走.md`)留的第三条待办是「知识管理 → `knowledge/`」——
+# 硬编的话那一条根本做不了。
+#
+# **为什么点名而不是扫整个仓库**:仓库里的 md 不都该进 RAG
+# (交接、日志、README 是给人读的流程文档,进了检索只会稀释真正的知识)。
+# > 一个「把所有 md 都导进去」的脚本,它导进去的东西会随仓库长大而变脏,
+# > **而检索质量下降是没有告警的**。
+#
+# 每一批为什么选它,见各自的 `为什么` —— 那是下一个人判断
+# 「这一批还该不该在里面」的唯一线索。
+语料批次 = {
+    "业务拍板": dict(
+        目录=os.path.join(澜绣, "业务决策"), 知识库名="澜绣业务拍板",
+        为什么="它们是**口径的原文**,而 `knowledge/*.py` 是口径的实现 —— "
+               "RAG 要引的是原文。有小节结构,所以「片段能指回第几节第几段」"
+               "天然可满足。而且里面有「我摆过的代价,业务知情后仍然这么选」"
+               "这种段落 —— 那正是顾问最需要查到、而问模型最容易被编出来的。"
+               "⚠️ **演示项目下那一份别删**:`test_retrieval` / "
+               "`test_index_build` / `test_vector_constraints` 三份集成测试"
+               "按名字找它。澜绣项目下另建一份 —— 同名但不同项目,"
+               "而项目隔离是这个后台最硬的约束,所以那不是两份会漂的副本,"
+               "是**两个项目各有自己的数据**"),
+    "领域知识": dict(
+        目录=os.path.join(澜绣, "knowledge"), 知识库名="澜绣领域知识",
+        # ⚠️ **排除清单:点名,而且要写为什么。** 现在是空的 ——
+        # 而它存在的理由见上面那段:仓库里的 md 不都该进 RAG。
+        # 空清单不是「没想过」,是**这一批里确实每一份都该进**:
+        #
+        # `knowledge/README.md` **有意保留**(第一眼我以为它该排掉 ——
+        # 我自己在上面写了「README 是给人读的流程文档」)。读了之后改主意:
+        # 它定义了「三级来源标注」的规矩,原话是
+        # 「**这是这个库最重要的规矩** —— 知识库最怕的不是内容少,
+        # 是**真假混在一起而读的人分不出来**」,还带一张
+        # 「哪一级能不能对客户说」的表。
+        # 顾问问「这条知识靠不靠谱、能不能跟客户讲」时,**它就是答案** ——
+        # 排掉它才是丢了一份真知识。
+        排除=(),
+        为什么="形制/面料/工艺/配饰/颜色/相容矩阵/工期/量体/养护/版型/BOM/"
+               "成长/纹样/话术/SOP/电商 —— **手写的真相源**。"
+               "⚠️ 它们**同时**是 `derive_*.py` 的输入:那几个脚本读 md、"
+               "跑规则、生成 2000+ 条派生数据落库,`check.sh` 会对账。"
+               "所以这里导进来的是**可检索的索引,不是真相源的搬家** —— "
+               "文件仍然是源,改了文件要重导(`lanxiu_kb_sync_check.py` 盯着)"),
+}
+语料目录 = 语料批次["业务拍板"]["目录"]      # 默认那一批(向后兼容)
+知识库名 = 语料批次["业务拍板"]["知识库名"]
 URL = os.environ.get("DATABASE_URL") or \
     "postgresql+psycopg://" + os.environ.get("USER", "") + "@localhost:5432/aimc_dev"
 
@@ -56,14 +103,36 @@ def 内容哈希(s):
     return "sha256:" + hashlib.sha256(s.encode("utf-8")).hexdigest()[:40]
 
 
-def 要哪个项目(c):
+def 要哪个项目(c, 指定=None):
     """导到哪个项目。**不猜** —— 库里没有项目就报出来让人先建。
 
     ⚠️ 不自动建项目:一个自动出现的项目会让「这些数据属于谁」变得说不清,
     而项目是权限和隔离的单位(§18)。
+
+    ## ⚠️ 2026-10-02 改掉了「导进第一个」
+
+    原来多个项目时打一句警告然后**导进第一个**。那在 09-27 没问题
+    (库里只有两个演示项目),而 10-02 建了 `project_lanxiu` 之后
+    **「第一个」取决于 `order by created_at`** —— 也就是靠运气。
+
+    实际后果已经发生过:09-27 那 5 篇业务拍板导进了 `project_demo_a`,
+    而它们本该在澜绣项目里。
+    > **一个靠「第一个」决定数据归属的脚本,它的结果取决于建项目的顺序** ——
+    > 而那个顺序没有任何地方写着。
+
+    现在:多个项目时**必须用 `--项目` 点名**,不点就报出来让人选。
     """
+    if 指定:
+        r = c.execute(text("""select organization_id, id, name from projects
+                             where id=:i and archived_at is null"""),
+                      {"i": 指定}).mappings().first()
+        if not r:
+            有 = [x["id"] for x in c.execute(text(
+                "select id from projects where archived_at is null")).mappings()]
+            raise SystemExit(f"没有项目 {指定} —— 库里有:{有}")
+        return r["organization_id"], r["id"]
     r = c.execute(text("select organization_id, id, name from projects"
-                       " where archived_at is null order by created_at limit 2")
+                       " where archived_at is null order by created_at")
                   ).mappings().all()
     if not r:
         raise SystemExit(
@@ -71,27 +140,35 @@ def 要哪个项目(c):
             "这里不自动建:项目是权限和隔离的单位,一个自动出现的项目\n"
             "会让「这些数据属于谁」变得说不清。")
     if len(r) > 1:
-        print(f"⚠️ 库里有多个项目,导进第一个:{r[0]['name']}({r[0]['id']})")
+        raise SystemExit(
+            f"库里有 {len(r)} 个项目,**不猜导哪个** —— 用 `--项目` 点名:\n"
+            + "\n".join(f"    --项目 {x['id']}    # {x['name']}" for x in r)
+            + "\n⚠️ 原来这里是「导进第一个」,而那取决于建项目的顺序 ——\n"
+              "  09-27 那 5 篇业务拍板就是这么落进演示项目的。")
     return r[0]["organization_id"], r[0]["id"]
 
 
-def 拿或建知识库(c, org, proj):
+def 拿或建知识库(c, org, proj, 名字=None):
+    """⚠️ **要带 `archived_at is null`。** 不带的话会拿到一个已归档的
+    知识库然后往里导 —— 而归档的知识库在接口上看不见,
+    于是「导进去了」和「什么都没导」在页面上长得一模一样。"""
+    名字 = 名字 or 知识库名
     r = c.execute(text("select id from knowledge_bases where project_id=:p"
                        " and name=:n and archived_at is null"),
-                  {"p": proj, "n": 知识库名}).scalar()
+                  {"p": proj, "n": 名字}).scalar()
     if r:
         return r, False
     kb = 新("kb")
     c.execute(text("""insert into knowledge_bases
         (id, organization_id, project_id, name, status, created_at, created_by, revision)
         values (:i,:o,:p,:n,'active', now(), 'ingest', 1)"""),
-              {"i": kb, "o": org, "p": proj, "n": 知识库名})
+              {"i": kb, "o": org, "p": proj, "n": 名字})
     return kb, True
 
 
-def 导一份(c, org, proj, kb, 文件名):
+def 导一份(c, org, proj, kb, 文件名, 目录=None):
     """导入一份文件。返回一句人话。"""
-    路 = os.path.join(语料目录, 文件名)
+    路 = os.path.join(目录 or 语料目录, 文件名)
     原文 = open(路, encoding="utf-8").read()
     h = 内容哈希(原文)
     相对路径 = os.path.relpath(路, 澜绣)
@@ -164,20 +241,39 @@ def 导一份(c, org, proj, kb, 文件名):
 
 
 def main():
-    if not os.path.isdir(语料目录):
-        raise SystemExit(f"找不到语料目录 {语料目录}")
-    文件们 = sorted(f for f in os.listdir(语料目录) if f.endswith(".md"))
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--批次", default="业务拍板", choices=sorted(语料批次),
+                    help="导哪一批语料(见 `语料批次`)")
+    ap.add_argument("--项目", default=None,
+                    help="导进哪个项目。**库里有多个项目时必须给** —— "
+                         "原来是「导进第一个」,而那取决于建项目的顺序")
+    a = ap.parse_args()
+    批 = 语料批次[a.批次]
+    目录, kb名 = 批["目录"], 批["知识库名"]
+    print(f"\n▸ 导入语料:**{a.批次}** → 知识库「{kb名}」")
+    print(f"  为什么选这一批:{批['为什么']}")
+    if not os.path.isdir(目录):
+        raise SystemExit(f"找不到语料目录 {目录}")
+    排除 = set(批.get("排除") or ())
+    全部 = sorted(f for f in os.listdir(目录) if f.endswith(".md"))
+    文件们 = [f for f in 全部 if f not in 排除]
+    跳过了 = [f for f in 全部 if f in 排除]
+    if 跳过了:
+        # ⚠️ **明说跳过了哪几份,不静默跳过。**
+        # 「这一批就这么几份」和「有几份被排掉了」必须分得开。
+        print(f"  ⚠️ 排除清单跳过 {len(跳过了)} 份:{跳过了}")
     if not 文件们:
-        raise SystemExit(f"{语料目录} 里没有 .md —— **不静默导入 0 份**:"
+        raise SystemExit(f"{目录} 里没有 .md —— **不静默导入 0 份**:"
                          f"「导完了」和「什么都没导」在输出上必须分得开")
     eng = create_engine(URL)
     with eng.begin() as c:
-        org, proj = 要哪个项目(c)
-        kb, 新建 = 拿或建知识库(c, org, proj)
-        print(f"项目 {proj} · 知识库 {知识库名}({kb}{',新建' if 新建 else ''})")
+        org, proj = 要哪个项目(c, a.项目)
+        kb, 新建 = 拿或建知识库(c, org, proj, kb名)
+        print(f"项目 {proj} · 知识库 {kb名}({kb}{',新建' if 新建 else ''})")
         print(f"语料 {len(文件们)} 份:")
         for f in 文件们:
-            print("  ·", 导一份(c, org, proj, kb, f))
+            print("  ·", 导一份(c, org, proj, kb, f, 目录))
         # 汇总。**从库里查,不累加内存里的计数** —— 累加的数字和库里的会漂。
         s = c.execute(text("""select
             (select count(*) from documents where project_id=:p and knowledge_base_id=:k),
