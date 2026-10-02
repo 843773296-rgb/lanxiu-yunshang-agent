@@ -166,6 +166,11 @@ export const ENDPOINTS = [
   { method: "POST", path: "/tools/{id}/versions", summary: "冻结工具版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/capability-connections", summary: "工具连接列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/capability-connections", summary: "建工具连接", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/lanxiu-knobs", summary: "有哪些旋钮(连落点核对)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/knob-plans", summary: "旋钮方案列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/knob-plans", summary: "建旋钮方案", capability: "改筛选策略", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/knob-plans/{key}", summary: "旋钮方案详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/knob-plans/{key}/draft", summary: "改旋钮方案", capability: "改筛选策略", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/capability-connections/{id}/discovery-jobs", summary: "发现连接里的工具", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "POST", path: "/tool-discoveries/{id}/import", summary: "把发现的工具导入成草稿", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/tool-groups", summary: "工具组列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -205,4 +210,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 118 条接口 · 22 条异步 · 27 条要幂等键 · 13 条要 If-Match */
+/** 共 123 条接口 · 22 条异步 · 27 条要幂等键 · 14 条要 If-Match */
