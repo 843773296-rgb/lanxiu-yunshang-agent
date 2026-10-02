@@ -40,6 +40,12 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "knowledge")]
 # 每一条都手动改坏过一次,确认对应那条检查**真的会红**。
 # 一条从没红过的检查,和没有这条检查是一样的。
 咬合 = [
+    ("把 15 篇第一节「补货_服务水平」那一行依据里的业务日期去掉",
+     "我们的决定每一行都带业务日期"),
+    ("在 stockalert 里把缺货容忍写回 `服务水平 = 0.95`(第二个来源)",
+     "缺货容忍和压货档只有一个来源"),
+    ("把 15 篇「压货怎么处理」小节标题上的 `demo` 去掉",
+     "行业做法每一小节都标 demo"),
     ("把 可售天数() 里的「笔数不够」那道闸删掉(退回成只判件数 > 0)",
      "卖过不到两笔的 SKU,可售天数必须是「算不出」"),
     ("在 stockalert 里把补货点改成写死的 `补货点 = 10`",
@@ -93,6 +99,28 @@ def main():
        callable(SA.补货点) and 0 < SA.服务水平 < 1 and "业务" in SA.服务水平_来源
        and SA.补货点([1, 0] * 30, 15)[0] is not None and SA.补货点([0] * 60, 15)[0] is None, 1,
        "补货点 = 交期内平均销量 + 安全库存,按每个 SKU 自己的销量现算;没销量的必须算不出,不许凑数")
+
+    # ── ①半 电商运营的决定:md 是唯一来源(知识库 C)──────────────────────
+    import re as _re, ecom
+    决 = ecom.表()
+    ck("我们的决定每一行都带业务日期(没日期的和行业做法分不开)",
+       all(_re.search(r"业务 \d{4}-\d{2}-\d{2}", v[1]) for v in 决.values()) and len(决) >= 3, len(决),
+       "、".join(f"{k}={v[0]}" for k, v in 决.items()))
+    _sa_src = open(os.path.join(ROOT, "knowledge", "stockalert.py"), encoding="utf-8").read()
+    _sa_码 = "\n".join(l.split("#")[0] for l in _sa_src.splitlines())
+    ck("缺货容忍和压货档只有一个来源(stockalert 从 15-电商运营.md 读,代码里不另写)",
+       SA.服务水平 == ecom.数("补货_服务水平") and SA.压货档 == ecom.档("压货档")
+       and not _re.search(r"服务水平\s*=\s*[\d.]", _sa_码) and not _re.search(r"压货档\s*=\s*\[", _sa_码), 2,
+       f"服务水平 {SA.服务水平} · 压货档 {SA.压货档}")
+    _md = open(ecom.MD, encoding="utf-8").read()
+    _二 = _md.split("## 二、")[1].split("\n## ")[0] if "## 二、" in _md else ""
+    _小节 = [l for l in _二.split("\n") if l.startswith("### ")]
+    ck("行业做法每一小节都标 demo(参考和我们的规矩在文档里长得一样)",
+       bool(_小节) and all("`demo`" in l for l in _小节), len(_小节),
+       "没标的:" + "、".join(l for l in _小节 if "`demo`" not in l) if not all("`demo`" in l for l in _小节) else "")
+    _三 = _md.split("## 三、")[1] if "## 三、" in _md else ""
+    _问 = _re.findall(r"^\d+\.\s", _三, _re.M)
+    ck("还没定的业务决定有明确的提问(不许被一个编出来的默认值填上)", len(_问) >= 1, len(_问))
 
     src = open(os.path.join(ROOT, "knowledge", "stockalert.py"),
                encoding="utf-8").read()
