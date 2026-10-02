@@ -315,6 +315,60 @@ def 跑():
                    "cm": json.dumps({"tv_write_report": ["tv_search"]},
                                     ensure_ascii=False)})
 
+        # ── 演示筛选策略:固定工具组模式(2026-10-02 加)──────────────────
+        #
+        # ⚠️ **它有业务理由,不是为了喂判据。**
+        # 上面刚铺了 `tg_先查后写` 那个组,而规格 §4.2 里「固定工具组」
+        # 是首版支持的两种模式之一 —— **一个演示项目该有一个能用的默认策略**,
+        # 否则「策略怎么配」这一页上没有任何可照抄的样例。
+        #
+        # 顺带也解决一件事:`ifmatch_reachable_check` 要从
+        # `/tool-selection-policies` 列表取一个样例 id,而 CI 是**从零建库**。
+        # ⚠️⚠️ **这是今天第三次撞同一个形状**(前两次:旋钮方案的基线、
+        # 工具组的「先查后写」)——
+        # > 一个靠样例数据成立的判据,每加一条就要**同时**回答
+        # > 「CI 的从零库里它从哪来」。
+        #
+        # 限额那五个数照规格 §14.3 的初值(**设计初值,不是实测出来的**)。
+        c.execute(text("""insert into tool_selection_policies
+            (id, organization_id, project_id, name, purpose, owner, status,
+             draft_revision, created_at, created_by, updated_at, revision)
+            values ('tsp_默认固定组',:o,:p,'默认:固定工具组',
+                    '演示项目的默认策略 —— 绑「先查后写」那个组。'
+                    '固定工具组是规格 §4.2 首版支持的两种模式之一,'
+                    '而它不需要索引,所以从零建库就能用',
+                    'seed','active', 1, now(),'seed', now(), 1)
+            on conflict (project_id, id) do nothing"""),
+                  {"o": ORG, "p": A})
+        c.execute(text("""insert into tool_selection_policy_versions
+            (id, organization_id, project_id, tool_selection_policy_id,
+             version_no, selection_mode, default_group_version_ref,
+             limits, loading_type, empty_result_action, catalog_error_action,
+             independent_router_enabled, candidate_cache_enabled,
+             release_criteria, content_hash, change_note,
+             created_at, created_by, updated_at, revision)
+            values ('tspv_默认固定组_v1',:o,:p,'tsp_默认固定组',1,
+                    'fixed_group','tgv_先查后写_v1',
+                    cast(:lm as jsonb),'append_within_run',
+                    'stop','use_compatible_fixed_group_or_stop',
+                    false, false, cast('{}' as jsonb),
+                    'seedtspvhash_默认固定组',
+                    '首版:绑「先查后写」组。限额照规格 §14.3 的初值',
+                    now(),'seed', now(), 1)
+            on conflict (project_id, id) do nothing"""),
+                  {"o": ORG, "p": A,
+                   # ⚠️ 规格 §14.3 的初值 —— **设计初值,不是实测出来的**。
+                   # 规格自己也这么写。在只有 2 个工具的演示项目上
+                   # 调它们没有意义(候选上限 5 永远碰不到)——
+                   # 见 `docs/选型/选型卡-工具检索-20261002.md`。
+                   "lm": json.dumps({
+                       "initial_candidates": 5,
+                       "new_definition_tokens": 4000,
+                       "active_definition_tokens": 12000,
+                       "max_rediscovery": 2,
+                       "selection_timeout_ms": 3000,
+                   }, ensure_ascii=False)})
+
         # Prompt 正式版本:Workflow 的 LLM 节点要引用**确切版本**,不是草稿。
         #
         # ⚠️ **version_no 要算 max+1,不能写死 1。**
