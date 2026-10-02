@@ -133,6 +133,7 @@ run "RFM 评分 · 自测" python3 knowledge/rfm.py
 run "RFM 评分 · 五条性质" python3 backend/rfm_check.py
 run "交接文档 · 四段必填是否齐全" python3 tools/make_handoff.py --check
 run "intent · 待办都点了名,「做完了」的判据真的在" python3 tools/intent_check.py
+run "运营 SOP · 生成的和现在的口径对得上(下单 / 开裁 / 判责 / 铁律)" python3 tools/make_sop.py --check
 run "咬合记录 · 最贵的那一步不许只在脑子里" python3 tools/bite_check.py
 run "截断的报告要说「还有几条」(只许少不许多)" python3 tools/truncation_check.py
 run "INSERT 要写具名列 —— 列数恰好相等而顺序错了是不报错的(位置参数只许少不许多)" python3 tools/insert_shape_check.py

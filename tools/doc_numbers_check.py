@@ -236,7 +236,9 @@ def 顶栏项数():
       r"个工具、(\d+)\s*个口径模块",
       r"口径模块\s*(\d+)\s*个"),
     S("服务数", 服务数, r"(\d+)\s*个服务、\d+\s*个工具"),
-    S("手写知识 md 份数", lambda: len(list((ROOT / "knowledge").glob("*.md"))),
+    # 「人工维护」的才算:生成的那几份(如 14-运营SOP.md,开头声明「这份文件是生成的」)不是手写口径
+    S("手写知识 md 份数", lambda: sum(1 for f in (ROOT / "knowledge").glob("*.md")
+                                      if "这份文件是生成的" not in f.read_text(encoding="utf-8")[:400]),
       r"手写口径\s*(\d+)\s*份\s*md",
       r"人工维护\s*(\d+)\s*份"),
     # ── 数据规模 ──

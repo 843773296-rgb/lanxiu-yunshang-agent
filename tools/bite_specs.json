@@ -3962,5 +3962,29 @@
    }
   ],
   "预期红": "跨年也对"
+ },
+ {
+  "script": "tools/make_sop.py --check",
+  "改坏": "把判责的举证期从 6 个月改成 7 个月,但不重新生成",
+  "file": [
+   {
+    "path": "knowledge/liability.py",
+    "old": "举证期月数 = 6 ",
+    "new": "举证期月数 = 7 "
+   }
+  ],
+  "预期红": "SOP 和现在的代码对得上"
+ },
+ {
+  "script": "tools/make_sop.py --check",
+  "改坏": "让开裁闸对「该试、试了、没签字」放行,但不重新生成",
+  "file": [
+   {
+    "path": "knowledge/muslin.py",
+    "old": "    if not 签了吗:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "SOP 和现在的代码对得上"
  }
 ]
