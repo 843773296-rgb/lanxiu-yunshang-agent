@@ -37,7 +37,7 @@ import os, re, sys, json, subprocess, urllib.parse, time, html
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KN = os.path.join(HERE, "..", "knowledge")
-MDS = ("02-面料.md", "03-工艺.md", "01-形制.md", "04-配饰.md")
+MDS = ("02-面料.md", "03-工艺.md", "01-形制.md", "04-配饰.md", "16-竞品与行业.md")
 
 
 def _get(url, timeout=25, 重试=2):
@@ -50,12 +50,25 @@ def _get(url, timeout=25, 重试=2):
     重试两次、每次退避,还不行就**明说是抓不到,不是判它坏**。
     """
     for i in range(重试 + 1):
-        r = subprocess.run(["curl", "-sL", "-m", str(timeout), url],
-                           capture_output=True, text=True)
-        if r.stdout and len(r.stdout) > 500:
-            return r.stdout
+        # 带 UA、解 gzip、按页面声明的编码解 —— 竞品篇(2026-10-02)撞到三样:
+        # 有的站不带 UA 给空壳,明华堂移动版回 gzip,政府网转载页是 GBK(text=True 直接崩)
+        r = subprocess.run(["curl", "-sL", "--compressed", "-A", "Mozilla/5.0", "-m", str(timeout), url],
+                           capture_output=True)
+        b = r.stdout or b""
+        cs = re.search(rb"charset=[\"']?([\w-]+)", b[:4000])
+        try:
+            t = b.decode((cs.group(1).decode() if cs else "utf-8"), errors="replace")
+        except LookupError:
+            t = b.decode("utf-8", errors="replace")
+        if t and len(t) > 500:
+            return t
         time.sleep(1.5 * (i + 1))
     return ""
+
+
+def _归一(t):
+    """去空白、引号统一 —— 页面用中文弯引号、md 里手打直引号,是同一个字,不该判成「页面里没有」。"""
+    return re.sub(r"\s+", "", t).translate(str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'"}))
 
 
 def 页面标题(url):
@@ -88,15 +101,23 @@ def 条目():
         if not os.path.isfile(p): continue
         lines = open(p, encoding="utf-8").read().split("\n")
         code = name = None
+        数字 = []
         for i, line in enumerate(lines):
             m = re.match(r"^###\s+((?:XZ|MT|KF|PS|SE)\d{2})\s+(.+?)\s+`\w+`\s*$", line.strip())
             if m: code, name = m.group(1), m.group(2)
+            # 竞品篇没有编码,一条一个 `### 标题`;要点里的数字也要在页面上原样出现(数是这一篇的全部价值)
+            if fn.startswith("16-") and line.startswith("### "):
+                code, name, 数字 = "竞品", line[4:].strip(), []
+            mk = re.match(r"^-\s*要点\s*[::]\s*(.+)$", line.strip())
+            if fn.startswith("16-") and mk:
+                数字 = re.findall(r"\d+(?:\.\d+)?", mk.group(1))
             # 2026-10-01 新写法:`- **出处**:出处名:页面上应出现的标题 → 链接` —— 期望值就写在同一行
             mc = re.match(r"^-\s*\*\*出处\*\*\s*[::]\s*(.+?)\s*→\s*(https?://\S+)", line.strip())
             if mc:
                 左 = mc.group(1)
                 标题 = re.split(r"[::]", 左, maxsplit=1)[1].strip() if re.search(r"[::]", 左) else None
-                out.append((fn, code, name, ("出处", 标题), mc.group(2).rstrip(").,")))
+                out.append((fn, code, name, ("出处", 标题, tuple(数字) if fn.startswith("16-") else ()),
+                            mc.group(2).rstrip(").,")))
                 continue
             if not line.strip().startswith("→ http"): continue
             url = re.search(r"(https?://\S+)", line).group(1).rstrip(").,")
@@ -144,8 +165,14 @@ def main():
             正文 = html.unescape(re.sub(r"<[^>]+>", " ", 页))
             if not 标:
                 疑.append((code, name, url, "出处没写页面标题")); print(f"  ⚠ {code} {name:10} 出处没写页面标题")
-            elif 标 in 正文 or 标.replace(" ", "") in 正文.replace(" ", ""):
-                print(f"  ✅ {code} {name:10} 出处写「{标}」 → 页面里有")
+            elif 标 in 正文 or _归一(标) in _归一(正文):
+                缺数 = [n for n in (项目[2] if len(项目) > 2 else ()) if n not in 正文]
+                if 缺数:
+                    print(f"  ❌ {code} {name:10} 标题对得上,但要点里的数 {缺数} 页面上**没有**")
+                    坏.append((code, name, 标, url, f"(要点的数 {缺数} 页面里找不到)"))
+                else:
+                    print(f"  ✅ {code} {name:10} 出处写「{标}」 → 页面里有"
+                          + (f";要点的数 {list(项目[2])} 也都在" if len(项目) > 2 and 项目[2] else ""))
             else:
                 print(f"  ❌ {code} {name:10} 出处写「{标}」 → 页面里**没有**这几个字")
                 坏.append((code, name, 标, url, "(页面里找不到)"))

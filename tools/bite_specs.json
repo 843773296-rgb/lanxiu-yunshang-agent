@@ -4022,5 +4022,46 @@
    }
   ],
   "预期红": "行业做法每一小节都标 demo"
+ },
+ {
+  "script": "backend/competitor_check.py",
+  "改坏": "把 16 篇第一条的抓取日期删掉",
+  "file": [
+   {
+    "path": "knowledge/16-竞品与行业.md",
+    "old": "- 发布日期:2022-07-22\n- 抓取日期:2026-10-02\n",
+    "new": "- 发布日期:2022-07-22\n"
+   }
+  ],
+  "预期红": "每条都带齐五样"
+ },
+ {
+  "script": "backend/competitor_check.py",
+  "改坏": "让过期判定永远说「没过期」",
+  "file": [
+   {
+    "path": "knowledge/competitor.py",
+    "old": "    return _加月(d, 过期月数) < 今天",
+    "new": "    return False"
+   }
+  ],
+  "预期红": "超过 6 个月的条目会被说出来"
+ },
+ {
+  "script": "backend/competitor_check.py",
+  "改坏": "把 13 篇和 15 篇里对 16 篇的引用都删掉",
+  "file": [
+   {
+    "path": "knowledge/13-销售话术.md",
+    "old": "见 `16-竞品与行业.md`(每条",
+    "new": "见竞品资料(每条"
+   },
+   {
+    "path": "knowledge/15-电商运营.md",
+    "old": "出处和日期见 `16-竞品与行业.md` 第二节",
+    "new": "出处和日期见竞品资料第二节"
+   }
+  ],
+  "预期红": "它是原料:话术或电商运营引用了它"
  }
 ]

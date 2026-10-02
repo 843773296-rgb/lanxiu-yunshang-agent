@@ -338,7 +338,7 @@ def a_kb_read_traversal():
             return f"拿「{bad}」读到了知识库以外的东西"
     raise PermissionError(
         "八种路径穿越写法全部落空 —— **它根本不接受路径**,"
-        "只在 15 篇的白名单里挑。过滤 `../` 那条路永远漏一种写法")
+        "只在 16 篇的白名单里挑。过滤 `../` 那条路永远漏一种写法")
 
 
 def a_whitelist():
@@ -624,7 +624,7 @@ STRUCT = [
   a_expired_order, "拿一个量体已过期的孩子走下单前拦截", "ops.order_block 规则直出"),
  ("读原文的工具不许变成读文件的工具", "backend/api.py kb_read / KB_DOCS 白名单",
   a_kb_read_traversal, "八种路径穿越写法(../ 、绝对路径、URL 编码、....// 等)",
-  "**根本不接受路径** —— 调用方给的字串只在写死的 15 篇里挑,"
+  "**根本不接受路径** —— 调用方给的字串只在写死的 16 篇里挑,"
   "挑不中就没有第二条路。过滤 `../` 那条路永远漏一种写法"),
  ("项目的 CLAUDE.md 不进模型的系统提示词", "agentsite/sdk.py RUNTIME + _ensure_runtime",
   a_no_project_memory, "从运行目录一路往上找 CLAUDE.md;并确认 Skill 没被一起弄丢",
