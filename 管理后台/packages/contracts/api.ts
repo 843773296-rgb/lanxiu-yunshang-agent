@@ -60,7 +60,8 @@ export type Capability =
   | "查看审计"
   | "改编排草稿"
   | "运行编排测试"
-  | "审批工具动作";
+  | "审批工具动作"
+  | "改筛选策略";
 
 /* ── 接口:路径 + 它要的权限 ───────────────────────── */
 
@@ -165,6 +166,24 @@ export const ENDPOINTS = [
   { method: "POST", path: "/tools/{id}/versions", summary: "冻结工具版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/capability-connections", summary: "工具连接列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/capability-connections", summary: "建工具连接", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/capability-connections/{id}/discovery-jobs", summary: "发现连接里的工具", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "POST", path: "/tool-discoveries/{id}/import", summary: "把发现的工具导入成草稿", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "GET", path: "/tool-groups", summary: "工具组列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/tool-groups", summary: "建工具组", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/tool-groups/{id}", summary: "工具组详情(草稿 + 版本历史)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/tool-groups/{id}/draft", summary: "改工具组草稿", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/tool-groups/{id}/versions", summary: "冻结工具组版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/tool-selection-policies", summary: "筛选策略列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/tool-selection-policies", summary: "建筛选策略", capability: "改筛选策略", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/tool-selection-policies/{id}", summary: "筛选策略详情(草稿 + 版本历史)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PATCH", path: "/tool-selection-policies/{id}/draft", summary: "改筛选策略草稿", capability: "改筛选策略", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "POST", path: "/tool-selection-policies/{id}/validate", summary: "校验筛选策略草稿", capability: "改筛选策略", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/tool-selection-policies/{id}/versions", summary: "冻结筛选策略版本", capability: "改筛选策略", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/tool-catalog-snapshots/build-jobs", summary: "建工具目录索引", capability: "改编排草稿", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "GET", path: "/tool-catalog-snapshots", summary: "工具目录快照列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/tool-selection-previews", summary: "只筛一遍(不执行)", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "POST", path: "/tool-selection-test-runs", summary: "沙箱或授权的真实试跑", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "GET", path: "/execution-runs/{id}/tool-selection", summary: "看这次运行的筛选证据", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/skills", summary: "Skill 指南列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/skills", summary: "建 Skill 指南", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/skills/{id}/versions", summary: "冻结指南版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -186,4 +205,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 100 条接口 · 19 条异步 · 22 条要幂等键 · 11 条要 If-Match */
+/** 共 118 条接口 · 22 条异步 · 27 条要幂等键 · 13 条要 If-Match */

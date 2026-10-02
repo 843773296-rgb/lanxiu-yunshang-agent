@@ -562,15 +562,36 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
       ["agent_id", "version_no", "prompt_version_id", "connection_version_id",
        "task_template", "tools", "context_policy", "limits", "output_schema",
        "completion_criteria", "incomplete_strategy", "execution_strategy",
-       "input_schema", "content_hash", "change_note"],
+       "input_schema", "content_hash", "change_note",
+       # ── 工具筛选(2026-10-02 第三份规格 §13.2)──────────────────
+       # 「提供给模型的方式:全部加载 / 固定工具组 / 按任务发现」。
+       # ⚠️⚠️ **这一列为空必须被读成「全部加载」,不是「没配置」。**
+       # 这是规格 §16 第一阶段那条兼容性要求的唯一落点:
+       # 「旧 Agent 默认继续原加载方式」。
+       # `agent_versions` 是**不可变**的 —— 已有的版本这一列**永远是 NULL**。
+       # 实现要是把 NULL 当「未配置」然后报错,
+       # **所有历史 Agent 版本会在升级那一刻一起失效** —— 而建表时一切正常。
+       # 规格原话也说「全部加载……**保留作为旧配置兼容及对比基线**」:
+       # 它不是过渡态,是个永久选项(没有基线就没法说筛选是不是更好)。
+       "tool_loading_type",
+       # 选了「固定工具组」或「按任务发现」时指向确切的策略版本。
+       # 列名是全称 —— 短名推不出外键,见 `selection_decisions` 那段。
+       "tool_selection_policy_version_id"],
       ["工具与策略都是**确切版本**;**已发布内容不可修改**(§16.3)",
+       "**`tool_loading_type` 为空 = 全部加载**(规格 §13.2 的兼容要求)—— "
+       "旧版本这一列永远是 NULL,把 NULL 当「未配置」会让历史版本一起失效",
+       "**筛选策略不许扩大授权**(规格 §13.2):策略里的必要工具"
+       "不在这个 Agent 的 `tools` 里时**阻止冻结并定位冲突**,"
+       "**不能自动勾上** —— 自动勾上就等于让筛选策略成了一条发权限的路,"
+       "而规格 §3 明写「筛选得分高不授予权限」",
        "**limits 是结构化状态,不是提示词里的一句话**(§9.5)—— "
        "硬权限、批准记录、步骤计数、剩余额度存在这里,"
        "靠模型摘要保存的上限等于没有上限",
        "context_policy.long_term_memory **首版默认关闭**(§9.5):"
        "未经审核就持久化的错误事实会跨任务传染",
        "`tools` 是 JSONB 里的一串 tool_version_id —— **没有外键**,冻结时服务端逐个验"],
-      依赖=["agents", "prompt_versions", "connection_versions"]),
+      依赖=["agents", "prompt_versions", "connection_versions",
+          "tool_selection_policy_versions"]),
 
     # ③ 工具 / 连接 / 指南 / 规则
     E("tool_definitions", "工具", 项目级, 可改,
