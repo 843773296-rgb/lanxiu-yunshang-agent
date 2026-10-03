@@ -61,6 +61,21 @@ _s = importlib.util.spec_from_file_location(
 IMP = importlib.util.module_from_spec(_s)
 _s.loader.exec_module(IMP)
 
+def _列(xs, n):
+    """列前 n 个,**截断了就明说还有几条**。
+
+    ⚠️ 不说的话,照着这个清单下的结论会错:看到「少了这 8 个」的人
+    会以为就少 8 个,而可能少了 81 个 —— 那是「一个都没导」。
+    (`tools/truncation_check.py` 守的是这条规矩;而它**没报出这两处** ——
+     它的探测器比这个 bug 的形状窄。
+     > 一条判据漏掉的那几处,和不存在的那几处,在绿勾上长得一模一样。)
+    """
+    xs = list(xs)
+    if len(xs) <= n:
+        return str(xs)
+    return f"{xs[:n]}…还有 {len(xs) - n} 个(共 {len(xs)})"
+
+
 项目id = os.environ.get("AIMC_LANXIU_PROJECT", "project_lanxiu")
 
 
@@ -121,11 +136,11 @@ def main():
     少导 = sorted(set(工具面) - set(库里))
     多出 = sorted(set(库里) - set(工具面))
     if 少导:
-        print(f"\n  {R}❌ 澜绣在跑、后台**没有**的 {len(少导)} 个:{少导[:8]}{D}")
+        print(f"\n  {R}❌ 澜绣在跑、后台**没有**的 {len(少导)} 个:{_列(少导, 8)}{D}")
         print(f"     跑 `python3 tools/import_lanxiu_tools.py --项目 {项目id}`。")
         return 1
     if 多出:
-        print(f"\n  {R}❌ 后台有、澜绣那边**没有**的 {len(多出)} 个:{多出[:8]}{D}")
+        print(f"\n  {R}❌ 后台有、澜绣那边**没有**的 {len(多出)} 个:{_列(多出, 8)}{D}")
         print(f"     澜绣下架了而后台还列着 —— "
               f"**那条会在后台上一直显示成「能用的工具」**。")
         return 1
@@ -166,6 +181,8 @@ def main():
                   f"**而 `backend/api.py` 有未提交的改动**:{D}")
             for n, v in 不一致[:8]:
                 print(f"     · {n}(后台最新是 v{v})")
+            if len(不一致) > 8:
+                print(f"     …… 还有 {len(不一致)-8} 个(共 {len(不一致)})")
             print(f"     {Y}⚠️ **先别跑导入。** 并行会话很可能正在改它 ——"
                   f"导下去就是把半成品灌进后台,还给它发版本号。{D}")
             print(f"     {Y}这一档**不算红** —— CI 从提交的代码建库,撞不到它。{D}")

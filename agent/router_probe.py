@@ -66,6 +66,20 @@ sys.path.insert(0, os.path.join(HERE, "..", "agentsite"))
 {目录}"""
 
 
+def _列(xs, n):
+    """列前 n 个,**截断了就明说还有几条**。
+
+    ⚠️ 不说的话,照着这个清单下的结论会错 ——
+    看到「need=kb_bom,kb_detail」的人会以为真值就这两个,
+    而它可能有五个。`tools/truncation_check.py` 在守这一条,
+    而这个文件第一版就栽了(2026-10-03,队友报的)。
+    """
+    xs = list(xs)
+    if len(xs) <= n:
+        return ",".join(xs)
+    return ",".join(xs[:n]) + f"…还有 {len(xs) - n} 条(共 {len(xs)})"
+
+
 def 目录文本(全量=None):
     """名字 + 首行说明。**不给全文** —— 全文 11300 token,首行 3900。
 
@@ -173,8 +187,8 @@ def main():
                            ms=ms, usage=u))
             print(f"  {集}{tid:5s} {'✅' if 过 else '❌'} {ms:5d}ms  "
                   f"给 {len(给的)} 个{('(编了'+str(len(编的))+'个)') if 编的 else ''}  "
-                  f"{','.join(给的[:3])}"
-                  f"{'' if 过 else '  need='+','.join(need[:2])}")
+                  f"{_列(给的, 3)}"
+                  f"{'' if 过 else '  need=' + _列(need, 2)}")
         汇总[缓] = 行
 
     print("\n" + "=" * 96)
