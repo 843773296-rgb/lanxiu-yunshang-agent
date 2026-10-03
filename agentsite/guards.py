@@ -1614,13 +1614,31 @@ def make_hooks(state, 注日期=True):
         return {}
 
     async def on_stop(inp, tool_use_id, ctx):
-        if state.get("stopped"):     # 已经打回过一次,不再无限循环
-            return {}
+        """**每一个候选最终答案都查**,「最多改几次」和「最终过没过」分开记(外部审阅 10-03 §4.1)。
+
+        原来打回一次就置 stopped,第二次答案直接走空返回 —— **检查器只被调用一次**,
+        改过的答案可能仍不合格却离开了执行链;记录里只有「曾经被打回」,看不出「最终合格」。
+        现在:每次都查、每次都记(答案哈希 / 规则版本 / 结果 / 失败项);改的次数用完还不过,
+        **不再打回**(防无限循环),最终交付由 sdk 的交付判定决定 —— 不当成正常答案交出去。
+        """
         text = _last_answer(inp.get("transcript_path"))
-        bad = check_answer(text, state.get("calls"), state.get("prompt"))
-        if not bad: return {}
-        state["stopped"] = True
-        state["violations"] = bad
+        尝 = state.setdefault("答案检查", [])
+        try:
+            bad = check_answer(text, state.get("calls"), state.get("prompt"))
+        except Exception as e:
+            # 检查器自己坏了 ≠ 答案过了 —— 记「检查出错」,交付判定会把它当「未检查」
+            尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 规则版本=规则版本(), 结果="检查出错",
+                          失败项=[], 说明=f"{type(e).__name__}: {e}"[:200]))
+            return {}
+        尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 规则版本=规则版本(),
+                      结果="不通过" if bad else "通过", 失败项=[b["check"] for b in bad]))
+        if not bad:
+            return {}
+        # 违规**历史**不因修正成功而删(审阅:保留失败历史),逐次累加
+        state.setdefault("violations", []).extend(bad)
+        if state.get("修正次数", 0) >= 最多修正次数:
+            return {}            # 次数用完:不再打回,交付判定会拦住它
+        state["修正次数"] = state.get("修正次数", 0) + 1
         return {"decision": "block",
                 "reason": "交付前体检没过,请修正后重答:\n"
                           + "\n".join(f"· {b['msg']}" for b in bad)}
@@ -1658,6 +1676,73 @@ def _unwrap(resp):
                 except Exception: return t
         return resp
     return resp
+
+
+# 被打回之后最多让它改几次。⚠️ 审阅建议首版保留一次修正机会 —— 不是业务定的数
+最多修正次数 = 1
+
+
+def 答案哈希(text):
+    import hashlib
+    return hashlib.sha256((text or "").strip().encode("utf-8")).hexdigest()[:12]
+
+
+def 规则版本():
+    """检查规则的版本 = check_answer 源码的哈希。规则改了,旧的「通过」记录就不该和新的混着比。"""
+    import hashlib, inspect
+    return hashlib.sha256(inspect.getsource(check_answer).encode("utf-8")).hexdigest()[:8]
+
+
+def 交付判定(state, text, 体检开着=True, 跑完了=True):
+    """这一份要交给用户的答案,**最终**过没过检查。返回 dict(状态, 修正次数, 尝试)。
+
+    状态五种,**只有两种算交付成功**:
+      通过 / 修正后通过         —— 正常交付
+      未通过                    —— 改的次数用完还不合格:**不当成正常答案交**(sdk 换成受控说明)
+      未检查                    —— 体检关着 / 检查器出错 / 空答案:不能显示成「通过」
+      不完整                    —— 这一轮没跑完(预算掐断 / 超时):答案本身就是半截
+    Stop 没触发到最终那份答案(最终文本和查过的不是同一份)时,**在这里补查一次**。
+    """
+    尝 = state.setdefault("答案检查", [])
+    修 = state.get("修正次数", 0)
+    out = lambda 状态, 为什么="": dict(状态=状态, 为什么=为什么, 修正次数=修, 尝试=尝)
+    if not 体检开着:
+        return out("未检查", "这一轮交付前体检关着")
+    if not 跑完了:
+        return out("不完整", "这一轮没跑完(预算掐断或中途出错),答案是半截的")
+    if not (text or "").strip():
+        return out("未检查", "没有答案")
+    h = 答案哈希(text)
+    这份 = next((a for a in reversed(尝) if a["哈希"] == h), None)
+    if 这份 is None:
+        try:
+            bad = check_answer(text, state.get("calls"), state.get("prompt"))
+            这份 = dict(尝试=len(尝) + 1, 哈希=h, 规则版本=规则版本(), 结果="不通过" if bad else "通过",
+                       失败项=[b["check"] for b in bad], 来源="交付前补查(Stop 没查到这一份)")
+            if bad:
+                state.setdefault("violations", []).extend(bad)
+        except Exception as e:
+            这份 = dict(尝试=len(尝) + 1, 哈希=h, 规则版本=规则版本(), 结果="检查出错", 失败项=[],
+                       说明=f"{type(e).__name__}: {e}"[:200], 来源="交付前补查")
+        尝.append(这份)
+    if 这份["结果"] == "检查出错":
+        return out("未检查", "检查器出错了 —— 检查出错 ≠ 答案通过")
+    if 这份["结果"] == "不通过":
+        return out("未通过", "改了 %d 次仍没通过交付前检查" % 修)
+    return out("修正后通过" if any(a["结果"] == "不通过" for a in 尝) else "通过")
+
+
+def 交付处理(state, text, 体检开着=True, 跑完了=True):
+    """sdk.run 收尾时调:返回 (交给用户的文本, 未通过的草稿或 None, 交付判定)。
+    **未通过的答案不进正常答案字段** —— 换成受控说明,草稿另存给人核对。"""
+    交付 = 交付判定(state, text, 体检开着=体检开着, 跑完了=跑完了)
+    if 交付["状态"] == "未通过":
+        return 未通过时的说明, text, 交付
+    return text, None, 交付
+
+
+未通过时的说明 = ("这条回答没有通过交付前检查(改过一次仍不合格),**没有作为正式答复给出**,需要人工核对。"
+             "没通过的是哪几条、草稿内容,在本条记录的「交付检查」里。")
 
 
 def _last_answer(path):

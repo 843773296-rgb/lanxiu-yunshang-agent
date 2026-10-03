@@ -653,7 +653,14 @@ function drawStream(){
     }
     if(m.error)
       return `<div class="msg a"><div class="wrap"><div class="err">${esc(m.error)}</div></div></div>`;
-    const gv = (m.guard_violations || []).length
+    // 交付状态分开写:「修正后通过」和「未通过检查,需人工核对」是两回事;没查到的不显示成通过
+    const 交 = (m.交付检查 || {}).状态;
+    const 交说 = {"修正后通过": "修正后通过检查", "未通过": "未通过检查,需人工核对",
+                 "未检查": "未经交付前检查", "不完整": "这一轮没跑完,答案不完整"}[交];
+    const gv = 交说
+      ? `<div class="gv"><b>${esc(交说)}</b>` + ((m.guard_violations || []).length ? " —— " +
+        m.guard_violations.map(v => esc(v.msg || v)).join("；") : "") + `</div>`
+      : (m.guard_violations || []).length
       ? `<div class="gv"><b>回答体检打回过</b> —— ` +
         m.guard_violations.map(v => esc(v.msg || v)).join("；") + `</div>` : "";
     return `<div class="msg a"><div class="wrap">

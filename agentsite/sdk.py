@@ -236,7 +236,23 @@ def cost_of(usage, model, ts=None):
     return round((inp * pr["inp"] + cache * pr["cache"] + 写 * 写价 + out * pr["out"]) / 1e6, 6)
 
 
-def mcp_config(me=None, kind=None):
+def 生效工具(kind, 收窄=None):
+    """这一轮**真正能用**的工具 —— 角色许可 ∩ 本次显式限制。**开跑时只算一次**,同一份用在
+    MCP 暴露、SDK 参数、提示词装配、运行记录四处(外部审阅 10-03 §4.3)。
+
+    ⚠️ **None 和空集合是两回事**:None = 没额外限制(用角色全集);[] = 明确一个都不给。
+    原来写的是 `收窄 or 角色全集` —— 空集合被 `or` 吃掉,**退回整个角色的工具**,
+    而「明确不给」和「没限制」在那个表达式里长得一样。
+    取交集而不是直接用收窄:收窄里混进角色没有的工具也不会被放进来(只许收窄,不许放宽)。
+    """
+    全 = _tools_for(kind)
+    if 收窄 is None:
+        return list(全)
+    要 = set(收窄)
+    return [t for t in 全 if t in 要]
+
+
+def mcp_config(me=None, kind=None, 名单=None):
     """把三个 MCP 服务挂上。工具面按用途分开,不给模型多余的选择。
 
     me:当前登录的人。**通过每个服务自己的 env 传,不改 os.environ** ——
@@ -250,8 +266,10 @@ def mcp_config(me=None, kind=None):
     """
     py = sys.executable
     env = {"LANXIU_ME": json.dumps(me, ensure_ascii=False)} if me else {}
-    if kind is not None:
-        名单 = _tools_for(kind)
+    if kind is not None or 名单 is not None:
+        # 名单优先:run 算好的「这一轮生效的工具」从这里进 MCP 的 LANXIU_TOOLS ——
+        # 原来这里只按角色全集建,收窄只进了 allowed_tools,**模型看得见、也调得动被收掉的工具**
+        名单 = _tools_for(kind) if 名单 is None else 名单
         out = {}
         for 服务, cfg in _mcp_all(py, env).items():
             短 = [t.split("__", 2)[2] for t in 名单 if t.startswith(f"mcp__{服务}__")]
@@ -748,7 +766,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 那一轮跑的不是你以为的配置,而分数差会被归因到别处。
 
     model = _env(provider, model_name)
-    state = {}
+    工具 = 生效工具(kind, _收窄)
+    state = {"生效工具": 工具}          # 进运行记录:这一轮实际给了哪些,不是配置意图
     if _旋话:
         state["旋钮"] = _旋话      # 进轨迹,让台账上看得见这一轮是拧过的
     # ── 为什么这里是 effort 而不是 temperature ──────────────────────
@@ -777,14 +796,16 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         # 但取数的权限不靠这句话 —— 那是 MCP 服务的 env 管的。
         # 提示词里的身份是**告知**,env 里的身份才是**授权**。
         # **不用 .get 回落** —— 见上面 `_SYS` 那段。角色没配就该炸,不该静默降级。
-        system_prompt=(_SYS[kind] + (
+        # 提示词按**这一轮生效的工具**装配:收掉的工具,管它的规矩也不该还在(否则模型被不存在的工具误导)
+        system_prompt=((_SYS[kind] if _收窄 is None else prompts.assemble(
+            kind, {t.rsplit("__", 1)[-1] for t in 工具} | ({"图片"} if kind in ("kb", "all") else set()))[0]) + (
             f"\n\n## 现在是谁在跟你说话\n\n"
             f"{me['name']}(工号 {me['no']})· {me['role']}"
             f"{' · ' + me['shop'] if me.get('shop') else ''}。\n"
             f"他能看到什么、能做什么由工号决定 —— 工具已经按他的身份取数了,"
             f"你不需要(也不能)替他换个身份查。\n" if me else "")),
-        mcp_servers=mcp_config(me, kind),
-        allowed_tools=(_收窄 or _tools_for(kind)),   # 旋钮只许收窄 —— 放宽在 knobs.校验 里当场抛
+        mcp_servers=mcp_config(me, kind, 名单=工具),
+        allowed_tools=工具,           # 和 MCP 暴露的是同一份 —— 不再用 `or`(空集合会被吃掉)
         # ⚠️ **allowed_tools 不是排他白名单。**
         # 它管的是「哪些工具不用逐次批准」,不是「只有这些工具存在」——
         # 配上 permission_mode="bypassPermissions" 之后,CLI 的内置工具
@@ -1063,6 +1084,9 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             terminal_reason=getattr(res, "terminal_reason", None),
         ))
 
+    # ── 交付判定(外部审阅 10-03 §4.1):**最终那份答案**过没过检查,不是「曾经被打回过」──
+    # 改的次数用完仍不合格:**不放进正常答案字段**,草稿另存、给人核对
+    text, 未通过草稿, 交付 = guards.交付处理(state, text, 体检开着=bool(guard), 跑完了=not budget_err)
     if budget_hit and not text.strip():
         # 一个字都没答出来 —— 那就把预算这件事当成回答本身,而不是报个错
         text = budget_hit
@@ -1096,6 +1120,9 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                 # 它们是「模型有多不听话」的直接度量,比事后抽样评测灵敏得多
                 guard_blocked=bool(state.get("violations")),
                 guard_violations=state.get("violations") or [],
+                # 最终交付状态:通过 / 修正后通过 / 未通过 / 未检查 / 不完整。
+                # **只有前两种算交付成功** —— 别拿 guard_blocked(曾被打回过)当「最终合格」
+                交付检查=交付, 未通过草稿=未通过草稿,
                 tool_calls_seen=len(state.get("calls") or []),
                 answer_turns=len(turns), text_all="\n\n".join(turns))
 

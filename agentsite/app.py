@@ -574,6 +574,7 @@ class H(BaseHTTPRequestHandler):
             usage=r.get("usage"), latency_ms=ms, model=r.get("model"),
             guard_blocked=r.get("guard_blocked"),
             guard_violations=r.get("guard_violations"),
+            交付检查=r.get("交付检查"), 未通过草稿=r.get("未通过草稿"),
             answer_turns=r.get("answer_turns"),
             # ⚠️ 这一条 2026-09-28 补。`sdk.run()` 一直返回 trace_id,
             # 而这里**从来没往后台传** —— 库里每条研判都答不出它是哪一次调用的产物。

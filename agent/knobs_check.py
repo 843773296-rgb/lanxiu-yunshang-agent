@@ -114,7 +114,11 @@ i旋 = src.find("_kn.应用(")
 iopt = src.find("opts = ClaudeAgentOptions(")
 ck("旋钮在 ClaudeAgentOptions 构造**之前**生效(之后套 = 假旋钮)",
    0 < i旋 < iopt, f"旋钮@{i旋} opts@{iopt}")
-ck("工具白名单那行读的是收窄后的值", "_收窄 or _tools_for(kind)" in src)
+# 10-03 外部审阅 §4.3 之后:收窄先算成「这一轮生效的工具」,同一份给 allowed_tools 和 MCP 暴露
+# (原来是 `_收窄 or _tools_for(kind)` —— 空集合会被 `or` 吃掉,而且 MCP 那层根本没收到)。
+# 行为由 agentsite/tool_scope_check.py 验;这里盯落点:生效工具从收窄算,两处都用它
+ck("工具白名单那行读的是收窄后的值", "工具 = 生效工具(kind, _收窄)" in src and "allowed_tools=工具," in src
+   and "mcp_servers=mcp_config(me, kind, 名单=工具)" in src)
 ck("hook 那行接了注日期旋钮", "注日期=_注日期" in src)
 ck("拧过的旋钮进记录仪(不记就归不了因)", "lanxiu.knobs" in src)
 
