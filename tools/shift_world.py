@@ -67,6 +67,8 @@ DB = os.path.join(ROOT, "backend", "lanxiu.db")
     "op_log.reason": "派工记录里写着上门时间(「2026-10-04 14:00 → 16:00」),"
                      "它复述的是 task 上的时间",
     "order_mix_batch.payload": "订单快照的 JSON,里面是那一单当时的各个时间点",
+    "call_audio.consent_basis": "「客户 2025-04-03 接受了服务条款 v2.3」复述的是 terms_accept.accepted_at —— "
+                                "那一列跟着挪,这句不挪就自相矛盾(业务拍板日期故意不写进这句,见 recording_terms.默认同意依据)",
 }
 文字里不挪 = {
     "color_family.note": "「(业务 2026-09-20 定)」是**来路** —— 记的是人哪天拍的板,"
