@@ -30,6 +30,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("模型分人不验形状(长度不对也收)", "模型答的行数和段数对不上 → 整通标未分"),
     ("转写失败不落库(except 里不写「失败」)", "转写抛错 → 状态落「失败」并写清原因"),
     ("上传不核门店", "外店客户的录音传不上"),
+    ("上传不记同意依据", "上传那一刻记下同意依据"),
     ("处理() 里有一处没注入假纠错(去掉一个 `纠错call=不纠`)", "整个检查一次真模型都没调"),
     ("拆行不核对原文(拼回去对不上也收)", "拆开的几段拼回去和原行对不上"),
     ("纠错不核读音", "读音对不上 → 不改"),
@@ -215,10 +216,13 @@ def main():
         ck("空文件 → 拒", code == 400, 1, str(out))
         out, code = server.call_upload(本店员, dict(customer_id=客户[0], channel="上门", data=数,
                                                  filename="x.wav"), 入队=False)
-        行 = server.rows("SELECT status, channel, uploaded_by, source FROM call_audio WHERE id=?", out.get("id"))
+        行 = server.rows("SELECT status, channel, uploaded_by, source, consent_basis FROM call_audio WHERE id=?",
+                        out.get("id"))
         ck("本店客户的录音收下,落「排队」,记下谁传的、什么方式",
            code == 200 and 行 and 行[0]["status"] == "排队" and 行[0]["channel"] == "上门"
            and 行[0]["uploaded_by"] == "T1" and 行[0]["source"] == "真实录音", 1, f"{code} {out} {行}")
+        ck("上传那一刻记下同意依据(业务 D9:不拦,只记是条款接受还是默认同意)",
+           bool(行) and (行[0]["consent_basis"] or "").startswith(("条款接受:", "默认同意:")), 1, str(行))
         详 = server.customer_detail(客户[0])
         ck("客户详情里看得到这通录音", any(x["id"] == out.get("id") for x in 详.get("calls") or []), 1)
     finally:

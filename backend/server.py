@@ -2372,20 +2372,23 @@ def call_upload(me, body, 入队=True):
         for f in (原件, wav):
             os.path.exists(f) and os.remove(f)
         return {"error": f"录音有 {秒 / 60:.0f} 分钟,超过一小时 —— 多半是录音没停,请剪一下再传"}, 413
+    import terms_store
     with _conn() as c:
-        asr.建表(c)
+        asr.建表(c); terms_store.建表(c)
+        # 同意依据**上传那一刻定下来**(业务 D9:不能撤回、默认同意 —— 不拦,只记依据是哪一种)
+        依据 = terms_store.依据(c, cid)
         c.execute("INSERT INTO call_audio(id, customer_id, ref_kind, ref_id, path, seconds, source, created,"
-                  " channel, status, uploaded_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                  (aid, cid, None, None, wav, round(秒, 1), "真实录音", _now(), 方式, "排队", me.get("no")))
+                  " channel, status, uploaded_by, consent_basis) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (aid, cid, None, None, wav, round(秒, 1), "真实录音", _now(), 方式, "排队", me.get("no"), 依据))
     if 入队:
         _转写工人().put(aid)
-    return {"ok": True, "id": aid, "seconds": round(秒, 1), "status": "排队",
+    return {"ok": True, "id": aid, "seconds": round(秒, 1), "status": "排队", "同意依据": 依据,
             "说明": "已排队转写。一次只转一通,几分钟后刷新这一页看结果。"}, 200
 
 
 def calls_of(cid):
     """客户名下的通话:状态、怎么分的说话人、逐字稿。"""
-    return rows("""SELECT a.id, a.channel, a.seconds, a.source, a.status, a.fail_reason, a.created,
+    return rows("""SELECT a.id, a.channel, a.seconds, a.source, a.status, a.fail_reason, a.created, a.consent_basis,
                           a.uploaded_by, t.text, t.speaker_src, t.trad, t.raw_text, t.fixes
                    FROM call_audio a LEFT JOIN call_transcript t ON t.audio_id=a.id
                    WHERE a.customer_id=? ORDER BY a.created DESC, a.id DESC""", cid)

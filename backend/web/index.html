@@ -1160,13 +1160,13 @@ async function custDetail(cid){
         <input type="file" id="callFile" accept="audio/*,.wav,.m4a,.mp3,.aac">
         <select id="callCh"><option value="">沟通方式…</option><option>电话</option><option>上门</option><option>到店</option></select>
         <button class="btn" id="callUp">上传录音</button><span id="callMsg" style="font-size:12.5px;color:var(--ink2)"></span></div>
-        <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">电话录音如果是双声道(顾问、客户各一边)会按声道分说话人;上门 / 到店的单声道录音由模型按内容分,<b>请顾问核对</b>。没接通的电话不算沟通,不用传。</div>`;
+        <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">电话录音如果是双声道(顾问、客户各一边)会按声道分说话人;上门 / 到店的单声道录音由模型按内容分,<b>请顾问核对</b>。没接通的电话不算沟通,不用传。录音同意写在服务条款里、默认同意,不用再问客户;每通会记下同意依据(客户接受过含录音条款的版本,还是按规定默认同意)。</div>`;
       const cs=d.calls||[];
       return up+(cs.length? `<table class="tb"><thead><tr><th style="width:190px">通话</th><th style="width:70px">方式</th>
         <th style="width:70px">时长</th><th style="width:80px">状态</th><th style="width:170px">说话人</th><th>逐字稿</th></tr></thead><tbody>
         ${cs.map(x=>{const sp=SPK[x.speaker_src]||(x.speaker_src?["p-bad",x.speaker_src]:null);
           return `<tr><td class="mono">${esc(x.id)}<div style="font-size:11.5px;color:var(--ink3)">${esc((x.created||"").slice(0,16))}</div></td>
-          <td>${esc(x.channel||"—")}</td><td class="mono">${x.seconds?Math.round(x.seconds)+"s":"—"}</td>
+          <td>${esc(x.channel||"—")}${x.consent_basis?`<div style="font-size:11px;color:var(--ink3)" title="${esc(x.consent_basis)}">${esc(x.consent_basis.split(":")[0])}</div>`:""}</td><td class="mono">${x.seconds?Math.round(x.seconds)+"s":"—"}</td>
           <td><span class="pill ${STP[x.status]||"p-mut"}">${esc(x.status||"已入库")}</span>${x.fail_reason?`<div style="font-size:11.5px;color:var(--bad)">${esc(x.fail_reason)}</div>`:""}</td>
           <td>${sp?`<span class="pill ${sp[0]}">${esc(sp[1])}</span>`:"—"}${x.trad?`<div style="font-size:11.5px;color:var(--warn)">有繁体字:${esc(x.trad)}</div>`:""}</td>
           <td>${x.text?`<details><summary style="cursor:pointer">${esc(x.text.split("\n")[0].slice(0,40))}…</summary>

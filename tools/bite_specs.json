@@ -4503,5 +4503,53 @@
    }
   ],
   "预期红": "读音对不上 → 不改"
+ },
+ {
+  "script": "backend/recording_terms_check.py",
+  "改坏": "在客户页「通话录音」那一栏加一个「撤回录音同意」按钮",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "<button class=\"btn\" id=\"callUp\">上传录音</button>",
+    "new": "<button class=\"btn\" id=\"callUp\">上传录音</button><button class=\"btn\">撤回录音同意</button>"
+   }
+  ],
+  "预期红": "任何页面都没有「撤回录音同意」的入口"
+ },
+ {
+  "script": "backend/recording_terms_check.py",
+  "改坏": "版本按字符串比",
+  "file": [
+   {
+    "path": "knowledge/recording_terms.py",
+    "old": "    return bool(a and a >= b)\n",
+    "new": "    return str(版本) >= 录音条款起始版本\n"
+   }
+  ],
+  "预期红": "版本按数字比:v2.10 比 v2.3 新"
+ },
+ {
+  "script": "backend/recording_terms_check.py",
+  "改坏": "条款接受表加一列 revoked_at",
+  "file": [
+   {
+    "path": "backend/terms_store.py",
+    "old": "  via         TEXT,",
+    "new": "  via         TEXT,\n  revoked_at  TEXT,"
+   }
+  ],
+  "预期红": "条款接受表只追加,没有撤回类的列"
+ },
+ {
+  "script": "backend/call_flow_check.py",
+  "改坏": "上传不记同意依据",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "                  (aid, cid, None, None, wav, round(秒, 1), \"真实录音\", _now(), 方式, \"排队\", me.get(\"no\"), 依据))",
+    "new": "                  (aid, cid, None, None, wav, round(秒, 1), \"真实录音\", _now(), 方式, \"排队\", me.get(\"no\"), None))"
+   }
+  ],
+  "预期红": "上传那一刻记下同意依据"
  }
 ]
