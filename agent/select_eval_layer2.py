@@ -127,6 +127,15 @@ def 跑一臂(名, 题们, 模型, 选的=None, 角色="all"):
         ok, why = TE.judge(cid, r["text"], names, r.get("guard_violations"))
         行.append(dict(题=cid, 过=ok, 为什么=why,
                       调了=",".join(n.split("__")[-1] for n in names),
+                      # ⚠️ **存答案原文。** `tool_eval` 的文件头写着这条规矩,
+                      # 而我写这一份时抄了它的跑法、**没抄这条规矩**:
+                      # > 不存的话,失败了只能重跑才知道它到底说了什么 ——
+                      # > 而重跑要花钱,还不一定复现。
+                      # 代价当天就付了:改 T04/T07 的判据时想拿真实说法验,
+                      # 而上一轮的原文**一个字都没留**。
+                      # > 一份只记「过没过」的评测结果,和一份记了原文的,
+                      # > 在成绩单上长得一模一样 —— 而诊断只能靠后者。
+                      原文=r.get("text") or "",
                       成本=r.get("cost_usd") or 0, ms=int((time.time()-t0)*1000),
                       轮=r.get("answer_turns"), usage=r.get("usage") or {}))
         print(f"  {cid:5s} {'✅' if ok else '❌'} {len(names)}调 "
