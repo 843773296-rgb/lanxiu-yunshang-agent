@@ -4287,5 +4287,41 @@
    }
   ],
   "预期红": "原话标点全半角不同、多了空格 —— 不该挂"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "口径的诉求维度里删掉「配饰」",
+  "file": [
+   {
+    "path": "knowledge/oppo_obj.py",
+    "old": "\"颜色\", \"配饰\", \"版型\"",
+    "new": "\"颜色\", \"版型\""
+   }
+  ],
+  "预期红": "诉求维度 = 业务 D3 定的那 12 个"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "「点名的东西原话里得提到」那一支去掉",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "        elif 维 in 点名维度 and not _原话说到(维, str(x.get(\"值\") or \"\"), 原):\n",
+    "new": "        elif False:\n"
+   }
+  ],
+  "预期红": "原话真是客户说的,但里面没提这个值"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "去掉「对上」的形状检查",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "    if not isinstance(对上, dict):\n        # 真跑见过写成列表 [\"颜色\", \"形制\"] —— 说不清对上了什么值,等于没说\n        return [f\"格式:{spu} 的「对上」要写成 {{维度: 值}},实际是 {type(对上).__name__}\"]\n",
+    "new": ""
+   }
+  ],
+  "预期红": "「对上」写成了列表"
  }
 ]

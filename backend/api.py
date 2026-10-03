@@ -4522,9 +4522,10 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号或姓名。给了就只看这一个人,并单列他的判断。"},
     "limit":{"type":"number","description":"名单最多返回几条,默认 20,最多 100"}},"required":[]}},
- {"name":"call_opportunity","description":"**这些通话里有没有值得跟进的生意。** 它看的是**通话逐字稿**里客户提过什么偏好。\n\n⚠️ **问「今天该联系谁」用 `revive_list`**(那个回答的是「为什么是他、为什么是现在」);这个回答的是「他说过想要什么,而店里现在有」。两个问题都像「哪些客户值得跟进」,**给的是完全不同的两份名单**。 两种用法,代价差一个数量级:\n\n**不给 customer** = 清单,**只跑规则层**(免费、确定)。它只看「客户说了什么偏好 + 店里有没有对得上的货」,**分不出「想要」和「随口一提」** —— 实测 24 条里误报 7 条(约三成)。⚠️ **返回的是候选不是结论**,报给顾问时必须把这句话一起说,否则他会照着一个个打过去。\n\n**给了 customer**(客户号或姓名)= 这一个人深判,规则层 + 模型层,模型只回答一个问题:真想要还是随口一提。⚠️ **不要对整张清单逐个深判** —— 每条都是一次模型调用。\n\n⚠️ 「有逐字稿的通话」是 0,意思是这个范围里**根本没有录音**,不是「查过了没商机」——**「没有商机」和「没东西可判」是两回事**。\n\n四种「不是商机」的下一步不同:`NO_DIMENSION` 这通电话没话可跟进 · `NO_STOCK` 想要的现在给不了 · `JUST_MENTIONED` 随口一提 · `NO_CUSTOMER_LINE` **逐字稿里说话人没标**(数据问题,不是这个客户没戏)。范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。",
+ {"name":"call_opportunity","description":"**这些通话里有没有值得跟进的生意。** 它看的是**通话逐字稿**里客户提过什么偏好。\n\n⚠️ **问「今天该联系谁」用 `revive_list`**(那个回答的是「为什么是他、为什么是现在」);这个回答的是「他说过想要什么,而店里现在有」。两个问题都像「哪些客户值得跟进」,**给的是完全不同的两份名单**。 两种用法,代价差一个数量级:\n\n**不给 customer** = 清单,**只跑规则层**(免费、确定)。它只看「客户说了什么偏好 + 店里有没有对得上的货」,**分不出「想要」和「随口一提」** —— 实测 24 条里误报 7 条(约三成)。⚠️ **返回的是候选不是结论**,报给顾问时必须把这句话一起说,否则他会照着一个个打过去。\n\n**给了 customer**(客户号或姓名)= 这一个人深判,规则层 + 模型层,模型只回答一个问题:真想要还是随口一提。⚠️ **不要对整张清单逐个深判** —— 每条都是一次模型调用。\n\n⚠️ 「有逐字稿的通话」是 0,意思是这个范围里**根本没有录音**,不是「查过了没商机」——**「没有商机」和「没东西可判」是两回事**。\n\n四种「不是商机」的下一步不同:`NO_DIMENSION` 这通电话没话可跟进 · `NO_STOCK` 想要的现在给不了 · `JUST_MENTIONED` 随口一提 · `NO_CUSTOMER_LINE` **逐字稿里说话人没标**(数据问题,不是这个客户没戏)。范围跟身份走:顾问看自己名下的,店长看本店,总部看全部。\n\n**给 call(通话号)= 整理这一通**:原文 + 对得上的在架商品 + 客户名下的方案 / 订单号,**不调模型**。要写通话总结、研判、下一步时用它 —— 原话要从原文里逐字抄,下一步要指向它给的编号。",
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号(如 C10001)或姓名。给了就深判这一个人(会调模型);不给就列候选清单。"},
+    "call":{"type":"string","description":"通话号(如 TS-001)。给了就**整理这一通**:返回逐字稿原文、客户提到的偏好、每个偏好现在对得上的在架商品、这位客户名下的方案和订单号 —— 不调模型(研判由你读原文来做)。"},
     "limit":{"type":"number","description":"清单最多返回几条,默认 20,最多 100"}},"required":[]}},
  {"name":"ownerless_list","description":"**谁实际上没人管** —— **顾问问「我名下的客户有没有问题」也用这个**(会自动只看他名下那一份)。 —— 注意「有归属顾问」和「有人管」不是一回事:一个停用的顾问名下还挂着客户,顾问字段**非空**,任何按「有没有顾问」筛的写法都查不出他们。\n\n返回五种码,**分开的全部理由是下一步不同**:`LEFT` 顾问已停用(店长重新指人)· `NONE` 还没归属(等分配)· `CROSS_SHOP` 顾问不在客户门店(转店还是转人)· `NO_SUCH` 工号员工表里没有(**数据要修**)· `NO_SHOP` 档案没填门店,**判不了跨没跨店**(数据要修)。⚠️ 后两种是数据问题不是业务问题,**对着它们建议「重新分配客户」是答错了**。⚠️ `NO_SHOP` 是「判不了」,不是「确认过没问题」。\n\n`NEVER_TOUCHED` 归属人在系统里**没有一条经手记录**(⚠️ 这**不等于他没跟过** —— 微信电话没录进来就查不到;下一步是去确认是哪一种)。\n\n**只查不改** —— 改不改归属是店长的动作,这个工具不写任何一行。范围跟身份走:店长看本店,总部看全部,**顾问看自己名下那一份**(⚠️ 按定义他名下不会有 NONE/NO_SUCH/LEFT,所以**多半是空的**;空清单只说明「查了哪几类」那几类没有,**不等于一切正常**)(返回值里写着「看的范围」是哪一段,**合计 0 不等于全店都有人管**)。code 可只看某一种码。另附「待确立归属」:到店接待完成、但归属还没确立的人数(业务定:归属在首次到店接待完成时确立)。",
   "input_schema":{"type":"object","properties":{
@@ -5322,7 +5323,7 @@ def revive_list(customer=None, limit=20):
     return out
 
 
-def call_opportunity(customer=None, limit=20):
+def call_opportunity(customer=None, limit=20, call=None):
     """**这些通话里有没有值得跟进的生意。**
 
     两种用法,**代价差一个数量级**,所以刻意分开:
@@ -5359,14 +5360,23 @@ def call_opportunity(customer=None, limit=20):
             范围 = "你名下的客户"
         if customer:
             where.append("(cu.id = ? OR cu.name = ?)"); args += [customer, customer]
+        if call:
+            where.append("t.audio_id = ?"); args.append(call)
         rs = [dict(r) for r in con.execute(
-            "SELECT t.audio_id, t.text, cu.id cid, cu.name cname, cu.shop "
+            "SELECT t.audio_id, t.text, a.created, cu.id cid, cu.name cname, cu.shop "
             "FROM call_transcript t JOIN call_audio a ON a.id = t.audio_id "
             "JOIN customer cu ON cu.id = a.customer_id"
             + (" WHERE " + " AND ".join(where) if where else "")
             + " ORDER BY a.created DESC", args)]
     finally:
         con.close()
+    if call:
+        # 整理一通:**不调模型** —— 读原文、做研判的是调用方(技能)自己。
+        # 「找不到」和「不归你看」分不开时一律说找不到范围内的,别泄露别人名下有这通
+        if not rs:
+            return {"看的范围": 范围, "通话": call,
+                    "说明": f"你能看的范围里没有通话 {call}(通话号写错了,或者这位客户不归你看)"}
+        return _整理一通(rs[0], 范围)
     if not rs:
         return {"看的范围": 范围, "合计": 0,
                 "说明": ("这个范围里一条**有逐字稿的通话**都没有。"
@@ -5419,6 +5429,75 @@ def call_opportunity(customer=None, limit=20):
             "这一层只看「客户提到了什么 + 店里有没有货」,**分不出想要和随口一提**。"
             f"实测 24 条里误报 7 条(约三成)。要确认某一个人,"
             f"用 call_opportunity(customer=\"客户号\") —— 那一步会调模型判「真想要还是提一句」。"),
+    }
+
+
+def _ko_obj():
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "knowledge"))
+    import oppo_obj
+    return oppo_obj
+
+
+def _场合词表():
+    import sqlite3 as _sq
+    con = _sq.connect(f"file:{DB}?mode=ro", uri=True)
+    try:
+        return con.execute("SELECT name FROM sys_code WHERE category='场合' AND status='启用' ORDER BY code").fetchall()
+    finally:
+        con.close()
+
+
+def _整理一通(r, 范围):
+    """一通通话的原料:原文、客户提到的偏好、对得上的在架商品、客户名下的方案 / 订单号。
+
+    **只给编号和事实,不给结论**:是不是商机、下一步做什么,由读原文的那一方判。
+    规则层的判断也一起给 —— 但标明它**分不出想要和随口一提**。
+    """
+    import opportunity as _op, opportunity_store as _st, sqlite3 as _sq
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "knowledge"))
+    import oppo as _ko
+    判, 码, why = _op.判断(r["text"])
+    客户话 = _ko.客户说的(r["text"])
+    con = _sq.connect(f"file:{DB}?mode=ro", uri=True)
+    try:
+        提到 = []
+        for 词, 维度, _ in _op.命中维度(客户话):
+            货 = _st.对得上的在架(con, 维度, 词, 5)
+            提到.append({"维度": 维度, "值": 词, "对得上的在架商品": [
+                {"商品": spu, "名称": 名, "依据": 依} for spu, 名, 依 in 货],
+                "共几款": _op.现在有货(维度, 词)})
+        # **客户要的是「月白色的马面裙」,不是「月白色的」和「马面裙」各一件** ——
+        # 各维度分开列,列出来的白色款全不是马面裙。所以先给几条同时对得上的
+        条件 = [(x["维度"], x["值"]) for x in 提到]
+        全中 = []
+        if len(条件) > 1:
+            for spu, 名 in con.execute("SELECT spu, name FROM product WHERE status='上架' ORDER BY spu").fetchall():
+                if all(_st.满足吗(con, spu, 维, 值)[0] for 维, 值 in 条件):
+                    全中.append({"商品": spu, "名称": 名})
+        方案 = [{"方案": i, "状态": st} for i, st in con.execute(
+            "SELECT id, status FROM scheme WHERE customer_id=? ORDER BY id", (r["cid"],))]
+        订单 = [{"订单": i, "状态": st, "下单": (cr or "")[:10]} for i, st, cr in con.execute(
+            "SELECT id, status, created FROM ordr WHERE customer_id=? ORDER BY created DESC LIMIT 5", (r["cid"],))]
+        单数 = con.execute("SELECT COUNT(*) FROM ordr WHERE customer_id=?", (r["cid"],)).fetchone()[0]
+    finally:
+        con.close()
+    return {
+        "看的范围": 范围, "通话": r["audio_id"], "通话时间": (r.get("created") or "")[:16],
+        "客户": f"{r['cname']}({r['cid']})",
+        "原文": r["text"],
+        "客户提到的": 提到,
+        "几条全都对得上的在架商品": (全中[:5] if len(提到) > 1 else "只提到一个偏好,看上面那一栏"),
+        "全都对得上的共几款": (len(全中) if len(提到) > 1 else None),
+        "规则层判断": {"是商机": 判, "码": 码, "理由": why,
+                     "⚠️": "规则层分不出「想要」和「随口一提」(实测约三成误报)—— 读原文自己判"},
+        "这位客户名下": {"方案": 方案, "最近的订单": 订单, "订单共几张": 单数},
+        "怎么用": "原话从「原文」里**客户说的那几行**逐字抄(一句话抄一句,不跨行拼、不删字);"
+                 "下一步只指向这里给的编号(商品 / 方案 / 订单)。"
+                 "「对得上的在架商品」每个偏好最多列 5 款,「共几款」是全部。",
+        # 规矩跟着数据走:技能第一次全量真跑,模型自己发明了「气质」「风格」「活动日期」当维度 ——
+        # 只写在技能说明里不够,返回值里直接给可选值
+        "诉求维度只能用": list(_ko_obj().诉求维度),
+        "场合只能写": [n for (n,) in _场合词表()],
     }
 
 

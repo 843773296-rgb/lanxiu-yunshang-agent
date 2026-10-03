@@ -107,16 +107,41 @@ def 满足吗(c, spu, 维度, 值):
                       "WHERE s.spu=? AND f.family=? LIMIT 1", (spu, 值)).fetchone()
         return bool(r), (f"有「{r[0]}」(属{值}色系)" if r else "")
     if 维度 == "形制":
-        r = c.execute("SELECT t.xz FROM product p JOIN pattern t ON p.pattern=t.code WHERE p.spu=? AND t.xz LIKE ?",
-                      (spu, f"%{值}%")).fetchone() or c.execute(
+        # pattern.xz 存的是形制编码(XZ09),名字在 craft 表 —— 直接 like 编码永远对不上(10-03 查出)
+        r = c.execute("SELECT k.name FROM product p JOIN pattern t ON p.pattern=t.code JOIN craft k ON k.code=t.xz "
+                      "WHERE p.spu=? AND (k.name LIKE ? OR k.alias LIKE ?)",
+                      (spu, f"%{值}%", f"%{值}%")).fetchone() or c.execute(
                       "SELECT xz FROM product_custom WHERE spu=? AND xz LIKE ?", (spu, f"%{值}%")).fetchone()
         return bool(r), (f"形制「{r[0]}」" if r else "")
     if 维度 == "场合":
-        r = c.execute("SELECT 1 FROM product_scene ps JOIN sys_code k ON k.code=ps.scene "
-                      "WHERE ps.spu=? AND k.name=? LIMIT 1", (spu, 值)).fetchone()
-        return bool(r), (f"挂着「{值}」场合" if r else "")
+        # 场合词表是「婚礼婚服」「日常通勤」这种四字词,人说的是「婚礼」「日常」—— 包含就算
+        r = c.execute("SELECT k.name FROM product_scene ps JOIN sys_code k ON k.code=ps.scene "
+                      "WHERE ps.spu=? AND k.category='场合' AND (k.name=? OR instr(k.name, ?) > 0) LIMIT 1",
+                      (spu, 值, 值)).fetchone()
+        return bool(r), (f"挂着「{r[0]}」场合" if r else "")
+    if 维度 == "配饰":            # 业务 D4:按分类命中 —— 配饰(C04)下哪个分类名出现在「值」里
+        r = c.execute("SELECT k.name FROM product p JOIN category k ON k.code=p.category "
+                      "WHERE p.spu=? AND p.category LIKE 'C04%' AND instr(?, k.name) > 0", (spu, 值)).fetchone()
+        return bool(r), (f"属「{r[0]}」" if r else "")
+    if 维度 == "版型":
+        r = c.execute("SELECT t.code, t.name FROM product p JOIN pattern t ON p.pattern=t.code "
+                      "WHERE p.spu=? AND (t.code=? OR t.name LIKE ?)", (spu, 值, f"%{值}%")).fetchone()
+        return bool(r), (f"版型 {r[0]}「{r[1]}」" if r else "")
+    # 面料 / 工艺 / 纹样 / 其余:按商品名粗算(和商机判断的「纹样有没有货」同一个粗法)
     r = c.execute("SELECT name FROM product WHERE spu=? AND name LIKE ?", (spu, f"%{值}%")).fetchone()
     return bool(r), (f"商品名里有「{值}」" if r else "")
+
+
+def 对得上的在架(c, 维度, 值, n=5):
+    """在架商品里哪几款满足「维度 = 值」—— 给研判时找下一步推什么。按商品号排,稳定。返回 [(spu, 名称, 依据)]。"""
+    出 = []
+    for spu, 名 in c.execute("SELECT spu, name FROM product WHERE status='上架' ORDER BY spu").fetchall():
+        ok, 依 = 满足吗(c, spu, 维度, 值)
+        if ok:
+            出.append((spu, 名, 依))
+            if len(出) >= n:
+                break
+    return 出
 
 
 def 回捞(c, 新品们, 今天):

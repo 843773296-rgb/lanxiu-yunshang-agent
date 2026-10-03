@@ -124,10 +124,17 @@ def 现在有货(维度, 词):
         # 不是形制。查不到不报错,只是恒返回 0,于是所有形制商机都被判成「没货」。
         # 正确路径:product.pattern → pattern.code,形制在 pattern.xz
         # 用 like 而不是 = —— 客户说的简称要能查到全称的货
-        n = _rows("""select count(*) n from product p join pattern t on p.pattern=t.code
-                     where t.xz like ?""", f"%{词}%")
-        m = _rows("select count(*) n from product_custom where xz like ?", f"%{词}%")
-        return (n[0]["n"] if n else 0) + (m[0]["n"] if m else 0)
+        # ⚠️ **第二个坑(10-03 技能真跑时查出来的)**:pattern.xz 存的是**形制编码**(XZ09),
+        # 不是名字 —— `xz like '%圆领袍%'` 永远 0 条,于是**成衣一件都没被算进「有货」**,
+        # 只有 product_custom(存的是名字)那半边在起作用。编码 → 名字要接 craft 表。
+        # 两边按商品去重再数,别把同一件算两次
+        n = _rows("""select count(*) n from (
+                       select p.spu from product p join pattern t on p.pattern=t.code
+                         join craft k on k.code=t.xz
+                         where k.name like ? or k.alias like ?
+                       union select spu from product_custom where xz like ?)""",
+                  f"%{词}%", f"%{词}%", f"%{词}%")
+        return n[0]["n"] if n else 0
     if 维度 == "纹样":
         # 纹样是**算出来的**(knowledge/motif.py 从商品名和面料推),不落库。
         # 这里按商品名里有没有这个纹样词粗算 —— 够回答「店里有没有」这个问题。
