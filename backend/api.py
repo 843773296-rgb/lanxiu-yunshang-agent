@@ -5687,3 +5687,11 @@ KB_SCHEMAS=[
     "scope":{"type":"string","enum":["局部","整幅"],"description":"工艺做局部还是整幅,整幅按局部的 4 倍估。默认局部。"}},
    "required":["pattern","size","material"]}},
 ]
+
+# ── 工具的「模型说明」拼进 description(用户 2026-10-03 定:全拼进去)──────────────
+# 真值在 backend/工具模型说明.json(后台只读展示),拼法在 backend/工具模型说明.py。
+# **拼在三份 SCHEMAS 的源头**:MCP 和直连两条路都从这里取,mcp/parity.py 要求两边一字不差。
+# ⚠️ 哪些来路能进提示词由那份文件里的白名单决定(管理后台会话 5b9dfde 装的闸);
+#    用户选的是「全拼进去」,而那道闸现在挡着「评测题」—— 两者的取舍见 HANDOFF 10-03 那一节
+import 工具模型说明 as _说明
+SCHEMAS, SHOP_SCHEMAS, KB_SCHEMAS = _说明.拼进三份(SCHEMAS, SHOP_SCHEMAS, KB_SCHEMAS)
