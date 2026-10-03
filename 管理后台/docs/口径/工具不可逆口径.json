@@ -1,0 +1,68 @@
+{
+  "拍板日期": "2026-10-03",
+  "谁拍的": "业务(用户)",
+  "口径一句话": "线画在「顾客那边已经发生了」—— 系统里改得回来,但顾客已经看到了,改不回来",
+  "为什么不是更窄的那条线": "只算「动了钱或裁了料」的话,签收、替顾客追认完成这类动作模型可以自己做 —— 而那些动作顾客已经知道了",
+  "为什么不是全部 24 个": "派任务、改派、登记量体这类天天干的事也要点确认的话,人烦了就会开始乱点确认,那时候这道闸只剩个形式",
+
+  "不可逆": [
+    "confirm_order",
+    "start_cutting",
+    "record_pickup",
+    "decide_repair",
+    "verify_fit_code",
+    "verify_repair_return",
+    "ratify_complete",
+    "mark_delay_told",
+    "decide_approval"
+  ],
+  "不可逆·为什么": {
+    "confirm_order": "确认下单 = 已付款(业务 09-22:定制单确认即已付款,不走待付款)",
+    "start_cutting": "开裁。云锦缂丝裁下去没有回头路 —— 白坯试衣就是为这一步设的后悔药",
+    "record_pickup": "发货 / 转寄给顾客。转寄要运单号 —— 寄出去了",
+    "decide_repair": "店长判责。判给顾客的要录费用",
+    "verify_fit_code": "顾客签收 —— 衣服被拿走了,而且订单推进到待完成",
+    "verify_repair_return": "返修件回店签收 —— 同上",
+    "ratify_complete": "替顾客追认完成。业务 09-22:完成由顾客确认,追认是兜底,不是替顾客点",
+    "mark_delay_told": "标记「已经把延期告诉顾客了」。告没告诉是对外事实,标错了这份清单只进不出",
+    "decide_approval": "批审批 —— 等级 / 积分 / 客户转移就此生效"
+  },
+
+  "可撤": [
+    "apply_adjust",
+    "create_repair",
+    "advance_repair",
+    "open_order",
+    "assign_task",
+    "dispatch_task",
+    "reassign_task",
+    "finish_task",
+    "assign_batch",
+    "dispatch_batch",
+    "record_measure",
+    "record_fitting",
+    "report_production",
+    "rollback_order",
+    "set_piece_ratio"
+  ],
+  "可撤·为什么": {
+    "apply_adjust": "只是提一张审批单,不生效 —— 生效那一步是 decide_approval(在不可逆里)",
+    "create_repair": "新建返修单停在「待确认」,等店长判责 —— 还没动任何东西",
+    "advance_repair": "推进返修一档。档位可以往回走,而且最后那一步(回店签收)单列在不可逆里",
+    "open_order": "开单停在「待确认」—— 还没生效。生效那一步是 confirm_order(在不可逆里)",
+    "assign_task": "派错了可以改派(reassign_task),而且原负责人看得见是谁改的",
+    "dispatch_task": "同上",
+    "reassign_task": "改派本身也可以再改派",
+    "finish_task": "标完成。日程总结必填,错了能看出来",
+    "assign_batch": "批量排班。全过才写,一条不过整批不写 —— 不会留半截",
+    "dispatch_batch": "同上",
+    "record_measure": "登记量体。量错了再录一次,取最近一整次",
+    "record_fitting": "登记白坯试衣。补签这条路本来就有",
+    "report_production": "自有工坊报工。外发工厂的单谁都不许替它报(工具自己拦)",
+    "rollback_order": "它本身就是「回退」—— 一个回退动作要人确认才能回退,就没人敢用它了",
+    "set_piece_ratio": "改用料占比并标成版师核过。版师随时能再核一遍"
+  },
+
+  "⚠️ 两边都要列全": "只列「不可逆」的话,新加一个工具会静默落进「可撤」—— 而那正是危险的那一边(后台的闸不要求确认)。import_lanxiu_tools.py 对两边都没列的工具拒导并点名。",
+  "⚠️ 落点": "这份口径只决定后台怎么登记。真正拦住执行的是澜绣那边 agentsite/sdk.py 的 Hook 和 backend/fsm.py 的几道闸 —— 「后台记着要确认」和「执行时真的拦住了」是两件事。"
+}

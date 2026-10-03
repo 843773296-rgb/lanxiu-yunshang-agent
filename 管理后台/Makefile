@@ -64,6 +64,12 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tools/lanxiu_kb_sync_check.py
 	@echo ""
+	@echo "▸ 后台工具目录和澜绣在跑的 81 个工具一致吗(要库)"
+	@echo "  ⚠️ 这条里最要紧的一档是**副作用档位变了** —— 后台标着「只读」而澜绣那边已经会写了,"
+	@echo "     **后台的闸会放过它**。「说明改了一个字」和「从只读变成会写」在哈希上长得一样,所以单独报。"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tools/lanxiu_tool_sync_check.py
+	@echo ""
 	@echo "▸ 契约和库是否一致(alembic check)"
 	@cd services/api && DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		../../.venv/bin/alembic check 2>&1 | tail -1
