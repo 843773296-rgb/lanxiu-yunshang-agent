@@ -722,6 +722,12 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "catalog_snapshot_ref", "default_group_version_ref", "limits",
        "loading_type", "empty_result_action", "catalog_error_action",
        "independent_router_enabled", "candidate_cache_enabled",
+       # ⚠️ 2026-10-03 加。`independent_router_enabled` 在这之前**一道闸都没有** ——
+       # 而规格 §4.2 给的是**条件**不是开关:
+       # 「**只有实验证明额外分类有价值时,才启用独立路由节点**」。
+       # 这两列是那个条件的落点:指一次已完成的评测,和规格 §9.6 要的模型连接。
+       # > 一个没有实验撑着的「已启用」,和一个有实验撑着的,在策略页上长得一模一样。
+       "router_evidence_ref", "router_connection_id",
        "release_criteria", "content_hash", "change_note"],
       ["**身份、真实授权、密钥、对象范围不进这里**(规格 §14.3)—— "
        "它们由服务端绑定;放进策略就等于放进了模型可填的参数",
@@ -733,7 +739,16 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "一次索引故障会被当成「这个任务没有可用工具」",
        "**`candidate_cache_enabled` 首版关闭**(A-7):"
        "缓存命中也只复用候选 ID,权限、启停和版本仍要实时复核"],
-      依赖=["tool_selection_policies"]),
+      # 依赖里加 evaluations / capability_connections:那两列是跨对象引用,
+      # 而「声明了依赖」要落成外键(`fk_dep_check` 在守)。
+      # `router_evidence_ref` 的列名推不出来(它不叫 evaluation_id),
+      # 所以进了 `models.py::_依赖列` 的显式映射。
+      # ⚠️ 这里第一版写的是 `capability_connections`(**工具**连接)—— **接错了表**。
+      # 规格 §9.6 要的是「**模型连接**」,而后台有两张:
+      #   `capability_connections` 工具连接(没有探测口)
+      #   `model_connections`      模型连接(有 `POST /model-connections/{id}/probe`)
+      # 是撞见探测口才发现的。**外键建错了表,在列表上完全看不出来。**
+      依赖=["tool_selection_policies", "evaluations", "model_connections"]),
     E("tool_catalog_snapshots", "工具目录快照", 项目级, 不可变,
       ["catalog_hash", "tool_version_ids", "tokenizer_ref", "embedder_ref",
        "status", "build_detail", "activated_at"],

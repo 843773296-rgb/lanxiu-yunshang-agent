@@ -124,6 +124,14 @@ def _列(字段, 范围内=False, 表=None):
 _依赖列 = {
     ("tool_versions", "capability_connections"): "connection_id",
     ("connection_versions", "model_connections"): "connection_id",
+    # ⚠️ ② 2026-10-03 加的两处。筛选策略版本上那两列是**一名多指**的反面:
+    # 列名里没有被依赖表的名字(`router_evidence_ref` 不叫 `evaluation_id`),
+    # 所以按表名推列名**推不出来** —— 而推不出来是**静默 continue**。
+    # > 「我声明了依赖所以有外键」和「我声明了依赖但列名推不出来所以没外键」,
+    # > 在登记表上长得一模一样。
+    ("tool_selection_policy_versions", "evaluations"): "router_evidence_ref",
+    ("tool_selection_policy_versions", "model_connections"):
+        "router_connection_id",
 }
 
 _额外唯一 = {

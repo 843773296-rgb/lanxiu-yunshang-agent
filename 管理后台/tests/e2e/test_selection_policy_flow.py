@@ -87,6 +87,25 @@ def 清掉():
         c.execute(text("""delete from tool_selection_policies
                         where project_id=:p and name like :n"""),
                   {"p": 项目, "n": f"%{尾}"})
+        # ⚠️ 第七节自己造的三个「真东西」也要清 ——
+        # 不清的话**跑第二遍会撞主键**,而那个失败看起来像接口坏了。
+        # (「跑得起第二遍」和「不留垃圾」是两件事,这仓库撞过五次。)
+        # 按**名字里的随机尾**清,不按 id 前缀 —— id 这几条是我自己拼的,
+        # 但按名字清和别的夹具一致,而且下次有人改成服务端生成也不会失效。
+        c.execute(text("""delete from connection_versions
+                        where project_id=:p and connection_id in (
+                          select id from model_connections
+                           where project_id=:p and display_name like :n)"""),
+                  {"p": 项目, "n": f"%{尾}"})
+        c.execute(text("""delete from model_connections
+                        where project_id=:p and display_name like :n"""),
+                  {"p": 项目, "n": f"%{尾}"})
+        c.execute(text("""delete from capability_connections
+                        where project_id=:p and name like :n"""),
+                  {"p": 项目, "n": f"%{尾}"})
+        c.execute(text("""delete from evaluations
+                        where project_id=:p and id like :i"""),
+                  {"p": 项目, "i": f"ev_假的{尾}"})
 
 
 def main():
@@ -192,6 +211,117 @@ def main():
     码, 体 = 打("POST", f"{P}/tool-selection-policies",
              {"名称": f"editor 建不了{尾}", "用途": "x"}, 谁="U003")
     ck("viewer 建策略 → 403(要「改筛选策略」这条能力)", 码 == 403, {"码": 码})
+
+    # ── 开独立路由那四道闸(2026-10-03 加)──────────────────────────
+    #
+    # 规格 §4.2 给的是**条件**不是开关:
+    # 「**只有实验证明额外分类有价值时,才启用独立路由节点**」。
+    # 在这之前 `independent_router_enabled` 一道闸都没有 —— 只是 bool() 收下来。
+    # > 一个没有实验撑着的「已启用」,和一个有实验撑着的,在策略页上长得一模一样。
+    #
+    # ⚠️ **每条反例只破坏一件事**,其余字段全合法 ——
+    # 不然前面的闸先拦住,这几道根本走不到。
+    # (第一次手撞这几道闸就栽在这上面:报出来的全是「没结果怎么办」没给,
+    #  四道路由闸一道都没走到,而输出看起来像「全红了」。)
+    print("\n▸ 七、开独立路由的四道闸(规格 §4.2 的「实验」变成结构)")
+    # 三个**真东西** —— 不造的话下面几条断言测不到行为,只测到提示文案里有几个字
+    from sqlalchemy import text as _t
+    from db import 事务 as _事务
+    with _事务() as _c:
+        _org = _c.execute(_t("select organization_id from projects where id=:p"),
+                          {"p": 项目}).scalar()
+        真工具连接 = f"cc_假的{尾}"
+        _c.execute(_t("""insert into capability_connections
+            (id, organization_id, project_id, name, adapter, allowed_endpoints,
+             secret_ref, status, owner, created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:n,'MockAdapter', cast('[]' as jsonb),
+                    'keychain://x','active','test', now(),'test', now(), 1)"""),
+                   {"i": 真工具连接, "o": _org, "p": 项目,
+                    "n": f"工具连接-给闸测用{尾}"})
+        # 一条**已完成且有基线**的评测 —— 闸要求的就是这个形状
+        真实验 = f"ev_假的{尾}"
+        _c.execute(_t("""insert into evaluations
+            (id, organization_id, project_id, candidate_ref, baseline_ref,
+             dataset_version_id, scorer_version, status,
+             created_at, created_by, updated_at, revision)
+            values (:i,:o,:p, cast('{"ref":"候选"}' as jsonb),
+                    cast('{"ref":"基线"}' as jsonb), null, 'v1', '已完成',
+                    now(),'test', now(), 1)"""),
+                   {"i": 真实验, "o": _org, "p": 项目})
+        真模型连接 = f"mc_假的{尾}"
+        _c.execute(_t("""insert into model_connections
+            (id, organization_id, project_id, purpose, adapter, display_name,
+             status, created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,'路由','MockModelProvider', :n, 'active',
+                    now(),'test', now(), 1)"""),
+                   {"i": 真模型连接, "o": _org, "p": 项目,
+                    "n": f"模型连接-给闸测用{尾}"})
+        # ⚠️ **故意不给它探过的版本** —— 「没探过」那一道要撞得到
+        _c.execute(_t("""insert into connection_versions
+            (id, organization_id, project_id, connection_id, endpoint,
+             secret_ref, capabilities, config_hash,
+             created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:cid,'https://x','keychain://x', null, :h,
+                    now(),'test', now(), 1)"""),
+                   {"i": f"cv_假的{尾}", "o": _org, "p": 项目,
+                    "cid": 真模型连接, "h": 尾})
+
+    基 = {"模式": "fixed_group", "没结果怎么办": "stop",
+         "目录出错怎么办": "stop", "加载方式": "append_within_run",
+         "限额": {"initial_candidates": 5, "new_definition_tokens": 4000,
+                "active_definition_tokens": 12000, "max_rediscovery": 2,
+                "selection_timeout_ms": 3000}}
+
+    def 校(盖):
+        _, r2 = 打("POST", f"{P}/tool-selection-policies/{pid}/validate",
+                   dict(基, **盖))
+        return " ".join(str(x) for x in ((r2 or {}).get("问题") or []))
+
+    # ⚠️ 这两条**各自单独一次调用,每次只少一样** ——
+    # 第一版把它们合在一次调用里(同时不给实验也不给连接),两条都过了,
+    # 但那是「一次注入两个破坏」:**少的那一样是哪一个,断言分不出来**。
+    文 = 校({"开独立路由": True, "路由模型连接": 真模型连接})
+    ck("只少「路由实验」→ 点名要它(规格:只有实验证明有价值时才启用)",
+       "必须指一次评测" in 文 and "必须给模型连接" not in 文, 文[:100])
+    文 = 校({"开独立路由": True, "路由实验": 真实验})
+    ck("只少「路由模型连接」→ 点名要它(规格 §9.6)",
+       "必须给模型连接" in 文 and "必须指一次评测" not in 文, 文[:100])
+
+    文 = 校({"开独立路由": True, "路由实验": "ev_不存在的",
+           "路由模型连接": 真模型连接})
+    ck("指一个不存在的实验 → 红", "路由实验 ev_不存在的 不存在" in 文, 文[:80])
+
+    # ⚠️ **这一条必须传一条真的工具连接 id。**
+    # 第一版传的是 `mc_不存在的`,而它过了 ——
+    # 因为那句错误提示**永远带着**「不是工具连接」这几个字。
+    # > 一条靠「提示文案里恰好有这几个字」成立的断言,
+    # > 和一条真的验到了行为的断言,在绿勾上长得一模一样。
+    文 = 校({"开独立路由": True, "路由实验": 真实验,
+           "路由模型连接": 真工具连接})
+    ck("**传一条真的工具连接 id 也红** —— 规格要的是模型连接,"
+       "而后台这两张表只差一个词(闸的第一版就查错了表)",
+       f"路由模型连接 {真工具连接} 不存在" in 文 and "不是工具连接" in 文, 文[:130])
+
+    # 这条模型连接有版本但 capabilities 是空的 —— **没探过**
+    文 = 校({"开独立路由": True, "路由实验": 真实验,
+           "路由模型连接": 真模型连接})
+    ck("模型连接存在、**但一个探过的版本都没有** → 红"
+       "(不探就默认全支持,会在真跑时变成一个说不清的 400)",
+       "一个探过的版本都没有" in 文, 文[:120])
+
+    # 对照:把 capabilities 填上(= 探过了)→ 那一道该放行
+    with _事务() as _c:
+        _c.execute(_t("""update connection_versions
+                         set capabilities = cast('{"max_tokens": true}' as jsonb)
+                       where connection_id=:cid"""), {"cid": 真模型连接})
+    文 = 校({"开独立路由": True, "路由实验": 真实验,
+           "路由模型连接": 真模型连接})
+    ck("**探过之后那一道放行** —— 对照:这道闸不是一律拒绝",
+       "一个探过的版本都没有" not in 文, 文[:120])
+
+    文 = 校({"开独立路由": False})
+    ck("对照:不开路由时**不要求**实验和连接(这几道闸不是一律拒绝)",
+       "必须指一次评测" not in 文 and "必须给模型连接" not in 文, 文[:80])
 
     清掉()
     print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}(夹具已清)")

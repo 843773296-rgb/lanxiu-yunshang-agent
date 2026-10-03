@@ -66,6 +66,51 @@ sys.path.insert(0, os.path.join(HERE, "..", "agentsite"))
 {目录}"""
 
 
+def 探针版本():
+    """这一份自己的内容哈希。**不手写版本号** —— 忘记改的版本号比没有版本号更坏:
+    它会让两轮不可比的结果看起来可比。(`select_eval.py` 同一条规矩。)"""
+    import hashlib
+    src = open(os.path.abspath(__file__), encoding="utf-8").read()
+    return "router_probe@" + hashlib.sha256(src.encode("utf-8")).hexdigest()[:12]
+
+
+def 补成本(结果文件=None):
+    """给已有的结果补上**算好的单条成本**和探针哈希 —— 不重新调模型。
+
+    ## 为什么钱要在这一侧算
+
+    `sdk.cost_of()` 要 `claude_agent_sdk`,它只装在 `agentsite/.venv`;
+    而要读这份结果的 `管理后台/tools/import_router_eval.py` 跑在后台那个 venv 里。
+    **两个 venv 跨不过去。**
+
+    而**后台那边不许自己重算** —— `cost_of()` 里记着:
+    「2026-09-22 修过两处,**修之前少算约三成**」(官方的 `input_tokens`
+    已经不含缓存命中和缓存写入)。自己抄一遍就会把那三成错误抄回来。
+
+    所以:**产生数据的这一侧把钱算好写进去**,读的那一侧只读。
+    """
+    import json as _j
+    p = 结果文件 or os.path.join(HERE, "..", ".feynman", "router-probe.json")
+    d = _j.load(open(p, encoding="utf-8"))
+    行们 = d if isinstance(d, dict) and "关" in d else d.get("配置", d)
+    import sdk
+    改 = 0
+    for 缓, 行 in 行们.items():
+        for x in 行:
+            if x.get("挂了") or not x.get("usage"): continue
+            c = sdk.cost_of(x["usage"], os.environ.get("ROUTER_MODEL", "claude-haiku-4-5"))
+            x["成本USD"] = c
+            改 += 1
+    out = {"探针版本": 探针版本(),
+           "模型": os.environ.get("ROUTER_MODEL", "claude-haiku-4-5"),
+           "配置": 行们}
+    _j.dump(out, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    print(f"✅ 补好 {改} 条的成本 · 盖上探针版本 {探针版本()}")
+    print(f"   ⚠️ **钱在这一侧算,读的那一侧只读** —— "
+          f"`cost_of` 修过一次「少算三成」,抄一份就会把那个错抄回来")
+    return out
+
+
 def _列(xs, n):
     """列前 n 个,**截断了就明说还有几条**。
 
@@ -140,8 +185,14 @@ def main():
     ap.add_argument("--k", type=int, default=5, help="最多让它给几个(规格 §14.3 是 5)")
     ap.add_argument("--缓存", choices=("开", "关", "都跑"), default="都跑")
     ap.add_argument("--只跑", type=int, default=0, help="只跑前 N 题(先试水用)")
+    ap.add_argument("--重算", action="store_true",
+                    help="不调模型 —— 只给已有结果补上算好的成本和探针哈希")
     a = ap.parse_args()
     os.environ.setdefault("LANXIU_PROVIDER", "claude")
+    if a.重算:
+        os.environ["ROUTER_MODEL"] = a.模型
+        补成本()
+        return 0
 
     import api
     import v1

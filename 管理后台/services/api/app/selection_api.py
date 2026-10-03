@@ -150,6 +150,110 @@ def 校验策略(c, project_id, 配):
                   "**权限、启停和版本仍要实时复核**;"
                   "少复核一样,一条被撤回的授权就会靠缓存继续生效")
     路由 = bool(配.get("开独立路由") or 配.get("independent_router_enabled"))
+    # ── 开独立路由的三道闸(2026-10-03 加)──────────────────────────────
+    #
+    # 规格 §4.2 后面那句话给了**条件**,不是给了一个开关:
+    #
+    # > 筛选语句可由执行任务的 Agent 直接产生,不强制单独调用「路由大模型」。
+    # > **只有实验证明额外分类有价值时,才启用独立路由节点**;
+    # > 它的成本和延迟计入整条任务。
+    #
+    # 在这之前这个字段**一道闸都没有** —— 只是 `bool()` 收下来。
+    #
+    # > **一个没有实验撑着的「已启用」,和一个有实验撑着的,在策略页上长得一模一样。**
+    #
+    # 三道:① 要指一次**已完成**的评测  ② 超时要放得下实测延迟
+    #       ③ 规格 §9.6 那张表要的「模型连接」要给
+    if 路由:
+        证据 = (配.get("路由实验") or 配.get("router_evidence_ref") or "").strip()
+        if not 证据:
+            问.append("开独立路由**必须指一次评测**(`路由实验`)—— "
+                      "规格 §4.2:「**只有实验证明额外分类有价值时,才启用独立路由节点**」。"
+                      "不指的话,「已启用」和「有实验撑着」在策略页上长得一模一样")
+        else:
+            r = c.execute(text("""select status, candidate_ref, baseline_ref
+                                from evaluations
+                               where project_id=:p and id=:i
+                                 and archived_at is null"""),
+                          {"p": project_id, "i": 证据}).mappings().first()
+            if not r:
+                问.append(f"路由实验 {证据} 不存在(或已归档)")
+            elif r["status"] != "已完成":
+                问.append(f"路由实验 {证据} 现在是「{r['status']}」—— "
+                          f"**只有跑完的实验算证据**。"
+                          f"一条排队中的评测指上去,策略看起来一样合法,"
+                          f"而它什么都没证明")
+            elif not (r["baseline_ref"] or {}).get("ref"):
+                问.append(f"路由实验 {证据} **没有基线** —— "
+                          f"没有基线的分数不能当结论:"
+                          f"「路由器 87%」单独放着回答不了「它比现在这套好吗」")
+            else:
+                # ② 超时要放得下实测延迟。**从实验里现读,不写死一个数** ——
+                # 写死的话换了模型或换了目录大小,那个数就过期了,而它不会报错。
+                p100 = c.execute(text("""select max(s.value) from scores s
+                                       join evaluation_items i
+                                         on i.id=s.evaluation_item_id
+                                      where i.evaluation_id=:e
+                                        and s.dimension like '单条延迟%'
+                                        and s.value_known"""),
+                                 {"e": 证据}).scalar()
+                到 = 限.get("selection_timeout_ms")
+                if p100 is not None and 到 is not None and float(到) < float(p100):
+                    问.append(
+                        f"筛选超时配的是 {到}ms,而路由实验里**最慢那一条是 "
+                        f"{int(float(p100))}ms** —— 这样配,最慢那些请求必定超时,"
+                        f"而超时走的是「回退」那条路。"
+                        f"⚠️ **实测过:同一批题不开提示词缓存最慢 4438ms、"
+                        f"开了 2743ms** —— 缓存不只是省钱,它是这个超时预算成立的前提")
+        # ③ 规格 §9.6 那张表:「模型路由 | 默认关闭的选项 | 开启后选**模型连接、
+        #    Prompt 版本与预算**」。连接必须是这个项目里**探过的**那种 ——
+        #    而规格自己的模型表上,haiku-4-5 那一行写着「实际连接未验证」。
+        连 = (配.get("路由模型连接") or 配.get("router_connection_id") or "").strip()
+        if not 连:
+            问.append("开独立路由**必须给模型连接**(`路由模型连接`)—— "
+                      "规格 §9.6:「开启后选模型连接、Prompt 版本与预算」。"
+                      "不给的话它拿什么调模型?而**「没给」和「给了个没探过的」"
+                      "在策略上长得一样**")
+        else:
+            # ⚠️ 查的是 **`model_connections`(模型连接)**,不是
+            # `capability_connections`(工具连接)。闸的第一版查错了表 ——
+            # 规格 §9.6 要的是「模型连接」,而后台这两张表只差一个词。
+            # **外键和查询都建错了表,在列表上完全看不出来。**
+            r2 = c.execute(text("""select status from model_connections
+                                where project_id=:p and id=:i
+                                  and archived_at is null"""),
+                           {"p": project_id, "i": 连}).mappings().first()
+            if not r2:
+                问.append(f"路由模型连接 {连} 不存在(或已归档)—— "
+                          f"⚠️ 它要是一条 **模型连接**(`model_connections`),"
+                          f"不是工具连接")
+            elif r2["status"] != "active":
+                问.append(f"路由模型连接 {连} 现在是「{r2['status']}」,不是 active")
+            else:
+                # ⚠️ **这一条是把下面那句提示兑现。**
+                # 闸的第一版只检查「连接存在」,而提示文案里写着
+                # 「**「没给」和「给了个没探过的」在策略上长得一样**」——
+                # **我写了那句话,却没真的检查「探过没有」**。
+                # > 一条从没被攻击过的「结构性保证」,实际上仍然只是约定。
+                #
+                # 「探过没有」的落点是 `connection_versions.capabilities`——
+                # 契约原话:「探测要落 capabilities:**这个端点到底支持哪些参数**。
+                # 不探就默认全支持,会在真跑时变成一个说不清的 400」。
+                探 = c.execute(text("""select count(*) from connection_versions
+                                     where connection_id=:i
+                                       and capabilities is not null
+                                       and archived_at is null"""),
+                               {"i": 连}).scalar()
+                if not 探:
+                    问.append(
+                        f"路由模型连接 {连} **一个探过的版本都没有**"
+                        f"(`connection_versions.capabilities` 全是空的)—— "
+                        f"而规格自己的模型表上,haiku-4-5 那一行写着「实际连接未验证」。"
+                        f"没探就开路由,表现是**第一次真跑才发现连不上**,"
+                        f"而那时走的是「筛选失败」那条回退路,"
+                        f"**看起来像「这个任务没有可用工具」**。"
+                        f"先跑 `POST /model-connections/{连}/probe`")
+
     # 目录快照:给了就要存在而且就绪(规格 §14.4「只有就绪快照可绑定」)
     快照 = (配.get("目录快照") or 配.get("catalog_snapshot_ref") or "").strip() or None
     if 快照:
@@ -190,6 +294,12 @@ def 校验策略(c, project_id, 配):
         "selection_mode": 模式, "limits": 限, "loading_type": 载,
         "empty_result_action": 空, "catalog_error_action": 错,
         "independent_router_enabled": 路由,
+        "router_evidence_ref": ((配.get("路由实验")
+                                 or 配.get("router_evidence_ref") or "").strip()
+                                or None) if 路由 else None,
+        "router_connection_id": ((配.get("路由模型连接")
+                                  or 配.get("router_connection_id") or "").strip()
+                                 or None) if 路由 else None,
         "candidate_cache_enabled": 缓存,
         "catalog_snapshot_ref": 快照,
         "default_group_version_ref": 组版本,
@@ -280,6 +390,7 @@ def 策略详情(project_id: str, pid: str,
             raise _错(404, "NOT_FOUND", f"没有策略 {pid}", "回策略列表看有哪些")
         版本们 = [dict(r) for r in c.execute(text("""
             select version_no, selection_mode, catalog_snapshot_ref,
+                   router_evidence_ref, router_connection_id,
                    default_group_version_ref, limits, loading_type,
                    empty_result_action, catalog_error_action,
                    independent_router_enabled, candidate_cache_enabled,
@@ -306,6 +417,10 @@ def 策略详情(project_id: str, pid: str,
             "没结果怎么办": v.get("empty_result_action"),
             "目录出错怎么办": v.get("catalog_error_action"),
             "开了独立路由吗": v.get("independent_router_enabled"),
+            # ⚠️ 开了路由就把**证据**一起给出去 —— 一个「已启用」而不说
+            # 靠哪次实验启用的,和一个没有证据的「已启用」长得一模一样
+            "路由实验": v.get("router_evidence_ref"),
+            "路由模型连接": v.get("router_connection_id"),
             "开了候选缓存吗": v.get("candidate_cache_enabled"),
             "发布门槛": v.get("release_criteria"),
             "内容哈希": v.get("content_hash"),
@@ -417,16 +532,19 @@ async def 冻结策略版本(project_id: str, pid: str, request: Request,
              default_group_version_ref, limits, loading_type,
              empty_result_action, catalog_error_action,
              independent_router_enabled, candidate_cache_enabled,
+             router_evidence_ref, router_connection_id,
              release_criteria, content_hash, change_note,
              created_at, created_by, updated_at, revision)
             values (:i,:o,:p,:g,:n,:sm,:cs,:dg, cast(:lm as jsonb),:lt,
-                    :ea,:ce,:ir,:cc, cast(:rc as jsonb), :h,:cn,
+                    :ea,:ce,:ir,:cc,:rev,:rcn, cast(:rc as jsonb), :h,:cn,
                     now(), :by, now(), 1)"""),
                   {"i": vid, "o": p["organization_id"], "p": project_id,
                    "g": pid, "n": 号,
                    "sm": 归一["selection_mode"],
                    "cs": 归一["catalog_snapshot_ref"],
                    "dg": 归一["default_group_version_ref"],
+                   "rev": 归一["router_evidence_ref"],
+                   "rcn": 归一["router_connection_id"],
                    "lm": _json.dumps(归一["limits"], ensure_ascii=False),
                    "lt": 归一["loading_type"],
                    "ea": 归一["empty_result_action"],
