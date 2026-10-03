@@ -4167,5 +4167,53 @@
    }
   ],
   "预期红": "已关闭的商机不许被唤醒"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "往回捞池里塞一条指向已关闭商机的提醒",
+  "sql": [
+   "INSERT INTO opportunity_recall(opp_id,customer_id,spu,matched,quote,created) SELECT o.id,o.customer_id,'x','{}','x','2020-01-01' FROM opportunity o WHERE o.status='已关闭' LIMIT 1"
+  ],
+  "预期红": "回捞出来的都是「搁置等供给」"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "把一条回捞提醒「对上了」的颜色改成新品没有的",
+  "sql": [
+   "UPDATE opportunity_recall SET matched='{\"颜色\": \"紫\"}' WHERE rowid=(SELECT MIN(rowid) FROM opportunity_recall)"
+  ],
+  "预期红": "回捞的新品真的满足它等的东西"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "同一客户同一天再推一条",
+  "sql": [
+   "INSERT INTO opportunity_recall(opp_id,customer_id,spu,matched,quote,created) SELECT opp_id,customer_id,spu,matched,quote,created FROM opportunity_recall LIMIT 1"
+  ],
+  "预期红": "天内只推一次"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "让回捞不看冷却期",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "        if K.冷却中(d(上次) if 上次 else None, 今天):\n            continue\n",
+    "new": ""
+   }
+  ],
+  "预期红": "合成场景:30 天前刚推过的客户不再推"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "让回捞不设单次上限",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "        if len(出) >= K.回捞_单次上限:\n            break\n",
+    "new": ""
+   }
+  ],
+  "预期红": "合成场景:一次最多唤醒 50 条"
  }
 ]

@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS opportunity_need(
   val     TEXT NOT NULL,
   quote   TEXT NOT NULL,              -- 原话:逐字稿里客户说的那一句
   call_id TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS opportunity_recall(
+  opp_id      TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  spu         TEXT NOT NULL,          -- 哪件上新对上了
+  matched     TEXT NOT NULL,          -- 对上了哪几条,JSON {维度: 值}
+  quote       TEXT NOT NULL,          -- 凭什么:当初那句原话
+  created     TEXT NOT NULL);         -- 提醒发出的时间(冷却按它算)
 """
 
 
@@ -90,3 +97,60 @@ def 改状态(c, oid, 到, 时间, 经手人=None, 关闭原因=None, 等什么=
     if 方案:
         c.execute("UPDATE scheme SET opportunity_id=? WHERE id=?", (oid, 方案))
     return True, f"{oid} → {到}"
+
+
+# ── 回捞:搁置等供给 × 上新(四个闸在 oppo_obj,业务 2026-09-20 D6)──────────────
+def 满足吗(c, spu, 维度, 值):
+    """这件商品满不满足「维度 = 值」这条诉求。返回 (满不满足, 依据)。查法和判断器的「现在有货」同一套。"""
+    if 维度 == "颜色":            # 同色系:色系按 color_family
+        r = c.execute("SELECT s.color FROM sku s JOIN color_family f ON f.color=s.color "
+                      "WHERE s.spu=? AND f.family=? LIMIT 1", (spu, 值)).fetchone()
+        return bool(r), (f"有「{r[0]}」(属{值}色系)" if r else "")
+    if 维度 == "形制":
+        r = c.execute("SELECT t.xz FROM product p JOIN pattern t ON p.pattern=t.code WHERE p.spu=? AND t.xz LIKE ?",
+                      (spu, f"%{值}%")).fetchone() or c.execute(
+                      "SELECT xz FROM product_custom WHERE spu=? AND xz LIKE ?", (spu, f"%{值}%")).fetchone()
+        return bool(r), (f"形制「{r[0]}」" if r else "")
+    if 维度 == "场合":
+        r = c.execute("SELECT 1 FROM product_scene ps JOIN sys_code k ON k.code=ps.scene "
+                      "WHERE ps.spu=? AND k.name=? LIMIT 1", (spu, 值)).fetchone()
+        return bool(r), (f"挂着「{值}」场合" if r else "")
+    r = c.execute("SELECT name FROM product WHERE spu=? AND name LIKE ?", (spu, f"%{值}%")).fetchone()
+    return bool(r), (f"商品名里有「{值}」" if r else "")
+
+
+def 回捞(c, 新品们, 今天):
+    """上新了这些商品 → 哪些搁置的商机该唤醒。返回 [提醒],并记进 opportunity_recall。
+
+    四个闸:只捞「搁置等供给」(**已关闭一条都不碰**)· 诉求在 12 个月内 · 同一客户 90 天内只推一次 ·
+    一次最多 50 条(按诉求从新到旧)。「等什么」里的每一条都要对上(全满足才算)。
+    """
+    import datetime as _dt
+    d = lambda x: _dt.date.fromisoformat(str(x)[:10])
+    候选 = c.execute("SELECT id, customer_id, wait_for, created FROM opportunity "
+                     "WHERE status='搁置等供给' ORDER BY created DESC").fetchall()
+    出, 本次客户 = [], set()
+    for oid, cust, wf, created in 候选:
+        if len(出) >= K.回捞_单次上限:
+            break
+        if not K.在时效内(d(created), 今天) or cust in 本次客户:
+            continue
+        上次 = c.execute("SELECT MAX(created) FROM opportunity_recall WHERE customer_id=?", (cust,)).fetchone()[0]
+        if K.冷却中(d(上次) if 上次 else None, 今天):
+            continue
+        等 = json.loads(wf or "{}")
+        for spu in 新品们:
+            结果 = [满足吗(c, spu, k, v) for k, v in 等.items()]
+            if 等 and all(ok for ok, _ in 结果):
+                原 = c.execute("SELECT quote FROM opportunity_need WHERE opp_id=? AND dim=? AND val=? LIMIT 1",
+                               (oid, *next(iter(等.items())))).fetchone()
+                if not 原:
+                    break            # 指不回原话的诉求不许进回捞池
+                c.execute("INSERT INTO opportunity_recall(opp_id, customer_id, spu, matched, quote, created) "
+                          "VALUES(?,?,?,?,?,?)", (oid, cust, spu, json.dumps(等, ensure_ascii=False), 原[0],
+                                                   今天.isoformat()))
+                出.append(dict(商机=oid, 客户=cust, 新品=spu, 对上了=等, 原话=原[0],
+                              依据="；".join(y for _, y in 结果)))
+                本次客户.add(cust)
+                break
+    return 出

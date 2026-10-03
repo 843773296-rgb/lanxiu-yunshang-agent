@@ -30,6 +30,7 @@ def main(db=DB):
     import opportunity as J, opportunity_store as S, oppo_obj as K, oppo as KO
     c = sqlite3.connect(db)
     S.建表(c)
+    c.execute("DELETE FROM opportunity_recall")
     c.execute("DELETE FROM opportunity_need"); c.execute("DELETE FROM opportunity")
     c.execute("UPDATE scheme SET opportunity_id=NULL")
     建 = 0
@@ -62,10 +63,19 @@ def main(db=DB):
                     S.改状态(c, oid, "搁置等供给", created, 等什么={第一[0]: 第一[1]})
         st = c.execute("SELECT status FROM opportunity WHERE id=?", (oid,)).fetchone()[0]
         计[st] = 计.get(st, 0) + 1
+    # ── 模拟一次上新,跑一遍回捞(演示;真实场景由上新动作触发)──
+    # ⚠️ 不按 on_shelf_at 取「最近上架」:那一列没跟着世界平移(最晚停在建库前),取出来是 0 款。
+    # 这里按商品号的稳定哈希挑约 1/8 的在架商品当「这次上新」—— 只为让回捞有东西可捞,不代表真实上新节奏
+    import worldclock
+    今 = worldclock.今天()
+    新品 = [r[0] for r in c.execute("SELECT spu FROM product WHERE status='上架' ORDER BY spu") if _h(r[0]) % 8 == 0]
+    提醒 = S.回捞(c, 新品, 今)
     c.commit()
     n = c.execute("SELECT COUNT(*) FROM opportunity_need").fetchone()[0]
     print(f"  商机 {建} 条(从 {c.execute('SELECT COUNT(*) FROM call_audio').fetchone()[0]} 通通话里判出来),"
           f"诉求 {n} 条(每条带原话);状态:{计}")
+    print(f"  模拟上新 {len(新品)} 款 → 回捞提醒 {len(提醒)} 条:" + "；".join(
+        f"{x['商机']}←{x['新品']}({x['依据']})" for x in 提醒[:3]))
     c.close()
     return 0
 
