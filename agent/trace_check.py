@@ -28,11 +28,55 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SKIP = (".git", ".venv", "__pycache__", "node_modules")
 
+# ── 明写的例外 —— **排掉一个是个决定,漏掉一个是个事故** ─────────────────
+#
+# ⚠️ 每一条都要写清**为什么**,而且理由要是「它不是调用点」,
+# 不是「它让门禁红了」。后一种理由等于把判据改松。
+明写不算调用点 = {
+    "管理后台/tests/e2e/test_exec_mode_flow.py":
+        ("夹具里有一个 `http://127.0.0.1:9/v1/messages`(本机 discard 口,"
+         "用来证明「真实调用失败不退回 mock」)—— 那是**夹具字符串,不是调用点**。"
+         "真调用走 `runtime/真模型.py`,**那里接了记录仪**,"
+         "所以这个文件属于这份文件头说的"
+         "「调用别人封装好的 run() 的文件,不算 call site」那一类。"),
+}
+
 # 真正发起调用的指纹
 CALL = [
     (re.compile(r"^\s*(?:async\s+)?for\s+\w+\s+in\s+query\s*\(", re.M), "调 Agent SDK 的 query()"),
     (re.compile(r"(?<!def )\bquery\s*\(\s*prompt\s*="), "调 Agent SDK 的 query(prompt=...)"),
     (re.compile(r"api\.deepseek\.com|api\.anthropic\.com|/v1/messages"), "直接打模型 API 端点"),
+]
+
+# ── 2026-10-03 放宽:**端点是从库里取的那种调用点,上面那条指纹看不见** ──────
+#
+# 并行会话报「这条判据红在一个测试文件上」,而真相更糟:
+# `管理后台/services/api/app/runtime/真模型.py` 才是真正的调用点,
+# 而它**对这条判据是隐形的** —— 它的端点来自模型连接那张表,
+# 源码里一个 URL 都没有,所以上面那条「有没有端点字面量」的指纹扫不到它。
+# 点中的那个测试文件只是因为夹具里写了一个 `http://127.0.0.1:9/v1/messages`。
+#
+# > **一个发现不了真正调用点、而点中了一个夹具字符串的探测器,
+# > 和一个正确的,在那条红上长得一模一样。**
+#
+# 新指纹:**curl + 凭据定位符 + `-X POST`** —— 也就是
+# 「带着凭据往外发一个 POST」。
+#
+# ⚠️ **放宽前先量过**(这个仓库放宽探测器的规矩):
+#   · 先用宽版(curl + Authorization/x-api-key + POST)量 → 扫出 4 个,
+#     其中 `tools/feishu_publish.py` 是**误报**(发飞书,不是模型)
+#   · 收紧到「凭据定位符」(`secretref` / `SR.解析`)→ **正好 2 个**,
+#     误报消失:`runtime/真模型.py`(已接)和
+#     `connections_api.py`(**真漏** —— 连接探测真发请求而没记,当天补上了)
+#   · 所以这次放宽**没有带进任何欠债**,不需要欠债表
+# ⚠️⚠️ **用前瞻写成「两个条件都满足」,而不是 `"curl".*?secretref`。**
+# 第一版就是后者 —— 它要求凭据**出现在 curl 之后**,而
+# `runtime/真模型.py` 是先 `import secretref` 再用 curl,于是**它仍然是隐形的**。
+# 当时判据是绿的(它扫到了另一个文件),而我要抓的那个根本没进名单。
+# > 一个顺序相关的指纹,在「它扫到了别的文件、结果是绿的」时**看起来完全正常**。
+CALL += [
+    (re.compile(r'(?s)(?=.*"curl")(?=.*(?:secretref|SR\.解析\())'),
+     "带凭据往外发 POST"),
 ]
 # 认「接了记录仪」要同时满足两条:导入了 trace 模块 + 调了 record()。
 # 第一版只认字面的 `trace.record(`,结果把 `import trace as _trace` 的
@@ -89,6 +133,7 @@ def traced(src):
 
 
 def scan():
+    免 = []
     sites, ok, bad = [], [], []
     for root, dirs, files in os.walk(ROOT):
         dirs[:] = [d for d in dirs if d not in SKIP and not d.startswith(".")]
@@ -100,14 +145,25 @@ def scan():
             src = open(p, encoding="utf-8", errors="ignore").read()
             hits = [why for rx, why in CALL if rx.search(src)]
             if not hits: continue
+            # ⚠️ **明写的例外单独列出来,不静默跳过。**
+            # 静默跳过的话,这个清单会慢慢变成一个没人记得的洞 ——
+            # 而「它被排掉了」和「它从来没被扫到」在输出上长得一样。
+            if rel in 明写不算调用点:
+                免.append((rel, hits, 明写不算调用点[rel]))
+                continue
             sites.append((rel, hits))
             (ok if traced(src) else bad).append((rel, hits))
-    return sites, ok, bad
+    return sites, ok, bad, 免
 
 
 if __name__ == "__main__":
     print("记录仪覆盖检查\n" + "=" * 76)
-    sites, ok, bad = scan()
+    sites, ok, bad, 免 = scan()
+    for rel, hits, 为什么 in 免:
+        # ⚠️ 例外**印出来**,而且连理由一起印 —— 不印的话这个清单会变成
+        # 一个没人记得的洞,而「它被排掉了」和「它从来没被扫到」在输出上长得一样。
+        print(f"  ⏸ {rel}  {'、'.join(hits)} —— **明写不算调用点**")
+        print(f"       {为什么}")
     for rel, hits in sites:
         good = any(r == rel for r, _ in ok)
         print(f"  {'✅' if good else '❌'} {rel:28s} {'、'.join(hits)}")

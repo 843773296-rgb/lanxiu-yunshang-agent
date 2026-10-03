@@ -38,6 +38,11 @@ import time
 _这儿 = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(_这儿))
 import secretref as SR  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(_这儿), "knowledge"))
+# ⚠️ **名字叫 `llmtrace` 不叫 `trace`** —— 标准库里有个 `trace`,
+# 它先进 `sys.modules` 的话 `trace.record(...)` 会变成 AttributeError,
+# 而触发条件是**别人的 import 顺序**(见 knowledge/llmtrace.py 的文件头)。
+import llmtrace as trace  # noqa: E402
 
 
 class 调不动(Exception):
@@ -91,6 +96,13 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
                              capture_output=True, text=True, timeout=超时 + 5)
     except Exception as e:
         # ⚠️ **发不出去也是失败,不是「那就跑 mock」。**
+        # ⚠️ **失败也记。** 一次发不出去的调用照样花了时间,
+        # 而不记的话它在日志里**和「从没试过」长得一模一样** ——
+        # 于是「这个端点一直连不上」这种问题在成本报表上是隐形的。
+        trace.record(用途="Prompt 调试运行(真实模型)", 模型=型号,
+                     耗时毫秒=int((time.time() - t0) * 1000), 成功=False,
+                     是mock=False, 细节={"失败": "REQUEST_NOT_SENT",
+                                       "异常": type(e).__name__})
         raise 调不动("REQUEST_NOT_SENT", f"请求发不出去:{type(e).__name__}")
     ms = int((time.time() - t0) * 1000)
 
@@ -106,6 +118,11 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
         # ⚠️ **非 2xx 当场抛。** 这个仓库 10-03 栽过一次反例:
         # 「接口非 2xx 就直写库」—— 而接口返的是「没权限」,
         # 于是一个被拒的动作被当成「接口不支持」绕过去了。
+        trace.record(用途="Prompt 调试运行(真实模型)", 模型=型号,
+                     耗时毫秒=ms, 成功=False, 是mock=False,
+                     细节={"失败": "MODEL_CALL_FAILED", "http状态": 码,
+                          # ⚠️ 只记端点怎么拒的,**不记请求体**(可能带业务原文)
+                          "端点怎么拒的": (错 or "")[:200]})
         raise 调不动("MODEL_CALL_FAILED",
                    f"http {码}(往返 {ms}ms):{(错 or 正文)[:200]}")
     try:
@@ -116,6 +133,28 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
     文 = "".join(b.get("text") or "" for b in (j.get("content") or [])
                  if isinstance(b, dict))
     u = j.get("usage") or {}
+    # ⚠️⚠️ **接记录仪 —— 这是这个仓库栽过的那一处。**
+    # `agent/trace_check.py` 的文件头:从手写循环升到 Agent SDK 之后
+    # **新那条路径一行日志都没记**,而且不报错 —— 文件还在、还有数据,
+    # 只是日期不动了。
+    # > **可观测性不会自动跟着架构走。** 换一代架构,记录仪要重新接一次,
+    # > 而漏了它的表现是「一切正常」。
+    #
+    # ⚠️ 顺带:并行会话 10-03 报过「这条红出在我的测试文件上」,
+    # 而真相更糟 —— **真正的调用点(这个文件)那条判据根本看不见**:
+    # 它靠「源码里有没有模型端点的字面量」发现调用点,
+    # 而这里的端点是从库里取的,源码里一个 URL 都没有。
+    # > 一个发现不了真正调用点、而点中了一个夹具字符串的探测器,
+    # > **和一个正确的,在那条红上长得一模一样**。
+    trace.record(用途="Prompt 调试运行(真实模型)",
+                 模型=j.get("model") or 型号,
+                 用量={"input_tokens": u.get("input_tokens"),
+                      "output_tokens": u.get("output_tokens"),
+                      "cache_read_tokens": u.get("cache_read_input_tokens"),
+                      "cache_write_tokens": u.get("cache_creation_input_tokens")},
+                 耗时毫秒=ms, 成功=True, 是mock=False,
+                 细节={"请求的型号": 型号, "凭据来路": 来路,
+                      "http状态": 码})
     return {
         "text": 文,
         "finish_reason": j.get("stop_reason") or "ok",

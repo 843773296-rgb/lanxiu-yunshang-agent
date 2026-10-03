@@ -74,6 +74,14 @@ def _按路径加载(名, 相对路径):
 AD = _按路径加载("契约_适配器登记", os.path.join("contract", "adapters.py"))
 import connections as CN
 import secretref as SR
+# ⚠️ **探测也是一次真实的模型调用** —— 它的耗时和结果原来是黑的。
+# 2026-10-03 放宽记录仪判据的指纹(curl + 凭据定位符 + POST)之后扫出来的,
+# 而放宽之前这条路径**对那条判据是隐形的**:它靠源码里的端点字面量发现调用点,
+# 而这里的端点是从库里取的。
+# 名字叫 `llmtrace` 不叫 `trace`(标准库同名问题,见 knowledge/llmtrace.py)。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "knowledge"))
+import llmtrace as trace
 import runtime_cfg as CFG
 
 router = APIRouter()
@@ -326,6 +334,11 @@ def _真探(endpoint, secret_ref):
         # ⚠️ **这一档不许用「真实端点」开头。** 第一版写的是
         # 「真实端点(**没探成**…)」—— 而这种情况下**一个请求都没发出去**,
         # 用「真实端点」打头会让人以为它至少试过连。
+        # ⚠️ 这一档**一个请求都没发出去**,所以记「成功=False」而且不记耗时 ——
+        # 不记的话它和「发出去了但失败」在日志里长得一样。
+        trace.record(用途="模型连接探测", 模型="(未发出)", 成功=False,
+                     是mock=False, 细节={"失败": "SECRET_UNRESOLVED",
+                                       "发出请求了吗": False})
         return {"探法": "**没有发出请求**(凭据定位符解析不了)",
                 "探成了吗": False, "发出请求了吗": False, "为什么没成": str(e)}
     cmd = ["curl", "-sS", "-o", "-", "-w", "\n%{http_code}",
@@ -341,6 +354,9 @@ def _真探(endpoint, secret_ref):
         out = subprocess.run(cmd, input=探包, capture_output=True,
                              text=True, timeout=25)
     except Exception as e:
+        trace.record(用途="模型连接探测", 模型="(发不出去)", 成功=False,
+                     是mock=False, 细节={"失败": "REQUEST_NOT_SENT",
+                                       "异常": type(e).__name__})
         return {"探法": "**请求发不出去**(curl 挂了或超时)",
                 "探成了吗": False, "发出请求了吗": False,
                 "为什么没成": type(e).__name__}
@@ -356,6 +372,12 @@ def _真探(endpoint, secret_ref):
         错话 = (j.get("error") or {}).get("message")
     except Exception:
         pass
+    # ⚠️ 探测**不产生生成**(max_tokens=1 + 空 messages 必被拒),所以用量是空的 ——
+    # 而「用量为空」和「没记」是两件事,所以照样要记一条。
+    trace.record(用途="模型连接探测", 模型="claude-haiku-4-5",
+                 耗时毫秒=ms, 成功=码.startswith(("2", "4")), 是mock=False,
+                 细节={"http状态": 码, "凭据来路": 来路,
+                      "⚠️": "这个请求必被参数校验拒掉,不产生生成、不花钱"})
     return {
         "探法": f"真实端点 —— **真发过一个请求**(凭据来路 {来路})",
         "发出请求了吗": True,
