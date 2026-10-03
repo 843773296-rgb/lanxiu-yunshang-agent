@@ -569,13 +569,10 @@ async def 跑一次(project_id: str, request: Request,
     体 = await request.json()
     pid, 变量 = 体.get("prompt_id"), 体.get("变量") or {}
     with 事务() as c:
-        老 = c.execute(text("""select id, status, target_ref from jobs
+        老 = c.execute(text("""select id, status, target_ref, snapshot_hash,
+                                    config_snapshot from jobs
                              where project_id=:p and idempotency_key=:k"""),
                        {"p": project_id, "k": idempotency_key}).mappings().first()
-        if 老:
-            # 相同键相同请求 → **返回原任务**,不新建(§19.1)
-            return _异步(老["id"], (老["target_ref"] or {}).get("run_id"),
-                        project_id, status=老["status"])
         d = c.execute(text("select * from prompt_drafts where project_id=:p and id=:i"),
                       {"p": project_id, "i": pid}).mappings().first()
         if not d:
@@ -591,19 +588,73 @@ async def 跑一次(project_id: str, request: Request,
                       "**调用前拦住,比跑完拿一个缺东西的答案强**",
                       field_errors={k: "必填" for k in 缺})
 
+        # ── 提交时固化那份配置(2026-10-03,外部审阅 4.5)────────────────
+        #
+        # ⚠️ 原来这里只算一个 `snapshot_hash`,而 Worker 执行时按 id
+        # **重查 `prompt_drafts`** —— 于是「提交 A → 排队 → 有人改成 B →
+        # Worker 跑的是 B」,而那次运行在界面上看起来就是 A 的结果。
+        # 而当时这里的注释写着「任务建好之后改 Prompt 不影响它」,**那是假的**。
+        #
+        # **存一个哈希还原不了内容。** 所以存内容本身,
+        # 哈希降级成它的校验和(Worker 执行前比一次)。
+        # ⚠️ **请求摘要和快照是两件事,别用同一个哈希比。**
+        # 请求摘要 = 这次请求的**内容**(配置 + 输入)。幂等拿它比。
+        # 快照 = 请求摘要 + 留痕(从哪条草稿的哪一版固化来的)。Worker 拿它跑。
+        #
+        # 第一版拿整份快照的哈希做幂等比较 —— 于是「同一个键、同一份配置」
+        # 在**草稿 revision 变过**之后也会判成冲突(内容一个字没差,
+        # 只是那个计数器动了)。而 revision **不是请求的一部分**。
+        # > 一个把「别人碰过这条草稿」当成「你提交了另一份请求」的幂等判断,
+        # > 和一个正确的,**在那个 409 上长得一模一样**。
+        请求摘要 = {"messages": d["messages"], "variable_schema": d["variable_schema"],
+                 "params": d["params"], "变量": 变量}
+        快照 = {**请求摘要,
+               # 留痕「这份快照是从哪条草稿的哪一版固化来的」——
+               # 只有 id 的话,事后查不出当时它是第几版。
+               # ⚠️ `prompt_drafts` 上**没有** `draft_revision` 这一列,
+               # 真实列名是 `revision`(查过库才写的 —— 第一版我写的是
+               # `draft_revision`,它会永远是 None,于是
+               # 「固化自第几版」这件事**看起来记了而其实没记**)。
+               "prompt_id": pid, "草稿revision": d.get("revision"),
+               "固化于": "POST /prompt-runs"}
+        哈 = _哈希(快照)            # 完整性校验和 —— Worker 执行前比它
+        摘 = _哈希(请求摘要)         # 幂等比的是这个
+
+        if 老:
+            # ⚠️ **同一个键、不同的请求 → 冲突,不是复用**(审阅 4.5 第 4 条)。
+            # 原来这里无条件返回原任务 —— 于是
+            # 「重发同一次点击」和「拿同一个键提交了另一份配置」走同一条路,
+            # 而后者会**把旧任务的结果当成新请求的执行结果**返回。
+            # > 一个把别的请求的结果还给你的接口,和一个真的做了幂等的,
+            # > **在那次返回上长得一模一样**。
+            老摘 = _哈希({k: (老["config_snapshot"] or {}).get(k)
+                        for k in 请求摘要}) if 老["config_snapshot"] else None
+            if 老摘 and 老摘 != 摘:
+                raise _错(409, "IDEMPOTENCY_CONFLICT",
+                          "这个 Idempotency-Key 已经用过,而这次提交的配置不一样",
+                          "换一个新的 Idempotency-Key —— "
+                          "**同一个键只能对应同一次请求**。"
+                          "继续复用的话,你会拿到上一次那份配置的运行结果,"
+                          "而界面上它看起来就是这一次的结果")
+            # 相同键相同请求 → **返回原任务**,不新建(§19.1)
+            return _异步(老["id"], (老["target_ref"] or {}).get("run_id"),
+                        project_id, status=老["status"])
+
         job, run, trace = _新id("job"), _新id("run"), _新id("tr")
         c.execute(text("""
             insert into jobs (id, organization_id, project_id, type, target_ref, status,
-                attempts, max_attempts, snapshot_hash, idempotency_key,
-                created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,'prompt_run',:t,'排队中',0,3,:sh,:k, now(), :u, now(), 1)
+                attempts, max_attempts, snapshot_hash, config_snapshot,
+                idempotency_key, created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,'prompt_run',:t,'排队中',0,3,:sh,
+                    cast(:cs as jsonb),:k, now(), :u, now(), 1)
         """), {"i": job, "o": me.org_id, "p": project_id,
                "t": json.dumps({"run_id": run, "prompt_id": pid, "变量": 变量},
                                ensure_ascii=False),
-               # 快照哈希:提交时那份配置 —— 任务建好之后改 Prompt 不影响它。
-               # **「我改了配置所以结果不同」和「同一份配置结果不稳」是两回事。**
-               "sh": _哈希({"messages": d["messages"], "变量": d["variable_schema"],
-                          "参数": d["params"], "输入": 变量}),
+               # 快照哈希 = `config_snapshot` 的校验和。Worker 执行前比一次。
+               # **「我改了配置所以结果不同」和「同一份配置结果不稳」是两回事** ——
+               # 而要分开这两件事,光有哈希不够:**得真的跑提交时那一份**。
+               "sh": 哈,
+               "cs": json.dumps(快照, ensure_ascii=False),
                "k": idempotency_key, "u": me.user_id})
         c.execute(text("""
             insert into job_events (id, organization_id, project_id, job_id, seq, kind,

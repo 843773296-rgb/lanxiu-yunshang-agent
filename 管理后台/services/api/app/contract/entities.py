@@ -523,6 +523,20 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "lease_until", "lease_owner", "heartbeat_at", "processed_count",
        "cancel_requested", "cancel_at", "idempotency_key", "external_id",
        "error_code", "error_detail", "snapshot_hash", "next_retry_at",
+       # ⚠️ `config_snapshot` 是 2026-10-03 加的,补的是一句**写在注释里而没兑现**的话。
+       #
+       # 原来只存 `snapshot_hash`,而提交那条接口的注释写着
+       # 「快照哈希:提交时那份配置 —— **任务建好之后改 Prompt 不影响它**」。
+       # 那句话是假的:Worker 执行时按 id **重查 `prompt_drafts`**,
+       # 既不核那个哈希、也拿不到提交时的正文。
+       # 于是「提交 A → 排队 → 有人把草稿改成 B → Worker 跑的是 B」,
+       # 而界面上那次运行看起来就是 A 的结果。
+       #
+       # > **一句声称自己已经做到的注释,比没有注释更糟** —— 它让读代码的人不去核。
+       #
+       # **存一个哈希还原不了内容。** 所以这里存内容本身,
+       # 而 `snapshot_hash` 变成它的校验和(执行前比一次)。
+       "config_snapshot",
        "needs_human_check"],
       ["**数据库事务内写 Job + Outbox**(§18)—— 不许先发队列再写库",
        "lease 保证同一任务不被两个 worker 同时拿走;**重复投递是正常故障场景**(§17.1)",

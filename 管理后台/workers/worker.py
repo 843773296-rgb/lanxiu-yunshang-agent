@@ -86,18 +86,47 @@ def _跑一次prompt(c, job, 打点):
                      "trace_id": 做过[0]})
         return {"trace_id": 做过[0], "幂等命中": True}
 
-    d = c.execute(text("select * from prompt_drafts where project_id=:p and id=:i"),
-                  {"p": job["project_id"], "i": pid}).mappings().first()
-    if not d:
-        # 引用的对象不存在 —— **不重试**,它不会自己出现
-        raise 干不了("NOT_FOUND", {"prompt_id": pid})
+    # ── 跑的是**提交时那份配置**,不是现在的草稿(2026-10-03)─────────────
+    #
+    # ⚠️ 原来这里按 `prompt_id` 重查 `prompt_drafts` —— 于是
+    # 「提交 A → 排队 → 有人把草稿改成 B → Worker 跑的是 B」,
+    # 而那次运行在界面上看起来就是 A 的结果。
+    # (外部审阅 2026-10-03 第 4.5 条;当时提交那一侧的注释还写着
+    #  「任务建好之后改 Prompt 不影响它」—— 那句话是假的。)
+    #
+    # 现在:`jobs.config_snapshot` 是提交时固化的内容,
+    # `snapshot_hash` 是它的校验和。
+    快照 = job.get("config_snapshot")
+    if not 快照:
+        # ⚠️ **明确失败,不许退回现查草稿。**
+        # 退回去的话,这个任务照样跑完、照样出一份结果 ——
+        # 而那份结果和「跑了提交时那一版」在界面上长得一模一样。
+        # > 一次悄悄换了输入的运行,比一次失败的运行难查得多。
+        # 会走到这儿的只有两种:① 加这一列之前建的老任务
+        # ② 提交那条路没存快照(那是 bug)。两种都该停下让人看一眼。
+        raise 干不了("SNAPSHOT_MISSING",
+                   {"prompt_id": pid, "为什么": "这个任务没有 config_snapshot —— "
+                    "要么是 2026-10-03 之前建的老任务,要么提交那一侧没存上。"
+                    "**不退回现查草稿**:那会让这次运行用上和提交时不同的配置,"
+                    "而结果看起来一样"})
 
-    打点("展开模板", {"阶段": "render"})
+    import main as _api                       # 复用 mock 适配器和哈希,不抄第二份
+    真哈 = _api._哈希(快照)
+    if job.get("snapshot_hash") and 真哈 != job["snapshot_hash"]:
+        # 快照内容和登记的校验和不一致 —— 有人动过这一行,或者写入时就不一致。
+        raise 干不了("SNAPSHOT_TAMPERED",
+                   {"登记的": job["snapshot_hash"], "现算的": 真哈,
+                    "为什么": "快照和它的校验和对不上 —— **不猜哪个是对的**"})
+
+    打点("展开模板", {"阶段": "render", "用的是": "提交时的快照",
+                   "快照哈希": job.get("snapshot_hash")})
     if 打点.取消了:
         raise 取消了()
 
-    import main as _api                       # 复用 mock 适配器,不抄第二份
-    r = _api._mock生成(dict(d), t.get("变量") or {})
+    # `_mock生成` 要的是一个「草稿形状」的东西 —— 快照就是按那个形状存的。
+    # ⚠️ 变量取**快照里的**,不取 `target_ref` 里的:两处都有的话
+    # 它们可能不一致,而「用了哪一份」在结果上看不出来。
+    r = _api._mock生成(dict(快照), 快照.get("变量") or t.get("变量") or {})
 
     打点("调模型", {"阶段": "generate", "execution_mode": r["execution_mode"]})
     if 打点.取消了:

@@ -180,7 +180,15 @@ def 取一个(conn, 我是谁, 类型=None, 项目=None, 能处理的类型们=N
           from 候选 c
          where j.project_id = c.project_id and j.id = c.id
         returning j.id, j.project_id, j.organization_id, j.type, j.target_ref,
-                  j.attempts, j.max_attempts, j.snapshot_hash, j.stage
+                  j.attempts, j.max_attempts, j.snapshot_hash, j.stage,
+                  -- ⚠️ `config_snapshot` 是 2026-10-03 加的,**而这一处差点漏掉**。
+                  -- 它是提交时固化的那份配置,Worker 就是靠它跑「提交时那一版」。
+                  -- 漏在这儿的后果:列加了、Worker 的读取也写了,
+                  -- 而 Worker 永远拿到 NULL → 每个任务都报 `SNAPSHOT_MISSING`。
+                  -- > **「这一列存在」和「这条路径拿得到它」是两件事。**
+                  -- (逐列点名是有意的 —— 它防的是「有人加一列就被带出去」;
+                  --  代价就是每次加列都得有人想起这一处。)
+                  j.config_snapshot
     """), 参).mappings().first()
     return dict(r) if r else None
 
