@@ -4188,6 +4188,9 @@ def channel_compare(include_sim=False):
             "绑的活动": sorted({x["activity"] or "(无)" for x in os_}),
         })
         能, 为什么 = _ch.可比吗(名)
+        归, 依据 = _ch.归属(名)
+        if 归:
+            d["获客来源归属"] = f"{归} —— {依据}"
         if 能: 渠道[名] = d
         else:
             d["⚠️ 这不是一个渠道"] = 为什么
