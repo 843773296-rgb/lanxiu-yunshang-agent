@@ -150,7 +150,18 @@ def 读留出集():
         "agent_tool_eval", os.path.join(HERE, "tool_eval.py"))
     TE = importlib.util.module_from_spec(_s)
     _s.loader.exec_module(TE)
-    A = [(c[0], c[1], list(c[2])) for c in TE.CASES if c[2]]
+    # ⚠️ **带 `need` 的和不带的都要跑。**
+    # 第一版写的是 `if c[2]`(只要带 need 的 22 题)—— 理由是「没有真值量不了召回」,
+    # 那对**第一层**成立。但第二层(真跑模型、比答对数)能量全部 24 题:
+    # 内容判据不需要工具真值。
+    #
+    # 而漏掉的恰恰是最该量的两道:T16「客户上周下的那单到哪一步了」和
+    # T24「给客户出份报价单」—— 它们的真值是**「不要求调工具」**,
+    # 也就是「**筛选器给错了工具会不会害它答错**」。
+    #
+    # > 两个脚本对「这套题有几道」理解不一致 —— 而它们都对:
+    # > 探针只能量带真值的召回,第二层能量全部。**所以这里跑全,召回那一栏按 need 为空跳过。**
+    A = [(c[0], c[1], list(c[2])) for c in TE.CASES]
     B路 = os.path.join(HERE, "..", "agentsite", "evals", "tool_routing.json")
     d = json.load(open(B路, encoding="utf-8"))
     B = [(f"R{c['id']}", c["prompt"], [e["工具"] for e in c["期望"]])
@@ -232,11 +243,14 @@ def main():
             文 = "".join(b.get("text", "") for b in (r.get("content") or [])
                          if b.get("type") == "text")
             给的, 编的 = 解析工具名(文, 池)
-            过 = bool(set(给的) & set(need))
+            # ⚠️ `need` 为空的题(T16/T24)**召回那一栏判不了,不是判错** ——
+            # 它们的真值是「不要求调工具」,而「给了几个」本身不构成对错。
+            # 写成 False 会让召回率凭空掉两道。
+            过 = (None if not need else bool(set(给的) & set(need)))
             u = r.get("usage") or {}
             行.append(dict(题=tid, 集=集, 过=过, 给的=给的, 编的=编的,
                            ms=ms, usage=u))
-            print(f"  {集}{tid:5s} {'✅' if 过 else '❌'} {ms:5d}ms  "
+            print(f"  {集}{tid:5s} {'⏸' if 过 is None else ('✅' if 过 else '❌')} {ms:5d}ms  "
                   f"给 {len(给的)} 个{('(编了'+str(len(编的))+'个)') if 编的 else ''}  "
                   f"{_列(给的, 3)}"
                   f"{'' if 过 else '  need=' + _列(need, 2)}")
@@ -246,7 +260,8 @@ def main():
     for 缓, 行 in 汇总.items():
         好 = [x for x in 行 if not x.get("挂了")]
         if not 好: continue
-        过 = sum(1 for x in 好 if x["过"])
+        判得了 = [x for x in 好 if x["过"] is not None]
+        过 = sum(1 for x in 判得了 if x["过"])
         编 = sum(len(x.get("编的") or []) for x in 好)
         ms = sorted(x["ms"] for x in 好)
         入 = sum((x["usage"].get("input_tokens") or 0) for x in 好)
@@ -254,7 +269,9 @@ def main():
         读缓 = sum((x["usage"].get("cache_read_input_tokens") or 0) for x in 好)
         写缓 = sum((x["usage"].get("cache_creation_input_tokens") or 0) for x in 好)
         print(f"\n【缓存{缓}】{len(好)} 题")
-        print(f"  召回(至少命中一个 need):{过}/{len(好)} = {100*过//len(好)}%")
+        print(f"  召回(至少命中一个 need):{过}/{len(判得了)} "
+              f"= {100*过//max(len(判得了),1)}%"
+              f"   ⏸ 另 {len(好)-len(判得了)} 题 need 为空,**召回判不了**(不是判错)")
         print(f"  延迟:中位 {ms[len(ms)//2]}ms · 最慢 {ms[-1]}ms")
         print(f"  token/条:入 {入//len(好)} · 出 {出//len(好)}"
               f" · 读缓存 {读缓//len(好)} · 写缓存 {写缓//len(好)}")
@@ -263,9 +280,21 @@ def main():
                   f"一个凭空捏的工具名和一个真工具在 JSON 里长得一样;"
                   f"后台对未注册的工具名一律拒绝(§9.4),所以这些会在执行时被拦 ——"
                   f"**而拦下来的表现是「这个任务没有可用工具」**")
+    # ⚠️ **只有一条写文件的路。**
+    # 第一版主程序自己 `json.dump(汇总, ...)`,写的是裸的 `{缓存档: 行}`;
+    # 而后来加的 `--重算` 写的是 `{探针版本, 模型, 配置}` ——
+    # **两处写同一个文件,写出两种形状**,而我加 `--重算` 时只改了那一条路。
+    #
+    # > 一个少了「探针版本」的结果文件,和一个盖了章的,**在目录里长得一模一样** ——
+    # > 而下游的哈希核对闸会报「没盖章」,看起来像文件坏了。
+    #
+    # 更糟的是它**悄悄丢了成本**:`成本USD` 是 `--重算` 才算的。
+    # 所以这里先按裸形状落一次,再走 `补成本()` 那条唯一的路盖章 + 算钱。
     out = os.path.join(HERE, "..", ".feynman", "router-probe.json")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     json.dump(汇总, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    os.environ["ROUTER_MODEL"] = a.模型
+    补成本(out)          # ← 盖探针版本 + 算每条成本,和 `--重算` 同一条路
     print(f"\n明细 → {os.path.relpath(out, os.path.join(HERE, '..'))}")
     print("⚠️ **成本一律用 `sdk.cost_of()` 自己算** —— "
           "Agent SDK 返回的 total_cost_usd 跨供应商时是错的(实测差过 24 倍、135 倍)。"

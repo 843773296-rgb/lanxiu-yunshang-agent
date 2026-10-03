@@ -205,11 +205,21 @@ def 收一份资料(c, *, 组织, 项目, 知识库id, 上传, 谁, 文档id=Non
     for s in 切["片段们"]:
         c.execute(text("""insert into chunks
             (id, organization_id, project_id, document_version_id, section_path,
+             section_titles,
              ordinal, text, text_hash, token_count, chunker_version, parser_version,
              created_at, created_by, revision)
-            values (:i,:o,:p,:v,:sp,:ord,:t,:th,:tk,:cv,:pv, now(), :by, 1)"""),
+            values (:i,:o,:p,:v,:sp, cast(:st as jsonb),
+                    :ord,:t,:th,:tk,:cv,:pv, now(), :by, 1)"""),
                   {"i": _新("ch"), "o": 组织, "p": 项目, "v": 版本id,
-                   "sp": s["section_path"], "ord": s["ordinal"], "t": s["text"],
+                   "sp": s["section_path"],
+                   # ⚠️ **列表那一份也落库。** `section_path` 是用 ` / ` 拼的,
+                   # 而全库 29 个标题名字里带 ` / ` —— 拼起来就拆不回去
+                   # (802 个片段里 44 个,5.5%)。
+                   # > 路径的无歧义表示是列表,不是用分隔符拼起来的字符串。
+                   # `section_path` 一个字不改(对外引用和显示都用它);
+                   # **要按级别做事的一律读这一列**。
+                   "st": json.dumps(s.get("节标题们") or [], ensure_ascii=False),
+                   "ord": s["ordinal"], "t": s["text"],
                    "th": s["text_hash"], "tk": s["token_count"],
                    # ⚠️ 切它的版本记在行上 —— 索引指纹要用它。
                    # 从代码常量读会隐含「库里的片段是当前版本切的」,而它失效时不报错。
