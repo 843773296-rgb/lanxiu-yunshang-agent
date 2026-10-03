@@ -4215,5 +4215,77 @@
    }
   ],
   "预期红": "合成场景:一次最多唤醒 50 条"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "原话改成在全文里找",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "    客户 = _规整(KO.客户说的(逐字稿))\n",
+    "new": "    客户 = _规整(逐字稿)\n"
+   }
+  ],
+  "预期红": "原话是顾问说的 —— 顾问介绍商品一定会提颜色"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "去掉「已下架」那一支",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "                elif r[0] != \"上架\":\n",
+    "new": "                elif False:\n"
+   }
+  ],
+  "预期红": "推了一件已下架的"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "去掉方案 / 订单的归属核对",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "                elif r[0] != 客户:\n",
+    "new": "                elif False:\n"
+   }
+  ],
+  "预期红": "推了别的客户的方案"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "正文编号不扫了",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "        坏 += 查正文编号(c, 答 or \"\")\n",
+    "new": ""
+   }
+  ],
+  "预期红": "JSON 干净,正文里编了一个商品号"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "成数只认阿拉伯数字",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "|[一二三四五六七八九十\\d]\\s*成\"",
+    "new": "|\\d\\s*成\""
+   }
+  ],
+  "预期红": "中文数字的成数 —— 只认阿拉伯数字就漏"
+ },
+ {
+  "script": "agent/oppo_eval_judgetest.py",
+  "改坏": "比原话前不抹全半角",
+  "file": [
+   {
+    "path": "agent/oppo_eval.py",
+    "old": "    return s.translate(str.maketrans(全, \",.!?;:()\")).replace(\"……\", \"…\")\n",
+    "new": "    return s\n"
+   }
+  ],
+  "预期红": "原话标点全半角不同、多了空格 —— 不该挂"
  }
 ]

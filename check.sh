@@ -79,6 +79,7 @@ run "促活判断 · 逐例标真值 + 覆盖报告(没有样本不叫通过)" p
 run "简体闸 · 业务数据一律简体(外来文本进来前先查)" python3 backend/simplified.py
 run "商机判断 · 24 条逐字稿(造的对话·纯规则版·只许升不许降)" python3 backend/opportunity_check.py
 run "商机对象 · 指回通话、和方案互指、两种终态分得开、诉求指得回原话" python3 backend/opportunity_obj_check.py
+run "商机研判判分器 · 24 条对照(原话只认客户说的、指向真在库里且归这位客户、不给成单概率)" python3 agent/oppo_eval_judgetest.py
 run "排班 · 五种状态逐例标真值(没排班和休息长得一样)" python3 backend/roster_check.py
 run "客户归属 · 「有顾问」≠「有人管」(只查不改)" python3 backend/ownership_check.py
 run "成交归因 · 收入分成必须=100,影响力分成可以超(规则相反)" python3 backend/credit_check.py
