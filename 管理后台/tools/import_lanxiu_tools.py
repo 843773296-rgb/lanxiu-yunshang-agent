@@ -135,6 +135,18 @@ def 包一版(名, 说明, 入参, 服务, 档, 为什么):
     """
     import dsl as DSL
     要 = DSL.找副作用(档)          # 认不出就抛,不兜底
+    # ── §8.2「模型说明」那三样(2026-10-03)────────────────────────
+    #
+    # ⚠️ **真值在澜绣那边**(`backend/工具模型说明.json`,业务 10-03 拍的),
+    # 后台这份是镜像,§8.2 那个页签只读。
+    #
+    # ⚠️⚠️ **只带文件里真有的键,不替任何工具补空值。**
+    # 给一个 `[]` 的话,「还没人填」和「有人看过、确认不需要」在库里长得一样 ——
+    # 而那个页签的全部意义就是让人把前者变成后者,
+    # 混掉之后「还有几个工具没人填过」这个数**永远填不完**,
+    # 而它是衡量这件事做完没做完的唯一指标。
+    # 所以这里:**没有就是 NULL(没说过)**。
+    说明三样 = _说明模块().查(名)
     v = dict(
         model_description=说明,
         input_schema=入参,
@@ -170,7 +182,40 @@ def 包一版(名, 说明, 入参, 服务, 档, 为什么):
         # 而反过来不声明就默认可轮询也会放过真的失控。
         pollable=(档 == DSL.只读),
     )
+    # 只放真有的键 —— **缺的保持缺**(NULL = 没说过)
+    for 后台键, 中文键 in (("model_aliases", "别名"),
+                        ("when_to_use", "适用不适用"),
+                        ("task_examples", "任务示例")):
+        if 中文键 in 说明三样:
+            v[后台键] = 说明三样[中文键]
+    # ⚠️ 走后台那一道闸 —— **导入不许绕过界面上过不了的检查**。
+    # 这个脚本直写库(不经接口),于是接口上那道
+    # `capabilities._查模型说明` 默认不会跑。
+    # 不跑的后果很具体:一份「只写了适用、没写不适用」的数据
+    # 从界面进不来,**而从导入可以** —— 而两条路进来的数据在库里长得一样。
+    # > 一道只有一条路会经过的闸,等于半道闸。
+    问 = _闸模块()._查模型说明(定义={"name": 名}, 草稿=v)
+    if 问:
+        raise SystemExit(f"❌ `{名}` 的模型说明过不了后台的闸:\n   "
+                         + "\n   ".join(问)
+                         + f"\n   改 backend/工具模型说明.json 里 `{名}` 那一条。")
     return v
+
+
+def _说明模块():
+    """澜绣侧那份真值。**不在这边抄一份** —— 抄的那份会和澜绣漂,
+    而漂开时后台显示的说明和模型真收到的不是同一句。"""
+    import importlib, os, sys
+    根 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    侧 = os.path.join(根, "backend")
+    if 侧 not in sys.path:
+        sys.path.insert(0, 侧)
+    return importlib.import_module("工具模型说明")
+
+
+def _闸模块():
+    import importlib
+    return importlib.import_module("capabilities")
 
 
 def 哈希(定义, 版本):
@@ -281,12 +326,18 @@ def 写库(项目, 计划):
                  allowed_scopes, confirmation_policy, idempotency_strategy,
                  external_status_lookup, timeout_seconds, retry_policy, redaction,
                  secret_ref, connection_id, server_bound_arguments, pollable,
+                 model_aliases, when_to_use, task_examples,
                  content_hash, created_at, created_by, updated_at, revision)
                 values (:i,:o,:p,:d,:v,:md, cast(:ins as jsonb), cast(:outs as jsonb),
                         :se, cast(:sc as jsonb), cast(:cp as jsonb),
                         cast(:idem as jsonb), cast(:esl as jsonb), :to,
                         cast(:rp as jsonb), cast(:rd as jsonb), :sr, :ci,
-                        cast(:sba as jsonb), :po, :h, now(),'lanxiu-import',
+                        cast(:sba as jsonb), :po,
+                        -- 三个都是 JSONB。**None 要留成 NULL**:
+                        -- `json.dumps(None)` 会写进一个 json 的 `null`,
+                        -- 而那是「说过:没有」,不是「没说过」。
+                        cast(:al as jsonb), cast(:wt as jsonb), cast(:te as jsonb),
+                        :h, now(),'lanxiu-import',
                         now(), 1)"""),
                       {"i": "tv_" + uuid.uuid4().hex[:16], "o": org, "p": 项目,
                        "d": did, "v": (有 or 0) + 1,
@@ -307,7 +358,18 @@ def 写库(项目, 计划):
                        "sr": None, "ci": None,
                        "sba": json.dumps(版本["server_bound_arguments"],
                                          ensure_ascii=False),
-                       "po": 版本["pollable"], "h": h})
+                       "po": 版本["pollable"],
+                       # ⚠️ `版本.get(...)` 而不是 `版本[...]` —— 三个键
+                       # **只在文件里真有的时候才存在**(见 `包一版` 那段)。
+                       # `is not None` 那个判断是为了让 `[]` 存成空的一串、
+                       # 而不是 NULL:前者是「确认不需要」,后者是「没说过」。
+                       "al": (json.dumps(版本["model_aliases"], ensure_ascii=False)
+                              if 版本.get("model_aliases") is not None else None),
+                       "wt": (json.dumps(版本["when_to_use"], ensure_ascii=False)
+                              if 版本.get("when_to_use") is not None else None),
+                       "te": (json.dumps(版本["task_examples"], ensure_ascii=False)
+                              if 版本.get("task_examples") is not None else None),
+                       "h": h})
             出新版 += 1
     return (f"✅ 新增 {新增} 个工具 · 出新版 {出新版} 条 · 没动 {没动} 条\n"
             f"\n  ⚠️ 盲区:**单向**。在后台改这些工具**不会回到 api.py**,"
