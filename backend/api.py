@@ -2422,7 +2422,7 @@ def reassign_task(task_id, assignee, reason):
     return r
 
 
-def finish_task(task_id, summary):
+def finish_task(task_id, summary, conclusion=None):
     """**把任务标记完成**(真的写进去)。日程总结必填。
 
     **只能完成派给自己的** —— 谁做的谁点完成,别人代点等于台账上写了
@@ -2432,7 +2432,7 @@ def finish_task(task_id, summary):
     import tasks
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁 —— 请先登录")
-    r = tasks.finish_task(dict(id=task_id, summary=summary), me)
+    r = tasks.finish_task(dict(id=task_id, summary=summary, conclusion=conclusion), me)
     if r.get("ok"): _agent_log(me, "FINISH", r.get("reason", ""))
     return r
 
@@ -4648,7 +4648,8 @@ SHOP_SCHEMAS=[
  {"name":"finish_task","description":"**把任务标记完成**(真的写进去)。日程总结必填。**只能完成派给自己的** —— 别人代点等于台账上写了一件没发生的事。需要现场照的类型要先在页面上传照片,这里传不了图。",
   "input_schema":{"type":"object","properties":{
     "task_id":{"type":"string","description":"任务号"},
-    "summary":{"type":"string","description":"日程总结:做了什么、结果如何"}},
+    "summary":{"type":"string","description":"日程总结:做了什么、结果如何"},
+    "conclusion":{"type":"string","description":"只有「商机提醒」要填:从这条任务的「可选结论」里选一个(如「满足了」「客户不要了」),商机按它走。别的任务不用填"}},
    "required":["task_id","summary"]}},
  {"name":"get_scheme","description":"查方案。**方案是「一件事」的单位** —— 客户这次想做的这件衣服(形制/面料/工艺/颜色/配饰/版型都挂在它上面),有自己的生命周期:草稿 → 已保存 → 已锁定 → 已失效。三种问法:给 scheme_id 返回单条明细(并附上该客户的其他方案);给 customer(客户号或姓名)列这个客户的全部方案;给 status 按状态筛。⚠️ **同一个客户并行多条方案是常态** —— 客户或顾问说「那个方案」「刚才那套」时,**先调这个工具看清楚有几条,不要默认只有一条就往下推进**。推进(报价、下单、排产)之前必须确认说的是哪一个方案号。",
   "input_schema":{"type":"object","properties":{

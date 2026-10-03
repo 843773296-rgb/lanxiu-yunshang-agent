@@ -30,6 +30,9 @@ def main(db=DB):
     import opportunity as J, opportunity_store as S, oppo_obj as K, oppo as KO
     c = sqlite3.connect(db)
     S.建表(c)
+    # 上次铺出来的商机提醒任务也清掉(任务在 schedule 里,靠 opportunity_task 认)—— 不清的话重跑一次多派一遍
+    c.execute("DELETE FROM schedule WHERE id IN (SELECT schedule_id FROM opportunity_task)")
+    c.execute("DELETE FROM opportunity_task"); c.execute("DELETE FROM customer_pref")
     c.execute("DELETE FROM opportunity_recall")
     c.execute("DELETE FROM opportunity_need"); c.execute("DELETE FROM opportunity")
     c.execute("UPDATE scheme SET opportunity_id=NULL")
@@ -69,13 +72,16 @@ def main(db=DB):
     import worldclock
     今 = worldclock.今天()
     新品 = [r[0] for r in c.execute("SELECT spu FROM product WHERE status='上架' ORDER BY spu") if _h(r[0]) % 8 == 0]
-    提醒 = S.回捞(c, 新品, 今)
+    提醒 = S.回捞(c, 新品, 今)            # 每条提醒同时进归属顾问的待办(商机提醒任务)
+    满足 = S.满足扫描(c, 今)
+    派数 = c.execute("SELECT COUNT(*) FROM opportunity_task").fetchone()[0]
     c.commit()
     n = c.execute("SELECT COUNT(*) FROM opportunity_need").fetchone()[0]
     print(f"  商机 {建} 条(从 {c.execute('SELECT COUNT(*) FROM call_audio').fetchone()[0]} 通通话里判出来),"
           f"诉求 {n} 条(每条带原话);状态:{计}")
     print(f"  模拟上新 {len(新品)} 款 → 回捞提醒 {len(提醒)} 条:" + "；".join(
-        f"{x['商机']}←{x['新品']}({x['依据']})" for x in 提醒[:3]))
+        f"{x['商机']}←{x['新品']}({x['依据']})" for x in 提醒[:3])
+          + f";派进顾问待办 {派数} 条(满足确认 {len(满足)})")
     c.close()
     return 0
 

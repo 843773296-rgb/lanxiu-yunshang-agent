@@ -114,7 +114,8 @@ def main():
     print("\n\033[1m▸ 任务类型 · 两族的规则不一样\033[0m")
     print("  " + "=" * 76)
     import tasktypes as tt
-    check("客户相关类型数", str(len(tt.CUSTOMER_TYPES)), "4")
+    # 10-03 加了「商机提醒」(系统按商机派,挂客户号)→ 5
+    check("客户相关类型数", str(len(tt.CUSTOMER_TYPES)), "5")
     check("店铺运营类型数", str(len(tt.OPS_TYPES)), "5")
     for t in tt.CUSTOMER_TYPES:
         if tt.ref_of(t) != "customer":

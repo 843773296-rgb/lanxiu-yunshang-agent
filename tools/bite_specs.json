@@ -1598,8 +1598,8 @@
   "file": [
    {
     "path": "backend/tasktypes.py",
-    "old": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\"),\n    \"企业任务\": (\"接待任务\", \"团建培训\", \"日常运维\"),",
-    "new": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"接待任务\"),\n    \"企业任务\": (\"团建培训\", \"日常运维\"),"
+    "old": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"商机提醒\"),\n    \"企业任务\": (\"接待任务\", \"团建培训\", \"日常运维\"),",
+    "new": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"商机提醒\", \"接待任务\"),\n    \"企业任务\": (\"团建培训\", \"日常运维\"),"
    }
   ],
   "预期红": "接待任务:展示归企业、派单归客户"
@@ -4563,5 +4563,53 @@
    }
   ],
   "预期红": "默认同意那句话里不带日期"
+ },
+ {
+  "script": "backend/opportunity_task_check.py",
+  "改坏": "满足扫描直接把商机改成已成交(不等顾问)",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "            if t:\n                出.append(t)\n            break          # 一条商机一次只问一张单",
+    "new": "            if t:\n                出.append(t)\n                改状态(c, oid, \"已成交\", str(今天))\n            break          # 一条商机一次只问一张单"
+   }
+  ],
+  "预期红": "满足扫描只派提醒,商机状态不动"
+ },
+ {
+  "script": "backend/opportunity_task_check.py",
+  "改坏": "结论不核清单",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "    if 结论 not in 表:\n        return False, f\"「{kind}」要选一个结论:{' / '.join(表)}\"\n    去 = 表[结论]",
+    "new": "    去 = 表.get(结论)"
+   }
+  ],
+  "预期红": "选了不属于这种提醒的结论 → 不收"
+ },
+ {
+  "script": "backend/opportunity_task_check.py",
+  "改坏": "回捞不看偏好作没作废",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "\"FROM customer_pref WHERE retired_at IS NULL GROUP BY customer_id, opp_id",
+    "new": "\"FROM customer_pref GROUP BY customer_id, opp_id"
+   }
+  ],
+  "预期红": "客户说不要了的偏好,再上新也不推"
+ },
+ {
+  "script": "backend/opportunity_task_check.py",
+  "改坏": "完成商机提醒不要结论",
+  "file": [
+   {
+    "path": "backend/tasks.py",
+    "old": "            if 选 is not None:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "不选结论完成不了"
  }
 ]

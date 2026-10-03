@@ -91,6 +91,10 @@ h2{font-size:15px;margin:26px 0 12px;color:var(--dim);font-weight:600}
   <div id="dlg">
     <h3 id="dtitle">做完了</h3>
     <p class="sub" id="dsub"></p>
+    <div id="dconc" style="display:none;margin-bottom:12px">
+      <label for="dconcsel">结论（必选）—— 商机按它走</label>
+      <select id="dconcsel" style="width:100%;padding:8px;font-size:14px"></select>
+    </div>
     <label for="dsum">日程总结（必填）</label>
     <textarea id="dsum" placeholder="做了什么、结果如何、客户下一步要什么"></textarea>
     <p id="need"></p>
@@ -199,6 +203,11 @@ function openFin(r){
   $("#need").className = t.needs_photo ? "on" : "";
   $("#need").textContent = t.needs_photo
     ? "这个类型完成时必须传现场照 —— 事情本身留下了可看的痕迹,拍一张再提交。" : "";
+  // 商机提醒:结论的可选项来自后端(每种提醒只认它自己那几个),前端不自己列
+  const opts=r.可选结论||[];
+  $("#dconc").style.display = opts.length ? "" : "none";
+  $("#dconcsel").innerHTML = `<option value="">请选择…</option>` +
+    opts.map(o=>`<option>${o.replace(/[<>&"]/g,"")}</option>`).join("");
   $("#mask").className="on"; $("#dsum").focus();
 }
 $("#cancel").onclick=()=>{$("#mask").className=""};
@@ -229,7 +238,8 @@ $("#ok").onclick=async()=>{
   $("#ok").disabled=true; $("#ok").textContent="提交中…";
   const d=await(await fetch("/api/task-finish",{method:"POST",
     headers:{"content-type":"application/json"},
-    body:JSON.stringify({id:CUR.id, summary:$("#dsum").value.trim(), files:SPICS})})).json();
+    body:JSON.stringify({id:CUR.id, summary:$("#dsum").value.trim(), files:SPICS,
+                         conclusion:$("#dconcsel").value||undefined})})).json();
   $("#ok").disabled=false; $("#ok").textContent="提交";
   if(!d.ok){
     $("#derr").className="on";

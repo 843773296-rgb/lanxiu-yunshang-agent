@@ -494,6 +494,11 @@ def dispatch_batch(items, me):
                        f"{sum(1 for m in made if m['采纳建议'])} 条采纳了 agent 的建议。")
 
 
+def tt_norm(t):
+    import tasktypes as _tt
+    return _tt.norm(t)
+
+
 def my_tasks(me, status=None):
     """看任务。范围由 visible_scope 一处判定 —— **顾问只看得到派给自己的**。
 
@@ -523,6 +528,17 @@ def my_tasks(me, status=None):
                             else f"工号 {src}(员工表里查不到这个人)")
     # 「逾期」按天算、用演示世界的今天,由服务端给 —— 不让页面用设备时钟自己算
     # (业务 2026-09-22 确认,附录 A-169:和月度复盘同一个口径;今天到期的不算逾期)
+    try:
+        import opportunity_store as _os
+        with sqlite3.connect(DB) as c:
+            for r in rs:
+                if tt_norm(r.get("type")) == "商机提醒":
+                    选 = _os.可选结论(c, r["id"]) if c.execute(
+                        "SELECT 1 FROM sqlite_master WHERE name='opportunity_task'").fetchone() else None
+                    if 选:
+                        r["可选结论"] = 选
+    except Exception:
+        pass
     from seed import TODAY
     for r in rs:
         r["逾期"] = r.get("status") == "有效" and bool(r.get("end_ts")) and r["end_ts"][:10] < TODAY
@@ -652,7 +668,19 @@ def finish_task(d, me):
                     reason=f"「{tt.norm(t.get('type'))}」完成时要传现场照"
                            + (f";这次这 {len(msgs)} 张没存下:{msgs[0]}" if msgs else ""))
 
+    # 商机提醒:**完成时必须选结论**,商机按结论走(用户 10-03 定:规则判 + 顾问点头 —— 这一下就是点头)。
+    # 结论和改任务状态在**同一个事务**里:商机改了而任务没完结(或反过来)都会让两边对不上
+    结论话 = None
     with sqlite3.connect(DB) as c:
+        if tt.norm(t.get("type")) == "商机提醒":
+            import opportunity_store as _os
+            _os.建表(c)
+            选 = _os.可选结论(c, sid)
+            if 选 is not None:
+                ok3, 结论话 = _os.按结论处理(c, sid, (d.get("conclusion") or "").strip(), me["no"], summary, _wnow())
+                if not ok3:
+                    c.rollback()
+                    return dict(ok=False, code="NEED_CONCLUSION", reason=结论话, 可选结论=选)
         c.execute("UPDATE schedule SET status='完结',summary=? WHERE id=?", (summary, sid))
     log_op(me["name"], "schedule", sid, "有效", "完结", True, "FINISH",
            f"{me['name']} 完成[{tt.norm(t.get('type'))}]:{summary[:40]}"
@@ -684,8 +712,8 @@ def finish_task(d, me):
                    f"{me['name']} 完成 {sid} 后,自动收尾对应的预约 {closed} —— "
                    f"客户已经见过面,这条不该还在待办里",
                    {"role": me["role"], "by_task": sid, "推出来的": True})
-    return _nz(dict(ok=True, code="FINISH", 总结附件=have, 顺带收尾=closed,
-                    reason=f"任务 {sid} 已完结" + (f",总结附件 {have} 张" if have else "")
+    return _nz(dict(ok=True, code="FINISH", 总结附件=have, 顺带收尾=closed, 商机=结论话,
+                    reason=f"任务 {sid} 已完结" + (f";{结论话}" if 结论话 else "") + (f",总结附件 {have} 张" if have else "")
                            + (f";顺带把预约 {closed} 也收了(客户已经见过面)" if closed else "")
                            + (f"。有 {len(msgs)} 张没存下:{msgs[0]}" if msgs else "")))
 
