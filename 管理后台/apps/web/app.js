@@ -1765,6 +1765,89 @@ async function 画工具详情(tid) {
         <b>于是预算在它身上先花掉</b> —— 而那不是它该占的位置。
         <br>⚠️ <b>「添加配套」「检查依赖」两个按钮还没做</b> ——
         配套关系现在只能在<b>冻结工具组版本</b>时给（那里有成环检查）。</div>`;
+    // ── 规格 §8.2「模型说明」页签(2026-10-03)─────────────────────
+    //
+    // ⚠️⚠️ **三态从接口拿(`模型说明填了吗`),不在这里自己判。**
+    // 这一页上 `null` 和 `[]` 是**两件不同的事**:
+    //   · `null` = 没人说过      → 「待补」(这个页签要消灭的状态)
+    //   · `[]`   = 有人看过、确认不需要 → 「已确认不需要」(**已经做完了**)
+    // 而它们在 JavaScript 里**都是 falsy** —— 一句
+    // `if (!别名) 显示「待补」` 会把后者也渲染成待补,
+    // 于是「还有几个工具没人填过别名」这个数**永远填不完**,
+    // 而那是衡量这件事做完没做完的唯一指标。
+    //
+    // ⚠️ 「预览模型所见内容」显示的是接口给的 `模型所见内容` ——
+    // 它由 `agent_loop` 真跑时用的那同一个函数算出来。
+    // **这一页绝不自己把几栏拼一遍当预览**:那是第二份实现,
+    // 它会和真正发出去的那一段漂,而漂开的表现是
+    // 「后台显示的」和「模型收到的」分家。
+    const 态牌 = (t) => t === "没说过"
+      ? `<span class="pill warn">待补</span>`
+      : t === "确认不需要"
+        ? `<span class="pill">已确认不需要</span>`
+        : `<span class="pill ok">${esc(t || "")}</span>`;
+    const 串串 = (xs) => (xs || []).length
+      ? `<ul style="margin:4px 0 0 18px;padding:0">`
+        + xs.map((x) => `<li>${esc(String(x))}</li>`).join("") + `</ul>`
+      : `<span class="k">—</span>`;
+    const 模型说明区 = !新版 ? "" : `
+      <h2 style="display:flex;align-items:center;gap:10px">
+        最新版本（${esc(新版["版本"])}）· 模型说明
+        <button id="d-preview" style="font-size:12px;font-weight:400">
+          预览模型所见内容</button></h2>
+      <table><tbody>
+        <tr><td class="k" style="width:120px">模型可见名称</td>
+          <td><code>${esc(d["名称"] || "")}</code>
+            <span class="k">模型按这个名字调它</span></td></tr>
+        <tr><td class="k">描述</td>
+          <td>${esc(新版["给模型的说明"] || "—")}</td></tr>
+        <tr><td class="k">别名
+            ${态牌((新版["模型说明填了吗"] || {})["别名"])}</td>
+          <td>${串串(新版["别名"])}
+            ${(新版["模型说明填了吗"] || {})["别名"] === "没说过"
+              ? `<div class="note warn">⚠️ <b>没人填过别名</b> ——
+                  10-03 量到的病根就在这儿:<b>用户问的是业务，工具说明写的是系统</b>。
+                  五道题的「需要的工具」和「用户的问法」<b>一个共同片段都没有</b>
+                  （「还能发几件」对「查现货」）。<br>
+                  <b>确认它真的不需要别名</b>的话，填一个空的一串 ——
+                  那和「没人填过」在库里是两个不同的状态。</div>`
+              : ""}</td></tr>
+        <tr><td class="k">适用场景
+            ${态牌((新版["模型说明填了吗"] || {})["适用不适用"])}</td>
+          <td>${串串((新版["适用不适用"] || {})["适用"])}</td></tr>
+        <tr><td class="k">不适用场景</td>
+          <td>${串串((新版["适用不适用"] || {})["不适用"])}
+            <div class="note">⚠️ <b>「不适用」不许单独空着</b> ——
+              只写「适用」的话，「不适用」会<b>静默变成「没说过」</b>，
+              而一个没说过不适用的工具，和一个处处适用的工具，
+              <b>在模型眼里长得一模一样</b>。冻结时会拦（422）。</div></td></tr>
+        <tr><td class="k">任务示例
+            ${态牌((新版["模型说明填了吗"] || {})["任务示例"])}</td>
+          <td>${(新版["任务示例"] || []).length
+            ? `<table><thead><tr><th>真实问法</th><th>来路</th></tr></thead><tbody>`
+              + (新版["任务示例"] || []).map((x) => `<tr>
+                  <td>${esc(x["问法"] || "")}</td>
+                  <td>${x["来源"] === "现编"
+                    ? `<span class="pill warn">现编</span>
+                       <span class="k">不能当评测真值</span>`
+                    : `<span class="pill">${esc(x["来源"] || "")}</span>`}</td>
+                  </tr>`).join("") + `</tbody></table>`
+            : `<span class="k">—</span>`}
+            <div class="note">⚠️ <b>每条都要带来路</b>（记录仪 / 业务口述 / 现编）。
+              不带的话，一条编的例子和一条真实问法在这张表里长得一样 ——
+              而 10-03 栽过：拿反推出来的别名跑出 21/21，<b>那是先看答案再出题</b>。</div>
+          </td></tr>
+      </tbody></table>
+      <div id="preview-box" style="display:none">
+        <h2>模型实际收到的那一段</h2>
+        <pre style="margin:4px 0;padding:8px 10px;background:#f7f8fa;
+          border-left:3px solid var(--ok,#2a7);font-size:12px;white-space:pre-wrap;
+          overflow:auto;max-height:320px">${esc(新版["模型所见内容"] || "")}</pre>
+        <div class="note">⚠️ 这一段<b>不是这一页拼的</b> —— 它由
+          <code>capabilities.模型看到的工具</code> 算出来，
+          而 <b>Agent 真跑时发给模型的就是同一个函数的返回</b>。<br>
+          所以这里看到的就是模型看到的：<b>上面填的别名如果没出现在这一段里，
+          那就是填了等于没填</b>。</div></div>`;
     const 最新版区 = !新版 ? "" : `
       <h2>最新版本（${esc(新版["版本"])}）· 输入与输出</h2>
       <table><tbody>
@@ -1955,6 +2038,7 @@ async function 画工具详情(tid) {
         <p><button class="pri" id="d-freeze">冻结</button></p>`
         : `<div class="note">改草稿 / 冻结要「改编排草稿」这条能力 ——
           你现在是 <b>${esc(我的角色 || "?")}</b>，<b>所以这里不摆按钮</b>。</div>`}
+      ${模型说明区}
       ${最新版区}
       ${版本差异区}
       <h2>版本历史（${版本们.length}）</h2>
@@ -1986,6 +2070,19 @@ async function 画工具详情(tid) {
             + `${md(r.note ? "。" + r.note : "")}`);
           await 画工具详情(tid);
         } catch (e) { 报工具(闸文(e), true); $("#d-save").disabled = false; }
+      };
+    }
+    // 规格 §8.2:区域右上「预览模型所见内容」。
+    // ⚠️ 它**只是展开/收起**已经拿到的那一段 —— 不另发请求、不在这里拼。
+    // 再发一次请求的话,「预览」和「页面上显示的」会是两个时刻的数据,
+    // 而那种不一致只在别人同时改了它的那一刻出现(查都查不出来)。
+    if ($("#d-preview")) {
+      $("#d-preview").onclick = () => {
+        const 盒 = $("#preview-box");
+        const 开 = 盒.style.display === "none";
+        盒.style.display = 开 ? "" : "none";
+        $("#d-preview").textContent = 开 ? "收起预览" : "预览模型所见内容";
+        if (开) 盒.scrollIntoView({ behavior: "smooth", block: "nearest" });
       };
     }
     if ($("#d-freeze")) {

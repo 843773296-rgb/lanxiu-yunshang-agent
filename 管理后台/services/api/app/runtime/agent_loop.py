@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "contract"))
 import dsl as DS  # noqa: E402
 import tool_gateway as G  # noqa: E402
+import capabilities as CAP  # noqa: E402
 
 # 模型响应的动作类型。**按提供商的正式动作类型解析,不解析自由文本**(附录 A-4)。
 # §10.1:「模型给出普通文字计划,只能显示为计划;
@@ -146,11 +147,15 @@ def 跑一个agent(配置, 输入, *, 适配器, 工具目录, 有效范围, 账
         if 名 in 网关目录:
             撞名.append(名)
         网关目录[名] = 契
-        工具定义们.append({"name": 名,
-                        "description": 契.get("model_description"),
-                        "input_schema": 契.get("input_schema"),
-                        # **模型看不见服务端绑定参数**(§9.4)
-                        "side_effect_type": 契.get("side_effect_type")})
+        # ⚠️ **这一段的拼法只有一处**(`capabilities.模型看到的工具`)——
+        # 规格 §8.2 的「预览模型所见内容」走的是同一个函数。
+        # 原来这里是就地拼一个 dict,而预览要是另写一遍,两份会漂,
+        # 漂开的表现是「后台显示的」和「模型收到的」分家 ——
+        # **而分家那天没有任何东西会红**。
+        # 顺带:§8.2 那三个字段(别名 / 适用不适用 / 任务示例)也是在那个函数里
+        # 拼进 `description` 的 —— 不进去的话,那个页签就是
+        # 一个**看起来在配模型、而模型一个字也收不到**的界面。
+        工具定义们.append({**CAP.模型看到的工具(契), "name": 名})
     if 撞名:
         # 模型按名字调工具 —— 两个版本同名,**它调到哪个取决于字典顺序**。
         记事("agent.tool_name_clash", {"撞了": sorted(set(撞名))})
