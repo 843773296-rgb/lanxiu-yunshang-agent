@@ -4123,5 +4123,49 @@
    }
   ],
   "预期红": "TL31 说了官网归私域、别据此投 SEO"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "把一条商机触发它的通话号改成库里没有的",
+  "sql": [
+   "UPDATE opportunity SET call_id='TS-999' WHERE rowid=(SELECT MIN(rowid) FROM opportunity)"
+  ],
+  "预期红": "沟通发现的商机都指得回触发它的那次通话"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "把方案那头指回商机的字段清掉",
+  "sql": [
+   "UPDATE scheme SET opportunity_id=NULL"
+  ],
+  "预期红": "商机和方案互相指得回"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "把「已关闭」和「搁置等供给」合并成一个「已丢单」",
+  "sql": [
+   "UPDATE opportunity SET status='已丢单' WHERE status IN ('已关闭','搁置等供给')"
+  ],
+  "预期红": "状态都在口径里"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "把一条诉求的原话换成逐字稿里没有的一句",
+  "sql": [
+   "UPDATE opportunity_need SET quote='客户说她最喜欢正红' WHERE rowid=(SELECT MIN(rowid) FROM opportunity_need)"
+  ],
+  "预期红": "每条诉求的原话都在那通电话的逐字稿里"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "让口径允许已关闭的商机被唤醒",
+  "file": [
+   {
+    "path": "knowledge/oppo_obj.py",
+    "old": "    \"已关闭\": (),\n}",
+    "new": "    \"已关闭\": (\"跟进中\",),\n}"
+   }
+  ],
+  "预期红": "已关闭的商机不许被唤醒"
  }
 ]
