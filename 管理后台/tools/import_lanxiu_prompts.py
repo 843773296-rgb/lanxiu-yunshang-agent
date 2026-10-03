@@ -132,9 +132,47 @@ def 哈希(messages, params):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--硬来", action="store_true",
+                    help="明知有未提交的改动也要导。**只在「改的人就是你」时用**")
     ap.add_argument("--看", action="store_true",
                     help="只看不写(**默认是写** —— 见文档串里那段)")
     a = ap.parse_args()
+
+    # ── 一道闸:**别把别人没提交的改动导进后台**(2026-10-03 加)──────────
+    #
+    # 同步判据(`lanxiu_prompt_sync_check.py`)早就分得清「该导」和「等别人提交」,
+    # **而这个脚本不分** —— 它直接读工作区的 `prompts.py`。
+    #
+    # > **一道装在判据上而没装在动作上的闸,挡得住「看」,挡不住「做」。**
+    #
+    # 今天侥幸没出事(那 6 行未提交的改动落在 Rule 之外),但下一次不一定。
+    # 这个仓库常有并行会话,规矩是「只提自己的路径,绝不替别人提交半成品」——
+    # **导入也一样**:导下去就是给半成品发一个正式版本号。
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _未提交 as _U
+    _仓 = os.path.dirname(根) if "根" in dir() else os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    _f = os.path.join(_仓, "prompts.py")
+    _查得出, _碰到, _行 = _U.改动碰到的段(_仓, "prompts.py",
+                                   _U.python里的Rule起点(_f))
+    if _碰到 and not a.硬来:
+        print(f"⏸  **先别导。** `prompts.py` 有未提交的改动({_行} 行),"
+              f"碰到了这几条铁律:{sorted(_碰到)}")
+        print(f"    这仓库常有并行会话 —— 导下去就是把半成品灌进后台,"
+              f"还给它发一个正式版本号。")
+        print(f"    看是谁的改动:`git diff prompts.py`")
+        print(f"    · 是你自己的 → 先提交,再跑这个脚本")
+        print(f"    · 是别人的   → **什么都别做**,等他提交完")
+        print(f"    确实要导(比如就是你自己在改、而且要先看效果):加 `--硬来`")
+        return 1
+    if not _查得出:
+        print("⚠️ git 查不出未提交的改动 —— **当成「可能有」**,"
+              "先 `git status prompts.py` 看一眼;确认干净再加 `--硬来`")
+        if not a.硬来:
+            return 1
+    if _行 and not _碰到:
+        print(f"ℹ️ `prompts.py` 有 {_行} 行未提交的改动,"
+              f"但**一条铁律都没碰到** —— 照导。")
 
     print(f"\n\033[1m▸ 把澜绣的铁律导进后台(一条一个 Prompt){D}")
     全, 用它的, 漏 = 读铁律()

@@ -73,6 +73,7 @@ def _按路径加载(名, 相对路径):
 
 AD = _按路径加载("契约_适配器登记", os.path.join("contract", "adapters.py"))
 import connections as CN
+import secretref as SR
 import runtime_cfg as CFG
 
 router = APIRouter()
@@ -290,6 +291,88 @@ async def 建连接(project_id: str, request: Request,
                      "而把密钥混进哈希会让哈希本身变成一条侧信道")}
 
 
+def _真探(endpoint, secret_ref):
+    """真发一个最小请求,把**实际发生的事**记下来。
+
+    ## 为什么用「一定会被拒」的请求去探
+
+    探的是「这个端点到底支持哪些参数」(契约原话)。
+    而最便宜、最不会产生副作用的办法是:**发一个必定被参数校验拒掉的请求**,
+    看它拒的理由 —— 那个理由就是它的参数校验在说话。
+
+    这里发的是 `max_tokens: 1` + 一个空 messages:
+      · 认得这套协议的端点会回 **400 + 一句关于 messages 的话**
+      · 认不出协议的会回别的码,或者根本连不上
+      · 没凭据会回 **401**
+
+    三种都是**真信息**,而且这个请求**不会产生任何生成**(不花钱)。
+
+    ⚠️ **不发一个能成功的请求** —— 那会真的生成一次,而「探测」不该花钱、
+    不该留下一条用量记录。
+
+    ## 凭据怎么走
+
+    `secretref.解析` 返回**要加哪几个头**,这里直接塞进 curl 的参数,
+    **不落任何变量名带凭据字样的地方,不进返回值**。
+    走 curl 而不是 urllib:这台机器上 Python 的 TLS 会被拦
+    (项目记着「TLS 拦截,联网用 curl」)。
+    """
+    import subprocess
+    import time
+    try:
+        头, 来路 = SR.解析(secret_ref)
+    except SR.解析不了 as e:
+        # ⚠️ 异常文字来自 secretref,它保证不带值
+        # ⚠️ **这一档不许用「真实端点」开头。** 第一版写的是
+        # 「真实端点(**没探成**…)」—— 而这种情况下**一个请求都没发出去**,
+        # 用「真实端点」打头会让人以为它至少试过连。
+        return {"探法": "**没有发出请求**(凭据定位符解析不了)",
+                "探成了吗": False, "发出请求了吗": False, "为什么没成": str(e)}
+    cmd = ["curl", "-sS", "-o", "-", "-w", "\n%{http_code}",
+           "--max-time", "20", "-X", "POST", endpoint,
+           "-H", "content-type: application/json"]
+    for k, v in 头.items():
+        cmd += ["-H", f"{k}: {v}"]
+    cmd += ["--data-binary", "@-"]
+    探包 = _json.dumps({"model": "claude-haiku-4-5", "max_tokens": 1,
+                      "messages": []}, ensure_ascii=False)
+    t0 = time.time()
+    try:
+        out = subprocess.run(cmd, input=探包, capture_output=True,
+                             text=True, timeout=25)
+    except Exception as e:
+        return {"探法": "**请求发不出去**(curl 挂了或超时)",
+                "探成了吗": False, "发出请求了吗": False,
+                "为什么没成": type(e).__name__}
+    ms = int((time.time() - t0) * 1000)
+    体 = (out.stdout or "").strip().splitlines()
+    码 = 体[-1] if 体 else ""
+    正文 = "\n".join(体[:-1])[:600] if len(体) > 1 else ""
+    # 端点的参数校验在说什么 —— 那才是「支持哪些参数」的真答案
+    错码 = 错话 = None
+    try:
+        j = _json.loads(正文)
+        错码 = (j.get("error") or {}).get("type")
+        错话 = (j.get("error") or {}).get("message")
+    except Exception:
+        pass
+    return {
+        "探法": f"真实端点 —— **真发过一个请求**(凭据来路 {来路})",
+        "发出请求了吗": True,
+        "探成了吗": 码.startswith(("2", "4")),   # 4xx 也算探成:端点在说话
+        "http状态": 码, "往返毫秒": ms,
+        "端点怎么拒的": {"类型": 错码, "说法": (错话 or "")[:200]},
+        "⚠️ 这个请求": "max_tokens=1 + 空 messages —— **必定被参数校验拒掉**,"
+                   "所以不产生生成、不花钱、不留用量记录。"
+                   "拒的理由就是它的参数校验在说话",
+        "判读": ("401/403 → 端点在、协议对,**但这个凭据不行**"
+               if 码 in ("401", "403") else
+               "400 → 端点在、协议对、凭据过了,**参数校验在说话**(这是最好的结果)"
+               if 码 == "400" else
+               f"{码} → 端点或协议不是预期的那个"),
+    }
+
+
 @router.post(前缀 + "/model-connections/{cid}/probe", status_code=202)
 async def 探测连接(project_id: str, cid: str,
              idempotency_key: str = Header(default=None, alias="Idempotency-Key"),
@@ -324,17 +407,48 @@ async def 探测连接(project_id: str, cid: str,
         if 坏引用:
             raise _错(422, "BAD_SECRET_REF", "这个配置版本的密钥引用不合格",
                       坏引用)
-        是mock = CFG.演示模式()
+        # ⚠️ 问的是 **`模型是mock()`**,不是 `演示模式()`。
+        # `演示模式()` 是个「或」—— 训练适配器是 mock 也会让它为真,
+        # 而那和一次模型探测毫无关系。
+        # 2026-10-03 撞到:`MODEL_ADAPTER=anthropic` 起的实例,
+        # 探测仍然自称 mock,因为 `TRAINING_ADAPTER` 默认还是 mock。
+        是mock = CFG.模型是mock()
         契约 = AD.找("ModelProvider")
         # 探测结果:**照适配器契约登记的方法和必留字段**报,不自己编一套。
         能力 = {
             "探的人": me.user_id,
-            "探法": ("mock 适配器" if 是mock else "真实端点"),
             "是mock探的": bool(是mock),
             "支持的方法": 契约["方法"],
             "必留字段": 契约["必留"],
             "endpoint": cv["endpoint"],
         }
+        # ── 真探:**非 mock 就真发一个请求**(2026-10-03 加)────────────────
+        #
+        # ⚠️ 这一段之前**不存在**。那时非 mock 分支写的是 `探法: "真实端点"`,
+        # 而它**全程没碰过网络** —— 读适配器契约、写一行字、落库。
+        #
+        # > **一个写着「真实端点」而从没发过一个请求的探测,
+        # > 和一个真探过的,在 capabilities 上长得一模一样。**
+        #
+        # 而这条链上游还有一半:`secret_ref` 一直只被「验形状」,
+        # **全仓没有任何地方把它解析开** —— 也就是这后台从没拿它调过东西。
+        # 解析在 `secretref.py`。
+        if not 是mock:
+            实 = _真探(cv["endpoint"], cv["secret_ref"])
+            能力.update(实)
+            # ⚠️ **落库之前过一道「凭据漏没漏」。**
+            # 不是防御性编程 —— 这仓库记着:
+            # > 一条从没被攻击过的「结构性保证」,实际上仍然只是约定。
+            漏 = SR.查有没有漏凭据(能力)
+            if 漏:
+                # ⚠️ 这里**不把 `能力` 放进异常** —— 那就是把凭据抄进错误体
+                raise _错(500, "PROBE_LEAK",
+                          "探测结果里可能带了凭据,**已拦住,没有落库**",
+                          f"命中 {len(漏)} 处:{漏[:3]} —— "
+                          f"这是 `secretref.查有没有漏凭据` 拦的")
+        else:
+            能力["探法"] = "mock 适配器(**没有发过任何请求**)"
+            能力["发出请求了吗"] = False
         哈 = CN.配置哈希(用途=mc["purpose"], 适配器=mc["adapter"],
                     endpoint=cv["endpoint"], capabilities=能力)
         c.execute(text("""update connection_versions

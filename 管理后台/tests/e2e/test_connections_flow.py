@@ -155,11 +155,46 @@ def main():
     ck("探测不带幂等键 → 409", 码 == 409, 码)
     码, pr, _ = 打("POST", f"{P}/model-connections/{cid}/probe", 键=f"pb-{uuid.uuid4().hex[:8]}")
     ck("探测 → 202", 码 == 202, (码, (pr or {}).get("code")))
-    ck("**标明是 mock 探的**(一份 mock 的 capabilities 和真的形状一样)",
-       (pr or {}).get("是mock探的") is True, (pr or {}).get("是mock探的"))
-    ck("capabilities 照适配器契约登记的方法落下来",
-       "generate" in ((pr or {}).get("capabilities") or {}).get("支持的方法", []),
-       ((pr or {}).get("capabilities") or {}).get("支持的方法"))
+    # ⚠️ **不许断言「它是 mock」** —— 那假设了服务是用 mock 适配器起的,
+    # 而这份测试既不控制也不声明那个环境变量。
+    # 2026-10-03 撞到:用 `MODEL_ADAPTER=anthropic` 起的实例,探测**正确地说了
+    # 它不是 mock**,于是这条断言红了 —— 而它红的理由是「环境变了」,不是「坏了」。
+    #
+    # > 一个假设「服务是用 mock 起的」的断言,和一个真验到了标记的断言,
+    # > **在绿勾上长得一模一样** —— 直到有人用真适配器起服务。
+    #
+    # 该断的是**不变量**:标记和它实际干的事一致。这个在两种环境下都成立。
+    是mock = (pr or {}).get("是mock探的")
+    探法 = ((pr or {}).get("capabilities") or {}).get("探法") or ""
+    ck("**标明是谁探的**(一份 mock 的 capabilities 和真的形状一样)",
+       是mock in (True, False), 是mock)
+    # 不变量:**它不许声称发过请求而其实没发,也不许发过了不说**。
+    # 三档互不重叠:mock 没发 / 非 mock 但凭据解析不了也没发 / 非 mock 真发了。
+    # ⚠️ 这份测试的夹具用的是**假 secret_ref**(它不该带真凭据),
+    # 所以在真适配器下它会落到第二档 —— **那是对的,不是坏了**。
+    发了 = ((pr or {}).get("capabilities") or {}).get("发出请求了吗")
+    ck("**三档状态互不重叠,而且都说清了发没发请求**",
+       发了 in (True, False), 发了)
+    ck("mock 一定没发过请求", (发了 is False) if 是mock else True,
+       f"是mock={是mock} 发了={发了}")
+    ck("**说了没发的,就不许自称「真实端点」**"
+       " —— 那四个字会让人以为它至少试过连",
+       True if 发了 else ("真实端点" not in 探法), 探法[:70])
+    c2 = ((pr or {}).get("capabilities") or {})
+    ck("**说了发过的,必须带回端点说的话**(http 状态 + 它怎么拒的)"
+       " —— 不然「真发过一个请求」保不住任何东西",
+       (bool(c2.get("http状态")) and isinstance(c2.get("端点怎么拒的"), dict))
+       if 发了 else True,
+       {"发了": 发了, "http状态": c2.get("http状态")})
+    # ⚠️ 这一条只管**非 mock** 那一档。
+    # mock 没发请求是**按设计**,不是失败 —— 理由已经在「mock 适配器」那四个字里。
+    # 第一版没分这个,于是 mock 环境下它红了,而那不是问题。
+    # > 一个管得太宽的断言,和一个真发现了问题的断言,在红勾上长得一模一样。
+    ck("**非 mock 而没发出去的,必须说为什么**"
+       "(不然查不出是凭据问题还是网络问题)",
+       True if (是mock or 发了) else bool(c2.get("为什么没成")),
+       {"是mock": 是mock, "发了": 发了, "为什么": c2.get("为什么没成")})
+
     码, 体, _ = 打("POST", f"{P}/model-connections/{cid}/probe",
                 键=f"pb-{uuid.uuid4().hex[:8]}", 谁="U002")
     ck("editor 探测 → 403(要「配置密钥与预算」)", 码 == 403, 码)

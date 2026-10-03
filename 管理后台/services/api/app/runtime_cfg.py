@@ -43,5 +43,27 @@ def 启动自检():
 
 
 def 演示模式():
-    """演示模式要有**醒目标记**(实施必须遵守第 3 条)。"""
-    return MODEL_ADAPTER == "mock" or TRAINING_ADAPTER == "mock"
+    """**整个系统**有没有任何一处在用 mock —— 页面上那条醒目横幅看这个
+    (实施必须遵守第 3 条)。
+
+    ⚠️ **别拿它判「这一次具体动作是不是 mock 的」。** 它是个「或」:
+    训练适配器是 mock 也会让它为真,而那和一次**模型探测**毫无关系。
+
+    > 一个因为「训练适配器是 mock」而把模型探测标成 mock 的判断,
+    > 和一个正确判断的,**在那个布尔值上长得一模一样**。
+
+    2026-10-03 撞到:`MODEL_ADAPTER=anthropic` 起的实例,探测仍然自称 mock ——
+    因为 `TRAINING_ADAPTER` 默认还是 mock。
+    判具体动作用下面那两个。
+    """
+    return 模型是mock() or 训练是mock()
+
+
+def 模型是mock():
+    """**这一次模型调用**是不是 mock 的。探测、推理、重排都该问这个。"""
+    return MODEL_ADAPTER == "mock"
+
+
+def 训练是mock():
+    """**这一次训练**是不是 mock 的。mock 的产物不许计入真实评测或发布。"""
+    return TRAINING_ADAPTER == "mock"
