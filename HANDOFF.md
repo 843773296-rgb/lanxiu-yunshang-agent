@@ -18,6 +18,12 @@
 **④ 作废**:「本机没有语音识别」(已装 whisper.cpp + `backend/asr.py`);演示上新不能按 on_shelf_at(没跟着平移,取出 0 款)
 **⑤ 禁区**:`agent/router_probe.py` 的静默截断红是管理后台会话的(0d7729a),已告知,别替它改;本机库备份 `库备份/lanxiu-20261003-商机前.db`
 **⑥ 悬而未决**:织锦缎、泥金 / 描金两条出处收不收(待用户);GB/T 26380 要人手开浏览器看
+- 管理后台会话报的两件(都是我这边的东西,没人动):
+  ① `truncation_check` 的探测器比 bug 形状窄 —— 漏了 `管理后台/tools/lanxiu_tool_sync_check.py` 三处 `xxx[:8]`(它已自修)。
+     要放宽:先放宽 → 看新扫出多少 → 一次性进欠债表并标「探测器放宽带进来的」→ 再逐步还(不然「只许少」当场红)
+  ② `agentsite/evals/tool_routing.json` 真值里 8 个合并前的旧工具名(my_tasks / team_tasks / member_level / get_lifecycle /
+     get_member_priority / get_task / dispatch_pool / piece_ratios),下次用前要核
+  ③ 改 `backend/api.py` 的三个 SCHEMAS 列表后,管理后台要重导;新写工具要在 `管理后台/docs/口径/工具不可逆口径.json` 两边列全,否则它拒导
 
 ## 🧭 2026-10-03 · 官网归私域(de05bb6)+ 商机对象第一步 + 评价造数改配额(待提交)
 
