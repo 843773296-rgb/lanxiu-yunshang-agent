@@ -66,10 +66,86 @@ def _新(前缀): return f"{前缀}_{uuid.uuid4().hex[:12]}"
 
 
 def 处理(类型):
+    """登记一个任务处理器。**导入时就核参数名**,别等到 worker 捞到任务。
+
+    ⚠️ 为什么要核:2026-10-03 我在 `@处理("prompt_run")` 和它的函数之间
+    插了一个辅助函数 —— **装饰器被那个辅助函数劫走了**。
+    它被按 `(c, job, 打点)` 调用,第三个参数当成了别的东西,
+    于是报出 `AttributeError: '_打点器' object has no attribute 'get'` ——
+    **而那个报错和「快照里某个字段形状不对」长得一模一样**,
+    我第一次就按那个方向查错了。
+
+    > **「插在一个 `def` 正上方」看起来是最安全的插入点** ——
+    > 而当它上面是装饰器时,这个动作会静默改掉绑定关系。
+
+    核参数名能当场抓住它:被劫走的那个函数签名一定不是 `(c, job, 打点)`。
+    这比「以后记得别插在那儿」硬 —— 它在导入时就红,而不是在生产上。
+    """
     def 包(f):
+        import inspect
+        名 = list(inspect.signature(f).parameters)
+        if 名[:3] != ["c", "job", "打点"]:
+            raise RuntimeError(
+                f"`@处理({类型!r})` 挂在 `{f.__name__}` 上,"
+                f"而它的参数是 {名} —— 任务处理器的前三个参数必须是 "
+                f"`(c, job, 打点)`。\n"
+                f"**最常见的原因:有人在装饰器和它原本那个函数之间插了一个新函数**,"
+                f"于是装饰器挂到了新函数上(2026-10-03 栽过一次)。")
         处理器[类型] = f
         return f
     return 包
+
+
+# ⚠️⚠️ **这个函数放在装饰器上面是有原因的。**
+#
+# 第一版我把它插在 `def _跑一次prompt` 的**正上方** —— 而那一行上面就是
+# `@处理("prompt_run")`,于是**装饰器被它劫走了**:注册成 prompt_run 处理器的
+# 变成了这个取连接的函数,它被按 `(c, job, 打点)` 调用,
+# `快照` 收到的是打点器,`.get()` 当场炸
+# (`AttributeError: '_打点器' object has no attribute 'get'`)。
+#
+# > **「插在一个 `def` 正上方」看起来是最安全的插入点** ——
+# > 而当它上面是装饰器时,这个动作会**静默改掉绑定关系**。
+#
+# 而且报出来的错和「快照里某个字段形状不对」长得一模一样
+# (我第一次就按那个方向查错了,还查到了一条**别的测试留下的旧任务**上)。
+def _取冻结的模型连接(c, 项目, 快照):
+    """这次运行该用哪个模型连接。**没有就返回 None,由 `执行模式.定` 去抛。**
+
+    ⚠️ 为什么不在这里抛:这个函数答的是「有没有」,
+    `执行模式.定` 答的是「这种情况下该怎么办」。
+    混在一起的话,「没有连接」和「有连接但不许真跑」会走同一条错误路径,
+    而它们**要给人看的下一步完全不同**。
+
+    ⚠️ **`探过吗` 判的是 `connection_versions.capabilities` 有没有东西**,
+    不是「连接这一行存不存在」。10-03 在另一个闸上栽过:
+    提示写着「没探过的和没给的长得一样」,而代码只检查了「连接存在」。
+    """
+    引 = (快照 or {}).get("model_connection_id")
+    if not 引:
+        return None
+    # ⚠️ **`endpoint` / `secret_ref` 在 `connection_versions` 上,不在
+    # `model_connections` 上**(查过库才写的 —— 第一版我按名字猜成了
+    # `mc.endpoint` / `mc.secret_ref` / `mc.default_model`,
+    # 那三列**一个都不存在**。「凭名字猜列」这族今天第 10 次)。
+    # 父表只有 purpose / adapter / display_name / status。
+    #
+    # ⚠️ 取**最新那一版**:连接是可改对象,而版本是不可变的 ——
+    # 「这次运行用的是哪一版」要能事后查得出,所以把版本 id 一起带回去。
+    r = c.execute(text("""select cv.connection_id as id, cv.id as 连接版本id,
+                                 cv.endpoint, cv.secret_ref,
+                                 cv.capabilities is not null as 探过吗,
+                                 mc.status, mc.adapter
+                            from connection_versions cv
+                            join model_connections mc
+                              on mc.project_id = cv.project_id
+                             and mc.id = cv.connection_id
+                           where cv.project_id=:p and cv.connection_id=:i
+                           order by cv.created_at desc limit 1"""),
+                  {"p": 项目, "i": 引}).mappings().first()
+    if not r:
+        return None
+    return dict(r)
 
 
 @处理("prompt_run")
@@ -123,10 +199,47 @@ def _跑一次prompt(c, job, 打点):
     if 打点.取消了:
         raise 取消了()
 
-    # `_mock生成` 要的是一个「草稿形状」的东西 —— 快照就是按那个形状存的。
+    # ── 这一次跑真模型还是 mock:**一处解析,而且失败不退回 mock** ──────
+    #
+    # 外部审阅 §5.4:「只有明确选择模拟运行才使用 mock,
+    # **真实调用失败不能静默降级为 mock**」。
+    # 在这之前这里是硬写的 `_api._mock生成(...)` ——
+    # 那不是「选择了 mock」,那是**默认**,而
+    # > 一个默认是 mock 的系统,和一个选择了 mock 的系统,
+    # > 在那次运行的结果上长得一模一样 —— 而前者没人决定过。
+    import 执行模式 as _模式
+    连接 = _取冻结的模型连接(c, job["project_id"], 快照)
+    try:
+        模式, 替身 = _模式.定(连接=连接)
+    except _模式.不能跑 as e:
+        # ⚠️ **抛,不跑 mock。** 跑了的话这次运行照样出一份答案,
+        # 而那份答案和真模型给的在数据形状上一样。
+        raise 干不了(e.码, {"为什么": e.细节})
+    留痕 = _模式.记一笔(模式, 替身, 入口="Prompt 调试运行")
+    打点("定执行模式", 留痕)
+
     # ⚠️ 变量取**快照里的**,不取 `target_ref` 里的:两处都有的话
     # 它们可能不一致,而「用了哪一份」在结果上看不出来。
-    r = _api._mock生成(dict(快照), 快照.get("变量") or t.get("变量") or {})
+    变量 = 快照.get("变量") or t.get("变量") or {}
+    if 模式 == _模式.假:
+        # `_mock生成` 要的是一个「草稿形状」的东西 —— 快照就是按那个形状存的。
+        r = _api._mock生成(dict(快照), 变量)
+    else:
+        import 真模型 as _真
+        m = 快照.get("messages") or {}
+        展 = (m.get("user") or m.get("system") or "")
+        for k, v in (变量 or {}).items():
+            展 = 展.replace("{{" + k + "}}", str(v))
+        try:
+            r = _真.生成(连接=连接, 系统=m.get("system") if m.get("user") else None,
+                       用户=展, 参数=快照.get("params") or {})
+        except _真.调不动 as e:
+            # ⚠️ 同上:**失败就是失败**。
+            raise 干不了(e.码, {"为什么": e.细节, "入口": "Prompt 调试运行",
+                             "⚠️": "**没有退回 mock** —— 退回去会出一份"
+                                   "看起来正常的答案,而它不是这个模型给的"})
+    r["替身清单"] = 替身
+    r["整体算真实吗"] = 留痕["整体算真实吗"]
 
     打点("调模型", {"阶段": "generate", "execution_mode": r["execution_mode"]})
     if 打点.取消了:

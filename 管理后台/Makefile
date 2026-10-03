@@ -303,7 +303,8 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py \
           test_tools_flow.py test_settings_flow.py \
           test_lanxiu_knobs_flow.py test_toolgroups_flow.py \
           test_selection_policy_flow.py test_eval_items_flow.py \
-          test_tool_modelcard_flow.py test_prompt_snapshot_flow.py
+          test_tool_modelcard_flow.py test_prompt_snapshot_flow.py \
+          test_exec_mode_flow.py
 
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
@@ -426,6 +427,11 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  ⚠️ 判据不是「它跑完了」,是**展开后的模板里是 A 还是 B** ——"
 	@echo "     「跑完了」和「跑的是提交那一版」在界面上长得一模一样"
 	@./.venv/bin/python tests/e2e/test_prompt_snapshot_flow.py
+	@echo ""
+	@echo "▸ 执行模式:**真实调用失败不许静默降级成 mock**(外部审阅 §5.4)"
+	@echo "  ⚠️ 第 ③ 条在 `MODEL_ADAPTER=mock` 下会报 ⏸「没验」而不是通过 ——"
+	@echo "     要真验那一条:`MODEL_ADAPTER=anthropic make dev` 之后再跑这一份"
+	@./.venv/bin/python tests/e2e/test_exec_mode_flow.py
 	@echo ""
 	@echo "▸ 模型与连接端到端(§17.4-5):**碰凭据的那一组**"
 	@echo "  (明文当场拒不是收下后忽略 / 错误不回显 / 列表只给形状 / 没探过的发生产被拦)"
@@ -590,6 +596,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_prompt_snapshot_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_prompt_snapshot_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_prompt_snapshot_flow.log
+	@./.venv/bin/python tests/e2e/test_exec_mode_flow.py > /tmp/prog-test_exec_mode_flow.log 2>&1 \
+	  || { echo "  ❌ test_exec_mode_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_exec_mode_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_exec_mode_flow.log
 	@./.venv/bin/python tests/e2e/test_selection_policy_flow.py > /tmp/prog-test_selection_policy_flow.log 2>&1 \
 	  || { echo "  ❌ test_selection_policy_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_selection_policy_flow.log; exit 1; }
