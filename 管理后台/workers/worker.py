@@ -360,6 +360,19 @@ def _跑一张工作流(c, job, 打点):
               {"p": job["project_id"], "i": run_id})
     打点("开始执行", {"节点数": len(计划["节点"])})
 
+    # ── 这张图的 LLM 节点跑真模型还是 mock(外部审阅 §5.4,第二条入口)──────
+    #
+    # ⚠️ 原来这里**只有** `_mock_llm`,硬写死 —— 那不是「选择了 mock」,
+    # 那是默认。照 Prompt 入口那条切片的形状接:一处解析、失败不降级。
+    import 执行模式 as _模式
+    连接 = _取冻结的模型连接(c, job["project_id"], r["input_snapshot"] or {})
+    try:
+        模式, 替身 = _模式.定(连接=连接)
+    except _模式.不能跑 as e:
+        raise 干不了(e.码, {"为什么": e.细节, "入口": "Workflow 的 LLM 节点"})
+    留痕 = _模式.记一笔(模式, 替身, 入口="Workflow 的 LLM 节点")
+    打点("定执行模式", 留痕)
+
     def _mock_llm(cfg, 实参):
         # **mock 适配器**。和真实适配器同一个契约,但 execution_mode=mock ——
         # 一份 mock 跑出来的报告和真实报告在数据形状上一模一样,
@@ -369,6 +382,25 @@ def _跑一张工作流(c, job, 打点):
         return {"text": 文, "lang": "zh", "execution_mode": "mock",
                 "usage": {"input_tokens": 12, "output_tokens": 34},
                 "finish_reason": "stop"}
+
+    def _真llm(cfg, 实参):
+        """真模型。**失败就抛** —— 没有退回 mock 的分支。
+
+        ⚠️ 抛出去之后这张图会按它自己的失败策略处理(`跑一张图` 里那套),
+        而**不是**在这里换一个能成功的东西:
+        > 一次悄悄换了模型的运行,比一次失败的运行难查得多。
+        """
+        import 真模型 as _真
+        用户 = " / ".join(f"{k}={v}" for k, v in sorted(实参.items()))
+        出 = _真.生成(连接=连接, 系统=cfg.get("system") or None, 用户=用户,
+                   参数=cfg.get("params") or {})
+        return {"text": 出["text"], "lang": "zh",
+                "execution_mode": "live",
+                "usage": 出["usage"], "finish_reason": 出["finish_reason"],
+                # 审阅 §5.3:**报端点实际返回的型号**,不报我们请求的那个
+                "actual_model": 出["actual_model"]}
+
+    _llm = _mock_llm if 模式 == _模式.假 else _真llm
 
     事件序号 = [1]
 
@@ -382,7 +414,7 @@ def _跑一张工作流(c, job, 打点):
                "r": run_id, "s": 事件序号[0], "k": 种类,
                "pl": _j.dumps(载荷, ensure_ascii=False, default=str), "u": 我是谁})
 
-    结果 = RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _mock_llm},
+    结果 = RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm},
                     记事=记事, run_id=run_id, 上限=r["limits"] or {},
                     系统={"project_id": job["project_id"]})
     打点("执行完", {"状态": 结果["执行状态"]})
@@ -866,6 +898,42 @@ def _跑一个agent(c, job, 打点):
                "r": run_id, "s": 事件序号[0], "k": 种类,
                "pl": _j.dumps(载荷, ensure_ascii=False, default=str), "u": 我是谁})
 
+    # ── 这条入口跑真模型还是 mock(外部审阅 §5.4,第三条入口)───────────
+    #
+    # ⚠️⚠️ **这条入口的真适配器还没实现,而「没实现」要明说,不能悄悄跑 mock。**
+    #
+    # 它的契约和前两条不一样:Agent Loop 要的是**工具调用循环**
+    # (收 `消息们` + `工具定义们`,回 `tool_calls` 或 `finish`),
+    # 而 `runtime/真模型.py` 只做单次生成。接通它要实现工具使用协议 ——
+    # 那是另一块工程,不在这次切片里。
+    #
+    # 审阅 §5.4 对这种情况的要求很具体:
+    # 「**连接缺失、能力不支持时返回具体错误;只有明确选择模拟运行才使用 mock**」
+    # 以及「补齐目前明确未实现的编排端到端入口,**真实联调缺配置时记未验证/跳过,
+    # 不计为通过**」。
+    #
+    # 所以:选了 mock → 跑 mock 并记替身;要真跑 → **抛一个点名的错**,
+    # 而不是「反正有个 mock 在手边」。
+    # > 一个在「要真跑」时跑了 mock 的入口,和一个真接通了的,
+    # > **在那次运行出的报告上长得一模一样**。
+    import 执行模式 as _模式
+    try:
+        模式, 替身 = _模式.定(连接=_取冻结的模型连接(
+            c, job["project_id"], r["input_snapshot"] or {}))
+    except _模式.不能跑 as e:
+        raise 干不了(e.码, {"为什么": e.细节, "入口": "后台 Agent Loop"})
+    if 模式 == _模式.真:
+        raise 干不了("ENTRY_NOT_WIRED_LIVE",
+                   {"入口": "后台 Agent Loop",
+                    "为什么": "这条入口的**真实适配器还没实现** —— 它要的是工具调用"
+                              "循环(tool_calls / finish),而现有的真模型适配器只做"
+                              "单次生成。**不退回 mock**:那会出一份合成报告,"
+                              "而它和真实运行的报告在数据形状上一模一样。",
+                    "现在能怎么办": "要跑这条入口就明确选模拟运行"
+                                    "(MODEL_ADAPTER=mock);要真实联调,"
+                                    "先把工具调用协议接上。",
+                    "⚠️": "**这一条记「未验证」,不计为通过**(外部审阅 §5.4)"})
+
     # ── mock 模型:**脚本化的,而且它自己说自己是 mock** ─────────────
     轮 = [0]
 
@@ -893,7 +961,16 @@ def _跑一个agent(c, job, 打点):
         # 这里更保守:干脆不接,于是网关会报 ADAPTER_MISSING,**而那是要被看见的**。
         if 契["side_effect_type"] == _DS.只读:
             适配器[契["adapter"]] = _mock只读工具
+    # ⚠️ 把**模型的替身**也并进这条留痕 —— 原来它只报工具那一半,
+    # 于是一次「模型是 mock、工具也是 mock」的运行,
+    # 和一次「模型真、工具是 mock」的运行,在这条事件上长得一样。
+    # 审阅 §5.4:混合运行**必须逐项显示替换清单**,不能整体标成真实。
+    替身 = list(替身) + [
+        {"哪一样": f"工具 {契['adapter']}", "换成了": "只读 mock 实现",
+         "为什么": "这条入口现在只给只读工具接 mock"}
+        for 契 in 目录.values() if 契["side_effect_type"] == _DS.只读]
     记事("agent.adapters", {
+        **_模式.记一笔(模式, 替身, 入口="后台 Agent Loop"),
         "接了": [k for k in 适配器 if k != "model"],
         "没接": [契["adapter"] for 契 in 目录.values()
                 if 契["side_effect_type"] != _DS.只读],
