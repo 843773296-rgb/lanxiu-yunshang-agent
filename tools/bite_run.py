@@ -57,8 +57,12 @@ def 建副本(dst):
         src = os.path.join(ROOT, name)
         d = os.path.join(dst, name)
         if os.path.isdir(src):
+            # 库的临时日志(-journal / -wal / -shm)不带:它们随写随删,复制到一半消失会让 copytree 报
+            # Errno 2(10-03 队友撞到过)—— 而且带过去也没用,副本里的库是独立打开的
+            # 录音目录也不带:客户的声音,几十 MB 一通,检查用不到
             shutil.copytree(src, d, ignore=shutil.ignore_patterns(
-                "__pycache__", "*.pyc", ".git", ".venv"), symlinks=True)
+                "__pycache__", "*.pyc", ".git", ".venv", "*.db-journal", "*.db-wal", "*.db-shm", "录音"),
+                symlinks=True)
         else:
             shutil.copy2(src, d)
     for venv in ("agentsite/.venv", ".venv"):

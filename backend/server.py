@@ -2297,9 +2297,99 @@ def customer_detail(cid):
     plog=rows("""SELECT behavior,delta,balance,reason,actor,ts FROM points_log
                  WHERE customer_id=? ORDER BY id DESC LIMIT 20""",cid)
     lv=rows("SELECT * FROM level_cfg WHERE name=?",c.get("level"))
-    return dict(customer=c,appts=appts,followups=fus,deposits=deps,logs=logs,
+    try:
+        calls=calls_of(cid)
+    except Exception:
+        calls=[]          # 老库还没有录音表
+    return dict(customer=c,appts=appts,followups=fus,deposits=deps,logs=logs,calls=calls,
                 measures=measure_of(cid),binds=binds,points_log=plog,
                 level_cfg=lv[0] if lv else None)
+
+# ── 通话录音:上传 → 排队转写 → 分说话人 → 挂到客户名下(10-03,用户选的入口:客户详情页)──
+录音目录 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "录音")
+录音上限字节 = 60 * 1024 * 1024        # base64 之前 60MB:十分钟双声道 wav 约 38MB,再大多半是传错了文件
+沟通方式 = ("电话", "上门", "到店")     # 业务 D7:算沟通的三种(没接通的不算沟通,不收录音)
+_转写队列 = None
+
+
+def _转写工人():
+    """**一次只转一通** —— whisper 吃满 CPU,并发只会让每通都更慢。进程起来时把没转完的重新排上。"""
+    global _转写队列
+    import queue, threading, asr
+    if _转写队列 is not None:
+        return _转写队列
+    _转写队列 = queue.Queue()
+    def 干():
+        while True:
+            aid = _转写队列.get()
+            try:
+                asr.处理(aid)
+            except Exception:
+                pass          # 处理() 自己会把失败落库;这里只保证工人不死
+    threading.Thread(target=干, daemon=True).start()
+    # 上次进程退出时还在「排队 / 转写中」的 —— 不重排的话它们会永远停在那儿,看着像还在转
+    for r in rows("SELECT id FROM call_audio WHERE status IN ('排队','转写中') ORDER BY created"):
+        _转写队列.put(r["id"])
+    return _转写队列
+
+
+def call_upload(me, body, 入队=True):
+    """收一通录音。返回 (dict, http 状态码)。**只收、只排队,不在请求里转写**(转写要几十秒到几分钟)。"""
+    import base64, asr, datetime as _d
+    if not me:
+        return {"error": "请先登录", "code": "NO_AUTH"}, 401
+    cid = (body.get("customer_id") or "").strip()
+    方式 = body.get("channel")
+    cu = rows("SELECT id, shop FROM customer WHERE id=?", cid)
+    if not cu:
+        return {"error": f"客户 {cid} 不存在"}, 404
+    # 范围:总部看全部;其余只能给**本店**客户传(上门 / 到店可能不是自己名下的客户,所以按店不按人)
+    if me.get("role") != "总部运营" and me.get("shop") != cu[0]["shop"]:
+        return {"error": "只能给本店客户上传录音", "code": "NOT_YOUR_SHOP"}, 403
+    if 方式 not in 沟通方式:
+        return {"error": f"沟通方式要选 {' / '.join(沟通方式)} 之一(没接通的电话不算沟通,不收录音)"}, 400
+    try:
+        数据 = base64.b64decode(body.get("data") or "", validate=True)
+    except Exception:
+        return {"error": "文件内容读不出来(不是 base64)"}, 400
+    if not 数据:
+        return {"error": "文件是空的"}, 400
+    if len(数据) > 录音上限字节:
+        return {"error": f"文件太大(超过 {录音上限字节 // 1024 // 1024}MB)—— 是不是传错了文件?"}, 413
+    os.makedirs(录音目录, exist_ok=True)
+    now = _d.datetime.now()
+    aid = f"CA-{now:%Y%m%d%H%M%S}-{len(rows('SELECT id FROM call_audio WHERE id LIKE ?', f'CA-{now:%Y%m%d}%')) + 1:03d}"
+    后缀 = os.path.splitext(body.get("filename") or "")[1].lower()[:6] or ".bin"
+    原件 = os.path.join(录音目录, aid + ".原件" + 后缀)     # 别和转出来的 aid.wav 同名(传的就是 wav 时会原地覆盖)
+    with open(原件, "wb") as f:
+        f.write(数据)
+    try:
+        wav, 秒 = asr.规整(原件, os.path.join(录音目录, aid + ".wav"))
+    except Exception as e:
+        os.remove(原件)
+        return {"error": str(e)[:200]}, 400
+    if 秒 > asr.单次音频上限秒:
+        for f in (原件, wav):
+            os.path.exists(f) and os.remove(f)
+        return {"error": f"录音有 {秒 / 60:.0f} 分钟,超过一小时 —— 多半是录音没停,请剪一下再传"}, 413
+    with _conn() as c:
+        asr.建表(c)
+        c.execute("INSERT INTO call_audio(id, customer_id, ref_kind, ref_id, path, seconds, source, created,"
+                  " channel, status, uploaded_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                  (aid, cid, None, None, wav, round(秒, 1), "真实录音", _now(), 方式, "排队", me.get("no")))
+    if 入队:
+        _转写工人().put(aid)
+    return {"ok": True, "id": aid, "seconds": round(秒, 1), "status": "排队",
+            "说明": "已排队转写。一次只转一通,几分钟后刷新这一页看结果。"}, 200
+
+
+def calls_of(cid):
+    """客户名下的通话:状态、怎么分的说话人、逐字稿。"""
+    return rows("""SELECT a.id, a.channel, a.seconds, a.source, a.status, a.fail_reason, a.created,
+                          a.uploaded_by, t.text, t.speaker_src, t.trad
+                   FROM call_audio a LEFT JOIN call_transcript t ON t.audio_id=a.id
+                   WHERE a.customer_id=? ORDER BY a.created DESC, a.id DESC""", cid)
+
 
 def lifecycle_page(sel=None):
     types=["潜在","新客","活跃","高价值","忠诚","休眠","潜在流失","流失"]  # 展示顺序,不是优先级
@@ -2650,6 +2740,9 @@ class H(BaseHTTPRequestHandler):
             return self._send(transit(body.get("machine"),body.get("target"),
                                       body.get("to"),body.get("ctx") or {},
                                       actor=_ut.get("name") or "?"))
+        if p=="/api/call-upload":
+            out, code = call_upload(_me(self), body)
+            return self._send(out, code)
         if p=="/api/scheme-check":
             # 只校验不落库,给页面做即时提示用。前端拿它染色,但它不是闸门。
             import scheme as _sch
@@ -2884,4 +2977,5 @@ class H(BaseHTTPRequestHandler):
 if __name__=="__main__":
     port=int(os.environ.get("PORT","8760"))
     print(f"澜绣云裳管理后台 → http://127.0.0.1:{port}")
+    _转写工人()          # 起转写工人,并把上次没转完的重新排上
     HTTPServer(("127.0.0.1",port),H).serve_forever()

@@ -80,6 +80,7 @@ run "简体闸 · 业务数据一律简体(外来文本进来前先查)" python3
 run "商机判断 · 24 条逐字稿(造的对话·纯规则版·只许升不许降)" python3 backend/opportunity_check.py
 run "商机对象 · 指回通话、和方案互指、两种终态分得开、诉求指得回原话" python3 backend/opportunity_obj_check.py
 run "商机研判判分器 · 24 条对照(原话只认客户说的、指向真在库里且归这位客户、不给成单概率)" python3 agent/oppo_eval_judgetest.py
+run "录音接进流程 · 双声道按声道分、单声道模型分(答歪整通标未分)、失败落库、上传核门店" python3 backend/call_flow_check.py
 run "排班 · 五种状态逐例标真值(没排班和休息长得一样)" python3 backend/roster_check.py
 run "客户归属 · 「有顾问」≠「有人管」(只查不改)" python3 backend/ownership_check.py
 run "成交归因 · 收入分成必须=100,影响力分成可以超(规则相反)" python3 backend/credit_check.py
@@ -245,6 +246,10 @@ run "「当前方案」注入 · 列清单不算取过" ./agentsite/.venv/bin/py
 run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py
 run "中文否定与子串 · 29 条(十次踩过的坑)" python3 agent/textmatch.py
 run "判分器自测 · 人造用例(两个方向)" python3 agent/chat_eval_judgetest.py
+run "工具选择判分器 · 20 条对照(「全部必需都在」不是「至少一个」)" python3 agent/select_eval_judgetest.py
+run "工具筛选准入线 · 23 条(线随走不走缓存漂 8 倍,所以不许写死)" python3 agent/tool_select_judgetest.py
+run "工厂回传判分器 · 37 条对照(写好那天起就没进过门禁,10-03 补)" python3 agent/factory_eval_judgetest.py
+run "自测都进了门禁 · 没注册的自测和不存在的自测在绿勾上长得一样" python3 tools/selftest_registry_check.py
 run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judgetest.py
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py
 run "识图判分器 · 13 条对照用例" python3 agent/vision_eval_judgetest.py

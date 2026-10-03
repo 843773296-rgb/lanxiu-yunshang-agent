@@ -46,22 +46,50 @@ DB = os.path.join(HERE, "lanxiu.db")
 
 # 喂给模型的行业词。**不写死在这儿** —— 从知识库和库里现读,
 # 否则加一个新形制要改代码(和场合词表那条是同一个理由)。
-def 行业词(limit=60):
-    words = []
+热词字数上限 = 180   # whisper 的提示最多约 224 个 token,汉字一个字 1–2 个 token,超了它会截掉前面的
+
+
+def _短名(名):
+    """「唐制齐胸襦裙」→「齐胸襦裙」、「绢 / 电力纺」→ 两个、「香云纱 · 双面莨」→「香云纱」。人说的是短名。"""
+    出 = []
+    for 段 in re.split(r"\s*/\s*", 名 or ""):
+        段 = re.sub(r"[((].*?[))]", "", 段).split("·")[0].strip()
+        段 = re.sub(r"^(唐制|宋制|明制|晋制|魏晋|童款|改良)", "", 段).strip()
+        if 2 <= len(段) <= 5:
+            出.append(段)
+    return 出
+
+
+def 行业词(limit=None):
+    """喂给 whisper 的行业词。**按类别轮流取**,每一类都有份。
+
+    ⚠️ 10-03 之前这里是「形制取 40 个 + craft 表取前 30 个」—— 而 craft 表**前面全是形制**,
+    于是**缂丝、妆花、香云纱、云肩一个都没进热词**;形制还是全称(「唐制齐胸襦裙」),人说的是「齐胸襦裙」。
+    之前 asr_check 量出的「热词有用」,量的只是形制和颜色那一半。
+    """
+    类们 = []
     try:
         with sqlite3.connect(DB) as c:
-            words += [r[0] for r in c.execute("select name from xingzhi limit 40")]
-            words += [r[0] for r in c.execute("select name from craft limit 30")]
-            words += [r[0] for r in c.execute(
-                "select distinct color from sku where color not in ('定制','素') limit 25")]
+            for 类 in ("形制", "材质", "工艺", "配饰"):
+                类们.append([w for (n,) in c.execute("SELECT name FROM craft WHERE cat=? ORDER BY code", (类,))
+                             for w in _短名(n)])
+            类们.append([r[0] for r in c.execute(
+                "SELECT DISTINCT color FROM sku WHERE color NOT IN ('定制','素') ORDER BY color")])
+        # 纹样走口径模块(knowledge/motif.py 是唯一真相源),和商机判断的纹样词表同一份
+        import sys as _sys
+        _sys.path.insert(0, os.path.join(HERE, "..", "knowledge"))
+        import motif
+        类们.append([w for w in motif.词表() if w != "无纹样"])
     except sqlite3.Error:
         pass
-    seen, out = set(), []
-    for w in words:
-        w = (w or "").strip()
-        if w and w not in seen and len(w) <= 8:
-            seen.add(w); out.append(w)
-    return out[:limit]
+    seen, out, 字 = set(), [], 0
+    for k in range(max((len(x) for x in 类们), default=0)):
+        for 类 in 类们:
+            if k < len(类):
+                w = (类[k] or "").strip()
+                if w and w not in seen and len(w) <= 8 and 字 + len(w) + 1 <= 热词字数上限:
+                    seen.add(w); out.append(w); 字 += len(w) + 1
+    return out[:limit] if limit else out
 
 
 def 提示词():
@@ -139,6 +167,23 @@ def 建表(c):
                    created   TEXT not null,
                    edited_by TEXT,          -- 人工校对过就记下是谁
                    edited_at TEXT)""")
+    _补列(c)
+
+
+def _补列(c):
+    """10-03 录音接进业务流程时加的列。老库没有就补(ALTER 只加列,不动已有数据)。"""
+    有 = {r[1] for r in c.execute("PRAGMA table_info(call_audio)")}
+    for 列, 型 in (("channel", "TEXT"),        # 沟通方式:电话 / 上门 / 到店(业务 D7)
+                   ("status", "TEXT"),         # 排队 / 转写中 / 完成 / 失败;NULL = 不经过流水线(造的逐字稿)
+                   ("fail_reason", "TEXT"),
+                   ("uploaded_by", "TEXT")):
+        if 列 not in 有:
+            c.execute(f"ALTER TABLE call_audio ADD COLUMN {列} {型}")
+    有 = {r[1] for r in c.execute("PRAGMA table_info(call_transcript)")}
+    if "speaker_src" not in 有:
+        # 说话人是怎么分出来的:声道 / 模型 / 未分 / 文本自带(造的逐字稿)。
+        # **「声道分的」和「模型猜的」在逐字稿里长得一模一样** —— 都是「客户:……」
+        c.execute("ALTER TABLE call_transcript ADD COLUMN speaker_src TEXT")
 
 
 def 入库(audio_id, customer_id, wav, 文本, model, 用时, source, 用热词=True,
@@ -164,6 +209,261 @@ def 入库(audio_id, customer_id, wav, 文本, model, 用时, source, 用热词=
                        hotwords=excluded.hotwords, cost_sec=excluded.cost_sec,
                        trad=excluded.trad""",
                   (audio_id, 文本, "whisper.cpp", model, 1 if 用热词 else 0, 用时, 繁 or None, today))
+
+
+# ══════════════════════════════════════════════════════════════════
+# 分说话人 + 业务流程(10-03,用户选的 B 方案)
+# ══════════════════════════════════════════════════════════════════
+#
+# 商机这条链靠的是「**只认客户说的话**」(顾问介绍商品一定会提颜色)。
+# 而 whisper 吐出来的是一整段,不分谁说的。用户 10-03 定:
+#
+#     双声道(电话系统把顾问、客户录在左右两边)→ 按声道分        speaker_src = 声道
+#     单声道(上门 / 到店,一个麦克风)        → 模型按内容分      speaker_src = 模型
+#     分不出来(模型没跑通 / 声道分不清)     → 标「未分」,不进商机判断
+#
+# 模型分的那些,兜底是业务 D5:商机要顾问点头才落库 —— 顾问当时在场,谁说的哪句一眼看得出。
+# 实测(合成录音,10-03):双声道 13/13、模型分 34/34 —— **合成音频每句间隔整齐,真实抢话会更差,
+# 那两个满分不代表真实效果**。真录音进来之后要重量(tools/asr_speaker_eval.py)。
+
+# ⚠️ **拍脑袋的**:双声道里左边是顾问。取决于门店电话系统怎么录,接真设备时要核。
+# 录反了的后果:顾问的话全被当成客户的诉求 —— 所以做成一个有名字的常量,不散在代码里
+左声道是 = "顾问"
+右声道是 = "客户"
+单次音频上限秒 = 3600          # 一小时;再长多半是录音没停,转写要占住机器很久
+
+
+def 声道数(wav):
+    import wave
+    with wave.open(wav) as w:
+        return w.getnchannels()
+
+
+def 规整(src, dst):
+    """任意格式(m4a / mp3 / wav…)→ 16k 16 位 wav,**保留声道数**(双声道要留着分人)。
+    用 macOS 自带的 afconvert —— 不装 ffmpeg。返回 (dst, 秒数)。"""
+    r = subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16@16000", src, dst],
+                       capture_output=True, text=True, timeout=600)
+    if r.returncode != 0 or not os.path.exists(dst):
+        raise RuntimeError(f"这个文件转不成 wav(是不是录音文件?):{(r.stderr or '')[-200:]}")
+    import wave
+    with wave.open(dst) as w:
+        return dst, w.getnframes() / float(w.getframerate())
+
+
+def 拆声道(wav):
+    """双声道 → 左、右两个单声道 wav。纯标准库(wave + array),不装 ffmpeg。"""
+    import wave, array as _a
+    with wave.open(wav) as w:
+        if w.getnchannels() != 2 or w.getsampwidth() != 2:
+            raise ValueError("只拆 16 位双声道")
+        率 = w.getframerate(); 数 = _a.array("h", w.readframes(w.getnframes()))
+    出 = []
+    for 边, 名 in ((0, "L"), (1, "R")):
+        p = wav[:-4] + f".{名}.wav"
+        with wave.open(p, "w") as o:
+            o.setnchannels(1); o.setsampwidth(2); o.setframerate(率); o.writeframes(数[边::2].tobytes())
+        出.append(p)
+    return 出
+
+
+# 切轮次的技术参数(只报不问,用户看不到):
+帧毫秒 = 30            # 每 30ms 量一次两边的音量
+静音比 = 0.06          # 低于「整通响度的高位」的 6% 算没人说话
+压过倍数 = 1.5         # 一边要比另一边响 1.5 倍才算是它在说(真实电话会串音:客户的声音漏进顾问那一路)
+并入毫秒 = 400         # 同一个人中间停不到 0.4 秒,算同一轮
+最短毫秒 = 300         # 短于 0.3 秒的一轮丢掉(咳嗽、按键音)
+
+
+def 按声道切轮次(wav):
+    """双声道 → [(起始毫秒, 结束毫秒, "0"左 / "1"右)]。**按哪一边更响定谁在说**,不靠 whisper 切段。"""
+    import wave, array as _a
+    with wave.open(wav) as w:
+        率 = w.getframerate(); 数 = _a.array("h", w.readframes(w.getnframes()))
+    步 = 率 * 帧毫秒 // 1000
+    L, R = 数[0::2], 数[1::2]
+    能 = []
+    for k in range(0, len(L) - 步 + 1, 步):
+        能.append((sum(abs(x) for x in L[k:k + 步]) / 步, sum(abs(x) for x in R[k:k + 步]) / 步))
+    if not 能:
+        return []
+    高 = sorted(max(a, b) for a, b in 能)[int(len(能) * 0.95)] or 1
+    标 = []
+    for a, b in 能:
+        if max(a, b) < 高 * 静音比:
+            标.append(None)
+        elif a >= b * 压过倍数:
+            标.append("0")
+        elif b >= a * 压过倍数:
+            标.append("1")
+        else:
+            标.append("?")
+    轮 = []
+    for k, x in enumerate(标):
+        if x is None:
+            continue
+        起, 止 = k * 帧毫秒, (k + 1) * 帧毫秒
+        if 轮 and 轮[-1][2] == x and 起 - 轮[-1][1] <= 并入毫秒:
+            轮[-1][1] = 止
+        else:
+            轮.append([起, 止, x])
+    return [tuple(t) for t in 轮 if t[1] - t[0] >= 最短毫秒]
+
+
+def 转写分段(wav, 双声道, model=默认模型, 用热词=True, timeout=1800):
+    """返回 [(起始毫秒, 文本, 说话人或 None)]。双声道时说话人是 "0"(左)/"1"(右)/"?"。
+
+    双声道**先按两边音量切成一轮一轮,再逐轮转写**。试过两种不行的(10-03 合成录音实测):
+      · whisper 自带 `-di`:先切段再按段标人,而它切段**不管换人**,「特别仙气儿。」(顾问)和
+        「仙气儿,听着就不错」(客户)被切进同一段,那一段怎么标都错一半
+      · 拆成左右两条各转再按时间合:人全标对了,但单条声道里大段静音,whisper 的时间戳会乱
+        (客户 5.6 秒说的话标成 0 秒),合回去**顺序错了**
+    按音量切轮次:每一轮只有一个人,起止时间是自己量的,不靠 whisper。
+    """
+    if 双声道:
+        import wave, array as _a
+        with wave.open(wav) as w:
+            率 = w.getframerate(); 数 = _a.array("h", w.readframes(w.getnframes()))
+        出 = []
+        for k, (起, 止, 谁) in enumerate(按声道切轮次(wav)):
+            边 = 数[(0 if 谁 != "1" else 1)::2][起 * 率 // 1000: 止 * 率 // 1000]
+            p = wav[:-4] + f".t{k}.wav"
+            with wave.open(p, "w") as o:
+                o.setnchannels(1); o.setsampwidth(2); o.setframerate(率); o.writeframes(边.tobytes())
+            文 = "".join(t for _, t, _ in _转写一条(p, model, 用热词, timeout))
+            for f in (p, p[:-4] + ".seg.json"):
+                os.path.exists(f) and os.remove(f)
+            if 文:
+                出.append((起, 文, 谁))
+        return 出
+    return _转写一条(wav, model, 用热词, timeout)
+
+
+def _转写一条(wav, model, 用热词, timeout):
+    ok, 缺 = 可用()
+    if not ok:
+        raise RuntimeError("ASR 环境不全:" + ";".join(缺))
+    out = wav[:-4] + ".seg"
+    cmd = [可执行, "-m", os.path.join(模型目录, model), "-f", wav, "-l", "zh", "-oj", "-of", out]
+    if 用热词 and 提示词():
+        cmd += ["--prompt", 提示词()]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0 or not os.path.exists(out + ".json"):
+        raise RuntimeError(f"转写失败(退出码 {r.returncode}):{(r.stderr or '')[-300:]}")
+    import json as _js
+    with open(out + ".json", encoding="utf-8") as f:
+        段 = _js.load(f).get("transcription") or []
+    return [(x["offsets"]["from"], (x.get("text") or "").strip(), None)
+            for x in 段 if (x.get("text") or "").strip()]
+
+
+def 按声道成行(段们):
+    """双声道:speaker 0 → 左声道是,1 → 右声道是,其余 → 未分。返回 [(谁, 文本)]。"""
+    映 = {"0": 左声道是, "1": 右声道是}
+    return [(映.get(str(spk), "未分"), t) for _, t, spk in 段们]
+
+
+模型分人提示 = ("下面是汉服门店顾问和客户的一段对话录音转写,逐行编了号,但没有标说话人。"
+              "逐行判断每一行是「顾问」还是「客户」说的。顾问是店里的人:介绍商品、问需求、报价、约时间;"
+              "客户是来买东西的人。只输出一个 JSON 数组,如 [\"顾问\",\"客户\"],长度必须和行数一致。")
+
+
+def 模型分人(段们, call=None):
+    """单声道:交给模型按内容分。返回 ([(谁, 文本)], 分人方式)。
+
+    **模型没跑通、或答的形状不对 → 整通标「未分」**,不猜、不部分采纳:
+    「模型说是客户」和「我们替它补了一个客户」在逐字稿里长得一模一样。
+    `call` 可以注入假的调用(检查里用),默认走 agent/v1.call(记录仪自动接上)。
+    """
+    import json as _js
+    行 = "\n".join(f"{i + 1}. {t}" for i, (_, t, _) in enumerate(段们))
+    try:
+        if call is None:
+            import sys as _sys
+            _sys.path.insert(0, os.path.join(HERE, "..", "agent"))
+            import v1
+            pv = v1.provider()
+            r = v1.call(pv, dict(model=pv["model"], max_tokens=40 + 8 * len(段们), system=模型分人提示,
+                                 messages=[{"role": "user", "content": 行}]),
+                        purpose="录音转写·单声道分说话人", gen="工具")
+        else:
+            r = call(行)
+        t = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
+        m = re.search(r"\[.*\]", t, re.S)
+        标 = _js.loads(m.group(0)) if m else None
+    except Exception as e:
+        return [("未分", t) for _, t, _ in 段们], f"未分(模型没跑通:{type(e).__name__})"
+    if not isinstance(标, list) or len(标) != len(段们) or any(x not in ("顾问", "客户") for x in 标):
+        return [("未分", t) for _, t, _ in 段们], "未分(模型答的形状不对)"
+    return [(w, t) for w, (_, t, _) in zip(标, 段们)], "模型"
+
+
+def 成稿(行们):
+    """[(谁, 文本)] → 「顾问:……\n客户:……」。相邻同一个人的段并成一行(whisper 会把一句话切成几段)。"""
+    出 = []
+    for 谁, t in 行们:
+        if 出 and 出[-1][0] == 谁:
+            出[-1] = (谁, 出[-1][1] + t)
+        else:
+            出.append((谁, t))
+    return "\n".join(f"{谁}:{t}" for 谁, t in 出)
+
+
+def 处理(audio_id, db=None, call=None, 转写=None):
+    """一通录音从「排队」走到「完成 / 失败」。**任何一步失败都落「失败 + 原因」**,不留在「转写中」:
+    「还在转」和「早就崩了」在页面上长得一模一样。`转写` 可注入假的转写函数(检查里用)。"""
+    db = db or DB
+    转写 = 转写 or 转写分段
+    with sqlite3.connect(db) as c:
+        建表(c)
+        r = c.execute("SELECT path, customer_id FROM call_audio WHERE id=?", (audio_id,)).fetchone()
+        if not r:
+            return False, f"没有录音 {audio_id}"
+        c.execute("UPDATE call_audio SET status='转写中', fail_reason=NULL WHERE id=?", (audio_id,))
+    path = r[0]
+    try:
+        双 = 声道数(path) == 2
+        t0 = time.time()
+        段们 = 转写(path, 双)
+        用时 = time.time() - t0
+        if not 段们:
+            raise RuntimeError("转出来是空的 —— 录音里没有人声,或者文件坏了")
+        if 双:
+            行们 = 按声道成行(段们)
+            方式 = "声道" if any(w != "未分" for w, _ in 行们) else "未分(声道分不清)"
+        else:
+            行们, 方式 = 模型分人(段们, call=call)
+        文本 = 成稿(行们)
+        import simplified
+        繁 = "".join(simplified.繁体字(文本))
+        today = datetime.date.today().isoformat()
+        with sqlite3.connect(db) as c:
+            c.execute("""insert into call_transcript(audio_id,text,engine,model,hotwords,cost_sec,trad,created,speaker_src)
+                         values(?,?,?,?,?,?,?,?,?)
+                         on conflict(audio_id) do update set text=excluded.text, model=excluded.model,
+                           hotwords=excluded.hotwords, cost_sec=excluded.cost_sec, trad=excluded.trad,
+                           speaker_src=excluded.speaker_src""",
+                      (audio_id, 文本, "whisper.cpp", 默认模型, 1, 用时, 繁 or None, today, 方式))
+            c.execute("UPDATE call_audio SET status='完成' WHERE id=?", (audio_id,))
+        # 挂商机:规则层判一遍,是就建「待确认」。**这一步失败不算转写失败** —— 逐字稿已经在了,
+        # 商机可以事后再判;但要留痕,不然「没判出商机」和「判的时候崩了」长得一样
+        try:
+            import sys as _sys
+            _sys.path[:0] = [HERE, os.path.join(HERE, "..", "knowledge")]
+            import opportunity_store as _os
+            with sqlite3.connect(db) as c:
+                _os.建表(c)
+                _os.从转写建(c, audio_id)
+        except Exception as e:
+            with sqlite3.connect(db) as c:
+                c.execute("UPDATE call_audio SET fail_reason=? WHERE id=?",
+                          (f"转写完成,但判商机时出错:{type(e).__name__}: {e}"[:300], audio_id))
+        return True, 方式
+    except Exception as e:
+        with sqlite3.connect(db) as c:
+            c.execute("UPDATE call_audio SET status='失败', fail_reason=? WHERE id=?",
+                      (f"{type(e).__name__}: {e}"[:300], audio_id))
+        return False, str(e)
 
 
 if __name__ == "__main__":

@@ -70,6 +70,29 @@ def 从通话建(c, call_id, 客户, 顾问, 诉求, 时间, 下一步=None, 预
     return oid
 
 
+def 从转写建(c, audio_id):
+    """一通录音转写完 → 规则层判一遍(免费、不调模型),是商机就建一条「待确认」挂到这通上。
+
+    **只建「待确认」** —— 业务 D5:模型 / 规则给判断,顾问点头才算。规则层约三成是随口一提,
+    那正是顾问点头这一步要拦的。说话人没分出来的不建(分不清哪句是客户说的)。
+    返回商机号或 None。同一通重复调用不重复建。
+    """
+    import opportunity as J, oppo as KO
+    r = c.execute("SELECT a.customer_id, t.text, t.speaker_src, a.created FROM call_audio a "
+                  "JOIN call_transcript t ON t.audio_id=a.id WHERE a.id=?", (audio_id,)).fetchone()
+    if not r or (r[2] or "").startswith("未分"):
+        return None
+    if c.execute("SELECT 1 FROM opportunity WHERE call_id=?", (audio_id,)).fetchone():
+        return None
+    是, 码, _ = J.判断(r[1], r[0])
+    if not 是:
+        return None
+    行们 = KO.客户说的(r[1]).splitlines()
+    诉求 = [(维, 词, K.原话(行们, 词)) for 词, 维, _ in J.命中维度(KO.客户说的(r[1]))]
+    顾问 = (c.execute("SELECT advisor_no FROM customer WHERE id=?", (r[0],)).fetchone() or [None])[0]
+    return 从通话建(c, audio_id, r[0], 顾问, 诉求, r[3], 下一步=f"按「{码}」去查店里有没有对得上的款")
+
+
 def 改状态(c, oid, 到, 时间, 经手人=None, 关闭原因=None, 等什么=None, 方案=None):
     """按口径转状态。返回 (成没成, 一句人话)。**不合口径的不写**。"""
     r = c.execute("SELECT status FROM opportunity WHERE id=?", (oid,)).fetchone()

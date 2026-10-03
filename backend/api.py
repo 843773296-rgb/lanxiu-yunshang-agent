@@ -5363,7 +5363,7 @@ def call_opportunity(customer=None, limit=20, call=None):
         if call:
             where.append("t.audio_id = ?"); args.append(call)
         rs = [dict(r) for r in con.execute(
-            "SELECT t.audio_id, t.text, a.created, cu.id cid, cu.name cname, cu.shop "
+            "SELECT t.audio_id, t.text, a.created, t.speaker_src, a.channel, cu.id cid, cu.name cname, cu.shop "
             "FROM call_transcript t JOIN call_audio a ON a.id = t.audio_id "
             "JOIN customer cu ON cu.id = a.customer_id"
             + (" WHERE " + " AND ".join(where) if where else "")
@@ -5447,6 +5447,18 @@ def _场合词表():
         con.close()
 
 
+def _分人说明(src):
+    """「声道分的」和「模型猜的」在逐字稿里长得一模一样 —— 都是「客户:……」。来路必须跟着原文走。"""
+    if src == "声道":
+        return "按录音声道分的(双声道:顾问、客户各一边),可信"
+    if src == "模型":
+        return ("**模型按内容分的**(单声道,上门 / 到店)—— 可能把顾问的话标成客户的。"
+                "列诉求时在总结里写明「说话人是模型分的,请顾问核对原话是不是客户说的」")
+    if src and src.startswith("未分"):
+        return f"**没分出说话人**({src})—— 分不清哪句是客户说的,判不了商机,照实说"
+    return "逐字稿自带说话人标注(演示数据)"
+
+
 def _整理一通(r, 范围):
     """一通通话的原料:原文、客户提到的偏好、对得上的在架商品、客户名下的方案 / 订单号。
 
@@ -5484,6 +5496,8 @@ def _整理一通(r, 范围):
     return {
         "看的范围": 范围, "通话": r["audio_id"], "通话时间": (r.get("created") or "")[:16],
         "客户": f"{r['cname']}({r['cid']})",
+        "沟通方式": r.get("channel") or "—",
+        "说话人怎么分的": _分人说明(r.get("speaker_src")),
         "原文": r["text"],
         "客户提到的": 提到,
         "几条全都对得上的在架商品": (全中[:5] if len(提到) > 1 else "只提到一个偏好,看上面那一栏"),

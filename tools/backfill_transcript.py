@@ -72,9 +72,10 @@ def main():
         c.execute("""insert into call_audio(id,customer_id,ref_kind,ref_id,path,seconds,source,created)
                      values(?,?,?,?,?,?,?,?)""",
                   (tid, cid, None, None, "", None, 来源, TODAY))
-        c.execute("""insert into call_transcript(audio_id,text,engine,model,hotwords,cost_sec,trad,created)
-                     values(?,?,?,?,?,?,?,?)""",
-                  (tid, 条["逐字稿"], "造数据", data.get("模型", "?"), 0, None, None, TODAY))
+        # speaker_src = 文本自带:造的逐字稿里「顾问:」「客户:」是写的时候就标好的,不是分出来的
+        c.execute("""insert into call_transcript(audio_id,text,engine,model,hotwords,cost_sec,trad,created,speaker_src)
+                     values(?,?,?,?,?,?,?,?,?)""",
+                  (tid, 条["逐字稿"], "造数据", data.get("模型", "?"), 0, None, None, TODAY, "文本自带"))
         # 真值单独进 truth —— 业务表里不许有答案
         c.execute("""insert into truth(case_id,breakpoint,root_cause,expected_action,
                                        expected_evidence,note,src)

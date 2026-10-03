@@ -290,6 +290,26 @@ def 用例表():
                                       actor=员["no"] if 员 else "魏欣新"),
                    "op_log"))
 
+    # 通话录音上传(10-03):管理后台客户页。**不入队**(冒烟不该真去转写),
+    # 格式转换换成假的(CI 上没有 afconvert,而这里验的是「收下 + 落库」,不是系统工具),录音落临时目录
+    店客 = 取("SELECT id, shop FROM customer WHERE shop IS NOT NULL LIMIT 1")
+    if 店客:
+        def _传(s):
+            import asr, base64, tempfile, wave
+            s.录音目录 = tempfile.mkdtemp()
+            def 假规整(src, dst):
+                with wave.open(dst, "w") as w:
+                    w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000); w.writeframes(b"\0\0" * 160)
+                return dst, 0.01
+            真, asr.规整 = asr.规整, 假规整
+            try:
+                return s.call_upload(dict(no=员["no"] if 员 else "T", name="冒烟", role="顾问", shop=店客["shop"]),
+                                     dict(customer_id=店客["id"], channel="电话", filename="冒烟.wav",
+                                          data=base64.b64encode(b"x").decode()), 入队=False)[0]
+            finally:
+                asr.规整 = 真
+        出.append(("call_upload", _传, "call_audio"))
+
     return [x for x in 出 if 有表(x[2])]
 
 
@@ -332,7 +352,7 @@ def 指到副本():
     for m in ("server", "api", "oplog", "ops", "tasks", "auth", "files",
               "booking", "img", "appt_expire",
               "factory_inbox", "order_write", "measure_write", "fitting_write",
-              "pickup_write", "repair_write"):
+              "pickup_write", "repair_write", "asr"):
         try:
             importlib.import_module(m)
         except Exception:

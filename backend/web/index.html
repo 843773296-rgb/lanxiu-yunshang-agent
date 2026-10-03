@@ -1144,7 +1144,7 @@ async function custDetail(cid){
   const APC={"已预约":"#3381FF","已到店":"#FF7D00","已完成":"#00B42A","已取消":"#C9CDD4",
              "已过期":"#C9CDD4","爽约":"#F53F3F"};
   const marks={}; d.appts.forEach(a=>{marks[(a.start_ts||"").slice(0,10)]=APC[a.status]||"#C9CDD4"});
-  const TABS=["跟进记录","预约记录","押金记录","操作日志"];
+  const TABS=["跟进记录","通话录音","预约记录","押金记录","操作日志"];
   const tbl=()=>{
     if(CT.tab==="跟进记录") return d.followups.length? `<table class="tb"><thead><tr>
       <th style="width:170px">跟进时间</th><th style="width:110px">跟进方式</th>
@@ -1152,6 +1152,28 @@ async function custDetail(cid){
       ${d.followups.map(f=>`<tr><td class="mono">${esc(f.ts)}</td><td>${esc(f.channel)}</td>
        <td>${esc(f.advisor)}</td><td>${esc(f.content)}</td></tr>`).join("")}</tbody></table>`
       : `<div class="empty">暂无跟进记录</div>`;
+    if(CT.tab==="通话录音"){
+      // 说话人怎么分的要摆出来:「声道分的」和「模型猜的」在逐字稿里长得一模一样
+      const SPK={"声道":["p-ok","按声道分"],"模型":["p-warn","模型按内容分 · 顾问请核对"],"文本自带":["p-mut","演示数据"]};
+      const STP={"完成":"p-ok","失败":"p-bad","排队":"p-mut","转写中":"p-warn"};
+      const up=`<div style="display:flex;gap:10px;align-items:center;padding:12px 0;flex-wrap:wrap">
+        <input type="file" id="callFile" accept="audio/*,.wav,.m4a,.mp3,.aac">
+        <select id="callCh"><option value="">沟通方式…</option><option>电话</option><option>上门</option><option>到店</option></select>
+        <button class="btn" id="callUp">上传录音</button><span id="callMsg" style="font-size:12.5px;color:var(--ink2)"></span></div>
+        <div style="font-size:12px;color:var(--ink3);margin-bottom:8px">电话录音如果是双声道(顾问、客户各一边)会按声道分说话人;上门 / 到店的单声道录音由模型按内容分,<b>请顾问核对</b>。没接通的电话不算沟通,不用传。</div>`;
+      const cs=d.calls||[];
+      return up+(cs.length? `<table class="tb"><thead><tr><th style="width:190px">通话</th><th style="width:70px">方式</th>
+        <th style="width:70px">时长</th><th style="width:80px">状态</th><th style="width:170px">说话人</th><th>逐字稿</th></tr></thead><tbody>
+        ${cs.map(x=>{const sp=SPK[x.speaker_src]||(x.speaker_src?["p-bad",x.speaker_src]:null);
+          return `<tr><td class="mono">${esc(x.id)}<div style="font-size:11.5px;color:var(--ink3)">${esc((x.created||"").slice(0,16))}</div></td>
+          <td>${esc(x.channel||"—")}</td><td class="mono">${x.seconds?Math.round(x.seconds)+"s":"—"}</td>
+          <td><span class="pill ${STP[x.status]||"p-mut"}">${esc(x.status||"已入库")}</span>${x.fail_reason?`<div style="font-size:11.5px;color:var(--bad)">${esc(x.fail_reason)}</div>`:""}</td>
+          <td>${sp?`<span class="pill ${sp[0]}">${esc(sp[1])}</span>`:"—"}${x.trad?`<div style="font-size:11.5px;color:var(--warn)">有繁体字:${esc(x.trad)}</div>`:""}</td>
+          <td>${x.text?`<details><summary style="cursor:pointer">${esc(x.text.split("\n")[0].slice(0,40))}…</summary>
+            <pre style="white-space:pre-wrap;font-size:12.5px;margin:6px 0">${esc(x.text)}</pre>
+            <div style="font-size:11.5px;color:var(--ink3)">要总结、研判商机、出下一步:在智能运维平台说「整理一下通话 ${esc(x.id)}」</div></details>`:"—"}</td></tr>`}).join("")}
+        </tbody></table>` : `<div class="empty">暂无通话录音</div>`);
+    }
     if(CT.tab==="预约记录") return d.appts.length? `<table class="tb"><thead><tr>
       <th style="width:110px">预约编号</th><th style="width:170px">预约时间</th><th>归属店铺</th>
       <th style="width:100px">顾问</th><th style="width:100px">状态</th>
@@ -1292,6 +1314,19 @@ async function custDetail(cid){
   M.querySelectorAll("[data-edit]").forEach(e=>e.onclick=()=>formEditCustomer(c,()=>custDetail(cid)));
   M.querySelectorAll("[data-fu]").forEach(e=>e.onclick=()=>formFollowup(cid,()=>custDetail(cid)));
   M.querySelectorAll("[data-newapt]").forEach(e=>e.onclick=()=>formAppt(cid,()=>{CT.tab="预约记录";custDetail(cid)}));
+  const cu=document.getElementById("callUp");
+  if(cu) cu.onclick=async()=>{
+    const f=document.getElementById("callFile").files[0], ch=document.getElementById("callCh").value,
+          msg=document.getElementById("callMsg");
+    if(!f){msg.textContent="先选一个录音文件";return}
+    if(!ch){msg.textContent="选一下沟通方式(电话 / 上门 / 到店)";return}
+    msg.textContent="上传中…";
+    const b64=await new Promise((ok,no)=>{const r=new FileReader();
+      r.onload=()=>ok(String(r.result).split(",")[1]||""); r.onerror=no; r.readAsDataURL(f)});
+    const r=await post("/api/call-upload",{customer_id:cid,channel:ch,filename:f.name,data:b64});
+    if(r.error){msg.textContent="没传上:"+r.error;return}
+    msg.textContent=r.说明||"已排队"; setTimeout(()=>custDetail(cid),1500);
+  };
   M.querySelectorAll("[data-a]").forEach(e=>e.onclick=()=>view("appt",e.dataset.a));
   M.querySelectorAll("[data-t]").forEach(e=>e.onclick=()=>view("task",e.dataset.t));
 }
