@@ -76,6 +76,11 @@ def main():
     指定 = [x for x in sys.argv[1:] if x.startswith("TS-")]
     题 = 指定 or ["TS-001", "TS-002", "TS-004", "TS-007", "TS-017", "TS-019"]
     稿们 = {i: c.execute("SELECT text FROM call_transcript WHERE audio_id=?", (i,)).fetchone()[0] for i in 题}
+    # 埋一通「客户真说了被子」的 —— 同音纠错最怕把真词改成行业词(被子 → 褙子)
+    if not 指定:
+        题.append("埋-被子")
+        稿们["埋-被子"] = ("顾问:您好,想看点什么?\n客户:家里被子太厚了,不过今天是来看衣服的,想要一件宋制褙子。"
+                         "\n顾问:褙子我们有好几款。\n客户:被子的事回头再说,先看褙子。")
     颜色, 形制, 纹样, 场合 = J.词表()
     行业词 = set(形制) | set(纹样) | {"缂丝", "妆花", "盘金绣", "云肩", "香云纱", "马面裙", "襦裙", "褙子", "月白"}
     目录 = tempfile.mkdtemp()
@@ -96,8 +101,24 @@ def main():
             总[f"模型{轮}"][0] += 对m; 总[f"模型{轮}"][1] += len(段m)
             if 轮 == 1:
                 模型稿 = asr.成稿(行m)
-        # ② 行业词
+        # ② 行业词:纠错前 / 纠错后(纠错调模型,两轮)
         原 = 稿们[i]; 转 = asr.成稿(行)
+        纠后们 = []
+        for 轮 in (1, 2):
+            try:
+                纠, 收, 拒 = asr.同音纠错(转)
+            except Exception as e:
+                纠, 收, 拒 = 转, [], [("", "", f"没跑通 {type(e).__name__}")]
+            纠后们.append((纠, 收, 拒))
+        该0 = [w for w in 行业词 if w in 原]
+        for 轮, (纠, 收, 拒) in enumerate(纠后们, 1):
+            总.setdefault(f"纠后{轮}", [0, 0]); 总[f"纠后{轮}"][0] += sum(w in 纠 for w in 该0); 总[f"纠后{轮}"][1] += len(该0)
+            错 = [(o, n) for o, n in 收 if n not in 原]          # 改成了原稿里根本没有的词 = 改错
+            if "被子" in 原 and "被子" not in 纠:
+                错.append(("被子", "褙子(真词被改掉)"))
+            总.setdefault(f"改错{轮}", [0, 0]); 总[f"改错{轮}"][0] += len(错); 总[f"改错{轮}"][1] += len(收)
+            if 错 or 轮 == 1:
+                print(f"     纠错第{轮}轮 改 {收} 拒 {len(拒)} 条{' · ❌ 改错 ' + str(错) if 错 else ''}")
         该 = [w for w in 行业词 if w in 原]
         中 = [w for w in 该 if w in 转]
         总["词"][0] += len(中); 总["词"][1] += len(该)
@@ -113,7 +134,8 @@ def main():
     p = lambda k: f"{总[k][0]}/{总[k][1]}"
     print(f"⚠️ 合成语音、每句间隔整齐、从不抢话 —— 下面是**上限**,不是真实效果")
     print(f"  说话人:双声道 {p('声道')} · 单声道模型分 第 1 轮 {p('模型1')} / 第 2 轮 {p('模型2')}")
-    print(f"  行业词转对:{p('词')}")
+    print(f"  行业词转对:纠错前 {p('词')} · 纠错后 第 1 轮 {p('纠后1')} / 第 2 轮 {p('纠后2')}")
+    print(f"  改错(改成原稿里没有的词 + 真词被改掉):第 1 轮 {p('改错1')} / 第 2 轮 {p('改错2')}(分母是改了几处)")
     print(f"  商机判断和原稿一致:{p('判断')}")
     out = os.path.join(ROOT, "agent", "asr-speaker-results.jsonl")
     sys.path.insert(0, os.path.join(ROOT, "agent"))

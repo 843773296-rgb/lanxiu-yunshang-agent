@@ -4342,7 +4342,7 @@
   "file": [
    {
     "path": "backend/asr.py",
-    "old": "    if not isinstance(标, list) or len(标) != len(段们) or any(x not in (\"顾问\", \"客户\") for x in 标):\n",
+    "old": "    if not isinstance(标, list) or len(标) != len(段们):\n",
     "new": "    if not isinstance(标, list):\n"
    }
   ],
@@ -4443,5 +4443,65 @@
    }
   ],
   "预期红": "没有探针结果 → 抛(不给默认成本)"
+ },
+ {
+  "script": "backend/call_flow_check.py",
+  "改坏": "纠错不核词表",
+  "file": [
+   {
+    "path": "backend/asr.py",
+    "old": "        if n not in 全:\n            拒.append((o, n, \"改成的不是行业词\"))\n        elif not o or o not in 稿:",
+    "new": "        if not o or o not in 稿:"
+   }
+  ],
+  "预期红": "改成的不是行业词 → 不改"
+ },
+ {
+  "script": "backend/call_flow_check.py",
+  "改坏": "纠错不留原稿",
+  "file": [
+   {
+    "path": "backend/asr.py",
+    "old": "                      (audio_id, 文本, \"whisper.cpp\", 默认模型, 1, 用时, 繁 or None, today, 方式, 原稿, 改记))",
+    "new": "                      (audio_id, 文本, \"whisper.cpp\", 默认模型, 1, 用时, 繁 or None, today, 方式, 文本, 改记))"
+   }
+  ],
+  "预期红": "纠过的稿落库,**原稿留着**"
+ },
+ {
+  "script": "backend/call_flow_check.py",
+  "改坏": "处理() 里有一处没注入假纠错",
+  "file": [
+   {
+    "path": "backend/call_flow_check.py",
+    "old": "    asr.处理(\"CA-T1\", db=db, 纠错call=不纠, 转写=lambda p, 双: 段[:2])",
+    "new": "    asr.处理(\"CA-T1\", db=db, 转写=lambda p, 双: 段[:2])"
+   }
+  ],
+  "预期红": "整个检查一次真模型都没调"
+ },
+ {
+  "script": "backend/call_flow_check.py",
+  "改坏": "拆行不核对原文",
+  "file": [
+   {
+    "path": "backend/asr.py",
+    "old": "              and 规(\"\".join(str(y[1]) for y in x)) == 规(t)):",
+    "new": "              ):"
+   }
+  ],
+  "预期红": "拆开的几段拼回去和原行对不上"
+ },
+ {
+  "script": "backend/call_flow_check.py",
+  "改坏": "纠错不核读音",
+  "file": [
+   {
+    "path": "backend/asr.py",
+    "old": "        elif _读音(x.get(\"原读音\")) != _读音(x.get(\"改读音\")) or not _读音(x.get(\"原读音\")):",
+    "new": "        elif False:"
+   }
+  ],
+  "预期红": "读音对不上 → 不改"
  }
 ]

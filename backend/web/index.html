@@ -1171,6 +1171,13 @@ async function custDetail(cid){
           <td>${sp?`<span class="pill ${sp[0]}">${esc(sp[1])}</span>`:"—"}${x.trad?`<div style="font-size:11.5px;color:var(--warn)">有繁体字:${esc(x.trad)}</div>`:""}</td>
           <td>${x.text?`<details><summary style="cursor:pointer">${esc(x.text.split("\n")[0].slice(0,40))}…</summary>
             <pre style="white-space:pre-wrap;font-size:12.5px;margin:6px 0">${esc(x.text)}</pre>
+            ${(()=>{let f={};try{f=JSON.parse(x.fixes||"{}")}catch(e){}
+              if(f.没纠) return `<div style="font-size:11.5px;color:var(--warn)">同音纠错没跑通(${esc(f.没纠)}),这是转写原样</div>`;
+              const g=f.改||[]; if(!g.length) return "";
+              return `<div style="font-size:11.5px;color:var(--warn)">同音纠错改了 ${g.length} 处:${g.map(p=>esc(p[0])+"→"+esc(p[1])).join("、")}
+                —— 客户要是真说的原词(比如「被子」),以原稿为准</div>
+                <details><summary style="cursor:pointer;font-size:11.5px">看转写原稿</summary>
+                <pre style="white-space:pre-wrap;font-size:12px;color:var(--ink3)">${esc(x.raw_text||"")}</pre></details>`})()}
             <div style="font-size:11.5px;color:var(--ink3)">要总结、研判商机、出下一步:在智能运维平台说「整理一下通话 ${esc(x.id)}」</div></details>`:"—"}</td></tr>`}).join("")}
         </tbody></table>` : `<div class="empty">暂无通话录音</div>`);
     }

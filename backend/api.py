@@ -5363,7 +5363,7 @@ def call_opportunity(customer=None, limit=20, call=None):
         if call:
             where.append("t.audio_id = ?"); args.append(call)
         rs = [dict(r) for r in con.execute(
-            "SELECT t.audio_id, t.text, a.created, t.speaker_src, a.channel, cu.id cid, cu.name cname, cu.shop "
+            "SELECT t.audio_id, t.text, a.created, t.speaker_src, t.fixes, a.channel, cu.id cid, cu.name cname, cu.shop "
             "FROM call_transcript t JOIN call_audio a ON a.id = t.audio_id "
             "JOIN customer cu ON cu.id = a.customer_id"
             + (" WHERE " + " AND ".join(where) if where else "")
@@ -5459,6 +5459,23 @@ def _分人说明(src):
     return "逐字稿自带说话人标注(演示数据)"
 
 
+def _纠错说明(fixes):
+    """原文里哪几个词是纠错改过的 —— 改过的稿和原稿长得一模一样,不说的话原话的来路就断了。"""
+    if not fixes:
+        return "没纠过(演示数据,或者纠错之前的老录音)"
+    try:
+        f = json.loads(fixes)
+    except Exception:
+        return "纠错记录读不出来"
+    if f.get("没纠"):
+        return f"纠错没跑通({f['没纠']}),原文是转写原样 —— 行业词可能是同音错字(缂丝写成克斯)"
+    改 = f.get("改") or []
+    if not 改:
+        return "纠过,没有要改的"
+    return ("原文里这几处是同音纠错改过的:" + "、".join(f"{a}→{b}" for a, b in 改)
+            + " —— 引这几个词做原话时,在总结里说明「转写纠错过」")
+
+
 def _整理一通(r, 范围):
     """一通通话的原料:原文、客户提到的偏好、对得上的在架商品、客户名下的方案 / 订单号。
 
@@ -5498,6 +5515,7 @@ def _整理一通(r, 范围):
         "客户": f"{r['cname']}({r['cid']})",
         "沟通方式": r.get("channel") or "—",
         "说话人怎么分的": _分人说明(r.get("speaker_src")),
+        "同音纠错": _纠错说明(r.get("fixes")),
         "原文": r["text"],
         "客户提到的": 提到,
         "几条全都对得上的在架商品": (全中[:5] if len(提到) > 1 else "只提到一个偏好,看上面那一栏"),

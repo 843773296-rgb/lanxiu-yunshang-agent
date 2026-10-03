@@ -180,6 +180,11 @@ def _补列(c):
         if 列 not in 有:
             c.execute(f"ALTER TABLE call_audio ADD COLUMN {列} {型}")
     有 = {r[1] for r in c.execute("PRAGMA table_info(call_transcript)")}
+    for 列 in ("raw_text", "fixes"):
+        # raw_text:纠错之前 whisper 吐的原样;fixes:改了哪几处(JSON)。**改过的稿和原稿长得一模一样**,
+        # 不留原稿的话,「客户真说的是被子、被改成了褙子」这种事永远查不回来
+        if 列 not in 有:
+            c.execute(f"ALTER TABLE call_transcript ADD COLUMN {列} TEXT")
     if "speaker_src" not in 有:
         # 说话人是怎么分出来的:声道 / 模型 / 未分 / 文本自带(造的逐字稿)。
         # **「声道分的」和「模型猜的」在逐字稿里长得一模一样** —— 都是「客户:……」
@@ -364,8 +369,10 @@ def 按声道成行(段们):
 
 
 模型分人提示 = ("下面是汉服门店顾问和客户的一段对话录音转写,逐行编了号,但没有标说话人。"
-              "逐行判断每一行是「顾问」还是「客户」说的。顾问是店里的人:介绍商品、问需求、报价、约时间;"
-              "客户是来买东西的人。只输出一个 JSON 数组,如 [\"顾问\",\"客户\"],长度必须和行数一致。")
+              "顾问是店里的人:介绍商品、问需求、报价、约时间;客户是来买东西的人。"
+              "输出一个 JSON 数组,每一行对应一个元素:整行是一个人说的,就写 \"顾问\" 或 \"客户\";"
+              "**一行里混了两个人的话**,就把这一行拆开,写成 [[\"客户\",\"前半句\"],[\"顾问\",\"后半句\"]],"
+              "拆出来的几段按顺序拼起来必须和原行一字不差。数组长度必须和行数一致。只输出 JSON。")
 
 
 def 模型分人(段们, call=None):
@@ -383,7 +390,7 @@ def 模型分人(段们, call=None):
             _sys.path.insert(0, os.path.join(HERE, "..", "agent"))
             import v1
             pv = v1.provider()
-            r = v1.call(pv, dict(model=pv["model"], max_tokens=40 + 8 * len(段们), system=模型分人提示,
+            r = v1.call(pv, dict(model=pv["model"], max_tokens=300 + 12 * len(段们), system=模型分人提示,
                                  messages=[{"role": "user", "content": 行}]),
                         purpose="录音转写·单声道分说话人", gen="工具")
         else:
@@ -393,9 +400,23 @@ def 模型分人(段们, call=None):
         标 = _js.loads(m.group(0)) if m else None
     except Exception as e:
         return [("未分", t) for _, t, _ in 段们], f"未分(模型没跑通:{type(e).__name__})"
-    if not isinstance(标, list) or len(标) != len(段们) or any(x not in ("顾问", "客户") for x in 标):
+    if not isinstance(标, list) or len(标) != len(段们):
         return [("未分", t) for _, t, _ in 段们], "未分(模型答的形状不对)"
-    return [(w, t) for w, (_, t, _) in zip(标, 段们)], "模型"
+    规 = lambda x: re.sub(r"[\s,。!?;:、,.!?;:…]", "", x or "")
+    出 = []
+    for x, (_, t, _) in zip(标, 段们):
+        if x in ("顾问", "客户"):
+            出.append((x, t))
+        elif (isinstance(x, list) and x and all(isinstance(y, list) and len(y) == 2 and y[0] in ("顾问", "客户")
+                                              for y in x)
+              and 规("".join(str(y[1]) for y in x)) == 规(t)):
+            # 一行混了两个人(whisper 切段不管换人)—— 拆开的几段**拼回去和原行一字不差**才收
+            出 += [(y[0], str(y[1])) for y in x]
+        else:
+            出.append(("未分", t))       # 这一行拆得对不上原文:只这一行不收,别的行照收
+    if all(w == "未分" for w, _ in 出):
+        return 出, "未分(模型一行都没标对)"
+    return 出, "模型"
 
 
 def 成稿(行们):
@@ -409,7 +430,77 @@ def 成稿(行们):
     return "\n".join(f"{谁}:{t}" for 谁, t in 出)
 
 
-def 处理(audio_id, db=None, call=None, 转写=None):
+def 纠错词表():
+    """同音纠错能改成的词:和热词同六类,**不受热词字数上限截断**(热词要塞进 whisper 的提示,纠错不用)。"""
+    old = 热词字数上限
+    try:
+        globals()["热词字数上限"] = 10 ** 6
+        return 行业词()
+    finally:
+        globals()["热词字数上限"] = old
+
+
+同音纠错提示 = ("下面是语音识别出来的汉服门店通话稿。行业词常被听成同音字(比如「缂丝」写成「克斯」)。"
+              "只找出**读音和下面某个行业词相同或几乎相同、但字写错了**的地方,别的一个字都不要动。"
+              "输出 JSON 数组:[{\"原\":\"稿子里的写法\",\"改\":\"行业词\",\"原读音\":\"拼音\",\"改读音\":\"拼音\"}],"
+              "读音写不带声调的拼音、音节之间空格隔开;没有就输出 []。\n行业词:")
+
+
+def _读音(p):
+    """去声调、去空格、小写 —— 「kè sī」「ke4 si1」「Ke Si」都算 kesi。"""
+    import unicodedata
+    p = unicodedata.normalize("NFD", str(p or ""))
+    return re.sub(r"[^a-z]", "", "".join(ch for ch in p if not unicodedata.combining(ch)).lower().replace("ü", "v"))
+
+
+def 同音纠错(稿, call=None, 词表=None):
+    """模型指出「哪几个字是某个行业词的同音错写」,**改不改由规则把关**(用户 10-03 定的 A 案):
+
+        改成的词必须在词表里 · 字数和原写法一样 · 原写法真在稿子里 · 两者不同
+
+    不过闸的一条都不改,记进「拒」—— 实测拦下过「装种 → 装逼」「接栏 → 接缘」(都不是行业词)。
+    返回 (新稿, 收 [(原, 改)], 拒 [(原, 改, 为什么)])。**模型没跑通就抛**,由调用方决定怎么落。
+    """
+    import json as _js
+    词表 = 词表 or 纠错词表()
+    全 = set(词表)
+    if call is None:
+        import sys as _sys
+        _sys.path.insert(0, os.path.join(HERE, "..", "agent"))
+        import v1
+        pv = v1.provider()
+        r = v1.call(pv, dict(model=pv["model"], max_tokens=600,
+                             system=同音纠错提示 + "、".join(sorted(全, key=len, reverse=True)),
+                             messages=[{"role": "user", "content": 稿}]),
+                    purpose="录音转写·同音纠错", gen="工具")
+    else:
+        r = call(稿)
+    t = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
+    m = re.search(r"\[.*\]", t, re.S)
+    建议 = _js.loads(m.group(0)) if m else []
+    收, 拒 = [], []
+    for x in 建议 if isinstance(建议, list) else []:
+        o, n = (x.get("原") or "", x.get("改") or "") if isinstance(x, dict) else ("", "")
+        if n not in 全:
+            拒.append((o, n, "改成的不是行业词"))
+        elif not o or o not in 稿:
+            拒.append((o, n, "稿子里没有这个写法"))
+        elif len(o) != len(n):
+            拒.append((o, n, "字数不一样(同音错写字数不会变)"))
+        elif _读音(x.get("原读音")) != _读音(x.get("改读音")) or not _读音(x.get("原读音")):
+            # 真跑见过「接栏 → 镶边」:意思相近、读音完全不同,前三道闸全过。读音是模型自己报的,
+            # 没法独立核对 —— 但它挡得住「按意思改」这一类(要它先承认两边读音一样)
+            拒.append((o, n, f"读音对不上({x.get('原读音')} / {x.get('改读音')})"))
+        elif o == n:
+            continue
+        elif (o, n) not in 收:
+            收.append((o, n))
+    for o, n in 收:
+        稿 = 稿.replace(o, n)
+    return 稿, 收, 拒
+
+
+def 处理(audio_id, db=None, call=None, 转写=None, 纠错call=None):
     """一通录音从「排队」走到「完成 / 失败」。**任何一步失败都落「失败 + 原因」**,不留在「转写中」:
     「还在转」和「早就崩了」在页面上长得一模一样。`转写` 可注入假的转写函数(检查里用)。"""
     db = db or DB
@@ -433,17 +524,25 @@ def 处理(audio_id, db=None, call=None, 转写=None):
             方式 = "声道" if any(w != "未分" for w, _ in 行们) else "未分(声道分不清)"
         else:
             行们, 方式 = 模型分人(段们, call=call)
-        文本 = 成稿(行们)
+        原稿 = 成稿(行们)
+        # 同音纠错:**失败不算转写失败** —— 原稿照样落,fixes 里写清「没纠」,不然和「纠过、没有要改的」长得一样
+        try:
+            文本, 收, 拒 = 同音纠错(原稿, call=纠错call)
+            import json as _js
+            改记 = _js.dumps({"改": 收, "拒": 拒}, ensure_ascii=False)
+        except Exception as e:
+            文本, 改记 = 原稿, f'{{"没纠": "{type(e).__name__}"}}'
         import simplified
         繁 = "".join(simplified.繁体字(文本))
         today = datetime.date.today().isoformat()
         with sqlite3.connect(db) as c:
-            c.execute("""insert into call_transcript(audio_id,text,engine,model,hotwords,cost_sec,trad,created,speaker_src)
-                         values(?,?,?,?,?,?,?,?,?)
+            c.execute("""insert into call_transcript(audio_id,text,engine,model,hotwords,cost_sec,trad,created,
+                                                     speaker_src,raw_text,fixes)
+                         values(?,?,?,?,?,?,?,?,?,?,?)
                          on conflict(audio_id) do update set text=excluded.text, model=excluded.model,
                            hotwords=excluded.hotwords, cost_sec=excluded.cost_sec, trad=excluded.trad,
-                           speaker_src=excluded.speaker_src""",
-                      (audio_id, 文本, "whisper.cpp", 默认模型, 1, 用时, 繁 or None, today, 方式))
+                           speaker_src=excluded.speaker_src, raw_text=excluded.raw_text, fixes=excluded.fixes""",
+                      (audio_id, 文本, "whisper.cpp", 默认模型, 1, 用时, 繁 or None, today, 方式, 原稿, 改记))
             c.execute("UPDATE call_audio SET status='完成' WHERE id=?", (audio_id,))
         # 挂商机:规则层判一遍,是就建「待确认」。**这一步失败不算转写失败** —— 逐字稿已经在了,
         # 商机可以事后再判;但要留痕,不然「没判出商机」和「判的时候崩了」长得一样

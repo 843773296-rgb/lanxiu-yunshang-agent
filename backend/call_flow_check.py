@@ -6,7 +6,8 @@
 「依赖外部状态的检查放进门禁会变成随机拦路」)。验的是**我们自己的逻辑**:
 
   ① 双声道按声道分:左 → 顾问、右 → 客户,分不清的标「未分」
-  ② 单声道交给模型分:答得对就收;**答的形状不对 / 没跑通 → 整通标「未分」,不部分采纳**
+  ② 单声道交给模型分:答得对就收;**行数对不上 / 没跑通 → 整通标「未分」**;某一行标签不对、
+     或拆开的几段拼回去和原行对不上 → 只那一行「未分」(未分的行不算客户说的,规则层读不到)
   ③ 任何一步失败都落「失败 + 原因」,不留在「转写中」(「还在转」和「早就崩了」长得一样)
   ④ 上传:没登录拒、外店客户拒、沟通方式不在 D7 那三种里拒、空文件拒
   ⑤ 接上商机:模型分的逐字稿,规则层读得到客户的话;**未分的,规则层报「说话人没标」而不是「没商机」**
@@ -29,6 +30,11 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("模型分人不验形状(长度不对也收)", "模型答的行数和段数对不上 → 整通标未分"),
     ("转写失败不落库(except 里不写「失败」)", "转写抛错 → 状态落「失败」并写清原因"),
     ("上传不核门店", "外店客户的录音传不上"),
+    ("处理() 里有一处没注入假纠错(去掉一个 `纠错call=不纠`)", "整个检查一次真模型都没调"),
+    ("拆行不核对原文(拼回去对不上也收)", "拆开的几段拼回去和原行对不上"),
+    ("纠错不核读音", "读音对不上 → 不改"),
+    ("纠错不核词表(`if n not in 全:` 那一支去掉)", "改成的不是行业词 → 不改"),
+    ("纠错不留原稿(raw_text 写成纠过的稿)", "纠过的稿落库,**原稿留着**"),
     ("转写完不挂商机(`_os.从转写建(c, audio_id)` 删掉)", "转写完成后规则层判出商机"),
 ]
 
@@ -47,6 +53,9 @@ def 假返回(文本):
     return lambda 行: {"content": [{"type": "text", "text": 文本}]}
 
 
+不纠 = 假返回("[]")       # 门禁里**不许真调模型**:纠错一律注入假的
+
+
 def 造wav(path, 声道):
     with wave.open(path, "w") as w:
         w.setnchannels(声道); w.setsampwidth(2); w.setframerate(16000)
@@ -54,6 +63,14 @@ def 造wav(path, 声道):
 
 
 def main():
+    # **门禁里一次真模型都不许调**。把唯一发请求口换成「调一次记一笔」:
+    # 分人 / 纠错没跑通会被吞成「未分 / 没纠」,所以不能指望它自己报错 —— 记下来、最后对账
+    sys.path.insert(0, os.path.join(HERE, "..", "agent"))
+    import v1
+    真调 = []
+    def 记一笔(*a, **k):
+        真调.append(k.get("purpose") or "?"); raise RuntimeError("门禁里不许调真模型")
+    v1.call = 记一笔
     tmp = tempfile.mkdtemp()
     db = os.path.join(tmp, "lanxiu.db")
     shutil.copy(os.path.join(HERE, "lanxiu.db"), db)
@@ -84,10 +101,18 @@ def main():
     单 = [(0, "您好,想看点什么?", None), (900, "我想要月白色的马面裙。", None)]
     行, 方式 = asr.模型分人(单, call=假返回('["顾问","客户"]'))
     ck("单声道:模型答得对就收,标「模型」", 方式 == "模型" and [w for w, _ in 行] == ["顾问", "客户"], 1, f"{方式} {行}")
+    混 = [(0, "您好想看点什么?", None), (900, "接篮是什么意思?就是下面那个装饰的边。", None)]
+    行, 方式 = asr.模型分人(混, call=假返回('["顾问", [["客户","接篮是什么意思?"],["顾问","就是下面那个装饰的边。"]]]'))
+    ck("一行混了两个人:拆开的几段拼回去和原行一样 → 拆开收(真跑见过模型主动拆)",
+       方式 == "模型" and [w for w, _ in 行] == ["顾问", "客户", "顾问"], 1, f"{方式} {行}")
+    行, 方式 = asr.模型分人(混, call=假返回('["顾问", [["客户","接篮是什么"],["顾问","我编的一句"]]]'))
+    ck("拆开的几段拼回去和原行对不上 → 只这一行标未分,别的行照收",
+       [w for w, _ in 行] == ["顾问", "未分"], 1, f"{方式} {行}")
     行, 方式 = asr.模型分人(单, call=假返回('["顾问"]'))
     ck("模型答的行数和段数对不上 → 整通标未分", 方式.startswith("未分") and all(w == "未分" for w, _ in 行), 1, 方式)
     行, 方式 = asr.模型分人(单, call=假返回('["顾问","店员"]'))
-    ck("模型答了「顾问 / 客户」以外的标签 → 整通标未分", 方式.startswith("未分"), 1, 方式)
+    ck("模型给某一行标了「顾问 / 客户」以外的标签 → 那一行标未分(不会被当成客户的话)",
+       [w for w, _ in 行] == ["顾问", "未分"], 1, f"{方式} {行}")
     def 崩(行): raise TimeoutError("超时")
     行, 方式 = asr.模型分人(单, call=崩)
     ck("模型没跑通 → 整通标未分,并写清是没跑通", 方式.startswith("未分") and "没跑通" in 方式, 1, 方式)
@@ -103,22 +128,55 @@ def main():
         "SELECT a.status, a.fail_reason, t.speaker_src, t.text FROM call_audio a "
         "LEFT JOIN call_transcript t ON t.audio_id=a.id WHERE a.id=?", (aid,)).fetchone()
     入("CA-T1", 2)
-    asr.处理("CA-T1", db=db, 转写=lambda p, 双: 段[:2])
+    asr.处理("CA-T1", db=db, 纠错call=不纠, 转写=lambda p, 双: 段[:2])
     s = 状态("CA-T1")
     ck("双声道录音 → 完成,说话人按声道分", s[0] == "完成" and s[2] == "声道" and s[3].startswith("顾问:"), 1, str(s))
     入("CA-T2", 1)
-    asr.处理("CA-T2", db=db, 转写=lambda p, 双: 单, call=假返回('["顾问","客户"]'))
+    asr.处理("CA-T2", db=db, 纠错call=不纠, 转写=lambda p, 双: 单, call=假返回('["顾问","客户"]'))
     s = 状态("CA-T2")
     ck("单声道录音 → 完成,说话人标「模型」", s[0] == "完成" and s[2] == "模型", 1, str(s))
     入("CA-T3", 1)
     def 转崩(p, 双): raise RuntimeError("whisper 退出码 1")
-    asr.处理("CA-T3", db=db, 转写=转崩)
+    asr.处理("CA-T3", db=db, 纠错call=不纠, 转写=转崩)
     s = 状态("CA-T3")
     ck("转写抛错 → 状态落「失败」并写清原因", s[0] == "失败" and "退出码" in (s[1] or ""), 1, str(s))
     入("CA-T4", 1)
-    asr.处理("CA-T4", db=db, 转写=lambda p, 双: [])
+    asr.处理("CA-T4", db=db, 纠错call=不纠, 转写=lambda p, 双: [])
     s = 状态("CA-T4")
     ck("转出来是空的 → 失败,不当成「没人说话」", s[0] == "失败" and "空" in (s[1] or ""), 1, str(s))
+
+    print("\n\033[1m▸ 同音纠错:模型指出错写,改不改由规则把关\033[0m")
+    稿 = "客户:我想要克斯的,香芸砂也行。\n顾问:好的,我们这个装种的。"
+    建议 = ('[{"原":"克斯","改":"缂丝","原读音":"ke si","改读音":"kè sī"},'
+           '{"原":"香芸砂","改":"香云纱","原读音":"xiang yun sha","改读音":"xiang yun sha"},'
+           '{"原":"装种","改":"装逼","原读音":"zhuang zhong","改读音":"zhuang bi"},'
+           '{"原":"齐兄","改":"齐胸襦裙","原读音":"qi xiong","改读音":"qi xiong ru qun"},'
+           '{"原":"不存在","改":"妆花","原读音":"bu cun zai","改读音":"zhuang hua"},'
+           '{"原":"接栏","改":"镶边","原读音":"jie lan","改读音":"xiang bian"},'
+           '{"原":"装种","改":"装钟","原读音":"zhuang zhong","改读音":"zhuang zhong"}]')
+    稿 += "\n客户:那个接栏好看。"
+    新, 收, 拒 = asr.同音纠错(稿, call=假返回(建议), 词表=["缂丝", "香云纱", "齐胸襦裙", "妆花", "镶边"])
+    ck("改成的是词表里的词、字数一样、原写法真在稿里 → 改", ("克斯", "缂丝") in 收 and "缂丝" in 新 and "香云纱" in 新, 2, str(收))
+    # 「装钟」读音和「装种」一样 —— 只有词表这道闸拦得住它(装逼那条读音闸也会拦,隔离不出词表闸在承重)
+    ck("改成的不是行业词 → 不改(读音一样也不改;真跑见过「装种 → 装逼」)",
+       "装种" in 新 and any(x[1] == "装钟" for x in 拒), 1, str(拒))
+    ck("字数对不上 → 不改", any(x[0] == "齐兄" for x in 拒), 1, str(拒))
+    ck("读音对不上 → 不改(真跑见过「接栏 → 镶边」:意思近、读音不同,前三道闸全过)",
+       "接栏" in 新 and any(x[0] == "接栏" for x in 拒), 1, str(拒))
+    ck("稿子里没有那个写法 → 不改", any(x[0] == "不存在" for x in 拒) and "妆花" not in 新, 1, str(拒))
+    入("CA-T5", 1)
+    asr.处理("CA-T5", db=db, 转写=lambda p, 双: [(0, "我想要克斯的。", None)], call=假返回('["客户"]'),
+            纠错call=假返回('[{"原":"克斯","改":"缂丝","原读音":"ke si","改读音":"ke si"}]'))
+    k = sqlite3.connect(db)
+    t, raw, fx = k.execute("SELECT text, raw_text, fixes FROM call_transcript WHERE audio_id='CA-T5'").fetchone()
+    ck("纠过的稿落库,**原稿留着**、改了哪几处记下来", "缂丝" in t and "克斯" in raw and "缂丝" in (fx or ""), 1, f"{t}|{raw}|{fx}")
+    入("CA-T6", 1)
+    def 纠崩(稿): raise TimeoutError("超时")
+    asr.处理("CA-T6", db=db, 转写=lambda p, 双: [(0, "我想要克斯的。", None)], call=假返回('["客户"]'), 纠错call=纠崩)
+    st, t, fx = k.execute("SELECT a.status, t.text, t.fixes FROM call_audio a JOIN call_transcript t ON t.audio_id=a.id "
+                          "WHERE a.id='CA-T6'").fetchone()
+    ck("纠错没跑通 → 转写照样完成、原稿照落,并记下「没纠」", st == "完成" and "克斯" in t and "没纠" in (fx or ""), 1, f"{st}|{fx}")
+    k.close()
 
     print("\n\033[1m▸ 接上商机:规则层读得到客户的话\033[0m")
     import oppo as KO
@@ -172,6 +230,9 @@ def main():
     with api.as_user(dict(no="HQ", name="总部", role="总部运营")):
         r = api.call_opportunity(call="CA-T2")
     ck("模型分的那通,返回里写明「模型按内容分的」", "模型" in (r.get("说话人怎么分的") or ""), 1, str(r)[:160])
+
+    print("\n\033[1m▸ 门禁不花钱\033[0m")
+    ck("整个检查一次真模型都没调(分人、纠错都是注入的假返回)", not 真调, 1, f"调了 {len(真调)} 次:{真调[:3]}")
 
     shutil.rmtree(tmp, ignore_errors=True)
     print()

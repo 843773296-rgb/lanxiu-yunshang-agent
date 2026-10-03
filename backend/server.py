@@ -2386,7 +2386,7 @@ def call_upload(me, body, 入队=True):
 def calls_of(cid):
     """客户名下的通话:状态、怎么分的说话人、逐字稿。"""
     return rows("""SELECT a.id, a.channel, a.seconds, a.source, a.status, a.fail_reason, a.created,
-                          a.uploaded_by, t.text, t.speaker_src, t.trad
+                          a.uploaded_by, t.text, t.speaker_src, t.trad, t.raw_text, t.fixes
                    FROM call_audio a LEFT JOIN call_transcript t ON t.audio_id=a.id
                    WHERE a.customer_id=? ORDER BY a.created DESC, a.id DESC""", cid)
 
