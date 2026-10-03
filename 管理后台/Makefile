@@ -302,7 +302,8 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py \
           test_training_flow.py test_handover_flow.py \
           test_tools_flow.py test_settings_flow.py \
           test_lanxiu_knobs_flow.py test_toolgroups_flow.py \
-          test_selection_policy_flow.py test_eval_items_flow.py
+          test_selection_policy_flow.py test_eval_items_flow.py \
+          test_tool_modelcard_flow.py
 
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
@@ -415,6 +416,11 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_toolgroups_flow.py
 	@./.venv/bin/python tests/e2e/test_selection_policy_flow.py
 	@./.venv/bin/python tests/e2e/test_eval_items_flow.py
+	@echo ""
+	@echo "▸ §8.2「模型说明」那三个字段:**两种空分得开**"
+	@echo "  (没给 = 没人说过 / 给了 `[]` = 有人看过确认不需要 —— 混掉的话"
+	@echo "   「还有几个工具没人填过别名」这个问题从此答不出来,而它是这件事的唯一指标)"
+	@./.venv/bin/python tests/e2e/test_tool_modelcard_flow.py
 	@echo ""
 	@echo "▸ 模型与连接端到端(§17.4-5):**碰凭据的那一组**"
 	@echo "  (明文当场拒不是收下后忽略 / 错误不回显 / 列表只给形状 / 没探过的发生产被拦)"
@@ -571,6 +577,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_eval_items_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_eval_items_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_eval_items_flow.log
+	@./.venv/bin/python tests/e2e/test_tool_modelcard_flow.py > /tmp/prog-test_tool_modelcard_flow.log 2>&1 \
+	  || { echo "  ❌ test_tool_modelcard_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_tool_modelcard_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_tool_modelcard_flow.log
 	@./.venv/bin/python tests/e2e/test_selection_policy_flow.py > /tmp/prog-test_selection_policy_flow.log 2>&1 \
 	  || { echo "  ❌ test_selection_policy_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_selection_policy_flow.log; exit 1; }

@@ -77,6 +77,19 @@ def _审计(c, me, action, target, result="ok", reason=None):
            "e": os.environ.get("APP_ENV", "development"), "r": result, "rs": reason})
 
 
+def _取一个(体, *键):
+    """按**键在不在**取第一个给了的键,没给返回 None。
+
+    ⚠️ 不能写成 `体.get(a) or 体.get(b) or None`:那样 `[]` / `0` / `""`
+    会被当成「没给」。而这三个字段上,`[]` 和没给是**两件不同的事** ——
+    `[]` 是「有人看过,确认它不需要」,NULL 是「没人说过」。
+    """
+    for k in 键:
+        if k in 体:
+            return 体[k]
+    return None
+
+
 def _引用形状(secret_ref):
     """**只给形状,不给内容**,而且不做截断。和 `connections_api` 同一条。"""
     s = (secret_ref or "").strip()
@@ -143,6 +156,9 @@ def 工具详情(project_id: str, tid: str,
                    allowed_scopes, idempotency_strategy, timeout_seconds,
                    redaction, server_bound_arguments, external_status_lookup,
                    connection_id, retry_policy,
+                   -- §8.2「模型说明」那三列(2026-10-03)。
+                   -- ⚠️ 逐列点名,**逐列点名** —— 这张表上有 secret_ref。
+                   model_aliases, when_to_use, task_examples,
                    -- ⚠️ **只报「配了没配」,不给值。** 见上面那段红线。
                    (secret_ref is not null) as 配了凭据吗
               from tool_versions
@@ -326,6 +342,30 @@ def 工具详情(project_id: str, tid: str,
             # ⚠️ **只说配了没配,不给凭据引用本身。**
             # 规格 §11.2 / 这个仓库的红线:**凭据绝不经返回值出去**。
             "配了凭据吗": bool(v.get("配了凭据吗")),
+            # ── 规格 §8.2「模型说明」那一页要的(2026-10-03)─────────
+            #
+            # ⚠️ 原样给出去(**NULL 就是 null,`[]` 就是 `[]`**)——
+            # 这两个在这一页上意思不同,合成一个「空」就把
+            # 「81 个工具里还有几个没人填过别名」这个问题弄没了,
+            # 而那是衡量这件事做完没做完的唯一指标。
+            "别名": v.get("model_aliases"),
+            "适用不适用": v.get("when_to_use"),
+            "任务示例": v.get("task_examples"),
+            # ⚠️⚠️ **三态在服务端算,不让每个前端各实现一遍。**
+            # 这条接口自己为 `风险变大了吗` 讲过同一个理由:
+            # > 让界面自己去比的话,那条规矩就变成每个前端各实现一遍,
+            # > 而**它们会在某一天不一致,且不一致的表现是界面上少一句话**。
+            # 这里更险:`null` 和 `[]` 在 JavaScript 里都是 falsy,
+            # 一句 `if (!别名) 显示「待补」` 会把
+            # 「有人看过、确认不需要」也渲染成「待补」—— 而那条**永远填不完**。
+            "模型说明填了吗": {
+                名: ("没说过" if 值 is None else
+                     ("确认不需要" if 值 == [] or 值 == {} else
+                      (f"填了 {len(值)} 条" if isinstance(值, (list, dict))
+                       else "填了")))
+                for 名, 值 in (("别名", v.get("model_aliases")),
+                              ("适用不适用", v.get("when_to_use")),
+                              ("任务示例", v.get("task_examples")))},
             # ── 规格 §8.2「引用与运行」那一页要的 ──────────────────
             "谁在用它": 引用.get(v["version_no"]) or {},
         } for v in 版本们],
@@ -477,6 +517,26 @@ async def 冻结工具版本(project_id: str, tid: str, request: Request,
             "confirmation_policy": 体.get("确认策略") or 体.get("confirmation_policy"),
             "timeout_seconds": 体.get("超时秒") or 体.get("timeout_seconds"),
             "secret_ref": (体.get("secret_ref") or "").strip() or None,
+            # ── §8.2「模型说明」那三个字段(2026-10-03)────────────────
+            #
+            # ⚠️ **`or None` 而不是 `or []`。** 三个都允许不给 ——
+            # 库里 81 个版本全没有这三样,要求必填会让所有冻结当场拒。
+            # 而给 `[]` 的话,「还没人填别名」和
+            # 「有人看过、确认它不需要别名」在数据上长得一模一样。
+            # **NULL 是「没说过」,`[]` 是「说过:没有」** —— 这两件事要分得开,
+            # 因为这个页签的全部意义就是让人把前者变成后者。
+            #
+            # ⚠️⚠️ **按「键在不在」读,不按真值读。**
+            # 第一版我写的是 `体.get("别名") or None` —— 那会把客户端
+            # **显式传来的 `[]`** 变成 NULL,也就是把「说过:没有」
+            # 静默改写成「没说过」。而那正是上面那段注释警告的事:
+            # 注释写对了,代码写的是反的。
+            # > 一个把 `[]` 存成 NULL 的接口,和一个正确存下来的,
+            # > **在「保存成功」那一刻长得一模一样**。
+            # 中文键放前面:规格和界面说的是「别名 / 适用不适用 / 任务示例」。
+            "model_aliases": _取一个(体, "别名", "model_aliases"),
+            "when_to_use": _取一个(体, "适用不适用", "适用/不适用场景", "when_to_use"),
+            "task_examples": _取一个(体, "任务示例", "task_examples"),
         }
         问 = CAP.可以冻结工具吗(定义=d, 草稿=草稿, 上一版=上一版)
         if 草稿["secret_ref"]:
@@ -499,11 +559,20 @@ async def 冻结工具版本(project_id: str, tid: str, request: Request,
                  model_description, input_schema, output_schema, side_effect_type,
                  allowed_scopes, confirmation_policy, idempotency_strategy,
                  timeout_seconds, secret_ref, content_hash,
+                 model_aliases, when_to_use, task_examples,
                  created_at, created_by, updated_at, revision)
                 values (:i,:o,:p,:t,:n,:md, cast(:isc as jsonb), cast(:osc as jsonb),
                         :se, cast(:sc as jsonb), cast(:cp as jsonb),
                         cast(:idem as jsonb), :to, :sr,
-                        :h, now(), :by, now(), 1)"""),
+                        :h,
+                        -- ⚠️ 三个都是 **JSONB**。塞裸串当场
+                        -- `invalid input syntax for type json` ——
+                        -- 「JSONB 塞裸串」在这个仓库犯过七次,所以这里一律
+                        -- `_json.dumps(...) if ... else None`,**None 要留成 NULL**
+                        -- (`dumps(None)` 会写进一个 json 的 `null`,
+                        --  而那是「说过:没有」,不是「没说过」)。
+                        cast(:al as jsonb), cast(:wt as jsonb), cast(:te as jsonb),
+                        now(), :by, now(), 1)"""),
                       {"i": vid, "o": d["organization_id"], "p": project_id, "t": tid,
                        "n": 新号, "md": 草稿["model_description"],
                        "isc": _json.dumps(草稿["input_schema"], ensure_ascii=False),
@@ -519,7 +588,14 @@ async def 冻结工具版本(project_id: str, tid: str, request: Request,
                                             ensure_ascii=False)
                                 if 草稿["idempotency_strategy"] else None),
                        "to": 草稿["timeout_seconds"], "sr": 草稿["secret_ref"],
-                       "h": 哈, "by": me.user_id})
+                       "h": 哈,
+                       "al": (_json.dumps(草稿["model_aliases"], ensure_ascii=False)
+                              if 草稿["model_aliases"] is not None else None),
+                       "wt": (_json.dumps(草稿["when_to_use"], ensure_ascii=False)
+                              if 草稿["when_to_use"] is not None else None),
+                       "te": (_json.dumps(草稿["task_examples"], ensure_ascii=False)
+                              if 草稿["task_examples"] is not None else None),
+                       "by": me.user_id})
             _审计(c, me, "tool.version.create",
                   {"tool_id": tid, "tool_version_id": vid, "version_no": 新号,
                    "side_effect_type": 草稿["side_effect_type"],
