@@ -646,14 +646,38 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "output_schema", "side_effect_type", "allowed_scopes", "confirmation_policy",
        "idempotency_strategy", "external_status_lookup", "timeout_seconds",
        "retry_policy", "redaction", "secret_ref", "connection_id",
-       "server_bound_arguments", "pollable", "content_hash"],
+       "server_bound_arguments", "pollable", "content_hash",
+       # ── §8.2「模型说明」页签的三个字段(2026-10-03 加)──────────
+       # ⚠️ **不是替 `model_description`,是在它之外补的。**
+       # 那一个是「模型可见的工具说明」,这三个回答的是它回答不了的问题:
+       # 用什么别的说法指这件事 / 什么时候该用它 / 真人是怎么问的。
+       #
+       # 为什么它们非得跟着**版本**走:`tool_versions` 是不可变子对象,
+       # 所以改一条别名就是出一个新版本 —— 而这正是要的,
+       # 因为**别名是模型实际会读到的内容**,改了它等于改了工具说明,
+       # 而规格 §16.3 的既有约定是「说明变了要出新版本」
+       # (否则引用老版本的 Agent 指着的那份说明已经不是现在这份)。
+       "model_aliases", "when_to_use", "task_examples"],
       ["**服务端绑定参数**(输出目录 / project_id / 允许的文档库)"
        "模型参数不许覆盖(§9.4)",
        "**pollable 要显式声明**(§10.3):相同参数的重复读取可能是合法轮询,"
        "「调用两次就算无进展」会把正常轮询判成失控 —— "
        "反过来,不声明就默认可轮询也会放过真的失控",
        "**不可逆写入必须有 confirmation_policy**;落点在 dsl.可以执行吗()",
-       "redaction 说清哪些字段在 Trace 和导出里要脱敏"],
+       "redaction 说清哪些字段在 Trace 和导出里要脱敏",
+       # ── 下面三条是 §8.2 那三个字段的约束(2026-10-03)──────────
+       "**`when_to_use` 要么两边都给,要么一边都不给**:"
+       "只写「适用」而不写「不适用」时,"
+       "「不适用」会静默变成「没说过」—— 而**一个没说过不适用的工具,"
+       "和一个处处适用的工具,在模型眼里长得一模一样**。"
+       "10-03 量到的 5 道零重叠题缺的不是关键词,是「什么时候不该用它」",
+       "**`task_examples` 每条必须带来路**(记录仪 / 业务口述 / 现编),"
+       "而「现编」要标出来:10-03 栽过一次 —— "
+       "拿反推出来的别名跑出 21/21,那是**先看答案再出题**。"
+       "不带来路的话,一条编的例子和一条真实问法在这张表里长得一样",
+       "**这三个字段是模型会读到的内容,不是后台的备注** —— "
+       "所以「预览模型所见内容」要显示模型实际收到的那一段,"
+       "而不是把三个字段并排列出来(否则「后台显示的」和「模型收到的」会分家)"],
       依赖=["tool_definitions", "capability_connections"]),
     E("capability_connections", "工具连接", 项目级, 可改,
       ["name", "adapter", "allowed_endpoints", "secret_ref", "capability_snapshot",
