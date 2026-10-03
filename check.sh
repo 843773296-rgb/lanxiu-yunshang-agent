@@ -64,6 +64,13 @@ run "边界审计 · 每条保证真的攻击一次" python3 backend/boundary_au
 # 这条抓原因:写「已发生的事」那几列的地方,必须用 backend/worldclock.py。
 run "世界时钟 · 写已发生的事不许用机器时钟(4 条咬合)" python3 backend/worldclock_check.py
 run "提示词 · 单一源头与按工具装配" python3 tools/prompts_check.py
+# ⚠️ 这一条不只验「文件里有没有」,它验**「现在跑着的 SCHEMAS 里到底有没有」** ——
+# 也就是 `api.py` 末尾那一行接线还在不在。
+# 数据在文件里而没人读它,就是「声明了而没生效」,而那种状态**看起来一切正常**。
+# 它还会报出「有多少条评测题的题面进了提示词」(业务 10-03 知情后拍的「全拼进去」)——
+# **代价被接受了,不等于代价可以看不见**:拿这份说明跑的评测,报分要带上那个数。
+run "工具模型说明 · 三样真的拼进了模型读到的那段吗(以及多少条题面进了提示词)" \
+    python3 backend/工具模型说明.py
 # 「页面上的旋钮不许是假的」—— 每个旋钮声明的落点必须真的被后端读到。
 # 假旋钮(界面能拧、后端不读)比没有这个功能糟:拖动它什么都不变,而人会以为自己在调。
 run "调参旋钮 · 落点真接上了、只许收窄不许放宽(5 条咬合)" python3 agent/knobs_check.py
@@ -246,6 +253,8 @@ run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/lead
 run "回答体检 · 人造用例(正反各半)" python3 agentsite/guards_test.py
 run "「当前方案」注入 · 列清单不算取过" ./agentsite/.venv/bin/python agentsite/scheme_hook_test.py
 run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py
+run "工具收窄落到 MCP 那一层 · 真起服务读回、空集合不扩成全部、提示词按生效工具装(外部审阅 4.3)" ./agentsite/.venv/bin/python agentsite/tool_scope_check.py
+run "每一份候选答案都检查 · 修正后通过 / 未通过 / 未检查 / 不完整分开,未通过的不当正式答复交(外部审阅 4.1)" ./agentsite/.venv/bin/python agentsite/delivery_check.py
 run "中文否定与子串 · 29 条(十次踩过的坑)" python3 agent/textmatch.py
 run "判分器自测 · 人造用例(两个方向)" python3 agent/chat_eval_judgetest.py
 run "工具选择判分器 · 20 条对照(「全部必需都在」不是「至少一个」)" python3 agent/select_eval_judgetest.py
