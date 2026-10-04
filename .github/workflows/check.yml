@@ -378,6 +378,18 @@ jobs:
           # 这个脚本**默认就写**(要只看用 `--看`),所以没有
           # 「默认 dry-run 而且退出 0」那个坑。
           ./.venv/bin/python tools/import_lanxiu_prompts.py
+          # ⚠️ **工具目录也要导** —— 10-04 加,补的是一个一直存在的缺口。
+          #
+          # 上面那一步导的是**铁律**,而工具目录从来没导过,于是
+          # `lanxiu_tool_sync_check` 这条判据**在 CI 上一次都没跑过**。
+          # 它最要紧的一档是「**副作用档位变了**」——
+          # 后台标着「只读」而澜绣那边已经会写了,**后台的闸会放过它**。
+          # > 「说明改了一个字」和「从只读变成会写」在哈希上长得一样,
+          # > 所以那条判据把后者单独报。
+          #
+          # 这两件事是**一对**:不导就必红(和上面那条铁律一样),
+          # 而红出来会像「判据坏了」。
+          ./.venv/bin/python tools/import_lanxiu_tools.py --项目 project_lanxiu
           # ⚠️ **把澜绣的语料导进知识库** —— 10-02 加(搬家说明第三条待办)。
           # 两批:`业务决策/`(口径原文)和 `knowledge/`(手写领域知识)。
           # **项目要点名** —— 这个脚本原来是「导进第一个」,而那取决于
@@ -424,6 +436,16 @@ jobs:
           rc=0
           ./.venv/bin/python tools/ifmatch_reachable_check.py || rc=1
           ./.venv/bin/python tools/seed_rerun_check.py || rc=1
+          # ⚠️ 下面三条**只要库**,不要服务 —— 放这儿是为了和上面两条
+          # **共用这个 `rc` 收口**(它们各自 `|| rc=1`,最后一次性 exit)。
+          # 这三条验的是「**控制面显示的 == 执行层在用的**」,
+          # 而导入是单向的:文件改了后台不会自己跟上,
+          # **而那时后台那一页看起来完全正常**。
+          # 10-04 之前它们只装在 `make test` 里 —— 那是个没人跑的目标。
+          # > **一条判据装在一个我从来没跑过的目标里,等于没装。**
+          ./.venv/bin/python tools/lanxiu_prompt_sync_check.py || rc=1
+          ./.venv/bin/python tools/lanxiu_kb_sync_check.py || rc=1
+          ./.venv/bin/python tools/lanxiu_tool_sync_check.py || rc=1
           exit $rc
 
       - name: 挂了就把两个日志尾部贴出来

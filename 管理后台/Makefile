@@ -756,6 +756,16 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     **在那次运行上长得一模一样**(规格 §4.3)"
 	@echo "  有发布 ≠ 已加载(§9.2)· 哈希不符是**冲突**不是没切过去(§10.3)·"
 	@echo "  回执会陈旧(§10.2)· 硬限制「**没核查过**」不算支持"
+	@echo "▸ 把草稿冻成一版策略:**拼错的键和布尔值不许冻进去**"
+	@echo "  ⚠️ 两种最毒的放过法:"
+	@echo "     · 拼错键名(\`tool_attemps_cap\`)→ 执行层读不到,"
+	@echo "       **那个保护从来没生效过,而页面上填着数**"
+	@echo "     · 写 \`true\` → Python 里 True == 1,于是"
+	@echo "       **一条上限 1 次的策略,和一条写着 true 的,在执行时长得一样**"
+	@echo "  哈希只覆盖影响行为的字段(改备注不出新版本)· 复用缓存那个规范化器"
+	@echo "  (\`0\` / \`null\` / \`false\` 折出来必须不一样)"
+	@./.venv/bin/python tests/orchestration/test_policy_freeze.py
+	@echo ""
 	@./.venv/bin/python tests/orchestration/test_policy_resolve.py
 	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
