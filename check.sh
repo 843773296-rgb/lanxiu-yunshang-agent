@@ -155,6 +155,14 @@ run "运营 SOP · 生成的和现在的口径对得上(下单 / 开裁 / 判责
 run "竞品与行业 · 每条有日期、过期会自己说、真有人引用" python3 backend/competitor_check.py
 run "知识库扩容 · 每条详解说得出回答了什么问题、有出处、不漏进工艺表" python3 backend/kb_depth_check.py
 run "咬合记录 · 最贵的那一步不许只在脑子里" python3 tools/bite_check.py
+
+# 执行上限的落点对账(规格「工具调用上限与防循环监控」P0-A)。
+# ⚠️ 这一条红的时候,**红的通常不是代码,是那张登记表过期了** ——
+# 而「规格里写的现状」和「现在真实的现状」在那张表上长得一模一样。
+run "执行上限 · 每条现在到底在哪儿执行(填得进去而没人读的上限最毒)" \
+    python3 管理后台/tools/exec_limits_report.py
+run "执行上限清单 · 四种状态各判对了吗(16 条自测)" \
+    python3 管理后台/tools/exec_limits_report.py --selftest
 run "截断的报告要说「还有几条」(只许少不许多)" python3 tools/truncation_check.py
 run "INSERT 要写具名列 —— 列数恰好相等而顺序错了是不报错的(位置参数只许少不许多)" python3 tools/insert_shape_check.py
 run "门禁外的检查多久没跑了(只报状态,永不拦)" python3 tools/runlog_check.py
