@@ -733,6 +733,11 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     报「开筛选省 71%」,真因是基线臂在写缓存、对照臂吃热缓存 —— 真数 12%"
 	@./.venv/bin/python tests/orchestration/test_cache_metrics.py
 	@echo ""
+	@echo "▸ 缓存答案还能用吗:**撤权后不等物理删除**、代次判完全相等、过期是严格小于"
+	@echo "  ⚠️ 这一族 bug 的共同点是**答案还在,而它已经不该被返回了** ——"
+	@echo "     而一条不该返回的答案,和一条正常的答案,**在内容上长得一模一样**"
+	@./.venv/bin/python tests/orchestration/test_cache_usable.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py
