@@ -4791,5 +4791,17 @@
    }
   ],
   "预期红": "续聊时角色变了 → 拒"
+ },
+ {
+  "script": "tools/hook_sync_check.py",
+  "改坏": "把 `tools/hooks` 改成一个不存在的目录(判据一个 hook 都扫不到)",
+  "file": [
+   {
+    "path": "tools/hook_sync_check.py",
+    "old": "os.path.join(根, \"tools\", \"hooks\")",
+    "new": "os.path.join(根, \"tools\", \"hooks根本没有这个目录\")"
+   }
+  ],
+  "预期红": "找不到"
  }
 ]
