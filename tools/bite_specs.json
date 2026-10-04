@@ -4803,5 +4803,29 @@
    }
   ],
   "预期红": "找不到"
+ },
+ {
+  "script": "agentsite/session_state_check.py",
+  "改坏": "run 的 return 缩进进了「存会话状态」那个 if",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        _存成, _存话 = _会话.保存(_新sid, me, state, 基于版本=(_恢复版本 if _新sid == resume else None))\n    return dict(text=text.strip(), budget_hit=bool(budget_hit),",
+    "new": "        _存成, _存话 = _会话.保存(_新sid, me, state, 基于版本=(_恢复版本 if _新sid == resume else None))\n        return dict(text=text.strip(), budget_hit=bool(budget_hit),"
+   }
+  ],
+  "预期红": "run 不管存没存会话状态,都把结果交回去"
+ },
+ {
+  "script": "agentsite/scheme_hook_test.py",
+  "改坏": "_unwrap 只认 {content:[…]},不认真服务给的光秃秃内容块列表",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if isinstance(resp, list) and resp and isinstance(resp[0], dict) and \"text\" in resp[0]:\n        resp = {\"content\": resp}\n",
+    "new": ""
+   }
+  ],
+  "预期红": "①b 真服务那种返回形状"
  }
 ]

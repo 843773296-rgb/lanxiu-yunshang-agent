@@ -21,6 +21,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("保存不核版本", "基于旧版本的写 → 不覆盖"),
     ("恢复方案不重查(删了也带回来)", "上一轮在谈的方案已经被删 → 不带回来"),
     ("续聊归属不核权限变化", "续聊时角色变了 → 拒"),
+    ("run 的 return 缩进进了「存会话状态」那个 if", "run 不管存没存会话状态,都把结果交回去"),
 ]
 
 坏 = 0
@@ -117,6 +118,12 @@ def main():
     print("\n\033[1m▸ sdk.run 接上了(静态落点,行为由上面验)\033[0m")
     src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
     ck("run 开头恢复、收尾存回", "_会话.加载(resume, me)" in src and "_会话.保存(_新sid, me, state" in src, 1)
+    # 10-04 真出过:return 被缩进进了 `if _新sid and me:` —— 不带身份的评测(十来个脚本)全拿到 None。
+    # 函数体最后一句必须是**顶层的** return,不能藏在任何分支里
+    import ast
+    fn = next(n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.AsyncFunctionDef) and n.name == "run")
+    ck("run 不管存没存会话状态,都把结果交回去(最后一句是顶层 return)",
+       isinstance(fn.body[-1], ast.Return), 1, f"最后一句是 {type(fn.body[-1]).__name__}")
 
     shutil.rmtree(tmp, ignore_errors=True)
     print()

@@ -29,6 +29,7 @@
 下面第 ② 条专门钉这个。
 """
 import asyncio
+import json
 import os
 import sys
 
@@ -91,6 +92,18 @@ def main():
        有没有记 and 单["方案号"] in 注入,
        f"注入里带上了 {单['方案号']}" if 有没有记 and 单["方案号"] in 注入 else
        f"记了 {有没有记};注入片段:{注入[-120:]}")
+
+    # ── ①b 真服务的返回形状:**光秃秃的内容块列表** ────────────────
+    #    10-04 真跑才发现:SDK 给 PostToolUse 的 tool_response 是 [{"type":"text","text":"{json}"}],
+    #    不是上面手造的 dict。只认 dict 时「当前方案」在真服务里一次没记过,而这套自测全绿
+    state1b = {}
+    hooks1b = 造hook(state1b)
+    跑(hooks1b["PostToolUse"][0].hooks[0],
+       {"tool_name": "mcp__shop__get_scheme", "tool_input": {"scheme_id": 单["方案号"]},
+        "tool_response": [{"type": "text", "text": json.dumps(单, ensure_ascii=False)}]}, None, None)
+    ck("①b 真服务那种返回形状(内容块列表)也记得住当前方案",
+       state1b.get("当前方案", {}).get("号") == 单["方案号"],
+       f"记下的是 {state1b.get('当前方案')}")
 
     # ── ② 列清单**不算**取过 ─────────────────────────────────────
     #    这是这套自测最要紧的一条,理由见文件头。

@@ -1666,7 +1666,14 @@ def make_hooks(state, 注日期=True):
 
 
 def _unwrap(resp):
-    """MCP 工具的返回被包在 content[0].text 里,拆出来才好检查"""
+    """MCP 工具的返回被包在 content[0].text 里,拆出来才好检查。
+
+    ⚠️ **两种形状都要认**:`{"content": [块…]}` 和**光秃秃的块列表** `[{"type":"text","text":…}]`。
+    2026-10-04 真服务里实测是后一种(SDK 0.2.152)—— 只认前一种时 `_out` 永远不是 dict:
+    「当前方案」一次没记过、写入 ok 永远判假、check_answer 读到的工具结果全是 {}。
+    单测全绿,因为单测手造的是前一种。"""
+    if isinstance(resp, list) and resp and isinstance(resp[0], dict) and "text" in resp[0]:
+        resp = {"content": resp}
     if isinstance(resp, dict):
         cont = resp.get("content")
         if isinstance(cont, list) and cont and isinstance(cont[0], dict):

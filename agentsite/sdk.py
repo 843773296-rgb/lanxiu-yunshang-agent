@@ -1125,22 +1125,22 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     _存话 = None
     if _新sid and me:
         _存成, _存话 = _会话.保存(_新sid, me, state, 基于版本=(_恢复版本 if _新sid == resume else None))
-        return dict(text=text.strip(), budget_hit=bool(budget_hit),
-                budget_limit=_max_usd(provider),
-                trajectory=traj, seconds=round(time.time() - t0, 1),
-                session_id=getattr(res, "session_id", None),
-                trace_id=getattr(_树, "tid", None),   # 调试后台凭它定位这一次运行
-                usage=usage, sdk_cost_usd=cost, cost_usd=real, model=model,
-                # 被体检打回过几次、因为什么 —— 这两个数要落进研判台账,
-                # 它们是「模型有多不听话」的直接度量,比事后抽样评测灵敏得多
-                guard_blocked=bool(state.get("violations")),
-                guard_violations=state.get("violations") or [],
-                # 最终交付状态:通过 / 修正后通过 / 未通过 / 未检查 / 不完整。
-                # **只有前两种算交付成功** —— 别拿 guard_blocked(曾被打回过)当「最终合格」
-                交付检查=交付, 未通过草稿=未通过草稿,
-                tool_calls_seen=len(state.get("calls") or []),
-                会话状态=dict(恢复说明=state.get("会话恢复") or [], 存=_存话),
-                answer_turns=len(turns), text_all="\n\n".join(turns))
+    return dict(text=text.strip(), budget_hit=bool(budget_hit),
+            budget_limit=_max_usd(provider),
+            trajectory=traj, seconds=round(time.time() - t0, 1),
+            session_id=getattr(res, "session_id", None),
+            trace_id=getattr(_树, "tid", None),   # 调试后台凭它定位这一次运行
+            usage=usage, sdk_cost_usd=cost, cost_usd=real, model=model,
+            # 被体检打回过几次、因为什么 —— 这两个数要落进研判台账,
+            # 它们是「模型有多不听话」的直接度量,比事后抽样评测灵敏得多
+            guard_blocked=bool(state.get("violations")),
+            guard_violations=state.get("violations") or [],
+            # 最终交付状态:通过 / 修正后通过 / 未通过 / 未检查 / 不完整。
+            # **只有前两种算交付成功** —— 别拿 guard_blocked(曾被打回过)当「最终合格」
+            交付检查=交付, 未通过草稿=未通过草稿,
+            tool_calls_seen=len(state.get("calls") or []),
+            会话状态=dict(恢复说明=state.get("会话恢复") or [], 存=_存话),
+            answer_turns=len(turns), text_all="\n\n".join(turns))
 
 
 if __name__ == "__main__":
