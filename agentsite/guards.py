@@ -207,6 +207,33 @@ def _工具返回里的数(calls):
     return out
 
 
+def _原样出处(text, i, calls):
+    """答案里从 i 开始的那一截(「2–5 天」「75cm」「¥560」)**原样**出现在本轮某个工具返回里吗。
+
+    比「数在不在」更具体:片段带着单位和区间,个位数也不会碰巧撞上。
+    10-04 复核钉回:「工期 2–5 天」是 kb_lookup 原样返回的 lead_days,被当成编的整单工期;
+    只收两位数的那道豁免对个位数区间无能为力,而整单工期那一支原来根本不看出处。"""
+    片 = None
+    for rx in (RE_DAYS, RE_BODY, RE_MONEY):
+        m = rx.match(text, i)
+        if m: 片 = m.group(0); break
+    if not 片: return False
+    片 = re.sub(r"\s+", "", 片)
+    for c in calls or []:
+        o = c.get("output")
+        t = o if isinstance(o, str) else json.dumps(o, ensure_ascii=False, default=str)
+        if 片 in re.sub(r"\s+", "", t or ""): return True
+    return False
+
+
+def _查到过(v, text, i, 查到的数, calls):
+    """这个数有没有出处:数本身在返回里 / 百分数在返回里是小数(18% ↔ 0.18)/ 那一截原样在返回里。"""
+    if v in 查到的数: return True
+    if text[i:i + 12].lstrip("0123456789.").lstrip()[:1] in ("%", "％") and round(v / 100, 6) in 查到的数:
+        return True
+    return _原样出处(text, i, calls)
+
+
 # ── 体检项 ──────────────────────────────────────────────────────────────
 def g1_no_source(text, calls):
     """给了数字结论,却没查过 —— **「该查的没查就答」是工具变多之后最高频的失败**,
@@ -241,7 +268,7 @@ def g1_no_source(text, calls):
     查到的数 = _工具返回里的数(calls)
     for 类, v, i in ([("钱", v, i) for v, i in monies] + [("天", v, i) for v, i in days_pos(days)]
                     + [("量", v, i) for v, i in bodies]):
-        if v in 查到的数:
+        if _查到过(v, text, i, 查到的数, calls):
             continue
         命中 = [(工具们, 叫什么) for 词们, 工具们, 叫什么 in 数的出处
                 if _near(text, i, 词们) and (类 != "天" or 叫什么 in 时间类)]
@@ -253,10 +280,10 @@ def g1_no_source(text, calls):
             return (f"答案给了{叫}({v:g}),但**没调 {' / '.join(sorted(可接受))} "
                     f"里的任何一个** —— 调了别的工具不等于查过了这个数")
     for v, i in monies:
-        if _near(text, i, TOTAL_M) and not _called(calls, "kb_bom"):
+        if _near(text, i, TOTAL_M) and not _called(calls, "kb_bom") and not _原样出处(text, i, calls):
             return f"答案报了总价/报价(¥{v:g}),但没调 kb_bom 算过 —— 价格不能凭印象说"
     for a, b, i in days:
-        if _near(text, i, TOTAL_D) and not _called(calls, "kb_lead"):
+        if _near(text, i, TOTAL_D) and not _called(calls, "kb_lead") and not _原样出处(text, i, calls):
             return f"答案给了整单工期({a:g} 天),但没调 kb_lead 算过 —— 工期不能凭印象说"
     return None
 
@@ -1669,10 +1696,10 @@ def make_hooks(state, 注日期=True):
             bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"))
         except Exception as e:
             # 检查器自己坏了 ≠ 答案过了 —— 记「检查出错」,交付判定会把它当「未检查」
-            尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 规则版本=规则版本(), 结果="检查出错",
+            尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 原文=text, 规则版本=规则版本(), 结果="检查出错",
                           失败项=[], 说明=f"{type(e).__name__}: {e}"[:200]))
             return {}
-        尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 规则版本=规则版本(),
+        尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 原文=text, 规则版本=规则版本(),
                       结果="不通过" if bad else "通过", 失败项=[b["check"] for b in bad]))
         if not bad:
             return {}
@@ -1766,12 +1793,12 @@ def 交付判定(state, text, 体检开着=True, 跑完了=True):
     if 这份 is None:
         try:
             bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"))
-            这份 = dict(尝试=len(尝) + 1, 哈希=h, 规则版本=规则版本(), 结果="不通过" if bad else "通过",
+            这份 = dict(尝试=len(尝) + 1, 哈希=h, 原文=text, 规则版本=规则版本(), 结果="不通过" if bad else "通过",
                        失败项=[b["check"] for b in bad], 来源="交付前补查(Stop 没查到这一份)")
             if bad:
                 state.setdefault("violations", []).extend(bad)
         except Exception as e:
-            这份 = dict(尝试=len(尝) + 1, 哈希=h, 规则版本=规则版本(), 结果="检查出错", 失败项=[],
+            这份 = dict(尝试=len(尝) + 1, 哈希=h, 原文=text, 规则版本=规则版本(), 结果="检查出错", 失败项=[],
                        说明=f"{type(e).__name__}: {e}"[:200], 来源="交付前补查")
         尝.append(这份)
     if 这份["结果"] == "检查出错":

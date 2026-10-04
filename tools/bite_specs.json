@@ -4854,11 +4854,11 @@
  },
  {
   "script": "agentsite/guards_test.py",
-  "改坏": "g1 不认「数原样出现在工具返回里」这个出处",
+  "改坏": "g1 不认「数原样出现在工具返回里」这个出处(整个出处判断去掉)",
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "        if v in 查到的数:\n            continue\n",
+    "old": "        if _查到过(v, text, i, 查到的数, calls):\n            continue\n",
     "new": ""
    }
   ],
@@ -4923,5 +4923,29 @@
    }
   ],
   "预期红": "评测判分读的是最终违规"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g1 不认百分数 ↔ 小数(18% ↔ 0.18)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if text[i:i + 12].lstrip(\"0123456789.\").lstrip()[:1] in (\"%\", \"％\") and round(v / 100, 6) in 查到的数:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "复核钉回:损耗率返回是 0.18"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g1 整单工期那一支不看原样出处",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if _near(text, i, TOTAL_D) and not _called(calls, \"kb_lead\") and not _原样出处(text, i, calls):",
+    "new": "        if _near(text, i, TOTAL_D) and not _called(calls, \"kb_lead\"):"
+   }
+  ],
+  "预期红": "复核钉回:「工期 2–5 天」"
  }
 ]
