@@ -13,6 +13,8 @@
    (`.session_state.db`)只存当前方案 / 锚点 / 刚压缩过,加载先核工号 + 角色 + 门店,方案重查,版本号防覆盖;
    sessions.check 角色 / 门店变了拒续聊(session_state_check 19 条 + 5 咬合)
 **③ 未验证**:4.2 没在真服务里续聊过一次(只验了函数和 hook 注入);页面采纳按钮没在浏览器点过
+   ;fa7741b 的 CI 推送时还在跑(本机门禁绿、干净克隆重建过)—— 新会话先 `gh run list --limit 3` 看一眼;
+   钩子报「CI 连红」时先看是不是 cancelled(被新一轮取代),那不是失败
 **④ 作废**:纠错四道闸过了就全局 replace;读音拼成一串字母比;每轮 `state={}`
 **⑤ 禁区**:**核验表上线是空的,别替人把「克斯 → 缂丝」标成已核验**;CHECK 共写文件(check.sh / HANDOFF.md)提交前 git diff 看每一行都是自己的
 **⑥ 悬而未决**:medium 模型 1.5GB 删不删;管理后台会话现在的地址用 ListAgents 查(socket 会变)
@@ -3505,50 +3507,41 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-04 12:22。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-04 12:57。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 796174c · 2026-10-04 · 交接:缓存那块开工(全是纯逻辑),下一步先让 PostgreSQL 起来 |
-| 代码量 | 590 个 Python 文件 / 110714 行(不含 .venv) |
-| 验收 | `./check.sh` 共 219 项 —— **接手第一件事就是跑它** |
+| 最新提交 | ddb95a3 · 2026-10-04 · 装一条判据:**仓库里的 hook ≠ 真正在跑的那份**(刚被这件事骗过一次) |
+| 代码量 | 595 个 Python 文件 / 111063 行(不含 .venv) |
+| 验收 | `./check.sh` 共 220 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 没起来 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-M .gitignore
- M HANDOFF.md
+M HANDOFF.md
  M agent/eval-history.jsonl
  M agent/growth-eval-results.jsonl
  M agent/measure-eval-results.jsonl
  M agent/member-eval-results.jsonl
  M agent/ops-eval-results.partial.jsonl
- M agentsite/.claude/skills/call-notes/SKILL.md
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M agentsite/sdk.py
- M agentsite/sessions.py
- M backend/api.py
- M backend/asr.py
- M backend/call_flow_check.py
- M backend/server.py
- M backend/web/index.html
- M backend/write_smoke_check.py
- M check.sh
- M tools/asr_speaker_eval.py
+?? .feynman/world-shift-launchd.log
+?? .wip-muslin/
+?? data/lanxiu.db
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+ddb95a3 装一条判据:**仓库里的 hook ≠ 真正在跑的那份**(刚被这件事骗过一次)
+e633fba 交接:外部审阅澜绣侧 4.1–4.4 全部做完
+fa7741b 外部审阅 4.4 + 4.2:同音纠错只自动改核验过的词对;会话业务状态跨请求恢复
+7c72ba3 缓存第 2 步:契约五个对象 + 两个迁移 + 生成物(一口气到第 4 步)
 796174c 交接:缓存那块开工(全是纯逻辑),下一步先让 PostgreSQL 起来
-ce5a749 CI 提示:`cancelled` 不是失败 —— 它今天连喊三次红而 CI 一次都没红
-5216c34 缓存指标(纯逻辑,31 条):每一条都对着一种会算出**假收益**的方式
-ee1bc2a 答案缓存键(纯逻辑,24 条)+ 一条盯「纯逻辑自测有没有入口」的判据
-6bf3298 缓存第一步:运行消费者清单 + 缓存写入按 TTL 分档(一档上原来少算 37.5%)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
