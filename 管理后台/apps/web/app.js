@@ -2792,7 +2792,7 @@ async function 页_加资料() {
       <div class="lbl">选一个文件</div>
       <input type="file" id="f" accept=".md,.markdown,.txt">
       <button class="pri" id="go">上传并校验</button>
-      <div class="note">收 `.md` / `.markdown` / `.txt`,单个不超过 5 MB。
+      <div class="note">收 .md / .markdown / .txt,单个不超过 5 MB。
         **PDF 和扫描件要 OCR,这一版没接** —— 会在第一步就被拒,不会让你白传一遍。</div>
       <div id="步"></div>
     </div>
