@@ -776,6 +776,15 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     (第一版各写了一遍,而注释里恰好写着「两处各写一遍迟早分叉」)"
 	@./.venv/bin/python tests/orchestration/test_receipt_verify.py
 	@echo ""
+	@echo "▸ 这次运行实际采用了什么:**存快照本身,不只是那个外键**"
+	@echo "  ⚠️ 环境指针是可改的 —— 只存外键的话指针一变,"
+	@echo "     **历史运行会跟着改口**说自己当时用的是新版:"
+	@echo "     一个事后跟着指针漂的「当时用的策略」,和一个真记下来的,"
+	@echo "     **在那一栏上长得一模一样**(规格 §4.2 第 ④ 行)"
+	@echo "  来源三种(采用/回退/继承前段)· 回退要看得出来 ·"
+	@echo "  续跑段**继承不重装**(同一任务固定快照)· 拒绝启动的不配快照"
+	@./.venv/bin/python tests/orchestration/test_adopt_snapshot.py
+	@echo ""
 	@./.venv/bin/python tests/orchestration/test_policy_resolve.py
 	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"

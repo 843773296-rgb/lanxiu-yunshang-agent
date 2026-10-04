@@ -171,6 +171,7 @@ import evals_api as _EVA
 import lanxiu_api as _LX
 import toolgroups_api as _TG
 import selection_api as _SEL
+import exec_policy_api as _EXP   # 执行上限:冻结 / 回执 / 查采用
 app.include_router(_WF.router)
 app.include_router(_AG.router)
 app.include_router(_KB.router)
@@ -189,6 +190,7 @@ app.include_router(_SEL.router)
 app.include_router(_TL.router)
 app.include_router(_DBG.router)
 app.include_router(_EVA.router)
+app.include_router(_EXP.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

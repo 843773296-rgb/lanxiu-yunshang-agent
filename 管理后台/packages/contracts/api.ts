@@ -154,6 +154,9 @@ export const ENDPOINTS = [
   { method: "PATCH", path: "/workflows/{id}/draft", summary: "改图草稿", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/workflows/{id}/validate", summary: "校验图", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/workflows/{id}/versions", summary: "冻结图版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/execution-policy-versions", summary: "冻结一版执行策略", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/execution-policy-versions", summary: "执行策略版本列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/policy-instance-receipts", summary: "实例回报已加载哪一版", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/agents", summary: "Agent 列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/agents", summary: "建 Agent", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/agents/{id}", summary: "Agent 详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -211,4 +214,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 124 条接口 · 22 条异步 · 27 条要幂等键 · 14 条要 If-Match */
+/** 共 127 条接口 · 22 条异步 · 27 条要幂等键 · 14 条要 If-Match */

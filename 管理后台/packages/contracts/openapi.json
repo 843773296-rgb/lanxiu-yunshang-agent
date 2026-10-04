@@ -4208,6 +4208,232 @@
         "x-权限": "运行评测"
       }
     },
+    "/api/v1/projects/{project_id}/execution-policy-versions": {
+      "get": {
+        "description": "每一版要同时给**实例回执覆盖数**和**最近一次实际采用时间**(规格 §9.2)—— 「存在发布但没有实例回执时明确显示「尚未确认加载」」。> 一条发了而没人加载的策略,和一条真在执行的,**在那个「已发布」上长得一模一样**",
+        "operationId": "get_execution-policy-versions",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListEnvelope"
+                }
+              }
+            },
+            "description": "分页列表"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "执行策略版本列表",
+        "tags": [
+          "执行上限"
+        ],
+        "x-字段权限": [],
+        "x-审计": false,
+        "x-权限": "查看有权配置"
+      },
+      "post": {
+        "description": "**冻结 ≠ 发布**(规格 §4.2):发布引用由 `release_manifests` 管,而「版本已发布」**不能表示全部实例已加载**。返回里要把这三件事分开说 —— 否则调接口的人看到 200 会以为生效了。⚠️ 认不出的 `limits` 键**一律拒绝**:拼错的键会冻进版本而执行层读不到,**那个保护从来没生效过,而页面上填着数**;布尔也拒绝(`True == 1`,于是上限变成 1 次而填的人以为打开了保护)",
+        "operationId": "post_execution-policy-versions",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已创建"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "冻结一版执行策略",
+        "tags": [
+          "执行上限"
+        ],
+        "x-字段权限": [],
+        "x-审计": true,
+        "x-权限": "改编排草稿"
+      }
+    },
     "/api/v1/projects/{project_id}/execution-runs": {
       "get": {
         "description": "**执行状态和任务达标状态分两列**(§14.2)—— 合成一列就没法回答「跑完了但没做成」这种最常见的情况",
@@ -8697,6 +8923,112 @@
         "x-字段权限": [],
         "x-审计": true,
         "x-权限": "配置密钥与预算"
+      }
+    },
+    "/api/v1/projects/{project_id}/policy-instance-receipts": {
+      "post": {
+        "description": "**哈希对不上是「冲突」,不是「以回执为准」**(规格 §10.3 服务端核验身份)。`loaded_at` **服务端盖**(实例时钟不对会让回执永不过期);能力矩阵**三态**(「没报」不是「不支持」);**只追加**,重复回执是正常事件(§10.2「同一实例定期更新」),所以**不要幂等键** —— 加了的话「它还在用这一版」就只会被记一次。⚠️ 权限点的是「改编排草稿」,而**调用方是进程不是人** ——见上面那段:真正的解法是实例凭据,本期范围之外",
+        "operationId": "post_policy-instance-receipts",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已创建"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "实例回报已加载哪一版",
+        "tags": [
+          "执行上限"
+        ],
+        "x-字段权限": [],
+        "x-审计": true,
+        "x-权限": "改编排草稿"
       }
     },
     "/api/v1/projects/{project_id}/prompt-runs": {
