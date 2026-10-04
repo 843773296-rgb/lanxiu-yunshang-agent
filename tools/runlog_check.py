@@ -87,7 +87,14 @@ def 门禁外的检查():
     for m in re.findall(r"run .*?([\w/]+\.py)", sh):
         在门禁里.add(os.path.basename(m))
     出 = []
-    for d in ("tools", "fakedata", "backend", "agent"):
+    # ⚠️ **`agentsite/` 和 `管理后台/` 原来不在这儿,于是它们是这条检查的盲区。**
+    # 2026-10-04 加规格 §6.2 那个中断探针时发现的:
+    # 探针注释里明写「不进 check.sh」,而**没有任何东西盯它多久没跑** ——
+    # > 一个写着「要手动跑」而没人盯的脚本,和一个真被盯着的,
+    # > **在那句注释上长得一模一样**。
+    # 加上之后多出两条,其中 `管理后台/tools/seed_rerun_check.py` 本来就漏着。
+    for d in ("tools", "fakedata", "backend", "agent",
+              "agentsite", "管理后台/tools", "管理后台/workers"):
         p = os.path.join(ROOT, d)
         if not os.path.isdir(p):
             continue
