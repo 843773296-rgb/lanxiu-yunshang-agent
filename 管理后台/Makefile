@@ -745,6 +745,14 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     **在那个新任务编号上长得一模一样**(规格 §5.1 / §D.1 / C48)"
 	@./.venv/bin/python tests/orchestration/test_task_identity.py
 	@echo ""
+	@echo "▸ 这次用哪一版策略:**拒绝启动,而不是回退成「没有限制」**"
+	@echo "  ⚠️ 最容易写出来的恰恰是那一行 \`策略 = 拉配置() or 默认不限制\`:"
+	@echo "     一个「配置服务挂了所以没限制」的运行,和一个「真被授权不限制」的,"
+	@echo "     **在那次运行上长得一模一样**(规格 §4.3)"
+	@echo "  有发布 ≠ 已加载(§9.2)· 哈希不符是**冲突**不是没切过去(§10.3)·"
+	@echo "  回执会陈旧(§10.2)· 硬限制「**没核查过**」不算支持"
+	@./.venv/bin/python tests/orchestration/test_policy_resolve.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py
