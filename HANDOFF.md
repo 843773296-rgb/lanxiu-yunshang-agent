@@ -3,6 +3,20 @@
 > 于是**接手的人第一眼读到的不是最新状态** —— 交接文档漂了比没有更糟。
 > 往里加内容一律加在**最顶上**。
 
+## 🧭 2026-10-04 · 外部审阅 4.4 同音纠错收窄 + 4.2 会话状态恢复(澜绣侧做完,提交见 git log)
+
+**① 下一步第一个动作**:外部审阅澜绣侧四条(4.1–4.4)**全部做完**。若这两条还没提交:先确认
+   干净克隆从零重建过(4.4 加了表 asr_verified_pair)+ check.sh 绿,再 `git commit --only` 自己的路径。之后可选:
+   用真录音重量同音纠错(核验表现在是空的,自动改 0 处);把 4.1 的交付状态接真 SDK 跑一次(只验了补查分支)。
+**② 判据**:D15(用户 10-04):只有 `asr_verified_pair` 里的词对按位置自动改,其余挂「模型建议改写 · 待核对」,顾问采纳 /
+   不采纳,店长以上「采纳并以后自动改」,可恢复原稿(call_flow_check 纠错 12 条)。4.2:`agentsite/session_state.py`
+   (`.session_state.db`)只存当前方案 / 锚点 / 刚压缩过,加载先核工号 + 角色 + 门店,方案重查,版本号防覆盖;
+   sessions.check 角色 / 门店变了拒续聊(session_state_check 19 条 + 5 咬合)
+**③ 未验证**:4.2 没在真服务里续聊过一次(只验了函数和 hook 注入);页面采纳按钮没在浏览器点过
+**④ 作废**:纠错四道闸过了就全局 replace;读音拼成一串字母比;每轮 `state={}`
+**⑤ 禁区**:**核验表上线是空的,别替人把「克斯 → 缂丝」标成已核验**;CHECK 共写文件(check.sh / HANDOFF.md)提交前 git diff 看每一行都是自己的
+**⑥ 悬而未决**:medium 模型 1.5GB 删不删;管理后台会话现在的地址用 ListAgents 查(socket 会变)
+
 ## 🧭 2026-10-03 深夜 · 管理后台那条线收口:工具筛选**不开**(并行会话)
 
 > ⚠️ **这一节是管理后台会话写的,给澜绣侧看的,因为它处置的是 `agent/` 下的四个脚本。**
@@ -3491,45 +3505,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-03 22:54。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-04 12:22。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | a0147f8 · 2026-10-03 · 评测报分带上「工具说明里有几条评测题面」:汇总印一行,每条记录盖一个章 |
-| 代码量 | 585 个 Python 文件 / 110488 行(不含 .venv) |
-| 验收 | `./check.sh` 共 218 项 —— **接手第一件事就是跑它** |
-| 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
+| 最新提交 | 796174c · 2026-10-04 · 交接:缓存那块开工(全是纯逻辑),下一步先让 PostgreSQL 起来 |
+| 代码量 | 590 个 Python 文件 / 110714 行(不含 .venv) |
+| 验收 | `./check.sh` 共 219 项 —— **接手第一件事就是跑它** |
+| 服务 | 管理后台 :8760 → 没起来 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
+M .gitignore
+ M HANDOFF.md
  M agent/eval-history.jsonl
  M agent/growth-eval-results.jsonl
  M agent/measure-eval-results.jsonl
  M agent/member-eval-results.jsonl
  M agent/ops-eval-results.partial.jsonl
- M agent/trace_check.py
+ M agentsite/.claude/skills/call-notes/SKILL.md
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/connections_api.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/\347\234\237\346\250\241\345\236\213.py"
-?? .feynman/world-shift-launchd.log
-?? .wip-muslin/
-?? data/lanxiu.db
+ M agentsite/sdk.py
+ M agentsite/sessions.py
+ M backend/api.py
+ M backend/asr.py
+ M backend/call_flow_check.py
+ M backend/server.py
+ M backend/web/index.html
+ M backend/write_smoke_check.py
+ M check.sh
+ M tools/asr_speaker_eval.py
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-a0147f8 评测报分带上「工具说明里有几条评测题面」:汇总印一行,每条记录盖一个章
-ae3fef3 外部审阅 §5.4 第一条入口:真实调用失败**不许静默降级成 mock**(19 条)
-e2c5e89 外部审阅 4.1 + 4.3:每一份候选答案都检查;工具收窄落到 MCP 那一层
-700f41f 按业务决定全拼进提示词,但**代价留一个还在报数的计数器**;进度报告按审阅分层
-7697664 接上工具「模型说明」:三份 SCHEMAS 在源头拼进 description(用户 10-03 定:全拼进去)
+796174c 交接:缓存那块开工(全是纯逻辑),下一步先让 PostgreSQL 起来
+ce5a749 CI 提示:`cancelled` 不是失败 —— 它今天连喊三次红而 CI 一次都没红
+5216c34 缓存指标(纯逻辑,31 条):每一条都对着一种会算出**假收益**的方式
+ee1bc2a 答案缓存键(纯逻辑,24 条)+ 一条盯「纯逻辑自测有没有入口」的判据
+6bf3298 缓存第一步:运行消费者清单 + 缓存写入按 TTL 分档(一档上原来少算 37.5%)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
