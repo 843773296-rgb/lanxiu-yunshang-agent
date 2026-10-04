@@ -164,6 +164,18 @@ def upgrade() -> None:
     #
     # 一张只有列而没有约束的表,和一张真的拦得住的,
     # **在那份 schema 文档上长得一模一样。**
+    #
+    # ⚠️ **而只写在这儿是不够的 —— 唯一约束必须同时登记进
+    # `app/models.py` 的 `_额外唯一`。** 2026-10-04 这一版第一次推上去时
+    # CI 就红在这里,报的是 `remove_constraint`:
+    # > autogenerate 做的是「让库跟上模型」—— 模型漏声明的时候,
+    # > **它会安静地删掉一条真约束**。
+    # 这个坑在 models.py 里已经记了两次(09-27 索引、10-01 约束),我是第三次。
+    #
+    # ⚠️ 下面那几个**名字是算出来的,不是起的** —— `models._唯一名()` 生成,
+    # 两边必须一个字不差,否则 `alembic check` 会说「删掉这个、建那个」。
+    # `uq_execution_policy_versions_pi_ai_ek_vn` 是缩写形式,
+    # 因为全名 78 字符、超过 PostgreSQL 的 63 上限。
 
     # ⚠️ 入口只有这两种。**认不出的入口要当场拒绝**,
     # 而不是存进去等运行时发现 —— 那时候它已经被当成一条有效策略了。
@@ -181,18 +193,18 @@ def upgrade() -> None:
         "version_no > 0")
     # 同一应用同一入口下版本号不重复。
     op.create_unique_constraint(
-        "uq_exec_policy_ver_no", "execution_policy_versions",
+        "uq_execution_policy_versions_pi_ai_ek_vn", "execution_policy_versions",
         ["project_id", "application_id", "entry_kind", "version_no"])
 
     # ⚠️ **一个任务一本账,所有 Run 段共享**(规格 §5.1)。
     # 不唯一的话,「重启后又开了一本」和「本来就是两个任务」长得一样 ——
     # 而前者正是 §6.3 点名禁止的「恢复时重新初始化成零」。
     op.create_unique_constraint(
-        "uq_ledger_task", "task_budget_ledgers", ["project_id", "task_ref"])
+        "uq_task_budget_ledgers_project_id_task_ref", "task_budget_ledgers", ["project_id", "task_ref"])
 
     # 同一个追加请求发两次,**额度不许累计两份**(规格 C45)。
     op.create_unique_constraint(
-        "uq_topup_idempotency", "budget_topups",
+        "uq_budget_topups_project_id_idempotency_key", "budget_topups",
         ["project_id", "idempotency_key"])
     # ⚠️ 理由不许是空串 —— 一条没有理由的追加,和一条有理由的,
     # 在那张审计表上长得一样。而这张表存在的全部理由就是审计。

@@ -76,8 +76,13 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 		./.venv/bin/python tools/lanxiu_tool_sync_check.py
 	@echo ""
 	@echo "▸ 契约和库是否一致(alembic check)"
-	@cd services/api && DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
-		../../.venv/bin/alembic check 2>&1 | tail -1
+	@echo "  ⚠️ **这一行原来是 \`alembic check 2>&1 | tail -1\`** —— 管道吞退出码,"
+	@echo "     它红了这个目标也不红(整条命令的状态是 tail 的,永远 0)。"
+	@echo "     2026-10-04 改成走包装脚本:**它自己判退出码,而且进了根 check.sh** ——"
+	@echo "     原来这条只在 \`make test\` 里,而那是个我从来不跑的目标。"
+	@echo "     > 一条判据装在一个我从来没跑过的目标里,等于没装;"
+	@echo "     > 而即使跑了,接上管道之后它也不拦。"
+	@./.venv/bin/python tools/alembic_sync_check.py
 	@echo ""
 	@echo "▸ 跨项目引用:**真的去攻击它**(5 次攻击 + 1 条正向对照 + 还原检查)"
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \

@@ -134,6 +134,42 @@ _依赖列 = {
         "router_connection_id",
 }
 
+# ## 唯一约束叫什么名字 —— **这个名字必须和迁移里那个一个字不差**
+#
+# 默认是 `uq_{表}_{列}_{列}…`,而 PostgreSQL 的标识符上限是 **63 字符**。
+# 2026-10-04 撞上了:
+#     uq_execution_policy_versions_project_id_application_id_entry_kind_version_no
+#     = 78 字符 → SQLAlchemy 直接抛 IdentifierError
+#
+# 超长时**不能随便截**,也**不能加随机后缀** —— 这个名字要能被手写进迁移,
+# 所以缩短必须是**确定性**的:超过上限就按「去掉每个列名里的 `_` 之后的首字母缩写」
+# 兜底,而那个结果对同一组列永远一样。
+# > 一个每次算出不同名字的约束,和一个稳定的,**在它建成功那一次上长得一模一样** ——
+# > 而下一次 `alembic check` 会说「删掉这个、建那个」。
+#
+# ⚠️ 兜底的名字也**登记在这儿的注释里**,因为写迁移的人要照抄它:
+#     execution_policy_versions + (project_id, application_id, entry_kind,
+#     version_no) → `uq_execution_policy_versions_pi_ai_ek_vn`
+_上限 = 63
+
+
+def _唯一名(表, 组):
+    长 = f"uq_{表}_{'_'.join(组)}"
+    if len(长) <= _上限:
+        return 长
+    # 确定性缩写:每个列名取各段首字母(project_id → pi)。
+    短 = f"uq_{表}_" + "_".join(
+        "".join(seg[0] for seg in c.split("_") if seg) for c in 组)
+    if len(短) > _上限:
+        # 连缩写都超长 —— **抛,不截**。截出来的名字会和另一组列撞上,
+        # 而撞名字的两条约束里只有一条建得起来。
+        raise ValueError(
+            f"唯一约束名 {短!r} 还是超过 {_上限} 字符 —— "
+            f"**不截断**(截出来可能和另一组列撞名,而撞名时只有一条建得起来)。"
+            f"给 {表} 换个短表名,或者在这儿加一条显式映射")
+    return 短
+
+
 _额外唯一 = {
     # 任务幂等键 —— **防重复训练/重复计费的命根子**。项目内唯一就够:
     # 幂等键是客户端给的,两个项目用同一个字符串是正常的。
@@ -186,6 +222,28 @@ _额外唯一 = {
     "release_manifests": [("project_id", "application_id", "content_hash")],
     # 任务事件按 job 内 seq 单调:SSE 续传靠它,重号会让客户端丢事件或重放
     "job_events": [("project_id", "job_id", "seq")],
+
+    # ── 执行上限与防循环域(2026-10-04)──────────────────────────────
+    #
+    # ⚠️ **这四条是补登记的,而我是照着上面那段注释的原样又踩了一遍。**
+    # 我手工把约束写进迁移、没登记在这儿,于是 CI 的 `alembic check` 报
+    # `remove_constraint` —— **它想删掉我刚建的那四条真约束**。
+    # 而那段教训(09-29 / 10-01 那两条)就躺在上面,离这儿不到 60 行。
+    # > autogenerate 做的是「让库跟上模型」—— 模型漏声明的时候,
+    # > **它会安静地删掉一条真约束**。
+    #
+    # 版本号在 (应用, 入口) 内单调:两个 v3 会让「生产引用哪一版」失去意义。
+    # ⚠️ 带 `entry_kind` —— 门店 V3 和后台编排是**不同执行入口**(规格 §2.2),
+    # 它们各自的版本号序列不该互相挤号。
+    "execution_policy_versions": [
+        ("project_id", "application_id", "entry_kind", "version_no")],
+    # **一个任务一本账,所有 Run 段共享**(规格 §5.1)。
+    # 不唯一的话,「重启后又开了一本」和「本来就是两个任务」长得一样 ——
+    # 而前者正是规格 §6.3 点名禁止的「恢复时重新初始化成零」。
+    "task_budget_ledgers": [("project_id", "task_ref")],
+    # 额度追加的幂等键(规格 C45):同一个追加请求发两次,
+    # **额度不许累计两份**。和上面 `deployments` / `jobs` 同一个形状。
+    "budget_topups": [("project_id", "idempotency_key")],
 
     # ── Workflow / Agent 编排域 ─────────────────────────────────────
     # 版本号在父对象内单调:两个 v3 会让「生产引用哪一版」这句话失去意义
@@ -293,7 +351,7 @@ def _建一张(e):
 
     for 组 in _额外唯一.get(名, []):
         if all(c in 字段 for c in 组):
-            约束.append(UniqueConstraint(*组, name=f"uq_{名}_{'_'.join(组)}"))
+            约束.append(UniqueConstraint(*组, name=_唯一名(名, 组)))
 
     t = Table(名, metadata, *列, *约束)
 
@@ -314,6 +372,18 @@ def _建一张(e):
         # (2026-09-27 就是这么红的一次:我在迁移里建了索引,契约里忘了声明。)
         Index("ix_index_builds_proj_kb_input", t.c.project_id,
               t.c.knowledge_base_id, t.c.input_hash)
+    # ⚠️ 下面两条同样是**补登记的**(2026-10-04),原因和 `_额外唯一` 末尾那段一样:
+    # 我在迁移里建了索引、这儿忘了声明,`alembic check` 就报 `remove_index`。
+    # 这个文件里**同一个坑记了两次**(09-27 索引、10-01 约束),而我是第三次。
+    if 名 == "policy_instance_receipts":
+        # 「这个实例最近报的是哪一版」—— 策略解析每次都要查它,
+        # 而它还要按 `loaded_at` 算回执年龄(规格 §10.2 的「过期回执标陈旧」)。
+        Index("ix_receipt_by_instance", t.c.project_id, t.c.instance_ref,
+              t.c.loaded_at)
+    if 名 == "traces":
+        # 「这个任务的所有 Run 段」—— 预算账本按任务共享,
+        # 查「这一本账被哪几段用过」走它。
+        Index("ix_traces_task", t.c.project_id, t.c.task_ref)
     return t
 
 
