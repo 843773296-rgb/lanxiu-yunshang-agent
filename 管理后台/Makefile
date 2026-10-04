@@ -738,6 +738,13 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     而一条不该返回的答案,和一条正常的答案,**在内容上长得一模一样**"
 	@./.venv/bin/python tests/orchestration/test_cache_usable.py
 	@echo ""
+	@echo "▸ 这是哪一件事:额度算在谁头上 —— **模型声称「这是新任务」不算**"
+	@echo "  业务拍板(10-04):自动按客户切 + 顾问能手动开新;打架时手动赢,而**手动不永久**"
+	@echo "  ⚠️ 额度耗尽会疼,所以一定有一股力气想绕过它 —— 最便宜的绕法就是换个任务编号:"
+	@echo "     一个「模型声称是新任务」而被当真的,和一个顾问真开了新任务的,"
+	@echo "     **在那个新任务编号上长得一模一样**(规格 §5.1 / §D.1 / C48)"
+	@./.venv/bin/python tests/orchestration/test_task_identity.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py
