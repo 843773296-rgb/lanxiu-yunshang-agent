@@ -5,9 +5,25 @@
 
 ## 🧭 2026-10-04 · 缓存那块开工(外部审阅第五批)· 全是纯逻辑,**库没起来**
 
-**① 下一步第一个动作:先让 PostgreSQL 起来。**
+**① 下一步第一个动作:缓存规格阶段 3(精确答案缓存)。**
 
-本机 PG 起不来,真因是**开机后留下的陈旧 `postmaster.pid`** ——
+阶段 1–2 的契约、迁移、生成物**都做完了**(五个对象、两个迁移、`make contract` 0 红、
+`alembic check` 无漂移、端到端 177 条)。阶段 3 要那四个对象:
+`answer_cache_entries` / `cache_namespace_states` /
+`cache_invalidation_jobs` / `cache_evaluation_extensions` ——
+**它们的字段后缀已经登记好了**,所以那一步不会再碰 `fieldtypes.py`。
+
+⚠️ **两件要用户按一下的**(我被自动模式拦了,或者那是他的运行环境):
+```
+# ① 让 hook 修复真的生效(建议软链,那样它永远不会再漂)
+ln -sf /Users/eureka/Desktop/澜绣云裳agent/tools/hooks/push-then-ci.mjs ~/.claude/hooks/push-then-ci.mjs
+# ② make test 第一道闸要干净的库
+psql -d aimc_dev -c "delete from index_members; delete from embeddings; delete from job_events where job_id in (select id from jobs where type='index_build'); delete from jobs where type='index_build'; delete from index_builds; delete from retrieval_config_versions;"
+```
+
+**①b 库的事已经解决**(2026-10-04 用户按了那一行)。
+
+~~本机 PG 起不来~~(**已解决**),真因是开机后留下的陈旧 `postmaster.pid` ——
 里面记的 PID 754 现在是系统进程 `/usr/libexec/transparencyd`。
 > `pg_ctl status` 只验「那个 PID 存在」,不验「它是 postgres」,所以它说
 > 「server is running」—— **「真在跑」和「陈旧 pid 文件 + 不相干进程」在它眼里一样**。
@@ -52,6 +68,26 @@ rm /opt/homebrew/var/postgresql@17/postmaster.pid && brew services restart postg
   而 `tests/orchestration/` 那一组 16/16 齐着,**正因为它齐,才看不出没人在盯**。
 - **「被新一轮取代」和「真的失败」在 `conclusion !== "success"` 上长得一样。**
   那条 CI 提示今天连喊三次红而 CI 一次都没红。
+- ⚠️⚠️ **仓库里的 hook ≠ 真正在跑的那份。** 我修了 `tools/hooks/push-then-ci.mjs`、
+  补了四条自测、22/22 全绿、提交推送 —— **而喊话的是 `~/.claude/hooks/` 下
+  9 月 17 日的一份拷贝**。而且我当时还看到提示变成「上一次是绿的」,
+  把它当成「修完之后它自己在生产里验证了一次」—— **那只是那一刻恰好绿了**。
+  > **一个改了而没生效的 hook,和一个生效了的,在它打出的那句提示上长得一模一样。**
+  这是「把声明当成生效」在这个仓库的**第六次**,所以装了
+  `tools/hook_sync_check.py`(已挂 `check.sh`)。
+  四份 hook **全是拷贝**;另三份现在内容恰好一样 ——
+  **正因为它们一样,才看不出这个机制会漂**。
+- ⚠️ **我给自己开了个咬合例外,而棘轮比我对。** 加那条 hook 判据时我在提交信息里
+  写「它现在就是红的,所以不需要咬合」—— 那个理由只盖住第 ② 关(改坏要红),
+  **没盖住第 ① 关(对照先绿)和第 ③ 关(红的必须是点名那一条)**。
+  补的时候又撞到一层:`bite_run` 报「**对照就是红的,这条咬合证明不了任何事**」,
+  真因是这条检查的对照**依赖本机状态**。
+  > 「它本来就红」和「因为我改坏了才红」,在那个 ❌ 上长得一模一样。
+  修法是给它 `AIMC_HOOKS_DIR`(对照可注入),**而且每次印出比对的是哪个目录** ——
+  否则有人指到一个永远对得上的目录,这条检查就变成一句好话。
+- **不可变 ≠ 只追加**(契约检查逼出来的):不可变是**内容寻址的制品**(要哈希),
+  只追加是**事件日志**(两条相同内容是两次事件)。
+  给事件日志加内容哈希会把「同一个请求被判了两次」合成一行,**而那正是要查的东西**。
 
 **④ 未验证 / 真实状态**
 
