@@ -5470,11 +5470,19 @@ def _纠错说明(fixes):
         return "纠错记录读不出来"
     if f.get("没纠"):
         return f"纠错没跑通({f['没纠']}),原文是转写原样 —— 行业词可能是同音错字(缂丝写成克斯)"
-    改 = f.get("改") or []
-    if not 改:
-        return "纠过,没有要改的"
-    return ("原文里这几处是同音纠错改过的:" + "、".join(f"{a}→{b}" for a, b in 改)
-            + " —— 引这几个词做原话时,在总结里说明「转写纠错过」")
+    对 = lambda x: (x["原"], x["改"]) if isinstance(x, dict) else tuple(x[:2])
+    改 = [对(x) for x in (f.get("改") or [])]
+    议 = [对(x) for x in (f.get("建议") or []) if not (isinstance(x, dict) and x.get("处理"))]
+    话 = []
+    if 改:
+        话.append("原文里这几处是按**人工核验过的词对**自动改的:" + "、".join(f"{a}→{b}" for a, b in 改))
+    if 议:
+        # 10-04 起没核验的只作建议、不改原文(外部审阅 §4.4,用户定)—— 原文里还是错字
+        话.append("这几处**可能是同音错字、还没人核对**(原文没改):" + "、".join(f"{a}(可能是{b})" for a, b in 议)
+                 + " —— 不要替顾问认定,引用原话照原文抄")
+    if f.get("已恢复原稿"):
+        话.append("顾问把这通恢复成了转写原稿")
+    return ";".join(话) or "纠过,没有要改的"
 
 
 def _整理一通(r, 范围):

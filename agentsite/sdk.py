@@ -768,6 +768,16 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     model = _env(provider, model_name)
     工具 = 生效工具(kind, _收窄)
     state = {"生效工具": 工具}          # 进运行记录:这一轮实际给了哪些,不是配置意图
+    # ── 跨轮业务状态(外部审阅 10-03 §4.2):续聊时把**当前方案 / 锚点 / 待消费的压缩标记**恢复回来 ──
+    # 只恢复跨轮的那几样;calls / 违规 / 修正次数这些本轮状态照常从零开始(不整包回灌)。
+    # 归属和当前权限在 session_state.加载 里先核 —— 角色 / 门店变了不恢复。
+    import session_state as _会话
+    _恢复版本 = None
+    if resume and me:
+        _恢复, _恢复版本, _恢复说 = _会话.加载(resume, me)
+        state.update(_恢复)
+        if _恢复说:
+            state["会话恢复"] = _恢复说
     if _旋话:
         state["旋钮"] = _旋话      # 进轨迹,让台账上看得见这一轮是拧过的
     # ── 为什么这里是 effort 而不是 temperature ──────────────────────
@@ -1110,7 +1120,12 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                    seconds=round(time.time() - t0, 1), ok=not budget_hit)
     except Exception:
         pass    # 埋点不许影响主流程 —— 记录仪坏了不该让业务跟着坏
-    return dict(text=text.strip(), budget_hit=bool(budget_hit),
+    # 存下这一轮结束时的跨轮状态。SDK 续聊可能换一个 session id(分叉)—— 换了就按新会话存,不基于旧版本
+    _新sid = getattr(res, "session_id", None)
+    _存话 = None
+    if _新sid and me:
+        _存成, _存话 = _会话.保存(_新sid, me, state, 基于版本=(_恢复版本 if _新sid == resume else None))
+        return dict(text=text.strip(), budget_hit=bool(budget_hit),
                 budget_limit=_max_usd(provider),
                 trajectory=traj, seconds=round(time.time() - t0, 1),
                 session_id=getattr(res, "session_id", None),
@@ -1124,6 +1139,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                 # **只有前两种算交付成功** —— 别拿 guard_blocked(曾被打回过)当「最终合格」
                 交付检查=交付, 未通过草稿=未通过草稿,
                 tool_calls_seen=len(state.get("calls") or []),
+                会话状态=dict(恢复说明=state.get("会话恢复") or [], 存=_存话),
                 answer_turns=len(turns), text_all="\n\n".join(turns))
 
 

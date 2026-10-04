@@ -2386,6 +2386,38 @@ def call_upload(me, body, 入队=True):
             "说明": "已排队转写。一次只转一通,几分钟后刷新这一页看结果。"}, 200
 
 
+def call_fix(me, body):
+    """顾问处理一条「模型建议改写」/ 恢复原稿;店长以上可以把词对标成「已核验,以后自动改」。返回 (dict, 状态码)。"""
+    import asr
+    if not me:
+        return {"error": "请先登录", "code": "NO_AUTH"}, 401
+    aid = (body.get("audio_id") or "").strip()
+    r = rows("SELECT a.customer_id, cu.shop FROM call_audio a JOIN customer cu ON cu.id=a.customer_id WHERE a.id=?", aid)
+    if not r:
+        return {"error": f"没有录音 {aid}"}, 404
+    if me.get("role") != "总部运营" and me.get("shop") != r[0]["shop"]:
+        return {"error": "只能处理本店客户的录音", "code": "NOT_YOUR_SHOP"}, 403
+    动作 = body.get("action")
+    with _conn() as c:
+        asr.建表(c)
+        if 动作 == "恢复原稿":
+            ok, 话 = asr.恢复原稿(c, aid, me.get("no"))
+        elif 动作 in ("采纳", "不采纳"):
+            ok, 话 = asr.处理建议(c, aid, int(body.get("idx", -1)), 动作, me.get("no"))
+            if ok and 动作 == "采纳" and body.get("以后自动改"):
+                # **核验词对要店长以上** —— 它会让以后每一通录音都自动改,不是只改这一处
+                if me.get("role") not in ("店长", "总部运营"):
+                    return {"ok": True, "说明": 话 + ";「以后自动改」要店长确认,这次只改了这一处"}, 200
+                import json as _js
+                x = (_js.loads(c.execute("SELECT fixes FROM call_transcript WHERE audio_id=?", (aid,)).fetchone()[0])
+                     .get("建议") or [])[int(body.get("idx"))]
+                ok2, 话2 = asr.核验词对(c, x["原"], x["改"], me.get("no"), f"{aid} 第 {x['位置']} 字采纳时核验")
+                话 += ";" + 话2
+        else:
+            return {"error": "action 只能是 采纳 / 不采纳 / 恢复原稿"}, 400
+    return ({"ok": True, "说明": 话}, 200) if ok else ({"error": 话}, 409)
+
+
 def calls_of(cid):
     """客户名下的通话:状态、怎么分的说话人、逐字稿。"""
     return rows("""SELECT a.id, a.channel, a.seconds, a.source, a.status, a.fail_reason, a.created, a.consent_basis,
@@ -2743,6 +2775,9 @@ class H(BaseHTTPRequestHandler):
             return self._send(transit(body.get("machine"),body.get("target"),
                                       body.get("to"),body.get("ctx") or {},
                                       actor=_ut.get("name") or "?"))
+        if p=="/api/call-fix":
+            out, code = call_fix(_me(self), body)
+            return self._send(out, code)
         if p=="/api/call-upload":
             out, code = call_upload(_me(self), body)
             return self._send(out, code)

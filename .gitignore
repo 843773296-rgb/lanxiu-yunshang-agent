@@ -87,6 +87,8 @@ agentsite/evals/skill_usage.jsonl
 
 # 会话归属表(谁的对话是谁的)—— 本机运行态,不进版本库
 agentsite/.sessions.json
+# 会话的跨轮业务状态(当前方案 / 锚点 / 压缩标记),和归属表一样只在本机
+agentsite/.session_state.db
 .capman-gaps.json
 
 # 后台页面的草稿暂存 —— **运行时产物**,跟着谁开过服务变,

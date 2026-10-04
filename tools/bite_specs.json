@@ -4466,7 +4466,7 @@
     "new": "                      (audio_id, 文本, \"whisper.cpp\", 默认模型, 1, 用时, 繁 or None, today, 方式, 文本, 改记))"
    }
   ],
-  "预期红": "纠过的稿落库,**原稿留着**"
+  "预期红": "落库:核验过的改了、没核验的没改,**原稿留着**"
  },
  {
   "script": "backend/call_flow_check.py",
@@ -4498,11 +4498,11 @@
   "file": [
    {
     "path": "backend/asr.py",
-    "old": "        elif _读音(x.get(\"原读音\")) != _读音(x.get(\"改读音\")) or not _读音(x.get(\"原读音\")):",
+    "old": "        elif not 音o or 音o != 音n or len(音o) != len(o):",
     "new": "        elif False:"
    }
   ],
-  "预期红": "读音对不上 → 不改"
+  "预期红": "同义不同音(接栏 → 镶边,读音照实报)→ 拒"
  },
  {
   "script": "backend/recording_terms_check.py",
@@ -4695,5 +4695,101 @@
    }
   ],
   "预期红": "没跑完(预算掐断)→ 不完整"
+ },
+ {
+  "script": "backend/call_flow_check.py",
+  "改坏": "未核验的也自动改",
+  "file": [
+   {
+    "path": "backend/asr.py",
+    "old": "            (改 if (o, n) in 已核验 else 建议).append(条)",
+    "new": "            改.append(条)"
+   }
+  ],
+  "预期红": "没核验过的(香芸砂 → 香云纱)→ 只作建议"
+ },
+ {
+  "script": "backend/call_flow_check.py",
+  "改坏": "采纳不按位置、全局替换",
+  "file": [
+   {
+    "path": "backend/asr.py",
+    "old": "        新, 没改 = 按位置替换(text, [x])",
+    "new": "        新, 没改 = text.replace(x[\"原\"], x[\"改\"]), []"
+   }
+  ],
+  "预期红": "采纳第一条 → 只改那一个位置"
+ },
+ {
+  "script": "backend/call_flow_check.py",
+  "改坏": "采纳不核原稿指纹",
+  "file": [
+   {
+    "path": "backend/asr.py",
+    "old": "    if f.get(\"原稿指纹\") and 指纹(raw) != f[\"原稿指纹\"]:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "原稿变过了 → 旧建议不能再采纳"
+ },
+ {
+  "script": "agentsite/session_state_check.py",
+  "改坏": "整包回灌",
+  "file": [
+   {
+    "path": "agentsite/session_state.py",
+    "old": "    d = {k: v for k, v in json.loads(data or \"{}\").items() if k in 跨轮键}",
+    "new": "    d = dict(json.loads(data or \"{}\"))"
+   }
+  ],
+  "预期红": "不整包回灌"
+ },
+ {
+  "script": "agentsite/session_state_check.py",
+  "改坏": "加载不核角色 / 门店",
+  "file": [
+   {
+    "path": "agentsite/session_state.py",
+    "old": "    if (role or \"\") != (me.get(\"role\") or \"\") or (shop or \"\") != (me.get(\"shop\") or \"\"):\n        return {}, None, [f\"你的角色 / 门店变了",
+    "new": "    if False and (role or \"\") != (me.get(\"role\") or \"\") or (shop or \"\") != (me.get(\"shop\") or \"\"):\n        return {}, None, [f\"你的角色 / 门店变了"
+   }
+  ],
+  "预期红": "角色或门店变了 → 不恢复"
+ },
+ {
+  "script": "agentsite/session_state_check.py",
+  "改坏": "保存不核版本",
+  "file": [
+   {
+    "path": "agentsite/session_state.py",
+    "old": "            if 基于版本 is not None and cur[0] != 基于版本:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "基于旧版本的写 → 不覆盖"
+ },
+ {
+  "script": "agentsite/session_state_check.py",
+  "改坏": "恢复方案不重查",
+  "file": [
+   {
+    "path": "agentsite/session_state.py",
+    "old": "            d.pop(\"当前方案\")\n",
+    "new": "            pass\n"
+   }
+  ],
+  "预期红": "上一轮在谈的方案已经被删"
+ },
+ {
+  "script": "agentsite/session_state_check.py",
+  "改坏": "续聊归属不核权限变化",
+  "file": [
+   {
+    "path": "agentsite/sessions.py",
+    "old": "    if (rec.get(\"role\") or \"\") != (me.get(\"role\") or \"\") or (rec.get(\"shop\") or \"\") != (me.get(\"shop\") or \"\"):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "续聊时角色变了 → 拒"
  }
 ]

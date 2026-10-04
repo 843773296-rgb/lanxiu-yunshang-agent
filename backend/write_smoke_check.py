@@ -310,6 +310,25 @@ def 用例表():
                 asr.规整 = 真
         出.append(("call_upload", _传, "call_audio"))
 
+        # 处理一条「模型建议改写」(10-04):店长「采纳并以后自动改」→ 核验词对表多一行。
+        # 先在副本里造一通带建议的逐字稿(演示数据里没有真转写的录音)
+        def _纠(s):
+            import asr, json as _js, sqlite3 as _sq
+            with _sq.connect(副本) as c:
+                asr.建表(c)
+                原 = "客户:我想要克斯的。"
+                c.execute("INSERT OR REPLACE INTO call_audio(id, customer_id, path, source, created, channel, status)"
+                          " VALUES('CA-SMOKE', ?, 'x.wav', '真实录音', '2026-01-01', '电话', '完成')", (店客["id"],))
+                c.execute("INSERT OR REPLACE INTO call_transcript(audio_id, text, engine, model, created, raw_text, fixes)"
+                          " VALUES('CA-SMOKE', ?, 'whisper.cpp', 'x', '2026-01-01', ?, ?)",
+                          (原, 原, _js.dumps({"改": [], "建议": [{"原": "克斯", "改": "缂丝", "位置": 6, "上下文": 原}],
+                                              "原稿指纹": asr.指纹(原)}, ensure_ascii=False)))
+                c.execute("DELETE FROM asr_verified_pair WHERE src='克斯' AND dst='缂丝'")
+            店长 = 取("SELECT no FROM staff WHERE role='店长' AND shop=? LIMIT 1", 店客["shop"])
+            return s.call_fix(dict(no=(店长 or {}).get("no", "T"), name="冒烟", role="店长", shop=店客["shop"]),
+                              dict(audio_id="CA-SMOKE", idx=0, action="采纳", 以后自动改=True))[0]
+        出.append(("call_fix", _纠, "asr_verified_pair"))
+
     return [x for x in 出 if 有表(x[2])]
 
 

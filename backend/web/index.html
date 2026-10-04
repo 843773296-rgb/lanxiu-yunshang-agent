@@ -1137,6 +1137,7 @@ function calendar(marks){
   return html+"</tbody></table></div>";
 }
 
+function alertLine(t){const m=document.getElementById("callMsg"); if(m) m.textContent=t;}
 async function custDetail(cid){
   const d=await get("/api/customer/"+cid);
   if(d.error){M.innerHTML=chrome(["首页","客户管理","客户详情"],`<div class="err">${esc(d.error)}</div>`);return}
@@ -1173,11 +1174,20 @@ async function custDetail(cid){
             <pre style="white-space:pre-wrap;font-size:12.5px;margin:6px 0">${esc(x.text)}</pre>
             ${(()=>{let f={};try{f=JSON.parse(x.fixes||"{}")}catch(e){}
               if(f.没纠) return `<div style="font-size:11.5px;color:var(--warn)">同音纠错没跑通(${esc(f.没纠)}),这是转写原样</div>`;
-              const g=f.改||[]; if(!g.length) return "";
-              return `<div style="font-size:11.5px;color:var(--warn)">同音纠错改了 ${g.length} 处:${g.map(p=>esc(p[0])+"→"+esc(p[1])).join("、")}
-                —— 客户要是真说的原词(比如「被子」),以原稿为准</div>
-                <details><summary style="cursor:pointer;font-size:11.5px">看转写原稿</summary>
-                <pre style="white-space:pre-wrap;font-size:12px;color:var(--ink3)">${esc(x.raw_text||"")}</pre></details>`})()}
+              const g=f.改||[], s=f.建议||[];
+              // ⚠️ 读音是模型自报的,**不是独立的同音校验** —— 自动改的只有人工核验过的词对,其余是「建议」(用户 10-04 定)
+              const auto = g.length ? `<div style="font-size:11.5px;color:var(--ink2)">按已核验词对自动改了 ${g.length} 处:${g.map(p=>esc(p.原)+"→"+esc(p.改)).join("、")}</div>` : "";
+              const sug = s.length ? `<div style="font-size:11.5px;color:var(--warn);margin-top:4px">模型建议改写 · 待核对(读音是模型自报的,不是独立校验):</div>` +
+                s.map((p,i)=>`<div style="font-size:12px;margin:2px 0">「…${esc(p.上下文||"")}…」 ${esc(p.原)} → ${esc(p.改)}
+                  ${p.处理?`<span style="color:var(--ink3)">(${esc(p.处理)})</span>`:
+                  `<span class="lk" data-fix="${esc(x.id)}" data-i="${i}" data-act="采纳">采纳</span>
+                   <span class="lk" data-fix="${esc(x.id)}" data-i="${i}" data-act="采纳" data-auto="1">采纳并以后自动改</span>
+                   <span class="lk" data-fix="${esc(x.id)}" data-i="${i}" data-act="不采纳">不采纳</span>`}</div>`).join("") : "";
+              const raw = x.raw_text ? `<details><summary style="cursor:pointer;font-size:11.5px">看转写原稿</summary>
+                <pre style="white-space:pre-wrap;font-size:12px;color:var(--ink3)">${esc(x.raw_text)}</pre>
+                <span class="lk" data-fix="${esc(x.id)}" data-act="恢复原稿">恢复成原稿</span></details>` : "";
+              return auto+sug+(g.length||s.length?raw:"");
+            })()}
             <div style="font-size:11.5px;color:var(--ink3)">要总结、研判商机、出下一步:在智能运维平台说「整理一下通话 ${esc(x.id)}」</div></details>`:"—"}</td></tr>`}).join("")}
         </tbody></table>` : `<div class="empty">暂无通话录音</div>`);
     }
@@ -1321,6 +1331,10 @@ async function custDetail(cid){
   M.querySelectorAll("[data-edit]").forEach(e=>e.onclick=()=>formEditCustomer(c,()=>custDetail(cid)));
   M.querySelectorAll("[data-fu]").forEach(e=>e.onclick=()=>formFollowup(cid,()=>custDetail(cid)));
   M.querySelectorAll("[data-newapt]").forEach(e=>e.onclick=()=>formAppt(cid,()=>{CT.tab="预约记录";custDetail(cid)}));
+  M.querySelectorAll("[data-fix]").forEach(e=>e.onclick=async()=>{
+    const r=await post("/api/call-fix",{audio_id:e.dataset.fix,idx:+(e.dataset.i||-1),action:e.dataset.act,以后自动改:!!e.dataset.auto});
+    await custDetail(cid); alertLine(r.error?("没改成:"+r.error):(r.说明||"好了"));
+  });
   const cu=document.getElementById("callUp");
   if(cu) cu.onclick=async()=>{
     const f=document.getElementById("callFile").files[0], ch=document.getElementById("callCh").value,

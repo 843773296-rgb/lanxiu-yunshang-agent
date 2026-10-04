@@ -180,6 +180,11 @@ def _补列(c):
         if 列 not in 有:
             c.execute(f"ALTER TABLE call_audio ADD COLUMN {列} {型}")
     有 = {r[1] for r in c.execute("PRAGMA table_info(call_transcript)")}
+    c.execute("""CREATE TABLE IF NOT EXISTS asr_verified_pair(
+                   src TEXT NOT NULL, dst TEXT NOT NULL,      -- 原写法 → 行业词(等长)
+                   verified_by TEXT NOT NULL, verified_at TEXT NOT NULL,
+                   basis TEXT,                                -- 依据:哪通录音里核过的 / 谁说的
+                   PRIMARY KEY(src, dst))""")
     for 列 in ("raw_text", "fixes"):
         # raw_text:纠错之前 whisper 吐的原样;fixes:改了哪几处(JSON)。**改过的稿和原稿长得一模一样**,
         # 不留原稿的话,「客户真说的是被子、被改成了褙子」这种事永远查不回来
@@ -453,17 +458,60 @@ def _读音(p):
     return re.sub(r"[^a-z]", "", "".join(ch for ch in p if not unicodedata.combining(ch)).lower().replace("ü", "v"))
 
 
-def 同音纠错(稿, call=None, 词表=None):
-    """模型指出「哪几个字是某个行业词的同音错写」,**改不改由规则把关**(用户 10-03 定的 A 案):
+def _音节(p):
+    """读音 → 音节列表(去声调、小写)。**按音节比,不把边界去掉拼成一串字母** ——
+    拼成一串的话「xi an」和「xian」会碰巧相等(外部审阅 10-03 §4.4)。"""
+    import unicodedata
+    p = unicodedata.normalize("NFD", str(p or ""))
+    p = "".join(ch for ch in p if not unicodedata.combining(ch)).lower().replace("ü", "v")
+    return [x for x in re.split(r"[^a-z]+", re.sub(r"\d", " ", p)) if x]
 
-        改成的词必须在词表里 · 字数和原写法一样 · 原写法真在稿子里 · 两者不同
 
-    不过闸的一条都不改,记进「拒」—— 实测拦下过「装种 → 装逼」「接栏 → 接缘」(都不是行业词)。
-    返回 (新稿, 收 [(原, 改)], 拒 [(原, 改, 为什么)])。**模型没跑通就抛**,由调用方决定怎么落。
+def 已核验词对(c=None):
+    """人工核验过的易错词对 {(原, 改)}。**只有这张表里的才自动改**(用户 10-04 定)。"""
+    try:
+        con = c or sqlite3.connect(DB)
+        try:
+            return {(a, b) for a, b in con.execute("SELECT src, dst FROM asr_verified_pair")}
+        finally:
+            if c is None:
+                con.close()
+    except sqlite3.Error:
+        return set()
+
+
+def 指纹(s):
+    import hashlib
+    return hashlib.sha256((s or "").encode("utf-8")).hexdigest()[:16]
+
+
+def 按位置替换(稿, 条目们):
+    """条目 = {原, 改, 位置}。**按位置改,不全局 replace**:同一个词在别处的语境可能是对的
+    (「被子」和「褙子」)。改之前核对那个位置上还是「原」那几个字,对不上的跳过并返回。
+    同音错写字数不变,所以改一处不会让别处的位置跑偏。返回 (新稿, 没改成的)。"""
+    没改 = []
+    for x in sorted(条目们, key=lambda x: -x["位置"]):
+        p, o, n = x["位置"], x["原"], x["改"]
+        if 稿[p:p + len(o)] != o or len(o) != len(n):
+            没改.append(x); continue
+        稿 = 稿[:p] + n + 稿[p + len(o):]
+    return 稿, 没改
+
+
+def 同音纠错(稿, call=None, 词表=None, 已核验=None):
+    """模型**指出**「哪几个字是某个行业词的同音错写」,规则把关,**只有人工核验过的词对才自动改**。
+
+    用户 10-03 定 A 案(模型指出 + 规则把关);10-04 按外部审阅 §4.4 收窄(用户定):
+    读音是模型**自己报的**,没法独立核对 —— 造一个「接栏 → 镶边」让它两边都报 xiang bian,四道闸全过。
+    所以四道闸(在词表 / 等长 / 原文有 / 音节一样)过了也只算**候选**:
+        在「已核验词对」表里  → 自动改(按位置)
+        不在                  → **建议**,挂在页面上「模型建议改写 · 待核对」,顾问采纳才改
+    返回 dict(稿, 改, 建议, 拒, 原稿指纹)。改 / 建议 每条 = {原, 改, 位置, 上下文}。**模型没跑通就抛**。
     """
     import json as _js
     词表 = 词表 or 纠错词表()
     全 = set(词表)
+    已核验 = 已核验词对() if 已核验 is None else 已核验
     if call is None:
         import sys as _sys
         _sys.path.insert(0, os.path.join(HERE, "..", "agent"))
@@ -477,27 +525,88 @@ def 同音纠错(稿, call=None, 词表=None):
         r = call(稿)
     t = "".join(b.get("text", "") for b in r.get("content", []) if b.get("type") == "text")
     m = re.search(r"\[.*\]", t, re.S)
-    建议 = _js.loads(m.group(0)) if m else []
-    收, 拒 = [], []
-    for x in 建议 if isinstance(建议, list) else []:
+    提议 = _js.loads(m.group(0)) if m else []
+    候选, 拒 = [], []
+    for x in 提议 if isinstance(提议, list) else []:
         o, n = (x.get("原") or "", x.get("改") or "") if isinstance(x, dict) else ("", "")
+        音o, 音n = _音节(x.get("原读音")) if isinstance(x, dict) else [], _音节(x.get("改读音")) if isinstance(x, dict) else []
         if n not in 全:
             拒.append((o, n, "改成的不是行业词"))
         elif not o or o not in 稿:
             拒.append((o, n, "稿子里没有这个写法"))
         elif len(o) != len(n):
             拒.append((o, n, "字数不一样(同音错写字数不会变)"))
-        elif _读音(x.get("原读音")) != _读音(x.get("改读音")) or not _读音(x.get("原读音")):
-            # 真跑见过「接栏 → 镶边」:意思相近、读音完全不同,前三道闸全过。读音是模型自己报的,
-            # 没法独立核对 —— 但它挡得住「按意思改」这一类(要它先承认两边读音一样)
-            拒.append((o, n, f"读音对不上({x.get('原读音')} / {x.get('改读音')})"))
+        elif not 音o or 音o != 音n or len(音o) != len(o):
+            # 读音是模型自报的:**这道闸只挡得住「按意思改」,挡不住伪造的读音** —— 所以过了也只是候选
+            拒.append((o, n, f"读音对不上(音节 {音o} / {音n})"))
         elif o == n:
             continue
-        elif (o, n) not in 收:
-            收.append((o, n))
-    for o, n in 收:
-        稿 = 稿.replace(o, n)
-    return 稿, 收, 拒
+        elif (o, n) not in [(c_["原"], c_["改"]) for c_ in 候选]:
+            候选.append({"原": o, "改": n})
+    改, 建议 = [], []
+    for c_ in 候选:
+        o, n = c_["原"], c_["改"]
+        for mm in re.finditer(re.escape(o), 稿):       # 每一处单独一条:同一个词在两处,语境可能不同
+            p = mm.start()
+            条 = {"原": o, "改": n, "位置": p, "上下文": 稿[max(0, p - 8):p + len(o) + 8]}
+            (改 if (o, n) in 已核验 else 建议).append(条)
+    原指纹 = 指纹(稿)
+    新稿, 没改 = 按位置替换(稿, 改)
+    改 = [x for x in 改 if x not in 没改]
+    return dict(稿=新稿, 改=改, 建议=建议, 拒=拒, 原稿指纹=原指纹)
+
+
+def 处理建议(c, audio_id, idx, 动作, 经手人):
+    """顾问对一条「建议改写」的处理:采纳 / 不采纳。返回 (成没成, 一句人话)。
+
+    采纳时**核对原稿没变过、那个位置上还是原来那几个字**才改(外部审阅:按位置 + 源文本哈希定位)。"""
+    import json as _js
+    r = c.execute("SELECT text, raw_text, fixes FROM call_transcript WHERE audio_id=?", (audio_id,)).fetchone()
+    if not r:
+        return False, f"没有逐字稿 {audio_id}"
+    text, raw, fx = r
+    f = _js.loads(fx or "{}")
+    建议 = f.get("建议") or []
+    if not (0 <= idx < len(建议)):
+        return False, "没有这一条建议"
+    x = 建议[idx]
+    if x.get("处理"):
+        return False, f"这一条已经{x['处理']}过了"
+    if f.get("原稿指纹") and 指纹(raw) != f["原稿指纹"]:
+        return False, "原稿变过了(和出建议时不是同一份),这条建议不能再用"
+    if 动作 == "采纳":
+        新, 没改 = 按位置替换(text, [x])
+        if 没改:
+            return False, f"那个位置上已经不是「{x['原']}」了,不改"
+        text = 新
+    elif 动作 != "不采纳":
+        return False, "动作只能是 采纳 / 不采纳"
+    x.update(处理=动作, 处理人=经手人, 处理于=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    c.execute("UPDATE call_transcript SET text=?, fixes=?, edited_by=?, edited_at=? WHERE audio_id=?",
+              (text, _js.dumps(f, ensure_ascii=False), 经手人, x["处理于"], audio_id))
+    return True, f"{动作}:{x['原']} → {x['改']}(第 {x['位置']} 字)"
+
+
+def 恢复原稿(c, audio_id, 经手人):
+    """把逐字稿恢复成转写原样 —— 自动改的、采纳过的全部撤回(记录留着,标「已恢复」)。"""
+    import json as _js
+    r = c.execute("SELECT raw_text, fixes FROM call_transcript WHERE audio_id=?", (audio_id,)).fetchone()
+    if not r or r[0] is None:
+        return False, "没有转写原稿可恢复(演示数据或老录音)"
+    f = _js.loads(r[1] or "{}")
+    f["已恢复原稿"] = dict(经手人=经手人, 于=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    c.execute("UPDATE call_transcript SET text=?, fixes=?, edited_by=?, edited_at=? WHERE audio_id=?",
+              (r[0], _js.dumps(f, ensure_ascii=False), 经手人, f["已恢复原稿"]["于"], audio_id))
+    return True, "已恢复成转写原稿"
+
+
+def 核验词对(c, 原, 改, 经手人, 依据=""):
+    """把一对易错词标成「人工核验过」,以后自动改。**只收等长的**(同音错写字数不变)。"""
+    if not 原 or not 改 or len(原) != len(改) or 原 == 改:
+        return False, "词对要等长、不能相同"
+    c.execute("INSERT OR IGNORE INTO asr_verified_pair(src, dst, verified_by, verified_at, basis) VALUES(?,?,?,?,?)",
+              (原, 改, 经手人, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), 依据))
+    return True, f"「{原} → {改}」以后自动改"
 
 
 def 处理(audio_id, db=None, call=None, 转写=None, 纠错call=None):
@@ -527,9 +636,12 @@ def 处理(audio_id, db=None, call=None, 转写=None, 纠错call=None):
         原稿 = 成稿(行们)
         # 同音纠错:**失败不算转写失败** —— 原稿照样落,fixes 里写清「没纠」,不然和「纠过、没有要改的」长得一样
         try:
-            文本, 收, 拒 = 同音纠错(原稿, call=纠错call)
+            with sqlite3.connect(db) as _c:
+                _核 = 已核验词对(_c)
+            结 = 同音纠错(原稿, call=纠错call, 已核验=_核)
+            文本 = 结["稿"]
             import json as _js
-            改记 = _js.dumps({"改": 收, "拒": 拒}, ensure_ascii=False)
+            改记 = _js.dumps({k: 结[k] for k in ("改", "建议", "拒", "原稿指纹")}, ensure_ascii=False)
         except Exception as e:
             文本, 改记 = 原稿, f'{{"没纠": "{type(e).__name__}"}}'
         import simplified

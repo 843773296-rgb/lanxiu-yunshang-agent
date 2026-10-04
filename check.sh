@@ -255,6 +255,7 @@ run "「当前方案」注入 · 列清单不算取过" ./agentsite/.venv/bin/py
 run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py
 run "工具收窄落到 MCP 那一层 · 真起服务读回、空集合不扩成全部、提示词按生效工具装(外部审阅 4.3)" ./agentsite/.venv/bin/python agentsite/tool_scope_check.py
 run "每一份候选答案都检查 · 修正后通过 / 未通过 / 未检查 / 不完整分开,未通过的不当正式答复交(外部审阅 4.1)" ./agentsite/.venv/bin/python agentsite/delivery_check.py
+run "会话的业务状态跨请求恢复 · 只恢复跨轮的、先核归属和权限、方案被删不带回、并发不覆盖(外部审阅 4.2)" ./agentsite/.venv/bin/python agentsite/session_state_check.py
 run "中文否定与子串 · 29 条(十次踩过的坑)" python3 agent/textmatch.py
 run "判分器自测 · 人造用例(两个方向)" python3 agent/chat_eval_judgetest.py
 run "工具选择判分器 · 20 条对照(「全部必需都在」不是「至少一个」)" python3 agent/select_eval_judgetest.py

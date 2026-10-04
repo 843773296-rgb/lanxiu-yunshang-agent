@@ -70,6 +70,11 @@ def check(session_id, me):
     if str(rec.get("no")) != str(me["no"]):
         return False, (f"这条会话是**别人的**({rec.get('name') or rec.get('no')}),"
                        f"不能接着往下说 —— 里面有你看不到的数据")
+    # 外部审阅 10-03 §4.2:**权限变了就中止旧历史续聊** —— 只限制新的工具调用不够,
+    # 旧历史里已经有按旧权限取到的数据(店长调去当顾问,接着说就还看得见全店的)
+    if (rec.get("role") or "") != (me.get("role") or "") or (rec.get("shop") or "") != (me.get("shop") or ""):
+        return False, (f"你的角色 / 门店变了(这条会话开的时候是 {rec.get('role')}·{rec.get('shop') or '—'}),"
+                       f"里面有按原来权限取到的数据 —— **开一条新的**")
     return True, ""
 
 
