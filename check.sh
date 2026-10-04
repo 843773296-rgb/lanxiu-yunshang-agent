@@ -161,7 +161,7 @@ run "咬合记录 · 最贵的那一步不许只在脑子里" python3 tools/bite
 # 而「规格里写的现状」和「现在真实的现状」在那张表上长得一模一样。
 run "执行上限 · 每条现在到底在哪儿执行(填得进去而没人读的上限最毒)" \
     python3 管理后台/tools/exec_limits_report.py
-run "执行上限清单 · 四种状态各判对了吗(16 条自测)" \
+run "执行上限清单 · 五种状态各判对了吗(21 条自测)" \
     python3 管理后台/tools/exec_limits_report.py --selftest
 run "截断的报告要说「还有几条」(只许少不许多)" python3 tools/truncation_check.py
 run "INSERT 要写具名列 —— 列数恰好相等而顺序错了是不报错的(位置参数只许少不许多)" python3 tools/insert_shape_check.py
