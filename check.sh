@@ -152,6 +152,12 @@ run "RFM 评分 · 五条性质" python3 backend/rfm_check.py
 run "交接文档 · 四段必填是否齐全" python3 tools/make_handoff.py --check
 run "intent · 待办都点了名,「做完了」的判据真的在" python3 tools/intent_check.py
 run "运营 SOP · 生成的和现在的口径对得上(下单 / 开裁 / 判责 / 铁律)" python3 tools/make_sop.py --check
+# 营销 SOP:八节各自对着一个口径模块(生命周期/促活/挽回/预约/活动/归因/渠道/价格)。
+# ⚠️ 它和运营 SOP 同一个机制 —— **改了口径不重新生成就红**,并指出第几行起不一样。
+# 而 `--check` 不只比字符串:还验节数=8 和几个必含项 ——
+# 一份被整体清空又重新生成的**空 SOP 也能「对得上」**。
+run "营销 SOP · 生成的和现在的口径对得上(八节 · 最值钱的是「不该做什么」那一段)" \
+    python3 tools/make_mkt_sop.py --check
 run "竞品与行业 · 每条有日期、过期会自己说、真有人引用" python3 backend/competitor_check.py
 run "知识库扩容 · 每条详解说得出回答了什么问题、有出处、不漏进工艺表" python3 backend/kb_depth_check.py
 run "咬合记录 · 最贵的那一步不许只在脑子里" python3 tools/bite_check.py
