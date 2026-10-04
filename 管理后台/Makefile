@@ -728,6 +728,11 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     一条只抽查了三个字段的判据,和一条全验了的,在绿勾上长得一模一样)"
 	@./.venv/bin/python tests/orchestration/test_cache_key.py
 	@echo ""
+	@echo "▸ 缓存指标:**分母为 0 是「不适用」,不是 0%**;未知不当 0(规格 §17.2 / A-8)"
+	@echo "  ⚠️ 每条都对着一种会算出**假收益**的方式。这个仓库真栽过一次:"
+	@echo "     报「开筛选省 71%」,真因是基线臂在写缓存、对照臂吃热缓存 —— 真数 12%"
+	@./.venv/bin/python tests/orchestration/test_cache_metrics.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py
