@@ -21,6 +21,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("改的次数不设上限(`>= 最多修正次数` 改成 `>= 99`)", "连续两次失败 → 第二次不再打回"),
     ("未通过的答案照样交出去(交付处理里不换文本)", "未通过的答案不进正常答案字段"),
     ("没跑完也照常判通过(交付判定里去掉 `跑完了` 那一支)", "没跑完(预算掐断)→ 不完整"),
+    ("Stop 只读 transcript,不用入参里的 last_assistant_message", "transcript 里还没有最终答案"),
 ]
 
 坏 = 0
@@ -45,13 +46,13 @@ def main():
         hooks = guards.make_hooks(state)
         stop = hooks["Stop"][0].hooks[0]
         次["n"] = 0
-        def 假查(text, calls, prompt=""):
+        def 假查(text, calls, prompt="", **_):
             次["n"] += 1
             return 判法(text)
         guards.check_answer = 假查
         回 = []
         for a in 答案们:
-            guards._last_answer = lambda p, a=a: a
+            guards._last_answer = lambda p, *_, a=a: a
             回.append(asyncio.run(stop({"transcript_path": "x"}, None, None)))
         return 回, state
 
@@ -83,7 +84,7 @@ def main():
         ck("检查器出错 → 「未检查」,不当成通过", guards.交付判定(st, "答案")["状态"] == "未检查", 1)
 
         print("\n\033[1m▸ 交付判定:Stop 没查到 / 没跑完 / 体检关着 / 空答案\033[0m")
-        guards.check_answer = lambda text, calls, prompt="": 坏答(text)
+        guards.check_answer = lambda text, calls, prompt="", **_: 坏答(text)
         st = {}
         交 = guards.交付判定(st, "坏的最终答案")
         ck("Stop 没触发到最终那份(SDK 异常出口)→ 交付前补查,照样「未通过」",
@@ -91,6 +92,25 @@ def main():
         ck("没跑完(预算掐断)→ 不完整", guards.交付判定({}, "好答案", 跑完了=False)["状态"] == "不完整", 1)
         ck("体检关着 → 未检查(不能显示成通过)", guards.交付判定({}, "好答案", 体检开着=False)["状态"] == "未检查", 1)
         ck("空答案 → 未检查", guards.交付判定({}, "  ")["状态"] == "未检查", 1)
+
+        print("\n\033[1m▸ Stop 读到的是真答案(真的 _last_answer,不打桩)\033[0m")
+        # 10-04 真服务实测:Stop 触发时最终答案**还没写进 transcript**,只在入参 last_assistant_message 里。
+        # 只读文件时 Stop 查的一直是空串(哈希 e3b0c442…),「打回 → 改 → 再查」从没走通。
+        # 这里造一份「最后一行停在工具调用」的 transcript —— 就是真服务里那个样子
+        import json as _j, tempfile as _tf
+        tp = os.path.join(_tf.mkdtemp(), "t.jsonl")
+        with open(tp, "w", encoding="utf-8") as f:
+            f.write(_j.dumps({"type": "user", "message": {"content": "问"}}, ensure_ascii=False) + "\n")
+            f.write(_j.dumps({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "mcp__kb__kb_combo", "input": {}}]}}, ensure_ascii=False) + "\n")
+        guards._last_answer = 真读
+        state = {}
+        stop = guards.make_hooks(state)["Stop"][0].hooks[0]
+        guards.check_answer = lambda text, calls, prompt="", **_: 坏答(text)
+        回 = asyncio.run(stop({"transcript_path": tp, "last_assistant_message": "坏答案"}, None, None))
+        ck("transcript 里还没有最终答案、入参里有 → Stop 查的是那份答案(该打回就打回)",
+           回.get("decision") == "block" and state["答案检查"][0]["哈希"] == guards.答案哈希("坏答案"), 1,
+           f"钩子返回 {回};查的哈希 {state.get('答案检查')}")
 
         print("\n\033[1m▸ sdk.run 收尾用的是这一套\033[0m")
         src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()

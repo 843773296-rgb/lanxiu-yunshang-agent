@@ -189,6 +189,24 @@ def _res(c):
 ]
 
 
+# 天数只可能是这几类的数(别的类挨着一个「天」字,那个数也不是那一类的)
+时间类 = ("产能排期",)
+
+
+def _工具返回里的数(calls):
+    """本轮所有工具返回里出现过的数。**只收「像个具体值」的**(带小数或至少两位)——
+    个位整数到处都是,收进来会让编出来的「5」碰巧有了出处。"""
+    out = set()
+    for c in calls or []:
+        o = c.get("output")
+        t = o if isinstance(o, str) else json.dumps(o, ensure_ascii=False, default=str)
+        for m in re.finditer(r"\d+(?:\.\d+)?", t or ""):
+            if "." in m.group() or len(m.group()) >= 2:
+                v = _num(m.group())
+                if v is not None: out.add(v)
+    return out
+
+
 # ── 体检项 ──────────────────────────────────────────────────────────────
 def g1_no_source(text, calls):
     """给了数字结论,却没查过 —— **「该查的没查就答」是工具变多之后最高频的失败**,
@@ -214,9 +232,19 @@ def g1_no_source(text, calls):
     # 「这个数可能从这几处来,而他查过其中一处」—— 那就不该拦。
     # (代价:一个数同时属于两类时,查了其中一类就放行。宁可漏,不可误 ——
     #  误拦会让体检被关掉,而关掉之后它挡的所有错会一起回来。)
-    for v, i in (monies + days_pos(days) + bodies):
+    # ⚠️ 2026-10-04 体检 A/B 真跑钉回两条误拦(4.1 之后误拦 = 答案被扣下,代价从「多改一次」变成「这题没答案」):
+    #   ① **天数被当成身高**:「已过 280 天,超过允许的 180 天」离「身高」近,180 被判成「身高推算没出处」。
+    #      数带着单位,单位决定它能是哪一类 —— **天数只归时间类**,不靠离哪个词近来猜
+    #   ② **查出来的数被当成编的**:着装人档案里实测的「身高 105.4cm」,调的是 get_wearer,
+    #      而「身高」这一档只认 forecast_growth。**答案里的数原样出现在本轮某个工具的返回里,就是有出处** ——
+    #      判「查没查过」最直接的证据是数本身,不是工具名单(名单永远列不全,这一档就漏了 get_wearer)
+    查到的数 = _工具返回里的数(calls)
+    for 类, v, i in ([("钱", v, i) for v, i in monies] + [("天", v, i) for v, i in days_pos(days)]
+                    + [("量", v, i) for v, i in bodies]):
+        if v in 查到的数:
+            continue
         命中 = [(工具们, 叫什么) for 词们, 工具们, 叫什么 in 数的出处
-                if _near(text, i, 词们)]
+                if _near(text, i, 词们) and (类 != "天" or 叫什么 in 时间类)]
         if not 命中:
             continue
         可接受 = {t for 工具们, _ in 命中 for t in 工具们}
@@ -278,7 +306,11 @@ def g4_no_rule(text, calls):
         if r.get("craft") and r["craft"] not in text: continue
         rule, reason = r.get("rule") or "", r.get("reason") or ""
         if rule and rule in text: continue
-        if reason and any(k in text for k in re.findall(r"[一-龥]{4,}", reason)[:4]):
+        # ⚠️ 2026-10-04 真跑钉回:依据是「须在**织造阶段**完成」,模型说的是「是**织造阶段**完成的工艺」——
+        # 原来拿依据里**整段**短语逐字比,差两个字就判「没说依据」(又是枚举中文说法那个坑)。
+        # 改成比**依据里任意连续四个字**:说出了依据的核心词组(织造阶段 / 成品面料)就算讲了理由
+        if reason and any(seg[j:j + 4] in text for seg in re.findall(r"[一-龥]{4,}", reason)
+                          for j in range(len(seg) - 3)):
             continue
         return (f"判了「{r.get('craft')} × {r.get('material')} 不可」却没说依据 —— "
                 f"依据是 [{rule}] {reason[:40]}")
@@ -745,7 +777,12 @@ def g11_girth_point(text, calls):
         if not w: continue
         # **限定必须和围度在同一小句里。** 踩过:「复量」写在说身高的那句上,
         # 围度那句只有「也一并算好了」,体检却因为整段里有「复量」而放行。
-        if tm.in_clause(text, w, ("区间", "范围", "复量", "再量", "不得直接", "不能直接")):
+        # ⚠️ 2026-10-04 真跑钉回:「**围度**只给区间(胸 75.5–85.1、腰 67.5–76.1),到时候还得复量才能裁」
+        # 被拦了 —— 限定贴着的是总称「围度」,而这里只认三个部位名,于是去看了前面一行
+        # 「腰围 → 用系带调节」(那行没给数)。**限定贴着总称说,也是在说围度**。
+        # 仍然是小句级:「复量」贴着「身高」说的,照样不算(下面那条用例钉着)
+        if any(tm.in_clause(text, g, ("区间", "范围", "复量", "再量", "不得直接", "不能直接"))
+               for g in ("胸围", "腰围", "臀围", "围度")):
             continue
         return ("你说了围度却没说它只是一个区间、必须复量。"
                 "**围度不给点估计,更不能照着裁** —— 同一个身高能对应差很多的围度。")
@@ -881,7 +918,7 @@ def g20_consent_version(text, calls):
             "先让客户在小程序上重新确认。")
 
 
-def g18_vision_conclusion(text, calls):
+def g18_vision_conclusion(text, calls, 带图=False):
     """看了图就直接下形制结论,或者只凭图报价。
 
     **图给的是特征,不是结论。** 一张照片分不出唐制大袖衫和宋制褙子 ——
@@ -891,10 +928,13 @@ def g18_vision_conclusion(text, calls):
     价钱和工期更危险:它们取决于**面料与工艺**,
     而那两样**照片里根本看不出来** —— 只凭图报价是纯粹的编。
     """
-    if not _called(calls, "__vision__") and "[图片]" not in (text or ""):
-        # 这一条只在带图的那一轮生效。带图与否由调用方在文本里打标记,
-        # 或者由 vision_eval 直接调 check_answer 时传进来。
-        pass
+    # 这一条**只在带图的那一轮生效**。带图与否由 sdk.run 记进 state["带图"],经 check_answer 传进来。
+    # ⚠️ 2026-10-04 才发现:原来这里写的是 `pass` —— 判断了「没带图」却什么都不做,
+    # 而全库没有任何地方打过那个标记,于是**不带图的问答只要提到形制名就被当成「看图下结论」打回**
+    # (体检 A/B:32 题里旧臂 9 次、新臂 6 次)。4.1 之前打回一次后第二份照样放出去,误拦看不出后果;
+    # 4.1 之后改一次仍不过就扣下不交付 —— **潜伏的误拦从此直接变成「这题没答案」**。
+    if not 带图:
+        return None
     xz = tm.mentions(text, XZ_WORDS)
     if not xz: return None
     tools = " ".join(c.get("tool", "") for c in (calls or []))
@@ -1056,7 +1096,7 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g22_agree_without_reading, g23_discount_promise]
 
 
-def check_answer(text, calls, prompt=""):
+def check_answer(text, calls, prompt="", 带图=False):
     """返回违规清单。空清单 = 通过。纯函数,可离线测。
 
     `prompt` 是 2026-09-14 加的:有一类失败**只看回答看不出来** ——
@@ -1066,9 +1106,11 @@ def check_answer(text, calls, prompt=""):
     out = []
     for fn in CHECKS:
         try:
-            v = (fn(text or "", calls or [], prompt or "")
-                 if "prompt" in fn.__code__.co_varnames[:fn.__code__.co_argcount]
-                 else fn(text or "", calls or []))
+            参 = fn.__code__.co_varnames[:fn.__code__.co_argcount]
+            额 = {}
+            if "prompt" in 参: 额["prompt"] = prompt or ""
+            if "带图" in 参: 额["带图"] = bool(带图)
+            v = fn(text or "", calls or [], **额)
         except Exception as e: v = f"体检项 {fn.__name__} 自己出错了:{type(e).__name__}: {e}"
         if v: out.append(dict(check=fn.__name__, msg=v))
     return out
@@ -1621,10 +1663,10 @@ def make_hooks(state, 注日期=True):
         现在:每次都查、每次都记(答案哈希 / 规则版本 / 结果 / 失败项);改的次数用完还不过,
         **不再打回**(防无限循环),最终交付由 sdk 的交付判定决定 —— 不当成正常答案交出去。
         """
-        text = _last_answer(inp.get("transcript_path"))
+        text = _last_answer(inp.get("transcript_path"), inp.get("last_assistant_message"))
         尝 = state.setdefault("答案检查", [])
         try:
-            bad = check_answer(text, state.get("calls"), state.get("prompt"))
+            bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"))
         except Exception as e:
             # 检查器自己坏了 ≠ 答案过了 —— 记「检查出错」,交付判定会把它当「未检查」
             尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 规则版本=规则版本(), 结果="检查出错",
@@ -1723,7 +1765,7 @@ def 交付判定(state, text, 体检开着=True, 跑完了=True):
     这份 = next((a for a in reversed(尝) if a["哈希"] == h), None)
     if 这份 is None:
         try:
-            bad = check_answer(text, state.get("calls"), state.get("prompt"))
+            bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"))
             这份 = dict(尝试=len(尝) + 1, 哈希=h, 规则版本=规则版本(), 结果="不通过" if bad else "通过",
                        失败项=[b["check"] for b in bad], 来源="交付前补查(Stop 没查到这一份)")
             if bad:
@@ -1752,9 +1794,17 @@ def 交付处理(state, text, 体检开着=True, 跑完了=True):
              "没通过的是哪几条、草稿内容,在本条记录的「交付检查」里。")
 
 
-def _last_answer(path):
-    """从 transcript 里取最后一条助手文本。Stop hook 的入参里没有答案正文,
-    只有 transcript_path —— 读文件是唯一拿得到的办法。"""
+def _last_answer(path, 入参原文=None):
+    """取这一轮的最终答案。**先用 Stop 入参里的 `last_assistant_message`**,没有才读 transcript。
+
+    ⚠️ 2026-10-04 真服务实测(SDK 0.2.152):**Stop 触发时最终答案还没写进 transcript** ——
+    文件最后几行停在工具调用上,这里一直返回 ""。于是 Stop 体检查的**全是空串**
+    (答案哈希 e3b0c442… = sha256("")):空串在旧臂上「通过」,真答案只在交付前补查时才第一次被查,
+    已经没有修改机会 → 直接扣下;在新臂上空串会触发 g12 之类,模型被要求改一份它看不见问题的答案。
+    「打回 → 改 → 再查」这条路在真服务里**从没走通过**,而单测造的是写好的 transcript,全绿。
+    原来的注释写「入参里没有答案正文」—— 写的时候是真的,后来 CLI 加了这个字段。"""
+    if isinstance(入参原文, str) and 入参原文.strip():
+        return 入参原文
     if not path or not os.path.exists(path): return ""
     out = []
     for line in open(path, encoding="utf-8", errors="ignore"):

@@ -4654,8 +4654,8 @@
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "        text = _last_answer(inp.get(\"transcript_path\"))\n        尝 = state.setdefault(\"答案检查\", [])",
-    "new": "        if state.get('修正次数'):\n            return {}\n        text = _last_answer(inp.get(\"transcript_path\"))\n        尝 = state.setdefault(\"答案检查\", [])"
+    "old": "        text = _last_answer(inp.get(\"transcript_path\"), inp.get(\"last_assistant_message\"))\n        尝 = state.setdefault(\"答案检查\", [])",
+    "new": "        if state.get('修正次数'):\n            return {}\n        text = _last_answer(inp.get(\"transcript_path\"), inp.get(\"last_assistant_message\"))\n        尝 = state.setdefault(\"答案检查\", [])"
    }
   ],
   "预期红": "失败后改对 → 第二份也查了"
@@ -4827,5 +4827,77 @@
    }
   ],
   "预期红": "①b 真服务那种返回形状"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g18 的「没带图就放行」退回 `pass`(判断了却什么都不做)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if not 带图:\n        return None\n",
+    "new": "    if not 带图:\n        pass\n"
+   }
+  ],
+  "预期红": "g18 不带图:提到形制名不算"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "Stop 只读 transcript,不用入参里的 last_assistant_message",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if isinstance(入参原文, str) and 入参原文.strip():\n        return 入参原文\n",
+    "new": ""
+   }
+  ],
+  "预期红": "transcript 里还没有最终答案"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g1 不认「数原样出现在工具返回里」这个出处",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if v in 查到的数:\n            continue\n",
+    "new": ""
+   }
+  ],
+  "预期红": "真跑钉回:天数挨着「身高」不是身高"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g1 天数也按离哪个词近来归类(去掉单位约束)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "if _near(text, i, 词们) and (类 != \"天\" or 叫什么 in 时间类)]",
+    "new": "if _near(text, i, 词们)]"
+   }
+  ],
+  "预期红": "天数只归时间类"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g11 只认三个部位名,不认总称「围度」",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "for g in (\"胸围\", \"腰围\", \"臀围\", \"围度\"))",
+    "new": "for g in (\"胸围\", \"腰围\", \"臀围\"))"
+   }
+  ],
+  "预期红": "真跑钉回:限定贴着总称「围度」说"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g4 退回拿依据整段短语逐字比",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if reason and any(seg[j:j + 4] in text for seg in re.findall(r\"[一-龥]{4,}\", reason)\n                          for j in range(len(seg) - 3)):",
+    "new": "        if reason and any(k in text for k in re.findall(r\"[一-龥]{4,}\", reason)[:4]):"
+   }
+  ],
+  "预期红": "真跑钉回:依据换了说法"
  }
 ]

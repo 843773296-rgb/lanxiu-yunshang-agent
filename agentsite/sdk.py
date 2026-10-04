@@ -768,6 +768,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     model = _env(provider, model_name)
     工具 = 生效工具(kind, _收窄)
     state = {"生效工具": 工具}          # 进运行记录:这一轮实际给了哪些,不是配置意图
+    if images:
+        state["带图"] = True          # 体检 g18「看图直接下形制结论」只在带图的那一轮生效
     # ── 跨轮业务状态(外部审阅 10-03 §4.2):续聊时把**当前方案 / 锚点 / 待消费的压缩标记**恢复回来 ──
     # 只恢复跨轮的那几样;calls / 违规 / 修正次数这些本轮状态照常从零开始(不整包回灌)。
     # 归属和当前权限在 session_state.加载 里先核 —— 角色 / 门店变了不恢复。
