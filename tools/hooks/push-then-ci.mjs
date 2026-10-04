@@ -99,12 +99,44 @@ export function 该不该出声(cmd, 输出) {
 
 export function 写报告(runs, root) {
   if (!runs || !runs.length) return null;
-  const 完成 = runs.filter((r) => r.status === "completed");
-  if (!完成.length) return null;
-  const 红 = 完成.filter((r) => r.conclusion !== "success");
-  const 最近一次绿 = 完成.find((r) => r.conclusion === "success");
   const 看结果 = "看本次结果:`gh run watch $(gh run list --limit 1 --json databaseId " +
                  "-q '.[0].databaseId') --exit-status`";
+  const 全部完成 = runs.filter((r) => r.status === "completed");
+  // ⚠️ **一条都没完成 → 闭嘴**(它们还在跑,没什么可报的)。
+  // 这和「完成了但全被取消」是**两件事**,而我第一版把它们混成了一种 ——
+  // 已有的那条自测「只有在跑的运行时闭嘴」当场抓住了它。
+  // > 「还没有结果」和「有结果但都作废了」,一个该闭嘴、一个该说「判不出」。
+  if (!全部完成.length) return null;
+  // ⚠️⚠️ **`cancelled` / `skipped` 不是失败,把它们当红是误报。**
+  //
+  // 2026-10-04 这条提示连喊了三次「🔴 CI 现在是红的」,而 CI 一次都没红 ——
+  // 它读到的「最新一次完成」是一个被**新一轮取代**而取消的运行。
+  // (推得密的时候这很常见:上一轮还没跑完,下一轮就把它挤掉了。)
+  //
+  // > **「被新一轮取代」和「真的失败」在 `conclusion !== "success"` 上
+  // > 长得一模一样** —— 而一条天天喊红的提示,真红那天已经没人信了。
+  //
+  // 这正是这个文件上面那段注释学过的同一个教训的下一层:
+  // 判据要贴着含义。`cancelled` 的含义是「这一轮没跑完就被停了」,
+  // 它**什么都没证明** —— 既不证明绿,也不证明红。
+  //
+  // ⚠️ **不静默丢掉**:排掉几条要说出来(排掉一条是个决定,漏掉一条是个事故)。
+  const 没跑完就停了 = 全部完成.filter(
+    (r) => r.conclusion === "cancelled" || r.conclusion === "skipped");
+  const 完成 = 全部完成.filter(
+    (r) => r.conclusion !== "cancelled" && r.conclusion !== "skipped");
+  const 取消说明 = 没跑完就停了.length
+    ? `(另有 ${没跑完就停了.length} 次被取消/跳过,**不算红也不算绿** —— ` +
+      `多半是被新一轮取代了)`
+    : "";
+  // ⚠️ 全都被取消 → **说「不知道」,不说绿也不说红**。
+  // 「没有可判的运行」和「最近一次是绿的」在一句「CI 没问题」上长得一样。
+  if (!完成.length) {
+    return `ℹ️ CI:**最近 ${全部完成.length} 次运行全部被取消或跳过,` +
+           `所以现在判不出红绿** —— 这不是「没问题」,是**没查到**。${看结果}`;
+  }
+  const 红 = 完成.filter((r) => r.conclusion !== "success");
+  const 最近一次绿 = 完成.find((r) => r.conclusion === "success");
 
   // ⚠️ **报的是「现在是红是绿」,不是「历史上红过几次」。**
   // 第一版这里数的是回看窗口里的失败次数,于是刚把 CI 修绿的那一刻,
@@ -115,13 +147,13 @@ export function 写报告(runs, root) {
     const 尾巴 = 红.length
       ? `(最近 ${完成.length} 次里红过 ${红.length} 次,最新这次已经绿了)`
       : `(最近 ${完成.length} 次都是绿的)`;
-    return `ℹ️ CI:上一次是**绿**的 ${尾巴}。${看结果}`;
+    return `ℹ️ CI:上一次是**绿**的 ${尾巴}${取消说明}。${看结果}`;
   }
 
   const 连红 = 完成.findIndex((r) => r.conclusion === "success");
   const 连红数 = 连红 === -1 ? `至少 ${完成.length}` : String(连红);
   return [
-    `🔴 **CI 现在是红的** —— 连红 ${连红数} 次(最近 ${完成.length} 次里红了 ${红.length} 次)。`,
+    `🔴 **CI 现在是红的** —— 连红 ${连红数} 次(最近 ${完成.length} 次可判的里红了 ${红.length} 次)${取消说明}。`,
     最近一次绿
       ? `   最近一次绿:${最近一次绿.createdAt.slice(0, 16)}(${最近一次绿.headSha.slice(0, 7)})`
       : `   **这 ${完成.length} 次里一次都没绿过。**`,
@@ -180,6 +212,28 @@ if (process.argv.includes("--selftest")) {
     [/从零复现/.test(有红 || ""), "报警里要带本地从零复现的办法"],
     [写报告([], "/tmp/repo") === null, "没有运行记录时闭嘴,不瞎报"],
     [写报告([{ status: "in_progress", conclusion: null }], "/tmp/repo") === null, "只有在跑的运行时闭嘴"],
+    // ── 2026-10-04 补:**`cancelled` 不是失败** ──────────────────────
+    // 这条提示那天连喊三次「🔴 CI 现在是红的」而 CI 一次都没红 ——
+    // 读到的「最新一次完成」是被新一轮取代而取消的那一轮。
+    // > 「被新一轮取代」和「真的失败」在 `conclusion !== "success"` 上长得一样。
+    [!/🔴/.test(写报告([
+      { status: "completed", conclusion: "cancelled", createdAt: "2026-10-04T11:00", headSha: "aaa1111", displayTitle: "被取代", workflowName: "check" },
+      { status: "completed", conclusion: "success", createdAt: "2026-10-04T10:00", headSha: "bbb2222", displayTitle: "绿的", workflowName: "check" },
+    ], "/tmp/repo") || ""), "最新一次被取消、上一次是绿的 → **不许报红**(这次踩的就是它)"],
+    [/被取消\/跳过/.test(写报告([
+      { status: "completed", conclusion: "cancelled", createdAt: "2026-10-04T11:00", headSha: "aaa1111", displayTitle: "被取代", workflowName: "check" },
+      { status: "completed", conclusion: "success", createdAt: "2026-10-04T10:00", headSha: "bbb2222", displayTitle: "绿的", workflowName: "check" },
+    ], "/tmp/repo") || ""), "而且**要说出排掉了几条**(排掉一条是个决定,漏掉一条是个事故)"],
+    // ⚠️ 真红不许被这次改动顺手放过 —— 取消只是不计,不是把红也吃掉
+    [/🔴/.test(写报告([
+      { status: "completed", conclusion: "cancelled", createdAt: "2026-10-04T11:00", headSha: "aaa1111", displayTitle: "被取代", workflowName: "check" },
+      { status: "completed", conclusion: "failure", createdAt: "2026-10-04T10:00", headSha: "bbb2222", displayTitle: "真红", workflowName: "check" },
+    ], "/tmp/repo") || ""), "**最新可判的那次是真红 → 照旧报红**(别把红也一起吃掉)"],
+    // ⚠️ 全被取消 → 说「判不出」,**不说绿也不说红**
+    [/判不出红绿/.test(写报告([
+      { status: "completed", conclusion: "cancelled", createdAt: "2026-10-04T11:00", headSha: "aaa1111", displayTitle: "x", workflowName: "check" },
+      { status: "completed", conclusion: "skipped", createdAt: "2026-10-04T10:00", headSha: "bbb2222", displayTitle: "y", workflowName: "check" },
+    ], "/tmp/repo") || ""), "全被取消/跳过 → 说「**判不出**」—— 「没有可判的运行」和「没问题」不是一回事"],
   ];
   for (const [ok, 名] of 断言) { if (!ok) 红++; console.log(`${ok ? "✅" : "❌"} ${名}`); }
   console.log(`\n${用例.length + 断言.length - 红}/${用例.length + 断言.length} 通过` + (红 ? `  ❌ ${红} 项不符` : "  ✅ 全绿"));
