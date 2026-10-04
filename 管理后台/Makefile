@@ -766,6 +766,16 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  (\`0\` / \`null\` / \`false\` 折出来必须不一样)"
 	@./.venv/bin/python tests/orchestration/test_policy_freeze.py
 	@echo ""
+	@echo "▸ 实例回执可信吗:**哈希对不上是「冲突」,不是「以回执为准」**"
+	@echo "  ⚠️ 实例说「我加载了这一版」—— **它说的话不等于事实**:"
+	@echo "     一条「我加载了这一版」而内容其实不是的回执,和一条真实的,"
+	@echo "     **在那张「实例已加载」的表上长得一模一样**(规格 §10.3)"
+	@echo "  loaded_at 服务端盖(实例时钟不对会让回执永不过期)· 能力三态"
+	@echo "  (「没报」不是「不支持」)· 能力不够**不在收回执时拒绝**"
+	@echo "  ⚠️ 还验**共用真的发生了**:`策略解析` 与它是同一份陈旧判据"
+	@echo "     (第一版各写了一遍,而注释里恰好写着「两处各写一遍迟早分叉」)"
+	@./.venv/bin/python tests/orchestration/test_receipt_verify.py
+	@echo ""
 	@./.venv/bin/python tests/orchestration/test_policy_resolve.py
 	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
