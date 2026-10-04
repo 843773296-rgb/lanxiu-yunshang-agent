@@ -78,8 +78,22 @@ ck("**0 的档不会被报成「认不出」**(它是认得出的档,只是这�
         & set(r["认不出的档"])), r["认不出的档"])
 
 print("▸ ③ 认不出的档要报出来 —— 不管它是什么形状")
-ck("嵌套 dict 的 `cache_creation` **被报出来**(第一版在这儿漏掉了)",
-   "cache_creation" in r["认不出的档"], r["认不出的档"])
+# ⚠️⚠️ **这一条 2026-10-04 翻过面,而且是往「更强」那边翻的。**
+#
+# 原来断的是「嵌套 dict 的 `cache_creation` **被报出来**」——
+# 那时它是个**认不出的**字段,而这个文件的保护就是「认不出的要报」。
+#
+# 现在它**认得出了**:`归一用量` 会按它把缓存写入拆成
+# 5 分钟 / 1 小时两档并**分别计价**(两档单价差 60%)。
+# 所以它不该再出现在「认不出」名单里 —— 那不是保护被削弱,是保护被升级:
+# 从「这个字段我不懂,报给你」变成「这个字段我懂,而且算对了钱」。
+#
+# ⚠️ **而「认不出的要报」这条规矩本身没放松** —— 它现在守的是更里面一层:
+# 嵌套里出现一个**没见过的 TTL 键**(比如哪天有了 24 小时档)时仍然要报,
+# 那一条在第 ⑩ 组里验。
+ck("`cache_creation` **不再进「认不出」名单** —— 它现在是认得出、"
+   "而且按 TTL 分档计价的(保护升级,不是放松)",
+   "cache_creation" not in r["认不出的档"], r["认不出的档"])
 ck("字符串的 `service_tier` / `inference_geo` 也报",
    {"service_tier", "inference_geo"} <= set(r["认不出的档"]), r["认不出的档"])
 ck("认得出的那四档**不在**认不出清单里(证明不是把所有键都报了)",
@@ -181,6 +195,83 @@ ck("DeepSeek 取**高峰价**($1.32,非高峰是一半)—— "
 ck("**两家的单价不一样,所以必须按供应商查表** —— "
    "跨供应商用错价目表实测差过 24 倍、135 倍,而它不报错",
    海ku["input_tokens"] != 深["input_tokens"])
+
+print("▸ ⑩ 缓存写入**按 TTL 分档** —— 两档单价差 60%(2026-10-04 加)")
+# ⚠️ `cache_creation_input_tokens` 是**两档的合计**。一手:
+# `shared/prompt-caching.md` —— 「Cache writes cost
+# **1.25× for 5-minute TTL, 2× for 1-hour TTL**」。
+# 原来只认那个合计、只配一个 1.25 的单价,于是 1 小时档的 token
+# **按 1.25 计价,少算 37.5%** —— 而这个文件的「认不出的档要报出来」
+# 那道闸**拦不住它**:嵌套字段确实被报了,可钱早就按合计算完了。
+# > 一道装在错位置的闸,和一道没装的闸,在它响的时候长得一样。
+两档价 = {"input_tokens": 1.0 / 1_000_000, "output_tokens": 5.0 / 1_000_000,
+        "ephemeral_5m_input_tokens": 1.25 / 1_000_000,
+        "ephemeral_1h_input_tokens": 2.00 / 1_000_000,
+        "cache_creation_input_tokens": 1.25 / 1_000_000,
+        "cache_read_input_tokens": 0.10 / 1_000_000, "currency": "USD"}
+
+档们, 剩 = U.归一用量(dict(真用量, cache_creation_input_tokens=3000,
+                      cache_creation={"ephemeral_5m_input_tokens": 1000,
+                                      "ephemeral_1h_input_tokens": 2000}))
+ck("两档都有 → **拆成两行**,合计那一档不再出现(否则双算)",
+   档们.get("ephemeral_5m_input_tokens") == 1000
+   and 档们.get("ephemeral_1h_input_tokens") == 2000
+   and "cache_creation_input_tokens" not in 档们, 档们)
+
+r11 = U.折成账目(用量=dict(真用量, cache_creation_input_tokens=10000,
+                      cache_creation={"ephemeral_5m_input_tokens": 0,
+                                      "ephemeral_1h_input_tokens": 10000}),
+              模型="claude-haiku-4-5", 提供方="anthropic",
+              事件键="k11", 价目=两档价)
+金11 = {x["档"]: x["amount"] for x in r11["行们"]}
+ck("一万 token 全走 **1 小时**档 → $0.02(2.00/MTok)",
+   金11.get("ephemeral_1h_input_tokens") == 0.02, 金11)
+ck("**按旧口径会算成 $0.0125 —— 少算 $0.0075**(那一档上少 37.5%)",
+   round(0.02 - 10000 * 1.25 / 1_000_000, 6) == 0.0075)
+
+r12 = U.折成账目(用量=dict(真用量, cache_creation_input_tokens=10000,
+                      cache_creation={"ephemeral_5m_input_tokens": 10000,
+                                      "ephemeral_1h_input_tokens": 0}),
+              模型="claude-haiku-4-5", 提供方="anthropic",
+              事件键="k12", 价目=两档价)
+金12 = {x["档"]: x["amount"] for x in r12["行们"]}
+ck("全走 **5 分钟**档 → $0.0125,**和旧口径一样**"
+   "(所以这次改动不会让已有的账变样)",
+   金12.get("ephemeral_5m_input_tokens") == 0.0125, 金12)
+ck("而且 0 的那一档**不占一行**(这个文件的老规矩)",
+   "ephemeral_1h_input_tokens" not in 金12, sorted(金12))
+
+# ⚠️ 下面两条是「它不许自己挑一个」的咬合
+档坏, _ = U.归一用量(dict(真用量, cache_creation_input_tokens=3000,
+                     cache_creation={"ephemeral_5m_input_tokens": 1000,
+                                     "ephemeral_1h_input_tokens": 500}))
+ck("**分档之和 ≠ 合计 → 当场报出来,不挑一个用** —— "
+   "挑合计会漏掉新档的单价,挑分档会少算那部分 token",
+   "⚠️缓存写入分档对不上" in 档坏, sorted(档坏))
+ck("而且报的时候两个数都在(事后查得出差多少)",
+   (档坏.get("⚠️缓存写入分档对不上") or {}).get("合计") == 3000
+   and (档坏["⚠️缓存写入分档对不上"]).get("分档之和") == 1500,
+   档坏.get("⚠️缓存写入分档对不上"))
+
+档新, _ = U.归一用量(dict(真用量, cache_creation_input_tokens=1000,
+                     cache_creation={"ephemeral_5m_input_tokens": 1000,
+                                     "ephemeral_1h_input_tokens": 0,
+                                     "ephemeral_24h_input_tokens": 0}))
+ck("供应商**加了一档没见过的 TTL** → 也要报(哪怕它这次是 0)—— "
+   "等它非 0 的那天再发现就已经算错了",
+   "⚠️缓存写入分档对不上" in 档新
+   and "ephemeral_24h_input_tokens" in str(档新["⚠️缓存写入分档对不上"]),
+   档新.get("⚠️缓存写入分档对不上"))
+
+档常, 剩常 = U.归一用量(真用量)
+ck("**真实常见形状(两档都是 0)不多报任何东西** —— "
+   "6093 条记录里 1 小时档写入是 0 条,这条闸不许在那上面天天响",
+   "⚠️缓存写入分档对不上" not in 档常
+   # ⚠️ 不能断 `剩常 == []`:`service_tier` / `inference_geo` 本来就是
+   # 认不出的**非 token** 字段,每次都在(第一版我断成空,当场红)。
+   # 要断的是**这次改动有没有多报东西**,也就是 `cache_creation` 走掉了。
+   and "cache_creation" not in 剩常,
+   (sorted(档常), 剩常))
 
 print(f"\n{'✅' if not 挂 else '❌'} 过 {len(过)} / 挂 {len(挂)}")
 if 挂:

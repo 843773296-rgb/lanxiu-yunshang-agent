@@ -48,6 +48,34 @@ Claude / DeepSeek 的价目表快照。
 token档 = ("input_tokens", "output_tokens",
            "cache_creation_input_tokens", "cache_read_input_tokens")
 
+# ── 缓存写入要**按 TTL 分档**(2026-10-04 加)─────────────────────────────
+#
+# ⚠️⚠️ **`cache_creation_input_tokens` 是两档写入的合计。**
+# 一手确认(`shared/prompt-caching.md`:「`usage.cache_creation` breaks
+# `cache_creation_input_tokens` down by TTL」):
+#
+#     cache_creation_input_tokens  = 5 分钟档 + 1 小时档 的**合计**
+#     cache_creation: {ephemeral_5m_input_tokens, ephemeral_1h_input_tokens}
+#
+# 而两档的单价**不一样**:
+#     5 分钟写入 = 1.25 × 普通输入价
+#     1 小时写入 = **2 × 普通输入价**
+#
+# 于是只认那个合计、只配一个单价(1.25)的话,
+# **一旦出现 1 小时写入,它的 token 会按 1.25 计价 —— 少算 37.5%**。
+#
+# ⚠️ 而这个文件原有那道「认不出的档要报出来」的闸**拦不住它**:
+# 嵌套的 `cache_creation` 确实会被报成「认不出」,
+# **但钱早就按合计算完了** —— 报警响在一个不影响错数的地方。
+# > **一道装在错位置的闸,和一道没装的闸,在它响的时候长得一样。**
+#
+# 实测(2026-10-04):记录仪里 6093 条调用,1 小时档写入 **0 条**;
+# 代码里也没人设 `ttl: "1h"`。所以这是**潜在**错账,不是已经发生的。
+# 那为什么现在修:缓存规格第 9 节要给策略编辑者一个「有效期」下拉 ——
+# **那份规格本身会造出触发这个错账的条件**。先修账,再开那个开关。
+写入分档 = ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
+合计档 = "cache_creation_input_tokens"
+
 
 class 用量不对(Exception):
     """用量本身有问题 —— **当场抛,不写一条半真的账**。"""
@@ -72,6 +100,29 @@ def 归一用量(用量):
     # 的账读起来像「花了未知的钱」,实际是「这一档没用上」。
     出 = {k: int(用量.pop(k)) for k in token档
          if 用量.get(k) is not None and int(用量[k]) != 0}
+    # ── 把缓存写入换成按 TTL 的两档(见上面 `写入分档` 那段)──────────
+    分档 = 用量.get("cache_creation")
+    if isinstance(分档, dict):
+        细 = {k: int(分档.get(k) or 0) for k in 写入分档}
+        未知档 = sorted(set(分档) - set(写入分档))
+        和 = sum(细.values())
+        合计 = int(出.get(合计档) or 0)
+        # ⚠️ **分档之和对不上合计 → 报出来,不挑一个用。**
+        # 对不上只有两种可能:供应商加了第三档 TTL,或者这两个字段的含义
+        # 和我们理解的不一样。两种都不该靠猜 ——
+        # 挑合计会漏掉新档的单价,挑分档会少算那部分 token。
+        if 和 != 合计 or 未知档:
+            出["⚠️缓存写入分档对不上"] = {
+                "合计": 合计, "分档": 细, "分档之和": 和,
+                "没见过的 TTL 档": 未知档,
+                "怎么办": "供应商可能加了一档新 TTL —— **先把它登记进 `写入分档` "
+                          "和价目表,再算账**。这次按合计那一档计价(可能少算)",
+            }
+        else:
+            # 对得上:用分档替换合计。**0 的档照旧不占一行**(这个文件的老规矩)。
+            出.pop(合计档, None)
+            出.update({k: v for k, v in 细.items() if v != 0})
+        用量.pop("cache_creation", None)
     # 把 0 的那些也从剩余里摘掉 —— 它们是**认得出的档**,只是这次是 0,
     # 报进「认不出的档」会是假警报。
     for k in token档:

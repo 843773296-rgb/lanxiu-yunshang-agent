@@ -77,8 +77,26 @@ def 每百万(x):
          prices={
              "input_tokens": 每百万(1.0),
              "output_tokens": 每百万(5.0),
-             # 5 分钟缓存写。1 小时那档是 $2/MTok,而我们没用 1h 缓存 ——
-             # **认不出的档会被报出来**(usage.归一用量),所以少一档不会悄悄算漏
+             # ── 缓存写入:**按 TTL 两档,单价不同**(2026-10-04 修)────────
+             #
+             # ⚠️ 这里原来只有一行 `cache_creation_input_tokens: 1.25`,
+             # 旁边写着「1 小时那档是 $2/MTok,而我们没用 1h 缓存 ——
+             # **认不出的档会被报出来**(usage.归一用量),所以少一档不会悄悄算漏」。
+             #
+             # **那句话不成立。** 嵌套的 `cache_creation` 确实会被报成「认不出」,
+             # 但 `cache_creation_input_tokens` 是**两档的合计**,
+             # 钱早就按它和这一个单价算完了 —— 于是 1 小时档的 token
+             # 会按 1.25 计价,**少算 37.5%**,而那条报警影响不了这个数。
+             # > 一道装在错位置的闸,和一道没装的闸,在它响的时候长得一样。
+             #
+             # 一手:`shared/prompt-caching.md` —— 「Cache writes cost
+             # **1.25× for 5-minute TTL, 2× for 1-hour TTL**」。
+             # haiku-4-5 普通输入 $1/MTok → 5 分钟 $1.25、1 小时 $2.00。
+             "ephemeral_5m_input_tokens": 每百万(1.25),
+             "ephemeral_1h_input_tokens": 每百万(2.00),
+             # ⚠️ **合计那一档留着**,给「供应商没给分档」的情况用
+             # (别的供应商、或者老版本 API)。那种情况下按 5 分钟档计价,
+             # 而 `归一用量` 会在明细里写明这次没有 TTL 分档。
              "cache_creation_input_tokens": 每百万(1.25),
              "cache_read_input_tokens": 每百万(0.10),
          }),

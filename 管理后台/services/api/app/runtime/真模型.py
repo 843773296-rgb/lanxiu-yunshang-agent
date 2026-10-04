@@ -151,7 +151,15 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
                  用量={"input_tokens": u.get("input_tokens"),
                       "output_tokens": u.get("output_tokens"),
                       "cache_read_tokens": u.get("cache_read_input_tokens"),
-                      "cache_write_tokens": u.get("cache_creation_input_tokens")},
+                      # ⚠️ **缓存写入按 TTL 分档报**(2026-10-04)。
+                      # `cache_creation_input_tokens` 是 5 分钟 + 1 小时的
+                      # **合计**,而两档单价差 60%(1.25× vs 2×)——
+                      # 只报合计的话,事后从记录仪**算不回**这次花了多少。
+                      "cache_write_tokens": u.get("cache_creation_input_tokens"),
+                      "cache_write_5m_tokens": (u.get("cache_creation") or {}
+                                                ).get("ephemeral_5m_input_tokens"),
+                      "cache_write_1h_tokens": (u.get("cache_creation") or {}
+                                                ).get("ephemeral_1h_input_tokens")},
                  耗时毫秒=ms, 成功=True, 是mock=False,
                  细节={"请求的型号": 型号, "凭据来路": 来路,
                       "http状态": 码})
@@ -171,6 +179,10 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
             # 而填 0 会让后者看起来像前者。
             "cache_read_tokens": u.get("cache_read_input_tokens"),
             "cache_write_tokens": u.get("cache_creation_input_tokens"),
+            # ⚠️ 合计之外**把原始 TTL 分档也带出去** —— 折账时要靠它分别计价,
+            # 而**合计里混着两种单价**(5 分钟 1.25×、1 小时 2×)。
+            # 原样留着不加工,给对账用(规格 §17.2:原始 usage 单独保留)。
+            "cache_creation": u.get("cache_creation"),
         },
         "execution_mode": "live",
         "往返毫秒": ms,
