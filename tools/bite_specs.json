@@ -4947,5 +4947,101 @@
    }
   ],
   "预期红": "复核钉回:「工期 2–5 天」"
+ },
+ {
+  "script": "agent/growth_eval_judgetest.py",
+  "改坏": "禁止说法不看是不是在讲后果",
+  "file": [
+   {
+    "path": "agent/growth_eval.py",
+    "old": "        if hit(text, (w,), negation=True) and not tm.as_consequence(text, w):",
+    "new": "        if hit(text, (w,), negation=True):"
+   }
+  ],
+  "预期红": "真跑钉回:讲后果"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T13 题面退回写死日期",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": " (\"T13\", f\"缂丝这活现在什么时候能排上?今天是 {题日}。需要 20 工日。\", [\"get_capacity\"],",
+    "new": " (\"T13\", \"缂丝这活现在什么时候能排上?今天是 2026-09-04。需要 20 工日。\", [\"get_capacity\"],"
+   }
+  ],
+  "预期红": "题面里的日期都是现算的"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T19 判据退回枚举「织造阶段」",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "  [NO, _说了不可的依据, _没说纱上能做], []),",
+    "new": "  [NO, (K[\"combo_rule\"], \"织造阶段\"), _没说纱上能做], []),"
+   }
+  ],
+  "预期红": "真跑钉回:「必须在织造时完成"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g11 不去括号(「(」被当成小句边界)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "去括号 = re.sub(r\"[()\\uff08\\uff09]\", \"\", text)",
+    "new": "去括号 = text"
+   }
+  ],
+  "预期红": "真跑钉回(G03)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g11 只往后看(限定写在前面就不认)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "(\"区间\", \"范围\", \"复量\", \"再量\", \"不得直接\", \"不能直接\"), both=True)",
+    "new": "(\"区间\", \"范围\", \"复量\", \"再量\", \"不得直接\", \"不能直接\"))"
+   }
+  ],
+  "预期红": "真跑钉回(G03)"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T19 去掉「纱上能做」那道结构判断",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "  [NO, _说了不可的依据, _没说纱上能做], []),",
+    "new": "  [NO, _说了不可的依据], []),"
+   }
+  ],
+  "预期红": "反面:「纱上也能做"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T09 退回只认最晚下单日",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "   (K[\"dl_last\"], str(K[\"lead_slow\"]), str(K[\"lead_fast\"]))],",
+    "new": "   (K[\"dl_last\"],)],"
+   }
+  ],
+  "预期红": "真跑钉回:赶不上 + 最慢工期天数"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T24 去掉「编了带价报价单」那道结构判断",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "   (\"客户\", \"形制\", \"面料\", \"工艺\", \"尺码\"), _没编出带价的报价单], []),",
+    "new": "   (\"客户\", \"形制\", \"面料\", \"工艺\", \"尺码\")], []),"
+   }
+  ],
+  "预期红": "反面:信息没给就编了"
  }
 ]

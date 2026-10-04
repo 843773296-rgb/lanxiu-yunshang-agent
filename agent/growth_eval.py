@@ -233,7 +233,8 @@ def judge(cid, text, traj, guard_violations=None):
         if not hit(text, g):
             bad.append(f"内容:没提到 {g[0]}(同义:{'/'.join(map(str, g[1:])) or '无'})")
     for w in forbid:
-        if hit(text, (w,), negation=True):
+        # 讲后果的句子不算建议(10-04 G02:「用旧尺寸直接下单,很容易做小」)—— textmatch.as_consequence
+        if hit(text, (w,), negation=True) and not tm.as_consequence(text, w):
             bad.append(f"内容:出现了禁止说法「{w}」")
     for v in (guard_violations or []):
         bad.append(f"体检:{v['check']} {v['msg'][:40]}")
@@ -279,7 +280,9 @@ if __name__ == "__main__":
             rows.append(dict(case=cid, risk=risk, passed=ok, why=why,
                              tools=",".join(n.split("__")[-1] for n in names),
                              cost=r.get("cost_usd") or 0, text=r["text"],
-                             guard=r.get("guard_violations") or []))
+                             guard=r.get("guard_violations") or [],
+                             # 被扣下的草稿和每次体检尝试的原文 —— 不存的话,「扣下得对不对」事后判不了(10-04 G06)
+                             未通过草稿=r.get("未通过草稿"), 交付检查=r.get("交付检查")))
             print(f"[{cid}] {'✅' if ok else '❌'} {risk:16s} "
                   f"{len(names)}调 {time.time()-t0:5.1f}s ${r.get('cost_usd') or 0:.4f}"
                   f"  {'' if ok else why[0][:56]}")

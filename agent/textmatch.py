@@ -242,6 +242,30 @@ def in_sentence(text, word, needles, span=120):
     return None
 
 
+后果标记 = ("容易", "导致", "风险", "后果", "返工")
+
+
+def as_consequence(text, word, span=120):
+    """word 所在**整句**是不是在讲后果(「用旧尺寸直接下单,很容易做小」)而不是在建议它。
+
+    2026-10-04 成长推算 G02 钉回:答案开头「不行,必须拦下」,中间一句警告
+    「用 11 月的尺寸直接下单,很容易做出来就小了」被判成说了禁止说法「直接下单」——
+    forbid 只查否定,而讲后果的句子没有否定词。
+    判法是**结构**:同一句里有没有**未被否定**的后果标记。标记被否定的不算
+    (「可以直接下单,没有风险」照样是在建议)。
+    """
+    i = text.find(word)
+    while i >= 0:
+        lo = max(0, i - span); hi = min(len(text), i + len(word) + span)
+        a = i
+        while a > lo and text[a - 1] not in HARD: a -= 1
+        b = i + len(word)
+        while b < hi and text[b] not in HARD: b += 1
+        if says(text[a:b], 后果标记): return True
+        i = text.find(word, i + 1)
+    return False
+
+
 def decide(text, yes, no, span=DEFAULT_SPAN):
     """二选一判定。返回 "yes" / "no" / "conflict" / None。
 
@@ -295,6 +319,12 @@ if __name__ == "__main__":
          lambda: says("云锦目前没有现货", "有现货") is None, True),
         ("⑧ 反向:must 锚点不查否定,「无现货…22 天」里的 22 要算提到",
          lambda: mentions("无现货,需备料 22 天", "22") is not None, True),
+        ("⑩ 讲后果不是建议:「用旧尺寸直接下单,很容易做小」",
+         lambda: as_consequence("用 11 月的尺寸直接下单,很容易做出来就小了。", "直接下单"), True),
+        ("⑩ 后果标记被否定 → 仍是建议:「可以直接下单,没有风险」",
+         lambda: as_consequence("可以直接下单,没有风险。", "直接下单"), False),
+        ("⑩ 后果在另一句不算:「可以直接下单。返工的事以后再说」",
+         lambda: as_consequence("可以直接下单。返工的事以后再说。", "直接下单"), False),
         # decide 的三种结果
         ("⑨ decide:不建议合并 → no",
          lambda: decide("**不建议合并**。保留两条独立档案",
