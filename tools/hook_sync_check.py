@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""仓库里的 hook 和**真正在跑的那份**一样吗。
+
+## 为什么需要它
+
+2026-10-04 栽了一次,而且栽得很像成功:
+
+我修了 `tools/hooks/push-then-ci.mjs`(它把被新一轮取代的 `cancelled`
+当成了 CI 红),补了四条自测,它自带的套件 22/22 全绿,提交推送。
+**而真正在喊话的是 `~/.claude/hooks/push-then-ci.mjs` —— 9 月 17 日的一份拷贝。**
+
+> **把「我改了」当成了「它生效了」。**
+
+这次尤其像真的:修完之后我确实看到提示变成了「上一次是绿的」——
+那只是因为那一刻最新一轮**恰好**绿了。
+**一个改了而没生效的 hook,和一个生效了的,在那一句提示上长得一模一样。**
+
+而四份 hook 里有三份现在内容一样 ——
+**正因为它们一样,才看不出这个机制会漂。**
+
+## 判据
+
+逐个比 `tools/hooks/*.mjs` 和 `~/.claude/hooks/` 下的同名文件:
+· 内容不同 → **红**(改了仓库那份而没生效,或者反过来)
+· 装的那份不存在 → **「不适用」,不是通过**(比如 CI、或者另一台机器)
+· 是软链而且指向仓库 → **最好的情况**,它永远不会漂
+
+⚠️ **这一条不会自己去同步。** 写 `~/.claude/` 是改用户的运行环境,
+要用户自己按一下 —— 而判据的职责是**让漂移被看见**,不是替人决定。
+"""
+import os
+import subprocess
+import sys
+
+根 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+仓库hook = os.path.join(根, "tools", "hooks")
+装的 = os.path.expanduser("~/.claude/hooks")
+
+
+def main():
+    print("hook 同步对账 · 仓库里的和真正在跑的那份")
+    print("=" * 76)
+    if not os.path.isdir(仓库hook):
+        print(f"  ❌ 找不到 {仓库hook} —— **这不叫「没有 hook」,叫路径写错了**")
+        return 1
+    们 = sorted(f for f in os.listdir(仓库hook) if f.endswith(".mjs"))
+    # ⚠️ **样本量下限**:空集合上「每一份都一样」恒为真。
+    if not 们:
+        print(f"  ❌ 一个 .mjs 都没扫到({仓库hook})—— 不叫「都同步了」,叫没扫到")
+        return 1
+    print(f"  仓库里 {len(们)} 份 hook")
+
+    漂 = []
+    不适用 = []
+    软链 = []
+    一样 = []
+    for f in 们:
+        仓 = os.path.join(仓库hook, f)
+        装 = os.path.join(装的, f)
+        if os.path.islink(装):
+            指向 = os.path.realpath(装)
+            if 指向 == os.path.realpath(仓):
+                软链.append(f)
+                continue
+            漂.append((f, f"软链指向的是**另一个文件**:{指向}"))
+            continue
+        if not os.path.exists(装):
+            不适用.append(f)
+            continue
+        with open(仓, "rb") as a, open(装, "rb") as b:
+            if a.read() == b.read():
+                一样.append(f)
+            else:
+                漂.append((f, "内容不同 —— **改了仓库那份,而跑的是装的那份**"))
+
+    for f in 软链:
+        print(f"  ✅ {f}  软链指向仓库 —— **它永远不会漂**")
+    for f in 一样:
+        print(f"  🟡 {f}  内容一样(**而它是拷贝,下次改完还会漂**)")
+    for f in 不适用:
+        # ⚠️ 「没装」和「装的那份对得上」要分开说。
+        print(f"  ⏸ {f}  `~/.claude/hooks/` 里没有它 —— "
+              f"**这不是通过,是不适用**(CI 或另一台机器上就是这样)")
+    for f, 为什么 in 漂:
+        print(f"  ❌ {f}  {为什么}")
+
+    if 漂:
+        print(f"\n  ❌ {len(漂)} 份漂了。**改了仓库那份不等于它生效了。**")
+        print(f"     同步(要你自己按,这条判据不替你写 `~/.claude/`):")
+        for f, _ in 漂:
+            print(f"       cp {os.path.join('tools/hooks', f)} ~/.claude/hooks/{f}")
+        print(f"     ⚠️ **更好的办法是软链**,那样它永远不会再漂:")
+        for f, _ in 漂:
+            print(f"       ln -sf {os.path.join(根, 'tools/hooks', f)} "
+                  f"~/.claude/hooks/{f}")
+        return 1
+
+    if 一样 and not 软链:
+        print(f"\n  🟡 {len(一样)} 份内容一样,**但它们都是拷贝** —— "
+              f"下次改完仓库那份,跑的还是旧的。")
+        print(f"     ⚠️ **三份现在一样,正因为它们一样,才看不出这个机制会漂。**")
+        print(f"     这一条现在是绿的,而它绿得很脆。")
+    print(f"\n  ✅ 没有漂的(一样 {len(一样)} · 软链 {len(软链)} · "
+          f"不适用 {len(不适用)})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
