@@ -23,6 +23,11 @@ contract:      ## 只跑契约覆盖检查(不需要数据库)
 	@echo ""
 	@./.venv/bin/python tools/test_registry_check.py
 	@echo ""
+	@echo "▸ 纯逻辑自测也要有入口能跑(`tests/orchestration/`)"
+	@echo "  ⚠️ e2e 那一组有判据盯着,**这一组原来没有** —— 2026-10-04 数的时候"
+	@echo "     16 份文件挂了 16 份,齐的;而它齐是靠人手挂齐的,下一份忘了挂门禁照旧绿"
+	@./.venv/bin/python tools/orchestration_registry_check.py
+	@echo ""
 	@./.venv/bin/python tools/nav_smoke_check.py
 	@echo ""
 	@./.venv/bin/python tools/seed_flag_check.py
@@ -716,6 +721,12 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 用量折账:**没有价目表时 token 已知、金额未知** —— 不编单价,也不写 0"
 	@echo "  (认不出的用量档要报出来:供应商加一档新计费,它的 token 一分钱都不会被算进来)"
 	@./.venv/bin/python tests/orchestration/test_usage.py
+	@echo ""
+	@echo "▸ 答案缓存键:**缺一个字段要抛,绝不拿空串顶**(缓存规格 §10.1 / 附录 A-2)"
+	@echo "  两次都缺同一个字段时,它们会算出**同一个键** —— 于是跨版本、跨身份复用了答案"
+	@echo "  ⚠️ 16 个必填字段**逐个**改一个值、断键必须变(不是抽查 ——"
+	@echo "     一条只抽查了三个字段的判据,和一条全验了的,在绿勾上长得一模一样)"
+	@./.venv/bin/python tests/orchestration/test_cache_key.py
 	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
