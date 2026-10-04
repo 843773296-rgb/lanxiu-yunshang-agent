@@ -565,7 +565,7 @@ if __name__ == "__main__":
                                  text="", usage={}, turns=0, guard=[]))
                 print(f"[{cid}] ❌ 跑挂了:{type(e).__name__}"); continue
             names = [t["tool"] for t in r["trajectory"]]
-            ok, why = judge(cid, r["text"], names, r.get("guard_violations"))
+            ok, why = judge(cid, r["text"], names, r.get("最终违规"))
             rows.append(dict(case=cid, passed=ok, why=why,
                              tools=",".join(n.split("__")[-1] for n in names),
                              cost=r.get("cost_usd") or 0, text=r["text"],

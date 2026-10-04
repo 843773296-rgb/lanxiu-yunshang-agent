@@ -102,7 +102,12 @@ def turn(state, prompt, traj, me=None):
             拦的理由=[b[:40] for b in (state.get("_funnel_blocks") or [])[:3]] or None,
             触发的技能=next((( (t.get("args") or {}).get("skill"))
                           for t in (traj or []) if (t.get("tool") or "") == "Skill"), None),
-            工具数=len(names)))
+            工具数=len(names),
+            # ④ 体检:**首答打回率另记**(用户 10-04 拍:评测按最终交付判,打回率单列)
+            #    判分不再看「打回过没有」,所以「模型第一遍有多靠谱」只剩这里看得见
+            首答打回=bool((state.get("答案检查") or [{}])[0].get("结果") == "不通过"),
+            体检尝试=len(state.get("答案检查") or []),
+            交付状态=state.get("交付状态")))
     except Exception:
         pass
 
@@ -130,6 +135,10 @@ def report():
         拦了之后改用批量=len([r for r in 复合且写 if r.get("被拦次数") and r.get("用了批量")]),
         不像复合却走了批量=len([r for r in 写路径 if not r.get("像复合请求") and r.get("用了批量")]),
         技能触发=len([r for r in turns if r.get("触发的技能")]),
+        # 首答打回率(10-04 起记):评测按最终交付判分,「第一遍就合格」只在这里看得见
+        体检记过的轮次=len([r for r in turns if "首答打回" in r]),
+        首答被打回=len([r for r in turns if r.get("首答打回")]),
+        最终未通过=len([r for r in turns if r.get("交付状态") == "未通过"]),
         最近=[dict(时间=r["ts"][5:16], 问的=r["问的"][:30],
                   像复合=r.get("像复合请求"), 写=r.get("走了写路径"),
                   批量=r.get("用了批量"), 拦=r.get("被拦次数"))
@@ -150,6 +159,11 @@ if __name__ == "__main__":
     print(f"      拦了之后改用批量 {r['拦了之后改用批量']}   ← **拦了有没有用,看这个**")
     print(f"    不像复合却用批量   {r['不像复合却走了批量']}   ← 判据太紧,漏了")
     print(f"    技能触发           {r['技能触发']}")
+    if r.get("体检记过的轮次"):
+        n = r["体检记过的轮次"]
+        print(f"    首答被体检打回     {r['首答被打回']}/{n} = {r['首答被打回'] / n:.0%}"
+              f"   ← 评测按最终交付判分(10-04 起),第一遍有多靠谱只在这里看")
+        print(f"    最终未通过(扣下)   {r['最终未通过']}/{n}")
     print()
     print("  **四个数对应四套改法** —— 一个总数区分不了它们:")
     print("    都是 0 → 这条闸一次没派上用场,先别改判据,先看有没有人提复合请求")

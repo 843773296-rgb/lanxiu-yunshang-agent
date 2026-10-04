@@ -4899,5 +4899,29 @@
    }
   ],
   "预期红": "真跑钉回:依据换了说法"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "最终违规退回历次全记录(修正后通过也带着打回)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if (交付 or {}).get(\"状态\") != \"未通过\":\n        return []\n",
+    "new": "    return state.get(\"violations\") or []\n"
+   }
+  ],
+  "预期红": "修正后通过 → 最终违规为空"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "某套评测判分又读回 guard_violations",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "ok, why = judge(cid, r[\"text\"], names, r.get(\"最终违规\"))",
+    "new": "ok, why = judge(cid, r[\"text\"], names, r.get(\"guard_violations\"))"
+   }
+  ],
+  "预期红": "评测判分读的是最终违规"
  }
 ]

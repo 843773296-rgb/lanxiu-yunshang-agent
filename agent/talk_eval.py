@@ -410,7 +410,7 @@ if __name__ == "__main__":
             except Exception as ex:
                 j = None
                 print(f"     ⚠️ 判官没跑成({type(ex).__name__}),这一题**只按三轴判** —— 不当它通过")
-            ok, why = judge(c, r["text"], names, r.get("guard_violations"), j)
+            ok, why = judge(c, r["text"], names, r.get("最终违规"), j)
             cost += r.get("cost_usd") or 0
             rows.append(dict(case=c["id"], passed=ok, why=why,
                              tools=",".join(n.split("__")[-1] for n in names),

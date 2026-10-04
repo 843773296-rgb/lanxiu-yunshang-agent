@@ -1099,6 +1099,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # ── 交付判定(外部审阅 10-03 §4.1):**最终那份答案**过没过检查,不是「曾经被打回过」──
     # 改的次数用完仍不合格:**不放进正常答案字段**,草稿另存、给人核对
     text, 未通过草稿, 交付 = guards.交付处理(state, text, 体检开着=bool(guard), 跑完了=not budget_err)
+    state["交付状态"] = 交付.get("状态")      # funnel 轮末那行要记(首答打回率另记)
     if budget_hit and not text.strip():
         # 一个字都没答出来 —— 那就把预算这件事当成回答本身,而不是报个错
         text = budget_hit
@@ -1140,6 +1141,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             # 最终交付状态:通过 / 修正后通过 / 未通过 / 未检查 / 不完整。
             # **只有前两种算交付成功** —— 别拿 guard_blocked(曾被打回过)当「最终合格」
             交付检查=交付, 未通过草稿=未通过草稿,
+            # **评测判分用这一项**(用户 10-04 拍:按最终交付判);guard_violations 是历次打回全记录,只算打回率
+            最终违规=guards.最终违规(state, 交付),
             tool_calls_seen=len(state.get("calls") or []),
             会话状态=dict(恢复说明=state.get("会话恢复") or [], 存=_存话),
             answer_turns=len(turns), text_all="\n\n".join(turns))

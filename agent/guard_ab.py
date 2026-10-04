@@ -41,7 +41,7 @@ def 跑(臂, 套, cid, q, kind, judge):
     except Exception as e:
         return dict(臂=臂, 套=套, case=cid, 崩=f"{type(e).__name__}: {e}")
     names = [t["tool"] for t in r["trajectory"]]
-    ok, why = judge(cid, r["text"], names, r.get("guard_violations"))
+    ok, why = judge(cid, r["text"], names, r.get("最终违规"))
     return dict(臂=臂, 套=套, case=cid, passed=ok, why=why, tools=[n.split("__")[-1] for n in names],
                 打回=len(r.get("guard_violations") or []),
                 违规=[v.get("check") for v in r.get("guard_violations") or []],

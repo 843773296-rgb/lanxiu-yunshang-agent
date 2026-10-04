@@ -182,7 +182,7 @@ if __name__ == "__main__":
                       f"跑挂了:{type(ex).__name__}")
                 continue
             names = [x["tool"] for x in r["trajectory"]]
-            ok, why = judge(c, r["text"], names, r.get("guard_violations"))
+            ok, why = judge(c, r["text"], names, r.get("最终违规"))
             cost += r.get("cost_usd") or 0
             rows.append(dict(case=c["case_id"], truth=c["root_cause"], passed=ok, why=why,
                              tools=",".join(n.split("__")[-1] for n in names),

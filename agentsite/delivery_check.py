@@ -22,6 +22,8 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("未通过的答案照样交出去(交付处理里不换文本)", "未通过的答案不进正常答案字段"),
     ("没跑完也照常判通过(交付判定里去掉 `跑完了` 那一支)", "没跑完(预算掐断)→ 不完整"),
     ("Stop 只读 transcript,不用入参里的 last_assistant_message", "transcript 里还没有最终答案"),
+    ("最终违规退回历次全记录(修正后通过也带着打回)", "修正后通过 → 最终违规为空"),
+    ("某套评测判分又读回 guard_violations", "评测判分读的是最终违规"),
 ]
 
 坏 = 0
@@ -112,10 +114,29 @@ def main():
            回.get("decision") == "block" and state["答案检查"][0]["哈希"] == guards.答案哈希("坏答案"), 1,
            f"钩子返回 {回};查的哈希 {state.get('答案检查')}")
 
+        print("\n\033[1m▸ 评测按最终交付判分(用户 10-04 拍),打回率另记\033[0m")
+        guards.check_answer = 真检查
+        st = {"violations": [{"check": "g1", "msg": "旧"}, {"check": "g20", "msg": "协议"}, {"check": "g1", "msg": "新"}]}
+        ck("修正后通过 → 最终违规为空(打回过不等于答错)",
+           guards.最终违规(st, {"状态": "修正后通过", "尝试": [{"失败项": ["g1"]}, {"失败项": []}]}) == [], 1)
+        末 = guards.最终违规(st, {"状态": "未通过", "尝试": [{"失败项": ["g1", "g20"]}, {"失败项": ["g1"]}]})
+        ck("未通过 → 只带最后那份没过的规则,同一条取最后一次原话", 末 == [{"check": "g1", "msg": "新"}], 1, str(末))
+        # 静态:每套评测判分那一步读的是「最终违规」,guard_violations 只许出现在存档那一栏(guard=…)
+        import glob, re as _re
+        坏处, 扫 = [], 0
+        for f in sorted(glob.glob(os.path.join(ROOT, "agent", "*.py"))):
+            if f.endswith(("_judgetest.py", "guard_ab.py")): continue
+            for n, l in enumerate(open(f, encoding="utf-8"), 1):
+                if 'r.get("最终违规")' in l: 扫 += 1
+                if 'r.get("guard_violations")' in l and "guard=" not in l:
+                    坏处.append(f"{os.path.basename(f)}:{n}")
+        ck("评测判分读的是最终违规(guard_violations 只进存档,不进判分)", not 坏处, 扫, f"还在用历次记录判分:{坏处}")
+
         print("\n\033[1m▸ sdk.run 收尾用的是这一套\033[0m")
         src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
         ck("sdk.run 收尾调了交付处理,并把交付检查放进返回(静态落点,行为由上面几条验)",
-           "guards.交付处理(state, text" in src and "交付检查=交付" in src, 1)
+           "guards.交付处理(state, text" in src and "交付检查=交付" in src
+           and "最终违规=guards.最终违规(state, 交付)" in src, 1)
     finally:
         guards.check_answer, guards._last_answer = 真检查, 真读
 

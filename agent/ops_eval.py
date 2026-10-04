@@ -1175,7 +1175,7 @@ def main():
                 text, traj, r = "", [], {"error": f"{type(e).__name__}: {e}"[:160]}
             bad = (c["grade"](text, traj, c) if text
                    else [f"跑挂了:{r.get('error', '无回答')}"])
-            for v in (r.get("guard_violations") or []):
+            for v in (r.get("最终违规") or []):
                 bad.append(f"体检:{v.get('check')} {str(v.get('msg'))[:40]}")
             ok = not bad
             recs.append(dict(id=c["id"], role=c["role"], kind=c["kind"], q=c["q"],

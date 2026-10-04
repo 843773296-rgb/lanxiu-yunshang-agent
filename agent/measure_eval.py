@@ -235,7 +235,7 @@ def main():
                 c["效果"] = 差(前)
                 还原(前)          # **每题之后还原** —— 上一题录进去的尺寸会变成下一题的「最近一次」
                 bad = (c["grade"](text, traj, c) if text else [f"跑挂了:{r.get('error', '无回答')}"])
-                for v in (r.get("guard_violations") or []):
+                for v in (r.get("最终违规") or []):
                     bad.append(f"体检:{v.get('check')} {str(v.get('msg'))[:40]}")
                 ok = not bad
                 recs.append(dict(id=c["id"], kind=c["kind"], 身份=c["me"]["role"], role=c["role"],

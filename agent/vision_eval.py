@@ -256,7 +256,7 @@ if __name__ == "__main__":
                                  cost=0, text=""))
                 print(f"  ❌ {c['cat']:6s} 跑挂了:{type(ex).__name__}"); continue
             names = [x["tool"] for x in r["trajectory"]]
-            ok, why = judge(c, r["text"], names, r.get("guard_violations"))
+            ok, why = judge(c, r["text"], names, r.get("最终违规"))
             cost += r.get("cost_usd") or 0
             rows.append(dict(spu=c["spu"], cat=c["cat"], kind=c["kind"], passed=ok,
                              why=why, tools=",".join(n.split("__")[-1] for n in names),

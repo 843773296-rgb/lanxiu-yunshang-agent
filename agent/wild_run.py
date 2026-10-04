@@ -189,7 +189,7 @@ if __name__ == "__main__":
             r = asyncio.run(sdk.run("kb", q))
             cost += r.get("cost_usd") or 0
             o = observe(r["text"], [x["tool"] for x in r["trajectory"]],
-                        r.get("guard_violations"))
+                        r.get("最终违规"))
             o.update(dir=direction(r["text"]), 秒=round(time.time() - t0, 1), text=r["text"])
             runs.append(o)
         same = len({x["dir"] for x in runs}) == 1

@@ -124,7 +124,7 @@ def 跑一臂(名, 题们, 模型, 选的=None, 角色="all"):
             行.append(dict(题=cid, 过=False, 为什么=[f"跑挂了:{type(e).__name__}"],
                           挂了=True)); continue
         names = [t["tool"] for t in r["trajectory"]]
-        ok, why = TE.judge(cid, r["text"], names, r.get("guard_violations"))
+        ok, why = TE.judge(cid, r["text"], names, r.get("最终违规"))
         行.append(dict(题=cid, 过=ok, 为什么=why,
                       调了=",".join(n.split("__")[-1] for n in names),
                       # ⚠️ **存答案原文。** `tool_eval` 的文件头写着这条规矩,
