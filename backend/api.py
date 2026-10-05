@@ -3611,7 +3611,7 @@ def forecast_growth(wearer_id, target_date=None, months=12):
                         tgt, parents=par)
     r["着装人"] = w["name"]
     r["留成长量"] = growth.allowance(r["长高"])
-    r["话术"] = growth.sales_line(w["name"], r["长高"], 5.0) if r["长高"] > 0 else None
+    r["话术"] = growth.sales_line(w["name"], r["长高"], 5.0, r.get("区间")) if r["长高"] > 0 else None
     g = _rows("""SELECT item,value FROM measure_rec WHERE wearer_id=? AND item IN ('MI03','MI04')
                  ORDER BY measured_at DESC""", wearer_id)
     if g and r["长高"] > 0:

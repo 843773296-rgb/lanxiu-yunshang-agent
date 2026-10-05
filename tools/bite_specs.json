@@ -5199,5 +5199,17 @@
    }
   ],
   "预期红": "真跑钉回:「加急基本没招"
+ },
+ {
+  "script": "knowledge/growth.py",
+  "改坏": "话术退回只报一个点估计(不带区间)",
+  "file": [
+   {
+    "path": "knowledge/growth.py",
+    "old": "    if 区间:\n        lo, hi = 区间",
+    "new": "    if False:\n        lo, hi = 区间"
+   }
+  ],
+  "预期红": "给家长的话术带区间"
  }
 ]
