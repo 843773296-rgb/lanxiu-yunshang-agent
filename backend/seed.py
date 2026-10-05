@@ -466,6 +466,36 @@ CREATE TABLE part_option(
   spu TEXT, kind TEXT, part TEXT, material TEXT, addon REAL, colors TEXT, sort INT,
   PRIMARY KEY(spu, kind, part, material));
 
+CREATE TABLE lifecycle_history(
+  -- **档位历史 —— 「她那天是哪一档」,以及「凭什么」。**
+  --
+  -- 2026-10-05 为营销 SOP 的 C 方案(流失预警)加的。在这之前库里**只有当前档位**
+  -- (`customer.lifecycle`),没有任何历史 —— `edit_log` 里带 lifecycle 的记录是 0 条。
+  -- 而业务当时要的是「先查她掉下来之前是哪一档」,**系统答不出来**。
+  --
+  -- ⚠️ **它不只存档位,还存当时的那几个事实。** 理由:
+  -- 清单(`fakedata/交数据工坊_营销SOP的数据缺口_20261004.md`)里那条约束是
+  -- 「变化要能被 `lifecycle.decide()` 重跑出来」——
+  -- > 一张**只存档位标签**的历史表,和一张**存了判定依据**的,
+  -- > 在那一列档位上长得一模一样 —— 而前者没法验证「这个档位当时判得对不对」,
+  -- > 于是预警模型学的可能是一串错标签。
+  --
+  -- ⚠️ **只追加,不改不删。** 它是事件日志:同一个客户同一天被判两次是两行,
+  -- 不是一行被更新(和 `cache_decisions` 那条「不可变 ≠ 只追加」同一个道理)。
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id TEXT NOT NULL,
+  as_of TEXT NOT NULL,        -- 这一条说的是哪一天的状态(日期,不是写入时间)
+  lifecycle TEXT NOT NULL,    -- 那天判出来的档位
+  -- ↓ 判定依据:这四个就是 `lifecycle.match()` 吃的字段
+  idle_days INT,              -- 距上次互动多少天
+  orders_12m INT,             -- 近 12 个月单数
+  amount_12m REAL,            -- 近 12 个月实付
+  quarters_12m INT,           -- 近 12 个月跨几个季度
+  source TEXT NOT NULL,       -- 'recompute'(按事实重算) | 'manual'(人工调整) | 'synth'(造的)
+  note TEXT,
+  created TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS ix_lchist_cust ON lifecycle_history(customer_id, as_of);
+
 CREATE TABLE edit_log(
   -- **资料编辑日志 —— 和 op_log(状态流转)分开。**
   --
