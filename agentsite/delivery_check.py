@@ -24,6 +24,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("Stop 只读 transcript,不用入参里的 last_assistant_message", "transcript 里还没有最终答案"),
     ("最终违规退回历次全记录(修正后通过也带着打回)", "修正后通过 → 最终违规为空"),
     ("某套评测判分又读回 guard_violations", "评测判分读的是最终违规"),
+    ("打回提示退回一句「请修正后重答」", "打回提示讲清三件事"),
 ]
 
 坏 = 0
@@ -131,6 +132,17 @@ def main():
                 if 'r.get("guard_violations")' in l and "guard=" not in l:
                     坏处.append(f"{os.path.basename(f)}:{n}")
         ck("评测判分读的是最终违规(guard_violations 只进存档,不进判分)", not 坏处, 扫, f"还在用历次记录判分:{坏处}")
+
+        print("\n\033[1m▸ 打回提示:让模型重写给顾问的答案,而不是回复这段检查(10-05)\033[0m")
+        # 原来只有「交付前体检没过,请修正后重答」—— 第二版开头成了「收到——感谢提醒」「你说得对」,
+        # 原样进了顾问看到的答案。提示里必须讲清:谁看得见 / 交什么 / 对谁说
+        话 = guards.打回说明([{"check": "测", "msg": "测:不合格"}])
+        缺 = [k for k, 词 in (("用户看不到", "看不到"), ("交完整答案", "完整的回答"), ("对象是顾问", "对象仍然是"),
+                             ("不回应检查", "不要回应")) if 词 not in 话]
+        ck("打回提示讲清三件事(顾问看不到这段 / 交完整的新答案 / 不回应检查)", not 缺 and "测:不合格" in 话, 4,
+           f"缺:{缺}")
+        stop_src = open(os.path.join(HERE, "guards.py"), encoding="utf-8").read()
+        ck("Stop 打回用的就是这份说明", '"reason": 打回说明(bad)' in stop_src, 1)
 
         print("\n\033[1m▸ sdk.run 收尾用的是这一套\033[0m")
         src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()

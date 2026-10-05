@@ -5043,5 +5043,17 @@
    }
   ],
   "预期红": "反面:信息没给就编了"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "打回提示退回一句「请修正后重答」",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        return {\"decision\": \"block\", \"reason\": 打回说明(bad)}",
+    "new": "        return {\"decision\": \"block\", \"reason\": \"交付前体检没过,请修正后重答:\\n\" + \"\\n\".join(b[\"msg\"] for b in bad)}"
+   }
+  ],
+  "预期红": "Stop 打回用的就是这份说明"
  }
 ]
