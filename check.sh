@@ -89,6 +89,7 @@ run "生命周期口径 · 自测" python3 knowledge/lifecycle.py
 run "会员生命周期 · 14 条边界标注对账" python3 backend/member_check.py
 run "预约派单 · 逐例标真值(派错和派对长得一样)" python3 backend/booking_check.py
 run "促活判断 · 逐例标真值 + 覆盖报告(没有样本不叫通过)" python3 backend/revive_check.py
+run "流失预警取数 · 列名/只读/转发对账 + 覆盖报告(没有样本不叫通过)" python3 backend/slipping_check.py
 run "简体闸 · 业务数据一律简体(外来文本进来前先查)" python3 backend/simplified.py
 run "商机判断 · 24 条逐字稿(造的对话·纯规则版·只许升不许降)" python3 backend/opportunity_check.py
 run "商机对象 · 指回通话、和方案互指、两种终态分得开、诉求指得回原话" python3 backend/opportunity_obj_check.py
@@ -346,7 +347,7 @@ run "旅程口径 · 一次量体是一次触点(16 条自测)" python3 knowledg
 run "归因口径 · 两种分成的校验方向相反(26 条自测)" python3 knowledge/attribution.py
 run "排班口径 · 查不到记录只能表示「还没排」(18 条自测)" python3 knowledge/shift.py
 run "促活口径 · 时间相对他自己,没由头不进名单(25 条自测)" python3 knowledge/reactivate.py
-run "流失预警口径 · 八档不是一条线、预警不等于名单(68 条自测)" python3 knowledge/churn.py
+run "流失预警口径 · 八档不是一条线、预警不等于名单(74 条自测)" python3 knowledge/churn.py
 run "商机口径 · 分清是谁说的,别枚举中文说法(19 条自测)" python3 knowledge/oppo.py
 run "归属口径 · 分开只因为下一步不同(15 条自测)" python3 knowledge/owner.py
 run "评测指纹 · 行数没变但内容改了,指纹也得变(7 条自测)" python3 agent/fingerprint.py --selftest

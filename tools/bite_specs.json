@@ -5211,5 +5211,161 @@
    }
   ],
   "预期红": "给家长的话术带区间"
+ },
+ {
+  "script": "knowledge/churn.py",
+  "改坏": "拿 lifecycle.PRIORITY 当健康阶梯(忠诚→休眠会被算成往上走)",
+  "file": [
+   {
+    "path": "knowledge/churn.py",
+    "old": "    return 活跃度轴.index(档) if 档 in 活跃度轴 else None",
+    "new": "    return lifecycle.PRIORITY.index(档) if 档 in lifecycle.PRIORITY else None"
+   }
+  ],
+  "预期红": "忠诚掉成休眠算退了一步"
+ },
+ {
+  "script": "knowledge/churn.py",
+  "改坏": "价值标签从 lifecycle 那一列读,不从当时的事实重跑",
+  "file": [
+   {
+    "path": "knowledge/churn.py",
+    "old": "    曾有价值 = sorted({t for h in 行 for t in _那天的标签(h) if t in 价值标签})",
+    "new": "    曾有价值 = sorted({h[\"lifecycle\"] for h in 行 if h[\"lifecycle\"] in 价值标签})"
+   }
+  ],
+  "预期红": "忠诚过但标签被压掉的,仍然算可惜"
+ },
+ {
+  "script": "knowledge/churn.py",
+  "改坏": "把「只有一条历史」当成「没在流失」(报成 STABLE)",
+  "file": [
+   {
+    "path": "knowledge/churn.py",
+    "old": "        return {\"要不要预警\": False, \"码\": \"NO_HISTORY\", \"严重程度\": None,\n                \"话\": f\"只有 {len(行)} 条判定记录",
+    "new": "        return {\"要不要预警\": False, \"码\": \"STABLE\", \"严重程度\": None,\n                \"话\": f\"只有 {len(行)} 条判定记录"
+   }
+  ],
+  "预期红": "只有一条判定说不出在不在动"
+ },
+ {
+  "script": "knowledge/churn.py",
+  "改坏": "超过 365 天还报预警(已经走完了当成来得及)",
+  "file": [
+   {
+    "path": "knowledge/churn.py",
+    "old": "    if 到 == \"流失\":",
+    "new": "    if 到 == \"流失\" and False:"
+   }
+  ],
+  "预期红": "已经流失的不算预警算复盘"
+ },
+ {
+  "script": "knowledge/churn.py",
+  "改坏": "下滑和上一条比,不和她自己最好的那一格比",
+  "file": [
+   {
+    "path": "knowledge/churn.py",
+    "old": "    退了 = _距离(到) - _距离(最好)",
+    "new": "    退了 = (_距离(到) - _距离(从)) if 从 else 0"
+   }
+  ],
+  "预期红": "退到底之后又退不算第一次下滑"
+ },
+ {
+  "script": "knowledge/churn.py",
+  "改坏": "排名时把高危低危混成一批打 RFM 分",
+  "file": [
+   {
+    "path": "knowledge/churn.py",
+    "old": "    出 = {}\n    for 等 in 严重:\n        批 = [w for w in 预警们 if w.get(\"严重程度\") == 等 and w.get(\"要不要预警\")]\n        if 批:\n            出[等] = rfm.score(批)\n    return 出",
+    "new": "    出 = {}\n    全 = rfm.score([w for w in 预警们 if w.get(\"要不要预警\")])\n    for 等 in 严重:\n        批 = [w for w in 全 if w.get(\"严重程度\") == 等]\n        if 批:\n            出[等] = 批\n    return 出"
+   }
+  ],
+  "预期红": "每一档都各自从 1 开始编号"
+ },
+ {
+  "script": "knowledge/churn.py",
+  "改坏": "「建档时就已经休眠、后来活跃起来」也当成退过又回来(没有上次可查)",
+  "file": [
+   {
+    "path": "knowledge/churn.py",
+    "old": "    if 退了 <= 0 and 退过:",
+    "new": "    if 退了 <= 0 and len(set(有效)) > 1:"
+   }
+  ],
+  "预期红": "一进视野就已经休眠、后来活跃起来,**不叫退过又回来**"
+ },
+ {
+  "script": "knowledge/churn.py",
+  "改坏": "拿「一共退了几步」当「一次判定之间退了几步」(慢慢凉被说成一脚踩空)",
+  "file": [
+   {
+    "path": "knowledge/churn.py",
+    "old": "    if 单步最大 >= 2:",
+    "new": "    if 退了 >= 2:"
+   }
+  ],
+  "预期红": "慢慢凉不许说「一次判定之间」"
+ },
+ {
+  "script": "knowledge/churn.py",
+  "改坏": "理由里的日期用历史第一条,不用「她最后一次还在最好状态」那条",
+  "file": [
+   {
+    "path": "knowledge/churn.py",
+    "old": "    最好那条 = 行[max(i for i, d in enumerate(历史档) if d == 最好)]",
+    "new": "    最好那条 = 行[0]"
+   }
+  ],
+  "预期红": "最好那天取的是最后一次还在最好状态"
+ },
+ {
+  "script": "backend/slipping_check.py",
+  "改坏": "把要查的列名写成库里不存在的(quarters_12m 多两个字)",
+  "file": [
+   {
+    "path": "backend/slipping.py",
+    "old": "      \"orders_12m\", \"amount_12m\", \"quarters_12m\")",
+    "new": "      \"orders_12m\", \"amount_12m\", \"quarters_12mXX\")"
+   }
+  ],
+  "预期红": "要查的每一列都真实存在"
+ },
+ {
+  "script": "backend/slipping_check.py",
+  "改坏": "把活跃度轴在取数层抄一份,而不是从口径模块转发",
+  "file": [
+   {
+    "path": "backend/slipping.py",
+    "old": "活跃度轴 = _口径.活跃度轴",
+    "new": "活跃度轴 = tuple(list(_口径.活跃度轴))"
+   }
+  ],
+  "预期红": "参数是转发的,不是抄的"
+ },
+ {
+  "script": "backend/slipping_check.py",
+  "改坏": "把只读连接换成普通连接(取数层就能写库了)",
+  "file": [
+   {
+    "path": "backend/slipping.py",
+    "old": "    con = sqlite3.connect(f\"file:{DB}?mode=ro\", uri=True)",
+    "new": "    con = sqlite3.connect(DB)"
+   }
+  ],
+  "预期红": "取数用的连接是只读的"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g24 不看有没有统计说法(一律放行)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if tm.mentions(text, 统计说法): return None",
+    "new": "        return None"
+   }
+  ],
+  "预期红": "真跑钉回(G01):「预计身高"
  }
 ]

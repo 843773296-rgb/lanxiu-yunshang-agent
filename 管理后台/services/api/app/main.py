@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "contract"))
 
 from fastapi import FastAPI, Depends, Header, Query, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
@@ -798,4 +798,30 @@ if os.path.isdir(_web):
 
     @app.get("/")
     def 首页():
-        return FileResponse(os.path.join(_web, "index.html"))
+        """⚠️ **把 `app.js` 的内容哈希塞进 script 的 URL 里。**
+
+        2026-10-04:修好了 `app.js` 里一个让整页炸掉的 bug,服务端返回的
+        确实是新版(ETag 也变了、协商缓存也正常),而**用户那边照旧报同一句错**
+        —— 浏览器压根没重新请求那个文件。
+
+        > 一个「浏览器拿的是缓存」的报错,和一个「代码还没修好」的报错,
+        > **在那句报错上长得一模一样** —— 而两者的下一步完全不同
+        > (刷新 vs 继续查代码),于是排查会往错的方向走。
+
+        ETag 只在浏览器**肯发请求**时才有用。所以这里改成
+        **内容寻址的 URL**:文件一变,URL 就变,缓存**绕不过去** ——
+        这和仓库里别处「不可变 = 内容寻址」是同一条道理。
+        """
+        _p = os.path.join(_web, "index.html")
+        try:
+            _js = os.path.join(_web, "app.js")
+            _v = hashlib.sha256(open(_js, "rb").read()).hexdigest()[:12]
+            _html = open(_p, encoding="utf-8").read().replace(
+                'src="/static/app.js"', f'src="/static/app.js?v={_v}"')
+            return HTMLResponse(_html)
+        except Exception:
+            # ⚠️ 读不到就原样返回 —— **缓存破不了总比页面打不开强**。
+            # 而这条回退要留痕:静默吞掉的话,下次又是「为什么还是旧的」。
+            print("⚠️ 给 app.js 加版本号失败,回退到原样返回 index.html",
+                  file=sys.stderr)
+            return FileResponse(_p)
