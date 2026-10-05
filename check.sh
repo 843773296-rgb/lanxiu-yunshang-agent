@@ -346,6 +346,7 @@ run "旅程口径 · 一次量体是一次触点(16 条自测)" python3 knowledg
 run "归因口径 · 两种分成的校验方向相反(26 条自测)" python3 knowledge/attribution.py
 run "排班口径 · 查不到记录只能表示「还没排」(18 条自测)" python3 knowledge/shift.py
 run "促活口径 · 时间相对他自己,没由头不进名单(25 条自测)" python3 knowledge/reactivate.py
+run "流失预警口径 · 八档不是一条线、预警不等于名单(68 条自测)" python3 knowledge/churn.py
 run "商机口径 · 分清是谁说的,别枚举中文说法(19 条自测)" python3 knowledge/oppo.py
 run "归属口径 · 分开只因为下一步不同(15 条自测)" python3 knowledge/owner.py
 run "评测指纹 · 行数没变但内容改了,指纹也得变(7 条自测)" python3 agent/fingerprint.py --selftest
