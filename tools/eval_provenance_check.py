@@ -63,6 +63,7 @@ FAIL = []
      "一份文件里不混两家"),
     ("把整份结果文件的供应商都改成 deepseek",
      "基线是 claude 跑的"),
+    ("盖章不查环境故障", "撞过环境故障就不给盖章"),
 ]
 
 
@@ -255,6 +256,25 @@ def main():
     ck("方案号和拧了哪些旋钮都进了章",
        _章2.get("方案") == "_来路自测" and "想多深" in (_章2.get("旋钮") or ""), 1,
        str(_章2.get("旋钮")))
+
+    # ── 环境故障:撞过就不给盖章(10-05)──────────────────────────────
+    # 并行会话批量写真库时工具全报 database is locked,模型答「知识库暂时无法访问」,
+    # 评测照常判分写结果 —— 被污染的成绩单和真的长得一样。sdk.run 把故障记进 sdk.环境故障,盖章前查
+    import types as _ty
+    _旧sdk = sys.modules.get("sdk")
+    try:
+        sys.modules["sdk"] = _ty.SimpleNamespace(环境故障=[{"工具": "kb_size", "错误": "database is locked"}])
+        try:
+            ER.盖章(); _拦了 = False
+        except RuntimeError:
+            _拦了 = True
+        sys.modules["sdk"] = _ty.SimpleNamespace(环境故障=[])
+        _干净能盖 = bool(ER.盖章())
+    finally:
+        if _旧sdk is None: sys.modules.pop("sdk", None)
+        else: sys.modules["sdk"] = _旧sdk
+    ck("撞过环境故障就不给盖章(写不了结果);干净时照常盖", _拦了 and _干净能盖, 2,
+       f"有故障时拦了={_拦了} · 干净时能盖={_干净能盖}")
 
     _同 = {"供应商": "claude", "模型": "haiku", "代码": "aaa"}
     _能, _说 = ER.能不能当结论(dict(_同, 方案=None),

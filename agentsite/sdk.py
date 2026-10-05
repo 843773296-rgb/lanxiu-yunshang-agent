@@ -732,6 +732,23 @@ EFFORT = ("low", "medium", "high", "xhigh", "max")
 EFFORT_DEFAULT = "medium"
 
 
+# 工具返回里出现这些,说明那次调用时**环境不可用**,答案不代表模型 —— 本进程累计,evalrec 盖章前查
+环境故障特征 = ("database is locked", "OperationalError", "unable to open database", "no such table")
+环境故障 = []
+
+
+def 找环境故障(calls):
+    """这一轮哪几次工具调用撞上了环境故障。纯函数,离线可测。"""
+    out = []
+    for c in calls or []:
+        o = c.get("output")
+        t = o if isinstance(o, str) else json.dumps(o, ensure_ascii=False, default=str)
+        k = next((k for k in 环境故障特征 if k in (t or "")), None)
+        if k:
+            out.append({"工具": (c.get("tool") or "").rsplit("__", 1)[-1], "错误": k})
+    return out
+
+
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
               provider=None, model_name=None, me=None, skills=None, effort=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
@@ -1124,6 +1141,12 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     except Exception:
         pass    # 埋点不许影响主流程 —— 记录仪坏了不该让业务跟着坏
     # 存下这一轮结束时的跨轮状态。SDK 续聊可能换一个 session id(分叉)—— 换了就按新会话存,不基于旧版本
+    # ── 环境故障:工具返回里出现数据库报错 → 记进进程级的 环境故障(evalrec 见到就拒绝写结果)──
+    # 10-05:并行会话造数锁库,这一轮的答案全是「知识库暂时无法访问」,而评测照常判分写基线
+    # 成功的调用(calls)和**失败的调用**(工具失败)两边都查 —— 锁库时工具是「失败」,只查 calls 认不出
+    _故障 = 找环境故障(state.get("calls")) + 找环境故障(
+        [dict(tool=f.get("tool"), output=f.get("error")) for f in state.get("工具失败") or []])
+    环境故障.extend(_故障)
     _新sid = getattr(res, "session_id", None)
     _存话 = None
     if _新sid and me:
@@ -1145,6 +1168,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             最终违规=guards.最终违规(state, 交付),
             tool_calls_seen=len(state.get("calls") or []),
             会话状态=dict(恢复说明=state.get("会话恢复") or [], 存=_存话),
+            环境故障=_故障,
             answer_turns=len(turns), text_all="\n\n".join(turns))
 
 

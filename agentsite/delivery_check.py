@@ -25,6 +25,8 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("最终违规退回历次全记录(修正后通过也带着打回)", "修正后通过 → 最终违规为空"),
     ("某套评测判分又读回 guard_violations", "评测判分读的是最终违规"),
     ("打回提示退回一句「请修正后重答」", "打回提示讲清三件事"),
+    ("环境故障只认字符串返回(dict 形状的报错漏掉)", "工具返回里的数据库报错认得出"),
+    ("不挂 PostToolUseFailure(失败的调用没人记)", "工具调用失败也记下来"),
 ]
 
 坏 = 0
@@ -143,6 +145,29 @@ def main():
            f"缺:{缺}")
         stop_src = open(os.path.join(HERE, "guards.py"), encoding="utf-8").read()
         ck("Stop 打回用的就是这份说明", '"reason": 打回说明(bad)' in stop_src, 1)
+
+        src0 = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
+        print("\n\033[1m▸ 环境故障:工具返回里的数据库报错要认得出(10-05)\033[0m")
+        import sdk as _sdk
+        _坏 = _sdk.找环境故障([
+            {"tool": "mcp__kb__kb_size", "output": {"error": "OperationalError: database is locked"}},
+            {"tool": "mcp__shop__get_stock", "output": "sqlite3.OperationalError: database is locked"},
+            {"tool": "mcp__kb__kb_lead", "output": {"最慢天数": 166}}])
+        ck("工具返回里的数据库报错认得出(dict / 字符串两种形状),正常返回不算", [x["工具"] for x in _坏] == ["kb_size", "get_stock"],
+           3, str(_坏))
+        # 锁库时工具是「失败」,PostToolUse 不触发 —— 10-05 实测 calls 一条都没有,故障认不出
+        _st = {}
+        _h = guards.make_hooks(_st)
+        _挂了 = "PostToolUseFailure" in _h
+        if _挂了:
+            asyncio.run(_h["PostToolUseFailure"][0].hooks[0](
+                {"tool_name": "mcp__kb__kb_size", "tool_input": {}, "error": "sqlite3.OperationalError: database is locked"},
+                None, None))
+        _记 = [f["tool"] for f in _st.get("工具失败") or []]
+        ck("工具调用失败也记下来(挂了 PostToolUseFailure,报错原文进 state[工具失败])",
+           _挂了 and _记 == ["mcp__kb__kb_size"], 1, f"挂了={_挂了} 记下={_记}")
+        ck("sdk.run 每轮都查并累计进 sdk.环境故障", "_故障 = 找环境故障(state.get(\"calls\"))" in src0
+           and "环境故障.extend(_故障)" in src0 and 'state.get("工具失败")' in src0, 1)
 
         print("\n\033[1m▸ sdk.run 收尾用的是这一套\033[0m")
         src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()

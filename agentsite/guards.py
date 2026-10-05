@@ -1743,11 +1743,20 @@ def make_hooks(state, 注日期=True):
         state["压缩次数"] = state.get("压缩次数", 0) + 1
         return {}
 
+    async def on_tool_fail(inp, tool_use_id, ctx):
+        """工具调用**失败**。PostToolUse 不会为它触发 —— 10-05 锁库实测:轨迹里调过 kb_size,
+        而 state["calls"] 一条都没有,环境故障因此认不出来,被锁污染的那轮照样写进了基线。
+        单独记一份,不混进 calls(体检规则拿 calls 当工具结果对,报错不是结果)。"""
+        state.setdefault("工具失败", []).append(dict(
+            tool=inp.get("tool_name", ""), input=inp.get("tool_input"), error=str(inp.get("error") or "")[:500]))
+        return {}
+
     from claude_agent_sdk import HookMatcher
     return {
         "UserPromptSubmit": [HookMatcher(hooks=[on_prompt])],
         "PreToolUse":       [HookMatcher(hooks=[pre_tool])],
         "PostToolUse":      [HookMatcher(hooks=[post_tool])],
+        "PostToolUseFailure": [HookMatcher(hooks=[on_tool_fail])],
         "Stop":             [HookMatcher(hooks=[on_stop])],
         "PreCompact":       [HookMatcher(hooks=[on_compact])],
     }

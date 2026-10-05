@@ -5139,5 +5139,41 @@
    }
   ],
   "预期红": "真跑钉回:标题一行给档位"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "环境故障只认字符串返回(dict 形状的报错漏掉)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        t = o if isinstance(o, str) else json.dumps(o, ensure_ascii=False, default=str)\n        k = next((k for k in 环境故障特征 if k in (t or \"\")), None)",
+    "new": "        t = o if isinstance(o, str) else \"\"\n        k = next((k for k in 环境故障特征 if k in (t or \"\")), None)"
+   }
+  ],
+  "预期红": "工具返回里的数据库报错认得出"
+ },
+ {
+  "script": "tools/eval_provenance_check.py",
+  "改坏": "盖章不查环境故障",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "    坏 = 环境故障()\n    if 坏:",
+    "new": "    坏 = []\n    if 坏:"
+   }
+  ],
+  "预期红": "撞过环境故障就不给盖章"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "不挂 PostToolUseFailure(失败的调用没人记)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        \"PostToolUseFailure\": [HookMatcher(hooks=[on_tool_fail])],\n",
+    "new": ""
+   }
+  ],
+  "预期红": "工具调用失败也记下来"
  }
 ]
