@@ -4138,47 +4138,44 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-05 18:43。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-05 20:46。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | a5b9d6d · 2026-10-05 · 撞上环境故障(库被锁)的评测轮不许写结果 —— 第一版还漏了「失败的调用」 |
-| 代码量 | 616 个 Python 文件 / 113380 行(不含 .venv) |
-| 验收 | `./check.sh` 共 227 项 —— **接手第一件事就是跑它** |
+| 最新提交 | 9625d7d · 2026-10-05 · 新规矩 TL61「能查的先查,查完还缺什么再问」—— 「不调工具就答」其实是「先反问不查」 |
+| 代码量 | 617 个 Python 文件 / 113541 行(不含 .venv) |
+| 验收 | `./check.sh` 共 228 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 没起来 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
- M agent/eval-history.jsonl
+M agent/eval-history.jsonl
  M agent/measure-eval-results.jsonl
  M agent/member-eval-results.jsonl
  M agent/ops-eval-results.partial.jsonl
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
  M check.sh
- M "knowledge/15-\350\220\245\351\224\200SOP.md"
- M tools/make_mkt_sop.py
  M "tools/\350\277\220\350\241\214\345\217\262.json"
  M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
  M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/main.py"
 ?? .feynman/world-shift-launchd.log
 ?? .wip-muslin/
 ?? data/lanxiu.db
-?? tools/mkt_data_health.py
+?? knowledge/churn.py
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+9625d7d 新规矩 TL61「能查的先查,查完还缺什么再问」—— 「不调工具就答」其实是「先反问不查」
+05a62cd 交接:C 方案选 A(规则预警)—— 理由是能不能被证伪
+c95fddd 修 CI:覆盖率数字不进生成物 —— 它本来就不该在 RAG 语料里
+c345216 交接:全量基线立好 + 环境故障防线(b803b08 · a5b9d6d)
 a5b9d6d 撞上环境故障(库被锁)的评测轮不许写结果 —— 第一版还漏了「失败的调用」
-b803b08 全量重跑立基线:工具使用 22/24·20/24(最后一轮改尺子重判 23/24),成长推算 5/8·7/8
-8b86254 交接:门禁绿了(1108 行全过),下一步是 C 方案
-4137996 营销 SOP 按新数据重生成:三条「撑不住」的警告自己消失了
-0f4db57 交接:说清 15-营销SOP.md 为什么改了没提交
 ```
 <!--/AUTO-->
 ## 一句话在做什么
