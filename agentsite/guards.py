@@ -800,8 +800,14 @@ def g11_girth_point(text, calls):
     """
     for f in _fc(calls):
         if not f["girth"]: continue
-        w = tm.mentions(text, ("胸围", "腰围", "臀围"))
-        if not w: continue
+        去括号 = re.sub(r"[()\uff08\uff09]", "", text)
+        # ⚠️ 10-05 G01 真跑:「其他部位(袖长 3.0cm、**腰围用系带调节**)」被拦 —— 那句既没给数也没在估,
+        # 是在说怎么留余量。只看**在给围度数或在估围度**的那几处:同小句里有数字,或有推 / 算 / 预测 / 估。
+        # 「腰围也一并算好了」(说算过了)照样算在估,照样要限定
+        估的 = [g for g in ("胸围", "腰围", "臀围") for m in re.finditer(g, 去括号)
+               if re.search(r"\d|推|算|预测|估|预计",
+                            tm._seg_before(去括号, m.start(), 30) + tm._seg_after(去括号, m.end(), 30))]
+        if not 估的: continue
         # **限定必须和围度在同一小句里。** 踩过:「复量」写在说身高的那句上,
         # 围度那句只有「也一并算好了」,体检却因为整段里有「复量」而放行。
         # ⚠️ 2026-10-04 真跑钉回:「**围度**只给区间(胸 75.5–85.1、腰 67.5–76.1),到时候还得复量才能裁」
@@ -813,7 +819,6 @@ def g11_girth_point(text, calls):
         # 作用域仍是小句(到标点为止),「复量身高,腰围也算好了」那种隔着逗号的照样不算
         # 括号是给前面那句话作补充,不是换句 —— 但 textmatch 的小句边界把「(」算进去了(否定判断等处共用,不全局改),
         # 这里先去掉括号再判:「只能给区间(胸围 …)」里的「区间」和「胸围」才在同一小句
-        去括号 = re.sub(r"[()\uff08\uff09]", "", text)
         if any(tm.in_clause(去括号, g, ("区间", "范围", "复量", "再量", "不得直接", "不能直接"), both=True)
                for g in ("胸围", "腰围", "臀围", "围度")):
             continue
@@ -827,11 +832,17 @@ def g12_expired_ignored(text, calls):
 
     「有个旧尺寸总比没有强」是童装返工的来源。**超期的记录是无效值,不是参考值。**
     """
+    # ⚠️ 2026-10-05 T03 真跑:问的是客户**本人**(量体有效),而 get_wearer 按客户号返回了一家三口,
+    # 女儿的量体过期 —— 原来「返回里任何一个人过期」就拦,模型被逼着改成「王青梧的量体已超期」,
+    # **体检把一个对的答案改成了错的**。一次只返回一个人时照旧;返回好几个人时,
+    # 只有答案**提到了那个过期的人**才算在说他
     stale = False
     for c in _called(calls, "get_wearer"):
         r = _res(c)
-        for w in (r.get("着装人") or []) if isinstance(r, dict) else []:
-            if (w.get("量体是否过期") or {}).get("过期"): stale = True
+        人们 = (r.get("着装人") or []) if isinstance(r, dict) else []
+        for w in 人们:
+            if not (w.get("量体是否过期") or {}).get("过期"): continue
+            if len(人们) == 1 or (w.get("姓名") and w["姓名"] in text): stale = True
     for f in _fc(calls):
         if any("无效记录" in w or "已过" in w for w in f["warn"]): stale = True
     if not stale: return None

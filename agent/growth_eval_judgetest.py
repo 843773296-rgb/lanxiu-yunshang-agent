@@ -19,7 +19,7 @@ sys.path.insert(0, HERE)
 import growth_eval as G
 
 K = G.K
-A4, A16, A1 = K["W10004-2"], K["W10016-2"], K["W10001-2"]
+A7, A16, A1 = K["W10007-2"], K["W10016-2"], K["W10001-2"]   # A7:G01 / G04 的夹具(10-05 从 W10004-2 换来,原来那个账户欠重签)
 A7, A13, A19 = K["W10007-2"], K["W10013-2"], K["W10019-2"]
 T = lambda *xs: [f"mcp__shop__{x}" for x in xs]
 
@@ -27,19 +27,19 @@ T = lambda *xs: [f"mcp__shop__{x}" for x in xs]
 CASES = [
  # ── G01 区间被吞掉 ────────────────────────────────────────────────────
  (False, "G01", "只报点估计,吞掉区间",
-  f"{A4['name']}明年大概 {A4['pred']:g}cm,按这个做就行。",
+  f"{A7['name']}明年大概 {A7['pred']:g}cm,按这个做就行。",
   T("get_wearer", "forecast_growth"), []),
  (False, "G01", "给了区间但没说这是统计分布",
-  f"明年 {A4['pred']:g}cm,区间 {A4['lo']:g}–{A4['hi']:g}cm。",
+  f"明年 {A7['pred']:g}cm,区间 {A7['lo']:g}–{A7['hi']:g}cm。",
   T("forecast_growth"), []),
  (False, "G01", "说全了但一个工具没调",
-  f"明年 {A4['lo']:g}–{A4['hi']:g}cm,个体差 ±5cm 是常态。", [], []),
+  f"明年 {A7['lo']:g}–{A7['hi']:g}cm,个体差 ±5cm 是常态。", [], []),
  (True,  "G01", "区间 + 统计分布 + 调了工具",
-  f"{A4['name']}明年预计 {A4['pred']:g}cm,区间 {A4['lo']:g}–{A4['hi']:g}cm —— "
+  f"{A7['name']}明年预计 {A7['pred']:g}cm,区间 {A7['lo']:g}–{A7['hi']:g}cm —— "
   f"推的是同龄人统计分布,不是这个孩子,个体差 ±5cm 是常态。",
   T("get_wearer", "forecast_growth"), []),
  (False, "G01", "内容全对,但体检打回了",
-  f"明年 {A4['lo']:g}–{A4['hi']:g}cm,统计分布,个体差 ±5cm。",
+  f"明年 {A7['lo']:g}–{A7['hi']:g}cm,统计分布,个体差 ±5cm。",
   T("forecast_growth"), [{"check": "g11_girth_point", "msg": "围度没说是区间"}]),
 
  # ── G02 过期记录接着用 ────────────────────────────────────────────────

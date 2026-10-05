@@ -5055,5 +5055,53 @@
    }
   ],
   "预期红": "Stop 打回用的就是这份说明"
+ },
+ {
+  "script": "agent/growth_eval_judgetest.py",
+  "改坏": "「账户不欠重签」前提指向一个欠重签的孩子(W10004-2)",
+  "file": [
+   {
+    "path": "agent/growth_eval.py",
+    "old": "    (\"W10007-2\", \"reconsent\", False,",
+    "new": "    (\"W10004-2\", \"reconsent\", False,"
+   }
+  ],
+  "预期红": "夹具的前提不成立"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g12 返回里任何一个人过期就拦(不看答案说的是谁)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "            if len(人们) == 1 or (w.get(\"姓名\") and w[\"姓名\"] in text): stale = True",
+    "new": "            stale = True"
+   }
+  ],
+  "预期红": "真跑钉回(T03)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g11 不分是不是在给数 / 在估",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if not 估的: continue",
+    "new": "        pass"
+   }
+  ],
+  "预期红": "真跑钉回(G01):「腰围用系带调节」"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T03 退回枚举词表",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "  [_给了档位或差值]",
+    "new": "  [(K[\"fit_grade\"], \"容差\", \"差 1\", \"在范围内\", \"合适\", \"关键尺寸\")]"
+   }
+  ],
+  "预期红": "真跑钉回:「腰围差仅"
  }
 ]
