@@ -5122,8 +5122,8 @@
   "file": [
    {
     "path": "agent/tool_eval.py",
-    "old": "        if kw in t and tm.in_clause(t, kw, (\"没用\", \"无效\", \"不了\", \"不能\", \"没法\", \"不行\", \"白搭\", \"压不\"), both=True):",
-    "new": "        if False:"
+    "old": "    if _说了加人加钱无效(_norm(text)):\n        return None\n    return \"没说出「这个工艺加不了人」",
+    "new": "    return \"没说出「这个工艺加不了人」"
    }
   ],
   "预期红": "真跑钉回:「缂丝一台织机"
@@ -5175,5 +5175,29 @@
    }
   ],
   "预期红": "工具调用失败也记下来"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T04 往下看的是原始行(空行占位)",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "            后 = \"\\n\".join([x for x in 行们[k + 1:] if x.strip()][:5])[:300]",
+    "new": "            后 = \"\\n\".join(x for x in 行们[k + 1:k + 6] if x.strip())[:300]"
+   }
+  ],
+  "预期红": "真跑钉回:标题 + 分隔线"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T10 不认「加钱 / 加人没用」",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "    if tm.says(t, NO + (\"加不了\", \"无效\", \"只能等\")) or _说了加人加钱无效(t):",
+    "new": "    if tm.says(t, NO + (\"加不了\", \"无效\", \"只能等\")):"
+   }
+  ],
+  "预期红": "真跑钉回:「加急基本没招"
  }
 ]
