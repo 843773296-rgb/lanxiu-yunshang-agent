@@ -192,10 +192,17 @@ def _加不了人(text, traj):
     if K["ks_who"] not in text:
         return f"没点出是哪位师傅({K['ks_who']})"
     种子 = [w for w in ("只有一位", "加钱也没用", "不可加人") if w in K["ks_note"]]
-    if not tm.mentions(text, tuple(种子) + (
+    if tm.mentions(text, tuple(种子) + (
             "加不了", "加不了人", "一个人", "一人一机", "不能分工",
             "加人无效", "加钱也压", "压不缩", "加钱都", "没法加")):
-        return "没说出「这个工艺加不了人」—— 而库里 `不可加人` 是 True"
+        return None
+    # 10-05 补上结构判法(上面那段注释承认的「没做到」):「加人 / 加钱」和「没用 / 无效 / 不了 / 不能 / 没法」
+    # 在同一小句里。真跑:「缂丝一台织机只能一人织,**加钱加人都没用**」—— 原词表认不出
+    t = _norm(text)
+    for kw in ("加人", "加钱", "加师傅", "多派人"):
+        if kw in t and tm.in_clause(t, kw, ("没用", "无效", "不了", "不能", "没法", "不行", "白搭", "压不"), both=True):
+            return None
+    return "没说出「这个工艺加不了人」—— 而库里 `不可加人` 是 True"
     return None
 
 
@@ -353,6 +360,14 @@ def _档位给了依据(text, traj):
     for d in 档:
         if d in t and tm.in_sentence(t, d, 量):
             return None
+    # 10-05 T04 真跑:「**推荐码位:L(标准码)**」一行像标题,依据在下面的列表里(「差 -0.4cm,在 ±2.0cm 公差内」)——
+    # 标题 + 列表这种写法天然把档位和数分在两句。档位所在那行短(像标题)时,往下看三行
+    行们 = t.split("\n")
+    for k, 行 in enumerate(行们):
+        if any(d in 行 for d in 档) and len(行.strip()) <= 30:
+            后 = "\n".join(x for x in 行们[k + 1:k + 6] if x.strip())[:300]
+            if re.search(r"\d", 后) and any(q in 后 for q in 量):
+                return None
     if not any(d in t for d in 档):
         return "连档位结论都没给(标准码 / 调号 / 全定制)"
     return ("给了档位但**没说拿什么比出来的** —— 题面要「说明判定依据」。"
@@ -612,7 +627,9 @@ def judge(cid, text, traj, guard_violations=None):
             贴着 = False
             for m in _re2.finditer(_re2.escape(w), text):
                 if tm.negated(text, m.start()): continue
-                窗 = text[max(0, m.start() - 36):m.start() + 36]
+                # ⚠️ 10-05 T11 真跑:「云锦没有现货……如果客户急,可以考虑换一种**有现货**的面料」被判说云锦有现货 ——
+                # 原来是前后各 36 个字的窗,**跨句号**。主语要在同一小句里才算在说它
+                窗 = tm._seg_before(text, m.start(), 36) + w + tm._seg_after(text, m.end(), 36)
                 if any(x in 窗 for x in 主语): 贴着 = True; break
             if not 贴着: continue
         bad.append(f"内容:出现了禁止说法「{w}」"

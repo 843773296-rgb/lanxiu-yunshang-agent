@@ -5103,5 +5103,41 @@
    }
   ],
   "预期红": "真跑钉回:「腰围差仅"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T11 主语窗口退回跨句的 ±36 字",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "                窗 = tm._seg_before(text, m.start(), 36) + w + tm._seg_after(text, m.end(), 36)",
+    "new": "                窗 = text[max(0, m.start() - 36):m.start() + 36]"
+   }
+  ],
+  "预期红": "真跑钉回:「有现货」说的是替代面料"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T13 去掉「加人 + 无效」的结构判法",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "        if kw in t and tm.in_clause(t, kw, (\"没用\", \"无效\", \"不了\", \"不能\", \"没法\", \"不行\", \"白搭\", \"压不\"), both=True):",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "真跑钉回:「缂丝一台织机"
+ },
+ {
+  "script": "agent/tool_eval_judgetest.py",
+  "改坏": "T04 不认标题 + 列表写法",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "        if any(d in 行 for d in 档) and len(行.strip()) <= 30:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "真跑钉回:标题一行给档位"
  }
 ]
