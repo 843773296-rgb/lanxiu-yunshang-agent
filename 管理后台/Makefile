@@ -787,6 +787,15 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@./.venv/bin/python tests/orchestration/test_policy_resolve.py
 	@echo ""
+	@echo "▸ 没有任何已发布策略时用哪套上限(业务 2026-10-06 拍的:**内置兜底**)"
+	@echo "  ⚠️ 判据是**消掉「无限制」这个档**:"
+	@echo "     一个「没有策略所以不限制」的运行,和一个「策略说了不限制」的,"
+	@echo "     **在运行记录上长得一模一样**"
+	@echo "  数字来自规格 §5.3(「可替换的测试起点,**不是当前生产配置**」)·"
+	@echo "  只填**真有执行点**的键(拿 exec_limits_report 的登记表现查对账)·"
+	@echo "  兜底**不是回退**(回退要带版本/年龄/原因/有效期,兜底一样都没有)"
+	@./.venv/bin/python tests/orchestration/test_backstop_limits.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py

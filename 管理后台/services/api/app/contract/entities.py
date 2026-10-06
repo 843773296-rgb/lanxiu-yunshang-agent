@@ -1088,7 +1088,8 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "execution_mode", "completion_reason", "quality_evaluation_status",
        "started_at", "ended_at", "deadline_at", "current_step_id", "output_ref",
        "usage_snapshot", "checkpoint_seq", "pause_requested", "cancel_requested",
-       "idempotency_key", "trace_id"],
+       "idempotency_key", "trace_id",
+       "policy_snapshot", "adopted_policy_snapshot"],
       ["**完整快照**:启动时固定发布清单和输入(§3.2);"
        "**正在执行的 Run 保持原版本**,但当前权限和停用开关**仍须实时检查**",
        "**status 和 quality_evaluation_status 是两件事**(§16.4):"
@@ -1098,7 +1099,21 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "和真实报告在数据形状上一模一样,唯一的区别就是这个字段",
        "parent_run_id:子调用的额度和费用**计入父任务**,"
        "不是每嵌套一层重新拿一份完整预算(§13.2)",
-       "**`definition_ref` / `release_ref` 是 JSONB,没有外键** —— 见这一段开头"],
+       "**`definition_ref` / `release_ref` 是 JSONB,没有外键** —— 见这一段开头",
+       "**执行上限的策略存两列,不是一列**(业务 2026-10-06 拍的):"
+       "`policy_snapshot` 是**受理时冻结**的那一版,"
+       "`adopted_policy_snapshot` 是**Run 开始时真正采用**的那一版。"
+       "两者不一致 → **停下让人看一眼,不猜哪个是对的** "
+       "(和同一个函数里 `DEFINITION_CHANGED_WHILE_QUEUED` 一个道理)",
+       "⚠️ 为什么不是一列:一列只能记住一个时刻,而「排队期间上限被改过」"
+       "这件事**只有两个时刻放在一起才看得出来** —— "
+       "一个只存了采用值的运行记录,和一个上限从没变过的,"
+       "**在那一列上长得一模一样**",
+       "⚠️ `adopted_policy_snapshot` 里的 `来源` 分三种:"
+       "**已发布策略 / 本地回退 / 内置兜底**(`runtime/兜底上限.py`)。"
+       "系统里**不存在「无限制」这个档** —— "
+       "一个「没有策略所以不限制」的运行,和一个「策略说了不限制」的,"
+       "在运行记录上长得一模一样,所以那一栏必须点名是哪一种"],
       依赖=["applications", "release_manifests", "traces"]),
     E("run_steps", "运行步骤", 子对象, 可改,
       ["execution_run_id", "node_id", "kind", "iteration_path", "attempt",

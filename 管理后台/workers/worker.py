@@ -814,10 +814,40 @@ def _跑一个agent(c, job, 打点):
     目录 = AA._工具目录(c, job["project_id"], cfg.get("tools") or [])
     工具名们 = sorted(契["name"] for 契 in 目录.values())
 
-    c.execute(text("""update execution_runs set status='running', updated_at=now()
-                      where project_id=:p and id=:i"""),
-              {"p": job["project_id"], "i": run_id})
-    打点("开始执行", {"工具": 工具名们, "上限": cfg.get("limits")})
+    # ── 🔑 Run 真开始那一刻:**再解析一次执行策略,和受理时那份比** ──────
+    #
+    # 业务 2026-10-06 拍的:**两个都存,不一致就停**(三个选项里的第三个)。
+    # 这一段和上面 `DEFINITION_CHANGED_WHILE_QUEUED` 是同一个形状 ——
+    # 配置在排队期间被改过,**不静默跑新的那一份**。
+    #
+    # ⚠️ 解析**调的是 `agents_api._本次策略`,不是这儿再写一套**:
+    # > 一个「两处各写一套解析」的实现,和一个真共用的,
+    # > **在那两列快照上长得一模一样** —— 而前者的「不一致」可能来自
+    # > 两套代码的差别,于是运维被叫起来看一个**永远对不上**的东西。
+    # 判定在 `runtime/采用快照.判两份`,**这儿一条判据都没有** ——
+    # 内联的 if 没法单独测,而「它跑对的那一次」和「它改坏了」长得一样。
+    import 采用快照 as _AS
+    现的 = AA._本次策略(c, job["project_id"])
+    要停, 策略码, 策略细 = _AS.判两份(受理时=r["policy_snapshot"], 现在的=现的)
+    if 要停:
+        raise 干不了(策略码, 策略细)
+    if 策略码 == _AS.受理时没存:
+        # ⚠️ **不停,但要显形。** 老数据不该被新列拦住,
+        # 而这一批运行回答不了「排队期间上限有没有被改过」——
+        # 不打点的话它们会被当成「验过了」。
+        打点("策略快照没得比", 策略细)
+    c.execute(text("""update execution_runs
+                         set status='running', adopted_policy_snapshot=:ap,
+                             updated_at=now()
+                       where project_id=:p and id=:i"""),
+              {"p": job["project_id"], "i": run_id,
+               "ap": _j.dumps(现的, ensure_ascii=False)})
+    打点("开始执行", {"工具": 工具名们, "上限": cfg.get("limits"),
+                  "上限来源": 现的.get("来源"),
+                  # ⚠️ 兜底的数字**不是业务配的**,这一栏要跟着走 ——
+                  # 一次兜底和一次正常采用在界面上长得一模一样
+                  "⚠️": (现的["细节"].get("兜底用的", {}).get("⚠️")
+                        if 现的["状态"].startswith("内置兜底") else None)})
 
     # ── 账本:贴着 tool_invocations 表 ─────────────────────────────
     class 表账本:

@@ -39,6 +39,85 @@ from db import 连接, 事务
 from deps import 身份, 要权限, _错
 from workflows_api import _依赖查询, _新id
 
+import 策略解析 as _PR
+import 策略冻结 as _PF
+import 采用快照 as _AS
+
+
+def _本次策略(c, project_id, 现在=None):
+    """这次运行该照哪一版执行策略办 —— **受理时和 Run 开始时用的是这同一个函数**。
+
+    业务 2026-10-06 拍的「两个都存,不一致就停」只有在两边**用同一份解析**时
+    才成立:
+    > 一个「两处各写一套解析」的实现,和一个真共用的,
+    > **在那两列快照上长得一模一样** —— 而前者的「不一致」可能来自
+    > 两套代码的差别,而不是来自策略真的变了。
+    > 于是运维会被叫起来看一个**永远对不上**的东西。
+
+    判定逻辑**一行都不在这儿** —— 在 `runtime/策略解析.py`(四态)和
+    `runtime/兜底上限.py`(没发布过任何一版时用哪套数)。这儿只做 IO:
+    把发布的那一版、这台实例的回执取出来递进去。
+
+    ⚠️ **入口写死成「后台编排」。** 规格 §2.2:一个入口上过了的限制,
+    在另一个入口上可能根本没有执行点 —— 所以不给「通用」留口子。
+    """
+    import datetime as _dt
+    现在 = 现在 if 现在 is not None else _dt.datetime.now(_dt.timezone.utc).timestamp()
+
+    # ⚠️ **「已发布」要走环境指针,不是「最新冻结的那一版」。**
+    # 2026-10-06 我第一版写的是 `where status = 'published'` ——
+    # 而 `execution_policy_versions` **压根没有 status 这一列**:
+    # 这个项目里 **冻结 ≠ 发布**(`exec_policy_api.py` 开头那段),
+    # 发布引用由 `release_manifests` 管,哪一份清单在服务由
+    # `environment_bindings` 的环境指针决定。
+    # > 一个「冻结了而没发布」的版本,和一个真在服务的,
+    # > **在版本列表上长得一模一样** —— 拿最新冻结的那一版当「已发布」,
+    # > 等于让一次「我先冻一版看看」立刻生效。
+    #
+    # ⚠️ 查不到就是 None,**不编一版出来**。这个环境现在真的查不到
+    # (0 条执行策略版本),而 `策略解析` 对这种情况返回「内置兜底」。
+    环境 = os.environ.get("APP_ENV", "development")
+    发布的 = c.execute(text("""
+        select v.id, v.content_hash, v.entry_kind, v.support_conditions,
+               v.limits, v.counter_schema_version
+          from environment_bindings b
+          join release_manifests m
+            on m.project_id = b.project_id and m.id = b.release_manifest_id
+          join execution_policy_versions v
+            on v.project_id = m.project_id and v.id = m.execution_policy_version_id
+         where b.project_id = :p and b.environment = :env
+           and v.entry_kind = :e
+         limit 1"""),
+        {"p": project_id, "env": 环境, "e": _PF.后台编排}).mappings().first()
+    发布的 = dict(发布的) if 发布的 else None
+
+    回执 = None
+    if 发布的:
+        # 回执只在**有发布**时才有意义:它回答「这台实例加载的是不是这一版」。
+        r = c.execute(text("""
+            select execution_policy_version_id, policy_hash, loaded_at,
+                   capability_map
+              from policy_instance_receipts
+             where project_id = :p and execution_policy_version_id = :v
+             order by loaded_at desc limit 1"""),
+            {"p": project_id, "v": 发布的["id"]}).mappings().first()
+        回执 = dict(r) if r else None
+
+    版, 状态, 细 = _PR.这次用哪一版(入口=_PF.后台编排, 发布的=发布的,
+                               这个实例的回执=回执, 现在=现在)
+    return {
+        "状态": 状态,
+        # ⚠️ **哈希是比对用的那一栏。** 兜底也有哈希(入口算进去了),
+        # 所以「兜底 → 后来发布了一版」也会被认成不一致 —— 那正是要停的。
+        "内容哈希": (版 or {}).get("内容哈希") or (版 or {}).get("content_hash"),
+        "limits": (版 or {}).get("limits"),
+        "来源": (版 or {}).get("来源") or 状态,
+        "入口": _PF.后台编排,
+        "细节": 细,
+        "盖章于": 现在,
+    }
+
+
 router = APIRouter()
 前缀 = "/api/v1/projects/{project_id}"
 
@@ -552,20 +631,30 @@ async def 跑agent(project_id: str, request: Request,
             values (:i,:o,:p,:s,:rq,:e, now(), now(), :u)
         """), {"i": trace, "o": me.org_id, "p": project_id, "s": run, "rq": job,
                "e": os.environ.get("APP_ENV", "development"), "u": me.user_id})
+        # ── 受理时把执行策略**冻下来** ────────────────────────────
+        # 业务 2026-10-06 拍的:**两个都存,不一致就停**。
+        # 这一处存的是「受理那一刻的策略」,`workers/worker.py` 的
+        # `_跑一个agent` 会在 Run 真开始时再解析一次、比对两份。
+        # > 一列只能记住一个时刻,而「排队期间上限被改过」这件事
+        # > **只有两个时刻放在一起才看得出来** ——
+        # > 一个只存了采用值的运行记录,和一个上限从没变过的,
+        # > **在那一列上长得一模一样。**
+        冻的 = _本次策略(c, project_id)
         c.execute(text("""
             insert into execution_runs (id, organization_id, project_id, kind,
                 definition_ref, input_snapshot, definition_hash, principal, status,
                 limits, environment, execution_mode, quality_evaluation_status,
-                started_at, trace_id, idempotency_key,
+                started_at, trace_id, idempotency_key, policy_snapshot,
                 created_at, created_by, updated_at, revision)
             values (:i,:o,:p,'agent',:dr,:isn,:dh,:pr,'queued',:lm,:env,'mock',
-                    '未评', now(), :t, :k, now(), :u, now(), 1)
+                    '未评', now(), :t, :k, :ps, now(), :u, now(), 1)
         """), {"i": run, "o": me.org_id, "p": project_id,
                "dr": json.dumps(来源, ensure_ascii=False),
                "isn": json.dumps(输入, ensure_ascii=False),
                "dh": DS.逻辑哈希(cfg), "pr": me.user_id,
                "lm": json.dumps(cfg.get("limits") or {}, ensure_ascii=False),
                "env": os.environ.get("APP_ENV", "development"),
+               "ps": json.dumps(冻的, ensure_ascii=False),
                "t": trace, "k": idempotency_key, "u": me.user_id})
         c.execute(text("""
             insert into jobs (id, organization_id, project_id, type, target_ref, status,
