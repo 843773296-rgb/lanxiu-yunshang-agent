@@ -5427,5 +5427,29 @@
    }
   ],
   "预期红": "真跑钉回(返修判责):「须由你"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "已过标记不认「闲置」类",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "           \"闲置\", \"无互动\", \"没来\", \"沉默\")",
+    "new": "           )"
+   }
+  ],
+  "预期红": "真跑钉回(C10001)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g22 不看「查完再说」",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if tm.in_clause((text or \"\")[:160], hit, (\"再\", \"之后\", \"查完\", \"查出\", \"等我\", \"如果\", \"确认后\"), both=True):\n        return None",
+    "new": "    if False:\n        return None"
+   }
+  ],
+  "预期红": "真跑钉回(T02):「查出来之后"
  }
 ]
