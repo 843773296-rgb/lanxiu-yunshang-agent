@@ -792,6 +792,28 @@ def g10_point_no_range(text, calls):
     return None
 
 
+统计说法 = ("统计", "分布", "个体差", "每个孩子", "不是这个孩子", "因人而异", "个体", "平均", "±", "\u00b1")
+
+
+def g24_growth_not_statistical(text, calls):
+    """报了推算的身高(预测值或区间端点),却没说这是按同龄孩子的**统计**推的。
+
+    g10 管「给了点没给区间」,这条管下一步:**区间给了,也得说它是统计,不是这个孩子**(TL09)。
+    2026-10-05 用户拍板加这条。起因:成长评测 G01 稳定挂在「没说统计推算」——
+    工具话术已改成带「统计推的」(4be7d0a),而模型多半自己写话术,还是漏。
+    校准:存下来的 52 份调过成长推算、报了身高的真跑答案,这条拦 16 份,逐条读过都是真漏了
+    (「明年预计身高 127.9–132.9cm」当确定结论说,没有一句「每个孩子不一样」)。
+    """
+    for f in _fc(calls):
+        if not f["h"] or not f["rng"]: continue
+        lo, hi = f["rng"]
+        if not tm.mentions(text, (f"{f['h']:g}", f"{lo:g}", f"{hi:g}")): continue   # 没报推算的身高,不管
+        if tm.mentions(text, 统计说法): return None
+        return (f"你报了推算的身高({lo:g}–{hi:g}cm),却没说这是按同龄孩子的**统计**推的。"
+                "**推的是统计分布,不是这个孩子** —— 个体差 ±5cm 是常态。补一句再给顾问。")
+    return None
+
+
 def g11_girth_point(text, calls):
     """给了围度点估计,或者没说围度必须复量。
 
@@ -1137,7 +1159,7 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g15_growth_plan_sections, g16_bypass_control,
           g17_liability_promise, g18_vision_conclusion,
           g19_account_state, g20_consent_version, g21_apply_as_done,
-          g22_agree_without_reading, g23_discount_promise]
+          g22_agree_without_reading, g23_discount_promise, g24_growth_not_statistical]
 
 
 def check_answer(text, calls, prompt="", 带图=False):
