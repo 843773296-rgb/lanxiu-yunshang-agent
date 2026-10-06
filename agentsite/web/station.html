@@ -229,6 +229,52 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 #novis{font-size:11.5px;color:var(--warn);margin-top:6px}
 #hint{max-width:760px;margin:7px auto 0;padding:0 24px;font-size:11.5px;color:var(--dim)}
 
+/* ── 订单卡片 + 详情弹窗(业务 2026-10-06)────────────────────
+   ⚠️ **卡片的数据来自工具返回值,不是模型吐的文字。**
+   一张模型编出来的订单卡片,和一张真数据渲染的,在屏幕上长得一模一样 ——
+   而前者里的金额、客户、状态可以全是假的。所以这里只渲染 t.result。 */
+.ordhead{margin:10px 0 6px;font-size:12px;color:var(--dim);line-height:1.7}
+.ordhead b{color:#23242a}
+.ordhead .warn{color:var(--warn)}
+.ordcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:8px;margin:4px 0 8px}
+.ordcard{border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 11px;
+  cursor:pointer;text-align:left;font:inherit;transition:border-color .12s,box-shadow .12s}
+.ordcard:hover{border-color:var(--accent);box-shadow:0 1px 6px rgba(40,60,160,.08)}
+.ordcard .l1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.ordcard .cust{font-weight:600;font-size:13px}
+.ordcard .amt{font-variant-numeric:tabular-nums;font-size:13px}
+.ordcard .l2{color:var(--dim);font-size:11.5px;margin-top:3px}
+.ordcard .l3{margin-top:5px;display:flex;gap:4px;flex-wrap:wrap}
+.ordcard .tg{font-size:10.5px;padding:1px 6px;border-radius:999px;background:#eef1f8;color:#48516e}
+.ordcard .oid{font-size:10.5px;color:#9aa0ad;margin-top:4px;word-break:break-all}
+#od{position:fixed;inset:0;background:rgba(20,20,24,.34);display:none;z-index:40}
+#od.on{display:block}
+#odp{position:absolute;right:0;top:0;bottom:0;width:min(560px,94vw);background:#fff;
+  border-left:1px solid var(--line);overflow:auto;padding:22px 24px 40px}
+#odp h3{font-size:15px;margin:0 0 2px}
+#odp .sub{color:var(--dim);font-size:11.5px;margin-bottom:16px}
+#odp .kv{display:flex;justify-content:space-between;gap:12px;padding:5px 0;
+  border-bottom:1px dashed var(--line);font-size:12.5px}
+#odp .kv span:first-child{color:var(--dim)}
+#odp .kv span:last-child{text-align:right;word-break:break-all}
+#odp h4{font-size:12.5px;margin:18px 0 4px;color:#23242a}
+#odp .it{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:5px 0;font-size:12px}
+#odp .note{margin-top:16px;font-size:11.5px;color:var(--dim);line-height:1.7}
+#odp .pimg{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px}
+#odp .pimg img{width:84px;height:84px;object-fit:cover;border:1px solid var(--line);
+  border-radius:8px;background:#fafafa}
+#odp .imgsrc{font-size:11px;color:var(--warn);margin:2px 0 8px;line-height:1.6}
+#odp .pintro{font-size:12px;color:#3d3f46;margin:4px 0 6px;line-height:1.7}
+#odp .cz{border:1px solid var(--line);border-radius:8px;margin:6px 0;overflow:hidden}
+#odp .cz > summary{cursor:pointer;padding:7px 10px;background:#f7f8fb;font-size:12px}
+#odp .czrow{display:flex;gap:8px;padding:6px 10px;border-top:1px solid var(--line);font-size:12px}
+#odp .czrow .pt{min-width:52px;color:var(--dim)}
+#odp .czrow .nt{color:var(--dim);font-size:11px;display:block;margin-top:2px}
+#odp .czsum{padding:7px 10px;border-top:1px solid var(--line);font-size:11.5px;color:var(--dim)}
+#odp .bad{color:var(--warn)}
+#odclose{position:absolute;right:16px;top:14px;border:1px solid var(--line);background:#fff;
+  border-radius:8px;padding:3px 9px;cursor:pointer;font:inherit;font-size:12px}
+
 /* ── 「?」教学层 ─────────────────────────────────────────── */
 #ov{position:fixed;inset:0;background:rgba(20,20,24,.34);display:none;z-index:9}
 #ov.on{display:block}
@@ -428,6 +474,12 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 </div>
 
 <div id="ov"><div id="ovp"><button id="ovx">×</button><div id="ovc"></div></div></div>
+<!-- 订单详情弹窗(业务 2026-10-06)。
+     ⚠️ 第一版我只写了样式和 JS,**忘了这两个节点** —— `$("#od")` 拿到 null,
+     点一下卡片就炸。而 `js_check.py` 是绿的:它验语法,而那段语法完全合法。
+     > 一段引用了不存在元素的 JS,和一段正确的,**在语法检查器眼里长得一模一样。**
+     现在 `agentsite/dom_ref_check.py` 盯这件事。 -->
+<div id="od"><div id="odp"></div></div>
 
 <script>
 "use strict";
@@ -564,6 +616,185 @@ const SUG = [
   ["W10001-2 明年六月毕业礼要穿,该按多高做?", "着装人 + 成长推算 —— 看它给不给区间"]
 ];
 
+/* ── 订单卡片(业务 2026-10-06)──────────────────────────────────
+   数据来自 `t.result` —— **工具的返回值**,不是模型写的文字。
+   ⚠️ 这件事值钱在:模型可以把金额、客户、状态全说错,而卡片不会跟着错。
+      两份数不一致时你**看得见** —— 而让模型吐 markdown 的话,
+      一张编出来的卡片和一张真数据的,在屏幕上长得一模一样。 */
+const 订单工具 = "orders_by_date";
+
+function ordCards(t){
+  const r = t && t.result;
+  if(!r || typeof r !== "object") return "";
+  // 「判不了」「error」那几条路也要显形 —— 不显形的话,
+  // 一次「它拒绝了并问你要哪种读法」和一次「它什么都没查到」在屏幕上一样。
+  if(r["判不了"])
+    return `<div class="ordhead"><b class="warn">${esc(r["判不了"])}</b><br>` +
+      (r["候选"]||[]).map(c =>
+        `· ${esc(c["含义"])} —— <b>${esc(String(c["有多少单"]))}</b> 单`).join("<br>") +
+      `<br>${esc(r["note"]||"")}</div>`;
+  if(r["error"]) return `<div class="ordhead"><b class="warn">${esc(r["error"])}</b></div>`;
+  const cs = r["卡片"];
+  if(!Array.isArray(cs)) return "";
+  // ⚠️ **总数和卡片数都要写出来。**
+  // 一份「只给了前 N 张卡片」的结果,和一份「这段时间就只有 N 单」的,
+  // 在屏幕上长得一模一样 —— 除非把总数摆在上面。
+  const 分 = r["两个数分开看"];
+  const 头 = [`<b>${esc(r["区间"]||"")}</b> · ${esc(r["范围"]||"")} ·
+      共 <b>${esc(String(r["总数"]))}</b> 单`];
+  if(分) 头.push(`其中 我名下客户的 <b>${esc(String(分["我名下客户的"]))}</b> ·
+      我经手下的 <b>${esc(String(分["我经手下的"]))}</b> ·
+      两者重叠 ${esc(String(分["两者重叠"]))}`);
+  if(r["还有"] > 0)
+    头.push(`<span class="warn">这里只给了前 ${cs.length} 张卡片,还有 ${esc(String(r["还有"]))} 单没列
+      —— 别把 ${cs.length} 当成这段时间的单数</span>`);
+  if(!cs.length) 头.push(`<span class="warn">一张卡片都没有</span>`);
+  const 卡 = cs.map(c => `
+    <button class="ordcard" data-oid="${esc(c["订单"])}">
+      <div class="l1"><span class="cust">${esc(c["客户"]||c["客户号"]||"—")}</span>
+        <span class="amt">${esc(fmtAmt(c["金额"]))}</span></div>
+      <div class="l2">${esc(c["日期"]||"")} · ${esc(c["类型"]||"")} · ${esc(c["状态"]||"")}</div>
+      ${(c["标"]||[]).length ? `<div class="l3">${(c["标"]||[]).map(x =>
+        `<span class="tg">${esc(x)}</span>`).join("")}</div>` : ""}
+      <div class="oid">${esc(c["订单"])}</div>
+    </button>`).join("");
+  return `<div class="ordhead">${头.join("<br>")}</div>
+    <div class="ordcards">${卡}</div>`;
+}
+
+function fmtAmt(v){
+  if(v == null) return "—";
+  const n = Number(v);
+  return isNaN(n) ? String(v) : n.toLocaleString("zh-CN", {maximumFractionDigits: 2}) + " 元";
+}
+
+/* ── 点开一张卡片:详情弹窗 ───────────────────────────────────────
+   ⚠️ **详情是重新向服务端取的,而服务端会再判一遍身份。**
+   一个「前端只显示自己范围内的卡片」的实现,和一个「服务端也拦住了」的,
+   在界面上长得一模一样 —— 直到有人直接改 URL。
+   所以这里拿到的 `看不到` 是真的拦,不是前端装样子。 */
+/* ── 订单里的一件:商品 / 图 / 定制内容 ────────────────────────────
+   ⚠️ **每张图都标出处。** 库里没有「实物照片」这一档 —— 只有 AI 生成的
+      效果图和按属性现画的剪影。
+      > 一张现画的剪影,和一张 AI 效果图,**在那个图片框里长得一模一样** ——
+      > 而顾问可能拿它给客户看,客户会以为那就是实物。
+   ⚠️ **定制内容逐部件列,不压成一句话。**
+      > 一句「定制:真丝素罗」和一张逐部件的清单,在那个商品名上长得一模一样 ——
+      > 而出了色差纠纷时,只有后者答得出「袖子当时选的是哪个色」。 */
+function ordItem(x){
+  const p = x["商品"] || {}, k = x["规格"] || {}, g = x["图"] || {}, cz = x["定制内容"];
+  const 图 = [];
+  if(g["主图"]) 图.push(g["主图"]);
+  // 细节图是 {小程序:[...], ipad:[...]} 或 {⚠️ 解析不了:...}
+  const dd = g["细节图"];
+  if(dd && typeof dd === "object" && !dd["⚠️ 解析不了"])
+    Object.values(dd).forEach(a => Array.isArray(a) && a.forEach(u => 图.push(u)));
+  const 去重 = [...new Set(图)].slice(0, 8);
+  return `<div class="it">
+    <b>${esc(x["name"]||x["sku"]||"")}</b>${x["tag"] ? ` · ${esc(x["tag"])}` : ""}
+    <div style="color:var(--dim);margin-top:2px">${esc(x["sku"]||"")}
+      × ${esc(String(x["qty"]==null?"—":x["qty"]))}
+      · 单价 ${esc(fmtAmt(x["price"]))} · 合计 ${esc(fmtAmt(x["total"]))}</div>
+    ${去重.length ? `<div class="pimg">${去重.map(u =>
+        `<img src="${esc(u)}" alt="">`).join("")}</div>
+      <div class="imgsrc">图的出处:<b>${esc(g["出处"]||"不知道")}</b> ——
+        ${esc(g["⚠️"]||"")}</div>` : ""}
+    ${p["name"] ? `<div class="kv"><span>商品</span><span>${esc(p["name"])}
+      ${p["unit"] ? " / " + esc(p["unit"]) : ""}${p["gender"] ? " / " + esc(p["gender"]) : ""}</span></div>` : ""}
+    ${x["类目全路径"] ? `<div class="kv"><span>类目</span><span>${esc(x["类目全路径"])}</span></div>` : ""}
+    ${k["spec"] ? `<div class="kv"><span>规格</span><span>${esc(k["spec"])}
+      ${k["color"] ? " / " + esc(k["color"]) : ""}${k["size"] ? " / " + esc(k["size"]) : ""}</span></div>` : ""}
+    ${x["pattern_version"] ? `<div class="kv"><span>版型版本</span><span>${esc(String(x["pattern_version"]))}
+      ${x["pattern_version_src"] ? "（" + esc(x["pattern_version_src"]) + "）" : ""}</span></div>` : ""}
+    ${p["介绍"] ? `<div class="pintro">${esc(p["介绍"])}</div>` : ""}
+    ${p["当前标价"] != null ? `<div class="kv"><span>商品当前标价</span>
+      <span>${esc(fmtAmt(p["当前标价"]))}</span></div>
+      <div class="imgsrc">${esc(p["⚠️ 当前标价不是这一单的价"]||"")}</div>` : ""}
+    ${cz ? ordCustom(cz) : ""}
+  </div>`;
+}
+
+function ordCustom(cz){
+  if(cz["⚠️ 收了定制加价而没有部件明细"])
+    return `<div class="czsum bad">${esc(cz["⚠️ 收了定制加价而没有部件明细"])}</div>`;
+  const rows = cz["逐部件"] || [];
+  const czrow = r => `<div class="czrow"><span class="pt">${esc(r["part"]||"")}</span>
+    <span><b>${esc(r["kind"]||"")}</b> · ${esc(r["material"]||"—")}${
+      r["color"] ? " · " + esc(r["color"]) : ""}${
+      Number(r["amount"]||0) ? ` · +${esc(fmtAmt(r["amount"]))}` : ""}
+      ${r["note"] ? `<span class="nt">${esc(r["note"])}</span>` : ""}</span></div>`;
+  const 可 = cz["这一款的可选范围"] || {};
+  return `<details class="cz" open>
+    <summary><b>定制内容</b> · ${esc(String(cz["部件数"]||rows.length))} 个部件 ·
+      ${esc(String(rows.length))} 项选择</summary>
+    ${rows.map(czrow).join("")}
+    <div class="czsum">
+      选项标的加价合计 <b>${esc(fmtAmt(cz["选项标的加价合计"]))}</b> ·
+      订单行上的定制加价 <b>${esc(fmtAmt(cz["订单行上的定制加价"]))}</b>
+      ${cz["⚠️ 两个加价对不上"]
+        ? `<br><span class="bad">${esc(cz["⚠️ 两个加价对不上"])}</span>` : ""}
+      ${可["xz"] ? `<br>这一款可选:${esc(可["xz"])} · 面料 ${esc(可["mt_opts"]||"—")}
+        · 工艺 ${esc(可["kf_opts"]||"—")} · 工期 ${esc(可["lead_days"]||"—")}` : ""}
+    </div>
+  </details>`;
+}
+
+async function openOrder(oid){
+  const ov = $("#od"), bx = $("#odp");
+  ov.classList.add("on");
+  bx.innerHTML = `<button id="odclose">关闭</button><h3>${esc(oid)}</h3>
+    <div class="sub">在取…</div>`;
+  $("#odclose").onclick = closeOrder;
+  let d;
+  try{
+    d = await (await fetch("/api/chat-order/" + encodeURIComponent(oid))).json();
+  }catch(e){
+    bx.innerHTML = `<button id="odclose">关闭</button><h3>取不到</h3>
+      <div class="sub">${esc(String(e))} —— 这是取数失败,<b>不是「这单不存在」</b></div>`;
+    $("#odclose").onclick = closeOrder; return;
+  }
+  if(d && d["看不到"]){
+    bx.innerHTML = `<button id="odclose">关闭</button><h3>看不到这张单</h3>
+      <div class="sub">${esc(d["为什么"]||"")}</div>
+      <div class="note">⚠️ 「这单不在你范围内」和「这单不存在」<b>对外是同一句话</b> ——
+        否则这个接口本身就成了一个「这单存不存在」的探测器。
+        要确认是哪一种,找店长或运营查。</div>`;
+    $("#odclose").onclick = closeOrder; return;
+  }
+  const o = (d && d["订单"]) || {}, cu = (d && d["客户"]) || {}, it = (d && d["明细"]) || [];
+  const kv = (k, v) => `<div class="kv"><span>${esc(k)}</span><span>${esc(v == null ? "—" : String(v))}</span></div>`;
+  bx.innerHTML = `<button id="odclose">关闭</button>
+    <h3>${esc(cu["name"]||o["customer_id"]||"")} · ${esc(fmtAmt(o["amount"]))}</h3>
+    <div class="sub">${esc(o["id"]||"")} · ${esc(d["看的范围"]||"")}
+      ${(d["我的标"]||[]).map(x => `<span class="tg">${esc(x)}</span>`).join(" ")}</div>
+    <h4>订单</h4>
+    ${kv("类型", o["kind"])}${kv("状态", o["status"])}${kv("生产状态", o["prd_status"])}
+    ${kv("下单", o["created"])}${kv("付款", o["paid_at"])}${kv("审核", o["audit_at"])}
+    ${kv("完工", o["produced_at"])}${kv("发货", o["shipped_at"])}
+    ${kv("应付", fmtAmt(o["payable"]))}${kv("已收", fmtAmt(o["received"]))}
+    ${kv("货款", fmtAmt(o["goods_amount"]))}${kv("运费", fmtAmt(o["freight"]))}
+    ${kv("退款状态", o["refund_status"])}${kv("来源", o["source"])}${kv("活动", o["activity"])}
+    ${kv("门店", o["shop"])}${kv("顾问工号", o["advisor_no"])}
+    ${kv("交付方式", o["delivery"])}${kv("地址", o["addr"])}
+    <h4>客户</h4>
+    ${kv("客户号", cu["id"])}${kv("姓名", cu["name"])}
+    ${kv("手机", cu["phone"])}${kv("等级", cu["level"])}${kv("归属门店", cu["shop"])}
+    <h4>明细（${it.length} 件）</h4>
+    ${it.length ? it.map(ordItem).join("")
+      : `<div class="note">这张单在 <code>ordr_item</code> 里<b>一行明细都没有</b> ——
+         这是数据问题,不是「这单没东西」。</div>`}
+    <div class="note">⚠️ 手机号是<b>脱敏</b>的（和别处同一条规矩）。<br>
+      ⚠️ 这一页的权限是<b>服务端重判的</b> —— 不信前端传来的任何范围。</div>`;
+  $("#odclose").onclick = closeOrder;
+}
+
+function closeOrder(){ $("#od").classList.remove("on"); }
+// 点遮罩空白处关掉(和「?」教学层同一个习惯)。**不关 #odp 内部的点击** ——
+// 否则在详情里选文字也会把它关掉。
+document.addEventListener("click", e => {
+  if(e.target && e.target.id === "od") closeOrder();
+});
+
 function toolChip(t){
   let a = "";
   try{ a = JSON.stringify(t.args || {}); }catch(e){ a = ""; }
@@ -663,12 +894,23 @@ function drawStream(){
       : (m.guard_violations || []).length
       ? `<div class="gv"><b>回答体检打回过</b> —— ` +
         m.guard_violations.map(v => esc(v.msg || v)).join("；") + `</div>` : "";
+    // 订单卡片排在**正文之前** —— 它是数据,正文是模型说的话。
+    // 两者不一致时先看到数据,而不是先被那段话带走。
+    const 卡 = (m.trajectory || [])
+      .filter(t => String(t.tool || "").split("__").pop() === 订单工具)
+      .map(ordCards).join("");
     return `<div class="msg a"><div class="wrap">
       ${(m.trajectory || []).map(toolChip).join("")}
+      ${卡}
       <div class="body">${md(m.text)}</div>${gv}
       <div class="meta">${esc(metaLine(m))}</div></div></div>`;
   }).join("");
   s.scrollTop = s.scrollHeight;
+  // 卡片用**事件委托**绑 —— 每次重绘 innerHTML 都会把旧的 onclick 冲掉,
+  // 而「绑了但被冲掉」和「没绑」在点不动这件事上长得一模一样。
+  s.querySelectorAll(".ordcard").forEach(b => {
+    b.onclick = () => openOrder(b.dataset.oid);
+  });
 }
 
 /* ── 图片附件 ─────────────────────────────────────────────

@@ -796,6 +796,15 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  兜底**不是回退**(回退要带版本/年龄/原因/有效期,兜底一样都没有)"
 	@./.venv/bin/python tests/orchestration/test_backstop_limits.py
 	@echo ""
+	@echo "▸ 这次运行**真正生效**的上限是哪几个数,每个数从哪来"
+	@echo "  两个地方在说同一件事:执行策略(组织护栏)和 Agent 自己的 limits ——"
+	@echo "  **两边都有时取更严的那个**,而且**来源必须报出来**:"
+	@echo "     一个「被组织策略拦住」的运行,和一个「Agent 自己配得严才没跑飞」的,"
+	@echo "     **在那次停下来上长得一模一样**"
+	@echo "  ⚠️ 0 不是「无限制」· 两边都没有就抛(不兜底)· 布尔判在整数之前 ·"
+	@echo "  ⚠️ 新口径直接抛 —— **不拿一个计数器冒充两个**(规格 §5.2)"
+	@./.venv/bin/python tests/orchestration/test_effective_caps.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py

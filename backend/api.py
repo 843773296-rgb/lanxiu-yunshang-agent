@@ -3889,6 +3889,15 @@ def factory_chase():
 
 
 # 「下一周的订单」到底查哪一列 —— 四个字段是四份完全不同的单子
+# 中文月份 → 数字。**一张显式的小表,12 条,不是自然语言解析。**
+#
+# 它只用在一件事上:调用方把「一月」原样传进来时,**认出他说的是几月**,
+# 然后走「判不了」那条路把两种读法摆出来 —— 而不是替他猜。
+# > 一个「猜对了」的月份,和一个「问清了」的,**在那份清单上长得一模一样** ——
+# > 而猜错的那次,清单看起来完全正常。
+_中文月 = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
+         "七": 7, "八": 8, "九": 9, "十": 10, "十一": 11, "十二": 12}
+
 _订单日期列 = {
     "下单": ("created",      "客户下单的时间"),
     "完工": ("produced_at",  "工厂报完工的时间(定制单才有)"),
@@ -3921,7 +3930,55 @@ def report_production(order_id=None, event=None, item=None, tracking_no=None):
                     "照「理由」去处理,别换个说法再报一次。"}
 
 
-def orders_by_date(direction=None, days=7, field="下单", limit=50):
+def _订单范围(me):
+    """这个人能看到哪些订单。返回 `(where 片段, 参数, 范围人话, 顾问工号或None)`。
+
+    业务 2026-10-06 拍的三档,**顾问那一档是并集**:
+
+        总部运营   全部门店
+        店长       本店
+        顾问       **他名下客户的单 ∪ 他经手下的单**
+
+    ⚠️ 为什么是并集:这两种读法在 **39% 的订单上给出不同名单**
+    (31660 单里 12393 单的「订单上的顾问」和「客户归属顾问」不是同一个人)。
+    · 只算「名下客户」→ 他帮同事客户下的单,他自己看不到
+    · 只算「经手的单」→ 他休假时同事帮他客户下的单,他看不到
+
+    ⚠️ **而并集之后每一行必须标清是哪一种**,两个数也要分开报:
+    > 一份「我的客户的单」和一份「我做的单」混成一个数,
+    > **业绩就说不清了** —— 而混之前和混之后,那个总数长得一模一样。
+    """
+    import order_scope as _范
+    role, no, shop = me.get("role"), me.get("no"), me.get("shop")
+    话 = _范.范围话(角色=role, 门店=shop)
+    if role == _范.总部运营:
+        return "", [], 话, None
+    if role == _范.店长:
+        if not shop:
+            # ⚠️ **判不了不等于看全部。** 口径那边同一条:算不出「本店」就不放行。
+            # 这里给一条永远不成立的 where —— 返回空清单,而 `话` 里写着为什么。
+            return " AND 1=0", [], 话, None
+        return " AND o.shop=?", [shop], 话, None
+    if role == _范.顾问:
+        if not no:
+            return " AND 1=0", [], 话, None
+        # 并集。**两边都要带上**,而且下面按这两列算标签。
+        return " AND (o.advisor_no=? OR cu.advisor_no=?)", [no, no], 话, no
+    # ⚠️ 三档之外(工匠/版师/财务)**不兜底成「本店」** ——
+    # 兜一个出来的话,一个财务就能看到全店订单,而界面上看不出异常。
+    return " AND 1=0", [], 话, None
+
+
+def _订单标签(行, 顾问号):
+    """这一单对这个顾问是哪一种。顾问之外的角色返回空 —— **不编一个标签出来**。"""
+    # 判定在 `knowledge/order_scope.标`,**这儿不再写一份**。
+    import order_scope as _范
+    return _范.标(角色=_范.顾问 if 顾问号 else None, 工号=顾问号,
+                单的顾问=行.get("顾问"), 客户归属顾问=行.get("客户归属顾问"))
+
+
+def orders_by_date(direction=None, days=7, field="下单", limit=50,
+                   月份=None, 起=None, 止=None):
     """**按时间段列订单** —— 「下周有哪些单要交付」「上周下了多少单」这类问法。
 
     ⚠️ **「下一周」是歧义的,这个工具不替人猜**(业务 2026-09-24 定):
@@ -3951,22 +4008,81 @@ def orders_by_date(direction=None, days=7, field="下单", limit=50):
     今 = _dt.date.fromisoformat(TODAY)
     天 = max(1, min(int(days or 7), 366))
 
-    where, args = [], []
-    if me.get("role") == "顾问":
-        where.append("advisor_no=?"); args.append(me.get("no"))
-    elif me.get("role") != "总部运营":
-        where.append("shop=?"); args.append(me.get("shop"))
-    条 = (" AND " + " AND ".join(where)) if where else ""
+    条, args, 范围话, 顾问号 = _订单范围(me)
 
     def 数(起, 止):
         with _c() as c:
-            return c.execute(f'SELECT COUNT(*) FROM ordr WHERE "{col}" IS NOT NULL '
-                             f'AND "{col}">=? AND "{col}"<=?{条}',
-                             (起.isoformat(), 止.isoformat() + " 23:59:59", *args)).fetchone()[0]
+            return c.execute(
+                f'SELECT COUNT(*) FROM ordr o '
+                f'LEFT JOIN customer cu ON cu.id=o.customer_id '
+                f'WHERE o."{col}" IS NOT NULL AND o."{col}">=? AND o."{col}"<=?{条}',
+                (起.isoformat(), 止.isoformat() + " 23:59:59", *args)).fetchone()[0]
+
+    # ── 绝对区间那条路(业务 2026-10-06 要的「一月全部订单」)──────────
+    #
+    # ⚠️ **「一月」在中文里是歧义的**,和这个工具本来就在拦的「下一周」同一个形状:
+    #     今年 1 月        2026-01-01 ~ 2026-01-31
+    #     最近一个月      今天往前 30 天
+    # 两份单子几乎没有交集。所以调用方把「一月」原样传进来时**不猜** ——
+    # 认出他说的是几月,然后把两种读法各有多少单摆出来,让他挑。
+    绝对 = None
+    if 月份 is not None:
+        m = re.fullmatch(r"(\d{4})-(\d{1,2})", str(月份).strip())
+        if m:
+            y, mo = int(m.group(1)), int(m.group(2))
+            if not 1 <= mo <= 12:
+                return {"error": f"月份里的月是 {mo} —— 得在 1 和 12 之间"}
+            起日 = _dt.date(y, mo, 1)
+            末 = _dt.date(y + (mo == 12), (mo % 12) + 1, 1) - _dt.timedelta(days=1)
+            绝对 = (起日, 末, f"{y} 年 {mo} 月")
+        else:
+            # 认不出 ISO —— 看看是不是「一月」「1月」这类说法
+            原 = str(月份).strip().rstrip("月份 ")
+            mo = _中文月.get(原) or (int(原) if 原.isdigit() and 1 <= int(原) <= 12 else None)
+            if not mo:
+                return {"error": f"月份要写成 `YYYY-MM`(比如 `2026-01`),你给的是「{月份}」",
+                        "note": "**不替你解析自然语言** —— 解析错的那次,"
+                                "清单看起来完全正常"}
+            今年起 = _dt.date(今.year, mo, 1)
+            今年末 = _dt.date(今.year + (mo == 12), (mo % 12) + 1, 1) - _dt.timedelta(days=1)
+            return {"判不了": f"「{月份}」有两种读法,**这两份单子几乎没有交集**",
+                    "今天": TODAY, "按哪一列": f"{field}({col}:{释})",
+                    "候选": [
+                        {"参数": {"月份": f"{今.year}-{mo:02d}"},
+                         "含义": f"{今.year} 年 {mo} 月({今年起} ~ {今年末})",
+                         "有多少单": 数(今年起, 今年末)},
+                        {"参数": {"direction": "往前", "days": 30},
+                         "含义": f"最近一个月({今 - _dt.timedelta(days=30)} ~ {今})",
+                         "有多少单": 数(今 - _dt.timedelta(days=30), 今)}],
+                    "note": "**不替你挑一个** —— 定下来再调一次。"
+                            "(和 direction 那条歧义同一个道理)"}
+    elif 起 is not None or 止 is not None:
+        if not (起 and 止):
+            return {"error": "`起` 和 `止` 要一起给 —— **只给一头的区间没有意义**,"
+                             "而它会被当成「从那天到今天」或者「从头到那天」,两种差很远"}
+        try:
+            起日, 末 = _dt.date.fromisoformat(str(起)), _dt.date.fromisoformat(str(止))
+        except ValueError:
+            return {"error": f"`起`/`止` 要写成 `YYYY-MM-DD`,你给的是「{起}」/「{止}」"}
+        if 末 < 起日:
+            return {"error": f"`止`({末})比 `起`({起日})还早 —— **不替你调换顺序**,"
+                             f"调换之后那份清单看起来完全正常"}
+        绝对 = (起日, 末, f"{起日} ~ {末}")
+
+    if 绝对 and direction is not None:
+        return {"error": "**绝对区间和相对天数同时给了,说不清要哪个** —— "
+                         f"你给了 {绝对[2]},又给了 direction={direction!r}。"
+                         "去掉一个再调一次"}
 
     往后起, 往后止 = 今, 今 + _dt.timedelta(days=天)
     往前起, 往前止 = 今 - _dt.timedelta(days=天), 今
-    if direction not in ("往后", "往前", "future", "past"):
+    # ⚠️ **这条歧义只在相对模式下成立。** 给了绝对区间(月份 / 起+止)时
+    # 根本没有「往哪边数」这件事 —— 第一版漏了 `not 绝对`,于是
+    # `月份="2026-01"` 也被这条拦下来,表现是「它不认我给的月份」,
+    # 而实际上是另一条检查先开了口。
+    # > 一个「参数没传对」的报错,和一个「另一条检查先拦住了」的,
+    # > **在那句「判不了」上长得一模一样。**
+    if not 绝对 and direction not in ("往后", "往前", "future", "past"):
         return {"判不了": f"「{天} 天」要往哪边数,没说清 —— 这两种读法的单子几乎没有交集",
                 "今天": TODAY, "按哪一列": f"{field}({col}:{释})",
                 "候选": [
@@ -3976,22 +4092,68 @@ def orders_by_date(direction=None, days=7, field="下单", limit=50):
                      "有多少单": 数(往前起, 往前止)}],
                 "note": "**不替你挑一个** —— 猜错的表现是给出一份看起来很正常的清单,"
                         "而没有任何地方会提示这不是你要的那一批。把 direction 定下来再调一次。"}
-    往后 = direction in ("往后", "future")
-    起, 止 = (往后起, 往后止) if 往后 else (往前起, 往前止)
+    if 绝对:
+        起, 止, 区间话 = 绝对
+        升序 = True
+    else:
+        往后 = direction in ("往后", "future")
+        起, 止 = (往后起, 往后止) if 往后 else (往前起, 往前止)
+        区间话 = f"{起} ~ {止}"
+        升序 = 往后
+
+    n = max(1, min(int(limit or 50), 200))
     with _c() as c:
-        rs = [dict(zip(("订单", "客户", "类型", "状态", "金额", "门店", "顾问", field),
-                       r)) for r in c.execute(
-            f'SELECT id, customer_id, kind, status, amount, shop, advisor_no, "{col}" FROM ordr '
-            f'WHERE "{col}" IS NOT NULL AND "{col}">=? AND "{col}"<=?{条} '
-            f'ORDER BY "{col}" {"ASC" if 往后 else "DESC"} LIMIT ?',
-            (起.isoformat(), 止.isoformat() + " 23:59:59", *args, max(1, min(int(limit or 50), 200))))]
-    return {"今天": TODAY, "方向": "往后" if 往后 else "往前",
-            "区间": f"{起} ~ {止}", "按哪一列": f"{field}({col}:{释})",
-            "范围": ("我自己的" if me.get("role") == "顾问"
-                    else ("全部门店" if me.get("role") == "总部运营" else me.get("shop"))),
-            "单数": len(rs), "明细": rs,
-            "note": f"按「{field}」这一列排的。同一张单「下单」和「交付」差着好几周,"
-                    f"要的是另一头就换 field 再调一次。"}
+        # 总数**先单独数** —— 不是 len(卡片)。
+        # > 一份「只给了前 20 张卡片」的结果,和一份「这段时间就只有 20 单」的,
+        # > **在屏幕上长得一模一样** —— 除非把总数写在上面。
+        总数 = 数(起, 止)
+        列 = ("订单", "客户号", "客户", "类型", "状态", "金额", "门店", "顾问",
+             "客户归属顾问", "日期")
+        rs = [dict(zip(列, r)) for r in c.execute(
+            f'SELECT o.id, o.customer_id, cu.name, o.kind, o.status, o.amount, '
+            f'       o.shop, o.advisor_no, cu.advisor_no, o."{col}" '
+            f'  FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id '
+            f' WHERE o."{col}" IS NOT NULL AND o."{col}">=? AND o."{col}"<=?{条} '
+            f' ORDER BY o."{col}" {"ASC" if 升序 else "DESC"} LIMIT ?',
+            (起.isoformat(), 止.isoformat() + " 23:59:59", *args, n))]
+        # 顾问那一档:两个数**分开报**(业务 2026-10-06 拍的)
+        分项 = None
+        if 顾问号:
+            一 = lambda 片: c.execute(
+                f'SELECT COUNT(*) FROM ordr o '
+                f'LEFT JOIN customer cu ON cu.id=o.customer_id '
+                f'WHERE o."{col}" IS NOT NULL AND o."{col}">=? AND o."{col}"<=? AND {片}',
+                (起.isoformat(), 止.isoformat() + " 23:59:59")).fetchone()[0]
+            分项 = {
+                "我名下客户的": 一(f"cu.advisor_no='{顾问号}'"),
+                "我经手下的": 一(f"o.advisor_no='{顾问号}'"),
+                "两者重叠": 一(f"cu.advisor_no='{顾问号}' AND o.advisor_no='{顾问号}'"),
+            }
+
+    for r in rs:
+        r["标"] = _订单标签(r, 顾问号)
+        # ⚠️ 客户归属顾问**只用来算标签,不往外报** —— 卡片上不需要它,
+        # 而多报一列别人的归属关系没有用处只有风险。
+        r.pop("客户归属顾问", None)
+
+    出 = {"今天": TODAY, "区间": 区间话, "按哪一列": f"{field}({col}:{释})",
+         "范围": 范围话, "总数": 总数, "卡片数": len(rs), "卡片": rs,
+         # ⚠️ **这一栏必须在。** 它是「只给了前 n 张」和「总共就这么多」的唯一区别。
+         "还有": max(0, 总数 - len(rs)),
+         "note": f"按「{field}」这一列排的。同一张单「下单」和「交付」差着好几周,"
+                 f"要的是另一头就换 field 再调一次。"}
+    if not 绝对:
+        出["方向"] = "往后" if 升序 else "往前"
+    if 分项:
+        出["两个数分开看"] = 分项
+        出["⚠️ 为什么分开"] = (
+            "「我的客户的单」和「我做的单」是两件事,混成一个数**业绩就说不清了** ——"
+            "而混之前和混之后,那个总数长得一模一样。每张卡片上的 `标` 说明它是哪一种")
+    if 总数 > len(rs):
+        出["⚠️ 没给全"] = (f"这段时间一共 {总数} 单,这里只给了前 {len(rs)} 张卡片。"
+                       f"**别把 {len(rs)} 当成这段时间的单数** —— 要更多就加大 limit"
+                       f"(最多 200),要对账就看「总数」那一栏")
+    return 出
 
 
 def fitting_queue(order=None):

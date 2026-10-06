@@ -53,7 +53,7 @@ run "数据层 · truth 表隔离"   python3 backend/selftest.py
 run "写入口身份闸 · 没登录不许改业务数据(打 HTTP 层)" python3 backend/authgate_check.py
 run "员工登录 · 5 条自测" python3 backend/auth.py
 run "路由 · handler 必须真的存在" python3 backend/route_check.py
-run "只读入口冒烟 · 50 个入口真跑一遍(handler 存在≠跑得起来)" python3 backend/page_smoke_check.py
+run "只读入口冒烟 · 54 个入口真跑一遍(handler 存在≠跑得起来)" python3 backend/page_smoke_check.py
 run "写接口冒烟 · 在库的副本上真写一遍(返回 ok≠写进去了)" python3 backend/write_smoke_check.py
 run "产品文档 · 写死的数字和代码对账(文档变假时不会报错)" python3 tools/doc_numbers_check.py
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
@@ -192,6 +192,21 @@ run "契约和库一致吗(手工写进迁移的约束,模型里漏声明会被�
 # (澜绣那侧早有一条「路由 · handler 必须真的存在」,这边一直没有对等的。)
 run "契约端点 · 代码里真有那个路由吗(文档说有而实际 404,文档和契约都是绿的)" \
     python3 管理后台/tools/route_exists_check.py
+# ⚠️ **2026-10-06 加,因为它咬到了:CI 红在 `cd6c4fa` 上。**
+# 我给 `execution_runs` 加了两列(改的是契约),而**契约文档是从契约生成的** ——
+# 改了源没重跑生成器,那份 md 停在上一版。
+# > 一份「和契约一致」的契约文档,和一份「还是上一版」的,
+# > **在那份 md 上长得一模一样** —— 而读它的人会按旧的那份理解这张表。
+#
+# ⚠️ 而更该记的是**为什么本地没拦住**:上面第 189 行那句注释提到了
+# `spec_coverage`,于是我 `grep -c spec_coverage check.sh` 得到 1、以为它在门禁里。
+# > 一行「提到某个检查」的注释,和一行**真跑它**的 run,
+# > **在 grep 的计数上长得一模一样。**
+# 这是这个项目第三次栽在「我写了检查 ≠ 检查在跑」上
+# (`.pyc` 那次 · 43 条对抗测试那次 · 这次),所以把它搬进来。
+# **它不需要数据库**,所以放在这儿没有外部依赖。
+run "契约内部自洽 · 契约文档是最新的 / 端点有权限 / 幂等落成 header" \
+    ./管理后台/.venv/bin/python 管理后台/tools/spec_coverage.py
 # ⚠️ **2026-10-04 加,因为用户在「加资料」页上撞到了它。**
 # 一行反引号把模板字符串截断,紧跟的 `.md` 变成**模板标签调用** ——
 # 而「字符串不是函数」只在运行时炸。整页渲染不出来,
@@ -221,6 +236,8 @@ run "写入校验规则 · 11 个用例" python3 backend/rules.py
 run "控件审计 · 死控件检查"    python3 backend/ui_audit.py
 run "页面内联 JS · 语法(两个站都扫)" python3 agentsite/js_check.py
 run "前端 · 引用的元素必须存在" python3 agentsite/ref_check.py
+run "聊天查订单 · 卡片那头:每张卡片逐条复核 + 总数不是卡片数(41 条)" python3 tools/chat_order_cards_check.py
+run "聊天查订单 · 弹窗那头:越权要拦 + 商品/图/定制内容(46 条)" python3 backend/chat_order_check.py
 run "遮蔽检查 · 局部变量压函数" python3 backend/shadow_check.py
 run "商品库 · 不卖矩阵判不可的组合" python3 backend/catalog_check.py
 run "会员与订单 · 映射/勾稽/门槛" python3 backend/member_order_check.py
@@ -347,6 +364,7 @@ run "旅程口径 · 一次量体是一次触点(16 条自测)" python3 knowledg
 run "归因口径 · 两种分成的校验方向相反(26 条自测)" python3 knowledge/attribution.py
 run "排班口径 · 查不到记录只能表示「还没排」(18 条自测)" python3 knowledge/shift.py
 run "促活口径 · 时间相对他自己,没由头不进名单(25 条自测)" python3 knowledge/reactivate.py
+run "订单范围口径 · 顾问那一档是并集,三档之外不兜底(36 条自测)" python3 knowledge/order_scope.py
 run "流失预警口径 · 八档不是一条线、预警不等于名单(74 条自测)" python3 knowledge/churn.py
 run "商机口径 · 分清是谁说的,别枚举中文说法(19 条自测)" python3 knowledge/oppo.py
 run "归属口径 · 分开只因为下一步不同(15 条自测)" python3 knowledge/owner.py

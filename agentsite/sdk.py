@@ -175,6 +175,43 @@ def _价表里的名字(m):
     return 去日期 if (去日期 in v1.PRICE or 去日期 in v1.DEEPSEEK_PRICE) else None
 
 
+# ── 哪几个工具的返回值要原样递给前端 ──────────────────────────────────
+#
+# 业务 2026-10-06 要的「订单卡片」需要它:**卡片从数据渲染,不是模型吐的**。
+# > 一张模型编出来的订单卡片,和一张真数据渲染的,
+# > **在屏幕上长得一模一样** —— 而前者里的金额、客户、状态可以全是假的。
+#
+# ⚠️ **白名单,不是全挂。** 一轮可能调十几个工具,全挂会把对话历史撑大,
+# 而大多数返回值前端用不上。要加新的卡片类型,往这儿加一个名字。
+结构化回前端 = {"orders_by_date"}
+
+# 单个返回值挂上去的上限(字符)。超了**不挂,而且说清为什么** ——
+# > 一个「因为太大没挂上」的返回值,和一个「这个工具压根没返回」的,
+# > **在前端的 `undefined` 上长得一模一样。**
+_结构化上限 = 200_000
+
+
+def _结构化(content):
+    """把 ToolResultBlock 的 content 解析成 dict/list。解析不出来返回标注过的原文。
+
+    ⚠️ **不抛**:它只是给前端画卡片用的,解析失败不该把整轮对话弄挂。
+    但也**不静默返回 None** —— 那样前端分不出「没这个工具」和「解析失败」。
+    """
+    import json as _j
+    t = _tool_result_text(content)
+    if isinstance(t, (dict, list)):
+        return t
+    if not isinstance(t, str):
+        return {"⚠️ 没解析成结构": f"返回值是 {type(t).__name__}"}
+    if len(t) > _结构化上限:
+        return {"⚠️ 太大没挂": f"{len(t)} 字符,超过 {_结构化上限} —— "
+                             f"前端画不了卡片,去证据面板看原文"}
+    try:
+        return _j.loads(t)
+    except Exception:
+        return {"⚠️ 没解析成结构": t[:400]}
+
+
 def _tool_result_text(content):
     """把 ToolResultBlock 的 content 拆成能看的东西。
 
@@ -908,6 +945,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                       "lanxiu.prompt_chars": len(prompt) if isinstance(prompt, str) else None})
     _当前模型span = _根        # 工具挂在「是哪次模型调用要的它」下面
     _工具span = {}             # tool_use_id → span_id,等返回值回来时对得上
+    _traj下标 = {}             # tool_use_id → traj 里的第几条(返回值要挂回去)
     _模型span = {}             # message_id → span_id,**一次调用分几条消息发,要合成一个**
     # 「这一步花了多久」= 从上一件事结束到这条消息到手。SDK 不给服务端时间戳,
     # 所以**这是等待时长,不是模型的生成时长** —— 网络和排队都算在里面,别拿它判模型快慢。
@@ -975,6 +1013,9 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                         traj.append({"tool": getattr(b, "name", "?"),
                                      "args": getattr(b, "input", {})})
                         _tu = getattr(b, "id", None)
+                        # 记住「这次调用对应 traj 里第几条」—— 返回值是以 user 角色
+                        # 回流的(下面那一支),那时候要能找回来挂上去。
+                        if _tu: _traj下标[_tu] = len(traj) - 1
                         _sid = _树.一次工具调用(
                             父=_当前模型span, 工具=(getattr(b, "name", "?") or "?").rsplit("__", 1)[-1],
                             参数=getattr(b, "input", {}), 调用号=_tu, 起=_now)
@@ -990,6 +1031,22 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                     if not _sid: continue
                     _树.工具回来了(_sid, _tool_result_text(getattr(b, "content", None)),
                                    出错=bool(getattr(b, "is_error", False)), 止=_now)
+                    # ── 把返回值挂到 traj 上(只挂点名的那几个工具)──────────
+                    #
+                    # ⚠️ **为什么前端要拿到返回值:卡片必须从数据渲染。**
+                    # 不给的话,唯一的做法是让模型把卡片吐成 markdown ——
+                    # > 一张**模型编出来**的订单卡片,和一张**真数据渲染**的,
+                    # > **在屏幕上长得一模一样。**
+                    #
+                    # ⚠️ **只挂白名单里的工具**,不是全挂:
+                    # 一轮可能调十几个工具,全挂会把整段对话历史撑大,
+                    # 而大多数返回值前端用不上。
+                    _i = _traj下标.get(getattr(b, "tool_use_id", None))
+                    if _i is not None:
+                        _名 = str(traj[_i].get("tool") or "").rsplit("__", 1)[-1]
+                        if _名 in 结构化回前端:
+                            traj[_i]["result"] = _结构化(
+                                getattr(b, "content", None))
                     _上次时刻 = _now
             elif cls == "ResultMessage":
                 usage = getattr(m, "usage", None) or {}

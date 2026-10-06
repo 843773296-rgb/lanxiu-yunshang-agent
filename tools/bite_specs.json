@@ -4678,8 +4678,8 @@
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "    if 交付[\"状态\"] == \"未通过\":\n        return 未通过时的说明, text, 交付",
-    "new": "    if False:\n        return 未通过时的说明, text, 交付"
+    "old": "    if 交付[\"状态\"] == \"未通过\":\n        _记扣下(state, 交付)\n        return 未通过时的说明, text, 交付",
+    "new": "    if False:\n        _记扣下(state, 交付)\n        return 未通过时的说明, text, 交付"
    }
   ],
   "预期红": "未通过的答案不进正常答案字段"
@@ -5367,5 +5367,65 @@
    }
   ],
   "预期红": "真跑钉回(G01):「预计身高"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g1 不认问题里带的数(题数清空,三处过滤一起失效)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    题数 = {v for v in (_num(m) for m in re.findall(r\"\\d+(?:\\.\\d+)?\", prompt or \"\")) if v is not None}",
+    "new": "    题数 = set()"
+   }
+  ],
+  "预期红": "真跑钉回(P02)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g8 只认 get_order(状态在别的工具返回里也算编)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    没出处 = [w for w in ORDER_ST if w in text and w not in 返回原文]",
+    "new": "    没出处 = [w for w in ORDER_ST if w in text]"
+   }
+  ],
+  "预期红": "真跑钉回(R4)"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "扣下时不记(_记扣下 不调)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        _记扣下(state, 交付)\n",
+    "new": ""
+   }
+  ],
+  "预期红": "答案被扣下时记一份"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g1 已过去的天数也当工期",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if any(k in 小句 for k in 已过标记):\n            continue",
+    "new": "        if False:\n            continue"
+   }
+  ],
+  "预期红": "真跑钉回(WO8001)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g17 只认词表(插字的确认说法认不出)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if re.search(r\"(须|需|要|由)[^。\\n!?]{0,10}确认|不构成[^。\\n!?]{0,8}承诺\", text or \"\"): return None",
+    "new": ""
+   }
+  ],
+  "预期红": "真跑钉回(返修判责):「须由你"
  }
 ]

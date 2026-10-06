@@ -63,6 +63,33 @@ def SQL(s): return ("SQL", s)
 def SQL行(s): return ("SQL行", s)
 
 
+def 带身份的handler():
+    """给 `chat_order_detail` 用的假 handler —— 它的身份**从 cookie 取**。
+
+    ⚠️ 这个入口和别的不一样:它不从参数拿身份,而是 `_me(handler)` 从
+    Cookie 里的 token 换(整个权限体系的地基)。所以冒烟要给它一个真会话,
+    **否则它会正确地返回「看不到」,而冒烟会把那当成失败**。
+    > 一次「权限拦住了」和一次「页面炸了」,在那个非空返回上长得不一样,
+    > 而**在「冒烟没过」这件事上长得一模一样** —— 所以身份要先备好。
+
+    发的是**总部运营**的会话:冒烟要的是「这个入口跑得通」,
+    而三档权限本身由 `backend/chat_order_check.py` 的 31 条专门验。
+    """
+    import datetime as _dt
+    import auth as _auth
+    运 = server.rows("SELECT no,name,role,shop FROM staff "
+                     "WHERE role='总部运营' AND status='启用' LIMIT 1")
+    if not 运:
+        return None
+    tok = "page-smoke-总部运营"
+    with _auth._LOCK:
+        _auth._SESS[tok] = dict(dict(运[0]), at=_dt.datetime.now())
+
+    class _H:
+        headers = {"cookie": f"lx_token={tok}"}
+    return _H()
+
+
 用例 = {
     # ── 详情页:参数是一个真实 id ───────────────────────────────────
     "task_detail":      [(SQL("SELECT id FROM task LIMIT 1"),)],
@@ -105,6 +132,19 @@ def SQL行(s): return ("SQL行", s)
     #    正是只有真跑到才会露出来的。外加一个不存在的 kind,验它不给空文件。
     "export_csv": [("customers", {}), ("orders", {}), ("workorders", {}), ("oplog", {}),
                    ("根本没有这种导出", {})],
+    # ── 聊天里点开订单卡片的那条(2026-10-06 加)────────────────────
+    # ⚠️ **它不该进豁免表** —— 豁免那张表的注释写着「每一条都要写清为什么,
+    # 否则会变成懒得写用例就往里扔的垃圾桶」,而这一条**没有理由可写**:
+    # 它是真的页面入口,而且是管权限的那种。
+    # 身份从 cookie 取(`_me`),所以参数里要带一个真会话的 handler ——
+    # 不带的话它会**正确地**返回「看不到」,而冒烟会把那当成失败。
+    "chat_order_detail": [(SQL("SELECT id FROM ordr WHERE kind='定制品订单' LIMIT 1"),
+                           ("带身份", None)),
+                          # 标品单也跑一遍:定制那条路会走 `item_part_choice`,
+                          # 标品不走 —— **两条路都要跑过**,
+                          # 否则「标品单点开会炸」这件事要等顾问点下去才知道
+                          (SQL("SELECT id FROM ordr WHERE kind='标品订单' LIMIT 1"),
+                           ("带身份", None))],
 }
 
 # 豁免:不是页面入口,是工具函数。**每一条都要写清为什么**,
@@ -123,6 +163,8 @@ def SQL行(s): return ("SQL行", s)
 }
 
 咬合 = [
+    ('从用例表里删掉 chat_order_detail(聊天点开订单那条从此不被冒烟,而检查照样绿)',
+     'do_GET 走得到的函数,都在用例表或豁免表里'),
     ('把 measure_of 那处修复整个退回去(既不造 measured_by 字段,也不兜底)—— 这正是 2026-09-17 之前的样子',
      '每个只读入口都拿真数据跑得通'),
     ('从用例表里删掉 customer_detail 那一行(某个页面从此不被验,而检查照样绿)',
@@ -181,7 +223,14 @@ def main():
             真参 = []
             缺 = False
             for a in args:
-                if isinstance(a, tuple) and len(a) == 2 and a[0] in ("SQL", "SQL行"):
+                if isinstance(a, tuple) and len(a) == 2 and a[0] == "带身份":
+                    h = 带身份的handler()
+                    if h is None:
+                        坏.append(f"{fn}:库里没有在职的总部运营 —— "
+                                 f"**拿不到身份不算通过**")
+                        缺 = True; break
+                    真参.append(h)
+                elif isinstance(a, tuple) and len(a) == 2 and a[0] in ("SQL", "SQL行"):
                     cur = c.execute(a[1]); row = cur.fetchone()
                     if not row or row[0] is None:
                         坏.append(f"{fn}:库里取不到真参数(`{a[1]}`)—— **拿不到样本不算通过**")

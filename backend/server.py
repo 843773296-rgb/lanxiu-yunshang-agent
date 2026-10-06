@@ -530,6 +530,204 @@ TAB_MAP={"全部":None,"待确认":"待付款",
          "已生产":"待发货","待发货":"待发货","已发货":"待收货","待完成":"待收货",
          "完成":"已完成","取消":"已关闭"}
 
+def _图们(product_row):
+    """这一款的图,**每一张都带出处**。
+
+    ⚠️ **这是这段代码存在的主要理由。** 库里没有「实物照片」这一档 ——
+    只有 AI 生成的效果图(`.png/.jpg/...`)和按属性现画的剪影(`.svg`)。
+    > 一张现画的剪影,和一张 AI 效果图,**在那个图片框里长得一模一样** ——
+    > 而顾问可能拿它给客户看,客户会以为那就是实物。
+
+    `图来源()` 那段注释说的是同一件事:「『没做』和『做了』必须在界面上分得开,
+    不能只有代码知道。」
+
+    ⚠️ **地址结尾是 `.svg` 而出处可能是「生成图」,这两件事不矛盾** ——
+    2026-10-06 我为此误判过一次。`/img/` 那一层按「**这一张出了没有**」决定
+    发 png 还是现画 svg(地址不变,`content-type` 说实话),
+    所以库里几千条 `.svg` 地址不用动。
+    > 一个「地址和实际内容不一致」的 bug,和一个「刻意让地址保持稳定」的设计,
+    > **在那个 `.svg` 后缀上长得一模一样** —— 差别要读那一层的代码才看得出。
+    """
+    import json as _j
+    spu = product_row.get("spu")
+    出 = {"主图": product_row.get("img_main"),
+         "出处": 图来源(spu) if spu else None,
+         "⚠️": "**两种都不是实物照片** —— 「生成图」是 AI 出的效果图,"
+               "「示意图」是按商品属性现画的剪影。给客户看之前要说清"}
+    for 键, 列 in (("细节图", "img_detail"), ("介绍图", "img_intro")):
+        v = product_row.get(列)
+        if not v:
+            continue
+        try:
+            出[键] = _j.loads(v)
+        except Exception:
+            # ⚠️ 解析不了**不静默丢掉** —— 否则「这款没有细节图」和
+            # 「那一列存了个解析不了的东西」在界面上长得一模一样。
+            出[键] = {"⚠️ 解析不了": str(v)[:120]}
+    return 出
+
+
+def _补件上的商品(it):
+    """给订单的每一件补上:商品信息 / 图(带出处) / **定制选了什么**。
+
+    ## ⚠️ 定制内容是**按部件**的,不是一句话
+
+    `item_part_choice` 一件可能有七八条:主身 / 袖 / 裙 / 内衬 × 面料 / 工艺,
+    每条带材料、颜色、加价、说明。
+    > 一句「定制:真丝素罗」和一张逐部件的清单,**在那个商品名上长得一模一样** ——
+    > 而出了色差纠纷时,只有后者答得出「袖子当时选的是哪个色」。
+
+    ## ⚠️ 两个加价都报,对不上**不调和**
+
+    `ordr_item.custom_amount` 是客户实付的加价;
+    逐条 `item_part_choice.amount` 加起来是选项标的加价。
+    这两个数**应该相等**,而它们可以不等(改过选项、给过优惠、数据漂了)。
+    > 一个「两个数恰好相等」的订单,和一个「我们只报了其中一个」的,
+    > **在那一行加价上长得一模一样。**
+    所以两个都给,不等时标出来 —— 不替它们挑一个。
+    """
+    spu = it.get("spu")
+    if spu:
+        p = rows("""SELECT spu, name, category, kind, status, base_price, unit,
+                           gender, remark, img_main, img_detail, img_intro,
+                           pattern, template FROM product WHERE spu=?""", spu)
+        if p:
+            pr = dict(p[0])
+            it["商品"] = {k: pr.get(k) for k in
+                        ("spu", "name", "category", "kind", "unit", "gender",
+                         "pattern", "template")}
+            # ⚠️ **商品标价和这一单实收不是一回事,而摆在一起会被读成「打了折」。**
+            # 实测:这一款 `product.base_price` 是 56820,而订单行 `base_amount`
+            # 是 4200 —— 差 13 倍(标价是整套、订单行按件/按当时的价)。
+            # > 一个「商品当前标价」和一个「这一单当时的价」摆在一起而不说明,
+            # > **在那两个数字上长得一模一样** —— 顾问会以为系统算错了,
+            # > 或者更糟:以为给客户打过折,然后照着它去解释。
+            it["商品"]["当前标价"] = pr.get("base_price")
+            it["商品"]["⚠️ 当前标价不是这一单的价"] = (
+                f"「当前标价」是商品现在的挂牌价;这一件当时的价看"
+                f"`base_amount`({it.get('base_amount')})和 `total`"
+                f"({it.get('total')})—— **两个数不该拿来相减当折扣**")
+            # 「介绍」就是 remark —— 库里没有单独的长描述列,**不编一段出来**
+            it["商品"]["介绍"] = pr.get("remark")
+            it["图"] = _图们(pr)
+            it["类目全路径"] = cat_paths().get(pr.get("category"))
+    if it.get("sku"):
+        k = rows("""SELECT code, spec, color, size, collar, price, img
+                      FROM sku WHERE code=?""", it["sku"])
+        if k:
+            it["规格"] = dict(k[0])
+
+    # ── 定制内容 ──────────────────────────────────────────────
+    ch = rows("""SELECT kind, part, material, color, amount, note
+                   FROM item_part_choice WHERE item_id=? ORDER BY part, kind""",
+              it.get("id"))
+    if ch:
+        逐条 = [dict(x) for x in ch]
+        标的 = round(sum(float(x.get("amount") or 0) for x in 逐条), 2)
+        实付 = round(float(it.get("custom_amount") or 0), 2)
+        it["定制内容"] = {
+            "逐部件": 逐条,
+            "部件数": len({x.get("part") for x in 逐条 if x.get("part")}),
+            "选项标的加价合计": 标的,
+            "订单行上的定制加价": 实付,
+        }
+        if abs(标的 - 实付) > 0.01:
+            # ⚠️ **不调和,只报出来。** 哪个对要人去查(改过选项?给过优惠?)
+            it["定制内容"]["⚠️ 两个加价对不上"] = (
+                f"选项标的 {标的} vs 订单行上的 {实付},差 {round(实付 - 标的, 2)} —— "
+                f"**不替它们挑一个**:可能是改过选项、给过优惠,也可能是数据漂了")
+        if spu:
+            pc = rows("SELECT xz, mt_opts, kf_opts, lead_days, note "
+                      "FROM product_custom WHERE spu=?", spu)
+            if pc:
+                it["定制内容"]["这一款的可选范围"] = dict(pc[0])
+    elif (it.get("custom_amount") or 0) > 0:
+        # ⚠️ 收了定制加价**而一条部件选择都没有** —— 这是数据问题,要显形。
+        # > 一件「没有定制明细」的定制品,和一件「标品」,
+        # > **在那张订单上长得一模一样** —— 而前者收了钱却说不出收的是什么。
+        it["定制内容"] = {"⚠️ 收了定制加价而没有部件明细":
+                       f"这一件加价 {it['custom_amount']} 元,而 "
+                       f"`item_part_choice` 里一条都没有 —— "
+                       f"**这是数据问题,不是「没有定制」**"}
+    return it
+
+
+def chat_order_detail(oid, handler):
+    """**聊天里点开一张订单卡片时,这张单的全部信息** —— 业务 2026-10-06 要的弹窗。
+
+    ## ⚠️ 这个函数存在的全部理由是**权限在服务端再判一遍**
+
+    卡片是工具按身份取数给的,前端只显示自己范围内那些。而弹窗要按订单号取数:
+    > 一个「前端只显示自己范围内的卡片」的实现,和一个「服务端也拦住了」的,
+    > **在界面上长得一模一样** —— 直到有人直接改 URL。
+
+    所以这里**不信任何传进来的范围参数**,身份只从 Cookie 换
+    (`_me`,和写口那套同一个地基)。
+
+    ## 三档范围(和 `backend/api.py` 的 `_订单范围` 同一套口径)
+
+        总部运营   全部门店
+        店长       本店
+        顾问       **他名下客户的单 ∪ 他经手下的单**(业务 2026-10-06 拍的并集)
+
+    ⚠️ **看不到要和「不存在」分开报。**
+    > 一句「订单不存在」和一句「这单不在你范围内」,**在界面上长得一模一样** ——
+    > 而前者会让人去查数据,后者该去找店长。
+    不过**对外都不泄露存在性**:两种都回 403 形状的 `看不到`,
+    而**理由里分开说**(`为什么`)—— 既不骗自己人,也不告诉外人「这单存在」。
+    """
+    u = _me(handler)
+    if not u:
+        return {"看不到": True, "为什么": "没登录 —— 不知道你是谁就不知道该给你看什么"}
+    r = rows("SELECT * FROM ordr WHERE id=?", oid)
+    if not r:
+        # ⚠️ 不存在也走同一个形状 —— 否则「存在但你看不到」和「不存在」
+        # 可以靠两种不同的回复被区分出来,那本身就是一条信息泄露。
+        return {"看不到": True, "为什么": "查不到这张单(可能不存在,也可能不在你范围内)"}
+    o = r[0]
+    # 判定在 `knowledge/order_scope`,**这儿一条判据都没有**。
+    # 第一版我在这儿和 `backend/api.py` 各写了一份 ——
+    # > 一份写在工具里的范围口径,和一份写在接口里的,**在各自的测试里都绿**,
+    # > 而它们可以给出不同的名单:卡片列着而点开说看不到(顾问以为系统坏了),
+    # > 或者更糟 —— 卡片没列而弹窗给得出来(那是一个拿 URL 就能捞数据的洞)。
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.dirname(
+        _o.path.abspath(__file__))), "knowledge"))
+    import order_scope as _范
+    cu = rows("SELECT advisor_no FROM customer WHERE id=?", o["customer_id"])
+    归属 = cu[0]["advisor_no"] if cu else None
+    role = u.get("role")
+    能, 为什么 = _范.看得到吗(角色=role, 工号=u.get("no"), 门店=u.get("shop"),
+                         单的门店=o["shop"], 单的顾问=o["advisor_no"],
+                         客户归属顾问=归属)
+    if not 能:
+        return {"看不到": True, "为什么": 为什么}
+    标 = _范.标(角色=role, 工号=u.get("no"),
+              单的顾问=o["advisor_no"], 客户归属顾问=归属)
+
+    明细 = rows("""SELECT id, sku, name, tag, price, qty, spu, base_amount,
+                         custom_amount, total, wearer_id, pattern_version,
+                         pattern_version_src FROM ordr_item WHERE order_id=?""", oid)
+    for it in 明细:
+        _补件上的商品(it)
+    客 = rows("SELECT id, name, phone, level, shop FROM customer WHERE id=?",
+             o["customer_id"])
+    # ⚠️ 手机号**脱敏**(和别处同一条规矩:对外只给脱敏手机号)
+    if 客:
+        客 = dict(客[0])
+        ph = 客.get("phone") or ""
+        客["phone"] = (ph[:3] + "****" + ph[-4:]) if len(ph) >= 7 else ("有" if ph else None)
+    else:
+        客 = None
+    return {
+        "订单": dict(o), "客户": 客, "明细": 明细, "我的标": 标,
+        "看的范围": _范.范围话(角色=role, 门店=u.get("shop")),
+        "⚠️ 口径": "这里的权限是**服务端重判的**,不信前端传来的任何范围 —— "
+                 "一个只在前端过滤的实现,和一个服务端也拦住了的,"
+                 "在界面上长得一模一样",
+    }
+
+
 def order_list(q):
     kw=(q.get("q") or [""])[0].strip()
     tab=(q.get("tab") or ["全部"])[0]
@@ -2715,6 +2913,11 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/staff": return self._send(staff_list(Q))
         if p=="/api/schedule": return self._send(schedule_list(Q))
         if p=="/api/orders": return self._send(order_list(Q))
+        # ⚠️ 聊天里点开卡片用的那条 —— **它带身份**,而 `/api/orders` 不带
+        #    (那条是后台列表页在用的,返回全部订单)。两条路名字只差一点,
+        #    **而一条带权限一条不带** —— 所以这里不复用那个函数。
+        if p.startswith("/api/chat-order/"):
+            return self._send(chat_order_detail(p.split("/api/chat-order/")[1], self))
         if p=="/api/products": return self._send(product_list(Q))
         if p.startswith("/api/product/"): return self._send(product_detail(p.split("/api/product/")[1]))
         if p.startswith("/api/craft-doc/"): return self._send(craft_doc(p.split("/api/craft-doc/")[1]))

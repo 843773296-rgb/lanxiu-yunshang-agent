@@ -35,6 +35,14 @@ _这 = os.path.dirname(os.path.abspath(__file__))
 根 = os.path.dirname(os.path.dirname(_这))
 sys.path.insert(0, os.path.join(根, "services", "api", "app", "runtime"))
 sys.path.insert(0, os.path.join(根, "services", "api", "app", "contract"))
+# ⚠️ **app 目录也要加。** 2026-10-06 发现:`agent_loop` 在提交 6432d20 里
+# 多了一行 `import capabilities as CAP`,而 `capabilities.py` 在 app 目录下 ——
+# 于是这份**43 条对抗测试从那次提交起一条都没跑过**(import 就炸)。
+# > 一份「挂在 Makefile 里」的自测,和一份真在跑的,
+# > **在那份清单上长得一模一样。**
+# `orchestration_registry_check` 自己的输出早点出了这个盲区:
+# 「这一条证明的是**有入口**,不是那个入口在 CI 里跑」。
+sys.path.insert(0, os.path.join(根, "services", "api", "app"))
 import tool_gateway as G  # noqa: E402
 import agent_loop as A  # noqa: E402
 import dsl as DS  # noqa: E402
@@ -133,7 +141,8 @@ class 脚本模型:
 }
 
 
-def 跑(回答们, *, 配置=None, 批准=None, 账本=None, fs=None, 记事=None):
+def 跑(回答们, *, 配置=None, 批准=None, 账本=None, fs=None, 记事=None,
+      执行策略=None):
     fs = fs or 文件系统()
     m = 脚本模型(回答们)
     事件 = []
@@ -147,7 +156,7 @@ def 跑(回答们, *, 配置=None, 批准=None, 账本=None, fs=None, 记事=Non
         批准查询=(lambda 调, 摘: 批准(调, 摘)) if 批准 else None,
         记事=lambda 种, 载: (事件.append((种, 载)),
                           (记事 or (lambda *a: None))(种, 载))[0],
-        run_id="ar1")
+        run_id="ar1", 执行策略=执行策略)
     return r, m, fs, 事件
 
 
@@ -416,6 +425,96 @@ ck("认不出的 Schema 关键字**当场报**,不静默忽略",
    G.校验Schema({"a": 1}, {"type": "object", "patternProperties": {}}), 1)
 ck("对照:合法参数过得去",
    not G.校验Schema({"q": "x"}, 搜索["input_schema"]), 1)
+
+# ── 执行策略接上来之后:**数一个都不许变,只换来源** ──────────────────
+#
+# `agent_loop` 原来写的是 `限.get("max_model_turns", 8)` / `(..., 12)` ——
+# 那两个内联默认值和 `兜底上限.py` 从规格 §5.3 抄来的是**同一对**。
+# > 一处写在 `.get(..., 8)` 里的兜底,和一处写在策略模块里的,
+# > **在那个 8 上长得一模一样** —— 而同一个事实两个来源,必然漂。
+#
+# 所以接线的判据不是「它跑起来了」,而是:
+# > 一次「只换了来源」的接线,和一次「顺手把数也改了」的,
+# > **在「跑起来没报错」上长得一模一样。**
+print("\n▸ 执行策略接上来:数不变,来源变得说得出来")
+import 兜底上限 as _兜
+import 策略冻结 as _冻
+
+兜 = _兜.兜底(入口=_冻.后台编排)
+无策略配置 = {"limits": {}}          # Agent 自己什么都没填 → 落到内联默认值
+
+_, _, _, ev无 = 跑([完成], 配置=无策略配置)
+_, _, _, ev有 = 跑([完成], 配置=无策略配置, 执行策略=兜)
+
+内联 = next((载 for 种, 载 in ev无 if 种 == "agent.limits_inline"), None)
+解析 = next((载 for 种, 载 in ev有 if 种 == "agent.limits_resolved"), None)
+ck("不传策略时记一笔 agent.limits_inline", bool(内联), 1, str(内联)[:40])
+ck("传了策略时记一笔 agent.limits_resolved", bool(解析), 1, str(解析)[:40])
+ck("🔑 **两个数一个都没变**(8 / 12 两边一样)",
+   (内联 or {}).get("上限") == (解析 or {}).get("上限"), 1,
+   f"内联 {(内联 or {}).get('上限')} vs 解析 {(解析 or {}).get('上限')}")
+ck("而且就是规格 §5.3 那两个数",
+   (解析 or {}).get("上限") == {"max_model_turns": 8, "max_tool_attempts": 12}, 1,
+   str((解析 or {}).get("上限")))
+ck("🔑 变的是「每个数从哪来」说得出来了",
+   bool((解析 or {}).get("每个数从哪来")) and "每个数从哪来" not in (内联 or {}), 1,
+   str((解析 or {}).get("每个数从哪来")))
+ck("策略从哪来也记下了(内置兜底 / 已发布 / 回退)",
+   "内置兜底" in str((解析 or {}).get("策略从哪来")), 1,
+   str((解析 or {}).get("策略从哪来")))
+ck("没传策略那一笔**明说组织级护栏没参与**",
+   "没有传执行策略" in str((内联 or {}).get("⚠️")), 1)
+
+# 🔑 Agent 自己填得更严 → 用它的;填个大数 → 被策略压回去。
+# **两个方向都要验**,否则「总是用策略」和「取更严」分不开。
+_, _, _, ev严 = 跑([完成], 配置={"limits": {"max_model_turns": 3,
+                                          "max_tool_attempts": 4}},
+                 执行策略=兜)
+严 = next((载 for 种, 载 in ev严 if 种 == "agent.limits_resolved"), {})
+ck("Agent 填得更严 → 用 Agent 的(3 / 4)",
+   严.get("上限") == {"max_model_turns": 3, "max_tool_attempts": 4}, 1,
+   str(严.get("上限")))
+ck("而来源说清是 Agent 更严",
+   all("Agent" in v for v in (严.get("每个数从哪来") or {}).values()), 1,
+   str(严.get("每个数从哪来")))
+_, _, _, ev松 = 跑([完成], 配置={"limits": {"max_model_turns": 999,
+                                          "max_tool_attempts": 999}},
+                 执行策略=兜)
+松 = next((载 for 种, 载 in ev松 if 种 == "agent.limits_resolved"), {})
+ck("🔑 Agent 填 999 → 被策略压回 8 / 12(**填个大数退不出护栏**)",
+   松.get("上限") == {"max_model_turns": 8, "max_tool_attempts": 12}, 1,
+   str(松.get("上限")))
+ck("而来源说清是策略更严",
+   all("策略" in v for v in (松.get("每个数从哪来") or {}).values()), 1,
+   str(松.get("每个数从哪来")))
+
+# ⚠️ **算不出上限 → 抛,不退回默认值。** 规格 §4.3:
+# 配置服务不可用不等于额度可以清零。
+try:
+    跑([完成], 配置=无策略配置,
+      执行策略={"limits": {}, "counter_schema_version": _冻.旧口径})
+    ck("策略里一个 limits 都没有 → 抛", False, 1, "它没抛")
+except ValueError as e:
+    ck("🔑 算不出上限 → **抛,不退回默认值**", "算不出这次的有效上限" in str(e), 1)
+try:
+    跑([完成], 配置=无策略配置,
+      执行策略={"limits": {"model_request_cap": 8, "tool_attempt_cap": 12},
+              "counter_schema_version": _冻.新口径})
+    ck("新口径 → 抛", False, 1, "它没抛")
+except ValueError as e:
+    ck("新口径的策略 → **抛**(不拿一个计数器冒充两个)", "冒充" in str(e), 1)
+
+# 🔑 上限真的在拦吗 —— 把回合压到 1,看它停不停
+_, _, _, ev停 = 跑([
+    {"tool_calls": [{"id": "s1", "name": "search", "arguments": {"q": "甲"}}]},
+    {"tool_calls": [{"id": "s2", "name": "search", "arguments": {"q": "乙"}}]},
+    完成],
+                 配置={"limits": {}},
+                 执行策略=dict(兜, limits={"model_request_cap": 1,
+                                        "tool_attempt_cap": 12}))
+停了 = [载 for 种, 载 in ev停 if 种 == "agent.stopped"]
+ck("🔑 策略把回合压到 1 → **真的停了**(不是只记了个数)",
+   bool(停了), 1, str(停了[:1])[:70])
 
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 for x in 挂:
