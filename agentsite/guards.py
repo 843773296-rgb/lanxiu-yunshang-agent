@@ -62,6 +62,8 @@ RE_BODY = re.compile(r"(\d+(?:\.\d+)?)\s*(?:[-–—~至]\s*\d+(?:\.\d+)?\s*)?"
 
 # 整单结论的信号词 —— 只有给总量时才要求调过对应的算账工具
 TOTAL_D  = ("整单", "总共", "一共", "交期", "工期", "多久", "大概要", "预计", "能拿到", "交付")
+# 「距离」也收:「距离交期还有 20 天」是在报日期差,同样不是在估整单工期
+已过标记 = ("逾期", "超期", "至今", "距今", "距离", "已过", "过了", "已经", "晚了", "之前", "天前", "延误")
 TOTAL_M  = ("总价", "合计", "报价", "价格", "多少钱", "售价", "要花")
 PRICEY   = ("售价", "报价", "价格", "多少钱", "卖", "要花", "收")
 HEDGE    = ("物料成本", "不含", "不是售价", "不是报价", "仅物料", "材料成本")
@@ -235,14 +237,22 @@ def _查到过(v, text, i, 查到的数, calls):
 
 
 # ── 体检项 ──────────────────────────────────────────────────────────────
-def g1_no_source(text, calls):
+def g1_no_source(text, calls, prompt=""):
     """给了数字结论,却没查过 —— **「该查的没查就答」是工具变多之后最高频的失败**,
     而它恰恰是评测集最难覆盖的:答案看起来完全正常,只是那个数字是编的。"""
     monies, days = _monies(text), _days(text)
+    # ⚠️ 10-06 运营评测真跑:概念题「潜在流失 12 分和休眠 14 分能比吗」「分成加起来 200% 是不是算错了」——
+    # 答案里的 12 / 14 / 100 是**用户在问题里自己说的**,没调工具也不是编的。被当成「没出处」两次打回、整份扣下(T02)。
+    # 问题里出现过的数,算有出处
+    题数 = {v for v in (_num(m) for m in re.findall(r"\d+(?:\.\d+)?", prompt or "")) if v is not None}
+    if 题数:
+        monies = [(v, i) for v, i in monies if v not in 题数]
+        days = [(a, b, i) for a, b, i in days if a not in 题数]
     # 带单位的数**默认算「查出来的」**,只有贴着做法动作词才不算
     # (「裙长留 5cm 折边」是决定,不是查来的数)
     bodies = [(v, i) for v, i in _bodies(text)
-              if not _near(text, i, 做法词) and not _near(text, i, 限定记号, span=10)]
+              if not _near(text, i, 做法词) and not _near(text, i, 限定记号, span=10)
+              and v not in 题数]
     if not (monies or days or bodies): return None
     if not calls:
         哪 = ("金额/工期" if (monies or days) else "尺寸/件数/积分/百分比这类**只能查出来**的数")
@@ -283,6 +293,11 @@ def g1_no_source(text, calls):
         if _near(text, i, TOTAL_M) and not _called(calls, "kb_bom") and not _原样出处(text, i, calls):
             return f"答案报了总价/报价(¥{v:g}),但没调 kb_bom 算过 —— 价格不能凭印象说"
     for a, b, i in days:
+        # ⚠️ 10-06 人工任务角色真跑:「**逾期** 6 天(交期 09-30)」「交付时间 09-30,**距今** 6 天」—— 是**已经过去的天数**,
+        # 挨着「交期 / 交付」就被当成整单工期,两份答案因此整份扣下。已过去的天数不是工期:同小句有经过标记就不管
+        小句 = tm._seg_before(text, i, 20) + tm._seg_after(text, i, 20)
+        if any(k in 小句 for k in 已过标记):
+            continue
         if _near(text, i, TOTAL_D) and not _called(calls, "kb_lead") and not _原样出处(text, i, calls):
             return f"答案给了整单工期({a:g} 天),但没调 kb_lead 算过 —— 工期不能凭印象说"
     return None
@@ -651,8 +666,13 @@ def g8_business_fact(text, calls):
     """
     specific = bool(RE_ORDID.search(text)) or any(w in text for w in SPECIFIC)
     if not specific: return None
-    if any(w in text for w in ORDER_ST) and not _called(calls, "get_order"):
-        return "答案里给了某一单的状态,但没调 get_order 查过 —— 订单状态不能凭印象说"
+    # ⚠️ 10-06 运营评测真跑:R3 的状态是 recovery_queue 查出来的、R4 的「已取消 / 爽约」是**预约**的状态 ——
+    # 只认 get_order 时都被判「凭印象说订单状态」。状态词**原样出现在本轮某个工具返回里**,就是查过的(和 g1 同一个思路)
+    返回原文 = " ".join(c.get("output") if isinstance(c.get("output"), str)
+                     else json.dumps(c.get("output"), ensure_ascii=False, default=str) for c in calls or [])
+    没出处 = [w for w in ORDER_ST if w in text and w not in 返回原文]
+    if 没出处 and not _called(calls, "get_order"):
+        return f"答案里给了某一单的状态(「{没出处[0]}」),但没调 get_order 查过 —— 订单状态不能凭印象说"
     for w in STOCK_W:
         i = text.find(w)
         if i >= 0 and not _called(calls, "get_stock"):
@@ -1029,6 +1049,10 @@ def g17_liability_promise(text, calls):
     soft = sum(1 for w in LIAB_SOFT if w in text)
     if hard < 1 and soft < 2: return None
     if tm.mentions(text, CONFIRM): return None
+    # ⚠️ 10-06 返修判责真跑:「这是建议,**须由你(店长)确认后执行,不构成对外承诺**」被判没写确认 ——
+    # 词表是「由店长 / 须确认 / 不构成承诺」,中间多插了几个字就对不上(又是逐字比)。查结构:
+    # 「须 / 需 / 要 / 由 …… 确认」或「不构成 …… 承诺」,中间允许隔几个字
+    if re.search(r"(须|需|要|由)[^。\n!?]{0,10}确认|不构成[^。\n!?]{0,8}承诺", text or ""): return None
     return ("这是一份判责结论,但没写明**须由人确认后执行**。"
             "判责每一条都对着钱 —— 「我方,免费返修」被原样念给客户,"
             "就等于商家已经认了责,而**认责没有回退键**。"
@@ -1872,6 +1896,7 @@ def 交付处理(state, text, 体检开着=True, 跑完了=True):
     **未通过的答案不进正常答案字段** —— 换成受控说明,草稿另存给人核对。"""
     交付 = 交付判定(state, text, 体检开着=体检开着, 跑完了=跑完了)
     if 交付["状态"] == "未通过":
+        _记扣下(state, 交付)
         return 未通过时的说明, text, 交付
     return text, None, 交付
 
@@ -1892,6 +1917,30 @@ def 最终违规(state, 交付):
         if v.get("check") in 最后:
             留[v["check"]] = v           # 同一条规则留最后一次的原话
     return list(留.values())
+
+
+扣下记录 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "evals", "withheld.jsonl")
+
+
+def _记扣下(state, 交付):
+    """被扣下的答案记一份:问题 + 每次尝试的原文 + 没过的规则 + 调了哪些工具。
+
+    10-06:人工任务角色 15 套评测里十来道被整份扣下,而大多数评测的结果文件不存草稿、不存是哪条规则 ——
+    **扣下得对不对事后判不了**。在源头记,所有评测和真实使用都覆盖到。记录仪坏了不许影响主流程。
+    """
+    try:
+        import datetime as _dt
+        with open(扣下记录, "a", encoding="utf-8") as f:
+            f.write(json.dumps(dict(
+                时间=_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                问题=str(state.get("prompt") or "")[:500],
+                尝试=[dict(结果=a.get("结果"), 失败项=a.get("失败项"), 原文=(a.get("原文") or "")[:1500])
+                     for a in 交付.get("尝试") or []],
+                违规=[dict(check=v.get("check"), msg=(v.get("msg") or "")[:200]) for v in state.get("violations") or []],
+                工具=[(c.get("tool") or "").rsplit("__", 1)[-1] for c in state.get("calls") or []]),
+                ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 
 
 未通过时的说明 = ("这条回答没有通过交付前检查(改过一次仍不合格),**没有作为正式答复给出**,需要人工核对。"

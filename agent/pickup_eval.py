@@ -152,11 +152,52 @@ def 挑():
         久 = c.execute("""SELECT o.id FROM ordr o JOIN pickup p ON p.order_id=o.id WHERE o.shop=?
                          AND o.kind='定制品订单' AND o.status='待完成' AND p.fit_at <= ? ORDER BY o.id""",
                       (s, (datetime.datetime.now() - datetime.timedelta(days=16)).strftime("%Y-%m-%d %H:%M"))).fetchall()
-        if 顾问 and len(到店) >= 2 and 路上 and len(久) >= 2 and 分 and 多件:
+        # 「新」那张在 N04 里会被 准备() 改成「3 天前签收」—— 它**不需要本来就满 15 天**,同店任一张待完成就行。
+        # 原来要求满 16 天的有两张,是把两种用途绑在了一起(10-06:世界往前走,三家店满 16 天的只剩 1 张,整套拒跑)
+        新 = c.execute("""SELECT o.id FROM ordr o JOIN pickup p ON p.order_id=o.id WHERE o.shop=?
+                          AND o.kind='定制品订单' AND o.status='待完成' AND o.id<>? ORDER BY o.id LIMIT 1""",
+                       (s, 久[0][0] if 久 else "")).fetchone()
+        if 顾问 and len(到店) >= 2 and 路上 and 久 and 新 and 分 and 多件:
             return dict(顾问=dict(顾问), 到店=到店[0][0], 到店2=到店[1][0], 路上=路上[0],
-                        久=久[0][0], 新=久[1][0],
+                        久=久[0][0], 新=新[0],
                         分=分[0], 分包=分[1], 多件=多件[0], 多件包=多件[1])
     return None
+
+
+def 造到店():
+    """库里一张「到店待取」都没有时,从「还在路上」的单里临时登记几张到店 —— 调用方先拍了快照,跑完还原。
+
+    ⚠️ 2026-10-06:世界往前走,每个到店的包裹都被取走了(pkg_pickup 3319 行 / pickup_item 3322 行),
+    「到店待取」0 张、一包多件的待取 0 张 —— 夹具前提失效,整套拒跑。**那是数据推进,不是代码错。**
+    夹具不该假设库里恰好停着某种状态(CLAUDE.md §8 夹具不许写死会漂的东西),
+    而 order_eval 早就是「每题之前现开一张待确认单」—— 这里同一个做法:现造,跑完还原。
+    每家店:单包裹单件的路上单登记 2 张到店(留至少 1 张在路上),多件包裹登记 1 个。
+    """
+    c = sqlite3.connect(DBP)
+    造了 = 0
+    for s in [r[0] for r in c.execute("SELECT DISTINCT shop FROM staff WHERE role='顾问' AND status='启用'")]:
+        顾问 = c.execute("SELECT no FROM staff WHERE role='顾问' AND status='启用' AND shop=? ORDER BY no LIMIT 1",
+                         (s,)).fetchone()
+        if not 顾问: continue
+        单件 = c.execute("""SELECT o.id, k.pkg_id FROM ordr o JOIN pkg k ON k.order_id=o.id AND k.void_at IS NULL
+                            WHERE o.shop=? AND o.kind='定制品订单' AND o.status='已发货'
+                              AND (SELECT COUNT(*) FROM pkg g WHERE g.order_id=o.id AND g.void_at IS NULL)=1
+                              AND (SELECT COUNT(*) FROM pkg_item i WHERE i.pkg_id=k.pkg_id)=1
+                              AND NOT EXISTS(SELECT 1 FROM pkg_pickup u WHERE u.order_id=o.id)
+                            ORDER BY o.id""", (s,)).fetchall()
+        多件 = c.execute("""SELECT o.id, k.pkg_id FROM ordr o JOIN pkg k ON k.order_id=o.id AND k.void_at IS NULL
+                            WHERE o.shop=? AND o.kind='定制品订单' AND o.status='已发货'
+                              AND (SELECT COUNT(*) FROM pkg_item i WHERE i.pkg_id=k.pkg_id)>1
+                              AND NOT EXISTS(SELECT 1 FROM pkg_pickup u WHERE u.pkg_id=k.pkg_id)
+                            ORDER BY o.id LIMIT 1""", (s,)).fetchall()
+        登 = (单件[1:3] if len(单件) >= 3 else []) + 多件      # 第一张留在路上
+        到店时 = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d 14:00:00")
+        for oid, pid in 登:
+            c.execute("INSERT INTO pkg_pickup(pkg_id, order_id, arrived_at, received_by, mode) VALUES(?,?,?,?,?)",
+                      (pid, oid, 到店时, 顾问[0], "到店取"))
+            造了 += 1
+    c.commit(); c.close()
+    return 造了
 
 
 def 题(x):
@@ -227,12 +268,16 @@ def 拍():
     u = [tuple(r) for r in cx.execute("SELECT * FROM pkg_pickup ORDER BY pkg_id")]
     i = [tuple(r) for r in cx.execute("SELECT * FROM pickup_item ORDER BY order_item_id")]
     g = [tuple(r) for r in cx.execute("SELECT pkg_id,status,arrived_at FROM pkg ORDER BY pkg_id")]
+    # ⚠️ 10-06:「腰有点紧」那题模型照流程登记不合身 → 生成维保 + 判责两条,而快照原来**不拍维保表**,
+    # 跑完就留在库里(挂在未完成订单上,门禁 R5「维保只能在订单完成之后」当场红 —— 红在并行会话的门禁上)。
+    # 拍下当时有哪些维保号,还原时删掉多出来的
+    m = {r[0] for r in cx.execute("SELECT id FROM maintain")}
     cx.close()
-    return o, p, k, u, i, g
+    return o, p, k, u, i, g, m
 
 
 def 差(前, c):
-    o0, p0, k0, u0, i0, g0 = 前
+    o0, p0, k0, u0, i0, g0 = 前[:6]
     cx = sqlite3.connect(DBP); cx.row_factory = sqlite3.Row
     状态 = {c["单"]: cx.execute("SELECT status FROM ordr WHERE id=?", (c["单"],)).fetchone()[0]}
     旧到 = {r[0] for r in p0}
@@ -250,8 +295,12 @@ def 差(前, c):
 
 
 def 还原(前):
-    o0, p0, k0, u0, i0, g0 = 前
+    o0, p0, k0, u0, i0, g0, m0 = 前
     cx = sqlite3.connect(DBP)
+    多的 = [r[0] for r in cx.execute("SELECT id FROM maintain") if r[0] not in m0]
+    for mid in 多的:
+        cx.execute("DELETE FROM maintain_decision WHERE maintain_id=?", (mid,))
+        cx.execute("DELETE FROM maintain WHERE id=?", (mid,))
     cx.execute("DELETE FROM pickup"); cx.execute("DELETE FROM fit_code")
     cx.execute("DELETE FROM pkg_pickup"); cx.execute("DELETE FROM pickup_item")
     if u0: cx.executemany(f"INSERT INTO pkg_pickup VALUES({','.join('?' * len(u0[0]))})", u0)
@@ -287,9 +336,24 @@ def 准备(c):
 
 def main():
     only = sys.argv[1] if len(sys.argv) > 1 else None
+    # 启动先自检:有维保挂在未完成的订单上,多半是上一轮没还原干净(10-06 就留过一条)——
+    # 带着它跑,还原会把它当成「原样」写回去,脏数据就永远留下了。**先拒跑,说清楚**
+    _cx = sqlite3.connect(DBP)
+    _脏 = _cx.execute("""SELECT m.id, m.order_id, o.status FROM maintain m JOIN ordr o ON o.id=m.order_id
+                         WHERE o.status NOT IN ('完成','已完成')""").fetchall()
+    _cx.close()
+    if _脏:
+        print(f"❌ 库里有 {len(_脏)} 条维保挂在未完成的订单上(如 {_脏[0]})—— 多半是上一轮评测没还原干净。"
+              "**先清掉再跑**,否则还原会把它当成原样写回去"); return
+    起 = 拍()                     # 先拍:挑不到时会现造到店记录,跑完连它一起还原
     x = 挑()
     if not x:
-        print("❌ 挑不到题要的单(同一家店:两张到店待取、一张还在路上、两张签收满 15 天的待完成)—— **挑不到就不跑**"); return
+        n = 造到店()
+        print(f"  ℹ 库里没有停着「到店待取」的单(世界往前走、都被取走了),临时登记 {n} 个到店包裹 —— 跑完还原")
+        x = 挑()
+    if not x:
+        还原(起)
+        print("❌ 挑不到题要的单(同一家店:两张到店待取、一张还在路上、一张签收满 15 天的待完成、分批 / 多件各一)—— **挑不到就不跑**"); return
     CASES = 题(x)
     cs = [c for c in CASES if not only or c["id"] in only.split(",")]
     import asyncio, sdk
@@ -297,7 +361,6 @@ def main():
     print(f"供应商:{prov}" + ("   ⚠️ **按量计费**,开发验证请设 LANXIU_PROVIDER=claude" if "deepseek" in prov else ""))
     print(f"交付签收评测 · {len(cs)} 题(正向 {sum(1 for c in cs if c['kind']=='正向')} / "
           f"负向 {sum(1 for c in cs if c['kind']=='负向')})\n" + "=" * 100, flush=True)
-    起 = 拍()
 
     def 跑一轮():
         recs = []

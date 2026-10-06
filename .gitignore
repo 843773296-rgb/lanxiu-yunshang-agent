@@ -113,3 +113,4 @@ backend/static/
 库备份/
 # 门店上传的通话录音 —— 客户的声音,不进版本库
 backend/录音/
+agentsite/evals/withheld.jsonl

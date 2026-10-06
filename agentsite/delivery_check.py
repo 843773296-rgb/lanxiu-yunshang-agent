@@ -26,6 +26,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("某套评测判分又读回 guard_violations", "评测判分读的是最终违规"),
     ("打回提示退回一句「请修正后重答」", "打回提示讲清三件事"),
     ("环境故障只认字符串返回(dict 形状的报错漏掉)", "工具返回里的数据库报错认得出"),
+    ("扣下时不记(_记扣下 不调)", "答案被扣下时记一份"),
     ("不挂 PostToolUseFailure(失败的调用没人记)", "工具调用失败也记下来"),
 ]
 
@@ -41,7 +42,9 @@ def ck(名, ok, n, 说明=""):
 
 
 def main():
-    import guards
+    import guards, tempfile as _tf
+    # 场景里有「未通过」的,交付处理会往 evals/withheld.jsonl 记一份 —— 测试数据别写进真日志
+    guards.扣下记录 = os.path.join(_tf.mkdtemp(), "withheld.jsonl")
     真检查, 真读 = guards.check_answer, guards._last_answer
     次 = {"n": 0}
 
@@ -147,6 +150,22 @@ def main():
         ck("Stop 打回用的就是这份说明", '"reason": 打回说明(bad)' in stop_src, 1)
 
         src0 = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
+        print("\n\033[1m▸ 扣下的答案记一份(10-06):事后要判得了扣下得对不对\033[0m")
+        import json as _jj
+        if os.path.exists(guards.扣下记录): os.remove(guards.扣下记录)
+        _st = {"prompt": "这单能加急吗?", "violations": [{"check": "g1_no_source", "msg": "数没出处"}],
+               "calls": [{"tool": "mcp__kb__kb_lead"}],
+               "答案检查": [{"尝试": 1, "哈希": guards.答案哈希("草稿一"), "结果": "不通过", "失败项": ["g1_no_source"], "原文": "草稿一"},
+                          {"尝试": 2, "哈希": guards.答案哈希("草稿二"), "结果": "不通过", "失败项": ["g1_no_source"], "原文": "草稿二"}],
+               "修正次数": 1}
+        guards.check_answer = lambda text, calls, prompt="", **_: [{"check": "g1_no_source", "msg": "数没出处"}]
+        _文, _稿, _交 = guards.交付处理(_st, "草稿二")
+        _记 = [_jj.loads(l) for l in open(guards.扣下记录, encoding="utf-8")] if os.path.exists(guards.扣下记录) else []
+        ck("答案被扣下时记一份(问题 + 每次尝试原文 + 失败项 + 工具)", _交["状态"] == "未通过" and len(_记) == 1
+           and _记[0]["问题"] == "这单能加急吗?" and [a["原文"] for a in _记[0]["尝试"]] == ["草稿一", "草稿二"]
+           and _记[0]["工具"] == ["kb_lead"], 1, str(_记)[:200])
+        guards.check_answer = 真检查
+
         print("\n\033[1m▸ 环境故障:工具返回里的数据库报错要认得出(10-05)\033[0m")
         import sdk as _sdk
         _坏 = _sdk.找环境故障([
