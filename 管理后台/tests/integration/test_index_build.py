@@ -24,6 +24,7 @@
 这个文件建的构建 / 向量 / 成员全部删掉。⚠️ 但**片段和文档不动** ——
 那 71 个片段是 `tools/ingest_lanxiu.py` 导入的真语料,别的测试也读它们。
 """
+import atexit
 import json
 import os
 import subprocess
@@ -239,6 +240,90 @@ if not kb or not 片段数:
     print("\n❌ 没有语料,后面都测不了 —— **这不叫通过,叫没东西可测**")
     sys.exit(1)
 
+# ⚠️⚠️ **这一块必须在测试代码之前** —— 2026-10-07 咬合抓到的:
+# 第一版我把它留在文件末尾(清理段原来的位置),于是 `atexit.register` 那一行
+# **在炸点之后才执行** → 兜底根本没注册上 → 库里留下 1 个索引 + 74 条向量。
+# > 一个「注册了兜底清理」的测试,和一个「兜底注册在炸点之后所以没注册上」的,
+# > **在那份代码上长得一模一样** —— 后者的兜底永远不会在真正需要它的时候生效。
+# 同一个形状今天第二次(上一次是 `tools/make_todo.py` 里我把「读不到就喊」
+# 写在了 `取()` 调用之前)。**顺序错了,防护就不存在。**
+#
+# ⚠️ `_还原()` 引用的 `proj` / `建的` 等是后面才赋值的全局变量 ——
+# 函数体延迟求值,所以定义在前面没问题;而如果炸在那些变量赋值之前,
+# `_还原()` 会 NameError,**由兜底里的 except 捞住并报出来**(不静默)。
+
+# ── ⚠️ 清理要能在「中途炸了」之后也跑到 ──────────────────────────────
+# 2026-10-07 实测过一次代价:第 ① 节建好索引、第 ④ 节炸了 → 下面这段
+# **没执行** → 留下 74 条向量,挡住下一次跑(洁净度闸直接 exit 1)。
+# 而库里那 209 条 index_build 残留正是这么一次次攒出来的。
+# > 一次「测试跑完清理干净」和一次「测试炸在中途、清理段没执行」,
+# > **在那次失败的输出上长得一模一样** —— 而后者留下的残留会挡住下一次,
+# > 下一个人看到的是「库不干净」,根因却在三天前某次中途失败。
+#
+# ⚠️ **为什么用 `atexit` 兜底,而不是把整份测试包进一个大 try/finally:**
+# 这些测试是**顶层语句**(几百行)。包起来要改全部缩进 ——
+# **那个改动本身比它要防的 bug 更容易出错**。
+# `atexit` 在正常退出、抛异常、`sys.exit()` 三种情况下都会跑,
+# 而且不动一行现有代码的缩进。
+_还原过了 = {"是": False}
+
+
+def _兜底清理():
+    if _还原过了["是"]:
+        return
+    print("\n⚠️ **主流程没走到清理那一步** —— 大概是中途炸了。兜底清理:")
+    try:
+        _还原()
+        print("   ✅ 兜底清理做完了 —— 下一次跑不会被洁净度闸拦住")
+    except Exception as e:
+        print(f"   ❌ **兜底清理自己也炸了**:{type(e).__name__}: {e}")
+        print("      ⚠️ 库里留下了残留。**这不掩盖上面那次失败** —— 两个都要查。")
+        print("      手动清:看这份文件里 `_还原()` 的 SQL,或 "
+              "`python3 tools/stale_sweep.py --做`(它只清超过 72 小时的)")
+
+
+atexit.register(_兜底清理)
+
+def _还原():
+    # ── 还原 ──────────────────────────────────────────────────────────
+    # ⚠️ **片段和文档不动** —— 那 71 个片段是导入的真语料,别的测试也读它们。
+    with eng.begin() as c:
+        for ib in 建了的构建:
+            c.execute(text("delete from index_members where project_id=:p and index_build_id=:b"),
+                      {"p": proj, "b": ib})
+        # ⚠️ 先删事件再删任务 —— `job_events` 有外键指向 `jobs`。
+        # (`job_events` 是**只追加**的审计表。删它的行在生产上是不该做的事;
+        #  这里删的是这个测试自己刚造的那些,而且只按 type 限定。)
+        c.execute(text("""delete from job_events where project_id=:p and job_id in
+                          (select id from jobs where project_id=:p and type='index_build')"""),
+                  {"p": proj})
+        c.execute(text("delete from jobs where project_id=:p and type='index_build'"),
+                  {"p": proj})
+        for ib in 建了的构建:
+            c.execute(text("delete from index_builds where project_id=:p and id=:i"),
+                      {"p": proj, "i": ib})
+        for rc in 建了的配置:
+            c.execute(text("delete from retrieval_config_versions where project_id=:p and id=:i"),
+                      {"p": proj, "i": rc})
+        # ⚠️ 删向量之前要先删**所有**引用它们的成员,不只是这个测试建的构建的 ——
+        # 手工试跑留下的构建也引用着同一批向量(它们的身份是 (文本, 模型),跨构建共享,
+        # **那正是复用的机制**)。踩过一次:`ForeignKeyViolation`。
+        c.execute(text("""delete from index_members where project_id=:p and embedding_id in
+            (select id from embeddings where project_id=:p
+               and model_id in ('emb-mock','emb-探针'))"""), {"p": proj})
+        # 成员没了,引用它们的构建也清掉(手工试跑留下的那些)
+        c.execute(text("""delete from index_builds where project_id=:p
+            and id not in (select distinct index_build_id from index_members
+                           where project_id=:p and index_build_id is not null)
+            and created_by in ('test','ingest')"""), {"p": proj})
+        c.execute(text("delete from embeddings where project_id=:p"
+                       " and model_id in ('emb-mock','emb-探针')"), {"p": proj})
+        c.execute(text("delete from knowledge_bases where project_id=:p"
+                       " and name='空知识库(测试用)'"), {"p": proj})
+    _还原过了["是"] = True
+
+
+
 print("\n▸ ① 端到端:71 个片段 → 71 个成员,一个不少")
 with eng.begin() as c:
     ib1, j1 = 摆一个构建(c, org, proj, kb, 配置哈希="cfg-t1")
@@ -388,41 +473,8 @@ with eng.connect() as c:
                     {"p": proj, "i": ib6}).scalar()
 ck("空构建没被标成「已就绪」", st6 != "已就绪", st6)
 
-# ── 还原 ──────────────────────────────────────────────────────────
-# ⚠️ **片段和文档不动** —— 那 71 个片段是导入的真语料,别的测试也读它们。
-with eng.begin() as c:
-    for ib in 建了的构建:
-        c.execute(text("delete from index_members where project_id=:p and index_build_id=:b"),
-                  {"p": proj, "b": ib})
-    # ⚠️ 先删事件再删任务 —— `job_events` 有外键指向 `jobs`。
-    # (`job_events` 是**只追加**的审计表。删它的行在生产上是不该做的事;
-    #  这里删的是这个测试自己刚造的那些,而且只按 type 限定。)
-    c.execute(text("""delete from job_events where project_id=:p and job_id in
-                      (select id from jobs where project_id=:p and type='index_build')"""),
-              {"p": proj})
-    c.execute(text("delete from jobs where project_id=:p and type='index_build'"),
-              {"p": proj})
-    for ib in 建了的构建:
-        c.execute(text("delete from index_builds where project_id=:p and id=:i"),
-                  {"p": proj, "i": ib})
-    for rc in 建了的配置:
-        c.execute(text("delete from retrieval_config_versions where project_id=:p and id=:i"),
-                  {"p": proj, "i": rc})
-    # ⚠️ 删向量之前要先删**所有**引用它们的成员,不只是这个测试建的构建的 ——
-    # 手工试跑留下的构建也引用着同一批向量(它们的身份是 (文本, 模型),跨构建共享,
-    # **那正是复用的机制**)。踩过一次:`ForeignKeyViolation`。
-    c.execute(text("""delete from index_members where project_id=:p and embedding_id in
-        (select id from embeddings where project_id=:p
-           and model_id in ('emb-mock','emb-探针'))"""), {"p": proj})
-    # 成员没了,引用它们的构建也清掉(手工试跑留下的那些)
-    c.execute(text("""delete from index_builds where project_id=:p
-        and id not in (select distinct index_build_id from index_members
-                       where project_id=:p and index_build_id is not null)
-        and created_by in ('test','ingest')"""), {"p": proj})
-    c.execute(text("delete from embeddings where project_id=:p"
-                   " and model_id in ('emb-mock','emb-探针')"), {"p": proj})
-    c.execute(text("delete from knowledge_bases where project_id=:p"
-                   " and name='空知识库(测试用)'"), {"p": proj})
+
+_还原()
 with eng.connect() as c:
     剩 = c.execute(text("""select
         (select count(*) from index_builds where project_id=:p),
