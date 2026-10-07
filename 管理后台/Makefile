@@ -55,6 +55,14 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@echo "#   而原处那个仍然在一个不保证服务在跑的目标里当场红。"
 	@echo "#   (删之前核过:page-smoke 第 230 行确实有。**不是悄悄少一条检查**。)"
 	@echo ""
+	@echo "▸ 卡住的记录有多少(只报,不改) —— **钉住 0 条可推**"
+	@echo "  一次「测试跑完清理干净」和一次「又留了一批」,在那些绿勾上长得一模一样"
+	@echo "  —— 这一条会把它数出来。红了就跑:python3 tools/stale_sweep.py --做"
+	@echo "  ⚠️ 「只报警」那一档(等外部确认)不计入 —— 它们是正常状态,不是残留"
+	@echo "  (判据在脚本里的 --钉住,这儿只取退出码 —— **不接管道**)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tools/stale_sweep.py --钉住 0
+	@echo ""
 	@echo "▸ 语料权限 · **在真 PG 上验**(两级 ACL 填完即 rollback,库里不留痕)"
 	@echo "  还的是一笔点名记在交接里的欠账:72 组合对账是照 SQL 语义**用 Python 算的**,"
 	@echo "  jsonb 的 '?|' 行为没在 PG 上验过 —— 一份「两种表示对账过了」的测试,"
@@ -891,6 +899,16 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  🔑 而主要理由是第 ⑥ 节:**不重不漏** —— 一次「拆走」和一次「复制过去而原文档也留着」,"
 	@echo "     在新文档的片段列表上长得一模一样,而后者权限白收紧了"
 	@./.venv/bin/python tests/orchestration/test_split_document.py
+	@echo ""
+	@echo "▸ 卡住判定:超时之后该不该由**系统**推它(业务 2026-10-07 拍的两档)"
+	@echo "  ⚠️ 等外部确认的**只报警** —— 系统自己推「取消请求中 → 已取消」"
+	@echo "     是契约明令禁止的,那条禁令是一个真 bug 换来的(连点两次取消,"
+	@echo "     系统自己宣布已取消)"
+	@echo "  ⚠️ running **有检查点**的也只报警 —— 自动标失败会丢掉一次可恢复的执行"
+	@echo "  ⚠️ 终态是**状态机**说的那个:queued 到不了 failed(只能 expired)"
+	@echo "  🔑 门槛 72 小时的依据**一半实测一半是猜的**(残留最短 75.2h 是实测的,"
+	@echo "     真实训练多久没数据 —— 库里那些耗时全是 mock 跑的)。接真系统后要重量"
+	@./.venv/bin/python tests/orchestration/test_stale_judge.py
 	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + 'object_key' 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
