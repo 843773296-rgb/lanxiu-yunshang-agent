@@ -3,9 +3,27 @@
 > 于是**接手的人第一眼读到的不是最新状态** —— 交接文档漂了比没有更糟。
 > 往里加内容一律加在**最顶上**。
 
+## 🧭 2026-10-07 下午 · 三套重跑读完错题(6/7 是判分器错)+ 判责说法拍板 + TL63 试了无效已撤 + 来路章 bug(体检 / 评测线写)
+
+**① 下一步第一个动作**:这一轮提交后**通知 eureka-75 跑 `管理后台/tools/import_lanxiu_prompts.py`**(他们等着导提示词,TL63 已撤、不要导)。
+   然后约窗口真跑 talk / workshop / rating / repair 一轮:验判分器修复 + 判责新说法有没有让 g17 打回变少
+**② 判据**:三套重跑(两轮)talk 12·10 · workshop 5·5 再跑 6·6 · rating 8·5 再跑 7·7(实际是 claude-haiku-4-5,见 ④)。
+   7 道错题读原文:6 道判分器错(rating N04 写死「库里没评价」/ R01 不认 ⭐⭐ / R03「不像惯例的 ≤2」/ talk T2「不比价」/
+   workshop W-P1 查出在制先问),1 道模型真错(talk T6 没查就许「找店长看能不能特殊处理」)。判分器已改 + 原话钉回 + 咬合。
+   **TL63「规则里的数先调工具再说」靶向 A/B**(7 题 × 两臂 × 4 次,claude-haiku-4-5):首答 g1 打回 15→13,一个工具不调 17→20,
+   扣下 3→0 —— **无效,用户拍板撤**(prompts.py 留了 ⛔ 注释)。原始数据在草稿目录 tl63_ab.json(会被清)
+**③ 未验证**:判分器改完没真跑;判责新说法(TK10 / TL49 加「须店长 / 质检确认」)没真跑
+**④ 作废**:「下午三套是 DeepSeek 跑的」—— **章盖错了**:`evalrec.供应商()` 还是「有 DeepSeek 钥匙就记 deepseek」,
+   而 v1 / sdk 09-22 起没设开关就走 Claude。已改 + 新检查 `agent/evalrec_provider_check.py`(进 check.sh、有咬合),
+   三份结果文件的章已更正并注明「章更正」。另作废「g1 误拦了算出来的百分比」—— 我读的是**改完后**的答案,
+   首答其实是一个工具都没调;那次放宽已撤回,**g1 没改**
+**⑤ 禁区**:「有 … 差评」别用裸正则(「没有差评」里有「有差评」);**别再往提示词加「先查再说」类祈使句**,两次 A/B 都证明压不住;
+   A/B 脚本要存**首答草稿**,只存最终答案会把「被打回后查了」读成「查了还被拦」(我今天就这么误判了一次)
+**⑥ 悬而未决**:规则常数没查就报(91 天 / 95% / 1000 元)仍靠 g1 打回一次再改 —— 代价是顾问多等一轮;
+   用户 10-07 拍:判责可以照表说归属,但同一段写明「判责建议,须店长 / 质检确认后再告知顾客」
+
 ## 🧭 2026-10-07 · 13 套评测干净重跑做完 + 又修四处体检误拦(ccd175c · 体检 / 评测线写)
 
-**⓪ 进行中(10-07 压缩后)**:已发消息给 eureka-75 约窗口,等回复后重跑 talk / workshop / rating;没回复前不跑
 **① 下一步第一个动作**:可选 —— 这轮 13 套的分是在今天四处误拦修之前跑的(talk 被扣 4 份等),要最干净的数再跑一遍
    受影响的 talk / workshop / rating(先跟并行会话约窗口);或者转去看「拦得对」那类(规则常数没调工具就报)要不要改提示词
 **② 判据**:两轮 · 昨天 · 旧基线 —— report 13·12(12·12)13 · role 8·8(7·8)10 · talk 10·9(10·8)9 · rating 6·8(6·5)8 ·
@@ -4537,46 +4555,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-07 13:25。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-07 15:41。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | b4caa81 · 2026-10-07 · 交接:13 套评测干净重跑做完(ccd175c) |
-| 代码量 | 628 个 Python 文件 / 116335 行(不含 .venv) |
-| 验收 | `./check.sh` 共 232 项 —— **接手第一件事就是跑它** |
+| 最新提交 | c694758 · 2026-10-07 · 交接:残留清完、两份测试恢复 + 记一次归属误判(判据用错了 git 工具) |
+| 代码量 | 637 个 Python 文件 / 116473 行(不含 .venv) |
+| 验收 | `./check.sh` 共 233 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 没起来 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-M agent/eval-history.jsonl
+M HANDOFF.md
+ M agent/eval-history.jsonl
+ M agent/evalrec.py
  M agent/ops-eval-results.partial.jsonl
+ M agent/rating-eval-results.jsonl
+ M agent/rating_eval.py
+ M agent/rating_eval_judgetest.py
+ M agent/talk-eval-results.jsonl
+ M agent/talk_eval.py
+ M agent/talk_eval_judgetest.py
+ M agent/workshop-eval-results.jsonl
+ M agent/workshop_eval.py
+ M agent/workshop_eval_judgetest.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M intent/opportunity-and-call-notes.md
+ M check.sh
+ M prompts.py
+ M tools/bite_specs.json
  M "tools/\350\277\220\350\241\214\345\217\262.json"
  M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/HANDOFF.md"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/Makefile"
-?? .feynman/world-shift-launchd.log
-?? .wip-muslin/
-?? data/lanxiu.db
-?? "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/\346\213\206\346\226\207\346\241\243.py"
-?? "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/\350\257\255\346\226\231\345\217\257\350\247\201.py"
-?? "\347\256\241\347\220\206\345\220\216\345\217\260/tests/orchestration/test_corpus_visible.py"
-?? "\347\256\241\347\220\206\345\220\216\345\217\260/tests/orchestration/test_split_document.py"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-b4caa81 交接:13 套评测干净重跑做完(ccd175c)
-ccd175c 13 套评测干净重跑(和并行会话约好 2.5 小时窗口)+ 扣下留底又翻出四处误拦
-b7fbf31 交接收尾:全部提交完 · CI 绿了(连红 8 次之后)· 产品文档已发飞书
-7aea978 修 CI 连红 8 次:漏带计数口径让运行永远停在 queued;而那条检查自己在 CI 上崩了
-84b272b 人工任务角色 15 套评测立 D16 / TL61 基线 + 扣下留底翻出的又两处体检误拦
+c694758 交接:残留清完、两份测试恢复 + 记一次归属误判(判据用错了 git 工具)
+a27aa5a 两份被挡了几天的集成测试修好并跑通(25 + 19 条)——各自藏着一个只有真跑才露的 bug
+de93121 三个新接口漏登记进契约,让并行会话的门禁红了
+d2216ef 交接:页面在真服务上验过了(含权限矩阵)+ 两条新作废结论 + 209 条要授权
+39234e3 给页面渲染检查的桩补上 URLSearchParams —— 我的新页面让根门禁红了
 ```
 <!--/AUTO-->
 ## 一句话在做什么

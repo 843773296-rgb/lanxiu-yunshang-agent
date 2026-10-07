@@ -34,14 +34,18 @@ def 供应商():
     正是这个项目最早那次事故的形状(DeepSeek 的数覆盖了 Claude 的基线,文件上看不出)。
     (2026-09-22 一份附录草稿查出来的。更糟的是同一天上午我刚把「模型」那一栏
     从占位符改成了算出来的默认值 —— 把「看得出是没问出来」改成了「看起来很确定的错」。)
+
+    ⚠️ **2026-10-07 又反过来错了一次。** `v1.provider()` 09-22 改成了「没设开关默认 Claude」,
+    这里**没跟着改**,还是「找得到 DeepSeek 凭证就记 deepseek」—— 于是本机(有 ~/.deepseek-key)
+    所有没设开关的轮次,**实际跑的是 claude-haiku-4-5,章上写的是 deepseek-v4-pro**。
+    下午重跑三套,每套都打印「供应商不同,不拿它当基线」,我差点据此认定花了 DeepSeek 的钱 ——
+    是记录仪里的 model 一栏(claude-haiku-4-5)说出了真相。
+    > 「两处写同一条判据」本身就是病:一处改了另一处不会知道。
+    这里**不去调** `v1.provider()`(它会读钥匙串、拿不到凭证就退出进程),只照同一条判据记:
+    开关没设就是 Claude。`tools/evalrec_provider_check.py` 守这件事 ——
+    几种环境设置下,这里、`v1.provider()`、`agentsite/sdk.py` 三处必须说同一家。
     """
-    force = os.environ.get("LANXIU_PROVIDER", "").lower()
-    if force:
-        return force
-    if os.environ.get("DEEPSEEK_API_KEY") or \
-       os.path.exists(os.path.expanduser("~/.deepseek-key")):
-        return "deepseek"
-    return "claude"
+    return os.environ.get("LANXIU_PROVIDER", "").lower() or "claude"
 
 
 def 代码():

@@ -333,6 +333,7 @@ run "评价判分器 · 25 条对照(星级不是衣服质量/不换算满意度
 run "报修写口 · 哪一件不猜、店长判责、同意要凭据、回店输码才完成(在库副本上跑)" python3 backend/repair_write_check.py
 run "多渠道对比 · 数算得对,而这张表不能用来比渠道" python3 backend/channel_check.py
 run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/eval_provenance_check.py
+run "评测来路章 · 章上的供应商和真正发请求的是同一家" ./agentsite/.venv/bin/python tools/evalrec_provider_check.py
 run "判据词表 · 声称有备选,就得验过一条备选" python3 tools/vocab_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py

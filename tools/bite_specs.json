@@ -5487,5 +5487,53 @@
    }
   ],
   "预期红": "真跑钉回(工坊)"
+ },
+ {
+  "script": "agent/rating_eval_judgetest.py",
+  "改坏": "N04「有 … 差评」不查否定",
+  "file": [
+   {
+    "path": "agent/rating_eval.py",
+    "old": "            not TM.negated(t, m.start()) for m in re.finditer(r\"有[^。\\n]{0,12}差评\", t)):",
+    "new": "            True for m in re.finditer(r\"有[^。\\n]{0,12}差评\", t)):"
+   }
+  ],
+  "预期红": "反向:库里有 4 条,却说「最近没有差评」"
+ },
+ {
+  "script": "agent/rating_eval_judgetest.py",
+  "改坏": "R03 不按句摘掉已说了 ≤3 的句子",
+  "file": [
+   {
+    "path": "agent/rating_eval.py",
+    "old": "if not re.search(线三, 句)]",
+    "new": "if True]"
+   }
+  ],
+  "预期红": "真跑 R03"
+ },
+ {
+  "script": "agent/workshop_eval_judgetest.py",
+  "改坏": "W-P1 不要求先查",
+  "file": [
+   {
+    "path": "agent/workshop_eval.py",
+    "old": "        if 冲突 and 在问 and 查了:",
+    "new": "        if 冲突 and 在问:"
+   }
+  ],
+  "预期红": "反向:没查就问"
+ },
+ {
+  "script": "tools/evalrec_provider_check.py",
+  "改坏": "盖章退回「找得到 DeepSeek 凭证就记 deepseek」",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "    return os.environ.get(\"LANXIU_PROVIDER\", \"\").lower() or \"claude\"",
+    "new": "    return os.environ.get(\"LANXIU_PROVIDER\", \"\").lower() or (\"deepseek\" if os.environ.get(\"DEEPSEEK_API_KEY\") else \"claude\")"
+   }
+  ],
+  "预期红": "没设开关"
  }
 ]

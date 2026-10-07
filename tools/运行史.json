@@ -8,6 +8,7 @@
   "tools/verify_sources.py": "2026-09-21 15:37",
   "backend/opportunity_eval.py": "2026-09-21 15:37",
   "fakedata/bench.py": "2026-09-21 15:49",
-  "agent/growth_eval.py": "2026-09-21 15:50"
+  "agent/growth_eval.py": "2026-09-21 15:50",
+  "agentsite/interrupt_probe.py": "2026-10-04 14:36"
  }
 }
