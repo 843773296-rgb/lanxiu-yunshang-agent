@@ -4541,7 +4541,7 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | ccd175c · 2026-10-07 · 13 套评测干净重跑(和并行会话约好 2.5 小时窗口)+ 扣下留底又翻出四处误拦 |
+| 最新提交 | b4caa81 · 2026-10-07 · 交接:13 套评测干净重跑做完(ccd175c) |
 | 代码量 | 628 个 Python 文件 / 116335 行(不含 .venv) |
 | 验收 | `./check.sh` 共 232 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 没起来 · 智能运维平台 :8770 → 没起来 |
@@ -4549,8 +4549,7 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 **未提交的改动:**
 
 ```
-M HANDOFF.md
- M agent/eval-history.jsonl
+M agent/eval-history.jsonl
  M agent/ops-eval-results.partial.jsonl
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
@@ -4565,17 +4564,18 @@ M HANDOFF.md
 ?? "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/\346\213\206\346\226\207\346\241\243.py"
 ?? "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/\350\257\255\346\226\231\345\217\257\350\247\201.py"
 ?? "\347\256\241\347\220\206\345\220\216\345\217\260/tests/orchestration/test_corpus_visible.py"
+?? "\347\256\241\347\220\206\345\220\216\345\217\260/tests/orchestration/test_split_document.py"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+b4caa81 交接:13 套评测干净重跑做完(ccd175c)
 ccd175c 13 套评测干净重跑(和并行会话约好 2.5 小时窗口)+ 扣下留底又翻出四处误拦
 b7fbf31 交接收尾:全部提交完 · CI 绿了(连红 8 次之后)· 产品文档已发飞书
 7aea978 修 CI 连红 8 次:漏带计数口径让运行永远停在 queued;而那条检查自己在 CI 上崩了
 84b272b 人工任务角色 15 套评测立 D16 / TL61 基线 + 扣下留底翻出的又两处体检误拦
-b73baa9 人工任务角色评测重跑翻出的四处体检误拦 + 扣下的答案留底 + 签收评测两处夹具问题
 ```
 <!--/AUTO-->
 ## 一句话在做什么
