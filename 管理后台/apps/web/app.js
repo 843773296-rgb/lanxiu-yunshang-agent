@@ -373,7 +373,7 @@ async function 页_prompt详情(pid) {
             (不支持的参数会返回明确错误,不会被静默忽略)。</div>
           <label class="f">测试输入　<span style="color:var(--ink3)">和模板独立保存,运行结果不会覆盖模板</span></label>
           <div id="testvars"></div>
-          <div class="btns" style="margin-top:10px">
+          <div style="margin-top:10px">
             <button class="pri" id="b-run">运行测试</button>
             <span class="msg" id="runmsg" style="font-size:12.5px;color:var(--ink2)"></span>
           </div>
@@ -2223,8 +2223,8 @@ function _mock标(是mock) {
   // 所以这个标记要一路传到界面上,不只写在文档里。
   if (是mock === null || 是mock === undefined) return "";
   return 是mock
-    ? `<span class="tag crit" title="mock 向量从文本哈希派生,**语义无感知** —— 相似度不代表语义">⚠️ mock 向量</span>`
-    : `<span class="tag ok" title="真模型(本机 onnxruntime,离线)">真向量</span>`;
+    ? `<span class="pill fail" title="mock 向量从文本哈希派生,**语义无感知** —— 相似度不代表语义">⚠️ mock 向量</span>`
+    : `<span class="pill ok" title="真模型(本机 onnxruntime,离线)">真向量</span>`;
 }
 
 /* ── 人工待办 ────────────────────────────────────────────────────
@@ -2258,16 +2258,16 @@ async function 页_人工待办() {
         <td>${esc(r.risk_note || r.kind || r.id)}
           <div class="k">${esc(r.id)}</div>
           ${r["有人能批吗"] === false
-            ? `<div class="k"><span class="tag crit">没人能批</span>
+            ? `<div class="k"><span class="pill fail">没人能批</span>
                  ${esc(r["没人能批的原因"] || "")}</div>` : ""}</td>
-        <td><span class="tag ${r.status === "pending" ? "warn"
+        <td><span class="pill ${r.status === "pending" ? "warn"
               : r.status === "approved" ? "ok" : ""}">${esc(r.status)}</span></td>
         <td class="k">${r.expires_at
               ? esc(String(r.expires_at).slice(5, 16).replace("T", " "))
-              : `<span class="tag crit">没设截止</span>`}
-          ${r["过期了吗"] === true ? `<span class="tag crit">已过期</span>` : ""}</td>
-        <td>${r["还能处理吗"] ? `<span class="tag ok">能</span>`
-              : `<span class="tag">不能</span>
+              : `<span class="pill fail">没设截止</span>`}
+          ${r["过期了吗"] === true ? `<span class="pill fail">已过期</span>` : ""}</td>
+        <td>${r["还能处理吗"] ? `<span class="pill ok">能</span>`
+              : `<span class="pill">不能</span>
                  <div class="k">${esc(String(r["为什么不能处理"] || "").slice(0, 60))}</div>`}</td>
         <td><button data-hr="${esc(r.id)}">看详情</button></td>
       </tr>`).join("")
@@ -2306,9 +2306,9 @@ async function 页_待办详情(hid) {
     <h2>决定</h2>`
     + (d["你能处理吗"]
         ? `<div class="card">
-             <div class="lbl">理由（驳回必填）</div>
+             <label class="f">理由（驳回必填）</label>
              <textarea id="why" rows="2"></textarea>
-             <div class="lbl">改字段（JSON，只许改 ${esc(JSON.stringify(d["允许编辑的字段"]))}）</div>
+             <label class="f">改字段（JSON，只许改 ${esc(JSON.stringify(d["允许编辑的字段"]))}）</label>
              <textarea id="edits" rows="2">{}</textarea>
              <button class="pri" id="ap">批准</button>
              <button id="rj">驳回</button>
@@ -2324,7 +2324,7 @@ async function 页_待办详情(hid) {
         ? `<table><thead><tr><th>谁</th><th>怎么判的</th><th>那时的 rev</th>
              <th>理由</th></tr></thead><tbody>`
           + d["决定历史"].map((x) => `<tr><td>${esc(x.actor)}</td>
-              <td><span class="tag">${esc(x.decision)}</span></td>
+              <td><span class="pill">${esc(x.decision)}</span></td>
               <td class="num">${x.request_revision}</td>
               <td>${esc(x.reason || "")}</td></tr>`).join("")
           + `</tbody></table>`
@@ -2382,12 +2382,12 @@ async function 页_评测中心() {
         <td><b>${esc((r.candidate_ref || {})["名"] || r.id)}</b>
           <div class="k">${esc(r.id)}</div></td>
         <td>${r["有基线吗"] ? esc((r.baseline_ref || {})["名"] || "有")
-                            : `<span class="tag crit">没有基线</span>`}</td>
+                            : `<span class="pill fail">没有基线</span>`}</td>
         <td class="num">${r["题数"]}</td>
         <td class="k">${esc(String(r.dataset_version_id || "—").slice(-10))}</td>
         <td class="k">${esc(r.scorer_version || "—")}</td>
-        <td>${r["能当结论吗"] ? `<span class="tag ok">能</span>`
-              : `<span class="tag crit">不能</span>
+        <td>${r["能当结论吗"] ? `<span class="pill ok">能</span>`
+              : `<span class="pill fail">不能</span>
                  <div class="k">${esc(r["为什么不能当结论"] || "")}</div>`}</td>
       </tr>`).join("")
     + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
@@ -2415,8 +2415,8 @@ async function 页_实验对比() {
     `<option value="${esc(r.id)}">${esc((r.candidate_ref || {})["名"] || r.id)}</option>`).join("");
   $("#main").innerHTML = 头 + `
     <div class="card">
-      <div class="lbl">甲</div><select id="ea">${选()}</select>
-      <div class="lbl">乙</div><select id="eb">${选()}</select>
+      <label class="f">甲</label><select id="ea">${选()}</select>
+      <label class="f">乙</label><select id="eb">${选()}</select>
       <button class="pri" id="cmp">对比</button>
     </div><div id="res"></div>`;
   $("#eb").selectedIndex = Math.min(1, d.items.length - 1);
@@ -2444,14 +2444,14 @@ async function 页_实验对比() {
             const A = (r["分数"][r["甲"].id] || {})[k] || {};
             const B = (r["分数"][r["乙"].id] || {})[k] || {};
             const 格 = (v) => v["均分是未知吗"]
-              ? `<span class="tag warn">未知</span>`
+              ? `<span class="pill warn">未知</span>`
               : `${v["均分"]} <div class="k">${v["已知几条"]} 条已打分`
                 + (v["没打分几条"] ? ` · ${v["没打分几条"]} 条没打分` : "") + `</div>`;
             const 可算 = !A["均分是未知吗"] && !B["均分是未知吗"];
             return `<tr><td><b>${esc(k)}</b></td><td>${格(A)}</td><td>${格(B)}</td>
               <td>${可算 ? (B["均分"] - A["均分"] >= 0 ? "+" : "")
                           + Math.round((B["均分"] - A["均分"]) * 10000) / 10000
-                        : `<span class="tag warn">算不出</span>`}</td></tr>`;
+                        : `<span class="pill warn">算不出</span>`}</td></tr>`;
           }).join("")
         + `</tbody></table><div class="note">${md(r.note || "")}</div>`;
     } catch (e) {
@@ -2487,10 +2487,10 @@ async function 页_单条试跑() {
   }
   $("#main").innerHTML = 头 + `
     <div class="card">
-      <div class="lbl">选一条 Prompt</div>
+      <label class="f">选一条 Prompt</label>
       <select id="pp">${ps.items.map((p) =>
         `<option value="${esc(p.id)}">${esc(p.name || p.key || p.id)}</option>`).join("")}</select>
-      <div class="lbl">变量(JSON)</div>
+      <label class="f">变量(JSON)</label>
       <textarea id="vv" rows="4">{}</textarea>
       <button class="pri" id="go">试跑一次</button>
       <div class="note">⚠️ **这一次真的会调模型。** 返回的是任务信封(202),
@@ -2552,13 +2552,13 @@ async function 页_调用链() {
     + d.items.map((r) => `<tr>
         <td class="k">${esc(String(r.started_at).slice(5, 19).replace("T", " "))}
           <div class="k">${esc(r.id)}</div></td>
-        <td>${r["调用方"] ? esc(r["调用方"]) : `<span class="tag warn">没标调用方</span>`}</td>
+        <td>${r["调用方"] ? esc(r["调用方"]) : `<span class="pill warn">没标调用方</span>`}</td>
         <td class="num">${r["步数"]}${r["出错的步数"]
-            ? ` <span class="tag crit">${r["出错的步数"]} 步出错</span>` : ""}</td>
+            ? ` <span class="pill fail">${r["出错的步数"]} 步出错</span>` : ""}</td>
         <td class="num">${Number(r["token数"]).toLocaleString()}</td>
         <td class="num">${_参考价(r["参考价"])}</td>
-        <td>${r["成功吗"] ? `<span class="tag ok">${esc(r.end_reason || "完成")}</span>`
-                          : `<span class="tag crit">${esc(r.end_reason || "失败")}</span>`}</td>
+        <td>${r["成功吗"] ? `<span class="pill ok">${esc(r.end_reason || "完成")}</span>`
+                          : `<span class="pill fail">${esc(r.end_reason || "失败")}</span>`}</td>
         <td><button data-tr="${esc(r.id)}">看调用树</button></td>
       </tr>`).join("")
     + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
@@ -2588,18 +2588,18 @@ async function 页_调用树(tid) {
         ? `<table><thead><tr><th>用途</th><th>谁提供的</th><th>调用方</th>
              <th class="num">token</th><th class="num">金额</th></tr></thead><tbody>`
           + d["用量"].map((u) => `<tr><td>${esc(u.resource)}</td>
-              <td>${u.provider ? esc(u.provider) : `<span class="tag">mock</span>`}</td>
+              <td>${u.provider ? esc(u.provider) : `<span class="pill">mock</span>`}</td>
               <td>${esc(u.caller || "—")}</td>
               <td class="num">${Number(u["token数"]).toLocaleString()}</td>
               <td class="num">${u["金额未知的行数"] > 0
-                    ? `<span class="tag warn">未知</span>`
+                    ? `<span class="pill warn">未知</span>`
                     : `$${Number(u["已知金额"]).toFixed(4)}`}</td></tr>`).join("")
           + `</tbody></table>`
         : `<div class="state">这次运行没有用量记录</div>`)
     + `<h2>每一步</h2>`
     + (d["步们"] || []).map((s2, i) => `<div class="card">
         <div class="k">${i + 1}. ${esc(s2.stage)}
-          ${s2["出错了吗"] ? `<span class="tag crit">出错</span>` : ""}</div>
+          ${s2["出错了吗"] ? `<span class="pill fail">出错</span>` : ""}</div>
         <pre class="k">${esc(JSON.stringify(
             脱 ? {入: s2["入_形状"], 出: s2["出_形状"], 错: s2["错_形状"]}
                : {入: s2["入"], 出: s2["出"], 错: s2["错"]}, null, 1))}</pre>
@@ -2671,7 +2671,7 @@ function _参考价(x) {
   // ⚠️ `x == null` 同时接住 null 和 undefined。写成 `x === null` 的话,
   // 一个字段名拼错(拿到 undefined)会显示成 `undefined`,而不是「未知」——
   // 那种时候更该显示「未知」,因为我们确实不知道。
-  return x == null ? `<span class="tag warn">未知</span>` : `$${x.toFixed(4)}`;
+  return x == null ? `<span class="pill warn">未知</span>` : `$${x.toFixed(4)}`;
 }
 
 async function 页_用量与成本() {
@@ -2709,12 +2709,12 @@ async function 页_用量与成本() {
         <td><b>${esc(g["调用方"])}</b></td>
         <td>${g.provider ? esc(g.provider) : `<span class="k">—</span>`}</td>
         <td>${g.source === "mock"
-              ? `<span class="tag">mock · 没花钱</span>`
-              : `<span class="tag ok">live</span>`}</td>
+              ? `<span class="pill">mock · 没花钱</span>`
+              : `<span class="pill ok">live</span>`}</td>
         <td class="num">${g["调用次数"]}</td>
         <td class="num">${Number(g["token数"]).toLocaleString()}</td>
         <td class="num">${g["金额未知的行数"] > 0
-              ? `<span class="tag warn">未知</span>`
+              ? `<span class="pill warn">未知</span>`
               : `$${Number(g["已知金额"]).toFixed(4)}`}</td>
       </tr>`).join("")
     + `</tbody></table>
@@ -2729,12 +2729,12 @@ async function 页_用量与成本() {
     + (d["按用途"] || []).map((g) => `<tr>
         <td><b>${esc(g.resource)}</b></td>
         <td>${g.source === "mock"
-              ? `<span class="tag">mock · 没花钱</span>`
-              : `<span class="tag ok">${esc(g.source)}</span>`}</td>
+              ? `<span class="pill">mock · 没花钱</span>`
+              : `<span class="pill ok">${esc(g.source)}</span>`}</td>
         <td class="num">${g["调用次数"]}</td>
         <td class="num">${Number(g["token数"]).toLocaleString()}</td>
         <td class="num">${g["金额未知的行数"] > 0
-              ? `<span class="tag warn">未知</span><div class="k">${g["金额未知的行数"]} 行</div>`
+              ? `<span class="pill warn">未知</span><div class="k">${g["金额未知的行数"]} 行</div>`
               : `$${Number(g["已知金额"]).toFixed(4)}`}</td>
       </tr>`).join("")
     + `</tbody></table>
@@ -2746,8 +2746,8 @@ async function 页_用量与成本() {
     + (d.items || []).map((r) => `<tr>
         <td class="k">${esc(String(r.created_at).slice(5, 19).replace("T", " "))}
             ${r.world_date ? `<div class="k">世界 ${esc(r.world_date)}</div>` : ""}</td>
-        <td>${r.caller ? esc(r.caller) : `<span class="tag warn">没标调用方</span>`}</td>
-        <td>${esc(r.resource)} ${r["是mock吗"] ? `<span class="tag">mock</span>` : ""}</td>
+        <td>${r.caller ? esc(r.caller) : `<span class="pill warn">没标调用方</span>`}</td>
+        <td>${esc(r.resource)} ${r["是mock吗"] ? `<span class="pill">mock</span>` : ""}</td>
         <td class="k">${esc(r["档"] || "")}</td>
         <td class="num">${Number(r.quantity).toLocaleString()} ${esc(r.unit)}</td>
         <td class="num">${_参考价(r["参考价"])}</td>
@@ -2775,7 +2775,7 @@ async function 页_用量与成本() {
  * 校验没过是 **200 + 通过=false**,不是请求出错 —— 所以这里不能走 错误块(),
  * 要把「哪条规则没过、为什么」显示出来。一个坏文件不是一次失败的请求。 */
 const _上传状态色 = { "待上传": "", "已上传": "warn", "已校验": "ok",
-                  "校验失败": "crit", "已放弃": "" };
+                  "校验失败": "fail", "已放弃": "" };
 
 async function 页_加资料() {
   const 头 = `<div class="crumb">知识与 RAG</div>
@@ -2789,7 +2789,7 @@ async function 页_加资料() {
 
   $("#main").innerHTML = 头 + `
     <div class="card">
-      <div class="lbl">选一个文件</div>
+      <label class="f">选一个文件</label>
       <input type="file" id="f" accept=".md,.markdown,.txt">
       <button class="pri" id="go">上传并校验</button>
       <div class="note">收 .md / .markdown / .txt,单个不超过 5 MB。
@@ -2810,9 +2810,9 @@ function 画上传表(d) {
       <th>没过的规则</th></tr></thead><tbody>`
     + d.items.map((r) => `<tr>
         <td><b>${esc(r.file_name || "")}</b><div class="k">${esc(r.id)}</div></td>
-        <td><span class="tag ${_上传状态色[r["状态"]] || ""}">${esc(r["状态"])}</span></td>
-        <td>${r["能引用吗"] ? `<span class="tag ok">能</span>`
-                            : `<span class="tag crit">不能</span>`}</td>
+        <td><span class="pill ${_上传状态色[r["状态"]] || ""}">${esc(r["状态"])}</span></td>
+        <td>${r["能引用吗"] ? `<span class="pill ok">能</span>`
+                            : `<span class="pill fail">不能</span>`}</td>
         <td class="num">${r.byte_count == null ? "—" : r.byte_count}</td>
         <td>${((r["校验详情"] || {})["没过的规则"] || []).map(esc).join("、") || "—"}</td>
       </tr>`).join("")
@@ -2901,12 +2901,13 @@ async function 页_知识库() {
         <td class="num">${r["文档数"]}</td>
         <td class="num">${r["片段数"]}</td>
         <td>${r["能检索吗"]
-              ? `<span class="tag ok">能</span>`
-              : `<span class="tag crit">不能</span>
+              ? `<span class="pill ok">能</span>`
+              : `<span class="pill fail">不能</span>
                  <div class="k">${esc(r["为什么不能检索"] || "")}</div>`}</td>
         <td>${r["就绪索引数"]} 个已就绪 ${_mock标(r["索引是mock吗"])}
             ${r["索引模型"] ? `<div class="k">${esc(r["索引模型"])}</div>` : ""}</td>
         <td><button data-kb="${esc(r.id)}">看索引</button>
+            <button data-chunks="${esc(r.id)}">看切片</button>
             ${r["能检索吗"] ? `<button data-try="${esc(r.id)}">去检索</button>` : ""}</td>
       </tr>`).join("")
     + `</tbody></table>
@@ -2916,9 +2917,171 @@ async function 页_知识库() {
   $("#main").querySelectorAll("[data-kb]").forEach((b) => {
     b.onclick = () => { location.hash = "#/kb/" + encodeURIComponent(b.dataset.kb); };
   });
+  $("#main").querySelectorAll("[data-chunks]").forEach((b) => {
+    b.onclick = () => {
+      location.hash = "#/chunks/" + encodeURIComponent(b.dataset.chunks);
+    };
+  });
   $("#main").querySelectorAll("[data-try]").forEach((b) => {
     b.onclick = () => { location.hash = "#/retrieval"; };
   });
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * 切片栏目(业务 2026-10-07 要的)
+ *
+ * 切片级**权限**那一拍是不做(要收紧就拆成独立文档),但**看得见**要做:
+ * 人得能回答「我导进去的那段话被切成了什么样」「为什么搜不到」。
+ *
+ * ## ⚠️ 这一页要显式回答的两件事
+ *
+ *   「在役索引数 0」  这一段**检索不到** —— 切出来了但没进任何已就绪的索引。
+ *                     > 一个在役索引里的片段,和一个切出来没进索引的,
+ *                     > **在这张表上长得一模一样** —— 后者检索不到,
+ *                     > 看起来却像语料里有。
+ *   「混着切的」      这个知识库**建不出索引**(整库查的那道闸)。
+ *                     > 而每行标个版本号是不够的:人要把一屏的版本号比一遍
+ *                     > 才看得出来,**而那正是「看起来正常」的样子**。
+ *                     所以它是顶部一条独立告警,不是表格里的一列。
+ * ══════════════════════════════════════════════════════════════ */
+
+/* ⚠️ 分页状态放在模块变量里,**不进 hash**。
+ * 取舍说清:这样刷新页面会回到第一页、浏览器后退也不回上一页。
+ * 换成 hash 要改现有那套 `slice(n)` 的路由解析(它不解析查询串),
+ * 而这一页是第一个有真分页的页面 —— **先把取舍写下来,别让它成为默认**。 */
+let _切片页 = { kb: null, off: 0, doc: null };
+
+async function 页_切片列表(kbId) {
+  if (_切片页.kb !== kbId) _切片页 = { kb: kbId, off: 0, doc: null };
+  const 每页 = 30;
+  const 头 = `<div class="crumb"><a href="#/kb">知识库</a> · 切片</div>
+    <div class="head"><div><h1>切片</h1>
+      <div class="sub">${md("资料被切成了什么样。**切片级权限不做** —— 要给某几段单独设权限,把它们拆成独立文档。")}</div>
+    </div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  const q = new URLSearchParams({ limit: String(每页), offset: String(_切片页.off) });
+  if (_切片页.doc) q.set("document_id", _切片页.doc);
+  let d;
+  try {
+    d = await 请求(`${P()}/knowledge-bases/${encodeURIComponent(kbId)}/chunks?${q}`);
+  } catch (e) {
+    const s = 错误块(e, () => 页_切片列表(kbId));
+    $("#main").innerHTML = 头 + s.html; s.挂(); return;
+  }
+  if (!d.total) {
+    $("#main").innerHTML = 头 + 状态("", _切片页.doc ? "这篇文档没有切片" : "这个知识库还没有切片",
+      _切片页.doc
+        ? "换个文档看看,或者清掉筛选。"
+        : "先去「加资料」把文件传上来并切片。\n\n"
+          + "⚠️ **也可能是你的角色看不到这个库里的文档** —— "
+          + "「一条都没有」和「一条都看不到」在这个列表上长得一模一样,"
+          + "所以这句话要写出来。",
+      _切片页.doc
+        ? { 文: "清掉筛选", 做: () => { _切片页.doc = null; _切片页.off = 0; 页_切片列表(kbId); } }
+        : { 文: "去加资料", 做: () => { location.hash = "#/uploads"; } }).html;
+    const a = $("#st-act"); if (a) a.onclick = () => {
+      if (_切片页.doc) { _切片页.doc = null; _切片页.off = 0; 页_切片列表(kbId); }
+      else location.hash = "#/uploads";
+    };
+    return;
+  }
+  // ── 顶部:混版本告警(整库一起看,不受筛选影响)────────────────────
+  const 告警 = d["混着切的吗"]
+    ? `<div class="state err"><h3>这个知识库建不出索引</h3><p>${md(
+        "切片器版本:**" + d["切片器版本们"].join(" / ") + "** · 解析器版本:**"
+        + d["解析器版本们"].join(" / ") + "**\n\n" + (d["混了会怎样"] || ""))}</p></div>`
+    : "";
+  const 末 = Math.min(_切片页.off + 每页, d.total);
+  const 筛 = _切片页.doc
+    ? `<div class="note">只看文档 <code>${esc(_切片页.doc)}</code>
+         <button id="clr">看全部</button></div>`
+    : "";
+  $("#main").innerHTML = 头 + 告警 + 筛 + `<table><thead><tr>
+      <th class="num">段</th><th>节路径</th><th>正文</th>
+      <th class="num">token</th><th>版本</th><th>索引</th><th></th>
+      </tr></thead><tbody>`
+    + d.items.map((r) => `<tr>
+        <td class="num">${r.ordinal}<div class="k">v${r["版次"]}</div></td>
+        <td>${esc(r.section_path || "—")}
+            <div class="k"><a href="#" data-doc="${esc(r["文档id"])}">只看这篇</a></div></td>
+        <td>${esc(r["正文预览"] || "")}${(r["正文长度"] > (r["正文预览"] || "").length) ? "…" : ""}
+            <div class="k">${r["正文长度"]} 字</div></td>
+        <td class="num">${r["token_count"] ?? "—"}</td>
+        <td class="k">${esc(r["chunker_version"] || "(空)")} /
+            ${esc(r["parser_version"] || "(空)")}</td>
+        <td>${r["在役索引数"]
+              ? `<span class="pill ok">在 ${r["在役索引数"]} 个</span>`
+              : `<span class="pill fail">检索不到</span>`}</td>
+        <td><button data-ch="${esc(r.id)}">详情</button></td>
+      </tr>`).join("")
+    + `</tbody></table>
+       <div class="note">第 ${_切片页.off + 1}–${末} 条,共 ${d.total} 条
+         <button id="pv"${_切片页.off ? "" : " disabled"}>上一页</button>
+         <button id="nx"${末 < d.total ? "" : " disabled"}>下一页</button>
+       </div>
+       <div class="note">${md(
+         "⚠️ **这里只给每篇文档最新那一版的切片。** `chunks` 绑的是文档版本,"
+         + "而一篇文档有多版 —— 列出所有版本的话会含着已经被改掉的内容,"
+         + "而数量看着也像对的。索引取的也是最新版,**列表跟索引一致**才有参考价值。"
+         + "\n\n⚠️ 标「检索不到」的那些是**切出来了但没进任何已就绪索引** ——"
+         + "它在这张表上和能检索的长得一样,所以这一列必须显式标出来。")}</div>`;
+  const 跳 = (off) => { _切片页.off = off; 页_切片列表(kbId); };
+  if ($("#pv")) $("#pv").onclick = () => 跳(Math.max(0, _切片页.off - 每页));
+  if ($("#nx")) $("#nx").onclick = () => 跳(_切片页.off + 每页);
+  if ($("#clr")) $("#clr").onclick = () => { _切片页.doc = null; 跳(0); };
+  $("#main").querySelectorAll("[data-ch]").forEach((b) => {
+    b.onclick = () => { location.hash = "#/chunk/" + encodeURIComponent(b.dataset.ch); };
+  });
+  $("#main").querySelectorAll("[data-doc]").forEach((a) => {
+    a.onclick = (ev) => { ev.preventDefault(); _切片页.doc = a.dataset.doc; 跳(0); };
+  });
+}
+
+async function 页_切片详情(chunkId) {
+  const 头 = `<div class="crumb"><a href="#/kb">知识库</a> · 切片</div>
+    <div class="head"><div><h1>切片详情</h1></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/chunks/${encodeURIComponent(chunkId)}`); }
+  catch (e) {
+    const s = 错误块(e, () => 页_切片详情(chunkId));
+    $("#main").innerHTML = 头 + s.html; s.挂(); return;
+  }
+  const 头2 = `<div class="crumb"><a href="#/kb">知识库</a> ·
+      <a href="#/chunks/${encodeURIComponent(d["knowledge_base_id"])}">${esc(d["知识库名"])}</a>
+      · 第 ${d.ordinal} 段</div>
+    <div class="head"><div><h1>切片详情</h1>
+      <div class="sub">${esc(d.section_path || "")}</div></div></div>`;
+  const 检索 = d["检索得到吗"]
+    ? `<span class="pill ok">检索得到</span>`
+    : `<div class="state err"><h3>这一段检索不到</h3><p>${md(d["为什么检索不到"])}</p></div>`;
+  $("#main").innerHTML = 头2 + 检索 + `
+    <div class="card"><h3>正文</h3><pre class="io">${esc(d.text)}</pre>
+      <div class="k">${d.text.length} 字 · ${d["token_count"] ?? "?"} token(粗估)
+        · 哈希 ${esc((d["text_hash"] || "").slice(0, 16))}</div></div>
+    <table><tbody>
+      <tr><th>节路径</th><td>${esc(d.section_path || "—")}</td></tr>
+      <tr><th>各级标题</th><td>${(d["section_titles"] || []).map((x) =>
+          `<code>${esc(x)}</code>`).join(" › ") || "—"}
+        <div class="k">${md("⚠️ 要按级别做事的一律读**各级标题**(列表),"
+          + "别拿分隔符去拆节路径 —— 全库有 29 个标题自己的名字里带那个分隔符")}</div></td></tr>
+      <tr><th>切片器 / 解析器</th><td><code>${esc(d["chunker_version"] || "(空)")}</code> /
+        <code>${esc(d["parser_version"] || "(空)")}</code>
+        <div class="k">${md("**空不等于「和当前一样」** —— 它是这个字段加上之前切的")}</div></td></tr>
+      <tr><th>文档版本</th><td>v${d["版次"]} ${d["是最新版吗"]
+          ? `<span class="pill ok">最新</span>`
+          : `<span class="pill fail">旧版本(索引只取最新版)</span>`}
+        <div class="k">${esc(d["document_version_id"])}</div></td></tr>
+      <tr><th>原文件</th><td><code>${esc(d["object_key"] || "—")}</code>
+        <div class="k">来源:${esc(((d["source_info"] || {})["存储"]) || "(没记)")}</div></td></tr>
+      <tr><th>在哪些索引里</th><td>${(d["在哪些索引里"] || []).map((x) =>
+          `<span class="pill ${x.status === "已就绪" ? "ok" : "warn"}">${esc(x.status)}</span>
+           <code>${esc(x.id)}</code>`).join("<br>") || "—(一个都没有)"}</td></tr>
+      <tr><th>谁看得到</th><td>${(d["谁看得到"] || []).map((x) =>
+          `<code>${esc(x)}</code>`).join(" ")}
+        <div class="k">${esc(d["为什么是这些人"])}</div></td></tr>
+    </tbody></table>
+    <div class="note">${md("⚠️ **不能单独设这一段的权限。** " + d["为什么不能"])}</div>`;
 }
 
 async function 页_索引构建(kbId) {
@@ -2944,7 +3107,7 @@ async function 页_索引构建(kbId) {
       <th>输入指纹</th></tr></thead><tbody>`
     + d.items.map((r) => `<tr>
         <td class="num">${esc(r.id)}<div class="k">${esc(r.created_at || "")}</div></td>
-        <td><span class="tag ${r.status === "已就绪" ? "ok" : (r.status === "失败" ? "crit" : "warn")}">${esc(r.status)}</span></td>
+        <td><span class="pill ${r.status === "已就绪" ? "ok" : (r.status === "失败" ? "fail" : "warn")}">${esc(r.status)}</span></td>
         <td>${esc(r.embedding_model_id || "—")} ${r.embedding_dim ? `<span class="k">${r.embedding_dim} 维</span>` : ""}
             ${_mock标(r["是mock吗"])}</td>
         <td class="num">${r["成员数"]}</td>
@@ -3017,14 +3180,14 @@ function 画链路(d) {
     <table><tbody>
     ${行("原问", esc(d["原问"]))}
     ${行("改写", d["改写"] === null
-          ? `<span class="tag">没做</span>`
+          ? `<span class="pill">没做</span>`
           : esc(d["改写"]),
           md(d["改写说明"] || ""))}
     ${行("召回", `${d["召回数"]} 条候选 · ${esc((d["召回方式"] || []).join("、"))}`)}
     ${行("向量", `${esc(d["embedding"]["模型"])} · ${d["embedding"]["维度"]} 维 ${_mock标(d["embedding"]["是mock"])}`)}
     ${行("精排", d["精排"]["做了"]
           ? `${esc(d["精排"]["模型"] || "")} · ${(d["精排"]["用量"] || {}).input_tokens || "?"} in / ${(d["精排"]["用量"] || {}).output_tokens || "?"} out`
-          : `<span class="tag warn">没做</span>`,
+          : `<span class="pill warn">没做</span>`,
           d["精排"]["做了"] ? "" : md(d["精排"]["为什么"] || ""))}
     ${行("截断", esc(d["截断"]))}
     ${行("选片", `${d["选了几片"]} 片 · ${d["用了多少token"]} token`,
@@ -3038,14 +3201,14 @@ function 画链路(d) {
   const 片 = `<div class="card"><div class="k" style="padding:8px 10px 0">选中的片段(按精排分数)</div>
     ${d["选片"].map((x) => `<div class="body" style="border-top:1px solid var(--line)">
       <div>
-        ${x["分数"] === null ? `<span class="tag">未精排</span>`
-                            : `<span class="tag ${x["分数"] >= 7 ? "ok" : (x["分数"] >= 4 ? "warn" : "crit")}">${x["分数"]}/10</span>`}
+        ${x["分数"] === null ? `<span class="pill">未精排</span>`
+                            : `<span class="pill ${x["分数"] >= 7 ? "ok" : (x["分数"] >= 4 ? "warn" : "fail")}">${x["分数"]}/10</span>`}
         <span class="k">向量 ${x["相似度"]}</span>
         <b style="margin-left:8px">${esc(x["证据"])}</b>
       </div>
       ${x["引文"] ? `<div style="margin:4px 0">
           ${x["引文可信"] === false
-            ? `<span class="tag crit" title="${esc(x["引文问题"] || "")}">⚠️ 引文不可信</span> `
+            ? `<span class="pill fail" title="${esc(x["引文问题"] || "")}">⚠️ 引文不可信</span> `
             : ``}
           引文「${esc(x["引文"])}」
           ${x["引文可信"] === false
@@ -3088,7 +3251,7 @@ async function 页_审计记录() {
       <div class="sub"><b>只追加,不许删也不许改</b>(§15.4)——
         一个能删审计的接口,会让审计在最需要它的那一刻正好是空的。</div></div></div>
     <div class="note">按动作筛:<select id="f-act"><option value="">全部</option></select>
-      <button class="btn" id="f-go">看</button></div>
+      <button id="f-go">看</button></div>
     <div id="list"><div class="state">加载中…</div></div>`;
   const 拉 = async (动作) => {
     try {
@@ -4132,6 +4295,10 @@ async function 路由() {
     if (h === "#/usage") return await 页_用量与成本();
     if (h === "#/uploads") return await 页_加资料();
     if (h === "#/kb") return await 页_知识库();
+    // ⚠️ `#/chunks/` 和 `#/chunk/` 不冲突(第 8 个字符一个是 s 一个是 /),
+    // 但更长的前缀写在前面 —— 下一个人加 `#/chunkset/` 时就不会踩。
+    if (h.startsWith("#/chunks/")) return await 页_切片列表(decodeURIComponent(h.slice(9)));
+    if (h.startsWith("#/chunk/")) return await 页_切片详情(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/kb/")) return await 页_索引构建(decodeURIComponent(h.slice(5)));
     if (h === "#/retrieval") return await 页_检索实验室();
     if (h === "#/audit") return await 页_审计记录();

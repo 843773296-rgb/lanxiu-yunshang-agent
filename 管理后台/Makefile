@@ -709,6 +709,14 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  🔑 而我**当天自己又种了四个** —— 所以它不能只写在 CLAUDE.md 里"
 	@./.venv/bin/python tools/makefile_echo_check.py
 	@echo ""
+	@echo "▸ 页面上写的 class,CSS 里得真有 —— 不然它是一行普通文字"
+	@echo "  2026-10-07 量到 47 处 'class=tag ...' 而 CSS 里定义的是 '.pill';"
+	@echo "  其中 14 处还用了 'crit' 而 CSS 里是 '.fail' —— 47 个状态徽章一直没样式"
+	@echo "  ⚠️ 浏览器对不认识的 class **完全静默**:不报错、不警告、照样渲染"
+	@echo "  🔑 没在 CSS 里加 '.tag' 别名 —— 两套名字迟早分叉,"
+	@echo "     而分叉时两边各自都「有样式」,只是不一样"
+	@./.venv/bin/python tools/css_class_check.py
+	@echo ""
 	@echo "▸ SQL 字符串体检:注释里的绑定参数 / 缺 cast 的位置"
 	@echo "  **判据不自己实现词法,问 SQLAlchemy** —— 第一版自己写正则,15/17 是误报"
 	@./.venv/bin/python tools/sql_lint.py
