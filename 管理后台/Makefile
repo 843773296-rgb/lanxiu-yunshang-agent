@@ -23,7 +23,7 @@ contract:      ## 只跑契约覆盖检查(不需要数据库)
 	@echo ""
 	@./.venv/bin/python tools/test_registry_check.py
 	@echo ""
-	@echo "▸ 纯逻辑自测也要有入口能跑(`tests/orchestration/`)"
+	@echo "▸ 纯逻辑自测也要有入口能跑('tests/orchestration/')"
 	@echo "  ⚠️ e2e 那一组有判据盯着,**这一组原来没有** —— 2026-10-04 数的时候"
 	@echo "     16 份文件挂了 16 份,齐的;而它齐是靠人手挂齐的,下一份忘了挂门禁照旧绿"
 	@./.venv/bin/python tools/orchestration_registry_check.py
@@ -61,7 +61,7 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	# `contract` 那一组是「不需要数据库」的 —— 放进去会让它在没库的机器上红,
 	# 而那种红会和真问题混在一张报告里。
 	# > 一条装在跑不起来的地方的判据,和没装一样。
-	@echo "▸ 后台里的铁律和 `prompts.py` 一致吗(要库)"
+	@echo "▸ 后台里的铁律和 'prompts.py' 一致吗(要库)"
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tools/lanxiu_prompt_sync_check.py
 	@echo ""
@@ -76,10 +76,10 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 		./.venv/bin/python tools/lanxiu_tool_sync_check.py
 	@echo ""
 	@echo "▸ 契约和库是否一致(alembic check)"
-	@echo "  ⚠️ **这一行原来是 \`alembic check 2>&1 | tail -1\`** —— 管道吞退出码,"
+	@echo "  ⚠️ **这一行原来是 \'alembic check 2>&1 | tail -1\'** —— 管道吞退出码,"
 	@echo "     它红了这个目标也不红(整条命令的状态是 tail 的,永远 0)。"
 	@echo "     2026-10-04 改成走包装脚本:**它自己判退出码,而且进了根 check.sh** ——"
-	@echo "     原来这条只在 \`make test\` 里,而那是个我从来不跑的目标。"
+	@echo "     原来这条只在 \'make test\' 里,而那是个我从来不跑的目标。"
 	@echo "     > 一条判据装在一个我从来没跑过的目标里,等于没装;"
 	@echo "     > 而即使跑了,接上管道之后它也不拦。"
 	@./.venv/bin/python tools/alembic_sync_check.py
@@ -95,7 +95,7 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@echo "▸ 真 Embedding(BGE-small-zh-v1.5,onnxruntime 本机跑):"
 	@echo "  **判据是语义有效性,不是形状** —— 四档层级必须成立"
 	@echo "  (相同 > 同义 > 同主题 > 无关;pooling 错、前缀错都会让中间两档塌一起)"
-	@echo "  ⚠️ 要模型文件:`bash tools/fetch_model.sh`(96 MB,不进 git)"
+	@echo "  ⚠️ 要模型文件:'bash tools/fetch_model.sh'(96 MB,不进 git)"
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_embedder_bge.py
 	@echo ""
@@ -106,11 +106,21 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_index_build.py
 	@echo ""
-	@echo "▸ 检索链:召回 → 截断 → 证据链(`要精排=False`,**不花 API 额度**)"
+	@echo "▸ 检索链:召回 → 截断 → 证据链('要精排=False',**不花 API 额度**)"
 	@echo "  精排的**判据**在编排层(零依赖),精排的**效果**在 make test-live ——"
 	@echo "  **只有第三层要花钱,而前两层覆盖了绝大部分会坏的地方**"
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_retrieval.py
+	@echo ""
+	@echo "▸ 语料权限 · **在真 PG 上验**(两级 ACL 填完即 rollback,库里不留痕)"
+	@echo "  还的是一笔点名记在交接里的欠账:72 组合对账是照 SQL 语义**用 Python 算的**,"
+	@echo "  jsonb 的 '?|' 行为没在 PG 上验过 —— 一份「两种表示对账过了」的测试,"
+	@echo "  和一份「对账的另一侧是我自己模拟的」,在那些绿勾上长得一模一样"
+	@echo "  🔑 第一次真跑就量出一个分叉:'{\"roles\":[]}' 上 SQL 说看不到、"
+	@echo "     纯判定说看得到(coalesce 只对 NULL 生效,而 '[]' 不是 NULL) ——"
+	@echo "     **纯逻辑对账抓不到它**,因为那两边都调同一个 '_规范()'(同源谬误的变种)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_corpus_acl_live.py
 	@echo ""
 	@echo "▸ 向量约束:**真的插坏数据**(混维度/假向量id/重复文本/跨项目引用)"
 	@echo "  「能用约束表达的不要用判据表达」是个声称 —— 这里去攻击它"
@@ -324,7 +334,7 @@ E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
 test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
 	@echo "▸ 端到端(CI 版):$(words $(E2E_CI)) 份 Python + $(words $(E2E_CI_JS)) 份 JS"
 	@echo "  ⚠️ **排掉了两份要真调 Claude 的** —— 排掉哪几份、为什么,"
-	@echo "     看 Makefile 里 `E2E_CI跳过`;`test_registry_check` 验「没有谁从两个名单之间漏掉」"
+	@echo "     看 Makefile 里 'E2E_CI跳过';'test_registry_check' 验「没有谁从两个名单之间漏掉」"
 	@./.venv/bin/python tools/seed_datasets.py > /dev/null
 	@./.venv/bin/python tools/seed_training.py > /dev/null
 # ⚠️ **失败时把输出贴全,不 `tail` 截。**
@@ -429,7 +439,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_eval_items_flow.py
 	@echo ""
 	@echo "▸ §8.2「模型说明」那三个字段:**两种空分得开**"
-	@echo "  (没给 = 没人说过 / 给了 `[]` = 有人看过确认不需要 —— 混掉的话"
+	@echo "  (没给 = 没人说过 / 给了 '[]' = 有人看过确认不需要 —— 混掉的话"
 	@echo "   「还有几个工具没人填过别名」这个问题从此答不出来,而它是这件事的唯一指标)"
 	@./.venv/bin/python tests/e2e/test_tool_modelcard_flow.py
 	@echo ""
@@ -439,8 +449,8 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_prompt_snapshot_flow.py
 	@echo ""
 	@echo "▸ 执行模式:**真实调用失败不许静默降级成 mock**(外部审阅 §5.4)"
-	@echo "  ⚠️ 第 ③ 条在 `MODEL_ADAPTER=mock` 下会报 ⏸「没验」而不是通过 ——"
-	@echo "     要真验那一条:`MODEL_ADAPTER=anthropic make dev` 之后再跑这一份"
+	@echo "  ⚠️ 第 ③ 条在 'MODEL_ADAPTER=mock' 下会报 ⏸「没验」而不是通过 ——"
+	@echo "     要真验那一条:'MODEL_ADAPTER=anthropic make dev' 之后再跑这一份"
 	@./.venv/bin/python tests/e2e/test_exec_mode_flow.py
 	@echo ""
 	@echo "▸ 模型与连接端到端(§17.4-5):**碰凭据的那一组**"
@@ -663,8 +673,8 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@./.venv/bin/python tools/spec_coverage.py
 	@echo ""
 	@echo "▸ Shell 体检:**bash 不接受中文变量名**(本地 zsh 接受,CI 的 bash 不接受)"
-	@echo "  踩过三次,其中一次在**全绿时完全看不出来**:`红=0` 被当成命令,"
-	@echo "  `$$红` 展开成空,exit 拿不到数字退 255 —— 而红的理由完全指错方向"
+	@echo "  踩过三次,其中一次在**全绿时完全看不出来**:'红=0' 被当成命令,"
+	@echo "  '$$红' 展开成空,exit 拿不到数字退 255 —— 而红的理由完全指错方向"
 	@./.venv/bin/python tools/shell_lint.py
 	@echo ""
 	@echo "▸ 敏感信息检测覆盖:**漏检和误拦分开报**(用户 2026-09-28 要求)"
@@ -673,13 +683,20 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@./.venv/bin/python tools/redact_coverage.py
 	@echo ""
 	@echo "▸ JSONB 列写裸串:**今天栽了八次的那一族**"
-	@echo "  `sql_columns_check` 只查列名不查类型 —— 那条已知盲区两天里放过去 8 次同一个错"
+	@echo "  'sql_columns_check' 只查列名不查类型 —— 那条已知盲区两天里放过去 8 次同一个错"
 	@echo "  ⚠️ 判据改了三版才咬得住:盯错不变量 → 留的口子正好放过真 bug → 收紧过头又漏"
 	@./.venv/bin/python tools/jsonb_cast_check.py
 	@echo ""
 	@echo "▸ SQL 列名体检:**问 information_schema,不猜列名**"
 	@echo "  (同一天栽了四次「没查就写 SQL」:三次猜类型、一次猜列名)"
 	@./.venv/bin/python tools/sql_columns_check.py
+	@echo ""
+	@echo "▸ Makefile 自己:'@echo' 里不许有反引号 —— 它是 shell 的命令替换"
+	@echo "  2026-10-07 量到 23 行,被执行的东西里有 'bash tools/fetch_model.sh'"
+	@echo "  (会真的下模型)和 'MODEL_ADAPTER=anthropic make dev'(会真的起服务) ——"
+	@echo "  今天没出事只因为那几行所在的目标恰好没被跑到"
+	@echo "  🔑 而我**当天自己又种了四个** —— 所以它不能只写在 CLAUDE.md 里"
+	@./.venv/bin/python tools/makefile_echo_check.py
 	@echo ""
 	@echo "▸ SQL 字符串体检:注释里的绑定参数 / 缺 cast 的位置"
 	@echo "  **判据不自己实现词法,问 SQLAlchemy** —— 第一版自己写正则,15/17 是误报"
@@ -751,19 +768,19 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@./.venv/bin/python tests/orchestration/test_task_identity.py
 	@echo ""
 	@echo "▸ 这次用哪一版策略:**拒绝启动,而不是回退成「没有限制」**"
-	@echo "  ⚠️ 最容易写出来的恰恰是那一行 \`策略 = 拉配置() or 默认不限制\`:"
+	@echo "  ⚠️ 最容易写出来的恰恰是那一行 \'策略 = 拉配置() or 默认不限制\':"
 	@echo "     一个「配置服务挂了所以没限制」的运行,和一个「真被授权不限制」的,"
 	@echo "     **在那次运行上长得一模一样**(规格 §4.3)"
 	@echo "  有发布 ≠ 已加载(§9.2)· 哈希不符是**冲突**不是没切过去(§10.3)·"
 	@echo "  回执会陈旧(§10.2)· 硬限制「**没核查过**」不算支持"
 	@echo "▸ 把草稿冻成一版策略:**拼错的键和布尔值不许冻进去**"
 	@echo "  ⚠️ 两种最毒的放过法:"
-	@echo "     · 拼错键名(\`tool_attemps_cap\`)→ 执行层读不到,"
+	@echo "     · 拼错键名(\'tool_attemps_cap\')→ 执行层读不到,"
 	@echo "       **那个保护从来没生效过,而页面上填着数**"
-	@echo "     · 写 \`true\` → Python 里 True == 1,于是"
+	@echo "     · 写 \'true\' → Python 里 True == 1,于是"
 	@echo "       **一条上限 1 次的策略,和一条写着 true 的,在执行时长得一样**"
 	@echo "  哈希只覆盖影响行为的字段(改备注不出新版本)· 复用缓存那个规范化器"
-	@echo "  (\`0\` / \`null\` / \`false\` 折出来必须不一样)"
+	@echo "  (\'0\' / \'null\' / \'false\' 折出来必须不一样)"
 	@./.venv/bin/python tests/orchestration/test_policy_freeze.py
 	@echo ""
 	@echo "▸ 实例回执可信吗:**哈希对不上是「冲突」,不是「以回执为准」**"
@@ -772,7 +789,7 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     **在那张「实例已加载」的表上长得一模一样**(规格 §10.3)"
 	@echo "  loaded_at 服务端盖(实例时钟不对会让回执永不过期)· 能力三态"
 	@echo "  (「没报」不是「不支持」)· 能力不够**不在收回执时拒绝**"
-	@echo "  ⚠️ 还验**共用真的发生了**:`策略解析` 与它是同一份陈旧判据"
+	@echo "  ⚠️ 还验**共用真的发生了**:'策略解析' 与它是同一份陈旧判据"
 	@echo "     (第一版各写了一遍,而注释里恰好写着「两处各写一遍迟早分叉」)"
 	@./.venv/bin/python tests/orchestration/test_receipt_verify.py
 	@echo ""
@@ -827,7 +844,7 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     在新文档的片段列表上长得一模一样,而后者权限白收紧了"
 	@./.venv/bin/python tests/orchestration/test_split_document.py
 	@echo ""
-	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
+	@echo "▸ 收资料:**只收「已校验」的上传** + 'object_key' 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py
 	@echo ""
