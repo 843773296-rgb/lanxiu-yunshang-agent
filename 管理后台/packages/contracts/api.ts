@@ -105,6 +105,9 @@ export const ENDPOINTS = [
   { method: "POST", path: "/document-versions/{id}/revisions", summary: "改片段(出新候选)", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/knowledge-bases/{id}/index-builds", summary: "某个知识库的索引构建", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/knowledge-bases/{id}/index-builds", summary: "建索引", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "GET", path: "/knowledge-bases/{id}/chunks", summary: "某个知识库的切片", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/chunks/{id}", summary: "一个切片的详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/documents/{id}/split", summary: "把几个切片拆成独立文档", capability: "改 Prompt/知识候选", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "POST", path: "/retrieval-tests", summary: "检索实验室跑一次", capability: "运行评测", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/datasets", summary: "数据集列表", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/datasets", summary: "建数据集", capability: "改训练样本", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -214,4 +217,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 127 条接口 · 22 条异步 · 27 条要幂等键 · 14 条要 If-Match */
+/** 共 130 条接口 · 22 条异步 · 28 条要幂等键 · 14 条要 If-Match */
