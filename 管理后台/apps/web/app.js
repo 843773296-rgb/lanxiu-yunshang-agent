@@ -2990,7 +2990,15 @@ async function 页_切片列表(kbId) {
     s.挂();
     return;
   }
-  // ── 顶部:混版本告警(整库一起看,不受筛选影响)────────────────────
+  // ── 顶部:**先说库级的** ────────────────────────────────────────
+  // ⚠️ 2026-10-07 在浏览器里看到详情页才发现:那个库一个索引都没建过,
+  // 于是**每一行**都标「检索不到」,而那不是各行自己的问题。
+  // > 一个「这一段没进索引」的标记,和一个「整个库从没建过索引」的,
+  // > **在那一列上长得一模一样** —— 前者让人去查那一段,后者建一次索引就好。
+  const 库告警 = d["这个知识库有索引吗"] ? "" :
+    `<div class="state err"><h3>这个知识库还没有索引</h3><p>${md(
+      d["没索引会怎样"] || "")}</p></div>`;
+  // ── 混版本告警(整库一起看,不受筛选影响)──────────────────────────
   const 告警 = d["混着切的吗"]
     ? `<div class="state err"><h3>这个知识库建不出索引</h3><p>${md(
         "切片器版本:**" + d["切片器版本们"].join(" / ") + "** · 解析器版本:**"
@@ -3001,7 +3009,7 @@ async function 页_切片列表(kbId) {
     ? `<div class="note">只看文档 <code>${esc(_切片页.doc)}</code>
          <button id="clr">看全部</button></div>`
     : "";
-  $("#main").innerHTML = 头 + 告警 + 筛 + `<table><thead><tr>
+  $("#main").innerHTML = 头 + 库告警 + 告警 + 筛 + `<table><thead><tr>
       <th class="num">段</th><th>节路径</th><th>正文</th>
       <th class="num">token</th><th>版本</th><th>索引</th><th></th>
       </tr></thead><tbody>`
@@ -3057,9 +3065,13 @@ async function 页_切片详情(chunkId) {
       · 第 ${d.ordinal} 段</div>
     <div class="head"><div><h1>切片详情</h1>
       <div class="sub">${esc(d.section_path || "")}</div></div></div>`;
+  // ⚠️ 标题要跟着分档 —— 「这一段检索不到」在整库没索引时是**误导**:
+  // 它让人去查这一段出了什么事,而真相是建一次索引就好。
   const 检索 = d["检索得到吗"]
     ? `<span class="pill ok">检索得到</span>`
-    : `<div class="state err"><h3>这一段检索不到</h3><p>${md(d["为什么检索不到"])}</p></div>`;
+    : `<div class="state err"><h3>${d["这个知识库有索引吗"]
+          ? "这一段检索不到" : "这个知识库还没有索引"}</h3>
+        <p>${md(d["为什么检索不到"])}</p></div>`;
   $("#main").innerHTML = 头2 + 检索 + `
     <div class="card"><h3>正文</h3><pre class="io">${esc(d.text)}</pre>
       <div class="k">${d.text.length} 字 · ${d["token_count"] ?? "?"} token(粗估)

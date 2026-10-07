@@ -256,6 +256,13 @@ def 切片列表(project_id: str, kb_id: str,
                {条件}
         """
         总 = c.execute(text(f"select count(*) {基}"), 参).scalar()
+        # 见详情里那段:库级和片段级要分得开,否则每一行的「检索不到」
+        # 看起来都像这一段自己的问题
+        库索引数 = c.execute(text("""
+            select count(*) from index_builds
+             where project_id=:p and knowledge_base_id=:k
+               and status='已就绪' and archived_at is null
+        """), {"p": project_id, "k": kb_id}).scalar()
         rs = c.execute(text(f"""
             select ch.id, ch.document_version_id, d.id 文档id, dv.revision 版次,
                    dv.object_key, ch.ordinal, ch.section_path, ch.section_titles,
@@ -308,6 +315,11 @@ def 切片列表(project_id: str, kb_id: str,
         # **整个知识库一起查**的)—— 也就是说这个库从此一个索引都建不出来。
         # 每行标版本号的话,人要自己把一屏行的版本号比一遍才看得出来;
         # 而那正是「看起来正常」的样子。
+        "这个知识库有索引吗": bool(库索引数),
+        "没索引会怎样": (None if 库索引数 else
+                    f"**这个知识库一个索引都没建过** —— 下面这 {总} 段"
+                    f"**全都检索不到**。每一行标的「检索不到」是这个原因,"
+                    f"不是那一段自己的问题"),
         "混着切的吗": 混了,
         "混了会怎样": (None if not 混了 else
                    "这个知识库**建不出索引** —— 索引构建那一步会报 "
@@ -361,6 +373,17 @@ def 切片详情(project_id: str, chunk_id: str,
              where im.project_id=:p and im.chunk_id=:i and ib.archived_at is null
              order by ib.created_at desc
         """), {"p": project_id, "i": chunk_id}).mappings().all()
+        # ⚠️ **库级和片段级要分得开。** 2026-10-07 在浏览器里看到这一页才发现:
+        # 那个库一个索引都没建过,于是**每一条**详情都显示「这一段检索不到」——
+        # > 一个「这一段没进索引」的告警,和一个「整个知识库从没建过索引」的,
+        # > **在那个红框上长得一模一样** —— 前者让人去查这一段出了什么事,
+        # > 后者只需要建一次索引。
+        # 实测当时:两个库 0 个已就绪索引、1745 个片段**全部**检索不到。
+        库索引数 = c.execute(text("""
+            select count(*) from index_builds
+             where project_id=:p and knowledge_base_id=:k
+               and status='已就绪' and archived_at is null
+        """), {"p": project_id, "k": r["knowledge_base_id"]}).scalar()
     d = dict(r)
     kacl, dacl = d.pop("知识库acl", None), d.pop("acl_override", None)
     可见, 为什么 = KV.定(知识库acl=kacl, 文档acl=dacl)
@@ -377,11 +400,16 @@ def 切片详情(project_id: str, chunk_id: str,
     d["在役索引数"] = sum(1 for x in 索引们 if x["status"] == "已就绪")
     # ⚠️ 这两条合起来回答「我明明导入了为什么搜不到」。
     d["检索得到吗"] = bool(d["在役索引数"]) and bool(d["是最新版吗"])
+    d["这个知识库有索引吗"] = bool(库索引数)
     d["为什么检索不到"] = (
         None if d["检索得到吗"] else
-        ("它属于**旧版本**的文档 —— 索引只取每篇文档最新那一版"
-         if not d["是最新版吗"] else
-         "它**不在任何已就绪的索引里** —— 切出来了但没建索引,或者建完又归档了"))
+        # ⚠️ **先说库级那一种** —— 它一真,片段级那两句就全是噪音
+        ("**这个知识库一个索引都没建过** —— 它的片段**全都**检索不到,"
+         "不是这一段的问题。去知识库页建一次索引"
+         if not 库索引数 else
+         ("它属于**旧版本**的文档 —— 索引只取每篇文档最新那一版"
+          if not d["是最新版吗"] else
+          "它**不在任何已就绪的索引里** —— 切出来了但没建索引,或者建完又归档了")))
     return d
 
 
