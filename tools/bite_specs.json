@@ -5386,8 +5386,8 @@
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "    没出处 = [w for w in ORDER_ST if w in text and w not in 返回原文]",
-    "new": "    没出处 = [w for w in ORDER_ST if w in text]"
+    "old": "    没出处 = [w for w in ORDER_ST if w in text and w not in 返回原文 and _当状态说(w)]",
+    "new": "    没出处 = [w for w in ORDER_ST if w in text and _当状态说(w)]"
    }
   ],
   "预期红": "真跑钉回(R4)"
@@ -5434,8 +5434,8 @@
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "           \"闲置\", \"无互动\", \"没来\", \"沉默\")",
-    "new": "           )"
+    "old": "           \"闲置\", \"无互动\", \"没来\", \"沉默\", \"还剩\")",
+    "new": "           \"还剩\")"
    }
   ],
   "预期红": "真跑钉回(C10001)"
@@ -5451,5 +5451,41 @@
    }
   ],
   "预期红": "真跑钉回(T02):「查出来之后"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g17 只要有「免费改」就算判责(不看归属)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    归属 = soft >= 1 or any(w in text for w in (\"承担\", \"责任\"))\n    if not 归属: return None",
+    "new": "    归属 = True\n    if not 归属: return None"
+   }
+  ],
+  "预期红": "真跑钉回(话术):「能让的只有三样"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g8 「签收后」也当状态",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        return any(text[m.end():m.end() + 1] not in (\"后\", \"前\", \"时\") for m in re.finditer(re.escape(w), text))",
+    "new": "        return True"
+   }
+  ],
+  "预期红": "真跑钉回(话术):「签收后 3 个月内」"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g1 整单工期不认时间字段里的数",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if a in _工具里的天数(calls):\n            continue",
+    "new": "        if False:\n            continue"
+   }
+  ],
+  "预期红": "真跑钉回(工坊)"
  }
 ]

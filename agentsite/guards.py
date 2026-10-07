@@ -65,7 +65,7 @@ TOTAL_D  = ("整单", "总共", "一共", "交期", "工期", "多久", "大概�
 # 「距离」也收:「距离交期还有 20 天」是在报日期差,同样不是在估整单工期
 # 「闲置 / 无互动 / 没来 / 沉默」:10-06 运营 C10001「她**闲置** 300 天」挨着「多久没来」的「多久」被当成整单工期
 已过标记 = ("逾期", "超期", "至今", "距今", "距离", "已过", "过了", "已经", "晚了", "之前", "天前", "延误",
-           "闲置", "无互动", "没来", "沉默")
+           "闲置", "无互动", "没来", "沉默", "还剩")
 TOTAL_M  = ("总价", "合计", "报价", "价格", "多少钱", "售价", "要花")
 PRICEY   = ("售价", "报价", "价格", "多少钱", "卖", "要花", "收")
 HEDGE    = ("物料成本", "不含", "不是售价", "不是报价", "仅物料", "材料成本")
@@ -230,6 +230,29 @@ def _原样出处(text, i, calls):
     return False
 
 
+def _工具里的天数(calls):
+    """本轮工具返回里**时间类字段**的数(字段名带 day / 天 / 工日 / 工期 / lead)。
+
+    10-07 工坊真跑:「工作日 18 天」是 get_workorder 原样返回的 workdays=18.0,被当成凭印象说的整单工期。
+    整单工期那一支 10-06 试过「数在任何返回里就算」,原有用例当场红(物料成本里碰巧有同一个数)——
+    所以只认**时间类字段**里的数,不认随便哪个字段。"""
+    out = set()
+    def 走(o, k=""):
+        if isinstance(o, dict):
+            for kk, vv in o.items(): 走(vv, str(kk))
+        elif isinstance(o, list):
+            for vv in o: 走(vv, k)
+        elif isinstance(o, (int, float)) and not isinstance(o, bool):
+            if any(w in k.lower() for w in ("day", "天", "工日", "工期", "lead")): out.add(float(o))
+    for c in calls or []:
+        o = c.get("output")
+        if isinstance(o, str):
+            try: o = json.loads(o)
+            except Exception: continue
+        走(o)
+    return out
+
+
 def _查到过(v, text, i, 查到的数, calls):
     """这个数有没有出处:数本身在返回里 / 百分数在返回里是小数(18% ↔ 0.18)/ 那一截原样在返回里。"""
     if v in 查到的数: return True
@@ -299,6 +322,8 @@ def g1_no_source(text, calls, prompt=""):
         # 挨着「交期 / 交付」就被当成整单工期,两份答案因此整份扣下。已过去的天数不是工期:同小句有经过标记就不管
         小句 = tm._seg_before(text, i, 20) + tm._seg_after(text, i, 20)
         if any(k in 小句 for k in 已过标记):
+            continue
+        if a in _工具里的天数(calls):
             continue
         if _near(text, i, TOTAL_D) and not _called(calls, "kb_lead") and not _原样出处(text, i, calls):
             return f"答案给了整单工期({a:g} 天),但没调 kb_lead 算过 —— 工期不能凭印象说"
@@ -672,7 +697,10 @@ def g8_business_fact(text, calls):
     # 只认 get_order 时都被判「凭印象说订单状态」。状态词**原样出现在本轮某个工具返回里**,就是查过的(和 g1 同一个思路)
     返回原文 = " ".join(c.get("output") if isinstance(c.get("output"), str)
                      else json.dumps(c.get("output"), ensure_ascii=False, default=str) for c in calls or [])
-    没出处 = [w for w in ORDER_ST if w in text and w not in 返回原文]
+    # 「签收后 3 个月内」说的是时限,不是某一单的状态(10-07 话术真跑):状态词后面紧跟 后 / 前 / 时 的不算
+    def _当状态说(w):
+        return any(text[m.end():m.end() + 1] not in ("后", "前", "时") for m in re.finditer(re.escape(w), text))
+    没出处 = [w for w in ORDER_ST if w in text and w not in 返回原文 and _当状态说(w)]
     if 没出处 and not _called(calls, "get_order"):
         return f"答案里给了某一单的状态(「{没出处[0]}」),但没调 get_order 查过 —— 订单状态不能凭印象说"
     for w in STOCK_W:
@@ -1050,6 +1078,13 @@ def g17_liability_promise(text, calls):
     hard = sum(1 for w in LIAB_HARD if w in text)
     soft = sum(1 for w in LIAB_SOFT if w in text)
     if hard < 1 and soft < 2: return None
+    # ⚠️ 10-07 话术评测真跑:「能让的只有三样:**免首次改衣**、送保养、免运费」「签收后 3 个月内免费改一次」
+    # 被当成判责结论扣下 4 份 —— 那是在讲**优惠政策**,「免费改」三个字不等于判了责。
+    # 判责结论的结构特征:**说了责任归谁**(我方 / 客方 / 责任 / 承担 / 判责…)。列优惠政策时不说归属
+    # 第一版还要求「指向某一张单」—— 原有用例「判责:工艺瑕疵,我方承担,免费返修,已经锁定」不带单号也是判责,当场放行,去掉了。
+    # 剩下的代价:列判定表通用条件、又写了「我们承担」的,仍会被拦(两可,先接受)
+    归属 = soft >= 1 or any(w in text for w in ("承担", "责任"))
+    if not 归属: return None
     if tm.mentions(text, CONFIRM): return None
     # ⚠️ 10-06 返修判责真跑:「这是建议,**须由你(店长)确认后执行,不构成对外承诺**」被判没写确认 ——
     # 词表是「由店长 / 须确认 / 不构成承诺」,中间多插了几个字就对不上(又是逐字比)。查结构:
