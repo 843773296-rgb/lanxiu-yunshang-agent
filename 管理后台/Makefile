@@ -122,6 +122,17 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_corpus_acl_live.py
 	@echo ""
+	@echo "▸ 切片栏目 · 列表 + 详情(业务 2026-10-07 要的那个栏目)"
+	@echo "  ⚠️ 这个接口最容易变成**绕开检索权限的后门** —— 不检索,直接翻列表;"
+	@echo "     所以它用的是和检索同一个 where 片段,不是另写一套"
+	@echo "  ⚠️ 只给最新那一版的片段(实测 1335 个片段里 619 条属于旧版本) ——"
+	@echo "     索引取的也是 max(revision),列表跟索引一致才有参考价值"
+	@echo "  ⚠️ 看不到和不存在**对外同形**(都 404),否则它是个存在性探测器"
+	@echo "  🔑 混版本告警**整库一起看,不受 document_id 筛选影响** ——"
+	@echo "     第一版拿带筛选的查询算,于是一条真告警会在筛选状态下消失"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_chunk_browse.py
+	@echo ""
 	@echo "▸ 向量约束:**真的插坏数据**(混维度/假向量id/重复文本/跨项目引用)"
 	@echo "  「能用约束表达的不要用判据表达」是个声称 —— 这里去攻击它"
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \

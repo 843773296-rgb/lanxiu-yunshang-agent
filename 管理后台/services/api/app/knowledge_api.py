@@ -33,6 +33,10 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "contract"))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge"))
+# ⚠️ `语料可见` 在 runtime/ —— **显式加进来,不靠 `import retrieval` 顺带**。
+# 那样会让 import 顺序变成隐含依赖:把这一行挪到 retrieval 前面就 ImportError,
+# 而「为什么挪一下 import 就炸」读起来跟这个模块毫无关系。
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime"))
 
 import json as _json
 import os as _os
@@ -45,6 +49,7 @@ import adapters as AD
 import index_plan as IP
 import ingest as IN
 import parser as PS
+import 语料可见 as KV
 import retrieval as RT
 import reranker as RR
 import storage as OS_
@@ -60,6 +65,27 @@ router = APIRouter()
 前缀 = "/api/v1/projects/{project_id}"
 
 
+def _直调默认(值, 兜底):
+    """FastAPI 的 `Query(x)` 默认值在**直接调用**这个函数时不是 `x`。
+
+    它是 `fastapi.params.Query` 的实例,而且 **truthy** —— 于是
+    `if 某参数:` 为真、`limit` 变成一个对象,绑进 SQL 就报
+    `cannot adapt type 'Query'`。
+
+    > 一个默认值是 `None` 的参数,和一个默认值是 `Query(None)` 的,
+    > **在函数签名上长得几乎一样** —— 前者直接调用能用,后者当场炸。
+
+    ⚠️ 判的是**它是不是 Query 对象**,不是「它是不是我期望的类型」——
+    后者会把一个合法但意外的值悄悄换成兜底,而那是另一种错(更难查)。
+
+    为什么要支持直接调用:`tests/integration/test_chunk_browse.py`
+    **刻意不起服务**(起服务的测试要外部状态,进门禁会变成随机拦路),
+    所以它直接调端点函数。那是合理用法,归一化就该在这儿。
+    """
+    from fastapi.params import Query as _Q
+    return 兜底 if isinstance(值, _Q) else 值
+
+
 @router.get(前缀 + "/knowledge-bases")
 def 知识库列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
            limit: int = Query(20, ge=1, le=100)):
@@ -68,19 +94,28 @@ def 知识库列表(project_id: str, me: 身份 = Depends(要权限("查看有�
     只给片段数的话,「资料进来了」和「索引建好了」会被当成同一件事 ——
     而一个有 71 个片段、0 个索引的知识库,检索时返回的是空。
     """
+    # 口径唯一源头 —— 和检索那条 where 片段是同一个函数
+    权限, 权限参 = KV.where片段(这个人的角色们=[me.role], 知识库别名="kb")
     with 连接() as c:
-        rs = c.execute(text("""
+        rs = c.execute(text(f"""
             select kb.id, kb.name, kb.status, kb.updated_at,
                    (select count(*) from documents d
                      where d.project_id=kb.project_id and d.knowledge_base_id=kb.id
                        and d.archived_at is null) 文档数,
+                   -- ⚠️ **这个数要按权限过滤。** 2026-10-07 补:
+                   -- > 一个「片段数 71」和一个「你能看到的片段数 71」,
+                   -- > 在那个数字上长得一模一样 —— 而 ACL 一旦填上,
+                   -- > 它就在泄露他看不到的文档有多少内容。
+                   -- 补这一条的时机是**现在** —— 两级 ACL 今天全空,
+                   -- 所以加过滤数字不变;等填了再改就得解释「为什么变小了」。
                    (select count(*) from chunks ch
                       join document_versions dv
                         on dv.project_id=ch.project_id and dv.id=ch.document_version_id
                       join documents d
                         on d.project_id=dv.project_id and d.id=dv.document_id
                      where ch.project_id=kb.project_id
-                       and d.knowledge_base_id=kb.id) 片段数,
+                       and d.knowledge_base_id=kb.id
+                       and {权限}) 片段数,
                    (select count(*) from index_builds ib
                      where ib.project_id=kb.project_id and ib.knowledge_base_id=kb.id
                        and ib.status='已就绪') 就绪索引数,
@@ -92,7 +127,7 @@ def 知识库列表(project_id: str, me: 身份 = Depends(要权限("查看有�
              where kb.project_id=:p and kb.archived_at is null
              order by kb.updated_at desc nulls last
              limit :n
-        """), {"p": project_id, "n": limit}).mappings().all()
+        """), {"p": project_id, "n": limit, **权限参}).mappings().all()
     出 = []
     for r in rs:
         d = dict(r)
@@ -149,6 +184,203 @@ def 索引构建列表(project_id: str, kb_id: str,
         d["输入指纹短"] = (d["input_hash"] or "")[:26] or None
         出.append(d)
     return {"知识库": dict(kb), "items": 出, "total": len(出)}
+
+
+@router.get(前缀 + "/knowledge-bases/{kb_id}/chunks")
+def 切片列表(project_id: str, kb_id: str,
+         me: 身份 = Depends(要权限("查看有权配置")),
+         document_id: str = Query(None),
+         limit: int = Query(30, ge=1, le=200),
+         offset: int = Query(0, ge=0)):
+    """这个知识库的切片 —— **列表**。只读。
+
+    业务 2026-10-07 要的「切片栏目」。切片级**权限**那一拍是不做
+    (要收紧就拆成独立文档,见 `runtime/拆文档.py`),但**看得见**是要做的:
+    一个人要能回答「我导进去的那段话到底被切成了什么样」。
+
+    ## ⚠️ 这个接口最容易变成一个绕开检索权限的后门
+
+    > 一个「检索过滤了」的系统,和一个「检索过滤了而切片列表没过滤」的,
+    > **在那次检索上长得一模一样** —— 而那个人不检索、直接翻列表,
+    > 就看到了全部语料。
+    所以这里用的是**和检索同一个** `语料可见.where片段()`,不是另写一套。
+
+    ## ⚠️ 只给**最新那一版**的片段
+
+    `chunks` 绑的是 `document_version_id`,而一篇文档有多版。
+    > 一份「18 篇文档的片段」和一份「18 篇文档所有历史版本的片段」,
+    > **在那个列表上长得一模一样**(都是一堆片段)—— 而后者含着
+    > 已经被改掉的内容,数量还是前者的几倍。
+    索引取的也是 `max(revision)`,**列表跟索引一致**才有参考价值。
+
+    ## ⚠️ 「在不在役索引里」必须显式说
+
+    > 一个「在役索引里的片段」和一个「切出来了但没进任何索引」的,
+    > **在那个列表上长得一模一样** —— 而后者检索不到,
+    > 看起来却像语料里有。这一列正是在回答「我明明导入了为什么搜不到」。
+    """
+    # 见 `_直调默认` —— 直接调用时这几个默认值是 Query 对象,不是 None/30/0
+    document_id = _直调默认(document_id, None)
+    limit = _直调默认(limit, 30)
+    offset = _直调默认(offset, 0)
+    权限, 权限参 = KV.where片段(这个人的角色们=[me.role], 知识库别名="kb")
+    条件 = "and d.id = :doc" if document_id else ""
+    参 = {"p": project_id, "k": kb_id, "n": limit, "off": offset, **权限参}
+    if document_id:
+        参["doc"] = document_id
+    with 连接() as c:
+        if not c.execute(text("""select 1 from knowledge_bases
+                                 where project_id=:p and id=:k
+                                   and archived_at is null"""),
+                         {"p": project_id, "k": kb_id}).first():
+            raise _错(404, "NOT_FOUND", "没有这个知识库", "核对一下 id")
+        # ⚠️ **顺序必须确定**,否则翻页会重复或漏 ——
+        # 而「翻页漏了一条」和「那一条不存在」在界面上长得一模一样。
+        基 = f"""
+              from chunks ch
+              join document_versions dv on dv.project_id=ch.project_id
+                                       and dv.id=ch.document_version_id
+              join documents d on d.project_id=dv.project_id and d.id=dv.document_id
+              join knowledge_bases kb on kb.project_id=d.project_id
+                                     and kb.id=d.knowledge_base_id
+             where ch.project_id=:p and d.knowledge_base_id=:k
+               and d.archived_at is null and dv.archived_at is null
+               and d.disabled_at is null
+               and dv.revision = (select max(dv2.revision) from document_versions dv2
+                                   where dv2.project_id=dv.project_id
+                                     and dv2.document_id=dv.document_id
+                                     and dv2.archived_at is null)
+               and {权限}
+               {条件}
+        """
+        总 = c.execute(text(f"select count(*) {基}"), 参).scalar()
+        rs = c.execute(text(f"""
+            select ch.id, ch.document_version_id, d.id 文档id, dv.revision 版次,
+                   dv.object_key, ch.ordinal, ch.section_path, ch.section_titles,
+                   ch.token_count, ch.text_hash,
+                   ch.chunker_version, ch.parser_version,
+                   left(ch.text, 120) 正文预览, length(ch.text) 正文长度,
+                   (select count(*) from index_members im
+                      join index_builds ib on ib.project_id=im.project_id
+                                          and ib.id=im.index_build_id
+                     where im.project_id=ch.project_id and im.chunk_id=ch.id
+                       and ib.status='已就绪' and ib.archived_at is null) 在役索引数
+            {基}
+             order by d.id, ch.ordinal, ch.id
+             limit :n offset :off
+        """), 参).mappings().all()
+        # ── 混版本告警:**整库一起看,不受 document_id 筛选影响** ───────────
+        # ⚠️ 第一版我拿上面那个带 `document_id` 条件的 `基` 来查,于是:
+        # > 一个「这个库没有混版本」的告警,和一个「筛选后这一篇没有混版本」的,
+        # > **在那个 `混着切的吗: false` 上长得一模一样** ——
+        # > 而前者能建索引,后者不能。**筛选会让一条真告警消失。**
+        # 索引构建那道闸(`MIXED_CHUNKER_VERSION`)是按 `knowledge_base_id`
+        # 整库查的,所以这条告警也必须整库查 —— 判据要贴着它的含义。
+        版本行 = c.execute(text(f"""
+            select distinct ch.chunker_version 切, ch.parser_version 解
+              from chunks ch
+              join document_versions dv on dv.project_id=ch.project_id
+                                       and dv.id=ch.document_version_id
+              join documents d on d.project_id=dv.project_id and d.id=dv.document_id
+              join knowledge_bases kb on kb.project_id=d.project_id
+                                     and kb.id=d.knowledge_base_id
+             where ch.project_id=:p and d.knowledge_base_id=:k
+               and d.archived_at is null and dv.archived_at is null
+               and d.disabled_at is null
+               and dv.revision = (select max(dv2.revision) from document_versions dv2
+                                   where dv2.project_id=dv.project_id
+                                     and dv2.document_id=dv.document_id
+                                     and dv2.archived_at is null)
+               and {权限}
+        """), {"p": project_id, "k": kb_id, **权限参}).mappings().all()
+    切 = sorted({(r["切"] or "(空)") for r in 版本行})
+    解 = sorted({(r["解"] or "(空)") for r in 版本行})
+    混了 = len(切) > 1 or len(解) > 1
+    return {
+        "items": [dict(r) for r in rs],
+        "total": 总,
+        "limit": limit, "offset": offset,
+        "切片器版本们": 切, "解析器版本们": 解,
+        # ⚠️ **这条告警要放在顶部,不只是每行标个版本号。**
+        # 混着切的片段进不了同一个索引(`MIXED_CHUNKER_VERSION`,而那道闸是
+        # **整个知识库一起查**的)—— 也就是说这个库从此一个索引都建不出来。
+        # 每行标版本号的话,人要自己把一屏行的版本号比一遍才看得出来;
+        # 而那正是「看起来正常」的样子。
+        "混着切的吗": 混了,
+        "混了会怎样": (None if not 混了 else
+                   "这个知识库**建不出索引** —— 索引构建那一步会报 "
+                   "MIXED_CHUNKER_VERSION,而它是整库一起查的。"
+                   "先把这些文档版本重新切成同一个版本再建"),
+    }
+
+
+@router.get(前缀 + "/chunks/{chunk_id}")
+def 切片详情(project_id: str, chunk_id: str,
+         me: 身份 = Depends(要权限("查看有权配置"))):
+    """一个切片的**详情**(全文 + 它的来路 + 它在哪些索引里)。只读。
+
+    ## ⚠️ 「看不到」和「不存在」对外**同形**
+
+    两者都回 404。否则这个接口就成了一个**存在性探测器**:
+    拿 id 枚举一遍就能知道哪些 id 存在,而那本身是信息。
+    理由里分开说(服务端日志看得到),对外一句话。
+    """
+    权限, 权限参 = KV.where片段(这个人的角色们=[me.role], 知识库别名="kb")
+    with 连接() as c:
+        r = c.execute(text(f"""
+            select ch.id, ch.text, ch.section_path, ch.section_titles, ch.ordinal,
+                   ch.token_count, ch.text_hash,
+                   ch.chunker_version, ch.parser_version,
+                   ch.document_version_id, dv.revision 版次, dv.object_key,
+                   dv.content_hash, dv.source_info,
+                   d.id 文档id, d.knowledge_base_id, d.acl_override,
+                   kb.name 知识库名, kb.acl 知识库acl,
+                   (dv.revision = (select max(dv2.revision) from document_versions dv2
+                                    where dv2.project_id=dv.project_id
+                                      and dv2.document_id=dv.document_id
+                                      and dv2.archived_at is null)) 是最新版吗
+              from chunks ch
+              join document_versions dv on dv.project_id=ch.project_id
+                                       and dv.id=ch.document_version_id
+              join documents d on d.project_id=dv.project_id and d.id=dv.document_id
+              join knowledge_bases kb on kb.project_id=d.project_id
+                                     and kb.id=d.knowledge_base_id
+             where ch.project_id=:p and ch.id=:i and {权限}
+        """), {"p": project_id, "i": chunk_id, **权限参}).mappings().first()
+        if not r:
+            # ⚠️ 不区分「没这条」和「没权限」—— 见上面那段。
+            raise _错(404, "NOT_FOUND", "没有这个切片",
+                      "核对一下 id;**也可能是你的角色看不到它所属的那篇文档**")
+        索引们 = c.execute(text("""
+            select ib.id, ib.status, ib.embedding_model_id, ib.created_at
+              from index_members im
+              join index_builds ib on ib.project_id=im.project_id
+                                  and ib.id=im.index_build_id
+             where im.project_id=:p and im.chunk_id=:i and ib.archived_at is null
+             order by ib.created_at desc
+        """), {"p": project_id, "i": chunk_id}).mappings().all()
+    d = dict(r)
+    kacl, dacl = d.pop("知识库acl", None), d.pop("acl_override", None)
+    可见, 为什么 = KV.定(知识库acl=kacl, 文档acl=dacl)
+    d["谁看得到"] = sorted(可见)
+    d["为什么是这些人"] = 为什么
+    # ⚠️ 切片级权限**不做** —— 这里要说清,否则界面上看到「谁看得到」
+    # 会被当成「可以在这里改」。
+    d["能单独设这一段的权限吗"] = False
+    d["为什么不能"] = (
+        "切片是**派生物** —— 重建索引时整批重切,绑在它上面的权限会静默失效。"
+        "要给某几段单独设权限,**把它们拆成独立文档**(业务 2026-10-07 拍的,"
+        "业界也停在文档级)")
+    d["在哪些索引里"] = [dict(x) for x in 索引们]
+    d["在役索引数"] = sum(1 for x in 索引们 if x["status"] == "已就绪")
+    # ⚠️ 这两条合起来回答「我明明导入了为什么搜不到」。
+    d["检索得到吗"] = bool(d["在役索引数"]) and bool(d["是最新版吗"])
+    d["为什么检索不到"] = (
+        None if d["检索得到吗"] else
+        ("它属于**旧版本**的文档 —— 索引只取每篇文档最新那一版"
+         if not d["是最新版吗"] else
+         "它**不在任何已就绪的索引里** —— 切出来了但没建索引,或者建完又归档了"))
+    return d
 
 
 @router.post(前缀 + "/retrieval-tests")
