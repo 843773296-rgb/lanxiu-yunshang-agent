@@ -50,6 +50,8 @@ import index_plan as IP
 import ingest as IN
 import parser as PS
 import 语料可见 as KV
+import upload_rules as UR
+import 拆文档 as SP
 import retrieval as RT
 import reranker as RR
 import storage as OS_
@@ -381,6 +383,199 @@ def 切片详情(project_id: str, chunk_id: str,
          if not d["是最新版吗"] else
          "它**不在任何已就绪的索引里** —— 切出来了但没建索引,或者建完又归档了"))
     return d
+
+
+@router.post(前缀 + "/documents/{doc_id}/split", status_code=201)
+async def 拆成独立文档(project_id: str, doc_id: str, request: Request,
+                 idempotency_key: str = Header(default=None,
+                                               alias="Idempotency-Key"),
+                 me: 身份 = Depends(要权限("改 Prompt/知识候选"))):
+    """把几个切片**拆成一篇独立文档**。入参
+    `{要拆走的切片ids, 新文档acl, 目标知识库id?}`。
+
+    这是业务 2026-10-07 那一拍的落点:**切片级权限不做**,要给某几段单独设
+    权限就拆成独立文档。判定全在 `runtime/拆文档.py`(纯逻辑、零 IO),
+    这里只负责取数、执行计划、算哈希。
+
+    ## ⚠️ 返回的是**计划 + 欠账**,不是「成功」
+
+    在役索引是快照(`index_members` 固定了一批 chunk_id),检索只认
+    `index_build_id`:
+    > 一次「权限已经收紧了」的拆分,和一次「拆了而在役索引还是旧快照」的,
+    > **在那张 documents 表上长得一模一样** —— 那个人照旧检索得到这几段,
+    > **直到重建索引完成并切换**。
+    所以返回体里没有任何能当「做完了」用的键,`欠账` 永远非空。
+
+    ## ⚠️ 原切片一条都不动
+
+    `chunks` 不可变、而且绑的是**文档版本**。拆 = 新文档 + 新版本 +
+    **复制**正文;原文档也新建一版(只含剩下的片段)。旧版的片段留着 ——
+    索引只取 `max(revision)`,所以旧版自动退出召回,而证据链完好。
+
+    ## ⚠️ 幂等:必须带 `Idempotency-Key`
+
+    重复提交**天然会被挡住**(那些切片已经不在原文档最新版里,
+    `拆文档.定()` 会抛「不在这篇文档最新那一版里」)—— 但那句话读起来像
+    「我填错了」,而实际是「你已经拆过了」。
+    > 一次「参数错了」和一次「这个请求已经成功过一次」,
+    > **在那个 422 上长得一模一样**。
+    所以 key 记进新文档的 `source_info`,重复提交直接回上次的结果。
+    """
+    体 = await request.json()
+    ids = 体.get("要拆走的切片ids") or 体.get("要拆走的id们") or []
+    新acl = 体.get("新文档acl")
+    目标kb = (体.get("目标知识库id") or "").strip() or None
+    if not idempotency_key:
+        raise _错(409, "IDEMPOTENCY_KEY_REQUIRED", "要带 Idempotency-Key",
+                  "拆分会新建文档和版本 —— **重试必须能被认出来**,"
+                  "否则一次网络超时后的重试会拆出第二篇文档")
+    if not isinstance(ids, list) or not ids:
+        raise _错(422, "VALIDATION", "没说要拆走哪几个切片",
+                  "传 `要拆走的切片ids`。**不兜底成「全拆」或「不拆」** —— "
+                  "一次「什么都没选」和一次「拆了个空文档」在那次调用上长得一样",
+                  field_errors={"要拆走的切片ids": "必填,至少一个"})
+
+    with 连接() as c:
+        # ── 幂等:这个 key 拆过了吗 ────────────────────────────────────
+        旧 = c.execute(text("""
+            select id, knowledge_base_id, source_info from documents
+             where project_id=:p and source_info->>'幂等键'=:k"""),
+                       {"p": project_id, "k": idempotency_key}).mappings().first()
+        if 旧:
+            return {"已经拆过了": True,
+                    "新文档id": 旧["id"],
+                    "新文档所在知识库": 旧["knowledge_base_id"],
+                    "说明": "这个 Idempotency-Key 已经成功拆过一次 —— "
+                           "**原样返回上次的结果,没有再拆一遍**",
+                    "欠账": ["拆完**还没生效**:在役索引是快照,"
+                            "那个人照旧检索得到这几段,直到重建索引完成并切换"]}
+        d = c.execute(text("""
+            select d.id, d.organization_id, d.knowledge_base_id, d.acl_override,
+                   kb.acl 知识库acl
+              from documents d
+              join knowledge_bases kb on kb.project_id=d.project_id
+                                     and kb.id=d.knowledge_base_id
+             where d.project_id=:p and d.id=:i and d.archived_at is null"""),
+                      {"p": project_id, "i": doc_id}).mappings().first()
+        if not d:
+            raise _错(404, "NOT_FOUND", "没有这篇文档", "核对一下 id")
+        # 最新那一版 + 它的全部片段(拆文档的判定要整份清单)
+        版 = c.execute(text("""
+            select id, revision, object_key, source_info from document_versions
+             where project_id=:p and document_id=:i and archived_at is null
+             order by revision desc limit 1"""),
+                       {"p": project_id, "i": doc_id}).mappings().first()
+        if not 版:
+            raise _错(422, "NO_VERSION", "这篇文档还没有任何版本",
+                      "先给它发一个版本(POST /documents/{id}/versions)")
+        片段们 = [dict(x) for x in c.execute(text("""
+            select id, ordinal, text, text_hash, token_count,
+                   section_path, section_titles, chunker_version, parser_version
+              from chunks where project_id=:p and document_version_id=:v
+             order by ordinal"""), {"p": project_id, "v": 版["id"]}).mappings()]
+        目标kb = 目标kb or d["knowledge_base_id"]
+        目标acl = c.execute(text("""select acl from knowledge_bases
+                                 where project_id=:p and id=:k
+                                   and archived_at is null"""),
+                           {"p": project_id, "k": 目标kb}).scalar_one_or_none() \
+            if 目标kb != d["knowledge_base_id"] else d["知识库acl"]
+        if 目标kb != d["knowledge_base_id"]:
+            if not c.execute(text("""select 1 from knowledge_bases
+                                     where project_id=:p and id=:k
+                                       and archived_at is null"""),
+                             {"p": project_id, "k": 目标kb}).first():
+                raise _错(404, "NOT_FOUND", "没有这个目标知识库", "核对一下 id")
+
+    # ── 判定:全在纯逻辑里 ──────────────────────────────────────────
+    try:
+        计划 = SP.定(源文档片段=片段们, 要拆走的id们=ids,
+                  源知识库acl=d["知识库acl"], 源文档acl=d["acl_override"],
+                  目标知识库acl=目标acl, 新文档acl=新acl,
+                  目标知识库id=目标kb, 源知识库id=d["knowledge_base_id"])
+    except SP.判不了 as e:
+        # ⚠️ `拆不了` 继承 `语料可见.判不了`,所以这一个 except 兜住两边。
+        # **不降级、不猜** —— 把它那句带「怎么办」的话原样传出去(§19.1)。
+        raise _错(422, "SPLIT_REFUSED", str(e).split("\n")[0][:300], str(e)[:900])
+
+    # ── 执行:一个事务 ─────────────────────────────────────────────
+    新文档id, 新版本id = _新id("doc"), _新id("dv")
+    原新版本id = _新id("dv")
+    def _哈(片们):
+        # ⚠️ **从剩下/搬走的那些片段正文算**,不照抄上一版的 content_hash ——
+        # `object_key` 指向的原文件没变(它还含着拆走的那几段),
+        # 而「这份资料变没变」全靠那一列。照抄就让那一列从此骗人。
+        文 = "\n\n".join(x["text"] for x in 片们)
+        return UR.内容哈希(文.encode("utf-8"))
+    按id = {x["id"]: x for x in 片段们}
+    搬 = [按id[x["源片段id"]] for x in 计划["搬过去的片段"]]
+    剩 = [按id[x["源片段id"]] for x in 计划["原文档留下的片段"]]
+    with 事务() as c:
+        c.execute(text("""insert into documents
+            (id, organization_id, project_id, knowledge_base_id, acl_override,
+             source_info, created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:k, cast(:acl as jsonb), cast(:si as jsonb),
+                    now(), :by, now(), 1)"""),
+                  {"i": 新文档id, "o": d["organization_id"], "p": project_id,
+                   "k": 目标kb,
+                   "acl": _json.dumps(计划["新文档"]["acl_override"],
+                                      ensure_ascii=False),
+                   "si": _json.dumps({**计划["新文档"]["source_info"],
+                                      "幂等键": idempotency_key,
+                                      "拆自文档": doc_id,
+                                      "拆自版本": 版["id"]}, ensure_ascii=False),
+                   "by": me.user_id})
+        for 版id, 文档, 片们, 说 in ((新版本id, 新文档id, 搬, "拆出来的"),
+                                 (原新版本id, doc_id, 剩, "原文档剩下的")):
+            c.execute(text("""insert into document_versions
+                (id, organization_id, project_id, document_id, object_key,
+                 content_hash, effective_at, revision, source_info,
+                 created_at, created_by, updated_at)
+                values (:i,:o,:p,:d,:ok,:h, now(), :rev, cast(:si as jsonb),
+                        now(), :by, now())"""),
+                      {"i": 版id, "o": d["organization_id"], "p": project_id,
+                       "d": 文档,
+                       # 原文档照抄上一版的键(原文件没变);新文档没有原文件
+                       "ok": (版["object_key"] if 文档 == doc_id else None),
+                       "h": _哈(片们),
+                       "rev": (版["revision"] + 1 if 文档 == doc_id else 1),
+                       "si": _json.dumps(
+                           {"存储": SP.派生自拆分, "这一版是": 说,
+                            "拆自版本": 版["id"], "幂等键": idempotency_key},
+                           ensure_ascii=False),
+                       "by": me.user_id})
+            for n, s in enumerate(片们):
+                c.execute(text("""insert into chunks
+                    (id, organization_id, project_id, document_version_id,
+                     section_path, section_titles, ordinal, text, text_hash,
+                     token_count, chunker_version, parser_version,
+                     created_at, created_by, revision)
+                    values (:i,:o,:p,:v,:sp, cast(:st as jsonb),
+                            :ord,:t,:th,:tk,:cv,:pv, now(), :by, 1)"""),
+                          {"i": _新id("ch"), "o": d["organization_id"],
+                           "p": project_id, "v": 版id,
+                           "sp": s["section_path"],
+                           "st": _json.dumps(s["section_titles"] or [],
+                                             ensure_ascii=False),
+                           # 两边都**重排成 0..n-1 连续**(计划里算好的那一份)
+                           "ord": n, "t": s["text"], "th": s["text_hash"],
+                           "tk": s["token_count"],
+                           # ⚠️ **沿用源片段记的版本,不读当前常量。**
+                           # MIXED_CHUNKER_VERSION 是整个知识库一起查的 ——
+                           # 重切一遍这个库从此一个索引都建不出来,
+                           # 而那要到下一次重建才炸。
+                           "cv": s["chunker_version"],
+                           "pv": s["parser_version"], "by": me.user_id})
+    return {
+        "新文档id": 新文档id, "新文档所在知识库": 目标kb,
+        "新文档版本id": 新版本id, "搬过去几段": len(搬),
+        "原文档新版本id": 原新版本id, "原文档新版次": 版["revision"] + 1,
+        "原文档还剩几段": len(剩),
+        "权限": 计划["权限"], "版本": 计划["版本"],
+        # ⚠️ **没有「成功」这个键。** 见函数文档:在役索引是快照。
+        "欠账": 计划["欠账"],
+        "下一步": "重建这个知识库的索引并切换 —— **在那之前权限没有生效**,"
+                "原来能看到这几段的人照旧检索得到",
+    }
 
 
 @router.post(前缀 + "/retrieval-tests")

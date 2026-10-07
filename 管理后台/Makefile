@@ -133,6 +133,17 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_chunk_browse.py
 	@echo ""
+	@echo "▸ 真的拆一次 · 把几个切片拆成独立文档(执行层,写库后清干净)"
+	@echo "  判定那一层在编排测试里(54 条零 IO);这一份验写进去的对不对"
+	@echo "  ⚠️ 原切片**一条都不动** —— chunks 不可变且绑在不可变的文档版本上"
+	@echo "  ⚠️ 搬过去的片段沿用源片段记的切片器版本,不读当前常量"
+	@echo "  ⚠️ content_hash **不照抄上一版** —— 原文件没变而内容变了,"
+	@echo "     照抄就让那一列从此骗人"
+	@echo "  🔑 第 6 节把原文档的版次和切片数和开跑前逐项对一遍 ——"
+	@echo "     一次清干净了和一次清了一半,在那句跑完了上长得一模一样"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_split_live.py
+	@echo ""
 	@echo "▸ 向量约束:**真的插坏数据**(混维度/假向量id/重复文本/跨项目引用)"
 	@echo "  「能用约束表达的不要用判据表达」是个声称 —— 这里去攻击它"
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
