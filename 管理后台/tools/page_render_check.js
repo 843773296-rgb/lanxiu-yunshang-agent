@@ -132,6 +132,16 @@ async function main() {
 
   const 记 = [];
   const 桩 = 造桩(记);
+  // ⚠️ **桩要提供标准 Web API。** 2026-10-07:`页_切片列表` 用了
+  // `new URLSearchParams(...)`(拼查询串的惯用写法,浏览器和 Node 都有),
+  // 而 `vm.createContext` 建的是**隔离 context** —— 里面只有桩给的全局变量。
+  // 于是这条检查报「URLSearchParams is not defined」。
+  // > 一个「页面真有 bug」的报错,和一个「桩缺了一个标准 API」的,
+  // > **在那行红字上长得一模一样** —— 而照着后者去改页面,
+  // > 会把惯用写法改成手拼字符串,**为了让检查过而把代码写差**。
+  // 缺什么补什么,别让页面绕着桩写。
+  桩.URLSearchParams = URLSearchParams;
+  桩.URL = URL;
   const ctx = vm.createContext(桩);
   try {
     // ⚠️ **先整体跑一遍模块**。这一步本身就能抓到这次那个 bug ——
