@@ -140,14 +140,30 @@ def 提交(pid, 连接id=None):
     run = (r or {}).get("resource_id")
     if 连接id and run:
         with 事务() as c:
+            # ⚠️ 下面用 `cast(... as text)` —— **不要写成参数后面直接跟两个冒号
+            # 再跟类型名**,那个写法会和 SQLAlchemy 的绑定参数语法打架。
+            #
+            # ⚠️⚠️ **这段说明必须写在 Python 注释里,不能写进 SQL 注释。**
+            # `text()` 对 `--` 不透明 —— **SQL 注释里的 `:xxx` 照样被当成绑定参数**。
+            # 实测(2026-10-07):
+            #     text("select :cid" + "::text")._bindparams  →  ['ci']
+            # 注意认出来的是 `ci` 而不是 `cid`。于是原先写在 SQL 注释里的那句话
+            # **凭空要求了一个叫 ci 的参数**,而调用方不会给它 ——
+            # SQLAlchemy 当场抛,接口返回 500,**读起来像「服务端坏了」**。
+            #
+            # 这个 bug 从 2026-10-03 起躺在这儿。它有检查盯着
+            # (`make test-orchestration` 里那条 SQL 参数检查),而那个目标前面
+            # 另有一条先红了 —— **make 遇错即停,这条四天没跑到**:
+            # > 一条「后面全绿」的门禁,和一条「后面根本没跑到」的,
+            # > 在那个红叉上长得一模一样。
+            #
+            # 同一个形状在这个项目里是第三次(前两次是注释里写字段名让「待建」
+            # 那档变红),而**前两次只是检查变红,这次是运行时真炸** ——
+            # 修法一样:**说那件事,不写标识符**。
             c.execute(text("""update jobs
                                  set config_snapshot =
                                      jsonb_set(config_snapshot,
                                                '{model_connection_id}',
-                                               -- ⚠️ 用 `cast(... as text)`,
-                                               -- **不写 `:cid::text`** ——
-                                               -- 那个 `::` 会和 SQLAlchemy 的
-                                               -- 绑定参数语法打架(当场语法错)
                                                to_jsonb(cast(:cid as text))),
                                      -- ⚠️ 把校验和清掉是**故意的**:
                                      -- 这里在测试里改了快照内容,
