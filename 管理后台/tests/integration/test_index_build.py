@@ -174,8 +174,20 @@ with eng.begin() as c:
          where ch.project_id=:p and d.knowledge_base_id=:k"""),
                     {"p": proj, "k": kb}).scalar() if kb else 0
 
+# ⚠️ **收尾那条断言要用项目级的基线,不能用上面那个 `片段数`。**
+# 2026-10-07 修:`片段数` 是**那个知识库的**(join 到 knowledge_base_id),
+# 而收尾查的是**整个项目的** `chunks` —— 两端量的根本不是同一个东西,
+# 于是那条断言**永远会红**(74 vs 299),不管清得多干净。
+# > 一条「跑完清干净了」的断言,和一条「两端量的不是同一个东西」的,
+# > **在它红的时候长得一模一样。**
+# 它一直没被发现,是因为这份测试被洁净度闸挡着跑不了(209 条残留 + 76 条向量)。
+# `片段数` 另有三处在用(索引按知识库建,它们要的就是知识库口径),所以不动它。
+with eng.connect() as c:
+    项目片段基线 = c.execute(text("select count(*) from chunks where project_id=:p"),
+                        {"p": proj}).scalar()
+
 ck("语料已经在库里(先跑 `python tools/ingest_lanxiu.py`)", bool(kb) and 片段数 > 0,
-   f"知识库 {kb} · {片段数} 个片段")
+   f"知识库 {kb} · {片段数} 个片段(整个项目 {项目片段基线} 个)")
 
 # ── 开跑前先看库干不干净 ────────────────────────────────────────────
 #
@@ -418,7 +430,7 @@ with eng.connect() as c:
         (select count(*) from embeddings where project_id=:p),
         (select count(*) from chunks where project_id=:p)"""), {"p": proj}).first()
 ck("跑完:构建/成员/向量都清了,**而片段一个没少**(它们是导入的真语料)",
-   剩[0] == 0 and 剩[1] == 0 and 剩[2] == 0 and 剩[3] == 片段数,
+   剩[0] == 0 and 剩[1] == 0 and 剩[2] == 0 and 剩[3] == 项目片段基线,
    f"构建 {剩[0]} · 成员 {剩[1]} · 向量 {剩[2]} · 片段 {剩[3]}")
 
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
