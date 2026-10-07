@@ -39,7 +39,12 @@ if _这 not in sys.path:
 
 from sqlalchemy import text   # noqa: E402
 
+_运行时 = os.path.join(os.path.dirname(_这), "runtime")
+if _运行时 not in sys.path:
+    sys.path.insert(0, _运行时)
+
 import adapters as AD          # noqa: E402
+import 语料可见 as KV          # noqa: E402
 import index_plan as IP        # noqa: E402
 import reranker as RR          # noqa: E402
 
@@ -63,12 +68,25 @@ def 证据串(片段):
     return f"{片段['section_path']} · 第 {片段['ordinal']} 段"
 
 
-def 检索(conn, *, 项目, 构建id, 问题, 要精排=True):
+def 检索(conn, *, 项目, 构建id, 问题, 这个人的角色们, 要精排=True):
     """跑一次检索。返回规格 §9.5 要的整条链路。
 
     ⚠️ `conn` 由调用方给 —— 这个模块**不自己开连接**:
     检索要和调用方在同一个事务里看到同一份数据
     (否则「刚建好的索引查不到」这种事会变成偶发)。
+
+    ## ⚠️ `这个人的角色们` 是**必填的位置之后关键字参数**,没有默认值
+
+    给它一个默认值(比如 `None` = 不过滤)就等于留了一条静默放开的路:
+    > 一个「接了身份过滤」的检索,和一个「接了而某个调用方没传所以没过滤」的,
+    > **在那条检索结果上长得一模一样** —— 而漏传的那个调用方把全部语料
+    > 交给了一个没权限的人。
+
+    必填之后漏传是 `TypeError`,**当场炸在那一行**。
+    这比任何检查都可靠 —— 它不需要有人记得去跑。
+
+    ⚠️ 传的是**角色**,不是 `身份.grants`(专项授权)。
+    混进来会让专项授权成为绕过语料 ACL 的万能钥匙 —— 见 `语料可见` 模块头。
     """
     if not (问题 or "").strip():
         raise 检索不了("问题是空的 —— 空查询的向量没有意义,"
@@ -112,7 +130,16 @@ def 检索(conn, *, 项目, 构建id, 问题, 要精排=True):
     # ⚠️ `用途="查询"` —— BGE 非对称:查询加前缀、文档不加,搞错不报错
     q = EMB.算([问题], 用途="查询")[0]
 
-    候选们 = conn.execute(text("""
+    # ── 权限:**检索前**过滤,不是召回后再筛 ─────────────────────────
+    # 口径唯一源头在 `语料可见.where片段()`,它和纯判定由
+    # `tests/orchestration/test_corpus_visible.py` 第 ⑥ 节对账(72 组合)。
+    # ⚠️ 为什么必须是检索前:
+    # > 一次「召回 10 条、丢掉 8 条、剩 2 条」和一次「库里本来就只有 2 条相关的」,
+    # > 在那 2 条结果上长得一模一样 —— 用户和模型都看不出自己被过滤了。
+    # 而更坏的后果是 top-k 被权限吃掉、模型上下文变少、答得更差,
+    # **表现是「这个 RAG 不准」,没人会去查是权限吃掉了召回**。
+    权限片段, 权限参 = KV.where片段(这个人的角色们=这个人的角色们)
+    候选们 = conn.execute(text(f"""
         select ch.id, ch.text, ch.section_path, ch.ordinal, ch.text_hash,
                ch.token_count, ch.document_version_id,
                1 - (e.embedding <=> cast(:v as vector)) as 相似度
@@ -120,13 +147,36 @@ def 检索(conn, *, 项目, 构建id, 问题, 要精排=True):
           join chunks ch on ch.project_id = im.project_id and ch.id = im.chunk_id
           join embeddings e on e.project_id = im.project_id
                            and e.id = im.embedding_id
+          join document_versions dv on dv.project_id = ch.project_id
+                                   and dv.id = ch.document_version_id
+          join documents d on d.project_id = dv.project_id
+                          and d.id = dv.document_id
+          join knowledge_bases kb on kb.project_id = d.project_id
+                                 and kb.id = d.knowledge_base_id
          where im.project_id = :p and im.index_build_id = :b
+           and d.disabled_at is null
+           and {权限片段}
          order by e.embedding <=> cast(:v as vector)
          limit :k
     """), {"v": EMB.成SQL文本(q["向量"]), "p": 项目, "b": 构建id,
-           "k": 配置["candidate_k"]}).mappings().all()
+           "k": 配置["candidate_k"], **权限参}).mappings().all()
     候选 = [dict(x) for x in 候选们]
     if not 候选:
+        # ⚠️ **这里必须分两种,不能合成一句。** 加了权限过滤之后:
+        # > 一次「索引坏了」和一次「这个人一条都没权限看」,
+        # > **在那个空候选上长得一模一样** —— 而前者要去查谁写了坏数据,
+        # > 后者是完全正常的权限结果,去查数据是白费功夫。
+        # 所以再查一次**不带权限过滤**的成员数来区分。
+        有成员 = conn.execute(text("""
+            select 1 from index_members im
+             where im.project_id = :p and im.index_build_id = :b limit 1
+        """), {"p": 项目, "b": 构建id}).first()
+        if 有成员:
+            raise 检索不了(
+                f"这个索引里的语料**你一条都看不到** —— 不是索引的问题"
+                f"(它有成员),是你的角色 {sorted(set(这个人的角色们))} "
+                f"不在这些文档的可见范围里。要查为什么,看那个知识库的 "
+                f"`acl` 和各文档的 `acl_override`(口径在 `语料可见`)")
         # 索引已就绪但一个成员都没有 —— 那本该在构建时被
         # `INDEX_INCOMPLETE` 拦住。走到这儿说明有别的路径写了坏数据。
         raise 检索不了(

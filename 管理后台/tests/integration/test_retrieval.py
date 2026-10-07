@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.join(ROOT, "services", "api", "app", "knowledge"))
 
 from sqlalchemy import create_engine, text   # noqa: E402
 import retrieval as RT                        # noqa: E402
+import 语料可见 as KV                         # noqa: E402
 import embedder_bge as BGE                    # noqa: E402
 
 URL = os.environ.get("DATABASE_URL") or \
@@ -184,7 +185,7 @@ with eng.begin() as c:
 跑worker()
 with eng.connect() as c:
     链 = RT.检索(c, 项目=proj, 构建id=ib, 问题="客户给了差评要怎么处理",
-               要精排=False)
+               要精排=False, 这个人的角色们=["admin"])
 ck("召回了候选(candidate_k=12)", 链["召回数"] == 12, 链["召回数"])
 ck("**选片受 final_chunk_limit 限制**(4)", 链["选了几片"] <= 4, 链["选了几片"])
 ck("每一片都有**能翻回原文的证据串**(节路径 + 第几段)",
@@ -226,14 +227,14 @@ with eng.connect() as c:
     #  技术上没错,但那个结果对用的人是无用且误导的。)
     ck("预算连一片都放不下 → **抛,不返回空结果**"
        "(0 片和「知识库里没有」在界面上长得一样)",
-       _抛(lambda: RT.检索(c, 项目=proj, 构建id=ib2, 问题="差评", 要精排=False)))
+       _抛(lambda: RT.检索(c, 项目=proj, 构建id=ib2, 问题="差评", 要精排=False, 这个人的角色们=["admin"])))
 
 # 预算够放几片但不够放满 4 片 —— 这才是「被预算卡住」该测的场景
 with eng.begin() as c:
     ib2b = 摆索引(c, org, proj, kb, k=12, 预算=200, 限片=4)
 跑worker()
 with eng.connect() as c:
-    链2 = RT.检索(c, 项目=proj, 构建id=ib2b, 问题="差评", 要精排=False)
+    链2 = RT.检索(c, 项目=proj, 构建id=ib2b, 问题="差评", 要精排=False, 这个人的角色们=["admin"])
 ck("预算 200 token / 限片 4 → **被预算卡住而不是条数**(选片 1-3 之间)",
    0 < 链2["选了几片"] < 4 and "预算" in 链2["截断"],
    f"{链2['选了几片']} 片 · {链2['用了多少token']} token · {链2['截断']}")
@@ -253,7 +254,7 @@ with eng.begin() as c:
     ib3 = 摆索引(c, org, proj, kb, k=12, 预算=100000, 限片=2)  # 条数卡得死
 跑worker()
 with eng.connect() as c:
-    链3 = RT.检索(c, 项目=proj, 构建id=ib3, 问题="差评", 要精排=False)
+    链3 = RT.检索(c, 项目=proj, 构建id=ib3, 问题="差评", 要精排=False, 这个人的角色们=["admin"])
 ck("预算很大 / 限片 2 → **被条数卡住**",
    链3["选了几片"] == 2 and "条数" in 链3["截断"],
    f"{链3['选了几片']} 片 · {链3['截断']}")
@@ -261,22 +262,129 @@ ck("预算很大 / 限片 2 → **被条数卡住**",
 print("\n▸ ③ 不满足前提的一律**抛,不降级**")
 with eng.connect() as _c:
     ck("空问题 → 抛(空查询的向量会返回一批「离原点最近」的片段,看起来像正常结果)",
-       _抛(lambda: RT.检索(_c, 项目=proj, 构建id=ib, 问题="   ")))
+       _抛(lambda: RT.检索(_c, 项目=proj, 构建id=ib, 问题="   ", 这个人的角色们=["admin"])))
 with eng.begin() as c:
     ib4 = 摆索引(c, org, proj, kb, 状态跑=False)      # 不派 job → 停在「排队中」
 with eng.connect() as c:
     ck("索引还没「已就绪」→ 抛(**不在没建好的索引上检索**:"
        "结果不完整,而那和「知识库里就这么点」长得一样)",
-       _抛(lambda: RT.检索(c, 项目=proj, 构建id=ib4, 问题="差评")))
+       _抛(lambda: RT.检索(c, 项目=proj, 构建id=ib4, 问题="差评", 这个人的角色们=["admin"])))
     ck("构建 id 不存在 → 抛",
-       _抛(lambda: RT.检索(c, 项目=proj, 构建id="ib_根本没有", 问题="差评")))
+       _抛(lambda: RT.检索(c, 项目=proj, 构建id="ib_根本没有", 问题="差评", 这个人的角色们=["admin"])))
 with eng.begin() as c:
     ib5 = 摆索引(c, org, proj, kb, modes=["hybrid"])
 跑worker()
 with eng.connect() as c:
     ck("配置要了 `hybrid` 而只实现了 vector → **抛,不静默退化**"
        "(退化会让人以为融合在生效)",
-       _抛(lambda: RT.检索(c, 项目=proj, 构建id=ib5, 问题="差评", 要精排=False)))
+       _抛(lambda: RT.检索(c, 项目=proj, 构建id=ib5, 问题="差评", 要精排=False, 这个人的角色们=["admin"])))
+
+print("\n▸ ④ **权限过滤在真库上生效** —— 这一节是在还一笔欠账")
+# 交接里记着:`语料可见.where片段()` **从没在真库上跑过** —— 那 72 组合对账是
+# 照 SQL 语义**用 Python 算的**,jsonb 的 `?|` 行为没在 PG 上验过。
+# > 一份「两种表示对账过了」的测试,和一份「对账的另一侧是我自己模拟的」,
+# > **在那 32 条绿勾上长得一模一样。**
+#
+# ⚠️ 两级 ACL 今天全库是空的(量过:`kb.acl` 全空、178 篇 `acl_override` 0 篇有值)。
+# 所以这一节**在一个事务里填、验完 rollback** —— 库里一个字都不变:
+# > 一次「测完清理干净了」和一次「测完忘了清理、而恰好没人去看那张表」,
+# > 在那次绿勾上长得一模一样 —— 而 rollback 让「忘了清理」**不可能发生**。
+# 留下脏 ACL 的代价不是报错,是下一个去量「这个字段有没有人填过」的人得出错结论。
+_c = eng.connect()
+_tx = _c.begin()
+try:
+    # ── ⓪ 最底层那个假设:`?|` 在空 ACL 上返回什么 ──────────────────────
+    r = _c.execute(text("""
+        select ('{"roles":["admin"]}'::jsonb -> 'roles') ?| array['admin'] as 命中,
+               ('{"roles":["admin"]}'::jsonb -> 'roles') ?| array['viewer'] as 不中,
+               (null::jsonb -> 'roles') ?| array['admin'] as 空的,
+               ('{}'::jsonb -> 'roles') ?| array['admin'] as 没这个键
+    """)).first()
+    ck("jsonb `?|`:角色在清单里 → true", r[0] is True, r[0])
+    ck("不在清单里 → false", r[1] is False, r[1])
+    ck("🔑 **空 ACL 上 `?|` 返回的是 NULL,不是 false** —— 这一条才是 "
+       "`where片段` 里那个 `is null or` 不可省的理由:NULL 在 WHERE 里当假,"
+       "少了那一支,「没说过」就变成了「谁都看不见」(两种读法后果正好相反)",
+       r[2] is None, f"空={r[2]!r} / 没这个键={r[3]!r}")
+    ck("`{}`(有 jsonb 但没 roles 键)也是 NULL,和 null 同路",
+       r[3] is None, r[3])
+
+    # ── ① 知识库级:填上之后 viewer 一条都看不到 ──────────────────────
+    _c.execute(text("update knowledge_bases set acl=:a where project_id=:p and id=:k"),
+               {"a": json.dumps({"roles": ["admin", "approver"]}),
+                "p": proj, "k": kb})
+    链a = RT.检索(_c, 项目=proj, 构建id=ib, 问题="差评", 要精排=False,
+                这个人的角色们=["admin"])
+    ck("库限 {admin,approver}:admin 召回正常", 链a["召回数"] > 0, 链a["召回数"])
+    try:
+        RT.检索(_c, 项目=proj, 构建id=ib, 问题="差评", 要精排=False,
+               这个人的角色们=["viewer"])
+        ck("viewer 该一条都看不到", False, "**没抛** —— 过滤没生效")
+    except RT.检索不了 as e:
+        ck("viewer 一条都看不到 → 抛,且**说清「不是索引的问题」**",
+           "一条都看不到" in str(e) and "不是索引的问题" in str(e), str(e)[:80])
+        # ⚠️ 这句话要分得开两件事:
+        # > 一次「索引坏了」和一次「这个人一条都没权限看」,在那个空候选上
+        # > 长得一模一样 —— 而前者要去查谁写了坏数据,后者去查数据是白费功夫。
+
+    # ── ② 文档级收紧一篇,然后**两种表示对账** ────────────────────────
+    一篇 = _c.execute(text("""
+        select d.id from documents d
+         where d.project_id=:p and d.knowledge_base_id=:k and d.disabled_at is null
+         order by d.id limit 1
+    """), {"p": proj, "k": kb}).scalar()
+    _c.execute(text("update documents set acl_override=:a where project_id=:p and id=:d"),
+               {"a": json.dumps({"roles": ["admin"]}), "p": proj, "d": 一篇})
+
+    名单们 = {}
+    for 角色 in ("admin", "approver", "viewer", "editor"):
+        片段, 参 = KV.where片段(这个人的角色们=[角色])
+        sql名单 = {x[0] for x in _c.execute(text(f"""
+            select d.id from documents d
+              join knowledge_bases kb2 on kb2.project_id=d.project_id
+                                      and kb2.id=d.knowledge_base_id
+             where d.project_id=:p and d.knowledge_base_id=:k and {片段}
+        """), {"p": proj, "k": kb, **参})}
+        纯名单 = set()
+        for did, kacl, dacl in _c.execute(text("""
+            select d.id, kb2.acl, d.acl_override from documents d
+              join knowledge_bases kb2 on kb2.project_id=d.project_id
+                                      and kb2.id=d.knowledge_base_id
+             where d.project_id=:p and d.knowledge_base_id=:k
+        """), {"p": proj, "k": kb}):
+            行, _ = KV.看得到吗(这个人的角色们=[角色], 知识库acl=kacl, 文档acl=dacl)
+            if 行:
+                纯名单.add(did)
+        名单们[角色] = sql名单
+        ck(f"🔑 `{角色}`:**真库上 SQL 过滤和纯判定给同一份名单**",
+           sql名单 == 纯名单,
+           f"SQL {len(sql名单)} / 纯 {len(纯名单)}" +
+           (f" / 差 {sorted(sql名单 ^ 纯名单)[:3]}" if sql名单 != 纯名单 else ""))
+
+    ck("🔑 对照:这几个角色的名单**不是全都一样** —— 全一样的话上面那组对账"
+       "是空洞的(一个恒返回全部文档的 where 片段也能全过)",
+       len({frozenset(v) for v in 名单们.values()}) > 1,
+       {k2: len(v) for k2, v in 名单们.items()})
+    ck("而且**文档级那一笔真的收紧了**:approver 比 admin 少正好那一篇",
+       名单们["admin"] - 名单们["approver"] == {一篇},
+       f"少掉 {sorted(名单们['admin'] - 名单们['approver'])[:2]}")
+    ck("viewer 在库这一级就被拦住 —— 一篇都没有",
+       not 名单们["viewer"], len(名单们["viewer"]))
+finally:
+    # ⚠️ **rollback 而不是「改回去」** —— 改回去要写对每一个 UPDATE,
+    # 而 rollback 不需要我记得改了几张表。
+    _tx.rollback()
+    _c.close()
+with eng.connect() as c:
+    留 = c.execute(text("""select count(*) from knowledge_bases
+                          where project_id=:p and acl is not null"""),
+                  {"p": proj}).scalar()
+    留2 = c.execute(text("""select count(*) from documents
+                           where project_id=:p and acl_override is not null"""),
+                   {"p": proj}).scalar()
+ck("跑完库里**一条 ACL 都没留下**(两级都是空的,和跑之前一样)",
+   留 == 0 and 留2 == 0, f"kb.acl {留} 条 / acl_override {留2} 条")
+
 
 # ── 还原 ──────────────────────────────────────────────────────────
 with eng.begin() as c:
