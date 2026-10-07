@@ -48,69 +48,12 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@echo ""
 	@./.venv/bin/python tools/fk_dep_check.py
 	@echo ""
-	@echo "▸ 要 If-Match 的写接口,**界面拿得到那个 revision 吗**(要服务在跑)"
-	@echo "  ⚠️ 契约覆盖看「登记的都实现了吗」,端到端看「接口对不对」——"
-	@echo "     **没有一条看「界面拿得到它要带的东西吗」**,而那一族的表现是界面做不起来"
-	@./.venv/bin/python tools/ifmatch_reachable_check.py
-	@echo ""
-	@echo "▸ 铺数据的脚本跑得起第二遍吗(**要库,所以不在 contract 里**)"
-	@echo "  ⚠️ 它会**重铺 seed 夹具**并跑两份端到端 —— 要先 make dev"
-	@./.venv/bin/python tools/seed_rerun_check.py
-	@echo ""
-	# ⚠️ **这条要数据库,所以挂 `test` 不挂 `contract`。**
-	# `contract` 那一组是「不需要数据库」的 —— 放进去会让它在没库的机器上红,
-	# 而那种红会和真问题混在一张报告里。
-	# > 一条装在跑不起来的地方的判据,和没装一样。
-	@echo "▸ 后台里的铁律和 'prompts.py' 一致吗(要库)"
-	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
-		./.venv/bin/python tools/lanxiu_prompt_sync_check.py
-	@echo ""
-	@echo "▸ 后台知识库和仓库里的 md 一致吗(要库)"
-	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
-		./.venv/bin/python tools/lanxiu_kb_sync_check.py
-	@echo ""
-	@echo "▸ 后台工具目录和澜绣在跑的 81 个工具一致吗(要库)"
-	@echo "  ⚠️ 这条里最要紧的一档是**副作用档位变了** —— 后台标着「只读」而澜绣那边已经会写了,"
-	@echo "     **后台的闸会放过它**。「说明改了一个字」和「从只读变成会写」在哈希上长得一样,所以单独报。"
-	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
-		./.venv/bin/python tools/lanxiu_tool_sync_check.py
-	@echo ""
-	@echo "▸ 契约和库是否一致(alembic check)"
-	@echo "  ⚠️ **这一行原来是 \'alembic check 2>&1 | tail -1\'** —— 管道吞退出码,"
-	@echo "     它红了这个目标也不红(整条命令的状态是 tail 的,永远 0)。"
-	@echo "     2026-10-04 改成走包装脚本:**它自己判退出码,而且进了根 check.sh** ——"
-	@echo "     原来这条只在 \'make test\' 里,而那是个我从来不跑的目标。"
-	@echo "     > 一条判据装在一个我从来没跑过的目标里,等于没装;"
-	@echo "     > 而即使跑了,接上管道之后它也不拦。"
-	@./.venv/bin/python tools/alembic_sync_check.py
-	@echo ""
-	@echo "▸ 跨项目引用:**真的去攻击它**(5 次攻击 + 1 条正向对照 + 还原检查)"
-	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
-		./.venv/bin/python tests/integration/test_project_isolation.py
-	@echo ""
-	@echo "▸ 任务租约:**真的让两个 worker 去抢**(并发/接手/重试/心跳,16 条)"
-	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
-		./.venv/bin/python tests/integration/test_worker_lease.py
-	@echo ""
-	@echo "▸ 真 Embedding(BGE-small-zh-v1.5,onnxruntime 本机跑):"
-	@echo "  **判据是语义有效性,不是形状** —— 四档层级必须成立"
-	@echo "  (相同 > 同义 > 同主题 > 无关;pooling 错、前缀错都会让中间两档塌一起)"
-	@echo "  ⚠️ 要模型文件:'bash tools/fetch_model.sh'(96 MB,不进 git)"
-	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
-		./.venv/bin/python tests/integration/test_embedder_bge.py
-	@echo ""
-	@echo "▸ 索引构建:**真起 Worker 跑一轮**(端到端/跨构建复用/重复投递/"
-	@echo "  **检查点机制**/已完成跳过/0 片段不许静默成功)"
-	@echo "  ⚠️ 检查点那条是**机制级**证明:外层事务回滚,独立事务写的还在 ——"
-	@echo "  场景级要「跑到一半 kill -9」,而那会变成偶发红,偶发红最后都被忽略"
-	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
-		./.venv/bin/python tests/integration/test_index_build.py
-	@echo ""
-	@echo "▸ 检索链:召回 → 截断 → 证据链('要精排=False',**不花 API 额度**)"
-	@echo "  精排的**判据**在编排层(零依赖),精排的**效果**在 make test-live ——"
-	@echo "  **只有第三层要花钱,而前两层覆盖了绝大部分会坏的地方**"
-	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
-		./.venv/bin/python tests/integration/test_retrieval.py
+	@echo "# ⚠️ ifmatch_reachable_check 2026-10-07 从这儿删了 —— 它在 page-smoke 里有"
+	@echo "#   同一条。2026-10-02 那次「挪到 page-smoke」**只复制没删原处**:"
+	@echo "#   一次「把判据挪到对的目标里」和一次「复制过去而原处没删」,"
+	@echo "#   在那条判据开始生效这件事上长得一模一样 —— 两边都跑,"
+	@echo "#   而原处那个仍然在一个不保证服务在跑的目标里当场红。"
+	@echo "#   (删之前核过:page-smoke 第 230 行确实有。**不是悄悄少一条检查**。)"
 	@echo ""
 	@echo "▸ 语料权限 · **在真 PG 上验**(两级 ACL 填完即 rollback,库里不留痕)"
 	@echo "  还的是一笔点名记在交接里的欠账:72 组合对账是照 SQL 语义**用 Python 算的**,"
@@ -144,12 +87,87 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_split_live.py
 	@echo ""
+	@echo "▸ 铺数据的脚本跑得起第二遍吗(**要库,所以不在 contract 里**)"
+	@echo "  ⚠️ 它会**重铺 seed 夹具**并跑两份端到端 —— 要先 make dev"
+	@./.venv/bin/python tools/seed_rerun_check.py
+	@echo ""
+	# ⚠️ **这条要数据库,所以挂 `test` 不挂 `contract`。**
+	# `contract` 那一组是「不需要数据库」的 —— 放进去会让它在没库的机器上红,
+	# 而那种红会和真问题混在一张报告里。
+	# > 一条装在跑不起来的地方的判据,和没装一样。
+	@echo "▸ 后台里的铁律和 'prompts.py' 一致吗(要库)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tools/lanxiu_prompt_sync_check.py
+	@echo ""
+	@echo "▸ 后台知识库和仓库里的 md 一致吗(要库)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tools/lanxiu_kb_sync_check.py
+	@echo ""
+	@echo "▸ 后台工具目录和澜绣在跑的 81 个工具一致吗(要库)"
+	@echo "  ⚠️ 这条里最要紧的一档是**副作用档位变了** —— 后台标着「只读」而澜绣那边已经会写了,"
+	@echo "     **后台的闸会放过它**。「说明改了一个字」和「从只读变成会写」在哈希上长得一样,所以单独报。"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tools/lanxiu_tool_sync_check.py
+	@echo ""
+	@echo "▸ 契约和库是否一致(alembic check)"
+	@echo "  ⚠️ **这一行原来是 \'alembic check 2>&1 | tail -1\'** —— 管道吞退出码,"
+	@echo "     它红了这个目标也不红(整条命令的状态是 tail 的,永远 0)。"
+	@echo "     2026-10-04 改成走包装脚本:**它自己判退出码,而且进了根 check.sh** ——"
+	@echo "     原来这条只在 \'make test\' 里,而那是个我从来不跑的目标。"
+	@echo "     > 一条判据装在一个我从来没跑过的目标里,等于没装;"
+	@echo "     > 而即使跑了,接上管道之后它也不拦。"
+	@./.venv/bin/python tools/alembic_sync_check.py
+	@echo ""
+	@echo "⚠️ 下面这三份**故意排在最前面**,别追加到末尾 —— 读这段再动:"
+	@echo "   test_index_build / test_retrieval 开头有洁净度闸(非终态 index_build"
+	@echo "   任务必须为 0、embeddings 必须为空),闸是对的(脏状态上的结论不可信)。"
+	@echo "   而 2026-10-07 库里积了 209 条残留 → 那两份 exit 1 → **make 遇错即停**,"
+	@echo "   排在它们后面的一条都跑不到。这三份不需要干净的库(自己 rollback 或清理),"
+	@echo "   所以放在闸之前。"
+	@echo "   🔑 一份登记进门禁的测试,和一份登记在跑不到的位置上的,"
+	@echo "      在这个 Makefile 上长得一模一样。"
+	@echo ""
+	@echo "▸ 跨项目引用:**真的去攻击它**(5 次攻击 + 1 条正向对照 + 还原检查)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_project_isolation.py
+	@echo ""
+	@echo "▸ 任务租约:**真的让两个 worker 去抢**(并发/接手/重试/心跳,16 条)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_worker_lease.py
+	@echo ""
+	@echo "▸ 真 Embedding(BGE-small-zh-v1.5,onnxruntime 本机跑):"
+	@echo "  **判据是语义有效性,不是形状** —— 四档层级必须成立"
+	@echo "  (相同 > 同义 > 同主题 > 无关;pooling 错、前缀错都会让中间两档塌一起)"
+	@echo "  ⚠️ 要模型文件:'bash tools/fetch_model.sh'(96 MB,不进 git)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_embedder_bge.py
+	@echo ""
+	@echo "▸ 索引构建:**真起 Worker 跑一轮**(端到端/跨构建复用/重复投递/"
+	@echo "  **检查点机制**/已完成跳过/0 片段不许静默成功)"
+	@echo "  ⚠️ 检查点那条是**机制级**证明:外层事务回滚,独立事务写的还在 ——"
+	@echo "  场景级要「跑到一半 kill -9」,而那会变成偶发红,偶发红最后都被忽略"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_index_build.py
+	@echo ""
+	@echo "▸ 检索链:召回 → 截断 → 证据链('要精排=False',**不花 API 额度**)"
+	@echo "  精排的**判据**在编排层(零依赖),精排的**效果**在 make test-live ——"
+	@echo "  **只有第三层要花钱,而前两层覆盖了绝大部分会坏的地方**"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_retrieval.py
+	@echo ""
 	@echo "▸ 向量约束:**真的插坏数据**(混维度/假向量id/重复文本/跨项目引用)"
 	@echo "  「能用约束表达的不要用判据表达」是个声称 —— 这里去攻击它"
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_vector_constraints.py
 	@echo ""
-	@echo "⚠️ test 跑的是**不需要起服务**的那部分(契约层 + 数据层)。"
+	@echo "⚠️ test 大部分**不需要起服务**(契约层 + 数据层),但**还有一条要**:"
+	@echo "   seed_rerun_check 会重铺 seed 夹具并跑两份端到端 —— 它只挂在这儿,"
+	@echo "   所以 **make test 整体仍然要先 make dev**。"
+	@echo "   这句话 2026-10-07 之前写的是「不需要起服务」—— 那是过期的:"
+	@echo "   一句「不需要起服务」的说明和一句准确的,在这段输出上长得一模一样,"
+	@echo "   而照着它跑的人会撞上一条「打不通就当场红」。"
+	@echo "   🔑 要服务的判据该挪去 page-smoke/test-e2e(和 ifmatch 同一个理由),"
+	@echo "      但 seed_rerun 只在这一处 —— **挪去哪要定,所以先把事实写准。**"
 	@echo "   接口和页面的闭环在 make test-e2e(要先 make dev)。"
 	@echo "   **两个都绿也不代表「系统可用」** —— Worker / 知识链 / 训练链 / 发布链"
 	@echo "   都还没实现,见 README 的「现在做到哪了」。"
