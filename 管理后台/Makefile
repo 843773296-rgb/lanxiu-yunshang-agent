@@ -805,6 +805,28 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "  ⚠️ 新口径直接抛 —— **不拿一个计数器冒充两个**(规格 §5.2)"
 	@./.venv/bin/python tests/orchestration/test_effective_caps.py
 	@echo ""
+	@echo "▸ 这段语料这个人能不能**检索到**(规格 §18「文档父级权限可收紧」)"
+	@echo "  业务 2026-10-07 拍的:**切片级不做** —— 切片是派生物,重建索引就整批重切,"
+	@echo "  权限绑在它上面会静默失效;要收紧就**拆成独立文档**(业界也停在文档级)"
+	@echo "  ⚠️ ACL 存**角色**不存人(调岗只改 memberships,不用重写任何 ACL)·"
+	@echo "  ⚠️ 空 ACL 是「没说过」不是「没有人」(五种空写法都验了)·"
+	@echo "  ⚠️ 只能收紧不能放宽,拒的时候要说清**被哪一级卡住、多出来的是谁**"
+	@echo "  🔑 而主要理由是第 ⑥ 节:**where 片段和纯判定要给出同一份名单** ——"
+	@echo "     一份 SQL 过滤和一份纯判定,在各自的测试里都绿,而它们可以给出不同的名单"
+	@./.venv/bin/python tests/orchestration/test_corpus_visible.py
+	@echo ""
+	@echo "▸ 拆成独立文档:**切片级权限不做**那一拍,代价全压在这个动作上"
+	@echo "  ⚠️ 原切片**一条都不动** —— chunks 不可变且绑在不可变的文档版本上,"
+	@echo "     改归属就把已建索引、已发生的问答留下的证据链一起指向了新内容"
+	@echo "  ⚠️ 搬过去的片段**沿用源片段记的切片器版本**,不读当前常量 ——"
+	@echo "     MIXED_CHUNKER_VERSION 是整个知识库一起查的:重切一遍,这个库从此建不出索引"
+	@echo "  ⚠️ 新文档 ACL **必填写死**不许留空继承(它可能落在另一个库,上限就换了一个)"
+	@echo "  ⚠️ 返回的是**计划 + 欠账**,没有任何能当「做完了」用的键 ——"
+	@echo "     在役索引是快照,拆完那个人照旧检索得到,直到重建索引切换"
+	@echo "  🔑 而主要理由是第 ⑥ 节:**不重不漏** —— 一次「拆走」和一次「复制过去而原文档也留着」,"
+	@echo "     在新文档的片段列表上长得一模一样,而后者权限白收紧了"
+	@./.venv/bin/python tests/orchestration/test_split_document.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + `object_key` 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py
