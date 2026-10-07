@@ -5458,7 +5458,7 @@
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "    归属 = soft >= 1 or any(w in text for w in (\"承担\", \"责任\"))\n    if not 归属: return None",
+    "old": "    归属 = soft >= 1 or bool(承担) or \"责任\" in text\n    if not 归属: return None",
     "new": "    归属 = True\n    if not 归属: return None"
    }
   ],
@@ -5535,5 +5535,29 @@
    }
   ],
   "预期红": "没设开关"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g17「承担」不看宾语(承担运费也算归属)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "            if not re.search(r\"运费|邮费|快递|转寄\", text[max(0, m.start() - 6):m.end() + 6])]",
+    "new": "            if True]"
+   }
+  ],
+  "预期红": "真跑钉回(话术 T3)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g23「反映」不看接收方",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if m.group(0) == \"反映\" and not re.search(",
+    "new": "        if False and not re.search("
+   }
+  ],
+  "预期红": "真跑钉回(评价 R02)"
  }
 ]
