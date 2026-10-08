@@ -294,6 +294,22 @@ def g1_no_source(text, calls, prompt="", 规矩=""):
         monies = [(v, i) for v, i in monies if not _在规矩(i)]
         days = [(a, b, i) for a, b, i in days if not _在规矩(i)]
         bodies = [(v, i) for v, i in bodies if not _在规矩(i)]
+    # ⚠️ 10-08 运维重跑:**举例用的数**被当成编的 —— T02 首稿「一单可以同时是『收入:张三 70% + 李四 30%』」
+    # (两轮都是首稿答对、被打回、第二稿改成只追问订单号);V03 反问「你说低,具体是多少?比如 30%、50%?」两轮整份扣下。
+    # 结构:**这一行里有占位人名**(张三 / 李四 / 某某),或者**举例标记(比如 / 例如 / 例子…)领着的反问句** —— 不是在报事实。
+    # 「比如这件云锦要 30 天」不是反问、也没有占位名,照样要出处
+    def _举例(i):
+        头 = text.rfind("\n", 0, i) + 1
+        尾 = text.find("\n", i); 尾 = len(text) if 尾 < 0 else 尾
+        行 = text[头:尾]
+        if re.search(r"张三|李四|王五|赵六|某某|某人|某位", 行): return True
+        前 = [x for x in text[:头].split("\n") if x.strip()][-3:]
+        例 = re.search(r"比如|例如|举例|举个例|例子|打个比方|假如|假设", 行) or any(
+            re.search(r"比如|例如|举例|举个例|例子|打个比方|假如|假设", x) for x in 前)
+        return bool(例) and 行.rstrip().rstrip("*").rstrip().endswith(("?", "?"))
+    monies = [(v, i) for v, i in monies if not _举例(i)]
+    days = [(a, b, i) for a, b, i in days if not _举例(i)]
+    bodies = [(v, i) for v, i in bodies if not _举例(i)]
     if not (monies or days or bodies): return None
     if not calls:
         哪 = ("金额/工期" if (monies or days) else "尺寸/件数/积分/百分比这类**只能查出来**的数")
@@ -338,6 +354,9 @@ def g1_no_source(text, calls, prompt="", 规矩=""):
         # 挨着「交期 / 交付」就被当成整单工期,两份答案因此整份扣下。已过去的天数不是工期:同小句有经过标记就不管
         小句 = tm._seg_before(text, i, 20) + tm._seg_after(text, i, 20)
         if any(k in 小句 for k in 已过标记):
+            continue
+        # 10-08 运维 R01:「订单**已交付** 9–40 天,到了该回访的时候」—— 「已 + 动词」紧贴在数前面,说的是过去了多久
+        if re.search(r"已[一-龥]{1,3}\s*$", tm._seg_before(text, i, 20)):
             continue
         if a in _工具里的天数(calls):
             continue
