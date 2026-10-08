@@ -334,6 +334,23 @@ setTimeout(() => {
   if (占位.length) {
     console.log("=".repeat(70));
     console.log(`  ❌ 这几个节点里还留着占位符或坏值:${占位.map(([k]) => "#" + k).join(", ")}`);
+    // ⚠️ **报出命中的那一段,别只报节点名。** 2026-10-07 加:
+    // 一条「#tdbody 里还留着占位符」的报错,和一条「#tdbody 第 N 字处是
+    // `undefined`,上下文是 …」的,**在那行红字上长得一模一样** ——
+    // 而前者让人去翻几千字的 HTML(实测那一页 12701 字),后者直接指出位置。
+    for (const [k, v] of 占位) {
+      for (const 坏 of ["加载中", "undefined", "NaN", "[object Object]"]) {
+        let i = v.indexOf(坏);
+        let 报过 = 0;
+        while (i >= 0 && 报过 < 3) {
+          const 上下文 = v.slice(Math.max(0, i - 90), i + 50)
+            .replace(/\s+/g, " ").trim();
+          console.log(`     · #${k} 第 ${i} 字处是 \`${坏}\`:…${上下文}…`);
+          报过 += 1;
+          i = v.indexOf(坏, i + 1);
+        }
+      }
+    }
     process.exit(1);
   }
   if (请求数 < 2) {

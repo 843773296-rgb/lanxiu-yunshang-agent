@@ -270,11 +270,25 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 # 门禁确实红了(这是对的),但它**只打印一个页面名就死了**。
 # > 一个红了却不说为什么的门禁,等于让人自己去猜。
 # 所以靠显式的 `rc` 收口,不靠 `set -e`。
+	@echo ""
+	@echo "▸ 详情页的冒烟 hash:**id 从库里现取,不写死**"
+	@echo "  2026-10-07 发现:上面那个名单 21 个全是一级页,而 12 个详情页"
+	@echo "  (#/prompt/{id} · #/tool/{id} · #/chunk/{id} …)**一个都没被打过** ——"
+	@echo "  nav_smoke_check 的判据是「侧栏能点开的页都要在名单里」,"
+	@echo "  而详情页点不开(它要一个 id),按设计就不在它视野里"
+	@echo "  🔑 第一次打就抓到一个真 bug:工具详情页的版本历史渲染出 'object Object'"
+	@echo "     (确认策略是 jsonb,而 esc 对象给出的那个字符串是合法的,兜底不触发)"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tools/detail_page_hashes.py --钉住 0
+	@echo ""
+	@echo "▸ 页面冒烟(一级页 + 详情页)"
 	@rc=0; \
 	for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' \
 	         '#/kb' '#/retrieval' '#/usage' '#/traces' '#/health' '#/tryout' \
 	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' \
-	         '#/datasets' '#/training' '#/artifacts' '#/audit'; do \
+	         '#/datasets' '#/training' '#/artifacts' '#/audit' \
+	         $$(DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+	            ./.venv/bin/python tools/detail_page_hashes.py --只要hash); do \
 		printf "  %-14s " "$$h"; \
 		out=$$(node tests/e2e/page_smoke.js "$$h" 2>&1); \
 		if [ $$? -ne 0 ]; then rc=1; echo "❌ 挂了"; echo "$$out" | tail -6; \

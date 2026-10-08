@@ -16,6 +16,24 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
 const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
   .replace(/`(.+?)`/g, "<code>$1</code>");
 
+/* ⚠️ **`esc()` 拿到对象会给出 `[object Object]`,而那是个合法字符串。**
+ * 2026-10-07 页面冒烟第一次打工具详情页就抓到:版本历史那一列写的是
+ *     esc(v["确认策略"] || "—")
+ * 而 `确认策略` 是 jsonb(`{"谁批":"approver","为什么":"…"}`)——
+ * 界面上真的显示着那六个字。
+ * > 一个「esc 了一个字符串」和一个「esc 了一个对象」,
+ * > **在那行代码上长得一模一样** —— 而 `|| "—"` 的兜底**不会触发**,
+ * > 因为对象是 truthy。
+ * 这一页从没被冒烟打过(名单 21 个全是一级页),所以它一直在那儿。 */
+function _策略文(p) {
+  if (!p) return "—";
+  if (typeof p === "string") return esc(p);
+  const 谁 = p["谁批"] || p.approver || "";
+  const 为 = p["为什么"] || p.reason || "";
+  if (!谁 && !为) return esc(JSON.stringify(p));   // 形状没见过:原样给出,别吞
+  return esc(谁 || "—") + (为 ? ` <span class="k">${esc(为)}</span>` : "");
+}
+
 /* 身份:开发模式从请求头来(生产要接 OIDC) */
 const 人们 = [
   ["U001", "U001 管理员"], ["U002", "U002 编辑"], ["U003", "U003 查看者"],
@@ -2055,7 +2073,7 @@ async function 画工具详情(tid) {
       + (版本们.length ? 版本们.map((v) => `<tr>
           <td><b>${esc(v["版本"])}</b></td>
           <td>${esc(v["读写类型"])}</td>
-          <td class="k">${esc(v["确认策略"] || "—")}</td>
+          <td class="k">${_策略文(v["确认策略"])}</td>
           <td class="k">${v["能轮询吗"] ? "能" : `<span class="k">没声明</span>`}</td>
           <td><code style="font-size:11px">${esc(
             String(v["内容哈希"] || "").slice(0, 12))}</code></td>
