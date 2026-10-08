@@ -82,6 +82,15 @@ PY = os.path.join(根, ".venv", "bin", "python")
     ("tools/seed_evals.py", "评测题集与结果夹具", None),
     ("tools/seed_human_requests.py", "人工介入请求夹具", None),
     ("tools/seed_pricing.py", "计价表夹具", None),
+    # 2026-10-08 加。⚠️ 这一份和上面几个**不是同一种 seed**:
+    # 它不往库里写夹具,而是**走产品自己的接口**(建索引 → 等 Worker →
+    # 跑一次试跑),为的是让三条判据在 CI 上有东西可验
+    # (试跑栏目的 e2e / ifmatch 的样例 id / `#/rrun/{id}` 详情页冒烟)。
+    # 所以它**要服务在跑**,而这个目标里服务是起着的。
+    # 第三栏是 None:它造的东西没有别的测试去引用,
+    # 「第二遍」考的是它自己的幂等(已经齐了就什么都不做)。
+    ("tools/seed_retrieval_demo.py",
+     "演示项目的「已就绪索引 + 一条试跑」(CI 要这份数据)", None),
 ]
 
 # 名单外的 seed 脚本:**点名 + 写理由**,不许静默跳过
