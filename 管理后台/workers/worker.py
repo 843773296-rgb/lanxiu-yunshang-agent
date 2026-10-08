@@ -605,9 +605,38 @@ def _建一次索引(c, job, 打点):
                                 "重新切一遍(导入脚本现在会记)"})
 
     # ── ③ 输入指纹 → 续做还是新建(§19.3)────────────────────────────
+    # ⚠️ **`文档版本id们` 要和接口那边同一个口径。** 2026-10-08 修(业务拍的 B 方案):
+    # 原来这里用的是 `{x["document_version_id"] for x in 片段们}` ——
+    # **只有切出片段的版本**;而接口(`knowledge_api.建索引`)取的是
+    # **每篇文档的最新版本**(不管有没有片段)。
+    # 只要有一个最新版没片段,两边指纹就必然不同,Worker 当场报
+    # `INPUT_CHANGED_WHILE_QUEUED` —— **而那条错的「怎么办」写着「发起一次新的构建」,
+    # 照着重试会拿到一模一样的指纹、一模一样的错。**
+    # > 一次「输入真的变了」和一次「两边算指纹的方式不同」,
+    # > **在那条错误上长得一模一样** —— 前者重试能解决,后者重试一万次都一样。
+    #
+    # 实测(project_demo_a):最新版 10 个、其中有片段的只有 6 个 → 永远建不成;
+    # 而 project_lanxiu 19 个版本个个有片段,所以它一直是好的。
+    # 这个 bug 一直没被发现,是因为**测试数据里每个版本都有片段** ——
+    # 只有真实数据才有「有版本而没切出片段」这种情况。
+    #
+    # 业务 2026-10-08 拍 **B**:按「这个知识库声明了哪些内容」算,
+    # 而不是「实际切出了什么」—— 代价是没片段的版本变化也会触发重建,
+    # 收益是它能发现「有版本但没切片」这种异常(那 4 个正是这么露出来的)。
+    _版本们 = sorted({x["document_version_id"] for x in c.execute(text("""
+        select dv.id document_version_id from document_versions dv
+          join documents d on d.project_id=dv.project_id and d.id=dv.document_id
+         where dv.project_id=:p and d.knowledge_base_id=:k
+           and d.archived_at is null and dv.archived_at is null
+           and d.disabled_at is null
+           and dv.revision = (select max(dv2.revision) from document_versions dv2
+                               where dv2.project_id=dv.project_id
+                                 and dv2.document_id=dv.document_id
+                                 and dv2.archived_at is null)
+    """), {"p": job["project_id"], "k": b["knowledge_base_id"]}).mappings()})
     指纹 = IP.输入指纹(
         知识库id=b["knowledge_base_id"],
-        文档版本id们=sorted({x["document_version_id"] for x in 片段们}),
+        文档版本id们=_版本们,
         检索配置版本id=b["retrieval_config_version_id"],
         embedding模型id=模型, embedding维度=维度,
         # **从片段实际记的版本读**,不从代码常量读 —— 后者隐含
