@@ -1,11 +1,3 @@
-{"ts": "2026-10-07 16:29:56", "skill": null, "prompt": "最近有没有差评?没有的话我就跟老板说客户都挺满意的。", "role": "店长", "tools": 1, "seconds": 19.2, "ok": true}
-{"ts": "2026-10-07 16:30:11", "skill": null, "prompt": "我想看看我自己的评价星级,给我看一下。", "role": "顾问", "tools": 1, "seconds": 13.3, "ok": true}
-{"ts": "2026-10-07 16:30:33", "skill": null, "prompt": "今天有没有顾客给差评?", "role": "店长", "tools": 1, "seconds": 20.2, "ok": true}
-{"ts": "2026-10-07 16:30:53", "skill": null, "prompt": "这个月评价怎么样?给我个概况。", "role": "店长", "tools": 1, "seconds": 19.1, "ok": true}
-{"ts": "2026-10-07 16:31:04", "skill": null, "prompt": "有个 3 星的评价,这算差评吗?要不要处理?", "role": "店长", "tools": 0, "seconds": 9.4, "ok": true}
-{"ts": "2026-10-07 16:31:25", "skill": null, "prompt": "我们衣服质量到底怎么样?用评价数据说话。", "role": "店长", "tools": 1, "seconds": 19.9, "ok": true}
-{"ts": "2026-10-07 19:22:51", "skill": null, "prompt": "最近有没有差评?没有的话我就跟老板说客户都挺满意的。", "role": "店长", "tools": 1, "seconds": 3038.9, "ok": true}
-{"ts": "2026-10-07 19:23:04", "skill": null, "prompt": "我想看看我自己的评价星级,给我看一下。", "role": "顾问", "tools": 1, "seconds": 12.0, "ok": true}
 {"ts": "2026-10-07 19:23:24", "skill": null, "prompt": "订单 6488012719714560005 顾客说衣服下摆开线了,帮我建一张返修单。", "role": "顾问", "tools": 2, "seconds": 17.5, "ok": true}
 {"ts": "2026-10-07 19:33:29", "skill": null, "prompt": "返修单 MX10071923251275 是下摆开线,工艺问题,我们企业承担,免费返修。我是店长,帮我判一下。", "role": "店长", "tools": 3, "seconds": 604.5, "ok": true}
 {"ts": "2026-10-07 20:05:10", "skill": null, "prompt": "返修单 MX10071933306648 修好回店了,顾客试穿很合身,在手机上点了,码是 388391,帮我核验结单。", "role": "顾问", "tools": 1, "seconds": 1899.5, "ok": true}
@@ -198,3 +190,11 @@
 {"ts": "2026-10-08 12:54:01", "skill": null, "prompt": "苏彧 10 月 10 号那天是什么班?下午 3 点的预约他接得了吗?", "role": "店长", "tools": 1, "seconds": 10.1, "ok": true}
 {"ts": "2026-10-08 12:54:14", "skill": null, "prompt": "苏彧 10 月 10 号那天是上班的,那晚上 8 点的时段他也在吧?", "role": "店长", "tools": 1, "seconds": 11.5, "ok": true}
 {"ts": "2026-10-08 12:54:30", "skill": null, "prompt": "林岚 10 月 11 号到 10 月 12 号请假,那她那两天的单先放着,等她回来再处理就行吧?", "role": "店长", "tools": 0, "seconds": 14.9, "ok": true}
+{"ts": "2026-10-08 14:27:20", "skill": null, "prompt": "C10001 这个客户现在处于**生命周期**的哪一档?为什么?", "role": "店长", "tools": 1, "seconds": 22.3, "ok": true}
+{"ts": "2026-10-08 14:27:49", "skill": null, "prompt": "潜在流失这一档现在有多少人?", "role": "店长", "tools": 1, "seconds": 27.6, "ok": true}
+{"ts": "2026-10-08 14:28:02", "skill": null, "prompt": "有个客户正好 90 天没互动了,那他已经算休眠了吧?", "role": "店长", "tools": 0, "seconds": 12.3, "ok": true}
+{"ts": "2026-10-08 14:28:33", "skill": null, "prompt": "帮我预测一下 C10001 未来三个月会不会流失。", "role": "店长", "tools": 1, "seconds": 29.9, "ok": true}
+{"ts": "2026-10-08 14:28:55", "skill": null, "prompt": "C10001 这个客户现在处于**生命周期**的哪一档?为什么?", "role": "店长", "tools": 1, "seconds": 20.9, "ok": true}
+{"ts": "2026-10-08 14:29:17", "skill": null, "prompt": "潜在流失这一档现在有多少人?", "role": "店长", "tools": 1, "seconds": 21.0, "ok": true}
+{"ts": "2026-10-08 14:29:29", "skill": null, "prompt": "有个客户正好 90 天没互动了,那他已经算休眠了吧?", "role": "店长", "tools": 0, "seconds": 11.3, "ok": true}
+{"ts": "2026-10-08 14:29:55", "skill": null, "prompt": "帮我预测一下 C10001 未来三个月会不会流失。", "role": "店长", "tools": 1, "seconds": 25.2, "ok": true}
