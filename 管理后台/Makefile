@@ -95,9 +95,6 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_split_live.py
 	@echo ""
-	@echo "▸ 铺数据的脚本跑得起第二遍吗(**要库,所以不在 contract 里**)"
-	@echo "  ⚠️ 它会**重铺 seed 夹具**并跑两份端到端 —— 要先 make dev"
-	@./.venv/bin/python tools/seed_rerun_check.py
 	@echo ""
 	# ⚠️ **这条要数据库,所以挂 `test` 不挂 `contract`。**
 	# `contract` 那一组是「不需要数据库」的 —— 放进去会让它在没库的机器上红,
@@ -168,14 +165,11 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_vector_constraints.py
 	@echo ""
-	@echo "⚠️ test 大部分**不需要起服务**(契约层 + 数据层),但**还有一条要**:"
-	@echo "   seed_rerun_check 会重铺 seed 夹具并跑两份端到端 —— 它只挂在这儿,"
-	@echo "   所以 **make test 整体仍然要先 make dev**。"
-	@echo "   这句话 2026-10-07 之前写的是「不需要起服务」—— 那是过期的:"
-	@echo "   一句「不需要起服务」的说明和一句准确的,在这段输出上长得一模一样,"
-	@echo "   而照着它跑的人会撞上一条「打不通就当场红」。"
-	@echo "   🔑 要服务的判据该挪去 page-smoke/test-e2e(和 ifmatch 同一个理由),"
-	@echo "      但 seed_rerun 只在这一处 —— **挪去哪要定,所以先把事实写准。**"
+	@echo "⚠️ test **不需要起服务**(契约层 + 数据层)。2026-10-08 起这句话是真的:"
+	@echo "   最后两条要服务的(ifmatch / seed_rerun)都挪走了 ——"
+	@echo "   ifmatch 去了 page-smoke、seed_rerun 去了 test-e2e。"
+	@echo "   🔑 挪完**停掉服务真跑了一遍**才改的这句话 ——"
+	@echo "      一句没验过的「不需要起服务」,和一句验过的,在这段输出上长得一模一样。"
 	@echo "   接口和页面的闭环在 make test-e2e(要先 make dev)。"
 	@echo "   **两个都绿也不代表「系统可用」** —— Worker / 知识链 / 训练链 / 发布链"
 	@echo "   都还没实现,见 README 的「现在做到哪了」。"
@@ -479,6 +473,15 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (幂等靠内容哈希 / 输入变了新建构建 / 第一次建索引必须显式给模型)"
 	@echo "  ⚠️ 其中一条会真调一次 Claude 精排(月租额度)"
 	@./.venv/bin/python tests/e2e/test_knowledge_write_flow.py
+	@echo ""
+	@echo "▸ 铺数据的脚本跑得起第二遍吗(**它要服务**,所以在这儿不在 make test)"
+	@echo "  2026-10-08 从 make test 挪过来 —— 那段注释(第 220 行附近)早就写着"
+	@echo "  「要服务的判据该挪去 page-smoke/test-e2e」,而这一条一直留在 make test,"
+	@echo "  于是 make test 整体要先 make dev,而它的说明写着「不需要起服务」"
+	@echo "  🔑 一句「不需要起服务」的说明和一句准确的,在那段输出上长得一模一样 ——"
+	@echo "     而照着它跑的人会撞上一条「打不通就当场红」"
+	@echo "  ⚠️ 它会**重铺 seed 夹具**并跑两份端到端 —— 要先 make dev"
+	@./.venv/bin/python tools/seed_rerun_check.py
 	@echo ""
 	@echo "▸ 运行控制端到端:**「请求」不是「已经」**(pause→pause_requested)"
 	@echo "  (把「请求暂停」写成「已暂停」→ 界面显示已停而模型还在跑、钱还在花)"
