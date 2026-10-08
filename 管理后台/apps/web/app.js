@@ -365,10 +365,10 @@ async function 页_prompt详情(pid) {
         <textarea class="t" id="e-用途" placeholder="比如:把文章整理成结论、依据、待核实事项">${esc(m.用途 || "")}</textarea>
 
         <label class="f">系统指令</label>
-        <textarea class="t mono" id="e-system" rows="6">${esc(m.system || "")}</textarea>
+        <textarea class="t mono" data-raw="原文" id="e-system" rows="6">${esc(m.system || "")}</textarea>
 
         <label class="f">用户模板　<span style="color:var(--ink3)">变量写成 <code>{{名称}}</code></span></label>
-        <textarea class="t mono" id="e-user" rows="6">${esc(m.user || "")}</textarea>
+        <textarea class="t mono" data-raw="原文" id="e-user" rows="6">${esc(m.user || "")}</textarea>
 
         <label class="f">输入变量</label>
         <div id="vars"></div>
