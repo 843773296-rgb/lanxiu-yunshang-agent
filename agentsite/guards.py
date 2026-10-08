@@ -1815,8 +1815,11 @@ def make_hooks(state, 注日期=True):
             尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 原文=text, 规则版本=规则版本(), 结果="检查出错",
                           失败项=[], 说明=f"{type(e).__name__}: {e}"[:200]))
             return {}
+        补 = [b["check"] for b in bad if b["check"] in 交付时补注]
+        bad = [b for b in bad if b["check"] not in 交付时补注]
         尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 原文=text, 规则版本=规则版本(),
-                      结果="不通过" if bad else "通过", 失败项=[b["check"] for b in bad]))
+                      结果="不通过" if bad else "通过", 失败项=[b["check"] for b in bad],
+                      **({"交付时补注": 补} if 补 else {})))
         if not bad:
             return {}
         # 违规**历史**不因修正成功而删(审阅:保留失败历史),逐次累加
@@ -1893,6 +1896,37 @@ def 打回说明(bad):
 # 被打回之后最多让它改几次。⚠️ 审阅建议首版保留一次修正机会 —— 不是业务定的数
 最多修正次数 = 1
 
+# 交付时由系统补一句、**不打回重写**的规则(用户 2026-10-08 拍板)。
+# 判责「须店长 / 质检确认」写进提示词两处(TK10 / TL49),10-07 四套真跑首答照样不写(返修 P02 第一稿),
+# 靠 g17 打回一次才补上 —— 顾问多等一轮,偶尔改一次还不过就整份扣下。这句话是**固定的**,
+# 不需要模型组织语言,所以不靠模型:交付前系统追加,再整份重查一次。
+交付时补注 = {"g17_liability_promise": "\n\n> ⚠️ 以上是判责建议,须店长 / 质检确认后再告知顾客;确认前请勿对顾客承诺。"}
+
+
+def _补注(state, text):
+    """交付前:最终答案若触发「交付时补注」里的规则,追加那句固定的话,并把补后的这份查一遍记下。"""
+    加 = [k for k, 句 in 交付时补注.items()
+         if 句.strip() not in (text or "") and _规则(k)(text, state.get("calls"))]
+    if not 加:
+        return text
+    text = (text or "").rstrip() + "".join(交付时补注[k] for k in 加)
+    state["系统补注"] = 加
+    尝 = state.setdefault("答案检查", [])
+    try:
+        bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"))
+        尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 原文=text, 规则版本=规则版本(),
+                      结果="不通过" if bad else "通过", 失败项=[b["check"] for b in bad],
+                      来源="交付前系统补注(" + "、".join(加) + ")"))
+        if bad:
+            state.setdefault("violations", []).extend(bad)
+    except Exception:
+        pass            # 查不了就交给交付判定补查 —— 那边会把「检查出错」记成未检查
+    return text
+
+
+def _规则(名):
+    return {"g17_liability_promise": g17_liability_promise}[名]
+
 
 def 答案哈希(text):
     import hashlib
@@ -1947,6 +1981,8 @@ def 交付判定(state, text, 体检开着=True, 跑完了=True):
 def 交付处理(state, text, 体检开着=True, 跑完了=True):
     """sdk.run 收尾时调:返回 (交给用户的文本, 未通过的草稿或 None, 交付判定)。
     **未通过的答案不进正常答案字段** —— 换成受控说明,草稿另存给人核对。"""
+    if 体检开着 and 跑完了 and (text or "").strip():
+        text = _补注(state, text)
     交付 = 交付判定(state, text, 体检开着=体检开着, 跑完了=跑完了)
     if 交付["状态"] == "未通过":
         _记扣下(state, 交付)

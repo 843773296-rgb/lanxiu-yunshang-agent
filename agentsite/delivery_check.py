@@ -28,6 +28,8 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("环境故障只认字符串返回(dict 形状的报错漏掉)", "工具返回里的数据库报错认得出"),
     ("扣下时不记(_记扣下 不调)", "答案被扣下时记一份"),
     ("不挂 PostToolUseFailure(失败的调用没人记)", "工具调用失败也记下来"),
+    ("交付处理里不补注(去掉 `text = _补注(state, text)`)", "判责没写确认 → 不打回,交付时系统补那句"),
+    ("Stop 照旧把 g17 当打回(不滤掉交付时补注的规则)", "判责没写确认 + 别的毛病 → 只为别的毛病打回"),
 ]
 
 坏 = 0
@@ -187,6 +189,23 @@ def main():
            _挂了 and _记 == ["mcp__kb__kb_size"], 1, f"挂了={_挂了} 记下={_记}")
         ck("sdk.run 每轮都查并累计进 sdk.环境故障", "_故障 = 找环境故障(state.get(\"calls\"))" in src0
            and "环境故障.extend(_故障)" in src0 and 'state.get("工具失败")' in src0, 1)
+
+        print("\n\033[1m▸ 判责须确认:系统补那句,不打回重写(用户 10-08 拍)\033[0m")
+        # 10-07 返修 P02 第一稿原话(只写了归属,没写确认)
+        _判 = "**判责结论:企业承担,免费返修。** 依据:下摆开线是工艺瑕疵,判定表写我方,免费返修。"
+        guards.check_answer = 真检查
+        回, st = 场景([_判], lambda t: 真检查(t, [], "返修单是下摆开线,帮我判一下。"))
+        _文, _稿, _交 = guards.交付处理(st, _判)
+        ck("判责没写确认 → 不打回,交付时系统补那句、补完整份重查通过",
+           回 == [{}] and _交["状态"] == "通过" and _稿 is None
+           and _文.endswith(guards.交付时补注["g17_liability_promise"]) and st.get("系统补注") == ["g17_liability_promise"]
+           and "系统补注" in (st["答案检查"][-1].get("来源") or ""), 1, f"{回} / {_交['状态']} / {_文[-40:]}")
+        回, st = 场景(["判责加别的毛病"], lambda t: [{"check": "g17_liability_promise", "msg": "判责没写确认"},
+                                                 {"check": "测", "msg": "测:不合格"}])
+        _原因 = (回[0] or {}).get("reason") or ""
+        ck("判责没写确认 + 别的毛病 → 只为别的毛病打回(打回说明里没有判责那条)",
+           回[0].get("decision") == "block" and "测:不合格" in _原因 and "判责没写确认" not in _原因, 1, _原因[:80])
+        guards.check_answer = 真检查
 
         print("\n\033[1m▸ sdk.run 收尾用的是这一套\033[0m")
         src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()

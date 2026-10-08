@@ -5559,5 +5559,29 @@
    }
   ],
   "预期红": "真跑钉回(评价 R02)"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "交付处理里不补注",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        text = _补注(state, text)\n",
+    "new": "        pass\n"
+   }
+  ],
+  "预期红": "判责没写确认 → 不打回"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "Stop 照旧把 g17 当打回",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        bad = [b for b in bad if b[\"check\"] not in 交付时补注]\n",
+    "new": "\n"
+   }
+  ],
+  "预期红": "判责没写确认 + 别的毛病"
  }
 ]

@@ -5,8 +5,9 @@
 
 ## 🧭 2026-10-07 晚 · 四套正式真跑(claude-haiku-4-5)+ 体检两处误拦修掉(体检 / 评测线写)
 
-**① 下一步第一个动作**:「判责须确认」新说法**首答没照做**(返修 P02 第一稿只写「企业承担,免费返修」,g17 拦对了,改稿才加确认)——
-   要么接受「靠 g17 打回一次」,要么换办法(提示词那两处没压住);先给用户摆选项,别直接再加祈使句(见 ⑤)
+**① 下一步第一个动作**:✅ 10-08 用户拍板「系统自动补那句话」—— g17 不再打回重写,交付前系统追加
+   「以上是判责建议,须店长 / 质检确认后再告知顾客;确认前请勿对顾客承诺」再整份重查(`guards.交付时补注` / `_补注`,
+   delivery_check 两个场景 + 两条咬合)。**还没真跑过**:下一步约窗口跑 repair / liability 看补注后的答案读着顺不顺
 **② 判据**:两轮 —— talk 10·11 · workshop 6·6 · rating 7·6 · repair 8·7(代码 7af4955 之后,LANXIU_PROVIDER=claude 显式)。
    8 道没过逐条读扣下留底:talk T3/T4 是 g17 把「我们承担**运费**」当认责(误拦,已修:看「承担」的宾语)/
    rating R02 是 g23 把「这个数**反映**的是…」当往上推价格(误拦,已修:「反映」要有接收方)/
@@ -4571,13 +4572,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-07 20:56。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-08 09:55。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 0cf7d60 · 2026-10-07 · 交接:索引建起来了(RAG 真的能用了)+ 记一个缺口:检索配置没有接口 |
-| 代码量 | 641 个 Python 文件 / 116555 行(不含 .venv) |
+| 最新提交 | b85eaaf · 2026-10-08 · 12 个详情页从没被冒烟打过 —— 接上之后第一次打就抓到一个真 bug |
+| 代码量 | 642 个 Python 文件 / 116610 行(不含 .venv) |
 | 验收 | `./check.sh` 共 233 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 没起来 · 智能运维平台 :8770 → 没起来 |
 
@@ -4585,16 +4586,10 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 
 ```
 M HANDOFF.md
- M agent/rating-eval-results.jsonl
- M agent/repair-eval-results.jsonl
- M agent/talk-eval-results.jsonl
- M agent/workshop-eval-results.jsonl
- M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
+ M agentsite/delivery_check.py
  M agentsite/guards.py
- M agentsite/guards_test.py
  M tools/bite_specs.json
- M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
+ M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\351\234\200\346\261\202\346\226\207\346\241\243.md"
 ?? .feynman/world-shift-launchd.log
 ?? .wip-muslin/
 ?? data/lanxiu.db
@@ -4606,11 +4601,11 @@ M HANDOFF.md
 **最近 5 次提交:**
 
 ```
+b85eaaf 12 个详情页从没被冒烟打过 —— 接上之后第一次打就抓到一个真 bug
+1353026 四套正式真跑读扣下留底:体检两处误拦修掉 · 判责「须确认」首答没照做 · 又一次读错稿
 0cf7d60 交接:索引建起来了(RAG 真的能用了)+ 记一个缺口:检索配置没有接口
 c5f3036 「这一段检索不到」在整库没索引时是误导 —— 打开页面才看见的
 766bbc6 交接:make test 整体绿了(306 条)—— 从 10-02 起第一次
-7af4955 三套重跑读错题:7 道里 6 道是判分器错 · 判责说法用户拍板 · TL63 试了无效已撤 · 来路章一直盖错
-65d46f3 治根:测试中途炸了也要清理(atexit 兜底)—— 那 209 条残留就是这么攒出来的
 ```
 <!--/AUTO-->
 ## 一句话在做什么
