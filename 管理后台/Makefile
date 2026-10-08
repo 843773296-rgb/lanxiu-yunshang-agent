@@ -771,6 +771,13 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     而分叉时两边各自都「有样式」,只是不一样"
 	@./.venv/bin/python tools/css_class_check.py
 	@echo ""
+	@echo "▸ 页面文案里的加粗真的渲染了吗(别把星号显示给人看)"
+	@echo "  2026-10-08 用户验收一眼看到的:知识库页上那两个星号是**字面显示**的 ——"
+	@echo "  把它变成粗体的是 md(),而那些文案直接写进 HTML、没经过它。全站 32 处"
+	@echo "  🔑 一句「写了加粗」的文案,和一句「加粗真的生效了」的,在源码上长得一模一样"
+	@echo "  ⚠️ 它只接住**可机检的那一半** —— 排版好不好看仍然要人看一眼"
+	@./.venv/bin/python tools/md_render_check.py
+	@echo ""
 	@echo "▸ SQL 字符串体检:注释里的绑定参数 / 缺 cast 的位置"
 	@echo "  **判据不自己实现词法,问 SQLAlchemy** —— 第一版自己写正则,15/17 是误报"
 	@./.venv/bin/python tools/sql_lint.py

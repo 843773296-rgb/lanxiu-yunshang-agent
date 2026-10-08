@@ -195,8 +195,8 @@ async function 页_工作台() {
   const 头 = `<div class="crumb">工作台</div>
     <div class="head"><div>
       <h1>工作台</h1>
-      <div class="sub">先知道哪里需要处理。每张卡都写清它**算的是什么范围、分母是什么、数据从哪来** ——
-        一个没有分母的比率没法判断它可不可信。</div>
+      <div class="sub">${md(`先知道哪里需要处理。每张卡都写清它**算的是什么范围、分母是什么、数据从哪来** ——
+        一个没有分母的比率没法判断它可不可信。`)}</div>
     </div><div class="acts">
       <select id="wb-h" style="height:32px">
         <option value="24">最近 24 小时</option><option value="168">最近 7 天</option>
@@ -228,8 +228,8 @@ async function 页_工作台() {
     };
     $("#main").innerHTML = 头
       + `<div class="cards">${(d.卡片 || []).map(卡).join("")}</div>`
-      + `<div class="note warn">**「未知」不是 0。** 费用未知是因为 mock 适配器没有真实计价;
-         质量分未知是因为还没有评测覆盖 —— 显示 0 会被读成「质量很差」,而真相是「没测过」。</div>`;
+      + `<div class="note warn">${md(`**「未知」不是 0。** 费用未知是因为 mock 适配器没有真实计价;
+         质量分未知是因为还没有评测覆盖 —— 显示 0 会被读成「质量很差」,而真相是「没测过」。`)}</div>`;
     $("#wb-h").value = h;
     $("#wb-h").onchange = 画;
   };
@@ -241,8 +241,8 @@ async function 页_prompt列表() {
   const 头 = `<div class="crumb">Prompt 管理</div>
     <div class="head"><div>
       <h1>Prompt 管理</h1>
-      <div class="sub">「最新保存版本」和「生产引用版本」**并排显示** ——
-        避免以为保存就上线了。生产用哪一版由**发布清单 + 环境指针**决定,不是「最新的那个」。</div>
+      <div class="sub">${md(`「最新保存版本」和「生产引用版本」**并排显示** ——
+        避免以为保存就上线了。生产用哪一版由**发布清单 + 环境指针**决定,不是「最新的那个」。`)}</div>
     </div><div class="acts">
       <button id="np" class="pri">新建 Prompt</button>
     </div></div>
@@ -364,9 +364,9 @@ async function 页_prompt详情(pid) {
 
         <label class="f">输入变量</label>
         <div id="vars"></div>
-        <div class="note">**定义变量不等于已经取得数据。** 每个变量都要说清来源
+        <div class="note">${md(`**定义变量不等于已经取得数据。** 每个变量都要说清来源
           (用户输入 / 上一步结果 / 检索上下文 / 受控系统字段)—— 来源没绑上,
-          它在运行时就是空的。</div>
+          它在运行时就是空的。`)}</div>
 
         <label class="f">输出要求</label>
         <pre class="io" id="e-out">${esc(JSON.stringify(出要, null, 2))}</pre>
@@ -386,17 +386,17 @@ async function 页_prompt详情(pid) {
       <div>
         <div class="card">
           <div style="font-weight:600;margin-bottom:6px">模型与参数</div>
-          <div class="note warn">当前是 **mock 适配器** —— 它返回的是编出来的回答,
+          <div class="note warn">${md(`当前是 **mock 适配器** —— 它返回的是编出来的回答,
             **不许计入真实评测或发布**。接真实连接后这里会列出该连接**实际支持**的参数
-            (不支持的参数会返回明确错误,不会被静默忽略)。</div>
+            (不支持的参数会返回明确错误,不会被静默忽略)。`)}</div>
           <label class="f">测试输入　<span style="color:var(--ink3)">和模板独立保存,运行结果不会覆盖模板</span></label>
           <div id="testvars"></div>
           <div style="margin-top:10px">
             <button class="pri" id="b-run">运行测试</button>
             <span class="msg" id="runmsg" style="font-size:12.5px;color:var(--ink2)"></span>
           </div>
-          <div class="note">期望答案放在**独立的评分区域**,不会自动传给被测模型 ——
-            否则等于把答案给了考生。</div>
+          <div class="note">${md(`期望答案放在**独立的评分区域**,不会自动传给被测模型 ——
+            否则等于把答案给了考生。`)}</div>
         </div>
         <div class="card" id="runout" style="display:none"></div>
       </div>
@@ -418,8 +418,8 @@ async function 页_prompt详情(pid) {
         <td>${esc(v.类型 || "string")}</td><td>${esc(v.来源 || "—")}</td>
         <td>${v.必填 ? '<span class="pill warn">必填</span>' : "可选"}</td>
         <td>${esc(v.默认值 ?? "—")}</td></tr>`).join("")}</tbody></table>`
-      : `<div class="note">还没定义变量。模板里写了 <code>{{x}}</code> 但没定义的话,
-          「保存为新版本」会被拦住 —— 那不是刁难:**没定义来源的变量在运行时是空的**。</div>`;
+      : `<div class="note">${md(`还没定义变量。模板里写了 <code>{{x}}</code> 但没定义的话,
+          「保存为新版本」会被拦住 —— 那不是刁难:**没定义来源的变量在运行时是空的**。`)}</div>`;
     $("#testvars").innerHTML = 变量.length ? 变量.map((v) => `
       <label class="f">${esc(v.名称)}${v.必填 ? ' <span class="req">*</span>' : ""}
         <span style="color:var(--ink3)">${esc(v.说明 || "")}</span></label>
@@ -542,8 +542,8 @@ async function 页_prompt详情(pid) {
                                 : (s.输出 && s.输出.text) || JSON.stringify(s.输出, null, 2))}</pre>
         <details><summary>应用实际发送给模型的内容${果.看得到原文 ? "" : "(已脱敏)"}</summary>
           <pre class="io">${esc(JSON.stringify(s.实际发送, null, 2))}</pre>
-          ${果.看得到原文 ? "" : `<div class="note">**默认脱敏。** 看原文要
-            「查看敏感输入/独立测试答案」专项权限 —— 换成 U004 能看到差别。</div>`}
+          ${果.看得到原文 ? "" : `<div class="note">${md(`**默认脱敏。** 看原文要
+            「查看敏感输入/独立测试答案」专项权限 —— 换成 U004 能看到差别。`)}</div>`}
         </details>`).join("")}
       <div class="two" style="margin-top:8px">
         <div><div class="vtag">用量</div>
@@ -557,8 +557,8 @@ async function 页_prompt详情(pid) {
             #${e.seq} ${esc(e.kind)} ${esc(String(e.at || "").slice(0, 19))}</div>`).join("")}
           <div class="note">Trace <code>${esc(果.trace_id || "—")}</code></div></div>
       </div>
-      <div class="note">跑完可以「加入问题集」「保存为评测样本」—— 新样本**先进待审核**,
-        避免把错误答案当成真值。(这两个按钮还没实现)</div>`;
+      <div class="note">${md(`跑完可以「加入问题集」「保存为评测样本」—— 新样本**先进待审核**,
+        避免把错误答案当成真值。(这两个按钮还没实现)`)}</div>`;
   }
 }
 
@@ -1988,10 +1988,10 @@ async function 画工具详情(tid) {
           <b>这不是「没有差异」</b> —— 是还没有第二版。</div>` : "")
       : `<h2>版本差异（${esc(上版["版本"])} → ${esc(新版["版本"])}）</h2>
       ${变了的.length === 0
-        ? `<div class="note warn">⚠️ <b>这两版的内容哈希不同，而上面这些字段逐个比下来都一样</b>。
+        ? `<div class="note warn">${md(`⚠️ <b>这两版的内容哈希不同，而上面这些字段逐个比下来都一样</b>。
             说明改的是**这张表没列出来的东西**（比如重试策略、
             服务端绑定参数、查外部状态）——
-            <b>别读成「没改」</b>：哈希是按全部字段算的。</div>`
+            <b>别读成「没改」</b>：哈希是按全部字段算的。`)}</div>`
         : `<table><thead><tr><th>变了什么</th>
             <th>${esc(上版["版本"])}</th><th>${esc(新版["版本"])}</th>
             <th>对引用方意味着什么</th></tr></thead><tbody>`
@@ -2258,7 +2258,7 @@ function _mock标(是mock) {
 async function 页_人工待办() {
   const 头 = `<div class="crumb">人工待办</div>
     <div class="head"><div><h1>人工待办</h1>
-      <div class="sub">不可逆写入要人点头。**列表上没有批准按钮,这是有意的。**</div>
+      <div class="sub">${md(`不可逆写入要人点头。**列表上没有批准按钮,这是有意的。**`)}</div>
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
@@ -2331,8 +2331,8 @@ async function 页_待办详情(hid) {
              <button class="pri" id="ap">批准</button>
              <button id="rj">驳回</button>
              <button id="info">要求补充</button>
-             <div class="note">⚠️ **批准只产生批准记录,不等于已执行** ——
-               真正执行时还要再查一遍权限和工具当前可用性。</div>
+             <div class="note">${md(`⚠️ **批准只产生批准记录,不等于已执行** ——
+               真正执行时还要再查一遍权限和工具当前可用性。`)}</div>
              <div id="res"></div>
            </div>`
         : `<div class="state err"><h3>你不能处理这条</h3>
@@ -2382,7 +2382,7 @@ async function 页_待办详情(hid) {
 async function 页_评测中心() {
   const 头 = `<div class="crumb">评测中心</div>
     <div class="head"><div><h1>回归验收</h1>
-      <div class="sub">改完之后跑一遍,看有没有退步。**有分数 ≠ 能当结论。**</div>
+      <div class="sub">${md(`改完之后跑一遍,看有没有退步。**有分数 ≠ 能当结论。**`)}</div>
     </div><div><a href="#/compare"><button>实验对比</button></a></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
@@ -2418,7 +2418,7 @@ async function 页_评测中心() {
 async function 页_实验对比() {
   const 头 = `<div class="crumb"><a href="#/evals">评测中心</a> · 实验对比</div>
     <div class="head"><div><h1>实验对比</h1>
-      <div class="sub">同一套题两个版本并排。**不可比时不给分数。**</div>
+      <div class="sub">${md(`同一套题两个版本并排。**不可比时不给分数。**`)}</div>
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
@@ -2492,7 +2492,7 @@ async function 页_实验对比() {
 async function 页_单条试跑() {
   const 头 = `<div class="crumb">Prompt 管理</div>
     <div class="head"><div><h1>单条试跑</h1>
-      <div class="sub">拿一条真输入试一次。**调试也花钱**,所以要过额度闸。</div>
+      <div class="sub">${md(`拿一条真输入试一次。**调试也花钱**,所以要过额度闸。`)}</div>
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let ps;
@@ -2511,8 +2511,8 @@ async function 页_单条试跑() {
       <label class="f">变量(JSON)</label>
       <textarea id="vv" rows="4">{}</textarea>
       <button class="pri" id="go">试跑一次</button>
-      <div class="note">⚠️ **这一次真的会调模型。** 返回的是任务信封(202),
-        不是答案 —— 下面显示的是**真实状态**,不是假进度条。</div>
+      <div class="note">${md(`⚠️ **这一次真的会调模型。** 返回的是任务信封(202),
+        不是答案 —— 下面显示的是**真实状态**,不是假进度条。`)}</div>
       <div id="步"></div>
     </div>`;
   $("#go").onclick = async () => {
@@ -2552,7 +2552,7 @@ async function 页_单条试跑() {
 async function 页_调用链() {
   const 头 = `<div class="crumb">运行记录</div>
     <div class="head"><div><h1>调用链</h1>
-      <div class="sub">每一次运行的调用树。**看得到 trace 不等于看得到原文。**</div>
+      <div class="sub">${md(`每一次运行的调用树。**看得到 trace 不等于看得到原文。**`)}</div>
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
@@ -2631,7 +2631,7 @@ async function 页_调用树(tid) {
 async function 页_智能体健康() {
   const 头 = `<div class="crumb">评测中心</div>
     <div class="head"><div><h1>智能体健康</h1>
-      <div class="sub">上线之后**没有标准答案** —— 能拿到的是采纳率,而它不是质量分。</div>
+      <div class="sub">${md(`上线之后**没有标准答案** —— 能拿到的是采纳率,而它不是质量分。`)}</div>
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
@@ -2695,7 +2695,7 @@ function _参考价(x) {
 async function 页_用量与成本() {
   const 头 = `<div class="crumb">用量与成本</div>
     <div class="head"><div><h1>用量与成本</h1>
-      <div class="sub">谁花的、花在哪次调用上。**未知显示「未知」,不显示 0。**</div>
+      <div class="sub">${md(`谁花的、花在哪次调用上。**未知显示「未知」,不显示 0。**`)}</div>
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
@@ -2717,9 +2717,9 @@ async function 页_用量与成本() {
        <p>${md(d["为什么有算不出的"])}</p></div>` : ""}
 
     <h2>按调用方 —— **谁花的**</h2>
-    <div class="note">⚠️ 这一张是 A1 上报链存在的**全部理由**。
+    <div class="note">${md(`⚠️ 这一张是 A1 上报链存在的**全部理由**。
       只有「按用途」的话,门店助手和管理后台自己的调用混在同一个用途里,
-      **「门店助手今天花了多少」答不出来**,只答得出「一共花了多少」。</div>
+      **「门店助手今天花了多少」答不出来**,只答得出「一共花了多少」。`)}</div>
     <table><thead><tr><th>调用方</th><th>谁提供的</th><th>模式</th>
         <th class="num">调用</th><th class="num">token</th>
         <th class="num">金额</th></tr></thead><tbody>`
@@ -2738,9 +2738,9 @@ async function 页_用量与成本() {
     + `</tbody></table>
 
     <h2>按用途</h2>
-    <div class="note">⚠️ **「谁提供的」要和「用途」一起看** ——
+    <div class="note">${md(`⚠️ **「谁提供的」要和「用途」一起看** ——
       一份 mock 的用量在数据形状上和真的一模一样。
-      这段时间里**真花过钱的用途有 ${d["真花过钱的用途数"]} 个**。</div>
+      这段时间里**真花过钱的用途有 ${d["真花过钱的用途数"]} 个**。`)}</div>
     <table><thead><tr><th>用途</th><th>谁提供的</th>
         <th class="num">调用</th><th class="num">token</th>
         <th class="num">金额</th></tr></thead><tbody>`
@@ -2772,9 +2772,9 @@ async function 页_用量与成本() {
         <td class="k">${esc(r.trace_id || "")}</td>
       </tr>`).join("")
     + `</tbody></table>
-       <div class="note">⚠️ **每次调用写几行,不是一行** —— token 分
+       <div class="note">${md(`⚠️ **每次调用写几行,不是一行** —— token 分
          input / output / cache 几档记,因为**它们的单价差一个数量级**。
-         合成一个数之后,补上价目表也算不回来了。</div>`;
+         合成一个数之后,补上价目表也算不回来了。`)}</div>`;
 }
 
 /* ── 加资料(上传三步)─────────────────────────────────────────────
@@ -2798,7 +2798,7 @@ const _上传状态色 = { "待上传": "", "已上传": "warn", "已校验": "o
 async function 页_加资料() {
   const 头 = `<div class="crumb">知识与 RAG</div>
     <div class="head"><div><h1>加资料</h1>
-      <div class="sub">选文件 → 传 → **服务端校验**。只有「已校验」才算能用的文件引用(§17.1)。</div>
+      <div class="sub">${md(`选文件 → 传 → **服务端校验**。只有「已校验」才算能用的文件引用(§17.1)。`)}</div>
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
@@ -2810,8 +2810,8 @@ async function 页_加资料() {
       <label class="f">选一个文件</label>
       <input type="file" id="f" accept=".md,.markdown,.txt">
       <button class="pri" id="go">上传并校验</button>
-      <div class="note">收 .md / .markdown / .txt,单个不超过 5 MB。
-        **PDF 和扫描件要 OCR,这一版没接** —— 会在第一步就被拒,不会让你白传一遍。</div>
+      <div class="note">${md(`收 .md / .markdown / .txt,单个不超过 5 MB。
+        **PDF 和扫描件要 OCR,这一版没接** —— 会在第一步就被拒,不会让你白传一遍。`)}</div>
       <div id="步"></div>
     </div>
     <h2>传过的</h2>
@@ -2835,9 +2835,9 @@ function 画上传表(d) {
         <td>${((r["校验详情"] || {})["没过的规则"] || []).map(esc).join("、") || "—"}</td>
       </tr>`).join("")
     + `</tbody></table>
-       <div class="note">⚠️ **「能引用的」通常少于总数**(这里 ${d["能引用的"]} / ${d.total})。
+       <div class="note">${md(`⚠️ **「能引用的」通常少于总数**(这里 ${d["能引用的"]} / ${d.total})。
          校验失败的那些**留着不删**:一条「传过但没通过」的记录是证据 ——
-         删掉之后用户只会再传一次同一个坏文件。</div>`;
+         删掉之后用户只会再传一次同一个坏文件。`)}</div>`;
 }
 
 async function 走三步() {
@@ -2894,7 +2894,7 @@ async function 走三步() {
 async function 页_知识库() {
   const 头 = `<div class="crumb">知识与 RAG</div>
     <div class="head"><div><h1>知识库</h1>
-      <div class="sub">资料、片段、索引。**有片段不等于能检索** —— 要有一个「已就绪」的索引。</div>
+      <div class="sub">${md(`资料、片段、索引。**有片段不等于能检索** —— 要有一个「已就绪」的索引。`)}</div>
     </div><div><a href="#/uploads"><button>加资料</button></a></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
@@ -2929,9 +2929,9 @@ async function 页_知识库() {
             ${r["能检索吗"] ? `<button data-try="${esc(r.id)}">去检索</button>` : ""}</td>
       </tr>`).join("")
     + `</tbody></table>
-       <div class="note">⚠️ **「片段数」是资料切出来的条数,不是索引里的条数。**
+       <div class="note">${md(`⚠️ **「片段数」是资料切出来的条数,不是索引里的条数。**
          两个对不上就说明索引不完整 —— 而一个不完整的索引检索时只是「少返回几条」,
-         **不报错**。点「看索引」能看到每次构建的成员数。</div>`;
+         **不报错**。点「看索引」能看到每次构建的成员数。`)}</div>`;
   $("#main").querySelectorAll("[data-kb]").forEach((b) => {
     b.onclick = () => { location.hash = "#/kb/" + encodeURIComponent(b.dataset.kb); };
   });
@@ -3149,17 +3149,17 @@ async function 页_索引构建(kbId) {
         <td class="k">${esc(r["输入指纹短"] || "**没记**")}</td>
       </tr>`).join("")
     + `</tbody></table>
-       <div class="note">**输入指纹**覆盖:文档版本集合 + 检索配置 + Embedding 模型与维度
+       <div class="note">${md(`**输入指纹**覆盖:文档版本集合 + 检索配置 + Embedding 模型与维度
          + 切片器版本 + 解析器版本。少一项就会在**变过的输入上续做** ——
          产出一半旧边界一半新边界的索引,而它**不报错**,只是答得怪(§19.3)。
          <br>⚠️ 指纹那一栏写「没记」的是这个字段加上之前建的 ——
-         它们会被强制重建,**因为「没记」不等于「一样」**。</div>`;
+         它们会被强制重建,**因为「没记」不等于「一样」**。`)}</div>`;
 }
 
 async function 页_检索实验室() {
   const 头 = `<div class="crumb">知识与 RAG</div>
     <div class="head"><div><h1>检索实验室</h1>
-      <div class="sub">问一句话,看**整条链路**怎么走到那几段(§9.5)。</div></div></div>`;
+      <div class="sub">${md(`问一句话,看**整条链路**怎么走到那几段(§9.5)。`)}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let kbs;
   try { kbs = await 请求(`${P()}/knowledge-bases`); }
@@ -3187,9 +3187,9 @@ async function 页_检索实验室() {
       <label class="k" style="margin-left:10px">
         <input type="checkbox" id="rt-rr" checked> Claude 精排</label>
       <button id="rt-go" style="margin-left:10px">检索</button>
-      <div class="note">⚠️ 勾着精排会**真调一次 Claude**(几百毫秒到两秒),用量记在记录仪里。
+      <div class="note">${md(`⚠️ 勾着精排会**真调一次 Claude**(几百毫秒到两秒),用量记在记录仪里。
         去掉勾只走向量 —— **那个排序不可靠**:实测一个表格头排到过第 1 名(0.6849),
-        而真答案第 2(0.6329)。</div>
+        而真答案第 2(0.6329)。`)}</div>
     </div></div><div id="rt-out"></div>`;
   const 跑 = async () => {
     const ib = $("#rt-ib") ? $("#rt-ib").value : "";
@@ -3257,9 +3257,9 @@ function 画链路(d) {
   return 链
     + (警.length ? `<div class="note warn">${警.join("<br>")}</div>` : "")
     + 片
-    + `<div class="note">**证据串**(「业务拍板 · 2026-09-27 / 二、几星算差评 · 第 4 段」)
+    + `<div class="note">${md(`**证据串**(「业务拍板 · 2026-09-27 / 二、几星算差评 · 第 4 段」)
         不是装饰 —— 顾问要能**照着它翻回原文核对**。
-        一个查不回去的引用比没有引用糟:它看起来有出处。</div>`;
+        一个查不回去的引用比没有引用糟:它看起来有出处。`)}</div>`;
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -3464,8 +3464,8 @@ async function 页_应用详情(aid) {
   $("#main").innerHTML = `<div class="crumb">发布 / 应用 /
       <a href="#/apps">列表</a></div>
     <div class="head"><div><h1 id="t">应用</h1>
-      <div class="sub">这一页能**做**发布那四步 ——
-        出清单 / 审核 / 切指针 / 回滚。</div></div></div>
+      <div class="sub">${md(`这一页能**做**发布那四步 ——
+        出清单 / 审核 / 切指针 / 回滚。`)}</div></div></div>
     <div id="msg"></div>
     <div id="body"><div class="state">加载中…</div></div>`;
   await 画应用详情(aid);
