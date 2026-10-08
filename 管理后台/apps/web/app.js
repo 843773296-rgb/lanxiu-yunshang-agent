@@ -2921,7 +2921,7 @@ async function 页_知识库() {
         <td>${r["能检索吗"]
               ? `<span class="pill ok">能</span>`
               : `<span class="pill fail">不能</span>
-                 <div class="k">${esc(r["为什么不能检索"] || "")}</div>`}</td>
+                 <div class="k">${md(r["为什么不能检索"] || "")}</div>`}</td>
         <td>${r["就绪索引数"]} 个已就绪 ${_mock标(r["索引是mock吗"])}
             ${r["索引模型"] ? `<div class="k">${esc(r["索引模型"])}</div>` : ""}</td>
         <td><button data-kb="${esc(r.id)}">看索引</button>

@@ -818,7 +818,16 @@ if os.path.isdir(_web):
             _v = hashlib.sha256(open(_js, "rb").read()).hexdigest()[:12]
             _html = open(_p, encoding="utf-8").read().replace(
                 'src="/static/app.js"', f'src="/static/app.js?v={_v}"')
-            return HTMLResponse(_html)
+            # ⚠️ **首页本身也不许缓存。** 2026-10-08 用户验收时撞上:
+            # app.js 用内容寻址的 `?v=<哈希>`,缓存绕不过去 —— 但那个地址
+            # **写在这个 HTML 里**。HTML 被缓存住,就永远拿到旧的 `?v=`,
+            # 顺着它拿到旧的 app.js。
+            # > 一个「内容寻址所以缓存绕不过去」的方案,和一个「绕不过去、
+            # > 但那个地址本身写在一个被缓存的文件里」的,
+            # > **在那段设计说明上长得一模一样。**
+            # 首页很小,每次重取没有代价,而它是整条链的入口。
+            return HTMLResponse(_html, headers={
+                "Cache-Control": "no-store, must-revalidate"})
         except Exception:
             # ⚠️ 读不到就原样返回 —— **缓存破不了总比页面打不开强**。
             # 而这条回退要留痕:静默吞掉的话,下次又是「为什么还是旧的」。
