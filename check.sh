@@ -59,6 +59,11 @@ run "产品文档 · 写死的数字和代码对账(文档变假时不会报错)
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
 run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py
 run "边界审计 · 每条保证真的攻击一次" python3 backend/boundary_audit.py
+# chat 接管理后台那份 RAG 这条桥(2026-10-08 接的,业务拍的第 ④ 步)。
+# ⚠️ 盯三件**坏了不报错**的事:退路悄悄长回来 / 岗位→角色的映射被改大 /
+# 管它的那条规矩(TL64)被改软。零 IO,不调模型、不发请求,所以能进门禁。
+run "chat→RAG 这条桥 · 退路 / 角色映射 / TL64 三件不许被改软" \
+    python3 backend/rag_bridge_check.py
 # 2026-09-26:booking.py 用机器时钟写 schedule.assigned_at,而世界停在别的日子;
 # 平移把它一天一天往未来推 —— **这个 bug 不会自愈**,而 C4 抓到的只是症状。
 # 这条抓原因:写「已发生的事」那几列的地方,必须用 backend/worldclock.py。
