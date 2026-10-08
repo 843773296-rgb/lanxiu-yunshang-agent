@@ -356,7 +356,7 @@ async function 页_prompt详情(pid) {
       <div class="sub">草稿 revision <code id="rev">${rev}</code>
         ${(d.版本历史 || []).length ? ` · 已有 ${d.版本历史.length} 个正式版本`
                                     : " · <b>还没存过正式版本</b>"}
-        <br>**保存草稿不会影响任何已保存版本,也不影响生产。**</div>
+        <br>${md("**保存草稿不会影响任何已保存版本,也不影响生产。**")}</div>
     </div></div>
 
     <div class="split">
@@ -2247,9 +2247,17 @@ function 挂工具表单() {
 function _mock标(是mock) {
   // ⚠️ mock 向量算出的相似度是个**看起来很正常的数字**(0.83),人会拿它当效果读。
   // 所以这个标记要一路传到界面上,不只写在文档里。
+  // ⚠️ **tooltip 里不写加粗标记**(`title=` 属性渲染不了粗体,塞进去就是两个星号)。
+  // 这一处是 2026-10-08 CI 抓到的,而**本地那一轮是绿的** ——
+  // 因为本地索引是真 BGE、CI 是 mock(我自己给 CI 建的 mock 索引),
+  // 于是这个分支只在 CI 上渲染。
+  // > 一次「本地全绿」和一次「CI 全绿」,**在那个绿勾上长得一模一样** ——
+  // > 而两边的**数据形状不同**:本地留着历次跑出来的产物,CI 每次从零。
+  // 复现法:`AIMC_USER=U005 AIMC_PROJECT=project_demo_b node tests/e2e/page_smoke.js '#/kb'`
+  // (那个项目里有一个 mock 索引 —— 验这个分支要有 mock 的数据)。
   if (是mock === null || 是mock === undefined) return "";
   return 是mock
-    ? `<span class="pill fail" title="mock 向量从文本哈希派生,**语义无感知** —— 相似度不代表语义">⚠️ mock 向量</span>`
+    ? `<span class="pill fail" title="mock 向量从文本哈希派生,语义无感知 —— 相似度不代表语义">⚠️ mock 向量</span>`
     : `<span class="pill ok" title="真模型(本机 onnxruntime,离线)">真向量</span>`;
 }
 
