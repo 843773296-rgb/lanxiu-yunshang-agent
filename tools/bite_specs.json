@@ -5426,7 +5426,7 @@
     "new": ""
    }
   ],
-  "预期红": "真跑钉回(返修判责):「须由你"
+  "预期红": "「须 … 确认」中间插字、又没点店长"
  },
  {
   "script": "agentsite/guards_test.py",
@@ -5583,5 +5583,29 @@
    }
   ],
   "预期红": "判责没写确认 + 别的毛病"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g17 不认「店长 / 质检 … 确认」",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if re.search(r\"(店长|质检|客服)[^。\\n!?]{0,6}确认\", text or \"\"): return None\n",
+    "new": "\n"
+   }
+  ],
+  "预期红": "真跑钉回(售后判责)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g17 不看 decide_repair 写没写成功",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "for c in _called(calls or [], \"decide_repair\")): return None",
+    "new": "for c in []): return None"
+   }
+  ],
+  "预期红": "真跑钉回(返修 P02):店长"
  }
 ]
