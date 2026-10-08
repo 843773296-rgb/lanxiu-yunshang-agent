@@ -971,6 +971,15 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     一个「每句话都有出处」的答案和一个「另外加了两句自己的」,在那张卡上长得一样"
 	@./.venv/bin/python tests/orchestration/test_answerer.py
 	@echo ""
+	@echo "▸ chat 的检索入口(A3)—— 业务 2026-10-08 拍的那两条**还在不在**"
+	@echo "  ① 这条路断了就报错,**不退回澜绣自己的 mcp/kb**"
+	@echo "     (一次「查不到原文」和一次「它根本没查」在顾问看到的话上长得一样)"
+	@echo "  ② **每次都查**,不自己判断「这个问题要不要查知识库」"
+	@echo "  🔑 最锋利的是第三条:**两套角色词表对不上** —— 语料 ACL 用管理后台的"
+	@echo "     (viewer/editor/…),chat 那边是岗位(门店顾问/…)。而今天 ACL 全空,"
+	@echo "     传错角色名也「看起来能用」;ACL 填上那天它变成「顾问什么都检索不到」"
+	@./.venv/bin/python tests/orchestration/test_chat_rag_entry.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + 'object_key' 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py

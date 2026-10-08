@@ -242,6 +242,67 @@ ck("🔑 审计里有这两次打分,而且**记了从几分改成几分** —�
                            for x in 我的审计),
    [x.get("对象") for x in 我的审计[:2]])
 
+print("\n▸ ⑧ chat 的检索入口(A3)· **只验不花钱的那几条**")
+# ⚠️ 这一组**只打被拒的路径** —— 它们一次模型都不调,所以能进 CI。
+# 真跑一次(精排 + 生成两次调用)在 `test_knowledge_flow.py` 里,
+# 那份 CI 不跑(**「CI 只跑不花钱的」是这个项目的规矩**)。
+# > 一组「验过了 chat 入口」和一组「只验了它怎么拒」的,
+# > **在这份输出上长得一模一样** —— 所以这行字写在这儿。
+基 = {"调用方": "门店助手", "问题": "客户给了差评要怎么处理"}
+s, e = 打("POST", f"{P}/knowledge-queries", 体={k: v for k, v in 基.items()
+                                            if k != "调用方"})
+ck("`调用方` 省了 → 422(没有它只答得出「一共查了多少次」,答不出「谁在查」)",
+   s == 422 and "调用方" in ((e or {}).get("field_errors") or {}),
+   f"{s} {(e or {}).get('code')}")
+s, e = 打("POST", f"{P}/knowledge-queries", 体=基)
+ck("角色漏传 → 422,**没有「没传就不过滤」这条路**",
+   s == 422 and "这个人的角色们" in ((e or {}).get("field_errors") or {}),
+   f"{s} {(e or {}).get('code')}")
+s, e = 打("POST", f"{P}/knowledge-queries",
+         体={**基, "这个人的角色们": ["门店顾问"]})
+ck("🔑 传 chat 那边的**岗位名** → `UNKNOWN_ROLE` 当场拒 —— "
+   "语料 ACL 用的是管理后台的角色词表,两套名字不是一套",
+   s == 422 and (e or {}).get("code") == "UNKNOWN_ROLE",
+   f"{s} {(e or {}).get('code')}")
+ck("↳ 而错误里说清**为什么今天传错也「看起来能用」**(ACL 全空 → 什么都过滤不掉)—— "
+   "不说的话,ACL 填上那天它会变成「顾问什么都检索不到」",
+   "ACL 全是空的" in ((e or {}).get("advice") or ""),
+   ((e or {}).get("advice") or "")[:60])
+# ⚠️ **「没有这个库」和「这个库没索引」要分开** —— 两者的下一步完全不同:
+# 前者是库 id 传错了,后者是去建一次索引。报错把人引向后者的话,
+# 他会去给一个不存在的库建索引,然后发现界面上找不到那个库。
+s, e = 打("POST", f"{P}/knowledge-queries",
+         体={**基, "这个人的角色们": ["editor"], "知识库id": "kb_根本没有"})
+ck("🔑 指一个**不存在**的库 → 404 NOT_FOUND(不是报成「没索引」)",
+   s == 404 and (e or {}).get("code") == "NOT_FOUND",
+   f"{s} {(e or {}).get('code')}")
+ck("↳ 而且建议里说清这和「有库但没索引」是两件事",
+   "两件事" in ((e or {}).get("advice") or ""), ((e or {}).get("advice") or "")[:50])
+
+# 「有库但没索引」那一支:**现造一个空库**(项目里现在每个库都有索引)。
+# ⚠️ 名字固定 —— 重复跑不堆库(堆了会让知识库页一片噪声)。
+空名 = "自测用的空库(chat 入口 NO_READY_INDEX)"
+s, L0 = 打("GET", f"{P}/knowledge-bases?limit=100")
+现成 = [x for x in (L0 or {}).get("items", []) if x["name"] == 空名]
+if 现成:
+    空id = 现成[0]["id"]
+else:
+    s, c0 = 打("POST", f"{P}/knowledge-bases", 体={"name": 空名})
+    ck("建一个空库(用来验「有库但没索引」)", s in (200, 201), f"{s} {c0}")
+    空id = (c0 or {}).get("id")
+if 空id:
+    s, e = 打("POST", f"{P}/knowledge-queries",
+             体={**基, "这个人的角色们": ["editor"], "知识库id": 空id})
+    ck("🔑 有库但**没已就绪索引** → `NO_READY_INDEX`,"
+       "**不退回「没找到相关内容」** —— 业务 2026-10-08 拍的:这条路断了就要说出来",
+       s == 422 and (e or {}).get("code") == "NO_READY_INDEX",
+       f"{s} {(e or {}).get('code')}")
+    ck("↳ 建议里写明了不退回", "不退回" in ((e or {}).get("advice") or ""),
+       ((e or {}).get("advice") or "")[:46])
+else:
+    # ⚠️ **不静默跳过。**「跳过了」和「通过了」在输出上长得一模一样。
+    ck("拿到了一个空库来验 NO_READY_INDEX", False, "没建出来 —— 这一条没验到")
+
 print("\n" + "=" * 92)
 if 挂:
     print(f"❌ 过 {len(过)} / 挂 {len(挂)}")

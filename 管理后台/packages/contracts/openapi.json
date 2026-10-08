@@ -7917,6 +7917,112 @@
         "x-权限": "改 Prompt/知识候选"
       }
     },
+    "/api/v1/projects/{project_id}/knowledge-queries": {
+      "post": {
+        "description": "业务 2026-10-08 拍的两条都落在这儿:**① 这条路断了就报错,不退回澜绣自己的 mcp/kb**(一次「查不到原文」和一次「它根本没查」在顾问看到的话上长得一样);**② 每次都查**,不自己判断要不要查。⚠️ `这个人的角色们` 用的是**管理后台的角色词表**(语料 ACL 就是用它写的),词表外的名字**当场拒** —— 今天 ACL 全空,传错也「看起来能用」,而 ACL 填上那天它会变成「顾问什么都检索不到」",
+        "operationId": "post_knowledge-queries",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已创建"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "chat 问一次知识库",
+        "tags": [
+          "知识与 RAG"
+        ],
+        "x-字段权限": [],
+        "x-审计": false,
+        "x-权限": "运行评测"
+      }
+    },
     "/api/v1/projects/{project_id}/lanxiu-knobs": {
       "get": {
         "description": "定义从 `agent/knobs.py` 的 `旋钮表` **现读**,后台不存第二份 —— 存一份会和代码漂,而漂开时页面上会多出一个**拖了什么都不会变的滑块**。⚠️ **必须带上 `落点核对` 的结果**:它回答「这个旋钮是真的吗」——一个显示着 6 个旋钮却不说它们接没接上的后台,本身就在制造那种假象",
