@@ -5475,7 +5475,7 @@
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "        return any(text[m.end():m.end() + 1] not in (\"后\", \"前\", \"时\") for m in re.finditer(re.escape(w), text))",
+    "old": "        return any(not re.match(r\"后|前|时|当场|当天|那天|那一刻|之后|以后|之前\", text[m.end():m.end() + 3])\n                   for m in re.finditer(re.escape(w), text))",
     "new": "        return True"
    }
   ],
@@ -5720,5 +5720,77 @@
    }
   ],
   "预期红": "同名 + 完整手机号相同"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g1 不认调用入参里的天数",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if isinstance(c.get(\"input\"), dict):\n            走(c.get(\"input\"))\n",
+    "new": "\n"
+   }
+  ],
+  "预期红": "真跑钉回(页面·九月订单)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g8 状态词后面的「当场 / 当天」不当时间关系",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "r\"后|前|时|当场|当天|那天|那一刻|之后|以后|之前\"",
+    "new": "r\"后|前|时\""
+   }
+  ],
+  "预期红": "真跑钉回(页面·本月差评)"
+ },
+ {
+  "script": "knowledge/lifecycle.py",
+  "改坏": "进休眠的天数从 91 改成 90",
+  "file": [
+   {
+    "path": "knowledge/lifecycle.py",
+    "old": "进入天数 = {\"休眠\": 91,",
+    "new": "进入天数 = {\"休眠\": 90,"
+   }
+  ],
+  "预期红": "进入日那天正好闲置"
+ },
+ {
+  "script": "backend/month_query_check.py",
+  "改坏": "get_member 的 hit 退回 len(rows)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    return {\"hit\": 总, \"列出\": len(out),",
+    "new": "    return {\"hit\": len(out), \"列出\": len(out),"
+   }
+  ],
+  "预期红": "按档位列人,hit 是总数不是 LIMIT"
+ },
+ {
+  "script": "backend/month_query_check.py",
+  "改坏": "orders_by_date 不认 month",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    月份 = 月份 if 月份 is not None else month\n",
+    "new": "\n"
+   }
+  ],
+  "预期红": "month=YYYY-MM 和独立 SQL 对得上"
+ },
+ {
+  "script": "backend/month_query_check.py",
+  "改坏": "进入日按 90 天算",
+  "file": [
+   {
+    "path": "knowledge/lifecycle.py",
+    "old": "进入天数 = {\"休眠\": 91,",
+    "new": "进入天数 = {\"休眠\": 90,"
+   }
+  ],
+  "预期红": "进入休眠人数和独立 SQL 对得上"
  }
 ]

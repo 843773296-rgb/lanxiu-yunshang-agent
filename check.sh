@@ -340,6 +340,7 @@ run "多渠道对比 · 数算得对,而这张表不能用来比渠道" python3 
 run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/eval_provenance_check.py
 run "评测来路章 · 章上的供应商和真正发请求的是同一家" ./agentsite/.venv/bin/python tools/evalrec_provider_check.py
 run "提示词里的数 · 体检认它算出处,所以它得在知识库里找得到" ./agentsite/.venv/bin/python tools/prompt_numbers_check.py
+run "按月查 · 某月进入休眠的客户 / 某月的订单(期望值另用 SQL 算)" python3 backend/month_query_check.py
 run "判据词表 · 声称有备选,就得验过一条备选" python3 tools/vocab_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py

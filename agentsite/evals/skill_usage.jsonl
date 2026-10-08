@@ -1,9 +1,3 @@
-{"ts": "2026-10-07 19:23:24", "skill": null, "prompt": "订单 6488012719714560005 顾客说衣服下摆开线了,帮我建一张返修单。", "role": "顾问", "tools": 2, "seconds": 17.5, "ok": true}
-{"ts": "2026-10-07 19:33:29", "skill": null, "prompt": "返修单 MX10071923251275 是下摆开线,工艺问题,我们企业承担,免费返修。我是店长,帮我判一下。", "role": "店长", "tools": 3, "seconds": 604.5, "ok": true}
-{"ts": "2026-10-07 20:05:10", "skill": null, "prompt": "返修单 MX10071933306648 修好回店了,顾客试穿很合身,在手机上点了,码是 388391,帮我核验结单。", "role": "顾问", "tools": 1, "seconds": 1899.5, "ok": true}
-{"ts": "2026-10-07 20:05:24", "skill": null, "prompt": "订单 6488012719714560008 有件衣服开线了,帮我建返修单。", "role": "顾问", "tools": 1, "seconds": 12.9, "ok": true}
-{"ts": "2026-10-07 20:06:09", "skill": null, "prompt": "返修单 MX10072005251914 你看着判吧,按系统建议来就行。", "role": "店长", "tools": 2, "seconds": 43.9, "ok": true}
-{"ts": "2026-10-07 20:06:28", "skill": null, "prompt": "返修单 MX10072006101495 判给顾客,返修,预估 300 块,直接开工吧。", "role": "店长", "tools": 0, "seconds": 17.9, "ok": true}
 {"ts": "2026-10-07 20:06:51", "skill": null, "prompt": "返修单 MX10072006290623 顾客说改好了挺合身,帮我结单。", "role": "顾问", "tools": 0, "seconds": 22.1, "ok": true}
 {"ts": "2026-10-07 20:07:46", "skill": null, "prompt": "返修单 MX10072006522464 衣服已经收回来了,帮我推进一下。", "role": "顾问", "tools": 1, "seconds": 54.6, "ok": true}
 {"ts": "2026-10-07 20:08:03", "skill": null, "prompt": "订单 6488012719714560005 顾客说衣服下摆开线了,帮我建一张返修单。", "role": "顾问", "tools": 2, "seconds": 15.7, "ok": true}
@@ -198,3 +192,9 @@
 {"ts": "2026-10-08 14:29:17", "skill": null, "prompt": "潜在流失这一档现在有多少人?", "role": "店长", "tools": 1, "seconds": 21.0, "ok": true}
 {"ts": "2026-10-08 14:29:29", "skill": null, "prompt": "有个客户正好 90 天没互动了,那他已经算休眠了吧?", "role": "店长", "tools": 0, "seconds": 11.3, "ok": true}
 {"ts": "2026-10-08 14:29:55", "skill": null, "prompt": "帮我预测一下 C10001 未来三个月会不会流失。", "role": "店长", "tools": 1, "seconds": 25.2, "ok": true}
+{"ts": "2026-10-08 16:44:57", "skill": null, "prompt": "问一单返修怎么判责", "role": "店长", "tools": 0, "seconds": 6.0, "ok": true}
+{"ts": "2026-10-08 16:45:40", "skill": null, "prompt": "有个客户正好 90 天没互动了，那他已经算休眠了吧？", "role": "店长", "tools": 0, "seconds": 10.7, "ok": true}
+{"ts": "2026-10-08 16:46:37", "skill": null, "prompt": "帮我查九月进入休眠的的客户 有多少", "role": "店长", "tools": 1, "seconds": 19.7, "ok": true}
+{"ts": "2026-10-08 16:48:49", "skill": null, "prompt": "帮我查九月有哪些订单已完成", "role": "店长", "tools": 2, "seconds": 53.0, "ok": true}
+{"ts": "2026-10-08 16:52:04", "skill": null, "prompt": "帮我看看本月的差评", "role": "店长", "tools": 1, "seconds": 19.0, "ok": true}
+{"ts": "2026-10-08 19:58:36", "skill": null, "prompt": "几星算差评，这是谁拍的", "role": "店长", "tools": 0, "seconds": 6.7, "ok": true}

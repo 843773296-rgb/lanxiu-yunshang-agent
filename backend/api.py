@@ -248,6 +248,10 @@ def get_lifecycle(customer=None, lifecycle=None):
     sql = ("SELECT id,name,lifecycle,order_cnt,idle_days,amount_12m,orders_12m,"
            "quarters_12m,first_order,manual_lc,manual_at,last_interact FROM customer")
     if where: sql += " WHERE " + " AND ".join(where)
+    # ⚠️ 2026-10-08 用户在页面上问「九月进入休眠的有多少」,模型答「休眠命中 40 个」——
+    # **40 是 LIMIT,不是人数**(按库里存的档,休眠有 1395 条)。返回的 hit 原来是 len(rows),被 LIMIT 截在 40,
+    # 而「截断了」和「一共就这么多」在返回里长得一模一样。总数单独数一遍,截了要明说
+    总 = _rows("SELECT COUNT(*) n FROM customer" + (" WHERE " + " AND ".join(where) if where else ""), *args)[0]["n"]
     rs = _rows(sql + " ORDER BY id LIMIT 40", *args)
     if not rs:
         return {"hit": 0, "note": "查不到这个客户,不要凭印象回答",
@@ -269,10 +273,58 @@ def get_lifecycle(customer=None, lifecycle=None):
             d["提醒"] = (f"库里存的是「{d['lifecycle']}」,按今天重算是「{v['生命周期']}」——"
                        "说明这条还没被今天的重算刷到,**以哪个为准要问运营**")
         out.append(_nz(d))
-    return {"hit": len(out), "rows": out,
+    return {"hit": 总, "列出": len(out),
+            **({"截断": f"一共 {总} 个,只列了前 {len(out)} 个 —— **报人数用 hit,不要数 rows**"} if 总 > len(out) else {}),
+            "rows": out,
             "优先级": _lc.PRIORITY, "判定条件": _lc.RULES,
             "note": "「命中」列出全部命中的条件,「生命周期」是按优先级取的那一个。"
                     "**多条命中时要把命中列表说出来** —— 只报结论,运营无从判断算得对不对。"}
+
+
+def lifecycle_entered(lifecycle, month):
+    """**某个月进入某一档的客户** —— 「九月 / 本月进入休眠的有多少」(业务 2026-10-08)。
+
+    系统**没记换档历史**,只知道「现在在哪一档」。按无互动天数判的三档(休眠 / 潜在流失 / 流失)
+    推得出来:进入那天 = 最后一次有效互动 + 91 / 181 / 366 天 —— 口径在 knowledge/lifecycle.py 的
+    `进入日()`,这里只取数、按月筛。**「今天」用业务世界的今天**(seed.TODAY),还没到的那几天不算进入。
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "knowledge"))
+    import lifecycle as _lc
+    from seed import TODAY
+    if lifecycle not in _lc.进入天数:
+        return {"error": f"「{lifecycle}」推不出哪天进的 —— 只有按无互动天数判的三档能推:{list(_lc.进入天数)}。"
+                         "其余几档(新客 / 高价值 / 忠诚…)系统没记换档历史,**照实说查不了,别凭印象估**"}
+    m = re.fullmatch(r"(\d{4})-(\d{1,2})", str(month or "").strip())
+    if not m or not 1 <= int(m.group(2)) <= 12:
+        return {"error": f"entered_month 要写成 YYYY-MM(「本月」就是 {TODAY[:7]}),你给的是「{month}」",
+                "note": "**不替你解析自然语言** —— 解析错的那次,人数看起来完全正常"}
+    y, mo = int(m.group(1)), int(m.group(2))
+    起 = _dt.date(y, mo, 1)
+    末 = _dt.date(y + (mo == 12), (mo % 12) + 1, 1) - _dt.timedelta(days=1)
+    今 = _dt.date.fromisoformat(TODAY)
+    if 起 > 今:
+        return {"error": f"{y} 年 {mo} 月还没到(业务今天是 {TODAY}),没有人「已经进入」"}
+    截 = min(末, 今)
+    天 = _lc.进入天数[lifecycle]
+    rs = _rows("SELECT id,name,lifecycle,last_interact,idle_days FROM customer "
+               "WHERE last_interact IS NOT NULL AND date(last_interact) BETWEEN ? AND ? ORDER BY last_interact",
+               (起 - _dt.timedelta(days=天)).isoformat(), (截 - _dt.timedelta(days=天)).isoformat())
+    out = []
+    for r in rs:
+        d = dict(r)
+        日 = _lc.进入日(d["last_interact"], lifecycle)       # 口径只有一份:再过一遍,不在这儿手算第二套
+        if 起 <= 日 <= 截:
+            d["进入日"] = 日.isoformat()
+            out.append(_nz(d))
+    return {"档位": lifecycle, "月份": f"{y} 年 {mo} 月",
+            "按什么算": f"进入{lifecycle}那天 = 最后一次有效互动 + {天} 天(和判档的含端边界同一套)",
+            "算到哪天": f"{起} ~ {截}" + ("(这个月还没过完,只算到业务今天)" if 截 < 末 else ""),
+            "人数": len(out), "rows": out[:40],
+            "note": ("**这是推算,不是换档记录** —— 系统没记过谁哪天换的档。推不出来的一类要照实告诉用户:"
+                     "这个月进过这一档、后来又有互动回去了的人,最后互动日变了,不会出现在这里;"
+                     "人工调过档的(30 天优先期)也按口径算,不看人工。")
+                    + (f" rows 只列了前 40 个,人数以「人数」为准。" if len(out) > 40 else "")}
 
 
 def get_member_priority(lifecycle=None, limit=10):
@@ -3978,7 +4030,7 @@ def _订单标签(行, 顾问号):
 
 
 def orders_by_date(direction=None, days=7, field="下单", limit=50,
-                   月份=None, 起=None, 止=None):
+                   月份=None, 起=None, 止=None, month=None, start=None, end=None):
     """**按时间段列订单** —— 「下周有哪些单要交付」「上周下了多少单」这类问法。
 
     ⚠️ **「下一周」是歧义的,这个工具不替人猜**(业务 2026-09-24 定):
@@ -3998,6 +4050,13 @@ def orders_by_date(direction=None, days=7, field="下单", limit=50,
     """
     from seed import TODAY
     import datetime as _dt
+    # ⚠️ 2026-10-08 用户在页面上问「九月有哪些订单已完成」,模型答「这个工具只能往前数 N 天,框不出 9 月 1–30 日」——
+    # **函数早就会按月 / 按起止日期查(10-06 加的),给模型看的 schema 里一个字没写**,它只看得见 direction / days。
+    # 而 schema 的属性名**必须是 ASCII**(API 校验 ^[a-zA-Z0-9_.-]{1,64}$),中文参数名进不了 schema ——
+    # 所以对外是 month / start / end,进来后照旧走 月份 / 起 / 止 那条路
+    月份 = 月份 if 月份 is not None else month
+    起 = 起 if 起 is not None else start
+    止 = 止 if 止 is not None else end
     me = whoami()
     if not me:
         return {"error": "没有登录身份,不知道看哪家店"}
@@ -4048,7 +4107,7 @@ def orders_by_date(direction=None, days=7, field="下单", limit=50,
             return {"判不了": f"「{月份}」有两种读法,**这两份单子几乎没有交集**",
                     "今天": TODAY, "按哪一列": f"{field}({col}:{释})",
                     "候选": [
-                        {"参数": {"月份": f"{今.year}-{mo:02d}"},
+                        {"参数": {"month": f"{今.year}-{mo:02d}"},
                          "含义": f"{今.year} 年 {mo} 月({今年起} ~ {今年末})",
                          "有多少单": 数(今年起, 今年末)},
                         {"参数": {"direction": "往前", "days": 30},
@@ -4646,11 +4705,12 @@ SHOP_SCHEMAS=[
     "assignee":{"type":"string","description":"只看这一个人,工号或姓名(等同 scope=团队 再筛一个人)"},
     "status":{"type":"string","description":"只看这一档:有效 / 完结 / 取消 / 无效。不传看全部。"}},
    "required":[]}},
- {"name":"get_member","description":"**查会员分层 —— 等级和生命周期一次给全。** 给 customer(客户号或姓名)返回这个人的**会员等级档**(凭什么、离下一档还差多少)和**生命周期档**(八档中的哪一档、凭什么、有没有人工覆盖);给 lifecycle 列这一档里有哪些人;再加 rank=true 按 **RFM 三维**排出「先联系谁」。\n\n⚠️ **这是两套各答各的判定,不要互相推导**:会员等级看的是滚动 12 个月的实付或完成单数(满足任一条即可,**不是「且」**,依据取客户档案上的 12 个月快照字段、**不是去订单表现算**);生命周期看的是多久没来,判定口径**全是含端边界**(第 90 天算活跃、第 91 天进休眠、第 181 天进潜在流失、第 366 天才算流失;实付满 15000 **含端**计高价值)—— 这些不要心算,直接看返回值。\n\n多条命中时**必须把命中列表一起说出来**,只报结论运营无从判断算得对不对。出现「提醒」字段说明库里存的值和按今天重算的不一致,照实说,不要替它选一个。**RFM 是相对分,只在返回的这一批人内部可比** —— 排序解决的是「先打给谁」,不是「谁更值钱」。**这是判定和排序,不是预测。**\n\n⚠️ 按姓名查会重名 —— 命中不止一个时不给等级明细,会明说要客户号。",
+ {"name":"get_member","description":"**查会员分层 —— 等级和生命周期一次给全。** 给 customer(客户号或姓名)返回这个人的**会员等级档**(凭什么、离下一档还差多少)和**生命周期档**(八档中的哪一档、凭什么、有没有人工覆盖);给 lifecycle 列这一档里有哪些人(**人数看 hit,rows 最多列 40 个**);再加 rank=true 按 **RFM 三维**排出「先联系谁」;再加 entered_month 查「某个月进入这一档的有多少」(九月 / 本月进入休眠的…)。\n\n⚠️ **这是两套各答各的判定,不要互相推导**:会员等级看的是滚动 12 个月的实付或完成单数(满足任一条即可,**不是「且」**,依据取客户档案上的 12 个月快照字段、**不是去订单表现算**);生命周期看的是多久没来,判定口径**全是含端边界**(第 90 天算活跃、第 91 天进休眠、第 181 天进潜在流失、第 366 天才算流失;实付满 15000 **含端**计高价值)—— 这些不要心算,直接看返回值。\n\n多条命中时**必须把命中列表一起说出来**,只报结论运营无从判断算得对不对。出现「提醒」字段说明库里存的值和按今天重算的不一致,照实说,不要替它选一个。**RFM 是相对分,只在返回的这一批人内部可比** —— 排序解决的是「先打给谁」,不是「谁更值钱」。**这是判定和排序,不是预测。**\n\n⚠️ 按姓名查会重名 —— 命中不止一个时不给等级明细,会明说要客户号。",
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号(如 C10001)或姓名。姓名可能重名,重名时要改用客户号。"},
     "lifecycle":{"type":"string","description":"按档位筛,如「潜在流失」「休眠」"},
     "rank":{"type":"boolean","description":"true=在这一档里按 RFM 排出先联系谁"},
+    "entered_month":{"type":"string","description":"和 lifecycle 一起给:查**这个月进入这一档**的人(YYYY-MM,本月就写当月)。只有休眠 / 潜在流失 / 流失推得出进入日(最后互动 + 91 / 181 / 366 天);是推算不是换档记录,返回的 note 要照实转告"},
     "limit":{"type":"number","description":"排序时返回前几名,默认 10,最多 40"}},
    "required":[]}},
  {"name":"task_types","description":"九种任务类型的**数据规范**:每种挂哪张单据(客户号/订单号/维保单号/售后单号/不挂)、谁能派、完成时要不要传现场照。**起草派任务之前先调这个** —— 类型决定了要填什么,填错会被拒。",
@@ -4767,7 +4827,7 @@ SHOP_SCHEMAS=[
  {"name":"mark_delay_told","description":"**(写)记下「已经把延期告诉顾客了」。** 只标本店的;标之前要跟用户确认他真的通知过了 —— 标错了这张单就从清单里消失,顾客再也等不到那个电话。","input_schema":{"type":"object","properties":{"delay_id":{"type":"integer"}},"required":["delay_id"]}},
  {"name":"rollback_order","description":"**(写)人工回退**:工厂发错件(退回等发货)/ 到店发现要返工(退回生产中,算重新生产)。**只有店长能点**,必须写清哪件不对、怎么发现的;运费公司承担。这是系统里唯一能让订单往回走的口子,回退记录一直留着。cause 只能是「发错件」或「到店返工」,note 写理由。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"cause":{"type":"string","enum":["发错件","到店返工"]},"note":{"type":"string"}},"required":["order_id","cause","note"]}},
  {"name":"report_production","description":"**(写)自有工坊报工**:这几件做完了 / 质检过了 / 发出去了。**工匠报自己做的那件,店长报本店**;顾问和版师报不了(不在生产环节)。\n\n⚠️ **外发工厂的单谁都不许替它报** —— 工厂没回传,真相就是「工厂还没报」,而不是「我们知道它做完了」。替它报一条,订单往前走了,而工厂那边什么都没发生。工具会自己查这张单的生产方,不是自有工坊就拒。\n\n和工厂回传**走同一个收件箱、同一套判定**:重复只记一次、来早了暂存、报「发出」必须带快递单号、车间工单还在制却报完工会挂异常(报完工会顺手把工单收掉)。被拒收或挂异常时**照「理由」去处理,不要换个说法再报一次** —— 每次都会留痕。\n\nevent:完工 / 质检通过 / 发出。item 给订单行号(只报某一件),不给就是整单。发出要传 tracking_no。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"event":{"type":"string","enum":["完工","质检通过","发出"]},"item":{"type":"string","description":"订单行号;不给就是整单"},"tracking_no":{"type":"string","description":"报「发出」时必填"}},"required":["order_id","event"]}},
- {"name":"orders_by_date","description":"**按时间段列订单**(只读)。「下周有哪些单要交付」「最近一周下了多少单」这类问法用它 —— 这是唯一一个不用先给订单号或客户号就能列单的入口。\n\n⚠️ **「下一周」是歧义的,这个工具不替人猜**:`direction` 要么「往后」(今天→N 天后,问的是接下来要发生什么)、要么「往前」(N 天前→今天,问的是刚过去这段做了多少)。不给 direction 它会返回「判不了」,并把两种读法各有多少单一起给你 —— **把这两个数原样告诉用户让他选**,不要自己挑一个:两种读法的单子几乎没有交集,而猜错的表现是一份看起来很正常的清单,没有任何地方会提示这不是他要的那一批。\n\n`field` 决定查哪一列:**下单 / 完工 / 发货 / 交付**,四列是四份不同的单子(同一张单「下单」在上个月、「交付」在下周)。用户说「下周要交的货」是**交付**,说「这周下了多少单」是**下单**;拿不准就问。默认按下单日,返回里会写明用的是哪一列。\n\n`days` 默认 7。范围跟身份走:顾问只看自己的,店长看本店,总部运营看全部。","input_schema":{"type":"object","properties":{"direction":{"type":"string","enum":["往后","往前"],"description":"往后=今天到 N 天后;往前=N 天前到今天。不给会返回判不了"},"days":{"type":"integer","description":"几天,默认 7"},"field":{"type":"string","enum":["下单","完工","发货","交付"],"description":"按哪一列的时间算,默认下单"},"limit":{"type":"integer","description":"最多返回几条,默认 50"}}}},
+ {"name":"orders_by_date","description":"**按时间段列订单**(只读)。「下周有哪些单要交付」「最近一周下了多少单」这类问法用它 —— 这是唯一一个不用先给订单号或客户号就能列单的入口。\n\n⚠️ **「下一周」是歧义的,这个工具不替人猜**:`direction` 要么「往后」(今天→N 天后,问的是接下来要发生什么)、要么「往前」(N 天前→今天,问的是刚过去这段做了多少)。不给 direction 它会返回「判不了」,并把两种读法各有多少单一起给你 —— **把这两个数原样告诉用户让他选**,不要自己挑一个:两种读法的单子几乎没有交集,而猜错的表现是一份看起来很正常的清单,没有任何地方会提示这不是他要的那一批。\n\n`field` 决定查哪一列:**下单 / 完工 / 发货 / 交付**,四列是四份不同的单子(同一张单「下单」在上个月、「交付」在下周)。用户说「下周要交的货」是**交付**,说「这周下了多少单」是**下单**;拿不准就问。默认按下单日,返回里会写明用的是哪一列。\n\n`days` 默认 7。\n\n**按日历月 / 按起止日期查**:`month`(`YYYY-MM`,比如「九月」= `2026-09`,查的是那个月 1 号到月底)或 `start` + `end`(`YYYY-MM-DD`,两个一起给)。给了它们就**不要再给 direction / days**。用户只说「一月」而没说哪年时,`month` 原样传「一月」,工具会把「今年 1 月」和「最近一个月」两种读法各有多少单摆出来 —— 照样**不替他挑**。\n\n范围跟身份走:顾问只看自己的,店长看本店,总部运营看全部。","input_schema":{"type":"object","properties":{"direction":{"type":"string","enum":["往后","往前"],"description":"往后=今天到 N 天后;往前=N 天前到今天。不给会返回判不了;用 month / start+end 时不给"},"days":{"type":"integer","description":"几天,默认 7"},"month":{"type":"string","description":"按日历月查:YYYY-MM(如 2026-09 = 9 月 1 日到 30 日)"},"start":{"type":"string","description":"按起止日期查的起点 YYYY-MM-DD,要和 end 一起给"},"end":{"type":"string","description":"按起止日期查的终点 YYYY-MM-DD(含这一天)"},"field":{"type":"string","enum":["下单","完工","发货","交付"],"description":"按哪一列的时间算,默认下单"},"limit":{"type":"integer","description":"最多返回几条,默认 50"}}}},
  {"name":"factory_chase","description":"**该催工厂的单 + 要人看的工厂回传**(只读)。定制单的生产和发货**只认工厂回传**(自有工坊和外发工厂都有,谁接的单谁报),门店和后台都不能手动推状态。这里列出:① 该催的单 —— 开工超过 3 天工厂没回接单(单可能没发过去),或过了工厂承诺的完工日还没完工(该先告诉顾客会晚),带生产方、承诺完工日、归属顾问、是不是你的;② 要人看的回传 —— 挂异常(查无此单、单已取消、别家报了这张单、车间工单还在制却报完工)/ 拒收(缺物流单号、时间不对)/ 暂存(来早了,等前一条)。店长看本店,总部运营看全部。顾问问「我有哪些单该去催工厂」「这单怎么还没做好」也用这个。","input_schema":{"type":"object","properties":{}}},
  {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**定制单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。**哪些款必须试(业务 09-22 定)**:重工、全定制(顾问亲自量的尺寸判出)、婚服(商品挂了「婚礼婚服」场合标签)三类命中任一即必试;没命中但有一类判不了 → 判不了,**不当成不必试**;重工的两个门槛(装饰工序最慢 ≥25 天 / 单项工艺起步 ≥12 天)业务 09-22 确认。**开裁这道闸会拦**:该试的要试过、而且客户签了字,整单才许开裁 —— 看板里「待开裁的单」列出每张待生产单能不能裁、卡在哪。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
  {"name":"record_pickup","description":"**交付签收的三个动作(真的写进去)**:action=「到店代收」(**工厂的货到了门店、顾客还没来** —— 这一步只是门店收货入库,不涉及顾客,也不是签收;定制单「已发货」指的是工厂发往门店,不是寄给顾客)/「取件方式」(mode=到店取 或 转寄;**转寄要 tracking_no**,业务 09-22:顾问先邀约顾客到店取,实在来不了才转寄)/「不合身」(顾客试了**某一件**不合身 → 那一件不算签收、留店转返修,同包裹里合身的件照常签收拿走;issue 写清哪里不合身,item 指哪一件)。**分批发货(业务 09-23)**:一张单可能分几个包裹,每个包裹各自到店、各自取件方式、各自一个码 —— 单子不止一个包裹时要给 pkg(包裹号),不给会反问,**不许替用户挑一个**。只能动本店的单,经手人就是你自己(不收工号)。「不合身」时 matches_record(成衣和订单留存数据对得上吗)、other_defect(有没有别的瑕疵)、our_fault(查出来是「导购」或「打版」的问题)都是**查出来的事实,不知道就别填** —— 返回的判责建议(对得上且无别的瑕疵 → 顾客承担、收费;导购 / 打版问题 → 企业承担、免费)**不是结论,由售后负责人确认**。⚠️ 动手前先跟用户对一遍单号和动作。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"action":{"type":"string","enum":["到店代收","取件方式","不合身"]},"pkg":{"type":"string","description":"包裹号。一单分了好几个包裹时必须给"},"item":{"type":"string","description":"订单行号(哪一件)。登记不合身时,包裹里不止一件就必须给"},"mode":{"type":"string","enum":["到店取","转寄"]},"tracking_no":{"type":"string"},"issue":{"type":"string"},"matches_record":{"type":"boolean"},"other_defect":{"type":"boolean"},"our_fault":{"type":"string","enum":["导购","打版"]}},"required":["order_id","action"]}},
@@ -4944,13 +5004,15 @@ def get_tasks(task_id=None, scope=None, assignee=None, status=None):
     return my_tasks(status=status)
 
 
-def get_member(customer=None, lifecycle=None, rank=False, limit=None):
+def get_member(customer=None, lifecycle=None, rank=False, limit=None, entered_month=None):
     """查会员分层。**会员等级和生命周期是两套判定**,问一个客户时一次给全 ——
     原来要调两次才拼得出「这个客户值不值得跟」。
 
     customer → 这个人的等级档 + 生命周期档;
     lifecycle → 这一档里有哪些人;再加 rank=true → 这一档里先联系谁(RFM 排序)。
     """
+    if lifecycle and entered_month:
+        return lifecycle_entered(lifecycle, entered_month)
     if lifecycle and rank:
         return get_member_priority(lifecycle=lifecycle, limit=limit)
     if customer:

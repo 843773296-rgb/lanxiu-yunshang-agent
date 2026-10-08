@@ -248,8 +248,12 @@ def _工具里的天数(calls):
         o = c.get("output")
         if isinstance(o, str):
             try: o = json.loads(o)
-            except Exception: continue
+            except Exception: o = None
         走(o)
+        # 10-08 用户在页面上撞到:「我按交付往前倒了 **38 天**」被当成编的整单工期、整份扣下 ——
+        # 38 是模型自己传给 orders_by_date 的 days=38。**调用入参里的时间字段**也是这一轮的事实
+        if isinstance(c.get("input"), dict):
+            走(c.get("input"))
     return out
 
 
@@ -741,7 +745,11 @@ def g8_business_fact(text, calls):
                      else json.dumps(c.get("output"), ensure_ascii=False, default=str) for c in calls or [])
     # 「签收后 3 个月内」说的是时限,不是某一单的状态(10-07 话术真跑):状态词后面紧跟 后 / 前 / 时 的不算
     def _当状态说(w):
-        return any(text[m.end():m.end() + 1] not in ("后", "前", "时") for m in re.finditer(re.escape(w), text))
+        # 10-08 用户在页面上撞到:「星级衡量的是交付体验(**签收当场**、衣服没穿过时评的)」被当成某一单的状态,
+        # 本月差评那份答案整份扣下。状态词后面紧跟**时间关系词**(后 / 前 / 时 / 当场 / 当天 / 那天 / 之后 / 以后)
+        # 时,说的是「那个时刻」,不是「这单现在处于什么状态」
+        return any(not re.match(r"后|前|时|当场|当天|那天|那一刻|之后|以后|之前", text[m.end():m.end() + 3])
+                   for m in re.finditer(re.escape(w), text))
     没出处 = [w for w in ORDER_ST if w in text and w not in 返回原文 and _当状态说(w)]
     if 没出处 and not _called(calls, "get_order"):
         return f"答案里给了某一单的状态(「{没出处[0]}」),但没调 get_order 查过 —— 订单状态不能凭印象说"
