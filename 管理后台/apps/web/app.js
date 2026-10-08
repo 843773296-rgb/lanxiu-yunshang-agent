@@ -3111,7 +3111,7 @@ async function 页_切片详情(chunkId) {
       <a href="#/chunks/${encodeURIComponent(d["knowledge_base_id"])}">${esc(d["知识库名"])}</a>
       · 第 ${d.ordinal} 段</div>
     <div class="head"><div><h1>切片详情</h1>
-      <div class="sub">${esc(d.section_path || "")}</div></div></div>`;
+      <div class="sub" data-raw="原文">${esc(d.section_path || "")}</div></div></div>`;
   // ⚠️ 标题要跟着分档 —— 「这一段检索不到」在整库没索引时是**误导**:
   // 它让人去查这一段出了什么事,而真相是建一次索引就好。
   const 检索 = d["检索得到吗"]
@@ -3124,7 +3124,7 @@ async function 页_切片详情(chunkId) {
       <div class="k">${d.text.length} 字 · ${d["token_count"] ?? "?"} token(粗估)
         · 哈希 ${esc((d["text_hash"] || "").slice(0, 16))}</div></div>
     <table><tbody>
-      <tr><th>节路径</th><td>${esc(d.section_path || "—")}</td></tr>
+      <tr><th>节路径</th><td data-raw="原文">${esc(d.section_path || "—")}</td></tr>
       <tr><th>各级标题</th><td>${(d["section_titles"] || []).map((x) =>
           `<code>${esc(x)}</code>`).join(" › ") || "—"}
         <div class="k">${md("⚠️ 要按级别做事的一律读**各级标题**(列表),"
