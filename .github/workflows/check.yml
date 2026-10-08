@@ -398,6 +398,19 @@ jobs:
           # **而它报出来会像「判据坏了」** —— 所以这一步和那条判据是一对。
           ./.venv/bin/python tools/ingest_lanxiu.py --批次 业务拍板 --项目 project_lanxiu
           ./.venv/bin/python tools/ingest_lanxiu.py --批次 领域知识 --项目 project_lanxiu
+          # ⚠️ **演示项目也要灌一批** —— 2026-10-08 加,CI 为它红过一次。
+          # 页面冒烟用的是**默认身份 U002 看得到的那个项目**(project_demo_a),
+          # 而 `project_lanxiu` 只有 U001/U007 是成员。于是详情页冒烟里
+          # 知识链那三页(#/kb/{id} · #/chunks/{id} · #/chunk/{id})
+          # **在 CI 上取不到 id**:knowledge_bases / chunks 在 demo 项目里一条都没有。
+          #
+          # 本地之所以是绿的,是因为**我本地跑过**这条命令的 demo 版本 ——
+          # > 「本地留着历次跑出来的产物,CI 每次从零」最典型的一例:
+          # > 一个「12 个详情页都冒烟了」的报告,和一个「其中 3 个因为没数据
+          # > 而跳过」的,**在那份名单上长得一模一样**。
+          # ⚠️ 修法不是把 `detail_page_hashes.py --钉住` 调大 ——
+          # 那等于承认那三页在 CI 上永远不被冒烟。该让 CI 有那份数据。
+          ./.venv/bin/python tools/ingest_lanxiu.py --批次 业务拍板 --项目 project_demo_a
 
       - name: 起 API + Worker,**等到就绪**(不是等固定秒数)
         working-directory: 管理后台
