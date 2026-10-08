@@ -789,6 +789,12 @@ def 找环境故障(calls):
     return out
 
 
+def _记规矩(state, 系统):
+    """这一轮发给模型的系统提示词原样记进 state —— 体检 g1 认「规矩里原样写着的数」要读它(用户 10-08 拍板)。"""
+    state["规矩原文"] = 系统
+    return 系统
+
+
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
               provider=None, model_name=None, me=None, skills=None, effort=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
@@ -866,7 +872,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         # 提示词里的身份是**告知**,env 里的身份才是**授权**。
         # **不用 .get 回落** —— 见上面 `_SYS` 那段。角色没配就该炸,不该静默降级。
         # 提示词按**这一轮生效的工具**装配:收掉的工具,管它的规矩也不该还在(否则模型被不存在的工具误导)
-        system_prompt=((_SYS[kind] if _收窄 is None else prompts.assemble(
+        system_prompt=_记规矩(state, (_SYS[kind] if _收窄 is None else prompts.assemble(
             kind, {t.rsplit("__", 1)[-1] for t in 工具} | ({"图片"} if kind in ("kb", "all") else set()))[0]) + (
             f"\n\n## 现在是谁在跟你说话\n\n"
             f"{me['name']}(工号 {me['no']})· {me['role']}"

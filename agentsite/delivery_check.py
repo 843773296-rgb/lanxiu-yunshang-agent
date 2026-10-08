@@ -30,6 +30,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("不挂 PostToolUseFailure(失败的调用没人记)", "工具调用失败也记下来"),
     ("交付处理里不补注(去掉 `text = _补注(state, text)`)", "判责没写确认 → 不打回,交付时系统补那句"),
     ("Stop 照旧把 g17 当打回(不滤掉交付时补注的规则)", "判责没写确认 + 别的毛病 → 只为别的毛病打回"),
+    ("sdk 不记规矩原文(去掉 `state[\"规矩原文\"] = 系统`)", "sdk.run 把这一轮的系统提示词记进 state"),
 ]
 
 坏 = 0
@@ -209,6 +210,8 @@ def main():
 
         print("\n\033[1m▸ sdk.run 收尾用的是这一套\033[0m")
         src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
+        ck("sdk.run 把这一轮的系统提示词记进 state[规矩原文](g1 认规矩里写着的数要读它,10-08)",
+           "system_prompt=_记规矩(state, " in src and 'state["规矩原文"] = 系统' in src, 1)
         ck("sdk.run 收尾调了交付处理,并把交付检查放进返回(静态落点,行为由上面几条验)",
            "guards.交付处理(state, text" in src and "交付检查=交付" in src
            and "最终违规=guards.最终违规(state, 交付)" in src, 1)

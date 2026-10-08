@@ -4642,8 +4642,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "        system_prompt=((_SYS[kind] if _收窄 is None else prompts.assemble(",
-    "new": "        system_prompt=((_SYS[kind] if True else prompts.assemble("
+    "old": "        system_prompt=_记规矩(state, (_SYS[kind] if _收窄 is None else prompts.assemble(",
+    "new": "        system_prompt=_记规矩(state, (_SYS[kind] if True else prompts.assemble("
    }
   ],
   "预期红": "收掉的工具,管它的规矩也不在提示词里"
@@ -5607,5 +5607,53 @@
    }
   ],
   "预期红": "真跑钉回(返修 P02):店长"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g1 不认规矩里原样写着的数",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if 规矩:\n        规 = re.sub(",
+    "new": "    if False:\n        规 = re.sub("
+   }
+  ],
+  "预期红": "真跑钉回(运维 L03)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "check_answer 不把规矩原文递给 g1",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "            if \"规矩\" in 参: 额[\"规矩\"] = 规矩 or \"\"",
+    "new": "            pass"
+   }
+  ],
+  "预期红": "check_answer 没把规矩原文递给 g1"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "sdk 不记规矩原文",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    state[\"规矩原文\"] = 系统\n",
+    "new": "\n"
+   }
+  ],
+  "预期红": "sdk.run 把这一轮的系统提示词记进 state"
+ },
+ {
+  "script": "tools/prompt_numbers_check.py",
+  "改坏": "提示词把休眠口径改成知识库里没有的数",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "第 91 天才进休眠",
+    "new": "第 97 天才进休眠"
+   }
+  ],
+  "预期红": "原样找不到"
  }
 ]

@@ -262,7 +262,7 @@ def _查到过(v, text, i, 查到的数, calls):
 
 
 # ── 体检项 ──────────────────────────────────────────────────────────────
-def g1_no_source(text, calls, prompt=""):
+def g1_no_source(text, calls, prompt="", 规矩=""):
     """给了数字结论,却没查过 —— **「该查的没查就答」是工具变多之后最高频的失败**,
     而它恰恰是评测集最难覆盖的:答案看起来完全正常,只是那个数字是编的。"""
     monies, days = _monies(text), _days(text)
@@ -278,6 +278,22 @@ def g1_no_source(text, calls, prompt=""):
     bodies = [(v, i) for v, i in _bodies(text)
               if not _near(text, i, 做法词) and not _near(text, i, 限定记号, span=10)
               and v not in 题数]
+    # ⚠️ 10-08 运维评测 L03「正好 90 天算不算休眠」两轮都扣下:首稿「第 90 天还算活跃,**第 91 天才进休眠**」完全对,
+    # 91 是这一轮发给它的规矩里原样写着的口径(TK 里「第 90 天算活跃、第 91 天才进休眠」),没调工具 → 打回 →
+    # 第二稿不敢答了、改成追问客户号 → 再打回 → 扣下。**打回把一个对的答案变成了没有答案**。
+    # 用户拍板:规矩里**原样写着**的数(带单位的那一截,和「原样出现在工具返回里」同一个判法)算有出处。
+    # 规矩里的数会不会过期,由 tools/prompt_numbers_check.py 对知识库原文对账(对不上就红)。
+    if 规矩:
+        规 = re.sub(r"\s+", "", 规矩)
+        def _在规矩(i):
+            for rx in (RE_DAYS, RE_BODY, RE_MONEY):
+                m = rx.match(text, i)
+                if m:
+                    return re.sub(r"\s+", "", m.group(0)) in 规
+            return False
+        monies = [(v, i) for v, i in monies if not _在规矩(i)]
+        days = [(a, b, i) for a, b, i in days if not _在规矩(i)]
+        bodies = [(v, i) for v, i in bodies if not _在规矩(i)]
     if not (monies or days or bodies): return None
     if not calls:
         哪 = ("金额/工期" if (monies or days) else "尺寸/件数/积分/百分比这类**只能查出来**的数")
@@ -1245,7 +1261,7 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g22_agree_without_reading, g23_discount_promise, g24_growth_not_statistical]
 
 
-def check_answer(text, calls, prompt="", 带图=False):
+def check_answer(text, calls, prompt="", 带图=False, 规矩=""):
     """返回违规清单。空清单 = 通过。纯函数,可离线测。
 
     `prompt` 是 2026-09-14 加的:有一类失败**只看回答看不出来** ——
@@ -1259,6 +1275,7 @@ def check_answer(text, calls, prompt="", 带图=False):
             额 = {}
             if "prompt" in 参: 额["prompt"] = prompt or ""
             if "带图" in 参: 额["带图"] = bool(带图)
+            if "规矩" in 参: 额["规矩"] = 规矩 or ""        # 这一轮发给模型的系统提示词(10-08)
             v = fn(text or "", calls or [], **额)
         except Exception as e: v = f"体检项 {fn.__name__} 自己出错了:{type(e).__name__}: {e}"
         if v: out.append(dict(check=fn.__name__, msg=v))
@@ -1815,7 +1832,7 @@ def make_hooks(state, 注日期=True):
         text = _last_answer(inp.get("transcript_path"), inp.get("last_assistant_message"))
         尝 = state.setdefault("答案检查", [])
         try:
-            bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"))
+            bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"), 规矩=state.get("规矩原文"))
         except Exception as e:
             # 检查器自己坏了 ≠ 答案过了 —— 记「检查出错」,交付判定会把它当「未检查」
             尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 原文=text, 规则版本=规则版本(), 结果="检查出错",
@@ -1919,7 +1936,7 @@ def _补注(state, text):
     state["系统补注"] = 加
     尝 = state.setdefault("答案检查", [])
     try:
-        bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"))
+        bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"), 规矩=state.get("规矩原文"))
         尝.append(dict(尝试=len(尝) + 1, 哈希=答案哈希(text), 原文=text, 规则版本=规则版本(),
                       结果="不通过" if bad else "通过", 失败项=[b["check"] for b in bad],
                       来源="交付前系统补注(" + "、".join(加) + ")"))
@@ -1968,7 +1985,7 @@ def 交付判定(state, text, 体检开着=True, 跑完了=True):
     这份 = next((a for a in reversed(尝) if a["哈希"] == h), None)
     if 这份 is None:
         try:
-            bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"))
+            bad = check_answer(text, state.get("calls"), state.get("prompt"), 带图=state.get("带图"), 规矩=state.get("规矩原文"))
             这份 = dict(尝试=len(尝) + 1, 哈希=h, 原文=text, 规则版本=规则版本(), 结果="不通过" if bad else "通过",
                        失败项=[b["check"] for b in bad], 来源="交付前补查(Stop 没查到这一份)")
             if bad:

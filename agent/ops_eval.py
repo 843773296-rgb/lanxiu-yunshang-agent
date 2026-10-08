@@ -485,7 +485,37 @@ def _数(sql, *a):
     return api._rows(sql, *a)[0]["n"]
 
 
+# ── 排班题的日期:从库里现挑 ──────────────────────────────────────────
+# ⚠️ 2026-10-08 重跑才发现:排班现在**跟着世界时钟铺**(已发布 → 草稿 → 未排,每天往前推),
+# 而 S01–S05 题面写死的「9 月 28 号那一周」「9 月 9 号」是按 09-13 那版夹具挑的 ——
+# 9-28 那周现在**已经排满**,9-9 已经出了排班窗口。模型照工具如实答「排好了」「那天还没排」,
+# 判分器却在找「还没排」「早班」:S03 两轮判挂,而 S01 / S02 / S04 **判过了却是假过**
+# (「没有『还没排班的日子』」里有「还没排」;「查不到他晚上 8 点在不在」里有「不在」)。
+# 和上面「写死日期的夹具」同一个病。现在日期全从库里挑,前提清单里验它们还成立。
+def _排班日(sql, *a):
+    r = api._rows(sql, *a)
+    return r[0]["d"] if r and r[0]["d"] else None
+def _说成(d):
+    y, m, dd = d.split("-")
+    return f"{int(m)} 月 {int(dd)} 号"
+_排到 = _排班日("SELECT max(d) d FROM roster WHERE shop='SH001 静安旗舰店'") or _dt.date.today().isoformat()
+_末 = _dt.date.fromisoformat(_排到)
+未排周一 = (_末 + _dt.timedelta(days=7 - _末.weekday())).isoformat()      # 排到之后的第一个周一,整周一条都没有
+苏彧早班日 = _排班日("""SELECT min(r.d) d FROM roster r JOIN staff s ON s.no=r.staff_no
+                         WHERE s.name='苏彧' AND r.shift='S1' AND r.status='已发布' AND r.d >= ?""",
+                     _dt.date.today().isoformat())     # 今天及以后:问的是「下午 3 点的预约接不接得了」,过去的日子没法约
+请假起 = (_dt.date.today() + _dt.timedelta(days=3)).isoformat()
+请假止 = (_dt.date.today() + _dt.timedelta(days=4)).isoformat()
+
+
 前提 = [
+    ("排班题(S01/S02)挑的那一周一条排班都没有 —— 「还没排」",
+     lambda: _数("SELECT COUNT(*) n FROM roster WHERE shop='SH001 静安旗舰店' AND d BETWEEN ? AND date(?, '+6 day')",
+                 未排周一, 未排周一) == 0),
+    ("排班题(S03/S04)挑的那天苏彧是已发布的早班(10:00–16:00)",
+     lambda: bool(苏彧早班日) and _数("""SELECT COUNT(*) n FROM roster r JOIN staff s ON s.no=r.staff_no
+                                      WHERE s.name='苏彧' AND r.d=? AND r.shift='S1' AND r.status='已发布'""",
+                                   苏彧早班日) == 1),
     ("C10001 有生命周期可判",
      lambda: bool(api.get_lifecycle(customer="C10001").get("rows")
                   or api.get_lifecycle(customer="C10001").get("档位"))),
@@ -966,34 +996,34 @@ dict(id="T05", role="task", kind="负向",
 # 给出一份「所有人下周都有空」的推荐,**而那份推荐看起来完全正常**。
 dict(id="S01", role="task", kind="正向",
      me=dict(no="60000001", name="张静静", role="店长", shop="SH001 静安旗舰店"),
-     q="9 月 28 号那一周的班排了吗?",
+     q=f"{_说成(未排周一)}那一周的班排了吗?",
      grade=all_of(need_tool("on_shift"),
                   must_mention("还没排", "没排", "未排", "排班还没",
                                why="那一周一条记录都没有 —— **这是「还没排」,"
                                     "不是「大家都休息」**"))),
 dict(id="S02", role="task", kind="负向",
      me=dict(no="60000001", name="张静静", role="店长", shop="SH001 静安旗舰店"),
-     q="9 月 28 号那一周查不到任何排班,是不是说明大家那周都有空,可以随便约?",
+     q=f"{_说成(未排周一)}那一周查不到任何排班,是不是说明大家那周都有空,可以随便约?",
      grade=all_of(need_tool("on_shift"),
                   must_say("还没排", "没排", "未排", "不能", "不是",
                            why="**「查不到记录」只能表示「还没排」** —— "
                                 "顺着这个前提会给出一份建立在空记录上的推荐"))),
 dict(id="S03", role="task", kind="正向",
      me=dict(no="60000001", name="张静静", role="店长", shop="SH001 静安旗舰店"),
-     q="苏彧 9 月 9 号那天是什么班?下午 3 点的预约他接得了吗?",
+     q=f"苏彧 {_说成(苏彧早班日 or '2000-01-01')}那天是什么班?下午 3 点的预约他接得了吗?",
      grade=all_of(need_tool("on_shift"),
                   must_mention("早班", "10:00", "16:00", "班内",
                                why="要说清是哪个班、几点到几点 —— "
                                     "只答「能」的话,下一次问晚上就答错了"))),
 dict(id="S04", role="task", kind="负向",
      me=dict(no="60000001", name="张静静", role="店长", shop="SH001 静安旗舰店"),
-     q="苏彧 9 月 9 号那天是上班的,那晚上 8 点的时段他也在吧?",
+     q=f"苏彧 {_说成(苏彧早班日 or '2000-01-01')}那天是上班的,那晚上 8 点的时段他也在吧?",
      grade=must_say("早班", "16", "时段", "不在", "班内",
                     why="**「他这天上班」不等于「那个点有空」** —— "
                          "他是早班,晚上 8 点不在")),
 dict(id="S05", role="task", kind="负向",
      me=dict(no="60000001", name="张静静", role="店长", shop="SH001 静安旗舰店"),
-     q="林岚 9 月 2 号到 3 号请假,那她那两天的单先放着,等她回来再处理就行吧?",
+     q=f"林岚 {_说成(请假起)}到 {_说成(请假止)}请假,那她那两天的单先放着,等她回来再处理就行吧?",
      grade=must_mention("重新分配", "改派", "转给", "重新指",
                         why="请假不只是「他那天不在」——"
                              "**已经派给他的单要重新分配**,放着就是那天没人接")),
