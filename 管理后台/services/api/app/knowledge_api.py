@@ -102,6 +102,16 @@ def 知识库列表(project_id: str, me: 身份 = Depends(要权限("查看有�
     with 连接() as c:
         rs = c.execute(text(f"""
             select kb.id, kb.name, kb.status, kb.updated_at,
+                   -- ⚠️ **`count(*) over ()` 不是炫技,它是为了不让两份 WHERE 分叉。**
+                   -- 原来 `total` 报的是 `len(出)` —— 而上面有 `limit`,
+                   -- 于是库里超过 limit 条的时候那个数是**截断后的数**。
+                   -- > 一个「真的只有 N 条」和一个「被截断成 N 条」,
+                   -- > **在那个数字上长得一模一样** —— 而人会拿它去做决定。
+                   -- (同一个病 2026-10-08 在澜绣那侧真咬到人:`get_lifecycle`
+                   --  被 LIMIT 40 截住,模型报「休眠 40 个」,**实际 1395 个**。)
+                   -- 另写一句 count(*) 也能算对,但那是**第二份 WHERE** ——
+                   -- 窗口函数在同一个查询里算,改条件时不可能只改一边。
+                   count(*) over () 全量,
                    (select count(*) from documents d
                      where d.project_id=kb.project_id and d.knowledge_base_id=kb.id
                        and d.archived_at is null) 文档数,
@@ -159,6 +169,9 @@ def 知识库列表(project_id: str, me: 身份 = Depends(要权限("查看有�
     出 = []
     for r in rs:
         d = dict(r)
+        # ⚠️ `全量` 是**窗口函数算给整页用的**,不是这一行的属性 ——
+        # 不摘掉的话每条记录上都挂一个 `全量: 2`,而那读起来像「这个知识库有 2 个什么」。
+        d.pop("全量", None)
         模型 = d.pop("最新索引模型", None)
         # ⚠️ **「能不能检索」要显式说,不让人从 0 里猜。**
         # 一个有片段但没就绪索引的知识库,检索时返回空 ——
@@ -182,7 +195,9 @@ def 知识库列表(project_id: str, me: 身份 = Depends(要权限("查看有�
         # mock 向量算出的相似度是个看起来很正常的数字,人会拿它当效果读。
         d["索引是mock吗"] = (None if not 模型 else not AD.是真的吗(模型))
         出.append(d)
-    return {"items": 出, "total": len(出)}
+    # `total` 是**全量**(不是这一页几条)—— 见上面那段 SQL 注释
+    return {"items": 出, "total": (int(rs[0]["全量"]) if rs else 0),
+            "这一页几条": len(出)}
 
 
 @router.get(前缀 + "/knowledge-bases/{kb_id}/index-builds")
@@ -206,7 +221,8 @@ def 索引构建列表(project_id: str, kb_id: str,
             # 404 而不是 403:**不泄露「这个 ID 在别的项目里存在」**
             raise _错(404, "NOT_FOUND", "没有这个知识库", "回知识库列表重新进入")
         rs = c.execute(text("""
-            select ib.id, ib.status, ib.embedding_model_id, ib.embedding_dim,
+            select count(*) over () 全量,
+                   ib.id, ib.status, ib.embedding_model_id, ib.embedding_dim,
                    ib.input_hash, ib.job_id, ib.created_at, ib.updated_at,
                    ib.retrieval_config_version_id,
                    (select count(*) from index_members im
@@ -220,11 +236,14 @@ def 索引构建列表(project_id: str, kb_id: str,
     出 = []
     for r in rs:
         d = dict(r)
+        d.pop("全量", None)       # 窗口函数算给整页的,不是这一行的属性
         d["是mock吗"] = (None if not d["embedding_model_id"]
                        else not AD.是真的吗(d["embedding_model_id"]))
         d["输入指纹短"] = (d["input_hash"] or "")[:26] or None
         出.append(d)
-    return {"知识库": dict(kb), "items": 出, "total": len(出)}
+    # `total` 是全量(这一页几条另给)—— 带 limit 的列表把 len 当总数是会骗人的
+    return {"知识库": dict(kb), "items": 出,
+            "total": (int(rs[0]["全量"]) if rs else 0), "这一页几条": len(出)}
 
 
 @router.get(前缀 + "/knowledge-bases/{kb_id}/chunks")
@@ -1627,7 +1646,8 @@ def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         条件.append("rr.rating is null")
     with 连接() as c:
         rs = c.execute(text(f"""
-            select rr.id, rr.created_at, rr.created_by, rr.source, rr.user_query,
+            select count(*) over () 全量,
+                   rr.id, rr.created_at, rr.created_by, rr.source, rr.user_query,
                    rr.rewritten_query, rr.recall_count, rr.selected_count,
                    rr.context_token_count, rr.answer_status, rr.answer_output,
                    rr.rating, rr.rating_reason, rr.rated_by, rr.rated_at,
@@ -1677,7 +1697,10 @@ def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         })
     平均 = (float(总["平均分"]) if 总["平均分"] is not None else None)
     return {
-        "items": 出, "total": len(出),
+        # ⚠️ `total` 是**筛选后的全量**(汇总那一块才是不筛的整表数)——
+        # 两个数不是一回事,所以键名也不同。
+        "items": 出, "total": (int(rs[0]["全量"]) if rs else 0),
+        "这一页几条": len(出),
         "汇总": {
             "一共几条": 总["条数"], "评过的": 总["评过的"],
             "还没评的": (总["条数"] or 0) - (总["评过的"] or 0),

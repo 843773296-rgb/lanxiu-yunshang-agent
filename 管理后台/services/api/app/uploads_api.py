@@ -314,12 +314,13 @@ def 上传列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
     # 这一条也是今天第二次踩,两次都是 `tools/sql_lint.py` 抓出来的。
     with 连接() as c:
         rs = c.execute(text("""
-            select * from uploads
+            select *, count(*) over () 全量 from uploads
              where project_id=:p and archived_at is null
                and (cast(:st as text) is null or status = cast(:st as text))
              order by created_at desc limit :n
         """), {"p": project_id, "st": status, "n": limit}).mappings().all()
     出 = [_对外(dict(r), project_id=project_id) for r in rs]
-    return {"items": 出, "next_cursor": None, "total": len(出),
+    return {"items": 出, "next_cursor": None,
+            "total": (int(rs[0]["全量"]) if rs else 0), "这一页几条": len(出),
             "能引用的": sum(1 for d in 出 if d["能引用吗"]),
             "note": "**`能引用的` 通常小于 total** —— 只有 `已校验` 算文件引用"}

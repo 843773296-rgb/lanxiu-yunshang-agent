@@ -79,7 +79,7 @@ def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看�
     """
     with 连接() as c:
         rs = c.execute(text("""
-            select t.id, t.request_id, t.environment, t.started_at, t.ended_at,
+            select count(*) over () 全量, t.id, t.request_id, t.environment, t.started_at, t.ended_at,
                    t.end_reason, t.created_by,
                    (select count(*) from spans s
                      where s.project_id=t.project_id and s.trace_id=t.id) 步数,
@@ -105,13 +105,16 @@ def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看�
     出 = []
     for r in rs:
         d = dict(r)
+        d.pop("全量", None)   # 窗口函数算给整页的,不是这一行的属性
         # ⚠️ **金额未知就是 None,不是 0**(和 `/usage` 同一条规矩)。
         # 在这里填 0 的话,列表按金额排序会把「不知道花了多少」的排在最便宜那头。
         d["参考价"] = (float(d["已知金额"]) if not d["金额未知的行数"] else None)
         d["参考价算不出吗"] = bool(d["金额未知的行数"])
         d["成功吗"] = (d["end_reason"] not in ("failed", "error"))
         出.append(d)
-    return {"items": 出, "next_cursor": None, "total": len(出),
+    return {"items": 出, "next_cursor": None,
+            "total": (int(rs[0]["全量"]) if rs else 0),
+            "这一页几条": len(出),
             "note": ("**「参考价」是按标价估的,不是账单。** 计量的硬事实是 token;"
                      "算不出参考价的那些显示「—」而不是 0")}
 
@@ -385,7 +388,7 @@ def 评测列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
     """
     with 连接() as c:
         rs = c.execute(text("""
-            select e.id, e.candidate_ref, e.baseline_ref, e.dataset_version_id,
+            select count(*) over () 全量, e.id, e.candidate_ref, e.baseline_ref, e.dataset_version_id,
                    e.scorer_version, e.status, e.job_id, e.created_at,
                    (select count(*) from evaluation_items i
                      where i.project_id=e.project_id and i.evaluation_id=e.id) 题数
@@ -396,6 +399,7 @@ def 评测列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
     出 = []
     for r in rs:
         d = dict(r)
+        d.pop("全量", None)   # 窗口函数算给整页的,不是这一行的属性
         # ⚠️ **「有没有基线」是显式字段。** 没有基线的分数不能当结论,
         # 而一个只显示分数的列表会让人把它当结论用。
         d["有基线吗"] = bool(d["baseline_ref"])
@@ -410,7 +414,9 @@ def 评测列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                 f"没有冻结的数据版本,两轮跑的不是同一套题;"
                 f"没有判据版本,换了判据的两轮不可比")
         出.append(d)
-    return {"items": 出, "next_cursor": None, "total": len(出),
+    return {"items": 出, "next_cursor": None,
+            "total": (int(rs[0]["全量"]) if rs else 0),
+            "这一页几条": len(出),
             "note": ("**「有分数」不等于「能当结论」** —— 四个东西要同时在场:"
                      "候选、基线、冻结的数据版本、判据版本")}
 

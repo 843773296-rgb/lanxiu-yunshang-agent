@@ -118,7 +118,7 @@ def 人工待办列表(project_id: str, me: 身份 = Depends(要权限("查看�
     """
     with 连接() as c:
         rs = c.execute(text("""
-            select id, execution_run_id, run_step_id, kind, status, revision,
+            select count(*) over () 全量, id, execution_run_id, run_step_id, kind, status, revision,
                    expires_at, candidate_roles, risk_note, target_ref,
                    tool_version_id, created_at, created_by
               from human_requests
@@ -131,6 +131,7 @@ def 人工待办列表(project_id: str, me: 身份 = Depends(要权限("查看�
     出 = []
     for r in rs:
         d = dict(r)
+        d.pop("全量", None)   # 窗口函数算给整页的,不是这一行的属性
         过 = AP.过期了吗(d["expires_at"], 现)
         # ⚠️ **三档不是两档**:过期 / 没过期 / **没设过期时间**。
         # 把第三档并进「没过期」的坏法:一条忘了设过期的高危请求
@@ -157,7 +158,8 @@ def 人工待办列表(project_id: str, me: 身份 = Depends(要权限("查看�
         if not 有人能批:
             d["没人能批的原因"] = 为啥
         出.append(d)
-    return {"items": 出, "next_cursor": None, "total": len(出),
+    return {"items": 出, "next_cursor": None,
+            "total": (int(rs[0]["全量"]) if rs else 0), "这一页几条": len(出),
             "note": ("**列表上没有批准按钮,这是有意的**(§12.1)—— "
                      "批量批准的界面会让人按「全选」,而那正是不该发生的事。"
                      "要批准请进详情页,那里会显示具体工具、参数和影响对象")}
@@ -204,6 +206,7 @@ def 待办详情(project_id: str, req_id: str,
                             {"p": project_id, "i": r["tool_version_id"]}).mappings().first()
     现 = _现在()
     d = dict(r)
+    d.pop("全量", None)   # 窗口函数算给整页的,不是这一行的属性
     能, 为什么 = AP.能处理吗(d, 谁=me.user_id, 他的角色=me.role, 现在=现,
                        他能碰这个对象吗=True)
     出 = {
@@ -293,6 +296,7 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
         if not r:
             raise _错(404, "NOT_FOUND", "没有这条待办", "回待办列表重新进入")
         d = dict(r)
+        d.pop("全量", None)   # 窗口函数算给整页的,不是这一行的属性
         # 幂等:同一个键只记一条决定
         老 = c.execute(text("""select id, decision from human_decisions
                              where project_id=:p and idempotency_key=:k"""),

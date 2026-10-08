@@ -192,7 +192,7 @@ def 工具列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
            limit: int = Query(50, ge=1, le=200)):
     with 连接() as c:
         rs = c.execute(text("""
-            select d.id, d.name, d.purpose, d.side_effect_type, d.adapter, d.owner,
+            select count(*) over () 全量, d.id, d.name, d.purpose, d.side_effect_type, d.adapter, d.owner,
                    d.status, d.updated_at,
                    (select max(v.version_no) from tool_versions v
                      where v.project_id=d.project_id and v.tool_definition_id=d.id) 最新版本,
@@ -210,7 +210,8 @@ def 工具列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         "最新版本": (f"v{r['最新版本']}" if r["最新版本"] else None),
         "版本数": r["版本数"],
         "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None,
-    } for r in rs], "next_cursor": None, "total": len(rs),
+    } for r in rs], "next_cursor": None,
+       "total": (int(rs[0]["全量"]) if rs else 0), "这一页几条": len(rs),
         # ── 建工具的表单要填什么,**由接口给** ──────────────────────────
         # ⚠️ 2026-09-29/10-01 这一族第三处(前两处:模型连接的用途、
         # 样本的复核状态)。前端硬编一份的代价不是难看,是**它和契约会漂** ——
@@ -280,7 +281,7 @@ def agent列表(project_id: str, me: 身份 = Depends(要权限("查看有权配
             limit: int = Query(20, ge=1, le=100)):
     with 连接() as c:
         rs = c.execute(text("""
-            select a.id, a.name, a.purpose, a.owner, a.tags, a.draft_revision,
+            select count(*) over () 全量, a.id, a.name, a.purpose, a.owner, a.tags, a.draft_revision,
                    a.validation_status, a.updated_at,
                    (select max(v.version_no) from agent_versions v
                      where v.project_id=a.project_id and v.agent_id=a.id) 最新冻结,
@@ -310,7 +311,8 @@ def agent列表(project_id: str, me: 身份 = Depends(要权限("查看有权配
             "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None,
         })
     return {"items": 出, "next_cursor": None,
-            "total": len(出)}
+            "total": (int(rs[0]["全量"]) if rs else 0),
+            "这一页几条": len(出)}
 
 
 def _agent模板(c, project_id):

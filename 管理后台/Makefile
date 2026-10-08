@@ -28,6 +28,14 @@ contract:      ## 只跑契约覆盖检查(不需要数据库)
 	@echo "     16 份文件挂了 16 份,齐的;而它齐是靠人手挂齐的,下一份忘了挂门禁照旧绿"
 	@./.venv/bin/python tools/orchestration_registry_check.py
 	@echo ""
+	@echo "▸ 带 limit 的列表不许把 len(rows) 当总数(2026-10-08 加)"
+	@echo "  🔑 这个病当天在澜绣那侧**真咬到人**:get_lifecycle 被 LIMIT 40 截住,"
+	@echo "     模型照着报「休眠 40 个」—— **实际 1395 个**,差 35 倍"
+	@echo "  > 一个「真的只有 N 条」和一个「被截断成 N 条」,在那个数字上长得一模一样"
+	@echo "  顺着扫管理后台也有**九处**(Agent 98 / 调用链 1417 / 评测 73 / 上传 714,"
+	@echo "  而页面上都写着「共 20 条」)—— 改成 count(*) over () 在同一个查询里算"
+	@./.venv/bin/python tools/total_not_truncated_check.py
+	@echo ""
 	@./.venv/bin/python tools/nav_smoke_check.py
 	@echo ""
 	@./.venv/bin/python tools/seed_flag_check.py
