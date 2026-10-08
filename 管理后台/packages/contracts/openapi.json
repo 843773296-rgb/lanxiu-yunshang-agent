@@ -10335,7 +10335,7 @@
     },
     "/api/v1/projects/{project_id}/retrieval-tests": {
       "post": {
-        "description": "必须回:原问、改写、候选、融合分、选片、证据、Trace —— **整条链路**(§9.5「必须看到整条链路」)",
+        "description": "必须回:原问、改写、候选、融合分、选片、证据、Trace —— **整条链路**(§9.5「必须看到整条链路」)。2026-10-08 补了最后一步:传 `要生成=true` 多调一次模型,照着选中的证据生成答案,**并验它指得出的出处真在证据里**",
         "operationId": "post_retrieval-tests",
         "parameters": [
           {

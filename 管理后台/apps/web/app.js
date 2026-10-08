@@ -2917,7 +2917,9 @@ async function 页_知识库() {
     + d.items.map((r) => `<tr>
         <td><b>${esc(r.name)}</b><div class="k">${esc(r.id)}</div></td>
         <td class="num">${r["文档数"]}</td>
-        <td class="num">${r["片段数"]}</td>
+        <td class="num">${r["片段数"]}
+            ${r["旧版本的片段数"]
+              ? `<div class="k">索引收 ${r["最新版片段数"]}</div>` : ""}</td>
         <td>${r["能检索吗"]
               ? `<span class="pill ok">能</span>`
               : `<span class="pill fail">不能</span>
@@ -2930,8 +2932,13 @@ async function 页_知识库() {
       </tr>`).join("")
     + `</tbody></table>
        <div class="note">${md(`⚠️ **「片段数」是资料切出来的条数,不是索引里的条数。**
-         两个对不上就说明索引不完整 —— 而一个不完整的索引检索时只是「少返回几条」,
-         **不报错**。点「看索引」能看到每次构建的成员数。`)}</div>`;
+         点「看索引」能看到每次构建的成员数。
+         ⚠️ **而这两个数对不上有两种原因,别混**(2026-10-08 实测撞到):
+         ① 索引不完整 —— 要去查谁写坏了数据;
+         ② 那几条属于**文档的旧版本** —— 索引只收最新版,这完全正常。
+         下面那行小字「索引收 N」就是第 ② 种;两种都会让索引**少返回几条而不报错**。`)}</div>`
+    + (d.items.filter((r) => r["片段数怎么读"]).map((r) =>
+        `<div class="note">${md(`**${r.name}**:` + r["片段数怎么读"])}</div>`).join(""));
   $("#main").querySelectorAll("[data-kb]").forEach((b) => {
     b.onclick = () => { location.hash = "#/kb/" + encodeURIComponent(b.dataset.kb); };
   });
@@ -3186,20 +3193,29 @@ async function 页_检索实验室() {
              value="客户给了差评要怎么处理">
       <label class="k" style="margin-left:10px">
         <input type="checkbox" id="rt-rr" checked> Claude 精排</label>
+      <label class="k" style="margin-left:10px">
+        <input type="checkbox" id="rt-gen" checked> 生成答案</label>
       <button id="rt-go" style="margin-left:10px">检索</button>
-      <div class="note">${md(`⚠️ 勾着精排会**真调一次 Claude**(几百毫秒到两秒),用量记在记录仪里。
-        去掉勾只走向量 —— **那个排序不可靠**:实测一个表格头排到过第 1 名(0.6849),
-        而真答案第 2(0.6329)。`)}</div>
+      <div class="note">${md(`⚠️ 两个勾各**真调一次 Claude**(一次检索最多两次调用,
+        几百毫秒到几秒),用量记在记录仪**和账本**里。
+        去掉精排只走向量 —— **那个排序不可靠**:实测一个表格头排到过第 1 名(0.6849),
+        而真答案第 2(0.6329)。
+        去掉生成就只看「它怎么找、找到什么」,看不到**它答成什么** ——
+        而 RAG 最常见的失效正在那一步:片段选对了,答的时候自己补了内容。`)}</div>
     </div></div><div id="rt-out"></div>`;
   const 跑 = async () => {
     const ib = $("#rt-ib") ? $("#rt-ib").value : "";
     const q = ($("#rt-q").value || "").trim();
     const rr = $("#rt-rr").checked;
-    $("#rt-out").innerHTML = `<div class="state">检索中${rr ? "(要调一次模型,稍等)" : ""}…</div>`;
+    const gen = $("#rt-gen") ? $("#rt-gen").checked : false;
+    const 几次 = (rr ? 1 : 0) + (gen ? 1 : 0);
+    $("#rt-out").innerHTML = `<div class="state">检索中${
+      几次 ? `(要调 ${几次} 次模型,稍等)` : ""}…</div>`;
     let d;
     try {
       d = await 请求(`${P()}/retrieval-tests`, {
-        method: "POST", body: JSON.stringify({ 索引构建id: ib, 问题: q, 要精排: rr }),
+        method: "POST",
+        body: JSON.stringify({ 索引构建id: ib, 问题: q, 要精排: rr, 要生成: gen }),
       });
     } catch (e) { const s = 错误块(e, 跑); $("#rt-out").innerHTML = s.html; s.挂(); return; }
     $("#rt-out").innerHTML = 画链路(d);
@@ -3227,6 +3243,7 @@ function 画链路(d) {
     ${行("截断", esc(d["截断"]))}
     ${行("选片", `${d["选了几片"]} 片 · ${d["用了多少token"]} token`,
           d["token是粗估"] ? "token 数是**粗估** —— 不许拿它算钱" : "")}
+    ${行("生成", 生成标(d["生成"]), 生成注(d["生成"]))}
     </tbody></table></div>`;
 
   const 警 = [];
@@ -3256,10 +3273,92 @@ function 画链路(d) {
 
   return 链
     + (警.length ? `<div class="note warn">${警.join("<br>")}</div>` : "")
+    + 画答案(d["生成"])
     + 片
     + `<div class="note">${md(`**证据串**(「业务拍板 · 2026-09-27 / 二、几星算差评 · 第 4 段」)
         不是装饰 —— 顾问要能**照着它翻回原文核对**。
         一个查不回去的引用比没有引用糟:它看起来有出处。`)}</div>`;
+}
+
+/* ── 生成那一步(2026-10-08 补的 A)───────────────────────────────────
+ *
+ * 这一页原来停在「选了哪几片」。它回答得了「它怎么找、找到什么」,
+ * **回答不了「它答成什么」** —— 而答案才是顾问真正拿到手的东西。
+ *
+ * ⚠️ 三种「没有答案」要分得开,而且**不靠认那段文案** ——
+ * 接口给了结构化的 `哪一种`(这次没要 / 跑不成 / 炸了)。
+ * 认文案会在下一个人改文案的那天静默失效(这个项目为枚举中文说法栽过七次)。
+ */
+function 生成标(g) {
+  g = g || {};
+  if (g["做了"]) {
+    const u = g["用量"] || {};
+    return `${g["够不够答"] === false
+      ? `<span class="pill warn">证据不够</span>`
+      : `<span class="pill ok">答了</span>`}
+      <span class="k">${esc(g["模型"] || "")} · ${u.input_tokens || "?"} in /
+      ${u.output_tokens || "?"} out · 引了 ${(g["引用们"] || []).length} 条证据</span>`;
+  }
+  // ⚠️ 「这次没要」用灰 pill,「跑不成 / 炸了」用红 —— **两种不同颜色**。
+  // 同一个灰「没做」会让一次故障看起来像一个选择。
+  return g["哪一种"] === "这次没要"
+    ? `<span class="pill none">这次没要</span>`
+    : `<span class="pill fail">${esc(g["哪一种"] || "没做")}</span>`;
+}
+
+function 生成注(g) {
+  g = g || {};
+  if (g["做了"]) {
+    return "⚠️ 验到的是它**指得出出处**(引用的原话真在证据里)——"
+      + "**不是**它没有超出证据。后者要做句子级蕴含,这一版没做";
+  }
+  return g["为什么"] || "";
+}
+
+/* 底部那张答案卡。
+ * ⚠️ 答案用 `md()` 不用 `esc()`:`md` 自己先 esc 再认 `**`,所以既安全、
+ * 又不会把模型写的 `**` 原样显示成星号(10-07 验收时用户用眼睛抓到过
+ * 32 处字面星号 —— 那次是文案写了 `**` 而没过 `md()`)。*/
+function 画答案(g) {
+  g = g || {};
+  if (!g["做了"]) {
+    // 「这次没要」不值得一张卡(人自己去掉的勾);跑不成要显眼。
+    return g["哪一种"] === "这次没要" ? ""
+      : `<div class="note warn">${md(g["为什么"] || "生成没做,而没说为什么")}</div>`;
+  }
+  const 引 = g["引用们"] || [];
+  const 坏 = 引.filter((x) => x["原话可信"] === false);
+  return `<div class="card"><div class="body">
+    <div style="margin-bottom:6px">
+      ${g["够不够答"] === false
+        ? `<span class="pill warn">模型说证据不够</span>`
+        : `<span class="pill ok">照着证据答的</span>`}
+      <span class="k" style="margin-left:6px">${esc(g["照着谁答的"] || "")}</span>
+      ${坏.length ? `<span class="pill fail" style="margin-left:6px">${坏.length}
+        条出处对不上</span>` : ""}
+    </div>
+    <div style="white-space:pre-wrap;font-size:14px;line-height:1.7">${md(g["答案"] || "")}</div>
+    ${g["缺什么"] ? `<div class="note warn" style="margin:8px 0 0">
+        ${md("**模型说缺的是**:" + g["缺什么"])}</div>` : ""}
+    ${引.length ? `<div class="k" style="margin-top:10px">它指的出处(每条都验过原话真在那片里)</div>
+      <table><tbody>${引.map((x) => `<tr>
+        <td class="k" style="white-space:nowrap">[${x["编号"]}] ${esc(x["证据"] || "")}</td>
+        <td>${x["原话可信"] === false
+          ? `<span class="pill fail" title="${esc(x["原话问题"] || "")}">⚠️ 对不上</span> `
+          : ""}「${esc(x["原话"] || "")}」
+          ${x["原话可信"] === false
+            ? `<div class="k">${esc(x["原话问题"] || "")}</div>` : ""}</td>
+        </tr>`).join("")}</tbody></table>`
+      : `<div class="note" style="margin:8px 0 0">${md(
+          "它一条出处都没指 —— 而 `enough=false` 时**不要求**出处"
+          + "(要求一个「证据里没有」的回答给出引文,等于逼它为不存在的关联编证据)")}</div>`}
+    <div class="note" style="margin:10px 0 0">${md(
+      `⚠️ **这张卡验到的,和验不到的**:验到了「它指得出的出处真在证据里」`
+      + `(编一个不存在的编号、改写原话都会被抓到);**没验**「答案里有没有超出证据的内容」——`
+      + `那要做句子级蕴含,是另一次模型调用。\n`
+      + `一个「每句话都指得出出处」的答案,和一个「有出处的那几句之外还加了两句自己的」,`
+      + `**在这张卡上长得一模一样**。`)}</div>
+  </div></div>`;
 }
 
 /* ══════════════════════════════════════════════════════════════════

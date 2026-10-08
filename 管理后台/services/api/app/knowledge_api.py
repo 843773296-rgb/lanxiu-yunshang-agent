@@ -118,6 +118,31 @@ def 知识库列表(project_id: str, me: 身份 = Depends(要权限("查看有�
                      where ch.project_id=kb.project_id
                        and d.knowledge_base_id=kb.id
                        and {权限}) 片段数,
+                   -- ⚠️⚠️ **再给一个「最新版的片段数」(2026-10-08 补)。**
+                   --
+                   -- 上面那个 `片段数` 数的是**全部版本**,而索引只收
+                   -- `max(revision)` 那一版(`index_plan` 的口径,切片栏目也一样)。
+                   -- 于是一篇文档改过第二版之后,这两个数就**永远对不上**:
+                   -- 实测 project_demo_a 的「澜绣业务拍板」= 97 / 89。
+                   --
+                   -- > 一个「这个库有 97 个片段」和一个「这个库有 89 个片段
+                   -- > 检索得到」,**在那个 97 上长得一模一样** ——
+                   -- > 而人看到 97、检索却只能命中 89,会去查检索。
+                   --
+                   -- 这个数**不改 `片段数` 的含义**(那样会悄悄改掉界面上一个
+                   -- 已经在用的数,而且改完也看不出来);它是**多给一个**。
+                   (select count(*) from chunks ch
+                      join document_versions dv
+                        on dv.project_id=ch.project_id and dv.id=ch.document_version_id
+                      join documents d
+                        on d.project_id=dv.project_id and d.id=dv.document_id
+                     where ch.project_id=kb.project_id
+                       and d.knowledge_base_id=kb.id
+                       and dv.revision = (select max(dv2.revision)
+                                            from document_versions dv2
+                                           where dv2.project_id=d.project_id
+                                             and dv2.document_id=d.id)
+                       and {权限}) 最新版片段数,
                    (select count(*) from index_builds ib
                      where ib.project_id=kb.project_id and ib.knowledge_base_id=kb.id
                        and ib.status='已就绪') 就绪索引数,
@@ -142,6 +167,15 @@ def 知识库列表(project_id: str, me: 身份 = Depends(要权限("查看有�
             None if d["就绪索引数"] else
             ("还没有片段 —— 先导入文档" if not d["片段数"]
              else "有片段但**没有已就绪的索引** —— 先建一次索引"))
+        # ⚠️ 旧版本那几条**说出来**:它们在库里、不在索引里,
+        # 而「有 8 条检索不到」静默发生的话,表现是「这个 RAG 漏东西」。
+        d["旧版本的片段数"] = d["片段数"] - d["最新版片段数"]
+        d["片段数怎么读"] = (
+            None if not d["旧版本的片段数"] else
+            f"这个库一共 {d['片段数']} 个片段,而**索引只收最新版的 "
+            f"{d['最新版片段数']} 个** —— 另外 {d['旧版本的片段数']} 条属于"
+            f"文档的旧版本,留着是为了能翻回历史,**但它们检索不到**。"
+            f"这不是索引不完整")
         d["索引模型"] = 模型
         # 用的是真向量还是 mock。**这个标记要一路传到界面上** ——
         # mock 向量算出的相似度是个看起来很正常的数字,人会拿它当效果读。
@@ -156,8 +190,12 @@ def 索引构建列表(project_id: str, kb_id: str,
              limit: int = Query(20, ge=1, le=100)):
     """某个知识库的索引构建。**状态、模型、成员数、输入指纹都要给。**
 
-    ⚠️ `成员数` 和知识库的 `片段数` 对不上就说明这个索引不完整 ——
-    而一个不完整的索引检索时只是「少返回几条」,不报错。
+    ⚠️ `成员数` 要和知识库的 **`最新版片段数`** 对,不是和 `片段数` 对 ——
+    索引只收 `max(revision)` 那一版。2026-10-08 修:
+    > 一次「索引不完整」和一次「那几条属于文档的旧版本」,
+    > **在「成员数 < 片段数」这件事上长得一模一样** ——
+    > 而前者要去查谁写坏了数据,后者完全正常。
+    而一个真不完整的索引检索时只是「少返回几条」,不报错。
     """
     with 连接() as c:
         kb = c.execute(text("""select id, name from knowledge_bases
@@ -611,18 +649,25 @@ async def 检索实验室(project_id: str, request: Request,
                me: 身份 = Depends(要权限("运行评测"))):
     """跑一次检索,返回**整条链路**(§9.5)。
 
-    入参:`{索引构建id, 问题, 要精排?}`
+    入参:`{索引构建id, 问题, 要精排?, 要生成?}`
 
     ⚠️ **同步** —— 人坐在那儿等结果,异步反而更难用。
     代价:一次调用会**真调一次 Claude 精排**(几百毫秒到两秒),
     用量记在记录仪日志里。传 `要精排=false` 就只走向量,
     而返回里会说清「只走向量的排序不可靠」。
+
+    ⚠️ `要生成=true` 会**再**调一次模型(照着选中的证据生成答案)。
+    **默认关着** —— 而「这次没要」和「这一版没做」在空答案上长得一样,
+    所以 `链["生成"]["为什么"]` 会说是哪一种。
     """
     体 = await request.json()
     构建id = (体.get("索引构建id") or "").strip()
     问题 = (体.get("问题") or "").strip()
     要精排 = 体.get("要精排")
     要精排 = True if 要精排 is None else bool(要精排)
+    # ⚠️ 生成**默认不做**(多一次模型调用)。而「这次没要」和「这一版没做」
+    # 在那个空答案上长得一样 —— 所以 `retrieval` 会把哪一种写进 `链["生成"]`。
+    要生成 = bool(体.get("要生成"))
     if not 构建id:
         raise _错(422, "VALIDATION", "没给索引构建 id",
                   "先在知识库页面选一个「已就绪」的索引",
@@ -641,7 +686,8 @@ async def 检索实验室(project_id: str, request: Request,
             # (`perms.判` 自己写着「否则专项授权就变成万能钥匙」)。
             # 而身份模型今天是一人一角色,所以这里是单元素清单。
             链 = RT.检索(c, 项目=project_id, 构建id=构建id, 问题=问题,
-                       这个人的角色们=[me.role], 要精排=要精排)
+                       这个人的角色们=[me.role], 要精排=要精排,
+                       要生成=要生成)
         except RT.检索不了 as e:
             # ⚠️ 这些是**配置/前提不满足**,不是服务问题 —— 422 而不是 500。
             # 而且 `retrieval.py` 的每条异常都带「怎么办」,原样传给调用方
@@ -669,12 +715,24 @@ async def 检索实验室(project_id: str, request: Request,
     # ⚠️ 这一步失败**不许把检索结果吞掉** —— 人已经等到答案了,
     # 而记账是我们内部的事。但也**不许静默**:记不上账的调用是黑的。
     # (和澜绣那条 A2「上报失败不影响业务但必须留痕」同一个形状。)
-    链["记账"] = 记一次精排的账(project_id, me, 链)
+    链["记账"] = 记这次检索的账(project_id, me, 链)
     return 链
 
 
-def 记一次精排的账(project_id, me, 链):
-    """把这一次精排的 token 用量写进 `usage_ledger`。返回一段能显示的说明。
+def 记这次检索的账(project_id, me, 链):
+    """把这一次**真花过钱的每一步**写进 `usage_ledger`。返回一段能显示的说明。
+
+    ⚠️ 2026-10-08 起这一次检索可能调**两次**模型(精排 + 生成),外加
+    改写那一次。原来这个函数叫「记一次精排的账」,只记精排 ——
+    > 一笔「没花钱」和一笔「花了而没记上」,**在账本的总额上长得一模一样**,
+    > 而后者要等账单来了才发现,那时候已经追不回是哪一次调用了。
+    所以这里按**步骤**逐条记,每一步一个 `event_key`(防重复计费靠它)。
+
+    ⚠️ **改写那一次没记在这儿** —— 它在 `rewriter` 里只进了记录仪,
+    没进账本。这是个已知的缺口,写在这儿而不是等人发现:
+    改写用量在 `llmtrace` 日志里查得到,而**账本里看不到它**。
+    补它要先决定「改写算哪个 resource」(它不是 rerank 也不是 generate),
+    那是业务口径,不自己拍。
 
     ## 为什么写在这里而不是 reranker 里
 
@@ -688,11 +746,26 @@ def 记一次精排的账(project_id, me, 链):
     **一笔查不到出处的钱,在总额里和真的一样**。
     """
     精 = (链 or {}).get("精排") or {}
-    if not 精.get("做了"):
-        return {"记了吗": False, "为什么": "这次没调精排(要精排=false),没有花销可记"}
-    if 精.get("是mock"):
-        # mock 也记 —— 但 source='mock',界面上要能一眼看出这笔不是真的
-        pass
+    生 = (链 or {}).get("生成") or {}
+    # 哪些步骤**真调了模型**。`阶段` 进 `spans.stage`,`资源` 进 `usage_ledger`。
+    # ⚠️ 这张表就是「这次检索花了几笔钱」的唯一来源 —— 新加一步调模型的,
+    # **加在这里**,否则它的花销在账本里是黑的(而总额看起来完全正常)。
+    步骤 = []
+    if 精.get("做了"):
+        步骤.append(dict(步="精排", 阶段="rerank", 资源=UG.精排, 数据=精,
+                       细=dict(模型=精.get("模型"), 精排了几条=精.get("精排了几条"),
+                              精排器版本=精.get("精排器版本"))))
+    if 生.get("做了"):
+        步骤.append(dict(步="生成", 阶段="generate", 资源=UG.生成, 数据=生,
+                       细=dict(模型=生.get("模型"), 生成器版本=生.get("生成器版本"),
+                              够不够答=生.get("够不够答"),
+                              引用没通过校验的=生.get("引用没通过校验的"))))
+    if not 步骤:
+        return {"记了吗": False,
+                "为什么": "这次一步模型都没调(要精排=false 且没要生成),"
+                        "没有花销可记"}
+    # mock 也记 —— 但 source='mock',界面上要能一眼看出这笔不是真的
+    各步, 行数, token数 = [], 0, 0
     try:
         with 事务() as c:
             org = c.execute(text("select organization_id from projects where id=:p"),
@@ -704,24 +777,37 @@ def 记一次精排的账(project_id, me, 链):
                 values (:i,:o,:p,:rq,:e, now(), now(), 'completed', now(), :u)"""),
                       {"i": tid, "o": org, "p": project_id, "rq": tid,
                        "e": _os.environ.get("APP_ENV", "development"), "u": me.user_id})
-            c.execute(text("""
-                insert into spans (id, organization_id, project_id, trace_id, stage,
-                    output_ref, started_at, ended_at, created_at, created_by)
-                values (:i,:o,:p,:t,'rerank', cast(:orf as jsonb), now(), now(), now(), :u)"""),
-                      {"i": _新id("sp"), "o": org, "p": project_id, "t": tid,
-                       "orf": _json.dumps({"模型": 精.get("模型"),
-                                           "精排了几条": 精.get("精排了几条"),
-                                           "精排器版本": 精.get("精排器版本")},
-                                          ensure_ascii=False), "u": me.user_id})
-            # ⚠️ 写库走 `usage.写进库` —— **只有那一处**。
-            # A1 上报接口是第二个写入方,而两个写入方迟早分叉
-            # (分叉的表现刚刚真发生过一次:两批账用了不同的 `source` 含义)。
-            折 = UG.写进库(c, 组织=org, 项目=project_id, 谁=me.user_id,
-                        用量=精.get("用量"), 模型=精.get("模型"),
-                        提供方="anthropic", 资源=UG.精排,
-                        事件键=f"{tid}:rerank", trace_id=tid,
-                        是mock=bool(精.get("是mock")),
-                        调用方="检索实验室", _新id=_新id)
+            for 步 in 步骤:
+                c.execute(text("""
+                    insert into spans (id, organization_id, project_id, trace_id,
+                        stage, output_ref, started_at, ended_at, created_at, created_by)
+                    values (:i,:o,:p,:t,:st, cast(:orf as jsonb),
+                            now(), now(), now(), :u)"""),
+                          {"i": _新id("sp"), "o": org, "p": project_id, "t": tid,
+                           "st": 步["阶段"],
+                           "orf": _json.dumps(步["细"], ensure_ascii=False),
+                           "u": me.user_id})
+                # ⚠️ 写库走 `usage.写进库` —— **只有那一处**。
+                # A1 上报接口是第二个写入方,而两个写入方迟早分叉
+                # (分叉的表现真发生过一次:两批账用了不同的 `source` 含义)。
+                # ⚠️ `事件键` 带上**步骤名**:同一个 trace 里两笔账,
+                # 键一样的话第二笔会被当成重复上报**静默丢掉** ——
+                # 而那正好是「花了钱而账本上没有」。
+                折 = UG.写进库(c, 组织=org, 项目=project_id, 谁=me.user_id,
+                            用量=步["数据"].get("用量"), 模型=步["数据"].get("模型"),
+                            提供方="anthropic", 资源=步["资源"],
+                            事件键=f"{tid}:{步['阶段']}", trace_id=tid,
+                            是mock=bool(步["数据"].get("是mock")),
+                            调用方="检索实验室", _新id=_新id)
+                # ⚠️ `资源` 和 `事件键` 带出来 —— 不是为了好看:
+                # 防重复计费靠 `(project_id, event_key)` 唯一约束,
+                # 两步的键**必须不同**,否则第二笔被 `do nothing` 静默丢掉。
+                # 而「丢掉了」和「没花钱」在账本总额上长得一模一样,
+                # 所以那条性质要能在外面被断言(e2e 第 ④.5 组)。
+                各步.append({"步": 步["步"], "资源": 步["资源"],
+                           "事件键": f"{tid}:{步['阶段']}", **折})
+                行数 += int(折.get("写了几行") or 0)
+                token数 += int(折.get("token合计") or 0)
     except UG.用量不对 as e:
         # **不吞** —— 但也不让它把检索结果一起毁掉
         return {"记了吗": False, "为什么": f"用量不合格,没记账:{str(e)[:200]}"}
@@ -729,7 +815,15 @@ def 记一次精排的账(project_id, me, 链):
         return {"记了吗": False,
                 "为什么": f"记账失败({type(e).__name__}: {str(e)[:160]})—— "
                         f"**检索结果是好的,但这次调用的花销在库里是黑的**。要人看"}
-    return {"记了吗": True, "trace_id": tid, **折}
+    return {"记了吗": 行数 > 0, "trace_id": tid, "各步": 各步,
+            "写了几行": 行数, "token合计": token数,
+            # ⚠️ 行数为 0 要说清**为什么**:`写进库` 对「用量里一个 token 都没有」
+            # 的调用不写账(0 不是一笔花销)。不说的话,「没花钱」和
+            # 「花了而没记上」在这个返回里长得一模一样。
+            "为什么": (None if 行数 > 0 else
+                    f"调了 {len(步骤)} 步模型,但用量里没有可计费的 token —— "
+                    f"**没写账**(0 不是一笔花销)。要查这几次调用本身,"
+                    f"看记录仪日志")}
 
 
 # ══════════════════════════════════════════════════════════════════════

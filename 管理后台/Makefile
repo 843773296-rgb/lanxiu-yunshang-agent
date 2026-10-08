@@ -941,6 +941,15 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     所以两种用不同的说明文字,否则在那个 None 上长得一模一样"
 	@./.venv/bin/python tests/orchestration/test_rewriter.py
 	@echo ""
+	@echo "▸ 照着证据生成答案(业务 2026-10-08 拍的 A)—— 零 IO,**真跑那个纯函数**"
+	@echo "  这一步的全部防护在 'answerer.校验答案' 里:空答案 / 编出来的证据编号 /"
+	@echo "  改写了的原话 / 「没表态」被当成「说够了」—— 这份测试真的去调它看它抛不抛"
+	@echo "  🔑 一条「判据写在代码里」和一条「判据真的会拦」,在源码上长得一模一样"
+	@echo "  ⚠️ 最后两节盯的是**文案不许替判据担保**:这一版没验「答案有没有超出证据」"
+	@echo "     (那要句子级蕴含),所以页面上写的是「指得出出处」——"
+	@echo "     一个「每句话都有出处」的答案和一个「另外加了两句自己的」,在那张卡上长得一样"
+	@./.venv/bin/python tests/orchestration/test_answerer.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + 'object_key' 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py

@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""`tests/orchestration/` 下的纯逻辑自测,**每一份都得有入口能跑**。
+"""`tests/orchestration/` 和 `tests/integration/` 下的自测,
+**每一份都得有入口能跑**。
+
+⚠️ 2026-10-08 把 `tests/integration/` 也收进来了(原来只管编排层)。
+起因:加 `tests/orchestration/test_answerer.py` 的时候我顺手又写了一条
+同样的判据塞进 `test_registry_check.py` —— **而这一条已经存在**。
+> 同一条性质有两个判据,它们迟早分叉,**而分叉的时候两边各自都是绿的**。
+所以那半撤了,只把**真没人盯的那一层**(集成层,9 份)补进这里。
+
+**文件名没改**(还叫 `orchestration_`):它被 Makefile 和交接文档引用着,
+改名要同步三处,而收益只是名字更准。**这一行就是那个名字的解释。**
 
 ## 为什么需要它
 
@@ -32,7 +42,9 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-组目录 = os.path.join(ROOT, "tests", "orchestration")
+# ⚠️ 两层各自的**样本量下限**。空集合上「每一份都挂了」恒为真 ——
+# 而「一份都没扫到」和「全挂齐了」在那句话上长得一模一样。
+两层 = (("orchestration", 5), ("integration", 5))
 MAKEFILE = os.path.join(ROOT, "Makefile")
 
 # ── 明写不挂 —— **排掉一份是个决定,漏掉一份是个事故** ────────────────
@@ -42,7 +54,7 @@ MAKEFILE = os.path.join(ROOT, "Makefile")
 明写不挂 = {}
 
 
-def 挂了哪些():
+def 挂了哪些(层):
     with open(MAKEFILE, encoding="utf-8") as f:
         mk = f.read()
     # ⚠️ **不能写成 `test_[A-Za-z0-9_]+\.py`** —— 那只认 ASCII 文件名,
@@ -53,12 +65,22 @@ def 挂了哪些():
     # **一份已经挂好的测试被报成漏挂**,害人去查一个不存在的问题。
     # > 判据按自己的写法定,别人换个写法就漏了(`trace_check` 的老教训)。
     # 所以这里按「不是空白、不是 Make 语法分隔符」收,不枚举字符集。
-    return set(re.findall(r"tests/orchestration/(test_[^\s\"':;()|&]+\.py)", mk))
+    return set(re.findall(
+        rf"tests/{层}/(test_[^\s\"':;()|&]+\.py)", mk))
 
 
 def main():
-    print("纯逻辑自测清单对账 · tests/orchestration/")
+    print("自测清单对账 · tests/orchestration/ + tests/integration/")
     print("=" * 76)
+    坏 = 0
+    for 层, 下限 in 两层:
+        坏 |= 一层(层, 下限)
+    return 1 if 坏 else 0
+
+
+def 一层(层, 下限):
+    组目录 = os.path.join(ROOT, "tests", 层)
+    print(f"\n▸ tests/{层}/")
     if not os.path.isdir(组目录):
         print(f"  ❌ 找不到 {组目录} —— **这不叫「没有自测」,叫路径写错了**")
         return 1
@@ -66,11 +88,11 @@ def main():
                  if f.startswith("test_") and f.endswith(".py"))
     # ⚠️ **样本量下限。** 空集合上「每一份都挂了」恒为真 ——
     # 而「一份都没扫到」和「全挂齐了」在那句话上长得一模一样。
-    if len(文件们) < 5:
-        print(f"  ❌ 只扫到 {len(文件们)} 份自测({组目录})—— "
+    if len(文件们) < 下限:
+        print(f"  ❌ 只扫到 {len(文件们)} 份自测({组目录},下限 {下限})—— "
               f"**这不叫「都挂齐了」,叫没扫到文件**")
         return 1
-    挂 = 挂了哪些()
+    挂 = 挂了哪些(层)
     print(f"  {组目录.replace(ROOT + os.sep, '')} 下有 {len(文件们)} 份;"
           f"Makefile 里引用了 {len(挂)} 份")
 
@@ -89,13 +111,14 @@ def main():
         return 1
     if 漏:
         print(f"\n  ❌ 这 {len(漏)} 份**没有任何入口能跑**:{漏}")
-        print(f"     挂进 Makefile 的 `test-orchestration`,"
+        print(f"     挂进 Makefile 的 "
+              f"`{'test-orchestration' if 层 == 'orchestration' else 'test'}`,"
               f"或者写进这个脚本的 `明写不挂` 并**说清为什么**。")
         print(f"     ⚠️ **排掉一份是个决定,漏掉一份是个事故** —— "
               f"而它们在目录里长得一样:文件在、看起来有覆盖,而没人跑它。")
         return 1
 
-    print(f"\n  ✅ {len(文件们)} 份自测都有入口能跑")
+    print(f"  ✅ {len(文件们)} 份自测都有入口能跑")
     print(f"  ⚠️ 盲区:这一条证明的是「**有入口**」,不是「那个入口在 CI 里跑」。")
     print(f"     要证后者得看 CI 真跑了哪条 make 目标 —— "
           f"而「挂在一个没人跑的目标里」和「没挂」的后果是一样的。")
