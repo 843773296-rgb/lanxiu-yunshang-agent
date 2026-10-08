@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 咬合 = [
     ('把手机号的格式判定放宽成「有数字就行」(不合法的号也收得进来)',
      '项与预期不符'),
+    ('同名 + 完整手机号相同不再说成「同一个用户」(业务 10-08)', '项与预期不符'),
 ]
 
 def norm_phone(p):
@@ -39,6 +40,12 @@ def validate_customer(d, existing, actor_role="顾问"):
         return False,"BAD_PHONE",f"手机号「{d.get('phone')}」不是合法的 11 位手机号",[]
     # 规则一:标准化手机号完全相同 → 直接阻止新建
     same=[c for c in existing if norm_phone(c.get("phone"))==phone]
+    # 业务 2026-10-08:**姓名相同 + 完整手机号相同 = 同一个用户** —— 拦住新建,指向老档案(并存的另一条:
+    # 姓名 + 生日 + 地址三项全同 → 疑似跨店重复,转店长,见 prompts TK05)。只是尾号相同不算,要核完整号码
+    同人=[c for c in same if (c.get("name") or "").strip()==name]
+    if 同人:
+        return False,"DUP_PHONE",\
+          f"姓名和完整手机号都与客户 {同人[0]['id']}({同人[0]['name']})相同 —— 就是同一个用户,用这条老档案,不要新建",同人
     if same:
         return False,"DUP_PHONE",\
           f"手机号与客户 {same[0]['id']}({same[0]['name']})完全相同,按 PRD 6.2 阻止新建",same
@@ -50,7 +57,8 @@ def validate_customer(d, existing, actor_role="顾问"):
     if sus:
         跨店 = "" if sus[0].get("shop")==shop else f"(在 {sus[0].get('shop') or '别的门店'})"
         return False,"NEED_REVIEW",\
-          f"与客户 {sus[0]['id']}({sus[0]['name']}){跨店}姓名相似、尾号相同,须由店长确认后建档",sus
+          (f"与客户 {sus[0]['id']}({sus[0]['name']}){跨店}姓名相似、尾号相同 —— 尾号相同不等于同一个人,"
+           f"要核对完整手机号,须由店长确认后建档"),sus
     return True,"OK","",[]
 
 # 前端 PRD 11.6:到店至少提前 2 小时,上门量体至少提前 24 小时
@@ -139,14 +147,16 @@ if __name__=="__main__":
       # 业务 2026-09-22(附录 A-65):要防的是同一个人在两家店各建一次档 —— 跨店也得转店长
       ({"name":"蔡青云","phone":"13911110511","shop":"SH001 静安店"},"姓名相似+尾号相同,门店不同"),
     ]
-    EXP_C=["NEED_NAME","BAD_PHONE","DUP_PHONE","NEED_REVIEW","OK","NEED_REVIEW"]
+    # 业务 2026-10-08:姓名相同 + 完整手机号相同 = 同一个用户(拦住新建,话里要指向老档案)
+    cases.append(({"name":"蔡青梧","phone":"13600000511","shop":"SH001"},"同名 + 完整手机号相同 → 同一个用户"))
+    EXP_C=["NEED_NAME","BAD_PHONE","DUP_PHONE","NEED_REVIEW","OK","NEED_REVIEW","DUP_PHONE"]
     bad=0
     print("客户录入校验\n"+"="*70)
     for (d,t),exp in zip(cases,EXP_C):
         ok,code,why,_=validate_customer(d,ex)
-        hit=code==exp
+        hit=code==exp and ("同一个用户" in why) == ("同一个用户" in t)
         if not hit: bad+=1
-        print(f"{'✅' if hit else '❗'} [{code:12s}] {t}" + ("" if hit else f"   期望 {exp}"))
+        print(f"{'✅' if hit else '❌'} [{code:12s}] {t}" + ("" if hit else f"   期望 {exp}"))
     from datetime import datetime as DT
     now=DT(2026,8,31,10,0)
     ac=[({"way":"到店量体","start":"2026-08-31 11:00","end":"2026-08-31 12:00"},"到店只提前1小时"),
@@ -160,7 +170,7 @@ if __name__=="__main__":
         ok,code,why=validate_appointment(d,now)
         hit=code==exp
         if not hit: bad+=1
-        print(f"{'✅' if hit else '❗'} [{code:16s}] {t}" + ("" if hit else f"   期望 {exp}"))
+        print(f"{'✅' if hit else '❌'} [{code:16s}] {t}" + ("" if hit else f"   期望 {exp}"))
     print("\n导入校验\n"+"="*70)
     hdr_cases=[(["姓名","手机号","归属店铺","销售顾问"],"OK"),
                (["姓名","手机号"],"BAD_HEADER"),
@@ -169,7 +179,7 @@ if __name__=="__main__":
         ok,code,why=validate_import_header(cols)
         hit=code==exp
         if not hit: bad+=1
-        print(f"{'✅' if hit else '❗'} [{code:12s}] 表头 {cols}")
+        print(f"{'✅' if hit else '❌'} [{code:12s}] 表头 {cols}")
     ex2=[dict(id="C1",name="蔡青梧",phone="13600000511",shop="SH002 徐汇店")]
     data=[{"姓名":"李四","手机号":"13812345678","归属店铺":"SH001","销售顾问":"A01"},
           {"姓名":"王五","手机号":"136 0000 0511","归属店铺":"SH002","销售顾问":"A02"},
@@ -180,7 +190,7 @@ if __name__=="__main__":
     res=(len(o),len(sk),len(er),len(rv))
     hit = res==(1,2,1,1)
     if not hit: bad+=1
-    print(f"{'✅' if hit else '❗'} 行级校验 5 行 → 成功{len(o)} 跳过{len(sk)} 错误{len(er)} 待确认{len(rv)}"
+    print(f"{'✅' if hit else '❌'} 行级校验 5 行 → 成功{len(o)} 跳过{len(sk)} 错误{len(er)} 待确认{len(rv)}"
           + ("" if hit else "   期望 1/2/1/1"))
     print("="*70)
     print(f"{'✅ 全部符合预期' if not bad else f'❌ {bad} 项与预期不符'}")
