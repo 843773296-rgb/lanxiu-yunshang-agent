@@ -84,6 +84,15 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_chunk_browse.py
 	@echo ""
+	@echo "▸ 检索试跑记录 · **真的去攻击那几条 CHECK**(评分 1-5 / 来源枚举 / 答案四档)"
+	@echo "  接口里写着「评分要是 1-5」,而那是**一个写入方的 if** ——"
+	@echo "  下一个写入方(补数据的 SQL、将来 chat 那条链)不经过它,"
+	@echo "  而写进去的 7 分在列表上和 4 分长得一模一样"
+	@echo "  🔑 四条「拦住了」后面跟着一条**正向对照** ——"
+	@echo "     一次「CHECK 拦住了坏值」和一次「这张表根本写不进东西」,在那四个 ✅ 上长得一样"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_retrieval_runs_live.py
+	@echo ""
 	@echo "▸ 真的拆一次 · 把几个切片拆成独立文档(执行层,写库后清干净)"
 	@echo "  判定那一层在编排测试里(54 条零 IO);这一份验写进去的对不对"
 	@echo "  ⚠️ 原切片**一条都不动** —— chunks 不可变且绑在不可变的文档版本上"
@@ -278,7 +287,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	@echo "▸ 页面冒烟(一级页 + 详情页)"
 	@rc=0; \
 	for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' \
-	         '#/kb' '#/retrieval' '#/usage' '#/traces' '#/health' '#/tryout' \
+	         '#/kb' '#/retrieval' '#/rruns' '#/usage' '#/traces' '#/health' '#/tryout' \
 	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' \
 	         '#/datasets' '#/training' '#/artifacts' '#/audit' \
 	         $$(DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
@@ -380,7 +389,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py \
           test_lanxiu_knobs_flow.py test_toolgroups_flow.py \
           test_selection_policy_flow.py test_eval_items_flow.py \
           test_tool_modelcard_flow.py test_prompt_snapshot_flow.py \
-          test_exec_mode_flow.py
+          test_exec_mode_flow.py test_retrieval_runs_flow.py
 
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
@@ -468,6 +477,14 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 知识与 RAG 端到端:三条接口 + **整条链路**(§9.5)"
 	@echo "  ⚠️ 其中一条会**真调一次 Claude 精排**(月租额度);另一条走 要精排=false 不花钱"
 	@./.venv/bin/python tests/e2e/test_knowledge_flow.py
+	@echo ""
+	@echo "▸ 检索试跑记录栏目(业务 2026-10-08 要的)· 列表 / 详情 / 5 档打分"
+	@echo "  ⚠️ **这一份不调模型**(要精排=false、不要生成),所以不花钱 ——"
+	@echo "     它验的是「记录 / 列表 / 评价」那一层,和模型无关"
+	@echo "  🔑 没评过的 '评分' 是 **None 不是 0** ——「还没人评」和「评了最低档」"
+	@echo "     在一个 0 上长得一模一样,而平均分会把那些 0 算进去"
+	@echo "  🔑 打分要 If-Match:两个人同时评,后到的会**静默覆盖**前一个"
+	@./.venv/bin/python tests/e2e/test_retrieval_runs_flow.py
 	@echo ""
 	@echo "▸ 知识库写入端到端(M2):**「片段进库不等于能检索」有代码兜着**"
 	@echo "  (幂等靠内容哈希 / 输入变了新建构建 / 第一次建索引必须显式给模型)"
@@ -637,6 +654,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_knowledge_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_knowledge_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_knowledge_flow.log
+	@./.venv/bin/python tests/e2e/test_retrieval_runs_flow.py > /tmp/prog-test_retrieval_runs_flow.log 2>&1 \
+	  || { echo "  ❌ test_retrieval_runs_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_retrieval_runs_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_retrieval_runs_flow.log
 	@./.venv/bin/python tests/e2e/test_upload_flow.py > /tmp/prog-test_upload_flow.log 2>&1 \
 	  || { echo "  ❌ test_upload_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_upload_flow.log; exit 1; }

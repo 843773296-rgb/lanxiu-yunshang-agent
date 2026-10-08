@@ -224,6 +224,12 @@
     "purpose": "TEXT", "adapter": "TEXT", "endpoint": "TEXT", "revision": "BIGINT",
     "messages": "JSONB", "params": "JSONB", "capabilities": "JSONB",
     "acl": "JSONB", "text": "TEXT", "ordinal": "INTEGER", "format": "TEXT",
+    # ⚠️ `rating` 点名登记成 INTEGER(2026-10-08,检索试跑的 5 档评价)。
+    # **不叫 `rating_count`** —— 那样能命中 `_count` 后缀不用登记,
+    # 而它会是一句谎话:5 档里的「4」是**档位**,不是「评了 4 次」。
+    # > 一个名字骗人的列,和一个类型错的列,后果是同一类:
+    # > 下一个人照着名字去读它,而**读出来的数看起来完全正常**。
+    "rating": "INTEGER",
     "content": "JSONB", "source": "TEXT", "split": "TEXT", "objective": "TEXT",
     "kind": "TEXT", "usable": "BOOLEAN", "step": "INTEGER", "metrics": "JSONB",
     "dimension": "TEXT", "value": "NUMERIC(20,6)", "rationale": "TEXT",
@@ -324,6 +330,15 @@
 按表必填 = {
     "deployments": {"model_artifact_id", "environment", "status"},
     "application_drafts": {"application_id"},
+    # 检索试跑记录(2026-10-08):这五列**一列都不能空**,否则那一行没有用 ——
+    #   · `source` 空 → 分不出是实验室跑的还是 chat 跑的,而这张表存在的理由
+    #     就是「哪些是 chat 的」(chat 现在还没接上这条链)
+    #   · `user_query` 空 → 不知道问的是什么
+    #   · `chain_snapshot` 空 → 「那次它找到了哪几段」没了,这是全部价值
+    #   · 两个 id 空 → 答不出「在哪个库的哪一版索引上跑的」
+    # ⚠️ 而它们**空着也插得进去** —— 表现是列表里多一行什么都没有的记录。
+    "retrieval_runs": {"source", "user_query", "chain_snapshot",
+                       "index_build_id", "knowledge_base_id"},
 }
 # 项目范围内的表:organization_id / project_id 也是必填 —— 它们是身份的一部分
 # (进了复合主键)。⚠️ 这一条要和 models.py 的主键规则**对得上**:

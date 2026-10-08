@@ -16,6 +16,13 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
 const md = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
   .replace(/`(.+?)`/g, "<code>$1</code>");
 
+/* ⚠️ **`title=` 属性里渲染不了粗体** —— 而后端那些说明文案里带着 `**`。
+ * 原样塞进 title,用户在 tooltip 里看到的就是两个星号。
+ * 所以属性里**去掉标记**(内容一个字不少),不是去渲染它。
+ * 2026-10-08 页面冒烟那条「渲染后不许有字面星号」接上退出码之后,
+ * 一次就抓出 8 页 —— 其中三页是 tooltip,就是这一类。*/
+const 去粗 = (s) => String(s ?? "").replace(/\*\*/g, "");
+
 /* ⚠️ **`esc()` 拿到对象会给出 `[object Object]`,而那是个合法字符串。**
  * 2026-10-07 页面冒烟第一次打工具详情页就抓到:版本历史那一列写的是
  *     esc(v["确认策略"] || "—")
@@ -100,6 +107,7 @@ const 导航 = [
   ["#/uploads", "加资料", true, true],
   ["#/kb", "知识库", true, true],
   ["#/retrieval", "检索实验室", true, true],
+  ["#/rruns", "检索试跑记录", true, true],
   ["#/datasets", "数据集", true],
   ["grp", "微调训练"],
   ["#/training", "训练任务", true, true],
@@ -369,7 +377,7 @@ async function 页_prompt详情(pid) {
           它在运行时就是空的。`)}</div>
 
         <label class="f">输出要求</label>
-        <pre class="io" id="e-out">${esc(JSON.stringify(出要, null, 2))}</pre>
+        <pre class="io" id="e-out" data-raw="原文">${esc(JSON.stringify(出要, null, 2))}</pre>
 
         <label class="f">变更说明 <span class="req">*</span>
           <span style="color:var(--ink3)">保存正式版本必填 —— 它是以后唯一能想起「为什么改」的地方</span></label>
@@ -541,7 +549,7 @@ async function 页_prompt详情(pid) {
         <pre class="io">${esc(typeof s.输出 === "string" ? s.输出
                                 : (s.输出 && s.输出.text) || JSON.stringify(s.输出, null, 2))}</pre>
         <details><summary>应用实际发送给模型的内容${果.看得到原文 ? "" : "(已脱敏)"}</summary>
-          <pre class="io">${esc(JSON.stringify(s.实际发送, null, 2))}</pre>
+          <pre class="io" data-raw="原文">${esc(JSON.stringify(s.实际发送, null, 2))}</pre>
           ${果.看得到原文 ? "" : `<div class="note">${md(`**默认脱敏。** 看原文要
             「查看敏感输入/独立测试答案」专项权限 —— 换成 U004 能看到差别。`)}</div>`}
         </details>`).join("")}
@@ -618,7 +626,7 @@ async function 页_工作流列表() {
         <td>${esc(r["用途"] || "—")}</td><td>${esc(r["负责人"] || "—")}</td>
         <td>${r["最新冻结版本"] ? `<span class="pill">${esc(r["最新冻结版本"])}</span>`
               : `<span class="k">还没冻结过</span>`}</td>
-        <td><span class="stale" title="${esc(r["生产引用说明"])}">还没接</span></td>
+        <td><span class="stale" title="${esc(去粗(r["生产引用说明"]))}">还没接</span></td>
         <td>${r["校验状态"] === "通过" ? `<span class="pill ok">通过</span>`
               : `<span class="pill warn">${esc(r["校验状态"])}</span>`}</td>
         <td class="k">${esc((r["更新时间"] || "").slice(0, 16).replace("T", " "))}</td>
@@ -714,7 +722,7 @@ function 画_节点库() {
       拖拽不是唯一操作方法(§3.3)。</div>`
     + 分组.map(([标, 们]) => `<h4>${esc(标)}</h4>` + 们.map((k) => {
         const n = 按名[k]; if (!n) return "";
-        return `<div class="nd ${n["可用"] ? "" : "off"}" title="${esc(n["说明"])}">
+        return `<div class="nd ${n["可用"] ? "" : "off"}" title="${esc(去粗(n["说明"]))}">
           <span>${esc(n["中文"])}</span>
           ${n["可用"] ? `<button data-add="${k}">加入</button>`
                       : `<span class="k">未实现</span>`}</div>`;
@@ -897,7 +905,7 @@ function 画_底部() {
       ? g.事件.map((e) => `<div style="font-size:12px">
           <span class="k">${esc(String(e.seq).padStart(2, "0"))}</span>
           <code>${esc(e["类型"])}</code>
-          <span class="k">${esc(JSON.stringify(e["载荷"] || {}).slice(0, 120))}</span></div>`).join("")
+          <span data-raw="原文" class="k">${esc(JSON.stringify(e["载荷"] || {}).slice(0, 120))}</span></div>`).join("")
       : `<div class="k">还没试运行过。<b>点「试运行」会返回 202 排队中</b> ——
           一个模型都还没调,要等 Worker 捞到才真跑。</div>`;
     return;
@@ -1174,7 +1182,7 @@ async function 页_运行详情(rid) {
   $("#main").innerHTML = `
     <div class="crumb"><a href="#/workflows">工作流</a> / 运行 ${esc(rid)}</div>
     <div class="head"><div><h1>运行详情</h1>
-      <div class="sub">定义来源 <code>${esc(JSON.stringify(d["定义来源"] || {}))}</code></div>
+      <div class="sub">定义来源 <code data-raw="原文">${esc(JSON.stringify(d["定义来源"] || {}))}</code></div>
     </div>
       <div>${运行控制按钮(d)}</div>
     </div>
@@ -1216,9 +1224,9 @@ async function 页_运行详情(rid) {
     <h3>输入输出</h3>
     <div class="two">
       <div class="card"><h4>输入快照</h4>
-        <pre style="font-size:12px;white-space:pre-wrap">${esc(JSON.stringify(d["输入快照"], null, 1))}</pre></div>
+        <pre data-raw="原文" style="font-size:12px;white-space:pre-wrap">${esc(JSON.stringify(d["输入快照"], null, 1))}</pre></div>
       <div class="card"><h4>输出</h4>
-        <pre style="font-size:12px;white-space:pre-wrap">${esc(JSON.stringify(d["输出"], null, 1))}</pre>
+        <pre data-raw="原文" style="font-size:12px;white-space:pre-wrap">${esc(JSON.stringify(d["输出"], null, 1))}</pre>
         <div class="note">原文默认<b>脱敏</b>;要看要「查看敏感输入/独立测试答案」
           专项授权(§14.3)。顶栏切到 U004 能看到区别。</div></div>
     </div>
@@ -1226,7 +1234,7 @@ async function 页_运行详情(rid) {
     ${(d["事件"] || []).map((e) => `<div style="font-size:12px">
         <span class="k">${esc(String(e.seq).padStart(2, "0"))}</span>
         <code>${esc(e["类型"])}</code>
-        <span class="k">${esc(JSON.stringify(e["载荷"] || {}).slice(0, 160))}</span></div>`).join("")}
+        <span data-raw="原文" class="k">${esc(JSON.stringify(e["载荷"] || {}).slice(0, 160))}</span></div>`).join("")}
     <div class="note">事件<b>只表达已记录的事实</b>(§17.2)——
       不会在外部返回成功之前先发一条成功事件。seq 在 Run 内单调,断线能按 seq 续。</div>`;
   // ⚠️ 事件要在 innerHTML 写完**之后**挂 —— 写之前挂的话那些按钮还不存在,
@@ -1282,11 +1290,11 @@ async function 页_agent列表() {
         <td><a href="#/agent/${encodeURIComponent(r.id)}">${esc(r["名称"])}</a></td>
         <td>${esc(r["用途"] || "—")}</td>
         <td class="k">${esc(r["模型连接"] || "没选")}</td>
-        <td title="${esc(r["工具数说明"])}">${r["工具数"]}
+        <td title="${esc(去粗(r["工具数说明"]))}">${r["工具数"]}
             <span class="k">个候选</span></td>
         <td>${r["最新冻结版本"] ? `<span class="pill">${esc(r["最新冻结版本"])}</span>`
               : `<span class="k">还没冻结过</span>`}</td>
-        <td><span class="stale" title="${esc(r["生产引用说明"])}">还没接</span></td>
+        <td><span class="stale" title="${esc(去粗(r["生产引用说明"]))}">还没接</span></td>
         <td>${r["校验状态"] === "通过" ? `<span class="pill ok">通过</span>`
               : `<span class="pill warn">${esc(r["校验状态"])}</span>`}</td>
         <td><a href="#/agent/${encodeURIComponent(r.id)}">配置</a></td>
@@ -1350,8 +1358,8 @@ function 字段(标, 键, 值, 说明, 多行) {
   const v = 值 === undefined || 值 === null ? ""
     : (typeof 值 === "object" ? JSON.stringify(值, null, 1) : String(值));
   return `<div class="fieldrow"><label>${esc(标)}</label>
-    ${多行 ? `<textarea data-k="${esc(键)}" rows="${多行}">${esc(v)}</textarea>`
-           : `<input data-k="${esc(键)}" value="${esc(v)}">`}</div>
+    ${多行 ? `<textarea data-k="${esc(键)}" data-raw="原文" rows="${多行}">${esc(v)}</textarea>`
+           : `<input data-k="${esc(键)}" data-raw="原文" value="${esc(v)}">`}</div>
     ${说明 ? `<div class="note">${md(说明)}</div>` : ""}`;
 }
 
@@ -1465,7 +1473,7 @@ function 画_agent正文() {
           <div class="k">停止原因 <code>${esc(r["停止原因"] || "—")}</code>
             · 任务达标 <b>${esc(r["任务达标"])}</b></div>
           <div class="note">${md(r["达标说明"] || "")}</div>
-          <pre style="font-size:12px;white-space:pre-wrap">${esc(JSON.stringify(r["输出"], null, 1))}</pre>
+          <pre data-raw="原文" style="font-size:12px;white-space:pre-wrap">${esc(JSON.stringify(r["输出"], null, 1))}</pre>
           <div class="k">用量 ${esc(JSON.stringify(r["用量"] || {}))}</div>
           <a href="#/wfrun/${encodeURIComponent(r.id)}">看完整运行详情 →</a>`
           : `<div class="k">还没跑过。点右上「试运行」——
@@ -1475,7 +1483,7 @@ function 画_agent正文() {
       ${(g.事件 || []).length ? (g.事件 || []).map((e) => `<div style="font-size:12px">
           <span class="k">${esc(String(e.seq).padStart(2, "0"))}</span>
           <code>${esc(e["类型"])}</code>
-          <span class="k">${esc(JSON.stringify(e["载荷"] || {}).slice(0, 150))}</span></div>`).join("")
+          <span data-raw="原文" class="k">${esc(JSON.stringify(e["载荷"] || {}).slice(0, 150))}</span></div>`).join("")
         : `<div class="k">跑一次就有了。</div>`}
       <div class="note"><b>看这里能回答「它为什么没用那个工具」</b>:
         <code>agent.adapters</code> 说清接了哪些没接哪些;
@@ -1818,7 +1826,7 @@ async function 画工具详情(tid) {
           <td><code>${esc(d["名称"] || "")}</code>
             <span class="k">模型按这个名字调它</span></td></tr>
         <tr><td class="k">描述</td>
-          <td>${esc(新版["给模型的说明"] || "—")}</td></tr>
+          <td data-raw="原文">${esc(新版["给模型的说明"] || "—")}</td></tr>
         <tr><td class="k">别名
             ${态牌((新版["模型说明填了吗"] || {})["别名"])}</td>
           <td>${串串(新版["别名"])}
@@ -1866,7 +1874,7 @@ async function 画工具详情(tid) {
         那会出现「后台上看起来配好了，而线上一个字没变」。</div>
       <div id="preview-box" style="display:none">
         <h2>模型实际收到的那一段</h2>
-        <pre style="margin:4px 0;padding:8px 10px;background:#f7f8fa;
+        <pre data-raw="原文" style="margin:4px 0;padding:8px 10px;background:#f7f8fa;
           border-left:3px solid var(--ok,#2a7);font-size:12px;white-space:pre-wrap;
           overflow:auto;max-height:320px">${esc(新版["模型所见内容"] || "")}</pre>
         <div class="note">⚠️ 这一段<b>不是这一页拼的</b> —— 它由
@@ -1878,7 +1886,7 @@ async function 画工具详情(tid) {
       <h2>最新版本（${esc(新版["版本"])}）· 输入与输出</h2>
       <table><tbody>
         <tr><td class="k">给模型的说明</td>
-          <td>${esc(新版["给模型的说明"] || "—")}</td></tr>
+          <td data-raw="原文">${esc(新版["给模型的说明"] || "—")}</td></tr>
         <tr><td class="k">入参 schema</td><td>${JSON块(新版["入参"])}</td></tr>
         <tr><td class="k">出参 schema</td><td>${JSON块(新版["出参"])}
           ${新版["出参"] ? "" : `<span class="k">没声明出参 ——
@@ -2273,11 +2281,11 @@ async function 页_人工待办() {
       <th>要做什么</th><th>状态</th><th>截止</th><th>你能处理吗</th><th></th>
     </tr></thead><tbody>`
     + d.items.map((r) => `<tr>
-        <td>${esc(r.risk_note || r.kind || r.id)}
+        <td>${r.risk_note ? md(r.risk_note) : esc(r.kind || r.id)}
           <div class="k">${esc(r.id)}</div>
           ${r["有人能批吗"] === false
             ? `<div class="k"><span class="pill fail">没人能批</span>
-                 ${esc(r["没人能批的原因"] || "")}</div>` : ""}</td>
+                 ${md(r["没人能批的原因"] || "")}</div>` : ""}</td>
         <td><span class="pill ${r.status === "pending" ? "warn"
               : r.status === "approved" ? "ok" : ""}">${esc(r.status)}</span></td>
         <td class="k">${r.expires_at
@@ -2286,7 +2294,7 @@ async function 页_人工待办() {
           ${r["过期了吗"] === true ? `<span class="pill fail">已过期</span>` : ""}</td>
         <td>${r["还能处理吗"] ? `<span class="pill ok">能</span>`
               : `<span class="pill">不能</span>
-                 <div class="k">${esc(String(r["为什么不能处理"] || "").slice(0, 60))}</div>`}</td>
+                 <div class="k">${md(String(r["为什么不能处理"] || "").slice(0, 60))}</div>`}</td>
         <td><button data-hr="${esc(r.id)}">看详情</button></td>
       </tr>`).join("")
     + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
@@ -2310,16 +2318,16 @@ async function 页_待办详情(hid) {
     <h2>要批准什么</h2>
     <div class="card">
       <div class="k">影响对象</div>
-      <pre class="k">${esc(JSON.stringify(d["影响对象"], null, 1))}</pre>
+      <pre data-raw="原文" class="k">${esc(JSON.stringify(d["影响对象"], null, 1))}</pre>
       <div class="k">具体工具</div>
       <pre class="k">${工 ? esc(JSON.stringify(工, null, 1)) : "(没绑工具版本)"}</pre>
       <div class="k">参数${d["看得到原文吗"] ? "（原文）" : "（已脱敏）"}</div>
-      <pre class="k">${esc(JSON.stringify(d["脱敏参数"], null, 1))}</pre>
+      <pre data-raw="原文" class="k">${esc(JSON.stringify(d["脱敏参数"], null, 1))}</pre>
     </div>
     <h2>证据</h2>
     <table><tbody>`
     + Object.entries(证).map(([k, v]) =>
-        `<tr><td class="k">${esc(k)}</td><td>${esc(JSON.stringify(v))}</td></tr>`).join("")
+        `<tr><td class="k">${esc(k)}</td><td data-raw="原文">${esc(JSON.stringify(v))}</td></tr>`).join("")
     + `</tbody></table>
     <h2>决定</h2>`
     + (d["你能处理吗"]
@@ -2618,7 +2626,7 @@ async function 页_调用树(tid) {
     + (d["步们"] || []).map((s2, i) => `<div class="card">
         <div class="k">${i + 1}. ${esc(s2.stage)}
           ${s2["出错了吗"] ? `<span class="pill fail">出错</span>` : ""}</div>
-        <pre class="k">${esc(JSON.stringify(
+        <pre data-raw="原文" class="k">${esc(JSON.stringify(
             脱 ? {入: s2["入_形状"], 出: s2["出_形状"], 错: s2["错_形状"]}
                : {入: s2["入"], 出: s2["出"], 错: s2["错"]}, null, 1))}</pre>
       </div>`).join("");
@@ -2674,11 +2682,17 @@ async function 页_智能体健康() {
 // 照工作台那套类名画卡(`.cards` / `.card.kpi` / `.n.unknown`)——
 // **不另起一套**:两套卡片样式迟早长得不一样,而「未知」那个灰掉的样式
 // 正是工作台已经做对的地方。
+/* ⚠️ `分母` 过 `md()`、`来源` 用 `esc()` —— 前者是调用方传进来的**文案**
+ * (会写加粗),后者是个表名。页面冒烟在 #/health 上抓到过这一处。
+ * ⚠️ 这段说明**不能写成 HTML 注释** —— HTML 注释会被渲染进页面,
+ * 于是注释里的加粗标记自己触发那条「渲染后不许有字面星号」的判据。
+ * 今天同一个形状踩了四次(两次在 `画链路` 的注释里、一次反例照抄、这一次)——
+ * **在一个会扫自己产物的判据的视野里,说明要放在不进产物的地方。** */
 function _卡(名, 值, 未知, 分母, 来源) {
   const v = 未知 ? `<div class="n unknown">未知</div>`
                  : `<div class="n">${esc(值)}</div>`;
   return `<div class="card kpi"><div class="k">${esc(名)}</div>${v}
-    <div class="meta">${分母 ? esc(分母) + "<br>" : ""}来源:${esc(来源)}</div></div>`;
+    <div class="meta">${分母 ? md(分母) + "<br>" : ""}来源:${esc(来源)}</div></div>`;
 }
 
 // ⚠️ 这个函数叫 `_参考价` 不叫 `_钱` —— 用户 2026-09-28 定的:
@@ -2716,7 +2730,7 @@ async function 页_用量与成本() {
     ${不可信 ? `<div class="state err"><h3>总额不可信</h3><p>${md(d["参考价怎么读"])}</p>
        <p>${md(d["为什么有算不出的"])}</p></div>` : ""}
 
-    <h2>按调用方 —— **谁花的**</h2>
+    <h2>按调用方 —— ${md("**谁花的**")}</h2>
     <div class="note">${md(`⚠️ 这一张是 A1 上报链存在的**全部理由**。
       只有「按用途」的话,门店助手和管理后台自己的调用混在同一个用途里,
       **「门店助手今天花了多少」答不出来**,只答得出「一共花了多少」。`)}</div>
@@ -3040,9 +3054,9 @@ async function 页_切片列表(kbId) {
       </tr></thead><tbody>`
     + d.items.map((r) => `<tr>
         <td class="num">${r.ordinal}<div class="k">v${r["版次"]}</div></td>
-        <td>${esc(r.section_path || "—")}
+        <td data-raw="原文">${esc(r.section_path || "—")}
             <div class="k"><a href="#" data-doc="${esc(r["文档id"])}">只看这篇</a></div></td>
-        <td>${esc(r["正文预览"] || "")}${(r["正文长度"] > (r["正文预览"] || "").length) ? "…" : ""}
+        <td data-raw="原文">${esc(r["正文预览"] || "")}${(r["正文长度"] > (r["正文预览"] || "").length) ? "…" : ""}
             <div class="k">${r["正文长度"]} 字</div></td>
         <td class="num">${r["token_count"] ?? "—"}</td>
         <td class="k">${esc(r["chunker_version"] || "(空)")} /
@@ -3098,7 +3112,7 @@ async function 页_切片详情(chunkId) {
           ? "这一段检索不到" : "这个知识库还没有索引"}</h3>
         <p>${md(d["为什么检索不到"])}</p></div>`;
   $("#main").innerHTML = 头2 + 检索 + `
-    <div class="card"><h3>正文</h3><pre class="io">${esc(d.text)}</pre>
+    <div class="card"><h3>正文</h3><pre class="io" data-raw="原文">${esc(d.text)}</pre>
       <div class="k">${d.text.length} 字 · ${d["token_count"] ?? "?"} token(粗估)
         · 哈希 ${esc((d["text_hash"] || "").slice(0, 16))}</div></div>
     <table><tbody>
@@ -3194,14 +3208,16 @@ async function 页_检索实验室() {
       <label class="k" style="margin-left:10px">
         <input type="checkbox" id="rt-rr" checked> Claude 精排</label>
       <label class="k" style="margin-left:10px">
-        <input type="checkbox" id="rt-gen" checked> 生成答案</label>
+        <input type="checkbox" id="rt-gen"> 生成答案</label>
       <button id="rt-go" style="margin-left:10px">检索</button>
       <div class="note">${md(`⚠️ 两个勾各**真调一次 Claude**(一次检索最多两次调用,
         几百毫秒到几秒),用量记在记录仪**和账本**里。
         去掉精排只走向量 —— **那个排序不可靠**:实测一个表格头排到过第 1 名(0.6849),
         而真答案第 2(0.6329)。
-        去掉生成就只看「它怎么找、找到什么」,看不到**它答成什么** ——
-        而 RAG 最常见的失效正在那一步:片段选对了,答的时候自己补了内容。`)}</div>
+        **「生成答案」默认不勾**(一打开这一页就跑两次模型太贵)——
+        勾上再点「检索」,底下会多一张答案卡。
+        不看答案就看不到 **RAG 最常见的那种失效**:片段选对了,
+        而模型答的时候自己补了内容 —— 只看检索结果看不出来。`)}</div>
     </div></div><div id="rt-out"></div>`;
   const 跑 = async () => {
     const ib = $("#rt-ib") ? $("#rt-ib").value : "";
@@ -3225,6 +3241,24 @@ async function 页_检索实验室() {
   await 跑();
 }
 
+/* ⚠️ **片段正文带 `data-raw="原文"`,而且故意用 `esc()` 不用 `md()`。**
+ *
+ * 语料片段**本身就是 Markdown**(那些 md 里到处是加粗),它是**数据不是文案** ——
+ * 证据要能让人**照着它翻回原文核对**,渲染成粗体之后它和源文件就不再逐字相同;
+ * 而且按 300 字截断会把一对 `**` 截成单边,那时渲染器不认它、星号照样露出来,
+ * **只是变成了偶发红**(取决于截断点落在哪)。
+ *
+ * 这个标记让页面冒烟那条「渲染后不许有字面星号」的判据跳过它,
+ * **而豁免因此是有名字的** —— 谁加这个标记,就是在说「这段是原始数据」。
+ *
+ * ⚠️ 这段说明**原来写在 HTML 注释里,连踩两次**:
+ *   ① 里面的反引号在模板字符串里**直接终止了字符串** —— 整个 app.js 语法错,
+ *      表现是「框架有、数据一个都不加载」(和 09 月那次 let 重复声明同一族);
+ *   ② 去掉反引号之后,注释里的 `**故意**` **被渲染进了 HTML**,
+ *      于是星号判据抓到了我自己的注释。
+ * > **在一个会扫自己源码的判据的视野里举例,要描述那个坏写法,不能写出来。**
+ * 密钥扫描那条规矩连踩三次,是同一件事;所以说明搬到这里 —— JS 注释不进页面。
+ */
 function 画链路(d) {
   const 行 = (k, v, n) => `<tr><td class="k">${esc(k)}</td><td>${v}${n ? `<div class="k">${n}</div>` : ""}</td></tr>`;
   const 链 = `<div class="card"><div class="k" style="padding:8px 10px 0">整条链路(§9.5)</div>
@@ -3242,7 +3276,7 @@ function 画链路(d) {
           d["精排"]["做了"] ? "" : md(d["精排"]["为什么"] || ""))}
     ${行("截断", esc(d["截断"]))}
     ${行("选片", `${d["选了几片"]} 片 · ${d["用了多少token"]} token`,
-          d["token是粗估"] ? "token 数是**粗估** —— 不许拿它算钱" : "")}
+          d["token是粗估"] ? md("token 数是**粗估** —— 不许拿它算钱") : "")}
     ${行("生成", 生成标(d["生成"]), 生成注(d["生成"]))}
     </tbody></table></div>`;
 
@@ -3256,19 +3290,19 @@ function 画链路(d) {
         ${x["分数"] === null ? `<span class="pill">未精排</span>`
                             : `<span class="pill ${x["分数"] >= 7 ? "ok" : (x["分数"] >= 4 ? "warn" : "fail")}">${x["分数"]}/10</span>`}
         <span class="k">向量 ${x["相似度"]}</span>
-        <b style="margin-left:8px">${esc(x["证据"])}</b>
+        <b data-raw="原文" style="margin-left:8px">${esc(x["证据"])}</b>
       </div>
       ${x["引文"] ? `<div style="margin:4px 0">
           ${x["引文可信"] === false
-            ? `<span class="pill fail" title="${esc(x["引文问题"] || "")}">⚠️ 引文不可信</span> `
+            ? `<span class="pill fail" title="${esc(去粗(x["引文问题"] || ""))}">⚠️ 引文不可信</span> `
             : ``}
-          引文「${esc(x["引文"])}」
+          <span data-raw="原文">引文「${esc(x["引文"])}」</span>
           ${x["引文可信"] === false
-            ? `<div class="k">**这句话在片段里找不到**(模型改写了原话)——
-                 分数仍然保留,但它给的**理由不可信**。引文的用处是让人照着它
-                 在原文里搜到那一句,搜不到就等于没有。</div>` : ""}
+            ? `<div class="k">${md("**这句话在片段里找不到**(模型改写了原话)——"
+               + "分数仍然保留,但它给的**理由不可信**。引文的用处是让人照着它"
+               + "在原文里搜到那一句,搜不到就等于没有。")}</div>` : ""}
         </div>` : ""}
-      <div class="k" style="white-space:pre-wrap">${esc((x["文"] || "").slice(0, 300))}</div>
+      <div class="k" data-raw="原文" style="white-space:pre-wrap">${esc((x["文"] || "").slice(0, 300))}</div>
     </div>`).join("")}</div>`;
 
   return 链
@@ -3307,12 +3341,19 @@ function 生成标(g) {
 }
 
 function 生成注(g) {
+  /* ⚠️ **两条出口都要过 `md()`。** 这里的文字里有 `**` ——
+   * 而 `行()` 把 note 原样塞进 `<div class="k">`,不渲染。
+   * 页面冒烟当场抓到(`#rr-chain` 上显示着字面星号):
+   * > 一句「写了加粗」的文案,和一句「加粗真的生效了」的,
+   * > **在源码上长得一模一样** —— 而 `tools/md_render_check.py` 扫的是
+   * > 源码里的 `**` 有没有在同一处过 md,接口返回的那半它看不见。
+   * 这一条(`g["为什么"]`)正是**从接口来的**。*/
   g = g || {};
   if (g["做了"]) {
-    return "⚠️ 验到的是它**指得出出处**(引用的原话真在证据里)——"
-      + "**不是**它没有超出证据。后者要做句子级蕴含,这一版没做";
+    return md("⚠️ 验到的是它**指得出出处**(引用的原话真在证据里)——"
+      + "**不是**它没有超出证据。后者要做句子级蕴含,这一版没做");
   }
-  return g["为什么"] || "";
+  return md(g["为什么"] || "");
 }
 
 /* 底部那张答案卡。
@@ -3342,10 +3383,10 @@ function 画答案(g) {
         ${md("**模型说缺的是**:" + g["缺什么"])}</div>` : ""}
     ${引.length ? `<div class="k" style="margin-top:10px">它指的出处(每条都验过原话真在那片里)</div>
       <table><tbody>${引.map((x) => `<tr>
-        <td class="k" style="white-space:nowrap">[${x["编号"]}] ${esc(x["证据"] || "")}</td>
+        <td class="k" data-raw="原文" style="white-space:nowrap">[${x["编号"]}] ${esc(x["证据"] || "")}</td>
         <td>${x["原话可信"] === false
-          ? `<span class="pill fail" title="${esc(x["原话问题"] || "")}">⚠️ 对不上</span> `
-          : ""}「${esc(x["原话"] || "")}」
+          ? `<span class="pill fail" title="${esc(去粗(x["原话问题"] || ""))}">⚠️ 对不上</span> `
+          : ""}<span data-raw="原文">「${esc(x["原话"] || "")}」</span>
           ${x["原话可信"] === false
             ? `<div class="k">${esc(x["原话问题"] || "")}</div>` : ""}</td>
         </tr>`).join("")}</tbody></table>`
@@ -3359,6 +3400,217 @@ function 画答案(g) {
       + `一个「每句话都指得出出处」的答案,和一个「有出处的那几句之外还加了两句自己的」,`
       + `**在这张卡上长得一模一样**。`)}</div>
   </div></div>`;
+}
+
+/* ── 检索试跑记录(业务 2026-10-08 要的栏目)─────────────────────────
+ *
+ * 检索实验室跑一次,结果在页面上,**刷新就没了**。而「这一版检索好不好用」
+ * 要靠攒下来的试跑回答 —— 一次试跑是个印象,二十次才是个判断。
+ *
+ * ⚠️ 业务要的是「记录 chat 里的 RAG 检索」,而 **chat 现在不走这条链**
+ * (它走澜绣那边的 V1/V2/V3,自己查 mcp/kb)。所以这个栏目现在全是
+ * 实验室自己的试跑 —— 而那句话**写在页面上**:
+ * > 一个「记录 chat 检索」的栏目,和一个永远是空的栏目,
+ * > 在那个页面上长得一模一样。
+ *
+ * ⚠️ 打分**就在列表上**,不用点进详情。要人先点进去才拿得到 revision 的话,
+ * 打分会被嫌麻烦而没人做 —— 而没人评的话这个栏目就只是一本日志。
+ */
+/* ⚠️ **class 写成字面量,不拼。** `tools/css_class_check.py` 钉着
+ * 「拼出来的 class」的条数(19 处)—— 拼出来的它验不了,
+ * 而 10-07 真撞过一次:某一处写了个 CSS 里**根本不存在的 class 名**
+ * (那个名字和 `pill` 同义,只是没人定义过它),
+ * 页面上那个标记一点样式都没有,而代码读起来完全正常。
+ * 所以这里五档各写一份字面 class,而不是把档位变量插进 class 里。
+ * ⚠️ **这段注释原来照抄了那个反例写法,于是 `css_class_check` 把注释本身
+ * 数成了第 20 处拼接**(上限 19)—— 和密钥扫描那条规矩同一个形状:
+ * **被扫描的文件里不要写出真实的匹配串,要举例就描述它。**
+ * (那边连踩三次:规矩写进 CLAUDE.md → 文档匹配自己;挪进 .secretscan →
+ *  规则文件匹配自己;在脚本注释里举例 → 脚本匹配自己。)*/
+const 档位pill = {
+  1: (文) => `<span class="pill fail">${文}</span>`,
+  2: (文) => `<span class="pill fail">${文}</span>`,
+  3: (文) => `<span class="pill warn">${文}</span>`,
+  4: (文) => `<span class="pill ok">${文}</span>`,
+  5: (文) => `<span class="pill ok">${文}</span>`,
+};
+
+function 评分块(r) {
+  /* 五个按钮 + 当前分。`data-rr` / `data-score` 由下面统一接事件。
+   * ⚠️ `data-rev` 带的是**这一行的 revision** —— 打分要用它做 If-Match。 */
+  const 现 = r["评分"];
+  return `<div data-rrrow="${esc(r.id)}">
+    ${现 && 档位pill[现]
+        ? 档位pill[现](`${现} · ${esc(r["评分档位"] || "")}`)
+        : `<span class="pill none">还没评</span>`}
+    <div class="k" style="margin-top:3px">
+      ${[1, 2, 3, 4, 5].map((n) => `<button data-rr="${esc(r.id)}" data-score="${n}"
+        data-rev="${esc(String(r["revision"]))}"
+        title="${esc(档位名[n] || "")}"
+        style="padding:1px 6px;margin-right:2px${
+          现 === n ? ";font-weight:700;border-color:var(--ink)" : ""}">${n}</button>`).join("")}
+    </div>
+    ${r["评语"] ? `<div class="k">「${esc(r["评语"])}」</div>` : ""}
+  </div>`;
+}
+
+let 档位名 = {};        // 从接口的档位表来(不在前端写死一份,两份会漂)
+
+async function 打分(id, 分, rev, 刷新) {
+  const 评语 = window.prompt(`${分} 分 · ${档位名[分] || ""}\n\n`
+    + "为什么?(可以不写)\n这句话是以后回看「为什么当时给了这个分」的唯一线索", "");
+  if (评语 === null) return;              // 点了取消 —— 不打分
+  try {
+    await 请求(`${P()}/retrieval-runs/${encodeURIComponent(id)}/rating`, {
+      method: "PATCH",
+      // ⚠️ **If-Match 带的是这一行的 revision** ——
+      // 两个人同时评,后到的会静默覆盖前一个。
+      headers: { "If-Match": String(rev) },
+      body: JSON.stringify({ 评分: 分, 评语: 评语 }),
+    });
+  } catch (e) {
+    // 409 要说清「刷新再看」—— 直接报一句「失败」会让人再点一次,而再点还是 409
+    alert((e && e.message ? e.message : String(e))
+      + "\n\n(如果是「已经被改过」:别人刚评过同一条,刷新看一眼再决定)");
+  }
+  await 刷新();
+}
+
+function 接打分(刷新) {
+  $("#main").querySelectorAll("[data-rr][data-score]").forEach((b) => {
+    b.onclick = () => 打分(b.dataset.rr, Number(b.dataset.score),
+                          b.dataset.rev, 刷新);
+  });
+}
+
+async function 页_试跑记录() {
+  const 头 = `<div class="crumb">知识与 RAG</div>
+    <div class="head"><div><h1>检索试跑记录</h1>
+      <div class="sub">${md(`每次检索试跑攒在这儿,**带 5 档评价** ——
+        一次试跑是个印象,二十次才是个判断。`)}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  const 拉 = async () => {
+    let d;
+    try { d = await 请求(`${P()}/retrieval-runs?limit=100`); }
+    catch (e) { const s = 错误块(e, 页_试跑记录); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+    const 汇 = d["汇总"] || {};
+    // 档位名从接口来 —— 列表没给的话去详情拿;两处都没有就只显示数字。
+    if (d.items[0]) {
+      try {
+        const one = await 请求(`${P()}/retrieval-runs/${encodeURIComponent(d.items[0].id)}`);
+        档位名 = (one["评价"] || {})["档位表"] || {};
+      } catch (e) { /* 拿不到就只显示数字,不挡住整页 */ }
+    }
+    const 汇总块 = `<div class="cards">
+      ${[["一共几条", 汇["一共几条"]], ["评过的", 汇["评过的"]],
+         ["还没评的", 汇["还没评的"]],
+         ["平均分", 汇["平均分"] === null || 汇["平均分"] === undefined
+            ? "—" : 汇["平均分"]]].map(([k, v]) =>
+        `<div class="card kpi"><div class="body"><div class="k">${esc(k)}</div>
+           <div style="font-size:22px;font-weight:700">${esc(String(v ?? "—"))}</div>
+         </div></div>`).join("")}
+      </div>
+      <div class="note">${md("**平均分怎么读**:" + (汇["平均分怎么读"] || "—"))}</div>
+      ${Object.keys(汇["各档分布"] || {}).length
+        ? `<div class="note">各档分布:${Object.entries(汇["各档分布"]).map(
+            ([k, v]) => `${esc(k)} <b>${v}</b> 条`).join(" · ")}</div>` : ""}
+      ${汇["chat 的有几条"]
+        ? `<div class="note">${md(汇["note"] || "")}</div>`
+        : `<div class="note warn">${md(汇["note"] || "")}</div>`}`;
+    if (!d.items.length) {
+      $("#main").innerHTML = 头 + 汇总块 + 状态("", "还没有试跑记录",
+        "去**检索实验室**问一句话 —— 跑完会自动记在这儿。\n\n"
+        + "⚠️ 而 **chat 现在不走这条检索链**,所以这里不会自己长出 chat 的记录。",
+        { 文: "去检索实验室", 做: () => { location.hash = "#/retrieval"; } }).html;
+      const b = $("#st-act"); if (b) b.onclick = () => { location.hash = "#/retrieval"; };
+      return;
+    }
+    $("#main").innerHTML = 头 + 汇总块 + `<table><thead><tr>
+        <th>什么时候</th><th>来源</th><th>问题</th><th>知识库</th>
+        <th class="num">选片</th><th>答案</th><th>评价(点数字打分)</th><th></th>
+        </tr></thead><tbody>`
+      + d.items.map((r) => `<tr>
+          <td class="k" style="white-space:nowrap">${esc(String(r["什么时候"] || "").slice(0, 19))}
+            <div class="k">${esc(r["谁跑的"] || "—")}</div></td>
+          <td>${r["来源"] === "chat" ? `<span class="pill ok">chat</span>`
+                : `<span class="pill none">实验室</span>`}</td>
+          <td><a href="#/rrun/${encodeURIComponent(r.id)}"><b>${esc(r["问题"])}</b></a>
+            ${r["改写"] && r["改写"] !== r["问题"]
+              ? `<div class="k">改写:${esc(r["改写"])}</div>` : ""}</td>
+          <td class="k">${esc(r["知识库"] || "—")}</td>
+          <td class="num">${r["选了几片"] ?? "—"} / ${r["召回数"] ?? "—"}</td>
+          <td>${答案档标(r["答案那一档"])}
+            ${r["答案摘要"] ? `<div class="k">${esc(r["答案摘要"])}…</div>` : ""}</td>
+          <td>${评分块(r)}</td>
+          <td><a href="#/rrun/${encodeURIComponent(r.id)}">看详情</a></td>
+        </tr>`).join("")
+      + `</tbody></table>
+         <div class="note">${md(`⚠️ **「答案」那一栏的四档不是同一类事**:
+           「这次没要」是人去掉了勾(一个选择),「跑不成」是一次故障 ——
+           **合成一句「没有答案」的话,这两种在列表上长得一模一样**。`)}</div>`;
+    接打分(拉);
+  };
+  await 拉();
+}
+
+function 答案档标(档) {
+  if (档 === "答了") return `<span class="pill ok">答了</span>`;
+  if (档 === "证据不够") return `<span class="pill warn">证据不够</span>`;
+  if (档 === "这次没要") return `<span class="pill none">这次没要</span>`;
+  if (档 === "跑不成") return `<span class="pill fail">跑不成</span>`;
+  return `<span class="k">—</span>`;
+}
+
+async function 页_试跑详情(rid) {
+  const 头 = `<div class="crumb"><a href="#/rruns">检索试跑记录</a> / 详情</div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  const 拉 = async () => {
+    let d;
+    try { d = await 请求(`${P()}/retrieval-runs/${encodeURIComponent(rid)}`); }
+    catch (e) { const s = 错误块(e, () => 页_试跑详情(rid)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+    档位名 = (d["评价"] || {})["档位表"] || 档位名;
+    const 评 = d["评价"] || {};
+    const 行 = { id: d.id, 评分: 评["评分"], 评分档位: 评["评分档位"],
+                 评语: 评["评语"], revision: d["revision"] };
+    $("#main").innerHTML = 头 + `
+      <div class="head"><div><h1>${esc(d["问题"])}</h1>
+        <div class="sub">${esc(String(d["什么时候"] || "").slice(0, 19))} ·
+          ${esc(d["来源"])} · ${esc(d["谁跑的"] || "")} ·
+          知识库 ${esc(d["知识库"] || "—")}</div></div></div>
+      <div class="card"><div class="body">
+        <div class="k">这一次好不好用?(5 档,点数字)</div>
+        ${评分块(行)}
+        ${评["谁评的"] ? `<div class="k">${esc(评["谁评的"])} 评于
+           ${esc(String(评["什么时候评的"] || "").slice(0, 19))}</div>` : ""}
+      </div></div>
+      ${d["隐去了几片正文"]
+        ? `<div class="note warn">${md(d["为什么隐去"] || "")}</div>` : ""}
+      ${画答案(答案成链形(d))}
+      <div id="rr-chain"></div>
+      <div class="note">${md(d["note"] || "")}</div>`;
+    // ⚠️ **复用检索实验室那一份 `画链路`** —— 不另写一份:
+    // > 两份渲染迟早分叉,而分叉时两边各自都显示得很正常。
+    // (业务要的就是「内容同检索实验室」。)
+    $("#rr-chain").innerHTML = 画链路(d["链路"] || {});
+    接打分(拉);
+  };
+  await 拉();
+}
+
+/* 详情接口把答案单独给了一份(`答案`),而 `画答案` 吃的是链路里
+ * `生成` 那一块的形状。**转一次,而不是给 `画答案` 加一个分支** ——
+ * 加分支会让那一个函数有两种输入形状,而那是漏判的入口。 */
+function 答案成链形(d) {
+  const a = d["答案"] || {};
+  const 档 = d["答案那一档"];
+  if (档 === "答了" || 档 === "证据不够") {
+    return { 做了: true, 答案: a["答案"], 够不够答: a["够不够答"],
+             缺什么: a["缺什么"], 模型: a["模型"], 引用们: a["引用们"] || [],
+             引用没通过校验的: a["引用没通过校验的"],
+             照着谁答的: "原问(不是改写后的查询)" };
+  }
+  return { 做了: false, 哪一种: (档 === "这次没要" ? "这次没要" : 档),
+           为什么: a["为什么没答"] || "(没记下为什么)" };
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -3452,7 +3704,7 @@ async function 页_应用与发布() {
           <td>${r["候选能出清单吗"] ? `<span class="pill">可以出清单</span>`
                 : `<span class="pill warn">还差 ${(r["候选还差什么"] || []).length} 项</span>`}
             ${(r["候选还差什么"] || []).length
-              ? `<div class="k">${esc((r["候选还差什么"] || [])[0].slice(0, 46))}</div>` : ""}
+              ? `<div class="k">${md((r["候选还差什么"] || [])[0].slice(0, 46))}</div>` : ""}
           </td></tr>`; }).join("")
       + `</tbody></table><div class="note">${md(d.note || "")}<br>
         <b>点应用名进详情</b> —— 发布那四步(出清单 / 审核 / 切指针 / 回滚)在那一页。</div>`;
@@ -3639,7 +3891,7 @@ async function 画应用详情(aid) {
           ? `<span class="pill ok">审核通过 · 算数</span>
              <div class="k">${esc(审["审核人"] || "")}${
                审["理由"] ? " · " + esc(审["理由"]) : ""}</div>`
-          : `<span class="pill warn">审过,但**不算这一份**</span>
+          : `<span class="pill warn">审过,但${md("**不算这一份**")}</span>
              <div class="k">${md(m["为什么"] || "")}</div>`;
       const 在线 = m["哪些环境指着它"] || [];
       const 动作 = [];
@@ -4125,7 +4377,7 @@ async function 页_数据集() {
         <td>${r["能导出吗"] ? `<span class="pill">可以</span>`
               : `<span class="pill warn">不行</span>`}
           ${(r["卡在哪"] || []).length
-            ? `<div class="k">${esc((r["卡在哪"] || [])[0].slice(0, 54))}</div>` : ""}
+            ? `<div class="k">${md((r["卡在哪"] || [])[0].slice(0, 54))}</div>` : ""}
           ${r["还有一道看内容的闸"]
             ? `<div class="k">⚠️ ${esc(r["还有一道看内容的闸"].slice(0, 54))}</div>` : ""}
         </td></tr>`).join("")
@@ -4435,6 +4687,10 @@ async function 路由() {
     if (h.startsWith("#/chunk/")) return await 页_切片详情(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/kb/")) return await 页_索引构建(decodeURIComponent(h.slice(5)));
     if (h === "#/retrieval") return await 页_检索实验室();
+    // ⚠️ 带参的写在前面(`#/rrun/` 比 `#/rruns` 长,但两者第 7 个字符不同,
+    // 不会互相吃掉)—— 顺序照 `#/chunks/` 那段的理由。
+    if (h.startsWith("#/rrun/")) return await 页_试跑详情(decodeURIComponent(h.slice(7)));
+    if (h === "#/rruns") return await 页_试跑记录();
     if (h === "#/audit") return await 页_审计记录();
     if (h === "#/apps") return await 页_应用与发布();
     if (h.startsWith("#/app/")) return await 页_应用详情(decodeURIComponent(h.slice(6)));

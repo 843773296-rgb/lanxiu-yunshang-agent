@@ -439,6 +439,27 @@ jobs:
             echo "--- worker ---"; tail -40 /tmp/aimc-worker.log; exit 1; fi
           echo "✅ 服务和 Worker 都就绪了"
 
+      - name: 给演示项目造「已就绪的索引 + 一条试跑」(2026-10-08 加)
+        working-directory: 管理后台
+        run: |
+          # ⚠️ **三条判据要这份数据**,而根因是同一个:演示项目只灌了语料,
+          # 没有索引构建 —— 于是
+          #   · tests/e2e/test_retrieval_runs_flow.py  起不来(要已就绪的索引)
+          #   · tools/ifmatch_reachable_check.py       取不到样例试跑 id
+          #   · tools/detail_page_hashes.py --钉住 0   `#/rrun/{id}` 取不到 id
+          #
+          # > **修法不是把判据调松** —— 那等于承认这几条在 CI 上永远不验,
+          # > 而「验过了」和「因为没数据而什么都没验」在报告上长得一模一样。
+          # (10-08 上午 CI 连红三次是同一族:详情页冒烟在空库上取不到 id。)
+          #
+          # 这一步**全走产品自己的路径**:建索引接口 → Worker 真跑 →
+          # 试跑接口。唯一直接写库的是 `retrieval_config_versions`
+          # (没有建它的接口),脚本里写明了。
+          # ⚠️ 用 `emb-mock`:真 Embedding 要 96MB 模型文件,不在 CI。
+          # mock 向量的相似度是个**看起来很正常的数字** ——
+          # 拿 CI 这个索引看「检索效果」没有意义,它只验链路通不通。
+          ./.venv/bin/python tools/seed_retrieval_demo.py --项目 project_demo_a
+
       - name: 端到端(CI 版)+ 页面冒烟 + 行级对账
         working-directory: 管理后台
         run: make test-e2e-ci

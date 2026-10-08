@@ -31,7 +31,8 @@ import entities as EN, fieldtypes as FT
 
 from sqlalchemy import (Date, MetaData, Table, Column, Text, Integer, BigInteger, Boolean,
                         Numeric, TIMESTAMP, Index, UniqueConstraint,
-                        ForeignKeyConstraint, PrimaryKeyConstraint)
+                        ForeignKeyConstraint, PrimaryKeyConstraint,
+                        CheckConstraint)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import UserDefinedType
 
@@ -275,6 +276,32 @@ _额外唯一 = {
 }
 
 
+# ── 值域约束:**能用约束表达的,不要用判据表达**(2026-10-08 加这个机制)──
+#
+# 这个文件原来没有 CHECK 的入口,于是「rating 只能是 1-5」只能写在接口里 ——
+# 而这个仓库最反复的一条教训正是:
+# > **规矩写在代码的 if 里 ≠ 结构上拦住。**
+# 接口是一个写入方,下一个写入方(脚本、补数据的 SQL、将来 chat 那条链)
+# 不会经过那个 if,**而写进去的 7 分在列表上和 4 分长得一模一样**。
+#
+# ⚠️ 这里只放**值域**(枚举、区间)。跨行、跨表的性质不要放进来:
+# CHECK 看不到别的行,写得出来也拦不住。
+_额外检查 = {
+    "retrieval_runs": [
+        # 5 档评价。**NULL 允许**(还没人评)—— 而 NULL 不是 0 分:
+        # 「还没人评」和「评了最低档」在一个 0 上长得一模一样。
+        ("ck_retrieval_runs_rating_1_5", "rating is null or (rating between 1 and 5)"),
+        # 来源的取值**现在只有两个**,而 chat 那一支还没接上这条链。
+        # 写成枚举是有意的:接 chat 的那天要改这一行 + 出一个迁移,
+        # 而那正好是「它真的接上了」的一个落点。
+        ("ck_retrieval_runs_source", "source in ('检索实验室', 'chat')"),
+        # 答案四档。后两档都让答案是空的,**而一个是选择、一个是故障**。
+        ("ck_retrieval_runs_answer_status",
+         "answer_status in ('答了', '证据不够', '这次没要', '跑不成')"),
+    ],
+}
+
+
 def _建一张(e):
     名 = e["名"]
     字段 = list(dict.fromkeys(EN.该有的通用字段(e) + e["关键字段"]))
@@ -352,6 +379,9 @@ def _建一张(e):
     for 组 in _额外唯一.get(名, []):
         if all(c in 字段 for c in 组):
             约束.append(UniqueConstraint(*组, name=_唯一名(名, 组)))
+
+    for 名字, 表达式 in _额外检查.get(名, []):
+        约束.append(CheckConstraint(表达式, name=名字))
 
     t = Table(名, metadata, *列, *约束)
 

@@ -716,6 +716,11 @@ async def 检索实验室(project_id: str, request: Request,
     # 而记账是我们内部的事。但也**不许静默**:记不上账的调用是黑的。
     # (和澜绣那条 A2「上报失败不影响业务但必须留痕」同一个形状。)
     链["记账"] = 记这次检索的账(project_id, me, 链)
+    # ── 存档(业务 2026-10-08 要的那个栏目)────────────────────────────
+    # ⚠️ 顺序:**记账在前,存档在后** —— 存档要把 trace_id 一起存下来,
+    # 而那是记账那一步才有的。反过来写的话,`trace_id` 永远是空的,
+    # 而那一列空着**不报错**:表现是「这条试跑查不到它花了多少钱」。
+    链["存档"] = 记一次试跑(project_id, me, 链, 构建id=构建id)
     return 链
 
 
@@ -1495,3 +1500,354 @@ async def 上报一次模型调用(project_id: str, request: Request,
                     "**服务端不拿今天顶上**:猜一个日期看起来像真的,"
                     "而没有日期时人知道自己不知道")
     return 出
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 检索试跑记录(业务 2026-10-08 要的那个栏目)
+#
+# ## 为什么要存
+#
+# 检索实验室跑一次,结果在页面上,**刷新就没了**。而「这一版检索好不好用」
+# 要靠**攒下来的试跑**回答 —— 一次试跑是个印象,二十次才是个判断。
+#
+# ## ⚠️ 业务要的是「记录 chat 里的 RAG 检索」,而 chat 现在不走这条链
+#
+# chat 走的是澜绣那边的 V1/V2/V3,它们自己查知识(`mcp/kb`),
+# **不经过这里的 `retrieval.检索()`**。所以这张表第一批数据全是实验室自己的试跑。
+# > 一个「记录 chat 检索」的栏目,和一个**永远是空的**栏目,
+# > **在那个页面上长得一模一样** —— 所以 `source` 这一列从第一天就在,
+# > 列表上也写着现在有没有 chat 的记录(不写的话,空着看起来像「还没人用」)。
+#
+# ## 评价是 5 档,而「还没评」不是 0 分
+#
+# `rating` 可空,库里有 CHECK(1-5)。档位的中文名在下面 `评价档位` 里 ——
+# 只给数字的话,「3 分」是什么意思每个人心里一套,而那让分数不可比。
+# ══════════════════════════════════════════════════════════════════════
+
+# ⚠️ **档位要有名字,不能只有数字。** 一个只有 1-5 的量表上,
+# 「3」在不同人心里差别很大 —— 而平均分会把这种差别算进来,
+# 算出一个看起来精确的数。名字把它钉住。
+评价档位 = {
+    1: "完全答错 / 帮不上",
+    2: "找得不对,得自己重查",
+    3: "勉强能用,还要补",
+    4: "基本对,小改就能用",
+    5: "正好是我要的",
+}
+
+
+def _答案档(链):
+    """四档:答了 / 证据不够 / 这次没要 / 跑不成。
+
+    ⚠️ **后两档都让答案是空的,而一个是选择、一个是故障。**
+    合成一句「没有答案」的话,界面上那两种长得一模一样。
+    库里有 CHECK 钉着这四个值。
+    """
+    生 = (链 or {}).get("生成") or {}
+    if 生.get("做了"):
+        return "答了" if 生.get("够不够答") else "证据不够"
+    return "这次没要" if 生.get("哪一种") == "这次没要" else "跑不成"
+
+
+def 记一次试跑(project_id, me, 链, *, 构建id, 来源="检索实验室"):
+    """把这一次试跑存进 `retrieval_runs`。返回一段能显示的说明。
+
+    ⚠️ **存不下来不许把检索结果吞掉**(和 `记这次检索的账` 同一个形状):
+    人已经等到结果了,存档是我们内部的事。但也**不许静默** ——
+    一次没存上的试跑,和一次没跑过的,在那个列表上长得一模一样。
+    """
+    try:
+        生 = (链 or {}).get("生成") or {}
+        with 事务() as c:
+            r = c.execute(text("""select ib.knowledge_base_id, p.organization_id
+                                   from index_builds ib
+                                   join projects p on p.id = ib.project_id
+                                  where ib.project_id=:p and ib.id=:i"""),
+                          {"p": project_id, "i": 构建id}).mappings().first()
+            if not r:
+                return {"存了吗": False,
+                        "为什么": f"查不到索引构建 {构建id} —— 没存这次试跑"}
+            rid = _新id("rr")
+            c.execute(text("""
+                insert into retrieval_runs (id, organization_id, project_id,
+                    index_build_id, knowledge_base_id, source, user_query,
+                    rewritten_query, chain_snapshot, recall_count, selected_count,
+                    context_token_count, answer_status, answer_output, trace_id,
+                    created_at, created_by, updated_at, revision)
+                values (:i,:o,:p,:ib,:kb,:src,:q,:rq, cast(:chain as jsonb),
+                        :rc,:sc,:tc,:ast, cast(:aout as jsonb), :tr,
+                        now(), :u, now(), 1)"""),
+                      {"i": rid, "o": r["organization_id"], "p": project_id,
+                       "ib": 构建id, "kb": r["knowledge_base_id"], "src": 来源,
+                       "q": 链.get("原问"), "rq": 链.get("改写"),
+                       # ⚠️ 整条链原样存 —— **快照,不是引用**。
+                       # 索引会被重建、文档会出新版本,而「当时它找到了哪几段」
+                       # 是这条记录的全部价值(存引用的话,重建一次索引,
+                       # 全部历史试跑的证据就指向了新内容)。
+                       "chain": _json.dumps(链, ensure_ascii=False, default=str),
+                       "rc": 链.get("召回数"), "sc": 链.get("选了几片"),
+                       "tc": 链.get("用了多少token"), "ast": _答案档(链),
+                       "aout": _json.dumps(
+                           {"答案": 生.get("答案"), "够不够答": 生.get("够不够答"),
+                            "缺什么": 生.get("缺什么"), "模型": 生.get("模型"),
+                            "引用们": 生.get("引用们"),
+                            "引用没通过校验的": 生.get("引用没通过校验的"),
+                            "为什么没答": (None if 生.get("做了") else 生.get("为什么"))},
+                           ensure_ascii=False, default=str),
+                       "tr": ((链.get("记账") or {}).get("trace_id")), "u": me.user_id})
+    except Exception as e:
+        return {"存了吗": False,
+                "为什么": f"存档失败({type(e).__name__}: {str(e)[:160]})—— "
+                        f"**检索结果是好的,但这次试跑没进记录**。"
+                        f"一次没存上的试跑,和一次没跑过的,在那个列表上长得一样"}
+    return {"存了吗": True, "试跑id": rid,
+            "下一步": "去「检索试跑」栏目给它打个分(5 档)—— "
+                    "分数是这一版检索好不好用的唯一可比数据"}
+
+
+@router.get(前缀 + "/retrieval-runs")
+def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
+          limit: int = Query(50, ge=1, le=200),
+          source: str = Query(None), 只看没评的: bool = Query(False)):
+    """检索试跑列表。**分数、来源、答案那一档都要在列表上看得见。**
+
+    ⚠️ 这一页回答的是「**这一版检索好不好用**」—— 不是「跑过几次」。
+    所以汇总里是分档分布 + 平均分 + **还没评的有几条**,
+    而平均分**带样本量**:3 条试跑算出的 4.3 和 30 条算出的 4.3 不是一回事。
+    """
+    limit = _直调默认(limit, 50)
+    source = _直调默认(source, None)
+    只看没评的 = bool(_直调默认(只看没评的, False))
+    条件, 参 = ["rr.project_id = :p"], {"p": project_id, "n": limit}
+    if source:
+        条件.append("rr.source = :src")
+        参["src"] = source
+    if 只看没评的:
+        条件.append("rr.rating is null")
+    with 连接() as c:
+        rs = c.execute(text(f"""
+            select rr.id, rr.created_at, rr.created_by, rr.source, rr.user_query,
+                   rr.rewritten_query, rr.recall_count, rr.selected_count,
+                   rr.context_token_count, rr.answer_status, rr.answer_output,
+                   rr.rating, rr.rating_reason, rr.rated_by, rr.rated_at,
+                   rr.revision, rr.index_build_id, rr.knowledge_base_id,
+                   kb.name kb_name
+              from retrieval_runs rr
+              left join knowledge_bases kb on kb.project_id = rr.project_id
+                                          and kb.id = rr.knowledge_base_id
+             where {' and '.join(条件)}
+             order by rr.created_at desc
+             limit :n
+        """), 参).mappings().all()
+        # ⚠️ 汇总**另算一次,不筛**:筛着看的时候那个平均分只代表筛出来的那几条,
+        # 而人读到的是「这一版检索的平均分」。
+        # (这个坑今天在切片栏目上踩过一次:混版本告警拿带筛选的查询算,
+        #  于是一条真告警在筛选状态下消失。)
+        总 = c.execute(text("""
+            select count(*) 条数, count(rating) 评过的,
+                   avg(rating)::numeric(10,2) 平均分,
+                   count(*) filter (where source = 'chat') chat的
+              from retrieval_runs where project_id = :p
+        """), {"p": project_id}).mappings().first()
+        分布 = {int(r["rating"]): r["几条"] for r in c.execute(text("""
+            select rating, count(*) 几条 from retrieval_runs
+             where project_id = :p and rating is not null
+             group by rating order by rating"""), {"p": project_id}).mappings()}
+    出 = []
+    for r in rs:
+        d = dict(r)
+        出力 = d.pop("answer_output", None) or {}
+        出.append({
+            "id": d["id"], "什么时候": d["created_at"], "谁跑的": d["created_by"],
+            "来源": d["source"], "问题": d["user_query"],
+            "改写": d["rewritten_query"],
+            "知识库": d["kb_name"] or d["knowledge_base_id"],
+            "召回数": d["recall_count"], "选了几片": d["selected_count"],
+            "用了多少token": d["context_token_count"],
+            "答案那一档": d["answer_status"],
+            # 列表上给**一句**答案就够;全文在详情里。
+            "答案摘要": ((出力.get("答案") or "")[:80] or None),
+            "评分": d["rating"],
+            # ⚠️ 没评过给 **None,不是 0** ——「还没人评」和「评了最低档」
+            # 在一个 0 上长得一模一样。
+            "评分档位": (评价档位.get(d["rating"]) if d["rating"] else None),
+            "评语": d["rating_reason"], "谁评的": d["rated_by"],
+            "什么时候评的": d["rated_at"], "revision": d["revision"],
+        })
+    平均 = (float(总["平均分"]) if 总["平均分"] is not None else None)
+    return {
+        "items": 出, "total": len(出),
+        "汇总": {
+            "一共几条": 总["条数"], "评过的": 总["评过的"],
+            "还没评的": (总["条数"] or 0) - (总["评过的"] or 0),
+            "平均分": 平均,
+            # ⚠️ **平均分要带样本量,而且样本太少要说出来。**
+            # 3 条算出的 4.3 和 30 条算出的 4.3 在那个数字上长得一模一样。
+            "平均分怎么读": (
+                "还没有人评过 —— **这不是 0 分**,是没有数据" if not 总["评过的"]
+                else f"{总['评过的']} 条评价算出来的"
+                     + ("。**样本太少,别拿它下结论**(少于 10 条)"
+                        if (总["评过的"] or 0) < 10 else "")),
+            "各档分布": {f"{k} · {评价档位[k]}": v for k, v in 分布.items()},
+            "chat 的有几条": 总["chat的"],
+            # ⚠️ 这一句是这个栏目最要紧的一句话。见模块头那段。
+            "note": (
+                "**chat 现在不走这条检索链** —— 它走澜绣那边的 V1/V2/V3,"
+                "自己查知识(mcp/kb)。所以这里现在全是检索实验室的试跑。"
+                if not 总["chat的"] else
+                f"其中 {总['chat的']} 条来自 chat"),
+        },
+    }
+
+
+@router.get(前缀 + "/retrieval-runs/{rid}")
+def 试跑详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """一次试跑的**整条链路**(内容同检索实验室)+ 评价。
+
+    ## ⚠️ 快照里有片段原文 —— 读的时候**按读者的角色重过一遍 ACL**
+
+    快照是「**当时那个人**看到的」,不是「谁都能看的」。
+    直接把它原样吐出来,这个栏目就成了一条**绕开语料权限的后门**:
+    > 一个「他有权限看的片段」和一个「别人当时看到、而他没权限看的片段」,
+    > **在这条快照上长得一模一样**。
+
+    所以这里拿快照里的片段 id 重查一遍可见性,看不到的**把正文隐去**
+    (保留证据串和分数 —— 否则他连「有几片被隐去了」都不知道,
+    而那会让他以为这次检索只找到那么几片)。
+    """
+    with 连接() as c:
+        r = c.execute(text("""select rr.*, kb.name kb_name
+                               from retrieval_runs rr
+                               left join knowledge_bases kb
+                                 on kb.project_id = rr.project_id
+                                and kb.id = rr.knowledge_base_id
+                              where rr.project_id=:p and rr.id=:i"""),
+                      {"p": project_id, "i": rid}).mappings().first()
+        if not r:
+            # 404 而不是 403:**不泄露「这个 id 在别的项目里存在」**
+            raise _错(404, "NOT_FOUND", "没有这条试跑记录", "回「检索试跑」列表")
+        链 = dict(r["chain_snapshot"] or {})
+        # ── 按**读者**的角色重过一遍可见性 ─────────────────────────
+        片段ids = [x.get("id") for x in (链.get("选片") or []) if x.get("id")]
+        候选ids = [x.get("id") for x in (链.get("候选") or []) if x.get("id")]
+        要查 = sorted(set(片段ids) | set(候选ids))
+        可见 = set()
+        if 要查:
+            片, 参 = KV.where片段(这个人的角色们=[me.role])
+            可见 = {x[0] for x in c.execute(text(f"""
+                select ch.id
+                  from chunks ch
+                  join document_versions dv on dv.project_id=ch.project_id
+                                           and dv.id=ch.document_version_id
+                  join documents d on d.project_id=dv.project_id
+                                  and d.id=dv.document_id
+                  join knowledge_bases kb on kb.project_id=d.project_id
+                                         and kb.id=d.knowledge_base_id
+                 where ch.project_id=:p and ch.id = any(:ids) and {片}
+            """), {"p": project_id, "ids": 要查, **参}).all()}
+    隐了 = 0
+    for 组 in ("选片", "候选"):
+        for x in (链.get(组) or []):
+            if x.get("id") and x["id"] not in 可见:
+                x["文"] = None
+                x["正文被隐去了"] = True
+                隐了 += 1
+    出力 = dict(r["answer_output"] or {})
+    return {
+        "id": r["id"], "什么时候": r["created_at"], "谁跑的": r["created_by"],
+        "来源": r["source"], "问题": r["user_query"], "改写": r["rewritten_query"],
+        "知识库": r["kb_name"] or r["knowledge_base_id"],
+        "索引构建id": r["index_build_id"], "trace_id": r["trace_id"],
+        # 整条链路 —— **和检索实验室同一份形状**,前端复用同一个渲染函数。
+        "链路": 链,
+        "答案那一档": r["answer_status"], "答案": 出力,
+        "评价": {
+            "评分": r["rating"],
+            "评分档位": (评价档位.get(r["rating"]) if r["rating"] else None),
+            "评语": r["rating_reason"], "谁评的": r["rated_by"],
+            "什么时候评的": r["rated_at"],
+            "还没评" : r["rating"] is None,
+            "档位表": {str(k): v for k, v in 评价档位.items()},
+        },
+        # ⚠️ 改评价要带它做 If-Match(两个人同时评,后到的不许静默覆盖)
+        "revision": r["revision"],
+        "隐去了几片正文": 隐了,
+        "为什么隐去": (None if not 隐了 else
+                  f"这条快照里有 {隐了} 片**你的角色({me.role})看不到**的语料 —— "
+                  f"正文隐去了,证据串和分数留着(不留的话你连「有几片被隐去」"
+                  f"都不知道,而那会让你以为这次检索只找到剩下那几片)。"
+                  f"快照是「当时那个人看到的」,不是「谁都能看的」"),
+        "note": "这是一次试跑的**快照** —— 索引后来可能被重建、文档可能出了新版本,"
+                "而这里存的是**当时**它找到了哪几段。"
+                "所以拿它和今天跑一次的结果对比是有意义的",
+    }
+
+
+@router.patch(前缀 + "/retrieval-runs/{rid}/rating")
+async def 给试跑打分(project_id: str, rid: str, request: Request,
+                if_match: str = Header(default=None, alias="If-Match"),
+                me: 身份 = Depends(要权限("运行评测"))):
+    """给一次试跑打分(**5 档**)。入参 `{评分: 1-5, 评语?}`
+
+    ## ⚠️ 要 `If-Match`,而且这不是形式
+
+    两个人同时评同一条,后到的那个会**静默覆盖**前一个 ——
+    > 一条「只有一个人评过」的记录,和一条「两个人评过而第一个被盖掉」的,
+    > **在那个分数上长得一模一样**。
+    revision 从试跑详情里拿(`GET /retrieval-runs/{id}` 的 `revision`)。
+
+    ## 覆盖了也要留痕
+
+    改评价会**真的覆盖**上一个分数(这张表只存当前评价,不存历史)。
+    所以每次打分都写一条审计:谁、什么时候、从几分改成几分。
+    > **一个能被悄悄改掉的分数,在报表里和一个没被改过的长得一样。**
+    """
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match",
+                  "把试跑详情里的 revision 放进 If-Match 头再提交 —— "
+                  "两个人同时评的话,后到的会静默覆盖前一个")
+    体 = await request.json()
+    分 = 体.get("评分")
+    if not isinstance(分, int) or isinstance(分, bool) or not (1 <= 分 <= 5):
+        raise _错(422, "VALIDATION", f"评分要是 1-5 的整数,给的是 {分!r}",
+                  "5 档:" + " / ".join(f"{k}={v}" for k, v in 评价档位.items()),
+                  field_errors={"评分": "1-5 的整数"})
+    评语 = (体.get("评语") or "").strip() or None
+    with 事务() as c:
+        r = c.execute(text("""select rating, revision from retrieval_runs
+                             where project_id=:p and id=:i for update"""),
+                      {"p": project_id, "i": rid}).mappings().first()
+        if not r:
+            raise _错(404, "NOT_FOUND", "没有这条试跑记录", "回「检索试跑」列表")
+        if str(r["revision"]) != str(if_match):
+            raise _错(409, "REVISION_CONFLICT",
+                      f"这条已经被改过(你拿的是 {if_match},现在是 {r['revision']})",
+                      "刷新看一眼别人评了什么再决定;**不要直接覆盖**",
+                      field_errors={"revision": f"当前 {r['revision']}"})
+        新版 = int(r["revision"]) + 1
+        c.execute(text("""update retrieval_runs
+                             set rating=:g, rating_reason=:why, rated_by=:u,
+                                 rated_at=now(), revision=:r, updated_at=now()
+                           where project_id=:p and id=:i"""),
+                  {"g": 分, "why": 评语, "u": me.user_id, "r": 新版,
+                   "p": project_id, "i": rid})
+        # ⚠️ **覆盖要留痕。** 这张表只存当前评价 ——
+        # 不记审计的话,「从 5 分被改成 2 分」在报表里查不出来。
+        c.execute(text("""
+            insert into audit_events (id, organization_id, project_id, actor, action,
+                target_ref, environment, at, result, reason, created_at, created_by)
+            values (:i,:o,:p,:a,'评价检索试跑', cast(:t as jsonb),:e, now(),
+                    'ok', :rs, now(), :a)"""),
+                  {"i": _新id("aud"), "o": me.org_id, "p": project_id,
+                   "a": me.user_id,
+                   "t": _json.dumps({"试跑id": rid, "原来几分": r["rating"],
+                                     "现在几分": 分, "档位": 评价档位[分]},
+                                    ensure_ascii=False),
+                   "e": _os.environ.get("APP_ENV", "development"),
+                   "rs": (评语 or "")[:200] or None})
+    return {"id": rid, "评分": 分, "评分档位": 评价档位[分], "评语": 评语,
+            "revision": 新版,
+            "note": ("打分覆盖的是**当前**评价(这张表只存当前值),"
+                     f"而{'从 ' + str(r['rating']) + ' 分改成 ' if r['rating'] else ''}"
+                     f"这次改动写进了审计 —— "
+                     "一个能被悄悄改掉的分数,在报表里和没被改过的长得一样")}
