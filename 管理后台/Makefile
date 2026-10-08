@@ -934,6 +934,13 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     真实训练多久没数据 —— 库里那些耗时全是 mock 跑的)。接真系统后要重量"
 	@./.venv/bin/python tests/orchestration/test_stale_judge.py
 	@echo ""
+	@echo "▸ 查询改写(业务 2026-10-08 拍:调模型改写)—— 零 IO,不调模型"
+	@echo "  拍板时提过这个方案的缺点是「改写结果不稳定」,所以 temperature=0"
+	@echo "  **是用结构拦的**,不是写在注释里 —— 这条检查盯着它"
+	@echo "  🔑 「改写失败」和「这一版没做」都让 改写=None ——"
+	@echo "     所以两种用不同的说明文字,否则在那个 None 上长得一模一样"
+	@./.venv/bin/python tests/orchestration/test_rewriter.py
+	@echo ""
 	@echo "▸ 收资料:**只收「已校验」的上传** + 'object_key' 不知道是哪种键就当场抛"
 	@echo "  (一列有两个含义而没人知道,比缺一列糟 —— 它会咬第一个想读原文的人)"
 	@./.venv/bin/python tests/orchestration/test_ingest.py
