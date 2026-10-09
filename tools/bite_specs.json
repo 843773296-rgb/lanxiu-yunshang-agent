@@ -5840,5 +5840,41 @@
    }
   ],
   "预期红": "同一个问题问两次,榜单一模一样"
+ },
+ {
+  "script": "backend/sales_rank_check.py",
+  "改坏": "「各排法的第一」从件数榜里挑金额最大的(10-09 真跑时模型的错法)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "for k, v in [min(汇.items(), key=lambda kv: (-kv[1][m], str(kv[0])))]}",
+    "new": "for k, v in [min(((x[\"编码\"], x) for x in 榜), key=lambda kv: (-kv[1][m], str(kv[0])))]}"
+   }
+  ],
+  "预期红": "按金额的第一和独立 SQL 是同一个商品"
+ },
+ {
+  "script": "backend/lifecycle_sync_check.py",
+  "改坏": "判档口径变了(休眠起点 91 → 95 天)而库里存的档没跟着重算",
+  "file": [
+   {
+    "path": "knowledge/lifecycle.py",
+    "old": "    if 91 <= idle <= 180: m.append(\"休眠\")",
+    "new": "    if 95 <= idle <= 180: m.append(\"休眠\")"
+   }
+  ],
+  "预期红": "存的档位 ≠ 按存的事实重算"
+ },
+ {
+  "script": "backend/lifecycle_sync_check.py",
+  "改坏": "豁免名单扫空了(现扫那一步坏掉)",
+  "file": [
+   {
+    "path": "backend/lifecycle_sync_check.py",
+    "old": "豁免 = order_mix.受保护客户(c)",
+    "new": "豁免 = {}"
+   }
+  ],
+  "预期红": "豁免名单是现扫的,而且不为空"
  }
 ]

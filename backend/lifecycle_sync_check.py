@@ -14,9 +14,15 @@
 """
 import os, sys, sqlite3, datetime as dt, collections
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "knowledge")]
+sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "knowledge"), os.path.join(os.path.dirname(HERE), "tools")]
 import lifecycle as L
 from seed import TODAY
+import order_mix
+
+咬合 = [
+    ("判档口径变了(休眠起点 91 → 95 天)而库里存的档没跟着重算", "存的档位 ≠ 按存的事实重算"),
+    ("豁免名单扫空了(现扫那一步坏掉)", "豁免名单是现扫的,而且不为空"),
+]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 T = dt.date.fromisoformat(TODAY)
@@ -37,9 +43,15 @@ c.row_factory = sqlite3.Row
 要单的档 = {"新客", "忠诚", "高价值"}
 最新单 = dict(c.execute("SELECT customer_id, max(substr(created,1,10)) FROM ordr GROUP BY 1").fetchall())
 有完成单 = {r[0] for r in c.execute("SELECT DISTINCT customer_id FROM ordr WHERE status='完成'")}
+# **受保护客户不判** —— 夹具 / 真值引用的客户身上的事实是故意摆的(合并用例、边界用例),
+# 重算会抹掉它们。名单**现扫** order_mix.受保护客户(),不读手抄 JSON
+# (10-09 那份 JSON 只有 22 个、现扫 52 个,漏的 30 个正是客户合并的真值夹具)。
+豁免 = order_mix.受保护客户(c)
 总, 类, 样 = 0, {"B": collections.Counter(), "A": collections.Counter(), "C": collections.Counter()}, {}
 for r in c.execute("SELECT * FROM customer"):
     d = dict(r)
+    if d["id"] in 豁免:
+        continue
     总 += 1
     新 = 最新单.get(d["id"])
     if 新 and (d["last_interact"] or "")[:10] < 新:
@@ -57,7 +69,10 @@ for r in c.execute("SELECT * FROM customer"):
 
 名 = {"B": "最后互动日比名下最新订单还早", "A": "存的档位要有完成单,而名下一张都没有",
      "C": "存的档位 ≠ 按存的事实重算"}
-print(f"存着的档位 vs 按 {TODAY} 重算(验了 {总} 个客户)")
+print(f"存着的档位 vs 按 {TODAY} 重算(验了 {总} 个客户,受保护的 {len(豁免)} 个不判)")
+if len(豁免) < 14:
+    print(f"  {R}❌{D} 豁免名单是现扫的,而且不为空 —— 只扫出 {len(豁免)} 个,扫描本身多半坏了"); sys.exit(1)
+print(f"  {G}✅{D} 豁免名单是现扫的,而且不为空({len(豁免)} 个)")
 if 总 == 0:
     print(f"  {R}❌{D} 客户表是空的 —— 空集合上什么都成立,这不算过"); sys.exit(1)
 坏 = 0

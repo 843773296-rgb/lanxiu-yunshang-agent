@@ -17,6 +17,7 @@ import api
     ("销量不过滤状态(取消 / 退款的行也算进去)", "合计件数和独立 SQL 对得上"),
     ("店长不再限本店(_订单范围 那一层没接)", "店长只看本店:合计 = 本店独立 SQL"),
     ("排序丢了次序键(同件数时顺序不确定)", "同一个问题问两次,榜单一模一样"),
+    ("「各排法的第一」从件数榜里挑金额最大的(10-09 真跑时模型的错法)", "按金额的第一和独立 SQL 是同一个商品"),
 ]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -73,6 +74,12 @@ ck("同一个问题问两次,榜单一模一样", [x["编码"] for x in r_again[
                       -next(x for x in r_again["榜单"] if x["编码"] == k)["单数"], k)))
 金额序 = [x["金额"] for x in r_amt["榜单"]]
 ck("按金额排时金额单调不增", 金额序 == sorted(金额序, reverse=True), str(金额序))
+期望金额 = c.execute(f"SELECT i.spu FROM ordr_item i JOIN ordr o ON o.id=i.order_id "
+                     f"WHERE {区} AND {算} GROUP BY i.spu ORDER BY SUM(i.total) DESC, i.spu LIMIT 1").fetchone()[0]
+ck("按金额的第一和独立 SQL 是同一个商品", (r.get("各排法的第一") or {}).get("金额", {}).get("编码") == 期望金额,
+   f"工具 {(r.get('各排法的第一') or {}).get('金额')} / SQL {期望金额}")
+ck("按件数查时,金额第一不在件数前五里也照样给出(否则验不到这条)",
+   期望金额 not in [x["编码"] for x in r["榜单"]], "九月金额第一恰好在件数前五 —— 这条验不到")
 ck("没算进销量的行要说出来(九月有取消单)", "取消" in (r.get("没算进销量的订单行") or {}))
 
 期望店 = sql(" AND o.shop=?", (店,))
