@@ -281,7 +281,7 @@ def get_lifecycle(customer=None, lifecycle=None):
                     "**多条命中时要把命中列表说出来** —— 只报结论,运营无从判断算得对不对。"}
 
 
-def lifecycle_entered(lifecycle, month):
+def lifecycle_entered(lifecycle, month=None, week=None, start=None, end=None):
     """**某个月进入某一档的客户** —— 「九月 / 本月进入休眠的有多少」(业务 2026-10-08)。
 
     系统**没记换档历史**,只知道「现在在哪一档」。按无互动天数判的三档(休眠 / 潜在流失 / 流失)
@@ -295,16 +295,34 @@ def lifecycle_entered(lifecycle, month):
     if lifecycle not in _lc.进入天数:
         return {"error": f"「{lifecycle}」推不出哪天进的 —— 只有按无互动天数判的三档能推:{list(_lc.进入天数)}。"
                          "其余几档(新客 / 高价值 / 忠诚…)系统没记换档历史,**照实说查不了,别凭印象估**"}
-    m = re.fullmatch(r"(\d{4})-(\d{1,2})", str(month or "").strip())
-    if not m or not 1 <= int(m.group(2)) <= 12:
-        return {"error": f"entered_month 要写成 YYYY-MM(「本月」就是 {TODAY[:7]}),你给的是「{month}」",
-                "note": "**不替你解析自然语言** —— 解析错的那次,人数看起来完全正常"}
-    y, mo = int(m.group(1)), int(m.group(2))
-    起 = _dt.date(y, mo, 1)
-    末 = _dt.date(y + (mo == 12), (mo % 12) + 1, 1) - _dt.timedelta(days=1)
     今 = _dt.date.fromisoformat(TODAY)
-    if 起 > 今:
-        return {"error": f"{y} 年 {mo} 月还没到(业务今天是 {TODAY}),没有人「已经进入」"}
+    if start and end:
+        起, 末 = _dt.date.fromisoformat(str(start)), _dt.date.fromisoformat(str(end))
+        区间名, week = f"{起} ~ {末}", "区间"
+        if 起 > 今:
+            return {"error": f"{区间名}还没到(业务今天是 {TODAY})"}
+    elif week:
+        # 周报用(用户 10-09:业务周 = 周一到周日)—— 周的切法在 knowledge/weekly.py
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge"))
+        import weekly as _wk
+        try:
+            起, 末 = _wk.周起止(week)
+        except ValueError:
+            return {"error": f"entered_week 要写成那一周里任意一天 `YYYY-MM-DD`,你给的是「{week}」"}
+        区间名 = f"{起} ~ {末}(业务周,周一到周日)"
+        if 起 > 今:
+            return {"error": f"{区间名}还没到(业务今天是 {TODAY}),没有人「已经进入」"}
+    else:
+        m = re.fullmatch(r"(\d{4})-(\d{1,2})", str(month or "").strip())
+        if not m or not 1 <= int(m.group(2)) <= 12:
+            return {"error": f"entered_month 要写成 YYYY-MM(「本月」就是 {TODAY[:7]}),你给的是「{month}」",
+                    "note": "**不替你解析自然语言** —— 解析错的那次,人数看起来完全正常"}
+        y, mo = int(m.group(1)), int(m.group(2))
+        起 = _dt.date(y, mo, 1)
+        末 = _dt.date(y + (mo == 12), (mo % 12) + 1, 1) - _dt.timedelta(days=1)
+        区间名 = f"{y} 年 {mo} 月"
+        if 起 > 今:
+            return {"error": f"{y} 年 {mo} 月还没到(业务今天是 {TODAY}),没有人「已经进入」"}
     截 = min(末, 今)
     天 = _lc.进入天数[lifecycle]
     rs = _rows("SELECT id,name,lifecycle,last_interact,idle_days FROM customer "
@@ -317,9 +335,9 @@ def lifecycle_entered(lifecycle, month):
         if 起 <= 日 <= 截:
             d["进入日"] = 日.isoformat()
             out.append(_nz(d))
-    return {"档位": lifecycle, "月份": f"{y} 年 {mo} 月",
+    return {"档位": lifecycle, ("区间" if week else "月份"): 区间名,
             "按什么算": f"进入{lifecycle}那天 = 最后一次有效互动 + {天} 天(和判档的含端边界同一套)",
-            "算到哪天": f"{起} ~ {截}" + ("(这个月还没过完,只算到业务今天)" if 截 < 末 else ""),
+            "算到哪天": f"{起} ~ {截}" + (("(这一周" if week else "(这个月") + "还没过完,只算到业务今天)" if 截 < 末 else ""),
             "人数": len(out), "rows": out[:40],
             "note": ("**这是推算,不是换档记录** —— 系统没记过谁哪天换的档。推不出来的一类要照实告诉用户:"
                      "这个月进过这一档、后来又有互动回去了的人,最后互动日变了,不会出现在这里;"
@@ -623,7 +641,7 @@ def dispatch_batch(items):
     return r
 
 
-def monthly_review(month=None):
+def monthly_review(month=None, week=None, start=None, end=None):
     """**月度复盘**:这个月做完了多少、几条逾期、逾期都在谁身上、改派了几次、
     agent 的派单建议采纳率、待分配积压、订单走完一轮要多久。
 
@@ -640,15 +658,29 @@ def monthly_review(month=None):
     if not me: return dict(error="不知道现在是谁在看 —— 请先登录")
     today = _dt.date.today().isoformat()
     m = (month or today[:7]).strip()
-    if not re.fullmatch(r"\d{4}-\d{2}", m):
+    if start and end:
+        区起, 区止 = str(start)[:10], str(end)[:10]
+        m, week = f"{区起} ~ {区止}", "区间"
+    elif week:
+        # 周报用(用户 10-09:业务周 = 周一到周日)。归周的钟和归月**同一个**(rv.归月字段),只是区间换成一周
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge"))
+        import weekly as _wk
+        try:
+            _一, _日 = _wk.周起止(week)
+        except ValueError:
+            return dict(error=f"week 要写成那一周里任意一天 `YYYY-MM-DD`,收到「{week}」")
+        区起, 区止, m = _一.isoformat(), _日.isoformat(), f"{_一} ~ {_日}(业务周,周一到周日)"
+    elif not re.fullmatch(r"\d{4}-\d{2}", m):
         return dict(error=f"月份写成 2026-09 这样,收到「{month}」")
+    else:
+        区起, 区止 = m + "-01", m + "-31"
 
     where, args, scope = _tk.visible_scope(me)
     ts_ = _rows(f"SELECT s.*, st.name assignee_name FROM schedule s "
                 f"LEFT JOIN staff st ON st.no=s.assignee_no "
-                f"WHERE {where} AND substr(s.{rv.归月字段},1,7)=?", *(args + [m]))
+                f"WHERE {where} AND substr(s.{rv.归月字段},1,10) BETWEEN ? AND ?", *(args + [区起, 区止]))
 
-    out = dict(月份=m, 范围=scope,
+    out = dict(**({"区间": m} if week else {"月份": m}), 范围=scope,
                口径=f"任务按**{rv.归月字段_人话}**归月;"
                     f"改派/分派这些动作,**按它动的那条任务归月** —— "
                     f"台账记的是操作发生的墙上时间,和业务时间不是一个钟,"
@@ -680,7 +712,7 @@ def monthly_review(month=None):
                           逾期口径=f"截止时间已过、状态仍是「有效」,按**今天 {today}** 判 —— "
                                    f"问的是「现在还有几条客户在等」,不是「当月月底欠着几条」")
     else:
-        out["任务"] = dict(总数=0, 说明=f"{m} 这个月,你看得到的范围里没有任务到期")
+        out["任务"] = dict(总数=0, 说明=f"{m} " + ("这一周" if week else "这个月") + ",你看得到的范围里没有任务到期")
 
     # 动作:从台账里取,但**按它动的那条任务归月**,和上面同一个钟。
     ids = {r["id"] for r in ts_}
@@ -736,7 +768,7 @@ def monthly_review(month=None):
     if mgr_view:
         ap = _rows("SELECT a.*, c.shop cshop FROM approval a "
                    "LEFT JOIN customer c ON c.id=a.target "
-                   "WHERE substr(a.applied_at,1,7)=?", m)
+                   "WHERE substr(a.applied_at,1,10) BETWEEN ? AND ?", 区起, 区止)
         if me.get("role") != "总部运营":
             ap = [x for x in ap if (x.get("cshop") or "") == me.get("shop")]
         if ap:
@@ -2193,7 +2225,7 @@ def bad_ratings(status="待处理"):
                     差评=rs))
 
 
-def rating_overview(days=30):
+def rating_overview(days=30, week=None, start=None, end=None):
     """**评价概况**:最近多少天、多少条、平均几星、差评几条。只有店长看得到。
 
     ⚠️ **返回里必须带上「这个数不能说明什么」** —— 这不是客套话,是这个指标的性质:
@@ -2210,11 +2242,26 @@ def rating_overview(days=30):
     本店 = None if me["role"] == "总部运营" else me.get("shop")
     # `days=0` 是「只看今天」,不是「没传」—— 原来写 `int(days or 30)`,传 0 会悄悄变成 30 天
     起 = (_wc.今天() - _dt.timedelta(days=int(30 if days is None else days))).isoformat()
+    止 = "9999-12-31"
+    # 周报要「某一周」的评价(用户 10-09:业务周 = 周一到周日)—— 给了 week 就按那一周的起止,
+    # 不再是「最近 N 天」。周的切法在 knowledge/weekly.py,这里不再写一份
+    if week:
+        import sys as _s, os as _o
+        _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "knowledge"))
+        import weekly as _wk
+        try:
+            一, 日 = _wk.周起止(week)
+        except ValueError:
+            return dict(error=f"week 要写成那一周里任意一天 `YYYY-MM-DD`,你给的是「{week}」")
+        起, 止 = 一.isoformat(), 日.isoformat()
+    elif start and end:
+        起, 止 = str(start)[:10], str(end)[:10]
     rs = _rows("""SELECT r.star, r.rated_at, o.shop FROM rating r
-                  LEFT JOIN ordr o ON o.id=r.order_id WHERE substr(r.rated_at,1,10)>=?""", 起)
+                  LEFT JOIN ordr o ON o.id=r.order_id
+                  WHERE substr(r.rated_at,1,10)>=? AND substr(r.rated_at,1,10)<=?""", 起, 止)
     if 本店: rs = [x for x in rs if x.get("shop") == 本店]
     if not rs:
-        return dict(说明=f"最近 {days} 天这里没有评价记录 —— "
+        return dict(说明=(f"{起} ~ {止} 这段时间" if (week or start) else f"最近 {days} 天") + "这里没有评价记录 —— "
                         "**「没有评价」和「评价都很好」是两件事**,别当成后者", 条数=0,
                     起=起)
     星们 = [x["star"] for x in rs if x["star"] is not None]
@@ -2250,7 +2297,7 @@ def rating_overview(days=30):
     月们 = sorted({str(x["rated_at"])[:7] for x in rs if x.get("rated_at")})
     按月 = {k: _一组([x for x in rs if str(x.get("rated_at"))[:7] == k]) for k in 月们}
 
-    out = dict(起=起, 窗口=f"最近 {int((30 if days is None else days))} 天", 条数=len(rs),
+    out = dict(起=起, 窗口=(f"{起} ~ {止}(业务周,周一到周日)" if week else f"{起} ~ {止}" if start else f"最近 {int((30 if days is None else days))} 天"), 条数=len(rs),
                平均=round(sum(星们) / len(星们), 2),
                各星几条={f"{n}星": sum(1 for x in 星们 if x == n) for n in range(5, 0, -1)},
                差评几条=len(差), 差评占比=f"{len(差)/len(星们):.0%}")
@@ -4066,6 +4113,51 @@ def sales_rank(month=None, start=None, end=None, by="商品", metric="件数", k
     return out
 
 
+def weekly_revenue(week=None, start=None, end=None):
+    """**按周营收 = 实收减退款**(周报用,用户 2026-10-09 拍板)。
+
+    口径在 knowledge/weekly.py:业务周 = 周一到周日;实收按**付款日**归周,退款按**退款日**归周
+    (不是下单日)。范围随身份走(同 orders_by_date:总部全部 / 店长本店 / 顾问名下∪经手)。
+    ⚠️ 库里没有单独的「退款完成时间」,退款日用售后单的最后更新时间**近似** —— 返回值里明写。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "knowledge"))
+    import weekly as _wk
+    from seed import TODAY
+    me = whoami()
+    if not me:
+        return {"error": "没有登录身份,不知道看哪家店"}
+    try:
+        if start or end:
+            # 日报 / 月报用同一个口径,只换时间窗(报告期在 knowledge/weekly.报告期)
+            一, 日 = _dt.date.fromisoformat(str(start)), _dt.date.fromisoformat(str(end))
+        else:
+            一, 日 = _wk.周起止(week) if week else _wk.上一完整周(TODAY)
+    except (ValueError, TypeError):
+        return {"error": f"week 要写成这一周里任意一天 `YYYY-MM-DD`(或 start + end 一起给),你给的是「{week or start}」;不给就是上一个完整周"}
+    if 一 > _dt.date.fromisoformat(TODAY):
+        return {"error": f"{一} 那一周还没到(今天 {TODAY})"}
+    where, args, 范围话, _ = _订单范围(me)
+    起, 止 = 一.isoformat(), 日.isoformat() + " 23:59:59"
+    收 = [(r["d"], r["received"]) for r in _rows(
+        "SELECT substr(o.paid_at,1,10) d, o.received FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id "
+        "WHERE o.paid_at IS NOT NULL AND o.paid_at >= ? AND o.paid_at <= ?" + where, 起, 止, *args)]
+    退 = [(r["d"], r["amount"]) for r in _rows(
+        "SELECT substr(a.updated,1,10) d, a.amount FROM aftersale a JOIN ordr o ON o.id=a.order_id "
+        "LEFT JOIN customer cu ON cu.id=o.customer_id "
+        f"WHERE a.kind IN ({','.join('?' * len(_wk.退款类))}) AND a.status=? "
+        "AND a.updated >= ? AND a.updated <= ?" + where,
+        *_wk.退款类, _wk.退款完成, 起, 止, *args)]
+    out = {("区间" if (start or end) else "业务周"): f"{一} ~ {日}" + ("" if (start or end) else f"({_wk.周名})"),
+           "范围": 范围话, **_wk.营收(收, 退),
+           "口径": "营收 = 这一周实际收到的钱 − 这一周退出去的钱;实收按付款日、退款按退款日归周(业务 2026-10-09 定)",
+           "⚠️ 近似": "库里没有单独的「退款完成时间」,退款日用售后单最后更新时间近似 —— 个别退款可能被归到相邻一周",
+           "不算在内": "预约押金(可退的押金,不是营收)、还没付款的单、退款中还没走完的"}
+    if 日 >= _dt.date.fromisoformat(TODAY):
+        out["⚠️ 这一周还没过完" if not (start or end) else "⚠️ 区间还没过完"] = f"今天 {TODAY},数字截到今天"
+    return out
+
+
 # 「下一周的订单」到底查哪一列 —— 四个字段是四份完全不同的单子
 # 中文月份 → 数字。**一张显式的小表,12 条,不是自然语言解析。**
 #
@@ -4837,6 +4929,7 @@ SHOP_SCHEMAS=[
     "lifecycle":{"type":"string","description":"按档位筛,如「潜在流失」「休眠」"},
     "rank":{"type":"boolean","description":"true=在这一档里按 RFM 排出先联系谁"},
     "entered_month":{"type":"string","description":"和 lifecycle 一起给:查**这个月进入这一档**的人(YYYY-MM,本月就写当月)。只有休眠 / 潜在流失 / 流失推得出进入日(最后互动 + 91 / 181 / 366 天);是推算不是换档记录,返回的 note 要照实转告"},
+    "entered_week":{"type":"string","description":"周报用:和 lifecycle 一起给,查**某一个业务周(周一到周日)进入这一档**的人,给那一周里任意一天 `YYYY-MM-DD`;口径同 entered_month"},
     "limit":{"type":"number","description":"排序时返回前几名,默认 10,最多 40"}},
    "required":[]}},
  {"name":"task_types","description":"九种任务类型的**数据规范**:每种挂哪张单据(客户号/订单号/维保单号/售后单号/不挂)、谁能派、完成时要不要传现场照。**起草派任务之前先调这个** —— 类型决定了要填什么,填错会被拒。",
@@ -4846,7 +4939,7 @@ SHOP_SCHEMAS=[
     "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
     "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
  {"name":"conversion_rate","description":"**成交率:两个数,一个是业务要的,一个不是。**\n\n⚠️ 2026-09-22 之前这个工具说「算不了」—— **那是因为「接待」被定义错了**(只认「预约到店」,全库 7 条)。业务说清之后(**到店/上门量体、白坯试衣、预约到店都是接待;远程量体不算**),**3403/3542 张定制单追得到是哪次接待**。\n\n**① 按接待人算** —— 每次接待后面有没有跟着成交。算得出,**但业务明说过这样算不对**:「成交率是长期一对一营销的结果,不能因为某一次就算在某人身上」;而且四成以上的单(返回里有现算的比例),**接待人和订单顾问不是同一个人**。\n\n**② 按归因算(业务要的那个)** —— 按影响力分成汇总。已按业务 09-22 定的口径给出:**按客户算不按接待次数**(门店 = 成交客户 ÷ 亲自接待过的客户;顾问 = W 型份额之和 ÷ 他亲自接待过的客户),多张单算 1 个成交客户,**暂不分周期**。\n\n⚠️ **两个数都像成交率,而它们回答的是不同的问题** —— 报数必须说清是哪一个。⚠️ **绝对不要自己拿订单数除一除编一个率**。⚠️ 现在的挂接是**下单前最近一次**接待,「取最近一次」是**默认不是业务拍的**。",
-  "input_schema":{"type":"object","properties":{
+  "input_schema":{"type":"object","properties":{"week":{"type":"string","description":"周报用:**最近 4 周滚动**成交率(截到这一周的周日往前 28 天,同期口径),给那一周里任意一天 `YYYY-MM-DD`。顾问排名按归因成交份额排"},
     "shop":{"type":"string","description":"只看某个门店。不给就按你的身份来(店长看本店,总部看全部)。"},
     "mode":{"type":"string","enum":["同期","队列"],"description":"统计周期口径。不给=不分周期(全部数据)。**长周期生意看队列**:同期会把「这个月接待、下个月下单」的客户算成没成交。"},
     "month":{"type":"string","description":"哪个月,YYYY-MM。给了 mode 才用;不给就是当月(可能还没满 N 天,率偏低)。"},
@@ -4901,7 +4994,8 @@ SHOP_SCHEMAS=[
     "status":{"type":"string","description":"待处理 / 已关闭 / 全部,默认待处理"}},"required":[]}},
  {"name":"rating_overview","description":"**评价概况**:最近多少天多少条、平均几星、各星几条、差评几条占多少,**并且按门店拆、按月拆**(口径里那句「不同门店/不同时间段可以互相比」就是指这两个切分)。days 默认 30。⚠️ **想看趋势(在变好还是变坏)必须把 days 放大** —— 30 天只落在一个月里,这时候「按月」那栏会明说「这个窗口看不出趋势」,**别把它读成「没变化」**;看三个月写 days=120。⚠️ **每个分组的平均后面都跟着条数,回答时把条数一起说** —— 「8 条算出来的 4.2」和「600 条算出来的 4.2」数字一样但结论完全不同。⚠️ 店长只看得到本店,跨店比较要总部运营的身份。**只有店长看得到**。⚠️ 返回里带着「这个数能说明什么 / 不能说明什么」,**照着说,别自己改口径**:业务定的是「签收当场就请评价」,顾客是在店里、导购面前、**衣服还没穿过**时评的 —— 所以它衡量的是**交付体验**,不是衣服好不好;而且当面难给差评,分数**系统性偏高**,不能和行业基线比、也不能说成「几成顾客满意」。⚠️ 没有评价记录时说「没有记录」,**别说成「评价都很好」**。",
   "input_schema":{"type":"object","properties":{
-    "days":{"type":"integer","description":"往前看多少天,默认 30"}},"required":[]}},
+    "days":{"type":"integer","description":"往前看多少天,默认 30"},
+    "week":{"type":"string","description":"周报用:看**某一个业务周**(周一到周日),给那一周里任意一天 `YYYY-MM-DD`;给了就不看 days"}},"required":[]}},
  {"name":"dispatch_batch","description":"**一次把待分配池里的几条单分出去**(真的写进去)。items 是 [{task_id, assignee?}],不给 assignee 就采纳 dispatch_pool 给的建议,一次最多 20 条。**全过才写,一条不过整批不写。** 用户说「把待分配的都派了」「这几条都分下去」时用这个 —— assign_batch 是**新建**任务的,派不了已经存在的单。",
   "input_schema":{"type":"object","properties":{
     "items":{"type":"array","description":"要分派的单",
@@ -4911,7 +5005,7 @@ SHOP_SCHEMAS=[
         "required":["task_id"]}}},
    "required":["items"]}},
  {"name":"monthly_review","description":"**月度复盘**:这个月做完了多少、几条逾期、逾期都在谁身上、改派几次和理由、**agent 的派单建议采纳率**、智能体代做了几笔、待分配积压、订单走完一轮要多久。month 写 `2026-09`,不给就是当月。按**截止时间**归月(复盘看的是「这个月该做完的做完了没有」)。范围跟身份走:顾问只看自己的,店长看本店。⚠️ **分母为零的地方不给比率,给一句话** —— 「没发生过分派」和「分派了但一次没采纳」是两件事。",
-  "input_schema":{"type":"object","properties":{
+  "input_schema":{"type":"object","properties":{"week":{"type":"string","description":"周报用:看**某一个业务周**(周一到周日),给那一周里任意一天 `YYYY-MM-DD`;给了就不看 month"},
     "month":{"type":"string","description":"哪个月,写 2026-09。不给就是当月。"}},"required":[]}},
  {"name":"appt_funnel","description":"**预约到店转化漏斗**:约了多少 → 我们确认了多少 → 真到店多少 → 量体多少 → 下单多少;以及**流失分四种**(待确认烂掉 / 客户取消 / 爽约 / 已过期),每种带一句该怎么办。since/until 写 2026-08-01,不给就是全部。范围跟身份走。⚠️ 报**两种**转化率:环节转化率(÷上一环,看哪一环漏得最狠)和整体转化率(÷总预约,看一百个最后剩几个)——只报一个会答错另一个问题。⚠️ 最后两环(量体/下单)和预约之间**没有外键**,按「同一个客户、预约之后」连,**会高估**。",
   "input_schema":{"type":"object","properties":{
@@ -4953,6 +5047,7 @@ SHOP_SCHEMAS=[
  {"name":"mark_delay_told","description":"**(写)记下「已经把延期告诉顾客了」。** 只标本店的;标之前要跟用户确认他真的通知过了 —— 标错了这张单就从清单里消失,顾客再也等不到那个电话。","input_schema":{"type":"object","properties":{"delay_id":{"type":"integer"}},"required":["delay_id"]}},
  {"name":"rollback_order","description":"**(写)人工回退**:工厂发错件(退回等发货)/ 到店发现要返工(退回生产中,算重新生产)。**只有店长能点**,必须写清哪件不对、怎么发现的;运费公司承担。这是系统里唯一能让订单往回走的口子,回退记录一直留着。cause 只能是「发错件」或「到店返工」,note 写理由。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"cause":{"type":"string","enum":["发错件","到店返工"]},"note":{"type":"string"}},"required":["order_id","cause","note"]}},
  {"name":"report_production","description":"**(写)自有工坊报工**:这几件做完了 / 质检过了 / 发出去了。**工匠报自己做的那件,店长报本店**;顾问和版师报不了(不在生产环节)。\n\n⚠️ **外发工厂的单谁都不许替它报** —— 工厂没回传,真相就是「工厂还没报」,而不是「我们知道它做完了」。替它报一条,订单往前走了,而工厂那边什么都没发生。工具会自己查这张单的生产方,不是自有工坊就拒。\n\n和工厂回传**走同一个收件箱、同一套判定**:重复只记一次、来早了暂存、报「发出」必须带快递单号、车间工单还在制却报完工会挂异常(报完工会顺手把工单收掉)。被拒收或挂异常时**照「理由」去处理,不要换个说法再报一次** —— 每次都会留痕。\n\nevent:完工 / 质检通过 / 发出。item 给订单行号(只报某一件),不给就是整单。发出要传 tracking_no。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"event":{"type":"string","enum":["完工","质检通过","发出"]},"item":{"type":"string","description":"订单行号;不给就是整单"},"tracking_no":{"type":"string","description":"报「发出」时必填"}},"required":["order_id","event"]}},
+{"name":"weekly_revenue","description":"**按周营收 = 实收减退款**(只读,周报用)。「上周营收多少」「这周进了多少钱」用它。⚠️ 业务周是**周一到周日**;实收按**付款日**、退款按**退款日**归周,**不是按下单日** —— 和 orders_by_date 的「下单数」不是一回事。⚠️ 退款日是近似(用售后单最后更新时间),返回里写着。预约押金不算营收。不给 week 就是上一个完整周;week 给那一周里任意一天 `YYYY-MM-DD`。范围随身份:总部全部 / 店长本店 / 顾问名下∪经手。","input_schema":{"type":"object","properties":{"week":{"type":"string","description":"那一周里任意一天 `YYYY-MM-DD`;不给 = 上一个完整周"}}}},
 {"name":"sales_rank","description":"**商品销量排行**(只读)。「九月卖得最好的商品是什么」「这个月哪个品类卖得多」「标品前十」用它 —— 按商品 / SKU / 品类汇总订单行,不用逐单去查。⚠️ **时间段必须写成 `month=YYYY-MM` 或 `start`+`end`**,「九月」先换成具体年月,拿不准是哪一年就问。⚠️ **默认按件数排**(一单买 3 件算 3);定制品每单一件、单价高 —— 按件数几乎上不了榜、按金额会霸榜,**用户没说按什么时按件数答,再照返回里「各排法的第一」说按金额是谁 —— 不要从榜单里自己推**。⚠️ 取消 / 待付款 / 已退款的行**不算销量**(口径同库存预警),返回里「没算进销量的订单行」写了各有多少。⚠️ 报总量用「合计」,不要拿榜单相加;返回「并列」时要说出前 N 名不唯一。范围随身份:总部全部 / 店长本店 / 顾问名下∪经手。","input_schema":{"type":"object","properties":{"month":{"type":"string","description":"月份 `YYYY-MM`,如 `2026-09`"},"start":{"type":"string","description":"起始日 `YYYY-MM-DD`(和 end 一起给)"},"end":{"type":"string","description":"截止日 `YYYY-MM-DD`(含当天)"},"by":{"type":"string","description":"按什么汇总:商品(默认,同款不同尺码颜色合一)/ SKU / 品类"},"metric":{"type":"string","description":"按什么排:件数(默认)/ 金额 / 单数"},"kind":{"type":"string","description":"只看 标品 或 定制品;不给就是都算"},"field":{"type":"string","description":"按哪个日期归月:下单(默认)/ 完工 / 发货 / 交付"},"limit":{"type":"integer","description":"列前几名,默认 10,最多 50"}}}},
  {"name":"orders_by_date","description":"**按时间段列订单**(只读)。「下周有哪些单要交付」「最近一周下了多少单」这类问法用它 —— 这是唯一一个不用先给订单号或客户号就能列单的入口。\n\n⚠️ **「下一周」是歧义的,这个工具不替人猜**:`direction` 要么「往后」(今天→N 天后,问的是接下来要发生什么)、要么「往前」(N 天前→今天,问的是刚过去这段做了多少)。不给 direction 它会返回「判不了」,并把两种读法各有多少单一起给你 —— **把这两个数原样告诉用户让他选**,不要自己挑一个:两种读法的单子几乎没有交集,而猜错的表现是一份看起来很正常的清单,没有任何地方会提示这不是他要的那一批。\n\n`field` 决定查哪一列:**下单 / 完工 / 发货 / 交付**,四列是四份不同的单子(同一张单「下单」在上个月、「交付」在下周)。用户说「下周要交的货」是**交付**,说「这周下了多少单」是**下单**;拿不准就问。默认按下单日,返回里会写明用的是哪一列。\n\n`days` 默认 7。\n\n**按日历月 / 按起止日期查**:`month`(`YYYY-MM`,比如「九月」= `2026-09`,查的是那个月 1 号到月底)或 `start` + `end`(`YYYY-MM-DD`,两个一起给)。给了它们就**不要再给 direction / days**。用户只说「一月」而没说哪年时,`month` 原样传「一月」,工具会把「今年 1 月」和「最近一个月」两种读法各有多少单摆出来 —— 照样**不替他挑**。\n\n范围跟身份走:顾问只看自己的,店长看本店,总部运营看全部。","input_schema":{"type":"object","properties":{"direction":{"type":"string","enum":["往后","往前"],"description":"往后=今天到 N 天后;往前=N 天前到今天。不给会返回判不了;用 month / start+end 时不给"},"days":{"type":"integer","description":"几天,默认 7"},"month":{"type":"string","description":"按日历月查:YYYY-MM(如 2026-09 = 9 月 1 日到 30 日)"},"start":{"type":"string","description":"按起止日期查的起点 YYYY-MM-DD,要和 end 一起给"},"end":{"type":"string","description":"按起止日期查的终点 YYYY-MM-DD(含这一天)"},"field":{"type":"string","enum":["下单","完工","发货","交付"],"description":"按哪一列的时间算,默认下单"},"limit":{"type":"integer","description":"最多返回几条,默认 50"}}}},
  {"name":"factory_chase","description":"**该催工厂的单 + 要人看的工厂回传**(只读)。定制单的生产和发货**只认工厂回传**(自有工坊和外发工厂都有,谁接的单谁报),门店和后台都不能手动推状态。这里列出:① 该催的单 —— 开工超过 3 天工厂没回接单(单可能没发过去),或过了工厂承诺的完工日还没完工(该先告诉顾客会晚),带生产方、承诺完工日、归属顾问、是不是你的;② 要人看的回传 —— 挂异常(查无此单、单已取消、别家报了这张单、车间工单还在制却报完工)/ 拒收(缺物流单号、时间不对)/ 暂存(来早了,等前一条)。店长看本店,总部运营看全部。顾问问「我有哪些单该去催工厂」「这单怎么还没做好」也用这个。","input_schema":{"type":"object","properties":{}}},
@@ -5131,13 +5226,15 @@ def get_tasks(task_id=None, scope=None, assignee=None, status=None):
     return my_tasks(status=status)
 
 
-def get_member(customer=None, lifecycle=None, rank=False, limit=None, entered_month=None):
+def get_member(customer=None, lifecycle=None, rank=False, limit=None, entered_month=None, entered_week=None):
     """查会员分层。**会员等级和生命周期是两套判定**,问一个客户时一次给全 ——
     原来要调两次才拼得出「这个客户值不值得跟」。
 
     customer → 这个人的等级档 + 生命周期档;
     lifecycle → 这一档里有哪些人;再加 rank=true → 这一档里先联系谁(RFM 排序)。
     """
+    if lifecycle and entered_week:
+        return lifecycle_entered(lifecycle, week=entered_week)
     if lifecycle and entered_month:
         return lifecycle_entered(lifecycle, entered_month)
     if lifecycle and rank:
@@ -5175,7 +5272,7 @@ def _pattern_queue(pattern=None):
     return pattern_queue()
 
 
-def conversion_rate(shop=None, mode=None, month=None, n_days=None):
+def conversion_rate(shop=None, mode=None, month=None, n_days=None, week=None):
     """**成交率:两种算法,一个是你要的,一个不是。**
 
     ⚠️ 2026-09-22 之前这个工具说「算不了」—— **那是因为「接待」被定义错了**:
@@ -5290,6 +5387,33 @@ def conversion_rate(shop=None, mode=None, month=None, n_days=None):
         "⚠️ 前提": "W 型 30/30/30/10 是惯例不是算出来的;**触点和订单都是造的数据**,"
                     "这个数证明口径跑得通,不是真实成交率",
     }
+    if week:
+        # 周报:「最近 4 周滚动」(用户 2026-10-09 选)—— 截到报告周的周日、往前 28 天,同期口径。
+        # 周的切法在 knowledge/weekly.py,区间成交率在 knowledge/attribution.py,这里只取数
+        import seed as _seed
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge"))
+        import weekly as _wk
+        try:
+            _一, _日 = _wk.周起止(week)
+        except ValueError:
+            return dict(error=f"week 要写成那一周里任意一天 `YYYY-MM-DD`,你给的是「{week}」")
+        起 = (_一 - _dt.timedelta(days=21)).isoformat()
+        止 = min(_日, _dt.date.fromisoformat(_seed.TODAY)).isoformat()
+        店接待 = [x for x in 接待列表 if x[2] in 人 and (not 店 or 人[x[2]][1] == 店)]
+        结 = _归.区间成交率(店接待, 订单列表, 起, 止)
+        a, b = 结["门店"]
+        return {"看的范围": 范围,
+                "口径": f"最近 4 周滚动 · {起} ~ {止}(截到报告周的周日;同期口径:这 28 天里亲自接待过的客户,"
+                        "这 28 天里下了定制单的算成交)",
+                "门店成交率": f"{100*a/b:.0f}%" if b else "—",
+                "门店怎么算的": f"{a} ÷ {b}",
+                "顾问成交率(按归因成交排)": [
+                    {"顾问": 人[w][0], "分母客户": n, "归因成交份额": round(x, 1),
+                     "成交率": f"{100*x/n:.0f}%" if n else "—"}
+                    for w, (x, n) in sorted(结["顾问"].items(), key=lambda kv: (-kv[1][0], kv[0])) if w in 人],
+                "⚠️ 已知偏低": "这 28 天里接待、28 天之后才下单的,这里算没成交 —— 和月度同期口径同一个偏差;"
+                               "滚动看的是趋势,不要拿它和别家的成交率比绝对值",
+                "⚠️ 前提": "W 型 30/30/30/10 是惯例不是算出来的;**触点和订单都是造的数据**"}
     if mode:
         import seed as _seed
         N = int(n_days or _归.默认N)
@@ -6098,7 +6222,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"report_production":report_production,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"report_production":report_production,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

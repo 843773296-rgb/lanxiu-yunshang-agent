@@ -396,6 +396,9 @@ run "按月查 · 某月进入休眠的客户 / 某月的订单(期望值另用 
 run "工厂回传 · 条数是总数不是 LIMIT(副本上造到 60+ 条)" python3 backend/factory_chase_count_check.py
 run "商品销量排行 · 对独立 SQL、范围随身份、排序确定" python3 backend/sales_rank_check.py
 run "客户档位 · 存的 = 按今天重算的(最后互动日过期 / 要单没单 / 其余不符 三类分开报)" python3 backend/lifecycle_sync_check.py
+run "周报口径 · 业务周切法 / 营收 = 实收减退款(自测)" python3 knowledge/weekly.py
+run "周报 · 按周营收对独立 SQL(按付款日 / 退款日归周、范围随身份)" python3 backend/weekly_revenue_check.py
+run "周报 · 评价 / 进入休眠 / 任务复盘按周查,对独立 SQL" python3 backend/weekly_metrics_check.py
 run "判据词表 · 声称有备选,就得验过一条备选" python3 tools/vocab_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py

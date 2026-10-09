@@ -408,6 +408,8 @@ SHOP_TOOLS = [
     "mcp__shop__orders_by_date",
     # 商品销量排行(只读):「九月卖得最好的商品」—— 按商品 / SKU / 品类汇总订单行。规矩 TL65
     "mcp__shop__sales_rank",
+    # 按周营收(只读,周报用):实收减退款,按付款日 / 退款日归周。规矩 TL66
+    "mcp__shop__weekly_revenue",
     "mcp__shop__report_production",
     # 订单日志(只读):这张单发生过什么 —— 顾客问「为什么晚了」时,被拒收和作废的回传往往才是答案。规矩 TL54
     "mcp__shop__order_log",

@@ -523,6 +523,16 @@ ORDERS_RANGE_RULE = Rule("TL62", ("orders_by_date",), """
   **并且在回答里说清按的是哪一列**。
 """, scope="工具")
 
+WEEKLY_REVENUE_RULE = Rule("TL66", ("weekly_revenue",), """
+**按周营收(周报用,业务 2026-10-09 定)。三条:**
+
+- **营收 = 实收减退款,按付款日 / 退款日归周** —— 不是这周下了多少单、也不是订单金额。
+  用户问「上周卖了多少钱」时先说清是哪个数:营收看 `weekly_revenue`,下单数看 `orders_by_date`,
+  卖掉的件数和订单行金额看 `sales_rank`。三个数口径不同,**不要拿一个去顶另一个**。
+- **业务周是周一到周日**;不给 week 就是上一个完整周。这一周还没过完时返回里写着,报的时候要说「截到今天」。
+- **退款日是近似的**(库里没有退款完成时间,用售后单最后更新时间),报退款时带一句。预约押金不算营收。
+""", scope="工具")
+
 SALES_RANK_RULE = Rule("TL65", ("sales_rank",), """
 **商品销量排行(「九月卖得最好的商品」这类问法)。四条:**
 
@@ -828,6 +838,7 @@ OPPORTUNITY_RULE,
 REVIVE_RULE,
 ORDERS_RANGE_RULE,
 SALES_RANK_RULE,
+WEEKLY_REVENUE_RULE,
 SHIFT_RULE,
 CREDIT_RULE,
 HISTORY_RULE,
@@ -1269,6 +1280,7 @@ OPPORTUNITY_RULE,
 REVIVE_RULE,
 ORDERS_RANGE_RULE,
 SALES_RANK_RULE,
+WEEKLY_REVENUE_RULE,
 SHIFT_RULE,
 CREDIT_RULE,
 HISTORY_RULE,

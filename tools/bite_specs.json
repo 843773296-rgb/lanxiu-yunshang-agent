@@ -5948,5 +5948,101 @@
    }
   ],
   "预期红": "真跑钉回(10-09 整套重跑):按归因排名并说清不用接待人那个数"
+ },
+ {
+  "script": "backend/weekly_revenue_check.py",
+  "改坏": "实收按下单日归周(而不是付款日)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "\"SELECT substr(o.paid_at,1,10) d, o.received FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id \"\n        \"WHERE o.paid_at IS NOT NULL AND o.paid_at >= ? AND o.paid_at <= ?\" + where, 起, 止, *args)]",
+    "new": "\"SELECT substr(o.created,1,10) d, o.received FROM ordr o LEFT JOIN customer cu ON cu.id=o.customer_id \"\n        \"WHERE o.paid_at IS NOT NULL AND o.created >= ? AND o.created <= ?\" + where, 起, 止, *args)]"
+   }
+  ],
+  "预期红": "上周实收和独立 SQL 对得上"
+ },
+ {
+  "script": "backend/weekly_revenue_check.py",
+  "改坏": "退款没减(营收 = 实收)",
+  "file": [
+   {
+    "path": "knowledge/weekly.py",
+    "old": "\"营收\": round(收 - 退, 2),",
+    "new": "\"营收\": round(收, 2),"
+   }
+  ],
+  "预期红": "营收 = 实收 − 退款,且和独立 SQL 对得上"
+ },
+ {
+  "script": "backend/weekly_revenue_check.py",
+  "改坏": "店长不再限本店",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    where, args, 范围话, _ = _订单范围(me)\n    起, 止 = 一.isoformat(), 日.isoformat() + \" 23:59:59\"",
+    "new": "    where, args, 范围话, _ = \"\", [], \"全部\", None\n    起, 止 = 一.isoformat(), 日.isoformat() + \" 23:59:59\""
+   }
+  ],
+  "预期红": "店长只看本店:实收 = 本店独立 SQL"
+ },
+ {
+  "script": "knowledge/weekly.py",
+  "改坏": "业务周切成周日到周六(周日算成下一周的头一天)",
+  "file": [
+   {
+    "path": "knowledge/weekly.py",
+    "old": "    一 = d - _dt.timedelta(days=d.weekday())",
+    "new": "    一 = d - _dt.timedelta(days=(d.weekday() + 1) % 7)"
+   }
+  ],
+  "预期红": "周日属于这一周(不是下一周)"
+ },
+ {
+  "script": "backend/weekly_metrics_check.py",
+  "改坏": "评价按周时只卡了起点、没卡终点(和「最近 N 天」一样往后漏)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "WHERE substr(r.rated_at,1,10)>=? AND substr(r.rated_at,1,10)<=?\"\"\", 起, 止)",
+    "new": "WHERE substr(r.rated_at,1,10)>=? AND ?<>''\"\"\", 起, 止)"
+   }
+  ],
+  "预期红": "评价:上周条数和独立 SQL 对得上"
+ },
+ {
+  "script": "backend/weekly_metrics_check.py",
+  "改坏": "任务按周时还是按月筛",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "f\"WHERE {where} AND substr(s.{rv.归月字段},1,10) BETWEEN ? AND ?\", *(args + [区起, 区止]))",
+    "new": "f\"WHERE {where} AND substr(s.{rv.归月字段},1,7)=substr(?,1,7) AND ?<>''\", *(args + [区起, 区止]))"
+   }
+  ],
+  "预期红": "任务:每一周的到期数和独立 SQL 对得上"
+ },
+ {
+  "script": "backend/weekly_metrics_check.py",
+  "改坏": "滚动窗口少算了一周(21 天而不是 28 天)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        起 = (_一 - _dt.timedelta(days=21)).isoformat()\n        止 = min(_日, _dt.date.fromisoformat(_seed.TODAY)).isoformat()",
+    "new": "        起 = (_一 - _dt.timedelta(days=14)).isoformat()\n        止 = min(_日, _dt.date.fromisoformat(_seed.TODAY)).isoformat()"
+   }
+  ],
+  "预期红": "成交率:窗口是截到报告周周日的最近 28 天"
+ },
+ {
+  "script": "knowledge/attribution.py",
+  "改坏": "区间成交率把区间之后的单也算进来",
+  "file": [
+   {
+    "path": "knowledge/attribution.py",
+    "old": "        if c in 分母客户 and 在期(d):\n            各.setdefault(c, []).append(分)",
+    "new": "        if c in 分母客户:\n            各.setdefault(c, []).append(分)"
+   }
+  ],
+  "预期红": "区间:区间之后才下的单不算"
  }
 ]
