@@ -95,8 +95,22 @@ def main():
     ck(f"{A['name']} 看到的每条要么是他的、要么标着改派",
        "是" if mine_or_reassigned else "混进说不清的", "是",
        "  ← 别人的活出现在他列表里而没标改派,就是漏")
-    ck(f"店长看得到 {A['name']} 的", "看得到" if ida <= idm else "看不全", "看得到")
-    ck(f"店长看得到 {B['name']} 的", "看得到" if idb <= idm else "看不全", "看得到")
+    # ⚠️ 原来比的是 `ida <= idm` —— 而店长的 my_tasks **最多列 40 条**(多的写在「还有没列出的」)。
+    # 10-09 数据工厂补了派单任务、本店涨到 60 条,店长列表截掉 20 条,这条就红成「看不全」——
+    # 红的不是隔离,是**拿截断后的列表当全集**。
+    # > 一个「店长看不到」和一个「店长的列表只列了前 40 条」,在「不在 idm 里」上长得一模一样。
+    # 改成**逐条用店长身份打开**(get_task 自带范围判定):打得开才算看得到,不受列表上限影响
+    def _店长打得开(ids, who):
+        with api.as_user(who):
+            return all("error" not in api.get_task(t) for t in ids)
+    ck(f"店长看得到 {A['name']} 的", "看得到" if _店长打得开(ida, mgr) else "看不全", "看得到")
+    ck(f"店长看得到 {B['name']} 的", "看得到" if _店长打得开(idb, mgr) else "看不全", "看得到")
+    # 反方向也要验:别店店长**一条都打不开**(否则上面那条换成「谁都打得开」也会绿)
+    别店长 = next((r for r in st.values() if r["role"] == "店长" and r["shop"] != mgr["shop"]), None)
+    if 别店长:
+        with api.as_user(别店长):
+            漏 = [t for t in ida | idb if "error" not in api.get_task(t)]
+        ck(f"别店店长打不开 {A['name']} / {B['name']} 的", "打不开" if not 漏 else f"漏了 {len(漏)} 条", "打不开")
     ck("店长的范围是全店", "全店" if "店长" in da["范围"] or "全店" in dm["范围"] else "不是", "全店")
 
     print(f"\n\033[1m▸ 单条隔离 · 知道单号能不能看别人的\033[0m")
