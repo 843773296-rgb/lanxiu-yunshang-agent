@@ -344,6 +344,19 @@ class H(BaseHTTPRequestHandler):
         p = _u(unquote(urlparse(self.path).path))
         n = int(self.headers.get("content-length") or 0)
         raw = self.rfile.read(n) if n else b"{}"
+        if p == "/api/rate-rag":
+            # 顾问在聊天框里点了 1-5(业务 2026-10-08 拍:问完直接评,使用者来评)
+            try: body = json.loads(raw or b"{}")
+            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
+            rid = (body.get("试跑id") or "").strip()
+            分 = body.get("评分")
+            if not rid:
+                return self._send({"error": "没有 `试跑id` —— 这一轮没查知识库,没东西可评"},
+                                  code=400)
+            if not isinstance(分, int) or not (1 <= 分 <= 5):
+                return self._send({"error": f"评分要是 1-5,给的是 {分!r}"}, code=400)
+            r = _评一次检索(rid, 分, body.get("评语"))
+            return self._send(r, code=(200 if r.get("ok") else 502))
         if p == "/run":
             try: body = json.loads(raw or b"{}")
             except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
@@ -586,6 +599,67 @@ class H(BaseHTTPRequestHandler):
                     tools=row.get("tool_calls"), cost=r.get("cost_usd"), seconds=r["seconds"],
                     guard_blocked=r.get("guard_blocked"),
                     guard=[v["msg"] for v in (r.get("guard_violations") or [])])
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 顾问给这一次检索打分(业务 2026-10-08 拍:**chat 问完直接评,使用者来评**)
+#
+# ⚠️ **为什么要在这儿转一道,而不是让浏览器直接打管理后台:**
+#   · 浏览器只跟自己这个站说话 —— 不然要配跨域、要把管理后台的身份头发到前端;
+#   · 打分要 `If-Match`(管理后台那边两个人同时评会静默覆盖),
+#     而 revision 要先读一次详情才拿得到 —— **那是两步,不该让前端记得做**。
+#     > 一个「带了 If-Match」和一个「忘了带」,在前端代码上长得几乎一样,
+#     > 而后者会让后到的那个人静默盖掉前一个人的分。
+#
+# ⚠️ **低于 3 分不在这儿判。** 这里只负责把分数送过去 ——
+# 「低于 3 分算问题、要打开分析」是**管理后台那一侧的事**(业务拍的:
+# 管理后台只做展示)。在两边都写一遍阈值,它们迟早分叉。
+_后台基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
+_后台项目 = os.environ.get("AIMC_PROJECT", "project_lanxiu")
+_后台身份 = os.environ.get("AIMC_USER", "U001")
+
+
+def _评一次检索(试跑id, 分, 评语=None):
+    """给一次检索试跑打分。返回 `{ok, …}` 或 `{error, 怎么办}`。
+
+    ⚠️ 失败**不装作成功** —— 评分点了没生效,而界面上显示成功,
+    那比点不动糟:顾问以为自己反馈过了。
+    """
+    import urllib.error
+    基 = f"{_后台基址}/api/v1/projects/{_后台项目}/retrieval-runs/{试跑id}"
+    头 = {"content-type": "application/json", "X-Dev-User": _后台身份}
+    try:
+        # ① 先读详情拿 revision(打分要用它做 If-Match)
+        q = urllib.request.Request(基, headers={"X-Dev-User": _后台身份})
+        d = json.loads(urllib.request.urlopen(q, timeout=20).read())
+        rev = d.get("revision")
+        if rev is None:
+            return {"error": "管理后台没给 revision,打不了分",
+                    "怎么办": "这条试跑记录可能不存在了 —— 刷新再问一次"}
+        # ② 带着 revision 打分
+        体 = json.dumps({"评分": int(分), "评语": (评语 or "")},
+                        ensure_ascii=False).encode()
+        w = urllib.request.Request(基 + "/rating", method="PATCH", data=体,
+                                   headers={**头, "If-Match": str(rev)})
+        return {"ok": True, **json.loads(urllib.request.urlopen(w, timeout=20).read())}
+    except urllib.error.HTTPError as e:
+        try:
+            错 = json.loads(e.read())
+        except Exception:
+            错 = {}
+        if e.code == 409:
+            # 别人刚评过同一条 —— 说清楚,别让人以为是自己点错了
+            return {"error": "这条刚被别人评过了",
+                    "怎么办": "刷新一下看看别人评了几分,再决定要不要改"}
+        return {"error": f"打分没成功({e.code}):{错.get('message') or ''}"[:160],
+                "怎么办": (错.get("advice") or "")[:200] or "过一会儿再试"}
+    except Exception as e:
+        # ⚠️ 管理后台没起的时候就是这一支。**照实说** ——
+        # 业务拍的那条「这条路断了就说出来」在这儿也成立。
+        return {"error": f"连不上管理后台({_后台基址})",
+                "怎么办": "管理后台没起的话,这个分数记不下来 —— "
+                        "起法:`管理后台/tools/dev.sh`。"
+                        f"({type(e).__name__})"}
 
 
 def _post(path, payload, timeout=60):

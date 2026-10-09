@@ -1547,6 +1547,11 @@ async def 上报一次模型调用(project_id: str, request: Request,
 # ⚠️ **档位要有名字,不能只有数字。** 一个只有 1-5 的量表上,
 # 「3」在不同人心里差别很大 —— 而平均分会把这种差别算进来,
 # 算出一个看起来精确的数。名字把它钉住。
+# ⚠️ **「低于几分算要分析」只在这一处定。** 业务 2026-10-08 拍的 3 分。
+# chat 那一侧不判它 —— 两边各写一遍阈值,它们迟早分叉,
+# 而分叉的时候两边各自都说得通(一边说「这条要看」,另一边说「不用」)。
+要分析的门槛 = 3
+
 评价档位 = {
     1: "完全答错 / 帮不上",
     2: "找得不对,得自己重查",
@@ -1628,7 +1633,8 @@ def 记一次试跑(project_id, me, 链, *, 构建id, 来源="检索实验室"):
 @router.get(前缀 + "/retrieval-runs")
 def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
           limit: int = Query(50, ge=1, le=200),
-          source: str = Query(None), 只看没评的: bool = Query(False)):
+          source: str = Query(None), 只看没评的: bool = Query(False),
+          只看要分析的: bool = Query(False)):
     """检索试跑列表。**分数、来源、答案那一档都要在列表上看得见。**
 
     ⚠️ 这一页回答的是「**这一版检索好不好用**」—— 不是「跑过几次」。
@@ -1644,6 +1650,11 @@ def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         参["src"] = source
     if 只看没评的:
         条件.append("rr.rating is null")
+    # ⚠️ **「低于 3 分」这个阈值只在这一处定**(业务 2026-10-08 拍:
+    # 低于 3 分算问题,要打开分析)。chat 那一侧**不判**它 ——
+    # 两边各写一遍阈值,它们迟早分叉,而分叉时两边各自都说得通。
+    if 只看要分析的:
+        条件.append(f"rr.rating is not null and rr.rating < {要分析的门槛}")
     with 连接() as c:
         rs = c.execute(text(f"""
             select count(*) over () 全量,
@@ -1664,10 +1675,13 @@ def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         # 而人读到的是「这一版检索的平均分」。
         # (这个坑今天在切片栏目上踩过一次:混版本告警拿带筛选的查询算,
         #  于是一条真告警在筛选状态下消失。)
-        总 = c.execute(text("""
+        总 = c.execute(text(f"""
             select count(*) 条数, count(rating) 评过的,
                    avg(rating)::numeric(10,2) 平均分,
-                   count(*) filter (where source = 'chat') chat的
+                   count(*) filter (where source = 'chat') chat的,
+                   -- 业务拍的那条线:低于 3 分 = 要打开看的
+                   count(*) filter (where rating is not null
+                                      and rating < {要分析的门槛}) 要分析的
               from retrieval_runs where project_id = :p
         """), {"p": project_id}).mappings().first()
         分布 = {int(r["rating"]): r["几条"] for r in c.execute(text("""
@@ -1689,6 +1703,9 @@ def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
             # 列表上给**一句**答案就够;全文在详情里。
             "答案摘要": ((出力.get("答案") or "")[:80] or None),
             "评分": d["rating"],
+            # ⚠️ **「要分析」是接口算的,不是让界面自己比数**:
+            # 界面比数的话,阈值就有了第二个定义点,而改一边不报错。
+            "要分析吗": (d["rating"] is not None and d["rating"] < 要分析的门槛),
             # ⚠️ 没评过给 **None,不是 0** ——「还没人评」和「评了最低档」
             # 在一个 0 上长得一模一样。
             "评分档位": (评价档位.get(d["rating"]) if d["rating"] else None),
@@ -1714,6 +1731,11 @@ def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                         if (总["评过的"] or 0) < 10 else "")),
             "各档分布": {f"{k} · {评价档位[k]}": v for k, v in 分布.items()},
             "chat 的有几条": 总["chat的"],
+            "要分析的有几条": 总["要分析的"],
+            "什么算要分析": f"评分低于 {要分析的门槛} 分(业务 2026-10-08 拍)—— "
+                        f"**打开看它当时找到了哪几段**,那是这个栏目的用处。"
+                        f"⚠️ 没评过的不算(`rating is null`)—— "
+                        f"「还没人评」和「评得低」是两件事",
             # ⚠️ 这一句是这个栏目最要紧的一句话。见模块头那段。
             "note": (
                 "**chat 现在不走这条检索链** —— 它走澜绣那边的 V1/V2/V3,"

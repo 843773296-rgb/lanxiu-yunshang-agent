@@ -130,12 +130,37 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 .wrap{max-width:760px;margin:0 auto;padding:0 24px}
 .msg{margin-bottom:26px}
 .msg.u .wrap{display:flex;justify-content:flex-end}
-.msg.u .bub{background:var(--chip);border-radius:14px;padding:9px 14px;max-width:78%;white-space:pre-wrap}
+/* ⚠️ **`max-width:78%` 要挂在 flex 项上,不是挂在气泡自己身上。**
+   原来写在 `.bub` 上:它的百分比是相对**父元素**算的,而那个父元素
+   (`.wrap > div`,一个无样式的 div)在 flex 里是 shrink-to-fit ——
+   宽度由气泡内容撑出来。两者互相依赖,浏览器只能先按最小内容宽度收,
+   于是**四个字也会被折行**。
+   > 一个「气泡宽度限制对了」和一个「限制挂在了一个宽度还没定的元素上」,
+   > **在那行 CSS 上长得几乎一样** —— 而后者把每条短消息都折成一列。
+   现在:限制挂在 flex 项上(它的百分比相对 `.wrap`,宽度是确定的),
+   气泡本身 `max-width:100%` + `width:fit-content`,短句就一行。
+   `overflow-wrap:anywhere` 只管那种**本来就断不开的长串**(URL、长编号)。*/
+.msg.u .wrap > div{max-width:78%;min-width:0}
+.msg.u .bub{background:var(--chip);border-radius:14px;padding:9px 14px;
+  max-width:100%;width:fit-content;margin-left:auto;
+  white-space:pre-wrap;overflow-wrap:anywhere}
 .msg.a .body{white-space:normal}
 .tool{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);
   background:var(--chip);border-radius:7px;padding:3px 9px;margin:0 6px 6px 0}
 .tool b{font-weight:500;color:#5b5d64}
 .meta{margin-top:12px;font-size:11.5px;color:var(--dim);border-top:1px solid var(--line);padding-top:8px}
+/* ── 评分条(业务 2026-10-08 拍:问完直接评,使用者来评)─────────────
+   ⚠️ 只在**这一轮真查了知识库**时出现 —— 没查过就没东西可评。
+   > 一个「这一轮没查知识库」和一个「查了但没人评」,
+   > **在一个空的评分条上长得一模一样。** */
+.rate{margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  font-size:12px;color:var(--dim)}
+.rate button{border:1px solid var(--line);background:#fff;border-radius:7px;
+  width:30px;height:28px;font:inherit;font-size:13px;cursor:pointer;color:var(--ink)}
+.rate button:hover{border-color:var(--accent);color:var(--accent)}
+.rate button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.rate .done{color:var(--ok,#2a7)}
+.rate .bad{color:var(--fail,#c0392b)}
 .gv{background:var(--warnbg);border:1px solid #fed7aa;color:var(--warn);
   border-radius:9px;padding:8px 11px;font-size:12px;margin-top:10px}
 .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:9px;padding:10px 12px}
@@ -802,6 +827,59 @@ function toolChip(t){
   return `<span class="tool">↳ <b>${esc(t.tool)}</b>${a ? esc(a.slice(0,60)) : ""}</span>`;
 }
 
+/* ── 评分条(业务 2026-10-08 拍:chat 问完直接给评分,让使用者来评)──────
+ *
+ * ⚠️ **试跑 id 只从工具的真返回值取**(`t.result.试跑id`),
+ * 不从模型说的话里找:
+ * > 一个「模型复述出来的 id」和一个「真返回值里的 id」,
+ * > **在那串字符上长得一模一样** —— 而前者可能指向另一次检索,
+ * > 于是顾问的分数记到了别人头上,**而且不报错**。
+ * (`sdk.py` 的 `结构化回前端` 里点名了 `kb_rag`,返回值才会挂到 traj 上。)
+ *
+ * ⚠️ **这一轮没查知识库就不显示这个条** —— 没东西可评。
+ * 显示一个点不动的评分条,比不显示糟:人会以为自己评过了。
+ *
+ * ⚠️ **不在这儿判「低于 3 分算问题」** —— 那是管理后台那一侧的事
+ * (业务拍的:管理后台只做展示 + 低于 3 分要能打开分析)。
+ * 两边各写一遍阈值,它们迟早分叉。这里只负责把分数送出去。 */
+function ragRunId(m){
+  const t = (m.trajectory || []).filter(
+    x => String(x.tool || "").split("__").pop() === "kb_rag" &&
+         x.result && x.result.试跑id);
+  return t.length ? t[t.length - 1].result.试跑id : null;   // 一轮查了多次就评最后那次
+}
+
+function rateBar(m, i){
+  const rid = ragRunId(m);
+  if(!rid) return "";                       // 这一轮没查知识库 —— 不显示
+  const 已 = RATED[rid];
+  if(已 != null){
+    const 坏 = 已 < 3;
+    return `<div class="rate"><span class="${坏 ? "bad" : "done"}">`
+      + `已评 ${已} 分${坏 ? " —— 这条会进管理后台的「要分析」清单" : ""}</span>`
+      + `<button data-rid="${esc(rid)}" data-again="1" title="改分">改</button></div>`;
+  }
+  return `<div class="rate"><span>这次找得怎么样?</span>`
+    + [1,2,3,4,5].map(n => `<button data-rid="${esc(rid)}" data-score="${n}"`
+        + ` title="${esc(档位名[n])}">${n}</button>`).join("")
+    + `<span style="font-size:11.5px">1 完全没用 · 5 正好是我要的</span></div>`;
+}
+
+const 档位名 = {1:"完全答错 / 帮不上", 2:"找得不对,得自己重查", 3:"勉强能用,还要补",
+              4:"基本对,小改就能用", 5:"正好是我要的"};
+const RATED = {};        // 试跑id → 分数(这一页内记着,免得重绘丢掉)
+
+async function 评这次(rid, 分){
+  const r = await fetch("/api/rate-rag", {
+    method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({试跑id: rid, 评分: 分}),
+  }).then(x => x.json()).catch(e => ({error: String(e)}));
+  if(r.ok){ RATED[rid] = 分; drawStream(); return; }
+  // ⚠️ **失败不装作成功。** 点了没生效而界面显示成功,比点不动糟 ——
+  // 顾问以为自己反馈过了,而那条记录上什么都没有。
+  alert((r.error || "打分没成功") + (r.怎么办 ? "\n\n" + r.怎么办 : ""));
+}
+
 function metaLine(r){
   const u = r.usage || {};
   const bits = [];
@@ -875,7 +953,7 @@ function drawStream(){
     });
     return;
   }
-  s.innerHTML = c.msgs.map(m => {
+  s.innerHTML = c.msgs.map((m, i) => {
     if(m.role === "user"){
       const im = (m.images || []).length
         ? `<div class="imgs">${m.images.map(u => `<img src="${esc(u)}">`).join("")}</div>` : "";
@@ -903,13 +981,23 @@ function drawStream(){
       ${(m.trajectory || []).map(toolChip).join("")}
       ${卡}
       <div class="body">${md(m.text)}</div>${gv}
-      <div class="meta">${esc(metaLine(m))}</div></div></div>`;
+      <div class="meta">${esc(metaLine(m))}</div>
+      ${rateBar(m, i)}</div></div>`;
   }).join("");
   s.scrollTop = s.scrollHeight;
   // 卡片用**事件委托**绑 —— 每次重绘 innerHTML 都会把旧的 onclick 冲掉,
   // 而「绑了但被冲掉」和「没绑」在点不动这件事上长得一模一样。
   s.querySelectorAll(".ordcard").forEach(b => {
     b.onclick = () => openOrder(b.dataset.oid);
+  });
+  // 评分按钮每次重绘都要重绑 —— 和上面那条同一个理由:
+  // innerHTML 一改,旧的 onclick 全被冲掉,而「绑了但被冲掉」和「没绑」
+  // 在点不动这件事上长得一模一样。
+  s.querySelectorAll(".rate button[data-score]").forEach(b => {
+    b.onclick = () => 评这次(b.dataset.rid, +b.dataset.score);
+  });
+  s.querySelectorAll(".rate button[data-again]").forEach(b => {
+    b.onclick = () => { delete RATED[b.dataset.rid]; drawStream(); };
   });
 }
 

@@ -3444,52 +3444,49 @@ const 档位pill = {
 };
 
 function 评分块(r) {
-  /* 五个按钮 + 当前分。`data-rr` / `data-score` 由下面统一接事件。
-   * ⚠️ `data-rev` 带的是**这一行的 revision** —— 打分要用它做 If-Match。 */
+  /* ⚠️ **只展示,不给打分按钮**(业务 2026-10-08 拍:
+   *   「chat 问完直接给评分,让使用者来评,ai 管理后台只做展示」)。
+   *
+   * 这一版**原来是在这一页上打分的** —— 而那等于要顾问为了评一次
+   * 专门打开另一个系统:
+   * > 一个「有评分功能」的栏目,和一个「没人会去评」的,
+   * > **在那个按钮上长得一模一样** —— 而后者的分数永远是空的。
+   * 打分搬到了聊天框里(值班台那一页,答完就在气泡下面)。
+   *
+   * ⚠️ 「低于 3 分 = 要分析」**不在这儿比** —— 接口给了 `要分析吗`。
+   * 界面自己比数的话,那个阈值就有了第二个定义点,而改一边不报错。*/
   const 现 = r["评分"];
-  return `<div data-rrrow="${esc(r.id)}">
-    ${现 && 档位pill[现]
-        ? 档位pill[现](`${现} · ${esc(r["评分档位"] || "")}`)
-        : `<span class="pill none">还没评</span>`}
-    <div class="k" style="margin-top:3px">
-      ${[1, 2, 3, 4, 5].map((n) => `<button data-rr="${esc(r.id)}" data-score="${n}"
-        data-rev="${esc(String(r["revision"]))}"
-        title="${esc(档位名[n] || "")}"
-        style="padding:1px 6px;margin-right:2px${
-          现 === n ? ";font-weight:700;border-color:var(--ink)" : ""}">${n}</button>`).join("")}
-    </div>
+  if (现 == null) return `<span class="pill none">还没评</span>`;
+  const 要分析 = r["要分析吗"] === true;
+  return `${档位pill[现] ? 档位pill[现](`${现} · ${esc(r["评分档位"] || "")}`)
+            : `<span class="pill none">${现}</span>`}
+    ${要分析 ? `<div class="k"><b>要分析</b> —— 打开看它当时找到了哪几段</div>` : ""}
     ${r["评语"] ? `<div class="k">「${esc(r["评语"])}」</div>` : ""}
-  </div>`;
+    ${r["谁评的"] ? `<div class="k">${esc(r["谁评的"])}</div>` : ""}`;
 }
 
 let 档位名 = {};        // 从接口的档位表来(不在前端写死一份,两份会漂)
 
-async function 打分(id, 分, rev, 刷新) {
-  const 评语 = window.prompt(`${分} 分 · ${档位名[分] || ""}\n\n`
-    + "为什么?(可以不写)\n这句话是以后回看「为什么当时给了这个分」的唯一线索", "");
-  if (评语 === null) return;              // 点了取消 —— 不打分
-  try {
-    await 请求(`${P()}/retrieval-runs/${encodeURIComponent(id)}/rating`, {
-      method: "PATCH",
-      // ⚠️ **If-Match 带的是这一行的 revision** ——
-      // 两个人同时评,后到的会静默覆盖前一个。
-      headers: { "If-Match": String(rev) },
-      body: JSON.stringify({ 评分: 分, 评语: 评语 }),
-    });
-  } catch (e) {
-    // 409 要说清「刷新再看」—— 直接报一句「失败」会让人再点一次,而再点还是 409
-    alert((e && e.message ? e.message : String(e))
-      + "\n\n(如果是「已经被改过」:别人刚评过同一条,刷新看一眼再决定)");
-  }
-  await 刷新();
-}
+/* ⚠️ **这一页原来能打分,2026-10-08 搬走了。**
+ *
+ * 业务拍的是:「chat 问完直接给评分,让使用者来评,ai 管理后台只做展示」。
+ * 而原来的做法要顾问为了评一次专门打开管理后台 ——
+ * > 一个「有评分功能」的栏目,和一个「没人会去评」的,
+ * > **在那个按钮上长得一模一样** —— 而后者的分数永远是空的。
+ *
+ * 打分现在在**聊天框里**(值班台 8770,答完就在气泡下面),
+ * 它走 `POST /api/rate-rag` → 由那个站转发到这边的
+ * `PATCH /retrieval-runs/{id}/rating`(If-Match 在服务端带,前端不用管)。
+ * 这一页只负责**看**:哪几条低于 3 分、点开看它当时找到了哪几段。
+ *
+ * ⚠️ 打分那条接口**没删** —— 它还在契约里、还有判据(两个人同时评的
+ * 静默覆盖那条)。删掉它等于让 chat 那条路也没法评。
+ */
 
-function 接打分(刷新) {
-  $("#main").querySelectorAll("[data-rr][data-score]").forEach((b) => {
-    b.onclick = () => 打分(b.dataset.rr, Number(b.dataset.score),
-                          b.dataset.rev, 刷新);
-  });
-}
+/* 「只看要分析的」= 评分低于 3 分(业务 2026-10-08 拍)。
+ * ⚠️ 这个阈值**不在前端** —— 接口给 `要分析吗` / `只看要分析的`,
+ * 界面只传开关。前端比数的话,阈值就有了第二个定义点。*/
+let _只看要分析的 = false;
 
 async function 页_试跑记录() {
   const 头 = `<div class="crumb">知识与 RAG</div>
@@ -3499,7 +3496,10 @@ async function 页_试跑记录() {
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   const 拉 = async () => {
     let d;
-    try { d = await 请求(`${P()}/retrieval-runs?limit=100`); }
+    try {
+      d = await 请求(`${P()}/retrieval-runs?limit=100`
+        + (_只看要分析的 ? "&只看要分析的=true" : ""));
+    }
     catch (e) { const s = 错误块(e, 页_试跑记录); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
     const 汇 = d["汇总"] || {};
     // 档位名从接口来 —— 列表没给的话去详情拿;两处都没有就只显示数字。
@@ -3512,6 +3512,8 @@ async function 页_试跑记录() {
     const 汇总块 = `<div class="cards">
       ${[["一共几条", 汇["一共几条"]], ["评过的", 汇["评过的"]],
          ["还没评的", 汇["还没评的"]],
+         // 🔑 业务要的那一格:低于 3 分 = 要打开分析的
+         ["要分析的(<3 分)", 汇["要分析的有几条"]],
          ["平均分", 汇["平均分"] === null || 汇["平均分"] === undefined
             ? "—" : 汇["平均分"]]].map(([k, v]) =>
         `<div class="card kpi"><div class="body"><div class="k">${esc(k)}</div>
@@ -3519,6 +3521,13 @@ async function 页_试跑记录() {
          </div></div>`).join("")}
       </div>
       <div class="note">${md("**平均分怎么读**:" + (汇["平均分怎么读"] || "—"))}</div>
+      ${汇["要分析的有几条"]
+        ? `<div class="note warn">${md("**" + 汇["要分析的有几条"]
+            + " 条要分析** —— " + (汇["什么算要分析"] || ""))}
+            <div style="margin-top:6px"><button id="rr-bad">${
+              _只看要分析的 ? "看全部" : "只看要分析的"}</button></div></div>`
+        : `<div class="note">${md("没有低于 3 分的记录 —— "
+            + (汇["什么算要分析"] || ""))}</div>`}
       ${Object.keys(汇["各档分布"] || {}).length
         ? `<div class="note">各档分布:${Object.entries(汇["各档分布"]).map(
             ([k, v]) => `${esc(k)} <b>${v}</b> 条`).join(" · ")}</div>` : ""}
@@ -3556,7 +3565,8 @@ async function 页_试跑记录() {
          <div class="note">${md(`⚠️ **「答案」那一栏的四档不是同一类事**:
            「这次没要」是人去掉了勾(一个选择),「跑不成」是一次故障 ——
            **合成一句「没有答案」的话,这两种在列表上长得一模一样**。`)}</div>`;
-    接打分(拉);
+    const bad = $("#rr-bad");
+    if (bad) bad.onclick = () => { _只看要分析的 = !_只看要分析的; 拉(); };
   };
   await 拉();
 }
@@ -3600,7 +3610,6 @@ async function 页_试跑详情(rid) {
     // > 两份渲染迟早分叉,而分叉时两边各自都显示得很正常。
     // (业务要的就是「内容同检索实验室」。)
     $("#rr-chain").innerHTML = 画链路(d["链路"] || {});
-    接打分(拉);
   };
   await 拉();
 }
