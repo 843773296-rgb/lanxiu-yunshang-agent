@@ -179,13 +179,40 @@ def main():
             print("        交数据工坊:见 fakedata/交数据工坊_营销SOP的数据缺口_20261004.md")
 
         # ⚠️ 这一条**只报不拦**,理由写在下面
-        不符 = [r["customer_id"] for r in sqlite3.connect(slipping.DB).execute(
+        #
+        # ⚠️⚠️ 2026-10-09 修了一处**从写下那天起就没跑过**的代码:
+        # 这里原来写 `r["customer_id"]`,而这个连接**没有设 row_factory**,
+        # 行是元组 —— 按字符串取下标会 `TypeError`。
+        # 它一直没炸,是因为这个查询**以前返回 0 行**:列表推导式一行都不迭代,
+        # 那个错的下标永远不会被求值。
+        # 当天档位重算之后它开始返回 2732 行,**当场崩**(而崩溃不打印 ❌,
+        # 整条检查显示成「没验过」)。
+        # > 一行「下标写错了」的代码和一行写对的,**在查询返回 0 行时长得一模一样。**
+        不符 = [r[0] for r in sqlite3.connect(slipping.DB).execute(
             """select h.customer_id from lifecycle_history h
                join customer c on c.id = h.customer_id
                where h.as_of = (select max(as_of) from lifecycle_history
                                  where customer_id = h.customer_id)
                  and h.lifecycle <> c.lifecycle""")]
+        # ⚠️⚠️ **这里要守的是另一个 0。**
+        #
+        # 上面那个查询**返回 0 行就是通过**(没有一个对不上),所以不能给它加
+        # 「0 行算没验到」—— 那会让一条正确的不变量永远红。真正分不开的是:
+        # > 一个「一条都没对不上」和一个「**一条都没比过**」,
+        # > **在那个 0 上长得一模一样。**
+        # 所以数一下「到底比了多少对」。这张表空了 / join 写坏了 /
+        # 子查询选不出最后一条 —— 比的对数就是 0,而那时上面那个 0 什么都不代表。
+        # **空集合上所有性质都成立。**
+        比了 = sqlite3.connect(slipping.DB).execute(
+            """select count(*) from lifecycle_history h
+                 join customer cu on cu.id = h.customer_id
+                where h.as_of = (select max(as_of) from lifecycle_history
+                                  where customer_id = h.customer_id)""").fetchone()[0]
         print()
+        if 比了 < 100:
+            坏.append(f"只比了 {比了} 对「历史最后一条 vs 现在的档位」——"
+                      f" **这不叫通过,叫没比过**(库里 5804 个客户有档位历史)")
+            print(f"  {R}❌{D} {坏[-1]}")
         if 不符:
             print(f"  {Y}⚠{D} 历史最后一条和 `customer.lifecycle` "
                   f"对不上的有 {len(不符)} 个")

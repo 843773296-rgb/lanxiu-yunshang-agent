@@ -121,6 +121,12 @@ run "调参旋钮 · 落点真接上了、只许收窄不许放宽(5 条咬合)"
 run "页面 fetch 的地址 · 后端接得住,而且在对的那个处理器里(2 条咬合)" python3 agentsite/fetch_route_check.py
 run "上下文注入 · 有没有两处在管同一件事(打架时贴着用户消息的那处会赢)" python3 tools/context_conflict_check.py
 run "生命周期口径 · 自测" python3 knowledge/lifecycle.py
+# ⚠️ **这条要排在 member_check 前面** —— member_check 拿 E- 夹具逐例对账,
+# 而夹具被打穿的时候它照样是绿的(2026-10-09:5 张演示单落在夹具上,
+# 把「互动第 91 天」那个边界拉成了第 2 天,member_check 一个字都没报)。
+# 先问「靶子还是原来那个靶子吗」,再问「照着靶子打准不准」。
+run "边界夹具 · 还是不是原来那个夹具(名下0单 / 名字 / 档位闲置)" \
+    python3 backend/fixture_intact_check.py
 run "会员生命周期 · 14 条边界标注对账" python3 backend/member_check.py
 run "预约派单 · 逐例标真值(派错和派对长得一样)" python3 backend/booking_check.py
 run "促活判断 · 逐例标真值 + 覆盖报告(没有样本不叫通过)" python3 backend/revive_check.py

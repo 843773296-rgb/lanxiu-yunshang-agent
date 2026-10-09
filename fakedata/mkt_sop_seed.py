@@ -83,20 +83,54 @@ sys.path.insert(0, os.path.join(根, "knowledge"))
 
 
 def _世界今天(c):
-    """时间基准从库里取,**不取机器的今天**。"""
-    r = c.execute("select v from world_meta where k='today'").fetchone()
+    """时间基准从库里取,**不取机器的今天**。
+
+    ⚠️⚠️ **键是 `world_today`,不是 `today`。** 2026-10-09 发现:
+    这里原来查的是 `where k='today'` —— 而库里那个键叫 `world_today`,
+    所以**主路径从来没有生效过**,一直在走下面「取最新订单日期」那条兜底。
+    今天两者恰好都是 2026-10-09,所以看不出来。
+
+    > 一个「从世界时钟读的今天」和一个「从最新订单日期兜出来的今天」,
+    > **在数值相等的那天长得一模一样** —— 而库里一有未来日期的订单它们就分叉。
+
+    全仓只有这一处这么查(`grep "k='today'"` 唯一命中)。
+    现在:先读 `world_today`,读不到就**当场炸**,不再用「最新订单日期」顶 ——
+    那条兜底的危险不在于它算错,在于它**让一个坏掉的主路径看起来是好的**。
+    """
+    r = c.execute("select v from world_meta where k='world_today'").fetchone()
     if r and r[0]:
         return datetime.fromisoformat(str(r[0])[:10])
-    # 兜底:取库里最新的订单日期 —— 仍然不碰机器时钟
-    r = c.execute("select max(created) from ordr").fetchone()
-    if r and r[0]:
-        return datetime.fromisoformat(str(r[0])[:10])
-    raise SystemExit("取不到世界日期 —— **不拿机器的今天顶**(这个仓库为它栽过)")
+    raise SystemExit("world_meta 里没有 world_today —— **不拿机器的今天、也不拿最新订单日期顶**"
+                     "(正规读法是 backend/worldclock.今天();这个仓库为时钟栽过)")
+
+
+def _现扫受保护(c):
+    """**现从 `truth` 表扫**出受保护客户 —— 不读任何手抄名单。
+
+    2026-10-09:那份手抄的 `.fakedata/营销SOP造数-保护清单.json` 只护住 22 个,
+    而 `truth` 引用且在库的客户有 44 个 —— **漏掉的 30 个全是 `C21000–C21031`**
+    (客户合并那批)。而清单里护住 `E-A2/A3/A4` 的理由写的正好是「被真值表引用(truth)」。
+
+    > 一份「护住了被真值表引用的客户」的保护清单,和一份「只护住了其中 14 个」的,
+    > **在那条理由上长得一模一样。**
+
+    `tools/order_mix.受保护客户()` 的注释早就写明了该怎么做:
+    「**不手抄名单** —— 哪天加了第 15 条边界用例,手抄那份不会跟着变,
+      而那时重算会静默抹掉它。」**那份 JSON 就是它警告过的手抄件。**
+    所以这里**两份并集**:JSON 还护着它独有的那些(FX- 前缀、写死在检查里的 id),
+    现扫的补上 truth 这一路。
+    """
+    import sys as _s
+    _t = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+    if _t not in _s.path:
+        _s.path.insert(0, _t)
+    import order_mix as OM
+    return set(OM.受保护客户(c))
 
 
 def _读保护(c):
-    """把保护清单翻译成「这些客户 id 不许碰」。"""
-    护 = set()
+    """把保护清单翻译成「这些客户 id 不许碰」(手抄清单 ∪ 现扫)。"""
+    护 = set(_现扫受保护(c))
     if not os.path.exists(保护文件):
         print(f"  ⚠️ 没有保护清单 {保护文件} —— **这不叫「没有要护的」,叫没扫过**")
         print("     先跑:python3 fakedata/cli.py protect <库> --env dev "
@@ -331,13 +365,28 @@ def 跑(库, 真写):
     计划["档位历史"] = len(动过) * 4      # 每人回算 4 个时点(3/6/9/12 个月前)
 
     if 真写:
+        import sys as _s
+        _t = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tools")
+        if _t not in _s.path:
+            _s.path.insert(0, _t)
+        import order_mix as OM
         for cid in 动过:
-            # 近 12 个月的事实(现查,不猜)
-            订 = c.execute("""select created, payable, amount from ordr
-                              where customer_id=? and created is not null
-                              order by created""", (cid,)).fetchall()
+            行 = dict(c.execute("select * from customer where id=?", (cid,)).fetchone())
+            建档 = str(行.get("created") or "")[:10]
             for 月前 in (12, 9, 6, 3, 0):
                 基 = 今天 - timedelta(days=30 * 月前)
+                # ⚠️⚠️ **客户还没建档的那些时点,一条历史都不写。**
+                #
+                # 原来是五个时点无条件各写一条,于是「客户建档前」也有档位 ——
+                # 而 `某天的事实` 在那时候一条互动都查不到,算出 idle=9999 → **「流失」**。
+                # 这不是口径问题,是**事实错误**:客户那时候还不存在,不该有任何档位。
+                #
+                # 代价在下游:这段历史是给流失预警当训练样本的,
+                # 「建档前流失 → 建档后活跃」会被当成**「流失后又回来」的正例**,直接污染标签。
+                # > 一条「这个人流失过又回来了」的历史,和一条「这个人那时候还没建档」的,
+                # > **在那张表上长得一模一样** —— 字段齐、档位列有值,只有日期泄露了它。
+                if 建档 and f"{基:%Y-%m-%d}" < 建档:
+                    continue
                 # ⚠️ **「最后一次互动」要按这个时点算,不能用「现在」的。**
                 #
                 # 第一版把它放在循环外面算一次 —— 于是 12 个月前那个时点的
@@ -347,32 +396,23 @@ def 跑(库, 真写):
                 # > 一份「回算了 12 个月」的历史,和一份**每个时点都用今天的
                 # > 数据算**的,**在那张表上长得一模一样** ——
                 # > 条数、字段、格式全对,只有「档位不变」这一点泄露了它。
-                末 = c.execute("""select max(t) from (
-                         select ts t from followup
-                          where customer_id=? and ts<=?
-                         union all select start_ts from appointment
-                          where customer_id=? and start_ts<=?
-                         union all select start_ts from schedule
-                          where customer_id=? and start_ts<=?)""",
-                              (cid, f"{基:%Y-%m-%d} 23:59",
-                               cid, f"{基:%Y-%m-%d} 23:59",
-                               cid, f"{基:%Y-%m-%d} 23:59")).fetchone()[0]
-                窗 = 基 - timedelta(days=365)
-                近 = [o for o in 订
-                      if o["created"] and 窗 <= datetime.fromisoformat(
-                          str(o["created"])[:10]) <= 基]
-                金 = sum((o["payable"] or o["amount"] or 0) for o in 近)
-                季 = len({(datetime.fromisoformat(str(o["created"])[:10]).year,
-                          (datetime.fromisoformat(str(o["created"])[:10]).month - 1) // 3)
-                         for o in 近})
-                首 = min((datetime.fromisoformat(str(o["created"])[:10]) for o in 订),
-                        default=None)
-                闲 = ((基 - datetime.fromisoformat(str(末)[:10])).days
-                      if 末 else 9999)
-                事实 = {"idle_days": max(闲, 0), "orders_12m": len(近),
-                       "amount_12m": 金, "quarters_12m": 季,
-                       "order_cnt": len(订),
-                       "days_since_first_order": (基 - 首).days if 首 else None}
+                #
+                # ⚠️⚠️⚠️ **2026-10-09:这里原来手抄了一份「末」的算法,而它不算下单。**
+                # 只取 followup / appointment / schedule 三张触点表的最近一次 ——
+                # 而 `customer.last_interact` 是**算订单**的。于是刚下过单、
+                # 但没被跟进过的客户被判成休眠,又在下面 `月前 == 0` 那一步
+                # 写回 `customer.lifecycle`,而同一行里的事实列没跟着改。
+                # 全库 **2687 个客户**的档位和它自己那一行的事实对不上;
+                # 页面被问「多少人休眠」时报的就是那一列(存 1395,按当天重算 864)。
+                #
+                # > **一份手抄的口径和一份共用的,在第一天长得一模一样。**
+                #
+                # 口径(用户 2026-10-09 拍):**下了单就算互动** ——
+                # 待确认 / 没付款 / 后来取消退款的都算(下单那天确实有过互动)。
+                # 现在算法只有一份:`tools/order_mix.某天的事实`,
+                # 它所有取数都限定 `<= 基`,所以回算过去时点也用它。
+                # **这里不许再抄第二份。**
+                写回, 事实 = OM.某天的事实(c, 行, 基.date() if hasattr(基, "date") else 基)
                 档 = L.decide(事实)
                 # ⚠️ **键是「生命周期」(中文),不是 `lifecycle`。**
                 # 第一版写的是 `档.get("lifecycle")` —— 取不到就静静返回 None,
@@ -395,8 +435,20 @@ def 跑(库, 真写):
                            "synth", f"回算({月前} 个月前)", f"{今天:%Y-%m-%d}"))
                 if 月前 == 0:
                     # **最后一条 = 现在**,并同步回 customer —— 两者必须一致
-                    c.execute("update customer set lifecycle=? where id=?",
-                              (str(档名), cid))
+                    #
+                    # ⚠️⚠️ **要把算档位用的那些事实一起写回去,不能只写档位。**
+                    # 原来这里只有 `update customer set lifecycle=?` ——
+                    # 于是档位是按「这个脚本算的闲置」来的,而 `idle_days` /
+                    # `last_interact` 那几列还是别人算的,**同一行自相矛盾**。
+                    # 这正是 `backend/lifecycle_sync_check.py` 的 C 类红
+                    # (「存的档位 ≠ 按存的事实重算」)的来源。
+                    # > 一行「档位写对了」和一行「档位和它自己的事实对不上」,
+                    # > **在那一列上长得一模一样** —— 直到有人数人头。
+                    列 = dict(写回, lifecycle=str(档名),
+                              matched="/".join(档["命中"]))
+                    c.execute("update customer set "
+                              + ",".join(f"{x}=?" for x in 列) + " where id=?",
+                              [列[x] for x in 列] + [cid])
         c.commit()
 
     print("\n要造的:")

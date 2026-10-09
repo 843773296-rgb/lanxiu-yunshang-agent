@@ -919,46 +919,105 @@ def 维保(c, rng, 排除, 判责, 改了的单, log):
 
 
 # ── ③ 客户汇总重算 ────────────────────────────────────────────────────
-def 重算(c, 排除, log):
-    """单数 / 实付 / 12 个月 / 季度 / 首单 / 最近互动 / 闲置 / 等级 / 生命周期,全部从订单推。
+def 某天的事实(c, k, 基准):
+    """一个客户**截至某一天**的全部事实。返回 (要写回 customer 的列, 喂给 decide 的字典)。
 
-    口径:
+    ⚠️⚠️⚠️ **这是「最近互动 / 闲置 / 12 个月」的唯一一份算法 —— 不要再抄第二份。**
+
+    2026-10-09:`fakedata/mkt_sop_seed.py` 手抄过一份,它算「最后一次互动」时只取
+    跟进 / 预约 / 日程,**不算下单** —— 于是刚下过单、但没被跟进过的客户被判成休眠,
+    又写回了 `customer.lifecycle`,而同一行里的事实列没跟着改。
+    全库 **2687 个客户**的 lifecycle 和它自己那一行的事实对不上;
+    页面被问到「多少人休眠」时报的就是那一列(存 1395,按当天重算 871)。
+
+    > **一份手抄的口径和一份共用的,在第一天长得一模一样。**
+
+    口径(用户 2026-10-09 拍板的那条在最后一行):
       算数的单 = 已付款、没取消、没退完款的
-      单数(order_cnt / orders_12m)= **完成**的单(等级表写的是「完成订单 ≥ N 单」,
+      单数(order_cnt / orders_12m)= **完成**的单(等级表写「完成订单 ≥ N 单」,
                                      生命周期「潜在 = 无完成订单」)
       实付(paid_amount / amount_12m)= 算数的单的实收
-      12 个月 = 截至建库基准日往前 365 天
-      最近互动 = 原来记的互动和最近一单取晚的(下单本身就是一次互动)
+      12 个月 = 截至 `基准` 往前 365 天
+      最近互动 = **下了单就算互动** —— 待确认 / 没付款 / 后来取消退款的都算
+                 (下单那天确实有过互动);跟进 / 预约 / 日程同样算。
+
+    ⚠️ **所有取数都限定 `<= 基准`**,所以它也能用来回算过去某个时点
+    (`mkt_sop_seed` 要按 12 / 9 / 6 / 3 / 0 个月前各算一次)。
+    `customer.last_interact` 这一列**只在它本身 ≤ 基准 时才算进去** ——
+    回算过去时点时,「现在」的那次互动还没发生。
     """
+    import lifecycle as LC  # noqa: F401  (给调用方留着;这里只算事实)
+    截 = 基准.isoformat()
+    win0 = (基准 - dt.timedelta(days=365)).isoformat()
+    cid = k["id"]
+    os_ = [dict(r) for r in c.execute(
+        """SELECT created, status, received, refund_status, finished_at FROM ordr
+           WHERE customer_id=? AND paid_at IS NOT NULL AND status<>'取消'
+             AND refund_status<>'已退款' AND substr(created,1,10)<=?""", (cid, 截))]
+    done = [o for o in os_ if o["status"] == "完成"]
+    d12 = [o for o in done if o["created"][:10] >= win0]
+    a12 = [o for o in os_ if o["created"][:10] >= win0]
+    # 「最近互动」的候选:① 这一列原来记的(只在 ≤ 基准 时算)② 任何状态的订单 ③ 三张触点表
+    候选 = [x for x in [(k["last_interact"] or "")[:10]] if x and x <= 截]
+    候选 += [r[0][:10] for r in c.execute(
+        "SELECT created FROM ordr WHERE customer_id=? AND substr(created,1,10)<=?", (cid, 截))]
+    for 表, 列 in (("followup", "ts"), ("appointment", "start_ts"), ("schedule", "start_ts")):
+        try:
+            r = c.execute(f"SELECT max(substr({列},1,10)) FROM {表}"
+                          f" WHERE customer_id=? AND substr({列},1,10)<=?", (cid, 截)).fetchone()
+        except sqlite3.OperationalError:
+            continue                      # 这张表还没建:跳过,但不当成「没有互动」
+        if r and r[0]:
+            候选.append(r[0])
+    last = max(候选) if 候选 else None
+    # ⚠️⚠️ **一条互动都没有的时候,闲置是「从没互动过」(9999),不是「沿用那一列」。**
+    #
+    # 2026-10-09 我第一版在这里写了 `else k["idle_days"]` —— 沿用**今天**那一列。
+    # 于是回算过去时点时:一个 2026-09-20 才有互动的客户,在 `2025-10-14` 那个时点
+    # 也显示 `idle=19`,而那时候那次互动**还没发生**。
+    #
+    # > 一个「那时候真的闲了 19 天」和一个「那时候一次互动都还没有,
+    # > 于是拿今天那一列顶上」,**在 `idle=19` 这个数上长得一模一样。**
+    #
+    # 而这正是 `mkt_sop_seed` 原注释警告过的那一类错(「五个时点的事实几乎一样,
+    # 档位自然不变」),我用一个兜底把它又放回来了。
+    # **量过才改**:基准=今天 时「一条互动都没有」的客户只有 3 个,
+    # 而且全是 `FX-*` 反例夹具 —— 它们在受保护名单里,重算本来就跳过,
+    # 所以这一改**对今天的真实数据零影响**。
+    idle = max(0, (基准 - dt.date.fromisoformat(last)).days) if last else 9999
+    first = min(o["created"] for o in os_)[:10] if os_ else None
+    new = dict(order_cnt=len(done), paid_amount=round(sum(o["received"] or 0 for o in os_), 2),
+               orders_12m=len(d12), amount_12m=round(sum(o["received"] or 0 for o in a12), 2),
+               quarters_12m=len({(o["created"][:4], (int(o["created"][5:7]) - 1) // 3)
+                                 for o in d12}),
+               first_order=first, last_interact=last, idle_days=idle)
+    row = dict(new, days_since_first_order=((基准 - dt.date.fromisoformat(first)).days
+                                            if first else None),
+               manual_lc=k["manual_lc"],
+               days_since_manual=((基准 - dt.date.fromisoformat(k["manual_at"][:10])).days
+                                  if k["manual_at"] else None))
+    return new, row
+
+
+def 重算(c, 排除, log, 基准=None):
+    """把 `某天的事实` 写回 customer(含等级和生命周期)。
+
+    ⚠️ **`基准` 默认是建库基准日 `T`(2026-08-31),不是「今天」。**
+    它是 order_mix 建世界时用的那一天,所以默认值不能动 ——
+    但**每日重算必须传世界的今天**,否则算出来是 39 天前的世界。
+    那条入口在 `tools/lifecycle_refresh.py`。
+    > 一个「按今天重算过了」和一个「按建库那天重算过了」,
+    > **在「重算了 N 个」这句话上长得一模一样。**
+    """
+    基准 = 基准 or T
     import lifecycle as LC, member as MB
     C = [dict(r) for r in c.execute("SELECT code,name,amount,orders,sort FROM level_cfg "
                                    "WHERE status='启用'")]
-    win0 = (T - dt.timedelta(days=365)).isoformat()
     n = 0
     for k in [dict(r) for r in c.execute("SELECT * FROM customer")]:
         if k["id"] in 排除:
             continue
-        os_ = [dict(r) for r in c.execute(
-            """SELECT created, status, received, refund_status, finished_at FROM ordr
-               WHERE customer_id=? AND paid_at IS NOT NULL AND status<>'取消'
-                 AND refund_status<>'已退款'""", (k["id"],))]
-        done = [o for o in os_ if o["status"] == "完成"]
-        d12 = [o for o in done if o["created"][:10] >= win0]
-        a12 = [o for o in os_ if o["created"][:10] >= win0]
-        allo = [r[0] for r in c.execute("SELECT created FROM ordr WHERE customer_id=?", (k["id"],))]
-        last = max([k["last_interact"] or ""] + [x[:10] for x in allo]) or None
-        idle = max(0, (T - dt.date.fromisoformat(last[:10])).days) if last else k["idle_days"]
-        first = min(o["created"] for o in os_)[:10] if os_ else None
-        new = dict(order_cnt=len(done), paid_amount=round(sum(o["received"] or 0 for o in os_), 2),
-                   orders_12m=len(d12), amount_12m=round(sum(o["received"] or 0 for o in a12), 2),
-                   quarters_12m=len({(o["created"][:4], (int(o["created"][5:7]) - 1) // 3)
-                                     for o in d12}),
-                   first_order=first, last_interact=last, idle_days=idle)
-        row = dict(new, days_since_first_order=((T - dt.date.fromisoformat(first)).days
-                                                if first else None),
-                   manual_lc=k["manual_lc"],
-                   days_since_manual=((T - dt.date.fromisoformat(k["manual_at"][:10])).days
-                                      if k["manual_at"] else None))
+        new, row = 某天的事实(c, k, 基准)
         d = LC.decide(row)
         new.update(lifecycle=d["生命周期"], matched="/".join(d["命中"]),
                    level=MB.判档(new["amount_12m"], new["orders_12m"], C))
@@ -968,7 +1027,7 @@ def 重算(c, 排除, log):
             c.execute("UPDATE customer SET " + ",".join(f"{kk}=?" for kk in new) + " WHERE id=?",
                       [new[kk] for kk in new] + [k["id"]])
             n += 1
-    log(f"  ③ 客户汇总:重算 {n} 个(跳过受保护的 {len(排除)} 个)")
+    log(f"  ③ 客户汇总:重算 {n} 个(算到 {基准},跳过受保护的 {len(排除)} 个)")
 
 
 def run(c, log=print):
