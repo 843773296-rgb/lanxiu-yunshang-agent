@@ -4306,7 +4306,8 @@ def store_report(kind="周", date=None):
     r = TOOLS["recovery_queue"]()
     存["待付款"] = 项({"笔数": (r.get("待付款") or {}).get("笔数"), "压着的钱": (r.get("待付款") or {}).get("压着的钱")},
                     "recovery_queue()", "单位:笔 / 元", 写成万={"压着的钱": 万((r.get("待付款") or {}).get("压着的钱"))})
-    存["约了没来"] = 项((r.get("预约未成行") or {}).get("合计"), "recovery_queue()", "已取消 / 爽约 / 已过期三种,下一步不同")
+    存["约了没来"] = 项((r.get("预约未成行") or {}).get("合计"), "recovery_queue()",
+                    "单位:人次(一条预约算一次,不是单)。已取消 / 爽约 / 已过期三种,下一步不同")
     r = factory_chase()
     存["该催工厂"] = 项({"单数": (r.get("该催") or {}).get("单数"), "要人看的回传": (r.get("要人看的回传") or {}).get("条数")},
                      "factory_chase()")

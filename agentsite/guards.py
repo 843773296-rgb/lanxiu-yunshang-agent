@@ -1364,7 +1364,13 @@ def g26_wan_mismatch(text, calls, prompt=""):
             continue
         位 = len(写.split(".")[1]) if "." in 写 else 0
         值 = float(写)
-        if not any(round(n / 10000, 位) == round(值, 位) for n in 返回的数):
+        # ⚠️ 不用 round():Python 的 round 是**银行家舍入**(round(66.5)=66),真值落在 .5 万时会误拦
+        # 正确的「67 万」,而且跟着数字奇偶跳(数据工厂 10-09 实测)。改成「差不超过写法精度的半格」——
+        # 四舍五入、银行家舍入、直接截断都在半格内,10 倍的错远在外面。
+        # 余量用**相对**的(半格 × (1 + 1e-9)),不加绝对常数:位数多时半格只有 0.005,
+        # 固定 0.01 的余量比半格还大,会把写错一格的「66.89 万」放过去
+        半格 = 0.5 * 10 ** -位
+        if not any(abs(n / 10000 - 值) <= 半格 * (1 + 1e-9) for n in 返回的数):
             错.append(m.group(0).strip())
     if not 错:
         return None

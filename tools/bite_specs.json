@@ -6128,5 +6128,29 @@
    }
   ],
   "预期红": "日报真跑:668997 元写成 669 万元"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g26 退回用 round()(银行家舍入,.5 边界误拦)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if not any(abs(n / 10000 - 值) <= 半格 * (1 + 1e-9) for n in 返回的数):",
+    "new": "        if not any(round(n / 10000, 位) == round(值, 位) for n in 返回的数):"
+   }
+  ],
+  "预期红": ".5 边界:真值 66.5 万写成 67 万元"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g26 余量用绝对常数 0.01(位数多时比半格还大)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if not any(abs(n / 10000 - 值) <= 半格 * (1 + 1e-9) for n in 返回的数):",
+    "new": "        if not any(abs(n / 10000 - 值) <= 半格 + 0.01 for n in 返回的数):"
+   }
+  ],
+  "预期红": "两位小数写错一格(66.89 万元)"
  }
 ]
