@@ -1337,6 +1337,42 @@ def g25_count_without_lookup(text, calls, prompt="", 规矩=""):
             "先调对应的工具查,再照返回值说")
 
 
+# 「X 万元」:模型自己把元换算成万 —— RE_MONEY 只认「数 + 元」,「669 万元」从它眼皮底下过去
+RE_WAN = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s*万\s*元|[¥￥]\s*(\d+(?:\.\d+)?)\s*万")
+
+
+def g26_wan_mismatch(text, calls, prompt=""):
+    """**「X 万元」换算回去,和工具返回的金额对不上。**
+
+    来由:2026-10-09 真跑日报,取数包里待付款压着 668997.39 元,模型写成「669 万元」—— 差了 10 倍。
+    原有的「报数要有出处」只认「数 + 元」,`669 万元` 一个字都没被核;而**换算是模型最容易错、
+    又最难被人一眼看出的那一步**:66.9 万和 669 万在一份报告里读着都像回事。
+    判法:把 X 换算回元,看工具返回里有没有一个金额**按 X 的小数位四舍五入后等于 X**。
+    只在调过工具时判(没调工具的由 g1 / g25 管);问题里出现过的数不算。
+    """
+    if not calls:
+        return None
+    原 = " ".join(c.get("output") if isinstance(c.get("output"), str)
+                 else json.dumps(c.get("output"), ensure_ascii=False, default=str) for c in calls)
+    返回的数 = [float(x.replace(",", "")) for x in re.findall(r"(?<![\d.])\d[\d,]*(?:\.\d+)?", 原)]
+    返回的数 = [x for x in 返回的数 if x >= 1000]
+    题 = set(re.findall(r"\d+(?:\.\d+)?", prompt or ""))
+    错 = []
+    for m in RE_WAN.finditer(text):
+        写 = m.group(1) or m.group(2)
+        if 写 in 题:
+            continue
+        位 = len(写.split(".")[1]) if "." in 写 else 0
+        值 = float(写)
+        if not any(round(n / 10000, 位) == round(值, 位) for n in 返回的数):
+            错.append(m.group(0).strip())
+    if not 错:
+        return None
+    return (f"「{'、'.join(dict.fromkeys(错))}」换算回元,在工具返回里找不到对得上的金额 —— "
+            "多半是元换万时错了位(10-09 真跑:668997 元写成了「669 万元」)。照工具返回的金额写,"
+            "要写成万就照返回里给好的那个写法")
+
+
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer,
           g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
@@ -1344,7 +1380,7 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g17_liability_promise, g18_vision_conclusion,
           g19_account_state, g20_consent_version, g21_apply_as_done,
           g22_agree_without_reading, g23_discount_promise, g24_growth_not_statistical,
-          g25_count_without_lookup]
+          g25_count_without_lookup, g26_wan_mismatch]
 
 
 def check_answer(text, calls, prompt="", 带图=False, 规矩=""):

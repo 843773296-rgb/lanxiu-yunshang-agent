@@ -4193,6 +4193,10 @@ def store_report(kind="周", date=None):
     def 项(值, 出处, 口径=None, **另):
         return {"值": 值, "出处": 出处, **({"口径": 口径} if 口径 else {}), **另}
 
+    def 万(x):
+        # **换算好给出去,不让写报告那一步自己换** —— 10-09 真跑日报把 668997 元写成「669 万元」
+        return None if x is None else f"{x / 10000:.1f} 万元"
+
     期内 = {}
     # ① 订单:四个日期列各是一份单子
     单 = {}
@@ -4200,7 +4204,7 @@ def store_report(kind="周", date=None):
         r = orders_by_date(field=f, start=a, end=b, limit=1)
         单[f] = r.get("总数") if "error" not in r else None
     期内["订单"] = 项(单, f"orders_by_date(start={a}, end={b}, field=下单/完工/交付)",
-                    "四个日期列是四份不同的单子:同一张单可能这一期下单、下一期交付")
+                    "单位:单(不是件)。四个日期列是四份不同的单子:同一张单可能这一期下单、下一期交付")
     # ② 销量
     r = sales_rank(start=a, end=b, limit=5)
     if "error" in r:
@@ -4216,7 +4220,8 @@ def store_report(kind="周", date=None):
         缺口.append(f"营收:{r['error']}")
     else:
         期内["营收"] = 项({k: r[k] for k in ("实收", "退款", "营收")}, f"weekly_revenue(start={a}, end={b})",
-                        r["口径"], 近似=r.get("⚠️ 近似"))
+                        r["口径"], 近似=r.get("⚠️ 近似"),
+                        写成万={k: 万(r[k]) for k in ("实收", "退款", "营收")})
     # ④ 进店客流 = 实际预约到店(用户 10-09 定)
     r = TOOLS["appt_funnel"](since=a, until=b)
     到 = next((x.get("人次") for x in r.get("漏斗") or [] if x.get("环节") == "到店"), None)
@@ -4300,7 +4305,7 @@ def store_report(kind="周", date=None):
     存 = {}
     r = TOOLS["recovery_queue"]()
     存["待付款"] = 项({"笔数": (r.get("待付款") or {}).get("笔数"), "压着的钱": (r.get("待付款") or {}).get("压着的钱")},
-                    "recovery_queue()")
+                    "recovery_queue()", "单位:笔 / 元", 写成万={"压着的钱": 万((r.get("待付款") or {}).get("压着的钱"))})
     存["约了没来"] = 项((r.get("预约未成行") or {}).get("合计"), "recovery_queue()", "已取消 / 爽约 / 已过期三种,下一步不同")
     r = factory_chase()
     存["该催工厂"] = 项({"单数": (r.get("该催") or {}).get("单数"), "要人看的回传": (r.get("要人看的回传") or {}).get("条数")},
@@ -4313,7 +4318,8 @@ def store_report(kind="周", date=None):
     r = TOOLS["stock_alert"]()
     存["库存"] = 项({k: (r.get(k) or {}).get("个数") for k in ("发不出", "断货", "快没了", "卖不动")}, "stock_alert()",
                   "发不出 = 在手有货但全被订单占用(最要紧);断货 = 在手和可用都是 0;快没了 = 可用 ≤ 5 件且卖得动;"
-                  "卖不动 = 有货而**一件都没卖过**(不是「90 天没卖」—— 10-09 真跑时被写成了这个)")
+                  "卖不动 = 有货而**一件都没卖过**(不是「90 天没卖」—— 10-09 真跑时被写成了这个)。"
+                  "单位:**个 SKU**(商品规格),不是件")
     r = TOOLS["bad_ratings"](status="待处理")
     存["差评待跟"] = 项(r.get("条数"), "bad_ratings(status=待处理)", "关单必须写处理记录")
     r = TOOLS["churn_watch"]()

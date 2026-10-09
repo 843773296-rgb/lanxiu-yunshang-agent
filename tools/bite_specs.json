@@ -6116,5 +6116,17 @@
    }
   ],
   "预期红": "没有预约的那一天:进店客流记 0,不算取不到"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g26 关掉(万元换算错也放行)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if not calls:\n        return None\n    原 = \" \".join(c.get(\"output\") if isinstance(c.get(\"output\"), str)",
+    "new": "    if True:\n        return None\n    原 = \" \".join(c.get(\"output\") if isinstance(c.get(\"output\"), str)"
+   }
+  ],
+  "预期红": "日报真跑:668997 元写成 669 万元"
  }
 ]
