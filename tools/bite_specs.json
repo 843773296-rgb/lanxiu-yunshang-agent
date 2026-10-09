@@ -6044,5 +6044,41 @@
    }
   ],
   "预期红": "区间:区间之后才下的单不算"
+ },
+ {
+  "script": "backend/store_report_check.py",
+  "改坏": "月报默认取了本月而不是上个完整月",
+  "file": [
+   {
+    "path": "knowledge/weekly.py",
+    "old": "            某天 = 今.replace(day=1) - _dt.timedelta(days=1)",
+    "new": "            某天 = 今"
+   }
+  ],
+  "预期红": "月报默认 = 上个自然月"
+ },
+ {
+  "script": "backend/store_report_check.py",
+  "改坏": "存量混进期内(两栏不分)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "\"期内\": 期内, \"存量(截至今天)\": 存,",
+    "new": "\"期内\": {**期内, **存}, \"存量(截至今天)\": 存,"
+   }
+  ],
+  "预期红": "期内和存量分两栏,存量不出现在期内"
+ },
+ {
+  "script": "backend/store_report_check.py",
+  "改坏": "进入休眠不按门店筛(门店报告报了全公司的数)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "r = lifecycle_entered(档, start=a, end=b, shop=None if me.get(\"role\") == \"总部运营\" else me.get(\"shop\"))",
+    "new": "r = lifecycle_entered(档, start=a, end=b, shop=None)"
+   }
+  ],
+  "预期红": "进入休眠只算本店"
  }
 ]

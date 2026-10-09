@@ -523,6 +523,20 @@ ORDERS_RANGE_RULE = Rule("TL62", ("orders_by_date",), """
   **并且在回答里说清按的是哪一列**。
 """, scope="工具")
 
+STORE_REPORT_RULE = Rule("TL67", ("store_report",), """
+**写日报 / 周报 / 月报(用户 2026-10-09:三种都要)。五条:**
+
+- **先调 `store_report` 拿取数包,再照它写。** 不要自己一个个工具去凑 —— 取数包里每一项都带「出处」和「口径」,
+  凑出来的没有。kind 填 日 / 周 / 月;用户没说哪一期,就是上一个**完整**的那一期(昨天 / 上周 / 上个月)。
+- **只照取数包里的数说,不改写、不心算新数。** 环比、占比这类取数包里没有的,不要自己除一个出来;
+  要的话说「取数包里没有这一项」。「取不到的」那一栏要照实写进报告。
+- **「期内」和「存量」两栏不许混。** 期内是这一期发生了多少;存量是**截至今天**还压着多少 ——
+  不要把「截至今天该催工厂 N 单」写成「本周新增 N 单」。
+- **口径要跟着数一起写一句**:营收是实收减退款(退款日是近似);进店客流是实际预约到店;
+  周报成交率是最近 4 周滚动、会偏低;评价是交付体验、不进顾问考核。
+- **原因和建议标成判断**(「可能是…」「建议…」),不写成已安排;不许顺手去派任务、改订单。
+""", scope="工具")
+
 WEEKLY_REVENUE_RULE = Rule("TL66", ("weekly_revenue",), """
 **按周营收(周报用,业务 2026-10-09 定)。三条:**
 
@@ -839,6 +853,7 @@ REVIVE_RULE,
 ORDERS_RANGE_RULE,
 SALES_RANK_RULE,
 WEEKLY_REVENUE_RULE,
+STORE_REPORT_RULE,
 SHIFT_RULE,
 CREDIT_RULE,
 HISTORY_RULE,
@@ -1281,6 +1296,7 @@ REVIVE_RULE,
 ORDERS_RANGE_RULE,
 SALES_RANK_RULE,
 WEEKLY_REVENUE_RULE,
+STORE_REPORT_RULE,
 SHIFT_RULE,
 CREDIT_RULE,
 HISTORY_RULE,
