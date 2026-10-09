@@ -59,21 +59,37 @@ export PYTHONDONTWRITEBYTECODE=1
 # ⚠️ bash 的变量名**只能是 ASCII** —— 写 `每条超时=600` 会当成命令去执行。
 #    (这是中文标识符第 5 次咬人,前 4 次在工具 schema 的属性名上。)
 CHK_TIMEOUT=${CHK_TIMEOUT:-600}
+# ⚠️⚠️ **每条检查的输出要写进「这一轮自己的」临时文件,不是一个固定路径。**
+#
+# 2026-10-09 和并行会话**同时跑根门禁**时撞到:这里原来写死一个**固定路径**
+# (`/tmp/` 下一个不带进程号的名字),
+# 5 处都用它,于是两轮并行**互相覆盖**。影响的边界(看过代码,分清了):
+#     红/绿的**判定**     —— 不会被污染,它用的是 `rc`(每个进程自己的退出码)
+#     失败的**详情**       —— **会**(`tail -3` / `awk` 读的就是这个文件)
+#     「崩了 vs 判定不过」 —— **会**(那一步是 `grep -qE 'Traceback...'`)
+#
+# > 一次「门禁跑完了」和一次「两轮并行把临时文件互相盖了」,
+# > **在那个退出码上长得一模一样** ——
+# > 而这个项目最在意的恰恰是「**报告要能回答谁红了**」(同一天那条 `cancelled` 就是这个教训)。
+#
+# `$$` 在函数里取到的是这个脚本自己的进程号(不是子 shell),正是要的。
+CHK_OUT="${TMPDIR:-/tmp}/chk.$$.out"
+trap 'rm -f "$CHK_OUT"' EXIT
 run(){ printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
   local rc=0
   python3 -c 'import subprocess, sys
 try:
     sys.exit(subprocess.run(sys.argv[2:], timeout=int(sys.argv[1])).returncode)
 except subprocess.TimeoutExpired:
-    sys.exit(124)' "$CHK_TIMEOUT" "$@" > /tmp/chk.out 2>&1 || rc=$?
+    sys.exit(124)' "$CHK_TIMEOUT" "$@" > "$CHK_OUT" 2>&1 || rc=$?
   if [ "$rc" -eq 0 ]; then
-    tail -3 /tmp/chk.out | awk '{print "  " $0}'
+    tail -3 "$CHK_OUT" | awk '{print "  " $0}'
   elif [ "$rc" -eq 124 ]; then
-    FAIL=1; CRASH=$((CRASH + 1)); awk '{print "  " $0}' /tmp/chk.out
+    FAIL=1; CRASH=$((CRASH + 1)); awk '{print "  " $0}' "$CHK_OUT"
     printf "  \033[31m✗ 超过 %s 秒没跑完,被掐了(这条检查没验过)\033[0m\n" "$CHK_TIMEOUT"
   else
-    FAIL=1; awk '{print "  " $0}' /tmp/chk.out
-    if grep -qE 'Traceback \(most recent call last\)|^[A-Za-z]*Error:|command not found|No such file' /tmp/chk.out; then
+    FAIL=1; awk '{print "  " $0}' "$CHK_OUT"
+    if grep -qE 'Traceback \(most recent call last\)|^[A-Za-z]*Error:|command not found|No such file' "$CHK_OUT"; then
       CRASH=$((CRASH + 1)); printf "  \033[31m✗ 崩了(这条检查没验过)\033[0m\n"
     else
       BAD=$((BAD + 1)); printf "  \033[31m✗ 失败\033[0m\n"
