@@ -31,6 +31,8 @@ G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
      '同样闲置 200 天,但他一年才来一次'),
     ('把订单终态写成库里不存在的值(「已完成」而库里是「完成」)',
      '订单终态都是库里真实存在的值'),
+    ('工具层不拦「把自己的名字当客户」(10-09 R02 真跑的错法)',
+     '顾问把自己的名字当 customer 传 → 明说'),
 ]
 
 
@@ -128,6 +130,20 @@ def main():
         print(f"     它们在上面的逐例测试里是对的,但**库里没有真实样本** ——")
         print(f"     **一条永远不触发的分支,和一条正确的分支,在通过率上长得一模一样。**")
         print(f"     ANNIVERSARY 恒空是因为库里只有 12 个月的订单,往年同期查不到东西。")
+
+    # ── 工具层:顾问把**自己的名字**当 customer 传(10-09 运营评测 R02 真跑)——
+    # 原来静静返回「合计 0」,模型照着答「查不到你名下的客户」,而该联系的有几百个
+    import api
+    顾 = c.execute("SELECT s.no, s.name, s.shop FROM staff s WHERE s.role='顾问' AND s.status='启用' "
+                  "AND EXISTS(SELECT 1 FROM customer cu WHERE cu.advisor_no=s.no) ORDER BY s.no LIMIT 1").fetchone()
+    if 顾:
+        with api.as_user(dict(no=顾[0], name=顾[1], role="顾问", shop=顾[2])):
+            自 = api.revive_list(customer=顾[1])
+            全 = api.revive_list()
+        check("顾问把自己的名字当 customer 传 → 明说", "明说" if "你自己" in str(自.get("error")) else f"返回{str(自)[:40]}", "明说")
+        check("不传 customer 时名下有客户(否则上面那条验不到)", "有" if (全.get("看了几个客户") or 0) > 0 else "空", "有")
+    else:
+        check("顾问把自己的名字当 customer 传 → 明说", "没找到有客户的顾问", "明说")
 
     print()
     if bad:

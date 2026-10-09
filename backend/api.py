@@ -5627,6 +5627,13 @@ def revive_list(customer=None, limit=20):
     me = whoami()
     if not me:
         return dict(error="不知道现在是谁在问 —— 请先登录")
+    # ⚠️ 10-09 运营评测 R02 真跑:顾问问「我今天该联系哪些客户」,模型把**她自己的名字**(程萦)
+    # 当 customer 传进来 → 名下客户里没人叫程萦 → 合计 0 → 模型答「查不到你名下的客户」(其实该联系的有 716 个)。
+    # > 一个「名下真的没有客户」和一个「把自己的名字当成了客户」,在「合计 0」上长得一模一样。
+    # 所以填的是提问人自己时**明说**,不静静地返回空
+    if customer and str(customer).strip() in {me.get("name"), me.get("no")} - {None, ""}:
+        return dict(error=f"customer 填的是你自己({customer}),不是客户 —— "
+                          "要看你名下全部该联系的客户,**不传 customer** 再调一次")
     import revive as _rv
     import sqlite3 as _sq
     today = _rv._today()

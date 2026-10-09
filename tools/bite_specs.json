@@ -5924,5 +5924,29 @@
    }
   ],
   "预期红": "V04 真跑:W 型份额 30/30/30/10 是一串份额,不是计数"
+ },
+ {
+  "script": "backend/revive_check.py",
+  "改坏": "工具层不拦「把自己的名字当客户」(10-09 R02 真跑的错法)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if customer and str(customer).strip() in {me.get(\"name\"), me.get(\"no\")} - {None, \"\"}:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "顾问把自己的名字当 customer 传 → 明说"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "any_of 退回成只认第一条(T03 只许说「不是成交率」)",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "        return [] if any(not o for o in outs) else outs[0]",
+    "new": "        return outs[0]"
+   }
+  ],
+  "预期红": "真跑钉回(10-09 整套重跑):按归因排名并说清不用接待人那个数"
  }
 ]
