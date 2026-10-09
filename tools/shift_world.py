@@ -50,9 +50,42 @@ from datetime import date, datetime, timedelta
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
-
+# ⚠️⚠️ **`DB` 是「真库」的定义,命令行的 `--db` 不许重绑它。**
+# `tools/oplog_unshift.py` 里 `--db` 是模块级重绑 `DB` 的(那个脚本里没问题),
+# 照抄到这里会把下面那道守卫**反过来**:平移末尾 `if 天 and 是真库(db)` 才去跑
+# 「按星期重算」,而那几个重算脚本只认死真库、没有 `--db`。
+# `DB` 一被重绑成副本路径,判断就成立了 —— **在副本上平移,却去改了真库**,
+# 而那是本脚本最不该干的一件事。所以 `--db` 只进 `main`,从参数一路传下去。
 # 这套数据当初照哪一天写的 —— 库里还没有 meta 时按它算
 基准 = "2026-08-31"
+
+
+def 是真库(db):
+    """`--db` 指的是不是真库本身 —— **按路径指向判,不按字符串相等判**。
+
+    `--db backend/lanxiu.db` 指的就是真库,而它和 `DB`(绝对路径)**字符串不等**。
+    用 `db == DB` 的话,这种写法会让「平移后重算」被**静默跳过** ——
+    排班还照旧的星期边界排着,而**那种数据看起来完全正常**
+    (实测过一次同形的:挪 24 天,周一变周四,8 个人周当场破「每周至少休 1 天」,
+     而每一行单看都对)。
+    """
+    try:
+        return os.path.realpath(db) == os.path.realpath(DB)
+    except OSError:
+        return False
+
+
+def 标记路径(db):
+    """互斥标记跟着**被平移的那个库**走,不跟着 `DB` 走。
+
+    原来写的是 `os.path.dirname(DB)` —— 开了 `--db` 之后那就错了:
+    在副本上平移会去占真库的标记,于此同时**真库的每日平移会被一个
+    根本没在动真库的进程挡住**,而报错长得和「真有人在平移真库」一模一样。
+    副本在别的目录 → 标记落在副本目录,互不相干;
+    副本要是放在 `backend/` 里(和真库同目录),两者**本来就该互斥** ——
+    同一个目录下同时跑两次平移,`.shifting` 挡住是对的。
+    """
+    return os.path.join(os.path.dirname(os.path.abspath(db)), ".shifting")
 
 # 整列日期的判据。**要容得下 `2026-02-16 9:16` 这种单位数小时** ——
 # 第一版写的是 `\d{2}:\d{2}`,于是 edit_log.ts(542 条)被判成「文字列」漏掉了,
@@ -292,7 +325,16 @@ def 平移(db=DB, 到=None, 说=print):
     说(f"  挪了 {改} 个值,{len(纯)} 个日期列 + {len(该挪文字)} 个文字列")
     c.close()
     # 按星期编排的数据要重算 —— 见上面「平移后重算」那张表
-    if 天 and db == DB:
+    # ⚠️ 副本上**故意不重算**:那几个脚本只认死真库(没有 `--db`),
+    # 在副本上跑它们等于「平移副本却改了真库」。但跳过不许静默 ——
+    # 一个「排班重算过的库」和一个「排班还是旧星期边界的库」,
+    # **在行数和每一行上都长得一模一样**,只在那条业务规则上不成立。
+    if 天 and not 是真库(db):
+        说(f"  ⏭ 副本({db})—— **跳过「按星期重算」**:"
+          f"{[x for x, _ in 平移后重算]} 只认死真库,在副本上跑等于去改真库。"
+          f"代价是这个副本里按**星期**编排的数据(排班、按第 N 天排的旅程)"
+          f"还是旧的边界 —— 拿副本验那类判据会红,**那是副本的局限,不是数据坏了**")
+    if 天 and 是真库(db):
         import subprocess
         for 脚本, 为什么 in 平移后重算:
             说(f"  ↻ 重算 {脚本}({为什么})")
@@ -452,15 +494,47 @@ def _自测():
        c.execute("select max(created) from ordr").fetchone()[0][:10] == "2026-09-24")
     c.close()
 
+    # ── `--db`:在副本上动手,不许碰到真库 ──────────────────────────
+    # 这三条守的是同一件事的两个方向,**两个方向错的代价都不可见**:
+    #   往「没认出真库」偏 → 真库上的「按星期重算」被静默跳过(排班悄悄不成立)
+    #   往「把副本认成真库」偏 → 在副本上平移,却去改了真库
+    ck("--db 写成相对路径也认得出是真库(不然真库上的「按星期重算」会被静默跳过)",
+       是真库(os.path.join(ROOT, "backend", "..", "backend", "lanxiu.db")) is True)
+    ck("--db 指向别的库就不算真库", 是真库(p) is False)
+    ck("互斥标记跟着被平移的那个库走,不跟着真库走",
+       标记路径(p) == os.path.join(os.path.dirname(p), ".shifting")
+       and 标记路径(p) != 标记路径(DB))
+
+    # 副本上平移:**明说跳过了重算**。静默跳过的话,
+    # 「重算过的库」和「排班还是旧星期边界的库」在每一行上都长得一样。
+    p2 = os.path.join(tempfile.mkdtemp(), "t2.db")
+    c = sqlite3.connect(p2)
+    # 具名列 —— 门禁的「位置参数只许少不许多」那条棘轮当场咬住了第一版
+    c.executescript("create table ordr(id text, created text);"
+                    "insert into ordr(id, created) values('A','2026-08-31 10:00');")
+    c.commit(); c.close()
+    话 = []
+    r4 = 平移(p2, "2026-09-20", 说=话.append)
+    ck("副本上平移会明说「跳过按星期重算」(不静默)",
+       not r4.get("错") and any("跳过" in x for x in 话), r4)
+
     print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
     return 1 if 挂 else 0
 
 
 if __name__ == "__main__":
     if "--selftest" in sys.argv: sys.exit(_自测())
+    # ── `--db`:对哪个库动手 ───────────────────────────────────────
+    # 开它是为了**在副本上做端到端**(整库挪几百天,看判码/分布守不守恒)——
+    # 以前要另搭一套临时目录才做得到,于是那条欠账一直挂着。
+    # 解析放在这里(不是模块级),理由见文件开头 `DB` 那段:重绑 `DB` 会反掉守卫。
+    库 = DB
+    for i, a in enumerate(sys.argv):
+        if a == "--db" and i + 1 < len(sys.argv): 库 = sys.argv[i + 1]
+
     if "--check" in sys.argv:
-        print("演示世界的日期 · 自洽检查\n" + "=" * 76)
-        坏 = 查()
+        print("演示世界的日期 · 自洽检查" + ("" if 是真库(库) else f"(副本 {库})") + "\n" + "=" * 76)
+        坏 = 查(库)
         rc = _自测()
         print()
         if 坏 or rc:
@@ -479,7 +553,7 @@ if __name__ == "__main__":
     # `tools/rebuild.sh` 早就有 `.rebuilding` 标记,这里一直没有;
     # 而「谁都能直接敲这一行」和 09-18 栽的那三次是同一形状:
     # **调用方的守卫只护得住调用方。**
-    标记 = os.path.join(os.path.dirname(DB), ".shifting")
+    标记 = 标记路径(库)
     老 = None
     if os.path.exists(标记):
         try: 老 = int(open(标记).read().strip())
@@ -504,9 +578,9 @@ if __name__ == "__main__":
     import atexit as _atexit
     _atexit.register(lambda: os.path.exists(标记) and os.remove(标记))
 
-    print(f"把演示世界平移到 {到}")
+    print(f"把演示世界平移到 {到}" + ("" if 是真库(库) else f" · 副本 {库}"))
     print("=" * 76)
-    r = 平移(到=到)
+    r = 平移(db=库, 到=到)
     if r.get("错"):
         print(f"\033[31m❌ {r['错']}\033[0m")
         print("   新加的表/列里有日期就要在 tools/shift_world.py 里登记:"
