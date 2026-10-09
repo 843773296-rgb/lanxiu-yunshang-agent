@@ -23,6 +23,14 @@
 #   simulate_sales.py 6 个月标品销量(库存预警要它才算得出可售天数)
 #   order_mix.py     把其中一批改成定制单 + 重建售后/换货/维保 + 客户汇总按订单重算
 #   backfill_rating.py    铺签收后的顾客评价
+#   daily_fresh.py        「每日上新」那一步 —— 平移之后造一小批新记录 + 推进存量
+#   lifecycle_refresh.py  按世界今天重算档位并对齐历史
+#   ⚠️ **后两步接进配方不只是为了建表。** 2026-10-09 并行会话查出一类问题:
+#      `lifecycle_history` 在配方里一步都没有造 —— 于是**CI 的库里它永远是空的**,
+#      依赖它的判据在 CI 上一个字都没验,而绿勾看起来完全正常。
+#      > 一个「这个功能的取数都对」的绿勾,和一个「CI 上这个功能的数据根本不存在」的,
+#      > **长得一模一样。**
+#      所以每日那两步要在**从零重建**里也真跑一遍(它们都幂等,重复跑不翻倍)。
 #                         ⚠️⚠️ **必须排在 shift_world 之后。** 2026-09-27 CI 连红两次:
 #                         `seed.py` 重建之后世界回到**建库基准日 2026-08-31**,
 #                         而 shift_world 才把它挪到真实的今天(+27 天)。
@@ -101,7 +109,7 @@ if [ "$FRESH_ONLY" = 1 ]; then
     echo "   真要重建,请直接敲 ./tools/rebuild.sh(它会先说清楚要删什么,并留 3 秒反悔)。"
     exit 1
   fi
-  echo "📦 首次建库:下面 29 步**全跑完**才算建好,少一步都会让某几张表空着。"
+  echo "📦 首次建库:下面 31 步**全跑完**才算建好,少一步都会让某几张表空着。"
 else
   echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
   sleep 3
@@ -123,7 +131,9 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
             "tools/backfill_transcript.py" "tools/backfill_terms.py" "tools/backfill_opportunity.py" "tools/backfill_roster.py" "tools/backfill_credit.py" "tools/ensure_tables.py" "tools/backfill_fixtures.py" "tools/backfill_biz_fields.py" "tools/backfill_link.py" "tools/backfill_wattr.py" \
             "tools/seed_factory_feed.py" "backend/seed_pickup.py --铺到包裹" "tools/seed_pending_orders.py" \
             "tools/clamp_future_done.py" "tools/level_customer_orders.py" \
-            "tools/shift_world.py" "tools/backfill_rating.py" "tools/make_todo.py"; do
+            "tools/shift_world.py" "tools/backfill_rating.py" \
+            "tools/daily_fresh.py --做" "tools/lifecycle_refresh.py --做" \
+            "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
   python3 $STEP > /tmp/rebuild-step.out 2>&1 || {
     echo "  ❌ 这一步失败了,后面的不跑 —— **跳过一步不会报错,只会让某几张表空着**"
@@ -135,8 +145,11 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
 done
 
 # **自己证明干了活。** 不加这一条的话,上面那个 bug 会一直以「✅」收场。
-if [ "$DONE" -ne 29 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 29 步)—— **循环没跑全,而上面看起来是顺利的**"
+# ⚠️ **加步骤要改这个数。** 2026-10-09 加了 daily_fresh / lifecycle_refresh 两步,
+# 忘了改 —— `backend/firstrun_check.py` 当场逮到「步骤表 31 步,自校验却写着 29 步」。
+# 这个数存在的理由正是「循环没跑全,而上面看起来是顺利的」,所以它自己不能过期。
+if [ "$DONE" -ne 31 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 31 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"
