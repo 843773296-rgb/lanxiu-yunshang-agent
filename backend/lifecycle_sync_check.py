@@ -28,26 +28,46 @@ def ago(s):
 
 c = sqlite3.connect(os.path.join(HERE, "lanxiu.db"))
 c.row_factory = sqlite3.Row
-总, 错, 样 = 0, collections.Counter(), []
+# 一个「2758 个存错」其实是三个病加起来(数据工厂 2026-10-09 拆出来的)——
+# 只报一个总数的话,修掉其中一个,剩下的仍红在同一条判据上,看着像「没修好」。所以分开报:
+#   B  最后互动日比名下最新一张单还早 —— 这一列自己过期了(口径:下了单就算互动,
+#      待确认 / 没付款 / 后来取消的都算 —— 用户 2026-10-09 拍的)
+#   A  存的档位要有完成单才可能命中,而名下一张完成单都没有 —— 存的值是旧的
+#   C  其余:存的档位 ≠ 按存的事实重算(10-09 那次的主体:造数脚本算闲置不算下单)
+要单的档 = {"新客", "忠诚", "高价值"}
+最新单 = dict(c.execute("SELECT customer_id, max(substr(created,1,10)) FROM ordr GROUP BY 1").fetchall())
+有完成单 = {r[0] for r in c.execute("SELECT DISTINCT customer_id FROM ordr WHERE status='完成'")}
+总, 类, 样 = 0, {"B": collections.Counter(), "A": collections.Counter(), "C": collections.Counter()}, {}
 for r in c.execute("SELECT * FROM customer"):
     d = dict(r)
     总 += 1
-    v = L.decide(dict(d, days_since_first_order=ago(d["first_order"]),
-                      days_since_manual=ago(d["manual_at"])))["生命周期"]
-    if d["lifecycle"] != v:
-        错[(d["lifecycle"], v)] += 1
-        if len(样) < 3:
-            样.append(f'{d["id"]} 存「{d["lifecycle"]}」/ 算「{v}」(最后互动 {d["last_interact"]})')
+    新 = 最新单.get(d["id"])
+    if 新 and (d["last_interact"] or "")[:10] < 新:
+        k = "B"; 说 = f'最后互动 {d["last_interact"]} < 最新单 {新}'
+        类[k][("最后互动早于最新单",)] += 1
+    else:
+        v = L.decide(dict(d, days_since_first_order=ago(d["first_order"]),
+                          days_since_manual=ago(d["manual_at"])))["生命周期"]
+        if d["lifecycle"] == v:
+            continue
+        k = "A" if d["lifecycle"] in 要单的档 and d["id"] not in 有完成单 else "C"
+        类[k][(d["lifecycle"], v)] += 1
+        说 = f'存「{d["lifecycle"]}」/ 算「{v}」(最后互动 {d["last_interact"]})'
+    样.setdefault(k, f'{d["id"]} {说}')
 
-print(f"存着的档位 vs 按 {TODAY} 重算")
+名 = {"B": "最后互动日比名下最新订单还早", "A": "存的档位要有完成单,而名下一张都没有",
+     "C": "存的档位 ≠ 按存的事实重算"}
+print(f"存着的档位 vs 按 {TODAY} 重算(验了 {总} 个客户)")
 if 总 == 0:
     print(f"  {R}❌{D} 客户表是空的 —— 空集合上什么都成立,这不算过"); sys.exit(1)
-if 错:
-    n = sum(错.values())
-    print(f"  {R}❌{D} {n}/{总} 个客户存的档位和重算对不上")
-    for (存, 算), k in 错.most_common(6):
-        print(f"      存「{存}」→ 算「{算}」 {k} 个")
-    for s in 样:
-        print(f"      例:{s}")
-    sys.exit(1)
-print(f"  {G}✅{D} {总} 个客户全部对得上")
+坏 = 0
+for k in ("B", "A", "C"):
+    n = sum(类[k].values())
+    坏 += n
+    if not n:
+        print(f"  {G}✅{D} {k} · {名[k]}:0 个"); continue
+    print(f"  {R}❌{D} {k} · {名[k]}:{n} 个")
+    for kk, m in 类[k].most_common(4):
+        print(f"      {' → '.join(kk)} {m} 个")
+    print(f"      例:{样[k]}")
+sys.exit(1 if 坏 else 0)
