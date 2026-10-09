@@ -14,9 +14,10 @@ import api, report_doc, oplog
 
 咬合 = [
     ("确认不看是不是最新那一版", "旧版确认不了(只能确认最新那一版)"),
-    ("保存时不冻结取数包(存的是现查的)", "冻结:存完加一张单,存下的下单数不变"),
+    ("读报告时不用冻结的取数包,现场重新取数(存了也白存)", "冻结:存完加一张单,存下的下单数不变"),
     ("别店店长也能确认", "别店店长确认不了"),
     ("必选缺了也能确认", "必选指标缺了确认不了"),
+    ("报告正文没登记进平移(第二天 05:10 平移会当场停)", "平移:这两列都登记在「文字里也挪」"),
 ]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -47,7 +48,10 @@ c = sqlite3.connect(db)
 店长 = dict(no="SM-CHECK", name="店长", role="店长", shop=店)
 别店长 = dict(no="SM-OTHER", name="别店店长", role="店长", shop=别店)
 顾问 = dict(no="AD-CHECK", name="顾问", role="顾问", shop=店)
-正文 = "## 上周经营周报\n下单与营收见取数包。"
+# 正文要像真报告一样**写着报告期的日期** —— 否则下面「平移扫得到正文这一列」验不到(10-09 第一版正文没日期,扫不到)
+with api.as_user(dict(no="SM-CHECK", name="店长", role="店长", shop=店)):
+    _区 = api.store_report(kind="周")["区间"][:23]
+正文 = f"## 上周经营周报\n**区间:{_区}**\n下单与营收见取数包。"
 
 with api.as_user(店长):
     r1 = api.save_report(body=正文, kind="周")
@@ -98,6 +102,20 @@ with api.as_user(店长):
     现取 = api.store_report(kind="周")["期内"]["订单"]["值"]["下单"]
     再看 = api.list_reports(report_id=r3.get("报告号"))["pack"]["期内"]["订单"]["值"]["下单"]
 ck("冻结:存完加一张单,存下的下单数不变", 再看 == 存下 and 现取 == 存下 + 1, f"存下 {存下} / 再看 {再看} / 现取 {现取}")
+
+# 每日平移:存进报告以后,body / pack 真的被扫成「混着日期」、而且登记在「文字里也挪」——
+# 空表时 shift_world 按值扫一列都扫不到,那条登记只触发 ⚠ 提醒、从没被验过(数据工厂 10-09 提醒):
+# 「登记对了但还没数据」和「列名登记错了」在那条 ⚠ 上长得一模一样。这里在有数据的副本上验一次
+sys.path.insert(0, os.path.join(ROOT, "tools"))
+import shift_world as sw
+纯, 混 = sw.扫列(c)
+混名 = {x if isinstance(x, str) else ".".join(x[:2]) for x in 混}
+纯名 = {x if isinstance(x, str) else ".".join(x[:2]) for x in 纯}
+ck("平移:报告正文和取数包被扫成「混着日期」的列", {"store_report_doc.body", "store_report_doc.pack"} <= 混名,
+   str(sorted(x for x in 混名 if x.startswith("store_report_doc"))))
+ck("平移:这两列都登记在「文字里也挪」", {"store_report_doc.body", "store_report_doc.pack"} <= set(sw.文字里也挪))
+ck("平移:报告期两列是整列日期(跟着挪)", {"store_report_doc.period_start", "store_report_doc.period_end"} <= 纯名,
+   str(sorted(x for x in 纯名 if x.startswith("store_report_doc"))))
 
 c.close()
 shutil.rmtree(tmp, ignore_errors=True)

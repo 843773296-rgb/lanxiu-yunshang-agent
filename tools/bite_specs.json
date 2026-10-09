@@ -6167,12 +6167,12 @@
  },
  {
   "script": "backend/report_doc_check.py",
-  "改坏": "保存时不冻结取数包(存的是现查的)",
+  "改坏": "读报告时不用冻结的取数包,现场重新取数(存了也白存)",
   "file": [
    {
     "path": "backend/report_doc.py",
-    "old": "        c.execute(\"INSERT INTO store_report_doc(id,shop,kind,period_start,period_end,revision,status,body,pack,\"\n                  \"supersedes,created_at,created_by) VALUES(?,?,?,?,?,?,'草稿',?,?,?,?,?)\",\n                  (rid, shop, pack[\"种类\"], 起, 止, 版, body, json.dumps(pack, ensure_ascii=False, default=str),",
-    "new": "        c.execute(\"INSERT INTO store_report_doc(id,shop,kind,period_start,period_end,revision,status,body,pack,\"\n                  \"supersedes,created_at,created_by) VALUES(?,?,?,?,?,?,'草稿',?,?,?,?,?)\",\n                  (rid, shop, pack[\"种类\"], 起, 止, 版, body, \"{}\","
+    "old": "    d = dict(r); d[\"pack\"] = json.loads(d[\"pack\"])",
+    "new": "    d = dict(r); import api as _a; d[\"pack\"] = _a.store_report(kind=d[\"kind\"], date=d[\"period_start\"])"
    }
   ],
   "预期红": "冻结:存完加一张单,存下的下单数不变"
@@ -6200,5 +6200,17 @@
    }
   ],
   "预期红": "必选指标缺了确认不了"
+ },
+ {
+  "script": "backend/report_doc_check.py",
+  "改坏": "报告正文没登记进平移(第二天 05:10 平移会当场停)",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "    \"store_report_doc.body\": \"经营报告正文",
+    "new": "    \"store_report_doc.body_改名\": \"经营报告正文"
+   }
+  ],
+  "预期红": "平移:这两列都登记在「文字里也挪」"
  }
 ]
