@@ -5792,5 +5792,53 @@
    }
   ],
   "预期红": "进入休眠人数和独立 SQL 对得上"
+ },
+ {
+  "script": "backend/factory_chase_count_check.py",
+  "改坏": "factory_chase 的回传条数退回 len(明细)(被 LIMIT 50 截住)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "            \"要人看的回传\": {\"条数\": 看总, \"列出\": len(看), \"明细\": 看,",
+    "new": "            \"要人看的回传\": {\"条数\": len(看), \"列出\": len(看), \"明细\": 看,"
+   }
+  ],
+  "预期红": "条数 = 独立 SQL 数出来的总数"
+ },
+ {
+  "script": "backend/sales_rank_check.py",
+  "改坏": "销量不过滤状态(取消 / 退款的行也算进去)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "if not 算:\n            k = (r[\"status\"] + \" · 已退款\") if (r[\"refund_status\"] or \"\") == \"已退款\" else r[\"status\"]",
+    "new": "if False:\n            k = (r[\"status\"] + \" · 已退款\") if (r[\"refund_status\"] or \"\") == \"已退款\" else r[\"status\"]"
+   }
+  ],
+  "预期红": "合计件数和独立 SQL 对得上"
+ },
+ {
+  "script": "backend/sales_rank_check.py",
+  "改坏": "店长不再限本店(_订单范围 那一层没接)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    where, args, 范围话, _ = _订单范围(me)\n    sql = (f\"SELECT {键} k",
+    "new": "    where, args, 范围话, _ = \"\", [], \"全部\", None\n    sql = (f\"SELECT {键} k"
+   }
+  ],
+  "预期红": "店长只看本店:合计 = 本店独立 SQL"
+ },
+ {
+  "script": "backend/sales_rank_check.py",
+  "改坏": "排序丢了次序键(同件数时顺序不确定)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "排 = sorted(汇.items(), key=lambda kv: (-kv[1][metric], -kv[1][次[0]], -kv[1][次[1]], str(kv[0])))",
+    "new": "排 = sorted(汇.items(), key=lambda kv: -kv[1][metric])"
+   }
+  ],
+  "预期红": "同一个问题问两次,榜单一模一样"
  }
 ]

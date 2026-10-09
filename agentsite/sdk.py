@@ -399,6 +399,8 @@ SHOP_TOOLS = [
     # 顾问问「我哪些单该催」、店长看本店,两个角色都要;规矩 TL52:不许建议后台改状态、不替工厂补数据。
     "mcp__shop__factory_chase",
     "mcp__shop__orders_by_date",
+    # 商品销量排行(只读):「九月卖得最好的商品」—— 按商品 / SKU / 品类汇总订单行。规矩 TL65
+    "mcp__shop__sales_rank",
     "mcp__shop__report_production",
     # 订单日志(只读):这张单发生过什么 —— 顾客问「为什么晚了」时,被拒收和作废的回传往往才是答案。规矩 TL54
     "mcp__shop__order_log",

@@ -371,6 +371,8 @@ run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/e
 run "评测来路章 · 章上的供应商和真正发请求的是同一家" ./agentsite/.venv/bin/python tools/evalrec_provider_check.py
 run "提示词里的数 · 体检认它算出处,所以它得在知识库里找得到" ./agentsite/.venv/bin/python tools/prompt_numbers_check.py
 run "按月查 · 某月进入休眠的客户 / 某月的订单(期望值另用 SQL 算)" python3 backend/month_query_check.py
+run "工厂回传 · 条数是总数不是 LIMIT(副本上造到 60+ 条)" python3 backend/factory_chase_count_check.py
+run "商品销量排行 · 对独立 SQL、范围随身份、排序确定" python3 backend/sales_rank_check.py
 run "判据词表 · 声称有备选,就得验过一条备选" python3 tools/vocab_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py

@@ -3929,15 +3929,129 @@ def factory_chase():
                           "AND result='收下' LIMIT 1", (x["订单"],)).fetchone()
             x["生产方"], x["承诺完工日"] = (接[0], 接[1]) if 接 else (None, None)
             x["是你的"] = x["顾问"] == me.get("no")
+        # ⚠️ 「条数」原来是 len(看) —— 而明细被 LIMIT 50 截住,超过 50 条就会报成 50。
+        # 和 get_lifecycle 那次「休眠 40 个、实际 1395」同一个洞(2026-10-08 用户撞到的):
+        # 「截断了」和「一共就这么多」在返回里长得一模一样。总数单独数一遍
+        从 = (" FROM factory_msg f LEFT JOIN ordr o ON o.id=f.order_id WHERE f.result IN ('挂异常','拒收','暂存')"
+             + (" AND o.shop=?" if shop else ""))
+        参 = (shop,) if shop else ()
+        看总 = c.execute("SELECT COUNT(*)" + 从, 参).fetchone()[0]
         看 = [dict(zip(("订单", "回传", "生产方", "工厂报的时间", "处理", "为什么"), r)) for r in c.execute(
-            "SELECT f.order_id, f.event, f.factory, f.at, f.result, f.reason FROM factory_msg f "
-            "LEFT JOIN ordr o ON o.id=f.order_id WHERE f.result IN ('挂异常','拒收','暂存')"
-            + (" AND o.shop=?" if shop else "") + " ORDER BY f.at DESC LIMIT 50", ((shop,) if shop else ()))]
+            "SELECT f.order_id, f.event, f.factory, f.at, f.result, f.reason" + 从
+            + " ORDER BY f.at DESC LIMIT 50", 参)]
     return {"截至": TODAY, "范围": shop or "全部门店",
             "该催": {"单数": len(催), "明细": 催},
-            "要人看的回传": {"条数": len(看), "明细": 看},
+            "要人看的回传": {"条数": 看总, "列出": len(看), "明细": 看,
+                        **({"截断": f"一共 {看总} 条,只列了最近 {len(看)} 条 —— **报条数用「条数」,不要数明细**"}
+                           if 看总 > len(看) else {})},
             "note": "生产和发货只认工厂回传,**门店和后台都不能手动推状态**。该催的是**对外动作**(联系工厂、"
                     "告诉顾客会晚),由人去做;挂异常 / 拒收的回传照「为什么」去跟工厂核,别替工厂补数据。"}
+
+
+def sales_rank(month=None, start=None, end=None, by="商品", metric="件数", kind=None,
+               field="下单", limit=10):
+    """**商品销量排行** —— 「九月卖得最好的商品是什么」「这个月哪个品类卖得多」。
+
+    2026-10-09 用户在 chat 里问「九月订单中销量最好的商品」,模型答「查不了」——
+    它手上只有按订单列的工具(orders_by_date 只到订单一层、不含商品行),
+    要排商品就得逐单 get_order,1487 单不现实。**数据一直都在**(ordr_item 每行有 SPU 和件数),
+    缺的只是一个按商品汇总的入口。
+
+    口径**不在这里另拍**:
+      · 哪些行算卖掉了 —— `knowledge/stockalert.卖掉了()`(库存预警的销量也是它,同一把尺)
+      · 能看哪些单 —— `_订单范围()`(总部全部 / 店长本店 / 顾问名下∪经手)
+      · 归到哪个月 —— 默认按**下单日**;`field` 可换成 完工 / 发货 / 交付(和 orders_by_date 同一张表)
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "knowledge"))
+    import stockalert as _sa
+    me = whoami()
+    if not me:
+        return {"error": "没有登录身份,不知道看哪家店"}
+    if field not in _订单日期列:
+        return {"error": f"field 只能是 {' / '.join(_订单日期列)}", "按哪一列":
+                {k: v[1] for k, v in _订单日期列.items()}}
+    列 = _订单日期列[field][0]
+    # 区间:month 或 start+end,**不替人解析「九月」** —— 和 orders_by_date 同一条理由
+    if month is not None:
+        m = re.fullmatch(r"(\d{4})-(\d{1,2})", str(month).strip())
+        if not m or not 1 <= int(m.group(2)) <= 12:
+            return {"error": f"month 要写成 `YYYY-MM`(比如 `2026-09`),你给的是「{month}」 ——"
+                             "「九月」是今年九月还是最近一个月,**不替你猜**"}
+        y, mo = int(m.group(1)), int(m.group(2))
+        起日 = _dt.date(y, mo, 1)
+        止日 = (_dt.date(y + (mo == 12), mo % 12 + 1, 1) - _dt.timedelta(days=1))
+    elif start or end:
+        if not (start and end):
+            return {"error": "start 和 end 要一起给"}
+        try:
+            起日, 止日 = _dt.date.fromisoformat(str(start)), _dt.date.fromisoformat(str(end))
+        except ValueError:
+            return {"error": f"start/end 要写成 `YYYY-MM-DD`,你给的是「{start}」/「{end}」"}
+        if 止日 < 起日:
+            return {"error": f"end({止日})比 start({起日})还早 —— 不替你调换"}
+    else:
+        return {"error": "要给时间段:month=`YYYY-MM`,或 start + end"}
+    键 = {"商品": "i.spu", "SKU": "i.sku", "品类": "p.category"}.get(by)
+    if not 键:
+        return {"error": "by 只能是 商品 / SKU / 品类"}
+    if metric not in ("件数", "金额", "单数"):
+        return {"error": "metric 只能是 件数 / 金额 / 单数"}
+    if kind not in (None, "", "标品", "定制品"):
+        return {"error": "kind 只能是 标品 / 定制品,不给就是都算"}
+    limit = max(1, min(int(limit or 10), 50))
+
+    where, args, 范围话, _ = _订单范围(me)
+    sql = (f"SELECT {键} k, i.order_id, i.qty, i.total, i.name iname, i.tag, o.status, o.refund_status, "
+           "p.name pname, p.category cat, cg.name catname FROM ordr_item i JOIN ordr o ON o.id=i.order_id "
+           "LEFT JOIN customer cu ON cu.id=o.customer_id LEFT JOIN product p ON p.spu=i.spu "
+           "LEFT JOIN category cg ON cg.code=p.category "
+           f"WHERE o.{列} IS NOT NULL AND o.{列} >= ? AND o.{列} <= ?" + where
+           + (" AND i.tag=?" if kind else ""))
+    行 = _rows(sql, 起日.isoformat(), 止日.isoformat() + " 23:59:59", *args, *([kind] if kind else []))
+    汇, 没算, 总件, 总额, 总单 = {}, {}, 0, 0.0, set()
+    for r in 行:
+        算, 为啥 = _sa.卖掉了(r["status"], r["refund_status"])
+        if not 算:
+            k = (r["status"] + " · 已退款") if (r["refund_status"] or "") == "已退款" else r["status"]
+            没算.setdefault(k, [0, 为啥])[0] += 1
+            continue
+        # 按品类汇总时「名称」就是品类名 —— 只给编码(C020101)店长看不懂
+        名 = (r["catname"] or r["cat"]) if by == "品类" else (r["pname"] or r["iname"])
+        a = 汇.setdefault(r["k"] or "(未登记)", {"名称": 名, "品类": r["catname"] or r["cat"],
+                                               "类型": r["tag"] if by != "品类" else None,
+                                               "件数": 0, "金额": 0.0, "单": set()})
+        a["件数"] += r["qty"] or 0
+        a["金额"] += r["total"] or 0
+        a["单"].add(r["order_id"])
+        总件 += r["qty"] or 0; 总额 += r["total"] or 0; 总单.add(r["order_id"])
+    for a in 汇.values():
+        a["单数"] = len(a.pop("单")); a["金额"] = round(a["金额"], 2)
+    # 排序要确定:同值再按另两项、最后按编码 —— 不然同一个问题问两次,并列的几个顺序会变
+    次 = [x for x in ("件数", "金额", "单数") if x != metric]
+    排 = sorted(汇.items(), key=lambda kv: (-kv[1][metric], -kv[1][次[0]], -kv[1][次[1]], str(kv[0])))
+    榜 = [dict(名次=i + 1, 编码=k, **v,
+               占比=f"{(v[metric] / {'件数': 总件, '金额': 总额, '单数': len(总单)}[metric] * 100):.1f}%"
+               if {'件数': 总件, '金额': 总额, '单数': len(总单)}[metric] else "—")
+          for i, (k, v) in enumerate(排[:limit])]
+    out = {"区间": f"{起日} ~ {止日}", "按哪一列": f"{field}({_订单日期列[field][1]})",
+           "范围": 范围话, "排名依据": metric, "按什么汇总": by + (f" · 只看{kind}" if kind else ""),
+           "合计": {"件数": 总件, "金额": round(总额, 2), "单数": len(总单), f"上榜的{by}一共": len(汇)},
+           "榜单": 榜}
+    # 边界并列要说出来:第 N 名和第 N+1 名同值,「前 N」就不是唯一的
+    if len(排) > limit and 排[limit - 1][1][metric] == 排[limit][1][metric]:
+        out["并列"] = (f"第 {limit} 名和第 {limit + 1} 名的{metric}一样({排[limit][1][metric]}),"
+                     f"**前 {limit} 名不唯一** —— 报的时候要说出来")
+    if 没算:
+        out["没算进销量的订单行"] = {k: {"行数": v[0], "为什么": v[1]} for k, v in 没算.items()}
+    if not 汇:
+        out["note"] = "这段时间在你的范围里没有卖掉的商品行 —— 是**没有**,不是查不到"
+    else:
+        out["note"] = ("「销量」默认按**件数**(一单买 3 件算 3);金额是订单行实收合计。"
+                       "**定制品每单都是一件、单价高,和标品混排时按件数它几乎上不了榜、按金额又会霸榜** ——"
+                       "问「卖得最好」没说按什么时,先按件数答,并说一句按金额排是谁。"
+                       "取消、待付款、已退款的行不算销量(口径同库存预警)。")
+    return out
 
 
 # 「下一周的订单」到底查哪一列 —— 四个字段是四份完全不同的单子
@@ -4827,6 +4941,7 @@ SHOP_SCHEMAS=[
  {"name":"mark_delay_told","description":"**(写)记下「已经把延期告诉顾客了」。** 只标本店的;标之前要跟用户确认他真的通知过了 —— 标错了这张单就从清单里消失,顾客再也等不到那个电话。","input_schema":{"type":"object","properties":{"delay_id":{"type":"integer"}},"required":["delay_id"]}},
  {"name":"rollback_order","description":"**(写)人工回退**:工厂发错件(退回等发货)/ 到店发现要返工(退回生产中,算重新生产)。**只有店长能点**,必须写清哪件不对、怎么发现的;运费公司承担。这是系统里唯一能让订单往回走的口子,回退记录一直留着。cause 只能是「发错件」或「到店返工」,note 写理由。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"cause":{"type":"string","enum":["发错件","到店返工"]},"note":{"type":"string"}},"required":["order_id","cause","note"]}},
  {"name":"report_production","description":"**(写)自有工坊报工**:这几件做完了 / 质检过了 / 发出去了。**工匠报自己做的那件,店长报本店**;顾问和版师报不了(不在生产环节)。\n\n⚠️ **外发工厂的单谁都不许替它报** —— 工厂没回传,真相就是「工厂还没报」,而不是「我们知道它做完了」。替它报一条,订单往前走了,而工厂那边什么都没发生。工具会自己查这张单的生产方,不是自有工坊就拒。\n\n和工厂回传**走同一个收件箱、同一套判定**:重复只记一次、来早了暂存、报「发出」必须带快递单号、车间工单还在制却报完工会挂异常(报完工会顺手把工单收掉)。被拒收或挂异常时**照「理由」去处理,不要换个说法再报一次** —— 每次都会留痕。\n\nevent:完工 / 质检通过 / 发出。item 给订单行号(只报某一件),不给就是整单。发出要传 tracking_no。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"event":{"type":"string","enum":["完工","质检通过","发出"]},"item":{"type":"string","description":"订单行号;不给就是整单"},"tracking_no":{"type":"string","description":"报「发出」时必填"}},"required":["order_id","event"]}},
+{"name":"sales_rank","description":"**商品销量排行**(只读)。「九月卖得最好的商品是什么」「这个月哪个品类卖得多」「标品前十」用它 —— 按商品 / SKU / 品类汇总订单行,不用逐单去查。⚠️ **时间段必须写成 `month=YYYY-MM` 或 `start`+`end`**,「九月」先换成具体年月,拿不准是哪一年就问。⚠️ **默认按件数排**(一单买 3 件算 3);定制品每单一件、单价高 —— 按件数几乎上不了榜、按金额会霸榜,**用户没说按什么时按件数答,并顺带说一句按金额是谁**。⚠️ 取消 / 待付款 / 已退款的行**不算销量**(口径同库存预警),返回里「没算进销量的订单行」写了各有多少。⚠️ 报总量用「合计」,不要拿榜单相加;返回「并列」时要说出前 N 名不唯一。范围随身份:总部全部 / 店长本店 / 顾问名下∪经手。","input_schema":{"type":"object","properties":{"month":{"type":"string","description":"月份 `YYYY-MM`,如 `2026-09`"},"start":{"type":"string","description":"起始日 `YYYY-MM-DD`(和 end 一起给)"},"end":{"type":"string","description":"截止日 `YYYY-MM-DD`(含当天)"},"by":{"type":"string","description":"按什么汇总:商品(默认,同款不同尺码颜色合一)/ SKU / 品类"},"metric":{"type":"string","description":"按什么排:件数(默认)/ 金额 / 单数"},"kind":{"type":"string","description":"只看 标品 或 定制品;不给就是都算"},"field":{"type":"string","description":"按哪个日期归月:下单(默认)/ 完工 / 发货 / 交付"},"limit":{"type":"integer","description":"列前几名,默认 10,最多 50"}}}},
  {"name":"orders_by_date","description":"**按时间段列订单**(只读)。「下周有哪些单要交付」「最近一周下了多少单」这类问法用它 —— 这是唯一一个不用先给订单号或客户号就能列单的入口。\n\n⚠️ **「下一周」是歧义的,这个工具不替人猜**:`direction` 要么「往后」(今天→N 天后,问的是接下来要发生什么)、要么「往前」(N 天前→今天,问的是刚过去这段做了多少)。不给 direction 它会返回「判不了」,并把两种读法各有多少单一起给你 —— **把这两个数原样告诉用户让他选**,不要自己挑一个:两种读法的单子几乎没有交集,而猜错的表现是一份看起来很正常的清单,没有任何地方会提示这不是他要的那一批。\n\n`field` 决定查哪一列:**下单 / 完工 / 发货 / 交付**,四列是四份不同的单子(同一张单「下单」在上个月、「交付」在下周)。用户说「下周要交的货」是**交付**,说「这周下了多少单」是**下单**;拿不准就问。默认按下单日,返回里会写明用的是哪一列。\n\n`days` 默认 7。\n\n**按日历月 / 按起止日期查**:`month`(`YYYY-MM`,比如「九月」= `2026-09`,查的是那个月 1 号到月底)或 `start` + `end`(`YYYY-MM-DD`,两个一起给)。给了它们就**不要再给 direction / days**。用户只说「一月」而没说哪年时,`month` 原样传「一月」,工具会把「今年 1 月」和「最近一个月」两种读法各有多少单摆出来 —— 照样**不替他挑**。\n\n范围跟身份走:顾问只看自己的,店长看本店,总部运营看全部。","input_schema":{"type":"object","properties":{"direction":{"type":"string","enum":["往后","往前"],"description":"往后=今天到 N 天后;往前=N 天前到今天。不给会返回判不了;用 month / start+end 时不给"},"days":{"type":"integer","description":"几天,默认 7"},"month":{"type":"string","description":"按日历月查:YYYY-MM(如 2026-09 = 9 月 1 日到 30 日)"},"start":{"type":"string","description":"按起止日期查的起点 YYYY-MM-DD,要和 end 一起给"},"end":{"type":"string","description":"按起止日期查的终点 YYYY-MM-DD(含这一天)"},"field":{"type":"string","enum":["下单","完工","发货","交付"],"description":"按哪一列的时间算,默认下单"},"limit":{"type":"integer","description":"最多返回几条,默认 50"}}}},
  {"name":"factory_chase","description":"**该催工厂的单 + 要人看的工厂回传**(只读)。定制单的生产和发货**只认工厂回传**(自有工坊和外发工厂都有,谁接的单谁报),门店和后台都不能手动推状态。这里列出:① 该催的单 —— 开工超过 3 天工厂没回接单(单可能没发过去),或过了工厂承诺的完工日还没完工(该先告诉顾客会晚),带生产方、承诺完工日、归属顾问、是不是你的;② 要人看的回传 —— 挂异常(查无此单、单已取消、别家报了这张单、车间工单还在制却报完工)/ 拒收(缺物流单号、时间不对)/ 暂存(来早了,等前一条)。店长看本店,总部运营看全部。顾问问「我有哪些单该去催工厂」「这单怎么还没做好」也用这个。","input_schema":{"type":"object","properties":{}}},
  {"name":"fitting_queue","description":"**白坯试衣看板** —— 哪些定制单该做白坯试衣、试了没有、客户签没签字。白坯试衣是**定制单唯一的后悔药**(云锦缂丝裁下去没有回头路,几百块的白坯挡掉几万块返工),而在这个工具之前系统只做到一半:工期里算了 7–12 天,试没试、谁陪的、签没签一条记录都没有。⚠️ **最要紧的一档是「该试没试」**:不是还没轮到,是**已经开裁了而没有任何试衣记录** —— 这一档在判尺寸争议时**往我方判**(流程没走到,是我们的)。⚠️ **「没有试衣记录」和「有记录但没签字」不是一回事**:前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录),**判责方向相反** —— 不许拿「查不到记录」当成「没签字」。⚠️ **签字是责任转移点**:量体记录说的是「我们量得对不对」,试衣签字说的是「**他本人穿过并且认可了**」,后者压过前者、也压过「远程量体」。**哪些款必须试(业务 09-22 定)**:重工、全定制(顾问亲自量的尺寸判出)、婚服(商品挂了「婚礼婚服」场合标签)三类命中任一即必试;没命中但有一类判不了 → 判不了,**不当成不必试**;重工的两个门槛(装饰工序最慢 ≥25 天 / 单项工艺起步 ≥12 天)业务 09-22 确认。**开裁这道闸会拦**:该试的要试过、而且客户签了字,整单才许开裁 —— 看板里「待开裁的单」列出每张待生产单能不能裁、卡在哪。⚠️ **这个工具不改任何东西**:约试衣、催签字是人的动作。","input_schema":{"type":"object","properties":{"order":{"type":"string","description":"订单号;不传则看全部"}}}},
@@ -5964,7 +6079,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"report_production":report_production,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"report_production":report_production,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

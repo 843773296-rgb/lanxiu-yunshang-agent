@@ -522,6 +522,25 @@ ORDERS_RANGE_RULE = Rule("TL62", ("orders_by_date",), """
   **并且在回答里说清按的是哪一列**。
 """, scope="工具")
 
+SALES_RANK_RULE = Rule("TL65", ("sales_rank",), """
+**商品销量排行(「九月卖得最好的商品」这类问法)。四条:**
+
+- **问商品卖得怎样,用 `sales_rank`,不要逐单去翻。** 订单列表只到订单一层、不含商品,
+  一单一单 `get_order` 拼出来的榜既慢又容易漏;更不要说「查不了」—— 这个入口就是为它做的。
+
+- **「九月」先换成具体年月再查**(今年九月就是 `month=今年-09`)。拿不准指哪一年、
+  还是「最近一个月」时问一句,不要猜。
+
+- **「卖得最好」没说按什么时,按件数答,并顺带说一句按金额排第一的是谁。**
+  定制品一单一件、单价高:按件数几乎上不了榜,按金额又会霸榜 ——
+  > 一个按件数排的第一和一个按金额排的第一,在「卖得最好」这四个字上长得一模一样,
+  > 而它们常常不是同一件。
+
+- **报总量用返回里的「合计」,不要拿榜单相加**(榜单只列前几名)。
+  返回有「并列」时,要说出「前 N 名不唯一」。取消 / 待付款 / 已退款的不算销量 ——
+  用户问「怎么比我想的少」时,照「没算进销量的订单行」解释。
+""", scope="工具")
+
 
 REVIVE_RULE = Rule("TL35", ("revive_list",), """
 **促活名单要回答两件事:为什么是他,为什么是现在。五条不许错:**
@@ -800,6 +819,7 @@ Rule("TL15", ("kb_pattern",), """
 OPPORTUNITY_RULE,
 REVIVE_RULE,
 ORDERS_RANGE_RULE,
+SALES_RANK_RULE,
 SHIFT_RULE,
 CREDIT_RULE,
 HISTORY_RULE,
@@ -1240,6 +1260,7 @@ OWNERLESS_RULE,
 OPPORTUNITY_RULE,
 REVIVE_RULE,
 ORDERS_RANGE_RULE,
+SALES_RANK_RULE,
 SHIFT_RULE,
 CREDIT_RULE,
 HISTORY_RULE,
