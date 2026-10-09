@@ -42,6 +42,12 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowled
 import order_mix as OM          # noqa: E402  (它自己会把 backend/knowledge 挂上 sys.path)
 import worldclock as W          # noqa: E402
 
+# ⚠️ 可以指定库(`--db 某个副本`)—— 整条链(造历史 → 上新 → 重算)要能在副本上先验一遍,
+# 别拿共享的 backend/lanxiu.db 当试验台(并行会话随时在读它)。
+for _i, _a in enumerate(sys.argv):
+    if _a == "--db" and _i + 1 < len(sys.argv):
+        OM.DB = sys.argv[_i + 1]
+
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
 
