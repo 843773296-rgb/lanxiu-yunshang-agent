@@ -443,6 +443,8 @@ WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task",
                "create_repair", "decide_repair", "advance_repair", "verify_repair_return",
                # 工厂回传(业务 09-23):延期通知完标一下、店长人工回退(发错件 / 到店返工)
                "mark_delay_told", "rollback_order",
+               # 经营报告(用户 10-09):存草稿(每存一版,冻结当时的取数包)、店长确认(必选缺了不许确认)
+               "save_report", "confirm_report",
                # 自有工坊报工(业务 09-25):它把订单一路推到已发货,**是写**。
                # 走的是工厂回传那个收件箱,但动的是真状态 —— 不登记的话它就是
                # 「唯一一个没人管的写口」(set_piece_ratio 当年正是这么漏的)。
@@ -4337,6 +4339,31 @@ def store_report(kind="周", date=None):
                      "两类不许混(别把存量说成本期新增)。原因、建议要标成判断,不要写成已安排。"}
 
 
+def save_report(body=None, kind="周", date=None, report_id=None):
+    """(写)**把写好的经营报告存成草稿** —— 每存一次是新的一版,保存时冻结当时的取数包。
+    口径和规则在 backend/report_doc.py;这里只取身份、取数包。"""
+    import report_doc as _rd
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在存 —— 请先登录")
+    return _rd.保存(me, store_report(kind=kind, date=date), body, report_id=report_id, db=DB)
+
+
+def confirm_report(report_id=None):
+    """(写)**店长确认报告** —— 必选指标缺了不许确认;确认后不能改,要改再存一版。"""
+    import report_doc as _rd
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在确认 —— 请先登录")
+    return _rd.确认(me, (report_id or "").strip(), db=DB)
+
+
+def list_reports(kind=None, report_id=None, limit=20):
+    """存过的经营报告:不给 report_id 就列每一期最新那一版;给了就看那一版的正文和冻结的取数包。"""
+    import report_doc as _rd
+    me = whoami()
+    if not me: return dict(error="不知道现在是谁在看 —— 请先登录")
+    return _rd.取(me, report_id.strip(), db=DB) if report_id else _rd.列(me, kind=kind, limit=limit, db=DB)
+
+
 # 「下一周的订单」到底查哪一列 —— 四个字段是四份完全不同的单子
 # 中文月份 → 数字。**一张显式的小表,12 条,不是自然语言解析。**
 #
@@ -5226,6 +5253,9 @@ SHOP_SCHEMAS=[
  {"name":"mark_delay_told","description":"**(写)记下「已经把延期告诉顾客了」。** 只标本店的;标之前要跟用户确认他真的通知过了 —— 标错了这张单就从清单里消失,顾客再也等不到那个电话。","input_schema":{"type":"object","properties":{"delay_id":{"type":"integer"}},"required":["delay_id"]}},
  {"name":"rollback_order","description":"**(写)人工回退**:工厂发错件(退回等发货)/ 到店发现要返工(退回生产中,算重新生产)。**只有店长能点**,必须写清哪件不对、怎么发现的;运费公司承担。这是系统里唯一能让订单往回走的口子,回退记录一直留着。cause 只能是「发错件」或「到店返工」,note 写理由。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"cause":{"type":"string","enum":["发错件","到店返工"]},"note":{"type":"string"}},"required":["order_id","cause","note"]}},
  {"name":"report_production","description":"**(写)自有工坊报工**:这几件做完了 / 质检过了 / 发出去了。**工匠报自己做的那件,店长报本店**;顾问和版师报不了(不在生产环节)。\n\n⚠️ **外发工厂的单谁都不许替它报** —— 工厂没回传,真相就是「工厂还没报」,而不是「我们知道它做完了」。替它报一条,订单往前走了,而工厂那边什么都没发生。工具会自己查这张单的生产方,不是自有工坊就拒。\n\n和工厂回传**走同一个收件箱、同一套判定**:重复只记一次、来早了暂存、报「发出」必须带快递单号、车间工单还在制却报完工会挂异常(报完工会顺手把工单收掉)。被拒收或挂异常时**照「理由」去处理,不要换个说法再报一次** —— 每次都会留痕。\n\nevent:完工 / 质检通过 / 发出。item 给订单行号(只报某一件),不给就是整单。发出要传 tracking_no。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"event":{"type":"string","enum":["完工","质检通过","发出"]},"item":{"type":"string","description":"订单行号;不给就是整单"},"tracking_no":{"type":"string","description":"报「发出」时必填"}},"required":["order_id","event"]}},
+{"name":"save_report","description":"**(写)把写好的日报 / 周报 / 月报存成草稿。** ⚠️ **只在用户明说「存一下 / 保存」时调**,先把正文给他看过;不要写完就自动存。每存一次是**新的一版**(旧版不覆盖),保存时冻结当时的取数包 —— 之后数据变了,这份报告的数不跟着变。kind / date 要和写这份报告时用的取数包一致;改的是已有报告就带上 report_id。返回报告号和「能不能确认」。只有店长 / 总部能存。","input_schema":{"type":"object","properties":{"body":{"type":"string","description":"报告正文(就是给用户看过的那一份)"},"kind":{"type":"string","description":"日 / 周 / 月,默认 周"},"date":{"type":"string","description":"那一期里任意一天 `YYYY-MM-DD`;不给 = 上一个完整的那一期"},"report_id":{"type":"string","description":"改已有报告时给它的报告号"}},"required":["body"]}},
+{"name":"confirm_report","description":"**(写)店长确认一份经营报告。** ⚠️ **只在店长明说「确认」时调,不要替他点。** 必选指标(下单数、营收)缺了不许确认;只能确认这一期**最新那一版**;确认后不能改,要改再存一版。第一版**不自动发送给任何人**。","input_schema":{"type":"object","properties":{"report_id":{"type":"string","description":"要确认的报告号(RPT 开头)"}},"required":["report_id"]}},
+{"name":"list_reports","description":"**存过的经营报告**(只读)。不给 report_id 就列每一期最新那一版(状态:草稿 / 已确认,带版本数);给了 report_id 就看那一版的正文和保存时冻结的取数包。只给店长 / 总部。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"只看 日 / 周 / 月"},"report_id":{"type":"string","description":"看某一份的正文"},"limit":{"type":"integer","description":"列几份,默认 20"}}}},
 {"name":"store_report","description":"**门店经营报告的取数包**(只读)—— 店长说「生成上周周报」「出个九月月报」「昨天的日报」时**先调它**,再照它写。日报 / 周报 / 月报共用:kind=日 / 周 / 月,date 给那一期里任意一天 `YYYY-MM-DD`,**不给就是上一个完整的那一期**(昨天 / 上周 / 上个月)。返回分两栏:**「期内」这一期发生了多少**(订单、销量、营收、进店客流、评价、进入休眠、任务、成交率)和**「存量(截至今天)」还压着多少**(待付款、该催工厂、延期没告诉顾客、白坯、库存、差评待跟、流失预警)—— ⚠️ **两栏不许混**,别把存量说成本期新增。⚠️ 每一项都带「出处」和「口径」,写报告**只照这份数说**,数字不许改写、不许心算新数;「取不到的」要照实写进报告。周报的成交率是**最近 4 周滚动**;日报不报成交率。原因和建议要标成判断,不写成已安排。只给店长 / 总部。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"日 / 周 / 月,默认 周"},"date":{"type":"string","description":"那一期里任意一天 `YYYY-MM-DD`;不给 = 上一个完整的那一期"}}}},
 {"name":"weekly_revenue","description":"**按周营收 = 实收减退款**(只读,周报用)。「上周营收多少」「这周进了多少钱」用它。⚠️ 业务周是**周一到周日**;实收按**付款日**、退款按**退款日**归周,**不是按下单日** —— 和 orders_by_date 的「下单数」不是一回事。⚠️ 退款日是近似(用售后单最后更新时间),返回里写着。预约押金不算营收。不给 week 就是上一个完整周;week 给那一周里任意一天 `YYYY-MM-DD`。范围随身份:总部全部 / 店长本店 / 顾问名下∪经手。","input_schema":{"type":"object","properties":{"week":{"type":"string","description":"那一周里任意一天 `YYYY-MM-DD`;不给 = 上一个完整周"}}}},
 {"name":"sales_rank","description":"**商品销量排行**(只读)。「九月卖得最好的商品是什么」「这个月哪个品类卖得多」「标品前十」用它 —— 按商品 / SKU / 品类汇总订单行,不用逐单去查。⚠️ **时间段必须写成 `month=YYYY-MM` 或 `start`+`end`**,「九月」先换成具体年月,拿不准是哪一年就问。⚠️ **默认按件数排**(一单买 3 件算 3);定制品每单一件、单价高 —— 按件数几乎上不了榜、按金额会霸榜,**用户没说按什么时按件数答,再照返回里「各排法的第一」说按金额是谁 —— 不要从榜单里自己推**。⚠️ 取消 / 待付款 / 已退款的行**不算销量**(口径同库存预警),返回里「没算进销量的订单行」写了各有多少。⚠️ 报总量用「合计」,不要拿榜单相加;返回「并列」时要说出前 N 名不唯一。范围随身份:总部全部 / 店长本店 / 顾问名下∪经手。","input_schema":{"type":"object","properties":{"month":{"type":"string","description":"月份 `YYYY-MM`,如 `2026-09`"},"start":{"type":"string","description":"起始日 `YYYY-MM-DD`(和 end 一起给)"},"end":{"type":"string","description":"截止日 `YYYY-MM-DD`(含当天)"},"by":{"type":"string","description":"按什么汇总:商品(默认,同款不同尺码颜色合一)/ SKU / 品类"},"metric":{"type":"string","description":"按什么排:件数(默认)/ 金额 / 单数"},"kind":{"type":"string","description":"只看 标品 或 定制品;不给就是都算"},"field":{"type":"string","description":"按哪个日期归月:下单(默认)/ 完工 / 发货 / 交付"},"limit":{"type":"integer","description":"列前几名,默认 10,最多 50"}}}},
@@ -6402,7 +6432,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"report_production":report_production,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

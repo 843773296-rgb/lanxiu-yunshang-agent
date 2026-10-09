@@ -36,6 +36,7 @@ DB = os.path.join(HERE, "..", "backend", "lanxiu.db")
 # (写这行注释时它正好抓到了 cust_owner_log —— 当时这里还是 `__import__`。)
 import ownership, asr, credit, roster, seed_rating
 import seed_quote
+import report_doc
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -51,6 +52,8 @@ import seed_quote
     # 报价表(2026-09-27):**只建表,不铺数据** —— 报价是 skill 真跑出来的东西,
     # 造一批假报价等于给评测喂一批没人报过的价。
     (seed_quote, "建表", ["quote"]),
+    # 经营报告(2026-10-09):店长存的日报 / 周报 / 月报 —— 运行时才写,没有任何一步铺数据
+    (report_doc, "建表", ["store_report_doc"]),
 ]
 
 

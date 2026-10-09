@@ -6152,5 +6152,53 @@
    }
   ],
   "预期红": "两位小数写错一格(66.89 万元)"
+ },
+ {
+  "script": "backend/report_doc_check.py",
+  "改坏": "确认不看是不是最新那一版",
+  "file": [
+   {
+    "path": "backend/report_doc.py",
+    "old": "        if r[4] != 最新:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "旧版确认不了(只能确认最新那一版)"
+ },
+ {
+  "script": "backend/report_doc_check.py",
+  "改坏": "保存时不冻结取数包(存的是现查的)",
+  "file": [
+   {
+    "path": "backend/report_doc.py",
+    "old": "        c.execute(\"INSERT INTO store_report_doc(id,shop,kind,period_start,period_end,revision,status,body,pack,\"\n                  \"supersedes,created_at,created_by) VALUES(?,?,?,?,?,?,'草稿',?,?,?,?,?)\",\n                  (rid, shop, pack[\"种类\"], 起, 止, 版, body, json.dumps(pack, ensure_ascii=False, default=str),",
+    "new": "        c.execute(\"INSERT INTO store_report_doc(id,shop,kind,period_start,period_end,revision,status,body,pack,\"\n                  \"supersedes,created_at,created_by) VALUES(?,?,?,?,?,?,'草稿',?,?,?,?,?)\",\n                  (rid, shop, pack[\"种类\"], 起, 止, 版, body, \"{}\","
+   }
+  ],
+  "预期红": "冻结:存完加一张单,存下的下单数不变"
+ },
+ {
+  "script": "backend/report_doc_check.py",
+  "改坏": "别店店长也能确认",
+  "file": [
+   {
+    "path": "backend/report_doc.py",
+    "old": "def _能管(me, shop):\n    if me.get(\"role\") not in 管理角色:\n        return False\n    return me.get(\"role\") == \"总部运营\" or me.get(\"shop\") == shop",
+    "new": "def _能管(me, shop):\n    if me.get(\"role\") not in 管理角色:\n        return False\n    return True"
+   }
+  ],
+  "预期红": "别店店长确认不了"
+ },
+ {
+  "script": "backend/report_doc_check.py",
+  "改坏": "必选缺了也能确认",
+  "file": [
+   {
+    "path": "backend/report_doc.py",
+    "old": "        if not pack.get(\"能不能确认\"):",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "必选指标缺了确认不了"
  }
 ]

@@ -523,6 +523,27 @@ ORDERS_RANGE_RULE = Rule("TL62", ("orders_by_date",), """
   **并且在回答里说清按的是哪一列**。
 """, scope="工具")
 
+SAVE_REPORT_RULE = Rule("TL68", ("save_report",), """
+**存经营报告(用户 2026-10-09:第一版只保存,不自动发送)。三条:**
+
+- **只在用户明说「存一下 / 保存」时调。** 写完报告先给他看,不要写完就自动存。
+- **存的就是给他看过的那一份正文**,kind / date 要和写这份报告时用的取数包一致;改已有报告带上 report_id。
+- 每存一次是新的一版、数字冻结在保存那一刻;返回里「能不能确认」为否时,把缺的必选指标告诉他。
+""", scope="工具")
+
+CONFIRM_REPORT_RULE = Rule("TL69", ("confirm_report",), """
+**确认经营报告。三条:**
+
+- **只在店长明说「确认」时调,不要替他点** —— 确认是他对这份报告负责。
+- **必选指标缺了确认不了**(下单数、营收);只能确认这一期最新那一版。被拒时照实转告原因,不要换个说法再试。
+- **确认后不能改**,要改就再存一版(旧版留作历史);确认以后**不发给任何人** —— 用户问「发给谁了」照实说第一版只保存。
+""", scope="工具")
+
+LIST_REPORTS_RULE = Rule("TL70", ("list_reports",), """
+**看存过的经营报告。** 不给 report_id 列每一期最新那一版(草稿 / 已确认、几个版本);给了看正文和冻结的取数包。
+**报告里的数以冻结的取数包为准** —— 用户问「这份报告上周说营收多少」,照存下的说,不要拿今天现查的数去替换。
+""", scope="工具")
+
 STORE_REPORT_RULE = Rule("TL67", ("store_report",), """
 **写日报 / 周报 / 月报(用户 2026-10-09:三种都要)。五条:**
 
@@ -855,6 +876,9 @@ ORDERS_RANGE_RULE,
 SALES_RANK_RULE,
 WEEKLY_REVENUE_RULE,
 STORE_REPORT_RULE,
+SAVE_REPORT_RULE,
+CONFIRM_REPORT_RULE,
+LIST_REPORTS_RULE,
 SHIFT_RULE,
 CREDIT_RULE,
 HISTORY_RULE,
@@ -1298,6 +1322,9 @@ ORDERS_RANGE_RULE,
 SALES_RANK_RULE,
 WEEKLY_REVENUE_RULE,
 STORE_REPORT_RULE,
+SAVE_REPORT_RULE,
+CONFIRM_REPORT_RULE,
+LIST_REPORTS_RULE,
 SHIFT_RULE,
 CREDIT_RULE,
 HISTORY_RULE,

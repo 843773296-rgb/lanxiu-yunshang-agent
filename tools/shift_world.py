@@ -100,6 +100,9 @@ DB = os.path.join(ROOT, "backend", "lanxiu.db")
     "daily_fresh_batch.原值": "每日上新改一行之前的原值快照(JSON),里面是那一行当时的各个时间点 —— "
                               "和 order_mix_batch.payload 同一个道理:要拿它写回去,"
                               "它就得和那一行现在的日期在同一套世界里",
+    "store_report_doc.body": "经营报告正文(店长存的日报 / 周报 / 月报)里写着报告期和各种日期 ——"
+                             "同一行的 period_start / period_end 跟着挪,正文不挪就自相矛盾(「上周 9/28—10/4」对不上已经挪过的报告期)",
+    "store_report_doc.pack": "保存时冻结的取数包(JSON),里面是那一期的区间、截至日、环比上一期 —— 同上,要和报告期同一套世界",
     "call_audio.consent_basis": "「客户 2025-04-03 接受了服务条款 v2.3」复述的是 terms_accept.accepted_at —— "
                                 "那一列跟着挪,这句不挪就自相矛盾(业务拍板日期故意不写进这句,见 recording_terms.默认同意依据)",
 }

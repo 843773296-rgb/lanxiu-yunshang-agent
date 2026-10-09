@@ -412,6 +412,8 @@ SHOP_TOOLS = [
     "mcp__shop__weekly_revenue",
     # 门店经营报告取数包(只读):日报 / 周报 / 月报共用,期内和存量分两栏。规矩 TL67
     "mcp__shop__store_report",
+    # 经营报告存档:存草稿 / 店长确认(写)、看存过的(只读)。规矩 TL68-70:存和确认都只在用户明说时调
+    "mcp__shop__save_report", "mcp__shop__confirm_report", "mcp__shop__list_reports",
     "mcp__shop__report_production",
     # 订单日志(只读):这张单发生过什么 —— 顾客问「为什么晚了」时,被拒收和作废的回传往往才是答案。规矩 TL54
     "mcp__shop__order_log",
