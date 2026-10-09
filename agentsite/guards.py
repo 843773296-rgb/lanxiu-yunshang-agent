@@ -1279,13 +1279,72 @@ def g22_agree_without_reading(text, calls, prompt=""):
             "先调工具核一遍,再说对不对。")
 
 
+
+# 业务计数:「4217 张单」「1395 个客户」「3403/3542」—— 库里的数,会随数据变。
+RE_COUNT = re.compile(r"(?<![\d.])(\d[\d,]*)\s*(?:/\s*(\d[\d,]*)\s*)?"
+                      r"(?:张|单|笔|位|名|人|个(?:客户|顾客|会员|商品|SKU|sku|款)|条|件|家|款)")
+# 只认「A/B」两段;「30/30/30/10」那种一串份额不是计数(10-09 扫历史回答误拦过)
+RE_FRAC = re.compile(r"(?<![\d./])(\d[\d,]{1,})\s*/\s*(\d[\d,]{1,})(?![\d./])")
+
+
+def g25_count_without_lookup(text, calls, prompt="", 规矩=""):
+    """**报了库里的数,而这一轮一次查询都没调。**(用户 2026-10-09 拍:体检直接拦)
+
+    来由:运营评测 V05「多少单追得到接待」—— 模型一个工具没调,答「3403/3542」。
+    那个数**原样写在规矩里**(TL 成交率那条),所以 g1「规矩里写着的数算有出处」把它放了 ——
+    而库里现在是 4217/4222。规矩里的数是**写规矩那天**的数:
+    > 一个「照规矩念的旧数」和一个「刚查出来的数」,在答案里长得一模一样。
+    所以这一条**不认规矩原文当出处**:订单数、客户数这类计数只能来自这一轮的查询。
+
+    只管**零调用**的那一轮(调过工具的由 g1 逐个核出处);只管 ≥ 10 的计数
+    (「3 条规矩」「第 2 次」不是库里的数);问题里出现过的数、举例的数不算。
+    """
+    if calls:
+        return None
+    题数 = {v for v in (_num(m) for m in re.findall(r"\d[\d,]*(?:\.\d+)?", prompt or "")) if v is not None}
+
+    def _举例行(i):
+        头 = text.rfind("\n", 0, i) + 1
+        尾 = text.find("\n", i); 尾 = len(text) if 尾 < 0 else 尾
+        行 = text[头:尾]
+        return bool(re.search(r"张三|李四|王五|赵六|某某|比如|例如|举例|举个例|假如|假设|打个比方", 行))
+
+    # 规矩里标明是**实测 / 抽查**出来的数(「实测 24 条里误报 7 条」)是一次评估的结论,不是库里会变的数,
+    # 照念不算编 —— 判据贴着**规矩原文里那个数前面的标记**,标记在我们自己写的规矩里,不猜回答的措辞。
+    # 而「现在 3403/3542 的定制单…」前面没有这类标记 —— 那就是写规矩那天的库存数,照念就是旧数
+    规 = re.sub(r"\s+", "", 规矩 or "")
+    def _实测数(片):
+        片 = re.sub(r"\s+", "", 片)
+        for mm in re.finditer(re.escape(片), 规):
+            if re.search(r"实测|抽查|测过|测了|真跑|样本", 规[max(0, mm.start() - 12):mm.start()]):
+                return True
+        return False
+
+    命中 = []
+    for rx in (RE_COUNT, RE_FRAC):
+        for m in rx.finditer(text):
+            vs = [_num(g) for g in m.groups() if g]
+            vs = [v for v in vs if v is not None]
+            if not vs or max(vs) < 10:
+                continue
+            if all(v in 题数 for v in vs) or _举例行(m.start()) or _实测数(m.group(0)):
+                continue
+            命中.append(m.group(0).strip())
+    if not 命中:
+        return None
+    return (f"报了库里的数({'、'.join(dict.fromkeys(命中))}),而这一轮**一次查询都没调** —— "
+            "订单数、客户数这类计数会随数据变,**规矩里写着的数是写规矩那天的**,不能当现在的数报。"
+            "先调对应的工具查,再照返回值说")
+
+
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer,
           g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
           g15_growth_plan_sections, g16_bypass_control,
           g17_liability_promise, g18_vision_conclusion,
           g19_account_state, g20_consent_version, g21_apply_as_done,
-          g22_agree_without_reading, g23_discount_promise, g24_growth_not_statistical]
+          g22_agree_without_reading, g23_discount_promise, g24_growth_not_statistical,
+          g25_count_without_lookup]
 
 
 def check_answer(text, calls, prompt="", 带图=False, 规矩=""):

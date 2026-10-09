@@ -5888,5 +5888,41 @@
    }
   ],
   "预期红": "豁免名单是现扫的,而且不为空"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g25 关掉(没查就报数也放行)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if calls:\n        return None\n    题数",
+    "new": "    if True:\n        return None\n    题数"
+   }
+  ],
+  "预期红": "V05 真跑:没调工具报规矩里的旧数"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g25 不认规矩里标了实测的数",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "or _举例行(m.start()) or _实测数(m.group(0)):",
+    "new": "or _举例行(m.start()):"
+   }
+  ],
+  "预期红": "g25 规矩里标了「实测」的数 → 不算编"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g25 把一串份额 30/30/30/10 当成计数",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "RE_FRAC = re.compile(r\"(?<![\\d./])(\\d[\\d,]{1,})\\s*/\\s*(\\d[\\d,]{1,})(?![\\d./])\")",
+    "new": "RE_FRAC = re.compile(r\"(?<![\\d.])(\\d[\\d,]{1,})\\s*/\\s*(\\d[\\d,]{1,})(?![\\d.])\")"
+   }
+  ],
+  "预期红": "V04 真跑:W 型份额 30/30/30/10 是一串份额,不是计数"
  }
 ]
