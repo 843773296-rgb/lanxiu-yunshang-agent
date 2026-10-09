@@ -19,6 +19,9 @@ from seed import TODAY
     ("月报默认取了本月而不是上个完整月", "月报默认 = 上个自然月"),
     ("存量混进期内(两栏不分)", "期内和存量分两栏,存量不出现在期内"),
     ("进入休眠不按门店筛(门店报告报了全公司的数)", "进入休眠只算本店"),
+    ("周报环比的上一期错位(拿了上上周)", "周报环比:上期下单数和独立 SQL 对得上"),
+    ("本期没过完也照样比", "本期还没过完 → 不比(避免假的下跌)"),
+    ("没有预约的那一天把到店算成「取不到」(10-09 CI 红法)", "没有预约的那一天:进店客流记 0,不算取不到"),
 ]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -93,6 +96,50 @@ with api.as_user(dict(no="60000014", name="程萦", role="顾问", shop=店)):
 with api.as_user(店长):
     ck("kind 写错 → 报错", bool(api.store_report(kind="季").get("error")))
     ck("还没到的那一期 → 明说", "还没到" in str(api.store_report(kind="周", date=(今 + dt.timedelta(days=14)).isoformat()).get("error")))
+
+# ④ 环比(用户 10-09:周报、月报比销量和订单量,日报不比)—— 上一期的下单数对独立 SQL
+for k, 上 in (("周", (期望["周"][0] - dt.timedelta(days=7), 期望["周"][1] - dt.timedelta(days=7))),
+              ("月", ((期望["月"][0] - dt.timedelta(days=1)).replace(day=1), 期望["月"][0] - dt.timedelta(days=1)))):
+    上单 = c.execute("SELECT COUNT(*) FROM ordr WHERE shop=? AND created >= ? AND created <= ?",
+                    (店, 上[0].isoformat(), 上[1].isoformat() + " 23:59:59")).fetchone()[0]
+    环 = 包[k].get("环比") or {}
+    ck(f"{k}报环比:上一期是 {上[0]} ~ {上[1]}", 环.get("上一期") == f"{上[0]} ~ {上[1]}", str(环.get("上一期")))
+    # 名字写成字面量 —— 咬合规格按字面在脚本里找「预期红」那一条,f-string 拼出来的找不到(bite_check 10-09 抓到)
+    ck({"周": "周报环比:上期下单数和独立 SQL 对得上", "月": "月报环比:上期下单数和独立 SQL 对得上"}[k],
+       (环.get("订单量(下单数)") or {}).get("上期") == 上单,
+       f"工具 {(环.get('订单量(下单数)') or {}).get('上期')} / SQL {上单}")
+    本, 上值 = (环.get("订单量(下单数)") or {}).get("本期"), (环.get("订单量(下单数)") or {}).get("上期")
+    if 本 is not None and 上值:
+        ck(f"{k}报环比:比例是程序算好的 (本 − 上) ÷ 上",
+           (环["订单量(下单数)"].get("环比") or "") == f"{(本 - 上值) / 上值 * 100:+.1f}%", str(环["订单量(下单数)"]))
+    ck(f"{k}报环比里有销量(卖掉的件数)", "销量(卖掉的件数)" in 环)
+ck("日报不做环比", "环比" not in 包["日"])
+with api.as_user(店长):
+    本月 = api.store_report(kind="月", date=TODAY)
+ck("本期还没过完 → 不比(避免假的下跌)", "没过完" in str((本月.get("环比") or {}).get("说明")), str(本月.get("环比"))[:80])
+
+# ⑤ 必选 / 可选(用户 10-09:下单数和营收必选,其余可选、默认全选)
+ck("必选指标是下单数(订单)和营收", 包["周"].get("必选指标") == ["订单", "营收"], str(包["周"].get("必选指标")))
+ck("每一项都标了必选 / 可选,且可选的默认都在(默认全选)",
+   all("必选" in v for v in 包["周"]["期内"].values())
+   and {"销量", "进店客流", "评价", "进入休眠", "任务", "成交率"} <= set(包["周"]["期内"]))
+ck("必选都取到了 → 能确认", 包["周"].get("能不能确认") is True and 包["周"].get("必选缺了的") == [])
+ck("写明时区(中国时间)", "中国时间" in str(包["周"].get("时区")))
+
+# ⑥ 一条预约都没有的那一天:到店记 0,不算「取不到」(10-09 CI 从零建库撞到的)—— 找一天真的没预约
+# 本地库近一年天天有预约,所以往数据开始之前找;先**确认那天店里真的没有预约**,再拿它测
+最早 = c.execute("SELECT MIN(substr(start_ts,1,10)) FROM appointment").fetchone()[0] or TODAY
+候选 = (dt.date.fromisoformat(最早) - dt.timedelta(days=3)).isoformat()
+空日 = (候选,) if c.execute("SELECT COUNT(*) FROM appointment WHERE shop=? AND substr(start_ts,1,10)=?",
+                           (店, 候选)).fetchone()[0] == 0 else None
+with api.as_user(店长):
+    if 空日:
+        空 = api.store_report(kind="日", date=空日[0])
+        ck("没有预约的那一天:进店客流记 0,不算取不到",
+           (空.get("期内") or {}).get("进店客流", {}).get("值") == 0 and not any("进店客流" in x for x in 空.get("取不到的") or []),
+           f"{空日[0]}: {(空.get('期内') or {}).get('进店客流', {}).get('值')} / {空.get('取不到的')}")
+    else:
+        ck("没有预约的那一天:进店客流记 0,不算取不到", False, "近 400 天天天都有预约 —— 找不到样本,这条没验到")
 
 sc = next(t for t in api.SHOP_SCHEMAS if t["name"] == "store_report")
 ck("工具参数名都是 ASCII", all(re.fullmatch(r"[a-zA-Z0-9_.-]{1,64}", k) for k in sc["input_schema"]["properties"]))

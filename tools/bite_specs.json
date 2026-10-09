@@ -6063,8 +6063,8 @@
   "file": [
    {
     "path": "backend/api.py",
-    "old": "\"期内\": 期内, \"存量(截至今天)\": 存,",
-    "new": "\"期内\": {**期内, **存}, \"存量(截至今天)\": 存,"
+    "old": "\"期内\": 期内, **({\"环比\": 环比} if 环比 else {}), \"存量(截至今天)\": 存,",
+    "new": "\"期内\": {**期内, **存}, **({\"环比\": 环比} if 环比 else {}), \"存量(截至今天)\": 存,"
    }
   ],
   "预期红": "期内和存量分两栏,存量不出现在期内"
@@ -6080,5 +6080,41 @@
    }
   ],
   "预期红": "进入休眠只算本店"
+ },
+ {
+  "script": "backend/store_report_check.py",
+  "改坏": "周报环比的上一期错位(拿了上上周)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "上起, 上止 = ((起 - _dt.timedelta(days=7), 止 - _dt.timedelta(days=7)) if kind == \"周\"",
+    "new": "上起, 上止 = ((起 - _dt.timedelta(days=14), 止 - _dt.timedelta(days=14)) if kind == \"周\""
+   }
+  ],
+  "预期红": "周报环比:上期下单数和独立 SQL 对得上"
+ },
+ {
+  "script": "backend/store_report_check.py",
+  "改坏": "本期没过完也照样比",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        if 止 > 今:\n            环比 = {\"说明\": \"本期还没过完,不和完整的上一期比(会出假的下跌)\"}\n        else:",
+    "new": "        if False:\n            环比 = {\"说明\": \"本期还没过完,不和完整的上一期比(会出假的下跌)\"}\n        else:"
+   }
+  ],
+  "预期红": "本期还没过完 → 不比(避免假的下跌)"
+ },
+ {
+  "script": "backend/store_report_check.py",
+  "改坏": "没有预约的那一天把到店算成「取不到」(10-09 CI 红法)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if 到 is None and \"error\" not in r and \"漏斗\" not in r:\n        到 = 0",
+    "new": "    if False:\n        到 = 0"
+   }
+  ],
+  "预期红": "没有预约的那一天:进店客流记 0,不算取不到"
  }
 ]
