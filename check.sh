@@ -38,9 +38,39 @@ export PYTHONDONTWRITEBYTECODE=1
 # 是并行会话发消息才知道是红的。
 # 崩了和判定不过,下一步完全不同:一个是「这条检查压根没验过」,
 # 一个是「验了,不合格」。收尾行把两个数分开报。
+# ⚠️⚠️ **每条检查都有一道墙** —— 2026-10-09 加的,因为挂住**看起来不像红**。
+#
+# 那天 `agent/trace_check.py` 里一条没加锚点的前瞻正则变成了 O(n²),
+# 跟着 `backend/api.py` 长到 28.8 万字之后要跑约 3 小时。
+# CI 上的表现:主门禁这个 job 跑到 20 分钟撞上 `timeout-minutes: 20`,
+# 列表里显示一条 **`cancelled`**。
+#
+# > **一条「挂住被掐」的 `cancelled`,和一条「新 push 把旧 run 掐掉」的 `cancelled`,
+# > 在 run 列表上长得一模一样** —— 于是它连着挂了 4 次都没人当成红。
+# > 我自己也是核了「被掐的时刻有没有新 push」才分清的。
+#
+# 所以超时要在**这里**变成一条明确的红,而不是指望外层 job 的墙。
+# 并且它归到**「崩了 / 没验过」**那一类,不是「判定不过」——
+# 它确实一个字都没验,和「验了不合格」下一步完全不同。
+#
+# 墙定在 600 秒:现存最慢的一条也远低于它,所以**只有真挂住才会撞上**。
+# 要调用 `CHK_TIMEOUT=900 ./check.sh`(别为了让某条过去而放宽,先问它为什么慢)。
+# ⚠️ 这台机器**没有 `timeout(1)`**(macOS 不带,也没装 coreutils),所以用 python3 当看门狗。
+# ⚠️ bash 的变量名**只能是 ASCII** —— 写 `每条超时=600` 会当成命令去执行。
+#    (这是中文标识符第 5 次咬人,前 4 次在工具 schema 的属性名上。)
+CHK_TIMEOUT=${CHK_TIMEOUT:-600}
 run(){ printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
-  if "$@" > /tmp/chk.out 2>&1; then
+  local rc=0
+  python3 -c 'import subprocess, sys
+try:
+    sys.exit(subprocess.run(sys.argv[2:], timeout=int(sys.argv[1])).returncode)
+except subprocess.TimeoutExpired:
+    sys.exit(124)' "$CHK_TIMEOUT" "$@" > /tmp/chk.out 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
     tail -3 /tmp/chk.out | awk '{print "  " $0}'
+  elif [ "$rc" -eq 124 ]; then
+    FAIL=1; CRASH=$((CRASH + 1)); awk '{print "  " $0}' /tmp/chk.out
+    printf "  \033[31m✗ 超过 %s 秒没跑完,被掐了(这条检查没验过)\033[0m\n" "$CHK_TIMEOUT"
   else
     FAIL=1; awk '{print "  " $0}' /tmp/chk.out
     if grep -qE 'Traceback \(most recent call last\)|^[A-Za-z]*Error:|command not found|No such file' /tmp/chk.out; then
