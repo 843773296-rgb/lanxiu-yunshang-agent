@@ -40,6 +40,18 @@ CREATE INDEX IF NOT EXISTS ix_rptdoc_key ON store_report_doc(shop, kind, period_
 
 管理角色 = ("店长", "总部运营")
 正文上限 = 20000
+# 页面地址(用户 10-10:确认后要给个链接能直达)。**站内相对路径** —— 对话页和报告页同一个站,
+# 写死主机和端口的话换一台机器 / 换个端口就是一条死链,而死链在回复里和活链长得一样
+全部报告 = "/report"
+
+
+def 链接(report_id):
+    return f"{全部报告}?id={report_id}"
+
+
+def 下载(report_id):
+    """PDF 下载地址(用户 10-10:chat 里要能直接下 PDF)。出 PDF 在 agentsite/report_pdf.py"""
+    return f"{全部报告}.pdf?id={report_id}"
 
 
 def 建表(c=None, db=None):
@@ -115,7 +127,7 @@ def 保存(me, pack, body, report_id=None, db=None):
     _记(me.get("no"), rid, "REPORT_SAVE", True, f"{pack['报告']} 第 {版} 版", {"kind": pack["种类"], "start": 起})
     return dict(ok=True, 报告号=rid, 第几版=版, 状态="草稿", 报告=pack["报告"], 门店=shop,
                 **({"替代": 上一版已确认[0]} if 上一版已确认 else {}),
-                能不能确认=pack.get("能不能确认"), 必选缺了的=pack.get("必选缺了的"),
+                能不能确认=pack.get("能不能确认"), 必选缺了的=pack.get("必选缺了的"), 链接=链接(rid), 下载=下载(rid),
                 note="存的是草稿,数字冻结在保存这一刻。**确认要店长明说**,不要替他点。")
 
 
@@ -144,8 +156,8 @@ def 确认(me, report_id, db=None):
     finally:
         c.close()
     _记(me.get("no"), report_id, "REPORT_CONFIRM", True, "确认", {})
-    return dict(ok=True, 报告号=report_id, 状态="已确认",
-                note="确认后不能改;要改就再存一版,这一版留作历史。**第一版不自动发送给任何人**。")
+    return dict(ok=True, 报告号=report_id, 状态="已确认", 链接=链接(report_id), 下载=下载(report_id),
+                note="确认后不能改;要改就再存一版,这一版留作历史。**不自动发送给任何人**(用户 10-10 定:只保存)。")
 
 
 def 列(me, kind=None, limit=20, db=None):
@@ -168,8 +180,10 @@ def 列(me, kind=None, limit=20, db=None):
         rs = [dict(r) for r in c.execute(sql + " ORDER BY d.period_start DESC, d.kind", args)]
     finally:
         c.close()
+    for r in rs:
+        r["链接"], r["下载"] = 链接(r["id"]), 下载(r["id"])
     lim = max(1, min(int(limit or 20), 100))
-    return {"份数": len(rs), "列出": min(len(rs), lim), "报告": rs[:lim],
+    return {"份数": len(rs), "列出": min(len(rs), lim), "报告": rs[:lim], "全部报告": 全部报告,
             **({"截断": f"一共 {len(rs)} 份,只列了 {lim} 份"} if len(rs) > lim else {})}
 
 
@@ -182,5 +196,5 @@ def 取(me, report_id, db=None):
         c.close()
     if not r or not _能管(me, r["shop"]):
         return dict(error=f"没有 {report_id} 这份报告,或者它不在你的范围里")
-    d = dict(r); d["pack"] = json.loads(d["pack"])
+    d = dict(r); d["pack"] = json.loads(d["pack"]); d["链接"], d["下载"] = 链接(report_id), 下载(report_id)
     return d

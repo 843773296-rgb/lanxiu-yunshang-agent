@@ -75,6 +75,16 @@ main{padding:16px 22px 60px;min-width:0}
 .card>.bd{padding:15px 20px 20px}
 .row{display:grid;gap:14px;margin-bottom:14px}
 .r-13{grid-template-columns:1fr 2.05fr}
+/* 新品上市日历 */
+.cal-h,.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-h div{font-size:11px;color:var(--ink3);text-align:center;padding-bottom:2px}
+.cal-d{min-height:62px;border:1px solid var(--line2);border-radius:6px;padding:3px 4px;font-size:11px;overflow:hidden}
+.cal-x{border:0}.cal-t{border-color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue)}
+.cal-n{color:var(--ink3);font-size:10.5px}
+.cal-i{background:var(--blue4,#dbe7ff);border-radius:4px;padding:0 4px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-i b{float:right;color:var(--warn);font-weight:700}
+.cal-p{background:transparent;border:1px dashed var(--blue);color:var(--blue)}
+.cal-more{color:var(--ink3);font-size:10.5px}
 .r-3{grid-template-columns:repeat(3,1fr)}
 .r-4{grid-template-columns:repeat(4,1fr)}
 @media(max-width:1120px){.r-13,.r-3,.r-4{grid-template-columns:1fr}}
@@ -610,6 +620,15 @@ async function workbench(){
           <div><div class="l">门店编码</div><div class="v mono" style="font-size:13px">${esc(s.shop.split(" ")[0])}</div></div>
         </div></div>`}).join("")}</div></div></div>
 
+  <div class="row r-13">
+    <div class="card"><div class="hd"><h3>经营报告</h3><span class="n" id="wb-rpt-n"></span>
+      <span class="more"><a href="/report" target="_blank" rel="noopener">全部 ›</a></span></div>
+      <div class="bd" id="wb-rpt"><div style="color:var(--ink3);font-size:12.5px">加载中…</div></div></div>
+    <div class="card"><div class="hd"><h3>新品上市日历</h3><span class="n" id="wb-cal-n"></span>
+      <span class="more"><b class="calnav" data-d="-1">‹ 上月</b> <b class="calnav" data-d="1">下月 ›</b></span></div>
+      <div class="bd" id="wb-cal"><div style="color:var(--ink3);font-size:12.5px">加载中…</div></div></div>
+  </div>
+
   <div class="row r-3">
     <div class="card"><div class="hd"><h3>退款尝试趋势</h3>
       <div class="lg" style="margin-left:auto"><span><i style="background:var(--blue4)"></i>尝试次数(次)</span>
@@ -631,6 +650,51 @@ async function workbench(){
   M.querySelectorAll("[data-pend]").forEach(e=>e.onclick=()=>view(e.dataset.pend));
   M.querySelectorAll(".seg b").forEach(b=>b.onclick=()=>{
     M.querySelectorAll(".seg b").forEach(x=>x.classList.remove("on")); b.classList.add("on")});
+  wbReports(); wbCalendar();
+  M.querySelectorAll(".calnav").forEach(b=>b.onclick=()=>wbCalendar(+b.dataset.d));
+}
+
+/* ── 工作台 · 经营报告(用户 10-10:日报 / 周报 / 月报的管理也在工作台)──
+   数据、范围(店长本店 / 总部全部)都来自 /api/reports,和 chat 里 list_reports 是同一个函数;
+   「怎么生成的」不在这儿看 —— 在 AI 管理平台的调用记录里看(那一页是给调控的人的,工作台只办业务) */
+const 种名={日:"日报",周:"周报",月:"月报"};
+async function wbReports(){
+  const el=document.getElementById("wb-rpt"); if(!el) return;
+  let d; try{ d=await get("/api/reports"); }catch(e){ el.innerHTML="取不到"; return; }
+  if(d.error){ el.innerHTML=`<div style="color:var(--ink3);font-size:12.5px">${esc(d.error)}(经营报告只给店长 / 总部看)</div>`; return; }
+  const rows=d.报告||[];
+  document.getElementById("wb-rpt-n").textContent=`(${d.份数} 份)`;
+  el.innerHTML=(rows.length?`<table class="tb" style="width:100%;font-size:12.5px"><tbody>${rows.slice(0,8).map(x=>`<tr>
+      <td>${esc(种名[x.kind]||x.kind)}<div style="color:var(--ink3);font-size:11.5px">${esc(x.period_start)}${x.period_end!==x.period_start?" ~ "+esc(x.period_end.slice(5)):""}</div></td>
+      <td><span class="pill ${x.status==="已确认"?"p-ok":"p-warn"}">${esc(x.status)}</span>
+        <div style="color:var(--ink3);font-size:11.5px">第 ${esc(x.revision)} 版 · ${esc((x.shop||"").split(" ")[1]||x.shop)}</div></td>
+      <td style="text-align:right;white-space:nowrap"><a href="${esc(x.链接)}" target="_blank" rel="noopener">打开</a>
+        · <a href="${esc(x.下载)}">PDF</a></td></tr>`).join("")}</tbody></table>`
+    :`<div style="color:var(--ink3);font-size:12.5px;padding:8px 0">还没有存过报告</div>`)+
+    `<div style="color:var(--ink3);font-size:11.5px;margin-top:8px">在助手里说「生成上周周报」→「存一下」→「确认」</div>`;
+}
+
+/* ── 工作台 · 新品上市日历(用户 10-10)── 已上 = 实心,计划 = 虚线框;角标是这一款绑上了几条等货的商机 */
+let CAL_M=null;
+async function wbCalendar(step){
+  const el=document.getElementById("wb-cal"); if(!el) return;
+  if(step&&CAL_M){ const [y,m]=CAL_M.split("-").map(Number); const t=new Date(y,m-1+step,1);
+    CAL_M=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}`; }
+  let d; try{ d=await get("/api/arrival-calendar"+(CAL_M?"?month="+CAL_M:"")); }catch(e){ el.innerHTML="取不到"; return; }
+  if(d.error){ el.innerHTML=esc(d.error); return; }
+  CAL_M=d.月;
+  document.getElementById("wb-cal-n").textContent=`(${d.月} · 已上 ${d.已上} 款 · 计划 ${d.计划} 款 · 待上架 ${d.待上架总数} 款)`;
+  const 起=new Date(d.起+"T00:00:00"), 天数=+d.止.slice(8), 空=(起.getDay()+6)%7;   // 周一开头
+  const 格=[]; for(let i=0;i<空;i++) 格.push(`<div class="cal-d cal-x"></div>`);
+  for(let i=1;i<=天数;i++){
+    const k=`${d.月}-${String(i).padStart(2,"0")}`, xs=d.天[k]||[];
+    格.push(`<div class="cal-d${k===d.今天?" cal-t":""}"><div class="cal-n">${i}</div>${xs.slice(0,3).map(x=>
+      `<div class="cal-i ${x.状态==="计划"?"cal-p":""}" title="${esc(x.名称)}(${esc(x.款号)} · ${esc(x.类型)} · ${esc(x.状态)})">${esc(x.名称.replace(/[「」]/g,"").slice(0,8))}${x.绑上的商机?`<b>${x.绑上的商机}</b>`:""}</div>`).join("")}${xs.length>3?`<div class="cal-more">+${xs.length-3}</div>`:""}</div>`);
+  }
+  el.innerHTML=`<div class="cal-h">${["一","二","三","四","五","六","日"].map(x=>`<div>${x}</div>`).join("")}</div>
+    <div class="cal">${格.join("")}</div>
+    <div style="color:var(--ink3);font-size:11.5px;margin-top:8px">实心 = 已上 · 虚线 = 计划上新 · 角标 = 这一款绑上了几条等货的商机(上新那天会给顾问弹待办卡片)
+    ${d.说明?`<br>⚠️ ${esc(d.说明)}`:""}</div>`;
 }
 
 /* ── 图表:全部内联 SVG,不引外部库 ── */

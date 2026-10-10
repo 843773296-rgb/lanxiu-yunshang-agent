@@ -407,6 +407,7 @@ run "周报 · 按周营收对独立 SQL(按付款日 / 退款日归周、范围
 run "周报 · 评价 / 进入休眠 / 任务复盘按周查,对独立 SQL" python3 backend/weekly_metrics_check.py
 run "经营报告取数包 · 日报 / 周报 / 月报的报告期、对独立 SQL、期内和存量分栏" python3 backend/store_report_check.py
 run "经营报告保存 / 确认 · 每存一版、只确认最新、冻结取数包、权限(库副本上跑)" python3 backend/report_doc_check.py
+run "上新待办卡片 · 谁看得到、打码、30 天窗口、看完整号码留痕、建议写一次(库副本上跑)" python3 backend/arrival_card_check.py
 run "判据词表 · 声称有备选,就得验过一条备选" python3 tools/vocab_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py

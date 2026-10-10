@@ -2688,6 +2688,34 @@ class H(BaseHTTPRequestHandler):
         if _u(unquote(urlparse(self.path).path)) == "/api/me":
             u = _me(self)
             return self._send(u or {"error": "没登录"}, 200 if u else 401)
+        # 存过的经营报告(用户 10-10:确认后要给个链接能直达)—— 身份只从 Cookie 换,
+        # 范围规则和 chat 里 list_reports 是**同一个函数**(report_doc.列 / 取),页面不另写一套
+        if p == "/api/arrival-calendar":
+            # 新品上市日历(工作台)—— 商品排期不分门店,登录了就能看
+            import arrival_card as _ac
+            if not _me(self): return self._send({"error": "没登录"}, 401)
+            from urllib.parse import parse_qs as _pq
+            m = (_pq(urlparse(self.path).query).get("month") or [None])[0]
+            try:
+                return self._send(_ac.日历(m, db=backend.DB))
+            except ValueError:
+                return self._send({"error": f"月份写成 YYYY-MM:{m}"}, 400)
+        if p == "/api/arrival-cards":
+            # 上新待办卡片(用户 10-10:导购每次登录 chat 都直接弹)—— 范围规则在 arrival_card._可见
+            import arrival_card as _ac
+            u = _me(self)
+            if not u: return self._send({"error": "没登录"}, 401)
+            return self._send(_ac.卡片(u, db=backend.DB))
+        if p == "/api/reports" or p.startswith("/api/report/"):
+            import report_doc as _rd
+            u = _me(self)
+            if not u: return self._send({"error": "没登录"}, 401)
+            if p == "/api/reports":
+                from urllib.parse import parse_qs as _pq
+                k = (_pq(urlparse(self.path).query).get("kind") or [None])[0]
+                return self._send(_rd.列(u, kind=_u(unquote(k)) if k else None, limit=100, db=backend.DB))
+            r = _rd.取(u, p.split("/api/report/", 1)[1], db=backend.DB)
+            return self._send(r, 404 if "error" in r else 200)
         # 四个智能体页面已迁到独立站点(agentsite/,端口 8770)。
         # 后台只留一个入口链接,接口仍对外提供 —— 新站的 /api/* 反代过来。
         if p in ("/","/index.html"):
@@ -2959,6 +2987,13 @@ class H(BaseHTTPRequestHandler):
         p=_u(unquote(urlparse(self.path).path))
         n=int(self.headers.get("content-length") or 0)
         body=json.loads(self.rfile.read(n) or "{}") if n else {}
+        if p == "/api/reveal-contact":
+            # 卡片上点「看完整号码」—— 身份只从 Cookie 换;每点一次进操作台账(用户 10-10 定)
+            import arrival_card as _ac
+            u = _me(self)
+            if not u: return self._send({"error": "没登录"}, 401)
+            r = _ac.看完整联系方式(u, str(body.get("task") or ""), db=backend.DB)
+            return self._send(r, 403 if "error" in r else 200)
         if p=="/api/transit":
             # ⚠️ **2026-09-20 修**:这个入口原来直接把请求体喂给 `transit()`,
             # **没有取任何身份** —— 而 `transit()` 的 `actor` 默认是「魏欣新」。

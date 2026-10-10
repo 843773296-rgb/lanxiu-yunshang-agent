@@ -6212,5 +6212,118 @@
    }
   ],
   "预期红": "平移:这两列都登记在「文字里也挪」"
+ },
+ {
+  "script": "backend/report_doc_check.py",
+  "改坏": "确认后不给链接(用户 10-10:确认后要能直达)",
+  "file": [
+   {
+    "path": "backend/report_doc.py",
+    "old": "    return dict(ok=True, 报告号=report_id, 状态=\"已确认\", 链接=链接(report_id),",
+    "new": "    return dict(ok=True, 报告号=report_id, 状态=\"已确认\","
+   }
+  ],
+  "预期红": "确认返回带链接,指向这一份"
+ },
+ {
+  "script": "backend/report_doc_check.py",
+  "改坏": "对话里的链接不渲染成可点的",
+  "file": [
+   {
+    "path": "agentsite/web/_md.js",
+    "old": "    .replace(/\\[([^\\]\\n]+)\\]\\((\\/(?!\\/)[^)\\s]*)\\)/g,'<a href=\"$2\" target=\"_blank\" rel=\"noopener\">$1</a>')\n",
+    "new": ""
+   }
+  ],
+  "预期红": "对话页:站内链接渲染成可点的"
+ },
+ {
+  "script": "backend/report_doc_check.py",
+  "改坏": "PDF 离线页没把数据塞进去(打出来是空白 / 登录页)",
+  "file": [
+   {
+    "path": "agentsite/report_pdf.py",
+    "old": "<script>window.__REPORT__ = {数据};</script>",
+    "new": "<script>window.__REPORT__ = null;</script>"
+   }
+  ],
+  "预期红": "PDF:离线页真渲染出了这份报告的正文和冻结的数"
+ },
+ {
+  "script": "backend/arrival_card_check.py",
+  "改坏": "别的顾问也能看到不是派给自己的卡片",
+  "file": [
+   {
+    "path": "backend/arrival_card.py",
+    "old": "    return bool(指派) and me.get(\"no\") == 指派",
+    "new": "    return True"
+   }
+  ],
+  "预期红": "别的顾问一张都看不到"
+ },
+ {
+  "script": "backend/arrival_card_check.py",
+  "改坏": "卡片上直接给完整手机号",
+  "file": [
+   {
+    "path": "backend/arrival_card.py",
+    "old": "顾客=dict(客户号=cid, 姓名=cu[0] if cu else \"—\", 电话=打码电话(cu[1] if cu else \"\"),",
+    "new": "顾客=dict(客户号=cid, 姓名=cu[0] if cu else \"—\", 电话=(cu[1] if cu else \"\"),"
+   }
+  ],
+  "预期红": "卡片上的电话打码、地址里没有门牌数字"
+ },
+ {
+  "script": "backend/arrival_card_check.py",
+  "改坏": "看完整号码不记台账",
+  "file": [
+   {
+    "path": "backend/arrival_card.py",
+    "old": "        oplog.log_op(me.get(\"no\"), None, (行[0][12] if 行 else schedule_id), None, None, ok, \"REVEAL_CONTACT\",",
+    "new": "        (lambda *a: None)(me.get(\"no\"), None, (行[0][12] if 行 else schedule_id), None, None, ok, \"REVEAL_CONTACT\","
+   }
+  ],
+  "预期红": "看完整号码:记了一笔台账"
+ },
+ {
+  "script": "backend/arrival_card_check.py",
+  "改坏": "任务做完卡片就不弹了(用户要的是暂时不消失)",
+  "file": [
+   {
+    "path": "backend/arrival_card.py",
+    "old": "    args = [*回捞类, 起, 今天.isoformat()]",
+    "new": "    sql += \" AND s.status='有效'\"\n    args = [*回捞类, 起, 今天.isoformat()]"
+   }
+  ],
+  "预期红": "任务做完了卡片照弹"
+ },
+ {
+  "script": "backend/arrival_card_check.py",
+  "改坏": "模型答歪了也照收",
+  "file": [
+   {
+    "path": "backend/arrival_card.py",
+    "old": "        if 2 <= len([x for x in t.splitlines() if x.strip()]) <= 6 and 20 <= len(t) <= 400:",
+    "new": "        if True:"
+   }
+  ],
+  "预期红": "模型答歪 → 退回规则模板,来源照实标「规则」"
+ },
+ {
+  "script": "backend/arrival_card_check.py",
+  "改坏": "上新不看现在的状态,老款上架日被改写成今天",
+  "file": [
+   {
+    "path": "backend/arrival_card.py",
+    "old": "            if r[0] == \"上架\":\n                本来就在架.append(spu); continue\n",
+    "new": ""
+   },
+   {
+    "path": "backend/arrival_card.py",
+    "old": " WHERE spu=? AND status<>'上架'\",",
+    "new": " WHERE spu=?\","
+   }
+  ],
+  "预期红": "已经上架的老款再上一次:上架日不变,并报「本来就在架」"
  }
 ]

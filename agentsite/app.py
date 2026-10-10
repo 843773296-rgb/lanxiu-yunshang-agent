@@ -59,6 +59,8 @@ PAGES = {"/": "station.html", # 登录与任务:登录态是**后台**发的 ses
          "/m": "m.html", "/pad": "pad.html",
          "/fabric": "fabric.html", "/duty": "duty.html", "/queue": "queue.html",
          "/scheme": "scheme.html",
+         # 存过的经营报告:/report 列表,/report?id=RPT… 直达那一份(用户 10-10:确认后要给个链接能直达)
+         "/report": "report.html",
          # 着装人的身体生命周期 —— 和会员生命周期(新客/沉默/流失)不是一回事
          "/wearers": "wearers.html",
          # ⚠️ 2026-09-28:`/workbench` `/acceptance` `/health` `/ai` `/debug` `/experiments`
@@ -212,6 +214,36 @@ class H(BaseHTTPRequestHandler):
                 html = html.replace("<!--NAV-->", _nav.顶栏html(当前=p))
             self._send(html.encode(), "text/html; charset=utf-8"); return
         if p.startswith("/api/") or p.startswith("/img/"): return self._proxy("GET")
+        if p == "/report.pdf":
+            # 报告导出 PDF(用户 10-10)。**先拿店长自己的 cookie 向后台取这一份** ——
+            # 范围规则还是 report_doc.取 那一个函数,取不到(没登录 / 别店的)就到此为止,不出 PDF
+            import report_pdf as _rp
+            rid = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
+            h = {"cookie": self.headers.get("cookie") or ""}
+            try:
+                with urllib.request.urlopen(urllib.request.Request(
+                        BACKEND + "/api/report/" + quote(rid), headers=h), timeout=30) as r:
+                    报告 = json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                if e.code == 401:
+                    self.send_response(302)
+                    self.send_header("location", "/login?back=" + quote(self.path))
+                    self.end_headers(); return
+                return self._send(json.loads(e.read() or b"{}") or {"error": f"取不到 {rid}"}, code=e.code)
+            b, 原因 = _rp.出PDF(报告)
+            if not b: return self._send({"error": 原因}, code=503)
+            名 = _rp.文件名(报告)
+            self.send_response(200)
+            self.send_header("content-type", "application/pdf")
+            # 中文文件名走 RFC 5987(filename*),旧浏览器退回 ASCII 那个
+            self.send_header("content-disposition",
+                             f"attachment; filename=\"report-{quote(str(报告.get('id')))}.pdf\"; filename*=UTF-8''{quote(名)}")
+            self.send_header("content-length", str(len(b)))
+            self.end_headers(); self.wfile.write(b); return
+        if p == "/md.js":
+            # 对话页和报告页共用的 Markdown 渲染 —— 一份文件,两页都从这儿取
+            return self._send(open(os.path.join(HERE, "web", "_md.js"), "rb").read(),
+                              "application/javascript; charset=utf-8")
         if p == "/roles":
             # 角色清单由 sdk 出 —— 名字、职责、工具数、规矩数都在那儿,页面不许抄
             return self._send({"rows": sdk.roles()})

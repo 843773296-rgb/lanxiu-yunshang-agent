@@ -248,6 +248,62 @@ def a_phone_leak():
     raise PermissionError(f"{len(api.TOOLS)} 个工具的返回全部脱敏")
 
 
+# ── 上新待办卡片(用户 10-10):电话先打码、点了才给全号、只给卡片范围内的人、每点一次留痕 ──
+def _卡片副本():
+    """看完整号码会写台账 —— 攻击在库的临时副本上打,真库的台账不留审计的痕迹。"""
+    import shutil as _sh, tempfile as _tf, os as _os
+    d = _tf.mkdtemp(); f = _os.path.join(d, "lanxiu.db"); _sh.copy(api.DB, f)
+    return d, f
+
+
+def a_card_mask():
+    """总部能看到全部卡片 —— 拿全部卡片的返回去搜完整手机号。"""
+    import json as _j, arrival_card as AC
+    r = AC.卡片(dict(no="HQ-AUDIT", name="审计", role="总部运营", shop=None), db=api.DB)
+    if not r["卡片"]:
+        return "一张上新卡片都没有 —— 空集合上「全部打码」恒成立,这条没验到"
+    m = _PH.search(_j.dumps(r, ensure_ascii=False, default=str))
+    if m: return f"卡片返回里出现完整手机号 {m.group()}"
+    raise PermissionError(f"{len(r['卡片'])} 张卡片的电话全部打码")
+
+
+def a_card_reveal_other():
+    """别的顾问拿一张不是指派给他的卡片号去点「看完整号码」。"""
+    import shutil as _sh, sqlite3 as _sq, arrival_card as AC, oplog as _ol
+    d, f = _卡片副本(); 旧 = _ol.DB; _ol.DB = f
+    try:
+        c = _sq.connect(f)
+        sid, 派 = c.execute("SELECT s.id, s.assignee_no FROM opportunity_task ot JOIN schedule s ON s.id=ot.schedule_id "
+                           "WHERE ot.kind='回捞' AND s.assignee_no IS NOT NULL LIMIT 1").fetchone() or (None, None)
+        别人 = c.execute("SELECT no FROM staff WHERE role='顾问' AND no<>? LIMIT 1", (派 or "",)).fetchone()
+        c.close()
+        if not sid or not 别人: return "找不到可攻击的卡片 / 别的顾问 —— 这条没验到"
+        r = AC.看完整联系方式(dict(no=别人[0], name="别人", role="顾问", shop=None), sid, db=f)
+        if "电话" in r: return f"别的顾问拿到了 {sid} 的完整号码"
+        raise PermissionError(r.get("error"))
+    finally:
+        _ol.DB = 旧; _sh.rmtree(d, ignore_errors=True)
+
+
+def a_card_reveal_unlogged():
+    """台账写不进的时候点「看完整号码」—— 能看到全号就等于「看了但没留痕」。"""
+    import shutil as _sh, sqlite3 as _sq, arrival_card as AC, oplog as _ol
+    d, f = _卡片副本(); 旧 = _ol.log_op
+    def _坏(*a, **k): raise RuntimeError("台账写不进(审计注入)")
+    _ol.log_op = _坏
+    try:
+        c = _sq.connect(f)
+        sid, 派 = c.execute("SELECT s.id, s.assignee_no FROM opportunity_task ot JOIN schedule s ON s.id=ot.schedule_id "
+                           "WHERE ot.kind='回捞' AND s.assignee_no IS NOT NULL LIMIT 1").fetchone() or (None, None)
+        c.close()
+        if not sid: return "找不到可攻击的卡片 —— 这条没验到"
+        r = AC.看完整联系方式(dict(no=派, name="本人", role="顾问", shop=None), sid, db=f)
+        if "电话" in r: return "台账写不进,照样给了完整号码"
+        raise PermissionError(r.get("error"))
+    finally:
+        _ol.log_op = 旧; _sh.rmtree(d, ignore_errors=True)
+
+
 def a_bash():
     v = guards.pre_tool_verdict("Bash", {"command": "ls"})
     if v: raise PermissionError(v)
@@ -603,6 +659,15 @@ STRUCT = [
   "这层包装防的是**未来新加的工具**。所以它的咬合方式是"
   "「临时加一个会吐真号的工具,看包装拦不拦得住」,"
   "而不是「拆掉包装看漏不漏」(现在拆了也不漏)"),
+ ("上新待办卡片的电话地址默认打码", "backend/arrival_card.py 卡片()(用户 10-10)",
+  a_card_mask, "用总部身份取全部卡片,搜返回里的完整手机号",
+  "卡片出口上打码 —— 页面拿到的就是打码的,不是前端藏起来"),
+ ("看完整号码只给这张卡片范围内的人", "backend/arrival_card.py 看完整联系方式()",
+  a_card_reveal_other, "别的顾问拿一张不是指派给他的卡片号去取全号",
+  "范围判定和「卡片列给谁」是同一个函数(_可见)—— 不另写一套"),
+ ("看完整号码一定留痕", "同上(用户 10-10 定:点一下看完整并留痕)",
+  a_card_reveal_unlogged, "让台账写不进,再以本人身份去取全号",
+  "**台账写不进就不给全号** —— 「看了但没留痕」正是用户要防的那件事,不能因为台账出故障就放行"),
  ("模型不能执行命令", "prompts.py 铁律 TL05「你没有任何写权限」",
   a_bash, "让 PreToolUse 判定 Bash 工具", "非 mcp__ 开头的工具一律拦下(Hook 运行时)"),
  ("模型不能开子智能体", "同上", a_task, "让 PreToolUse 判定 Task 工具", "同上"),

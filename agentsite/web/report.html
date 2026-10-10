@@ -1,0 +1,156 @@
+<!doctype html><meta charset="utf-8">
+<title>经营报告 · 澜绣云裳</title>
+<nav class="sitenav"><!--NAV--></nav>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#fff;--side:#f7f7f8;--line:#e6e6e8;--ink:#17181c;--dim:#8b8d94;
+  --accent:#2f5bff;--chip:#f1f2f4;--ok:#067647;--okbg:#ecfdf3;
+  --err:#b42318;--errbg:#fef3f2;--warn:#b45309;--warnbg:#fff7ed;--warnln:#fec84b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--side);color:var(--ink);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+#top{display:flex;align-items:center;gap:10px;padding:11px 20px;background:#fff;
+  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+#top b{font-size:14.5px}
+.sp{flex:1}
+.tbtn{font:inherit;font-size:12.5px;padding:5px 11px;border:1px solid var(--line);
+  border-radius:8px;background:#fff;color:var(--ink);cursor:pointer;text-decoration:none}
+.tbtn:hover{background:var(--chip)}
+#who{font-size:12.5px;color:var(--dim)}#who b{color:var(--ink)}
+main{max-width:1000px;margin:20px auto 60px;padding:0 20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:13px;padding:20px 22px;margin-bottom:18px;overflow-x:auto}
+h2{margin:0 0 3px;font-size:15px}
+.hint{margin:0 0 14px;font-size:12.5px;color:var(--dim)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:8px 8px;text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--dim);font-weight:600;white-space:nowrap}
+td.n{white-space:nowrap;color:var(--dim);font-size:12.5px}
+td.v{white-space:nowrap;font-weight:600}
+.tag{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:20px;background:var(--chip);color:var(--dim)}
+.tag.done{background:var(--okbg);color:var(--ok)}
+.tag.draft{background:var(--warnbg);color:var(--warn)}
+.tag.must{background:#eef2ff;color:var(--accent)}
+.meta{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--dim);margin-top:6px}
+.meta b{color:var(--ink);font-weight:600}
+.banner{padding:10px 13px;border-radius:9px;font-size:12.5px;margin-bottom:14px;border:1px solid}
+.banner.draft{background:var(--warnbg);color:var(--warn);border-color:var(--warnln)}
+.banner.done{background:var(--okbg);color:var(--ok);border-color:#abefc6}
+.banner.no{background:var(--errbg);color:var(--err);border-color:#fecdca}
+.body h2,.body h3,.body h4{margin:16px 0 6px}
+.body table{margin:8px 0}
+.empty{padding:26px 0;text-align:center;color:var(--dim);font-size:13px}
+.src{font-size:11.5px;color:var(--dim)}
+a{color:var(--accent)}
+/* 打印 / 导出 PDF:不要顶栏和按钮,卡片不切两半 */
+@media print{#top,.sitenav{display:none}body{background:#fff}main{margin:0;max-width:none}
+  .card{border:0;padding:6px 0;margin-bottom:8px;overflow:visible}tr{break-inside:avoid}}
+</style>
+
+<div id="top">
+  <b>经营报告</b>
+  <span id="who"></span>
+  <span class="sp"></span>
+  <a class="tbtn" id="pdf" hidden>下载 PDF</a>
+  <a class="tbtn" href="/report" id="tolist" hidden>全部报告</a>
+  <a class="tbtn" href="/">← 回助手</a>
+</div>
+
+<main id="main"><div class="card"><div class="empty">加载中…</div></div></main>
+
+<script src="/md.js"></script>
+<script>
+/* 存过的经营报告(用户 10-10:确认后要给个链接,能直达)。
+   /report            每一期最新那一版的列表
+   /report?id=RPT…    那一份:正文 + **保存那一刻冻结的数**
+   数据和范围规则都来自后台 /api/report(s),和 chat 里 list_reports 是同一个函数 —— 这页不另算一个数。 */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? "" : s)
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const 状态签 = s => s === "已确认" ? '<span class="tag done">已确认</span>' : '<span class="tag draft">' + esc(s) + '</span>';
+const 种名 = {"日": "日报", "周": "周报", "月": "月报"};
+
+// 值有三种形状:数字、{名: 数} 的小表、文字 —— 小表摊成「名 数 · 名 数」
+function 值(v){
+  if(v == null) return '<span class="src">没有(见口径)</span>';
+  if(typeof v === "object") return Object.entries(v).map(([k, x]) =>
+    esc(k) + " " + esc(typeof x === "object" ? JSON.stringify(x) : x)).join(" · ");
+  return esc(v);
+}
+
+function 指标表(栏){
+  const rows = Object.entries(栏 || {});
+  if(!rows.length) return '<div class="empty">这一栏没有数</div>';
+  return "<table><thead><tr><th>指标</th><th>数</th><th>口径 / 出处</th></tr></thead><tbody>" +
+    rows.map(([k, x]) => "<tr><td class='n'>" + esc(k) + (x && x.必选 ? ' <span class="tag must">必选</span>' : "") +
+      "</td><td class='v'>" + 值(x && x.值) + "</td><td><div>" + esc(x && x.口径 || "") +
+      "</div><div class='src'>" + esc(x && x.出处 || "") + "</div></td></tr>").join("") + "</tbody></table>";
+}
+
+function 环比表(h){
+  if(!h) return "";
+  const rows = Object.entries(h).filter(([, x]) => x && typeof x === "object" && "本期" in x);
+  if(!rows.length) return '<p class="hint">' + esc(h.说明 || "这一期不做环比") + "</p>";
+  return '<p class="hint">上一期:' + esc(h.上一期) + "。" + esc(h.口径 || "") + "</p>" +
+    "<table><thead><tr><th>指标</th><th>本期</th><th>上期</th><th>环比</th></tr></thead><tbody>" +
+    rows.map(([k, x]) => `<tr><td class='n'>${esc(k)}</td><td class='v'>${esc(x.本期)}</td>` +
+      `<td>${esc(x.上期)}</td><td class='v'>${esc(x.环比 ?? "—")}</td></tr>`).join("") + "</tbody></table>";
+}
+
+async function 列表(){
+  const r = await fetch("/api/reports");
+  const d = await r.json();
+  if(d.error){ $("#main").innerHTML = '<div class="banner no">' + esc(d.error) + "</div>"; return; }
+  const rows = d.报告 || [];
+  $("#main").innerHTML = '<div class="card"><h2>存过的报告</h2><p class="hint">每一期只列最新那一版;' +
+    "在助手里说「生成上周周报」→「存一下」→「确认」就会出现在这里。</p>" +
+    (rows.length ? "<table><thead><tr><th>报告</th><th>门店</th><th>区间</th><th>版本</th><th>状态</th><th>存于</th></tr></thead><tbody>" +
+      rows.map(x => `<tr><td><a href="/report?id=${encodeURIComponent(x.id)}">${esc(种名[x.kind] || x.kind)} ${esc(x.id)}</a>` +
+        ` · <a href="/report.pdf?id=${encodeURIComponent(x.id)}">PDF</a></td>` +
+        `<td class='n'>${esc(x.shop)}</td><td class='n'>${esc(x.period_start)} ~ ${esc(x.period_end)}</td>` +
+        `<td class='n'>第 ${esc(x.revision)} 版 / 共 ${esc(x.版本数)} 版</td><td>${状态签(x.status)}</td>` +
+        `<td class='n'>${esc(x.created_at)}</td></tr>`).join("") + "</tbody></table>"
+      : '<div class="empty">还没有存过报告</div>') +
+    (d.截断 ? '<p class="hint">' + esc(d.截断) + "</p>" : "") + "</div>";
+}
+
+async function 单份(id){
+  $("#tolist").hidden = false;
+  $("#pdf").href = "/report.pdf?id=" + encodeURIComponent(id); $("#pdf").hidden = false;
+  画单份(await (await fetch("/api/report/" + encodeURIComponent(id))).json());
+}
+
+function 画单份(d){
+  if(d.error){ $("#main").innerHTML = '<div class="banner no">' + esc(d.error) + "</div>"; return; }
+  document.title = (种名[d.kind] || d.kind) + " " + d.period_start + " · 澜绣云裳";
+  const p = d.pack || {};
+  const 横幅 = d.status === "已确认"
+    ? `<div class="banner done">已确认 · ${esc(d.confirmed_by)} 于 ${esc(d.confirmed_at)}。确认后不能改,要改就在助手里再存一版。</div>`
+    : `<div class="banner draft">草稿,还没确认。核过以后在助手里说「确认」。` +
+      (p.能不能确认 === false ? ` 必选指标缺了(${esc((p.必选缺了的 || []).join("、"))}),这一版确认不了。` : "") + "</div>";
+  $("#main").innerHTML =
+    `<div class="card">${横幅}<h2>${esc(d.shop)} · ${esc(种名[d.kind] || d.kind)}(${esc(d.period_start)}${d.period_end !== d.period_start ? " ~ " + esc(d.period_end) : ""})</h2>` +
+    `<div class="meta"><span>区间 <b>${esc(d.period_start)} ~ ${esc(d.period_end)}</b></span>` +
+    `<span>第 <b>${esc(d.revision)}</b> 版</span><span>${状态签(d.status)}</span>` +
+    `<span>存于 <b>${esc(d.created_at)}</b>(${esc(d.created_by)})</span>` +
+    (d.supersedes ? `<span>替代 <a href="/report?id=${encodeURIComponent(d.supersedes)}">${esc(d.supersedes)}</a></span>` : "") +
+    `<span>报告号 <b>${esc(d.id)}</b></span></div></div>` +
+    `<div class="card body">${md(d.body)}</div>` +
+    `<div class="card"><h2>保存那一刻的数</h2><p class="hint">报告里的数以这一份为准 —— 存的时候冻结了,` +
+    `之后数据再变,这份报告不跟着漂。${esc(p.时区 || "")}</p>` +
+    `<h3 style="font-size:13.5px;margin:12px 0 4px">本期发生的</h3>${指标表(p.期内)}` +
+    (p.环比 ? `<h3 style="font-size:13.5px;margin:16px 0 4px">和上一期比</h3>${环比表(p.环比)}` : "") +
+    `<h3 style="font-size:13.5px;margin:16px 0 4px">截至 ${esc(p.截至 || "")} 还压着的</h3>${指标表(p["存量(截至今天)"])}</div>`;
+}
+
+(async () => {
+  // 导出 PDF 时(agentsite/report_pdf.py)数据已经塞在页里:不登录、不取数,直接画
+  if(window.__REPORT__){ 画单份(window.__REPORT__); return; }
+  const r = await fetch("/api/me");
+  if(r.status === 401){ location.href = "/login?back=" + encodeURIComponent(location.pathname + location.search); return; }
+  const me = await r.json();
+  $("#who").innerHTML = "<b>" + esc(me.name) + "</b> · " + esc(me.role) + (me.shop ? " · " + esc(me.shop) : "");
+  const id = new URLSearchParams(location.search).get("id");
+  try { id ? await 单份(id) : await 列表(); }
+  catch(e){ $("#main").innerHTML = '<div class="banner no">取不到:' + esc(e.message) + "</div>"; }
+})();
+</script>
