@@ -3936,6 +3936,58 @@ def order_log(order_id=None):
             "note": "**被拒收、被作废的回传也在里面** —— 只留成功的,出了事最想知道的那几条恰好都不在。"}
 
 
+def cancel_fee(order_id=None, material_cost=None):
+    """**顾客完工前不做了,扣多少、退多少**(只读,业务 2026-10-10 晚:工钱按工单工日折钱)。
+
+    口径在 knowledge/cancel_fee.py:已完成的工单全算、做到一半的按已过天数折(不超过工日)、没开工的不扣,
+    普通 300 / 非遗级 800 元一工日;**扣的总额不超过已付**。逐道工序列明细,给顾客确认用。
+    material_cost  门店按采购单核过的料的成本价 —— **只填用户说出来的数**;不给就只算工钱,并说清料费另算。
+    **只算不退**:真退款走退款流程。
+    """
+    import sqlite3 as _sq, worldclock as _wc
+    if _GROWTH_DIR not in sys.path: sys.path.insert(0, _GROWTH_DIR)
+    import cancel_fee as _cf
+    me = whoami()
+    if not me:
+        return {"error": "没有登录身份"}
+    oid = (order_id or "").strip()
+    o = _rows("SELECT id, shop, status, kind FROM ordr WHERE id=?", oid)
+    if not o:
+        return {"error": f"没有订单 {oid}"}
+    o = o[0]
+    if me.get("role") != "总部运营" and o["shop"] != me.get("shop"):
+        return {"error": f"这张单在「{o['shop']}」,只能看本店的"}
+    if o["kind"] != "定制品订单":
+        return {"error": f"订单 {oid} 是{o['kind'] or '标品订单'} —— 这里只算定制单完工前不做了扣多少;标品走退换货规则"}
+    if o["status"] in ("待确认", "待付款"):
+        return {"订单": oid, "现在是": o["status"], "结论": "还没确认下单 / 没付款,直接取消就行,不扣钱"}
+    if o["status"] in ("取消", "已取消", "已关闭"):
+        return {"订单": oid, "现在是": o["status"], "结论": "这张单已经取消了"}
+    if o["status"] in ("已生产", "待发货", "已发货", "待完成", "完成", "已完成"):   # 已生产 / 待发货 = 已完工、还没交付
+        return {"订单": oid, "现在是": o["status"],
+                "结论": "已经完工交付,不属于「完工前不做了」—— 按确认书「已完工、交付前」那一档是全额;质量问题走返修 / 重做 / 退款"}
+    料 = 0.0
+    if material_cost not in (None, ""):
+        try:
+            料 = float(material_cost)
+        except (TypeError, ValueError):
+            return {"error": f"料费「{material_cost}」不是数"}
+        if 料 < 0:
+            return {"error": "料费不能是负数"}
+    c = _sq.connect(f"file:{DB}?mode=ro", uri=True)
+    try:
+        r = _cf.从库(c, oid, _wc.今天(), 料费=料)
+    finally:
+        c.close()
+    if r.get("error"):
+        return r
+    r["现在是"] = o["status"]
+    r["料费说明"] = ("料费按用户给的数算" if material_cost not in (None, "") else
+                 "**料费没算** —— 料的成本价由门店按采购单核,核好告诉我再算一次;现在的「扣」只是工钱")
+    r["note"] = "只算不退:顾客看过逐道明细、确认了,再走退款流程。单价是成本口径,只给顾客看这张单的明细,不单独报「一工日多少钱」"
+    return r
+
+
 def delay_pending():
     """**工厂延期了、还没告诉顾客的单。** 通知完用 mark_delay_told 记一下。只读。"""
     import factory_inbox as _fi
@@ -5354,7 +5406,8 @@ SHOP_SCHEMAS=[
  {"name":"verify_repair_return","description":"**返修件回店签收(真的写进去)**:顾客试穿修好的衣服合身,在手机上点「试穿合身」拿 6 位码交给导购,导购输入核验通过才算完成(业务 09-22:和交付签收同一套码)。**码只能是用户这句话里说出来的那一个,不许编、不许猜** —— 输错记次数,5 次作废。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"},"code":{"type":"string"}},"required":["maintain_id","code"]}},
  {"name":"ratify_complete","description":"**顾问追认完成(真的写进去)**:**最后一件**签收满 15 天顾客还没在手机上确认完成,顾问写理由(比如「已电话联系,顾客表示没问题」)把订单「待完成 → 完成」。**不满 15 天不行、没写理由不行** —— 业务 09-22:完成由顾客确认,追认是兜底,不是替顾客点。⚠️ 动手前先跟用户确认理由是真的联系过。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"reason":{"type":"string"}},"required":["order_id","reason"]}},
  {"name":"open_order","description":"**开一张定制单(真的写进去)**,停在「待确认」—— 还没生效。顾问或店长用,只给本店客户开。items 每一件写 spu(或 sku)、wearer_id(**给谁做,必填** —— 下单量体量的必须是穿这件的人)、qty。只开定制单,标品流程不变。开完的**下一步**:给每一件量下单量体并绑到这一件(record_measure 带 order_id + item),再 confirm_order。⚠️ 动手前先跟用户对一遍:哪位客户、哪几件、每件给谁做。","input_schema":{"type":"object","properties":{"customer_id":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"spu":{"type":"string"},"sku":{"type":"string"},"wearer_id":{"type":"string"},"qty":{"type":"integer"}}}}},"required":["customer_id","items"]}},
- {"name":"confirm_order","description":"**确认下单(真的写进去)**:待确认 → 待审核。业务 09-22:**定制单确认即已付款**,不走「待付款」。**逐件过闸**:每一件都要有绑在它上面的、开单之后量的、够做这件衣服的下单量体;有一件不过就整单拒绝,返回里列出是哪几件、缺什么(没有下单量体 / 早于开单 / 缺哪几项 / 着装人没定)。被拒了**不要换个说法再试**,把缺什么告诉用户,去量、去绑。**还要顾客单独确认「本单定制品不适用七天无理由退货」**:先把这句话念给顾客听,顾客同意了才带 no7day_ack=true;没确认就会被拒,**不许替顾客填**。⚠️ 动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"no7day_ack":{"type":"boolean","description":"顾客本人已当面单独确认「本单定制品不适用七天无理由退货」—— 只有用户明确说顾客确认过才填 true"}},"required":["order_id"]}},
+ {"name":"cancel_fee","description":"**顾客完工前不做了,扣多少、退多少**(只读,业务 2026-10-10 晚定)。给定制单号,按工单逐道工序列明细:已完成的工序全算、做到一半的按已过天数折(不超过这道的工日)、还没开工的不扣;扣的总额不超过已付。返回每道工序怎么算的、工钱合计、扣多少、退多少;有工单数据不全的会列在「判不了」,**那时不要把数报给顾客**。material_cost 是门店按采购单核过的料钱,**只填用户说出来的数**,不给就只算工钱。只算不退:顾客确认明细后再走退款。只能看本店的单。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"material_cost":{"type":"number","description":"门店核过的料的成本价(元);用户没说就不填"}},"required":["order_id"]}},
+{"name":"confirm_order","description":"**确认下单(真的写进去)**:待确认 → 待审核。业务 09-22:**定制单确认即已付款**,不走「待付款」。**逐件过闸**:每一件都要有绑在它上面的、开单之后量的、够做这件衣服的下单量体;有一件不过就整单拒绝,返回里列出是哪几件、缺什么(没有下单量体 / 早于开单 / 缺哪几项 / 着装人没定)。被拒了**不要换个说法再试**,把缺什么告诉用户,去量、去绑。**还要顾客单独确认「本单定制品不适用七天无理由退货」**:先把这句话念给顾客听,顾客同意了才带 no7day_ack=true;没确认就会被拒,**不许替顾客填**。⚠️ 动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"no7day_ack":{"type":"boolean","description":"顾客本人已当面单独确认「本单定制品不适用七天无理由退货」—— 只有用户明确说顾客确认过才填 true"}},"required":["order_id"]}},
  {"name":"record_measure","description":"**登记一次量体(真的写进去)**。顾问或店长用,只能录本店客户的着装人;量体人就是你自己(不收工号)。wearer_id 是着装人编号(W 开头,客户号 C 开头的不是)。values 形如 {\"胸围\":86,\"腰围\":68}。method 只认「到店 / 上门」—— 业务 09-22 **不准远程量体**。inner(内搭:无/薄/厚/单层内衣)、shoe(鞋:赤足/平底/高跟)、breath(呼吸:平静呼气)**三个都必填,缺一件就等于没量**。数值超出人体合理范围会被拒(多半是单位或小数点录错),**不替你改**。**下单量体**:签单时按这件衣服重新量,给 order_id + item(订单行号或商品名),这一件就以这次为准;业务 09-22 定了**没有下单量体就不许下单**。要先有「身体数据」同意(未满 14 岁还要监护人同意)。⚠️ 动手前先跟用户对一遍:给谁量的、哪几项多少、到店还是上门、三个条件、是不是某一件的下单量体 —— 尺寸录错,衣服就按错的做。","input_schema":{"type":"object","properties":{"wearer_id":{"type":"string"},"values":{"type":"object","description":"{量体项名: 数值}"},"method":{"type":"string","enum":["到店","上门"]},"inner":{"type":"string"},"shoe":{"type":"string"},"breath":{"type":"string"},"order_id":{"type":"string","description":"只在下单量体时给"},"item":{"type":"string","description":"订单行号或商品名,只在下单量体时给"}},"required":["wearer_id","values","method","inner","shoe","breath"]}},
  {"name":"record_fitting","description":"**登记一轮白坯试衣(真的写进去)**。顾问或店长用,只能登记本店订单;陪同人就是你自己(不收工号)。item 填订单行号或商品名(一张单里同名多件时必须给行号)。adjust 写这一轮改了哪几处(没改写「无需调整」,不许空);signed 客户当场签字就填 true。**补签**:客户后来才签,给 round(已有的轮次号)并 signed=true;**签字不能撤销**。⚠️ 客户没签字之前,这一件所在的整张单**不许开裁**(业务 09-22)。⚠️ **动手前先跟用户对一遍**哪张单、哪一件、改了什么、签没签 —— 签字是责任转移点,记错了等于给门店一张不存在的底牌。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"item":{"type":"string","description":"订单行号或商品名"},"adjust":{"type":"string","description":"这一轮改了哪几处;没改写「无需调整」"},"signed":{"type":"boolean","description":"客户签字了吗"},"round":{"type":"integer","description":"只在补签时给:要补签的那一轮"},"note":{"type":"string"}},"required":["order_id","item"]}},
  {"name":"start_cutting","description":"**开裁(真的写进去)**:把一张定制单从「待生产」推进到「生产中」。只有版师能用。**要先过白坯试衣这道闸**(业务 09-22):单里每一件该试的都试过、而且客户签了字,才许开裁;有一件没过就整单拒绝,返回里列出是哪几件、缺什么(没试 / 没签 / 判不了该不该试又没试过 —— 判不了的先试一轮并签字就能裁)。被拒时**不要换个说法再试**,把卡在哪告诉用户,让顾问去约试衣或补签。⚠️ **开裁不可逆**,动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
@@ -6516,7 +6569,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

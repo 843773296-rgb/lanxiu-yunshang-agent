@@ -412,6 +412,7 @@ run "产出监督 · 报告 / 建议推给 AI 管理平台、打回后拦确认 
 run "商品归纳口径 · 认料最长先认、规律 / 共性分开、没规律明说(自测)" python3 knowledge/traits.py
 run "订单确认书条款 · 业务 10-10 定的退款 / 质量 / 延期 / 七天勾选 / 付款发票、无固定违约比例、记条款版本(自测)" python3 knowledge/contract_terms.py
 run "开裁后取消扣工钱 · 工单工日折钱、做一半按已过天数且封顶、没开工不扣、总额不超已付(自测)" python3 knowledge/cancel_fee.py
+run "完工前不做了扣多少(cancel_fee 工具)· 折钱对独立 SQL、只看本店、料费不替门店填、完工单不算(只读)" python3 backend/cancel_fee_check.py
 run "同意按年龄 · 不满 14 监护人、14—18 本人为准 + 家长付款双签、营销只看本人(自测)" python3 knowledge/consent_age.py
 run "订单确认书 · 确认下单同一事务生成、写不进就整单回滚、金额对独立 SQL、范围(库副本上跑)" python3 backend/contract_check.py
 run "购买喜好口径 · 24 个月窗口、新款对上她的规律(自测)" python3 knowledge/purchase_pref.py

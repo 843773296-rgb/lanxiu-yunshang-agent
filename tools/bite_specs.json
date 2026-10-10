@@ -6745,5 +6745,29 @@
    }
   ],
   "预期红": "不开票换价钱,一个折扣词都没有"
+ },
+ {
+  "script": "backend/cancel_fee_check.py",
+  "改坏": "已完成的工序只算一半工钱",
+  "file": [
+   {
+    "path": "knowledge/cancel_fee.py",
+    "old": "        return dict(行, 扣=round(工日 * 价, 2), 计天=工日, 怎么算=f\"已完成:{工日:g} 工日 × {价} 元\")",
+    "new": "        return dict(行, 扣=round(工日 * 价 / 2, 2), 计天=工日, 怎么算=f\"已完成:{工日:g} 工日 × {价} 元\")"
+   }
+  ],
+  "预期红": "折钱算法和独立 SQL 逐张一致"
+ },
+ {
+  "script": "backend/cancel_fee_check.py",
+  "改坏": "扣工钱不限本店(别店也能看)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        return {\"error\": f\"这张单在「{o['shop']}」,只能看本店的\"}",
+    "new": "        pass"
+   }
+  ],
+  "预期红": "别店的单看不到"
  }
 ]

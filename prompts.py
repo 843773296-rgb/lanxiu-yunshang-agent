@@ -546,6 +546,17 @@ CONFIRM_REPORT_RULE = Rule("TL69", ("confirm_report",), """
   **确认成功就给出返回里的「链接」和「下载」**,写成 `[打开报告](链接) · [下载 PDF](下载)` —— 点开能直达、点下载直接拿 PDF;原样照抄、不要自己拼。
 """, scope="工具")
 
+CANCEL_FEE_RULE = Rule("TL72", ("cancel_fee",), """
+**顾客完工前不做了、问扣多少(业务 2026-10-10 晚)。四条:**
+
+- **先调 `cancel_fee` 拿逐道明细**,不要自己按「做了几成」估一个数,也不要说「一般扣 30%」——
+  业务定了不设固定比例,只扣已经发生的料和工。
+- **只照返回的明细说**:每道工序怎么算的原样给;返回里有「判不了」的,**这一单先不报数**,告诉用户请生产补齐工单再算。
+- **料费只填用户说出来的数**;没说就照返回说「料费另算,门店按采购单核」,不替门店估料钱。
+- **工日单价不单独报**(「一工日 800」顾客会拿去乘售价);只给这张单的明细。算完是给顾客确认用的,**不是已经退了** ——
+  真退款走退款流程。顾客依然有权不做,不许借扣款劝她别取消。
+""", scope="工具")
+
 SUMMARIZE_PRODUCTS_RULE = Rule("TL71", ("summarize_products",), """
 **商品归纳总结(用户 2026-10-10)。三条:**
 
@@ -897,6 +908,7 @@ SALES_RANK_RULE,
 WEEKLY_REVENUE_RULE,
 STORE_REPORT_RULE,
 SUMMARIZE_PRODUCTS_RULE,
+CANCEL_FEE_RULE,
 SAVE_REPORT_RULE,
 CONFIRM_REPORT_RULE,
 LIST_REPORTS_RULE,
@@ -1344,6 +1356,7 @@ SALES_RANK_RULE,
 WEEKLY_REVENUE_RULE,
 STORE_REPORT_RULE,
 SUMMARIZE_PRODUCTS_RULE,
+CANCEL_FEE_RULE,
 SAVE_REPORT_RULE,
 CONFIRM_REPORT_RULE,
 LIST_REPORTS_RULE,
