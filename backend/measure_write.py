@@ -77,17 +77,20 @@ def record(d, me):
     w = w[0]
     if w["cshop"] != me.get("shop"):
         return _deny(me, "OTHER_SHOP", f"这位着装人的档案在「{w['cshop']}」,只能录本店客户", wid)
-    # 身体数据的同意 —— 和推算、看档案同一道门
-    ok = rows("SELECT 1 FROM consent WHERE wearer_id=? AND scope='身体数据' AND revoked_at IS NULL", wid)
-    if not ok:
-        return dict(ok=False, code="NO_CONSENT",
-                    reason="这位着装人**没有有效的身体数据同意** —— 先让本人(或监护人)签同意,再量再录")
+    # 身体数据的同意 —— 按年龄要哪几份,口径在 knowledge/consent_age.py(14—18 周岁业务 10-10 晚定:
+    # 本人为准,家长付款的身体数据那项家长也签)
+    import consent_age
     now = _now()
     岁 = _周岁(w["birthday"], now)
-    if 岁 is not None and 岁 < 14 and not rows(
-            "SELECT 1 FROM consent WHERE wearer_id=? AND scope='未成年人' AND revoked_at IS NULL", wid):
-        return dict(ok=False, code="NO_GUARDIAN",
-                    reason="不满十四周岁,**缺监护人的未成年人同意** —— 先签,再量再录")
+    同意们 = [(r["scope"], r["relation"]) for r in rows(
+        "SELECT scope, relation FROM consent WHERE wearer_id=? AND revoked_at IS NULL", wid)]
+    缺 = consent_age.缺什么(岁, w["relation"], 同意们)
+    if 缺:
+        code = ("NO_CONSENT" if not any(s == "身体数据" for s, _ in 同意们)
+                else "NO_GUARDIAN" if 岁 is not None and 岁 < 14
+                else "NO_SELF_CONSENT" if any("本人" in x for x in 缺) else "NO_PARENT_COSIGN")
+        return dict(ok=False, code=code, 缺=缺,
+                    reason="这位着装人的同意不齐,先签再量再录:" + ";".join(缺))
     值们 = d.get("values") or {}
     条件 = {"内搭": d.get("inner"), "鞋": d.get("shoe"), "呼吸": d.get("breath")}
     坏 = measure.校验一次(d.get("method"), 条件, 值们)

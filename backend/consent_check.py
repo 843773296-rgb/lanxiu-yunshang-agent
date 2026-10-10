@@ -172,6 +172,25 @@ def main():
           "一个长得像开关却不控制任何事的字段,比没有更危险,有人会以为它在生效)"
           if 用到 == 0 else ""))
 
+    # ── ⑥ 14—18 周岁:本人为准 + 家长付款的双签(业务 10-10 晚,口径 knowledge/consent_age.py) ──
+    #    年龄按**世界今天**算(不是机器今天)—— 这条和量体写入的闸用同一个口径、同一个日子
+    sys.path.insert(0, os.path.join(HERE, "..", "knowledge"))
+    import consent_age, worldclock
+    世界 = worldclock.今天().isoformat()
+    少年 = c.execute("SELECT id, name, relation, birthday FROM wearer WHERE birthday IS NOT NULL "
+                    "AND date(birthday, '+14 years') <= ? AND date(birthday, '+18 years') > ?", (世界, 世界)).fetchall()
+    少年 = [w for w in 少年 if w[0] in 有身体]
+    不齐 = []
+    for wid_, _, 关系, _ in 少年:
+        有 = [(r["scope"], r["relation"]) for r in 同意 if r["wearer_id"] == wid_ and not r["revoked_at"]]
+        缺 = consent_age.缺什么(16, 关系, 有)
+        if 缺:
+            不齐.append(f"{wid_}:{缺[0]}")
+    ck("⑥ 14—18 周岁存了身体数据的,本人签过;家长付款的家长也签了", not 不齐 and len(少年) > 0, len(少年),
+       (f"不齐 {len(不齐)} 人:{不齐[:3]} —— 补签走 tools/teen_self_consent.py --做(重建配方里有这一步)"
+        if 不齐 else "**样本为 0**:库里没有存了身体数据的 14—18 周岁着装人,这条什么都没验" if not 少年 else
+        f"{len(少年)} 位 14—18 周岁着装人,本人那一签和家长那一签都齐"))
+
     c.close()
     print("=" * 80)
     if FAIL:
@@ -186,6 +205,7 @@ def main():
     ('删掉一个未成年着装人的监护人同意(身体数据那条留着)', '② 不满 14 岁且存了身体数据的'),
     ('把 _consent_ok 的 scope 参数忽略掉(任一档同意就全放行)', '③ 有身体数据同意 ≠ 有营销触达同意'),
     ('把 _consent_ok 里的 `revoked_at IS NULL` 删掉(撤回不再生效)', '④ 撤回之后'),
+    ('删掉一位 14—18 周岁着装人本人签的身体数据同意(家长那份留着)', '⑥ 14—18 周岁存了身体数据的'),
 ]
 
 if __name__ == "__main__":

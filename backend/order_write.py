@@ -17,6 +17,8 @@
             **衣服和穿的人要对得上**(女款不开给男士、童装不开给大人,order_place.穿的人对不对)
   确认下单  顾问 / 店长;**逐件过闸**(order_place.逐件判),有一件不过整单不许确认;
             闸同时挂在订单状态机的「待确认 → 待审核」上,后台改状态也绕不过(同开裁那道闸)
+            **顾客要单独勾「不适用七天无理由退货」**(业务 10-10 晚 #7;实施条例 19「显著标注、顾客确认」)——
+            不默认勾、没勾不让确认;勾的时间和账号记进订单确认书
 """
 import os, sys, sqlite3, datetime
 
@@ -202,6 +204,13 @@ def confirm_order(d, me):
     o = o[0]
     if o["shop"] != me.get("shop"):
         return _deny(me, "OTHER_SHOP", f"这张单是「{o['shop']}」的,只能确认本店订单", oid)
+    # 七天无理由:**只认明确的 true** —— 字符串 "false"、"否"、1 都不算勾过(布尔以外的值一律当没勾)
+    if d.get("no7day_ack") is not True:
+        return dict(ok=False, code="NO7_ACK",
+                    reason="顾客还没单独确认「本单定制品不适用七天无理由退货」—— 先把这句话念给顾客听"
+                           "(门店当面下单由顾问念),顾客同意后再带上这个确认来确认下单;**不许替顾客勾**",
+                    能做什么="念给顾客听:「这件是按您的尺寸和选料做的,做好以后不适用七天无理由退货;"
+                            "如果是我们的质量问题,您可以选返修、重做或退款。」顾客同意后再确认")
     结论, 话, 明细 = 过闸(oid)
     ok, code, why = fsm.check("bk-order", o["status"], "待审核",
                               {"kind": "定制品订单", "下单过闸": 结论, "下单过闸_为什么": 话})
@@ -218,7 +227,7 @@ def confirm_order(d, me):
                   "WHERE id=? AND status='待确认'", (fsm.ORDER_PRD["待审核"], now, now, oid))
         # 订单确认书(业务 10-10:收预付款要有书面约定)—— **同一个事务**:写不进去就整个确认回滚,
         # 不存在「已付全款、确认书稍后补」这种中间状态
-        确认书 = _oc.生成(c, oid, me, now[:10])
+        确认书 = _oc.生成(c, oid, me, now[:10], 七天确认=dict(时间=now, 账号=me.get("no") or me.get("name")))
     log_op(me["name"], "ordr", oid, "待确认", "待审核", True, "CONFIRM",
            f"{me['name']} 确认下单 {oid}:{话}(付款在确认时已完成)", {"role": me["role"]})
     return dict(ok=True, code="CONFIRM", 订单=oid, 从="待确认", 到="待审核", 逐件=明细,

@@ -410,7 +410,9 @@ run "经营报告保存 / 确认 · 每存一版、只确认最新、冻结取�
 run "上新待办卡片 · 谁看得到、打码、30 天窗口、看完整号码留痕、建议写一次(库副本上跑)" python3 backend/arrival_card_check.py
 run "产出监督 · 报告 / 建议推给 AI 管理平台、打回后拦确认 / 带理由重写、trace 走通(库副本上跑)" python3 backend/supervise_check.py
 run "商品归纳口径 · 认料最长先认、规律 / 共性分开、没规律明说(自测)" python3 knowledge/traits.py
-run "订单确认书条款 · 业务 10-10 四条、无固定违约比例、记条款版本(自测)" python3 knowledge/contract_terms.py
+run "订单确认书条款 · 业务 10-10 定的退款 / 质量 / 延期 / 七天勾选 / 付款发票、无固定违约比例、记条款版本(自测)" python3 knowledge/contract_terms.py
+run "开裁后取消扣工钱 · 工单工日折钱、做一半按已过天数且封顶、没开工不扣、总额不超已付(自测)" python3 knowledge/cancel_fee.py
+run "同意按年龄 · 不满 14 监护人、14—18 本人为准 + 家长付款双签、营销只看本人(自测)" python3 knowledge/consent_age.py
 run "订单确认书 · 确认下单同一事务生成、写不进就整单回滚、金额对独立 SQL、范围(库副本上跑)" python3 backend/contract_check.py
 run "购买喜好口径 · 24 个月窗口、新款对上她的规律(自测)" python3 knowledge/purchase_pref.py
 run "商品归纳总结 + 购买喜好推荐 · 独立 SQL 复核、营销同意、冷却合算、待确认商机(库副本上跑)" python3 backend/product_summary_check.py

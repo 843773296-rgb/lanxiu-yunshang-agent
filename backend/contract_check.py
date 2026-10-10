@@ -42,6 +42,10 @@ ck("有能确认下单的样本(空集合上什么都成立)", len(待) >= 2, f"
 店长 = dict(no="SM-CHECK", name="店长", role="店长", shop=店1)
 
 r = W.confirm_order({"order_id": 单1}, 店长)
+ck("顾客没单独勾「不适用七天无理由」→ 不让确认,也不生成确认书",
+   r.get("code") == "NO7_ACK" and not c.execute("SELECT 1 FROM order_contract WHERE order_id=?", (单1,)).fetchone()
+   and c.execute("SELECT status FROM ordr WHERE id=?", (单1,)).fetchone()[0] == "待确认", str(r)[:120])
+r = W.confirm_order({"order_id": 单1, "no7day_ack": True}, 店长)
 ck("确认下单成功,返回里带确认书链接和下载", r.get("ok") and r.get("订单确认书") == f"/contract?order={单1}"
    and r.get("确认书下载") == f"/contract.pdf?order={单1}", str(r)[:160])
 文 = OC.取(店长, 单1, db=db)
@@ -54,6 +58,9 @@ ck("确认书里的商品和金额和这张单对得上(独立 SQL)",
 ck("条款写着业务 10-10 拍的四条,不出现固定违约比例,记下条款版本",
    all(w in 文["body"] for w in ("随时可以决定不做", "重做", "利息", "不适用七天无理由退货"))
    and not re.search(r"\d+\s*%", 文["body"]) and 文.get("条款版本") == T.版本)
+勾 = c.execute("SELECT no7_ack_at, no7_ack_by FROM order_contract WHERE order_id=?", (单1,)).fetchone()
+ck("记下顾客勾选的时间和账号,并写进确认书正文",
+   勾 and 勾[0] and 勾[1] == 店长["no"] and 勾[0] in 文["body"] and 店长["no"] in 文["body"], 勾)
 ck("一张单一份:同一张单不会再生成第二份", c.execute("SELECT COUNT(*) FROM order_contract WHERE order_id=?", (单1,)).fetchone()[0] == 1)
 
 # 确认书写不进去 → 整个回滚
@@ -61,7 +68,7 @@ ck("一张单一份:同一张单不会再生成第二份", c.execute("SELECT COU
 def _坏(*a, **k): raise RuntimeError("确认书写不进去(检查注入)")
 OC.生成 = _坏
 try:
-    r2 = W.confirm_order({"order_id": 单2}, dict(店长, shop=店2))
+    r2 = W.confirm_order({"order_id": 单2, "no7day_ack": True}, dict(店长, shop=店2))
     状态 = None
 except Exception as e:
     r2 = dict(ok=False, error=str(e))

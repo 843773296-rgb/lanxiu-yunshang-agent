@@ -2690,8 +2690,11 @@ def open_order(customer_id, items):
     return r
 
 
-def confirm_order(order_id):
+def confirm_order(order_id, no7day_ack=False):
     """**确认下单**(真的写进去):待确认 → 待审核。定制单确认即已付款(业务 09-22)。
+
+    no7day_ack  顾客本人已单独确认「本单定制品不适用七天无理由退货」(业务 10-10 晚)——
+                不默认、只认 true;没确认就拒绝,时间和账号写进订单确认书。
 
     **逐件过闸**:每一件都要有绑在它上面的、开单之后量的、够做这件衣服的下单量体;
     有一件不过整单拒绝,返回里列出是哪几件、缺什么。
@@ -2700,7 +2703,7 @@ def confirm_order(order_id):
     import order_write as ow
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁在确认 —— 请先登录")
-    r = ow.confirm_order(dict(order_id=order_id), me)
+    r = ow.confirm_order(dict(order_id=order_id, no7day_ack=no7day_ack), me)
     if r.get("ok"): _agent_log(me, "CONFIRM", r.get("reason", ""))
     return r
 
@@ -5351,7 +5354,7 @@ SHOP_SCHEMAS=[
  {"name":"verify_repair_return","description":"**返修件回店签收(真的写进去)**:顾客试穿修好的衣服合身,在手机上点「试穿合身」拿 6 位码交给导购,导购输入核验通过才算完成(业务 09-22:和交付签收同一套码)。**码只能是用户这句话里说出来的那一个,不许编、不许猜** —— 输错记次数,5 次作废。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"},"code":{"type":"string"}},"required":["maintain_id","code"]}},
  {"name":"ratify_complete","description":"**顾问追认完成(真的写进去)**:**最后一件**签收满 15 天顾客还没在手机上确认完成,顾问写理由(比如「已电话联系,顾客表示没问题」)把订单「待完成 → 完成」。**不满 15 天不行、没写理由不行** —— 业务 09-22:完成由顾客确认,追认是兜底,不是替顾客点。⚠️ 动手前先跟用户确认理由是真的联系过。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"reason":{"type":"string"}},"required":["order_id","reason"]}},
  {"name":"open_order","description":"**开一张定制单(真的写进去)**,停在「待确认」—— 还没生效。顾问或店长用,只给本店客户开。items 每一件写 spu(或 sku)、wearer_id(**给谁做,必填** —— 下单量体量的必须是穿这件的人)、qty。只开定制单,标品流程不变。开完的**下一步**:给每一件量下单量体并绑到这一件(record_measure 带 order_id + item),再 confirm_order。⚠️ 动手前先跟用户对一遍:哪位客户、哪几件、每件给谁做。","input_schema":{"type":"object","properties":{"customer_id":{"type":"string"},"items":{"type":"array","items":{"type":"object","properties":{"spu":{"type":"string"},"sku":{"type":"string"},"wearer_id":{"type":"string"},"qty":{"type":"integer"}}}}},"required":["customer_id","items"]}},
- {"name":"confirm_order","description":"**确认下单(真的写进去)**:待确认 → 待审核。业务 09-22:**定制单确认即已付款**,不走「待付款」。**逐件过闸**:每一件都要有绑在它上面的、开单之后量的、够做这件衣服的下单量体;有一件不过就整单拒绝,返回里列出是哪几件、缺什么(没有下单量体 / 早于开单 / 缺哪几项 / 着装人没定)。被拒了**不要换个说法再试**,把缺什么告诉用户,去量、去绑。⚠️ 动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
+ {"name":"confirm_order","description":"**确认下单(真的写进去)**:待确认 → 待审核。业务 09-22:**定制单确认即已付款**,不走「待付款」。**逐件过闸**:每一件都要有绑在它上面的、开单之后量的、够做这件衣服的下单量体;有一件不过就整单拒绝,返回里列出是哪几件、缺什么(没有下单量体 / 早于开单 / 缺哪几项 / 着装人没定)。被拒了**不要换个说法再试**,把缺什么告诉用户,去量、去绑。**还要顾客单独确认「本单定制品不适用七天无理由退货」**:先把这句话念给顾客听,顾客同意了才带 no7day_ack=true;没确认就会被拒,**不许替顾客填**。⚠️ 动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"no7day_ack":{"type":"boolean","description":"顾客本人已当面单独确认「本单定制品不适用七天无理由退货」—— 只有用户明确说顾客确认过才填 true"}},"required":["order_id"]}},
  {"name":"record_measure","description":"**登记一次量体(真的写进去)**。顾问或店长用,只能录本店客户的着装人;量体人就是你自己(不收工号)。wearer_id 是着装人编号(W 开头,客户号 C 开头的不是)。values 形如 {\"胸围\":86,\"腰围\":68}。method 只认「到店 / 上门」—— 业务 09-22 **不准远程量体**。inner(内搭:无/薄/厚/单层内衣)、shoe(鞋:赤足/平底/高跟)、breath(呼吸:平静呼气)**三个都必填,缺一件就等于没量**。数值超出人体合理范围会被拒(多半是单位或小数点录错),**不替你改**。**下单量体**:签单时按这件衣服重新量,给 order_id + item(订单行号或商品名),这一件就以这次为准;业务 09-22 定了**没有下单量体就不许下单**。要先有「身体数据」同意(未满 14 岁还要监护人同意)。⚠️ 动手前先跟用户对一遍:给谁量的、哪几项多少、到店还是上门、三个条件、是不是某一件的下单量体 —— 尺寸录错,衣服就按错的做。","input_schema":{"type":"object","properties":{"wearer_id":{"type":"string"},"values":{"type":"object","description":"{量体项名: 数值}"},"method":{"type":"string","enum":["到店","上门"]},"inner":{"type":"string"},"shoe":{"type":"string"},"breath":{"type":"string"},"order_id":{"type":"string","description":"只在下单量体时给"},"item":{"type":"string","description":"订单行号或商品名,只在下单量体时给"}},"required":["wearer_id","values","method","inner","shoe","breath"]}},
  {"name":"record_fitting","description":"**登记一轮白坯试衣(真的写进去)**。顾问或店长用,只能登记本店订单;陪同人就是你自己(不收工号)。item 填订单行号或商品名(一张单里同名多件时必须给行号)。adjust 写这一轮改了哪几处(没改写「无需调整」,不许空);signed 客户当场签字就填 true。**补签**:客户后来才签,给 round(已有的轮次号)并 signed=true;**签字不能撤销**。⚠️ 客户没签字之前,这一件所在的整张单**不许开裁**(业务 09-22)。⚠️ **动手前先跟用户对一遍**哪张单、哪一件、改了什么、签没签 —— 签字是责任转移点,记错了等于给门店一张不存在的底牌。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"item":{"type":"string","description":"订单行号或商品名"},"adjust":{"type":"string","description":"这一轮改了哪几处;没改写「无需调整」"},"signed":{"type":"boolean","description":"客户签字了吗"},"round":{"type":"integer","description":"只在补签时给:要补签的那一轮"},"note":{"type":"string"}},"required":["order_id","item"]}},
  {"name":"start_cutting","description":"**开裁(真的写进去)**:把一张定制单从「待生产」推进到「生产中」。只有版师能用。**要先过白坯试衣这道闸**(业务 09-22):单里每一件该试的都试过、而且客户签了字,才许开裁;有一件没过就整单拒绝,返回里列出是哪几件、缺什么(没试 / 没签 / 判不了该不该试又没试过 —— 判不了的先试一轮并签字就能裁)。被拒时**不要换个说法再试**,把卡在哪告诉用户,让顾问去约试衣或补签。⚠️ **开裁不可逆**,动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},

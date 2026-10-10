@@ -45,6 +45,8 @@
 #                         **库里最老的订单只有 364 天前,而「流失」要 365 天 —— 差一天**;
 #                         第三支的根因不同:库里**没有一个人的 12 个月金额是往下走的**
 #                         (末值低于自己峰值的 0 个)。排在造历史之前(历史要先有人有单)
+#   teen_self_consent.py  给 14—18 周岁补「本人签」的身体数据同意(业务 10-10 晚:本人为准)。
+#                         排在 shift_world / daily_fresh 之后:年龄按世界今天算,新着装人也要先造出来
 #   lifecycle_history_seed.py  造「档位历史」(回算 12/9/6/3/0 五个时点)——
 #                         ⚠️ **这一步 2026-10-09 才进配方**,而这张表是流失预警的训练样本。
 #                         在那之前配方里**一步都没有造它**,所以 CI 的库里它永远是空的,
@@ -134,7 +136,7 @@ if [ "$FRESH_ONLY" = 1 ]; then
     echo "   真要重建,请直接敲 ./tools/rebuild.sh(它会先说清楚要删什么,并留 3 秒反悔)。"
     exit 1
   fi
-  echo "📦 首次建库:下面 36 步**全跑完**才算建好,少一步都会让某几张表空着。"
+  echo "📦 首次建库:下面 37 步**全跑完**才算建好,少一步都会让某几张表空着。"
 else
   echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
   sleep 3
@@ -157,7 +159,7 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
             "tools/seed_factory_feed.py" "backend/seed_pickup.py --铺到包裹" "tools/seed_pending_orders.py" \
             "tools/clamp_future_done.py" "tools/level_customer_orders.py" \
             "tools/shift_world.py" "tools/backfill_rating.py" \
-            "tools/daily_fresh.py --做" "tools/seed_churned.py --做" \
+            "tools/daily_fresh.py --做" "tools/teen_self_consent.py --做" "tools/seed_churned.py --做" \
             "tools/lifecycle_history_seed.py --做" \
             "tools/lifecycle_refresh.py --做" "tools/seed_dispatch.py --做" \
             "tools/seed_customer_tasks.py --做" "tools/seed_new_products.py --做" \
@@ -176,8 +178,8 @@ done
 # ⚠️ **加步骤要改这个数。** 2026-10-09 加了 daily_fresh / lifecycle_refresh 两步,
 # 忘了改 —— `backend/firstrun_check.py` 当场逮到「步骤表 31 步,自校验却写着 29 步」。
 # 这个数存在的理由正是「循环没跑全,而上面看起来是顺利的」,所以它自己不能过期。
-if [ "$DONE" -ne 36 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 36 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 37 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 37 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"

@@ -106,6 +106,28 @@ def run(T):
     ck("没有身体数据同意 → 拒", x.get("code") == "NO_CONSENT", x.get("reason"))
     c.execute("UPDATE consent SET revoked_at=NULL WHERE wearer_id=? AND scope='身体数据'", (wid,)); c.commit()
 
+    # 14—18 周岁(业务 10-10 晚,knowledge/consent_age.py):本人为准,家长付款的家长也签 —— 在副本上真去撤
+    import worldclock
+    世界 = worldclock.今天().isoformat()
+    少 = c.execute("""SELECT w.id FROM wearer w JOIN customer cu ON cu.id=w.customer_id
+                      WHERE cu.shop=? AND w.relation!='本人' AND date(w.birthday,'+14 years')<=? AND date(w.birthday,'+18 years')>?
+                        AND EXISTS(SELECT 1 FROM consent k WHERE k.wearer_id=w.id AND k.scope='身体数据' AND k.relation='本人'
+                                   AND k.revoked_at IS NULL)
+                        AND EXISTS(SELECT 1 FROM consent k WHERE k.wearer_id=w.id AND k.scope='身体数据' AND k.relation LIKE '监护人%'
+                                   AND k.revoked_at IS NULL)
+                      ORDER BY w.id LIMIT 1""", (shop, 世界, 世界)).fetchone()
+    ck("有一位本店、家长付款、两签都齐的 14—18 周岁着装人(空集合上什么都成立)", bool(少))
+    if 少:
+        少好 = {**好, "wearer_id": 少[0]}
+        c.execute("UPDATE consent SET revoked_at='2026-01-01' WHERE wearer_id=? AND scope='身体数据' AND relation='本人'", (少[0],)); c.commit()
+        with api.as_user(顾问): x = api.record_measure(**少好)
+        ck("14—18 周岁只有家长签 → 拒(本人为准)", x.get("code") == "NO_SELF_CONSENT", x.get("reason"))
+        c.execute("UPDATE consent SET revoked_at=NULL WHERE wearer_id=? AND relation='本人'", (少[0],))
+        c.execute("UPDATE consent SET revoked_at='2026-01-01' WHERE wearer_id=? AND scope='身体数据' AND relation LIKE '监护人%'", (少[0],)); c.commit()
+        with api.as_user(顾问): x = api.record_measure(**少好)
+        ck("家长付款的 14—18 周岁只有本人签 → 拒(身体数据要家长也确认)", x.get("code") == "NO_PARENT_COSIGN", x.get("reason"))
+        c.execute("UPDATE consent SET revoked_at=NULL WHERE wearer_id=? AND scope='身体数据'", (少[0],)); c.commit()
+
     # 平时的量体
     前 = c.execute("SELECT COUNT(*) FROM measure_rec").fetchone()[0]
     with api.as_user(顾问): x = api.record_measure(**好)

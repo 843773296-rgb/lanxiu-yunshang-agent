@@ -143,7 +143,7 @@ def run(T):
     if 发:
         ck("查已发货的定制单会说明「工厂发往门店、还没到顾客手里」",
            "工厂发往门店" in (api.get_order(发[0]).get("状态说明") or ""))
-    with api.as_user(顾问): r = api.confirm_order(oid)
+    with api.as_user(顾问): r = api.confirm_order(oid, no7day_ack=True)
     ck("没量下单量体就确认 → 拒", r.get("code") == "ORDER_GATE", r.get("reason"))
     r = server.transit("bk-order", oid, "待审核", {}, actor="检查")
     ck("后台改状态同样被拦(不能绕)", r.get("code") == "ORDER_GATE", r.get("reason"))
@@ -154,17 +154,21 @@ def run(T):
                                                   order_id=oid, item=str(行))
     ck("录下单量体并绑到这一件", bool(r.get("ok")), r.get("reason"))
     c.execute("UPDATE ordr SET created='2999-01-01 00:00' WHERE id=?", (oid,)); c.commit()
-    with api.as_user(顾问): r = api.confirm_order(oid)
+    with api.as_user(顾问): r = api.confirm_order(oid, no7day_ack=True)
     ck("下单量体早于开单(拿旧量体顶上)→ 拒", r.get("code") == "ORDER_GATE" and "早于开单" in r.get("reason", ""),
        r.get("reason"))
     c.execute("UPDATE ordr SET created='2000-01-01 00:00' WHERE id=?", (oid,)); c.commit()
 
     with api.as_user(顾问): r = api.confirm_order(oid)
+    ck("顾客没单独勾「不适用七天无理由」→ 拒(不默认勾)", r.get("code") == "NO7_ACK", r.get("reason"))
+    with api.as_user(顾问): r = api.confirm_order(oid, no7day_ack="true")
+    ck("勾选只认布尔 true,字符串 \"true\" 不算", r.get("code") == "NO7_ACK", r.get("reason"))
+    with api.as_user(顾问): r = api.confirm_order(oid, no7day_ack=True)
     ck("每件都有为它量的下单量体 → 确认成功", bool(r.get("ok")), r.get("reason"))
     o = dict(c.execute("SELECT status, prd_status, paid_at, received, amount FROM ordr WHERE id=?", (oid,)).fetchone())
     ck("确认后直接进待审核(不走待付款)、落付款", o["status"] == "待审核" and o["prd_status"] == "方案确认中"
        and o["paid_at"] and o["received"] == o["amount"], o)
-    with api.as_user(顾问): r = api.confirm_order(oid)
+    with api.as_user(顾问): r = api.confirm_order(oid, no7day_ack=True)
     ck("已确认的单再确认 → 拒", r.get("code") == "BAD_STATE", r.get("reason"))
 
     with api.as_user(顾问): r = api.open_order(w["cid"], [{"spu": p["spu"], "wearer_id": w["wid"]}])

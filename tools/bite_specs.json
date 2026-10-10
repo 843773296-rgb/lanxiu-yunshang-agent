@@ -2602,12 +2602,12 @@
  },
  {
   "script": "backend/measure_write_check.py",
-  "改坏": "把量体录入的身体数据同意那道门去掉",
+  "改坏": "把量体录入的身体数据同意那道门去掉(口径层:没有身体数据同意也算齐)",
   "file": [
    {
-    "path": "backend/measure_write.py",
-    "old": "    if not ok:\n        return dict(ok=False, code=\"NO_CONSENT\",",
-    "new": "    if False:\n        return dict(ok=False, code=\"NO_CONSENT\","
+    "path": "knowledge/consent_age.py",
+    "old": "        return [\"没有有效的身体数据同意\"]",
+    "new": "        return []"
    }
   ],
   "预期红": "没有身体数据同意 → 拒"
@@ -6560,8 +6560,8 @@
   "file": [
    {
     "path": "backend/order_write.py",
-    "old": "        确认书 = _oc.生成(c, oid, me, now[:10])",
-    "new": "        try: 确认书 = _oc.生成(c, oid, me, now[:10])\n        except Exception: 确认书 = None"
+    "old": "        确认书 = _oc.生成(c, oid, me, now[:10], 七天确认=dict(时间=now, 账号=me.get(\"no\") or me.get(\"name\")))",
+    "new": "        try: 确认书 = _oc.生成(c, oid, me, now[:10], 七天确认=dict(时间=now, 账号=me.get(\"no\") or me.get(\"name\")))\n        except Exception: 确认书 = None"
    }
   ],
   "预期红": "确认书写不进去 → 确认下单整个回滚,订单还是「待确认」"
@@ -6637,5 +6637,113 @@
    }
   ],
   "预期红": "定制品按她下单时真选的面料算(不是这款的可选项第一项)"
+ },
+ {
+  "script": "backend/contract_check.py",
+  "改坏": "顾客没勾「不适用七天无理由」也让确认下单",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "    if d.get(\"no7day_ack\") is not True:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "顾客没单独勾「不适用七天无理由」→ 不让确认,也不生成确认书"
+ },
+ {
+  "script": "backend/order_write_check.py",
+  "改坏": "勾选认「真值」而不是布尔 true(字符串 \"true\" / \"false\" 都会被当成勾过)",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "    if d.get(\"no7day_ack\") is not True:",
+    "new": "    if not d.get(\"no7day_ack\"):"
+   }
+  ],
+  "预期红": "勾选只认布尔 true,字符串 \"true\" 不算"
+ },
+ {
+  "script": "knowledge/contract_terms.py",
+  "改坏": "确认书里不写顾客勾选的时间和账号",
+  "file": [
+   {
+    "path": "knowledge/contract_terms.py",
+    "old": "            文 += f\"\\n\\n**顾客已单独勾选确认**:{七天确认['时间']} · 操作账号 {七天确认['账号']}\"",
+    "new": "            pass"
+   }
+  ],
+  "预期红": "七天无理由那条带上顾客勾选的时间和账号"
+ },
+ {
+  "script": "knowledge/cancel_fee.py",
+  "改坏": "做到一半的工单按已过天数全算,不封顶到工日",
+  "file": [
+   {
+    "path": "knowledge/cancel_fee.py",
+    "old": "    天 = min(过, 工日)",
+    "new": "    天 = 过"
+   }
+  ],
+  "预期红": "做到一半的按已过天数折,超过工日的封顶"
+ },
+ {
+  "script": "knowledge/cancel_fee.py",
+  "改坏": "扣的总额不按已付款封顶",
+  "file": [
+   {
+    "path": "knowledge/cancel_fee.py",
+    "old": "    合计 = min(原, 已付)",
+    "new": "    合计 = 原"
+   }
+  ],
+  "预期红": "扣的总额不超过已付款"
+ },
+ {
+  "script": "knowledge/consent_age.py",
+  "改坏": "14—18 周岁家长签的身体数据同意顶替本人",
+  "file": [
+   {
+    "path": "knowledge/consent_age.py",
+    "old": "    if 本人 not in 身体:",
+    "new": "    if not 身体:"
+   }
+  ],
+  "预期红": "14—18 周岁只有家长签 → 缺本人"
+ },
+ {
+  "script": "backend/measure_write_check.py",
+  "改坏": "量体录入不按年龄判同意(14—18 周岁当成年人)",
+  "file": [
+   {
+    "path": "backend/measure_write.py",
+    "old": "    缺 = consent_age.缺什么(岁, w[\"relation\"], 同意们)",
+    "new": "    缺 = consent_age.缺什么(None, w[\"relation\"], 同意们)"
+   }
+  ],
+  "预期红": "14—18 周岁只有家长签 → 拒(本人为准)"
+ },
+ {
+  "script": "backend/consent_check.py",
+  "改坏": "「家长」认不出来(双签那一签永远算没有)",
+  "file": [
+   {
+    "path": "knowledge/consent_age.py",
+    "old": "    return str(relation or \"\").startswith(\"监护人\")",
+    "new": "    return False"
+   }
+  ],
+  "预期红": "⑥ 14—18 周岁存了身体数据的"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "「不开票换价钱」那道判断掐掉",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    for m in 不开票换钱.finditer(text or \"\"):",
+    "new": "    for m in []:"
+   }
+  ],
+  "预期红": "不开票换价钱,一个折扣词都没有"
  }
 ]

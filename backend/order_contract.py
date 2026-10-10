@@ -24,8 +24,12 @@ CREATE TABLE IF NOT EXISTS order_contract(
   body       TEXT NOT NULL,         -- 确认书正文(Markdown)
   snapshot   TEXT NOT NULL,         -- 下单那一刻的商品 / 价款(JSON)—— 订单以后改了,这份不跟着变
   created_at TEXT NOT NULL,
-  created_by TEXT NOT NULL);        -- 谁点的确认下单(顾客当面确认,顾问 / 店长操作)
+  created_by TEXT NOT NULL,         -- 谁点的确认下单(顾客当面确认,顾问 / 店长操作)
+  no7_ack_at TEXT,                  -- 顾客单独勾「不适用七天无理由退货」的时间(业务 10-10 晚 #7)
+  no7_ack_by TEXT);                 -- 勾的时候登录的账号(门店当面下单 = 顾问念给顾客听、顾客同意后勾)
 """
+# 10-10 晚加的两列:表在这之前就建过的库(本地 / 已部署),CREATE IF NOT EXISTS 不会补列
+补列 = (("no7_ack_at", "TEXT"), ("no7_ack_by", "TEXT"))
 
 全部 = "/contract"
 
@@ -40,10 +44,15 @@ def 下载(order_id):
 
 def 建表(c):
     c.executescript(DDL)
+    有 = {r[1] for r in c.execute("PRAGMA table_info(order_contract)")}
+    for 列, 型 in 补列:
+        if 列 not in 有:
+            c.execute(f"ALTER TABLE order_contract ADD COLUMN {列} {型}")
 
 
-def 生成(c, order_id, me, 今天):
-    """在调用方的事务里写一份确认书。**出任何错都抛** —— 让确认下单一起回滚。返回链接。"""
+def 生成(c, order_id, me, 今天, 七天确认=None):
+    """在调用方的事务里写一份确认书。**出任何错都抛** —— 让确认下单一起回滚。返回链接。
+    七天确认 = {时间, 账号}:缺了 contract_terms.拼正文 会抛(没勾过的不生成)。"""
     建表(c)
     o = c.execute("SELECT o.id, o.shop, o.amount, o.received, o.wearer_id, cu.name FROM ordr o "
                   "LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?", (order_id,)).fetchone()
@@ -61,10 +70,11 @@ def 生成(c, order_id, me, 今天):
         着装人 = w[0] if w else None
     合计 = float(o[2] or sum(x["金额"] for x in 明细))
     正文 = K.拼正文(订单号=order_id, 门店=o[1], 顾客=o[5] or "—", 下单日=str(今天)[:10], 明细=明细,
-                  合计=合计, 已付=float(o[3] if o[3] is not None else 合计), 着装人=着装人)
-    c.execute("INSERT INTO order_contract(order_id, terms_ver, body, snapshot, created_at, created_by) VALUES(?,?,?,?,?,?)",
+                  合计=合计, 已付=float(o[3] if o[3] is not None else 合计), 着装人=着装人, 七天确认=七天确认)
+    c.execute("INSERT INTO order_contract(order_id, terms_ver, body, snapshot, created_at, created_by, no7_ack_at, no7_ack_by) "
+              "VALUES(?,?,?,?,?,?,?,?)",
               (order_id, K.版本, 正文, json.dumps(dict(明细=明细, 合计=合计), ensure_ascii=False),
-               str(今天)[:10], me.get("no") or me.get("name")))
+               str(今天)[:10], me.get("no") or me.get("name"), 七天确认["时间"], 七天确认["账号"]))
     return 链接(order_id)
 
 
