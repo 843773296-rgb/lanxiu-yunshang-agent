@@ -337,7 +337,7 @@ python3 tools/impact.py          # 工作区还没提交的改动碰到了什么
   现在 `rfm_check` / `route_check` 都带样本量下限,不够就明说「是没扫到东西,不是都通过」。
 - **新加一条对外保证,必须进 `backend/boundary_audit.py`**,并写清它靠**结构**(做不到)还是**约定**(不该做)。声称靠结构的,必须配一段真的去攻击它的代码 ——
   **一条从没被攻击过的「结构性保证」,实际上仍然只是约定。**
-- **新加一处调模型的地方,必须接记录仪**(`agent/trace.py` 的 `trace.record`)。`agent/trace_check.py` 会扫描并强制这一点。
+- **新加一处调模型的地方,必须接记录仪**(`agent/llmtrace.py` 的 `record`;原名 trace.py,和标准库 trace 重名改了)。`agent/trace_check.py` 会扫描并强制这一点。
 - 新写的 md 文档,发飞书 + commit。
 - 评测结果 `agent/*-results.jsonl` **要进版本库** —— 它是「这个版本在这套题上考了多少分」的历史,是可比对的度量,不是临时产物。
 

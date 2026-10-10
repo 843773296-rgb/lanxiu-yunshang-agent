@@ -19,6 +19,7 @@ import json, os, sqlite3, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "knowledge")]
 DB = os.path.join(HERE, "lanxiu.db")
+本库 = DB      # 只有这个库上存的报告才推给 AI 管理平台(见 artifact_report.是本库);检查改 DB 改不到它
 
 DDL = """
 CREATE TABLE IF NOT EXISTS store_report_doc(
@@ -125,7 +126,9 @@ def 保存(me, pack, body, report_id=None, db=None, trace=None):
                        (shop, pack["种类"], 起)).fetchone()[0] or 0) + 1
         上一版已确认 = c.execute("SELECT id FROM store_report_doc WHERE shop=? AND kind=? AND period_start=? "
                             "AND status='已确认' ORDER BY revision DESC LIMIT 1", (shop, pack["种类"], 起)).fetchone()
-        序 = (c.execute("SELECT COUNT(*) FROM store_report_doc").fetchone()[0] or 0) + 1
+        # 编号取**现有最大的 + 1**,不按行数 —— 按行数的话删过行就会把一个用过的号再发一次
+        # (10-10:RPT000002 先被检查副本的假报告用过、推上了管理平台,后来真库又发给了店长的月报)
+        序 = (c.execute("SELECT MAX(CAST(substr(id,4) AS INTEGER)) FROM store_report_doc").fetchone()[0] or 0) + 1
         rid = f"RPT{序:06d}"
         while c.execute("SELECT 1 FROM store_report_doc WHERE id=?", (rid,)).fetchone():
             序 += 1; rid = f"RPT{序:06d}"
@@ -136,7 +139,7 @@ def 保存(me, pack, body, report_id=None, db=None, trace=None):
         c.commit()
     finally:
         c.close()
-    上报监督(rid, shop, pack, body, 版, trace)
+    上报监督(rid, shop, pack, body, 版, trace, db=db or DB)
     _记(me.get("no"), rid, "REPORT_SAVE", True, f"{pack['报告']} 第 {版} 版", {"kind": pack["种类"], "start": 起})
     return dict(ok=True, 报告号=rid, 第几版=版, 状态="草稿", 报告=pack["报告"], 门店=shop,
                 **({"替代": 上一版已确认[0]} if 上一版已确认 else {}),
@@ -207,7 +210,7 @@ def 列(me, kind=None, limit=20, db=None):
 
 
 # ── 产出监督(用户 10-10:AI 管理平台「能看 + 能打回」)──────────────────────
-def 上报监督(rid, shop, pack, body, 版, trace):
+def 上报监督(rid, shop, pack, body, 版, trace, db=None):
     """存下一版就推一份给管理后台:输入 = 冻结的取数包,规矩 = 管写报告和存报告的那两条,输出 = 正文。
     **不抛**(A2:上报出任何事都不许影响业务)。"""
     try:
@@ -215,6 +218,8 @@ def 上报监督(rid, shop, pack, body, 版, trace):
         _s.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
         _s.path.insert(0, os.path.dirname(HERE))
         import artifact_report as AR, prompts as _p
+        if not AR.是本库(db or DB, 本库):
+            return            # 库副本上存的(检查脚本)不往管理平台推
         规 = [dict(编号=r.id, 正文=r.text.strip()) for _, r in _p.all_rules(unique=True) if r.id in ("TL67", "TL68")]
         AR.排队(外部id=f"报告:{rid}", 类型="报告", 版本=版, 标题=f"{shop} · {pack.get('种类', '')}报 · {str(pack.get('区间', ''))[:23]}",
                输入=pack, 输出=body, 规则=规, 门店=shop, 世界日期=_今天(), 生成方式="对话", 外部trace=trace)

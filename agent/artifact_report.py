@@ -38,6 +38,17 @@ def _去手机号(x):
     return json.loads(_手机号.sub(r"\1****\2", json.dumps(x, ensure_ascii=False, default=str)))
 
 
+def 是本库(连接或路径, 本库):
+    """只有在**本库**上产生的产出才推给管理后台(10-10 抓到的事故):检查脚本在库的临时副本上存报告、写建议,
+    原来照样往**真投递箱**里排 —— 三份不存在的报告和十条不存在的建议被推上了 AI 管理平台,看起来和真的一模一样。
+    本库 = 模块载入时那个库的路径(检查脚本会改模块的 DB 指向副本,但改不到这个);副本上要推,得显式把本库也指过去。"""
+    import os as _os, sqlite3 as _sq
+    p = 连接或路径
+    if isinstance(p, _sq.Connection):
+        p = (p.execute("PRAGMA database_list").fetchone() or (None, None, ""))[2]
+    return bool(p) and _os.path.realpath(p) == _os.path.realpath(本库)
+
+
 def 键(外部id, 版本):
     return "lxat-" + hashlib.sha1(f"{外部id}|{版本}".encode("utf-8")).hexdigest()[:32]   # ASCII:进 HTTP 头
 

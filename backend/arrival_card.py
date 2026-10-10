@@ -24,6 +24,7 @@ sys.path[:0] = [HERE, os.path.join(HERE, "..", "knowledge")]
 import oppo_obj as K
 
 DB = os.path.join(HERE, "lanxiu.db")
+本库 = DB      # 只有这个库上写的建议才推给 AI 管理平台(见 artifact_report.是本库)
 
 DDL = """
 CREATE TABLE IF NOT EXISTS recall_advice(
@@ -103,8 +104,8 @@ def _商品(c, spu):
     码 = [x[0] for x in c.execute("SELECT DISTINCT size FROM sku WHERE spu=? AND size IS NOT NULL ORDER BY code", (spu,))]
     价 = c.execute("SELECT MIN(price), MAX(price), SUM(stock - COALESCE(locked,0)) FROM sku WHERE spu=? AND status='启用'",
                    (spu,)).fetchone()
-    return dict(款号=r[0], 名称=r[1], 类型=r[2], 价格=(f"{价[0]:.0f}" if 价[0] == 价[1] else f"{价[0]:.0f}–{价[1]:.0f}")
-                if 价[0] is not None else (f"{r[3]:.0f} 起" if r[3] else "—"),
+    return dict(款号=r[0], 名称=r[1], 类型=r[2], 价格=(f"{价[0]:,.0f}" if 价[0] == 价[1] else f"{价[0]:,.0f}–{价[1]:,.0f}")
+                if 价[0] is not None else (f"{r[3]:,.0f} 起" if r[3] else "—"),
                 颜色=色, 尺码=码, 可卖件数=价[2], 上架日=r[5], 图=r[6] or f"/img/{r[0]}.svg", 状态=r[7])
 
 
@@ -163,15 +164,17 @@ def 写建议(c, opp_id, spu, call=None, 打回=None):
     版 = (打回 or {}).get("版本") or 1
     c.execute("INSERT OR IGNORE INTO recall_advice(opp_id, spu, text, source, model, created, version, input, trace_id) "
               "VALUES(?,?,?,?,?,?,?,?,?)", (opp_id, spu, 正文, 来源, 模型, _今天().isoformat(), 版, 材料, 调用号))
-    _上报监督(opp_id, spu, 版, 材料, 正文, 来源, 模型, 调用号, 商品, 客户)
+    _上报监督(opp_id, spu, 版, 材料, 正文, 来源, 模型, 调用号, 商品, 客户, 库=c)
     return 正文, 来源
 
 
-def _上报监督(opp_id, spu, 版, 材料, 正文, 来源, 模型, 调用号, 商品, 客户):
-    """推一份给 AI 管理平台(用户 10-10:能看 + 能打回)。**不抛**。"""
+def _上报监督(opp_id, spu, 版, 材料, 正文, 来源, 模型, 调用号, 商品, 客户, 库=None):
+    """推一份给 AI 管理平台(用户 10-10:能看 + 能打回)。**不抛**。库副本上写的不推。"""
     try:
         sys.path.insert(0, os.path.join(HERE, "..", "agent"))
         import artifact_report as AR
+        if 库 is not None and not AR.是本库(库, 本库):
+            return
         AR.排队(外部id=f"建议:{opp_id}:{spu}", 类型="建议", 版本=版,
                标题=f"上新建议 · {商品['名称']} → {(客户.get('姓名') or '')[:1]}**",
                输入=json.loads(材料.split("\n\n上一版被")[0]) if 材料.startswith("{") else {"材料": 材料},

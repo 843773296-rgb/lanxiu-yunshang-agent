@@ -6541,5 +6541,17 @@
    }
   ],
   "预期红": "对话页读回会话后,顶上的「当前助手」跟着重画(不会存的是工坊、显示的是全能助手)"
+ },
+ {
+  "script": "backend/supervise_check.py",
+  "改坏": "库副本上存的报告也往真投递箱推",
+  "file": [
+   {
+    "path": "agent/artifact_report.py",
+    "old": "    return bool(p) and _os.path.realpath(p) == _os.path.realpath(本库)",
+    "new": "    return True"
+   }
+  ],
+  "预期红": "默认:库副本上存报告、写建议,一条都不进投递箱"
  }
 ]

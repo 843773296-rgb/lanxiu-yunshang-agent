@@ -19,6 +19,7 @@ import api, report_doc, arrival_card as AC, oplog, artifact_report as AR
     # 预期红指向「发送前那一道」:真实的输入(取数包 / 建议材料)本来就不带手机号,另一条在真数据上看不见这处破坏(咬合 10-10 抓到)
     ("产出上报把完整手机号带出门", "发送前还有一道:手机号到了出门那一刻也会被打码"),
     ("存报告不记是哪一轮对话", "报告存下了生成它的那一轮(trace_id)"),
+    ("库副本上存的报告也往真投递箱推", "默认:库副本上存报告、写建议,一条都不进投递箱"),
 ]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -47,6 +48,19 @@ report_doc.建表(c); c.execute("DELETE FROM store_report_doc"); c.commit()
 
 def 箱里():
     return [json.loads(l) for l in open(AR.箱, encoding="utf-8")] if os.path.exists(AR.箱) else []
+
+
+# ── 默认不推(10-10 事故:检查在副本上存的假报告 / 假建议被推上了 AI 管理平台)──
+# 此刻 report_doc.本库 / AC.本库 还是真库的路径,而我们在副本上存 —— 投递箱里应该一条都没有
+with api.as_user(店长):
+    _r0 = api.save_report(body="## 副本上的报告\n不该推出去", kind="周")
+_o0, _s0 = c.execute("SELECT opp_id, spu FROM opportunity_recall LIMIT 1").fetchone()
+AC.建表(c); c.execute("DELETE FROM recall_advice WHERE opp_id=? AND spu=?", (_o0, _s0)); c.commit()
+AC.写建议(c, _o0, _s0, call=lambda 材料: {"content": [{"type": "text", "text": "1. 甲甲甲甲甲甲甲甲甲甲\n2. 乙乙乙乙乙乙乙乙乙\n3. 丙丙丙"}]}); c.commit()
+ck("默认:库副本上存报告、写建议,一条都不进投递箱", _r0.get("ok") and 箱里() == [], str(箱里())[:120])
+c.execute("DELETE FROM store_report_doc"); c.execute("DELETE FROM recall_advice"); c.commit()
+# 下面要验「推了什么」,所以**显式**把本库指到副本(只在这份检查里)
+report_doc.本库 = AC.本库 = db
 
 
 # ── 报告 ──

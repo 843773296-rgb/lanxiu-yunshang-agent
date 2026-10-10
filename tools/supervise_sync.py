@@ -59,7 +59,7 @@ def 补上报(db=None):
         for oid, spu, 版, 正文, 来源, 模型, 材料, 号 in c.execute(
                 "SELECT opp_id, spu, version, text, source, model, input, trace_id FROM recall_advice").fetchall():
             商 = AC._商品(c, spu) or {"名称": spu}
-            AC._上报监督(oid, spu, 版, 材料 or "{}", 正文, 来源, 模型, 号, 商, {})
+            AC._上报监督(oid, spu, 版, 材料 or "{}", 正文, 来源, 模型, 号, 商, {}, 库=c)
             n += 1
         return n
     finally:
