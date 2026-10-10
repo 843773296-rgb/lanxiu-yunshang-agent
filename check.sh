@@ -408,6 +408,10 @@ run "周报 · 评价 / 进入休眠 / 任务复盘按周查,对独立 SQL" pyth
 run "经营报告取数包 · 日报 / 周报 / 月报的报告期、对独立 SQL、期内和存量分栏" python3 backend/store_report_check.py
 run "经营报告保存 / 确认 · 每存一版、只确认最新、冻结取数包、权限(库副本上跑)" python3 backend/report_doc_check.py
 run "上新待办卡片 · 谁看得到、打码、30 天窗口、看完整号码留痕、建议写一次(库副本上跑)" python3 backend/arrival_card_check.py
+run "产出监督 · 报告 / 建议推给 AI 管理平台、打回后拦确认 / 带理由重写、trace 走通(库副本上跑)" python3 backend/supervise_check.py
+run "商品归纳口径 · 认料最长先认、规律 / 共性分开、没规律明说(自测)" python3 knowledge/traits.py
+run "购买喜好口径 · 24 个月窗口、新款对上她的规律(自测)" python3 knowledge/purchase_pref.py
+run "商品归纳总结 + 购买喜好推荐 · 独立 SQL 复核、营销同意、冷却合算、待确认商机(库副本上跑)" python3 backend/product_summary_check.py
 run "判据词表 · 声称有备选,就得验过一条备选" python3 tools/vocab_check.py
 run "钉死的锚点 · 抓同源谬误(手抄不现算)" python3 knowledge/pinned_check.py
 run "产能排期 · 工种/一人一机/产能缺口" python3 knowledge/capacity.py

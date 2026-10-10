@@ -69,6 +69,17 @@ CREATE TABLE IF NOT EXISTS customer_pref(
   confirmed_by TEXT NOT NULL,          -- 哪个顾问点的头
   created TEXT NOT NULL,
   retired_at TEXT, retired_by TEXT, retired_reason TEXT);
+-- 购买偏好回捞(用户 2026-10-10:「只买红的 → 上新红色就是商机」,方案 B)。
+-- **不和 opportunity_recall 混一张表**:那张表的每一行都指得回客户在电话里说的原话、商机都是「搁置等供给」,
+-- 好几条检查按这个读;推断出来的偏好没有原话,混进去就得放宽那几条检查。冷却和上限两张表**合着算**
+CREATE TABLE IF NOT EXISTS buy_pref_recall(
+  opp_id      TEXT NOT NULL,          -- 推出来就开一条「待确认」商机(来源 购买偏好),顾问点头才算
+  customer_id TEXT NOT NULL,
+  spu         TEXT NOT NULL,
+  matched     TEXT NOT NULL,          -- {"颜色": 色系}
+  basis       TEXT NOT NULL,          -- 依据:近 24 个月买过几件、几件是这个色系、和店里一般客人比
+  ratio       REAL NOT NULL,          -- 倍数(她的比例 ÷ 全店比例)
+  created     TEXT NOT NULL);
 """
 
 
@@ -132,12 +143,15 @@ def 改状态(c, oid, 到, 时间, 经手人=None, 关闭原因=None, 等什么=
     if 到 == "已转方案" and not 方案:
         return False, "转方案要指明是哪个方案"
     c.execute("UPDATE opportunity SET status=?, updated=?,"
-              " close_reason=COALESCE(?, close_reason), wait_for=COALESCE(?, wait_for),"
+              # 「等什么」只属于「搁置等供给」:离开这个状态就清掉(10-10 数据工厂抓到:搁置 → 已关闭
+              # 时 wait_for 还挂着,于是一条已关闭的商机看起来还在等货 —— 以前红不了,因为没有从搁置关掉的数据)
+              " close_reason=COALESCE(?, close_reason),"
+              " wait_for=CASE WHEN ?='搁置等供给' THEN COALESCE(?, wait_for) ELSE NULL END,"
               " scheme_id=COALESCE(?, scheme_id),"
               " confirmed_by=CASE WHEN ?='跟进中' AND confirmed_by IS NULL THEN ? ELSE confirmed_by END,"
               " confirmed_at=CASE WHEN ?='跟进中' AND confirmed_at IS NULL THEN ? ELSE confirmed_at END"
               " WHERE id=?",
-              (到, 时间, 关闭原因, json.dumps(等什么, ensure_ascii=False) if 等什么 else None, 方案,
+              (到, 时间, 关闭原因, 到, json.dumps(等什么, ensure_ascii=False) if 等什么 else None, 方案,
                到, 经手人, 到, 时间, oid))
     if 方案:
         c.execute("UPDATE scheme SET opportunity_id=? WHERE id=?", (oid, 方案))
@@ -322,6 +336,15 @@ def 对得上的在架(c, 维度, 值, n=5):
     return 出
 
 
+def _上次推送(c, cust):
+    """冷却按「这位客户上一次被推是哪天」算 —— **两种回捞合着算**:电话里说过的和购买推断的,
+    同一个人 90 天内只被推一次,不因为来源不同就推两遍。"""
+    a = c.execute("SELECT MAX(created) FROM opportunity_recall WHERE customer_id=?", (cust,)).fetchone()[0]
+    b = c.execute("SELECT MAX(created) FROM buy_pref_recall WHERE customer_id=?", (cust,)).fetchone()[0] \
+        if c.execute("SELECT 1 FROM sqlite_master WHERE name='buy_pref_recall'").fetchone() else None
+    return max([x for x in (a, b) if x] or [None])
+
+
 def 回捞(c, 新品们, 今天):
     """上新了这些商品 → 哪些搁置的商机该唤醒。返回 [提醒],并记进 opportunity_recall。
 
@@ -338,7 +361,7 @@ def 回捞(c, 新品们, 今天):
             break
         if not K.在时效内(d(created), 今天) or cust in 本次客户:
             continue
-        上次 = c.execute("SELECT MAX(created) FROM opportunity_recall WHERE customer_id=?", (cust,)).fetchone()[0]
+        上次 = _上次推送(c, cust)
         if K.冷却中(d(上次) if 上次 else None, 今天):
             continue
         等 = json.loads(wf or "{}")
@@ -369,7 +392,7 @@ def 回捞(c, 新品们, 今天):
             break
         if not K.在时效内(d(created), 今天) or cust in 本次客户:
             continue
-        上次 = c.execute("SELECT MAX(created) FROM opportunity_recall WHERE customer_id=?", (cust,)).fetchone()[0]
+        上次 = _上次推送(c, cust)
         if K.冷却中(d(上次) if 上次 else None, 今天):
             continue
         等 = dict(x.split("=", 1) for x in dims.split("|"))
@@ -386,4 +409,114 @@ def 回捞(c, 新品们, 今天):
                        f"(她买过,但当时没买到这个)—— 原话:「{原}」", 今天,
                        dict(新品=spu, 对上=等, 原话=原, 偏好=[int(x) for x in ids.split(",")]))
                 break
+    # ── 购买偏好回捞(用户 10-10,方案 B):**排在最后** —— 名额先给电话里亲口说过的 ──
+    if len(出) < K.回捞_单次上限:
+        出 += 购买偏好回捞(c, 新品们, 今天, 本次客户, min(K.购买推断_单次上限, K.回捞_单次上限 - len(出)))
+    return 出
+
+
+def 购买偏好回捞(c, 新品们, 今天, 已推=None, 名额=None):
+    """上新了这几款 → 从购买记录归纳出喜好、对得上新款的客户(用户 10-10)。
+
+    喜好 = 把她近 24 个月买过的衣服交给**商品归纳**(knowledge/traits.py)得出的「规律」——
+    颜色、纹样、面料、工艺、形制都算,判法是方案 B(比全店买过的东西明显多)。新款对上她任意一条规律就推。
+    每推一位:开一条「待确认」商机(来源 购买偏好)、记 buy_pref_recall、给归属顾问派「购买偏好回捞」提醒。
+    **推断不直接算商机** —— 顾问联系后点「客户想看」才转跟进中(和「模型给判断,人点头才算」同一条规矩)。
+    闸:和回捞共用 90 天冷却、单次 50 条;**不同意营销触达 / 注销中 / 已注销的不推**(没有账户的也不推:查不到同意)。
+    """
+    import purchase_pref as P, traits as T, product_summary as PS
+    c.executescript(DDL)
+    名额 = K.购买推断_单次上限 if 名额 is None else min(名额, K.购买推断_单次上限)
+    已推 = set(已推 or ())
+    if 名额 <= 0 or not 新品们:
+        return []
+    起, 止 = P.窗口起点(今天).isoformat(), 今天.isoformat()
+    表 = PS.属性表(c)
+    新属 = {spu: {d: [v for v, _ in 表[spu]["属性"][d]] for d in T.维度们} for spu in 新品们 if spu in 表}
+    if not 新属:
+        return []
+    对照 = PS.全店买过的占比(c, 起, 止, 表)
+    色系 = dict(c.execute("SELECT color, family FROM color_family"))
+    每人 = {}
+    for cust, spu, col in c.execute(
+            "SELECT o.customer_id, i.spu, s.color FROM ordr o JOIN ordr_item i ON i.order_id=o.id "
+            "LEFT JOIN sku s ON s.code=i.sku WHERE o.customer_id IS NOT NULL AND substr(o.created,1,10) BETWEEN ? AND ? "
+            "AND o.status NOT IN ('取消','已取消','待付款')", (起, 止)):
+        if spu in 表:
+            v = {d: [x for x, _ in 表[spu]["属性"][d]] for d in T.维度们}
+            v["颜色"] = [色系[col]] if 色系.get(col) else []      # 她买的那个 SKU 的颜色
+            每人.setdefault(cust, []).append(v)
+    候选 = []
+    for cust, 件们 in 每人.items():
+        if cust in 已推 or len(件们) < T.最少件数:
+            continue
+        规 = T.归纳(件们, 对照)["规律"]
+        if not 规:
+            continue
+        for spu, 属 in 新属.items():
+            中 = P.对上的规律(规, 属)
+            if 中:
+                候选.append((中[0]["件数"], 中[0]["倍数"], cust, spu, 中))
+                break                       # 一个人一次上新只推一款
+    # 名额不够时谁先:**证据多的先**(对上那条规律的件数),同样多再看倍数 ——
+    # 只按倍数排的话,只买过 3 件、碰巧 2 件棉麻的人(20 倍)会排在买了 9 件、6 件红的老客前面
+    候选.sort(key=lambda t: (-t[0], -t[1], t[2]))
+    出 = []
+    for _, _, cust, spu, 中 in 候选:
+        if len(出) >= 名额:
+            break
+        能 = c.execute("SELECT a.status, a.marketing_consent FROM customer cu JOIN account a ON a.id=cu.account_id "
+                       "WHERE cu.id=?", (cust,)).fetchone()
+        if not 能 or 能[0] in ("注销中", "已注销") or not 能[1]:
+            continue
+        上次 = _上次推送(c, cust)
+        if K.冷却中(_dt_日(上次) if 上次 else None, 今天):
+            continue
+        oid = f"OP-B{cust}-{今天.strftime('%Y%m%d')}"
+        if c.execute("SELECT 1 FROM opportunity WHERE id=?", (oid,)).fetchone():
+            continue
+        依据 = ";".join(T.一句话(x) for x in 中) + f"(近 {P.回看月数} 个月她买过的东西,和全店买过的比)"
+        对上 = {}
+        for x in 中:
+            对上.setdefault(x["维度"], x["值"])
+        时间 = 今天.isoformat()
+        adv = c.execute("SELECT advisor_no FROM customer WHERE id=?", (cust,)).fetchone()
+        c.execute("INSERT INTO opportunity(id, customer_id, source, status, next_step, advisor_no, created, updated) "
+                  "VALUES(?,?,?,?,?,?,?,?)", (oid, cust, "购买偏好", K.起始状态,
+                                              "上新对上了她的购买规律(" + "、".join(f"{k}{v}" for k, v in 对上.items())
+                                              + ")—— 联系确认", adv[0] if adv else None, 时间, 时间))
+        c.execute("INSERT INTO buy_pref_recall(opp_id, customer_id, spu, matched, basis, ratio, created) VALUES(?,?,?,?,?,?,?)",
+                  (oid, cust, spu, json.dumps(对上, ensure_ascii=False), 依据, 中[0]["倍数"], 时间))
+        名 = (c.execute("SELECT name FROM product WHERE spu=?", (spu,)).fetchone() or [spu])[0]
+        _派提醒(c, oid, "购买偏好回捞",
+               f"上新「{名}」({spu})对上了她的购买规律 —— {依据}。这是按购买记录归纳的,不是她说过的;"
+               f"联系问问她要不要看,做完选结论", 今天, dict(新品=spu, 对上=对上, 依据=依据, 倍数=中[0]["倍数"]))
+        出.append(dict(商机=oid, 客户=cust, 新品=spu, 对上了=对上, 原话=依据, 依据="购买记录归纳(方案 B)"))
+    return 出
+
+
+def _dt_日(x):
+    import datetime as _dt
+    return _dt.date.fromisoformat(str(x)[:10])
+
+
+def 推断提醒收口(c, 今天):
+    """**购买推断**派出去的提醒,过了期限没人答 → 自动收口(用户 2026-10-10 定):
+    提醒取消(写明原因,不算逾期)、那条「待确认」商机关掉(写明「推断的提醒没人答」)。
+    **只管机器推断的**:客户亲口说过的那两种提醒不动 —— 那是她要的东西,没人答就该一直挂着逾期让店长看见。
+    谁来调:每天跑一次(每日上新那一步,数据工厂接)。返回收掉的任务号。"""
+    出 = []
+    for sid, oid in c.execute(
+            "SELECT s.id, t.opp_id FROM opportunity_task t JOIN schedule s ON s.id=t.schedule_id "
+            "WHERE t.kind='购买偏好回捞' AND t.answer IS NULL AND s.status='有效' AND substr(s.end_ts,1,10) < ?",
+            (今天.isoformat(),)).fetchall():
+        c.execute("UPDATE schedule SET status='取消', cancel_reason=? WHERE id=?",
+                  ("按购买记录推断的提醒,过了期限没人答 —— 自动收口(用户 10-10 定),不算逾期", sid))
+        c.execute("UPDATE opportunity_task SET answer=?, answered_by=?, answered_at=? WHERE schedule_id=?",
+                  ("自动收口", "SYS", 今天.isoformat(), sid))
+        st = c.execute("SELECT status FROM opportunity WHERE id=?", (oid,)).fetchone()
+        if st and st[0] == K.起始状态:
+            改状态(c, oid, "已关闭", 今天.isoformat(), 经手人="SYS",
+                   关闭原因="按购买记录推断的商机,提醒过期没人答 —— 自动收口(不是客户说不要)")
+        出.append(sid)
     return 出

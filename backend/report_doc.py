@@ -37,6 +37,14 @@ CREATE TABLE IF NOT EXISTS store_report_doc(
 );
 CREATE INDEX IF NOT EXISTS ix_rptdoc_key ON store_report_doc(shop, kind, period_start, revision);
 """
+# 后加的列(10-10 产出监督):建表语句不改 —— 老库里表已经在,CREATE IF NOT EXISTS 不会补列;
+# 补列走 ALTER,有就跳过。**只写一处**:CI 从零建和本地老库走的是同一段
+后加列 = [
+    ("trace_id", "TEXT"),        # 生成这一版的那一轮对话(sdk 的 trace_id,经 MCP env 的 LANXIU_TRACE 传进来)
+    ("rejected_at", "TEXT"),     # AI 管理平台打回:什么时候、谁、为什么 —— 打回的那一版不许确认
+    ("rejected_by", "TEXT"),
+    ("reject_reason", "TEXT"),
+]
 
 管理角色 = ("店长", "总部运营")
 正文上限 = 20000
@@ -58,6 +66,10 @@ def 建表(c=None, db=None):
     own = c is None
     c = c or sqlite3.connect(db or DB)
     c.executescript(DDL)
+    有 = {r[1] for r in c.execute("PRAGMA table_info(store_report_doc)")}
+    for 列, 型 in 后加列:
+        if 列 not in 有:
+            c.execute(f"ALTER TABLE store_report_doc ADD COLUMN {列} {型}")
     if own:
         c.commit(); c.close()
 
@@ -81,7 +93,7 @@ def _能管(me, shop):
     return me.get("role") == "总部运营" or me.get("shop") == shop
 
 
-def 保存(me, pack, body, report_id=None, db=None):
+def 保存(me, pack, body, report_id=None, db=None, trace=None):
     """存一版草稿。pack 是 api.store_report 刚取的取数包(由调用方传进来,本模块不取数)。"""
     if me.get("role") not in 管理角色:
         return dict(ok=False, code="NOT_MANAGER", reason="经营报告只有店长 / 总部能保存")
@@ -118,12 +130,13 @@ def 保存(me, pack, body, report_id=None, db=None):
         while c.execute("SELECT 1 FROM store_report_doc WHERE id=?", (rid,)).fetchone():
             序 += 1; rid = f"RPT{序:06d}"
         c.execute("INSERT INTO store_report_doc(id,shop,kind,period_start,period_end,revision,status,body,pack,"
-                  "supersedes,created_at,created_by) VALUES(?,?,?,?,?,?,'草稿',?,?,?,?,?)",
+                  "supersedes,created_at,created_by,trace_id) VALUES(?,?,?,?,?,?,'草稿',?,?,?,?,?,?)",
                   (rid, shop, pack["种类"], 起, 止, 版, body, json.dumps(pack, ensure_ascii=False, default=str),
-                   上一版已确认[0] if 上一版已确认 else None, _今天(), me.get("no")))
+                   上一版已确认[0] if 上一版已确认 else None, _今天(), me.get("no"), trace))
         c.commit()
     finally:
         c.close()
+    上报监督(rid, shop, pack, body, 版, trace)
     _记(me.get("no"), rid, "REPORT_SAVE", True, f"{pack['报告']} 第 {版} 版", {"kind": pack["种类"], "start": 起})
     return dict(ok=True, 报告号=rid, 第几版=版, 状态="草稿", 报告=pack["报告"], 门店=shop,
                 **({"替代": 上一版已确认[0]} if 上一版已确认 else {}),
@@ -147,6 +160,11 @@ def 确认(me, report_id, db=None):
             return dict(ok=False, code="NOT_LATEST",
                         reason=f"{report_id} 是第 {r[4]} 版,这一期最新的是第 {最新} 版 —— 确认最新那一版")
         pack = json.loads(r[6])
+        打回 = c.execute("SELECT rejected_at, reject_reason FROM store_report_doc WHERE id=?", (report_id,)).fetchone()
+        if 打回 and 打回[0]:
+            return dict(ok=False, code="REJECTED",
+                        reason=f"这一版被 AI 管理平台打回了(理由:{打回[1]})—— 打回的版本不许确认;"
+                               "请重新生成、给店长看过再存一版")
         if not pack.get("能不能确认"):
             return dict(ok=False, code="MISSING_REQUIRED",
                         reason=f"必选指标缺了:{pack.get('必选缺了的')} —— 缺了不许确认(用户 10-09 定:下单数和营收必选)")
@@ -173,6 +191,7 @@ def 列(me, kind=None, limit=20, db=None):
             where.append("kind=?"); args.append(kind)
         # 每一期只列最新那一版(历史版本数一起给)
         sql = ("SELECT d.id,d.shop,d.kind,d.period_start,d.period_end,d.revision,d.status,d.created_at,d.confirmed_at, "
+               "d.rejected_at,d.reject_reason, "
                "(SELECT COUNT(*) FROM store_report_doc x WHERE x.shop=d.shop AND x.kind=d.kind "
                "AND x.period_start=d.period_start) 版本数 FROM store_report_doc d WHERE " + " AND ".join(where) +
                " AND d.revision=(SELECT MAX(revision) FROM store_report_doc y WHERE y.shop=d.shop AND y.kind=d.kind "
@@ -185,6 +204,42 @@ def 列(me, kind=None, limit=20, db=None):
     lim = max(1, min(int(limit or 20), 100))
     return {"份数": len(rs), "列出": min(len(rs), lim), "报告": rs[:lim], "全部报告": 全部报告,
             **({"截断": f"一共 {len(rs)} 份,只列了 {lim} 份"} if len(rs) > lim else {})}
+
+
+# ── 产出监督(用户 10-10:AI 管理平台「能看 + 能打回」)──────────────────────
+def 上报监督(rid, shop, pack, body, 版, trace):
+    """存下一版就推一份给管理后台:输入 = 冻结的取数包,规矩 = 管写报告和存报告的那两条,输出 = 正文。
+    **不抛**(A2:上报出任何事都不许影响业务)。"""
+    try:
+        import sys as _s
+        _s.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+        _s.path.insert(0, os.path.dirname(HERE))
+        import artifact_report as AR, prompts as _p
+        规 = [dict(编号=r.id, 正文=r.text.strip()) for _, r in _p.all_rules(unique=True) if r.id in ("TL67", "TL68")]
+        AR.排队(外部id=f"报告:{rid}", 类型="报告", 版本=版, 标题=f"{shop} · {pack.get('种类', '')}报 · {str(pack.get('区间', ''))[:23]}",
+               输入=pack, 输出=body, 规则=规, 门店=shop, 世界日期=_今天(), 生成方式="对话", 外部trace=trace)
+    except Exception:
+        pass
+
+
+def 打回(report_id, 谁, 理由, db=None):
+    """执行 AI 管理平台拉回来的打回:**只标记,不改正文、不删** —— 打回的那一版留作历史,
+    确认被拦住,店长那边看得到理由,要重新生成再存一版。返回 (ok, 说明)。"""
+    c = sqlite3.connect(db or DB)
+    try:
+        建表(c)
+        r = c.execute("SELECT id, rejected_at FROM store_report_doc WHERE id=?", (report_id,)).fetchone()
+        if not r:
+            return False, f"没有 {report_id} 这份报告"
+        if r[1]:
+            return True, "这一版之前已经被打回过"
+        c.execute("UPDATE store_report_doc SET rejected_at=?, rejected_by=?, reject_reason=? WHERE id=?",
+                  (_今天(), 谁, 理由, report_id))
+        c.commit()
+    finally:
+        c.close()
+    _记(谁, report_id, "REPORT_REJECT", True, f"AI 管理平台打回:{理由}", {})
+    return True, "已标记打回:这一版不许确认,店长那边显示理由"
 
 
 def 取(me, report_id, db=None):

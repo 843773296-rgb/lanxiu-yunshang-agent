@@ -22,6 +22,9 @@ llm-trace.jsonl
 .feynman/feedback-outbox.jsonl
 .feynman/feedback-sent.jsonl
 .feynman/feedback-report-errors.jsonl
+.feynman/artifact-outbox.jsonl
+.feynman/artifact-acked.jsonl
+.feynman/artifact-outbox-errors.jsonl
 # 提示词候选版本 —— **本机工作态**,不进版本库。
 # 采纳之后改动落在 prompts.py 里(那一份要进),候选文件本身只是过程草稿;
 # 进了版本库反而会让人以为「候选也是源头的一部分」,而它恰恰是「还没算数的那一版」。

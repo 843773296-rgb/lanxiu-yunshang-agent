@@ -21,6 +21,8 @@ import api, report_doc, oplog
     ("确认后不给链接(用户 10-10:确认后要能直达)", "确认返回带链接,指向这一份"),
     ("对话里的链接不渲染成可点的", "对话页:站内链接渲染成可点的"),
     ("PDF 离线页没把数据塞进去(打出来是空白 / 登录页)", "PDF:离线页真渲染出了这份报告的正文和冻结的数"),
+    ("报告又从工作台顶栏拿掉了", "工作台顶栏有「经营报告」这一格"),
+    ("读回会话后不重画顶上的当前助手", "对话页读回会话后,顶上的「当前助手」跟着重画(不会存的是工坊、显示的是全能助手)"),
 ]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -181,6 +183,24 @@ else:
 _app2 = open(os.path.join(ROOT, "agentsite", "app.py"), encoding="utf-8").read()
 ck("PDF 下载路由先拿店长自己的 cookie 向后台取(范围规则不另写)",
    'p == "/report.pdf"' in _app2 and '"/api/report/" + quote(rid)' in _app2)
+
+# 工作台入口(用户 10-10:「日报 / 周报 / 月报在工作台里没有入口」)
+sys.path.insert(0, os.path.join(ROOT, "agentsite"))
+import nav as _nav
+_rpt = open(os.path.join(ROOT, "agentsite", "web", "report.html"), encoding="utf-8").read()
+_st = open(os.path.join(ROOT, "agentsite", "web", "station.html"), encoding="utf-8").read()
+ck("工作台顶栏有「经营报告」这一格", any(x[0] == "/report" for x in _nav.顶栏), str([x[0] for x in _nav.顶栏]))
+ck("报告页有生成日报 / 周报 / 月报三个入口,带着那句话去对话页",
+   all(f'id="g{k}"' in _rpt for k in "日周月") and '"/?q=" + encodeURIComponent(话)' in _rpt)
+ck("对话页收到带过来的话只填进输入框,不替人发送",
+   'new URLSearchParams(location.search).get("q")' in _st and '$("#q").value = 带' in _st
+   and "ask()" not in _st[_st.find('get("q")'):_st.find('get("q")') + 300])
+
+_bind = _st[_st.find("function bindStore"):_st.find("function bindStore") + 900]
+ck("对话页读回会话后,顶上的「当前助手」跟着重画(不会存的是工坊、显示的是全能助手)", "syncHint();" in _bind, _bind[-200:])
+_ops = open(os.path.join(HERE, "web", "index.html"), encoding="utf-8").read()
+ck("后台运营页登录后显示登录的那个人,不是写死的「魏欣新 · 顾问」",
+   'fetch("/api/me")' in _ops and "ROLE=ME.role" in _ops and 'getElementById("meName").textContent=ME.name' in _ops)
 
 import prompts
 for t in ("save_report", "confirm_report", "list_reports"):

@@ -34,13 +34,33 @@ CREATE TABLE IF NOT EXISTS recall_advice(
   model   TEXT,
   created TEXT NOT NULL,
   PRIMARY KEY(opp_id, spu));
+-- 被 AI 管理平台打回的旧版(10-10 产出监督):**挪到这里留着,不删** —— 打回的那一版连同理由
+-- 是最有价值的评测样本(人说「这样写不行」),删了就没了
+CREATE TABLE IF NOT EXISTS recall_advice_log(
+  opp_id TEXT NOT NULL, spu TEXT NOT NULL, version INTEGER NOT NULL,
+  text TEXT NOT NULL, source TEXT NOT NULL, model TEXT, created TEXT NOT NULL,
+  input TEXT, trace_id TEXT,
+  rejected_at TEXT NOT NULL, rejected_by TEXT NOT NULL, reject_reason TEXT NOT NULL);
 """
+后加列 = [("version", "INTEGER NOT NULL DEFAULT 1"),   # 第几版(打回重写一次 +1)
+         ("input", "TEXT"),                          # 发给模型的材料(监督要看「它是照什么写的」)
+         ("trace_id", "TEXT")]                       # 这一次模型调用的号 —— 记录仪和 A1 上报的「外部trace」
 
-回捞类 = ("回捞", "偏好回捞")
+回捞类 = ("回捞", "偏好回捞", "购买偏好回捞")
+# 两种绑定合成一个来源:电话里说过的(opportunity_recall,quote = 原话)和购买记录推断的
+# (buy_pref_recall,用户 10-10,basis = 依据)。卡片、建议、日历都从这里读,**不各写一遍 UNION**
+_绑定 = ("(SELECT opp_id, customer_id, spu, matched, quote, created, '说过的' 来源 FROM opportunity_recall "
+        "UNION ALL SELECT opp_id, customer_id, spu, matched, basis, created, '购买推断' FROM buy_pref_recall)")
 
 
 def 建表(c):
+    import opportunity_store as _S
+    _S.建表(c)            # buy_pref_recall 在那边建 —— 老库里还没有它时,卡片的 UNION 也不能炸
     c.executescript(DDL)
+    有 = {r[1] for r in c.execute("PRAGMA table_info(recall_advice)")}
+    for 列, 型 in 后加列:
+        if 列 not in 有:
+            c.execute(f"ALTER TABLE recall_advice ADD COLUMN {列} {型}")
 
 
 def _今天():
@@ -61,9 +81,10 @@ def 打码地址(a):
 
 # ── 建议:绑定那一刻写一次 ───────────────────────────────────────────────
 建议提示 = """你是汉服定制店的资深导购主管,给一位导购写**联系老客户的建议**。
-背景:这位客户之前想要的东西店里当时没有(或没买到),现在上新了一款对得上的。
+背景:这位客户之前想要的东西店里当时没有(或没买到),或者她一直偏爱某个颜色,现在上新了一款对得上的。
 写 3 条,每条一句,总共不超过 150 字:
-1. 怎么开口 —— 要提到她当初说过的话,让她知道你记得;
+1. 怎么开口 —— 材料里有「当初原话」就提她说过的话,让她知道你记得;
+   材料里是「购买记录」就**只说她以前常买这个色系**,绝不能说「您说过 / 您提过」(她没说过,说了就是编);
 2. 推这一款的哪个颜色 / 尺码 —— **卖点只能用商品名称里出现的词**;面料成分、工艺细节、版型结构、价格、库存、
    优惠、工期,材料里没给的一个字都不要写(说错一个,导购照着说出去就是对客户说假话);
 3. 一个要注意的点:客户备注**和这款有关**才提(比如备注说对某种面料敏感、而这款名称里就有这种面料);
@@ -95,13 +116,16 @@ def _规则建议(客户, 原话, 商品, 对上):
     return "\n".join(f"{i}. {x}" for i, x in enumerate(条, 1))
 
 
-def 写建议(c, opp_id, spu, call=None):
-    """给一条绑定写建议并存下。已有就不重写(用户定:绑定那一刻写一次)。返回 (正文, 来源)。"""
+def 写建议(c, opp_id, spu, call=None, 打回=None):
+    """给一条绑定写建议并存下。已有就不重写(用户定:绑定那一刻写一次)。返回 (正文, 来源)。
+
+    打回:AI 管理平台打回后重写时传 {"上一版": 正文, "理由": …, "版本": 新版本号} ——
+    把被打回的那一版和理由一起给模型,让它知道哪里不行(否则重写一次很可能写出同样的东西)。"""
     建表(c)
     有 = c.execute("SELECT text, source FROM recall_advice WHERE opp_id=? AND spu=?", (opp_id, spu)).fetchone()
     if 有:
         return 有
-    r = c.execute("SELECT r.customer_id, r.quote, r.matched FROM opportunity_recall r WHERE r.opp_id=? AND r.spu=? "
+    r = c.execute(f"SELECT r.customer_id, r.quote, r.matched, r.来源 FROM {_绑定} r WHERE r.opp_id=? AND r.spu=? "
                   "ORDER BY r.created DESC LIMIT 1", (opp_id, spu)).fetchone()
     商品 = _商品(c, spu)
     if not r or not 商品:
@@ -109,9 +133,14 @@ def 写建议(c, opp_id, spu, call=None):
     cu = c.execute("SELECT name, lifecycle, level, remark FROM customer WHERE id=?", (r[0],)).fetchone() or ("", "", "", "")
     客户 = dict(姓名=cu[0], 生命周期=cu[1], 等级=cu[2], 备注=cu[3])
     对上 = json.loads(r[2] or "{}")
-    材料 = json.dumps(dict(客户=dict(客户, 姓名=(客户["姓名"] or "")[:1] + "女士/先生"), 当初原话=r[1], 对上了=对上,
+    依据键 = "当初原话" if r[3] == "说过的" else "购买记录(她没说过,是按买过的推断的;开口别说「您说过」)"
+    材料 = json.dumps(dict(客户=dict(客户, 姓名=(客户["姓名"] or "")[:1] + "女士/先生"), **{依据键: r[1]}, 对上了=对上,
                           新款={k: 商品[k] for k in ("名称", "类型", "价格", "颜色", "尺码")}), ensure_ascii=False)
+    if 打回:
+        材料 += (f"\n\n上一版被 AI 管理平台打回了。上一版:\n{打回['上一版']}\n打回理由:{打回['理由']}\n"
+                 "照理由改,不要再犯同样的问题。")
     正文, 来源, 模型 = None, "规则", None
+    调用号 = __import__("uuid").uuid4().hex      # 这一次模型调用的号:记录仪 / A1「外部trace」/ 这里存下的是同一个
     try:
         if call is None:
             sys.path.insert(0, os.path.join(HERE, "..", "agent"))
@@ -119,7 +148,7 @@ def 写建议(c, opp_id, spu, call=None):
             pv = v1.provider()
             resp = v1.call(pv, dict(model=pv["model"], max_tokens=400, system=建议提示,
                                     messages=[{"role": "user", "content": 材料}]),
-                           purpose="上新卡片·给导购的建议", gen="工具", retries=2)
+                           purpose="上新卡片·给导购的建议", gen="工具", retries=2, extra={"trace_id": 调用号})
             模型 = pv["model"]
         else:
             resp = call(材料)
@@ -130,10 +159,53 @@ def 写建议(c, opp_id, spu, call=None):
     except Exception:
         pass
     if not 正文:
-        正文, 模型 = _规则建议(客户, r[1] or "", 商品, 对上), None
-    c.execute("INSERT OR IGNORE INTO recall_advice(opp_id, spu, text, source, model, created) VALUES(?,?,?,?,?,?)",
-              (opp_id, spu, 正文, 来源, 模型, _今天().isoformat()))
+        正文, 模型, 调用号 = _规则建议(客户, r[1] or "", 商品, 对上), None, None
+    版 = (打回 or {}).get("版本") or 1
+    c.execute("INSERT OR IGNORE INTO recall_advice(opp_id, spu, text, source, model, created, version, input, trace_id) "
+              "VALUES(?,?,?,?,?,?,?,?,?)", (opp_id, spu, 正文, 来源, 模型, _今天().isoformat(), 版, 材料, 调用号))
+    _上报监督(opp_id, spu, 版, 材料, 正文, 来源, 模型, 调用号, 商品, 客户)
     return 正文, 来源
+
+
+def _上报监督(opp_id, spu, 版, 材料, 正文, 来源, 模型, 调用号, 商品, 客户):
+    """推一份给 AI 管理平台(用户 10-10:能看 + 能打回)。**不抛**。"""
+    try:
+        sys.path.insert(0, os.path.join(HERE, "..", "agent"))
+        import artifact_report as AR
+        AR.排队(外部id=f"建议:{opp_id}:{spu}", 类型="建议", 版本=版,
+               标题=f"上新建议 · {商品['名称']} → {(客户.get('姓名') or '')[:1]}**",
+               输入=json.loads(材料.split("\n\n上一版被")[0]) if 材料.startswith("{") else {"材料": 材料},
+               输出=正文, 规则=[dict(编号="上新卡片·建议提示词", 正文=建议提示)],
+               世界日期=_今天().isoformat(), 模型=模型, 生成方式=来源, 外部trace=调用号)
+    except Exception:
+        pass
+
+
+def 打回重写(opp_id, spu, 谁, 理由, db=None, call=None):
+    """执行 AI 管理平台拉回来的打回:旧版连同理由挪进 recall_advice_log(**留作评测样本,不删**),
+    带着理由重写一版。返回 (ok, 说明, 新版本)。"""
+    c = sqlite3.connect(db or DB)
+    try:
+        建表(c)
+        旧 = c.execute("SELECT text, source, model, created, version, input, trace_id FROM recall_advice "
+                       "WHERE opp_id=? AND spu=?", (opp_id, spu)).fetchone()
+        if not 旧:
+            return False, f"没有 {opp_id} / {spu} 这条建议", None
+        c.execute("INSERT INTO recall_advice_log(opp_id, spu, version, text, source, model, created, input, trace_id, "
+                  "rejected_at, rejected_by, reject_reason) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (opp_id, spu, 旧[4], 旧[0], 旧[1], 旧[2], 旧[3], 旧[5], 旧[6], _今天().isoformat(), 谁, 理由))
+        c.execute("DELETE FROM recall_advice WHERE opp_id=? AND spu=?", (opp_id, spu))
+        c.commit()          # 先落下「旧版已挪走」再调模型:模型慢,别压着库锁
+        新, 来源 = 写建议(c, opp_id, spu, call=call, 打回=dict(上一版=旧[0], 理由=理由, 版本=旧[4] + 1))
+        c.commit()
+    finally:
+        c.close()
+    try:
+        import oplog
+        oplog.log_op(谁, None, f"{opp_id}:{spu}", 旧[4], 旧[4] + 1, True, "ADVICE_REJECT", f"AI 管理平台打回:{理由}", {})
+    except Exception:
+        pass
+    return True, f"已重写成第 {旧[4] + 1} 版({来源})", 旧[4] + 1
 
 
 def 补建议(db=None, call=None):
@@ -141,7 +213,7 @@ def 补建议(db=None, call=None):
     c = sqlite3.connect(db or DB)
     try:
         建表(c)
-        缺 = c.execute("SELECT DISTINCT r.opp_id, r.spu FROM opportunity_recall r LEFT JOIN recall_advice a "
+        缺 = c.execute(f"SELECT DISTINCT r.opp_id, r.spu FROM {_绑定} r LEFT JOIN recall_advice a "
                        "ON a.opp_id=r.opp_id AND a.spu=r.spu WHERE a.opp_id IS NULL").fetchall()
         for oid, spu in 缺:
             写建议(c, oid, spu, call=call)
@@ -203,7 +275,7 @@ def 日历(月=None, db=None, 今天=None):
         天 = {}
 
         def 放(d, spu, 名, 种, 状态):
-            绑 = c.execute("SELECT COUNT(*) FROM opportunity_recall WHERE spu=?", (spu,)).fetchone()[0]
+            绑 = c.execute(f"SELECT COUNT(*) FROM {_绑定} WHERE spu=?", (spu,)).fetchone()[0]
             天.setdefault(str(d)[:10], []).append(dict(款号=spu, 名称=名, 类型=种, 状态=状态, 绑上的商机=绑))
 
         for spu, 名, 种, d in c.execute("SELECT spu, name, kind, substr(on_shelf_at,1,10) FROM product "
@@ -238,9 +310,9 @@ def _可见(me, 指派, 店):
 def _行们(c, 今天, schedule_id=None):
     起 = (今天 - dt.timedelta(days=K.上新卡片天 - 1)).isoformat()
     sql = ("SELECT s.id, s.status, s.assignee_no, s.shop, s.end_ts, ot.opp_id, ot.kind, ot.detail, "
-           "r.spu, r.quote, r.matched, r.created, r.customer_id "
+           "r.spu, r.quote, r.matched, r.created, r.customer_id, r.来源 "
            "FROM opportunity_task ot JOIN schedule s ON s.id=ot.schedule_id "
-           "JOIN opportunity_recall r ON r.opp_id=ot.opp_id AND r.spu=json_extract(ot.detail,'$.新品') "
+           f"JOIN {_绑定} r ON r.opp_id=ot.opp_id AND r.spu=json_extract(ot.detail,'$.新品') "
            f"WHERE ot.kind IN ({','.join('?' * len(回捞类))}) AND r.created >= ? AND r.created <= ?")
     args = [*回捞类, 起, 今天.isoformat()]
     if schedule_id:
@@ -255,7 +327,7 @@ def 卡片(me, db=None, 今天=None):
     try:
         建表(c)
         出 = []
-        for sid, st, 指派, 店, 止, oid, kind, detail, spu, 原话, 对上, 绑日, cid in _行们(c, 今天):
+        for sid, st, 指派, 店, 止, oid, kind, detail, spu, 原话, 对上, 绑日, cid, 来源 in _行们(c, 今天):
             if not _可见(me, 指派, 店):
                 continue
             cu = c.execute("SELECT name, phone, addr, remark, lifecycle, level FROM customer WHERE id=?", (cid,)).fetchone()
@@ -268,7 +340,9 @@ def 卡片(me, db=None, 今天=None):
                 任务号=sid, 任务状态=st, 任务期限=str(止)[:10], 商机=oid, 提醒类型=kind,
                 顾客=dict(客户号=cid, 姓名=cu[0] if cu else "—", 电话=打码电话(cu[1] if cu else ""),
                          地址=打码地址(cu[2] if cu else ""), 生命周期=cu[4] if cu else None, 等级=cu[5] if cu else None),
-                留言=dict(当初原话=原话, 客户备注=cu[3] if cu else None),
+                # 来源:「说过的」= 电话里的原话;「购买推断」= 按购买记录推的依据(用户 10-10)—— 页面按它换标题,
+                # 不能把推断出来的那句写成「她当初说的」
+                留言=dict(当初原话=原话, 来源=来源, 客户备注=cu[3] if cu else None),
                 对上了=json.loads(对上 or "{}"),
                 建议=dict(正文=建[0], 来源=建[1]) if 建 else dict(正文=None, 来源="还没写(补建议没跑)"),
                 新款=商品, 绑定日=绑日,

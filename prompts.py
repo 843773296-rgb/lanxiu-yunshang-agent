@@ -541,6 +541,16 @@ CONFIRM_REPORT_RULE = Rule("TL69", ("confirm_report",), """
   **确认成功就给出返回里的「链接」和「下载」**,写成 `[打开报告](链接) · [下载 PDF](下载)` —— 点开能直达、点下载直接拿 PDF;原样照抄、不要自己拼。
 """, scope="工具")
 
+SUMMARIZE_PRODUCTS_RULE = Rule("TL71", ("summarize_products",), """
+**商品归纳总结(用户 2026-10-10)。三条:**
+
+- **用户问「这几件 / 这一批 / 她买的东西有什么规律、共同点」时先调 `summarize_products`**,不要自己读商品名去归纳 ——
+  名字里的词认法有坑(「香云纱」里有「纱」),而且「多」要和店里一般情况比过才算,工具已经比好了。
+- **只照返回的「规律」说,用它给好的那句说法**;「共性」要说清「店里本来就常见,不算规律」;
+  **结论是「没有发现规律」就照说没有**(并说是件数不够还是太分散),不要自己凑一条出来。
+- 「覆盖」里认不出的件数要说出来(比如「6 件里有 4 件看不出颜色」)—— 结论只对认得出的那几件成立。
+""", scope="工具")
+
 LIST_REPORTS_RULE = Rule("TL70", ("list_reports",), """
 **看存过的经营报告。** 不给 report_id 列每一期最新那一版(草稿 / 已确认、几个版本);给了看正文和冻结的取数包。
 **报告里的数以冻结的取数包为准** —— 用户问「这份报告上周说营收多少」,照存下的说,不要拿今天现查的数去替换。
@@ -881,6 +891,7 @@ ORDERS_RANGE_RULE,
 SALES_RANK_RULE,
 WEEKLY_REVENUE_RULE,
 STORE_REPORT_RULE,
+SUMMARIZE_PRODUCTS_RULE,
 SAVE_REPORT_RULE,
 CONFIRM_REPORT_RULE,
 LIST_REPORTS_RULE,
@@ -1327,6 +1338,7 @@ ORDERS_RANGE_RULE,
 SALES_RANK_RULE,
 WEEKLY_REVENUE_RULE,
 STORE_REPORT_RULE,
+SUMMARIZE_PRODUCTS_RULE,
 SAVE_REPORT_RULE,
 CONFIRM_REPORT_RULE,
 LIST_REPORTS_RULE,
@@ -1641,7 +1653,8 @@ def _pattern_rules():
     #   TL08  kb_fit     推荐尺码只是建议、需补量时不许按身高体重猜码
     #   TL27  kb_read    先看目录再取一节;原文答「为什么」,数字走结构化工具
     #   TL41  start_cutting 开裁不可逆、过不了白坯那道闸不许换说法再试
-    pick = {"TL25", "TL26", "TK01", "TK03", "TL07", "TL15", "TL08", "TL27", "TL41"}
+    #   TL71  summarize_products 商品归纳总结:只照规律说,没规律就说没有(用户 10-10)
+    pick = {"TL25", "TL26", "TK01", "TK03", "TL07", "TL15", "TL08", "TL27", "TL41", "TL71"}
     seen, out = set(), []
     for r in (TASK_RULES + KB_RULES + WORKSHOP_RULES):
         if r.id in pick and r.id not in seen:

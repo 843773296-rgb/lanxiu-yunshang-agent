@@ -128,8 +128,10 @@ class 一棵树:
     一次运行几十个 span,攒在内存里几十 KB,结束时一次写完。
     """
 
-    def __init__(self, *, 角色=None, 会话号=None, 模型=None, 供应商=None, gen="V3"):
-        self.tid = uuid.uuid4().hex
+    def __init__(self, *, 角色=None, 会话号=None, 模型=None, 供应商=None, gen="V3", tid=None):
+        # tid 可以由调用方先定:工具子进程要在**建树之前**就拿到它(sdk 先算 MCP 配置再开树),
+        # 存报告之类的产出要记下「是哪一轮生成的」,AI 管理平台才能从产出跳回那一轮(用户 10-10)
+        self.tid = tid or uuid.uuid4().hex
         self.spans = []
         self.开始 = time.time()
         self.元 = dict(角色=角色, 会话号=会话号, 模型=模型, 供应商=供应商, gen=gen)

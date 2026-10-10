@@ -4618,8 +4618,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "        mcp_servers=mcp_config(me, kind, 名单=工具),",
-    "new": "        mcp_servers=mcp_config(me, kind),"
+    "old": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid),",
+    "new": "        mcp_servers=mcp_config(me, kind, trace=_tid),"
    }
   ],
   "预期红": "MCP 暴露的和 allowed_tools 是同一份"
@@ -6325,5 +6325,221 @@
    }
   ],
   "预期红": "已经上架的老款再上一次:上架日不变,并报「本来就在架」"
+ },
+ {
+  "script": "backend/supervise_check.py",
+  "改坏": "被打回的报告照样能确认",
+  "file": [
+   {
+    "path": "backend/report_doc.py",
+    "old": "        if 打回 and 打回[0]:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "打回的那一版确认不了(REJECTED)"
+ },
+ {
+  "script": "backend/supervise_check.py",
+  "改坏": "打回建议时把旧版直接删了(样本没了)",
+  "file": [
+   {
+    "path": "backend/arrival_card.py",
+    "old": "        c.execute(\"INSERT INTO recall_advice_log(opp_id, spu, version, text, source, model, created, input, trace_id, \"",
+    "new": "        if False: c.execute(\"INSERT INTO recall_advice_log(opp_id, spu, version, text, source, model, created, input, trace_id, \""
+   }
+  ],
+  "预期红": "打回建议:旧版连同理由留在 recall_advice_log"
+ },
+ {
+  "script": "backend/supervise_check.py",
+  "改坏": "重写时不把打回理由给模型",
+  "file": [
+   {
+    "path": "backend/arrival_card.py",
+    "old": "    if 打回:\n        材料 +=",
+    "new": "    if False:\n        材料 +="
+   }
+  ],
+  "预期红": "重写时模型拿到了上一版和打回理由"
+ },
+ {
+  "script": "backend/supervise_check.py",
+  "改坏": "产出上报把完整手机号带出门",
+  "file": [
+   {
+    "path": "agent/artifact_report.py",
+    "old": "    return json.loads(_手机号.sub(r\"\\1****\\2\", json.dumps(x, ensure_ascii=False, default=str)))",
+    "new": "    return x"
+   }
+  ],
+  "预期红": "发送前还有一道:手机号到了出门那一刻也会被打码"
+ },
+ {
+  "script": "backend/supervise_check.py",
+  "改坏": "存报告不记是哪一轮对话",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "                    trace=os.environ.get(\"LANXIU_TRACE\") or None)",
+    "new": "                    trace=None)"
+   }
+  ],
+  "预期红": "报告存下了生成它的那一轮(trace_id)"
+ },
+ {
+  "script": "backend/opportunity_obj_check.py",
+  "改坏": "离开「搁置等供给」时不清「等什么」(已关闭的还挂着等货)",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "              \" wait_for=CASE WHEN ?='搁置等供给' THEN COALESCE(?, wait_for) ELSE NULL END,\"",
+    "new": "              \" wait_for=CASE WHEN ? IS NOT NULL THEN COALESCE(?, wait_for) ELSE NULL END,\""
+   }
+  ],
+  "预期红": "合成场景:搁置 → 已关闭 / 跟进中,「等什么」清掉了"
+ },
+ {
+  "script": "backend/product_summary_check.py",
+  "改坏": "没规律时编一条出来(把共性当规律)",
+  "file": [
+   {
+    "path": "knowledge/traits.py",
+    "old": "            if 基 and 占 / 基 >= 倍数门槛:",
+    "new": "            if (基 and 占 / 基 >= 倍数门槛) or 占 >= 0.8:"
+   }
+  ],
+  "预期红": "全是无纹样但在架本来就多 → 只进共性,不进规律"
+ },
+ {
+  "script": "backend/product_summary_check.py",
+  "改坏": "推荐不看营销同意",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "        if not 能 or 能[0] in (\"注销中\", \"已注销\") or not 能[1]:\n            continue\n        上次 = _上次推送(c, cust)\n        if K.冷却中(_dt_日(上次) if 上次 else None, 今天):\n            continue\n        oid = f\"OP-B",
+    "new": "        if False:\n            continue\n        上次 = _上次推送(c, cust)\n        if K.冷却中(_dt_日(上次) if 上次 else None, 今天):\n            continue\n        oid = f\"OP-B"
+   }
+  ],
+  "预期红": "推的每一位都同意营销触达、账户没注销"
+ },
+ {
+  "script": "backend/product_summary_check.py",
+  "改坏": "推断的绑定混进「电话里说过的」那张表",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "        c.execute(\"INSERT INTO buy_pref_recall(opp_id, customer_id, spu, matched, basis, ratio, created) VALUES(?,?,?,?,?,?,?)\",\n                  (oid, cust, spu, json.dumps(对上, ensure_ascii=False), 依据, 中[0][\"倍数\"], 时间))",
+    "new": "        c.execute(\"INSERT INTO opportunity_recall(opp_id, customer_id, spu, matched, quote, created) VALUES(?,?,?,?,?,?)\",\n                  (oid, cust, spu, json.dumps(对上, ensure_ascii=False), 依据, 时间))"
+   }
+  ],
+  "预期红": "推断的绑定不进 opportunity_recall(那张表只放电话里说过的)"
+ },
+ {
+  "script": "backend/product_summary_check.py",
+  "改坏": "同一位客户 90 天内被推两次(冷却没合着算)",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "    return max([x for x in (a, b) if x] or [None])",
+    "new": "    return a"
+   }
+  ],
+  "预期红": "冷却:5 天后再上新一次,推过的人不再推"
+ },
+ {
+  "script": "backend/product_summary_check.py",
+  "改坏": "顾客的颜色按这款所有颜色算,不按她买的那件",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "            v[\"颜色\"] = [色系[col]] if 色系.get(col) else []      # 她买的那个 SKU 的颜色",
+    "new": "            pass"
+   }
+  ],
+  "预期红": "只买过蓝色那件(那款另有红色)的人,上新红色不推她"
+ },
+ {
+  "script": "knowledge/traits.py",
+  "改坏": "认料不按最长先认(「香云纱」被认成「纱」)",
+  "file": [
+   {
+    "path": "knowledge/traits.py",
+    "old": "    for 名 in sorted(别名, key=len, reverse=True):",
+    "new": "    for 名 in sorted(别名):"
+   }
+  ],
+  "预期红": "「香云纱」不被认成「纱」(最长的先认、认到的挖掉)"
+ },
+ {
+  "script": "knowledge/purchase_pref.py",
+  "改坏": "新款没对上她的规律也推",
+  "file": [
+   {
+    "path": "knowledge/purchase_pref.py",
+    "old": "    return [x for x in 她的规律 if x[\"值\"] in (新款属性.get(x[\"维度\"]) or ())]",
+    "new": "    return list(她的规律)"
+   }
+  ],
+  "预期红": "新款一条都对不上 → 不推"
+ },
+ {
+  "script": "backend/product_summary_check.py",
+  "改坏": "购买推断不单独限量(一次推 50 人)",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "    名额 = K.购买推断_单次上限 if 名额 is None else min(名额, K.购买推断_单次上限)",
+    "new": "    名额 = 50"
+   }
+  ],
+  "预期红": "推了人,而且单次不超过 5(用户 10-10:购买推断每次最多 5 人)"
+ },
+ {
+  "script": "backend/product_summary_check.py",
+  "改坏": "自动收口把客户说过的提醒也收了",
+  "file": [
+   {
+    "path": "backend/opportunity_store.py",
+    "old": "            \"WHERE t.kind='购买偏好回捞' AND t.answer IS NULL AND s.status='有效' AND substr(s.end_ts,1,10) < ?\",",
+    "new": "            \"WHERE t.answer IS NULL AND s.status='有效' AND substr(s.end_ts,1,10) < ?\","
+   }
+  ],
+  "预期红": "客户亲口说过的那两种提醒不被收口"
+ },
+ {
+  "script": "backend/arrival_card_check.py",
+  "改坏": "卡片链接不带客户号",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "          <a href=\"/tasks?task=${encodeURIComponent(k.任务号)}&customer=${encodeURIComponent(k.顾客.客户号)}\" target=\"_blank\" rel=\"noopener\">去任务列表</a></div>",
+    "new": "          <a href=\"/tasks\" target=\"_blank\" rel=\"noopener\">去任务列表</a></div>"
+   }
+  ],
+  "预期红": "卡片上的两个链接都带着任务号和客户号(用户 10-10:客户号直接带入)"
+ },
+ {
+  "script": "backend/report_doc_check.py",
+  "改坏": "报告又从工作台顶栏拿掉了",
+  "file": [
+   {
+    "path": "agentsite/nav.py",
+    "old": "    (\"/report\",      \"经营报告\",   \"日报 / 周报 / 月报:生成、存档、确认、下载 PDF\"),\n",
+    "new": ""
+   }
+  ],
+  "预期红": "工作台顶栏有「经营报告」这一格"
+ },
+ {
+  "script": "backend/report_doc_check.py",
+  "改坏": "读回会话后不重画顶上的当前助手",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "  // 而这里原来只重画了左栏和消息区:**存的是工坊、显示的是全能助手**,一刷新 / 一跳走再回来就露出来\n  syncHint(); drawSide(); drawStream();",
+    "new": "  // 而这里原来只重画了左栏和消息区:**存的是工坊、显示的是全能助手**,一刷新 / 一跳走再回来就露出来\n  drawSide(); drawStream();"
+   }
+  ],
+  "预期红": "对话页读回会话后,顶上的「当前助手」跟着重画(不会存的是工坊、显示的是全能助手)"
  }
 ]

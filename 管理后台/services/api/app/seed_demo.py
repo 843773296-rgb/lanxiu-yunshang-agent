@@ -392,11 +392,27 @@ def 跑():
             on conflict (project_id, id) do nothing"""),
                   {"i": "pv_seed_article_summary", "o": ORG, "p": A})
 
+    # 产出监督(2026-10-10):演示项目放一份**标明是演示**的建议产出 ——
+    # `#/output/{id}` 详情页的冒烟要一个样例 id,而真产出要澜绣推过来,CI 的空库上没有。
+    # (和 `#/rrun/` 同一族:详情页冒烟在空库上取不到 id。修法不是调大钉住的数。)
+    with 事务() as c:
+        c.execute(text("""
+            insert into artifacts (id, organization_id, project_id, external_ref, kind, version_no,
+                display_name, shop_name, world_date, model_name, generation_type, rule_snapshot,
+                input_snapshot, text, external_trace_ref, report_detail,
+                created_at, created_by, updated_at, revision)
+            values ('art_seed_demo', :o, :p, '演示:建议:1', '建议', 1,
+                '演示 · 上新建议(不是真产出)', '演示门店', date '2026-10-10', null, '规则',
+                '[{"编号": "演示", "正文": "这是演示数据:真产出由澜绣上报"}]'::jsonb,
+                '{"说明": "演示数据"}'::jsonb, '1. 演示用的建议正文', null,
+                '{"演示": true}'::jsonb, now(), 'seed', now(), 1)
+            on conflict (project_id, external_ref, version_no) do nothing"""), {"o": ORG, "p": A})
+
     with 事务() as c:
         n = {t: c.execute(text(f"select count(*) from {t}")).scalar()
              for t in ("organizations", "projects", "memberships", "prompt_drafts",
                        "model_connections", "connection_versions", "prompt_versions",
-                       "tool_definitions", "tool_versions")}
+                       "tool_definitions", "tool_versions", "artifacts")}
     return n
 
 

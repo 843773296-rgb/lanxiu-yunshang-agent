@@ -32,3 +32,18 @@ fi
 sleep 3
 printf "  管理后台     http://127.0.0.1:8760  HTTP %s\n" "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8760/)"
 printf "  智能运维平台  http://127.0.0.1:8770  HTTP %s\n" "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8770/)"
+
+# ── 连 AI 管理平台(管理后台/,:8801)——用户 2026-10-10 定:本机要连 ─────────────────
+# 连上之后每 30 秒一轮:推用量(A1)、推产出(报告 / 建议)、拉「打回」回来执行。
+# **只有显式配置、而且那边真的起着才连**:没起就明说没连,不往一个不存在的地址静默地发。
+# 换机器 / 换项目号就改这三行(或者在外面先 export 好,这里不覆盖)。
+export LANXIU_USAGE_URL="${LANXIU_USAGE_URL:-http://127.0.0.1:8801}"
+export LANXIU_USAGE_PROJECT="${LANXIU_USAGE_PROJECT:-project_demo_a}"
+export LANXIU_USAGE_USER="${LANXIU_USAGE_USER:-U001}"
+pkill -f "tools/supervise_sync.py --循环" 2>/dev/null
+if curl -s -o /dev/null -m 3 "$LANXIU_USAGE_URL/"; then
+  nohup python3 tools/supervise_sync.py --循环 30 > /tmp/lanxiu-supervise-sync.log 2>&1 &
+  echo "  AI 管理平台   $LANXIU_USAGE_URL  已连(每 30 秒同步一次,日志 /tmp/lanxiu-supervise-sync.log)"
+else
+  echo "  AI 管理平台   $LANXIU_USAGE_URL  没起 —— 没连。先在 管理后台/ 里 make dev,再重跑 ./start.sh"
+fi

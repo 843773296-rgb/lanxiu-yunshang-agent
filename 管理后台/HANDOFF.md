@@ -3,6 +3,44 @@
 > 这份写的是**摘要留不下的东西**:试过并否决的、判据为什么长这样、哪些是"看起来对但没接上"。
 > 「现在做到哪了」和怎么跑,在 `README.md`。需求真相源在 `docs/规格/`。
 
+## 🧭 2026-10-10 · 产出监督(报告 / agent 建议:看 + 打回)—— 管理后台这一半做完,未提交
+
+用户:报告和 agent 建议「是怎么生成的」要能在 AI 管理平台上**看 + 能打回**。
+**澜绣那一半(推产出、拉打回、执行)由澜绣会话做**;这边只收、只看、只记决定。
+
+### ① 方向(和 A3 同一条判据,不另拍板)
+
+管理后台**绝不反查澜绣的库,也不反写**:产出由澜绣 `POST /artifacts` 推过来;
+打回只记一条 `artifact_decisions`,澜绣 `GET /artifact-decisions?状态=待执行` 拉回去、走自己的正门执行
+(建议:按理由重写一版再推上来 → `ack 已重写 + 新版本`;报告:店长那边标「被管理平台打回」、不许确认 → `ack 已标记`),
+执行不了就 `ack 执行失败`。
+
+### ② 做了什么
+
+- 契约:`entities.py` 加 `artifacts`(项目级)/`artifact_decisions`(挂产出);`models.py` 加
+  (项目, 外部id, 版本) 唯一、类型 / 状态 / 结果 CHECK、**部分唯一索引 `uq_artifact_decisions_one_pending`**
+  (同一份产出同时只能一条待执行 —— 不只靠接口的 if,两人同时点也挡得住)。迁移 `f432d534324a`。
+- 接口 `services/api/app/artifacts_api.py`,登记在 `contract/endpoints.py`(分组「评测中心」)。
+  上报 / 拉取 / 确认要「运行评测」(澜绣服务身份,同 A3);**打回要「改训练样本」**(人判内容、会回流成样本,
+  归标注员 / 管理员;approver 默认没有)。
+- **状态不存列**,由最近一条决定推出来(正常 / 已打回待执行 / 已执行 / 执行失败)。
+- **入库前扫 11 位手机号打码**,并在 `report_detail` 记「打了几处」—— 发送方漏了要看得见,不被这一层悄悄兜住。
+- 详情里的「对应调用链」:按 `spans.input_ref` 里的「外部trace」找。⚠️ `input_ref` 是 **TEXT**(`_ref` 后缀),
+  `->>` 当场报 `text ->> unknown`,整列 cast 又会被非 JSON 行炸 —— 所以 LIKE 粗筛 + Python 逐条解析确认。
+  找不到给 null **并说为什么**(还没推过来 / 规则模板没调模型 / 上报没带)。
+- 页面:侧栏「产出监督」→ `#/outputs`、详情 `#/output/<id>`。⚠️ **不叫 `#/artifacts`** —— 那是「模型产物」。
+  列表页整页一次画完再挂事件:先画「加载中」再用 outerHTML 换掉一块,冒烟的 DOM 桩上换不掉(实测)。
+- `seed_demo.py` 放一份标明「演示」的建议产出:详情页冒烟要样例 id,CI 空库上没有真产出(同 `#/rrun/` 那一族)。
+- 测试 `tests/integration/test_artifacts_live.py`(26 条,真 PG + 真接口,try/finally 清理 + 收尾断言),挂进 `make test`。
+
+### ③ 别重做 / 注意
+
+- 澜绣发 `Idempotency-Key` 必须 **ASCII**(httpx / HTTP 头不收中文,测试里第一版就撞了)。
+- 列表返回 `items / next_cursor / total`(本仓惯例),另附 `rows / 总数` 同一份 —— 澜绣那侧约的是后者。
+- 这次 `make test` 顺带抓到两处**与本改动无关的漂移**,已补:TL64–70 没导进后台(`import_lanxiu_prompts.py`)、
+  5 份领域知识改了没重导(`ingest_lanxiu.py`)。**还剩 `test_index_build` / `test_retrieval` 因本地库残留
+  89 条 bge 向量拒跑**(它们要先清 embeddings / index_builds,会删本地检索实验室的索引)—— 没替人清,等决定。
+
 ## 🧭 2026-10-08 晚 · RAG 四步做完 + **九处「总数」其实是截断后的数**
 
 ### ① 下一步第一个动作

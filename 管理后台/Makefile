@@ -101,6 +101,13 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_retrieval_runs_live.py
 	@echo ""
+	@echo "▸ 产出监督 · 澜绣推报告 / 建议过来,这边看 + 打回;打回由澜绣拉回去执行(2026-10-10)"
+	@echo "  ⚠️ 状态不存列,由最近一条决定推出来 —— 这里验推得对(正常 → 待执行 → 已执行 / 执行失败)"
+	@echo "  ⚠️ 两条待执行的打回由**库里的部分唯一索引**挡,不只靠接口的 if —— 这里绕过接口直接插一次"
+	@echo "  ⚠️ 调用链找不到时要说为什么,不编一个;发送方漏了手机号,入库前打码并记下几处"
+	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
+		./.venv/bin/python tests/integration/test_artifacts_live.py
+	@echo ""
 	@echo "▸ 真的拆一次 · 把几个切片拆成独立文档(执行层,写库后清干净)"
 	@echo "  判定那一层在编排测试里(54 条零 IO);这一份验写进去的对不对"
 	@echo "  ⚠️ 原切片**一条都不动** —— chunks 不可变且绑在不可变的文档版本上"
@@ -297,7 +304,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' \
 	         '#/kb' '#/retrieval' '#/rruns' '#/usage' '#/traces' '#/health' '#/tryout' \
 	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' \
-	         '#/datasets' '#/training' '#/artifacts' '#/audit' \
+	         '#/datasets' '#/training' '#/artifacts' '#/audit' '#/outputs' \
 	         $$(DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 	            ./.venv/bin/python tools/detail_page_hashes.py --只要hash); do \
 		printf "  %-14s " "$$h"; \

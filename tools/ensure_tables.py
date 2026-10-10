@@ -56,7 +56,7 @@ import arrival_card
     # 经营报告(2026-10-09):店长存的日报 / 周报 / 月报 —— 运行时才写,没有任何一步铺数据
     (report_doc, "建表", ["store_report_doc"]),
     # 上新卡片的 agent 建议(2026-10-10):绑定那一刻写一次 —— 运行时才写
-    (arrival_card, "建表", ["recall_advice"]),
+    (arrival_card, "建表", ["recall_advice", "recall_advice_log"]),
 ]
 
 

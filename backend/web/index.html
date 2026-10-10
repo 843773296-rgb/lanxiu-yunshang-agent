@@ -408,7 +408,7 @@ h1{font-size:18px;margin:0 0 3px;font-weight:600}
     <span class="ic" id="bellBtn" title="查看待处理任务"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>
       <span class="badge" id="bell">0</span></span>
-    <span class="user" id="roleSw" title="切换角色以演示审批链"><span class="av">魏</span>魏欣新
+    <span class="user" id="roleSw" title="切换角色以演示审批链"><span class="av" id="meAv">魏</span><span id="meName">魏欣新</span>
       <span style="color:var(--ink3);font-size:12px;margin-left:2px">· <b id="roleTxt">顾问</b></span>
       <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="var(--ink3)" stroke-width="1.6"><path d="M2 4.5 6 8.5 10 4.5"/></svg></span>
   </div>
@@ -582,7 +582,7 @@ async function workbench(){
   M.innerHTML=chrome(["首页","工作台"],`
   <div class="row r-13">
     <div class="card"><div class="hd"><h3>基本信息</h3></div><div class="bd">
-      <div class="who"><span class="ph">魏</span><div><div class="nm">魏欣新</div>
+      <div class="who"><span class="ph">${esc((ME&&ME.name||"魏欣新").slice(0,1))}</span><div><div class="nm">${esc(ME&&ME.name||"魏欣新")}</div>
         <div class="st">今日待处理 <b>${W.finance.length+W.merge.length}</b> 件 · 本月操作 <b>${W.oplog.allow+W.oplog.deny}</b> 次</div></div></div>
       <div class="quick">
         <div class="q c1" data-go="finance">${qic("c1")}押金退款异常</div>
@@ -666,7 +666,7 @@ async function wbReports(){
   document.getElementById("wb-rpt-n").textContent=`(${d.份数} 份)`;
   el.innerHTML=(rows.length?`<table class="tb" style="width:100%;font-size:12.5px"><tbody>${rows.slice(0,8).map(x=>`<tr>
       <td>${esc(种名[x.kind]||x.kind)}<div style="color:var(--ink3);font-size:11.5px">${esc(x.period_start)}${x.period_end!==x.period_start?" ~ "+esc(x.period_end.slice(5)):""}</div></td>
-      <td><span class="pill ${x.status==="已确认"?"p-ok":"p-warn"}">${esc(x.status)}</span>
+      <td><span class="pill ${x.status==="已确认"?"p-ok":"p-warn"}">${esc(x.status)}</span>${x.rejected_at?` <span class="pill p-bad" title="${esc(x.reject_reason)}">被打回</span>`:""}
         <div style="color:var(--ink3);font-size:11.5px">第 ${esc(x.revision)} 版 · ${esc((x.shop||"").split(" ")[1]||x.shop)}</div></td>
       <td style="text-align:right;white-space:nowrap"><a href="${esc(x.链接)}" target="_blank" rel="noopener">打开</a>
         · <a href="${esc(x.下载)}">PDF</a></td></tr>`).join("")}</tbody></table>`
@@ -3317,13 +3317,28 @@ if(location.search.indexOf("probe")>=0){
   },300);
 }
 
-setRole(ROLE);
+/* 登录了就**跟登录走**(用户 10-10:「角色进入工作台再返回 chat 会丢失角色信息」)——
+   这一页原来写死「魏欣新」、角色存在浏览器里默认「顾问」,和谁登录无关:店长进来看到的是「魏欣新 · 顾问」。
+   而后台判权限**只认登录身份**(请求体里的 role 一律不读),那个切换开关登录后切了也不生效 —— 是个假开关。
+   没登录(直接开 :8760 演示)时保留原来的演示切换。 */
+let ME=null;
+async function 认人(){
+  try{ const r=await fetch("/api/me"); if(r.ok) ME=await r.json(); }catch(e){ ME=null; }
+  if(ME&&ME.name){
+    ROLE=ME.role;
+    document.getElementById("meName").textContent=ME.name;
+    document.getElementById("meAv").textContent=ME.name.slice(0,1);
+    document.getElementById("roleTxt").textContent=ME.role+(ME.shop?" · "+ME.shop.split(" ").pop():"");
+    document.getElementById("roleSw").title="当前登录:"+ME.name+"("+ME.no+")· 换人请退出后重新登录";
+  } else setRole(ROLE);
+}
 document.getElementById("roleSw").onclick=()=>{
+  if(ME&&ME.name){ res(true,"ROLE","身份跟登录走:当前是「"+ME.name+" · "+ME.role+"」—— 换人请退出后重新登录"); return; }
   setRole(ROLES[(ROLES.indexOf(ROLE)+1)%ROLES.length]);
-  res(true,"ROLE","当前角色已切换为「"+ROLE+"」");
+  res(true,"ROLE","当前角色已切换为「"+ROLE+"」(演示模式:没登录)");
   const h=(location.hash||"").slice(1).split("/"); view(h[0]||"workbench",h[1]);
 };
 renderNav();
-{const h=(location.hash||"").slice(1).split("/");
- if(h[0]&&h[0]!=="workbench") view(h[0],h[1]); else view("workbench");}
+认人().then(()=>{const h=(location.hash||"").slice(1).split("/");
+ if(h[0]&&h[0]!=="workbench") view(h[0],h[1]); else view("workbench");});
 </script></body></html>

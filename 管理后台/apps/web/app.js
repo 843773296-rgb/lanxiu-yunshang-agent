@@ -113,6 +113,7 @@ const 导航 = [
   ["#/training", "训练任务", true, true],
   ["#/artifacts", "模型产物", true, true],
   ["#/health", "智能体健康", true, true],
+  ["#/outputs", "产出监督", true, true],
   ["#/evals", "评测中心", true],
   ["#/compare", "实验对比", true, true],
   ["#/runs", "运行记录", true],
@@ -2640,6 +2641,125 @@ async function 页_调用树(tid) {
       </div>`).join("");
 }
 
+/* ── 产出监督(2026-10-10)──────────────────────────────────────────────
+ * 用户:报告和 agent 建议「是怎么生成的」要能在这里**看 + 打回**。
+ * 产出由澜绣推过来(管理后台不反查澜绣的库);打回只记一条决定,由澜绣拉回去执行。
+ * ⚠️ 路由叫 #/outputs 不叫 #/artifacts —— 后者已经是「模型产物」(微调训练那一组)。 */
+const _产出状态色 = { "正常": "ok", "已打回待执行": "warn", "已执行": "", "执行失败": "fail" };
+let _产出筛 = { 类型: "", 状态: "" };
+async function 页_产出监督() {
+  const 头 = `<div class="crumb">评测与监督</div>
+    <div class="head"><div><h1>产出监督</h1>
+      <div class="sub">${md(`门店助手写出来的**日报 / 周报 / 月报**和上新时给导购的**建议**,每一份都在这里:`
+        + `用了哪些规矩、照着什么数据、哪个模型、写出了什么。不满意就**打回** ——`
+        + `建议会由澜绣按你写的理由自动重写一版,报告会在店长那边标「被管理平台打回」、不许确认。`)}</div>
+    </div></div>`;
+  const 筛 = `<div class="filters">
+      类型 <select id="of-k"><option value="">全部</option><option>报告</option><option>建议</option></select>
+      状态 <select id="of-s"><option value="">全部</option><option>正常</option><option>已打回待执行</option>
+        <option>已执行</option><option>执行失败</option></select></div>`;
+  // 整页一次画完再挂事件 —— 先画「加载中」再换掉其中一块的写法,在冒烟的 DOM 桩上换不掉(10-10 实测)
+  const 挂筛 = () => {
+    $("#of-k").value = _产出筛.类型; $("#of-s").value = _产出筛.状态;
+    $("#of-k").onchange = () => { _产出筛.类型 = $("#of-k").value; 页_产出监督(); };
+    $("#of-s").onchange = () => { _产出筛.状态 = $("#of-s").value; 页_产出监督(); };
+  };
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  const q = new URLSearchParams({ limit: "100" });
+  if (_产出筛.类型) q.set("类型", _产出筛.类型);
+  if (_产出筛.状态) q.set("状态", _产出筛.状态);
+  let d;
+  try { d = await 请求(`${P()}/artifacts?${q}`); }
+  catch (e) { const s = 错误块(e, 页_产出监督); $("#main").innerHTML = 头 + 筛 + s.html; 挂筛(); s.挂(); return; }
+  if (!d.items.length) {
+    $("#main").innerHTML = 头 + 筛 + 状态("", (_产出筛.类型 || _产出筛.状态) ? "这个筛选下没有产出" : "还没有产出推过来",
+      "店长在助手里存一份报告、或者上新时给导购写了建议,澜绣就会把它推到这里。").html;
+    挂筛();
+    return;
+  }
+  $("#main").innerHTML = 头 + 筛 + `<table><thead><tr>
+      <th>什么时候</th><th>类型</th><th>标题</th><th>门店</th><th class="num">版本</th>
+      <th>怎么写的</th><th>状态</th><th></th></tr></thead><tbody>`
+    + d.items.map((r) => `<tr>
+        <td class="k">${esc(String(r.created_at).slice(5, 16).replace("T", " "))}
+          ${r["世界日期"] ? `<div class="k">世界日 ${esc(r["世界日期"])}</div>` : ""}</td>
+        <td>${esc(r["类型"])}</td>
+        <td>${esc(r["标题"])}<div class="k">${esc(r["外部id"])}</div></td>
+        <td>${esc(r["门店"] || "—")}</td>
+        <td class="num">${r["版本"]}</td>
+        <td>${esc(r["生成方式"] || "—")}${r["模型"] ? `<div class="k">${esc(r["模型"])}</div>` : ""}</td>
+        <td><span class="pill ${_产出状态色[r["状态"]] || ""}">${esc(r["状态"])}</span>
+          ${r["最近打回理由"] ? `<div class="k">${esc(r["最近打回理由"])}</div>` : ""}</td>
+        <td><button data-out="${esc(r.id)}">看详情</button></td></tr>`).join("")
+    + `</tbody></table><div class="note">共 ${d.total} 份${d.total > d.items.length ? `,这一页列了 ${d.items.length} 份` : ""}</div>`;
+  挂筛();
+  $("#main").querySelectorAll("[data-out]").forEach((b) => {
+    b.onclick = () => { location.hash = "#/output/" + encodeURIComponent(b.dataset.out); };
+  });
+}
+
+async function 页_产出详情(id) {
+  const 头 = `<div class="crumb"><a href="#/outputs">产出监督</a> · 详情</div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/artifacts/${encodeURIComponent(id)}`); }
+  catch (e) { const s = 错误块(e, () => 页_产出详情(id)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 链 = d["关联调用链"] || {};
+  const 能打回 = 能力.includes("改训练样本");
+  const 待执行 = d["状态"] === "已打回待执行";
+  $("#main").innerHTML = 头
+    + `<div class="head"><div><h1>${esc(d["标题"])}</h1>
+        <div class="sub">${esc(d["类型"])} · ${esc(d["门店"] || "—")} · 第 ${d["版本"]} 版 ·
+          ${esc(d["生成方式"] || "—")}${d["模型"] ? " · " + esc(d["模型"]) : ""} ·
+          <span class="pill ${_产出状态色[d["状态"]] || ""}">${esc(d["状态"])}</span></div></div></div>`
+    + `<div class="note">${md("**打回后会发生什么:**" + d["打回后会发生什么"])}</div>`
+    + (d["入库时打码了几处手机号"] ? `<div class="note warn">${md(`入库时把 **${d["入库时打码了几处手机号"]}** 处完整手机号打了码 —— 发送方漏了,要回头查澜绣那边`)}</div>` : "")
+    + `<h2>对应调用链</h2><div class="card">`
+    + (链.trace_id ? `<a href="#/trace/${encodeURIComponent(链.trace_id)}">${esc(链.trace_id)}</a> · ${esc(链["说明"])}`
+                   : `<span class="k">${esc(链["说明"] || "没有")}</span>`)
+    + `</div><h2>用了哪些规矩(上报那一刻的快照)</h2>`
+    + ((d["规则"] || []).length ? d["规则"].map((r) => `<div class="card"><div class="k">${esc(r["编号"])}</div>
+        <pre class="io">${esc(r["正文"])}</pre></div>`).join("")
+                                  : `<div class="state">这份产出没有登记规矩</div>`)
+    + `<h2>输出</h2><div class="card"><pre class="io">${esc(d["输出"])}</pre></div>`
+    + `<h2>输入(照着什么数据写的)</h2><details><summary>展开看完整输入</summary>
+        <pre data-raw="原文" class="k">${esc(JSON.stringify(d["输入"], null, 2))}</pre></details>`
+    + `<h2>版本历史</h2><table><thead><tr><th class="num">版本</th><th>什么时候</th><th>状态</th></tr></thead><tbody>`
+    + d["版本们"].map((v) => `<tr><td class="num">${v.id === d.id ? `<b>${v["版本"]}</b>`
+          : `<a href="#/output/${encodeURIComponent(v.id)}">${v["版本"]}</a>`}</td>
+        <td class="k">${esc(String(v.created_at).slice(5, 16).replace("T", " "))}</td>
+        <td><span class="pill ${_产出状态色[v["状态"]] || ""}">${esc(v["状态"])}</span></td></tr>`).join("")
+    + `</tbody></table><h2>打回历史</h2>`
+    + (d["打回历史"].length ? `<table><thead><tr><th>什么时候</th><th>谁</th><th>理由</th><th>执行情况</th></tr></thead><tbody>`
+        + d["打回历史"].map((x) => `<tr><td class="k">${esc(String(x.created_at).slice(5, 16).replace("T", " "))}</td>
+            <td>${esc(x.created_by)}</td><td>${esc(x["理由"])}</td>
+            <td><span class="pill ${x["状态"] === "执行失败" ? "fail" : x["状态"] === "待执行" ? "warn" : ""}">${esc(x["状态"])}</span>
+              ${x["结果"] ? esc(x["结果"]) : ""}${x["新版本"] ? ` → 第 ${x["新版本"]} 版` : ""}
+              ${x["结果说明"] ? `<div class="k">${esc(x["结果说明"])}</div>` : ""}</td></tr>`).join("")
+        + `</tbody></table>` : `<div class="state">还没有打回过</div>`)
+    + `<h2>打回</h2>`
+    + (!能打回 ? `<div class="note">${md("你的角色没有「改训练样本」这条能力,不能打回 —— 打回是人判内容、会回流成评测样本,归标注员 / 管理员")}</div>`
+       : 待执行 ? `<div class="note">${md("这一版已经有一条打回在等澜绣执行,执行完才能再打回")}</div>`
+       : `<div class="card"><textarea id="rj-why" rows="3" style="width:100%"
+            placeholder="哪里不对?(至少 4 个字)—— 澜绣重写建议时会照着它改"></textarea>
+          <div style="margin-top:8px"><button class="pri" id="rj-go">打回这一版</button>
+          <span id="rj-msg" class="k"></span></div></div>`);
+  const 按 = $("#rj-go");
+  if (按) 按.onclick = async () => {
+    const 理由 = $("#rj-why").value.trim();
+    if (理由.length < 4) { $("#rj-msg").textContent = "理由至少 4 个字"; return; }
+    按.disabled = true;
+    try {
+      await 请求(`${P()}/artifacts/${encodeURIComponent(id)}/reject`,
+                 { method: "POST", body: JSON.stringify({ 理由 }) });
+      await 页_产出详情(id);
+    } catch (e) {
+      按.disabled = false;
+      $("#rj-msg").textContent = ((e.体 && e.体.message) || e.message) + ((e.体 && e.体.advice) ? " —— " + e.体.advice : "");
+    }
+  };
+}
+
 /* ── 智能体健康(M4:/health 重建)────────────────────────────────────
  * ⚠️ **采纳率不是质量分。** 上线之后没有标准答案(线上问题不在评测集里),
  * 能拿到的只有「人采纳了没有」—— 而采纳率高也可能是因为人懒得改。
@@ -4687,6 +4807,8 @@ async function 路由() {
     if (h === "#/traces") return await 页_调用链();
     if (h.startsWith("#/trace/")) return await 页_调用树(decodeURIComponent(h.slice(8)));
     if (h === "#/health") return await 页_智能体健康();
+    if (h === "#/outputs") return await 页_产出监督();
+    if (h.startsWith("#/output/")) return await 页_产出详情(decodeURIComponent(h.slice(9)));
     if (h === "#/runs") return await 页_运行记录();
     if (h === "#/workflows") return await 页_工作流列表();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));

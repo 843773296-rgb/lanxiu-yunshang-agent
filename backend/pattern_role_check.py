@@ -220,6 +220,7 @@ def main():
     跑法 = {
         "pattern_queue": lambda: api.pattern_queue(),
         "grading_audit": lambda: api.grading_audit("PT04"),
+        "summarize_products": lambda: api.summarize_products(keyword="马面裙", limit=10),
         "piece_ratios":  lambda: api.piece_ratios("PT06"),
         "kb_pattern":    lambda: api.kb_pattern("PT04"),
         "kb_size":       lambda: api.kb_size("PT04"),

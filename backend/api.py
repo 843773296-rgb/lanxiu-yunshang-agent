@@ -4345,7 +4345,9 @@ def save_report(body=None, kind="周", date=None, report_id=None):
     import report_doc as _rd
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁在存 —— 请先登录")
-    return _rd.保存(me, store_report(kind=kind, date=date), body, report_id=report_id, db=DB)
+    # trace:这一轮对话的 trace_id(sdk 经 MCP env 传进来)—— AI 管理平台从报告跳回生成它的那一轮
+    return _rd.保存(me, store_report(kind=kind, date=date), body, report_id=report_id, db=DB,
+                    trace=os.environ.get("LANXIU_TRACE") or None)
 
 
 def confirm_report(report_id=None):
@@ -4354,6 +4356,44 @@ def confirm_report(report_id=None):
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁在确认 —— 请先登录")
     return _rd.确认(me, (report_id or "").strip(), db=DB)
+
+
+def summarize_products(spus=None, keyword=None, category=None, customer=None, limit=40):
+    """**商品归纳总结**(用户 2026-10-10):给一套衣服,从颜色、纹样、面料、工艺、形制归纳规律;没有就说没有。
+    三种给法:spus(款号列表,逗号分隔也行)/ keyword(商品名里含这个词)/ category(分类编码前缀);
+    或者 customer:归纳这位顾客近 24 个月买过的东西(喜好)。口径在 knowledge/traits.py。"""
+    import product_summary as _ps, worldclock as _wc
+    c = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+    try:
+        if customer:
+            cid = str(customer).strip()
+            r = c.execute("SELECT id, name FROM customer WHERE id=? OR name=? ORDER BY id LIMIT 2", (cid, cid)).fetchall()
+            if not r:
+                return dict(error=f"没有客户 {cid}")
+            if len(r) > 1:
+                return dict(error=f"叫「{cid}」的不止一位,请给客户号", 候选=[x[0] for x in r])
+            出 = _ps.归纳顾客(c, r[0][0], _wc.今天())
+            出["归纳的是"] = f"客户 {r[0][0]} 买过的东西"
+            return 出
+        lim = max(3, min(int(limit or 40), 80))
+        if spus:
+            号 = [x.strip() for x in (spus.split(",") if isinstance(spus, str) else spus) if str(x).strip()]
+        elif keyword or category:
+            sql, a = "SELECT spu FROM product WHERE 1=1", []
+            if keyword: sql += " AND name LIKE ?"; a.append(f"%{keyword}%")
+            if category: sql += " AND category LIKE ?"; a.append(f"{category}%")
+            号 = [x[0] for x in c.execute(sql + " ORDER BY spu", a)]
+        else:
+            return dict(error="给一套衣服:spus(款号)、keyword(名字里的词)、category(分类编码)三选一,或者 customer")
+        一共 = len(号)
+        号 = 号[:lim]
+        出 = _ps.归纳商品(c, 号)
+        出["归纳的是"] = f"{len(号)} 款商品"
+        if 一共 > lim:
+            出["截断"] = f"一共 {一共} 款,只归纳了前 {lim} 款 —— 结论只对这 {lim} 款成立"
+        return 出
+    finally:
+        c.close()
 
 
 def list_reports(kind=None, report_id=None, limit=20):
@@ -5256,7 +5296,8 @@ SHOP_SCHEMAS=[
 {"name":"save_report","description":"**(写)把写好的日报 / 周报 / 月报存成草稿。** ⚠️ **只在用户明说「存一下 / 保存」时调**,先把正文给他看过;不要写完就自动存。每存一次是**新的一版**(旧版不覆盖),保存时冻结当时的取数包 —— 之后数据变了,这份报告的数不跟着变。kind / date 要和写这份报告时用的取数包一致;改的是已有报告就带上 report_id。返回报告号和「能不能确认」。只有店长 / 总部能存。","input_schema":{"type":"object","properties":{"body":{"type":"string","description":"报告正文(就是给用户看过的那一份)"},"kind":{"type":"string","description":"日 / 周 / 月,默认 周"},"date":{"type":"string","description":"那一期里任意一天 `YYYY-MM-DD`;不给 = 上一个完整的那一期"},"report_id":{"type":"string","description":"改已有报告时给它的报告号"}},"required":["body"]}},
 {"name":"confirm_report","description":"**(写)店长确认一份经营报告。** ⚠️ **只在店长明说「确认」时调,不要替他点。** 必选指标(下单数、营收)缺了不许确认;只能确认这一期**最新那一版**;确认后不能改,要改再存一版。第一版**不自动发送给任何人**。","input_schema":{"type":"object","properties":{"report_id":{"type":"string","description":"要确认的报告号(RPT 开头)"}},"required":["report_id"]}},
 {"name":"list_reports","description":"**存过的经营报告**(只读)。不给 report_id 就列每一期最新那一版(状态:草稿 / 已确认,带版本数);给了 report_id 就看那一版的正文和保存时冻结的取数包。只给店长 / 总部。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"只看 日 / 周 / 月"},"report_id":{"type":"string","description":"看某一份的正文"},"limit":{"type":"integer","description":"列几份,默认 20"}}}},
-{"name":"store_report","description":"**门店经营报告的取数包**(只读)—— 店长说「生成上周周报」「出个九月月报」「昨天的日报」时**先调它**,再照它写。日报 / 周报 / 月报共用:kind=日 / 周 / 月,date 给那一期里任意一天 `YYYY-MM-DD`,**不给就是上一个完整的那一期**(昨天 / 上周 / 上个月)。返回分两栏:**「期内」这一期发生了多少**(订单、销量、营收、进店客流、评价、进入休眠、任务、成交率)和**「存量(截至今天)」还压着多少**(待付款、该催工厂、延期没告诉顾客、白坯、库存、差评待跟、流失预警)—— ⚠️ **两栏不许混**,别把存量说成本期新增。⚠️ 每一项都带「出处」和「口径」,写报告**只照这份数说**,数字不许改写、不许心算新数;「取不到的」要照实写进报告。周报的成交率是**最近 4 周滚动**;日报不报成交率。原因和建议要标成判断,不写成已安排。只给店长 / 总部。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"日 / 周 / 月,默认 周"},"date":{"type":"string","description":"那一期里任意一天 `YYYY-MM-DD`;不给 = 上一个完整的那一期"}}}},
+{"name":"summarize_products","description":"**商品归纳总结**(只读):给一套衣服,从**颜色、纹样(花型)、面料(材质 / 布料)、工艺、形制**归纳规律。三种给法:spus(款号,逗号分隔)/ keyword(商品名里含的词,如「马面裙」)/ category(分类编码前缀);或者给 customer(客户号或姓名)归纳她近 24 个月买过的东西(喜好)。返回「规律」(这一套里明显多于对照组的值,每条带一句现成的说法)、「共性」(几乎都是、但对照组里本来就常见 —— **不是规律**)、「覆盖」(每个维度认得出几件)、「结论」。⚠️ **结论说「没有发现规律」就照说没有**,不要自己从商品名里另找一条;⚠️ 只照返回的说法讲,不心算比例;认不出的件数要说出来。用于商机研判、版师看版型共性、运营看选品。","input_schema":{"type":"object","properties":{"spus":{"type":"string","description":"款号,逗号分隔"},"keyword":{"type":"string","description":"商品名里含的词"},"category":{"type":"string","description":"分类编码前缀,如 C0102"},"customer":{"type":"string","description":"客户号或姓名:归纳她买过的东西"},"limit":{"type":"integer","description":"最多归纳多少款,默认 40,最多 80"}}}},
+ {"name":"store_report","description":"**门店经营报告的取数包**(只读)—— 店长说「生成上周周报」「出个九月月报」「昨天的日报」时**先调它**,再照它写。日报 / 周报 / 月报共用:kind=日 / 周 / 月,date 给那一期里任意一天 `YYYY-MM-DD`,**不给就是上一个完整的那一期**(昨天 / 上周 / 上个月)。返回分两栏:**「期内」这一期发生了多少**(订单、销量、营收、进店客流、评价、进入休眠、任务、成交率)和**「存量(截至今天)」还压着多少**(待付款、该催工厂、延期没告诉顾客、白坯、库存、差评待跟、流失预警)—— ⚠️ **两栏不许混**,别把存量说成本期新增。⚠️ 每一项都带「出处」和「口径」,写报告**只照这份数说**,数字不许改写、不许心算新数;「取不到的」要照实写进报告。周报的成交率是**最近 4 周滚动**;日报不报成交率。原因和建议要标成判断,不写成已安排。只给店长 / 总部。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"日 / 周 / 月,默认 周"},"date":{"type":"string","description":"那一期里任意一天 `YYYY-MM-DD`;不给 = 上一个完整的那一期"}}}},
 {"name":"weekly_revenue","description":"**按周营收 = 实收减退款**(只读,周报用)。「上周营收多少」「这周进了多少钱」用它。⚠️ 业务周是**周一到周日**;实收按**付款日**、退款按**退款日**归周,**不是按下单日** —— 和 orders_by_date 的「下单数」不是一回事。⚠️ 退款日是近似(用售后单最后更新时间),返回里写着。预约押金不算营收。不给 week 就是上一个完整周;week 给那一周里任意一天 `YYYY-MM-DD`。范围随身份:总部全部 / 店长本店 / 顾问名下∪经手。","input_schema":{"type":"object","properties":{"week":{"type":"string","description":"那一周里任意一天 `YYYY-MM-DD`;不给 = 上一个完整周"}}}},
 {"name":"sales_rank","description":"**商品销量排行**(只读)。「九月卖得最好的商品是什么」「这个月哪个品类卖得多」「标品前十」用它 —— 按商品 / SKU / 品类汇总订单行,不用逐单去查。⚠️ **时间段必须写成 `month=YYYY-MM` 或 `start`+`end`**,「九月」先换成具体年月,拿不准是哪一年就问。⚠️ **默认按件数排**(一单买 3 件算 3);定制品每单一件、单价高 —— 按件数几乎上不了榜、按金额会霸榜,**用户没说按什么时按件数答,再照返回里「各排法的第一」说按金额是谁 —— 不要从榜单里自己推**。⚠️ 取消 / 待付款 / 已退款的行**不算销量**(口径同库存预警),返回里「没算进销量的订单行」写了各有多少。⚠️ 报总量用「合计」,不要拿榜单相加;返回「并列」时要说出前 N 名不唯一。范围随身份:总部全部 / 店长本店 / 顾问名下∪经手。","input_schema":{"type":"object","properties":{"month":{"type":"string","description":"月份 `YYYY-MM`,如 `2026-09`"},"start":{"type":"string","description":"起始日 `YYYY-MM-DD`(和 end 一起给)"},"end":{"type":"string","description":"截止日 `YYYY-MM-DD`(含当天)"},"by":{"type":"string","description":"按什么汇总:商品(默认,同款不同尺码颜色合一)/ SKU / 品类"},"metric":{"type":"string","description":"按什么排:件数(默认)/ 金额 / 单数"},"kind":{"type":"string","description":"只看 标品 或 定制品;不给就是都算"},"field":{"type":"string","description":"按哪个日期归月:下单(默认)/ 完工 / 发货 / 交付"},"limit":{"type":"integer","description":"列前几名,默认 10,最多 50"}}}},
  {"name":"orders_by_date","description":"**按时间段列订单**(只读)。「下周有哪些单要交付」「最近一周下了多少单」这类问法用它 —— 这是唯一一个不用先给订单号或客户号就能列单的入口。\n\n⚠️ **「下一周」是歧义的,这个工具不替人猜**:`direction` 要么「往后」(今天→N 天后,问的是接下来要发生什么)、要么「往前」(N 天前→今天,问的是刚过去这段做了多少)。不给 direction 它会返回「判不了」,并把两种读法各有多少单一起给你 —— **把这两个数原样告诉用户让他选**,不要自己挑一个:两种读法的单子几乎没有交集,而猜错的表现是一份看起来很正常的清单,没有任何地方会提示这不是他要的那一批。\n\n`field` 决定查哪一列:**下单 / 完工 / 发货 / 交付**,四列是四份不同的单子(同一张单「下单」在上个月、「交付」在下周)。用户说「下周要交的货」是**交付**,说「这周下了多少单」是**下单**;拿不准就问。默认按下单日,返回里会写明用的是哪一列。\n\n`days` 默认 7。\n\n**按日历月 / 按起止日期查**:`month`(`YYYY-MM`,比如「九月」= `2026-09`,查的是那个月 1 号到月底)或 `start` + `end`(`YYYY-MM-DD`,两个一起给)。给了它们就**不要再给 direction / days**。用户只说「一月」而没说哪年时,`month` 原样传「一月」,工具会把「今年 1 月」和「最近一个月」两种读法各有多少单摆出来 —— 照样**不替他挑**。\n\n范围跟身份走:顾问只看自己的,店长看本店,总部运营看全部。","input_schema":{"type":"object","properties":{"direction":{"type":"string","enum":["往后","往前"],"description":"往后=今天到 N 天后;往前=N 天前到今天。不给会返回判不了;用 month / start+end 时不给"},"days":{"type":"integer","description":"几天,默认 7"},"month":{"type":"string","description":"按日历月查:YYYY-MM(如 2026-09 = 9 月 1 日到 30 日)"},"start":{"type":"string","description":"按起止日期查的起点 YYYY-MM-DD,要和 end 一起给"},"end":{"type":"string","description":"按起止日期查的终点 YYYY-MM-DD(含这一天)"},"field":{"type":"string","enum":["下单","完工","发货","交付"],"description":"按哪一列的时间算,默认下单"},"limit":{"type":"integer","description":"最多返回几条,默认 50"}}}},
@@ -6432,7 +6473,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

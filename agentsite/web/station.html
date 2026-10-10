@@ -232,12 +232,20 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 
 /* ── 输入区 ───────────────────────────────────────────────── */
 #composer{flex:none;padding:6px 0 16px;background:var(--bg)}
-#cbox{display:flex;gap:9px;align-items:flex-end;border:1px solid var(--line);border-radius:15px;
-  padding:9px 9px 9px 15px;background:#fff}
+#cbox{display:flex;gap:8px;align-items:flex-end;border:1px solid var(--line);border-radius:15px;
+  padding:8px 8px 8px 15px;background:#fff}
 #cbox:focus-within{border-color:#c2c4ca}
-#q{flex:1;border:0;outline:0;resize:none;font:inherit;line-height:1.6;max-height:190px;
-  padding:4px 0;background:none;color:var(--ink)}
-#send,#stop{border:0;border-radius:11px;padding:8px 15px;font:inherit;font-size:13px;cursor:pointer}
+/* 输入框单行时和按钮一样高(36px),文字上下居中;多行时往上长,按钮仍贴底(用户 10-10:文字不垂直居中)。
+   行高 22px + 上下各 7px = 36px —— 改行高要连 padding 一起改,不然又对不齐 */
+#q{flex:1;border:0;outline:0;resize:none;font:inherit;font-size:14px;line-height:22px;max-height:190px;
+  min-height:36px;padding:7px 0;box-sizing:border-box;background:none;color:var(--ink)}
+/* 图片 / 停 / 发送三个按钮同一个尺寸(用户 10-10:图片和发送不一样大)—— 「图片」原来借的是顶栏小按钮的样式 */
+#cbox #pic,#send,#stop{height:36px;min-width:60px;padding:0 14px;border-radius:10px;font:inherit;font-size:13px;
+  display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;cursor:pointer;flex:none}
+#cbox #pic{border:1px solid var(--line);background:#fff;color:var(--dim)}
+#cbox #pic:hover{color:var(--ink);border-color:#c9cace}
+#send,#stop{border:0}
+#cbox [hidden]{display:none}   /* 上面给按钮写了 display:inline-flex,会把 hidden 盖掉 ——「停」在没跑的时候露出来(10-10 截图抓到) */
 #send{background:var(--accent);color:#fff}
 #send:disabled{background:#c8cdd8;cursor:default}
 #stop{background:var(--chip);color:var(--ink)}
@@ -559,7 +567,10 @@ function bindStore(no){
   DB = {convs: [], cur: null};
   try{ const raw = localStorage.getItem(KEY); if(raw) DB = JSON.parse(raw); }catch(e){}
   if(!Array.isArray(DB.convs)) DB.convs = [];
-  drawSide(); drawStream();
+  // 顶上那个「当前助手」也要跟着重画(用户 10-10:「进入工作台再返回 chat 会丢失角色信息」)——
+  // 页面一打开先按一个临时的空会话画了「澜绣云裳助手」,身份到了才读回真会话(比如「工坊排产」),
+  // 而这里原来只重画了左栏和消息区:**存的是工坊、显示的是全能助手**,一刷新 / 一跳走再回来就露出来
+  syncHint(); drawSide(); drawStream();
 }
 const cur = () => DB.convs.find(c => c.id === DB.cur) || null;
 
@@ -1036,7 +1047,7 @@ $("#q").addEventListener("paste", e => {
 
 /* ── 提问 ─────────────────────────────────────────────────── */
 let RUNNING = null;
-function grow(){ const q = $("#q"); q.style.height = "auto"; q.style.height = Math.min(q.scrollHeight, 190) + "px"; }
+function grow(){ const q = $("#q"); q.style.height = "auto"; q.style.height = Math.max(36, Math.min(q.scrollHeight, 190)) + "px"; }
 
 async function ask(){
   const q = $("#q"); const text = q.value.trim();
@@ -1476,6 +1487,9 @@ async function loadMe(){
   }catch(e){ $("#me").textContent = ""; }
 }
 
+// /?q=… 从别的页带一句话过来(报告页的「生成周报」按钮):**只填进输入框,不替人发送** ——
+// 自动发出去的话,点错一个按钮就是一次模型调用,而且人还没看过那句话
+{ const 带 = new URLSearchParams(location.search).get("q"); if(带){ $("#q").value = 带; history.replaceState(null, "", location.pathname); } }
 syncHint(); grow(); $("#q").focus();   // drawSide/drawStream 交给 bindStore ——
                                        // 身份没到,列表就该是空的,不是别人的
 loadRoles(); loadModels(); loadMe().then(loadArrival); loadSkillsets();
@@ -1499,10 +1513,13 @@ async function loadArrival(){
           <span class="tag">${esc(k.顾客.等级 || "")}</span><span class="tag">${esc(k.顾客.生命周期 || "")}</span><br>
           电话 <span class="ph">${esc(k.顾客.电话)}</span> · 地址 <span class="ad">${esc(k.顾客.地址)}</span>
           <button class="rv" data-act="reveal">看完整号码和地址</button></div>
-        <div class="sec"><i>留言(她当初说的)</i><div class="quote">「${esc(k.留言.当初原话 || "—")}」</div>
+        <div class="sec"><i>${k.留言.来源 === "购买推断" ? "为什么推她(按购买记录推断,她没说过)" : "留言(她当初说的)"}</i>
+          <div class="quote">${k.留言.来源 === "购买推断" ? esc(k.留言.当初原话 || "—") : "「" + esc(k.留言.当初原话 || "—") + "」"}</div>
           ${k.留言.客户备注 ? `<div style="margin-top:4px">备注:${esc(k.留言.客户备注)}</div>` : ""}</div>
         <div class="sec"><i>agent 建议 · ${esc(k.建议.来源)}</i><div class="adv">${esc(k.建议.正文 || "还没写")}</div></div>
-        <div class="sec sub">任务 ${esc(k.任务号)} · 期限 ${esc(k.任务期限)} · <a href="/tasks" target="_blank" rel="noopener">去任务列表处理</a></div>
+        <div class="sec sub">任务 ${esc(k.任务号)} · 客户 ${esc(k.顾客.客户号)} · 期限 ${esc(k.任务期限)} ·
+          <a href="/pad?task=${encodeURIComponent(k.任务号)}&customer=${encodeURIComponent(k.顾客.客户号)}" target="_blank" rel="noopener">直接处理</a> ·
+          <a href="/tasks?task=${encodeURIComponent(k.任务号)}&customer=${encodeURIComponent(k.顾客.客户号)}" target="_blank" rel="noopener">去任务列表</a></div>
       </div>
     </div>`).join("");
   $("#arrival .n").textContent = `${d.卡片.length} 张 · ${d.窗口}`;

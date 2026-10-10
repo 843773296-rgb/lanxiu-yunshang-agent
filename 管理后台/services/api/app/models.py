@@ -273,6 +273,9 @@ _额外唯一 = {
     # 一个对象一份草稿。PostgreSQL 把多个 NULL 当互不相同,所以
     # (project_id, workflow_id) 唯一**不会**妨碍一堆 workflow_id 为空的 agent 草稿。
     "graph_drafts": [("project_id", "workflow_id"), ("project_id", "agent_id")],
+    # 产出监督(2026-10-10):同一份产出的同一版只记一行 —— 重复上报不许变成两条,
+    # 否则打回会挂在其中一条上,而另一条在列表里看起来「正常」
+    "artifacts": [("project_id", "external_ref", "version_no")],
 }
 
 
@@ -287,6 +290,19 @@ _额外唯一 = {
 # ⚠️ 这里只放**值域**(枚举、区间)。跨行、跨表的性质不要放进来:
 # CHECK 看不到别的行,写得出来也拦不住。
 _额外检查 = {
+    # 产出监督(2026-10-10):类型 / 状态只收这几个值 —— 一个拼错的值会自成一档,
+    # 而列表筛选时它既不算「待执行」也不算「已执行」,看起来就是没有
+    "artifacts": [
+        ("ck_artifacts_kind", "kind in ('报告', '建议')"),
+        ("ck_artifacts_generation_type", "generation_type is null or generation_type in ('模型', '规则', '对话')"),
+        ("ck_artifacts_version_no", "version_no >= 1"),
+    ],
+    "artifact_decisions": [
+        ("ck_artifact_decisions_action", "action in ('打回')"),
+        ("ck_artifact_decisions_status", "status in ('待执行', '已执行', '执行失败')"),
+        ("ck_artifact_decisions_result",
+         "result is null or result in ('已重写', '已标记', '执行失败')"),
+    ],
     "retrieval_runs": [
         # 5 档评价。**NULL 允许**(还没人评)—— 而 NULL 不是 0 分:
         # 「还没人评」和「评了最低档」在一个 0 上长得一模一样。
@@ -414,6 +430,13 @@ def _建一张(e):
         # 「这个任务的所有 Run 段」—— 预算账本按任务共享,
         # 查「这一本账被哪几段用过」走它。
         Index("ix_traces_task", t.c.project_id, t.c.task_ref)
+    if 名 == "artifact_decisions":
+        # 同一份产出**同时只能有一条待执行的打回**(2026-10-10)。用库里的部分唯一索引钉住,
+        # 不只靠接口里那个 if:两个人同时点打回,两个 if 都会看到「还没有」——
+        # 而两条待执行的打回会让澜绣那边重写两次,第二次覆盖第一次,看起来都正常
+        from sqlalchemy import text as _t
+        Index("uq_artifact_decisions_one_pending", t.c.project_id, t.c.artifact_id,
+              unique=True, postgresql_where=_t("status = '待执行'"))
     return t
 
 

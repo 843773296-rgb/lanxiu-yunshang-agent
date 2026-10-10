@@ -110,7 +110,7 @@ def provider():
         headers=["authorization: Bearer "+tok,"anthropic-version: 2023-06-01",
                  "anthropic-beta: oauth-2025-04-20"],price=price_of(m))
 
-def call(pv, body, retries=6, purpose="未标注", turn=None, cache=None, gen="V1"):
+def call(pv, body, retries=6, purpose="未标注", turn=None, cache=None, gen="V1", extra=None):
     """限流退避:OAuth 凭证与本机 Claude Code 会话共用额度,必须退让。
 
     这是全项目唯一真正发出请求的地方 —— 记录仪就包在这一层,
@@ -140,7 +140,7 @@ def call(pv, body, retries=6, purpose="未标注", turn=None, cache=None, gen="V
                                provider=pv.get("id"),is_mock=False,resource="generate",
                                latency_ms=ms,turn=turn,attempt=att,body=body,
                                cache_on=not isinstance(body.get("system"),str),
-                               peak=(pv.get("id")=="deepseek" and is_peak()),**kw)
+                               peak=(pv.get("id")=="deepseek" and is_peak()),extra=extra,**kw)
             except Exception: pass          # 记录仪永远不能把主流程搞挂
         if r.returncode!=0:
             _rec(usage=None,error=f"curl 失败: {r.stderr[:200]}")

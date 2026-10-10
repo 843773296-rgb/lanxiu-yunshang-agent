@@ -19,6 +19,7 @@ import api, arrival_card as AC, oplog
     ("看完整号码不记台账", "看完整号码:记了一笔台账"),
     ("任务做完卡片就不弹了(用户要的是暂时不消失)", "任务做完了卡片照弹"),
     ("模型答歪了也照收", "模型答歪 → 退回规则模板,来源照实标「规则」"),
+    ("卡片链接不带客户号", "卡片上的两个链接都带着任务号和客户号(用户 10-10:客户号直接带入)"),
 ]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -136,6 +137,16 @@ src = open(os.path.join(ROOT, "agentsite", "web", "station.html"), encoding="utf
 srv = open(os.path.join(HERE, "server.py"), encoding="utf-8").read()
 ck("对话页登录后就取卡片", "loadMe().then(loadArrival)" in src and '"/api/arrival-cards"' in src)
 ck("卡片能手动关(用户:暂时不消失,手动关)", '#arrival .x' in src and '$("#arrival").hidden = true' in src)
+tasks_src = open(os.path.join(ROOT, "agentsite", "web", "tasks.html"), encoding="utf-8").read()
+pad_src = open(os.path.join(ROOT, "agentsite", "web", "pad.html"), encoding="utf-8").read()
+ck("卡片上的两个链接都带着任务号和客户号(用户 10-10:客户号直接带入)",
+   "/pad?task=${encodeURIComponent(k.任务号)}&customer=${encodeURIComponent(k.顾客.客户号)}" in src
+   and "/tasks?task=${encodeURIComponent(k.任务号)}&customer=${encodeURIComponent(k.顾客.客户号)}" in src)
+ck("任务页读得到带过来的客户号:填进客户号、高亮那条任务",
+   '来自.get("customer")' in tasks_src and '$("#cust").value = cid' in tasks_src and 'getElementById("row-" + tid)' in tasks_src)
+ck("接待页读得到带过来的任务号:直接打开那条的完成弹层,标题带客户号",
+   'new URLSearchParams(location.search).get("task")' in pad_src and "if(row) openFin(row)" in pad_src
+   and '" · 客户 "+r.customer_id' in pad_src)
 ck("后台口子在:取卡片 / 看完整号码", '"/api/arrival-cards"' in srv and '"/api/reveal-contact"' in srv)
 
 c.close()

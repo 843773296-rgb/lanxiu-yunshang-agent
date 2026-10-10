@@ -9,7 +9,7 @@
 
 SDK 是拉起 Claude Code CLI 跑的,所以本机必须装 CLI。
 """
-import asyncio, json, os, sys, time
+import asyncio, json, os, sys, time, uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -296,7 +296,7 @@ def 生效工具(kind, 收窄=None):
     return [t for t in 全 if t in 要]
 
 
-def mcp_config(me=None, kind=None, 名单=None):
+def mcp_config(me=None, kind=None, 名单=None, trace=None):
     """把三个 MCP 服务挂上。工具面按用途分开,不给模型多余的选择。
 
     me:当前登录的人。**通过每个服务自己的 env 传,不改 os.environ** ——
@@ -310,6 +310,9 @@ def mcp_config(me=None, kind=None, 名单=None):
     """
     py = sys.executable
     env = {"LANXIU_ME": json.dumps(me, ensure_ascii=False)} if me else {}
+    if trace:
+        # 这一轮的 trace_id —— 工具写下的产出(存报告)带着它,AI 管理平台才能从产出跳回生成它的那一轮
+        env = {**env, "LANXIU_TRACE": trace}
     if kind is not None or 名单 is not None:
         # 名单优先:run 算好的「这一轮生效的工具」从这里进 MCP 的 LANXIU_TOOLS ——
         # 原来这里只按角色全集建,收窄只进了 allowed_tools,**模型看得见、也调得动被收掉的工具**
@@ -412,6 +415,7 @@ SHOP_TOOLS = [
     "mcp__shop__weekly_revenue",
     # 门店经营报告取数包(只读):日报 / 周报 / 月报共用,期内和存量分两栏。规矩 TL67
     "mcp__shop__store_report",
+    "mcp__shop__summarize_products",    # 商品归纳总结(用户 10-10):顾问看商机、运营看选品都要
     # 经营报告存档:存草稿 / 店长确认(写)、看存过的(只读)。规矩 TL68-70:存和确认都只在用户明说时调
     "mcp__shop__save_report", "mcp__shop__confirm_report", "mcp__shop__list_reports",
     "mcp__shop__report_production",
@@ -484,6 +488,7 @@ PATTERN_TOOLS = [
     "mcp__shop__pattern_queue",     # 排队看板:今天该我核什么(按影响面排序);
                                     # 传 pattern 转看那一版的裁片占比明细(带来源和折合米数)
     "mcp__shop__grading_audit",     # 推档自检:1237 个数压成 12 条档差
+    "mcp__shop__summarize_products",  # 商品归纳总结(用户 10-10:版师看一批版型的共性)
     "mcp__shop__set_piece_ratio",   # 写 —— 改占比并标「版师」
     # 写 —— 开裁(待生产 → 生产中)。**闸在订单状态机上**:白坯该试没试 / 没签字整单拒绝。
     # 版型定了才能裁,所以归版师;规矩 TL41:被拒不许换说法再试。
@@ -887,6 +892,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     eff = (effort or EFFORT_DEFAULT).strip().lower()
     if eff not in EFFORT:
         eff = EFFORT_DEFAULT          # 认不出就退回默认,**不报错也不瞎传**
+    _tid = uuid.uuid4().hex     # 这一轮的 trace_id:**先定**,MCP 配置和树用同一个(见 mcp_config)
     opts = ClaudeAgentOptions(
         effort=eff,
         hooks=guards.make_hooks(state, 注日期=_注日期) if guard else None,
@@ -903,7 +909,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             f"{' · ' + me['shop'] if me.get('shop') else ''}。\n"
             f"他能看到什么、能做什么由工号决定 —— 工具已经按他的身份取数了,"
             f"你不需要(也不能)替他换个身份查。\n" if me else "")),
-        mcp_servers=mcp_config(me, kind, 名单=工具),
+        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid),
         allowed_tools=工具,           # 和 MCP 暴露的是同一份 —— 不再用 `or`(空集合会被吃掉)
         # ⚠️ **allowed_tools 不是排他白名单。**
         # 它管的是「哪些工具不用逐次批准」,不是「只有这些工具存在」——
@@ -959,7 +965,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 而「成功之后才记」的记录仪在出事的时候正好是空的。
     _pv0 = (provider or os.environ.get("LANXIU_PROVIDER") or "claude").lower()
     _树 = _spans.一棵树(角色=(ROLE_META.get(kind) or {}).get("name", kind),
-                        会话号=resume, 模型=model, 供应商=_pv0)
+                        会话号=resume, 模型=model, 供应商=_pv0, tid=_tid)
     _根 = _树.开("invoke_agent", f"invoke_agent {(ROLE_META.get(kind) or {}).get('name', kind)}",
                  属性={"gen_ai.agent.name": (ROLE_META.get(kind) or {}).get("name", kind),
                       "gen_ai.conversation.id": resume,

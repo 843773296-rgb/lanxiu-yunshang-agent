@@ -172,6 +172,7 @@ import lanxiu_api as _LX
 import toolgroups_api as _TG
 import selection_api as _SEL
 import exec_policy_api as _EXP   # 执行上限:冻结 / 回执 / 查采用
+import artifacts_api as _ART      # 产出监督:澜绣推产出过来、打回决定由澜绣拉回去执行(2026-10-10)
 app.include_router(_WF.router)
 app.include_router(_AG.router)
 app.include_router(_KB.router)
@@ -191,6 +192,7 @@ app.include_router(_TL.router)
 app.include_router(_DBG.router)
 app.include_router(_EVA.router)
 app.include_router(_EXP.router)
+app.include_router(_ART.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

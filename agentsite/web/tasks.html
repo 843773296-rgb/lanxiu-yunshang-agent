@@ -73,6 +73,7 @@ td.n{white-space:nowrap;color:var(--dim);font-size:12.5px}
 </div>
 
 <main>
+  <div class="card" id="from" hidden style="background:#fff7ed;border-color:var(--warnln);font-size:13px"></div>
   <!-- 待分配池排在最上面:它是「客户已经在等」,比店长凭空想派的活更急 -->
   <div class="card" id="poolcard" hidden>
     <h2>待分配 <span id="pooln" style="color:var(--warn)"></span></h2>
@@ -150,7 +151,7 @@ function tag(r){
 
 async function boot(){
   const r=await fetch("/api/me");
-  if(r.status===401){location.href="/login?back="+encodeURIComponent(location.pathname);return}
+  if(r.status===401){location.href="/login?back="+encodeURIComponent(location.pathname+location.search);return}
   ME=await r.json();
   $("#who").innerHTML=`<b>${esc(ME.name)}</b> · ${esc(ME.role)}${ME.shop?" · "+esc(ME.shop):""}`;
   const boss=ME.role==="店长"||ME.role==="总部运营";
@@ -259,7 +260,7 @@ async function loadTasks(){
       <th>单号</th><th>类型</th><th>内容</th><th>顾问</th><th>起止</th>
       <th>状态</th><th>图</th><th>派任务的人</th><th></th></tr>`+
     rs.map(r=>`<tr>
-      <td class="n">${esc(r.id)}</td>
+      <td class="n" id="row-${esc(r.id)}">${esc(r.id)}</td>
       <td class="n"><span class="tag fam">${esc(r.type||"—")}</span></td>
       <td>${esc(r.note||"—")}
         ${r.ref_id?`<br><span style="font-size:11.5px;color:var(--dim)">挂 ${esc(r.ref_id)}${r.customer_id?`（${esc(r.customer_id)}）`:""}</span>`:""}
@@ -275,7 +276,31 @@ async function loadTasks(){
   $("#lnote").textContent = ME.role==="顾问"
     ? "你只看得到派给自己的任务 —— 这是数据隔离,不是界面上少显示几行。"
     : "你看得到全店的任务,但「完成」只能由做事的人自己点(带总结,该传图的要传图)。";
-  for(const b of document.querySelectorAll("[data-fin]")) b.onclick=()=>location.href="/pad";
+  for(const b of document.querySelectorAll("[data-fin]"))
+    b.onclick=()=>location.href="/pad?task="+encodeURIComponent(b.dataset.fin);
+  带入();
+}
+
+/* 从上新卡片点过来(用户 10-10:「客户号给我直接带入」):/tasks?task=SC…&customer=C…
+   高亮那条任务、顶部说清是谁的哪条;店长的「派任务」表单里客户号直接填好(换成要挂客户的类型)。 */
+const 来自 = new URLSearchParams(location.search);
+function 带入(){
+  const tid = 来自.get("task"), cid = 来自.get("customer");
+  if(!tid && !cid) return;
+  $("#from").hidden = false;
+  $("#from").innerHTML = `从上新卡片过来 · 客户 <b>${esc(cid||"—")}</b> · 任务 <b>${esc(tid||"—")}</b>` +
+    (tid ? ` · <a href="/pad?task=${encodeURIComponent(tid)}&customer=${encodeURIComponent(cid||"")}">直接处理这条</a>` : "");
+  const cell = tid && document.getElementById("row-" + tid);
+  if(cell){ cell.parentElement.style.background = "#fff7ed"; cell.scrollIntoView({block: "center"}); }
+  else if(tid){ $("#from").innerHTML += `<br>⚠️ 列表里没有 ${esc(tid)} —— 它可能不是派给你的,或者已经不在这个范围里`; }
+  if(cid && !$("#assign").hidden && TYPES.length){
+    const t = TYPES.find(x => x.name === $("#ttype").value);
+    if(!t || t.ref !== "customer"){
+      const c = TYPES.find(x => x.ref === "customer");
+      if(c){ $("#ttype").value = c.name; syncType(); }
+    }
+    $("#cust").value = cid; $("#cust").dispatchEvent(new Event("input"));
+  }
 }
 
 // ── 待分配池 ────────────────────────────────────────────────────────

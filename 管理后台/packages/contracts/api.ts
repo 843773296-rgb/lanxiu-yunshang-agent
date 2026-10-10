@@ -127,6 +127,12 @@ export const ENDPOINTS = [
   { method: "POST", path: "/model-artifacts", summary: "登记产物", capability: "提交真实训练", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/deployments", summary: "部署产物", capability: "生产审核/发布/回滚", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "POST", path: "/feedback", summary: "应用层上报一次人工判读", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "POST", path: "/artifacts", summary: "应用层上报一份产出(报告 / 建议)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "GET", path: "/artifacts", summary: "产出列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/artifacts/{id}", summary: "产出详情(规矩 / 输入 / 输出 / 版本 / 打回历史 / 调用链)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/artifacts/{id}/reject", summary: "打回一份产出", capability: "改训练样本", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/artifact-decisions", summary: "待执行的打回决定(给澜绣拉取)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/artifact-decisions/{id}/ack", summary: "澜绣确认执行了一条打回", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/agent-health", summary: "智能体健康(采纳率)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/evaluations", summary: "评测列表", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/evaluations/compare", summary: "实验对比(同一套题两个版本并排)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -221,4 +227,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 134 条接口 · 22 条异步 · 28 条要幂等键 · 15 条要 If-Match */
+/** 共 140 条接口 · 22 条异步 · 29 条要幂等键 · 15 条要 If-Match */

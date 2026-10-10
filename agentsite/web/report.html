@@ -48,6 +48,9 @@ a{color:var(--accent)}
 
 <div id="top">
   <b>经营报告</b>
+  <a class="tbtn" href="/" id="g日">生成昨天的日报</a>
+  <a class="tbtn" href="/" id="g周">生成上周周报</a>
+  <a class="tbtn" href="/" id="g月">生成上个月的月报</a>
   <span id="who"></span>
   <span class="sp"></span>
   <a class="tbtn" id="pdf" hidden>下载 PDF</a>
@@ -68,6 +71,10 @@ const esc = s => String(s == null ? "" : s)
   .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 const 状态签 = s => s === "已确认" ? '<span class="tag done">已确认</span>' : '<span class="tag draft">' + esc(s) + '</span>';
 const 种名 = {"日": "日报", "周": "周报", "月": "月报"};
+// 「生成」三个按钮:**报告是 chat 写的**(取数包 + 规矩,见 TL67),这页只管存档 —— 所以按钮带着那句话去对话页,
+// 话填进输入框、不替人点发送(用户 10-10:工作台要有入口)
+for(const [k, 话] of [["日", "帮我生成昨天的日报"], ["周", "帮我生成上周周报"], ["月", "帮我生成上个月的月报"]])
+  document.getElementById("g" + k).href = "/?q=" + encodeURIComponent(话);
 
 // 值有三种形状:数字、{名: 数} 的小表、文字 —— 小表摊成「名 数 · 名 数」
 function 值(v){
@@ -107,7 +114,8 @@ async function 列表(){
       rows.map(x => `<tr><td><a href="/report?id=${encodeURIComponent(x.id)}">${esc(种名[x.kind] || x.kind)} ${esc(x.id)}</a>` +
         ` · <a href="/report.pdf?id=${encodeURIComponent(x.id)}">PDF</a></td>` +
         `<td class='n'>${esc(x.shop)}</td><td class='n'>${esc(x.period_start)} ~ ${esc(x.period_end)}</td>` +
-        `<td class='n'>第 ${esc(x.revision)} 版 / 共 ${esc(x.版本数)} 版</td><td>${状态签(x.status)}</td>` +
+        `<td class='n'>第 ${esc(x.revision)} 版 / 共 ${esc(x.版本数)} 版</td><td>${状态签(x.status)}` +
+        (x.rejected_at ? ' <span class="tag" style="background:var(--errbg);color:var(--err)">被打回</span>' : "") + `</td>` +
         `<td class='n'>${esc(x.created_at)}</td></tr>`).join("") + "</tbody></table>"
       : '<div class="empty">还没有存过报告</div>') +
     (d.截断 ? '<p class="hint">' + esc(d.截断) + "</p>" : "") + "</div>";
@@ -123,10 +131,11 @@ function 画单份(d){
   if(d.error){ $("#main").innerHTML = '<div class="banner no">' + esc(d.error) + "</div>"; return; }
   document.title = (种名[d.kind] || d.kind) + " " + d.period_start + " · 澜绣云裳";
   const p = d.pack || {};
-  const 横幅 = d.status === "已确认"
+  const 横幅 = (d.rejected_at ? `<div class="banner no">这一版被 AI 管理平台打回了(${esc(d.rejected_at)}):${esc(d.reject_reason)}。` +
+      `打回的版本不许确认 —— 在助手里重新生成、核过再存一版。</div>` : "") + (d.status === "已确认"
     ? `<div class="banner done">已确认 · ${esc(d.confirmed_by)} 于 ${esc(d.confirmed_at)}。确认后不能改,要改就在助手里再存一版。</div>`
     : `<div class="banner draft">草稿,还没确认。核过以后在助手里说「确认」。` +
-      (p.能不能确认 === false ? ` 必选指标缺了(${esc((p.必选缺了的 || []).join("、"))}),这一版确认不了。` : "") + "</div>";
+      (p.能不能确认 === false ? ` 必选指标缺了(${esc((p.必选缺了的 || []).join("、"))}),这一版确认不了。` : "") + "</div>");
   $("#main").innerHTML =
     `<div class="card">${横幅}<h2>${esc(d.shop)} · ${esc(种名[d.kind] || d.kind)}(${esc(d.period_start)}${d.period_end !== d.period_start ? " ~ " + esc(d.period_end) : ""})</h2>` +
     `<div class="meta"><span>区间 <b>${esc(d.period_start)} ~ ${esc(d.period_end)}</b></span>` +
