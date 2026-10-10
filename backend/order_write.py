@@ -123,12 +123,27 @@ def open_order(d, me):
     行们 = []
     for x in items:
         key = str(x.get("sku") or x.get("spu") or "").strip()
-        s = rows("SELECT s.code sku, s.spu, s.price, p.name, p.kind, p.pattern, p.gender, p.category "
+        s = rows("SELECT s.code sku, s.spu, s.price, p.name, p.kind, p.pattern, p.gender, "
+                 "p.category, p.status, p.plan_on_shelf "
                  "FROM sku s JOIN product p ON p.spu=s.spu "
                  "WHERE s.code=? OR s.spu=? ORDER BY s.code LIMIT 1", key, key)
         if not s:
             return dict(ok=False, code="NO_SKU", reason=f"没有商品「{key}」")
         s = s[0]
+        # ── 只许卖**上架**的款 ─────────────────────────────────────────
+        # ⚠️⚠️ 这里原来**不看 status**,于是「待上架」和「下架」的款**都能被下单**。
+        # 用户 2026-10-10 定「50 件新款先全部待上架、顾客看不到」时,
+        # 真正的风险不在列表而在这儿:
+        #   按 `product.status` 过滤的地方,白名单 `='上架'` 是多数(加个新值天然安全),
+        #   但有 4 处黑名单 `<>'下架'`、另有 **149 处根本不过滤**。
+        # **列表有 149 处,下单口只有 1 处** —— 所以闸装在写口:
+        # 列表漏看见顶多尴尬,**下不成单就不会产生假订单**。
+        if (s["status"] or "") != "上架":
+            计 = f"(计划 {s['plan_on_shelf']} 上新)" if s.get("plan_on_shelf") else ""
+            return dict(ok=False, code="NOT_ON_SHELF",
+                        reason=f"「{s['name']}」现在是**{s['status'] or '(没有状态)'}**{计},不能下单 —— "
+                               f"只有「上架」的款能卖。要卖就先上架(走 backend/arrival_card.上新),"
+                               f"**别直接改 status** —— 那样等它的客户没人去叫")
         if s["kind"] != "定制品":
             return dict(ok=False, code="NOT_CUSTOM", reason=f"「{s['name']}」是标品 —— 这个入口只开定制单,标品流程不变")
         wid = (x.get("wearer_id") or "").strip()

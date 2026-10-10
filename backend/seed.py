@@ -224,7 +224,11 @@ CREATE TABLE product(spu TEXT PRIMARY KEY, name TEXT, category TEXT, kind TEXT, 
   -- 补这条边之前,86 个有版型的定制品里 **66 个的量体模板和版型对不上**
   -- (长衫按裙子的口径量)。同一个事实两个来源,必然漂。
   -- 可空:按名字匹配不上的留空,**不猜** —— 猜错的话用料/工期/量体全跟着错。
-  pattern TEXT);
+  pattern TEXT,
+  -- **计划**上新日(YYYY-MM-DD)。待上架的款排在哪天放出来,新品上市日历读它。
+  -- ⚠️ 已登记进 tools/shift_world.py 的 `整列日期不挪` —— 跟着平移的话
+  -- 「那一天永远不会到来」(世界和计划一起走,差值恒定),理由写在那儿。
+  plan_on_shelf TEXT);
 CREATE TABLE sku(code TEXT PRIMARY KEY, spu TEXT, spec TEXT, color TEXT, size TEXT,
   price REAL, stock INT, locked INT, status TEXT,
   collar TEXT, size_no TEXT, spec_code TEXT, weight_kg REAL, volume_m3 REAL,
@@ -3638,7 +3642,11 @@ def run():
                 _ch.append({"字段": _fn, "改前": _a2 or "", "改后": _b2 or ""})
             c.execute("INSERT INTO edit_log(ts,actor,actor_no,obj,target,title,source,changes)"
                       " VALUES(?,?,?,?,?,?,?,?)",
-                      (f"{_p['created'][:10]} {9 + _k2}:{16 + _i2 % 40:02d}",
+                                             # ⚠️ 小时**必须补零**。原来是 `{9 + _k2}`,`_k2=0` 时写出
+                       # `9:16` —— **SQLite 的 `date()` 解析不了单位数小时**,
+                       # 整列 296 行都成了 date() 返回 NULL 的值;而且按字符串排序时
+                       # `9:16` 排在 `10:00` **后面**。两个毛病都不报错。
+                      (f"{_p['created'][:10]} {9 + _k2:02d}:{16 + _i2 % 40:02d}",
                        _who[_i2 % len(_who)], None, "商品", _p["spu"], _t,
                        "后台", _j2.dumps(_ch, ensure_ascii=False)))
             _n_edit += 1

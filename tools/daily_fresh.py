@@ -280,7 +280,14 @@ def 生成(c, 今, rng, 护, 说=print):
         cid = rng.choice(客)
         店 = rng.choice(店们)
         adv = rng.choice(顾问[店])
-        时 = f"{日} {rng.randint(10, 20):02d}:{rng.choice('0123456')}{rng.randint(0,9)}"
+        # ⚠️ 十位只能是 0–5。原来写的是 `'0123456'` —— 抽到 6 就生成 **60~69 分**,
+        # 而那是个**非法时间戳**:SQLite 的 `date()` 解析不了就返回 NULL。
+        # 后果出现在一条**完全无关**的检查上:`link_check` 的门槛是
+        # `date(max(ordr.created), '-180 day')`,最大那行一旦非法,门槛变 NULL,
+        # `hired_at >= NULL` 永不为真 → 报「半年内入职的顾问 0 人」。
+        # 而库里明明有新人(工号 60000015,世界今天前 60 天)。
+        # **而且它是间歇的**:max(created) 随每日上新变,所以同一份代码今天绿明天红。
+        时 = f"{日} {rng.randint(10, 20):02d}:{rng.choice('012345')}{rng.randint(0,9)}"
         oid = f"DF{今.strftime('%y%m%d')}{k:03d}"
         行们 = []
         for _ in range(rng.choice([1, 1, 1, 2])):

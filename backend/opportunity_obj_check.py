@@ -21,6 +21,7 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge")]
     ("口径的诉求维度里删掉「配饰」", "诉求维度 = 业务 D3 定的那 12 个"),
     ("把一条商机触发它的通话号改成库里没有的", "沟通发现的商机都指得回触发它的那次通话"),
     ("把方案那头指回商机的字段清掉", "商机和方案互相指得回"),
+    ("离开「搁置等供给」时不清「等什么」(已关闭的还挂着等货)", "合成场景:搁置 → 已关闭 / 跟进中,「等什么」清掉了"),
     ("把「已关闭」和「搁置等供给」合并成一个「已丢单」", "状态都在口径里"),
     ("把一条诉求的原话换成逐字稿里没有的一句", "每条诉求的原话都在那通电话的逐字稿里"),
     ("让口径允许已关闭的商机被唤醒", "已关闭的商机不许被唤醒"),
@@ -69,6 +70,12 @@ def 闸自测(库):
     ck("合成场景:已关闭的不捞", "Z-关" not in 中, 1)
     ck("合成场景:30 天前刚推过的客户不再推", "Z00" not in 中, 1)
     ck("合成场景:超过上限时按诉求从新到旧取(最新的那条在里面)", "Z01" in 中, 1)
+    # 搁置 → 已关闭 / 跟进中:「等什么」要清掉(10-10 数据工厂抓到的真 bug:已关闭的还挂着等什么)
+    关, 关话 = S.改状态(c, "Z10", "已关闭", 今.isoformat(), 关闭原因="看了不喜欢")
+    跟, 跟话 = S.改状态(c, "Z11", "跟进中", 今.isoformat(), 经手人="CHECK")
+    ck("合成场景:搁置 → 已关闭 / 跟进中 两次转状态都成", 关 and 跟, 2, f"{关话} / {跟话}")
+    ck("合成场景:搁置 → 已关闭 / 跟进中,「等什么」清掉了",
+       c.execute("SELECT COUNT(*) FROM opportunity WHERE id IN ('Z10','Z11') AND wait_for IS NULL").fetchone()[0] == 2, 2)
     c.close()
 
 
@@ -136,8 +143,18 @@ def main():
     回 = [dict(r) for r in c.execute("SELECT * FROM opportunity_recall")] if c.execute(
         "SELECT 1 FROM sqlite_master WHERE name='opportunity_recall'").fetchone() else []
     商 = {o["id"]: o for o in os_}
+    # ⚠️ **答过的提醒不算。** `oppo_obj.提醒结论` 的设计就是
+    # 「客户想看 → 跟进中 / 客户不要了 → 已关闭」—— **顾问一答,商机本来就该改状态**。
+    # 这条断言原来拿「商机**现在**的状态」当代理,于是**任何一次真实作答都会让它红**:
+    # 整个「按结论处理」永远测不到,而且真实用户一答就红。
+    # 2026-10-10 第一次有数据走到这里(造了两条结论)才暴露出来。
+    # 它要守的是咬合里那句「**已关闭的商机不许被唤醒**」—— 回捞**不许去碰**已关闭的商机;
+    # 所以范围收到「还没答过的」:塞一条指向已关闭商机的提醒照样会红(咬合仍然成立)。
+    答过 = {r[0] for r in c.execute(
+        "SELECT opp_id FROM opportunity_task WHERE kind='回捞' AND answer IS NOT NULL")}
     非搁 = [f"{x['opp_id']}:{商.get(x['opp_id'], {}).get('status')}" for x in 回
-            if 商.get(x["opp_id"], {}).get("status") != "搁置等供给"]
+            if x["opp_id"] not in 答过
+            and 商.get(x["opp_id"], {}).get("status") != "搁置等供给"]
     ck("回捞出来的都是「搁置等供给」(已关闭的一条都不许碰)", not 非搁, len(回), f"共 {len(非搁)} 条:{非搁[:3]}" if 非搁 else "")
     不满足 = [f"{x['opp_id']}←{x['spu']}" for x in 回
               if not all(S.满足吗(c, x["spu"], k, v)[0] for k, v in json.loads(x["matched"]).items())]
