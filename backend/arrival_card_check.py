@@ -42,9 +42,14 @@ oplog.DB = db
 c = sqlite3.connect(db)
 
 # 期望值:独立 SQL。回捞提醒 = opportunity_task.kind 回捞 / 偏好回捞,挂着 opportunity_recall
+# 两种绑定都算:电话里说过的(opportunity_recall)和购买推断的(buy_pref_recall)——
+# 10-10 CI 从零建时库里已经有购买推断的绑定(造数会跑上新),只数前一种的话「别的顾问 0 张」「店长看全店」都对不上
+import opportunity_store as _OS
+_OS.建表(c)
 行 = c.execute("SELECT s.id, s.assignee_no, s.shop, r.created, r.customer_id FROM opportunity_task ot "
-               "JOIN schedule s ON s.id=ot.schedule_id JOIN opportunity_recall r ON r.opp_id=ot.opp_id "
-               "AND r.spu=json_extract(ot.detail,'$.新品') WHERE ot.kind IN ('回捞','偏好回捞')").fetchall()
+               "JOIN schedule s ON s.id=ot.schedule_id JOIN (SELECT opp_id, spu, created, customer_id FROM opportunity_recall "
+               "UNION ALL SELECT opp_id, spu, created, customer_id FROM buy_pref_recall) r ON r.opp_id=ot.opp_id "
+               "AND r.spu=json_extract(ot.detail,'$.新品') WHERE ot.kind IN ('回捞','偏好回捞','购买偏好回捞')").fetchall()
 ck("有回捞提醒样本(空集合上什么都成立)", len(行) > 0, "opportunity_recall 是空的 —— 先跑 tools/backfill_opportunity.py")
 今天 = max(dt.date.fromisoformat(r[3][:10]) for r in 行) if 行 else dt.date.today()
 顾问们 = {}
@@ -110,8 +115,10 @@ ck("模型答对形状 → 收下,来源「模型」", 好[1] == "模型", str(�
 ck("发给模型的材料里没有客户全名和电话", bool(材) and 姓名 not in 材[0] and not re.search(r"1[3-9]\d{9}", 材[0]), 材[0][:120] if 材 else "")
 
 # 上新正门:挂上架 → 回捞 → 派提醒 → 写建议(90 天冷却之后,让一条搁置商机再被同一款唤醒一次)
-oid2, spu2, 绑2 = c.execute("SELECT opp_id, spu, created FROM opportunity_recall r WHERE EXISTS "
-                           "(SELECT 1 FROM opportunity o WHERE o.id=r.opp_id AND o.status='搁置等供给') LIMIT 1").fetchone()
+# 要一条还在「搁置等供给」、回捞过的商机 —— 10-10 CI 从零建时一条都没剩(造数把它们都答掉了),本地碰巧还有。
+# 不赌数据:在副本里把一条回捞过的商机放回搁置(等的就是当初对上的那条),**期望不依赖库里碰巧剩什么**
+oid2, spu2, 绑2, 等 = c.execute("SELECT opp_id, spu, created, matched FROM opportunity_recall ORDER BY created, opp_id LIMIT 1").fetchone()
+c.execute("UPDATE opportunity SET status='搁置等供给', wait_for=? WHERE id=?", (等, oid2)); c.commit()
 以后 = dt.date.fromisoformat(绑2[:10]) + dt.timedelta(days=95)
 c.execute("UPDATE product SET status='下架' WHERE spu=?", (spu2,)); c.commit()
 出 = AC.上新([spu2], 今天=以后, db=db, call=lambda 材料: {"content": [{"type": "text", "text": "x"}]})

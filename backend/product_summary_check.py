@@ -89,6 +89,7 @@ ck("工具:给客户 → 归纳她买过的(对照组是全店买过的)", t4.ge
 红款 = c.execute("SELECT s.spu FROM sku s JOIN color_family f ON f.color=s.color JOIN product p ON p.spu=s.spu "
                  "WHERE f.family='红' AND p.kind='标品' ORDER BY s.spu LIMIT 1").fetchone()[0]
 回前 = c.execute("SELECT COUNT(*) FROM opportunity_recall").fetchone()[0]
+推前 = c.execute("SELECT COUNT(*) FROM buy_pref_recall").fetchone()[0]     # CI 从零建时造数已经推过一轮(10-10),比增量不比绝对数
 出 = S.购买偏好回捞(c, [红款], 今); c.commit()
 ck("推了人,而且单次不超过 5(用户 10-10:购买推断每次最多 5 人)", 0 < len(出) <= 5, str(len(出)))
 起 = (今 - dt.timedelta(days=round(24 * 365.25 / 12))).isoformat()
@@ -111,7 +112,7 @@ ck("推的每一位都同意营销触达、账户没注销", not 不该, str(不
 ck("推出来的是「待确认」商机,来源「购买偏好」", 商 == [("购买偏好", "待确认")], str(商))
 ck("推断的绑定不进 opportunity_recall(那张表只放电话里说过的)",
    c.execute("SELECT COUNT(*) FROM opportunity_recall").fetchone()[0] == 回前
-   and c.execute("SELECT COUNT(*) FROM buy_pref_recall").fetchone()[0] == len(出))
+   and c.execute("SELECT COUNT(*) FROM buy_pref_recall").fetchone()[0] == 推前 + len(出))
 # 5 天后再上新一次(**不用同一天**:同一天的商机号 OP-B客户-日期 撞号会先挡住,冷却就测不到 —— 咬合 10-10 抓到)
 再 = S.购买偏好回捞(c, [红款], 今 + dt.timedelta(days=5)); c.commit()
 ck("冷却:5 天后再上新一次,推过的人不再推", not ({x["客户"] for x in 再} & {x["客户"] for x in 出}), str(len(再)))
@@ -149,7 +150,8 @@ c.commit()
                                 "WHERE t.kind='购买偏好回捞' AND t.answer IS NULL AND s.status='有效' AND substr(s.end_ts,1,10) < ?",
                                 (收日.isoformat(),))]
 # 样本:造一条「电话里说过的」回捞提醒,让它也过期 —— 真库里开着的那种可能是 0 条,空集合上「没被收」恒成立
-_o = c.execute("SELECT id FROM opportunity WHERE status='搁置等供给' LIMIT 1").fetchone()
+# 不要求它在「搁置等供给」—— 10-10 CI 从零建时一条搁置的都没剩;派提醒不看状态,任何一条电话里来的商机都行
+_o = c.execute("SELECT id FROM opportunity WHERE source<>'购买偏好' ORDER BY id LIMIT 1").fetchone()
 if _o:
     S._派提醒(c, _o[0], "回捞", "检查用:电话里说过的回捞提醒", 今, {"新品": 红款}); c.commit()
 说过的前 = c.execute("SELECT COUNT(*) FROM opportunity_task t JOIN schedule s ON s.id=t.schedule_id "
