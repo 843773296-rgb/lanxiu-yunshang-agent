@@ -54,8 +54,15 @@ def main():
     if c.execute("SELECT COUNT(*) FROM ordr WHERE status='待确认'").fetchone()[0]:
         print("  库里已经有待确认的单,不重复造"); return
     # 挂了版型、有尺码表的定制款,取两款(两件那张单用)
+    # ⚠️ **只挑「上架」的款。** 2026-10-10 加了下单口的闸(只许卖上架的款)之后,
+    # 这一步在 CI 的**从零重建**里当场失败:挑到了一个下架款,
+    # 开单被正确地拒掉 → 那一步失败 → 后面的步骤全不跑。
+    # 本地发现不了,因为上面那句「库里已经有待确认的单,不重复造」让它成了空操作 ——
+    # **本地留着历次产物,CI 每次从零,两者只在「从零建得起来」这件事上分岔。**
+    # 闸没错,是这里挑款时漏了 status。
     款 = [r for r in c.execute("""SELECT p.spu, p.pattern, p.gender, p.category FROM product p
                                  WHERE p.kind='定制品' AND p.pattern IS NOT NULL
+                                   AND p.status='上架'
                                    AND EXISTS(SELECT 1 FROM sku s WHERE s.spu=p.spu)
                                    AND EXISTS(SELECT 1 FROM size_spec z WHERE z.pattern=p.pattern)
                                  ORDER BY p.spu""") if ow.需要的项(r["pattern"])]
