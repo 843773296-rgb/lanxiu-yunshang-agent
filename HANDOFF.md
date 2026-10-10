@@ -768,7 +768,7 @@ tempfile 里、跑完就删。
 ## 🧭 2026-10-10 夜 · 七条拍板落进代码(体检 / 评测线写)
 
 最后刷新:2026-10-10 夜 · 本次变化:数据工厂还了窗口(远端 5a16c50,已 pull);**用户 10-10 晚拍的 7 条全部落进代码 + 检查 + 咬合**;第二轮全量门禁 exit=0、扫密钥 rc=0,已提交(push 要用户按)。
-**下一步第一个动作**:看 `scratchpad/gate2.log` 末尾 `exit=`;0 → 扫密钥(单独跑看 rc)→ `git commit --only` 下面「我的文件」→ 让用户 `! git push` → 发飞书(产品说明 + 需求文档)→ **把窗口还数据工厂**(SendMessage eureka-75),告诉它:重建配方多了一步 `teen_self_consent.py`(36→37 步),它改配方时别丢。
+**下一步第一个动作**:已提交 e4ed206、产品说明 + 需求文档已发飞书、**窗口已还数据工厂**(它做假数据工厂进 rebuild 配方 + 判据样本下限)。等用户 `! git push` 后看那轮 CI(重点看 check job 里 consent_check ⑥ 在从零重建的库上有没有样本);窗口回来之前不跑任何检查、不碰库。
 
 我的文件(本轮):knowledge/contract_terms.py · knowledge/cancel_fee.py(新)· knowledge/consent_age.py(新)· tools/teen_self_consent.py(新)·
 backend/order_contract.py · order_write.py · api.py · measure_write.py · consent_check.py · contract_check.py · order_write_check.py · measure_write_check.py ·
