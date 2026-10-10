@@ -541,6 +541,56 @@ def 生成(c, 今, rng, 护, 说=print):
     return 计
 
 
+def 收口与放出(c, 今, 说=print):
+    """每天两件事,**顺序写死**:先收口过期的推断提醒,再把到期的款放出来。
+
+    ## 为什么是这个顺序
+
+    上新会触发回捞,回捞又会派新的「购买推断」提醒。**先收口再上新**的话,
+    收掉的是**昨天以前**那批没人答的;反过来先上新,就会把今天刚派出去的那批
+    一起量进「过期」的判断里(它们的 `end_ts` 还没到,所以其实收不掉,
+    但**次序一错,读日志的人分不清「今天派的」和「昨天剩的」**)。
+
+    ## 为什么必须在 `with c:` 之外
+
+    `arrival_card.上新()` **自己开连接、自己提交**。包在我的事务里的话,
+    我这条连接正拿着写锁,而它用的是它自己的连接 —— 永远等不到,
+    报 `database is locked`。2026-10-09 在派单任务上栽过一次,
+    > 一句「并行会话正在写库」和一句「我把写口包进了自己的事务」,
+    > **在这条报错上长得一模一样。**
+
+    ## 量级(2026-10-10 算过,用户定的 ①+③)
+
+    每周 2 款 × `购买推断_单次上限 5` = 最多 10 条商机 + 10 条任务;
+    `提醒期限天 3` + 收口每天跑 → 一条推断提醒最多只有 **1 天**处在逾期。
+    逾期峰值 = 现有 21 + 最多 10 = 31 条:第 1 周 31/223 = 13.9%,
+    第 25 周 31/463 = 6.7% —— `seed_customer_tasks` 的「逾期 ≤25%」守得住。
+    """
+    import arrival_card as AC
+    import opportunity_store as OS
+
+    # ① 先收口:过期没人答的「购买推断」提醒 → 取消(**不算逾期**)、那条待确认商机关掉
+    with c:
+        收 = OS.推断提醒收口(c, 今)
+    说(f"  收口:{收}" if 收 else "  收口:没有过期没答的推断提醒")
+
+    # ② 再放出:到期的待上架款。**不许只改 status** —— 走正门,它会跑回捞、绑商机、派提醒
+    到期 = [r[0] for r in c.execute(
+        "SELECT spu FROM product WHERE status='待上架' AND plan_on_shelf IS NOT NULL "
+        "AND plan_on_shelf<=? ORDER BY plan_on_shelf, spu", (今.isoformat(),))]
+    if not 到期:
+        早 = c.execute("SELECT MIN(plan_on_shelf) FROM product WHERE status='待上架'").fetchone()[0]
+        说(f"  放出:今天没有到期的款(最早排在 {早 or '(没有待上架的款)'})")
+        return dict(收口=收, 上了=0)
+    说(f"  放出:{len(到期)} 款到期 → 走 arrival_card.上新(挂上架 + 回捞绑商机 + 派提醒)")
+    r = AC.上新(到期, 今, db=DB)
+    # ⚠️ 返回的是 dict:{上了, 本来就在架, 没这款, 绑上} —— **逐项报出来**,
+    # 不笼统说「上新完成」:「上了 2 款」和「2 款本来就在架」在「没报错」上长得一样
+    说(f"    上了 {len(r.get('上了') or [])} · 本来就在架 {len(r.get('本来就在架') or [])} "
+      f"· 没这款 {len(r.get('没这款') or [])} · 回捞绑上 {len(r.get('绑上') or [])}")
+    return dict(收口=收, 上了=len(r.get("上了") or []), 绑上=len(r.get("绑上") or []))
+
+
 def main():
     ap = argparse.ArgumentParser(description="每天让演示世界长出一点新东西")
     ap.add_argument("--做", action="store_true", dest="做")
@@ -583,6 +633,12 @@ def main():
             c.rollback()
             return 1
     print("  造了:" + " · ".join(f"{k} {v}" for k, v in 计.items()))
+
+    # ── ④ 收口 + 每周放 2 件(用户 2026-10-10)──────────────────────────
+    # **必须在上面那个 `with c:` 之外** —— arrival_card.上新 自己开连接、自己提交,
+    # 包进我的事务里就是 `database is locked`(理由写在 收口与放出 的文档字符串里)。
+    收口与放出(c, 今, 说=print)
+
     print(f"  {G}✅{D} 写完。回滚:python3 tools/daily_fresh.py --回滚")
     print(f"  {Y}下一步{D}:跑 python3 tools/lifecycle_refresh.py --做 "
           f"—— 新单改了事实,档位要跟着重算(否则 lifecycle_sync_check 的 C 类会红)")
