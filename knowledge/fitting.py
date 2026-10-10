@@ -6,7 +6,7 @@
 
 三条规则,全部来自 md,不在这里另立标准:
   · 关键尺寸与标准码差 ≤2cm → 标准码;2–5cm → 调号;>5cm → 全定制
-  · **远程量体公差放宽 1cm**(不是因为量得准,是因为量得不准,严卡会白白把人推进调号)
+  · ~~远程量体公差放宽 1cm~~ —— **删了**(业务 2026-09-22 定不准远程量体,远程量的数不算数;10-10 删掉这段死代码)
   · **有明显体型特征 → 直接全定制**,与差值无关
 
 最容易错的一步不是算差值,是**比对基准**:
@@ -17,7 +17,7 @@ import os, re, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 MD_PT = os.path.join(HERE, "10-版型库.md")
 MD_MS = os.path.join(HERE, "08-量体与版型.md")
-TOL_FIT, TOL_ADJ, REMOTE_RELAX = 2.0, 5.0, 1.0
+TOL_FIT, TOL_ADJ = 2.0, 5.0
 
 # ── 围度放松量按版型基码反推(业务 2026-09-22 定)──────────────────────
 #
@@ -136,7 +136,12 @@ def recommend(measures, pattern, sizes, specs, xz_code, method="到店", feature
     """measures: {量体项名: 值};specs: {尺码: {部位: 成衣值}}。返回推荐与逐项明细。"""
     E, K = ease(), key_sizes()
     keys = K.get(xz_code, [])
-    tol = TOL_FIT + (REMOTE_RELAX if method == "远程" else 0)
+    if method == "远程":
+        # 业务 09-22:不准远程量体,远程量的尺寸不算数 —— 不再放宽公差、也不拿它推荐尺码(10-10 删掉「放宽 1cm」)
+        return dict(推荐尺码=None, 档位="需补量", 量体方式=method,
+                    理由="远程量的尺寸不算数(业务 2026-09-22 定:只认到店 / 上门量体),请约客户到店或上门重量",
+                    明细=[], 未比对=[], 关键尺寸未覆盖=K.get(xz_code, []), 需补量项=[])
+    tol = TOL_FIT
     rows, skipped = [], []
 
     def target(part, wear, sz=None):
@@ -199,8 +204,7 @@ def recommend(measures, pattern, sizes, specs, xz_code, method="到店", feature
         grade, why = "全定制", (f"有体型特征({'、'.join(features)})—— "
                                 f"**与差值无关,直接出专属版**")
     elif mx <= tol:
-        grade, why = "标准码", (f"关键尺寸最大差 {mx}cm,在 {tol}cm 以内"
-                             + ("(远程量体已放宽 1cm)" if method == "远程" else ""))
+        grade, why = "标准码", f"关键尺寸最大差 {mx}cm,在 {tol}cm 以内"
     elif mx <= TOL_ADJ:
         grade, why = "调号", f"关键尺寸最大差 {mx}cm(在 {tol}–{TOL_ADJ}cm),在标准版上微调「{worst['部位']}」"
     else:
@@ -272,9 +276,9 @@ if __name__ == "__main__":
     m = {"腰围": 78.7, "裙长": 96.0}
     a = recommend(m, "PT04", None, specs, "XZ03", method="到店")
     b = recommend(m, "PT04", None, specs, "XZ03", method="远程")
-    print(f"  {'✅' if (a['档位'],b['档位'])==('调号','标准码') else '❌'} "
-          f"同一组尺寸:到店判「{a['档位']}」,远程判「{b['档位']}」(公差放宽 1cm)")
-    assert (a["档位"], b["档位"]) == ("调号", "标准码"), (a["档位"], b["档位"], a["最大差"])
+    print(f"  {'✅' if (a['档位'],b['档位'])==('调号','需补量') else '❌'} "
+          f"同一组尺寸:到店判「{a['档位']}」;远程量的不算数 → 「{b['档位']}」(业务 09-22,不再放宽 1cm)")
+    assert (a["档位"], b["档位"]) == ("调号", "需补量"), (a["档位"], b["档位"], a.get("最大差"))
 
     # ── 宽松款:正常身材不许判全定制(2026-09-22 修的那个病)──────────────
     # PT31 圆领袍 M 码成衣胸围 118;原来全局放松量 16 → 「该有的净体」102 ——

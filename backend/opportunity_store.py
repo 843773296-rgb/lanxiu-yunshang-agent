@@ -438,14 +438,13 @@ def 购买偏好回捞(c, 新品们, 今天, 已推=None, 名额=None):
     对照 = PS.全店买过的占比(c, 起, 止, 表)
     色系 = dict(c.execute("SELECT color, family FROM color_family"))
     每人 = {}
-    for cust, spu, col in c.execute(
-            "SELECT o.customer_id, i.spu, s.color FROM ordr o JOIN ordr_item i ON i.order_id=o.id "
+    for cust, spu, col, iid in c.execute(
+            "SELECT o.customer_id, i.spu, s.color, i.id FROM ordr o JOIN ordr_item i ON i.order_id=o.id "
             "LEFT JOIN sku s ON s.code=i.sku WHERE o.customer_id IS NOT NULL AND substr(o.created,1,10) BETWEEN ? AND ? "
             "AND o.status NOT IN ('取消','已取消','待付款')", (起, 止)):
         if spu in 表:
-            v = {d: [x for x, _ in 表[spu]["属性"][d]] for d in T.维度们}
-            v["颜色"] = [色系[col]] if 色系.get(col) else []      # 她买的那个 SKU 的颜色
-            每人.setdefault(cust, []).append(v)
+            # 她买的那一件:颜色按 SKU,定制品按下单时真选的料 / 工艺 / 颜色(和商品归纳同一个函数,不另写一套)
+            每人.setdefault(cust, []).append(PS.买的那件(c, 表, 色系, iid, spu, col))
     候选 = []
     for cust, 件们 in 每人.items():
         if cust in 已推 or len(件们) < T.最少件数:

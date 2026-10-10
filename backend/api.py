@@ -880,6 +880,13 @@ def appt_funnel(since=None, until=None):
     表 = []
     for i, (名, n) in enumerate(各环):
         row = dict(环节=名, 人次=n)
+        if 名 == "到店":
+            # 到店的**客户数**(去重):同一个人这一期来两次,人次 2、客户数 1(V1.1:接待客户数要按周期重新去重,
+            # 日报的数不能直接加成周报)。没挂客户号的到店不进客户数 —— 照实给出有几条没挂
+            row["客户数"] = len(cids)
+            没挂 = sum(1 for r in 到店 if not r.get("customer_id"))
+            if 没挂:
+                row["没挂客户号的到店"] = 没挂
         if i:
             row["这一环漏了多少"] = af.环节转化(n, 各环[i-1][1], 名)[0]
             row["从头算剩多少"] = af.整体转化(n, 总, 名)[0]
@@ -4237,8 +4244,26 @@ def store_report(kind="周", date=None):
     elif 到 is None:
         缺口.append(f"进店客流:{r.get('error') or '预约漏斗里没找到「到店」那一环'}")
     期内["进店客流"] = 项(到, f"appt_funnel(since={a}, until={b})",
-                      "用实际预约到店人数(用户 2026-10-09 定),不另造客流数据;工具注明部分关联可能高估",
+                      "用实际预约到店人数(用户 2026-10-09 定),不另造客流数据;工具注明部分关联可能高估。单位:**人次**",
                       漏斗=r.get("漏斗"), 一句话=r.get("先看这一句"))
+    # ④b 到店客户数(去重,V1.1)—— 和上面同一个漏斗、同一个「到店」口径,只是按客户去重
+    客 = next((x.get("客户数") for x in r.get("漏斗") or [] if x.get("环节") == "到店"), None)
+    期内["到店客户数"] = 项(0 if 到 == 0 else 客, f"appt_funnel(since={a}, until={b}) 的「到店」按客户去重",
+                         "单位:**人**(同一个客户这一期来几次都算 1)。**这一期重新去重** —— 不能拿日报的数加成周报")
+    # ④c 售后新建 / 结案(V1.1)—— 两个数各用自己的事件时间:新建按建单日,结案按办结那天
+    _店 = me.get("shop") if me.get("role") != "总部运营" else None
+    _w = " AND COALESCE(a.shop, o.shop)=?" if _店 else ""
+    _p = [_店] if _店 else []
+    新建 = _rows2("SELECT a.kind, COUNT(*) n FROM aftersale a LEFT JOIN ordr o ON o.id=a.order_id "
+                  f"WHERE substr(a.created,1,10) BETWEEN ? AND ?{_w} GROUP BY a.kind", a, b, *_p)
+    结案 = _rows2("SELECT a.kind, COUNT(*) n FROM aftersale a LEFT JOIN ordr o ON o.id=a.order_id "
+                  f"WHERE a.status IN ('已完成','已关闭','已拒绝') AND substr(a.updated,1,10) BETWEEN ? AND ?{_w} "
+                  "GROUP BY a.kind", a, b, *_p)
+    期内["售后"] = 项({"新建": sum(x[1] for x in 新建), "结案": sum(x[1] for x in 结案),
+                      "新建按类型": {x[0]: x[1] for x in 新建}, "结案按类型": {x[0]: x[1] for x in 结案}},
+                     f"aftersale(start={a}, end={b})",
+                     "新建按建单日、结案按办结那天(已完成 / 已关闭 / 已拒绝,用最后更新日近似)—— 两个数**各算各的**,"
+                     "不是同一批单;单位:单")
     # ⑤ 评价
     r = rating_overview(start=a, end=b)
     期内["评价"] = 项({k: r.get(k) for k in ("条数", "平均", "差评几条", "差评占比")},
@@ -4332,11 +4357,26 @@ def store_report(kind="周", date=None):
     return {"报告": 名, "种类": kind, "区间": f"{a} ~ {b}" + ("(这一期还没过完,截到今天)" if 止 > 今 else ""),
             "范围": me.get("shop") or "全部门店", "截至": TODAY,
             "时区": "中国时间(按演示世界的日期;用户 2026-10-09 定)",
+            # 规则版本留底(V1.1):这份数是按哪一版口径取的、写报告的规矩是哪一版 —— 存进报告就冻结,
+            # 三个月后规矩改了,还查得到当时是照什么写的
+            "规则版本": _报告规则版本(),
             "期内": 期内, **({"环比": 环比} if 环比 else {}), "存量(截至今天)": 存, "取不到的": 缺口,
             "必选指标": list(必选), "必选缺了的": 必缺,
             "能不能确认": not 必缺,
             "怎么用": "**只照这份数说**:每一项都有出处;「期内」说这一期发生了多少,「存量」说截至今天还压着多少,"
                      "两类不许混(别把存量说成本期新增)。原因、建议要标成判断,不要写成已安排。"}
+
+
+# 取数包口径的版本:**改了取数口径就升这个号**(加指标、改单位、改去重都算)
+报告口径版本 = "2026-10-10.1"   # 10-10:加到店客户数(去重)、售后新建 / 结案、规则版本留底
+
+
+def _报告规则版本():
+    """取数口径版本 + 写报告 / 存报告那两条规矩(TL67 / TL68)正文的指纹 —— 规矩改一个字,指纹就变。"""
+    import hashlib, prompts as _p
+    规 = {r.id: r.text for _, r in _p.all_rules(unique=True) if r.id in ("TL67", "TL68")}
+    return {"取数口径": 报告口径版本,
+            "规矩指纹": {k: hashlib.sha1(v.encode("utf-8")).hexdigest()[:10] for k, v in sorted(规.items())}}
 
 
 def save_report(body=None, kind="周", date=None, report_id=None):

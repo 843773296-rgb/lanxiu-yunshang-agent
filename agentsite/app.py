@@ -61,6 +61,8 @@ PAGES = {"/": "station.html", # 登录与任务:登录态是**后台**发的 ses
          "/scheme": "scheme.html",
          # 存过的经营报告:/report 列表,/report?id=RPT… 直达那一份(用户 10-10:确认后要给个链接能直达)
          "/report": "report.html",
+         # 定制订单确认书(业务 10-10:收预付款要有书面约定)—— 确认下单时生成,从任务 / chat 给的链接直达
+         "/contract": "contract.html",
          # 着装人的身体生命周期 —— 和会员生命周期(新客/沉默/流失)不是一回事
          "/wearers": "wearers.html",
          # ⚠️ 2026-09-28:`/workbench` `/acceptance` `/health` `/ai` `/debug` `/experiments`
@@ -238,6 +240,29 @@ class H(BaseHTTPRequestHandler):
             # 中文文件名走 RFC 5987(filename*),旧浏览器退回 ASCII 那个
             self.send_header("content-disposition",
                              f"attachment; filename=\"report-{quote(str(报告.get('id')))}.pdf\"; filename*=UTF-8''{quote(名)}")
+            self.send_header("content-length", str(len(b)))
+            self.end_headers(); self.wfile.write(b); return
+        if p == "/contract.pdf":
+            # 订单确认书下载 —— 和报告 PDF 同一套:先拿登录人自己的 cookie 向后台取,取不到不出
+            import report_pdf as _rp
+            oid = (parse_qs(urlparse(self.path).query).get("order") or [""])[0]
+            try:
+                with urllib.request.urlopen(urllib.request.Request(
+                        BACKEND + "/api/contract/" + quote(oid), headers={"cookie": self.headers.get("cookie") or ""}),
+                        timeout=30) as r:
+                    文档 = json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                if e.code == 401:
+                    self.send_response(302); self.send_header("location", "/login?back=" + quote(self.path))
+                    self.end_headers(); return
+                return self._send(json.loads(e.read() or b"{}") or {"error": f"取不到 {oid}"}, code=e.code)
+            b, 原因 = _rp.出PDF(None, 页=_rp.确认书离线页(文档))
+            if not b: return self._send({"error": 原因}, code=503)
+            名 = f"澜绣云裳-订单确认书-{文档.get('订单号')}.pdf"
+            self.send_response(200)
+            self.send_header("content-type", "application/pdf")
+            self.send_header("content-disposition",
+                             f"attachment; filename=\"contract-{quote(str(文档.get('订单号')))}.pdf\"; filename*=UTF-8''{quote(名)}")
             self.send_header("content-length", str(len(b)))
             self.end_headers(); self.wfile.write(b); return
         if p == "/md.js":

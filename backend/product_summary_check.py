@@ -19,6 +19,7 @@ import api, product_summary as PS, opportunity_store as S, arrival_card as AC, o
     ("推断的绑定混进「电话里说过的」那张表", "推断的绑定不进 opportunity_recall(那张表只放电话里说过的)"),
     ("同一位客户 90 天内被推两次(冷却没合着算)", "冷却:5 天后再上新一次,推过的人不再推"),
     ("顾客的颜色按这款所有颜色算,不按她买的那件", "只买过蓝色那件(那款另有红色)的人,上新红色不推她"),
+    ("定制品还按可选项第一项算,不按她下单时真选的", "定制品按她下单时真选的面料算(不是这款的可选项第一项)"),
     ("购买推断不单独限量(一次推 50 人)", "推了人,而且单次不超过 5(用户 10-10:购买推断每次最多 5 人)"),
     ("自动收口把客户说过的提醒也收了", "客户亲口说过的那两种提醒不被收口"),
 ]
@@ -84,6 +85,20 @@ ck("工具:按关键词给 → 归纳了、超过上限会说截断", "结论" i
 ck("工具:按款号给,和直接归纳同一个结论", t2["结论"] == r["结论"] and len(t2["规律"]) == len(r["规律"]))
 ck("工具:什么都没给 → 报错说清三种给法", "error" in t3)
 ck("工具:给客户 → 归纳她买过的(对照组是全店买过的)", t4.get("对照组", "").startswith("全店") and t4.get("明细") is not None, str(t4)[:120])
+
+# 定制品按她下单时真选的(10-10):找一件选的主料和这款「可选项第一项」不一样的定制单行
+_色系 = dict(c.execute("SELECT color, family FROM color_family"))
+_样 = None
+for iid, spu, mt in c.execute("SELECT i.id, i.spu, pc.mt_opts FROM ordr_item i JOIN product_custom pc ON pc.spu=i.spu "
+                              "WHERE pc.mt_opts IS NOT NULL ORDER BY i.id").fetchall():
+    选 = c.execute("SELECT material FROM item_part_choice WHERE item_id=? AND kind='面料' AND part IN ('主身','整件') "
+                   "ORDER BY id LIMIT 1", (iid,)).fetchone()
+    第一项 = (mt or "").split(",")[0].strip()
+    if 选 and 选[0] and 选[0] != 第一项 and spu in 表 and 第一项 not in (表[spu]["名称"] or ""):
+        _样 = (iid, spu, 选[0], 第一项); break
+_件 = PS.买的那件(c, 表, _色系, _样[0], _样[1], None) if _样 else {}
+ck("定制品按她下单时真选的面料算(不是这款的可选项第一项)", bool(_样) and _件.get("面料") == [_样[2]],
+   f"样本 {_样} → {_件.get('面料')}")
 
 # ── 购买喜好推荐 ──
 红款 = c.execute("SELECT s.spu FROM sku s JOIN color_family f ON f.color=s.color JOIN product p ON p.spu=s.spu "

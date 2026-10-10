@@ -22,6 +22,8 @@ from seed import TODAY
     ("周报环比的上一期错位(拿了上上周)", "周报环比:上期下单数和独立 SQL 对得上"),
     ("本期没过完也照样比", "本期还没过完 → 不比(避免假的下跌)"),
     ("没有预约的那一天把到店算成「取不到」(10-09 CI 红法)", "没有预约的那一天:进店客流记 0,不算取不到"),
+    ("到店客户数没去重(直接拿人次)", "到店客户数 = 这一期按客户去重(独立 SQL),而且不超过人次"),
+    ("售后结案按建单日算", "售后新建 / 结案各按自己的事件时间,和独立统计对得上"),
 ]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -140,6 +142,34 @@ with api.as_user(店长):
            f"{空日[0]}: {(空.get('期内') or {}).get('进店客流', {}).get('值')} / {空.get('取不到的')}")
     else:
         ck("没有预约的那一天:进店客流记 0,不算取不到", False, "近 400 天天天都有预约 —— 找不到样本,这条没验到")
+
+# ⑦ V1.1 补的三项(10-10):到店客户数去重、售后新建 / 结案、规则版本留底
+# 挑本店到店最多的那个月(重建后的库预约稀,上周可能一条到店都没有 —— 空集合上「去重对」恒成立)
+月 = c.execute("SELECT substr(start_ts,1,7) m, COUNT(*) FROM appointment WHERE shop=? AND status IN ('已到店','已完成') "
+               "AND substr(start_ts,1,10) < ? GROUP BY m ORDER BY 2 DESC LIMIT 1", (店, TODAY)).fetchone()
+with api.as_user(店长):
+    包月 = api.store_report(kind="月", date=(月[0] + "-01") if 月 else TODAY)
+起, 止 = 包月["区间"][:10], 包月["区间"][13:23]
+期望客 = len({r[0] for r in c.execute("SELECT customer_id FROM appointment WHERE shop=? AND status IN ('已到店','已完成') "
+                                      "AND customer_id IS NOT NULL AND substr(start_ts,1,10) BETWEEN ? AND ?", (店, 起, 止))})
+期望次 = c.execute("SELECT COUNT(*) FROM appointment WHERE shop=? AND status IN ('已到店','已完成') "
+                   "AND substr(start_ts,1,10) BETWEEN ? AND ?", (店, 起, 止)).fetchone()[0]
+客 = 包月["期内"]["到店客户数"]["值"]
+ck("到店客户数 = 这一期按客户去重(独立 SQL),而且不超过人次", 期望客 > 0 and 客 == 期望客 and 客 <= 包月["期内"]["进店客流"]["值"],
+   f"{起}~{止}:工具 {客} / SQL {期望客} / 人次 {包月['期内']['进店客流']['值']}(SQL 人次 {期望次})")
+新, 结 = 0, 0
+for kind_, st, cre, upd, ash, osh in c.execute("SELECT a.kind, a.status, a.created, a.updated, a.shop, o.shop FROM aftersale a "
+                                                 "LEFT JOIN ordr o ON o.id=a.order_id"):
+    if (ash or osh) != 店:
+        continue
+    新 += 起 <= (cre or "")[:10] <= 止
+    结 += st in ("已完成", "已关闭", "已拒绝") and 起 <= (upd or "")[:10] <= 止
+售 = 包月["期内"]["售后"]["值"]
+ck("售后新建 / 结案各按自己的事件时间,和独立统计对得上", (售["新建"], 售["结案"]) == (新, 结) and 新 + 结 > 0,
+   f"工具 {售['新建']}/{售['结案']} / 独立 {新}/{结}")
+版 = 包月.get("规则版本") or {}
+ck("规则版本留底:取数口径版本 + 写报告两条规矩的指纹", 版.get("取数口径") == api.报告口径版本
+   and set((版.get("规矩指纹") or {})) == {"TL67", "TL68"} and all(len(v) == 10 for v in 版["规矩指纹"].values()), str(版))
 
 sc = next(t for t in api.SHOP_SCHEMAS if t["name"] == "store_report")
 ck("工具参数名都是 ASCII", all(re.fullmatch(r"[a-zA-Z0-9_.-]{1,64}", k) for k in sc["input_schema"]["properties"]))

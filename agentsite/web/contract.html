@@ -1,0 +1,42 @@
+<!doctype html><meta charset="utf-8">
+<title>订单确认书 · 澜绣云裳</title>
+<nav class="sitenav"><!--NAV--></nav>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--side:#f7f7f8;--line:#e6e6e8;--ink:#17181c;--dim:#8b8d94;--accent:#2f5bff;--err:#b42318;--errbg:#fef3f2}
+*{box-sizing:border-box}
+body{margin:0;background:var(--side);color:var(--ink);font:14px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+#top{display:flex;align-items:center;gap:10px;padding:11px 20px;background:#fff;border-bottom:1px solid var(--line)}
+#top b{font-size:14.5px}.sp{flex:1}
+.tbtn{font:inherit;font-size:12.5px;padding:5px 11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);text-decoration:none}
+main{max-width:860px;margin:20px auto 60px;padding:0 20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:13px;padding:24px 28px}
+.card h1{font-size:20px;margin:0 0 10px}.card h2{font-size:15px;margin:20px 0 6px}
+.card table{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0}
+.card th,.card td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left}
+.meta{font-size:12px;color:var(--dim);margin-top:12px}
+.no{background:var(--errbg);color:var(--err);padding:12px;border-radius:9px}
+@media print{#top,.sitenav{display:none}body{background:#fff}main{margin:0;max-width:none}.card{border:0;padding:0}}
+</style>
+<div id="top"><b>订单确认书</b><span class="sp"></span><a class="tbtn" id="pdf" hidden>下载 PDF</a><a class="tbtn" href="/tasks">← 回任务</a></div>
+<main id="main"><div class="card">加载中…</div></main>
+<script src="/md.js"></script>
+<script>
+/* 定制订单确认书(业务 10-10:收预付款要有书面约定)。/contract?order=… 看,/contract.pdf?order=… 下载。
+   正文是确认下单那一刻冻结的(backend/order_contract.py),这页只画。导出 PDF 时数据塞在 window.__DOC__ 里。 */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+function 画(d){
+  if(d.error){ $("#main").innerHTML = '<div class="no">' + esc(d.error) + "</div>"; return; }
+  $("#main").innerHTML = '<div class="card">' + md(d.body) +
+    `<div class="meta">生成于 ${esc(d.生成于)}(经手 ${esc(d.经手)})· 条款版本 ${esc(d.条款版本)} · 订单现在「${esc(d.订单状态)}」</div></div>`;
+}
+(async () => {
+  if(window.__DOC__){ 画(window.__DOC__); return; }
+  const r = await fetch("/api/me");
+  if(r.status === 401){ location.href = "/login?back=" + encodeURIComponent(location.pathname + location.search); return; }
+  const id = new URLSearchParams(location.search).get("order") || "";
+  $("#pdf").href = "/contract.pdf?order=" + encodeURIComponent(id); $("#pdf").hidden = !id;
+  画(await (await fetch("/api/contract/" + encodeURIComponent(id))).json());
+})();
+</script>

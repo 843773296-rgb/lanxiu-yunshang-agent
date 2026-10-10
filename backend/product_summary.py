@@ -85,9 +85,29 @@ def 归纳商品(c, spus):
     return 出
 
 
+def 买的那件(c, 表, 色系, item_id, spu, sku色):
+    """顾客买的**那一件**的属性 —— 不是这款商品的属性:
+    颜色按她买的那个 SKU;**定制品的面料 / 工艺 / 颜色按她下单时真选的**(item_part_choice,10-10 接上 ——
+    原来用的是这款「可选项第一项」,而她可能选的是第三种料)。选了的维度来源标「下单时选的」,没选的退回商品属性。"""
+    v = {d: [x for x, _ in 表[spu]["属性"][d]] for d in T.维度们}
+    v["颜色"] = [色系[sku色]] if 色系.get(sku色) else []
+    选 = c.execute("SELECT kind, part, material, color FROM item_part_choice WHERE item_id=? ORDER BY id",
+                   (item_id,)).fetchall() if item_id is not None else []
+    料 = [x for x in 选 if x[0] == "面料" and x[2]]
+    if 料:
+        主 = next((x for x in 料 if x[1] in ("主身", "整件")), 料[0])
+        v["面料"] = [主[2]]
+        if 色系.get(主[3]):
+            v["颜色"] = [色系[主[3]]]
+    艺 = sorted({x[2] for x in 选 if x[0] == "工艺" and x[2]})
+    if 艺:
+        v["工艺"] = 艺
+    return v
+
+
 def 买过的(c, 客户, 起, 止):
     """一位顾客窗口里买过的每一件(一行一件;取消 / 待付款的不算买过)。颜色按她买的那个 SKU。"""
-    return c.execute("SELECT i.spu, s.color, o.id, substr(o.created,1,10) FROM ordr o JOIN ordr_item i ON i.order_id=o.id "
+    return c.execute("SELECT i.spu, s.color, o.id, substr(o.created,1,10), i.id FROM ordr o JOIN ordr_item i ON i.order_id=o.id "
                      "LEFT JOIN sku s ON s.code=i.sku WHERE o.customer_id=? AND substr(o.created,1,10) BETWEEN ? AND ? "
                      "AND o.status NOT IN ('取消','已取消','待付款') ORDER BY o.created, i.id", (客户, 起, 止)).fetchall()
 
@@ -111,10 +131,10 @@ def 归纳顾客(c, 客户, 今天, 表=None, 对照=None):
     起, 止 = P.窗口起点(今天).isoformat(), 今天.isoformat()
     色系 = dict(c.execute("SELECT color, family FROM color_family"))
     件们, 明细 = [], []
-    for spu, col, oid, d in 买过的(c, 客户, 起, 止):
+    for spu, col, oid, d, iid in 买过的(c, 客户, 起, 止):
         if spu not in 表:
             continue
-        v = _值们(表[spu]["属性"]); v["颜色"] = [色系[col]] if 色系.get(col) else []
+        v = 买的那件(c, 表, 色系, iid, spu, col)
         件们.append(v)
         明细.append(dict(款号=spu, 名称=表[spu]["名称"], 订单=oid, 日期=d, **{k: x for k, x in v.items()}))
     对照 = 对照 or 全店买过的占比(c, 起, 止, 表)

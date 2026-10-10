@@ -746,6 +746,45 @@ tempfile 里、跑完就删。
    `opportunity_store.满足扫描()`,**不要手造**。
 5. 「没联系上」那个结论分支故意没覆盖(见 ⑤)。
 
+## 🧭 2026-10-10 夜 · 压缩前交接(体检 / 评测线写)
+
+最后刷新:2026-10-10 夜 · 上下文 81% · 本次变化:预约缺口根因查明待用户拍;法律 4 条落地 + 订单确认书 + V1.1 三项 + 定制品真选 + 删远程放宽,**全部未提交**
+
+### 1. 未验证的预判
+- 🔮 **预判**:下面这批未提交改动全量门禁会绿。**没验。** 只单跑过:contract_check 12/12、contract_terms 自测、
+  咬合 contract 3 + terms 1、fitting.py 自测、js_check、nav_check、prompts_check、doc_numbers_check。
+  **没跑**:store_report_check(新加 V1.1 三条)、product_summary_check(新加定制品真选一条 + 两条咬合重指)、
+  report_doc_check / arrival_card_check(arrival_card 改了建议材料和规则模板)。验法:拿回窗口后逐个单跑,再 ./check.sh,再 bite_run 这几组。
+- 🔮 **预判**:store_report_check 的「到店客户数」那条在新库上**可能样本稀**(重建后预约只剩 79 条)—— 判据挑本店到店最多的那个月,
+  若期望客 = 0 会红(故意:空集合不算过)。验法:跑一下;红了先看是不是数据工厂还没修预约。
+- 🔮 **预判**:doc_numbers_check 的「数据表数」会因为 order_contract 新表在真库建出来后 +1(现在真库还没这张表)。验法:ensure_tables 跑过后再对账。
+
+### 2. 判据
+- 订单确认书**必须和 confirm_order 同一事务**:写不进就整单回滚 —— 「付了全款、确认书稍后补」在补上之前和不存在没区别。
+- 产出推平台只认**本库**(artifact_report.是本库):副本上产生的默认不推;只有 supervise_check 显式把 report_doc.本库 / AC.本库 指到副本。
+- 购买推断的建议**不许写成「她说过」**;颜色对上的是色系,材料里要列出新款里属于这个色系的具体色名(否则模型说「这批没有紫色」)。
+- 定制品「重做」走现成返修单(repair_write.decide plan=重做),**不是**标品换货流程;aftersale R1 数据规则不用改。
+
+### 3. 作废的结果
+- ❌ 数据工厂重建后那第一轮全量门禁**不作数**:我在它跑到一半时写了 recall_advice 7 行(它自己说只当参考)。
+- ❌ 今天下午平台上的产出(含我演示的那次打回)基于测试泄漏的假内容,已全部清掉重推;别拿旧截图当证据。
+- ❌ 旧投递箱 `.feynman/artifact-*.jsonl.重建前-20261010` 是旧库的,只留底,别再推。
+
+### 4. 禁区(原话)
+- 数据工厂:「这期间请别写库,也别改代码——你那批未提交的改动等窗口回去再动。等我回你。」(我回了:代码在原目录改、不提交不跑门禁,它的门禁跑在 worktree 源码上)
+- 用户 CLAUDE.md:不提交别人的改动,`git commit --only`;push 前扫密钥;~/Desktop/chatgpt/ 只读;放宽守卫要用户执行。
+- 涉及业务口径和法律的规矩,等用户拍板再改(10-10 晚用户已全部拍完,见下)。
+
+### 5. 下一步第一个动作
+等数据工厂说「窗口还你」→ `git stash && git pull --rebase && git stash pop`(HANDOFF.md / 待办清单.md 可能冲突:待办清单重新生成,HANDOFF 两边都留)→
+单跑 `python3 backend/store_report_check.py`、`backend/product_summary_check.py`、`backend/report_doc_check.py`、`backend/arrival_card_check.py`、`backend/contract_check.py`
+→ `python3 tools/ensure_tables.py`(建 order_contract)→ 截确认书页面(`scratchpad/cdp/shot.mjs`,要先在库里确认一张单才有确认书)→ ./check.sh → bite_run 新组 → 提交 → 发飞书(产品说明 + 需求文档)。
+
+### 6. 悬而未决
+- ✅ **用户 10-10 晚拍完剩下 7 条**(原文在《话术待定项法规与行业做法》附录顶部):退款时限按三档(押金 1 / 订单 3、≥1000 元 5 / 标品 7 日)· 发票按建议 · 定制品下单单独勾「不适用七天无理由」不默认勾 · 收现金、分期只走花呗信用卡不贴息 · 14—18 岁本人为准+身体数据家长双签 · 延期**晚 3 天起**给一样 · 开裁后取消工钱**按工单工日折钱**(workorder.workdays × 300/800,做一半按已过天数折,不另设比例)。**只改了两份文档,代码 / 知识 / 条款 / 检查都还没改** —— 先提交上一批再做。
+- 重建后预约 17456 → 79:**数据工厂查清了** —— 那 1.7 万条是一次人工灌的假数据(SYN- 前缀),从来不在 tools/rebuild.sh 配方里;受影响三张表 appointment 17456→79、schedule 17587→220、followup 10461→30,其余 29 张表 95%~100%。重建不报错不变红,只是悄悄变少。**用户 10-10 拍了②+③**(写进配方 + 判据加样本下限,不从备份捞;已转告数据工厂,它来做,做完通知我)。原三选:①从备份捞回 SYN- 数据 ②把灌数写进配方 ③接受稀库、把判据样本下限提上去让它下次直接红;数据工厂倾向②+③,我也倾向②+③。**周报客流现在是 0 不是报告的 bug,别改报告取数。**
+- 管理后台 test_index_build / test_retrieval 没跑:要清本地检索实验的 89 条向量,等用户定。
+
 ## 🧭 2026-10-09 深夜 · 日报 / 周报 / 月报:取数、保存、确认都做完了(体检 / 评测线写)
 
 **① 下一步第一个动作**:等用户在页面上试「生成上周周报 → 存一下 → 确认」给反馈;
@@ -798,6 +837,20 @@ tempfile 里、跑完就删。
   报告编号改成「现有最大 + 1」(按行数会复用号:RPT000002 先给了假报告,后给了店长的真月报)。
   清理:平台库删了 13 条假的 + 3 条假 v1 和挂在上面的那条演示打回,推回真内容;本地投递箱 / 送达记录同步删掉(否则真 v2 会被假键挡住)。
   ⚠️ 结果:平台上 OP-TS-023 v1 显示「正常」,但它在澜绣里是被打回过的(打回记录随假 v1 一起删了)。
+- **用户 10-10 拍了话术里 4 条法律冲突**(都按建议):① 定制品质量问题可选返修 / 重做 / 退款(知识 09 §6.1 已改;
+  重做走现成的返修单 plan=重做,aftersale R1 那条数据规则不用动)② 延期「三样」只当主动致歉,法定退款利息另算
+  ③ 完工前随时可停、只扣已发生的料和工(话术已改;各工序工钱比例待生产定)④ **订单确认书**(新):
+  `knowledge/contract_terms.py` 条款 + `backend/order_contract.py`,**在 confirm_order 同一事务里生成**(写不进整单回滚),
+  `/contract?order=` 看、`/contract.pdf` 下;TL47 加了「给出确认书链接」;contract_check 12 条 + 咬合 4。
+  **未提交**,等数据工厂重建完在新库上跑门禁再提交。其余 5 条(押金时限、开票、七天无理由勾选、收现金、14—18 岁)待业务定。
+- **10-10 晚,未提交(等窗口跑门禁)**:订单确认书 + 4 条法律口径(见上)· 卡片建议三处修(购买推断的规则模板别写「她说的」、
+  材料里写明对上色系的具体色名、禁止许诺预留)· fitting.py 删「远程放宽 1cm」(远程量的直接判需补量)·
+  **V1.1 三项**:取数包加「到店客户数」(漏斗 appt_funnel 的到店环节加「客户数」去重)、「售后」新建 / 结案、「规则版本」
+  (`api.报告口径版本` + TL67/68 指纹)· 商品归纳 / 购买推荐里定制品按 item_part_choice 真选的(`product_summary.买的那件`)。
+  store_report_check / product_summary_check 加了判据没跑(答应数据工厂窗口回来前不读库)。
+- ⚠️ 重建后 appointment 只剩 79 条(原 17456),上周进店客流 0 —— 已报数据工厂,归它那条线。
+- **数据工厂在重建本地库**(用户直接对它点头的)。建完它说「建完了」我再做:清投递箱 / 送达记录 + 平台旧产出、
+  `python3 backend/arrival_card.py` 补建议、`supervise_sync.py --补` 推、`./start.sh` 起同步循环;截确认书页面;全量门禁;发飞书。
 - 文档:产品说明补了今天的功能(5F 留存第三问 / H3+ / J3–J4 / 新 5G 产出监督),需求文档 + 产品说明已发飞书;
   doc_numbers_check 加了「购买推断上限 5」「回看 24 个月」两条现算规格。
 
@@ -6996,48 +7049,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-10 14:53。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-10 16:14。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 285f1a0 · 2026-10-10 · 修 CI:两项新检查赌了本地库碰巧剩下的数据,从零建的库长得不一样 |
-| 代码量 | 691 个 Python 文件 / 126066 行(不含 .venv) |
-| 验收 | `./check.sh` 共 251 项 —— **接手第一件事就是跑它** |
+| 最新提交 | 238de39 · 2026-10-10 · 修一个泄漏:检查在库副本上存的报告 / 写的建议,照样推上了 AI 管理平台;并补完文档 |
+| 代码量 | 691 个 Python 文件 / 126271 行(不含 .venv) |
+| 验收 | `./check.sh` 共 253 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
 **未提交的改动:**
 
 ```
-M CLAUDE.md
- M HANDOFF.md
- M agent/artifact_report.py
+M HANDOFF.md
+ M agentsite/app.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M agentsite/web/report.html
+ M agentsite/nav.py
+ M agentsite/report_pdf.py
+ M backend/api.py
  M backend/arrival_card.py
- M backend/report_doc.py
- M backend/supervise_check.py
+ M backend/opportunity_store.py
+ M backend/order_write.py
+ M backend/product_summary.py
+ M backend/product_summary_check.py
+ M backend/server.py
+ M backend/store_report_check.py
+ M check.sh
+ M "knowledge/09-\345\205\273\346\212\244\344\270\216\345\224\256\345\220\216.md"
+ M knowledge/fitting.py
+ M prompts.py
  M tools/bite_specs.json
- M tools/doc_numbers_check.py
- M tools/supervise_sync.py
- M "\346\276\234\347\273\243\344\272\221\350\243\263agent-\344\272\247\345\223\201\350\257\264\346\230\216.md"
-?? .feynman/world-shift-launchd.log
-?? .wip-muslin/
-?? data/lanxiu.db
-?? "\347\256\241\347\220\206\345\220\216\345\217\260/.wip-209\346\235\241\346\256\213\347\225\231\345\244\207\344\273\275.json"
-?? "\347\256\241\347\220\206\345\220\216\345\217\260/.wip-\346\270\205\346\216\211\347\232\204\347\264\242\345\274\225\345\244\207\344\273\275.json"
+ M tools/ensure_tables.py
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+238de39 修一个泄漏:检查在库副本上存的报告 / 写的建议,照样推上了 AI 管理平台;并补完文档
+286d5ef 交接:造数不许吃掉别人的判据样本;夹具不忠实时变异测试会给出假的安心
+4d20db5 修 CI:造数把别人的样本吃掉了 —— 「留一条提醒开着」不等于「留一条搁置商机」
 285f1a0 修 CI:两项新检查赌了本地库碰巧剩下的数据,从零建的库长得不一样
 45e8ec1 AI 管理平台产出监督 + 商品归纳总结 + 购买喜好推荐 + 工作台入口 / 角色丢失 / 卡片带客户号(用户 10-10)
-ea10edf 修 CI:造了 25 个定制品,文档里写死的 146 变假了(文档变假时不会报错)
-29dbc96 知识溯源补 KF26 泥金(织物上的,现抓核过);交接记下「给写口加闸要先数造数脚本」
-c0afd90 修 CI 从零重建红:下单口的闸把造数脚本拦了 —— 闸没错,是挑款时漏了 status
 ```
 <!--/AUTO-->
 ## 一句话在做什么

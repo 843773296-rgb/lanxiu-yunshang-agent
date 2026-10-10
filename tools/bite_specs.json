@@ -6451,9 +6451,9 @@
   "改坏": "顾客的颜色按这款所有颜色算,不按她买的那件",
   "file": [
    {
-    "path": "backend/opportunity_store.py",
-    "old": "            v[\"颜色\"] = [色系[col]] if 色系.get(col) else []      # 她买的那个 SKU 的颜色",
-    "new": "            pass"
+    "path": "backend/product_summary.py",
+    "old": "    v[\"颜色\"] = [色系[sku色]] if 色系.get(sku色) else []",
+    "new": "    pass"
    }
   ],
   "预期红": "只买过蓝色那件(那款另有红色)的人,上新红色不推她"
@@ -6553,5 +6553,89 @@
    }
   ],
   "预期红": "默认:库副本上存报告、写建议,一条都不进投递箱"
+ },
+ {
+  "script": "backend/contract_check.py",
+  "改坏": "确认书写不进去也照样确认下单(付了全款没有书面约定)",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "        确认书 = _oc.生成(c, oid, me, now[:10])",
+    "new": "        try: 确认书 = _oc.生成(c, oid, me, now[:10])\n        except Exception: 确认书 = None"
+   }
+  ],
+  "预期红": "确认书写不进去 → 确认下单整个回滚,订单还是「待确认」"
+ },
+ {
+  "script": "backend/contract_check.py",
+  "改坏": "确认书的金额不按这张单取",
+  "file": [
+   {
+    "path": "backend/order_contract.py",
+    "old": "    合计 = float(o[2] or sum(x[\"金额\"] for x in 明细))",
+    "new": "    合计 = 1.0"
+   }
+  ],
+  "预期红": "确认书里的商品和金额和这张单对得上(独立 SQL)"
+ },
+ {
+  "script": "backend/contract_check.py",
+  "改坏": "别店也能看确认书",
+  "file": [
+   {
+    "path": "backend/order_contract.py",
+    "old": "    return me.get(\"role\") == \"总部运营\" or me.get(\"shop\") == shop",
+    "new": "    return True"
+   }
+  ],
+  "预期红": "别店店长看不到"
+ },
+ {
+  "script": "knowledge/contract_terms.py",
+  "改坏": "条款里写了固定违约比例",
+  "file": [
+   {
+    "path": "knowledge/contract_terms.py",
+    "old": "    (\"方案锁定、还没备料\", \"预付款全退\"),",
+    "new": "    (\"方案锁定、还没备料\", \"扣 30% 违约金\"),"
+   }
+  ],
+  "预期红": "不出现固定违约比例(30% / 50% 这种)"
+ },
+ {
+  "script": "backend/store_report_check.py",
+  "改坏": "到店客户数没去重(直接拿人次)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "            row[\"客户数\"] = len(cids)",
+    "new": "            row[\"客户数\"] = len(到店)"
+   }
+  ],
+  "预期红": "到店客户数 = 这一期按客户去重(独立 SQL),而且不超过人次"
+ },
+ {
+  "script": "backend/store_report_check.py",
+  "改坏": "售后结案按建单日算",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "f\"WHERE a.status IN ('已完成','已关闭','已拒绝') AND substr(a.updated,1,10) BETWEEN ? AND ?{_w} \"",
+    "new": "f\"WHERE a.status IN ('已完成','已关闭','已拒绝') AND substr(a.created,1,10) BETWEEN ? AND ?{_w} \""
+   }
+  ],
+  "预期红": "售后新建 / 结案各按自己的事件时间,和独立统计对得上"
+ },
+ {
+  "script": "backend/product_summary_check.py",
+  "改坏": "定制品还按可选项第一项算,不按她下单时真选的",
+  "file": [
+   {
+    "path": "backend/product_summary.py",
+    "old": "        v[\"面料\"] = [主[2]]",
+    "new": "        pass"
+   }
+  ],
+  "预期红": "定制品按她下单时真选的面料算(不是这款的可选项第一项)"
  }
 ]

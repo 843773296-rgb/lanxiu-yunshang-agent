@@ -55,6 +55,16 @@ def 离线页(报告):
     return html
 
 
+def 确认书离线页(文档):
+    """订单确认书 → 自带数据的离线页(和报告同一个做法:拿页面本身去打,不另写排版)。"""
+    html = open(os.path.join(WEB, "contract.html"), encoding="utf-8").read()
+    md = open(os.path.join(WEB, "_md.js"), encoding="utf-8").read()
+    html = html.replace('<nav class="sitenav"><!--NAV--></nav>', "")
+    html = html.replace('<script src="/md.js"></script>', "<script>\n" + md + "\n</script>")
+    数据 = json.dumps(文档, ensure_ascii=False).replace("</", "<\\/")
+    return html.replace("<script>\n/* 定制订单确认书", f"<script>window.__DOC__ = {数据};</script>\n<script>\n/* 定制订单确认书", 1)
+
+
 def 文件名(报告):
     种 = {"日": "日报", "周": "周报", "月": "月报"}.get(报告.get("kind"), "报告")
     店 = str(报告.get("shop") or "").split(" ")[-1]
@@ -94,15 +104,16 @@ def 渲染后的页(报告, 限时=60):
         shutil.rmtree(d, ignore_errors=True)
 
 
-def 出PDF(报告, 限时=60):
-    """返回 (pdf 字节, None) 或 (None, 原因)。"""
+def 出PDF(报告, 限时=60, 页=None):
+    """返回 (pdf 字节, None) 或 (None, 原因)。页:现成的离线页 HTML(确认书用);不给就拿报告拼。"""
     浏览器 = 找浏览器()
     if not 浏览器:
         return None, "这台机器上没有 Chrome,导不了 PDF —— 先用「打开报告」看,或在浏览器里打印"
+    现成 = 页
     d = tempfile.mkdtemp(prefix="lanxiu-pdf-")
     try:
         页, 出 = os.path.join(d, "report.html"), os.path.join(d, "report.pdf")
-        open(页, "w", encoding="utf-8").write(离线页(报告))
+        open(页, "w", encoding="utf-8").write(现成 if 现成 else 离线页(报告))
         # 单独的用户目录:不碰用户自己正在用的 Chrome,也不和它抢同一个配置锁
         proc = subprocess.Popen([浏览器, "--headless=new", "--disable-gpu", "--no-first-run",
                                  "--no-pdf-header-footer", "--virtual-time-budget=5000",

@@ -212,10 +212,15 @@ def confirm_order(d, me):
         return dict(ok=False, code="ORDER_GATE", reason=话, 逐件=明细,
                     能做什么="给缺下单量体的那几件量体并绑上(record_measure 带 order_id + item),或先定着装人")
     now = _now()
+    import order_contract as _oc
     with sqlite3.connect(DB) as c:
         c.execute("UPDATE ordr SET status='待审核', prd_status=?, paid_at=?, received=amount, updated=? "
                   "WHERE id=? AND status='待确认'", (fsm.ORDER_PRD["待审核"], now, now, oid))
+        # 订单确认书(业务 10-10:收预付款要有书面约定)—— **同一个事务**:写不进去就整个确认回滚,
+        # 不存在「已付全款、确认书稍后补」这种中间状态
+        确认书 = _oc.生成(c, oid, me, now[:10])
     log_op(me["name"], "ordr", oid, "待确认", "待审核", True, "CONFIRM",
            f"{me['name']} 确认下单 {oid}:{话}(付款在确认时已完成)", {"role": me["role"]})
     return dict(ok=True, code="CONFIRM", 订单=oid, 从="待确认", 到="待审核", 逐件=明细,
-                reason=f"已确认下单:{话}。付款在确认时已完成,订单进「待审核」")
+                订单确认书=确认书, 确认书下载=_oc.下载(oid),
+                reason=f"已确认下单:{话}。付款在确认时已完成,订单进「待审核」;订单确认书已生成,请让顾客看过")

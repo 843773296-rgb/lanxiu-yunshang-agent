@@ -2690,6 +2690,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(u or {"error": "没登录"}, 200 if u else 401)
         # 存过的经营报告(用户 10-10:确认后要给个链接能直达)—— 身份只从 Cookie 换,
         # 范围规则和 chat 里 list_reports 是**同一个函数**(report_doc.列 / 取),页面不另写一套
+        if p.startswith("/api/contract/"):
+            # 订单确认书(业务 10-10)—— 范围:本店 / 总部,规则在 order_contract._能看
+            import order_contract as _ocs
+            u = _me(self)
+            if not u: return self._send({"error": "没登录"}, 401)
+            r = _ocs.取(u, p.split("/api/contract/", 1)[1], db=backend.DB)
+            return self._send(r, 404 if "error" in r else 200)
         if p == "/api/arrival-calendar":
             # 新品上市日历(工作台)—— 商品排期不分门店,登录了就能看
             import arrival_card as _ac

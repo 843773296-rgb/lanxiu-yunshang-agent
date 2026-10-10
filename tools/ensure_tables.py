@@ -38,6 +38,7 @@ import ownership, asr, credit, roster, seed_rating
 import seed_quote
 import report_doc
 import arrival_card
+import order_contract
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -57,6 +58,8 @@ import arrival_card
     (report_doc, "建表", ["store_report_doc"]),
     # 上新卡片的 agent 建议(2026-10-10):绑定那一刻写一次 —— 运行时才写
     (arrival_card, "建表", ["recall_advice", "recall_advice_log"]),
+    # 定制订单确认书(2026-10-10):确认下单时在同一事务里写 —— 运行时才写
+    (order_contract, "建表", ["order_contract"]),
 ]
 
 
