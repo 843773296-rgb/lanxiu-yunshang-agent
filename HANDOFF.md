@@ -7078,50 +7078,41 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-10 19:23。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-10 21:34。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 5a16c50 · 2026-10-10 · 研判队列立项:它一直不在任何清单上;窗口边界改成「谁能跑门禁」 |
-| 代码量 | 694 个 Python 文件 / 126755 行(不含 .venv) |
-| 验收 | `./check.sh` 共 255 项 —— **接手第一件事就是跑它** |
+| 最新提交 | be3a814 · 2026-10-10 · 扣工钱接成智能体只读工具 cancel_fee:顾问 / 店长能直接问「她不做了扣多少」 |
+| 代码量 | 698 个 Python 文件 / 127241 行(不含 .venv) |
+| 验收 | `./check.sh` 共 256 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 200 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
- M agent/order_eval.py
- M agentsite/evals/funnel.jsonl
+M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M agentsite/guards.py
- M agentsite/guards_test.py
- M backend/api.py
- M backend/consent_check.py
- M backend/contract_check.py
- M backend/measure_write.py
- M backend/measure_write_check.py
- M backend/order_contract.py
- M backend/order_write.py
- M backend/order_write_check.py
- M check.sh
- M "knowledge/09-\345\205\273\346\212\244\344\270\216\345\224\256\345\220\216.md"
- M "knowledge/12-\346\210\220\351\225\277\344\270\216\347\224\237\345\221\275\345\221\250\346\234\237.md"
- M "knowledge/13-\351\224\200\345\224\256\350\257\235\346\234\257.md"
- M knowledge/contract_terms.py
- M prompts.py
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/world-shift-launchd.log
+?? .wip-muslin/
+?? "backend/lanxiu.db.\351\207\215\345\273\272\345\211\215"
+?? data/lanxiu.db
+?? "\347\256\241\347\220\206\345\220\216\345\217\260/.wip-209\346\235\241\346\256\213\347\225\231\345\244\207\344\273\275.json"
+?? "\347\256\241\347\220\206\345\220\216\345\217\260/.wip-\346\270\205demo_a\346\256\213\347\225\231.sh"
+?? "\347\256\241\347\220\206\345\220\216\345\217\260/.wip-\346\270\205\346\216\211\347\232\204\347\264\242\345\274\225\345\244\207\344\273\275.json"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+be3a814 扣工钱接成智能体只读工具 cancel_fee:顾问 / 店长能直接问「她不做了扣多少」
+a8e3b36 交接:七条已提交、文档已发飞书、窗口还给数据工厂
+e4ed206 用户 10-10 晚拍的七条落进代码:七天无理由单独勾、扣工钱按工单工日、14—18 岁本人为准
 5a16c50 研判队列立项:它一直不在任何清单上;窗口边界改成「谁能跑门禁」
 bc6fb0b 定制订单确认书 + 法律四条落地 + 定制品按下单真选归纳;用户 10-10 晚拍完剩余七条口径
-c6c1adc 交接:库从零重建完;挖出「预约一直不可再生」这个缺口
-eb8770e 每天收口+放出接进 daily_fresh;溯源欠账上限降到 19
-238de39 修一个泄漏:检查在库副本上存的报告 / 写的建议,照样推上了 AI 管理平台;并补完文档
 ```
 <!--/AUTO-->
 ## 一句话在做什么
