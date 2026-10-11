@@ -178,7 +178,9 @@ test:          ## 确定性单测与集成测试(**报实际跑了几项**)
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
 		./.venv/bin/python tests/integration/test_index_build.py
 	@echo ""
-	@echo "▸ 检索链:召回 → 截断 → 证据链('要精排=False',**不花 API 额度**)"
+	@echo "▸ 检索链:召回 → 截断 → 证据链('要精排=False')"
+	@echo "  ⚠️ 10-08 起检索会先**调 Claude 改写问题**(业务拍的)—— 本机走钥匙串月租不额外花钱,"
+	@echo "     设了 ANTHROPIC_API_KEY 就**按量计费**。原来这里写「不花 API 额度」,改写上线后就不对了"
 	@echo "  精排的**判据**在编排层(零依赖),精排的**效果**在 make test-live ——"
 	@echo "  **只有第三层要花钱,而前两层覆盖了绝大部分会坏的地方**"
 	@DATABASE_URL="$${DATABASE_URL:-postgresql+psycopg://$$USER@localhost:5432/aimc_dev}" \
