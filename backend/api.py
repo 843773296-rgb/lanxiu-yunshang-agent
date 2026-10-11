@@ -866,15 +866,31 @@ def appt_funnel(since=None, until=None):
     到店 = [r for r in rs if r.get("status") in af.到店了]
 
     # 后两环:按「同一个客户、预约之后」连 —— **没有外键,是估的**。
+    #
+    # ⚠️ **两条分组查询,不是逐条到店各查两次。** 原来是后者,而 `_rows2`
+    # **每次调用新开一个数据库连接**(见它自己那一行)。70 条到店的时候
+    # 是 140 次连库、眨眼就过;2026-10-11 接待触点进配方之后到店变成 1.7 万条,
+    # 同一段代码变成 **3.5 万次连库**,而 `funnel_check` 要跑六遍 ——
+    # 实测单条检查 99% CPU 跑过 3 分半,直奔门禁那 600 秒超时。
+    #
+    # > 一段「数据少时快得看不出问题」的代码,和一段没有这个问题的,
+    # > **在小库上长得一模一样** —— 只有真实数据量能把它们分开。
+    #
+    # 判断没有变:**「存在一条 `measured_at >= t0` 的记录」等价于
+    # 「`MAX(measured_at) >= t0`」**(都是字符串比较,NULL 被 MAX 忽略,
+    # 和原来 `measured_at>=?` 遇 NULL 为假一致;查不到这个人 → 取到 ""
+    # → 任何日期都比它大 → 和原来「没有记录」一样是不计)。
     cids = {r["customer_id"] for r in 到店 if r.get("customer_id")}
+    最近量体 = dict(_rows2("SELECT customer_id, MAX(measured_at) FROM measure_rec "
+                         "WHERE customer_id IS NOT NULL GROUP BY customer_id"))
+    最近下单 = dict(_rows2("SELECT customer_id, MAX(created) FROM ordr "
+                         "WHERE customer_id IS NOT NULL GROUP BY customer_id"))
     量了 = 下单了 = 0
     for r in 到店:
         cid, t0 = r.get("customer_id"), r.get("start_ts")
         if not cid or not t0: continue
-        if _rows2("SELECT 1 FROM measure_rec WHERE customer_id=? AND measured_at>=? LIMIT 1",
-                  cid, t0[:10]): 量了 += 1
-        if _rows2("SELECT 1 FROM ordr WHERE customer_id=? AND created>=? LIMIT 1",
-                  cid, t0[:10]): 下单了 += 1
+        if (最近量体.get(cid) or "") >= t0[:10]: 量了 += 1
+        if (最近下单.get(cid) or "") >= t0[:10]: 下单了 += 1
 
     各环 = [("约了", 总), ("确认了", len(确认了)), ("到店", len(到店))]
     表 = []

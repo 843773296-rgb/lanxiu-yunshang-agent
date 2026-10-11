@@ -34,8 +34,16 @@
 #                         造完会有 3 条预约被真的自动收尾。
 #                         必须排在 shift_world 之后(要读 world_today)、
 #                         backfill_opportunity 之后(商机提醒是它回捞出来的)。
-#   seed_dispatch.py      造「派出去的任务」—— `schedule` 17467 行里有 17374 行是
-#                         `type='到店'` 的**接待记录**(end_ts 全是 NULL),真正的派单
+#   touchpoint_history_seed.py  造接待触点(预约/到店流水/跟进)—— 这三张表的历史
+#                         原来**只由 fakedata/mkt_sop_seed.py 顺带造,而它不在本配方里**
+#                         (它不幂等,重跑撞 appointment.id)。后果 10-10 当场验到:重建一次
+#                         预约 17456→79、日程 17587→220、跟进 10461→30,周报「进店客流」
+#                         70→0 —— **而 37 步一步没少、check.sh 全绿**。
+#                         **必须排在 lifecycle_history_seed 之前**:那一步按这三张表算
+#                         「最近一次互动」,排在后面的话档位历史是在一个没人到过店的世界里算的。
+#   seed_dispatch.py      造「派出去的任务」—— `schedule` 约 1.7 万行里绝大多数是
+#                         `type='到店'` 的**接待记录**(end_ts 全是 NULL,10-11 重灌后 17391
+#                         条;**别照抄这个数**,它跟着订单数走),真正的派单
 #                         任务原来只有 93 条,撑不起「这周派了多少/谁手上压着/有没有
 #                         逾期」。走写口正门(api.as_user + assign_task),所以权限照常
 #                         生效、op_log 里有「谁干的」;回滚按台账不按 id 前缀(正门不
@@ -136,7 +144,7 @@ if [ "$FRESH_ONLY" = 1 ]; then
     echo "   真要重建,请直接敲 ./tools/rebuild.sh(它会先说清楚要删什么,并留 3 秒反悔)。"
     exit 1
   fi
-  echo "📦 首次建库:下面 37 步**全跑完**才算建好,少一步都会让某几张表空着。"
+  echo "📦 首次建库:下面 38 步**全跑完**才算建好,少一步都会让某几张表空着。"
 else
   echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
   sleep 3
@@ -160,6 +168,7 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
             "tools/clamp_future_done.py" "tools/level_customer_orders.py" \
             "tools/shift_world.py" "tools/backfill_rating.py" \
             "tools/daily_fresh.py --做" "tools/teen_self_consent.py --做" "tools/seed_churned.py --做" \
+            "tools/touchpoint_history_seed.py --做" \
             "tools/lifecycle_history_seed.py --做" \
             "tools/lifecycle_refresh.py --做" "tools/seed_dispatch.py --做" \
             "tools/seed_customer_tasks.py --做" "tools/seed_new_products.py --做" \
@@ -178,8 +187,8 @@ done
 # ⚠️ **加步骤要改这个数。** 2026-10-09 加了 daily_fresh / lifecycle_refresh 两步,
 # 忘了改 —— `backend/firstrun_check.py` 当场逮到「步骤表 31 步,自校验却写着 29 步」。
 # 这个数存在的理由正是「循环没跑全,而上面看起来是顺利的」,所以它自己不能过期。
-if [ "$DONE" -ne 37 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 37 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 38 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 38 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"
