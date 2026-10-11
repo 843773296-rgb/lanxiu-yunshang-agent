@@ -848,6 +848,8 @@ tempfile 里、跑完就删。
   ❌ 我原先说「定时任务一直没跑成」**是错的**:读的是 launchd 的 stdout 文件 `.feynman/world-shift-launchd.log`,它 10-02 起就不再被写;
   判据要用状态文件 `world-shift-ok` + 脚本自己的日志 `.feynman/daily-shift.log`。单据上的时间是世界内营业时间,不能拿来推谁在写库。
   ⚠️ **真在持续写共享库的**:`tools/supervise_sync.py --循环 30`(PID 85071,10-10 15:27 起,是我做产出监督时 start.sh 拉起的)+ start.sh 起的 server.py / app.py;`/tmp/lanxiu-backend.log` 已有 database is locked。停不停等用户。
+- ⚠️ 性能坑(数据工厂 10-11 挖到):`api._rows2` **每次调用新开一个连接**。漏斗原来逐条到店各查两次,预约灌到 1.7 万后 funnel_check 3 分半奔超时;它把漏斗那处改成分组查询(1.68 秒),`_rows2` 本身没改。**哪条检查突然变慢,先 grep 循环里调 `_rows2` 的地方。**
+- ⏸ 等用户:`backend/advisor_ref_check.py` 从没进过门禁,手跑退出码 1 —— ① 守的顾问名字列后来删了,扫到 0 张表(检查本身过时)② 判「工号都在员工表」没排掉夹具 FX-BAD-01。排夹具 = 放宽判据,要用户执行。
 - 做完要把窗口还数据工厂(SendMessage eureka-75)。
 
 ## 🧭 2026-10-10 夜 · 七条拍板落进代码(体检 / 评测线写)
