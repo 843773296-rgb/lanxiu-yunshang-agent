@@ -6781,5 +6781,41 @@
    }
   ],
   "预期红": "真跑钉回:「这件要给杨女士(W10004-3)做吗?」点名问 → 过"
+ },
+ {
+  "script": "backend/advisor_ref_check.py",
+  "改坏": "豁免名单清空",
+  "file": [
+   {
+    "path": "backend/advisor_ref_check.py",
+    "old": "豁免 = [\n    dict(表=\"customer\", id=\"FX-BAD-01\", 列=\"advisor_no\",",
+    "new": "豁免 = [] and [\n    dict(表=\"customer\", id=\"FX-BAD-01\", 列=\"advisor_no\","
+   }
+  ],
+  "预期红": "工号都在员工表里"
+ },
+ {
+  "script": "backend/advisor_ref_check.py",
+  "改坏": "豁免指向一个不存在的夹具",
+  "file": [
+   {
+    "path": "backend/advisor_ref_check.py",
+    "old": "    dict(表=\"customer\", id=\"FX-BAD-01\", 列=\"advisor_no\",",
+    "new": "    dict(表=\"customer\", id=\"FX-BAD-99\", 列=\"advisor_no\","
+   }
+  ],
+  "预期红": "每条豁免都还活着"
+ },
+ {
+  "script": "backend/advisor_ref_check.py",
+  "改坏": "把一个工号列当成名字列",
+  "file": [
+   {
+    "path": "backend/advisor_ref_check.py",
+    "old": "名字列名 = (\"advisor\", \"measured_by\")",
+    "new": "名字列名 = (\"advisor\", \"measured_by\", \"assignee_no\")"
+   }
+  ],
+  "预期红": "名字列没有长回来"
  }
 ]
