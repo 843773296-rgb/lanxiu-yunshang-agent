@@ -12,13 +12,40 @@
 
 import api, json, sqlite3, os
 print("=== 工具层离线自测 ===")
-t=api.list_tasks("财务人工任务"); print(f"财务人工任务 {len(t)} 条,首条 ref={t[0]['ref_id']}")
+
+
+def 挑一条(类型):
+    """挑一条这个类型的工单 —— **不绑在某个状态上**。
+
+    ⚠️ 2026-10-11 这里崩过(`IndexError: list index out of range`):原来写的是
+    `api.list_tasks("财务人工任务")`,而它的默认参数是 `status="待处理"`。
+    研判一落库,`ops.save_triage()` 就把工单推到「待复核」——
+    于是**把队列研判完一遍,这条自测当场崩**,而崩的理由和工具层没有半点关系。
+
+    > 一条「工具层坏了」的红,和一条「这条自测挑样本的方式绑在一个会变的状态上」的,
+    > **在「崩了」这件事上长得一模一样** —— 而后者先要修的是自测。
+
+    这条自测要的只是**一条真实的单据号**去验 get_deposit / get_refund_trace /
+    get_payment_flow 答不答得出来,它是「待处理」还是「待复核」无关。
+    一条都没有的时候**说清是取空了,不是崩** —— 这个仓库对这件事有定论:
+    「样本量 0 **这不叫通过,这叫没扫到东西**」。
+    """
+    for 态 in ("待处理", "待复核", "已处理", "已升级", "已关闭"):
+        行 = api.list_tasks(类型, status=态)
+        if 行:
+            return 行, 态
+    raise SystemExit(f"❌ 一条「{类型}」工单都没有 —— **这不叫通过,这叫取数取空了**。"
+                     f"自测需要一条真实单据号才能验工具层。")
+
+
+t, 态 = 挑一条("财务人工任务")
+print(f"财务人工任务 {len(t)} 条(状态「{态}」)," f"首条 ref={t[0]['ref_id']}")
 d=t[0]['ref_id']
 print("押金单:", json.dumps(api.get_deposit(d),ensure_ascii=False))
 print("退款轨迹:", json.dumps(api.get_refund_trace(d),ensure_ascii=False)[:180])
 print("支付流水:", json.dumps(api.get_payment_flow(d),ensure_ascii=False)[:180])
-m=api.list_tasks("客户合并确认"); a,b=m[0]['ref_id'].split("|")
-print(f"\n合并任务 {len(m)} 条,首条 {a} vs {b}")
+m, 态2 = 挑一条("客户合并确认"); a,b=m[0]['ref_id'].split("|")
+print(f"\n合并任务 {len(m)} 条(状态「{态2}」),首条 {a} vs {b}")
 print("客户A:", json.dumps(api.get_customer(a),ensure_ascii=False))
 print("\n=== truth 表泄漏检查 ===")
 leaked=[n for n,f in api.TOOLS.items() if "truth" in (f.__doc__ or "").lower()]

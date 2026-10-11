@@ -610,31 +610,14 @@ class H(BaseHTTPRequestHandler):
             BACKEND + "/api/ops-queue", timeout=30).read())["rows"]
         t = next((x for x in q if x["task_id"] == tid), None)
         if not t: raise ValueError(f"队列里没有 {tid}")
-        t = dict(id=t["task_id"], ref=t["ref"],
-                 bp={"财务人工任务": "BP-01", "客户合并确认": "BP-02",
-                     "售后判责": "BP-03"}.get(t["type"], "BP-02"))
-        if t["bp"] == "BP-03":
-            case = t["ref"]
-            prompt = (f"任务类型:售后判责\n维修工单号:{t['ref']}\n\n"
-                      "客户报修,需要判定责任归属并给出处理方式。"
-                      "先用 get_maintain 查现场,再用 kb_tables 取「售后争议判定」,"
-                      "对照 09-养护与售后.md 第五节的返修判定表给结论。\n"
-                      "两条硬规矩:①「交付告知签收」为 null 就是**没有书面告知**,"
-                      "特性类问题在这种情况下按「我方,让步处理」;"
-                      "② **你只出草稿,不对客户承诺任何金额或返修结果** —— "
-                      "结论必须由店长/客服确认后执行。\n"
-                      "按「根因 / 建议动作 / 证据 / 置信度」四段输出,每段单独起一行。")
-        elif t["bp"] == "BP-01":
-            case = t["ref"]
-            prompt = (f"任务类型:财务人工任务\n押金单号:{t['ref']}\n\n"
-                      "这笔押金退款已连续失败并转入人工处理。请查清失败的根本原因,"
-                      "给出建议的处理动作,并列出支撑结论的证据。"
-                      "按「根因 / 建议动作 / 证据 / 置信度」四段输出,每段单独起一行。")
-        else:
-            a, b2 = t["ref"].split("|"); case = t["id"][1:]
-            prompt = (f"任务类型:客户合并确认\n两条疑似重复的客户档案:{a} 和 {b2}\n\n"
-                      "请判断是否为同一客户,给出合并或不合并的建议,并逐项列出比对依据。"
-                      "按「根因 / 建议动作 / 证据 / 置信度」四段输出,每段单独起一行。")
+        # 断点号和提示词**从后台的 ops 取,这边不留第二份** ——
+        # 2026-10-11 抽过去的,因为配方新加的「造 triage 样本」那一步也要用它。
+        # 两份提示词的后果不是「不一致」,是**样本在替另一句话打分**。
+        # 类型没登记时它当场抛,带着为什么(差评的 AI 辅助默认关闭) ——
+        # 原来这里是 `.get(类型, "BP-02")`,差评会掉进客户合并分支崩掉。
+        _ops_bp = _ops_mod()
+        bp, case, prompt = _ops_bp.研判提示词(t["type"], t["ref"], t["task_id"])
+        t = dict(id=t["task_id"], ref=t["ref"], bp=bp)
         t0 = _t.time()
         r = asyncio.run(sdk.run("task", prompt))
         ms = int((_t.time() - t0) * 1000)
@@ -717,6 +700,20 @@ def _评一次检索(试跑id, 分, 评语=None):
                 "怎么办": "管理后台没起的话,这个分数记不下来 —— "
                         "起法:`管理后台/tools/dev.sh`。"
                         f"({type(e).__name__})"}
+
+
+def _ops_mod():
+    """后台的 ops 模块。**提示词和断点号只有那一份** —— 站上不抄。
+
+    站和后台在同一台机器、同一个仓库,所以直接 import;跨机部署时这里
+    要换成走 HTTP 问后台要提示词,**但不许在这边复制一份**。
+    """
+    import sys as _s, os as _o
+    _b = _o.path.join(_o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))), "backend")
+    if _b not in _s.path:
+        _s.path.insert(0, _b)
+    import ops as _o2
+    return _o2
 
 
 def _post(path, payload, timeout=60):

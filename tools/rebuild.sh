@@ -34,6 +34,17 @@
 #                         造完会有 3 条预约被真的自动收尾。
 #                         必须排在 shift_world 之后(要读 world_today)、
 #                         backfill_opportunity 之后(商机提醒是它回捞出来的)。
+#   seed_triage_samples.py  造研判队列的样本 —— **真调模型,模型真用工具**。
+#                         triage 表一直是 0 条,而研判队列的验收门槛第一条是
+#                         「样本量 0 不叫通过」。四段和置信度是 ops 从**过程信号**
+#                         推的(查了几次数据、证据齐不齐),手填一条「置信度=高」
+#                         等于把看板的分子分母一起编掉。
+#                         ⚠️ **这一步每次重建都会真调模型**(用户 2026-10-11 拍的,
+#                         没选录制回放)。代价说清:**CI 上调不动模型,所以 CI 的库里
+#                         这张表是空的**,依赖它的判据在 CI 上一个字都没验 ——
+#                         脚本会把这件事大声打印出来,但不会把 CI 判红。
+#                         本机跑满 52 条约半小时;差评那 214 条**不跑**
+#                         (方案自己声明「差评的 AI 辅助默认关闭」)。
 #   touchpoint_history_seed.py  造接待触点(预约/到店流水/跟进)—— 这三张表的历史
 #                         原来**只由 fakedata/mkt_sop_seed.py 顺带造,而它不在本配方里**
 #                         (它不幂等,重跑撞 appointment.id)。后果 10-10 当场验到:重建一次
@@ -144,7 +155,7 @@ if [ "$FRESH_ONLY" = 1 ]; then
     echo "   真要重建,请直接敲 ./tools/rebuild.sh(它会先说清楚要删什么,并留 3 秒反悔)。"
     exit 1
   fi
-  echo "📦 首次建库:下面 38 步**全跑完**才算建好,少一步都会让某几张表空着。"
+  echo "📦 首次建库:下面 39 步**全跑完**才算建好,少一步都会让某几张表空着。"
 else
   echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
   sleep 3
@@ -172,6 +183,7 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
             "tools/lifecycle_history_seed.py --做" \
             "tools/lifecycle_refresh.py --做" "tools/seed_dispatch.py --做" \
             "tools/seed_customer_tasks.py --做" "tools/seed_new_products.py --做" \
+            "tools/seed_triage_samples.py --做" \
             "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
   python3 $STEP > /tmp/rebuild-step.out 2>&1 || {
@@ -187,8 +199,8 @@ done
 # ⚠️ **加步骤要改这个数。** 2026-10-09 加了 daily_fresh / lifecycle_refresh 两步,
 # 忘了改 —— `backend/firstrun_check.py` 当场逮到「步骤表 31 步,自校验却写着 29 步」。
 # 这个数存在的理由正是「循环没跑全,而上面看起来是顺利的」,所以它自己不能过期。
-if [ "$DONE" -ne 38 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 38 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 39 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 39 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"

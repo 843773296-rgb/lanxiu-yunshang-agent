@@ -66,7 +66,21 @@ CREATE TABLE task(id TEXT PRIMARY KEY, type TEXT, ref_id TEXT, status TEXT, crea
 -- 同一条工单研判多次就是多行,谁都能回头看当时智能体说了什么、花了多少钱。
 CREATE TABLE triage(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  schedule_id TEXT, breakpoint TEXT, case_id TEXT, created TEXT,
+  -- ⚠️ **这一列 2026-10-11 从 `schedule_id` 改名成 `task_id`。**
+  -- 它指的是 `task.id`(研判的是工单),而库里**真有一张叫 `schedule` 的表**
+  -- (日程任务 + 接待流水)—— 所以旧名字不是「过时」,是**指错了地方**。
+  --
+  -- 而真正的代价不在名字上:`backend/ops.py` 从头到尾按 `task_id` 写,
+  -- `save_triage()` 的 INSERT 列名就是 `task_id` —— **所以那条写入路径
+  -- 一行都写不进去,`sqlite3.OperationalError: no such column: task_id`。**
+  -- 没人发现是因为表一直是空的:`ops.queue()` 里 `latest[t["task_id"]]`
+  -- 在空表上永远不执行,循环体一次都没进过。
+  --
+  -- > 一条「没人采纳 AI 结论」的记录,和一条「AI 结论从来没能落进库」的,
+  -- > **在「triage 有结论命中 0 条」这个数上长得一模一样。**
+  -- 立项文档里那条实测(201 条销账全来自「工单已关闭」,triage 有结论 0 条)
+  -- 一直被当成业务现象 —— 它的一半是这个 bug。
+  task_id TEXT, breakpoint TEXT, case_id TEXT, created TEXT,
   ai_root_cause TEXT, ai_action TEXT, ai_evidence TEXT,
   ai_confidence TEXT,          -- 高 / 中 / 低,由工具调用数与证据完整度推,不是模型自称
   ai_text TEXT, tool_calls INT, cost REAL, latency_ms INT, model TEXT,
