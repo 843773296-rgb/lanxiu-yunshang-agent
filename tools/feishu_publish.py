@@ -69,14 +69,51 @@ class H(BaseHTTPRequestHandler):
         pass
 
 
+def _跑curl(cmd, token=None, timeout=120):
+    """发请求。**令牌走标准输入,不进命令行参数。**
+
+    ⚠️ 2026-10-11 实测撞上来的:原来是 `cmd += ["-H", "Authorization: Bearer " + token]`,
+    而 `subprocess` 超时抛的 `TimeoutExpired` 异常**把整条 cmd 打进了报错** ——
+    于是一次网络超时就把完整令牌吐进了终端和日志。
+
+    > 这正是这个项目红线里那句「**凭据绝不写进任何返回值或异常**」,
+    > 只不过守的一直是数据库里的密码哈希,没人想到飞书令牌是从**异常**漏的。
+
+    而且不止异常这一个出口:**命令行参数在 `ps` 里对同机其他用户是可见的** ——
+    所以修法不是「catch 住别打印」(那只堵一个口),是让令牌根本不进 argv。
+    `curl -K -` 从标准输入读配置,`header = "..."` 就是那个请求头。
+    """
+    # `-S`:`-s` 把**错误也静默了**,而上面那条「stdout 空就报 stderr」要有话可报。
+    # 实测没加 -S 时拿到的是 `退出码 35 / stderr 空` —— 知道它失败了,不知道为什么。
+    cmd = cmd + ["-S"]
+    inp = None
+    if token:
+        cmd = cmd + ["-K", "-"]
+        inp = f'header = "Authorization: Bearer {token}"\n'
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True,
+                           input=inp, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # **不把原异常往上抛** —— 它带着 cmd(以及将来万一有人又把令牌放回去)。
+        # cmd[4] 是 URL(curl -s -X POST <url> …)或 cmd[2](curl -s <url>)。
+        raise RuntimeError(f"飞书请求超时({timeout}s)") from None
+    # ⚠️ **curl 没跑起来**(DNS、代理、配置语法)时 stdout 是空的,
+    # 而调用方只会打印一句「XXX_FAILED: 」后面什么都没有 ——
+    # 2026-10-11 实测撞上一次,查了十分钟才知道它根本没出过门。
+    # > 一次「服务端返回了空」和一次「curl 压根没发出去」,
+    # > **在 stdout 上长得一模一样** —— 分开它们的是退出码和 stderr。
+    # 所以 stdout 空的时候把这两样拼成一句话返回(调用方照原样打印即可)。
+    if not r.stdout.strip():
+        err = (r.stderr or "").strip().replace("\n", " ")[:200]
+        return f'{{"_curl_failed": "退出码 {r.returncode}", "_stderr": "{err}"}}'
+    return r.stdout
+
+
 def post(url, payload, token=None):
     # 本机有 TLS 拦截代理,Python 证书链校验会失败;curl 走系统钥匙串,正常。
-    cmd = ["curl", "-s", "-X", "POST", url,
-           "-H", "Content-Type: application/json; charset=utf-8",
-           "-d", json.dumps(payload, ensure_ascii=False)]
-    if token:
-        cmd += ["-H", "Authorization: Bearer " + token]
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=120).stdout
+    out = _跑curl(["curl", "-s", "-X", "POST", url,
+                  "-H", "Content-Type: application/json; charset=utf-8",
+                  "-d", json.dumps(payload, ensure_ascii=False)], token, 120)
     try:
         return json.loads(out)
     except json.JSONDecodeError:
@@ -84,8 +121,7 @@ def post(url, payload, token=None):
 
 
 def get(url, token):
-    out = subprocess.run(["curl", "-s", url, "-H", "Authorization: Bearer " + token],
-                         capture_output=True, text=True, timeout=60).stdout
+    out = _跑curl(["curl", "-s", url], token, 60)
     try:
         return json.loads(out)
     except json.JSONDecodeError:
@@ -167,11 +203,10 @@ def prune_same_name(name, keep_token, uat):
     files = (r.get("data") or {}).get("files") or []
     stale = [f for f in files if f.get("name") == name and f.get("token") != keep_token]
     for f in stale:
-        out = subprocess.run(
+        out = _跑curl(
             ["curl", "-s", "-X", "DELETE",
-             f"https://open.feishu.cn/open-apis/drive/v1/files/{f['token']}?type=docx",
-             "-H", "Authorization: Bearer " + uat],
-            capture_output=True, text=True, timeout=60).stdout
+             f"https://open.feishu.cn/open-apis/drive/v1/files/{f['token']}?type=docx"],
+            uat, 60)
         try:
             ok = json.loads(out).get("code") == 0
         except json.JSONDecodeError:
@@ -188,17 +223,16 @@ def publish(path, uat):
     size = os.path.getsize(path)
 
     # 1) 上传素材。ccm_import_open 必须带 extra,否则 1061004 forbidden
-    up = subprocess.run([
+    up = _跑curl([
         "curl", "-s", "-X", "POST",
         "https://open.feishu.cn/open-apis/drive/v1/medias/upload_all",
-        "-H", "Authorization: Bearer " + uat,
         "-F", f"file_name={base}",
         "-F", "parent_type=ccm_import_open",
         "-F", f"parent_node={FOLDER}",
         "-F", f"size={size}",
         "-F", 'extra={"obj_type":"docx","file_extension":"md"}',
         "-F", f"file=@{path}",
-    ], capture_output=True, text=True, timeout=300).stdout
+    ], uat, 300)
     try:
         ftok = (json.loads(up).get("data") or {}).get("file_token")
     except json.JSONDecodeError:
