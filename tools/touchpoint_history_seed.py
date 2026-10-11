@@ -178,11 +178,12 @@ def 要补的单(c, rnd, 说=print):
     return 补, 护
 
 
-def 生成(补, 今, rnd):
+def 生成(补, 今, rnd, 门店顾问=None):
     """**纯算,不碰库。** 产出三张表要插的行。
 
     预约 → 到店流水 → (跟进) → 下单:顺序对得上,不是随机撒。
     """
+    门店顾问 = 门店顾问 or {}
     预约, 日程, 跟进 = [], [], []
     for n, r in enumerate(补, start=1):
         下单日 = dt.date.fromisoformat(str(r["created"])[:10])
@@ -199,7 +200,31 @@ def 生成(补, 今, rnd):
         if 日程日 > 今:
             日程日 = 今
         aid = f"{标记}AP{n:06d}"
-        顾问 = r["advisor_no"]      # 这一单自己的顾问 —— 和 o.shop 天然同店
+        # ⚠️ **接待人约一半不是这一单的顾问,但必须同店。**
+        #
+        # 第一版这里写的是 `顾问 = r["advisor_no"]`(这一单自己的顾问),理由是
+        # 它和 `o.shop` 天然同店 —— 那个理由是对的,**但它构造出了一个业务上不成立的世界**:
+        # `tools/backfill_link.py` 会从接待记录**反推** `ordr.recept_by`,
+        # 于是 `recept_by == advisor_no` 成了必然,而业务事实是**过半的单不是同一个人**
+        # (客户上次来是别人接待的)。
+        #
+        # ⚠️ **归因更正(2026-10-11,我连错两次)**:我一度以为
+        # 「接待人和订单顾问不是同一个人的占比只有 0.8%」是这一行造成的,
+        # 改完发现**比例一点没动**。真因在别处:
+        # **`measure_rec.measured_by_no` 和 `ordr.advisor_no` 100% 相同**
+        # (实测 71910 条一条不差),而**量体占接待证据的九成**
+        # (量体 3835 / 白坯试衣 352 / 预约到店 35)—— 预约只占 0.8%,
+        # 所以这一行怎么改都动不了那个比例。
+        # > 教训:**查了消费方读哪个字段,还要查那个字段是从哪儿推出来的。**
+        # > 我第一次查到 `link_check` 读 `ordr.recept_by` 就停了,
+        # > 而 `recept_by` 是 `backfill_link` 从**量体/白坯/预约**三处反推的。
+        #
+        # 这一行还是改了(五成概率用这一单的顾问,否则同店另一个顾问):
+        # 它让预约这一路更接近业务形状,**代价是零**,只是别指望它能修那个比例 ——
+        # 要修得去改造数时「量体人一律取订单顾问」那一步,已登记。
+        同店 = 门店顾问.get(r["shop"]) or [r["advisor_no"]]
+        顾问 = (r["advisor_no"] if rnd.random() < 0.5
+                else 同店[rnd.randrange(len(同店))])
         门店 = r["shop"]
         # ⚠️ **`checkin_ts` 必须给。** 状态是「已完成」而没有签到时间,
         # `link_check` 那条「到店/完成的预约都有签到时间」会红。
@@ -343,7 +368,15 @@ def main():
         print(f"{R}❌{D} 只挑中 {len(补)} 单 —— **这不叫「没什么可补」,叫取数取空了**"
               f"(要 ≥ {最少要补})")
         return 1
-    预约, 日程, 跟进 = 生成(补, 今, rnd)
+    # 同店在职顾问 —— **从库里现读,不手抄**(花名册改了这里要跟着变)
+    门店顾问 = {}
+    for r in c.execute("SELECT shop, no FROM staff WHERE role='顾问' AND status='启用' "
+                       "ORDER BY no"):
+        门店顾问.setdefault(r["shop"], []).append(r["no"])
+    if not 门店顾问:
+        print(f"{R}❌{D} 一个在职顾问都没扫到 —— **这不叫「没顾问」,叫取数取空了**")
+        return 1
+    预约, 日程, 跟进 = 生成(补, 今, rnd, 门店顾问)
     print(f"会造:预约 {len(预约)} · 到店流水 {len(日程)} · 跟进 {len(跟进)}")
     if not a.做:
         旧 = {t: c.execute(f"select count(*) from {t} where id like ?",

@@ -28,6 +28,10 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("把 差评线 从 3 改成 2(3 星就不建工单了)", "3 星是差评 → 自动进 task 清单"),
     ("让 close_bad_rating() 不要求处理记录", "关差评不写处理记录 → 拒"),
     ("让 close_bad_rating() 放开角色(顾问也能关)", "顾问关差评 → 拒"),
+    ("让 rating.处理方式能不能用() 不要求处理方式(空也放过)", "不给处理方式 → 拒"),
+    ("让 rating.出钱的处理方式 变成空元组(出钱的也当不出钱)", "出钱却没填批准人 → 拒"),
+    ("让 rating.处理方式能不能用() 不比批准人和处理人是不是同一个",
+     "批准人填成处理人自己 → 拒"),
     ("让 customer_edit_rating() 在差评改好评时把工单关掉", "差评改好评 → 工单不撤,还在待处理"),
     ("在 seed_rating 的建表里加一句 ALTER,给 rating 加个 status 列",
      "rating 表没有 status 列(状态只存 task 上)"),
@@ -177,15 +181,41 @@ def run(T):
     ck("「看过了」太短,不算处理完", rt.close_bad_rating({"pkg": 包, "note": "看过了"}, 店长)["code"] == "NEED_NOTE")
     ck("被拒之后工单还在待处理",
        c.execute("SELECT status FROM task WHERE id=?", (t["id"],)).fetchone()[0] == "待处理")
-    r = rt.close_bad_rating({"pkg": 包, "note": "已电话联系顾客,约了周六回店修线头,顾客接受"}, 店长)
-    ck("店长写了处理记录 → 关得掉", r["ok"], r.get("reason"))
+    # ── 处理方式 + 出钱要第二个人(业务 2026-10-11)─────────────────────
+    # ⚠️ 这几条**先于**成功用例,因为成功用例一关就没法再试拒绝了
+    # (关过的工单走 ALREADY_CLOSED,后面那些判据就都测不到了)。
+    ck("不给处理方式 → 拒", rt.close_bad_rating(
+        {"pkg": 包, "note": "已电话联系顾客,约了周六回店修线头,顾客接受"}, 店长)["code"] == "NEED_WAY")
+    ck("处理方式不在枚举里 → 拒", rt.close_bad_rating(
+        {"pkg": 包, "note": "已电话联系顾客,约了周六回店修线头,顾客接受",
+         "way": "随便给点什么"}, 店长)["code"] == "NEED_WAY")
+    ck("出钱却没填批准人 → 拒", rt.close_bad_rating(
+        {"pkg": 包, "note": "已协商,顾客保留衣服,退还工费部分", "way": "部分退款"},
+        店长)["code"] == "NEED_WAY")
+    # **这一条是双人复核的承重墙**:一个人既处置又批准,记录上两个字段都填着
+    ck("批准人填成处理人自己 → 拒", rt.close_bad_rating(
+        {"pkg": 包, "note": "已协商,顾客保留衣服,退还工费部分", "way": "部分退款",
+         "approved_by": 店长["no"]}, 店长)["code"] == "NEED_WAY")
+    ck("拒了这几次之后工单还在待处理",
+       c.execute("SELECT status FROM task WHERE id=?", (t["id"],)).fetchone()[0] == "待处理")
+
+    r = rt.close_bad_rating({"pkg": 包, "note": "已电话联系顾客,约了周六回店修线头,顾客接受",
+                             "way": "免次改衣"}, 店长)
+    ck("店长写了处理记录 + 给了处理方式 → 关得掉", r["ok"], r.get("reason"))
+    ck("不出钱的那档不要批准人", r.get("出钱") is False and r.get("批准人") is None, str(r)[:80])
     ck("工单状态变成已关闭",
        c.execute("SELECT status FROM task WHERE id=?", (t["id"],)).fetchone()[0] == "已关闭")
-    ck("处理记录和处理人落在评价那行上",
-       (lambda x: x["handle_note"] and x["handled_by"] == 店长["no"] and x["handled_at"])(
-           c.execute("SELECT * FROM rating WHERE pkg_id=?", (包,)).fetchone()))
-    ck("已关闭的工单不能再关一次", rt.close_bad_rating({"pkg": 包, "note": "再关一次试试看"}, 店长)
-       ["code"] == "ALREADY_CLOSED")
+    ck("处理记录、处理人、**处理方式**都落在评价那行上",
+       (lambda x: x["handle_note"] and x["handled_by"] == 店长["no"] and x["handled_at"]
+        and x["handle_way"] == "免次改衣")(
+           c.execute("SELECT * FROM rating WHERE pkg_id=?", (包,)).fetchone()),
+       "← 只落处理记录不落方式,「给没给钱」就还是靠读那段中文判")
+    # ⚠️ 这里**必须带上 way** —— 不带的话它会先撞 NEED_WAY,
+    # 于是这条判据测到的是「少了参数」,不是「已关闭不能再关」。
+    # > 一条「因为已关闭被拒」和一条「因为少参数被拒」,
+    # > **在「被拒了」这件事上长得一模一样。**
+    ck("已关闭的工单不能再关一次", rt.close_bad_rating(
+        {"pkg": 包, "note": "再关一次试试看", "way": "只回访"}, 店长)["code"] == "ALREADY_CLOSED")
 
     # ── 差评改好评:**工单不撤** ───────────────────────────────────────
     # 另找一个包裹从头走一遍 —— 上面那个已经改过一次了。

@@ -49,6 +49,13 @@ import worldclock
 import rating as R
 
 店长角色 = ("店长",)
+# ⚠️ **关差评的角色 2026-10-11 从「只有店长」扩到「店长 + 售后」。**
+# 业务那天拍了:**评价差评由新建的「售后」角色确认**。
+# 而 2026-09-27 那句「差评归店长跟」**没有被推翻** —— 两句说的是两件事:
+#   · 「归店长跟」= 谁去跟客户(跟进责任)
+#   · 「售后确认」= 谁有权让这件事结案(状态图上的权力)
+# 所以两个角色都能关,**不是把店长换掉**。
+能关差评的角色 = ("店长", "售后")
 来源_顾客 = "顾客小程序"
 工单类型 = "评价差评"
 
@@ -220,9 +227,10 @@ def close_bad_rating(d, me):
     业务 2026-09-27:差评归**店长**跟,不进顾问考核。
     """
     if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
-    if me.get("role") not in 店长角色:
+    if me.get("role") not in 能关差评的角色:
         return _deny(me.get("name"), "ROLE",
-                     f"差评由店长跟进,你是「{me.get('role')}」—— 业务 2026-09-27:只给店长看",
+                     f"关差评只有 {' / '.join(能关差评的角色)} 能做,你是「{me.get('role')}」"
+                     f"—— 业务 2026-09-27「差评归店长跟」+ 2026-10-11「售后确认结案」",
                      d.get("pkg") or "—", me.get("role"))
     pid = str(d.get("pkg") or d.get("pkg_id") or "").strip()
     r = _评过的(pid)
@@ -236,12 +244,30 @@ def close_bad_rating(d, me):
     能, 话 = R.待办能不能关(d.get("note"))
     if not 能:
         return dict(ok=False, code="NEED_NOTE", reason=话)
+    # ── 处理方式 + 出钱要第二个人(业务 2026-10-11)────────────────────────
+    # 判定全在 `knowledge/rating.处理方式能不能用` —— **这儿不抄一份**。
+    # ⚠️ 处理人传的是**工号**:批准人不能是处理人自己那条判据要拿它比,
+    # 传姓名的话两个人改个名就比不出来了。
+    我 = me.get("no") or me.get("name")
+    方式 = d.get("way") or d.get("处理方式")
+    行, 方式话 = R.处理方式能不能用(方式, d.get("approved_by"), 我)
+    if not 行:
+        return dict(ok=False, code="NEED_WAY", reason=方式话)
+    方式 = str(方式).strip()
+    要二人, _ = R.要不要第二个人(方式)
+    批 = str(d.get("approved_by") or "").strip() or None
+    批说明 = str(d.get("approve_note") or "").strip() or None
     now = _now()
     with sqlite3.connect(DB) as c:
         c.execute("UPDATE task SET status='已关闭' WHERE id=?", (r["task_id"],))
-        c.execute("UPDATE rating SET handled_at=?, handled_by=?, handle_note=? WHERE pkg_id=?",
-                  (now, me.get("no") or me.get("name"), str(d["note"]).strip(), pid))
+        c.execute("UPDATE rating SET handled_at=?, handled_by=?, handle_note=?,"
+                  " handle_way=?, handle_approved_by=?, handle_approve_note=? WHERE pkg_id=?",
+                  (now, 我, str(d["note"]).strip(), 方式, 批, 批说明, pid))
+    # ⚠️ 审计日志里**要带上处理方式和批准人** —— 不带的话,
+    # 「谁批了一笔退款」这件事只存在于 rating 表里,而 op_log 是追溯的入口。
     log_op(me.get("name"), "task", r["task_id"], "待处理", "已关闭", True, "BAD_RATING_CLOSED",
-           str(d["note"]).strip()[:120], {"role": me.get("role"), "pkg": pid})
+           f"{方式}:{str(d['note']).strip()[:90]}", {"role": me.get("role"), "pkg": pid,
+           "处理方式": 方式, "出钱": 要二人, "批准人": 批})
     return dict(ok=True, code="BAD_RATING_CLOSED", 包裹=pid, 工单=r["task_id"],
-                reason=f"工单 {r['task_id']} 已关闭,处理记录记下了")
+                处理方式=方式, 出钱=要二人, 批准人=批,
+                reason=f"工单 {r['task_id']} 已关闭({方式});{方式话}")

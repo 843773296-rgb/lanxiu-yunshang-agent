@@ -2926,8 +2926,8 @@
   "file": [
    {
     "path": "backend/rating_write.py",
-    "old": "    if me.get(\"role\") not in 店长角色:",
-    "new": "    if False:"
+    "old": "能关差评的角色 = (\"店长\", \"售后\")",
+    "new": "能关差评的角色 = (\"店长\", \"售后\", \"顾问\")"
    }
   ],
   "预期红": "顾问关差评 → 拒"
@@ -6817,5 +6817,17 @@
    }
   ],
   "预期红": "名字列没有长回来"
+ },
+ {
+  "script": "backend/role_check.py",
+  "改坏": "把 需要 映射里的 \"task\": \"店长\" 删掉(店长从此算没有 agent 能力)",
+  "file": [
+   {
+    "path": "backend/role_check.py",
+    "old": "            \"finance\": \"财务\", \"pattern\": \"版师\"}",
+    "new": "            \"finance\": \"财务\", \"pattern\": \"版师\"}\n    需要.pop(\"task\", None)"
+   }
+  ],
+  "预期红": "没有 agent 能力的在职岗位,不超过 1 个"
  }
 ]

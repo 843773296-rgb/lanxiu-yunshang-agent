@@ -210,6 +210,22 @@ def 铺(db=DB, 说=print):
     c.execute("DELETE FROM task WHERE type=?", (R_工单类型 := "评价差评",))
     c.execute("DELETE FROM rating")
 
+    # ⚠️ **处理差评的人只能是店长或售后**(`rating_write.能关差评的角色`)。
+    # 从 `staff` 表现读,**不手抄工号** —— 手抄的话哪天花名册改了这里不会跟着变,
+    # 而造出来的数据会悄悄变成「规则不允许的处理人」(2026-10-11 就是这么发现
+    # 201 条差评的处理人全是顾问的)。
+    店长们 = {r["shop"]: r["no"] for r in c.execute(
+        "SELECT shop, no FROM staff WHERE role='店长' AND status='启用'")}
+    _售 = c.execute("SELECT no FROM staff WHERE role='售后' AND status='启用' "
+                   "ORDER BY no LIMIT 1").fetchone()
+    售后工号 = _售["no"] if _售 else None
+    if not 店长们:
+        raise SystemExit("❌ staff 表里一个在职店长都没有 —— **这不叫「没店长」,叫取数取空了**")
+    if not 售后工号:
+        print("  ⚠️ 没有「售后」角色 —— 出钱那一档的处理人回落到店长,"
+              "而**批准人也是店长就会撞上「批准人不能是处理人自己」** ——"
+              "所以这一轮不造出钱的样本(业务 2026-10-11 拍的那条路径会是零样本)")
+
     # ⚠️ 四条资格,一条都不能少:
     #   ① 真签收过(至少一件合身,而且有 fit_at)—— 判据和写口那道闸同一个事实
     #   ② 签收**不在世界的未来**(19 个曾经在,已由 clamp_future_done 挪回来)
@@ -305,7 +321,7 @@ def 铺(db=DB, 说=print):
                 原星 = None
         # 差评 → **走口径模块**建待办,不在这儿抄一份判据
         待 = R.差评待办(星, 评语, p["order_id"], p["pkg_id"], 评s, 顾问=p["顾问"])
-        tid = 处理于 = 处理人 = 处理记录 = None
+        tid = 处理于 = 处理人 = 处理记录 = 方式 = 批准人 = 批说明 = None
         if 待:
             tid = f"TR{p['pkg_id']}"
             岁 = (今 - dt.date.fromisoformat(评s[:10])).days
@@ -321,21 +337,58 @@ def 铺(db=DB, 说=print):
                     h = min(dt.datetime.strptime(评s, "%Y-%m-%d %H:%M") + dt.timedelta(hours=2),
                             dt.datetime.combine(今, dt.time(23, 59)))
                 处理于 = h.strftime("%Y-%m-%d %H:%M")
-                处理人 = p["顾问"]        # 演示数据里用经手工号占位;真处理人是店长
-                处理记录 = rng.choice([
-                    "已电话联系顾客,约了本周回店免费修线头,顾客接受",
-                    "已电话回访,顾客反映等太久,已说明工期并赠送一次保养",
-                    "已上门取件返修,修好后顺丰寄回,顾客确认满意",
-                    "已联系顾客,腰围按实测重新调整,免费返修",
-                    "已致电致歉,包装问题已反馈工厂,下次改进"])
+                # ⚠️ **处理人不能是顾问。** 原来这里写的是 `p["顾问"]`,注释自己写着
+                # 「演示数据里用经手工号占位;真处理人是店长」—— 而那个占位
+                # **造出了规则明确禁止的数据**:`rating_write.close_bad_rating`
+                # 对顾问是直接拒的(`code="ROLE"`,业务 2026-09-27「差评归店长跟」)。
+                # 2026-10-11 实测后果:库里 201 条已关闭差评的处理人全是顾问工号,
+                # 而 `op_log` 里 `BAD_RATING_CLOSED` **0 条** —— 正门一次没走过。
+                # > 一份「差评是顾问在处理」的数据和一份合规的,
+                # > **在那一列上长得一模一样**(都是六位工号)——
+                # > 而拿它做报表的人会得出一个业务明令禁止的结论。
+                # 这正是 `fakedata/guard.py` 警告的那种破法:
+                # 「让真值描述一个不存在的世界 —— 而这种破法不会让检查变红」。
+                #
+                # ⚠️ **而且两个分支都要有样本。** 原来那五句处理记录
+                # **没有一句是出钱的**,照原样生成会让业务 2026-10-11 拍的
+                # 「出钱要两个人」那条路径**又是零样本** —— 规则在、没有数据走过。
+                #
+                # 配对生成(处理方式 ↔ 处理记录),**不许只给记录不给方式**:
+                # 方式是结构化判据,记录是给人看的一句话,两者不一致就没人知道哪个对。
+                # 没有售后角色时不造出钱样本 —— 见上面那句警告的理由
+                出钱 = bool(售后工号) and (rng.random() < 0.22)   # 约两成要给钱
+                if 出钱:
+                    # 出钱的:处理人是**售后**(它确认结案),批准人是**该店店长** ——
+                    # 两个人不能是同一个(判据在 knowledge/rating.处理方式能不能用)
+                    处理人 = 售后工号 or 店长们.get(p["shop"]) or p["顾问"]
+                    批准人 = 店长们.get(p["shop"])
+                    方式, 处理记录 = rng.choice([
+                        ("优惠券", "已电话致歉,顾客不愿返修,送 200 元无门槛券作补偿,顾客接受"),
+                        ("部分退款", "已协商,顾客保留衣服,退还工费部分,金额已报店长批准"),
+                        ("全额退款", "已上门取回,顾客坚持退货,全额退款并承担运费"),
+                    ])
+                    批说明 = f"店长 {批准人} 批准:差评补偿走「{方式}」"
+                else:
+                    # 不出钱的:处理人是**该店店长**(业务 2026-09-27「归店长跟」)
+                    处理人 = 店长们.get(p["shop"]) or p["顾问"]
+                    批准人 = 批说明 = None
+                    方式, 处理记录 = rng.choice([
+                        ("免次改衣", "已电话联系顾客,约了本周回店免费修线头,顾客接受"),
+                        ("送保养", "已电话回访,顾客反映等太久,已说明工期并赠送一次保养"),
+                        ("免次改衣", "已上门取件返修,修好后顺丰寄回,顾客确认满意"),
+                        ("免次改衣", "已联系顾客,腰围按实测重新调整,免费返修"),
+                        ("只回访", "已致电致歉,包装问题已反馈工厂,下次改进"),
+                    ])
         行.append((p["pkg_id"], p["order_id"], p["customer_id"], 星, 评语 or None, 评s,
                   R.来源_顾客 if hasattr(R, "来源_顾客") else "顾客小程序",
-                  p["顾问"], 改次, 改于, 原星, tid, 处理于, 处理人, 处理记录))
+                  p["顾问"], 改次, 改于, 原星, tid, 处理于, 处理人, 处理记录,
+                  方式, 批准人, 批说明))
 
     c.executemany("""INSERT INTO rating(pkg_id,order_id,customer_id,star,note,rated_at,src,
                         advisor_no,edit_cnt,edited_at,star_before,task_id,
-                        handled_at,handled_by,handle_note)
-                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 行)
+                        handled_at,handled_by,handle_note,
+                        handle_way,handle_approved_by,handle_approve_note)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 行)
     c.executemany("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",
                   工单)
     # ⚠️ **记下造数时世界停在哪天。**
@@ -408,7 +461,21 @@ def _自测():
                                fit_result text, fit_at text, fit_verified_by text);
       create table task(id text primary key, type text, ref_id text, status text,
                         created text, summary text);
+      -- ⚠️ **夹具要有 staff 表。** 2026-10-11 加「处理人只能是店长或售后」之后
+      -- 这个自测当场崩(`no such table: staff`)—— 而崩和「验了不合格」不是一回事,
+      -- 门禁自己会分开报:「崩了的那几条**一条都没验过**」。
+      -- 为什么不是让代码容错:容错之后自测就**测不到新的处理人逻辑**了,
+      -- 而那正是这次要加的东西。**夹具缺一张表,判据就是空转的。**
+      create table staff(no text primary key, name text, role text, shop text, status text);
     """)
+    # 三家店各一个店长 + 一个售后 —— 和真库同形(门店留空的是售后)。
+    # 出钱那一档要「处理人(售后) ≠ 批准人(店长)」,所以两种角色都要有。
+    c.executemany("insert into staff(no,name,role,shop,status) values(?,?,?,?,?)", [
+        ("60000001", "夹具店长A", "店长", "SH001 静安旗舰店", "启用"),
+        ("60000004", "夹具店长B", "店长", "SH002 徐汇店", "启用"),
+        ("60000007", "夹具店长C", "店长", "SH003 杭州湖滨店", "启用"),
+        ("60000022", "夹具售后", "售后", "", "启用"),
+    ])
     sys.path.insert(0, os.path.join(ROOT, "backend"))
     import seed_rating as _建
     _建.建表(c)
