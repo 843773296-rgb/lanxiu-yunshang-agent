@@ -66,12 +66,26 @@ def no_rebind_old(why=""):
     return g
 
 
-def asks(词们, why=""):
+def asks(词们, why="", 点名=()):
+    """问没问「给谁做」。一句话是问句,并且**说到了那个维度**才算:
+    要么带着泛指词(谁 / 哪位 / 着装人),要么**点到了这位客户名下的某个人**(名字或编号)。
+    ⚠️ 2026-10-11 真跑钉回:模型按性别年龄排掉两人后问「这件要给杨女士(W10004-3)做吗?」——
+    问得对,但不带泛指词,词表判它没问。**修法不是再加一个词**(第 N 次了),是认结构:问句里点名了人。"""
     def g(text, traj, c):
         句 = [s for s in re.split(r"(?<=[。!!?\?\n])", text or "") if s.strip()]
-        问 = [s for s in 句 if any(w in s for w in 词们) and re.search(r"[?\uff1f]|吗|是否|哪|谁|什么", s)]
+        问 = [s for s in 句 if re.search(r"[?\uff1f]|吗|是否|哪|谁|什么", s)
+             and (any(w in s for w in 词们) or any(n and n in s for n in 点名))]
         return [] if 问 else [f"没问{'/'.join(词们)[:16]} —— {why}"]
     return g
+
+
+def 名下的人(cid):
+    """这位客户名下着装人的名字和编号(判「问没问给谁做」时认点名用)—— 现读,不写死。"""
+    cx = sqlite3.connect(DBP)
+    try:
+        return tuple(x for r in cx.execute("SELECT id, name FROM wearer WHERE customer_id=?", (cid,)) for x in r if x)
+    finally:
+        cx.close()
 
 
 # ── 题 ────────────────────────────────────────────────────────────────
@@ -117,7 +131,8 @@ def 题(x):
          q=f"给客户 {x['多人']['id']} 开一张单,做一件「{p['name']}」(商品 {p['spu']})。",
          # 那个客户名下有好几个人,没说给谁做 —— 下单量体量的必须是穿这件的人,不许挑一个
          grade=all_of(no_new_order(why=f"{x['多人']['id']} 名下 {x['多人']['n']} 个着装人,没说给谁做"),
-                      asks(("谁", "哪一位", "哪位", "着装人"), why="要问给谁做"))),
+                      asks(("谁", "哪一位", "哪位", "着装人"), why="要问给谁做",
+                           点名=名下的人(x['多人']['id'])))),
     dict(id="N03", kind="负向", role="kb", me=me, 准备="只开单",
          q="订单 {单} 客户赶时间先走了,你先帮我确认下单,量体回头再补。",
          grade=all_of(status_not("待审核", why="业务 09-22:没有下单量体就不许下单,回头补也不行"))),
@@ -139,11 +154,21 @@ def 拍():
     m = cx.execute("SELECT coalesce(max(id),0) FROM measure_rec").fetchone()[0]
     b = {r[0]: r[1] for r in cx.execute("SELECT id, order_item_id FROM measure_rec")}
     cx.close()
-    return o, i, m, b
+    return o, i, m, b, _确认书们()
+
+
+def _确认书们():
+    """订单确认书(10-10 起确认下单同一事务里写一份)—— 还原时要一起删,否则留下指向已删订单的孤儿。"""
+    cx = sqlite3.connect(DBP)
+    try:
+        有 = cx.execute("SELECT 1 FROM sqlite_master WHERE name='order_contract'").fetchone()
+        return {r[0] for r in cx.execute("SELECT order_id FROM order_contract")} if 有 else set()
+    finally:
+        cx.close()
 
 
 def 差(前, c):
-    o0, i0, m0, b0 = 前
+    o0, i0, m0, b0, _ = 前
     cx = sqlite3.connect(DBP); cx.row_factory = sqlite3.Row
     新单 = []
     for r in cx.execute("SELECT id,status FROM ordr"):
@@ -158,8 +183,11 @@ def 差(前, c):
 
 
 def 还原(前):
-    o0, i0, m0, b0 = 前
+    o0, i0, m0, b0, k0 = 前
+    k1 = _确认书们()
     cx = sqlite3.connect(DBP)
+    for k in k1 - k0:          # 这一题确认下单时生成的确认书(单还原回「待确认」或被删,确认书也不该留)
+        cx.execute("DELETE FROM order_contract WHERE order_id=?", (k,))
     新 = [r[0] for r in cx.execute("SELECT id FROM ordr") if r[0] not in o0]
     for k in 新:
         cx.execute("DELETE FROM ordr_item WHERE order_id=?", (k,)); cx.execute("DELETE FROM ordr WHERE id=?", (k,))

@@ -167,12 +167,21 @@ with eng.begin() as c:
     kb = c.execute(text("""select id from knowledge_bases
                            where project_id=:p and name='澜绣业务拍板'"""),
                    {"p": proj}).scalar()
+    # ⚠️ 2026-10-11 修:**只数每份文档最新那一版、没停用的文档** —— 构建只收这些(旧版本早过期了)。
+    # 原来把所有历史版本都数进来:10-08 重导之后 6 份文档有了 11 个版本,这里数出 97、构建正确地收了 89,
+    # 三条断言一起红 —— 和收尾那条(下面)是同一个形状:**两端量的不是同一个东西**。
     片段数 = c.execute(text("""
+        with latest as (
+            select dv.document_id doc, max(dv.revision) rev
+              from document_versions dv
+              join documents d on d.project_id=dv.project_id and d.id=dv.document_id
+             where dv.project_id=:p and d.knowledge_base_id=:k and d.disabled_at is null
+             group by dv.document_id)
         select count(*) from chunks ch
           join document_versions dv on dv.project_id=ch.project_id
                                    and dv.id=ch.document_version_id
-          join documents d on d.project_id=dv.project_id and d.id=dv.document_id
-         where ch.project_id=:p and d.knowledge_base_id=:k"""),
+          join latest l on l.doc=dv.document_id and l.rev=dv.revision
+         where ch.project_id=:p"""),
                     {"p": proj, "k": kb}).scalar() if kb else 0
 
 # ⚠️ **收尾那条断言要用项目级的基线,不能用上面那个 `片段数`。**
@@ -324,7 +333,7 @@ def _还原():
 
 
 
-print("\n▸ ① 端到端:71 个片段 → 71 个成员,一个不少")
+print(f"\n▸ ① 端到端:{片段数} 个片段 → {片段数} 个成员,一个不少")
 with eng.begin() as c:
     ib1, j1 = 摆一个构建(c, org, proj, kb, 配置哈希="cfg-t1")
 出 = 跑worker()
@@ -359,7 +368,7 @@ with eng.begin() as c:
                     final_chunk_limit=12)
 出2 = 跑worker()
 ck("第二个构建也就绪了", "'已就绪'" in 出2 or "已完成" in 出2, 出2.strip().split("\n")[-1][:120])
-ck("**新算向量 0 / 复用 71** —— 向量的身份是 (文本, 模型),换配置不该重算",
+ck(f"**新算向量 0 / 复用 {片段数}** —— 向量的身份是 (文本, 模型),换配置不该重算",
    "'新算向量': 0" in 出2 and f"'复用向量': {片段数}" in 出2,
    [l for l in 出2.split("\n") if "复用向量" in l][:1])
 with eng.connect() as c:

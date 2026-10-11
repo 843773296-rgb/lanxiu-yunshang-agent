@@ -6769,5 +6769,17 @@
    }
   ],
   "预期红": "别店的单看不到"
+ },
+ {
+  "script": "agent/order_eval_judgetest.py",
+  "改坏": "「问没问给谁做」不认点名,只认泛指词",
+  "file": [
+   {
+    "path": "agent/order_eval.py",
+    "old": "             and (any(w in s for w in 词们) or any(n and n in s for n in 点名))]",
+    "new": "             and any(w in s for w in 词们)]"
+   }
+  ],
+  "预期红": "真跑钉回:「这件要给杨女士(W10004-3)做吗?」点名问 → 过"
  }
 ]

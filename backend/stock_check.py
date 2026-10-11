@@ -272,10 +272,13 @@ def main():
     # 这里钉的是**上限**,不是归零:改种子是别人的真值,而且要业务点头。
     ck("流水记的是什么,有定义", SA.流水记的是 == "可用"
        and "发货出库" in SA.流水记的是_为什么, 1, SA.流水记的是_为什么[:40])
+    # ⚠️ 2026-10-11:链尾按 (ts, 写入顺序) 取最后一笔,**不能只按 MAX(ts)** ——
+    # 同一秒写进两笔(每日上新同一刻占用两单:225、224),MAX(ts) 会把两笔都当链尾,
+    # 225 那笔「对不上」,而真正的最后一笔 224 是对的。红的是检查,不是账。
     有流水 = list(c1.execute(
         "SELECT l.sku, l.after_n, s.stock, COALESCE(s.locked,0) lk FROM stock_log l "
-        "JOIN sku s ON s.code=l.sku WHERE l.ts=("
-        "  SELECT MAX(ts) FROM stock_log WHERE sku=l.sku)"))
+        "JOIN sku s ON s.code=l.sku WHERE l.rowid=("
+        "  SELECT rowid FROM stock_log WHERE sku=l.sku ORDER BY ts DESC, rowid DESC LIMIT 1)"))
     对不上 = [x["sku"] for x in 有流水 if x["after_n"] != x["stock"] - x["lk"]]
     ck("流水链尾对不上可用的,不超过上限", len(对不上) <= SA.流水对不上的上限,
        len(有流水),
