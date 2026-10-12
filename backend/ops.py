@@ -17,6 +17,10 @@ import json, os, sqlite3, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
+# 本库 = 模块载入时那个库。检查脚本会把 DB 指向临时副本,但改不到这个 ——
+# 销账后的判读上报**只在本库上发生**(2026-10-12:ops_resolve_check 第一次在副本上销账,
+# 两条假判读进了真投递箱;同 artifact_report.是本库 那次 10-10 的事故)
+_本库 = DB
 
 # 时效承诺。定在这里而不是散在页面上,是因为它是**业务承诺**,不是显示逻辑。
 # 退款失败压着客户的钱,比客户合并急。
@@ -458,17 +462,67 @@ def get_triage(triage_id):
 
 
 # ── 三、销账与回流 ───────────────────────────────────────────────────────
-def resolve(triage_id, decision, handler, root_cause=None, action=None, note=None):
+# ── 谁能销哪一类(业务 2026-10-10 晚 / 10-11 拍,原文在 intent/triage-queue.md)──────────
+# ⚠️ 2026-10-12 之前**谁都能销账**:`/api/ops-resolve` 不查登录、`handler` 读请求体(默认「值班同学」),
+# 而 `resolve` 不写 op_log —— 谁都能销、署名随便填、销完查不出是谁。用户拍「修,排在页面两步之前」。
+# 门分两层:**会话 → 身份**在接口那层(造数脚本没有会话);**身份 → 能不能销**在这里(所有调用方都过)。
+# ⚠️ 两段确认(退款:店长先定该不该退 → 财务执行;合并:店长认人 → 总部运营执行)的**顺序这里管不住**,
+# 只管「是这几种角色才能销」—— 两段流程还没做,别把这张表读成两段确认已经落地。
+# ⚠️「已升级」用同一张表(能办结的才能升级)是**开发按同一张表推的,业务没拍过**。
+可销账角色 = {
+    "财务人工任务": ("店长", "财务"),       # 退款异常两段:店长定该不该退 → 财务执行
+    "客户合并确认": ("店长", "总部运营"),   # 两段:店长认人 → 总部运营执行合并
+    "售后判责":     ("售后",),              # 10-11:新建「售后」角色负责确认
+}
+
+
+def 能销吗(task_type, role):
+    """→ (能不能, 为什么)。评价差评跟「关差评」用同一份名单(rating_write.能关差评的角色),不另抄。"""
+    if task_type == "评价差评":
+        import rating_write as _rw
+        许 = tuple(_rw.能关差评的角色)
+    else:
+        许 = 可销账角色.get(task_type)
+    if not 许:
+        return False, f"「{task_type}」没登记谁能销账 —— 不猜,先去 ops.可销账角色 登记"
+    if role not in 许:
+        return False, f"「{task_type}」只能由 {' / '.join(许)} 销账,你是「{role or '(没有角色)'}」"
+    return True, ""
+
+
+def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, 来源="页面"):
     """值班同学销账。**改判会回流成新的标注** —— 这是平台能越用越准的唯一通路。
+
+    me = 销账的人 {no, name, role}(**调用方给,不在这里读会话**:接口层从登录态取,造数脚本传一个真员工)。
+    角色不对 → 抛 PermissionError;成功 / 被拒 / 出错**都写 op_log**(machine='triage')。
 
     回流写的是 truth 表,标 src='人工改判'。为什么要分开标:
     回流条目只经过一个人的判断、没有第二个人复核过,
     如果和建库标注混在一起,一次判错的裁决会悄悄变成"标准答案",而且再也查不出来。
     """
+    from oplog import log_op as _log
+    me = me or {}
+    谁 = f"{me.get('name') or '?'}({me.get('no') or '?'})"
+    # reason 里**不带日期** —— op_log.ts 自己记时间;文本里一带日期就要去 shift_world 登记,否则每日平移拒跑
+    def _记(ok, code, 话):
+        _log(谁, "triage", f"triage#{triage_id}", "待复核", decision if ok else "—", ok, code,
+             f"[{来源}] {话}"[:200], {"role": me.get("role"), "no": me.get("no")})
+    if not (me.get("no") and me.get("role")):
+        _记(False, "NO_IDENTITY", "没有销账人身份(工号 + 角色)")
+        raise PermissionError("没有销账人身份 —— 要登录;造数脚本要传一个真员工")
     if decision not in DECISIONS:
+        _记(False, "BAD_DECISION", f"decision={decision}")
         raise ValueError(f"decision 只能是 {DECISIONS},收到 {decision}")
     t = get_triage(triage_id)
-    if not t: raise ValueError(f"没有 triage#{triage_id}")
+    if not t:
+        _记(False, "NO_TRIAGE", "没有这条研判")
+        raise ValueError(f"没有 triage#{triage_id}")
+    _任务 = _rows("SELECT type FROM task WHERE id=?", t["task_id"])
+    ok, 为什么 = 能销吗(_任务[0]["type"] if _任务 else None, me.get("role"))
+    if not ok:
+        _记(False, "ROLE", 为什么)
+        raise PermissionError(为什么)
+    handler = 谁
     ts = now().strftime("%Y-%m-%d %H:%M:%S")
     flowed, conflict = False, None
     with _c() as c:
@@ -506,6 +560,8 @@ def resolve(triage_id, decision, handler, root_cause=None, action=None, note=Non
         import sys as _s, os as _os
         _s.path.insert(0, _os.path.join(_os.path.dirname(_os.path.dirname(
             _os.path.abspath(__file__))), "agent"))
+        if os.path.realpath(DB) != os.path.realpath(_本库):
+            raise RuntimeError("副本上的销账不上报")    # 落到下面的 except:不上报、不影响销账
         import feedback_report as _fb, worldclock as _wc1
         # ⚠️ **`外部trace` 传的必须是 sdk 那个 trace id,不是 `triage#N`。**
         # 两个字段的定义不一样:`trace_id` 是**接收端**在 A1 上报时返回的号,
@@ -533,6 +589,8 @@ def resolve(triage_id, decision, handler, root_cause=None, action=None, note=Non
                 世界日期=str(_wc1.今天()))
     except Exception:
         pass                       # 上报出任何事都不许影响销账
+    _记(True, "RESOLVE", f"{decision} · 工单 {t['task_id']}" + (" · 回流评测集" if flowed else "")
+        + (" · 与建库标注冲突" if conflict else "") + (f" · {note[:40]}" if note else ""))
     return dict(triage_id=triage_id, decision=decision, 回流评测集=flowed, 与建库标注冲突=conflict)
 
 

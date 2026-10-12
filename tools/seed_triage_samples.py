@@ -309,11 +309,19 @@ def main():
         决 = 销账配比.get(i % 10)
         if not 决:
             continue
-        decision, who, role = 决
+        decision, _who, _role = 决
+        # 2026-10-12 起销账要身份且查角色(ops.能销吗):按**这一类谁能销**现挑一位在职员工,不写死名字
+        类型 = (OPS._rows("SELECT type FROM task WHERE id=?", 行["task_id"]) or [{}])[0].get("type")
+        许 = [r for r in ("店长", "财务", "总部运营", "售后") if OPS.能销吗(类型, r)[0]]
+        人 = OPS._rows("SELECT no, name, role FROM staff WHERE role IN (%s) AND status='启用' ORDER BY role, no LIMIT 1"
+                      % ",".join("?" * len(许)), *许) if 许 else []
+        if not 人:
+            print(f"  {R}✗{D} 「{类型}」没有能销账的在职员工 —— 不销,也不找人顶"); continue
+        role = 人[0]["role"]
         try:
-            OPS.resolve(行["id"], decision, who,
+            OPS.resolve(行["id"], decision, 人[0],
                         note=f"造样本({role}):这一条只为让队列的「{decision}」状态有样本。"
-                             f"**不造「已改判」** —— 那会回流进 truth(评测答案)。")
+                             f"**不造「已改判」** —— 那会回流进 truth(评测答案)。", 来源="造数")
             销 += 1
         except Exception as e:
             print(f"  {R}✗{D} 销账 triage#{行['id']} 失败:{type(e).__name__}: {e}"[:120])

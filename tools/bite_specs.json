@@ -7225,5 +7225,53 @@
    }
   ],
   "预期红": "「上海」和「上海市」算同一个省"
+ },
+ {
+  "script": "backend/ops_resolve_check.py",
+  "改坏": "能销吗 不查角色",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    if role not in 许:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "拿错角色销账 → 拒"
+ },
+ {
+  "script": "backend/ops_resolve_check.py",
+  "改坏": "resolve 成功不写 op_log",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    _记(True, \"RESOLVE\", ",
+    "new": "    (lambda *a: None)(True, \"RESOLVE\", "
+   }
+  ],
+  "预期红": "对的角色销账 → 成功,op_log 查得到是谁"
+ },
+ {
+  "script": "backend/ops_resolve_check.py",
+  "改坏": "接口层改回读请求体里的 handler",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "                    body.get(\"triage_id\"), body.get(\"decision\"), u,",
+    "new": "                    body.get(\"triage_id\"), body.get(\"decision\"), body.get(\"handler\") or u,"
+   }
+  ],
+  "预期红": "接口层:身份只从登录态取"
+ },
+ {
+  "script": "backend/ops_resolve_check.py",
+  "改坏": "销账上报不看是不是本库",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "        if os.path.realpath(DB) != os.path.realpath(_本库):\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "副本上的销账不往真投递箱里排"
  }
 ]

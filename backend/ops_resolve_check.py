@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""研判销账的门 · 检查 —— 在库的临时副本上真去攻击,真库不动。
+
+2026-10-12 之前:`/api/ops-resolve` 不查登录、销账人读请求体里的 `handler`(默认「值班同学」),
+`ops.resolve` 不写 op_log —— **谁都能销账、署名随便填、销完查不出是谁**(用户拍「修,排在页面两步之前」)。
+
+门分两层,两层都要验:
+  · 接口层:身份只从登录态取(`_me(self)`),没登录 401,请求体里的 handler 不读
+  · `ops.resolve`:没身份拒、角色不在 `可销账角色` 里拒;成功 / 被拒**都写 op_log**
+⚠️ 两段确认的**顺序**这里不验 —— 还没做,`ops.可销账角色` 的注释写着。
+"""
+import os, re, shutil, sqlite3, sys, tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), os.path.join(ROOT, "agent")]
+G, R, D = "\033[32m", "\033[31m", "\033[0m"
+bad, n = [], 0
+
+
+def ck(名, ok, 附=""):
+    global n
+    n += 1
+    if not ok:
+        bad.append(名)
+    print(f"  {'✅' if ok else '❌'} {名}" + (f"  {str(附)[:160]}" if 附 and not ok else ""))
+
+
+咬合 = [
+    ("能销吗 不查角色", "拿错角色销账 → 拒"),
+    ("resolve 成功不写 op_log", "对的角色销账 → 成功,op_log 查得到是谁"),
+    ("接口层改回读请求体里的 handler", "接口层:身份只从登录态取"),
+    ("销账上报不看是不是本库", "副本上的销账不往真投递箱里排"),
+]
+
+print("研判销账的门 · 检查(库的临时副本上跑,真库不动)")
+print("=" * 80)
+tmp = tempfile.mkdtemp(prefix="opsres-")
+db = os.path.join(tmp, "lanxiu.db")
+shutil.copy(os.path.join(HERE, "lanxiu.db"), db)
+import ops, oplog
+ops.DB = oplog.DB = db
+c = sqlite3.connect(db); c.row_factory = sqlite3.Row
+import feedback_report as FB
+_箱前 = open(FB.箱, encoding="utf-8").read() if os.path.exists(FB.箱) else ""
+
+
+def 一条(类型):
+    return c.execute("SELECT tr.id FROM triage tr JOIN task t ON t.id=tr.task_id "
+                     "WHERE t.type=? AND tr.status='待复核' ORDER BY tr.id LIMIT 1", (类型,)).fetchone()
+
+
+def 员工(角色):
+    r = c.execute("SELECT no, name, role FROM staff WHERE role=? AND status='启用' ORDER BY no LIMIT 1", (角色,)).fetchone()
+    return dict(r) if r else None
+
+
+def 日志(tid):
+    return c.execute("SELECT actor, allowed, code, reason FROM op_log WHERE machine='triage' AND target=? "
+                     "ORDER BY rowid DESC LIMIT 1", (f"triage#{tid}",)).fetchone()
+
+
+def 拒了吗(f):
+    try:
+        f(); return False
+    except PermissionError:
+        return True
+
+
+财, 判 = 一条("财务人工任务"), 一条("售后判责")
+ck("有待复核的财务任务和售后判责可攻击(空集合上什么都成立)", bool(财 and 判), (财, 判))
+顾问, 店长, 财务, 售后 = 员工("顾问"), 员工("店长"), 员工("财务"), 员工("售后")
+if 财 and 判 and 顾问 and 店长 and 财务 and 售后:
+    t1, t2 = 财["id"], 判["id"]
+    ck("不给身份销账 → 拒,op_log 记下", 拒了吗(lambda: ops.resolve(t1, "已采纳", None))
+       and (日志(t1) or {})["code"] == "NO_IDENTITY")
+    ck("拿错角色销账 → 拒(顾问销财务任务)", 拒了吗(lambda: ops.resolve(t1, "已采纳", 顾问))
+       and 日志(t1)["code"] == "ROLE" and 日志(t1)["allowed"] == 0)
+    ck("店长销售后判责 → 拒(10-11:只归售后)", 拒了吗(lambda: ops.resolve(t2, "已采纳", 店长)))
+    ck("被拒之后研判状态没变(还是待复核)",
+       c.execute("SELECT status FROM triage WHERE id=?", (t1,)).fetchone()[0] == "待复核")
+    r = ops.resolve(t1, "已采纳", 财务, note="检查")
+    lg = 日志(t1)
+    ck("对的角色销账 → 成功,op_log 查得到是谁", r.get("decision") == "已采纳" and lg["allowed"] == 1
+       and lg["code"] == "RESOLVE" and 财务["no"] in lg["actor"], dict(lg) if lg else None)
+    ck("署名就是登录的那个人(不是「值班同学」)",
+       财务["no"] in (c.execute("SELECT handler FROM triage WHERE id=?", (t1,)).fetchone()[0] or ""))
+    ck("售后销售后判责 → 成功", ops.resolve(t2, "已采纳", 售后).get("decision") == "已采纳")
+    import rating_write as RW
+    ck("评价差评跟「关差评」用同一份名单(不另抄)",
+       all(ops.能销吗("评价差评", x)[0] for x in RW.能关差评的角色) and not ops.能销吗("评价差评", "顾问")[0])
+    ck("没登记谁能销的类型 → 拒,不猜", not ops.能销吗("没见过的类型", "总部运营")[0])
+c.close()
+shutil.rmtree(tmp, ignore_errors=True)
+_箱后 = open(FB.箱, encoding="utf-8").read() if os.path.exists(FB.箱) else ""
+ck("副本上的销账不往真投递箱里排(只有本库上的才上报)", _箱前 == _箱后,
+   f"真投递箱多了 {_箱后.count(chr(10)) - _箱前.count(chr(10))} 行")
+
+# 接口层 ①:取身份那一步**真调用**(数据工厂 10-12 指出:`_me` 只看 handler.headers 的 cookie,
+# 不依赖 socket / 服务,造一个只有 headers 的假 handler 就能真调)—— 比查字符串强一个量级
+import server as SV, auth as AU, secrets as _sec, datetime as _dt
+
+
+class 假手柄:
+    def __init__(s, ck): s.headers = {"cookie": ck}
+
+
+_tok = _sec.token_urlsafe(16)
+AU._SESS[_tok] = dict(no="CHK-SM", name="检查店长", role="店长", shop="SH001", at=_dt.datetime.now())
+try:
+    ck("接口层:不带登录凭证 → 认不出人(_me 真调用返回 None)", SV._me(假手柄("")) is None
+       and SV._me(假手柄("lx_token=乱填的")) is None)
+    ck("接口层:带真凭证 → 认出是谁(_me 真调用),不读请求体里的自称",
+       (SV._me(假手柄(f"lx_token={_tok}")) or {}).get("no") == "CHK-SM")
+finally:
+    AU._SESS.pop(_tok, None)
+
+# 接口层 ②:那三行有没有把 _me 的结果交给 resolve —— ⚠️ **这一条只验了文本**(路由分支里的代码判据调不到;
+# 要真验得起服务发请求,按规矩不进门禁)。取身份和判角色两半都被真调过了,残渣只剩这三行
+# 接口层:身份只从登录态取
+src = open(os.path.join(HERE, "server.py"), encoding="utf-8").read()
+m = re.search(r'if p=="/api/ops-resolve":(.*?)\n        if p==', src, re.S)
+段 = m.group(1) if m else ""
+ck("接口层:身份只从登录态取(_me),没登录 401,不读请求体里的 handler",
+   bool(段) and "_me(self)" in 段 and "401" in 段 and 'body.get("handler")' not in 段, 段[:200])
+
+print()
+if bad:
+    print(f"{R}❌ {len(bad)} 条不过(验了 {n} 条){D}")
+    sys.exit(1)
+print(f"{G}✅ 研判销账的门都对(验了 {n} 条){D}")

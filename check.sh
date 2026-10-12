@@ -433,6 +433,7 @@ run "订单确认书条款 · 业务 10-10 定的退款 / 质量 / 延期 / 七�
 run "开裁后取消扣工钱 · 工单工日折钱、做一半按已过天数且封顶、没开工不扣、总额不超已付(自测)" python3 knowledge/cancel_fee.py
 run "完工前不做了扣多少(cancel_fee 工具)· 折钱对独立 SQL、只看本店、料费不替门店填、完工单不算(只读)" python3 backend/cancel_fee_check.py
 run "顾问引用 · 名字列不许长回来、工号列从库结构现算、工号都查得到人(只豁免点名夹具且豁免要活着)" python3 backend/advisor_ref_check.py
+run "研判销账的门 · 只有对应角色能销、署名从登录态取、成功被拒都留痕、副本上不上报(库副本上真攻击)" python3 backend/ops_resolve_check.py
 run "同意按年龄 · 不满 14 监护人、14—18 本人为准 + 家长付款双签、营销只看本人(自测)" python3 knowledge/consent_age.py
 run "订单确认书 · 确认下单同一事务生成、写不进就整单回滚、金额对独立 SQL、范围(库副本上跑)" python3 backend/contract_check.py
 run "购买喜好口径 · 24 个月窗口、新款对上她的规律(自测)" python3 knowledge/purchase_pref.py

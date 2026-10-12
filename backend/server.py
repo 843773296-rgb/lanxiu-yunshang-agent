@@ -3281,12 +3281,19 @@ class H(BaseHTTPRequestHandler):
             return self._send(dict(ok=True, triage_id=tid, row=_ops.get_triage(tid)))
         if p=="/api/ops-resolve":
             # 值班同学销账。改判会回流评测集 —— 这是整套东西唯一的自我改进通路。
+            # ⚠️ 2026-10-12 前这里不查登录、销账人读请求体里的 handler(默认「值班同学」)。
+            # **身份只从登录态取**,请求体里的 handler 一律不读 —— 那是自称(用户拍「修」)
             import ops as _ops
+            u = _me(self)
+            if not u:
+                return self._send(dict(error="没登录 —— 销账要登录,署名用登录的人"), 401)
             try:
                 return self._send(_ops.resolve(
-                    body.get("triage_id"), body.get("decision"), body.get("handler") or "值班同学",
+                    body.get("triage_id"), body.get("decision"), u,
                     root_cause=body.get("root_cause"), action=body.get("action"),
-                    note=body.get("note")))
+                    note=body.get("note"), 来源="页面"))
+            except PermissionError as e:
+                return self._send(dict(error=str(e)[:200]), 403)
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
         if p=="/api/fit":

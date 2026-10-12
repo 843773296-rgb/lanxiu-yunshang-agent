@@ -108,6 +108,29 @@ def a_write_role_param():
     raise TypeError("写工具的签名里没有身份参数(这正是期望的)")
 
 
+def a_resolve_wrong_role():
+    """研判销账拿错角色 —— 在库副本上让顾问去销一条财务任务,应该抛 PermissionError。
+    2026-10-12 前谁都能销、署名随便填、销完不留痕(用户拍「修」)。"""
+    import ops as _ops, oplog as _ol, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq
+    原, 原日志 = _ops.DB, _ol.DB
+    d = _tf.mkdtemp(prefix="ba-res-"); p = _os.path.join(d, "lanxiu.db")
+    _sh.copy(原, p)
+    _ops.DB = _ol.DB = p
+    try:
+        c = _sq.connect(p)
+        t = c.execute("SELECT tr.id FROM triage tr JOIN task k ON k.id=tr.task_id "
+                      "WHERE k.type='财务人工任务' AND tr.status='待复核' LIMIT 1").fetchone()
+        u = c.execute("SELECT no, name, role FROM staff WHERE role='顾问' AND status='启用' LIMIT 1").fetchone()
+        c.close()
+        if not (t and u):
+            return "没有可攻击的样本(待复核的财务任务 / 在职顾问)—— 没攻击成,不算守住"
+        _ops.resolve(t[0], "已采纳", dict(no=u[0], name=u[1], role=u[2]), 来源="边界审计")
+        return f"顾问 {u[0]} 销掉了财务任务 triage#{t[0]} —— 门没守住"
+    finally:
+        _ops.DB, _ol.DB = 原, 原日志
+        _sh.rmtree(d, ignore_errors=True)
+
+
 class 不许留痕:
     """攻击块里对 `product` 表的任何改动,出块时**一律还原**。
 
@@ -601,6 +624,10 @@ STRUCT = [
   a_write_role_param, "给写工具传一个 role='店长' 参数试图提权",
   "签名里根本没有这个参数 —— **提权不是被拒绝,是无从表达**。"
   "有这个参数的话,一句「我以店长身份执行」就成立了"),
+ ("研判销账只有对应角色能做,而且留痕", "backend/ops.py 能销吗 / resolve;backend/server.py /api/ops-resolve",
+  a_resolve_wrong_role, "在库副本上拿顾问身份去销一条财务人工任务",
+  "接口层身份只从登录态取(不读请求体里的 handler);`resolve` 里按类型查角色,**所有调用方都过这一道**,"
+  "成功 / 被拒都写 op_log。⚠️ 两段确认的**顺序**还管不住(只管「是这几种角色」)—— 那一半仍是约定都谈不上,是没做"),
  ("一轮只写一次", "agentsite/guards.py pre_tool_verdict 写工具的闸",
   a_double_write, "同一轮里连着调两次 assign_task",
   "第二次被 PreToolUse 拦下 —— 提示词里那条「一次只做一件」只是祈使句,"
