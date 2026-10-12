@@ -203,17 +203,30 @@ def _稳定序(s):
     return int(hashlib.md5(str(s).encode("utf-8")).hexdigest()[:8], 16)
 
 
-def 读已处置差评(dbp=DBP):
-    """库里**人工处置过**的差评。没有处置的不进题集 —— 它们没有真值。"""
+def 读已处置差评(dbp=DBP, 报排除=False):
+    """库里**人工处置过**的差评。没有处置的不进题集 —— 它们没有真值。
+
+    ⚠️ **演示数据清理留下的那些要排除**(`knowledge/rating.是演示清理吗`)。
+    2026-10-12 为了清掉「已超时几千小时」,有一批差评走正门填了「只回访」——
+    **那不是人工判断,是脚本为了清页面填的**,拿它当真值就是往考卷里塞假标注。
+    > 一个「人工判了只回访」和一个「脚本填了只回访」,
+    > **在 `handle_way` 这一列上长得一模一样。**
+
+    `报排除=True` 时返回 (题行们, 排除了几条) —— **排除几条要报得出来**:
+    「排除生效了」和「一条都没匹配上」在返回值上长得一模一样。
+    """
     c = sqlite3.connect(f"file:{dbp}?mode=ro", uri=True)
     c.row_factory = sqlite3.Row
-    rows = [dict(r) for r in c.execute(
+    全 = [dict(r) for r in c.execute(
         "SELECT pkg_id, order_id, customer_id, star, COALESCE(note,'') note, "
-        "       substr(rated_at,1,10) 评于, handle_way 人工档 "
+        "       substr(rated_at,1,10) 评于, handle_way 人工档, "
+        "       COALESCE(handle_note,'') 处理记录 "
         "FROM rating WHERE star<=? AND handle_way IS NOT NULL AND handle_way<>'' "
         "ORDER BY pkg_id", (R.差评线,))]
     c.close()
-    return rows
+    出 = [r for r in 全 if not R.是演示清理吗(r.pop("处理记录"))]
+    排除 = len(全) - len(出)
+    return (出, 排除) if 报排除 else 出
 
 
 def 出题(行):
