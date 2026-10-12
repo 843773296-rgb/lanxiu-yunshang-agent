@@ -6841,5 +6841,29 @@
    }
   ],
   "预期红": "种子里的随机流串台了"
+ },
+ {
+  "script": "backend/order_write_check.py",
+  "改坏": "确认下单后不扫商机(当场那一半没接)",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "            满足提醒 = _os.满足扫描(c2, _wc.今天(), 客户=cid)",
+    "new": "            满足提醒 = []"
+   }
+  ],
+  "预期红": "确认下单当场扫"
+ },
+ {
+  "script": "backend/order_write_check.py",
+  "改坏": "每日任务里拿掉兜底满足扫描",
+  "file": [
+   {
+    "path": "tools/daily_fresh.py",
+    "old": "        满 = OS.满足扫描(c, 今)",
+    "new": "        满 = []"
+   }
+  ],
+  "预期红": "每天兜底那一步真接在每日任务里"
  }
 ]

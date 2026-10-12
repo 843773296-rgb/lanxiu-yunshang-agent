@@ -192,12 +192,20 @@ def 可选结论(c, schedule_id):
     return list(K.提醒结论[r[0]]) if r else None
 
 
-def 满足扫描(c, 今天):
+def 满足扫描(c, 今天, 客户=None):
     """跟进中 / 搁置的商机,客户之后下的单里有一件「认得出是这件事」的 → 派「满足确认」给顾问。
-    **只提示,不改状态**(规则判 + 顾问点头)。同一张单只问一次。返回派出去的任务号。"""
+    **只提示,不改状态**(规则判 + 顾问点头)。同一张单只问一次。返回派出去的任务号。
+
+    什么时候跑(用户 2026-10-12 定:当场 + 每天兜底):
+      · `order_write.confirm_order` 确认下单后**当场**扫这一位(`客户=`)—— 顾客还在店里,顾问立刻知道
+      · `tools/daily_fresh.py` 每天凌晨扫全部 —— 兜住不走「确认下单」的单(小程序 / 标品 / 别的渠道)
+    原来只在从零重建时跑一次(`backfill_opportunity`),**平时真下了单,一条都不会被问**。
+    同一张单只问一次(看 `opportunity_task.detail.订单`),所以两处都扫不会重复派。"""
     出 = []
     for oid, cid, created in c.execute("SELECT id, customer_id, created FROM opportunity "
-                                       "WHERE status IN ('跟进中','搁置等供给') ORDER BY id").fetchall():
+                                       "WHERE status IN ('跟进中','搁置等供给')"
+                                       + (" AND customer_id=?" if 客户 else "") + " ORDER BY id",
+                                       ((客户,) if 客户 else ())).fetchall():
         诉求 = c.execute("SELECT dim, val, quote FROM opportunity_need WHERE opp_id=?", (oid,)).fetchall()
         if not 诉求:
             continue

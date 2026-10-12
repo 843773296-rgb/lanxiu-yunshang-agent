@@ -163,8 +163,27 @@ def run(T):
     ck("顾客没单独勾「不适用七天无理由」→ 拒(不默认勾)", r.get("code") == "NO7_ACK", r.get("reason"))
     with api.as_user(顾问): r = api.confirm_order(oid, no7day_ack="true")
     ck("勾选只认布尔 true,字符串 \"true\" 不算", r.get("code") == "NO7_ACK", r.get("reason"))
+    # 商机满足扫描接上真实下单(用户 10-12:确认下单当场扫 + 每天兜底)—— 造一条这位客户「跟进中」的商机,
+    # 诉求只有颜色(不是认件维度)→ 按「买的是成衣」认,这一单该派一条「满足确认」
+    import opportunity_store as OS, worldclock as WC
+    OS.建表(c)
+    _cat = c.execute("SELECT category FROM product WHERE spu=?", (p["spu"],)).fetchone()[0] or ""
+    _opp = OS.从通话建(c, "CHK-SAT-01", w["cid"], 顾问["no"], [("颜色", "红", "想要红一点的")], "1999-12-31 10:00")
+    # ⚠️ 商机要早于这张单:扫描只认「有了商机之后下的单」,而上面把这张单的 created 挪到了 2000-01-01 00:00
+    c.execute("UPDATE opportunity SET status='跟进中' WHERE id=?", (_opp,)); c.commit()
     with api.as_user(顾问): r = api.confirm_order(oid, no7day_ack=True)
     ck("每件都有为它量的下单量体 → 确认成功", bool(r.get("ok")), r.get("reason"))
+    if _cat[:3] in OS.K.成衣品类:
+        _派 = r.get("商机满足提醒") or []
+        _记 = c.execute("SELECT detail FROM opportunity_task WHERE opp_id=? AND kind='满足确认'", (_opp,)).fetchall()
+        ck("确认下单当场扫:她挂着的商机派了「满足确认」,写明是这一单", len(_派) == 1 and len(_记) == 1
+           and oid in (_记[0][0] or ""), (_派, _记))
+        _日 = open(os.path.join(ROOT, "tools", "daily_fresh.py"), encoding="utf-8").read()
+        ck("每天兜底那一步真接在每日任务里(tools/daily_fresh.py 调了满足扫描)", "OS.满足扫描(c, 今)" in _日)
+        ck("每天兜底再扫一遍:同一张单不重复派", OS.满足扫描(c, WC.今天()) == [] and
+           c.execute("SELECT COUNT(*) FROM opportunity_task WHERE opp_id=? AND kind='满足确认'", (_opp,)).fetchone()[0] == 1)
+    else:
+        ck("满足扫描的样本:这一单的商品是成衣(否则当场扫那条验不到)", False, f"品类 {_cat}")
     o = dict(c.execute("SELECT status, prd_status, paid_at, received, amount FROM ordr WHERE id=?", (oid,)).fetchone())
     ck("确认后直接进待审核(不走待付款)、落付款", o["status"] == "待审核" and o["prd_status"] == "方案确认中"
        and o["paid_at"] and o["received"] == o["amount"], o)

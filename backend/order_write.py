@@ -230,6 +230,20 @@ def confirm_order(d, me):
         确认书 = _oc.生成(c, oid, me, now[:10], 七天确认=dict(时间=now, 账号=me.get("no") or me.get("name")))
     log_op(me["name"], "ordr", oid, "待确认", "待审核", True, "CONFIRM",
            f"{me['name']} 确认下单 {oid}:{话}(付款在确认时已完成)", {"role": me["role"]})
+    # 商机满足扫描(用户 10-12:当场 + 每天兜底)—— 她之前挂着的商机,这一单是不是满足了,派给顾问去问。
+    # **在确认下单的事务之外**:扫描出错不能让已付款的确认回滚;但不静默 —— 写进返回和操作日志
+    满足提醒, 扫描出错 = [], None
+    try:
+        import opportunity_store as _os, worldclock as _wc
+        cid = rows("SELECT customer_id FROM ordr WHERE id=?", oid)[0]["customer_id"]
+        with sqlite3.connect(DB) as c2:
+            _os.建表(c2)
+            满足提醒 = _os.满足扫描(c2, _wc.今天(), 客户=cid)
+    except Exception as e:      # noqa: BLE001 —— 提醒是附带的,确认已经成了
+        扫描出错 = f"{type(e).__name__}: {e}"[:160]
+        log_op(me["name"], "ordr", oid, "—", "—", False, "OPP_SCAN_FAIL",
+               f"确认下单后商机满足扫描出错(确认本身已成功;每天凌晨会兜底再扫):{扫描出错}", {"role": me["role"]})
     return dict(ok=True, code="CONFIRM", 订单=oid, 从="待确认", 到="待审核", 逐件=明细,
-                订单确认书=确认书, 确认书下载=_oc.下载(oid),
+                订单确认书=确认书, 确认书下载=_oc.下载(oid), 商机满足提醒=满足提醒,
+                **({"商机扫描出错": 扫描出错 + "(确认已成功,每天凌晨会兜底再扫)"} if 扫描出错 else {}),
                 reason=f"已确认下单:{话}。付款在确认时已完成,订单进「待审核」;订单确认书已生成,请让顾客看过")

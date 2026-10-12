@@ -574,6 +574,11 @@ def 收口与放出(c, 今, 说=print):
         收 = OS.推断提醒收口(c, 今)
     说(f"  收口:{收}" if 收 else "  收口:没有过期没答的推断提醒")
 
+    # ③ 兜底满足扫描(用户 10-12:确认下单当场扫 + 每天兜底一次)—— 兜住不走「确认下单」的单
+    with c:
+        满 = OS.满足扫描(c, 今)
+    说(f"  满足扫描:派了 {len(满)} 条「满足确认」" if 满 else "  满足扫描:没有新下单对得上的商机")
+
     # ② 再放出:到期的待上架款。**不许只改 status** —— 走正门,它会跑回捞、绑商机、派提醒
     到期 = [r[0] for r in c.execute(
         "SELECT spu FROM product WHERE status='待上架' AND plan_on_shelf IS NOT NULL "
@@ -581,14 +586,14 @@ def 收口与放出(c, 今, 说=print):
     if not 到期:
         早 = c.execute("SELECT MIN(plan_on_shelf) FROM product WHERE status='待上架'").fetchone()[0]
         说(f"  放出:今天没有到期的款(最早排在 {早 or '(没有待上架的款)'})")
-        return dict(收口=收, 上了=0)
+        return dict(收口=收, 满足=len(满), 上了=0)
     说(f"  放出:{len(到期)} 款到期 → 走 arrival_card.上新(挂上架 + 回捞绑商机 + 派提醒)")
     r = AC.上新(到期, 今, db=DB)
     # ⚠️ 返回的是 dict:{上了, 本来就在架, 没这款, 绑上} —— **逐项报出来**,
     # 不笼统说「上新完成」:「上了 2 款」和「2 款本来就在架」在「没报错」上长得一样
     说(f"    上了 {len(r.get('上了') or [])} · 本来就在架 {len(r.get('本来就在架') or [])} "
       f"· 没这款 {len(r.get('没这款') or [])} · 回捞绑上 {len(r.get('绑上') or [])}")
-    return dict(收口=收, 上了=len(r.get("上了") or []), 绑上=len(r.get("绑上") or []))
+    return dict(收口=收, 满足=len(满), 上了=len(r.get("上了") or []), 绑上=len(r.get("绑上") or []))
 
 
 def main():
