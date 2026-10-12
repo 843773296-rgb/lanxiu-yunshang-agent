@@ -42,7 +42,47 @@ import sys
 from datetime import datetime
 
 根 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-态 = os.path.join(根, ".feynman")
+
+# ⚠️ **标记写在 plist 指向的那个目录里,不是这个脚本自己的仓库根。**
+#
+# 2026-10-12 这条判据在 worktree 里报了一句**具体而错误**的结论:
+# 「plist 装了 13 天,**一次都没跑过**」—— 而真相是任务**当天 05:10 刚成功跑过**。
+# 它跑在 plist 的 `WorkingDirectory`(主检出)里,而这个脚本在 worktree 里
+# 找**自己**仓库根下的 `.feynman/`,那儿当然什么都没有。
+#
+# > **一个「任务挂了」和一个「我在另一个目录里找标记」,
+# > 在「标记文件不存在」这件事上长得一模一样。**
+#
+# 而这条红的代价不是白跑一趟:它会把人送去查 `launchctl`、查磁盘权限 ——
+# 那正是 10-01 真出过的两件事,**而这次两样都没问题**。
+# 「红错了理由」比不红更贵:照着一个错的结论去查,是白费功夫里最贵的一种。
+#
+# 教训和「接待人比例」那次是同一句:
+# **查了消费方读哪个字段,还要查那个字段是从哪儿推出来的。**
+# 这里消费方读的是标记文件,而标记文件的**位置**是 plist 决定的,不是 cwd。
+PLIST = os.path.expanduser("~/Library/LaunchAgents/com.lanxiu.worldshift.plist")
+
+
+def 任务跑在哪():
+    """返回 (目录, 说明) —— 从 plist 的 `WorkingDirectory` 现读,读不到才退回自己的根。"""
+    try:
+        import plistlib
+        with open(PLIST, "rb") as f:
+            d = plistlib.load(f)
+        目 = d.get("WorkingDirectory")
+        if 目 and os.path.isdir(目):
+            return 目, (None if os.path.realpath(目) == os.path.realpath(根)
+                        else f"任务跑在 {目}(plist 的 WorkingDirectory),不是这个工作区")
+        if 目:
+            # 这一档是**真问题**:plist 指着一个不存在的目录,任务永远跑不起来
+            return 根, f"⚠️ plist 指向的目录不存在:{目}"
+    except Exception:
+        pass
+    return 根, None
+
+
+态根, 在哪 = 任务跑在哪()
+态 = os.path.join(态根, ".feynman")
 尝试 = os.path.join(态, "world-shift-tried")
 成功 = os.path.join(态, "world-shift-ok")
 日志 = os.path.join(态, "daily-shift.log")
@@ -62,9 +102,9 @@ from datetime import datetime
 # 根 `check.sh` 里 7 条带时间的业务判据全红(「已经发生的事,时间不能在未来」
 # 「量体超期 → 下单被拦」……),而**没有一条指向定时任务**。
 LAUNCHD日志 = os.path.join(态, "world-shift-launchd.log")
-# 「装了多久」用 plist 的 mtime 答 —— 装上之后到第一次跑之间有个窗口,
-# 而这个窗口里「装了还没到点」和「根本没装」在标记上长得一模一样。
-PLIST = os.path.expanduser("~/Library/LaunchAgents/com.lanxiu.worldshift.plist")
+# 「装了多久」用 plist 的 mtime 答(PLIST 在文件上方定义)—— 装上之后
+# 到第一次跑之间有个窗口,而这个窗口里「装了还没到点」和「根本没装」
+# 在标记上长得一模一样。
 
 # 每天跑一次的任务,容两天 —— 一天是「今天还没到点」,两天才说明真不对。
 # ⚠️ 这个数是**拍脑袋的**,写明了:没有数据支撑,只是「一天太紧、三天太松」。
@@ -77,6 +117,14 @@ G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 # 左边「改坏什么」,右边「预期红的那一条」。
 # ⚠️ **手工验过不算** —— 我装完当场把三档都试了一遍,而那件事只存在于我的记忆里,
 # 而记忆不进仓库。`tools/bite_check.py` 钉的正是「有没有登记」,不是「我记不记得做过」。
+#
+# 🔺 **而 2026-10-12 查出来:下面前三条从写下那天起,`bite_specs.json` 里一条都没有** ——
+# 也就是说它们**只是散文,从来没被重放过**。这正是这段注释自己在说的那件事,
+# 而它发生在这段注释下面三行。
+# 原因是真的(不是忘了):`bite_run` 只在**工作区副本**上重放,而前三条要改的东西
+# 都在仓库外 —— 两个标记文件现在跟着 plist 的 `WorkingDirectory` 走(见文件上方),
+# plist 本身在 `~/Library/LaunchAgents/`。**第四条是仓库内的,已登记。**
+# > 「有咬合记录」和「咬合被重放过」是两件事,而 `bite_check` 只管前者。
 咬合 = [
     ("把 .feynman/world-shift-ok 的时间戳改成 5 天前(装着、在跑、但没成功过)",
      "任务在跑,但没有成功过"),
@@ -84,6 +132,8 @@ G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
      "任务装了却没在跑"),
     ("删掉 ~/Library/LaunchAgents/com.lanxiu.worldshift.plist 的同时留下旧标记",
      "任务装了却没在跑"),
+    ("把标记目录改回「脚本自己的仓库根」(不再从 plist 的 WorkingDirectory 取)",
+     "一次都没跑过"),
 ]
 
 
@@ -96,6 +146,10 @@ def 读(路):
 
 def main():
     print("\n\033[1m▸ 每日平移的定时任务还在不在跑\033[0m")
+    # **说清这些数是哪个目录的。** 不说的话,worktree 里读到的「成功过」
+    # 看起来像是这个工作区的,而它其实是主检出的 —— 而那正是上一个版本的病根。
+    if 在哪:
+        print(f"  {Y}⚠ {在哪}{D}")
     t, o = 读(尝试), 读(成功)
 
     装了吗 = os.path.exists(PLIST)

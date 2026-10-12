@@ -6901,5 +6901,17 @@
    }
   ],
   "预期红": "两个参数都不给 → 报错(不替用户挑一张)"
+ },
+ {
+  "script": "tools/cron_health_check.py",
+  "改坏": "把标记目录改回「脚本自己的仓库根」(不再从 plist 的 WorkingDirectory 取)",
+  "file": [
+   {
+    "path": "tools/cron_health_check.py",
+    "old": "        目 = d.get(\"WorkingDirectory\")",
+    "new": "        目 = None"
+   }
+  ],
+  "预期红": "一次都没跑过"
  }
 ]
