@@ -6925,5 +6925,29 @@
    }
   ],
   "预期红": "没有 agent 能力的在职岗位,不超过 "
+ },
+ {
+  "script": "backend/backtest_mask_check.py",
+  "改坏": "给 bad_ratings 的 SELECT 加一列 `r.handled_by 处理人`(清单没跟着加)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "                     r.handled_at 处理于, r.handle_note 处理记录,",
+    "new": "                     r.handled_at 处理于, r.handle_note 处理记录, r.handled_by 处理人,"
+   }
+  ],
+  "预期红": "带处置痕迹的键名,都在「回测要遮的字段」里登记过"
+ },
+ {
+  "script": "backend/backtest_mask_check.py",
+  "改坏": "往 回测要遮的字段 里加一个没有工具会吐的「处理门店」(清单留死条目)",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "回测要遮的字段 = (\"处理方式\", \"处理记录\", \"处理于\", \"批准人\", \"状态\")",
+    "new": "回测要遮的字段 = (\"处理方式\", \"处理记录\", \"处理于\", \"批准人\", \"状态\", \"处理门店\")"
+   }
+  ],
+  "预期红": "清单里没有死条目"
  }
 ]
