@@ -209,6 +209,7 @@ run "判差评的服务记录范围(刻意不看的按键名拦住)" python3 bac
 # ⚠️ 上面那条管「判一条新差评时不许看什么」;下面这条管「回测已处理的那批时不许看什么」。
 #    后者是**开卷考**:开卷考出来的分数照样是一个漂亮的分数,而回测分数高本来就是预期。
 run "回测不许开卷(处置痕迹的字段都登记过)" python3 backend/backtest_mask_check.py
+run "研判队列那一页不许把四件事压成一个「已销账」(后端分开报了而页面要真的读)" python3 agentsite/queue_view_check.py
 run "差评研判三套题集隔离(不重叠/时间真外推/测试集没被拿去调)+ 回测真的遮住了" python3 agent/triage_sets_check.py
 run "差评研判判分器 · 55 条对照(跨档漏报两句原话 + 夹缝那一列 + 小额档悬空不许报成通过)" python3 agent/triage_sets_judgetest.py
 # 版师是第一个「有写工具,但只有一个」的角色 —— 它特有的两种失败

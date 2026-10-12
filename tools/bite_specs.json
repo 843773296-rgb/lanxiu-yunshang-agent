@@ -7273,5 +7273,41 @@
    }
   ],
   "预期红": "副本上的销账不往真投递箱里排"
+ },
+ {
+  "script": "agentsite/queue_view_check.py",
+  "改坏": "把 销账标() 改成一律返回「已销账」(四件事又压成一个)",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": "  if(x.研判有结论 && x.工单已关闭) return `<span class=\"tag dye\">研判${esc(x.state).replace(\"已\",\"\")}·已关单</span>`;",
+    "new": "  if(x.研判有结论 && x.工单已关闭) return `<span class=\"tag dye\">已销账</span>`;\n  if(x.研判有结论) return `<span class=\"tag dye\">已销账</span>`;\n  if(true) return `<span class=\"tag dye\">已销账</span>`;"
+   }
+  ],
+  "预期红": "它在真实数据上吐出 **≥3 种**不同的结果"
+ },
+ {
+  "script": "agentsite/queue_view_check.py",
+  "改坏": "把 ops.queue 里分开报来源的那几个字段去掉(页面就没得分了)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "            level=level, state=st, done=done, 凭什么销账=凭什么,\n            研判有结论=研判有结论, 工单已关闭=工单已关闭,",
+    "new": "            level=level, state=st, done=done,"
+   }
+  ],
+  "预期红": "后端还在把销账来源分开报"
+ },
+ {
+  "script": "agentsite/queue_view_check.py",
+  "改坏": "把 批量提示文() 的失败分支改成走不到(有失败也返回成功那一句)",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": "  if(挂.length){",
+    "new": "  if(false){"
+   }
+  ],
+  "预期红": "**有 2 条失败 → bad,不是 ok**"
  }
 ]
