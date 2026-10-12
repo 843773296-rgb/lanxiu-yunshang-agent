@@ -6985,5 +6985,137 @@
    }
   ],
   "预期红": "周报取数包带现成话"
+ },
+ {
+  "script": "agent/triage_sets_check.py",
+  "改坏": "把 分三套 改成按包裹号轮转(不按时间)—— 构造器改了而冻结文件没动",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "        出[套名[0] if t[\"评于\"] <= 训 else\n          (套名[1] if t[\"评于\"] <= 验 else 套名[2])].append(t)",
+    "new": "        出[套名[sum(map(ord, t[\"包裹\"])) % 3]].append(t)"
+   }
+  ],
+  "预期红": "拿构造器现算一遍,和冻结的那份一模一样"
+ },
+ {
+  "script": "agent/triage_sets_check.py",
+  "改坏": "把测试集的一个包裹号钉进判分器对照(等于拿它调过了)",
+  "file": [
+   {
+    "path": "agent/triage_sets_judgetest.py",
+    "old": "print(\"差评研判判分器 · 人造对照\")",
+    "new": "print(\"差评研判判分器 · 人造对照\")\n# 真跑钉回来的说法示例:P0-H6488012800000728755-发"
+   }
+  ],
+  "预期红": "测试集的包裹号一个都没出现在判分器对照"
+ },
+ {
+  "script": "agent/triage_sets_check.py",
+  "改坏": "把 knowledge/rating.遮住处置痕迹 改成原样返回(一处也不遮)",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "    return 走(材料, \"材料\"), 遮了",
+    "new": "    return 材料, 遮了"
+   }
+  ],
+  "预期红": "遮蔽真的落进去了"
+ },
+ {
+  "script": "agent/triage_sets_check.py",
+  "改坏": "把 是被判的那条评价 改成只按包裹号认(不看它长不长得像评价行)",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "    return 带号 and 像评价",
+    "new": "    return 带号"
+   }
+  ],
+  "预期红": "同一单的物流行没被连坐"
+ },
+ {
+  "script": "agent/triage_sets_judgetest.py",
+  "改坏": "把「跨档漏报」改成只看「人出钱而机不出钱」(丢掉用户 10-12 补的那半条)",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "    出[\"跨档漏报\"] = bool(人 is not None and 人 >= 退款档 and (机 is None or 机 < 人))",
+    "new": "    出[\"跨档漏报\"] = bool(人 is not None and 人 >= 退款档 and (机 is None or 机 < 退款档))"
+   }
+  ],
+  "预期红": "人工全额退款 / 模型部分退款 → 跨档漏报"
+ },
+ {
+  "script": "agent/triage_sets_judgetest.py",
+  "改坏": "把「出钱档误报」的 >= 改成 >(只拦全额,放过部分退款)",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "    出[\"出钱档误报\"] = bool(人 is not None and 人 < 退款档 and 机 is not None and 机 >= 退款档)",
+    "new": "    出[\"出钱档误报\"] = bool(人 is not None and 人 < 退款档 and 机 is not None and 机 > 退款档)"
+   }
+  ],
+  "预期红": "人工送保养 / 模型部分退款 → 出钱档误报"
+ },
+ {
+  "script": "agent/triage_sets_judgetest.py",
+  "改坏": "让 档() 把认不出来的处理方式回落到 0 档(枚举外当成「只回访」)",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "        return 3\n    return None",
+    "new": "        return 3\n    return 0"
+   }
+  ],
+  "预期红": "人工只回访时,枚举外**不算**出钱档误报"
+ },
+ {
+  "script": "agent/triage_sets_judgetest.py",
+  "改坏": "把小额档那条线从「悬空」改成报成通过(空集合上所有性质都成立)",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "        \"③ 误报·小额档条数线\": dict(过=None, 状态=小额档悬空),",
+    "new": "        \"③ 误报·小额档条数线\": dict(过=True, 状态=小额档悬空),"
+   }
+  ],
+  "预期红": "小额档那条线报的是**悬空**,不是「过」"
+ },
+ {
+  "script": "agent/triage_sets_judgetest.py",
+  "改坏": "把「夹缝」那一列写死成 False(人工部分退款 / 模型全额退款 静默消失)",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "    出[\"出钱档内往上跨\"] = bool(人 is not None and 机 is not None\n                                and 人 >= 退款档 and 机 > 人)",
+    "new": "    出[\"出钱档内往上跨\"] = False"
+   }
+  ],
+  "预期红": "但它**被数出来了** —— 不是静默消失"
+ },
+ {
+  "script": "agent/triage_sets_judgetest.py",
+  "改坏": "把 _稳定序 从 md5 换回 hash()(每个进程带不同的盐)",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "    return int(hashlib.md5(str(s).encode(\"utf-8\")).hexdigest()[:8], 16)",
+    "new": "    return hash(str(s))"
+   }
+  ],
+  "预期红": "换 PYTHONHASHSEED 题型不变(比的是 20 道题的整串"
+ },
+ {
+  "script": "agent/triage_sets_judgetest.py",
+  "改坏": "把 边界() 改回写死日期(这个世界每天平移,写死的那个才会漂)",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "    return (str(今天 - _dt.timedelta(days=训练止偏移)),\n            str(今天 - _dt.timedelta(days=验证止偏移)))",
+    "new": "    return (\"2026-05-31\", \"2026-07-31\")"
+   }
+  ],
+  "预期红": "边界跟着**世界的今天**走"
  }
 ]
