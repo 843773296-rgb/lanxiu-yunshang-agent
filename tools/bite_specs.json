@@ -7072,15 +7072,15 @@
  },
  {
   "script": "agent/triage_sets_judgetest.py",
-  "改坏": "把小额档那条线从「悬空」改成报成通过(空集合上所有性质都成立)",
+  "改坏": "把小额档那条线的分母从「人工只回访那几道」改回整套题(上一条线就是这么顶穿的)",
   "file": [
    {
     "path": "agent/triage_sets.py",
-    "old": "        \"③ 误报·小额档条数线\": dict(过=None, 状态=小额档悬空),",
-    "new": "        \"③ 误报·小额档条数线\": dict(过=True, 状态=小额档悬空),"
+    "old": "    只回访的 = [x for x in 判们 if x[\"人工\"] == \"只回访\"]",
+    "new": "    只回访的 = list(判们)"
    }
   ],
-  "预期红": "小额档那条线报的是**悬空**,不是「过」"
+  "预期红": "分母是「人工只回访」那几道,**不是整套题**"
  },
  {
   "script": "agent/triage_sets_judgetest.py",
@@ -7117,5 +7117,41 @@
    }
   ],
   "预期红": "边界跟着**世界的今天**走"
+ },
+ {
+  "script": "knowledge/rating.py",
+  "改坏": "把「送保养」加进 出钱的处理方式(两个元组合并 → 双人批准闸悄悄变严)",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "出钱的处理方式 = (\"部分退款\", \"全额退款\")",
+    "new": "出钱的处理方式 = (\"部分退款\", \"全额退款\", \"送保养\")"
+   }
+  ],
+  "预期红": "小额档和「出钱的处理方式」一个都不重叠"
+ },
+ {
+  "script": "agent/triage_sets_judgetest.py",
+  "改坏": "把「样本太少就不报通过」那一支去掉(不足下限时照样报过)",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "    if len(只回访的) < 小额档样本下限:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "不足"
+ },
+ {
+  "script": "agent/triage_sets_judgetest.py",
+  "改坏": "把「验收只看测试集」那一支去掉(训练集上也判过不过)",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "    if 套 is not None and 套 != 验收看哪一套:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "训练集上**只报数、不判过不过**"
  }
 ]
