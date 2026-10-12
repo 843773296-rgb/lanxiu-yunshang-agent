@@ -6865,5 +6865,41 @@
    }
   ],
   "预期红": "每天兜底那一步真接在每日任务里"
+ },
+ {
+  "script": "backend/entrypoint_check.py",
+  "改坏": "往 rating_write.py 里加一个公开写口函数、不给它任何门(这正是这条棘轮在拦的退化)",
+  "file": [
+   {
+    "path": "backend/rating_write.py",
+    "old": "def close_bad_rating(d, me):",
+    "new": "def 新写的写口还没给门(d, me):\n    return dict(ok=False)\n\n\ndef close_bad_rating(d, me):"
+   }
+  ],
+  "预期红": "**涨了**(上限 "
+ },
+ {
+  "script": "backend/service_records_check.py",
+  "改坏": "把 api._挡住不该给的 改成原样返回(不再按键名拦刻意排除的字段)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    import rating as _R\n    if isinstance(出, dict):",
+    "new": "    import rating as _R\n    return 出\n    if isinstance(出, dict):"
+   }
+  ],
+  "预期红": "返回里混进「刻意不看」的字段 → 当场抛"
+ },
+ {
+  "script": "backend/service_records_check.py",
+  "改坏": "让 service_records 两个参数都不给时随便挑一张单(替用户挑)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        return dict(error=\"要给 pkg(包裹号)或 order_id(订单号)—— **不替你挑一张**\")",
+    "new": "        oid = \"随便挑一张\""
+   }
+  ],
+  "预期红": "两个参数都不给 → 报错(不替用户挑一张)"
  }
 ]

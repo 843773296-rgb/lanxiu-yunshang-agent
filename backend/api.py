@@ -431,6 +431,9 @@ WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task",
                # 上一版它没进来,于是它是**唯一一个没人管的写口**,
                # 而边界审计只能靠名字里有没有 `set_` 猜它存在。
                "set_piece_ratio",
+               # 关差评(业务 09-27 归店长跟 + 10-11 售后确认结案)。
+               # ⚠️ 它 2026-10-12 才进这张表 —— 写口在这之前**没有任何入口**。
+               "close_bad_rating",
                # 白坯试衣(业务 09-22):登记试衣 / 补签(顾问、店长),开裁(版师,过白坯那道闸)
                "record_fitting", "start_cutting",
                # 量体录入(业务 09-22):按次登记,可绑订单行作下单量体
@@ -2229,10 +2232,18 @@ def bad_ratings(status="待处理"):
     import rating as _R          # 评价口径:差评线、是差评()、这个星级能说明什么()
     me = whoami()
     if not me: return dict(error="不知道现在是谁在问 —— 请先登录")
-    if me.get("role") not in MANAGER_ROLES:
-        return dict(说明="差评由店长跟进,你是顾问,这里看不到东西 —— 业务 2026-09-27 定的",
+    # ⚠️ **能看的角色不在这儿手写,从写口那张表现取。**
+    # 业务 2026-10-11 定了「售后确认结案」,于是售后**关得了却看不到** ——
+    # 而「看不到」和「没有差评」在返回里长得一模一样(条数=0、差评=[])。
+    # 手写一份清单的话,下次写口加了角色这儿不会跟着变 —— 那正是「两份名单会漂」。
+    import rating_write as _rw
+    能看 = tuple(dict.fromkeys(MANAGER_ROLES + _rw.能关差评的角色))
+    if me.get("role") not in 能看:
+        return dict(说明=f"差评归 {' / '.join(_rw.能关差评的角色)} 跟,你是「{me.get('role')}」,"
+                        f"这里看不到东西 —— 业务 2026-09-27 + 2026-10-11",
                     条数=0, 差评=[])
-    本店 = None if me["role"] == "总部运营" else me.get("shop")
+    # 售后不属于某一家店(判责是工艺判断、差评跨店),所以它和总部运营一样看全量
+    本店 = None if me["role"] in ("总部运营", "售后") else me.get("shop")
     sql = ("""SELECT t.id 工单, t.status 状态, r.pkg_id 包裹, r.order_id 订单, r.star 星,
                      r.note 顾客说, r.rated_at 评于, r.star_before 原来几星,
                      r.handled_at 处理于, r.handle_note 处理记录, o.shop 门店,
@@ -2250,6 +2261,162 @@ def bad_ratings(status="待处理"):
     return _nz(dict(条数=len(rs), 按什么算差评=f"≤{_R.差评线} 星(业务 2026-09-27 定,不是常见的 ≤2)",
                     关掉要什么="**必须写处理记录** —— 「看过了」不算处理完",
                     差评=rs))
+
+
+def _挡住不该给的(出, 路径="返回"):
+    """**查返回的键名,不查我写了什么 SQL。**
+
+    研判刻意不看消费总额 / 会员等级 / 身体数据(`knowledge/rating.不许出现的字段`)。
+    「我没写那句 SQL」是约定 —— 换个写法(`select *`、别名、子查询)就绕过去了;
+    **查键名是结构**。这个项目的凭据红线就是这么守住的(`api._rows` 查返回的列名),
+    同一个手法搬过来。
+
+    ⚠️ **抛,不静默删。** 静默删掉那一列的话,加字段的人不会收到任何信号,
+    而「这一列被悄悄滤掉了」和「这一列本来就没查」在返回上长得一模一样。
+    """
+    import rating as _R
+    if isinstance(出, dict):
+        for k, v in 出.items():
+            名 = str(k)
+            for 禁 in _R.不许出现的字段:
+                if 禁 in 名:
+                    raise AssertionError(
+                        f"❌ {路径}.{名} 命中刻意排除的字段「{禁}」 —— "
+                        f"差评研判不许看消费总额 / 会员等级 / 身体数据"
+                        f"(理由在 knowledge/rating.研判刻意不看的:"
+                        f"按客户价值差别对待一旦被模型学会,**在建议文本上看不出来**)")
+            _挡住不该给的(v, f"{路径}.{名}")
+    elif isinstance(出, (list, tuple)):
+        for i, v in enumerate(出):
+            _挡住不该给的(v, f"{路径}[{i}]")
+    return 出
+
+
+def service_records(pkg=None, order_id=None):
+    """**这一单允许查看的服务记录(只读)** —— 判差评用的第三样材料。
+
+    方案 V2.0 的闸一要三样材料:评价本体(`bad_ratings` 有)、关联包裹/订单(同一个工具有)、
+    **允许查看的服务记录** —— 这一样 2026-10-12 之前**既没有工具,也没有定义「允许」的范围**。
+
+    给什么、为什么给,全在 `knowledge/rating.服务记录范围()`,**这儿不抄一份**。
+    现在是三类(都限定在**这一张订单 / 这一个客户**):交付与签收 · 返修与售后 · 这个客户历史上的差评。
+
+    ⚠️ **刻意不给**消费总额 / 会员等级 / 身体数据。而这一条不是靠「我没写那句 SQL」——
+    返回在出门前过一道 `_挡住不该给的`,**按键名拦**,命中就当场抛。
+    > 多给一个字段**不会让任何检查变红**,而「按客户价值差别对待」一旦被模型学会,
+    > **在建议文本上看不出来**:同样一句「建议全额退款」,看过消费总额的那一次
+    > 和没看过的长得一模一样。
+
+    📌 **这份范围是开发按方案拟的,业务还没拍过** —— 返回里带着这句话,照着说。
+    """
+    import rating as _R, rating_write as _rw
+    me = whoami()
+    if not me:
+        return dict(error="不知道现在是谁在查 —— 请先登录")
+    能看 = tuple(dict.fromkeys(MANAGER_ROLES + _rw.能关差评的角色))
+    if me.get("role") not in 能看:
+        return dict(说明=f"服务记录只给 {' / '.join(能看)} 看(判差评用)—— 你是「{me.get('role')}」",
+                    条数=0)
+    pid = str(pkg or "").strip() or None
+    oid = str(order_id or "").strip() or None
+    if not pid and not oid:
+        return dict(error="要给 pkg(包裹号)或 order_id(订单号)—— **不替你挑一张**")
+
+    # `_c()` 开的是**只读**连接(`mode=ro`),row_factory 它自己设好 ——
+    # 一个只读工具就该走只读连接,这样「它会不会写」不靠自觉
+    with _c() as c:
+        if pid and not oid:
+            r = c.execute("SELECT order_id, customer_id FROM rating WHERE pkg_id=?", (pid,)).fetchone()
+            if not r:
+                r = c.execute("SELECT order_id, NULL customer_id FROM pkg WHERE pkg_id=?", (pid,)).fetchone()
+            if not r:
+                return dict(error=f"查不到包裹 {pid} —— 是「没有这个包裹」,不是「没有服务记录」")
+            oid = r["order_id"]
+        单 = c.execute("SELECT id, customer_id, shop, status, created FROM ordr WHERE id=?", (oid,)).fetchone()
+        if not 单:
+            return dict(error=f"查不到订单 {oid} —— 是「没有这张单」,不是「没有服务记录」")
+        # 店长只看本店(和 bad_ratings 同一条隔离口径);售后和总部跨店
+        if me["role"] not in ("总部运营", "售后") and (单["shop"] or "") != (me.get("shop") or ""):
+            return dict(说明=f"订单 {oid} 不在你的门店 —— 和「A 顾问看不到 B 顾问的活」同一条口径",
+                        条数=0)
+        cid = 单["customer_id"]
+        客 = c.execute("SELECT name FROM customer WHERE id=?", (cid,)).fetchone()
+
+        包 = [dict(x) for x in c.execute(
+            "SELECT pkg_id 包裹, tracking_no 物流单号, shipped_at 发出, arrived_at 到店, status 状态 "
+            "FROM pkg WHERE order_id=? ORDER BY COALESCE(shipped_at,created)", (oid,))]
+        签 = [dict(x) for x in c.execute(
+            "SELECT arrived_at 到店, received_by 门店谁收的, mode 取件方式, forwarded_at 转寄于, "
+            "fit_result 试穿结果, fit_at 试穿于, fit_verified_by 核码的人, "
+            "complete_at 完成于, complete_by 完成人, ratify_note 追认理由 "
+            "FROM pickup WHERE order_id=?", (oid,))]
+        修 = [dict(x) for x in c.execute(
+            "SELECT m.id 返修单, m.item 哪一件, m.status 状态, m.issue 客户报的问题, m.created 报于, "
+            "d.liable 判给谁, d.plan 怎么修, d.fee_est 预估费用, d.customer_agreed_at 顾客同意于 "
+            "FROM maintain m LEFT JOIN maintain_decision d ON d.maintain_id=m.id "
+            "WHERE m.order_id=? ORDER BY m.created", (oid,))]
+        售 = [dict(x) for x in c.execute(
+            "SELECT id 售后单, kind 类型, status 状态, reason 原因, amount 金额, created 建于 "
+            "FROM aftersale WHERE order_id=? ORDER BY created", (oid,))]
+        史 = [dict(x) for x in c.execute(
+            "SELECT pkg_id 包裹, order_id 订单, star 星, note 顾客说, rated_at 评于, "
+            "handle_way 处理方式, handle_note 处理记录, handled_at 处理于, handle_approved_by 批准人 "
+            "FROM rating WHERE customer_id=? AND star<=? ORDER BY rated_at DESC",
+            (cid, _R.差评线)) ] if cid else []
+
+    能, 不, 要紧 = _R.服务记录范围()
+    出 = {
+        "这一单": dict(订单=oid, 门店=单["shop"], 状态=单["status"],
+                      客户=(客["name"] if 客 else None), 客户号=cid),
+        "交付与签收": dict(包裹=包, 签收=签,
+                          说明=("没有签收记录 —— 是「还没走到签收」,不是「签收没问题」"
+                                if not 签 else None)),
+        "返修与售后": dict(返修=修, 售后单=售,
+                          说明=("这一单没有返修 / 售后记录"
+                                if not 修 and not 售 else None),
+                          判责=("⚠️ `maintain_decision` 全库 0 行 —— **判责结论这一项库里没有数据**。"
+                                "「判给谁 / 花了多少」查出来是空的,那是**没录过**,不是「没有责任」"
+                                if not [x for x in 修 if x.get("判给谁")] else None)),
+        "这个客户历史上的差评": dict(条数=len(史), 明细=史,
+                                    说明=("这个客户只有这一条差评 —— 第一次和第三次,补救力度本来就该不同"
+                                          if len(史) <= 1 else None)),
+        "口径": dict(能看=[f"{名}:{理由}" for 名, 理由 in 能],
+                    刻意不看=[f"{名} —— {理由}" for 名, 理由 in 不],
+                    要紧=要紧),
+    }
+    return _挡住不该给的(出)
+
+
+def close_bad_rating(pkg, note, way, approved_by=None):
+    """**关掉一张差评工单(真的写进去)** —— 店长 / 售后,只能关自己看得到的那些。
+
+    ⚠️ **2026-10-12 之前这个动作没有入口。** 写口 `rating_write.close_bad_rating`
+    从写好那天起,全仓只有**它自己的检查**调它 —— 不在这张工具表里、不在页面上、
+    不在模型手里。而 `bad_ratings` 的描述一直在对模型说「关掉一条必须写处理记录」,
+    于是模型**被告知有这个动作、却拿不到门**。
+    > **一个写口和一个没有入口的写口,在代码里长得一模一样** ——
+    > 都是一个带判定、带审计、带回归测试的函数。差别只在有没有人走得到它。
+    库里那 201 条「已关闭」的差评就是这么来的:**直接写的库,正门一次没走过**
+    (`op_log` 里 `BAD_RATING_CLOSED` 0 条),而那批数据的处理人**全是顾问工号**
+    —— 一个这个写口会当场拒掉的角色。
+
+    way   处理方式,**只认登记过的那六种**(只回访 / 免次改衣 / 送保养 /
+          优惠券 / 部分退款 / 全额退款)。判定在 `knowledge/rating.处理方式能不能用`,这儿不抄。
+    approved_by  **出钱的三种必须有批准人**(业务 2026-10-11「钱要出门就要两个人」),
+          而且**批准人不能是处理人自己**;不出钱的三种不要填。
+    note  处理记录 —— 「看过了」不算处理完(判定在 `knowledge/rating.待办能不能关`)。
+
+    ⚠️ **动手前先跟用户对一遍**:哪一张、怎么处理的、出不出钱、谁批的。
+    关掉之后工单不在待处理清单里了,但**顾客那条评价不撤** ——
+    撤掉就看不出「差评被处理好了」和「从来没有差评」的区别。
+    """
+    import rating_write as rw
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在关这张差评 —— 请先登录")
+    r = rw.close_bad_rating(dict(pkg=pkg, note=note, way=way, approved_by=approved_by), me)
+    if r.get("ok"):
+        _agent_log(me, "BAD_RATING_CLOSED", r.get("reason", "") or f"{pkg} / {way}")
+    return r
 
 
 def rating_overview(days=30, week=None, start=None, end=None):
@@ -5295,7 +5462,7 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "start":{"type":"string","description":"从哪天起,YYYY-MM-DD,默认今天"},
     "days":{"type":"number","description":"看几天,默认 7,最多 14"}},"required":[]}},
- {"name":"conversion_rate","description":"**成交率:两个数,一个是业务要的,一个不是。**\n\n⚠️ 2026-09-22 之前这个工具说「算不了」—— **那是因为「接待」被定义错了**(只认「预约到店」,全库 7 条)。业务说清之后(**到店/上门量体、白坯试衣、预约到店都是接待;远程量体不算**),**3403/3542 张定制单追得到是哪次接待**。\n\n**① 按接待人算** —— 每次接待后面有没有跟着成交。算得出,**但业务明说过这样算不对**:「成交率是长期一对一营销的结果,不能因为某一次就算在某人身上」;而且**接待人和订单顾问常常不是同一个人**(返回里有现算的比例)。⚠️ **这个库里举不出这个证据**:实测只有 0.8%(35/4222)——因为造数时量体人一律取订单顾问,而量体占接待证据九成。**业务说的是「过半」,那是业务事实,不是这个库的实测** —— 报数时别把现算的那个比例当证据。\n\n**② 按归因算(业务要的那个)** —— 按影响力分成汇总。已按业务 09-22 定的口径给出:**按客户算不按接待次数**(门店 = 成交客户 ÷ 亲自接待过的客户;顾问 = W 型份额之和 ÷ 他亲自接待过的客户),多张单算 1 个成交客户,**暂不分周期**。\n\n⚠️ **两个数都像成交率,而它们回答的是不同的问题** —— 报数必须说清是哪一个。⚠️ **绝对不要自己拿订单数除一除编一个率**。⚠️ 现在的挂接是**下单前最近一次**接待,「取最近一次」是**默认不是业务拍的**。",
+ {"name":"conversion_rate","description":"**成交率:两个数,一个是业务要的,一个不是。**\n\n⚠️ 2026-09-22 之前这个工具说「算不了」—— **那是因为「接待」被定义错了**(只认「预约到店」,全库 7 条)。业务说清之后(**到店/上门量体、白坯试衣、预约到店都是接待;远程量体不算**),**3403/3542 张定制单追得到是哪次接待**。\n\n**① 按接待人算** —— 每次接待后面有没有跟着成交。算得出,**但业务明说过这样算不对**:「成交率是长期一对一营销的结果,不能因为某一次就算在某人身上」;而且**接待人和订单顾问常常不是同一个人**(返回里有现算的比例)。⚠️ 这个比例**2026-10-12 之前举不出来**:实测只有 0.8%,因为造数时量体人一律取订单顾问、而量体占接待证据九成。改掉那一步之后从零建实测 **56.6%(1996/3524)**,和业务说的「过半」对上了。⚠️ 但它仍然是**演示数据的形状,不是真实门店的实测** —— 报数时说清这一点。\n\n**② 按归因算(业务要的那个)** —— 按影响力分成汇总。已按业务 09-22 定的口径给出:**按客户算不按接待次数**(门店 = 成交客户 ÷ 亲自接待过的客户;顾问 = W 型份额之和 ÷ 他亲自接待过的客户),多张单算 1 个成交客户,**暂不分周期**。\n\n⚠️ **两个数都像成交率,而它们回答的是不同的问题** —— 报数必须说清是哪一个。⚠️ **绝对不要自己拿订单数除一除编一个率**。⚠️ 现在的挂接是**下单前最近一次**接待,「取最近一次」是**默认不是业务拍的**。",
   "input_schema":{"type":"object","properties":{"week":{"type":"string","description":"周报用:**最近 4 周滚动**成交率(截到这一周的周日往前 28 天,同期口径),给那一周里任意一天 `YYYY-MM-DD`。顾问排名按归因成交份额排"},
     "shop":{"type":"string","description":"只看某个门店。不给就按你的身份来(店长看本店,总部看全部)。"},
     "mode":{"type":"string","enum":["同期","队列"],"description":"统计周期口径。不给=不分周期(全部数据)。**长周期生意看队列**:同期会把「这个月接待、下个月下单」的客户算成没成交。"},
@@ -5346,9 +5513,11 @@ SHOP_SCHEMAS=[
         "activity_code":{"type":"string","description":"绑定活动,可不填"}},
         "required":["type","assignee","note","start","end"]}}},
    "required":["items"]}},
- {"name":"bad_ratings","description":"**差评清单**:签收后顾客给了 ≤3 星、还要人跟的那些(工单、包裹、订单、几星、顾客原话、有没有处理过)。status 可给「待处理」「已关闭」「全部」,不给就是待处理。**只有店长看得到**(业务 2026-09-27:差评归店长跟,不进顾问考核)。⚠️ 关掉一条**必须写处理记录**,「看过了」不算处理完。⚠️ 顾客把差评改成好评的,**清单里那条不撤** —— 撤掉就看不出「差评被处理好了」和「从来没有差评」的区别,返回里会标「顾客改过」。",
+ {"name":"bad_ratings","description":"**差评清单**:签收后顾客给了 ≤3 星、还要人跟的那些(工单、包裹、订单、几星、顾客原话、有没有处理过)。status 可给「待处理」「已关闭」「全部」,不给就是待处理。**店长和售后看得到**(业务 2026-09-27:差评归店长跟、不进顾问考核;2026-10-11:售后确认结案 —— **跟客户和结案是两件事,两句并存**)。售后不属于某一家店,看全量。⚠️ 关掉一条用 `close_bad_rating`,**必须写处理记录**(「看过了」不算处理完)**而且必须给处理方式**;出钱的三种还要批准人 —— 见 TK14。⚠️ 顾客把差评改成好评的,**清单里那条不撤** —— 撤掉就看不出「差评被处理好了」和「从来没有差评」的区别,返回里会标「顾客改过」。",
   "input_schema":{"type":"object","properties":{
     "status":{"type":"string","description":"待处理 / 已关闭 / 全部,默认待处理"}},"required":[]}},
+ {"name":"service_records","description":"**这一单允许查看的服务记录(只读)** —— 判差评时看「之前发生过什么」。给 pkg(差评清单里的包裹号)或 order_id,**两个都不给会报错,不替你挑一张**。给三类,都限定在**这一张订单 / 这一个客户**:① 交付与签收(什么时候发的、谁收的、取件方式、试穿结果、谁核的码)② 返修与售后(客户报的问题、判给谁、怎么修、预估费用、顾客同意没有)③ **这个客户历史上的差评**(分得清「第一次」和「第三次」—— 补救力度本来就该不同,带上次的处理方式和处理记录)。⚠️ **刻意不给三样**:别的客户的任何记录(和「A 顾问看不到 B 顾问」同一条隔离口径)· 这个客户的身体数据(量体尺寸,判差评用不到而且最敏感)· **这个客户的消费总额 / 会员等级** —— 最后那一条是刻意排除的:**按客户价值给不同的补救建议是业务该定的政策,不该由你隐式决定**。所以**不要去别的工具绕着查这两样来补**,也不要在建议里暗示「这是老客户/大客户」。⚠️ 查不到会分清是「没有这张单」还是「没有服务记录」;空的那几类会明说是「还没走到」还是「没问题」—— **照着说,别把「没录过」读成「没有责任」**。📌 这份范围是**开发按方案拟的、业务还没拍过**(返回里带着这句话,报给人时要带上)。只给店长 / 售后 / 总部运营;店长只看本店,售后和总部跨店。","input_schema":{"type":"object","properties":{"pkg":{"type":"string","description":"包裹号(差评清单里的「包裹」那一列)"},"order_id":{"type":"string","description":"订单号。和 pkg 给一个就行"}}}},
+ {"name":"close_bad_rating","description":"**关掉一张差评工单(真的写进去)**。店长或售后用。⚠️ **2026-10-12 才有这个工具** —— 在那之前「关差评」没有任何入口,而差评清单的描述一直在说「关掉一条必须写处理记录」:**动作被写在说明里,门却不存在**。pkg 填包裹号(差评清单里那一列)。note 写**处理记录**,「看过了」「已知悉」这类不算处理完。way 填**处理方式,只认这六种**:只回访 / 免次改衣 / 送保养 / 优惠券 / 部分退款 / 全额退款 —— 不许自己造词。⚠️ **后三种是要出钱的,必须另给 approved_by(批准人工号),而且不能是你自己**(业务 2026-10-11「钱要出门就要两个人」);前三种不要填 approved_by。⚠️ **动手前先跟用户对一遍**:哪一张、怎么处理的、出不出钱、谁批的 —— 关掉之后这张就不在待处理清单里了。⚠️ 顾客那条评价**不撤**,撤掉就看不出「差评被处理好了」和「从来没有差评」的区别。","input_schema":{"type":"object","properties":{"pkg":{"type":"string","description":"包裹号(差评清单里的「包裹」那一列)"},"note":{"type":"string","description":"处理记录:具体做了什么。「看过了」不算"},"way":{"type":"string","description":"处理方式,六种之一:只回访 / 免次改衣 / 送保养 / 优惠券 / 部分退款 / 全额退款"},"approved_by":{"type":"string","description":"批准人工号。**只有出钱的三种要填**,而且不能是你自己"}},"required":["pkg","note","way"]}},
  {"name":"rating_overview","description":"**评价概况**:最近多少天多少条、平均几星、各星几条、差评几条占多少,**并且按门店拆、按月拆**(口径里那句「不同门店/不同时间段可以互相比」就是指这两个切分)。days 默认 30。⚠️ **想看趋势(在变好还是变坏)必须把 days 放大** —— 30 天只落在一个月里,这时候「按月」那栏会明说「这个窗口看不出趋势」,**别把它读成「没变化」**;看三个月写 days=120。⚠️ **每个分组的平均后面都跟着条数,回答时把条数一起说** —— 「8 条算出来的 4.2」和「600 条算出来的 4.2」数字一样但结论完全不同。⚠️ 店长只看得到本店,跨店比较要总部运营的身份。**只有店长看得到**。⚠️ 返回里带着「这个数能说明什么 / 不能说明什么」,**照着说,别自己改口径**:业务定的是「签收当场就请评价」,顾客是在店里、导购面前、**衣服还没穿过**时评的 —— 所以它衡量的是**交付体验**,不是衣服好不好;而且当面难给差评,分数**系统性偏高**,不能和行业基线比、也不能说成「几成顾客满意」。⚠️ 没有评价记录时说「没有记录」,**别说成「评价都很好」**。",
   "input_schema":{"type":"object","properties":{
     "days":{"type":"integer","description":"往前看多少天,默认 30"},
@@ -6585,7 +6754,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,
