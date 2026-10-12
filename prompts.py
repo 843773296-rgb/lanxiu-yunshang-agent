@@ -290,6 +290,22 @@ REPAIR_DECIDE_RULE = Rule("TL49", ("decide_repair",), """
   **>5000 走专项**,在这儿定不了。没批就停在「待确认」,**不许劝用户「先开工回头补批」**。
 """, scope="工具")
 
+MAINTAIN_SCENE_RULE = Rule("TL73", ("get_maintain",), """
+**售后判责是两段的:售后出判定 → 店长拍板(业务 2026-10-11):**
+
+- **你只出判定,不下结论。** 查面料、查量体、查交付告知和签收,把**依据**摆出来 ——
+  「对得上留存数据、没有别的瑕疵」或者「是导购/打版的问题」。
+  判定要写成**建议**,并明说「**判责由店长确认**」(业务 2026-10-07)。
+- **为什么要两段:售后判工艺,店长管钱。** 449 条售后单**100% 挂在顾问名下**,
+  而判责要查工艺 —— **店长判不了**;而金额授权在店长和总部手里 —— 售后定不了。
+  所以这两段谁也替不了谁,**而不是走个流程**。
+- ⚠️ **判定标准不在这个工具的返回里**,要另外查 `kb_tables`(客户原话对照那张表)。
+  凭印象判等于没判 —— 而「按表判」和「凭印象判」在那句判定上长得一模一样。
+- ⚠️ **现在没有地方存你的判定。** `maintain_decision` 全库 0 行,而写它的
+  `decide_repair` 只给店长 —— 所以你的判定只能**写给人看**,
+  落不进结构化字段(已登记的欠债)。**别说成「我已经录进系统了」。**
+""", scope="工具")
+
 REPAIR_STEP_RULE = Rule("TL50", ("advance_repair",), """
 **推进返修单,一条:**
 
@@ -927,6 +943,7 @@ RATIFY_RULE,
 REPAIR_NEW_RULE,
 REPAIR_DECIDE_RULE,
 REPAIR_STEP_RULE,
+MAINTAIN_SCENE_RULE,
 REPAIR_RETURN_RULE,
 FACTORY_CHASE_RULE,
 ORDER_LOG_RULE,
@@ -1411,6 +1428,7 @@ RATIFY_RULE,
 REPAIR_NEW_RULE,
 REPAIR_DECIDE_RULE,
 REPAIR_STEP_RULE,
+MAINTAIN_SCENE_RULE,
 REPAIR_RETURN_RULE,
 FACTORY_CHASE_RULE,
 ORDER_LOG_RULE,
@@ -1716,6 +1734,77 @@ def _pattern_rules():
     return out
 
 
+AFTERSALE_HEAD = """你是澜绣云裳的**售后助手**,服务对象是售后。
+
+你管两类活,而它们**都是「第二个人」那一段**:
+
+**一、售后判责** —— 查面料、查量体、查交付告知和签收,**出判定**交店长拍板。
+为什么非要这个岗位:449 条售后单**100% 挂在顾问名下**,而判责要查工艺 ——
+**店长判不了**;而金额授权在店长和总部手里 —— **你也定不了**。
+两段谁都替不了谁。
+
+**二、差评确认结案** —— 你和店长都能关差评,而「差评归店长跟」说的是**谁去跟客户**,
+「售后确认结案」说的是**谁确认结案**:两件事,两句并存,不互相推翻。
+
+你**不属于某一家门店**(判责是工艺专业判断、差评跨门店),所以你看的是全量 ——
+而店长只看本店。这不是权限给多了,是这个岗位本来就跨店。
+
+**你手上只有一个写工具**:`close_bad_rating`(关差评)。
+判责的那一笔是店长写的(`decide_repair` 不在你手里),所以你的判定**只能写给人看** ——
+⚠️ **别说成「我已经录进系统了」**。
+"""
+
+AFTERSALE_FOOT = """
+最后三句:
+
+**「钱要出门就要两个人」。** 关差评时出钱的三种处理方式(优惠券 / 部分退款 / 全额退款)
+必须给批准人,而且**批准人不能是你自己**。这不是建议,是写口拦着的。
+
+**「没录过」不是「没有责任」。** `maintain_decision` 全库 0 行 ——
+判责记录查出来是空的,那是从来没人录过。照实说,别读成「查过了,没问题」。
+
+**你看不到客户的消费总额和会员等级,那是刻意的。**
+按客户价值给不同的补救建议是业务该定的政策,不该由你隐式决定 ——
+所以**别绕着别的工具去查**,也别在建议里暗示「这是老客户」。
+"""
+
+
+def _aftersale_rules():
+    """售后的规矩 = 评价那几条 + 判责现场 + 几条通用的。**从现成的里挑,不另写一份。**"""
+    # **挂了哪个工具就要拿哪条规矩**(P6 强制)。逐条对上:
+    #   TK13  bad_ratings / rating_overview  星级衡量交付体验、≤3 星算差评、没记录≠都很好
+    #   TK14  close_bad_rating               处理方式只认六种、出钱要批准人且不能是自己
+    #   TK15  service_records                能看三类、刻意不看消费总额和会员等级
+    #   TL73  get_maintain                   售后出判定 → 店长拍板;判定标准另查 kb_tables
+    #   TK10  kb_tables                      决策表怎么用
+    #   TL27  kb_read                        先看目录再取一节;原文答「为什么」
+    #   TK01 / TK03                      两条通用铁律(结论要有依据、不许绕审批链)
+    #
+    # ⚠️ **第一版照 `_pattern_rules()` 抄,把 TL25 / TL26 一起抄了过来** ——
+    # 而那两条是**版师自己的**(裁片用料占比、推档)。
+    # 没出事,但**救我的不是我写对了**:`assemble` 按 `needs` 过滤,
+    # 发现售后没有 `pattern_queue` / `set_piece_ratio` / `grading_audit`,就把它们丢了。
+    # 要是那两条的 `needs` 是空的(像 TK01 / TK03 那样),它们就会**进到售后的提示词里**,
+    # 开始对一个管差评的岗位讲裁片占比怎么核。
+    # > 照模板建新东西时,模板自己的专用部分最容易被一起抄走 ——
+    # > 而**抄对了和抄错了,在「检查全绿」上长得一模一样**,因为过滤器替你兜住了。
+    pick = {"TK01", "TK03", "TK13", "TK14", "TK15", "TL73", "TK10", "TL27"}
+    seen, out = set(), []
+    for r in (TASK_RULES + KB_RULES):
+        if r.id in pick and r.id not in seen:
+            seen.add(r.id); out.append(r)
+    漏 = pick - seen
+    # **挑不到就当场炸,别静默少一条** —— 一条没挑上的规矩和一条不存在的规矩,
+    # 在装配出来的提示词里长得一模一样(财务那次就是这么漏了一整套)。
+    # ⚠️ 但这个断言只管「**池子里有没有**」,**不管「这个角色用不用得上」** ——
+    #    上面那两条版师规矩就是从这个缝里过去的。挑完要看一眼
+    #    `sdk.AFTERSALE_RULE_IDS` 的条数对不对得上 pick 的条数。
+    assert not 漏, f"售后要的规矩在现成的池子里找不到:{sorted(漏)}"
+    return out
+
+
+AFTERSALE_RULES = _aftersale_rules()
+
 PATTERN_RULES = _pattern_rules()
 
 FINANCE_RULES = _finance_rules()
@@ -1725,7 +1814,11 @@ ROLES = {"all": (ALL_HEAD, ALL_RULES, ALL_FOOT),
          "kb": (KB_HEAD, KB_RULES, KB_FOOT),
          "workshop": (WORKSHOP_HEAD, WORKSHOP_RULES, WORKSHOP_FOOT),
          "task": (TASK_HEAD, TASK_RULES, TASK_FOOT),
-         "pattern": (PATTERN_HEAD, PATTERN_RULES, PATTERN_FOOT)}
+         "pattern": (PATTERN_HEAD, PATTERN_RULES, PATTERN_FOOT),
+         # 售后(2026-10-12 建)。登录身份 2026-10-11 就有了(60000022 闻砚之),
+         # 而**身份和能力是同一个病的两面** —— role_check 第 ⑥ 条棘轮
+         # 那个数停在 1 就是为这个,建完它降到 0。
+         "aftersale": (AFTERSALE_HEAD, AFTERSALE_RULES, AFTERSALE_FOOT)}
 
 
 # ── 候选版本:改提示词**不许直接改这个文件** ─────────────────────────

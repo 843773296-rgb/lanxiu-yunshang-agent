@@ -2431,9 +2431,16 @@ def rating_overview(days=30, week=None, start=None, end=None):
     import rating as _R
     me = whoami()
     if not me: return dict(error="不知道现在是谁在问 —— 请先登录")
-    if me.get("role") not in MANAGER_ROLES:
-        return dict(说明="评价概况只给店长看(业务 2026-09-27:不进顾问考核)", 条数=0)
-    本店 = None if me["role"] == "总部运营" else me.get("shop")
+    # ⚠️ 和 `bad_ratings` 同一条口径,**从写口那张表现取**:业务 2026-10-11
+    # 「售后确认结案」之后,售后要判「是不是老问题」就得看得到概况 ——
+    # 原来写死 `MANAGER_ROLES`,于是它**关得了却看不到**。
+    # 📌 **把售后放进来是开发定的、业务没拍过**:业务 09-27 那句「只给店长看」
+    #    是在说**别进顾问考核**,没说过售后。标在这儿,免得半年后被当成业务拍的。
+    import rating_write as _rw2
+    if me.get("role") not in tuple(dict.fromkeys(MANAGER_ROLES + _rw2.能关差评的角色)):
+        return dict(说明="评价概况给店长 / 售后 / 总部看(业务 2026-09-27:不进顾问考核)", 条数=0)
+    # 售后不属于某一家店 —— 和总部一样看全量
+    本店 = None if me["role"] in ("总部运营", "售后") else me.get("shop")
     # `days=0` 是「只看今天」,不是「没传」—— 原来写 `int(days or 30)`,传 0 会悄悄变成 30 天
     起 = (_wc.今天() - _dt.timedelta(days=int(30 if days is None else days))).isoformat()
     止 = "9999-12-31"

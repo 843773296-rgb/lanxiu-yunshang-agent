@@ -3463,12 +3463,12 @@
  },
  {
   "script": "backend/rating_view_check.py",
-  "改坏": "去掉 rating_overview 的店长身份闸(顾问也看得到评价概况)",
+  "改坏": "去掉 rating_overview 的身份闸(顾问也看得到评价概况)",
   "file": [
    {
     "path": "backend/api.py",
-    "old": "    if me.get(\"role\") not in MANAGER_ROLES:\n        return dict(说明=\"评价概况只给店长看",
-    "new": "    if False:\n        return dict(说明=\"评价概况只给店长看"
+    "old": "    if me.get(\"role\") not in tuple(dict.fromkeys(MANAGER_ROLES + _rw2.能关差评的角色)):",
+    "new": "    if False:"
    }
   ],
   "预期红": "顾问看不到评价概况"
@@ -6824,11 +6824,11 @@
   "file": [
    {
     "path": "backend/role_check.py",
-    "old": "            \"finance\": \"财务\", \"pattern\": \"版师\"}",
-    "new": "            \"finance\": \"财务\", \"pattern\": \"版师\"}\n    需要.pop(\"task\", None)"
+    "old": "            \"finance\": \"财务\", \"pattern\": \"版师\", \"aftersale\": \"售后\"}",
+    "new": "            \"finance\": \"财务\", \"pattern\": \"版师\", \"aftersale\": \"售后\"}\n    需要.pop(\"task\", None)"
    }
   ],
-  "预期红": "没有 agent 能力的在职岗位,不超过 1 个"
+  "预期红": "没有 agent 能力的在职岗位,不超过 "
  },
  {
   "script": "backend/seed_rng_check.py",
@@ -6913,5 +6913,17 @@
    }
   ],
   "预期红": "一次都没跑过"
+ },
+ {
+  "script": "backend/role_check.py",
+  "改坏": "把 需要 映射里的 \"aftersale\" 删掉(售后又变成「有身份没能力」)",
+  "file": [
+   {
+    "path": "backend/role_check.py",
+    "old": "\"finance\": \"财务\", \"pattern\": \"版师\", \"aftersale\": \"售后\"}",
+    "new": "\"finance\": \"财务\", \"pattern\": \"版师\"}"
+   }
+  ],
+  "预期红": "没有 agent 能力的在职岗位,不超过 "
  }
 ]

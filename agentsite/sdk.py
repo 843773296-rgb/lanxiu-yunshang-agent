@@ -508,6 +508,25 @@ PATTERN_TOOLS = [
     "mcp__kb__kb_read",
 ]
 
+# 售后(2026-10-12 建):两类活都是**「第二个人」那一段** —— 判责出判定、差评确认结案。
+# ⚠️ **只给一个写工具。** 判责那一笔是店长写的(`decide_repair` 不在这儿)——
+#    业务 2026-10-11 拍的是「售后出判定 → 店长拍板」,两段谁也替不了谁。
+# ⚠️ **刻意不给的**:`member_level` / `points_ledger`(消费总额和会员等级 ——
+#    按客户价值差别对待是业务该定的政策,不该由模型隐式决定,见 TK15)、
+#    一切量体和版型的工具(判差评用不到)、订单流水(那是店长和总部的活)。
+#    「给一个角色多余的工具」的代价是它会去用 —— 这个项目在 allowed_tools 上栽过。
+AFTERSALE_TOOLS = [
+    "mcp__shop__bad_ratings",        # 差评清单(售后看全量,店长只看本店)
+    "mcp__shop__rating_overview",    # 评价概况 —— 判「是不是老问题」要它
+    "mcp__shop__service_records",    # 判差评的第三样材料:交付签收 / 返修售后 / 这个客户的历史差评
+    "mcp__shop__close_bad_rating",   # 写 —— 确认结案;出钱的三种要批准人且不能是自己(TK14)
+    "mcp__shop__get_maintain",       # 售后判责的**现场**:客户报的问题、量体记录、形制工艺
+    # get_maintain 的说明明写「判定标准要另外查 kb_tables」—— 不给它就等于
+    # 让这个岗位凭印象判,而「按表判」和「凭印象判」在那句判定上长得一模一样
+    "mcp__kb__kb_tables",
+    "mcp__kb__kb_read",              # 原文答「为什么」:面料和工艺那几篇正文才有判责依据
+]
+
 # 财务:**只读账的四张表,一个写的都没有。**
 # 它不该看得到量体、版型、产能 —— 那些和对账无关,
 # 而「给一个角色多余的工具」的代价是它会去用(这个项目在 allowed_tools 上栽过)。
@@ -746,6 +765,8 @@ _ROLE_TOOLS = {
     # 财务只对账,**不看量体/版型/产能** —— 给多余的工具它就会去用。
     "finance":  lambda: FINANCE_TOOLS,
     "pattern":  lambda: PATTERN_TOOLS,
+    # 售后只管判责和差评,**不看订单流水、不看量体版型、不看消费额和等级**
+    "aftersale": lambda: AFTERSALE_TOOLS,
 }
 
 def _tools_for(kind):
@@ -764,6 +785,7 @@ SYS_WORKSHOP, WORKSHOP_RULE_IDS = prompts.assemble("workshop", _have("workshop")
 SYS_TASK, TASK_RULE_IDS = prompts.assemble("task", _have("task"))
 SYS_FINANCE, FINANCE_RULE_IDS = prompts.assemble("finance", _have("finance"))
 SYS_PATTERN, PATTERN_RULE_IDS = prompts.assemble("pattern", _have("pattern"))
+SYS_AFTERSALE, AFTERSALE_RULE_IDS = prompts.assemble("aftersale", _have("aftersale"))
 
 # **每个角色都必须在这儿有一条,漏一个当场炸。**
 # 财务这个角色为此栽过一次:`prompts.py` 里 FINANCE_HEAD / FINANCE_RULES / TL24
@@ -776,7 +798,8 @@ SYS_PATTERN, PATTERN_RULE_IDS = prompts.assemble("pattern", _have("pattern"))
 # 写成了同一件事。改成建表时就对齐,**让漏配在进程起来的那一刻就炸**,
 # 而不是等某次评测的某一题恰好露出来。
 _SYS = {"all": SYS_ALL, "kb": SYS_KB, "workshop": SYS_WORKSHOP,
-        "task": SYS_TASK, "finance": SYS_FINANCE, "pattern": SYS_PATTERN}
+        "task": SYS_TASK, "finance": SYS_FINANCE, "pattern": SYS_PATTERN,
+        "aftersale": SYS_AFTERSALE}
 _漏配 = set(_ROLE_TOOLS) - set(_SYS)
 if _漏配:
     raise RuntimeError(f"这些角色配了工具却没有提示词:{sorted(_漏配)} —— "
