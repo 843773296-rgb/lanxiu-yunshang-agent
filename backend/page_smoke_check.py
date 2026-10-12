@@ -121,6 +121,7 @@ def 带身份的handler():
         (SQL行("SELECT no,name,role,shop FROM staff WHERE role='顾问' AND status='启用' LIMIT 1"),)],
     "kb_search":        [({},)], "maintain_list":   [({},)], "measure_items": [({},)],
     "measure_tpls":     [({},)], "order_list":      [({},)], "page_list":     [({},)],
+    "freight_zones":    [({},)],
     "product_list":     [({},)], "schedule_list":   [({},)], "shop_list":     [({},)],
     "staff_list":       [({},)], "stock_list":      [({},)], "stock_log_list":[({},)],
     "syscode_list":     [({},)], "task_list":       [({},)],

@@ -450,7 +450,7 @@ const MENU=[
  {k:"mkt",i:"mkt",t:"营销",subs:[["activities","营销活动"],["invites","邀请码管理"]]},
  {k:"goods",i:"goods",t:"商品",subs:[["products","商品库"],["categories","品类管理"],
    ["stock","库存查询"],["stocklog","库存变更日志"]]},
- {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"],["factory","工厂回传"]]},
+ {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["freight","运费表"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"],["factory","工厂回传"]]},
  {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"]]},
  {k:"sys",i:"sys",t:"系统",subs:[["approvals","审批中心"],["staff","权限管理"],["syscodes","系统编码"],
    ["downloads","下载中心"],["oplog","操作日志"]]}];
@@ -474,7 +474,7 @@ function renderNav(){
 const CRUMB_ROUTE={"首页":"workbench","客户管理":"customers","客户档案":"customers",
   "店铺配置":"shops","店铺管理":"shops","导购":"schedule","个人日程":"schedule","权限管理":"staff",
   "交易查询":"orders","商品":"products","商品库":"products","品类管理":"categories","库存查询":"stock",
-  "业务内容":"mtpls","量体配置":"mitems","量体模版":"mtpls","内容管理":"contents",
+  "业务内容":"mtpls","量体配置":"mitems","量体模版":"mtpls","内容管理":"contents","运费表":"freight",
   "营销":"activities","营销活动":"activities","邀请码管理":"invites",
   "页面":"pages","页面配置":"pages","系统编码":"syscodes","下载中心":"downloads","审批中心":"approvals","会员等级":"levels","客户标签管理":"tags",
   "售后工单":"aftersales","维保工单":"maintains","工厂回传":"factory","导购业绩":"perf","库存变更日志":"stocklog","工艺知识库":"kb",
@@ -499,7 +499,7 @@ const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合
   appts:"客户预约",lifecycle:"客户生命周期类型",oplog:"操作日志",
   shops:"店铺管理",staff:"权限管理",schedule:"个人日程",orders:"交易查询",
   products:"商品库",categories:"品类管理",stock:"库存查询",
-  mitems:"量体配置",mtpls:"量体模版",contents:"内容管理",
+  mitems:"量体配置",mtpls:"量体模版",contents:"内容管理",freight:"运费表",
   activities:"营销活动",invites:"邀请码管理",pages:"页面配置",
   syscodes:"系统编码",downloads:"下载中心",approvals:"审批中心",
   levels:"会员等级",tags:"客户标签管理",
@@ -540,6 +540,7 @@ async function route(v,arg){
   if(v==="orderlog") return orderLog(a);
   if(v==="mitems")   return measureItems();
   if(v==="mtpls")    return measureTpls();
+  if(v==="freight")  return freightPage();
   if(v==="contents") return contentList();
   if(v==="activities")return activityList();
   if(v==="activity") return activityDetail(arg);
@@ -2041,6 +2042,85 @@ function bindToggle(reload){
   M.querySelectorAll("[data-tgl]").forEach(e=>e.onclick=()=>{
     const [table,key,val]=e.dataset.tgl.split("|");
     doOp("/api/toggle",{table,key,val},reload)});
+}
+
+// ── 运费表(业务 2026-10-12:分区固定价 + 满额免邮)────────────────────────
+// 这一页有意把三样东西摆在表格**上面**,而不是藏在说明里:
+//   覆盖面     这张表真正收得到运费的只有 6.1% 的单 —— 不说的话人会以为它管全店
+//   试算       直接给出几个省份现在算出来多少 —— 不用去下单才知道改对没改对
+//   整表校验   「这张表现在配得对吗」,因为配坏的表不会报错,只会少收钱
+async function freightPage(){
+  const d=await get("/api/freight-zones");
+  const okb=d.表配得对吗.行不行;
+  const 空区=(d.挂着0客户的区&&d.挂着0客户的区.有哪些)||[];
+  M.innerHTML=chrome([["首页","workbench"],"消费与售后","运费表"],`
+   <div class="card">
+    <div class="note ${okb?"":"bad"}" style="margin-bottom:10px">
+      <b>${okb?"这张表现在配得对":"⚠️ 这张表现在配得不对"}</b> —— ${esc(d.表配得对吗.说明)}
+    </div>
+    <div class="note" style="margin-bottom:10px">${esc(d.覆盖面)}</div>
+    ${空区.length?`<div class="note bad" style="margin-bottom:10px">
+      <b>${esc(空区.join("、"))}</b>：${esc(d.挂着0客户的区.要紧)}</div>`:""}
+    <div class="ops">
+      <button class="btn sol" data-fznew>+ 新增区域</button>
+      <button class="btn" data-fzover>满额免邮门槛：${d.满额免邮门槛}  元（改）</button>
+    </div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:120px">区域</th><th>省份（逗号分隔；兜底区留空）</th>
+     <th style="width:90px">运费</th><th style="width:70px">兜底</th>
+     <th style="width:70px">排序</th><th style="width:120px">挂着多少客户</th>
+     <th style="width:120px">操作</th></tr></thead><tbody>
+     ${d.rows.map(r=>`<tr>
+      <td class="mono">${esc(r.区域)}</td>
+      <td style="color:var(--ink2)">${esc(r.省份)||'<i>（接住所有没登记的省份）</i>'}</td>
+      <td class="mono">${r.运费===0?'<span class="pill p-green">免邮</span>':r.运费}</td>
+      <td>${r.兜底?'<span class="pill p-blue">兜底</span>':""}</td>
+      <td class="mono">${r.排序}</td>
+      <td class="mono">${r.挂着多少客户}</td>
+      <td><button class="btn xs" data-fzedit="${esc(r.区域)}">改</button>
+          <button class="btn xs ${r.兜底?"dead":""}" data-fzdel="${esc(r.区域)}">删</button></td>
+     </tr>`).join("")}
+    </tbody></table>
+    <h4 style="margin:18px 0 8px">试算 —— 这张表现在的行为</h4>
+    <table class="tb"><thead><tr><th style="width:150px">收货省份</th>
+     <th style="width:110px">货品金额</th><th style="width:90px">运费</th>
+     <th style="width:100px">怎么落的</th><th>依据</th></tr></thead><tbody>
+     ${d.试算.map(t=>`<tr>
+      <td>${esc(t.省)||'<i>（没填省份）</i>'}</td>
+      <td class="mono">${t.货品金额}</td>
+      <td class="mono">${t.结果.运费===null?"算不出来":t.结果.运费}</td>
+      <td>${esc(t.结果.怎么落的||"")}${t.结果.要人确认?' <span class="pill p-red">要人确认</span>':""}</td>
+      <td style="color:var(--ink2)">${esc(t.结果.依据)}</td></tr>`).join("")}
+    </tbody></table>
+    <div class="note" style="margin-top:12px">
+      <b>口径</b>：${esc(d.口径.算法)}<br>
+      <b>用哪个金额</b>：${esc(d.口径.哪个金额)}<br>
+      <b>地址不明</b>：${esc(d.口径.地址不明)}<br>
+      <b>历史订单</b>：${esc(d.口径.历史订单)}
+    </div>
+   </div>`);
+  const F=[{k:"zone",label:"区域名",req:1,ph:"例如 华南"},
+           {k:"provinces",label:"省份（逗号分隔，兜底区留空）",ph:"广东,广西,福建"},
+           {k:"fee",label:"运费（元）",req:1,ph:"28"},
+           {k:"sort",label:"排序（小的先匹配）",ph:"50"},
+           {k:"is_fallback",type:"select",label:"是不是兜底区",opts:["否","是"],val:"否"}];
+  M.querySelectorAll("[data-fznew]").forEach(e=>e.onclick=()=>
+    modal("新增运费区域",F,v=>doOp("/api/freight-save",
+      {action:"加",zone:v.zone,provinces:v.provinces,fee:v.fee,sort:v.sort,
+       is_fallback:v.is_fallback==="是"},freightPage),1));
+  M.querySelectorAll("[data-fzedit]").forEach(e=>e.onclick=()=>{
+    const r=d.rows.find(x=>x.区域===e.dataset.fzedit);
+    modal("改运费区域 · "+r.区域,F.map(f=>Object.assign({},f,{
+      val:f.k==="zone"?r.区域:f.k==="provinces"?r.省份:f.k==="fee"?r.运费
+         :f.k==="sort"?r.排序:(r.兜底?"是":"否")})),v=>doOp("/api/freight-save",
+      {action:"改",zone:r.区域,provinces:v.provinces,fee:v.fee,sort:v.sort,
+       is_fallback:v.is_fallback==="是"},freightPage),1)});
+  M.querySelectorAll("[data-fzdel]:not(.dead)").forEach(e=>e.onclick=()=>
+    doOp("/api/freight-save",{action:"删",zone:e.dataset.fzdel},freightPage));
+  M.querySelectorAll("[data-fzover]").forEach(e=>e.onclick=()=>
+    modal("改满额免邮门槛",[{k:"free_over",label:"满多少元免运费",req:1,
+      val:d.满额免邮门槛,ph:"2000"}],v=>doOp("/api/freight-save",
+      {action:"门槛",free_over:v.free_over},freightPage)));
 }
 
 async function measureTpls(){

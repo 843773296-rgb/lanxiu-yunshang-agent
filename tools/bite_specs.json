@@ -7153,5 +7153,77 @@
    }
   ],
   "预期红": "训练集上**只报数、不判过不过**"
+ },
+ {
+  "script": "knowledge/freight.py",
+  "改坏": "让 查区域表() 不管有没有兜底区",
+  "file": [
+   {
+    "path": "knowledge/freight.py",
+    "old": "    兜底 = [z for z in 区域表 if z.get(\"兜底\")]\n    if not 兜底:",
+    "new": "    兜底 = [z for z in 区域表 if z.get(\"兜底\")]\n    if False:"
+   }
+  ],
+  "预期红": "没有兜底区 → 算不出来"
+ },
+ {
+  "script": "knowledge/freight.py",
+  "改坏": "让空的区域表回落到免邮(算不出来返回 0)",
+  "file": [
+   {
+    "path": "knowledge/freight.py",
+    "old": "    if not 区域表:\n        return False, (\"运费区域表是空的 —— **这不叫「都免邮」,叫表还没配**。\"\n                       \"去运营后台配区域\")",
+    "new": "    if not 区域表:\n        return True, \"空表,先当都免邮\""
+   }
+  ],
+  "预期红": "空的区域表算不出来,**不是免邮**"
+ },
+ {
+  "script": "knowledge/freight.py",
+  "改坏": "让 找区() 用子串包含匹配省份(「黑龙江」会被「江苏」捞走)",
+  "file": [
+   {
+    "path": "knowledge/freight.py",
+    "old": "        if p in 省份清单(z.get(\"省份\")):\n            return z, \"命中\"",
+    "new": "        if any(x in p or p in x for x in 省份清单(z.get(\"省份\"))):\n            return z, \"命中\""
+   }
+  ],
+  "预期红": "省份是**整名**匹配,不是子串匹配"
+ },
+ {
+  "script": "knowledge/freight.py",
+  "改坏": "把省份后缀表改回按手顺排(长后缀永远用不上)",
+  "file": [
+   {
+    "path": "knowledge/freight.py",
+    "old": "省份后缀 = tuple(sorted(\n    (\"省\", \"市\", \"自治区\", \"特别行政区\", \"维吾尔自治区\", \"壮族自治区\", \"回族自治区\"),\n    key=len, reverse=True))",
+    "new": "省份后缀 = (\"省\", \"市\", \"自治区\", \"特别行政区\", \"维吾尔自治区\", \"壮族自治区\",\n            \"回族自治区\")"
+   }
+  ],
+  "预期红": "后缀表是按长度从长到短排的"
+ },
+ {
+  "script": "backend/freight_check.py",
+  "改坏": "让后台写入只校验这一行、不校验改完之后的整张表",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    行, 话 = F.查区域表(新表)\n    if not 行:\n        return dict(ok=False, code=\"BAD_TABLE\",\n                    reason=f\"这么改完之后整张表不合格:{话} —— **一行都没落**\")",
+    "new": "    行, 话 = True, \"(没校验整表)\""
+   }
+  ],
+  "预期红": "同一个省登记到第二个区 → **存不进去**"
+ },
+ {
+  "script": "backend/freight_check.py",
+  "改坏": "让 找区() 不做省份归一(「上海市」对不上登记的「上海」—— 82% 的客户从免邮变收 28)",
+  "file": [
+   {
+    "path": "knowledge/freight.py",
+    "old": "    p = 规范省份(省)\n    if not p:\n        return 兜底, \"没省份\"",
+    "new": "    p = str(省 or \"\").strip()\n    if not p:\n        return 兜底, \"没省份\""
+   }
+  ],
+  "预期红": "「上海」和「上海市」算同一个省"
  }
 ]

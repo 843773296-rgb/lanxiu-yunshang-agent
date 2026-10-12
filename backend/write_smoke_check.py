@@ -205,6 +205,26 @@ def 用例表():
                        lambda s, _d=延, _m=dict(顾问): s.delay_told({"delay_id": _d["id"]}, _m),
                        # 「已通知」是**改**已有那条(told_at),不是加一行 —— 这里看它往操作日志里记没记
                        "op_log"))
+    # 运费表(2026-10-12):save_freight(d, actor, role) —— 往 freight_zone 加一个区。
+    #
+    # ⚠️ **用「加」不用「改」。** 第一版写的是改一个区的运费,检查当场红:
+    # 「返回成功,但 `freight_zone` 一行没多」—— 而那条判据是对的,
+    # 它数的是**行数变没变**,而「改」在实现上是删+插,行数不动。
+    # > 一个「真的写进去了」和一个「返回了 ok」,在返回值上长得一模一样 ——
+    # > 所以这个检查只认行数,而用例要配合它:**加一行,才看得见。**
+    #
+    # ⚠️ 省份用一个**库里不存在的名字**,不用真实省份:
+    # 用真实省份(比如广东)会在副本里改掉那 500 位客户的运费档,
+    # 而后面别的用例可能正好读到它 —— **副本里的连带影响也是影响**。
+    if 有表("freight_zone"):
+        出.append(("save_freight",
+                   lambda s: s.save_freight(
+                       {"action": "加", "zone": "冒烟区" + str(id(s))[-5:],
+                        "provinces": "冒烟省", "fee": 33, "sort": 60,
+                        "is_fallback": False},
+                       "冒烟", "总部运营"),
+                   "freight_zone"))
+
     if 客:
         # create_followup(d, actor) —— d 里要 customer_id + content
         出.append(("create_followup",

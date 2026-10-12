@@ -1071,6 +1071,185 @@ def measure_tpls(q):
     if stt: rs=[r for r in rs if r["status"]==stt]
     d=_page(rs,q); d["facets"]=dict(status=["启用","停用"]); return d
 
+# ── 运费表(业务 2026-10-12:分区固定价 + 满额免邮,运营后台可配)─────────────
+#
+# 判定口径全在 `knowledge/freight.py`,**这儿不抄一份** ——
+# 页面只负责取数、校验、写回。
+def _freight_zones_raw():
+    """库里那张区域表,转成口径层认的形状。"""
+    return [dict(区域=r["zone"], 省份=r["provinces"] or "", 运费=float(r["fee"] or 0),
+                 兜底=bool(r["is_fallback"]), 排序=r["sort"], 状态=r["status"])
+            for r in rows("SELECT * FROM freight_zone WHERE status='启用' ORDER BY sort, zone")]
+
+
+def _freight_free_over():
+    r = rows("SELECT free_over FROM freight_rule WHERE id=1")
+    return float(r[0]["free_over"]) if r else None
+
+
+def freight_zones(q):
+    """运费表这一页。**带着「这条规则管得到几单」那个数一起给** ——
+
+    这张表真正收得到运费的只有 6.1% 的单(江浙沪占 82% 免邮、满额又免一批)。
+    光给一张能改的表,看不出改它影响多大;而一个配错的区**每一单都是一次客诉**。
+    """
+    import freight as F
+    zs = _freight_zones_raw()
+    门 = _freight_free_over()
+    行, 话 = F.查区域表(zs)
+    # 每个区现在挂着多少客户 —— 改价之前要看得见影响面
+    省到区 = {}
+    for z in zs:
+        for pv in F.省份清单(z["省份"]):
+            省到区[pv] = z["区域"]
+    兜底名 = next((z["区域"] for z in zs if z["兜底"]), None)
+    计 = {z["区域"]: 0 for z in zs}
+    for r in rows("SELECT province, COUNT(*) n FROM customer "
+                  "WHERE COALESCE(province,'')<>'' GROUP BY province"):
+        计[省到区.get(F.规范省份(r["province"]), 兜底名)] = \
+            计.get(省到区.get(F.规范省份(r["province"]), 兜底名), 0) + r["n"]
+    for z in zs:
+        z["挂着多少客户"] = 计.get(z["区域"], 0)
+    # 试算几个样例,让人一眼看出这张表现在是什么行为(不用去下单验)
+    # ⚠️ **「没省份」那一条必须在样例里。** 它是唯一会「要人确认」的分支,
+    # 而一个在页面上看不见的分支,和一个不存在的分支,**在这一页上长得一模一样**。
+    试 = [dict(省=sp, 货品金额=amt,
+               结果=F.算运费(sp, amt, zs, 门 if 门 is not None else 0))
+          for sp, amt in (("上海市", 500), ("安徽省", 500), ("新疆维吾尔自治区", 500),
+                          ("安徽省", 2500), ("广东省", 500), ("", 500))]
+    # 挂着 0 客户的区:**它配得对不对,现在验不到** ——
+    # 这是「空集合上所有性质都成立」在一张配置表上的样子
+    空区 = [z["区域"] for z in zs if not z["挂着多少客户"]]
+    return dict(rows=zs, total=len(zs), 满额免邮门槛=门,
+                表配得对吗=dict(行不行=行, 说明=话),
+                覆盖面=F.这张表管得到哪些单(),
+                试算=试,
+                挂着0客户的区=dict(
+                    有哪些=空区,
+                    要紧=("这几个区现在**一个客户都没有** —— 它们配得对不对,"
+                          "在这个库上**验不到**(空集合上所有性质都成立)。"
+                          "不是错,但别把「没报错」读成「配对了」"
+                          if 空区 else None)),
+                口径=dict(算法="满额免邮压过区域价;否则按收货省份找区取价",
+                          哪个金额="**货品金额**(不是含运费的合计)—— "
+                                   "用合计会绕回自己:运费加上去刚好够门槛 → 免运费 → 又不够门槛",
+                          地址不明=F.地址不明怎么办,
+                          历史订单="**只管新单,历史不动**(用户 2026-10-12 拍)—— "
+                                   "老订单当时确实收了那笔运费,改了等于篡改账本"))
+
+
+def save_freight(d, actor, role):
+    """改运费表(区域增删改 / 改满额门槛)。
+
+    ⚠️ **校验的是「改完之后的整张表」,不是这一行。**
+    「兜底只能有一个」「同一个省不许登记在两个区」都是**表级**约束 ——
+    逐行校验根本看不见它们,而配出来的表会在某个省份上静默取错价。
+    """
+    import freight as F
+    if role not in ("总部运营",):
+        return dict(ok=False, code="WRONG_ROLE",
+                    reason=f"运费表只有总部运营能改(它是全店收钱的口径),当前角色:{role}")
+    动作 = (d.get("action") or "").strip()
+    zs = _freight_zones_raw()
+    门 = _freight_free_over()
+
+    if 动作 == "门槛":
+        try:
+            新门 = float(d.get("free_over"))
+        except (TypeError, ValueError):
+            return dict(ok=False, code="BAD_NUMBER",
+                        reason=f"满额免邮门槛要填一个数,收到「{d.get('free_over')}」")
+        if 新门 < 0:
+            return dict(ok=False, code="BAD_NUMBER", reason="门槛不能是负数")
+        with _conn() as c:
+            c.execute("UPDATE freight_rule SET free_over=?,updated_by=?,updated=wnow() "
+                      "WHERE id=1", (新门, d.get("actor_no") or "—"))
+        log_edit(actor, d.get("actor_no"), "运费表", "满额免邮门槛", "改满额免邮门槛",
+                 [{"字段": "满额免邮门槛", "改前": 门, "改后": 新门}], d.get("source") or "后台")
+        log_op(actor, "freight_rule", "1", "—", "改门槛", True, "UPDATE",
+               f"满额免邮门槛 {门} → {新门}", {})
+        影响 = rows("SELECT COUNT(*) c FROM ordr WHERE COALESCE(goods_amount,0)>=? "
+                    "AND COALESCE(goods_amount,0)<?",
+                    min(门 or 0, 新门), max(门 or 0, 新门))[0]["c"]
+        return dict(ok=True, code="UPDATE",
+                    reason=f"满额免邮门槛 {门} → {新门}。**只对新单生效,历史不动**。"
+                           f"参照:历史上有 {影响} 单落在这两个门槛之间")
+
+    zone = (d.get("zone") or "").strip()
+    if not zone:
+        return dict(ok=False, code="NEED_ZONE", reason="区域名必填")
+
+    # 先在内存里把表改成「改完之后的样子」,再整表校验 —— 不合格就一行都不落
+    新表 = [dict(z) for z in zs]
+    if 动作 == "删":
+        目标 = next((z for z in 新表 if z["区域"] == zone), None)
+        if not 目标:
+            return dict(ok=False, code="NOT_FOUND", reason=f"没有「{zone}」这个区")
+        if 目标["兜底"]:
+            return dict(ok=False, code="NO_FALLBACK",
+                        reason=f"「{zone}」是**兜底区**,删了之后没登记的省份就算不出运费 —— "
+                               f"而算不出来要是回落到 0,就是整店静默免邮。"
+                               f"先把别的区标成兜底,再删这个")
+        新表 = [z for z in 新表 if z["区域"] != zone]
+    elif 动作 in ("加", "改"):
+        try:
+            fee = float(d.get("fee"))
+        except (TypeError, ValueError):
+            return dict(ok=False, code="BAD_NUMBER",
+                        reason=f"运费要填一个数,收到「{d.get('fee')}」")
+        行新 = dict(区域=zone, 省份=(d.get("provinces") or "").strip(), 运费=fee,
+                    兜底=bool(d.get("is_fallback")),
+                    排序=int(d.get("sort") or 50), 状态="启用")
+        旧 = next((z for z in 新表 if z["区域"] == zone), None)
+        if 动作 == "加" and 旧:
+            return dict(ok=False, code="DUP", reason=f"「{zone}」这个区已经有了,要改走「改」")
+        if 动作 == "改" and not 旧:
+            return dict(ok=False, code="NOT_FOUND", reason=f"没有「{zone}」这个区")
+        新表 = [行新 if z["区域"] == zone else z for z in 新表] if 旧 else 新表 + [行新]
+        if 行新["兜底"]:
+            新表 = [dict(z, 兜底=(z["区域"] == zone)) for z in 新表]   # 兜底只能一个
+    else:
+        return dict(ok=False, code="BAD_ACTION", reason="action 只认 加 / 改 / 删 / 门槛")
+
+    行, 话 = F.查区域表(新表)
+    if not 行:
+        return dict(ok=False, code="BAD_TABLE",
+                    reason=f"这么改完之后整张表不合格:{话} —— **一行都没落**")
+
+    with _conn() as c:
+        if 动作 == "删":
+            c.execute("DELETE FROM freight_zone WHERE zone=?", (zone,))
+        else:
+            c.execute("DELETE FROM freight_zone WHERE zone=?", (zone,))
+            z = next(x for x in 新表 if x["区域"] == zone)
+            c.execute("INSERT INTO freight_zone(zone,provinces,fee,is_fallback,sort,"
+                      "status,updated_by,updated) "
+                      "VALUES(?,?,?,?,?,'启用',?,wnow())",
+                      (z["区域"], z["省份"], z["运费"], 1 if z["兜底"] else 0,
+                       z["排序"], d.get("actor_no") or "—"))
+            # 兜底改到这个区时,别的区要取消兜底
+            if z["兜底"]:
+                c.execute("UPDATE freight_zone SET is_fallback=0 WHERE zone<>?", (zone,))
+    ch = [{"字段": "区域", "改前": (next((f"{z['省份']} / {z['运费']}" for z in zs
+                                         if z["区域"] == zone), "(新增)")),
+           "改后": ("(删除)" if 动作 == "删" else
+                   f"{d.get('provinces') or ''} / {d.get('fee')}")}]
+    log_edit(actor, d.get("actor_no"), "运费表", zone, f"{动作}运费区域", ch,
+             d.get("source") or "后台")
+    log_op(actor, "freight_zone", zone, "—", f"{动作}区域", True, 动作, 话, {})
+    # 影响面:这个区现在挂着多少客户
+    省 = F.省份清单(d.get("provinces") or "")
+    n = 0
+    if 省:
+        qs = ",".join("?" * len(省))
+        n = rows(f"SELECT COUNT(*) c FROM customer WHERE province IN ({qs}) "
+                 f"OR province IN ({qs})", *省, *[x + "省" for x in 省])[0]["c"]
+    return dict(ok=True, code=动作,
+                reason=f"运费区域「{zone}」已{动作}。整表校验通过:{话}。"
+                       f"**只对新单生效,历史不动**" +
+                       (f";这几个省现在挂着 {n} 位客户" if 省 else ""))
+
+
 def measure_of(cid):
     rs=rows("""SELECT r.*, i.name iname, i.unit FROM measure_rec r
                LEFT JOIN measure_item i ON r.item=i.code
@@ -2960,6 +3139,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/stock": return self._send(stock_list(Q))
         if p=="/api/measure-items": return self._send(measure_items(Q))
         if p=="/api/measure-tpls": return self._send(measure_tpls(Q))
+        if p=="/api/freight-zones": return self._send(freight_zones(Q))
         if p=="/api/contents": return self._send(content_list(Q))
         if p=="/api/activities": return self._send(activity_list(Q))
         if p.startswith("/api/activity/"): return self._send(activity_detail(p.split("/api/activity/")[1]))
@@ -3188,6 +3368,8 @@ class H(BaseHTTPRequestHandler):
             # 敞开的代价由 booking.book() 自己的三道闸兜(格式/频次/派给谁不由请求决定)。
             import booking as _bk
             return self._send(_bk.book(body))
+        if p=="/api/freight-save":
+            return self._send(save_freight(body, _actor_of(self), _role_of(self)))
         if p=="/api/customer-create":
             return self._send(create_customer(body, _actor_of(self), _role_of(self)))
         if p.startswith("/api/customer-update/"):

@@ -292,6 +292,20 @@ CREATE TABLE measure_item(code TEXT PRIMARY KEY, name TEXT, unit TEXT, required 
 CREATE TABLE measure_tpl(code TEXT PRIMARY KEY, name TEXT, descr TEXT, status TEXT,
   updated_by TEXT, updated TEXT);
 CREATE TABLE tpl_item(tpl TEXT, item TEXT, sort INT);
+-- 运费表 —— 业务 2026-10-12:**分区固定价 + 满额免邮**,运营后台可配。
+-- 这两张表之前**不存在**:系统里有运费数字(`ordr.freight`,9124 单带着 28 元),
+-- 而那条规则只活在两个造数脚本里(`tools/order_mix.py` / `tools/simulate_sales.py`
+-- 各手抄了一份 `freight = 0.0 if goods >= 2000 else 28.0`)——
+-- 后台改不了、工具查不到,而且运费和收货省份毫无关系。
+-- 判定口径在 `knowledge/freight.py`,这两张表只存配置。
+--   兜底   这一档接住所有没登记的省份。**必须恰好有一个** ——
+--          没有的话,一个没登记的省份就算不出运费,而算不出来要是回落到 0
+--          就是整店静默免邮,报表上完全正常。
+CREATE TABLE freight_zone(zone TEXT PRIMARY KEY, provinces TEXT, fee REAL,
+  is_fallback INT, sort INT, status TEXT, updated_by TEXT, updated TEXT);
+-- 单行表(id 恒为 1)。满额免邮门槛单独放,因为它不属于任何一个区。
+CREATE TABLE freight_rule(id INT PRIMARY KEY, free_over REAL,
+  updated_by TEXT, updated TEXT);
 -- 体型特征 —— 「差 >5cm **或有明显体型特征** 即全定制」里的后半句,
 -- 之前只是知识库里的一句话,没有任何字段承载它,所以那条规则永远跑不到。
 -- 体型特征挂**着装人**,不挂门店档案。
@@ -2168,6 +2182,21 @@ def run():
           (code,nm,de,st,"60000008",f"2026-08-2{TPL.index((code,nm,de,st,items))} 16:16"))
         for j,it in enumerate(items):
             c.execute("INSERT INTO tpl_item VALUES(?,?,?)",(code,it,j+1))
+    # ── 运费表(业务 2026-10-12 定:分区固定价 + 满额免邮)──────────────────
+    # ⚠️ **这里只灌配置,不碰历史订单的 `ordr.freight`。**
+    # 用户 2026-10-12 拍的是「**只管新单,历史不动**」——
+    # 老订单当时确实收了 28 元,那是已经发生的事,改了等于篡改账本;
+    # 而且江浙沪占 82%,重算会让 9124 单的运费归零、全库金额和已存报告跟着变。
+    # (所以那两个造数脚本里手抄的 28 元**故意不动** —— 动了就等于选了「从零重建时重算」。)
+    FZ=[("江浙沪","上海,浙江,江苏",0.0,0,1),
+        ("偏远","新疆,西藏,青海,内蒙古,宁夏,甘肃",48.0,0,2),
+        ("其他","",28.0,1,9)]
+    for z,pv,fee,fb,so in FZ:
+        c.execute("INSERT INTO freight_zone(zone,provinces,fee,is_fallback,sort,"
+                  "status,updated_by,updated) VALUES(?,?,?,?,?,'启用',?,?)",
+                  (z,pv,fee,fb,so,"60000008","2026-10-12 10:00"))
+    c.execute("INSERT INTO freight_rule(id,free_over,updated_by,updated) VALUES(1,?,?,?)",
+              (2000.0,"60000008","2026-10-12 10:00"))
     # ── 客户量体档案(定制品订单的客户)──
     # **加量体项的时候这里要一起加** —— 少一个当场 KeyError,
     # 而且是在造数据的半路崩,留下**看起来正常的残缺库**。
