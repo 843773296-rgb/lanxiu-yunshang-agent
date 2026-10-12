@@ -2794,8 +2794,8 @@
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "    _对客 = 对顾客说的那部分(text)\n    if _对客: text = _对客",
-    "new": "    _对客 = None\n    if _对客: text = _对客"
+    "old": "    _对客 = 对顾客说的那部分(text)\n    # 内部经营报告",
+    "new": "    _对客 = None\n    # 内部经营报告"
    }
   ],
   "预期红": "真跑钉回:「补充背景给顾问」那段在解释"
@@ -6949,5 +6949,41 @@
    }
   ],
   "预期红": "清单里没有死条目"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "内部报告放宽取消(周报又会被类目清单误拦)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if not _对客 and _called(calls or [], \"store_report\"):\n        return None",
+    "new": "    if False:\n        return None"
+   }
+  ],
+  "预期红": "真跑钉回:周报里列差评处理方式类目"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "放宽不看有没有对客话术(报告里夹的让价话也放过)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if not _对客 and _called(calls or [], \"store_report\"):",
+    "new": "    if _called(calls or [], \"store_report\"):"
+   }
+  ],
+  "预期红": "调过 store_report,但报告里夹着对顾客说的让价话"
+ },
+ {
+  "script": "backend/store_report_check.py",
+  "改坏": "取数包不再带成交率窗口那句",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if \"成交率\" in 期内 and 期内[\"成交率\"].get(\"值\") is not None and kind == \"周\":",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "周报取数包带现成话"
  }
 ]

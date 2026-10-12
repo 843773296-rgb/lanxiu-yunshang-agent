@@ -192,6 +192,14 @@ ck("售后新建 / 结案各按自己的事件时间,和独立统计对得上", 
 ck("规则版本留底:取数口径版本 + 写报告两条规矩的指纹", 版.get("取数口径") == api.报告口径版本
    and set((版.get("规矩指纹") or {})) == {"TL67", "TL68"} and all(len(v) == 10 for v in 版["规矩指纹"].values()), str(版))
 
+# 并排读时要说清的(用户 10-12 试周报后定:做进取数包,不只写在规矩里)
+周包 = 包.get("周") or {}
+并 = 周包.get("并排读时要说清的") or []
+ck("周报取数包带现成话:成交率是最近 4 周、和本周进店不是同一个窗口", any("最近 4 周" in x for x in 并), 并)
+_单 = ((周包.get("期内", {}).get("订单") or {}).get("值") or {}).get("下单")
+_销 = (((周包.get("期内", {}).get("销量") or {}).get("值") or {}).get("合计") or {}).get("单数")
+ck("下单数和销量订单数对不上时,取数包带现成的解释(数对得上就不硬塞)",
+   (_单 == _销) or any(f"下单 {_单} 单" in x and f"{_销} 个订单" in x for x in 并), (_单, _销, 并))
 sc = next(t for t in api.SHOP_SCHEMAS if t["name"] == "store_report")
 ck("工具参数名都是 ASCII", all(re.fullmatch(r"[a-zA-Z0-9_.-]{1,64}", k) for k in sc["input_schema"]["properties"]))
 import prompts
