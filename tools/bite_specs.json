@@ -6829,5 +6829,17 @@
    }
   ],
   "预期红": "没有 agent 能力的在职岗位,不超过 1 个"
+ },
+ {
+  "script": "backend/seed_rng_check.py",
+  "改坏": "把花名册那两个随机数改回抽全局那条流(加一个员工就会把 sku/customer/schedule 等整批挪位)",
+  "file": [
+   {
+    "path": "backend/seed.py",
+    "old": "(花名册时间.randint(0, 9), 花名册时间.randint(0, 9))",
+    "new": "(random.randint(0, 9), random.randint(0, 9))"
+   }
+  ],
+  "预期红": "种子里的随机流串台了"
  }
 ]

@@ -78,8 +78,69 @@ ck("按金额排时金额单调不增", 金额序 == sorted(金额序, reverse=T
                      f"WHERE {区} AND {算} GROUP BY i.spu ORDER BY SUM(i.total) DESC, i.spu LIMIT 1").fetchone()[0]
 ck("按金额的第一和独立 SQL 是同一个商品", (r.get("各排法的第一") or {}).get("金额", {}).get("编码") == 期望金额,
    f"工具 {(r.get('各排法的第一') or {}).get('金额')} / SQL {期望金额}")
-ck("按件数查时,金额第一不在件数前五里也照样给出(否则验不到这条)",
-   期望金额 not in [x["编码"] for x in r["榜单"]], "九月金额第一恰好在件数前五 —— 这条验不到")
+# ⚠️ **这一条原来钉死在九月,而它靠的是一个巧合 —— 2026-10-11 那个巧合没了。**
+#
+# 它要的形状是「金额第一**不在**件数前五」:只有这样,才验得到
+# 「按件数查的时候,工具也照样把金额第一给出来」这件事。原来写的是
+# `期望金额 not in r["榜单"]`,九月不满足就直接红。
+#
+# 从零建库之后**库里 16 个月没有一个月满足** —— 有一个两头都第一的爆款
+# (157 件 / ¥272 万)在每个月都既是金额第一、又在件数前五。
+# 而它以前绿**不是因为被保证了,是因为那一次抽样恰好让某个月错开**:
+# 种子里加了一行员工、随机流整体挪位,它就翻面(真因见 `backend/seed_rng_check.py`)。
+# > **一条「被保证成立」的判据和一条「碰巧成立」的判据,在绿勾上长得一模一样。**
+#
+# 改成**去找一个真能分辨的窗口**(滑动 7 天 —— 工具本来就支持起止日,
+# 而上面那条「month 和 start+end 是同一批」已经验过两种给法同源)。
+# 找得到就在那个窗口上验;**一个都找不到才红**,而那时候红的是一笔**数据欠账**:
+# 这个库里「各排法的第一」永远分辨不出来,这个功能等于空跑。
+def 找分辨窗口():
+    """返回一个「金额第一不在件数前五」的 7 天窗口,找不到返回 None。
+
+    ⚠️ **一次查完在内存里滑窗,不要每个窗口发一轮 SQL。** 第一版就是每天两条
+    `GROUP BY`(`substr(created,1,10)` 用不上索引),两年的日子扫下来 **46 秒** ——
+    而门禁有二十多项,一项占掉 46 秒就会让人开始跳着跑。
+    """
+    import collections, datetime as _dt
+    行 = c.execute(f"SELECT substr(o.created,1,10), i.spu, i.qty, i.total "
+                   f"FROM ordr_item i JOIN ordr o ON o.id=i.order_id WHERE {算}").fetchall()
+    if not 行:
+        return None
+    按天 = collections.defaultdict(list)
+    for 日, spu, 件, 钱 in 行:
+        按天[日].append((spu, 件 or 0, 钱 or 0))
+    d, 末 = _dt.date.fromisoformat(min(按天)), _dt.date.fromisoformat(max(按天))
+    while d <= 末:
+        窗 = [d + _dt.timedelta(days=i) for i in range(7)]
+        聚 = collections.defaultdict(lambda: [0, 0])
+        for 日 in 窗:
+            for spu, 件, 钱 in 按天.get(str(日), ()):
+                聚[spu][0] += 件
+                聚[spu][1] += 钱
+        if len(聚) >= 5:     # 不够 5 个商品时「前五」装得下全部,两种排法必然重叠 —— 不算分辨得出来
+            件五 = [k for k, _ in sorted(聚.items(), key=lambda kv: (-kv[1][0], -kv[1][1], kv[0]))[:5]]
+            钱一 = sorted(聚.items(), key=lambda kv: (-kv[1][1], kv[0]))[0][0]
+            if 钱一 not in 件五:
+                return str(d), str(d + _dt.timedelta(days=6)), 钱一, 件五
+        d += _dt.timedelta(days=1)
+    return None
+
+
+窗 = 找分辨窗口()
+if 窗 is None:
+    ck("库里有一个窗口能让两种排法指向不同商品(没有就验不到「各排法的第一」)", False,
+       "16 个月、每一个 7 天窗口都找不到 —— **造数没造出『贵而卖得少』和『便宜而卖得多』错开的形状**,"
+       "「各排法的第一」这个功能在这个库里永远分辨不出来(空跑)")
+else:
+    _起, _止, _钱一, _件五 = 窗
+    with api.as_user(总部):
+        r_窗 = api.sales_rank(start=_起, end=_止, limit=5)
+    ck("按件数查时,金额第一不在件数前五里也照样给出"
+       f"(窗口 {_起}~{_止},这个窗口是**挑来专门分辨这件事的**)",
+       (r_窗.get("各排法的第一") or {}).get("金额", {}).get("编码") == _钱一
+       and _钱一 not in [x["编码"] for x in r_窗["榜单"]],
+       f"工具 {(r_窗.get('各排法的第一') or {}).get('金额')} / SQL 金额第一 {_钱一} / "
+       f"件数前五 {_件五}")
 ck("没算进销量的行要说出来(九月有取消单)", "取消" in (r.get("没算进销量的订单行") or {}))
 
 期望店 = sql(" AND o.shop=?", (店,))

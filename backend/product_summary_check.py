@@ -105,6 +105,8 @@ ck("定制品按她下单时真选的面料算(不是这款的可选项第一项
                  "WHERE f.family='红' AND p.kind='标品' ORDER BY s.spu LIMIT 1").fetchone()[0]
 回前 = c.execute("SELECT COUNT(*) FROM opportunity_recall").fetchone()[0]
 推前 = c.execute("SELECT COUNT(*) FROM buy_pref_recall").fetchone()[0]     # CI 从零建时造数已经推过一轮(10-10),比增量不比绝对数
+# 先记下已有的那批 —— 下面「卡片标得出购买推断」那条**只认这一轮新造的**(理由写在那儿)
+_回捞前 = {r[0] for r in c.execute("SELECT schedule_id FROM opportunity_task WHERE kind='购买偏好回捞'")}
 出 = S.购买偏好回捞(c, [红款], 今); c.commit()
 ck("推了人,而且单次不超过 5(用户 10-10:购买推断每次最多 5 人)", 0 < len(出) <= 5, str(len(出)))
 起 = (今 - dt.timedelta(days=round(24 * 365.25 / 12))).isoformat()
@@ -182,11 +184,34 @@ ck("客户亲口说过的那两种提醒不被收口", 说过的前 > 0 and c.ex
    "WHERE t.kind IN ('回捞','偏好回捞') AND s.status='有效'").fetchone()[0] == 说过的前)
 ck("还没到期的不收", S.推断提醒收口(c, 今) == [])
 # 卡片标得出「购买推断」
-派给 = c.execute("SELECT s.assignee_no, s.shop FROM opportunity_task t JOIN schedule s ON s.id=t.schedule_id "
-                 "WHERE t.kind='购买偏好回捞' AND s.assignee_no IS NOT NULL LIMIT 1").fetchone()
-卡 = AC.卡片(dict(no=派给[0], name="顾问", role="顾问", shop=派给[1]), db=db, 今天=今) if 派给 else {"卡片": []}
-ck("上新卡片里标得出「购买推断」,依据就是那句说法",
-   any(k["留言"]["来源"] == "购买推断" and "件里" in (k["留言"]["当初原话"] or "") for k in 卡["卡片"]), str(卡["卡片"][:1])[:200])
+# ⚠️ **这一条原来靠「库里恰好已经有一条日期正好等于 `今` 的推断任务」。**
+#
+# `今` 写死成 2026-10-10,而这个世界每天往前平移一天;检查自己造的那几条
+# 排在**两天后**(购买偏好回捞按回访节奏排期,实测 start_ts = 2026-10-12 09:00),
+# 所以它问「10-10 当天的卡片」时,拿到的只能是**别人留下的存量**。
+# 上面那句注释自己写着「CI 从零建时库里已经有购买推断的绑定(造数会跑上新)」——
+# 2026-10-11 随机流一挪,存量里就没有日期对得上的了,当场红。
+# > **一条「自己造了再验」的判据和一条「捡到存量才成立」的判据,在绿勾上长得一模一样。**
+#
+# 改成**只认这一轮自己造出来的那一条**,并按**那一条真正到期的日子**去取卡片 ——
+# 和「夹具不许写死会漂的东西:id 会被数据变更打断,日期会被时间打断」是同一条规矩。
+_新回捞 = [r for r in c.execute(
+    "SELECT t.schedule_id, s.assignee_no, s.shop, substr(s.start_ts,1,10) "
+    "FROM opportunity_task t JOIN schedule s ON s.id=t.schedule_id "
+    "WHERE t.kind='购买偏好回捞' AND s.assignee_no IS NOT NULL ORDER BY t.schedule_id")
+    if r[0] not in _回捞前]
+# **先验样本造出来了,再验卡片。** 少了这一条,「卡片是空的」会被当成卡片逻辑错 ——
+# 而真因是这一轮没有样本,那是另一个地方的毛病。
+ck("刚推的那批真落成了派给人的任务(不然下面那条等于没验)", bool(_新回捞),
+   f"这一轮推了 {len(出)} 人,却一条带 assignee_no 的「购买偏好回捞」都没新增")
+if _新回捞:
+    _sid, _no, _shop, _到期 = _新回捞[0]
+    卡 = AC.卡片(dict(no=_no, name="顾问", role="顾问", shop=_shop), db=db,
+                 今天=dt.date.fromisoformat(_到期))
+    ck("上新卡片里标得出「购买推断」,依据就是那句说法(按那条任务自己到期的日子取)",
+       any(k["留言"]["来源"] == "购买推断" and "件里" in (k["留言"]["当初原话"] or "")
+           for k in 卡["卡片"]),
+       f"{_sid} 到期 {_到期} / 卡片 {str(卡['卡片'][:1])[:160]}")
 
 c.close()
 shutil.rmtree(tmp, ignore_errors=True)

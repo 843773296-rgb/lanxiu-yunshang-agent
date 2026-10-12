@@ -189,6 +189,11 @@ run "订单状态 · 定制品与标品两套状态必须分开" python3 backend
 run "演示数据集 · 形状(退款对得上 / 占比 / 面料有差异 / 汇总对得上 / 不是整数)" python3 backend/dataset_check.py
 run "打版库(每个版型都出得了图 / 图上的数就是库里的数 / 页面指对版型)" python3 backend/draft_check.py
 run "重建可复现(SQL 不许 RANDOM / 造数据要设种子 / 不拿机器的今天当基准)" python3 tools/determinism_check.py
+# ⚠️ 上面那条问「同一份代码建两次,数据一样吗」;下面这条问「改一处,只有该变的变了吗」。
+#    2026-10-11 加一行员工,把 sku/customer/schedule/stock_log 等**八张表**整批挪了位
+#    (插员工那两个随机数抽的是全局流),CI 红的是两条和员工毫无关系的判据。
+#    那次的数据**完全可复现** —— 所以上面那条一个字都不会报。
+run "种子的随机流不许串台(加一个员工只许改 staff 一张表)" python3 backend/seed_rng_check.py
 run "同名字段必须同义(一个列名在几张表里存的是同一种东西)" python3 backend/samekey_check.py
 run "种下的规律 · 登记和代码对得上(种进去的不许被当成发现)" python3 fakedata/planted.py
 run "角色与登录身份 · 每个 agent 角色都得有人进得来" python3 backend/role_check.py
