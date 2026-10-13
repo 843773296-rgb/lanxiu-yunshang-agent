@@ -145,13 +145,19 @@ def a_close_without_receipt():
         c = _sq.connect(p)
         k = c.execute("SELECT id, ref_id FROM task WHERE type='财务人工任务' ORDER BY id LIMIT 1").fetchone()
         u = c.execute("SELECT no, name, role FROM staff WHERE role='财务' AND status='启用' LIMIT 1").fetchone()
-        if not (k and u):
+        m = c.execute("SELECT no, name, role FROM staff WHERE role='店长' AND status='启用' LIMIT 1").fetchone()
+        if not (k and u and m):
             c.close()
-            return "没有可攻击的样本(财务人工任务 / 在职财务)—— 没攻击成,不算守住"
+            return "没有可攻击的样本(财务人工任务 / 在职财务 / 在职店长)—— 没攻击成,不算守住"
         c.execute("UPDATE deposit SET status='退款失败' WHERE id=?", (k[1],)); c.commit(); c.close()
         me = dict(no=u[0], name=u[1], role=u[2])
         t = _ops.save_triage(k[0], "审计", "审计", "根因:审计造的", [])
-        _ops.resolve(t, "已采纳", me, 来源="边界审计")
+        # ⚠️ 复核那一步**必须走通**(10-13 两段确认起只认店长)—— 这一步要是被拒,
+        # PermissionError 会被当成「拦下了」,而真正要攻击的「凭没走完的单办结」一步都没走到
+        try:
+            _ops.resolve(t, "已采纳", dict(no=m[0], name=m[1], role=m[2]), 来源="边界审计")
+        except PermissionError as e:
+            return f"**攻击没走到办结那一步**:复核就被拒了({str(e)[:60]})—— 没攻击成,不算守住"
         r = _ops.办结(t, k[1], me, 来源="边界审计")
         if r.get("ok"):
             return f"没退成的定金 {k[1]} 被当成回执,triage#{t} 办结了 —— 门没守住"
@@ -657,7 +663,8 @@ STRUCT = [
  ("研判销账只有对应角色能做,而且留痕", "backend/ops.py 能销吗 / resolve;backend/server.py /api/ops-resolve",
   a_resolve_wrong_role, "在库副本上拿顾问身份去销一条财务人工任务",
   "接口层身份只从登录态取(不读请求体里的 handler);`resolve` 里按类型查角色,**所有调用方都过这一道**,"
-  "成功 / 被拒都写 op_log。⚠️ 两段确认的**顺序**还管不住(只管「是这几种角色」)—— 那一半仍是约定都谈不上,是没做"),
+  "成功 / 被拒都写 op_log。两段确认(10-13 起):退款 / 合并的复核只认店长、办结只认财务 / 总部运营,"
+  "所以钱出门必经两个人(第二段那一刀在「已办结只认真走完的回执」里)"),
  ("研判已办结只认真走完的回执", "backend/ops.py 回执行不行 / 办结;backend/server.py /api/ops-close",
   a_close_without_receipt, "在库副本上拿一笔没退成的定金当回执去办结财务任务",
   "回执要查得到那张单、属于这件事、状态真走完(定金已退 / 维保单已完成 / 差评按处理方式认同一张订单的单);"

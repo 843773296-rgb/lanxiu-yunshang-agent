@@ -504,27 +504,39 @@ def get_triage(triage_id):
 # ⚠️ 2026-10-12 之前**谁都能销账**:`/api/ops-resolve` 不查登录、`handler` 读请求体(默认「值班同学」),
 # 而 `resolve` 不写 op_log —— 谁都能销、署名随便填、销完查不出是谁。用户拍「修,排在页面两步之前」。
 # 门分两层:**会话 → 身份**在接口那层(造数脚本没有会话);**身份 → 能不能销**在这里(所有调用方都过)。
-# ⚠️ 两段确认(退款:店长先定该不该退 → 财务执行;合并:店长认人 → 总部运营执行)的**顺序这里管不住**,
-# 只管「是这几种角色才能销」—— 两段流程还没做,别把这张表读成两段确认已经落地。
-# ⚠️「已升级」用同一张表(能办结的才能升级)是**开发按同一张表推的,业务没拍过**。
+# ── 两段确认(业务 10-11「钱要出门就要两个人」;**顺序** 用户 2026-10-13 拍「复核 = 第一段、办结 = 第二段」)──
+# 原来这张表是「店长或财务都能销」—— 两个角色谁都能一个人从头点到尾,「两个人」只写在规矩里。
+# 现在借「已办结」(10-13 同日做的)把两段分开:**复核**(已采纳 / 已改判 / 已升级)只认第一段的角色,
+# **办结**(凭回执)只认第二段的角色 —— 两段角色不同,所以退款必然经两个人的手。
+# 代价用户拍板时知道:店里只有一个人在时,退款办不完,要等另一个人。
+两段 = {
+    "财务人工任务": {"复核": ("店长",), "办结": ("财务",)},        # 店长定该不该退 → 财务执行退款
+    "客户合并确认": {"复核": ("店长",), "办结": ("总部运营",)},    # 店长认人 → 总部运营执行合并(执行合并还没做)
+}
+# 一段就完的类型:复核和办结是同一拨人
 可销账角色 = {
-    "财务人工任务": ("店长", "财务"),       # 退款异常两段:店长定该不该退 → 财务执行
-    "客户合并确认": ("店长", "总部运营"),   # 两段:店长认人 → 总部运营执行合并
     "售后判责":     ("售后",),              # 10-11:新建「售后」角色负责确认
 }
+# ⚠️「已升级」算复核那一段(第一段的人决定往上交)—— **开发按同一张表推的,业务没拍过**。
 
 
-def 能销吗(task_type, role):
-    """→ (能不能, 为什么)。评价差评跟「关差评」用同一份名单(rating_write.能关差评的角色),不另抄。"""
+def 能销吗(task_type, role, 段="复核"):
+    """→ (能不能, 为什么)。段:复核 / 办结。
+    评价差评跟「关差评」用同一份名单(rating_write.能关差评的角色),不另抄;两段都是这拨人。"""
+    if 段 not in ("复核", "办结"):
+        return False, f"段只有 复核 / 办结,给的是「{段}」"
     if task_type == "评价差评":
         import rating_write as _rw
         许 = tuple(_rw.能关差评的角色)
+    elif task_type in 两段:
+        许 = 两段[task_type][段]
     else:
         许 = 可销账角色.get(task_type)
     if not 许:
-        return False, f"「{task_type}」没登记谁能销账 —— 不猜,先去 ops.可销账角色 登记"
+        return False, f"「{task_type}」没登记谁能销账 —— 不猜,先去 ops.两段 / ops.可销账角色 登记"
     if role not in 许:
-        return False, f"「{task_type}」只能由 {' / '.join(许)} 销账,你是「{role or '(没有角色)'}」"
+        头 = f"「{task_type}」是两段确认,{段}这一段" if task_type in 两段 else f"「{task_type}」"
+        return False, f"{头}只能由 {' / '.join(许)} 做,你是「{role or '(没有角色)'}」"
     return True, ""
 
 
@@ -613,7 +625,7 @@ def 回执行不行(c, 任务, 单号):
 def 办结(triage_id, 单号, me, 来源="页面"):
     """已采纳 / 已改判的研判,凭回执单号标成已办结。**不改复核结论**,只记回执。
 
-    角色和销账同一张表(`能销吗`);成功 / 被拒都写 op_log(machine='triage')。
+    角色按**办结那一段**查(`能销吗(…, 段="办结")`:退款只认财务、合并只认总部运营);成功 / 被拒都写 op_log。
     已升级的不在这一层办(交上去了);待复核的先复核。"""
     from oplog import log_op as _log
     me = me or {}
@@ -629,7 +641,7 @@ def 办结(triage_id, 单号, me, 来源="页面"):
         _记(False, "NO_TRIAGE", "没有这条研判")
         raise ValueError(f"没有 triage#{triage_id}")
     任务 = (_rows("SELECT type, ref_id FROM task WHERE id=?", t["task_id"]) or [None])[0]
-    ok, 为什么 = 能销吗(任务["type"] if 任务 else None, me.get("role"))
+    ok, 为什么 = 能销吗(任务["type"] if 任务 else None, me.get("role"), 段="办结")
     if not ok:
         _记(False, "ROLE", 为什么)
         raise PermissionError(为什么)
@@ -682,7 +694,7 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
         _记(False, "NO_TRIAGE", "没有这条研判")
         raise ValueError(f"没有 triage#{triage_id}")
     _任务 = _rows("SELECT type FROM task WHERE id=?", t["task_id"])
-    ok, 为什么 = 能销吗(_任务[0]["type"] if _任务 else None, me.get("role"))
+    ok, 为什么 = 能销吗(_任务[0]["type"] if _任务 else None, me.get("role"), 段="复核")
     if not ok:
         _记(False, "ROLE", 为什么)
         raise PermissionError(为什么)

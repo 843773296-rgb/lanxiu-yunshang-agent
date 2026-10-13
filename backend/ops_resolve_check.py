@@ -7,8 +7,9 @@
 
 门分两层,两层都要验:
   · 接口层:身份只从登录态取(`_me(self)`),没登录 401,请求体里的 handler 不读
-  · `ops.resolve`:没身份拒、角色不在 `可销账角色` 里拒;成功 / 被拒**都写 op_log**
-⚠️ 两段确认的**顺序**这里不验 —— 还没做,`ops.可销账角色` 的注释写着。
+  · `ops.resolve`:没身份拒、角色不对拒;成功 / 被拒**都写 op_log**
+  · **两段确认**(用户 2026-10-13 拍):复核只认第一段(退款 / 合并都是店长),办结只认第二段 ——
+    第二段那半在 `ops_close_check` 验;这里验「第二段的人不能来做第一段」
 """
 import os, re, shutil, sqlite3, sys, tempfile
 
@@ -29,6 +30,7 @@ def ck(名, ok, 附=""):
 
 咬合 = [
     ("能销吗 不查角色", "拿错角色销账 → 拒"),
+    ("两段不分:复核那一段也认第二段的角色", "两段确认:财务不能做复核那一段(复核只认店长)"),
     ("resolve 成功不写 op_log", "对的角色销账 → 成功,op_log 查得到是谁"),
     ("接口层改回读请求体里的 handler", "接口层:身份只从登录态取"),
     ("销账上报不看是不是本库", "副本上的销账不往真投递箱里排"),
@@ -89,12 +91,14 @@ if 财 and 判 and 顾问 and 店长 and 财务 and 售后:
     ck("店长销售后判责 → 拒(10-11:只归售后)", 拒了吗(lambda: ops.resolve(t2, "已采纳", 店长)))
     ck("被拒之后研判状态没变(还是待复核)",
        c.execute("SELECT status FROM triage WHERE id=?", (t1,)).fetchone()[0] == "待复核")
-    r = ops.resolve(t1, "已采纳", 财务, note="检查")
+    ck("两段确认:财务不能做复核那一段(复核只认店长)", 拒了吗(lambda: ops.resolve(t1, "已采纳", 财务))
+       and 日志(t1)["code"] == "ROLE")
+    r = ops.resolve(t1, "已采纳", 店长, note="检查")
     lg = 日志(t1)
     ck("对的角色销账 → 成功,op_log 查得到是谁", r.get("decision") == "已采纳" and lg["allowed"] == 1
-       and lg["code"] == "RESOLVE" and 财务["no"] in lg["actor"], dict(lg) if lg else None)
+       and lg["code"] == "RESOLVE" and 店长["no"] in lg["actor"], dict(lg) if lg else None)
     ck("署名就是登录的那个人(不是「值班同学」)",
-       财务["no"] in (c.execute("SELECT handler FROM triage WHERE id=?", (t1,)).fetchone()[0] or ""))
+       店长["no"] in (c.execute("SELECT handler FROM triage WHERE id=?", (t1,)).fetchone()[0] or ""))
     ck("售后销售后判责 → 成功", ops.resolve(t2, "已采纳", 售后).get("decision") == "已采纳")
     import rating_write as RW
     ck("评价差评跟「关差评」用同一份名单(不另抄)",

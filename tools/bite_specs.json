@@ -7453,5 +7453,41 @@
    }
   ],
   "预期红": "开关默认关:不带 开差评 → 照旧当场说「默认关闭」"
+ },
+ {
+  "script": "backend/ops_resolve_check.py",
+  "改坏": "两段不分:复核那一段也认第二段的角色",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    elif task_type in 两段:\n        许 = 两段[task_type][段]",
+    "new": "    elif task_type in 两段:\n        许 = 两段[task_type][\"复核\"] + 两段[task_type][\"办结\"]"
+   }
+  ],
+  "预期红": "两段确认:财务不能做复核那一段(复核只认店长)"
+ },
+ {
+  "script": "backend/ops_close_check.py",
+  "改坏": "两段不分:办结那一段也认第一段的角色",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    elif task_type in 两段:\n        许 = 两段[task_type][段]",
+    "new": "    elif task_type in 两段:\n        许 = 两段[task_type][\"复核\"] + 两段[task_type][\"办结\"]"
+   }
+  ],
+  "预期红": "两段确认:店长不能做办结那一段(退款只认财务执行)"
+ },
+ {
+  "script": "backend/supervise_check.py",
+  "改坏": "trace_id 不进工具服务(mcp_config 不传 trace)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹),",
+    "new": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=None, 被判包裹=被判包裹),"
+   }
+  ],
+  "预期红": "sdk:这一轮的 trace_id 先定,进工具子进程的 env,树用同一个"
  }
 ]

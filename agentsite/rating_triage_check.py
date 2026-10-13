@@ -127,6 +127,9 @@ import sdk
 无 = sdk.mcp_config({"no": "X", "role": "店长"}, None)
 ck("被判包裹传进了每一个工具服务的 env", 有 and all(v["env"].get("LANXIU_JUDGING_PKG") == "P-检查" for v in 有.values()),
    {k: v["env"].get("LANXIU_JUDGING_PKG") for k, v in 有.items()})
+_带 = sdk.mcp_config({"no": "X", "role": "店长"}, None, trace="T-检查")
+ck("trace_id 真的进了每一个工具服务的 env(supervise_check 只能验结构,行为在这儿验)",
+   _带 and all(v["env"].get("LANXIU_TRACE") == "T-检查" for v in _带.values()))
 ck("不给被判包裹 → 哪个服务的 env 里都没有(聊天、复核不遮)",
    all("LANXIU_JUDGING_PKG" not in v["env"] for v in 无.values()))
 

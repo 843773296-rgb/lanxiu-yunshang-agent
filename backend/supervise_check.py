@@ -136,10 +136,35 @@ ck("同步:报告的打回分派到报告那边", 结1[0] == "已标记", str(�
 ck("同步:认不出的外部id → 执行失败(不静默当成功)", 结2[0] == "执行失败", str(结2))
 
 # ── trace_id 真的走通了 ──
-sdk_src = open(os.path.join(ROOT, "agentsite", "sdk.py"), encoding="utf-8").read()
+# ⚠️ 原来这条查的是**源码里有没有那一整行字符串** —— 10-13 给那行加了一个入参(被判包裹),它当场红、CI 红;
+# 而真正的风险(trace_id 没串起来)只要那几个字还在,它照样漏。改成**按语法树**认结构:
+# run 里先定的 _tid,同时进了 mcp_config(trace=) 和树(tid=);mcp_config 把 trace 放进 env 的 LANXIU_TRACE。
+# 「env 里真拿到这个号」那半是行为,在 agentsite/rating_triage_check.py 真调 mcp_config 验(这里没有 SDK 环境)。
+import ast as _ast
+_树 = _ast.parse(open(os.path.join(ROOT, "agentsite", "sdk.py"), encoding="utf-8").read())
+_函 = {f.name: f for f in _ast.walk(_树) if isinstance(f, (_ast.FunctionDef, _ast.AsyncFunctionDef))}
+
+
+def _调用(f, 名):
+    return [x for x in _ast.walk(f) if isinstance(x, _ast.Call)
+            and getattr(x.func, "id", getattr(x.func, "attr", None)) == 名]
+
+
+def _关键字是(call, kw, 变量):
+    return any(k.arg == kw and isinstance(k.value, _ast.Name) and k.value.id == 变量 for k in call.keywords)
+
+
+_run = _函.get("run")
+_先定 = _run is not None and any(isinstance(x, _ast.Assign) and any(getattr(t, "id", None) == "_tid" for t in x.targets)
+                               for x in _ast.walk(_run))
+_进配置 = _run is not None and any(_关键字是(x, "trace", "_tid") for x in _调用(_run, "mcp_config"))
+_进树 = _run is not None and any(_关键字是(x, "tid", "_tid") for x in _ast.walk(_run) if isinstance(x, _ast.Call))
+_mc = _函.get("mcp_config")
+_放env = _mc is not None and any(isinstance(d, _ast.Dict) and any(
+    isinstance(k, _ast.Constant) and k.value == "LANXIU_TRACE" and isinstance(v, _ast.Name) and v.id == "trace"
+    for k, v in zip(d.keys, d.values)) for d in _ast.walk(_mc))
 ck("sdk:这一轮的 trace_id 先定,进工具子进程的 env,树用同一个",
-   "mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid)" in sdk_src and "tid=_tid)" in sdk_src
-   and '"LANXIU_TRACE": trace' in sdk_src)
+   _先定 and _进配置 and _进树 and _放env, dict(先定=_先定, 进配置=_进配置, 进树=_进树, 放env=_放env))
 v1_src = open(os.path.join(ROOT, "agent", "v1.py"), encoding="utf-8").read()
 ck("调模型入口把 extra(调用号)交给记录仪", "extra=extra,**kw" in v1_src)
 
