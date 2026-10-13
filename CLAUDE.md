@@ -162,7 +162,7 @@ LANXIU_PROVIDER=claude   # 走 Claude(CLI 登录态,月租,不额外花钱)
      规则写进 CLAUDE.md → 文档匹配自己;挪进 `.secretscan` → 规则文件匹配自己;
      在脚本注释里举例 → 脚本匹配自己。要举例就**描述**它(「GitHub 令牌前缀」),别照抄。
      每次的修法都别再加一条排除 —— 那是打地鼠。
-   - 远程:`https://github.com/843773296-rgb/lanxiu-yunshang-agent`(**私有**。改公开不可逆,必须先问)
+   - 远程:`https://github.com/843773296-rgb/lanxiu-yunshang-agent`(**已公开** —— 用户自己改的,2026-10-13 用 gh 核实。**每次 push 都是对全网发布**,上面那步扫密钥因此是硬闸)
 2. **每做完一个功能就更新文档并发飞书,不攒着。**
    ```bash
    python3 tools/feishu_publish.py <文件.md>
