@@ -118,14 +118,16 @@ def a_resolve_wrong_role():
     _ops.DB = _ol.DB = p
     try:
         c = _sq.connect(p)
-        t = c.execute("SELECT tr.id FROM triage tr JOIN task k ON k.id=tr.task_id "
-                      "WHERE k.type='财务人工任务' AND tr.status='待复核' LIMIT 1").fetchone()
+        # 要攻击的那条研判**自己造**(走正门 save_triage,不碰模型)—— CI 上没有模型凭据,
+        # 造样本那一步跳过,triage 表恒为空;靠碰上的样本,这一刀在 CI 上永远砍不下去(数据工厂 10-13 查出)
+        k = c.execute("SELECT id FROM task WHERE type='财务人工任务' ORDER BY id LIMIT 1").fetchone()
         u = c.execute("SELECT no, name, role FROM staff WHERE role='顾问' AND status='启用' LIMIT 1").fetchone()
         c.close()
-        if not (t and u):
-            return "没有可攻击的样本(待复核的财务任务 / 在职顾问)—— 没攻击成,不算守住"
-        _ops.resolve(t[0], "已采纳", dict(no=u[0], name=u[1], role=u[2]), 来源="边界审计")
-        return f"顾问 {u[0]} 销掉了财务任务 triage#{t[0]} —— 门没守住"
+        if not (k and u):
+            return "没有可攻击的样本(财务人工任务 / 在职顾问)—— 没攻击成,不算守住"
+        t = _ops.save_triage(k[0], "审计", "审计", "根因:审计造的\n建议动作:审计造的\n证据:无", [])
+        _ops.resolve(t, "已采纳", dict(no=u[0], name=u[1], role=u[2]), 来源="边界审计")
+        return f"顾问 {u[0]} 销掉了财务任务 triage#{t} —— 门没守住"
     finally:
         _ops.DB, _ol.DB = 原, 原日志
         _sh.rmtree(d, ignore_errors=True)

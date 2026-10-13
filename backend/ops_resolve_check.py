@@ -47,8 +47,17 @@ _箱前 = open(FB.箱, encoding="utf-8").read() if os.path.exists(FB.箱) else "
 
 
 def 一条(类型):
-    return c.execute("SELECT tr.id FROM triage tr JOIN task t ON t.id=tr.task_id "
-                     "WHERE t.type=? AND tr.status='待复核' ORDER BY tr.id LIMIT 1", (类型,)).fetchone()
+    """**自己造**要攻击的那条研判,不用库里碰上的。
+
+    2026-10-13 数据工厂查出:CI 上没有模型凭据,`seed_triage_samples` 那一步不造样本、也不算失败
+    → CI 上 triage 表恒为空 → 这条检查本地绿、CI 必红(「空集合上什么都成立」报得对,但永远过不去)。
+    所以不管库里有没有现成的,一律在副本上走正门 `ops.save_triage` 造一条 —— 本地和 CI 走同一条路。
+    `save_triage` 只吃文本和轨迹,不碰模型。"""
+    t = c.execute("SELECT id FROM task WHERE type=? ORDER BY id LIMIT 1", (类型,)).fetchone()
+    if not t:
+        return None
+    tid = ops.save_triage(t["id"], "检查", "检查", "根因:检查造的\n建议动作:检查造的\n证据:无", [])
+    return {"id": tid}
 
 
 def 员工(角色):
@@ -69,7 +78,7 @@ def 拒了吗(f):
 
 
 财, 判 = 一条("财务人工任务"), 一条("售后判责")
-ck("有待复核的财务任务和售后判责可攻击(空集合上什么都成立)", bool(财 and 判), (财, 判))
+ck("造得出待复核的财务任务和售后判责来攻击(库里有这两类任务;空集合上什么都成立)", bool(财 and 判), (财, 判))
 顾问, 店长, 财务, 售后 = 员工("顾问"), 员工("店长"), 员工("财务"), 员工("售后")
 if 财 and 判 and 顾问 and 店长 and 财务 and 售后:
     t1, t2 = 财["id"], 判["id"]
