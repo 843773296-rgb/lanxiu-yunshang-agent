@@ -409,6 +409,7 @@ run "毛利口径 · 缺一项就算不出、毛利率和覆盖率绑着报(24 �
 run "评价写口 · 闸读签收记录不读订单状态、差评自动进 task 清单(库副本)" python3 backend/rating_write_check.py
 run "评价造数 · 门店差距/趋势/不静默夹逼(合成夹具自证)" python3 tools/backfill_rating.py --selftest
 run "评价数据 · 没签收就评/差评没进清单/两处状态打架(9 条判据在合成夹具上自证)" python3 backend/rating_check.py
+run "差评造数的产物 = 库里那批 · 库副本上真重跑一遍再逐条比(改了造数脚本而库没跟上 → 红)" python3 backend/rating_rebuild_check.py
 run "判读回流上报 · 词表归一/trace 挂不上要说出来/外部trace 别现编(18 条)" python3 agent/feedback_report_check.py
 run "用量上报 · 供应商拼法/是mock不默认/写不进去也不抛(15 条)" python3 agent/usage_report_check.py
 run "评价概况(看的那一头)· 口径承诺的两个切分工具真给了、趋势不拿残月当起点(14 条)" python3 backend/rating_view_check.py
