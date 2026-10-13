@@ -7369,5 +7369,41 @@
    }
   ],
   "预期红": "寄到家而门槛没配 → 不开单(不按 0 开,不静默免邮)"
+ },
+ {
+  "script": "backend/ops_close_check.py",
+  "改坏": "回执不查单据状态(没退成的定金也认)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "        return (r[0] == \"已退\", 要, \"\" if r[0] == \"已退\" else f\"定金 {单号} 现在是「{r[0]}」,还没退成\")",
+    "new": "        return (True, 要, \"\")"
+   }
+  ],
+  "预期红": "定金还没退成 → 办结不了"
+ },
+ {
+  "script": "backend/ops_close_check.py",
+  "改坏": "差评回执不查是不是同一张订单",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    if str(r[0]) != str(评[0]):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "差评:别的订单的售后单 → 办结不了"
+ },
+ {
+  "script": "backend/ops_close_check.py",
+  "改坏": "办结时把复核结论改写成「已办结」",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "        c.execute(\"UPDATE triage SET receipt=?, receipt_kind=? WHERE id=?\", (单号.strip(), 类, triage_id))",
+    "new": "        c.execute(\"UPDATE triage SET receipt=?, receipt_kind=?, status='已办结' WHERE id=?\", (单号.strip(), 类, triage_id))"
+   }
+  ],
+  "预期红": "办结后复核结论不变(还是已采纳),回执另记"
  }
 ]

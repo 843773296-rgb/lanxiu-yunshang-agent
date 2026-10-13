@@ -102,7 +102,12 @@ CREATE TABLE triage(
   status TEXT,                 -- 待复核 / 已采纳 / 已改判 / 已升级
   human_root_cause TEXT, human_action TEXT, human_note TEXT,
   handler TEXT, handled_at TEXT,
-  into_eval INT DEFAULT 0      -- 人工改判后是否已回流评测集
+  into_eval INT DEFAULT 0,     -- 人工改判后是否已回流评测集
+  -- **已办结 = 研判结论之外、凭一张系统单据证明「现实里真办完了」**(用户 2026-10-13 拍:按类型各认一种单号)。
+  -- 不覆盖 status:status 是**复核结论**(采纳 / 改判 / 升级),办没办完是另一件事 ——
+  -- 覆盖掉的话「它当初被改判过」就查不到了。时间不存这儿,op_log 里有(这一列不含日期,世界平移不用登记)。
+  receipt TEXT,                -- 回执单号(定金号 / 维保单号 / 售后单号)
+  receipt_kind TEXT            -- 回执是哪种单
 );
 CREATE TABLE shop(code TEXT PRIMARY KEY, name TEXT, status TEXT, manager TEXT,
   phone TEXT, province TEXT, addr TEXT, updated TEXT);

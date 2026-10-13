@@ -3295,6 +3295,18 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(error=str(e)[:200]), 403)
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
+        if p=="/api/ops-close":
+            # 已办结:凭回执单号(用户 10-13 拍「按类型各认一种系统单号」)。身份同销账,只从登录态取
+            import ops as _ops
+            u = _me(self)
+            if not u:
+                return self._send(dict(error="没登录 —— 办结要登录,署名用登录的人"), 401)
+            try:
+                return self._send(_ops.办结(body.get("triage_id"), body.get("receipt"), u, 来源="页面"))
+            except PermissionError as e:
+                return self._send(dict(error=str(e)[:200]), 403)
+            except Exception as e:
+                return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
         if p=="/api/fit":
             return self._send(backend.kb_fit(body.get("customer"),body.get("pattern")))
         if p=="/api/scheme-lead":

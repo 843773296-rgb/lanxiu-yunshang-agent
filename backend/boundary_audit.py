@@ -133,6 +133,34 @@ def a_resolve_wrong_role():
         _sh.rmtree(d, ignore_errors=True)
 
 
+def a_close_without_receipt():
+    """研判办结拿一张没走完的单当回执 —— 库副本上,财务对一笔没退成的定金办结,应该被拒。
+    用户 2026-10-13 拍「已办结要凭系统单号」:凭空点出来的已办结和真办完的在队列上长得一模一样。"""
+    import ops as _ops, oplog as _ol, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq
+    原, 原日志 = _ops.DB, _ol.DB
+    d = _tf.mkdtemp(prefix="ba-close-"); p = _os.path.join(d, "lanxiu.db")
+    _sh.copy(原, p)
+    _ops.DB = _ol.DB = p
+    try:
+        c = _sq.connect(p)
+        k = c.execute("SELECT id, ref_id FROM task WHERE type='财务人工任务' ORDER BY id LIMIT 1").fetchone()
+        u = c.execute("SELECT no, name, role FROM staff WHERE role='财务' AND status='启用' LIMIT 1").fetchone()
+        if not (k and u):
+            c.close()
+            return "没有可攻击的样本(财务人工任务 / 在职财务)—— 没攻击成,不算守住"
+        c.execute("UPDATE deposit SET status='退款失败' WHERE id=?", (k[1],)); c.commit(); c.close()
+        me = dict(no=u[0], name=u[1], role=u[2])
+        t = _ops.save_triage(k[0], "审计", "审计", "根因:审计造的", [])
+        _ops.resolve(t, "已采纳", me, 来源="边界审计")
+        r = _ops.办结(t, k[1], me, 来源="边界审计")
+        if r.get("ok"):
+            return f"没退成的定金 {k[1]} 被当成回执,triage#{t} 办结了 —— 门没守住"
+        raise PermissionError(r.get("reason", "")[:90])     # 被拒 = 守住(_must_fail 的约定:抛了才算拦下)
+    finally:
+        _ops.DB, _ol.DB = 原, 原日志
+        _sh.rmtree(d, ignore_errors=True)
+
+
 class 不许留痕:
     """攻击块里对 `product` 表的任何改动,出块时**一律还原**。
 
@@ -630,6 +658,10 @@ STRUCT = [
   a_resolve_wrong_role, "在库副本上拿顾问身份去销一条财务人工任务",
   "接口层身份只从登录态取(不读请求体里的 handler);`resolve` 里按类型查角色,**所有调用方都过这一道**,"
   "成功 / 被拒都写 op_log。⚠️ 两段确认的**顺序**还管不住(只管「是这几种角色」)—— 那一半仍是约定都谈不上,是没做"),
+ ("研判已办结只认真走完的回执", "backend/ops.py 回执行不行 / 办结;backend/server.py /api/ops-close",
+  a_close_without_receipt, "在库副本上拿一笔没退成的定金当回执去办结财务任务",
+  "回执要查得到那张单、属于这件事、状态真走完(定金已退 / 维保单已完成 / 差评按处理方式认同一张订单的单);"
+  "不改复核结论,另记回执;成功被拒都写 op_log。⚠️ 客户合并现在进不了已办结 —— 系统里没有执行合并"),
  ("一轮只写一次", "agentsite/guards.py pre_tool_verdict 写工具的闸",
   a_double_write, "同一轮里连着调两次 assign_task",
   "第二次被 PreToolUse 拦下 —— 提示词里那条「一次只做一件」只是祈使句,"

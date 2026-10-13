@@ -208,6 +208,9 @@ def queue(state=None):
             ai_root_cause=tr["ai_root_cause"] if tr else None,
             ai_confidence=tr["ai_confidence"] if tr else None,
             cost=tr["cost"] if tr else None,
+            # 已办结 = 有回执(用户 10-13 拍)。**和「已销账」是两层**:销账是复核完了,办结是现实里办完了
+            已办结=bool(tr and tr.get("receipt")),
+            回执=(f"{tr.get('receipt_kind')} {tr['receipt']}" if tr and tr.get("receipt") else None),
         ))
     if state == "待办":  out = [x for x in out if not x["done"]]
     elif state == "未研判": out = [x for x in out if x["state"] == "未研判"]
@@ -488,6 +491,132 @@ def 能销吗(task_type, role):
     if role not in 许:
         return False, f"「{task_type}」只能由 {' / '.join(许)} 销账,你是「{role or '(没有角色)'}」"
     return True, ""
+
+
+# ── 已办结:凭业务回执(用户 2026-10-13 拍「按类型各认一种系统单号」,对照表同日核过)──────────
+#
+# 复核结论(已采纳 / 已改判)说的是「AI 判得对不对、该怎么办」;**办没办完是另一件事**。
+# 只认员工点一下的话,「已办结」和「已采纳」没区别 —— 嘴上说办了,查不到证据。
+# 所以回执必须是**系统里查得到、而且状态真走完了**的那张单,不收照片、不收顾客口头确认
+# (照片系统判不了拍的是什么;顾客不回就永远办不结 —— 用户当天在三案里选的)。
+回执对照 = {
+    "财务人工任务": "定金单",     # 工单挂的那笔定金,状态「已退」
+    "售后判责":     "维保单",     # 工单挂的那张维保单,状态「已完成」
+    "评价差评":     "按处理方式",  # 见下一张表
+    "客户合并确认": None,         # ⚠️ 系统里**没有「执行合并」这个动作** —— 判了该合并也没地方真去合。
+                                  # 用户 10-13 拍「先空着」,执行合并另行排期
+}
+# 差评按**当初登记的处理方式**认单。⚠️ 这张表必须盖住 `rating.处理方式` 的每一项 ——
+# 枚举里新加一档而这里没登记,`回执对照没漏()` 会报出来:**新档该认什么单是要人定的,不许默认**。
+差评回执 = {
+    "部分退款": "售后单", "全额退款": "售后单",   # 售后退款单(仅退款 / 退货退款),已完成
+    "送保养":   "维保单", "免次改衣": "维保单",   # 「免次改衣也认维保单」开发推的,用户 10-13 核过表
+    "免运费":   None,     "只回访":   None,       # 没有对应单据 → 停在已采纳(用户拍板时接受的代价)
+}
+
+
+def 回执对照没漏():
+    """→ 枚举里有、对照表里没登记的处理方式(应为空)。"""
+    import rating as _R
+    return [x for x in _R.处理方式 if x not in 差评回执]
+
+
+def _确保回执列(c):
+    有 = {r[1] for r in c.execute("PRAGMA table_info(triage)")}
+    for col in ("receipt", "receipt_kind"):
+        if col not in 有:
+            c.execute(f"ALTER TABLE triage ADD COLUMN {col} TEXT")
+
+
+def 回执行不行(c, 任务, 单号):
+    """→ (行不行, 回执类型, 为什么)。只读。单号要**属于这件事**,而且那张单**真的走完了**。"""
+    类型, ref = 任务["type"], 任务["ref_id"]
+    单号 = (单号 or "").strip()
+    if 类型 not in 回执对照:
+        return False, None, f"「{类型}」没登记认什么回执 —— 不猜,先去 ops.回执对照 登记"
+    要 = 回执对照[类型]
+    if 要 is None:
+        return False, None, f"「{类型}」现在进不了已办结:系统里还没有能证明它办完的单据(执行合并还没做)"
+    if not 单号:
+        return False, 要, "没给回执单号"
+    if 要 == "定金单":
+        if 单号 != ref:
+            return False, 要, f"这件事挂的是定金 {ref},回执给的是 {单号}"
+        r = c.execute("SELECT status FROM deposit WHERE id=?", (单号,)).fetchone()
+        if not r: return False, 要, f"没有定金单 {单号}"
+        return (r[0] == "已退", 要, "" if r[0] == "已退" else f"定金 {单号} 现在是「{r[0]}」,还没退成")
+    if 要 == "维保单" and 类型 == "售后判责":
+        if 单号 != ref:
+            return False, 要, f"这件事挂的是维保单 {ref},回执给的是 {单号}"
+        r = c.execute("SELECT status FROM maintain WHERE id=?", (单号,)).fetchone()
+        if not r: return False, 要, f"没有维保单 {单号}"
+        return (r[0] == "已完成", 要, "" if r[0] == "已完成" else f"维保单 {单号} 现在是「{r[0]}」,还没完成")
+    # 评价差评:ref 是包裹号;按当初登记的处理方式认单,而且那张单必须是**同一张订单**的
+    评 = c.execute("SELECT order_id, handle_way FROM rating WHERE pkg_id=?", (ref,)).fetchone()
+    if not 评: return False, None, f"包裹 {ref} 没有评价"
+    方式 = 评[1]
+    if not 方式:
+        return False, None, "这条差评还没登记处理方式 —— 先关差评、写清怎么处理的"
+    if 方式 not in 差评回执:
+        return False, None, f"处理方式「{方式}」没登记认什么回执 —— 不猜"
+    要 = 差评回执[方式]
+    if 要 is None:
+        return False, None, f"处理方式是「{方式}」,没有对应单据 —— 停在已采纳"
+    if 要 == "售后单":
+        r = c.execute("SELECT order_id, kind, status FROM aftersale WHERE id=?", (单号,)).fetchone()
+        if not r: return False, 要, f"没有售后单 {单号}"
+        if r[1] not in ("仅退款", "退货退款"):
+            return False, 要, f"售后单 {单号} 是「{r[1]}」,不是退款单"
+    else:
+        r = c.execute("SELECT order_id, '维保', status FROM maintain WHERE id=?", (单号,)).fetchone()
+        if not r: return False, 要, f"没有维保单 {单号}"
+    if str(r[0]) != str(评[0]):
+        return False, 要, f"{要} {单号} 是订单 {r[0]} 的,这条差评是订单 {评[0]} 的"
+    return (r[2] == "已完成", 要, "" if r[2] == "已完成" else f"{要} {单号} 现在是「{r[2]}」,还没完成")
+
+
+def 办结(triage_id, 单号, me, 来源="页面"):
+    """已采纳 / 已改判的研判,凭回执单号标成已办结。**不改复核结论**,只记回执。
+
+    角色和销账同一张表(`能销吗`);成功 / 被拒都写 op_log(machine='triage')。
+    已升级的不在这一层办(交上去了);待复核的先复核。"""
+    from oplog import log_op as _log
+    me = me or {}
+    谁 = f"{me.get('name') or '?'}({me.get('no') or '?'})"
+    def _记(ok, code, 话):
+        _log(谁, "triage", f"triage#{triage_id}", "—", "已办结" if ok else "—", ok, code,
+             f"[{来源}] {话}"[:200], {"role": me.get("role"), "no": me.get("no")})
+    if not (me.get("no") and me.get("role")):
+        _记(False, "NO_IDENTITY", "没有办结人身份(工号 + 角色)")
+        raise PermissionError("没有办结人身份 —— 要登录")
+    t = get_triage(triage_id)
+    if not t:
+        _记(False, "NO_TRIAGE", "没有这条研判")
+        raise ValueError(f"没有 triage#{triage_id}")
+    任务 = (_rows("SELECT type, ref_id FROM task WHERE id=?", t["task_id"]) or [None])[0]
+    ok, 为什么 = 能销吗(任务["type"] if 任务 else None, me.get("role"))
+    if not ok:
+        _记(False, "ROLE", 为什么)
+        raise PermissionError(为什么)
+    if t["status"] not in ("已采纳", "已改判"):
+        话 = f"这条研判是「{t['status']}」—— 只有已采纳 / 已改判的才能办结" + \
+             ("(先复核)" if t["status"] == "待复核" else "")
+        _记(False, "BAD_STATE", 话)
+        return dict(ok=False, code="BAD_STATE", reason=话)
+    if t.get("receipt"):
+        话 = f"已经办结过了(回执 {t.get('receipt_kind')} {t['receipt']})"
+        _记(False, "ALREADY", 话)
+        return dict(ok=False, code="ALREADY", reason=话)
+    with _c() as c:
+        _确保回执列(c)      # 老库没有这两列(新建的库 seed 里就有);补列不改任何已有数据
+        行, 类, 话 = 回执行不行(c, 任务, 单号)
+        if not 行:
+            _记(False, "NO_RECEIPT", 话)
+            return dict(ok=False, code="NO_RECEIPT", reason=话, 回执类型=类)
+        c.execute("UPDATE triage SET receipt=?, receipt_kind=? WHERE id=?", (单号.strip(), 类, triage_id))
+    _记(True, "CLOSE", f"凭{类} {单号.strip()} 办结")
+    return dict(ok=True, code="CLOSE", 回执类型=类, 回执=单号.strip(),
+                reason=f"已办结:凭{类} {单号.strip()}。复核结论仍是「{t['status']}」")
 
 
 def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, 来源="页面"):
