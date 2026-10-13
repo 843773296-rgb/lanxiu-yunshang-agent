@@ -411,6 +411,18 @@ def 跑(说=print):
                           (code, spu, 基价, f"GG{起规格 + 序:03d}01",
                            int(基价 * 积分倍数), f"/img/{spu}-sku1.svg"))
                 记(c, 批, "sku", code, "新增")
+                # 照上面那张表补额外配色的 SKU(大多数款没有,这个循环不跑)
+                for 序2, (颜色, _前缀) in enumerate(额外配色.get(spu, ()), start=2):
+                    c2 = f"{spu}-{序2:02d}"
+                    # ⚠️ `spec` 写成「颜色/定制」而不是「定制/定制」——
+                    # 颜色是点名的,尺码仍然按单定。两段分别说实话。
+                    c.execute("""INSERT INTO sku(code,spu,spec,color,size,price,stock,
+                                 locked,status,spec_code,points,img)
+                                 VALUES(?,?,?,?,'定制',?,0,0,'启用',?,?,?)""",
+                              (c2, spu, f"{颜色}/定制", 颜色, 基价,
+                               f"GG{起规格 + 序:03d}{序2:02d}",
+                               int(基价 * 积分倍数), f"/img/{spu}-sku{序2}.svg"))
+                    记(c, 批, "sku", c2, "新增")
             else:
                 # 号型和颜色**照兄弟款抄** —— 猜一个号型的代价是下单当场出错
                 # ⚠️ **`supplier_code` 也要抄。** 规矩是「**标品有供应商、定制品没有**」
@@ -440,6 +452,35 @@ def 跑(说=print):
             说(f"    ✗ {x}")
     c.close()
     return 1 if (败 or len(成) != 要造) else 0
+
+
+# ── 额外配色:哪几款除了「定制」色之外还出了别的颜色 ─────────────────────
+#
+# 🔺 用户 2026-10-13 拍的。缘起:出图那边(Codex)给「杭罗」唐制齐胸襦裙
+# 出了**月白、黑棕两套**,而这款原来只有一条「定制」色 SKU ——
+# 于是那 6 张黑棕图在 `import_images.py` 里**认不出来**
+# (它把 `lxys_xxx-variant-blackbrown-main` 解析成一个不存在的商品编号)。
+#
+# ⚠️ **为什么写成一张表,而不是在造 SKU 那个循环里埋一个 if**:
+# 埋进去的特例**没人看得见** —— 下一个人读那段代码会以为「每款一条定制 SKU」
+# 是不变量,而它已经不是了。写成表,`--复查` 能逐条核,diff 里也看得见。
+#
+# ⚠️ **这一条和「定制品」的身份是有张力的**,明写在这儿:
+# 这 50 款是定制品(`spec='定制/定制'`、`stock=0`、按单做),颜色本来「由客户定」。
+# 给它加一个具体色的 SKU,等于这一款**既能定制、又有一个点名的配色**。
+# 用户知情并拍了;而这条张力的后果是:**按「定制品只有一条 SKU」算的东西会偏**
+# (`product_pattern_check` 那类检查如果写死了这个假设,会在这一款上红 ——
+#  红了不是 bug,是这张表在说话)。
+#
+# ⚠️ **而 6 张图里只有 1 张有地方挂。** 图挂在**商品**一级
+# (main / intro / d1 / d2 / d3),SKU 只分到一个 `skuN` 图位 ——
+# 月白那套已经占了前五个位。所以黑棕那套只有颜色图收得进来,
+# 剩下 5 张**留在交付箱**,要它们有位置得让「图挂到 SKU 一级」,
+# 那是商品模块的改动,不是收图能解决的。
+额外配色 = {
+    # spu: [(颜色, 这个颜色的图在交付箱里叫什么前缀)]
+    "lxys_102351943": [("黑棕", "variant-blackbrown")],
+}
 
 
 def 回滚(说=print):
@@ -659,8 +700,64 @@ def 试跑(说=print):
         shutil.rmtree(工, ignore_errors=True)
 
 
+def 补配色(说=print, db=None):
+    """照 `额外配色` 那张表,给**已经造好的**那些款补上缺的 SKU。**幂等**。
+
+    ## 为什么要有这个子命令
+
+    从零重建时 `跑()` 造那 50 款的同时就带上额外配色了。
+    但**现在这个共享库是增量演化来的** —— 那 50 款是上一批造的,那时还没有这张表。
+    所以要让库跟上代码,得单独补一次。
+    > 今天(2026-10-13)刚为「**库和代码不一致**」花了半天:
+    > 一个「库和代码一致」和一个「库里存着旧代码的产物」,
+    > **在本机上长得一模一样** —— 因为本机从不重建。
+
+    ## 两个刻意的决定
+
+    1. **值从 `额外配色` 和那一款自己的 `-01` 来,一个字都不手抄** ——
+       手抄的话这一条和 `跑()` 造出来的会漂,而**漂了之后两边分别看都是对的**。
+    2. **台账批次独立**(`额外配色`),不挂在某一批商品上 ——
+       否则 `--回滚 <那一批>` 会把它一起删掉,而它和那一批不是同一件事。
+    """
+    import sqlite3 as _s3
+    c = _s3.connect(db or DB)
+    c.row_factory = _s3.Row
+    加了, 跳过 = 0, 0
+    for spu, 配色们 in 额外配色.items():
+        基 = c.execute("SELECT * FROM sku WHERE code=? ", (f"{spu}-01",)).fetchone()
+        if not 基:
+            说(f"  ⚠️ {spu} 连 `-01` 都没有 —— **跳过,不替它造**"
+               f"(这款可能还没造,或者编号变了)")
+            continue
+        基 = dict(基)
+        for 序2, (颜色, _前缀) in enumerate(配色们, start=2):
+            code = f"{spu}-{序2:02d}"
+            if c.execute("SELECT 1 FROM sku WHERE code=?", (code,)).fetchone():
+                跳过 += 1
+                continue
+            # 规格码:照 `-01` 那条,只换末两位的 SKU 序号 —— **不自己算商品号那三位**
+            基码 = 基["spec_code"] or ""
+            新码 = (基码[:-2] + f"{序2:02d}") if len(基码) >= 2 else None
+            c.execute("""INSERT INTO sku(code,spu,spec,color,size,price,stock,locked,
+                         status,spec_code,points,img)
+                         VALUES(?,?,?,?,?,?,0,0,'启用',?,?,?)""",
+                      (code, spu, f"{颜色}/{基['size']}", 颜色, 基["size"],
+                       基["price"], 新码, 基["points"],
+                       f"/img/{spu}-sku{序2}.svg"))
+            记(c, "额外配色", "sku", code, "新增")
+            说(f"  + {code}  {颜色}/{基['size']}  规格码 {新码}  "
+               f"图位 sku{序2}  价 {基['price']}")
+            加了 += 1
+    c.commit()
+    n = c.execute("SELECT COUNT(*) FROM sku").fetchone()[0]
+    c.close()
+    说(f"  加了 {加了} 条,已有跳过 {跳过} 条;现在 SKU 共 {n} 条")
+    return 0
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
+    p.add_argument("--补配色", action="store_true")
     p.add_argument("--做", action="store_true")
     p.add_argument("--回滚", action="store_true")
     p.add_argument("--复查", action="store_true")
@@ -669,7 +766,9 @@ if __name__ == "__main__":
     print(f"新品 · 造 {要造} 款「待上架」,每周 {每周几件} 件排开")
     print("=" * 72)
     rc = 0
-    if getattr(a, "试跑"):
+    if getattr(a, "补配色"):
+        rc = 补配色()
+    elif getattr(a, "试跑"):
         rc = 试跑()
     elif getattr(a, "回滚"):
         rc = 回滚()
@@ -681,4 +780,5 @@ if __name__ == "__main__":
         rc = 复查()
     else:
         print("  先 --试跑(副本上整套验,不动真库);要动手加 --做;撤回加 --回滚")
+        print("  只补额外配色的 SKU(幂等):--补配色")
     sys.exit(rc)
