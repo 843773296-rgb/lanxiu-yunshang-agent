@@ -7345,5 +7345,29 @@
    }
   ],
   "预期红": "枚举里每一档在库里都有样本"
+ },
+ {
+  "script": "backend/order_write_check.py",
+  "改坏": "寄到家也不收运费(运费写死 0)",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "        运费, 运费依据 = round(float(算[\"运费\"]), 2), 算[\"依据\"]",
+    "new": "        运费, 运费依据 = 0.0, 算[\"依据\"]"
+   }
+  ],
+  "预期红": "寄到家 → 按客户省份收该区运费,合计 = 货品 + 运费"
+ },
+ {
+  "script": "backend/order_write_check.py",
+  "改坏": "运费算不出来时按 0 开单",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "        if not 算[\"算得出来\"]:\n            return _deny(me, \"FREIGHT_UNKNOWN\",",
+    "new": "        if not 算[\"算得出来\"]:\n            算 = dict(算, 运费=0.0)\n        if False:\n            return _deny(me, \"FREIGHT_UNKNOWN\","
+   }
+  ],
+  "预期红": "寄到家而门槛没配 → 不开单(不按 0 开,不静默免邮)"
  }
 ]

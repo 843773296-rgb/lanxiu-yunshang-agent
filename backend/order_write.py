@@ -36,6 +36,23 @@ def rows(sql, *a):
         return [dict(r) for r in c.execute(sql, a)]
 
 
+送法们 = ("配送到店", "配送到客户")   # 业务 2026-10-13:到店取不收运费,寄到家才按运费表收
+
+
+def 运费表():
+    """库里的运费区域表 + 满额免邮门槛,转成 `knowledge/freight` 认的形状。
+
+    **全库只有这一处读这张表** —— 运营后台那一页(server.freight_zones)和开单都走它。
+    原来读表的两个函数长在 server.py 里,开单要用就得再抄一份;两份读法一漂,
+    后台试算出来的和真开单收的就不是同一个数,而两边分别看都是对的。
+    门槛没配返回 None —— **不替它补 0**(补 0 = 满 0 元免邮 = 整店静默免邮)。"""
+    zs = [dict(区域=r["zone"], 省份=r["provinces"] or "", 运费=float(r["fee"] or 0),
+               兜底=bool(r["is_fallback"]), 排序=r["sort"], 状态=r["status"])
+          for r in rows("SELECT * FROM freight_zone WHERE status='启用' ORDER BY sort, zone")]
+    r = rows("SELECT free_over FROM freight_rule WHERE id=1")
+    return zs, (float(r[0]["free_over"]) if r and r[0]["free_over"] is not None else None)
+
+
 def _deny(me, code, reason, key="—"):
     log_op((me or {}).get("name") or "未登录", "ordr", key, "—", "—", False, code,
            reason[:120], {"role": (me or {}).get("role")})
@@ -109,12 +126,18 @@ def 过闸(order_id):
 
 
 def open_order(d, me):
-    """开一张定制单,停在「待确认」。d: customer_id, items=[{spu 或 sku, wearer_id, qty}]"""
+    """开一张定制单,停在「待确认」。d: customer_id, items=[{spu 或 sku, wearer_id, qty}], delivery
+
+    delivery  配送到店(默认)/ 配送到客户。**运费只在寄到家时收**(业务 2026-10-13 拍:
+              工厂送到门店是我们自己的物流,顾客没让我们寄东西)。寄到家按客户所在省份、
+              货品金额查运费表;**算不出来就不开单**,不按 0 开 —— 少收的运费不可逆,
+              而一张运费 0 的单和一张免邮的单长得一模一样。
+              ⚠️ 历史单上「到店也收了 28」是造数脚本的简化,**不回溯**(用户 10-12「只管新单」)。"""
     if not me: return dict(ok=False, code="NO_LOGIN", reason="请先登录")
     if me.get("role") not in 下单角色:
         return _deny(me, "ROLE", f"开单须由顾问或店长操作,你是「{me.get('role')}」")
     cid = (d.get("customer_id") or "").strip()
-    cu = rows("SELECT id, shop FROM customer WHERE id=?", cid)
+    cu = rows("SELECT id, shop, province FROM customer WHERE id=?", cid)
     if not cu:
         return dict(ok=False, code="NO_CUSTOMER", reason=f"没有客户 {cid}")
     if cu[0]["shop"] != me.get("shop"):
@@ -165,16 +188,28 @@ def open_order(d, me):
             return _deny(me, "WEARER_MISMATCH", f"「{s['name']}」开给 {w[0]['name'] or wid}:{why}", cid)
         qty = int(x.get("qty") or 1)
         行们.append((s, wid, qty))
+    amt = round(sum((s["price"] or 0) * q for s, _, q in 行们), 2)
+    送法 = (d.get("delivery") or "配送到店").strip()
+    if 送法 not in 送法们:
+        return dict(ok=False, code="BAD_DELIVERY", reason=f"送法只认 {' / '.join(送法们)},给的是「{送法}」")
+    运费, 运费依据 = 0.0, "到店取,不收运费(业务 2026-10-13)"
+    if 送法 == "配送到客户":
+        import freight as F
+        zs, 门 = 运费表()
+        算 = F.算运费(cu[0]["province"] or "", amt, zs, 门)
+        if not 算["算得出来"]:
+            return _deny(me, "FREIGHT_UNKNOWN", f"寄到家的运费算不出来,没开单:{算['依据']}", cid)
+        运费, 运费依据 = round(float(算["运费"]), 2), 算["依据"]
     mx = rows("SELECT MAX(CAST(id AS INTEGER)) m FROM ordr")[0]["m"] or 0
     oid, now = str(int(mx) + 1), _now()
-    amt = round(sum((s["price"] or 0) * q for s, _, q in 行们), 2)
+    合计 = round(amt + 运费, 2)
     import fsm
     with sqlite3.connect(DB) as c:
         c.execute("""INSERT INTO ordr(id,customer_id,kind,status,advisor_no,shop,source,delivery,amount,payable,
                      created,updated,prd_status,goods_amount,freight,received,refund_status,appt_src)
-                     VALUES(?,?,'定制品订单','待确认',?,?,'门店 Pad','配送到店',?,?,?,?,?,?,0,0,'未退款','未接入')""",
-                  (oid, cid, me["no"], me.get("shop"), amt, amt, now, now,
-                   fsm.ORDER_PRD.get("待确认", "待付款"), amt))
+                     VALUES(?,?,'定制品订单','待确认',?,?,'门店 Pad',?,?,?,?,?,?,?,?,0,'未退款','未接入')""",
+                  (oid, cid, me["no"], me.get("shop"), 送法, 合计, 合计, now, now,
+                   fsm.ORDER_PRD.get("待确认", "待付款"), amt, 运费))
         # **版型版本在开单这一刻记下快照**(grading_check 查)—— 现算给的是今天那一版,
         # 版型改过之后就对不上当初量的、裁的是哪一版
         for s, wid, q in 行们:
@@ -187,7 +222,8 @@ def open_order(d, me):
     log_op(me["name"], "ordr", oid, "—", "待确认", True, "OPEN",
            f"{me['name']} 给 {cid} 开定制单 {oid},{len(行们)} 件,停在待确认", {"role": me["role"]})
     明 = rows("SELECT id, name, wearer_id FROM ordr_item WHERE order_id=? ORDER BY id", oid)
-    return dict(ok=True, code="OPEN", 订单=oid, 状态="待确认", 件=明,
+    return dict(ok=True, code="OPEN", 订单=oid, 状态="待确认", 件=明, 送法=送法,
+                货品金额=amt, 运费=运费, 运费依据=运费依据, 合计=合计,
                 reason=f"已开单 {oid},停在「待确认」。**下一步:给每一件量下单量体并绑到这一件**"
                        f"(record_measure 带 order_id + item),量完再确认下单")
 

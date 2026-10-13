@@ -20,6 +20,8 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("删掉查订单里定制单「已发货」的状态说明", "查已发货的定制单会说明「工厂发往门店、还没到顾客手里」"),
     ("把开单时的 `status != '上架'` 那道闸去掉(待上架的款就能卖)",
      "不是「上架」的款不能下单"),
+    ("寄到家也不收运费(运费写死 0)", "寄到家 → 按客户省份收该区运费,合计 = 货品 + 运费"),
+    ("运费算不出来时按 0 开单", "寄到家而门槛没配 → 不开单(不按 0 开,不静默免邮)"),
 ]
 
 FAIL, N = [], [0]
@@ -193,6 +195,41 @@ def run(T):
     with api.as_user(顾问): r = api.open_order(w["cid"], [{"spu": p["spu"], "wearer_id": w["wid"]}])
     r2 = server.transit("bk-order", r.get("订单"), "取消", {"reason": "客户没定"}, actor="检查")
     ck("没定的待确认单能直接取消", bool(r2.get("ok")), r2.get("reason"))
+
+    # ── 运费(业务 2026-10-13:到店取不收,寄到家按运费表收;算不出来不开单)──────────
+    # 期望值**不拿 freight.算运费 现算**(那是被测的口径,同源就抓不到实现错)——
+    # 直接在副本上把表摆成已知形状:客户放进偏远区,该区运费从表里按省名直读。
+    开前 = lambda: c.execute("SELECT COUNT(*) FROM ordr").fetchone()[0]
+    件 = [{"spu": p["spu"], "wearer_id": w["wid"]}]
+    with api.as_user(顾问): r = api.open_order(w["cid"], 件)
+    o = c.execute("SELECT delivery, freight, goods_amount, amount, payable FROM ordr WHERE id=?",
+                  (r.get("订单"),)).fetchone()
+    ck("不说送法 → 到店取,运费 0、合计 = 货品金额", r.get("ok") and o and o["delivery"] == "配送到店"
+       and o["freight"] == 0 and o["amount"] == o["goods_amount"] == o["payable"], dict(o) if o else r)
+    偏 = c.execute("SELECT zone, fee FROM freight_zone WHERE status='启用' AND is_fallback=0 AND fee>0 "
+                  "AND provinces LIKE '%新疆%'").fetchone()
+    ck("运费表里有一个收钱的偏远区(含新疆)可拿来验", bool(偏), tuple(偏) if 偏 else None)
+    if 偏:
+        c.execute("UPDATE customer SET province='新疆维吾尔自治区' WHERE id=?", (w["cid"],))
+        c.execute("UPDATE freight_rule SET free_over=? WHERE id=1", (9e9,)); c.commit()
+        with api.as_user(顾问): r = api.open_order(w["cid"], 件, delivery="配送到客户")
+        o = c.execute("SELECT delivery, freight, goods_amount, amount, payable FROM ordr WHERE id=?",
+                      (r.get("订单"),)).fetchone()
+        ck("寄到家 → 按客户省份收该区运费,合计 = 货品 + 运费", r.get("ok") and o and o["delivery"] == "配送到客户"
+           and o["freight"] == 偏["fee"] and o["amount"] == o["payable"] == round(o["goods_amount"] + 偏["fee"], 2)
+           and r.get("运费") == 偏["fee"], dict(o) if o else r)
+        with api.as_user(顾问): r = api.open_order(w["cid"], 件)
+        ck("同一位偏远客户到店取 → 照样不收运费", r.get("ok") and r.get("运费") == 0, r)
+        c.execute("UPDATE freight_rule SET free_over=0 WHERE id=1"); c.commit()
+        with api.as_user(顾问): r = api.open_order(w["cid"], 件, delivery="配送到客户")
+        ck("寄到家但够满额门槛 → 免运费", r.get("ok") and r.get("运费") == 0, r)
+        c.execute("DELETE FROM freight_rule"); c.commit()
+        n0 = 开前()
+        with api.as_user(顾问): r = api.open_order(w["cid"], 件, delivery="配送到客户")
+        ck("寄到家而门槛没配 → 不开单(不按 0 开,不静默免邮)", r.get("code") == "FREIGHT_UNKNOWN"
+           and 开前() == n0, r)
+    with api.as_user(顾问): r = api.open_order(w["cid"], 件, delivery="快递到家")
+    ck("送法只认登记的两种", r.get("code") == "BAD_DELIVERY", r)
 
 
 if __name__ == "__main__":

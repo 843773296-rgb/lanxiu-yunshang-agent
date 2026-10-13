@@ -1075,16 +1075,15 @@ def measure_tpls(q):
 #
 # 判定口径全在 `knowledge/freight.py`,**这儿不抄一份** ——
 # 页面只负责取数、校验、写回。
+# 读表只有一处:`order_write.运费表()` —— 开单收的和这一页试算的必须是同一个读法
 def _freight_zones_raw():
-    """库里那张区域表,转成口径层认的形状。"""
-    return [dict(区域=r["zone"], 省份=r["provinces"] or "", 运费=float(r["fee"] or 0),
-                 兜底=bool(r["is_fallback"]), 排序=r["sort"], 状态=r["status"])
-            for r in rows("SELECT * FROM freight_zone WHERE status='启用' ORDER BY sort, zone")]
+    import order_write as _ow
+    return _ow.运费表()[0]
 
 
 def _freight_free_over():
-    r = rows("SELECT free_over FROM freight_rule WHERE id=1")
-    return float(r[0]["free_over"]) if r else None
+    import order_write as _ow
+    return _ow.运费表()[1]
 
 
 def freight_zones(q):
@@ -1114,7 +1113,7 @@ def freight_zones(q):
     # ⚠️ **「没省份」那一条必须在样例里。** 它是唯一会「要人确认」的分支,
     # 而一个在页面上看不见的分支,和一个不存在的分支,**在这一页上长得一模一样**。
     试 = [dict(省=sp, 货品金额=amt,
-               结果=F.算运费(sp, amt, zs, 门 if 门 is not None else 0))
+               结果=F.算运费(sp, amt, zs, 门))   # 门槛没配就让它报「算不出来」,不补 0(补 0 = 满 0 免邮)
           for sp, amt in (("上海市", 500), ("安徽省", 500), ("新疆维吾尔自治区", 500),
                           ("安徽省", 2500), ("广东省", 500), ("", 500))]
     # 挂着 0 客户的区:**它配得对不对,现在验不到** ——
