@@ -7284,7 +7284,7 @@
     "new": "  if(x.研判有结论 && x.工单已关闭) return `<span class=\"tag dye\">已销账</span>`;\n  if(x.研判有结论) return `<span class=\"tag dye\">已销账</span>`;\n  if(true) return `<span class=\"tag dye\">已销账</span>`;"
    }
   ],
-  "预期红": "它在真实数据上吐出 **≥3 种**不同的结果"
+  "预期红": "**四种形状吐出四种不同的结果**"
  },
  {
   "script": "agentsite/queue_view_check.py",
