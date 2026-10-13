@@ -292,9 +292,30 @@ def render(spu, variant):
         c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
         r = c.execute("SELECT name,kind,category FROM product WHERE spu=?", (spu,)).fetchone()
         if r: nm, kind, cat = r["name"], r["kind"], r["category"]
+        # ── 图位可以是两段:`sku2-main` = 第 2 个 SKU 那一套的主图 ──────────
+        #
+        # 🔺 2026-10-13 用户拍「按颜色换整套图」(电商标准做法:点一个颜色,
+        # 主图/背面/细节**全换成那个颜色的**)。缘起是出图那边给一款出了两套完整配色,
+        # 而原来的数据模型是「**一款一套图,颜色只是其中一张小图**」——
+        # 图挂在 SPU 一级(main/intro/d1-d3),`sku.img` 每个 SKU 只有 1 张,
+        # 于是第二套那 5 张(主图/背面/三张细节)**在表里找不到字段**。
+        #
+        # ⚠️ **不用改表**:取图那一层是按**文件名**找真图的,
+        # 所以 `{spu}-sku2-main.png` 这个名字天然能被取到。而这儿要做的是
+        # 让现画也认它 —— 于是**回落天然正确**:
+        #   有 `-sku2-main.png` → 发真图;没有 → 现画一张**同一个颜色**的示意图。
+        # > 回落到**同一个颜色的示意图**,而不是「另一个颜色的真图」——
+        # > 后者才是会出客诉的那种不一致(客户看月白的图、下单拿到黑棕)。
+        #
+        # ⚠️ 注意 `sku2`(一段)和 `sku2-main`(两段)**都要支持**:
+        # 一段的是**那个颜色的小图**(167 款早就在用),两段的是**那个颜色的整套**。
         idx = 1
-        m = re.match(r"sku(\d+)", variant or "")
-        if m: idx = int(m.group(1))
+        m = re.match(r"^sku(\d+)(?:-(.+))?$", variant or "")
+        if m:
+            idx = int(m.group(1))
+            # 两段式:后半段才是真正的图位(main / intro / d1…);
+            # 一段式(`sku2`)保持原样 —— 它就是「第 2 个颜色的小图」。
+            variant = m.group(2) or variant
         sk = c.execute("SELECT color FROM sku WHERE spu=? ORDER BY code", (spu,)).fetchall()
         if sk: color = sk[min(idx, len(sk)) - 1]["color"]
         pc = c.execute("SELECT mt_opts,kf_opts FROM product_custom WHERE spu=?", (spu,)).fetchone()

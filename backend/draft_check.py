@@ -284,8 +284,22 @@ def main():
     #   在整个函数里变成局部的**,于是上面第一处使用会报 "not associated with a value")
     钉文件 = os.path.join(HERE, "图色钉住.json")
     钉 = _json.load(open(钉文件, encoding="utf-8"))["钉住"] if os.path.exists(钉文件) else {}
-    有图 = {f.rpartition("-")[0] for f in os.listdir(os.path.join(HERE, "static", "img"))
-           if f.endswith(("-main.png", "-main.jpg", "-main.jpeg", "-main.webp"))}         if os.path.isdir(os.path.join(HERE, "static", "img")) else set()
+    # ⚠️⚠️ **这是同一个文件名解析的第五处,2026-10-13 被这条判据自己抓出来。**
+    # 原来是 `f.rpartition("-")[0]`,而 `lxys_x-sku2-main.png` 也以 `-main.png` 结尾 ——
+    # 于是它被当成「一款的主图」,切出 `lxys_x-sku2`,判据报
+    # 「**这一款出过图但没钉颜色**」。而那不是一款,是**一款的第二个配色**。
+    # > 一个「有款出了图没钉颜色」和一个「我把配色图当成了一款的主图」,
+    # > **在那条红上长得一模一样** —— 而照着前者去做,
+    # > 会往钉住表里写一个**不存在的商品号**。
+    # 改成只认**整款的主图**(`{spu}-main.*`,spu 是 `lxys_<数字>`);
+    # 配色那一套(`{spu}-sku2-main.*`)**不参与「这一款钉没钉颜色」** ——
+    # 钉住表管的是「这一款在页面上显示成什么色」,那是主图的颜色,不是某个 SKU 的。
+    # 📌 同一个解析在**五处**各写一份(这里 / `tools/import_images.py` /
+    #    `tools/delivered_images.py` / `backend/server.py` 的 `/img/` / `backend/img.py`)。
+    _主图名 = _re.compile(r"^(lxys_\d+)-main\.(png|jpg|jpeg|webp)$")
+    有图 = {m.group(1) for f in os.listdir(os.path.join(HERE, "static", "img"))
+           if (m := _主图名.match(f))} if os.path.isdir(
+               os.path.join(HERE, "static", "img")) else set()
     # ⚠️ **「这台机器上没有图」不是不合格。** 图不进版本库(二进制、一批批换),
     # 所以 CI 和新克隆上一张都没有 —— 第一版把「样本量 0」判成红,当场把 CI 弄红了。
     # 但也不能默默跳过:**「验过了」和「没东西可验」要能分开**,所以照实打印。

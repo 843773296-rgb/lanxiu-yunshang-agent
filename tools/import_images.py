@@ -19,7 +19,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
 目的地 = os.path.join(ROOT, "backend", "static", "img")
 备份 = os.path.join(ROOT, "商品图备份")   # gitignore;核对:delivered_images.py 验 --在 商品图备份
-图位 = ("main", "intro", "d1", "d2", "d3") + tuple(f"sku{i}" for i in range(1, 20))
+_单段 = ("main", "intro", "d1", "d2", "d3") + tuple(f"sku{i}" for i in range(1, 20))
+# ── 两段式图位:`sku2-main` = 第 2 个 SKU 那一套的主图 ──────────────────────
+#
+# 🔺 2026-10-13 用户拍「按颜色换整套图」(点一个颜色,主图/背面/细节**全换**)。
+# `sku2`(一段)是**那个颜色的小图**(167 款早就在用);
+# `sku2-main`(两段)是**那个颜色的整套**里的主图。两种都要认。
+图位 = _单段 + tuple(f"sku{i}-{v}" for i in range(1, 20)
+                     for v in ("main", "intro", "d1", "d2", "d3"))
 可收 = (".png", ".jpg", ".jpeg", ".webp")
 
 
@@ -28,7 +35,15 @@ def 认(名, spus):
     stem, ext = os.path.splitext(os.path.basename(名))
     if ext.lower() not in 可收:
         return None, f"不是图片({ext or '没有扩展名'})"
-    spu, _, v = stem.rpartition("-")
+    # ⚠️⚠️ **原来是 `stem.rpartition("-")`,而它在两段式图位上切错**:
+    # `lxys_x-sku2-d1` 会被切成 spu=`lxys_x-sku2`、v=`d1` —— 于是报
+    # 「没有这个商品编号」,而那个编号**根本不是文件名想表达的东西**。
+    # 改成**第一个连字符切**:346 款编号全是 `lxys_<数字>`、一个连字符都没有(实测),
+    # 所以第一段是 spu、剩下整段都是图位。
+    # 📌 同一个解析在三处各写了一份(这里 / `backend/server.py` 的 `/img/` 路由 /
+    #    `backend/img.py` 的 `render`)—— 三处都改了。**而三份就是三份,会漂**:
+    #    下一个动它的人要三处一起看。
+    spu, _, v = stem.partition("-")
     if spu in spus and v in 图位:
         return (spu, v), None
     # 报出它像哪一个 —— **少打前缀是最常见的**(`100617682-main` 少了 `lxys_`),

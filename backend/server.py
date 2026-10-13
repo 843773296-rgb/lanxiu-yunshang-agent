@@ -2855,6 +2855,10 @@ def _u(x):
     try: return x.encode("latin-1").decode("utf-8")
     except Exception: return x
 
+# 图名解析:`{spu}-{图位}`,而 spu 是 `lxys_<数字>`(346 款实测没有一个含连字符)。
+# 图位可以是一段(`main` / `sku2`)也可以是两段(`sku2-main` —— 第 2 个 SKU 那一套的主图)。
+_re_img = __import__("re").compile(r"^(lxys_\d+)-(.+)$")
+
 class H(BaseHTTPRequestHandler):
     def log_message(self,*a): pass
     def _send(self,obj,code=200):
@@ -2909,7 +2913,23 @@ class H(BaseHTTPRequestHandler):
             self.send_header("content-length",str(len(b))); self.end_headers(); self.wfile.write(b); return
         if p.startswith("/img/") and p.endswith(".svg"):
             import img as _img
-            stem=p[len("/img/"):-4]; spu,_,variant=stem.rpartition("-")
+            stem=p[len("/img/"):-4]
+            # ⚠️⚠️ **原来这里是 `stem.rpartition("-")`,而它在两段式图位上切错。**
+            # 2026-10-13 用户拍「按颜色换整套图」,于是多了 `{spu}-sku2-main` 这种名字 ——
+            # `rpartition` 会把 spu 切成 `lxys_x-sku2`、variant 切成 `main`,
+            # **于是现画时查不到这款商品,画出一个兜底色的图,而页面上看不出来**。
+            # > 一个「这款没有这张图」和一个「文件名解析错了所以查不到这款」,
+            # > **在页面上都是一张示意图** —— 而后者是个 bug。
+            # 改成**认编号格式**:346 款全是 `lxys_<数字>`、一个连字符都没有(实测),
+            # 所以第一个 `-` 之前是 spu、之后整段都是图位。
+            _m=_re_img.match(stem); spu,variant=(_m.group(1),_m.group(2)) if _m else ("","")
+            if not _m:
+                # 认不出来**不猜** —— 退回旧切法会悄悄画出一张兜底色的图。
+                b=f"认不出这个图名:{stem}".encode("utf-8")
+                self.send_response(404)
+                self.send_header("content-type","text/plain; charset=utf-8")
+                self.send_header("content-length",str(len(b)))
+                self.end_headers(); self.wfile.write(b); return
             # **有出好的真图就用真图,没有才现画示意图。**
             # 出图是一批一批来的,所以这一层必须按「这一张有没有」判,不能按「这个功能开没开」——
             # 按开关判的话,开了之后没出图的商品会开天窗,而页面不会报错,只是空着。
