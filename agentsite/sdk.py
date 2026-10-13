@@ -296,7 +296,7 @@ def 生效工具(kind, 收窄=None):
     return [t for t in 全 if t in 要]
 
 
-def mcp_config(me=None, kind=None, 名单=None, trace=None):
+def mcp_config(me=None, kind=None, 名单=None, trace=None, 被判包裹=None):
     """把三个 MCP 服务挂上。工具面按用途分开,不给模型多余的选择。
 
     me:当前登录的人。**通过每个服务自己的 env 传,不改 os.environ** ——
@@ -313,6 +313,10 @@ def mcp_config(me=None, kind=None, 名单=None, trace=None):
     if trace:
         # 这一轮的 trace_id —— 工具写下的产出(存报告)带着它,AI 管理平台才能从产出跳回生成它的那一轮
         env = {**env, "LANXIU_TRACE": trace}
+    if 被判包裹:
+        # 这一轮在判哪条差评 —— 三个工具服务出门前把**它自己**的人工处置抹掉(mcp/protocol.遮被判那条)。
+        # 走 env 而不是工具参数:模型改得了参数,改不了 env
+        env = {**env, "LANXIU_JUDGING_PKG": str(被判包裹)}
     if kind is not None or 名单 is not None:
         # 名单优先:run 算好的「这一轮生效的工具」从这里进 MCP 的 LANXIU_TOOLS ——
         # 原来这里只按角色全集建,收窄只进了 allowed_tools,**模型看得见、也调得动被收掉的工具**
@@ -857,8 +861,11 @@ def _记规矩(state, 系统):
 
 
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
-              provider=None, model_name=None, me=None, skills=None, effort=None):
+              provider=None, model_name=None, me=None, skills=None, effort=None, 被判包裹=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
+
+    被判包裹:**判差评时**给被判那条的包裹号 —— 工具服务会把它自己的人工处置抹掉
+    (见 mcp/protocol.遮被判那条)。不给就不遮(聊天、复核照旧全给)。
 
     guard=True 时挂上回答体检 hook:交付前检查一遍,不合格**打回重答**。
     提示词里那些「铁律」原本只是祈使句,挂上 hook 才是强制。
@@ -941,7 +948,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             f"{' · ' + me['shop'] if me.get('shop') else ''}。\n"
             f"他能看到什么、能做什么由工号决定 —— 工具已经按他的身份取数了,"
             f"你不需要(也不能)替他换个身份查。\n" if me else "")),
-        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid),
+        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹),
         allowed_tools=工具,           # 和 MCP 暴露的是同一份 —— 不再用 `or`(空集合会被吃掉)
         # ⚠️ **allowed_tools 不是排他白名单。**
         # 它管的是「哪些工具不用逐次批准」,不是「只有这些工具存在」——

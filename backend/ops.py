@@ -359,7 +359,34 @@ def confidence(trajectory, parsed, need_tools=2):
 四段 = "按「根因 / 建议动作 / 证据 / 置信度」四段输出,每段单独起一行。"
 
 
-def 研判提示词(任务类型, ref, task_id):
+# ── 差评研判:**接通,但默认不开**(用户 2026-10-13 拍「做产线那条路」)─────────────
+#
+# 业务 2026-10-10 拍的是「差评 AI 默认关闭,等专用取数和独立评测接通后再启用」——
+# 这一步做的是**接通**,不是启用:产线入口(agentsite 的批量研判)不传 `开差评`,照旧当场说「默认关闭」;
+# 只有显式传 `开差评=True` 的调用方(评测走产线路)才进这个分支。四道闸过完、用户拍了,才在产线入口打开。
+#
+# 和数据工厂探针的区别(**数不可比**):探针是它从库里读出材料拼进提示词;
+# 这里模型要**自己调 service_records 取** —— 「取不取、取得对不对」是另一件事,所以探针那个 0% 是上限。
+差评研判版本 = "差评研判 v1 · 2026-10-13 · 材料由模型调 service_records 自取"
+
+
+def 差评研判提示词(ref):
+    """→ (断点号, case_id, 提示词)。处理方式从 `rating.处理方式` 现拼 —— 不手抄,不写「后几种」。
+    判差评的两条铁律(TK15 能看什么 / TK16 不许顺着问话改判)挂在 service_records 上,跟着工具走,这儿不抄。"""
+    import rating as _R
+    评 = (_rows("SELECT star, note FROM rating WHERE pkg_id=?", ref) or [None])[0]
+    if not 评:
+        raise ValueError(f"包裹 {ref} 没有评价 —— 判不了,不是跑挂了")
+    方式 = " / ".join(_R.处理方式)
+    return "BP-差评", ref, (
+        f"任务类型:评价差评\n包裹号:{ref}\n评分:{评['star']} 星\n客户原话:{评['note'] or '(没写)'}\n\n"
+        f"先用 service_records(pkg={ref}) 取这一单的交付签收、返修售后、这个客户历史上的差评,"
+        "再判这条差评该怎么补救。\n"
+        f"「建议动作」那一段**以处理方式开头**,只能从这几种里选一种:{方式}。\n"
+        "你只出草稿,不对客户承诺任何金额或补救 —— 结论由店长 / 售后确认后执行。\n" + 四段)
+
+
+def 研判提示词(任务类型, ref, task_id, 开差评=False):
     """返回 (断点号, case_id, 提示词)。类型没登记就**当场说清**,不套别的分支。
 
     ⚠️ **没有默认值。** 原来是 `断点.get(类型, "BP-02")` —— 于是「评价差评」
@@ -373,6 +400,8 @@ def 研判提示词(任务类型, ref, task_id):
 
     立项文档里记的「差评错进客户合并分支」,产生它的就是那个默认值。
     """
+    if 任务类型 == "评价差评" and 开差评:
+        return 差评研判提示词(ref)
     if 任务类型 not in 断点:
         由 = ("差评的 AI 辅助**默认关闭** —— 等专用取数和独立评测接通后再启用"
              "(方案自己声明的不做项);差评由店长人工确认(业务 2026-10-10 拍)。"
@@ -406,13 +435,15 @@ def 研判提示词(任务类型, ref, task_id):
 def save_triage(task_id, breakpoint, case_id, text, trajectory,
                 cost=None, latency_ms=None, model=None, usage=None,
                 guard_blocked=False, guard_violations=None, answer_turns=1,
-                trace_id=None):
+                trace_id=None, prompt_ver=None):
     """⚠️ `trace_id` 2026-09-28 补:它一直在 `sdk.run()` 的返回里,
     但到这一跳就丢了 —— 于是库里每条研判都答不出「它是哪一次调用的产物」。
     没有它,A3 的判读回流只能进总数,挂不到具体调用上。**空值合法,不许拿别的顶上。**"""
     p = parse_draft(text)
     conf = confidence(trajectory, p)
     with _c() as c:
+        if prompt_ver:
+            _确保回执列(c)
         cur = c.execute(
             "INSERT INTO triage(task_id,breakpoint,case_id,created,ai_root_cause,ai_action,"
             "ai_evidence,ai_confidence,ai_text,tool_calls,cost,latency_ms,model,"
@@ -427,6 +458,10 @@ def save_triage(task_id, breakpoint, case_id, text, trajectory,
              1 if guard_blocked else 0,
              json.dumps(guard_violations or [], ensure_ascii=False), answer_turns,
              trace_id))
+        if prompt_ver:
+            # **这条建议是哪版提示词、有没有取材料**(数据工厂 10-13:两轮之间动了两个变量就归因不干净,
+            # 落库的这一行是事后唯一能分开它们的东西)
+            c.execute("UPDATE triage SET prompt_ver=? WHERE id=?", (prompt_ver, cur.lastrowid))
         c.execute("UPDATE task SET status='待复核', summary=? WHERE id=?",
                   (p["ai_root_cause"][:60] or "(未解析出根因)", task_id))
         return cur.lastrowid
@@ -523,7 +558,7 @@ def 回执对照没漏():
 
 def _确保回执列(c):
     有 = {r[1] for r in c.execute("PRAGMA table_info(triage)")}
-    for col in ("receipt", "receipt_kind"):
+    for col in ("receipt", "receipt_kind", "prompt_ver"):
         if col not in 有:
             c.execute(f"ALTER TABLE triage ADD COLUMN {col} TEXT")
 

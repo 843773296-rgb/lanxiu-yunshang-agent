@@ -20,6 +20,33 @@ LATEST = "2025-11-25"
 SUPPORTED = [LATEST, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"]
 
 
+def 遮被判那条(out):
+    """**正在被判的那条差评,它自己的人工处置痕迹一律抹成 None** —— 每个工具的返回出门前都过这一道。
+
+    启动方(`agentsite/sdk.mcp_config`)把被判的包裹号放进这个服务进程的 env `LANXIU_JUDGING_PKG`;
+    没设就原样返回(人在后台复核、顾问聊天,照旧全给)。
+
+    为什么放在这一层、而不是让各个工具自己遮:
+    · `service_records` 分不出调用方是人还是模型(模型是以某个员工身份跑的)——
+      > 一个「人在复核」和一个「模型在被考」,**在工具的入参上长得一模一样**。
+      所以「这一轮在判哪条」只能由**启动方**说,而 env 是模型改不了的(它只能按 schema 调工具)。
+    · 放在协议这一层,**每个工具都过** —— `bad_ratings` 那张清单里也有「处理过没有」,
+      以后新加一个会带出处置字段的工具,不用记得再遮一次。
+    遮法、盲区都在 `knowledge/rating.遮住处置痕迹`,这儿不抄(数据工厂 10-13 建议,用户同日拍的产线路)。
+    """
+    被判 = (os.environ.get("LANXIU_JUDGING_PKG") or "").strip()
+    if not 被判:
+        return out
+    _k = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge")
+    if _k not in sys.path:
+        sys.path.insert(0, _k)
+    import rating as _R
+    遮完, 遮了 = _R.遮住处置痕迹(out, 被判)
+    if 遮了:
+        log(f"[遮蔽] 被判 {被判}:遮了 {len(遮了)} 处")    # 只进 stderr,不进给模型的材料
+    return 遮完
+
+
 def log(*a):
     """日志一律走 stderr"""
     print(*a, file=sys.stderr, flush=True)
@@ -73,7 +100,7 @@ class Server:
                 return self._ok(rid, {"content": [{"type": "text",
                     "text": f"没有名为 {nm} 的工具。可用:{list(self.tools)}"}], "isError": True})
             try:
-                out = t[3](**args)
+                out = 遮被判那条(t[3](**args))
                 return self._ok(rid, {"content": [{"type": "text",
                     "text": json.dumps(out, ensure_ascii=False, indent=1)}], "isError": False})
             except TypeError as e:

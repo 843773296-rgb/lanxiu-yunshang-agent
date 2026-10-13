@@ -4618,8 +4618,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid),",
-    "new": "        mcp_servers=mcp_config(me, kind, trace=_tid),"
+    "old": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹),",
+    "new": "        mcp_servers=mcp_config(me, kind, trace=_tid, 被判包裹=被判包裹),"
    }
   ],
   "预期红": "MCP 暴露的和 allowed_tools 是同一份"
@@ -7405,5 +7405,53 @@
    }
   ],
   "预期红": "办结后复核结论不变(还是已采纳),回执另记"
+ },
+ {
+  "script": "agentsite/rating_triage_check.py",
+  "改坏": "协议层不遮(遮被判那条原样返回)",
+  "file": [
+   {
+    "path": "mcp/protocol.py",
+    "old": "                out = 遮被判那条(t[3](**args))",
+    "new": "                out = t[3](**args)"
+   }
+  ],
+  "预期红": "工具层:被判那条的人工处置抹成 None"
+ },
+ {
+  "script": "agentsite/rating_triage_check.py",
+  "改坏": "遮蔽不看被判的包裹号,同一客户的差评全遮",
+  "file": [
+   {
+    "path": "mcp/protocol.py",
+    "old": "    遮完, 遮了 = _R.遮住处置痕迹(out, 被判)",
+    "new": "    遮完, 遮了 = out, []\n    def _全遮(x):   # 改坏:不看是不是被判那条,凡是处置字段一律遮(键名认法照 rating.回测要遮吗)\n        if isinstance(x, dict):\n            return {k: (None if _R.回测要遮吗(k) else _全遮(v)) for k, v in x.items()}\n        if isinstance(x, list):\n            return [_全遮(v) for v in x]\n        return x\n    遮完 = _全遮(out)"
+   }
+  ],
+  "预期红": "工具层:同一客户的另一条差评原样给(那是「第几次」的依据)"
+ },
+ {
+  "script": "agentsite/rating_triage_check.py",
+  "改坏": "被判包裹没传进工具服务的 env",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        env = {**env, \"LANXIU_JUDGING_PKG\": str(被判包裹)}",
+    "new": "        pass"
+   }
+  ],
+  "预期红": "被判包裹传进了每一个工具服务的 env"
+ },
+ {
+  "script": "agentsite/rating_triage_check.py",
+  "改坏": "产线入口不经开关直接判差评(研判提示词对差评不再拦)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    if 任务类型 == \"评价差评\" and 开差评:",
+    "new": "    if 任务类型 == \"评价差评\":"
+   }
+  ],
+  "预期红": "开关默认关:不带 开差评 → 照旧当场说「默认关闭」"
  }
 ]

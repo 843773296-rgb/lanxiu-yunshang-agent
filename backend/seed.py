@@ -107,7 +107,8 @@ CREATE TABLE triage(
   -- 不覆盖 status:status 是**复核结论**(采纳 / 改判 / 升级),办没办完是另一件事 ——
   -- 覆盖掉的话「它当初被改判过」就查不到了。时间不存这儿,op_log 里有(这一列不含日期,世界平移不用登记)。
   receipt TEXT,                -- 回执单号(定金号 / 维保单号 / 售后单号)
-  receipt_kind TEXT            -- 回执是哪种单
+  receipt_kind TEXT,           -- 回执是哪种单
+  prompt_ver TEXT              -- 这条建议是哪版提示词 + 材料怎么来的(差评研判 10-13 起记;别的类型暂空)
 );
 CREATE TABLE shop(code TEXT PRIMARY KEY, name TEXT, status TEXT, manager TEXT,
   phone TEXT, province TEXT, addr TEXT, updated TEXT);
