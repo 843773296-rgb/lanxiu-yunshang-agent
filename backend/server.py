@@ -2611,18 +2611,17 @@ def customer_list(q):
     _mg.确保列()
     rs=rows("""SELECT id,name,phone,lifecycle,shop,advisor_no,level,order_cnt,
                paid_amount,last_interact,idle_days,amount_12m,archived,merged_into FROM customer""")
-    # 软合并(10-14):已并入别人的档案不单独列;**搜的正好是它的号**时,换成列它的主档并注明
-    并入 = {c["id"]: c["merged_into"] for c in rs if c.get("merged_into")}
-    rs=[c for c in rs if not c.get("merged_into")]
-    if kw in 并入:
-        主 = _mg.主档(kw)
-        for c in rs:
-            if c["id"] == 主: c["搜的是"] = f"{kw}(已并入此档)"
-        rs=[c for c in rs if c["id"]==主] + [c for c in rs if c["id"]!=主]
+    # 软合并(10-14):已并入别人的档案**照样列、标上并入了谁** —— 不隐去。
+    # 用户 10-14 拍「新记录还记在本店那份档案上」:各店照旧给本店的档案开单量体,
+    # 列表把本店那份藏起来,本店的人就找不到自己的顾客了(第 1 批是隐去的,按这个拍板改回)。
+    for c in rs:
+        if c.get("merged_into"):
+            c["已并入"] = _mg.主档(c["id"])
+            c["并入说明"] = f"已并入 {c['已并入']}(同一个人;各店照旧在自己这份上开单,查的时候两份一起看)"
     填顾问名(rs)
     for c in rs:
         p=c["phone"] or ""; c["phone_mask"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
-    if kw: rs=[c for c in rs if c.get("搜的是") or kw in c["id"] or kw in (c["name"] or "") or kw in (c["phone"] or "")]
+    if kw: rs=[c for c in rs if kw in c["id"] or kw in (c["name"] or "") or kw in (c["phone"] or "")]
     for k,v in f.items():
         if v: rs=[c for c in rs if c.get(k)==v]
     rs=_sort(rs,q,{"id","name","paid_amount","order_cnt","idle_days","last_interact"})

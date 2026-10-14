@@ -7564,18 +7564,6 @@
  },
  {
   "script": "backend/merge_check.py",
-  "改坏": "客户列表不隐去已并入的档案",
-  "file": [
-   {
-    "path": "backend/server.py",
-    "old": "    rs=[c for c in rs if not c.get(\"merged_into\")]",
-    "new": "    rs=[c for c in rs]"
-   }
-  ],
-  "预期红": "客户列表不再单列副档"
- },
- {
-  "script": "backend/merge_check.py",
   "改坏": "AI 工具查订单只查主档(不连关联档)",
   "file": [
    {
@@ -7585,5 +7573,17 @@
    }
   ],
   "预期红": "AI 工具:查副档的订单 → 两条档案的单一起列、每单标着原档案"
+ },
+ {
+  "script": "backend/merge_check.py",
+  "改坏": "客户列表不标并入了谁",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            c[\"已并入\"] = _mg.主档(c[\"id\"])",
+    "new": "            c[\"已并入\"] = None"
+   }
+  ],
+  "预期红": "客户列表照样列副档,并标上并入了谁(各店还要在本店那份上开单)"
  }
 ]
