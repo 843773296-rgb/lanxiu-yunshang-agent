@@ -1,8 +1,37 @@
 <title>研判队列</title>
 <!--SHELL-->
 <style>
-.split{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:14px;align-items:start}
-@media(max-width:960px){.split{grid-template-columns:1fr}}
+/* ⚠️⚠️ 2026-10-14 改成**列表整宽 + 详情弹窗**(用户拍)。
+   原来是 `1.15fr 1fr` 左右分栏 —— 右边那块**不管有没有选中行都占掉 46%**,
+   于是左表只剩约 750px,而它有 8 列、工单号是 27 个字符的等宽字体(一列近 200px)。
+   结果:「评价差评」「未研判」这种词**一个字一行竖着排**,行高撑成四倍,
+   一屏只看得到 5~6 条 —— 而「已销账」那一档有 207 条。
+
+   > 一个「详情面板留着位置等你点」和一个「表格被挤到没法读」,
+   > **在那个 grid 定义上长得一模一样** —— 而只有打开页面才看得见是后者。
+
+   ⚠️ 这件事**四道验证全都没看见**:js_check(语法)、js_smoke(填了 4228 字真实数据)、
+   我自己那个脚本(收起 41 行 / 点开 207 行 / 三个数对得上)、门禁(queue.html 干净)——
+   全绿。**数据层全对,而页面没法用。**
+   > 一个「表格渲染正确」和一个「每个字单独占一行」,
+   > **在「#rows 被填了真实数据」这件事上长得一模一样。** */
+.split{display:block}
+/* 弹窗:盖在页面上,点背景或 ESC 关掉 */
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:40}
+.mask.on{display:block}
+.split .panel{position:fixed;z-index:41;display:none;
+  left:50%;top:50%;transform:translate(-50%,-50%);
+  width:min(760px,calc(100vw - 32px));max-height:min(80vh,900px);
+  overflow:auto;box-shadow:0 18px 48px rgba(0,0,0,.5)}
+.split .panel.on{display:block}
+.panel .hd{position:sticky;top:0;background:var(--paper);z-index:1}
+/* 关闭按钮贴在标题右边 */
+.关{display:none;position:fixed;z-index:42;font:inherit;font-size:13px;color:var(--ink);
+  background:var(--paper);border:1px solid var(--line);border-radius:4px;
+  cursor:pointer;padding:4px 10px;line-height:1.4}
+.关.on{display:block}
+.关:hover{border-color:var(--ink)}
+@media(max-width:960px){.split .panel{width:calc(100vw - 20px);max-height:88vh}}
 .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
 .bar .note{font-size:12.5px;color:var(--ink-3);margin-left:auto}
 .seg{display:flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
@@ -58,11 +87,13 @@ textarea,input[type=text]{width:100%;font-family:var(--sans);font-size:13.5px;pa
       style="width:44px;padding:2px 4px;font-family:var(--mono);border-radius:3px;border:1px solid rgba(255,255,255,.4);background:transparent;color:inherit"> 条</button>
     <span class="note" id="msg"></span>
   </div>
-  <div class="split">
+  <div class="mask" id="mask"></div>
+  <div class="split" id="split">
     <div class="box scroll" style="padding:0">
       <table><thead><tr><th>工单</th><th>类型</th><th>等待</th><th>时效</th><th>状态</th><th>怎么销的</th><th>置信</th><th>成本</th></tr></thead>
       <tbody id="rows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody></table>
     </div>
+    <button type="button" class="关" id="关钮">关闭 ✕</button>
     <div class="panel" id="panel">
       <div class="hd"><span class="id">选一条工单</span></div>
       <div class="bd"><div class="empty">左边点一行,这里显示智能体的四段草稿和它查了哪些数据。</div></div>
@@ -101,7 +132,18 @@ let state="待办", rows=[], sel=null;
 // 所以标题上三个数同时摆:这一档总数 / 其中走过正门的 / 其中没走正门的。
 let 展开没走正门=false;
 
+// 弹窗开关。**只在这一处切**,不在 open_ / 切档 / 清空那三处各写一份 ——
+// 三处写就会漂:哪天多一条路径忘了切,`sel` 和「弹窗开着没」就对不上,
+// 而那时**两边分别看都正常**(sel 是对的、弹窗状态也是个合法状态)。
+function 弹窗跟着选中走(){
+  const p=$("#panel"), m=$("#mask");
+  if(p) p.classList.toggle("on", !!sel);
+  if(m) m.classList.toggle("on", !!sel);
+  const k=$("#关钮"); if(k) k.classList.toggle("on", !!sel);
+}
+function 关弹窗(){ sel=null; render(); }
 function render(){
+  弹窗跟着选中走();
   // ⚠️⚠️ **收起用 `没走正门`,标签用 `研判有结论` —— 两个都要用,不能互相替代。**
   // 这一轮数据上它们恰好**完全互补**(166 / 41,没有交叉格),所以今天用哪个
   // 画出来一样。但它们问的是两件事:`研判有结论` 是「AI 出过结论吗」,
@@ -179,8 +221,42 @@ function 批量提示文(r, 跑了, state){
   if(挂.length){
     // 点名是哪几条 —— 光说「失败 2 条」没法查
     const 号 = 挂.map(f=>(f&&(f.task_id||f.id))||f).filter(Boolean).slice(0,4).join("、");
+    // ⚠️⚠️ 2026-10-14 用户撞到:点「研判」**看起来没反应**。
+    // 队列「待办」档最前面全是评价差评,而**差评的 AI 研判按业务 2026-10-10 拍板
+    // 是默认关的**(由店长人工确认)。后端把这句话原样返回了:
+    //   「『评价差评』没有 AI 研判分支,**不是跑挂了**。差评的 AI 辅助默认关闭
+    //     —— 差评由店长人工确认(业务 2026-10-10 拍)」
+    // **而这里只取了 `task_id`、把 `error` 整个丢掉了**,于是显示成
+    // 「有 1 条没跑出来 —— 失败那几条还在原来那一档里,没有被处理」。
+    //
+    // > 一个「这条跑挂了」和一个「这条按设计不该跑」,
+    // > **在「有 1 条没跑出来」这句话上长得一模一样** ——
+    // > 而后端恰恰把区别写清楚了,**就在它丢掉的那个字段里**。
+    //
+    // 后果比「少一句话」重:它把一个**设计**说成了**故障**,
+    // 而照着它去查,会去查那条工单哪里坏了 —— 查一个没有坏的东西。
+    // 所以**原因原样打出来**,不替后端改写、不替它分类。
+    // `ValueError:` 这类 Python 异常类名对看的人没有意义,只会让它更像故障 —— 削掉。
+    const 因 = [...new Set(挂.map(f => ((f && f.error) || "")
+                  .replace(/^\w+(Error|Exception):\s*/, "")).filter(Boolean))];
+    // ⚠️⚠️ **「按设计不跑」和「跑挂了」要在第一句话上就分开。**
+    // 第一版我只是把原因拼在「有 N 条没跑出来…没有被处理」后面 —— 而后端那句话里
+    // 明写着「**不是跑挂了**」,两句话当场互相矛盾,**而人读到的是前半句**。
+    //
+    // 判断依据**只能来自后端那句话本身**:`backend/ops.py` 两处都用同一个写法
+    // (`…没有评价 —— 判不了,不是跑挂了` / `「X」没有 AI 研判分支,不是跑挂了`)。
+    // **不在页面里重新分类** —— 那就又是一份会漂的口径:哪天后端多一种「不该跑」,
+    // 页面这份名单不会跟着变,而它会把那一种显示成故障。
+    const 都是按设计 = 挂.length > 0 && 挂.every(f => ((f && f.error) || "").includes("不是跑挂了"));
+    if(都是按设计){
+      return {文:`这 ${挂.length} 条**按设计不走 AI 研判**${号?"("+号+")":""} —— `
+                + 因.slice(0,2).join(" / "),
+              级:""};   // 不是 bad:它没出错
+    }
+    const 因文 = 因.length ? ` · ${因.slice(0,2).join(" / ")}` : "";
     return {文:`有 ${挂.length} 条没跑出来${号?"("+号+")":""};成功 ${跑了} 条,`
-              + `$${((r&&r.cost)||0).toFixed(4)} —— 失败那几条还在原来那一档里,没有被处理`,
+              + `$${((r&&r.cost)||0).toFixed(4)} —— 失败那几条还在原来那一档里,没有被处理`
+              + 因文,
             级:"bad"};
   }
   return {文:`研判 ${跑了} 条全部跑出来了,$${((r&&r.cost)||0).toFixed(4)}`
@@ -312,5 +388,28 @@ $("#seg").querySelectorAll("button").forEach(b=>b.onclick=()=>{
   $("#panel").innerHTML=`<div class="hd"><span class="id">选一条工单</span></div>
     <div class="bd"><div class="empty">左边点一行。</div></div>`;
 });
+// ── 弹窗的三条关闭路径,**一条都不能少** ──────────────────────────────
+//
+// ⚠️ 弹窗最常见的坏法不是打不开,是**关不掉** —— 而「关不掉」在截图上
+// 和「正常打开着」长得一模一样:两张图都是弹窗盖在页面上。
+// 所以三条路径都接上,并且都走同一个 `关弹窗()`(不在三处各写一份状态切换)。
+//
+// ⚠️ 关闭按钮用**事件委托**挂在 panel 上,不在那三处写内容的地方各加一个 ——
+// 那三处会漂:哪天多一处写内容的地方忘了加按钮,那种情形下弹窗就只能靠 ESC 关,
+// 而**那一处和别处在代码上长得一模一样**。
+document.addEventListener("keydown", e => { if(e.key === "Escape" && sel) 关弹窗(); });
+$("#mask").onclick = () => 关弹窗();
+$("#关钮").onclick = () => 关弹窗();
+// ⚠️ 关闭按钮**写在 HTML 骨架里**(`#panel` 外面那一层),不靠 JS 往里补。
+//
+// 第一版我用 `MutationObserver` 监听 panel 内容变化、自动补按钮 ——
+// **冒烟当场红**:那个最小 DOM 桩里没有 `MutationObserver`,脚本同步执行就挂,
+// 浏览器里的表现是「框架有、数据没有」。而**截图是绿的**(真 Chrome 有这个 API)。
+// > 一个「这段代码在所有环境都能跑」和一个「它依赖一个真浏览器才有的 API」,
+// > **在一张真浏览器截的图上长得一模一样。**
+//
+// 而那本来就是绕远了:panel 的内容在三处用 `innerHTML` 重写,
+// 把按钮放在**它们覆盖不到的那一层**就不用监听了 —— 少一个 API 依赖、少一条会漂的路径。
+
 load();
 </script>
