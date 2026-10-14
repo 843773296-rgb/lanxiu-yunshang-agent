@@ -7621,5 +7621,17 @@
    }
   ],
   "预期红": "挂了全站导航的页面,没有别的条也吸在 top:0"
+ },
+ {
+  "script": "agentsite/sticky_nav_check.py",
+  "改坏": "导航底色改成一个页面都没定义的变量(落到写死的白色)",
+  "file": [
+   {
+    "path": "agentsite/nav.py",
+    "old": "background:var(--paper,var(--surface,#fff))",
+    "new": "background:var(--nav-bg-x,#fff)"
+   }
+  ],
+  "预期红": "有深色主题的页面"
  }
 ]
