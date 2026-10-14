@@ -38,6 +38,15 @@ sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), ROOT]
     ("把 seed_rating._建() 里的补列去掉", "已有的老表补完列,和从零建的列一致"),
     ("把 worldclock.已发生的时间列 里 rating 那三行去掉",
      "四列时间都登记进了 worldclock.已发生的时间列"),
+    # ── 2026-10-14 退款金额 + 超线上升一级 ─────────────────────────────
+    ("让 rating.要填金额吗() 对「部分退款」也返回不用填",
+     "部分退款**不填金额** → 拒"),
+    ("让 rating.处理方式能不能用() 不比金额和订单额",
+     "部分退款**退得比订单额多** → 拒"),
+    ("把 rating.退款上升一级的线 调到一个超大的数(等于这条线没有)",
+     "→ 拒(角色也是从库里现读的)"),
+    ("让 rating_write 从调用方传的 amount 里取订单额,而不是从库里现读",
+     "全额退款**自己填了别的数** → 拒(金额就是订单额,系统现算)"),
 ]
 
 FAIL, N = [], [0]
@@ -196,6 +205,37 @@ def run(T):
     ck("批准人填成处理人自己 → 拒", rt.close_bad_rating(
         {"pkg": 包, "note": "已协商,顾客保留衣服,退还工费部分", "way": "部分退款",
          "approved_by": 店长["no"]}, 店长)["code"] == "NEED_WAY")
+    # ── 退款金额 + 超线上升一级(用户 2026-10-14 拍「上一级 = 总部运营」)────────
+    #
+    # ⚠️ 这一组**自己造出它要验的那几种形状**,不靠库里碰巧有什么:
+    # 订单额是现读的,所以先看一眼它是多少,再按「超线 / 没超线」各造一次。
+    _单额 = c.execute("SELECT amount FROM ordr WHERE id=?", (oid,)).fetchone()["amount"]
+    import rating as _R金
+    _线 = _R金.退款上升一级的线
+    _要谁 = _R金.上升一级要谁批
+    ck(f"夹具的订单额说得出来({_单额:.2f}),而且**超过那条线**({_线})—— "
+       f"下面「超线要谁批」那几条才验得到", _单额 is not None and _单额 > _线,
+       f"订单额 {_单额} —— 没超线的话,超线那几条等于没验。"
+       f"换一张单(定制单价高,33% 的单超线)或者把夹具改成现找一张超线的")
+    # 批准人用**顾问** —— 他不是处理人自己(过得了那道闸),而且不是「上升一级」
+    # 要的那个角色(所以超线那条该拒)。⚠️ 跨店角色(总部运营 / 售后)的 `shop` 是空,
+    # `人(role, 店)` 按店取**取不到**,所以正向那条另找一个人,见下面第三张单那段。
+    ck("部分退款**不填金额** → 拒", rt.close_bad_rating(
+        {"pkg": 包, "note": "已协商,顾客保留衣服,退还工费部分", "way": "部分退款",
+         "approved_by": 顾问["no"]}, 店长)["code"] == "NEED_WAY")
+    ck("部分退款**退得比订单额多** → 拒(订单额是从库里现读的)", rt.close_bad_rating(
+        {"pkg": 包, "note": "已协商,顾客保留衣服,退还工费部分", "way": "部分退款",
+         "approved_by": 顾问["no"], "amount": _单额 + 1}, 店长)["code"] == "NEED_WAY")
+    ck("不出钱的那几种**填了金额** → 拒(不是忽略)", rt.close_bad_rating(
+        {"pkg": 包, "note": "已电话联系顾客,约了周六回店修线头,顾客接受", "way": "免次改衣",
+         "amount": 500}, 店长)["code"] == "NEED_WAY")
+    ck(f"**超线**({_线})而批准人不是「{_要谁}」→ 拒(角色也是从库里现读的)",
+       rt.close_bad_rating(
+        {"pkg": 包, "note": "已协商,顾客保留衣服,退还工费部分", "way": "部分退款",
+         "approved_by": 顾问["no"], "amount": _线 + 1}, 店长)["code"] == "NEED_WAY")
+    ck("全额退款**自己填了别的数** → 拒(金额就是订单额,系统现算)", rt.close_bad_rating(
+        {"pkg": 包, "note": "已协商全额退款,衣服回收", "way": "全额退款",
+         "approved_by": 顾问["no"], "amount": 1.0}, 店长)["code"] == "NEED_WAY")
     ck("拒了这几次之后工单还在待处理",
        c.execute("SELECT status FROM task WHERE id=?", (t["id"],)).fetchone()[0] == "待处理")
 
@@ -244,6 +284,52 @@ def run(T):
         ck("评价行上留着原来的星级(看得出改过)",
            (lambda x: x["star"] == 5 and x["star_before"] == 2 and x["edit_cnt"] == 1)(
                c.execute("SELECT * FROM rating WHERE pkg_id=?", (包2,)).fetchone()))
+
+    # ── 超线那条线的**正向**:对的角色批了,要真的放行 ────────────────────
+    #
+    # ⚠️⚠️ 为什么非要单独一张单验这个:上面那几条全是「拒」,
+    # 而它们**覆盖不到放行那一支**。
+    # > 一个「这条线在正确的角色上放行」和一个「它对谁都拒」,
+    # > **在那几条拒的判据上长得一模一样。**
+    # 一条永远拒的闸会让这个功能彻底不可用,而所有拒的判据都是绿的。
+    # (这正是 2026-10-14 上午那条教训:判据要验到它真能走通。)
+    # 而正向那条会**真的把工单关掉**,所以不能插在上面那组里,得另起一张单。
+    _上级 = (lambda x: dict(x) if x else None)(c.execute(
+        "SELECT no, name, role FROM staff WHERE role=? AND status='启用' LIMIT 1",
+        (_要谁,)).fetchone())
+    ck(f"库里有在职的「{_要谁}」当批准人(没有的话下面那条等于没验)", bool(_上级),
+       f"一个在职的 {_要谁} 都没有 —— 那这条线上**谁都批不了**,"
+       f"而上面那几条「拒」照样全绿")
+    o3 = c.execute("""SELECT o.id, k.phone_tail, o.amount FROM ordr o
+                        JOIN customer k ON k.id=o.customer_id
+                       WHERE o.kind='定制品订单' AND o.status='已发货' AND o.shop=?
+                         AND o.amount > ?
+                         AND (SELECT COUNT(*) FROM pkg g WHERE g.order_id=o.id AND g.void_at IS NULL)=1
+                         AND NOT EXISTS(SELECT 1 FROM pickup p WHERE p.order_id=o.id)
+                       ORDER BY o.id LIMIT 1""", (o["shop"], _线)).fetchone()
+    ck(f"有第三张单当夹具,而且订单额超过那条线({_线})", bool(o3),
+       f"找不到本店一张超线、已发货、单包裹、还没到店的定制单 —— "
+       f"而全库 33% 的单超线,所以这更像是夹具条件太窄")
+    if o3 and _上级:
+        oid3, 尾3 = o3["id"], o3["phone_tail"]
+        pw.arrive({"order_id": oid3}, 顾问)
+        码3 = pw.customer_issue_code(oid3, 尾3).get("试穿合身码")
+        pw.verify({"order_id": oid3, "code": 码3}, 顾问)
+        包3 = c.execute("SELECT pkg_id FROM pkg WHERE order_id=? AND void_at IS NULL",
+                        (oid3,)).fetchone()["pkg_id"]
+        rt.customer_rate(oid3, 尾3, 2, "袖子长短不一样,穿不出去")
+        r3 = rt.close_bad_rating(
+            {"pkg": 包3, "note": "已协商全额退款,衣服回收,顾客同意", "way": "全额退款",
+             "approved_by": _上级["no"]}, 店长)
+        ck(f"**超线 + 「{_要谁}」批 → 真的放行**(全额退款,金额系统现算)",
+           r3.get("ok"), r3.get("reason"))
+        ck("放行之后金额**落在评价那行上**,而且等于订单额(不是人填的)",
+           (lambda x: x and x["handle_amount"] is not None
+            and abs(x["handle_amount"] - o3["amount"]) < 0.005)(
+               c.execute("SELECT * FROM rating WHERE pkg_id=?", (包3,)).fetchone()),
+           f"← 订单额 {o3['amount']};落下来的是 "
+           f"{(c.execute('SELECT handle_amount FROM rating WHERE pkg_id=?', (包3,)).fetchone() or ['(没有)'])[0]}"
+           f" —— 金额不落库的话,「谁批了多少钱」就只在那句中文里")
 
     # ── 闸的要害:**判据取签收记录,不取订单状态** ─────────────────────
     # ⚠️ 第一版这一条是假绿的:它没说是哪个包裹,于是拦住它的是 `_挑包裹`

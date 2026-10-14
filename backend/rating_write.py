@@ -250,9 +250,30 @@ def close_bad_rating(d, me):
     # 传姓名的话两个人改个名就比不出来了。
     我 = me.get("no") or me.get("name")
     方式 = d.get("way") or d.get("处理方式")
-    行, 方式话 = R.处理方式能不能用(方式, d.get("approved_by"), 我)
+    # ── 金额 + 超线上升一级(用户 2026-10-14 拍「上一级 = 总部运营」)────────
+    #
+    # ⚠️ 订单额和批准人角色**都从库里现读**,不让调用方传 ——
+    # 传进来的话,一个把 `order_amount` 填小的请求就能绕过那条线,
+    # 而记录上看起来一切正常。
+    # > 一个「这一单就是这么多钱」和一个「调用方说它这么多钱」,
+    # > **在那个数上长得一模一样。**
+    _单 = rows("SELECT amount FROM ordr WHERE id=?", r["order_id"])
+    订单额 = _单[0]["amount"] if _单 else None
+    批工号 = str(d.get("approved_by") or "").strip() or None
+    _批 = rows("SELECT role, status FROM staff WHERE no=?", 批工号) if 批工号 else []
+    # ⚠️ 离职的人不算 —— 一个离职的总部运营「批」了一笔退款,
+    # 和一个在职的批了,在那两个字段上长得一模一样。
+    批准人角色 = (_批[0]["role"] if _批 and _批[0]["status"] == "启用" else None)
+    金额 = d.get("amount") if d.get("amount") is not None else d.get("退款金额")
+    行, 方式话 = R.处理方式能不能用(方式, 批工号, 我,
+                                   金额=金额, 订单额=订单额,
+                                   批准人角色=批准人角色)
     if not 行:
         return dict(ok=False, code="NEED_WAY", reason=方式话)
+    # 全额退款不让人填,金额 = 订单额(现算 —— 和口径层那条同一个理由)
+    if 方式 and str(方式).strip() == "全额退款" and 金额 is None:
+        金额 = 订单额
+    金额 = float(金额) if 金额 is not None else None
     方式 = str(方式).strip()
     要二人, _ = R.要不要第二个人(方式)
     批 = str(d.get("approved_by") or "").strip() or None
@@ -261,13 +282,18 @@ def close_bad_rating(d, me):
     with sqlite3.connect(DB) as c:
         c.execute("UPDATE task SET status='已关闭' WHERE id=?", (r["task_id"],))
         c.execute("UPDATE rating SET handled_at=?, handled_by=?, handle_note=?,"
-                  " handle_way=?, handle_approved_by=?, handle_approve_note=? WHERE pkg_id=?",
-                  (now, 我, str(d["note"]).strip(), 方式, 批, 批说明, pid))
+                  " handle_way=?, handle_approved_by=?, handle_approve_note=?,"
+                  " handle_amount=? WHERE pkg_id=?",
+                  (now, 我, str(d["note"]).strip(), 方式, 批, 批说明, 金额, pid))
     # ⚠️ 审计日志里**要带上处理方式和批准人** —— 不带的话,
     # 「谁批了一笔退款」这件事只存在于 rating 表里,而 op_log 是追溯的入口。
     log_op(me.get("name"), "task", r["task_id"], "待处理", "已关闭", True, "BAD_RATING_CLOSED",
            f"{方式}:{str(d['note']).strip()[:90]}", {"role": me.get("role"), "pkg": pid,
-           "处理方式": 方式, "出钱": 要二人, "批准人": 批})
+           "处理方式": 方式, "出钱": 要二人, "批准人": 批,
+           # ⚠️ 金额要进审计:不带的话「谁批了**多少钱**」只存在 rating 表里,
+           # 而 op_log 是追溯的入口 —— 超线那条规矩将来被问起时,查的是这里。
+           "退款金额": 金额, "超线要谁批": R.这笔要谁批(金额)[0],
+           "批准人角色": 批准人角色})
     return dict(ok=True, code="BAD_RATING_CLOSED", 包裹=pid, 工单=r["task_id"],
-                处理方式=方式, 出钱=要二人, 批准人=批,
+                处理方式=方式, 出钱=要二人, 批准人=批, 退款金额=金额,
                 reason=f"工单 {r['task_id']} 已关闭({方式});{方式话}")
