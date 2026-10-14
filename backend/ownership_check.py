@@ -35,6 +35,7 @@ bad = 0
 咬合 = [
     ('把「归属顾问已离职」那一支去掉(离职的也算有人管)',
      '离职的顾问名下还挂着客户'),
+    ('待确立去掉按人去重(一条预约一行)', '待确立一人一行(到店几次也只数一次)'),
 ]
 
 
@@ -106,6 +107,34 @@ def main():
     待 = O.待确立()
     ck("有「到店接待完成但归属没确立」的样本", "有" if 待 else "没有", "有",
        f"  ← {len(待)} 人。归属该在这一刻定(业务 2026-09-20)")
+
+    # ⑥ **一人一行**(用户 10-14 拍:人数一律按人,归主档所在店)—— 在库副本上**自造**三种形状:
+    #   同一个人到店两次 / 两条合并过的档案 / 副档确立过。不靠库里碰巧有什么:
+    #   **「这个库里没人到店两次」和「去重是对的」,在一条按真库判的检查上长得一样。**
+    import shutil, tempfile
+    tmp = tempfile.mkdtemp(prefix="own-")
+    副本 = os.path.join(tmp, "lanxiu.db")
+    shutil.copy(O.DB, 副本)
+    with sqlite3.connect(副本) as c:
+        造 = [("C-检查-两次", "SH001", None), ("C-检查-主", "SH001", None), ("C-检查-副", "SH002", "C-检查-主"),
+              ("C-检查-确主", "SH001", None), ("C-检查-确副", "SH002", "C-检查-确主")]
+        for cid, 店, 并 in 造:
+            c.execute("insert into customer(id,name,shop,merged_into) values(?,?,?,?)", (cid, "检查", 店, 并))
+        for i, (cid, ts, 人) in enumerate([("C-检查-两次", "2026-01-01 10:00", "A1"), ("C-检查-两次", "2026-02-01 10:00", "A2"),
+                                           ("C-检查-副", "2026-01-02 10:00", "B1"), ("C-检查-主", "2026-01-05 10:00", "B2"),
+                                           ("C-检查-确主", "2026-01-03 10:00", "C1")]):
+            c.execute("insert into appointment(id,customer_id,advisor_no,start_ts,status) values(?,?,?,?,'已完成')",
+                      (f"AP-检查-{i}", cid, 人, ts))
+    O.记一笔("C-检查-确副", None, "C1", "确立", O.依据[0], "检查", db=副本)
+    行 = {d["customer_id"]: d for d in O.待确立(副本) if str(d["customer_id"]).startswith("C-检查")}
+    全 = [d["customer_id"] for d in O.待确立(副本)]
+    shutil.rmtree(tmp, ignore_errors=True)
+    ck("待确立一人一行(到店几次也只数一次)", "一行" if 全.count("C-检查-两次") == 1 else f"{全.count('C-检查-两次')} 行", "一行")
+    ck("待确立的接待人取最早那次到店", (行.get("C-检查-两次") or {}).get("接待人"), "A1")
+    ck("合并过的两条档案算一个人,归主档门店",
+       ("C-检查-副" not in 行, (行.get("C-检查-主") or {}).get("门店")), (True, "SH001"))
+    ck("副档确立过,这个人就算确立了", "C-检查-确主" in 行, False)
+    ck("真库上待确立也没有重复的人", len(待) == len({d["customer_id"] for d in 待}), True, f"  ← {len(待)} 人")
 
     # ⚠️ **四种码都必须有样本** —— 夹具由 backfill_fixtures.py 造。
     # 这里**判失败不判警告**:没有样本时那条分支从没跑过,

@@ -1785,6 +1785,18 @@
   "预期红": "离职的顾问名下还挂着客户"
  },
  {
+  "script": "backend/ownership_check.py",
+  "改坏": "待确立去掉按人去重(一条预约一行)",
+  "file": [
+   {
+    "path": "backend/ownership.py",
+    "old": "            人[根] = d\n",
+    "new": "            人[(根, r[\"start_ts\"])] = d\n"
+   }
+  ],
+  "预期红": "待确立一人一行(到店几次也只数一次)"
+ },
+ {
   "script": "backend/credit_check.py",
   "改坏": "把影响力分成也拉进「总和必须 100」的校验(两种分成合成一种)",
   "file": [

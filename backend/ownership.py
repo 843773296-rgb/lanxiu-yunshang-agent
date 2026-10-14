@@ -117,18 +117,42 @@ def 待确立(db=DB):
     """到店接待完成、但归属还没确立的客户 —— **归属该在这一刻定**。
 
     判据:有「已到店」或「已完成」的预约,而 `cust_owner_log` 里没有确立记录。
+
+    **一人一行**(用户 10-14 拍:人数一律按人,归主档所在店)。原来一条预约一行,
+    同一个人到店几次就数几次 —— 10-14 量过:14537 行,其实是 5549 人,平均数了 2.6 遍。
+    合并过的档案顺着主档认成同一个人;关联档里**任一条**确立过,这个人就算确立了。
+    接待人取**最早那次**到店的 —— 归属本来就在首次到店接待完成时定。
     """
+    import merge as _并
     with sqlite3.connect(db) as c:
         c.row_factory = sqlite3.Row
         建表(c)
-        return [dict(r) for r in c.execute("""
+        已确立 = {r[0] for r in c.execute(
+            "select distinct customer_id from cust_owner_log where action='确立'")}
+        行们 = c.execute("""
             select a.customer_id, cu.name, cu.shop 门店, a.advisor_no 接待人,
                    a.start_ts, a.status
             from appointment a join customer cu on cu.id = a.customer_id
             where a.status in ('已到店','已完成')
-              and not exists (select 1 from cust_owner_log g
-                              where g.customer_id = a.customer_id and g.action='确立')
-            order by a.start_ts""")]
+            order by a.start_ts, a.customer_id""").fetchall()
+        主, 人 = {}, {}
+        for r in 行们:
+            cid = r["customer_id"]
+            if cid not in 主:
+                主[cid] = _并.主档(cid, c) or cid
+            根 = 主[cid]
+            if 根 in 人:
+                continue                                   # 已经有更早的那次了
+            if 已确立 & set(_并.关联档(根, c) or [根]):
+                人[根] = None                              # 占位:这个人确立过,后面的也跳过
+                continue
+            d = dict(r)
+            d["customer_id"] = 根
+            店 = c.execute("select name, shop from customer where id=?", (根,)).fetchone()
+            if 店:
+                d["name"], d["门店"] = 店["name"], 店["shop"]
+            人[根] = d
+        return [d for d in 人.values() if d]
 
 
 def 记一笔(customer_id, frm, too, action, basis, actor, ts=None, db=DB):
