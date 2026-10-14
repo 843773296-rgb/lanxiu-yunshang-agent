@@ -95,9 +95,25 @@ function 销账标(x){
 }
 const CF={高:"ok",中:"near",低:"over"};
 let state="待办", rows=[], sel=null;
+// 「没走正门关的」那 166 条默认**收起**(用户 2026-10-14 拍)。
+// ⚠️ 收起只影响**列表**,不影响计数 —— 「166 条被收起」和「166 条不见了」
+// 在一个只显示 41 条的页面上长得一模一样,而后者会让人以为数据丢了。
+// 所以标题上三个数同时摆:这一档总数 / 其中走过正门的 / 其中没走正门的。
+let 展开没走正门=false;
 
 function render(){
-  $("#rows").innerHTML = rows.length ? rows.map(x=>`
+  // ⚠️⚠️ **收起用 `没走正门`,标签用 `研判有结论` —— 两个都要用,不能互相替代。**
+  // 这一轮数据上它们恰好**完全互补**(166 / 41,没有交叉格),所以今天用哪个
+  // 画出来一样。但它们问的是两件事:`研判有结论` 是「AI 出过结论吗」,
+  // `没走正门` 是「关单时走没走审计」。
+  // 等有人在页面上走完「AI 出结论 → 复核 → 走正门关单」,那条就是
+  // **研判有结论且走了正门** —— 一个今天不存在的第四格。
+  // > 一个「这两个字段说的是同一件事」和一个「它们现在恰好互补」,
+  // > **在今天这张交叉表上长得一模一样。**
+  // 图省事只用一个,等第四格出现时页面会把它归错,**而那时没有任何东西会报错**。
+  const 显 = (state==="已销账" && !展开没走正门)
+             ? rows.filter(x=>!x.没走正门) : rows;
+  $("#rows").innerHTML = 显.length ? 显.map(x=>`
     <tr data-t="${esc(x.task_id)}" ${sel===x.task_id?'aria-selected="true"':""}>
       <td class="num">${esc(x.task_id)}</td><td>${esc(x.type)}</td>
       <td class="num">${x.waited_h}h</td>
@@ -106,7 +122,10 @@ function render(){
       <td>${销账标(x)}</td>
       <td>${x.ai_confidence?`<span class="tag ${CF[x.ai_confidence]||""}">${x.ai_confidence}</span>`:"—"}</td>
       <td class="num">${x.cost!=null?"$"+(+x.cost).toFixed(4):"—"}</td></tr>`).join("")
-    : `<tr><td colspan="8" class="empty">这一档是空的。</td></tr>`;
+    : `<tr><td colspan="8" class="empty">${
+        (state==="已销账" && !展开没走正门 && rows.length)
+          ? `这一档 ${rows.length} 条**全是「没走正门关的」**,已经收起 —— 点上面那个按钮看。`
+          : "这一档是空的。"}</td></tr>`;
   $("#rows").querySelectorAll("tr[data-t]").forEach(tr=>tr.onclick=()=>open_(tr.dataset.t));
 }
 async function load(){
@@ -114,15 +133,30 @@ async function load(){
   rows=q.rows; render();
   // 「已销账」这一档顶上报分组计数 —— 一行行看才看出「大多数根本没走过研判」,
   // 等于没分开。这个数直接说出来。
-  if(state==="已销账"){
-    const 研=rows.filter(x=>x.研判有结论).length, 关=rows.filter(x=>!x.研判有结论).length;
-    提示(`这一档 ${rows.length} 条:研判有结论 ${研} 条 · 只是关单、没走过研判 ${关} 条`
-         + (关?" —— 后者可能是有人直接关单了事,值得看一眼":""), 关?"bad":"ok");
-  }
+  if(state==="已销账") 报销账计数();
 }
 
 // ⚠️ 提示原来只有 textContent,**成功和「有失败」长得一模一样**。
 // 现在分 ok / bad 两种样式,而且**有一条失败就不出成功样式**。
+// 「已销账」这一档的三个数 + 展开按钮。**抽成函数是因为按钮要再调它一次** ——
+// 第一版我在按钮里写了 `load_提示()`,**那个函数根本不存在**:
+// 点一下就 ReferenceError,而 `js_check.py` 过了 —— 它只验语法,不验函数在不在。
+// > 一个「这个函数名写对了」和一个「它压根不存在」,
+// > **在语法检查通过这件事上长得一模一样。**
+function 报销账计数(){
+  const 研=rows.filter(x=>x.研判有结论).length;
+  const 没门=rows.filter(x=>x.没走正门).length;
+  // **三个数同时摆** —— 只摆剩下的那个,用户点开会发现和总数对不上。
+  提示(`这一档 ${rows.length} 条:研判有结论 ${研} 条`
+       + (没门?` · 没走正门关的 ${没门} 条(${展开没走正门?"已展开":"默认收起"})`:"")
+       + (没门?` <button id="展" class="lnk">${展开没走正门?"收起":"点开看"}</button>`:"")
+       + (没门?` —— 那批关单时没有审计记录,多半是正门做好之前直接写库的`
+               + `(造数也走不到正门);这个数往上涨就是正门又被绕过了`:""),
+       没门?"bad":"ok");
+  const b=$("#展");
+  if(b) b.onclick=()=>{ 展开没走正门=!展开没走正门; render(); 报销账计数(); };
+}
+
 function 提示(文, 级){
   const e=$("#msg"); e.textContent=文;
   e.className="note" + (级?" "+级:"");
