@@ -523,7 +523,8 @@ AFTERSALE_TOOLS = [
     "mcp__shop__bad_ratings",        # 差评清单(售后看全量,店长只看本店)
     "mcp__shop__rating_overview",    # 评价概况 —— 判「是不是老问题」要它
     "mcp__shop__service_records",    # 判差评的第三样材料:交付签收 / 返修售后 / 这个客户的历史差评
-    "mcp__shop__close_bad_rating",   # 写 —— 确认结案;出钱的三种要批准人且不能是自己(TK14)
+    "mcp__shop__close_bad_rating",   # 写 —— 确认结案;出钱的那几种要批准人、不能是自己、要给金额(TK14)
+                                     # ⚠️ 原来写「出钱的三种」,而出钱的只有两种 —— 手抄的数字跟不上枚举
     "mcp__shop__get_maintain",       # 售后判责的**现场**:客户报的问题、量体记录、形制工艺
     # get_maintain 的说明明写「判定标准要另外查 kb_tables」—— 不给它就等于
     # 让这个岗位凭印象判,而「按表判」和「凭印象判」在那句判定上长得一模一样

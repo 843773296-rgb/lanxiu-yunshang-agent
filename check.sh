@@ -172,6 +172,7 @@ run "形制与量体模板 · 模板必须覆盖形制的关键尺寸(漏一项�
 run "待定版型分档 · 47 条对照用例(真值手标)" python3 backend/pattern_grade_check.py
 run "商品图 · 每张都渲染得出来,且看得出是不同的衣服" python3 backend/img_check.py
 run "工具入参 · 人怎么称呼它,工具就得认得出来" python3 backend/tool_input_check.py
+run "工具签名 vs MCP schema · 93 个工具每个都是两份,漂了模型就拿不到那个能力(函数加了参数而 schema 没加 → 模型看不到,而不报错)" python3 backend/tool_schema_check.py
 run "资料编辑日志 · 日志要说实话,而且说得出改了什么" python3 backend/edit_log_check.py
 run "商品表单 · 显示的字段就得改得了(对照设计稿)" python3 backend/product_form_check.py
 run "量体模版 / 测量项 · 改一个被引用的东西是最危险的动作" python3 backend/measure_tpl_check.py
