@@ -43,7 +43,10 @@ CREATE TABLE customer(id TEXT PRIMARY KEY, name TEXT, phone TEXT, phone_tail TEX
   province TEXT, city TEXT, district TEXT, inviter TEXT, points INT DEFAULT 0, remark TEXT,
   -- 这条门店档案属于哪个账户(按手机号归)。**同一账户可以有多条档案** ——
   -- 在不同店建过档就是两条,「客户合并」工单要解决的正是这个。
-  account_id TEXT);
+  account_id TEXT,
+  -- **软合并**(用户 2026-10-14 拍):这条档案并入了哪条(主档的 id);空 = 独立。数据不搬、能撤。
+  -- 谁在什么时候并的看 op_log(machine='customer-merge');这一列不含日期,世界平移不用登记。
+  merged_into TEXT);
 -- 积分流水(设计稿 积分行为:账户调加/账户调减/积分消费/积分返还/确认款样/完成定购)
 CREATE TABLE points_log(id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id TEXT, behavior TEXT,
   delta INT, balance INT, ref_id TEXT, reason TEXT, actor TEXT, ts TEXT);

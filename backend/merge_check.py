@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""客户软合并 · 检查 —— 在库的临时副本上跑,真库不动。
+
+用户 2026-10-14 拍:做软合并,并把现有硬合并改成它。要守的:
+  · **数据一行不搬**(合并前后各表里挂在副档上的行数不变)—— 硬合并最大的问题是搬了一半;
+  · 保留**建档最早**的当主档;**能撤**,撤完恢复原样;
+  · 只有**总部运营**能执行 / 撤销(两段确认的第二段),成功被拒都留痕;
+  · 客户列表不再单列副档,按副档号搜得到主档;详情页:副档告诉页面主档是谁,主档列关联档案**各列各的不相加**;
+  · 审批中心「已合并」走软合并、执行人从登录态取;研判「客户合并确认」凭合并记录办结。
+⚠️ 要合并的那一对**自己造**(挑两条档案、副本上把建档时间摆成已知先后),不靠库里碰上的。
+"""
+import os, shutil, sqlite3, sys, tempfile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path[:0] = [HERE, os.path.join(ROOT, "knowledge"), os.path.join(ROOT, "agent")]
+G, R, D = "\033[32m", "\033[31m", "\033[0m"
+bad, n = [], 0
+
+咬合 = [
+    ("并入时把副档的订单改指主档(变成硬合并)", "数据一行不搬:副档名下的订单 / 量体 / 预约行数不变"),
+    ("主档挑建档较晚的那条", "保留建档最早的那条当主档"),
+    ("执行合并不查角色", "店长不能执行合并(两段确认:执行只认总部运营)"),
+    ("客户列表不隐去已并入的档案", "客户列表不再单列副档"),
+]
+
+
+def ck(名, ok, 附=""):
+    global n
+    n += 1
+    if not ok:
+        bad.append(名)
+    print(f"  {'✅' if ok else '❌'} {名}" + (f"  {str(附)[:160]}" if 附 and not ok else ""))
+
+
+def 拒了吗(f):
+    try:
+        f(); return False
+    except PermissionError:
+        return True
+
+
+print("客户软合并 · 检查(库的临时副本上跑,真库不动)")
+print("=" * 80)
+tmp = tempfile.mkdtemp(prefix="merge-")
+db = os.path.join(tmp, "lanxiu.db")
+shutil.copy(os.path.join(HERE, "lanxiu.db"), db)
+import merge as MG, ops, oplog, server as SV
+MG.DB = ops.DB = oplog.DB = SV.DB = db
+c = sqlite3.connect(db); c.row_factory = sqlite3.Row
+MG.确保列()
+
+
+def 员工(角色):
+    r = c.execute("SELECT no, name, role FROM staff WHERE role=? AND status='启用' ORDER BY no LIMIT 1", (角色,)).fetchone()
+    return dict(r) if r else None
+
+
+店长, 总部 = 员工("店长"), 员工("总部运营")
+# 挑两条**都有订单**的档案,建档时间摆成已知先后:甲早、乙晚
+两条 = c.execute("SELECT customer_id FROM ordr GROUP BY customer_id HAVING COUNT(*)>=1 ORDER BY customer_id LIMIT 2").fetchall()
+ck("有店长、总部运营、两条有订单的档案可拿来造(空集合上什么都成立)", bool(店长 and 总部 and len(两条) == 2))
+if 店长 and 总部 and len(两条) == 2:
+    甲, 乙 = 两条[0][0], 两条[1][0]
+    c.execute("UPDATE customer SET created='2020-01-01', merged_into=NULL WHERE id=?", (甲,))
+    c.execute("UPDATE customer SET created='2024-06-01', merged_into=NULL WHERE id=?", (乙,))
+    c.commit()
+    表们 = ("ordr", "measure_rec", "appointment", "followup", "deposit", "rating", "points_log")
+    def 行数(cid):
+        return {t: c.execute(f"SELECT COUNT(*) FROM {t} WHERE customer_id=?", (cid,)).fetchone()[0] for t in 表们}
+    前乙 = 行数(乙)
+
+    ck("没身份 → 拒", 拒了吗(lambda: MG.并入(乙, 甲, None)))
+    ck("店长不能执行合并(两段确认:执行只认总部运营)", 拒了吗(lambda: MG.并入(乙, 甲, 店长)))
+    ck("同一个档案号不能并", MG.并入(甲, 甲, 总部).get("code") == "SAME")
+    r = MG.并入(乙, 甲, 总部)     # 故意把晚的放前面
+    ck("保留建档最早的那条当主档", r.get("ok") and r.get("主档") == 甲 and r.get("副档") == 乙, r)
+    ck("数据一行不搬:副档名下的订单 / 量体 / 预约行数不变", 行数(乙) == 前乙, (前乙, 行数(乙)))
+    ck("副档记上了并入谁", c.execute("SELECT merged_into FROM customer WHERE id=?", (乙,)).fetchone()[0] == 甲)
+    ck("主档 / 关联档 / 合并过吗 都认得出", MG.主档(乙) == 甲 and MG.关联档(甲) == [甲, 乙] and MG.合并过吗(甲, 乙))
+    lg = c.execute("SELECT actor, code FROM op_log WHERE machine='customer-merge' ORDER BY rowid DESC LIMIT 1").fetchone()
+    ck("合并写进 op_log,查得到是谁", lg and lg["code"] == "MERGE" and 总部["no"] in lg["actor"], dict(lg) if lg else None)
+    ck("已经是同一个人的再并 → 不重复", MG.并入(甲, 乙, 总部).get("code") == "ALREADY")
+
+    列 = SV.customer_list({"size": ["100000"]})["rows"]
+    ck("客户列表不再单列副档", 乙 not in {x["id"] for x in 列} and 甲 in {x["id"] for x in 列})
+    搜 = SV.customer_list({"q": [乙]})["rows"]
+    ck("按副档号搜 → 列出主档并注明", 搜 and 搜[0]["id"] == 甲 and 乙 in (搜[0].get("搜的是") or ""), 搜[:1])
+    详乙, 详甲 = SV.customer_detail(乙), SV.customer_detail(甲)
+    ck("副档详情告诉页面主档是谁", 详乙.get("已并入") == 甲)
+    关 = 详甲.get("关联档案") or []
+    ck("主档详情列出关联档案,订单数各列各的(不相加)",
+       len(关) == 1 and 关[0]["id"] == 乙 and 关[0]["订单数"] == 前乙["ordr"], 关)
+
+    ck("店长不能撤销合并", 拒了吗(lambda: MG.撤销(乙, 店长)))
+    r = MG.撤销(乙, 总部)
+    ck("能撤:撤完恢复独立,数据照旧", r.get("ok") and MG.主档(乙) == 乙 and not MG.合并过吗(甲, 乙) and 行数(乙) == 前乙, r)
+    ck("没并过的撤 → 说清没并过", MG.撤销(乙, 总部).get("code") == "NOT_MERGED")
+
+    # ── 审批中心那条流转:改成软合并、执行人从登录态取 ──────────────────────
+    c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES('T-检查合并','客户合并确认',?,'待处理','2026-01-01','检查')",
+              (f"{甲}|{乙}",)); c.commit()
+    r1 = SV.merge_transit("T-检查合并", "待总部审批", "生日地址一致", me=店长)
+    r2 = SV.merge_transit("T-检查合并", "已合并", "审批通过", me=店长)
+    ck("审批中心:店长不能点「已合并」", r1.get("ok") and not r2.get("ok"), (r1.get("reason"), r2.get("reason")))
+    r3 = SV.merge_transit("T-检查合并", "已合并", "审批通过", me=总部)
+    ck("审批中心:总部运营点「已合并」→ 走软合并,数据不搬",
+       r3.get("ok") and MG.合并过吗(甲, 乙) and 行数(乙) == 前乙, r3)
+    lg = c.execute("SELECT actor FROM op_log WHERE machine='customer-merge' AND code='MERGE' ORDER BY rowid DESC LIMIT 1").fetchone()
+    ck("审批中心那一笔的执行人是登录的那个人(不是写死的名字)", lg and 总部["no"] in lg["actor"], dict(lg) if lg else None)
+
+    # ── 研判:客户合并确认凭合并记录办结 ─────────────────────────────────
+    MG.撤销(乙, 总部)
+    tid = ops.save_triage("T-检查合并", "BP-02", "检查", "根因:检查\n建议动作:合并", [])
+    ops.resolve(tid, "已采纳", 店长, 来源="检查")
+    r = ops.办结(tid, f"{甲}|{乙}", 总部)
+    ck("研判:还没合并 → 办结不了", r.get("code") == "NO_RECEIPT", r)
+    MG.并入(甲, 乙, 总部)
+    r = ops.办结(tid, f"{甲}|{乙}", 总部)
+    ck("研判:合并了 → 凭合并记录办结", r.get("ok") and r.get("回执类型") == "合并记录", r)
+c.close()
+shutil.rmtree(tmp, ignore_errors=True)
+
+print()
+if bad:
+    print(f"{R}❌ {len(bad)} 条不过(验了 {n} 条){D}")
+    sys.exit(1)
+print(f"{G}✅ 客户软合并:数据不搬、留最早、能撤、只认总部运营(验了 {n} 条){D}")

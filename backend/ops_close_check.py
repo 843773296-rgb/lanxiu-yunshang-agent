@@ -142,12 +142,20 @@ if tid:
     r = ops.办结(tid, "CHK-AS-同单", 店长)
     ck("差评退款 + 同一张订单的已完成售后单 → 已办结", r.get("ok") and r.get("回执类型") == "售后单", r)
 
-# ── 客户合并:系统里没有执行合并,现在一条都办结不了 ──────────────────
-tid, t = 造采纳("客户合并确认", 店长)     # 两段:店长认人 → 总部运营执行合并(执行合并还没做)
+# ── 客户合并:10-14 软合并做了,办结认「合并记录」(合并后能办结那一半在 merge_check 验)──────
+tid, t = 造采纳("客户合并确认", 店长)     # 两段:店长认人 → 总部运营执行合并
 if tid:
-    r = ops.办结(tid, "随便什么单号", 总部)
-    ck("客户合并确认 → 现在进不了已办结(执行合并还没做)", r.get("code") == "NO_RECEIPT"
-       and "执行合并" in r.get("reason", ""), r)
+    import merge as _MG
+    _MG.DB = db
+    a_, b_ = t["ref_id"].split("|")
+    c.execute("UPDATE customer SET merged_into=NULL WHERE id IN (?,?)", (a_, b_)) if "merged_into" in \
+        {r[1] for r in c.execute("PRAGMA table_info(customer)")} else None
+    c.commit()
+    ck("客户合并:回执单号不是工单挂的那一对 → 办结不了",
+       ops.办结(tid, "随便什么单号", 总部).get("code") == "NO_RECEIPT")
+    r = ops.办结(tid, t["ref_id"], 总部)
+    ck("客户合并:那一对还没合并 → 办结不了(说清去审批中心执行)", r.get("code") == "NO_RECEIPT"
+       and r.get("回执类型") == "合并记录" and "还没合并" in r.get("reason", ""), r)
 c.close()
 shutil.rmtree(tmp, ignore_errors=True)
 

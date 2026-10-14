@@ -7525,5 +7525,53 @@
    }
   ],
   "预期红": "没写等什么 → 不收"
+ },
+ {
+  "script": "backend/merge_check.py",
+  "改坏": "并入时把副档的订单改指主档(变成硬合并)",
+  "file": [
+   {
+    "path": "backend/merge.py",
+    "old": "        c.execute(\"UPDATE customer SET merged_into=? WHERE id=?\", (主, 副))",
+    "new": "        c.execute(\"UPDATE customer SET merged_into=? WHERE id=?\", (主, 副))\n        c.execute(\"UPDATE ordr SET customer_id=? WHERE customer_id=?\", (主, 副))"
+   }
+  ],
+  "预期红": "数据一行不搬:副档名下的订单 / 量体 / 预约行数不变"
+ },
+ {
+  "script": "backend/merge_check.py",
+  "改坏": "主档挑建档较晚的那条",
+  "file": [
+   {
+    "path": "backend/merge.py",
+    "old": "        主, 副 = sorted((ra, rb), key=lambda x: ((候[x][\"created\"] or \"9999\"), x))",
+    "new": "        副, 主 = sorted((ra, rb), key=lambda x: ((候[x][\"created\"] or \"9999\"), x))"
+   }
+  ],
+  "预期红": "保留建档最早的那条当主档"
+ },
+ {
+  "script": "backend/merge_check.py",
+  "改坏": "执行合并不查角色",
+  "file": [
+   {
+    "path": "backend/merge.py",
+    "old": "    if me.get(\"role\") not in 能执行合并的角色:\n        话 = f\"客户合并的执行只能由",
+    "new": "    if False:\n        话 = f\"客户合并的执行只能由"
+   }
+  ],
+  "预期红": "店长不能执行合并(两段确认:执行只认总部运营)"
+ },
+ {
+  "script": "backend/merge_check.py",
+  "改坏": "客户列表不隐去已并入的档案",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    rs=[c for c in rs if not c.get(\"merged_into\")]",
+    "new": "    rs=[c for c in rs]"
+   }
+  ],
+  "预期红": "客户列表不再单列副档"
  }
 ]

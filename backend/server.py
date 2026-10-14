@@ -423,8 +423,16 @@ def close_task(tid,result,note,actor="魏欣新"):
     log_op(actor,"task",tid,"待处理",result,True,"CLOSE",note or "",{})
     return dict(ok=True,code="CLOSE",reason=f"任务已关闭:{result}")
 
-def merge_transit(tid, to, note, actor="魏欣新", role="顾问"):
-    """客户合并流转:店长发起 → 总部运营审批。规则见后台 PRD 6.2。"""
+def merge_transit(tid, to, note, me=None):
+    """客户合并流转:店长发起 → 总部运营审批。规则见后台 PRD 6.2。
+
+    ⚠️ 2026-10-14 两处改动(用户拍「现有硬合并改成软合并」):
+    · 「已合并」原来是**硬合并**(三张表改指主档、覆盖主档字段、副档归档)—— 撤不回、只搬 3 张表。
+      现在调 `merge.并入`:只在副档上记 merged_into,数据一行不搬,能撤。库里硬合并一次都没执行过。
+    · 执行人原来写死「魏欣新」、角色读的是兜底「顾问」—— 同 10-12 修过的销账,**改成从登录态取**(me)。"""
+    me = me or {}
+    actor = f"{me.get('name') or '?'}({me.get('no') or '?'})"
+    role = me.get("role") or "顾问"
     t=rows("SELECT * FROM task WHERE id=?",tid)
     if not t: return {"error":"任务不存在"}
     t=t[0]; cur=t["status"]
@@ -435,36 +443,18 @@ def merge_transit(tid, to, note, actor="魏欣新", role="顾问"):
 
     a,b=t["ref_id"].split("|")
     if to=="已合并":
-        ra=rows("SELECT * FROM customer WHERE id=?",a)[0]
-        rb=rows("SELECT * FROM customer WHERE id=?",b)[0]
-        # PRD:保留最早客户编号
-        main,dup=(ra,rb) if (ra["created"] or "") <= (rb["created"] or "") else (rb,ra)
-        # PRD:冲突字段采用最近一次经确认的数据
-        fresh = ra if (ra["last_interact"] or "") >= (rb["last_interact"] or "") else rb
-        conflicts=[]
-        for f in ("phone","addr","shop","advisor_no","level"):
-            if ra[f]!=rb[f]: conflicts.append(f"{f}: 取自 {fresh['id']}")
+        import merge as _mg
+        try:
+            r=_mg.并入(a, b, me, 来源="审批中心")
+        except PermissionError as e:
+            return dict(ok=False,code="ROLE",reason=str(e)[:200])
+        if not r.get("ok"): return r
         with _conn() as c:
-            # 合并标签、量体、跟进、预约、购买记录 → 关联迁移到主档
-            c.execute("UPDATE appointment SET customer_id=? WHERE customer_id=?",(main["id"],dup["id"]))
-            c.execute("UPDATE followup    SET customer_id=? WHERE customer_id=?",(main["id"],dup["id"]))
-            c.execute("UPDATE deposit     SET customer_id=? WHERE customer_id=?",(main["id"],dup["id"]))
-            # 冲突字段取最近确认的数据
-            c.execute("""UPDATE customer SET phone=?,addr=?,shop=?,advisor_no=?,level=?,
-                         last_interact=? WHERE id=?""",
-                      (fresh["phone"],fresh["addr"],fresh["shop"],fresh["advisor_no"],fresh["level"],
-                       fresh["last_interact"],main["id"]))
-            # PRD:订单、积分和支付只建立关联,不重复累计 —— 故不做 order_cnt / paid_amount 相加
-            c.execute("UPDATE customer SET archived=1 WHERE id=?",(dup["id"],))
             c.execute("UPDATE task SET status=?,summary=? WHERE id=?",
-                      ("已合并",f"主档 {main['id']} 保留(建档最早);{dup['id']} 归档。"
-                       f"冲突字段取自 {fresh['id']}。订单与积分仅建立关联,不重复累计。{note or ''}",tid))
-        log_op(actor,"customer",f"{main['id']}<-{dup['id']}","独立","已合并",True,"MERGE_DONE",
-               f"保留最早编号 {main['id']};冲突字段 {len(conflicts)} 项取自 {fresh['id']};"
-               f"订单/积分只关联不累计",{"conflicts":conflicts})
-        return dict(ok=True,code="MERGED",
-          reason=f"已合并:保留 {main['id']}(建档最早),{dup['id']} 转归档;"
-                 f"冲突字段 {len(conflicts)} 项取自 {fresh['id']};订单与积分仅建立关联,未累计")
+                      ("已合并",f"{r['副档']} 并入 {r['主档']}(保留建档最早);软合并,数据未搬、能撤。"
+                       f"订单与积分只关联不累计。{note or ''}",tid))
+        return dict(ok=True,code="MERGED",主档=r["主档"],副档=r["副档"],
+          reason=f"已合并:{r['副档']} 并入 {r['主档']}(保留建档最早);数据一行没搬,能撤;订单与积分只关联、不累计")
     with _conn() as c:
         c.execute("UPDATE task SET status=?,summary=? WHERE id=?",(to,note or "",tid))
     MSG={"待总部审批":"已提交总部运营审批","已核验":"已标记为非同一人,不再进入待核验队列",
@@ -2617,12 +2607,22 @@ def customer_list(q):
     f={k:(q.get(k) or [""])[0] for k in ("lifecycle","shop","advisor","level")}
     # ⚠️ **要把 advisor_no 一起取出来** —— 名字由 `填顾问名()` 现取,
     # 而它认的是工号。不取的话删列之后这一栏会静默变空。
+    import merge as _mg
+    _mg.确保列()
     rs=rows("""SELECT id,name,phone,lifecycle,shop,advisor_no,level,order_cnt,
-               paid_amount,last_interact,idle_days,amount_12m,archived FROM customer""")
+               paid_amount,last_interact,idle_days,amount_12m,archived,merged_into FROM customer""")
+    # 软合并(10-14):已并入别人的档案不单独列;**搜的正好是它的号**时,换成列它的主档并注明
+    并入 = {c["id"]: c["merged_into"] for c in rs if c.get("merged_into")}
+    rs=[c for c in rs if not c.get("merged_into")]
+    if kw in 并入:
+        主 = _mg.主档(kw)
+        for c in rs:
+            if c["id"] == 主: c["搜的是"] = f"{kw}(已并入此档)"
+        rs=[c for c in rs if c["id"]==主] + [c for c in rs if c["id"]!=主]
     填顾问名(rs)
     for c in rs:
         p=c["phone"] or ""; c["phone_mask"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
-    if kw: rs=[c for c in rs if kw in c["id"] or kw in (c["name"] or "") or kw in (c["phone"] or "")]
+    if kw: rs=[c for c in rs if c.get("搜的是") or kw in c["id"] or kw in (c["name"] or "") or kw in (c["phone"] or "")]
     for k,v in f.items():
         if v: rs=[c for c in rs if c.get(k)==v]
     rs=_sort(rs,q,{"id","name","paid_amount","order_cnt","idle_days","last_interact"})
@@ -2677,9 +2677,15 @@ def customer_detail(cid):
         calls=calls_of(cid)
     except Exception:
         calls=[]          # 老库还没有录音表
+    # 软合并(10-14):这条并入了别人 → 告诉页面主档是谁(页面引过去);
+    # 它是主档 → 列出关联档案,**各列各的订单 / 积分,不相加**(产品文档:只关联不累计)
+    import merge as _mg
+    _主 = _mg.主档(cid)
     return dict(customer=c,appts=appts,followups=fus,deposits=deps,logs=logs,calls=calls,
                 measures=measure_of(cid),binds=binds,points_log=plog,
-                level_cfg=lv[0] if lv else None)
+                level_cfg=lv[0] if lv else None,
+                已并入=(_主 if _主 and _主 != cid else None),
+                关联档案=(_mg.关联档摘要(cid) if _主 == cid else []))
 
 # ── 通话录音:上传 → 排队转写 → 分说话人 → 挂到客户名下(10-03,用户选的入口:客户详情页)──
 录音目录 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "录音")
@@ -3480,8 +3486,9 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/task-close":
             return self._send(close_task(body.get("id"),body.get("result"),body.get("note")))
         if p=="/api/merge":
+            # 身份只从登录态取(10-14):没登录就是空身份,FSM 按「顾问」最低权限判、合并执行拒
             return self._send(merge_transit(body.get("id"),body.get("to"),
-                                            body.get("note"),role=_role_of(self)))
+                                            body.get("note"),me=_me(self) or {}))
         if p=="/api/lifecycle-adjust":
             return self._send(adjust_lifecycle(body.get("id"),body.get("to"),body.get("reason")))
         if p.startswith("/api/draft/"): return self._send(gen_draft(p.split("/api/draft/")[1]))
