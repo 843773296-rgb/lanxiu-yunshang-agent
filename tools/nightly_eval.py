@@ -23,6 +23,13 @@
   ⑤ 两个时间戳:`nightly-eval-tried`(干活之前记)/ `nightly-eval-ok`(全套跑完才记)——
      「任务没在跑」和「在跑但每次失败」分得开(同 daily_shift.sh)。
   ⑥ 每套单独限时,一套卡死不拖垮整晚;**崩了 / 超时 / 判红分开记** —— 三种在「没过」上长得一模一样。
+  ⑦ **开跑前断言走的是 Claude 月租**(钥匙串登录态 claude-oauth + Haiku),不是就整晚不跑、日志告警。
+     `v1.provider()` 的路取决于环境里有什么凭证:有 ANTHROPIC_API_KEY 就走**按量计费**,
+     而 launchd 的环境和交互 shell 不是一套 —— 23 套 × 每天 × 自动,走错一天都发现不了,账单一直走。
+     所以传给评测的环境**剥掉所有按量计费的凭证变量**,再用同一个环境真问一次 provider(数据工厂 10-14 提醒)。
+  ⑧ **夜跑的分数不进基线文件**:每套跑完,把它往 agent/*.jsonl、agentsite/evals/*.jsonl 里新增的内容
+     挪到 `agent/nightly/`,原文件**恢复原样**。基线是从那些文件读的 —— 人工基线曾被一轮
+     用错模型的结果盖过(CLAUDE.md 第 4 节)。「不提交」不够:文件已经被改了,而基线是读文件的。
 """
 import datetime as dt, json, os, subprocess, sys, time
 
@@ -65,9 +72,71 @@ def 清单():
     return 套
 
 
+按量计费的凭证 = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+                 "DEEPSEEK_API_KEY", "DEEPSEEK_MODEL")
+要的路 = ("claude-oauth", "claude-haiku-4-5")
+
+
+def 评测环境():
+    env = {k: v for k, v in os.environ.items() if k not in 按量计费的凭证}
+    env.update(LANXIU_PROVIDER="claude", ANTHROPIC_MODEL="claude-haiku-4-5", PYTHONDONTWRITEBYTECODE="1")
+    return env
+
+
+def 走的哪条路():
+    """用**评测同一个环境**真问一次 v1.provider() —— 返回 (id, 模型) 或报错文本。"""
+    r = subprocess.run([PY, "-c", "import sys; sys.path.insert(0,'agent'); import v1; p=v1.provider();"
+                        " print(p['id'], p['model'])"], cwd=ROOT, env=评测环境(),
+                       capture_output=True, text=True, timeout=60)
+    return tuple(r.stdout.split()) if r.returncode == 0 else ("出错", (r.stderr or r.stdout).strip()[-120:])
+
+
+基线目录 = ("agent", os.path.join("agentsite", "evals"))
+
+
+def 拍快照():
+    快 = {}
+    for d in 基线目录:
+        for f in os.listdir(os.path.join(ROOT, d)):
+            if f.endswith(".jsonl"):
+                p = os.path.join(ROOT, d, f)
+                with open(p, "rb") as h:
+                    快[p] = h.read()
+    return 快
+
+
+def 挪走夜跑的(快, 名):
+    """把这一套往基线文件里加的东西挪到 agent/nightly/,原文件恢复原样。返回挪了哪些。"""
+    挪 = []
+    夜 = os.path.join(ROOT, "agent", "nightly")
+    for d in 基线目录:
+        for f in os.listdir(os.path.join(ROOT, d)):
+            p = os.path.join(ROOT, d, f)
+            if not f.endswith(".jsonl"):
+                continue
+            with open(p, "rb") as h:
+                现 = h.read()
+            旧 = 快.get(p)
+            if 现 == 旧:
+                continue
+            os.makedirs(夜, exist_ok=True)
+            去 = os.path.join(夜, os.path.relpath(p, ROOT).replace(os.sep, "__"))
+            新增 = 现[len(旧):] if 旧 is not None and 现.startswith(旧) else 现
+            with open(去, "ab") as h:
+                h.write(新增)
+            if 旧 is None:
+                os.remove(p)
+            else:
+                with open(p, "wb") as h:
+                    h.write(旧)
+            挪.append(os.path.relpath(p, ROOT) + ("" if 旧 is not None and 现.startswith(旧) else "(整个改写了)"))
+    if 挪:
+        说(f"    {名} 写了基线文件,已挪到 agent/nightly/ 并恢复原样:{'、'.join(挪)}")
+    return 挪
+
+
 def 跑一套(名, 参数, 截止):
-    env = {**os.environ, "LANXIU_PROVIDER": "claude", "ANTHROPIC_MODEL": "claude-haiku-4-5",
-           "PYTHONDONTWRITEBYTECODE": "1"}
+    env = 评测环境()
     限 = max(60, min(每套上限分钟 * 60, int((截止 - dt.datetime.now()).total_seconds())))
     t0 = time.time()
     try:
@@ -96,6 +165,11 @@ def main():
     if not os.path.exists(PY):
         说(f"❌ 没有 {PY}(要先 ./start.sh 建 venv)")
         return 1
+    路 = 走的哪条路()
+    if 路 != 要的路:
+        说(f"❌ **整晚不跑**:评测环境走的是 {路},要的是 {要的路}(Claude 月租 + Haiku)。"
+           f"走错一天就是一天的按量账单,而定时任务的失败默认没人看 —— 人来查这一行")
+        return 1
     with open(TRIED, "w") as f:
         f.write(f"{现在:%Y-%m-%dT%H:%M:%S}\n")
     截止 = dt.datetime.combine(现在.date(), 强停) if not 试 else 现在 + dt.timedelta(hours=3)
@@ -110,7 +184,9 @@ def main():
         if 谁:
             结果.append(dict(套=名, 结果=f"没开({谁})", 退出码=None, 分钟=0, 尾=[]))
             continue
+        快 = 拍快照()
         r = 跑一套(名, 参数, 截止)
+        r["挪走"] = 挪走夜跑的(快, 名)
         结果.append(r)
         说(f"  {名}:{r['结果']}({r['分钟']} 分钟)")
     os.makedirs(报告目录, exist_ok=True)
