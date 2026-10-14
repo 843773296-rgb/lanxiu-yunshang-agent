@@ -7645,5 +7645,29 @@
    }
   ],
   "预期红": "点常用语只填进输入框,不发送"
+ },
+ {
+  "script": "backend/queue_closed_check.py",
+  "改坏": "正门凭据不看 reason(演示清理也算复核)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "        \"SELECT target FROM op_log WHERE machine='task' AND allowed=1 AND code='BAD_RATING_CLOSED' \"\n        \"AND COALESCE(reason,'') NOT LIKE ?\", f\"%{标}%\")}",
+    "new": "        \"SELECT target FROM op_log WHERE machine='task' AND allowed=1 AND code='BAD_RATING_CLOSED' \"\n        \"AND ?=?\", 标, 标)}"
+   }
+  ],
+  "预期红": "走正门清理演示数据的那种不算(reason 带演示清理标记)"
+ },
+ {
+  "script": "backend/queue_closed_check.py",
+  "改坏": "没走正门不查正门凭据",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "            没走正门=bool(工单已关闭 and not 研判有结论 and t[\"id\"] not in 正门关过),",
+    "new": "            没走正门=bool(工单已关闭 and not 研判有结论),"
+   }
+  ],
+  "预期红": "真走正门关的不进这一档"
  }
 ]

@@ -161,6 +161,27 @@ def _dt(s):
 
 
 # ── 一、队列 ────────────────────────────────────────────────────────────
+def 正门关单凭据():
+    """→ 有**真实**正门关单记录的 task id 集合。
+
+    凭据 = op_log 里 machine='task'、target=task.id、allowed=1、code='BAD_RATING_CLOSED',**而且 reason 不带演示清理标记**。
+    · 为什么要读 reason:「有人走正门复核了这条」和「有人走正门清理了这条演示数据」(10-12 清超时那批,
+      reason 写着「演示数据清理…非真实复核」)在「有审计记录」这一条上**长得一模一样** —— 审计记录只证明
+      「有人通过正门做了某个动作」,动作是什么要读 reason(10-14 查出:原以为的「7 条正门关的」全是清理)。
+    · ⚠️ 为什么**没收 code='CLOSE'**(server.close_task 那条通用关单):现在已关闭的工单上**一条 CLOSE 都没有**,
+      收不收不影响结果;它是通用动作码,将来可能被别的路径写,收进来会让该亮的被收起来 —— 而少亮几条
+      在页面上和「本来就没有」长得一模一样。哪天 close_task 开始被用在差评上,这里要重判(数据工厂 10-14 建议写下这句)。"""
+    import sys as _s, os as _o
+    _k = _o.path.join(_o.path.dirname(_o.path.dirname(_o.path.abspath(__file__))), "knowledge")
+    if _k not in _s.path:
+        _s.path.insert(0, _k)     # ops.py 单独跑自测时没有这条路径(门禁 10-14 崩过一次)
+    import rating as _R
+    标 = _R.演示清理标记
+    return {r["target"] for r in _rows(
+        "SELECT target FROM op_log WHERE machine='task' AND allowed=1 AND code='BAD_RATING_CLOSED' "
+        "AND COALESCE(reason,'') NOT LIKE ?", f"%{标}%")}
+
+
 def queue(state=None):
     """值班队列。每条带:等了多久、离超时还有多久、智能体研判到哪一步了。
 
@@ -171,6 +192,7 @@ def queue(state=None):
     for t in _rows("SELECT * FROM triage ORDER BY id"):
         latest[t["task_id"]] = t          # 同一工单研判多次,取最后一次
 
+    正门关过 = 正门关单凭据()
     out, n = [], now()
     for t in _rows("SELECT * FROM task ORDER BY created"):
         created = _dt(t["created"]) or n
@@ -217,6 +239,9 @@ def queue(state=None):
             ai_root_cause=tr["ai_root_cause"] if tr else None,
             ai_confidence=tr["ai_confidence"] if tr else None,
             cost=tr["cost"] if tr else None,
+            # 没走正门 = 工单关了、没走过研判、**也查不到一条真实的正门关单记录**(用户 10-14 拍:默认收起、计数亮着)。
+            # 166 条全是造数直接写库造的(正门 10-12 才有,造数不走正门)—— 以后再有人绕过正门关单,也自动落进这一档
+            没走正门=bool(工单已关闭 and not 研判有结论 and t["id"] not in 正门关过),
             # 已办结 = 有回执(用户 10-13 拍)。**和「已销账」是两层**:销账是复核完了,办结是现实里办完了
             已办结=bool(tr and tr.get("receipt")),
             回执=(f"{tr.get('receipt_kind')} {tr['receipt']}" if tr and tr.get("receipt") else None),
@@ -268,6 +293,9 @@ def backlog():
              for k in {x["type"] for x in over_全部}),
             key=lambda kv: -kv[1])),
         # 销账的依据分布 —— 「没走过研判就关掉」有多少,是个要看的数
+        # 没走正门关的(用户 10-14 拍:默认收起、**计数亮着不藏成 0**)—— 只许少不许多:
+        # 涨了就是正门又被绕过了。基线 166 在 queue_closed_check 里
+        没走正门关的=len([x for x in q if x.get("没走正门")]),
         销账依据=dict(sorted(
             ((k, sum(1 for x in q if x["凭什么销账"] == k))
              for k in {x["凭什么销账"] for x in q if x["凭什么销账"]}),
