@@ -21,7 +21,17 @@ const page = process.argv[2] || (() => {
 const file = path.join(__dirname, "web", page);
 const src = fs.readFileSync(file, "utf8");
 const js = src.split("<script>").slice(1).join("<script>").split("</script>")[0];
-const ids = [...src.matchAll(/id="([\w-]+)"/g)].map(m => m[1]);
+/* ⚠️⚠️ 2026-10-14:原来是 `/id="([\w-]+)"/` —— **`\w` 不匹配中文**,
+   于是 `id="关钮"` / `id="展"` / `id="g日"` 这类**一个都扫不到**,
+   `$("#关钮")` 在桩里返回 null。
+
+   而这个缺口**至今没人发现**,因为页面大多写成 `const b=$("#展"); if(b) b.onclick=…`
+   —— 有 `if(b)` 保护的就**静默跳过**了:它不报错,只是让那几段代码从来没被冒烟跑过。
+   > 一个「这段代码冒烟验过了」和一个「桩取不到那个元素所以整段被跳过了」,
+   > **在冒烟的那个 ✅ 上长得一模一样。**
+
+   全站现有 5 个中文 id(`g日` / `g月` / `g周` / `关钮` / `展`),这一改它们才进冒烟视野。 */
+const ids = [...src.matchAll(/id="([^"]+)"/g)].map(m => m[1]);
 
 const errs = [];
 const el = (id) => ({
@@ -40,7 +50,7 @@ const store = new Map(ids.map(i => [i, el(i)]));
 /* select 要给它默认值 —— 浏览器里 <select> 的 value 是第一个 option 的值。
    桩不给的话,像 CHIPS[$("#agkind").value] 这种会拿到 undefined 然后炸,
    **那是桩的错,不是页面的错**。桩不够真,冒烟就会报假警。 */
-for (const m of src.matchAll(/<select[^>]*id="([\w-]+)"[\s\S]*?<\/select>/g)) {
+for (const m of src.matchAll(/<select[^>]*id="([^"]+)"[\s\S]*?<\/select>/g)) {
   const first = /<option[^>]*value="([^"]*)"/.exec(m[0]);
   if (first && store.has(m[1])) store.get(m[1]).value = first[1];
 }
