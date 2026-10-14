@@ -587,7 +587,13 @@ class H(BaseHTTPRequestHandler):
                     q = json.loads(urllib.request.urlopen(
                         BACKEND + "/api/ops-queue?state=" + quote("未研判"), timeout=30).read())["rows"]
                 except Exception as e:
-                    return self._send({"error": f"后台连不上:{e}"}, code=502)
+                    # **「超时」和「连不上」要分开说。** 后台(server.py)是单线程的:它正忙着处理别的长请求时,
+                    # 取队列要排队,30 秒没轮到就超时 —— 那时它是**在忙**,不是**连不上**。
+                    # 10-14 数据工厂拿到「后台连不上:timed out」,而单独取队列 6 毫秒就回 —— 差点照着这句去查 8760 挂没挂。
+                    慢 = isinstance(e, TimeoutError) or "timed out" in str(e)
+                    return self._send({"error": ("取研判队列时后台 30 秒没回:它一次只处理一个请求,多半正忙着别的,"
+                                                 "稍后再点一次;**不是连不上,也不是研判跑挂了**。" if 慢 else
+                                                 f"取研判队列时连不上后台(8760 可能没起):{e}")}, code=502)
                 ids = [x["task_id"] for x in q[: int(body.get("n") or 3)]]
             if not ids: return self._send({"ok": True, "done": [], "note": "队列里没有未研判的工单"})
             out, errs = [], []
