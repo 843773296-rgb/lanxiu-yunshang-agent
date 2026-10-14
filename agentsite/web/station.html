@@ -249,6 +249,15 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 #send{background:var(--accent);color:#fff}
 #send:disabled{background:#c8cdd8;cursor:default}
 #stop{background:var(--chip);color:var(--ink)}
+/* 常用语(用户 10-14:按钮,点了把文字放进输入框,不发送)—— 和「示例问题」两回事:示例是问它的,常用语是人自己写结论用的 */
+#phr{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+#phr:empty{display:none}
+#phr .grp{font-size:11.5px;color:#8a8d95;align-self:center;margin-right:2px}
+#phr .grp.bad{color:var(--warn)}
+#phr button{font:inherit;font-size:12.5px;border:1px solid var(--line);background:#fff;border-radius:14px;
+  padding:3px 10px;cursor:pointer;color:var(--ink);max-width:100%;text-align:left}
+#phr button:hover{border-color:#c9cace;background:var(--chip)}
+#phr button.bad{border-color:#f3d9b8;background:var(--warnbg)}
 #thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px}
 #thumbs .th{position:relative;width:62px;height:62px;border-radius:9px;overflow:hidden;
   border:1px solid var(--line);background:#fafafb}
@@ -500,6 +509,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
   <div id="composer">
     <div class="wrap">
       <div id="thumbs"></div>
+      <div id="phr"></div>
       <div id="cbox">
         <textarea id="q" rows="1" placeholder="问一句…(↩ 发送,⇧↩ 换行,可直接粘贴或拖入图片)"></textarea>
         <input id="file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
@@ -1312,6 +1322,30 @@ $("#q").addEventListener("keydown", e => {
   if(e.key === "Enter" && !e.shiftKey){ e.preventDefault(); ask(); }
 });
 document.addEventListener("keydown", e => { if(e.key === "Escape") closeOv(); });
+// 常用语:点一下插到输入框光标处,**不发送** —— 人改完空位(___ / PT__)再自己发
+function drawPhrases(R){
+  const box = $("#phr"); box.innerHTML = "";
+  const P = (R && R.phrases) || {};
+  for(const [组, 句们] of Object.entries(P)){
+    const bad = 组 === "异常";
+    const g = document.createElement("span"); g.className = "grp" + (bad ? " bad" : ""); g.textContent = 组;
+    box.appendChild(g);
+    for(const 句 of 句们){
+      const b = document.createElement("button"); b.type = "button";
+      b.className = bad ? "bad" : ""; b.textContent = 句; b.title = "放进输入框(不发送)";
+      b.onclick = () => {
+        const q = $("#q"), a = q.selectionStart ?? q.value.length, z = q.selectionEnd ?? q.value.length;
+        const 前 = q.value.slice(0, a), 后 = q.value.slice(z);
+        const 插 = (前 && !/\s$/.test(前) ? " " : "") + 句;
+        q.value = 前 + 插 + 后;
+        const pos = (前 + 插).length;
+        q.focus(); q.setSelectionRange(pos, pos);
+        q.dispatchEvent(new Event("input", {bubbles: true}));   // 让输入框按内容长高
+      };
+      box.appendChild(b);
+    }
+  }
+}
 function syncHint(){
   const c = cur(); const R = (c && KINDS[c.kind]) || {};
   // 顶栏显示**当前角色**,点它就去选助手屏(换助手 = 开新会话,不是就地切换)——
@@ -1323,6 +1357,7 @@ function syncHint(){
   $("#q").placeholder = R.name ? `向 ${R.name} 提问…(↩ 发送,⇧↩ 换行,可粘贴图片)`
                               : "先选一个助手";
   $("#hint").textContent = "";
+  drawPhrases(R);
   $("#disclaim").textContent =
     "内容由 AI 生成,请核实后再对客户使用。三个角色都是只读的 —— " +
     "涉及退款、判责、赔付、改期的结论必须由人签字。会话记录存在本机浏览器。";

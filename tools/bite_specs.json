@@ -7633,5 +7633,17 @@
    }
   ],
   "预期红": "有深色主题的页面"
+ },
+ {
+  "script": "agentsite/phrase_check.py",
+  "改坏": "点常用语按钮顺手把消息发出去",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "        q.dispatchEvent(new Event(\"input\", {bubbles: true}));   // 让输入框按内容长高",
+    "new": "        q.dispatchEvent(new Event(\"input\", {bubbles: true}));   // 让输入框按内容长高\n        ask();"
+   }
+  ],
+  "预期红": "点常用语只填进输入框,不发送"
  }
 ]
