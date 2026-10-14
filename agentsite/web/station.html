@@ -250,14 +250,25 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 #send:disabled{background:#c8cdd8;cursor:default}
 #stop{background:var(--chip);color:var(--ink)}
 /* 常用语(用户 10-14:按钮,点了把文字放进输入框,不发送)—— 和「示例问题」两回事:示例是问它的,常用语是人自己写结论用的 */
-#phr{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+#phr{margin:0 0 8px}
 #phr:empty{display:none}
+/* 用户 10-14:「太占页面了」—— 收起时**一组一行**(正常一行、异常一行),放不下的横着滑;
+   不按「前两行」截:那样异常那组整个被挤到折叠后面,收起时一句异常都看不见。展开 = 换行摊开、限高小窗口滚动 */
+#phr .phrs{display:flex;flex-direction:column;gap:6px}
+#phr .row{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin}
+#phr .row>*{flex-shrink:0;white-space:nowrap}
+#phr.open .phrs{max-height:170px;overflow-y:auto;padding-right:2px}
+#phr.open .row{flex-wrap:wrap;overflow-x:visible}
+#phr.open .row>*{white-space:normal}
+#phr .more{display:none;margin-top:4px;font:inherit;font-size:11.5px;color:#8a8d95;background:none;border:0;padding:0;cursor:pointer}
+#phr.long .more{display:inline-block}
+#phr .more:hover{color:var(--ink)}
 #phr .grp{font-size:11.5px;color:#8a8d95;align-self:center;margin-right:2px}
 #phr .grp.bad{color:var(--warn)}
-#phr button{font:inherit;font-size:12.5px;border:1px solid var(--line);background:#fff;border-radius:14px;
-  padding:3px 10px;cursor:pointer;color:var(--ink);max-width:100%;text-align:left}
-#phr button:hover{border-color:#c9cace;background:var(--chip)}
-#phr button.bad{border-color:#f3d9b8;background:var(--warnbg)}
+#phr .row button{font:inherit;font-size:12.5px;border:1px solid var(--line);background:#fff;border-radius:14px;
+  padding:3px 10px;line-height:18px;cursor:pointer;color:var(--ink);max-width:100%;text-align:left}
+#phr .row button:hover{border-color:#c9cace;background:var(--chip)}
+#phr .row button.bad{border-color:#f3d9b8;background:var(--warnbg)}
 #thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px}
 #thumbs .th{position:relative;width:62px;height:62px;border-radius:9px;overflow:hidden;
   border:1px solid var(--line);background:#fafafb}
@@ -1324,12 +1335,15 @@ $("#q").addEventListener("keydown", e => {
 document.addEventListener("keydown", e => { if(e.key === "Escape") closeOv(); });
 // 常用语:点一下插到输入框光标处,**不发送** —— 人改完空位(___ / PT__)再自己发
 function drawPhrases(R){
-  const box = $("#phr"); box.innerHTML = "";
+  const 外 = $("#phr"); 外.innerHTML = ""; 外.className = "";
   const P = (R && R.phrases) || {};
+  if(!Object.keys(P).length) return;          // 没常用语的角色:整块不占地方(:empty 收掉)
+  const box = document.createElement("div"); box.className = "phrs"; 外.appendChild(box);
   for(const [组, 句们] of Object.entries(P)){
     const bad = 组 === "异常";
+    const 行 = document.createElement("div"); 行.className = "row"; box.appendChild(行);
     const g = document.createElement("span"); g.className = "grp" + (bad ? " bad" : ""); g.textContent = 组;
-    box.appendChild(g);
+    行.appendChild(g);
     for(const 句 of 句们){
       const b = document.createElement("button"); b.type = "button";
       b.className = bad ? "bad" : ""; b.textContent = 句; b.title = "放进输入框(不发送)";
@@ -1342,9 +1356,18 @@ function drawPhrases(R){
         q.focus(); q.setSelectionRange(pos, pos);
         q.dispatchEvent(new Event("input", {bubbles: true}));   // 让输入框按内容长高
       };
-      box.appendChild(b);
+      行.appendChild(b);
     }
   }
+  // 有哪一组一行放不下才给「展开」;展开后是限高的小窗口,自己滚
+  const 开 = document.createElement("button"); 开.type = "button"; 开.className = "more";
+  const 标 = () => 开.textContent = 外.classList.contains("open") ? "收起 ▴" : "展开全部常用语 ▾";
+  开.onclick = () => { 外.classList.toggle("open"); 标(); };
+  标(); 外.appendChild(开);
+  // 画的时候这块可能还藏着(量出来是 0)、窗口也会变窄 —— 尺寸一变就重量
+  const 量 = () => 外.classList.contains("open") ||
+    外.classList.toggle("long", [...box.children].some(r => r.scrollWidth > r.clientWidth + 2));
+  if(window.ResizeObserver) new ResizeObserver(量).observe(box); else requestAnimationFrame(量);
 }
 function syncHint(){
   const c = cur(); const R = (c && KINDS[c.kind]) || {};
