@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""夜里自动把全套评测跑一遍(用户 2026-10-14 拍:「等晚上没有安排活的时候自动跑」)。
+
+    python3 tools/nightly_eval.py            # 定时任务调的就是这个(每天 0 点)
+    python3 tools/nightly_eval.py --试 2     # 白天手动试:只跑前 2 套,不看时间窗
+
+## 为什么要跑
+
+10-07 之后加了一批功能(工具 82 → 93、提示词 100 → 130 KB),而能力评测大多停在 10-07 ~ 10-11。
+**「加一个工具的代价不在那个工具上,在此后每一次调用上」**(CLAUDE.md 第 3 节)——
+能力没变而负担变重,就是退步,而它在功能清单上看不出来。
+
+## 几条刻意的设计
+
+  ① **只在夜里跑**:0 点起(用户 10-14 拍);04:30 后不开新的一套,04:55 前强停 —— 05:10 是每日世界平移,
+     平移中途被评测读到的是平移到一半的库。笔记本睡着错过了、醒来已经过了 05:00 → **今晚不跑**,
+     不在白天补(白天跑会和人抢库窗口)。
+  ② **有人在用就让开**:门禁在跑、重建在跑 → 整晚不跑,日志里写为什么。
+  ③ **一律 Claude Haiku**(CLAUDE.md 第 4 节:评测一律用 Claude;不指定模型会因凭证不同跑出别的模型)。
+  ④ **不提交、不推送**:结果只落本地(各评测自己的 results.jsonl + 一份夜报),
+     第二天有人看过再提交 —— 自动推送是对外动作。
+  ⑤ 两个时间戳:`nightly-eval-tried`(干活之前记)/ `nightly-eval-ok`(全套跑完才记)——
+     「任务没在跑」和「在跑但每次失败」分得开(同 daily_shift.sh)。
+  ⑥ 每套单独限时,一套卡死不拖垮整晚;**崩了 / 超时 / 判红分开记** —— 三种在「没过」上长得一模一样。
+"""
+import datetime as dt, json, os, subprocess, sys, time
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PY = os.path.join(ROOT, "agentsite", ".venv", "bin", "python")
+FEY = os.path.join(ROOT, ".feynman")
+LOG = os.path.join(FEY, "nightly-eval.log")
+TRIED = os.path.join(FEY, "nightly-eval-tried")
+OK = os.path.join(FEY, "nightly-eval-ok")
+报告目录 = os.path.join(FEY, "nightly-eval")
+
+窗口开始, 不开新的, 强停 = dt.time(0, 0), dt.time(4, 30), dt.time(4, 55)   # 0 点开跑:用户 10-14 拍「放在12点跑」
+每套上限分钟 = 25
+# 先跑最能回答「能力变没变」的两套,其余按名字
+先跑 = [("gen_compare.py", []), ("tool_eval.py", [])]
+额外参数 = {"scheme_eval.py": ["--run"]}
+
+
+def 说(*a):
+    os.makedirs(FEY, exist_ok=True)
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(f"{dt.datetime.now():%Y-%m-%d %H:%M:%S} {' '.join(map(str, a))}\n")
+
+
+def 有人在用():
+    if os.path.exists(os.path.join(ROOT, "backend", ".rebuilding")):
+        return "有重建在跑(backend/.rebuilding)"
+    r = subprocess.run(["pgrep", "-f", "check.sh"], capture_output=True, text=True)
+    if r.stdout.strip():
+        return "有门禁在跑(check.sh)"
+    return None
+
+
+def 清单():
+    套 = list(先跑)
+    已 = {x for x, _ in 套}
+    for f in sorted(os.listdir(os.path.join(ROOT, "agent"))):
+        if f.endswith("_eval.py") and f not in 已:
+            套.append((f, 额外参数.get(f, [])))
+    return 套
+
+
+def 跑一套(名, 参数, 截止):
+    env = {**os.environ, "LANXIU_PROVIDER": "claude", "ANTHROPIC_MODEL": "claude-haiku-4-5",
+           "PYTHONDONTWRITEBYTECODE": "1"}
+    限 = max(60, min(每套上限分钟 * 60, int((截止 - dt.datetime.now()).total_seconds())))
+    t0 = time.time()
+    try:
+        r = subprocess.run([PY, os.path.join("agent", 名), *参数], cwd=ROOT, env=env,
+                           capture_output=True, text=True, timeout=限)
+        尾 = [x for x in (r.stdout + r.stderr).strip().splitlines() if x.strip()][-3:]
+        结 = "过" if r.returncode == 0 else "判红"
+        return dict(套=名, 结果=结, 退出码=r.returncode, 分钟=round((time.time() - t0) / 60, 1), 尾=尾)
+    except subprocess.TimeoutExpired:
+        return dict(套=名, 结果="超时", 退出码=None, 分钟=round((time.time() - t0) / 60, 1), 尾=[f"超过 {限 // 60} 分钟被停"])
+    except Exception as e:                                                   # noqa: BLE001
+        return dict(套=名, 结果="崩了", 退出码=None, 分钟=round((time.time() - t0) / 60, 1), 尾=[f"{type(e).__name__}: {e}"])
+
+
+def main():
+    试 = "--试" in sys.argv
+    只跑 = int(sys.argv[sys.argv.index("--试") + 1]) if 试 and len(sys.argv) > sys.argv.index("--试") + 1 else None
+    现在 = dt.datetime.now()
+    if not 试 and not (窗口开始 <= 现在.time() < 不开新的):
+        说(f"跳过:现在 {现在:%H:%M} 不在夜里的窗口({窗口开始:%H:%M}–{不开新的:%H:%M})—— 多半是笔记本睡着、醒来补跑,白天不跑")
+        return 0
+    谁 = 有人在用()
+    if 谁:
+        说(f"跳过:{谁} —— 今晚整晚不跑")
+        return 0
+    if not os.path.exists(PY):
+        说(f"❌ 没有 {PY}(要先 ./start.sh 建 venv)")
+        return 1
+    with open(TRIED, "w") as f:
+        f.write(f"{现在:%Y-%m-%dT%H:%M:%S}\n")
+    截止 = dt.datetime.combine(现在.date(), 强停) if not 试 else 现在 + dt.timedelta(hours=3)
+    套们 = 清单()[: 只跑] if 只跑 else 清单()
+    说(f"开始:{len(套们)} 套{'(试跑)' if 试 else ''}")
+    结果 = []
+    for 名, 参数 in 套们:
+        if not 试 and dt.datetime.now().time() >= 不开新的:
+            结果.append(dict(套=名, 结果="没开(过了 04:30)", 退出码=None, 分钟=0, 尾=[]))
+            continue
+        谁 = 有人在用()
+        if 谁:
+            结果.append(dict(套=名, 结果=f"没开({谁})", 退出码=None, 分钟=0, 尾=[]))
+            continue
+        r = 跑一套(名, 参数, 截止)
+        结果.append(r)
+        说(f"  {名}:{r['结果']}({r['分钟']} 分钟)")
+    os.makedirs(报告目录, exist_ok=True)
+    报 = os.path.join(报告目录, f"{现在:%Y-%m-%d}.md")
+    计 = {}
+    for r in 结果:
+        计[r["结果"]] = 计.get(r["结果"], 0) + 1
+    with open(报, "w", encoding="utf-8") as f:
+        f.write(f"# 夜间评测 · {现在:%Y-%m-%d %H:%M}\n\n")
+        f.write("模型:claude-haiku-4-5 · **没提交没推送**,看过再提交(各评测的分数在 agent/*-results.jsonl 末行)\n\n")
+        f.write(" · ".join(f"{k} {v}" for k, v in 计.items()) + "\n\n")
+        f.write("| 套 | 结果 | 分钟 | 最后几行 |\n|---|---|---|---|\n")
+        for r in 结果:
+            f.write(f"| {r['套']} | {r['结果']} | {r['分钟']} | {' / '.join(x[:80] for x in r['尾']).replace('|', '¦')} |\n")
+    全跑完 = all(r["结果"] in ("过", "判红") for r in 结果)
+    if 全跑完:
+        with open(OK, "w") as f:
+            f.write(f"{dt.datetime.now():%Y-%m-%dT%H:%M:%S}\n")
+    说(f"结束:{json.dumps(计, ensure_ascii=False)} → {os.path.relpath(报, ROOT)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
