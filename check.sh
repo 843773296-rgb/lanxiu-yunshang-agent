@@ -212,6 +212,7 @@ run "回测不许开卷(处置痕迹的字段都登记过)" python3 backend/back
 run "研判队列那一页不许把四件事压成一个「已销账」(后端分开报了而页面要真的读)" python3 agentsite/queue_view_check.py
 run "差评研判三套题集隔离(不重叠/时间真外推/测试集没被拿去调)+ 回测真的遮住了" python3 agent/triage_sets_check.py
 run "差评研判判分器 · 55 条对照(跨档漏报两句原话 + 夹缝那一列 + 小额档悬空不许报成通过)" python3 agent/triage_sets_judgetest.py
+run "差评产线路的判定读法 · 五种自造形状(段首/段内/全文/读不出),段名从 TK04 现取而不是手抄(不调模型)" python3 agent/triage_pipeline_eval.py --自测读法
 # 版师是第一个「有写工具,但只有一个」的角色 —— 它特有的两种失败
 # (给多了 / 给死了)在界面上长得一模一样,所以两个方向都得测。
 # 要 venv 的解释器:这条检查 import sdk 取角色工具清单,不手抄一份。
@@ -409,7 +410,7 @@ run "毛利口径 · 缺一项就算不出、毛利率和覆盖率绑着报(24 �
 run "评价写口 · 闸读签收记录不读订单状态、差评自动进 task 清单(库副本)" python3 backend/rating_write_check.py
 run "评价造数 · 门店差距/趋势/不静默夹逼(合成夹具自证)" python3 tools/backfill_rating.py --selftest
 run "评价数据 · 没签收就评/差评没进清单/两处状态打架(9 条判据在合成夹具上自证)" python3 backend/rating_check.py
-run "差评造数的产物 = 库里那批 · 库副本上真重跑一遍再逐条比(改了造数脚本而库没跟上 → 红)" python3 backend/rating_rebuild_check.py
+run "差评造数是确定的 · 库副本上连造两次必须一样;而「库里那批就是现在代码造的」只在取行集指纹对得上时才判(每日上新天天改库)" python3 backend/rating_rebuild_check.py
 run "判读回流上报 · 词表归一/trace 挂不上要说出来/外部trace 别现编(18 条)" python3 agent/feedback_report_check.py
 run "用量上报 · 供应商拼法/是mock不默认/写不进去也不抛(15 条)" python3 agent/usage_report_check.py
 run "评价概况(看的那一头)· 口径承诺的两个切分工具真给了、趋势不拿残月当起点(14 条)" python3 backend/rating_view_check.py

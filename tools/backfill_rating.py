@@ -40,7 +40,7 @@
 固定种子。**同一份代码跑两次结果一样** —— 否则「数据变了」和「代码变了」分不清。
 可反复跑:每次先删掉自己造的那些(评价 + 评价差评工单),再重铺。
 """
-import collections, datetime as dt, os, random, sqlite3, sys
+import collections, datetime as dt, json, os, random, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -196,20 +196,15 @@ def _按配额挑星(rng, 分布, 账):
     return 星
 
 
-def 铺(db=DB, 说=print):
-    _夹过.clear(); _用的月.clear()
-    rng = random.Random(种子)
-    配额 = {}                         # (店, 评价月) → {星: 已发几颗},见 _按配额挑星
-    今 = worldclock.今天()
+def 造数的输入(c, 今):
+    """造数读的**全部库内输入**,只在这一处查 —— 算指纹时调的也是这个函数。
+
+    ⚠️ 为什么非要单一来源:判据要靠「输入的指纹」分开两件事,
+    而指纹要是另写一份查询,它就会和造数真正读的东西漂开 ——
+    于是「造数代码改了」会被当成「数据被动过」**放过去**,
+    而那恰恰是判据唯一要抓的东西。
+    """
     今s = 今.isoformat()
-    月目标 = 月目标_于(今)            # 跟着世界今天走(见模块顶上那段)
-    c = sqlite3.connect(db); c.row_factory = sqlite3.Row
-
-    # 先清掉自己造的 —— 可反复跑
-    n旧 = c.execute("SELECT COUNT(*) FROM rating").fetchone()[0]
-    c.execute("DELETE FROM task WHERE type=?", (R_工单类型 := "评价差评",))
-    c.execute("DELETE FROM rating")
-
     # ⚠️ **处理差评的人只能是店长或售后**(`rating_write.能关差评的角色`)。
     # 从 `staff` 表现读,**不手抄工号** —— 手抄的话哪天花名册改了这里不会跟着变,
     # 而造出来的数据会悄悄变成「规则不允许的处理人」(2026-10-11 就是这么发现
@@ -218,14 +213,6 @@ def 铺(db=DB, 说=print):
         "SELECT shop, no FROM staff WHERE role='店长' AND status='启用'")}
     _售 = c.execute("SELECT no FROM staff WHERE role='售后' AND status='启用' "
                    "ORDER BY no LIMIT 1").fetchone()
-    售后工号 = _售["no"] if _售 else None
-    if not 店长们:
-        raise SystemExit("❌ staff 表里一个在职店长都没有 —— **这不叫「没店长」,叫取数取空了**")
-    if not 售后工号:
-        print("  ⚠️ 没有「售后」角色 —— 出钱那一档的处理人回落到店长,"
-              "而**批准人也是店长就会撞上「批准人不能是处理人自己」** ——"
-              "所以这一轮不造出钱的样本(业务 2026-10-11 拍的那条路径会是零样本)")
-
     # ⚠️ 四条资格,一条都不能少:
     #   ① 真签收过(至少一件合身,而且有 fit_at)—— 判据和写口那道闸同一个事实
     #   ② 签收**不在世界的未来**(19 个曾经在,已由 clamp_future_done 挪回来)
@@ -243,6 +230,68 @@ def 铺(db=DB, 说=print):
            AND u.phone NOT LIKE 'DELETED-%'
          GROUP BY t.pkg_id HAVING substr(MAX(t.fit_at),1,10) <= ?
          ORDER BY t.pkg_id""", (今s,))]
+    return dict(包=包, 店长们=店长们, 售后工号=(_售["no"] if _售 else None),
+                月目标=月目标_于(今))
+
+
+def 指纹料(inp):
+    """把造数的全部输入压成一个指纹。**纯函数,不碰库。**
+
+    ⚠️ 指纹必须覆盖**所有**影响随机序列的输入,漏一个就会把「数据被动过」
+    误报成「代码改了」,或者反过来把真的代码改动放过去:
+      · **取行集(逐行全字段)** —— 多一行少一行都让 rng 整体错位。
+        2026-10-14 实测:只动一个元素,重合率从 100% 掉到 **6%**
+      · **售后工号** —— `bool(售后工号) and rng.random() < 0.22` 是**短路求值**,
+        工号为空时右边**不执行**,连消耗的随机数个数都不一样
+      · **店长们** —— 挑处理人要用
+      · **月目标** —— 挑星的配额按它算(而它跟着世界今天走)
+    """
+    import hashlib
+    料 = json.dumps(dict(
+        包=[[r["pkg_id"], r["签收于"], r["order_id"], r["customer_id"],
+             r["shop"], r["顾问"]] for r in inp["包"]],
+        店长们=sorted(inp["店长们"].items()),
+        售后工号=inp["售后工号"],
+        月目标=sorted(inp["月目标"].items()),
+    ), ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(料.encode("utf-8")).hexdigest()[:16]
+
+
+def 取行集指纹(db=DB):
+    """现在这个库算出来的造数输入指纹 —— `backend/rating_rebuild_check.py` 用它。"""
+    c = sqlite3.connect(db); c.row_factory = sqlite3.Row
+    try:
+        return 指纹料(造数的输入(c, worldclock.今天()))
+    finally:
+        c.close()
+
+
+def 铺(db=DB, 说=print):
+    _夹过.clear(); _用的月.clear()
+    rng = random.Random(种子)
+    配额 = {}                         # (店, 评价月) → {星: 已发几颗},见 _按配额挑星
+    今 = worldclock.今天()
+    今s = 今.isoformat()
+    月目标 = 月目标_于(今)            # 跟着世界今天走(见模块顶上那段)
+    c = sqlite3.connect(db); c.row_factory = sqlite3.Row
+
+    # 先清掉自己造的 —— 可反复跑
+    n旧 = c.execute("SELECT COUNT(*) FROM rating").fetchone()[0]
+    c.execute("DELETE FROM task WHERE type=?", (R_工单类型 := "评价差评",))
+    c.execute("DELETE FROM rating")
+
+    # 造数读的全部库内输入,**一处查**(见 `造数的输入` 上面那段:
+    # 指纹要和造数吃同一个来源,否则指纹就不反映真实输入)
+    _入 = 造数的输入(c, 今)
+    店长们, 售后工号 = _入["店长们"], _入["售后工号"]
+    if not 店长们:
+        raise SystemExit("❌ staff 表里一个在职店长都没有 —— **这不叫「没店长」,叫取数取空了**")
+    if not 售后工号:
+        print("  ⚠️ 没有「售后」角色 —— 出钱那一档的处理人回落到店长,"
+              "而**批准人也是店长就会撞上「批准人不能是处理人自己」** ——"
+              "所以这一轮不造出钱的样本(业务 2026-10-11 拍的那条路径会是零样本)")
+
+    包 = _入["包"]
     if not 包:
         说("  ❌ 一个能评的包裹都没有 —— **这是「没扫到东西」,不是「都铺好了」**")
         return 1
@@ -440,6 +489,22 @@ def 铺(db=DB, 说=print):
     # 由 `backend/rating_check.py` 断言它和现在的世界日期一致。
     c.execute("CREATE TABLE IF NOT EXISTS world_meta(k TEXT PRIMARY KEY, v TEXT)")
     c.execute("INSERT OR REPLACE INTO world_meta VALUES('rating_built_on',?)", (今s,))
+    # ⚠️⚠️ 2026-10-14 加:**造数这一刻,输入长什么样的指纹。**
+    # 为什么要记它 —— 「库里那批和现在重跑不一致」有两种完全不同的原因:
+    #   ① 造数的代码改了                              ← **这是要判红的**
+    #   ② 库里的数据被动过(每日上新每天加订单/评价)  ← 按设计就会发生,不该判红
+    # 而这两种**在「号不一样」这件事上长得一模一样**。
+    # 没有指纹的时候,`rating_rebuild_check` 问的是 ①+② 混在一起的那个问题,
+    # 于是它守的是一个**只在「刚造完数那一瞬间」为真的等式** —— 第二天必然红,
+    # 而红的理由和任何人改的代码都无关(和 2026-10-13 修的 `queue_view_check` 同病)。
+    c.execute("INSERT OR REPLACE INTO world_meta(k,v) VALUES('rating_rowset_fp',?)",
+              (指纹料(_入),))
+    # 行数单独记一份:指纹只能说「变了」,**说不出变成了什么样**。
+    # 而「多了 8 行」(每日上新加的,按设计会发生)和「行数一样但内容变了」
+    # (员工表/签收记录/客户匿名化被动过,更可疑)是两件完全不同的事 ——
+    # 只有指纹的话,它们在那句「指纹不一致」上长得一模一样。
+    c.execute("INSERT OR REPLACE INTO world_meta(k,v) VALUES('rating_rowset_n',?)",
+              (str(len(_入["包"])),))
     c.commit()
 
     # ── 自己证明干了活,而且形状对得上 ──────────────────────────────
