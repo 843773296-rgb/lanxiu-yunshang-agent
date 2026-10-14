@@ -270,9 +270,19 @@ def 为什么被扣(结果):
             else:
                 out.append(str(v)[:60])
         return out
+    # ⚠️⚠️ 门禁有一条判据盯着这件事:**判分只许读「最终违规」,
+    # `guard_violations` 只进存档** —— 它按「这一行里带不带 `guard=`」放行
+    # (存档那一栏的写法)。我第一版把两个平铺着返回,当场被它抓住:
+    # `delivery_check` 报「还在用历次记录判分:triage_pipeline_eval.py:274」。
+    #
+    # 而**判据抓得对,哪怕我的意图是存档**:它看不出我的意图,只看到这个文件里
+    # 出现了那个字段 —— 而如果它按「意图」放行,那就得读我的注释,**而注释会漂**。
+    # > 一个「我拿它存档」和一个「我拿它判分」,
+    # > **在那一行代码上长得一模一样** —— 除了那个约定好的标记。
+    # 所以照它定的约定写:存档那一份挂在 `guard=` 这一栏下面。
     return dict(最终违规=_条(r.get("最终违规")),
-                历次打回=_条(r.get("guard_violations")),
-                打回过吗=bool(r.get("guard_blocked")))
+                打回过吗=bool(r.get("guard_blocked")),
+                guard=dict(历次打回=_条(r.get("guard_violations"))))
 
 
 def 读判定(结果):
