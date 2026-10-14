@@ -147,6 +147,9 @@ def 并入(a, b, me, 来源="页面"):
         # 两边若各自已是别人的副档,合的是它们的主档 —— 人是同一个人,档案树并成一棵
         候 = {x: dict(c.execute("SELECT id, created FROM customer WHERE id=?", (x,)).fetchone()) for x in (ra, rb)}
         主, 副 = sorted((ra, rb), key=lambda x: ((候[x]["created"] or "9999"), x))
+        # **压平**:挂在副档下的档案一并改指新主档 —— 永远只有一层,
+        # 数人头的 SQL 只要查一次 merged_into 就能认到主档(多层的话一层查不到底,同一个人会被数两次)
+        c.execute("UPDATE customer SET merged_into=? WHERE merged_into=?", (主, 副))
         c.execute("UPDATE customer SET merged_into=? WHERE id=?", (主, 副))
     话 = f"{副} 并入 {主}(保留建档最早的 {主});数据一行没搬,订单 / 积分只关联不累计,能撤"
     _记(me, f"{主}<-{副}", "独立", "已并入", True, "MERGE", 话, 来源)
@@ -154,7 +157,7 @@ def 并入(a, b, me, 来源="页面"):
 
 
 def 撤销(副档, me, 来源="页面"):
-    """把一条已并入的档案恢复独立。只撤这一层(并进它的档案仍跟着它)。"""
+    """把一条已并入的档案恢复独立。**只撤这一条** —— 并入时压平过,所以没有「挂在它下面的档案」要跟着走。"""
     me = me or {}
     if not (me.get("no") and me.get("role")):
         _记(me, 副档, "—", "—", False, "NO_IDENTITY", "没有身份", 来源)
@@ -175,6 +178,30 @@ def 撤销(副档, me, 来源="页面"):
     话 = f"{副档} 从 {原主} 拆回独立"
     _记(me, f"{原主}<-{副档}", "已并入", "独立", True, "UNMERGE", 话, 来源)
     return dict(ok=True, code="UNMERGE", 原主档=原主, reason=话)
+
+
+# ── 数人头(用户 2026-10-14 拍:一律按人,归主档所在店)───────────────────────────
+# 只给**统计 / 报表的出口**用。⚠️ 别用在造数、编号生成、统计共用的底层取数上 ——
+# 造数的取行集一变,rating_rebuild_check 会从判红静默降级;编号生成(COUNT(*) FROM customer 定下一个号)
+# 一过滤就撞号。这两条都写在 intent/customer-soft-merge.md。
+
+def 人头条件(c, 别名=""):
+    """WHERE 里加的那一段:只数主档(没并入别人的)。老库没这一列 → 1=1(谁都没并过)。
+    数 customer 表的人头用它 —— 剩下的都是主档,按 shop 分组自然就「归主档所在店」。"""
+    if not _有列(c):
+        return "1=1"
+    p = f"{别名}." if 别名 else ""
+    return f"({p}merged_into IS NULL OR {p}merged_into='')"
+
+
+def 人(c, 列):
+    """把一个客户号表达式换成「这个人的主档号」的 SQL 表达式。
+    数**别的表**里的 DISTINCT customer_id(预约 / 量体 / 订单)时用:COUNT(DISTINCT {人(c,'a.customer_id')})。
+    并入时压平过,只查一层就到底。老库没这一列 → 原样返回。"""
+    if not _有列(c):
+        return 列
+    return (f"COALESCE((SELECT _mg.merged_into FROM customer _mg WHERE _mg.id={列} "
+            f"AND _mg.merged_into IS NOT NULL AND _mg.merged_into<>''), {列})")
 
 
 def 合并过吗(a, b):

@@ -132,7 +132,7 @@ def workbench():
                   FROM refund_trace GROUP BY d ORDER BY d""")
     codes=rows("""SELECT resp_code c, COUNT(*) n, SUM(req_amount) amt
                   FROM refund_trace GROUP BY c ORDER BY amt DESC""")
-    lifec=rows("SELECT lifecycle l, COUNT(*) n FROM customer GROUP BY l ORDER BY n DESC")
+    lifec=rows(f"SELECT lifecycle l, COUNT(*) n FROM customer WHERE {_人头()} GROUP BY l ORDER BY n DESC")   # 按人(10-14)
     def dod(k):
         if len(trend)<2 or not trend[-2][k]: return None
         return round((trend[-1][k]-trend[-2][k])/trend[-2][k]*100,1)
@@ -163,7 +163,8 @@ def workbench():
         dict(label="待退金额",value=f"{amt:,.2f}",unit="元",sub="失败与审批中合计"),
         dict(label="退款失败",value=str(fail),unit="笔",sub="已达重试上限"),
         dict(label="平均重试次数",value=f"{retry:.1f}",unit="次",sub="上限 3 次"),
-        dict(label="客户档案",value=str(rows("SELECT COUNT(*) c FROM customer")[0]["c"]),unit="人",sub="含疑似重复档案"),
+        # 10-14 起按人数:并入别人的档案不另算(用户拍「一律按人」);没合并掉的疑似重复仍在里面
+        dict(label="客户",value=str(rows(f"SELECT COUNT(*) c FROM customer WHERE {_人头()}")[0]["c"]),unit="人",sub="按人数;未确认的疑似重复仍各算一个"),
       ])
 
 def task_detail(tid):
@@ -465,7 +466,7 @@ def shop_list(q):
     kw=(q.get("q") or [""])[0].strip(); stt=(q.get("status") or [""])[0]
     rs=rows("SELECT * FROM shop ORDER BY code")
     for r in rs:
-        r["cust"]=rows("SELECT COUNT(*) c FROM customer WHERE shop LIKE ?",f"{r['code']}%")[0]["c"]
+        r["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE shop LIKE ? AND {_人头()}",f"{r['code']}%")[0]["c"]   # 按人,归主档所在店
         r["staff"]=rows("SELECT COUNT(*) c FROM staff WHERE shop LIKE ?",f"{r['code']}%")[0]["c"]
     if kw: rs=[r for r in rs if kw in r["name"] or kw in r["code"]]
     if stt: rs=[r for r in rs if r["status"]==stt]
@@ -476,7 +477,7 @@ def shop_detail(code):
     if not r: return {"error":"店铺不存在"}
     s=r[0]
     s["staff"]=rows("SELECT * FROM staff WHERE shop LIKE ? ORDER BY role,no",f"{code}%")
-    s["cust"]=rows("SELECT COUNT(*) c FROM customer WHERE shop LIKE ?",f"{code}%")[0]["c"]
+    s["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE shop LIKE ? AND {_人头()}",f"{code}%")[0]["c"]   # 按人,归主档所在店
     s["appt"]=rows("SELECT COUNT(*) c FROM appointment WHERE shop LIKE ?",f"{code}%")[0]["c"]
     s["logs"]=rows("SELECT * FROM op_log WHERE target=? ORDER BY id DESC LIMIT 20",code)
     return s
@@ -1094,7 +1095,7 @@ def freight_zones(q):
     兜底名 = next((z["区域"] for z in zs if z["兜底"]), None)
     计 = {z["区域"]: 0 for z in zs}
     for r in rows("SELECT province, COUNT(*) n FROM customer "
-                  "WHERE COALESCE(province,'')<>'' GROUP BY province"):
+                  f"WHERE COALESCE(province,'')<>'' AND {_人头()} GROUP BY province"):   # 按人(10-14)
         计[省到区.get(F.规范省份(r["province"]), 兜底名)] = \
             计.get(省到区.get(F.规范省份(r["province"]), 兜底名), 0) + r["n"]
     for z in zs:
@@ -1231,8 +1232,8 @@ def save_freight(d, actor, role):
     n = 0
     if 省:
         qs = ",".join("?" * len(省))
-        n = rows(f"SELECT COUNT(*) c FROM customer WHERE province IN ({qs}) "
-                 f"OR province IN ({qs})", *省, *[x + "省" for x in 省])[0]["c"]
+        n = rows(f"SELECT COUNT(*) c FROM customer WHERE (province IN ({qs}) "
+                 f"OR province IN ({qs})) AND {_人头()}", *省, *[x + "省" for x in 省])[0]["c"]   # 按人(10-14)
     return dict(ok=True, code=动作,
                 reason=f"运费区域「{zone}」已{动作}。整表校验通过:{话}。"
                        f"**只对新单生效,历史不动**" +
@@ -2107,7 +2108,7 @@ def guide_perf(q):
         # 而归零在页面上就是「这个顾问没有客户、没有订单」,
         # **看不出是坏了**。而且 LIKE 还会把「林岚岚」这样的名字一起数进来。
         no=a["no"]
-        cust_n=rows("SELECT COUNT(*) c FROM customer WHERE advisor_no=?",no)[0]["c"]
+        cust_n=rows(f"SELECT COUNT(*) c FROM customer WHERE advisor_no=? AND {_人头()}",no)[0]["c"]   # 按人
         # ⚠️ **业绩 = 已付款、没关闭的单,按实收加总**(后台 PRD 第 9 章口径,也是零售业通行的「净实收」)。
         #    原来写的是 `status IN ('已完成','待收货','待发货')` —— 那是 **PRD 口径的名字**,
         #    而 status 列存的是**设计稿口径**(完成 / 已发货 / 待完成……,见上面 TAB_MAP),
@@ -2602,6 +2603,14 @@ def task_list(q):
     rs=_sort(rs,q,{"id","ref_id","created","status"})
     return _page(rs,q)
 
+def _人头(别名=""):
+    """数人头的 WHERE 片段:只数主档(用户 10-14 拍:一律按人,归主档所在店)。
+    ⚠️ 只给统计出口用;**编号生成那两处(COUNT(*) FROM customer 定下一个号)不能用** —— 一过滤就撞号。"""
+    import merge as _mg
+    with _conn() as c:
+        return _mg.人头条件(c, 别名)
+
+
 def customer_list(q):
     kw=(q.get("q") or [""])[0].strip()
     f={k:(q.get(k) or [""])[0] for k in ("lifecycle","shop","advisor","level")}
@@ -2809,7 +2818,7 @@ def calls_of(cid):
 
 def lifecycle_page(sel=None):
     types=["潜在","新客","活跃","高价值","忠诚","休眠","潜在流失","流失"]  # 展示顺序,不是优先级
-    cnt={r["lifecycle"]:r["n"] for r in rows("SELECT lifecycle,COUNT(*) n FROM customer GROUP BY lifecycle")}
+    cnt={r["lifecycle"]:r["n"] for r in rows(f"SELECT lifecycle,COUNT(*) n FROM customer WHERE {_人头()} GROUP BY lifecycle")}   # 按人
     cur=sel or types[0]
     cs=rows("""SELECT id,name,phone,lifecycle,shop,advisor_no,level,order_cnt,
                paid_amount,last_interact,
@@ -3076,7 +3085,11 @@ class H(BaseHTTPRequestHandler):
                                    损耗=phy[0]["loss_rate"],备料天=phy[0]["lead_days"],
                                    库存=phy[0]["stock_qty"],单位=phy[0]["unit"])
                               if phy else None),
-                         细节=[x.strip() for x in (m["detail"] or "").split("/") if x.strip()])
+                         # 按「 / 」(前后带空格)拆 —— 原来按裸「/」拆,出处里的网址被切成好几截
+                         # (https: / www.xxx.com / zgxd / …,用户 10-14 截图);「FZ/T 43009」这种也被切开。
+                         # 只剩「标签:」没有内容的那条不给(资料本身空着,如香云纱「不适合:」—— 不替它编)
+                         细节=[x.strip() for x in __import__("re").split(r"\s+/\s+", m["detail"] or "")
+                               if x.strip() and not __import__("re").fullmatch(r"[^:：]{1,8}[:：]\s*", x.strip())])
                 out.append(d)
             return self._send(dict(rows=out,
                 说明="来源等级 public 可直接对客户说;scale 要注明「行业参考」;"
@@ -3186,7 +3199,7 @@ class H(BaseHTTPRequestHandler):
         if p.startswith("/api/aftersale/"): return self._send(aftersale_detail(p.split("/api/aftersale/")[1]))
         if p.startswith("/api/maintain/"): return self._send(maintain_detail(p.split("/api/maintain/")[1]))
         if p=="/api/levels": return self._send(dict(rows=rows("SELECT * FROM level_cfg ORDER BY sort"),
-            dist={r["level"]:r["n"] for r in rows("SELECT level,COUNT(*) n FROM customer GROUP BY level")}))
+            dist={r["level"]:r["n"] for r in rows(f"SELECT level,COUNT(*) n FROM customer WHERE {_人头()} GROUP BY level")}))   # 按人
         if p=="/api/tags": return self._send(_simple("tag",Q,["code","name"],{"code","n","updated"},["grp","status"],"code"))
         if p=="/api/appts": return self._send(appt_list())
         if p.startswith("/api/appt/"): return self._send(appt_detail(p.split("/api/appt/")[1]))

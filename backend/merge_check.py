@@ -24,6 +24,8 @@ bad, n = [], 0
     ("执行合并不查角色", "店长不能执行合并(两段确认:执行只认总部运营)"),
     ("客户列表不标并入了谁", "客户列表照样列副档,并标上并入了谁(各店还要在本店那份上开单)"),
     ("AI 工具查订单只查主档(不连关联档)", "AI 工具:查副档的订单 → 两条档案的单一起列、每单标着原档案"),
+    ("数人头不过滤已并入的档案", "数人头按人:合并后工作台客户数少一个(两条档案算一个人)"),
+    ("并入时不压平", "并入时压平:挂在副档下的档案一并改指新主档"),
 ]
 
 
@@ -113,13 +115,14 @@ if 店长 and 总部 and len(两条) == 2:
     售 = AP.get_aftersale(customer=乙)
     售数 = c.execute("SELECT COUNT(*) FROM aftersale WHERE customer_id IN (?,?)", (甲, 乙)).fetchone()[0]
     ck("AI 工具:查副档的售后 → 两条档案的一起列", (售.get("hit") or 0) == 售数, (售.get("hit"), 售数))
+    # 老库 = 一张**没有 merged_into 列**的 customer 表。⚠️ 不能拿真库副本 DROP COLUMN 造:
+    # SQLite 按原 DDL 重建表,这个项目的建表语句注释极多,老版本 SQLite(CI 上那个)当场报
+    # 「incomplete input」—— 本机版本新不崩,CI 崩(10-14 连红四次,数据工厂查出)。直接建一张最小的表,不靠版本。
     import tempfile as _tf
     _老 = os.path.join(_tf.mkdtemp(prefix="merge-old-"), "lanxiu.db")
-    shutil.copy(os.path.join(HERE, "lanxiu.db"), _老)
     _o = sqlite3.connect(_老)
-    if "merged_into" in {r[1] for r in _o.execute("PRAGMA table_info(customer)")}:
-        _o.execute("ALTER TABLE customer DROP COLUMN merged_into"); _o.commit()
-    _o.close()
+    _o.execute("CREATE TABLE customer(id TEXT PRIMARY KEY, name TEXT)")
+    _o.execute("INSERT INTO customer(id,name) VALUES(?,?)", (甲, 名甲)); _o.commit(); _o.close()
     AP.DB = _老
     try:
         _人, _ = AP._认客户(甲); _好 = [x["id"] for x in _人] == [甲]
@@ -130,6 +133,40 @@ if 店长 and 总部 and len(两条) == 2:
     _o.close()
     AP.DB = db
     ck("老库(没有并入列):AI 工具照常认人、而且一个字都不写(工具层是只读的)", _好 and _没写, _人)
+
+    # ── 第 4 批:数人头按人算、归主档所在店(用户 10-14 拍)────────────────────
+    # 合并状态下,两条档案只算一个人;按店数时这个人只算在主档那家店
+    店甲 = c.execute("SELECT shop FROM customer WHERE id=?", (甲,)).fetchone()[0]
+    店乙 = c.execute("SELECT shop FROM customer WHERE id=?", (乙,)).fetchone()[0]
+    import server as _S
+    def _工作台人数():
+        return int(next(x for x in _S.workbench()["metrics2"] if x["label"] == "客户")["value"])
+    MG.撤销(乙, 总部); 前人 = _工作台人数()
+    前店乙 = _S.shop_detail((店乙 or "").split(" ")[0]).get("cust") if 店乙 else None
+    MG.并入(甲, 乙, 总部); 后人 = _工作台人数()
+    后店乙 = _S.shop_detail((店乙 or "").split(" ")[0]).get("cust") if 店乙 else None
+    ck("数人头按人:合并后工作台客户数少一个(两条档案算一个人)", 后人 == 前人 - 1, (前人, 后人))
+    if 店乙 and 店乙 != 店甲:
+        ck("按店数归主档所在店:副档那家店少一个人", 后店乙 == 前店乙 - 1, (店乙, 前店乙, 后店乙))
+    ck("AI 工具:某档多少人也按人数(不数副档)",
+       all(x["id"] != 乙 for x in AP.get_lifecycle(lifecycle=c.execute(
+           "SELECT lifecycle FROM customer WHERE id=?", (乙,)).fetchone()[0]).get("rows", [])))
+
+    # ── 只有一层:并入时压平,而且**直接量这个保证**(不靠「每次都记得压平」)──────────
+    丙 = c.execute("SELECT id FROM customer WHERE id NOT IN (?,?) AND (merged_into IS NULL OR merged_into='') "
+                  "ORDER BY id LIMIT 1", (甲, 乙)).fetchone()[0]
+    c.execute("UPDATE customer SET created='2025-01-01' WHERE id=?", (丙,)); c.commit()
+    MG.撤销(乙, 总部)
+    MG.并入(乙, 丙, 总部)            # 乙(2024)收了丙(2025)
+    MG.并入(甲, 乙, 总部)            # 再把乙并进甲(2020)—— 丙必须跟着改指甲
+    ck("并入时压平:挂在副档下的档案一并改指新主档", c.execute(
+        "SELECT merged_into FROM customer WHERE id=?", (丙,)).fetchone()[0] == 甲)
+
+    def _两层(con):
+        return con.execute("SELECT a.id, a.merged_into, b.merged_into FROM customer a JOIN customer b "
+                           "ON b.id=a.merged_into WHERE COALESCE(b.merged_into,'')<>'' LIMIT 3").fetchall()
+    ck("全库扫:没有一条档案并到一个「自己也已并入别人」的档案上(副本)", not _两层(c), _两层(c))
+    MG.撤销(丙, 总部)
 
     ck("店长不能撤销合并", 拒了吗(lambda: MG.撤销(乙, 店长)))
     r = MG.撤销(乙, 总部)
@@ -159,6 +196,19 @@ if 店长 and 总部 and len(两条) == 2:
     ck("研判:合并了 → 凭合并记录办结", r.get("ok") and r.get("回执类型") == "合并记录", r)
 c.close()
 shutil.rmtree(tmp, ignore_errors=True)
+
+# 真库也扫一遍(只读):这条保证不靠「每次 并入 都记得压平」—— 有人直接改库 / 导数据写了两层,这里会红
+_真 = sqlite3.connect(f"file:{os.path.join(HERE, 'lanxiu.db')}?mode=ro", uri=True)
+if "merged_into" in {r[1] for r in _真.execute("PRAGMA table_info(customer)")}:
+    _坏 = _真.execute("SELECT a.id, a.merged_into FROM customer a JOIN customer b ON b.id=a.merged_into "
+                     "WHERE COALESCE(b.merged_into,'')<>'' LIMIT 3").fetchall()
+    _数 = _真.execute("SELECT COUNT(*) FROM customer WHERE COALESCE(merged_into,'')<>''").fetchone()[0]
+    ck(f"全库扫:没有一条档案并到一个「自己也已并入别人」的档案上(真库,只读;扫了 {_数} 条合并记录)", not _坏, _坏)
+    if not _数:
+        # **空集合上什么都成立** —— 别让这一条的 ✅ 被读成「验过了」(数据工厂 10-14 提醒)。
+        # 代码对不对那一半由上面副本里造「乙收丙、再并进甲」兜住;这一条只管库的现状
+        print("     ℹ️ 真库里还没有任何合并记录 —— 上面这条**现在什么都没验**,等真有人合并之后它才开始起作用")
+_真.close()
 
 print()
 if bad:

@@ -452,6 +452,7 @@ run "工期推算 · 并行链路/除不动/婚礼倒推" python3 knowledge/lead
 run "回答体检 · 人造用例(正反各半)" python3 agentsite/guards_test.py
 run "「当前方案」注入 · 列清单不算取过" ./agentsite/.venv/bin/python agentsite/scheme_hook_test.py
 run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py
+run "吸顶条让开全站导航 · 挂了导航的页面不许再有条吸在 top:0(静态扫)" python3 agentsite/sticky_nav_check.py
 run "差评研判产线路 · 接通但默认关、工具层只遮被判那一条、记下提示词版本和取没取材料(不调模型)" ./agentsite/.venv/bin/python agentsite/rating_triage_check.py
 run "工具收窄落到 MCP 那一层 · 真起服务读回、空集合不扩成全部、提示词按生效工具装(外部审阅 4.3)" ./agentsite/.venv/bin/python agentsite/tool_scope_check.py
 run "每一份候选答案都检查 · 修正后通过 / 未通过 / 未检查 / 不完整分开,未通过的不当正式答复交(外部审阅 4.1)" ./agentsite/.venv/bin/python agentsite/delivery_check.py

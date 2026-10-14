@@ -78,6 +78,30 @@ def _认客户(customer):
     return 人们, 注
 
 
+def _人头(别名=""):
+    """数人头的 WHERE 片段:只数主档(用户 10-14 拍:一律按人,归主档所在店)。只给统计出口用。"""
+    import merge as _mg
+    with _c() as c:
+        return _mg.人头条件(c, 别名)
+
+
+def _人列(列):
+    """把客户号列换成「这个人的主档号」:COUNT(DISTINCT {_人列('a.customer_id')})。"""
+    import merge as _mg
+    with _c() as c:
+        return _mg.人(c, 列)
+
+
+def _按人(ids):
+    """一串客户号 → 去重后的「人」(主档号)集合。Python 侧数人头用(数到店 / 接待 / 成交客户数)。"""
+    import merge as _mg
+    with _c() as c:
+        if not _mg._有列(c):
+            return set(x for x in ids if x)
+        并 = dict(c.execute("SELECT id, merged_into FROM customer WHERE merged_into IS NOT NULL AND merged_into<>''").fetchall())
+    return {并.get(x, x) for x in ids if x}
+
+
 def _在(ids):
     """SQL 的 IN 占位:→ ('?,?,?', ids)"""
     ids = list(ids)
@@ -312,6 +336,8 @@ def get_lifecycle(customer=None, lifecycle=None):
         else:
             where.append("(id=? OR name=?)"); args += [customer, customer]
     if lifecycle: where.append("lifecycle=?"); args.append(lifecycle)
+    if not customer:
+        where.append(_人头())        # 某档多少人:按人数(已并入别人的档案不另算一个人)
     sql = ("SELECT id,name,lifecycle,order_cnt,idle_days,amount_12m,orders_12m,"
            "quarters_12m,first_order,manual_lc,manual_at,last_interact FROM customer")
     if where: sql += " WHERE " + " AND ".join(where)
@@ -395,6 +421,7 @@ def lifecycle_entered(lifecycle, month=None, week=None, start=None, end=None, sh
     # shop:门店报告只看本店(store_report 传进来);不给就是全部 —— 原来这里不分店,模型问本店时报的是全公司
     rs = _rows("SELECT id,name,lifecycle,last_interact,idle_days FROM customer "
                "WHERE last_interact IS NOT NULL AND date(last_interact) BETWEEN ? AND ?"
+               + f" AND {_人头()}"      # 按人数,归主档所在店(10-14 拍)
                + (" AND shop=?" if shop else "") + " ORDER BY last_interact",
                (起 - _dt.timedelta(days=天)).isoformat(), (截 - _dt.timedelta(days=天)).isoformat(), *([shop] if shop else []))
     out = []
@@ -431,7 +458,8 @@ def get_member_priority(lifecycle=None, limit=10):
     sql = ("SELECT id,name,lifecycle,idle_days,orders_12m,amount_12m,last_interact,advisor_no "
            "FROM customer")
     args = []
-    if lifecycle: sql += " WHERE lifecycle=?"; args.append(lifecycle)
+    sql += f" WHERE {_人头()}"           # 按人数(10-14 拍)
+    if lifecycle: sql += " AND lifecycle=?"; args.append(lifecycle)
     rs = _rows(sql, *args)
     if not rs:
         return {"hit": 0, "note": "这一档一个人都没有,不要凭印象回答"}
@@ -969,7 +997,7 @@ def appt_funnel(since=None, until=None):
         if 名 == "到店":
             # 到店的**客户数**(去重):同一个人这一期来两次,人次 2、客户数 1(V1.1:接待客户数要按周期重新去重,
             # 日报的数不能直接加成周报)。没挂客户号的到店不进客户数 —— 照实给出有几条没挂
-            row["客户数"] = len(cids)
+            row["客户数"] = len(_按人(cids))     # 按人数:同一个人两条档案只算一次(10-14 拍)
             没挂 = sum(1 for r in 到店 if not r.get("customer_id"))
             if 没挂:
                 row["没挂客户号的到店"] = 没挂
@@ -6414,7 +6442,8 @@ def revive_list(customer=None, limit=20):
     today = _rv._today()
     con = _sq.connect(f"file:{DB}?mode=ro", uri=True); con.row_factory = _sq.Row
     try:
-        where, args = [], []
+        # 按人数(10-14 拍):已并入别人的档案不另算一个人;不给 customer 时才过滤(问某一个人照常认)
+        where, args = ([] if customer else [_人头()]), []
         if me.get("role") in MANAGER_ROLES:
             if me.get("role") != "总部运营" and me.get("shop"):
                 where.append("shop = ?"); args.append(me["shop"])
@@ -6479,7 +6508,8 @@ def churn_watch(customer=None, limit=20):
     import sqlite3 as _sq
     con = _sq.connect(f"file:{DB}?mode=ro", uri=True); con.row_factory = _sq.Row
     try:
-        where, args = [], []
+        # 按人数(10-14 拍):已并入别人的档案不另算一个人;不给 customer 时才过滤(问某一个人照常认)
+        where, args = ([] if customer else [_人头()]), []
         if me.get("role") in MANAGER_ROLES:
             if me.get("role") != "总部运营" and me.get("shop"):
                 where.append("shop = ?"); args.append(me["shop"])

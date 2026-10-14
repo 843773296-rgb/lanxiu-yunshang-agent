@@ -117,22 +117,24 @@ chat 进入平台后就回不来了」。查下来比他看到的更乱:
 # 导航的样式也在这儿 —— **结构和样式同一个来源**。
 # 2026-09-25 之前它有 5 份拷贝(_shell.txt + chat/scheme/workbench/acceptance 各一份),
 # 而拷贝之间已经漂了:四个页面的导航都还是 7 项的旧版,第一项还指着错页面。
-# 那几个变量(--paper/--ink-2/…)由各页自己的配色定义提供,所以这段样式到哪都成立。
+# 那几个变量(--paper/--ink-2/…)由各页自己的配色定义提供 —— ⚠️ **而 5 个挂导航的页面里 4 个没定义 --paper**
+# (面料学堂用的是 --surface),于是导航**没有底色、是透明的**,一滚动底下的内容就从导航里透出来(用户 10-14 截图)。
+# 所以每个变量都带兜底:先找这一页自己的同类变量,再落到固定色。
 样式 = """.sitenav{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 26px;height:52px;
- background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;
- font-family:var(--sans);font-size:13.5px}
-.sitenav a{color:var(--ink-2);text-decoration:none;padding:6px 12px;border-radius:4px}
-.sitenav a:hover{background:var(--paper-2);color:var(--dye)}
-.sitenav a[aria-current]{background:var(--dye-soft);color:var(--dye);font-weight:600}
-.sitenav .brand{font-weight:600;color:var(--ink);margin-right:10px;padding-left:0}
+ background:var(--paper,var(--surface,#fff));border-bottom:1px solid var(--line,#e5e2dc);position:sticky;top:0;z-index:50;
+ font-family:var(--sans,inherit);font-size:13.5px}
+.sitenav a{color:var(--ink-2,var(--muted,#555));text-decoration:none;padding:6px 12px;border-radius:4px}
+.sitenav a:hover{background:var(--paper-2,var(--surface2,#f3f1ed));color:var(--dye,var(--accent,#8a2b3b))}
+.sitenav a[aria-current]{background:var(--dye-soft,var(--accent-soft,#f6e9ec));color:var(--dye,var(--accent,#8a2b3b));font-weight:600}
+.sitenav .brand{font-weight:600;color:var(--ink,inherit);margin-right:10px;padding-left:0}
 /* 占位符没被替换时(比如这份页面被旧端口直接吐出来),整条自己藏起来。
    CSS 的 :empty 不把注释算成内容,所以 `<nav><!--占位--></nav>` 正好是空的。 */
 .sitenav:empty{display:none}
-.sitenav a.ops{margin-left:8px;border:1px solid var(--line);color:var(--dye)}
-.sitenav a.ops:hover{background:var(--dye-soft)}
-.sitenav .core{margin-left:auto;color:var(--ink-3);font-size:11.5px;font-family:var(--mono)}
-.sitenav a.ops{margin-left:8px;border:1px solid var(--line);color:var(--dye)}
-.sitenav a.ops:hover{background:var(--dye-soft)}"""
+.sitenav a.ops{margin-left:8px;border:1px solid var(--line,#e5e2dc);color:var(--dye,var(--accent,#8a2b3b))}
+.sitenav a.ops:hover{background:var(--dye-soft,var(--accent-soft,#f6e9ec))}
+.sitenav .core{margin-left:auto;color:var(--ink-3,var(--faint,#888));font-size:11.5px;font-family:var(--mono,inherit)}
+.sitenav a.ops{margin-left:8px;border:1px solid var(--line,#e5e2dc);color:var(--dye,var(--accent,#8a2b3b))}
+.sitenav a.ops:hover{background:var(--dye-soft,var(--accent-soft,#f6e9ec))}"""
 
 
 def 顶栏html(当前=None, 带样式=True):

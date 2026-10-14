@@ -6608,7 +6608,7 @@
   "file": [
    {
     "path": "backend/api.py",
-    "old": "            row[\"客户数\"] = len(cids)",
+    "old": "            row[\"客户数\"] = len(_按人(cids))     # 按人数:同一个人两条档案只算一次(10-14 拍)",
     "new": "            row[\"客户数\"] = len(到店)"
    }
   ],
@@ -7585,5 +7585,41 @@
    }
   ],
   "预期红": "客户列表照样列副档,并标上并入了谁(各店还要在本店那份上开单)"
+ },
+ {
+  "script": "backend/merge_check.py",
+  "改坏": "数人头不过滤已并入的档案",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    with _conn() as c:\n        return _mg.人头条件(c, 别名)",
+    "new": "    with _conn() as c:\n        return \"1=1\""
+   }
+  ],
+  "预期红": "数人头按人:合并后工作台客户数少一个(两条档案算一个人)"
+ },
+ {
+  "script": "backend/merge_check.py",
+  "改坏": "并入时不压平",
+  "file": [
+   {
+    "path": "backend/merge.py",
+    "old": "        c.execute(\"UPDATE customer SET merged_into=? WHERE merged_into=?\", (主, 副))\n",
+    "new": ""
+   }
+  ],
+  "预期红": "并入时压平:挂在副档下的档案一并改指新主档"
+ },
+ {
+  "script": "agentsite/sticky_nav_check.py",
+  "改坏": "把经营报告的标题栏改回吸在 top:0",
+  "file": [
+   {
+    "path": "agentsite/web/report.html",
+    "old": "  border-bottom:1px solid var(--line);position:sticky;top:52px;z-index:5}",
+    "new": "  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}"
+   }
+  ],
+  "预期红": "挂了全站导航的页面,没有别的条也吸在 top:0"
  }
 ]

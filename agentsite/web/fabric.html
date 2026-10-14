@@ -40,7 +40,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-off
 code{font:12px ui-monospace,Menlo,monospace;background:var(--surface2);padding:1px 5px;border-radius:4px}
 
 /* 顶栏 */
-.topbar{position:sticky;top:0;z-index:40;height:52px;display:flex;align-items:center;gap:16px;
+.topbar{position:sticky;top:52px;z-index:40;height:52px;display:flex;align-items:center;gap:16px;
  padding:0 18px;background:var(--surface);border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:10px;flex:none}
 .seal{width:30px;height:30px;border-radius:7px;background:var(--accent);color:#fff;display:grid;
@@ -192,7 +192,9 @@ tbody tr:hover{background:var(--surface2)}
 
 /* 智能体侧栏 */
 aside.agent{width:372px;flex:none;background:var(--surface);border-left:1px solid var(--line);
- display:flex;flex-direction:column;position:sticky;top:52px;height:calc(100vh - 52px)}
+ display:flex;flex-direction:column;position:sticky;top:104px;height:calc(100vh - 104px)}
+/* ⚠️ 全站导航(nav.py 的 .sitenav)高 52px、吸在 top:0;本页标题栏原来也吸在 top:0 → 一滚动两条叠在一起
+   (用户 10-14 截图)。标题栏吸在导航下面(52px),侧栏再往下让一个标题栏(104px)。 */
 aside.agent.off{display:none}
 .aghead{flex:none;display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--line)}
 .aghead .t{font-weight:700;font-size:14px}
@@ -282,6 +284,9 @@ aside.agent.off{display:none}
       <div class="card cardpad" id="quiz"></div>
     </div>
   </section>
+</div></main>
+<!-- ⚠️ 2026-10-14 修:原来这里缺 </div></main> —— 智能体侧栏被装进了正文那一栏,
+     掉到面料列表下面、右边空出一整栏(用户截图「布局崩了」)。侧栏必须是 .shell 的第二个孩子,和 main 并排。 -->
 
   <aside class="agent" id="agent">
   <div class="aghead">
@@ -516,7 +521,7 @@ function pick(code){
           <div><div class="k">库存</div><div class="v">${s.库存??"—"}</div></div>
         </div>
         <p><b>备料天是工期的第一段</b>,常常比缝制还长 —— 客户问「能不能快点」,第一个该查的是它。</p></div>
-      ${f.细节.length?`<div class="sect"><h3>怎么用</h3><ol class="steps">${f.细节.map(x=>`<li>${esc(x)}</li>`).join("")}</ol></div>`:""}
+      ${f.细节.length?`<div class="sect"><h3>怎么用</h3><ol class="steps">${f.细节.map(x=>`<li>${md(x)}</li>`).join("")}</ol></div>`:""}
       ${f.fit?`<div class="sect"><h3>适合什么形制</h3><p>${esc(f.fit)}</p></div>`:""}
       <div class="sect"><h3>能做哪些工艺</h3>
         <p>可 <b>${f.工艺.可}</b> 种 · 需评估 <b>${f.工艺.需评估}</b> 种 · 不可 <b>${f.工艺.不可}</b> 种</p>
