@@ -15,7 +15,8 @@ sys.path.insert(0, HERE)
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 bad, n = [], 0
 
-咬合 = [("点常用语按钮顺手把消息发出去", "点常用语只填进输入框,不发送")]
+咬合 = [("点常用语按钮顺手把消息发出去", "点常用语只填进输入框,不发送"),
+        ("把工坊排产的常用语删掉", "工坊排产有「正常」「异常」两组常用语")]
 
 
 def ck(名, ok, 附=""):
@@ -27,11 +28,17 @@ def ck(名, ok, 附=""):
 
 
 import sdk
-版师 = sdk.ROLE_META.get("pattern", {})
-P = 版师.get("phrases") or {}
-ck("版师核料有「正常」「异常」两组常用语", bool(P.get("正常")) and bool(P.get("异常")), list(P))
-ck("常用语和示例问题不混(示例是问它的,常用语是人写结论的)",
-   not (set(sum(P.values(), [])) & set(版师.get("examples") or [])))
+# 10-14 用户拍:岗位角色各配一套(写人自己核过 / 看到 / 问到的事);**全能助手不配** —— 用它的人是来问的,
+# 三套塞一起 11+12 句又把页面占满。
+岗位 = [k for k in sdk.ROLE_META if k != "all"]
+ck(f"岗位角色({len(岗位)} 个)都在验(少于 4 个多半是角色改名了,不是都通过)", len(岗位) >= 4, 岗位)
+for k in 岗位:
+    m = sdk.ROLE_META[k]
+    P = m.get("phrases") or {}
+    ck(f"{m['name']}有「正常」「异常」两组常用语", bool(P.get("正常")) and bool(P.get("异常")), list(P))
+    ck(f"{m['name']}的常用语和示例问题不混(示例是问它的,常用语是人写结论的)",
+       not (set(sum(P.values(), [])) & set(m.get("examples") or [])))
+ck("全能助手不配常用语(用户 10-14 拍)", not sdk.ROLE_META.get("all", {}).get("phrases"))
 页 = open(os.path.join(HERE, "web", "station.html"), encoding="utf-8").read()
 m = re.search(r"function drawPhrases\(R\)\{(.*?)\nfunction ", 页, re.S)
 体 = m.group(1) if m else ""

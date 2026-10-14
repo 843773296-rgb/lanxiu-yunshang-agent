@@ -7647,6 +7647,18 @@
   "预期红": "点常用语只填进输入框,不发送"
  },
  {
+  "script": "agentsite/phrase_check.py",
+  "改坏": "把工坊排产的常用语删掉",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        phrases={\"正常\": [\"现场看过 WO____",
+    "new": "        _phrases_x={\"正常\": [\"现场看过 WO____"
+   }
+  ],
+  "预期红": "工坊排产有「正常」「异常」两组常用语"
+ },
+ {
   "script": "backend/queue_closed_check.py",
   "改坏": "正门凭据不看 reason(演示清理也算复核)",
   "file": [
