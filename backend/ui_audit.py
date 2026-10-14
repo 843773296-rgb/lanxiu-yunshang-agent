@@ -26,7 +26,7 @@ CONTAINERS = {"btn","clk","row","tab","ty","sel","x","dnum","mask",
     ('在页面上加一个既没有 data-* 也没有 onclick 的按钮(看起来能点,点了没反应)',
      '既无 data-* 也无 onclick'),
     ('把 station.html「展开全部常用语」那行 onclick 删掉(运行时建的按钮不再绑点击)',
-     '.more 声明了 cursor:pointer 但无任何绑定'),
+     '声明了 cursor:pointer 但无任何绑定'),
 ]
 
 def audit(src):

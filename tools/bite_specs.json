@@ -833,7 +833,7 @@
     "new": "// 删掉了"
    }
   ],
-  "预期红": ".more 声明了 cursor:pointer 但无任何绑定"
+  "预期红": "声明了 cursor:pointer 但无任何绑定"
  },
  {
   "script": "backend/product_form_check.py",
@@ -7668,7 +7668,7 @@
     "new": "        _phrases_x={\"正常\": [\"现场看过 WO____"
    }
   ],
-  "预期红": "工坊排产有「正常」「异常」两组常用语"
+  "预期红": "有「正常」「异常」两组常用语"
  },
  {
   "script": "backend/queue_closed_check.py",
