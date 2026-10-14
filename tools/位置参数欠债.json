@@ -15,8 +15,7 @@
    "{…}": 1
   },
   "backend/rating_check.py": {
-   "pickup_item": 1,
-   "task": 1
+   "pickup_item": 1
   },
   "backend/seed.py": {
    "account": 1,
@@ -45,7 +44,6 @@
    "shop": 1,
    "sys_code": 1,
    "tag": 1,
-   "task": 3,
    "tpl_item": 1,
    "wearer": 1,
    "workorder": 2,

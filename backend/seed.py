@@ -60,7 +60,10 @@ CREATE TABLE appointment(id TEXT PRIMARY KEY, customer_id TEXT, shop TEXT, advis
   start_ts TEXT, end_ts TEXT, status TEXT, deposit_id TEXT, checkin_ts TEXT);
 CREATE TABLE followup(id TEXT PRIMARY KEY, customer_id TEXT, appt_id TEXT, ts TEXT,
   channel TEXT, content TEXT, advisor_no TEXT);
-CREATE TABLE task(id TEXT PRIMARY KEY, type TEXT, ref_id TEXT, status TEXT, created TEXT, summary TEXT);
+CREATE TABLE task(id TEXT PRIMARY KEY, type TEXT, ref_id TEXT, status TEXT, created TEXT, summary TEXT,
+  -- 「在等顾客」的说明(等什么 · 谁标的)。**不停表**(用户 2026-10-13 拍):超时照算,超时率另报一个剔除它的数。
+  -- 不含日期 —— 什么时候标的看 op_log(这一列一带日期就要去 shift_world 登记)
+  waiting TEXT);
 -- 研判台账 —— 平台和展示件的分界就在这张表:
 -- 展示件跑一条、显示、忘掉;平台跑一条、落库、等人销账。
 -- 同一条工单研判多次就是多行,谁都能回头看当时智能体说了什么、花了多少钱。
@@ -1015,7 +1018,7 @@ def run():
                 ik = f"IDEM-{did}-{a}" if cause=="幂等号重复提交" else idem
                 c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key) VALUES(?,?,?,?,?,?,?,?)",
                           (did,a,f"{dstr} 14:{20+a*3:02d}","微信支付",round(req,2),code,msg,ik))
-            c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)",
+            c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",
                       (f"T{did}","财务人工任务",did,"待处理",f"{dstr} 14:35",None))
             truths.append((did,"BP-01",cause,action,evid,desc))
             n+=1
@@ -1059,7 +1062,7 @@ def run():
             evid="生日不同、地址城市不同、手机号不同,仅姓名相同"
         c.executemany("INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,lifecycle,level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
         case=f"MERGE-{i:02d}"
-        c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)",(f"T{case}","客户合并确认",f"{aid}|{bid}","待处理","2026-08-22",None))
+        c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",(f"T{case}","客户合并确认",f"{aid}|{bid}","待处理","2026-08-22",None))
         truths.append((case,"BP-02",cause,action,evid,f"{aid} vs {bid}"))
 
     # ── 预约记录:每个押金对应一条,状态按后台 PRD 6.1 的预约状态机 ──
@@ -3106,7 +3109,7 @@ def run():
             else:
                 rc, act = "特性类未告知 · 我方让步", "让步处理"
                 ev = "**没有交付告知签收记录**,特性类未书面告知(09 第五节第 7 行)"
-        c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)",
+        c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",
                   (f"T{mid}", "售后判责", mid, "待处理", "2026-08-25", f"{item} · {issue}"))
         truths.append((mid, "BP-03", rc, act, ev, f"{item} · {issue} · 工单状态 {st}"))
 

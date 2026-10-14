@@ -27,7 +27,11 @@ _本库 = DB
 # ✅ **四个数都是业务拍过的**:差评 48(10-11);退款异常 24 / 售后判责 36 / 客户合并 48
 #   (用户 2026-10-13 在三案里选「照现在的数定」,没选「一律 48」「都收紧一档」)。
 #   在那之前这三个是开发按理由定的 —— 理由原样留在下面,它们就是拍板时给用户看的那几句。
-# 🔻 **还没拍的**:按什么日历算(夜里、周末算不算)、等顾客回话时停不停表 —— 现在是自然小时、不停表。
+# ✅ **日历和暂停也拍了**(用户 2026-10-13):
+#   · 按**自然小时**算(没选「只算营业时间」)—— 顾客等了多久就是多久;周末拉高超时率,那正是「周末没人管」本身。
+#   · 等顾客回话**不停表**,但员工可以标「在等顾客」(`标等顾客`,要写等什么、留痕),
+#     超时率**报两个数**:全部的、剔除在等顾客的(没选「停表」:标一下就永不超时,
+#     而「真在等」和「拿它当挡箭牌」在系统里分不出来;两个数都摆着,谁也藏不住)。
 SLA_HOURS = {"财务人工任务": 24, "客户合并确认": 48,
              # 售后判责比合并急:客户手里拿着一件坏了的衣服在等回话。
              # 但比退款松 —— 判责要查现场(面料工艺、量体记录、告知签收),
@@ -205,6 +209,7 @@ def queue(state=None):
             level = "已超时" if left <= 0 else ("临期" if left <= sla * 0.25 else "正常")
         out.append(dict(
             task_id=t["id"], type=t["type"], ref=t["ref_id"], created=t["created"],
+            在等顾客=t.get("waiting") or None,
             waited_h=round(waited_h, 1), sla_h=sla, left_h=None if left is None else round(left, 1),
             level=level, state=st, done=done, 凭什么销账=凭什么,
             研判有结论=研判有结论, 工单已关闭=工单已关闭,
@@ -246,6 +251,10 @@ def backlog():
         # 只报全部,就是 2026-09-27 那个「114 天的老差评改了超时率」。
         # **一个数不够表达「要处理但不算账」。**
         已超时_含不考核=len(over_全部), 临期_含不考核=len(临期_全部),
+        # 「在等顾客」**不停表**(用户 10-13 拍)—— 上面的「已超时」照算;这里另报剔除它之后的数,
+        # 两个数都摆着:只报剔除后的,标一下就能把超时藏起来;只报全部的,员工替顾客的拖延背锅
+        已超时_剔除在等顾客=len([x for x in over if not x.get("在等顾客")]),
+        在等顾客=len([x for x in todo if x.get("在等顾客")]),
         不进考核的类型=sorted(不进考核的类型),
         # ⚠️ **超时的是哪几类,要报出来。**
         # 2026-09-28 改 done 判据之后剩 55 条超时,其中 51 条集中在
@@ -388,6 +397,55 @@ def 差评研判提示词(ref):
         "再判这条差评该怎么补救。\n"
         f"「建议动作」那一段**以处理方式开头**,只能从这几种里选一种:{方式}。\n"
         "你只出草稿,不对客户承诺任何金额或补救 —— 结论由店长 / 售后确认后执行。\n" + 四段)
+
+
+def _确保等顾客列(c):
+    if "waiting" not in {r[1] for r in c.execute("PRAGMA table_info(task)")}:
+        c.execute("ALTER TABLE task ADD COLUMN waiting TEXT")
+
+
+def 标等顾客(task_id, 等什么, me, 取消=False, 来源="页面"):
+    """把一件事标成「在等顾客」(或取消)。**不停表** —— 只影响超时率的第二个数(用户 2026-10-13 拍)。
+
+    要写**等什么**(「等顾客寄回衣服」),空的不收 —— 一个没理由的「在等顾客」和一块挡箭牌长得一模一样。
+    谁能标:这件事两段里**任一段**的人(做事的人才知道在不在等顾客)。成功 / 被拒都写 op_log。
+
+    ⚠️ `task.waiting` 是**当前状态**,不是时长:超时率的第二个数是「**现在标着**在等顾客的不计入」,
+    不是「等顾客等掉了多少小时」(用户拍的是前者)。标 / 取消的时间都在 op_log(WAIT / UNWAIT),
+    哪天要算「被顾客拖了多久」,从那里算 —— 别拿这一列硬算(数据工厂 10-13 提醒)。"""
+    from oplog import log_op as _log
+    me = me or {}
+    谁 = f"{me.get('name') or '?'}({me.get('no') or '?'})"
+    def _记(ok, code, 话):
+        _log(谁, "task", str(task_id), "—", "取消等顾客" if 取消 else "在等顾客", ok, code,
+             f"[{来源}] {话}"[:200], {"role": me.get("role"), "no": me.get("no")})
+    if not (me.get("no") and me.get("role")):
+        _记(False, "NO_IDENTITY", "没有身份")
+        raise PermissionError("没有身份 —— 要登录")
+    t = (_rows("SELECT id, type, status FROM task WHERE id=?", task_id) or [None])[0]
+    if not t:
+        _记(False, "NO_TASK", "没有这件事")
+        return dict(ok=False, code="NO_TASK", reason=f"没有 {task_id}")
+    if not (能销吗(t["type"], me.get("role"), "复核")[0] or 能销吗(t["type"], me.get("role"), "办结")[0]):
+        为什么 = 能销吗(t["type"], me.get("role"), "复核")[1]
+        _记(False, "ROLE", 为什么)
+        raise PermissionError(为什么)
+    行 = [x for x in queue() if x["task_id"] == task_id]
+    if 行 and 行[0]["done"]:
+        _记(False, "DONE", "已经销账了")
+        return dict(ok=False, code="DONE", reason="这件事已经销账了,不用再标在等顾客")
+    话 = (等什么 or "").strip()
+    if not 取消 and len(话) < 4:
+        _记(False, "NO_REASON", "没写等什么")
+        return dict(ok=False, code="NO_REASON", reason="要写清在等顾客什么(如「等顾客寄回衣服」)—— 没理由的不收")
+    值 = None if 取消 else f"{话[:60]} · {谁}"
+    with _c() as c:
+        _确保等顾客列(c)
+        c.execute("UPDATE task SET waiting=? WHERE id=?", (值, task_id))
+    _记(True, "UNWAIT" if 取消 else "WAIT", "取消在等顾客" if 取消 else f"在等顾客:{话[:60]}")
+    return dict(ok=True, code="UNWAIT" if 取消 else "WAIT", 在等顾客=值,
+                reason=("已取消「在等顾客」" if 取消 else f"已标「在等顾客」:{话[:60]}。**照样计时**,"
+                        "只是超时率另报一个剔除它的数"))
 
 
 def 研判提示词(任务类型, ref, task_id, 开差评=False):

@@ -281,7 +281,7 @@ def 合成夹具自证():
         d.update(kw)
         c.execute(f"INSERT INTO rating({','.join(d)}) VALUES({','.join('?'*len(d))})", tuple(d.values()))
     def 工单(tid, pkg, status="待处理"):
-        c.execute("INSERT INTO task VALUES(?,?,?,?,?,?)", (tid, 工单类型, pkg, status, "t", "s"))
+        c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)", (tid, 工单类型, pkg, status, "t", "s"))
 
     # 每个判据配一行坏数据,**一行只坏一件事** —— 一行坏两件,分不清红的是哪一条
     签("PA"); 评("PA")                                            # 干净的对照

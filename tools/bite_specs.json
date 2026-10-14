@@ -7489,5 +7489,41 @@
    }
   ],
   "预期红": "sdk:这一轮的 trace_id 先定,进工具子进程的 env,树用同一个"
+ },
+ {
+  "script": "backend/ops_wait_check.py",
+  "改坏": "标了在等顾客就停表(已超时里剔掉它)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    over = [x for x in over_全部 if x[\"type\"] not in 不进考核的类型]",
+    "new": "    over = [x for x in over_全部 if x[\"type\"] not in 不进考核的类型 and not x.get(\"在等顾客\")]"
+   }
+  ],
+  "预期红": "标了之后「已超时」照算(不停表)"
+ },
+ {
+  "script": "backend/ops_wait_check.py",
+  "改坏": "剔除在等顾客的数不剔(和全部的一样)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "        已超时_剔除在等顾客=len([x for x in over if not x.get(\"在等顾客\")]),",
+    "new": "        已超时_剔除在等顾客=len(over),"
+   }
+  ],
+  "预期红": "「剔除在等顾客」那个数真的少了这一件"
+ },
+ {
+  "script": "backend/ops_wait_check.py",
+  "改坏": "没写等什么也收",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    if not 取消 and len(话) < 4:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "没写等什么 → 不收"
  }
 ]

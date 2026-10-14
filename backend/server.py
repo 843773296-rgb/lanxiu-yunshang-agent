@@ -3315,6 +3315,19 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(error=str(e)[:200]), 403)
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
+        if p=="/api/ops-wait":
+            # 标 / 取消「在等顾客」(用户 10-13 拍:不停表,超时率另报剔除它的数)。身份只从登录态取
+            import ops as _ops
+            u = _me(self)
+            if not u:
+                return self._send(dict(error="没登录 —— 标在等顾客要登录,署名用登录的人"), 401)
+            try:
+                return self._send(_ops.标等顾客(body.get("task_id"), body.get("reason"), u,
+                                               取消=bool(body.get("clear")), 来源="页面"))
+            except PermissionError as e:
+                return self._send(dict(error=str(e)[:200]), 403)
+            except Exception as e:
+                return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
         if p=="/api/ops-close":
             # 已办结:凭回执单号(用户 10-13 拍「按类型各认一种系统单号」)。身份同销账,只从登录态取
             import ops as _ops
