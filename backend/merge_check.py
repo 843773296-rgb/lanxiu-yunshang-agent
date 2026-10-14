@@ -23,6 +23,7 @@ bad, n = [], 0
     ("主档挑建档较晚的那条", "保留建档最早的那条当主档"),
     ("执行合并不查角色", "店长不能执行合并(两段确认:执行只认总部运营)"),
     ("客户列表不隐去已并入的档案", "客户列表不再单列副档"),
+    ("AI 工具查订单只查主档(不连关联档)", "AI 工具:查副档的订单 → 两条档案的单一起列、每单标着原档案"),
 ]
 
 
@@ -65,6 +66,8 @@ if 店长 and 总部 and len(两条) == 2:
     甲, 乙 = 两条[0][0], 两条[1][0]
     c.execute("UPDATE customer SET created='2020-01-01', merged_into=NULL WHERE id=?", (甲,))
     c.execute("UPDATE customer SET created='2024-06-01', merged_into=NULL WHERE id=?", (乙,))
+    # 乙用一个库里没有的名字:按名字搜的那条要验「认到主档」,而常见姓名在库里本来就有别的同名人(真重名)
+    c.execute("UPDATE customer SET name='检查专用·乙' WHERE id=?", (乙,))
     c.commit()
     表们 = ("ordr", "measure_rec", "appointment", "followup", "deposit", "rating", "points_log")
     def 行数(cid):
@@ -92,6 +95,42 @@ if 店长 and 总部 and len(两条) == 2:
     关 = 详甲.get("关联档案") or []
     ck("主档详情列出关联档案,订单数各列各的(不相加)",
        len(关) == 1 and 关[0]["id"] == 乙 and 关[0]["订单数"] == 前乙["ordr"], 关)
+
+    # ── 第 2 批:AI 工具按客户号 / 姓名认人,认得软合并 ─────────────────────
+    import api as AP
+    AP.DB = db
+    名甲, 名乙 = (c.execute("SELECT name FROM customer WHERE id=?", (x,)).fetchone()[0] for x in (甲, 乙))
+    人们, 注 = AP._认客户(乙)
+    ck("AI 工具:给副档号 → 认成主档,并注明已并入", len(人们) == 1 and 人们[0]["id"] == 甲
+       and 人们[0]["关联"] == [甲, 乙] and 乙 in (注 or ""), (人们, 注))
+    ck("AI 工具:按副档的名字搜(和主档不同名)也认到主档", 名乙 != 名甲 and [x["id"] for x in AP._认客户(名乙)[0]] == [甲],
+       (名乙, 名甲, AP._认客户(名乙)[0]))
+    单 = AP.get_order(customer=乙)
+    甲单 = c.execute("SELECT COUNT(*) FROM ordr WHERE customer_id=?", (甲,)).fetchone()[0]
+    ck("AI 工具:查副档的订单 → 两条档案的单一起列、每单标着原档案",
+       单.get("hit") == 甲单 + 前乙["ordr"] and {o["档案"] for o in 单["orders"]} == {甲, 乙}, {k: 单.get(k) for k in ("hit", "关联档案")})
+    ck("AI 工具:合并过的客户,订单返回里提醒「金额别加总、积分等级各算」",
+       "别替他加总" in (单.get("⚠合并") or ""), 单.get("⚠合并"))
+    售 = AP.get_aftersale(customer=乙)
+    售数 = c.execute("SELECT COUNT(*) FROM aftersale WHERE customer_id IN (?,?)", (甲, 乙)).fetchone()[0]
+    ck("AI 工具:查副档的售后 → 两条档案的一起列", (售.get("hit") or 0) == 售数, (售.get("hit"), 售数))
+    import tempfile as _tf
+    _老 = os.path.join(_tf.mkdtemp(prefix="merge-old-"), "lanxiu.db")
+    shutil.copy(os.path.join(HERE, "lanxiu.db"), _老)
+    _o = sqlite3.connect(_老)
+    if "merged_into" in {r[1] for r in _o.execute("PRAGMA table_info(customer)")}:
+        _o.execute("ALTER TABLE customer DROP COLUMN merged_into"); _o.commit()
+    _o.close()
+    AP.DB = _老
+    try:
+        _人, _ = AP._认客户(甲); _好 = [x["id"] for x in _人] == [甲]
+    except Exception as e:                                                  # noqa: BLE001
+        _好 = False; _人 = repr(e)
+    _o = sqlite3.connect(_老)
+    _没写 = "merged_into" not in {r[1] for r in _o.execute("PRAGMA table_info(customer)")}
+    _o.close()
+    AP.DB = db
+    ck("老库(没有并入列):AI 工具照常认人、而且一个字都不写(工具层是只读的)", _好 and _没写, _人)
 
     ck("店长不能撤销合并", 拒了吗(lambda: MG.撤销(乙, 店长)))
     r = MG.撤销(乙, 总部)

@@ -49,6 +49,41 @@ def _rows(sql,*a):
         if any(x.startswith("pwd_") for x in cols): raise PermissionError(_CRED_MSG)
         return [dict(r) for r in cur]
 
+def _认客户(customer):
+    """按客户号或姓名认人,**认得软合并**(用户 2026-10-14 拍)。→ (人们, 注明)。
+
+    人们:[{id: 主档号, name, 关联: [主档 + 并进它的档案号]}] —— 多于一个就是真重名,调用方照旧要客户号。
+    · 给的是**已并入的副档号** → 认成它的主档,注明「X 已并入 Y」;
+    · 每条命中都认到主档再去重:**已并入别人的副档不算另一个人**;按副档的名字搜也认得到主档。
+    查订单 / 方案 / 售后这类**挂在档案上的事**时用「关联」那一串 id 一起查;
+    会员等级 / 积分**不相加**(只关联不累计),调用方别拿关联去求和。只读:工具层连接是只读的。"""
+    import merge as _mg
+    with _c() as c:
+        有并 = _mg._有列(c)
+        cols = "id,name" + (",merged_into" if 有并 else "")
+        rs = [dict(r) for r in c.execute(f"SELECT {cols} FROM customer WHERE id=? OR name=?", (customer, customer))]
+        根们, 注 = [], None
+        for r in rs:
+            # 每一条命中都认到它的主档再去重 —— 同一个人的两条档案(不管同名还是不同名)只算一个人;
+            # ⚠️ 不能把「已并入的」直接跳过:按副档的**名字**搜而它和主档不同名时,就会报「没有这个客户」
+            根 = _mg.主档(r["id"], c)
+            if r["id"] == customer and 根 != r["id"]:
+                注 = f"{customer} 已并入 {根}(同一个人;订单 / 积分只关联不累计)"
+            if 根 not in 根们:
+                根们.append(根)
+        人们 = []
+        for 根 in 根们:
+            nm = c.execute("SELECT name FROM customer WHERE id=?", (根,)).fetchone()
+            人们.append(dict(id=根, name=nm[0] if nm else None, 关联=_mg.关联档(根, c)))
+    return 人们, 注
+
+
+def _在(ids):
+    """SQL 的 IN 占位:→ ('?,?,?', ids)"""
+    ids = list(ids)
+    return ",".join("?" * len(ids)), ids
+
+
 def list_tasks(task_type=None, status="待处理"):
     """列出人工任务。type: 财务人工任务 / 客户合并确认"""
     if task_type: return _rows("SELECT * FROM task WHERE type=? AND status=?",task_type,status)
@@ -267,7 +302,15 @@ def get_lifecycle(customer=None, lifecycle=None):
         os.path.abspath(__file__))), "knowledge"))
     import lifecycle as _lc
     where, args = [], []
-    if customer:  where.append("(id=? OR name=?)"); args += [customer, customer]
+    _并注 = None
+    if customer:
+        # 软合并(10-14):给的是副档号 → 认成主档;**按档统计的数(某档多少人)不在这儿动** —— 那是第 4 批,
+        # 而且造数 / 统计共用的底层查询加过滤会让取行集悄悄变(intent/customer-soft-merge.md 那条坑)
+        _人, _并注 = _认客户(customer)
+        if len(_人) == 1:
+            where.append("id=?"); args.append(_人[0]["id"])
+        else:
+            where.append("(id=? OR name=?)"); args += [customer, customer]
     if lifecycle: where.append("lifecycle=?"); args.append(lifecycle)
     sql = ("SELECT id,name,lifecycle,order_cnt,idle_days,amount_12m,orders_12m,"
            "quarters_12m,first_order,manual_lc,manual_at,last_interact FROM customer")
@@ -3361,12 +3404,20 @@ def get_order(order_id=None, customer=None):
     if not (order_id or customer):
         return {"error": "要么给订单号,要么给客户号/姓名"}
     if customer and not order_id:
-        cs=_rows("SELECT id,name FROM customer WHERE id=? OR name=?",customer,customer)
-        if not cs: return {"error":f"没有客户「{customer}」"}
-        rs=_rows("SELECT id,kind,status,prd_status,amount,received,refund_status,created"
-                 " FROM ordr WHERE customer_id=? ORDER BY created DESC",cs[0]["id"])
-        return {"客户":cs[0]["name"],"hit":len(rs),"orders":rs,
-                "note":"这是该客户的订单清单;要看某一单的明细,拿 id 再调一次。"}
+        人们, 并注 = _认客户(customer)
+        if not 人们: return {"error":f"没有客户「{customer}」"}
+        人 = 人们[0]
+        ph, ids = _在(人["关联"])
+        # 软合并(10-14):关联档的订单一起列,每一单带着它挂在哪条档案上 —— **不相加成一个总额**
+        rs=_rows("SELECT id,customer_id 档案,kind,status,prd_status,amount,received,refund_status,created"
+                 f" FROM ordr WHERE customer_id IN ({ph}) ORDER BY created DESC",*ids)
+        d={"客户":人["name"],"hit":len(rs),"orders":rs,
+           "note":"这是该客户的订单清单;要看某一单的明细,拿 id 再调一次。"}
+        if len(人["关联"])>1:
+            d["关联档案"]=人["关联"]
+            d["⚠合并"]=(并注 or f"{人['id']} 名下并入了 {'、'.join(人['关联'][1:])}(同一个人)")+ \
+                       " —— 清单里每单的「档案」列写着它原来挂在哪条档案上;**金额别替他加总**,积分 / 等级各档案各算"
+        return d
     o=_rows("SELECT * FROM ordr WHERE id=?",order_id)
     if not o: return {"error":f"没有订单 {order_id}"}
     o=o[0]
@@ -3553,11 +3604,12 @@ def get_scheme(scheme_id=None, customer=None, status=None):
     sql = "SELECT * FROM scheme WHERE 1=1"
     args = []
     if customer:
-        cs = _rows("SELECT id,name FROM customer WHERE id=? OR name=?", customer, customer)
-        if not cs:
+        人们, _ = _认客户(customer)
+        if not 人们:
             return {"error": f"没有客户「{customer}」"}
-        sql += " AND customer_id=?"
-        args.append(cs[0]["id"])
+        ph, ids = _在(人们[0]["关联"])          # 软合并:关联档的方案一起列
+        sql += f" AND customer_id IN ({ph})"
+        args += ids
     if status:
         sql += " AND status=?"
         args.append(status)
@@ -3573,9 +3625,10 @@ def get_aftersale(order_id=None, customer=None, status=None):
     args=[]
     if order_id: q+=" AND a.order_id=?"; args.append(order_id)
     if customer:
-        cs=_rows("SELECT id FROM customer WHERE id=? OR name=?",customer,customer)
-        if not cs: return {"error":f"没有客户「{customer}」"}
-        q+=" AND a.customer_id=?"; args.append(cs[0]["id"])
+        人们, _ = _认客户(customer)
+        if not 人们: return {"error":f"没有客户「{customer}」"}
+        ph, ids = _在(人们[0]["关联"])          # 软合并:关联档的售后一起列
+        q+=f" AND a.customer_id IN ({ph})"; args+=ids
     if status: q+=" AND a.status=?"; args.append(status)
     rs=_rows(q+" ORDER BY a.created DESC",*args)
     if not rs:
@@ -3734,9 +3787,9 @@ def kb_fit(customer, pattern, wearer=None):
     只给 customer 时,退回到该账户的「本人」。"""
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","knowledge"))
     import fitting
-    cs=_rows("SELECT id,name FROM customer WHERE id=? OR name=?",customer,customer)
-    if not cs: return {"error":f"没有客户「{customer}」"}
-    cu=cs[0]
+    人们, _ = _认客户(customer)          # 软合并:副档号认成主档
+    if not 人们: return {"error":f"没有客户「{customer}」"}
+    cu=dict(id=人们[0]["id"], name=人们[0]["name"])
     p=_rows("SELECT code,name,xz,sizes,tpl FROM pattern WHERE code=? OR name=?",pattern,pattern)
     if not p: return {"error":f"没有版型「{pattern}」"}
     p=p[0]
@@ -4697,7 +4750,8 @@ def summarize_products(spus=None, keyword=None, category=None, customer=None, li
     try:
         if customer:
             cid = str(customer).strip()
-            r = c.execute("SELECT id, name FROM customer WHERE id=? OR name=? ORDER BY id LIMIT 2", (cid, cid)).fetchall()
+            人们, 并注 = _认客户(cid)       # 软合并:副档号认成主档;已并入的同名副档不算重名
+            r = [(x["id"], x["name"]) for x in 人们]
             if not r:
                 return dict(error=f"没有客户 {cid}")
             if len(r) > 1:
@@ -6077,9 +6131,9 @@ def customer_history(customer=None, limit=30):
     import sqlite3 as _sq
     con = _sq.connect(f"file:{DB}?mode=ro", uri=True); con.row_factory = _sq.Row
     try:
-        cs = [dict(r) for r in con.execute(
-            "SELECT id,name,shop,advisor_no FROM customer WHERE id=? OR name=?",
-            (customer, customer))]
+        # 软合并(10-14):副档号认成主档;已并入的同名副档不算重名
+        cs = [dict(con.execute("SELECT id,name,shop,advisor_no FROM customer WHERE id=?", (x["id"],)).fetchone())
+              for x in _认客户(customer)[0]]
     finally:
         con.close()
     if not cs:

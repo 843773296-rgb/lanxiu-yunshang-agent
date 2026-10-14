@@ -38,6 +38,10 @@ def _c():
     return c
 
 
+def _有列(c):
+    return "merged_into" in {r[1] for r in c.execute("PRAGMA table_info(customer)")}
+
+
 def _确保列(c):
     if "merged_into" not in {r[1] for r in c.execute("PRAGMA table_info(customer)")}:
         c.execute("ALTER TABLE customer ADD COLUMN merged_into TEXT")
@@ -71,7 +75,9 @@ def 主档(cid, c=None):
     own = c is None
     c = c or _c()
     try:
-        _确保列(c)
+        # **读路径不写库**:老库没这一列 = 谁都没并过(工具层的连接是只读的,ALTER 会炸)
+        if not _有列(c):
+            return cid if c.execute("SELECT 1 FROM customer WHERE id=?", (cid,)).fetchone() else None
         走过, 当前 = set(), cid
         while True:
             r = c.execute("SELECT id, merged_into FROM customer WHERE id=?", (当前,)).fetchone()
@@ -93,6 +99,8 @@ def 关联档(cid, c=None):
         if not 根:
             return []
         out, 待 = [根], [根]
+        if not _有列(c):
+            return out
         while 待:
             x = 待.pop()
             for r in c.execute("SELECT id FROM customer WHERE merged_into=? ORDER BY id", (x,)):

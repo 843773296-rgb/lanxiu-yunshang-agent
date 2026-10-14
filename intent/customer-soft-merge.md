@@ -51,3 +51,8 @@
 - B 档的汇总列和实际对不上(ordr 里没单、order_cnt 填 1)—— 种子数据的毛病,合并不修它。
 - lifecycle_history / cust_owner_log 按档案记,合并后 A 会有两条时间线、两个归属顾问 —— 第 4 批再处理。
 - `customer.inviter` 可能指向 B —— 第 4 批。
+- ⚠️ **别动 customer 的可见集合而不自知**(数据工厂 10-14 提醒):造差评数据的取行集
+  (`tools/backfill_rating.造数的输入()`)按 customer 条件挑人(比如 `phone NOT LIKE 'DELETED-%'`)。
+  后面几批要是在**共用的取客户写法**上加了「隐去已并入」的过滤、或合并时顺手改了 phone,
+  取行集就会变 —— **不报错**,表现是 `rating_rebuild_check` 从判红静默降级成打印。
+  过滤只加在**展示 / 查询入口**,别加在造数和统计共用的底层查询上。
