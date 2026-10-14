@@ -25,6 +25,8 @@ CONTAINERS = {"btn","clk","row","tab","ty","sel","x","dnum","mask",
 咬合 = [
     ('在页面上加一个既没有 data-* 也没有 onclick 的按钮(看起来能点,点了没反应)',
      '既无 data-* 也无 onclick'),
+    ('把 station.html「展开全部常用语」那行 onclick 删掉(运行时建的按钮不再绑点击)',
+     '.more 声明了 cursor:pointer 但无任何绑定'),
 ]
 
 def audit(src):
@@ -80,8 +82,18 @@ def audit(src):
             continue
         cls = re.findall(r'\.([a-zA-Z][\w-]*)', sel)
         if cls: ptr.add(cls[-1])
+    # **运行时创建的控件**:`const b = createElement("button"); b.className = "more"; b.onclick = …`
+    # 「这个元素属于 .more」只在运行时成立 —— 上面认的全是静态写法(内联 onclick / 按选择器绑),
+    # 所以 2026-10-14 station.html 的「展开全部常用语」被报成死控件,而它绑得好好的(数据工厂查实)。
+    # 判据:同一个变量既被赋了这个类、附近又给它绑了点击,才算。**不进豁免名单** ——
+    # 豁免会让这个类以后真没人绑时也不报;这里删掉那行 onclick,它照样红(bite_specs 有一条)。
+    dyn = set()
+    for m in re.finditer(r'(\w+)\.(?:className\s*=\s*"([^"]*)"|classList\.add\("([^"]+)"\))', s):
+        v, 附近 = m.group(1), s[max(0, m.start() - 1500): m.end() + 1500]
+        if re.search(r'(?<!\w)' + re.escape(v) + r'\.(?:onclick\s*=|addEventListener\(\s*"click")', 附近):
+            dyn |= set((m.group(2) or m.group(3)).split())
     dead_cls = []
-    for c in sorted(ptr - CONTAINERS):
+    for c in sorted(ptr - CONTAINERS - dyn):
         inline = re.search(r'class="[^"]*\b' + c + r'\b[^"]*"[^>]*data-', s)
         # 该类所在的标签带了一个已被绑定的 id(按 id 绑,不按类绑)
         by_id = any(m.group(1) in ids for m in

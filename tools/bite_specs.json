@@ -824,6 +824,18 @@
   "预期红": "既无 data-* 也无 onclick"
  },
  {
+  "script": "backend/ui_audit.py",
+  "改坏": "把 station.html「展开全部常用语」那行 onclick 删掉(运行时建的按钮不再绑点击)",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "开.onclick = () => { 外.classList.toggle(\"open\"); 标(); };",
+    "new": "// 删掉了"
+   }
+  ],
+  "预期红": ".more 声明了 cursor:pointer 但无任何绑定"
+ },
+ {
   "script": "backend/product_form_check.py",
   "改坏": "往写入覆盖的字段清单里加一项,而编辑表单里没有它(能写却改不了)",
   "file": [
