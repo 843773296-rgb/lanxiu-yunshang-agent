@@ -161,6 +161,41 @@ def check():
     return bad
 
 
+日志文件 = "澜绣云裳agent-项目日志.md"
+
+
+def 日志落后():
+    """项目日志落后 HEAD 多少次提交 —— 只报,不判红(每次提交都会落后一次,判红就天天拦人)。"""
+    try:
+        头 = open(os.path.join(ROOT, 日志文件), encoding="utf-8").read(400)
+        m = re.search(r"共 (\d+) 次提交", 头)
+        现 = int(sh("git rev-list --count HEAD", "0") or 0)
+        return (现 - int(m.group(1))) if m else None
+    except OSError:
+        return None
+
+
+def 项目日志():
+    """刷新交接 = 一个阶段做完 → **顺手重新生成项目日志并发飞书**(用户 2026-10-15 拍,两种里选的「交接时顺手做」)。
+
+    ⚠️ 起因:日志 9-27 之后停了 18 天(794 → 1349 次提交)—— 原料(提交说明)一直在攒,
+    而「生成 + 发布」要人想起来手动跑,没有任何东西盯着,过期了没人知道。
+    只在**正式刷新**时跑;`--check`(门禁里那一次)绝不发飞书。"""
+    r = subprocess.run([sys.executable, "tools/make_log.py"], cwd=ROOT, capture_output=True, text=True)
+    if r.returncode:
+        print(f"  ⚠ 项目日志没生成成功(交接照样刷新了):{(r.stderr or r.stdout)[-200:]}")
+        return
+    print("  项目日志已重新生成 —— " + (r.stdout.strip().splitlines() or [""])[-1][:80])
+    r = subprocess.run([sys.executable, "tools/feishu_publish.py", 日志文件], cwd=ROOT, capture_output=True, text=True)
+    链 = re.search(r"https://\S+", r.stdout or "")
+    if r.returncode or not 链:
+        print(f"  ⚠ 项目日志没发上飞书(本地已生成,可以手动 python3 tools/feishu_publish.py {日志文件}):"
+              f"{(r.stderr or r.stdout)[-200:]}")
+    else:
+        print(f"  项目日志已发飞书:{链.group(0)}")
+    print(f"  📌 记得把 {日志文件} 和 HANDOFF.md 一起提交(git commit --only)")
+
+
 if __name__ == "__main__":
     if "--check" in sys.argv:
         bad = check()
@@ -169,7 +204,12 @@ if __name__ == "__main__":
         if not bad:
             print(f"  ✅ HANDOFF.md 四段必填齐全,自动区完好")
             print("     (只查「能不能用」,内容对不对只有人知道)")
+        落 = 日志落后()
+        if 落:
+            print(f"  ℹ 项目日志落后 {落} 次提交 —— 下一次刷新交接(不带 --check)会顺手重新生成并发飞书。只报不拦")
         sys.exit(1 if bad else 0)
     refresh()
     print(f"已刷新 {DOC}")
     for b in check(): print(f"  ⚠ {b}")
+    if "--不发日志" not in sys.argv:
+        项目日志()
