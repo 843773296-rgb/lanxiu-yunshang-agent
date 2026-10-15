@@ -72,7 +72,30 @@ global.window = { __CONF: [] };
 global.alert = () => {};
 const BASE = process.env.BASE || "http://127.0.0.1:8770";
 const realFetch = global.fetch;
-global.fetch = (u, o) => realFetch(u.startsWith("http") ? u : BASE + u, o);
+/* **要登录的页面先登录**(用户 2026-10-15 拍:配测试账号自动登录)。
+   这几页第一件事是 fetch("/api/me"),401 就 location.href="/login" 然后 return ——
+   桩里给 href 赋值既不跳转也不报错,**加载路径在那一行静默终止**,冒烟永远「填了 0 个」,
+   而那几页的加载代码从来没被冒烟跑过。
+   账号**不抄**:工号从登录页的演示账号清单里按岗位取(role_check 也读这一段),
+   口令从 seed.py 的 DEMO_PW 读(公开的演示口令,本来就写在 seed 里)。抄一份,改了那边这边就过期。 */
+const 要登录 = {"contract.html": "店长", "pad.html": "工匠", "report.html": "店长", "tasks.html": "店长"};
+let 饼 = "";
+async function 登录() {
+  const 岗 = process.env.SMOKE_ROLE || 要登录[page];
+  if (!岗) return;
+  const 段 = (/class="demo"([\s\S]*?)<\/div>/.exec(fs.readFileSync(path.join(__dirname, "web", "login.html"), "utf8")) || [])[1] || "";
+  const 号 = (new RegExp(">\\s*" + 岗 + "\\s*<code>(\\d{8})</code>").exec(段) || [])[1];
+  const 口令 = (/DEMO_PW\s*=\s*"([^"]+)"/.exec(fs.readFileSync(path.join(__dirname, "..", "backend", "seed.py"), "utf8")) || [])[1];
+  if (!号 || !口令) { errs.push(`要登录却取不到演示账号(岗位 ${岗}:工号${号 ? "有" : "没有"}、口令${口令 ? "有" : "没有"})`); return; }
+  const r = await realFetch(BASE + "/api/login", {method: "POST", headers: {"content-type": "application/json"},
+                                                  body: JSON.stringify({login_name: 号, password: 口令})});
+  const c = (r.headers.get("set-cookie") || "").split(";")[0];
+  if (!r.ok || !c) { errs.push(`用演示账号(${岗})登录失败:HTTP ${r.status}`); return; }
+  饼 = c;
+  console.log(`  以演示账号「${岗}」登录后再跑(这一页要登录才加载)`);
+}
+global.fetch = (u, o = {}) => realFetch(u.startsWith("http") ? u : BASE + u,
+  饼 ? {...o, headers: {...(o.headers || {}), cookie: 饼}} : o);
 /* location:调控中心那些页靠 `location.pathname` 判断自己在哪个模块 ——
    桩里没有它,脚本第一行就抛 ReferenceError,而那是**桩的缺口,不是页面的错**。
    路径按页面名推(ai.html → /ai),第四个参数可以指定别的(比如 /ai/runs 进某个模块)。 */
@@ -90,7 +113,30 @@ const DEFAULT_DRIVE = {"station.html": "", "ai.html": ""};   // panels.html 已�
 const drive = (process.argv[3] !== undefined ? process.argv[3]
               : (DEFAULT_DRIVE[page] !== undefined ? DEFAULT_DRIVE[page] : "")).split(",").filter(Boolean);
 const driver = drive.map(s => `try{show(${JSON.stringify(s)})}catch(e){__E.push("show(${s}) 挂了:"+e.message)}`).join(";");
+/* **要网址参数的页面,参数运行时现取**(10-15):合同页没有 ?order= 时按设计只显示一句「没有订单」——
+   那是对的,但等于没测加载路径。订单号**不写死**(夹具写死会漂的 id,数据一变就过期),
+   每次现找一张「本店的、有确认书的」:翻订单列表前几页,筛登录者门店,逐个问 /api/contract/ 直到有一张能看。 */
+const 现取参数 = {
+  "contract.html": async () => {
+    const me = await (await fetch("/api/me")).json();
+    for (let pg = 1; pg <= 5; pg++) {
+      const os = (await (await fetch("/api/orders?page=" + pg)).json()).rows || [];
+      for (const o of os.filter(o => o.shop === me.shop)) {
+        const r = await fetch("/api/contract/" + encodeURIComponent(o.id));
+        if (r.ok) return "?order=" + encodeURIComponent(o.id);
+      }
+    }
+    errs.push(`在「${me.shop}」的前 5 页订单里找不到一张有确认书的 —— 没法测合同页的加载路径(不是页面坏了)`);
+    return "";
+  },
+};
 global.__E = errs;
+(async () => {
+await 登录();
+if (现取参数[page]) {
+  location.search = await 现取参数[page]();
+  if (location.search) console.log(`  网址参数现取:${location.search}`);
+}
 try { new Function(js + "\n;" + driver)(); }
 catch (e) { errs.push("同步执行就挂了:" + e.message); }
 
@@ -140,3 +186,4 @@ setTimeout(() => {
   console.log("\n" + "=".repeat(68));
   console.log(`✅ 脚本跑通,${filled.length} 个节点被真实数据填充`);
 }, 4000);
+})();
