@@ -76,7 +76,8 @@ def 记一笔(order_id, staff_no, kind, role, pct, source, method=None, basis=No
     if 坏:
         raise ValueError(坏)
     import datetime
-    ts = ts or datetime.date.today().isoformat()
+    import worldclock   # 世界时钟:这一列会被平移(10-15:原来是机器的今天)
+    ts = ts or worldclock.今天().isoformat()
     行 = (order_id, staff_no, kind, role, pct, source, method, basis, ts)
     SQL = """insert into deal_credit
              (order_id,staff_no,kind,role,pct,source,method,basis,created)

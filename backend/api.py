@@ -360,14 +360,14 @@ def get_workorder(workorder_id=None, artisan=None, status=None, ref=None, overdu
            "LEFT JOIN craft c ON c.code=w.craft")
     if where: sql += " WHERE " + " AND ".join(where)
     rs = _rows(sql + " ORDER BY w.due_date", *args)
-    today = _dt.date.today().isoformat()
+    today = _wc.今天().isoformat()
     out = []
     for r in rs:
         d = dict(r)
         # **交期是否已经过了**,而不是让模型自己拿今天去比 ——
         # 模型不知道今天几号,靠它算这个必错,而且错得很自然。
         d["已逾期"] = bool(d.get("due_date") and d["due_date"] < today and d["status"] == "在制")
-        d["剩余天数"] = ((_dt.date.fromisoformat(d["due_date"]) - _dt.date.today()).days
+        d["剩余天数"] = ((_dt.date.fromisoformat(d["due_date"]) - _wc.今天()).days
                      if d.get("due_date") else None)
         out.append(d)
     if not out:
@@ -419,7 +419,7 @@ def get_lifecycle(customer=None, lifecycle=None):
         # 天数由**这一层**算好再交给口径 —— 口径不管今天几号,
         # 否则同一批数据在不同时刻算出不同结果,真值对账没法复现。
         def _ago(iso):
-            return ((_dt.date.today() - _dt.date.fromisoformat(iso)).days
+            return ((_wc.今天() - _dt.date.fromisoformat(iso)).days
                     if iso else None)
         v = _lc.decide(dict(d, days_since_first_order=_ago(d.get("first_order")),
                             days_since_manual=_ago(d.get("manual_at"))))
@@ -725,7 +725,7 @@ def week_grid(start=None, days=7):
         return dict(error=f"排班是店长的活,你是「{me.get('role')}」。"
                           f"你自己的日程用 my_tasks 看")
     try:
-        d0 = (datetime.date.fromisoformat(start) if start else datetime.date.today())
+        d0 = (datetime.date.fromisoformat(start) if start else _wc.今天())
     except ValueError:
         return dict(error=f"起始日期「{start}」格式不对,要 YYYY-MM-DD")
     days = max(1, min(int(days or 7), 14))
@@ -822,7 +822,7 @@ def monthly_review(month=None, week=None, start=None, end=None):
 
     me = whoami()
     if not me: return dict(error="不知道现在是谁在看 —— 请先登录")
-    today = _dt.date.today().isoformat()
+    today = _wc.今天().isoformat()
     m = (month or today[:7]).strip()
     if start and end:
         区起, 区止 = str(start)[:10], str(end)[:10]
@@ -1003,7 +1003,7 @@ def appt_funnel(since=None, until=None):
 
     me = whoami()
     if not me: return dict(error="不知道现在是谁在看 —— 请先登录")
-    today = _dt.date.today().isoformat()
+    today = _wc.今天().isoformat()
     for lbl, v in (("since", since), ("until", until)):
         if v and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(v).strip()):
             return dict(error=f"{lbl} 写成 2026-08-01 这样,收到「{v}」")
@@ -1276,7 +1276,7 @@ def apply_adjust(kind, target, payload, reason):
     aid = f"{pre}-{n:03d}"
     while _rows2("SELECT 1 FROM approval WHERE id=?", aid):
         n += 1; aid = f"{pre}-{n:03d}"
-    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = _wc.当下().strftime("%Y-%m-%d %H:%M")
     payload = dict(payload); payload["reason"] = why
     with sqlite3.connect(DB) as c:
         c.execute("INSERT INTO approval(id,kind,target,payload,status,applied_by,applied_at)"
@@ -1320,7 +1320,7 @@ def decide_approval(approval_id, agree, note):
         return dict(ok=False, code="NEED_NOTE",
                     reason="批注必填 —— 驳回不写理由,申请人不知道该补什么;"
                            "**同意不写理由,出事之后没人说得清当时看了什么**")
-    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    now = _wc.当下().strftime("%Y-%m-%d %H:%M")
     with sqlite3.connect(DB) as c:
         c.execute("UPDATE approval SET status=?,decided_by=?,decided_at=?,note=? WHERE id=?",
                   (to, me.get("no"), now, txt, aid))
@@ -1502,7 +1502,7 @@ def can_order(customer_id, kind="定制品订单", wearer_id=None):
     cid = (customer_id or "").strip()
     if not _rows2("SELECT 1 FROM customer WHERE id=?", cid):
         return dict(error=f"没有客户 {cid} —— **查无此人**,不是「这人不能下单」")
-    today = _dt.date.today().isoformat()
+    today = _wc.今天().isoformat()
 
     if not og.需要量体吗(kind):
         k, why = og.能不能下单(kind, None, None, None)
@@ -1625,7 +1625,7 @@ def recovery_queue(kind=None, today=None):
     _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
                                    "..", "knowledge"))
     import recovery as _rc
-    今天 = today or _dt.date.today().isoformat()
+    今天 = today or _wc.今天().isoformat()
     out = {"今天": 今天, "口径": _rc.口径说明()}
 
     if kind in (None, "待付款"):
@@ -2261,7 +2261,7 @@ def set_piece_ratio(pattern, piece, ratio, why=""):
     # 于是检查测的是一个现实中不存在的入参形状。
     # **夹具喂出来的绿,和真的绿长得一模一样。**
     who = f"{me.get('no') or me.get('id') or ''}|{me.get('name') or ''}".strip("|")
-    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = _wc.当下().strftime("%Y-%m-%d %H:%M:%S")
     with _sq.connect(DB) as cx:
         cx.execute("UPDATE pattern_piece SET ratio=?, ratio_src='版师', "
                    "ratio_by=?, ratio_at=?, ratio_why=? "
@@ -2311,7 +2311,7 @@ def my_workorders(status=None):
     if not rows:
         return _nz(dict(范围=scope, 说明="这个范围里没有工单" +
                         (f"(状态={status})" if status else "")))
-    today = _dt.date.today().isoformat()
+    today = _wc.今天().isoformat()
     逾期 = [r for r in rows if (r.get("due_date") or "9999") < today
             and r.get("status") in ("在制", "待开工")]
     在制 = [r for r in rows if r.get("status") == "在制"]
@@ -3160,7 +3160,7 @@ def check_write(action, fields=None):
             out["该怎么办"] = "转店长确认后再建档 —— 系统不替人做这个判断"
         return _nz(out)
     if act in ("预约", "补录预约", "appointment", "create_appointment"):
-        ok, code, why = _r.validate_appointment(d, actor_role=role)
+        ok, code, why = _r.validate_appointment(d, now=_wc.当下(), actor_role=role)   # 世界的当下:预约时间是世界数据
         return _nz({"能不能做": "能" if ok else "不能", "编码": code,
                     "理由": why or "校验通过", "以什么角色判的": _how})
     return {"error": f"不认识的动作「{action}」", "支持": ["建档", "预约"],
@@ -3752,10 +3752,11 @@ def get_capacity(craft=None, workdays=None, from_date=None):
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","knowledge"))
     import capacity as cap
     if not craft:
-        return cap.overview(from_date)
+        # 日期由这一层给世界的今天 (10-15:口径模块不许自己取日期 —— 不传它就落到**机器的今天**,平移没跑成的那天会和别处差一天)
+        return cap.overview(from_date or _wc.今天().isoformat())
     k,e=_resolve(craft,"工艺")
     if e: return {"error":e}
-    r=cap.when_free(k["code"], float(workdays or 10), from_date)
+    r=cap.when_free(k["code"], float(workdays or 10), from_date or _wc.今天().isoformat())
     if not r.get("error"): r["工艺"]=k["name"]
     return r
 
@@ -3984,8 +3985,9 @@ def kb_lead(pattern, size, material, crafts=None, scope="局部", workers=2,
         kcs.append(r["code"])
     kw=dict(pattern=p[0]["code"], size=size, material=m["code"], crafts=kcs,
             scope=scope, workers=int(workers or 2), craft_names=_names(),
-            from_date=from_date)
-    return lt.deadline(need_date, None, **kw) if need_date else lt.estimate(**kw)
+            from_date=from_date or _wc.今天().isoformat())   # 产能排队从哪天起算:世界的今天(10-15)
+    # 下单日不传就给世界的今天 (10-15:口径模块不许自己取日期 —— 不传它就落到**机器的今天**,平移没跑成的那天会和别处差一天)
+    return lt.deadline(need_date, from_date or _wc.今天().isoformat(), **kw) if need_date else lt.estimate(**kw)
 
 
 # ── 着装人与成长推算 ────────────────────────────────────────────────────

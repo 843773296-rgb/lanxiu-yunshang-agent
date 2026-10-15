@@ -196,9 +196,20 @@ def _补列(c):
         c.execute("ALTER TABLE call_transcript ADD COLUMN speaker_src TEXT")
 
 
+def _世界今天():
+    """通话 / 逐字稿 / 处理记录都写进库、会被平移 —— 必须用世界时钟(10-15:原来是机器时钟)。"""
+    import worldclock
+    return worldclock.今天().isoformat()
+
+
+def _世界当下():
+    import worldclock
+    return worldclock.当下().strftime("%Y-%m-%d %H:%M")
+
+
 def 入库(audio_id, customer_id, wav, 文本, model, 用时, source, 用热词=True,
         ref_kind=None, ref_id=None, seconds=None, today=None):
-    today = today or datetime.date.today().isoformat()
+    today = today or _世界今天()
     with sqlite3.connect(DB) as c:
         建表(c)
         c.execute("""insert into call_audio(id,customer_id,ref_kind,ref_id,path,seconds,source,created)
@@ -581,7 +592,7 @@ def 处理建议(c, audio_id, idx, 动作, 经手人):
         text = 新
     elif 动作 != "不采纳":
         return False, "动作只能是 采纳 / 不采纳"
-    x.update(处理=动作, 处理人=经手人, 处理于=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    x.update(处理=动作, 处理人=经手人, 处理于=_世界当下())
     c.execute("UPDATE call_transcript SET text=?, fixes=?, edited_by=?, edited_at=? WHERE audio_id=?",
               (text, _js.dumps(f, ensure_ascii=False), 经手人, x["处理于"], audio_id))
     return True, f"{动作}:{x['原']} → {x['改']}(第 {x['位置']} 字)"
@@ -594,7 +605,7 @@ def 恢复原稿(c, audio_id, 经手人):
     if not r or r[0] is None:
         return False, "没有转写原稿可恢复(演示数据或老录音)"
     f = _js.loads(r[1] or "{}")
-    f["已恢复原稿"] = dict(经手人=经手人, 于=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+    f["已恢复原稿"] = dict(经手人=经手人, 于=_世界当下())
     c.execute("UPDATE call_transcript SET text=?, fixes=?, edited_by=?, edited_at=? WHERE audio_id=?",
               (r[0], _js.dumps(f, ensure_ascii=False), 经手人, f["已恢复原稿"]["于"], audio_id))
     return True, "已恢复成转写原稿"
@@ -605,7 +616,7 @@ def 核验词对(c, 原, 改, 经手人, 依据=""):
     if not 原 or not 改 or len(原) != len(改) or 原 == 改:
         return False, "词对要等长、不能相同"
     c.execute("INSERT OR IGNORE INTO asr_verified_pair(src, dst, verified_by, verified_at, basis) VALUES(?,?,?,?,?)",
-              (原, 改, 经手人, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), 依据))
+              (原, 改, 经手人, _世界当下(), 依据))
     return True, f"「{原} → {改}」以后自动改"
 
 
@@ -646,7 +657,7 @@ def 处理(audio_id, db=None, call=None, 转写=None, 纠错call=None):
             文本, 改记 = 原稿, f'{{"没纠": "{type(e).__name__}"}}'
         import simplified
         繁 = "".join(simplified.繁体字(文本))
-        today = datetime.date.today().isoformat()
+        today = _世界今天()
         with sqlite3.connect(db) as c:
             c.execute("""insert into call_transcript(audio_id,text,engine,model,hotwords,cost_sec,trad,created,
                                                      speaker_src,raw_text,fixes)

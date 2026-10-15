@@ -65,7 +65,7 @@ def validate_customer(d, existing, actor_role="顾问"):
 LEAD={"到店量体":2,"到店试衣":2,"上门沟通":24,"电话回电":0}
 
 def validate_appointment(d, now=None, actor_role="顾问"):
-    now=now or datetime.now()
+    now=now or __import__("worldclock").当下()   # 世界的当下:预约起止是世界数据(10-15:原来默认机器时钟)
     way=d.get("way") or "到店量体"
     try:
         st=datetime.fromisoformat((d.get("start") or "").replace("T"," "))

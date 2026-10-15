@@ -40,6 +40,7 @@ def record_ask(craft, material, craft_name=None, material_name=None, asked_by=No
     聚合(问了几次、谁先核)一律从明细现算,不做增量累加 ——
     明细在,统计就永远能重建。
     """
+    # 真实时钟:写的是追加式日志文件(不进库、不被平移),记的是真实世界里谁在什么时候问的
     row = {"ts": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
            "craft": craft, "material": material,
            "craft_name": craft_name, "material_name": material_name,

@@ -3864,6 +3864,18 @@
   "预期红": "运行时的「今天」不许写死成某一天"
  },
  {
+  "script": "backend/worldclock_check.py",
+  "改坏": "把 api.get_workorder 的剩余天数改回拿机器的今天减",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "d[\"剩余天数\"] = ((_dt.date.fromisoformat(d[\"due_date\"]) - _wc.今天()).days",
+    "new": "d[\"剩余天数\"] = ((_dt.date.fromisoformat(d[\"due_date\"]) - _dt.date.today()).days"
+   }
+  ],
+  "预期红": "后台每一处机器时钟,要么改世界时钟、要么当场注明「真实时钟」和为什么"
+ },
+ {
   "script": "knowledge/check_kb.py",
   "改坏": "把 md 里 KF38 灰缬的出处链接改掉、库不动",
   "file": [

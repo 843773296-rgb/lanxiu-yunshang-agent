@@ -1701,7 +1701,7 @@ def create_appointment(d, actor="魏欣新", _role=None):
     """新建预约。PRD:早于当前时间的补录只有店长及以上能做 —— 判据在 rules.py。"""
     import datetime
     role = _role or "顾问"
-    ok, code, why = rules.validate_appointment(d, actor_role=role)
+    ok, code, why = rules.validate_appointment(d, now=_wnow(), actor_role=role)   # 世界的当下(10-15):原来不传,落到机器时钟
     if not ok:
         log_op(actor, "appointment", "-", "—", "新建", False, code, why, {"role": role})
         return dict(ok=False, code=code, reason=why)
@@ -1829,6 +1829,7 @@ def import_customers(text,actor="魏欣新",role="顾问",dry=True):
     if fatal:
         log_op(actor,"import","-","—","导入",False,fatal[0],fatal[1],{})
         return dict(ok=False,code=fatal[0],reason=fatal[1])
+    # 真实时钟:导入批次号,记的是真实世界里这次导入发生在哪一秒
     batch=f"IMP{datetime.datetime.now():%y%m%d%H%M%S}"
     if not dry:
         n=rows("SELECT COUNT(*) c FROM customer")[0]["c"]
@@ -2747,6 +2748,7 @@ def call_upload(me, body, 入队=True):
     if len(数据) > 录音上限字节:
         return {"error": f"文件太大(超过 {录音上限字节 // 1024 // 1024}MB)—— 是不是传错了文件?"}, 413
     os.makedirs(录音目录, exist_ok=True)
+    # 真实时钟:录音文件编号(真实上传的那一秒),只用来起不重复的名字
     now = _d.datetime.now()
     aid = f"CA-{now:%Y%m%d%H%M%S}-{len(rows('SELECT id FROM call_audio WHERE id LIKE ?', f'CA-{now:%Y%m%d}%')) + 1:03d}"
     后缀 = os.path.splitext(body.get("filename") or "")[1].lower()[:6] or ".bin"

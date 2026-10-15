@@ -60,6 +60,7 @@ def main():
     print(f"\n\033[1m▸ 商机判断 · 规则版 vs 规则+模型版({n} 条,⚠️ 造的对话)\033[0m")
     print("  " + "=" * 80)
 
+    # 真实时钟:评测在真实世界里跑于何时,和演示世界无关
     记录 = {"跑于": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
             "模型": os.environ.get("ANTHROPIC_MODEL", "(默认)"), "条数": n, "轮": []}
     for 版本, 用模型 in (("规则版", False), ("规则+模型", True)):

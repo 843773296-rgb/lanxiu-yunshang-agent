@@ -139,6 +139,7 @@ def create(d, me, 来源="售后"):
         return dict(ok=False, code="NO_ISSUE", reason="写清哪里要修(比如「下摆开线」「腰围紧 2cm」)")
     if 来源 not in repair.来源:
         return dict(ok=False, code="BAD_SOURCE", reason=f"来源只认 {' / '.join(repair.来源)}")
+    # 真实时钟:只用来拼一个不重复的编号后缀(到微秒),不是业务时间
     mid = "MX" + datetime.datetime.now().strftime("%m%d%H%M%S%f")[:14]
     now = _now()
     with sqlite3.connect(DB) as c:

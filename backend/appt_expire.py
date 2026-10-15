@@ -54,9 +54,15 @@ def 到点了(end_ts, now, 宽限=宽限小时):
     return t + datetime.timedelta(hours=宽限) < now
 
 
+def 世界当下():
+    """预约的起止时间是**世界数据**(会被平移)—— 拿机器时钟比,平移没跑成的那天就判错哪些该过期(10-15)。"""
+    import worldclock
+    return worldclock.当下()
+
+
 def scan(now=None):
     """返回 (该过期的, 状态机外的)。不改任何东西。"""
-    now = now or datetime.datetime.now()
+    now = now or 世界当下()
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row
     认的 = set(fsm.SM["bk-appt"]["states"])
     该过期, 野 = [], []
@@ -71,7 +77,7 @@ def scan(now=None):
 
 
 def run(go=False, now=None):
-    now = now or datetime.datetime.now()
+    now = now or 世界当下()
     该过期, 野 = scan(now)
     print(f"预约自动过期 · {'真跑' if go else 'dry-run(加 --go 才真改)'} · "
           f"基准时间 {now:%Y-%m-%d %H:%M}")

@@ -88,6 +88,7 @@ _真实时钟标 = re.compile(r"真实时钟")
     ("把豁免的理由清空",                                      "每条豁免都写了理由"),
     ("往豁免里写一个不存在的文件名",                          "豁免指向的文件都还在"),
     ("把 api.get_wearer 的 today 改回 date(2026, 8, 31)",       "运行时的「今天」不许写死成某一天"),
+    ("把 api.get_workorder 的剩余天数改回拿机器的今天减",          "后台每一处机器时钟,要么改世界时钟、要么当场注明「真实时钟」和为什么"),
 ]
 
 _机器时钟 = re.compile(r"datetime\.now\(\)|datetime\.datetime\.now\(\)|"
@@ -496,6 +497,41 @@ for _目录, _要 in _范围:
 ck("运行时的「今天」不许写死成某一天(世界每天平移,写死的那天会和数据越错越远)",
    not 坏今, 扫今, 坏今[:4] + ([f"……还有 {len(坏今) - 4} 处"] if len(坏今) > 4 else []))
 ck("真的扫到了给「今天」赋值的地方(一个都没扫到 = 判据坏了,不是全都对)", 扫今 >= 3, 扫今)
+
+# ── 第五条判据:**每一处**机器时钟都要么改世界时钟、要么当场注明「真实时钟」(2026-10-15) ──
+#
+# 前三条都只管**写**(写那几列 / 时间源函数 / SQL 里的 now)。而 10-15 一扫:**读**的那头——
+# 拿机器的今天去算「剩几天 / 逾期没有 / 多少天没互动 / 预约过期没有 / 最晚哪天下单」——
+# 在 api.py 里有 11 处、外加 appt_expire / rules / capacity 的调用方,**一处都不归任何判据管**。
+# 平时世界的今天 = 机器的今天(05:10 平移对齐),所以算出来是对的;**平移没跑成的那天**
+# (笔记本睡着、或像 10-15 那样差点被「新表没登记」拒跑),这些数就和用世界时钟的那些差一天。
+# > 一个「这里该用世界时钟」和一个「这天恰好对齐了」,在今天算出来的数上长得一模一样。
+#
+# 粒度按**站点**(同第三条):放行靠同行或上一行写「真实时钟」+ 为什么。
+# knowledge/ 口径层的兜底默认值单独记成**欠账棘轮**(只许少不许多)——
+# 口径模块本来就不该自己取日期(CLAUDE.md 第 9 节 ①),标「真实时钟」是撒谎,改成必填又要逐个核调用方。
+坏读, 扫读 = [], 0
+口径欠账, 口径欠账上限 = [], 5          # 写死:capacity 4 处 + leadtime 1 处(10-15),调用方 api 已传世界日期
+for 目录 in (HERE, os.path.join(ROOT, "knowledge")):
+    for fn in sorted(os.listdir(目录)):
+        if not fn.endswith(".py") or fn.endswith("_check.py") or fn == "seed.py": continue
+        if 目录 == HERE and fn in 时间源豁免: continue
+        原 = open(os.path.join(目录, fn), encoding="utf-8").read()
+        代码 = 只留代码(原)
+        if 代码 is None:
+            坏读.append(f"{fn}:剥注释失败 —— 不当它通过"); continue
+        原行 = 原.split("\n")
+        for i, l in enumerate(代码.split("\n")):
+            if not _机器时钟.search(l): continue
+            扫读 += 1
+            if _真实时钟标.search(原行[i]) or (i and _真实时钟标.search(原行[i - 1])): continue
+            位 = f"{os.path.relpath(os.path.join(目录, fn), ROOT)}:{i+1}"
+            (口径欠账 if 目录 != HERE else 坏读).append(位)
+ck("后台每一处机器时钟,要么改世界时钟、要么当场注明「真实时钟」和为什么", not 坏读, 扫读,
+   坏读[:4] + ([f"……还有 {len(坏读) - 4} 处"] if len(坏读) > 4 else []))
+ck(f"口径层自己取机器日期的兜底只许少不许多(上限 {口径欠账上限})", len(口径欠账) <= 口径欠账上限,
+   len(口径欠账), 口径欠账)
+ck("真的扫到了机器时钟的用处(一个都没扫到 = 判据坏了,不是全都对)", 扫读 >= 5, 扫读)
 
 _db = os.path.join(HERE, "lanxiu.db")
 if not os.path.exists(_db):

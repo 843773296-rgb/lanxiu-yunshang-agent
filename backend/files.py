@@ -75,7 +75,7 @@ def save(schedule_id, kind, name, data_url, actor):
         c.execute("INSERT INTO schedule_file(schedule_id,kind,name,mime,size,path,"
                   "uploaded_by,uploaded_at) VALUES(?,?,?,?,?,?,?,?)",
                   (schedule_id, kind, (name or fn)[:80], mime, len(raw), rel, actor,
-                   datetime.datetime.now().strftime("%Y-%m-%d %H:%M")))
+                   __import__("worldclock").当下().strftime("%Y-%m-%d %H:%M")))   # 世界时钟:这一列会被平移(10-15)
     return True, f"已存「{kind}」附件({len(raw)//1024}KB)"
 
 

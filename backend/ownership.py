@@ -160,7 +160,8 @@ def 记一笔(customer_id, frm, too, action, basis, actor, ts=None, db=DB):
     if basis not in 依据:
         raise ValueError(f"依据必须是 {依据} 之一,给的是「{basis}」—— "
                          f"**不写依据等于把过程又丢了一次**")
-    ts = ts or datetime.date.today().isoformat()
+    import worldclock   # 世界时钟:这一列会被平移(10-15:原来是机器的今天)
+    ts = ts or worldclock.今天().isoformat()
     with sqlite3.connect(db) as c:
         建表(c)
         c.execute("""insert into cust_owner_log(customer_id,frm,too,action,basis,actor,ts)
