@@ -15,7 +15,8 @@
 > 手写的清单会漂,而漂了不报错 —— 它只是安静地把一件做完的事留在上面。
 """
 import sys as _sys
-import datetime, glob, os, re, sqlite3, subprocess, sys
+import datetime
+import io, glob, os, re, sqlite3, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -165,7 +166,27 @@ def main():
     L += ["---", "",
           f"共 {len(items)} 条。每一条的完整来龙去脉在 `intent/<名字>.md`,",
           "而「现在停在哪」在 `HANDOFF.md` —— **前者不该变,后者随时在变**。"]
-    open(OUT, "w", encoding="utf-8").write("\n".join(L) + "\n")
+    # ⚠️ **内容没变就不写文件**(2026-10-15)。
+    #
+    # `tools/intent_check.py` 的第 ⑤ 条会**真的跑这个脚本**来比对,
+    # 而它比的是**剥掉时间戳之后**的内容。于是每跑一轮全量,
+    # 哪怕一个字没变,这个文件也会被盖上一个新时间戳 + 新提交号 ——
+    # 两个并行会话各跑一次,`git pull` 就撞一次,而**撞的内容永远是那一行**。
+    # > 一条「检查」和一条「顺手改了文件的检查」,**在绿勾上长得一模一样** ——
+    # > 而后者会让两个检出每次都冲突。
+    #
+    # 📌 保证一点没少:内容真变了照旧写(带新时间戳),`intent_check` 照旧
+    #    发现过期并提示「记得一起提交」。省掉的只有「没变也盖一遍时间戳」。
+    新文 = "\n".join(L) + "\n"
+    import re as _re
+    _剥 = lambda t: _re.sub(r"> 生成于 .*\n", "", t)
+    try:
+        旧文 = io.open(OUT, encoding="utf-8").read()
+    except OSError:
+        旧文 = None
+    if 旧文 is not None and _剥(旧文) == _剥(新文):
+        return                      # 只有时间戳会变 —— 不碰它
+    open(OUT, "w", encoding="utf-8").write(新文)
     print(f"生成 {OUT}:{len(items)} 条")
     for 状, (标题, _) in 分组.items():
         n = sum(1 for x in items if x["状态"] == 状)
