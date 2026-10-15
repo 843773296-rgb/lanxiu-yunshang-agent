@@ -60,10 +60,16 @@ global.document = {
     if (s.startsWith("#")) return store.get(s.slice(1)) || null;
     return el("?");
   },
+  /* 2026-10-15 补:桩里原来**没有 getElementById** —— report.html / scheme.html 直接调它,
+     第一行就抛「不是函数」,冒烟红,而浏览器里好好的(数据工厂 10-14 查出)。
+     它和上面的 querySelector("#x") 取的是**同一份**元素表,别各存一份。 */
+  getElementById(i){ return store.get(i) || null; },
   querySelectorAll(){ return []; },
   addEventListener(){}, createElement:()=>el("new"), body: el("body"),
 };
 global.window = { __CONF: [] };
+/* alert:tasks.html 等页会调 —— 桩不给就抛「不是函数」,而浏览器里只是弹个框(10-15 补)。 */
+global.alert = () => {};
 const BASE = process.env.BASE || "http://127.0.0.1:8770";
 const realFetch = global.fetch;
 global.fetch = (u, o) => realFetch(u.startsWith("http") ? u : BASE + u, o);
@@ -105,6 +111,16 @@ setTimeout(() => {
      ⚠️ 修法**不是把 3 改小**(那是放宽判据,下次真没加载也照样绿)。
      改成换个问法:节点少的时候,**看填进去的到底是不是实质内容** ——
      加载真没跑起来的页面写不出几百个字符,而且占位符会留在里面。 */
+  /* **没有加载路径的页面**(10-15):登录页、手机预约页是纯表单 —— 脚本只绑提交回调,不点按钮就什么都不该填。
+     拿「填了几个节点」判它们,红的理由就是错的(「加载路径没跑起来」,而它本来就没有加载路径)。
+     ⚠️ 修法**不是把下面的 3 / 400 调小**(那是放宽,下次真没加载也照样绿),是把这一类单列、在输出里说清。
+     单列的页面仍然要过上面那关:脚本**同步执行不许挂**(errs 非空照样红)。 */
+  const 纯表单 = {"login.html": "登录表单,点「登录」才发请求", "m.html": "手机端预约表单,点「提交」才发请求"};
+  if (纯表单[page]) {
+    console.log("\n" + "=".repeat(68));
+    console.log(`✅ 脚本跑通(这一页没有加载路径:${纯表单[page]} —— 不按「填了几个节点」判)`);
+    return;
+  }
   const 字数 = filled.reduce((n, [, v]) => n + v._h.length, 0);
   const 占位 = filled.filter(([, v]) => /加载中|undefined|NaN|\[object Object\]/.test(v._h))
                      .map(([k]) => k);
