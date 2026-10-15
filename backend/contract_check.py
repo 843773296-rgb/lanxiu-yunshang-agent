@@ -19,6 +19,7 @@ import order_write as W, order_contract as OC, contract_terms as T, oplog
 ]
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
+Y = "\033[33m"        # 库况那一行用它 —— 黄色表示「只报不拦」
 bad, n = [], 0
 
 
@@ -31,6 +32,8 @@ def ck(名, ok, 说明=""):
 
 
 print("订单确认书 · 库副本上走一遍")
+import contract_terms as _K      # 生效日从条款那边现取,不手抄
+真库 = W.DB          # 下面那条库况要读它 —— 这一行之后 W.DB 就指向副本了
 tmp = tempfile.mkdtemp()
 db = os.path.join(tmp, "lanxiu.db")
 shutil.copy(W.DB, db)
@@ -96,6 +99,43 @@ import prompts
 ck("确认下单的规矩要求把确认书链接给出来", any("confirm_order" in r_.needs and "订单确认书" in r_.text for r_ in prompts.ALL_RULES))
 
 c.close()
+# ── 库况:这个库上还有几张缺确认书 —— **只打印,不判红** ──────────────────
+#
+# ⚠️ **为什么这一条不判红**,想清楚了再改:
+#
+# 确认书的规矩是「`confirm_order` 时在同一事务里生成」(业务 2026-10-10),
+# 而**代码层面已经守住了** —— 上面那条「确认书写不进去 → 确认下单整个回滚」
+# 就是结构保证:走正门确认的单不可能没有确认书。
+#
+# 真库上「缺几张」量的是**另一件事**:这个库里有多少单是在规矩生效前确认的。
+# 而演示世界**每天平移一天**,于是原本 10-09 确认的老单,明天就变成 10-10 之后 ——
+# **自动落进「规矩生效后」这个范围,而它被确认的那一刻规矩确实还没生效**。
+# 实测:真库(停在 10-15)范围内 56 张、缺 0 张;平移到 10-16 的副本上
+# 范围内 63 张、缺 7 张。写死日期做成判据的话,它会一天比一天红,
+# 而每天多出来的那几条**没有一条是谁做错了**。
+#
+# > 一个「正门被绕过了」和一个「平移把老单挪进了这个范围」,
+# > **在「缺几张」这个数上长得一模一样** —— 而只有前者该红。
+#
+# 所以这里只报数。要补就手工跑 `python3 tools/backfill_contracts.py --写`
+# (它走 `order_contract.生成()` 那个正门函数,幂等,不碰规矩生效前的单)。
+_c真 = sqlite3.connect(f"file:{真库}?mode=ro", uri=True)
+_范围 = _c真.execute(
+    """SELECT count(*) FROM ordr WHERE kind='定制品订单'
+       AND paid_at IS NOT NULL AND paid_at >= ?""", (_K.生效日,)).fetchone()[0]
+_缺 = _c真.execute(
+    """SELECT count(*) FROM ordr o WHERE o.kind='定制品订单'
+       AND o.paid_at IS NOT NULL AND o.paid_at >= ?
+       AND NOT EXISTS(SELECT 1 FROM order_contract k WHERE k.order_id=o.id)""",
+    (_K.生效日,)).fetchone()[0]
+_份 = _c真.execute("SELECT count(*) FROM order_contract").fetchone()[0]
+_c真.close()
+print(f"  {Y}📖 库况{D} 这个库上 {_份} 份确认书;规矩生效日之后已确认的定制单 {_范围} 张,"
+      f"其中缺确认书 {_缺} 张"
+      + ("" if not _缺 else
+         f" —— **只报不拦**:多半是平移把规矩生效前的老单挪进了这个范围"
+         f"(它们确认那天规矩还没生效)。要补跑 `python3 tools/backfill_contracts.py --写`"))
+
 shutil.rmtree(tmp, ignore_errors=True)
 print()
 if bad:

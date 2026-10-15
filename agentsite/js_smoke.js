@@ -120,7 +120,12 @@ const 现取参数 = {
   "contract.html": async () => {
     const me = await (await fetch("/api/me")).json();
     for (let pg = 1; pg <= 5; pg++) {
-      const os = (await (await fetch("/api/orders?page=" + pg)).json()).rows || [];
+      // ⚠️ **每页要 100 条**:`/api/orders` 默认每页只有 10 条(server.py 的 `_page`),
+      // 翻 5 页才 50 条 —— 而订单按 `created` 倒序,前面全是每天上新造的标品单,
+      // 静安第一张有确认书的排在第 185 位,**根本够不着**。
+      // 2026-10-15 补完 56 份确认书之后这一页仍然红,红的理由正是这个,
+      // 不是「库里没有确认书」。
+      const os = (await (await fetch("/api/orders?per=100&page=" + pg)).json()).rows || [];
       for (const o of os.filter(o => o.shop === me.shop)) {
         const r = await fetch("/api/contract/" + encodeURIComponent(o.id));
         if (r.ok) return "?order=" + encodeURIComponent(o.id);
@@ -137,7 +142,23 @@ if (现取参数[page]) {
   location.search = await 现取参数[page]();
   if (location.search) console.log(`  网址参数现取:${location.search}`);
 }
-try { new Function(js + "\n;" + driver)(); }
+/* 本站的外部脚本(`<script src="/md.js">`)也要跑。
+   ⚠️ 上面取内联脚本用的是 `src.split("<script>")` —— **精确匹配,不含属性**,
+   所以 `<script src="…">` 根本切不中,整个被忽略。
+   表现是 contract.html 当场 `ReferenceError: md is not defined`,
+   而那不是页面坏了:浏览器里 md.js 是真的加载了的。
+   > 一个「页面用了一个不存在的函数」和一个「桩没加载它依赖的脚本」,
+   > **在那条 ReferenceError 上长得一模一样。**
+   只取本站的绝对路径(`/xxx.js`),CDN 不碰 —— 冒烟不该依赖外网。
+   拼在内联脚本**前面**一起跑,这样它定义的东西内联脚本看得见。 */
+let 外部 = "";
+for (const m of src.matchAll(/<script\s+src="(\/[^"]+)"\s*><\/script>/g)) {
+  try {
+    外部 += await fetch(BASE + m[1]).then(r => r.ok ? r.text() : "") + "\n;";
+    console.log(`  外部脚本:${m[1]}`);
+  } catch (e) { errs.push(`取不到外部脚本 ${m[1]}:${e.message}`); }
+}
+try { new Function(外部 + js + "\n;" + driver)(); }
 catch (e) { errs.push("同步执行就挂了:" + e.message); }
 
 setTimeout(() => {
