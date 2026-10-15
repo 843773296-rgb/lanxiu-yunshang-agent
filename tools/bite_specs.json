@@ -8008,5 +8008,17 @@
    }
   ],
   "预期红": "后端接这个地址的分支进得去(外面那层 if 不挡它)"
+ },
+ {
+  "script": "backend/task_status_check.py",
+  "改坏": "把 rebuild.sh 里造工单那步挪到研判之前(补足那一刻工单还没被研判,它会判定「够用」而不补,于是重建出来的队列是空的)",
+  "file": [
+   {
+    "path": "tools/rebuild.sh",
+    "old": "            \"tools/seed_triage_samples.py --做\" \\\n            \"tools/seed_triage_tasks.py --写\" \\",
+    "new": "            \"tools/seed_triage_tasks.py --写\" \\\n            \"tools/seed_triage_samples.py --做\" \\"
+   }
+  ],
+  "预期红": "从零重建时,造工单那步排在研判之后"
  }
 ]

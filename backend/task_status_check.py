@@ -166,6 +166,31 @@ ck(f"v1 取样够 subset 那八个下标用(要 ≥33,拿到 {len(取样)})", le
    f"只拿到 {len(取样)} 条,而 `v1.py` 的 subset 取 [0,4,8,12,16,20,24,32] —— "
    f"**当场 IndexError**,而报出来的理由和工具层没有半点关系")
 
+# ── 从零重建时,造工单那步要排在研判之后 ────────────────────────────────
+#
+# ⚠️ 2026-10-15 查出来的,而且这个顺序错了**不会报错,只会让队列空着**:
+#   `tools/rebuild.sh` 第 181 行跑 `daily_fresh`(里面有「不够 3 条就补到 3 条」),
+#   而第 186 行才跑 `seed_triage_samples`(把工单全研判掉)。
+#   于是补足那一刻 `seed.py` 造的 52 条还没被研判 —— **够用,不补**;
+#   紧接着全被研判掉,**从零重建出来的库里一条能点的都没有**,
+#   正是用户当天抱怨的那个状态(「给我做几个能跑的呀」)。
+#   > 一个「补足跑过了」和一个「它跑的时候还不需要补」,
+#   > **在重建日志上长得一模一样。**
+# 📌 所以 `seed_triage_tasks.py --写` 补在 `seed_triage_samples` **之后**,
+#    而这条判据盯的就是这个先后 —— 顺序是靠位置成立的,位置会被人改。
+_rb = os.path.join(os.path.dirname(这里), "tools", "rebuild.sh")
+if os.path.exists(_rb):
+    _文 = open(_rb, encoding="utf-8").read()
+    _研判 = _文.find('"tools/seed_triage_samples.py')
+    _造单 = _文.find('"tools/seed_triage_tasks.py')
+    ck("从零重建时,造工单那步排在研判之后(顺序反了队列就是空的)",
+       _研判 > 0 and _造单 > _研判,
+       f"研判那步在第 {_文[:_研判].count(chr(10))+1} 行、造工单在第 "
+       f"{_文[:_造单].count(chr(10))+1 if _造单>0 else '(没有)'} 行 —— "
+       f"排在研判之前的话,补足那一刻工单还没被研判,它会判定「够用」而不补")
+else:
+    库况("没找到 tools/rebuild.sh", "**这不叫通过,是没验到**")
+
 # ── enum 对账:库里出现的取值,常量里必须都有 ──────────────────────────
 cx = sqlite3.connect(f"file:{库}?mode=ro", uri=True)
 库状态 = {r[0] for r in cx.execute("SELECT DISTINCT status FROM task") if r[0]}

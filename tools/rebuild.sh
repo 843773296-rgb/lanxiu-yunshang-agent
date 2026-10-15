@@ -102,6 +102,15 @@
 #                     它要读客户建档日和订单下单日比大小,得等所有造单的步骤都跑完)
 #                    (业务 2026-09-18 的数据集规格,intent/order-aftersale-dataset.md)
 #   seed_fitting.py  白坯试衣记录(要先有定制订单行)
+#   seed_triage_tasks.py  几条 AI 真跑得动的未研判工单(**必须排在 seed_triage_samples 之后**)
+#     ⚠️ 2026-10-15:它在 `daily_fresh` 里也会跑(「不够 3 条就补到 3 条」),
+#        但那一步排在第 181 行 —— **那时 seed.py 造的 52 条工单还没被研判**,
+#        补足一数「够用」就不补;紧接着 `seed_triage_samples` 把它们全研判掉,
+#        于是**从零重建出来的库,队列里一条能点的都没有** ——
+#        正是用户 2026-10-15 抱怨的那个状态(「给我做几个能跑的呀」)。
+#        > 一个「补足跑过了」和一个「它跑的时候还不需要补」,
+#        > **在重建日志上长得一模一样。**
+#        脚本在流程里、逻辑也对,**只是位置不对**:它检查的时候条件还没成立。
 #   make_todo.py     待办清单(从 intent/ 生成)
 #
 # ⚠️ **后面每一步都依赖前面那一步的产物**,跳一步不会报错,
@@ -155,7 +164,7 @@ if [ "$FRESH_ONLY" = 1 ]; then
     echo "   真要重建,请直接敲 ./tools/rebuild.sh(它会先说清楚要删什么,并留 3 秒反悔)。"
     exit 1
   fi
-  echo "📦 首次建库:下面 39 步**全跑完**才算建好,少一步都会让某几张表空着。"
+  echo "📦 首次建库:下面 40 步**全跑完**才算建好,少一步都会让某几张表空着。"
 else
   echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
   sleep 3
@@ -184,6 +193,7 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
             "tools/lifecycle_refresh.py --做" "tools/seed_dispatch.py --做" \
             "tools/seed_customer_tasks.py --做" "tools/seed_new_products.py --做" \
             "tools/seed_triage_samples.py --做" \
+            "tools/seed_triage_tasks.py --写" \
             "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
   python3 $STEP > /tmp/rebuild-step.out 2>&1 || {
@@ -199,8 +209,8 @@ done
 # ⚠️ **加步骤要改这个数。** 2026-10-09 加了 daily_fresh / lifecycle_refresh 两步,
 # 忘了改 —— `backend/firstrun_check.py` 当场逮到「步骤表 31 步,自校验却写着 29 步」。
 # 这个数存在的理由正是「循环没跑全,而上面看起来是顺利的」,所以它自己不能过期。
-if [ "$DONE" -ne 39 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 39 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 40 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 40 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"
