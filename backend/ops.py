@@ -880,7 +880,14 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
 def recheck_list():
     """该复量的人。规则直出,0 次模型调用。"""
     import lifecycle_check as lc
-    _, sig, conf = lc.run(verbose=False)
+    # 只要「该复量」和「需人工确认」两样 —— **别走 lc.run()**:它还会顺手跑一遍整套结构体检
+    # (16 条整表查询,10-15 量过 5.5 秒),而结果在这里一个字都不用。
+    # 着装人页每打开一次就调一次,后台是单线程,这 5.5 秒全站都在排队。
+    c = lc._c()
+    try:
+        sig, conf = lc.signals(c), lc.conflicts(c)
+    finally:
+        c.close()
     return {"该复量": sorted(sig, key=lambda x: -(x["已过"] - x["上限"])),
             "需人工确认": conf,
             "说明": "规则直出,不经模型 —— 步骤能枚举的事不该花钱买不确定性"}

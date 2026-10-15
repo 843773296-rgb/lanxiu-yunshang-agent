@@ -3096,17 +3096,33 @@ class H(BaseHTTPRequestHandler):
                      "demo 是内部演示数据,**不可作为对客户的承诺**。"
                      "「备料天」是下单到面料到位的天数,现货为 1–3 天。"))
         if p=="/api/wearers":
-            import api as _api, ops as _o
+            # **分页,该复量的排最前**(用户 2026-10-15 拍)。原来对全部着装人逐个调 get_wearer ——
+            # 10-15 量过:12340 人 × 约 9 毫秒 = **90 秒一次**,而后台是单线程,
+            # 这 90 秒里全站每个请求都在排队(那天早上 8760 两次被它拖到连接都建不上)。
+            # 现在只给**本页**的人算档案;顶部统计照旧按**全部人**算(一条查询就够,不逐个调)。
+            import api as _api, ops as _o, growth as _g
             rl=_o.recheck_list()
             due={x["id"]:x for x in rl["该复量"]}
+            超=lambda i: due[i]["已过"]-due[i]["上限"]
+            全=_api._rows("SELECT id,birthday FROM wearer ORDER BY customer_id,id")
+            今=_api._wc.今天()
+            序=sorted([w["id"] for w in 全 if w["id"] in due], key=超, reverse=True) + \
+               [w["id"] for w in 全 if w["id"] not in due]
+            每页=100
+            总页=max(1,-(-len(序)//每页))
+            try: 页=min(max(1,int((Q.get("page") or ["1"])[0])),总页)
+            except ValueError: 页=1
             _out=[]   # 别叫 rows —— 模块级已经有个 rows() 函数,遮蔽了后面就调不到
-            for w in _api._rows("SELECT * FROM wearer ORDER BY customer_id,id"):
-                d=_api.get_wearer(wearer_id=w["id"])["着装人"][0]
-                d["该复量"]=w["id"] in due
-                d["超期天数"]=(due[w["id"]]["已过"]-due[w["id"]]["上限"]) if w["id"] in due else None
+            for i in 序[(页-1)*每页:页*每页]:
+                d=_api.get_wearer(wearer_id=i)["着装人"][0]
+                d["该复量"]=i in due
+                d["超期天数"]=超(i) if i in due else None
                 _out.append(d)
-            return self._send(dict(rows=_out, 需人工确认=rl["需人工确认"],
-                                   说明=rl["说明"]))
+            # 未成年口径和页面原来一致:年龄保留一位小数后 < 18
+            未成年=sum(1 for w in 全 if w["birthday"] and round(_g.age_at(w["birthday"],今),1)<18)
+            return self._send(dict(rows=_out, 页=页, 总页数=总页, 每页=每页,
+                                   统计=dict(着装人=len(全), 未成年=未成年, 该复量=len(due)),
+                                   需人工确认=rl["需人工确认"], 说明=rl["说明"]))
         if p=="/api/wearer-plan":
             import api as _api
             from urllib.parse import parse_qs as _pq

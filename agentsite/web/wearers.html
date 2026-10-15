@@ -71,6 +71,7 @@ ul.lim{margin:0;padding-left:18px;font-size:12.6px;color:var(--ink-3);line-heigh
       <th>上次量体</th><th>状态</th><th>同意</th></tr></thead>
     <tbody id="rows"><tr><td colspan="8">加载中…</td></tr></tbody>
   </table></div>
+  <div class="note" id="pager" style="margin-top:8px"></div>
 </section>
 
 <section>
@@ -100,13 +101,14 @@ const esc=s=>(s??"").toString().replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">"
 const md=s=>esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>");
 let ROWS=[];
 
-function kpi(rows,conf){
-  const kid=rows.filter(x=>x.年龄!=null&&x.年龄<18).length;
-  const due=rows.filter(x=>x.该复量).length;
+/* 统计按**全部人**算,由后台给 —— 表格是分页的(用户 10-15 拍:该复量的排最前、每页 100),
+   拿本页的行去数会把「该复量 37」数成「本页 37」,而两者在这个数上长得一样。 */
+function kpi(st,conf){
+  const kid=st.未成年, due=st.该复量;
   const k=(cls,label,val,note)=>`<div class="kpi ${cls}"><div class="k">${label}</div>
     <div class="v">${val}</div><div class="n">${note}</div></div>`;
   $("#kpis").innerHTML=
-    k("","着装人",rows.length,`挂在账号下的人,不是账号数`)+
+    k("","着装人",st.着装人,`挂在账号下的人,不是账号数`)+
     k("","未成年",kid,`这个模块真正要管的对象`)+
     k(due?"warn":"good","该复量",due,`超过周期的量体记录是无效值,不是参考值`)+
     k(conf.length?"warn":"good","需人工确认",conf.length,`遗传身高与推算差 >8cm,不自动挑边`);
@@ -119,10 +121,12 @@ function row(x){
     <td class="num">${esc(x.量体日||"—")}</td><td>${st}</td>
     <td>${x.身体数据同意==="有效"?'<span class="tag ok">有效</span>':'<span class="tag over">缺失</span>'}</td></tr>`;
 }
-async function load(){
-  const r=await fetch("/api/wearers").then(r=>r.json());
-  ROWS=r.rows; kpi(ROWS,r.需人工确认||[]);
+async function load(页=1){
+  const r=await fetch("/api/wearers?page="+页).then(r=>r.json());
+  ROWS=r.rows; kpi(r.统计,r.需人工确认||[]);
   $("#rows").innerHTML=ROWS.map(row).join("");
+  const 钮=(p,t)=>p>=1&&p<=r.总页数&&p!==r.页?`<button type="button" class="pg" data-p="${p}">${t}</button>`:"";
+  $("#pager").innerHTML=`第 ${r.页} / ${r.总页数} 页 · 每页 ${r.每页} 人,该复量的排最前 `+钮(r.页-1,"‹ 上一页")+钮(r.页+1,"下一页 ›");
   const kids=ROWS.filter(x=>x.年龄!=null&&x.年龄<18&&x.量体日);
   $("#w").innerHTML=kids.map(x=>`<option value="${x.着装人}">${esc(x.姓名)}(${x.年龄}岁)</option>`).join("")
     ||`<option value="">没有可推算的着装人</option>`;
@@ -146,6 +150,7 @@ function plan(r){
       <ul class="lim">${r.限定.map(x=>`<li>${md(x)}</li>`).join("")}</ul>
       <div style="font-size:12.6px;color:var(--ink-3);margin-top:9px">${md(r.说明)}</div></div>`;
 }
+$("#pager").addEventListener("click",e=>{const b=e.target.closest("[data-p]"); if(b) load(+b.dataset.p);});
 $("#go").onclick=async()=>{
   const w=$("#w").value; if(!w) return;
   $("#msg").textContent="算…";
