@@ -3060,6 +3060,14 @@ class H(BaseHTTPRequestHandler):
             import booking as _bk
             return self._send({"rows": _bk.unassigned(
                 None if _u2["role"] == "总部运营" else _u2.get("shop"))})
+        if p=="/api/refund-state":
+            # ⚠️ 别挪进下面 `/api/ops-` 那一段 —— 第一版就放在那里,路径不是 ops- 开头永远进不来,弹窗只显示 not found
+            # (函数层的检查全绿,真库端到端走一遍才看见,10-15)。
+            # 研判弹窗「退款处理」那一块(10-15):押金单状态 + 退款轨迹。要登录;能不能改在写口里判
+            import refund_write as _rw
+            if not _me(self): return self._send({"error":"请先登录"},401)
+            _r=_rw.看((Q.get("deposit") or [""])[0])
+            return self._send(_r, 404 if "error" in _r else 200)
         if p.startswith("/api/ops-"):
             # 智能运维平台的读接口。队列/积压/健康度都在 ops.py 里算,
             # 这里只负责转发 —— 路由层不放业务规则,SLA 改了不用翻两个文件。
@@ -3077,12 +3085,6 @@ class H(BaseHTTPRequestHandler):
                                        counts=_ops.各档计数(_全),
                                        挪到值班台=dict(开着=_挪["开着"], 已超时=_挪["已超时"],
                                                      没走正门关的=_挪["没走正门关的"])))
-            if p=="/api/refund-state":
-                # 研判弹窗「退款处理」那一块(10-15):押金单状态 + 退款轨迹。要登录;能不能改在写口里判
-                import refund_write as _rw
-                if not _me(self): return self._send({"error":"请先登录"},401)
-                _r=_rw.看((Q.get("deposit") or [""])[0])
-                return self._send(_r, 404 if "error" in _r else 200)
             if p=="/api/ops-manual":
                 # 值班台「差评待店长确认」(用户 10-15 拍)—— 和研判队列同一份 queue() 分出来,不另算
                 return self._send(_ops.待店长确认())
