@@ -3052,7 +3052,13 @@ class H(BaseHTTPRequestHandler):
             # 智能运维平台的读接口。队列/积压/健康度都在 ops.py 里算,
             # 这里只负责转发 —— 路由层不放业务规则,SLA 改了不用翻两个文件。
             import ops as _ops
-            if p=="/api/ops-queue":   return self._send(dict(rows=_ops.queue((Q.get("state") or [None])[0])))
+            if p=="/api/ops-queue":
+                # 各档计数一起给 —— 页面要在「待办」那档说出「另有 N 条已超时」。
+                # 让页面自己数会漂:它手上只有本档的行,数不出别档的。
+                _全 = _ops.queue()
+                _st = (Q.get("state") or [None])[0]
+                return self._send(dict(rows=[x for x in _全 if _ops.档位[_st](x)] if _st in _ops.档位 else _全,
+                                       counts=_ops.各档计数(_全)))
             if p=="/api/ops-backlog": return self._send(_ops.backlog())
             if p=="/api/ops-health":  return self._send(_ops.health())
             if p=="/api/ops-detail":

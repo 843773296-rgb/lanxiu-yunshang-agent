@@ -7777,5 +7777,29 @@
    }
   ],
   "预期红": "传了着装人就真的按他算"
+ },
+ {
+  "script": "backend/ops_wait_check.py",
+  "改坏": "把算等待用的基准换回 now()(世界日期+机器时刻),于是今天下午那些记录在上午算出负的等待时长",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    out, n = [], 算等待的当下()",
+    "new": "    out, n = [], now()"
+   }
+  ],
+  "预期红": "今天晚些时刻的工单,等待时长不为负"
+ },
+ {
+  "script": "backend/ops_wait_check.py",
+  "改坏": "让写研判记录的时间戳也用「世界今天的末尾」(新落的记录会盖上 23:59:59,而不是落库那一刻)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    return worldclock.当下().replace(microsecond=0)",
+    "new": "    return worldclock.当下().replace(hour=23, minute=59, second=59, microsecond=0)"
+   }
+  ],
+  "预期红": "写入口用的仍是机器时刻,不是今天末尾"
  }
 ]

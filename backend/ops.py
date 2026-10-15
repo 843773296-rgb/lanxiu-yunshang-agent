@@ -152,6 +152,37 @@ def now():
     return worldclock.当下().replace(microsecond=0)
 
 
+def 算等待的当下():
+    """**算「等了多久」时的那个当下 —— 世界今天的末尾,不是机器此刻。**
+
+    ⚠️ 2026-10-15 用户在页面上撞到的:一条今天 14:34 的差评显示「等了 -5.2 小时 · 正常」。
+
+    `当下()` = 世界日期 + **机器时刻**。而演示世界的「今天」是**已经过完的一天**
+    (平移把全年数据整体挪过来,今天的记录铺到 23:44 —— 见 `tools/daily_fresh.py`)。
+    于是上午 9 点打开页面,所有「今天下午那些记录」算出来的等待时长都是负的,
+    **而到了下午它自己就变正了**。
+
+    `backend/factory_inbox.py` 里早记过同一个病的另一例,那句话是对的:
+    > 同一天之内,这两种时刻没有可比的先后。
+
+    > 一个「这条任务还没发生」和一个「机器时钟还没走到世界数据那个时刻」,
+    > **在那个负数上长得一模一样。**
+
+    📌 **为什么不直接改 `now()`**:`now()` 在这个文件里是**两种用途**——
+       `queue()` 拿它算等待(读),而 `save_triage` / `resolve` 拿它写
+       `triage.created` / `handled_at`(写)。写入要的是机器此刻,
+       改成今天末尾的话,新落的研判记录时间戳会变成 23:59:59。
+       **所以这里是把一个该分开的函数分开,而不是改掉它。**
+
+    实测(2026-10-15 09:35,库里 223 条):等待为负 1 条 → 0 条,
+    而**各档条数一条都没变**(已超时 14 / 正常 2 / 已销账 207)——
+    不过那是这批数据决定的,不是定义决定的:等待时长整体多算最多 14.4 小时,
+    SLA 短的任务理论上会更早判临期。
+    """
+    import datetime as _d
+    return _d.datetime.combine(now().date(), _d.time(23, 59, 59))
+
+
 def _dt(s):
     if not s: return None
     for f in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
@@ -182,6 +213,34 @@ def 正门关单凭据():
         "AND COALESCE(reason,'') NOT LIKE ?", f"%{标}%")}
 
 
+# ── 队列的档位:**一份定义,两个读者**(`queue()` 过滤、`各档计数()` 数数)────
+#
+# ⚠️ **超时的不算在「待办」里**(用户 2026-10-15 拍)。
+# 原来「待办」= 所有没销账的,于是**超时的和不着急的混在同一屏** ——
+# 用户截图里 14 条「已超时」和 2 条「正常」上下挨着,而它们要的动作完全不同。
+# > 一个「今天刚来的」和一个「超了 4209 小时的」,在同一个「待办」标签下长得一样。
+# 现在「待办」和「已超时」**互斥**:待办只剩还来得及的。
+#
+# 📌 抽成这一份,是因为页面要在「待办」那一档上说出「另有 N 条已超时」——
+#    而那个 N 如果在页面或 server 里另算一次,**两边的档位规则就会各自漂**,
+#    漂了的表现是「按钮上写 14,点进去 11 条」,而两边分别看都正常。
+# 📌 `backlog()` 的 `待办` 这个数**没跟着变** —— 它是看板的积压总量(含超时),
+#    和这里的「待办档」是两个口径,别让人去相减。
+档位 = {
+    "待办":   lambda x: not x["done"] and x["level"] != "已超时",
+    "已超时": lambda x: not x["done"] and x["level"] == "已超时",
+    "未研判": lambda x: x["state"] == "未研判",
+    "待复核": lambda x: x["state"] == "待复核",
+    "已销账": lambda x: x["done"],
+}
+
+
+def 各档计数(行=None):
+    """每一档多少条。**和 `queue()` 用同一份 `档位`**,不另写一遍。"""
+    q = queue() if 行 is None else 行
+    return {k: sum(1 for x in q if f(x)) for k, f in 档位.items()} | {"全部": len(q)}
+
+
 def queue(state=None):
     """值班队列。每条带:等了多久、离超时还有多久、智能体研判到哪一步了。
 
@@ -193,7 +252,9 @@ def queue(state=None):
         latest[t["task_id"]] = t          # 同一工单研判多次,取最后一次
 
     正门关过 = 正门关单凭据()
-    out, n = [], now()
+    # ⚠️ 算等待用的是**世界今天的末尾**,不是机器此刻 —— 见 `算等待的当下()`。
+    # 用 `now()` 的话,今天下午那些记录在上午看会算出负的等待时长。
+    out, n = [], 算等待的当下()
     for t in _rows("SELECT * FROM task ORDER BY created"):
         created = _dt(t["created"]) or n
         waited_h = (n - created).total_seconds() / 3600
@@ -246,10 +307,7 @@ def queue(state=None):
             已办结=bool(tr and tr.get("receipt")),
             回执=(f"{tr.get('receipt_kind')} {tr['receipt']}" if tr and tr.get("receipt") else None),
         ))
-    if state == "待办":  out = [x for x in out if not x["done"]]
-    elif state == "未研判": out = [x for x in out if x["state"] == "未研判"]
-    elif state == "待复核": out = [x for x in out if x["state"] == "待复核"]
-    elif state == "已销账": out = [x for x in out if x["done"]]
+    if state in 档位: out = [x for x in out if 档位[state](x)]
     # 超时的排最前,然后按等待时长倒序 —— 队列的排序本身就是一种业务规则
     rank = {"已超时": 0, "临期": 1, "正常": 2, "已销账": 3}
     out.sort(key=lambda x: (rank[x["level"]], -x["waited_h"]))

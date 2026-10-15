@@ -78,6 +78,7 @@ textarea,input[type=text]{width:100%;font-family:var(--sans);font-size:13.5px;pa
   <div class="bar">
     <div class="seg" id="seg">
       <button data-s="待办" aria-pressed="true">待办</button>
+      <button data-s="已超时">已超时</button>
       <button data-s="未研判">未研判</button>
       <button data-s="待复核">待复核</button>
       <button data-s="已销账">已销账</button>
@@ -173,9 +174,40 @@ function render(){
 async function load(){
   const q=await fetch("/api/ops-queue"+(state?"?state="+encodeURIComponent(state):"")).then(r=>r.json());
   rows=q.rows; render();
+  if(q.counts) 更新档位计数(q.counts);
   // 「已销账」这一档顶上报分组计数 —— 一行行看才看出「大多数根本没走过研判」,
   // 等于没分开。这个数直接说出来。
   if(state==="已销账") 报销账计数();
+  else if(state==="待办") 报待办计数(q.counts);
+  else if(state==="已超时") 报超时计数();
+}
+
+// 档位按钮上直接写条数。**数字由后端一次算完给过来**(`counts`),
+// 不在页面上数 —— 页面手上只有本档的行,数不出别档的,
+// 而「按钮上写 14、点进去 11 条」这种漂,两边分别看都正常。
+function 更新档位计数(c){
+  const g=$("#seg"); if(!g) return;
+  g.querySelectorAll("button").forEach(b=>{
+    const k=b.dataset.s||"全部", n=c[k];
+    if(n!==undefined) b.textContent=k+" "+n;
+  });
+}
+
+// ⚠️ **「待办」这一档现在不含超时的了,所以必须当场说出超时有多少条。**
+// 用户 2026-10-15 拍「所有超时的归到超时而不是待办」—— 分开之后待办只剩 2 条,
+// 而一个只显示 2 条的页面上,「超时的挪到隔壁了」和「数据丢了」长得一模一样。
+function 报待办计数(c){
+  const 超=(c&&c["已超时"])||0;
+  提示("这一档 "+rows.length+" 条 —— 只剩还来得及的。"
+     + (超 ? "另有 "+超+" 条已超时,挪到「已超时」那一档了(点上面那个按钮)"
+           : "超时的一条都没有"),
+     超?"bad":"ok");
+}
+
+function 报超时计数(){
+  const 久=rows.length?Math.max(...rows.map(x=>x.waited_h||0)):0;
+  提示("这一档 "+rows.length+" 条全部已超时,等最久的 "+久.toFixed(1)+" 小时 —— "
+     + "它们不在「待办」里,别靠那一档的数字判断还剩多少活", rows.length?"bad":"ok");
 }
 
 // ⚠️ 提示原来只有 textContent,**成功和「有失败」长得一模一样**。
