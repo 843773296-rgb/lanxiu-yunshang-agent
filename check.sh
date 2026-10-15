@@ -174,6 +174,32 @@ run "商品图 · 每张都渲染得出来,且看得出是不同的衣服" pytho
 run "工具入参 · 人怎么称呼它,工具就得认得出来" python3 backend/tool_input_check.py
 run "工具签名 vs MCP schema · 93 个工具每个都是两份,漂了模型就拿不到那个能力(函数加了参数而 schema 没加 → 模型看不到,而不报错)" python3 backend/tool_schema_check.py
 run "按 id 找人工任务 · 不许绑在某个状态上(绑了就是「列表里明明有,点下去说任务不存在」)" python3 backend/task_status_check.py
+
+# ── 页面冒烟:**有条件进门禁**(用户 2026-10-15 拍)────────────────────────
+#
+# `agentsite/js_smoke.js` 用最小 DOM 桩在 node 里真跑一遍页面的加载路径。
+# 它原来**不在门禁里**(理由正当:要服务在跑,而依赖外部状态的检查进门禁
+# 会变成随机拦路)。代价是 2026-10-15 发现**8 个页面一直红,而红了多久没人知道**。
+#
+# 更糟的是:盯「检查有没有进门禁」的那条检查(`tools/selftest_registry_check.py`)
+# 原来只扫 `*.py`,**根本看不见这个 .js** ——
+# > 一条「没进门禁的检查」和一条「盯它的那条检查看不见它」,
+# > **在绿勾上长得一模一样。**
+#
+# 所以照**管理后台那个 venv 的三条**同一个做法:服务在跑就真跑,没起就
+# **明说「不适用,不是通过」** —— 既不随机拦路,也不静默消失。
+# 📌 页面列表**现扫 `web/`**,新增一页自动纳入,不用改两处。
+if curl -s -o /dev/null --max-time 3 http://127.0.0.1:8770/ 2>/dev/null; then
+  run "页面冒烟 · web/ 下每一页真跑加载路径(agentsite/js_smoke.js;要 8770 在跑)" \
+      bash -c 'n=0; for f in agentsite/web/*.html; do p="${f##*/}";
+        if out=$(node agentsite/js_smoke.js "$p" 2>&1); then n=$((n+1));
+        else echo "❌ $p 没跑通:"; echo "$out" | tail -6;
+             echo "   —— 在第 $((n+1)) 页上停下,前 $n 页是好的"; exit 1; fi; done;
+        echo "✅ $n 页全部跑通(web/ 下现扫,新增一页自动纳入)"'
+else
+  printf "\n\033[1m▸ %s\033[0m\n" "页面冒烟 · web/ 下每一页真跑加载路径(agentsite/js_smoke.js)"
+  printf "  ⏸ 8770 没起 —— **不适用,不是通过**(先跑 ./start.sh;CI 上没有服务,所以那边也是这一支)\n"
+fi
 run "资料编辑日志 · 日志要说实话,而且说得出改了什么" python3 backend/edit_log_check.py
 run "商品表单 · 显示的字段就得改得了(对照设计稿)" python3 backend/product_form_check.py
 run "量体模版 / 测量项 · 改一个被引用的东西是最危险的动作" python3 backend/measure_tpl_check.py

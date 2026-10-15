@@ -59,7 +59,20 @@ def main():
               # ⚠️ 这一个是**带子目录**的 —— 上面五个是顶层 glob,
               # 而管理后台的测试全在 tests/orchestration 下面。
               "管理后台/tools", "管理后台/tests/orchestration"):
-        for pat in ("*_check.py", "*_judgetest.py", "*_test.py", "test_*.py"):
+        # ⚠️ **不只扫 .py**(2026-10-15 补的)。
+        #
+        # 原来这四个模式全是 `.py`,于是 `agentsite/js_smoke.js` ——
+        # 一个真跑页面加载路径的冒烟检查 —— **根本不在这条检查的视野里**。
+        # 后果是 2026-10-15 发现** 8 个页面冒烟一直红,而红了多久没人知道**:
+        # 它不在门禁里,也没人盯着它该不该在门禁里。
+        # > 一条「没进门禁的检查」和一条「盯它的那条检查看不见它」,
+        # > **在绿勾上长得一模一样。**
+        # 那 8 页不是谁忘了登记,是**登记表自己看不见这一类文件**。
+        #
+        # 📌 顺带也盖住了 `管理后台/tools/page_render_check.js`:它本来就在门禁里,
+        #    但那纯属没人动它 —— 哪天被从 check.sh 删掉,不会有任何判据红。
+        for pat in ("*_check.py", "*_judgetest.py", "*_test.py", "test_*.py",
+                    "*_check.js", "*_check.mjs", "*_smoke.js", "*_test.js"):
             扫 += [os.path.relpath(p, ROOT)
                   for p in glob.glob(os.path.join(ROOT, d, pat))]
     扫 = sorted(set(扫))
