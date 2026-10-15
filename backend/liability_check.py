@@ -104,14 +104,27 @@ EXPECT = {
 
 
 def run(verbose=True):
-    bad, rows = [], []
+    bad, rows, 没出过题 = [], [], []
     tasks = api._rows("SELECT id, ref_id, summary FROM task WHERE type='售后判责' ORDER BY id")
     for t in tasks:
         tr = truthdb.rows("SELECT root_cause FROM truth WHERE case_id=? "
                           "AND breakpoint='BP-03'", t["ref_id"])
         f = facts(t["ref_id"])
-        if not tr or not f:
-            bad.append((t["id"], "查不到真值或现场")); continue
+        # ⚠️ **「没出过评测题」和「真值丢了」要分开**(2026-10-15)。
+        # 这条检查的职责是**拿 truth 和 knowledge/liability.py 的规则对账** ——
+        # 它只管「出过题的那些，两份实现对不对得上」。
+        # 2026-10-15 往队列里造了几条「AI 跑得动的未研判工单」给用户点,
+        # 那几条**刻意不写 truth**(truth 是评测答案,编一份等于往评测里塞一道自己出的题) ——
+        # 于是它们在这里被报成「查不到真值或现场」而整条红,**而没有一条是谁做错了**。
+        #
+        # 但也不能见到没真值就跳过:**真值丢了**也长这样。
+        # 两者的区别在**现场**:现场(facts)查不到才是数据坏了。
+        # > 一个「这条没出过评测题」和一个「这条的真值丢了」,
+        # > **在「查不到真值」这句话上长得一模一样** —— 而只有后者该红。
+        if not f:
+            bad.append((t["id"], "查不到现场(维保单不在了?)—— 这是数据坏了")); continue
+        if not tr:
+            没出过题.append(t["id"]); continue
         rc = tr[0]["root_cause"]
         got = liability.judge(**f)
         want = EXPECT.get(rc)
@@ -143,6 +156,14 @@ def run(verbose=True):
             print(f"\n  ⚠️ 上面 {len(missing)} 条规则**没有任何在办工单命中** ——")
             print("     它们只被 knowledge/liability.py 的单元自测覆盖,没有端到端用例。")
             print("     **没有用例的规则可以是错的,而且永远不会被发现。**")
+        # ⚠️ **只报不拦,但一定要报。** 这几条是给用户点的演示工单(没出过评测题),
+        # 不在对账范围 —— 可它们**也不该静默消失**:数字对不上的时候,
+        # 「有 3 条没参与对账」和「对账覆盖了全部」在上面那张表上长得一模一样。
+        if 没出过题:
+            print(f"\n  📖 另有 {len(没出过题)} 条**没出过评测题**(truth 里没有它),不参与对账:")
+            print(f"     {没出过题}")
+            print("     这些多半是 `tools/seed_triage_tasks.py` 造给用户点的演示工单 ——"
+                  "**刻意不写 truth**(编一份真值等于往评测里塞一道自己出的题)。")
     return bad, rows, missing
 
 

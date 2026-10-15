@@ -148,9 +148,19 @@ def pick(n_bp01, n_bp02):
     for t in t1:                                   # 先每类真因取一个
         rc = T.get(t["ref_id"], {}).get("root_cause")
         if rc and rc not in seen: seen[rc] = 1; out.append(t)
+    # ⚠️ **补足也只补有真值的**(2026-10-15)。
+    # 上面那个循环按真因去重时查了 `T.get(...)`,而这个补足循环原来**不查** ——
+    # 现在库里所有财务工单恰好都有真值,所以它从没暴露过。
+    # 而 2026-10-15 要往队列里造「能跑的未研判工单」给用户点,
+    # 那些单**不写 `truth`**(truth 是评测答案,编一份真值等于把分子分母一起编掉) ——
+    # 它们一进库,这个循环就会把没有真值的单补进评测,判分器拿不到真值。
+    # > 一个「这道题模型答错了」和一个「这道题根本没有标准答案」,
+    # > **在成绩单上长得一模一样。**
+    # 加上这个条件之后结果不变(现有的单都有真值),变的是**以后不会错**。
     for t in t1:                                   # 再补足
         if len(out) >= n_bp01: break
-        if t not in out: out.append(t)
+        if t not in out and T.get(t["ref_id"], {}).get("root_cause"):
+            out.append(t)
     seen2, out2 = {}, []
     for t in t2:
         rc = T.get(t["id"][1:], {}).get("root_cause")
