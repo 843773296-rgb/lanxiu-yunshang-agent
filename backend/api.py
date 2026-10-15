@@ -108,10 +108,65 @@ def _在(ids):
     return ",".join("?" * len(ids)), ids
 
 
-def list_tasks(task_type=None, status="待处理"):
-    """列出人工任务。type: 财务人工任务 / 客户合并确认"""
-    if task_type: return _rows("SELECT * FROM task WHERE type=? AND status=?",task_type,status)
-    return _rows("SELECT * FROM task WHERE status=?",status)
+# ── 人工任务的状态与类型:**收成一份,别手抄** ────────────────────
+#
+# ⚠️ 2026-10-15 收的。原来这两份清单哪儿都没有:
+#   · 状态只有 `selftest.py` 手抄过一份五种(而它是自测,不是口径);
+#   · 类型**一处都没有**,而 `list_tasks` 的描述手抄着「财务人工任务 / 客户合并确认」
+#     **两种** —— 库里实际有**四种**,漏掉的 `评价差评` 是最大的那一类。
+#
+# 后果不是报错,是**模型照描述以为只有两种**:它不会去问评价差评和售后判责。
+# **这和「免运费进了枚举而描述没跟上」是同一个形状** —— 判定层放行,说明层拦着。
+#
+# 📌 `TASK_STATES[0]` 是 `list_tasks` 的默认值,顺序有意义,别重排。
+TASK_STATES = ("待处理", "待复核", "已处理", "已升级", "已关闭")
+TASK_TYPES = ("评价差评", "财务人工任务", "客户合并确认", "售后判责")
+看全部任务 = "全部"      # status 传这个就不按状态过滤
+
+
+def list_tasks(task_type=None, status=TASK_STATES[0]):
+    """列出人工任务。type 见 TASK_TYPES,status 见 TASK_STATES。
+
+    ⚠️ **默认只返回「待处理」的,而那是少数** —— 库里大部分任务已经不在这个状态了。
+    原来 schema 不给 status,于是**模型只看得到一小部分,问「已关闭的人工任务」
+    会拿到那几条待处理的,而且语气确定**。status 传 `全部` 就不按状态过滤。
+    """
+    全 = status == 看全部任务
+    if task_type and 全: return _rows("SELECT * FROM task WHERE type=?", task_type)
+    if task_type: return _rows("SELECT * FROM task WHERE type=? AND status=?", task_type, status)
+    if 全: return _rows("SELECT * FROM task")
+    return _rows("SELECT * FROM task WHERE status=?", status)
+
+
+def find_task(task_id):
+    """按 id 找一条人工任务 —— **不绑状态**。
+
+    ⚠️ 这个函数存在的理由就是「让它只剩一份」。
+    原来 `server.py` 和 `v1.py` 各自手写着
+    `[x for x in list_tasks(None, "待处理") if x["id"]==tid]` ——
+    **两份本该一致的东西,而没有东西盯着它们**。
+    绑了「待处理」之后库里只找得到几条,
+    页面上的表现是**「列表里明明有这条,点下去说任务不存在」**。
+
+    改成一份之后,`task_status_check` 才算真的在验那段代码 ——
+    它原来在库副本上自己重实现了一份去验,
+    **而一个「验了那段代码」和一个「验了我重写的一份」,在绿勾上长得一模一样。**
+    """
+    return [x for x in list_tasks(None, 看全部任务) if x["id"] == task_id]
+
+
+def 本人着装人(customer_id):
+    """这条客户档案所属账户的「本人」是哪个着装人。没有就 None。
+
+    ⚠️ **身份绑账户,不绑门店档案**(CLAUDE.md)—— 所以这里走 account。
+    提成函数是因为三个地方要用同一个答案:`kb_fit` 的退路、评测的锚点、
+    以及那条「题面写死的着装人还是本人吗」的前提判据。
+    **评测锚点原来是靠 `kb_fit` 不传 wearer 时退到本人「恰好」拿到这个值的** ——
+    而 2026-10-15 之后 kb_fit 不再猜了,那个巧合就没了。
+    """
+    r = _rows("""SELECT a.self_wearer_id w FROM customer k
+                 JOIN account a ON a.id=k.account_id WHERE k.id=?""", customer_id)
+    return (r or [{}])[0].get("w")
 
 def get_deposit(deposit_id):
     """押金单:金额、状态、幂等号、关联预约"""
@@ -165,8 +220,17 @@ _不出钱表 = " / ".join(x for x in _R方式.处理方式
 
 
 SCHEMAS=[
- {"name":"list_tasks","description":"列出待处理的人工任务。task_type 可选:财务人工任务、客户合并确认",
-  "input_schema":{"type":"object","properties":{"task_type":{"type":"string"}},"required":[]}},
+ {"name":"list_tasks","description":"列出人工任务。⚠️ **不传 status 时只返回「"
+  + TASK_STATES[0] + "」的,而那是少数** —— 库里大部分任务已经不在这个状态了。"
+  "问「已关闭的任务」、「有多少条已处理」这类问题**必须传 status**,"
+  "想看全貌就传 `" + 看全部任务 + "`。不传就答等于拿一小部分当全部。",
+  "input_schema":{"type":"object","properties":{
+    "task_type":{"type":"string","enum":list(TASK_TYPES),
+                 "description":"哪一类人工任务。不传 = 不按类型过滤"},
+    "status":{"type":"string","enum":list(TASK_STATES) + [看全部任务],
+              "description":"任务状态。不传 = 只看「" + TASK_STATES[0] + "」的;传 `"
+                            + 看全部任务 + "` = 不按状态过滤"}},
+   "required":[]}},
  {"name":"get_deposit","description":"读取押金单:金额、当前状态、幂等号、关联预约号",
   "input_schema":{"type":"object","properties":{"deposit_id":{"type":"string"}},"required":["deposit_id"]}},
  {"name":"get_refund_trace","description":"读取退款尝试轨迹,含每次重试的返回码、请求金额和幂等号",
@@ -3838,9 +3902,45 @@ def kb_fit(customer, pattern, wearer=None):
     # 原来按 customer_id 取:一条档案下 2–4 个人的量体混进一个字典、后写的覆盖先写的 ——
     # 孩子会拿到妈妈的腰围;方式也是按客户 LIMIT 1 取的。161 个客户名下有多人量体。
     # 体型特征那一半早就按着装人取了(见下),量体这一半当时漏了。
-    _wid0 = wearer or (_rows("""SELECT a.self_wearer_id w FROM customer k
-                               JOIN account a ON a.id=k.account_id WHERE k.id=?""", cu["id"])
-                       or [{}])[0].get("w")
+    _本人 = 本人着装人(cu["id"])
+
+    # ── 不知道给谁做就不猜(2026-10-15 业务拍,对齐 can_order) ────────────────
+    #
+    # ⚠️ 原来不传 `wearer` 就**退到账户「本人」并照常出码** —— 不报错、不提示。
+    # 实测同一个客户同一个版型:本人 **L / 调号**,名下第二个着装人 **S / 标准码** ——
+    # 差两档尺码、差一个档位,而返回里「客户」两次写的是同一个名字,**看不出这是谁的码**。
+    #
+    # 而同一条业务红线上,`can_order` 的做法是相反的 —— 它的描述自己写着:
+    # 「**判不了不等于可以** —— 客户名下多个着装人而没传 wearer_id 时返回『判不了』
+    # 并列出候选,**不替你挑一个**:挑错的话这一单会拿着另一个人的尺寸去裁剪,
+    # 而报表上完全正常」。**两个工具两种做法,而 `kb_fit` 是更前置的那个**。
+    #
+    # 📌 只在**不止一人量过体**时判不了:只有本人量过的话退到本人是唯一选择,
+    #    不存在猜错。「量过体」的口径用 `_以哪次为准` 现算 ——
+    #    和下面真正推码用的是同一个函数,不再写一份「算不算量过」的判定。
+    # ⚠️ 名下有谁按**账户**算(和这个函数一直用的粒度一致,也和 CLAUDE.md
+    #    「身份绑 account,不绑 customer」一致)。`can_order` 按的是 **customer**,
+    #    两者在少数跨店重复建档的客户上算出来不一样 ——
+    #    这一点没统一,业务没拍过,**别静默改它**。
+    if not wearer:
+        _候选 = _rows("""SELECT w.id, w.name, w.relation FROM wearer w
+                          JOIN customer k ON k.account_id = w.account_id
+                          WHERE k.id=? AND w.status='在用' ORDER BY w.id""", cu["id"])
+        _量过 = [x for x in _候选 if (_以哪次为准(x["id"])[0])]
+        if len(_量过) > 1:
+            return dict(
+                档位="判不了",
+                理由=(f"「{cu['name']}」这个账户名下有 {len(_量过)} 人量过体,"
+                    f"尺寸和体型各不相同 —— **没指定给谁做就不推码**"),
+                客户=cu["name"],
+                版型=p["name"],
+                量过体的有谁=[f"{x['name']}({x['id']},{x['relation']})" for x in _量过],
+                怎么办=("把 wearer 一起传进来再问一次。**别让我替你挑** —— "
+                     "定制是照着尺寸裁的,挑错了这一单会拿着另一个人的尺寸去裁剪,"
+                     "而报表上完全正常"),
+                note="**判不了不等于可以**,也不等于需补量 —— 量体记录是全的,"
+                     "缺的是「这件衣服穿在谁身上」。")
+    _wid0 = wearer or _本人
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),"..","knowledge"))
     ms, mth, _依据 = _以哪次为准(_wid0)          # 最近一整次亲自量的,缺项不拼(业务 09-22)
     mth = mth or "到店"
@@ -3853,9 +3953,7 @@ def kb_fit(customer, pattern, wearer=None):
     # 妈妈的「溜肩」会被算到 3 岁儿子头上,而规则是「有明显体型特征即全定制」,
     # 于是孩子被直接推成全定制:**加价又加工期**。
     # 没指定着装人时,退回到该账户的「本人」—— 而不是把全家的特征并起来。
-    _wid = wearer or _rows("""SELECT a.self_wearer_id w FROM customer k
-                              JOIN account a ON a.id=k.account_id WHERE k.id=?""", cu["id"])
-    _wid = wearer if wearer else (_wid[0]["w"] if _wid else None)
+    _wid = wearer or _本人        # 和上面同一份,不再重查一遍
     fs=[r["feature"] for r in _rows("SELECT feature FROM body_feature WHERE wearer_id=?", _wid)]
     specs={}
     for r in _rows("SELECT size,item,value FROM size_spec WHERE pattern=?",p["code"]):
@@ -7086,10 +7184,11 @@ KB_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "pattern":{"type":"string","description":"版型名称或编码,如「明制马面裙·标准」或 PT04"},
     "size":{"type":"string","description":"只看某一个码,如 M。不传则返回全部码。"}},"required":["pattern"]}},
- {"name":"kb_fit","description":"拿客户的量体记录比对版型尺码表,给出**推荐尺码**和**档位**(标准码 / 调号 / 全定制 / 需补量)。返回逐项差值,标出哪几项是这个形制的关键尺寸。三条铁律:①系统只给建议,**最终由版师定**;②档位是「需补量」时**绝不能按身高体重猜码**,要请客户补量;③返回里的「关键尺寸未覆盖」列出的项系统比不了(比如马面宽没有对应量体项),必须告诉用户这几项还需人工确认,不能让人以为已经全查过了。",
+ {"name":"kb_fit","description":"拿客户的量体记录比对版型尺码表,给出**推荐尺码**和**档位**(标准码 / 调号 / 全定制 / 需补量 / **判不了**)。⚠️ **「判不了」是「不知道这件给谁做」**—— 名下不止一人量过体而没传 wearer 时就是它,返回里列着候选。这时**去问给谁做,不要自己挑一个**,也不要说「请补量」(量体是全的)。返回逐项差值,标出哪几项是这个形制的关键尺寸。三条铁律:①系统只给建议,**最终由版师定**;②档位是「需补量」时**绝不能按身高体重猜码**,要请客户补量;③返回里的「关键尺寸未覆盖」列出的项系统比不了(比如马面宽没有对应量体项),必须告诉用户这几项还需人工确认,不能让人以为已经全查过了。",
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户姓名或客户号"},
-    "pattern":{"type":"string","description":"版型名称或编码,如「明制马面裙·标准」或 PT04。不知道有哪些版型时先用 kb_pattern 查。"}},
+    "pattern":{"type":"string","description":"版型名称或编码,如「明制马面裙·标准」或 PT04。不知道有哪些版型时先用 kb_pattern 查。"},
+    "wearer":{"type":"string","description":"着装人编号(W 开头)。**衣服穿在谁身上就填谁**。名下**只有一人量过体**时不填会退回到账户的「本人」;**不止一人量过体时不填就拿不到码**(返回档位「判不了」+ 候选)。一个账户下常有好几个人(妈妈给两个孩子做),尺寸和体型各不相同 —— **名下有多个着装人是常见情况,不是例外**,不填就等于让系统替你挑一个人。先用 get_wearer 查这个客户名下都有谁。"}},
    "required":["customer","pattern"]}},
  {"name":"kb_lead","description":"算工期:给定版型 + 尺码 + 面料 + 工艺,返回**最快到最慢的天数区间**、每一段花多久、**关键路径卡在哪一环**、有哪些风险、哪些环节加钱能压缩。**已经把工坊的排队等待算进去了**(师傅手上压着活,新单要排队),不必再单独查产能。传了 need_date(用件日期,YYYY-MM-DD)还会倒推最晚下单日并判断来不来得及。三条铁律:①**对客户报最慢那个数**,余量留给自己,绝不能报最快的;②「关键路径」告诉你加钱只对哪一环有用 —— 不在关键路径上的环节压缩了也没用;③返回的「风险」里凡是提到**不能靠加人压缩**(织造、染色晾晒、手绘顾绣发绣)的,加急要求必须当场拒绝,不要先答应再想办法。",
   "input_schema":{"type":"object","properties":{

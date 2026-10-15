@@ -105,10 +105,19 @@ def A():
     # 模型答 152 是对的,却被判成错。
     _dur = api.kb_lead("PT06", "M", "云锦", ["缂丝"], "整幅")
     d["dur_slow"] = _dur["最慢天数"]
-    fit = api.kb_fit("C10016", "PT04")
+    # ⚠️ **锚点必须显式传着装人**(2026-10-15)。
+    # 原来这两行不传 wearer,靠 `kb_fit` 退到账户「本人」「恰好」和题面对上 ——
+    # T03 题面写着「**本人**」、T04 题面写着「着装人 W10001-0」。
+    # 而业务 2026-10-15 拍了 `kb_fit` **名下多人量过体就不再猜**(返回「判不了」),
+    # 于是那个巧合当场消失:不传 wearer 拿到的是「判不了」,锚点全坏。
+    # → 改成**显式问本人是谁**。传了本人的结果和改之前一字不差(退路就是本人),
+    #   所以**评测基线没动** —— 变的只是「题面和锚点说同一个人」这件事
+    #   从「碰巧」变成了「写死」。
+    _w16, _w01 = api.本人着装人("C10016"), api.本人着装人("C10001")
+    fit = api.kb_fit("C10016", "PT04", wearer=_w16)
     d["fit_grade"], d["fit_feat"] = fit["档位"], (fit.get("体型特征") or [""])[0]
     d["fit_maxdiff"] = fit.get("最大差")
-    d["fit2_grade"] = api.kb_fit("C10001", "PT04")["档位"]
+    d["fit2_grade"] = api.kb_fit("C10001", "PT04", wearer=_w01)["档位"]
     oid = api._rows("SELECT id,status FROM ordr WHERE status<>'取消' LIMIT 1")[0]
     d["ord_id"], d["ord_st"] = oid["id"], oid["status"]
     d["af_n"] = api.get_aftersale(status="退款失败")["hit"]
@@ -412,7 +421,14 @@ def _档位给了依据(text, traj):
 # 在成绩单上长得一模一样。**
 前提 = [
     ("PT05 没有 S 码",      lambda: "S" not in api.kb_size("PT05")["尺码表"]),
-    ("C10016 判出来是标准码", lambda: api.kb_fit("C10016", "PT04")["档位"] == "标准码"),
+    ("C10016 本人判出来是标准码",
+     lambda: api.kb_fit("C10016", "PT04", wearer=api.本人着装人("C10016"))["档位"] == "标准码"),
+    # ⚠️ T04 的**题面里写死了 `W10001-0`**,而锚点问的是「本人是谁」 ——
+    # 两者现在是同一个人,而那是**数据决定的,不是定义决定的**。
+    # 对不上的那一天,题面和锚点问的是两个人,而分数会看起来很正常 ——
+    # 所以让它在这里当场红。
+    ("T04 题面写的 W10001-0 就是 C10001 的本人",
+     lambda: api.本人着装人("C10001") == "W10001-0"),
     ("云锦没有现货",         lambda: not api.get_stock(material="云锦")["stock_qty"]),
     ("妆花 × 纱是「不可」",   lambda: api.kb_combo("妆花", "纱")["verdict"] == "不可"),
 ]

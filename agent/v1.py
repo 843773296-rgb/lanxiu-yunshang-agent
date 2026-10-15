@@ -265,7 +265,7 @@ BP03="""任务类型:售后判责
 
 def one(task_id):
     """被后台页面调用:跑单个任务,最后一行输出 JSON。"""
-    t=[x for x in backend.list_tasks(None,"待处理") if x["id"]==task_id]
+    t=backend.find_task(task_id)      # 不许手写 —— 见 api.find_task 的注释
     if not t: print(json.dumps({"error":"任务不存在"},ensure_ascii=False)); return
     t=t[0]
     if t["type"]=="售后判责": prompt=BP03.format(ref=t["ref_id"])
@@ -287,7 +287,13 @@ if __name__=="__main__":
         one(sys.argv[2]); sys.exit(0)
     pv=provider(); print(f"供应商 {pv['id']} / 模型 {pv['model']}\n")
     which=sys.argv[1] if len(sys.argv)>1 else "smoke"
-    tasks=backend.list_tasks("财务人工任务")+backend.list_tasks("客户合并确认")
+    # ⚠️ 必须传「全部」—— 不传时 `list_tasks` 默认只给「待处理」的,
+    # 而这两类 40 条**现在一条待处理的都没有**(已处理 35 / 已升级 4 / 待复核 1)。
+    # 下面取 `tasks[0]` 和 `tasks[24]` —— 财务类正好 24 条,所以 24 是客户合并类的第一条,
+    # subset 那八个下标也是按这 40 条排的。**绑在「待处理」上是当年的巧合**:
+    # 任务刚造出来时全部是待处理,于是两者恰好相等 —— 而一处理它就静默变成 0 条。
+    # 这和 `selftest.py` 里记的那次崩(`IndexError`)是**同一个病**,而当时只修了自测这一处。
+    tasks=backend.list_tasks("财务人工任务",backend.看全部任务)+backend.list_tasks("客户合并确认",backend.看全部任务)
     if which=="smoke": tasks=[tasks[0],tasks[24]]
     elif which=="subset":
         # 每类真因各取一个:6 类退款 × 1 + 同一人/不同人 各 1

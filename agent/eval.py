@@ -139,8 +139,11 @@ def truths():
 def pick(n_bp01, n_bp02):
     """按真因分层取样,保证 6 类退款真因都被覆盖。"""
     T = truths()
-    t1 = [t for t in api.list_tasks("财务人工任务", "待处理")]
-    t2 = [t for t in api.list_tasks("客户合并确认", "待处理")]
+    # ⚠️ 这里原来写的是 "待处理",而这两类**现在一条待处理的都没有** ——
+    # 于是 t1/t2 全空、`pick()` 返回空列表,**评测取空了而不是报错**。
+    # 取样要的是「这两类的全部工单」,它们处理到哪一步和分层取样没关系。
+    t1 = [t for t in api.list_tasks("财务人工任务", api.看全部任务)]
+    t2 = [t for t in api.list_tasks("客户合并确认", api.看全部任务)]
     seen, out = {}, []
     for t in t1:                                   # 先每类真因取一个
         rc = T.get(t["ref_id"], {}).get("root_cause")

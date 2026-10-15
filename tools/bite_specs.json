@@ -7705,5 +7705,77 @@
    }
   ],
   "预期红": "真走正门关的不进这一档"
+ },
+ {
+  "script": "backend/task_status_check.py",
+  "改坏": "把 api.find_task 里的「看全部任务」改回「待处理」(2026-10-15 之前四处那个写法)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "return [x for x in list_tasks(None, 看全部任务) if x[\"id\"] == task_id]",
+    "new": "return [x for x in list_tasks(None, TASK_STATES[0]) if x[\"id\"] == task_id]"
+   }
+  ],
+  "预期红": "`api.find_task` 找得到一条非待处理的任务"
+ },
+ {
+  "script": "backend/task_status_check.py",
+  "改坏": "把 server.py 里的 backend.find_task(tid) 改回自己手写一份(绕过那唯一一份实现)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "t=backend.find_task(tid)",
+    "new": "t=[x for x in backend.list_tasks(None,backend.看全部任务) if x[\"id\"]==tid]"
+   }
+  ],
+  "预期红": "没有人绕过 `find_task` 重新手写"
+ },
+ {
+  "script": "backend/task_status_check.py",
+  "改坏": "从 api.TASK_TYPES 里删掉「评价差评」(库里 171 条是这一类,而 schema 的 enum 从它现拼)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "TASK_TYPES = (\"评价差评\", ",
+    "new": "TASK_TYPES = ("
+   }
+  ],
+  "预期红": "库里出现的类型常量里都有"
+ },
+ {
+  "script": "backend/order_gate_check.py",
+  "改坏": "把 kb_fit 的「判不了」分支停掉(回到默默退到账户本人并照常出码)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        if len(_量过) > 1:",
+    "new": "        if False and len(_量过) > 1:"
+   }
+  ],
+  "预期红": "`kb_fit` 名下多人量过体时不猜"
+ },
+ {
+  "script": "backend/order_gate_check.py",
+  "改坏": "把「量过体」的口径放宽成「名下在用的都算」(于是只有本人量过体的客户也被判不了)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        _量过 = [x for x in _候选 if (_以哪次为准(x[\"id\"])[0])]",
+    "new": "        _量过 = list(_候选)"
+   }
+  ],
+  "预期红": "只有一人量过体时照常出码"
+ },
+ {
+  "script": "backend/order_gate_check.py",
+  "改坏": "让 kb_fit 忽略传进来的 wearer(传了也当没传)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if not wearer:\n        _候选 = _rows(",
+    "new": "    if True:\n        _候选 = _rows("
+   }
+  ],
+  "预期红": "传了着装人就真的按他算"
  }
 ]

@@ -30,6 +30,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.dirname(HERE)]
 import knowledge.growth as G
 import knowledge.order_gate as OG
+# 下面 `kb_fit` 那几条要**真调工具层**,不是照它的样子重写一份
+import api as backend
 
 DB = os.path.join(HERE, "lanxiu.db")
 FAIL = []
@@ -42,9 +44,21 @@ FAIL = []
 咬合 = [
     ('把所有着装人的生日都改成成年(未成年那条规则从此一行都跑不到)',
      '规则在未成年着装人身上跑过'),
+    # 下面三条是 2026-10-15 跟 `kb_fit` 一起加的。可执行规格在 `tools/bite_specs.json`。
+    ('把 `kb_fit` 的「判不了」分支删掉(回到默默退到账户「本人」并照常出码)',
+     '`kb_fit` 名下多人量过体时不猜'),
+    ('把「判不了」的条件放宽到「只要名下有多人就判不了」'
+     '(于是只有本人量过体的客户也被判不了 —— 而那时退到本人是唯一选择,不存在猜错)',
+     '只有一人量过体时照常出码'),
+    ('把 `kb_fit` 里的 `wearer` 参数忽略掉(传了也当没传)',
+     '传了着装人就真的按他算'),
 ]
 
+条数 = [0]        # 末尾那句话原来写死着「10 条」—— 加判据就过期,改成现算
+
+
 def ck(name, ok, n, msg=""):
+    条数[0] += 1
     print(f"  {'✅' if ok else '❌'} {name}(验了 {n} 个){'  ' + msg if msg else ''}")
     if not ok: FAIL.append(name)
     if n == 0:
@@ -359,11 +373,74 @@ def main():
               f"订单上没着装人,而客户名下不止一个人。"
               f"跑 `tools/migrate_order_wearer.py` 看明细")
     c.close()
+    # ── 同一条红线的另一个工具:`kb_fit` 不知道给谁做就不猜 ─────────
+    #
+    # ⚠️ 2026-10-15 业务拍的。这几条和上面 `can_order` 那几条是**同一条红线** ——
+    # 所以摆在一处。原来两个工具在这条红线上**做法相反**:
+    #   · `can_order` 名下多人而没传 wearer_id → 「判不了」+ 列候选,**不替你挑**
+    #   · `kb_fit` → **默默退到账户「本人」并照常出码**,不报错不提示
+    # 而 `kb_fit` 是**更前置**的那个(推码在下单之前)。
+    # 实测同一客户同一版型:本人 **L / 调号**、名下第二人 **S / 标准码**,
+    # 而返回里「客户」两次写的是同一个名字 —— **看不出这是谁的码**。
+    import random as _rd
+    _客 = {r["cid"]: r["n"] for r in backend._rows("""
+        SELECT k.id cid, count(DISTINCT w.id) n FROM customer k
+        JOIN wearer w ON w.account_id = k.account_id AND w.status='在用'
+        JOIN measure_rec m ON m.wearer_id = w.id GROUP BY k.id""")}
+    # 「量过体」要用和推码同一个口径(只认顾问亲自量的),不重写一份判定
+    def _真量过的人(cid):
+        return [x["id"] for x in backend._rows("""SELECT w.id FROM wearer w
+                JOIN customer k ON k.account_id = w.account_id
+                WHERE k.id=? AND w.status='在用' ORDER BY w.id""", cid)
+                if backend._以哪次为准(x["id"])[0]]
+
+    _rd.seed(20261015)        # 固定种子 —— 每次抽到的是同一批,红了能重现
+    _多 = [c for c, v in _客.items() if v > 1]
+    _单 = [c for c, v in _客.items() if v == 1]
+    _样多 = _rd.sample(_多, min(12, len(_多)))
+    _样单 = _rd.sample(_单, min(12, len(_单)))
+    _PT = (backend._rows("SELECT code FROM pattern ORDER BY code LIMIT 1") or [{}])[0].get("code")
+
+    _真多 = [c for c in _样多 if len(_真量过的人(c)) > 1]
+    _判不了 = [c for c in _真多 if backend.kb_fit(c, _PT).get("档位") == "判不了"]
+    _漏的 = [c for c in _真多 if c not in _判不了]
+    # ⚠️ msg 在 `ck` 里是**无条件打印**的 —— 绿的时候也会跟着出来。
+    # 所以这几条只在真挂的时候给说明,否则绿勾旁边写着一句
+    # 「照样出了码」,读的人会以为它真出了码。
+    ck("`kb_fit` 名下多人量过体时不猜", not _漏的, len(_真多),
+       "" if not _漏的 else
+       f"这几个客户名下不止一人量过体,而不传 wearer 照样出了码:"
+       f"{_漏的} —— **那是拿本人的尺码去推别人的码**")
+
+    # 反向对照一:传了着装人就必须真的按他算 ——
+    # 少了这条,把 `kb_fit` 改成「任何情况都判不了」也能让上面那条全绿。
+    _传了有码 = []
+    for c in _真多:
+        for w in _真量过的人(c)[:2]:
+            d = backend.kb_fit(c, _PT, wearer=w)
+            _传了有码.append(d.get("档位") != "判不了")
+    ck("传了着装人就真的按他算", all(_传了有码), len(_传了有码),
+       "" if all(_传了有码) else
+       "传了 wearer 还是返回「判不了」—— 那上面那条是空转的")
+
+    # 反向对照二:只有一人量过体时**不许**判不了 ——
+    # 那时退到本人是唯一选择,不存在猜错。少了这条,把条件放宽到
+    # 「名下有多人就判不了」也看不出来 —— 而那会把一大批本来答得出的问题变成问不出。
+    _真单 = [c for c in _样单 if len(_真量过的人(c)) == 1]
+    _误判 = [c for c in _真单 if backend.kb_fit(c, _PT).get("档位") == "判不了"]
+    ck("只有一人量过体时照常出码", not _误判, len(_真单),
+       "" if not _误判 else
+       f"这几个客户名下只有一人量过体,却被判成「判不了」:{_误判}"
+       f" —— **条件放得太宽了**")
+
+    print(f"  📖 触发面:全库 {len(_多)} 个客户名下不止一人有量体记录"
+          f"(共 {len(_客)} 个客户有量体记录)—— 这些客户不传 wearer 会得到「判不了」")
+
     print("=" * 80)
     if FAIL:
         print(f"❌ {len(FAIL)} 条没过:{FAIL}")
         return 1
-    print("✅ 下单前置条件 10 条全过")
+    print(f"✅ 下单前置条件 {条数[0]} 条全过")
     return 0
 
 

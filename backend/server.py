@@ -3135,7 +3135,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/agent-run":
             import time as _t
             tid=(Q.get("task") or [None])[0]
-            t=[x for x in backend.list_tasks(None,"待处理") if x["id"]==tid]
+            t=backend.find_task(tid)      # 不许手写 —— 见 api.find_task 的注释
             if not t: return self._send(dict(error="任务不存在"),404)
             t=t[0]
             _v1=_agent()
