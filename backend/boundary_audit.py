@@ -133,6 +133,46 @@ def a_resolve_wrong_role():
         _sh.rmtree(d, ignore_errors=True)
 
 
+def a_refund_done_without_proof():
+    """把一笔退款失败的定金弄成「已退」,而不留凭据 / 不是财务 —— 库副本上三刀,任何一刀成了都算破。
+    用户 2026-10-15 拍「登记退款结果」写口:原来后台通用改状态**任何登录的人**点一下就成「已退」,什么凭据都不要;
+    而研判办结拿「已退」当回执 —— 没凭据的已退会让办结也成了凭空点出来的。"""
+    import refund_write as _rw, oplog as _ol, ops as _ops, server as _S, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq
+    原 = (_rw.DB, _ol.DB, _ops.DB, _S.DB)
+    d = _tf.mkdtemp(prefix="ba-refund-"); p = _os.path.join(d, "lanxiu.db")
+    _sh.copy(原[0], p)
+    _rw.DB = _ol.DB = _ops.DB = _S.DB = p
+    try:
+        c = _sq.connect(p)
+        k = c.execute("SELECT id FROM deposit WHERE status='退款失败' ORDER BY id LIMIT 1").fetchone()
+        财 = c.execute("SELECT no, name, role FROM staff WHERE role='财务' AND status='启用' LIMIT 1").fetchone()
+        店 = c.execute("SELECT no, name, role FROM staff WHERE role='店长' AND status='启用' LIMIT 1").fetchone()
+        c.close()
+        if not (k and 财 and 店):
+            return "没有可攻击的样本(退款失败的定金 / 在职财务 / 在职店长)—— 没攻击成,不算守住"
+        财务, 店长 = dict(no=财[0], name=财[1], role=财[2]), dict(no=店[0], name=店[1], role=店[2])
+        # 刀一:店长走后台通用改状态,请求体里自报财务
+        r = _S.transit("bk-deposit", k[0], "退款处理中", {"idem_key": "IDEM-x", "role": "财务", "上次": "确实没退成"},
+                       actor=店长["name"], me=店长)
+        if r.get("ok"):
+            return f"店长从通用改状态把 {k[0]} 推进了退款处理中 —— 门没守住"
+        # 刀二:财务登记已退,不给流水号
+        r = _rw.登记已退(k[0], 财务, "", "渠道核实其实已退")
+        if r.get("ok"):
+            return f"{k[0]} 没有流水号就成了已退 —— 门没守住"
+        # 刀三:同一个流水号证明两笔
+        r1 = _rw.登记已退(k[0], 财务, "BA-同一流水", "原渠道退回")
+        k2 = _sq.connect(p).execute("SELECT id FROM deposit WHERE status='退款失败' ORDER BY id LIMIT 1").fetchone()
+        if r1.get("ok") and k2:
+            r2 = _rw.登记已退(k2[0], 财务, "BA-同一流水", "原渠道退回")
+            if r2.get("ok"):
+                return f"同一个流水号 BA-同一流水 证明了 {k[0]} 和 {k2[0]} 两笔退款 —— 门没守住"
+        raise PermissionError("三刀都被拦下")     # _must_fail 的约定:抛了才算拦下
+    finally:
+        _rw.DB, _ol.DB, _ops.DB, _S.DB = 原
+        _sh.rmtree(d, ignore_errors=True)
+
+
 def a_close_without_receipt():
     """研判办结拿一张没走完的单当回执 —— 库副本上,财务对一笔没退成的定金办结,应该被拒。
     用户 2026-10-13 拍「已办结要凭系统单号」:凭空点出来的已办结和真办完的在队列上长得一模一样。"""
@@ -665,6 +705,11 @@ STRUCT = [
   "接口层身份只从登录态取(不读请求体里的 handler);`resolve` 里按类型查角色,**所有调用方都过这一道**,"
   "成功 / 被拒都写 op_log。两段确认(10-13 起):退款 / 合并的复核只认店长、办结只认财务 / 总部运营,"
   "所以钱出门必经两个人(第二段那一刀在「已办结只认真走完的回执」里)"),
+ ("押金「已退」只有财务能登记、必须带渠道退款流水号、一笔流水只证明一笔", "backend/fsm.py bk-deposit 两道闸;backend/refund_write.py;backend/server.py transit / /api/refund-*",
+  a_refund_done_without_proof, "在库副本上:店长走通用改状态自报财务 / 财务不给流水号 / 同一流水号登两笔",
+  "闸在**状态机**上(fail closed),通用改状态也得过;角色从会话取、覆盖请求体里自报的;"
+  "通用改状态点这两条边一律指向退款写口(那里流水号才进得了 refund_trace);流水号唯一索引(结构上做不到重复)。"
+  "成功被拒都写 op_log。⚠️ 「已付 → 退款审批中」的审批人仍读请求体(approved_by),这次没动"),
  ("研判已办结只认真走完的回执", "backend/ops.py 回执行不行 / 办结;backend/server.py /api/ops-close",
   a_close_without_receipt, "在库副本上拿一笔没退成的定金当回执去办结财务任务",
   "回执要查得到那张单、属于这件事、状态真走完(定金已退 / 维保单已完成 / 差评按处理方式认同一张订单的单);"

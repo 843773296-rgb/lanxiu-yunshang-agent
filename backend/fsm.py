@@ -206,7 +206,27 @@ def check(mid, frm, to, ctx=None):
             return False,"NEED_REASON","日程任务取消需填写原因"
         if (mid,frm,to) in IDEMPOTENT and not ctx.get("idem_key"):
             return False,"NEED_IDEM","资金类流转必须携带幂等号"
-        if ctx.get("retries",0)>=3 and to=="退款处理中":
+        # ⚠️ **退款失败之后再进「处理中」,只有财务、而且先说清上次是哪一种**(用户 2026-10-15 拍「登记退款结果」写口)。
+        #    最怕的是**重复退款**:渠道超时而钱其实已经退了,再发一次顾客就收两笔。所以这条边要么带
+        #    「已核实上次确实没退成」(真去重发),要么带「核实其实已退」(不发新请求,紧接着登记已退)——
+        #    两样都没带的一律拒绝(fail closed)。角色从**会话**取(server.transit / refund_write 都塞进 ctx),
+        #    后台通用改状态原来任何登录的人都能点这一下。
+        if (mid,frm,to)==("bk-deposit","退款失败","退款处理中"):
+            if ctx.get("role")!="财务":
+                return False,"WRONG_ROLE",f"退款失败之后再处理只能由财务操作,当前角色:{ctx.get('role') or '未指定'}"
+            if ctx.get("上次")not in("确实没退成","核实其实已退"):
+                return False,"NEED_VERIFY",("重新处理一笔退款失败的单,先说清上次是哪种:「确实没退成」(去渠道核实过)才能重发;"
+                                            "「核实其实已退」就别重发,直接登记已退 —— 渠道超时而钱已到账,再发一次顾客就收两笔")
+        # 「→ 已退」要**渠道退款流水号**,而且只有财务 —— 原来通用改状态任何登录的人点一下就成「已退」,什么凭据都不要;
+        # 而研判办结拿「已退」当回执(ops.回执行不行),没有凭据的「已退」会让办结也变成凭空点出来的
+        if (mid,frm,to)==("bk-deposit","退款处理中","已退"):
+            if ctx.get("role")!="财务":
+                return False,"WRONG_ROLE",f"登记已退只能由财务操作,当前角色:{ctx.get('role') or '未指定'}"
+            if not str(ctx.get("退款流水号") or "").strip():
+                return False,"NEED_REFUND_NO","登记已退必须填渠道退款流水号 —— 没有凭据的「已退」和真退了在押金单上长得一模一样"
+        # 重试上限拦的是**系统自动重试**(原文:「已达 3 次,须转财务人工处理」)——
+        # 财务亲自处理正是这句话要的那个「人工」,所以财务带了核实结论的,不再拦
+        if ctx.get("retries",0)>=3 and to=="退款处理中" and not (ctx.get("role")=="财务" and ctx.get("上次")):
             return False,"RETRY_LIMIT","已达重试上限 3 次,须转财务人工处理"
         return True,"OK",""
 
@@ -274,13 +294,22 @@ if __name__=="__main__":
            ("bk-deposit","退款审批中","退款处理中",{"idem_key":"IDEM-x"}),
            ("bk-deposit","已付","已退",{}),
            ("bk-deposit","已退","退款处理中",{}),
-           ("bk-deposit","退款失败","退款处理中",{"idem_key":"IDEM-x"}),
+           ("bk-deposit","退款失败","退款处理中",{"idem_key":"IDEM-x","role":"财务","上次":"确实没退成"}),
            ("bk-deposit","退款失败","退款处理中",{"idem_key":"IDEM-x","retries":3}),
+           ("bk-deposit","退款失败","退款处理中",{"idem_key":"IDEM-x","role":"店长","上次":"确实没退成"}),
+           ("bk-deposit","退款失败","退款处理中",{"idem_key":"IDEM-x","role":"财务"}),
+           ("bk-deposit","退款失败","退款处理中",{"idem_key":"IDEM-x","role":"财务","上次":"确实没退成","retries":3}),
+           ("bk-deposit","退款处理中","已退",{"role":"财务"}),
+           ("bk-deposit","退款处理中","已退",{"role":"顾问","退款流水号":"R1"}),
+           ("bk-deposit","退款处理中","已退",{"role":"财务","退款流水号":"R1"}),
+           # 重试上限仍然拦**系统自动重试**(没有财务的核实结论)—— 上面那条被 WRONG_ROLE 先拦了,这条专测它
+           ("bk-deposit","退款审批中","退款处理中",{"idem_key":"IDEM-x","retries":3}),
            ("bk-appt","已完成","已预约",{}),
            ("bk-appt","已预约","已完成",{}),
            ("bk-lifecycle","活跃","高价值",{})]
     EXPECT=["NEED_APPROVAL","OK","NEED_FINANCE","OK","NEED_IDEM","OK",
-            "UNDEFINED","TERMINAL","OK","RETRY_LIMIT","TERMINAL","SKIP","ALGORITHMIC"]
+            "UNDEFINED","TERMINAL","OK","WRONG_ROLE","WRONG_ROLE","NEED_VERIFY","OK",
+            "NEED_REFUND_NO","WRONG_ROLE","OK","RETRY_LIMIT","TERMINAL","SKIP","ALGORITHMIC"]
     print("状态流转引擎自测\n"+"="*76)
     bad=0
     for (mid,f,t,ctx),exp in zip(cases,EXPECT):

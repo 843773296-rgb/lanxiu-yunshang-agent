@@ -1910,7 +1910,7 @@
   "file": [
    {
     "path": "backend/server.py",
-    "old": "            _ut = _me(self)\n            if not _ut:\n                return self._send({\"error\": \"请先登录\", \"code\": \"NO_AUTH\"}, 401)\n            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {},\n                                      actor=_ut.get(\"name\") or \"?\"))",
+    "old": "            _ut = _me(self)\n            if not _ut:\n                return self._send({\"error\": \"请先登录\", \"code\": \"NO_AUTH\"}, 401)\n            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {},\n                                      actor=_ut.get(\"name\") or \"?\", me=_ut))",
     "new": "            return self._send(transit(body.get(\"machine\"),body.get(\"target\"),\n                                      body.get(\"to\"),body.get(\"ctx\") or {}))"
    }
   ],
@@ -7921,5 +7921,68 @@
    }
   ],
   "预期红": "同一条研判复核第二次被拒"
+ },
+ {
+  "script": "backend/refund_write_check.py",
+  "改坏": "重新发起不查「上次是哪种」(超时其实已退的也能再发一次)",
+  "file": [
+   {
+    "path": "backend/refund_write.py",
+    "old": "    if 上次 != \"确实没退成\":\n",
+    "new": "    if False:\n"
+   },
+   {
+    "path": "backend/fsm.py",
+    "old": "            if ctx.get(\"上次\")not in(\"确实没退成\",\"核实其实已退\"):",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "没说清上次是哪种,不许重新发起"
+ },
+ {
+  "script": "backend/refund_write_check.py",
+  "改坏": "登记已退不要流水号",
+  "file": [
+   {
+    "path": "backend/refund_write.py",
+    "old": "    if not no:\n        return _deny(me, deposit_id, \"NEED_REFUND_NO\"",
+    "new": "    if False:\n        return _deny(me, deposit_id, \"NEED_REFUND_NO\""
+   },
+   {
+    "path": "backend/fsm.py",
+    "old": "            if not str(ctx.get(\"退款流水号\") or \"\").strip():",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "登记已退不填流水号被拒"
+ },
+ {
+  "script": "backend/refund_write_check.py",
+  "改坏": "流水号不查重(一笔流水证明两笔退款)",
+  "file": [
+   {
+    "path": "backend/refund_write.py",
+    "old": "        if c.execute(\"SELECT 1 FROM refund_trace WHERE refund_no=?\", (no,)).fetchone():",
+    "new": "        if False:"
+   },
+   {
+    "path": "backend/refund_write.py",
+    "old": "\"CREATE UNIQUE INDEX IF NOT EXISTS ux_refund_no ON refund_trace(refund_no) \"",
+    "new": "\"DROP INDEX IF EXISTS ux_refund_no --\""
+   }
+  ],
+  "预期红": "同一个流水号登记到第二笔被拒"
+ },
+ {
+  "script": "backend/refund_write_check.py",
+  "改坏": "通用改状态又能直接点成「已退」",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        if (cur,to) in ((\"退款失败\",\"退款处理中\"),(\"退款处理中\",\"已退\")):",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "后台通用改状态点不出「已退」(指向退款写口)"
  }
 ]

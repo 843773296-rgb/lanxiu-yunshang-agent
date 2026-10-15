@@ -399,6 +399,8 @@ async function open_(tid){
       <div class="traj">${esc((d.ai_text||"").slice(0,700))||"(没有正文)"}</div></div>
     ${done?fld("人工裁决",`${d.status} · ${d.handler||""} ${d.handled_at||""}
 ${d.human_root_cause||""}${d.human_note?"\n"+d.human_note:""}`):""}
+    ${done && x.type==="财务人工任务" ? `<div class="fld" id="退款块"><div class="k">退款处理与办结(财务)</div>
+      <div id="退款内">加载中…</div></div>` : ""}
     ${done?"":`<div class="edit" id="edit">
       <label>你认定的根因</label><input type="text" id="hrc" placeholder="改判必填 —— 这句会成为这条 case 的标注答案">
       <label>应该怎么处理</label><input type="text" id="hac" placeholder="例:不得重新发起退款,先向渠道核对流水">
@@ -412,7 +414,64 @@ ${d.human_root_cause||""}${d.human_note?"\n"+d.human_note:""}`):""}
     <button onclick="toggleEdit()" id="btnEdit">改判…</button>
     <button onclick="resolve(${d.id},'已升级')">升级给店长</button>
     <span class="note" id="rmsg" style="font-size:12.5px;color:var(--ink-3)"></span></div>`}`;
+  if($("#退款内")) await 画退款(x.ref, d.id, x);
 }
+/* ── 退款处理与办结(用户 2026-10-15 拍「登记退款结果」写口)─────────────────────
+   闭环原来断在第五步:复核完了,「财务真的退成了」在系统里没地方写,办结的回执核验永远过不了。
+   这一块只给**已有结论的财务人工任务**:看押金单现在什么状态和每一次尝试,按状态给能做的事。
+   ⚠️ 「重新发起」要先勾「已向渠道核实:上次确实没退成」—— 渠道超时而钱已到账的,再发一次顾客就收两笔;
+      那种情况走「登记已退」(怎么退的选「渠道核实其实已退」)。能不能做由后端判(只有财务),页面不猜角色。 */
+async function 画退款(dep, 研判号, x){
+  const s=await fetch("/api/refund-state?deposit="+encodeURIComponent(dep)).then(r=>r.json()).catch(e=>({error:e+""}));
+  const el=$("#退款内"); if(!el) return;
+  if(s.error){ el.textContent=s.error; return; }
+  el.dataset.dep=dep; el.dataset.tri=研判号;
+  const 轨=(s.轨迹||[]).map(t=>`第 ${t.attempt} 次 · ${t.ts} · ${t.channel} · ${t.resp_code}`
+      +(t.refund_no?` · 流水 ${t.refund_no}`:"")).join("\n");
+  let 做="";
+  if((s.能做||[]).includes("重新发起"))
+    做+=`<div class="rf"><label><input type="checkbox" id="rf核"> 已向渠道核实:上次<b>确实没退成</b></label>
+      <button data-rf="重新发起">重新发起退款</button></div>`;
+  if((s.能做||[]).includes("登记已退"))
+    做+=`<div class="rf">渠道退款流水号 <input type="text" id="rf号" style="width:150px">
+      怎么退的 <select id="rf式">${(s.方式们||[]).map(m=>`<option>${esc(m)}</option>`).join("")}</select>
+      <input type="text" id="rf注" placeholder="备注(选「其他」必填)" style="width:150px">
+      <button data-rf="登记已退">登记已退</button></div>`;
+  if((s.能做||[]).includes("登记仍失败"))
+    做+=`<div class="rf">渠道回来的原因 <input type="text" id="rf因" style="width:200px">
+      <button data-rf="登记仍失败">登记仍失败</button></div>`;
+  if(s.状态==="已退" && !x.已办结)
+    做+=`<div class="rf"><button class="pri" data-rf="办结">用押金单 ${esc(dep)} 当回执办结</button></div>`;
+  if(x.已办结) 做+=`<div class="rf">已办结 · 回执 ${esc(x.回执||"")}</div>`;
+  el.innerHTML=`<div>押金单 <b>${esc(dep)}</b> · ¥${+s.金额||0} · 现在「<b>${esc(s.状态)}</b>」</div>
+    <div class="traj">${esc(轨)||"(还没有退款尝试)"}</div>${做}
+    <div class="note" id="rf提示" style="font-size:12.5px"></div>`;
+}
+$("#panel").addEventListener("click",async e=>{
+  const b=e.target.closest("[data-rf]"); if(!b) return;
+  const el=$("#退款内"), dep=el.dataset.dep, 动=b.dataset.rf;
+  const 说=t=>{ const p=$("#rf提示"); if(p) p.textContent=t; };
+  let url, body;
+  if(动==="重新发起"){
+    if(!$("#rf核").checked){ 说("先向渠道核实上次确实没退成,再重发 —— 渠道超时而钱已到账的别重发,直接「登记已退」"); return; }
+    url="/api/refund-retry"; body={deposit:dep, 上次:"确实没退成"};
+  } else if(动==="登记已退"){
+    url="/api/refund-done"; body={deposit:dep, 退款流水号:$("#rf号").value.trim(), 方式:$("#rf式").value, 备注:$("#rf注").value.trim()};
+  } else if(动==="登记仍失败"){
+    url="/api/refund-fail"; body={deposit:dep, 原因:$("#rf因").value.trim()};
+  } else {
+    url="/api/ops-close"; body={triage_id:+el.dataset.tri, receipt:dep};
+  }
+  b.disabled=true; 说("提交中…");
+  const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)})
+    .then(r=>r.json()).catch(e=>({error:e+""}));
+  b.disabled=false;
+  // 失败照实说(后端那句话原样给),**不出成功样式** —— 跑挂了说成完成,这个页面栽过两次
+  const 失败=!!(r.error || r.ok===false);
+  if(失败){ 说("没成:"+(r.error||r.reason||"")); return; }
+  await load(); await open_(sel);
+  说(r.说明 || (动==="办结" ? "办结了 —— 回执核验通过" : "好了"));
+});
 window.toggleEdit=()=>{
   const e=$("#edit"); e.classList.toggle("on");
   const on=e.classList.contains("on");
