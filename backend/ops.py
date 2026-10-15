@@ -229,7 +229,10 @@ def 正门关单凭据():
 档位 = {
     "待办":   lambda x: not x["done"] and x["level"] != "已超时",
     "已超时": lambda x: not x["done"] and x["level"] == "已超时",
-    "未研判": lambda x: x["state"] == "未研判",
+    # 「未研判」= 还没研判**而且还没结束**(10-15 外部核查指出、实测属实:原来只看研判状态,
+    # 180 条里 166 条早已关单 —— 自动挑单从这一档取,关掉的单会被挑去重跑)。
+    # 关了但没研判过的那些在「已销账」档里,带着「没走正门」的标,不在这一档重复出现。
+    "未研判": lambda x: x["state"] == "未研判" and not x["done"],
     "待复核": lambda x: x["state"] == "待复核",
     "已销账": lambda x: x["done"],
 }
@@ -239,6 +242,33 @@ def 各档计数(行=None):
     """每一档多少条。**和 `queue()` 用同一份 `档位`**,不另写一遍。"""
     q = queue() if 行 is None else 行
     return {k: sum(1 for x in q if f(x)) for k, f in 档位.items()} | {"全部": len(q)}
+
+
+def 研判队列(行=None):
+    """研判队列**只放 AI 能跑的**(用户 2026-10-15 拍:「不能跑的放在研判队列干啥?」)。
+
+    那天队列「未研判」171 条**全是评价差评**,而差评按业务 10-10 拍板不走 AI ——
+    能跑的三类早就全研判过了,用户点进来一条能试的都没有。
+    不能跑的挪到值班台(`待店长确认()`),**一条不删、看板总数不变** —— 只是不摆在「研判」这个面上。
+    判定用 `能跑AI研判`(和真跑那处同一份),不按类型名自己猜。"""
+    q = queue() if 行 is None else 行
+    return [x for x in q if x["能跑AI研判"]]
+
+
+def 待店长确认(行=None):
+    """不走 AI 研判的工单(现在只有评价差评)—— 值班台那一块「差评待店长确认」。
+
+    只列**还开着的**;关掉的不列,但「没走正门关的」计数**照旧亮着**(用户 10-14 拍:不藏成 0),
+    跟着从研判队列一起搬过来。超时照算(差评时效 48h,业务 10-11 拍),只是不进考核(`不进考核的类型`)。"""
+    q = queue() if 行 is None else 行
+    人工 = [x for x in q if not x["能跑AI研判"]]
+    开着 = [x for x in 人工 if not x["done"]]
+    return dict(
+        rows=开着, 开着=len(开着),
+        已超时=sum(1 for x in 开着 if x["level"] == "已超时"),
+        没走正门关的=sum(1 for x in 人工 if x.get("没走正门")),
+        为什么不走AI={t: 不跑的理由(t) for t in sorted({x["type"] for x in 人工})},
+    )
 
 
 def queue(state=None):
@@ -859,6 +889,10 @@ def 办结(triage_id, 单号, me, 来源="页面"):
                 reason=f"已办结:凭{类} {单号.strip()}。复核结论仍是「{t['status']}」")
 
 
+class _复核冲突(Exception):
+    """复核写回时发现这条已经不是「待复核」—— 内部用,出了 resolve 就换成 ValueError。"""
+
+
 def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, 来源="页面"):
     """值班同学销账。**改判会回流成新的标注** —— 这是平台能越用越准的唯一通路。
 
@@ -894,29 +928,44 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
     handler = 谁
     ts = now().strftime("%Y-%m-%d %H:%M:%S")
     flowed, conflict = False, None
-    with _c() as c:
-        c.execute("UPDATE triage SET status=?,human_root_cause=?,human_action=?,"
-                  "human_note=?,handler=?,handled_at=? WHERE id=?",
-                  (decision, root_cause, action, note, handler, ts, triage_id))
-        c.execute("UPDATE task SET status=? WHERE id=?",
-                  ("已升级" if decision == "已升级" else "已处理", t["task_id"]))
-        if decision == "已改判" and t["case_id"] and root_cause:
-            old = c.execute("SELECT root_cause,src FROM truth WHERE case_id=?",
-                            (t["case_id"],)).fetchone()
-            if old and old["src"] == "建库标注" and old["root_cause"] != root_cause:
-                # **不覆盖**。上线前的标注是复核过的,值班同学的裁决只经一个人。
-                # 谁对谁错这里定不了 —— 定不了的事就别偷偷替对方做决定,记下来给人裁。
-                # 和相容矩阵里「人工确认 vs 规则不一致就列出来」是同一条处理原则。
-                conflict = dict(case_id=t["case_id"], 建库标注=old["root_cause"], 人工改判=root_cause)
-            elif old and old["root_cause"] == root_cause:
-                flowed = True          # 和已有标注一致,不用重复写
-            else:
-                c.execute("INSERT OR REPLACE INTO truth(case_id,breakpoint,root_cause,"
-                          "expected_action,expected_evidence,note,src) VALUES(?,?,?,?,?,?,'人工改判')",
-                          (t["case_id"], t["breakpoint"], root_cause, action or "",
-                           note or "", f"{handler} 于 {ts} 改判回流"))
-                flowed = True
-            if flowed: c.execute("UPDATE triage SET into_eval=1 WHERE id=?", (triage_id,))
+    try:
+        with _c() as c:
+            # **只认「待复核」的那一刻**(10-15 外部核查指出、读码属实:原来按 id 直接覆盖)。
+            # 两人同时复核 / 旧页面晚提交,原来**后到的悄悄盖掉先到的**,而两次都显示「销账成功」。
+            # 状态条件写在同一条 UPDATE 里(不是先查再写)—— 先查再写,两个请求会同时查到「待复核」。
+            # 要改一条已有结论的,得有正式的「重开」—— 现在还没有这个入口,先拒并说清(待业务定)。
+            改 = c.execute("UPDATE triage SET status=?,human_root_cause=?,human_action=?,"
+                           "human_note=?,handler=?,handled_at=? WHERE id=? AND status='待复核'",
+                           (decision, root_cause, action, note, handler, ts, triage_id)).rowcount
+            if not 改:
+                现 = c.execute("SELECT status, handler, handled_at FROM triage WHERE id=?", (triage_id,)).fetchone()
+                raise _复核冲突(f"这条研判已经是「{现['status']}」(由 {现['handler'] or '?'} 于 {现['handled_at'] or '?'} 处理)"
+                                f" —— 不能再覆盖。刷新页面看最新结论;要改结论得走重开(这个入口还没有)")
+            c.execute("UPDATE task SET status=? WHERE id=?",
+                      ("已升级" if decision == "已升级" else "已处理", t["task_id"]))
+            if decision == "已改判" and t["case_id"] and root_cause:
+                old = c.execute("SELECT root_cause,src FROM truth WHERE case_id=?",
+                                (t["case_id"],)).fetchone()
+                if old and old["src"] == "建库标注" and old["root_cause"] != root_cause:
+                    # **不覆盖**。上线前的标注是复核过的,值班同学的裁决只经一个人。
+                    # 谁对谁错这里定不了 —— 定不了的事就别偷偷替对方做决定,记下来给人裁。
+                    # 和相容矩阵里「人工确认 vs 规则不一致就列出来」是同一条处理原则。
+                    conflict = dict(case_id=t["case_id"], 建库标注=old["root_cause"], 人工改判=root_cause)
+                elif old and old["root_cause"] == root_cause:
+                    flowed = True          # 和已有标注一致,不用重复写
+                else:
+                    c.execute("INSERT OR REPLACE INTO truth(case_id,breakpoint,root_cause,"
+                              "expected_action,expected_evidence,note,src) VALUES(?,?,?,?,?,?,'人工改判')",
+                              (t["case_id"], t["breakpoint"], root_cause, action or "",
+                               note or "", f"{handler} 于 {ts} 改判回流"))
+                    flowed = True
+                if flowed: c.execute("UPDATE triage SET into_eval=1 WHERE id=?", (triage_id,))
+    except _复核冲突 as e:
+        # ⚠️ 记日志要在 `with` **外面** —— 里面还握着写锁,log_op 另开连接去写 op_log
+        # 会等到「database is locked」(第一版就这么写的,新检查第一次跑当场抓到)。
+        # 抛 _复核冲突 让 with 整段回滚:状态、工单、回流要么一起成,要么一起不动。
+        _记(False, "STALE", str(e))
+        raise ValueError(str(e))
     # ── A3:把这条判读投给管理后台(投本地箱,不在这里发 HTTP)────────────
     # ⚠️ 和 A1 同一条规矩(A2):**绝不能把销账这件事搞挂**。
     # 销账是业务动作,上报是附加的 —— 所以库先写完(上面那个 with 已经出块提交),

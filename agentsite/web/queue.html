@@ -72,6 +72,9 @@ textarea,input[type=text]{width:100%;font-family:var(--sans);font-size:13.5px;pa
   <h1>研判队列</h1>
   <p class="deck">智能体交草稿,<b>你签字</b>。采纳 = 认可;改判 = 它错了,你写对的
   —— <b>你写的那条会进评测集</b>,下次回归跑得到;升级 = 这条你也定不了,转给别人。</p>
+  <!-- 这里只放 AI 能跑的(用户 10-15 拍)。不走 AI 的挪去了值班台 —— 这一句说清挪去哪、有几条,
+       否则「差评不见了」和「差评被处理完了」在这一页上长得一模一样。 -->
+  <p class="deck" id="挪走" style="font-size:13.5px" hidden></p>
 </header>
 
 <section>
@@ -175,6 +178,14 @@ async function load(){
   const q=await fetch("/api/ops-queue"+(state?"?state="+encodeURIComponent(state):"")).then(r=>r.json());
   rows=q.rows; render();
   if(q.counts) 更新档位计数(q.counts);
+  const 挪=q.挪到值班台;
+  if(挪){
+    $("#挪走").hidden=false;
+    $("#挪走").innerHTML=`这里只放 AI 能跑的。<b>差评不走 AI</b>(由店长人工确认),挪到了 `
+      +`<a href="/duty#差评">值班台 →</a>:还开着 <b>${+挪.开着}</b> 条`
+      +(挪.已超时?`(其中 <b>${+挪.已超时}</b> 条已超时)`:"")
+      +(挪.没走正门关的?` · 没走正门关的 ${+挪.没走正门关的} 条`:"");
+  }
   // 「已销账」这一档顶上报分组计数 —— 一行行看才看出「大多数根本没走过研判」,
   // 等于没分开。这个数直接说出来。
   if(state==="已销账") 报销账计数();

@@ -55,6 +55,19 @@
   </table></div>
 </section>
 
+<!-- 用户 10-15 拍:研判队列只放 AI 能跑的;差评不走 AI,挪到这里。
+     **一条不删** —— 超时照算、「没走正门关的」计数照旧亮着,只是不摆在「研判」那个面上。 -->
+<section id="差评">
+  <h2>差评待店长确认</h2>
+  <p class="sub">差评<b>不走 AI 研判</b>(业务 10-10 拍:差评的 AI 辅助默认关闭,由店长人工确认),所以不在研判队列里。
+  超时照算,但<b>不进考核</b>。</p>
+  <p class="sub" id="差评说"></p>
+  <div class="box scroll"><table>
+    <thead><tr><th>工单</th><th>包裹</th><th>等待</th><th>时效</th></tr></thead>
+    <tbody id="差评行"><tr><td colspan="4">加载中…</td></tr></tbody>
+  </table></div>
+</section>
+
 <section>
   <h2>为什么改成这样</h2>
   <p class="sub">同一个智能体、同一批工具,组织形态换了。</p>
@@ -135,12 +148,20 @@ function row(x){
     <td>${x.ai_confidence?`<span class="tag ${CF[x.ai_confidence]||""}">${x.ai_confidence}</span>`:"—"}</td></tr>`;
 }
 async function load(){
-  const [b,q]=await Promise.all([
+  const [b,q,m]=await Promise.all([
     fetch("/api/ops-backlog").then(r=>r.json()),
-    fetch("/api/ops-queue?state=待办").then(r=>r.json())]);
+    fetch("/api/ops-queue?state=待办").then(r=>r.json()),
+    fetch("/api/ops-manual").then(r=>r.json())]);
   kpi(b);
+  // 研判队列见底 ≠ 今天没活了 —— 差评在下面那一块,原来这句「可以下班」会把它们说没
   $("#rows").innerHTML=q.rows.length?q.rows.slice(0,8).map(row).join(""):
-    `<tr><td colspan="7">队列见底了 —— 今天可以下班。</td></tr>`;
+    `<tr><td colspan="7">研判队列这一档见底了${m.开着?` —— 但还有 ${+m.开着} 条差评等店长确认,见下面`:""}。</td></tr>`;
+  $("#差评说").innerHTML=`还开着 <b>${+m.开着}</b> 条`+(m.已超时?`,其中 <b>${+m.已超时}</b> 条已超时`:"")
+    +(m.没走正门关的?` · 另有没走正门关的 ${+m.没走正门关的} 条(已关单、没留过审计,不在下面列)`:"");
+  $("#差评行").innerHTML=m.rows.length?m.rows.map(x=>`<tr><td class="num">${esc(x.task_id)}</td>
+    <td class="num">${esc(x.ref)}</td><td class="num">${x.waited_h}h</td>
+    <td><span class="tag ${LV[x.level]}">${esc(x.level)}${x.left_h!=null&&x.left_h>0?" 余"+x.left_h+"h":""}</span></td></tr>`).join(""):
+    `<tr><td colspan="4">没有等店长确认的差评。</td></tr>`;
 }
 $("#run").onclick=async()=>{
   const btn=$("#run"); btn.disabled=true; const t0=Date.now();

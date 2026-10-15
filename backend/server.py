@@ -3057,10 +3057,19 @@ class H(BaseHTTPRequestHandler):
             if p=="/api/ops-queue":
                 # 各档计数一起给 —— 页面要在「待办」那档说出「另有 N 条已超时」。
                 # 让页面自己数会漂:它手上只有本档的行,数不出别档的。
-                _全 = _ops.queue()
+                # 研判队列**只放 AI 能跑的**(用户 10-15 拍),差评挪到值班台 —— 计数也只数这些,
+                # 另报挪走了多少,页面上写一句「差评 N 条在值班台」,不让人以为它们消失了
+                _所有 = _ops.queue()
+                _全 = _ops.研判队列(_所有)
+                _挪 = _ops.待店长确认(_所有)
                 _st = (Q.get("state") or [None])[0]
                 return self._send(dict(rows=[x for x in _全 if _ops.档位[_st](x)] if _st in _ops.档位 else _全,
-                                       counts=_ops.各档计数(_全)))
+                                       counts=_ops.各档计数(_全),
+                                       挪到值班台=dict(开着=_挪["开着"], 已超时=_挪["已超时"],
+                                                     没走正门关的=_挪["没走正门关的"])))
+            if p=="/api/ops-manual":
+                # 值班台「差评待店长确认」(用户 10-15 拍)—— 和研判队列同一份 queue() 分出来,不另算
+                return self._send(_ops.待店长确认())
             if p=="/api/ops-backlog": return self._send(_ops.backlog())
             if p=="/api/ops-health":  return self._send(_ops.health())
             if p=="/api/ops-detail":

@@ -7873,5 +7873,53 @@
    }
   ],
   "预期红": "弹窗按「能跑AI研判」决定给不给"
+ },
+ {
+  "script": "backend/queue_split_check.py",
+  "改坏": "研判队列不按能不能跑筛(差评又摆回研判队列)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    return [x for x in q if x[\"能跑AI研判\"]]\n",
+    "new": "    return list(q)\n"
+   }
+  ],
+  "预期红": "研判队列里没有不能跑的"
+ },
+ {
+  "script": "backend/queue_split_check.py",
+  "改坏": "待店长确认漏掉还开着的差评",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    开着 = [x for x in 人工 if not x[\"done\"]]\n",
+    "new": "    开着 = [x for x in 人工 if not x[\"done\"] and x[\"type\"] != \"评价差评\"]\n"
+   }
+  ],
+  "预期红": "自造的开着的差评落在值班台那一块"
+ },
+ {
+  "script": "backend/queue_split_check.py",
+  "改坏": "「未研判」档不看 done(关掉的单又会被挑去重跑)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    \"未研判\": lambda x: x[\"state\"] == \"未研判\" and not x[\"done\"],",
+    "new": "    \"未研判\": lambda x: x[\"state\"] == \"未研判\","
+   }
+  ],
+  "预期红": "已经关单、没研判过的,不在「未研判」档"
+ },
+ {
+  "script": "backend/queue_split_check.py",
+  "改坏": "复核写回去掉状态条件(后到的悄悄盖掉先到的)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "\"human_note=?,handler=?,handled_at=? WHERE id=? AND status='待复核'\"",
+    "new": "\"human_note=?,handler=?,handled_at=? WHERE id=?\""
+   }
+  ],
+  "预期红": "同一条研判复核第二次被拒"
  }
 ]

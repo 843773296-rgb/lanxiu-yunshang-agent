@@ -631,7 +631,13 @@ class H(BaseHTTPRequestHandler):
         q = json.loads(urllib.request.urlopen(
             BACKEND + "/api/ops-queue", timeout=30).read())["rows"]
         t = next((x for x in q if x["task_id"] == tid), None)
-        if not t: raise ValueError(f"队列里没有 {tid}")
+        # 研判队列 10-15 起只放 AI 能跑的 —— 找不到的多半是不走 AI 的(差评),它们在值班台
+        if not t: raise ValueError(f"研判队列里没有 {tid}(不走 AI 的类型,比如差评,在值班台「差评待店长确认」)")
+        # **已结束的不重跑**(10-15 外部核查指出、实测属实:「未研判」档 180 条里 166 条早已关单,
+        # 自动挑单只看研判状态、不看 done)。重跑 = 白花钱,而且新草稿会盖在一件已经办完的事上。
+        # 「待复核」照样能重跑(那条还没结论)—— 这里只拦**结束了**的。
+        if t.get("done"):
+            raise ValueError(f"{tid} 已经结束({t.get('凭什么销账') or '已销账'}),不重跑 —— 要重开得走复核那边")
         # 断点号和提示词**从后台的 ops 取,这边不留第二份** ——
         # 2026-10-11 抽过去的,因为配方新加的「造 triage 样本」那一步也要用它。
         # 两份提示词的后果不是「不一致」,是**样本在替另一句话打分**。
