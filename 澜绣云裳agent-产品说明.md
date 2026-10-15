@@ -973,7 +973,7 @@ flowchart TD
     DV --> DB[("<b>数据库 111 张表</b><br/>四大主数据库<br/>＋ 运营数据")]
 
     DB -->|"② 读<br/>只读连接 ＋ 三把锁"| KJ["口径模块 53 个"]
-    KJ --> MCP["<b>MCP</b><br/>kb 11 · shop 44 · task 5"]
+    KJ --> MCP["<b>MCP</b><br/>kb 11 · shop 77 · task 5"]
     MCP --> LLM["模型"]
 
     LLM -->|"③ 一次问答"| GD{"26 项回答体检"}

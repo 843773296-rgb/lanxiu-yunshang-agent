@@ -7984,5 +7984,17 @@
    }
   ],
   "预期红": "后台通用改状态点不出「已退」(指向退款写口)"
+ },
+ {
+  "script": "tools/doc_numbers_check.py",
+  "改坏": "把画图脚本里「kb 11 · shop 77 · task 5」的 shop 改成 76(没有量词的写法)",
+  "file": [
+   {
+    "path": "tools/publish_prd.py",
+    "old": "kb 11 · shop 77 · task 5",
+    "new": "kb 11 · shop 76 · task 5"
+   }
+  ],
+  "预期红": "shop 工具数"
  }
 ]
