@@ -7837,5 +7837,29 @@
    }
   ],
   "预期红": "没有会原样显示出来的星号"
+ },
+ {
+  "script": "agentsite/queue_view_check.py",
+  "改坏": "让 软化() 不再削 Markdown 的星号(后端那句「AI 辅助**默认关闭**」就会带着星号显示在页面上)",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": ".replace(/\\*\\*/g, \"\")",
+    "new": ""
+   }
+  ],
+  "预期红": "没有会原样显示出来的星号"
+ },
+ {
+  "script": "agentsite/queue_view_check.py",
+  "改坏": "让弹窗不再看「能跑AI研判」(跑不了的工单又会摆出「只跑这一条」按钮)",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": "const 不跑 = x.能跑AI研判 === false;",
+    "new": "const 不跑 = false;"
+   }
+  ],
+  "预期红": "弹窗按「能跑AI研判」决定给不给"
  }
 ]

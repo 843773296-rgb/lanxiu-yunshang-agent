@@ -231,7 +231,19 @@ function 报销账计数(){
   if(b) b.onclick=()=>{ 展开没走正门=!展开没走正门; render(); 报销账计数(); };
 }
 
+// 后端那几句话是写给人读的 Markdown(带 `**强调**`),而页面用 textContent / esc ——
+// 星号会**原样显示出来**。削掉记号,别削内容。
+// (`ValueError:` 这类异常类名同理:对看的人没有意义,只会让它更像故障。)
+function 软化(t){
+  return String(t||"").replace(/^\w+(Error|Exception):\s*/, "").replace(/\*\*/g, "");
+}
+
+// ⚠️ 提示原来只写页面顶部的 #msg,而弹窗是 fixed + 遮罩 —— **顶部那行被挡住了**。
+// 用户点完「只跑这一条」,反馈出现在他看不见的地方,于是「点了没反应」。
+// 弹窗里有 #弹窗提示 时同时写一份,**只有一个函数**,不在两处各写一套。
 function 提示(文, 级){
+  const k=$("#弹窗提示");
+  if(k){ k.textContent=文; k.className="note" + (级?" "+级:""); }
   const e=$("#msg"); e.textContent=文;
   e.className="note" + (级?" "+级:"");
 }
@@ -269,8 +281,10 @@ function 批量提示文(r, 跑了, state){
     // 而照着它去查,会去查那条工单哪里坏了 —— 查一个没有坏的东西。
     // 所以**原因原样打出来**,不替后端改写、不替它分类。
     // `ValueError:` 这类 Python 异常类名对看的人没有意义,只会让它更像故障 —— 削掉。
-    const 因 = [...new Set(挂.map(f => ((f && f.error) || "")
-                  .replace(/^\w+(Error|Exception):\s*/, "")).filter(Boolean))];
+    // ⚠️ 用 `软化()` —— 它同时削掉异常类名**和 Markdown 的 `**`**。
+    // 原来这里只削了类名,于是后端那句「差评的 AI 辅助**默认关闭**」
+    // 带着两对星号原样显示在页面上。
+    const 因 = [...new Set(挂.map(f => 软化((f && f.error) || "")).filter(Boolean))];
     // ⚠️⚠️ **「按设计不跑」和「跑挂了」要在第一句话上就分开。**
     // 第一版我只是把原因拼在「有 N 条没跑出来…没有被处理」后面 —— 而后端那句话里
     // 明写着「**不是跑挂了**」,两句话当场互相矛盾,**而人读到的是前半句**。
@@ -344,9 +358,21 @@ async function open_(tid){
     <span class="tag">${esc(x.type)}</span>
     <span class="tag">等了 ${x.waited_h}h</span>`;
   if(!x.triage_id){
+    // ⚠️⚠️ **跑不了的不给按钮。** 用户 2026-10-15 第二次报「点了没反应」,
+    // 撞的就是这儿:弹窗原来给每条工单都摆「只跑这一条」,而差评按业务默认不走 AI 研判。
+    // 点下去跑一趟回来才被告知「按设计不跑」—— 那一趟还真跑进了后台。
+    // > 一个「这条能跑」和一个「这条按设计不跑」,**在一个都给按钮的弹窗上长得一模一样**。
+    // `能跑AI研判` / `不跑的原因` 都是后端算好带过来的(`backend/ops.py`),
+    // **页面不自己按类型猜、也不自己编理由** —— 编的话哪天差评的 AI 辅助打开了,
+    // 页面这份还写着「默认关闭」,而两边分别看都正常。
+    const 不跑 = x.能跑AI研判 === false;
     $("#panel").innerHTML=`<div class="hd">${hd}</div>
-      <div class="bd"><div class="empty">这条还没研判过。<br>用上面的「研判 N 条」按钮跑,或单独跑它。</div></div>
-      <div class="ft"><button class="pri" onclick="runOne('${esc(x.task_id)}')">只跑这一条</button></div>`;
+      <div class="bd"><div class="empty">${不跑
+          ? "这条<b>按设计不走 AI 研判</b> —— " + esc(软化(x.不跑的原因||""))
+          : "这条还没研判过。<br>用上面的「研判 N 条」按钮跑,或单独跑它。"}</div></div>
+      <div class="ft">${不跑 ? '<span class="note">不需要跑,按上面说的处理</span>'
+          : `<button class="pri" onclick="runOne('${esc(x.task_id)}')">只跑这一条</button>`}
+        <span class="note" id="弹窗提示"></span></div>`;
     return;
   }
   const d=await fetch("/api/ops-detail?id="+x.triage_id).then(r=>r.json());
@@ -400,8 +426,17 @@ window.runOne=async(tid)=>{
   提示("跑这一条中…", "");
   const r=await fetch("/run-triage",{method:"POST",headers:{"content-type":"application/json"},
     body:JSON.stringify({task_id:tid})}).then(r=>r.json()).catch(e=>({error:e+""}));
-  if(r&&r.error){ 提示("研判失败:"+r.error, "bad"); return; }
-  提示("研判完成,请复核", "ok");
+  // ⚠️⚠️ **这里原来只认 `r.error`。** 而 `/run-triage` 带 task_id 时失败是放进
+  // `failed` 的(`{ok:false, done:[], failed:[{task_id, error}]}`),`error` 字段根本不存在 ——
+  // 于是跑挂了也走到下面那句「研判完成,请复核」。
+  // > 一个「跑成了」和一个「跑挂了但错误在另一个字段里」,**在这句提示上长得一模一样。**
+  // 这和中午修的「研判 0 条全部跑出来了」是同一个病,只是出在单条这条路上。
+  // 修法不是在这儿再写一套判断,是**复用批量那份** —— 它已经分清了
+  // 「按设计不跑」「真挂了」「跑了 0 条」,再写一份就又是两套会各自漂的口径。
+  const 跑了=(r&&r.done||[]).length;
+  const t=批量提示文(r, 跑了, state);
+  提示(t.文, t.级);
+  if(!跑了) return;        // 没跑成就别刷新 —— 刷了也一样,只会显得「什么都没发生」
   await load();
   await open_(tid);      // ← 要 await:它可能要换一档才找得到这条
 };
