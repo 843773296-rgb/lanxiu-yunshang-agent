@@ -7801,5 +7801,41 @@
    }
   ],
   "预期红": "写入口用的仍是机器时刻,不是今天末尾"
+ },
+ {
+  "script": "agentsite/queue_view_check.py",
+  "改坏": "让「能跑AI研判」对所有类型都说能跑(差评就会被取进批量研判,而它按业务默认不跑)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    return (任务类型 == \"评价差评\" and 开差评) or 任务类型 in 断点",
+    "new": "    return True or (任务类型 == \"评价差评\" and 开差评) or 任务类型 in 断点"
+   }
+  ],
+  "预期红": "评价差评默认不走 AI 研判"
+ },
+ {
+  "script": "agentsite/queue_view_check.py",
+  "改坏": "把「跑了 0 条」那个分支删掉(于是一条没跑也说「研判 0 条全部跑出来了」)",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": "  if(!跑了) return {文:(r&&r.note)",
+    "new": "  if(false) return {文:(r&&r.note)"
+   }
+  ],
+  "预期红": "跑了 0 条"
+ },
+ {
+  "script": "agentsite/queue_view_check.py",
+  "改坏": "把文案里的字面星号加回去(提示() 是 textContent,星号会原样显示在页面上)",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": "      return {文:`这 ${挂.length} 条按设计不走 AI 研判",
+    "new": "      return {文:`这 ${挂.length} 条**按设计不走 AI 研判**"
+   }
+  ],
+  "预期红": "没有会原样显示出来的星号"
  }
 ]

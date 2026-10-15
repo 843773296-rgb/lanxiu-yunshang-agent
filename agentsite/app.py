@@ -594,7 +594,23 @@ class H(BaseHTTPRequestHandler):
                     return self._send({"error": ("取研判队列时后台 30 秒没回:它一次只处理一个请求,多半正忙着别的,"
                                                  "稍后再点一次;**不是连不上,也不是研判跑挂了**。" if 慢 else
                                                  f"取研判队列时连不上后台(8760 可能没起):{e}")}, code=502)
-                ids = [x["task_id"] for x in q[: int(body.get("n") or 3)]]
+                # ⚠️ **跳过没有 AI 研判分支的**(2026-10-15)。
+                # 「未研判」档里超时的排最前,而超时的最前面恰好全是评价差评 ——
+                # 差评的 AI 辅助按业务 2026-10-10 拍板默认关闭(由店长人工确认)。
+                # 于是不管用户在哪个档点「研判 3 条」,取到的都是跑不了的那几条,
+                # 跑完只得到一句「按设计不跑」。用户 2026-10-14 为此报过「点研判没反应」。
+                # > 一个「研判 3 条」和一个「这 3 条一条都跑不了」,在按钮上长得一模一样。
+                # 📌 `能跑AI研判` 这个字段**由后台和真正跑的那处用同一份判定算出来**,
+                #    这里不按类型自己猜 —— 猜的话,哪天差评的 AI 辅助打开了这里还会拦着。
+                _能跑 = [x for x in q if x.get("能跑AI研判")]
+                ids = [x["task_id"] for x in _能跑[: int(body.get("n") or 3)]]
+                if not ids and q:
+                    from collections import Counter as _C
+                    _类 = "、".join(f"{k} {v} 条" for k, v in _C(x["type"] for x in q).most_common(3))
+                    return self._send({"ok": True, "done": [], "note":
+                        f"未研判的 {len(q)} 条里没有一条有 AI 研判分支,所以这次一条都没跑 —— "
+                        f"不是跑挂了。它们是:{_类}。差评由店长人工确认(业务 2026-10-10 拍),"
+                        f"要单独跑某一条请在列表里点开它。"})
             if not ids: return self._send({"ok": True, "done": [], "note": "队列里没有未研判的工单"})
             out, errs = [], []
             for tid in ids:
