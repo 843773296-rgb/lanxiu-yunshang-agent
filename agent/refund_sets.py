@@ -458,6 +458,11 @@ def 跑一题(题):
 
 def 做(轮数=2):
     import datetime as _dt
+    # 分界点要在**开跑之前**拍 —— 它描述的是「这一轮用的是哪一版代码」。
+    # 跑完再算是错的:真跑自己会写 `agentsite/evals/*.jsonl`(漏斗和技能使用记录),
+    # 于是工作区必然不干净,「未提交改动」那个标注就永远挂着、永远分不出
+    # 真正要警告的那种情况(判据改完没提交就跑)。
+    界 = 分界点()
     题 = 题们()
     轮们 = []
     for 轮 in range(1, 轮数 + 1):
@@ -488,7 +493,7 @@ def 做(轮数=2):
     报 = 判两轮(轮们[0], 轮们[1]) if len(轮们) >= 2 else 判一轮(轮们[0])
     with io.open(存, "a", encoding="utf-8") as f:
         f.write(json.dumps(dict(跑于=_dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                分界点=分界点(), 轮数=轮数, 报=报,
+                                分界点=界, 轮数=轮数, 报=报,
                                 逐轮=轮们), ensure_ascii=False) + "\n")
     return 报
 
