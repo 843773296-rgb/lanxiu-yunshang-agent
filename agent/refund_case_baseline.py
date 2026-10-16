@@ -283,6 +283,47 @@ def 遮完的样子(单号, dbp):
     return RR.归一化(出, W.今天())
 
 
+def 自备夹具(单号="DQ9001"):
+    """真库上这笔单没走过闭环时,**在库副本上给它走一遍**,返回那个副本的路径(否则 None)。
+
+    ## 为什么判据要自备夹具
+
+    `agent/refund_case_check.py` 的前五关验的是「闭环留下的痕迹遮没遮住」——
+    而那些痕迹是**真跑研判 + 财务登记**走出来的,**不在 `tools/rebuild.sh`
+    的重建配方里**(造数那头有条原则:不手造研判结果,`triage` 表一个字不碰)。
+    于是从零重建的库上三笔单都是出事时的原样,那五关**必然红** ——
+    2026-10-16 CI 就是这么红的,而我在「在用的库」上验它是绿的,
+    **它绿恰恰因为那个库被我走过闭环**。
+    > 一个「遮蔽验过了」和一个「这个库上根本没东西可遮」,在那条绿上长得一模一样。
+
+    让判据在没痕迹时就全部空判也不行 —— 那等于它在 CI 上不工作,
+    而 CI 跑的正是从零重建的那一份。所以它自己造出要遮的东西再验。
+
+    ⚠️ 只动副本,真库一个字不碰。造的痕迹照 2026-10-16 真实闭环的四处:
+    押金状态 / updated / 多一条渠道核实的成功轨迹 / 工单状态和摘要。
+    """
+    import shutil
+    import tempfile
+    if 有痕迹要遮吗(单号):
+        return None
+    import api
+    副本 = os.path.join(tempfile.mkdtemp(prefix="refundcase-夹具-"), "lanxiu.db")
+    shutil.copy2(api.DB, 副本)
+    c = sqlite3.connect(副本)
+    出事 = RR.出事于(c, 单号)
+    晚 = f"{str(出事)[:10]} 20:27"              # 比出事那一刻晚,照真实闭环那次
+    c.execute("UPDATE deposit SET status='已退', updated=? WHERE id=?", (晚, 单号))
+    c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,"
+              "resp_code,resp_msg,idem_key) VALUES(?,?,?,'渠道核实其实已退',?,"
+              "'SUCCESS','渠道核实:这笔其实已经退成了',?)",
+              (单号, 9, 晚, 1200, f"IDEM-{单号}-夹具"))
+    c.execute("UPDATE task SET status='已处理', summary=? WHERE ref_id=? AND type=?",
+              ("根因:渠道故障导致三次重试均失败。建议动作:建议重新发起退款。", 单号, RR.工单类型))
+    c.commit()
+    c.close()
+    return 副本
+
+
 def 有痕迹要遮吗(单号):
     """这笔单在库里**有没有**晚于出事时刻的处置痕迹 —— 有的话就必须至少被遮掉一处。
 
