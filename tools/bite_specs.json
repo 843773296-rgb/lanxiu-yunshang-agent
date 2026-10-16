@@ -8042,6 +8042,18 @@
   "预期红": "`run` **把它转给了** `mcp_config`"
  },
  {
+  "script": "tools/intent_check.py",
+  "改坏": "把 HANDOFF 里一条待办的 [intent: xxx] 删掉",
+  "file": [
+   {
+    "path": "HANDOFF.md",
+    "old": "**③ 那 391 条占比一条都还没到「版师」档** `[intent: piece-ratio-review]`",
+    "new": "**③ 那 391 条占比一条都还没到「版师」档**"
+   }
+  ],
+  "预期红": "交接文档里每条待办都点名了一个 intent"
+ },
+ {
   "script": "agent/refund_sets_judgetest.py",
   "改坏": "让判分器退回「提到这个词就算」:认「说出了别重发」时不再看它有没有被否定",
   "file": [
