@@ -8905,30 +8905,47 @@ CI 只有从零重建那一份(rebuild 生成 → 判据重新生成 → 同库 
 **⑥ 三张只有版师给得出来的表** `[intent: pattern-knowledge-gaps]`
 童装档差表 / 里料衬料的门幅 / 特体修版量。**已拍板:挂着等版师给,不替它猜。**
 
-**⑦ 判据审计:十套审完了,而它还有一半没做** `[intent: judge-audit]`
-四类病在十套里都修了(tool 13→20、member 9→11、report 11→13、
-ops 15→16、chat 16→19)。**剩下的那一半是:没有任何东西防止它们重新长出来。**
-`case_check`(题面)和 `impact.py`(警示段落)各堵了一维,
-而「词表差一个字」「夹具静默失效」这两维还只能靠人看。
-今天审了露马脚的两套,查出**判分器把总分压低了 8%**(tool 13→20、member 9→11)。
-而**一把全局偏严的尺子表现出来是「没变化」** —— 其余八套今天全部和旧记录持平,
-那恰恰是坏尺子最可能的样子。`case_check` 已经扫干净「题面」那一维,
-剩下三维要人去看:**写死数据状态 / 枚举中文说法 / 只看开头**。
+**⑦ ~~判据审计还有一半没做~~ → 已做完,这条待办漂了一个月** `[intent: judge-audit]`
+**2026-10-16 核过:四维都有东西自动盯着,`intent` 的状态「做完了(09-16)」是真的。**
+原来这条写着「『词表差一个字』『夹具静默失效』这两维还只能靠人看」—— 而
+`tools/vocab_check.py`、`tools/fixture_check.py`、`tools/case_check.py` **三个都在
+`check.sh` 里**,第四维(「禁的是一个字」→ 判据可以是函数)也还在用
+(`agent/ops_eval.不许给零销量的编天数`)。
 
-**⑧ 评测基线要盖上来路** `[intent: eval-provider]`
+🔺 **我差点照着它重做一遍** —— 而这份文档开头就写着这件事:
+「22 个形制没录」在交接里挂了很久、而它早已清零,下一个人会照着去重做。
+> 一个「还没做」和一个「做完了但没人把它从待办上撤下来」,
+> 在那条待办上长得一模一样 —— 而后者会让人白做一遍。
+
+当时留下的那条经验仍然成立,所以抄在这儿(别的地方没记):
+审了露马脚的两套查出**判分器把总分压低了 8%**(tool 13→20、member 9→11),
+而**一把全局偏严的尺子表现出来是「没变化」** —— 其余八套全部和旧记录持平,
+那恰恰是坏尺子最可能的样子。
+
+**⑧ 交接待办和 intent 状态长期不同步:7 条待办的 intent 已经标「做完了」** `[intent: judge-audit]`
+新加的那条判据(`intent_check` ④·续)当场抓到 **7 条**:advisor-columns、
+db-not-regenerable、eval-provider、fakedata-factory、judge-audit、
+pattern-knowledge-gaps、piece-ratio-review。
+**只报不拦**,因为这两份东西语义不同:intent 的「做完了」说的是**技术部分**做完,
+而交接待办说的是**还要有人做的下一个动作**(版师填数、业务拍板)。
+多数属于后者 —— 而 `intent` 本来有「**等人的活**」这个状态,没被用上。
+要逐份看:该标「等人的活」的改状态,真做完的把待办撤下来。
+(judge-audit 这一条我已经核完,见上面 ⑦。)
+
+**⑨ 评测基线要盖上来路** `[intent: eval-provider]`
 业务 2026-09-15 拍板:**一律用 Claude,不用 DeepSeek**。
 那一轮 DeepSeek 的数存档在 `agent/onetime-deepseek-20260915/`,**不许当基线**。
 ⚠️ `eval_provenance_check` 还没接进 check.sh —— 现存基线里
 chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前跑的。
 下一轮重跑就会补上。
 
-**⑨ 把 `*.advisor` 那七列真正删掉** `[intent: advisor-columns]`
+**⑩ 把 `*.advisor` 那七列真正删掉** `[intent: advisor-columns]`
 半天到一天,机械。要先把 38 个页面改成 join staff 取名字。
 
-**⑩ 假数据工厂:差集清单等评测会话来要** `[intent: fakedata-factory]`
+**⑪ 假数据工厂:差集清单等评测会话来要** `[intent: fakedata-factory]`
 差集清单整份交接挂着,对方开口再给,不主动推。
 
-**⑪ 2026-09-21 给工厂补的四项能力 —— 已全部落地,剩两件事** `[intent: fakedata-factory]`
+**⑫ 2026-09-21 给工厂补的四项能力 —— 已全部落地,剩两件事** `[intent: fakedata-factory]`
 `stable.py`(行级稳定)/ `repro.py`(跨进程跨日期)/ `anchor.py`(交付物锚定)/
 `agree.py`(跨字段一致),四个都进了 check.sh,咬合都真咬过。剩:
 
@@ -8948,7 +8965,7 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
     或直接往 `backend/图色钉住.json` 里加(锚文件是引用它,不存副本)。
     不补的话,那批新图的颜色没有任何东西护着。
 
-**⑫ 2026-09-21 下午:业务拍板 B 案之后连带查出的一串** `[intent: db-not-regenerable]`
+**⑬ 2026-09-21 下午:业务拍板 B 案之后连带查出的一串** `[intent: db-not-regenerable]`
 改「圆领袍」那个通称别名 → 重建 → 比对重建前后 → **拉出一串重建不可复现**:
 
   · `seed.py` 用内置 `hash()` 造供应商编码 —— **每重建一次 659 个 SKU 全换一批**。
@@ -8964,7 +8981,7 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
   · `account.pwd_salt/pwd_hash`、`op_log.ts` 登记为「每次都该变」并写明理由,
     每次跑都打出来 —— 一条没人再看的豁免和一个没修的 bug 长得一样。
 
-**⑬ 2026-09-21 傍晚:评测轮次做成结构 + 一个「写好了没接上」的防护** `[intent: judge-audit]`
+**⑭ 2026-09-21 傍晚:评测轮次做成结构 + 一个「写好了没接上」的防护** `[intent: judge-audit]`
 
 · `agent/rounds.py`(共用件)+ `agent/rounds_check.py`(棘轮门禁,13 套单轮登记在案)
 · `growth_eval` 接上多轮:跑完自己会说「轮间抖动 1 题 ≥ 版本差 1 题 →
@@ -8980,7 +8997,7 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 
   > **一个「写好了但没接上」的防护,和没有这个防护,在文件上长得一模一样。**
 
-**⑭ 2026-09-21:`growth_eval` 8 题里 3 题在轮间翻面 —— 而翻的原因是两类** `[intent: judge-audit]`
+**⑮ 2026-09-21:`growth_eval` 8 题里 3 题在轮间翻面 —— 而翻的原因是两类** `[intent: judge-audit]`
 用新判据跑的两轮:`7/8 / 6/8`,**G01、G03、G04 同时翻面**,和基线差 0 题。
 也就是说**这套题分辨不出小于 3 题的变化**;只跑一轮拿到 7/8 就会报「涨了一题」。
 

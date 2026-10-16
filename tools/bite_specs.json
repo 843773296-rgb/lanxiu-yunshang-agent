@@ -8067,8 +8067,8 @@
   "file": [
    {
     "path": "HANDOFF.md",
-    "old": "**③ 那 391 条占比一条都还没到「版师」档** `[intent: piece-ratio-review]`",
-    "new": "**③ 那 391 条占比一条都还没到「版师」档**"
+    "old": "那 391 条占比一条都还没到「版师」档** `[intent: piece-ratio-review]`",
+    "new": "那 391 条占比一条都还没到「版师」档**"
    }
   ],
   "预期红": "交接文档里每条待办都点名了一个 intent"
