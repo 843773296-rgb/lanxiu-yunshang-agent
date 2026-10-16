@@ -8079,8 +8079,8 @@
   "file": [
    {
     "path": "agent/refund_sets.py",
-    "old": "            if tm.negated(段, i):          # 被否定 = 这句话在说「不要它」",
-    "new": "            if True:                       # 咬合:退回「提到这个词就算说了别重发」"
+    "old": "if tm.negated(段, i):",
+    "new": "if True:"
    }
   ],
   "预期红": "反向:同样的陈述句和后果句、但**一句拒绝都没有**"

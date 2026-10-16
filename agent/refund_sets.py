@@ -285,8 +285,21 @@ def 分界点():
     > 在那串 12 位哈希上长得一模一样。
     """
     try:
-        sha = subprocess.run(["git", "-C", ROOT, "rev-parse", "HEAD"],
-                             capture_output=True, text=True, timeout=10).stdout.strip()[:12]
+        # ⚠️ **要看退出码,不是只读 stdout。** `subprocess.run` 命令失败时
+        # **不抛异常**(没传 check=True)—— 它返回 returncode 非 0、stdout 空,
+        # 于是 `sha` 成了空串、下面那个 except 分支**永远走不到**,
+        # 整个分界点变成一个空字符串写进结果文件。
+        # 2026-10-16 在咬合副本里撞到:`tools/bite_run.py` 复制工作区时不带 `.git`,
+        # 那里 `git rev-parse` 必然失败 —— 而**结果文件里那一行会从此说不清
+        # 用的是哪一版代码,没有任何东西报警**。
+        # (「颜色校验器退出码骗人」那条经验的反面:那次是只看退出码没读产物,
+        #  这次是只读产物没看退出码。)
+        _r = subprocess.run(["git", "-C", ROOT, "rev-parse", "HEAD"],
+                            capture_output=True, text=True, timeout=10)
+        if _r.returncode != 0 or not _r.stdout.strip():
+            return (f"(取不到 git HEAD:"
+                    f"{(_r.stderr or '').strip().splitlines()[0][:60] if _r.stderr else 'git 命令失败'})")
+        sha = _r.stdout.strip()[:12]
         # ⚠️ **已跟踪的改动**和**没进仓库的新文件**要分开报,不许混成一个「脏」。
         # 2026-10-16 并行会话量到:`git status --porcelain` 把未跟踪文件也算进去,
         # 而它的主检出里常驻一堆未跟踪文件 —— 于是那个标注在它那儿**永远挂着**,
