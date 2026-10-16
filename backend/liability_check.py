@@ -36,6 +36,13 @@ import truthdb
 咬合 = [
     ('把判定表里「脱线」那一行的责任方从我方改成客方(标注还停在我方)',
      '两条实现来自同一份文档'),
+    # 2026-10-16 并行会话从「改判下拉框」那边发现的:truth 表自己的两列对不上 ——
+    # 根因写「超出公差 · **我方免费返修**」而动作写「**收费改**,出示量体记录」。
+    # 那个框直接把 truth 的根因列给人选,于是一条自相矛盾的真值
+    # 会被人当成标准答案点下去,而**此前没有任何东西盯着这件事**。
+    ('把一条 BP-03 真值的 expected_action 改成和它根因相反的处理方式'
+     '(根因说我方免费,动作写收费改)',
+     '**truth 自己矛盾**'),
 ]
 
 def facts(mid):
@@ -164,16 +171,59 @@ def run(verbose=True):
             print(f"     {没出过题}")
             print("     这些多半是 `tools/seed_triage_tasks.py` 造给用户点的演示工单 ——"
                   "**刻意不写 truth**(编一份真值等于往评测里塞一道自己出的题)。")
+    # ── truth 自己不许自相矛盾(2026-10-16)──────────────────────────────
+    #
+    # 上面那几条对的是「真值 vs 口径规则」,而 **truth 表自己有两列**:
+    # `root_cause` 和 `expected_action` —— 它们也会对不上,而**没有任何东西盯着**。
+    #
+    # 真事:库里那条「尺寸偏差 · **超出公差 · 我方免费返修**」的 expected_action
+    # 写着「**收费改**,出示量体记录」。根因说我方免费、动作说收费。
+    # 来路是 `backend/seed_repair.py` 那条 UPDATE **只改了根因没改动作**,
+    # 而那几条记录原本是 seed.py 标注的「记录完整 · 客方收费改」。
+    # 🔺 同一段造的另一条「公差内 · 客方收费改」**没暴露问题,只因为动作恰好仍然对** ——
+    # 那比错的那条更危险:它让这个 bug 看起来只影响一条。
+    #
+    # 并行会话是从「改判下拉框」那边发现的 —— 那个框直接把 truth 的根因列给人选,
+    # 于是一条自相矛盾的真值会**被人当成标准答案点下去**。
+    # 用上面那份 EXPECT 逐条核,不另写一份「根因该配什么动作」。
+    for r in truthdb.rows("SELECT case_id, root_cause, expected_action FROM truth "
+                          "WHERE breakpoint='BP-03' ORDER BY case_id"):
+        rc, act = r["root_cause"], r["expected_action"] or ""
+        if rc not in EXPECT:
+            continue                 # 不在已知六种里 —— 上面那条已经报过了
+        _, 动作词 = EXPECT[rc]
+        if 动作词 not in act:
+            bad.append((r["case_id"],
+                        f"**truth 自己矛盾**:根因「{rc}」要的是「{动作词}」,"
+                        f"而 expected_action 写着「{act}」 —— "
+                        f"改判下拉框会把这条当标准答案给人选"))
+
     return bad, rows, missing
 
 
 if __name__ == "__main__":
     bad, rows, missing = run()
     print("\n" + "=" * 96)
-    if bad:
-        print(f"❌ {len(bad)} 条对不上 —— **两条实现来自同一份文档,对不上就有一边错了**:")
-        for t, w in bad: print(f"   · {t}:{w}")
+    # 两类问题要**分开报**,别混进同一句汇总里:
+    # ① 真值自己的两列对不上 → 去改那条真值(根因和处理方式必须一致)
+    # ② 真值和口径规则对不上 → 两边有一边错了,要人看是哪一边
+    # 混着报的后果不只是读起来累 —— 咬合**分不出红的是哪一条**
+    # (2026-10-16 实测:新加的咬合「改坏真值的处理方式」红了,
+    #  而红的那句汇总写的是「两条实现来自同一份文档」,于是它被判成
+    #  「红了,但红的不是那一条」)。
+    矛盾 = [(t, w) for t, w in bad if "truth 自己矛盾" in w]
+    对账 = [(t, w) for t, w in bad if (t, w) not in 矛盾]
+    if 矛盾:
+        print(f"❌ {len(矛盾)} 条**truth 自己矛盾** —— 根因和 expected_action 对不上,"
+              f"而改判下拉框会把这条当标准答案给人选:")
+        for t, w in 矛盾: print(f"   · {t}:{w}")
+        print("   去改那条真值(根因和处理方式必须一致);造数那头的来路见 "
+              "backend/seed_repair.py 那条 UPDATE。")
+    if 对账:
+        print(f"❌ {len(对账)} 条对不上 —— **两条实现来自同一份文档,对不上就有一边错了**:")
+        for t, w in 对账: print(f"   · {t}:{w}")
         print("   不要直接把真值改成规则算出来的 —— 那等于把这个检查关掉。")
+    if bad:
         sys.exit(1)
     print(f"✅ {len(rows)} 条判责标注与规则推导一致"
           f"{f';{len(missing)} 条规则暂无在办用例(已列出)' if missing else ''}")

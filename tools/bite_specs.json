@@ -8042,6 +8042,14 @@
   "预期红": "`run` **把它转给了** `mcp_config`"
  },
  {
+  "script": "backend/liability_check.py",
+  "改坏": "把一条 BP-03 真值的 expected_action 改成和它根因相反的处理方式(根因说我方免费,动作写收费改)",
+  "sql": [
+   "UPDATE truth SET expected_action='收费改,出示量体记录' WHERE breakpoint='BP-03' AND root_cause LIKE '%超出公差%'"
+  ],
+  "预期红": "**truth 自己矛盾**"
+ },
+ {
   "script": "backend/initpath_check.py",
   "改坏": "把在用的库里 task.waiting 那一列去掉(老库没跑过那个按需 ALTER TABLE)",
   "sql": [

@@ -51,22 +51,57 @@ def _造公差用例(c):
                             (SELECT p.fit_at FROM pickup p WHERE p.order_id=m.order_id) 签收
                      FROM maintain m
                      WHERE m.status IN ('待确认','待处理','处理中') AND m.issue='尺寸需调整'
+                       -- ⚠️ **只挑本来就有 BP-03 真值的单。**
+                       -- 2026-10-16 栽过:这里按 `齐[0]` / `齐[1]` 挑,而
+                       -- `tools/seed_triage_tasks.py` 后来造的演示工单 `MQ9003`
+                       -- 按 id 排在 MW 之前(MQ < MW),挤进了第一位 ——
+                       -- 而那条**刻意没有 truth**(编一份真值等于往评测里塞自己出的题)。
+                       -- 于是第一条 UPDATE **0 行受影响、静默空转**,
+                       -- 第二条把本该是「超出公差」的那单改成了「公差内」,
+                       -- 库里唯一的超公差用例就这么没了。
+                       -- > `UPDATE` 报 0 行和报成功,在没有 rowcount 检查时长得一模一样。
+                       -- (同一个教训 `agent/refund_sets.题们()` 也记过:
+                       --  真值按 resp_code **认**出来,不按顺序猜。)
+                       AND EXISTS(SELECT 1 FROM truth t
+                                  WHERE t.case_id=m.id AND t.breakpoint='BP-03')
                      ORDER BY m.id""").fetchall()
     齐 = [r for r in 行 if r[2] >= 4 and r[3]]          # 量体记录完整、签收过的:拿来做 ① ②
     缺 = [r for r in 行 if r[2] < 4 and r[3]]           # 记录不全、签收过的:拿来做 ③
     造 = []
+    # ⚠️ **根因和动作必须一起给、一起写。**
+    # 2026-10-16 并行会话从「改判下拉框」那边发现:库里那条
+    # 「尺寸偏差 · 超出公差 · 我方免费返修」的 expected_action 写着
+    # **「收费改,出示量体记录」** —— 根因说我方免费,动作说收费,自相矛盾。
+    # 根因不是抄错,是**没改**:下面那条 UPDATE 原来只写 root_cause 和
+    # expected_evidence,而这几条记录原本是 seed.py 标注的
+    # 「记录完整 · 客方收费改 / 收费改,出示量体记录」(它们量体项 ≥ 4),
+    # 改了根因之后动作还留在原处。
+    # 🔺 而另一条「公差内 · 客方收费改」**没暴露问题,只因为它的动作恰好仍然对** ——
+    # 那比错的那条更危险:它让这个 bug 看起来只影响一条。
+    # 口径三处都说超公差该免费:knowledge/liability.py:164(「我方做错,免费返修」)、
+    # backend/liability_check.py 的映射、顾问话术汇编(「超出公差…一律免费」)。
     if len(齐) >= 2:
         造.append((齐[0][0], '{"腰围": 4}', "尺寸偏差 · 超出公差 · 我方免费返修",
+                  "免费返修,不向客户收费",
                   "实测腰围差 4cm,公差 ±1.5cm —— 超出公差,我方免费返修(业务 2026-09-24)"))
         造.append((齐[1][0], '{"裙长": 1}', "尺寸偏差 · 公差内 · 客方收费改",
+                  "收费改,出示量体记录",
                   "实测裙长差 1cm,公差 ±2cm —— 在公差内,顾客要改收费改(业务 2026-09-24)"))
     # 第三例不用另造:「记录不全 → 我方免费改」本来就有用例(seed.py 标注的),
     # 时间窗只是给它加了期限(6 个月内才成立),不是新结论 —— 见 09 md 五之二那段说明。
-    for mid, 差, rc, ev in 造:
+    for mid, 差, rc, act, ev in 造:
         if 差:
             c.execute("UPDATE maintain SET 尺寸差=? WHERE id=?", (差, mid))
-        c.execute("UPDATE truth SET root_cause=?, expected_evidence=? WHERE case_id=? AND breakpoint='BP-03'",
-                  (rc, ev, mid))
+        cur = c.execute("UPDATE truth SET root_cause=?, expected_action=?, expected_evidence=? "
+                        "WHERE case_id=? AND breakpoint='BP-03'", (rc, act, ev, mid))
+        # **空转必须当场响。** 上面那条 EXISTS 已经挡住了「挑到没真值的单」,
+        # 这一句是第二道:WHERE 没命中时 sqlite 不报错、`rowcount` 是 0,
+        # 而外面那句「公差用例:2 条」照样打印 —— 一次「写进去了」和一次
+        # 「WHERE 一行都没匹配上」,在那句话上长得一模一样。
+        if cur.rowcount != 1:
+            raise SystemExit(
+                f"❌ 给 {mid} 写 BP-03 真值时 UPDATE 命中 {cur.rowcount} 行(该是 1)——"
+                f"这单在 truth 里没有 BP-03 记录,或者有重复。**不许当成写成功了**")
     if len(造) < 2:
         print(f"  ⚠️ 只造出 {len(造)} 条公差用例(要 2 条)—— 库里缺合适的尺寸类返修单")
     else:
