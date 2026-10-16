@@ -241,6 +241,47 @@ def 读冻结(路径=冻结文件):
 
 
 # ── 真跑(要 agentsite 的 venv)────────────────────────────────────────
+台账env = "LANXIU_MASK_LEDGER"
+
+
+def _台账路径(单号):
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), f"lanxiu-mask-{单号}-{os.getpid()}.jsonl")
+
+
+def 遮蔽台账(路径):
+    """读台账:遮蔽**在服务进程里**到底有没有开口。返回 [(押金单, 遮了几处), …]。
+
+    🔺🔺 **这是整条评测里最容易静默失效的一处,所以它是判据而不是日志。**
+
+    遮蔽挂在 MCP 服务**那个进程**里(`mcp/protocol.遮被判那笔押金`),
+    而「这一轮在判哪笔单」靠 env 传。可是 `agentsite/sdk.mcp_config` 给每个服务的 `env`
+    是**显式拼出来的** —— 差评那条是靠 `被判包裹=` 这个参数拼进去的。
+    所以我这条到不到得了那一跳,取决于 claude CLI 给 MCP 子进程传不传父进程的环境,
+    **而那件事没有证据**。
+
+    > 一个「遮蔽生效了」和一个「env 根本没到服务进程」,
+    > **在跑出来的分数上长得一模一样** —— 而后者的分数会**更好看**:
+    > 材料里写着「已退」、轨迹里有那条 SUCCESS,三道题全送分。
+
+    服务进程的 stderr 我读不到(它由 CLI 拉起),所以遮蔽往这个文件写一行。
+    **台账里没有这一轮的行,就不许给这一轮记分** —— 不是报一个好看的数。
+    """
+    if not os.path.exists(路径):
+        return []
+    出 = []
+    for 行 in io.open(路径, encoding="utf-8"):
+        行 = 行.strip()
+        if not 行:
+            continue
+        try:
+            d = json.loads(行)
+        except Exception:
+            continue
+        出.append((d.get("押金单"), d.get("遮了几处")))
+    return 出
+
+
 def 跑一题(题):
     """跑一道:题面从 `ops.研判提示词` 现取,材料靠 env 遮蔽,**一个字都不落库**。
 
@@ -252,15 +293,23 @@ def 跑一题(题):
     import ops as _ops
     import sdk
     bp, case, prompt = _ops.研判提示词("财务人工任务", 题["押金单"], 题["工单"])
-    原 = os.environ.get("LANXIU_JUDGING_DEPOSIT")
+    台账 = _台账路径(题["押金单"])
+    if os.path.exists(台账):
+        os.remove(台账)                       # 一轮一份,不许读到上一轮的行
+    原, 原台账 = os.environ.get("LANXIU_JUDGING_DEPOSIT"), os.environ.get(台账env)
     try:
         os.environ["LANXIU_JUDGING_DEPOSIT"] = 题["押金单"]     # ← 遮蔽:出事时的样子
-        r = asyncio.run(sdk.run(角色, prompt))
+        os.environ[台账env] = 台账                              # ← 遮蔽往这儿记它开了口
+        r = asyncio.run(sdk.run(角色, prompt, 被判押金=题["押金单"]))
     finally:
-        if 原 is None:
-            os.environ.pop("LANXIU_JUDGING_DEPOSIT", None)
-        else:
-            os.environ["LANXIU_JUDGING_DEPOSIT"] = 原
+        for k, v in ((("LANXIU_JUDGING_DEPOSIT"), 原), (台账env, 原台账)):
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    记了 = [x for x in 遮蔽台账(台账) if x[0] == 题["押金单"] and (x[1] or 0) >= 1]
+    r["遮蔽台账"] = 记了
+    r["遮蔽到了服务进程吗"] = bool(记了)
     return r
 
 
@@ -272,6 +321,14 @@ def 做(轮数=2):
         判们 = []
         for t in 题:
             r = 跑一题(t)
+            if not r.get("遮蔽到了服务进程吗"):
+                # **失败即关闭**:不记分、不写结果文件,当场说清为什么
+                raise AssertionError(
+                    f"{t['押金单']}:遮蔽台账里没有这一轮的行 —— "
+                    f"**没有证据说明遮蔽在 MCP 服务进程里开过口**,所以这一轮不许记分。"
+                    f"材料里很可能还写着闭环之后的「已退」,而那样三道题全送分、分数还更好看。"
+                    f"先查 `sdk.mcp_config` 有没有把被判押金拼进服务的 env"
+                    f"(差评那条是 `被判包裹=`)。台账:{_台账路径(t['押金单'])}")
             判 = 判一题(t, r.get("text"), r.get("trajectory"))
             判.update(轮=轮, 置信度那段=None, 调了几个工具=len(r.get("trajectory") or []),
                       交付检查=((r.get("交付检查") or {}).get("状态")), 模型=r.get("model"),
