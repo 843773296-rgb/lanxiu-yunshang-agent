@@ -27,11 +27,16 @@
      `v1.provider()` 的路取决于环境里有什么凭证:有 ANTHROPIC_API_KEY 就走**按量计费**,
      而 launchd 的环境和交互 shell 不是一套 —— 23 套 × 每天 × 自动,走错一天都发现不了,账单一直走。
      所以传给评测的环境**剥掉所有按量计费的凭证变量**,再用同一个环境真问一次 provider(数据工厂 10-14 提醒)。
+  ⑨ **开跑前真调一次模型,不只问「配的是哪条路」**(2026-10-16 补)。10-16 那晚 ⑦ 绿着(配置确实是 claude-oauth + Haiku),
+     而每一次调用都被拒:「Failed to authenticate. API Error: 403」—— 24 套全 0 分、一分钱没花,其中 17 套还记成「过」
+     (脚本没崩、退出码 0)。白天同一台机器调用正常,夜里后台任务登录不上(多半是锁屏后读不到钥匙串)。
+     > 一个「配的是对的路」和一个「这条路走得通」,在 ⑦ 那条检查上长得一模一样。
+     所以:开跑前用评测同一个环境真问一句,不通就整晚不跑;每套跑完再看输出里有没有认证失败,有就记「没跑成」,不记「过」。
   ⑧ **夜跑的分数不进基线文件**:每套跑完,把它往 agent/*.jsonl、agentsite/evals/*.jsonl 里新增的内容
      挪到 `agent/nightly/`,原文件**恢复原样**。基线是从那些文件读的 —— 人工基线曾被一轮
      用错模型的结果盖过(CLAUDE.md 第 4 节)。「不提交」不够:文件已经被改了,而基线是读文件的。
 """
-import datetime as dt, json, os, subprocess, sys, time
+import datetime as dt, json, os, re, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = os.path.join(ROOT, "agentsite", ".venv", "bin", "python")
@@ -81,6 +86,22 @@ def 评测环境():
     env = {k: v for k, v in os.environ.items() if k not in 按量计费的凭证}
     env.update(LANXIU_PROVIDER="claude", ANTHROPIC_MODEL="claude-haiku-4-5", PYTHONDONTWRITEBYTECODE="1")
     return env
+
+
+认证失败 = re.compile(r"Failed to authenticate|API Error: 40[13]|Invalid API key|Please run /login")
+
+
+def 真问一句():
+    """用**评测同一个环境**真调一次模型(走 Claude Code 命令行 —— 评测的 SDK 底下就是它)。返回 (通不通, 说明)。"""
+    try:
+        r = subprocess.run(["claude", "-p", "只回复两个字:正常", "--model", 要的路[1]], cwd=ROOT, env=评测环境(),
+                           capture_output=True, text=True, timeout=120)
+    except Exception as e:                                                   # noqa: BLE001
+        return False, f"{type(e).__name__}: {e}"[:160]
+    出 = (r.stdout + r.stderr).strip()
+    if r.returncode == 0 and "正常" in r.stdout and not 认证失败.search(出):
+        return True, "真调一次通了"
+    return False, 出[-160:] or f"退出码 {r.returncode}"
 
 
 def 走的哪条路():
@@ -143,7 +164,9 @@ def 跑一套(名, 参数, 截止):
         r = subprocess.run([PY, os.path.join("agent", 名), *参数], cwd=ROOT, env=env,
                            capture_output=True, text=True, timeout=限)
         尾 = [x for x in (r.stdout + r.stderr).strip().splitlines() if x.strip()][-3:]
-        结 = "过" if r.returncode == 0 else "判红"
+        # 跑到一半登录掉了也算(开跑前那一问只证明开跑那一刻通)—— 输出里有认证失败就是**没跑成**,
+        # 不记「过」:那套题一道都没真答,退出码 0 只说明脚本没崩(10-16 那晚 17 套就是这么「过」的)
+        结 = "没跑成(认证失败)" if 认证失败.search(r.stdout + r.stderr) else ("过" if r.returncode == 0 else "判红")
         return dict(套=名, 结果=结, 退出码=r.returncode, 分钟=round((time.time() - t0) / 60, 1), 尾=尾)
     except subprocess.TimeoutExpired:
         return dict(套=名, 结果="超时", 退出码=None, 分钟=round((time.time() - t0) / 60, 1), 尾=[f"超过 {限 // 60} 分钟被停"])
@@ -169,6 +192,11 @@ def main():
     if 路 != 要的路:
         说(f"❌ **整晚不跑**:评测环境走的是 {路},要的是 {要的路}(Claude 月租 + Haiku)。"
            f"走错一天就是一天的按量账单,而定时任务的失败默认没人看 —— 人来查这一行")
+        return 1
+    通, 话 = 真问一句()
+    if not 通:
+        说(f"❌ **整晚不跑**:配置是对的({路}),可真调一次模型不通 —— {话}。"
+           f"不跑是为了不造出 24 套「全 0 分」的假结果;这**不是能力 0 分**,是登录不上(多半是锁屏后后台读不到钥匙串)")
         return 1
     with open(TRIED, "w") as f:
         f.write(f"{现在:%Y-%m-%dT%H:%M:%S}\n")
