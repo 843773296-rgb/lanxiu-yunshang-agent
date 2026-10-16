@@ -47,6 +47,51 @@ def 遮被判那条(out):
     return 遮完
 
 
+_出事于缓存 = {}
+
+
+def 遮被判那笔押金(out):
+    """**正在被判的那笔押金单,它自己的处置痕迹一律按「出事时」还原** —— 和差评那道并列。
+
+    启动方把押金单号放进 env `LANXIU_JUDGING_DEPOSIT`;没设就原样返回。
+
+    为什么和差评分成两个函数、而不是合成一个:两边**认记录的办法不一样**
+    (差评按包裹号 + 长得像评价行;押金按时刻晚不晚于出事那一刻),
+    而合起来写就得在里面分流 —— 分流条件写错时,表现是「另一类一处也没遮」,
+    **而它不报错**。
+
+    ⚠️ `出事于` 要查库(`财务人工任务.created`),所以这里**只读打开**、并且**缓存** ——
+    每个工具的每次返回都过这一道,不缓存就是一次调用几十次查询。
+    查不到工单时**什么都不遮**并且**打一行到 stderr**:
+    > 一个「这笔单没有处置痕迹」和一个「我没找到分界点所以没遮」,
+    > **在返回值上长得一模一样**。
+    """
+    单 = (os.environ.get("LANXIU_JUDGING_DEPOSIT") or "").strip()
+    if not 单:
+        return out
+    _k = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "knowledge")
+    if _k not in sys.path:
+        sys.path.insert(0, _k)
+    import refund_replay as _RR
+    if 单 not in _出事于缓存:
+        import sqlite3
+        db = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "backend", "lanxiu.db")
+        c = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+        try:
+            _出事于缓存[单] = _RR.出事于(c, 单)
+        finally:
+            c.close()
+    出事 = _出事于缓存[单]
+    if not 出事:
+        log(f"[遮蔽] 被判押金 {单}:**找不到它的人工任务,分界点取不到 —— 一处也没遮**")
+        return out
+    遮完, 遮了 = _RR.遮住处置痕迹(out, 单, 出事)
+    if 遮了:
+        log(f"[遮蔽] 被判押金 {单}(出事于 {出事}):遮了 {len(遮了)} 处")
+    return 遮完
+
+
 def log(*a):
     """日志一律走 stderr"""
     print(*a, file=sys.stderr, flush=True)
@@ -100,7 +145,7 @@ class Server:
                 return self._ok(rid, {"content": [{"type": "text",
                     "text": f"没有名为 {nm} 的工具。可用:{list(self.tools)}"}], "isError": True})
             try:
-                out = 遮被判那条(t[3](**args))
+                out = 遮被判那笔押金(遮被判那条(t[3](**args)))
                 return self._ok(rid, {"content": [{"type": "text",
                     "text": json.dumps(out, ensure_ascii=False, indent=1)}], "isError": False})
             except TypeError as e:

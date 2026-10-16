@@ -1,0 +1,174 @@
+{
+ "冻于": "2026-10-16 08:56",
+ "单": {
+  "DQ9001": {
+   "get_deposit": {
+    "amount": 1200.0,
+    "appt_id": null,
+    "created": "T+0",
+    "customer_id": "C10000",
+    "id": "DQ9001",
+    "idem_key": "IDEM-DQ9001",
+    "status": "退款失败",
+    "updated": null
+   },
+   "get_payment_flow": [
+    {
+     "amount": 1200.0,
+     "channel": "微信支付",
+     "channel_serial": "WX9000000000",
+     "direction": "in",
+     "id": "PFDQ9001I",
+     "status": "success",
+     "ts": "T+0 12:46"
+    },
+    {
+     "amount": 1200.0,
+     "channel": "微信支付",
+     "channel_serial": "WX9100000000",
+     "direction": "out",
+     "id": "PFDQ9001O",
+     "status": "success",
+     "ts": "T+0 12:46"
+    }
+   ],
+   "get_refund_trace": [
+    {
+     "attempt": 1,
+     "channel": "微信支付",
+     "idem_key": "IDEM-DQ9001",
+     "req_amount": 1200.0,
+     "resp_code": "TIMEOUT",
+     "resp_msg": "渠道响应超时",
+     "ts": "T+0 12:46"
+    },
+    {
+     "attempt": 2,
+     "channel": "微信支付",
+     "idem_key": "IDEM-DQ9001",
+     "req_amount": 1200.0,
+     "resp_code": "TIMEOUT",
+     "resp_msg": "渠道响应超时",
+     "ts": "T+0 12:46"
+    },
+    {
+     "attempt": 3,
+     "channel": "微信支付",
+     "idem_key": "IDEM-DQ9001",
+     "req_amount": 1200.0,
+     "resp_code": "TIMEOUT",
+     "resp_msg": "渠道响应超时",
+     "ts": "T+0 12:46"
+    }
+   ],
+   "出事于": "T+0 12:46"
+  },
+  "DQ9002": {
+   "get_deposit": {
+    "amount": 800.0,
+    "appt_id": null,
+    "created": "T+0",
+    "customer_id": "C10001",
+    "id": "DQ9002",
+    "idem_key": "IDEM-DQ9002",
+    "status": "退款失败",
+    "updated": "T+0"
+   },
+   "get_payment_flow": [
+    {
+     "amount": 800.0,
+     "channel": "微信支付",
+     "channel_serial": "WX9000000001",
+     "direction": "in",
+     "id": "PFDQ9002I",
+     "status": "success",
+     "ts": "T+0 12:46"
+    }
+   ],
+   "get_refund_trace": [
+    {
+     "attempt": 1,
+     "channel": "微信支付",
+     "idem_key": "IDEM-DQ9002",
+     "req_amount": 800.0,
+     "resp_code": "ACCOUNT_CLOSED",
+     "resp_msg": "收款账户已注销",
+     "ts": "T+0 12:46"
+    },
+    {
+     "attempt": 2,
+     "channel": "微信支付",
+     "idem_key": "IDEM-DQ9002",
+     "req_amount": 800.0,
+     "resp_code": "ACCOUNT_CLOSED",
+     "resp_msg": "收款账户已注销",
+     "ts": "T+0 12:46"
+    },
+    {
+     "attempt": 3,
+     "channel": "微信支付",
+     "idem_key": "IDEM-DQ9002",
+     "req_amount": 800.0,
+     "resp_code": "ACCOUNT_CLOSED",
+     "resp_msg": "收款账户已注销",
+     "ts": "T+0 12:46"
+    }
+   ],
+   "出事于": "T+0 12:46"
+  },
+  "DQ9003": {
+   "get_deposit": {
+    "amount": 2000.0,
+    "appt_id": null,
+    "created": "T+0",
+    "customer_id": "C10002",
+    "id": "DQ9003",
+    "idem_key": "IDEM-DQ9003",
+    "status": "退款失败",
+    "updated": "T+0"
+   },
+   "get_payment_flow": [
+    {
+     "amount": 2000.0,
+     "channel": "微信支付",
+     "channel_serial": "WX9000000002",
+     "direction": "in",
+     "id": "PFDQ9003I",
+     "status": "success",
+     "ts": "T+0 12:46"
+    }
+   ],
+   "get_refund_trace": [
+    {
+     "attempt": 1,
+     "channel": "微信支付",
+     "idem_key": "IDEM-DQ9003",
+     "req_amount": 2000.0,
+     "resp_code": "INSUFFICIENT_BALANCE",
+     "resp_msg": "商户账户余额不足",
+     "ts": "T+0 12:46"
+    },
+    {
+     "attempt": 2,
+     "channel": "微信支付",
+     "idem_key": "IDEM-DQ9003",
+     "req_amount": 2000.0,
+     "resp_code": "INSUFFICIENT_BALANCE",
+     "resp_msg": "商户账户余额不足",
+     "ts": "T+0 12:46"
+    },
+    {
+     "attempt": 3,
+     "channel": "微信支付",
+     "idem_key": "IDEM-DQ9003",
+     "req_amount": 2000.0,
+     "resp_code": "INSUFFICIENT_BALANCE",
+     "resp_msg": "商户账户余额不足",
+     "ts": "T+0 12:46"
+    }
+   ],
+   "出事于": "T+0 12:46"
+  }
+ },
+ "说明": "三条退款研判题的题面材料 —— **遮完之后出事时的样子**。日期是「离世界今天几天」(T±n),因为这个世界每天 05:10 整体平移。遮后和这份对不上就红:多出来的那一处就是**漏遮**,而漏遮会让分数变好看。"
+}

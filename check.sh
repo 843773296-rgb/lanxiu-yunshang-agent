@@ -240,6 +240,7 @@ run "回测不许开卷(处置痕迹的字段都登记过)" python3 backend/back
 run "研判队列那一页不许把四件事压成一个「已销账」(后端分开报了而页面要真的读)" python3 agentsite/queue_view_check.py
 run "差评研判三套题集隔离(不重叠/时间真外推/测试集没被拿去调)+ 回测真的遮住了" python3 agent/triage_sets_check.py
 run "差评研判判分器 · 55 条对照(跨档漏报两句原话 + 夹缝那一列 + 小额档悬空不许报成通过)" python3 agent/triage_sets_judgetest.py
+run "三条退款研判题的题面材料是**出事时**的样子(DQ9001 已走完闭环;遮住处置痕迹 / 不遮掉考点 / 和出事时的基准逐处比 / 平移一天不假红 / 漏遮会红)" python3 agent/refund_case_check.py
 run "差评产线路的判定读法 · 五种自造形状(段首/段内/全文/读不出),段名从 TK04 现取而不是手抄(不调模型)" python3 agent/triage_pipeline_eval.py --自测读法
 # 版师是第一个「有写工具,但只有一个」的角色 —— 它特有的两种失败
 # (给多了 / 给死了)在界面上长得一模一样,所以两个方向都得测。

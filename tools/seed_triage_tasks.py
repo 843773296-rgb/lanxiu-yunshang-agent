@@ -51,6 +51,8 @@ sys.path[:0] = [os.path.join(根, "backend"), os.path.join(根, "knowledge"), �
 
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
+import refund_replay as _RR          # 回测口径:出事时的样子(状态只有那儿一份)
+
 # 退款失败的真因 —— 照 `backend/seed.py` 里那六种的形状,取其中三种。
 # 每一种的 resp_code 不同,模型查 get_refund_trace 才有得分辨。
 退款真因 = [
@@ -105,9 +107,13 @@ def 造财务(c, 现在, 真写, 要几条=3):
         cid = cust[i % len(cust)]
         amt = [1200.0, 800.0, 2000.0][i]
         if 真写:
+            # 状态**从回测口径那边取**(`knowledge/refund_replay.出事时押金状态`)——
+            # 评测要把这笔单还原成「出事时的样子」,而「出事时是什么状态」只能有一份。
+            # 两边各写一份 '退款失败' 的话,哪天造数改了状态,还原出来的就是**另一个场景**,
+            # 而它不报错:题照样出得来,只是不再是出事时那道题。
             c.execute("INSERT INTO deposit(id,customer_id,appt_id,amount,status,idem_key,created,updated)"
-                      " VALUES(?,?,?,?,'退款失败',?,?,?)",
-                      (did, cid, None, amt, f"IDEM-{did}", 现在[:10], 现在[:10]))
+                      " VALUES(?,?,?,?,?,?,?,?)",
+                      (did, cid, None, amt, _RR.出事时押金状态, f"IDEM-{did}", 现在[:10], 现在[:10]))
             c.execute("INSERT INTO payment_flow(id,deposit_id,direction,amount,channel,channel_serial,status,ts)"
                       " VALUES(?,?,'in',?,'微信支付',?,'success',?)",
                       (f"PF{did}I", did, amt, f"WX{9000000000 + i}", 现在))
