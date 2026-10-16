@@ -234,10 +234,22 @@ ck("副本上多写一条**晚于出事**的轨迹 → 它被遮掉,基准仍然
 副本2 = os.path.join(tempfile.mkdtemp(prefix="refundcase2-"), "lanxiu.db")
 shutil.copy2(api.DB, 副本2)
 cc = sqlite3.connect(副本2)
-# 这一条**没有时刻**可以露馅 —— 遮蔽认不出它,③ 必须靠「和基准对不上」抓到
+# 这一条**遮蔽认不出**(它不晚于出事那一刻)—— ③ 必须靠「和基准对不上」抓到。
+#
+# ⚠️ 时刻要**相对出事那一刻**算,不许写死。
+# 原来写的是 `{出事日期} 12:00`,它假定「出事时刻晚于 12:00」——
+# 我真库 12:46、本地从零重建 16:19 都成立,而 **CI 在 UTC 早上跑**
+# (run 时间戳 08:56Z),造数那一刻早于 12:00。于是这条本该「早于出事」的流水
+# 在 CI 上变成了**晚于**出事,被遮蔽正常拿掉,基准没差异 ——
+# 咬合于是判定「改坏了却没红」,而遮蔽其实工作得很好。
+# > 一条「咬合咬不动了」和一条「遮蔽工作得很好」,在那个 0 处差异上长得一模一样。
+# (今天第三次同一个形状:基准的时分秒、分界点的脏判断、现在是这里 ——
+#  **凡是写死的时刻,换个环境就失效,而失效时都不报错**。)
+_早于出事 = (_dt.datetime.fromisoformat(str(出事).strip().replace("T", " "))
+            - _dt.timedelta(minutes=17)).strftime("%Y-%m-%d %H:%M")
 cc.execute("INSERT INTO payment_flow(id,deposit_id,direction,amount,channel,channel_serial,status,ts)"
            " VALUES('PFDQ9001X','DQ9001','out',1200.0,'人工补退','WX咬合','success',?)",
-           (f"{str(出事)[:10]} 12:00",))
+           (_早于出事,))
 cc.commit(); cc.close()
 try:
     api.DB = 副本2
