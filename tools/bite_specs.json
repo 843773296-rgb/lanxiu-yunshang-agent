@@ -8192,5 +8192,53 @@
    }
   ],
   "预期红": "同一根因标注了两种处理 → 这个根因不进选项(不替人挑)"
+ },
+ {
+  "script": "backend/example_pool_check.py",
+  "改坏": "挑示例时不排除这一单自己",
+  "file": [
+   {
+    "path": "backend/example_pool.py",
+    "old": "if x[\"bp\"] != bp or x[\"case_id\"] == case_id:",
+    "new": "if x[\"bp\"] != bp:"
+   }
+  ],
+  "预期红": "挑示例永不挑这一单自己"
+ },
+ {
+  "script": "backend/example_pool_check.py",
+  "改坏": "挑示例不限示例池(评测那份也能被挑出来)",
+  "file": [
+   {
+    "path": "backend/example_pool.py",
+    "old": "    for x in 冻结的()[\"示例池\"]:\n        if x[\"bp\"] != bp",
+    "new": "    for x in 冻结的()[\"示例池\"] + 冻结的()[\"评测\"]:\n        if x[\"bp\"] != bp"
+   }
+  ],
+  "预期红": "挑出来的示例全在示例池里"
+ },
+ {
+  "script": "backend/example_pool_check.py",
+  "改坏": "切分不分层(只有一条的根因也切进示例池)",
+  "file": [
+   {
+    "path": "backend/example_pool.py",
+    "old": "        k = len(ids) // 3\n",
+    "new": "        k = max(1, len(ids) // 3)\n"
+   }
+  ],
+  "预期红": "评测的根因覆盖面一类不少"
+ },
+ {
+  "script": "backend/example_pool_check.py",
+  "改坏": "产品研判默认带上示例",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "def 研判提示词(任务类型, ref, task_id, 开差评=False, 带示例=False):",
+    "new": "def 研判提示词(任务类型, ref, task_id, 开差评=False, 带示例=True):"
+   }
+  ],
+  "预期红": "产品研判默认不带示例"
  }
 ]
