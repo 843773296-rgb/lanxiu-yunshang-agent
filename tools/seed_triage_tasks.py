@@ -52,6 +52,7 @@ sys.path[:0] = [os.path.join(根, "backend"), os.path.join(根, "knowledge"), �
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
 import refund_replay as _RR          # 回测口径:出事时的样子(状态只有那儿一份)
+from seed import 工单摘要_售后        # 售后工单摘要的公式**只许有一份**(见下面造售后那段)
 
 # 退款失败的真因 —— 照 `backend/seed.py` 里那六种的形状,取其中三种。
 # 每一种的 resp_code 不同,模型查 get_refund_trace 才有得分辨。
@@ -182,8 +183,13 @@ def 造售后(c, 现在, 真写, 要几条=3):
                                               created,updated,ext_system,synced_at,order_item_id)
                          VALUES(?,?,?,?,?,?,?,?,?,?,'售后/维保系统',?,?)""",
                       (mid, oid, cid, item_name, st, issue, shop, adv, 现在, 现在, 现在, item_id))
+            # 摘要调 `seed.工单摘要_售后` 而不是在这儿再拼一遍:`backend/seed.py:3126`
+            # 造的那 12 条售后工单用的是同一个公式,而 `tools/restore_task_summary.py`
+            # 要照它把被 AI 根因覆盖掉的摘要还原回来。
+            # **手拼第二份的后果不是报错**:还原出来的和新造的长得不一样,
+            # 而两边分别看都正常 —— 和确认书补单那次手写 INSERT 是同一个形状。
             c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,'待处理',?,?)",
-                      (tid, "售后判责", mid, 现在, f"{item_name} · {issue}"))
+                      (tid, "售后判责", mid, 现在, 工单摘要_售后(item_name, issue)))
         出.append((tid, f"返修 {mid} · {issue} · 订单 {oid}"))
     return 出
 

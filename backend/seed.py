@@ -779,6 +779,18 @@ PRIORITY = _lc.PRIORITY
 def _days(iso):
     return (T - date.fromisoformat(iso)).days if iso else None
 
+
+def 工单摘要_售后(item, issue):
+    """售后判责工单的摘要 = 商品 · 报修问题。**造数和还原调同一份**。
+
+    提成函数是因为 `tools/restore_task_summary.py` 要把被 AI 根因覆盖掉的那 12 条还原回来
+    (`backend/ops.py:682` 曾把模型的根因截 60 字写进 `task.summary`)。
+    手拼第二份的后果不是报错:**还原出来的和新造的长得不一样,而两边分别看都正常** ——
+    和确认书补单那次手写 INSERT 是同一个形状。
+    """
+    return f"{item} · {issue}"
+
+
 def match_rules(c):
     return _lc.match(dict(c, days_since_first_order=_days(c.get("first_order"))))
 
@@ -3113,7 +3125,7 @@ def run():
                 rc, act = "特性类未告知 · 我方让步", "让步处理"
                 ev = "**没有交付告知签收记录**,特性类未书面告知(09 第五节第 7 行)"
         c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",
-                  (f"T{mid}", "售后判责", mid, "待处理", "2026-08-25", f"{item} · {issue}"))
+                  (f"T{mid}", "售后判责", mid, "待处理", "2026-08-25", 工单摘要_售后(item, issue)))
         truths.append((mid, "BP-03", rc, act, ev, f"{item} · {issue} · 工单状态 {st}"))
 
     # ── ④ 成长推算留档 ──────────────────────────────────────────────
