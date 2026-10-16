@@ -473,6 +473,7 @@ run "研判队列「没走正门关的」· 凭据要真实(清理演示数据�
 run "研判队列只放能跑的 · 差评挪到值班台、一条不丢(用户 10-15 拍)"    python3 backend/queue_split_check.py
 run "退款执行写口 · 只有财务、先核实再重发、已退要流水号且不重复、通用入口绕不过(用户 10-15 拍)"    python3 backend/refund_write_check.py
 run "研判示例库 · 不相交、评测根因覆盖面不少、不挑自己、默认不带示例(用户 10-16 拍)"    python3 backend/example_pool_check.py
+run "研判评测判分 · 出账流水两种编号都认(10-16 真跑钉回)"    python3 agent/eval_hit_judgetest.py
 run "客户软合并 · 数据不搬、留建档最早、能撤、只认总部运营;列表 / 详情 / 审批中心 / 研判办结都认它(库副本上自造)" python3 backend/merge_check.py
 run "同意按年龄 · 不满 14 监护人、14—18 本人为准 + 家长付款双签、营销只看本人(自测)" python3 knowledge/consent_age.py
 run "订单确认书 · 确认下单同一事务生成、写不进就整单回滚、金额对独立 SQL、范围(库副本上跑)" python3 backend/contract_check.py

@@ -29,6 +29,7 @@ def facts(case_id):
     return dict(req=tr["req_amount"] if tr else None,
                 paid=fin["amount"] if fin else None,
                 out_id=out["id"] if out else None,
+                out_serial=out["channel_serial"] if out else None,
                 resp=tr["resp_code"] if tr else None)
 
 def nums_in(text, *vals):
@@ -116,13 +117,20 @@ def hit(text, truth_rc, case_id=None):
 
     # ③ 超时但实际已退:必须引到那条 out+success 的流水号,且不得真的建议再退一次
     if truth_rc == "渠道超时但实际已退":
-        if f.get("out_id") and f["out_id"] not in text:
-            return False, f"内容:没引到已成功的出账流水 {f['out_id']}"
+        # 库里的流水记录号和渠道流水号指的是**同一笔出账**,引哪个都算引到(2026-10-16 示例库对比真跑:
+        # 回答引了渠道流水号 WX…、根因和「不得再退」都对,却因为没写 PFD2000O 被判挂 —— 判据只认一种写法)
+        if f.get("out_id") and not any(x and x in text for x in (f["out_id"], f.get("out_serial"))):
+            return False, f"内容:没引到已成功的出账流水 {f['out_id']}(渠道流水号 {f.get('out_serial')})"
         # 原来这里用的是自己那份 8 个词的正则、窗口只有 8 字 ——
         # 「**不得**重新发起退款」这类曾经被判成「真的建议了重发」。统一走 textmatch。
         for m in re.finditer(r"(再次|重新|重复)(发起|提交)?退款", text):
-            if not tm.negated(text, m.start()):
-                return False, f"内容:真的建议了「{m.group(0)}」"
+            if tm.negated(text, m.start()):
+                continue
+            # 在讲**后果**不是在建议(2026-10-16 示例库对比真跑:「如果再次发起……更严重的是幂等保护失效,
+            # **导致**客户账户重复退款 800 元」被判成「建议了重复退款」)。看紧挨着的前文有没有后果 / 防范的词
+            if re.search(r"(导致|造成|引发|以免|防止|避免|风险|可能|会|就会|否则)[^。\n;;]{0,8}$", text[max(0, m.start() - 12):m.start()]):
+                continue
+            return False, f"内容:真的建议了「{m.group(0)}」"
         return True, ""
 
     # ④ 其余三类没有可核对的数字,只认判别性词根

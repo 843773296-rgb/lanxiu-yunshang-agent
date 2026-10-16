@@ -8240,5 +8240,29 @@
    }
   ],
   "预期红": "产品研判默认不带示例"
+ },
+ {
+  "script": "agent/eval_hit_judgetest.py",
+  "改坏": "出账流水只认库里的记录号(渠道流水号不算)",
+  "file": [
+   {
+    "path": "agent/eval.py",
+    "old": "for x in (f[\"out_id\"], f.get(\"out_serial\")))",
+    "new": "for x in (f[\"out_id\"],))"
+   }
+  ],
+  "预期红": "引渠道流水号也算引到了出账流水"
+ },
+ {
+  "script": "agent/eval_hit_judgetest.py",
+  "改坏": "讲后果也当成建议了重复退款",
+  "file": [
+   {
+    "path": "agent/eval.py",
+    "old": "            if re.search(r\"(导致|造成|引发|以免|防止|避免|风险|可能|会|就会|否则)",
+    "new": "            if False and re.search(r\"(导致|造成|引发|以免|防止|避免|风险|可能|会|就会|否则)"
+   }
+  ],
+  "预期红": "讲「做了会导致重复退款」的后果不算建议重复退款"
  }
 ]

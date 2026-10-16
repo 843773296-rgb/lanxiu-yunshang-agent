@@ -73,7 +73,7 @@ def 跑一题(题, 带示例):
                 过=bool(过) and not 没答成, 没答成=没答成, 照抄示例根因=照抄, 为什么=str(为什么)[:200],
                 调了几个工具=len(r.get("trajectory") or []),
                 工具=[t.get("tool") for t in (r.get("trajectory") or [])][:20],
-                花了=(r.get("usage") or {}).get("cost") or r.get("cost"), 原文=文[:4000])
+                花了=r.get("cost_usd"), 原文=文[:4000])
 
 
 def 做(轮数):
