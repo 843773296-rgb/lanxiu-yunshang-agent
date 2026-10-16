@@ -8064,5 +8064,41 @@
    }
   ],
   "预期红": "反向:同样的陈述句和后果句、但**一句拒绝都没有**"
+ },
+ {
+  "script": "backend/refund_write_check.py",
+  "改坏": "复核不看金额(≥1000 也不要财务)",
+  "file": [
+   {
+    "path": "backend/refund_write.py",
+    "old": "        要财务 = (d[\"amount\"] or 0) >= 1000\n",
+    "new": "        要财务 = False\n"
+   }
+  ],
+  "预期红": "3000 的单另一位店长复核完还差财务(金额只认库里)"
+ },
+ {
+  "script": "backend/refund_write_check.py",
+  "改坏": "复核不比发起人(自己发起自己复核)",
+  "file": [
+   {
+    "path": "backend/refund_write.py",
+    "old": "        if 已.get(\"发起\") and 已[\"发起\"] == me.get(\"no\"):\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "发起人不能复核自己发起的那一笔"
+ },
+ {
+  "script": "backend/refund_write_check.py",
+  "改坏": "通用改状态又能把审批中直接点进退款处理中",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        if (cur,to)==(\"退款审批中\",\"退款处理中\"):\n            return dict(ok=False,code=\"USE_REFUND_WRITE\"",
+    "new": "        if False:\n            return dict(ok=False,code=\"USE_REFUND_WRITE\""
+   }
+  ],
+  "预期红": "后台通用改状态点不过复核(指向退款写口)"
  }
 ]

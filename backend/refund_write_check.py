@@ -19,6 +19,9 @@ bad, n = [], 0
     ("登记已退不要流水号", "登记已退不填流水号被拒"),
     ("流水号不查重(一笔流水证明两笔退款)", "同一个流水号登记到第二笔被拒"),
     ("通用改状态又能直接点成「已退」", "后台通用改状态点不出「已退」(指向退款写口)"),
+    ("复核不看金额(≥1000 也不要财务)", "3000 的单另一位店长复核完还差财务(金额只认库里)"),
+    ("复核不比发起人(自己发起自己复核)", "发起人不能复核自己发起的那一笔"),
+    ("通用改状态又能把审批中直接点进退款处理中", "后台通用改状态点不过复核(指向退款写口)"),
 ]
 
 
@@ -102,6 +105,56 @@ try:
                   actor=店长["name"], me=店长)
     ck("请求体里自报「财务」不算数(角色从会话取)", not r.get("ok") and 状态("R-检查-3") == "退款失败", r)
 
+    # ── 退押金复核:真的两个人点(用户 10-16 拍)──
+    cx = sqlite3.connect(db)
+    店长们 = cx.execute("SELECT no, name, role FROM staff WHERE role='店长' AND status='启用' ORDER BY no LIMIT 2").fetchall()
+    顾 = cx.execute("SELECT no, name, role FROM staff WHERE role='顾问' AND status='启用' LIMIT 1").fetchone()
+    匠 = cx.execute("SELECT no, name, role FROM staff WHERE role='工匠' AND status='启用' LIMIT 1").fetchone()
+    for did, amt in (("R-检查-5", 500.0), ("R-检查-6", 3000.0), ("R-检查-7", 500.0)):
+        cx.execute("INSERT INTO deposit(id,customer_id,amount,status,idem_key,created,updated) VALUES(?,?,?,?,?,?,?)",
+                   (did, "C10000", amt, "已付", f"IDEM-{did}", "2026-01-01", "2026-01-01"))
+    cx.commit(); cx.close()
+    if not (len(店长们) == 2 and 顾 and 匠):
+        ck("库里有两位在职店长、一位顾问、一位工匠 —— 没有就没验,不算通过", False)
+    else:
+        甲, 乙 = (dict(no=x[0], name=x[1], role=x[2]) for x in 店长们)
+        顾问 = dict(no=顾[0], name=顾[1], role=顾[2]); 工匠 = dict(no=匠[0], name=匠[1], role=匠[2])
+        r = S.transit("bk-deposit", "R-检查-5", "退款审批中", {"role": "店长"}, actor=工匠["name"], me=工匠)
+        ck("工匠发起退押金被拒(请求体自报店长也不算)", not r.get("ok") and 状态("R-检查-5") == "已付", r)
+        r = S.transit("bk-deposit", "R-检查-5", "退款审批中", {"approved_by": "店长+财务"}, actor=顾问["name"], me=顾问)
+        ck("顾问发起后停在审批中(下拉框里的「店长+财务」不算复核)", r.get("ok") and 状态("R-检查-5") == "退款审批中", r)
+        r = S.transit("bk-deposit", "R-检查-5", "退款处理中", {"idem_key": "IDEM-x", "店长复核": 甲["no"]},
+                      actor=甲["name"], me=甲)
+        ck("后台通用改状态点不过复核(指向退款写口)", not r.get("ok") and r.get("code") == "USE_REFUND_WRITE"
+           and 状态("R-检查-5") == "退款审批中", r)
+        r = RW.复核("R-检查-5", 甲)
+        ck("不到 1000 的,另一位店长复核完就进退款处理中,并记一条处理中的请求",
+           r.get("ok") and 状态("R-检查-5") == "退款处理中" and 轨迹("R-检查-5")[-1][1] == "PENDING", r)
+
+        r = S.transit("bk-deposit", "R-检查-6", "退款审批中", {"amount": 0}, actor=甲["name"], me=甲)
+        ck("店长也能发起(请求体里的金额 0 不作数)", r.get("ok") and 状态("R-检查-6") == "退款审批中", r)
+        r = RW.复核("R-检查-6", 甲)
+        ck("发起人不能复核自己发起的那一笔", not r["ok"] and r["code"] == "SELF_APPROVE" and 状态("R-检查-6") == "退款审批中", r)
+        r = RW.复核("R-检查-6", 乙)
+        ck("3000 的单另一位店长复核完还差财务(金额只认库里)",
+           r.get("ok") and 状态("R-检查-6") == "退款审批中" and r.get("还差") == ["财务复核"], r)
+        r = RW.复核("R-检查-6", 乙)
+        ck("同一步不能点两次", not r["ok"] and r["code"] == "ALREADY", r)
+        r = RW.复核("R-检查-6", 财务)
+        ck("财务再点,两步齐了才进退款处理中", r.get("ok") and 状态("R-检查-6") == "退款处理中", r)
+
+        S.transit("bk-deposit", "R-检查-7", "退款审批中", {}, actor=顾问["name"], me=顾问)
+        r = RW.复核("R-检查-7", 财务)
+        ck("不到 1000 的财务不用点(不让财务替店长那一步)", not r["ok"] and r["code"] == "NOT_NEEDED"
+           and 状态("R-检查-7") == "退款审批中", r)
+        r = RW.复核("R-检查-7", 顾问)
+        ck("顾问不能复核", not r["ok"] and r["code"] == "WRONG_ROLE", r)
+        r = RW.复核("R-检查-7", 甲, "", "驳回")
+        ck("驳回要写理由", not r["ok"] and r["code"] == "NEED_REASON" and 状态("R-检查-7") == "退款审批中", r)
+        r = RW.复核("R-检查-7", 甲, "客户改约,不退了", "驳回")
+        n批 = sqlite3.connect(db).execute("SELECT COUNT(*) FROM refund_approval WHERE deposit_id='R-检查-7'").fetchone()[0]
+        ck("驳回回到已付,复核记录清掉(要退得重新发起)", r.get("ok") and 状态("R-检查-7") == "已付" and n批 == 0, (r, n批))
+
     # ── 闭环:已退之后,研判办结认它当回执 ──
     cx = sqlite3.connect(db); cx.row_factory = sqlite3.Row
     行, 类, 为什么 = ops.回执行不行(cx, {"type": "财务人工任务", "ref_id": "R-检查-2"}, "R-检查-2")
@@ -112,7 +165,8 @@ try:
     ox = sqlite3.connect(db)
     记 = {r[0] for r in ox.execute("SELECT code FROM op_log WHERE machine='bk-deposit' AND target LIKE 'R-检查-%'")}
     ox.close()
-    ck("成功和被拒都留了审计", {"REFUND_RETRY", "REFUND_DONE", "REFUND_FAIL", "WRONG_ROLE", "NEED_REFUND_NO"} <= 记, sorted(记))
+    ck("成功和被拒都留了审计", {"REFUND_RETRY", "REFUND_DONE", "REFUND_FAIL", "WRONG_ROLE", "NEED_REFUND_NO",
+                         "REFUND_APPROVE", "SELF_APPROVE", "REFUND_REJECT"} <= 记, sorted(记))
 finally:
     RW.DB, oplog.DB, ops.DB, S.DB = _真
     shutil.rmtree(tmp, ignore_errors=True)
@@ -121,4 +175,4 @@ print()
 if bad:
     print(f"{R}❌ {len(bad)} 条不过(验了 {n} 条){D}")
     sys.exit(1)
-print(f"{G}✅ 退款执行:只有财务、先核实再重发、已退要流水号且不重复、通用入口绕不过(验了 {n} 条){D}")
+print(f"{G}✅ 退款执行:复核两个人点、只有财务执行、先核实再重发、已退要流水号且不重复、通用入口绕不过(验了 {n} 条){D}")

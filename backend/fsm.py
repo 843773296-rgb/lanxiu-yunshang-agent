@@ -106,6 +106,8 @@ MERGE_ROLE={("待核验","待总部审批"):"店长",("待总部审批","已合�
 
 # 需要审批链的流转(后台 PRD 6.1 / 5.x)
 APPROVAL={("bk-deposit","已付","退款审批中"):"须由客服或店长发起、店长复核;单笔≥1000元增加财务复核"}
+# 「客服」在员工表里没有这个岗位 —— 前台接预约、收押金的是顾问,售后也接退押金(2026-10-16 按现有岗位落)
+退押金发起岗 = ("顾问", "售后", "店长")
 # 需要幂等号的流转
 IDEMPOTENT={("bk-deposit","退款审批中","退款处理中"),("bk-deposit","退款失败","退款处理中")}
 
@@ -144,10 +146,17 @@ def check(mid, frm, to, ctx=None):
     if (frm,to) in edges:
         # 合法边,再查附加约束
         key=(mid,frm,to)
-        if key in APPROVAL and not ctx.get("approved_by"):
-            return False,"NEED_APPROVAL",APPROVAL[key]
-        if key in APPROVAL and ctx.get("amount",0)>=1000 and "财务" not in str(ctx.get("approved_by","")):
-            return False,"NEED_FINANCE",f"单笔 ¥{ctx['amount']:,.2f} ≥ 1000,须增加财务复核"
+        # ⚠️ 2026-10-16 改(用户拍「真的两个人点」):原来这里认请求体里的 approved_by ——
+        #    发起人在下拉框里自己选「店长+财务」就算复核过了,一个人一下点进退款。
+        #    现在:发起只认会话里的岗位;**复核是另外的人另点**(记在 refund_approval 表),
+        #    「退款审批中 → 退款处理中」只认调用方从那张表现算出来的 店长复核 / 财务复核。
+        if key in APPROVAL and ctx.get("role") not in 退押金发起岗:
+            return False,"WRONG_ROLE",f"退押金须由{'/'.join(退押金发起岗)}发起,当前角色:{ctx.get('role') or '未指定'}"
+        if (mid,frm,to)==("bk-deposit","退款审批中","退款处理中"):
+            if not ctx.get("店长复核"):
+                return False,"NEED_APPROVAL",APPROVAL[("bk-deposit","已付","退款审批中")]+" —— 还没有店长复核"
+            if ctx.get("amount",0)>=1000 and not ctx.get("财务复核"):
+                return False,"NEED_FINANCE",f"单笔 ¥{ctx['amount']:,.2f} ≥ 1000,须增加财务复核"
         # ⚠️ **定制单开裁前必须过白坯试衣这道闸**(业务 2026-09-22)。
         #    闸放在状态机上、而不是只放在开裁那个写口里 —— 后台有一个通用的「改状态」入口
         #    (server.transit),只拦写口的话,从后台点一下就绕过去了。
@@ -287,11 +296,13 @@ if __name__=="__main__":
         print(f"  ❌ 订单状态机 {len(order_bad)} 条不符合预期:{order_bad}")
 
     cases=[("bk-deposit","已付","退款审批中",{}),
-           ("bk-deposit","已付","退款审批中",{"approved_by":"店长","amount":500}),
-           ("bk-deposit","已付","退款审批中",{"approved_by":"店长","amount":3000}),
-           ("bk-deposit","已付","退款审批中",{"approved_by":"店长+财务","amount":3000}),
-           ("bk-deposit","退款审批中","退款处理中",{}),
-           ("bk-deposit","退款审批中","退款处理中",{"idem_key":"IDEM-x"}),
+           ("bk-deposit","已付","退款审批中",{"role":"顾问","amount":500}),
+           ("bk-deposit","已付","退款审批中",{"role":"工匠","approved_by":"店长+财务","amount":3000}),
+           ("bk-deposit","退款审批中","退款处理中",{"idem_key":"IDEM-x","approved_by":"店长+财务","amount":3000}),
+           ("bk-deposit","退款审批中","退款处理中",{"店长复核":"S1","amount":500}),
+           ("bk-deposit","退款审批中","退款处理中",{"idem_key":"IDEM-x","店长复核":"S1","amount":500}),
+           ("bk-deposit","退款审批中","退款处理中",{"idem_key":"IDEM-x","店长复核":"S1","amount":3000}),
+           ("bk-deposit","退款审批中","退款处理中",{"idem_key":"IDEM-x","店长复核":"S1","财务复核":"F1","amount":3000}),
            ("bk-deposit","已付","已退",{}),
            ("bk-deposit","已退","退款处理中",{}),
            ("bk-deposit","退款失败","退款处理中",{"idem_key":"IDEM-x","role":"财务","上次":"确实没退成"}),
@@ -303,11 +314,11 @@ if __name__=="__main__":
            ("bk-deposit","退款处理中","已退",{"role":"顾问","退款流水号":"R1"}),
            ("bk-deposit","退款处理中","已退",{"role":"财务","退款流水号":"R1"}),
            # 重试上限仍然拦**系统自动重试**(没有财务的核实结论)—— 上面那条被 WRONG_ROLE 先拦了,这条专测它
-           ("bk-deposit","退款审批中","退款处理中",{"idem_key":"IDEM-x","retries":3}),
+           ("bk-deposit","退款审批中","退款处理中",{"idem_key":"IDEM-x","店长复核":"S1","amount":500,"retries":3}),
            ("bk-appt","已完成","已预约",{}),
            ("bk-appt","已预约","已完成",{}),
            ("bk-lifecycle","活跃","高价值",{})]
-    EXPECT=["NEED_APPROVAL","OK","NEED_FINANCE","OK","NEED_IDEM","OK",
+    EXPECT=["WRONG_ROLE","OK","WRONG_ROLE","NEED_APPROVAL","NEED_IDEM","OK","NEED_FINANCE","OK",
             "UNDEFINED","TERMINAL","OK","WRONG_ROLE","WRONG_ROLE","NEED_VERIFY","OK",
             "NEED_REFUND_NO","WRONG_ROLE","OK","RETRY_LIMIT","TERMINAL","SKIP","ALGORITHMIC"]
     print("状态流转引擎自测\n"+"="*76)

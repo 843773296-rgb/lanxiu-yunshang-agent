@@ -1043,6 +1043,7 @@ async function apptDetail(aid){
    </div>
    <div class="fbar"><button class="btn sol" disabled title="编辑预约 · 本期未实现">编辑预约</button>
      ${dep&&dep.status==="已付"?`<button class="btn sol" data-refund="${esc(dep.id)}" data-amt="${dep.amount}">退押金</button>`:""}
+     ${dep&&dep.status==="退款审批中"?`<button class="btn sol" data-approve="${esc(dep.id)}" data-amt="${dep.amount}">退款复核</button>`:""}
      ${dep&&dep.status!=="已付"&&dep.status!=="已退"?`<button class="btn" data-dep="${esc(dep.id)}">查看退款</button>`:""}
      <button class="btn sol" data-cancel="${esc(a.id)}">取消预约</button>
      <button class="btn" data-back="appts">返回</button></div>`);
@@ -1050,12 +1051,18 @@ async function apptDetail(aid){
   M.querySelectorAll("[data-dep]").forEach(e=>e.onclick=()=>view("task","T"+e.dataset.dep));
   M.querySelectorAll("[data-refund]").forEach(e=>e.onclick=()=>{
     const amt=Number(e.dataset.amt);
-    modal("发起退押金",[
-      {k:"approved_by",type:"select",label:`复核人${amt>=1000?"(本单 ¥"+amt.toLocaleString()+" ≥1000,须含财务)":""}`,
-       opts:["店长","店长+财务"]},
+    // 2026-10-16(用户拍「真的两个人点」):原来这里有个「复核人」下拉框,发起人自己选「店长+财务」就算复核过了。
+    // 现在发起只是发起;复核要另一位店长(≥1000 再加财务)登录后点「退款复核」。金额后端从库里读,这里不传
+    modal(`发起退押金(¥${amt.toLocaleString()})`,[
       {k:"note",type:"text",label:"退款原因",ph:"例如:客户取消预约"}],
       v=>doTransit("bk-deposit",e.dataset.refund,"退款审批中",
-                   {approved_by:v.approved_by,amount:amt},()=>view("appt",aid)))});
+                   {note:v.note},()=>view("appt",aid)))});
+  M.querySelectorAll("[data-approve]").forEach(e=>e.onclick=()=>{
+    const amt=Number(e.dataset.amt);
+    modal(`退押金复核(¥${amt.toLocaleString()}${amt>=1000?" · 店长、财务各点一次":" · 店长点一次"})`,[
+      {k:"结论",type:"select",label:"结论",opts:["通过","驳回"]},
+      {k:"意见",type:"text",label:"意见(驳回必填)",ph:"例如:已与客户电话核实取消原因"}],
+      v=>doOp("/api/refund-approve",{deposit:e.dataset.approve,结论:v.结论,意见:v.意见},()=>view("appt",aid)))});
   M.querySelectorAll("[data-cancel]").forEach(e=>e.onclick=()=>
     doTransit("bk-appt",e.dataset.cancel,"已取消",{},()=>view("appt",aid)));
 }

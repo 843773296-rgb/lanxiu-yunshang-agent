@@ -21,7 +21,7 @@
 
 ## 谁能做
 
-**只有财务**。身份由调用方从会话给(接口层),这里不读请求体里的角色。
+退押金复核(2026-10-16):店长;≥1000 再加财务;发起人不能复核自己发起的。其余步骤**只有财务**。身份由调用方从会话给(接口层),这里不读请求体里的角色。
 **不进智能体的工具表** —— 动钱的事,AI 出建议、人签字、财务执行。
 
 ## 凭据
@@ -37,6 +37,7 @@ sys.path.insert(0, HERE)
 from oplog import log_op
 
 财务 = "财务"
+店长 = "店长"
 方式们 = ("原渠道退回", "渠道核实其实已退", "线下转账", "其他(写明)")
 上次们 = ("确实没退成", "核实其实已退")
 
@@ -55,6 +56,10 @@ def 建表(c):
         c.execute("ALTER TABLE refund_trace ADD COLUMN refund_no TEXT")
     c.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_refund_no ON refund_trace(refund_no) "
               "WHERE refund_no IS NOT NULL")
+    # 退押金的发起和复核(用户 2026-10-16 拍「真的两个人点」):一行一个人一步,
+    # 同一笔同一步只能有一行 —— 两个店长同时点复核,后到的撞唯一约束
+    c.execute("""CREATE TABLE IF NOT EXISTS refund_approval(deposit_id TEXT, step TEXT, by_no TEXT,
+                 by_name TEXT, by_role TEXT, ts TEXT, note TEXT, UNIQUE(deposit_id, step))""")
 
 
 def _now():
@@ -211,6 +216,92 @@ def 登记仍失败(deposit_id, me, 原因):
     return dict(ok=True, 押金单=deposit_id, 状态="退款失败", 说明="已登记仍失败。")
 
 
+def 记发起(c, deposit_id, me, ts, note=""):
+    """「已付 → 退款审批中」成功那一刻记下发起人(server.transit 在同一个事务里调)。
+    复核时拿它比:**发起人不能复核自己发起的那一笔**。"""
+    c.execute("INSERT OR REPLACE INTO refund_approval(deposit_id,step,by_no,by_name,by_role,ts,note) "
+              "VALUES(?,?,?,?,?,?,?)", (deposit_id, "发起", me.get("no"), me.get("name"), me.get("role"), ts, note or ""))
+
+
+def _复核情况(c, deposit_id):
+    """{步: 工号} —— 状态机的 店长复核 / 财务复核 只从这里现算,请求体里写的一概不认。"""
+    return {r["step"]: r["by_no"] for r in c.execute(
+        "SELECT step, by_no FROM refund_approval WHERE deposit_id=?", (deposit_id,))}
+
+
+def 复核(deposit_id, me, 意见="", 结论="通过"):
+    """退押金复核(用户 2026-10-16 拍「真的两个人点」)。
+
+    店长点一次;单笔 ≥1000 财务再点一次;**发起人不能复核自己发起的,同一个人不能占两步**。
+    最后一个该点的人点完,在同一个事务里进「退款处理中」并记一条处理中的退款请求 ——
+    「都点完才真正退款」,中间没有谁能单独把钱送出去。
+    结论=驳回:回到「已付」(钱没动),已有的复核记录清掉,要退得重新发起。"""
+    me = me or {}
+    步 = {店长: "店长复核", 财务: "财务复核"}.get(me.get("role"))
+    if not 步:
+        return _deny(me, deposit_id, "WRONG_ROLE", f"退押金复核只有店长、财务能做,你是「{me.get('role') or '未登录'}」")
+    if 结论 not in ("通过", "驳回"):
+        return _deny(me, deposit_id, "BAD_VERDICT", "复核结论只能是「通过」或「驳回」")
+    if 结论 == "驳回" and not str(意见 or "").strip():
+        return _deny(me, deposit_id, "NEED_REASON", "驳回要写理由")
+    c = _c()
+    try:
+        d, n, 末 = _单(c, deposit_id)
+        if not d:
+            return _deny(me, deposit_id, "NO_DEPOSIT", f"没有押金单 {deposit_id}")
+        if d["status"] != "退款审批中":
+            return _deny(me, deposit_id, "BAD_FROM", f"押金单 {deposit_id} 现在是「{d['status']}」,只有「退款审批中」要复核")
+        已 = _复核情况(c, deposit_id)
+        要财务 = (d["amount"] or 0) >= 1000
+        if 步 == "财务复核" and not 要财务:
+            return _deny(me, deposit_id, "NOT_NEEDED", f"这笔 ¥{d['amount']:,.2f} 不到 1000,不需要财务复核,店长复核就够")
+        if 已.get(步):
+            return _deny(me, deposit_id, "ALREADY", f"这笔的{步}已经有人做过了")
+        if 已.get("发起") and 已["发起"] == me.get("no"):
+            return _deny(me, deposit_id, "SELF_APPROVE", "这笔是你发起的,不能自己复核 —— 钱要出门就要两个人")
+        if me.get("no") in {v for k, v in 已.items() if k != "发起"}:
+            return _deny(me, deposit_id, "SELF_APPROVE", "你已经复核过这笔的另一步,同一个人不能占两步")
+        t = _now()
+        if 结论 == "驳回":
+            n1 = c.execute("UPDATE deposit SET status='已付', updated=? WHERE id=? AND status='退款审批中'",
+                           (t, deposit_id)).rowcount
+            if n1 != 1:
+                c.rollback(); return _deny(me, deposit_id, "RACE", "这笔押金的状态刚被别人改了,请刷新再看")
+            c.execute("DELETE FROM refund_approval WHERE deposit_id=?", (deposit_id,))
+            c.commit()
+            log_op(me.get("name"), "bk-deposit", deposit_id, "退款审批中", "已付", True, "REFUND_REJECT",
+                   f"{步}驳回:{意见}"[:200], {"role": me.get("role"), "no": me.get("no")})
+            return dict(ok=True, 押金单=deposit_id, 状态="已付", reason="已驳回,押金回到「已付」,要退得重新发起。")
+        try:
+            c.execute("INSERT INTO refund_approval(deposit_id,step,by_no,by_name,by_role,ts,note) VALUES(?,?,?,?,?,?,?)",
+                      (deposit_id, 步, me.get("no"), me.get("name"), me.get("role"), t, 意见 or ""))
+        except sqlite3.IntegrityError:
+            c.rollback(); return _deny(me, deposit_id, "ALREADY", f"这笔的{步}刚被别人做了")
+        已[步] = me.get("no")
+        齐 = 已.get("店长复核") and (已.get("财务复核") or not 要财务)
+        状态 = "退款审批中"
+        if 齐:
+            幂等 = f"IDEM-{deposit_id}-A"
+            ok, code, why = _走(c, deposit_id, "退款审批中", "退款处理中",
+                               dict(店长复核=已.get("店长复核"), 财务复核=已.get("财务复核"), idem_key=幂等,
+                                    retries=n, amount=d["amount"], _ts=t))
+            if not ok:
+                c.rollback(); return _deny(me, deposit_id, code, why)
+            c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key) "
+                      "VALUES(?,?,?,?,?,'PENDING',?,?)",
+                      (deposit_id, n + 1, t, "微信支付", d["amount"], "复核齐了,发起退款", 幂等))
+            状态 = "退款处理中"
+        c.commit()
+    finally:
+        c.close()
+    log_op(me.get("name"), "bk-deposit", deposit_id, "退款审批中", 状态, True, "REFUND_APPROVE",
+           f"{步}通过{(':' + 意见) if 意见 else ''}"[:200], {"role": me.get("role"), "no": me.get("no")})
+    还差 = [] if 齐 else (["店长复核"] if not 已.get("店长复核") else []) + (["财务复核"] if 要财务 and not 已.get("财务复核") else [])
+    return dict(ok=True, 押金单=deposit_id, 状态=状态, 还差=还差,
+                reason="复核齐了,已发起退款(演示世界没有真实渠道,结果回来由财务登记)。" if 齐
+                else f"已记下{步},还差:{'、'.join(还差)}。")
+
+
 def 看(deposit_id):
     """押金单现在什么状态、退款轨迹 —— 只读,给研判弹窗的「退款处理」那一块用。"""
     with _c() as c:
@@ -220,7 +311,10 @@ def 看(deposit_id):
         tr = [dict(r) for r in c.execute(
             "SELECT attempt, ts, channel, resp_code, resp_msg, refund_no FROM refund_trace "
             "WHERE deposit_id=? ORDER BY attempt", (deposit_id,))]
-    return dict(押金单=d["id"], 金额=d["amount"], 状态=d["status"], 轨迹=tr,
-                能做={"退款失败": ["重新发起", "登记已退"], "退款处理中": ["登记已退", "登记仍失败"]}.get(d["status"], []),
+        批 = [dict(r) for r in c.execute(
+            "SELECT step, by_name, by_role, ts, note FROM refund_approval WHERE deposit_id=? ORDER BY ts", (deposit_id,))]
+    return dict(押金单=d["id"], 金额=d["amount"], 状态=d["status"], 轨迹=tr, 复核=批,
+                能做={"退款审批中": ["复核"], "退款失败": ["重新发起", "登记已退"],
+                     "退款处理中": ["登记已退", "登记仍失败"]}.get(d["status"], []),
                 方式们=list(方式们))
 

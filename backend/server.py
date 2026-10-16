@@ -285,12 +285,20 @@ def transit(mid, target, to, ctx, actor="魏欣新", me=None):
     if mid=="bk-deposit":
         r=rows("SELECT * FROM deposit WHERE id=?",target)
         if not r: return {"error":"押金单不存在"}
-        cur=r[0]["status"]; ctx.setdefault("amount",r[0]["amount"])
+        # 金额**只认库里的**(10-16 修:原来是 setdefault,请求体带个 amount=0 就绕过「≥1000 要财务复核」)
+        cur=r[0]["status"]; ctx["amount"]=r[0]["amount"]
         # 退款失败之后的处理、登记已退 **只走退款写口**(10-15):这里就算带了流水号也只进 op_log,
         # 进不了 refund_trace —— 「同一流水号不许登记两笔」就查不了。通用入口点这两条一律指过去
         if (cur,to) in (("退款失败","退款处理中"),("退款处理中","已退")):
             return dict(ok=False,code="USE_REFUND_WRITE",frm=cur,to=to,
                         reason="退款失败之后的重新发起、登记已退,要走「退款处理」(财务,要填核实结论 / 渠道退款流水号),通用改状态不做这两步")
+        # 复核也只走退款写口(10-16 用户拍「真的两个人点」):店长、≥1000 再加财务,各自登录各点一次,
+        # 最后一个点完自动进退款处理中。通用入口没有「谁复核过」的记录可查,一律指过去
+        if (cur,to)==("退款审批中","退款处理中"):
+            return dict(ok=False,code="USE_REFUND_WRITE",frm=cur,to=to,
+                        reason="退押金要店长复核(≥1000 再加财务复核),各自登录在「退款复核」里点,都点完自动发起退款")
+        if (cur,to)==("已付","退款审批中") and not (me and me.get("no")):
+            return dict(ok=False,code="NO_AUTH",frm=cur,to=to,reason="发起退押金要登录 —— 复核时要比对发起人是谁")
         ctx.setdefault("retries",rows("SELECT COUNT(*) n FROM refund_trace WHERE deposit_id=?",target)[0]["n"])
     elif mid=="bk-activity":
         r=rows("SELECT * FROM activity WHERE code=?",target)
@@ -391,6 +399,9 @@ def transit(mid, target, to, ctx, actor="魏欣新", me=None):
                     "取消":"cancelled_at"}.get(to)
             if _stamp:
                 c.execute(f"UPDATE ordr SET {_stamp}=wnow() WHERE id=?",(target,))
+        if mid=="bk-deposit" and to=="退款审批中":
+            import refund_write as _rw
+            _rw.建表(c); _rw.记发起(c, target, me, _rw._now(), ctx.get("note") or "")
         if mid=="bk-deposit" and to=="退款处理中":
             c.execute("""INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,
                          resp_code,resp_msg,idem_key)
@@ -3367,7 +3378,7 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
             return self._send(dict(ok=True, triage_id=tid, row=_ops.get_triage(tid)))
-        if p in ("/api/refund-retry","/api/refund-done","/api/refund-fail"):
+        if p in ("/api/refund-retry","/api/refund-done","/api/refund-fail","/api/refund-approve"):
             # ⚠️ 局部名别用 _u / _b / _r:这个文件里 _u 是全局函数,一赋值整个 do_POST 都当它局部(10-15 栽过,身份闸全红)
             # 退款处理(用户 10-15 拍):**身份只从会话取**,请求体里的角色一概不看。只有财务能过(在 refund_write 里判)
             import refund_write as _rw
@@ -3376,6 +3387,7 @@ class H(BaseHTTPRequestHandler):
             退体 = body or {}
             if p=="/api/refund-retry": 退果=_rw.重新发起(退体.get("deposit"), 退人, 退体.get("上次"), 退体.get("渠道") or "微信支付")
             elif p=="/api/refund-done": 退果=_rw.登记已退(退体.get("deposit"), 退人, 退体.get("退款流水号"), 退体.get("方式"), 退体.get("备注") or "")
+            elif p=="/api/refund-approve": 退果=_rw.复核(退体.get("deposit"), 退人, 退体.get("意见") or "", 退体.get("结论") or "通过")
             else: 退果=_rw.登记仍失败(退体.get("deposit"), 退人, 退体.get("原因"))
             return self._send(退果, 200 if 退果.get("ok") else 400)
         if p=="/api/ops-resolve":
