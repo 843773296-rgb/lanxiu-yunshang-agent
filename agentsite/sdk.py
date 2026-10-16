@@ -296,7 +296,7 @@ def 生效工具(kind, 收窄=None):
     return [t for t in 全 if t in 要]
 
 
-def mcp_config(me=None, kind=None, 名单=None, trace=None, 被判包裹=None):
+def mcp_config(me=None, kind=None, 名单=None, trace=None, 被判包裹=None, 被判押金=None):
     """把三个 MCP 服务挂上。工具面按用途分开,不给模型多余的选择。
 
     me:当前登录的人。**通过每个服务自己的 env 传,不改 os.environ** ——
@@ -313,6 +313,18 @@ def mcp_config(me=None, kind=None, 名单=None, trace=None, 被判包裹=None):
     if trace:
         # 这一轮的 trace_id —— 工具写下的产出(存报告)带着它,AI 管理平台才能从产出跳回生成它的那一轮
         env = {**env, "LANXIU_TRACE": trace}
+    if 被判押金:
+        # 这一轮在判哪笔押金单 —— 和上面那条差评**并列**(mcp/protocol.遮被判那笔押金)。
+        # ⚠️ 为什么非得从这儿拼进去、而不是指望 os.environ 被继承:
+        # 服务进程是 claude CLI 拉起的,**父进程的环境到不到那一跳没有证据**;
+        # 而到不了的时候材料里还写着闭环之后的「已退」——
+        # 一个「遮蔽生效了」和一个「env 没到服务进程」,在跑出来的分数上长得一模一样,
+        # 而后者的分数**更好看**(三道题全送分)。
+        # 台账那一条同理:遮蔽在服务进程里开没开口,只能靠它自己写下来。
+        env = {**env, "LANXIU_JUDGING_DEPOSIT": str(被判押金)}
+        _台账 = os.environ.get("LANXIU_MASK_LEDGER")
+        if _台账:
+            env = {**env, "LANXIU_MASK_LEDGER": _台账}
     if 被判包裹:
         # 这一轮在判哪条差评 —— 三个工具服务出门前把**它自己**的人工处置抹掉(mcp/protocol.遮被判那条)。
         # 走 env 而不是工具参数:模型改得了参数,改不了 env
@@ -899,11 +911,16 @@ def _记规矩(state, 系统):
 
 
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
-              provider=None, model_name=None, me=None, skills=None, effort=None, 被判包裹=None):
+              provider=None, model_name=None, me=None, skills=None, effort=None, 被判包裹=None,
+              被判押金=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
 
     被判包裹:**判差评时**给被判那条的包裹号 —— 工具服务会把它自己的人工处置抹掉
     (见 mcp/protocol.遮被判那条)。不给就不遮(聊天、复核照旧全给)。
+
+    被判押金:**判退款异常时**给被判那笔押金单号 —— 工具服务把它还原成**出事时**的样子
+    (见 mcp/protocol.遮被判那笔押金)。`DQ9001` 已经被走完闭环,不遮的话材料里
+    直接写着「已退」,而那道题考的正是「会不会漏看支付流水」—— **不遮就是送分**。
 
     guard=True 时挂上回答体检 hook:交付前检查一遍,不合格**打回重答**。
     提示词里那些「铁律」原本只是祈使句,挂上 hook 才是强制。
@@ -986,7 +1003,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             f"{' · ' + me['shop'] if me.get('shop') else ''}。\n"
             f"他能看到什么、能做什么由工号决定 —— 工具已经按他的身份取数了,"
             f"你不需要(也不能)替他换个身份查。\n" if me else "")),
-        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹),
+        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹,
+                               被判押金=被判押金),
         allowed_tools=工具,           # 和 MCP 暴露的是同一份 —— 不再用 `or`(空集合会被吃掉)
         # ⚠️ **allowed_tools 不是排他白名单。**
         # 它管的是「哪些工具不用逐次批准」,不是「只有这些工具存在」——

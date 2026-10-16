@@ -231,6 +231,103 @@ finally:
 ck(f"副本上塞一条**早于出事、遮蔽认不出**的流水 → 基准必须红(实际 {len(副本2差)} 处)"
    f" —— 这一关才是「漏遮」真正的样子:遮蔽不报错,基准报", lambda: len(副本2差) >= 1)
 
+# ── ⑥ 遮蔽到得了服务进程吗(这条链路断了,分数会更好看)──────────────────
+#
+# 前五关验的都是「**在这个进程里**遮得对不对」。但真跑时遮蔽跑在 **MCP 服务进程**里,
+# 而那个进程是 claude CLI 拉起的 —— 父进程的 `os.environ` 到不到那一跳**没有证据**。
+# 于是 `agentsite/sdk.mcp_config` 必须**显式**把单号拼进那个服务的 `env`
+# (差评那条走的就是这个办法),而 `sdk.run` 必须**把参数转下去**。
+#
+# 🔺 这四件事里断掉任何一件,后果都不是报错,而是:
+# > 材料里还写着闭环之后的「已退」—— **三道题全送分,分数更好看,没人会去查。**
+#
+# 判的是源码结构(ast),不是跑一次看看 —— 因为「跑一次没报错」恰恰是断掉时的样子。
+# ⚠️ 这一关自己也栽过一次:只认 `ast.FunctionDef` 的写法**找不到 `async def run`**,
+# 而它找不到的时候一个字都不报、`ck` 照样绿 —— 所以下面两种都要认。
+print("\n⑥ 遮蔽到得了服务进程吗:env 是显式拼进去的,这条链路不许断")
+import ast                                                   # noqa: E402
+
+押金env = "LANXIU_JUDGING_DEPOSIT"
+
+
+def 链路(源码):
+    """(mcp_config 收不收, run 收不收, run 转不转发, mcp_config 拼不拼 env)。
+
+    **纯函数,只吃源码文本** —— 所以下面能拿几份「改坏的样本」当场证明它真的会红,
+    不用去改真文件(改真文件验红,是在门禁上验门禁)。
+    """
+    t = ast.parse(源码)
+    收 = {"mcp_config": False, "run": False}
+    转发 = 拼env = False
+    for n in ast.walk(t):
+        if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue                      # ⚠️ 两种都要认:run 是 async def
+        if n.name not in 收:
+            continue
+        收[n.name] = "被判押金" in ([a.arg for a in n.args.args] +
+                                 [a.arg for a in n.args.kwonlyargs])
+        if n.name == "run":
+            转发 = any(isinstance(c, ast.Call)
+                     and getattr(c.func, "id", None) == "mcp_config"
+                     and any(k.arg == "被判押金" for k in c.keywords)
+                     for c in ast.walk(n))
+        else:
+            拼env = 押金env in ast.dump(n)
+    return 收["mcp_config"], 收["run"], 转发, 拼env
+
+
+_sdk源 = io.open(os.path.join(ROOT, "agentsite", "sdk.py"), encoding="utf-8").read()
+_收c, _收r, _转, _env = 链路(_sdk源)
+ck(f"`mcp_config` 收 `被判押金`", lambda: _收c)
+ck(f"`run` 也收(它是 `async def` —— 只认 FunctionDef 的判据在这儿会悄悄全绿)",
+   lambda: _收r)
+ck("`run` **把它转给了** `mcp_config`(光改 mcp_config 没用:不转发 = 永远 None)",
+   lambda: _转)
+ck(f"`mcp_config` 把单号**显式拼进服务的 env**(不靠环境继承 —— 那一跳没有证据)",
+   lambda: _env)
+
+# 人造对照:四份改坏的样本,每一份都必须被上面那个函数抓到。
+# (「新加的判据会不会红」和「它永远绿」,在一次通过的门禁上长得一模一样。)
+_好 = ("def mcp_config(me=None, 被判押金=None):\n"
+       f"    env = {{}}\n    if 被判押金:\n        env = {{**env, {押金env!r}: str(被判押金)}}\n"
+       "    return env\n"
+       "async def run(kind, prompt, 被判押金=None):\n"
+       "    return mcp_config(me=1, 被判押金=被判押金)\n")
+_坏样本 = {
+    "mcp_config 签名里没有它": _好.replace("def mcp_config(me=None, 被判押金=None):",
+                                      "def mcp_config(me=None):"),
+    "run 签名里没有它": _好.replace("async def run(kind, prompt, 被判押金=None):",
+                                "async def run(kind, prompt):"),
+    "run 收了却不转发": _好.replace("mcp_config(me=1, 被判押金=被判押金)", "mcp_config(me=1)"),
+    "env 没拼进去": _好.replace(f"env = {{**env, {押金env!r}: str(被判押金)}}", "pass"),
+}
+ck("人造对照:完好的样本四项全真", lambda: all(链路(_好)))
+for _名, _src in _坏样本.items():
+    ck(f"人造对照 · 「{_名}」必须被抓到",
+       lambda _s=_src: not all(链路(_s)))
+
+_proto源 = io.open(os.path.join(ROOT, "mcp", "protocol.py"), encoding="utf-8").read()
+ck("`遮被判那笔押金` 会往台账记一行(遮蔽在服务进程里开没开口,**只能靠它自己写下来**;"
+   "评测那头的规矩是台账没这一轮的行就不记分)",
+   lambda: "_记台账(单, 出事" in _proto源 and "def _记台账(" in _proto源)
+import refund_sets as _RS                                    # noqa: E402
+ck(f"台账那个环境变量名,评测和工具层是**同一个**(`{_RS.台账env}`)"
+   f" —— 两边各写一份的话,评测会永远读到一本空台账",
+   lambda: _RS.台账env in _proto源)
+
+# ── 咬合记录 ──────────────────────────────────────────────────────────
+# 左边「改坏了什么」,右边「预期红的那一条」。规格在 `tools/bite_specs.json` 里可重放。
+#
+# 挑的是 `sdk.run` 那一句转发:它是这条链路上**最像「已经做完了」的一环** ——
+# `mcp_config` 的签名改了、env 也拼了,看起来齐活,而 `run` 不把参数传下去的话
+# 那个形参永远是 None,遮蔽一次都不会发生。
+# 而它断掉的表现不是报错,是**三道题全送分、分数更好看**。
+咬合 = [
+    ('把 `sdk.run` 调 `mcp_config` 时转发被判押金那个实参去掉'
+     '(签名还在、env 还拼着,看起来齐活)',
+     '`run` **把它转给了** `mcp_config`'),
+]
+
 print()
 if 坏:
     print(f"{R}❌ {len(坏)} 处不对{D}")
