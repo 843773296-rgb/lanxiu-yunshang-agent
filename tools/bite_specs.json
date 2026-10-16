@@ -2730,8 +2730,8 @@
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "    for m in re.finditer(许诺, text or \"\"):",
-    "new": "    for m in re.finditer(许诺, \"\"):"
+    "old": "    for m in ([] if _退款研判 else re.finditer(许诺, text or \"\")):",
+    "new": "    for m in ([] if _退款研判 else re.finditer(许诺, \"\")):"
    }
   ],
   "预期红": "把价格推给店长 —— **一个折扣词都没有**"
@@ -8100,5 +8100,29 @@
    }
   ],
   "预期红": "后台通用改状态点不过复核(指向退款写口)"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "退款研判又被「不许让价」的软性那层误扣(放宽被撤回)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "for m in ([] if _退款研判 else re.finditer(许诺, text or \"\")):",
+    "new": "for m in re.finditer(许诺, text or \"\"):"
+   }
+  ],
+  "预期红": "真跑钉回:退款研判里「申请退款 800 元」(查过退款轨迹)—— 不许误拦"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "「重发要写前提」又不认「补足后再发」",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "               \"核实\", \"补足\", \"充足后\")",
+    "new": "               )"
+   }
+  ],
+  "预期红": "真跑钉回:余额不足,补足后再重新发起 —— 写了前提,不许误拦"
  }
 ]
