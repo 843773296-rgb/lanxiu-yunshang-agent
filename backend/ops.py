@@ -679,8 +679,9 @@ def save_triage(task_id, breakpoint, case_id, text, trajectory,
             # **这条建议是哪版提示词、有没有取材料**(数据工厂 10-13:两轮之间动了两个变量就归因不干净,
             # 落库的这一行是事后唯一能分开它们的东西)
             c.execute("UPDATE triage SET prompt_ver=? WHERE id=?", (prompt_ver, cur.lastrowid))
-        c.execute("UPDATE task SET status='待复核', summary=? WHERE id=?",
-                  (p["ai_root_cause"][:60] or "(未解析出根因)", task_id))
+        # 2026-10-16:**不再写 task.summary**。那一列是工单的处理记录(工单页带绿色 ✔ 显示),
+        # AI 的根因写进去就像已经办完;重跑时还会读到上一轮答案,两轮不独立。根因只在 triage 里。
+        c.execute("UPDATE task SET status='待复核' WHERE id=?", (task_id,))
         return cur.lastrowid
 
 
@@ -704,11 +705,7 @@ def reparse(only_failed=True):
                       "ai_confidence=? WHERE id=?",
                       (p["ai_root_cause"], p["ai_action"], p["ai_evidence"], conf, r["id"]))
             fixed.append(dict(id=r["id"], root_cause=p["ai_root_cause"][:50], confidence=conf))
-    for f in fixed:
-        with _c() as c:
-            c.execute("UPDATE task SET summary=? WHERE id=(SELECT task_id FROM triage WHERE id=?)",
-                      (f["root_cause"][:60], f["id"]))
-    return fixed
+    return fixed    # 不回写 task.summary,理由见 save_triage
 
 
 def get_triage(triage_id):

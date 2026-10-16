@@ -25,6 +25,7 @@ bad, n = [], 0
     ("待店长确认漏掉还开着的差评", "自造的开着的差评落在值班台那一块"),
     ("「未研判」档不看 done(关掉的单又会被挑去重跑)", "已经关单、没研判过的,不在「未研判」档"),
     ("复核写回去掉状态条件(后到的悄悄盖掉先到的)", "同一条研判复核第二次被拒"),
+    ("研判又把根因写进工单处理记录", "研判落库不动工单的处理记录"),
 ]
 
 
@@ -78,6 +79,13 @@ ck("已经关单、没研判过的,不在「未研判」档", "T-检查-分流-�
 if 店长:
     我 = dict(no=店长[0], name=店长[1], role=店长[2])
     tr = ops.save_triage(造["财务"][0], "检查", "检查", "根因:检查造的\n建议动作:检查\n证据:无", [])
+    记录 = lambda: sqlite3.connect(db).execute("SELECT summary FROM task WHERE id=?", (造["财务"][0],)).fetchone()[0]
+    ck("研判落库不动工单的处理记录(AI 根因不冒充办结记录)", 记录() == "检查", 记录())
+    with sqlite3.connect(db) as cx:
+        cx.execute("UPDATE triage SET ai_root_cause='' WHERE id=?", (tr,))
+    ops.reparse()
+    ck("重解析补出根因后也不回写处理记录", 记录() == "检查"
+       and (ops.get_triage(tr) or {}).get("ai_root_cause"), (记录(), (ops.get_triage(tr) or {}).get("ai_root_cause")))
     ops.resolve(tr, "已采纳", 我, 来源="检查")
     try:
         ops.resolve(tr, "已改判", 我, root_cause="检查", 来源="检查"); 第二次 = None
