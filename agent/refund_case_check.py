@@ -69,6 +69,15 @@ ck("押金单状态还原成出事时那个,而且**不是我在这儿写的那�
 ck("造数脚本的状态和回测口径**同一份**(两份会漂,漂了不报错)",
    lambda: __import__("seed_triage_tasks")._RR.出事时押金状态 is RR.出事时押金状态)
 
+# ⚠️ 工单行是「按时刻判」的盲区:`status` 和 `summary` **都没有自己的时刻**
+_工单行 = B.怎么取["list_tasks"]("DQ9001")
+_遮工单, _遮了工单 = RR.遮住处置痕迹(_工单行, "DQ9001", 出事)
+ck(f"工单行也遮了(实际 {len(_遮了工单)} 处)—— 它的痕迹不带时刻,"
+   f"「按时刻判」认不出来,所以这一行是**按名字**遮的", lambda: len(_遮了工单) >= 1)
+ck("`summary` 抹成 None —— 出事时它真的是 NULL(闭环往里写的是 **AI 自己那段错判原文**)",
+   lambda: _遮工单[0]["summary"] is None)
+ck("工单状态还原成出事时那个", lambda: _遮工单[0]["status"] == RR.出事时工单状态)
+
 # ── ② 遮过头了吗 ────────────────────────────────────────────────────
 活 = B.视图()["单"]
 print("\n② 遮过头了吗 —— 考点必须留着")
@@ -94,11 +103,33 @@ ck("基准文件在", lambda: 基 is not None)
 for x in 差[:8]:
     print(f"     {R}·{D} {x}")
 ck(f"逐处对得上(对不上 {len(差)} 处)", lambda: not 差)
-坏工具, 没扫到 = B.够得着工单表吗()
-ck(f"财务角色挂的工具**没有一个**读 task / triage 表 —— "
-   f"闭环把 AI 那段错判原文写进了 `task.summary`(ops.py:682),挂上就是送分口"
-   + (f";{R}有:{坏工具}{D}" if 坏工具 else ""), lambda: not 坏工具)
-ck(f"而且这一关真的扫到了源码(扫不到的:{没扫到 or '无'})", lambda: not 没扫到)
+漏盯, 没扫到 = B.没盯着的()
+挂的 = B.研判挂的工具()
+ck(f"研判那一轮挂的工具里,**能带出这笔单痕迹的都在基准的视野里**(挂了 {len(挂的)} 个)"
+   + (f";{R}没盯着:{漏盯}{D}" if 漏盯 else ""), lambda: not 漏盯)
+ck(f"而且真的扫到了源码(扫不到的:{没扫到 or '无'})", lambda: not 没扫到)
+ck(f"豁免的那几条理由**还成立**({list(B.不用盯的)})", lambda: not B.过期的豁免())
+_app = io.open(os.path.join(ROOT, "agentsite", "app.py"), encoding="utf-8").read()
+ck(f"研判真跑用的还是「{B.研判角色}」这个角色 —— {B.研判真跑在[0]} 里那一行。"
+   f"换了角色,这份基准盯的就是**另一个人挂的工具**"
+   f"(第一版就盯错过:盯的是财务,而研判是后台运营,偏偏后者挂着 list_tasks)",
+   lambda: B.研判真跑在[1] in _app)
+
+# 最直接的一条:**那段错判原文一个字都不许出现在题面材料里**
+import sqlite3 as _s3
+_c2 = _s3.connect(f"file:{api.DB}?mode=ro", uri=True)
+_错原文 = (_c2.execute("SELECT summary FROM task WHERE ref_id='DQ9001' AND type=?",
+                       (RR.工单类型,)).fetchone() or [None])[0]
+_c2.close()
+_材料串 = json.dumps(活, ensure_ascii=False)
+ck(f"库里那段 AI 错判原文{'(现在是 ' + repr((_错原文 or '')[:18]) + '…)' if _错原文 else '(现在是空的)'}"
+   f"**一个片段都没出现在遮后的材料里** —— 这道题考的就是别得出那个结论,"
+   f"而它正摆在工单行上",
+   lambda: (not _错原文) or all(_错原文[i:i + 12] not in _材料串
+                                for i in range(0, max(1, len(_错原文) - 12), 6)))
+if not _错原文:
+    print(f"     {Y}⚠️ 这一条现在是**空判**:库里那段原文是空的(这笔单还没被研判过,"
+          f"或者 summary 被清过)。它绿不等于遮住了 —— 等再走一次闭环才真的量得到{D}")
 
 # ── ④ 明天会不会假红 ────────────────────────────────────────────────
 print("\n④ 世界平移一天之后,基准还对得上吗(假红会让这条判据被关掉)")
@@ -119,7 +150,7 @@ def 挪一天(x):
     return x
 
 
-原料 = {s: {k: getattr(api, k)(s) for k in B.按押金单查的} for s in 活}
+原料 = {s: {k: 取(s) for k, 取 in B.怎么取.items()} for s in 活}
 今 = W.今天()
 
 

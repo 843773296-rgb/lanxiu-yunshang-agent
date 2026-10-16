@@ -42,7 +42,7 @@
 不是一条结构约束 —— 名单改一行它就够得着了,而那一轮的分会变好看。
 所以这里**扫财务角色挂的每个工具的源码**,有谁读 `task` / `triage` 表就红。
 """
-import argparse, inspect, io, json, os, re, sqlite3, sys
+import argparse, io, json, os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -52,6 +52,7 @@ for _p in (HERE, ROOT, os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowle
         sys.path.insert(0, _p)
 
 G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
+import refund_replay as RR
 基准文件 = os.path.join(HERE, "refund-case-baseline.json")
 
 # 三条题各自的押金单 —— **从造数脚本那边现取**(它从库里现扫号,不写死)
@@ -63,6 +64,76 @@ def 三条单(dbp):
         "ORDER BY ref_id LIMIT 3")]
     c.close()
     return r
+
+
+# 研判真跑时模型用的**角色** —— `agentsite/app.py` 里那一行 `sdk.run("task", prompt)`。
+#
+# ⚠️⚠️ 2026-10-16 实测:我第一版盯的是**财务**角色(FINANCE_TOOLS,只读账的五个工具),
+# 而研判根本不是以财务身份跑的,是**后台运营**。两者差在要紧的地方:
+# 后台运营挂着 `list_tasks`,而 `list_tasks` 是 `SELECT *` —— **`summary` 那一列跟着出来**,
+# 里面是闭环写进去的 **AI 自己那段错判原文**(`backend/ops.py:682`),也就是这道题的**错答案**。
+# > 一个「我核过模型够不着」和一个「我核的是另一个角色」,**在那个 ✅ 上长得一模一样。**
+# 所以角色名**在这儿写一次**,并且 `refund_case_check` 盯着 app.py 那一行有没有变。
+研判角色 = "task"
+研判真跑在 = ("agentsite/app.py", 'sdk.run("task", prompt)')
+
+# 这笔押金单的痕迹可能从哪些表里漏出来。**一张表都不许漏**:
+# 判据拿它扫「挂给研判的工具里谁读了这几张表」,扫出来的必须都在下面那份取法登记里。
+痕迹在这几张表 = ("task", "triage", "deposit", "refund_trace", "payment_flow")
+
+
+def _sdk源码名单():
+    """把 `agentsite/sdk.py` 里**模块级的字面量名单**全读出来 → {名字: [工具名]}。
+
+    不 `import sdk`:那个文件 `import claude_agent_sdk`,**要 agentsite 的 venv**。
+    而这条判据要**无条件进门禁** —— 依赖外部环境的检查会变成随机拦路,
+    而「有条件跑」的代价今天刚付过一次(`js_smoke.js` 红了多久都没人知道)。
+    """
+    import ast
+    src = io.open(os.path.join(ROOT, "agentsite", "sdk.py"), encoding="utf-8").read()
+    树 = ast.parse(src)
+    名单 = {}
+    for node in 树.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and \
+                getattr(node.targets[0], "id", None):
+            try:
+                v = ast.literal_eval(node.value)
+            except Exception:
+                continue
+            if isinstance(v, list) and all(isinstance(x, str) for x in v):
+                名单[node.targets[0].id] = v
+    return 名单, 树
+
+
+def 研判挂的工具():
+    """**研判那一轮模型真正挂着的工具** —— 从 `ROLE_TOOLS[研判角色]` 那个 lambda 现解。
+
+    那一行长这样:`"task": lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS`,
+    所以这里把 lambda 体里引用的几份名单加起来。
+
+    解不出来就**抛异常**,不返回空名单 —— 空名单会让下面每一关都「通过」,
+    而那正是这个项目反复栽的那个形状。
+    """
+    import ast
+    名单, 树 = _sdk源码名单()
+    for node in ast.walk(树):
+        if not isinstance(node, ast.Dict):
+            continue
+        for k, v in zip(node.keys, node.values):
+            if getattr(k, "value", None) != 研判角色 or not isinstance(v, ast.Lambda):
+                continue
+            出 = []
+            for n in ast.walk(v.body):
+                if isinstance(n, ast.Name):
+                    if n.id not in 名单:
+                        raise AssertionError(
+                            f"{研判角色} 角色的工具名单里有一份解不出来的:{n.id} —— "
+                            f"覆盖面已经不是这条判据以为的那个")
+                    出 += 名单[n.id]
+            if 出:
+                return 出
+    raise AssertionError(f"agentsite/sdk.py 里找不到 {研判角色} 角色的工具名单 —— "
+                         f"角色换了名字或名单换了地方,这条判据的覆盖面失效")
 
 
 def 财务挂的工具():
@@ -87,37 +158,101 @@ def 财务挂的工具():
                          "名单换了地方,这条判据的覆盖面已经不是它以为的那个")
 
 
-def _按押金单查的():
-    """模型在这道题上能调、而且**按押金单号查**的那几个工具 ——
-    **从财务角色挂的那份名单现取,不手抄三个名字**。
+def _这笔单的工单(单号):
+    """`list_tasks` 里属于这笔单的那一行 —— **只留这一行**。
 
-    ⚠️ 这一步是这份基准能不能答出「闭环以后多写了一张表」的关键:
-    手抄三个名字的话,哪天财务多挂一个带出押金处置痕迹的工具,
-    **基准的覆盖面不会跟着长** —— 它照样「逐处对得上」,而漏的那一处
-    从来没进过它的视野。
-    > 一个「全都比过了」和一个「我只比了我认识的那三个」,
-    > **在那个 ✅ 上长得一模一样。**
+    整份任务表有两百多条,全存进基准会把它变成一份随库变动的清单(每天假红);
+    而要盯的只有「**这笔单的痕迹有没有漏出来**」。
+    """
+    import api
+    return [x for x in api.list_tasks(task_type=RR.工单类型, status=api.看全部任务)
+            if x.get("ref_id") == 单号]
 
-    现取之后:多挂一个按押金单号查的工具 → 视图多一个键 → **和基准对不上 → 红**,
-    红了之后人要么登记它的遮蔽、要么重冻基准(而重冻是个显式动作)。
+
+# ── 取法登记:**基准盯着的每个工具,在这儿说清「这笔单的那部分怎么取」** ──────
+#
+# ⚠️ 为什么是一份显式登记,而不是「凡带 deposit_id 的就取」:
+# 第一版就是那么写的,于是 `list_tasks` **不在视野里** —— 它不带 deposit_id,
+# 而它恰恰是把 AI 错判原文带出来的那一个。
+# > 一个「全都比过了」和一个「我只比了我认识的那几个」,**在那个 ✅ 上长得一模一样。**
+# 现在反过来:判据扫「挂给研判的工具里谁读了那几张表」,**扫出来的不在这份登记里就红** ——
+# 漏登记不再是「静默少比一处」,是一条红。
+怎么取 = {
+    "get_deposit":      lambda 单: __import__("api").get_deposit(单),
+    "get_refund_trace": lambda 单: __import__("api").get_refund_trace(单),
+    "get_payment_flow": lambda 单: __import__("api").get_payment_flow(单),
+    "list_tasks":       _这笔单的工单,
+}
+
+
+# ── 豁免:**读了那几张表、但带不出这笔单** —— 一条一个理由,而且理由要**还成立** ───────
+#
+# 这个项目的规矩:豁免名单本身要有判据盯着(`tools/selftest_registry_check.py`
+# 那条「豁免名单里没有过期的」)。所以每条豁免带一个**现在还成立吗**的查法,
+# 过期了就红 —— 而不是靠谁记得回来删。
+def _差评类型():
+    """差评那个工单类型名 —— 从 `api.TASK_TYPES` 里认,不手抄字符串。"""
+    import api
+    return next(t for t in api.TASK_TYPES if "差评" in t)
+
+
+不用盯的 = {
+    "bad_ratings": (
+        "它只列差评那一类工单(店长的差评清单),而三条退款题是「{工单类型}」—— "
+        "两个类型不相交,它带不出这笔单的任何痕迹;而且它要店长身份,基准取不到它的返回。",
+        lambda: _差评类型() in __import__("inspect").getsource(
+            getattr(__import__("api"), "bad_ratings"))),
+}
+
+
+def 过期的豁免():
+    """哪几条豁免**已经不成立了**。空的才算过。"""
+    出 = []
+    for 名, (理由, 还成立吗) in 不用盯的.items():
+        try:
+            ok = bool(还成立吗())
+        except Exception as e:
+            ok = False
+            理由 = f"{理由}(而这条豁免自己的查法崩了:{type(e).__name__}: {e})"
+        if not ok:
+            出.append((名, 理由))
+    return 出
+
+
+def 读哪几张表(名):
+    """这个工具的源码里读了 `痕迹在这几张表` 里的哪几张。返回 (读了哪几张, 扫到源码没有)。
+
+    盲区:只扫这个函数**自己的**源码,不跟进它调的 helper。
     """
     import inspect
     import api
-    出 = []
-    for 全名 in 财务挂的工具():
+    fn = getattr(api, 名, None)
+    if fn is None:
+        return (), False
+    try:
+        src = inspect.getsource(fn)
+    except Exception:
+        return (), False
+    return tuple(t for t in 痕迹在这几张表
+                 if __import__("re").search(rf"(FROM|JOIN)\s+{t}\b", src, __import__("re").I)), True
+
+
+def 没盯着的():
+    """挂给研判的工具里,**能带出这笔单痕迹、而基准没盯着**的那些。
+
+    返回 (没盯着的, 扫不到源码的)。两样都要报得出来 ——
+    「一个都没有」和「一个都没扫到」在空列表上长得一模一样。
+    """
+    漏, 没扫到 = [], []
+    for 全名 in 研判挂的工具():
         名 = 全名.split("__")[-1]
-        fn = getattr(api, 名, None)
-        if fn is None:
+        表, 扫到 = 读哪几张表(名)
+        if not 扫到:
+            没扫到.append(名)
             continue
-        try:
-            if "deposit_id" in inspect.signature(fn).parameters:
-                出.append(名)
-        except (TypeError, ValueError):
-            continue
-    return tuple(出)
-
-
-按押金单查的 = _按押金单查的()
+        if 表 and 名 not in 怎么取 and 名 not in 不用盯的:
+            漏.append((名, 表))
+    return 漏, 没扫到
 
 
 def 遮完的样子(单号, dbp):
@@ -134,15 +269,14 @@ def 遮完的样子(单号, dbp):
     出 = {}
     try:
         os.environ["LANXIU_JUDGING_DEPOSIT"] = 单号
-        for 名 in 按押金单查的:
-            生 = getattr(api, 名)(单号)
+        for 名, 取 in sorted(怎么取.items()):
+            生 = 取(单号)
             出[名] = _proto.遮被判那笔押金(json.loads(json.dumps(生, ensure_ascii=False)))
     finally:
         if 原 is None:
             os.environ.pop("LANXIU_JUDGING_DEPOSIT", None)
         else:
             os.environ["LANXIU_JUDGING_DEPOSIT"] = 原
-    import refund_replay as RR
     c = sqlite3.connect(f"file:{dbp}?mode=ro", uri=True)
     出["出事于"] = RR.出事于(c, 单号)
     c.close()

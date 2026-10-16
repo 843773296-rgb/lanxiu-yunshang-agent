@@ -125,8 +125,11 @@ def 造财务(c, 现在, 真写, 要几条=3):
                 c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key)"
                           " VALUES(?,?,?,'微信支付',?,?,?,?)",
                           (did, a, 现在, amt, code, msg, f"IDEM-{did}"))
-            c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,'待处理',?,?)",
-                      (tid, "财务人工任务", did, 现在, None))
+            # 工单状态和「出事时」那份口径同一个来源(见上面押金状态那段的理由):
+            # 评测要把工单行还原成出事时的样子,而闭环会把它改成「已处理」
+            # 并且**把 AI 那段错判原文写进 summary** —— 那正是这道题的错答案。
+            c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",
+                      (tid, _RR.工单类型, did, _RR.出事时工单状态, 现在, None))
         出.append((tid, f"押金 {did} · {因} · {amt} 元 · 客户 {cid}"))
     return 出
 
