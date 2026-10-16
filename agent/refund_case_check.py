@@ -195,7 +195,8 @@ def 平移后的视图():
             出事挪 = f"{_dt.date.fromisoformat(str(出事)[:10]) + _dt.timedelta(days=1)}{str(出事)[10:]}"
             遮[k], _ = RR.遮住处置痕迹(挪, s, 出事挪)
         遮["出事于"] = f"{_dt.date.fromisoformat(str(出事)[:10]) + _dt.timedelta(days=1)}{str(出事)[10:]}"
-        出[s] = RR.归一化(遮, str(_dt.date.fromisoformat(str(今)[:10]) + _dt.timedelta(days=1)))
+        出[s] = RR.归一化(遮, str(_dt.date.fromisoformat(str(今)[:10]) + _dt.timedelta(days=1)),
+                        遮["出事于"])       # 出事那一刻也跟着挪了一天
     return 出
 
 

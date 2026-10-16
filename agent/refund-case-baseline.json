@@ -1,5 +1,5 @@
 {
- "冻于": "2026-10-16 09:06",
+ "冻于": "2026-10-16 16:23",
  "单": {
   "DQ9001": {
    "get_deposit": {
@@ -20,7 +20,7 @@
      "direction": "in",
      "id": "PFDQ9001I",
      "status": "success",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     },
     {
      "amount": 1200.0,
@@ -29,7 +29,7 @@
      "direction": "out",
      "id": "PFDQ9001O",
      "status": "success",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     }
    ],
    "get_refund_trace": [
@@ -40,7 +40,7 @@
      "req_amount": 1200.0,
      "resp_code": "TIMEOUT",
      "resp_msg": "渠道响应超时",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     },
     {
      "attempt": 2,
@@ -49,7 +49,7 @@
      "req_amount": 1200.0,
      "resp_code": "TIMEOUT",
      "resp_msg": "渠道响应超时",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     },
     {
      "attempt": 3,
@@ -58,12 +58,12 @@
      "req_amount": 1200.0,
      "resp_code": "TIMEOUT",
      "resp_msg": "渠道响应超时",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     }
    ],
    "list_tasks": [
     {
-     "created": "T+0 12:46",
+     "created": "T+0 出事+0分",
      "id": "TDQ9001",
      "ref_id": "DQ9001",
      "status": "待处理",
@@ -71,7 +71,7 @@
      "type": "财务人工任务"
     }
    ],
-   "出事于": "T+0 12:46"
+   "出事于": "T+0 出事+0分"
   },
   "DQ9002": {
    "get_deposit": {
@@ -92,7 +92,7 @@
      "direction": "in",
      "id": "PFDQ9002I",
      "status": "success",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     }
    ],
    "get_refund_trace": [
@@ -103,7 +103,7 @@
      "req_amount": 800.0,
      "resp_code": "ACCOUNT_CLOSED",
      "resp_msg": "收款账户已注销",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     },
     {
      "attempt": 2,
@@ -112,7 +112,7 @@
      "req_amount": 800.0,
      "resp_code": "ACCOUNT_CLOSED",
      "resp_msg": "收款账户已注销",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     },
     {
      "attempt": 3,
@@ -121,12 +121,12 @@
      "req_amount": 800.0,
      "resp_code": "ACCOUNT_CLOSED",
      "resp_msg": "收款账户已注销",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     }
    ],
    "list_tasks": [
     {
-     "created": "T+0 12:46",
+     "created": "T+0 出事+0分",
      "id": "TDQ9002",
      "ref_id": "DQ9002",
      "status": "待处理",
@@ -134,7 +134,7 @@
      "type": "财务人工任务"
     }
    ],
-   "出事于": "T+0 12:46"
+   "出事于": "T+0 出事+0分"
   },
   "DQ9003": {
    "get_deposit": {
@@ -155,7 +155,7 @@
      "direction": "in",
      "id": "PFDQ9003I",
      "status": "success",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     }
    ],
    "get_refund_trace": [
@@ -166,7 +166,7 @@
      "req_amount": 2000.0,
      "resp_code": "INSUFFICIENT_BALANCE",
      "resp_msg": "商户账户余额不足",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     },
     {
      "attempt": 2,
@@ -175,7 +175,7 @@
      "req_amount": 2000.0,
      "resp_code": "INSUFFICIENT_BALANCE",
      "resp_msg": "商户账户余额不足",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     },
     {
      "attempt": 3,
@@ -184,12 +184,12 @@
      "req_amount": 2000.0,
      "resp_code": "INSUFFICIENT_BALANCE",
      "resp_msg": "商户账户余额不足",
-     "ts": "T+0 12:46"
+     "ts": "T+0 出事+0分"
     }
    ],
    "list_tasks": [
     {
-     "created": "T+0 12:46",
+     "created": "T+0 出事+0分",
      "id": "TDQ9003",
      "ref_id": "DQ9003",
      "status": "待处理",
@@ -197,7 +197,7 @@
      "type": "财务人工任务"
     }
    ],
-   "出事于": "T+0 12:46"
+   "出事于": "T+0 出事+0分"
   }
  },
  "说明": "三条退款研判题的题面材料 —— **遮完之后出事时的样子**。日期是「离世界今天几天」(T±n),因为这个世界每天 05:10 整体平移。遮后和这份对不上就红:多出来的那一处就是**漏遮**,而漏遮会让分数变好看。"
