@@ -1381,6 +1381,14 @@
   "预期红": "⑤ 客户数和订单数不是整百"
  },
  {
+  "script": "backend/dataset_check.py",
+  "改坏": "往每日台账里塞几条假的「订单新增」,让基准那批订单数正好整百",
+  "sql": [
+   "INSERT INTO daily_fresh_batch(batch,表,主键,动作,原值) SELECT 'bite-假补足','ordr',id,'新增',NULL FROM ordr WHERE id NOT IN (SELECT 主键 FROM daily_fresh_batch WHERE 表='ordr' AND 动作='新增') ORDER BY id LIMIT (SELECT COUNT(*) % 100 FROM ordr WHERE id NOT IN (SELECT 主键 FROM daily_fresh_batch WHERE 表='ordr' AND 动作='新增'))"
+  ],
+  "预期红": "⑤ 客户数和订单数不是整百"
+ },
+ {
   "script": "agentsite/scheme_hook_test.py",
   "改坏": "把 on_prompt 里注入当前方案那一段去掉",
   "file": [
@@ -4654,8 +4662,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹),",
-    "new": "        mcp_servers=mcp_config(me, kind, trace=_tid, 被判包裹=被判包裹),"
+    "old": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹,\n                               被判押金=被判押金),",
+    "new": "        mcp_servers=mcp_config(me, kind, trace=_tid, 被判包裹=被判包裹,\n                               被判押金=被判押金),"
    }
   ],
   "预期红": "MCP 暴露的和 allowed_tools 是同一份"
@@ -7448,8 +7456,8 @@
   "file": [
    {
     "path": "mcp/protocol.py",
-    "old": "                out = 遮被判那条(t[3](**args))",
-    "new": "                out = t[3](**args)"
+    "old": "                out = 遮被判那笔押金(遮被判那条(t[3](**args)))",
+    "new": "                out = 遮被判那笔押金(t[3](**args))"
    }
   ],
   "预期红": "工具层:被判那条的人工处置抹成 None"
@@ -7520,8 +7528,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹),",
-    "new": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=None, 被判包裹=被判包裹),"
+    "old": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹,\n                               被判押金=被判押金),",
+    "new": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=None, 被判包裹=被判包裹,\n                               被判押金=被判押金),"
    }
   ],
   "预期红": "sdk:这一轮的 trace_id 先定,进工具子进程的 env,树用同一个"
@@ -8020,5 +8028,29 @@
    }
   ],
   "预期红": "从零重建时,造工单那步排在研判之后"
+ },
+ {
+  "script": "agent/refund_case_check.py",
+  "改坏": "把 `sdk.run` 调 `mcp_config` 时转发被判押金那个实参去掉(签名还在、env 还拼着,看起来齐活)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹,\n                               被判押金=被判押金),",
+    "new": "        mcp_servers=mcp_config(me, kind, 名单=工具, trace=_tid, 被判包裹=被判包裹),"
+   }
+  ],
+  "预期红": "`run` **把它转给了** `mcp_config`"
+ },
+ {
+  "script": "agent/refund_sets_judgetest.py",
+  "改坏": "让判分器退回「出现了就算」:认重发时不再看它有没有被否定",
+  "file": [
+   {
+    "path": "agent/refund_sets.py",
+    "old": "    未被否定的重发 = tm.says(文, 重发)            # 返回命中的那个词;被否定的不算",
+    "new": "    未被否定的重发 = next((w for w in 重发 if w in 文), None)  # 咬合:退回「出现了就算」"
+   }
+  ],
+  "预期红": "好答案判过(引了那条出账流水 + 否定了重发)"
  }
 ]
