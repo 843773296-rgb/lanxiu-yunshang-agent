@@ -387,6 +387,7 @@ async function open_(tid){
     return;
   }
   const d=await fetch("/api/ops-detail?id="+x.triage_id).then(r=>r.json());
+  当前改判选项=d.改判选项||[];
   const done=["已采纳","已改判","已升级"].includes(d.status);
   $("#panel").innerHTML=`<div class="hd">${hd}
     <span class="tag ${CF[d.ai_confidence]||""}">置信度 ${esc(d.ai_confidence)}</span>
@@ -402,9 +403,13 @@ ${d.human_root_cause||""}${d.human_note?"\n"+d.human_note:""}`):""}
     ${done && x.type==="财务人工任务" ? `<div class="fld" id="退款块"><div class="k">退款处理与办结(财务)</div>
       <div id="退款内">加载中…</div></div>` : ""}
     ${done?"":`<div class="edit" id="edit">
-      <label>你认定的根因</label><input type="text" id="hrc" placeholder="改判必填 —— 这句会成为这条 case 的标注答案">
-      <label>应该怎么处理</label><input type="text" id="hac" placeholder="例:不得重新发起退款,先向渠道核对流水">
-      <label>备注 / 依据</label><textarea id="hnt" rows="2" placeholder="选填"></textarea>
+      ${(d.改判选项||[]).length ? `
+      <label>你认定的根因(从预存的里选)</label>
+      <select id="hrc" onchange="选根因(this.value)"><option value="">— 请选择 —</option>
+        ${d.改判选项.map(o=>`<option value="${esc(o.root_cause)}">${esc(o.root_cause)}</option>`).join("")}</select>
+      <label>应该怎么处理(随根因带出,预存的标准处理)</label><div class="traj" id="hac">选了根因就显示</div>
+      <label>备注 / 依据</label><textarea id="hnt" rows="2" placeholder="选填"></textarea>`
+      : `<div class="hint">这类工单还没有预存的根因可选,改判不了 —— 觉得智能体判错了就点「升级给店长」。</div>`}
       <div class="hint"><b>注意:</b>改判会写进评测集并标为「人工改判」。
         它<b>只经过你一个人</b>的判断,回归时会单独统计通过率 —— 判错了会变成假的标准答案。</div>
     </div>`}
@@ -472,15 +477,21 @@ $("#panel").addEventListener("click",async e=>{
   await load(); await open_(sel);
   说(r.说明 || (动==="办结" ? "办结了 —— 回执核验通过" : "好了"));
 });
+// 改判只能选预存的根因(10-16 用户拍):选项和标准处理都从后端带过来,页面不手抄
+window.选根因=(v)=>{
+  const o=(当前改判选项||[]).find(x=>x.root_cause===v);
+  $("#hac").textContent=o?(o.action||"(这条没有预存处理方式)"):"选了根因就显示";
+};
+let 当前改判选项=[];
 window.toggleEdit=()=>{
   const e=$("#edit"); e.classList.toggle("on");
   const on=e.classList.contains("on");
   $("#btnEdit").textContent=on?"提交改判":"改判…";
   $("#btnEdit").onclick=on?()=>{
-    const rc=$("#hrc").value.trim();
-    if(!rc){$("#rmsg").textContent="改判必须写清根因 —— 它要当标注答案用。";return;}
+    const rc=($("#hrc")||{}).value||"";
+    if(!rc){$("#rmsg").textContent="改判要先选一个根因 —— 它要当标注答案用。";return;}
     resolve(+$("#panel").querySelector("[onclick^='resolve']").getAttribute("onclick").match(/\d+/)[0],
-            "已改判",rc,$("#hac").value.trim(),$("#hnt").value.trim());
+            "已改判",rc,"",$("#hnt").value.trim());
   }:window.toggleEdit;
 };
 window.resolve=async(id,decision,rc,ac,nt)=>{

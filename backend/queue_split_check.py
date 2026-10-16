@@ -88,7 +88,8 @@ if 店长:
        and (ops.get_triage(tr) or {}).get("ai_root_cause"), (记录(), (ops.get_triage(tr) or {}).get("ai_root_cause")))
     ops.resolve(tr, "已采纳", 我, 来源="检查")
     try:
-        ops.resolve(tr, "已改判", 我, root_cause="检查", 来源="检查"); 第二次 = None
+        # 第二次用「升级」:10-16 起改判只认预存根因,用随手写的根因会先被那道门拦下,测不到「不许覆盖」
+        ops.resolve(tr, "已升级", 我, 来源="检查"); 第二次 = None
     except ValueError as e:
         第二次 = str(e)
     ck("同一条研判复核第二次被拒", bool(第二次) and "已经是" in 第二次, 第二次)

@@ -641,7 +641,14 @@ def 研判提示词(任务类型, ref, task_id, 开差评=False):
         return bp, ref, (
             f"任务类型:财务人工任务\n押金单号:{ref}\n\n"
             "这笔押金退款已连续失败并转入人工处理。请查清失败的根本原因,"
-            "给出建议的处理动作,并列出支撑结论的证据。" + 四段)
+            "给出建议的处理动作,并列出支撑结论的证据。\n"
+            # 2026-10-16 加(用户拍「改」):退款三题六轮真跑,两类回答都是**查到了、根因也说对了**,
+            # 却没说出那句风险提醒 —— 建议动作里只有查证步骤。退款是唯一能把钱弄出去的动作,
+            # 少了「不能做什么、做了会怎样」,财务照着做就可能重复出账或白白重试。
+            # ⚠️ 只写原则,**不点名任何一种根因该怎么答** —— 点名了就是把评测答案递给它
+            "建议动作这一段**必须**写明:① 按你查到的根因,**哪一步不能做、做了会有什么后果**"
+            "(钱可能已经出账的,再发会不会重复出账;收款方那头还在不在、重试会不会注定失败);"
+            "② 下一步由谁、在什么前提成立之后做。只列查证步骤、不说后果的,不算给了建议。" + 四段)
     # BP-02 客户合并:ref 是「C21000|C21001」这样的一对
     甲, 乙 = str(ref).split("|")
     return bp, str(task_id)[1:], (
@@ -711,6 +718,24 @@ def reparse(only_failed=True):
 def get_triage(triage_id):
     r = _rows("SELECT * FROM triage WHERE id=?", triage_id)
     return r[0] if r else None
+
+
+def 改判选项(breakpoint):
+    """改判只能从**预先存好的根因**里选(用户 2026-10-16 拍「预先存好研判内容,选择就行了」)。
+
+    选项就是这一类断点**建库标注**里出现过的根因,每个根因带它那一条标准处理方式和证据 ——
+    从 truth 表现取,不在代码里手抄第二份(手抄的会和标注漂开)。
+    只取 src='建库标注':人工改判回流的条目只经过一个人,不能反过来变成别人的选项。
+    ⚠️ 只给页面和 resolve 用,**不进智能体的工具** —— 这是评测答案的根因清单。"""
+    # ⚠️ 根因和处理**成对取自同一行**,不分列各自聚合(数据工厂 10-16:造数曾只改了根因、没改处理,
+    # 同一根因下出现两种处理 —— 分列取 MIN 会把这个根因和另一行的处理拼在一起,看着完全正常)。
+    # 同一根因有两种以上不同处理 = 标注自相矛盾 → **不进选项**(不替人挑一个),交造数线修
+    组 = {}
+    for r in _rows("SELECT root_cause, expected_action, expected_evidence FROM truth "
+                   "WHERE breakpoint=? AND src='建库标注' AND root_cause IS NOT NULL ORDER BY case_id", breakpoint):
+        组.setdefault(r["root_cause"], []).append(r)
+    return [dict(root_cause=k, action=v[0]["expected_action"], evidence=v[0]["expected_evidence"])
+            for k, v in sorted(组.items()) if len({x["expected_action"] for x in v}) == 1]
 
 
 # ── 三、销账与回流 ───────────────────────────────────────────────────────
@@ -922,6 +947,17 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
     if not ok:
         _记(False, "ROLE", 为什么)
         raise PermissionError(为什么)
+    if decision == "已改判":
+        # 改判只认预存的根因,处理方式取它那一条标准处理 —— 页面传上来的根因 / 处理文字不作数
+        选 = 改判选项(t["breakpoint"])
+        中 = [o for o in 选 if o["root_cause"] == root_cause]
+        if not 选:
+            _记(False, "NO_OPTIONS", f"断点 {t['breakpoint']} 没有预存根因")
+            raise ValueError("这类工单还没有预存的根因可选,改判不了 —— 觉得智能体判错了就点「升级」")
+        if not 中:
+            _记(False, "BAD_ROOT_CAUSE", f"根因不在预存选项里:{root_cause}"[:120])
+            raise ValueError(f"改判的根因只能从预存的 {len(选)} 个里选,「{root_cause or '(空)'}」不在里面")
+        action = 中[0]["action"] if 中 else action      # 写成不会崩:上面那道门被拿掉时,检查要看见的是「放过了」而不是一个崩溃
     handler = 谁
     ts = now().strftime("%Y-%m-%d %H:%M:%S")
     flowed, conflict = False, None

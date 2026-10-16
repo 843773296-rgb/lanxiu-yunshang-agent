@@ -3103,6 +3103,8 @@ class H(BaseHTTPRequestHandler):
             if p=="/api/ops-health":  return self._send(_ops.health())
             if p=="/api/ops-detail":
                 d=_ops.get_triage((Q.get("id") or [None])[0])
+                # 改判下拉框的选项(10-16 用户拍「选择就行了」):这一类断点预存的根因 + 标准处理
+                if d: d=dict(d, 改判选项=_ops.改判选项(d.get("breakpoint")))
                 return self._send(d or dict(error="没有这条研判"), 200 if d else 404)
             return self._send(dict(error="no ops route"),404)
         # ── 用户生命周期 ────────────────────────────────────────────

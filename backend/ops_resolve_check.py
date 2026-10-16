@@ -34,6 +34,10 @@ def ck(名, ok, 附=""):
     ("resolve 成功不写 op_log", "对的角色销账 → 成功,op_log 查得到是谁"),
     ("接口层改回读请求体里的 handler", "接口层:身份只从登录态取"),
     ("销账上报不看是不是本库", "副本上的销账不往真投递箱里排"),
+    ("改判不查根因在不在预存选项里", "改判的根因不在预存选项里 → 拒"),
+    ("改判的处理方式又认页面传上来的", "改判成功,处理方式是预存的那一条(页面传的不作数)"),
+    ("改判选项把人工改判回流的也算进去", "人工改判回流的根因不会变成选项"),
+    ("同一根因两种处理时随便挑一个", "同一根因标注了两种处理 → 这个根因不进选项(不替人挑)"),
 ]
 
 print("研判销账的门 · 检查(库的临时副本上跑,真库不动)")
@@ -100,6 +104,45 @@ if 财 and 判 and 顾问 and 店长 and 财务 and 售后:
     ck("署名就是登录的那个人(不是「值班同学」)",
        店长["no"] in (c.execute("SELECT handler FROM triage WHERE id=?", (t1,)).fetchone()[0] or ""))
     ck("售后销售后判责 → 成功", ops.resolve(t2, "已采纳", 售后).get("decision") == "已采纳")
+    # ── 改判只能选预存的根因(用户 2026-10-16 拍「预先存好研判内容,选择就行了」)──
+    选 = ops.改判选项("BP-01")
+    ck("退款那一类有预存根因可选(从建库标注现取)", len(选) >= 2 and all(o["action"] for o in 选), 选)
+    c.execute("INSERT INTO truth(case_id,breakpoint,root_cause,expected_action,src) VALUES(?,?,?,?,?)",
+              ("检查-回流", "BP-01", "检查造的人工根因", "检查造的处理", "人工改判")); c.commit()
+    ck("人工改判回流的根因不会变成选项", "检查造的人工根因" not in [o["root_cause"] for o in ops.改判选项("BP-01")])
+    矛 = 选[-1]["root_cause"] if 选 else None
+    if 矛:
+        c.execute("INSERT INTO truth(case_id,breakpoint,root_cause,expected_action,src) VALUES(?,?,?,?,?)",
+                  ("检查-矛盾", "BP-01", 矛, "和原处理相反的处理", "建库标注")); c.commit()
+    ck("同一根因标注了两种处理 → 这个根因不进选项(不替人挑)",
+       bool(矛) and 矛 not in [o["root_cause"] for o in ops.改判选项("BP-01")], 矛)
+    if 矛:
+        c.execute("DELETE FROM truth WHERE case_id='检查-矛盾'"); c.commit()
+    财2 = c.execute("SELECT id FROM task WHERE type='财务人工任务' ORDER BY id LIMIT 1 OFFSET 1").fetchone()
+    if 财2 and 选:
+        t3 = ops.save_triage(财2[0], "BP-01", None, "根因:检查造的\n建议动作:检查造的\n证据:无", [])
+        try:
+            ops.resolve(t3, "已改判", 店长, root_cause="店长随手写的根因", action="随手写", 来源="检查"); 拒 = None
+        except ValueError as e:
+            拒 = str(e)
+        ck("改判的根因不在预存选项里 → 拒", bool(拒) and 日志(t3)["code"] == "BAD_ROOT_CAUSE"
+           and c.execute("SELECT status FROM triage WHERE id=?", (t3,)).fetchone()[0] == "待复核", 拒)
+        r = ops.resolve(t3, "已改判", 店长, root_cause=选[0]["root_cause"], action="页面上乱写的处理", 来源="检查")
+        行 = c.execute("SELECT status, human_root_cause, human_action FROM triage WHERE id=?", (t3,)).fetchone()
+        ck("改判成功,处理方式是预存的那一条(页面传的不作数)",
+           行["status"] == "已改判" and 行["human_root_cause"] == 选[0]["root_cause"]
+           and 行["human_action"] == 选[0]["action"], dict(行))
+        t4 = ops.save_triage(财2[0], "没有预存的断点", None, "根因:检查造的\n建议动作:检查造的\n证据:无", [])
+        try:
+            ops.resolve(t4, "已改判", 店长, root_cause=选[0]["root_cause"], 来源="检查"); 拒 = None
+        except ValueError as e:
+            拒 = str(e)
+        ck("没有预存根因的那一类 → 改判拒(指去升级),不让人随手写", bool(拒) and "升级" in 拒
+           and 日志(t4)["code"] == "NO_OPTIONS", 拒)
+    else:
+        ck("库里有第二条财务任务来验改判 —— 没有就没验,不算通过", False)
+    页 = open(os.path.join(ROOT, "agentsite", "web", "queue.html"), encoding="utf-8").read()
+    ck("研判弹窗的根因是下拉选择,不是手填框", '<select id="hrc"' in 页 and 'type="text" id="hrc"' not in 页)
     import rating_write as RW
     ck("评价差评跟「关差评」用同一份名单(不另抄)",
        all(ops.能销吗("评价差评", x)[0] for x in RW.能关差评的角色) and not ops.能销吗("评价差评", "顾问")[0])

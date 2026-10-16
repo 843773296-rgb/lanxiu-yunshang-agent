@@ -8144,5 +8144,53 @@
    }
   ],
   "预期红": "真跑钉回:余额不足,补足后再重新发起 —— 写了前提,不许误拦"
+ },
+ {
+  "script": "backend/ops_resolve_check.py",
+  "改坏": "改判不查根因在不在预存选项里",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "        if not 中:\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "改判的根因不在预存选项里 → 拒"
+ },
+ {
+  "script": "backend/ops_resolve_check.py",
+  "改坏": "改判的处理方式又认页面传上来的",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "        action = 中[0][\"action\"] if 中 else action",
+    "new": "        pass"
+   }
+  ],
+  "预期红": "改判成功,处理方式是预存的那一条(页面传的不作数)"
+ },
+ {
+  "script": "backend/ops_resolve_check.py",
+  "改坏": "改判选项把人工改判回流的也算进去",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "AND src='建库标注' AND root_cause IS NOT NULL",
+    "new": "AND root_cause IS NOT NULL"
+   }
+  ],
+  "预期红": "人工改判回流的根因不会变成选项"
+ },
+ {
+  "script": "backend/ops_resolve_check.py",
+  "改坏": "同一根因两种处理时随便挑一个",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "for k, v in sorted(组.items()) if len({x[\"expected_action\"] for x in v}) == 1]",
+    "new": "for k, v in sorted(组.items())]"
+   }
+  ],
+  "预期红": "同一根因标注了两种处理 → 这个根因不进选项(不替人挑)"
  }
 ]
