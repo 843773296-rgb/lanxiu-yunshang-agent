@@ -310,6 +310,9 @@ _proto源 = io.open(os.path.join(ROOT, "mcp", "protocol.py"), encoding="utf-8").
 ck("`遮被判那笔押金` 会往台账记一行(遮蔽在服务进程里开没开口,**只能靠它自己写下来**;"
    "评测那头的规矩是台账没这一轮的行就不记分)",
    lambda: "_记台账(单, 出事" in _proto源 and "def _记台账(" in _proto源)
+ck("三笔单里**至少有一笔真有痕迹要遮** —— 全都干净的时候遮不遮都一样,"
+   "而那正是「遮蔽看起来在工作」的假象来源(实测:只有 DQ9001 被走完了闭环)",
+   lambda: any(B.有痕迹要遮吗(s) for s in B.三条单(api.DB)))
 import refund_sets as _RS                                    # noqa: E402
 ck(f"台账那个环境变量名,评测和工具层是**同一个**(`{_RS.台账env}`)"
    f" —— 两边各写一份的话,评测会永远读到一本空台账",

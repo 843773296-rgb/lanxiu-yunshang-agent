@@ -283,6 +283,51 @@ def 遮完的样子(单号, dbp):
     return RR.归一化(出, W.今天())
 
 
+def 有痕迹要遮吗(单号):
+    """这笔单在库里**有没有**晚于出事时刻的处置痕迹 —— 有的话就必须至少被遮掉一处。
+
+    为什么要有这个函数:台账里的「遮了 0 处」有两种完全不同的含义 ——
+    · 这笔单本来就干净(没被研判采纳过、没登记过退款)→ **0 是正确答案**
+    · 这笔单被走完了闭环,而遮蔽一处也没遮上 → **漏遮,题面里写着「已退」,送分**
+    > 而这两种在那个 0 上长得一模一样。
+    2026-10-16 实测:DQ9001 被走完闭环(已退 / updated 20:27),遮 1~2 处;
+    DQ9002、DQ9003 还是出事时的原样,台账三行全是 0 —— 而那是对的。
+
+    **现算,不手写「哪笔单被闭环过」**:今天轮到 DQ9001,研判队列再跑一轮
+    就可能轮到另一笔。手写一份名单,它过期的样子正好是
+    「那笔单的痕迹一处没遮,而判据说这笔单没什么要遮」。
+
+    做法是把同一份材料取两遍 —— 设 env 和不设 env —— 不一样就说明有东西被抹掉了。
+    走的是**模型真正走的那一层**(协议层出门那一道),理由同 `遮完的样子`。
+    """
+    import protocol as _proto
+    原 = os.environ.get("LANXIU_JUDGING_DEPOSIT")
+    原台账 = os.environ.get("LANXIU_MASK_LEDGER")
+
+    def 取一遍(设env):
+        try:
+            if 设env:
+                os.environ["LANXIU_JUDGING_DEPOSIT"] = 单号
+            else:
+                os.environ.pop("LANXIU_JUDGING_DEPOSIT", None)
+            return {名: _proto.遮被判那笔押金(
+                json.loads(json.dumps(取(单号), ensure_ascii=False)))
+                for 名, 取 in sorted(怎么取.items())}
+        finally:
+            if 原 is None:
+                os.environ.pop("LANXIU_JUDGING_DEPOSIT", None)
+            else:
+                os.environ["LANXIU_JUDGING_DEPOSIT"] = 原
+    try:
+        # 这两趟**不许往台账写行** —— 台账是「服务进程里开过口」的证据,
+        # 判据自己在本进程里探一探,不能把证据给伪造出来。
+        os.environ.pop("LANXIU_MASK_LEDGER", None)
+        return 取一遍(True) != 取一遍(False)
+    finally:
+        if 原台账 is not None:
+            os.environ["LANXIU_MASK_LEDGER"] = 原台账
+
+
 def 视图(dbp=None):
     import api
     dbp = dbp or api.DB
