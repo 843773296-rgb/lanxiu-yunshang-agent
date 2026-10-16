@@ -801,7 +801,7 @@ LANXIU_PROVIDER=claude ./agentsite/.venv/bin/python \
 
 ### 下一步第一个动作
 
-**③ 题集走产线路**(并行会话的 ①② 已推 `62f11fe` / `f9dade7`)。
+**③ 题集走产线路**(并行会话的 ①② 已推 `62f11fe` / `f9dade7`)[intent: triage-queue]。
 接口:`agentsite/rating_triage.跑一条(task_id, pkg, me)`;
 遮蔽在**工具出门那一层**(env `LANXIU_JUDGING_PKG`,模型碰不到)。
 我定了:**第一轮用训练集(76 道)**,不碰验证集和测试集。
