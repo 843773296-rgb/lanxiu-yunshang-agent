@@ -259,6 +259,20 @@ def 判两轮(轮一, 轮二):
 
 
 # ── 冻结 ───────────────────────────────────────────────────────────────
+def 分界点标注(有已跟踪的改动, 没进仓库的py):
+    """把两个事实拼成标注。**纯函数**,所以下面那套人造对照咬得住它
+    (`agent/refund_sets_judgetest.py`)—— 原来这段内联在 `分界点()` 里,
+    对照只能去源码里搜字符串,而「源码里有那个词」和「它真的分开报了」是两件事。
+    """
+    标 = ""
+    if 有已跟踪的改动:
+        标 += "+工作区有未提交改动(这一轮的代码不在仓库里)"
+    if 没进仓库的py:
+        标 += (f"+另有 {len(没进仓库的py)} 个没进仓库的 .py"
+               f"(可能被 import:{'、'.join(没进仓库的py[:3])})")
+    return 标
+
+
 def 分界点():
     """哪个提交之后的分数和以前不可比 —— **取当前 HEAD**,不手写。
 
@@ -273,9 +287,28 @@ def 分界点():
     try:
         sha = subprocess.run(["git", "-C", ROOT, "rev-parse", "HEAD"],
                              capture_output=True, text=True, timeout=10).stdout.strip()[:12]
-        脏 = subprocess.run(["git", "-C", ROOT, "status", "--porcelain"],
+        # ⚠️ **已跟踪的改动**和**没进仓库的新文件**要分开报,不许混成一个「脏」。
+        # 2026-10-16 并行会话量到:`git status --porcelain` 把未跟踪文件也算进去,
+        # 而它的主检出里常驻一堆未跟踪文件 —— 于是那个标注在它那儿**永远挂着**,
+        # 即使开跑时已跟踪文件一处没改。(永远在报警的标注 = 不报警。)
+        #
+        # 但直接 `--untracked-files=no` 又太松:一个**新写的判据文件还没 git add**
+        # 时,它确实不在仓库里 —— 而那正是这个标注要警告的情形。
+        # 两者对「这一轮用的哪版代码」的后果不一样:
+        # 已跟踪的改动是**改动**(照那个号 checkout 拿到的是另一版),
+        # 未跟踪的新文件是**缺失**(只在它被 import 时才影响这一轮)。
+        # 所以只盯未跟踪的 `.py`(可能被 import 的那种),别的不管。
+        改 = subprocess.run(["git", "-C", ROOT, "status", "--porcelain",
+                             "--untracked-files=no"],
                             capture_output=True, text=True, timeout=10).stdout.strip()
-        return sha + ("+工作区有未提交改动(这一轮的代码不在仓库里)" if 脏 else "")
+        # ⚠️ `-c core.quotepath=false`:不加的话中文路径会被转义成
+        # `?? "tools/_\344\270\264..."`,**结尾是引号不是 `.py`**,这一条就永远筛不出东西。
+        # (今天第二次撞这个 —— 上一次是自动解冲突时按文件名筛,中文名一个都没匹配上。)
+        野 = [l[3:] for l in subprocess.run(
+            ["git", "-c", "core.quotepath=false", "-C", ROOT, "status", "--porcelain"],
+            capture_output=True, text=True, timeout=10).stdout.splitlines()
+            if l.startswith("??") and l.rstrip().endswith(".py")]
+        return sha + 分界点标注(bool(改), 野)
     except Exception as e:
         return f"(取不到 git HEAD:{type(e).__name__})"
 
