@@ -219,7 +219,10 @@ shutil.copy2(api.DB, 副本)
 cc = sqlite3.connect(副本)
 cc.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key)"
            " VALUES('DQ9001',9,?,'渠道核实','1200','SUCCESS','咬合:闭环又写了一条','IDEM-DQ9001-咬合')",
-           (f"{str(出事)[:10]} 23:30",))
+           # 出事时刻 + 1 分钟,不写死「当天 23:30」—— 10-18 多日期体检:09-30 那份 23:32 建库,出事就在 23:32,
+           # 「23:30」反而早于出事、被当成漏遮报红(同文件下面「早于出事」那条早就按出事时刻往回推了,这条漏了)
+           ((_dt.datetime.fromisoformat(str(出事).strip().replace("T", " "))
+             + _dt.timedelta(minutes=1)).strftime("%Y-%m-%d %H:%M"),))
 cc.commit(); cc.close()
 原DB = api.DB
 try:
