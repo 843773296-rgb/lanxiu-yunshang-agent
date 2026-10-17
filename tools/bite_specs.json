@@ -2687,11 +2687,11 @@
  },
  {
   "script": "backend/measure_write_check.py",
-  "改坏": "删掉一件定制单的下单量体(造数步骤漏补)",
+  "改坏": "删掉一件定制单的下单量体(造数步骤漏补)。⚠️ 2026-10-18 这条判据从「总数 ≤ 上限」换成「每一件都说得出来历 + 三类各自只许降」—— 被删的那一件着装人是普通客户,两份夹具名单里都没有,所以它落在「说不出来历」那一档",
   "sql": [
    "DELETE FROM measure_rec WHERE order_item_id=(SELECT MIN(order_item_id) FROM measure_rec WHERE order_item_id IS NOT NULL)"
   ],
-  "预期红": "没有下单量体的定制单不超过上限"
+  "预期红": "没有下单量体的定制单都说得出来历"
  },
  {
   "script": "backend/order_write_check.py",
