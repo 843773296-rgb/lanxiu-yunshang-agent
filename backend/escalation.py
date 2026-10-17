@@ -22,6 +22,7 @@
 import datetime as dt
 import os
 import sqlite3
+from contextlib import closing
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -152,7 +153,7 @@ def 收超时(当下=None):
     当下 = 当下 or ops.now()
     s = 当下.strftime("%Y-%m-%d %H:%M:%S")
     退 = []
-    with sqlite3.connect(ops.DB) as c:
+    with closing(sqlite3.connect(ops.DB)) as c, c:   # 后一个 c:提交/回滚;closing:当场关,不等 gc
         if not _有表(c):
             return 0
         for eid, tid, to, 限 in c.execute("SELECT id, triage_id, to_role, deadline FROM escalation "
@@ -180,7 +181,7 @@ def _办(esc_id, me, 动作, 理由=None):
         raise PermissionError("没有身份 —— 要登录")
     收超时()                                   # 先把过期的退掉,过期了就接不了
     e = None
-    with sqlite3.connect(ops.DB) as c:
+    with closing(sqlite3.connect(ops.DB)) as c, c:
         c.row_factory = sqlite3.Row
         if _有表(c):
             e = c.execute("SELECT * FROM escalation WHERE id=?", (esc_id,)).fetchone()
@@ -196,7 +197,7 @@ def _办(esc_id, me, 动作, 理由=None):
         raise ValueError("退回要写理由 —— 原负责人要知道为什么你不接")
     ts = ops.now().strftime("%Y-%m-%d %H:%M:%S")
     新 = "已接单" if 动作 == "接单" else "已退回"
-    with sqlite3.connect(ops.DB) as c:
+    with closing(sqlite3.connect(ops.DB)) as c, c:
         改 = c.execute("UPDATE escalation SET status=?, handled_no=?, handled_name=?, handled_at=?, return_note=? "
                        "WHERE id=? AND status='待接单'",
                        (新, me["no"], me.get("name"), ts, (理由 or "").strip() or None, esc_id)).rowcount
