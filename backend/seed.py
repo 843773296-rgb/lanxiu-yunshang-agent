@@ -2427,9 +2427,21 @@ def run():
         _merge_accs = {r[0] for r in c.execute(
             f"SELECT DISTINCT account_id FROM customer "
             f"WHERE account_id IS NOT NULL AND id IN ({_q})", tuple(sorted(_merge_cids)))}
+    # ⚠️⚠️ **`_merge_accs` 不能从这个列表里排除,只能在循环里跳过。**
+    # 2026-10-17 夜踩到:第一版写成 `... and r[0] not in _merge_accs`,
+    # 于是 `_accs` 变短、**下标整批平移** —— 锁定 / 注销中 / 已注销三类账户全换了人,
+    # 4 个「名字就是判据」的档位评测夹具(「互动第 91 天」那类)跟着改名,CI 当场红。
+    # > **我用「排除」去修「按下标挑人会平移」,而排除本身就是平移的原因。**
+    # 两件事必须分开:**列表一个不少**(只排 `_busy`,那是业务规则),
+    # 挑完之后再过滤(下面那个 `continue`)—— 这样别人的下标一个都不动,
+    # 只有那几个合并账户免于被注销。
     _accs = [r[0] for r in c.execute("SELECT id FROM account ORDER BY id")
-             if r[0] not in _busy and r[0] not in _merge_accs]
+             if r[0] not in _busy]
     for _n, _aid in enumerate(_accs):
+        # 合并题那几对档案挂着的账户:一律不碰(锁定 / 注销中 / 已注销都不给)。
+        # **放在这里 `continue`,而不是从 `_accs` 里排除** —— 见上面那条 ⚠️⚠️。
+        if _aid in _merge_accs:
+            continue
         if _n % 12 == 1:            # 3 个:锁定(连续输错密码)
             c.execute("UPDATE account SET fail_count=?, locked_until=?, status='锁定' "
                       "WHERE id=?", (5 + _n % 3, ago(-1), _aid))
