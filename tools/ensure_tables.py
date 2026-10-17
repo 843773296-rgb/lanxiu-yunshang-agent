@@ -39,6 +39,7 @@ import seed_quote
 import report_doc
 import arrival_card
 import order_contract
+import escalation
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -60,6 +61,9 @@ import order_contract
     (arrival_card, "建表", ["recall_advice", "recall_advice_log"]),
     # 定制订单确认书(2026-10-10):确认下单时在同一事务里写 —— 运行时才写
     (order_contract, "建表", ["order_contract"]),
+    # 研判升级记录(2026-10-17):第一次有人点「升级」时才建 —— 而造研判样本那步(真调模型)会升级一条,
+    # 于是**本机从零建库有这张表、CI(调不到模型)没有**,表数随「有没有人升级过」漂。在这里建死
+    (escalation, "确保表", ["escalation"]),
 ]
 
 
