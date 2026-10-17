@@ -307,22 +307,26 @@ def main():
     #
     # 这一条查工作区,所以重构完当场就红,不用等 CI。
     # 两条都要:一条护「我现在改的这一版」,一条护「仓库里那一版」。
+    # ⚠️ **这一关只剩一份实现** —— `tools/bite_run.py` 的 `验规格` 就是它。
+    # 2026-10-17 我在那边又写了一份一模一样的检查(当时不知道这里已经有),
+    # 当场合并:「规格过期了」这件事**有两个判法的话,它们不一致的时候谁也不知道**。
+    # 分工是跑的时机不同,不是逻辑不同:
+    #   那边 —— 全量重放开跑前验一遍,省掉近两个钟头的空跑
+    #   这边 —— 进门禁,重构完当场红,不用等 CI
+    # 顺带把那边新加的两条也一起带进门禁:
+    # 「一处破坏都没声明」(破坏写在执行器不认的键里 → 一处都没施加)
+    # 和「带着执行器不认的键」(下次把 sql 拼成 sqls 又是静默跳过)。
     import json as _js
     漂 = []
     _sp = os.path.join(ROOT, "tools", "bite_specs.json")
+    _specs = []
     if os.path.exists(_sp):
         _specs = _js.load(open(_sp, encoding="utf-8"))
-        for _x in _specs:
-            for _f in _x.get("file") or []:
-                _p = os.path.join(ROOT, _f.get("path", ""))
-                if not os.path.exists(_p):
-                    漂.append(f"{_f.get('path')} 这个文件不在了({_x['script']})")
-                    continue
-                if _f.get("old", "") not in open(_p, encoding="utf-8").read():
-                    漂.append(f"{_f.get('path')}:要改的那段找不到了 —— "
-                              f"**判定搬走了而规格没跟着搬**({_x['script']})")
-    ck("规格要改的那段,在工作区里也找得到(重构完当场红,不用等 CI)",
-       not 漂, len(_specs) if os.path.exists(_sp) else 0,
+        sys.path.insert(0, os.path.join(ROOT, "tools"))
+        import bite_run as _BR
+        漂 = [f"[{_i}] {_sc}:{_why}" for _i, _sc, _why in _BR.验规格(_specs, 根=ROOT)]
+    ck("规格要改的那段,在工作区里也找得到、破坏动作也声明了(重构完当场红,不用等 CI)",
+       not 漂, len(_specs),
        ("；".join(漂[:2]) + (f"(还有 {len(漂)-2} 条)" if len(漂) > 2 else "")) if 漂 else
        "**一条指着不存在的代码的规格,和一条好规格,在清单里长得一模一样**")
 

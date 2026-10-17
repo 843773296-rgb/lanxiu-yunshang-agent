@@ -49,22 +49,38 @@ def main():
 
 
 # **没有下单量体的定制单件数上限** —— 业务 09-22:「每一个订单都需要有绑定的下单量体数据」。
-# 现在 11 件:着装人没定的 3 件(不猜给谁量)+ 故意留的反例 8 件(超期量体 / 量体记录不全)。
+#
+# ⚠️ **2026-10-17 从 11 降到 4。** 全量咬合重放逮到这条是假绿:那条咬合
+# (删掉一件定制单的下单量体)删完变 5 件,**离上限 11 还差 6 格,当然不红** ——
+# 棘轮松了 7 格,等于那段时间可以凭空造出 7 件没量体的定制单而门禁全绿。
+# > 一道「钉着的闸」和一道「松了 7 格的闸」,在那个绿勾上长得一模一样。
+#
+# 降之前先量了会不会漂(这个数要是随世界日期整批换,钉死任何值都会让 CI 随机变红 ——
+# 「没走正门关的」那个数就是这么坑过一轮的):并行会话在同一个提交上、
+# 把世界日期分别钉在 10-16 / 10-17 各从零重建一次,**两次都是 4 件**,不漂。
+#
+# 现在这 4 件:着装人没定的 1 件(不猜给谁量)+ 有着装人却没量的 3 件
+# (待付款 1 / 生产中 1 / 完成 1 —— 这 3 件是真缺口,要造数补,不是判据该放过的)。
 # 只许降不许涨:哪个造数步骤又造出没绑下单量体的定制单,这里当场红。
 # **「待确认」的单不算**:开了单还没确认下单,还没量是正常的 —— 那正是确认下单那道闸要拦的
 # (重建第 20 步故意造了几张「没量」的待确认单做活用例)。
-没下单量体上限 = 11
+没下单量体上限 = 4
 
 
 def run(T):
     import api, oplog, measure_write as mw, measure
     _c0 = sqlite3.connect(T)
-    缺 = _c0.execute("""SELECT COUNT(*) FROM ordr_item i JOIN ordr o ON o.id=i.order_id
-                        WHERE o.kind='定制品订单' AND o.status!='待确认'
-                          AND NOT EXISTS(SELECT 1 FROM measure_rec m WHERE m.order_item_id=i.id)""").fetchone()[0]
+    # ⚠️ 取号不只取数:**涨了的时候得说得出是哪几件**,否则下一个人只能自己写 SQL 去找。
+    _缺行 = _c0.execute("""SELECT i.id, o.status FROM ordr_item i JOIN ordr o ON o.id=i.order_id
+                           WHERE o.kind='定制品订单' AND o.status!='待确认'
+                             AND NOT EXISTS(SELECT 1 FROM measure_rec m WHERE m.order_item_id=i.id)
+                           ORDER BY i.id""").fetchall()
     _c0.close()
+    缺 = len(_缺行)
     ck("没有下单量体的定制单不超过上限(业务 09-22:每一个订单都要有)", 缺 <= 没下单量体上限,
-       f"{缺} 件(上限 {没下单量体上限},只许降)")
+       f"{缺} 件(上限 {没下单量体上限},只许降):"
+       + "、".join(f"#{i}({st})" for i, st in _缺行[:8])
+       + (" …" if 缺 > 8 else ""))
     for m in (api, oplog, mw): m.DB = T
     c = sqlite3.connect(T); c.row_factory = sqlite3.Row
     # **按性质挑人,不钉死编号**:一个有身体数据同意的成年着装人,名下有一件定制单是给他做的

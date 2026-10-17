@@ -132,9 +132,18 @@ def 扫():
             放行.append(f"{f}:{l.strip()[:60]}")
         if re.search(r"ORDER\s+BY\s+RANDOM\s*\(", 码, re.I):
             坏.append(f)
-        # 用了全局 random.xxx( 就必须有 random.seed / Random(种子)
+        # 用了全局 random.xxx( 就必须有 random.seed(
+        #
+        # ⚠️ **证据只认 `random.seed(`,不能认 `random.Random(`。**
+        # 2026-10-17 全量咬合重放逮到:`run_journey.py` 第 786 行的 `random.seed(SEED)`
+        # 被删掉,这一条**照旧是绿的** —— 因为同一个文件第 761 行有个
+        # `_r3 = random.Random(f"{SEED}::...")`,把证据顶上了。
+        # 而 `random.Random(x)` 造的是**独立实例**,它永远管不着全局 `random.xxx()`
+        # 的确定性:拿它当「设了种子」的证据,等于让一个管不着的东西替另一件事背书。
+        # (注意上面那行 `用全局` 特意写了 `(?!seed|Random)` —— **同一个脚本里,
+        #  判据的「要求」那一侧分得清这两者,「证据」那一侧却把它们混成了一个。**)
         用全局 = re.search(r"(?<![\w.])random\.(?!seed|Random)\w+\(", 码)
-        有种子 = re.search(r"random\.seed\(|random\.Random\(", 码)
+        有种子 = re.search(r"random\.seed\(", 码)
         if 用全局 and not 有种子:
             无种子.append(f)
         # Python 的时钟,和 **SQL 里的时钟** —— 后者原来一条都没扫。

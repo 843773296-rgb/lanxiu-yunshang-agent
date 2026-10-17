@@ -600,6 +600,18 @@
   "预期红": "缺段落"
  },
  {
+  "script": "tools/make_handoff.py",
+  "改坏": "在交接文档里再插一段同名的「别重做:试过并否决的」(两份内容共用一个标题,判据只验第一段)",
+  "file": [
+   {
+    "path": "HANDOFF.md",
+    "old": "## 别重做:试过并否决的",
+    "new": "## 别重做:试过并否决的\n\n(咬合插进来的重复段:内容落在后面那段里,判据一个字都没验。)\n\n## 别重做:试过并否决的"
+   }
+  ],
+  "预期红": "内容落在后面那段里等于白写"
+ },
+ {
   "script": "knowledge/pinned_check.py",
   "改坏": "把 MT02 的幅宽加宽 20cm(钉死的锚点和库里算出来的对不上)",
   "sql": [
@@ -1818,12 +1830,17 @@
  },
  {
   "script": "tools/table_origin_check.py",
-  "改坏": "把 ensure_tables 里的 `import ownership` 去掉(那张表就没人建了)",
+  "改坏": "把 ensure_tables 和 backfill_fixtures 里的 `import ownership` 都去掉(⚠️ **两处都要堵** —— 只堵 ensure_tables 那一处,backfill_fixtures 还导着它,cust_owner_log 照旧有来路,判据不红是对的)",
   "file": [
    {
     "path": "tools/ensure_tables.py",
-    "old": "import ownership, asr, credit, roster",
-    "new": "import asr, credit, roster\nownership = __import__('ownership')"
+    "old": "import ownership, asr, credit, roster, seed_rating",
+    "new": "import asr, credit, roster, seed_rating"
+   },
+   {
+    "path": "tools/backfill_fixtures.py",
+    "old": "    import ownership as O",
+    "new": "    O = __import__('ownership')"
    }
   ],
   "预期红": "每张表都能从 rebuild.sh 建出来"
@@ -3628,31 +3645,41 @@
  {
   "script": "backend/supplier_check.py",
   "改坏": "给一家面料商填上返工率(两类的质量指标串了)",
-  "db": "UPDATE supplier SET defect_rate=0.05 WHERE code='SUP-FAB-01'",
+  "sql": [
+   "UPDATE supplier SET defect_rate=0.05 WHERE code='SUP-FAB-01'"
+  ],
   "预期红": "面料只填色差"
  },
  {
   "script": "backend/supplier_check.py",
   "改坏": "给一个自己做的工艺挂上供应商(判据逼出假数据)",
-  "db": "UPDATE craft SET supplier_code='SUP-OEM-01' WHERE code=(SELECT code FROM craft WHERE supplier_code IS NULL LIMIT 1)",
+  "sql": [
+   "UPDATE craft SET supplier_code='SUP-OEM-01' WHERE code=(SELECT code FROM craft WHERE supplier_code IS NULL LIMIT 1)"
+  ],
   "预期红": "自己做的工艺没被挂上"
  },
  {
   "script": "backend/supplier_check.py",
   "改坏": "把某个面料指向一个 supplier 表里没有的码(指向空处的引用)",
-  "db": "UPDATE material SET supplier_code='SUP-XXX' WHERE code=(SELECT code FROM material LIMIT 1)",
+  "sql": [
+   "UPDATE material SET supplier_code='SUP-XXX' WHERE code=(SELECT code FROM material LIMIT 1)"
+  ],
   "预期红": "指向的都是真的那几家"
  },
  {
   "script": "backend/supplier_check.py",
   "改坏": "把标品改回「一个 SKU 一个供应商」(恢复 659 那个形状)",
-  "db": "UPDATE sku SET supplier_code='SUP-'||code WHERE supplier_code IS NOT NULL",
+  "sql": [
+   "UPDATE sku SET supplier_code='SUP-'||code WHERE supplier_code IS NOT NULL"
+  ],
   "预期红": "标品的供应商是**少数几家**"
  },
  {
   "script": "backend/supplier_check.py",
   "改坏": "把**一个**里料改挂主料商(⚠️ 只改一行 —— 全改的话同类目还是一家,打不破这条)",
-  "db": "UPDATE material SET supplier_code='SUP-FAB-01' WHERE code=(SELECT code FROM material WHERE cat='里料' LIMIT 1)",
+  "sql": [
+   "UPDATE material SET supplier_code='SUP-FAB-01' WHERE code=(SELECT code FROM material WHERE cat='里料' LIMIT 1)"
+  ],
   "预期红": "面料是**按类目**分给供应商的"
  },
  {
@@ -5907,7 +5934,7 @@
     "new": "for k, v in [min(((x[\"编码\"], x) for x in 榜), key=lambda kv: (-kv[1][m], str(kv[0])))]}"
    }
   ],
-  "预期红": "按金额的第一和独立 SQL 是同一个商品"
+  "预期红": "金额第一不在件数前五里也照样给出"
  },
  {
   "script": "backend/lifecycle_sync_check.py",
@@ -6668,7 +6695,7 @@
     "new": "f\"WHERE a.status IN ('已完成','已关闭','已拒绝') AND substr(a.created,1,10) BETWEEN ? AND ?{_w} \""
    }
   ],
-  "预期红": "售后新建 / 结案各按自己的事件时间,和独立统计对得上"
+  "预期红": "再对一次账"
  },
  {
   "script": "backend/product_summary_check.py",
@@ -7044,12 +7071,12 @@
  },
  {
   "script": "agent/triage_sets_check.py",
-  "改坏": "把测试集的一个包裹号钉进判分器对照(等于拿它调过了)",
+  "改坏": "把测试集的一个包裹号钉进判分器对照(等于拿它调过了)。⚠️ **这个号会过期** —— 测试集重新冻结时 40 个号整批换,钉死的号就成了谁都不认识的字符串,判据扫不到它、这条咬合静默变绿。过期了从 `agent/triage-sets.json` 的测试集里现取一个换上",
   "file": [
    {
     "path": "agent/triage_sets_judgetest.py",
     "old": "print(\"差评研判判分器 · 人造对照\")",
-    "new": "print(\"差评研判判分器 · 人造对照\")\n# 真跑钉回来的说法示例:P0-H6488012800000728755-发"
+    "new": "print(\"差评研判判分器 · 人造对照\")\n# 真跑钉回来的说法示例:P0-H6488012800000723825-发"
    }
   ],
   "预期红": "测试集的包裹号一个都没出现在判分器对照"
@@ -8290,6 +8317,42 @@
   "预期红": "超过上限"
  },
  {
+  "script": "tools/bite_run.py",
+  "改坏": "把 `验规格` 里「一处破坏都没声明」那一支删掉(规格没写破坏动作也照跑)",
+  "file": [
+   {
+    "path": "tools/bite_run.py",
+    "old": "        if not s.get(\"sql\") and not s.get(\"file\"):\n            坏.append((i, s[\"script\"], \"一处破坏都没声明\" +\n                       (f\",而它带着执行器不认的键 {'/'.join(野)} —— 破坏大概写在那里了\" if 野 else \"\")))\n        elif 野:",
+    "new": "        if 野:"
+   }
+  ],
+  "预期红": "一处破坏都没声明"
+ },
+ {
+  "script": "tools/bite_run.py",
+  "改坏": "把 `验规格` 里「带着执行器不认的键」那一支掏空(把 sql 拼成别的名字就静默跳过)",
+  "file": [
+   {
+    "path": "tools/bite_run.py",
+    "old": "        elif 野:\n            坏.append((i, s[\"script\"], f\"带着执行器不认的键 {'/'.join(野)}\"))\n",
+    "new": "        elif 野:\n            pass\n"
+   }
+  ],
+  "预期红": "执行器不认的键"
+ },
+ {
+  "script": "tools/bite_run.py",
+  "改坏": "把 `验规格` 里「找不到要改的那段」那一支删掉(破坏点过期了也照跑两个钟头)",
+  "file": [
+   {
+    "path": "tools/bite_run.py",
+    "old": "            if n == 0:\n                坏.append((i, s[\"script\"],\n                           f\"{f['path']} 里找不到要改的那段 —— **破坏点过期了**,\"\n                           f\"它跑起来会报「改坏了却没红」,而那不是判据的错\"))\n            elif n > 1:",
+    "new": "            if n > 1:"
+   }
+  ],
+  "预期红": "破坏点已经过期"
+ },
+ {
   "script": "backend/queue_closed_check.py",
   "改坏": "往库里塞一条没登记来源的「已关闭差评」工单(模拟有人绕过正门关单)",
   "sql": [
@@ -8298,6 +8361,18 @@
    "INSERT INTO task(id,type,ref_id,status,created,summary) VALUES('T-绕门-咬合','评价差评','P-绕门-咬合','已关闭','2026-01-01 10:00:00','咬合:绕过正门关掉的差评')"
   ],
   "预期红": "说不出是谁关的"
+ },
+ {
+  "script": "backend/queue_closed_check.py",
+  "改坏": "把 `ops.说不出谁关的号` 改成只返回空列表(判据报得出数、报不出号)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    return [x[\"task_id\"] for x in queue()\n            if x.get(\"没走正门\") and x[\"task_id\"] not in 登记][:上限]",
+    "new": "    return []"
+   }
+  ],
+  "预期红": "号里真有那条自造的"
  },
  {
   "script": "tools/backfill_rating.py",
