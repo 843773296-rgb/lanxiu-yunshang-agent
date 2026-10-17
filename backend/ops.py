@@ -192,6 +192,33 @@ def _dt(s):
 
 
 # ── 一、队列 ────────────────────────────────────────────────────────────
+# 造数**直接写库关掉**工单时,来源登记表的定义 —— **只有这一份**。
+# ⚠️ 2026-10-17:这张表原来只有 `tools/backfill_rating.py` 一个写口,DDL 就写在那里。
+# 当天 CI 逮到**第二个写口**:`backend/seed.py` 的「注销的下游」那段 ——
+# 两条档案里有一条已注销,它就直接 `UPDATE task SET status='已关闭'`,而没登记来源。
+# 两个写口各写一份 DDL 的话,**加一列就只加在一处,而漂了不会报错**。
+直关登记表 = """CREATE TABLE IF NOT EXISTS seed_direct_closed(
+                  task_id TEXT PRIMARY KEY, 来源 TEXT NOT NULL, 造于 TEXT NOT NULL)"""
+
+
+def 登记直关(c, 号们, 来源, 今s):
+    """造数直接写库关掉工单时,在这里登记来源(表不在就建)。→ 登记了几条。
+
+    **凡是绕开正门关单的造数,都必须过这里** —— 没登记的那条,
+    `queue_closed_check` 会报成「说不出是谁关的」,而那条判据的意思是
+    「有人绕过正门」。造数自己绕开正门又不留名,就会**冒充成一次入侵**。
+
+    `来源` 要写清是哪一步关的(CI 上只看得到号,看不到代码),
+    不同来源互不干扰:重登记只清自己那批。
+    """
+    if not 号们:
+        return 0
+    c.execute(直关登记表)
+    c.executemany("INSERT OR REPLACE INTO seed_direct_closed(task_id,来源,造于) VALUES(?,?,?)",
+                  [(i, 来源, 今s) for i in 号们])
+    return len(号们)
+
+
 def 造数直关登记():
     """→ 造数**直接写库关掉**的 task id 集合;**登记表不在就返回 None**(不是空集合)。
 

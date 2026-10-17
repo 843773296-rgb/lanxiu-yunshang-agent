@@ -280,12 +280,13 @@ def 登记直关的(c, 关了的, 今s):
     而且答案应该是 0。比「≤166」**既更严也更稳**:原来基线底下藏着的
     166 条随便换一条也不会红,现在换一条就红。
     """
-    c.execute("""CREATE TABLE IF NOT EXISTS seed_direct_closed(
-                   task_id TEXT PRIMARY KEY, 来源 TEXT NOT NULL, 造于 TEXT NOT NULL)""")
+    # 表定义和插入都在 `backend/ops.py` 的 `登记直关` 里 —— **只此一份**
+    # (2026-10-17 发现 seed.py 是第二个写口,两份 DDL 会各自漂)。
+    # 这里先清自己那批:重造一次评价,上一批号就不该再留着。
+    import ops as _OPS
+    c.execute(_OPS.直关登记表)
     c.execute("DELETE FROM seed_direct_closed WHERE 来源=?", (直关来源,))
-    c.executemany("INSERT OR REPLACE INTO seed_direct_closed(task_id,来源,造于) VALUES(?,?,?)",
-                  [(i, 直关来源, 今s) for i in 关了的])
-    return len(关了的)
+    return _OPS.登记直关(c, 关了的, 直关来源, 今s)
 
 
 def 只登记(db=DB, 说=print):

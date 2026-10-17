@@ -2337,6 +2337,26 @@ def run():
           OR EXISTS(SELECT 1 FROM maintain t WHERE t.customer_id=k.id)
           OR EXISTS(SELECT 1 FROM ordr o WHERE o.customer_id=k.id
                     AND o.status NOT IN ('完成','取消')))""")}
+    # ⚠️⚠️ **挑谁注销是按列表下标挑的,而这个列表的内容会变 —— 挑中谁完全不稳。**
+    # 2026-10-17 实测到后果:CI 那一轮注销到的是 C21018/C21019 这一对,
+    # 而本机(世界日期钉 10-16 / 10-17 各重建一次)和主库里这一对**都没被注销** ——
+    # 于是「注销的下游」那段在 CI 上关掉了 `TMERGE-09`、在本机一条都没关,
+    # **同一个提交、同一份配方,两边的题集不一样**(CI 上合并那几道少一道真值)。
+    #
+    # 根因:`_accs` 要先排除 `_busy`(有未完成订单 / 维修 / 量体的账户),
+    # 而 `_busy` 的内容跟着订单状态走。**`_busy` 多一个或少一个,
+    # 后面所有人的下标就整体平移,`_n % 12 == 9` 挑中的那 3 个整批换人。**
+    # 这和 `backend/rating_rebuild_check.py` 记的那条是同一个形状:
+    # 「取行集多一行少一行就让 rng 整体错位 —— 只动一个元素,重合率从 100% 掉到 6%」。
+    # 那里错位的是随机序列,这里错位的是下标。
+    #
+    # 正确做法项目里早有,`backend/sales_rank_check.py` 的原话:
+    # **「按性质挑人,不钉死编号」** —— 而下标连「编号」都不是,它是**位置**,
+    # 位置不是任何人的性质。
+    #
+    # **没有在这一轮改**:换挑法会改变注销名单 → 库内容变 → 合并那几道评测题的真值
+    # 跟着变,而真值归评测线。要改先说清(记在 intent/bite-debt.md)。
+    # 眼下这条红由上面那次「登记来源」止住了:挑到谁都不会再被当成绕过正门。
     _accs = [r[0] for r in c.execute("SELECT id FROM account ORDER BY id")
              if r[0] not in _busy]
     for _n, _aid in enumerate(_accs):
@@ -2383,16 +2403,28 @@ def run():
     # 这个坑这个项目在 BP-03 上踩过一次,这是第二次。
     _purged = {r[0] for r in c.execute(
         "SELECT id FROM customer WHERE name='已注销用户'").fetchall()}
-    _drop = set()
+    _drop, _关了 = set(), []
     for _t in c.execute("SELECT id,ref_id FROM task WHERE type='客户合并确认'").fetchall():
         if _purged & set((_t[1] or "").split("|")):
             # 队列里关掉:注销后没有可比对的数据,这条合并不该再等人判
             c.execute("UPDATE task SET status='已关闭' WHERE id=?", (_t[0],))
             _drop.add(_t[0][1:])          # 工单 TMERGE-09 → 用例 MERGE-09
+            _关了.append(_t[0])
     if _drop:
         truths[:] = [t for t in truths if t[0] not in _drop]
         print(f"  [注销] {len(_drop)} 条客户合并工单因档案已注销而关闭,对应真值一并撤下:"
               f"{sorted(_drop)}")
+        # ⚠️ **绕开正门关单的造数必须留名。**
+        # 2026-10-17 CI 实测:这一段关掉的 `TMERGE-09` 没有登记来源,于是
+        # `queue_closed_check` 把它报成「说不出是谁关的 1 条」——
+        # 而那条判据的意思是「**有人绕过正门关了单**」。
+        # > 造数自己绕开正门、又不留名,**就会冒充成一次入侵**。
+        # 这张表原来只有 `tools/backfill_rating.py` 一个写口,**这里是第二个**,
+        # 所以表定义和插入都收到了 `ops.登记直关` 里(只此一份)。
+        #
+        # 为什么本机复现不出来、CI 上才红:见下面那条「挑谁注销按下标走」。
+        import ops as _OPS
+        _OPS.登记直关(c, _关了, "注销后关闭合并工单", TODAY)
 
     # ── A3/A7/A8:**每个账户必须有一个「本人」着装人,而且必须成年** ──────
     # 账户 = 一个人;那个人本身就是第一个着装人。原来只给 18 个有量体记录的
