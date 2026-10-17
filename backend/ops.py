@@ -298,6 +298,8 @@ def 正门关单凭据():
     # 关了但没研判过的那些在「已销账」档里,带着「没走正门」的标,不在这一档重复出现。
     "未研判": lambda x: x["state"] == "未研判" and not x["done"],
     "待复核": lambda x: x["state"] == "待复核",
+    # 升级出去、还没人接单复核的(10-17 起不算销账,计时接着走)
+    "已升级": lambda x: x["state"] == "已升级" and not x["done"],
     "已销账": lambda x: x["done"],
 }
 
@@ -346,6 +348,12 @@ def queue(state=None):
         latest[t["task_id"]] = t          # 同一工单研判多次,取最后一次
 
     正门关过 = 正门关单凭据()
+    import escalation as _esc
+    try:
+        _esc.收超时()           # 过了接单期限没人接的先退回 —— 不能让一条交出去的事停在「待接单」里
+    except Exception:            # noqa: BLE001  队列是读,退回失败不许把队列搞挂(下次读还会再收)
+        pass
+    升级记录 = _esc.全部开着的(DB)
     # ⚠️ 算等待用的是**世界今天的末尾**,不是机器此刻 —— 见 `算等待的当下()`。
     # 用 `now()` 的话,今天下午那些记录在上午看会算出负的等待时长。
     out, n = [], 算等待的当下()
@@ -369,7 +377,9 @@ def queue(state=None):
         # 压平之后「研判过并采纳了」和「工单被关掉但一条研判都没走过」
         # 长得一模一样 —— 而后者要人看一眼:它可能是对的(有些事不需要研判),
         # 也可能是有人直接关单了事。**一个数不够表达两种闭环。**
-        研判有结论 = st in DECISIONS
+        # 「已升级」**不算有结论**(用户 10-17 拍):原来它算销账,交上去就从待办里消失、计时停、又办不结。
+        # 现在升级是一次转交 —— 计时接着走(从建单算,不重置),接单人复核完才算有结论
+        研判有结论 = st in ("已采纳", "已改判")
         工单已关闭 = (t["status"] == "已关闭")
         done = 研判有结论 or 工单已关闭
         凭什么 = None
@@ -403,6 +413,7 @@ def queue(state=None):
             不跑的原因=不跑的理由(t["type"]),
             # 已办结 = 有回执(用户 10-13 拍)。**和「已销账」是两层**:销账是复核完了,办结是现实里办完了
             已办结=bool(tr and tr.get("receipt")),
+            升级=(_esc.摘要(升级记录.get(tr["id"])) if tr and (st == "已升级" or tr["id"] in 升级记录) else None),
             回执=(f"{tr.get('receipt_kind')} {tr['receipt']}" if tr and tr.get("receipt") else None),
         ))
     if state in 档位: out = [x for x in out if 档位[state](x)]
@@ -1001,6 +1012,10 @@ class _复核冲突(Exception):
     """复核写回时发现这条已经不是「待复核」—— 内部用,出了 resolve 就换成 ValueError。"""
 
 
+class _升级不成(Exception):
+    """升级登记不成(没登记去向 / 没写原因 / 已是最上一级)—— 整个事务回滚,出了 resolve 换成 ValueError。"""
+
+
 def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, 来源="页面"):
     """值班同学销账。**改判会回流成新的标注** —— 这是平台能越用越准的唯一通路。
 
@@ -1029,7 +1044,14 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
         _记(False, "NO_TRIAGE", "没有这条研判")
         raise ValueError(f"没有 triage#{triage_id}")
     _任务 = _rows("SELECT type FROM task WHERE id=?", t["task_id"])
-    ok, 为什么 = 能销吗(_任务[0]["type"] if _任务 else None, me.get("role"), 段="复核")
+    import escalation as _esc
+    接 = _esc.接单人(triage_id, DB)
+    if 接:
+        # 升级被接下之后,**只有接单人**能复核(用户 10-17 拍:接单后回到待复核,由接收人复核)——
+        # 原复核人这时候再点,等于两个人同时在办一件事
+        ok, 为什么 = (me.get("no") == 接), f"这条已由工号 {接} 接下升级,只能由接单人复核"
+    else:
+        ok, 为什么 = 能销吗(_任务[0]["type"] if _任务 else None, me.get("role"), 段="复核")
     if not ok:
         _记(False, "ROLE", 为什么)
         raise PermissionError(为什么)
@@ -1062,6 +1084,14 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
                                 f" —— 不能再覆盖。刷新页面看最新结论;要改结论得走重开(这个入口还没有)")
             c.execute("UPDATE task SET status=? WHERE id=?",
                       ("已升级" if decision == "已升级" else "已处理", t["task_id"]))
+            if 接:      # 接单人复核了 → 那条升级办完(再升一级的话,下面会另起一条待接单)
+                c.execute("UPDATE escalation SET status='已复核' WHERE triage_id=? AND status='已接单'", (triage_id,))
+            if decision == "已升级":
+                # 升级 = 一次正式转交(用户 10-17 拍):有接收岗位、有原因、有接单期限,同一个事务里登记
+                try:
+                    _esc.发起(c, t, _任务[0]["type"] if _任务 else None, me, note, ts)
+                except ValueError as e:
+                    raise _升级不成(str(e))
             if decision == "已改判" and t["case_id"] and root_cause:
                 old = c.execute("SELECT root_cause,src FROM truth WHERE case_id=?",
                                 (t["case_id"],)).fetchone()
@@ -1079,6 +1109,9 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
                                note or "", f"{handler} 于 {ts} 改判回流"))
                     flowed = True
                 if flowed: c.execute("UPDATE triage SET into_eval=1 WHERE id=?", (triage_id,))
+    except _升级不成 as e:
+        _记(False, "ESC_REFUSED", str(e))
+        raise ValueError(str(e))
     except _复核冲突 as e:
         # ⚠️ 记日志要在 `with` **外面** —— 里面还握着写锁,log_op 另开连接去写 op_log
         # 会等到「database is locked」(第一版就这么写的,新检查第一次跑当场抓到)。

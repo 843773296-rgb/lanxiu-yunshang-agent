@@ -8397,5 +8397,65 @@
    }
   ],
   "预期红": "只登记造数形状的号"
+ },
+ {
+  "script": "backend/escalation_check.py",
+  "改坏": "升级又算成已销账(交上去就从待办消失)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "        研判有结论 = st in (\"已采纳\", \"已改判\")\n",
+    "new": "        研判有结论 = st in DECISIONS\n"
+   }
+  ],
+  "预期红": "升级后的工单还在待办里,计时接着走"
+ },
+ {
+  "script": "backend/escalation_check.py",
+  "改坏": "超时没人接不退回",
+  "file": [
+   {
+    "path": "backend/escalation.py",
+    "old": "\"WHERE status='待接单' AND deadline < ?\", (s,)",
+    "new": "\"WHERE status='待接单' AND deadline < ? AND 0\", (s,)"
+   }
+  ],
+  "预期红": "过了接单期限,自动退回原负责人"
+ },
+ {
+  "script": "backend/escalation_check.py",
+  "改坏": "不是接收岗位也能接单",
+  "file": [
+   {
+    "path": "backend/escalation.py",
+    "old": "    if me.get(\"role\") != e[\"to_role\"]:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "不是接收岗位的人接不了单"
+ },
+ {
+  "script": "backend/escalation_check.py",
+  "改坏": "接单后原复核人还能抢着复核",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "        ok, 为什么 = (me.get(\"no\") == 接), f\"这条已由工号",
+    "new": "        ok, 为什么 = True, f\"这条已由工号"
+   }
+  ],
+  "预期红": "接单之后只有接单人能复核"
+ },
+ {
+  "script": "backend/escalation_check.py",
+  "改坏": "没写原因也能升级",
+  "file": [
+   {
+    "path": "backend/escalation.py",
+    "old": "    if not (理由 or \"\").strip():\n        raise ValueError(\"升级要写原因",
+    "new": "    if False:\n        raise ValueError(\"升级要写原因"
+   }
+  ],
+  "预期红": "没写原因升级被拒,而且研判状态没动"
  }
 ]

@@ -388,7 +388,8 @@ async function open_(tid){
   }
   const d=await fetch("/api/ops-detail?id="+x.triage_id).then(r=>r.json());
   当前改判选项=d.改判选项||[];
-  const done=["已采纳","已改判","已升级"].includes(d.status);
+  // 「已升级」10-17 起不算结论(用户拍「升级 = 正式转交」):交出去等人接单,计时接着走
+  const done=["已采纳","已改判"].includes(d.status), 升=d.升级, 升着=d.status==="已升级";
   $("#panel").innerHTML=`<div class="hd">${hd}
     <span class="tag ${CF[d.ai_confidence]||""}">置信度 ${esc(d.ai_confidence)}</span>
     <span class="tag ${done?"dye":""}">${esc(d.status)}</span></div>
@@ -400,24 +401,32 @@ async function open_(tid){
       <div class="traj">${esc((d.ai_text||"").slice(0,700))||"(没有正文)"}</div></div>
     ${done?fld("人工裁决",`${d.status} · ${d.handler||""} ${d.handled_at||""}
 ${d.human_root_cause||""}${d.human_note?"\n"+d.human_note:""}`):""}
+    ${升?fld("升级",`${升.状态} · 交给 ${升.去向||"(没有接收人,10-17 之前的旧数据)"}${升.期限?" · 接单期限 "+升.期限:""}${升.发起人?"\n发起:"+升.发起人:""}${升.原因?"\n原因:"+升.原因:""}${升.接单人?"\n处理人:"+升.接单人:""}${升.退回理由?"\n退回理由:"+升.退回理由:""}`):""}
     ${done && x.type==="财务人工任务" ? `<div class="fld" id="退款块"><div class="k">退款处理与办结(财务)</div>
       <div id="退款内">加载中…</div></div>` : ""}
-    ${done?"":`<div class="edit" id="edit">
+    ${done||升着?"":`<div class="edit" id="edit">
       ${(d.改判选项||[]).length ? `
       <label>你认定的根因(从预存的里选)</label>
       <select id="hrc" onchange="选根因(this.value)"><option value="">— 请选择 —</option>
         ${d.改判选项.map(o=>`<option value="${esc(o.root_cause)}">${esc(o.root_cause)}</option>`).join("")}</select>
       <label>应该怎么处理(随根因带出,预存的标准处理)</label><div class="traj" id="hac">选了根因就显示</div>
       <label>备注 / 依据</label><textarea id="hnt" rows="2" placeholder="选填"></textarea>`
-      : `<div class="hint">这类工单还没有预存的根因可选,改判不了 —— 觉得智能体判错了就点「升级给店长」。</div>`}
+      : `<div class="hint">这类工单还没有预存的根因可选,改判不了 —— 觉得智能体判错了就点「升级」。</div>`}
       <div class="hint"><b>注意:</b>改判会写进评测集并标为「人工改判」。
         它<b>只经过你一个人</b>的判断,回归时会单独统计通过率 —— 判错了会变成假的标准答案。</div>
     </div>`}
   </div>
-  ${done?"":`<div class="ft">
+  ${升着 ? `<div class="ft">
+    ${升&&升.id&&升.状态==="待接单" ? `<button class="pri" onclick="办升级(${升.id},'接单')">接单</button>
+    <input id="退回理由" placeholder="不接的话写理由" style="flex:1;min-width:120px">
+    <button onclick="办升级(${升.id},'退回')">退回</button>` : `<span class="note">${升&&升.id?"这条升级现在是「"+esc(升.状态)+"」":"旧数据没有接收人 —— 计时照走,请原负责人重新处理"}</span>`}
+    <span class="note" id="rmsg" style="font-size:12.5px;color:var(--ink-3)"></span></div>`
+  : done?"":`<div class="ft">
     <button class="pri" onclick="resolve(${d.id},'已采纳')">采纳草稿</button>
     <button onclick="toggleEdit()" id="btnEdit">改判…</button>
-    <button onclick="resolve(${d.id},'已升级')">升级给店长</button>
+    ${d.升级去向 ? `<input id="升级原因" placeholder="升级原因(必填:卡在哪一步)" style="flex:1;min-width:140px">
+    <button onclick="升级(${d.id})">升级给${esc(d.升级去向)}</button>`
+      : `<span class="note">你已是这类工单升级的最上一级</span>`}
     <span class="note" id="rmsg" style="font-size:12.5px;color:var(--ink-3)"></span></div>`}`;
   if($("#退款内")) await 画退款(x.ref, d.id, x);
 }
@@ -501,6 +510,23 @@ window.resolve=async(id,decision,rc,ac,nt)=>{
   if(r.error){ $("#rmsg").textContent="失败:"+r.error; return; }
   await load();
   $("#msg").textContent=`${decision}${r.回流评测集?" · 已回流评测集":""}`;
+  open_(sel);
+};
+/* 升级 = 一次正式转交(用户 2026-10-17 拍):要写原因;接收岗位 4 个工作小时内接单,超时自动退回原负责人。
+   接收岗位、能不能接由后端判,页面不猜角色 */
+window.升级=(id)=>{
+  const why=($("#升级原因")||{}).value||"";
+  if(!why.trim()){ $("#rmsg").textContent="升级要写原因 —— 接收人要知道卡在哪一步"; return; }
+  resolve(id,"已升级","","",why.trim());
+};
+window.办升级=async(eid,action)=>{
+  const note=action==="退回"?(($("#退回理由")||{}).value||"").trim():"";
+  if(action==="退回"&&!note){ $("#rmsg").textContent="退回要写理由"; return; }
+  const r=await fetch("/api/ops-escalation",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({esc_id:eid,action,note})}).then(r=>r.json()).catch(e=>({error:e+""}));
+  if(r.error||r.ok===false){ $("#rmsg").textContent="失败:"+(r.error||r.reason); return; }
+  await load();
+  $("#msg").textContent=r.reason||action;
   open_(sel);
 };
 window.runOne=async(tid)=>{

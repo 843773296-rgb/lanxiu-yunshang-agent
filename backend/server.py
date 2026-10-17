@@ -3105,6 +3105,13 @@ class H(BaseHTTPRequestHandler):
                 d=_ops.get_triage((Q.get("id") or [None])[0])
                 # 改判下拉框的选项(10-16 用户拍「选择就行了」):这一类断点预存的根因 + 标准处理
                 if d: d=dict(d, 改判选项=_ops.改判选项(d.get("breakpoint")))
+                # 升级的接收岗位 / 期限 / 谁接了(用户 10-17 拍「升级 = 正式转交」)—— 页面照着它画接单 / 退回
+                if d:
+                    import escalation as _esc
+                    _e=_esc.当前(d.get("id"))
+                    d=dict(d, 升级=(_esc.摘要(_e) if (_e or d.get("status")=="已升级") else None),
+                           升级去向=_esc.去向((_ops._rows("SELECT type FROM task WHERE id=?", d.get("task_id")) or [{}])[0].get("type"),
+                                              (_me(self) or {}).get("role"))[0])
                 return self._send(d or dict(error="没有这条研判"), 200 if d else 404)
             return self._send(dict(error="no ops route"),404)
         # ── 用户生命周期 ────────────────────────────────────────────
@@ -3405,6 +3412,24 @@ class H(BaseHTTPRequestHandler):
                     body.get("triage_id"), body.get("decision"), u,
                     root_cause=body.get("root_cause"), action=body.get("action"),
                     note=body.get("note"), 来源="页面"))
+            except PermissionError as e:
+                return self._send(dict(error=str(e)[:200]), 403)
+            except Exception as e:
+                return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
+        if p=="/api/ops-escalation":
+            # 升级的接单 / 退回(用户 10-17 拍)。身份只从登录态取;是不是接收岗位在 escalation 里判
+            import escalation as _esc
+            u = _me(self)
+            if not u:
+                return self._send(dict(error="没登录 —— 接单 / 退回要登录,署名用登录的人"), 401)
+            try:
+                if body.get("action") == "接单":
+                    r = _esc.接单(body.get("esc_id"), u)
+                elif body.get("action") == "退回":
+                    r = _esc.退回(body.get("esc_id"), u, body.get("note"))
+                else:
+                    return self._send(dict(error="action 只能是 接单 / 退回"), 400)
+                return self._send(r, 200 if r.get("ok") else 400)
             except PermissionError as e:
                 return self._send(dict(error=str(e)[:200]), 403)
             except Exception as e:
