@@ -8353,6 +8353,18 @@
   "预期红": "破坏点已经过期"
  },
  {
+  "script": "tools/bite_run.py",
+  "改坏": "把 `.fakedata` 从 `不带` 里删掉(门禁会往里写的输出目录又被拷进副本)",
+  "file": [
+   {
+    "path": "tools/bite_run.py",
+    "old": ",\n      \".fakedata\"}",
+    "new": "}"
+   }
+  ],
+  "预期红": "进了副本"
+ },
+ {
   "script": "backend/queue_closed_check.py",
   "改坏": "往库里塞一条没登记来源的「已关闭差评」工单(模拟有人绕过正门关单)",
   "sql": [

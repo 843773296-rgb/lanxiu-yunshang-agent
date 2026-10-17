@@ -65,6 +65,10 @@ SPECS = os.path.join(HERE, "bite_specs.json")
      "执行器不认的键"),
     ("把 `验规格` 里「找不到要改的那段」那一支删掉(破坏点过期了也照跑两个钟头)",
      "破坏点已经过期"),
+    # 2026-10-17 夜:主检出里 `.fakedata` 1.9 GB,那边一跑自测就撞上限,
+    # 而这个 worktree 没有这个目录、一直是绿的 —— 又一次「两个检出长得不一样」。
+    ("把 `.fakedata` 从 `不带` 里删掉(输出目录又被拷进副本)",
+     "进了副本"),
 ]
 
 # 副本里**不**带的东西。
@@ -72,7 +76,16 @@ SPECS = os.path.join(HERE, "bite_specs.json")
 # 起因:白名单漏了根目录的 `.mcp.json`,于是 `boundary_audit` 在副本里对照就是红的 ——
 # 而「副本漏了文件」和「代码真的坏了」在报告里长得一模一样。
 # **白名单会静默漏掉新加的文件,黑名单不会。**
-不带 = {".git", ".venv", "__pycache__", ".pytest_cache", ".DS_Store", "node_modules"}
+# ⚠️ **`.fakedata` 不能软链,只能不带。** 2026-10-17 夜:主检出里它有 1.9 GB,
+# 于是那边一跑 `--自测` 就撞拷贝上限(2304 MB),而**我的 worktree 里根本没有这个目录,
+# 所以我这边一直是绿的** —— 又一次「两个检出长得不一样」。
+# 为什么不照大目录那样软链进来:**它是输出目录,门禁会往里写**
+# (`fakedata/checkup.py`、`fakedata/stability.py` 都写 `.fakedata/*.json`;
+#  `runlog_check` 的注释原话「那是输出目录(gitignore,随时清掉)」)。
+# 软链进副本,副本里的写就落到**真的** `.fakedata` 上 —— 那正是软链那条前提要排除的情况。
+# 不带它是安全的,而且有现成证据:我的 worktree 本来就没有它,门禁一直全绿。
+不带 = {".git", ".venv", "__pycache__", ".pytest_cache", ".DS_Store", "node_modules",
+      ".fakedata"}
 
 # 软链进副本、不落第二份字节的大目录(项目根下的)。
 # 2026-10-17 量出来的账:整份拷贝 **10.77 GB / 6335 个文件,其中 10.74 GB 是图** ——
@@ -184,10 +197,24 @@ def 建副本(dst, 上限=None):
               if not os.path.islink(os.path.join(r, f)))
     顶 = 拷贝上限 if 上限 is None else 上限
     if 拷了 > 顶:
+        # ⚠️ **报数不报号,下一个人得自己 du 一遍。** 2026-10-17 夜实测:
+        # 这条在主检出上报「2304 MB 超过 400 MB」,而**占掉它的是谁一个字都没说** ——
+        # 并行会话只能自己去翻才找到是 `.fakedata`。所以把前几名打出来。
+        按顶层 = {}
+        for r, _, fs in os.walk(dst):
+            一级 = os.path.relpath(r, dst).split(os.sep)[0]
+            for f in fs:
+                fp = os.path.join(r, f)
+                if not os.path.islink(fp):
+                    按顶层[一级] = 按顶层.get(一级, 0) + os.path.getsize(fp)
+        大户 = "、".join(f"{k} {v/2**20:.0f} MB"
+                       for k, v in sorted(按顶层.items(), key=lambda kv: -kv[1])[:3])
         raise SystemExit(f"❌ 一份副本要拷 {拷了/2**20:.0f} MB,超过上限 {顶/2**20:.0f} MB ——"
                          f" 全量 {len(json.load(open(SPECS, encoding='utf-8'))) if os.path.exists(SPECS) else 0} 条"
-                         f" 规格要拷这么多份。把新来的大目录登记进 `媒体大目录`,"
-                         f"或者抬高 `拷贝上限` 并写明为什么")
+                         f" 规格要拷这么多份。**最占地方的:{大户}**。"
+                         f" 只读的大目录登记进 `媒体大目录`(软链进副本);"
+                         f" 会被写的输出目录加进 `不带`(软链会让副本里的写落到真目录上);"
+                         f" 两样都不是就抬高 `拷贝上限` 并写明为什么")
     return dst
 
 
@@ -341,6 +368,13 @@ def 自测():
         open(外, "wb").write(b"SQLite format 3\x00" + b"x" * 64)
         os.symlink(外, os.path.join(假, "backend", "lanxiu.db"))
         open(os.path.join(假, "随便.py"), "w").write("# 占位\n")
+        # 输出目录也造一个:**它不该进副本**(门禁会往 `.fakedata` 写,
+        # 软链或拷贝进来都不对 —— 拷进来撞上限、软链进来写到真目录上)。
+        # ⚠️ 这一条**必须自备夹具**:主检出里 `.fakedata` 有 1.9 GB,
+        # 而这个 worktree 里根本没有这个目录 —— 靠「这个检出碰巧有没有它」来验,
+        # 等于在我这边永远验不到(2026-10-17 夜就是这么漏过去的)。
+        os.makedirs(os.path.join(假, ".fakedata"))
+        open(os.path.join(假, ".fakedata", "产物.json"), "w").write("{}")
         global ROOT
         真根 = ROOT
         try:
@@ -348,6 +382,12 @@ def 自测():
             假副本 = 建副本(os.path.join(base, "假副本"))
         finally:
             ROOT = 真根
+        if os.path.exists(os.path.join(假副本, ".fakedata")):
+            print("  ❌ 输出目录 `.fakedata` 进了副本 —— 它是门禁会往里写的地方:"
+                  "拷进来撞拷贝上限,软链进来副本里的写会落到真目录上"); 坏 += 1
+        else:
+            print("  ✅ 输出目录 `.fakedata` 没进副本(自备夹具验的,不靠这个检出有没有它)")
+
         假库 = os.path.join(假副本, "backend", "lanxiu.db")
         if os.path.islink(假库) or not os.path.realpath(假库).startswith(os.path.realpath(假副本) + os.sep):
             print(f"  ❌ 副本里的库指着副本外面:{os.path.realpath(假库)} ——"
