@@ -192,6 +192,24 @@ def _dt(s):
 
 
 # ── 一、队列 ────────────────────────────────────────────────────────────
+def 造数直关登记():
+    """→ 造数**直接写库关掉**的 task id 集合;**登记表不在就返回 None**(不是空集合)。
+
+    「表不在」和「一条都没登记」要分开:前者是这个库还没跑过带登记的造数
+    (跑一次 `python3 tools/backfill_rating.py --只登记` 就有了),
+    后者是真的一条都没有。**两者都会让「说不出是谁关的」那个数变大,
+    但下一步完全不同** —— 合成一个空集合的话,判据只会说「有人绕过正门」,
+    而真相是登记还没建起来。
+
+    表由 `tools/backfill_rating.py` 写(它是唯一直接写库关差评工单的地方)。
+    """
+    import sqlite3 as _sq
+    try:
+        return {r["task_id"] for r in _rows("SELECT task_id FROM seed_direct_closed")}
+    except _sq.OperationalError:
+        return None
+
+
 def 正门关单凭据():
     """→ 有**真实**正门关单记录的 task id 集合。
 
@@ -351,6 +369,7 @@ def queue(state=None):
 def backlog():
     """积压看板。看的是「今天还剩多少件」,不是「历史一共多少件」。"""
     q = queue()
+    _登记 = 造数直关登记()        # None = 这个库还没有登记表(和「一条都没登记」不是一回事)
     todo = [x for x in q if not x["done"]]
     by_state, by_type = {}, {}
     for x in todo:
@@ -388,6 +407,17 @@ def backlog():
         # 没走正门关的(用户 10-14 拍:默认收起、**计数亮着不藏成 0**)—— 只许少不许多:
         # 涨了就是正门又被绕过了。基线 166 在 queue_closed_check 里
         没走正门关的=len([x for x in q if x.get("没走正门")]),
+        # ⚠️ **这个总数随世界日期漂,拿它当告警会报假警。** 2026-10-17 实测:
+        # 同一个提交、只把世界日期分别钉在 10-16 / 10-17 各从零重建一次 → 160 和 166,
+        # 而且不是「多了 6 条」,是差评那批**整批换了**(哪些包裹收到差评、
+        # 造数按年龄概率关掉了哪些,都跟着世界今天走)。
+        # 所以把它拆成两个数:**造数登记在册的**(会漂,按设计会漂)和
+        # **说不出是谁关的**(不漂,应该恒为 0,涨了才是正门被绕过)。
+        # 登记表不在时两个都是 None —— 「没登记表」和「0 条没登记」不能长一样。
+        没走正门_登记在册=(None if _登记 is None else
+                      len([x for x in q if x.get("没走正门") and x["task_id"] in _登记])),
+        没走正门_说不出谁关的=(None if _登记 is None else
+                        len([x for x in q if x.get("没走正门") and x["task_id"] not in _登记])),
         销账依据=dict(sorted(
             ((k, sum(1 for x in q if x["凭什么销账"] == k))
              for k in {x["凭什么销账"] for x in q if x["凭什么销账"]}),

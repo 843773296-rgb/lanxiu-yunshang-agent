@@ -51,6 +51,11 @@ import worldclock
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
 种子 = 20260927
 
+# 造数给差评工单的号是 `TR<包裹号>`,而这批里「已关闭」的那些是**直接写库**关的
+# (正门 2026-10-12 才有,造数不走正门)。这两个常量给登记表用,见 `登记直关的`。
+工单号前缀 = "TR"
+直关来源 = "backfill_rating"
+
 # ── 业务 2026-09-27 拍的形状 ───────────────────────────────────────────
 评价率 = 0.50                    # 签收过的包裹里,有多少留下了评价
 门店均分 = {"SH001 静安旗舰店": 4.7, "SH002 徐汇店": 4.5, "SH003 杭州湖滨店": 4.2}
@@ -255,6 +260,57 @@ def 指纹料(inp):
         月目标=sorted(inp["月目标"].items()),
     ), ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(料.encode("utf-8")).hexdigest()[:16]
+
+
+def 登记直关的(c, 关了的, 今s):
+    """把**造数直接写库关掉**的那批工单登记下来,一条一行。
+
+    ⚠️ **为什么要有这张表(2026-10-17,起因是 CI 上一条红)。**
+    `queue_closed_check` 原来拿一个固定基线(166)卡「没走正门关的」这个数,
+    而那个数**随世界日期漂**:并行会话用同一个提交、只把世界日期分别钉在
+    10-16 和 10-17 各从零重建一次,得到 160 和 166 —— 而且**不是「多了 6 条」,
+    是差评那批整批换了**(只在 10-17 有的 153 条、只在 10-16 有的 147 条,全是差评)。
+    哪些包裹收到差评、造数又按年龄概率关掉了哪些,**都跟着世界今天走**。
+
+    > 一条「正门又被人绕过了」和一条「换了一天重建」,
+    > **在「这个数涨了」这件事上长得一模一样。**
+
+    登记来源之后,判据问的不再是「这个数有没有超过 166」,而是
+    「**有没有一条关掉的工单说不出自己是谁关的**」—— 这个问题不随日期漂,
+    而且答案应该是 0。比「≤166」**既更严也更稳**:原来基线底下藏着的
+    166 条随便换一条也不会红,现在换一条就红。
+    """
+    c.execute("""CREATE TABLE IF NOT EXISTS seed_direct_closed(
+                   task_id TEXT PRIMARY KEY, 来源 TEXT NOT NULL, 造于 TEXT NOT NULL)""")
+    c.execute("DELETE FROM seed_direct_closed WHERE 来源=?", (直关来源,))
+    c.executemany("INSERT OR REPLACE INTO seed_direct_closed(task_id,来源,造于) VALUES(?,?,?)",
+                  [(i, 直关来源, 今s) for i in 关了的])
+    return len(关了的)
+
+
+def 只登记(db=DB, 说=print):
+    """不重造评价,只把库里**现在**已关闭的那批差评工单登记成造数直关。
+
+    给已经在用的库用 —— 登记表是 2026-10-17 才加的,老库里没有,
+    而重跑一遍造数会把评价整批换掉(同一个库上那是**换考卷**,见 `rating_rebuild_check`)。
+
+    ⚠️ **只登记 id 以 `TR` 开头的**(那是造数给差评工单的号)。
+    别的形状的已关闭差评**一条都不登记**:它们要么是别人造的,要么是真有人绕过了正门 ——
+    而「顺手替它们也登记上」正好会把这条判据要报的警**抹掉**。
+    > 替一条来历不明的工单登记来源,和它本来就有来源,在判据眼里长得一模一样。
+    """
+    c = sqlite3.connect(db)
+    关 = [r[0] for r in c.execute(
+        "SELECT id FROM task WHERE type='评价差评' AND status='已关闭'")]
+    造 = [i for i in 关 if i.startswith(工单号前缀)]
+    别的 = [i for i in 关 if not i.startswith(工单号前缀)]
+    n = 登记直关的(c, 造, worldclock.今天().isoformat())
+    c.commit(); c.close()
+    说(f"  登记 {n} 条造数直关的差评工单(库里已关闭的差评共 {len(关)} 条)")
+    if 别的:
+        说(f"  ⚠️ **没登记的 {len(别的)} 条**(id 不是造数的形状):{别的[:5]} —— "
+          f"它们会落进 `queue_closed_check` 的「说不出是谁关的」那一档,**那正是要报的警**")
+    return 0
 
 
 def 取行集指纹(db=DB):
@@ -481,6 +537,8 @@ def 铺(db=DB, 说=print):
                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", 行)
     c.executemany("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",
                   工单)
+    # 直接写库关掉的那批,**登记来源** —— 不登记的话,「正门被绕过」和「换了一天」分不开
+    登记直关的(c, [t[0] for t in 工单 if t[3] == "已关闭"], 今s)
     # ⚠️ **记下造数时世界停在哪天。**
     # 2026-09-27 CI 连红两次,根因是这个脚本在 `rebuild.sh` 里排在 `shift_world` **之前**:
     # `seed.py` 重建之后世界回到建库基准日(2026-08-31),造数按「8 月」给月度目标,
@@ -695,6 +753,28 @@ def _自测():
     ck("差评都建了工单", c.execute(
         "select count(*) from rating where star<=? and task_id is null", (R.差评线,)
     ).fetchone()[0] == 0)
+    # ── 直接写库关掉的那批,来源登记对不对 ────────────────────────────
+    # 为什么要验这两条:判据 `queue_closed_check` 现在问的是
+    # 「**有没有一条关掉的工单说不出是谁关的**」,而这个问题的答案
+    # 完全取决于这里登记得对不对 —— 登记漏了会**误报有人绕过正门**,
+    # 登记多了会**把真的绕过悄悄洗白**。两种错方向相反,都得验。
+    关了的 = {r[0] for r in c.execute(
+        "select id from task where type='评价差评' and status='已关闭'")}
+    登 = {r[0] for r in c.execute("select task_id from seed_direct_closed")}
+    ck("直接关掉的那批都登记了来源", 关了的 and 登 == 关了的,
+       f"关了 {len(关了的)} 条、登记 {len(登)} 条;漏登 {sorted(关了的 - 登)[:3]}、"
+       f"多登 {sorted(登 - 关了的)[:3]}")
+    # `--只登记` 只认造数的号(TR 开头)。塞一条别的形状的已关闭差评进去,
+    # 它**不许**被登记 —— 替一条来历不明的工单登记来源,
+    # 和它本来就有来源,在判据眼里长得一模一样。
+    c.execute("insert into task(id,type,ref_id,status,created,summary) "
+              "values('X-来历不明','评价差评','P-X','已关闭',?,'自测:不是造数的号')",
+              (夹具今天 + " 10:00",))
+    c.commit()
+    只登记(p, 说=lambda *a, **k: None)
+    登2 = {r[0] for r in sqlite3.connect(p).execute("select task_id from seed_direct_closed")}
+    ck("只登记造数形状的号(来历不明的那条不许被登记上)", "X-来历不明" not in 登2,
+       "它被登记了 —— 那等于替一条绕过正门关掉的工单开了张来源证明")
     建于 = (c.execute("select v from world_meta where k='rating_built_on'").fetchone() or [None])[0]
     ck("记下了造数时的世界日期(顺序那道守卫靠它)", 建于 == 夹具今天,
        f"记的是 {建于} —— `rating_check` 的「造数之后世界没有再被平移过」靠这个值,"
@@ -723,11 +803,17 @@ def _自测():
     ("让造数不记「它用的是哪天的世界日期」", "记下了造数时的世界日期"),
     ("把星级分布的插值锚点收窄回 4.14~4.75(两头目标被静默夹掉)", "没有发生静默夹逼"),
     ("让差评不建工单(差评躺在表里,不进待处理清单)", "差评都建了工单"),
+    ("让造数不登记它直接关掉的那批(登记表空着)", "直接关掉的那批都登记了来源"),
+    ("让 `--只登记` 连不是造数形状的号也登记上", "只登记造数形状的号"),
     ("把造数用的月目标写死回某一天(世界平移后趋势挪走)", "**按店配对合并后**在上升"),
     ("让月目标把没走完的当月也算成完整月", "跨年也对"),
 ]
 
 if __name__ == "__main__":
+    if "--只登记" in sys.argv:
+        print("只登记造数直关的差评工单(不重造评价)")
+        print("=" * 78)
+        sys.exit(只登记())
     if "--selftest" in sys.argv:
         print("评价造数 · 自测(合成夹具,不碰真库)")
         print("=" * 78)
