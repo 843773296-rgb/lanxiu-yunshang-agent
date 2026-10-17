@@ -278,6 +278,7 @@ run "营销数据体检 · 那几类触点够不够(只报状态,永不拦)" \
 run "竞品与行业 · 每条有日期、过期会自己说、真有人引用" python3 backend/competitor_check.py
 run "知识库扩容 · 每条详解说得出回答了什么问题、有出处、不漏进工艺表" python3 backend/kb_depth_check.py
 run "咬合记录 · 最贵的那一步不许只在脑子里" python3 tools/bite_check.py
+run "咬合副本 · 库是副本自己的 / 大目录软链 / 要改的是真文件" python3 tools/bite_run.py --自测
 
 # 执行上限的落点对账(规格「工具调用上限与防循环监控」P0-A)。
 # ⚠️ 这一条红的时候,**红的通常不是代码,是那张登记表过期了** ——
@@ -469,7 +470,7 @@ run "顾问引用 · 名字列不许长回来、工号列从库结构现算、�
 run "研判销账的门 · 只有对应角色能销、署名从登录态取、成功被拒都留痕、副本上不上报(库副本上真攻击)" python3 backend/ops_resolve_check.py
 run "研判已办结 · 只认真走完、属于这件事的回执单号(定金单/维保单/差评按处理方式认单;库副本上自造样本)" python3 backend/ops_close_check.py
 run "研判「在等顾客」· 不停表、超时率另报剔除它的数、要写等什么(库副本上自造样本)" python3 backend/ops_wait_check.py
-run "研判队列「没走正门关的」· 凭据要真实(清理演示数据不算复核)、只许少不许多(库副本自造 + 真库棘轮)" python3 backend/queue_closed_check.py
+run "研判队列「没走正门关的」· 凭据要真实(清理演示数据不算复核)、关掉的说得出是谁关的(库副本自造 + 真库来源登记)" python3 backend/queue_closed_check.py
 run "研判队列只放能跑的 · 差评挪到值班台、一条不丢(用户 10-15 拍)"    python3 backend/queue_split_check.py
 run "退款执行写口 · 只有财务、先核实再重发、已退要流水号且不重复、通用入口绕不过(用户 10-15 拍)"    python3 backend/refund_write_check.py
 run "研判示例库 · 不相交、评测根因覆盖面不少、不挑自己、默认不带示例(用户 10-16 拍)"    python3 backend/example_pool_check.py

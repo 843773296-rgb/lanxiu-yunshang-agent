@@ -8264,5 +8264,63 @@
    }
   ],
   "预期红": "讲「做了会导致重复退款」的后果不算建议重复退款"
+ },
+ {
+  "script": "tools/bite_run.py",
+  "改坏": "副本里那条指向共享真库的软链不拷实(改库型规格就会改到真库上)",
+  "file": [
+   {
+    "path": "tools/bite_run.py",
+    "old": "    _拷实外指的软链(dst, 软链)\n",
+    "new": ""
+   }
+  ],
+  "预期红": "副本里的库还指着外面"
+ },
+ {
+  "script": "tools/bite_run.py",
+  "改坏": "把大目录登记表清空 —— 商品图备份和库备份又被整份拷进副本",
+  "file": [
+   {
+    "path": "tools/bite_run.py",
+    "old": "媒体大目录 = (\"商品图备份\", \"库备份\")",
+    "new": "媒体大目录 = ()"
+   }
+  ],
+  "预期红": "超过上限"
+ },
+ {
+  "script": "backend/queue_closed_check.py",
+  "改坏": "往库里塞一条没登记来源的「已关闭差评」工单(模拟有人绕过正门关单)",
+  "sql": [
+   "CREATE TABLE IF NOT EXISTS seed_direct_closed(task_id TEXT PRIMARY KEY, 来源 TEXT NOT NULL, 造于 TEXT NOT NULL)",
+   "INSERT OR REPLACE INTO seed_direct_closed(task_id,来源,造于) SELECT id,'backfill_rating','2026-01-01' FROM task WHERE type='评价差评' AND status='已关闭' AND id LIKE 'TR%'",
+   "INSERT INTO task(id,type,ref_id,status,created,summary) VALUES('T-绕门-咬合','评价差评','P-绕门-咬合','已关闭','2026-01-01 10:00:00','咬合:绕过正门关掉的差评')"
+  ],
+  "预期红": "说不出是谁关的"
+ },
+ {
+  "script": "tools/backfill_rating.py",
+  "改坏": "让造数不登记它直接关掉的那批(登记表空着)",
+  "file": [
+   {
+    "path": "tools/backfill_rating.py",
+    "old": "    登记直关的(c, [t[0] for t in 工单 if t[3] == \"已关闭\"], 今s)",
+    "new": "    登记直关的(c, [], 今s)"
+   }
+  ],
+  "预期红": "直接关掉的那批都登记了来源"
+ },
+ {
+  "script": "tools/backfill_rating.py",
+  "改坏": "让 `--只登记` 连不是造数形状的号也登记上",
+  "file": [
+   {
+    "path": "tools/backfill_rating.py",
+    "old": "    造 = [i for i in 关 if i.startswith(工单号前缀)]",
+    "new": "    造 = list(关)"
+   }
+  ],
+  "预期红": "只登记造数形状的号"
  }
 ]
