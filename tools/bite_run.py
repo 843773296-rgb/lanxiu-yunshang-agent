@@ -69,6 +69,10 @@ SPECS = os.path.join(HERE, "bite_specs.json")
     # 而这个 worktree 没有这个目录、一直是绿的 —— 又一次「两个检出长得不一样」。
     ("把 `.fakedata` 从 `不带` 里删掉(输出目录又被拷进副本)",
      "进了副本"),
+    # 2026-10-17 夜加的「前置步骤」:有一类咬合要先把库建成某个状态才验得到,
+    # 当天三次独立撞到(rating_rebuild 的指纹 / seed.py 的登记 / 同段那条 assert)。
+    ("把 `前置` 的形状检查删掉(写成字符串也放过,于是 for 把它拆成单个字母)",
+     "前置"),
 ]
 
 # 副本里**不**带的东西。
@@ -297,7 +301,7 @@ def 验规格(specs, 根=None):
     · 这一关在**开跑之前对所有规格做完**:全量重放要跑近两个钟头,
       等跑到第 320 条才发现规格是坏的,前面那一个钟头已经花掉了。
     """
-    认得的键 = {"script", "改坏", "预期红", "sql", "file"}
+    认得的键 = {"script", "改坏", "预期红", "sql", "file", "前置"}
     坏, 提示 = [], []
     for i, s in enumerate(specs, 1):
         缺 = [k for k in ("script", "改坏", "预期红") if not s.get(k)]
@@ -309,6 +313,11 @@ def 验规格(specs, 根=None):
                        (f",而它带着执行器不认的键 {'/'.join(野)} —— 破坏大概写在那里了" if 野 else "")))
         elif 野:
             坏.append((i, s["script"], f"带着执行器不认的键 {'/'.join(野)}"))
+        前 = s.get("前置")
+        if 前 is not None and (not isinstance(前, list) or not all(
+                isinstance(x, str) and x.strip() for x in 前)):
+            坏.append((i, s["script"], "`前置` 要是一串非空命令(列表),现在是 "
+                       f"{type(前).__name__}"))
         if not 根:
             continue
         for f in s.get("file", []):
@@ -458,6 +467,15 @@ def 自测():
         else:
             print(f"  ✅ 带着执行器不认的键的规格也被挑出来({验规格(乙)[0][2]})")
 
+        丁 = [{"script": "x.py", "改坏": "前置写成了字符串而不是一串命令", "预期红": "随便",
+               "file": [{"path": "x.py", "old": "a", "new": "b"}],
+               "前置": "python3 一条字符串不是列表.py"}]
+        if not 验规格(丁):
+            print("  ❌ `前置` 写成字符串没被挑出来 —— 字符串会被 for 拆成单个字符,"
+                  "于是「前置」变成一串跑不起来的单字母命令"); 坏 += 1
+        else:
+            print(f"  ✅ `前置` 的形状不对也会被挑出来({验规格(丁)[0][2][:30]}…)")
+
         # 破坏点过期的(要改的那段在文件里已经找不到)。
         # ⚠️ **那串「找不到的文本」必须在运行时拼出来。** 写成字面量的话,
         # 它就**出现在这个文件里**了 —— 而夹具的 path 指的正是这个文件,
@@ -544,13 +562,49 @@ def main():
         # 2026-10-17 实测:加上这个参数,单条从 31 秒掉到 1 秒以内。
         shutil.copytree(pristine, work, symlinks=True)
 
-        # ① 对照要绿
-        if script not in 对照:
+        # ① 前置:把库建成这条咬合需要的状态(可选)
+        #
+        # ⚠️ **为什么要有它。** 有一类咬合「破坏要生效必须先把库建成某个状态」——
+        # 2026-10-17 一天里**三次独立撞到**:
+        #   · `rating_rebuild_check` 只在「库里记了造数输入指纹」时才硬判,
+        #     而这个检出的库是加指纹**之前**造的 → 那条咬合在本机永远验不到;
+        #   · `seed.py` 的「注销后关闭合并工单」登记,要先建一次库才看得见;
+        #   · 同一段那条 assert 同理。
+        # 三次都只能记进账、配不了咬合。而缺的其实只是「跑之前先做几步」。
+        #
+        # **这是增强,不是放宽**:它让原本验不到的咬合真的能验,
+        # 而不是给咬合开一个「验不到就不判红」的出口 —— 那两件事当天被我混过一次。
+        #
+        # ⚠️ **有前置的规格不能共用对照缓存**:前置改了库,对照自然和别人不同。
+        # 所以缓存的键是 (脚本, 前置),不是脚本。
+        前置 = tuple(s.get("前置", ()))
+        if 前置:
+            挂 = None
+            for cmd in 前置:
+                try:
+                    pp = subprocess.run(cmd, shell=True, cwd=work, capture_output=True,
+                                        text=True, timeout=1800)
+                except subprocess.TimeoutExpired:
+                    挂 = f"`{cmd}` 跑了 30 分钟还没完"; break
+                if pp.returncode != 0:
+                    尾 = (pp.stdout + pp.stderr).strip().split("\n")[-1][:120]
+                    挂 = f"`{cmd}` 退出码 {pp.returncode}:{尾}"; break
+            if 挂:
+                # **单独报,不混进「改坏了却没红」** —— 这是今天最贵的那个教训:
+                # 三种失败报同一句话,13 条里有 5 条把人指向了错误的修复对象。
+                print(f"  ❌ [{i}/{len(specs)}] {script}  前置步骤没跑成:{挂}")
+                print(f"       —— **这不是判据的错**,是这条咬合需要的库状态没建起来")
+                红.append(s); continue
+
+        # ② 对照要绿
+        键 = (script, 前置)
+        if 键 not in 对照:
             rc0, out0 = 跑(work, script)
-            对照[script] = (rc0, out0)
-        rc0, out0 = 对照[script]
+            对照[键] = (rc0, out0)
+        rc0, out0 = 对照[键]
         if rc0 != 0:
-            print(f"  ❌ [{i}/{len(specs)}] {script}  **对照就是红的** —— 这条咬合证明不了任何事")
+            print(f"  ❌ [{i}/{len(specs)}] {script}  **对照就是红的** —— 这条咬合证明不了任何事"
+                  + ("(它有前置步骤,先怀疑前置把库建成了判据不认的样子)" if 前置 else ""))
             红.append(s); continue
 
         # ② 改坏

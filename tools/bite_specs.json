@@ -7395,7 +7395,7 @@
  },
  {
   "script": "backend/rating_rebuild_check.py",
-  "改坏": "把造数里不出钱那一族的配对列表删掉一项(改了造数脚本,而库里那批是改之前造的)",
+  "改坏": "把造数里不出钱那一族的配对列表删掉一项(改了造数脚本,而库里那批是改之前造的)。⚠️ 这条**靠前置步骤才验得到**:判据只在「库里记了造数输入指纹」时才硬判号的等式,而这个检出的库是加指纹**之前**造的 —— 前置先用未改坏的代码跑一遍造数(写下指纹),对照才绿、破坏才看得见",
   "file": [
    {
     "path": "tools/backfill_rating.py",
@@ -7403,7 +7403,10 @@
     "new": ""
    }
   ],
-  "预期红": "**重跑造出的那批号,和库里那批一模一样**"
+  "预期红": "**重跑造出的那批号,和库里那批一模一样**",
+  "前置": [
+   "python3 tools/backfill_rating.py"
+  ]
  },
  {
   "script": "backend/rating_rebuild_check.py",
@@ -8363,6 +8366,18 @@
    }
   ],
   "预期红": "进了副本"
+ },
+ {
+  "script": "tools/bite_run.py",
+  "改坏": "把 `前置` 的形状检查删掉(写成字符串也放过,于是 for 把它拆成单个字母命令)",
+  "file": [
+   {
+    "path": "tools/bite_run.py",
+    "old": "        前 = s.get(\"前置\")\n        if 前 is not None and (not isinstance(前, list) or not all(\n                isinstance(x, str) and x.strip() for x in 前)):\n            坏.append((i, s[\"script\"], \"`前置` 要是一串非空命令(列表),现在是 \"\n                       f\"{type(前).__name__}\"))\n",
+    "new": ""
+   }
+  ],
+  "预期红": "前置"
  },
  {
   "script": "backend/queue_closed_check.py",
