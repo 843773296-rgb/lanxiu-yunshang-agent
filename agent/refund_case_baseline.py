@@ -42,7 +42,7 @@
 不是一条结构约束 —— 名单改一行它就够得着了,而那一轮的分会变好看。
 所以这里**扫财务角色挂的每个工具的源码**,有谁读 `task` / `triage` 表就红。
 """
-import argparse, io, json, os, sqlite3, sys
+import argparse, datetime as _dt, io, json, os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -313,7 +313,19 @@ def 自备夹具(单号="DQ9001"):
     shutil.copy2(api.DB, 副本)
     c = sqlite3.connect(副本)
     出事 = RR.出事于(c, 单号)
-    晚 = f"{str(出事)[:10]} 20:27"              # 比出事那一刻晚,照真实闭环那次
+    # ⚠️ **要比出事那一刻晚,所以相对它算,不许写死。**
+    # 第一版写的是 `{出事日期} 20:27`(照真实闭环那次的时分秒)——
+    # 它假定「出事时刻早于 20:27」。我真库 12:46、本地从零重建 16:19 都成立,
+    # 而 **CI 2026-10-17 那轮在 UTC 22:55 跑**,造数那一刻 22:55 **晚于** 20:27。
+    # 于是夹具造出来的「闭环痕迹」反而**早于**出事,遮蔽**正确地不遮它** ——
+    # CI 报「轨迹上至少遮住一处(实际 0 处)」「押金单上至少遮住一处(实际 0 处)」,
+    # 而遮蔽一点问题都没有。
+    # > 一个「遮蔽坏了」和一个「我造的夹具根本不该被遮」,在那个 0 处上长得一模一样。
+    # 📌 这是**同一个错误在同一个文件的第二处**:昨天修了 `refund_case_check` 咬合里
+    # 写死的 `12:00`,而这里的 `20:27` 当时没看见 —— 改一处的时候要搜一遍同类。
+    # (跨天不要紧:遮蔽按「晚于分界点」判,跨到第二天照样遮;而被遮掉的东西不进基准。)
+    _出事时 = _dt.datetime.fromisoformat(str(出事).strip().replace("T", " "))
+    晚 = (_出事时 + _dt.timedelta(minutes=461)).strftime("%Y-%m-%d %H:%M")  # 461 分 = 12:46→20:27
     c.execute("UPDATE deposit SET status='已退', updated=? WHERE id=?", (晚, 单号))
     c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,"
               "resp_code,resp_msg,idem_key) VALUES(?,?,?,'渠道核实其实已退',?,"
