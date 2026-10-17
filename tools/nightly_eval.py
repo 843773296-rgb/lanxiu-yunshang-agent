@@ -48,6 +48,11 @@ OK = os.path.join(FEY, "nightly-eval-ok")
 
 窗口开始, 不开新的, 强停 = dt.time(0, 0), dt.time(4, 30), dt.time(4, 55)   # 0 点开跑:用户 10-14 拍「放在12点跑」
 每套上限分钟 = 25
+# 按白天真跑的时长单独给(10-16):商机一套 41 分钟;运营 68 题×两轮,60 分钟跑不完,约 2 个多小时
+单独上限分钟 = {"oppo_eval.py": 50, "ops_eval.py": 150}
+# 运营 150 分钟 + 其余 23 套约 3 小时 40 分,一晚(0:00–4:55)放不下 ——
+# 用户 10-17 拍「每周一晚单跑运营」:周日凌晨(周六晚那一轮)只跑它,其余六晚跑另外 23 套
+单跑那晚 = {"ops_eval.py": 6}   # 套名 → 星期几(周一=0 … 周日=6)
 # 先跑最能回答「能力变没变」的两套,其余按名字
 先跑 = [("gen_compare.py", []), ("tool_eval.py", [])]
 额外参数 = {"scheme_eval.py": ["--run"]}
@@ -68,11 +73,15 @@ def 有人在用():
     return None
 
 
-def 清单():
-    套 = list(先跑)
+def 清单(星期=None):
+    星期 = dt.date.today().weekday() if 星期 is None else 星期
+    单跑 = [(f, 额外参数.get(f, [])) for f, 哪天 in 单跑那晚.items() if 哪天 == 星期]
+    if 单跑:
+        return 单跑
+    套 = [x for x in 先跑 if x[0] not in 单跑那晚]
     已 = {x for x, _ in 套}
     for f in sorted(os.listdir(os.path.join(ROOT, "agent"))):
-        if f.endswith("_eval.py") and f not in 已:
+        if f.endswith("_eval.py") and f not in 已 and f not in 单跑那晚:
             套.append((f, 额外参数.get(f, [])))
     return 套
 
@@ -187,7 +196,7 @@ def 挪走夜跑的(快, 名):
 
 def 跑一套(名, 参数, 截止):
     env = 评测环境()
-    限 = max(60, min(每套上限分钟 * 60, int((截止 - dt.datetime.now()).total_seconds())))
+    限 = max(60, min(单独上限分钟.get(名, 每套上限分钟) * 60, int((截止 - dt.datetime.now()).total_seconds())))
     t0 = time.time()
     try:
         r = subprocess.run([PY, os.path.join("agent", 名), *参数], cwd=ROOT, env=env,
