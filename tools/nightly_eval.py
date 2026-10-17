@@ -82,9 +82,30 @@ def 清单():
 要的路 = ("claude-oauth", "claude-haiku-4-5")
 
 
+def _系统代理():
+    """读 macOS 系统代理(`scutil --proxy`)—— 只取地址和端口,不带账号密码,仓库里不留任何密钥。"""
+    try:
+        t = subprocess.run(["/usr/sbin/scutil", "--proxy"], capture_output=True, text=True, timeout=10).stdout
+    except Exception:                                                        # noqa: BLE001
+        return None
+    值 = dict(re.findall(r"^\s*(\w+)\s*:\s*(\S+)", t, re.M))
+    if 值.get("HTTPSEnable") == "1" and 值.get("HTTPSProxy") and 值.get("HTTPSPort"):
+        return f"http://{值['HTTPSProxy']}:{值['HTTPSPort']}"
+    return None
+
+
 def 评测环境():
     env = {k: v for k, v in os.environ.items() if k not in 按量计费的凭证}
     env.update(LANXIU_PROVIDER="claude", ANTHROPIC_MODEL="claude-haiku-4-5", PYTHONDONTWRITEBYTECODE="1")
+    # ⚠️ 2026-10-17 查实夜跑 403 的根因:launchd 起的进程**没有代理环境变量**,而评测走的 SDK 那条路
+    # 没代理就被拒(「403 Request not allowed」);白天在会话里跑,环境里带着代理,所以一直通。
+    # 白天在 launchd 里复现过:同一个 SDK 调用,无代理 403、补上代理就通;命令行 claude -p 无代理也通 ——
+    # 所以原来那道「开跑前用 claude -p 真问一句」测的不是评测走的路,两晚都放行了。
+    # 环境里没有代理时,现读系统代理补上(系统代理不带密码)
+    if not any(env.get(k) for k in ("HTTPS_PROXY", "https_proxy")):
+        代理 = _系统代理()
+        if 代理:
+            env.update(HTTPS_PROXY=代理, HTTP_PROXY=代理, NO_PROXY="localhost,127.0.0.1,::1")
     return env
 
 
@@ -92,10 +113,15 @@ def 评测环境():
 
 
 def 真问一句():
-    """用**评测同一个环境**真调一次模型(走 Claude Code 命令行 —— 评测的 SDK 底下就是它)。返回 (通不通, 说明)。"""
+    """用**评测同一个环境、同一条路**(SDK 的 `sdk.run`)真调一次模型。返回 (通不通, 说明)。
+
+    ⚠️ 原来走 `claude -p` 命令行 —— 它没代理也通,而评测走的 SDK 没代理就 403,
+    于是 10-16、10-17 两晚这道闸都放行了、整晚空跑(2026-10-17 查实)。**测的必须是评测真走的那条路**。"""
+    码 = ("import sys,asyncio; sys.path[:0]=['agentsite','backend','knowledge','agent']; import sdk; "
+          "r=asyncio.run(sdk.run('kb','只回复两个字:正常')); print('回答:'+(r.get('text') or ''))")
     try:
-        r = subprocess.run(["claude", "-p", "只回复两个字:正常", "--model", 要的路[1]], cwd=ROOT, env=评测环境(),
-                           capture_output=True, text=True, timeout=120)
+        r = subprocess.run([PY, "-c", 码], cwd=ROOT, env=评测环境(),
+                           capture_output=True, text=True, timeout=180)
     except Exception as e:                                                   # noqa: BLE001
         return False, f"{type(e).__name__}: {e}"[:160]
     出 = (r.stdout + r.stderr).strip()
@@ -129,6 +155,7 @@ def 拍快照():
 def 挪走夜跑的(快, 名):
     """把这一套往基线文件里加的东西挪到 agent/nightly/,原文件恢复原样。返回挪了哪些。"""
     挪 = []
+    挪走夜跑的.认证失败 = 0
     夜 = os.path.join(ROOT, "agent", "nightly")
     for d in 基线目录:
         for f in os.listdir(os.path.join(ROOT, d)):
@@ -143,6 +170,8 @@ def 挪走夜跑的(快, 名):
             os.makedirs(夜, exist_ok=True)
             去 = os.path.join(夜, os.path.relpath(p, ROOT).replace(os.sep, "__"))
             新增 = 现[len(旧):] if 旧 is not None and 现.startswith(旧) else 现
+            # 评测把调用报错接住写进结果文件、屏幕上只打汇总 —— 认证失败只看输出是看不见的(10-17 那晚 17 套记成「过」)
+            挪走夜跑的.认证失败 += len(认证失败.findall(新增.decode("utf-8", "replace")))
             with open(去, "ab") as h:
                 h.write(新增)
             if 旧 is None:
@@ -215,6 +244,9 @@ def main():
         快 = 拍快照()
         r = 跑一套(名, 参数, 截止)
         r["挪走"] = 挪走夜跑的(快, 名)
+        if 挪走夜跑的.认证失败 and r["结果"] in ("过", "判红"):
+            r["结果"] = "没跑成(认证失败)"
+            r["尾"] = (r.get("尾") or []) + [f"结果文件里有 {挪走夜跑的.认证失败} 处认证失败"]
         结果.append(r)
         说(f"  {名}:{r['结果']}({r['分钟']} 分钟)")
     os.makedirs(报告目录, exist_ok=True)
