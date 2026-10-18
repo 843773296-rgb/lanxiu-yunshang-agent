@@ -379,7 +379,7 @@ run "导航 · 每个页面都有入口,而且入口只有一个来源(2 条咬�
 run "自有工坊报工判分器 · 15 条人造对照(话说得漂亮但手动了照样挂)" python3 agent/workshop_eval_judgetest.py
 run "AI 调控中心 · 没做的模块不给假入口;咨询详情五段齐(21 条自测)" python3 agentsite/aihub.py --selftest
 run "提示词候选 · 不指定就用源头、找不到就抛、没验证不许采纳(7 条自测)" python3 tools/prompt_candidate.py --selftest
-run "演示世界的日期 · 世界跟着真实日期走,库说的和数据实际的要对得上(4 条咬合)" python3 tools/shift_world.py --check
+run "演示世界的日期 · 世界跟着真实日期走,库说的和数据实际的要对得上(6 条咬合)" python3 tools/shift_world.py --check
 # ⚠️ 上面那条用的是**合成夹具**(4 张表、11 个日期列),守的是挪法本身。
 # 下面这条在**真库的副本**上整库挪 200 天,守的是平移那句很强的承诺:
 # 「一切相对关系不变」。两条不能互相代替 —— 夹具里没有 lifecycle_history,
