@@ -164,16 +164,20 @@ async function load(){
     `<tr><td colspan="4">没有等店长确认的差评。</td></tr>`;
 }
 $("#run").onclick=async()=>{
-  const btn=$("#run"); btn.disabled=true; const t0=Date.now();
-  $("#msg").textContent="智能体在跑…… 每条要查 2–4 次数据,别关页面。";
+  // 10-18 起提交即返回(用户拍「自建运行记录」):这里只登记,在后台跑;运行号存下,研判队列页打开就接着显示进度
+  const btn=$("#run"); btn.disabled=true;
   try{
     const r=await fetch("/run-batch",{method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({n:3})}).then(r=>r.json());
-    const n=(r.done||[]).length, f=(r.failed||[]).length;
-    $("#msg").textContent=`研判了 ${n} 条${f?`,失败 ${f} 条`:""},花了 $${(r.cost||0).toFixed(4)},`+
-      `用时 ${((Date.now()-t0)/1000).toFixed(0)}s。去队列复核 →`;
-    await load();
-  }catch(e){ $("#msg").textContent="跑失败:"+e; }
+    if(r.error) $("#msg").textContent="没提交成:"+r.error;
+    else if(!(r.runs||[]).length) $("#msg").textContent=r.note||"这次一条都没提交 —— 队列里没有可跑的工单";
+    else{
+      try{ localStorage.setItem("研判运行号", r.runs.map(x=>x.run_id).join(",")); }catch(e){}
+      const 复用=r.runs.filter(x=>x.复用).length;
+      $("#msg").innerHTML=`已提交 ${r.runs.length} 条,在后台跑(每条约 30 秒,关页面不影响)`+
+        (复用?`,其中 ${复用} 条别处已经在跑、没有重跑`:"")+`。<a href="/queue">去研判队列看进度 →</a>`;
+    }
+  }catch(e){ $("#msg").textContent="没提交成:"+e; }
   btn.disabled=false;
 };
 load();

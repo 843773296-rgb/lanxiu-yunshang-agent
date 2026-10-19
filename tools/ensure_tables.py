@@ -40,6 +40,7 @@ import report_doc
 import arrival_card
 import order_contract
 import escalation
+import triage_run
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -64,6 +65,8 @@ import escalation
     # 研判升级记录(2026-10-17):第一次有人点「升级」时才建 —— 而造研判样本那步(真调模型)会升级一条,
     # 于是**本机从零建库有这张表、CI(调不到模型)没有**,表数随「有没有人升级过」漂。在这里建死
     (escalation, "确保表", ["escalation"]),
+    # 研判运行记录(2026-10-18):第一次有人点「研判」、或执行线程第一次报心跳时才建 —— 同上,建死免得表数漂
+    (triage_run, "确保表", ["triage_run", "triage_worker"]),
 ]
 
 

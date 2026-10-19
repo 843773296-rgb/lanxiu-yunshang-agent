@@ -84,12 +84,14 @@ textarea,input[type=text]{width:100%;font-family:var(--sans);font-size:13.5px;pa
       <button data-s="已超时">已超时</button>
       <button data-s="未研判">未研判</button>
       <button data-s="待复核">待复核</button>
+      <button data-s="改判待审">改判待审</button>
       <button data-s="已销账">已销账</button>
       <button data-s="">全部</button>
     </div>
     <button class="pri" id="run">研判 <input id="n" type="number" value="3" min="1" max="10"
       style="width:44px;padding:2px 4px;font-family:var(--mono);border-radius:3px;border:1px solid rgba(255,255,255,.4);background:transparent;color:inherit"> 条</button>
     <span class="note" id="msg"></span>
+    <span id="转人工们"></span>
   </div>
   <div class="mask" id="mask"></div>
   <div class="split" id="split">
@@ -105,8 +107,8 @@ textarea,input[type=text]{width:100%;font-family:var(--sans);font-size:13.5px;pa
   </div>
 </section>
 
-<footer>研判落库在 <code>triage</code> 表 · 改判回流写 <code>truth</code> 表并标 <code>src=人工改判</code>
-—— 分开标是因为回流条目<b>没有第二个人复核过</b></footer>
+<footer>研判落库在 <code>triage</code> 表 · 改判先进候选、总部运营审核采用、换考卷时才写进 <code>truth</code>(标 <code>src=人工改判</code>)
+—— 一个人的判断不直接变成标准答案</footer>
 </div>
 <script>
 const $=s=>document.querySelector(s);
@@ -402,8 +404,10 @@ async function open_(tid){
     ${done?fld("人工裁决",`${d.status} · ${d.handler||""} ${d.handled_at||""}
 ${d.human_root_cause||""}${d.human_note?"\n"+d.human_note:""}`):""}
     ${升?fld("升级",`${升.状态} · 交给 ${升.去向||"(没有接收人,10-17 之前的旧数据)"}${升.期限?" · 接单期限 "+升.期限:""}${升.发起人?"\n发起:"+升.发起人:""}${升.原因?"\n原因:"+升.原因:""}${升.接单人?"\n处理人:"+升.接单人:""}${升.退回理由?"\n退回理由:"+升.退回理由:""}`):""}
+    ${x.改判审核 ? 改判审核块(x.改判审核, d) : ""}
     ${done && x.type==="财务人工任务" ? `<div class="fld" id="退款块"><div class="k">退款处理与办结(财务)</div>
       <div id="退款内">加载中…</div></div>` : ""}
+    ${(done && x.type!=="财务人工任务" && d.办结) ? 办结块(d.办结, d.id) : ""}
     ${done||升着?"":`<div class="edit" id="edit">
       ${(d.改判选项||[]).length ? `
       <label>你认定的根因(从预存的里选)</label>
@@ -412,8 +416,8 @@ ${d.human_root_cause||""}${d.human_note?"\n"+d.human_note:""}`):""}
       <label>应该怎么处理(随根因带出,预存的标准处理)</label><div class="traj" id="hac">选了根因就显示</div>
       <label>备注 / 依据</label><textarea id="hnt" rows="2" placeholder="选填"></textarea>`
       : `<div class="hint">这类工单还没有预存的根因可选,改判不了 —— 觉得智能体判错了就点「升级」。</div>`}
-      <div class="hint"><b>注意:</b>改判会写进评测集并标为「人工改判」。
-        它<b>只经过你一个人</b>的判断,回归时会单独统计通过率 —— 判错了会变成假的标准答案。</div>
+      <div class="hint"><b>注意:</b>改判<b>不会直接进评测集</b>。它先记成候选,由总部运营审核(不能是你自己);
+        采用的等下次换考卷时才并入 —— 只经过一个人判断的结论,不直接变成以后考 AI 的标准答案。</div>
     </div>`}
   </div>
   ${升着 ? `<div class="ft">
@@ -430,6 +434,63 @@ ${d.human_root_cause||""}${d.human_note?"\n"+d.human_note:""}`):""}
     <span class="note" id="rmsg" style="font-size:12.5px;color:var(--ink-3)"></span></div>`}`;
   if($("#退款内")) await 画退款(x.ref, d.id, x);
 }
+/* ── 改判审核(用户 2026-10-19 拍:总部运营审,不能是改判人自己)────────────────────────
+   改判不直接进评测集:候选 → 审核采用 / 驳回 → 换考卷时并入。谁能审由后端判,页面不猜角色 */
+function 改判审核块(状态, d){
+  const 头=`<div class="k">改判审核 · ${esc(状态)}</div>`;
+  if(状态!=="待审核")
+    return `<div class="fld">${头}<div>${状态==="已采用"?"已采用 —— 下次换考卷时并入评测集"
+      :状态==="已并入"?"已并入评测集":"已驳回 —— 只作用在这张工单上,不进评测集"}${d.relabel_note?" · "+esc(d.relabel_note):""}</div></div>`;
+  return `<div class="fld">${头}<div>智能体判的:${esc(d.ai_root_cause||"—")} → 改判成:<b>${esc(d.human_root_cause||"—")}</b>(${esc(d.handler||"")})</div>
+    <div class="rf"><button class="pri" data-relabel="采用" data-tri="${d.id}">采用</button>
+    <input id="驳回理由" placeholder="驳回的话写理由" style="flex:1;min-width:120px">
+    <button data-relabel="驳回" data-tri="${d.id}">驳回</button></div>
+    <div class="note" id="审提示" style="font-size:12.5px"></div></div>`;
+}
+$("#panel").addEventListener("click",async e=>{
+  const b=e.target.closest("[data-relabel]"); if(!b) return;
+  const 说=t=>{ const p=$("#审提示"); if(p) p.textContent=t; };
+  const 动=b.dataset.relabel, 理由=(($("#驳回理由")||{}).value||"").trim();
+  if(动==="驳回" && !理由){ 说("驳回要写理由 —— 改判的人要知道为什么不算数"); return; }
+  b.disabled=true; 说("提交中…");
+  const r=await fetch("/api/ops-relabel-review",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({triage_id:+b.dataset.tri, action:动, note:理由})}).then(r=>r.json()).catch(e=>({error:e+""}));
+  b.disabled=false;
+  if(r.error || r.ok===false){ 说("没成:"+(r.error||r.reason||"")); return; }   // 失败照实说
+  await load(); await open_(sel); 提示(r.reason, "ok");
+});
+/* ── 售后 / 客户合并的办结(研判队列未做项第 7 项)───────────────────────────────
+   后端早就认这两类的回执(维保单已完成 / 那一对已合并),页面原来只给退款接了办结 ——
+   于是这两类复核完了就停在「已采纳」,办结永远进不去。认什么单、单号、够不够、谁办,
+   全照 /api/ops-detail 带来的 `办结` 画(`ops.办结预检`),**页面不按类型猜**。
+   回执不够时照实说差什么,不给按钮;能不能办(角色)仍由后端在点下去时判。 */
+function 办结块(b, 研判号){
+  let 内;
+  if(b.已办结) 内=`已办结 · 回执 ${esc(b.回执||"")}`;
+  else if(b.单号 && b.行不行)
+    内=`<button class="pri" data-close="${esc(b.单号)}" data-tri="${研判号}">用${esc(b.回执类型||"")} ${esc(b.单号)} 当回执办结</button>`;
+  else if(b.单号)
+    内=`还办不了:${esc(b.为什么||"")}`;
+  else if(b.回执类型)
+    内=`${esc(b.回执类型)}单号 <input type="text" id="结号" style="width:150px">
+      <button class="pri" data-close="" data-tri="${研判号}">办结</button>${b.为什么?`<div class="note">${esc(b.为什么)}</div>`:""}`;
+  else 内=esc(b.为什么||"这一类还没有能证明办完的单据");
+  return `<div class="fld"><div class="k">办结(${esc((b.谁办||[]).join(" / ")||"—")})</div>
+    <div>${内}</div><div class="note" id="结提示" style="font-size:12.5px"></div></div>`;
+}
+$("#panel").addEventListener("click",async e=>{
+  const b=e.target.closest("[data-close]"); if(!b) return;
+  const 说=t=>{ const p=$("#结提示"); if(p) p.textContent=t; };
+  const 号=b.dataset.close || (($("#结号")||{}).value||"").trim();
+  if(!号){ 说("先填回执单号"); return; }
+  b.disabled=true; 说("提交中…");
+  const r=await fetch("/api/ops-close",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({triage_id:+b.dataset.tri, receipt:号})}).then(r=>r.json()).catch(e=>({error:e+""}));
+  b.disabled=false;
+  if(r.error || r.ok===false){ 说("没成:"+(r.error||r.reason||"")); return; }   // 失败照实说,不出成功样式
+  await load(); await open_(sel);
+  说("办结了 —— 回执核验通过");
+});
 /* ── 退款处理与办结(用户 2026-10-15 拍「登记退款结果」写口)─────────────────────
    闭环原来断在第五步:复核完了,「财务真的退成了」在系统里没地方写,办结的回执核验永远过不了。
    这一块只给**已有结论的财务人工任务**:看押金单现在什么状态和每一次尝试,按状态给能做的事。
@@ -509,7 +570,7 @@ window.resolve=async(id,decision,rc,ac,nt)=>{
   }).then(r=>r.json());
   if(r.error){ $("#rmsg").textContent="失败:"+r.error; return; }
   await load();
-  $("#msg").textContent=`${decision}${r.回流评测集?" · 已回流评测集":""}`;
+  $("#msg").textContent=`${decision}${r.进候选待审核?" · 改判进了候选,等总部运营审核(还没进评测集)":""}`;
   open_(sel);
 };
 /* 升级 = 一次正式转交(用户 2026-10-17 拍):要写原因;接收岗位 4 个工作小时内接单,超时自动退回原负责人。
@@ -529,42 +590,87 @@ window.办升级=async(eid,action)=>{
   $("#msg").textContent=r.reason||action;
   open_(sel);
 };
-window.runOne=async(tid)=>{
-  提示("跑这一条中…", "");
-  const r=await fetch("/run-triage",{method:"POST",headers:{"content-type":"application/json"},
-    body:JSON.stringify({task_id:tid})}).then(r=>r.json()).catch(e=>({error:e+""}));
-  // ⚠️⚠️ **这里原来只认 `r.error`。** 而 `/run-triage` 带 task_id 时失败是放进
-  // `failed` 的(`{ok:false, done:[], failed:[{task_id, error}]}`),`error` 字段根本不存在 ——
-  // 于是跑挂了也走到下面那句「研判完成,请复核」。
-  // > 一个「跑成了」和一个「跑挂了但错误在另一个字段里」,**在这句提示上长得一模一样。**
-  // 这和中午修的「研判 0 条全部跑出来了」是同一个病,只是出在单条这条路上。
-  // 修法不是在这儿再写一套判断,是**复用批量那份** —— 它已经分清了
-  // 「按设计不跑」「真挂了」「跑了 0 条」,再写一份就又是两套会各自漂的口径。
-  const 跑了=(r&&r.done||[]).length;
-  const t=批量提示文(r, 跑了, state);
-  提示(t.文, t.级);
-  if(!跑了) return;        // 没跑成就别刷新 —— 刷了也一样,只会显得「什么都没发生」
+/* ── 研判运行:提交即返回运行号,后台逐条跑,页面轮询(用户 2026-10-18 拍「自建运行记录」)──────────
+   原来 /run-batch 在一个请求里同步跑完才回:N 条等几分钟、刷新就丢、两个窗口各点一次跑两遍。
+   现在提交只登记;运行号存进 localStorage,刷新后接着轮询。进度文和收尾汇总都是**纯函数**,
+   收尾汇总拼成原来 /run-batch 的形状({done, failed, cost}),交给 批量提示文() —— 不另写一套成功失败口径。 */
+const 运行键="研判运行号";
+function 运行进度文(runs, 线程在){
+  const 跑=runs.filter(r=>["排队","取数","调模型","落库"].includes(r.status));
+  const 完=runs.length-跑.length;
+  const 当前=跑.find(r=>r.status!=="排队");
+  const 前=Math.min(...跑.filter(r=>r.status==="排队").map(r=>r.前面还有几条??0), Infinity);
+  let 文=`研判 ${runs.length} 条:已结束 ${完} 条`;
+  if(当前) 文+=` · ${当前.task_id} 在${当前.status}`;
+  if(!当前 && 跑.length && 前!==Infinity) 文+=` · 你前面还有 ${前} 条`;
+  if(跑.length && 线程在===false) return {文:文+" —— 执行线程没在跑(智能运维平台可能没起),排队的等它起来接着跑", 级:"bad"};
+  return {文, 级:""};
+}
+function 运行汇总(runs){
+  const done=[], failed=[]; let cost=0;
+  for(const r of runs){
+    if(r.status==="完成"){ done.push({task_id:r.task_id, triage_id:r.triage_id}); cost+=+r.cost||0; }
+    else if(["失败","超时","中断"].includes(r.status)) failed.push({task_id:r.task_id, error:`${r.status}:${r.error||""}`});
+    else if(r.status==="转人工") failed.push({task_id:r.task_id, error:"已转人工 —— 不是跑挂了"});
+  }
+  return {ok:!failed.length, done, failed, cost};
+}
+function 存运行号(ids){ try{ ids&&ids.length ? localStorage.setItem(运行键, ids.join(",")) : localStorage.removeItem(运行键); }catch(e){} }
+function 读运行号(){ try{ return (localStorage.getItem(运行键)||"").split(",").filter(Boolean); }catch(e){ return []; } }
+async function 跟运行(ids, 打开哪条){
+  存运行号(ids);
+  const b=$("#run"); b.disabled=true;
+  let runs=[], 在=null;
+  for(;;){
+    const d=await fetch("/api/triage-run?ids="+ids.join(",")).then(r=>r.json()).catch(e=>({error:e+""}));
+    if(d.error){ 提示("查研判进度失败:"+d.error+" —— 刷新页面会接着查", "bad"); b.disabled=false; return; }
+    runs=d.runs||[]; 在=d.执行线程在吗;
+    if(runs.length && !runs.some(r=>["排队","取数","调模型","落库"].includes(r.status))) break;
+    const t=运行进度文(runs, 在); 提示(t.文, t.级);
+    await new Promise(r=>setTimeout(r, 2000));
+  }
+  存运行号([]); b.disabled=false;
+  const r=运行汇总(runs), 跑了=r.done.length;
+  if(跑了 && state==="未研判") 切档("待复核");
   await load();
-  await open_(tid);      // ← 要 await:它可能要换一档才找得到这条
+  const t=批量提示文(r, 跑了, state); 提示(t.文, t.级);
+  // 超时 / 失败 / 中断的给「转人工」—— 转了就不再被自动挑去跑(后端记谁转的)
+  $("#转人工们").innerHTML=runs.filter(x=>["失败","超时","中断"].includes(x.status)).map(x=>
+    `<button data-handoff="${x.id}" title="${esc(x.error||"")}">${esc(x.task_id)} 转人工</button>`).join(" ");
+  const 头=打开哪条 || (r.done[0]||{}).task_id;
+  if(头) await open_(头);
+}
+async function 提交研判(body){
+  $("#转人工们").innerHTML="";
+  const url=body.task_id?"/run-triage":"/run-batch";
+  const r=await fetch(url,{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify(body)}).then(r=>r.json()).catch(e=>({error:e+""}));
+  if(r.error || !r.runs || !r.runs.length){
+    const t=批量提示文(r, 0, state); 提示(t.文, t.级); return;
+  }
+  const 复用=r.runs.filter(x=>x.复用).length;
+  if(复用) 提示(`${复用} 条已经在跑了(别的窗口点过),没有再跑一遍,接着看它的进度`, "");
+  await 跟运行(r.runs.map(x=>x.run_id).filter(Boolean), body.task_id);
+}
+document.addEventListener("click", async e=>{
+  const b=e.target.closest("[data-handoff]"); if(!b) return;
+  b.disabled=true;
+  const r=await fetch("/api/triage-run-handoff",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({run_id:+b.dataset.handoff})}).then(r=>r.json()).catch(e=>({error:e+""}));
+  if(r.error || r.ok===false){ b.disabled=false; 提示("没转成:"+(r.error||r.reason), "bad"); return; }
+  b.remove(); 提示(r.reason, "ok");
+});
+window.runOne=async(tid)=>{
+  提示("提交这一条…", "");
+  return 提交研判({task_id:tid});
 };
 $("#run").onclick=async(e)=>{
   if(e.target.id==="n") return;
-  const b=$("#run"); b.disabled=true; 提示("智能体在跑……", "");
-  const r=await fetch("/run-batch",{method:"POST",headers:{"content-type":"application/json"},
-    body:JSON.stringify({n:+$("#n").value||3})}).then(r=>r.json()).catch(e=>({error:e+""}));
-  b.disabled=false;
-  const 跑了=(r.done||[]).length;
-  // 批量跑完也一样:在「未研判」档里跑,跑完的那几条会当场消失 ——
-  // 列表只是变短,看不出它们去哪了。跑出东西来就把档切到「待复核」。
-  if(!r.error && 跑了 && state==="未研判") 切档("待复核");
-  await load();
-  const t = 批量提示文(r, 跑了, state);
-  提示(t.文, t.级);
-  // 打开**刚跑完的那一条**,不是列表第一条 —— 列表第一条很可能是还没研判的,
-  // 那会让人以为「跑了等于没跑」。open_ 自己会在找不到时换一档。
-  const 头=(r.done||[])[0];
-  if(!r.error && 头 && 头.task_id) await open_(头.task_id);
+  提示("提交中…", "");
+  await 提交研判({n:+$("#n").value||3});
 };
+// 刷新 / 重开页面:上次没跟完的运行接着跟 —— 运行在后台照跑,页面只是重新接上
+{ const 上次=读运行号(); if(上次.length) 跟运行(上次); }
 $("#seg").querySelectorAll("button").forEach(b=>b.onclick=()=>{
   $("#seg").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed","false"));
   切档(b.dataset.s); sel=null; load();

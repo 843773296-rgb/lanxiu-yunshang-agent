@@ -473,6 +473,9 @@ run "研判「在等顾客」· 不停表、超时率另报剔除它的数、要
 run "研判队列「没走正门关的」· 凭据要真实(清理演示数据不算复核)、关掉的说得出是谁关的(库副本自造 + 真库来源登记)" python3 backend/queue_closed_check.py
 run "研判队列只放能跑的 · 差评挪到值班台、一条不丢(用户 10-15 拍)"    python3 backend/queue_split_check.py
 run "研判升级 = 正式转交 · 有接收人和期限、超时退回、接单人复核、计时不停(用户 10-17 拍)" python3 backend/escalation_check.py
+run "售后 / 客户合并的办结入口 · 页面照后端预检画、回执和角色由后端判(未做项第 7 项)" python3 backend/close_entry_check.py
+run "研判运行记录 · 不重复跑、看得到排到哪、断了标中断、排队的接着跑、超时可转人工(用户 10-18 拍)" python3 backend/triage_run_check.py
+run "改判先审核 · 进候选、总部运营审、不能自审、并入才进评测集(用户 10-19 拍)" python3 backend/relabel_check.py
 run "退款执行写口 · 只有财务、先核实再重发、已退要流水号且不重复、通用入口绕不过(用户 10-15 拍)"    python3 backend/refund_write_check.py
 run "研判示例库 · 不相交、评测根因覆盖面不少、不挑自己、默认不带示例(用户 10-16 拍)"    python3 backend/example_pool_check.py
 run "研判评测判分 · 出账流水两种编号都认(10-16 真跑钉回)"    python3 agent/eval_hit_judgetest.py

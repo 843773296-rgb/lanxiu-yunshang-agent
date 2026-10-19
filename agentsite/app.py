@@ -602,7 +602,10 @@ class H(BaseHTTPRequestHandler):
                 # > 一个「研判 3 条」和一个「这 3 条一条都跑不了」,在按钮上长得一模一样。
                 # 📌 `能跑AI研判` 这个字段**由后台和真正跑的那处用同一份判定算出来**,
                 #    这里不按类型自己猜 —— 猜的话,哪天差评的 AI 辅助打开了这里还会拦着。
-                _能跑 = [x for x in q if x.get("能跑AI研判")]
+                # 转人工了的也跳过(用户 10-18 拍:超时 / 失败给「转人工」,转了就不再被自动挑去烧钱)
+                try: _转 = set(_post("/api/triage-run-worker", {"op": "handed"}).get("ids") or [])
+                except Exception: _转 = set()
+                _能跑 = [x for x in q if x.get("能跑AI研判") and x["task_id"] not in _转]
                 ids = [x["task_id"] for x in _能跑[: int(body.get("n") or 3)]]
                 if not ids and q:
                     from collections import Counter as _C
@@ -612,17 +615,27 @@ class H(BaseHTTPRequestHandler):
                         f"不是跑挂了。它们是:{_类}。差评由店长人工确认(业务 2026-10-10 拍),"
                         f"要单独跑某一条请在列表里点开它。"})
             if not ids: return self._send({"ok": True, "done": [], "note": "队列里没有未研判的工单"})
-            out, errs = [], []
-            for tid in ids:
-                try: out.append(self._triage_one(tid))
-                except Exception as e: errs.append({"task_id": tid, "error": f"{type(e).__name__}: {e}"[:200]})
-            return self._send({"ok": not errs, "done": out, "failed": errs,
-                               "cost": round(sum(x.get("cost") or 0 for x in out), 4)})
+            # ⚠️ **不在这个请求里跑了**(用户 10-18 拍「自建运行记录」)。原来逐条同步跑完才返回:
+            # N 条要等几分钟、刷新就丢、两个窗口各点一次就跑两遍。现在只登记、当场返回批次号,
+            # 执行线程在后台逐条跑,页面按批次号轮询 /api/triage-run。
+            # 身份照转 cookie —— 后台按登录的人记下「谁点的」,站上不解读身份。
+            try:
+                r = _post("/api/triage-run-submit", {"task_ids": ids}, cookie=self.headers.get("cookie"))
+            except urllib.error.HTTPError as e:
+                try: msg = json.loads(e.read()).get("error")
+                except Exception: msg = str(e)
+                return self._send({"error": msg or f"提交研判失败({e.code})"}, code=e.code)
+            except Exception as e:
+                return self._send({"error": f"提交研判时连不上后台:{e}"}, code=502)
+            return self._send({"ok": True, "batch": r.get("batch"), "runs": r.get("runs") or [],
+                               "执行线程在吗": _执行线程["活着"]})
         if p.startswith("/api/"): return self._proxy("POST", raw)
         self._send({"error": "no route"}, code=404)
 
-    def _triage_one(self, tid):
-        """跑一条并落库。抛异常由调用方收集 —— 批量里一条挂掉不该拖垮整批。"""
+    @staticmethod
+    def _triage_one(tid, run_id=None):
+        """跑一条并落库。抛异常由调用方收集 —— 批量里一条挂掉不该拖垮整批。
+        给了 run_id 就沿途写阶段(取数 → 调模型 → 落库),调模型超过 `单条超时秒` 抛 TimeoutError。"""
         import time as _t
         # 从 ops 队列取。**别改成只列「待处理」的那种取法** ——
         # 一条工单研判过一次就变「待复核」,再想重跑就找不到了。
@@ -650,7 +663,12 @@ class H(BaseHTTPRequestHandler):
         bp, case, prompt = _ops_bp.研判提示词(t["type"], t["ref"], t["task_id"])
         t = dict(id=t["task_id"], ref=t["ref"], bp=bp)
         t0 = _t.time()
-        r = asyncio.run(sdk.run("task", prompt))
+        if run_id: _阶段(run_id, "调模型")
+        try:
+            r = asyncio.run(asyncio.wait_for(sdk.run("task", prompt), 单条超时秒))
+        except asyncio.TimeoutError:
+            raise TimeoutError(f"调模型超过 {单条超时秒 // 60} 分钟没出结果(平时约 30 秒)—— 没有落草稿,可以转人工")
+        if run_id: _阶段(run_id, "落库")
         ms = int((_t.time() - t0) * 1000)
         saved = _post("/api/ops-triage", dict(
             task_id=tid, bp=t["bp"], case=case, text=r["text"],
@@ -747,14 +765,84 @@ def _ops_mod():
     return _o2
 
 
-def _post(path, payload, timeout=60):
+def _post(path, payload, timeout=60, cookie=None):
+    h = {"content-type": "application/json"}
+    if cookie: h["cookie"] = cookie
     r = urllib.request.Request(BACKEND + path, method="POST",
-                               data=json.dumps(payload, ensure_ascii=False).encode(),
-                               headers={"content-type": "application/json"})
+                               data=json.dumps(payload, ensure_ascii=False).encode(), headers=h)
     return json.loads(urllib.request.urlopen(r, timeout=timeout).read())
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 研判执行线程(用户 2026-10-18 拍:在智能运维平台自建运行记录、单条超时 2 分钟)
+#
+# 记录在后台的库里(`backend/triage_run.py`),这边只领活、写阶段、收尾 —— 站上照旧不留库。
+# 两条线程:一条只报心跳(调模型那 2 分钟里也要报,不然会被当成死了),一条逐条领活跑。
+# ⚠️ 起来先收一遍「上一个进程跑到一半的」→ 中断;**排队的不动,接着领** —— 这就是「刷新 / 重启不丢」。
+# ⚠️ 一次只跑一条:后台是单线程的,并发跑只会让每条都更慢(10-15 长请求拖垮过一次整站)。
+# 超时和心跳的数**只在 triage_run 里有一份**(后台判「心跳断了」也用它),这边不抄
+_ops_mod()                    # 把 backend/ 放进 sys.path
+import triage_run as _tr
+单条超时秒, _心跳间隔 = _tr.单条超时秒, _tr.心跳间隔秒
+_执行线程 = {"活着": False}
+
+
+def _阶段(run_id, stage):
+    try: _post("/api/triage-run-worker", {"op": "stage", "run_id": run_id, "stage": stage}, timeout=30)
+    except Exception: pass        # 写阶段失败不该让这一条白跑;收尾那一下会再写
+
+
+def _心跳循环():
+    import time as _t
+    while True:
+        try:
+            _post("/api/triage-run-worker", {"op": "beat", "pid": os.getpid()}, timeout=10)
+            _执行线程["活着"] = True
+        except Exception:
+            _执行线程["活着"] = False
+        _t.sleep(_心跳间隔)
+
+
+def _执行循环():
+    import time as _t
+    while True:
+        try:
+            _post("/api/triage-run-worker", {"op": "recover"}, timeout=30)
+            break
+        except Exception:
+            _t.sleep(5)           # 后台还没起,等它
+    while True:
+        try:
+            run = _post("/api/triage-run-worker", {"op": "claim"}, timeout=30).get("run")
+        except Exception:
+            _t.sleep(5); continue
+        if not run:
+            _t.sleep(2); continue
+        结果, 号, 价, 错 = "完成", None, None, None
+        try:
+            d = H._triage_one(run["task_id"], run_id=run["run_id"])
+            号, 价 = d.get("triage_id"), d.get("cost")
+        except TimeoutError as e:
+            结果, 错 = "超时", str(e)
+        except Exception as e:
+            结果, 错 = "失败", f"{type(e).__name__}: {e}"
+        for _ in range(3):        # 收尾一定要写上 —— 写不上这条就会挂在「落库」,直到心跳断了被标中断
+            try:
+                _post("/api/triage-run-worker", {"op": "finish", "run_id": run["run_id"], "result": 结果,
+                                                 "triage_id": 号, "cost": 价, "error": 错}, timeout=30)
+                break
+            except Exception:
+                _t.sleep(3)
+
+
+def _起执行线程():
+    import threading
+    threading.Thread(target=_心跳循环, daemon=True, name="研判心跳").start()
+    threading.Thread(target=_执行循环, daemon=True, name="研判执行").start()
 
 
 if __name__ == "__main__":
     print(f"澜绣云裳 · 智能运维平台  http://127.0.0.1:{PORT}")
     print(f"  后台数据源:{BACKEND}(本站不直接读库,/api/* 反代过去)")
+    _起执行线程()
     ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()

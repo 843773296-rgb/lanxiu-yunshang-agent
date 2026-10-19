@@ -3079,6 +3079,13 @@ class H(BaseHTTPRequestHandler):
             if not _me(self): return self._send({"error":"请先登录"},401)
             _r=_rw.看((Q.get("deposit") or [""])[0])
             return self._send(_r, 404 if "error" in _r else 200)
+        if p=="/api/triage-run":
+            # 研判运行进度(用户 10-18 拍「自建运行记录」):按批次号或运行号查,读之前先收一遍中断。
+            # ⚠️ 放在 `/api/ops-` 那层外面 —— 路径不带 ops- 前缀,放里面永远进不去(fetch_route_check 当场逮到过)
+            import triage_run as _tr
+            if not _me(self): return self._send({"error":"请先登录"},401)
+            if Q.get("batch"): return self._send(_tr.查(Q["batch"][0]))
+            return self._send(_tr.查运行((Q.get("ids") or [""])[0].split(",")))
         if p.startswith("/api/ops-"):
             # 智能运维平台的读接口。队列/积压/健康度都在 ops.py 里算,
             # 这里只负责转发 —— 路由层不放业务规则,SLA 改了不用翻两个文件。
@@ -3112,6 +3119,8 @@ class H(BaseHTTPRequestHandler):
                     d=dict(d, 升级=(_esc.摘要(_e) if (_e or d.get("status")=="已升级") else None),
                            升级去向=_esc.去向((_ops._rows("SELECT type FROM task WHERE id=?", d.get("task_id")) or [{}])[0].get("type"),
                                               (_me(self) or {}).get("role"))[0])
+                # 办结那一块:认什么单、单号、够不够、谁办 —— 页面照着画,不自己按类型猜
+                if d: d=dict(d, 办结=_ops.办结预检(d.get("id")))
                 return self._send(d or dict(error="没有这条研判"), 200 if d else 404)
             return self._send(dict(error="no ops route"),404)
         # ── 用户生命周期 ────────────────────────────────────────────
@@ -3400,7 +3409,7 @@ class H(BaseHTTPRequestHandler):
             else: 退果=_rw.登记仍失败(退体.get("deposit"), 退人, 退体.get("原因"))
             return self._send(退果, 200 if 退果.get("ok") else 400)
         if p=="/api/ops-resolve":
-            # 值班同学销账。改判会回流评测集 —— 这是整套东西唯一的自我改进通路。
+            # 值班同学销账。改判先进候选、总部运营审核、换考卷时并入评测集(10-19)—— 这是整套东西唯一的自我改进通路。
             # ⚠️ 2026-10-12 前这里不查登录、销账人读请求体里的 handler(默认「值班同学」)。
             # **身份只从登录态取**,请求体里的 handler 一律不读 —— 那是自称(用户拍「修」)
             import ops as _ops
@@ -3434,6 +3443,51 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(error=str(e)[:200]), 403)
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
+        if p in ("/api/triage-run-submit", "/api/triage-run-handoff"):
+            # 提交研判 / 转人工 —— 身份只从登录态取(提交记下是谁点的,转人工记下是谁接手的)
+            import triage_run as _tr
+            u = _me(self)
+            if not u:
+                return self._send(dict(error="没登录 —— 研判要登录,记下是谁点的"), 401)
+            try:
+                if p.endswith("submit"):
+                    return self._send(_tr.提交(body.get("task_ids") or [], u))
+                r = _tr.转人工(int(body.get("run_id") or 0), u)
+                return self._send(r, 200 if r.get("ok") else 400)
+            except PermissionError as e:
+                return self._send(dict(error=str(e)[:200]), 403)
+            except Exception as e:
+                return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]), 400)
+        if p=="/api/triage-run-worker":
+            # 智能运维平台的执行线程用(同 /api/ops-triage:站上不留库,进度写回后台)
+            import triage_run as _tr
+            op = body.get("op")
+            try:
+                if op == "beat":    _tr.心跳(body.get("pid")); return self._send(dict(ok=True))
+                if op == "recover": return self._send(dict(ok=True, n=_tr.收中断(原因=body.get("reason") or "执行线程重启 —— 上一个进程跑到一半的这一条没有结果")))
+                if op == "claim":   return self._send(dict(ok=True, run=_tr.领一条()))
+                if op == "stage":   _tr.标阶段(body.get("run_id"), body.get("stage")); return self._send(dict(ok=True))
+                if op == "finish":  return self._send(dict(ok=True, n=_tr.收尾(body.get("run_id"), body.get("result"),
+                                                   body.get("triage_id"), body.get("cost"), body.get("error"))))
+                if op == "handed":  return self._send(dict(ok=True, ids=sorted(_tr.转人工的工单())))
+                return self._send(dict(error=f"不认识的 op:{op}"), 400)
+            except Exception as e:
+                return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]), 400)
+        if p=="/api/ops-relabel-review":
+            # 改判审核(用户 10-19 拍:总部运营审,不能是改判人自己)。身份只从登录态取
+            import relabel as _rl
+            u = _me(self)
+            if not u:
+                return self._send(dict(error="没登录 —— 审核要登录,署名用登录的人"), 401)
+            try:
+                if body.get("action") not in ("采用", "驳回"):
+                    return self._send(dict(error="action 只能是 采用 / 驳回"), 400)
+                r = _rl.审核(body.get("triage_id"), u, body.get("action") == "采用", body.get("note"))
+                return self._send(r, 200 if r.get("ok") else 400)
+            except PermissionError as e:
+                return self._send(dict(error=str(e)[:200]), 403)
+            except Exception as e:
+                return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]), 400)
         if p=="/api/ops-wait":
             # 标 / 取消「在等顾客」(用户 10-13 拍:不停表,超时率另报剔除它的数)。身份只从登录态取
             import ops as _ops

@@ -300,6 +300,8 @@ def 正门关单凭据():
     "待复核": lambda x: x["state"] == "待复核",
     # 升级出去、还没人接单复核的(10-17 起不算销账,计时接着走)
     "已升级": lambda x: x["state"] == "已升级" and not x["done"],
+    # 改判了、等总部运营审的(10-19 起改判不直接进评测集)—— 工单本身已销账,这一档是给审核人的活
+    "改判待审": lambda x: x.get("改判审核") == "待审核",
     "已销账": lambda x: x["done"],
 }
 
@@ -415,6 +417,8 @@ def queue(state=None):
             已办结=bool(tr and tr.get("receipt")),
             升级=(_esc.摘要(升级记录.get(tr["id"])) if tr and (st == "已升级" or tr["id"] in 升级记录) else None),
             回执=(f"{tr.get('receipt_kind')} {tr['receipt']}" if tr and tr.get("receipt") else None),
+            # 改判审核(10-19):待审核 / 已采用 / 已驳回 / 已并入;不是改判候选的是 None
+            改判审核=(tr.get("relabel_review") if tr else None),
         ))
     if state in 档位: out = [x for x in out if 档位[state](x)]
     # 超时的排最前,然后按等待时长倒序 —— 队列的排序本身就是一种业务规则
@@ -964,6 +968,38 @@ def 回执行不行(c, 任务, 单号):
     return (r[2] == "已完成", 要, "" if r[2] == "已完成" else f"{要} {单号} 现在是「{r[2]}」,还没完成")
 
 
+def 办结预检(triage_id):
+    """页面画「办结」那一块用的 —— 认什么单、单号是哪张、现在够不够、谁来办。只读,不写日志。
+
+    回执就是工单挂的那张单的(定金 / 售后维保 / 合并那一对)→ 直接给出单号,页面不用让人抄;
+    差评要按处理方式另找一张单 → 单号给 None,页面让人填。**能不能办由后端判**,页面不猜角色。"""
+    t = get_triage(triage_id)
+    if not t:
+        return None
+    任务 = (_rows("SELECT type, ref_id FROM task WHERE id=?", t["task_id"]) or [None])[0]
+    if not 任务:
+        return None
+    类型 = 任务["type"]
+    谁 = (两段.get(类型) or {}).get("办结") or 可销账角色.get(类型) or ()
+    出 = dict(类型=类型, 谁办=list(谁), 已办结=bool(t.get("receipt")),
+             回执=(f"{t.get('receipt_kind')} {t['receipt']}" if t.get("receipt") else None),
+             回执类型=回执对照.get(类型), 单号=None, 行不行=False, 为什么="")
+    if 出["已办结"]:
+        return 出
+    if t["status"] not in ("已采纳", "已改判"):
+        出["为什么"] = f"研判还是「{t['status']}」—— 复核完了才能办结"
+        return 出
+    if 回执对照.get(类型) in ("定金单", "合并记录") or (类型 == "售后判责"):
+        出["单号"] = 任务["ref_id"]
+    c = _c()
+    try:
+        行, 类, 话 = 回执行不行(c, 任务, 出["单号"] or "")
+    finally:
+        c.close()
+    出.update(行不行=行, 回执类型=类 or 出["回执类型"], 为什么=话)
+    return 出
+
+
 def 办结(triage_id, 单号, me, 来源="页面"):
     """已采纳 / 已改判的研判,凭回执单号标成已办结。**不改复核结论**,只记回执。
 
@@ -1022,9 +1058,9 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
     me = 销账的人 {no, name, role}(**调用方给,不在这里读会话**:接口层从登录态取,造数脚本传一个真员工)。
     角色不对 → 抛 PermissionError;成功 / 被拒 / 出错**都写 op_log**(machine='triage')。
 
-    回流写的是 truth 表,标 src='人工改判'。为什么要分开标:
-    回流条目只经过一个人的判断、没有第二个人复核过,
-    如果和建库标注混在一起,一次判错的裁决会悄悄变成"标准答案",而且再也查不出来。
+    改判**不再当场写 truth**(用户 2026-10-19 拍):先记成待审核的候选,总部运营审核采用后、
+    换考卷时才并入(`relabel.py`)。原因:改判只经过一个人的判断,当场写进评测答案的话,
+    一次判错的裁决会悄悄变成"标准答案",而且再也查不出来。
     """
     from oplog import log_op as _log
     me = me or {}
@@ -1101,14 +1137,15 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
                     # 和相容矩阵里「人工确认 vs 规则不一致就列出来」是同一条处理原则。
                     conflict = dict(case_id=t["case_id"], 建库标注=old["root_cause"], 人工改判=root_cause)
                 elif old and old["root_cause"] == root_cause:
-                    flowed = True          # 和已有标注一致,不用重复写
+                    pass                   # 和已有标注一致,没有新东西要进评测集
                 else:
-                    c.execute("INSERT OR REPLACE INTO truth(case_id,breakpoint,root_cause,"
-                              "expected_action,expected_evidence,note,src) VALUES(?,?,?,?,?,?,'人工改判')",
-                              (t["case_id"], t["breakpoint"], root_cause, action or "",
-                               note or "", f"{handler} 于 {ts} 改判回流"))
-                    flowed = True
-                if flowed: c.execute("UPDATE triage SET into_eval=1 WHERE id=?", (triage_id,))
+                    # ⚠️ **不再当场写 truth**(用户 2026-10-19 拍「改判先审核」):一个人的判断不直接变成标准答案。
+                    # 记成待审核的候选 → 总部运营审(不能是改判人自己)→ 换考卷时再并入(`relabel.py`)
+                    import relabel as _rl
+                    _rl.确保列(c)
+                    c.execute("UPDATE triage SET relabel_review='待审核', relabel_by_no=? WHERE id=?",
+                              (me.get("no"), triage_id))
+                    flowed = True          # 进了候选(不是进了评测集)—— 返回里叫「进候选待审核」
     except _升级不成 as e:
         _记(False, "ESC_REFUSED", str(e))
         raise ValueError(str(e))
@@ -1153,15 +1190,17 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
                 # 连根因都没给的那种(confidence 判「低」那条路),人处置了也不算改判。
                 有结论=bool((t.get("ai_root_cause") or "").strip()),
                 附带={"triage": str(triage_id)[:24],   # 短 ASCII,过得了形状闸
-                     "回流了": bool(flowed),
+                     # 10-19 起改判不当场进评测集(先审核、换考卷时并入),所以这一刻永远是 False;
+                     # 进没进候选另报 —— 别把「进候选」报成「回流了」,那边会把它算成评测集变了
+                     "回流了": False, "进候选": bool(flowed),
                      "与建库标注冲突": bool(conflict),
                      "置信度": {"高": 3, "中": 2, "低": 1}.get(t.get("ai_confidence"), 0)},
                 世界日期=str(_wc1.今天()))
     except Exception:
         pass                       # 上报出任何事都不许影响销账
-    _记(True, "RESOLVE", f"{decision} · 工单 {t['task_id']}" + (" · 回流评测集" if flowed else "")
+    _记(True, "RESOLVE", f"{decision} · 工单 {t['task_id']}" + (" · 改判进候选待审核" if flowed else "")
         + (" · 与建库标注冲突" if conflict else "") + (f" · {note[:40]}" if note else ""))
-    return dict(triage_id=triage_id, decision=decision, 回流评测集=flowed, 与建库标注冲突=conflict)
+    return dict(triage_id=triage_id, decision=decision, 进候选待审核=flowed, 回流评测集=False, 与建库标注冲突=conflict)
 
 
 # ── 五、生命周期提醒 ────────────────────────────────────────────────────

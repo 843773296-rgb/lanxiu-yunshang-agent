@@ -8520,5 +8520,101 @@
     "new": "    if 差 > 14:"
    }
   ]
+ },
+ {
+  "script": "backend/close_entry_check.py",
+  "改坏": "预检不看维保单状态(没完成也说够了)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    出.update(行不行=行, 回执类型=",
+    "new": "    行 = True\n    出.update(行不行=行, 回执类型="
+   }
+  ],
+  "预期红": "维保单没完成 → 预检说还办不了,并说出差在哪"
+ },
+ {
+  "script": "backend/close_entry_check.py",
+  "改坏": "页面把售后 / 合并的办结块拿掉",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": "    ${(done && x.type!==\"财务人工任务\" && d.办结) ? 办结块(d.办结, d.id) : \"\"}\n",
+    "new": ""
+   }
+  ],
+  "预期红": "页面:已有结论的非退款工单画办结块,照后端预检画"
+ },
+ {
+  "script": "backend/triage_run_check.py",
+  "改坏": "库里不建「同一工单只许一条在跑」的唯一索引",
+  "file": [
+   {
+    "path": "backend/triage_run.py",
+    "old": "    c.execute(\"CREATE UNIQUE INDEX IF NOT EXISTS ux_triage_run_active ON triage_run(task_id) \"\n              \"WHERE status IN ('排队','取数','调模型','落库')\")\n",
+    "new": ""
+   }
+  ],
+  "预期红": "库里兜底:同一工单插第二条在跑的 → 唯一索引拒绝(两个窗口同时插也插不进)"
+ },
+ {
+  "script": "backend/triage_run_check.py",
+  "改坏": "心跳断了连排队的也标中断",
+  "file": [
+   {
+    "path": "backend/triage_run.py",
+    "old": "        ph = \",\".join(\"?\" * len(跑到一半))\n        return c.execute(f\"UPDATE triage_run SET status='中断', finished=?, error=? WHERE status IN ({ph})\",\n                         (_现在(), 原因, *跑到一半)).rowcount",
+    "new": "        ph = \",\".join(\"?\" * len(在跑))\n        return c.execute(f\"UPDATE triage_run SET status='中断', finished=?, error=? WHERE status IN ({ph})\",\n                         (_现在(), 原因, *在跑)).rowcount"
+   }
+  ],
+  "预期红": "心跳断了:跑到一半的标中断,排队的不动"
+ },
+ {
+  "script": "backend/triage_run_check.py",
+  "改坏": "页面把超时算成跑完了",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": "    if(r.status===\"完成\"){",
+    "new": "    if(r.status===\"完成\"||r.status===\"超时\"){"
+   }
+  ],
+  "预期红": "页面:超时 / 中断进失败那一栏,提示是 bad 不是 ok"
+ },
+ {
+  "script": "backend/relabel_check.py",
+  "改坏": "改判又当场写进 truth",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "                    flowed = True          # 进了候选(不是进了评测集)",
+    "new": "                    c.execute(\"INSERT OR REPLACE INTO truth(case_id,breakpoint,root_cause,expected_action,src) VALUES(?,?,?,?,'人工改判')\", (t[\"case_id\"], t[\"breakpoint\"], root_cause, action or \"\"))\n                    flowed = True          # 进了候选(不是进了评测集)"
+   }
+  ],
+  "预期红": "改判只进候选:truth 里没有这一单,研判记成待审核"
+ },
+ {
+  "script": "backend/relabel_check.py",
+  "改坏": "改判人能审自己的改判",
+  "file": [
+   {
+    "path": "backend/relabel.py",
+    "old": "        if t[\"relabel_by_no\"] and t[\"relabel_by_no\"] == me[\"no\"]:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "改判人自己审不了(要第二个人把关)"
+ },
+ {
+  "script": "backend/relabel_check.py",
+  "改坏": "并入时覆盖建库标注",
+  "file": [
+   {
+    "path": "backend/relabel.py",
+    "old": "            if old and old[\"src\"] != \"人工改判\" and old[\"root_cause\"] != t[\"human_root_cause\"]:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "并入时那一单已有建库标注且不一致 → 不覆盖,列进冲突"
  }
 ]
