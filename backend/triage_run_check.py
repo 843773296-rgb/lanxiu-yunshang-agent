@@ -62,6 +62,13 @@ ck("单条超时是用户拍的 2 分钟(手抄的常数,不现算)", T.单条�
 tmp = tempfile.mkdtemp(prefix="trun-")
 db = os.path.join(tmp, "lanxiu.db")
 shutil.copy(os.path.join(HERE, "lanxiu.db"), db)
+# 副本里先清掉真服务留下的运行记录和心跳 —— 主库上 8770 跑过的话,这两张表里有东西,
+# 「从没报过心跳」「前面还有几条」就取决于库被怎么用过了(10-19 真跑实测之后门禁当场崩过)
+# ⚠️ 是 DROP 再按现在的代码重建,不是 DELETE:主库里的表连着索引一起拷过来,
+#    只清行的话「建表那段代码删了唯一索引」也看不出来(咬合当场没红过)
+with sqlite3.connect(db) as _c0:
+    _c0.execute("DROP TABLE IF EXISTS triage_run"); _c0.execute("DROP TABLE IF EXISTS triage_worker")
+    T.确保表(_c0)
 me = {"no": "W-检查", "name": "检查", "role": "店长"}
 状态 = lambda rid: sqlite3.connect(db).execute("SELECT status FROM triage_run WHERE id=?", (rid,)).fetchone()[0]
 

@@ -8616,5 +8616,46 @@
    }
   ],
   "预期红": "并入时那一单已有建库标注且不一致 → 不覆盖,列进冲突"
+ },
+ {
+  "script": "backend/reopen_check.py",
+  "改坏": "已办结的也能重开",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    if t.get(\"receipt\"):\n        话 = f\"已经办结了(回执",
+    "new": "    if False:\n        话 = f\"已经办结了(回执"
+   },
+   {
+    "path": "backend/ops.py",
+    "old": "f\"WHERE id=? AND status IN ({','.join('?' * len(可重开))}) AND receipt IS NULL\",",
+    "new": "f\"WHERE id=? AND status IN ({','.join('?' * len(可重开))})\","
+   }
+  ],
+  "预期红": "已办结的不重开(返回 CLOSED),回执不动"
+ },
+ {
+  "script": "backend/reopen_check.py",
+  "改坏": "重开把建单时间重置成现在",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "            c.execute(\"UPDATE task SET status='待处理' WHERE id=? AND status='已处理'\", (t[\"task_id\"],))\n    if not 改:",
+    "new": "            c.execute(\"UPDATE task SET status='待处理', created=datetime('now','localtime') WHERE id=? AND status='已处理'\", (t[\"task_id\"],))\n    if not 改:"
+   }
+  ],
+  "预期红": "重开 → 待复核、旧结论清掉、工单回待处理、建单时间不动(计时接着算)"
+ },
+ {
+  "script": "backend/reopen_check.py",
+  "改坏": "重开时不撤已并入评测集的改判",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "                撤下 = bool(c.execute(\"DELETE FROM truth WHERE case_id=? AND src='人工改判'\", (t[\"case_id\"],)).rowcount)",
+    "new": "                撤下 = False"
+   }
+  ],
+  "预期红": "已并入评测集的改判,重开时从 truth 撤下"
  }
 ]

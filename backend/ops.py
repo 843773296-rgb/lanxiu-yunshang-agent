@@ -419,6 +419,8 @@ def queue(state=None):
             回执=(f"{tr.get('receipt_kind')} {tr['receipt']}" if tr and tr.get("receipt") else None),
             # 改判审核(10-19):待审核 / 已采用 / 已驳回 / 已并入;不是改判候选的是 None
             改判审核=(tr.get("relabel_review") if tr else None),
+            # 重开过几次(10-19):回到待复核的那一条,页面标「重开过」—— 计时没重置,所以它多半已超时
+            重开次数=(tr.get("reopen_count") or 0) if tr else 0,
         ))
     if state in 档位: out = [x for x in out if 档位[state](x)]
     # 超时的排最前,然后按等待时长倒序 —— 队列的排序本身就是一种业务规则
@@ -1117,7 +1119,7 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
             if not 改:
                 现 = c.execute("SELECT status, handler, handled_at FROM triage WHERE id=?", (triage_id,)).fetchone()
                 raise _复核冲突(f"这条研判已经是「{现['status']}」(由 {现['handler'] or '?'} 于 {现['handled_at'] or '?'} 处理)"
-                                f" —— 不能再覆盖。刷新页面看最新结论;要改结论得走重开(这个入口还没有)")
+                                f" —— 不能再覆盖。刷新页面看最新结论;要改结论点「重开」(写原因,已办结的开更正工单)")
             c.execute("UPDATE task SET status=? WHERE id=?",
                       ("已升级" if decision == "已升级" else "已处理", t["task_id"]))
             if 接:      # 接单人复核了 → 那条升级办完(再升一级的话,下面会另起一条待接单)
@@ -1201,6 +1203,127 @@ def resolve(triage_id, decision, me, root_cause=None, action=None, note=None, �
     _记(True, "RESOLVE", f"{decision} · 工单 {t['task_id']}" + (" · 改判进候选待审核" if flowed else "")
         + (" · 与建库标注冲突" if conflict else "") + (f" · {note[:40]}" if note else ""))
     return dict(triage_id=triage_id, decision=decision, 进候选待审核=flowed, 回流评测集=False, 与建库标注冲突=conflict)
+
+
+# ── 重开 / 更正(研判队列未做项第 3 项 · 用户 2026-10-19 拍)─────────────────────────────
+# 原来已有结论的一律不让改(「要改结论得走重开(这个入口还没有)」)—— 防覆盖是对的,但没有合法的改口路径,
+# 人只能绕到后台改库,审计看不见。用户拍的三件事:
+#   ① 复核那一岗或总部运营能重开,要写原因;旧结论原样留档(op_log 里存全文),这条回到「待复核」;
+#   ② **已办结的不重开**(钱已出门,翻账改不回现实)—— 另开一张挂着原单号的更正工单;
+#   ③ 计时**接着算**:工单的建单时间不动,重开不洗掉超时。
+可重开 = ("已采纳", "已改判")
+
+
+def _确保重开列(c):
+    有 = {r[1] for r in c.execute("PRAGMA table_info(triage)")}
+    for col, ty in (("reopen_count", "INT DEFAULT 0"), ("reopen_note", "TEXT")):
+        if col not in 有:
+            c.execute(f"ALTER TABLE triage ADD COLUMN {col} {ty}")
+
+
+def _能重开吗(task_type, me):
+    if me.get("role") == "总部运营":
+        return True, ""
+    return 能销吗(task_type, me.get("role"), 段="复核")
+
+
+def 重开(triage_id, me, 原因, 来源="页面"):
+    """已采纳 / 已改判、还没办结的研判 → 回到待复核。旧结论进 op_log 留档,不覆盖、不删。
+
+    改判的候选跟着撤:待审核 / 已采用 → 已撤回;已经并入评测集的 → 把那条人工改判从 truth 撤下
+    (truth 一变,示例池冻结切分那道闸会红 —— 和并入一样,撤下也是换了考卷)。"""
+    from oplog import log_op as _log
+    me = me or {}
+    谁 = f"{me.get('name') or '?'}({me.get('no') or '?'})"
+    def _记(ok, code, 话, ctx=None):
+        _log(谁, "triage", f"triage#{triage_id}", "—", "待复核" if ok else "—", ok, code, f"[{来源}] 重开:{话}"[:200],
+             dict({"role": me.get("role"), "no": me.get("no")}, **(ctx or {})))
+    if not (me.get("no") and me.get("role")):
+        _记(False, "NO_IDENTITY", "没有身份")
+        raise PermissionError("没有身份 —— 要登录")
+    if not (原因 or "").strip():
+        _记(False, "NO_REASON", "没写原因")
+        raise ValueError("重开要写原因 —— 为什么原来的结论不对")
+    t = get_triage(triage_id)
+    if not t:
+        raise ValueError(f"没有 triage#{triage_id}")
+    任务 = (_rows("SELECT type FROM task WHERE id=?", t["task_id"]) or [{}])[0]
+    ok, 为什么 = _能重开吗(任务.get("type"), me)
+    if not ok:
+        _记(False, "ROLE", 为什么)
+        raise PermissionError(为什么.replace("复核这一段", "重开(和复核同一拨人,或总部运营)"))
+    if t.get("receipt"):
+        话 = f"已经办结了(回执 {t.get('receipt_kind')} {t['receipt']})—— 已办结的不重开,请开更正工单"
+        _记(False, "CLOSED", 话)
+        return dict(ok=False, code="CLOSED", reason=话)
+    if t["status"] not in 可重开:
+        话 = f"这条研判是「{t['status']}」—— 只有已采纳 / 已改判的能重开"
+        _记(False, "BAD_STATE", 话)
+        return dict(ok=False, code="BAD_STATE", reason=话)
+    旧 = {k: t.get(k) for k in ("status", "human_root_cause", "human_action", "human_note", "handler", "handled_at",
+                                "relabel_review")}
+    撤下 = False
+    with _c() as c:
+        _确保重开列(c)
+        import relabel as _rl
+        _rl.确保列(c)
+        改 = c.execute("UPDATE triage SET status='待复核', human_root_cause=NULL, human_action=NULL, human_note=NULL, "
+                       "handler=NULL, handled_at=NULL, reopen_count=COALESCE(reopen_count,0)+1, reopen_note=?, "
+                       "relabel_review=CASE WHEN relabel_review IN ('待审核','已采用','已并入') THEN '已撤回' "
+                       "ELSE relabel_review END, into_eval=0 "
+                       f"WHERE id=? AND status IN ({','.join('?' * len(可重开))}) AND receipt IS NULL",
+                       ((原因 or "").strip(), triage_id, *可重开)).rowcount
+        if 改:
+            if 旧["relabel_review"] == "已并入" and t.get("case_id"):
+                撤下 = bool(c.execute("DELETE FROM truth WHERE case_id=? AND src='人工改判'", (t["case_id"],)).rowcount)
+            # 工单回到待处理;建单时间不动 —— 计时接着算(用户 10-19 拍)
+            c.execute("UPDATE task SET status='待处理' WHERE id=? AND status='已处理'", (t["task_id"],))
+    if not 改:
+        话 = "刚被别人改过了 —— 刷新看最新状态"
+        _记(False, "STALE", 话)
+        return dict(ok=False, code="STALE", reason=话)
+    _记(True, "REOPEN", (原因 or "").strip() + (" · 撤下了已并入评测集的改判" if 撤下 else ""), {"旧结论": 旧})
+    return dict(ok=True, code="REOPEN", 撤下评测=撤下,
+                reason="重开了 —— 回到待复核,旧结论留在操作台账里;计时接着算(从建单起)"
+                       + (";这条的改判已经并入过评测集,已撤下 —— 等于换了考卷,示例池要重切" if 撤下 else ""))
+
+
+def 开更正工单(triage_id, me, 原因, 来源="页面"):
+    """已办结的事要纠正 → 新开一张同类型、挂着原单号的工单(原单和它的回执都不动)。→ {ok, task_id}"""
+    from oplog import log_op as _log
+    me = me or {}
+    谁 = f"{me.get('name') or '?'}({me.get('no') or '?'})"
+    def _记(ok, code, 话):
+        _log(谁, "triage", f"triage#{triage_id}", "已办结", "开更正工单" if ok else "—", ok, code,
+             f"[{来源}] 更正:{话}"[:200], {"role": me.get("role"), "no": me.get("no")})
+    if not (me.get("no") and me.get("role")):
+        _记(False, "NO_IDENTITY", "没有身份")
+        raise PermissionError("没有身份 —— 要登录")
+    if not (原因 or "").strip():
+        _记(False, "NO_REASON", "没写原因")
+        raise ValueError("开更正工单要写原因 —— 原来办的哪里不对")
+    t = get_triage(triage_id)
+    if not t:
+        raise ValueError(f"没有 triage#{triage_id}")
+    原 = (_rows("SELECT id, type, ref_id FROM task WHERE id=?", t["task_id"]) or [None])[0]
+    ok, 为什么 = _能重开吗(原["type"] if 原 else None, me)
+    if not ok:
+        _记(False, "ROLE", 为什么)
+        raise PermissionError(为什么)
+    if not t.get("receipt"):
+        话 = "还没办结 —— 没办结的直接重开,不用开更正工单"
+        _记(False, "NOT_CLOSED", 话)
+        return dict(ok=False, code="NOT_CLOSED", reason=话)
+    with _c() as c:
+        n = c.execute("SELECT COUNT(*) FROM task WHERE id LIKE ?", (f"{原['id']}-更正%",)).fetchone()[0] + 1
+        新 = f"{原['id']}-更正{n}"
+        # 建单时间 = 世界的当下:这是一件新的事,从现在起计时(原单的超时记录留在原单上)
+        c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",
+                  (新, 原["type"], 原["ref_id"], "待处理", now().strftime("%Y-%m-%d %H:%M:%S"),
+                   f"更正原单 {原['id']}:{(原因 or '').strip()}"[:200]))
+    _记(True, "CORRECTION", f"{新}:{(原因 or '').strip()}")
+    return dict(ok=True, code="CORRECTION", task_id=新,
+                reason=f"开了更正工单 {新} —— 原单和它的回执不动,纠正在新单上办")
 
 
 # ── 五、生命周期提醒 ────────────────────────────────────────────────────

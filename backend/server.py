@@ -3473,6 +3473,24 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(error=f"不认识的 op:{op}"), 400)
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]), 400)
+        if p=="/api/ops-reopen":
+            # 重开 / 开更正工单(用户 10-19 拍:复核那一岗或总部运营;已办结的不重开、开更正工单)。身份只从登录态取
+            import ops as _ops
+            u = _me(self)
+            if not u:
+                return self._send(dict(error="没登录 —— 重开要登录,署名用登录的人"), 401)
+            try:
+                if body.get("action") == "重开":
+                    r = _ops.重开(body.get("triage_id"), u, body.get("reason"))
+                elif body.get("action") == "更正":
+                    r = _ops.开更正工单(body.get("triage_id"), u, body.get("reason"))
+                else:
+                    return self._send(dict(error="action 只能是 重开 / 更正"), 400)
+                return self._send(r, 200 if r.get("ok") else 400)
+            except PermissionError as e:
+                return self._send(dict(error=str(e)[:200]), 403)
+            except Exception as e:
+                return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]), 400)
         if p=="/api/ops-relabel-review":
             # 改判审核(用户 10-19 拍:总部运营审,不能是改判人自己)。身份只从登录态取
             import relabel as _rl

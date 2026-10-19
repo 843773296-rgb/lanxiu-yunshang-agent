@@ -103,10 +103,10 @@ def 心跳(pid, db=None):
 
 def 执行线程在吗(c, 当下=None):
     r = c.execute("SELECT beat FROM triage_worker WHERE id=1").fetchone()
-    if not r or not r["beat"]:
+    if not r or not r[0]:          # 按位置取:调用方的连接不一定设了 row_factory
         return False
     当下 = 当下 or dt.datetime.now()   # 真实时钟:和 _现在() 写进 beat 的是同一种钟,混用世界时间会把心跳判成几天前
-    return (当下 - dt.datetime.strptime(r["beat"], "%Y-%m-%d %H:%M:%S")).total_seconds() <= 心跳断了秒
+    return (当下 - dt.datetime.strptime(r[0], "%Y-%m-%d %H:%M:%S")).total_seconds() <= 心跳断了秒
 
 
 def 收中断(当下=None, db=None, 原因=None):

@@ -408,6 +408,7 @@ ${d.human_root_cause||""}${d.human_note?"\n"+d.human_note:""}`):""}
     ${done && x.type==="财务人工任务" ? `<div class="fld" id="退款块"><div class="k">退款处理与办结(财务)</div>
       <div id="退款内">加载中…</div></div>` : ""}
     ${(done && x.type!=="财务人工任务" && d.办结) ? 办结块(d.办结, d.id) : ""}
+    ${done ? 重开块(x, d) : ""}
     ${done||升着?"":`<div class="edit" id="edit">
       ${(d.改判选项||[]).length ? `
       <label>你认定的根因(从预存的里选)</label>
@@ -434,6 +435,29 @@ ${d.human_root_cause||""}${d.human_note?"\n"+d.human_note:""}`):""}
     <span class="note" id="rmsg" style="font-size:12.5px;color:var(--ink-3)"></span></div>`}`;
   if($("#退款内")) await 画退款(x.ref, d.id, x);
 }
+/* ── 重开 / 更正(用户 2026-10-19 拍:复核那一岗或总部运营;已办结的不重开,开更正工单;计时接着算)──────
+   能不能做由后端判(角色、有没有办结),页面只按「办没办结」决定摆哪个按钮。 */
+function 重开块(x, d){
+  const 结=!!x.已办结;
+  return `<div class="fld"><div class="k">结论不对?${x.重开次数?` · 已重开过 ${+x.重开次数} 次`:""}</div>
+    <div class="rf"><input id="重开原因" placeholder="${结?"原来办的哪里不对(必填)":"为什么原来的结论不对(必填)"}" style="flex:1;min-width:160px">
+    <button data-reopen="${结?"更正":"重开"}" data-tri="${d.id}">${结?"开更正工单":"重开"}</button></div>
+    <div class="note" style="font-size:12.5px">${结?"已办结的不重开(事情在现实里已经办了)—— 新开一张挂着原单号的更正工单"
+      :"重开后回到待复核,旧结论留档;计时接着从建单算,不重置"}</div>
+    <div class="note" id="开提示" style="font-size:12.5px"></div></div>`;
+}
+$("#panel").addEventListener("click",async e=>{
+  const b=e.target.closest("[data-reopen]"); if(!b) return;
+  const 说=t=>{ const p=$("#开提示"); if(p) p.textContent=t; };
+  const 原因=(($("#重开原因")||{}).value||"").trim();
+  if(!原因){ 说("要写原因"); return; }
+  b.disabled=true; 说("提交中…");
+  const r=await fetch("/api/ops-reopen",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({triage_id:+b.dataset.tri, action:b.dataset.reopen, reason:原因})}).then(r=>r.json()).catch(e=>({error:e+""}));
+  b.disabled=false;
+  if(r.error || r.ok===false){ 说("没成:"+(r.error||r.reason||"")); return; }   // 失败照实说
+  await load(); await open_(r.task_id || sel); 提示(r.reason, "ok");
+});
 /* ── 改判审核(用户 2026-10-19 拍:总部运营审,不能是改判人自己)────────────────────────
    改判不直接进评测集:候选 → 审核采用 / 驳回 → 换考卷时并入。谁能审由后端判,页面不猜角色 */
 function 改判审核块(状态, d){
