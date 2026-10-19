@@ -8657,5 +8657,17 @@
    }
   ],
   "预期红": "已并入评测集的改判,重开时从 truth 撤下"
+ },
+ {
+  "script": "tools/cron_health_check.py",
+  "改坏": "把 daily_shift.sh 开跑前那次自检改回 `--check`(机器一关两周,世界就永久卡住)",
+  "file": [
+   {
+    "path": "tools/daily_shift.sh",
+    "old": "--can-shift 2>&1",
+    "new": "--check 2>&1"
+   }
+  ],
+  "预期红": "开跑前问的不是「能不能挪」"
  }
 ]

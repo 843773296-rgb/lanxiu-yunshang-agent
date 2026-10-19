@@ -157,7 +157,17 @@ if [ -f "$MARK" ] && kill -0 "$(cat "$MARK")" 2>/dev/null; then
   exit 1
 fi
 echo $$ > "$MARK"
-trap 'rm -f "$MARK"' EXIT
+# ⚠️ 这两个新文件挂在**同一个** trap 上。
+#    再写一句 `trap ... EXIT` 不是「再加一个」,是**把上面那个顶掉** ——
+#    于是 $MARK 不再被清理,而「重建在跑」这个标记留着的后果是
+#    每日平移从此天天让开(daily_shift.sh 第 ② 条)。
+STEP_TIMES="${TMPDIR:-/tmp}/rebuild.$$.times"
+# ⚠️ **每一步的输出写进「这一轮自己的」文件,不是一个固定路径。**
+#    原来三处都写死 `/tmp/rebuild-step.out` —— 两个会话同时重建就**互相覆盖**,
+#    而被覆盖的恰好是失败那一步的详情(`tail -15` 读的就是它)。
+#    check.sh 为同一个坑改过一次(2026-10-09),这里漏了。
+STEP_OUT="${TMPDIR:-/tmp}/rebuild-step.$$.out"
+trap 'rm -f "$MARK" "$STEP_TIMES" "$STEP_OUT"' EXIT
 if [ "$FRESH_ONLY" = 1 ]; then
   if [ -f backend/lanxiu.db ]; then
     echo "❌ --fresh-only 只管「从无到有建库」,而 backend/lanxiu.db 已经在了 —— 它不会去动它。"
@@ -177,6 +187,8 @@ fi
 #
 # **一个什么都没做的脚本,和一个做完了的脚本,输出长得一模一样。**
 DONE=0
+: > "$STEP_TIMES"
+BUILD_T0=$SECONDS
 # ⚠️ **场合标签(backfill_scene)排在造旅程之前**(2026-09-22 挪的):
 # 白坯试衣必试的三类里「婚服」按商品的「婚礼婚服」场合标签认,而旅程会把订单推到开裁 ——
 # 标签还没挂的话婚服判不出、闸判「判不了」、旅程卡在待生产,**时间没挪回过去,留下一批未来日期**
@@ -196,12 +208,19 @@ for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42
             "tools/seed_triage_tasks.py --写" \
             "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
-  python3 $STEP > /tmp/rebuild-step.out 2>&1 || {
+  STEP_T0=$SECONDS
+  python3 $STEP > "$STEP_OUT" 2>&1 || {
     echo "  ❌ 这一步失败了,后面的不跑 —— **跳过一步不会报错,只会让某几张表空着**"
-    tail -15 /tmp/rebuild-step.out | sed 's/^/     /'
+    tail -15 "$STEP_OUT" | sed 's/^/     /'
     exit 1
   }
-  tail -2 /tmp/rebuild-step.out | sed 's/^/     /'
+  # ⚠️ 记的是**起、止两个时刻**(都相对重建开始),不是一个时长。
+  #    为什么:`SECONDS` 是整秒,记时长的话每步 ±1 秒、四十步**累积**起来
+  #    足以把下面那个「空档」搅浑 —— 而那个数正是这本账的全部价值。
+  #    记起止就能把「步与步之间的空档」单独算出来、单独列出来,
+  #    **而今天那 215 秒就是一个空档**。
+  printf '%s\t%s\t%s\n' "$((STEP_T0 - BUILD_T0))" "$((SECONDS - BUILD_T0))" "$STEP" >> "$STEP_TIMES"
+  tail -2 "$STEP_OUT" | sed 's/^/     /'
   DONE=$((DONE + 1))
 done
 
@@ -212,5 +231,52 @@ done
 if [ "$DONE" -ne 40 ]; then
   echo "❌ 只跑了 $DONE 步(应该 40 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
+fi
+# ── 耗时账(2026-10-19 加的,和 check.sh 那本是同一件事)────────────────────
+# ⚠️ 最要紧的是最后那行 **「归不到任何一步的 N 秒」**。
+#    2026-10-19 CI 上有一次 215 秒的停顿,就落在 order_mix 退出之后、
+#    下一步的标题打出来之前 —— 那地方这个脚本只做了一次 `DONE` 加一。
+#    **按步去看的话,它会被算到 order_mix 头上**,于是两个会话都以为
+#    order_mix 从 14 秒变成了 229 秒,去查一个根本没变过的脚本。
+# ⚠️ 这一段只打印、**不参与判红**,自己崩了也不许带倒重建(`|| true`)。
+if [ -s "$STEP_TIMES" ]; then
+  python3 -c 'import sys
+步 = []
+for ln in open(sys.argv[1], encoding="utf-8"):
+    f = ln.rstrip("\n").split("\t")
+    if len(f) == 3:
+        try:
+            步.append((int(f[0]), int(f[1]), f[2]))
+        except ValueError:
+            pass
+total = int(sys.argv[2])
+if not 步:
+    raise SystemExit(0)
+# 空档 = 上一步止 → 下一步起;再加上头尾两段
+空档 = [(步[i + 1][0] - 步[i][1], "↑ 这一步之后的空档:" + 步[i][2]) for i in range(len(步) - 1)]
+空档.append((步[0][0], "↑ 第一步之前(建库脚本自己的准备)"))
+空档.append((total - 步[-1][1], "↑ 最后一步之后(收尾)"))
+走 = sum(b - a for a, b, _ in 步)
+空 = sum(d for d, _ in 空档)
+print("\n\033[1m建库耗时账(秒)—— 共 %d 步,只列 ≥ 1 秒的\033[0m" % len(步))
+for a, b, n in sorted(步, key=lambda r: r[0] - r[1]):
+    if b - a >= 1:
+        print("  %6d  %s" % (b - a, n))
+print("  " + "-" * 62)
+print("  各步之和 %d 秒 · 空档合计 %d 秒 · 整个重建 %d 秒" % (走, 空, total))
+大空 = sorted((d, n) for d, n in 空档 if d >= 5)
+if 大空:
+    print("  \033[1m⚠️ 有 ≥ 5 秒的空档 —— 这些时间不属于任何一步:\033[0m")
+    for d, n in reversed(大空):
+        print("    %6d  %s" % (d, n))
+    print("     空档不是哪一步变慢了。2026-10-19 CI 上有一次 215 秒的空档落在")
+    print("     order_mix 之后,**按步去看就成了「order_mix 从 14 秒变成 229 秒」** ——")
+    print("     两个会话都去查了一个根本没变过的脚本。")
+else:
+    print("  ✓ 没有 ≥ 5 秒的空档(每一秒都归到了某一步)")' "$STEP_TIMES" "$((SECONDS - BUILD_T0))" || true
+else
+  # ⚠️ **这本账自己坏了也要出声。** 静默跳过的话,下次要查「哪一步慢」时
+  #    只会发现表不见了 —— 而那和「重建本来就没跑几步」长得一模一样。
+  printf "\n⚠️ 建库耗时账是空的 —— 记账那一步自己坏了(不影响重建成败)\n"
 fi
 printf "\n\033[32m✅ 重建完成(%s 步全跑到)\033[0m —— 现在跑 ./check.sh,**全绿才算真的重建得出来**。\n" "$DONE"

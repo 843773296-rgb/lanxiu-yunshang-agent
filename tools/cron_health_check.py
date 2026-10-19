@@ -61,6 +61,7 @@ from datetime import datetime
 # **查了消费方读哪个字段,还要查那个字段是从哪儿推出来的。**
 # 这里消费方读的是标记文件,而标记文件的**位置**是 plist 决定的,不是 cwd。
 PLIST = os.path.expanduser("~/Library/LaunchAgents/com.lanxiu.worldshift.plist")
+_仓库根 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def 任务跑在哪():
@@ -134,6 +135,9 @@ G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
      "任务装了却没在跑"),
     ("把标记目录改回「脚本自己的仓库根」(不再从 plist 的 WorkingDirectory 取)",
      "一次都没跑过"),
+    # 2026-10-19:这一条守的是「那个死锁别回来」,而它**是仓库内的**,能重放。
+    ("把 daily_shift.sh 开跑前那次自检改回 `--check`(机器一关两周,世界就永久卡住)",
+     "开跑前问的不是「能不能挪」"),
 ]
 
 
@@ -224,6 +228,55 @@ def main():
                       f"\n       常见原因:macOS 把目录保护起来了"
                       f"(`Operation not permitted`)—— launchd agent 要在"
                       f"「系统设置 → 隐私与安全性 → 完全磁盘访问权限」里放行 `/bin/bash`")
+
+    # ── 开跑前问的是哪个问题(2026-10-19 加)─────────────────────────────
+    #
+    # 用户 2026-10-18 拍的 B 案把 `shift_world.py --check` 拆成了两个问题:
+    # 「自不自洽」(人看,把「数据太旧」报成错)和「能不能挪」(自动平移看,只验库坏没坏)。
+    # 在那之前开跑前问的是 `--check`,而「太旧」算进了不自洽,于是机器关两周之后**死锁**:
+    # 落后 > 14 天 → 自检红 → 拒绝平移 → 更落后 → 永远红。
+    #
+    # 📌 **为什么要单独一条检查盯这一行**:它改对之后,**没有任何东西盯着它别改回去** ——
+    # 改回 `--check` 不报错、本地门禁全绿、CI 也全绿,而后果要等到**机器连续关两周**
+    # 才看得见,那时候没人会想到是这一行。这正是这个项目那句规矩问的:
+    # 「新加一条保证时问一句:**如果它其实没生效,我靠什么会发现?**」——
+    # 在加这条之前,答案是「靠机器关两周」。
+    #
+    # ⚠️ 2026-10-19 当场撞过一次这个形状:那天早上世界日期跟上了机器日期,
+    # 我差点把它当成那个修复的第一次真实验证 —— 而定时任务跑的是主检出、
+    # 那会儿还是旧代码,**世界只落后 1 天,旧逻辑照样过**,什么都没证明。
+    # > 一个「这个修复生效了」和一个「那个条件碰巧没触发」,
+    # > **在「它成功了」上长得一模一样。**
+    _sh = os.path.join(_仓库根, "tools", "daily_shift.sh")
+    if not os.path.exists(_sh):
+        坏.append("找不到 tools/daily_shift.sh —— **扫挂了,不是「没问题」**")
+    else:
+        _调 = [(i, l.strip()) for i, l in enumerate(
+                   open(_sh, encoding="utf-8").read().splitlines(), 1)
+               if "shift_world.py" in l and not l.lstrip().startswith("#")]
+        # 「不带 -- 参数」那一行就是平移本身,它把前后分成两段:
+        # 之前的是「这个库能不能挪」,之后的是「我挪完有没有挪坏」。
+        _挪 = next((i for i, l in _调 if "--" not in l), None)
+        if _挪 is None:
+            坏.append(f"在 daily_shift.sh 里找不到「不带参数直接平移」那一行"
+                      f"(只扫到 {len(_调)} 处调用)—— **扫挂了,不是「没问题」**")
+        else:
+            _前 = [(i, l) for i, l in _调 if i < _挪]
+            _后 = [l for i, l in _调 if i > _挪]
+            _不对 = [i for i, l in _前
+                   if "--can-shift" not in l and "--能不能挪" not in l]
+            if not _前:
+                坏.append("daily_shift.sh 在平移之前一次自检都没有 —— "
+                          "往一个半平移的库上再挪一次,只会得到一个更说不清的库")
+            elif _不对:
+                坏.append(f"开跑前问的不是「能不能挪」—— daily_shift.sh 第 {_不对} 行。"
+                          f"问 `--check` 的话,**数据一落后超过 14 天就永远挪不动了**:"
+                          f"落后 → 自检报不自洽 → 这一步拒绝平移 → 更落后。"
+                          f"那两个问题 2026-10-18 已经拆开,开跑前要问 `--can-shift`")
+            elif not any("--check" in l for l in _后):
+                坏.append("平移完之后没有用「自不自洽」核一遍 —— "
+                          "`--can-shift` **故意不验**「数据旧不旧」,"
+                          "所以跑完那一次必须问 `--check`,否则挪坏了也看不出来")
 
     for x in 坏:
         print(f"  {R}❌ {x}{D}")

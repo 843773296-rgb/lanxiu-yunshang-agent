@@ -74,14 +74,41 @@ CHK_TIMEOUT=${CHK_TIMEOUT:-600}
 #
 # `$$` 在函数里取到的是这个脚本自己的进程号(不是子 shell),正是要的。
 CHK_OUT="${TMPDIR:-/tmp}/chk.$$.out"
-trap 'rm -f "$CHK_OUT"' EXIT
-run(){ printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
+# ⚠️⚠️ **耗时账**(2026-10-19 加的)—— 每一项记一行,收尾打成表。
+#
+# 为什么需要它:那几天 CI 连着四次跑满 35 分钟被取消,而要回答「哪条变慢了」
+# 只能事后翻 CI 日志 —— **而日志答不了这个问题**:
+# 最慢那几条检查三百多秒里一行不吐(Python 的输出不接终端时是**整段缓冲**的),
+# 全部断言在退出那一刻一起落下来,于是日志里它们每一行的时刻都是**同一个时刻**。
+# 于是两个会话各自按「这一段标题到下一段标题」去切时间,
+# **独立算出了同一个错数(229 秒),还以为互相验证过**。
+# 真凶是一次 215 秒的停顿,而它不属于任何一步。
+#
+# > **「我们有日志」和「日志答得出这个问题」是两件事。**
+#
+# 所以这一栏最要紧的不是每项多少秒,是收尾那行 **「归不到任何一项的 N 秒」** ——
+# 各项之和与整条门禁的差额。那 215 秒就落在这个差额里,
+# **而只按项去看的话它会被摊到某一项头上,看起来就是那一项慢了 16 倍。**
+CHK_TIMES="${TMPDIR:-/tmp}/chk.$$.times"
+trap 'rm -f "$CHK_OUT" "$CHK_TIMES"' EXIT
+run(){ local name="$1"; printf "\n\033[1m▸ %s\033[0m\n" "$1"; shift
   local rc=0
-  python3 -c 'import subprocess, sys
+  python3 -c 'import subprocess, sys, time
+t0 = time.monotonic()
+rc = 0
 try:
-    sys.exit(subprocess.run(sys.argv[2:], timeout=int(sys.argv[1])).returncode)
+    rc = subprocess.run(sys.argv[4:], timeout=int(sys.argv[1])).returncode
 except subprocess.TimeoutExpired:
-    sys.exit(124)' "$CHK_TIMEOUT" "$@" > "$CHK_OUT" 2>&1 || rc=$?
+    rc = 124
+finally:
+    # ⚠️ 记在 finally 里:**超时和崩溃那两条也要有耗时**,
+    #    否则「挂住的那一条」恰好是这本账上唯一的空白 —— 而它正是最该有数的那条。
+    try:
+        with open(sys.argv[2], "a") as f:
+            f.write("%.1f\t%s\n" % (time.monotonic() - t0, sys.argv[3]))
+    except OSError:
+        pass
+sys.exit(rc)' "$CHK_TIMEOUT" "$CHK_TIMES" "$name" "$@" > "$CHK_OUT" 2>&1 || rc=$?
   if [ "$rc" -eq 0 ]; then
     tail -3 "$CHK_OUT" | awk '{print "  " $0}'
   elif [ "$rc" -eq 124 ]; then
@@ -539,6 +566,38 @@ run "归属口径 · 分开只因为下一步不同(15 条自测)" python3 knowl
 run "评测指纹 · 行数没变但内容改了,指纹也得变(7 条自测)" python3 agent/fingerprint.py --selftest
 run "首次启动 · 建出来的库要和在用的库一样全(5 条咬合)" python3 backend/initpath_check.py
 run "交接门禁 · 过 80% 不许收工;交接在项目根、会话在子目录也要找得到;照提示提前刷了要放行(18 条)" node tools/hooks/handoff-gate.mjs --selftest
+# ── 耗时账打成表(为什么需要它见上面 CHK_TIMES 那段)──────────────────────
+# ⚠️ 这一段**不参与判红**:它只打印。算错了耗时不该让门禁变红,
+#    而它要是自己崩了也不许带倒整条门禁 —— 所以外面套了 `|| true`。
+if [ -s "$CHK_TIMES" ]; then
+  CHK_TOTAL=$SECONDS
+  python3 -c 'import sys
+rows = []
+for ln in open(sys.argv[1], encoding="utf-8"):
+    s, _, n = ln.rstrip("\n").partition("\t")
+    try:
+        rows.append((float(s), n))
+    except ValueError:
+        pass
+total = int(sys.argv[2])
+加 = sum(d for d, _ in rows)
+大 = sorted((r for r in rows if r[0] >= 1.0), reverse=True)
+print("\n\033[1m耗时账(秒)—— 只列 ≥ 1 秒的 %d 项,另外 %d 项都不到 1 秒\033[0m"
+      % (len(大), len(rows) - len(大)))
+for d, n in 大:
+    print("  %7.1f  %s" % (d, n))
+print("  " + "-" * 62)
+print("  各项之和 %.0f 秒 · 整条门禁 %d 秒 · \033[1m归不到任何一项的 %.0f 秒\033[0m"
+      % (加, total, total - 加))
+print("  ⚠️ 「归不到任何一项」那个数突然变大时,**不是哪条检查变慢了** ——")
+print("     2026-10-19 栽过一次:一次 215 秒的停顿被按项摊掉,看着像某一步慢了 16 倍。")' \
+    "$CHK_TIMES" "$CHK_TOTAL" || true
+else
+  # ⚠️ **这本账自己坏了也要出声。** 静默跳过的话,下次要回答「哪条慢」时
+  #    只会发现表不见了,而那和「门禁本来就没跑几项」长得一模一样。
+  printf "\n⚠️ 耗时账是空的 —— 记账那一步自己坏了(不影响红绿判定,但下次查「哪条慢」没得查)\n"
+fi
+
 printf "\n%s\n" "────────────────────────────────────────"
 if [ $FAIL -eq 0 ]; then printf "\033[32m✅ 全部检查通过\033[0m\n"
 else
