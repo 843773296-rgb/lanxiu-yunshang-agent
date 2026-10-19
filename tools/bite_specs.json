@@ -8849,5 +8849,41 @@
    }
   ],
   "预期红": "批量取数和逐件取数算出一样的结果:没有试衣记录"
+ },
+ {
+  "script": "backend/triage_board_check.py",
+  "改坏": "采纳率的分母把「已升级」也算进去",
+  "file": [
+   {
+    "path": "backend/triage_board.py",
+    "old": "        采纳率=_比(采, 采 + 改), 改判率=_比(改, 采 + 改),",
+    "new": "        采纳率=_比(采, 采 + 改 + len(桶[\"已升级\"])), 改判率=_比(改, 采 + 改),"
+   }
+  ],
+  "预期红": "采纳率 = 已采纳 ÷(已采纳 + 已改判):升级、待复核都不进分母"
+ },
+ {
+  "script": "backend/triage_board_check.py",
+  "改坏": "店长看到全部门店",
+  "file": [
+   {
+    "path": "backend/triage_board.py",
+    "old": "        if 店 is None or r[\"门店\"] == 店:",
+    "new": "        if True:"
+   }
+  ],
+  "预期红": "店长只看得到本店的事"
+ },
+ {
+  "script": "backend/triage_board_check.py",
+  "改坏": "事项数按研判行数数(跑两次算两件)",
+  "file": [
+   {
+    "path": "backend/triage_board.py",
+    "old": "        最后[r[\"task_id\"]] = r                       # 按 id 升序,最后一个就是最近一次",
+    "new": "        最后[r[\"id\"]] = r"
+   }
+  ],
+  "预期红": "事项数和 AI 运行次数分开数(一件跑两次 = 1 件、2 次)"
  }
 ]

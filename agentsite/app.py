@@ -61,6 +61,8 @@ PAGES = {"/": "station.html", # 登录与任务:登录态是**后台**发的 ses
          "/scheme": "scheme.html",
          # 研判设置(用户 10-19 拍):总部运营改时限 / 批量条数 / 提示词版本的草稿、试运行;发布找开发
          "/triage-settings": "triage-settings.html",
+         # 研判质量看板(用户 10-19 拍:总部看全部、店长看本店)
+         "/triage-board": "triage-board.html",
          # 存过的经营报告:/report 列表,/report?id=RPT… 直达那一份(用户 10-10:确认后要给个链接能直达)
          "/report": "report.html",
          # 定制订单确认书(业务 10-10:收预付款要有书面约定)—— 确认下单时生成,从任务 / chat 给的链接直达

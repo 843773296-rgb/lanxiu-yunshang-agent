@@ -3079,6 +3079,13 @@ class H(BaseHTTPRequestHandler):
             if not _me(self): return self._send({"error":"请先登录"},401)
             _r=_rw.看((Q.get("deposit") or [""])[0])
             return self._send(_r, 404 if "error" in _r else 200)
+        if p=="/api/triage-board":
+            # 研判质量看板(用户 10-19 拍:总部看全部、店长看本店)。范围在 triage_board 里按登录的人判,不收前端传的门店
+            import triage_board as _tb
+            u = _me(self)
+            if not u: return self._send({"error":"请先登录"},401)
+            try: return self._send(_tb.看板(u))
+            except PermissionError as e: return self._send({"error": str(e)[:200]}, 403)
         if p=="/api/triage-config":
             # 研判设置(用户 10-19 拍):现在生效什么、历史与草稿、可选的提示词版本。要登录;能不能改在写的那头判
             import triage_config as _tc

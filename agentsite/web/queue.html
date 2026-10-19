@@ -99,7 +99,8 @@ textarea,input[type=text]{width:100%;font-family:var(--sans);font-size:13.5px;pa
       style="width:44px;padding:2px 4px;font-family:var(--mono);border-radius:3px;border:1px solid rgba(255,255,255,.4);background:transparent;color:inherit"> 条</button>
     <span class="note" id="msg"></span>
     <span id="转人工们"></span>
-    <a href="/triage-settings" style="margin-left:auto;font-size:12.5px">研判设置 →</a>
+    <a href="/triage-board" style="margin-left:auto;font-size:12.5px">质量看板 →</a>
+    <a href="/triage-settings" style="font-size:12.5px">研判设置 →</a>
   </div>
   <div class="mask" id="mask"></div>
   <div id="toast" role="status" aria-live="polite"></div>
@@ -747,5 +748,6 @@ $("#关钮").onclick = () => 关弹窗();
 // 而那本来就是绕远了:panel 的内容在三处用 `innerHTML` 重写,
 // 把按钮放在**它们覆盖不到的那一层**就不用监听了 —— 少一个 API 依赖、少一条会漂的路径。
 
-load();
+// 从质量看板下钻过来的 /queue?task=… 直达那一条(10-19)—— open_ 自己会在当前档找不到时换档
+load().then(()=>{ const 直达=new URLSearchParams(location.search).get("task"); if(直达) open_(直达); });
 </script>
