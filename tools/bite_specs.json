@@ -8801,5 +8801,53 @@
    }
   ],
   "预期红": "登记表里没有死链"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "预取的「配件」一条都不给(批量取数那条路取错了,判定照样算出个正常结论)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    for r in _rows(\"SELECT item_id,kind,material,part FROM item_part_choice \"\n                   \"ORDER BY item_id, id\"):",
+    "new": "    for r in []:"
+   }
+  ],
+  "预期红": "批量取数和逐件取数算出一样的结果:有配件选择"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "预取的「试衣记录」一条都不给",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    for r in _rows(\"SELECT * FROM fitting ORDER BY item_id, round\"):",
+    "new": "    for r in []:"
+   }
+  ],
+  "预期红": "批量取数和逐件取数算出一样的结果:有试衣记录"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "预取的「场合标签」一条都不给",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    for r in _rows(\"SELECT spu,scene FROM product_scene ORDER BY spu\"):",
+    "new": "    for r in []:"
+   }
+  ],
+  "预期红": "批量取数和逐件取数算出一样的结果:有场合标签"
+ },
+ {
+  "script": "backend/muslin_check.py",
+  "改坏": "预取的「订单」一条都不给(下单日和开裁时刻都取不到)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    单 = {r[\"id\"]: r for r in _rows(\"SELECT id,created,cut_at FROM ordr\")}",
+    "new": "    单 = {}"
+   }
+  ],
+  "预期红": "批量取数和逐件取数算出一样的结果:没有试衣记录"
  }
 ]

@@ -4237,7 +4237,43 @@ def _亲量档位(wearer_id, pattern_code, order_item_id=None):
     return out.get("档位")
 
 
-def _白坯试衣(order_id, item_name, order_status, item_id=None, 假设未开裁=False):
+def _白坯试衣_预取(件们):
+    """**一次把一批订单行要的那几样取齐** —— 给 `_白坯试衣(预取=…)` 用。
+
+    为什么要有它:`_白坯试衣` 原来每件自己查 6 条(订单行 / 配件 / 下单日 /
+    开裁时刻 / 场合标签 / 试衣记录),而看板一次要算三千多件,
+    一份经营报告因此背上约两万条查询。
+    **每条只要 0.6 毫秒 —— 慢的不是查询,是条数。**
+    (2026-10-19 剖析:`fitting_queue` 一次 148.8 秒,这 6 条占 91%;
+    看板页面本身要等 21 秒,门禁只是第一个喊疼的地方。)
+
+    ⚠️⚠️ **这里只搬「取数」,一个判定都不做。** 该不该试 / 开没开裁 / 试没试
+    仍然只在 `_白坯试衣` 里判那一份 —— 预取给出来的东西必须和它自己查出来的
+    **逐字一样**。否则就是同一套规矩的第二套实现,
+    而**两份实现不一致的时候,各自看都是对的**(这个项目栽过)。
+    所以排序也要照抄:配件按 `id`(下面挑主料取的是第一条)、
+    试衣按 `round`(输出里「第几轮」按这个顺序列)。
+
+    ⚠️ **不用 `IN (…)`**:参数个数有上限,而上限随 SQLite 的编译选项变
+    (本机 32766,老版本是 999)—— 三千个 id 在这台机器上跑得过、换一台就报错,
+    而那种错**只在数据长大之后才出现**。整表取回来再分组就没有这个问题:
+    配件 2.5 万行、订单 2.7 万行、试衣 340 行、场合 553 行,四条查询。
+    """
+    件 = {r["id"]: r for r in 件们}
+    配件, 试衣, 场合 = {}, {}, {}
+    for r in _rows("SELECT item_id,kind,material,part FROM item_part_choice "
+                   "ORDER BY item_id, id"):
+        配件.setdefault(r["item_id"], []).append(r)
+    for r in _rows("SELECT * FROM fitting ORDER BY item_id, round"):
+        试衣.setdefault(r["item_id"], []).append(r)
+    for r in _rows("SELECT spu,scene FROM product_scene ORDER BY spu"):
+        场合.setdefault(r["spu"], []).append(r)
+    单 = {r["id"]: r for r in _rows("SELECT id,created,cut_at FROM ordr")}
+    return {"件": 件, "配件": 配件, "试衣": 试衣, "场合": 场合, "单": 单}
+
+
+def _白坯试衣(order_id, item_name, order_status, item_id=None, 假设未开裁=False,
+             预取=None):
     """这一单的白坯试衣现场。**只给事实,不给判责结论。**
 
     ⚠️ 和量体记录那一栏是同一条教训:**不许只给一个数让人自己去推。**
@@ -4255,12 +4291,19 @@ def _白坯试衣(order_id, item_name, order_status, item_id=None, 假设未开�
     import seed_fitting as _sf
 
     # 有行号就按行号取 —— 一家人订同款时同名商品不止一件,按名字取会串到别人那件上
-    it = (_rows("SELECT i.id, i.name, i.spu, i.wearer_id, p.pattern FROM ordr_item i "
-                "LEFT JOIN product p ON p.spu=i.spu WHERE i.id=? AND i.order_id=?", item_id, order_id)
-          if item_id else
-          _rows("SELECT i.id, i.name, i.spu, i.wearer_id, p.pattern FROM ordr_item i "
-                "LEFT JOIN product p ON p.spu=i.spu "
-                "WHERE i.order_id=? AND i.name=?", order_id, item_name))
+    if 预取 is not None and item_id is not None:
+        _预件 = (预取.get("件") or {}).get(item_id)
+        it = [_预件] if _预件 else []
+    else:
+        # 没给预取就照原样自己查 —— 这条路还在被跑到:
+        # `fitting_write.过闸` 一次只看一张单,它不走批量(2026-10-19 剖析:252 次)。
+        it = (_rows("SELECT i.id, i.name, i.spu, i.wearer_id, p.pattern FROM ordr_item i "
+                    "LEFT JOIN product p ON p.spu=i.spu WHERE i.id=? AND i.order_id=?",
+                    item_id, order_id)
+              if item_id else
+              _rows("SELECT i.id, i.name, i.spu, i.wearer_id, p.pattern FROM ordr_item i "
+                    "LEFT JOIN product p ON p.spu=i.spu "
+                    "WHERE i.order_id=? AND i.name=?", order_id, item_name))
     if not it:
         return {"note": "订单行里没有同名商品,查不到试衣记录"}
     item = it[0]
@@ -4270,8 +4313,9 @@ def _白坯试衣(order_id, item_name, order_status, item_id=None, 假设未开�
     mt = _ltb.记住(("带幅宽的料",), lambda: {r["name"]: r["code"] for r in
           _rows("SELECT code,name FROM material WHERE width_cm IS NOT NULL")})
     kfm = _ltb.记住(("工艺名→码",), lambda: {r["name"]: r["code"] for r in _rows("SELECT code,name FROM craft")})
-    ch = _rows("SELECT kind,material,part FROM item_part_choice WHERE item_id=? "
-               "ORDER BY id", item["id"])
+    ch = ((预取["配件"].get(item["id"]) or []) if 预取 is not None else
+          _rows("SELECT kind,material,part FROM item_part_choice WHERE item_id=? "
+                "ORDER BY id", item["id"]))
     ks = sorted({kfm[x["material"]] for x in ch
                  if x["kind"] == "工艺" and x["material"] in kfm})
     fab = [x for x in ch if x["kind"] == "面料" and x["material"] in mt]
@@ -4285,17 +4329,22 @@ def _白坯试衣(order_id, item_name, order_status, item_id=None, 假设未开�
                               for w in ("重工", "婚服", "满工")) else "局部"
         # 按**下单那天**算(用户 2026-09-19 定)—— 不传的话工期推算取今天,
         # 判责现场里的「凭什么」会一天变一天,跌破门槛那天结论就翻
-        _od = (_rows("SELECT created FROM ordr WHERE id=?", order_id) or [{}])[0].get("created")
+        # ⚠️ 用 `.get`,不是 `[...]`:取不到那张单时原来给的是 None,
+        #    而 KeyError 会**当场崩**。崩和 None 在这里是两种完全不同的行为。
+        _od = ((预取["单"].get(order_id) or {}).get("created") if 预取 is not None else
+               (_rows("SELECT created FROM ordr WHERE id=?", order_id) or [{}])[0].get("created"))
         该, why = _mu.按配置判(item["pattern"], mt[主["material"]], ks, scope,
                                None, _names(), on=_od)
 
     # ── 业务 09-22:三类必试(重工 / 全定制 / 婚服),新规挂在「开裁」这个动作上 ──
     重工, 重工_为什么 = 该, why
     开裁 = False if 假设未开裁 else _sf.开裁了吗(order_status)
-    系统开裁 = bool((_rows("SELECT cut_at FROM ordr WHERE id=?", order_id) or [{}])[0].get("cut_at"))
+    系统开裁 = bool((预取["单"].get(order_id) or {}).get("cut_at") if 预取 is not None else
+                    (_rows("SELECT cut_at FROM ordr WHERE id=?", order_id) or [{}])[0].get("cut_at"))
     新规 = _mu.适用新规(开裁, 系统开裁)
     档位 = _亲量档位(item["wearer_id"], item["pattern"], item["id"]) if 新规 else None
-    _场合 = _rows("SELECT scene FROM product_scene WHERE spu=?", item["spu"]) if item["spu"] else []
+    _场合 = ((预取["场合"].get(item["spu"]) or []) if 预取 is not None else
+             _rows("SELECT scene FROM product_scene WHERE spu=?", item["spu"])) if item["spu"] else []
     婚服 = (any(r["scene"] == "SC-OCC-03" for r in _场合) if _场合 else None) if 新规 else None
     if 新规 is None:
         该, why, 中 = None, "**判不了** —— 不知道这一单开没开裁,也就不知道按新规还是旧规判", []
@@ -4303,7 +4352,8 @@ def _白坯试衣(order_id, item_name, order_status, item_id=None, 假设未开�
         该, why, 中 = _mu.必试(重工, 档位, 婚服, 新规)
         if 重工_为什么 and "重工" in 中: why += ";重工:" + 重工_为什么
 
-    recs = _rows("SELECT * FROM fitting WHERE item_id=? ORDER BY round", item["id"])
+    recs = ((预取["试衣"].get(item["id"]) or []) if 预取 is not None else
+            _rows("SELECT * FROM fitting WHERE item_id=? ORDER BY round", item["id"]))
     签 = any(r["signed"] for r in recs)
     st = _mu.归档(该, 开裁, bool(recs), 签)
 
@@ -5251,17 +5301,27 @@ def fitting_queue(order=None):
     w, a = "", []
     if order:
         w = " AND o.id=?"; a = [order]
+    # ⚠️ 多取 `i.spu` 和 `p.pattern` 是给预取用的 —— `_白坯试衣` 原来自己查这一行,
+    #    现在这一行就是它要的那一行,**别让它再去查一遍**。
     rs = _rows("SELECT i.id,i.order_id,i.name,i.wearer_id,o.status,o.advisor_no,"
-               "  o.shop,c.name cname,o.customer_id "
+               "  o.shop,c.name cname,o.customer_id,i.spu,p.pattern "
                "FROM ordr_item i JOIN ordr o ON o.id=i.order_id "
                "LEFT JOIN customer c ON c.id=o.customer_id "
+               "LEFT JOIN product p ON p.spu=i.spu "
                "WHERE o.kind='定制品订单'" + w + " ORDER BY i.id", *a)
     摊 = {}
     # 三千多件逐件推工期 —— 放进「一次查看」的记忆范围:相容矩阵、工时表、现货、
     # 师傅名单、某一天的队在这一次里不会变,不必每件重查(结果一样,只是不重复查)
     import leadtime as _ltb
+    # ⚠️ **按行号传,不按商品名传。** `_白坯试衣` 的注释早就写着「按名字取会串到
+    #    别人那件上」(一家人订同款时同一张单里会有两件同名),而这里原来传的正是名字 ——
+    #    于是那种单会把其中一件**算两遍**,另一件的试衣记录根本没被看。
+    #    今天库里 115 组同名**全在标品单**、而这里只看定制单,所以**现在碰巧不触发**;
+    #    批量化天然按行号取,顺手把这个坑关掉(改前改后输出逐字节比过,一件没变)。
     with _ltb.批量():
-        _fs = [(r, _白坯试衣(r["order_id"], r["name"], r["status"])) for r in rs]
+        _预 = _白坯试衣_预取(rs)
+        _fs = [(r, _白坯试衣(r["order_id"], r["name"], r["status"],
+                            item_id=r["id"], 预取=_预)) for r in rs]
     for r, f in _fs:
         st = f.get("归到哪一档")
         if st == "不必试" and not order:
