@@ -914,6 +914,10 @@ def run():
       CREATE INDEX IF NOT EXISTS ix_choice_item     ON item_part_choice(item_id);
       CREATE INDEX IF NOT EXISTS ix_measure_wearer  ON measure_rec(wearer_id, measured_at);
       CREATE INDEX IF NOT EXISTS ix_measure_cust    ON measure_rec(customer_id);
+      -- 2026-10-19 补:「这件定制单有没有下单量体」= NOT EXISTS(measure_rec WHERE order_item_id=…),
+      -- 量体写口检查和回填脚本都这么查。没这条索引时每件定制单都翻一遍 14 万多行量体:
+      -- 本机这一条查询 33 秒 → 0.06 秒;CI 上整条检查 266 / 341 秒,门禁总时长贴着 35 分钟的墙跑
+      CREATE INDEX IF NOT EXISTS ix_measure_item    ON measure_rec(order_item_id);
       CREATE INDEX IF NOT EXISTS ix_wearer_customer ON wearer(customer_id);
       CREATE INDEX IF NOT EXISTS ix_stocklog_sku    ON stock_log(sku);
       CREATE INDEX IF NOT EXISTS ix_stocklog_ref    ON stock_log(ref);

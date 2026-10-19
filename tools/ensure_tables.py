@@ -41,6 +41,7 @@ import arrival_card
 import order_contract
 import escalation
 import triage_run
+import refund_write
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -67,6 +68,9 @@ import triage_run
     (escalation, "确保表", ["escalation"]),
     # 研判运行记录(2026-10-18):第一次有人点「研判」、或执行线程第一次报心跳时才建 —— 同上,建死免得表数漂
     (triage_run, "确保表", ["triage_run", "triage_worker"]),
+    # 退押金两人复核(2026-10-16 做的写口,10-19 补登记):第一次有人在页面上发起退押金才建 ——
+    # 10-19 主库有人真点过,表数 115 → 116、文档对账当场红;CI 从零建没人点过,就是 115。同 escalation 那次
+    (refund_write, "建表", ["refund_approval"]),
 ]
 
 

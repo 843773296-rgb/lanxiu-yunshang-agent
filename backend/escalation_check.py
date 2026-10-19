@@ -68,6 +68,10 @@ db = os.path.join(tmp, "lanxiu.db")
 shutil.copy(os.path.join(HERE, "lanxiu.db"), db)
 ops.DB = oplog.DB = db
 c = sqlite3.connect(db)
+# 副本里先清掉主库上真实的升级记录 —— 「到期退回了几条」数的是全表,
+# 主库有人真点过升级的话,别人的那条也会被数进来(10-19 主库多了一条真实升级,门禁当场红)
+if c.execute("SELECT 1 FROM sqlite_master WHERE name='escalation'").fetchone():
+    c.execute("DELETE FROM escalation")
 人 = lambda role: c.execute("SELECT no, name, role FROM staff WHERE role=? AND status='启用' ORDER BY no LIMIT 2",
                             (role,)).fetchall()
 店长, 总部 = 人("店长"), 人("总部运营")

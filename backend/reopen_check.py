@@ -53,6 +53,8 @@ db = os.path.join(tmp, "lanxiu.db")
 shutil.copy(os.path.join(HERE, "lanxiu.db"), db)
 ops.DB = oplog.DB = db
 c = sqlite3.connect(db)
+# 副本里先把主库上真实的改判候选清掉 —— 并入数的是全表的「已采用」,主库有人真审过的话会被数进来
+RL.确保列(c); c.execute("UPDATE triage SET relabel_review=NULL WHERE relabel_review IS NOT NULL")
 人 = lambda role: c.execute("SELECT no, name, role FROM staff WHERE role=? AND status='启用' ORDER BY no LIMIT 1",
                             (role,)).fetchone()
 店长, 总部, 售后, 财务 = 人("店长"), 人("总部运营"), 人("售后"), 人("财务")
