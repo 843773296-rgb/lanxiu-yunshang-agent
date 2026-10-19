@@ -50,7 +50,9 @@ def ck(名, 真, 补=""):
 
 def 页面路径(src=None):
     s = src if src is not None else open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
-    出 = set(re.findall(r'"(/[a-z]*)":\s*"[\w./]+\.html"', s))
+    # 路径里允许连字符(2026-10-19 补):原来只认 [a-z],`/triage-settings` 这种带连字符的页**扫不到**,
+    # 于是它在「不挂」里的登记被判成死链 —— 而如果它没登记,这条检查也一样看不见它
+    出 = set(re.findall(r'"(/[a-z-]*)":\s*"[\w./-]+\.html"', s))
     # /ai/<模块> 那一批由一行 update 生成 —— 它们共用 ai.html,不是独立入口
     return {p for p in 出 if p}
 
@@ -88,6 +90,13 @@ def 跑(src=None, 目录=None):
     import nav
     页 = 页面路径(src)
     ck("扫到了页面清单", len(页) >= 10, f"{len(页)} 个:{' '.join(sorted(页))}")
+    # 覆盖面对账(10-19 数据工厂建议):用**最宽**的写法再数一遍路由表里的 .html 条目,和上面扫到的比。
+    # 上面那条正则漏掉一种命名(当时是连字符;以后可能是下划线 / 数字 / 大写)的话,**数目当场对不上**,
+    # 而不是悄悄少验一页 —— 一个扫不到的页面和一个没问题的页面,在绿勾上长得一模一样
+    if src is None:
+        _源 = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
+        _宽 = set(re.findall(r'"(/[^"\s]*)":\s*"[^"]+\.html"', _源))
+        ck(f"扫到的页面数和路由表对得上(验了 {len(页 & _宽)} 个)", _宽 <= 页, f"路由表里有、上面那条正则没扫到:{sorted(_宽 - 页)}")
     漏 = sorted(页 - nav.全部登记的())
     ck("每个页面要么挂顶栏、要么写明为什么不挂", not 漏,
        f"没登记的:{漏} —— **有页面没入口不会报错,只会没人点得到**" if 漏 else

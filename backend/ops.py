@@ -359,10 +359,17 @@ def queue(state=None):
     # ⚠️ 算等待用的是**世界今天的末尾**,不是机器此刻 —— 见 `算等待的当下()`。
     # 用 `now()` 的话,今天下午那些记录在上午看会算出负的等待时长。
     out, n = [], 算等待的当下()
+    # 时限按**这张工单建单那一刻**生效的研判设置算(用户 10-19 拍「研判设置」;方案原文「新任务绑定当时发布的
+    # 版本,进行中的不受影响」)—— 改了时限不会让在办的单子一发布就成片超时。发布历史这里读一次,不逐张查库
+    import triage_config as _cfg
+    try:
+        _时限 = _cfg.时限查询器(DB)
+    except Exception:            # noqa: BLE001  设置表读挂了不许把队列搞挂 —— 退回代码默认值
+        _时限 = lambda ty, _c: SLA_HOURS.get(ty, DEFAULT_SLA)
     for t in _rows("SELECT * FROM task ORDER BY created"):
         created = _dt(t["created"]) or n
         waited_h = (n - created).total_seconds() / 3600
-        sla = SLA_HOURS.get(t["type"], DEFAULT_SLA)
+        sla = _时限(t["type"], t["created"])
         tr = latest.get(t["id"])
         st = "未研判" if not tr else tr["status"]
         # ── done 有**两个权威来源**(业务 2026-09-28 拍板,见业务拍板-20260927 第四条)──
@@ -489,7 +496,8 @@ def backlog():
         # `duty.html` 原来写死「财务 24h / 判责 36h / 合并 48h」——
         # 加了「评价差评 72h」之后那句话就漂了,而**漂了不报错**:
         # 页面上少一个类型,没有任何东西会红。
-        时效表={**SLA_HOURS, "(其余)": DEFAULT_SLA},
+        # 10-19 起时限可在研判设置里改:报的是**现在新建一张单**会用的那份(在办的各按建单那天的版本)
+        时效表={**__import__("triage_config").生效(db=DB)[0]["时限"], "(其余)": DEFAULT_SLA},
         最久未处理小时=round(max([x["waited_h"] for x in todo], default=0), 1),
         # 「最久那条」超没超它**那一类自己的**时效 —— 页面按这个标红,不再用一条统一的 72 小时
         # (业务 2026-09-22 确认,附录 A-166:同一屏两张卡用两把尺子,会出现「已超时」红、「最久等待」不红)

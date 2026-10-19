@@ -8729,5 +8729,77 @@
    }
   ],
   "预期红": "后台 /api/ops-triage 把版本号往下传"
+ },
+ {
+  "script": "backend/triage_config_check.py",
+  "改坏": "时限按「现在生效的」算(发布一下在办的全跟着变)",
+  "file": [
+   {
+    "path": "backend/triage_config.py",
+    "old": "            if 发布于 <= (建单 or \"\"):",
+    "new": "            if True:"
+   }
+  ],
+  "预期红": "发布之前建的单照旧 24 小时,之后建的才按新时限 2 小时"
+ },
+ {
+  "script": "backend/triage_config_check.py",
+  "改坏": "没试运行也能发布",
+  "file": [
+   {
+    "path": "backend/triage_config.py",
+    "old": "        if not r[\"tried_at\"]:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "没试运行过的发布不了"
+ },
+ {
+  "script": "backend/triage_config_check.py",
+  "改坏": "渲染时漏换占位单号",
+  "file": [
+   {
+    "path": "backend/triage_config.py",
+    "old": "    else:\n        词 = 词.replace(占位[0], str(ref))\n",
+    "new": "    else:\n        pass\n"
+   }
+  ],
+  "预期红": "按登记的版本渲染,三类都和代码直接生成的逐字一致"
+ },
+ {
+  "script": "agentsite/toast_check.py",
+  "改坏": "失败也弹成绿色",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": "  t.className=级===\"bad\"?\"bad\":\"ok\";",
+    "new": "  t.className=\"ok\";"
+   }
+  ],
+  "预期红": "弹():失败是红色、写着「没成」和后端给的理由"
+ },
+ {
+  "script": "agentsite/toast_check.py",
+  "改坏": "新加的提交失败分支没接提示条",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": "  if(r.error||r.ok===false){ $(\"#rmsg\").textContent=\"失败:\"+(r.error||r.reason); 弹(r.error||r.reason, \"bad\"); return; }",
+    "new": "  if(r.error||r.ok===false){ $(\"#rmsg\").textContent=\"失败:\"+(r.error||r.reason); return; }"
+   }
+  ],
+  "预期红": "页面里每一处提交失败的分支都弹红(以后新加按钮忘了接,这里当场红)"
+ },
+ {
+  "script": "agentsite/nav_check.py",
+  "改坏": "页面路径只认小写字母(带连字符的页扫不到)",
+  "file": [
+   {
+    "path": "agentsite/nav_check.py",
+    "old": "    出 = set(re.findall(r'\"(/[a-z-]*)\":\\s*\"[\\w./-]+\\.html\"', s))",
+    "new": "    出 = set(re.findall(r'\"(/[a-z]*)\":\\s*\"[\\w./]+\\.html\"', s))"
+   }
+  ],
+  "预期红": "登记表里没有死链"
  }
 ]

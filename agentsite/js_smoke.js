@@ -78,7 +78,8 @@ const realFetch = global.fetch;
    而那几页的加载代码从来没被冒烟跑过。
    账号**不抄**:工号从登录页的演示账号清单里按岗位取(role_check 也读这一段),
    口令从 seed.py 的 DEMO_PW 读(公开的演示口令,本来就写在 seed 里)。抄一份,改了那边这边就过期。 */
-const 要登录 = {"contract.html": "店长", "pad.html": "工匠", "report.html": "店长", "tasks.html": "店长"};
+const 要登录 = {"contract.html": "店长", "pad.html": "工匠", "report.html": "店长", "tasks.html": "店长",
+                "triage-settings.html": "总部运营"};   // 研判设置(10-19):只有总部运营改,读要登录
 let 饼 = "";
 async function 登录() {
   const 岗 = process.env.SMOKE_ROLE || 要登录[page];

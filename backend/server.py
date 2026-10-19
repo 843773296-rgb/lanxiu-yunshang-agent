@@ -3079,6 +3079,11 @@ class H(BaseHTTPRequestHandler):
             if not _me(self): return self._send({"error":"请先登录"},401)
             _r=_rw.看((Q.get("deposit") or [""])[0])
             return self._send(_r, 404 if "error" in _r else 200)
+        if p=="/api/triage-config":
+            # 研判设置(用户 10-19 拍):现在生效什么、历史与草稿、可选的提示词版本。要登录;能不能改在写的那头判
+            import triage_config as _tc
+            if not _me(self): return self._send({"error":"请先登录"},401)
+            return self._send(_tc.概览())
         if p=="/api/triage-run":
             # 研判运行进度(用户 10-18 拍「自建运行记录」):按批次号或运行号查,读之前先收一遍中断。
             # ⚠️ 放在 `/api/ops-` 那层外面 —— 路径不带 ops- 前缀,放里面永远进不去(fetch_route_check 当场逮到过)
@@ -3474,6 +3479,24 @@ class H(BaseHTTPRequestHandler):
                                                    body.get("triage_id"), body.get("cost"), body.get("error"))))
                 if op == "handed":  return self._send(dict(ok=True, ids=sorted(_tr.转人工的工单())))
                 return self._send(dict(error=f"不认识的 op:{op}"), 400)
+            except Exception as e:
+                return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]), 400)
+        if p=="/api/triage-config":
+            # 研判设置:总部运营存草稿 / 试运行。**发布和退回不在这里** —— 只有开发能做(tools/triage_config.py)
+            import triage_config as _tc
+            u = _me(self)
+            if not u:
+                return self._send(dict(error="没登录 —— 改设置要登录,署名用登录的人"), 401)
+            try:
+                if body.get("action") == "草拟":
+                    r = _tc.草拟(body.get("payload") or {}, u, body.get("note"))
+                elif body.get("action") == "试运行":
+                    r = _tc.试运行(int(body.get("id") or 0), u)
+                else:
+                    return self._send(dict(error="action 只能是 草拟 / 试运行 —— 发布和退回只有开发能做"), 400)
+                return self._send(r, 200 if r.get("ok") else 400)
+            except PermissionError as e:
+                return self._send(dict(error=str(e)[:200]), 403)
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]), 400)
         if p=="/api/ops-reopen":

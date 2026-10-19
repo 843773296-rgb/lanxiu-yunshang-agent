@@ -59,6 +59,8 @@ PAGES = {"/": "station.html", # 登录与任务:登录态是**后台**发的 ses
          "/m": "m.html", "/pad": "pad.html",
          "/fabric": "fabric.html", "/duty": "duty.html", "/queue": "queue.html",
          "/scheme": "scheme.html",
+         # 研判设置(用户 10-19 拍):总部运营改时限 / 批量条数 / 提示词版本的草稿、试运行;发布找开发
+         "/triage-settings": "triage-settings.html",
          # 存过的经营报告:/report 列表,/report?id=RPT… 直达那一份(用户 10-10:确认后要给个链接能直达)
          "/report": "report.html",
          # 定制订单确认书(业务 10-10:收预付款要有书面约定)—— 确认下单时生成,从任务 / chat 给的链接直达
@@ -642,7 +644,9 @@ class H(BaseHTTPRequestHandler):
                 try: _转 = set(_post("/api/triage-run-worker", {"op": "handed"}).get("ids") or [])
                 except Exception: _转 = set()
                 _能跑 = [x for x in q if x.get("能跑AI研判") and x["task_id"] not in _转]
-                ids = [x["task_id"] for x in _能跑[: int(body.get("n") or 3)]]
+                # 一次最多几条:研判设置里配的(用户 10-19 拍开放给总部运营改),页面填多了也按上限截
+                _上限 = _tr_cfg().生效()[0]["批量上限"]
+                ids = [x["task_id"] for x in _能跑[: max(1, min(int(body.get("n") or 3), _上限))]]
                 if not ids and q:
                     from collections import Counter as _C
                     _类 = "、".join(f"{k} {v} 条" for k, v in _C(x["type"] for x in q).most_common(3))
@@ -697,10 +701,16 @@ class H(BaseHTTPRequestHandler):
         # 原来这里是 `.get(类型, "BP-02")`,差评会掉进客户合并分支崩掉。
         _ops_bp = _ops_mod()
         bp, case, prompt = _ops_bp.研判提示词(t["type"], t["ref"], t["task_id"])
+        # 用哪版提示词:研判设置里发布了别的版本就用那一版(开发登记、验证过的;用户 10-19 拍),
+        # 没发布过就用代码当前这一版。渲染出来的正文和代码直接生成的逐字一致(triage_config_check 验)
+        _用 = _tr_cfg().生效()[0]["提示词版本"].get(t["type"])
+        研判版 = _ops_bp.研判提示词版本(t["type"])
+        if _用 and _用 != 研判版:
+            prompt, 研判版 = _tr_cfg().渲染(_用, t["type"], t["ref"], t["task_id"]), _用
         # 版本 = 研判提示词模板 + 智能体系统提示词(装配后的正文)各一个指纹;模型另有一列。
         # 换了任何一段,新研判的版本号就变 —— 配置回退、版本对比都靠它分开新旧(未做项第 5 项第一步)
         import hashlib as _hl
-        版 = f"研判:{_ops_bp.研判提示词版本(t['type'])}·系统:{_hl.sha256(sdk.SYS_TASK.encode('utf-8')).hexdigest()[:12]}"
+        版 = f"研判:{研判版}·系统:{_hl.sha256(sdk.SYS_TASK.encode('utf-8')).hexdigest()[:12]}"
         t = dict(id=t["task_id"], ref=t["ref"], bp=bp)
         t0 = _t.time()
         if run_id: _阶段(run_id, "调模型")
@@ -790,6 +800,13 @@ def _评一次检索(试跑id, 分, 评语=None):
                 "怎么办": "管理后台没起的话,这个分数记不下来 —— "
                         "起法:`管理后台/tools/dev.sh`。"
                         f"({type(e).__name__})"}
+
+
+def _tr_cfg():
+    """研判设置(backend/triage_config.py)。和 `_ops_mod` 同一个理由直接 import:同机同仓,不另抄一份。"""
+    _ops_mod()
+    import triage_config as _c
+    return _c
 
 
 def _ops_mod():

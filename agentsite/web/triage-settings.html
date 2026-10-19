@@ -1,0 +1,114 @@
+<title>研判设置</title>
+<!--SHELL-->
+<style>
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.box2{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:15px 17px}
+.box2 h3{margin:0 0 8px;font-size:13px;font-family:var(--mono);letter-spacing:.08em;color:var(--ink-3)}
+.row{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap;font-size:13.5px}
+.row label{min-width:96px;color:var(--ink-2)}
+.row input[type=number]{width:80px}
+.row select{max-width:260px}
+.tag{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:3px;border:1px solid var(--line);color:var(--ink-3)}
+.tag.ok{color:var(--pass);border-color:var(--pass)} .tag.no{color:var(--warn);border-color:var(--warn)}
+table.h{width:100%;border-collapse:collapse;font-size:13px}
+table.h td,table.h th{border-bottom:1px solid var(--line);padding:7px 6px;text-align:left;vertical-align:top}
+.rep{white-space:pre-wrap;font-size:12.8px;color:var(--ink-2);background:var(--paper-2);padding:8px 10px;border-radius:4px;margin-top:6px}
+.cmd{font-family:var(--mono);font-size:12px;background:var(--paper-2);padding:3px 6px;border-radius:3px;user-select:all}
+.msg{font-size:13px;margin-top:8px} .msg.bad{color:var(--fail)} .msg.ok{color:var(--pass)}
+</style>
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow"><span class="dot"></span><span class="lab">澜绣云裳 · 研判队列</span></div>
+  <h1>研判设置</h1>
+  <p class="deck">总部运营在这里改<b>时限、一次研判几条、用哪版提示词</b>:先存成草稿、再<b>试运行</b>看清会发生什么,
+  <b>发布和退回由开发执行</b>。谁能复核、谁能办结这类权限<b>不在这里改</b> —— 一次误配就能让一个人走完两段确认。</p>
+</header>
+
+<section>
+  <h2>现在生效的</h2>
+  <p class="sub" id="生效说明">加载中…</p>
+  <div class="grid" id="生效"></div>
+</section>
+
+<section>
+  <h2>新建一份草稿</h2>
+  <p class="sub">时限只管<b>发布之后新建</b>的工单 —— 已经在办的按它们建单时的那一版算,不会一发布就成片超时。
+  提示词只能选开发<b>验证过</b>的版本。</p>
+  <div class="grid">
+    <div class="box2"><h3>时限(小时)</h3><div id="时限表"></div></div>
+    <div class="box2"><h3>一次研判几条</h3><div class="row"><label>最多</label><input type="number" id="批量" min="1"> 条</div></div>
+    <div class="box2"><h3>提示词版本</h3><div id="版本表"></div></div>
+  </div>
+  <div class="row" style="margin-top:12px"><input id="说明" placeholder="为什么改(会留在历史里)" style="flex:1;min-width:220px">
+    <button class="pri" id="存草稿">存成草稿</button></div>
+  <div class="msg" id="草稿提示"></div>
+</section>
+
+<section>
+  <h2>历史与草稿</h2>
+  <table class="h"><thead><tr><th>#</th><th>状态</th><th>内容</th><th>说明</th><th>试运行 / 发布</th></tr></thead>
+    <tbody id="历史"></tbody></table>
+</section>
+</div>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let 概=null;
+function 内容文(p){
+  const 段=[];
+  if(p.时限) 段.push("时限 "+Object.entries(p.时限).map(([k,v])=>k+" "+v+"h").join("、"));
+  if(p.批量上限) 段.push("一次最多 "+p.批量上限+" 条");
+  if(p.提示词版本&&Object.keys(p.提示词版本).length) 段.push("提示词 "+Object.entries(p.提示词版本).map(([k,v])=>k+" "+v).join("、"));
+  return 段.join(";")||"(空 —— 用代码默认值)";
+}
+async function 载(){
+  概=await fetch("/api/triage-config").then(r=>r.json()).catch(e=>({error:e+""}));
+  if(概.error){ $("#生效说明").textContent="加载失败:"+概.error; return; }
+  const g=概.生效;
+  $("#生效说明").textContent=概.生效版本?`配置#${概.生效版本}`:"还没发布过任何一版 —— 现在用的是代码里的默认值";
+  $("#生效").innerHTML=`<div class="box2"><h3>时限</h3>${Object.entries(g.时限).map(([k,v])=>`<div class="row"><label>${esc(k)}</label>${+v} 小时</div>`).join("")}</div>
+    <div class="box2"><h3>一次研判几条</h3><div class="row">最多 ${+g.批量上限} 条</div></div>
+    <div class="box2"><h3>提示词版本</h3>${Object.entries(概.代码当前版本).map(([k,v])=>`<div class="row"><label>${esc(k)}</label><span class="cmd">${esc(g.提示词版本[k]||v)}</span>${g.提示词版本[k]?"":" <span class='tag'>代码当前</span>"}</div>`).join("")}</div>`;
+  $("#时限表").innerHTML=Object.entries(g.时限).map(([k,v])=>`<div class="row"><label>${esc(k)}</label>
+    <input type="number" data-时限="${esc(k)}" min="${概.时限可选[0]}" max="${概.时限可选[1]}" value="${+v}"></div>`).join("");
+  $("#批量").max=概.批量可选[1]; $("#批量").value=g.批量上限;
+  $("#版本表").innerHTML=Object.keys(概.代码当前版本).map(k=>{
+    const 可=(概.提示词版本||[]).filter(v=>v.task_type===k);
+    const 当=g.提示词版本[k]||概.代码当前版本[k];
+    return `<div class="row"><label>${esc(k)}</label><select data-版本="${esc(k)}">${可.map(v=>
+      `<option value="${esc(v.fp)}" ${v.verified?"":"disabled"} ${v.fp===当?"selected":""}>${esc(v.fp)}${v.verified?"":"(未验证,选不了)"}</option>`).join("")
+      ||`<option value="">(还没有登记的版本)</option>`}</select></div>`;
+  }).join("");
+  $("#历史").innerHTML=(概.历史||[]).map(r=>`<tr><td>${r.id}</td><td>${esc(r.status)}${r.id===概.生效版本?" <span class='tag ok'>生效中</span>":""}</td>
+    <td>${esc(内容文(r.payload))}</td><td>${esc(r.note||"")}<div style="color:var(--ink-3);font-size:12px">${esc(r.created_by||"")} ${esc(r.created||"")}</div></td>
+    <td>${r.status==="草稿"?(r.tried_at?`<div class="rep">${esc(r.tried_report||"")}</div>
+       <div style="margin-top:6px">发布要找开发执行:<span class="cmd">python3 tools/triage_config.py 发布 ${r.id} --by 开发名字</span></div>`
+       :`<button data-try="${r.id}">试运行</button>`)
+     :r.status==="已发布"?`${esc(r.published_by||"")} ${esc(r.published_at||"")}${r.rollback_of?` · 退回(撤下#${r.rollback_of})`:""}`:""}
+     <div class="msg" id="试${r.id}"></div></td></tr>`).join("")||`<tr><td colspan="5">还没有任何草稿或发布记录。</td></tr>`;
+}
+$("#存草稿").onclick=async()=>{
+  const g=概.生效, p={};
+  const 时={}; document.querySelectorAll("[data-时限]").forEach(i=>{ if(+i.value!==g.时限[i.dataset.时限]) 时[i.dataset.时限]=+i.value; });
+  if(Object.keys(时).length) p.时限=时;
+  if(+$("#批量").value!==g.批量上限) p.批量上限=+$("#批量").value;
+  const 版={}; document.querySelectorAll("[data-版本]").forEach(s=>{ const k=s.dataset.版本, 当=g.提示词版本[k]||概.代码当前版本[k];
+    if(s.value && s.value!==当) 版[k]=s.value; });
+  if(Object.keys(版).length) p.提示词版本=版;
+  const m=$("#草稿提示");
+  if(!Object.keys(p).length){ m.className="msg bad"; m.textContent="和现在生效的一样,没东西可存"; return; }
+  const r=await fetch("/api/triage-config",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({action:"草拟", payload:p, note:$("#说明").value.trim()})}).then(r=>r.json()).catch(e=>({error:e+""}));
+  if(r.error||r.ok===false){ m.className="msg bad"; m.textContent="没存成:"+(r.error||(r.错||[]).join(";")); return; }   // 失败照实说
+  m.className="msg ok"; m.textContent=`存成草稿 #${r.id} —— 下面点「试运行」看清会发生什么`; await 载();
+};
+document.addEventListener("click",async e=>{
+  const b=e.target.closest("[data-try]"); if(!b) return;
+  b.disabled=true;
+  const r=await fetch("/api/triage-config",{method:"POST",headers:{"content-type":"application/json"},
+    body:JSON.stringify({action:"试运行", id:+b.dataset.try})}).then(r=>r.json()).catch(e=>({error:e+""}));
+  if(r.error||r.ok===false){ b.disabled=false; const m=$("#试"+b.dataset.try); m.className="msg bad"; m.textContent="没试成:"+(r.error||(r.错||[]).join(";")); return; }
+  await 载();
+});
+载();
+</script>
