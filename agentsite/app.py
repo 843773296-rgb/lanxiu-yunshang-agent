@@ -149,6 +149,35 @@ def _登录状态(handler):
         return "连不上"
 
 
+def _运行版本():
+    """这个进程**启动时**的版本号 + 提交号 —— 页面右下角显示的是「正在跑的这一版」,不是仓库里最新的那一版
+    (拉了新代码没重启服务时,两者不一样,而那正是出问题时要分清的)。"""
+    根 = os.path.dirname(HERE)
+    try:
+        v = open(os.path.join(根, "VERSION"), encoding="utf-8").read().strip()
+    except Exception:
+        v = "?"
+    try:
+        import subprocess as _sp
+        h = _sp.run(["git", "rev-parse", "--short", "HEAD"], cwd=根, capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception:
+        h = ""
+    return v, h or "?"
+
+
+运行版本 = _运行版本()
+
+
+def _注入版本(html):
+    """右下角一行小字:v1.2.0 · 提交号(用户 2026-10-19 拍「发布版本号做」)。不挡点击。"""
+    v, h = 运行版本
+    块 = (f'<div id="__版本" title="正在运行的版本(服务启动时读的)" style="position:fixed;right:8px;bottom:6px;'
+          f'font:11px/1.4 ui-monospace,Menlo,monospace;color:#8a8a8a;opacity:.75;pointer-events:none;z-index:1">'
+          f'v{v} · {h}</div>')
+    i = html.lower().rfind("</body>")
+    return html[:i] + 块 + html[i:] if i >= 0 else html + 块
+
+
 def _注入登录守卫(html):
     """把 web/_auth_guard.js 放到页面最前面(doctype / charset 之后)—— 页面自己的脚本跑之前就得包好 fetch。"""
     js = open(os.path.join(HERE, "web", "_auth_guard.js"), encoding="utf-8").read()
@@ -254,6 +283,7 @@ class H(BaseHTTPRequestHandler):
                 html = html.replace("<!--NAV-->", _nav.顶栏html(当前=p))
             if p not in 免登录页:
                 html = _注入登录守卫(html)
+            html = _注入版本(html)
             self._send(html.encode(), "text/html; charset=utf-8"); return
         if p.startswith("/api/") or p.startswith("/img/"): return self._proxy("GET")
         if p == "/report.pdf":

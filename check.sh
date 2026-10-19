@@ -514,6 +514,7 @@ run "每条研判记下用的哪版提示词 · 改了就变、真落库(未做�
 run "研判设置 · 版本渲染逐字一致、时限按建单时的版本、只开放三样、试运行才能发布、只有开发发布(用户 10-19 拍)" python3 backend/triage_config_check.py
 run "研判队列页 · 提交之后成功绿 / 失败红带理由,每一处失败分支都接上(用户 10-19 要)" python3 agentsite/toast_check.py
 run "研判质量看板 · 事项和运行分开数、升级不进采纳率分母、店长只看本店、按版本拆、能下钻(用户 10-19 拍)" python3 backend/triage_board_check.py
+run "发布版本号 · VERSION、需求文档、产品说明、发布记录、页面显示对得上(用户 10-19 拍)" python3 tools/version_check.py
 run "退款执行写口 · 只有财务、先核实再重发、已退要流水号且不重复、通用入口绕不过(用户 10-15 拍)"    python3 backend/refund_write_check.py
 run "研判示例库 · 不相交、评测根因覆盖面不少、不挑自己、默认不带示例(用户 10-16 拍)"    python3 backend/example_pool_check.py
 run "研判评测判分 · 出账流水两种编号都认(10-16 真跑钉回)"    python3 agent/eval_hit_judgetest.py

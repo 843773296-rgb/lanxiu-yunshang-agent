@@ -103,7 +103,8 @@ ck("服务端:没登录打开页面 → 302 到登录页(登录页 / 顾客预�
    and 'self.send_header("location", "/login?back="' in 站)
 ck("服务端:后台连不上不算没登录(照常给页面)",
    re.search(r'except urllib\.error\.HTTPError as e:\s*\n\s*return "没登录" if e\.code == 401 else "连不上"', 站) is not None
-   and re.search(r'except Exception:\s*\n\s*return "连不上"\s*\n\s*\n\s*\ndef _注入登录守卫', 站) is not None)
+   # 只在 _登录状态 这个函数体里找(10-19 改:原来要求它紧挨着下一个函数,中间插一个别的函数就误红)
+   and 'return "连不上"' in 站[站.index("def _登录状态("):站.index("\ndef ", 站.index("def _登录状态(") + 1)])
 ck("服务端:每一页(登录页 / 顾客预约页除外)送出前都注入守卫", "html = _注入登录守卫(html)" in 站
    and "if p not in 免登录页:\n                html = _注入登录守卫(html)" in 站)
 登录页 = open(os.path.join(HERE, "web", "login.html"), encoding="utf-8").read()
