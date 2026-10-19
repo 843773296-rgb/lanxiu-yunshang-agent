@@ -26,6 +26,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE); sys.path.insert(0, os.path.dirname(HERE))
 import api
 import knowledge.member as mb
+# ⚠️ 在库副本上跑(10-19 改):原来在真库上把 approval 整张删了再插回去,中途崩了真库就少一张表的数据
+import oplog   # 写口里是懒加载的 —— 先 import 进来,下面那一下才改得到它(不然台账照样写真库,台账闸当场逮到过)
+import check_copy; check_copy.用副本("membership-")
 
 MGR = {"no": "60000001", "name": "张静静", "role": "店长", "shop": "SH001 静安旗舰店"}
 

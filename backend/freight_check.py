@@ -214,6 +214,7 @@ try:
     import server as S
     _真 = S.DB if hasattr(S, "DB") else None
     S.DB = 副本
+    import oplog as _ol; _真台账, _ol.DB = _ol.DB, 副本   # 台账也指过去(10-19 台账闸逮到漏了这个)
     兜底名 = next(z["区域"] for z in zs if z["兜底"])
     r1 = S.save_freight(dict(action="删", zone=兜底名), "检查", "总部运营")
     ck("后台删不掉兜底区(删了之后没登记的省份就算不出运费)",
@@ -247,6 +248,7 @@ try:
 finally:
     if _真:
         S.DB = _真
+    _ol.DB = _真台账
     shutil.rmtree(tmp, ignore_errors=True)
 
 print()

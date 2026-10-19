@@ -8669,5 +8669,65 @@
    }
   ],
   "预期红": "开跑前问的不是「能不能挪」"
+ },
+ {
+  "script": "agentsite/auth_guard_check.py",
+  "改坏": "守卫不管 401(只靠点按钮时查)",
+  "file": [
+   {
+    "path": "agentsite/web/_auth_guard.js",
+    "old": "        if (r.status === 401 && !/\\/api\\/login(\\?|$)/.test(u)) 去登录();",
+    "new": "        // 不管 401"
+   }
+  ],
+  "预期红": "请求回来 401 → 去登录页,并带上回来的地址"
+ },
+ {
+  "script": "agentsite/auth_guard_check.py",
+  "改坏": "登录页自己的 401 也被当成失效",
+  "file": [
+   {
+    "path": "agentsite/web/_auth_guard.js",
+    "old": "        if (r.status === 401 && !/\\/api\\/login(\\?|$)/.test(u)) 去登录();",
+    "new": "        if (r.status === 401) 去登录();"
+   }
+  ],
+  "预期红": "登录接口自己的 401(口令不对)不跳"
+ },
+ {
+  "script": "agentsite/auth_guard_check.py",
+  "改坏": "后台连不上也当成没登录",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "        return \"没登录\" if e.code == 401 else \"连不上\"",
+    "new": "        return \"没登录\""
+   }
+  ],
+  "预期红": "服务端:后台连不上不算没登录(照常给页面)"
+ },
+ {
+  "script": "backend/prompt_ver_check.py",
+  "改坏": "版本号写死(不随提示词变)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "    return hashlib.sha256(词.encode(\"utf-8\")).hexdigest()[:12]\n",
+    "new": "    return hashlib.sha256(任务类型.encode(\"utf-8\")).hexdigest()[:12]\n"
+   }
+  ],
+  "预期红": "改了提示词(四段那条通用要求)→ 三类的版本号都变"
+ },
+ {
+  "script": "backend/prompt_ver_check.py",
+  "改坏": "后台不往下传版本号",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "                                     prompt_ver=body.get(\"prompt_ver\"))",
+    "new": "                                     )"
+   }
+  ],
+  "预期红": "后台 /api/ops-triage 把版本号往下传"
  }
 ]

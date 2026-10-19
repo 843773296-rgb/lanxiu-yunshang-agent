@@ -47,8 +47,8 @@ def main():
     src = os.path.join(HERE, "lanxiu.db")
     tmp = tempfile.mkdtemp()
     shutil.copy(src, os.path.join(tmp, "lanxiu.db"))
-    import server
-    server.DB = os.path.join(tmp, "lanxiu.db")
+    import server, oplog
+    server.DB = oplog.DB = os.path.join(tmp, "lanxiu.db")   # 台账也指过去(10-19 台账闸逮到漏了这个)
     server.ensure_editlog()
 
     # ① **日志记的字段 = 写入真的覆盖的字段。**

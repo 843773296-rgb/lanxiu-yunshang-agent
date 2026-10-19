@@ -217,8 +217,9 @@ def 打回重写(opp_id, spu, 谁, 理由, db=None, call=None):
     try:
         import oplog
         oplog.log_op(谁, None, f"{opp_id}:{spu}", 旧[4], 旧[4] + 1, True, "ADVICE_REJECT", f"AI 管理平台打回:{理由}", {})
-    except Exception:
-        pass
+    except Exception as e:
+        # 重写已经落库了,不回滚;但**没留痕要照实说**,别报成和留了痕一样(原来是静默 pass,10-19 改)
+        return True, f"已重写成第 {旧[4] + 1} 版({来源})—— ⚠️ 但操作台账没写进({type(e).__name__}),这次打回没留痕", 旧[4] + 1
     return True, f"已重写成第 {旧[4] + 1} 版({来源})", 旧[4] + 1
 
 

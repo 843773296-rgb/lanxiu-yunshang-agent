@@ -30,6 +30,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import api, tasks
 DB = tasks.DB
+# ⚠️ 在库副本上跑(10-19 改):原来在真库上真改派一条日程、finally 里再改回去 ——
+# 台账里那条「张静静把 SC21711 改派给周叙」就是它留在真库的。改了再还原,中途崩了就还原不了
+import check_copy; check_copy.用副本("isolation-")
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 bad = 0

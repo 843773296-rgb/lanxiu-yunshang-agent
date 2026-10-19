@@ -46,8 +46,8 @@ def ck(name, ok, n, msg=""):
 def main():
     tmp = tempfile.mkdtemp()
     shutil.copy(os.path.join(HERE, "lanxiu.db"), os.path.join(tmp, "lanxiu.db"))
-    import server
-    server.DB = os.path.join(tmp, "lanxiu.db")
+    import server, oplog
+    server.DB = oplog.DB = os.path.join(tmp, "lanxiu.db")   # 台账也指过去(10-19 台账闸逮到漏了这个)
     server.ensure_editlog()
     c = sqlite3.connect(server.DB)
 

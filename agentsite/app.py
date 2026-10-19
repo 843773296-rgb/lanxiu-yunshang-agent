@@ -126,6 +126,33 @@ def _u(s):
     except Exception: return s
 
 
+# 不用登录也能开的页:登录页本身、顾客的手机端预约(客户不登录)
+免登录页 = ("/login", "/m")
+
+
+def _登录状态(handler):
+    """→ "已登录" / "没登录" / "连不上"。和 `_who` 的区别:**连不上不算没登录**。"""
+    ck = handler.headers.get("cookie")
+    if not ck or "lx_token=" not in ck:
+        return "没登录"
+    try:
+        req = urllib.request.Request(BACKEND + "/api/me", headers={"cookie": ck})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return "已登录" if json.loads(r.read()).get("no") else "没登录"
+    except urllib.error.HTTPError as e:
+        return "没登录" if e.code == 401 else "连不上"
+    except Exception:
+        return "连不上"
+
+
+def _注入登录守卫(html):
+    """把 web/_auth_guard.js 放到页面最前面(doctype / charset 之后)—— 页面自己的脚本跑之前就得包好 fetch。"""
+    js = open(os.path.join(HERE, "web", "_auth_guard.js"), encoding="utf-8").read()
+    块 = "<script>" + js + "</script>"
+    m = re.search(r'<meta charset="?utf-8"?>', html, re.I) or re.search(r"<!doctype html>", html, re.I)
+    return html[:m.end()] + 块 + html[m.end():] if m else 块 + html
+
+
 def _who(handler):
     """现在是谁在跟智能体说话 —— 从**后台的会话**换出来,不信前端说自己是谁。
 
@@ -204,6 +231,13 @@ class H(BaseHTTPRequestHandler):
         if p in PAGES:
             f = os.path.normpath(os.path.join(HERE, "web", PAGES[p]))
             if not os.path.exists(f): return self._send({"error": f"缺页面 {PAGES[p]}"}, code=404)
+            # 登录失效 → 刷新 / 打开任何一页都直接去登录页(用户 2026-10-19)。
+            # ⚠️ 只在**确定没登录**时跳;后台连不上时照常给页面 —— 「后台没起」不是「没登录」,
+            #    跳去登录页只会让人以为是自己的问题(登录页那时候也登不进去)。
+            if p not in 免登录页 and _登录状态(self) == "没登录":
+                self.send_response(302)
+                self.send_header("location", "/login?back=" + quote(self.path, safe=""))
+                self.send_header("content-length", "0"); self.end_headers(); return
             html = open(f, encoding="utf-8").read()
             # 配色、导航、表格样式只有一份(web/_shell.txt),页面里写 <!--SHELL--> 占位。
             # 抄五份的结果一定是改了四份漏一份 —— 和知识库不许存两遍是同一条理由。
@@ -214,6 +248,8 @@ class H(BaseHTTPRequestHandler):
             if "<!--NAV-->" in html:
                 import nav as _nav
                 html = html.replace("<!--NAV-->", _nav.顶栏html(当前=p))
+            if p not in 免登录页:
+                html = _注入登录守卫(html)
             self._send(html.encode(), "text/html; charset=utf-8"); return
         if p.startswith("/api/") or p.startswith("/img/"): return self._proxy("GET")
         if p == "/report.pdf":
@@ -661,6 +697,10 @@ class H(BaseHTTPRequestHandler):
         # 原来这里是 `.get(类型, "BP-02")`,差评会掉进客户合并分支崩掉。
         _ops_bp = _ops_mod()
         bp, case, prompt = _ops_bp.研判提示词(t["type"], t["ref"], t["task_id"])
+        # 版本 = 研判提示词模板 + 智能体系统提示词(装配后的正文)各一个指纹;模型另有一列。
+        # 换了任何一段,新研判的版本号就变 —— 配置回退、版本对比都靠它分开新旧(未做项第 5 项第一步)
+        import hashlib as _hl
+        版 = f"研判:{_ops_bp.研判提示词版本(t['type'])}·系统:{_hl.sha256(sdk.SYS_TASK.encode('utf-8')).hexdigest()[:12]}"
         t = dict(id=t["task_id"], ref=t["ref"], bp=bp)
         t0 = _t.time()
         if run_id: _阶段(run_id, "调模型")
@@ -681,7 +721,8 @@ class H(BaseHTTPRequestHandler):
             # ⚠️ 这一条 2026-09-28 补。`sdk.run()` 一直返回 trace_id,
             # 而这里**从来没往后台传** —— 库里每条研判都答不出它是哪一次调用的产物。
             # 缺了它,A3 的判读回流挂不到具体调用上(见 backend/seed.py 那一列的注释)。
-            trace_id=r.get("trace_id")))
+            trace_id=r.get("trace_id"),
+            prompt_ver=版))
         row = saved.get("row") or {}
         return dict(task_id=tid, triage_id=saved.get("triage_id"),
                     root_cause=row.get("ai_root_cause"), confidence=row.get("ai_confidence"),

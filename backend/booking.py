@@ -200,8 +200,12 @@ def _flag_dup(phone, hits):
                f"{[h['id'] + '/' + (h.get('shop') or '') for h in hits]};"
                f"本次按最早建档的 {hits[0]['id']} 派单 —— **这个号该走客户合并**",
                {"phone_tail": phone[-4:], "ids": [h["id"] for h in hits]})
-    except Exception:
-        pass
+    except Exception as e:
+        # 预约照常放行(客户没做错事),但**台账写不进这件事不能也不吭声** —— 原来这里是 `pass`,
+        # 和上面「不能不吭声」那句本意正相反(10-19 数据工厂核出来的)。至少落进服务日志
+        import sys as _s
+        print(f"⚠️ 一号多档没记进台账({type(e).__name__}: {e}):{[h['id'] for h in hits]} 该走客户合并",
+              file=_s.stderr)
 
 
 def unassigned(shop=None):

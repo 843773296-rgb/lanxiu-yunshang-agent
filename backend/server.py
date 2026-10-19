@@ -3392,7 +3392,10 @@ class H(BaseHTTPRequestHandler):
                                      guard_blocked=body.get("guard_blocked"),
                                      guard_violations=body.get("guard_violations"),
                                      answer_turns=body.get("answer_turns") or 1,
-                                     trace_id=body.get("trace_id"))
+                                     trace_id=body.get("trace_id"),
+                                     # 这条是哪版提示词跑的(研判队列未做项第 5 项第一步,10-19)—— 原来这里没往下传,
+                                     # 库里那一列从来是空的:换了提示词之后,新旧研判混在一起分不开
+                                     prompt_ver=body.get("prompt_ver"))
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
             return self._send(dict(ok=True, triage_id=tid, row=_ops.get_triage(tid)))

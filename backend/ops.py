@@ -759,6 +759,16 @@ def 研判提示词(任务类型, ref, task_id, 开差评=False, 带示例=False
         + _示例(bp, str(task_id)[1:], 带示例) + 四段)
 
 
+def 研判提示词版本(任务类型):
+    """这一类研判**用的那段提示词模板**的指纹(不含单号这类每条都不同的数据)。→ 12 位短串。
+
+    拿占位的单号把 `研判提示词` 真调一遍再取哈希 —— 不另抄一份模板去算,
+    否则改了提示词、忘了改这份,版本号就不变,「换了版本」和「没换」长得一样。"""
+    import hashlib
+    _, _, 词 = 研判提示词(任务类型, "§甲§|§乙§", "T§单号§")
+    return hashlib.sha256(词.encode("utf-8")).hexdigest()[:12]
+
+
 def save_triage(task_id, breakpoint, case_id, text, trajectory,
                 cost=None, latency_ms=None, model=None, usage=None,
                 guard_blocked=False, guard_violations=None, answer_turns=1,

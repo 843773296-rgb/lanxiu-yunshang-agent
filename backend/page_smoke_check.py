@@ -52,6 +52,8 @@ sys.path.insert(0, HERE)
 import server  # noqa: E402
 
 DB = os.path.join(HERE, "lanxiu.db")
+# 在库副本上跑(10-19 改):导出 / 写口都会记台账,原来全记进真库、挂在真员工名下
+import check_copy; check_copy.用副本("pagesmoke-")
 
 # 取一个真实参数:("SQL", 语句) 在跑的时候现查;别的照原样传。
 def SQL(s): return ("SQL", s)

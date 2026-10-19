@@ -37,6 +37,7 @@ shutil.copy(REAL, copy)
 
 import server
 server.DB = copy          # 把写接口指到副本上
+import oplog; oplog.DB = copy   # 台账也指过去 —— 10-19 台账闸逮到:业务写副本、台账写真库,真员工名下多出假操作
 
 # ── 前置断言:副本必须真的可用 ──────────────────────────────────────
 # 出现过一次**没能复现**的失败:`no such table: op_log`。

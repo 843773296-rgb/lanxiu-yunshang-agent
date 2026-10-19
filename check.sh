@@ -20,6 +20,11 @@ FAIL=0; BAD=0; CRASH=0
 # 「防止产生」和「防止使用」是两件事。两半都要堵:先清干净,再禁止写。
 find . -name __pycache__ -type d -not -path './agentsite/.venv/*' -exec rm -rf {} + 2>/dev/null
 export PYTHONDONTWRITEBYTECODE=1
+# ⚠️ **检查不许往真库的操作台账写**(2026-10-19)。不少检查把业务数据写在库副本上,`oplog.DB` 却没跟着指过去,
+# 于是真库台账里出现「张静静把 SC21711 改派给周叙」这种挂在真员工名下的假操作 —— 业务表干净、检查全绿,
+# **台账本来就该有新行,多几行假的没人会觉得怪**。这个变量在,`oplog.log_op` 遇到「门禁里写真库」就不写、记一笔;
+# 收尾那一步汇总点名。页面上真人点的不受影响(服务进程不在门禁里,没有这个变量)。
+export LANXIU_CHECK_LEAK="$(mktemp -t lanxiu-oplog-leak.XXXXXX)"
 # ⚠️ **缩进用 awk 不用 sed。** macOS 自带的是 BSD sed,
 # 在 LANG=zh_CN.UTF-8 下处理某些中文输出会**断言失败直接 abort**:
 #
@@ -504,6 +509,8 @@ run "售后 / 客户合并的办结入口 · 页面照后端预检画、回执�
 run "研判运行记录 · 不重复跑、看得到排到哪、断了标中断、排队的接着跑、超时可转人工(用户 10-18 拍)" python3 backend/triage_run_check.py
 run "改判先审核 · 进候选、总部运营审、不能自审、并入才进评测集(用户 10-19 拍)" python3 backend/relabel_check.py
 run "重开 / 更正 · 谁能重开、旧结论留档、计时不重置、已办结开更正工单(用户 10-19 拍)" python3 backend/reopen_check.py
+run "登录失效就去登录页 · 刷新走服务端跳转,点按钮 / 401 / 切回标签页走守卫(用户 10-19 要)" python3 agentsite/auth_guard_check.py
+run "每条研判记下用的哪版提示词 · 改了就变、真落库(未做项第 5 项第一步)" python3 backend/prompt_ver_check.py
 run "退款执行写口 · 只有财务、先核实再重发、已退要流水号且不重复、通用入口绕不过(用户 10-15 拍)"    python3 backend/refund_write_check.py
 run "研判示例库 · 不相交、评测根因覆盖面不少、不挑自己、默认不带示例(用户 10-16 拍)"    python3 backend/example_pool_check.py
 run "研判评测判分 · 出账流水两种编号都认(10-16 真跑钉回)"    python3 agent/eval_hit_judgetest.py
@@ -566,6 +573,17 @@ run "归属口径 · 分开只因为下一步不同(15 条自测)" python3 knowl
 run "评测指纹 · 行数没变但内容改了,指纹也得变(7 条自测)" python3 agent/fingerprint.py --selftest
 run "首次启动 · 建出来的库要和在用的库一样全(5 条咬合)" python3 backend/initpath_check.py
 run "交接门禁 · 过 80% 不许收工;交接在项目根、会话在子目录也要找得到;照提示提前刷了要放行(18 条)" node tools/hooks/handoff-gate.mjs --selftest
+run "检查不许往真库的操作台账写(写了就点名是哪个检查)" bash -c '
+  # 先自检:故意从门禁里写一笔,它必须被拦下并记进账 —— 拦不下的话,「没有漏写」就什么也说明不了
+  python3 -c "import sys; sys.path.insert(0,\"backend\"); import oplog; oplog.log_op(\"门禁自检\",\"check\",\"-\",\"—\",\"—\",True,\"LEAK_CANARY\",\"自检\",{})"
+  grep -qx -- "-c" "$LANXIU_CHECK_LEAK" || { echo "❌ 自检那一笔没被拦下 —— 检测本身坏了,下面的「没有漏写」不作数"; exit 1; }
+  LEAKS=$(grep -vx -- "-c" "$LANXIU_CHECK_LEAK" | sort | uniq -c | sort -rn)
+  if [ -n "$LEAKS" ]; then
+    echo "❌ 这些检查往真库的操作台账写了(已拦下没写进去)—— 把 oplog.DB 指到它自己的库副本上:"
+    echo "$LEAKS" | awk "{print \"     \" \$1 \" 笔  \" \$2}"
+    exit 1
+  fi
+  echo "✅ 没有检查往真库的台账写(自检那一笔拦下了,检测在工作)"'
 # ── 耗时账打成表(为什么需要它见上面 CHK_TIMES 那段)──────────────────────
 # ⚠️ 这一段**不参与判红**:它只打印。算错了耗时不该让门禁变红,
 #    而它要是自己崩了也不许带倒整条门禁 —— 所以外面套了 `|| true`。

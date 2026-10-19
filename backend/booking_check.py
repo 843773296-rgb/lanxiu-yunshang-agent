@@ -10,9 +10,16 @@
 """
 import sys, os, sqlite3
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import booking
+import booking, oplog, shutil, tempfile, atexit
 
-DB = booking.DB
+# ⚠️ **在库副本上跑**(2026-10-19 改)。原来这条检查直接在真库上下一单、再删掉那单和台账里那一行 ——
+# 「写了再清」:中途崩了就留在真库里,而且清台账那句按 id 推算,算错就删到别人的行。
+# 门禁的台账闸(LANXIU_CHECK_LEAK)把它逮了出来:它的「一号多档留了痕」那一笔是写进真库台账的。
+_副本目录 = tempfile.mkdtemp(prefix="booking-")
+DB = os.path.join(_副本目录, "lanxiu.db")
+shutil.copy(booking.DB, DB)
+booking.DB = oplog.DB = DB
+atexit.register(shutil.rmtree, _副本目录, True)
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 bad = 0
 
