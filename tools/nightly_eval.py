@@ -70,6 +70,20 @@ def 有人在用():
     r = subprocess.run(["pgrep", "-f", "check.sh"], capture_output=True, text=True)
     if r.stdout.strip():
         return "有门禁在跑(check.sh)"
+    # ⚠️ **咬合重放也算有人在用**(2026-10-19 加)。它每条规格都要拷一份库、
+    #    再在副本上跑一遍检查 —— 全量 756 条要四个多小时,CPU 和磁盘全程满载。
+    #    原来这里只看 `check.sh`,于是一次跨进夜里的重放**不会被拦**,
+    #    而今晚这一轮是全量 23 个评测、含三代对比 —— 那张表里的
+    #    「耗时/条」会被拖慢,**然后作为本轮的度量进版本库**。
+    #
+    # > 一个「跑过了但数被别的活拖慢了」的评测结果,和一个干净的结果,
+    # > **在那个 jsonl 里长得一模一样** —— 而它会被拿去和上一轮同模型的那次比。
+    #
+    #    让开的代价是「今晚没跑」,而那是**在日志里看得见**的;
+    #    不让开的代价是一份看起来正常的假数。**两种代价不对等。**
+    r = subprocess.run(["pgrep", "-f", "bite_run"], capture_output=True, text=True)
+    if r.stdout.strip():
+        return "有咬合重放在跑(bite_run)"
     return None
 
 
