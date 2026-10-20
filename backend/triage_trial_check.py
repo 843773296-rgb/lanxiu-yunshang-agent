@@ -100,13 +100,23 @@ ck("试跑:参数不全拒跑(不会悄悄挑一批去跑)", p.returncode != 0)
 import check_copy
 db = check_copy.用副本("trial-chk-")
 c = sqlite3.connect(db); c.row_factory = sqlite3.Row
-样 = c.execute("""SELECT tr.task_id, tr.case_id, u.root_cause FROM triage tr JOIN truth u ON u.case_id=tr.case_id
-                 JOIN task t ON t.id=tr.task_id WHERE t.type='售后判责' ORDER BY tr.id LIMIT 1""").fetchone()
+# 自造一件售后研判、挂到一条标准答案上 —— 红不红不取决于主库被怎么用过(CI 从零建的库里一条研判都没有)
+# 挑「同名不同人」:判分只看合并 / 不合并这个结论,不核库里的数字 —— 照答案写的草稿一定判对
+答 = c.execute("SELECT case_id, root_cause FROM truth WHERE root_cause='同名不同人' ORDER BY case_id LIMIT 1").fetchone()
+样 = None
+if 答:
+    c.execute("DELETE FROM triage")
+    c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",
+              ("T-检查-试-甲", "客户合并确认", "x", "待处理", "2026-01-01 10:00:00", "检查"))
+    c.execute("INSERT INTO triage(task_id,breakpoint,case_id,created,ai_root_cause,ai_text,status) VALUES(?,?,?,?,?,?,?)",
+              ("T-检查-试-甲", "BP-01", 答["case_id"], "2026-01-01 11:00:00", "检查造的根因", "根因:检查造的根因", "待复核"))
+    c.commit()
+    样 = dict(task_id="T-检查-试-甲", case_id=答["case_id"], root_cause=答["root_cause"])
 c.close()
 if not 样:
-    ck("库里有一条能对上标准答案的售后研判 —— 没有就没验,不算通过", False)
+    ck("库里有「同名不同人」的标准答案 —— 没有就没验,不算通过", False)
 else:
-    TT.存("检查批", 样["task_id"], "研判:x·系统:y", f"根因:{样['root_cause']}\n建议动作:按判定表\n证据:无", [], 0, "检查", db=db)
+    TT.存("检查批", 样["task_id"], "研判:x·系统:y", f"根因:{样['root_cause']}\n建议动作:不合并,保持独立\n证据:无", [], 0, "检查", db=db)
     TT.存("检查批", 样["task_id"], "研判:x·系统:y", "", [], None, "检查", error="ResultError: 403", db=db)
     o = TT.对比("检查批", db=db)
     ck("对比:跑挂了的单独数,不算答错", o["汇总"]["跑挂"] == 1 and o["汇总"]["可比"] == 1, o["汇总"])
