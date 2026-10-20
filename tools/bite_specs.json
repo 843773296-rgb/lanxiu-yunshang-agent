@@ -9056,5 +9056,17 @@
    }
   ],
   "预期红": "**残留的锁(进程早没了)要判不在跑**"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "夜跑自动提交把整个目录都提交(含 24 MB 的运行日志副本)",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "glob.glob(os.path.join(ROOT, \"agent\", \"nightly\", \"agent__*-results.jsonl\"))",
+    "new": "glob.glob(os.path.join(ROOT, \"agent\", \"nightly\", \"*.jsonl\"))"
+   }
+  ],
+  "预期红": "夜跑:跑完自动提交 —— 只挑 agent__*-results.jsonl 和报告,扫过密钥才提交,只提交这几个文件(--only)"
  }
 ]

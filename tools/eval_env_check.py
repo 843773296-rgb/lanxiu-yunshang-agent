@@ -76,6 +76,14 @@ ck("PID 文件放在真库所在的目录(两个检出共用;.feynman 各有一�
 _主 = 夜[夜.index("def main():"):夜.index("def _跑(")]
 ck("夜跑开跑写自己的 PID 文件,结束(含崩溃)在 finally 里删", "open(夜跑PID, \"w\")" in _主 and "finally:" in _主
    and "os.remove(夜跑PID)" in _主)
+# 夜跑结果自动提交(用户 10-20 拍)—— 只提交评测结果和报告,运行日志副本不进仓库;失败不抛
+_提 = 夜[夜.index("def 提交夜跑结果("):夜.index("def 归类(")]
+ck("夜跑:跑完自动提交 —— 只挑 agent__*-results.jsonl 和报告,扫过密钥才提交,只提交这几个文件(--only)",
+   '"agent__*-results.jsonl"' in _提 and "agentsite__" not in _提.split("def 提交夜跑结果(")[1].split("try:")[1]
+   and _提.index("scan_secrets.sh") < _提.index('"commit", "--only"') and "except Exception" in _提)
+ck("夜跑:试跑(--试)不提交", 'if not 试:\n        说(f"结果入库:{提交夜跑结果(报)}")' in 夜)
+_忽 = open(os.path.join(ROOT, ".gitignore"), encoding="utf-8").read()
+ck("运行日志副本(agentsite__evals__*,单份能到 24 MB)在忽略列表里,不会被顺手加进仓库", "agent/nightly/agentsite__evals__*" in _忽)
 api = open(os.path.join(ROOT, "backend", "api.py"), encoding="utf-8").read()
 ck("kb_rag 那头用的也是 AIMC_BASE(两边地址不许各写一份)", '_后台基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")' in api)
 

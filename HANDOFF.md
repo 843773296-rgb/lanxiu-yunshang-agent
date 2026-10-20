@@ -13,6 +13,45 @@
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
 
+## ✅ 研判队列七项全部做完 · 夜跑 5 红逐套查清 · v1.2.0 · 2026-10-20 上午(主会话 / 业务线)
+
+### 一句话
+`intent/澜绣云裳agent-研判队列未做项方案.md` 状态 → **做完了**(a118dd9):最后两块隔离试运行 + 版本对比落地(PRD A-283)。
+10-19 晚发了第一个版本标签 **v1.2.0**(`tools/release.py`,VERSION 一处记,页面右下角显示正在跑的版本)。
+10-20 夜跑 23 套 5 红逐套查清:只有 tool_eval 是环境问题(管理后台 8801 没起)要修,已修;其余是抖动 / 判分器认不出说法。
+
+### ⚠️ 下一步第一个动作(10-20 11 点前后,压缩前写)
+**有一批没提交:「夜跑结果自动入库」(用户 10-20 拍「进版本库,每天早上自动提交」)。** 门禁已在跑
+(日志 scratchpad `gate-1020d.log`)。**绿了**就提交推送下面这些(新文件已 `git add`):
+`tools/nightly_eval.py`(提交夜跑结果() + 报告头那句)、`tools/eval_env_check.py`(+3 条判据)、`tools/bite_specs.json`(+1)、
+`.gitignore`(`agent/nightly/agentsite__evals__*`)、`agent/nightly/agent__*-results.jsonl`(20 个)、`.feynman/nightly-eval/*.md`(6 个)、
+`待办清单.md`、`HANDOFF.md`、`澜绣云裳agent-项目日志.md`。**红了**先看是不是自己这批带进来的。推完通知数据工厂窗口归它。
+
+**判据(为什么这么做)**:`agent/nightly/` 有 28 MB,**大头是 `agentsite__evals__funnel.jsonl`(24 MB)和 `skill_usage`(4 MB)
+的整份副本**(评测把运行日志整个改写,夜跑挪过来存)—— 不是分数。所以只提交 `agent__*-results.jsonl` + 报告,副本进忽略列表。
+**这和用户选的「进版本库」有出入,已告诉用户「要那两份日志的话说一声」,还没回** —— 别自己改成全提交。
+
+**未验证**:`提交夜跑结果()` 只在代码层面验过(结构判据 + 咬合),**还没真在夜里跑过一次** —— 10-21 早上看
+`.feynman/nightly-eval.log` 里那行「结果入库:…」;launchd 环境下 `git push` 的凭据通不通**没有证据**。
+
+**其余没挂着的活。** 候选(都没拍):示例库等业务反例;数据工厂在做「跑挂了」单独成状态 + 75 推广 + 点名式错题名单(归它,别做)。
+
+### 今天落地的
+| 件 | 判据 |
+|---|---|
+| 隔离试运行(遮蔽副本、工具服务改读副本 + 凭证、没凭证就停)+ 版本对比(看板页最下面)| `triage_trial_check` |
+| 评测「环境没验成」退出码 75,夜跑报成「部分没验成(环境)」| `eval_env_check` |
+| 夜跑前自动拉起管理后台、跑完关掉自己拉起来的(用户拍「要」)| 同上 |
+| 「谁在用库」改用 PID 文件(真库所在目录的 `.nightly-eval.pid` / `.bite-run.pid`)| 同上;bite_run 那半归数据工厂 |
+| 发布版本号 v1.2.0 | `version_check` |
+
+### 别重做
+- **共享库里别先建表再推代码** —— 10-20 `triage_trial` 这么干了,数据工厂的门禁红在 5 条它没碰过的检查上(已记进记忆)
+- **别用 `pgrep -f <名字>` 判谁在跑** —— 诊断命令自己就带着那个名字;用 PID 文件 + `os.kill(pid, 0)`
+- **别把夜跑的 5 红当 5 个问题** —— 先按「真退步 / 抖动 / 判分器 / 环境」分;liability 那两题查过是模型抖动(工具输出逐字节一致)
+- **PID 文件别放 `.feynman/`** —— 每个检出各一份,两边互相看不见,闸会恒不拦
+
+
 ## 🗂 研判队列七项未做项做完六项 · 登录失效跳转 · 台账闸逮出 8 个检查 · 2026-10-19(主会话 / 业务线)
 
 ### 一句话
@@ -9927,50 +9966,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-19 17:45。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-20 10:43。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 022b087 · 2026-10-19 · 研判质量看板:事项和运行分开数、采纳率只对有结论的算、按类型和提示词版本拆、点数字下钻(用户 10-19 拍) |
-| 代码量 | 759 个 Python 文件 / 147670 行(不含 .venv) |
-| 验收 | `./check.sh` 共 296 项 —— **接手第一件事就是跑它** |
+| 最新提交 | 3cc7648 · 2026-10-20 · 三道判据在量路径不量结论(第四次);互斥闸从命令行匹配改成 PID 锁 —— 它被我自己的诊断命令触发 |
+| 代码量 | 765 个 Python 文件 / 148728 行(不含 .venv) |
+| 验收 | `./check.sh` 共 299 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-M .feynman/tool-eval.json
+A  .feynman/nightly-eval/2026-10-16.md
+A  .feynman/nightly-eval/2026-10-17.md
+A  .feynman/nightly-eval/2026-10-18.md
+A  .feynman/nightly-eval/2026-10-19.md
+A  .feynman/nightly-eval/2026-10-20.md
+ M .feynman/tool-eval.json
+ M .gitignore
  M HANDOFF.md
- M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
-?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? .feynman/authprobe.log
-?? .feynman/authprobe.sh
-?? .feynman/multi-date/
-?? .feynman/nightly-eval-launchd.log
-?? .feynman/nightly-eval-ok
-?? .feynman/nightly-eval-tried
-?? .feynman/nightly-eval.log
-?? .feynman/nightly-eval/
-?? .feynman/world-shift-launchd.log
-?? .wip-muslin/
-?? agent/example-ab-results.jsonl
-?? agent/nightly/
-?? "backend/lanxiu.db.\351\207\215\345\273\272\345\211\215"
-?? data/lanxiu.db
+A  agent/nightly/agent__chat-eval-results.jsonl
+A  agent/nightly/agent__factory-eval-results.jsonl
+A  agent/nightly/agent__fitting-eval-results.jsonl
+A  agent/nightly/agent__gen-compare-results.jsonl
+A  agent/nightly/agent__growth-eval-results.jsonl
+A  agent/nightly/agent__liability-eval-results.jsonl
+A  agent/nightly/agent__measure-eval-results.jsonl
+A  agent/nightly/agent__member-eval-results.jsonl
+A  agent/nightly/agent__oppo-eval-results.jsonl
+A  agent/nightly/agent__ops-eval-results.jsonl
+A  agent/nightly/agent__order-eval-results.jsonl
+A  agent/nightly/agent__pattern-eval-results.jsonl
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-022b087 研判质量看板:事项和运行分开数、采纳率只对有结论的算、按类型和提示词版本拆、点数字下钻(用户 10-19 拍)
-eeacbd9 白坯试衣看板从 21.6 秒降到 4.6 秒 —— 报告只用三个件数,却把整套现场算了一遍
-b05d857 研判设置页(草稿 → 试运行 → 开发发布 / 退回)· 提交后弹成功 / 失败提示 · 平移不再挪真实时钟心跳
-3600192 用户拍板五件:研判设置开放三样、只有开发能发布;反例需求单转业务;售后能发起退押金;g16 不放宽
-1985559 登录失效就去登录页 · 每条研判记下提示词版本 · 检查不许往真库台账写(逮出 8 个)
+3cc7648 三道判据在量路径不量结论(第四次);互斥闸从命令行匹配改成 PID 锁 —— 它被我自己的诊断命令触发
+a118dd9 研判队列七项全部落地:隔离试运行 + 版本对比 · 夜跑前拉起管理后台 · 「谁在用库」改用 PID 文件判
+4ca0dff 评测里「环境没验成」和「模型答错」分开记:管理后台没起时 kb_rag 的题不算模型挂(10-20 夜跑逮到)
+1d1f7bc 发布版本号 v1.2.0:VERSION 一处记、发布记录从 git 生成、页面右下角显示正在跑的版本(用户 10-19 拍「发布版本号做」)
+43461a1 夜跑和咬合重放互相让开(两半都补);以及一份查过而**没有**改的结论
 ```
 <!--/AUTO-->
 ## 一句话在做什么

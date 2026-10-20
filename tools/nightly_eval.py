@@ -278,6 +278,38 @@ def 关掉(进程):
             pass
 
 
+# ── 夜跑结果自动提交(用户 2026-10-20 拍「进版本库,每天早上自动提交」)──────────────────────
+# 评测结果是「这个版本在这套题上考了多少分」的历史(CLAUDE.md 第 8 节),原来夜跑的那份一直只在本机 agent/nightly/。
+# ⚠️ **只提交评测结果和报告**,不提交 agentsite__evals__* —— 那是运行日志(funnel 24 MB、skill_usage 4 MB)
+#    被评测整个改写之后挪过来的副本,不是分数;每晚往公开仓库塞几十 MB 不值(10-20 实测才发现,原估「几百 KB」是错的)。
+# 失败只记日志不抛:提交不成不该让夜跑本身算失败;没提交的明早人看报告时还在。
+def 提交夜跑结果(报告):
+    import glob
+    路径 = [os.path.relpath(报告, ROOT)] + sorted(os.path.relpath(f, ROOT) for f in
+                                                 glob.glob(os.path.join(ROOT, "agent", "nightly", "agent__*-results.jsonl")))
+    def git(*a):
+        return subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True, timeout=300)
+    try:
+        if not git("status", "--porcelain", "--", *路径).stdout.strip():
+            return "没有新结果要提交"
+        if git("add", "--", *路径).returncode:
+            return "git add 失败"
+        扫 = subprocess.run([os.path.join(ROOT, "tools", "scan_secrets.sh")], cwd=ROOT, capture_output=True, text=True)
+        if 扫.returncode:
+            return "扫密钥不过 —— 没提交,等人看(" + (扫.stdout + 扫.stderr).strip()[-120:] + ")"
+        r = git("commit", "--only", "-m", f"夜跑评测结果 {os.path.basename(报告)[:-3]}(自动提交:只有评测结果和报告)\n\n"
+                "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>", "--", *路径)
+        if r.returncode:
+            return "提交失败:" + (r.stdout + r.stderr).strip()[-160:]
+        for 步 in (("pull", "--rebase", "--autostash"), ("push",)):
+            r = git(*步)
+            if r.returncode:
+                return f"提交了没推上去({' '.join(步)} 失败)—— 本地有这次提交,人工推一下:" + (r.stdout + r.stderr).strip()[-120:]
+        return f"已提交并推送({len(路径)} 个文件)"
+    except Exception as e:                                                   # noqa: BLE001
+        return f"提交出错:{type(e).__name__}: {e}"
+
+
 def 归类(退出码, 输出):
     """一套评测跑完 → 结果。抽出来是为了让检查真调它(tools/eval_env_check.py)。
     · 输出里有认证失败 → 没跑成(开跑前那一问只证明开跑那一刻通;10-16 那晚 17 套就是这么「过」的)
@@ -373,7 +405,8 @@ def _跑(现在, 套们, 试, 截止):
         计[r["结果"]] = 计.get(r["结果"], 0) + 1
     with open(报, "w", encoding="utf-8") as f:
         f.write(f"# 夜间评测 · {现在:%Y-%m-%d %H:%M}\n\n")
-        f.write("模型:claude-haiku-4-5 · **没提交没推送**,看过再提交(各评测的分数在 agent/*-results.jsonl 末行)\n\n")
+        f.write("模型:claude-haiku-4-5 · 这一晚的结果在 agent/nightly/(**跑完自动提交推送**,用户 10-20 拍;"
+                "正式基线 agent/*-results.jsonl 不动)\n\n")
         f.write(f"管理后台(全文检索 kb_rag 要用):{后台状态}\n\n")
         f.write(" · ".join(f"{k} {v}" for k, v in 计.items()) + "\n\n")
         f.write("| 套 | 结果 | 分钟 | 最后几行 |\n|---|---|---|---|\n")
@@ -385,6 +418,8 @@ def _跑(现在, 套们, 试, 截止):
         with open(OK, "w") as f:
             f.write(f"{dt.datetime.now():%Y-%m-%dT%H:%M:%S}\n")
     说(f"结束:{json.dumps(计, ensure_ascii=False)} → {os.path.relpath(报, ROOT)}")
+    if not 试:
+        说(f"结果入库:{提交夜跑结果(报)}")
     return 0
 
 

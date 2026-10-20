@@ -119,3 +119,4 @@ backend/录音/
 agentsite/evals/withheld.jsonl
 backend/.nightly-eval.pid
 backend/.bite-run.pid
+agent/nightly/agentsite__evals__*
