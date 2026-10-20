@@ -10149,12 +10149,12 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-20 18:44。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-20 18:53。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `main` |
-| 最新提交 | 33c4e0f · 2026-10-20 · 外部复审 10-19 后两条:客户详情顾问为空、日历停在 8 月;助手页还写着「三个都是只读的」 |
+| 分支 | `w75` |
+| 最新提交 | 97a5a52 · 2026-10-20 · 交接(压缩前):差评题集失效的真因 —— 不是处置被清空,是那 126 个包裹号现在指向另一条评价 |
 | 代码量 | 773 个 Python 文件 / 149962 行(不含 .venv) |
 | 验收 | `./check.sh` 共 307 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 没起来 |
@@ -10162,37 +10162,18 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 **未提交的改动:**
 
 ```
-M .feynman/tool-eval.json
- M HANDOFF.md
- M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
-?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? .feynman/authprobe.log
-?? .feynman/authprobe.sh
-?? .feynman/multi-date/
-?? .feynman/nightly-aimc.log
-?? .feynman/nightly-eval-launchd.log
-?? .feynman/nightly-eval-ok
-?? .feynman/nightly-eval-tried
-?? .feynman/nightly-eval.log
-?? .feynman/world-shift-launchd.log
-?? .wip-muslin/
-?? agent/example-ab-results.jsonl
-?? "backend/lanxiu.db.\351\207\215\345\273\272\345\211\215"
-?? data/lanxiu.db
-?? "\347\256\241\347\220\206\345\220\216\345\217\260/.wip-209\346\235\241\346\256\213\347\225\231\345\244\207\344\273\275.json"
+?? .feynman/bite-all-20261016.log
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+97a5a52 交接(压缩前):差评题集失效的真因 —— 不是处置被清空,是那 126 个包裹号现在指向另一条评价
+f94d049 交接:差评 AI 先出诱导卷(用户拍线:出钱零容忍 + 净带偏只报数)· 下午落地五件 · 四条别重做
 33c4e0f 外部复审 10-19 后两条:客户详情顾问为空、日历停在 8 月;助手页还写着「三个都是只读的」
 122dd72 外部复审 10-19 前两条:方案保存丢客户和版型、首页指标口径不对
 1ccb6af 研判换成专用角色:只挂 7 个只读工具,V3 每条成本 $0.046 → $0.022、两轮 6/6(用户 10-20 拍「做」)
-07602c0 三代对比 10-20 重跑四轮:V3 贵了 1.6–2.9 倍而调用数没变 —— 研判挂的工具 39→72、提示词 3.4 倍
-298ecb9 README 重写:仓库入口 + 产品说明全文,由脚本拼出来、门禁核一致(用户 10-20)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
