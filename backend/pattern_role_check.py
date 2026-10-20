@@ -33,13 +33,16 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "agentsite")]
 
 # ── 咬合记录 ────────────────────────────────────────────────────────────
 咬合 = [
-    ("把 sdk 里的 mcp__shop__piece_ratios 写回 mcp__kb__",
+    ("把 sdk 里的 mcp__shop__set_piece_ratio 写回 mcp__kb__",
      "版师白名单里的每个名字都真的挂在 MCP 上"),
     ("把 set_piece_ratio 里的角色判定改成 if False",
      "该挡的都挡住了"),
     ("去掉 guards 里「没先看过就不许改」那道闸",
      "没先看过就改 → 拦下"),
-    ("把 set_piece_ratio 写库时的 ratio_by 置成 NULL",
+    # ⚠️ 原来写的是「置成 NULL」—— 那是**把 SQL 里那个 `?` 换成 `NULL`**,
+    # 绑定数就对不上、语句直接 ProgrammingError。**崩了和被逮到不是一回事。**
+    # 规格里改成「传 None 进去」(语句形状不动)。
+    ("把 set_piece_ratio 写库时的 ratio_by 传成 None",
      "改过的数查得到是谁、什么时候、为什么"),
     ("把 me.get('no') 改回 me.get('id')(后台只发 no,夹具原来两个都喂)",
      "改过的数查得到是谁、什么时候、为什么"),
@@ -228,6 +231,16 @@ def main():
         "kb_fit":        lambda: api.kb_fit("C10001", "PT04"),
         # 取一节**有实际正文**的,不是取目录 —— 目录里什么都没有,扫了等于没扫。
         "kb_read":       lambda: api.kb_read("10", "六、放松量与量体项映射"),
+        # ⚠️⚠️ **这一条不在版师的白名单里,放在这儿是给咬合用的。**
+        # 咬合第五条是「给版师挂上 get_customer(会带出手机号和消费额)」——
+        # 而它不在这张表里的时候,挂上去红的是**上面那条**
+        # 「版师的每个读工具都被真跑过一遍」,**隐私那条判据根本够不着它**。
+        # > 一条「隐私红线拦住了」和一条「这个工具压根没被跑到」,
+        # > **在那份咬合记录上长得一模一样**(都显示「红了」)。
+        # 补上它之后,挂 get_customer 红的就是隐私那一条了。
+        # 📌 它只在「这个工具出现在白名单里」时才会被调到,所以平时是死代码 ——
+        #    **而这正是它该在的样子**:白名单里没有它。
+        "get_customer":  lambda: api.get_customer("C10001"),
     }
     读工具 = [t.rsplit("__", 1)[-1] for t in tools
               if t.rsplit("__", 1)[-1] not in api.WRITE_TOOLS]

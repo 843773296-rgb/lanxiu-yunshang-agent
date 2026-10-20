@@ -39,7 +39,7 @@
   "backend/initpath_check.py": 1,
   "backend/muslin_check.py": 8,
   "backend/order_write_check.py": 4,
-  "backend/pattern_role_check.py": 5,
+  "backend/pattern_role_check.py": 1,
   "backend/pickup_write_check.py": 3,
   "backend/rating_check.py": 2,
   "backend/rating_rebuild_check.py": 2,

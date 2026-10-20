@@ -10144,5 +10144,53 @@
    }
   ],
   "预期红": "出钱却没填批准人 → 拒"
+ },
+ {
+  "script": "backend/pattern_role_check.py",
+  "改坏": "把 set_piece_ratio 里的角色判定改成永不命中(谁都能核裁片用料 —— **这个数是排料的依据**,核错了整批面料会不够裁)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if me.get(\"role\") != \"版师\":",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "该挡的都挡住了"
+ },
+ {
+  "script": "backend/pattern_role_check.py",
+  "改坏": "把写库时的 ratio_by 传成 None(改过的数查不到是谁改的)。⚠️ 不能把 SQL 里那个 `?` 直接换成 `NULL` —— 绑定数就对不上、语句直接 ProgrammingError,**而崩了和被逮到不是一回事**",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "                   (ratio, who, now, why.strip(), code, piece))",
+    "new": "                   (ratio, None, now, why.strip(), code, piece))"
+   }
+  ],
+  "预期红": "改过的数查得到是谁、什么时候、为什么"
+ },
+ {
+  "script": "backend/pattern_role_check.py",
+  "改坏": "把白名单里的 `mcp__shop__set_piece_ratio` 写回 `mcp__kb__`(命名空间跟着 schema 挂在哪个服务走,不跟着「它像哪一类」走 —— 这个坑踩过三次,三次都不报错:白名单里那个名字根本不存在,模型手上少一个工具,而角色页面照样显示工具数)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    \"mcp__shop__set_piece_ratio\",   # 写 —— 改占比并标「版师」",
+    "new": "    \"mcp__kb__set_piece_ratio\",   # 写 —— 改占比并标「版师」"
+   }
+  ],
+  "预期红": "版师白名单里的每个名字都真的挂在 MCP 上"
+ },
+ {
+  "script": "backend/pattern_role_check.py",
+  "改坏": "给版师挂上 get_customer(会带出手机号和消费额)—— **给多余的字段,它就会去用**,这个项目在 allowed_tools 上栽过",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    \"mcp__kb__kb_pattern\",          # 版型和裁片",
+    "new": "    \"mcp__shop__get_customer\",      # 咬合用:挂上它该被隐私那条判据逮到\n    \"mcp__kb__kb_pattern\",          # 版型和裁片"
+   }
+  ],
+  "预期红": "版师拿得到尺寸和体型,拿不到手机号和消费额"
  }
 ]
