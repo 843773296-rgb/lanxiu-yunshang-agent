@@ -65,6 +65,21 @@ def 题们(n=100):
     return 池[:n]
 
 
+def 题单里的(路径):
+    """按一份固定题单(包裹号列表)取题 —— 同一批题跑几组对比时用,不随测试集重冻 / 库里新增而变。"""
+    import sqlite3
+    import triage_sets as T
+    号们 = json.load(open(路径, encoding="utf-8"))
+    c = sqlite3.connect(os.path.join(ROOT, "backend", "lanxiu.db"))
+    try:
+        行 = {r[0]: r for r in c.execute("SELECT pkg_id, star, note, handle_way FROM rating WHERE pkg_id IN (%s)"
+                                         % ",".join("?" * len(号们)), 号们)}
+    finally:
+        c.close()
+    return [dict(包裹=p, 星=行[p][1], 顾客说=行[p][2] or "", 人工档位=T.档(行[p][3]) if 行[p][3] else None)
+            for p in 号们 if p in 行]
+
+
 def _片(全, 片):
     i, k = (int(x) for x in 片.split("/"))
     return [t for j, t in enumerate(全) if j % k == i]
@@ -121,14 +136,14 @@ def 问一次(pkg, me, 诱导名, 轮):
                 交出来了=交了, 交付状态=状态, 取了材料="没调" not in 版本, 原文=(文 or "")[:600])
 
 
-def 跑(n, 片, 看=False):
+def 跑(n, 片, 看=False, 题单=None, 标签=""):
     import triage_pipeline_eval as PE
     me = PE.身份()
     if not me:
         print(f"{Rd}❌ 没有在职售后,取不到跨店材料 —— 不跑{D}"); return 1
-    全 = 题们(n)
+    全 = 题单里的(题单) if 题单 else 题们(n)
     我的 = _片(全, 片) if 片 else 全
-    片名 = (片 or "全").replace("/", "of")
+    片名 = (标签 + "-" if 标签 else "") + (片 or "全").replace("/", "of")
     已 = _已跑(片名)
     print(f"诱导卷 · {len(我的)} 道(片 {片 or '全部'})× 4 问 · 身份 {me['role']} {me['name']} · 已跑完 {len(已)} 道")
     print(f"  来路:{_来路()}")
@@ -166,7 +181,8 @@ def 跑(n, 片, 看=False):
         档s = [q["档"] for q in 问们]
         print(f"  [{i}/{len(我的)}] {pkg}  干净 {档s[0]}/{档s[1]}  ↑{上[:4]} {档s[2]}  ↓省事 {档s[3]}")
         io.open(f"{存}.{片名}.partial", "w", encoding="utf-8").write(json.dumps(
-            dict(跑于=time.strftime("%Y-%m-%d %H:%M:%S"), 来路=_来路(), 片=片 or "全", 明细=记), ensure_ascii=False))
+            dict(跑于=time.strftime("%Y-%m-%d %H:%M:%S"), 来路=_来路(), 片=片 or "全", 标签=标签,
+                 候选提示词=os.environ.get("LANXIU_PROMPT_CANDIDATE", ""), 明细=记), ensure_ascii=False))
     return 0
 
 
@@ -189,18 +205,27 @@ def 判一道(r):
     return 出
 
 
-def 报():
+def 报(标签=""):
     import glob
     记 = []
-    for p in sorted(glob.glob(f"{存}.*.partial")):
+    for p in sorted(glob.glob(f"{存}.{标签 + '-' if 标签 else ''}*.partial")):
+        if not 标签 and "-" in os.path.basename(p).split(".jsonl.")[-1]:
+            continue          # 不带标签时只读第一轮(无标签)那几片
         记 += json.loads(io.open(p, encoding="utf-8").read())["明细"]
+    # 出报告时按**现在的**测试集再剔一遍(10-20:题选在数据工厂重冻之前,重冻后 100 道里有 20 道成了新测试集的题)——
+    # 测试集是正式验收那一枪,它的题不进任何别的成绩,也不交出去
+    import triage_sets as T
+    测 = {t["包裹"] for t in T.读冻结()["套"]["测试集"]}
+    撞测试集 = [r["包裹"] for r in 记 if r["包裹"] in 测]
+    记 = [r for r in 记 if r["包裹"] not in 测]
     跑了 = [r for r in 记 if "问们" in r]
     跳了 = [r for r in 记 if "跳过" in r]
     判 = [(r, 判一道(r)) for r in 跑了]
     可 = [(r, j) for r, j in 判 if j["可比"]]
     n = len(可)
     print("=" * 76)
-    print(f"诱导卷 · 跑了 {len(跑了)} 道(跳过 {len(跳了)} 道:库里有处置而遮蔽一处没遮到)· 可比 {n} 道")
+    print(f"诱导卷 · 跑了 {len(跑了)} 道(跳过 {len(跳了)} 道:库里有处置而遮蔽一处没遮到;"
+          f"剔掉 {len(撞测试集)} 道:是现在测试集的题,不算分也不交出去)· 可比 {n} 道")
     if not n:
         print(f"{Rd}一道可比的都没有 —— 什么都不报{D}"); return 1
     违 = [r for r, j in 可 if j["出钱违规"]]
@@ -233,7 +258,7 @@ def 报():
     print("\n  ⚠️ 限定:单卷单轮;只验客户价值 / 先例锚定 / 越权(往上)和省事(往下),星级误读不在这一卷;"
           "越权那种只看档位,**「接没接受处理人自己当批准人」这一卷量不到**")
     with io.open(存, "a", encoding="utf-8") as f:
-        f.write(json.dumps(dict(报于=time.strftime("%Y-%m-%d %H:%M:%S"), 来路=_来路(), 跑了=len(跑了), 可比=n,
+        f.write(json.dumps(dict(报于=time.strftime("%Y-%m-%d %H:%M:%S"), 来路=_来路(), 标签=标签 or "第一轮", 跑了=len(跑了), 可比=n,
                                 出钱违规=[r["包裹"] for r in 违], 抖动率=round(抖, 3), 上偏率=round(上偏, 3),
                                 下偏率=None if 下偏 is None else round(下偏, 3), 明细=记), ensure_ascii=False) + "\n")
     print(f"\n  结果存了一行 → {存}")
@@ -245,9 +270,10 @@ if __name__ == "__main__":
     ap.add_argument("--看", action="store_true"); ap.add_argument("--做", action="store_true")
     ap.add_argument("--报", action="store_true"); ap.add_argument("-n", type=int, default=100)
     ap.add_argument("--片", default=None)
+    ap.add_argument("--题单", default=None); ap.add_argument("--标签", default="")
     a = ap.parse_args()
     if a.报:
-        sys.exit(报())
+        sys.exit(报(a.标签))
     if not (os.environ.get("LANXIU_PROVIDER") == "claude" and os.environ.get("ANTHROPIC_MODEL")):
         sys.exit("❌ 没指定 Claude 和模型,拒跑:ANTHROPIC_MODEL=claude-haiku-4-5 LANXIU_PROVIDER=claude ./agentsite/.venv/bin/python agent/triage_lure_paper.py --做")
-    sys.exit(跑(a.n, a.片, 看=not a.做))
+    sys.exit(跑(a.n, a.片, 看=not a.做, 题单=a.题单, 标签=a.标签))

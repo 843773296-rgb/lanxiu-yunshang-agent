@@ -173,6 +173,20 @@ schema 漂了、导出图漏了表 → 红)· 遮蔽在快照上照样生效 · 
 (库里**连表都没有**,要先写口和表,比考一次试长得多)。
 
 ---
+## 🌙 差评诱导卷 2×2 整晚接力 · 2026-10-20 晚(主会话 / 业务线)
+
+### ⚠️ 下一步第一个动作(10-21 早上)
+看 `scratchpad/overnight.log` 和 `scratchpad/overnight-report.txt`
+(scratchpad = `/private/tmp/claude-501/-Users-eureka/0a0ac851-e575-4807-8f5e-502f689a9764/scratchpad/`;**会被清**,报告出来先把要紧的数抄进 intent)。
+接力脚本 `scratchpad/overnight.sh`:21:03 起跑 B1 → 23:45 自停让夜跑 → 05:00 后(夜跑结束)跑 B1 续 + A2 + B2 → 四份报告。
+- **A** = 现行提示词,**B** = 候选 `TK16-先定档`(`.feynman/prompt_candidates/`,gitignore 不进库;改 TK16 两处:
+  先定档再读倾向 / 拒一个提法不等于接受它顺带的处置;「往多给偏」限在同一档内)
+- 同一批 80 道:`agent/triage-lure-paper-题单-20261020.json`(第一轮里剔掉新测试集 20 道之后的)
+- **A1(第一轮)已出:出钱零容忍 ❌ 真违规 3 条**(人工复核记在结果文件最后一行);形状「嘴上顶住、档位被推动」
+- 早上要做:对比 A1/A2(那 3 条复不复现)vs B1/B2(候选有没有用);**候选要进源头必须用户拍**(改的是差评研判的规矩)
+- 读判定段首层有个洞(讲规则时提到的处置被当成建议,605056),待修,修法查结构不枚举
+- 今晚库窗口归数据工厂(建 `rating_shadow` + 跑门禁);我只读库不写库
+
 ## 🎯 差评 AI 辅助:先出诱导卷 · 外部复审 3.1–3.4 修完 · 研判专用角色 · 2026-10-20 下午(主会话 / 业务线)
 
 ### 一句话
@@ -10250,32 +10264,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-20 19:53。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-20 21:08。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | 94fc056 · 2026-10-20 · 差评题集改成「考卷自带世界」:加判据当场逮到 166 道里只剩 1 道有效 |
-| 代码量 | 773 个 Python 文件 / 150363 行(不含 .venv) |
-| 验收 | `./check.sh` 共 307 项 —— **接手第一件事就是跑它** |
+| 分支 | `main` |
+| 最新提交 | 52fc13d · 2026-10-20 · 差评 AI 诱导卷(用户 10-20 拍「先出诱导卷」;线:出钱零容忍 + 净带偏只报数) |
+| 代码量 | 775 个 Python 文件 / 150791 行(不含 .venv) |
+| 验收 | `./check.sh` 共 308 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
-?? .feynman/bite-all-20261016.log
+M .feynman/tool-eval.json
+ M HANDOFF.md
+ M agent/triage_lure_paper.py
+ M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
+ M intent/triage-queue.md
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
+?? .feynman/nightly-eval.log
+?? .feynman/world-shift-launchd.log
+?? .wip-muslin/
+?? agent/example-ab-results.jsonl
+?? agent/triage-lure-paper-results.jsonl
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+52fc13d 差评 AI 诱导卷(用户 10-20 拍「先出诱导卷」;线:出钱零容忍 + 净带偏只报数)
+0c16209 业务场景回归第一条(顾问接待到下单)· 一上来就逮到:开单从来不填来源方案
+ade12f0 交接:差评题集改成「考卷自带世界」· 自检为什么只能放在冻的那一刻 · 一个记下来的咬合盲区
 94fc056 差评题集改成「考卷自带世界」:加判据当场逮到 166 道里只剩 1 道有效
 4a777a0 交接补一条压缩会丢的:那个设计问题已答 —— 重冻要「按特征挑,不按 id」
-576daeb 交接自动区和项目日志跟上合并后的历史(两个会话各一节,我的在上)
-97a5a52 交接(压缩前):差评题集失效的真因 —— 不是处置被清空,是那 126 个包裹号现在指向另一条评价
-f94d049 交接:差评 AI 先出诱导卷(用户拍线:出钱零容忍 + 净带偏只报数)· 下午落地五件 · 四条别重做
 ```
 <!--/AUTO-->
 ## 一句话在做什么
