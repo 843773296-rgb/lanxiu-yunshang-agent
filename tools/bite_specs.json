@@ -9731,5 +9731,118 @@
    }
   ],
   "预期红": "已经一致了的,从欠债表里删掉了"
+ },
+ {
+  "script": "agentsite/cost_check.py",
+  "改坏": "把 cost_of 改回「输入减缓存命中、不算缓存写入」(2026-09-22 之前那个少算约三成的算法)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    return round((inp * pr[\"inp\"] + cache * pr[\"cache\"] + 写 * 写价 + out * pr[\"out\"]) / 1e6, 6)",
+    "new": "    return round(((inp - cache) * pr[\"inp\"] + cache * pr[\"cache\"] + out * pr[\"out\"]) / 1e6, 6)"
+   }
+  ],
+  "预期红": "按官方规则对得上"
+ },
+ {
+  "script": "backend/credit_check.py",
+  "改坏": "把库里「影响力分成总和超过 100%」的样本压到 100 以下(155 单 → 0 单)。⚠️ 攻击点在**数据**而不是实现:这条判据验的是「库里真有这种样本」,因为没有样本的话,一个把影响力分成也当成「必须=100」的实现**会全绿通过**",
+  "sql": [
+   "UPDATE deal_credit SET pct = pct / 10.0 WHERE kind='影响力分成'"
+  ],
+  "预期红": "影响力分成可以超过 100%"
+ },
+ {
+  "script": "backend/product_pattern_check.py",
+  "改坏": "把通称「圆领袍」加回 XZ09 明制圆领袍的别名(它同时也是童款圆领袍、唐制圆领襕袍的说法)。⚠️ 判据不看词、看结构:一个别名同时是两个以上形制名称的一部分,它就是通称",
+  "sql": [
+   "UPDATE xingzhi SET alias='常服袍,圆领袍' WHERE code='XZ09'"
+  ],
+  "预期红": "通称不许当某一个形制的独占别名"
+ },
+ {
+  "script": "backend/link_check.py",
+  "改坏": "把一单的 appt_src 写成空串(「没经过预约」和「经过了但没记」又混成一个空)。⚠️ 不能写成 NULL —— 列上有 NOT NULL,**而那正是这条判据守的东西**;空串绕过约束、判据照样该逮到(它数的是 `is null or =''`)",
+  "sql": [
+   "UPDATE ordr SET appt_src='' WHERE id=(SELECT id FROM ordr WHERE appt_src IS NOT NULL AND appt_src<>'' LIMIT 1)"
+  ],
+  "预期红": "每一单都说清了它和预约的关系"
+ },
+ {
+  "script": "agentsite/fetch_route_check.py",
+  "改坏": "把 /skillsets 的分支从 do_GET 挪到 do_POST(页面用 GET 取,分支却写在 POST 里)",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "        if p == \"/skillsets\":",
+    "new": "        if p == \"/skillsetsXX\":"
+   },
+   {
+    "path": "agentsite/app.py",
+    "old": "        raw = self.rfile.read(n) if n else b\"{}\"\n        if p == \"/api/rate-rag\":",
+    "new": "        raw = self.rfile.read(n) if n else b\"{}\"\n        if p == \"/skillsets\":\n            pass\n        if p == \"/api/rate-rag\":"
+   }
+  ],
+  "预期红": "页面 GET 的地址,do_GET 里都有分支;POST 的在 do_POST 里"
+ },
+ {
+  "script": "agentsite/fetch_route_check.py",
+  "改坏": "在页面里 fetch 一个前后端都没有的地址(station.html 的 /skillsets 改成 /nope-not-a-route)",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "const r=await (await fetch(\"/skillsets\")).json();",
+    "new": "const r=await (await fetch(\"/nope-not-a-route\")).json();"
+   }
+  ],
+  "预期红": "页面 fetch 的地址后端都接得住"
+ },
+ {
+  "script": "agent/eval_hit_judgetest.py",
+  "改坏": "把合并结论的「只写方向也算」那一支去掉(回到只认「建议合并」这几个字)",
+  "file": [
+   {
+    "path": "agent/eval.py",
+    "old": "        箭 = re.search(r\"合并\\s*\\**\\s*[A-Z]*\\d+\\s*\\**\\s*(?:→|->|⇒|并入)\", text)",
+    "new": "        箭 = None"
+   }
+  ],
+  "预期红": "只写「合并 A → B」也算给了合并结论"
+ },
+ {
+  "script": "knowledge/consent_age.py",
+  "改坏": "把「家长付款的单要双签」那一支去掉(只要本人签了就算齐)",
+  "file": [
+   {
+    "path": "knowledge/consent_age.py",
+    "old": "    if 着装人关系 != 本人 and not any(是家长(r) for r in 身体):\n        缺.append(\"家长付款的单,身体数据这一项**家长也要确认**(双签)\")",
+    "new": "    if False:\n        缺.append(\"家长付款的单,身体数据这一项**家长也要确认**(双签)\")"
+   }
+  ],
+  "预期红": "家长付款只有本人签 → 缺家长"
+ },
+ {
+  "script": "backend/queue_split_check.py",
+  "改坏": "让研判落库又把 AI 根因写回 task.summary(2026-10-16 去掉的那个写法)——那一列是工单的处理记录,AI 根因写进去就像已经办完,重跑还会读到上一轮答案",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "        c.execute(\"UPDATE task SET status='待复核' WHERE id=?\", (task_id,))\n        return cur.lastrowid",
+    "new": "        c.execute(\"UPDATE task SET status='待复核', summary=? WHERE id=?\",\n                  ((p[\"ai_root_cause\"] or '')[:60], task_id))\n        return cur.lastrowid"
+   }
+  ],
+  "预期红": "研判落库不动工单的处理记录(AI 根因不冒充办结记录)"
+ },
+ {
+  "script": "backend/popularity_check.py",
+  "改坏": "把排序里的 spu 兜底去掉(并列时名次在两次刷新之间无理由跳动,而那种跳动没人查得出原因)",
+  "file": [
+   {
+    "path": "knowledge/popularity.py",
+    "old": "        \"按件数\": sorted(榜, key=lambda x: (-x[\"件数\"], x[\"spu\"])),\n        \"按金额\": sorted(榜, key=lambda x: (-x[\"金额\"], x[\"spu\"])),",
+    "new": "        \"按件数\": sorted(榜, key=lambda x: -x[\"件数\"]),\n        \"按金额\": sorted(榜, key=lambda x: -x[\"金额\"]),"
+   }
+  ],
+  "预期红": "⑥ 同样的输入跑两次,名次一模一样"
  }
 ]

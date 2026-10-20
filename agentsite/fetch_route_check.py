@@ -24,8 +24,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(HERE, "web")
 
 咬合 = [
-    ("把某个 GET 接口的分支从 do_GET 挪到 do_POST", "页面 GET 的地址,do_GET 里都有分支"),
-    ("在页面里 fetch 一个后端没有的地址",            "页面 GET 的地址,do_GET 里都有分支"),
+    # ⚠️ 这两条原来**右边写的是同一句话**,而第二条实际该红的是另一条判据
+    # (「页面 fetch 的地址后端都接得住」)。
+    # > 一条「攻击 A 证明了判据甲」的记录,和一条「攻击 A 证明了判据乙」的,
+    # > **在那份清单上长得一模一样** —— 而照着它去验,会得到「改坏了却没红」。
+    # 另外第一条右边原来是**截断的**(少了「;POST 的在 do_POST 里」),
+    # 于是和规格文件里那份字面对不上。两处都已对齐,规格可重放。
+    ("把 /skillsets 的分支从 do_GET 挪到 do_POST",
+     "页面 GET 的地址,do_GET 里都有分支;POST 的在 do_POST 里"),
+    ("在页面里 fetch 一个前后端都没有的地址(/nope-not-a-route)",
+     "页面 fetch 的地址后端都接得住"),
     ("把后端 /api/refund-state 挪回 `/api/ops-` 那一段里(有分支、进不去)", "后端接这个地址的分支进得去(外面那层 if 不挡它)"),
 ]
 
