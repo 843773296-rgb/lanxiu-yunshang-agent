@@ -109,6 +109,17 @@ def sees_images(provider, model):
     return provider == "claude" or "vision" in (model or "")
 
 
+def 网站默认模型():
+    """网站(8770 聊天页)上的默认选项 —— 用户 2026-10-20 拍:**默认 claude-opus-5**。
+
+    和 default_model_id 分开:那个还被工具评测 / 技能评测拿去当「没指定时跑哪个」,
+    改它会让手动跑的评测悄悄换模型、和上一轮基线不可比(夜跑钉死了 haiku-4-5,不受影响)。
+    供应商的规矩照旧:LANXIU_PROVIDER=deepseek 时才走 DeepSeek,否则订阅内的 Claude。"""
+    if os.environ.get("LANXIU_PROVIDER", "").lower() == "deepseek":
+        return default_model_id()
+    return "claude:claude-opus-5"
+
+
 def default_model_id():
     """**网站上的默认选项**(不是脚本的默认)。
 

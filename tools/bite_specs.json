@@ -6631,8 +6631,8 @@
   "file": [
    {
     "path": "agentsite/web/station.html",
-    "old": "  // 而这里原来只重画了左栏和消息区:**存的是工坊、显示的是全能助手**,一刷新 / 一跳走再回来就露出来\n  syncHint(); drawSide(); drawStream();",
-    "new": "  // 而这里原来只重画了左栏和消息区:**存的是工坊、显示的是全能助手**,一刷新 / 一跳走再回来就露出来\n  drawSide(); drawStream();"
+    "old": "  // 而这里原来只重画了左栏和消息区:**存的是工坊、显示的是全能助手**,一刷新 / 一跳走再回来就露出来\n  同步模型(); syncHint(); drawSide(); drawStream();",
+    "new": "  // 而这里原来只重画了左栏和消息区:**存的是工坊、显示的是全能助手**,一刷新 / 一跳走再回来就露出来\n  同步模型(); drawSide(); drawStream();"
    }
   ],
   "预期红": "对话页读回会话后,顶上的「当前助手」跟着重画(不会存的是工坊、显示的是全能助手)"
@@ -9224,5 +9224,101 @@
    }
   ],
   "预期红": "两处元组必须一致"
+ },
+ {
+  "script": "backend/triage_gate_check.py",
+  "改坏": "越权不查两段是不是同一个人",
+  "file": [
+   {
+    "path": "backend/triage_gate.py",
+    "old": "if 复核者 and 工号 and 复核者[-1] == 工号:",
+    "new": "if False:"
+   }
+  ],
+  "预期红": "量法:两段确认被同一个人从头点到尾 → 数进越权"
+ },
+ {
+  "script": "backend/triage_gate_check.py",
+  "改坏": "越权不查登记已退的角色",
+  "file": [
+   {
+    "path": "backend/triage_gate.py",
+    "old": "if g[\"code\"] == \"REFUND_DONE\" and 角色 != rw.财务:",
+    "new": "if False:"
+   }
+  ],
+  "预期红": "量法:店长登记了已退(只认财务)→ 数进越权"
+ },
+ {
+  "script": "backend/triage_gate_check.py",
+  "改坏": "重复执行放过两次",
+  "file": [
+   {
+    "path": "backend/triage_gate.py",
+    "old": "if len(成) > 1:",
+    "new": "if len(成) > 2:"
+   }
+  ],
+  "预期红": "量法:同一条研判成功办结两次 → 数进重复业务执行(且只数进这一类)"
+ },
+ {
+  "script": "backend/triage_gate_check.py",
+  "改坏": "失败假成功只看押金不看研判",
+  "file": [
+   {
+    "path": "backend/triage_gate.py",
+    "old": "if t[\"status\"] != 应:",
+    "new": "if False:"
+   }
+  ],
+  "预期红": "量法:记着失败而状态照样变了 → 数进失败假成功"
+ },
+ {
+  "script": "backend/triage_gate_check.py",
+  "改坏": "无依据办结不查办结记录",
+  "file": [
+   {
+    "path": "backend/triage_gate.py",
+    "old": "if not any(g[\"allowed\"] and g[\"code\"] == \"CLOSE\" for g in gs):",
+    "new": "if False:"
+   }
+  ],
+  "预期红": "量法:有回执却没有一条成功的办结记录 → 数进无依据办结"
+ },
+ {
+  "script": "agentsite/model_sync_check.mjs",
+  "改坏": "身份到了换会话不同步下拉框",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "  同步模型(); syncHint(); drawSide(); drawStream();\n}",
+    "new": "  syncHint(); drawSide(); drawStream();\n}"
+   }
+  ],
+  "预期红": "清单到了调一次、身份到了换会话调一次、点左栏换会话也调一次"
+ },
+ {
+  "script": "agentsite/model_sync_check.mjs",
+  "改坏": "占位选项又没写值",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "<option value=\"\">载入中…</option>",
+    "new": "<option>载入中…</option>"
+   }
+  ],
+  "预期红": "占位选项「载入中…」的值是空的(不会被当成模型名存进新会话)"
+ },
+ {
+  "script": "agentsite/model_sync_check.mjs",
+  "改坏": "存的模型不在清单里也照用(回到空白)",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "const 要 = (c && ids.includes(c.model)) ? c.model",
+    "new": "const 要 = (c && c.model) ? c.model"
+   }
+  ],
+  "预期红": "会话里存的模型已经下架 → 显示网站默认(不是空白)"
  }
 ]

@@ -282,6 +282,7 @@ run "推档 · 1237 条尺码要核的是 12 条档差" python3 backend/grading_
 run "版师角色 · 写工具只有改占比和开裁两个,而且真的得能改" ./agentsite/.venv/bin/python backend/pattern_role_check.py
 run "会话归属 · 续聊不能续别人的(身份判得对也挡不住换历史)" python3 agentsite/sessions_check.py
 run "花费闸 · 阈值够聊几轮 + 撞线说不说得清" ./agentsite/.venv/bin/python agentsite/budget_check.py
+run "聊天页模型下拉框 · 一登录就有值(默认 opus-5)、跟着会话走、下架了回到默认(用户 10-20)" node agentsite/model_sync_check.mjs
 run "成本口径 · 项目算的钱要和官方计费规则对得上(期望值手抄官方价,不从价目表现算)" ./agentsite/.venv/bin/python agentsite/cost_check.py
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
 run "技能形状 · 该有的段落齐不齐" ./agentsite/.venv/bin/python agentsite/skill_shape.py
@@ -521,6 +522,7 @@ run "退款执行写口 · 只有财务、先核实再重发、已退要流水�
 run "研判示例库 · 不相交、评测根因覆盖面不少、不挑自己、默认不带示例(用户 10-16 拍)"    python3 backend/example_pool_check.py
 run "研判评测判分 · 出账流水两种编号都认(10-16 真跑钉回)"    python3 agent/eval_hit_judgetest.py
 run "客户软合并 · 数据不搬、留建档最早、能撤、只认总部运营;列表 / 详情 / 审批中心 / 研判办结都认它(库副本上自造)" python3 backend/merge_check.py
+run "研判上线门槛 · 越权 / 重复业务执行 / 失败假成功 / 无依据办结在真库上各为 0(量法在库副本上自造四种坏形状)" python3 backend/triage_gate_check.py
 run "同意按年龄 · 不满 14 监护人、14—18 本人为准 + 家长付款双签、营销只看本人(自测)" python3 knowledge/consent_age.py
 run "订单确认书 · 确认下单同一事务生成、写不进就整单回滚、金额对独立 SQL、范围(库副本上跑)" python3 backend/contract_check.py
 run "购买喜好口径 · 24 个月窗口、新款对上她的规律(自测)" python3 knowledge/purchase_pref.py

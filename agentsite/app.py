@@ -350,7 +350,7 @@ class H(BaseHTTPRequestHandler):
                 for k in ("own", "all", "none")], "default": "own"})
         if p == "/models":
             # 清单由 sdk 从**单价表**长出来,页面不许自己写死一份
-            return self._send({"rows": sdk.models(), "default": sdk.default_model_id()})
+            return self._send({"rows": sdk.models(), "default": sdk.网站默认模型()})
         if p == "/nav":
             # 导航清单的**唯一来源**。station 那一页布局特殊、不挂横向顶栏,
             # 它从这儿取同一份清单渲染左栏入口 —— 而不是自己手写一份。
@@ -496,7 +496,7 @@ class H(BaseHTTPRequestHandler):
             # 而不传 model 时实际跑的是 deepseek。**界面说一套、实际做一套**,
             # 而且不会报错 —— 你以为在用订阅,其实在按量计费。
             prov = mdl = None
-            mid = (body.get("model") or "").strip() or sdk.default_model_id()
+            mid = (body.get("model") or "").strip() or sdk.网站默认模型()
             if mid:
                 if mid not in {m["id"] for m in sdk.models()}:
                     return self._send({"error": f"没有这个模型:{mid}"}, code=400)
@@ -508,7 +508,7 @@ class H(BaseHTTPRequestHandler):
             if raw_imgs:
                 pv = prov or ("claude" if os.environ.get("LANXIU_PROVIDER","").lower()=="claude"
                               else "deepseek")
-                mv = mdl or (sdk.default_model_id().split(":",1)[1])
+                mv = mdl or (sdk.网站默认模型().split(":",1)[1])
                 if not sdk.sees_images(pv, mv):
                     return self._send({"error": f"{mv} 看不了图 —— "
                                        "换成 Claude 任一款,或 deepseek-v4-flash-vision-exp"}, code=400)

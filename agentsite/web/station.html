@@ -389,7 +389,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
          之前收进「设置」,理由是「调参用的,不该天天占工具栏」;而实际用的人要**当场换供应商**
          (订阅内的 Claude vs 按量计费的 DeepSeek),埋在二级页里等于没有。
          **控件只保留这一处**,设置里只留说明 —— 两个下拉迟早不同步。 -->
-    <select id="model" title="换模型不新开会话,续着问"><option>载入中…</option></select>
+    <select id="model" title="换模型不新开会话,续着问"><option value="">载入中…</option></select>
     <button class="tbtn" id="cfgbtn" title="技能档位 · 数据 · 关于">设置</button>
     <button class="tbtn" id="evbtn" title="证据 · 子助手">证据 ▸</button>
     <span id="kindhint"></span>
@@ -591,7 +591,7 @@ function bindStore(no){
   // 顶上那个「当前助手」也要跟着重画(用户 10-10:「进入工作台再返回 chat 会丢失角色信息」)——
   // 页面一打开先按一个临时的空会话画了「澜绣云裳助手」,身份到了才读回真会话(比如「工坊排产」),
   // 而这里原来只重画了左栏和消息区:**存的是工坊、显示的是全能助手**,一刷新 / 一跳走再回来就露出来
-  syncHint(); drawSide(); drawStream();
+  同步模型(); syncHint(); drawSide(); drawStream();
 }
 const cur = () => DB.convs.find(c => c.id === DB.cur) || null;
 
@@ -637,7 +637,7 @@ function drawSide(){
         if(DB.cur === c.id) DB.cur = DB.convs.length ? DB.convs[0].id : null;
         save(); drawSide(); drawStream(); return;
       }
-      DB.cur = c.id; save(); drawSide(); drawStream();
+      DB.cur = c.id; 同步模型(); save(); drawSide(); drawStream();
     };
     box.appendChild(el);
   }
@@ -1505,10 +1505,21 @@ async function loadModels(){
     ? rows.map(m => `<option value="${esc(m.id)}" data-vision="${m.vision ? 1 : 0}">${esc(m.label)}`
         + `${m.note ? " · " + esc(m.note) : ""}${m.vision ? " · 可识图" : ""}</option>`).join("")
     : `<option value="">(取不到清单)</option>`;
-  const c = cur();
-  sel.value = (c && c.model) || def || (rows[0] && rows[0].id) || "";
-  if(c && !c.model){ c.model = sel.value; save(); }
+  同步模型();
   drawSide();
+}
+// 下拉框跟着**当前会话**走。清单(/models)和身份(/api/me → bindStore 换成这个人的会话)是并发拉的,
+// 谁先到不一定 —— 原来只在清单到的那一刻选一次:身份后到、换了会话,下拉框还停在旧值;
+// 会话是在清单到之前新建的,model 存成了空串,于是**一登录头部模型是空的**(用户 10-20 截图)。
+// 现在两头到了都调它:清单还没到就什么都不做;会话存的模型不在清单里(空 / 已下架)→ 用网站默认,并写回会话。
+function 同步模型(){
+  const sel = $("#model");
+  const ids = Array.from(sel.options || []).map(o => o.value).filter(Boolean);   // 冒烟的 DOM 桩没有 options
+  if(!ids.length) return;
+  const c = cur();
+  const 要 = (c && ids.includes(c.model)) ? c.model : (ids.includes(MODEL_DEFAULT) ? MODEL_DEFAULT : ids[0]);
+  if(sel.value !== 要) sel.value = 要;
+  if(c && c.model !== 要){ c.model = 要; save(); }
 }
 $("#model").onchange = () => {
   const c = cur(); if(!c) return;

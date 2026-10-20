@@ -80,7 +80,9 @@ def main():
     # **网站的默认供应商决定了「随手聊一句」花不花钱。**
     # 原来默认 DeepSeek(按量计费),在浏览器里聊一句花一句 ——
     # 默认值设反的代价不是「不好用」,是每次用都在漏钱,而且没人会注意到。
-    did = sdk.default_model_id()
+    did = sdk.网站默认模型()
+    ck("网站默认是 claude-opus-5(用户 10-20 拍)", did, "claude:claude-opus-5",
+       "  ← 页面头部一打开就该显示它")
     ck("网站默认走订阅内的那个", "是" if did.startswith("claude:") else f"是 {did}", "是",
        "  ← 默认按量计费的话,随手聊一句就花一句")
     ck("默认不是最弱的那档", "不是" if "haiku" not in did else "haiku", "不是",
@@ -89,13 +91,15 @@ def main():
     # 这两个原来是两个来源:/models 说 claude:sonnet-5,不传 model 时实际跑 deepseek。
     # 界面说一套实际做一套,而且不报错 —— 你以为在用订阅,其实在按量计费。
     app_src = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
-    ck("不传模型时走 default_model_id",
-       "是" if "sdk.default_model_id()" in app_src.split('body.get("model")')[1][:200] else "没有", "是",
+    ck("不传模型时走网站默认(和 /models 说的是同一个)",
+       "是" if "sdk.网站默认模型()" in app_src.split('body.get("model")')[1][:200] else "没有", "是",
        "  ← 不是的话会掉到脚本默认上,和界面显示的不是同一个")
 
     # 评测那条路**必须仍然听环境变量** —— 默认一改就会悄悄变成
     # 「拿 Claude 的成绩当 DeepSeek 的成绩」
     os.environ["LANXIU_PROVIDER"] = "deepseek"
+    ck("网站默认也听 LANXIU_PROVIDER(设成 deepseek 时不偷偷走 Claude)",
+       "听" if sdk.网站默认模型().startswith("deepseek:") else "没听", "听")
     ck("评测路径仍听 LANXIU_PROVIDER",
        "听" if sdk.default_model_id().startswith("deepseek:") else "没听", "听",
        "  ← 不听的话,评测会拿 Claude 的成绩当 DeepSeek 的成绩")
