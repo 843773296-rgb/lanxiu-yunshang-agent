@@ -118,8 +118,17 @@ def load_drafts():
 def save_drafts(d): json.dump(d,open(DRAFTS,"w"),ensure_ascii=False,indent=1)
 
 def workbench():
-    fin=rows("SELECT * FROM task WHERE type='财务人工任务' ORDER BY id")
-    mrg=rows("SELECT * FROM task WHERE type='客户合并确认' ORDER BY id")
+    # 待处理 = 研判队列里**还没结束**的那些 —— 「结束」用 ops.queue 的 done(业务 09-28 拍的两个权威来源),
+    # 不在首页另写一套。原来按类型全量取(10-19 外部复审 3.2):26 件财务任务里 23 件早已处理,首页照样报 26。
+    import ops as _ops
+    开着 = [x for x in _ops.queue() if not x["done"]]
+    def _开(类型):
+        ids = [x["task_id"] for x in 开着 if x["type"] == 类型]
+        return rows(f"SELECT * FROM task WHERE id IN ({','.join('?'*len(ids))}) ORDER BY id", *ids) if ids else []
+    fin=_开("财务人工任务")
+    mrg=_开("客户合并确认")
+    待复核 = {类型: sum(1 for x in 开着 if x["type"] == 类型 and x["state"] == "待复核") for 类型 in ("财务人工任务", "客户合并确认")}
+    已升级 = {类型: sum(1 for x in 开着 if x["type"] == 类型 and x["state"] == "已升级") for 类型 in ("财务人工任务", "客户合并确认")}
     dr=load_drafts()
     amt=rows("SELECT SUM(amount) s FROM deposit WHERE status IN ('退款失败','退款审批中')")[0]["s"] or 0
     fail=rows("SELECT COUNT(*) c FROM deposit WHERE status='退款失败'")[0]["c"]
@@ -130,12 +139,19 @@ def workbench():
 
     trend=rows("""SELECT substr(ts,1,10) d, COUNT(*) n, SUM(req_amount) amt
                   FROM refund_trace GROUP BY d ORDER BY d""")
+    # 「失败原因」只数失败:原来对全部返回码分组,SUCCESS 也排进了「Top 失败原因」(10-19 外部复审 3.2)
     codes=rows("""SELECT resp_code c, COUNT(*) n, SUM(req_amount) amt
-                  FROM refund_trace GROUP BY c ORDER BY amt DESC""")
+                  FROM refund_trace WHERE resp_code!='SUCCESS' GROUP BY c ORDER BY amt DESC""")
     lifec=rows(f"SELECT lifecycle l, COUNT(*) n FROM customer WHERE {_人头()} GROUP BY l ORDER BY n DESC")   # 按人(10-14)
+    # 「当日 / 较昨日」按**世界的今天和昨天**取(10-19 外部复审 3.2):原来取最后两个有记录的日子 ——
+    # 昨天没记录时,「较昨日」比的其实是更早的某一天。今天没记录就是 0;昨天没记录(或为 0)就不给「较昨日」
+    import worldclock as _wc, datetime as _d
+    今 = _wc.今天().isoformat(); 昨 = (_wc.今天() - _d.timedelta(days=1)).isoformat()
+    按天 = {r["d"]: r for r in trend}
+    def _当(k, d): return (按天.get(d) or {}).get(k) or 0
     def dod(k):
-        if len(trend)<2 or not trend[-2][k]: return None
-        return round((trend[-1][k]-trend[-2][k])/trend[-2][k]*100,1)
+        if not _当(k, 昨): return None
+        return round((_当(k, 今) - _当(k, 昨)) / _当(k, 昨) * 100, 1)
 
     shops=rows("""SELECT shop, COUNT(*) cust, SUM(order_cnt) orders, SUM(paid_amount) amt
                   FROM customer WHERE shop!='' GROUP BY shop ORDER BY shop""")
@@ -153,11 +169,17 @@ def workbench():
       oplog=dict(**{k:rows("SELECT COUNT(*) c FROM op_log WHERE allowed=?",v)[0]["c"]
                     for k,v in [("allow",1),("deny",0)]}),
       drafts={k:v.get("status") for k,v in dr.items()},
+      # 待处理卡片的细项 —— 原来「等待复核 4」「已核验 0」「已合并 0」「规则数 14」写死在页面里(10-19 外部复审 3.2)
+      pend=dict(finance=dict(待复核=待复核["财务人工任务"], 已升级=已升级["财务人工任务"]),
+                merge=dict(待复核=待复核["客户合并确认"], 已升级=已升级["客户合并确认"])),
+      状态机数=len(__import__("fsm").SM),
       metrics=[
-        dict(label="退款尝试(当日)",value=str(trend[-1]["n"] if trend else 0),unit="次",trend=dod("n")),
-        dict(label="涉及金额(当日)",value=f"{(trend[-1]['amt'] if trend else 0):,.2f}",unit="元",trend=dod("amt")),
-        dict(label="财务人工任务",value=str(len(fin)),unit="件",sub="退款连续失败转人工"),
-        dict(label="客户合并确认",value=str(len(mrg)),unit="对",sub="疑似重复待核验"),
+        dict(label="退款尝试(今日)",value=str(_当("n", 今)),unit="次",trend=dod("n"),
+             sub=f"{今[5:]} · 昨天没有记录,不比" if not _当("n", 昨) else None),
+        dict(label="涉及金额(今日)",value=f"{_当('amt', 今):,.2f}",unit="元",trend=dod("amt"),
+             sub=f"{今[5:]} · 昨天没有记录,不比" if not _当("amt", 昨) else None),
+        dict(label="财务人工任务",value=str(len(fin)),unit="件",sub="还没结束的(和研判队列同一口径)"),
+        dict(label="客户合并确认",value=str(len(mrg)),unit="对",sub="还没结束的(和研判队列同一口径)"),
       ],
       metrics2=[
         dict(label="待退金额",value=f"{amt:,.2f}",unit="元",sub="失败与审批中合计"),
@@ -493,6 +515,64 @@ def customer_unmerge(cid, note, me=None):
         return _mg.撤销(cid, me or {}, 来源="客户详情:"+note.strip()[:60])
     except PermissionError as e:
         return dict(ok=False,code="ROLE",reason=str(e)[:200])
+
+def scheme_save(body, me=None):
+    """保存定制方案(10-20 外部复审 3.1 修):
+
+    原来**校验**读 `pt`(页面发的就是它),**新建入库**却读 `customer_id` / `pattern` —— 页面从来不发这两个名字,
+    于是「按选中的版型校验通过、存进库里客户和版型是空的」;编辑那条 UPDATE 根本不碰这两列;
+    执行人写死「魏欣新」、顾问写死「A01 林岚」。现在:
+      · 字段**只认页面发的那一个名字**(`cust` / `pt`),校验和入库读同一个,不再一处一个名字
+      · 编辑也更新客户和版型;选了一个库里没有的客户 → 拒,不静默存成无关联方案
+      · 不选客户照旧允许(页面上就有「不选客户,自己挑码」)—— 那是试算,不是缺字段
+      · 尺码、用件日期、人手、局部 / 整幅是**试算参数**,方案表没有这几列,不入库(页面上写明)
+      · 执行人和顾问从登录态取;没登录记「未登录」、顾问留空,不猜一个
+    存完回读,返回存进去的那一行 —— 「接口说成功」不算数,库里是什么才算。"""
+    import scheme as _sch
+    me = me or {}
+    谁 = f"{me.get('name') or '未登录'}({me.get('no') or '-'})"
+    客户 = (body.get("cust") or "").strip() or None
+    版型 = str(body.get("pt") or "").strip() or None
+    ok,iss=_sch.validate(xz=body.get("xz"),mt=body.get("mt"),
+                         kf=body.get("kf") or [],ps=body.get("ps") or [],color=body.get("color"),
+                         pattern=版型,size=body.get("size"),
+                         need_date=body.get("need_date"),
+                         scope=body.get("scope") or "局部",
+                         workers=int(body.get("workers") or 2))
+    if not ok:
+        blocked=[i for i in iss if i["level"]=="block"]
+        log_op(谁,"fe-scheme",body.get("id") or "新建","-","已保存",False,"INCOMPATIBLE",
+               ";".join(f"{i.get('pair','')} {i['msg'][:40]}" for i in blocked)[:200],{})
+        return dict(ok=False,code="INCOMPATIBLE",reason="选中的组合里有「不可」项,不能保存",issues=iss)
+    if 客户 and not rows("SELECT 1 FROM customer WHERE id=?",客户):
+        log_op(谁,"fe-scheme",body.get("id") or "新建","-","已保存",False,"NO_CUSTOMER",f"客户 {客户} 不存在",{})
+        return dict(ok=False,code="NO_CUSTOMER",reason=f"没有客户 {客户} —— 不能存成一个挂错人的方案",issues=iss)
+    sid=body.get("id") or f"SC{int(__import__('time').time())%100000:05d}"
+    cur=rows("SELECT status FROM scheme WHERE id=?",sid)
+    with _conn() as c:
+        if cur:
+            if cur[0]["status"]!="草稿" and cur[0]["status"]!="已保存":
+                return dict(ok=False,code="NOT_EDITABLE",reason=f"「{cur[0]['status']}」的方案不可再编辑")
+            c.execute("""UPDATE scheme SET name=?,customer_id=?,xz=?,mt=?,kf=?,color=?,ps=?,pattern=?,
+                         status='已保存',updated=? WHERE id=?""",
+                      (body.get("name"),客户,body.get("xz"),body.get("mt"),
+                       ",".join(body.get("kf") or []),body.get("color"),
+                       ",".join(body.get("ps") or []),版型,_now(),sid))
+        else:
+            # ⚠️ 具名列。原来是 `VALUES(?×13)`,而 `scheme` 加了 `pattern` 之后是 14 列 ——
+            # **前台新建方案这条路一直在抛 500**,没有任何检查红过(insert_shape_check 首跑抓到)。
+            c.execute("INSERT INTO scheme(id,customer_id,name,status,xz,mt,kf,color,ps,"
+                      "pattern,advisor_no,note,created,updated)"
+                      " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (sid,客户,body.get("name") or "未命名方案","已保存",
+                       body.get("xz"),body.get("mt"),",".join(body.get("kf") or []),
+                       body.get("color"),",".join(body.get("ps") or []),
+                       版型,me.get("no"),None,_now(),_now()))
+    log_op(谁,"fe-scheme",sid,(cur[0]["status"] if cur else "-"),"已保存",True,"OK",
+           ";".join(f"{i.get('pair','')} {i['kind']}" for i in iss) or "无问题",{})
+    存了=rows("SELECT id,customer_id,pattern,advisor_no,status FROM scheme WHERE id=?",sid)[0]
+    return dict(ok=True,id=sid,issues=iss,saved=存了)
+
 
 def shop_list(q):
     kw=(q.get("q") or [""])[0].strip(); stt=(q.get("status") or [""])[0]
@@ -3368,47 +3448,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(dict(can_save=ok,issues=iss))
         if p=="/api/scheme-save":
             # 这里才是闸门。前端 disabled 只是体验 —— 绕过前端直接调这个接口,一样拦。
-            import scheme as _sch
-            ok,iss=_sch.validate(xz=body.get("xz"),mt=body.get("mt"),
-                                 kf=body.get("kf") or [],ps=body.get("ps") or [],color=body.get("color"),
-                                 pattern=body.get("pt"),size=body.get("size"),
-                                 need_date=body.get("need_date"),
-                                 scope=body.get("scope") or "局部",
-                                 workers=int(body.get("workers") or 2))
-            if not ok:
-                blocked=[i for i in iss if i["level"]=="block"]
-                log_op("魏欣新","fe-scheme",body.get("id") or "新建","-","已保存",False,"INCOMPATIBLE",
-                       ";".join(f"{i.get('pair','')} {i['msg'][:40]}" for i in blocked)[:200],{})
-                return self._send(dict(ok=False,code="INCOMPATIBLE",
-                    reason="选中的组合里有「不可」项,不能保存",issues=iss),409)
-            sid=body.get("id") or f"SC{int(__import__('time').time())%100000:05d}"
-            cur=rows("SELECT status FROM scheme WHERE id=?",sid)
-            with _conn() as c:
-                if cur:
-                    if cur[0]["status"]!="草稿" and cur[0]["status"]!="已保存":
-                        return self._send(dict(ok=False,code="NOT_EDITABLE",
-                            reason=f"「{cur[0]['status']}」的方案不可再编辑"),409)
-                    c.execute("""UPDATE scheme SET name=?,xz=?,mt=?,kf=?,color=?,ps=?,status='已保存',updated=?
-                                 WHERE id=?""",
-                              (body.get("name"),body.get("xz"),body.get("mt"),
-                               ",".join(body.get("kf") or []),body.get("color"),
-                               ",".join(body.get("ps") or []),_now(),sid))
-                else:
-                    # ⚠️ 具名列。原来是 `VALUES(?×13)`,而 `scheme` 加了 `pattern` 之后是 14 列 ——
-                    # **前台新建方案这条路一直在抛 500**,没有任何检查红过(insert_shape_check 首跑抓到)。
-                    # 顺带:顾问原来写死显示串「A01 林岚」,而这一列存的是工号(和 seed 同一处修法)。
-                    # 前台没选版型就留空 —— 「还没定版型」在库里本来就是 NULL,不猜一个默认的。
-                    c.execute("INSERT INTO scheme(id,customer_id,name,status,xz,mt,kf,color,ps,"
-                              "pattern,advisor_no,note,created,updated)"
-                              " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                              (sid,body.get("customer_id"),body.get("name") or "未命名方案","已保存",
-                               body.get("xz"),body.get("mt"),",".join(body.get("kf") or []),
-                               body.get("color"),",".join(body.get("ps") or []),
-                               body.get("pattern") or None,顾问工号(body.get("advisor") or "A01 林岚"),
-                               None,_now(),_now()))
-            log_op("魏欣新","fe-scheme",sid,(cur[0]["status"] if cur else "-"),"已保存",True,"OK",
-                   ";".join(f"{i.get('pair','')} {i['kind']}" for i in iss) or "无问题",{})
-            return self._send(dict(ok=True,id=sid,issues=iss))
+            r=scheme_save(body, me=_me(self))
+            return self._send(r, 200 if r.get("ok") else 409)
         if p=="/api/scheme-transit":
             if scheme_status(body.get("id")) is None:
                 return self._send(dict(ok=False,reason="方案不存在"),404)

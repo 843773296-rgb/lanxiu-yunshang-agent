@@ -3724,8 +3724,8 @@
   "file": [
    {
     "path": "backend/server.py",
-    "old": "            log_op(\"魏欣新\",\"fe-scheme\",sid,",
-    "new": "            _ = \"INSERT INTO scheme VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)\"\n            log_op(\"魏欣新\",\"fe-scheme\",sid,"
+    "old": "    log_op(谁,\"fe-scheme\",sid,",
+    "new": "    _ = \"INSERT INTO scheme VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)\"\n    log_op(谁,\"fe-scheme\",sid,"
    }
   ],
   "预期红": "没有新增的位置参数 INSERT"
@@ -9368,5 +9368,77 @@
    }
   ],
   "预期红": "研判队列 / 隔离试运行 / 三代对比都走 triage;差评研判照旧走 task"
+ },
+ {
+  "script": "backend/scheme_save_check.py",
+  "改坏": "新建时又去读 customer_id(页面不发这个名字)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "(sid,客户,body.get(\"name\") or \"未命名方案\",\"已保存\",",
+    "new": "(sid,body.get(\"customer_id\"),body.get(\"name\") or \"未命名方案\",\"已保存\","
+   }
+  ],
+  "预期红": "新建:页面发的客户和版型都存进去了(回读库里那一行)"
+ },
+ {
+  "script": "backend/scheme_save_check.py",
+  "改坏": "编辑那条不更新客户和版型",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "UPDATE scheme SET name=?,customer_id=?,xz=?,mt=?,kf=?,color=?,ps=?,pattern=?,\n                         status='已保存',updated=? WHERE id=?\"\"\",\n                      (body.get(\"name\"),客户,body.get(\"xz\"),body.get(\"mt\"),\n                       \",\".join(body.get(\"kf\") or []),body.get(\"color\"),\n                       \",\".join(body.get(\"ps\") or []),版型,_now(),sid))",
+    "new": "UPDATE scheme SET name=?,xz=?,mt=?,kf=?,color=?,ps=?,\n                         status='已保存',updated=? WHERE id=?\"\"\",\n                      (body.get(\"name\"),body.get(\"xz\"),body.get(\"mt\"),\n                       \",\".join(body.get(\"kf\") or []),body.get(\"color\"),\n                       \",\".join(body.get(\"ps\") or []),_now(),sid))"
+   }
+  ],
+  "预期红": "编辑:换了客户和版型,库里跟着变"
+ },
+ {
+  "script": "backend/scheme_save_check.py",
+  "改坏": "选了库里没有的客户也照存",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if 客户 and not rows(\"SELECT 1 FROM customer WHERE id=?\",客户):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "选了一个库里没有的客户 → 拒,而且一行都没写"
+ },
+ {
+  "script": "backend/workbench_check.py",
+  "改坏": "失败原因又不排除 SUCCESS",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "FROM refund_trace WHERE resp_code!='SUCCESS' GROUP BY c",
+    "new": "FROM refund_trace GROUP BY c"
+   }
+  ],
+  "预期红": "「失败原因」不含成功的那条"
+ },
+ {
+  "script": "backend/workbench_check.py",
+  "改坏": "待处理按类型全量取(不看结束没)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    开着 = [x for x in _ops.queue() if not x[\"done\"]]",
+    "new": "    开着 = list(_ops.queue())"
+   }
+  ],
+  "预期红": "待处理只算没结束的:新开一件 +1,关掉 -1"
+ },
+ {
+  "script": "backend/workbench_check.py",
+  "改坏": "较昨日又拿最后两个有记录的日子比",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    今 = _wc.今天().isoformat(); 昨 = (_wc.今天() - _d.timedelta(days=1)).isoformat()",
+    "new": "    今 = trend[-1][\"d\"] if trend else _wc.今天().isoformat(); 昨 = trend[-2][\"d\"] if len(trend) > 1 else \"\""
+   }
+  ],
+  "预期红": "昨天没有记录 → 不给「较昨日」,也不拿更早的一天冒充"
  }
 ]

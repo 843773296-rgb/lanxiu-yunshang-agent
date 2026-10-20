@@ -523,6 +523,8 @@ run "退款执行写口 · 只有财务、先核实再重发、已退要流水�
 run "研判示例库 · 不相交、评测根因覆盖面不少、不挑自己、默认不带示例(用户 10-16 拍)"    python3 backend/example_pool_check.py
 run "研判评测判分 · 出账流水两种编号都认(10-16 真跑钉回)"    python3 agent/eval_hit_judgetest.py
 run "客户软合并 · 数据不搬、留建档最早、能撤、只认总部运营;列表 / 详情 / 审批中心 / 研判办结都认它(库副本上自造)" python3 backend/merge_check.py
+run "方案保存 · 客户和版型真的存进去、编辑跟着变、不串单、挂错人会拒(外部复审 10-19 · 3.1)" python3 backend/scheme_save_check.py
+run "首页指标 · 失败原因不含成功、今天昨天按日历、待处理和研判队列同一口径、页面不写死数(外部复审 10-19 · 3.2)" python3 backend/workbench_check.py
 run "研判上线门槛 · 越权 / 重复业务执行 / 失败假成功 / 无依据办结在真库上各为 0(量法在库副本上自造四种坏形状)" python3 backend/triage_gate_check.py
 run "同意按年龄 · 不满 14 监护人、14—18 本人为准 + 家长付款双签、营销只看本人(自测)" python3 knowledge/consent_age.py
 run "订单确认书 · 确认下单同一事务生成、写不进就整单回滚、金额对独立 SQL、范围(库副本上跑)" python3 backend/contract_check.py

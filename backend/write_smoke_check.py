@@ -321,6 +321,16 @@ def 用例表():
                 return r
             出.append(("customer_unmerge", _撤, "op_log"))
 
+    # scheme_save(body, me) —— 定制方案保存(10-20 外部复审 3.1 抽出来的)。组合是知识库推导的固定编号;
+    # 客户从库里取第一位 —— 验的是「存得进、库里多一行」,客户和版型存没存对归 scheme_save_check
+    客0 = 取("SELECT id FROM customer ORDER BY id LIMIT 1") if 有表("scheme") else None
+    if 客0:
+        出.append(("scheme_save",
+                   lambda s: s.scheme_save(dict(xz="XZ04", mt="MT02", kf=["KF02", "KF03"], color="胭脂",
+                                                ps=["云肩", "腰封"], name="冒烟方案", cust=客0["id"], pt="PT06"),
+                                           me={"no": "冒烟", "name": "冒烟", "role": "顾问"}),
+                   "scheme"))
+
     # toggle(table, key, val, col, on, off, actor) —— 启停一个系统编码
     码 = 取("SELECT code FROM sys_code LIMIT 1") if 有表("sys_code") else None
     if 码:

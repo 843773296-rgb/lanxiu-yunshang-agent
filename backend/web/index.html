@@ -642,10 +642,10 @@ async function workbench(){
   </div>
 
   <div class="row r-4">
-    ${pend("退款待处理","finance",W.finance.length,[["已达重试上限",W.metrics2[1].value,""],["等待复核",4,"w"],["涉及金额",Math.round(+String(W.metrics2[0].value).replace(/,/g,"")/1000)+"k","z"]])}
-    ${pend("合并待处理","merge",W.merge.length,[["疑似重复",W.merge.length,""],["已核验",0,"z"],["已合并",0,"z"]])}
+    ${pend("退款待处理","finance",W.finance.length,[["已达重试上限",W.metrics2[1].value,""],["等待复核",W.pend.finance.待复核,"w"],["涉及金额",Math.round(+String(W.metrics2[0].value).replace(/,/g,"")/1000)+"k","z"]])}
+    ${pend("合并待处理","merge",W.merge.length,[["没结束的",W.merge.length,""],["等待复核",W.pend.merge.待复核,"w"],["已升级",W.pend.merge.已升级,"z"]])}
     ${pend("预约待处理","appts",W.appt.booked+W.appt.arrived,[["已预约",W.appt.booked,""],["已到店",W.appt.arrived,""],["爽约",W.appt.noshow,"w"]])}
-    ${pend("操作留痕","oplog",W.oplog.allow+W.oplog.deny,[["允许",W.oplog.allow,""],["拒绝",W.oplog.deny,"w"],["规则数",14,"z"]])}
+    ${pend("操作留痕","oplog",W.oplog.allow+W.oplog.deny,[["允许",W.oplog.allow,""],["拒绝",W.oplog.deny,"w"],["状态机",W.状态机数,"z"]])}
   </div>`);
   M.querySelectorAll("[data-go]").forEach(e=>e.onclick=()=>view(e.dataset.go));
   M.querySelectorAll("[data-pend]").forEach(e=>e.onclick=()=>view(e.dataset.pend));
