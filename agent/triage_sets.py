@@ -463,9 +463,261 @@ def 判两轮(轮一, 轮二, 套=None):
                                  两轮漏的是不是同一批=同)
 
 
+# ── 考卷自带世界:快照库(用户 2026-10-20 拍)────────────────────────────
+#
+# **为什么要快照** —— 三个方案摆过,用户选的是这个:
+#
+#   现挑       每次从当天的库按同一套挑法现挑一批    便宜,但今天的卷和明天的卷不是同一张
+#   考卷自带世界 ← 选了这个                        一张卷永远是那张卷,跨天跨机都能并排比
+#   治根       让每次重建造出同一批评价            代价最大,而且每改一次造数又换一批
+#
+# 做法:冻题集的时候,把那几张表里**这些题够得着的行**导成一份小库,
+# 跑评测时给工具层 `LANXIU_DB` = 这份小库(隔离试运行那套「工具服务真改读副本」
+# 已经建好了,这里是**复用**,不是新造)。模型照旧**自己调 `service_records` 取材料** ——
+# 换的是它查的那个世界,不是它查不查。
+#
+# ⚠️ **导哪几张表不能凭感觉写** —— 口径是:`差评研判提示词` 点名让模型调
+# `service_records`,所以**它读的那几张表就是这份快照的边界**(见 `api.service_records`:
+# rating / ordr / customer / pkg / pickup / maintain / maintain_decision / aftersale),
+# 再加 `staff`(取身份要用)。
+#
+# ⚠️⚠️ **schema 整套都建**(全库 120 张表的空表),不只建这九张。
+# 理由:模型手上有七十多个工具,它会去调别的。表在、是空的 → 工具正常答「没有记录」;
+# 表不在 → 工具**崩**,而那会被记成「模型跑挂了」。
+# > **一个「这一单没有返修记录」和一个「返修表不存在」,在模型那边差得很远,
+# > 而在我这边只差一句 CREATE TABLE。**
+#
+# ⚠️ 快照**不是用来对照题面的**。题面和快照是同时冻的,拿它们互相比
+# **永远成立** —— 这个文件里已经犯过两次那个错(③ 和 ④ 上面都记着)。
+# 快照该被验的是**跑得动**:在快照上真调一遍 `service_records`,每道题都取得出材料。
+快照文件 = os.path.join(HERE, "triage-sets-snapshot.db.gz")
+
+# 导出图:表 → 按哪个键筛。**顺序有意义**(后面的键来自前面导出的行)。
+导出图 = ("rating", "ordr", "customer", "pkg", "pickup",
+          "maintain", "maintain_decision", "aftersale", "staff")
+
+
+def 导出快照(套们, dbp=DBP, 路径=快照文件):
+    """把这批题够得着的行导成一份小库(gzip)。返回 {表: 条数}。
+
+    ⚠️ gzip 写 `mtime=0`:内容没变就是同一串字节 —— 不然每次重冻都白多一次改动。
+    """
+    import gzip, shutil, tempfile
+    号们 = [t["包裹"] for k in 套名 for t in 套们.get(k, ())]
+    src = sqlite3.connect(f"file:{dbp}?mode=ro", uri=True)
+    src.row_factory = sqlite3.Row
+    临 = tempfile.mkdtemp(prefix="sets-snap-")
+    out = os.path.join(临, "snap.db")
+    dst = sqlite3.connect(out)
+    # ① 整套 schema(空表)—— 见上面那段:表不在会让工具崩,而那会被记成模型跑挂
+    for (sql,) in src.execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL "
+                              "AND name NOT LIKE 'sqlite_%'"):
+        try:
+            dst.execute(sql)
+        except sqlite3.OperationalError:
+            pass                      # 视图依赖别的视图时顺序会差一拍,空库上不要紧
+    # ② 行:按导出图一层层取
+    def 填(表, where, 参):
+        行 = [dict(r) for r in src.execute(f'SELECT * FROM "{表}" WHERE {where}', 参)]
+        if 行:
+            列 = list(行[0].keys())
+            dst.executemany(
+                f'INSERT INTO "{表}" ({",".join(chr(34) + c + chr(34) for c in 列)}) '
+                f'VALUES ({",".join("?" * len(列))})',
+                [[r[c] for c in 列] for r in 行])
+        return 行
+    _q = lambda n: ",".join("?" * n)
+    评 = 填("rating", f"pkg_id IN ({_q(len(号们))})", 号们)
+    客们 = sorted({r["customer_id"] for r in 评 if r["customer_id"]})
+    # 同一个客户历史上的**其它**差评:`service_records` 刻意给(闸一第三类材料)
+    其它 = 填("rating", f"customer_id IN ({_q(len(客们))}) AND pkg_id NOT IN ({_q(len(号们))})",
+              客们 + 号们) if 客们 else []
+    单们 = sorted({r["order_id"] for r in 评 + 其它 if r["order_id"]})
+    填("ordr", f"id IN ({_q(len(单们))})", 单们)
+    if 客们:
+        填("customer", f"id IN ({_q(len(客们))})", 客们)
+    for 表 in ("pkg", "pickup", "maintain", "aftersale"):
+        填(表, f"order_id IN ({_q(len(单们))})", 单们)
+    修们 = sorted({r["id"] for r in src.execute(
+        f'SELECT id FROM maintain WHERE order_id IN ({_q(len(单们))})', 单们)})
+    if 修们:
+        填("maintain_decision", f"maintain_id IN ({_q(len(修们))})", 修们)
+    填("staff", "1=1", [])            # 取身份要用;全表也就几十行
+    dst.commit()
+    条数 = {t: dst.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in 导出图}
+    dst.execute("VACUUM")
+    dst.close(); src.close()
+    with open(out, "rb") as f, open(路径, "wb") as g:
+        gz = gzip.GzipFile(filename="", mode="wb", fileobj=g, mtime=0)
+        shutil.copyfileobj(f, gz); gz.close()
+    shutil.rmtree(临, ignore_errors=True)
+    return 条数
+
+
+# 子进程里跑的那段 —— **只此一份**:冻结时的自检和门禁第 ⑨ 节用的是同一段代码,
+# 两份会漂,而漂了之后「冻结时验过了」就不代表「门禁验的是同一件事」。
+_取材料子码 = r"""
+import hashlib, io, json, os, sys
+入 = json.load(io.open(sys.argv[1], encoding="utf-8"))
+sys.path[:0] = 入["路"]
+if 入.get("库"):
+    os.environ["LANXIU_DB"] = 入["库"]
+import api
+import protocol
+protocol.指到副本()
+import sqlite3
+c = sqlite3.connect(f"file:{api.DB}?mode=ro", uri=True)
+c.row_factory = sqlite3.Row
+r = c.execute("SELECT no,name,role,shop FROM staff WHERE role='售后' AND status='启用' LIMIT 1").fetchone()
+c.close()
+出 = []
+if not r:
+    print(json.dumps({"崩了": "这个库里没有启用的售后 —— 取不到跨店的身份"}, ensure_ascii=False))
+    raise SystemExit(0)
+me = dict(r)
+for 号 in 入["号们"]:
+    行 = {"包裹": 号}
+    try:
+        protocol.指到副本()            # 工具里懒加载的模块启动时还没有,每次再扫一遍
+        with api.as_user(me):
+            材 = api.service_records(pkg=号)
+        文 = json.dumps(材, ensure_ascii=False, sort_keys=True, default=str)
+        行["指纹"] = hashlib.md5(文.encode("utf-8")).hexdigest()
+        行["这一单"] = bool((材.get("这一单") or {}).get("订单"))
+        行["包裹数"] = len(((材.get("交付与签收") or {}).get("包裹")) or [])
+        行["历史差评"] = ((材.get("这个客户历史上的差评") or {}).get("条数")) or 0
+        行["错"] = 材.get("error")
+        os.environ["LANXIU_JUDGING_PKG"] = 号
+        try:
+            遮 = protocol.遮被判那条(json.loads(json.dumps(材, ensure_ascii=False, default=str)))
+        finally:
+            os.environ.pop("LANXIU_JUDGING_PKG", None)
+        行["遮了"] = sum(1 for a, b in zip(
+            json.dumps(材, ensure_ascii=False, sort_keys=True, default=str).split(","),
+            json.dumps(遮, ensure_ascii=False, sort_keys=True, default=str).split(",")) if a != b)
+    except Exception as e:
+        行["崩了"] = f"{type(e).__name__}: {e}"
+    出.append(行)
+print(json.dumps(出, ensure_ascii=False))
+"""
+
+
+def 取材料(号们, 库=None):
+    """在**子进程**里用 `service_records` 把每道题的材料取一遍,返回每个号一行。
+
+    ⚠️⚠️ **为什么非得子进程**:`mcp/protocol.指到副本()` 把**已加载模块**里指着
+    真库的 `DB` 全改到副本上,而它**不可逆**。在本进程里改完,后面所有判据就
+    都在读快照了 —— 而「在读真库」和「在读快照」在那些判据的输出上长得一模一样。
+    > 一条图省事的 import,能把一整条检查的参照系换掉,而换掉的那一刻没有人在看。
+
+    `库=None` → 读真库。每行:包裹 / 指纹(整份材料的 md5)/ 这一单 / 包裹数 /
+    历史差评 / 遮了几处 / 错 / 崩了。
+    """
+    import subprocess, tempfile
+    with tempfile.TemporaryDirectory(prefix="sets-取材料-") as d:
+        入 = os.path.join(d, "in.json")
+        io.open(入, "w", encoding="utf-8").write(json.dumps(dict(
+            号们=list(号们), 库=库,
+            路=[os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowledge"),
+               os.path.join(ROOT, "mcp"), HERE]), ensure_ascii=False))
+        env = {**os.environ}
+        env.pop("LANXIU_DB", None)
+        if 库:
+            env["LANXIU_DB"] = 库
+        p = subprocess.run([sys.executable, "-I", "-c", _取材料子码, 入],
+                           capture_output=True, text=True, env=env)
+    if p.returncode != 0:
+        return dict(崩了=(p.stderr or "")[-400:])
+    try:
+        return json.loads(p.stdout.strip().splitlines()[-1])
+    except Exception as e:
+        return dict(崩了=f"读不出子进程的输出:{e} / {(p.stdout or '')[:200]}")
+
+
+def 用快照(路径=快照文件, 目录=None):
+    """把快照解到一个文件,返回路径 —— 工具层拿 `LANXIU_DB` 指它。
+
+    ⚠️ 解出来的是**可写**文件(sqlite 要写 -wal / -journal),但题集这条路只读;
+    每次解一份新的,所以就算被写脏了也不会污染下一次。
+    """
+    import gzip, shutil, tempfile
+    if not os.path.exists(路径):
+        return None
+    目录 = 目录 or tempfile.mkdtemp(prefix="sets-snap-用-")
+    出 = os.path.join(目录, "lanxiu.db")
+    with gzip.open(路径, "rb") as f, open(出, "wb") as g:
+        shutil.copyfileobj(f, g)
+    return 出
+
+
+# ── 题面还活着吗 ────────────────────────────────────────────────────────
+#
+# 2026-10-20 补。差评研判的设计**就是要模型自己用工具去查那条评价** ——
+# 所以题面里那个包裹号不是装饰,它是**考卷和世界之间唯一的那根线**。
+# 而这个演示世界每天从零重建,包裹号会被重新分配给**另一条评价**,于是:
+# > **一道好题,和一道「号还在、评价已经换成另一条」的废题,
+# > 在题集文件里长得一模一样。**
+#
+# 实测(2026-10-20,166 道):查不到 82 道、星级对不上 76 道、顾客原话对不上 82 道,
+# **完全对得上的只有 1 道** —— 而那一整天门禁是全绿的。
+# `triage_sets_check.py` 里所有拿库当参照的判据都已经退成「库况(不判红)」
+# (因为「库换了一批」和「有人改坏了」在它们身上长得一样),
+# 于是**题面本身失效这一类,正好漏在整条检查的视野外**。
+#
+# 比哪两样:**星级**和**顾客原话**。
+# ⚠️ **不比「评于」** —— 这个世界每天整体平移,日期跟着变是正常的;
+# 拿它当指纹会在一个好题集上报红,而这个错法在这两个文件里已经犯过两次。
+def 核对题面(套们, dbp=DBP):
+    """题集引用的那条评价,**在今天这个库里还是同一条吗**。
+
+    返回 dict(对得上=[包裹], 查不到=[包裹], 换了一条=[(包裹, 冻结的, 库里的)])。
+
+    ⚠️ **后两样分开数**:「号不在了」跑起来当场报「包裹没有评价」(零产出,很响);
+    「号还在但换了一条评价」**会安静地答完一道不存在的题**,还给出分数 ——
+    > 两个都该停,而只有后一个不会自己喊出来。
+    """
+    c = sqlite3.connect(f"file:{dbp}?mode=ro", uri=True)
+    库 = {r[0]: (r[1], (r[2] or "").strip())
+          for r in c.execute("SELECT pkg_id, star, COALESCE(note,'') FROM rating")}
+    c.close()
+    对, 缺, 换 = [], [], []
+    for k in 套名:
+        for t in 套们.get(k, ()):
+            有 = 库.get(t["包裹"])
+            if 有 is None:
+                缺.append(t["包裹"])
+            elif 有 != (t["星"], (t["顾客说"] or "").strip()):
+                换.append((t["包裹"], (t["星"], (t["顾客说"] or "")[:18]),
+                           (有[0], 有[1][:18])))
+            else:
+                对.append(t["包裹"])
+    return dict(对得上=对, 查不到=缺, 换了一条=换)
+
+
 # ── 冻结 ────────────────────────────────────────────────────────────────
-def 冻(dbp=DBP, 路径=冻结文件):
+def 冻(dbp=DBP, 路径=冻结文件, 快照=快照文件):
+    """造一套题 + **把它考的那个世界一起冻下来**,并当场自检两边取到的材料一字不差。
+
+    ⚠️ **自检只能在这儿做。** 「快照和真库一致」这件事**只有冻结的这一刻才验得了** ——
+    真库第二天就换了一批数据,那时候再比,比出来的差异说明的是「库换了」,不是「导漏了」。
+    > 一个「导漏了一张表」和一个「库换了一批」,在**事后**的比对上长得一模一样。
+    所以:**这一刻比,比不过就不许冻**;冻完之后门禁改验**另一件事**
+    (快照上跑得动、遮得住),那件事天天验得了。
+    """
     三 = 造(dbp)
+    号们 = [t["包裹"] for k in 套名 for t in 三[k]]
+    条数 = 导出快照(三, dbp, 快照)
+    真 = 取材料(号们, None)
+    快 = 取材料(号们, 用快照(快照))
+    for 名, x in (("真库", 真), ("快照", 快)):
+        if isinstance(x, dict) or any(r.get("崩了") for r in x):
+            raise RuntimeError(f"在{名}上取材料没取成:{str(x)[:400]}")
+    不一致 = [a["包裹"] for a, b in zip(真, 快) if a != b]
+    if 不一致:
+        raise RuntimeError(
+            f"快照上取到的材料和真库不一样({len(不一致)}/{len(号们)} 道,"
+            f"例 {不一致[:3]})—— **导出图漏了表**。"
+            f"口径见 `api.service_records` 读的那几张表;**没改对之前不许冻**")
     出 = dict(
         说明="差评研判三套隔离题集(闸二)。切分方式:按时间(用户 2026-10-12 定)。"
              "真值=人工处置档位,人判的、不是被测系统算的。",
@@ -477,6 +729,15 @@ def 冻(dbp=DBP, 路径=冻结文件):
                   为什么="和真实上线同形(用过去调、对未来验);"
                          "代价是测试集退款类条数少,靠「退款类全出省事诱导」补硬度"),
         冻于="由 git 历史记录,不写在这儿(写死日期会和重新冻结的那天打架)",
+        快照=dict(
+            文件=os.path.basename(快照), 条数=条数,
+            为什么="这个演示世界每天从零重建,包裹号会被重新分配给**另一条评价** ——"
+                   "按 id 冻的题集撑不过一次重建(2026-10-20 实测:166 道里只剩 1 道对得上,"
+                   "而那一整天门禁全绿)。所以**考卷自带世界**:模型照旧自己调 "
+                   "service_records 取材料,只是工具层读这份快照(用户 2026-10-20 在三个方案里选的)",
+            自检=f"冻的那一刻,{len(号们)} 道题的 service_records 在快照和真库上**整份材料的"
+                 f"指纹逐字一致**(比不过就不许冻);之后门禁验的是另一件事:"
+                 f"快照上跑得动、遮得住"),
         套={k: v for k, v in 三.items()})
     io.open(路径, "w", encoding="utf-8").write(
         json.dumps(出, ensure_ascii=False, indent=1) + "\n")
