@@ -134,6 +134,7 @@ run "路由 · handler 必须真的存在" python3 backend/route_check.py
 run "只读入口冒烟 · 54 个入口真跑一遍(handler 存在≠跑得起来)" python3 backend/page_smoke_check.py
 run "写接口冒烟 · 在库的副本上真写一遍(返回 ok≠写进去了)" python3 backend/write_smoke_check.py
 run "产品文档 · 写死的数字和代码对账(文档变假时不会报错)" python3 tools/doc_numbers_check.py
+run "README = 入口 + 产品说明全文,两边一致(用户 10-20:产品文档放进 README、去重)" python3 tools/make_readme.py --check
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
 run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py
 run "边界审计 · 每条保证真的攻击一次" python3 backend/boundary_audit.py
