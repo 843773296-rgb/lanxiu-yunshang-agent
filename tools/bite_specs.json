@@ -9988,5 +9988,113 @@
    }
   ],
   "预期红": "错的码 → 不签收"
+ },
+ {
+  "script": "knowledge/order_scope.py",
+  "改坏": "顾问那一档只认「订单上的顾问」,丢掉「名下客户」那一半(2026-10-06 实测 31660 单里12393 单两者不是同一个人 —— 丢掉这一半,顾问的列表会凭空少一大批)",
+  "file": [
+   {
+    "path": "knowledge/order_scope.py",
+    "old": "        if 客户归属顾问 == 工号:\n            return True, \"这单的客户在你名下(单是别人经手的)\"",
+    "new": "        if False:\n            return True, \"这单的客户在你名下(单是别人经手的)\""
+   }
+  ],
+  "预期红": "名下客户、别人经手 → 看得到"
+ },
+ {
+  "script": "knowledge/order_scope.py",
+  "改坏": "店长档案里没填门店时**放行**(算不出「本店」却给了全部)",
+  "file": [
+   {
+    "path": "knowledge/order_scope.py",
+    "old": "            return False, \"你的档案里没填门店,**算不出「本店」是哪一段** —— 判不了,不放行\"",
+    "new": "            return True, \"你的档案里没填门店,**算不出「本店」是哪一段** —— 判不了,不放行\""
+   }
+  ],
+  "预期红": "店长没填门店 → 判不了,不放行"
+ },
+ {
+  "script": "knowledge/order_scope.py",
+  "改坏": "给工匠 / 版师 / 财务兜一个「本店」出来(三档之外不该有范围)。⚠️ 预期红是「三档之外的角色「X」→ 不放行」那一条,**不是**「三档之外的范围话不说成「本店」」—— 后者验的是 `范围话()` 那句话,我改的是 `看得到()`,两个函数",
+  "file": [
+   {
+    "path": "knowledge/order_scope.py",
+    "old": "    return False, f\"「{角色}」这个角色不在订单范围的三档里 —— **不兜底成「本店」**\"",
+    "new": "    return True, f\"本店的单({门店})\""
+   }
+  ],
+  "预期红": "三档之外的角色"
+ },
+ {
+  "script": "knowledge/order_scope.py",
+  "改坏": "把标签顺序改成跟着命中次序走(一份今天这个顺序、明天那个顺序的标签,会让人以为数据变了)",
+  "file": [
+   {
+    "path": "knowledge/order_scope.py",
+    "old": "    出 = []\n    if 客户归属顾问 == 工号:\n        出.append(我的客户)\n    if 单的顾问 == 工号:\n        出.append(我下的单)\n    return 出",
+    "new": "    出 = []\n    if 单的顾问 == 工号:\n        出.append(我下的单)\n    if 客户归属顾问 == 工号:\n        出.append(我的客户)\n    return 出"
+   }
+  ],
+  "预期红": "标签顺序固定"
+ },
+ {
+  "script": "backend/repair_write_check.py",
+  "改坏": "让 _找件() 在没说哪一件时**挑第一件**(一张单好几件,替顾问猜了一件去修)",
+  "file": [
+   {
+    "path": "backend/repair_write.py",
+    "old": "        if len(its) == 1:\n            return its[0], None\n        return None, dict(ok=False, code=\"WHICH_ITEM\",",
+    "new": "        if its:\n            return its[0], None\n        return None, dict(ok=False, code=\"WHICH_ITEM\","
+   }
+  ],
+  "预期红": "一张单好几件、没说哪件 → 反问"
+ },
+ {
+  "script": "backend/repair_write_check.py",
+  "改坏": "让「判完了没有」不查顾客同意(判给顾客承担、顾客还没同意付费就能开工)",
+  "file": [
+   {
+    "path": "knowledge/repair.py",
+    "old": "        if not r.get(\"顾客同意于\"):",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "判给顾客、没同意 → 停在待确认"
+ },
+ {
+  "script": "backend/repair_write_check.py",
+  "改坏": "把金额授权那一档去掉(谁能拍板一律返回店长 —— 我方出 1200 也不用报总部)",
+  "file": [
+   {
+    "path": "knowledge/liability.py",
+    "old": "    if 钱 <= 大:\n        return \"总部\", f\"我方出 ¥{钱:g},超过店长权限({小}–{大} 要报总部)—— 报了才能开工\"",
+    "new": "    if 钱 <= 大:\n        return \"店长\", f\"我方出 ¥{钱:g},超过店长权限({小}–{大} 要报总部)—— 报了才能开工\""
+   }
+  ],
+  "预期红": "我方出 1200、没总部批 → 停在待确认"
+ },
+ {
+  "script": "backend/repair_write_check.py",
+  "改坏": "去掉状态机上的返修开工闸(没判完责也能从待确认推进待入库)",
+  "file": [
+   {
+    "path": "backend/fsm.py",
+    "old": "        if (mid,frm,to)==(\"bk-maintain\",\"待确认\",\"待入库\") and ctx.get(\"判完了\") is not True:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "状态机:没判完 → 拒"
+ },
+ {
+  "script": "tools/bite_check.py",
+  "改坏": "把 `--登记` 那道「只许降」的闸改成永不拦(基线能被静默重设上去)",
+  "file": [
+   {
+    "path": "tools/bite_check.py",
+    "old": "    if 旧总 and 现总 > 旧总 and not 允许涨:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "`--登记` 只许降(涨了要拦、降了放行、第一次放行)"
  }
 ]
