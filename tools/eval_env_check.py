@@ -76,14 +76,39 @@ ck("PID 文件放在真库所在的目录(两个检出共用;.feynman 各有一�
 _主 = 夜[夜.index("def main():"):夜.index("def _跑(")]
 ck("夜跑开跑写自己的 PID 文件,结束(含崩溃)在 finally 里删", "open(夜跑PID, \"w\")" in _主 and "finally:" in _主
    and "os.remove(夜跑PID)" in _主)
-# 夜跑结果自动提交(用户 10-20 拍)—— 只提交评测结果和报告,运行日志副本不进仓库;失败不抛
+# 夜跑结果自动提交(用户 10-20 拍)—— 评测结果 + 报告 + **压缩过的**运行日志;原样的日志不进;失败不抛
+import gzip, shutil, subprocess, tempfile
+with tempfile.TemporaryDirectory(prefix="nightly-chk-") as 假根:
+    夜目录 = os.path.join(假根, "agent", "nightly"); os.makedirs(夜目录)
+    日志 = ('{"t":"turn"}\n' * 2000).encode()
+    for 名, 内容 in (("agent__x-eval-results.jsonl", b"{}\n"), ("agentsite__evals__funnel.jsonl", 日志),
+                     ("agentsite__evals__withheld.jsonl", 日志), ("别的东西.jsonl", b"{}\n")):
+        open(os.path.join(夜目录, 名), "wb").write(内容)
+    单 = ne.入库清单(假根)
+    压 = os.path.join(夜目录, "agentsite__evals__funnel.jsonl.gz")
+    第一次 = open(压, "rb").read() if os.path.exists(压) else b""
+    ne.入库清单(假根)
+    ck("夜跑入库清单:评测结果 + 压缩过的运行日志;原样的日志、扣下的答案原文(withheld)、别的文件都不进",
+       单 == ["agent/nightly/agent__x-eval-results.jsonl", "agent/nightly/agentsite__evals__funnel.jsonl.gz"], 单)
+    ck("压缩包解开和原日志一字不差,而且比原文件小", 第一次 and gzip.decompress(第一次) == 日志 and len(第一次) < len(日志) // 5)
+    # 看包头,不比两次输出:两次压缩落在同一秒里时,带着时间戳也会一样 —— 那样判据量不到它要守的东西
+    ck("压缩包头不记时间戳、不记文件名(内容没变就是同一串字节 —— 不然每晚白多一次改动)",
+       第一次[3:8] == b"\0\0\0\0\0" and open(压, "rb").read() == 第一次, 第一次[:10])
 _提 = 夜[夜.index("def 提交夜跑结果("):夜.index("def 归类(")]
-ck("夜跑:跑完自动提交 —— 只挑 agent__*-results.jsonl 和报告,扫过密钥才提交,只提交这几个文件(--only)",
-   '"agent__*-results.jsonl"' in _提 and "agentsite__" not in _提.split("def 提交夜跑结果(")[1].split("try:")[1]
-   and _提.index("scan_secrets.sh") < _提.index('"commit", "--only"') and "except Exception" in _提)
+ck("夜跑:跑完自动提交 —— 文件只从入库清单来,扫过密钥才提交,只提交这几个文件(--only),出错不抛",
+   "入库清单(ROOT)" in _提 and _提.index("scan_secrets.sh") < _提.index('"commit", "--only"') and "except Exception" in _提)
 ck("夜跑:试跑(--试)不提交", 'if not 试:\n        说(f"结果入库:{提交夜跑结果(报)}")' in 夜)
-_忽 = open(os.path.join(ROOT, ".gitignore"), encoding="utf-8").read()
-ck("运行日志副本(agentsite__evals__*,单份能到 24 MB)在忽略列表里,不会被顺手加进仓库", "agent/nightly/agentsite__evals__*" in _忽)
+# 在一个临时空仓库里放真的 .gitignore 问 git —— 咬合副本里没有 .git,直接在 ROOT 问会崩
+_忽仓 = tempfile.mkdtemp(prefix="ignore-chk-")
+subprocess.run(["git", "init", "-q"], cwd=_忽仓)
+shutil.copy(os.path.join(ROOT, ".gitignore"), _忽仓)
+def _忽略(路径):
+    return subprocess.run(["git", "check-ignore", "-q", "--no-index", 路径], cwd=_忽仓).returncode == 0
+ck("忽略列表:原样的运行日志副本(单份 24 MB 还在长)被忽略,压缩包不被忽略",
+   _忽略("agent/nightly/agentsite__evals__funnel.jsonl") and not _忽略("agent/nightly/agentsite__evals__funnel.jsonl.gz"))
+ck("忽略列表:扣下的答案原文(withheld)原样、压缩包都被忽略 —— 进不了公开仓库",
+   _忽略("agent/nightly/agentsite__evals__withheld.jsonl") and _忽略("agent/nightly/agentsite__evals__withheld.jsonl.gz"))
+shutil.rmtree(_忽仓, ignore_errors=True)
 api = open(os.path.join(ROOT, "backend", "api.py"), encoding="utf-8").read()
 ck("kb_rag 那头用的也是 AIMC_BASE(两边地址不许各写一份)", '_后台基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")' in api)
 

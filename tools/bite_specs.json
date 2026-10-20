@@ -9059,15 +9059,63 @@
  },
  {
   "script": "tools/eval_env_check.py",
-  "改坏": "夜跑自动提交把整个目录都提交(含 24 MB 的运行日志副本)",
+  "改坏": "夜跑入库把原样的运行日志(24 MB、还在长)也提交了",
   "file": [
    {
     "path": "tools/nightly_eval.py",
-    "old": "glob.glob(os.path.join(ROOT, \"agent\", \"nightly\", \"agent__*-results.jsonl\"))",
-    "new": "glob.glob(os.path.join(ROOT, \"agent\", \"nightly\", \"*.jsonl\"))"
+    "old": "glob.glob(os.path.join(夜目录, \"agentsite__evals__*.jsonl.gz\"))",
+    "new": "glob.glob(os.path.join(夜目录, \"agentsite__evals__*.jsonl*\"))"
    }
   ],
-  "预期红": "夜跑:跑完自动提交 —— 只挑 agent__*-results.jsonl 和报告,扫过密钥才提交,只提交这几个文件(--only)"
+  "预期红": "夜跑入库清单:评测结果 + 压缩过的运行日志;原样的日志、扣下的答案原文(withheld)、别的文件都不进"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "压缩时带上时间戳 —— 内容没变也每晚多一次改动",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "fileobj=出, mtime=0, compresslevel=9",
+    "new": "fileobj=出, compresslevel=9"
+   }
+  ],
+  "预期红": "压缩包头不记时间戳、不记文件名(内容没变就是同一串字节 —— 不然每晚白多一次改动)"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "忽略规则写宽了,压缩包也被忽略、永远进不了库",
+  "file": [
+   {
+    "path": ".gitignore",
+    "old": "agent/nightly/agentsite__evals__*.jsonl\n",
+    "new": "agent/nightly/agentsite__evals__*\n"
+   }
+  ],
+  "预期红": "忽略列表:原样的运行日志副本(单份 24 MB 还在长)被忽略,压缩包不被忽略"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "夜跑把扣下的答案原文(withheld)也压缩进了公开仓库",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "        if os.path.basename(原) not in 进库的日志:\n            continue\n",
+    "new": ""
+   }
+  ],
+  "预期红": "夜跑入库清单:评测结果 + 压缩过的运行日志;原样的日志、扣下的答案原文(withheld)、别的文件都不进"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "忽略列表漏了 withheld 的压缩包",
+  "file": [
+   {
+    "path": ".gitignore",
+    "old": "agent/nightly/agentsite__evals__withheld*\n",
+    "new": ""
+   }
+  ],
+  "预期红": "忽略列表:扣下的答案原文(withheld)原样、压缩包都被忽略 —— 进不了公开仓库"
  },
  {
   "script": "agent/rounds.py",

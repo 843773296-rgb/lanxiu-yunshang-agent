@@ -280,13 +280,34 @@ def 关掉(进程):
 
 # ── 夜跑结果自动提交(用户 2026-10-20 拍「进版本库,每天早上自动提交」)──────────────────────
 # 评测结果是「这个版本在这套题上考了多少分」的历史(CLAUDE.md 第 8 节),原来夜跑的那份一直只在本机 agent/nightly/。
-# ⚠️ **只提交评测结果和报告**,不提交 agentsite__evals__* —— 那是运行日志(funnel 24 MB、skill_usage 4 MB)
-#    被评测整个改写之后挪过来的副本,不是分数;每晚往公开仓库塞几十 MB 不值(10-20 实测才发现,原估「几百 KB」是错的)。
+# 运行日志副本 funnel(24 MB)、skill_usage(4 MB)用户 10-20 拍「需要」进仓库 ——
+# ⚠️ **压成 .jsonl.gz 再进,原样的不进**:funnel 是从 10-07 起一直攒的,13 天 5.5 万行、每天约 +1.8 MB,
+#    原样进库约六周后单个文件过 GitHub 的 100 MB 上限,**从那天起每晚推送都会失败**;压完 28 MB → 1.6 MB。
+#    压缩不带时间戳(mtime=0、不记文件名):内容没变就是同一串字节,不会每晚白多一次改动。
 # 失败只记日志不抛:提交不成不该让夜跑本身算失败;没提交的明早人看报告时还在。
+# 只点名这两份(用户 10-20 说「需要」的就是它们)。⚠️ withheld 不进:那是体检扣下的答案原文,
+# 10-06 起原件就在 .gitignore 里(b73baa9「日志含答案原文」)—— 挪到 nightly 换个名字不该绕过这条
+进库的日志 = ("agentsite__evals__funnel.jsonl", "agentsite__evals__skill_usage.jsonl")
+
+
+def 入库清单(根):
+    """→ 这一晚要进仓库的文件(相对 根)。顺手把运行日志副本压成 .gz;原样的 .jsonl 不在清单里。"""
+    import glob, gzip
+    夜目录 = os.path.join(根, "agent", "nightly")
+    for 原 in sorted(glob.glob(os.path.join(夜目录, "agentsite__evals__*.jsonl"))):
+        if os.path.basename(原) not in 进库的日志:
+            continue
+        with open(原, "rb") as f:
+            数据 = f.read()
+        with open(原 + ".gz", "wb") as 出, gzip.GzipFile(filename="", mode="wb", fileobj=出, mtime=0, compresslevel=9) as z:
+            z.write(数据)
+    return sorted(os.path.relpath(f, 根) for f in
+                  glob.glob(os.path.join(夜目录, "agent__*-results.jsonl"))
+                  + glob.glob(os.path.join(夜目录, "agentsite__evals__*.jsonl.gz")))
+
+
 def 提交夜跑结果(报告):
-    import glob
-    路径 = [os.path.relpath(报告, ROOT)] + sorted(os.path.relpath(f, ROOT) for f in
-                                                 glob.glob(os.path.join(ROOT, "agent", "nightly", "agent__*-results.jsonl")))
+    路径 = [os.path.relpath(报告, ROOT)] + 入库清单(ROOT)
     def git(*a):
         return subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True, timeout=300)
     try:
@@ -297,7 +318,7 @@ def 提交夜跑结果(报告):
         扫 = subprocess.run([os.path.join(ROOT, "tools", "scan_secrets.sh")], cwd=ROOT, capture_output=True, text=True)
         if 扫.returncode:
             return "扫密钥不过 —— 没提交,等人看(" + (扫.stdout + 扫.stderr).strip()[-120:] + ")"
-        r = git("commit", "--only", "-m", f"夜跑评测结果 {os.path.basename(报告)[:-3]}(自动提交:只有评测结果和报告)\n\n"
+        r = git("commit", "--only", "-m", f"夜跑评测结果 {os.path.basename(报告)[:-3]}(自动提交:评测结果、报告、压缩过的运行日志)\n\n"
                 "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>", "--", *路径)
         if r.returncode:
             return "提交失败:" + (r.stdout + r.stderr).strip()[-160:]

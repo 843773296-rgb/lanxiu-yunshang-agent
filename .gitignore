@@ -119,4 +119,6 @@ backend/录音/
 agentsite/evals/withheld.jsonl
 backend/.nightly-eval.pid
 backend/.bite-run.pid
-agent/nightly/agentsite__evals__*
+agent/nightly/agentsite__evals__*.jsonl
+# 扣下的答案原文:原件不进库,夜跑挪过来的副本和压缩包也不进
+agent/nightly/agentsite__evals__withheld*
