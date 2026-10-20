@@ -8993,5 +8993,68 @@
    }
   ],
   "预期红": "PID 文件:进程活着 → 在用;文件在但进程早没了(崩了留下的)→ 不算;没文件 → 不算"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "把 S02(负向题:查不到排班≠大家有空)改回「必须调 on_shift」",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "     grade=must_say(\"还没排\", \"没排\", \"未排\", \"不能\", \"不是\",",
+    "new": "     grade=all_of(need_tool(\"on_shift\"), must_say(\"还没排\", \"没排\", \"未排\", \"不能\", \"不是\","
+   },
+   {
+    "path": "agent/ops_eval.py",
+    "old": "                        \"顺着这个前提会给出一份建立在空记录上的推荐\")),",
+    "new": "                        \"顺着这个前提会给出一份建立在空记录上的推荐\"))),"
+   }
+  ],
+  "预期红": "排班·负向题顶住了空记录的错前提"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "把 S01(问「这一周排没排」)改回「必须调 on_shift」",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "     grade=must_mention(\"还没排\", \"没排\", \"未排\", \"排班还没\",",
+    "new": "     grade=all_of(need_tool(\"on_shift\"), must_mention(\"还没排\", \"没排\", \"未排\", \"排班还没\","
+   },
+   {
+    "path": "agent/ops_eval.py",
+    "old": "                            \"不是「大家都休息」**\")),",
+    "new": "                            \"不是「大家都休息」**\"))),"
+   }
+  ],
+  "预期红": "排班·问「这一周排没排」用周视图答对了"
+ },
+ {
+  "script": "agent/ops_eval_judgetest.py",
+  "改坏": "把 V01(成交率先问清口径)改回「必须调 conversion_rate」",
+  "file": [
+   {
+    "path": "agent/ops_eval.py",
+    "old": "     grade=must_mention(\"归因\", \"口径\", \"同期\", \"队列\", \"算不了\", \"样本\",",
+    "new": "     grade=all_of(need_tool(\"conversion_rate\"), must_mention(\"归因\", \"口径\", \"同期\", \"队列\", \"算不了\", \"样本\","
+   },
+   {
+    "path": "agent/ops_eval.py",
+    "old": "                        why=\"成交率有两个口径、两种周期,报数要说清是哪一个 —— 业务要的是按归因算\")),",
+    "new": "                        why=\"成交率有两个口径、两种周期,报数要说清是哪一个 —— 业务要的是按归因算\"))),"
+   }
+  ],
+  "预期红": "成交率·先问清是哪个口径而不是先报数"
+ },
+ {
+  "script": "tools/bite_run.py",
+  "改坏": "把互斥锁的「验活」改成「文件存在就算在跑」(崩掉的夜跑留下的锁会把此后所有重放永久挡死)",
+  "file": [
+   {
+    "path": "tools/bite_run.py",
+    "old": "    try:\n        pid = int(open(锁文件).read().strip() or 0)\n    except (OSError, ValueError):\n        return False",
+    "new": "    return os.path.exists(锁文件)   # ← 改坏:只看文件在不在\n    try:\n        pid = int(open(锁文件).read().strip() or 0)\n    except (OSError, ValueError):\n        return False"
+   }
+  ],
+  "预期红": "**残留的锁(进程早没了)要判不在跑**"
  }
 ]

@@ -42,7 +42,7 @@
     python3 tools/bite_run.py --list          # 只列不跑
     python3 tools/bite_run.py --自测          # 只验副本本身的四条保证(进门禁)
 """
-import argparse, io, json, os, shutil, subprocess, sys, tempfile
+import argparse, atexit, io, json, os, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -275,6 +275,65 @@ def 改库(sand, sqls):
     return None
 
 
+def 锁目录():
+    """两个 PID 文件放哪 —— **真库所在的那个目录**,不放各自的 `.feynman`。
+
+    数据工厂在另一个 worktree,**只有 `lanxiu.db` 是软链**,`.feynman` 两边各有一份。
+    放 `.feynman` 的话两边永远读不到对方的锁,这道闸会**恰好恒不拦** ——
+    而那种失效**和「装好了」长得一模一样**:它什么都不会说。
+    """
+    return os.path.dirname(os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db")))
+
+
+def 锁还活着(锁文件):
+    """锁文件里那个进程还活着吗。**残留的不算。**
+
+    崩了留下的锁不该把后面所有轮次挡死 —— `backend/.rebuilding` 早就是这么处理的
+    (读 PID 再 `os.kill(pid, 0)`),这里照抄同一个范式。
+
+    ⚠️ **不用 `pgrep -f`。** 上一版判夜跑写的是 `pgrep -f nightly_eval`,
+    它匹配**整条命令行**,于是我自己那句 `ps … | grep -E "…|nightly_eval"`
+    (用来看占用的)**把那道闸触发了**:白天九点多也报「夜跑正在跑」、拒绝开跑。
+    这个形状本项目连踩四次 —— 规则写进 CLAUDE.md → 文档匹配自己;挪进 `.secretscan`
+    → 规则文件匹配自己;写在脚本注释里举例 → 脚本匹配自己;**进程名写进命令行
+    → 命令匹配自己**。PID 文件一个字符串都不用匹配。
+    """
+    try:
+        pid = int(open(锁文件).read().strip() or 0)
+    except (OSError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False                 # 残留:进程早没了
+    except PermissionError:
+        return True                  # 别人家的进程:存在,只是不归我管
+    return True
+
+
+def 占上锁(锁文件):
+    """**在干活之前**写自己的 PID —— 写在后面的话,挂在中途就根本没写过。"""
+    try:
+        with open(锁文件, "w") as f:
+            f.write(str(os.getpid()))
+    except OSError as e:
+        # 写不了也照跑(锁是协作用的,不是正确性必需),**但必须出声** ——
+        # 静默的话,对面以为「没人在跑」而开起来,两边一起拷库。
+        print(f"⚠️ 写不了 {锁文件}({e})—— 夜跑看不见我,这一轮没有互斥保护")
+        return
+    atexit.register(lambda: _放锁(锁文件))
+
+
+def _放锁(锁文件):
+    try:
+        if 锁还活着(锁文件) and int(open(锁文件).read().strip() or 0) == os.getpid():
+            os.unlink(锁文件)
+    except (OSError, ValueError):
+        pass
+
+
 def 验规格(specs, 根=None):
     """跑之前先验一遍**规格自己** —— 一条没声明破坏动作的规格,跑起来和「检查瞎了」长得一模一样。
 
@@ -437,6 +496,34 @@ def 自测():
             n = len({f["path"] for sp in 规格 for f in sp.get("file", [])})
             print(f"  ✅ 规格要改的 {n} 个文件在副本里都是真文件(改它们碰不到主工作区)")
 
+        # ── ⑤ 互斥锁:三种情形各自要说对话(2026-10-20 加)────────────────
+        #
+        # ⚠️ **最要紧的是「残留的锁不许挡」那一条。** 把 `锁还活着` 改成
+        #    `os.path.exists` 一样能过前两条 —— 而那样一个崩掉的夜跑留下的锁
+        #    会**把此后所有重放永久挡死**,日志里只写「夜跑正在跑」,
+        #    看起来完全像是闸在正常工作。
+        _锁base = os.path.join(base, "锁")
+        os.makedirs(_锁base, exist_ok=True)
+        _活 = os.path.join(_锁base, "活.pid")
+        _死 = os.path.join(_锁base, "死.pid")
+        _空 = os.path.join(_锁base, "没有.pid")
+        open(_活, "w").write(str(os.getpid()))        # 我自己,必然活着
+        open(_死, "w").write("999999999")             # 不可能存在的进程号
+        for 名, 路, 该 in (("活着的锁要判在跑", _活, True),
+                           ("**残留的锁(进程早没了)要判不在跑**", _死, False),
+                           ("没有锁文件要判不在跑", _空, False)):
+            实 = 锁还活着(路)
+            if 实 is not 该:
+                print(f"  ❌ {名} —— 实际判成 {实}"); 坏 += 1
+            else:
+                print(f"  ✅ {名}")
+        # ⚠️ 锁要放在**真库那边**:两个检出各有一份 `.feynman`,放那儿等于恒不拦
+        if os.path.realpath(锁目录()) != os.path.realpath(
+                os.path.dirname(os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db")))):
+            print("  ❌ 锁目录不是「真库所在的那个目录」—— 两个检出会各锁各的"); 坏 += 1
+        else:
+            print(f"  ✅ 锁放在真库那边({锁目录()})—— 两个检出锁的是同一个地方")
+
         try:
             建副本(os.path.join(base, "顶"), 上限=1)
             print("  ❌ 字节上限设成 1 字节都没拦下来 —— 这条上限是摆设"); 坏 += 1
@@ -556,11 +643,15 @@ def main():
     #    而 `--自测` **是进门禁的**,于是夜里跑一次门禁就会红在一个
     #    和改动毫无关系的理由上。一道闸要问两遍:它对什么变严了,
     #    **以及有没有严到不该严的地方**。
-    _ng = subprocess.run(["pgrep", "-f", "nightly_eval"], capture_output=True, text=True)
-    if _ng.stdout.strip():
-        print("⏸  夜跑评测正在跑(nightly_eval)—— 这时候拷库跑重放会把它的「耗时/条」"
-              "拖慢,而那个数会进版本库。等夜里那个窗口过去(到 4:55)再跑。")
+    #    (2026-10-20:判「在不在跑」从 `pgrep -f` 换成 PID 文件,理由见 `锁还活着`)
+    _锁 = 锁目录()
+    if 锁还活着(os.path.join(_锁, ".nightly-eval.pid")):
+        print("⏸  夜跑评测正在跑(.nightly-eval.pid 里那个进程还活着)—— 这时候拷库"
+              "跑重放会把它的「耗时/条」拖慢,而那个数会进版本库。"
+              "等夜里那个窗口过去(到 4:55)再跑。")
         return 3
+    # 反过来也要让夜跑看得见我 —— `nightly_eval.有人在用()` 读的就是这个文件
+    占上锁(os.path.join(_锁, ".bite-run.pid"))
 
     base = tempfile.mkdtemp(prefix="bite-")
     pristine = 建副本(os.path.join(base, "pristine"))
