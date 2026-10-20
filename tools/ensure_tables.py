@@ -44,6 +44,7 @@ import triage_run
 import refund_write
 import triage_config
 import triage_trial
+import rating_shadow
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -77,6 +78,12 @@ import triage_trial
     (triage_config, "确保表", ["triage_config", "triage_prompt"]),
     # 隔离试运行的结果(2026-10-20):第一次有人试跑才建 —— 同上,建死免得表数漂
     (triage_trial, "确保表", ["triage_trial"]),
+    # 闸四影子台账(2026-10-20):AI 在真实流程旁边跑一遍、结果不进流程。
+    # 只有 `agent/triage_shadow.py` 写它,**没有任何对外的口读它**(和 truth 表同一条红线:
+    # 处理人先看见 AI 的建议,新量轨那一致率就虚高,而「人工独立判的」和
+    # 「人工照着 AI 抄的」在台账上长得一模一样)。登记在这儿的理由和上面几张一样:
+    # 第一次有人影子跑才建 —— **本地建过就一直在,CI 每次从零**
+    (rating_shadow, "确保表", ["rating_shadow"]),
 ]
 
 

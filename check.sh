@@ -272,6 +272,11 @@ run "判差评的服务记录范围(刻意不看的按键名拦住)" python3 bac
 run "回测不许开卷(处置痕迹的字段都登记过)" python3 backend/backtest_mask_check.py
 run "研判队列那一页不许把四件事压成一个「已销账」(后端分开报了而页面要真的读)" python3 agentsite/queue_view_check.py
 run "差评研判三套题集隔离(不重叠/时间真外推/测试集没被拿去调)+ 回测真的遮住了" python3 agent/triage_sets_check.py
+# ⚠️ 上面那条守「回测要遮哪些字段这份清单不过期」,这条守**影子运行真的是影子**:
+#    差评研判走 sdk.run("task")(全包工具集,**里面有写工具**),所以「只观测不改行为」
+#    不能靠「希望模型别写」—— 影子跑整个搬到一份库副本上,这条在副本上真跑一次
+#    「装成会写库的模型」,断言真库一个字节都没变。
+run "闸四影子运行真的是影子(不改流程 / 台账不经任何口暴露 / 轨别算得出来 / 不足 50 条报验不动不报过)" python3 agent/triage_shadow_check.py
 run "差评研判判分器 · 55 条对照(跨档漏报两句原话 + 夹缝那一列 + 小额档悬空不许报成通过)" python3 agent/triage_sets_judgetest.py
 run "三条退款异常研判题的判分器 · 17 条人造对照(含一条**实录的错答案**:只说渠道故障、漏了那条出账流水)" python3 agent/refund_sets_judgetest.py
 run "三条退款研判题的题面材料是**出事时**的样子(DQ9001 已走完闭环;遮住处置痕迹 / 不遮掉考点 / 和出事时的基准逐处比 / 平移一天不假红 / 漏遮会红)" python3 agent/refund_case_check.py

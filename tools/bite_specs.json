@@ -9536,5 +9536,125 @@
    }
   ],
   "预期红": "拿别的客户的方案开单 → 拒,而且没开出单"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把 triage_shadow.核轨别 改成读 track 那个标签(而不是现算 human_at_run)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "    return \"新量\" if str(human_at_run or \"\").strip() == \"\" else \"回溯\"",
+    "new": "    return \"回溯\""
+   }
+  ],
+  "预期红": "影子跑那一刻人工档是空的 → 新量"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把子进程里 import ops 那一行挪到 指到副本() 之后(顺序反过来)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "import protocol\nimport api\nimport ops\nimport rating_triage as RT",
+    "new": "import protocol\nimport api\nimport rating_triage as RT"
+   }
+  ],
+  "预期红": "子进程里先 import 再 指到副本(顺序反了它改 0 个模块)"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把 triage_shadow.默认跑法 改成自测跑法(生产从此落一台账假数据)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "默认跑法 = \"产线路\"",
+    "new": "默认跑法 = \"自测写一行\""
+   }
+  ],
+  "预期红": "生产默认跑的是产线路,不是自测跑法"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把 报一轮 里「新量不足下限」那一支的 过=None 改成 过=True(验不动报成通过)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "            节[\"过\"] = None",
+    "new": "            节[\"过\"] = True"
+   }
+  ],
+  "预期红": "新量轨不足业务定的下限 → 状态写「验不动」且 过 为 None"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把 落账 的 INSERT 里 into_flow 那个 0 改成 1(影子结论标成进过流程)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "f\"VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)\"",
+    "new": "f\"VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)\""
+   }
+  ],
+  "预期红": "台账里 into_flow 全是 0(影子的定义就是不改行为)"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把自测跑法里那条 UPDATE 删掉(装成会写库的模型其实没写)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "            with sqlite3.connect(副) as _c:\n                _c.execute(\"UPDATE rating SET handle_note=? WHERE pkg_id=?\",\n                           (入.get(\"自测标记\", \"影子自测写的一行\"), pkg))\n",
+    "new": ""
+   }
+  ],
+  "预期红": "那个「会写库的模型」写的东西,判据自己在副本里翻到了(不信它自报)"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把子进程跑完删副本那一步去掉(每跑一次留 85 MB)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "if 自己开的:\n    shutil.rmtree(目录, ignore_errors=True)",
+    "new": "if False:\n    shutil.rmtree(目录, ignore_errors=True)"
+   }
+  ],
+  "预期红": "子进程自己开的副本跑完真的删了(85 MB,留着就是一天顶穿一次拷贝上限)"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把「遮不住的回溯行」里 track='回溯' 那个条件去掉(两轨混成一条)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "            f\"SELECT pkg_id FROM {表名} WHERE track='回溯' \"\n            f\"AND (masked IS NULL OR masked = 0)\")]",
+    "new": "            f\"SELECT pkg_id FROM {表名} WHERE \"\n            f\"(masked IS NULL OR masked = 0)\")]"
+   }
+  ],
+  "预期红": "遮蔽的要求按轨分开:两轨都 masked=0 时,只有回溯那行被挑出来"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把建表语句里写死的表名改回 f-string(表归属那条检查就看不见这张表了)",
+  "file": [
+   {
+    "path": "backend/rating_shadow.py",
+    "old": "c.execute(\"\"\"CREATE TABLE IF NOT EXISTS rating_shadow(",
+    "new": "c.execute(f\"\"\"CREATE TABLE IF NOT EXISTS {表名}("
+   }
+  ],
+  "预期红": "DDL 里的表名是写死的字面量,而且和 `表名` 这个常量一致"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把「交付成功的」口径放宽到也收「未通过」(没交出答复的草稿就进了分母)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "交付成功的 = (\"通过\", \"修正后通过\")",
+    "new": "交付成功的 = (\"通过\", \"修正后通过\", \"未通过\")"
+   }
+  ],
+  "预期红": "交付口径就是 sdk 那两种(「曾被打回过」不等于最终不合格)"
  }
 ]
