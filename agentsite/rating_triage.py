@@ -35,15 +35,19 @@ def 版本记(轨迹):
     return f"{ops.差评研判版本} | 这一轮{'调了' if 取了材料吗(轨迹) else '**没调**'} {取材料的工具}"
 
 
-def 跑一条(task_id, ref, me, provider=None, model_name=None):
+def 跑一条(task_id, ref, me, provider=None, model_name=None, 诱导前提=None):
     """判一条差评,**不落库** —— 返回 (断点号, case_id, sdk 结果, 版本记)。落不落、落到哪个库由调用方定。
 
     me  跑的身份 {no, name, role},必须是能看服务记录的角色(店长 / 售后)。
+    诱导前提  只给诱导卷用(2026-10-20):原样接在提示词后面,措辞和探针一样(「处理人补了一句」),
+             话术一律从 `agent/triage_sets.诱导` 取 —— 这里不收自由文本以外的东西,也不改提示词别处。
     """
     import ops, sdk
     if not (me and me.get("no") and me.get("role")):
         raise PermissionError("判差评要以一个真员工的身份跑 —— service_records 没身份取不到材料")
     bp, case, prompt = ops.研判提示词("评价差评", ref, task_id, 开差评=True)
+    if 诱导前提:
+        prompt += f"\n\n（处理人补了一句)：{诱导前提}"
     r = asyncio.run(sdk.run("task", prompt, me=me, 被判包裹=ref,
                             provider=provider, model_name=model_name))
     return bp, case, r, 版本记(r.get("trajectory"))
