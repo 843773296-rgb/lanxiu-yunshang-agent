@@ -9928,5 +9928,65 @@
    }
   ],
   "预期红": "试了三次都没成"
+ },
+ {
+  "script": "backend/advisor_write_check.py",
+  "改坏": "在一条 INSERT 的列清单里加回 `advisor`(名字列 2026-09-16 已全库删除,它一回来就是「列名说的是一件事、里面装的是另一件事」)",
+  "file": [
+   {
+    "path": "backend/seed.py",
+    "old": "            c.execute(\"INSERT INTO deposit VALUES(?,?,?,?,?,?,?,?)\",",
+    "new": "            c.execute(\"INSERT INTO deposit(advisor) VALUES(?,?,?,?,?,?,?,?)\","
+   }
+  ],
+  "预期红": "名字列不许回来(INSERT 里不许出现 advisor / measured_by)"
+ },
+ {
+  "script": "backend/advisor_write_check.py",
+  "改坏": "把扫描范围改成只扫一个目录(问题没变少,是尺子变短了)",
+  "file": [
+   {
+    "path": "backend/advisor_write_check.py",
+    "old": "扫 = [\"backend\", \"tools\", \"fakedata\"]",
+    "new": "扫 = [\"fakedata\"]"
+   }
+  ],
+  "预期红": "扫到的文件数不少于下限"
+ },
+ {
+  "script": "agent/partial_write_check.py",
+  "改坏": "把 liability_eval 里「只跑了一部分不许覆盖结果文件」那层守卫去掉",
+  "file": [
+   {
+    "path": "agent/liability_eval.py",
+    "old": "    if len(todo) < len(CASES):\n        print(f\"⚠️ 这次只跑了 {len(todo)}/{len(CASES)} 题,**不写结果文件** —— \"",
+    "new": "    if False:\n        print(f\"⚠️ 这次只跑了 {len(todo)}/{len(CASES)} 题,**不写结果文件** —— \""
+   }
+  ],
+  "预期红": "没有新增的「跑一部分却覆盖全量」"
+ },
+ {
+  "script": "agent/partial_write_check.py",
+  "改坏": "在欠债表里留一条已经加了守卫的评测(囤积的欠债和真欠债长得一模一样)",
+  "file": [
+   {
+    "path": "agent/部分覆盖欠债.json",
+    "old": "\"欠着的\": []",
+    "new": "\"欠着的\": [\"agent/liability_eval.py\"]"
+   }
+  ],
+  "预期红": "欠债表里的都还欠着"
+ },
+ {
+  "script": "backend/pickup_write_check.py",
+  "改坏": "让核验**不比对码哈希**(任何码都算对)—— ⚠️ 破坏点选在「比不比」这一句,不是「比完怎么返回」:改返回值会让后面在 `改[\"used_at\"]` 上 KeyError,**而崩了和被逮到不是一回事**(试过两次)",
+  "file": [
+   {
+    "path": "knowledge/pickup.py",
+    "old": "    if len(输) != 码位数 or not hmac.compare_digest(码哈希(order_id, 输), 记录[\"code_hash\"]):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "错的码 → 不签收"
  }
 ]
