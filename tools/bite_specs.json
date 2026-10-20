@@ -9140,5 +9140,29 @@
    }
   ],
   "预期红": "**真答错的那一轮照旧要写结果文件** —— 别把跑挂和答错一起拦了"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "把 g18 的报价那一支改回「数关键词」(模型说「我不能报价」会被当成报价扣下)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if _编了个数.search(text or \"\") and not verified:",
+    "new": "    if tm.mentions(text, PRICE_WORDS) and not verified:"
+   }
+  ],
+  "预期红": "说「无法报价」要放行 —— 提到价钱是为了说**不能**报"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "把 g18 认「编了个数」的单位里去掉「周」和「个月」(「一般 3 周能做出来」漏抓)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "|工作日|天|周|个月))",
+    "new": "|工作日|天))"
+   }
+  ],
+  "预期红": "工期单位也算(**原来 `周` 不在词表里,整条漏抓**)"
  }
 ]
