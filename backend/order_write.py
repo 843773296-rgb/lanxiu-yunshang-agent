@@ -145,6 +145,19 @@ def open_order(d, me):
     items = d.get("items") or []
     if not items:
         return dict(ok=False, code="NO_ITEM", reason="一件商品都没有")
+    # 来自哪套方案(可选,10-20 场景回归逮到的):`ordr.scheme_id` 这一列一直在、`get_scheme` 也靠它查
+    # 「这套方案下了哪些单」—— 而开单写口从来不填,新开的单永远挂不回方案(库里只有造数写的 70 张有)
+    方案 = (d.get("scheme_id") or "").strip() or None
+    if 方案:
+        sc = rows("SELECT customer_id, status FROM scheme WHERE id=?", 方案)
+        if not sc:
+            return dict(ok=False, code="NO_SCHEME", reason=f"没有方案 {方案}")
+        if sc[0]["customer_id"] != cid:
+            return dict(ok=False, code="SCHEME_OTHER_CUSTOMER",
+                        reason=(f"方案 {方案} 没挂客户 —— 先在方案页把客户存进方案,再拿它开单" if not sc[0]["customer_id"]
+                                else f"方案 {方案} 是客户 {sc[0]['customer_id']} 的,不是 {cid} 的"))
+        if sc[0]["status"] not in ("已保存", "已锁定"):
+            return dict(ok=False, code="SCHEME_STATUS", reason=f"方案 {方案} 是「{sc[0]['status']}」,不能拿来开单")
     行们 = []
     for x in items:
         key = str(x.get("sku") or x.get("spu") or "").strip()
@@ -206,10 +219,10 @@ def open_order(d, me):
     import fsm
     with sqlite3.connect(DB) as c:
         c.execute("""INSERT INTO ordr(id,customer_id,kind,status,advisor_no,shop,source,delivery,amount,payable,
-                     created,updated,prd_status,goods_amount,freight,received,refund_status,appt_src)
-                     VALUES(?,?,'定制品订单','待确认',?,?,'门店 Pad',?,?,?,?,?,?,?,?,0,'未退款','未接入')""",
+                     created,updated,prd_status,goods_amount,freight,received,refund_status,appt_src,scheme_id)
+                     VALUES(?,?,'定制品订单','待确认',?,?,'门店 Pad',?,?,?,?,?,?,?,?,0,'未退款','未接入',?)""",
                   (oid, cid, me["no"], me.get("shop"), 送法, 合计, 合计, now, now,
-                   fsm.ORDER_PRD.get("待确认", "待付款"), amt, 运费))
+                   fsm.ORDER_PRD.get("待确认", "待付款"), amt, 运费, 方案))
         # **版型版本在开单这一刻记下快照**(grading_check 查)—— 现算给的是今天那一版,
         # 版型改过之后就对不上当初量的、裁的是哪一版
         for s, wid, q in 行们:
@@ -222,7 +235,7 @@ def open_order(d, me):
     log_op(me["name"], "ordr", oid, "—", "待确认", True, "OPEN",
            f"{me['name']} 给 {cid} 开定制单 {oid},{len(行们)} 件,停在待确认", {"role": me["role"]})
     明 = rows("SELECT id, name, wearer_id FROM ordr_item WHERE order_id=? ORDER BY id", oid)
-    return dict(ok=True, code="OPEN", 订单=oid, 状态="待确认", 件=明, 送法=送法,
+    return dict(ok=True, code="OPEN", 订单=oid, 状态="待确认", 件=明, 送法=送法, 方案=方案,
                 货品金额=amt, 运费=运费, 运费依据=运费依据, 合计=合计,
                 reason=f"已开单 {oid},停在「待确认」。**下一步:给每一件量下单量体并绑到这一件**"
                        f"(record_measure 带 order_id + item),量完再确认下单")

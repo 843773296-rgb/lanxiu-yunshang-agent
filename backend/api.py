@@ -3043,19 +3043,20 @@ def start_cutting(order_id):
     return r
 
 
-def open_order(customer_id, items, delivery=None):
+def open_order(customer_id, items, delivery=None, scheme_id=None):
     """**开一张定制单**(真的写进去),停在「待确认」。顾问 / 店长,只给本店客户开。
 
     items  [{"spu" 或 "sku": ..., "wearer_id": 给谁做, "qty": 件数}] —— 每一件都要指明给谁做,
            下单量体量的必须是穿这件的人(业务 09-22)。
     开完**还没生效**:下一步给每一件量下单量体并绑上(record_measure 带 order_id + item),再 confirm_order。
     delivery  配送到店(默认,不收运费)/ 配送到客户(按客户省份查运费表;算不出来就不开单)。
+    scheme_id 照着哪套方案开的(可选):给了就挂上,之后按方案查得到这张单;方案得是这位客户的、已保存或已锁定。
     ⚠️ 动手前先跟用户对一遍:哪位客户、哪几件、每件给谁做、到店取还是寄到家。
     """
     import order_write as ow
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁在开单 —— 请先登录")
-    r = ow.open_order(dict(customer_id=customer_id, items=items, delivery=delivery), me)
+    r = ow.open_order(dict(customer_id=customer_id, items=items, delivery=delivery, scheme_id=scheme_id), me)
     if r.get("ok"): _agent_log(me, "OPEN", r.get("reason", ""))
     return r
 
@@ -5897,7 +5898,7 @@ SHOP_SCHEMAS=[
  {"name":"advance_repair","description":"**推进返修单一档(真的写进去)**:待入库 → 待处理(衣服收回来了)→ 处理中(送修)→ 待签收(修好回店)。顾问或店长,本店的单。还在「待确认」的要先等店长判责;「待签收 → 已完成」要顾客试穿输码(verify_repair_return),这里不给。⚠️ 动手前先跟用户确认单号和这一步真的发生了。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"}},"required":["maintain_id"]}},
  {"name":"verify_repair_return","description":"**返修件回店签收(真的写进去)**:顾客试穿修好的衣服合身,在手机上点「试穿合身」拿 6 位码交给导购,导购输入核验通过才算完成(业务 09-22:和交付签收同一套码)。**码只能是用户这句话里说出来的那一个,不许编、不许猜** —— 输错记次数,5 次作废。","input_schema":{"type":"object","properties":{"maintain_id":{"type":"string"},"code":{"type":"string"}},"required":["maintain_id","code"]}},
  {"name":"ratify_complete","description":"**顾问追认完成(真的写进去)**:**最后一件**签收满 15 天顾客还没在手机上确认完成,顾问写理由(比如「已电话联系,顾客表示没问题」)把订单「待完成 → 完成」。**不满 15 天不行、没写理由不行** —— 业务 09-22:完成由顾客确认,追认是兜底,不是替顾客点。⚠️ 动手前先跟用户确认理由是真的联系过。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"reason":{"type":"string"}},"required":["order_id","reason"]}},
- {"name":"open_order","description":"**开一张定制单(真的写进去)**,停在「待确认」—— 还没生效。顾问或店长用,只给本店客户开。items 每一件写 spu(或 sku)、wearer_id(**给谁做,必填** —— 下单量体量的必须是穿这件的人)、qty。只开定制单,标品流程不变。delivery 填「配送到店」(默认,**到店取不收运费**)或「配送到客户」(寄到家,按客户所在省份查运费表收;**算不出来就不开单**,别改成到店绕过去)。返回里有货品金额、运费、合计和运费依据,**报给顾客的数照返回读,不要自己算**。开完的**下一步**:给每一件量下单量体并绑到这一件(record_measure 带 order_id + item),再 confirm_order。⚠️ 动手前先跟用户对一遍:哪位客户、哪几件、每件给谁做、到店取还是寄到家。","input_schema":{"type":"object","properties":{"customer_id":{"type":"string"},"delivery":{"type":"string","enum":["配送到店","配送到客户"],"description":"到店取(默认,不收运费)还是寄到顾客家(按运费表收)"},"items":{"type":"array","items":{"type":"object","properties":{"spu":{"type":"string"},"sku":{"type":"string"},"wearer_id":{"type":"string"},"qty":{"type":"integer"}}}}},"required":["customer_id","items"]}},
+ {"name":"open_order","description":"**开一张定制单(真的写进去)**,停在「待确认」—— 还没生效。顾问或店长用,只给本店客户开。items 每一件写 spu(或 sku)、wearer_id(**给谁做,必填** —— 下单量体量的必须是穿这件的人)、qty。只开定制单,标品流程不变。delivery 填「配送到店」(默认,**到店取不收运费**)或「配送到客户」(寄到家,按客户所在省份查运费表收;**算不出来就不开单**,别改成到店绕过去)。返回里有货品金额、运费、合计和运费依据,**报给顾客的数照返回读,不要自己算**。开完的**下一步**:给每一件量下单量体并绑到这一件(record_measure 带 order_id + item),再 confirm_order。⚠️ 动手前先跟用户对一遍:哪位客户、哪几件、每件给谁做、到店取还是寄到家。","input_schema":{"type":"object","properties":{"customer_id":{"type":"string"},"delivery":{"type":"string","enum":["配送到店","配送到客户"],"description":"到店取(默认,不收运费)还是寄到顾客家(按运费表收)"},"scheme_id":{"type":"string","description":"照着哪套方案开的(可选,SC 开头)。给了就挂上 —— 之后按方案查得到这张单;方案得是这位客户的、已保存或已锁定"},"items":{"type":"array","items":{"type":"object","properties":{"spu":{"type":"string"},"sku":{"type":"string"},"wearer_id":{"type":"string"},"qty":{"type":"integer"}}}}},"required":["customer_id","items"]}},
  {"name":"cancel_fee","description":"**顾客完工前不做了,扣多少、退多少**(只读,业务 2026-10-10 晚定)。给定制单号,按工单逐道工序列明细:已完成的工序全算、做到一半的按已过天数折(不超过这道的工日)、还没开工的不扣;扣的总额不超过已付。返回每道工序怎么算的、工钱合计、扣多少、退多少;有工单数据不全的会列在「判不了」,**那时不要把数报给顾客**。material_cost 是门店按采购单核过的料钱,**只填用户说出来的数**,不给就只算工钱。只算不退:顾客确认明细后再走退款。只能看本店的单。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"material_cost":{"type":"number","description":"门店核过的料的成本价(元);用户没说就不填"}},"required":["order_id"]}},
 {"name":"confirm_order","description":"**确认下单(真的写进去)**:待确认 → 待审核。业务 09-22:**定制单确认即已付款**,不走「待付款」。**逐件过闸**:每一件都要有绑在它上面的、开单之后量的、够做这件衣服的下单量体;有一件不过就整单拒绝,返回里列出是哪几件、缺什么(没有下单量体 / 早于开单 / 缺哪几项 / 着装人没定)。被拒了**不要换个说法再试**,把缺什么告诉用户,去量、去绑。**还要顾客单独确认「本单定制品不适用七天无理由退货」**:先把这句话念给顾客听,顾客同意了才带 no7day_ack=true;没确认就会被拒,**不许替顾客填**。⚠️ 动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"no7day_ack":{"type":"boolean","description":"顾客本人已当面单独确认「本单定制品不适用七天无理由退货」—— 只有用户明确说顾客确认过才填 true"}},"required":["order_id"]}},
  {"name":"record_measure","description":"**登记一次量体(真的写进去)**。顾问或店长用,只能录本店客户的着装人;量体人就是你自己(不收工号)。wearer_id 是着装人编号(W 开头,客户号 C 开头的不是)。values 形如 {\"胸围\":86,\"腰围\":68}。method 只认「到店 / 上门」—— 业务 09-22 **不准远程量体**。inner(内搭:无/薄/厚/单层内衣)、shoe(鞋:赤足/平底/高跟)、breath(呼吸:平静呼气)**三个都必填,缺一件就等于没量**。数值超出人体合理范围会被拒(多半是单位或小数点录错),**不替你改**。**下单量体**:签单时按这件衣服重新量,给 order_id + item(订单行号或商品名),这一件就以这次为准;业务 09-22 定了**没有下单量体就不许下单**。要先有「身体数据」同意(未满 14 岁还要监护人同意)。⚠️ 动手前先跟用户对一遍:给谁量的、哪几项多少、到店还是上门、三个条件、是不是某一件的下单量体 —— 尺寸录错,衣服就按错的做。","input_schema":{"type":"object","properties":{"wearer_id":{"type":"string"},"values":{"type":"object","description":"{量体项名: 数值}"},"method":{"type":"string","enum":["到店","上门"]},"inner":{"type":"string"},"shoe":{"type":"string"},"breath":{"type":"string"},"order_id":{"type":"string","description":"只在下单量体时给"},"item":{"type":"string","description":"订单行号或商品名,只在下单量体时给"}},"required":["wearer_id","values","method","inner","shoe","breath"]}},

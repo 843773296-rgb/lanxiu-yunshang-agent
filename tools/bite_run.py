@@ -129,7 +129,10 @@ def 该软链的():
 
 def _忽略(软链):
     基 = shutil.ignore_patterns("__pycache__", "*.pyc", ".git", ".venv",
-                                "*.db-journal", "*.db-wal", "*.db-shm", "录音")
+                                "*.db-journal", "*.db-wal", "*.db-shm", "录音",
+                                # 换库前留的旧库备份(`lanxiu.db.重建前`,100 MB,不进版本库)——
+                                # 检查一个字节都不读它,而它一拷进副本就撞拷贝上限(10-20:401 MB > 400 MB,全量重放拒跑)
+                                "*.重建前")
     def f(目录, 名字们):
         # 库的临时日志(-journal / -wal / -shm)不带:它们随写随删,复制到一半消失会让 copytree 报
         # Errno 2(10-03 队友撞到过)—— 而且带过去也没用,副本里的库是独立打开的。

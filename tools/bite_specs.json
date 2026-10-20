@@ -9512,5 +9512,29 @@
    }
   ],
   "预期红": "快照里每张表的条数和冻结文件记的一样"
+ },
+ {
+  "script": "backend/scenario_check.py",
+  "改坏": "开单不填来源方案",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "fsm.ORDER_PRD.get(\"待确认\", \"待付款\"), amt, 运费, 方案))",
+    "new": "fsm.ORDER_PRD.get(\"待确认\", \"待付款\"), amt, 运费, None))"
+   }
+  ],
+  "预期红": "订单挂着这套方案,AI 按方案查得到这张单"
+ },
+ {
+  "script": "backend/scenario_check.py",
+  "改坏": "开单不核方案是不是这位客户的",
+  "file": [
+   {
+    "path": "backend/order_write.py",
+    "old": "        if sc[0][\"customer_id\"] != cid:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "拿别的客户的方案开单 → 拒,而且没开出单"
  }
 ]
