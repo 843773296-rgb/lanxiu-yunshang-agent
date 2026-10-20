@@ -9440,5 +9440,53 @@
    }
   ],
   "预期红": "昨天没有记录 → 不给「较昨日」,也不拿更早的一天冒充"
+ },
+ {
+  "script": "backend/customer_detail_check.py",
+  "改坏": "详情不按工号补顾问名",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    填顾问名([c]); 填顾问名(fus)",
+    "new": "    pass"
+   }
+  ],
+  "预期红": "详情的销售顾问 = 员工表里这个工号的名字"
+ },
+ {
+  "script": "backend/customer_detail_check.py",
+  "改坏": "详情不给世界的今天",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "                今天=__import__(\"worldclock\").今天().isoformat(),\n",
+    "new": ""
+   }
+  ],
+  "预期红": "详情接口给出世界的今天,页面日历用它"
+ },
+ {
+  "script": "agentsite/role_claims_check.py",
+  "改坏": "角色清单不报写工具数",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "writes=sum(1 for t in 工具 if t.rsplit(\"__\", 1)[-1] in 写)))",
+    "new": "writes=0))"
+   }
+  ],
+  "预期红": "每个助手报出手上会改数据的工具有几个(按写工具名单现算)"
+ },
+ {
+  "script": "agentsite/role_claims_check.py",
+  "改坏": "页面又写回「三个都是只读的」",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "${ROLES.length} 个助手<b>共用",
+    "new": "三个助手<b>共用"
+   }
+  ],
+  "预期红": "页面不再写死「三个助手 / 都是只读」,按每个助手实际的写工具说"
  }
 ]

@@ -1186,8 +1186,9 @@ function setRole(r){ROLE=r;localStorage.setItem("lx_role",r);
   const el=document.getElementById("roleTxt"); if(el)el.textContent=r;}
 
 // 演示世界的「今天」—— 必须与 backend/seed.py 的 TODAY 同一天,不用浏览器时钟
-const DEMO_TODAY="2026-08-31", DT=DEMO_TODAY.split("-").map(Number);
-let CAL={y:DT[0],m:DT[1]};
+// 日历的「今天」由客户详情接口给(世界的今天)—— 原来写死 2026-08-31,数据每天平移、日历一直停在 8 月(10-19 外部复审 3.3)
+let DEMO_TODAY="", DT=[0,0];
+let CAL={y:0,m:0};
 function calendar(marks){
   const Y=CAL.y,Mo=CAL.m, first=new Date(Y,Mo-1,1), days=new Date(Y,Mo,0).getDate();
   const lead=first.getDay(), prevD=new Date(Y,Mo-1,0).getDate();
@@ -1213,6 +1214,7 @@ function alertLine(t){const m=document.getElementById("callMsg"); if(m) m.textCo
 async function custDetail(cid){
   const d=await get("/api/customer/"+cid);
   if(d.error){M.innerHTML=chrome(["首页","客户管理","客户详情"],`<div class="err">${esc(d.error)}</div>`);return}
+  if(d.今天 && d.今天!==DEMO_TODAY){ DEMO_TODAY=d.今天; DT=DEMO_TODAY.split("-").map(Number); CAL={y:DT[0],m:DT[1]}; }
   const c=d.customer;
   const APC={"已预约":"#3381FF","已到店":"#FF7D00","已完成":"#00B42A","已取消":"#C9CDD4",
              "已过期":"#C9CDD4","爽约":"#F53F3F"};

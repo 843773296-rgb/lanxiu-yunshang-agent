@@ -905,22 +905,23 @@ function drawRoles(){
   const s = $("#stream");
   s.innerHTML = `<div id="pick">
     <h2>选一个助手开始</h2>
-    <div class="sub">三个助手<b>共用同一个内核</b>,区别在**手上有哪些工具、受哪些规矩管** ——
+    <div class="sub">${ROLES.length} 个助手<b>共用同一个内核</b>,区别在**手上有哪些工具、受哪些规矩管** ——
       所以换助手要新开一条会话。<br>
-      三个都是<b>只读的</b>:不下单、不改单、不改期、不改档,产出都是给人确认的草稿。</div>
+      有的助手手上有<b>会真的改数据</b>的工具(下单、派任务、量体录入……),卡片上写着有几个;
+      退款、判责、赔付这类结论一律只出建议,由人签字。</div>
     <div class="roles">${ROLES.map((r,i) => `
       <div class="role" style="--c:${esc(r.color || '#2f5bff')}">
         <div class="av" style="color:${esc(r.color)};background:${esc(r.color)}18">${esc(r.emoji)}</div>
         <div class="nm">${esc(r.name)}</div>
         <div class="who" style="color:${esc(r.color)}">${esc(r.who)}</div>
         <div class="desc">${esc(r.intro || r.desc)}</div>
-        <div class="cnt">${r.tools} 个工具 · ${r.rules} 条规矩</div>
+        <div class="cnt">${r.tools} 个工具 · ${r.rules} 条规矩 · ${r.writes ? `<b>${r.writes} 个会改数据</b>` : "只读"}</div>
         <button class="go" data-act="go" data-i="${i}"
           style="background:${esc(r.color)}14;color:${esc(r.color)}">开始对话</button>
       </div>`).join("")}</div>
     <div class="why"><b>为什么换助手要新开会话?</b><br>
-      一个助手 = 一组工具 + 一组规矩。门店顾问手上有 ${(ROLES[0]||{}).tools || "?"} 个工具,
-      工坊排产只有 ${(ROLES[1]||{}).tools || "?"} 个 ——
+      一个助手 = 一组工具 + 一组规矩。门店顾问手上有 ${(ROLES.find(r=>r.kind==="kb")||{}).tools ?? "?"} 个工具,
+      工坊排产只有 ${(ROLES.find(r=>r.kind==="workshop")||{}).tools ?? "?"} 个 ——
       聊到一半切过去,前面几轮的上下文对不上,而且它会拿**已经没有的工具**去承诺事情。
       所以<b>换助手一律新开会话</b>,这是结构上的,不是提醒。<br><br>
       <b>规矩也是跟着工具走的:</b>挂了哪个工具,管它的那条规矩才会发给模型 ——
@@ -1381,8 +1382,12 @@ function syncHint(){
                               : "先选一个助手";
   $("#hint").textContent = "";
   drawPhrases(R);
+  // 按这个助手**实际挂的写工具**说,不写死「只读」(10-19 外部复审 3.4)。
+  // ⚠️ 「动手前先跟你核对」只是提示词里的约定,不是结构 —— 所以这里不承诺它会问,只提醒人自己核对
   $("#disclaim").textContent =
-    "内容由 AI 生成,请核实后再对客户使用。三个角色都是只读的 —— " +
+    "内容由 AI 生成,请核实后再对客户使用。" +
+    (R.writes ? `这个助手有 ${R.writes} 个会真的改数据的工具,它说要动手时先看清做什么、改哪一单。`
+              : (R.name ? "这个助手只读,不改任何数据。" : "")) +
     "涉及退款、判责、赔付、改期的结论必须由人签字。会话记录存在本机浏览器。";
 }
 

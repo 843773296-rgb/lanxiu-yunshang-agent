@@ -2787,6 +2787,9 @@ def customer_detail(cid):
     c["matched_list"]=[x for x in (c.get("matched") or "").split("/") if x]
     appts=rows("SELECT * FROM appointment WHERE customer_id=? ORDER BY start_ts DESC",cid)
     fus=rows("SELECT * FROM followup WHERE customer_id=? ORDER BY ts DESC",cid)
+    # 顾问名字按工号现取(10-19 外部复审 3.3):库里只存工号,这里原来原样返回客户行和跟进行 ——
+    # 列表页过了 填顾问名、详情页没过,于是同一个客户在列表有顾问、详情「销售顾问」是空的
+    填顾问名([c]); 填顾问名(fus)
     deps=rows("""SELECT d.* FROM deposit d WHERE d.customer_id=? ORDER BY d.updated DESC""",cid)
     logs=rows("SELECT * FROM op_log WHERE target=? OR target LIKE ? ORDER BY id DESC LIMIT 50",
               cid,f"%{cid}%")
@@ -2805,6 +2808,8 @@ def customer_detail(cid):
     return dict(customer=c,appts=appts,followups=fus,deposits=deps,logs=logs,calls=calls,
                 measures=measure_of(cid),binds=binds,points_log=plog,
                 level_cfg=lv[0] if lv else None,
+                # 日历的「今天」用世界的今天(10-19 外部复审 3.3):页面原来写死 2026-08-31,数据每天平移、日历停在 8 月
+                今天=__import__("worldclock").今天().isoformat(),
                 已并入=(_主 if _主 and _主 != cid else None),
                 关联档案=(_mg.关联档摘要(cid) if _主 == cid else []))
 

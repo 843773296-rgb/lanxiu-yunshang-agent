@@ -817,10 +817,17 @@ ROLE_META = {
 
 def roles():
     """给页面用的角色清单。工具数和规矩数**现算**,不写死。"""
+    # writes:这个角色手上**会真的改数据**的工具有几个(从 api.WRITE_TOOLS 现算)——
+    # 页面原来写死「三个都是只读的」,而角色早就挂上了下单 / 派任务 / 量体录入这类写工具(10-19 外部复审 3.4)
+    sys.path.insert(0, os.path.join(ROOT, "backend"))
+    import api as _api
+    写 = set(_api.WRITE_TOOLS)
     out = []
     for k, m in ROLE_META.items():
         _, ids = prompts.assemble(k, _have(k))
-        out.append(dict(kind=k, **m, tools=len(_tools_for(k)), rules=len(ids)))
+        工具 = _tools_for(k)
+        out.append(dict(kind=k, **m, tools=len(工具), rules=len(ids),
+                        writes=sum(1 for t in 工具 if t.rsplit("__", 1)[-1] in 写)))
     return out
 
 
