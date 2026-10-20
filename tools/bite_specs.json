@@ -10096,5 +10096,53 @@
    }
   ],
   "预期红": "`--登记` 只许降(涨了要拦、降了放行、第一次放行)"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "让「处理方式能不能用」**不比枚举**(空的、乱写的都放过)。⚠️ 攻击点不能选上面那一支(`if not 方式`)—— 那一支是**冗余的**:去掉它,空串照样被这一行的枚举检查拦住,咬合当场证明了(它存在的意义是给一句更好的话,不是承重)",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "    if 方式 not in 处理方式:\n        return False, f\"处理方式只能是 {' / '.join(处理方式)},收到「{方式}」\"",
+    "new": "    if False:\n        return False, f\"处理方式只能是 {' / '.join(处理方式)},收到「{方式}」\""
+   }
+  ],
+  "预期红": "处理方式不在枚举里 → 拒"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "让「处理方式能不能用」不比批准人和处理人是不是同一个 —— 一个人既处置又批准,双人复核就只剩一个人,**而记录上两个字段都填着**",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "    if 处理人 and 批 == str(处理人).strip():",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "批准人填成处理人自己 → 拒"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "让「处理方式能不能用」不比金额和订单额(退得比收的多也放过)",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "        if 订单额 is not None and 金额 > float(订单额) + 0.005:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "部分退款**退得比订单额多** → 拒"
+ },
+ {
+  "script": "backend/rating_write_check.py",
+  "改坏": "让「出钱的处理方式」变成空元组(出钱的也当成不出钱,双人批准那道闸整条失效)",
+  "file": [
+   {
+    "path": "knowledge/rating.py",
+    "old": "出钱的处理方式 = (\"部分退款\", \"全额退款\")",
+    "new": "出钱的处理方式 = ()"
+   }
+  ],
+  "预期红": "出钱却没填批准人 → 拒"
  }
 ]

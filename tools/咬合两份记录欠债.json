@@ -43,7 +43,7 @@
   "backend/pickup_write_check.py": 3,
   "backend/rating_check.py": 2,
   "backend/rating_rebuild_check.py": 2,
-  "backend/rating_write_check.py": 7,
+  "backend/rating_write_check.py": 3,
   "backend/source_check.py": 4,
   "backend/stock_check.py": 12,
   "backend/supplier_check.py": 2,
