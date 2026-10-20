@@ -131,7 +131,7 @@ if __name__ == "__main__":
     _base = sum(1 for _ in open(_t0.LOG, encoding="utf-8")) if os.path.exists(_t0.LOG) else 0
     print(f"三代横向对比 · {len(tasks)} 条工单 · 模型 {pv['model']}")
     print("=" * 92)
-    res = {g: dict(ok=0, calls=0, sec=0.0, n=0) for g in gens}
+    res = {g: dict(ok=0, calls=0, sec=0.0, n=0, 明细=[]) for g in gens}
     for t in tasks:
         c = case_of(t); tr = truths.get(c)
         line = f"  {t['id']:10s}"
@@ -144,6 +144,14 @@ if __name__ == "__main__":
             hit = judge(r["text"], tr) if tr else None
             d = res[g]; d["n"] += 1; d["calls"] += r["calls"]; d["sec"] += r["sec"]
             d["ok"] += bool(hit)
+            # **判错的那条要留原文**(10-20 补):V3 在 TMERGE-02 上连错两轮,单跑一次却答对了 ——
+            # 只存「判对几条」的话,错在模型还是错在判分器永远查不了。分数是聚合的,原文不是。
+            # 答对的只记理由不记原文(文件别无谓地胖)。
+            import eval as _ev
+            明 = dict(工单=t["id"], 判对=bool(hit), 理由=(_ev.hit(r["text"], tr["root_cause"], tr["case_id"])[1] if tr else "没有标准答案"))
+            if not hit:
+                明["原文"] = (r["text"] or "")[:4000]
+            d["明细"].append(明)
             mark = "" if r.get("protocol", True) else "⚠协议"
             line += f"  {g}{'✅' if hit else '❌'}{r['calls']}调/{r['sec']:.0f}s{mark}"
         print(line)
@@ -224,6 +232,7 @@ if __name__ == "__main__":
                 "本轮成本每条": round(run_cost.get(g, 0) / d["n"], 5),
                 "本轮总成本": round(run_cost.get(g, 0), 5),
                 "工单": [t["id"] for t in tasks],
+                "明细": d["明细"],
             }, ensure_ascii=False) + "\n")
     print(f"\n  结果已落盘 → agent/gen-compare-results.jsonl(**每条都盖着来路**:{供应商} · {pv.get('model')})")
     print("  上一轮的数在同一个文件里,`diff` 得出来 —— **没有基线的「看起来差不多」不是信息**。")
