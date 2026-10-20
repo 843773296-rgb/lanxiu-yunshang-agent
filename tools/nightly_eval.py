@@ -208,6 +208,16 @@ def 挪走夜跑的(快, 名):
     return 挪
 
 
+def 归类(退出码, 输出):
+    """一套评测跑完 → 结果。抽出来是为了让检查真调它(tools/eval_env_check.py)。
+    · 输出里有认证失败 → 没跑成(开跑前那一问只证明开跑那一刻通;10-16 那晚 17 套就是这么「过」的)
+    · 75 = 只有「环境没验成」的题没过(比如管理后台没起、kb_rag 查不了)—— 和「判红」分开报,
+      不然模型老老实实说「查不了」和真答错长得一样(10-20 夜跑 tool_eval 就是这么红的)"""
+    if 认证失败.search(输出 or ""):
+        return "没跑成(认证失败)"
+    return "过" if 退出码 == 0 else "部分没验成(环境)" if 退出码 == 75 else "判红"
+
+
 def 跑一套(名, 参数, 截止):
     env = 评测环境()
     限 = max(60, min(单独上限分钟.get(名, 每套上限分钟) * 60, int((截止 - dt.datetime.now()).total_seconds())))
@@ -218,7 +228,7 @@ def 跑一套(名, 参数, 截止):
         尾 = [x for x in (r.stdout + r.stderr).strip().splitlines() if x.strip()][-3:]
         # 跑到一半登录掉了也算(开跑前那一问只证明开跑那一刻通)—— 输出里有认证失败就是**没跑成**,
         # 不记「过」:那套题一道都没真答,退出码 0 只说明脚本没崩(10-16 那晚 17 套就是这么「过」的)
-        结 = "没跑成(认证失败)" if 认证失败.search(r.stdout + r.stderr) else ("过" if r.returncode == 0 else "判红")
+        结 = 归类(r.returncode, r.stdout + r.stderr)
         return dict(套=名, 结果=结, 退出码=r.returncode, 分钟=round((time.time() - t0) / 60, 1), 尾=尾)
     except subprocess.TimeoutExpired:
         return dict(套=名, 结果="超时", 退出码=None, 分钟=round((time.time() - t0) / 60, 1), 尾=[f"超过 {限 // 60} 分钟被停"])
@@ -267,7 +277,7 @@ def main():
         快 = 拍快照()
         r = 跑一套(名, 参数, 截止)
         r["挪走"] = 挪走夜跑的(快, 名)
-        if 挪走夜跑的.认证失败 and r["结果"] in ("过", "判红"):
+        if 挪走夜跑的.认证失败 and r["结果"] in ("过", "判红", "部分没验成(环境)"):
             r["结果"] = "没跑成(认证失败)"
             r["尾"] = (r.get("尾") or []) + [f"结果文件里有 {挪走夜跑的.认证失败} 处认证失败"]
         结果.append(r)
@@ -284,7 +294,7 @@ def main():
         f.write("| 套 | 结果 | 分钟 | 最后几行 |\n|---|---|---|---|\n")
         for r in 结果:
             f.write(f"| {r['套']} | {r['结果']} | {r['分钟']} | {' / '.join(x[:80] for x in r['尾']).replace('|', '¦')} |\n")
-    全跑完 = all(r["结果"] in ("过", "判红") for r in 结果)
+    全跑完 = all(r["结果"] in ("过", "判红", "部分没验成(环境)") for r in 结果)   # 那一类也是跑完了,只是有题没验成
     if 全跑完:
         with open(OK, "w") as f:
             f.write(f"{dt.datetime.now():%Y-%m-%dT%H:%M:%S}\n")

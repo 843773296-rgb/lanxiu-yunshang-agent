@@ -689,6 +689,16 @@ if __name__ == "__main__":
     # 修好之后顾问手上没有它 —— **题该跟着工具走,而不是把工具再发回去**。
     角色 = {"T12": "workshop", "T13": "workshop"}
 
+    # 管理后台(8801)在不在 —— 全文检索 kb_rag 要连它(backend/api.py)。2026-10-20 夜跑:它没起,T07 两轮模型都老实说
+    # 「知识库现在查不了」(规矩就是这么要求的),却被判成答错,和真答错的题一起标「判红」,**分不开**。
+    # 现在开跑前问一次;不在的话,用到 kb_rag 又没过的题记成「环境:没验成」,不算模型挂
+    import subprocess as _sp
+    _基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
+    后台在 = _sp.run(["curl", "-s", "-o", "/dev/null", "-m", "5", "-w", "%{http_code}", _基址 + "/"],
+                     capture_output=True, text=True).stdout.strip() not in ("", "000")
+    if not 后台在:
+        print(f"⚠️ 管理后台({_基址})连不上 —— 用到全文检索 kb_rag 的题这一轮**验不成**,单独记,不算模型挂")
+
     def 跑一轮():
         rows = []
         for cid, q, need, must, forbid in todo:
@@ -702,7 +712,10 @@ if __name__ == "__main__":
                 print(f"[{cid}] ❌ 跑挂了:{type(e).__name__}"); continue
             names = [t["tool"] for t in r["trajectory"]]
             ok, why = judge(cid, r["text"], names, r.get("最终违规"))
-            rows.append(dict(case=cid, passed=ok, why=why,
+            环境 = (not ok) and (not 后台在) and any(n.endswith("kb_rag") for n in names)
+            if 环境:
+                why = ["环境:管理后台没起,kb_rag 查不了 —— 这题没验成,不算模型挂"] + why
+            rows.append(dict(case=cid, passed=ok, why=why, 环境没验成=环境,
                              tools=",".join(n.split("__")[-1] for n in names),
                              cost=r.get("cost_usd") or 0, text=r["text"],
                              usage=r.get("usage") or {}, turns=r.get("answer_turns"),
@@ -734,7 +747,11 @@ if __name__ == "__main__":
                               结果文件=os.path.join(HERE, "..", ".feynman", "tool-eval.json"),
                               全集数=len(CASES), 本轮数=len(todo))
     ok_n = sum(1 for r in rows if r["passed"])
+    环境_n = sum(1 for r in rows if r.get("环境没验成"))
     print("=" * 100)
     print(f"最后一轮 通过 {ok_n}/{len(todo)} = {ok_n/max(len(todo),1)*100:.0f}%  |  "
-          f"花费 ${sum(r.get('cost') or 0 for r in rows):.4f}")
-    sys.exit(0 if ok_n == len(todo) else 1)
+          f"花费 ${sum(r.get('cost') or 0 for r in rows):.4f}"
+          + (f"  |  ⚠️ 其中 {环境_n} 题没验成(管理后台没起),不算挂" if 环境_n else ""))
+    # 退出码:0 全过 · 1 有题真挂 · **75 只有「环境没验成」的没过**(75 = 约定俗成的「临时故障」,
+    # 不用 2:参数写错时 argparse 自己会退 2,会被夜跑误读成「环境」)
+    sys.exit(0 if ok_n == len(todo) else (75 if ok_n + 环境_n == len(todo) else 1))

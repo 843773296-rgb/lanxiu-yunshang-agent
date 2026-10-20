@@ -8909,5 +8909,29 @@
    }
   ],
   "预期红": "页面右下角显示正在运行的版本号(所有页面都过这一处)"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "夜跑把 75 也算成判红",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "    return \"过\" if 退出码 == 0 else \"部分没验成(环境)\" if 退出码 == 75 else \"判红\"",
+    "new": "    return \"过\" if 退出码 == 0 else \"判红\""
+   }
+  ],
+  "预期红": "夜跑:退出码 75 → 部分没验成(环境),和判红分开"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "管理后台在也把 kb_rag 的题记成环境",
+  "file": [
+   {
+    "path": "agent/tool_eval.py",
+    "old": "            环境 = (not ok) and (not 后台在) and any(n.endswith(\"kb_rag\") for n in names)",
+    "new": "            环境 = (not ok) and any(n.endswith(\"kb_rag\") for n in names)"
+   }
+  ],
+  "预期红": "tool_eval:只有管理后台不在、又用到 kb_rag 的题才记成环境没验成"
  }
 ]
