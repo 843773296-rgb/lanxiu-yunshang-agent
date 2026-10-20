@@ -203,7 +203,7 @@ def main():
             ok, why = (hit(text, tr.get("root_cause", ""), case) if f
                        else (False, f"跑挂了:{r.get('error', '未提交')}" if r.get("error")
                              else "未提交"))
-            r.update(case=case, bp=bp, truth=tr.get("root_cause"), passed=ok, judge=why,
+            r.update(case=case, bp=bp, truth=tr.get("root_cause"), passed=ok, why=why,
                      expected_action=tr.get("expected_action"))
             recs.append(r)
             print(f"[{i:2d}] {'✅' if ok else '❌'} {case:10s} {bp}  "
@@ -219,7 +219,7 @@ def main():
     # 全集 = 默认题量(12 + 8)挑出来的那批;命令行传小了就是部分跑,不许覆盖。
     import rounds
     全集 = len(pick(12, 8))
-    recs, _ = rounds.跑并收尾(跑一轮, 名="V1 退款定因/客户合并", 键="case", 理由="judge",
+    recs, _ = rounds.跑并收尾(跑一轮, 名="V1 退款定因/客户合并", 键="case",
                               结果文件=os.path.join(HERE, "eval-results.jsonl"),
                               全集数=全集, 本轮数=len(tasks))
     p = sum(r["passed"] for r in recs)
@@ -239,7 +239,8 @@ def rescore():
         text = json.dumps(f, ensure_ascii=False) if f else ""
         ok, why = hit(text, r.get("truth") or "", r.get("case")) if f else (False, r.get("error", "未提交"))
         if ok != r.get("passed"): changed += 1
-        r["passed"], r["judge"] = ok, why
+        r["passed"], r["why"] = ok, why
+        r.pop("judge", None)      # 老结果文件里那个字段名,重判时顺手去掉,别留两份
     with open(p, "w", encoding="utf-8") as fh:
         for r in recs: fh.write(json.dumps(r, ensure_ascii=False) + "\n")
     pn = sum(r["passed"] for r in recs)
@@ -247,7 +248,7 @@ def rescore():
     print(f"命中 {pn}/{len(recs)} = {pn/len(recs)*100:.0f}%")
     for r in recs:
         print(f"  {'✅' if r['passed'] else '❌'} {r['case']:10s} {r['bp']}  "
-              f"真因 {str(r.get('truth'))[:12]:12s} {r['judge'][:44]}")
+              f"真因 {str(r.get('truth'))[:12]:12s} {str(r['why'])[:44]}")
     return recs
 
 if __name__ == "__main__":

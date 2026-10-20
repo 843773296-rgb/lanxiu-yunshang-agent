@@ -9068,5 +9068,29 @@
    }
   ],
   "预期红": "夜跑:跑完自动提交 —— 只挑 agent__*-results.jsonl 和报告,扫过密钥才提交,只提交这几个文件(--only)"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "让共用收尾认不出「跑挂了」(于是认证失败那一轮照旧写进基线)",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "            if w and \"跑挂了\" in str(w):",
+    "new": "            if False and w and \"跑挂了\" in str(w):"
+   }
+  ],
+  "预期红": "跑挂了的那一轮不许写结果文件"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "让共用收尾把「真答错」也当成跑挂(于是所有结果文件都不再更新)",
+  "file": [
+   {
+    "path": "agent/rounds.py",
+    "old": "            if w and \"跑挂了\" in str(w):",
+    "new": "            if w is not None or True:"
+   }
+  ],
+  "预期红": "**真答错的那一轮照旧要写结果文件** —— 别把跑挂和答错一起拦了"
  }
 ]

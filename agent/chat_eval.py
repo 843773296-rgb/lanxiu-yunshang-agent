@@ -346,7 +346,7 @@ def main():
             except Exception as e: r = dict(answer="", trajectory=[], error=str(e)[:160])
             ok, why = (c["grade"](r) if r.get("answer")
                        else (False, f"跑挂了:{r.get('error', '无回答')}"))
-            r.update(id=c["id"], q=c["q"], kind=c["kind"], passed=ok, judge=why)
+            r.update(id=c["id"], q=c["q"], kind=c["kind"], passed=ok, why=why)
             r.pop("messages", None)
             recs.append(r)
             tools = "→".join(t["tool"] for t in r["trajectory"]) or "(没调工具)"
@@ -374,7 +374,7 @@ def main():
     # 原来的保护是「子集进指纹」(覆盖了也看得出来);现在部分跑干脆不写,
     # 两道防线叠着 —— 指纹照样记,只是部分跑的那份不再落盘。
     import rounds
-    recs, _ = rounds.跑并收尾(跑一轮, 名="工艺顾问", 理由="judge", 写=写,
+    recs, _ = rounds.跑并收尾(跑一轮, 名="工艺顾问", 写=写,
                               结果文件=os.path.join(HERE, "chat-eval-results.jsonl"),
                               全集数=len(CASES), 本轮数=len(cs))
     p = sum(r["passed"] for r in recs)
@@ -399,12 +399,13 @@ def rescore():
     for r in recs:
         ok, why = (by[r["id"]]["grade"](r) if r.get("answer") else (False, r.get("error", "无回答")))
         if ok != r["passed"]: ch += 1
-        r["passed"], r["judge"] = ok, why
+        r["passed"], r["why"] = ok, why
+        r.pop("judge", None)      # 老结果文件里那个字段名,重判时顺手去掉,别留两份
     with open(p, "w", encoding="utf-8") as fh:
         for r in 头 + recs: fh.write(json.dumps(r, ensure_ascii=False) + "\n")
     print(f"重判 {len(recs)} 条,翻转 {ch} 条 · 命中 {sum(r['passed'] for r in recs)}/{len(recs)}")
     for r in recs:
-        print(f"  {'✅' if r['passed'] else '❌'} {r['id']} {r['kind']} {r['q'][:26]:26s} {r['judge'][:46]}")
+        print(f"  {'✅' if r['passed'] else '❌'} {r['id']} {r['kind']} {r['q'][:26]:26s} {str(r['why'])[:46]}")
 
 if __name__ == "__main__":
     rescore() if len(sys.argv) > 1 and sys.argv[1] == "rescore" else main()
