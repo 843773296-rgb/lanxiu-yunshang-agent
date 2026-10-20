@@ -9844,5 +9844,89 @@
    }
   ],
   "预期红": "⑥ 同样的输入跑两次,名次一模一样"
+ },
+ {
+  "script": "backend/selftest.py",
+  "改坏": "把 api._rows 里拦 truth 的那一句改成永不命中(运行时锁失效,JOIN truth 就能绕过去)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if _TRUTH.search(sql):\n        raise PermissionError(",
+    "new": "    if False:\n        raise PermissionError("
+   }
+  ],
+  "预期红": "运行时 JOIN 绕过会被拦下"
+ },
+ {
+  "script": "backend/selftest.py",
+  "改坏": "在 api.py 的**代码里**真写一句 `FROM truth`(静态扫描该抓到)。⚠️ 不能写在注释里 —— 那条扫描扫之前先把注释剥掉(它为此栽过一次)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "_TRUTH = re.compile(r\"\\btruth\\b\", re.I)",
+    "new": "_TRUTH = re.compile(r\"\\btruth\\b\", re.I)\n\n\ndef _死函数_只给咬合用():\n    return _rows(\"SELECT 1 FROM truth\")"
+   }
+  ],
+  "预期红": "truth 表没有被任何工具的 SQL 静态触及"
+ },
+ {
+  "script": "backend/isolation_check.py",
+  "改坏": "把 tasks.visible_scope 里顾问那一档改成 `1=1`(谁都看得到全部任务)",
+  "file": [
+   {
+    "path": "backend/tasks.py",
+    "old": "    return (\"(s.assignee_no=? OR s.reassigned_from=?)\", [me[\"no\"], me[\"no\"]],\n            \"派给你的任务(含被改派走的)\")",
+    "new": "    return (\"1=1\", [], \"派给你的任务(含被改派走的)\")"
+   }
+  ],
+  "预期红": "拿单号"
+ },
+ {
+  "script": "backend/isolation_check.py",
+  "改坏": "把「店长看本店」改成 `1=1`(跨店也看得到)。⚠️ 预期红**不是**「店长的范围是全店」—— 那条只看那句人话说明里有没有「全店」,改 WHERE 不改说明,它照样绿;真破的是「别店店长打不开」",
+  "file": [
+   {
+    "path": "backend/tasks.py",
+    "old": "        return \"s.shop=?\", [me.get(\"shop\")], f\"{me.get('shop')}(你是店长,看得到全店)\"",
+    "new": "        return \"1=1\", [], f\"{me.get('shop')}(你是店长,看得到全店)\""
+   }
+  ],
+  "预期红": "别店店长打不开"
+ },
+ {
+  "script": "agentsite/gate_test.py",
+  "改坏": "把 guards 里「已经成功过一次」那个分支去掉(succeeded 不再拦,一轮能连着写好几条)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if succeeded:\n            done = succeeded[-1][\"tool\"]",
+    "new": "        if False:\n            done = succeeded[-1][\"tool\"]"
+   }
+  ],
+  "预期红": "已经成功过一次"
+ },
+ {
+  "script": "agentsite/gate_test.py",
+  "改坏": "把「同参数重试」那个分支去掉(same 不再拦,一模一样的参数能反复试)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        same = [x for x in tried if x.get(\"key\") == key]\n        if same:",
+    "new": "        same = [x for x in tried if x.get(\"key\") == key]\n        if False:"
+   }
+  ],
+  "预期红": "一模一样的参数再试"
+ },
+ {
+  "script": "agentsite/gate_test.py",
+  "改坏": "把重试上限从 3 改成 99(试了三次也不拦 —— 反复重试会在台账上留一串失败记录,而其中某一次可能碰巧成功,那就是一条没人打算派的任务)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if len(tried) >= 3:",
+    "new": "        if len(tried) >= 99:"
+   }
+  ],
+  "预期红": "试了三次都没成"
  }
 ]
