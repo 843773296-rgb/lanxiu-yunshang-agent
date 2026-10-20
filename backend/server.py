@@ -3079,6 +3079,16 @@ class H(BaseHTTPRequestHandler):
             if not _me(self): return self._send({"error":"请先登录"},401)
             _r=_rw.看((Q.get("deposit") or [""])[0])
             return self._send(_r, 404 if "error" in _r else 200)
+        if p=="/api/triage-compare":
+            # 版本对比(隔离试运行的结果 vs 现在那条研判;用户 10-19 拍)。给批次号看那一批,不给就列批次。
+            # 范围同看板:总部运营 / 店长能看(试跑是总部的动作,店长看了也只是对比,不涉及门店数据的差异)
+            import triage_trial as _tt, triage_board as _tb
+            u = _me(self)
+            if not u: return self._send({"error":"请先登录"},401)
+            if u.get("role") not in _tb.全部可见 + _tb.本店可见:
+                return self._send({"error": f"版本对比给总部运营和店长看,你是「{u.get('role')}」"}, 403)
+            b = (Q.get("batch") or [""])[0]
+            return self._send(_tt.对比(b) if b else dict(批次们=_tt.批次们()))
         if p=="/api/triage-board":
             # 研判质量看板(用户 10-19 拍:总部看全部、店长看本店)。范围在 triage_board 里按登录的人判,不收前端传的门店
             import triage_board as _tb

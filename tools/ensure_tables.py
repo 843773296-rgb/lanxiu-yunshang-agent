@@ -43,6 +43,7 @@ import escalation
 import triage_run
 import refund_write
 import triage_config
+import triage_trial
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -74,6 +75,8 @@ import triage_config
     (refund_write, "建表", ["refund_approval"]),
     # 研判设置(2026-10-19):配置版本 + 提示词版本登记。第一次有人打开设置页才建 —— 同上,建死免得表数漂
     (triage_config, "确保表", ["triage_config", "triage_prompt"]),
+    # 隔离试运行的结果(2026-10-20):第一次有人试跑才建 —— 同上,建死免得表数漂
+    (triage_trial, "确保表", ["triage_trial"]),
 ]
 
 

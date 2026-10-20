@@ -40,6 +40,16 @@ a.dd{cursor:pointer;text-decoration:underline dotted;color:inherit}
   <table class="b"><thead><tr><th>版本</th><th>事项</th><th>AI 运行</th><th>采纳率</th><th>改判</th><th>待复核</th><th>已升级</th><th>高置信被改判</th></tr></thead>
     <tbody id="按版本"></tbody></table>
 </section>
+<section>
+  <h2>版本对比(隔离试运行)</h2>
+  <p class="sub">换一版研判提示词之前,先在<b>遮掉顾客信息的库副本</b>上把一批工单跑一遍 —— 结果只在这里看,不写真实研判。
+  能对上评测标准答案的工单,用评测同一个判分函数算两版谁答对;两版都是单轮,差一两条可能只是抖动。
+  试跑由开发执行:<span style="font-family:var(--mono);font-size:12px">./agentsite/.venv/bin/python agentsite/trial_run.py --版本 &lt;指纹|当前&gt; --标准答案 6 --by &lt;名字&gt;</span></p>
+  <div class="row" style="margin:8px 0"><select id="批次"></select></div>
+  <p class="sub" id="对比汇总"></p>
+  <table class="b"><thead><tr><th>工单</th><th>标准答案</th><th>人工结论</th><th>现在那版的根因</th><th>试跑版的根因</th></tr></thead>
+    <tbody id="对比"></tbody></table>
+</section>
 </div>
 <script>
 const $=s=>document.querySelector(s);
@@ -81,5 +91,27 @@ document.addEventListener("click",e=>{
   框.innerHTML=`<b>${esc(a.dataset.g==="总体"?"全部":a.dataset.g.split("::")[1])} · ${esc(a.dataset.b)} · ${单.length} 件</b><br>`
     +单.map(x=>`<a href="/queue?task=${encodeURIComponent(x.task_id)}">${esc(x.task_id)}</a>`).join("");
 });
+function 对错(x){ return x===true?' <span style="color:var(--pass)">✓</span>':x===false?' <span style="color:var(--fail)">✕</span>':""; }
+async function 载对比(){
+  const 列=await fetch("/api/triage-compare").then(r=>r.json()).catch(e=>({error:e+""}));
+  const sel=$("#批次");
+  if(列.error){ $("#对比汇总").textContent="看不了:"+列.error; return; }
+  if(!(列.批次们||[]).length){ $("#对比汇总").textContent="还没有试跑过。"; return; }
+  sel.innerHTML=列.批次们.map(b=>`<option value="${esc(b.batch)}">${esc(b.batch)} · ${b.n} 张 · ${esc(b.prompt_ver||"")}</option>`).join("");
+  sel.onchange=()=>画对比(sel.value); 画对比(列.批次们[0].batch);
+}
+async function 画对比(b){
+  const o=await fetch("/api/triage-compare?batch="+encodeURIComponent(b)).then(r=>r.json()).catch(e=>({error:e+""}));
+  if(o.error || !o.汇总){ $("#对比汇总").textContent="看不了:"+(o.error||"没拿到这一批的对比"); return; }
+  const g=o.汇总;
+  $("#对比汇总").innerHTML=`能对上标准答案的 ${g.可比} 张:现在那版答对 <b>${g.现版对}</b>,试跑版答对 <b>${g.试版对}</b>`
+    +(g.跑挂?` · 跑挂了 ${g.跑挂} 张(不算答错)`:"")+(g.只并排?` · 另有 ${g.只并排} 张没有标准答案,只并排看`:"")
+    +(g.可比<10?` <span class="few">样本少</span>`:"")+`<br><span style="font-size:12px;color:var(--ink-3)">${esc(o.说明)}</span>`;
+  $("#对比").innerHTML=o.行.map(r=>`<tr><td><a href="/queue?task=${encodeURIComponent(r.task_id)}">${esc(r.task_id)}</a></td>
+    <td>${esc(r.标准答案||"—")}</td><td>${esc(r.人工结论||"—")}${r.人工根因?"<br><span style='font-size:12px'>"+esc(r.人工根因)+"</span>":""}</td>
+    <td>${esc(r.现版.根因||"—")}${对错(r.现版.对)}</td>
+    <td>${r.试版.跑挂?'<span style="color:var(--warn)">跑挂了</span>':esc(r.试版.根因||"—")+对错(r.试版.对)}</td></tr>`).join("");
+}
 载();
+载对比();
 </script>

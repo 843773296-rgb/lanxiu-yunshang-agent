@@ -8933,5 +8933,65 @@
    }
   ],
   "预期红": "tool_eval:只有管理后台不在、又用到 kb_rag 的题才记成环境没验成"
+ },
+ {
+  "script": "backend/triage_trial_check.py",
+  "改坏": "遮蔽漏了手机号",
+  "file": [
+   {
+    "path": "backend/triage_trial.py",
+    "old": "    \"customer\": [(\"name\", \"姓名\"), (\"phone\", \"手机\"), (\"phone_tail\", \"尾号\"),",
+    "new": "    \"customer\": [(\"name\", \"姓名\"), (\"phone_tail\", \"尾号\"),"
+   }
+  ],
+  "预期红": "遮蔽:顾客姓名 / 手机 / 地址在副本里一个原值都不剩"
+ },
+ {
+  "script": "backend/triage_trial_check.py",
+  "改坏": "工具服务不改读副本",
+  "file": [
+   {
+    "path": "mcp/protocol.py",
+    "old": "            m.DB = 副; n += 1",
+    "new": "            n += 1"
+   }
+  ],
+  "预期红": "真起一个工具服务、给它副本:查客户拿到的是代号,并且留了「副本生效」凭证"
+ },
+ {
+  "script": "backend/triage_trial_check.py",
+  "改坏": "对比把跑挂了算成答错",
+  "file": [
+   {
+    "path": "backend/triage_trial.py",
+    "old": "        if t[\"error\"]:\n            计[\"跑挂\"] += 1",
+    "new": "        if False:\n            计[\"跑挂\"] += 1"
+   }
+  ],
+  "预期红": "对比:跑挂了的单独数,不算答错"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "夜跑拉起管理后台之后不关",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "    关掉(后台进程)                     # 夜跑自己拉起来的才关;本来就开着的是 None,不动\n",
+    "new": ""
+   }
+  ],
+  "预期红": "夜跑:开跑前先确保管理后台在,跑完把自己拉起来的关掉,报告顶上写明这一晚的状态"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "残留的 PID 文件也当成在跑",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "        os.kill(pid, 0)\n        return True",
+    "new": "        return True"
+   }
+  ],
+  "预期红": "PID 文件:进程活着 → 在用;文件在但进程早没了(崩了留下的)→ 不算;没文件 → 不算"
  }
 ]

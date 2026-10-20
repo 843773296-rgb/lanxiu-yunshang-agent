@@ -64,10 +64,32 @@ def 说(*a):
         f.write(f"{dt.datetime.now():%Y-%m-%d %H:%M:%S} {' '.join(map(str, a))}\n")
 
 
+# ── 「谁在用库」用 PID 文件判,不按名字搜进程(2026-10-20 改)──────────────────────────
+# 原来是 `pgrep -f bite_run` / `pgrep -f check.sh` —— 匹配的是**整条命令行**,于是一条
+# `ps … | grep -E "check.sh|bite_run|nightly_eval"`(查占用的诊断命令)自己就触发了闸:
+# 白天 9 点多 bite_run 报「夜跑评测正在跑」拒跑。和「规则写进文档 → 文档匹配自己」同一个形状,第四次。
+# 现在照 `backend/.rebuilding` 那个现成范式:写 PID 文件、`os.kill(pid, 0)` 验活,残留的不算。
+# ⚠️ 文件放在**真库所在的目录**(两个检出共用那一份库;`.feynman/` 每个检出各有一份,放那里互相看不见)
+PID目录 = os.path.dirname(os.path.realpath(os.path.join(ROOT, "backend", "lanxiu.db")))
+夜跑PID = os.path.join(PID目录, ".nightly-eval.pid")
+重放PID = os.path.join(PID目录, ".bite-run.pid")
+
+
+def 活着(pid文件):
+    """PID 文件在、而且那个进程还活着 → True。文件在但进程早没了(崩了留下的)→ False。"""
+    try:
+        pid = int(open(pid文件).read().strip().split()[0])
+        os.kill(pid, 0)
+        return True
+    except Exception:                                                        # noqa: BLE001
+        return False
+
+
 def 有人在用():
     if os.path.exists(os.path.join(ROOT, "backend", ".rebuilding")):
         return "有重建在跑(backend/.rebuilding)"
-    r = subprocess.run(["pgrep", "-f", "check.sh"], capture_output=True, text=True)
+    # 门禁:只认**真正在跑 check.sh 的那个 bash 进程**(命令行以它开头),提到这个词的别的命令不算
+    r = subprocess.run(["pgrep", "-f", r"^(/bin/)?(ba)?sh \./check\.sh"], capture_output=True, text=True)
     if r.stdout.strip():
         return "有门禁在跑(check.sh)"
     # ⚠️ **咬合重放也算有人在用**(2026-10-19 加)。它每条规格都要拷一份库、
@@ -81,9 +103,8 @@ def 有人在用():
     #
     #    让开的代价是「今晚没跑」,而那是**在日志里看得见**的;
     #    不让开的代价是一份看起来正常的假数。**两种代价不对等。**
-    r = subprocess.run(["pgrep", "-f", "bite_run"], capture_output=True, text=True)
-    if r.stdout.strip():
-        return "有咬合重放在跑(bite_run)"
+    if 活着(重放PID):
+        return f"有咬合重放在跑({os.path.basename(重放PID)})"
     return None
 
 
@@ -208,6 +229,55 @@ def 挪走夜跑的(快, 名):
     return 挪
 
 
+# ── 管理后台(8801)夜跑前拉起来(用户 2026-10-20 拍「要」)───────────────────────────
+# 全文检索 kb_rag 要连它。10-20 那晚它没起,tool_eval T07 记成了「环境没验成」—— 分得开了,但每晚都验不成,
+# 检索这块就永远没人在测。所以开跑前不在就拉起来;**是夜跑拉起来的,跑完就关掉**(本来就开着的不动)。
+管理后台地址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
+
+
+def _管理后台在():
+    r = subprocess.run(["curl", "-s", "-o", "/dev/null", "-m", "5", "-w", "%{http_code}", 管理后台地址 + "/api/healthz"],
+                       capture_output=True, text=True)
+    return r.stdout.strip() == "200"
+
+
+def 确保管理后台(等秒=60):
+    """→ (状态说明, 拉起来的进程或 None)。拉不起来不拦夜跑 —— 那几题会照实记成「环境没验成」。"""
+    if _管理后台在():
+        return "本来就开着", None
+    脚本 = os.path.join(ROOT, "管理后台", "tools", "dev.sh")
+    if not os.path.exists(脚本):
+        return f"拉不起来:没有 {os.path.relpath(脚本, ROOT)}", None
+    import getpass
+    env = dict(os.environ)
+    env.setdefault("USER", getpass.getuser())          # launchd 里可能没有 USER,而 dev.sh 拼库地址要用它
+    日志 = open(os.path.join(FEY, "nightly-aimc.log"), "a", encoding="utf-8")
+    进程 = subprocess.Popen(["bash", 脚本], cwd=os.path.dirname(os.path.dirname(脚本)), env=env,
+                            stdout=日志, stderr=日志, start_new_session=True)   # 自成一组,跑完整组一起关
+    for _ in range(等秒 // 2):
+        time.sleep(2)
+        if _管理后台在():
+            return "夜跑前拉起来了(跑完关掉)", 进程
+        if 进程.poll() is not None:
+            break
+    关掉(进程)
+    return f"拉不起来:{等秒} 秒内没就绪(日志 .feynman/nightly-aimc.log)—— 用到 kb_rag 的题会记成「环境没验成」", None
+
+
+def 关掉(进程):
+    if 进程 is None or 进程.poll() is not None:
+        return
+    import signal
+    try:
+        os.killpg(进程.pid, signal.SIGTERM)
+        进程.wait(timeout=15)
+    except Exception:                                                        # noqa: BLE001
+        try:
+            os.killpg(进程.pid, signal.SIGKILL)
+        except Exception:                                                    # noqa: BLE001
+            pass
+
+
 def 归类(退出码, 输出):
     """一套评测跑完 → 结果。抽出来是为了让检查真调它(tools/eval_env_check.py)。
     · 输出里有认证失败 → 没跑成(开跑前那一问只证明开跑那一刻通;10-16 那晚 17 套就是这么「过」的)
@@ -264,6 +334,20 @@ def main():
         f.write(f"{现在:%Y-%m-%dT%H:%M:%S}\n")
     截止 = dt.datetime.combine(现在.date(), 强停) if not 试 else 现在 + dt.timedelta(hours=3)
     套们 = 清单()[: 只跑] if 只跑 else 清单()
+    with open(夜跑PID, "w") as f:                # bite_run 读它决定要不要让开(见 活着());结束时在下面删
+        f.write(f"{os.getpid()}\n")
+    try:
+        return _跑(现在, 套们, 试, 截止)
+    finally:
+        try:
+            os.remove(夜跑PID)
+        except OSError:
+            pass
+
+
+def _跑(现在, 套们, 试, 截止):
+    后台状态, 后台进程 = 确保管理后台()
+    说(f"管理后台:{后台状态}")
     说(f"开始:{len(套们)} 套{'(试跑)' if 试 else ''}")
     结果 = []
     for 名, 参数 in 套们:
@@ -290,10 +374,12 @@ def main():
     with open(报, "w", encoding="utf-8") as f:
         f.write(f"# 夜间评测 · {现在:%Y-%m-%d %H:%M}\n\n")
         f.write("模型:claude-haiku-4-5 · **没提交没推送**,看过再提交(各评测的分数在 agent/*-results.jsonl 末行)\n\n")
+        f.write(f"管理后台(全文检索 kb_rag 要用):{后台状态}\n\n")
         f.write(" · ".join(f"{k} {v}" for k, v in 计.items()) + "\n\n")
         f.write("| 套 | 结果 | 分钟 | 最后几行 |\n|---|---|---|---|\n")
         for r in 结果:
             f.write(f"| {r['套']} | {r['结果']} | {r['分钟']} | {' / '.join(x[:80] for x in r['尾']).replace('|', '¦')} |\n")
+    关掉(后台进程)                     # 夜跑自己拉起来的才关;本来就开着的是 None,不动
     全跑完 = all(r["结果"] in ("过", "判红", "部分没验成(环境)") for r in 结果)   # 那一类也是跑完了,只是有题没验成
     if 全跑完:
         with open(OK, "w") as f:

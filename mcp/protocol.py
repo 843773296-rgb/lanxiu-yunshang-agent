@@ -16,6 +16,34 @@
 """
 import json, os, sys, traceback
 
+# ── 隔离试运行:整个服务改读一份库副本(研判队列未做项第 6 项 · 用户 2026-10-19 拍:副本遮掉顾客信息)──
+# 启动方在 env 里给 LANXIU_DB(副本路径)→ 把**每个已加载模块**里指着真库的 `DB` 改到副本上。
+# 55 个文件各自写死了真库路径,一个个改不现实,也一定会漏;所以每次执行工具之前**再扫一遍** ——
+# 工具里懒加载的模块启动时还没有,漏掉它们读到的就是没遮蔽的顾客信息。
+# 生效了就在副本旁边留一行凭证:env 到没到这个进程「没有证据」的话,试跑那头拒绝认结果(和遮蔽台账同一个理由)。
+_真库 = os.path.realpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend", "lanxiu.db"))
+
+
+def 指到副本():
+    """→ 这次改了几个模块的 DB。没给 LANXIU_DB → 0,什么都不动。"""
+    副 = (os.environ.get("LANXIU_DB") or "").strip()
+    if not 副 or os.path.realpath(副) == _真库:
+        return 0
+    n = 0
+    for m in list(sys.modules.values()):
+        db = getattr(m, "DB", None)
+        if isinstance(db, str) and os.path.realpath(db) == _真库:
+            m.DB = 副; n += 1
+    if not getattr(指到副本, "_留过", False):
+        try:
+            with open(os.path.join(os.path.dirname(副), "副本生效.txt"), "a", encoding="utf-8") as f:
+                f.write(f"{os.getpid()}\t{os.path.basename(sys.argv[0])}\t改了 {n} 个模块\n")
+            指到副本._留过 = True
+        except Exception:
+            pass
+    return n
+
+
 LATEST = "2025-11-25"
 SUPPORTED = [LATEST, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"]
 
@@ -134,6 +162,7 @@ class Server:
         # allowed_tools,而那不是排他白名单:后台运营调了只发给工坊的「算工期」,还据此作答;
         # 财务(名义 5 个工具)每轮带的工具说明反而比后台运营(41 个)还多。
         # 没设这个变量(自测、直连)就照旧全挂 —— 名单为空串时一个都不挂。
+        指到副本()
         only = os.environ.get("LANXIU_TOOLS")
         if only is not None:
             keep = {x for x in only.split(",") if x}
@@ -148,6 +177,7 @@ class Server:
 
     def handle(self, req):
         m, rid, p = req.get("method"), req.get("id"), req.get("params") or {}
+        指到副本()                      # 每次都扫:上一个工具里懒加载进来的模块,这一次要接着改
 
         if m == "initialize":
             want = p.get("protocolVersion")

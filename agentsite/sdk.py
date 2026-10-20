@@ -313,6 +313,10 @@ def mcp_config(me=None, kind=None, 名单=None, trace=None, 被判包裹=None, �
     if trace:
         # 这一轮的 trace_id —— 工具写下的产出(存报告)带着它,AI 管理平台才能从产出跳回生成它的那一轮
         env = {**env, "LANXIU_TRACE": trace}
+    if os.environ.get("LANXIU_DB"):
+        # 隔离试运行:整个工具服务改读遮蔽过的库副本(mcp/protocol.指到副本)。和下面几条同理,**显式拼进去**,
+        # 不指望继承 —— 到不了的话工具读的是真库、顾客信息没遮;服务那头会留凭证,试跑那头核
+        env = {**env, "LANXIU_DB": os.environ["LANXIU_DB"]}
     if 被判押金:
         # 这一轮在判哪笔押金单 —— 和上面那条差评**并列**(mcp/protocol.遮被判那笔押金)。
         # ⚠️ 为什么非得从这儿拼进去、而不是指望 os.environ 被继承:

@@ -139,6 +139,7 @@ def 标记路径(db):
     "triage_run.started": "同上:执行线程领到这一条的时刻",
     "triage_run.finished": "同上:这一条跑完 / 失败 / 中断的时刻",
     "triage_run.stage_at": "同上:最近一次换阶段的时刻",
+    "triage_trial.ran_at": "隔离试运行跑的时刻 —— 机器时钟,运维动作不是演示世界里的事(backend/triage_trial.py)",
 }
 
 # ── 登记:文字里埋着日期的列,挪还是不挪 ────────────────────────────
@@ -178,6 +179,8 @@ def 标记路径(db):
     "triage.ai_action": "建议动作,里面引用具体单据和时间点(「同步最终完成时间戳为 …」)",
     "triage.ai_evidence": "证据清单 —— 逐条列着业务记录的时间,是这五列里日期最密的一列",
     "triage.ai_text": "草稿全文(上面三段的来源),同一个道理",
+    "triage_trial.ai_text": "隔离试运行的草稿全文(2026-10-20 起)—— 和 triage.ai_text 同一个道理:复述的是单据上的时间",
+    "triage_trial.ai_root_cause": "试跑草稿里切出来的根因,同上",
     "call_audio.consent_basis": "「客户 2025-04-03 接受了服务条款 v2.3」复述的是 terms_accept.accepted_at —— "
                                 "那一列跟着挪,这句不挪就自相矛盾(业务拍板日期故意不写进这句,见 recording_terms.默认同意依据)",
     # ── 2026-10-14:造数把「取行集指纹」和「行数」写进 world_meta 之后 ──────

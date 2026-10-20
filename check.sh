@@ -516,6 +516,7 @@ run "研判队列页 · 提交之后成功绿 / 失败红带理由,每一处失�
 run "研判质量看板 · 事项和运行分开数、升级不进采纳率分母、店长只看本店、按版本拆、能下钻(用户 10-19 拍)" python3 backend/triage_board_check.py
 run "发布版本号 · VERSION、需求文档、产品说明、发布记录、页面显示对得上(用户 10-19 拍)" python3 tools/version_check.py
 run "评测 · 环境没验成和模型答错分开记(10-20 夜跑 tool_eval 逮到)" python3 tools/eval_env_check.py
+run "隔离试运行 + 版本对比 · 遮干净、工具服务真改读副本、没凭证就停、对比不把跑挂算答错(用户 10-19 拍)" python3 backend/triage_trial_check.py
 run "退款执行写口 · 只有财务、先核实再重发、已退要流水号且不重复、通用入口绕不过(用户 10-15 拍)"    python3 backend/refund_write_check.py
 run "研判示例库 · 不相交、评测根因覆盖面不少、不挑自己、默认不带示例(用户 10-16 拍)"    python3 backend/example_pool_check.py
 run "研判评测判分 · 出账流水两种编号都认(10-16 真跑钉回)"    python3 agent/eval_hit_judgetest.py
