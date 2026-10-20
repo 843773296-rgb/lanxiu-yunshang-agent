@@ -71,7 +71,7 @@ def run_v3(t):
              "请判断是否为同一客户,给出合并或不合并的建议,并逐项列出比对依据。"
              "按「根因 / 建议动作 / 证据 / 置信度」四段输出,每段单独起一行。")
     t0 = time.time()
-    r = asyncio.run(sdk.run("task", p))
+    r = asyncio.run(sdk.run("triage", p))   # 研判专用(10-20):和研判队列真用的是同一条路
     return dict(text=r["text"], calls=len(r["trajectory"]), sec=round(time.time() - t0, 1))
 
 

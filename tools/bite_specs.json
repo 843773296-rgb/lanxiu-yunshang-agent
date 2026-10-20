@@ -9332,5 +9332,41 @@
    }
   ],
   "预期红": "README.md 和「入口 + 产品说明」对不上"
+ },
+ {
+  "script": "agentsite/triage_scope_check.py",
+  "改坏": "run 不认 triage(研判还是拿后台运营全包)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    _研判 = kind == \"triage\"\n",
+    "new": "    _研判 = False\n"
+   }
+  ],
+  "预期红": "run(\"triage\") 交给 SDK 的工具 = 研判工具(MCP 暴露的、allowed_tools 是同一份)"
+ },
+ {
+  "script": "agentsite/triage_scope_check.py",
+  "改坏": "研判工具里混进一个写工具",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "\"mcp__kb__kb_tables\", \"mcp__shop__get_order\",",
+    "new": "\"mcp__kb__kb_tables\", \"mcp__shop__get_order\", \"mcp__shop__open_order\","
+   }
+  ],
+  "预期红": "研判工具全是只读"
+ },
+ {
+  "script": "agentsite/triage_scope_check.py",
+  "改坏": "研判队列那一路还跑 task",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "sdk.run(\"triage\", prompt), 单条超时秒",
+    "new": "sdk.run(\"task\", prompt), 单条超时秒"
+   }
+  ],
+  "预期红": "研判队列 / 隔离试运行 / 三代对比都走 triage;差评研判照旧走 task"
  }
 ]

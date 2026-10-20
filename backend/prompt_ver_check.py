@@ -73,7 +73,7 @@ ck("后台 /api/ops-triage 把版本号往下传", 'prompt_ver=body.get("prompt_
 ck("站上真跑研判时带上版本号(研判提示词模板 + 系统提示词各一个指纹)",
    # 10-19 研判设置之后:研判那段指纹 = 代码当前版本,或设置里发布的那一版(渲染用的就是它)
    '研判版 = _ops_bp.研判提示词版本(t["type"])' in 站 and "prompt, 研判版 = _tr_cfg().渲染(_用" in 站
-   and 'f"研判:{研判版}·系统:' in 站 and "sdk.SYS_TASK" in 站 and "prompt_ver=版))" in 站)
+   and 'f"研判:{研判版}·系统:' in 站 and "sdk.SYS_TRIAGE" in 站 and "prompt_ver=版))" in 站)
 
 print()
 if bad:

@@ -852,6 +852,21 @@ SYS_ALL, ALL_RULE_IDS = prompts.assemble("all", _have("all"))
 SYS_KB, KB_RULE_IDS = prompts.assemble("kb", _have("kb"))
 SYS_WORKSHOP, WORKSHOP_RULE_IDS = prompts.assemble("workshop", _have("workshop"))
 SYS_TASK, TASK_RULE_IDS = prompts.assemble("task", _have("task"))
+# ── 研判专用(用户 2026-10-20 拍「做」)────────────────────────────────────────
+# 研判队列 / 差评研判 / 隔离试运行 / 三代对比原来都跑 `task`(后台运营助手)那一整包:72 个工具、3.1 万字提示词,
+# 里面还有开单、确认下单、撤单这类**写工具** —— 研判只需要读。三代对比 10-20 实测:V3 调用数没变(2.5 次 / 条),
+# 成本却是 09-16 的 1.6–2.9 倍,因为每次调用都要把这整包带上。
+# 清单不是凭印象挑的:三类研判(退款 / 客户合并 / 售后判责)各实跑两张,轨迹里只出现过前 6 个;
+# get_order 是兜底(售后判责可能要看订单),全部只读。
+# ⚠️ **差评研判不走这条路**(rating_triage 照旧跑 `task`):它最要紧的两条规矩 TK16「不许顺着问话的倾向改判定」
+#    要挂着 close_bad_rating 才装、TK13「星级量的是交付体验」要挂着 rating_overview 才装 —— 收窄就把它们一起收掉了。
+#    差评的 AI 辅助默认关着,不省这点钱。后台运营的对话助手也照旧用 `task` 全包。
+研判工具 = [
+    "mcp__task__get_deposit", "mcp__task__get_payment_flow", "mcp__task__get_refund_trace",   # 退款
+    "mcp__task__get_customer",                                                                   # 客户合并
+    "mcp__shop__get_maintain", "mcp__kb__kb_tables", "mcp__shop__get_order",                    # 售后判责
+]
+SYS_TRIAGE, TRIAGE_RULE_IDS = prompts.assemble("task", {t.rsplit("__", 1)[-1] for t in 研判工具})
 SYS_FINANCE, FINANCE_RULE_IDS = prompts.assemble("finance", _have("finance"))
 SYS_PATTERN, PATTERN_RULE_IDS = prompts.assemble("pattern", _have("pattern"))
 SYS_AFTERSALE, AFTERSALE_RULE_IDS = prompts.assemble("aftersale", _have("aftersale"))
@@ -953,6 +968,10 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 它就是个假旋钮 —— 页面上显示「已生效」,而真正发出去的还是默认值。
     # 这个项目在 allowed_tools 上栽过同一个形状的跟头(以为封住了,其实没封)。
     _旋话 = []
+    # 研判专用:规矩还是后台运营那一套(同一个 kind),工具收到 研判工具 —— 提示词跟着只装配管这些工具的规矩
+    _研判 = kind == "triage"
+    if _研判:
+        kind = "task"
     try:
         import knobs as _kn
         _参 = dict(effort=effort, max_turns=max_turns, model_name=model_name, guard=guard)
@@ -963,6 +982,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         _注日期 = _参.get("_注日期", True)
     except ImportError:
         _收窄, _注日期 = None, True
+    if _研判:
+        _收窄 = list(研判工具) if _收窄 is None else [t for t in _收窄 if t in 研判工具]
     # ⚠️ 校验失败**不吞** —— 配错的旋钮悄悄退回默认,比报错糟得多:
     # 那一轮跑的不是你以为的配置,而分数差会被归因到别处。
 

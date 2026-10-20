@@ -59,7 +59,7 @@ def 主():
             i += 1
     c.close()
     import sdk
-    系统 = hashlib.sha256(sdk.SYS_TASK.encode("utf-8")).hexdigest()[:12]
+    系统 = hashlib.sha256(sdk.SYS_TRIAGE.encode("utf-8")).hexdigest()[:12]
     副 = TT.遮蔽副本()
     os.environ["LANXIU_DB"] = 副                       # sdk 拉起工具服务时显式带上(见 sdk.py 那段)
     凭证 = os.path.join(os.path.dirname(副), "副本生效.txt")
@@ -72,7 +72,7 @@ def 主():
                 TC.渲染(fp, r["type"], r["ref_id"], r["id"])
             t0 = time.time()
             try:
-                out = asyncio.run(asyncio.wait_for(sdk.run("task", 提示), 180))
+                out = asyncio.run(asyncio.wait_for(sdk.run("triage", 提示), 180))
                 text, tools, cost, 错 = out["text"], [t["tool"].split("__")[-1] for t in out["trajectory"]], out.get("cost_usd"), None
             except Exception as e:                       # noqa: BLE001
                 text, tools, cost, 错 = "", [], None, f"{type(e).__name__}: {e}"[:300]

@@ -539,6 +539,7 @@ run "聊天页常用语按钮 · 点了只填进输入框不发送;版师有正�
 run "吸顶条让开全站导航 · 挂了导航的页面不许再有条吸在 top:0(静态扫)" python3 agentsite/sticky_nav_check.py
 run "差评研判产线路 · 接通但默认关、工具层只遮被判那一条、记下提示词版本和取没取材料(不调模型)" ./agentsite/.venv/bin/python agentsite/rating_triage_check.py
 run "工具收窄落到 MCP 那一层 · 真起服务读回、空集合不扩成全部、提示词按生效工具装(外部审阅 4.3)" ./agentsite/.venv/bin/python agentsite/tool_scope_check.py
+run "研判专用角色 · 只挂研判用得上的只读工具、提示词跟着收,后台运营助手不动(用户 10-20)" ./agentsite/.venv/bin/python agentsite/triage_scope_check.py
 run "每一份候选答案都检查 · 修正后通过 / 未通过 / 未检查 / 不完整分开,未通过的不当正式答复交(外部审阅 4.1)" ./agentsite/.venv/bin/python agentsite/delivery_check.py
 run "会话的业务状态跨请求恢复 · 只恢复跨轮的、先核归属和权限、方案被删不带回、并发不覆盖(外部审阅 4.2)" ./agentsite/.venv/bin/python agentsite/session_state_check.py
 run "中文否定与子串 · 29 条(十次踩过的坑)" python3 agent/textmatch.py

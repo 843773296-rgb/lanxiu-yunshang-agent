@@ -62,7 +62,7 @@ def 跑一题(题, 带示例):
     示根因 = [r["root_cause"] for r in
               __import__("truthdb").rows("SELECT root_cause FROM truth WHERE case_id IN (%s)" % ",".join("?" * len(用了)),
                                          *[u["case_id"] for u in 用了])] if 用了 else []
-    r = asyncio.run(sdk.run("task", prompt))
+    r = asyncio.run(sdk.run("triage", prompt))
     文 = r.get("text") or ""
     过, 为什么 = EV.hit(文, 题["真因"], 题["case_id"])
     没答成 = "没有作为正式答复给出" in 文

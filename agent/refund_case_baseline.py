@@ -74,8 +74,11 @@ def 三条单(dbp):
 # 里面是闭环写进去的 **AI 自己那段错判原文**(`backend/ops.py:682`),也就是这道题的**错答案**。
 # > 一个「我核过模型够不着」和一个「我核的是另一个角色」,**在那个 ✅ 上长得一模一样。**
 # 所以角色名**在这儿写一次**,并且 `refund_case_check` 盯着 app.py 那一行有没有变。
-研判角色 = "task"
-研判真跑在 = ("agentsite/app.py", 'sdk.run("task", prompt)')
+# 2026-10-20 起研判走专用角色 `triage`(只挂 `sdk.研判工具` 那 7 个只读工具,用户拍「做」)——
+# `list_tasks` 不在里面了,上面说的那条「错答案顺着 summary 漏出来」的路因此整条没了;
+# 这份基准照旧盯着,换角色时这里和 app.py 那一行一起改。
+研判角色 = "triage"
+研判真跑在 = ("agentsite/app.py", 'sdk.run("triage", prompt)')
 
 # 这笔押金单的痕迹可能从哪些表里漏出来。**一张表都不许漏**:
 # 判据拿它扫「挂给研判的工具里谁读了这几张表」,扫出来的必须都在下面那份取法登记里。
@@ -116,6 +119,11 @@ def 研判挂的工具():
     """
     import ast
     名单, 树 = _sdk源码名单()
+    if 研判角色 == "triage":
+        # 研判专用角色的工具就是 sdk 模块级那份字面量名单 —— 解不出来照样抛,不返回空
+        if not 名单.get("研判工具"):
+            raise RuntimeError("sdk.py 里找不到字面量名单「研判工具」—— 研判挂了什么工具解不出来")
+        return list(名单["研判工具"])
     for node in ast.walk(树):
         if not isinstance(node, ast.Dict):
             continue

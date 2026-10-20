@@ -742,12 +742,12 @@ class H(BaseHTTPRequestHandler):
         # 版本 = 研判提示词模板 + 智能体系统提示词(装配后的正文)各一个指纹;模型另有一列。
         # 换了任何一段,新研判的版本号就变 —— 配置回退、版本对比都靠它分开新旧(未做项第 5 项第一步)
         import hashlib as _hl
-        版 = f"研判:{研判版}·系统:{_hl.sha256(sdk.SYS_TASK.encode('utf-8')).hexdigest()[:12]}"
+        版 = f"研判:{研判版}·系统:{_hl.sha256(sdk.SYS_TRIAGE.encode('utf-8')).hexdigest()[:12]}"
         t = dict(id=t["task_id"], ref=t["ref"], bp=bp)
         t0 = _t.time()
         if run_id: _阶段(run_id, "调模型")
         try:
-            r = asyncio.run(asyncio.wait_for(sdk.run("task", prompt), 单条超时秒))
+            r = asyncio.run(asyncio.wait_for(sdk.run("triage", prompt), 单条超时秒))
         except asyncio.TimeoutError:
             raise TimeoutError(f"调模型超过 {单条超时秒 // 60} 分钟没出结果(平时约 30 秒)—— 没有落草稿,可以转人工")
         if run_id: _阶段(run_id, "落库")
