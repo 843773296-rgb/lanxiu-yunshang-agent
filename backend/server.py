@@ -483,6 +483,17 @@ def merge_transit(tid, to, note, me=None):
          "已驳回":"总部运营已驳回,退回店长重新核验"}
     return dict(ok=True,code=to,reason=MSG.get(to,f"状态已更新为「{to}」"))
 
+def customer_unmerge(cid, note, me=None):
+    """客户详情页「撤销合并」(10-20 补的入口 —— 软合并 10-14 立项就写着「能撤」,而一直只有函数没有入口)。
+    身份只从登录态取,角色闸在 merge.撤销 里(只有总部运营);原因必填,连同结果记进操作日志。"""
+    import merge as _mg
+    if not (note or "").strip():
+        return dict(ok=False,code="NO_NOTE",reason="要写为什么撤 —— 会记进操作日志")
+    try:
+        return _mg.撤销(cid, me or {}, 来源="客户详情:"+note.strip()[:60])
+    except PermissionError as e:
+        return dict(ok=False,code="ROLE",reason=str(e)[:200])
+
 def shop_list(q):
     kw=(q.get("q") or [""])[0].strip(); stt=(q.get("status") or [""])[0]
     rs=rows("SELECT * FROM shop ORDER BY code")
@@ -3717,6 +3728,8 @@ class H(BaseHTTPRequestHandler):
             # 身份只从登录态取(10-14):没登录就是空身份,FSM 按「顾问」最低权限判、合并执行拒
             return self._send(merge_transit(body.get("id"),body.get("to"),
                                             body.get("note"),me=_me(self) or {}))
+        if p=="/api/customer-unmerge":
+            return self._send(customer_unmerge(body.get("id"),body.get("note"),me=_me(self) or {}))
         if p=="/api/lifecycle-adjust":
             return self._send(adjust_lifecycle(body.get("id"),body.get("to"),body.get("reason")))
         if p.startswith("/api/draft/"): return self._send(gen_draft(p.split("/api/draft/")[1]))

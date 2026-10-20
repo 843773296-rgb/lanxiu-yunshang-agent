@@ -302,6 +302,25 @@ def 用例表():
                                           员["no"] if 员 else "魏欣新"),
                    "op_log"))
 
+    # customer_unmerge(cid, note, me) —— 客户详情页撤销合并(10-20)。
+    # ⚠️ 准备那一步(先并一对)**必须放在调用里**:用例表在「指到副本」之前生成,放在这里会写进真库。
+    # 被拒也会留痕(op_log 照样多一行),所以另外直接看那条档案是不是真的恢复独立了,不只看行数
+    if 有表("customer"):
+        对 = [r["id"] for r in (取("SELECT id FROM customer WHERE COALESCE(merged_into,'')='' ORDER BY id LIMIT 1 OFFSET 0"),
+                                 取("SELECT id FROM customer WHERE COALESCE(merged_into,'')='' ORDER BY id LIMIT 1 OFFSET 1")) if r]
+        if len(对) == 2:
+            def _撤(s, 对=对):
+                import merge as _mg
+                if _mg.DB != s.DB:
+                    return {"error": "merge 没指到副本 —— 拒绝往下跑"}
+                总部 = {"no": "冒烟", "name": "冒烟", "role": "总部运营"}
+                并 = _mg.并入(对[0], 对[1], 总部, 来源="冒烟准备")
+                r = s.customer_unmerge(并.get("副档"), "冒烟:撤销合并", me=总部)
+                if not r.get("ok") or _mg.主档(并.get("副档")) != 并.get("副档"):
+                    return {"error": f"没撤成:{r.get('reason')}"}
+                return r
+            出.append(("customer_unmerge", _撤, "op_log"))
+
     # toggle(table, key, val, col, on, off, actor) —— 启停一个系统编码
     码 = 取("SELECT code FROM sys_code LIMIT 1") if 有表("sys_code") else None
     if 码:
@@ -391,7 +410,7 @@ def 指到副本():
     for m in ("server", "api", "oplog", "ops", "tasks", "auth", "files",
               "booking", "img", "appt_expire",
               "factory_inbox", "order_write", "measure_write", "fitting_write",
-              "pickup_write", "repair_write", "asr"):
+              "pickup_write", "repair_write", "asr", "merge"):
         try:
             importlib.import_module(m)
         except Exception:

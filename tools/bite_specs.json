@@ -7709,6 +7709,30 @@
   "预期红": "并入时压平:挂在副档下的档案一并改指新主档"
  },
  {
+  "script": "backend/merge_check.py",
+  "改坏": "撤销入口不要原因",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if not (note or \"\").strip():\n        return dict(ok=False,code=\"NO_NOTE\",reason=\"要写为什么撤 —— 会记进操作日志\")\n    try:\n        return _mg.撤销(",
+    "new": "    try:\n        return _mg.撤销("
+   }
+  ],
+  "预期红": "撤销入口:店长撤不了、不写原因撤不了(都没撤成)"
+ },
+ {
+  "script": "backend/merge_check.py",
+  "改坏": "客户详情页的撤销按钮没接到接口",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "doOp(\"/api/customer-unmerge\"",
+    "new": "doOp(\"/api/customer-merge-x\""
+   }
+  ],
+  "预期红": "客户详情页:显示「已并入 / 关联档案」,撤销按钮接到撤销接口"
+ },
+ {
   "script": "agentsite/sticky_nav_check.py",
   "改坏": "把经营报告的标题栏改回吸在 top:0",
   "file": [

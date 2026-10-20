@@ -26,6 +26,7 @@ bad, n = [], 0
     ("AI 工具查订单只查主档(不连关联档)", "AI 工具:查副档的订单 → 两条档案的单一起列、每单标着原档案"),
     ("数人头不过滤已并入的档案", "数人头按人:合并后工作台客户数少一个(两条档案算一个人)"),
     ("并入时不压平", "并入时压平:挂在副档下的档案一并改指新主档"),
+    ("撤销入口不要原因", "撤销入口:店长撤不了、不写原因撤不了(都没撤成)"),
 ]
 
 
@@ -184,6 +185,25 @@ if 店长 and 总部 and len(两条) == 2:
        r3.get("ok") and MG.合并过吗(甲, 乙) and 行数(乙) == 前乙, r3)
     lg = c.execute("SELECT actor FROM op_log WHERE machine='customer-merge' AND code='MERGE' ORDER BY rowid DESC LIMIT 1").fetchone()
     ck("审批中心那一笔的执行人是登录的那个人(不是写死的名字)", lg and 总部["no"] in lg["actor"], dict(lg) if lg else None)
+
+    # ── 客户详情页「撤销合并」入口(10-20 补:原来只有函数,页面和接口都没处调)──────────────
+    详主, 详副 = SV.customer_detail(甲), SV.customer_detail(乙)
+    ck("客户详情:主档列出关联档,副档说清并入了谁(接口)",
+       any(x["id"] == 乙 for x in 详主.get("关联档案") or []) and 详副.get("已并入") == 甲,
+       (详主.get("关联档案"), 详副.get("已并入")))
+    u1 = SV.customer_unmerge(乙, "检查", me=店长)
+    u2 = SV.customer_unmerge(乙, "  ", me=总部)
+    ck("撤销入口:店长撤不了、不写原因撤不了(都没撤成)",
+       not u1.get("ok") and u2.get("code") == "NO_NOTE" and MG.合并过吗(甲, 乙), (u1, u2))
+    u3 = SV.customer_unmerge(乙, "检查:认错人了", me=总部)
+    lg = c.execute("SELECT * FROM op_log WHERE machine='customer-merge' AND code='UNMERGE' ORDER BY rowid DESC LIMIT 1").fetchone()
+    ck("撤销入口:总部运营写了原因 → 撤成,操作日志记着谁撤的、为什么",
+       u3.get("ok") and not MG.合并过吗(甲, 乙) and lg and 总部["no"] in lg["actor"] and "认错人了" in str(dict(lg)),
+       (u3, dict(lg) if lg else None))
+    页 = open(os.path.join(HERE, "web", "index.html"), encoding="utf-8").read()
+    ck("客户详情页:显示「已并入 / 关联档案」,撤销按钮接到撤销接口",
+       "d.已并入" in 页 and "d.关联档案" in 页 and 'doOp("/api/customer-unmerge"' in 页 and "[data-unmerge]" in 页)
+    MG.并入(甲, 乙, 总部)
 
     # ── 研判:客户合并确认凭合并记录办结 ─────────────────────────────────
     MG.撤销(乙, 总部)
