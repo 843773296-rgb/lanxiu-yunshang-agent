@@ -9547,7 +9547,7 @@
     "new": "    return \"回溯\""
    }
   ],
-  "预期红": "影子跑那一刻人工档是空的 → 新量"
+  "预期红": "人工档是空的却标成「回溯」→ 拒掉"
  },
  {
   "script": "agent/triage_shadow_check.py",
@@ -9656,5 +9656,44 @@
    }
   ],
   "预期红": "交付口径就是 sdk 那两种(「曾被打回过」不等于最终不合格)"
+ },
+ {
+  "script": "agent/triage_sets_check.py",
+  "改坏": "让 mcp/protocol.指到副本() 什么都不改(于是取材料的子进程读的是真库,不是快照)。⚠️ 这条**必须带前置**:快照是从真库冻的,内容一致时读哪个都取得出材料,这条攻击会**静默变绿**(2026-10-20 夜做过对照实验,不带前置确实没红)",
+  "前置": [
+   "python3 -c \"import json,sqlite3; j=json.load(open('agent/triage-sets.json',encoding='utf-8')); pkg=j['套']['测试集'][0]['包裹']; c=sqlite3.connect('backend/lanxiu.db'); n=c.execute('DELETE FROM pkg WHERE pkg_id=?',(pkg,)).rowcount; c.commit(); c.close(); assert n==1, '前置没删到那一行 —— 这条咬合会变成空转'; print('前置:在副本的真库里删掉了', pkg, '(快照里它还在)')\""
+  ],
+  "file": [
+   {
+    "path": "mcp/protocol.py",
+    "old": "    副 = (os.environ.get(\"LANXIU_DB\") or \"\").strip()",
+    "new": "    副 = \"\""
+   }
+  ],
+  "预期红": "在快照上真跑一遍 service_records:每道题都取得出材料(这一单在、有包裹、这个客户的差评史也在)"
+ },
+ {
+  "script": "agent/triage_sets_check.py",
+  "改坏": "让 用快照() 直接返回真库路径(等于整场考试换回那个每天重建的世界)。📌 这条**不需要前置**:条数那条判据直接比「快照里每张表几条」和冻结文件记的,真库条数差着量级。2026-10-20 夜实测红了 —— 所以交接里「这条今天红不出来」那句**不成立**,记错了",
+  "file": [
+   {
+    "path": "agent/triage_sets.py",
+    "old": "    with gzip.open(路径, \"rb\") as f, open(出, \"wb\") as g:\n        shutil.copyfileobj(f, g)\n    return 出",
+    "new": "    return DBP"
+   }
+  ],
+  "预期红": "快照里每张表的条数和冻结文件记的一样(有人换了快照文件 → 红)"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把 待回填() 里 track='新量' 那个条件去掉(回溯轨那些行也被当成等着回填)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "WHERE s.track='新量' AND (s.human_way IS NULL OR TRIM(s.human_way)='') ",
+    "new": "WHERE (s.human_way IS NULL OR TRIM(s.human_way)='') "
+   }
+  ],
+  "预期红": "人工后来判了新量那条 → 它进「等着回填的」(而回溯那条不进)"
  }
 ]

@@ -249,6 +249,30 @@ def 回填人工(dbp=None, 现在=None):
         c.close()
 
 
+def 待回填(dbp=None):
+    """新量轨里**人工已经判了、而台账还没回填**的那些。
+
+    ⚠️ 这个数非报不可,因为回填是**要有人去跑**的一步(`--回填`):
+    > 「有人处置了而台账没回填」和「还没人处置」在台账上长得一模一样 ——
+    > 两者 `verdict` 都是空,`judged_at` 都是空。
+    而前者是一条**已经攒到了、却没计入**的对照,后者只能等。
+    把它们混成一个「判定过的 0」,这道闸会显得永远攒不动,
+    **而真相可能是数据早就在了,只是没人跑那一步。**
+
+    判据第 ⑩ 节每次照数打印(库况,不判红 —— 它不是谁做错了事,是一步没跑)。
+    """
+    c = sqlite3.connect(f"file:{dbp or DBP}?mode=ro", uri=True)
+    try:
+        if not _有表(c):
+            return []
+        return [r[0] for r in c.execute(
+            f"SELECT s.pkg_id FROM {表名} s JOIN rating r ON r.pkg_id = s.pkg_id "
+            f"WHERE s.track='新量' AND (s.human_way IS NULL OR TRIM(s.human_way)='') "
+            f"AND r.handle_way IS NOT NULL AND TRIM(r.handle_way)<>''")]
+    finally:
+        c.close()
+
+
 def 遮不住的回溯行(dbp=None):
     """回溯轨里**一处都没遮到**的那些行 —— 它们的人工处置可能夹在材料里。
 
@@ -334,8 +358,15 @@ def 报一轮(dbp=None):
     # 库况:新量还能攒多少、剩多少要等
     可攒 = len(挑新量(dbp or DBP))
     判了 = 出["新量"].get("判定过的", 0)
+    待 = 待回填(dbp or DBP)
     出["库况"] = dict(库里还没影子跑过的未处置差评=可攒,
                       新量还差=max(0, 新量下限 - 判了),
+                      # **人工已经判了而台账还没回填的** —— 跑 `--回填` 就能计入。
+                      # 不单独报的话,它和「还没人处置」在「判定过的 0」上长得一模一样
+                      等着回填的=待,
+                      要不要跑回填=("要 —— 有 %d 条人工已经判了,跑 "
+                                    "`python3 agent/triage_shadow.py --回填`" % len(待))
+                                   if 待 else "不用,没有人工新判的",
                       一句话=("新量轨只能靠时间攒 —— 2026-10-20 量的速率是 8 天 3 条 "
                               "≈ 0.4 条/天;这个数不该拿来当「做得慢」,它是这个世界的上新速率"))
     return 出
