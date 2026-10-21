@@ -532,7 +532,7 @@ run "方案保存 · 客户和版型真的存进去、编辑跟着变、不串�
 run "首页指标 · 失败原因不含成功、今天昨天按日历、待处理和研判队列同一口径、页面不写死数(外部复审 10-19 · 3.2)" python3 backend/workbench_check.py
 run "客户详情 · 顾问名字按工号现取、日历的今天是世界的今天(外部复审 10-19 · 3.3)" python3 backend/customer_detail_check.py
 run "助手选择页 · 个数、只读与否、工具数都从角色清单现算(外部复审 10-19 · 3.4)" ./agentsite/.venv/bin/python agentsite/role_claims_check.py
-run "业务场景回归 · 顾问接待到下单:方案、订单、着装人、量体、AI 查询、署名一路对得上(外部复审 10-19 · 第 4 节 F)" python3 backend/scenario_check.py
+run "业务场景回归 · 接待到下单 / 交付出问题到解决 / 经营复盘到下期结果:方案、订单、着装人、量体、返修、研判回执、报告定的行动下一期回看一路对得上(外部复审 10-19 · 第 4 节 F)" python3 backend/scenario_check.py
 run "订单列表 · 只给当前页取明细(原来全量各查一次,一页 17 秒,拖住冒烟)" python3 backend/order_list_check.py
 run "研判上线门槛 · 越权 / 重复业务执行 / 失败假成功 / 无依据办结在真库上各为 0(量法在库副本上自造四种坏形状)" python3 backend/triage_gate_check.py
 run "同意按年龄 · 不满 14 监护人、14—18 本人为准 + 家长付款双签、营销只看本人(自测)" python3 knowledge/consent_age.py

@@ -650,6 +650,19 @@ schema 漂了、导出图漏了表 → 红)· 遮蔽在快照上照样生效 · 
 顺手:门禁冒烟「找不到有确认书的单」查出是订单列表 N+1(一页 17 秒),改成只给当页取明细 → 0.6 秒(ed899f9)。
 
 ### ⚠️ 下一步第一个动作
+- **有一批没提交:业务场景回归第二条(交付出问题到解决)**。`backend/scenario_check.py` 加了场景二(14 条全过)、`check.sh` 改了那一行的名字、`tools/bite_specs.json` +1(售后判责办结不核维保单完没完成)、`待办清单.md`。等数据工厂的门禁(10-21 07:0x 在跑)结束 → 跑全量门禁 → 绿了 `git commit --only` 这几个文件推上去。
+  - **10-21 全量门禁红 1 条:「全库没有悬空引用」—— triage 表 2 行指向不存在的 `T-场景2`(id 61、62)。** 是场景二第一版切库后才 import `ops` 漏进真库的研判记录(和那两张 MX 维修单同一次泄漏,当时只清了维修单)。子表 escalation / triage_run 无挂靠。删除被权限拦了,**已请用户执行**:`sqlite3 backend/lanxiu.db "delete from triage where id in (61,62) and task_id='T-场景2'"`。删完重跑门禁 → 绿了再提交。
+  - **同一批里又加了场景三(经营复盘到下期结果,用户 10-21 拍「补最小闭环」)**:
+    - `backend/tasktypes.py`:新任务类型「经营改进」(运营族、店长派),ref=report → `store_report_doc`;`resolve_ref` 只认**已确认、没被打回**的报告。
+    - `backend/tasks.py`:`assign_task` 对经营改进要求 `metric`(必须是报告冻结取数包里有数的一项,`报告可盯项()`),报告店 = 接活人的店;关联写进新表 `report_action`(写口里 CREATE IF NOT EXISTS,**真库目前没有这张表,第一次派这种任务时才建**)。
+    - `backend/api.py`:`assign_task` 工具加 `metric` 参数;`store_report` 取数包加「上期定的行动」(`_上期行动`:谁负责 / 做完了 / 盯的项上期冻结数 vs 这期现取数,**故意不给有效无效的结论**);报告口径版本升 `2026-10-21.1`。
+    - `backend/scenario_check.py` 场景三 7 条,三场景共 21 条全过;`tools/bite_specs.json` +2(场景三两条,单独重放已过);`check.sh` 那一行改名。
+    - 后台门禁 `gate-1021d.log`(scratchpad)在跑,找场景三带出的其他红(B2 那条照旧红,等用户删)。
+    - PRD A-286、`intent/biz-review-loop.md` 已写。`report_action` 已登进 `tools/ensure_tables.py`(数据工厂提醒:今早 rating_shadow 就是没登记 + 主检出没拉,05:10 平移炸了)。
+    - **10-21 进度**:真库已跑 ensure_tables 建出 report_action;平移在副本插真实一行验过(created 整列日期自动挪、无混合列);文档表数 10 处 120→121、README 重生成;intent 补全两栏 + 待办清单重生成;展示大类把经营改进归「企业任务」、booking_check 运营类型数 5→6;场景三加「metric 自由文本拒」(平移豁免的承重墙,数据工厂点的)。第二轮门禁(gate-1021e)只剩 B2 + 派单决策两条,后者已修、单跑绿。**只差用户删 triage 61/62 → 再跑门禁 → 提交。**
+    - 原计划(已做的划掉看上一条):真库跑 `python3 tools/ensure_tables.py` 建出表 → `python3 tools/shift_world.py` 的「只问能不能挪」核实 → `tools/doc_numbers_check.py` 表数 120→121 改文档 → 再跑门禁 → 提交推送 → **主检出 `git pull --rebase --autostash`** → 告诉数据工厂窗口还了。
+  ⚠️ 场景二第一版在「用副本」之后才 import repair_write,**两张测试维修单 MX10211833525932 / MX10211834029507 写进了真库,已删干净**(maintain + maintain_decision,MX 前缀全库 0 条);检查现在开跑前断言所有写口 DB 已指副本。MW73395 那张是每日造数造的,不是测试残留。
+- 场景三(经营复盘到下期结果)还没做
 - 差评 AI **仍关着**:闸二三套正式题(数据工厂重冻、带快照,训练 82 / 验证 46 / 测试 38)**还没考** —— 考的时候 `LANXIU_DB` 指快照(`triage_sets.用快照()`);
   闸四新量轨要攒(约 0.4 条 / 天)。上线还要用户拍。
 - 读判定段首层的洞(讲规则时提到的处置被读成建议,605056)待修,修法查结构不枚举 —— 结构闸已兜住出钱那一侧,不急
@@ -10733,21 +10746,24 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-21 12:13。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-21 18:37。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 8749fbd · 2026-10-21 · 运行日志:10-20 晚两边的模型调用记录(诱导卷 2×2 + 数据工厂影子运行),两个会话都在追加,一次提交 |
-| 代码量 | 779 个 Python 文件 / 152421 行(不含 .venv) |
+| 最新提交 | 2a27eec · 2026-10-21 · 交接:诱导卷 2×2 收口、出钱档结构上交给人、订单列表提速;下一步写清 |
+| 代码量 | 779 个 Python 文件 / 152470 行(不含 .venv) |
 | 验收 | `./check.sh` 共 310 项 —— **接手第一件事就是跑它** |
-| 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 没起来 |
+| 服务 | 管理后台 :8760 → 没起来 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
 M .feynman/tool-eval.json
  M HANDOFF.md
+ M backend/scenario_check.py
+ M check.sh
+ M tools/bite_specs.json
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? .feynman/authprobe.log
@@ -10763,20 +10779,17 @@ M .feynman/tool-eval.json
 ?? agent/example-ab-results.jsonl
 ?? agent/triage-lure-paper-results.jsonl.0of2.partial
 ?? agent/triage-lure-paper-results.jsonl.1of2.partial
-?? agent/triage-lure-paper-results.jsonl.A2-0of2.partial
-?? agent/triage-lure-paper-results.jsonl.A2-1of2.partial
-?? agent/triage-lure-paper-results.jsonl.B1-0of2.partial
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+2a27eec 交接:诱导卷 2×2 收口、出钱档结构上交给人、订单列表提速;下一步写清
 8749fbd 运行日志:10-20 晚两边的模型调用记录(诱导卷 2×2 + 数据工厂影子运行),两个会话都在追加,一次提交
 ed899f9 订单列表一页 17 秒 → 0.6 秒:原来对全部 26560 张单各查一次明细,最后只显示 100 张
 263ba86 差评 AI:出钱的档位结构上交给人(用户 10-21 拍);候选提示词不换 —— 诱导卷 2×2 看不出它有用
 a8cb321 项目日志重发飞书成功(上一次刷交接时超时 300s)
-4775a32 交接:版师五条红线第一次被真攻击证明,其中隐私那条判据原来够不着它要验的东西
 ```
 <!--/AUTO-->
 ## 一句话在做什么

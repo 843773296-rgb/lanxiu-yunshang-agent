@@ -38,6 +38,7 @@
 #   order      订单号        —— 盯一张单的进度
 #   maintain   维保单号      —— 某件衣服的保养/返修
 #   aftersale  售后单号      —— 某张单的退换赔付
+#   report     报告号        —— 店长确认过的周报 / 月报里看出的异常,定下的改进行动(不挂客户)
 #   None       不挂          —— 店内自己的事,本来就没有「给谁做」
 #
 # **客户号只在 ref=customer 时手填,其余一律从单据带出来。**
@@ -68,6 +69,10 @@ TYPES = [
     ("订单跟踪", "运营", "order",     "manager",       False, "盯一张订单的进度 —— 填订单号,客户从单上带出"),
     ("维保任务", "运营", "maintain",  "manager",       True,  "成衣保养、返修 —— 填维保单号,要有件的照片"),
     ("售后任务", "运营", "aftersale", "manager",       True,  "投诉、退换、赔付 —— 填售后单号,要有问题件的照片"),
+    # 经营复盘的闭环(用户 2026-10-21 拍「补最小闭环」):报告里看出的异常 → 店长定一条行动派给人 →
+    # 下一期报告回看「定了什么、做完没有、盯的那个数这期多少」。**必须挂一份已确认的报告、点名盯哪一项** ——
+    # 不挂报告的「改进一下业绩」下一期没处回看;不点名指标的话,回看时只能说「做了」,说不出数动没动
+    ("经营改进", "运营", "report",    "manager",       False, "周报 / 月报里确认过的异常,定下的改进行动 —— 填报告号和盯的那一项"),
 ]
 
 # 单据种类 → (库表, 主键列, 界面上叫什么, 举例)
@@ -76,6 +81,7 @@ REF_SOURCE = {
     "order":     ("ordr",      "id", "订单号",   "6488012719714560000"),
     "maintain":  ("maintain",  "id", "维保单号", "MW73020"),
     "aftersale": ("aftersale", "id", "售后单号", "AS64880127"),
+    "report":    ("store_report_doc", "id", "报告号", "RPT0001"),
 }
 
 BY_NAME = {t[0]: dict(name=t[0], family=t[1], ref=t[2], route=t[3],
@@ -95,7 +101,7 @@ OPS_TYPES = [t[0] for t in TYPES if t[1] == "运营"]
 # **别合并。** 这和「渠道」那两套口径是同一个形状:两套分法都成立,但回答的不是同一个问题。
 大类 = {
     "客户预约": ("电话回电", "预约到店", "上门沟通", "商机提醒"),
-    "企业任务": ("接待任务", "团建培训", "日常运维"),
+    "企业任务": ("接待任务", "团建培训", "日常运维", "经营改进"),   # 经营改进:10-21 加,店里自己的事、挂报告
     "订单任务": ("订单跟踪", "维保任务", "售后任务"),
 }
 _大类of = {leaf: k for k, vs in 大类.items() for leaf in vs}
@@ -197,6 +203,22 @@ def resolve_ref(kind, ref_id, q):
     rid = (ref_id or "").strip()
     if not rid:
         return False, None, None, f"{label}必填(例:{eg})"
+
+    if kind == "report":
+        # 报告不挂客户。**只认店长确认过、没被打回的那一版** —— 草稿里的数还会改,
+        # 照着草稿定的行动,下一期回看时对的是一个从没定稿的数
+        try:
+            r = q(f"SELECT * FROM {table} WHERE {key}=?", rid)
+        except Exception:
+            r = []                                # 还没存过任何报告的库,表都没有
+        if not r: return False, None, None, f"没有这个{label}:{rid}"
+        row = r[0]
+        if row.get("status") != "已确认" or row.get("rejected_at"):
+            return False, None, None, (f"{label} {rid} 还没确认(现在是「{row.get('status')}」"
+                                       + (",而且被打回过" if row.get("rejected_at") else "")
+                                       + ")—— 先确认报告,再照着它定行动")
+        return True, None, row.get("shop"), (f"{row.get('shop')} {row.get('kind')}报"
+                                             f"({row.get('period_start')} ~ {row.get('period_end')},{rid})")
 
     if kind == "customer":
         r = q(f"SELECT id,name,shop FROM customer WHERE {key}=?", rid)

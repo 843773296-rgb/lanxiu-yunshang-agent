@@ -2802,12 +2802,13 @@ def _agent_log(me, code, text):
         f"智能体代 {me['name']}({me['role']})执行:{text[:90]}", {"role": me.get("role")})
 
 
-def assign_task(type, assignee, note, end, start=None, ref_id=None, activity_code=None):
+def assign_task(type, assignee, note, end, start=None, ref_id=None, activity_code=None, metric=None):
     """**派一条任务**(真的写进去)。只有店长及以上能派,只能派给本店在职顾问。
 
     type 见 task_types();ref_id 填什么由类型决定
     (客户相关填客户号;订单跟踪填订单号;维保填维保单号;售后填售后单号;
-    团建培训和日常运维不填)。assignee 写工号或姓名。时间 `YYYY-MM-DD HH:MM`。
+    经营改进填报告号、并用 metric 点名盯报告里的哪一项;团建培训和日常运维不填)。
+    assignee 写工号或姓名。时间 `YYYY-MM-DD HH:MM`。
 
     **动手之前先跟用户把人、时间、内容对一遍** —— 派错了和派对了在库里长得
     一模一样,等发现的时候顾问已经去做了。
@@ -2829,7 +2830,7 @@ def assign_task(type, assignee, note, end, start=None, ref_id=None, activity_cod
         return dict(error=(f"找不到「{who}」" if not hit else f"有 {len(hit)} 个人叫「{who}」,请给工号"),
                     可派的人=[f"{p['name']}({p['no']})" for p in pool])
     r = tasks.assign_task(_nz(dict(type=type, assignee_no=hit[0]["no"], note=note, end=end,
-                                   start=start, ref_id=ref_id, activity_code=activity_code)), me)
+                                   start=start, ref_id=ref_id, activity_code=activity_code, metric=metric)), me)
     if r.get("ok"): _agent_log(me, "ASSIGN", r.get("reason", ""))
     return r
 
@@ -4888,6 +4889,7 @@ def store_report(kind="周", date=None):
     if _单 is not None and _销 is not None and _单 != _销:
         并排.append(f"下单 {_单} 单 ≠ 销量里 {_销} 个订单:下单按下单日数单子(含待付款、取消的),"
                    f"销量不算取消 / 待付款 / 已退款 —— 两个数并排时把这句写上")
+    上期行动 = _上期行动(kind, 起, me.get("shop"), 期内, 存, TODAY)
     return {"报告": 名, "种类": kind, "区间": f"{a} ~ {b}" + ("(这一期还没过完,截到今天)" if 止 > 今 else ""),
             "范围": me.get("shop") or "全部门店", "截至": TODAY,
             "时区": "中国时间(按演示世界的日期;用户 2026-10-09 定)",
@@ -4895,15 +4897,66 @@ def store_report(kind="周", date=None):
             # 三个月后规矩改了,还查得到当时是照什么写的
             "规则版本": _报告规则版本(),
             "期内": 期内, **({"环比": 环比} if 环比 else {}), "存量(截至今天)": 存, "取不到的": 缺口,
-            "并排读时要说清的": 并排,
+            "并排读时要说清的": 并排, "上期定的行动": 上期行动,
             "必选指标": list(必选), "必选缺了的": 必缺,
             "能不能确认": not 必缺,
             "怎么用": "**只照这份数说**:每一项都有出处;「期内」说这一期发生了多少,「存量」说截至今天还压着多少,"
                      "两类不许混(别把存量说成本期新增)。原因、建议要标成判断,不要写成已安排。"}
 
 
+def _上期行动(kind, 起, shop, 期内, 存, 今天):
+    """**经营复盘的闭环**(用户 2026-10-21 拍「补最小闭环」):上一期报告确认后定下的「经营改进」行动,
+    这一期回看 —— 谁负责、做完没有、盯的那一项上期多少 / 这期多少。
+
+    ⚠️ **只摆事实,不下因果。** 「做完了」和「数变好了」同时出现,不等于是这条行动起的作用
+    (季节、活动、别的行动都可能);数没变好也不等于行动没用。写报告的那一步照抄这两组数,
+    原因要标成判断。所以这里**不给「有效 / 无效」这种字段** —— 给了就会被照抄成结论。
+    """
+    import json as _j, contextlib as _cl
+    上起 = (起 - _dt.timedelta(days=7) if kind == "周" else
+           _wk_月起(起) if kind == "月" else 起 - _dt.timedelta(days=1))
+    with _cl.closing(_c()) as c:
+        有表 = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE name IN ('store_report_doc','report_action')")}
+        if len(有表) < 2:
+            return {"条数": 0, "说明": "上一期没有照报告定过行动(还没存过报告,或从没派过「经营改进」)"}
+        报 = c.execute("""SELECT id, shop, pack FROM store_report_doc
+                         WHERE kind=? AND period_start=? AND status='已确认' AND rejected_at IS NULL
+                           AND (? IS NULL OR shop=?) ORDER BY revision""",
+                      (kind, 上起.isoformat(), shop, shop)).fetchall()
+        出 = []
+        for rid, rshop, pack in 报:
+            旧 = _j.loads(pack or "{}")
+            for sid, metric, st, end, who, note in c.execute(
+                    """SELECT a.schedule_id, a.metric, s.status, s.end_ts,
+                              COALESCE((SELECT name FROM staff WHERE no=s.assignee_no), s.assignee_no), s.note
+                       FROM report_action a JOIN schedule s ON s.id=a.schedule_id
+                       WHERE a.report_id=? ORDER BY a.schedule_id""", (rid,)):
+                def 值(包, k):
+                    for 段 in ("期内", "存量(截至今天)"):
+                        if k in (包.get(段) or {}): return (包[段][k] or {}).get("值")
+                    return None
+                出.append({"任务": sid, "门店": rshop, "照着哪份报告": rid, "做什么": note, "负责人": who,
+                          "截止": end, "状态": st,
+                          # 任务做完写的是「完结」(早年造数里是「已完成」),两种都算;**取消 / 无效不算做完**
+                          "做完了": st in ("完结", "已完成"),
+                          "过了截止还没做完": st == "有效" and (end or "")[:10] < 今天,
+                          "盯的那一项": metric, "上期的数": 值(旧, metric),
+                          "这期的数": 值({"期内": 期内, "存量(截至今天)": 存}, metric)})
+    if not 出:
+        return {"条数": 0, "说明": f"上一期({上起.isoformat()} 起)确认过的报告里,没有定过「经营改进」行动"}
+    return {"条数": len(出), "行动": 出,
+            "怎么读": "只摆事实:定了什么、做完没有、盯的那一项上期 / 这期各多少。**做完了和数变了同时出现,"
+                     "不等于是这条行动起的作用**(季节、活动、别的行动都可能);写报告时原因一律标成判断"}
+
+
+def _wk_月起(起):
+    """上一个自然月的第一天。"""
+    d = 起 - _dt.timedelta(days=1)
+    return d.replace(day=1)
+
+
 # 取数包口径的版本:**改了取数口径就升这个号**(加指标、改单位、改去重都算)
-报告口径版本 = "2026-10-12.1"   # 10-12:加「并排读时要说清的」(成交率窗口、下单 vs 销量订单);10-10:加到店客户数(去重)、售后新建 / 结案、规则版本留底
+报告口径版本 = "2026-10-21.1"   # 10-21:加「上期定的行动」(经营复盘闭环); 10-12:加「并排读时要说清的」(成交率窗口、下单 vs 销量订单);10-10:加到店客户数(去重)、售后新建 / 结案、规则版本留底
 
 
 def _报告规则版本():
@@ -5914,12 +5967,13 @@ SHOP_SCHEMAS=[
     "status":{"type":"string","description":"只看某个状态的,不给就是全部"}},"required":[]}},
  {"name":"assign_task","description":"**派一条任务**(真的写进去,立即生效)。只有店长及以上能派,只能派给本店在职顾问。type 见 task_types();ref_id 填什么由类型决定;assignee 写工号或姓名。⚠️ **动手之前先跟用户把人、时间、内容对一遍** —— 派错了和派对了在库里长得一模一样,等发现的时候顾问已经去做了。用户没说清派给谁就问,别挑一个「看起来合理」的人。",
   "input_schema":{"type":"object","properties":{
-    "type":{"type":"string","description":"任务类型,九种之一,见 task_types()"},
+    "type":{"type":"string","description":"任务类型,见 task_types()"},
     "assignee":{"type":"string","description":"派给谁,工号或姓名"},
     "note":{"type":"string","description":"日程描述:这件事要做什么"},
     "end":{"type":"string","description":"结束时间 YYYY-MM-DD HH:MM"},
     "start":{"type":"string","description":"开始时间,不给则用现在"},
-    "ref_id":{"type":"string","description":"挂的单据号。客户相关填客户号;订单跟踪填订单号;维保填维保单号;售后填售后单号;团建培训和日常运维不填。"},
+    "ref_id":{"type":"string","description":"挂的单据号。客户相关填客户号;订单跟踪填订单号;维保填维保单号;售后填售后单号;经营改进填**已确认**的报告号;团建培训和日常运维不填。"},
+    "metric":{"type":"string","description":"只有经营改进要填:盯报告里的哪一项(如「订单」「差评待跟」),下一期报告会回看这一项的数"},
     "activity_code":{"type":"string","description":"绑定活动编码,可不填"}},
    "required":["type","assignee","note","end"]}},
  {"name":"dispatch_task","description":"**把待分配池里的单分出去**(真的写进去)。不给 assignee 就采纳 dispatch_pool 里那条建议。只能分**还没派出去的**单 —— 已经派给别人的要改派是另一个动作,悄悄换掉负责人会让原来那个人的列表凭空少一行。",

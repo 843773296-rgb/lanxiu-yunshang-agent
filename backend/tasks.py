@@ -154,6 +154,37 @@ def my_staff(me):
                 "WHERE role='顾问' AND status='启用' AND shop=? ORDER BY no", me.get("shop"))
 
 
+# 经营改进 → 报告的哪一项。**行动挂在任务上,盯的指标挂在这张表上** —— schedule 不为一种任务加一列。
+# 在写口里 CREATE IF NOT EXISTS:代码推上去、任何一个检出第一次派这种任务时表就有了(不靠先手工建表)
+REPORT_ACTION_DDL = """CREATE TABLE IF NOT EXISTS report_action(
+  schedule_id TEXT PRIMARY KEY,   -- schedule.id(那条经营改进任务)
+  report_id   TEXT NOT NULL,      -- store_report_doc.id(照着哪一版报告定的)
+  metric      TEXT NOT NULL,      -- 盯报告里的哪一项(期内 / 存量里的名字)。⚠️ **只收取数包里的指标名** ——
+                                  -- 这张表不进平移登记的前提就是它没有能写进日期的文字列;放开成自由文本
+                                  -- (或把「上期定的行动」落成库列)就要回头登记 tools/shift_world.py,
+                                  -- 否则第二天 05:10 平移当场拒挪。场景回归第三条有一条判据钉着它
+  created     TEXT NOT NULL)"""
+
+
+def 建表(c):
+    """登记在 tools/ensure_tables.py:第一次有人派「经营改进」才会建 —— 本地建过就一直在、CI 每次从零,表数会漂,所以建死。"""
+    c.execute(REPORT_ACTION_DDL)
+
+
+def 报告可盯项(report_id):
+    """这份报告冻结的取数包里,**当时有数**的那几项(期内 + 存量)。没数的项定了行动也回看不了。"""
+    import json as _j
+    try:
+        r = rows("SELECT pack FROM store_report_doc WHERE id=?", report_id)
+        pk = _j.loads(r[0]["pack"]) if r else {}
+    except Exception:
+        return []
+    out = []
+    for 段 in ("期内", "存量(截至今天)"):
+        out += [k for k, v in (pk.get(段) or {}).items() if isinstance(v, dict) and v.get("值") not in (None, {}, [])]
+    return out
+
+
 def assign_task(d, me):
     """店长派一条任务。任务清单的字段:类型 / 顾问 / 起止时间 / 绑定活动 / 描述 / 附件。
 
@@ -195,6 +226,20 @@ def assign_task(d, me):
                     reason=f"「{kind}」是店内自己的事,不挂任何单据。你填了 {ref_id} —— "
                            f"要么换成挂单据的类型,要么把它去掉")
 
+    盯 = None
+    if ref_kind == "report":
+        # 经营改进:报告要是**接活那个人那家店**的;盯的那一项要是报告里**真有、当时有数**的
+        # (从冻结的取数包里认,不收自由文本 —— 写「提升业绩」的话,下一期没有一个数能回看)
+        if ref_shop != allowed[to].get("shop"):
+            return dict(ok=False, code="REPORT_OTHER_SHOP",
+                        reason=f"{ref_desc} 是「{ref_shop}」的报告,{allowed[to]['name']} 在「{allowed[to].get('shop')}」")
+        盯 = (d.get("metric") or "").strip()
+        可盯 = 报告可盯项(ref_id)
+        if 盯 not in 可盯:
+            return dict(ok=False, code="NEED_METRIC",
+                        reason=f"「经营改进」要点名盯报告里的哪一项(metric);这份报告里有数的:{'、'.join(可盯) or '(没有)'}"
+                               + (f"。你填的「{盯}」不在里面" if 盯 else ""))
+
     note = (d.get("note") or d.get("title") or "").strip()
     if not note: return dict(ok=False, code="NEED_NOTE", reason="日程描述必填 —— 写清楚这件事要做什么")
 
@@ -226,6 +271,10 @@ def assign_task(d, me):
                   (sid, kind, him["no"], cid,
                    st, en, him.get("shop"), to, me["no"],
                    _wnow(), note, ac, ref_id))
+        if 盯:
+            c.execute(REPORT_ACTION_DDL)
+            c.execute("INSERT INTO report_action(schedule_id,report_id,metric,created) VALUES(?,?,?,?)",
+                      (sid, ref_id, 盯, _wnow()))
 
     # 派单附件 —— 存不下的**逐张回报**,不要笼统说「部分失败」。
     import files as _f

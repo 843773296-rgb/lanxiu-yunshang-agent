@@ -45,6 +45,7 @@ import refund_write
 import triage_config
 import triage_trial
 import rating_shadow
+import tasks
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -84,6 +85,9 @@ import rating_shadow
     # 「人工照着 AI 抄的」在台账上长得一模一样)。登记在这儿的理由和上面几张一样:
     # 第一次有人影子跑才建 —— **本地建过就一直在,CI 每次从零**
     (rating_shadow, "确保表", ["rating_shadow"]),
+    # 经营改进 → 报告的哪一项(2026-10-21,经营复盘闭环):第一次有人派「经营改进」才建 —— 同上,建死免得表数漂。
+    # 只有一列日期(created,世界的钟,整列日期 → 平移自动挪),其余三列是编号和指标名,不用登记进平移
+    (tasks, "建表", ["report_action"]),
 ]
 
 
