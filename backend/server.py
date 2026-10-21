@@ -835,11 +835,8 @@ def order_list(q):
     kw=(q.get("q") or [""])[0].strip()
     tab=(q.get("tab") or ["全部"])[0]
     kind=(q.get("kind") or [""])[0]; src=(q.get("source") or [""])[0]
-    rs=填顾问名(rows("""SELECT o.*, c.name cname FROM ordr o LEFT JOIN customer c
-               ON o.customer_id=c.id ORDER BY o.created DESC"""))
-    for r in rs:
-        r["items"]=rows("""SELECT sku,name,tag,price,qty,spu,base_amount,custom_amount,total
-                           FROM ordr_item WHERE order_id=?""",r["id"])
+    rs=rows("""SELECT o.*, c.name cname FROM ordr o LEFT JOIN customer c
+               ON o.customer_id=c.id ORDER BY o.created DESC""")
     if kw: rs=[r for r in rs if kw in r["id"] or kw in (r["cname"] or "")]
     if kind: rs=[r for r in rs if r["kind"]==kind]
     if src:  rs=[r for r in rs if r["source"]==src]
@@ -847,6 +844,13 @@ def order_list(q):
     unmapped = tab != "全部" and tab not in TAB_MAP
     if tab != "全部": rs=[r for r in rs if r["status"]==tab]
     d=_page(rs,q)
+    # 明细和顾问名**只给这一页**取(10-21):原来对全部 26560 张单各查一次明细、再整表补顾问名,最后只显示 100 张 ——
+    # 一页要 17 秒,后台订单页和页面冒烟都被它拖住(冒烟限时内翻不完 5 页,报成「找不到有确认书的单」)。
+    # 筛选只看订单本身的字段,不看明细,所以先筛先分页、再补,显示的内容一样
+    填顾问名(d["rows"])
+    for r in d["rows"]:
+        r["items"]=rows("""SELECT sku,name,tag,price,qty,spu,base_amount,custom_amount,total
+                           FROM ordr_item WHERE order_id=?""",r["id"])
     d["tabs"]=[dict(name=t,mapped=(t in TAB_MAP),
                     prd=TAB_MAP.get(t) or ("全部" if t=="全部" else None)) for t in DESIGN_TABS]
     d["tab"]=tab; d["unmapped"]=unmapped

@@ -10192,5 +10192,29 @@
    }
   ],
   "预期红": "版师拿得到尺寸和体型,拿不到手机号和消费额"
+ },
+ {
+  "script": "agentsite/rating_triage_check.py",
+  "改坏": "出钱转人工只认「建议」不认「提到」",
+  "file": [
+   {
+    "path": "agentsite/rating_triage.py",
+    "old": "    提到 = [w for w in R.出钱的处理方式 if w in 文]",
+    "new": "    提到 = [w for w in R.出钱的处理方式 if w in 文 and f\"{w}过度\" not in 文 and \"不建议\" not in 文]"
+   }
+  ],
+  "预期红": "出钱的档位结构上交给人:回答里提到部分 / 全额退款就转人工(否定句也转)"
+ },
+ {
+  "script": "backend/order_list_check.py",
+  "改坏": "明细又对全部订单各查一次",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    填顾问名(d[\"rows\"])\n    for r in d[\"rows\"]:",
+    "new": "    填顾问名(d[\"rows\"])\n    for r in rs:"
+   }
+  ],
+  "预期红": "明细只给这一页取:查 ordr_item 的次数不超过这一页的张数"
  }
 ]
