@@ -10228,5 +10228,41 @@
    }
   ],
   "预期红": "这一档自己的自测没过"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把 流程表 砍成只剩 rating(task / triage / 升级 / 运行记录都不比了)—— 并行会话 2026-10-21 那次真事故漏的正是 triage 那张表",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "流程表 = (\"rating\", \"ordr\", \"task\", \"triage\", \"triage_run\", \"escalation\", \"pkg\", \"pickup\")",
+    "new": "流程表 = (\"rating\",)"
+   }
+  ],
+  "预期红": "流程表清单盖住了会被写的那几张(rating / task / triage / 升级 / 运行记录)"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "让「每晚都跑」的那几项在「单跑那晚」那天被跳过(周日漏一天 —— 按天攒样本的东西漏一天等于把三个月拖成三个半月,而**慢不报错**)",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "        return _每晚 + 单跑",
+    "new": "        return 单跑"
+   }
+  ],
+  "预期红": "「单跑那晚」"
+ },
+ {
+  "script": "tools/eval_env_check.py",
+  "改坏": "把「每晚都跑」清空(影子跑退回成普通评测,跟着单跑那晚的调度走)",
+  "file": [
+   {
+    "path": "tools/nightly_eval.py",
+    "old": "每晚都跑 = (\"triage_shadow.py\",)",
+    "new": "每晚都跑 = ()"
+   }
+  ],
+  "预期红": "「每晚都跑」里有东西"
  }
 ]
