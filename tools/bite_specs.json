@@ -10264,5 +10264,20 @@
    }
   ],
   "预期红": "「每晚都跑」里有东西"
+ },
+ {
+  "script": "agent/triage_sets_check.py",
+  "改坏": "把「库里没有就判据自己造」那一支的 UPDATE 去掉(回到 2026-10-21 之前那个**在 CI 上必红**的状态 —— 红的理由是「造数没造出这个形状」,而那不是谁做错了事)",
+  "前置": [
+   "python3 -c \"import sqlite3; c=sqlite3.connect('backend/lanxiu.db'); 行=c.execute(\\\"SELECT pkg_id, customer_id FROM rating WHERE star<=3 AND handle_way IS NOT NULL AND handle_way<>''  ORDER BY pkg_id\\\").fetchall(); 见=set(); 清=[p for p,cid in 行 if (cid in 见) or (见.add(cid) or False)]; [c.execute('UPDATE rating SET handle_way=NULL, handle_note=NULL WHERE pkg_id=?',(p,)) for p in 清]; c.commit(); n=c.execute(\\\"SELECT COUNT(*) FROM (SELECT customer_id FROM rating WHERE star<=3 AND handle_way IS NOT NULL AND handle_way<>'' GROUP BY customer_id HAVING COUNT(*)>1)\\\").fetchone()[0]; assert n==0, f'前置没造成:还剩 {n} 个双差评客户'; print('前置:清掉重复客户的处置,现在 0 个双差评客户(模拟 CI 从零建库)')\""
+  ],
+  "file": [
+   {
+    "path": "agent/triage_sets_check.py",
+    "old": "            _c3w.execute(\"UPDATE rating SET customer_id=?, handle_way=?, handle_note=? \"\n                         \"WHERE pkg_id=?\",\n                         (_一[2], \"只回访\", \"判据自造:给同一个客户补第二条已处置差评\",\n                          _另包[0]))",
+    "new": "            pass"
+   }
+  ],
+  "预期红": "有「同一个客户有两条已处置差评」的样本可验"
  }
 ]

@@ -480,13 +480,61 @@ print("\n⑧ 回测真的遮住了 —— 不是「清单登记对了」,是「�
 c = sqlite3.connect(f"file:{api.DB}?mode=ro", uri=True)
 c.row_factory = sqlite3.Row
 # 要一个**同一个客户有两条差评**的样本,才验得到「其它那条照给」。
-# 库里这样的客户只有几个,所以**在全库里现找**,找不到就红(而不是静默跳过)。
+#
+# ⚠️⚠️ **2026-10-21 改:原来是「在全库里现找,找不到就红」—— 而那条在 CI 上必红。**
+# 本机库是增量演化来的,**碰巧有**这种客户;CI 每次从零建库,造数没造出这个形状。
+# 于是 CI 连红两次,而红的理由(「造数没造出这个形状」)**不是任何人做错了事**。
+# > **一条判据,如果它红不红取决于环境里碰巧有什么数据,那它不是在验代码。**
+# (这句话是这个项目自己写下的教训 —— 而这一条就是照着它的反面写的。)
+#
+# 修法照那条教训:**把混在一条里的两件事拆开** ——
+#   · **代码对不对** → 判据**自己造**那个形状(在库副本上插一条),两个环境都真验得到;
+#   · **这个库上有几个** → 另开一个只打印、**不判红**的口。
+# ⚠️ 自造那一组的断言必须是硬的(下面那几条 ck 都照旧判红)——
+#    少了它,两样一起变成什么都不验。
 双 = c.execute(
     "SELECT customer_id, COUNT(*) n FROM rating WHERE star<=? AND handle_way IS NOT NULL "
     "AND handle_way<>'' GROUP BY customer_id HAVING n>1 ORDER BY customer_id LIMIT 1",
     (R.差评线,)).fetchone()
-ck("库里找得到「同一个客户有两条已处置差评」的样本(没有就验不到「其它那条照给」)",
-   bool(双), "造数没造出这个形状 —— 第三类材料「分得清第一次和第三次」永远验不到")
+库况("这个库里「同一个客户有两条已处置差评」的客户",
+     f"{'有(拿它验)' if 双 else '没有 —— 下面改用判据自己造的那一条'}",
+     "← CI 从零建库时通常没有,所以**这件事不判红**;验代码靠自造的那一组")
+if not 双:
+    # ── 自己造:在**库副本**上给一个客户补第二条已处置差评 ────────────────
+    # ⚠️ 真库一行不碰(这个脚本整篇都是 `mode=ro`)。
+    import shutil as _sh3, tempfile as _tf3
+    _目3 = _tf3.mkdtemp(prefix="sets-双差评-")
+    _副3 = os.path.join(_目3, "lanxiu.db")
+    _sh3.copy(api.DB, _副3)
+    _c3w = sqlite3.connect(_副3)
+    _一 = _c3w.execute(
+        "SELECT pkg_id, order_id, customer_id FROM rating WHERE star<=? "
+        "AND handle_way IS NOT NULL AND handle_way<>'' ORDER BY pkg_id LIMIT 1",
+        (R.差评线,)).fetchone()
+    if _一:
+        _另包 = _c3w.execute(
+            "SELECT pkg_id FROM rating WHERE customer_id<>? AND star<=? ORDER BY pkg_id LIMIT 1",
+            (_一[2], R.差评线)).fetchone()
+        if _另包:
+            # ⚠️ **INSERT / UPDATE 都点名列** —— `tools/insert_shape_check.py` 盯着这件事:
+            # 列数恰好相等而顺序错了是不报错的,值会整体挪一格。
+            _c3w.execute("UPDATE rating SET customer_id=?, handle_way=?, handle_note=? "
+                         "WHERE pkg_id=?",
+                         (_一[2], "只回访", "判据自造:给同一个客户补第二条已处置差评",
+                          _另包[0]))
+            _c3w.commit()
+    _c3w.close()
+    # 之后这一节整个改读这份副本
+    c.close()
+    api.DB = _副3
+    c = sqlite3.connect(f"file:{_副3}?mode=ro", uri=True)
+    c.row_factory = sqlite3.Row
+    双 = c.execute(
+        "SELECT customer_id, COUNT(*) n FROM rating WHERE star<=? AND handle_way IS NOT NULL "
+        "AND handle_way<>'' GROUP BY customer_id HAVING n>1 ORDER BY customer_id LIMIT 1",
+        (R.差评线,)).fetchone()
+ck("有「同一个客户有两条已处置差评」的样本可验(库里没有就判据自己造)",
+   bool(双), "连自己造都没造出来 —— 库里连一条已处置差评都没有?那是另一个问题")
 if 双:
     两 = [dict(x) for x in c.execute(
         "SELECT r.pkg_id, r.order_id, r.handle_way, o.shop FROM rating r "
