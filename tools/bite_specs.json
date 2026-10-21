@@ -10216,5 +10216,17 @@
    }
   ],
   "预期红": "明细只给这一页取:查 ordr_item 的次数不超过这一页的张数"
+ },
+ {
+  "script": "tools/cron_health_check.py",
+  "改坏": "把 最近那次成功了吗() 改成永远返回「没失败」(文档里那第四档整条失效 —— 而它正是 2026-10-21 当天漏掉一次真实失败的那个洞)",
+  "file": [
+   {
+    "path": "tools/cron_health_check.py",
+    "old": "    差 = (t - o).total_seconds()\n    return 差 > 最近一次没成功的秒数, 差",
+    "new": "    差 = (t - o).total_seconds()\n    return False, 差"
+   }
+  ],
+  "预期红": "这一档自己的自测没过"
  }
 ]
