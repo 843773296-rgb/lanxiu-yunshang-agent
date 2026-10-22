@@ -10339,5 +10339,46 @@
    }
   ],
   "预期红": "⑦段首没有任何加粗"
+ },
+ {
+  "script": "backend/page_load_check.mjs",
+  "改坏": "取数口不看序号:先点的慢页后回来照样写屏(地址栏丙、内容乙)",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "  if(号!==载入序号) throw 已被取代;\n  let d;",
+    "new": "  let d;"
+   },
+   {
+    "path": "backend/web/index.html",
+    "old": "  if(号!==载入序号) throw 已被取代;\n  return d;",
+    "new": "  return d;"
+   }
+  ],
+  "预期红": "⑥ 连点两页、先点的那页后回来"
+ },
+ {
+  "script": "backend/page_load_check.mjs",
+  "改坏": "切页失败不接:异常抛出去,旧页留在屏幕上",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "    if(e===已被取代||号!==载入序号) return;    // 被更晚的点击取代",
+    "new": "    throw e;    // 被更晚的点击取代"
+   }
+  ],
+  "预期红": "④ 服务关了(连不上):标明「乙」没载入"
+ },
+ {
+  "script": "backend/page_load_check.mjs",
+  "改坏": "一点下去不标载入中(等的时候旧页原样摆着)",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "  M.setAttribute(\"aria-busy\",\"true\");",
+    "new": "  void 0;"
+   }
+  ],
+  "预期红": "① 慢响应:一点下去主区就标成「载入中」"
  }
 ]

@@ -394,6 +394,9 @@ h1{font-size:18px;margin:0 0 3px;font-weight:600}
    ⚠️ 这份文件**不拷到 agentsite 去** —— 拷一份的那天起两份就开始漂,而漂了不报错。
    `.wrap` 的高度要把那条导航减掉,否则底部会多出一条滚动。 */
 .wrap{min-height:calc(100vh - 130px)}
+#main[aria-busy="true"]{opacity:.45;pointer-events:none;transition:opacity .15s}
+.load-st{padding:48px 24px;text-align:center;color:var(--ink3);font-size:13.5px;line-height:1.9}
+.load-st.fail{color:var(--ink)}.load-st.fail b{color:var(--down)}.load-st .btn{margin-top:10px}
 </style></head><body>
 <nav class="sitenav"><!--NAV--></nav>
 
@@ -492,7 +495,34 @@ function chrome(crumbs,body){
   }).join("");
   return `<div class="crumb">${cr}</div><div class="tabbar"></div>${body}`;
 }
-async function get(u){return (await fetch(u)).json()}
+/* 切页的加载状态(外部复审 3.5,2026-10-22)。原来 view() 先改地址栏、再等接口、回来才换内容:
+   等的时候旧页原样摆着;接口报错 / 服务关了,异常没人接,**旧页一直留着而地址栏已是新页**;
+   连点两页,先点的慢页后回来,**把后点那页盖掉**(地址栏「丙」、内容「乙」)。
+   > 一个「新页载入成功」和一个「新页没载入、摆着的是上一页」,在屏幕上长得一模一样 —— 除了地址栏。
+   修法:每次切页领一个序号;取数口回来时序号变了 → 这次结果作废(抛「已被取代」,那页走不到写屏);
+   失败分五类说清(连不上 / 没响应 / 接口报错 / 不是数据 / 页面脚本出错),给重试;不自动重启、不清任何数据。
+   门禁 backend/page_load_check.mjs 造出七种形状逐一验。 */
+let 载入序号=0, 上次要载入=null;
+var 载入超时毫秒=30000;   // var 不是 let:门禁要从外面把它调短来造「一直不回」(let 挂不到全局上,改了等于没改)
+const 已被取代={已被取代:true};
+function 载入错(类,细){ const e=new Error(类+(细?":"+细:"")); e.载入类=类; return e; }
+async function get(u){
+  const 号=载入序号, ac=new AbortController(), 表=setTimeout(()=>ac.abort(),载入超时毫秒);
+  let r;
+  try{ r=await fetch(u,{signal:ac.signal}); }
+  catch(e){ throw 号!==载入序号 ? 已被取代
+                 : ac.signal.aborted ? 载入错("没响应",`${Math.round(载入超时毫秒/1000)} 秒没回,服务可能正忙`)
+                 : 载入错("连不上","管理后台服务可能没起或已关闭"); }
+  finally{ clearTimeout(表); }
+  if(号!==载入序号) throw 已被取代;
+  let d;
+  try{ d=await r.json(); }
+  catch(e){ throw r.ok ? 载入错("不是数据","接口返回的不是数据") : 载入错("接口报错","HTTP "+r.status); }
+  if(号!==载入序号) throw 已被取代;
+  return d;
+}
+function 重试载入(){ if(上次要载入) return view(上次要载入[0],上次要载入[1],true); }
+if(window.addEventListener) window.addEventListener("unhandledrejection",e=>{ if(e.reason===已被取代) e.preventDefault(); });
 async function post(u,b){return (await fetch(u,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(b||{})})).json()}
 
 const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合并确认",finance:"押金退款异常",
@@ -514,8 +544,22 @@ async function view(v,arg,fromTab){
     openTab(v,arg,t);
   }
   location.hash = arg? v+"/"+arg : v;
-  await route(v,arg);
-  renderTabs();
+  const 号=++载入序号, 名=TAB_TITLE[v]||v; 上次要载入=[v,arg];
+  M.setAttribute("aria-busy","true");          // 一点下去就标:旧内容变淡、点不动
+  const 慢=setTimeout(()=>{ if(号===载入序号) M.innerHTML=
+    `<div class="load-st">正在载入「${esc(名)}」…</div>`; },300);
+  try{ await route(v,arg); }
+  catch(e){
+    if(e===已被取代||号!==载入序号) return;    // 被更晚的点击取代:不算失败,也不许写屏
+    const 类=e&&e.载入类||"页面脚本出错";
+    M.innerHTML=`<div class="load-st fail"><b>「${esc(名)}」没有载入</b>(${esc(类)})
+      <div>${esc(e&&e.载入类?String(e.message).replace(类+":",""):String(e&&e.message||e))}</div>
+      <div>下面没有摆上一页的内容 —— 上一页不是这一页。</div>
+      <button class="btn" onclick="重试载入()">重试</button></div>`;
+    return;
+  }
+  finally{ clearTimeout(慢); if(号===载入序号){ M.removeAttribute("aria-busy"); renderTabs(); } }
+  if(号!==载入序号) return;
   M.querySelectorAll("[data-cr]").forEach(e=>e.onclick=()=>view(e.dataset.cr,e.dataset.ca||undefined));
 }
 async function route(v,arg){
