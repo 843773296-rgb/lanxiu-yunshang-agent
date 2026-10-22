@@ -10315,5 +10315,29 @@
    }
   ],
   "预期红": "④ 下一期周报回看得到它:负责人、还没做完"
+ },
+ {
+  "script": "agent/triage_pipeline_eval.py --自测读法",
+  "改坏": "段首层不再看方式名是不是被定下的(讲规则时提到全额退款会被读成建议)",
+  "file": [
+   {
+    "path": "agent/triage_pipeline_eval.py",
+    "old": "        if w and (层 != \"段首\" or 是定下的(w, t)):",
+    "new": "        if w:"
+   }
+  ],
+  "预期红": "⑥段首在讲规则"
+ },
+ {
+  "script": "agent/triage_pipeline_eval.py --自测读法",
+  "改坏": "段首层收紧过头:没有加粗的第一句也不认",
+  "file": [
+   {
+    "path": "agent/triage_pipeline_eval.py",
+    "old": " or f\"{w}**\" in 句 or \"**\" not in 句",
+    "new": " or f\"{w}**\" in 句"
+   }
+  ],
+  "预期红": "⑦段首没有任何加粗"
  }
 ]
