@@ -529,7 +529,7 @@ run "退款执行写口 · 只有财务、先核实再重发、已退要流水�
 run "研判示例库 · 不相交、评测根因覆盖面不少、不挑自己、默认不带示例(用户 10-16 拍)"    python3 backend/example_pool_check.py
 run "研判评测判分 · 出账流水两种编号都认(10-16 真跑钉回)"    python3 agent/eval_hit_judgetest.py
 run "客户软合并 · 数据不搬、留建档最早、能撤、只认总部运营;列表 / 详情 / 审批中心 / 研判办结都认它(库副本上自造)" python3 backend/merge_check.py
-run "方案保存 · 客户和版型真的存进去、编辑跟着变、不串单、挂错人会拒(外部复审 10-19 · 3.1)" python3 backend/scheme_save_check.py
+run "方案保存 · 客户和版型真的存进去、编辑跟着变、不串单、挂错人会拒、按钮发名字也落编码(外部复审 10-19 · 3.1 / 10-22 实跑)" python3 backend/scheme_save_check.py
 run "首页指标 · 失败原因不含成功、今天昨天按日历、待处理和研判队列同一口径、页面不写死数(外部复审 10-19 · 3.2)" python3 backend/workbench_check.py
 run "客户详情 · 顾问名字按工号现取、日历的今天是世界的今天(外部复审 10-19 · 3.3)" python3 backend/customer_detail_check.py
 run "助手选择页 · 个数、只读与否、工具数都从角色清单现算(外部复审 10-19 · 3.4)" ./agentsite/.venv/bin/python agentsite/role_claims_check.py

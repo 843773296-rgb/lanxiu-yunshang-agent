@@ -533,8 +533,25 @@ def scheme_save(body, me=None):
     谁 = f"{me.get('name') or '未登录'}({me.get('no') or '-'})"
     客户 = (body.get("cust") or "").strip() or None
     版型 = str(body.get("pt") or "").strip() or None
-    ok,iss=_sch.validate(xz=body.get("xz"),mt=body.get("mt"),
-                         kf=body.get("kf") or [],ps=body.get("ps") or [],color=body.get("color"),
+    # 形制 / 面料 / 工艺**一律落编码**(10-22 修)。表上这三列存编码(seed.py 那段注释:名字一改历史方案全断),
+    # 而**页面按钮发的是名字**(scheme.html 的 data-v=o.name)—— 10-20 修保存时夹具发的是编码,和页面各说各话,
+    # 所以一直绿;照页面的发法在库副本上真存一次,库里落的是「唐制齐胸襦裙」「香云纱」,
+    # 再显示就成了「唐制齐胸襦裙(认不出这是哪类编码)」。
+    # > 一个「夹具发的」和一个「页面真发的」,在那条检查的 ✅ 上长得一模一样。
+    # 名字和编码都收,翻译用 kb_combo 那一个口(api._resolve),不写第二份;认不出就拒,不静默存进去。
+    错 = []
+    def _码(v, 类):
+        r, e = backend._resolve(str(v), 类)
+        if r: return r["code"]
+        错.append(f"认不出{类}「{v}」({e})"); return None
+    形制 = _码(body.get("xz"), "形制") if body.get("xz") else None
+    面料 = _码(body.get("mt"), "材质") if body.get("mt") else None
+    工艺 = [_码(k, "工艺") for k in (body.get("kf") or []) if k]
+    if 错:
+        log_op(谁,"fe-scheme",body.get("id") or "新建","-","已保存",False,"BAD_OPTION","；".join(错)[:200],{})
+        return dict(ok=False,code="BAD_OPTION",reason="；".join(错)[:300],issues=[])
+    ok,iss=_sch.validate(xz=形制,mt=面料,
+                         kf=工艺,ps=body.get("ps") or [],color=body.get("color"),
                          pattern=版型,size=body.get("size"),
                          need_date=body.get("need_date"),
                          scope=body.get("scope") or "局部",
@@ -555,8 +572,8 @@ def scheme_save(body, me=None):
                 return dict(ok=False,code="NOT_EDITABLE",reason=f"「{cur[0]['status']}」的方案不可再编辑")
             c.execute("""UPDATE scheme SET name=?,customer_id=?,xz=?,mt=?,kf=?,color=?,ps=?,pattern=?,
                          status='已保存',updated=? WHERE id=?""",
-                      (body.get("name"),客户,body.get("xz"),body.get("mt"),
-                       ",".join(body.get("kf") or []),body.get("color"),
+                      (body.get("name"),客户,形制,面料,
+                       ",".join(工艺),body.get("color"),
                        ",".join(body.get("ps") or []),版型,_now(),sid))
         else:
             # ⚠️ 具名列。原来是 `VALUES(?×13)`,而 `scheme` 加了 `pattern` 之后是 14 列 ——
@@ -565,7 +582,7 @@ def scheme_save(body, me=None):
                       "pattern,advisor_no,note,created,updated)"
                       " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (sid,客户,body.get("name") or "未命名方案","已保存",
-                       body.get("xz"),body.get("mt"),",".join(body.get("kf") or []),
+                       形制,面料,",".join(工艺),
                        body.get("color"),",".join(body.get("ps") or []),
                        版型,me.get("no"),None,_now(),_now()))
     log_op(谁,"fe-scheme",sid,(cur[0]["status"] if cur else "-"),"已保存",True,"OK",

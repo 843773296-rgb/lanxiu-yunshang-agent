@@ -18,6 +18,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("新建时又去读 customer_id(页面不发这个名字)", "新建:页面发的客户和版型都存进去了(回读库里那一行)"),
     ("编辑那条不更新客户和版型", "编辑:换了客户和版型,库里跟着变"),
     ("选了库里没有的客户也照存", "选了一个库里没有的客户 → 拒,而且一行都没写"),
+    ("保存时不把名字翻成编码(页面发什么存什么)", "照页面的发法(按钮发名字)存"),
 ]
 
 
@@ -79,6 +80,23 @@ else:
     ck("不选客户(试算)照旧能存,客户和版型就是空,不猜一个", r5.get("ok") and l5 and l5["customer_id"] is None
        and l5["pattern"] is None, (r5.get("reason"), l5))
 
+    # ── 照**页面真发的**样子存(10-22 加):页面按钮发的是名字,不是编码 ──
+    # 上面那几条的夹具发的是编码(XZ04 / MT02),而页面从来不这么发 —— 所以 10-20 那次修完一直绿,
+    # 页面真存一次库里落的却是名字。名字从库里现取(不手抄,改名了这里跟着变)。
+    con = sqlite3.connect(db)
+    名 = {k: con.execute("SELECT name FROM craft WHERE code=?", (k,)).fetchone()[0] for k in ("XZ04", "MT02", "KF02", "KF03")}
+    con.close()
+    r6 = SV.scheme_save(dict(组, id="SC-检查6", name="检查", cust=甲, pt="PT06",
+                             xz=名["XZ04"], mt=名["MT02"], kf=[名["KF02"], 名["KF03"]]), me=me)
+    l6 = 行("SC-检查6")
+    ck("照页面的发法(按钮发名字)存:库里形制 / 面料 / 工艺落的是编码,不是名字",
+       r6.get("ok") and l6 and (l6["xz"], l6["mt"], l6["kf"]) == ("XZ04", "MT02", "KF02,KF03"),
+       (r6.get("reason"), l6 and (l6["xz"], l6["mt"], l6["kf"]), 名))
+    r7 = SV.scheme_save(dict(组, id="SC-检查7", name="检查", cust=甲, pt="PT06", mt="一种库里没有的面料"), me=me)
+    ck("发一个认不出的面料名 → 拒(说清是哪一样认不出),而且一行都没写",
+       not r7.get("ok") and r7.get("code") == "BAD_OPTION" and "一种库里没有的面料" in (r7.get("reason") or "")
+       and 行("SC-检查7") is None, r7)
+
     con = sqlite3.connect(db)
     谁 = con.execute("SELECT actor FROM op_log WHERE machine='fe-scheme' AND target='SC-检查1' ORDER BY id DESC LIMIT 1").fetchone()
     con.close()
@@ -94,4 +112,4 @@ print()
 if 坏:
     print(f"{R}❌ {len(坏)} 条不过(验了 {n} 条){D}")
     sys.exit(1)
-print(f"{G}✅ 方案保存:客户和版型存得进、改得动、不串单、挂错人会拒(验了 {n} 条){D}")
+print(f"{G}✅ 方案保存:客户和版型存得进、改得动、不串单、挂错人会拒、按钮发名字也落编码(验了 {n} 条){D}")
