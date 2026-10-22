@@ -239,6 +239,20 @@ if 分辨月:
 ck("规则版本留底:取数口径版本 + 写报告两条规矩的指纹", 版.get("取数口径") == api.报告口径版本
    and set((版.get("规矩指纹") or {})) == {"TL67", "TL68"} and all(len(v) == 10 for v in 版["规矩指纹"].values()), str(版))
 
+# 规则版本冻在取数包里,而取数包登记了每日平移 —— 版本号要**挪不动**,日期要**挪得动**(10-22 加)。
+# 拿平移真的挪字函数去挪这份包(不在这里照样子写一份正则);「区间真的挪了」那半句是为了
+# 别让「这份包里根本没有日期」冒充「挪过了、版本没动」。
+import importlib.util as _iu
+_sp = _iu.spec_from_file_location("shift_world", os.path.join(ROOT, "tools", "shift_world.py"))
+_sw = _iu.module_from_spec(_sp); _sp.loader.exec_module(_sw)
+import json as _json
+挪过 = _json.loads(_sw._挪文字(_json.dumps(包月, ensure_ascii=False), 1))
+ck("每日平移挪得动取数包里的日期、挪不动规则版本(版本号别长得像日期)",
+   (挪过.get("规则版本") or {}).get("取数口径") == api.报告口径版本
+   and 挪过.get("区间") != 包月.get("区间"),
+   f"挪前 {版.get('取数口径')} / 挪后 {(挪过.get('规则版本') or {}).get('取数口径')};"
+   f"区间 {包月.get('区间')} → {挪过.get('区间')}")
+
 # 并排读时要说清的(用户 10-12 试周报后定:做进取数包,不只写在规矩里)
 周包 = 包.get("周") or {}
 并 = 周包.get("并排读时要说清的") or []

@@ -9387,8 +9387,8 @@
   "file": [
    {
     "path": "backend/server.py",
-    "old": "UPDATE scheme SET name=?,customer_id=?,xz=?,mt=?,kf=?,color=?,ps=?,pattern=?,\n                         status='已保存',updated=? WHERE id=?\"\"\",\n                      (body.get(\"name\"),客户,body.get(\"xz\"),body.get(\"mt\"),\n                       \",\".join(body.get(\"kf\") or []),body.get(\"color\"),\n                       \",\".join(body.get(\"ps\") or []),版型,_now(),sid))",
-    "new": "UPDATE scheme SET name=?,xz=?,mt=?,kf=?,color=?,ps=?,\n                         status='已保存',updated=? WHERE id=?\"\"\",\n                      (body.get(\"name\"),body.get(\"xz\"),body.get(\"mt\"),\n                       \",\".join(body.get(\"kf\") or []),body.get(\"color\"),\n                       \",\".join(body.get(\"ps\") or []),_now(),sid))"
+    "old": "UPDATE scheme SET name=?,customer_id=?,xz=?,mt=?,kf=?,color=?,ps=?,pattern=?,\n                         status='已保存',updated=? WHERE id=?\"\"\",\n                      (body.get(\"name\"),客户,形制,面料,\n                       \",\".join(工艺),body.get(\"color\"),\n                       \",\".join(body.get(\"ps\") or []),版型,_now(),sid))",
+    "new": "UPDATE scheme SET name=?,xz=?,mt=?,kf=?,color=?,ps=?,\n                         status='已保存',updated=? WHERE id=?\"\"\",\n                      (body.get(\"name\"),形制,面料,\n                       \",\".join(工艺),body.get(\"color\"),\n                       \",\".join(body.get(\"ps\") or []),_now(),sid))"
    }
   ],
   "预期红": "编辑:换了客户和版型,库里跟着变"
@@ -10476,5 +10476,29 @@
    }
   ],
   "预期红": "① 慢响应:一点下去主区就标成「载入中」"
+ },
+ {
+  "script": "backend/store_report_check.py",
+  "改坏": "报告口径版本写回长得像日期的形状(每天被平移挪一天)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "报告口径版本 = \"2026.10.21.1\"",
+    "new": "报告口径版本 = \"2026-10-21.1\""
+   }
+  ],
+  "预期红": "每日平移挪得动取数包里的日期、挪不动规则版本"
+ },
+ {
+  "script": "backend/scheme_save_check.py",
+  "改坏": "保存时认出了名字却不翻成编码(页面发什么存什么)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        if r: return r[\"code\"]\n        错.append(f\"认不出{类}",
+    "new": "        if r: return v\n        错.append(f\"认不出{类}"
+   }
+  ],
+  "预期红": "照页面的发法(按钮发名字)存"
  }
 ]
