@@ -8073,12 +8073,12 @@
  },
  {
   "script": "tools/doc_numbers_check.py",
-  "改坏": "把画图脚本里「kb 11 · shop 77 · task 5」的 shop 改成 76(没有量词的写法)",
+  "改坏": "在画图脚本的工具服务层那个节点**后面插一个新节点**,写「shop 1 · task 5」(没有量词的写法)。⚠️ **这条原来盯的是值** —— `kb 11 · shop 77 · task 5` 里的 77 改成 76;而 2026-10-22 shop 从 77 变成 79,**破坏点当场过期**,咬合第一关报「找不到要改的那段」。它隔壁那条(守卫数)的注释里早就写着这个教训:**任何盯着「值」的破坏点都会漂,盯结构的不会** —— 这次照它改了。",
   "file": [
    {
     "path": "tools/publish_prd.py",
-    "old": "kb 11 · shop 77 · task 5",
-    "new": "kb 11 · shop 76 · task 5"
+    "old": "      N(\"lm\", \"对话入口\",",
+    "new": "      N(\"x9\", \"工具服务层\\nshop 1 · task 5\",             300,  870, 340,  90),\n      N(\"lm\", \"对话入口\","
    }
   ],
   "预期红": "shop 工具数"
@@ -10315,6 +10315,102 @@
    }
   ],
   "预期红": "④ 下一期周报回看得到它:负责人、还没做完"
+ },
+ {
+  "script": "backend/popularity_check.py",
+  "改坏": "把「这个月一条订单行都没有」那条早退去掉(空月份照样算一张空榜)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "行, 维, _ = _受欢迎取数(月)\n    if not 行:",
+    "new": "行, 维, _ = _受欢迎取数(月)\n    if False:"
+   }
+  ],
+  "预期红": "⑧ 空月份说「没扫到东西」,不给空榜"
+ },
+ {
+  "script": "backend/popularity_check.py",
+  "改坏": "把「这个月有销量的商品一共」那个总数抹掉(只给前 20 条)—— 看的人就分不出这是全部还是冰山一角",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "\"这个月有销量的商品一共\": 总数,",
+    "new": "\"这个月有销量的商品一共\": None,"
+   }
+  ],
+  "预期红": "⑨ 榜上给了几条 + 这个月一共多少,两个数都在"
+ },
+ {
+  "script": "backend/popularity_check.py",
+  "改坏": "让「撞在种下的规律上」那条提醒不再响(planted 的消费者又变回 0)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    return _pl.提醒(维度词)",
+    "new": "    return []"
+   }
+  ],
+  "预期红": "⑩ 两个工具都把「撞在种下的规律上」带进返回"
+ },
+ {
+  "script": "backend/popularity_check.py",
+  "改坏": "给 wear_risk 的入参加上 month(按月切会让分子分母错位,率系统性偏低)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "{\"dim\":{\"type\":\"string\",\"description\":\"按哪个维度切,默认面料\"",
+    "new": "{\"month\":{\"type\":\"string\",\"description\":\"月份\"},\"dim\":{\"type\":\"string\",\"description\":\"按哪个维度切,默认面料\""
+   }
+  ],
+  "预期红": "⑪ wear_risk 的入参里没有月份"
+ },
+ {
+  "script": "backend/popularity_check.py",
+  "改坏": "把 product_ranking 说明里的 `sales_rank` 这个名字去掉 —— ⚠️ **第一版攻击无效**:我替换的是「不是同一把尺」四个字,而判据查的是说明里有没有那个工具名,名字还在,于是「改坏了却没红」。**破坏点要碰到判据真正看的那个东西**",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "`sales_rank` 不是同一把尺",
+    "new": "别的榜不是同一把尺"
+   }
+  ],
+  "预期红": "⑫ product_ranking 的说明里点明了另一把尺是 sales_rank"
+ },
+ {
+  "script": "agent/pattern_eval_judgetest.py",
+  "改坏": "把 N12 的 no_promise 里「结实」那个词去掉(只剩耐穿 / 不容易坏 / 质量好)—— 判据就不再拦「它应该是挺结实的」",
+  "file": [
+   {
+    "path": "agent/pattern_eval.py",
+    "old": "no_promise(\"结实\", ",
+    "new": "no_promise("
+   }
+  ],
+  "预期红": "N12·说了样本不足,却顺口下了「结实」"
+ },
+ {
+  "script": "agent/pattern_eval_judgetest.py",
+  "改坏": "把 `member_eval._抹定语` 退回成「见到「X 的」一律当定语抹掉」—— 于是「它应该是挺**结实的**」被整段洗成「〈定语〉」,`no_promise` 报「它没下这个结论」。⚠️ 这正是 2026-10-22 修掉的那个漏洞:**一句真的下了结论的话,被一个为了防误判而做的清洗,洗成了没下结论**",
+  "file": [
+   {
+    "path": "agent/member_eval.py",
+    "old": "是判断句 = 落在句末 and (\"是\" in t[句首:j])",
+    "new": "是判断句 = False"
+   }
+  ],
+  "预期红": "N12·说了样本不足,却顺口下了「结实」"
+ },
+ {
+  "script": "tools/doc_numbers_check.py",
+  "改坏": "在总体架构那一节下面**插一句**「工具 1 个(读 1 / 写 27)」。⚠️ **盯结构插句子,不盯着某个值去改** —— 同一节里那条守卫数的教训:任何盯着「值」的破坏点都会漂(shop 77 那条 2026-10-22 就漂过一次)",
+  "file": [
+   {
+    "path": "澜绣云裳agent-产品说明.md",
+    "old": "## 4. 总体架构",
+    "new": "## 4. 总体架构\n\n工具 1 个(读 1 / 写 27)。"
+   }
+  ],
+  "预期红": "读工具数"
  },
  {
   "script": "agent/triage_pipeline_eval.py --自测读法",

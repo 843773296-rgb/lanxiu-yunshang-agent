@@ -218,12 +218,38 @@ def main():
     客户词 = ("手机", "phone", "mobile", "身份证", "消费", "余额", "积分", "等级",
               "payable", "received", "实收", "应收", "成交")
     钱词 = ("金额", "amount", "单价", "售价", "报价")
-    钱词豁免 = {"kb_bom"}
+    # ⚠️ `product_ranking` 一起豁免,**而理由必须和 kb_bom 同一条** ——
+    #    它报的是**商品销售金额的汇总**(聚到 SPU,不挂任何客户),
+    #    而业务 2026-09-18 要的就是「件数榜 + 金额榜并列」:
+    #    件数跟着打版的工作量走、金额跟着价值走,少一张就等于替版师挑了口径。
+    #    **豁免的是「钱词」这一类,客户词那一类仍然一个都不许有** ——
+    #    把豁免写成「这个工具整条不扫」就等于给它开了后门。
+    钱词豁免 = {"kb_bom", "product_ranking"}
     手机 = _re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+
+    def _有单的月():
+        """库里**最近有订单的那个月**,`YYYY-MM`。
+
+        ⚠️ **不写死,也不用世界的今天。** 写死会被时间打断(夹具不许写死会漂的东西);
+        用世界的今天会在某一天挪到一个没有订单的月份上,
+        那时这条判据扫的是一个「没扫到东西」的返回 ——
+        **而扫过了和什么都没扫到,在「没发现手机号」这件事上长得一模一样。**
+        """
+        r = api._rows("SELECT substr(created,1,7) m FROM ordr"
+                      " WHERE created IS NOT NULL AND created<>''"
+                      " ORDER BY created DESC LIMIT 1")
+        return r[0]["m"] if r else None
+
     跑法 = {
         "pattern_queue": lambda: api.pattern_queue(),
         "grading_audit": lambda: api.grading_audit("PT04"),
         "summarize_products": lambda: api.summarize_products(keyword="马面裙", limit=10),
+        # 受欢迎与易损(2026-10-22)。⚠️ **月份要给一个真有订单的** ——
+        # 不给就走世界当月,而世界的日子每天在挪,**某天挪到一个空月份上
+        # 这条判据会突然开始扫一个「没扫到东西」的返回**,而那和扫过了长得一样。
+        # 所以这里显式传月份,从库里现取「最近有订单的那个月」,不写死。
+        "product_ranking": lambda: api.product_ranking(month=_有单的月(), dim="面料"),
+        "wear_risk":       lambda: api.wear_risk("面料"),
         "piece_ratios":  lambda: api.piece_ratios("PT06"),
         "kb_pattern":    lambda: api.kb_pattern("PT04"),
         "kb_size":       lambda: api.kb_size("PT04"),

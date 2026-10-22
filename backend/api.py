@@ -5554,6 +5554,294 @@ def channel_compare(include_sim=False):
     return _nz(out)
 
 
+# ── 受欢迎与易损:给版师的打版依据 ──────────────────────────────────
+# 业务 2026-09-18 提的:「统计出当月最受欢迎的商品,并分析版型、花型、布料
+# 对受欢迎程度的影响,给予打版师打版依据;并统计维保单,判断哪些面料、款式
+# 更容易受损」。口径在 `knowledge/popularity.py`,两个参数业务 2026-09-19 拍过
+# (榜给前 20 条 + 总数、易损分母下限 30)。**这里只取数、只装配,一个口径都不重算。**
+#
+# ⚠️⚠️ **和 `sales_rank` 的三处不同,必须写在脸上。**
+# 两张都能被说成「这个月什么卖得最多」的榜,而它们答的不是同一个问题:
+#
+#     范围    `sales_rank` 随身份(总部全部 / 店长本店 / 顾问并集);
+#             这里**全量不分店** —— 打版是中心职能。而且 `_订单范围()` 对版师
+#             返回 `1=0`(刻意不兜底),**把 sales_rank 给版师只会得到一个永远空的清单**
+#             —— 工坊那次 21 位师傅登录进来手上没有 `my_workorders`,同一个病
+#     待付款  `sales_rank` 走 `stockalert.卖掉了()`,**不算**;
+#             这里走 `popularity.算数的单()`,**算**(钱还没付,但那是一次选择),
+#             并且把待付款件数**单独给出来**,让看的人自己决定要不要打折扣
+#     维度    `sales_rank` 切 商品 / SKU / 品类;这里切 **形制 / 面料 / 工艺**
+#             (`product_custom` 的多值列,一件商品挂多个面料,**每个都计一次**)
+#
+# **两张榜的总件数因此必然不一样,而这不是 bug。**
+# 不把它写出来的话,版师拿到一个数、店长拿到另一个数,**两个都对**,
+# 而没有任何人说得清差在哪 —— 所以两个工具的返回里都带着「另一把尺是谁」。
+def _受欢迎取数(月=None):
+    """受欢迎 / 易损两个工具的取数口。**全库只有这一份。**
+
+    `backend/popularity_check.py` 的判据调的也是它 —— 原来判据自己抄了一份
+    一样的 SQL。两份 SQL 会漂,而漂了之后**判据验的是它自己那一份、
+    工具跑的是另一份**:绿着,却什么都没守住。
+
+    月:`YYYY-MM`,None = 不限月份(易损率一律不限,见 `wear_risk`)。
+    """
+    where, a = "", []
+    if 月:
+        where, a = " AND substr(o.created,1,7)=?", [月]
+    # ⚠️ **带上 `p.kind` 和 `p.on_shelf_at`,这两列都是后来补的,各自修掉一个假说法:**
+    #   · `kind` —— 标品**本来就没有**形制 / 面料 / 工艺(那是定制品的属性组)。
+    #     少了这一列的话,「标品没有面料」和「定制品漏登记面料」
+    #     **在维度分布表上长得一模一样**,而两者的修法完全不同
+    #     (前者什么都不用做,后者要去补 2 条)。第一版就把 138 个标品
+    #     报成了「漏登记」,照着它去补齐是白费功夫。
+    #   · `on_shelf_at` —— **上架日是有的**,在 `product` 上,不在 `product_custom` 上。
+    #     第一版只查了 `product_custom` 就断言「库里没有上架日这一列」,
+    #     于是改报「首次售出日」—— 一个凭空降级的口径。**查一张表就下的结论。**
+    行 = _rows("SELECT i.spu, i.name, i.qty, i.total, o.status, o.created,"
+               "       p.kind, p.on_shelf_at"
+               " FROM ordr_item i JOIN ordr o ON o.id=i.order_id"
+               " LEFT JOIN product p ON p.spu=i.spu"
+               " WHERE 1=1" + where, *a)
+    # 商品 → 形制 / 面料 / 工艺。多值列,逗号分隔。
+    维 = {}
+    for r in _rows("SELECT spu, xz, mt_opts, kf_opts FROM product_custom"):
+        维[r["spu"]] = {
+            "形制": [x.strip() for x in (r["xz"] or "").split(",") if x.strip()],
+            "面料": [x.strip() for x in (r["mt_opts"] or "").split(",") if x.strip()],
+            "工艺": [x.strip() for x in (r["kf_opts"] or "").split(",") if x.strip()],
+        }
+    # 维保 → spu,**经 order_item 反查,不按商品名**(名字会重、会改)
+    维保行 = _rows("SELECT i.spu FROM maintain m JOIN ordr_item i ON i.id=m.order_item_id")
+    return 行, 维, 维保行
+
+
+def _种下的提醒(维度词):
+    """这条分析会不会正好撞在**造演示数据时种进去的规律**上。
+
+    `fakedata/planted.py` 把每条种下的规律都登记了(种了什么、强度、在哪、
+    哪种分析会看到它),而在这两个工具之前**没有任何一个分析口去问过它** ——
+    登记表在,消费者是 0。
+
+    > 一条**种下的规律**得出的结论,和一条**真的发现**,在报表上长得一模一样。
+
+    所以这不是免责声明,是这两个工具最要紧的一个返回字段:
+    「轻薄丝类最易损」在这个库上是**我们自己种的**(S1,轻薄 ×2.2),
+    「这个月谁排第一」是**随机打乱出来的**(S6)。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
+                                   "..", "fakedata"))
+    import planted as _pl
+    return _pl.提醒(维度词)
+
+
+_受欢迎维度 = ("形制", "面料", "工艺")
+
+
+def product_ranking(month=None, dim=None):
+    """**当月最受欢迎**(只读)——给版师的打版依据:哪些商品、哪些形制 / 面料 / 工艺卖得多。
+
+    month: `YYYY-MM`,默认**世界的当月**。dim: 形制 / 面料 / 工艺,给了就多返回一张维度分布。
+
+    ## 为什么两张榜并列,不合成一个分数
+
+        件数   卖出去几件    —— 打版的**工作量**跟着它走
+        金额   卖出去多少钱  —— 打版的**价值**跟着它走
+
+    一件卖 3 件的重工和一件卖 30 件的常服,按件数排是后者赢、按金额可能是前者。
+    合成分数(0.6×件数 + 0.4×金额)看着高级,但**权重是谁定的没人知道**,
+    而排名一旦变了,没人说得清是数据变了还是权重变了。**所以不合成。**
+
+    ## ⚠️ 这个库上「谁排第一」是随机的
+
+    商品热度是造数时按 `1/名次^0.9` 种进去的,**而名次是随机打乱的**
+    (`fakedata/planted.py` 的 S6)。所以这张榜的**形状**(长尾)是真的,
+    **第一名是谁不是** —— 返回里把这句话带出来。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
+                                   "..", "knowledge"))
+    import popularity as _pop
+
+    月 = (month or "").strip() or _wc.今天().strftime("%Y-%m")
+    if not re.fullmatch(r"\d{4}-\d{2}", 月):
+        return {"error": f"month 要写成 `YYYY-MM`(比如 `2026-10`),你给的是「{month}」"
+                         " —— 「这个月」是哪个月**不替你猜**"}
+    if dim is not None and dim not in _受欢迎维度:
+        return {"error": f"dim 只能是 {' / '.join(_受欢迎维度)},你给的是「{dim}」",
+                "note": "商品 / SKU / 品类那三种切法在 `sales_rank` 里(**那把尺不一样**,见返回里的「另一把尺」)"}
+
+    行, 维, _ = _受欢迎取数(月)
+    if not 行:
+        return {"算的是": f"{月}",
+                "⚠️ 这个月一条订单行都没有": "**这不是「都不受欢迎」,是没扫到东西** —— "
+                                             "先确认月份对不对(世界的今天是 "
+                                             f"{_wc.今天().isoformat()})",
+                "订单行": 0}
+    榜 = _pop.受欢迎(行)
+    件榜, 金榜 = 榜["按件数"], 榜["按金额"]
+    总数 = len(件榜)
+
+    out = {
+        "算的是": f"{月} · {len(行)} 条订单行 · **全量,不分门店**",
+        # ⚠️ **业务 2026-09-19 拍的:给前 20 条 + 总数。**
+        # 只给 20 条,看的人不知道这是全部还是冰山一角。
+        f"按件数前 {_pop.榜单条数}": 件榜[:_pop.榜单条数],
+        f"按金额前 {_pop.榜单条数}": 金榜[:_pop.榜单条数],
+        "这个月有销量的商品一共": 总数,
+        "榜上给了几条": min(_pop.榜单条数, 总数),
+        "总件数": 榜["总件数"],
+        "其中待付款件数": 榜["其中待付款件数"],
+    }
+    if 榜["总件数"]:
+        占 = 榜["其中待付款件数"] / 榜["总件数"]
+        out["待付款占比"] = f"{占:.1%} —— **钱还没付**。" + (
+            "占比不低,要不要把它折掉由看的人定" if 占 >= 0.1 else
+            "占比小,折不折掉不影响名次")
+    out["两张榜为什么不合成一个分数"] = (
+        "件数跟着**工作量**走、金额跟着**价值**走,是两件事。"
+        "合成一个分数的话,排名变了没人说得清是数据变了还是权重变了。")
+
+    if dim:
+        取 = lambda r, d=dim: 维.get(r.get("spu"), {}).get(d, [])
+        分布 = _pop.维度分布(行, 取)
+        out[f"按{dim}分布"] = 分布
+        合 = sum(x["件数"] for x in 分布)
+        out[f"⚠️ 按{dim}各档之和 {合} 大于总件数 {榜['总件数']}"] = (
+            f"**这是对的,不是算错了** —— 一件商品可以挂多个{dim}选项,"
+            f"它在每个选项下都计一次。**所以不许拿这些数去算百分比占比**:"
+            f"分母不是 {榜['总件数']}。")
+        # ⚠️⚠️ **进不了这张分布表的商品分两种,而它们的修法完全相反。**
+        #   · **标品** —— 本来就没有形制 / 面料 / 工艺这组属性(那是定制品的)。
+        #     **什么都不用做**,但必须说出来:否则看的人会以为分母是全部销量。
+        #   · **定制品而没登记** —— 这是真缺口,去补。
+        # 第一版把两种压成一个数「138 个商品没登记面料」,
+        # 而其中 136 个是标品、真缺口只有 2 个 ——
+        # > **「它没有这个属性」和「它漏填了这个属性」在那张表上长得一模一样**,
+        # > 而照着那个数去补齐,会去补 136 个本来就不该有这一列的商品。
+        空的 = [r for r in 行 if r.get("spu") and not 取(r)]
+        标品 = sorted({r["spu"] for r in 空的 if (r.get("kind") or "") == "标品"})
+        定制漏 = sorted({r["spu"] for r in 空的
+                        if (r.get("kind") or "") not in ("标品",)})
+        if 标品:
+            out[f"⚠️ 另有 {len(标品)} 个**标品**不在这张{dim}分布表里"] = (
+                f"**这不是漏登记** —— 标品没有形制 / 面料 / 工艺这组属性,"
+                f"它是定制品才有的。所以上面那张表的分母**不是这个月的全部销量**,"
+                f"**别拿它算占比**。")
+        if 定制漏:
+            out[f"⚠️ 有 {len(定制漏)} 个**定制品**没登记{dim}"] = (
+                f"**这是真缺口**,它们一件都没进上面那张表 —— "
+                f"**「这个{dim}卖得少」和「这件定制品漏填了{dim}」"
+                f"在那张表上长得一模一样**。要补的是这几个:{定制漏[:8]}")
+
+    # ── 上架天数:**不拉平,但要报出来** ──────────────────────────
+    # 新品自然卖得少。拉平(按「上架后日均」)要假设销量在生命周期里均匀,
+    # 而汉服有明显的季节和节日峰(`planted` 的 S3 / S4 就是种的这个),
+    # 这个假设不成立。所以不拉平,把上架天数并排放着让版师自己看:
+    # 一个上架 15 天卖了 8 件的,和一个上架 200 天卖了 10 件的,**不是一回事**,
+    # 而这件事只有把两个数并排放才看得出来。
+    #
+    # ⚠️ **算不出来的那些给 None,不给 0。** 52 个商品的 `on_shelf_at` 是空的 ——
+    # 「今天刚上架」和「不知道什么时候上架的」**在一个 0 上长得一模一样**,
+    # 而前者的低销量是正常的、后者根本没有依据可言。
+    今 = _wc.今天()
+    算不出 = []
+    for 条 in 件榜[:_pop.榜单条数] + 金榜[:_pop.榜单条数]:
+        d = (next((r.get("on_shelf_at") for r in 行
+                   if r.get("spu") == 条["spu"] and r.get("on_shelf_at")), "") or "")[:10]
+        if d:
+            try:
+                条["上架天数"] = (今 - _dt.date.fromisoformat(d)).days
+                条["上架日"] = d
+                continue
+            except ValueError:
+                pass
+        条["上架天数"] = None
+        条["⚠️ 上架天数"] = "**算不出来**(商品表的上架日是空的)—— 不是 0 天"
+        算不出.append(条["spu"])
+    out["为什么不按上架天数拉平"] = (
+        "**不拉平是故意的。** 拉成「上架后日均」要假设销量在生命周期里均匀,"
+        "而汉服有明显的季节和节日峰,这个假设不成立。所以把上架天数并排给出来 ——"
+        "一个上架 15 天卖 8 件的和一个上架 200 天卖 10 件的不是一回事,"
+        "**而这件事只有两个数并排放才看得出来**。")
+    if 算不出:
+        out[f"⚠️ 榜上有 {len(set(算不出))} 个商品算不出上架天数"] = (
+            "商品表的上架日是空的 —— 给的是 **None 不是 0**:"
+            "「今天刚上架」和「不知道什么时候上架」在一个 0 上长得一模一样,"
+            "而前者的低销量正常、后者没有依据可言。")
+
+    种 = _种下的提醒("受欢迎 排行 热销 " + (dim or ""))
+    if 种:
+        out["⚠️ 这张榜撞在种下的规律上"] = 种
+    out["另一把尺"] = (
+        "**`sales_rank` 也排商品,而它和这里不是同一把尺,三处不同:** "
+        "① 范围 —— 它随身份(店长只看本店),这里全量;"
+        "② 待付款 —— 它不算,这里算(并单独给出占比);"
+        "③ 维度 —— 它切商品 / SKU / 品类,这里切形制 / 面料 / 工艺。"
+        "**所以两边的总件数不一样,而两个都对** —— 报数的时候说清是哪一把。")
+    out["口径说明"] = _pop.口径说明
+    return _nz(out)
+
+
+def wear_risk(dim="面料"):
+    """**易损分析**(只读)——哪些面料 / 形制 / 工艺更容易出维保。dim: 面料 / 形制 / 工艺。
+
+    ## 为什么必须用率,而且必须连分母一起给
+
+    按维保单的**绝对数**排,排出来的是**「哪个面料卖得多」** —— 卖得多自然修得多。
+    而率有它自己的陷阱:**分母小的时候率会疯**。卖了 2 件修了 1 件 = 50%,
+    这个数毫无意义但看起来触目惊心。所以分母低于 30(业务 2026-09-19 拍)的
+    **不给结论**,给「样本不足」——
+    **不给一个 0% 让人以为它不容易坏:「没有证据」和「有证据说没问题」是两回事。**
+
+    ## ⚠️ 不接月份参数,这是故意的
+
+    维保**发生在卖出之后**。按月切的话,分母是这个月卖的、分子是这个月修的,
+    而这个月修的那些多半是**前几个月卖的** —— 率会系统性偏低,
+    **而偏低的率和「这个面料确实结实」长得一模一样**。所以一律全量。
+
+    ## ⚠️ 这个库上的易损结构是**种下去的**
+
+    造数时按行业常识放了倍数(`fakedata/planted.py` 的 S1:轻薄 ×2.2 / 锦缎 ×1.3 /
+    棉麻 ×0.45;S2:刺绣 ×1.6)。**方向有依据,大小是编的。**
+    所以「轻薄丝类最易损」在这里**不是发现,是我们自己种的** —— 返回里带着这句话。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
+                                   "..", "knowledge"))
+    import popularity as _pop
+
+    if dim not in _受欢迎维度:
+        return {"error": f"dim 只能是 {' / '.join(_受欢迎维度)},你给的是「{dim}」"}
+    行, 维, 维保行 = _受欢迎取数(None)
+    if not 行:
+        return {"⚠️ 一条订单行都没有": "**这不是「都不易损」,是没扫到东西**", "订单行": 0}
+    取 = lambda r, d=dim: 维.get(r.get("spu"), {}).get(d, [])
+    率 = _pop.易损率(行, 维保行, 取)
+    显 = _pop.差异显著吗(率)
+
+    有 = [x for x in 率 if x["维保率"] is not None]
+    out = {
+        "算的是": f"全量 {len(行)} 条订单行 · {len(维保行)} 条维保单 · 按{dim}切",
+        f"按{dim}的维保率": 率,
+        f"有结论的 {len(有)} 档 / 样本不足的 {len(率) - len(有)} 档": (
+            f"**样本不足的那些给的是「不给结论」,不是 0%** —— "
+            f"销售件数低于 {_pop.易损分母下限} 件(业务 2026-09-19 从 10 提到 30)"
+            f"就看不出来。它们排在最后,但**都返回,不隐藏**。"),
+        "差异显不显著": 显,
+    }
+    if not 显.get("显著"):
+        out["⚠️ 这批数据不足以支撑「某某更易损」"] = (
+            "**排行榜排得出来,而第一名和最后一名的差可能只是噪声。** "
+            "报一个不显著的第一名比不报更糟:不报的话版师知道自己没依据,"
+            "报了他以为自己有。")
+    种 = _种下的提醒(f"{dim} 易损 维保率")
+    if 种:
+        out["⚠️ 这个结论撞在种下的规律上"] = 种
+    out["口径说明"] = _pop.口径说明
+    return _nz(out)
+
+
 def _签收日期(order_id):
     """这一单什么时候签收的 —— 按件签收之后取**最后一件**合身的时间,没有就退回订单级那一行。"""
     r = _rows("SELECT MAX(fit_at) t FROM pickup_item WHERE order_id=? AND fit_result='合身'", order_id)
@@ -5958,6 +6246,8 @@ SHOP_SCHEMAS=[
  {"name":"record_fitting","description":"**登记一轮白坯试衣(真的写进去)**。顾问或店长用,只能登记本店订单;陪同人就是你自己(不收工号)。item 填订单行号或商品名(一张单里同名多件时必须给行号)。adjust 写这一轮改了哪几处(没改写「无需调整」,不许空);signed 客户当场签字就填 true。**补签**:客户后来才签,给 round(已有的轮次号)并 signed=true;**签字不能撤销**。⚠️ 客户没签字之前,这一件所在的整张单**不许开裁**(业务 09-22)。⚠️ **动手前先跟用户对一遍**哪张单、哪一件、改了什么、签没签 —— 签字是责任转移点,记错了等于给门店一张不存在的底牌。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"item":{"type":"string","description":"订单行号或商品名"},"adjust":{"type":"string","description":"这一轮改了哪几处;没改写「无需调整」"},"signed":{"type":"boolean","description":"客户签字了吗"},"round":{"type":"integer","description":"只在补签时给:要补签的那一轮"},"note":{"type":"string"}},"required":["order_id","item"]}},
  {"name":"start_cutting","description":"**开裁(真的写进去)**:把一张定制单从「待生产」推进到「生产中」。只有版师能用。**要先过白坯试衣这道闸**(业务 09-22):单里每一件该试的都试过、而且客户签了字,才许开裁;有一件没过就整单拒绝,返回里列出是哪几件、缺什么(没试 / 没签 / 判不了该不该试又没试过 —— 判不了的先试一轮并签字就能裁)。被拒时**不要换个说法再试**,把卡在哪告诉用户,让顾问去约试衣或补签。⚠️ **开裁不可逆**,动手前先跟用户确认单号。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
  {"name":"channel_compare","description":"**多渠道表现对比** —— 四个下单渠道(微信小程序/官网/门店 Pad/客服代下单)各自的单量、客单价、待付款占比、退款率、售后率。⚠️ **这张表不能用来比渠道,而它和真的渠道对比长得一模一样。** 原因不是数据少,是这一列怎么填上去的:种子订单是**按订单序号轮着发的**(`SRC[i % 4]`),模拟订单是**按固定权重独立抽的**,两种机制都让渠道和金额、状态、客户**统计独立** —— 任何渠道间差异都是这两个机制的产物,**不是渠道的表现**。⚠️ **渠道和活动 100% 共线**:每个渠道恰好对应一个活动,一一对应没有例外,所以「这个渠道转化好」和「这个活动效果好」在这批数据上**分不开**(这条同时影响 activity_roi)。⚠️ **客服代下单不是一个渠道**,是人工补录,背后可能是电话/微信/门店 —— 当渠道分析会得出假结论。⚠️ **不给渠道排名**:11 单的样本排不出名次,排了会被当成结论去调预算;每个比率后面都带着「**一单值多少个百分点**」。","input_schema":{"type":"object","properties":{"include_sim":{"type":"boolean","description":"是否把 3826 单模拟订单也算进来。默认 false —— 它们的渠道是抽出来的,算进来只会让表看起来更可信,不会更真"}}}},
+ {"name":"product_ranking","description":"**当月最受欢迎**(只读)——给版师的打版依据:这个月哪些商品卖得多,以及按**形制 / 面料 / 工艺**切开各档卖了多少。「这个月什么最受欢迎」「哪种面料卖得好」「圆领袍和马面裙哪个多」用它。⚠️ **两张榜并列给(按件数 / 按金额),不合成一个分数** —— 件数跟着打版的工作量走、金额跟着价值走,一件卖 3 件的重工和一件卖 30 件的常服按两种口径排出来不一样;用户没说按哪种时**两张都报**,别自己挑一张。⚠️ **返回里「这个月有销量的商品一共」是总数,榜上只给前 20 条** —— 报的时候要说出总数,否则看的人不知道这是全部还是冰山一角。⚠️ **待付款算进销量**(钱没付,但那是一次选择),占比单独给出来;占比高的时候要说一句。⚠️ **这张榜上「谁排第一」在这个库里是随机的** —— 商品热度是造演示数据时种进去的(名次随机打乱),返回里「撞在种下的规律上」那一条**必须一起报给版师**:一条种下的规律得出的结论,和一条真的发现,在报表上长得一模一样。⚠️ **这是相关不是因果** —— 能说「这个月它卖得最多」,不能说「改用它能让销量涨」。⚠️ **和 `sales_rank` 不是同一把尺**(范围:这里全量不分店 / 它随身份;待付款:这里算 / 它不算;维度:这里切形制面料工艺 / 它切商品 SKU 品类)——两边总件数不一样而**两个都对**,报数时说清是哪一把。","input_schema":{"type":"object","properties":{"month":{"type":"string","description":"月份 `YYYY-MM`,如 `2026-10`。默认世界的当月。「这个月」不替你猜成具体哪个月"},"dim":{"type":"string","description":"再按哪个维度切:形制 / 面料 / 工艺。不给就只给商品榜","enum":["形制","面料","工艺"]}}}},
+ {"name":"wear_risk","description":"**易损分析**(只读)——哪些面料 / 形制 / 工艺更容易出维保。「什么面料最容易坏」「刺绣是不是更容易报维保」用它。⚠️ **用的是率不是绝对数**(按维保单数排,排出来的是「哪个卖得多」),而**分子分母一起返回**:分母低于 30 件的**不给结论**,给「样本不足」——**那不是 0%**,不许读成「这个面料特别结实」,**「没有证据」和「有证据说没问题」是两回事**。⚠️ **返回里单独有一条「差异显不显著」** —— 不显著就说「这批数据分不出来」,**不许报第一名**:报一个不显著的第一名比不报更糟,不报的话版师知道自己没依据,报了他以为自己有。⚠️ **这个库上的易损结构是造数时种进去的**(轻薄丝类 / 刺绣的倍数是编的,方向才是行业常识),返回里「撞在种下的规律上」那一条**必须一起报出去** —— 否则这套分析越准确越危险:它会把一个编出来的假设,用真实数据的样子讲出来。⚠️ **不接月份参数,这是故意的** —— 维保发生在卖出之后,按月切会让分子分母错位、率系统性偏低,**而偏低的率和「这个面料确实结实」长得一模一样**。⚠️ **易损率高不等于该停做** —— 这里没有售价、没有毛利、没有退货,拿它单独下「别做了」的结论是用一个指标替代一整笔生意。","input_schema":{"type":"object","properties":{"dim":{"type":"string","description":"按哪个维度切,默认面料","enum":["面料","形制","工艺"]}}}},
  {"name":"recovery_queue","description":"**未成交挽回清单** —— 下了单没付钱的、约了没来的,各压着多少钱、压了多久、该按什么顺序跟。不传参数给两摊都要;传「待付款」或「预约」只要一摊。⚠️ **这个工具只出清单,不发任何东西** —— 发短信/微信/打电话是对外动作,按不按、怎么按是人的决定。⚠️ **它不划「超时」那条线**:定制品和标品的合理等待期本来就不一样,编一个数会把正常的单子算成流失。只排序不划线,按**金额 × 停留天数**排。⚠️ **三种未成行不许混成一类**:已取消是客户主动说了不来、爽约是没说就没来(**先确认人没事**)、已过期是系统判的(客户自己可能都不知道有这条预约)。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"待付款 或 预约;不传则两摊都给"}}}},
  {"name":"pattern_queue","description":"**版师的排队看板 —— 「今天该我核什么」。**不用传任何参数。把版师手上的活一次列全:裁片用料占比的进度(并按**影响面**排出先核哪几个 —— 挂多少商品、多少订单行已经按这个数备料)、推档有疑点的版型、「推得出但不作数」的尺码格子、配置页上架了却没有版型的定制品。**每一摊都报「总数 / 已完成 / 还剩」** —— 一摊显示 0 的时候要说得出是「做完了」还是「一条都没扫到」。版师进来第一句话就该调它。\n\n**传 pattern(认编码 PT06 和全名)就转看那一个版型的裁片用料占比明细**,每条带来源:`估算`(机器估的没人看过)/ `复核`(规则核过但这个数没人核过)/ `行业规范`(规则对过行业面积计算法,数没人核过)/ `版师`(人核过数)/ `BOM`(明写的用量)——**三种可信度不许混为一谈**。还给出占比折合多少米:**版师判断的是米数不是百分比**,「袖片 15.7%」看不出对不对,「袖片 0.63 米」一眼就知道。","input_schema":{"type":"object","properties":{}}},
  {"name":"grading_audit","description":"**推档自检 —— 把「要核 1237 个数」压成「要核 12 条档差」。**尺码表全部是推出来的(基码值 + 档差 × 尺码序号),版师真正该核的只有基码和那 12 条档差。不传 pattern 给全局(扫了多少、哪几个版型有疑点、档差规则是什么);传 pattern 给这一个版型的逐部位明细:实际档差 / 规则档差 / **覆盖范围**(这个版型能做多大的人)/ 量纲体检 / 哪几项「推得出但不作数」。**判据是定义性的,不是阈值** —— 相邻码的差必须处处相等且等于档差表,不一致就是真的有一格不对。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全局"}}}},
@@ -7118,7 +7408,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,
