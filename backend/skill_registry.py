@@ -38,6 +38,9 @@ if HERE not in sys.path:
     sys.path.insert(0, HERE)
 DB = os.path.join(HERE, "lanxiu.db")
 技能目录 = os.path.join(ROOT, "agentsite", ".claude", "skills")
+# 第三方技能的人工审查清单(intent/skill-third-party.md):{名称: {分类, 理由, 可借鉴的方法?, 初筛}}。
+# 只当**没登记时的默认分类** —— 库里总部运营填过的分类以库为准。
+审查清单 = os.path.join(ROOT, "agentsite", "third_party_review.json")
 
 状态们 = ("已安装待审查", "待适配", "试运行", "已发布", "已停用")
 放行的状态 = ("试运行", "已发布")
@@ -132,6 +135,26 @@ def 状态(name, db=None):
     return 默认状态(name)
 
 
+def _审查():
+    try:
+        with open(审查清单, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def 分类(name, 行=None, 审=None):
+    """→ (分类, 理由, 来源)。**库里人工填的优先**,没填才取审查清单;两边都没有是 ("", "", "")。
+    分类只是给人看的标签,**不碰状态、不碰执行闸** —— 清单写「可适配」不等于放行。"""
+    r = 行 or {}
+    if r.get("category"):
+        return r["category"], r.get("category_why") or "", "库"
+    e = (审 if 审 is not None else _审查()).get(name) or {}
+    if e.get("分类") in 分类们[1:]:
+        return e["分类"], e.get("理由") or "", "审查清单"
+    return "", "", ""
+
+
 def 放行吗(name, db=None):
     return 状态(name, db) in 放行的状态
 
@@ -196,15 +219,17 @@ def 清单(db=None):
     行 = _行们(db)
     自 = _ours()
     次, 末, 拦 = 使用()
+    审 = _审查()
     out = []
     for n in 装了哪些():
         r = 行.get(n) or {}
         _, 述 = _说明(n)
         依 = 依赖(n)
+        类, _, 类源 = 分类(n, r, 审)
         out.append(dict(
             名称=n, 来源="自有" if n in 自 else "第三方", 状态=r.get("status") or 默认状态(n),
             登记过=bool(r), 说明=述[:160], 负责人=r.get("owner"), 适用岗位=r.get("roles"),
-            分类=r.get("category") or "", 依赖就绪=依["就绪"],
+            分类=类, 分类来源=类源, 依赖就绪=依["就绪"],
             依赖缺口=(依["缺的脚本"][:3] + 依["外部能力"][:3]),
             最近调用=末.get(n), 调用次数=次.get(n, 0), 被拦次数=拦.get(n, 0),
             版本=r.get("version") or 0, 更新=r.get("updated"), 更新人=r.get("updated_by")))
@@ -221,11 +246,12 @@ def 详情(name, db=None):
         日志 = [dict(x) for x in c.execute(
             "SELECT what,before,after,why,by_name,at FROM skill_cfg_log WHERE name=? ORDER BY id DESC LIMIT 50", (name,))]
     st = r.get("status") or 默认状态(name)
+    类, 类因, 类源 = 分类(name, r)
     return dict(
         名称=name, 来源="自有" if name in _ours() else "第三方", 状态=st, 登记过=bool(r),
         可走到=list(可走.get(st, ())), 说明=述, 正文=正文,
         配置={k: (r.get(v) or "") for k, v in _栏到列.items()}, 版本=r.get("version") or 0,
-        依赖=依赖(name), 使用=使用(name), 日志=日志, 更新=r.get("updated"), 更新人=r.get("updated_by"),
+        依赖=依赖(name), 使用=使用(name), 日志=日志, 分类=dict(分类=类, 理由=类因, 来源=类源), 更新=r.get("updated"), 更新人=r.get("updated_by"),
         执行闸="放行" if st in 放行的状态 else "拦下")
 
 

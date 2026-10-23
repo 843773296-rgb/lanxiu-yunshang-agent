@@ -2611,7 +2611,7 @@ async function skillList(){
       <td>${esc(r.来源)}</td><td><span class="pill ${SK_PILL[r.状态]||"p-mut"}">${esc(r.状态)}</span></td>
       <td>${["试运行","已发布"].includes(r.状态)?"放行":'<span style="color:var(--ink2)">拦下</span>'}</td>
       <td>${r.依赖就绪?"就绪":`<span style="color:var(--bad)" title="${esc(r.依赖缺口.join(" / "))}">没就绪 · ${r.依赖缺口.length}</span>`}</td>
-      <td>${esc(r.分类||"—")}</td>
+      <td>${esc(r.分类||"—")}${r.分类来源==="审查清单"?'<span style="color:var(--ink2);font-size:11.5px" title="库里没人填过,取的是第三方审查清单的结论"> · 清单</span>':""}</td>
       <td class="mono">${r.最近调用?esc(r.最近调用.slice(5,16))+" · "+r.调用次数+" 次":"—"}${r.被拦次数?` <span style="color:var(--bad)">拦 ${r.被拦次数}</span>`:""}</td>
       <td style="color:var(--ink2);font-size:12.5px">${esc(r.说明)}</td></tr>`).join("")}
     </tbody></table>
@@ -2628,6 +2628,7 @@ async function skillDetail(name){
      <span class="pill ${SK_PILL[d.状态]||"p-mut"}">${esc(d.状态)}</span>
      <span class="n">${esc(d.来源)} · 执行闸:<b>${esc(d.执行闸)}</b> · 配置版本 ${d.版本}${d.更新?" · "+esc(d.更新人||"")+" "+esc(d.更新):""}</span></div>
     <p style="color:var(--ink2);font-size:13px">${esc(d.说明)}</p>
+    ${d.分类&&d.分类.分类?`<p style="font-size:13px">分类:<b>${esc(d.分类.分类)}</b>(${d.分类.来源==="库"?"总部运营填的":"第三方审查清单,库里没人填过时用它"})· ${esc(d.分类.理由)}</p>`:""}
     <div class="ops">${d.可走到.map(t=>`<button class="btn ${["试运行","已发布"].includes(t)?"sol":""}" data-skto="${esc(t)}">改成「${esc(t)}」</button>`).join("")}
       <span style="color:var(--ink2);font-size:12px">只有总部运营能改;改状态要写理由;依赖没就绪的进不了试运行 / 已发布</span></div></div>
    <div class="card"><div class="hd"><h3>依赖就绪(现算)</h3><span class="n">${依.就绪?"就绪":"<b style='color:var(--bad)'>没就绪</b>"}</span></div>

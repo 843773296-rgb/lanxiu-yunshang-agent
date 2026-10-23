@@ -11304,5 +11304,41 @@
    }
   ],
   "预期红": "并行工作区跑评测会互相把 .claude 改指走"
+ },
+ {
+  "script": "backend/skill_registry_check.py",
+  "改坏": "分类改成清单优先(库里人工填的被清单盖掉)",
+  "file": [
+   {
+    "path": "backend/skill_registry.py",
+    "old": "    if r.get(\"category\"):\n        return r[\"category\"], r.get(\"category_why\") or \"\", \"库\"\n",
+    "new": "    if False:\n        return r[\"category\"], r.get(\"category_why\") or \"\", \"库\"\n"
+   }
+  ],
+  "预期红": "库里人工填的分类优先于审查清单"
+ },
+ {
+  "script": "backend/skill_registry_check.py",
+  "改坏": "没登记时不读审查清单",
+  "file": [
+   {
+    "path": "backend/skill_registry.py",
+    "old": "    if e.get(\"分类\") in 分类们[1:]:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "没登记时:分类取审查清单(自造清单里写的那一类)"
+ },
+ {
+  "script": "backend/skill_registry_check.py",
+  "改坏": "审查清单里一条的理由被清空",
+  "file": [
+   {
+    "path": "agentsite/third_party_review.json",
+    "old": "\"理由\": \"「指标为什么变了」",
+    "new": "\"理由\": \"\", \"原理由\": \"「指标为什么变了」"
+   }
+  ],
+  "预期红": "版本库里的审查清单:每条分类合法、有理由;和初筛不同的写了为什么"
  }
 ]
