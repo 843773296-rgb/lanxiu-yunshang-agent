@@ -225,23 +225,29 @@ def main():
     # 角色默认 all(产品默认入口);RECALL_ROLE=kb 可换成顾问那一档(它没挂 get_member,档位只能从流失预警来)
     角色 = os.environ.get("RECALL_ROLE", "all")
     print(f"  角色:{角色}")
-    r = asyncio.run(sdk.run(角色, 题面, me=顾问, skills="own"))
-    traj = r["trajectory"]
-    技能 = next(((t.get("args") or {}).get("skill") for t in traj if t.get("tool") == "Skill"), None)
-    事实 = 取事实(traj, 顾问, {_短名(x) for x in sdk._ROLE_TOOLS[角色]()})
-    try:
-        why = 判(r["text"], traj, 事实)
-    except Exception as ex:
-        why = [f"判分器崩了:{type(ex).__name__}: {ex} —— 去补判分器,不是模型的错"]
-    print(f"  技能={技能 or '没走'} · {len(traj)} 次调用 · {time.time()-t0:.0f}s · ${r.get('cost_usd') or 0:.4f}")
-    print("  调用:" + " → ".join(_短名(t.get("tool")) for t in traj))
-    print("  " + ("✅ 过" if not why else "❌ " + "\n     ".join(why)))
-    print("\n—— 原文 ——\n" + r["text"])
-    evalrec.dump(os.path.join(HERE, "recall-eval-results.jsonl"),
-                 [dict(case="RC01", passed=not why, why=why, 技能=技能,
-                       tools=",".join(_短名(t.get("tool")) for t in traj),
-                       cost=r.get("cost_usd") or 0, text=r["text"])])
-    return 0 if not why else 1
+    import rounds
+
+    def 一轮():
+        r = asyncio.run(sdk.run(角色, 题面, me=顾问, skills="own"))
+        traj = r["trajectory"]
+        技能 = next(((t.get("args") or {}).get("skill") for t in traj if t.get("tool") == "Skill"), None)
+        事实 = 取事实(traj, 顾问, {_短名(x) for x in sdk._ROLE_TOOLS[角色]()})
+        try:
+            why = 判(r["text"], traj, 事实)
+        except Exception as ex:
+            why = [f"判分器崩了:{type(ex).__name__}: {ex} —— 去补判分器,不是模型的错"]
+        print(f"  技能={技能 or '没走'} · {len(traj)} 次调用 · {time.time()-t0:.0f}s · ${r.get('cost_usd') or 0:.4f}")
+        print("  调用:" + " → ".join(_短名(t.get("tool")) for t in traj))
+        print("  " + ("✅ 过" if not why else "❌ " + "\n     ".join(why)))
+        print("\n—— 原文 ——\n" + r["text"])
+        return [dict(case="RC01", passed=not why, why=why, 技能=技能,
+                     tools=",".join(_短名(t.get("tool")) for t in traj),
+                     cost=r.get("cost_usd") or 0, text=r["text"])]
+
+    # 两轮并报轮间抖动(rounds_check:调模型的评测不许只跑一轮;设 LANXIU_一轮 才只跑一轮)
+    最后, _ = rounds.跑并收尾(一轮, 名="客户召回", 结果文件=os.path.join(HERE, "recall-eval-results.jsonl"),
+                         全集数=1, 本轮数=1, 键="case")
+    return 0 if all(x["passed"] for x in 最后) else 1
 
 
 if __name__ == "__main__":

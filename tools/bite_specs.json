@@ -11460,5 +11460,17 @@
    }
   ],
   "预期红": "别的只读调用也重放"
+ },
+ {
+  "script": "agentsite/skill_rating_repair_eval.py",
+  "改坏": "判分器看不见轨迹里的写工具(「没有自动写」那条只剩库快照)",
+  "file": [
+   {
+    "path": "agentsite/skill_rating_repair_eval.py",
+    "old": "写了 = sorted(调过 & set(写工具))",
+    "new": "写了 = []"
+   }
+  ],
+  "预期红": "轨迹里有 decide_repair → 只挂③"
  }
 ]

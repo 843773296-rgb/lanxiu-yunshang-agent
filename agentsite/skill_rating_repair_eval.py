@@ -179,6 +179,10 @@ _好 = """一、事实
 _轨 = [{"tool": "mcp__service__get_maintain"}, {"tool": "mcp__service__service_records"},
       {"tool": "mcp__knowledge__kb_tables"}, {"tool": "Skill"}]
 
+咬合 = [
+    ("判分器看不见轨迹里的写工具(`写了 = sorted(...)` 改成 `写了 = []`)", "轨迹里有 decide_repair → 只挂③"),
+]
+
 对照 = [
     ("好答案:四条全过", _好, _轨, None, {}),
     # ⑤ 只有它会挂:①–④ 全过,但引用的是「量体记录完整」那一行,而现有口径(签收时试穿合身)排在它前面
@@ -262,7 +266,7 @@ def selftest():
 角色 = "task"
 
 
-def live(ids=None, 轮=1):
+def live(ids=None, 轮=2):
     sys.path.insert(0, HERE)
     import sdk
     prov, mdl = sdk.default_model_id().split(":", 1)
@@ -270,7 +274,14 @@ def live(ids=None, 轮=1):
         sys.exit("结果评测一律 Claude(CLAUDE.md 第 4 节)—— 设 LANXIU_PROVIDER=claude")
     情形们 = 判定表情形()
     记 = []
-    for 第 in range(轮):
+    sys.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+    import rounds
+    第 = -1
+
+    def 一轮():
+        nonlocal 第
+        第 += 1
+        过 = {}
         for t in 题:
             if ids and t["id"] not in ids: continue
             前 = 库快照(t)
@@ -290,6 +301,11 @@ def live(ids=None, 轮=1):
                           判=[dict(判据=n, 过=ok, 说明=why) for n, ok, why in 结],
                           工具=sorted(调过的工具(轨)), 原文=r.get("text"), 秒=r.get("seconds"),
                           ts=time.strftime("%Y-%m-%d %H:%M")))
+            过[t["id"]] = 全过
+        return 过
+
+    多 = rounds.跑(一轮, 轮数=轮)
+    rounds.报(多, 名="差评与维修研判")
     out = os.path.join(HERE, "evals", "runs", "rating_repair_result.jsonl")
     with open(out, "a", encoding="utf-8") as f:
         for x in 记: f.write(json.dumps(x, ensure_ascii=False) + "\n")
@@ -300,5 +316,5 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         sys.exit(selftest())
     ids = [a for a in sys.argv[1:] if a.startswith("RR")]
-    轮 = int(next((a.split("=")[1] for a in sys.argv if a.startswith("--rounds=")), "1"))
+    轮 = int(next((a.split("=")[1] for a in sys.argv if a.startswith("--rounds=")), "2"))
     live(ids or None, 轮)
