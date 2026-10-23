@@ -1637,18 +1637,6 @@
   "预期红": "评测前提:喂给模型的是合成图不是真照片"
  },
  {
-  "script": "backend/booking_check.py",
-  "改坏": "把接待任务的展示大类改成「客户预约」(展示分组和派单规则被合成一根轴)",
-  "file": [
-   {
-    "path": "backend/tasktypes.py",
-    "old": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"商机提醒\"),\n    \"企业任务\": (\"接待任务\", \"团建培训\", \"日常运维\", \"经营改进\"),   # 经营改进:10-21 加,店里自己的事、挂报告",
-    "new": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"商机提醒\", \"接待任务\"),\n    \"企业任务\": (\"团建培训\", \"日常运维\", \"经营改进\"),   # 经营改进:10-21 加,店里自己的事、挂报告"
-   }
-  ],
-  "预期红": "接待任务:展示归企业、派单归客户"
- },
- {
   "script": "tools/determinism_check.py",
   "改坏": "在造数据的脚本里写回一句 SQL 的 ORDER BY RANDOM()(抽样不再受种子管)",
   "file": [
@@ -11004,5 +10992,77 @@
    }
   ],
   "预期红": "样本量为 0 时报「没东西可验」"
+ },
+ {
+  "script": "backend/booking_check.py",
+  "改坏": "把接待任务的展示大类改成「客户预约」(展示分组和派单规则被合成一根轴)",
+  "file": [
+   {
+    "path": "backend/tasktypes.py",
+    "old": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"商机提醒\"),\n    \"企业任务\": (\"接待任务\", \"团建培训\", \"日常运维\", \"经营改进\", \"补货跟进\"),   # 经营改进:10-21 加;补货跟进:10-23 加,挂 SKU",
+    "new": "    \"客户预约\": (\"电话回电\", \"预约到店\", \"上门沟通\", \"商机提醒\", \"接待任务\"),\n    \"企业任务\": (\"团建培训\", \"日常运维\", \"经营改进\", \"补货跟进\"),   # 经营改进:10-21 加;补货跟进:10-23 加,挂 SKU"
+   }
+  ],
+  "预期红": "接待任务:展示归企业、派单归客户"
+ },
+ {
+  "script": "backend/alert_dispatch_check.py",
+  "改坏": "防重复派不看「还有没办完的」(只看同一个键办完没有)",
+  "file": [
+   {
+    "path": "backend/alert_dispatch.py",
+    "old": "\"WHERE s.type=? AND s.ref_id=? AND s.status='有效' ORDER BY s.assigned_at DESC LIMIT 1\",",
+    "new": "\"WHERE s.type=? AND s.ref_id=? AND s.status='有效' AND 0 ORDER BY s.assigned_at DESC LIMIT 1\","
+   }
+  ],
+  "预期红": "同一张单再派一次:上一条没办完 → 拒(ALERT_OPEN)"
+ },
+ {
+  "script": "backend/alert_dispatch_check.py",
+  "改坏": "同一次超期办完了也放行(不看键办没办完)",
+  "file": [
+   {
+    "path": "backend/alert_dispatch.py",
+    "old": "    if 同:\n",
+    "new": "    if 同 and False:\n"
+   }
+  ],
+  "预期红": "同一次超期已经办完 → 再派拒(ALERT_DONE)"
+ },
+ {
+  "script": "backend/alert_dispatch_check.py",
+  "改坏": "补货跟进能派给谁不按类型来(退回只派顾问的那个池子)",
+  "file": [
+   {
+    "path": "backend/tasks.py",
+    "old": "    allowed = {x[\"no\"]: x for x in pool_for(kind, me)}",
+    "new": "    allowed = {x[\"no\"]: x for x in my_staff(me)}"
+   }
+  ],
+  "预期红": "补货跟进派给店长自己 → 派出去了"
+ },
+ {
+  "script": "backend/alert_dispatch_check.py",
+  "改坏": "改派不按类型取可派的人(补货跟进能改派给顾问)",
+  "file": [
+   {
+    "path": "backend/tasks.py",
+    "old": "    allowed = {x[\"no\"]: x for x in pool_for(t.get(\"type\"), me)}",
+    "new": "    allowed = {x[\"no\"]: x for x in my_staff(me)}"
+   }
+  ],
+  "预期红": "补货跟进改派给顾问 → 拒"
+ },
+ {
+  "script": "backend/alert_dispatch_check.py",
+  "改坏": "从预警派单的 HTTP 口不取会话身份(谁都能派)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            return self._send(_ad.派(body, _me(self)))",
+    "new": "            return self._send(_ad.派(body, _me(self) or {\"no\": \"60000001\", \"name\": \"张静静\", \"role\": \"店长\", \"shop\": \"SH001 静安旗舰店\"}))"
+   }
+  ],
+  "预期红": "HTTP:没登录 → 拒(NO_LOGIN),一行没写"
  }
 ]

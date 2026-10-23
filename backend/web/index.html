@@ -2100,17 +2100,21 @@ async function stockList(){
      ${sortTh("SKU 编码","code",st,"190px")}<th>商品名称</th><th style="width:90px">类型</th>
      <th style="width:110px">规格</th>${sortTh("价格","price",st,"110px")}
      ${sortTh("库存","stock",st,"90px")}<th style="width:80px">占用</th>
-     ${sortTh("可用","avail",st,"90px")}<th style="width:90px">状态</th></tr></thead><tbody>
+     ${sortTh("可用","avail",st,"90px")}<th style="width:90px">状态</th><th style="width:90px">预警</th>
+     <th style="width:220px">跟进</th></tr></thead><tbody>
      ${d.rows.map(r=>`<tr${r.avail<=5?' style="background:#FFFBF5"':""}>
       <td class="mono">${esc(r.code)}</td><td>${esc(r.pname)}</td>
       <td><span class="pill ${r.kind==="定制品"?"p-warn":"p-blue"}">${esc(r.kind)}</span></td>
       <td>${esc(r.spec)}</td><td class="mono">¥${money(r.price)}</td>
       <td class="mono">${r.stock}</td><td class="mono">${r.locked}</td>
       <td class="mono" style="${r.avail<=5?"color:var(--bad);font-weight:600":""}">${r.avail}</td>
-      <td><span class="pill ${PPILL[r.status]}">${esc(r.status)}</span></td></tr>`).join("")}
-     ${d.rows.length?"":'<tr><td colspan="9" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的 SKU</td></tr>'}
+      <td><span class="pill ${PPILL[r.status]}">${esc(r.status)}</span></td>
+      <td>${r.档位&&r.档位!=="够"?`<span class="pill ${r.可派?"p-bad":"p-mut"}">${esc(r.档位)}</span>`:""}</td>
+      <td>${(r.可派||r.跟进)?alertCell(r.跟进, d.派单&&d.派单.能派&&r.可派, "库存预警", r.code, 11):""}</td></tr>`).join("")}
+     ${d.rows.length?"":'<tr><td colspan="11" style="text-align:center;color:var(--ink4);padding:40px">没有符合条件的 SKU</td></tr>'}
     </tbody></table>${pagerC(d)}</div>`);
   bindTable(st,stockList);
+  if(d.派单) bindAlertDispatch(d.派单, stockList);
 }
 
 Q.mtp={page:1,per:10}; Q.cnt={page:1,per:10};
@@ -3070,6 +3074,42 @@ async function orderLog(oid){
 }
 
 // 工厂回传(业务 09-22:生产和发货只认工厂回传,门店不推)—— 该催的单 + 收件箱里要人看的回传
+// ── 预警那一行派单(复审第 4 节 D)──────────────────────────────────
+// 「已跟进:谁 / 哪条任务」+「从这行派单」。**能不能派、派给谁都由服务端给**(d.派单),
+// 页面只决定按钮显不显示;真拦在写口 /api/alert-dispatch(没办完不重派、库存只派店长 / 总部)。
+function alertCell(跟, 能派, kind, obj, cols){
+  const 已 = 跟 ? `<div style="font-size:12px">${跟.状态==="有效"?"已跟进":"上次跟进"}:<b>${esc(跟.谁||"未指派")}</b> /
+     <span class="mono">${esc(跟.任务)}</span> <span class="pill ${跟.状态==="有效"?"p-blue":"p-mut"}">${esc(跟.状态||"")}</span>
+     ${跟.键?`<span style="color:var(--ink3)">(${esc(跟.键)})</span>`:""}</div>` : `<span style="color:var(--ink3);font-size:12px">没人跟</span>`;
+  const 钮 = 能派 ? `<button class="btn gray" style="height:24px;padding:0 8px;font-size:12px;margin-top:4px"
+     data-ad-kind="${esc(kind)}" data-adobj="${esc(obj)}" data-adcols="${cols}">从这行派单</button>` : "";
+  return 已 + 钮;
+}
+function bindAlertDispatch(派单, reload){
+  M.querySelectorAll("[data-ad-kind]").forEach(e=>e.onclick=()=>{
+    const tr=e.closest("tr");
+    if(tr.nextElementSibling && tr.nextElementSibling.dataset.adform==="1") return;
+    const f=document.createElement("tr"); f.dataset.adform="1";
+    f.innerHTML=`<td colspan="${e.dataset.adcols}" style="background:var(--tile);padding:12px 14px">
+      <b>派单 · ${esc(e.dataset.adobj)}</b>
+      <select class="adto" style="margin:0 8px;padding:4px 8px">
+        ${(派单.可派||[]).map(x=>`<option value="${esc(x.no)}">${esc(x.name)}(${esc(x.role)})</option>`).join("")}</select>
+      截止 <input class="adend" type="datetime-local" style="padding:4px 8px">
+      <input class="adnote" placeholder="要做什么(不填就用预警那句话)" style="width:260px;padding:4px 8px;margin-left:6px">
+      <button class="btn sol adgo" style="height:28px;padding:0 14px;font-size:12px;margin-left:8px">派出去</button>
+      <span class="admsg" style="margin-left:10px;color:var(--bad)"></span></td>`;
+    tr.after(f);
+    f.querySelector(".adgo").onclick=async()=>{
+      const b=f.querySelector(".adgo"); b.disabled=true;
+      const r=await post("/api/alert-dispatch",{kind:e.dataset.adKind, obj:e.dataset.adobj,
+        assignee_no:f.querySelector(".adto").value, end:f.querySelector(".adend").value,
+        note:f.querySelector(".adnote").value});
+      if(r&&r.ok){ reload(); }
+      else { b.disabled=false; f.querySelector(".admsg").textContent=(r&&r.reason)||"没派出去"; }
+    };
+  });
+}
+
 async function factoryPage(){
   const d=await get("/api/factory-feed");
   const RP={"挂异常":"p-bad","拒收":"p-warn","暂存":"p-blue","重复":"p-mut","收下":"p-ok"};
@@ -3090,10 +3130,11 @@ async function factoryPage(){
      <span class="n">开工超过 3 天没回接单,或过了承诺完工日还没完工 · 截至 ${esc(d.today)}</span></div>
     <table class="tb" style="margin-top:12px"><thead><tr>
      <th style="width:200px">订单</th><th style="width:140px">门店</th><th style="width:110px">顾问</th>
-     <th style="width:120px">生产方</th><th>为什么</th></tr></thead><tbody>
+     <th style="width:120px">生产方</th><th>为什么</th><th style="width:220px">跟进</th></tr></thead><tbody>
      ${d.chase.map(r=>`<tr><td class="mono"><a href="#" data-log="${esc(r.订单)}">${esc(r.订单)}</a></td><td>${esc(r.门店)}</td>
-      <td class="mono">${esc(r.顾问)}</td><td>${esc(r.生产方||"未接单")}</td><td>${esc(r.为什么)}</td></tr>`).join("")
-      ||`<tr><td colspan="5" style="color:var(--ink3)">没有该催的单</td></tr>`}
+      <td class="mono">${esc(r.顾问)}</td><td>${esc(r.生产方||"未接单")}</td><td>${esc(r.为什么)}</td>
+      <td>${alertCell(r.跟进, d.派单.能派 && r.本店, "工厂催办", r.订单, 8)}</td></tr>`).join("")
+      ||`<tr><td colspan="6" style="color:var(--ink3)">没有该催的单</td></tr>`}
     </tbody></table></div>
    <div class="card" style="margin-bottom:14px"><div class="hd"><h3>延期待通知顾客</h3>
      <span class="n">工厂延期了、顾问还没告诉顾客的单 · 通知完在助手或页面上点「已通知」</span></div>
@@ -3141,6 +3182,7 @@ async function factoryPage(){
     </tbody></table>
     <div class="note2" style="margin:0 24px 20px">${esc(d.note)}</div></div>`);
   M.querySelectorAll("[data-log]").forEach(e=>e.onclick=ev=>{ev.preventDefault();view("orderlog",e.dataset.log)});
+  bindAlertDispatch(d.派单, factoryPage);
   // 顾问点「已通知顾客」—— 不点的话这份清单只进不出,两天后就没人看了
   M.querySelectorAll("[data-told]").forEach(e=>e.onclick=async()=>{
     e.disabled=true; e.textContent="记下中…";

@@ -73,6 +73,11 @@ TYPES = [
     # 下一期报告回看「定了什么、做完没有、盯的那个数这期多少」。**必须挂一份已确认的报告、点名盯哪一项** ——
     # 不挂报告的「改进一下业绩」下一期没处回看;不点名指标的话,回看时只能说「做了」,说不出数动没动
     ("经营改进", "运营", "report",    "manager",       False, "周报 / 月报里确认过的异常,定下的改进行动 —— 填报告号和盯的那一项"),
+    # 库存预警转行动(用户 2026-10-23 拍「库存预警开口子」,复审第 4 节 D):**不挂客户、挂 SKU 号**,
+    # 只能派给店长 / 总部运营(补多少、找谁补是采购和店长的事,不是顾问的活)。
+    # **只能从库存预警那一行派**(backend/alert_dispatch.py)—— 通用派单口不收:
+    # 从那里派就没有「来自哪条预警」,同一个 SKU 会被派两遍而没有任何东西拦得住
+    ("补货跟进", "运营", "sku",       "manager",       False, "库存预警里要断 / 发不出的 SKU,派人去跟补货 —— 挂 SKU 号,只派给店长或总部运营"),
 ]
 
 # 单据种类 → (库表, 主键列, 界面上叫什么, 举例)
@@ -82,7 +87,21 @@ REF_SOURCE = {
     "maintain":  ("maintain",  "id", "维保单号", "MW73020"),
     "aftersale": ("aftersale", "id", "售后单号", "AS64880127"),
     "report":    ("store_report_doc", "id", "报告号", "RPT0001"),
+    "sku":       ("sku",       "code", "SKU 号",  "SKU 编码(库存查询页那一列)"),
 }
+
+# ── 能派给谁:默认是顾问,个别类型由类型自己说 ──────────────────────────
+# **这是类型的性质,不是派单口的分支** —— 写在派单口里的话,改派、批量那两条路各要再写一遍,
+# 漏一条就有一条路能把补货跟进派给顾问。没写在这里的类型 = 派给顾问(原来的样子)
+派给谁 = {
+    "补货跟进": ("店长", "总部运营"),
+}
+# 只能从预警那一行派的类型(通用派单口 / 批量派单都不收)—— 理由见上面「补货跟进」那条
+只从预警派 = ("补货跟进",)
+
+
+def 可派角色(t):
+    return 派给谁.get(norm(t), ("顾问",))
 
 BY_NAME = {t[0]: dict(name=t[0], family=t[1], ref=t[2], route=t[3],
                       needs_photo=t[4], desc=t[5],
@@ -101,7 +120,7 @@ OPS_TYPES = [t[0] for t in TYPES if t[1] == "运营"]
 # **别合并。** 这和「渠道」那两套口径是同一个形状:两套分法都成立,但回答的不是同一个问题。
 大类 = {
     "客户预约": ("电话回电", "预约到店", "上门沟通", "商机提醒"),
-    "企业任务": ("接待任务", "团建培训", "日常运维", "经营改进"),   # 经营改进:10-21 加,店里自己的事、挂报告
+    "企业任务": ("接待任务", "团建培训", "日常运维", "经营改进", "补货跟进"),   # 经营改进:10-21 加;补货跟进:10-23 加,挂 SKU
     "订单任务": ("订单跟踪", "维保任务", "售后任务"),
 }
 _大类of = {leaf: k for k, vs in 大类.items() for leaf in vs}
@@ -219,6 +238,12 @@ def resolve_ref(kind, ref_id, q):
                                        + ")—— 先确认报告,再照着它定行动")
         return True, None, row.get("shop"), (f"{row.get('shop')} {row.get('kind')}报"
                                              f"({row.get('period_start')} ~ {row.get('period_end')},{rid})")
+
+    if kind == "sku":
+        # SKU 不挂客户、也不属于哪家店(库存是总部一本账)—— 门店由接活的人带出
+        r = q(f"SELECT code, spec, status FROM {table} WHERE {key}=?", rid)
+        if not r: return False, None, None, f"没有这个{label}:{rid}"
+        return True, None, None, f"{label} {rid}" + (f" · {r[0]['spec']}" if r[0].get("spec") else "")
 
     if kind == "customer":
         r = q(f"SELECT id,name,shop FROM customer WHERE {key}=?", rid)

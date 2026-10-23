@@ -1178,7 +1178,18 @@ def category_tree():
         t["n"]=sum(ch["n"] for ch in t["children"])
     return top
 
-def stock_list(q):
+def _预警派单(me, 类型):
+    """预警页上「从这行派单」要的两样:这个人能不能派、能派给谁。**和写口同一个口径**(tasks.pool_for),
+    页面不自己判角色 —— 页面判的只是按钮显不显示,真拦在写口。"""
+    import tasks as _tk
+    if not me or me.get("role") not in _tk.MANAGER_ROLES:
+        return dict(能派=False, 可派=[])
+    return dict(能派=True, 可派=[dict(no=x["no"], name=x["name"], role=x["role"])
+                                 for x in _tk.pool_for(类型, me)])
+
+
+def stock_list(q, me=None):
+    import alert_dispatch as _ad
     kw=(q.get("q") or [""])[0].strip()
     low=(q.get("low") or [""])[0]
     rs=rows("""SELECT s.*, p.name pname, p.kind FROM sku s
@@ -1188,6 +1199,16 @@ def stock_list(q):
     if low=="是": rs=[r for r in rs if r["avail"]<=_sa.快没了_件数]
     rs=_sort(rs,q,{"code","stock","avail","price"})
     d=_page(rs,q); d["facets"]=dict(low=["是","否"])
+    # 预警档位 + 已跟进(复审第 4 节 D):档位按 stockalert.档 现算,只给这一页的行挂跟进情况
+    _c=_ad._c()
+    try: 档=_ad.全部sku档(_c)
+    finally: _c.close()
+    跟=_ad.跟进情况("库存预警",[r["code"] for r in d["rows"]])
+    for r in d["rows"]:
+        r["档位"]=档.get(r["code"])
+        r["可派"]=r["档位"] in _ad.可派档
+        if r["code"] in 跟: r["跟进"]=跟[r["code"]]
+    d["派单"]=_预警派单(me,"补货跟进")
     d["alert"]=len([r for r in rows("SELECT stock,locked FROM sku") if r["stock"]-r["locked"]<=_sa.快没了_件数])
     return d
 
@@ -2213,16 +2234,22 @@ def 工坊报工(body, me):
     return dict(ok=(r["结论"] == "收下"), 结论=r["结论"], reason=r["理由"], 效果=r.get("效果"))
 
 
-def factory_feed_page(q):
+def factory_feed_page(q, me=None):
     """工厂回传页(业务 09-22:生产和发货只认工厂回传)。该催清单 + 收件箱里要人看的那几条。
     「今天」按演示世界的今天(seed.TODAY),不按机器时钟 —— 和造数据、判超期用的是同一天。"""
-    import factory_inbox as _fi
+    import factory_inbox as _fi, alert_dispatch as _ad
     from seed import TODAY
     _fi.ensure()
     chase = _fi.该催清单(TODAY)
+    跟 = _ad.跟进情况("工厂催办", [x["订单"] for x in chase])
+    本店 = None if (me or {}).get("role") == "总部运营" else (me or {}).get("shop")
     for x in chase:
         接 = rows("SELECT factory FROM factory_msg WHERE order_id=? AND event='接单' AND result='收下' LIMIT 1", x["订单"])
         x["生产方"] = 接[0]["factory"] if 接 else None
+        # 已跟进:最近一条从这行派出的任务(谁 / 哪条 / 办完没有 / 那次是哪个超期日)
+        if x["订单"] in 跟: x["跟进"] = 跟[x["订单"]]
+        # 这行能不能派:店长只派本店的单(和写口 alert_dispatch.工厂催办项 同一个范围)
+        x["本店"] = 本店 is None or x.get("门店") == 本店
     stat = {r["result"]: r["n"] for r in rows("SELECT result, COUNT(*) n FROM factory_msg GROUP BY result")}
     look = rows("SELECT order_id, event, factory, at, result, reason FROM factory_msg "
                 "WHERE result IN ('挂异常','拒收','暂存') ORDER BY at DESC LIMIT 200")
@@ -2241,6 +2268,7 @@ def factory_feed_page(q):
     分批 = rows("SELECT COUNT(*) n FROM (SELECT order_id FROM pkg WHERE void_at IS NULL "
                "GROUP BY order_id HAVING COUNT(*)>1)")[0]["n"]
     return dict(today=TODAY, chase=chase, stat=stat, look=look, told=told, back=back, pkgs=pkgs, 分批=分批,
+                派单=_预警派单(me, "订单跟踪"),
                 note="生产和发货是工厂回传的事实,门店和后台不能手动推(订单状态机只认收下了的回传)。"
                      "生产方有自有工坊和外发工厂两种,谁接的单谁报,不许转厂;别家报、车间工单还在制却报完工,都挂异常等人核。"
                      "可以分批发货,每个包裹独立;发错件 / 到店发现要返工由店长人工回退,运费公司承担;"
@@ -3458,7 +3486,7 @@ class H(BaseHTTPRequestHandler):
         if p.startswith("/api/product/"): return self._send(product_detail(p.split("/api/product/")[1]))
         if p.startswith("/api/craft-doc/"): return self._send(craft_doc(p.split("/api/craft-doc/")[1]))
         if p=="/api/categories": return self._send(category_tree())
-        if p=="/api/stock": return self._send(stock_list(Q))
+        if p=="/api/stock": return self._send(stock_list(Q, _me(self)))
         if p=="/api/measure-items": return self._send(measure_items(Q))
         if p=="/api/measure-tpls": return self._send(measure_tpls(Q))
         if p=="/api/freight-zones": return self._send(freight_zones(Q))
@@ -3475,7 +3503,7 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/aftersales": return self._send(aftersale_list(Q))
         if p=="/api/maintains": return self._send(maintain_list(Q))
         if p=="/api/guide-perf": return self._send(guide_perf(Q))
-        if p=="/api/factory-feed": return self._send(factory_feed_page(Q))
+        if p=="/api/factory-feed": return self._send(factory_feed_page(Q, _me(self)))
         if p=="/api/workshop-todo": return self._send(自有工坊待报工(_me(self)))
         if p.startswith("/api/order-log/"): return self._send(order_log_page(p.split("/api/order-log/")[1]))
         if p=="/api/stock-log": return self._send(stock_log_list(Q))
@@ -3793,6 +3821,10 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/combo-resolve":
             return self._send(resolve_combo(body, _actor_of(self), _role_of(self)))
         if p=="/api/task-assign": return self._send(assign_task(body, _me(self)))
+        # 从预警那一行派单(复审第 4 节 D):身份只认会话;超期日期 / 档位由服务端现算,请求体里的不收
+        if p=="/api/alert-dispatch":
+            import alert_dispatch as _ad
+            return self._send(_ad.派(body, _me(self)))
         if p=="/api/task-finish": return self._send(finish_task(body, _me(self)))
         if p=="/api/task-dispatch": return self._send(dispatch(body, _me(self)))
         if p=="/api/task-reassign": return self._send(reassign(body, _me(self)))

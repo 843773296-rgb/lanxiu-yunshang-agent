@@ -154,6 +154,30 @@ def my_staff(me):
                 "WHERE role='顾问' AND status='启用' AND shop=? ORDER BY no", me.get("shop"))
 
 
+def pool_for(kind, me):
+    """这一类任务,当前登录的人**能派给谁**。默认就是 my_staff(顾问);
+    类型自己说了派给别的角色的(补货跟进 → 店长 / 总部运营),按类型说的来。
+
+    范围和 my_staff 同一个口径:店长 → 本店;总部运营 → 全部。**店长不能往上派给总部** ——
+    「派」是管辖关系,店长不管总部的人(要总部跟的事,由总部自己从同一行派)。
+    派单、改派都走这里 —— 只在派单口判一次的话,改派那条路就能把补货跟进转给顾问。
+    """
+    import tasktypes as tt
+    角色 = tt.可派角色(kind)
+    if tuple(角色) == ("顾问",):
+        return my_staff(me)
+    if not me or me.get("role") not in MANAGER_ROLES: return []
+    ph = ",".join("?" * len(角色))
+    if me["role"] == "总部运营":
+        return rows(f"SELECT no,name,role,shop,adv_code FROM staff WHERE role IN ({ph}) "
+                    "AND status='启用' ORDER BY no", *角色)
+    角色 = [r for r in 角色 if r != "总部运营"]
+    if not 角色: return []
+    ph = ",".join("?" * len(角色))
+    return rows(f"SELECT no,name,role,shop,adv_code FROM staff WHERE role IN ({ph}) "
+                "AND status='启用' AND shop=? ORDER BY no", *角色, me.get("shop"))
+
+
 # 经营改进 → 报告的哪一项。**行动挂在任务上,盯的指标挂在这张表上** —— schedule 不为一种任务加一列。
 # 在写口里 CREATE IF NOT EXISTS:代码推上去、任何一个检出第一次派这种任务时表就有了(不靠先手工建表)
 REPORT_ACTION_DDL = """CREATE TABLE IF NOT EXISTS report_action(
@@ -185,7 +209,7 @@ def 报告可盯项(report_id):
     return out
 
 
-def assign_task(d, me):
+def assign_task(d, me, _来源=None):
     """店长派一条任务。任务清单的字段:类型 / 顾问 / 起止时间 / 绑定活动 / 描述 / 附件。
 
     类型决定了两件事,所以它必须先填:
@@ -207,11 +231,19 @@ def assign_task(d, me):
                     reason=f"任务类型「{d.get('type') or '(空)'}」不认识;"
                            f"可选:{'、'.join(tt.CUSTOMER_TYPES + tt.OPS_TYPES)}")
 
+    # 只从预警派的类型(补货跟进):通用口不收 —— 没有「来自哪条预警」就没法防重复派。
+    # `_来源` 不是请求体里的字段,是 alert_dispatch 现算出来、按参数传进来的:**请求体里写了也不认**
+    if kind in tt.只从预警派 and not _来源:
+        return dict(ok=False, code="FROM_ALERT_ONLY",
+                    reason=f"「{kind}」只能从库存预警那一行派 —— 那里会记下是哪条预警、"
+                           f"同一件事没办完不会再派一遍;从这里派就没有这两样")
+
     to = (d.get("assignee_no") or "").strip()
-    allowed = {x["no"]: x for x in my_staff(me)}
+    allowed = {x["no"]: x for x in pool_for(kind, me)}
     if to not in allowed:
+        谁 = "、".join(tt.可派角色(kind))
         return _deny(me, "NOT_YOURS",
-                     f"只能派给**{me.get('shop') or '你管辖'}**的在职顾问;"
+                     f"「{kind}」只能派给**{me.get('shop') or '你管辖'}**在职的{谁};"
                      f"可派的人:{[x['name'] for x in allowed.values()] or '(没有)'}", to)
 
     # 数据规范由**类型**说了算:挂哪种单据、单据上的客户是谁,都从这里出。
@@ -263,6 +295,15 @@ def assign_task(d, me):
     sid = f"SC{7000 + n + 1}"
     him = allowed[to]
     with sqlite3.connect(DB) as c:
+        if _来源:
+            # 防重复派**在写的那个事务里再判一次**:页面上看到「没人跟」和点下去之间,
+            # 别人可能刚派过 —— 判在事务外,两个人同时点就会派出两条
+            c.execute("BEGIN IMMEDIATE")
+            import alert_dispatch as _ad
+            拦 = _ad.重复吗(c, _来源)
+            if 拦:
+                c.rollback()
+                return dict(ok=False, code=拦[0], reason=拦[1], 上一条=拦[2])
         # ⚠️ **工号也要写。** 名字是 staff 的副本、会漂;工号才是引用。
         # 工号本来就在手边(`him["no"]`),原来只是没写进去。
         c.execute("""INSERT INTO schedule(id,type,advisor_no,customer_id,start_ts,end_ts,status,
@@ -271,6 +312,8 @@ def assign_task(d, me):
                   (sid, kind, him["no"], cid,
                    st, en, him.get("shop"), to, me["no"],
                    _wnow(), note, ac, ref_id))
+        if _来源:
+            _ad.记来源(c, sid, _来源, _wnow())
         if 盯:
             c.execute(REPORT_ACTION_DDL)
             c.execute("INSERT INTO report_action(schedule_id,report_id,metric,created) VALUES(?,?,?,?)",
@@ -293,6 +336,7 @@ def assign_task(d, me):
            {"role": me["role"], "assignee": to, "type": kind,
             "ref": ref_id, "customer": cid})
     return dict(ok=True, code="ASSIGN", id=sid, 类型=kind, 附件=saved, 挂着=ref_desc or None,
+                派给=him["name"],
                 reason=(f"已派给 **{him['name']}**({kind}),{st} → {en}。"
                         + (f"这条挂着 {ref_desc}。" if ref_desc else "")
                         + "他登录后会在「我的任务」里看到。"
@@ -389,6 +433,8 @@ def assign_batch(items, me):
         kind = tt.norm(it.get("type") or "")
         ti = tt.info(kind)
         if not ti: bad.append(f"{tag}:类型「{it.get('type')}」不认识"); continue
+        if kind in tt.只从预警派:
+            bad.append(f"{tag}:「{kind}」只能从库存预警那一行派(要记来自哪条预警、防重复派)"); continue
         who = str(it.get("assignee") or it.get("assignee_no") or "").strip()
         him = allowed.get(who) or by_name.get(who)
         if not him: bad.append(f"{tag}:派给谁没写对(「{who}」不在可派的人里)"); continue
@@ -626,10 +672,11 @@ def reassign(d, me):
         return _deny(me, "NOT_YOURS", f"{sid} 属于 {t.get('shop')},不在你管辖范围", sid)
 
     to = (d.get("assignee_no") or "").strip()
-    allowed = {x["no"]: x for x in my_staff(me)}
+    # 能改派给谁和能派给谁是**同一个口径**(pool_for)—— 补货跟进不许改派给顾问
+    allowed = {x["no"]: x for x in pool_for(t.get("type"), me)}
     if to not in allowed:
         return _deny(me, "NOT_YOURS",
-                     f"只能改派给**{me.get('shop') or '你管辖'}**的在职顾问;"
+                     f"只能改派给**{me.get('shop') or '你管辖'}**可接这类活的在职人员;"
                      f"可派的人:{[x['name'] for x in allowed.values()] or '(没有)'}", sid)
     if to == t["assignee_no"]:
         return dict(ok=False, code="SAME_PERSON",

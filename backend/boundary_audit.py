@@ -479,6 +479,51 @@ def a_card_reveal_unlogged():
         _ol.log_op = 旧; _sh.rmtree(d, ignore_errors=True)
 
 
+# ── 预警 → 任务(复审第 4 节 D,10-23):没办完不重派 / 补货跟进只派店长或总部 / 只能从预警那一行派 ──
+def a_alert_dispatch():
+    """在库副本上真派:同一张该催的单连派两次;把补货跟进派给顾问;绕开预警从通用口派补货跟进;
+    请求体里自带一个假的超期日期想绕过防重复派。任何一刀成功就是边界破了。"""
+    import shutil as _sh, tempfile as _tf, os as _os, sys as _sys
+    import tasks as TK, alert_dispatch as AD, factory_inbox as FI, oplog as _ol
+    from seed import TODAY
+    d = _tf.mkdtemp(); f = _os.path.join(d, "lanxiu.db"); _sh.copy(api.DB, f)
+    真 = _os.path.realpath(api.DB)
+    改过 = [(m, m.DB) for m in list(_sys.modules.values())
+           if isinstance(getattr(m, "DB", None), str) and _os.path.realpath(m.DB) == 真]
+    for m, _ in 改过: m.DB = f
+    try:
+        if _os.path.realpath(TK.DB) != _os.path.realpath(f) or _os.path.realpath(_ol.DB) != _os.path.realpath(f):
+            return "没切到库副本 —— 不在真库上攻击,这条没验到"
+        c = sqlite3.connect(f); c.row_factory = sqlite3.Row
+        店长 = {r["shop"]: dict(r) for r in c.execute(
+            "SELECT no,name,role,shop FROM staff WHERE role='店长' AND status='启用'")}
+        单 = 顾问 = me = None
+        for x in FI.该催清单(TODAY):
+            if x["门店"] in 店长:
+                g = c.execute("SELECT no FROM staff WHERE role='顾问' AND status='启用' AND shop=? LIMIT 1",
+                              (x["门店"],)).fetchone()
+                if g: 单, 顾问, me = x["订单"], g[0], 店长[x["门店"]]; break
+        缺货 = next((k for k, v in AD.全部sku档(c).items() if v in AD.可派档), None)
+        c.close()
+        if not 单 or not 缺货:
+            return "库里找不到该催的单 / 缺货的 SKU —— 空集合上「拦住了」恒成立,这条没验到"
+        止 = f"{TODAY} 23:00"
+        r1 = AD.派(dict(kind="工厂催办", obj=单, assignee_no=顾问, end=止), me)
+        if not r1.get("ok"):
+            return f"第一次正常派就没派出去({r1.get('reason')})—— 攻击的前提不成立,这条没验到"
+        r2 = AD.派(dict(kind="工厂催办", obj=单, assignee_no=顾问, end=止, key_date="2099-01-01"), me)
+        if r2.get("ok"): return f"同一张单上一条 {r1['id']} 没办完,又派出了 {r2.get('id')}"
+        r3 = AD.派(dict(kind="库存预警", obj=缺货, assignee_no=顾问, end=止), me)
+        if r3.get("ok"): return f"补货跟进派给了顾问 {顾问}"
+        r4 = TK.assign_task(dict(type="补货跟进", assignee_no=me["no"], ref_id=缺货, note="绕开预警", end=止), me)
+        if r4.get("ok"): return "补货跟进从通用派单口派出去了(没有来源、不防重复派)"
+        raise PermissionError(f"重派拦下({r2.get('code')})· 派给顾问拦下({r3.get('code')})· "
+                              f"通用口拦下({r4.get('code')})")
+    finally:
+        for m, 旧 in 改过: m.DB = 旧
+        _sh.rmtree(d, ignore_errors=True)
+
+
 def a_bash():
     v = guards.pre_tool_verdict("Bash", {"command": "ls"})
     if v: raise PermissionError(v)
@@ -911,6 +956,11 @@ STRUCT = [
   a_budget, "检查 max_budget_usd 是否传进 options、是否为正值",
   "SDK 层强制,超了直接停;阈值按供应商分 —— "
   "SDK 那个数只在跑 Claude 时接近真实,跑 DeepSeek 时虚高几十倍"),
+ ("预警转任务:同一件事没办完不重派,补货跟进只派店长 / 总部、只能从预警那一行派",
+  "backend/alert_dispatch.py 派 / 重复吗;backend/tasks.py assign_task(_来源)、pool_for;backend/tasktypes.py 派给谁",
+  a_alert_dispatch, "库副本上同一张该催的单连派两次(第二次带一个假超期日期);补货跟进派给顾问;从通用口派补货跟进",
+  "防重复派在**写的那个事务里**判(BEGIN IMMEDIATE),超期日期 / 档位服务端现算、请求体里的不收;"
+  "能派给谁是类型的性质(派单、改派同一个 pool_for);来源只能由预警写口按参数传入,通用口没有这条路"),
  ("MCP 只认代码里声明的服务", "sdk.py strict_mcp_config",
   a_strict_mcp, "比对 .mcp.json 与代码声明的服务名",
   "两边名字完全不同 —— 名字对不上,正好**证明** .mcp.json 真的被忽略了"),

@@ -48,6 +48,7 @@ import rating_shadow
 import tasks
 import skill_registry
 import mcp_registry
+import alert_dispatch
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -95,6 +96,9 @@ import mcp_registry
     (skill_registry, "确保表", ["skill_cfg", "skill_cfg_log"]),
     # MCP 工具开关(2026-10-23,用户拍「MCP 管理带配置」):第一次有人在页面上改才建 —— 同上,建死免得表数漂
     (mcp_registry, "确保表", ["mcp_tool_cfg", "mcp_tool_cfg_log"]),
+    # 预警 → 任务的来源(2026-10-23,复审第 4 节 D):第一次有人从预警那一行派单才建 —— 同上,建死免得表数漂。
+    # 两列日期:key_date(超期的承诺完工日)、created(世界的钟),都是整列日期、系统写的,不是人填的自由文本
+    (alert_dispatch, "建表", ["alert_task"]),
 ]
 
 
