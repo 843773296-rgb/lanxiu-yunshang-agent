@@ -130,13 +130,12 @@ def 重复吗(c, 来源):
                   "WHERE a.kind=? AND a.obj=? AND a.key_tag=? AND COALESCE(a.key_date,'')=COALESCE(?,'') "
                   "AND s.status='完结' ORDER BY a.created DESC LIMIT 1",
                   (来源["kind"], 来源["obj"], 来源["key_tag"], 来源.get("key_date"))).fetchone()
-    if 同:
-        if 来源["kind"] == "工厂催办":
-            话 = (f"这一次超期({来源.get('key_date') or 来源['key_tag']})已经由 {同[0]} 跟进办完了 —— "
-                  "同一张单要工厂延期之后又超期,才算新的一件")
-        else:
-            话 = (f"{来源['obj']} 在「{来源['key_tag']}」这一档已经由 {同[0]} 跟进办完了 —— "
-                  "档位变了(比如快没了 → 断货)才算新的一件")
+    # 工厂催办**办完了就能再派**(用户 2026-10-23 选型卡拍「办完后能再派」):
+    # 工厂办完一次仍不交货、也不报延期,正是最需要再催的时候;没办完不重派由上面那条兜着。
+    # 库存那一类没问过,照旧 —— 同一档办完了不再派。
+    if 同 and 来源["kind"] != "工厂催办":
+        话 = (f"{来源['obj']} 在「{来源['key_tag']}」这一档已经由 {同[0]} 跟进办完了 —— "
+              "档位变了(比如快没了 → 断货)才算新的一件")
         return ("ALERT_DONE", 话, 同[0])
     return None
 

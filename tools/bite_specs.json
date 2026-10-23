@@ -11007,15 +11007,27 @@
  },
  {
   "script": "backend/alert_dispatch_check.py",
-  "改坏": "同一次超期办完了也放行(不看键办没办完)",
+  "改坏": "同一档库存办完了也放行(不看键办没办完)",
   "file": [
    {
     "path": "backend/alert_dispatch.py",
-    "old": "    if 同:\n",
+    "old": "    if 同 and 来源[\"kind\"] != \"工厂催办\":\n",
     "new": "    if 同 and False:\n"
    }
   ],
-  "预期红": "同一次超期已经办完 → 再派拒(ALERT_DONE)"
+  "预期红": "同一档办完了 → 再派拒(ALERT_DONE)"
+ },
+ {
+  "script": "backend/alert_dispatch_check.py",
+  "改坏": "工厂催办办完了仍按键拒(退回 10-23 拍板前)",
+  "file": [
+   {
+    "path": "backend/alert_dispatch.py",
+    "old": "    if 同 and 来源[\"kind\"] != \"工厂催办\":\n",
+    "new": "    if 同:\n"
+   }
+  ],
+  "预期红": "同一次超期已经办完 → 可以再派(用户 10-23 拍)"
  },
  {
   "script": "backend/alert_dispatch_check.py",
