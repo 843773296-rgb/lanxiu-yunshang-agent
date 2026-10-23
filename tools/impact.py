@@ -131,7 +131,10 @@ def 自检():
     import glob
     n = 0
     for p in glob.glob(os.path.join(ROOT, "**", "*.py"), recursive=True):
-        if ".venv" in p or "/.claude/" in p: continue
+        # ⚠️ 按**相对仓库根**的路径判断,不按绝对路径 —— 并行子任务的工作区本身在 `.claude/worktrees/` 下,
+        # 拿绝对路径判 `/.claude/` 会把整个工作区都跳过,于是「找得到 0 处」、自测红(10-23 子任务 A 查出)
+        r = os.path.relpath(p, ROOT)
+        if ".venv" in r.split(os.sep) or r.startswith(".claude" + os.sep): continue
         try: t = open(p, encoding="utf-8").read()
         except Exception: continue
         n += sum(1 for line in t.split("\n") if 警示.search(line))
