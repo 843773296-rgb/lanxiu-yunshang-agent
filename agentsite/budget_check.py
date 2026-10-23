@@ -118,8 +118,20 @@ def main():
        "  ← 默认 all 的话,每次问话都在和 236 个第三方技能竞争")
     ck("认不出的档退回 own", "own" if sdk.skills_for("乱写的") == sdk.skills_for("own") else "退回别处",
        "own", "  ← 退回 all 的话,写错一个参数就悄悄把 236 个放进竞争,而没人会发现")
-    ck("own 里只有我们自己的",
-       "是" if all(skills_own.is_ours(x) for x in sdk.skills_for("own")) else "混进别人的", "是")
+    # 10-23 起 own =「Skill 管理后台放行的」(用户拍:三个改造版第三方进试运行)—— 原来那条「own 里只有自己写的」
+    # 就此过期。现在验的是:**混进来的第三方,库里登记的状态都是试运行 / 已发布**。
+    # 状态从 skill_cfg 直接读,不借 放行吗() —— 拿被测的那个函数当期望值,就是同源谬误。
+    import sqlite3 as _sq
+    try:
+        with _sq.connect(f"file:{os.path.join(ROOT, 'backend', 'lanxiu.db')}?mode=ro", uri=True) as _c:
+            _登 = dict(_c.execute("SELECT name, status FROM skill_cfg").fetchall())
+    except _sq.Error:
+        _登 = {}
+    _外 = [x for x in sdk.skills_for("own") if not skills_own.is_ours(x)]
+    _越 = [x for x in _外 if _登.get(x) not in ("试运行", "已发布")]
+    ck("own 里的第三方都是后台放行过的",
+       "是" if not _越 else "混进没放行的:" + "、".join(_越[:3]), "是",
+       f"  ← 场上第三方 {len(_外)} 个,状态从库里直接读")
     ck("none 是真的空", str(len(sdk.skills_for("none"))), "0",
        "  ← 评测要有「没有技能时什么样」这个对照")
 
