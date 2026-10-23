@@ -10500,5 +10500,17 @@
    }
   ],
   "预期红": "照页面的发法(按钮发名字)存"
+ },
+ {
+  "script": "agent/workshop_eval_judgetest.py",
+  "改坏": "「在问」只认英文问号(10-23 夜跑判错的原样)",
+  "file": [
+   {
+    "path": "agent/workshop_eval.py",
+    "old": "在问 = re.search(r\"[?？]|确认一下|对吗|是不是\", t)",
+    "new": "在问 = re.search(r\"[?]|确认一下|对吗|是不是\", t)"
+   }
+  ],
+  "预期红": "真跑 10-23"
  }
 ]

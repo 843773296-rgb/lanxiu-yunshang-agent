@@ -67,7 +67,8 @@ def 报了完工或问清冲突():
             return []
         t = text or ""
         冲突 = re.search(r"在制|挂异常|异常|拒收|没交|未完成", t)
-        在问 = re.search(r"[??]|确认一下|对吗|是不是", t)
+        # 中英文问号都认 —— 原来只写了英文的,10-23 夜跑模型用全角「？」问清了冲突,被判成没问
+        在问 = re.search(r"[?？]|确认一下|对吗|是不是", t)
         查了 = any(w in n for n in names for w in ("get_order", "factory_chase", "my_workorders"))
         if 冲突 and 在问 and 查了:
             return []
