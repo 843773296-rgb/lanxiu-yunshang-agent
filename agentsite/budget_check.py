@@ -130,7 +130,7 @@ def main():
     _外 = [x for x in sdk.skills_for("own") if not skills_own.is_ours(x)]
     _越 = [x for x in _外 if _登.get(x) not in ("试运行", "已发布")]
     ck("own 里的第三方都是后台放行过的",
-       "是" if not _越 else "混进没放行的:" + "、".join(_越[:3]), "是",
+       "是" if not _越 else "混进没放行的:" + "、".join(_越[:3]) + (f" 等共 {len(_越)} 个" if len(_越) > 3 else ""), "是",
        f"  ← 场上第三方 {len(_外)} 个,状态从库里直接读")
     ck("none 是真的空", str(len(sdk.skills_for("none"))), "0",
        "  ← 评测要有「没有技能时什么样」这个对照")
