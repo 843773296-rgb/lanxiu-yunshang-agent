@@ -10460,7 +10460,7 @@
    {
     "path": "backend/api.py",
     "old": "报告口径版本 = \"2026.10.23.1\"",
-    "new": "报告口径版本 = \"2026-10-23.1\""
+    "new": "报告口径版本 = \"2026-09-01.1\""
    }
   ],
   "预期红": "每日平移挪得动取数包里的日期、挪不动规则版本"
@@ -11383,7 +11383,7 @@
   "file": [
    {
     "path": "agent/recall_eval.py",
-    "old": "    疑 = [x for x in _数们(text) if len(x) >= 2 and x not in 池数]",
+    "old": "    疑 = [x for x in _数们(text) if len(x) >= 2 and x not in 池数 and x not in 取整]",
     "new": "    疑 = []"
    }
   ],
@@ -11455,8 +11455,8 @@
   "file": [
    {
     "path": "agent/recall_eval.py",
-    "old": "    疑 = [x for x in _数们(text) if len(x) >= 2 and x not in 池数]",
-    "new": "    疑 = [x for x in _数们(text) if len(x.split(\".\")[0]) >= 2 and x not in 池数]"
+    "old": "    疑 = [x for x in _数们(text) if len(x) >= 2 and x not in 池数 and x not in 取整]",
+    "new": "    疑 = [x for x in _数们(text) if len(x.split(\".\")[0]) >= 2 and x not in 池数 and x not in 取整]"
    }
   ],
   "预期红": "自己算的倍数"
@@ -12024,5 +12024,65 @@
    }
   ],
   "预期红": "救回来的那一版,撤下留痕清成 NULL(不是空串 —— 空串会让每日平移判它是坏日期)"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "小数取整不认(取整当成编数)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "x not in 池数 and x not in 取整]",
+    "new": "x not in 池数]"
+   }
+  ],
+  "预期红": "真跑钉回:工具给的小数金额取整写出来,不算编数"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "取整放得太宽(差 1 也算取整)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "for f in (round, int)}",
+    "new": "for f in (round, int, lambda v: int(v) + 1)}"
+   }
+  ],
+  "预期红": "小数金额取整取错了照样挂"
+ },
+ {
+  "script": "backend/auth_persist_check.py",
+  "改坏": "重启后不去落盘那份找(只认内存)",
+  "file": [
+   {
+    "path": "backend/auth.py",
+    "old": "        if not s and token:\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "清空内存(= 服务重启)之后,同一个令牌还认得出是谁"
+ },
+ {
+  "script": "backend/auth_persist_check.py",
+  "改坏": "落盘时存令牌原文",
+  "file": [
+   {
+    "path": "backend/auth.py",
+    "old": "d[_指纹(tok)] = dict(who, at=now.isoformat())",
+    "new": "d[tok] = dict(who, at=now.isoformat())"
+   }
+  ],
+  "预期红": "会话文件里没有令牌原文(只有指纹)"
+ },
+ {
+  "script": "backend/auth_persist_check.py",
+  "改坏": "退出登录只删内存那份",
+  "file": [
+   {
+    "path": "backend/auth.py",
+    "old": "        if d.pop(_指纹(token), None) is not None:\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "退出登录之后,重启也不认"
  }
 ]

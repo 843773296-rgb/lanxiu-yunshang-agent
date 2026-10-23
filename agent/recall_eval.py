@@ -198,7 +198,10 @@ def 判(text, traj, 事实):
     池数 = set(事实.get("池数") or [])
     # 一位整数不查(列表序号会全部误报);**看整串长度,不看整数部分** —— 带小数的串至少 3 位,一律查。
     # 10-23 第四次真跑:「超过她往年节奏 2.7 倍」(196 ÷ 73 自己算的),原来只看整数部分位数,漏了
-    疑 = [x for x in _数们(text) if len(x) >= 2 and x not in 池数]
+    # **工具给小数、回答取了整也不算编**(10-23 顾问入口真跑:get_member 给「实付 21569.38」,模型写「实付 21569 元」)。
+    # 只认四舍五入和去尾两种,算错的整数(21570)照样挂
+    取整 = {str(f(float(x))) for x in 池数 if re.fullmatch(r"\d+\.\d+", x) for f in (round, int)}
+    疑 = [x for x in _数们(text) if len(x) >= 2 and x not in 池数 and x not in 取整]
     # **算对的数 ≠ 编的数**(10-23 五次真跑挂的全是这一类:641−4=637、196÷73≈2.7、101+51=152、
     # 7-17 到今天 98 天 —— 全算对了)。真正伤人的是编出来的数和算错的数,所以:
     # 能由工具里两个数 加 / 减 / 除(一位小数)、或「工具里的日期到今天」算出来的,放过;算错了照样红。
@@ -263,7 +266,7 @@ def main():
         return 2
     print(f"客户召回(customer-recall)结果评测 · 顾问 {顾问['name']} · 模型 {model}\n  问:{题面}")
     t0 = time.time()
-    # 角色默认 all(产品默认入口);RECALL_ROLE=kb 可换成顾问那一档(它没挂 get_member,档位只能从流失预警来)
+    # 角色默认 all(产品默认入口);RECALL_ROLE=kb 可换成顾问那一档(10-23 起也挂了 get_member)
     角色 = os.environ.get("RECALL_ROLE", "all")
     print(f"  角色:{角色}")
     import rounds
