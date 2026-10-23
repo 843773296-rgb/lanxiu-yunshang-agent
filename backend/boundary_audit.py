@@ -639,7 +639,7 @@ def a_card_mask():
     import json as _j, arrival_card as AC
     r = AC.卡片(dict(no="HQ-AUDIT", name="审计", role="总部运营", shop=None), db=api.DB)
     if not r["卡片"]:
-        return "一张上新卡片都没有 —— 空集合上「全部打码」恒成立,这条没验到"
+        raise 前提不成立("一张上新卡片都没有 —— 空集合上「全部打码」恒成立,这条没验到")
     m = _PH.search(_j.dumps(r, ensure_ascii=False, default=str))
     if m: return f"卡片返回里出现完整手机号 {m.group()}"
     raise PermissionError(f"{len(r['卡片'])} 张卡片的电话全部打码")
@@ -655,7 +655,8 @@ def a_card_reveal_other():
                            "WHERE ot.kind='回捞' AND s.assignee_no IS NOT NULL LIMIT 1").fetchone() or (None, None)
         别人 = c.execute("SELECT no FROM staff WHERE role='顾问' AND no<>? LIMIT 1", (派 or "",)).fetchone()
         c.close()
-        if not sid or not 别人: return "找不到可攻击的卡片 / 别的顾问 —— 这条没验到"
+        if not sid or not 别人:
+            raise 前提不成立("找不到可攻击的卡片 / 别的顾问 —— 这条没验到")
         r = AC.看完整联系方式(dict(no=别人[0], name="别人", role="顾问", shop=None), sid, db=f)
         if "电话" in r: return f"别的顾问拿到了 {sid} 的完整号码"
         raise PermissionError(r.get("error"))
@@ -674,7 +675,8 @@ def a_card_reveal_unlogged():
         sid, 派 = c.execute("SELECT s.id, s.assignee_no FROM opportunity_task ot JOIN schedule s ON s.id=ot.schedule_id "
                            "WHERE ot.kind='回捞' AND s.assignee_no IS NOT NULL LIMIT 1").fetchone() or (None, None)
         c.close()
-        if not sid: return "找不到可攻击的卡片 —— 这条没验到"
+        if not sid:
+            raise 前提不成立("找不到可攻击的卡片 —— 这条没验到")
         r = AC.看完整联系方式(dict(no=派, name="本人", role="顾问", shop=None), sid, db=f)
         if "电话" in r: return "台账写不进,照样给了完整号码"
         raise PermissionError(r.get("error"))
@@ -696,7 +698,7 @@ def a_alert_dispatch():
     for m, _ in 改过: m.DB = f
     try:
         if _os.path.realpath(TK.DB) != _os.path.realpath(f) or _os.path.realpath(_ol.DB) != _os.path.realpath(f):
-            return "没切到库副本 —— 不在真库上攻击,这条没验到"
+            raise 前提不成立("没切到库副本 —— 不在真库上攻击,这条没验到")
         c = sqlite3.connect(f); c.row_factory = sqlite3.Row
         店长 = {r["shop"]: dict(r) for r in c.execute(
             "SELECT no,name,role,shop FROM staff WHERE role='店长' AND status='启用'")}
