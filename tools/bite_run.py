@@ -142,6 +142,10 @@ def _忽略(软链):
         for n in 名字们:
             if os.path.normpath(os.path.join(rel, n)) in 软链:
                 丢.add(n)
+        # 并行子任务的 git 工作区(`.claude/worktrees/`,10-23 起)不带:每个都是整份仓库,
+        # 四个就把副本撑到 820 MB、撞拷贝上限、全量重放拒跑;检查一个字节都不读它们
+        if rel == ".claude" and "worktrees" in 名字们:
+            丢.add("worktrees")
         return 丢
     return f
 

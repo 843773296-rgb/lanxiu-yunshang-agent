@@ -33,6 +33,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("补货跟进能派给谁不按类型来(退回只派顾问的那个池子)", "补货跟进派给店长自己 → 派出去了"),
     ("改派不按类型取可派的人(补货跟进能改派给顾问)", "补货跟进改派给顾问 → 拒"),
     ("从预警派单的 HTTP 口不取会话身份(谁都能派)", "HTTP:没登录 → 拒(NO_LOGIN),一行没写"),
+    ("key_date 不校验形状(什么都往里写)", "key_date 只收 YYYY-MM-DD 或空"),
 ]
 
 
@@ -291,6 +292,23 @@ finally:
     with auth._LOCK:
         for t in (t店, t顾):
             auth._SESS.pop(t, None)
+
+# ── key_date 只收日期或空(数据工厂 10-23):混进一个 "-" 平移就把这一列判成「混着日期」、凌晨拒跑 ──
+import sqlite3 as _sq3
+_c = _sq3.connect(":memory:")
+_拒 = []
+for _坏值 in ("-", "N/A", "2026-Q4", "2026-09-24 完工"):
+    try:
+        AD.记来源(_c, f"CHK-{_坏值}", dict(kind="工厂催办", obj="CHK", key_date=_坏值, key_tag="超期"), "2026-10-23 10:00")
+    except ValueError:
+        _拒.append(_坏值)
+try:
+    AD.记来源(_c, "CHK-OK", dict(kind="工厂催办", obj="CHK", key_date="2026-09-24", key_tag="超期"), "2026-10-23 10:00")
+    AD.记来源(_c, "CHK-NULL", dict(kind="补货跟进", obj="CHK", key_date=None, key_tag="断货"), "2026-10-23 10:00")
+    _好 = True
+except ValueError:
+    _好 = False
+ck("key_date 只收 YYYY-MM-DD 或空:「-」「N/A」这类拒写,日期和空照收", len(_拒) == 4 and _好, (_拒, _好))
 
 print()
 if 坏:

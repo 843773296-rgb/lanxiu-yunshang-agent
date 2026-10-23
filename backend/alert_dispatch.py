@@ -142,6 +142,14 @@ def 重复吗(c, 来源):
 
 
 def 记来源(c, sid, 来源, 时间):
+    # ⚠️ key_date 只许是 YYYY-MM-DD 或 NULL,别的形状**拒写**(数据工厂 10-23 提醒)。
+    # 每日平移按「这一列每个值都像日期」把它判成整列日期、和承诺日同一天一起挪 —— 防重复派的键才恒等。
+    # 只要混进一个 "-" / "N/A",这一列就掉进「混着日期」,没登记的话凌晨平移直接拒跑,
+    # 而那时没人会想到是哪一支写了个 "-"。**把约定做成结构**,不靠后来的人记得。
+    import re as _re
+    kd = 来源.get("key_date")
+    if kd is not None and not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(kd)):
+        raise ValueError(f"alert_task.key_date 只收 YYYY-MM-DD 或空,拿到的是「{kd}」—— 写进去会让每日平移把这一列判成混着日期")
     建表(c)
     c.execute("INSERT INTO alert_task(schedule_id, kind, obj, key_date, key_tag, created) VALUES(?,?,?,?,?,?)",
               (sid, 来源["kind"], 来源["obj"], 来源.get("key_date"), 来源["key_tag"], 时间))

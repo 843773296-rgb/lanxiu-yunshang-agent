@@ -11064,5 +11064,17 @@
    }
   ],
   "预期红": "HTTP:没登录 → 拒(NO_LOGIN),一行没写"
+ },
+ {
+  "script": "backend/alert_dispatch_check.py",
+  "改坏": "key_date 不校验形状(什么都往里写)",
+  "file": [
+   {
+    "path": "backend/alert_dispatch.py",
+    "old": "    if kd is not None and not _re.fullmatch(",
+    "new": "    if False and not _re.fullmatch("
+   }
+  ],
+  "预期红": "key_date 只收 YYYY-MM-DD 或空"
  }
 ]
