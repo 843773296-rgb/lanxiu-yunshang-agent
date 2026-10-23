@@ -240,6 +240,42 @@
       "prompt": "有件衣服坏了,顾客问算谁的,怎么判?",
       "expect": "rating-repair",
       "why": "rating-repair 缺参数:没给单号也没给客户。按技能设计**应触发、由第一步去问是哪一条**(判责要先认清是哪一件,问的顺序本身是流程的一部分)。⚠️ 按 09-19 那条规律,信息半缺的题可能在两种合理行为间晃 —— 晃了先看题面,不先改描述"
+    },
+    {
+      "id": 301,
+      "prompt": "上周营收比前一周少了一截,问题出在哪?",
+      "expect": "metric-diagnostics-lanxiu",
+      "why": "第三方改造版(改造自 metric-diagnostics)的正例:问的是一个数**为什么变了**,要先复现两期再拆。⚠️ 改造版状态默认「已安装待审查」,执行闸会拦下真调用 —— 这条量的是**模型想不想调**(要用 --set all 跑,own 档里看不到它)"
+    },
+    {
+      "id": 302,
+      "prompt": "上周营收多少?",
+      "expect": null,
+      "why": "metric-diagnostics-lanxiu 的反例:只问一个数,直接 weekly_revenue。**钉误触发**:和 #301 同一个数、同一个时间,只差「为什么」"
+    },
+    {
+      "id": 303,
+      "prompt": "今年这几个活动哪个效果最好?投进去的钱值不值?",
+      "expect": "activity-review-lanxiu",
+      "why": "第三方改造版(改造自 marketing-roas-analyzer)的正例:评活动划不划算,要三种口径并列、归因期外单列。同 #301,状态没放行时量的是模型想不想调"
+    },
+    {
+      "id": 304,
+      "prompt": "老客转介绍那个活动是哪天开始的?",
+      "expect": null,
+      "why": "activity-review-lanxiu 的反例:问活动本身的信息,不是复盘。**事实取自库里**:活动 AC2603「老客转介绍」,2026-07-24 开始"
+    },
+    {
+      "id": 305,
+      "prompt": "帮我把库存巡一遍,看看有哪些要处理的",
+      "expect": "stock-patrol-lanxiu",
+      "why": "第三方改造版(改造自 multi-platform-inventory-warning)的正例:全量过一遍、分档、说清各找谁。同 #301,状态没放行时量的是模型想不想调"
+    },
+    {
+      "id": 306,
+      "prompt": "「金襕」织金缎马面裙(现货)M 码还有货吗?",
+      "expect": null,
+      "why": "stock-patrol-lanxiu 的反例:问单个商品有没有货,直接 get_stock 答可用件数。**钉误触发**:句子里有「货」。**事实取自库里**:该商品 M 码有可用库存"
     }
   ]
 }

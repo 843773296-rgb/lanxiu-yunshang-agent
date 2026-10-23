@@ -124,3 +124,9 @@ backend/.bite-run.pid
 agent/nightly/agentsite__evals__*.jsonl
 # 扣下的答案原文:原件不进库,夜跑挪过来的副本和压缩包也不进
 agent/nightly/agentsite__evals__withheld*
+
+# 第三方技能的改造版(intent/skill-third-party.md):改成只调本系统工具、用本系统口径,要进版本库;
+# 它们不是我们原创,**不进 skills_own.OURS**,状态默认「已安装待审查」,由总部运营在 Skill 管理页放进试运行。
+!agentsite/.claude/skills/metric-diagnostics-lanxiu/
+!agentsite/.claude/skills/activity-review-lanxiu/
+!agentsite/.claude/skills/stock-patrol-lanxiu/
