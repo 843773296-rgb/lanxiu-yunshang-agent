@@ -267,6 +267,8 @@ def main():
             bad = 判(c, text, traj) if text else [f"跑挂了:{r.get('error', '无回答')}"]
             recs.append(dict(id=c["id"], 身份=c["me"]["role"], kind=c["kind"], q=c["q"], passed=not bad,
                              why=bad, tools=",".join(_工具(traj)), skills=",".join(_技能(traj)),
+                             # 取数参数要留:答错的那期是模型传错了 date,还是把库里一份歪了的报告认成了这一期,只看这里分得清
+                             取数参数=[t.get("args") for t in traj if (t.get("tool") or "").endswith("store_report")],
                              cost=r.get("cost_usd"), text=text))
             print(f"  {'✅' if not bad else '❌'} {c['id']} {c['kind']} [{c['me']['role']}] "
                   f"{','.join(_工具(traj))[:50]:52s} {('' if not bad else bad[0])[:60]}", flush=True)
