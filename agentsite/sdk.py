@@ -858,6 +858,29 @@ def roles():
     return out
 
 
+# ── 网络代理:只转这几项,不读整份用户设置 ────────────────────────────────
+# 本机的代理写在 ~/.claude/settings.json 的 env 里。而 setting_sources 只开了 project ——
+# 故意的:用户级设置里还有个人的钩子、插件、权限,不能带进产品里的智能体。
+# 代价是代理也一起丢了:常驻服务(launchd 起的,不带终端的环境变量)直连出去,
+# 报「Failed to authenticate. API Error: 403 Request not allowed」—— **看着像登录坏了,其实是没走代理**。
+# 2026-10-23 用户在聊天页撞到;在终端里跑一直是好的(终端自带代理变量),所以之前没人发现。
+# 二分实测:干净环境下只有 setting_sources=["project"] 那一项会让它 403。
+_代理键 = ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy")
+
+
+def _代理环境():
+    """→ 要转给 CLI 的代理变量。进程环境里有就用进程的;没有再从用户设置的 env 里**只取这几项**。"""
+    out = {k: os.environ[k] for k in _代理键 if os.environ.get(k)}
+    if out:
+        return out
+    try:
+        with open(os.path.expanduser("~/.claude/settings.json"), encoding="utf-8") as f:
+            env = (json.load(f).get("env") or {})
+    except (OSError, ValueError):
+        return {}
+    return {k: str(env[k]) for k in _代理键 if env.get(k)}
+
+
 # ── 工具按需加载(用户 2026-10-23 拍「工具按需加载」)──────────────────────
 # 全能助手一次挂 95 个工具,开口就占约 19 万 token(Haiku 实测 192665),其中工具说明约 10 万。
 # 开了之后工具说明不全量进上下文,模型先用 ToolSearch 取回要用的那几个。
@@ -1109,7 +1132,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         ] + ([] if kind in 按需加载的角色 else ["ToolSearch"]),
         # 按需加载:工具说明先不进上下文,模型用 ToolSearch 按名字 / 关键词取回再调。
         # CLI 对非官方地址(DeepSeek)默认关着,要显式开;只开给 按需加载的角色。
-        env={"ENABLE_TOOL_SEARCH": "true"} if kind in 按需加载的角色 else {},
+        env={**_代理环境(), **({"ENABLE_TOOL_SEARCH": "true"} if kind in 按需加载的角色 else {})},
         model=model,
         max_turns=max_turns,
         permission_mode="bypassPermissions",   # 工具全是只读的,不需要逐次批准
