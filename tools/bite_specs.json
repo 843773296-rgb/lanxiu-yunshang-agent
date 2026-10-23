@@ -11796,5 +11796,17 @@
    }
   ],
   "预期红": "写出去的结果要带「各轮过」,两轮的证据都留下"
+ },
+ {
+  "script": "tools/shift_world.py",
+  "改坏": "把「平移后重算」里带参那条写回「名字后面跟参数」(2026-10-23 CI 真逮到的那个 bug)",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "    ([\"tools/realign_report_periods.py\", \"--写\"],",
+    "new": "    ([\"tools/realign_report_periods.py --写\"],"
+   }
+  ],
+  "预期红": "参数单独成格"
  }
 ]
