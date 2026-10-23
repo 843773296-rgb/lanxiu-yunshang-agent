@@ -36,6 +36,9 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("选了客户就默认选中第一个着装人", "名下两个着装人:选了客户之后一个都没预选"),
     ("没点选着装人也照发尺码请求", "没点选着装人:不发尺码请求"),
     ("kb_fit 不核着装人是不是这位客户名下的", "传一个别家客户的着装人:不推码"),
+    ("翻页参数不进 SQL(永远回第 1 页)", "每页 1 条:两页各回一位、不重复,共 2 页"),
+    ("编辑不分状态(已锁定的也能点编辑)", "列表每行有编辑按钮;已锁定的那行编辑点不了"),
+    ("编辑时不把库里存的带进弹窗", "点编辑:库里存的那几项都带进来了(方案号、形制、面料、两样工艺、版型、客户)"),
 ]
 
 
@@ -117,7 +120,15 @@ const fetch = (u, opt = {}) => {
   u = String(u); 记.push({ u, body: opt.body ? JSON.parse(opt.body) : null });
   if (u.startsWith("/api/scheme-options")) return 回({ 形制: [], 材质: [], 工艺: [], 配饰: [], 颜色: [], 版型: {} });
   if (u.startsWith("/api/scheme-check")) return 回({ issues: [] });
-  if (u.startsWith("/api/schemes")) return 回({ rows: [] });
+  if (u.startsWith("/api/schemes")) return 回({ rows: [
+    { id: "SC-改", name: "可改的", xz: "马面裙", mt: "真丝", kf: "刺绣,盘扣", color: "红", ps: "", pattern: "PT04",
+      customer_id: "C-两人", status: "已保存" },
+    { id: "SC-锁", name: "锁了的", xz: "马面裙", mt: "真丝", kf: "", color: "", ps: "", pattern: "", customer_id: "",
+      status: "已锁定" }] });
+  if (u.startsWith("/api/scheme-customers")) {
+    const pg = Number((u.match(/[?&]page=(\d+)/) || [])[1] || 1);
+    return 回({ rows: [{ id: "C-第" + pg + "页", name: "林" }], 共: 45, 每页: 20, 页: pg, 共页: 3, 说明: "" });
+  }
   if (u.startsWith("/api/scheme-wearers")) {
     const c = decodeURIComponent(u.split("customer=")[1] || "");
     return 回({ customer: c, rows: 着装人[c] || [] });
@@ -151,6 +162,36 @@ ck("点选之后:保存按钮可点", $("save").disabled === false, `disabled=${
 await ctx.pickCus("C-一人"); await 等();
 ck("换一位客户:原来点选的着装人清掉;名下只有一个也不替人点", 跑("SEL.wearer") === "" && 按下的人().length === 0,
    `SEL.wearer=${跑("SEL.wearer")}`);
+// ── 搜客户翻页(用户 10-23 拍「加分页」)──
+跑(`CUSQ="林"`); await ctx.searchCus(2); await 等();
+const 搜 = 记.filter(x => x.u.startsWith("/api/scheme-customers")).at(-1);
+ck("翻到第 2 页:请求里带 page=2", 搜 && /[?&]page=2(&|$)/.test(搜.u), 搜 && 搜.u);
+ck("翻到第 2 页:页面写着第 2 / 3 页,上一页能点、下一页也能点",
+   /第 2 \/ 3 页/.test($("cres").innerHTML) && !/id="cprev" disabled/.test($("cres").innerHTML)
+   && !/id="cnext" disabled/.test($("cres").innerHTML), $("cres").innerHTML.slice(0, 300));
+await ctx.searchCus(3); await 等();
+ck("最后一页:下一页点不了", /id="cnext" disabled/.test($("cres").innerHTML), $("cres").innerHTML.slice(0, 300));
+
+// ── 列表为主、新建 / 编辑走弹窗(用户 10-23)──
+await ctx.loadList(); await 等();
+ck("列表每行有编辑按钮;已锁定的那行编辑点不了",
+   /data-edit="SC-改"/.test($("list").innerHTML) && /data-edit="SC-锁" disabled/.test($("list").innerHTML),
+   $("list").innerHTML.slice(0, 400));
+ck("可编辑那行的编辑按钮没被禁用", !/data-edit="SC-改" disabled/.test($("list").innerHTML), "");
+const 前 = 记.length;
+跑(`开弹窗(ROWS[0])`); await 等();
+ck("点编辑:弹窗打开,标题写着是哪一条", $("dlg").hidden === false && /SC-改/.test($("dlgTitle").textContent), $("dlgTitle").textContent);
+ck("点编辑:库里存的那几项都带进来了(方案号、形制、面料、两样工艺、版型、客户)",
+   跑(`SEL.id==="SC-改" && SEL.xz==="马面裙" && SEL.mt==="真丝" && SEL.kf.length===2 && SEL.pt==="PT04" && SEL.cust==="C-两人"`),
+   跑(`JSON.stringify(SEL)`));
+ck("点编辑:去取这位客户名下的着装人,但不替人点选",
+   记.slice(前).some(x => x.u.startsWith("/api/scheme-wearers") && decodeURIComponent(x.u).includes("C-两人")) && 跑(`SEL.wearer`) === "",
+   JSON.stringify(记.slice(前).map(x => x.u)) + " wearer=" + 跑(`SEL.wearer`));
+跑(`开弹窗(null)`); await 等();
+ck("点新建:弹窗是空的(不带上一条的方案号)", 跑(`SEL.id===null && SEL.xz===null && SEL.cust===""`) && $("dlgTitle").textContent === "新建方案",
+   跑(`JSON.stringify(SEL)`));
+跑(`关弹窗()`);
+ck("关弹窗:隐藏起来", $("dlg").hidden === true, "");
 console.log(JSON.stringify(out));
 """
 
@@ -215,6 +256,15 @@ def main():
     ck("传本客户名下的着装人:照常推码(上一条不是一律拒)", d.get("档位") not in (None, "判不了"), d)
     d = backend.kb_fit("CK-甲", "PT04")
     ck("名下两人量过体、不传着装人:不猜(后台那道闸还在)", d.get("档位") == "判不了", d)
+
+    print("\n▸ 翻页(用户 10-23 选型卡拍「加分页」)")
+    一 = backend.search_fit_customers("检查搜客户", 跨店, 每页=1, 页=1)
+    二 = backend.search_fit_customers("检查搜客户", 跨店, 每页=1, 页=2)
+    ck("每页 1 条:两页各回一位、不重复,共 2 页",
+       一.get("共页") == 2 and 二.get("页") == 2 and len(ids(一)) == 1 and len(ids(二)) == 1 and ids(一) != ids(二),
+       (一.get("共页"), ids(一), ids(二)))
+    _, r = 打("/api/scheme-customers?q=检查搜客户&page=2", t总)
+    ck("HTTP 上 page 参数传得到(第 2 页超出就是空的,不回第 1 页)", r.get("页") == 2 and ids(r) == [], (r.get("页"), ids(r)))
 
     print("\n▸ 页面:着装人不默认、不点选就不出码(node 里真跑 scheme.html)")
     页面()

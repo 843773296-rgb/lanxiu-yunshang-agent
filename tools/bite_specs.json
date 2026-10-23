@@ -11556,5 +11556,41 @@
    }
   ],
   "预期红": "没登录调不动聊天站的智能体"
+ },
+ {
+  "script": "backend/scheme_customer_search_check.py",
+  "改坏": "翻页参数不进 SQL(永远回第 1 页)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "*参, q, q, 每页, (页 - 1) * 每页)",
+    "new": "*参, q, q, 每页, 0)"
+   }
+  ],
+  "预期红": "每页 1 条:两页各回一位、不重复,共 2 页"
+ },
+ {
+  "script": "backend/scheme_customer_search_check.py",
+  "改坏": "编辑不分状态(已锁定的也能点编辑)",
+  "file": [
+   {
+    "path": "agentsite/web/scheme.html",
+    "old": "const 能改 = r.status===\"草稿\" || r.status===\"已保存\";",
+    "new": "const 能改 = true;"
+   }
+  ],
+  "预期红": "列表每行有编辑按钮;已锁定的那行编辑点不了"
+ },
+ {
+  "script": "backend/scheme_customer_search_check.py",
+  "改坏": "编辑时不把库里存的带进弹窗",
+  "file": [
+   {
+    "path": "agentsite/web/scheme.html",
+    "old": "  if(row){\n    Object.assign(SEL,",
+    "new": "  if(false){\n    Object.assign(SEL,"
+   }
+  ],
+  "预期红": "点编辑:库里存的那几项都带进来了(方案号、形制、面料、两样工艺、版型、客户)"
  }
 ]

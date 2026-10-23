@@ -3429,7 +3429,7 @@ class H(BaseHTTPRequestHandler):
         # 方案页:客户改成输入搜索、选定后列着装人(复审第 4 节 B,用户 10-23 拍)。
         # 登录闸在上面 `要登录的读`;范围(只搜本店)由 `backend.本店范围` 定,和客户读接口同一个函数
         if p=="/api/scheme-customers":
-            return self._send(backend.search_fit_customers((Q.get("q") or [""])[0], _me(self)))
+            return self._send(backend.search_fit_customers((Q.get("q") or [""])[0], _me(self), 页=(Q.get("page") or ["1"])[0]))
         if p=="/api/scheme-wearers":
             _r = backend.scheme_wearers((Q.get("customer") or [""])[0], _me(self))
             return self._send(_r, {"NO_CUSTOMER": 404, "OTHER_SHOP": 403}.get(_r.get("code"), 200))

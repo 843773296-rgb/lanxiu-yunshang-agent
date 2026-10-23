@@ -3907,18 +3907,23 @@ def 本店范围(me):
 # 方案页的客户搜索(复审第 4 节 B,用户 10-23 拍)。
 # ⚠️ 下面三样是**暂定**,业务没拍过,见交付报告的选型卡:
 #   · 姓名按「包含」匹配;客户号按「整号相等」(不分大小写);手机按「尾号」,至少 4 位数字才认
-#   · 一次最多回 `方案搜客户_每页` 条,另报一共命中多少条(多了就提示再输入多一点)
+#   · 每页 `方案搜客户_每页` 条,另报一共命中多少条、共几页 —— **翻页**(用户 10-23 选型卡拍「加分页」;
+#     其余三条暂定值同日定下:姓名包含、客户号全号、手机尾号至少 4 位)
 方案搜客户_每页 = 20
 方案搜客户_尾号最少位数 = 4
 
 
-def search_fit_customers(q, me, 每页=None):
+def search_fit_customers(q, me, 每页=None, 页=1):
     """方案页用:按姓名 / 手机尾号 / 客户号搜**量过体**的客户,只搜得到登录的人那家店的(跨店角色除外)。
 
     原来方案页一次把 5155 位量过体的客户全拉下来平铺成下拉框 —— 不分门店、也没法搜。
     人群口径和 `fit_customers` 一样(有量体记录的才列,没量过体推不了码)。
     返回里**不给完整手机号**,只给尾号 —— 顾问拿尾号跟客户对一下就够了。"""
     每页 = 每页 or 方案搜客户_每页
+    try:
+        页 = max(1, int(页 or 1))
+    except (TypeError, ValueError):
+        页 = 1
     q = (q or "").strip()
     if not q:
         return dict(rows=[], 共=0, 说明="输入姓名、手机尾号或客户号来搜")
@@ -3937,11 +3942,12 @@ def search_fit_customers(q, me, 每页=None):
         " (SELECT MAX(r.method) FROM measure_rec r WHERE r.customer_id=c.id) method,"
         " (SELECT COUNT(DISTINCT r.item) FROM measure_rec r WHERE r.customer_id=c.id) items,"
         " (SELECT MIN(r.tpl) FROM measure_rec r WHERE r.customer_id=c.id) tpl_code"
-        + base + " ORDER BY (UPPER(c.id)=UPPER(?)) DESC, (c.name=?) DESC, c.name, c.id LIMIT ?",
-        *参, q, q, 每页)
-    return dict(rows=rs, 共=共, 每页=每页,
+        + base + " ORDER BY (UPPER(c.id)=UPPER(?)) DESC, (c.name=?) DESC, c.name, c.id LIMIT ? OFFSET ?",
+        *参, q, q, 每页, (页 - 1) * 每页)
+    共页 = max(1, -(-共 // 每页))
+    return dict(rows=rs, 共=共, 每页=每页, 页=页, 共页=共页,
                 说明=("只列量过体的客户" + ("" if 范围 is None else f",只搜 {范围 or '(你没挂门店)'} 的")
-                      + (f";命中 {共} 位,只列了前 {每页} 位 —— 再多输入几个字" if 共 > 每页 else "")))
+                      + (f";命中 {共} 位,第 {页} / {共页} 页" if 共 > 每页 else "")))
 
 
 def _名下着装人(customer_id):
