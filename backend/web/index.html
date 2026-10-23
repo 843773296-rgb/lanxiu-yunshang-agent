@@ -2814,7 +2814,7 @@ async function rtplDetail(name, 新建){
    <div class="card"><div class="hd"><h3>每项显示 / 隐藏 / 必选</h3><span class="n">隐藏的项不交给写报告的 AI(取数包里整项拿掉);锁定必选的两项不能隐藏;一节只放一种(期内 / 存量)</span></div>
     <table class="tb"><thead><tr><th style="width:140px">指标</th><th style="width:60px">段</th><th style="width:90px">主题</th><th style="width:60px">重要度</th><th style="width:200px">章节</th><th style="width:60px">显示</th><th>必选</th></tr></thead><tbody data-rtrows></tbody></table>
     <div class="ops" style="margin-top:10px"><button class="btn sol" data-rtsave>存成新的一版(草稿)</button></div></div>
-   <div class="card"><div class="hd"><h3>版本记录</h3><span class="n">只增不改 · 报告里冻的是「版本号」那一列 · 草稿 → 试运行 → 已发布,不许跳</span></div>
+   <div class="card"><div class="hd"><h3>版本记录</h3><span class="n">只增不改 · 报告里冻的是「版本号」那一列 · 草稿 → 试运行 → 已发布,不许跳 · 试运行满 ${d.试运行天数||30} 天没发布自动撤下 · 已发布撤下后回到上一版</span></div>
     <div style="margin:8px 0"><label>试点门店(点「试运行」时用这里勾的店)</label>
       ${Object.entries(店们).map(([k,v])=>`<label style="display:inline-flex;gap:4px;margin-right:12px"><input type="checkbox" data-rttrial="${esc(k)}">${esc(v)}</label>`).join("")}</div>
     <table class="tb"><thead><tr><th style="width:70px">版本</th><th style="width:60px">版本号</th><th style="width:150px">状态</th><th style="width:150px">时间</th><th style="width:90px">谁</th><th style="width:160px">隐藏的</th><th>理由 / 状态留痕</th><th style="width:130px">操作</th></tr></thead><tbody>
@@ -2823,7 +2823,8 @@ async function rtplDetail(name, 新建){
        <td class="mono">${esc(v.时间)}</td><td>${esc(v.谁||"")}</td>
        <td>${esc(v.内容.章节.flatMap(s=>s.指标.filter(x=>x.显示===false).map(x=>x.名)).join("、")||"无")}</td>
        <td>${esc(v.理由)}${(v.留痕||[]).map(h=>`<div style="color:var(--ink2);font-size:12px">→ ${esc(h.到)} · ${esc(h.时间||"")} · ${esc(h.谁||"")}:${esc(h.理由||"")}</div>`).join("")}</td>
-       <td>${((d.可走||{})[v.状态]||[]).map(to=>`<button class="btn" data-rtst="${esc(to)}" data-rtv="${v.版本}">${to==="已撤下"?"撤下":to==="已发布"?"发布":esc(to)}</button>`).join(" ")||"—"}</td></tr>`).join("")
+       <td>${((d.可走||{})[v.状态]||[]).map(to=>`<button class="btn" data-rtst="${esc(to)}" data-rtv="${v.版本}">${to==="已撤下"?"撤下":to==="已发布"?"发布":esc(to)}</button>`).join(" ")}
+         ${v.状态==="已撤下"?`<button class="btn" data-rtcopy="${v.版本}">复制为新草稿</button>`:""}</td></tr>`).join("")
        :'<tr><td colspan="8" style="color:var(--ink2)">还没存过</td></tr>'}</tbody></table></div>`);
   const 画行=()=>{
     const 节=M.querySelector("[data-rtsec]").value.split("\n").map(s=>s.trim()).filter(Boolean);
@@ -2850,6 +2851,9 @@ async function rtplDetail(name, 新建){
         章节:节.map(s=>({标题:s,指标:排.filter(n=>在哪[n]===s).map(n=>({名:n,显示:锁.has(n)||显[n]!==false,必选:锁.has(n)||!!必[n]}))}))};
       doOp("/api/report-template-save",{name,payload,why:v.why},()=>rtplDetail(name));
     });
+  M.querySelectorAll("[data-rtcopy]").forEach(b=>b.onclick=()=>modal(`把第 ${b.dataset.rtcopy} 版复制成新草稿`,
+    [{k:"why",label:"理由",type:"text",req:true,ph:"为什么再拿这一版出来试"}],
+    v=>doOp("/api/report-template-copy",{name,version:+b.dataset.rtcopy,why:v.why},()=>rtplDetail(name))));
   M.querySelectorAll("[data-rtst]").forEach(b=>b.onclick=()=>modal(`第 ${b.dataset.rtv} 版 → ${b.dataset.rtst}`,
     [{k:"why",label:"理由",type:"text",req:true,ph:"以后有人问「这一版为什么放出来了 / 为什么撤了」,答案在这里"}],
     v=>doOp("/api/report-template-status",{name,version:+b.dataset.rtv,to:b.dataset.rtst,why:v.why,

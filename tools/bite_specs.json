@@ -10459,8 +10459,8 @@
   "file": [
    {
     "path": "backend/api.py",
-    "old": "报告口径版本 = \"2026.10.21.1\"",
-    "new": "报告口径版本 = \"2026-10-21.1\""
+    "old": "报告口径版本 = \"2026.10.23.1\"",
+    "new": "报告口径版本 = \"2026-10-23.1\""
    }
   ],
   "预期红": "每日平移挪得动取数包里的日期、挪不动规则版本"
@@ -11952,5 +11952,65 @@
    }
   ],
   "预期红": "报告模板隐藏的指标,写报告的 AI 拿不到它的数"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "包里不列「被隐藏的」(隐藏和这期没数又混成一种)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "            \"被隐藏的\": list(_藏),\n",
+    "new": ""
+   }
+  ],
+  "预期红": "隐藏的在包顶层显式列出(和「取不到的」分开),口径版本号已升"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "试点门店不查适用门店(专用模板能拿任何店试)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "            if name != 默认模板名:\n                适用 =",
+    "new": "            if False:\n                适用 ="
+   }
+  ],
+  "预期红": "专用模板只在它适用的门店里试运行(试点写了不适用的店:拒)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "满期的试运行照样生效(读路径不看期限)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "and shop in r[\"试点\"] and not _过期(r, 今)]",
+    "new": "and shop in r[\"试点\"]]"
+   }
+  ],
+  "预期红": "试运行满 30 天自动撤下:满期那一刻起就不生效、打开页面落成已撤下(系统署名)、不能再发布"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "复制为新草稿不落库(只回个 ok)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "    return 保存(name, json.loads(r[\"payload\"]),",
+    "new": "    return dict(ok=True, 版本=版本 + 1) or 保存(name, json.loads(r[\"payload\"]),"
+   }
+  ],
+  "预期红": "撤下的另存成新草稿:新版本号、草稿、内容和原来那版一样;顾问复制不了"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "撤下已发布时不把上一版救回来",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "                if 前 and not 校验(",
+    "new": "                if False and 前 and not 校验("
+   }
+  ],
+  "预期红": "已发布能直接撤下,回到被它顶下来的那一版;再撤就回默认(第 1 版是系统撤的,不救回来)"
  }
 ]

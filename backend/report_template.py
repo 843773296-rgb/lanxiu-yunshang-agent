@@ -228,9 +228,15 @@ def _连(db=None):
 可走 = {
     "草稿": ("试运行",),
     "试运行": ("已发布", "已撤下"),
-    "已发布": (),
+    # 已发布可以直接撤下(用户 10-23 拍「允许,回到上一版」):撤下时把被它顶下来的那一版恢复成已发布,没有就回代码默认
+    "已发布": ("已撤下",),
+    # 撤下的不再回到试运行(用户 10-23 拍「另存新版本」)—— 一个版本只有一段经历;要再试用「复制为新草稿」
     "已撤下": (),
 }
+# 试运行满这么多天还没发布 → 自动撤下(用户 10-23 拍「到期自动撤下」)。
+# 30 天是用户 10-23 定的(「试用期一个月吧」;我最初提的 14 天是拍脑袋的)。试点店到期回到已发布的那一版。
+# 判过期按**世界时间**(ops.now)和 trial_at 比 —— trial_at 是整列日期、每日平移跟着挪,两边同一个世界,天数不漂。
+试运行天数 = 30
 # 后加的列(10-23 状态线):建表语句不改 —— 老库里表已经在,CREATE IF NOT EXISTS 不会补列;补列走 ALTER,有就跳过。
 # ⚠️ status 加列时默认「已发布」:加列之前存的版本当时一存就生效,迁移成已发布,生效规则和加列前一样(别丢)。
 #    新存的一版写口里**显式**写「草稿」。
@@ -292,6 +298,43 @@ def _在用(行们):
     return 出
 
 
+def _过期(r, 今):
+    """这一版是不是试运行满了 试运行天数 还没发布。trial_at 读不出来按没过期(不替人撤)。"""
+    if r.get("status") != "试运行" or not r.get("trial_at"):
+        return False
+    import datetime as _dt
+    try:
+        起 = _dt.datetime.strptime(str(r["trial_at"])[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return False
+    return 今 - 起 >= _dt.timedelta(days=试运行天数)
+
+
+def _世界今天():
+    import ops
+    return ops.now().replace(tzinfo=None)
+
+
+def _撤过期(c):
+    """把试运行满期的落成「已撤下」(写路径和页面打开时调;读路径 生效() 另按 _过期 现算,不靠这一步落库)。→ 撤下的 [(name, version)]。"""
+    今, now, 撤 = _世界今天(), _now(), []
+    for r in _全部(c):
+        if _过期(r, 今):
+            c.execute("UPDATE report_template_ver SET status='已撤下', withdraw_at=?, withdraw_by=?, withdraw_why=? WHERE id=?",
+                      (now, "系统", f"试运行满 {试运行天数} 天还没发布,自动撤下(用户 10-23 拍);试点店回到已发布的那一版", r["id"]))
+            撤.append((r["name"], r["version"]))
+    if 撤:
+        c.commit()
+        try:
+            from oplog import log_op
+            for n, v in 撤:
+                log_op("系统", "report_template", f"{n}#{v}", "试运行", "已撤下", True, "RPT_TPL_EXPIRE",
+                       f"试运行满 {试运行天数} 天自动撤下", {})
+        except Exception:
+            pass
+    return 撤
+
+
 def _门店们(c):
     """→ {门店标识: 店名}。标识用业务数据里的写法「SH001 静安旗舰店」(staff.shop / 订单 / 报告都是这一串),不是裸编码。"""
     try:
@@ -313,7 +356,9 @@ def 生效(shop, db=None):
     except sqlite3.Error:
         行 = []
     if shop:
-        试 = [r for r in 行 if r["status"] == "试运行" and shop in r["试点"]]
+        # 满期的试运行不生效,哪怕还没人打开页面把它落成「已撤下」—— 读路径是只读连接,不靠写来保证
+        今 = _世界今天()
+        试 = [r for r in 行 if r["status"] == "试运行" and shop in r["试点"] and not _过期(r, 今)]
         if 试:
             r = max(试, key=lambda x: x["id"])
             return dict(模板=r["name"], 版本=r["version"], 版本号=r["id"], 状态="试运行", 内容=json.loads(r["payload"]))
@@ -445,6 +490,8 @@ def _版行(v):
 
 def 概览(db=None):
     with closing(_连(db)) as c:
+        确保表(c)
+        _撤过期(c)
         行 = _各模板最新(c)
         用 = _在用(_全部(c))
         店 = _门店们(c)
@@ -470,6 +517,7 @@ def 概览(db=None):
 def 详情(name, db=None):
     with closing(_连(db)) as c:
         确保表(c)
+        _撤过期(c)
         版们 = [_行(r) for r in c.execute(
             "SELECT * FROM report_template_ver WHERE name=? ORDER BY version DESC", (name,))]
     if not 版们 and name != 默认模板名:
@@ -478,7 +526,7 @@ def 详情(name, db=None):
                 版本记录=[_版行(v) for v in 版们],
                 已登记指标=已登记指标(), 锁定必选=list(锁定必选()), 期间们=list(期间们),
                 报告期取不到={k: list(v) for k, v in 报告期取不到().items()},
-                状态们=list(状态们), 可走={k: list(v) for k, v in 可走.items()})
+                状态们=list(状态们), 可走={k: list(v) for k, v in 可走.items()}, 试运行天数=试运行天数)
 
 
 # ── 写 ───────────────────────────────────────────────────────────────
@@ -636,8 +684,10 @@ def 改状态(name, 版本, 到, 理由, me, 试点门店=None, db=None):
     except (TypeError, ValueError):
         return dict(ok=False, reason="版本要是第几版(数字)")
     撤下的 = None
+    恢复的 = None
     with closing(_连(db)) as c:
         确保表(c)
+        _撤过期(c)          # 先把满期的落下来 —— 满期的试运行不许再发布
         r = c.execute("SELECT * FROM report_template_ver WHERE name=? AND version=?", (name, 版本)).fetchone()
         if not r:
             return dict(ok=False, reason=f"没有模板「{name}」的第 {版本} 版")
@@ -662,6 +712,12 @@ def 改状态(name, 版本, 到, 理由, me, 试点门店=None, db=None):
             假 = [s for s in 店 if s not in 真店]
             if 假:
                 return dict(ok=False, reason=f"{'、'.join(假)} 不是门店(有:{'、'.join(真店)})")
+            # 专用模板只在它适用的门店里试(用户 10-23 拍);「默认」适用全部,不受限
+            if name != 默认模板名:
+                适用 = json.loads(r["payload"]).get("适用门店") or []
+                外 = [s for s in 店 if s not in 适用]
+                if 外:
+                    return dict(ok=False, reason=f"{'、'.join(外)} 不在模板「{name}」的适用门店里 —— 专用模板只在它适用的门店里试运行")
             试 = (用.get(name) or {}).get("试运行")
             if 试:
                 return dict(ok=False, reason=f"模板「{name}」第 {试['version']} 版已经在试运行 —— 同一模板同一时刻最多一版试运行;"
@@ -680,14 +736,44 @@ def 改状态(name, 版本, 到, 理由, me, 试点门店=None, db=None):
             撤下的 = [x["version"] for x in 旧]
             c.execute("UPDATE report_template_ver SET status='已发布', publish_at=?, publish_by=?, publish_why=? WHERE id=?",
                       (now, 谁, 理由, r["id"]))
-        else:   # 已撤下(只从试运行来)
+        else:   # 已撤下(从试运行来;或已发布直接撤 —— 用户 10-23 拍「允许,回到上一版」)
             c.execute("UPDATE report_template_ver SET status='已撤下', withdraw_at=?, withdraw_by=?, withdraw_why=? WHERE id=?",
                       (now, 谁, 理由, r["id"]))
+            if 现 == "已发布":
+                # 回到「被它顶下来的那一版」—— 按顶下来时写的那句认,不按「上一个版本号」猜:
+                # 中间可能有一版是人手撤的,那一版不该被救回来
+                前 = c.execute("SELECT * FROM report_template_ver WHERE name=? AND status='已撤下' AND withdraw_why LIKE ? "
+                              "ORDER BY version DESC LIMIT 1", (name, f"第 {版本} 版发布,自动撤下%")).fetchone()
+                if 前 and not 校验(json.loads(前["payload"]), c, name):
+                    c.execute("UPDATE report_template_ver SET status='已发布', withdraw_at=NULL, withdraw_by=NULL, withdraw_why=NULL "
+                              "WHERE id=?", (前["id"],))
+                    恢复的 = 前["version"]
         c.commit()
     try:
         from oplog import log_op
         log_op(谁, "report_template", f"{name}#{版本}", 现, 到, True, "RPT_TPL_STATUS", 理由[:120],
-               {"版本号": r["id"], **({"试点": 试点门店} if 到 == "试运行" else {}), **({"撤下": 撤下的} if 撤下的 else {})})
+               {"版本号": r["id"], **({"试点": 试点门店} if 到 == "试运行" else {}), **({"撤下": 撤下的} if 撤下的 else {}),
+                **({"恢复": 恢复的} if 恢复的 else {})})
     except Exception:
         pass
-    return dict(ok=True, 模板=name, 版本=版本, 从=现, 到=到, **({"顶下来的": 撤下的} if 撤下的 else {}))
+    回 = dict(ok=True, 模板=name, 版本=版本, 从=现, 到=到, **({"顶下来的": 撤下的} if 撤下的 else {}))
+    if 现 == "已发布" and 到 == "已撤下":
+        回["回到"] = f"第 {恢复的} 版" if 恢复的 else "代码默认(之前没有发布过别的版本,或那一版现在通不过校验)"
+    return 回
+
+
+def 复制为草稿(name, 版本, 理由, me, db=None):
+    """把某一版的内容另存成新的一版草稿(用户 10-23 拍:撤下的不重试,另存新版本)。走 保存 —— 同一道校验、同一份留痕。"""
+    e = _闸(me)
+    if e:
+        return dict(ok=False, code="NO_AUTH" if not (me or {}).get("no") else "FORBIDDEN", reason=e)
+    try:
+        版本 = int(版本)
+    except (TypeError, ValueError):
+        return dict(ok=False, reason="版本要是第几版(数字)")
+    with closing(_连(db)) as c:
+        确保表(c)
+        r = c.execute("SELECT payload FROM report_template_ver WHERE name=? AND version=?", (name, 版本)).fetchone()
+    if not r:
+        return dict(ok=False, reason=f"没有模板「{name}」的第 {版本} 版")
+    return 保存(name, json.loads(r["payload"]), (理由 or "").strip() and f"复制自第 {版本} 版:{理由.strip()}", me, db=db)

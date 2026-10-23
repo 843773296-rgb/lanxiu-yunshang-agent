@@ -3784,6 +3784,14 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(ok=False, reason="没登录 —— 改报告模板要登录,署名用登录的人"), 401)
             r = _rtp.保存(str(body.get("name") or ""), body.get("payload") or {}, body.get("why"), u, db=backend.DB)
             return self._send(r, 200 if r.get("ok") else (403 if r.get("code") == "FORBIDDEN" else 400))
+        if p=="/api/report-template-copy":
+            # 把某一版另存成新草稿(用户 10-23 拍:撤下的试运行不重试,另存新版本)。身份只从会话取
+            import report_template as _rtp
+            u = _me(self)
+            if not u:
+                return self._send(dict(ok=False, reason="没登录 —— 复制报告模板要登录,署名用登录的人"), 401)
+            r = _rtp.复制为草稿(str(body.get("name") or ""), body.get("version"), body.get("why"), u, db=backend.DB)
+            return self._send(r, 200 if r.get("ok") else (403 if r.get("code") == "FORBIDDEN" else 400))
         if p=="/api/report-template-status":
             # 报告模板一版的状态(用户 10-23 选「草稿 → 试运行 → 发布」):身份只从登录会话取;
             # 只有总部运营、要写理由、不许跳、试点门店必须是真门店 —— 都在 report_template.改状态 里判
