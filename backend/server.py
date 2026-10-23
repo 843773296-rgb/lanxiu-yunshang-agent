@@ -56,6 +56,22 @@ def _wtoday():
     import worldclock
     return worldclock.今天().isoformat()
 
+要登录的读 = (
+    "/api/workbench", "/api/tasks", "/api/lifecycle", "/api/wearers", "/api/wearer-plan",
+    "/api/fit-customers", "/api/schemes", "/api/oplog", "/api/appts2", "/api/appts", "/api/orders",
+    "/api/aftersales", "/api/maintains", "/api/guide-perf", "/api/approvals", "/api/approval-list",
+    "/api/schedule", "/api/staff", "/api/factory-feed",
+)
+要登录的读_前缀 = (
+    "/api/task/", "/api/export/", "/api/appt/", "/api/chat-order/", "/api/aftersale/",
+    "/api/maintain/", "/api/order-log/",
+)
+
+
+def _要登录(p):
+    return p in 要登录的读 or p.startswith(要登录的读_前缀)
+
+
 def _me(handler):
     """从 Cookie 里的 token 换出当前登录的员工。没登录返回 None。
 
@@ -3024,6 +3040,11 @@ class H(BaseHTTPRequestHandler):
         if _u(unquote(urlparse(self.path).path)) == "/api/me":
             u = _me(self)
             return self._send(u or {"error": "没登录"}, 200 if u else 401)
+        # 带客户信息的读接口一律要登录(用户 10-23 拍,见 intent/read-login.md)。
+        # **点名,不一刀切**:运维平台服务端取研判队列不带 cookie,全站一刀切会让自动研判悄悄坏掉。
+        # 新加一个会带出客户姓名 / 电话 / 地址的读接口,要加进 `要登录的读`。
+        if _要登录(p) and not _me(self):
+            return self._send({"error": "请先登录 —— 这一页带着客户信息", "code": "NO_AUTH"}, 401)
         # 存过的经营报告(用户 10-10:确认后要给个链接能直达)—— 身份只从 Cookie 换,
         # 范围规则和 chat 里 list_reports 是**同一个函数**(report_doc.列 / 取),页面不另写一套
         if p.startswith("/api/contract/"):

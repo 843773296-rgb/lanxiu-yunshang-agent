@@ -10752,5 +10752,53 @@
    }
   ],
   "预期红": "产品说明里那张工具表和代码对不上"
+ },
+ {
+  "script": "backend/customer_read_auth_check.py",
+  "改坏": "从点名清单里删掉订单列表",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "\"/api/appts2\", \"/api/appts\", \"/api/orders\",",
+    "new": "\"/api/appts2\", \"/api/appts\","
+   }
+  ],
+  "预期红": "没登录:点名的带客户信息读接口全拒(401)"
+ },
+ {
+  "script": "agentsite/skill_stats_check.py",
+  "改坏": "把 _declared 改回读 sdk.py 里的 SKILLS 字面量",
+  "file": [
+   {
+    "path": "agentsite/skill_stats.py",
+    "old": "    import skills_own as _own\n    return list(_own.OURS)",
+    "new": "    import re\n    src = open(os.path.join(HERE, \"sdk.py\"), encoding=\"utf-8\").read()\n    m = re.search(r\"^SKILLS = \\[(.*?)\\]\", src, re.M)\n    return [x.strip().strip('\"\\'') for x in m.group(1).split(\",\")] if m else []"
+   }
+  ],
+  "预期红": "从未触发的:列得出来,而且就是自有清单里没被用过的那几个"
+ },
+ {
+  "script": "agentsite/skill_stats_check.py",
+  "改坏": "记一轮 只挑第一个 Skill 调用(退回 next())",
+  "file": [
+   {
+    "path": "agentsite/skill_stats.py",
+    "old": "    调 = [t for t in (traj or []) if (t.get(\"tool\") or \"\") == \"Skill\"]",
+    "new": "    调 = [t for t in (traj or []) if (t.get(\"tool\") or \"\") == \"Skill\"][:1]"
+   }
+  ],
+  "预期红": "一轮两个技能:两个都记上"
+ },
+ {
+  "script": "agentsite/skill_stats_check.py",
+  "改坏": "被拦的也算进「用了」",
+  "file": [
+   {
+    "path": "agentsite/skill_stats.py",
+    "old": "x for r in hit for x in _全(r) if x not in (r.get(\"被拦\") or []))",
+    "new": "x for r in hit for x in _全(r))"
+   }
+  ],
+  "预期红": "被执行闸拦下的:不算用了,另列"
  }
 ]

@@ -28,6 +28,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("把客户读接口的登录检查去掉(回到「读不要登录」)", "没登录:客户详情拒(401)"),
     ("店长也当成跨店角色(不按门店划)", "店长看别家店的客户:拒(403)"),
     ("列表照用请求里传的门店(不按登录的店覆盖)", "店长翻列表时传别家店:照样只回本店"),
+    ("从点名清单里删掉订单列表", "没登录:点名的带客户信息读接口全拒(401)"),
 ]
 
 
@@ -92,6 +93,27 @@ def main():
                    ("没登录:客户简表拒(401)", "/api/customers")):
         码, 回 = 打(路)
         ck(名, 码 == 401, f"回了 {码} {str(回)[:40]}")
+
+    # 订单、预约等带客户信息的读接口(用户 10-23 第二次拍板)。
+    # ⚠️ **这份清单故意手抄,不读 server 里那一份** —— 拿被测的清单去验被测的清单,
+    # 从里面删掉一项,判据跟着少验一项,照样绿(同源谬误,CLAUDE.md 第 7 节第 2 条)。
+    # 前缀类的随便给个号,闸在路由之前,号对不对不影响拦不拦。
+    点名 = ["/api/workbench", "/api/tasks", "/api/lifecycle", "/api/wearers", "/api/wearer-plan",
+            "/api/fit-customers", "/api/schemes", "/api/oplog", "/api/appts2", "/api/appts",
+            "/api/orders", "/api/aftersales", "/api/maintains", "/api/guide-perf", "/api/approvals",
+            "/api/approval-list", "/api/schedule", "/api/staff", "/api/factory-feed",
+            "/api/task/X", "/api/export/X", "/api/appt/X", "/api/chat-order/X", "/api/aftersale/X",
+            "/api/maintain/X", "/api/order-log/X"]
+    漏 = [x for x in 点名 if 打(x)[0] != 401]
+    ck("没登录:点名的带客户信息读接口全拒(401)", bool(点名) and not 漏,
+       f"{len(点名)} 个" + (f",漏了 {漏[:4]}" if 漏 else ""))
+    挡错 = []
+    for x in server.要登录的读:
+        try:
+            if 打(x, t总)[0] == 401: 挡错.append(x)
+        except Exception:
+            pass   # 跑到业务函数里出错不是这条要验的事(page_smoke 管它跑不跑得通);要验的只是没被登录闸挡
+    ck("登录了:这些接口不被登录闸挡", not 挡错, f"被挡的 {挡错[:4]}" if 挡错 else f"{len(server.要登录的读)} 个")
 
     码, 回 = 打(f"/api/customer/{本店客}", t店)
     ck("店长看本店客户:看得到", 码 in (None, 200) and ((回 or {}).get("customer") or {}).get("id") == 本店客,
