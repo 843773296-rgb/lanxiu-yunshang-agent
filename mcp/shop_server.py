@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-⚠️ 2026-10-23 起 **V3(agentsite)不再用这个入口**,改走 mcp/domain_server.py(按 8 个业务领域起服务)。
-这个入口留给 V1 / V2 的 MCP 通道(agent/v1.py USE_MCP=1、mcp/parity.py)—— 三代对比的条件不动。
 """澜绣云裳 · 门店业务数据 MCP 服务
 
 订单、现货、售后 —— 顾问和值班同学天天要查的三样。
@@ -13,6 +11,8 @@
 三种数据的更新节奏和责任人都不一样,混在一个服务里,以后想单独收权限就来不及了。
 
 工具实现复用 backend/api.py,不复制一份逻辑。**全部只读。**
+⚠️ 2026-10-23 起 **V3(agentsite)不再用这个入口**,改走 mcp/domain_server.py(按 8 个业务领域起服务)。
+这个入口留给 V1 / V2 的 MCP 通道(agent/v1.py USE_MCP=1、mcp/parity.py)—— 三代对比的条件不动。
 """
 import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
