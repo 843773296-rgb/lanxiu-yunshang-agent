@@ -11340,5 +11340,125 @@
    }
   ],
   "预期红": "版本库里的审查清单:每条分类合法、有理由;和初筛不同的写了为什么"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "不查写口(`写了 = [...]` 改成 `写了 = []`)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "    写了 = [n for n in 调了 if n in api.WRITE_TOOLS]",
+    "new": "    写了 = []"
+   }
+  ],
+  "预期红": "调了 assign_task"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "切段不在下一个客户号处截断(`止 = …` 改成 `止 = len(text)`)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "        止 = next((q for q, c in 位[i + 1:] if c != cid), len(text))",
+    "new": "        止 = len(text)"
+   }
+  ],
+  "预期红": "引语只在别人那一段里"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "数不查了(`编的数 = sorted(...)` 改成 `编的数 = []`)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "    编的数 = sorted(x for x in _数们(text) if len(x) >= 2 and x not in 池数)",
+    "new": "    编的数 = []"
+   }
+  ],
+  "预期红": "编了一个挽回金额"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "写错档位不再是硬伤(`if 错档:` 改成 `if False:`)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "    if 错档:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "四位里一位档位写错"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "拿得到档位不再算预警名单上的人",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "拿得到档位 = 事实.get(\"有get_member\", True) or cid in set(事实.get(\"预警\") or [])",
+    "new": "拿得到档位 = 事实.get(\"有get_member\", True)"
+   }
+  ],
+  "预期红": "预警名单上的人档位拿得到"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "不抹「流失预警」这个概念名",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "s.replace(\"流失预警\", \"\")",
+    "new": "s"
+   }
+  ],
+  "预期红": "这个标注不算写档位"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "切段不止于小节边界(`if _界:` 改成 `if False:`)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "        if _界:\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "最后一位的段落止于下一节"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "千分位不抹(那一行 re.sub 删掉)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "    s = re.sub(r\"(?<=\\d),(?=\\d{3}(?!\\d))\", \"\", s)\n",
+    "new": ""
+   }
+  ],
+  "预期红": "千分位逗号不算编数"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "小数又只看整数部分位数(退回 `len(x.split(\".\")[0]) >= 2`)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "    编的数 = sorted(x for x in _数们(text) if len(x) >= 2 and x not in 池数)",
+    "new": "    编的数 = sorted(x for x in _数们(text) if len(x.split(\".\")[0]) >= 2 and x not in 池数)"
+   }
+  ],
+  "预期红": "自己算的倍数"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "只重放召回那几个工具(`_该重放` 改成只认 revive_list / churn_watch)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "    return n in api.TOOLS and n not in api.WRITE_TOOLS\n",
+    "new": "    return n in (\"revive_list\", \"churn_watch\")\n"
+   }
+  ],
+  "预期红": "别的只读调用也重放"
  }
 ]
