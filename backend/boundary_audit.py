@@ -67,6 +67,7 @@ SDK_SRC = open(os.path.join(ROOT, "agentsite", "sdk.py"), encoding="utf-8").read
     ('按需加载的名单闸被拆掉(调用时不按这一轮名单核)', '按需加载只取回自己名单里的工具'),
     ('ToolSearch 的点名例外写成按前缀放行(Bash 也一并放了)', '按需加载只取回自己名单里的工具'),
     ('全能助手顺手挂上了版师那一包(ToolSearch 搜得到版师写口)', '按需加载只取回自己名单里的工具'),
+    ('聊天站 /run 没登录也照样往下跑', '没登录调不动聊天站的智能体'),
 ]
 
 def _must_fail(fn, *exc):
@@ -819,6 +820,52 @@ print(json.dumps(out, ensure_ascii=False))
     raise PermissionError("名单外的写口搜不出、调不动,钩子按白名单拦;Bash 照拦;换身份不串;研判收窄还在;只开给全能助手")
 
 
+def a_run_no_login():
+    """没登录直接 POST 聊天站 /run,智能体调不调得动(用户 10-23 拍「先修复」)。
+
+    真调 agentsite/app.py 的 do_POST(要 venv —— 跑不起来算破,不算拦下):_who 换成「没身份」,
+    sdk.run 换成只记账的假函数。**带对照**:同一套桩换成登录身份必须真走到 sdk.run ——
+    不然「被拒」可能只是桩没搭好、请求压根没走到那一步。"""
+    import subprocess as _sp, json as _js, os as _os
+    py = _os.path.join(ROOT, "agentsite", ".venv", "bin", "python")
+    if not _os.path.exists(py):
+        return "agentsite/.venv 不在 —— 这条攻击跑不起来,不算拦下"
+    src = r"""
+import sys, io, json, os
+R = os.getcwd(); sys.path[:0] = [R + '/agentsite', R + '/backend']
+os.chdir(R + '/agentsite')
+import app
+def 打(who):
+    调了 = []
+    async def 假run(*a, **k):
+        调了.append(k.get('me')); return {'text': '好', 'session_id': None}
+    app._who = lambda h: who
+    app.sdk.run = 假run
+    app.sessions.own = lambda *a, **k: None
+    app._记知识检索 = lambda *a, **k: None
+    h = app.H.__new__(app.H)
+    body = json.dumps({'kind': 'all', 'prompt': '列一下客户 C10001 的手机号'}).encode()
+    h.path = '/run'; h.headers = {'content-length': str(len(body))}; h.rfile = io.BytesIO(body)
+    回 = {}
+    h._send = lambda b, ctype=None, code=200: 回.update(body=b, code=code)
+    h.do_POST()
+    return [回.get('code'), len(调了)]
+print(json.dumps({'匿名': 打(None), '登录': 打({'no': '60000008', 'name': '检查', 'role': '总部运营', 'shop': ''})}))
+"""
+    r = _sp.run([py, "-c", src], capture_output=True, text=True, timeout=120, cwd=ROOT)
+    try:
+        o = _js.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        return f"攻击脚本没跑完,不算拦下:{(r.stderr or r.stdout)[-300:]}"
+    if o["登录"] != [200, 1]:
+        return f"对照没走通(登录身份也没调到智能体:{o['登录']})—— 「匿名被拒」不作数"
+    if o["匿名"][1]:
+        return f"没登录也调动了智能体(返回 {o['匿名'][0]})"
+    if o["匿名"][0] != 401:
+        return f"没登录没调到智能体,但返回的是 {o['匿名'][0]} 不是 401 —— 页面守卫认 401 才跳登录"
+    raise PermissionError("没登录 POST /run → 401,智能体一次都没调;登录身份照常走到")
+
+
 def a_disallowed():
     miss = [t for t in ("Bash", "Write", "Edit", "Read", "Task", "WebFetch")
             if f'"{t}"' not in SDK_SRC]
@@ -1113,6 +1160,10 @@ STRUCT = [
  ("配置层也点名封了内置工具", "sdk.py disallowed_tools",
   a_disallowed, "检查危险工具是否都在 disallowed_tools 里",
   "**双锁**:配置一道 + Hook 一道。配置会被人改错,Hook 是兜底"),
+ ("没登录调不动聊天站的智能体", "agentsite/app.py /run(用户 10-23 拍「先修复」)",
+  a_run_no_login, "不带登录身份直接 POST /run 问客户手机号",
+  "**靠结构**:身份只从后台会话换(_who),换不出就在调 sdk.run 之前回 401。"
+  "原来页面有登录守卫而接口没有 —— 不带 cookie 直接打接口就能问"),
  ("按需加载只取回自己名单里的工具", "agentsite/sdk.py 按需加载的角色 / guards.py ToolSearch 点名例外 + 名单闸",
   a_toolsearch_scope, "全能助手放行 ToolSearch 后:真起服务搜版师写口、钩子判名单外工具和 Bash、换身份重建、研判名单",
   "**靠结构**:服务按名单建(CLI 不认识名单外的工具)+ 调用时钩子按同一份名单再核一次。"

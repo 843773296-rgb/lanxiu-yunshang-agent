@@ -11544,5 +11544,17 @@
    }
   ],
   "预期红": "规矩按名单启动时装配,不跟着运行时取回的工具走"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "聊天站 /run 没登录也照样往下跑",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "                if not me:\n                    return self._send({\"error\": \"没登录 —— 先登录再问",
+    "new": "                if False:\n                    return self._send({\"error\": \"没登录 —— 先登录再问"
+   }
+  ],
+  "预期红": "没登录调不动聊天站的智能体"
  }
 ]
