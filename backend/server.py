@@ -3375,8 +3375,32 @@ class H(BaseHTTPRequestHandler):
             self.wfile.write(data); return
         if p=="/api/oplog": return self._send(op_logs())
         if p=="/api/tasks": return self._send(task_list(Q))
-        if p=="/api/customers2": return self._send(customer_list(Q))
-        if p.startswith("/api/customer/"): return self._send(customer_detail(p.split("/api/customer/")[1]))
+        # ── 客户的读接口要登录,而且按门店划范围(用户 2026-10-23 拍「必须登录」)──
+        # 原来写的只要登录、读不要 —— 为了「不登录也能演示」留的口子。而客户详情里有手机号(打了码)、
+        # 地址、消费额、预约,**谁都能翻全公司 5 千多位客户**。
+        # 范围沿用本文件 bad_ratings 那条隔离口径:总部运营 / 售后跨店,其余只看本店 ——
+        # **同一个「本店」,两处各写一套,迟早对不上**。
+        if p=="/api/customers2" or p=="/api/customers" or p.startswith("/api/customer/"):
+            _uc = _me(self)
+            if not _uc:
+                return self._send({"error": "请先登录 —— 客户资料要登录才能看", "code": "NO_AUTH"}, 401)
+            _本店 = None if _uc.get("role") in backend.跨店角色 else _uc.get("shop")
+            if p=="/api/customers2":
+                if _本店: Q = dict(Q, shop=[_本店])   # 自己传了别的店也不认 —— 范围跟登录走,不跟参数走
+                return self._send(customer_list(Q))
+            if p=="/api/customers":
+                return self._send(填顾问名(rows(
+                    "SELECT id,name,phone,shop,advisor_no,lifecycle,level,order_cnt,"
+                    "paid_amount FROM customer"
+                    + (" WHERE shop=?" if _本店 else "") + " ORDER BY id LIMIT 200",
+                    *([_本店] if _本店 else []))))
+            _cid = p.split("/api/customer/")[1]
+            if _本店:
+                _店 = rows("SELECT shop FROM customer WHERE id=?", _cid)
+                if _店 and _店[0]["shop"] != _本店:
+                    return self._send({"error": f"这位客户不是本店的(你是 {_本店}),看不了",
+                                       "code": "NOT_YOUR_SHOP"}, 403)
+            return self._send(customer_detail(_cid))
         if p=="/api/appts2": return self._send(appt_list_q(Q))
         if p=="/api/shops": return self._send(shop_list(Q))
         if p.startswith("/api/shop/"): return self._send(shop_detail(p.split("/api/shop/")[1]))
@@ -3422,9 +3446,6 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/tags": return self._send(_simple("tag",Q,["code","name"],{"code","n","updated"},["grp","status"],"code"))
         if p=="/api/appts": return self._send(appt_list())
         if p.startswith("/api/appt/"): return self._send(appt_detail(p.split("/api/appt/")[1]))
-        if p=="/api/customers": return self._send(填顾问名(rows(
-            "SELECT id,name,phone,shop,advisor_no,lifecycle,level,order_cnt,"
-            "paid_amount FROM customer ORDER BY id LIMIT 200")))
         self._send({"error":"not found"},404)
     def do_POST(self):
         p=_u(unquote(urlparse(self.path).path))

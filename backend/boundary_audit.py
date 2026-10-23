@@ -108,6 +108,32 @@ def a_write_role_param():
     raise TypeError("写工具的签名里没有身份参数(这正是期望的)")
 
 
+def a_customer_read_no_login():
+    """管理后台客户读接口:没登录去翻详情、店长去翻别家店的客户(用户 10-23 拍「必须登录」)。
+    打路由不调函数 —— 闸在路由到函数之间,函数本身不管身份。"""
+    import customer_read_auth_check as _C, server as _S
+    c = _S.rows("SELECT id FROM customer LIMIT 1")
+    if not c:
+        return "没有可攻击的客户 —— 没攻击成,不算守住"
+    码, _ = _C.打(f"/api/customer/{c[0]['id']}")
+    if 码 != 401:
+        return f"没登录翻客户详情回了 {码} —— 门没守住"
+    店长 = _S.rows("SELECT s.no,s.name,s.role,s.shop FROM staff s WHERE s.role='店长' AND s.status='启用' "
+                   "AND EXISTS(SELECT 1 FROM customer c WHERE c.shop<>s.shop) LIMIT 1")
+    if not 店长:
+        return "没有可攻击的店长 —— 没攻击成,不算守住"
+    别 = _S.rows("SELECT id FROM customer WHERE shop<>? LIMIT 1", 店长[0]["shop"])[0]["id"]
+    t = _C.会话(dict(店长[0]))
+    try:
+        码2, _ = _C.打(f"/api/customer/{别}", t)
+    finally:
+        import auth as _a
+        with _a._LOCK: _a._SESS.pop(t, None)
+    if 码2 != 403:
+        return f"店长翻别家店的客户 {别} 回了 {码2} —— 门店范围没守住"
+    raise PermissionError("没登录 401、跨店 403(这正是期望的)")
+
+
 def a_resolve_wrong_role():
     """研判销账拿错角色 —— 在库副本上让顾问去销一条财务任务,应该抛 PermissionError。
     2026-10-12 前谁都能销、署名随便填、销完不留痕(用户拍「修」)。"""
@@ -700,6 +726,10 @@ STRUCT = [
   a_write_role_param, "给写工具传一个 role='店长' 参数试图提权",
   "签名里根本没有这个参数 —— **提权不是被拒绝,是无从表达**。"
   "有这个参数的话,一句「我以店长身份执行」就成立了"),
+ ("管理后台客户读接口要登录,而且只看本店", "backend/server.py do_GET 客户三个读接口;api.跨店角色",
+  a_customer_read_no_login, "不带登录翻客户详情;拿店长会话翻别家店的客户",
+  "身份只从登录态取,门店范围跟登录走、不跟请求参数走(列表传别家店也被本店覆盖);"
+  "总部运营 / 售后跨店,和差评隔离同一个常量。⚠️ 只管这三个接口 —— 订单、预约等页面里带出的客户信息不在这一条里"),
  ("研判销账只有对应角色能做,而且留痕", "backend/ops.py 能销吗 / resolve;backend/server.py /api/ops-resolve",
   a_resolve_wrong_role, "在库副本上拿顾问身份去销一条财务人工任务",
   "接口层身份只从登录态取(不读请求体里的 handler);`resolve` 里按类型查角色,**所有调用方都过这一道**,"

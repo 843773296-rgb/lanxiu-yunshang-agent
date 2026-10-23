@@ -85,7 +85,7 @@ function 搭页面() {
 }
 
 async function 跑() {
-  console.log("管理后台切页的加载状态(外部复审 3.5)—— 自造七种形状,不起服务\n");
+  console.log("管理后台切页的加载状态(外部复审 3.5)—— 自造八种形状,不起服务\n");
 
   // ── 先载入一页当「旧内容」,后面每一种都看它会不会被当成新页 ──
   async function 起手() {
@@ -127,6 +127,18 @@ async function 跑() {
        `主区=${h.slice(0, 160)}`);
     ck(`${名}:给了重试,载入标记撤掉`,
        h.includes("重试") && P.主.getAttribute("aria-busy") !== "true", `主区=${h.slice(0, 160)}`);
+  }
+  { // ⑧ 没登录(客户资料要登录,用户 10-23 拍):401 回的是一份带 error 的数据,
+    //    不拦的话页面会拿它当客户去画 —— 一张空壳,看着像「这位客户什么都没有」
+    const P = await 起手();
+    const 走 = P.ctx.view("乙");
+    await P.等(1);
+    P.票们.shift().ok({ ok: false, status: 401, json: async () => ({ error: "请先登录", code: "NO_AUTH" }) });
+    await 走.catch(() => {});
+    const h = P.主.innerHTML;
+    ck("⑧ 没登录(401):标明没载入、原因是要先登录、给去登录的入口,不把空数据画成页面",
+       h.includes("没有载入") && h.includes("要先登录") && h.includes("去登录") && !h.includes("页面:"),
+       `主区=${h.slice(0, 160)}`);
   }
   { // ⑤ 超时:服务一直不回,也要停下来说「没响应」,而不是永远转圈
     const P = await 起手();
@@ -170,7 +182,7 @@ async function 跑() {
   }
 
   console.log(`\n${坏 ? R + "❌" : G + "✅"} 切页加载状态 ${验 - 坏}/${验}${D}` +
-              (坏 ? "" : "(验了 7 种形状 + 对照)"));
+              (坏 ? "" : "(验了 8 种形状 + 对照)"));
   process.exit(坏 ? 1 : 0);
 }
 跑().catch(e => { console.error(`${R}❌ 判据自己崩了:${e.stack}${D}`); process.exit(2); });

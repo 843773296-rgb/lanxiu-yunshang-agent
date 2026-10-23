@@ -10447,8 +10447,8 @@
    },
    {
     "path": "backend/web/index.html",
-    "old": "  if(号!==载入序号) throw 已被取代;\n  return d;",
-    "new": "  return d;"
+    "old": "  if(号!==载入序号) throw 已被取代;\n  // 客户资料要登录",
+    "new": "  // 客户资料要登录"
    }
   ],
   "预期红": "⑥ 连点两页、先点的那页后回来"
@@ -10680,5 +10680,53 @@
    }
   ],
   "预期红": "明细按可售天数排,算不出的排后面"
+ },
+ {
+  "script": "backend/customer_read_auth_check.py",
+  "改坏": "把客户读接口的登录检查去掉(回到「读不要登录」)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "            if not _uc:\n                return self._send({\"error\": \"请先登录 —— 客户资料要登录才能看\"",
+    "new": "            if not _uc: _uc = {}\n            if False:\n                return self._send({\"error\": \"请先登录 —— 客户资料要登录才能看\""
+   }
+  ],
+  "预期红": "没登录:客户详情拒(401)"
+ },
+ {
+  "script": "backend/customer_read_auth_check.py",
+  "改坏": "店长也当成跨店角色(不按门店划)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "跨店角色 = (\"总部运营\", \"售后\")",
+    "new": "跨店角色 = (\"总部运营\", \"售后\", \"店长\")"
+   }
+  ],
+  "预期红": "店长看别家店的客户:拒(403)"
+ },
+ {
+  "script": "backend/customer_read_auth_check.py",
+  "改坏": "列表照用请求里传的门店(不按登录的店覆盖)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "                if _本店: Q = dict(Q, shop=[_本店])",
+    "new": "                pass"
+   }
+  ],
+  "预期红": "店长翻列表时传别家店:照样只回本店"
+ },
+ {
+  "script": "backend/page_load_check.mjs",
+  "改坏": "取数口不认 401(带 error 的数据照常交给页面去画)",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "  if(r.status===401) throw 载入错(",
+    "new": "  if(false) throw 载入错("
+   }
+  ],
+  "预期红": "⑧ 没登录(401)"
  }
 ]

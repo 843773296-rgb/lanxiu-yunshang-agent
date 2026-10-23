@@ -35,6 +35,11 @@ _CRED_MSG = ("账户凭据(密码哈希 / 盐)**不允许经工具层访问** �
              "查账户请把列名写清楚(id / phone / login_name / status),对外只给脱敏手机号。\n"
              "见 backend/boundary_audit.py。")
 
+
+# 跨店看全量的角色。**售后不属于某一家店**(判责是工艺判断、差评跨店),所以和总部运营一样。
+# 差评、退押金、管理后台客户读接口都用这一个 —— 「本店」两处各写一套,迟早对不上。
+跨店角色 = ("总部运营", "售后")
+
 def _rows(sql,*a):
     if _CRED.search(sql): raise PermissionError(_CRED_MSG)
     if _TRUTH.search(sql):
@@ -2402,7 +2407,7 @@ def bad_ratings(status="待处理"):
                         f"这里看不到东西 —— 业务 2026-09-27 + 2026-10-11",
                     条数=0, 差评=[])
     # 售后不属于某一家店(判责是工艺判断、差评跨店),所以它和总部运营一样看全量
-    本店 = None if me["role"] in ("总部运营", "售后") else me.get("shop")
+    本店 = None if me["role"] in 跨店角色 else me.get("shop")
     sql = ("""SELECT t.id 工单, t.status 状态, r.pkg_id 包裹, r.order_id 订单, r.star 星,
                      r.note 顾客说, r.rated_at 评于, r.star_before 原来几星,
                      r.handled_at 处理于, r.handle_note 处理记录, o.shop 门店,
@@ -2495,7 +2500,7 @@ def service_records(pkg=None, order_id=None):
         if not 单:
             return dict(error=f"查不到订单 {oid} —— 是「没有这张单」,不是「没有服务记录」")
         # 店长只看本店(和 bad_ratings 同一条隔离口径);售后和总部跨店
-        if me["role"] not in ("总部运营", "售后") and (单["shop"] or "") != (me.get("shop") or ""):
+        if me["role"] not in 跨店角色 and (单["shop"] or "") != (me.get("shop") or ""):
             return dict(说明=f"订单 {oid} 不在你的门店 —— 和「A 顾问看不到 B 顾问的活」同一条口径",
                         条数=0)
         cid = 单["customer_id"]
@@ -2619,7 +2624,7 @@ def rating_overview(days=30, week=None, start=None, end=None):
     if me.get("role") not in tuple(dict.fromkeys(MANAGER_ROLES + _rw2.能关差评的角色)):
         return dict(说明="评价概况给店长 / 售后 / 总部看(业务 2026-09-27:不进顾问考核)", 条数=0)
     # 售后不属于某一家店 —— 和总部一样看全量
-    本店 = None if me["role"] in ("总部运营", "售后") else me.get("shop")
+    本店 = None if me["role"] in 跨店角色 else me.get("shop")
     # `days=0` 是「只看今天」,不是「没传」—— 原来写 `int(days or 30)`,传 0 会悄悄变成 30 天
     起 = (_wc.今天() - _dt.timedelta(days=int(30 if days is None else days))).isoformat()
     止 = "9999-12-31"
