@@ -31,7 +31,8 @@
 # 我们自己写的、要对质量负责的技能
 OURS = ("quote", "growth-plan", "roster", "deadline-rescue", "exchange", "pattern-draft", "call-notes",
         "store-report",
-        "rating-repair")    # 差评与维修研判(2026-10-23,intent/skill-new-batch.md ③)
+        "rating-repair",    # 差评与维修研判(2026-10-23,intent/skill-new-batch.md ③)
+        "customer-recall")  # 客户召回(2026-10-23,intent/skill-new-batch.md ②)
 
 # 从 Accio 提取的第三方技能:装了、注册了、能触发,但**不受我们的质量检查管**。
 # 它们的来源、体量和验证结果见 accio索引/README.md 和 agentsite/evals/runs/all239.json
