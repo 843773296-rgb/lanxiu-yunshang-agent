@@ -575,6 +575,7 @@ run "判分器自测 · 人造用例(两个方向)" python3 agent/chat_eval_judg
 run "工具选择判分器 · 20 条对照(「全部必需都在」不是「至少一个」)" python3 agent/select_eval_judgetest.py
 run "工具筛选准入线 · 23 条(线随走不走缓存漂 8 倍,所以不许写死)" python3 agent/tool_select_judgetest.py
 run "工厂回传判分器 · 37 条对照(写好那天起就没进过门禁,10-03 补)" python3 agent/factory_eval_judgetest.py
+run "经营报告 Skill 判分器 · 对照(固定结构从 SKILL.md 现读、数只认取数包里有的、没被要求不许存/确认/派)" python3 agent/store_report_eval_judgetest.py
 run "自测都进了门禁 · 没注册的自测和不存在的自测在绿勾上长得一样" python3 tools/selftest_registry_check.py
 run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judgetest.py
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py

@@ -11136,5 +11136,29 @@
    }
   ],
   "预期红": "传一个别家客户的着装人:不推码"
+ },
+ {
+  "script": "agent/store_report_eval_judgetest.py",
+  "改坏": "让「没被要求就不写」永远认不出写口",
+  "file": [
+   {
+    "path": "agent/store_report_eval.py",
+    "old": "    碰 = [t for t in _工具(traj) if t in 写]",
+    "new": "    碰 = []"
+   }
+  ],
+  "预期红": "写完自己存了"
+ },
+ {
+  "script": "agent/store_report_eval_judgetest.py",
+  "改坏": "让「数都出自取数包」不查百分数",
+  "file": [
+   {
+    "path": "agent/store_report_eval.py",
+    "old": "    for x in re.findall(r\"([+-]?\\d+(?:\\.\\d+)?)\\s*%\", text or \"\"):",
+    "new": "    for x in []:"
+   }
+  ],
+  "预期红": "自己除了一个占比"
  }
 ]
