@@ -866,7 +866,7 @@ def a_budget():
 def a_toolsearch_scope():
     """按需加载放行 ToolSearch 之后,三道闸还在不在(用户 10-23 拍「工具按需加载」,数据工厂提的四问)。
 
-    要 venv(sdk / guards 的钩子要 claude_agent_sdk)—— **跑不起来就算破,不算拦下**:
+    要 venv(sdk / guards 的钩子要 claude_agent_sdk)—— **跑不起来抛「前提不成立」,仍然红、但不报成「边界破了」**:
     跑不起来的攻击什么都没验(agentsite/runtime.py 开篇那次)。
     攻五处,每处都真调被测代码:
       ① 全能助手真挂上的服务里,搜不搜得出别的角色的写口(版师 set_piece_ratio)——
@@ -879,7 +879,7 @@ def a_toolsearch_scope():
     import subprocess as _sp, json as _js, os as _os
     py = _os.path.join(ROOT, "agentsite", ".venv", "bin", "python")
     if not _os.path.exists(py):
-        return "agentsite/.venv 不在 —— 这条攻击跑不起来,不算拦下"
+        raise 前提不成立("agentsite/.venv 不在 —— 这条攻击跑不起来,它什么都没验")
     src = r"""
 import sys, json, asyncio, os, subprocess
 sys.path[:0] = ['agentsite', 'backend']
@@ -918,9 +918,10 @@ print(json.dumps(out, ensure_ascii=False))
     try:
         o = _js.loads(r.stdout.strip().splitlines()[-1])
     except Exception:
-        return f"攻击脚本没跑完,不算拦下:{(r.stderr or r.stdout)[-300:]}"
+        raise 前提不成立(f"攻击脚本没跑完,什么都没验:{(r.stderr or r.stdout)[-300:]}")
     if o["挂了版师写口"]: return "全能助手的服务挂上了版师写口 set_piece_ratio —— ToolSearch 搜得到"
-    if not o.get("列了几个"): return "全能助手的知识领域服务没起来或一个工具都没列 —— 「列不出版师写口」没验到"
+    if not o.get("列了几个"):
+        raise 前提不成立("全能助手的知识领域服务没起来或一个工具都没列 —— 「列不出版师写口」没验到")
     if o.get("列得出"): return "真起的服务把 set_piece_ratio 列给了全能助手"
     if o.get("调得动"): return "真起的服务让全能助手调动了 set_piece_ratio"
     if not o["名单外"] or "白名单" not in o["名单外"]: return f"名单外的工具没被钩子按白名单拦:{o['名单外']}"
@@ -937,13 +938,13 @@ print(json.dumps(out, ensure_ascii=False))
 def a_run_no_login():
     """没登录直接 POST 聊天站 /run,智能体调不调得动(用户 10-23 拍「先修复」)。
 
-    真调 agentsite/app.py 的 do_POST(要 venv —— 跑不起来算破,不算拦下):_who 换成「没身份」,
+    真调 agentsite/app.py 的 do_POST(要 venv —— 跑不起来抛「前提不成立」,仍红,理由是实话):_who 换成「没身份」,
     sdk.run 换成只记账的假函数。**带对照**:同一套桩换成登录身份必须真走到 sdk.run ——
     不然「被拒」可能只是桩没搭好、请求压根没走到那一步。"""
     import subprocess as _sp, json as _js, os as _os
     py = _os.path.join(ROOT, "agentsite", ".venv", "bin", "python")
     if not _os.path.exists(py):
-        return "agentsite/.venv 不在 —— 这条攻击跑不起来,不算拦下"
+        raise 前提不成立("agentsite/.venv 不在 —— 这条攻击跑不起来,它什么都没验")
     src = r"""
 import sys, io, json, os
 R = os.getcwd(); sys.path[:0] = [R + '/agentsite', R + '/backend']
@@ -970,9 +971,9 @@ print(json.dumps({'匿名': 打(None), '登录': 打({'no': '60000008', 'name': 
     try:
         o = _js.loads(r.stdout.strip().splitlines()[-1])
     except Exception:
-        return f"攻击脚本没跑完,不算拦下:{(r.stderr or r.stdout)[-300:]}"
+        raise 前提不成立(f"攻击脚本没跑完,什么都没验:{(r.stderr or r.stdout)[-300:]}")
     if o["登录"] != [200, 1]:
-        return f"对照没走通(登录身份也没调到智能体:{o['登录']})—— 「匿名被拒」不作数"
+        raise 前提不成立(f"对照没走通(登录身份也没调到智能体:{o['登录']})—— 「匿名被拒」不作数")
     if o["匿名"][1]:
         return f"没登录也调动了智能体(返回 {o['匿名'][0]})"
     if o["匿名"][0] != 401:
