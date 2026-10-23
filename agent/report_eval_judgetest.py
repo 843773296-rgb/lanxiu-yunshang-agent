@@ -23,8 +23,8 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "backend"),
 import report_eval as ev
 
 C = {c["id"]: c for c in ev.CASES}
-MR = ["mcp__shop__monthly_review"]
-AF = ["mcp__shop__appt_funnel"]
+MR = ["mcp__work__monthly_review"]
+AF = ["mcp__analytics__appt_funnel"]
 T = []   # (用例名, 题号, 轨迹, 答案, 该不该过, 钉的坑)
 
 # ── 分母为零:这套评测的核心判据 ─────────────────────────────────

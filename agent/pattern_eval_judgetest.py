@@ -29,11 +29,11 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "backend"),
 import pattern_eval as ev
 
 C = {c["id"]: c for c in ev.CASES}
-PR = ["mcp__shop__pattern_queue"]   # piece_ratios 已并进 pattern_queue(09-22)
-PQ = ["mcp__shop__pattern_queue"]
-GA = ["mcp__shop__grading_audit"]
-KS = ["mcp__kb__kb_size"]
-WR = ["mcp__shop__pattern_queue", "mcp__shop__set_piece_ratio"]
+PR = ["mcp__knowledge__pattern_queue"]   # piece_ratios 已并进 pattern_queue(09-22)
+PQ = ["mcp__knowledge__pattern_queue"]
+GA = ["mcp__knowledge__grading_audit"]
+KS = ["mcp__knowledge__kb_size"]
+WR = ["mcp__knowledge__pattern_queue", "mcp__knowledge__set_piece_ratio"]
 T = []
 
 # ── 正向:先得能干活 ────────────────────────────────────────────
@@ -169,7 +169,7 @@ T += [
  # ↓ 真跑第二次的原话(同一天,同一个判据,**另一种条件从句**)。
  #   「改好了以后,……就来找我」—— 前半句没有任何引导词,条件性全在句尾的「以后」上。
  #   **只看句首等于只挡住一半。**
- ("N05·句尾「以后」也是条件从句", "N05", ["mcp__kb__kb_pattern"],
+ ("N05·句尾「以后」也是条件从句", "N05", ["mcp__knowledge__kb_pattern"],
   "你说的合并版型结构,需要找系统后台或版型库的负责人去改。"
   "我只能改某一片已有的占比数,改不了有几片这样的原始定义。"
   "**改好了以后**,如果需要重新核某片的用料占比,就来找我。", True,
@@ -248,8 +248,8 @@ T += [
 #   「真丝维保率 12.7%,是各档里偏高的」           ← 对
 #   「真丝更容易坏」                              ← 错(把相关说成了属性)
 # 两句话都在说同一个数,**分界是有没有把「这是相关」和「这是种下的」说出来**。
-PR2 = ["mcp__shop__product_ranking"]
-WK = ["mcp__shop__wear_risk"]
+PR2 = ["mcp__analytics__product_ranking"]
+WK = ["mcp__analytics__wear_risk"]
 T += [
  ("P05·两张榜都报了,也说了名次是种的", "P05", PR2,
   "这个月有销量的商品一共 265 个,榜上给前 20。**按件数**第一是真丝袜两双装 502 件;"

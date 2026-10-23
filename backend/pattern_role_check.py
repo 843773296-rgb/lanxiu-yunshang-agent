@@ -33,7 +33,7 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "agentsite")]
 
 # ── 咬合记录 ────────────────────────────────────────────────────────────
 咬合 = [
-    ("把 sdk 里的 mcp__shop__set_piece_ratio 写回 mcp__kb__",
+    ("把 sdk 里的 mcp__knowledge__set_piece_ratio 写回 mcp__kb__",
      "版师白名单里的每个名字都真的挂在 MCP 上"),
     ("把 set_piece_ratio 里的角色判定改成 if False",
      "该挡的都挡住了"),
@@ -109,9 +109,9 @@ def main():
        f"多给了 {不该有}" if 不该有 else "给多余的工具,它就会去用")
 
     # ── ② 白名单里的名字必须真的挂得上(那个连栽三次的命名空间坑)──────
-    暴露 = {f"mcp__kb__{x['name']}" for x in api.KB_SCHEMAS} \
-         | {f"mcp__shop__{x['name']}" for x in api.SHOP_SCHEMAS} \
-         | {f"mcp__task__{x['name']}" for x in api.SCHEMAS}
+    # 10-23 起按业务领域起服务:每个工具挂在 domains 给它的那个前缀下(mcp/domain_server.py 同一个挑法)
+    import domains as _dm
+    暴露 = {_dm.全名(x["name"]) for x in api.KB_SCHEMAS + api.SHOP_SCHEMAS + api.SCHEMAS}
     幽灵 = sorted(set(tools) - 暴露)
     ck("版师白名单里的每个名字都真的挂在 MCP 上", not 幽灵, len(tools),
        f"挂不上的 {幽灵} —— **白名单里那个名字根本不存在,而页面照样显示工具数**"
@@ -293,14 +293,14 @@ def main():
     # ── ⑤ 闸也要两个方向 ──────────────────────────────────────────────
     # ⚠️ 「看过」喂的必须是**模型真能调的**工具名。这里原来喂的是已下架的 piece_ratios,
     # 而闸要的也是 piece_ratios —— 两边一起错,于是一直绿,盖住了「版师改占比永远调不成」(09-22 查出)。
-    v1 = guards.pre_tool_verdict("mcp__shop__set_piece_ratio",
+    v1 = guards.pre_tool_verdict("mcp__knowledge__set_piece_ratio",
                                  dict(pattern="PT06", piece="袖片", ratio=0.3, why="量过"),
                                  prompt="把袖片改成 0.3", state_reads=[], state_writes=[])
-    v2 = guards.pre_tool_verdict("mcp__shop__set_piece_ratio",
+    v2 = guards.pre_tool_verdict("mcp__knowledge__set_piece_ratio",
                                  dict(pattern="PT06", piece="袖片", ratio=0.3, why=""),
                                  prompt="把袖片改成 0.3",
                                  state_reads=["pattern_queue"], state_writes=[])
-    v3 = guards.pre_tool_verdict("mcp__shop__set_piece_ratio",
+    v3 = guards.pre_tool_verdict("mcp__knowledge__set_piece_ratio",
                                  dict(pattern="PT06", piece="袖片", ratio=0.3, why="量过"),
                                  prompt="把袖片改成 0.3",
                                  state_reads=["pattern_queue"], state_writes=[])

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+⚠️ 2026-10-23 起 **V3(agentsite)不再用这个入口**,改走 mcp/domain_server.py(按 8 个业务领域起服务)。
+这个入口留给 V1 / V2 的 MCP 通道(agent/v1.py USE_MCP=1、mcp/parity.py)—— 三代对比的条件不动。
 """澜绣云裳 · 工艺知识库 MCP 服务
 
 暴露的工具由 backend/api.py 的 KB_SCHEMAS 决定,这里不再写死数量 ——

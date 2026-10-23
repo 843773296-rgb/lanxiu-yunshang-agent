@@ -19,8 +19,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import scheme_eval as S
 
-查 = ["mcp__shop__get_scheme"]
-没查 = ["mcp__shop__get_order"]
+查 = ["mcp__commerce__get_scheme"]
+没查 = ["mcp__commerce__get_order"]
 
 单条 = dict(kind="单条", 正确号="SC2606", 候选号=["SC2606"], 失效号=None)
 歧义 = dict(kind="歧义", 正确号=None, 候选号=["SC2601", "SC2605", "SC2602"], 失效号=None)

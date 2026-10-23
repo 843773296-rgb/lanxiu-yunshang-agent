@@ -29,6 +29,12 @@ except ModuleNotFoundError as _e:      # noqa: E402
         "      ./agentsite/.venv/bin/python <脚本>\n\n"
         "  没有 .venv 就先 ./start.sh 建一次。") from None
 import guards   # noqa: E402
+# 工具归哪个领域、全名前缀 —— 唯一来源。**按路径单独载入,不把 backend 插进 sys.path 前面**:
+# 插进去的话 backend 里和本目录同名的模块会顶掉本目录的(import 顺序变了,不报错)
+import importlib.util as _ilu   # noqa: E402
+_dsp = _ilu.spec_from_file_location("domains", os.path.join(ROOT, "backend", "domains.py"))
+_domains = _ilu.module_from_spec(_dsp); _dsp.loader.exec_module(_domains)
+sys.modules.setdefault("domains", _domains)
 sys.path.insert(0, os.path.join(ROOT, "agent"))
 import llmtrace as trace   # noqa: E402  记录仪:**和 V1 共用同一份**,写同一个文件、同一套字段
 # ⚠️ 模块名**不叫 trace** —— 和标准库的 trace 同名会被它挡住(见 agent/llmtrace.py 文件头)
@@ -358,26 +364,22 @@ def mcp_config(me=None, kind=None, 名单=None, trace=None, 被判包裹=None, �
 
 
 def _mcp_all(py, env):
-    return {
-        "kb":   {"type": "stdio", "command": py,
-                 "args": [os.path.join(ROOT, "mcp", "kb_server.py")], "env": env},
-        "task": {"type": "stdio", "command": py,
-                 "args": [os.path.join(ROOT, "mcp", "task_server.py")], "env": env},
-        # 门店业务数据:订单 / 现货 / 售后。**顾问和值班两边都挂** ——
-        # 之前顾问能答「云锦配缂丝要 174 天」,却答不了「这件有没有现货」,
-        # 是一个知道所有原理、却不知道今天发生了什么的助手。
-        "shop": {"type": "stdio", "command": py,
-                 "args": [os.path.join(ROOT, "mcp", "shop_server.py")], "env": env},
-    }
+    # 按业务领域起服务(用户 2026-10-23 拍「全部拆」)。哪个工具归哪个领域只在 backend/domains.py 写一次,
+    # 这里照它一个领域起一个;一轮里用不到某个领域的工具,上面 mcp_config 就不起那个服务。
+    # 原来是 kb / task / shop 三个(按数据从哪来分),shop 一个装 79 个 ——
+    # 看 `mcp__shop__xxx` 说不出它是哪个岗位、什么风险的动作。
+    return {d: {"type": "stdio", "command": py,
+                "args": [os.path.join(ROOT, "mcp", "domain_server.py"), d], "env": env}
+            for d in _domains.领域}
 
 
 # MCP 工具在 SDK 里的名字是 mcp__<服务名>__<工具名>
-KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
-            "mcp__kb__kb_tables",
+KB_TOOLS = ["mcp__knowledge__kb_lookup", "mcp__knowledge__kb_detail", "mcp__knowledge__kb_combo",
+            "mcp__knowledge__kb_tables",
             # 读原文:表里查不到、只在正文里的那些话(怎么洗、怎么存、为什么这么做)。
             # 原来模型一个字都读不到,于是遇到「为什么这么贵」只能凭训练知识讲,
             # 而 TL01 明写着不许 —— **规矩在,而它没有别的办法守**。
-            "mcp__kb__kb_read",
+            "mcp__knowledge__kb_read",
             # 按**意思**找原文(2026-10-08,接管理后台那份 RAG)——
             # `kb_read` 要你先知道篇号,而顾问问「客户给了差评要怎么处理」时
             # 不知道这事写在第几篇。管它的规矩是 TL64。
@@ -386,9 +388,9 @@ KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
             # 而我今天加 `kb_rag` 时又漏了一次,**是那条检查当场拦下的**。
             # > 一个「工具挂上了」和一个「挂上了而白名单没跟上」,
             # > 在那份工具清单上长得一模一样 —— 而后者让 V3 根本调不到它。
-            "mcp__kb__kb_rag",
-            "mcp__kb__kb_pattern", "mcp__kb__kb_size", "mcp__kb__kb_bom",
-            "mcp__kb__kb_fit", "mcp__kb__kb_lead"]
+            "mcp__knowledge__kb_rag",
+            "mcp__knowledge__kb_pattern", "mcp__knowledge__kb_size", "mcp__knowledge__kb_bom",
+            "mcp__customer__kb_fit", "mcp__knowledge__kb_lead"]
 # ── 按角色发工具,不是两个角色都给全量 ────────────────────────────────
 # 原来 SHOP_TOOLS 一整包同时给了工艺顾问和任务助手,于是任务助手(退款定因 /
 # 客户合并 / 售后判责)手里多出 forecast_growth、plan_for_event、get_wearer、
@@ -401,63 +403,63 @@ KB_TOOLS = ["mcp__kb__kb_lookup", "mcp__kb__kb_detail", "mcp__kb__kb_combo",
 SHOP_TOOLS = [
     # 两个角色都要:客户问「订单到哪了 / 有没有现货 / 上次退货处理了吗」,
     # 后台定因也要靠 get_order 的勾稽异常。售后判责的现场在 get_maintain。
-    "mcp__shop__get_order", "mcp__shop__get_stock", "mcp__shop__get_aftersale",
+    "mcp__commerce__get_order", "mcp__commerce__get_stock", "mcp__service__get_aftersale",
     # 售后判责的现场。只给事实不给结论 —— 结论必须由人确认。
-    "mcp__shop__get_maintain",
+    "mcp__service__get_maintain",
     # 商机:顾问看自己名下客户的通话,店长看本店。**规则层免费,深判才调模型**。
-    "mcp__shop__call_opportunity",
+    "mcp__customer__call_opportunity",
     # 促活:该不该联系、联系他说什么。**没有由头的不进名单。**
-    "mcp__shop__revive_list",
+    "mcp__customer__revive_list",
     # 流失预警:她在不在往下走。**八档不是一条线** —— 活跃度轴才是单调下滑的
     # 那一根,忠诚/高价值是价值标签。**预警不是名单**,要不要联系仍看 revive_list。
-    "mcp__shop__churn_watch",
+    "mcp__customer__churn_watch",
     # 排班:谁哪天上班。**「查不到记录」只能表示「还没排」。**
-    "mcp__shop__on_shift",
+    "mcp__work__on_shift",
     # 成交归因:**两种分成校验规则相反**,一种必须 100,一种可以超 100。
-    "mcp__shop__deal_credit",
+    "mcp__analytics__deal_credit",
     # 客户接触史:**一次量体是一次触点,不是十几次**。
-    "mcp__shop__customer_history",
+    "mcp__customer__customer_history",
     # 成交率:**现在给不出数,而「给不出」和「低」是两回事**。
-    "mcp__shop__conversion_rate",
+    "mcp__analytics__conversion_rate",
     # 「谁没人管」:描述第一句就写着「顾问问『我名下的客户有没有问题』也用这个」,
     # 而它原来只发给后台运营 —— 顾问能用全靠「按角色发工具」没生效的漏洞(09-22 修掉)。
-    "mcp__shop__ownerless_list",
+    "mcp__customer__ownerless_list",
     # 登记白坯试衣 / 补签(写)。顾问陪客户试衣、店长也会陪,所以两个角色都要;
     # 陪同人从会话取 —— 规矩 TL40:签没签不许默认,签字不许撤销。
-    "mcp__shop__record_fitting",
+    "mcp__fulfillment__record_fitting",
     # 量体录入(写)。顾问 / 店长;量体人从会话取 —— 规矩 TL42:三个条件必须明说,给谁量的要对上。
-    "mcp__shop__record_measure",
+    "mcp__customer__record_measure",
     # 下单(写):开单停在待确认 / 确认下单(过下单量体那道闸)。顾问 / 店长;规矩 TL46 / TL47。
-    "mcp__shop__open_order", "mcp__shop__confirm_order",
+    "mcp__commerce__open_order", "mcp__commerce__confirm_order",
     # 完工前不做了扣多少(只读,业务 10-10 晚:工钱按工单工日折)。顾问 / 店长;规矩 TL72:不估数、判不了不报、料费不替门店填
-    "mcp__shop__cancel_fee",
+    "mcp__finance__cancel_fee",
     # 交付签收(写)。顾问 / 店长;经手人从会话取 —— 规矩 TL43–45:码只认用户说出来的那个,不合身不算签收,
     # 完成要顾客确认、追认要满 15 天写理由。
-    "mcp__shop__record_pickup", "mcp__shop__verify_fit_code", "mcp__shop__ratify_complete",
+    "mcp__fulfillment__record_pickup", "mcp__fulfillment__verify_fit_code", "mcp__fulfillment__ratify_complete",
     # 报修(写)。顾问 / 店长;判责只有店长能过(写口里管)—— 规矩 TL48–51:哪一件不清楚要问、
     # 谁承担和返修还是重做只照用户说的填、顾客同意要凭据、码只认用户说出来的那个。
-    "mcp__shop__create_repair", "mcp__shop__decide_repair", "mcp__shop__advance_repair",
-    "mcp__shop__verify_repair_return",
+    "mcp__service__create_repair", "mcp__service__decide_repair", "mcp__service__advance_repair",
+    "mcp__service__verify_repair_return",
     # 该催工厂 / 工厂回传(只读)。生产和发货只认工厂回传,门店不推 —— 门店要知道哪几单该去催。
     # 顾问问「我哪些单该催」、店长看本店,两个角色都要;规矩 TL52:不许建议后台改状态、不替工厂补数据。
-    "mcp__shop__factory_chase",
-    "mcp__shop__orders_by_date",
+    "mcp__fulfillment__factory_chase",
+    "mcp__commerce__orders_by_date",
     # 商品销量排行(只读):「九月卖得最好的商品」—— 按商品 / SKU / 品类汇总订单行。规矩 TL65
-    "mcp__shop__sales_rank",
+    "mcp__analytics__sales_rank",
     # 按周营收(只读,周报用):实收减退款,按付款日 / 退款日归周。规矩 TL66
-    "mcp__shop__weekly_revenue",
+    "mcp__analytics__weekly_revenue",
     # 门店经营报告取数包(只读):日报 / 周报 / 月报共用,期内和存量分两栏。规矩 TL67
-    "mcp__shop__store_report",
-    "mcp__shop__summarize_products",    # 商品归纳总结(用户 10-10):顾问看商机、运营看选品都要
+    "mcp__analytics__store_report",
+    "mcp__commerce__summarize_products",    # 商品归纳总结(用户 10-10):顾问看商机、运营看选品都要
     # 经营报告存档:存草稿 / 店长确认(写)、看存过的(只读)。规矩 TL68-70:存和确认都只在用户明说时调
-    "mcp__shop__save_report", "mcp__shop__confirm_report", "mcp__shop__list_reports",
-    "mcp__shop__report_production",
+    "mcp__analytics__save_report", "mcp__analytics__confirm_report", "mcp__analytics__list_reports",
+    "mcp__fulfillment__report_production",
     # 订单日志(只读):这张单发生过什么 —— 顾客问「为什么晚了」时,被拒收和作废的回传往往才是答案。规矩 TL54
-    "mcp__shop__order_log",
+    "mcp__commerce__order_log",
     # 工厂延期待通知 + 通知完标一下(写)。规矩 TL55:你不联系顾客;「已通知」只有用户说了才标
-    "mcp__shop__delay_pending", "mcp__shop__mark_delay_told",
+    "mcp__fulfillment__delay_pending", "mcp__fulfillment__mark_delay_told",
     # 人工回退(写):发错件 / 到店返工。规矩 TL56:只有店长能点,原因和理由只能照用户说的填
-    "mcp__shop__rollback_order",
+    "mcp__fulfillment__rollback_order",
 ]
 
 # 只给工艺顾问:着装人、成长推算、场景倒推、工坊产能。
@@ -469,12 +471,12 @@ SHOP_TOOLS = [
 # 所以 skills_check.py 加了结构检查:**白名单必须和 MCP 暴露的完全一致**,
 # 靠人记得同步是不行的。
 KB_ONLY_TOOLS = [
-    "mcp__shop__get_wearer", "mcp__shop__forecast_growth",
-    "mcp__shop__plan_for_event",
+    "mcp__customer__get_wearer", "mcp__customer__forecast_growth",
+    "mcp__commerce__plan_for_event",
     # 方案 =「一件事」的单位。**只给工艺顾问,不进 SHOP_TOOLS** ——
     # SHOP_TOOLS 是整包发给顾问和任务助手的,而任务助手做的是退款定因,
     # 跟客户这次想做哪件衣服无关。**给一个角色多余的工具,代价是它会去用。**
-    "mcp__shop__get_scheme",
+    "mcp__commerce__get_scheme",
 ]
 
 # ── 工坊排产:面对产能,不面对客户 ──────────────────────────────────
@@ -492,15 +494,15 @@ KB_ONLY_TOOLS = [
 # 这正是 P6 注释里记的那个老坑:**一整包工具同时发给多个角色**,
 # 于是某个角色拿到了它用不上、也没有规矩管的工具。
 WORKSHOP_TOOLS = [
-    "mcp__shop__get_capacity",     # 工种级:瓶颈在哪、消化几天
-    "mcp__shop__get_workorder",    # 单件级:在谁手上、会不会拖
+    "mcp__fulfillment__get_capacity",     # 工种级:瓶颈在哪、消化几天
+    "mcp__fulfillment__get_workorder",    # 单件级:在谁手上、会不会拖
     # **师傅自己的那一份。** 上一版漏了这个 —— `my_workorders` 只进了
     # task 和 all,于是师傅登录进来用工坊角色**手上根本没有它**,
     # 而店长用任务助手反倒看得到。补角色补到一半,比不补更难发现:
     # **登录进得来、规矩也在,只是那个工具不在场。**
-    "mcp__shop__my_workorders",
-    "mcp__kb__kb_lead", "mcp__kb__kb_bom",
-    "mcp__kb__kb_pattern", "mcp__kb__kb_size",
+    "mcp__fulfillment__my_workorders",
+    "mcp__knowledge__kb_lead", "mcp__knowledge__kb_bom",
+    "mcp__knowledge__kb_pattern", "mcp__knowledge__kb_size",
 ]
 
 # 版师:核裁片用料占比。**这是唯一一个「有写工具但只有一个」的角色。**
@@ -518,10 +520,10 @@ PATTERN_TOOLS = [
     # **进来第一句话就该调它。** 没有这个入口的时候,版师只能问某一个版型的
     # 某一件事,而「我手上到底有多少活、哪一件最该先做」系统一个字都没说 ——
     # **没有入口的能力等于没做。**
-    "mcp__shop__pattern_queue",     # 排队看板:今天该我核什么(按影响面排序);
+    "mcp__knowledge__pattern_queue",     # 排队看板:今天该我核什么(按影响面排序);
                                     # 传 pattern 转看那一版的裁片占比明细(带来源和折合米数)
-    "mcp__shop__grading_audit",     # 推档自检:1237 个数压成 12 条档差
-    "mcp__shop__summarize_products",  # 商品归纳总结(用户 10-10:版师看一批版型的共性)
+    "mcp__knowledge__grading_audit",     # 推档自检:1237 个数压成 12 条档差
+    "mcp__commerce__summarize_products",  # 商品归纳总结(用户 10-10:版师看一批版型的共性)
     # 受欢迎与易损(业务 2026-09-18 提,2026-10-22 接上入口)。
     # ⚠️ **口径和检查 09-18 就做完了,而 `grep popularity` 在工具层出现 0 次** ——
     # 版师问「这个月什么最受欢迎」,助手答不上来。**做了 90%,
@@ -530,23 +532,23 @@ PATTERN_TOOLS = [
     # (刻意不兜底),他拿到的会是一个**永远空的清单** —— 而空结果比没有工具更糟,
     # 模型会据此告诉版师「这个月没人买」。工坊那次 21 位师傅登录进来
     # 手上没有 `my_workorders`,同一个病。
-    "mcp__shop__product_ranking",   # 当月最受欢迎:两张榜并列 + 形制/面料/工艺分布
-    "mcp__shop__wear_risk",         # 易损率:分子分母一起给,不显著不报第一名
-    "mcp__shop__set_piece_ratio",   # 写 —— 改占比并标「版师」
+    "mcp__analytics__product_ranking",   # 当月最受欢迎:两张榜并列 + 形制/面料/工艺分布
+    "mcp__analytics__wear_risk",         # 易损率:分子分母一起给,不显著不报第一名
+    "mcp__knowledge__set_piece_ratio",   # 写 —— 改占比并标「版师」
     # 写 —— 开裁(待生产 → 生产中)。**闸在订单状态机上**:白坯该试没试 / 没签字整单拒绝。
     # 版型定了才能裁,所以归版师;规矩 TL41:被拒不许换说法再试。
-    "mcp__shop__start_cutting",
-    "mcp__kb__kb_pattern",          # 版型和裁片
-    "mcp__kb__kb_size",             # 成衣尺码表 —— 判米数要看尺寸
-    "mcp__kb__kb_bom",              # BOM:内衬和辅料的实际用量,可交叉验
+    "mcp__fulfillment__start_cutting",
+    "mcp__knowledge__kb_pattern",          # 版型和裁片
+    "mcp__knowledge__kb_size",             # 成衣尺码表 —— 判米数要看尺寸
+    "mcp__knowledge__kb_bom",              # BOM:内衬和辅料的实际用量,可交叉验
     # 「推荐尺码**最终由版师定**」—— 这句话在 kb_fit 的工具说明里写了三遍,
     # 而版师原来**看不到那个建议**。系统把决定权交给一个岗位,
     # 那个岗位却没有入口,这和工坊那次(21 位师傅登录不了)是同一个病。
     # ⚠️ 给的是**尺寸和体型**,不是客户档案:手机号、消费额、等级一概不在这条路上。
-    "mcp__kb__kb_fit",
+    "mcp__customer__kb_fit",
     # 版型库那篇正文里写着**放松量是怎么来的、档差为什么这么定、
     # 马面裙的腰围为什么不能按档差推** —— 那些话表里没有,而它们正是版师要核的依据。
-    "mcp__kb__kb_read",
+    "mcp__knowledge__kb_read",
 ]
 
 # 售后(2026-10-12 建):两类活都是**「第二个人」那一段** —— 判责出判定、差评确认结案。
@@ -557,27 +559,27 @@ PATTERN_TOOLS = [
 #    一切量体和版型的工具(判差评用不到)、订单流水(那是店长和总部的活)。
 #    「给一个角色多余的工具」的代价是它会去用 —— 这个项目在 allowed_tools 上栽过。
 AFTERSALE_TOOLS = [
-    "mcp__shop__bad_ratings",        # 差评清单(售后看全量,店长只看本店)
-    "mcp__shop__rating_overview",    # 评价概况 —— 判「是不是老问题」要它
-    "mcp__shop__service_records",    # 判差评的第三样材料:交付签收 / 返修售后 / 这个客户的历史差评
-    "mcp__shop__close_bad_rating",   # 写 —— 确认结案;出钱的那几种要批准人、不能是自己、要给金额(TK14)
+    "mcp__service__bad_ratings",        # 差评清单(售后看全量,店长只看本店)
+    "mcp__analytics__rating_overview",    # 评价概况 —— 判「是不是老问题」要它
+    "mcp__service__service_records",    # 判差评的第三样材料:交付签收 / 返修售后 / 这个客户的历史差评
+    "mcp__service__close_bad_rating",   # 写 —— 确认结案;出钱的那几种要批准人、不能是自己、要给金额(TK14)
                                      # ⚠️ 原来写「出钱的三种」,而出钱的只有两种 —— 手抄的数字跟不上枚举
-    "mcp__shop__get_maintain",       # 售后判责的**现场**:客户报的问题、量体记录、形制工艺
+    "mcp__service__get_maintain",       # 售后判责的**现场**:客户报的问题、量体记录、形制工艺
     # get_maintain 的说明明写「判定标准要另外查 kb_tables」—— 不给它就等于
     # 让这个岗位凭印象判,而「按表判」和「凭印象判」在那句判定上长得一模一样
-    "mcp__kb__kb_tables",
-    "mcp__kb__kb_read",              # 原文答「为什么」:面料和工艺那几篇正文才有判责依据
+    "mcp__knowledge__kb_tables",
+    "mcp__knowledge__kb_read",              # 原文答「为什么」:面料和工艺那几篇正文才有判责依据
 ]
 
 # 财务:**只读账的四张表,一个写的都没有。**
 # 它不该看得到量体、版型、产能 —— 那些和对账无关,
 # 而「给一个角色多余的工具」的代价是它会去用(这个项目在 allowed_tools 上栽过)。
 FINANCE_TOOLS = [
-    "mcp__task__get_deposit",        # 押金单:金额、状态、幂等号
-    "mcp__task__get_refund_trace",   # 退款轨迹:卡在哪一步、为什么
-    "mcp__task__get_payment_flow",   # 支付流水:进出两向
-    "mcp__shop__get_order",          # 订单:自带金额勾稽和时间线自检
-    "mcp__shop__activity_roi",       # 活动费用核销:预算 / 已发生 / 已开票
+    "mcp__finance__get_deposit",        # 押金单:金额、状态、幂等号
+    "mcp__finance__get_refund_trace",   # 退款轨迹:卡在哪一步、为什么
+    "mcp__finance__get_payment_flow",   # 支付流水:进出两向
+    "mcp__commerce__get_order",          # 订单:自带金额勾稽和时间线自检
+    "mcp__analytics__activity_roi",       # 活动费用核销:预算 / 已发生 / 已开票
 ]
 
 # 项目自带的 Skill(agentsite/.claude/skills/<名字>/SKILL.md)。
@@ -648,9 +650,9 @@ def skills_for(which=None):
 
 
 SKILLS = skills_for("own")      # 模块级默认 —— 给不传参数的调用方兜底
-TASK_TOOLS = ["mcp__task__list_tasks", "mcp__task__get_deposit",
-              "mcp__task__get_refund_trace", "mcp__task__get_payment_flow",
-              "mcp__task__get_customer"]
+TASK_TOOLS = ["mcp__work__list_tasks", "mcp__finance__get_deposit",
+              "mcp__finance__get_refund_trace", "mcp__finance__get_payment_flow",
+              "mcp__customer__get_customer"]
 
 # 只给后台运营:会员生命周期判定(八档 + 凭什么 + 有没有被人工覆盖)。
 # 这是**台账活** —— 顾问在跟客户说话的时候不该做分群。
@@ -663,20 +665,20 @@ TASK_ONLY_TOOLS = [
     # SHOP_TOOLS 是**整包**发给工艺顾问和任务助手的,而业务 09-27 明确定了
     # 「评价不进顾问考核,只给店长看」—— 一整包发下去,顾问那边就拿到了它。
     # 而这两个工具的规矩(TL59)写的是店长口径,**工具给了、规矩没给**正是 P6 拦的那件事。
-    "mcp__shop__bad_ratings",       # 差评待处理清单(关掉必须写处理记录)
+    "mcp__service__bad_ratings",       # 差评待处理清单(关掉必须写处理记录)
     # 关差评(写)。店长 / 售后;处理人从会话取 —— 规矩 TK14:处理方式只认六种、
     # 出钱的三种要批准人而且不能是自己。⚠️ **2026-10-12 才挂上** ——
     # 在那之前写口存在、判定存在、回归测试存在,**而没有任何入口走得到它**。
-    "mcp__shop__close_bad_rating",
+    "mcp__service__close_bad_rating",
     # 判差评要看的服务记录(只读)。范围口径在 knowledge/rating,**刻意不给消费总额和会员等级**
     # —— 规矩 TK15:不许绕着查、不许在建议里暗示客户价值。
-    "mcp__shop__service_records",
-    "mcp__shop__rating_overview",   # 星级概况(返回自带「这个数不能说明什么」)
-    "mcp__shop__get_member",   # 等级档 + 生命周期档 + 档内 RFM 排序,一个口
+    "mcp__service__service_records",
+    "mcp__analytics__rating_overview",   # 星级概况(返回自带「这个数不能说明什么」)
+    "mcp__customer__get_member",   # 等级档 + 生命周期档 + 档内 RFM 排序,一个口
     # 「这件事业务允不允许做」—— 跑真校验器,不写库。
     # 加它是因为实测发现:没有它时模型会**编一套架构理由**说可以,
     # 而编造建立在真事实上(账户与门店档案确实分层),读起来完全可信。
-    "mcp__shop__check_write",
+    "mcp__work__check_write",
     # ── 任务:四个只读 + 三个**会写库的** ──────────────────────────
     # ⚠️ 「工具全部只读」这条老保证到此为止 —— 现在有三个真写接口。
     # 换来的安全靠三条,不靠「不给写」:
@@ -684,40 +686,40 @@ TASK_ONLY_TOOLS = [
     #   ② 权限走 tasks.py 同一套判定 —— **和人在页面上点是同一份代码**,
     #      智能体不会因为是智能体而多一分权,也不会少一分
     #   ③ 每一笔都在台账里标明「智能体代 X 执行」,查得出是谁的主意
-    "mcp__shop__get_tasks",    # 我的 / 某一条 / 团队 / 待分配,靠参数分
-    "mcp__shop__monthly_review", "mcp__shop__appt_funnel", "mcp__shop__points_ledger", "mcp__shop__approval_queue", "mcp__shop__activity_roi", "mcp__shop__can_order", "mcp__shop__apply_adjust", "mcp__shop__decide_approval", "mcp__shop__week_grid", "mcp__shop__assign_batch", "mcp__shop__dispatch_batch",
-    "mcp__shop__task_types",
-    "mcp__shop__assign_task", "mcp__shop__dispatch_task",
-    "mcp__shop__reassign_task", "mcp__shop__finish_task",
+    "mcp__work__get_tasks",    # 我的 / 某一条 / 团队 / 待分配,靠参数分
+    "mcp__work__monthly_review", "mcp__analytics__appt_funnel", "mcp__customer__points_ledger", "mcp__customer__approval_queue", "mcp__analytics__activity_roi", "mcp__commerce__can_order", "mcp__customer__apply_adjust", "mcp__customer__decide_approval", "mcp__work__week_grid", "mcp__work__assign_batch", "mcp__work__dispatch_batch",
+    "mcp__work__task_types",
+    "mcp__work__assign_task", "mcp__work__dispatch_task",
+    "mcp__work__reassign_task", "mcp__work__finish_task",
     # 售后判责跑在这个角色上,而**判定表在 kb_tables 里**。
     # 原来没给:get_maintain 的描述明写「判定标准要另外查 kb_tables」,
     # liability_eval 的提示词也明写「再用 kb_tables 取售后争议判定」——
     # 而这个角色根本调不了它。18/18 全过,但**每条判责结论都没有依据来源**,
     # 模型是凭自己对「什么算公平」的理解在判。改公司政策,它不会跟着变。
-    "mcp__kb__kb_tables",
+    "mcp__knowledge__kb_tables",
     # 待核实队列:哪些格子被问到了却没依据。**只读,回填在后台。**
     # ⚠️ 命名空间跟着 **schema 挂在哪个服务**走,不跟着「它像哪一类」走。
     # 我第一版写成 mcp__kb__(因为它讲的是知识库的事),而它的 schema 在 SHOP_SCHEMAS 里,
     # 于是白名单和 MCP 暴露对不上 —— skills_check 当场抓到,和当年 plan_for_event 同一个坑。
-    "mcp__shop__get_review_queue",
+    "mcp__knowledge__get_review_queue",
     # 未成交挽回:下了单没付钱的、约了没来的。**只出清单,不发任何东西。**
     # 这两笔是**算得出金额的流失**,而在这之前没有任何东西在看它们 ——
     # 它们在表上只是一个状态,没有一个动作。
-    "mcp__shop__recovery_queue",
+    "mcp__customer__recovery_queue",
     # 库存预警:哪些要断了、哪些**看着有货其实发不出**、哪些在压货。
     # ⚠️ 它**给不出可售天数,而且会直说给不出** —— 全库每个 SKU 最多只卖过一笔,
     # 而一笔画不出速度。规矩(TL29)明写不许把「算不出」说成 0 天、
     # 也不许退回成件数阈值:**编出来的天数会让采购按它去补货。**
-    "mcp__shop__stock_alert",
+    "mcp__commerce__stock_alert",
     # 白坯试衣看板:哪些单该试、试了没有、客户签没签。
     # ⚠️ 「没有试衣记录」和「有记录但没签字」**判责方向相反** ——
     # 前者是流程没走(我方),后者是流程走了确认没拿到(回落到量体记录)。
     # 规矩(TL30)明写不许拿「查不到记录」当成「没签字」。
-    "mcp__shop__fitting_queue",
+    "mcp__fulfillment__fitting_queue",
     # 多渠道表现对比。⚠️ **这张表不能用来比渠道,而它和真的渠道对比长得一模一样** ——
     # 渠道这一列是按订单序号轮发(种子)/ 按固定权重独立抽(模拟)的,
     # 和金额、状态、客户统计独立。规矩(TL31)要求每次都把这件事说出去。
-    "mcp__shop__channel_compare",
+    "mcp__analytics__channel_compare",
 ]
 
 # ── 提示词:唯一源头在根目录 prompts.py ──────────────────────────────
@@ -885,9 +887,9 @@ SYS_TASK, TASK_RULE_IDS = prompts.assemble("task", _have("task"))
 #    要挂着 close_bad_rating 才装、TK13「星级量的是交付体验」要挂着 rating_overview 才装 —— 收窄就把它们一起收掉了。
 #    差评的 AI 辅助默认关着,不省这点钱。后台运营的对话助手也照旧用 `task` 全包。
 研判工具 = [
-    "mcp__task__get_deposit", "mcp__task__get_payment_flow", "mcp__task__get_refund_trace",   # 退款
-    "mcp__task__get_customer",                                                                   # 客户合并
-    "mcp__shop__get_maintain", "mcp__kb__kb_tables", "mcp__shop__get_order",                    # 售后判责
+    "mcp__finance__get_deposit", "mcp__finance__get_payment_flow", "mcp__finance__get_refund_trace",   # 退款
+    "mcp__customer__get_customer",                                                                   # 客户合并
+    "mcp__service__get_maintain", "mcp__knowledge__kb_tables", "mcp__commerce__get_order",                    # 售后判责
 ]
 SYS_TRIAGE, TRIAGE_RULE_IDS = prompts.assemble("task", {t.rsplit("__", 1)[-1] for t in 研判工具})
 SYS_FINANCE, FINANCE_RULE_IDS = prompts.assemble("finance", _have("finance"))

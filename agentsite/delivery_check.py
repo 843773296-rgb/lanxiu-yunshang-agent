@@ -113,7 +113,7 @@ def main():
         with open(tp, "w", encoding="utf-8") as f:
             f.write(_j.dumps({"type": "user", "message": {"content": "问"}}, ensure_ascii=False) + "\n")
             f.write(_j.dumps({"type": "assistant", "message": {"content": [
-                {"type": "tool_use", "name": "mcp__kb__kb_combo", "input": {}}]}}, ensure_ascii=False) + "\n")
+                {"type": "tool_use", "name": "mcp__knowledge__kb_combo", "input": {}}]}}, ensure_ascii=False) + "\n")
         guards._last_answer = 真读
         state = {}
         stop = guards.make_hooks(state)["Stop"][0].hooks[0]
@@ -157,7 +157,7 @@ def main():
         import json as _jj
         if os.path.exists(guards.扣下记录): os.remove(guards.扣下记录)
         _st = {"prompt": "这单能加急吗?", "violations": [{"check": "g1_no_source", "msg": "数没出处"}],
-               "calls": [{"tool": "mcp__kb__kb_lead"}],
+               "calls": [{"tool": "mcp__knowledge__kb_lead"}],
                "答案检查": [{"尝试": 1, "哈希": guards.答案哈希("草稿一"), "结果": "不通过", "失败项": ["g1_no_source"], "原文": "草稿一"},
                           {"尝试": 2, "哈希": guards.答案哈希("草稿二"), "结果": "不通过", "失败项": ["g1_no_source"], "原文": "草稿二"}],
                "修正次数": 1}
@@ -172,9 +172,9 @@ def main():
         print("\n\033[1m▸ 环境故障:工具返回里的数据库报错要认得出(10-05)\033[0m")
         import sdk as _sdk
         _坏 = _sdk.找环境故障([
-            {"tool": "mcp__kb__kb_size", "output": {"error": "OperationalError: database is locked"}},
-            {"tool": "mcp__shop__get_stock", "output": "sqlite3.OperationalError: database is locked"},
-            {"tool": "mcp__kb__kb_lead", "output": {"最慢天数": 166}}])
+            {"tool": "mcp__knowledge__kb_size", "output": {"error": "OperationalError: database is locked"}},
+            {"tool": "mcp__commerce__get_stock", "output": "sqlite3.OperationalError: database is locked"},
+            {"tool": "mcp__knowledge__kb_lead", "output": {"最慢天数": 166}}])
         ck("工具返回里的数据库报错认得出(dict / 字符串两种形状),正常返回不算", [x["工具"] for x in _坏] == ["kb_size", "get_stock"],
            3, str(_坏))
         # 锁库时工具是「失败」,PostToolUse 不触发 —— 10-05 实测 calls 一条都没有,故障认不出
@@ -183,11 +183,11 @@ def main():
         _挂了 = "PostToolUseFailure" in _h
         if _挂了:
             asyncio.run(_h["PostToolUseFailure"][0].hooks[0](
-                {"tool_name": "mcp__kb__kb_size", "tool_input": {}, "error": "sqlite3.OperationalError: database is locked"},
+                {"tool_name": "mcp__knowledge__kb_size", "tool_input": {}, "error": "sqlite3.OperationalError: database is locked"},
                 None, None))
         _记 = [f["tool"] for f in _st.get("工具失败") or []]
         ck("工具调用失败也记下来(挂了 PostToolUseFailure,报错原文进 state[工具失败])",
-           _挂了 and _记 == ["mcp__kb__kb_size"], 1, f"挂了={_挂了} 记下={_记}")
+           _挂了 and _记 == ["mcp__knowledge__kb_size"], 1, f"挂了={_挂了} 记下={_记}")
         ck("sdk.run 每轮都查并累计进 sdk.环境故障", "_故障 = 找环境故障(state.get(\"calls\"))" in src0
            and "环境故障.extend(_故障)" in src0 and 'state.get("工具失败")' in src0, 1)
 

@@ -145,7 +145,7 @@ def _selftest():
        direction("宋制褙子配百迭裙,宋制日常。也有人选马面裙。") == direction(c))
     ck("没提朝代 → 空指纹(和任何朝代都不一致)", direction("请客户补拍一张细节图。") == ())
 
-    o = observe("查不到这个客户的记录。请问订单号是多少?", ["mcp__kb__kb_lookup"], [])
+    o = observe("查不到这个客户的记录。请问订单号是多少?", ["mcp__knowledge__kb_lookup"], [])
     ck("拒答识别得出", o["拒答"])
     ck("反问识别得出", o["反问"])
     ck("工具记下来了", o["工具"] == ["kb_lookup"])
@@ -158,7 +158,7 @@ def _selftest():
        observe(long_answer, [], [])["零工具硬答"])
     ck("零工具但反问了 → 不算无据下结论",
        not observe("先给我订单号,我查完再答。" + long_answer, [], [])["零工具硬答"])
-    ck("调了工具就不算", not observe(long_answer, ["mcp__kb__kb_tables"], [])["零工具硬答"])
+    ck("调了工具就不算", not observe(long_answer, ["mcp__knowledge__kb_tables"], [])["零工具硬答"])
     ck("祈使式索要也算反问(实测里漏过)",
        observe("给我订单号,我马上跑一遍。", [], [])["反问"])
     print("\n" + "=" * 76)

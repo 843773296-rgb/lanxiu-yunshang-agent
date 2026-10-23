@@ -909,12 +909,12 @@
  },
  {
   "script": "mcp/selftest.py",
-  "改坏": "从 kb 服务的工具表里砍掉一个(声明 11 个,实际暴露 10 个)",
+  "改坏": "有一个领域服务少暴露一个工具(声明的比实际给的多)",
   "file": [
    {
-    "path": "mcp/kb_server.py",
-    "old": "TOOLS = [(s[\"name\"], s[\"description\"], s[\"input_schema\"], api.TOOLS[s[\"name\"]])\n         for s in api.KB_SCHEMAS]",
-    "new": "TOOLS = [(s[\"name\"], s[\"description\"], s[\"input_schema\"], api.TOOLS[s[\"name\"]])\n         for s in api.KB_SCHEMAS][:-1]"
+    "path": "mcp/domain_server.py",
+    "old": "            for s in api.SCHEMAS + api.SHOP_SCHEMAS + api.KB_SCHEMAS if s[\"name\"] in 要]",
+    "new": "            for s in api.SCHEMAS + api.SHOP_SCHEMAS + api.KB_SCHEMAS if s[\"name\"] in 要][:-1]"
    }
   ],
   "预期红": "tools/list"
@@ -925,7 +925,7 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "\"mcp__kb__kb_lookup\",",
+    "old": "\"mcp__knowledge__kb_lookup\",",
     "new": ""
    }
   ],
@@ -949,7 +949,7 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "\"mcp__shop__get_capacity\",",
+    "old": "\"mcp__fulfillment__get_capacity\",",
     "new": ""
    }
   ],
@@ -9351,8 +9351,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "\"mcp__kb__kb_tables\", \"mcp__shop__get_order\",",
-    "new": "\"mcp__kb__kb_tables\", \"mcp__shop__get_order\", \"mcp__shop__open_order\","
+    "old": "\"mcp__knowledge__kb_tables\", \"mcp__commerce__get_order\",",
+    "new": "\"mcp__knowledge__kb_tables\", \"mcp__commerce__get_order\", \"mcp__commerce__open_order\","
    }
   ],
   "预期红": "研判工具全是只读"
@@ -10171,11 +10171,11 @@
  },
  {
   "script": "backend/pattern_role_check.py",
-  "改坏": "把白名单里的 `mcp__shop__set_piece_ratio` 写回 `mcp__kb__`(命名空间跟着 schema 挂在哪个服务走,不跟着「它像哪一类」走 —— 这个坑踩过三次,三次都不报错:白名单里那个名字根本不存在,模型手上少一个工具,而角色页面照样显示工具数)",
+  "改坏": "把白名单里的 `mcp__knowledge__set_piece_ratio` 写回 `mcp__kb__`(命名空间跟着 schema 挂在哪个服务走,不跟着「它像哪一类」走 —— 这个坑踩过三次,三次都不报错:白名单里那个名字根本不存在,模型手上少一个工具,而角色页面照样显示工具数)",
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "    \"mcp__shop__set_piece_ratio\",   # 写 —— 改占比并标「版师」",
+    "old": "    \"mcp__knowledge__set_piece_ratio\",   # 写 —— 改占比并标「版师」",
     "new": "    \"mcp__kb__set_piece_ratio\",   # 写 —— 改占比并标「版师」"
    }
   ],
@@ -10187,8 +10187,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "    \"mcp__kb__kb_pattern\",          # 版型和裁片",
-    "new": "    \"mcp__shop__get_customer\",      # 咬合用:挂上它该被隐私那条判据逮到\n    \"mcp__kb__kb_pattern\",          # 版型和裁片"
+    "old": "    \"mcp__knowledge__kb_pattern\",          # 版型和裁片",
+    "new": "    \"mcp__customer__get_customer\",      # 咬合用:挂上它该被隐私那条判据逮到\n    \"mcp__knowledge__kb_pattern\",          # 版型和裁片"
    }
   ],
   "预期红": "版师拿得到尺寸和体型,拿不到手机号和消费额"
@@ -10800,5 +10800,17 @@
    }
   ],
   "预期红": "被执行闸拦下的:不算用了,另列"
+ },
+ {
+  "script": "mcp/selftest.py",
+  "改坏": "归属清单里漏掉一个工具(cancel_fee 不归任何领域)",
+  "file": [
+   {
+    "path": "backend/domains.py",
+    "old": "\"get_deposit\", \"get_refund_trace\", \"get_payment_flow\", \"cancel_fee\",",
+    "new": "\"get_deposit\", \"get_refund_trace\", \"get_payment_flow\","
+   }
+  ],
+  "预期红": "⑦ 八个服务的 tools/list 合起来恰好是全部"
  }
 ]

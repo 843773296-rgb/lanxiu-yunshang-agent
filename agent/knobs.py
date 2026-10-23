@@ -54,7 +54,7 @@ EFFORT = ("low", "medium", "high", "xhigh", "max")
 
 
 def _短(t):
-    """`mcp__shop__get_order` → `get_order`。
+    """`mcp__commerce__get_order` → `get_order`。
 
     ⚠️ 工具名在这个系统里**有两种写法**:页面和方案文件存短名(人看得懂),
     sdk 的白名单是全名(SDK 要的)。**方案里一律存短名,比较一律按短名** ——

@@ -41,14 +41,14 @@ ck("旋钮数 ≥ 5(只有一个能拧就不叫调参)", len(K.旋钮表) >= 5)
 ck("每个旋钮都写了人话说明", all(len(k.get("说明", "")) > 20 for k in K.旋钮表))
 
 # ── ② 只许收窄 ──────────────────────────────────────────────────────
-可用 = ["mcp__shop__get_order", "mcp__kb__fabric"]
+可用 = ["mcp__commerce__get_order", "mcp__kb__fabric"]
 try:
-    K.校验({"工具": ["mcp__shop__get_order"]}, 可用); r = True
+    K.校验({"工具": ["mcp__commerce__get_order"]}, 可用); r = True
 except Exception as e: r = False; print("   ", e)
 ck("收窄到子集 → 放行", r)
 
 try:
-    K.校验({"工具": ["mcp__shop__get_order", "mcp__danger__rm"]}, 可用); r = False
+    K.校验({"工具": ["mcp__commerce__get_order", "mcp__danger__rm"]}, 可用); r = False
 except ValueError: r = True
 ck("**放宽**到白名单外 → 当场抛(不是过滤掉)", r)
 
@@ -60,10 +60,10 @@ ck("收窄成空集 → 抛(一个工具都不给,它只能靠编)", r)
 # ── ②b 短名 ↔ 全名(2026-09-25 真踩到的 bug)──────────────────────────
 # 页面存短名、SDK 要全名。不统一的话:方案存下来能过,**一真跑就被判成
 # 「放宽白名单」当场抛**,而报错读起来像是你配错了工具。
-全名 = ["mcp__shop__get_order", "mcp__kb__fabric", "mcp__kb__lead_time"]
+全名 = ["mcp__commerce__get_order", "mcp__kb__fabric", "mcp__kb__lead_time"]
 干净, _, _ = K.校验({"工具": ["get_order", "fabric"]}, 全名)
 ck("给短名、白名单是全名 → 认得出(不误判成放宽)", 干净["工具"] == ["get_order", "fabric"], 干净)
-干净2, _, _ = K.校验({"工具": ["mcp__shop__get_order"]}, 全名)
+干净2, _, _ = K.校验({"工具": ["mcp__commerce__get_order"]}, 全名)
 ck("**给全名也认得**,而且存进方案时统一成短名", 干净2["工具"] == ["get_order"], 干净2)
 import json as _js, os as _os
 _os.makedirs(K.目录, exist_ok=True)
@@ -73,7 +73,7 @@ _js.dump({"号": "_自测", "旋钮": {"工具": ["get_order", "fabric"]}},
 新, _ = K.应用({"effort": None, "max_turns": 12, "model_name": None, "guard": True},
               号="_自测", 可用工具=全名)
 ck("传给 SDK 的**换回全名**(调用方不用自己记得换)",
-   新["_工具收窄"] == ["mcp__shop__get_order", "mcp__kb__fabric"], 新.get("_工具收窄"))
+   新["_工具收窄"] == ["mcp__commerce__get_order", "mcp__kb__fabric"], 新.get("_工具收窄"))
 _os.remove(_f)
 
 # ── ③ 认不出的旋钮名不许静默吞掉 ────────────────────────────────────

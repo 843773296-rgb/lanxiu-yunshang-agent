@@ -33,7 +33,7 @@ G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 # 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
 # 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
 咬合 = [
-    ('从 sdk 的白名单里删掉一个 shop 工具(挂了但没进白名单)',
+    ('从 sdk 的白名单里删掉一个工具(挂了但没进白名单)',
      '挂了但没进白名单'),
 ]
 
@@ -75,9 +75,10 @@ def build():
         ))
 
     sys.path.insert(0, os.path.join(ROOT, "backend"))
-    import api
-    tools = sorted(s["name"] for s in api.SHOP_SCHEMAS)
-    white = set(re.findall(r'"mcp__shop__(\w+)"', src))
+    import api, domains
+    # 10-23 起按业务领域起服务:原来只比 shop 那 79 个,现在比全部 —— 每个工具在它归属的那个前缀下才算进了白名单
+    tools = sorted(s["name"] for s in api.SCHEMAS + api.SHOP_SCHEMAS + api.KB_SCHEMAS)
+    white = {t for d, t in re.findall(r'"mcp__(\w+?)__(\w+)"', src) if domains.归属.get(t) == d}
     return dict(
         技能=skills,
         声明了但没有文件=[n for n in declared if n not in ondisk],

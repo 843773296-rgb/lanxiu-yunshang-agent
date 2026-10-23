@@ -18,8 +18,8 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "backend"),
 import role_eval as ev
 
 C = {c["id"]: c for c in ev.CASES}
-WO = ["mcp__shop__my_workorders"]
-RT = ["mcp__task__get_refund_trace"]
+WO = ["mcp__fulfillment__my_workorders"]
+RT = ["mcp__finance__get_refund_trace"]
 T = []
 
 
@@ -97,7 +97,7 @@ T += [
 # 从来没进过模型**(`sdk._SYS` 漏了一行,`.get` 静默回落到全能助手)。
 # 所以下面 F04 那句真实说法里提到的「责任判定表 / 根因 / 建议动作 / 证据 / 置信度」
 # 是**全能助手的格式**,不是财务的 —— 我一度以为是模型自己编的。
-GW = ["mcp__shop__get_workorder", "mcp__task__get_capacity"]
+GW = ["mcp__fulfillment__get_workorder", "mcp__fulfillment__get_capacity"]
 
 T += [
  ("A01·真跑原话(走的不是我预设的工具)", "A01", GW,

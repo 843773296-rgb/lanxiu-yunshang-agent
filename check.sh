@@ -413,7 +413,7 @@ run "会员与订单 · 映射/勾稽/门槛" python3 backend/member_order_check
 run "运维平台 · 队列/时效/解析/置信度" python3 backend/ops.py
 run "售后判责 · 返修判定表/证据不足不硬判" python3 knowledge/liability.py
 run "售后判责 · 标注与规则对账/规则覆盖" python3 backend/liability_check.py
-run "MCP · 三个服务连通性"      python3 mcp/selftest.py
+run "MCP · 八个业务领域服务连通性 + 总账(10-23 拆)" python3 mcp/selftest.py
 run "MCP · 通道等价(不调模型)" python3 mcp/parity.py
 run "V1 循环 · 离线自测"       python3 agent/offline_test.py
 run "V2 工作流 · 40 条工单纯规则(不调模型)" python3 agent/v2.py

@@ -17,33 +17,36 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # 写死数字的话,每加一个工具这个检查就红一次,红久了就没人看了;
 # 而对清单比数量更严:少注册、多注册、名字写错都能查出来。
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend"))
-import api as _api
-CASES = [
-    ("mcp/kb_server.py",   "lanxiu-kb",   [x["name"] for x in _api.KB_SCHEMAS],
-     ("kb_combo", {"craft": "妆花", "material": "香云纱"}, "不可"),
-     ("kb_combo", {"craft": 123}, None)),
-    ("mcp/task_server.py", "lanxiu-task", [x["name"] for x in _api.SCHEMAS],
-     ("get_deposit", {"deposit_id": "D2000"}, "D2000"),
-     ("get_deposit", {}, None)),
-    ("mcp/shop_server.py", "lanxiu-shop", [x["name"] for x in _api.SHOP_SCHEMAS],
-     ("get_stock", {"material": "棉麻"}, "现货"),
-     ("get_order", {}, None)),
-]
-
+import api as _api, domains as _D
+# 按业务领域起服务(10-23 拆)。期望清单:**api 里全部 schema 按 domains 的归属挑出来**,顺序和服务端一致。
+# 再加一条跨服务的总账(见文末):八个服务 tools/list 合起来必须恰好是 api 里全部工具 ——
+# 一个工具从 domains 里漏掉,它在各服务的期望清单里也跟着消失,单看每个服务是绿的。
+_全部 = [x["name"] for x in _api.SCHEMAS + _api.SHOP_SCHEMAS + _api.KB_SCHEMAS]
+# 有代表性调用的领域给一组「好参数 / 坏参数」,其余只验握手、清单、未知工具、stdout
+_调用 = {
+    "knowledge": (("kb_combo", {"craft": "妆花", "material": "香云纱"}, "不可"), ("kb_combo", {"craft": 123}, None)),
+    "finance":   (("get_deposit", {"deposit_id": "D2000"}, "D2000"), ("get_deposit", {}, None)),
+    "commerce":  (("get_stock", {"material": "棉麻"}, "现货"), ("get_order", {}, None)),
+}
+CASES = [(f"mcp/domain_server.py {d}", f"lanxiu-{d}", [t for t in _全部 if _D.归属.get(t) == d],
+          *(_调用.get(d) or (None, None)))
+         for d in _D.领域]
 
 # ── 咬合记录 ──────────────────────────────────────────────────────────
 # 左边「改坏了什么」,右边「预期红的那一条」。**每一条都在 tools/bite_specs.json 里
 # 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
 # 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
 咬合 = [
-    ('从 kb 服务的工具表里砍掉一个(声明 11 个,实际暴露 10 个)',
+    ('有一个领域服务少暴露一个工具(声明的比实际给的多)',
      'tools/list'),
+    ('归属清单里漏掉一个工具(cancel_fee 不归任何领域)',
+     '⑦ 八个服务的 tools/list 合起来恰好是全部'),
 ]
 
 class Client:
     def __init__(self, script):
         self.p = subprocess.Popen(
-            [sys.executable, os.path.join(HERE, "..", script)],
+            [sys.executable, os.path.join(HERE, "..", script.split()[0]), *script.split()[1:]],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, bufsize=1)
         self.n = 0
@@ -68,7 +71,8 @@ class Client:
 
 bad = 0
 print("MCP 连通性自测\n" + "=" * 74)
-for script, want_name, want_n, (gt, ga, expect), (bt, ba, _) in CASES:
+总账 = []
+for script, want_name, want_n, 好, 坏 in CASES:
     print(f"\n▸ {script}")
     c = Client(script)
     try:
@@ -86,6 +90,7 @@ for script, want_name, want_n, (gt, ga, expect), (bt, ba, _) in CASES:
         tools = r.get("result", {}).get("tools", [])
         shapes_ok = all(t.get("inputSchema", {}).get("type") == "object" for t in tools)
         got = [t["name"] for t in tools]
+        总账 += got
         ok2 = got == want_n and shapes_ok
         print(f"  {'✅' if ok2 else '❌'} ② tools/list → {len(got)} 个"
               f"(声明 {len(want_n)} 个),inputSchema 根均为 object:{shapes_ok}")
@@ -94,24 +99,26 @@ for script, want_name, want_n, (gt, ga, expect), (bt, ba, _) in CASES:
             print(f"       ⚠ 少了 {sorted(set(want_n)-set(got))} / 多了 {sorted(set(got)-set(want_n))}")
         bad += 0 if ok2 else 1
 
-        r = c.call("tools/call", {"name": gt, "arguments": ga})
-        res = r.get("result", {})
-        txt = (res.get("content") or [{}])[0].get("text", "")
-        ok3 = not res.get("isError") and (expect in txt)
-        print(f"  {'✅' if ok3 else '❌'} ③ tools/call {gt}({ga}) → 含「{expect}」:{expect in txt}")
-        bad += 0 if ok3 else 1
+        if 好:
+          gt, ga, expect = 好; bt, ba, _ = 坏
+          r = c.call("tools/call", {"name": gt, "arguments": ga})
+          res = r.get("result", {})
+          txt = (res.get("content") or [{}])[0].get("text", "")
+          ok3 = not res.get("isError") and (expect in txt)
+          print(f"  {'✅' if ok3 else '❌'} ③ tools/call {gt}({ga}) → 含「{expect}」:{expect in txt}")
+          bad += 0 if ok3 else 1
 
-        r = c.call("tools/call", {"name": bt, "arguments": ba})
-        res = r.get("result", {})
-        # 参数不对时,**返回一条能看懂的错误**也算合格,不一定要抛异常 ——
-        # 对模型来说 {"error": "要么给订单号,要么给客户号"} 比一个 traceback 有用得多,
-        # 它能照着改再调一次。这一项要查的是「错参数不会静默通过」,不是「必须抛」。
-        _t4 = (res.get("content") or [{}])[0].get("text", "")
-        ok4 = bool(res.get("isError")) or '"error"' in _t4
-        print(f"  {'✅' if ok4 else '❌'} ④ 错参数 → "
-              f"{'isError' if res.get('isError') else '返回 error 字段'} "
-              f"「{(res.get('content') or [{}])[0].get('text','')[:40]}」")
-        bad += 0 if ok4 else 1
+          r = c.call("tools/call", {"name": bt, "arguments": ba})
+          res = r.get("result", {})
+          # 参数不对时,**返回一条能看懂的错误**也算合格,不一定要抛异常 ——
+          # 对模型来说 {"error": "要么给订单号,要么给客户号"} 比一个 traceback 有用得多,
+          # 它能照着改再调一次。这一项要查的是「错参数不会静默通过」,不是「必须抛」。
+          _t4 = (res.get("content") or [{}])[0].get("text", "")
+          ok4 = bool(res.get("isError")) or '"error"' in _t4
+          print(f"  {'✅' if ok4 else '❌'} ④ 错参数 → "
+                f"{'isError' if res.get('isError') else '返回 error 字段'} "
+                f"「{(res.get('content') or [{}])[0].get('text','')[:40]}」")
+          bad += 0 if ok4 else 1
 
         r = c.call("tools/call", {"name": "no_such_tool", "arguments": {}})
         ok5 = bool(r.get("result", {}).get("isError"))
@@ -125,6 +132,14 @@ for script, want_name, want_n, (gt, ga, expect), (bt, ba, _) in CASES:
         err = c.close()
         if err.strip():
             print(f"       (stderr:{err.strip().splitlines()[0][:60]})")
+
+print("\n▸ 总账:八个服务合起来")
+_少, _多 = sorted(set(_全部) - set(总账)), sorted(set(总账) - set(_全部))
+_重 = sorted({x for x in 总账 if 总账.count(x) > 1})
+ok7 = not _少 and not _多 and not _重
+print(f"  {'✅' if ok7 else '❌'} ⑦ 八个服务的 tools/list 合起来恰好是全部 {len(_全部)} 个工具,一个不少、不重"
+      + ("" if ok7 else f"  少 {_少[:4]} 多 {_多[:4]} 重 {_重[:4]}"))
+bad += 0 if ok7 else 1
 
 print("\n" + "=" * 74)
 if bad:

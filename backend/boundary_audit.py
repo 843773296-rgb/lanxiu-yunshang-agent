@@ -319,17 +319,17 @@ def a_double_write():
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "agentsite"))
     import guards as _g
-    W = "mcp__shop__assign_task"
+    W = "mcp__work__assign_task"
     args = {"type": "日常运维", "assignee": "林岚", "note": "x", "end": "2026-12-31 18:00"}
     done = [dict(tool="assign_task", key=_g._arg_key("assign_task", args), ok=True)]
-    v = _verdict(W, reads=["mcp__shop__task_types"], writes=done)
+    v = _verdict(W, reads=["mcp__work__task_types"], writes=done)
     if not v: return "已经写成功一次之后,同一轮再写居然放行了"
     raise PermissionError(v)
 
 
 def a_blind_assign():
     """没调 task_types 就派任务 —— 必须被拦。"""
-    v = _verdict("mcp__shop__assign_task", reads=[], writes=[])
+    v = _verdict("mcp__work__assign_task", reads=[], writes=[])
     if not v: return "没查类型就派任务居然放行了"
     raise PermissionError(v)
 
@@ -523,9 +523,12 @@ def a_kb_read_traversal():
 
 
 def a_whitelist():
-    for ns, sch in (("kb", api.KB_SCHEMAS), ("shop", api.SHOP_SCHEMAS), ("task", api.SCHEMAS)):
+    # 10-23 起按业务领域起服务(mcp/domain_server.py):每个领域暴露 domains 里归它的那些
+    import domains as _dm
+    全 = [x["name"] for x in api.SCHEMAS + api.SHOP_SCHEMAS + api.KB_SCHEMAS]
+    for ns in _dm.领域:
         white = set(re.findall(r'"mcp__%s__(\w+)"' % ns, SDK_SRC))
-        real = {x["name"] for x in sch}
+        real = {t for t in 全 if _dm.归属.get(t) == ns}
         if white != real:
             # 约定:返回 = 攻击成功 = 边界破了;抛异常 = 被拦下 = 边界完好
             return f"{ns} 白名单与 MCP 暴露不一致:{sorted(white ^ real)}"
@@ -558,7 +561,9 @@ def a_disallowed():
 def a_strict_mcp():
     if "strict_mcp_config=True" not in SDK_SRC: return "没开 strict_mcp_config"
     declared = set(json.load(open(os.path.join(ROOT, ".mcp.json")))["mcpServers"])
-    code = set(re.findall(r'"(kb|shop|task)":\s*\{', SDK_SRC)) or {"kb", "shop", "task"}
+    # 10-23 起代码里的服务名是 8 个业务领域(sdk._mcp_all 照 backend/domains.py 起),不再字面写在 sdk 里
+    import domains as _dm
+    code = set(_dm.领域)
     if declared & code: return f".mcp.json 的服务名和代码声明重合:{declared & code}"
     raise PermissionError(f".mcp.json 声明的 {sorted(declared)} 全被忽略,只认代码里的")
 

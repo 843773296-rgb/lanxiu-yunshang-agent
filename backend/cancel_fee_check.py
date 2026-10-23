@@ -120,7 +120,7 @@ import prompts
 sys.path.insert(0, os.path.join(ROOT, "agentsite"))
 src = open(os.path.join(ROOT, "agentsite", "sdk.py"), encoding="utf-8").read()
 ck("工具有管它的规矩(TL72),顾问和店长都挂上了",
-   any("cancel_fee" in r_.needs for r_ in prompts.ALL_RULES) and '"mcp__shop__cancel_fee"' in src)
+   any("cancel_fee" in r_.needs for r_ in prompts.ALL_RULES) and '"mcp__finance__cancel_fee"' in src)
 ck("工具不在写工具清单里(只算不退)", "cancel_fee" not in api.WRITE_TOOLS)
 c.close()
 

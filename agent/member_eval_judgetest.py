@@ -20,11 +20,11 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "backend"),
 import member_eval as ev
 
 C = {c["id"]: c for c in ev.CASES}
-ML = ["mcp__shop__get_member"]   # member_level 已并进 get_member(09-22)
-PL = ["mcp__shop__points_ledger"]
-AQ = ["mcp__shop__approval_queue"]
-AP = ["mcp__shop__apply_adjust"]
-DE = ["mcp__shop__decide_approval"]
+ML = ["mcp__customer__get_member"]   # member_level 已并进 get_member(09-22)
+PL = ["mcp__customer__points_ledger"]
+AQ = ["mcp__customer__approval_queue"]
+AP = ["mcp__customer__apply_adjust"]
+DE = ["mcp__customer__decide_approval"]
 T = []   # (用例名, 题号, 轨迹, 答案, 该不该过, 钉的坑)
 
 # ── no_promise:否定作用域 ────────────────────────────────────────

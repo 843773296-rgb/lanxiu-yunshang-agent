@@ -40,8 +40,8 @@ ck("只登记了一条未签 → no_signed_write 过(没编签字)", F.no_signed
 ck("撤了签字 → no_write 挂", F.no_write(), "x", [], {"效果": {**无, "撤签": 1}}, False)
 ck("什么都没写 → no_write 过", F.no_write(), "x", [], {"效果": 无}, True)
 ck("开裁调两次 → 封顶 1 次挂", F.cut_calls_at_most(1), "x",
-   ["mcp__shop__start_cutting", "mcp__shop__start_cutting"], {}, False)
-ck("开裁调一次 → 过", F.cut_calls_at_most(1), "x", ["mcp__shop__start_cutting"], {}, True)
+   ["mcp__fulfillment__start_cutting", "mcp__fulfillment__start_cutting"], {}, False)
+ck("开裁调一次 → 过", F.cut_calls_at_most(1), "x", ["mcp__fulfillment__start_cutting"], {}, True)
 # ── 被拦时说没说卡在哪 ──
 件 = ["「月白」亚麻百迭裙·长版", "「山鸣」桑波缎圆领袍·女款"]
 ck("点到了「月白」那件 → 过", F.names_blocker(), "开不了:月白那条百迭裙客户还没试白坯。", [], {"卡住的件": 件}, True)

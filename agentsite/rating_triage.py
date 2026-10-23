@@ -26,7 +26,7 @@ for _p in (HERE, os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowledge"))
 
 
 def 取了材料吗(轨迹):
-    """这一轮有没有调过取材料那个工具。MCP 工具名带前缀(mcp__shop__service_records),按结尾认。"""
+    """这一轮有没有调过取材料那个工具。MCP 工具名带前缀(mcp__service__service_records),按结尾认。"""
     return any(str((s or {}).get("tool") or "").split("__")[-1] == 取材料的工具 for s in (轨迹 or []))
 
 

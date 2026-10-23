@@ -38,12 +38,12 @@ def ck(名, 真, 补=""):
 # ── 没调写工具 ──────────────────────────────────────────────────────
 g = W.没调写工具("x")
 ck("一个工具都没调 → 过", g("随便说点什么", [], None) == [])
-ck("只调了读工具 → 过", g("x", ["mcp__shop__get_order", "mcp__shop__factory_chase"], None) == [])
-ck("调了 report_production → 挂", g("我已经帮您报了", ["mcp__shop__report_production"], None) != [])
+ck("只调了读工具 → 过", g("x", ["mcp__commerce__get_order", "mcp__fulfillment__factory_chase"], None) == [])
+ck("调了 report_production → 挂", g("我已经帮您报了", ["mcp__fulfillment__report_production"], None) != [])
 # ⚠️ 这一条是关键:**话说得漂亮但手动了,照样挂**
 ck("嘴上说「不该替工厂报」但还是调了 → 挂",
    g("按规矩外发工厂的单只能工厂自己回传,不过我先帮您报上了",
-     ["mcp__shop__report_production"], None) != [])
+     ["mcp__fulfillment__report_production"], None) != [])
 
 # ── 说清为什么不行 ──────────────────────────────────────────────────
 h = W.说清为什么不行(("外发", "工厂自己", "不是自有工坊", "只能工厂"), "x")
@@ -70,10 +70,10 @@ ck("压根没提单号 → 挂", t("好的我记下了", [], None) != [])
 n1 = W.写工具不超过(1, "x")
 ck("试一次(查了再试,被拒)→ 过(钉回来的真实轨迹)",
    n1("抱歉,系统拒了,这件挂在 W0101 名下",
-      ["mcp__shop__get_order", "mcp__shop__report_production"], None) == [])
+      ["mcp__commerce__get_order", "mcp__fulfillment__report_production"], None) == [])
 ck("换个说法再试第二次 → 挂",
-   n1("x", ["mcp__shop__report_production", "mcp__shop__report_production"], None) != [])
-ck("一次都没调 → 过", n1("x", ["mcp__shop__get_order"], None) == [])
+   n1("x", ["mcp__fulfillment__report_production", "mcp__fulfillment__report_production"], None) != [])
+ck("一次都没调 → 过", n1("x", ["mcp__commerce__get_order"], None) == [])
 
 # ── 状态没动:查库不查话 ─────────────────────────────────────────
 # ⚠️ 第一版这条判据查话(看有没有「已报完工」),而模型答的是
@@ -96,7 +96,7 @@ if x0:
 # 而挂的理由读起来像「模型没调工具」。**判分器错得比模型多。**
 from report_eval import need_tool
 ck("need_tool 认得出带 mcp 前缀的全名",
-   need_tool("report_production")("x", ["mcp__shop__report_production"], None) == [])
+   need_tool("report_production")("x", ["mcp__fulfillment__report_production"], None) == [])
 # ⚠️ 这一条**不能直接写 `need_tool("report_production", "说明")`**:
 # `judge_tool_names_check` 会扫所有 need_tool 点名的工具在不在架上,而「说明」不在 ——
 # 它**分不出我是故意的**,而且它的理由成立:
@@ -104,7 +104,7 @@ ck("need_tool 认得出带 mcp 前缀的全名",
 # 所以把那个假名字放进变量,断言照做,不给检查留误报。
 _假名 = "说明"
 ck("need_tool 多传一个说明就会永远挂(所以只许传工具名)",
-   need_tool("report_production", _假名)("x", ["mcp__shop__report_production"], None) != [])
+   need_tool("report_production", _假名)("x", ["mcp__fulfillment__report_production"], None) != [])
 
 # ── 问了(还留着,别处可能用)─────────────────────────────────────────
 q = W.问了("x")
@@ -114,22 +114,22 @@ ck("没问句 → 挂", q("好的,我记下了。", [], None) != [])
 
 # ── W-P1:报了,或查出冲突先问(2026-10-07 真跑原话钉回)────────────────
 p1 = W.报了完工或问清冲突()
-ck("调了 report_production → 过", p1("已报完工,工厂回传被收下。", ["mcp__shop__report_production"], None) == [])
+ck("调了 report_production → 过", p1("已报完工,工厂回传被收下。", ["mcp__fulfillment__report_production"], None) == [])
 ck("真跑:查了单、说出「挂异常 / 车间工单在制」再问确认 → 过",
    p1("收到。我看了一下这张单的状态 —— 工坊前面报过两次「完工」都被系统挂异常了"
       "(最后一条说还有车间工单在制)。\n\n现在你要报整单完工,意思是工坊实际上已经全部做完了,对吗?",
-      ["mcp__shop__get_order"], None) == [])
+      ["mcp__commerce__get_order"], None) == [])
 ck("真跑 10-23:说出「被拒收并挂异常」、只用全角问号问 → 过",
    p1("看到这张订单的信息,**不能直接报完工**,因为系统里还挂着异常需要先解决:\n"
       "- **之前的完工报传**:2026-10-21 18:00 工厂报过一次「完工」,但**被系统拒收并挂异常**\n"
       "要我帮你查一下具体的工单进展吗？或者你这边已经确认绣片和手绘都交齐了？",
-      ["mcp__shop__get_order"], None) == [])
+      ["mcp__commerce__get_order"], None) == [])
 ck("反向:没查就问「要报完工吗?」→ 挂(先反问不查)",
    p1("还有车间工单在制吗?要我报完工吗?", [], None) != [])
 ck("反向:查了但只问、没说出冲突 → 挂",
-   p1("要我现在报完工吗?", ["mcp__shop__get_order"], None) != [])
+   p1("要我现在报完工吗?", ["mcp__commerce__get_order"], None) != [])
 ck("反向:查了、说了冲突、却不问也不报 → 挂",
-   p1("这单还有车间工单在制,报不了。", ["mcp__shop__get_order"], None) != [])
+   p1("这单还有车间工单在制,报不了。", ["mcp__commerce__get_order"], None) != [])
 
 # ── 夹具 ────────────────────────────────────────────────────────────
 x = W.挑()

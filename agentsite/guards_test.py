@@ -41,8 +41,8 @@ COST, FAST, SLOW = BOM["物料成本"], LEAD["最快天数"], LEAD["最慢天数
 ]
 
 def call(tool, out):
-    ns = "shop" if tool.startswith("get_") else "kb"
-    return dict(tool=f"mcp__{ns}__{tool}", input={}, output=out)
+    import domains   # 10-23 起前缀按业务领域(backend/domains.py)
+    return dict(tool=domains.全名(tool), input={}, output=out)
 C_BOM, C_LEAD, C_NO = call("kb_bom", BOM), call("kb_lead", LEAD), call("kb_combo", NO)
 UND = dict(NO, verdict="未定义", rule=None, reason=None)
 C_UND = call("kb_combo", UND)
@@ -324,7 +324,7 @@ CASES += [
 # 而模型说的是「已经**把 C10001** 改成黑金」—— 完成态标记和动作**中间隔着宾语**,
 # 整串接不上。**这个项目在枚举中文说法上栽到第十二次了。**
 # 现在查的是结构:同一个小句里,既有完成态标记、又有「改动生效」的动作。
-_APPLY = [{"tool": "mcp__shop__apply_adjust", "output": "{}"}]
+_APPLY = [{"tool": "mcp__customer__apply_adjust", "output": "{}"}]
 CASES += [
  (True,  "g21_apply_as_done", "声称已经改好(标记和动作隔着宾语)",
   "好的,已经把 C10001 改成黑金了。", _APPLY),
@@ -428,7 +428,7 @@ CASES += [
  # 用户 2026-10-12 试周报钉回:内部经营报告里的类目清单不是对顾客的许诺(调过 store_report、没有对客话术才放)
  (False, None, "真跑钉回:周报里列差评处理方式类目(调过 store_report)—— 不许误拦",
   "4. **4 条差评待处理** —— 建议逐条跟进,按处理方式记录(回访 / 改衣 / 保养 / 优惠 / 部分退 / 全额退)",
-  [dict(tool="mcp__shop__store_report", input={}, output={})]),
+  [dict(tool="mcp__analytics__store_report", input={}, output={})]),
  (True,  "g23_discount_promise", "同一句话、但这一轮没调 store_report → 照旧拦(放宽只认内部报告)",
   "4. **4 条差评待处理** —— 建议逐条跟进,按处理方式记录(回访 / 改衣 / 保养 / 优惠 / 部分退 / 全额退)", []),
  # 用户 2026-10-16 批准:退款研判里「申请」+ 退款金额不是让价(查过押金 / 退款轨迹、没有对客话术才放)
@@ -442,7 +442,7 @@ CASES += [
   [call("get_refund_trace", {"轨迹": [{"金额": 800}]})]),
  (True,  "g23_discount_promise", "调过 store_report,但报告里夹着对顾客说的让价话 → 那部分照旧拦",
   "本周营收 210.9 万元。\n跟顾客可以这样说:\n> 「这单我给您打个九折。」",
-  [dict(tool="mcp__shop__store_report", input={}, output={})]),
+  [dict(tool="mcp__analytics__store_report", input={}, output={})]),
  # ── 不许误拦:许的是能让的三样、或者跟钱无关的事 ──
  # ⚠️ 下面这条是**句号级粒度的代价**:整句里既有金额又有「问问」,靠第③层(许的是改衣)才放过的。
  # ⚠️ 报金额得带真实工具返回 —— **这一条我第一版又写成了空 calls,当场被 g1 拦**(同一个坑第二次)。
@@ -759,11 +759,11 @@ _题带数 += [   # 10-07 干净重跑的扣下留底
      "6488012800001290371 这单已经签收了。", [call("bad_ratings", {"条数": 2})], "这单到哪了"),
     (False, "g1_no_source", "真跑钉回(页面·九月订单):「往前倒了 38 天」是自己传给工具的 days=38",
      "我按\"交付\"(到客户手上/订单完成的时间)往前倒了 38 天,拿到的区间是 **2026-08-31 ~ 2026-10-08**。",
-     [{"tool": "mcp__shop__orders_by_date", "input": {"field": "交付", "direction": "往前", "days": 38, "limit": 50},
+     [{"tool": "mcp__commerce__orders_by_date", "input": {"field": "交付", "direction": "往前", "days": 38, "limit": 50},
        "output": {"总数": 1997}}], "帮我查九月有哪些订单已完成"),
     (True,  "g1_no_source", "反面:入参里没有 38,「整单工期 38 天」照样要出处",
      "这件整单工期 38 天能交付。",
-     [{"tool": "mcp__shop__orders_by_date", "input": {"field": "交付", "days": 30}, "output": {"总数": 1}}], "这件多久能做好"),
+     [{"tool": "mcp__commerce__orders_by_date", "input": {"field": "交付", "days": 30}, "output": {"总数": 1}}], "这件多久能做好"),
     # ── 10-08 运维重跑:g1 三处误拦(原话照抄)──
     (False, "g1_no_source", "真跑钉回(运维 T02):「张三 70% + 李四 30%」是举例的占位数",
      "**不是算错的。** 影响力分成可以超过 100%,这是正常的。\n一单可以同时是「收入:张三 70% + 李四 30%」"
@@ -865,7 +865,7 @@ _放行 = [名 for 名, t in 典型结论 if not guards.check_answer(t, [])]
 # ⚠️ **第二档:调了别的工具、但没调该调的那个。**
 # 这一档才是常见情况 —— 模型很少一个工具都不调。
 # 2026-09-21 夜实测:补完第一档之后,随便调个 kb_tables 就能让身高/库存/积分全放行。
-_无关 = [{"tool": "mcp__kb__kb_tables", "output": "{}"}]
+_无关 = [{"tool": "mcp__knowledge__kb_tables", "output": "{}"}]
 _放行2 = [名 for 名, t in 典型结论 if not guards.check_answer(t, _无关)]
 print()
 if _放行:

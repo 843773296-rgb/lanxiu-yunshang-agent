@@ -37,9 +37,9 @@ import guards as g
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 bad = 0
-W, B = "mcp__shop__assign_task", "mcp__shop__assign_batch"
-F, DP = "mcp__shop__finish_task", "mcp__shop__dispatch_task"
-READ = ["mcp__shop__task_types"]
+W, B = "mcp__work__assign_task", "mcp__work__assign_batch"
+F, DP = "mcp__work__finish_task", "mcp__work__dispatch_task"
+READ = ["mcp__work__task_types"]
 A1 = {"type": "日常运维", "assignee": "林岚", "note": "x", "end": "2026-12-31 18:00"}
 A2 = {"type": "日常运维", "assignee": "周叙", "note": "y", "end": "2026-12-31 18:00"}
 
@@ -88,7 +88,7 @@ def main():
     # 这条用例(只测「用批量不该被复合闸拦」)必须带上 week_grid,
     # 否则它测的就变成了另一条规矩 —— 而它会红,红的原因和它想测的东西无关。
     ck("复合请求用批量(已看过格子)",
-       g.pre_tool_verdict(B, {"items": []}, "把这三条都派了", ["mcp__shop__week_grid"], []), False)
+       g.pre_tool_verdict(B, {"items": []}, "把这三条都派了", ["mcp__work__week_grid"], []), False)
     # **闸指的那条路必须真的通。**
     # 上一版不管什么动作都让改用 assign_batch,而 assign_batch 是新建任务的,
     # 派不了待分配池里已存在的单 —— 影子埋点抓到:模型被拦之后两条路都没走成,
@@ -126,11 +126,11 @@ def main():
     ck("没看格子就排班", g.pre_tool_verdict(B, {"items": []}, "排下周班", [], []),
        True, "week_grid")
     ck("看过格子再排班", g.pre_tool_verdict(B, {"items": []}, "排下周班",
-       ["mcp__shop__week_grid"], []), False)
-    ck("没看池子就批量分派", g.pre_tool_verdict("mcp__shop__dispatch_batch", {"items": []},
+       ["mcp__work__week_grid"], []), False)
+    ck("没看池子就批量分派", g.pre_tool_verdict("mcp__work__dispatch_batch", {"items": []},
        "把待分配的都派了", [], []), True, "get_tasks")
-    ck("看过池子再分派", g.pre_tool_verdict("mcp__shop__dispatch_batch", {"items": []},
-       "把待分配的都派了", ["mcp__shop__get_tasks"], []), False)
+    ck("看过池子再分派", g.pre_tool_verdict("mcp__work__dispatch_batch", {"items": []},
+       "把待分配的都派了", ["mcp__work__get_tasks"], []), False)
     # **单条动作不受这条管** —— 判宽了会天天拦正常的活
     ck("单条派任务不要求先看格子", g.pre_tool_verdict(W, A1, "派一条", READ, []), False)
 
@@ -138,7 +138,7 @@ def main():
     print("  " + "=" * 78)
     for t in ("Bash", "Write", "Read", "Task", "WebFetch"):
         ck(f"{t}", g.pre_tool_verdict(t, {}, "随便", [], []), True)
-    ck("读工具不受写闸管", g.pre_tool_verdict("mcp__shop__get_tasks", {}, "把这三条都派了", [],
+    ck("读工具不受写闸管", g.pre_tool_verdict("mcp__work__get_tasks", {}, "把这三条都派了", [],
        [att("assign_task", A1, ok=True)]), False)
 
     print("\n\033[1m▸ 写工具清单只有一个来源\033[0m")
@@ -188,7 +188,8 @@ def main():
        None if "WRITE_TOOLS" in _in.getsource(_fn.turn) else "还在手抄", False,)
     src = open(_o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "sdk.py"),
                encoding="utf-8").read()
-    miss = [t for t in _api.WRITE_TOOLS if f'"mcp__shop__{t}"' not in src]
+    import domains as _dm   # 10-23 起前缀按业务领域(backend/domains.py),不再一律是 shop
+    miss = [t for t in _api.WRITE_TOOLS if f'"{_dm.全名(t)}"' not in src]
     ck("每个写工具都在 sdk 白名单里", str(miss) if miss else None, False,
        "  ← 挂了工具没进白名单,这个坑漏过一次")
 
@@ -203,7 +204,7 @@ def main():
     print("  " + "=" * 78)
     # 2026-09-24:签收评测抓到模型自己编了一个物流单号(用户只说「帮我转寄」)。
     # 同一个形状扫下来还有两处:**量体的尺寸数值**(编出来的会被拿去裁布)、**返修的预估费用**。
-    RM = "mcp__shop__record_measure"
+    RM = "mcp__customer__record_measure"
     条件 = dict(inner="薄", shoe="赤足", breath="平静呼气")
     ck("用户报了尺寸 → 放行",
        g.pre_tool_verdict(RM, dict(wearer_id="W1", values={"胸围": 88, "腰围": 72}, **条件),
@@ -214,7 +215,7 @@ def main():
     ck("小数点写法不同(72.0 对 72)不误拦",
        g.pre_tool_verdict(RM, dict(wearer_id="W1", values={"腰围": 72.0}, **条件),
                           "腰围 72,薄内搭赤足平静呼气", READ, []), False)
-    DR = "mcp__shop__decide_repair"
+    DR = "mcp__service__decide_repair"
     基 = dict(maintain_id="MT1", liable="顾客", plan="返修", customer_agreed=True,
              agree_note="顾客电话同意 300 元")
     ck("用户报了费用 → 放行",
@@ -238,7 +239,7 @@ def main():
     from seed import TODAY as 业务今天
     后五天 = (_dt.date.fromisoformat(业务今天) + _dt.timedelta(days=5)).isoformat()
     前一天 = (_dt.date.fromisoformat(业务今天) - _dt.timedelta(days=1)).isoformat()
-    PF = "mcp__kb__plan_for_event"
+    PF = "mcp__commerce__plan_for_event"
     ck(f"业务今天之后 5 天({后五天})的婚期不拦", g.pre_tool_verdict(PF, {"event_date": 后五天, "wearer_id": "W1"},
        "婚礼", READ, []), False)
     ck(f"业务今天前一天({前一天})的婚期拦下", g.pre_tool_verdict(PF, {"event_date": 前一天, "wearer_id": "W1"},
@@ -247,7 +248,7 @@ def main():
     # ── 转寄的物流单号只能照抄用户的(2026-09-24 评测抓到模型编了一个 SF2321616818)──
     print("\n\033[1m▸ 转寄 · 单号不许编\033[0m")
     print("  " + "=" * 78)
-    RP = "mcp__shop__record_pickup"
+    RP = "mcp__fulfillment__record_pickup"
     寄 = lambda 号: {"order_id": "O1", "action": "取件方式", "mode": "转寄", "tracking_no": 号}
     ck("单号是用户说的 → 放行", g.pre_tool_verdict(RP, 寄("SF1234567890"),
        "顾客来不了,帮我转寄,单号 SF1234567890", READ, []), False)

@@ -41,7 +41,7 @@ def main():
 
     # 走 sdk 真用的那个入口(记一轮),喂轨迹,不直接喂技能名 —— 「从轨迹里挑」本身也要被验到
     def 调(n): return {"tool": "Skill", "args": {"skill": n}}
-    读 = {"tool": "mcp__kb__kb_read", "args": {}}
+    读 = {"tool": "mcp__knowledge__kb_read", "args": {}}
     SS.记一轮([读], "随便问问")
     SS.记一轮([调("quote"), 读, 调("growth-plan")], "报个价顺便看看明年能不能穿")
     SS.记一轮([调("quote"), 调(第三方)], "报价 + 查淘宝库存")

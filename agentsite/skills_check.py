@@ -82,11 +82,14 @@ print(f"  {'✅' if set(declared)==set(found) else '❌'} 目录里每个技能�
 import re as _re
 _src = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
 sys.path.insert(0, os.path.join(HERE, "..", "backend"))
-import api as _api
-_GROUPS = {"kb": _api.KB_SCHEMAS, "shop": _api.SHOP_SCHEMAS, "task": _api.SCHEMAS}
+import api as _api, domains as _dm
+# 10-23 起按业务领域起服务(mcp/domain_server.py):每个领域暴露的就是 domains 里归它的那些,
+# 实际暴露的工具集从 api 的全部 schema 按归属挑 —— 和服务端同一个挑法
+_全 = {x["name"] for x in _api.SCHEMAS + _api.SHOP_SCHEMAS + _api.KB_SCHEMAS}
+_GROUPS = {d: [t for t in _全 if _dm.归属.get(t) == d] for d in _dm.领域}
 for _ns, _sch in _GROUPS.items():
     _white = set(_re.findall(r'"mcp__%s__(\w+)"' % _ns, _src))
-    _real = {x["name"] for x in _sch}
+    _real = set(_sch)
     _miss, _dead = sorted(_real - _white), sorted(_white - _real)
     if _miss:
         bad.append(f"MCP {_ns} 暴露了 {_miss} 但 sdk 白名单里没有 —— 模型看得见却用不了")
@@ -175,6 +178,6 @@ print("✅ Skill 与配置面自查通过")
 # 有一份可执行的规格**,`python3 tools/bite_run.py` 能重放:对照要先绿,改坏之后
 # 要红,而且红的必须是右边这一条 —— 三关缺一关,这条记录就不算数。
 咬合 = [
-    ('从 sdk 的白名单里删掉一个 kb 工具(MCP 暴露了,模型看得见却用不了)',
+    ('从 sdk 的白名单里删掉一个知识领域的工具(MCP 暴露了,模型看得见却用不了)',
      '模型看得见却用不了'),
 ]

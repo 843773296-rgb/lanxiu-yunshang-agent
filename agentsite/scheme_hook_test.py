@@ -82,7 +82,7 @@ def main():
     post_tool = hooks["PostToolUse"][0].hooks[0]
 
     # ── ① 按号取过单条 → 下一轮注进去 ────────────────────────────
-    跑(post_tool, {"tool_name": "mcp__shop__get_scheme",
+    跑(post_tool, {"tool_name": "mcp__commerce__get_scheme",
                   "tool_input": {"scheme_id": 单["方案号"]},
                   "tool_response": 单}, None, None)
     有没有记 = state.get("当前方案", {}).get("号") == 单["方案号"]
@@ -99,7 +99,7 @@ def main():
     state1b = {}
     hooks1b = 造hook(state1b)
     跑(hooks1b["PostToolUse"][0].hooks[0],
-       {"tool_name": "mcp__shop__get_scheme", "tool_input": {"scheme_id": 单["方案号"]},
+       {"tool_name": "mcp__commerce__get_scheme", "tool_input": {"scheme_id": 单["方案号"]},
         "tool_response": [{"type": "text", "text": json.dumps(单, ensure_ascii=False)}]}, None, None)
     ck("①b 真服务那种返回形状(内容块列表)也记得住当前方案",
        state1b.get("当前方案", {}).get("号") == 单["方案号"],
@@ -111,7 +111,7 @@ def main():
     hooks2 = 造hook(state2)
     清单 = api.get_scheme(customer=单["客户号"])
     跑(hooks2["PostToolUse"][0].hooks[0],
-       {"tool_name": "mcp__shop__get_scheme",
+       {"tool_name": "mcp__commerce__get_scheme",
         "tool_input": {"customer": 单["客户号"]},
         "tool_response": 清单}, None, None)
     r2 = 跑(hooks2["UserPromptSubmit"][0].hooks[0], {"prompt": "就按那个下单"}, None, None)
@@ -152,7 +152,7 @@ def main():
     on_compact = h5["PreCompact"][0].hooks[0]
 
     单号 = _一张订单号()
-    跑(pt5, {"tool_name": "mcp__shop__get_order",
+    跑(pt5, {"tool_name": "mcp__commerce__get_order",
             "tool_input": {"order_id": 单号}, "tool_response": {}}, None, None)
     ck("⑥ 按号取过订单 → 记成锚点",
        (state5.get("锚点") or {}).get("订单号") == 单号,
@@ -160,7 +160,7 @@ def main():
 
     state6 = {}; h6 = 造hook(state6)
     跑(h6["PostToolUse"][0].hooks[0],
-       {"tool_name": "mcp__shop__get_order",
+       {"tool_name": "mcp__commerce__get_order",
         "tool_input": {"customer": "C10000"}, "tool_response": {}}, None, None)
     ck("⑦ 按客户列订单清单**不算**取过",
        not (state6.get("锚点") or {}).get("订单号"),

@@ -137,9 +137,9 @@ ck("不给被判包裹 → 哪个服务的 env 里都没有(聊天、复核不�
 # ── ④ 落库记版本 + 调没调取材料的工具 ─────────────────────────────────
 import rating_triage as RTR
 ck("轨迹里调过 service_records → 认作取了材料",
-   RTR.取了材料吗([{"tool": "mcp__shop__bad_ratings"}, {"tool": "mcp__shop__service_records"}]))
+   RTR.取了材料吗([{"tool": "mcp__service__bad_ratings"}, {"tool": "mcp__service__service_records"}]))
 ck("只调了别的工具 → 认作没取材料(不是「有工具调用就算」)",
-   not RTR.取了材料吗([{"tool": "mcp__shop__bad_ratings"}, {"tool": "mcp__kb__kb_tables"}]))
+   not RTR.取了材料吗([{"tool": "mcp__service__bad_ratings"}, {"tool": "mcp__knowledge__kb_tables"}]))
 def _拒了(f):
     try:
         f(); return False
@@ -152,7 +152,7 @@ ck("没身份不跑(service_records 没身份取不到材料,跑了只会得到�
 if 评:
     t = c.execute("SELECT id FROM task WHERE type='评价差评' ORDER BY id LIMIT 1").fetchone()
     if t:
-        版 = RTR.版本记([{"tool": "mcp__shop__service_records"}])
+        版 = RTR.版本记([{"tool": "mcp__service__service_records"}])
         tid = ops.save_triage(t["id"], "BP-差评", 评["pkg_id"], "根因:检查\n建议动作:送保养", [], prompt_ver=版)
         存 = c.execute("SELECT prompt_ver FROM triage WHERE id=?", (tid,)).fetchone()
         ck("落库记下哪版提示词 + 这一轮调没调 service_records",
