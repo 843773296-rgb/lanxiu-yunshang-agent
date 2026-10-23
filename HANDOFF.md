@@ -15,66 +15,44 @@
 
 
 
-## 🧊 压缩前交接 · 2026-10-23 下午(主会话)
+## 🧊 压缩前交接 · 2026-10-23 傍晚(主会话)
 
-最后刷新:2026-10-23 约 15:00 · 上下文 79% · 本次变化:开了两批并行子任务(git worktree),合并到主检出;MCP 拆 8 领域 / Skill 后台 / MCP 后台 / 读接口要登录 / 复审 A B D 已推;C、E、经营报告 Skill 已合未推
+最后刷新:2026-10-23 约 17:00 · 上下文 ~90% · 本次变化:四个子任务全部合入并推送(907f2de);运行目录按检出分开;召回判分「算对的数≠编的数」已提交未推(c9c65d0);用户说「剩下的都做完」
 
-### 现在在哪(主检出 `main`,比 origin 多若干提交,**还没推**)
-- 已推(origin 693df82):MCP 拆 8 领域、MCP 服务与工具管理页、Skill 管理后台、读接口要登录(26 个)、复审 A 客户摘要、B 方案搜客户选着装人、D 预警转任务、常驻服务(launchd)。
-- **本地已合、未推**:经营报告 Skill(5 提交)、复审 E 知识问题入口、表数 129 / 技能数 8 文档、2be62ae(合并 E 时 MCP 写口丢 return 的修复 + 修订版本不许整串是日期)。
-- 上一轮全量(gate-1023i)**红 1 条 = mcp_registry_check 4 处**,原因已查实已修(2be62ae),**修后没再跑全量**。
-- **子任务 C(报告受控模板)已交回、还没合**:分支 `worktree-agent-a6bd14a887a935c8c` 提交 `2e13a2b`;它给 store_report_doc 加了 template_ver 列、改了 report_doc.保存 / 取、api.store_report / save_report 的 kind 默认 None。合并时表数要 +1(report_template_ver)→ 130。
-- **还在跑的子任务**:客户召回 Skill(`worktree-agent-a7ced631cc25278be`)、差评与维修研判 Skill(`…a03a3524f3a80e8af`)、第三方 Skill 审查改造(`…a4292c3f1e608b03e`)。都在排队跑真模型评测(评测锁 /tmp/lanxiu-eval.lock)。交回后照 `merge_specs` 合。
+### 现在在哪
+- **origin = 907f2de**,常驻服务已重启。已上线:报告受控模板(C)、经营报告 / 差评与维修研判 / 客户召回三个自有 Skill(OURS 共 10 个)、第三方 236 个审查清单 + 改造 3 个(状态仍「已安装待审查」)、运行目录按检出分开、判定表行号现算。
+- **本地多 1 个提交未推**:c9c65d0(召回判分器:运算两头都写在回答里且算对的放过;reactivate 断节奏理由带「是平均的 X 倍」)。只跑了相关检查 + 咬合 11/11,**没跑全量**。
+- 子任务 worktree 都已交回、已合;worktree 目录还在 `.claude/worktrees/`(没删,删前先看)。
 
 ### 1. 未验证的预判
-- 🔮 **预判**:2be62ae 之后全量会绿。**没验。** 验法:`./tools/gate_lock.sh --who 主会话 ./check.sh`,看退出码。
-- 🔮 **预判**:C 合进来只会在 index.html / server.py / api.py / check.sh / bite_specs / ensure_tables / 文档表数上冲突。**没验。** 验法:cherry-pick 2e13a2b,冲突文件逐个看;**server.py 别再无脑「两边都保留」**(见判据 ②)。
-- 🔮 **预判**:经营报告 Skill 的结果评测不稳主要因为 RPT000001 期被挪歪。**半验**(删掉那份后 1 过 1 没走流程)。等数据工厂改回那一行后重跑 `agent/store_report_eval.py` 两轮(走评测锁)。
+- 🔮 **预判**:c9c65d0 全量会绿。**没验。** 验法:全量走锁。
+- 🔮 **预判**:召回结果评测在新判据下(顾问入口 `RECALL_ROLE=kb`)会从 0/5 升到多数过。**没验。** 验法:`LANXIU_PROVIDER=claude ANTHROPIC_MODEL=claude-haiku-4-5 RECALL_ROLE=kb LANXIU_LOCK_DIR=/tmp/lanxiu-eval.lock tools/gate_lock.sh ./agentsite/.venv/bin/python agent/recall_eval.py`(现在默认两轮)。
+- 🔮 **预判**:经营报告评测不稳主要因 RPT000001 被挪歪。半验,等数据工厂落期对齐后重跑 `agent/store_report_eval.py`。
 
 ### 2. 判据
-- ① 合并子任务的咬合登记表用 scratchpad 的 `merge_specs.py <提交>`:**以主线为底 + 只接那个提交的纯新增,并丢掉它替换掉的旧版**(数据工厂踩过「新旧两版都留」)。脚本若丢了:逻辑是 父=show(c^)、我=show(c)、底=show(HEAD);out=底−(父−我)+(我−父−底)。
-- ② **server.py 冲突不能无脑「两边都保留」**:两边共用的最后一行(return)会被一边偷走 → 写口执行完掉到 404。合完必须跑所有写口检查(mcp_registry / skill_registry / kb_issue / customer_read_auth / scheme_customer_search / alert_dispatch / authgate / page_smoke)。
-- ③ 子任务不跑全量门禁(用户要提速、机器 10 核负载 9–10,并发门禁会让带超时的检查假红);全量只在合并后的主检出跑一次,走 `tools/gate_lock.sh`。
-- ④ 生成文件(安全边界审计.md、待办清单.md、README.md)冲突一律取主线再重生成,不三方合并。
-- ⑤ 拉代码**不用 --autostash**(stash 栈全仓共享);主检出那三份运行日志(.feynman/tool-eval.json、agentsite/evals/funnel.jsonl、skill_usage.jsonl)先复制到 scratchpad、checkout 掉、变基完再放回。
+- ①–⑤ 同上一版(merge_specs 合咬合登记;server.py 冲突别两边都留;子任务不跑全量;生成文件取主线再重生成;不用 --autostash)。merge_specs.py 在 scratchpad,**会写文件本身,别重定向它的 stdout 去覆盖 bite_specs.json**(10-23 踩过,清空了一次)。
+- ⑥ 多个子任务往 skill_trigger.json 末尾加题撞号:按段重编(经营报告 201–、第三方 301–、差评维修 401–、召回 501–)。
+- ⑦ **全能助手入口上下文 = 底座约 2.6 万 + 每个中文字约 1.67 token × (89 个工具说明 6 万字 + 规矩 4 万字)≈ 19.3 万**(实测 all 192665 / kb 129673 / task 164757 / 带不带技能几乎一样)。Haiku 窗口 20 万,召回这类取两份名单必崩。
 
 ### 3. 作废的结果
-- ❌ gate-1023i(706dc69 上那轮全量)**不作数**:红在 MCP 写口丢 return,已修,要重跑。
-- ❌ 经营报告 Skill 子任务早期那几轮真模型评测,和召回 / 差评子任务**同时跑过**(共享运行目录 `~/.lanxiu-runtime/.claude` 会被各工作区改指),结果可能被污染。
+- ❌ gate-1023n 跑的过程中我改了 recall_eval.py(未提交),那轮的绿只证明已提交部分。
+- ❌ 子任务早期真模型评测(运行目录共享时)可能被串,不作基线。
 
 ### 4. 禁区(逐字)
-- 「0:00–4:55 窗口期不动夜跑会 import 的代码、不占库、不起服务」
-- 「不碰差评正式题和第 4 节动手」—— 第 4 节用户 10-23 已改口全做;**差评正式考仍然不跑**。
-- 数据工厂说「**归我做,你别碰 `shift_world` 和 `store_report_doc`**」(报告期按整周挪 / RPT000001 改回);「挽回清单一键建跟进、报价一键转订单、待核实队列写回知识库、推档档差写回、咬合欠债」归数据工厂。
-- 主检出 `agentsite/.claude/skills/` 是共享目录:**不挪、不改、不删**(10-23 我挪过一次一分钟,已认错)。
-- 子任务提示词里写死:完全不许用 git stash;真模型评测包 `LANXIU_LOCK_DIR=/tmp/lanxiu-eval.lock tools/gate_lock.sh`。
+- 同上一版:窗口期规矩;「差评正式考仍然不跑」;数据工厂说「**归我做,你别碰 `shift_world` 和 `store_report_doc`**」;主检出 `agentsite/.claude/skills/` 不挪不改不删。
+- 造数脚本 `backend/seed.py` 3259/3262 证据文本里的「第五节第 2 / 3 行」已落库,改要重建共享库 —— **先不动**。
 
 ### 5. 下一步第一个动作
-1. `cd ~/Desktop/澜绣云裳agent && ./tools/gate_lock.sh --who 主会话 ./check.sh > <scratchpad>/gate.log 2>&1; echo $?` —— 绿了:`./tools/scan_secrets.sh`、`git fetch` 后核 `merge-base HEAD origin/main == origin/main`、`git push`、`./tools/always_on.sh restart`、SendMessage 告诉数据工厂(`uds:/tmp/cc-socks/71443.sock`,名 eureka-dd)。
-2. 合 C:`git cherry-pick 2e13a2b`,解冲突(判据 ①②④),`ensure_tables` 走锁建 report_template_ver,文档表数 → 130,跑 report_template_check 等,再全量、推。
-3. **修运行目录按工作区分开**(`agentsite/runtime.py`,`~/.lanxiu-runtime/.claude` 全机共用、各工作区改指)—— 数据工厂建议排在功能前面:它污染所有真模型评测、分数上看不出来。
-4. 报告正文:数据工厂把「期对齐」做成 `tools/realign_report_periods.py`(只改 period 两列,**等两半一起落**),**正文那一半归我**。⚠️ 我还没回它:store_report_doc 的正文是**模型写的**,不是模板生成的,没法「重渲染」—— 要和数据工厂、用户商量怎么改(候选:按该报告的校正量只挪正文里落在旧报告期内的日期;或正文不动、页面上标注)。另外它指出 pack 里混着来路日期(「用户 2026-10-20 定」)被平移误挪 —— 结构修法是 pack 只在已知键里挪日期。
-5. 剩下的子任务交回后逐个合。
+1. 全量走锁跑 c9c65d0 → 绿了扫密钥、核 merge-base、push、restart。
+2. 等数据工厂回「报告正文」方案(已发:正文不改写,页面按 op_log 里的 before/after period 标注「统计期已于 X 按整周校正」;pack 只挪已知键)。它同意后做页面标注,两半一起推,再重跑经营报告评测两轮。
+3. 全能助手入口太胖 —— **要用户拍**(见第 6 节),拍了再做。
+4. 重跑召回结果评测两轮验上面那条预判。
 
-### 6. 悬而未决(等用户拍)
-- **D 的三张选型卡**:① 同一次超期已办完能否再派(现状不能;我建议改成能)② 店长能否把补货跟进派给总部运营(现状不能)③ 未回接单类办完后能否再派(现状不能)。
-- **B 的搜索规则**(暂定):姓名包含即命中 / 客户号整号 / 尾号≥4 位 / 最多 20 条;只有一个着装人也要点选。
-- **C 的五张选型卡**:能否多加必选项;章节能否混放期内存量;新增指标默认显示还是隐藏;隐藏项要不要在规矩里明写不进正文;改模板要不要走草稿→试运行→发布。
-- **退款判分器**:模型说「核实没到账再按原幂等号重试」算对还是错(现状算错,我建议维持)。
-- 报告正文怎么改(见第 5 步第 4 条)。
-
-### 原来的排期表(10-23 早上立的,状态更新)
-| 项 | 状态 |
-|---|---|
-| 读接口要登录 | ✅ 已推 |
-| Skill 统计四处 | ✅ 已推 |
-| MCP 拆 8 领域 + MCP 管理页 | ✅ 已推 |
-| Skill 后台完整配置页 | ✅ 已推 |
-| 新 Skill:经营报告 | 🟡 已合未推;召回 / 差评维修 子任务在跑 |
-| 第三方审查改造 | 🟡 子任务在跑 |
-| 复审 A / B / D | ✅ 已推 |
-| 复审 C | 🟡 交回未合 |
-| 复审 E | 🟡 已合未推 |
+### 6. 悬而未决(等用户拍)—— 用户说「剩下的都做完」,有建议的按建议落,没建议的维持现状,最后统一列给他
+- **全能助手入口太胖**(新):候选 A 开工具按需加载(放行 ToolSearch,工具说明不再全量进上下文,省约 10 万;要动安全守卫 —— 只读的元工具)/ B 这个入口换 100 万窗口的模型(每次贵)/ C 不再把全能助手当默认入口,按岗位进 / D 精简工具说明和规矩(慢、只省两三成)。
+- 门店顾问入口要不要补 get_member(顾问看得到档位 vs 每次调用更贵)。
+- 客户召回是否先降「试运行」;三个改造版第三方 Skill 是否放进「试运行」。
+- D 三张选型卡(我建议 ① 改成能再派,②③ 维持)、B 搜索规则(暂定)、C 五张卡(无建议 = 维持现状)、退款判分器(建议维持算错)。
 
 ## 🌙 今晚长期任务 · 2026-10-22 20:00 → 10-23 早(主会话,用户说「一整晚都是你的」)
 
