@@ -50,10 +50,16 @@ def 建表(c):
             c.execute(f"ALTER TABLE order_contract ADD COLUMN {列} {型}")
 
 
-def 生成(c, order_id, me, 今天, 七天确认=None):
-    """在调用方的事务里写一份确认书。**出任何错都抛** —— 让确认下单一起回滚。返回链接。
-    七天确认 = {时间, 账号}:缺了 contract_terms.拼正文 会抛(没勾过的不生成)。"""
-    建表(c)
+def 拼这一单(c, order_id, 今天, 七天确认=None):
+    """按库里现在的数据,拼出这一单确认书的**正文 + 快照用的明细和合计**。
+
+    ⚠️ **抽出来是为了让它只剩一份。** `生成()` 和「重渲染已有的那份」
+    (`tools/backfill_contracts.py --重渲染`)用的都是这个函数 ——
+    各写一份的话,补出来 / 重渲染出来的确认书和新签的**长得不一样**,
+    而两边分别看都正常。`backfill_contracts.py` 的设计条①写的就是这件事。
+
+    返回 (正文, 明细, 合计)。出任何错都抛。
+    """
     o = c.execute("SELECT o.id, o.shop, o.amount, o.received, o.wearer_id, cu.name FROM ordr o "
                   "LEFT JOIN customer cu ON cu.id=o.customer_id WHERE o.id=?", (order_id,)).fetchone()
     if not o:
@@ -71,6 +77,14 @@ def 生成(c, order_id, me, 今天, 七天确认=None):
     合计 = float(o[2] or sum(x["金额"] for x in 明细))
     正文 = K.拼正文(订单号=order_id, 门店=o[1], 顾客=o[5] or "—", 下单日=str(今天)[:10], 明细=明细,
                   合计=合计, 已付=float(o[3] if o[3] is not None else 合计), 着装人=着装人, 七天确认=七天确认)
+    return 正文, 明细, 合计
+
+
+def 生成(c, order_id, me, 今天, 七天确认=None):
+    """在调用方的事务里写一份确认书。**出任何错都抛** —— 让确认下单一起回滚。返回链接。
+    七天确认 = {时间, 账号}:缺了 contract_terms.拼正文 会抛(没勾过的不生成)。"""
+    建表(c)
+    正文, 明细, 合计 = 拼这一单(c, order_id, 今天, 七天确认)
     c.execute("INSERT INTO order_contract(order_id, terms_ver, body, snapshot, created_at, created_by, no7_ack_at, no7_ack_by) "
               "VALUES(?,?,?,?,?,?,?,?)",
               (order_id, K.版本, 正文, json.dumps(dict(明细=明细, 合计=合计), ensure_ascii=False),
