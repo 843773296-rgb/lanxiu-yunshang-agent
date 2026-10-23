@@ -858,7 +858,9 @@ _ROLE_TOOLS = {
     # 全能助手:所有工具一次给全。**分装的机制没删**,只是默认入口先合起来。
     "all":      lambda: sorted(set(KB_TOOLS + KB_ONLY_TOOLS + WORKSHOP_TOOLS
                                    + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS)),
-    "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS,
+    # 门店顾问要看得到客户档位(用户 10-23 拍「补上」)—— 召回名单真跑时顾问入口拿不到档位,
+    # 只能写「档位未知」。管它的规矩(TL19 / TK08 / TK09)按 needs 跟着工具进,P6 会验。
+    "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS + ["mcp__customer__get_member"],
     "workshop": lambda: WORKSHOP_TOOLS,           # 工坊不看订单流水,只看产能和工单
     "task":     lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS,
     # 财务只对账,**不看量体/版型/产能** —— 给多余的工具它就会去用。
