@@ -37,7 +37,25 @@ TL01「只说知识库里查到的」被架空),以及内部信息暴露给模�
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RUNTIME = os.path.expanduser("~/.lanxiu-runtime")
+
+
+def _按检出分():
+    """**每份检出一个运行目录** —— 主检出照旧 `~/.lanxiu-runtime`(常驻服务在用),
+    其余检出(git worktree、bite_run 的副本)各用 `~/.lanxiu-runtime-wt/<路径哈希>`。
+
+    为什么(2026-10-23):原来全机一个目录,`ensure()` 每次把里面的 `.claude` 改指回「自己那份检出」。
+    四个并行子任务各在自己的 worktree 跑真模型评测,谁后起谁赢 —— 新技能在别人那份检出里不存在,
+    触发评测量成「漏触发」,**而分数上看不出是被串了**。判主检出靠 `.git` 是目录(worktree 里是文件、副本里没有)。
+    """
+    import hashlib
+    根 = os.path.realpath(os.path.dirname(HERE))
+    if os.path.isdir(os.path.join(根, ".git")):
+        return os.path.expanduser("~/.lanxiu-runtime")
+    return os.path.join(os.path.expanduser("~/.lanxiu-runtime-wt"),
+                        hashlib.sha1(根.encode("utf-8")).hexdigest()[:12])
+
+
+RUNTIME = _按检出分()
 
 
 def ensure():

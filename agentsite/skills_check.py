@@ -119,6 +119,20 @@ if 放开:
                    f"放开了 project 设置源,这些会整份进系统提示词")
     if not os.path.isdir(os.path.join(_rt.RUNTIME, ".claude", "skills")):
         bad.append("运行目录里没有 .claude/skills —— 隔离住了,但 Skill 也没了")
+    # 每份检出一个运行目录(2026-10-23):把 runtime.py 放进一份**没有 .git 的副本**里现算,
+    # 它拿到的目录必须和本检出的不同 —— 全机共用一个时,并行 worktree 的评测会互相把技能改指走
+    import subprocess as _sp, tempfile as _tf, shutil as _sh
+    _d = _tf.mkdtemp(prefix="rtck-")
+    try:
+        os.makedirs(os.path.join(_d, "agentsite"))
+        _sh.copy(os.path.join(HERE, "runtime.py"), os.path.join(_d, "agentsite"))
+        _别处 = _sp.run([sys.executable, "-c", "import runtime;print(runtime.RUNTIME)"],
+                       cwd=os.path.join(_d, "agentsite"), capture_output=True, text=True).stdout.strip()
+    finally:
+        _sh.rmtree(_d, ignore_errors=True)
+    if not _别处 or os.path.realpath(_别处) == os.path.realpath(_rt.RUNTIME):
+        bad.append(f"另一份检出算出的运行目录({_别处 or '没算出来'})和本检出的一样 —— "
+                   "并行工作区跑评测会互相把 .claude 改指走")
 # ⚠️ 这一行原来**印在 if 外面,无条件为真** —— 把 setting_sources 改成 []
 # 之后它照样绿着说「project 设置源已放开」。
 # **一条断言正确、话说得不对的检查,比没有检查更危险**:它每次都绿,

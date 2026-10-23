@@ -11292,5 +11292,17 @@
    }
   ],
   "预期红": "日报:隐藏的标「被隐藏」、取不到的标「取不到」,两种分开"
+ },
+ {
+  "script": "agentsite/skills_check.py",
+  "改坏": "运行目录退回全机共用一个(不按检出分)",
+  "file": [
+   {
+    "path": "agentsite/runtime.py",
+    "old": "if os.path.isdir(os.path.join(根, \".git\")):",
+    "new": "if True:"
+   }
+  ],
+  "预期红": "并行工作区跑评测会互相把 .claude 改指走"
  }
 ]
