@@ -71,15 +71,47 @@ def 闸(n):
     return guards.pre_tool_verdict("Skill", {"skill": n}) is None
 
 
+def 造技能目录():
+    """**判据自己造要验的形状,不靠这台机器碰巧装了什么**(10-23 数据工厂查出):
+    第三方技能目录被 .gitignore 挡着,版本库里只有 7 个自有的 —— 原来这条拿「本机装着的第三方」当样本,
+    本机绿、CI 和另一个检出都红在「没东西可验」,而那和任何人改的代码无关。
+    > 一条判据,如果它红不红取决于环境里碰巧有什么,那它不是在验代码。
+    做法:临时目录里放进 7 个自有技能(链接)+ 两个自造的第三方技能 —— 一个依赖就绪、一个缺脚本又要淘宝登录。"""
+    import tempfile, shutil, atexit
+    d = tempfile.mkdtemp(prefix="skill-dir-")
+    atexit.register(shutil.rmtree, d, True)
+    真 = R.技能目录
+    for n in R._ours():
+        if os.path.isdir(os.path.join(真, n)):
+            os.symlink(os.path.join(真, n), os.path.join(d, n))
+    for n, 正文 in (
+        ("chk-third-ready", "---\nname: chk-third-ready\ndescription: 自造的第三方技能,只调本系统工具\n---\n\n"
+                            "## 第一步\n调 `get_stock` 查现货。\n"),
+        ("chk-third-missing", "---\nname: chk-third-missing\ndescription: 自造的第三方技能,依赖缺着\n---\n\n"
+                              "## 第一步\n运行 `scripts/collect.py` 采集淘宝店铺库存。\n")):
+        os.makedirs(os.path.join(d, n))
+        open(os.path.join(d, n, "SKILL.md"), "w", encoding="utf-8").write(正文)
+    R.技能目录 = d
+    return d
+
+
 def main():
     print("\n\033[1m▸ Skill 管理 · 在库副本上改状态,问执行闸本身\033[0m")
+    造技能目录()
+    # 📖 库况(只打印,不是判据):这台机器真装了几个第三方
+    try:
+        _真 = os.path.join(ROOT, "agentsite", ".claude", "skills")
+        _第三方 = [x for x in os.listdir(_真) if os.path.isfile(os.path.join(_真, x, "SKILL.md")) and x not in R._ours()]
+        print(f"  📖 库况(不是判据):这台机器装着 {len(_第三方)} 个第三方技能 —— 判据用的是自造的两个,不靠它")
+    except OSError:
+        pass
     import oplog as _ol
     if os.path.realpath(R.DB) != os.path.realpath(副本) or os.path.realpath(_ol.DB) != os.path.realpath(副本):
         print(f"  {Rd}❌ 写口没切到副本(R.DB={R.DB} oplog.DB={_ol.DB})—— 不跑,免得写真库{D}"); return 1
-    自有, 第三方缺 = "quote", "multi-platform-inventory-warning"
-    第三方好 = next((n for n in R.装了哪些() if n not in R._ours() and R.依赖(n)["就绪"]), None)
-    if not 第三方好:
-        print(f"  {Rd}❌ 没扫到一个依赖就绪的第三方技能 —— 没东西可验,不是验过了{D}"); return 1
+    自有, 第三方缺, 第三方好 = "quote", "chk-third-missing", "chk-third-ready"
+    ck("自造的样本真分出了两种:一个依赖就绪、一个没就绪(少了这一条,下面两样一起变成什么都不验)",
+       R.依赖(第三方好)["就绪"] and not R.依赖(第三方缺)["就绪"] and 自有 in R.装了哪些(),
+       f"就绪={R.依赖(第三方好)['就绪']} 缺依赖={R.依赖(第三方缺)}")
     tH, 总部 = 会话("总部运营"); tG, _ = 会话("顾问")
     if not (tH and tG):
         print(f"  {Rd}❌ 库里找不到在职的总部运营 / 顾问 —— 没东西可验{D}"); return 1
@@ -89,7 +121,7 @@ def main():
     ck("默认:执行闸放自有、拦第三方", 闸(自有) and not 闸(第三方好))
 
     依 = R.依赖(第三方缺)
-    ck("依赖现算:淘宝库存预警那个缺脚本、要外部登录", not 依["就绪"] and 依["缺的脚本"] and 依["外部能力"],
+    ck("依赖现算:缺脚本、要淘宝登录的那个认得出来", not 依["就绪"] and 依["缺的脚本"] and 依["外部能力"],
        f"缺 {len(依['缺的脚本'])} 个脚本 · 外部 {依['外部能力'][:2]}")
 
     码, 体 = 打("/api/skill-status", {"name": 第三方好, "to": "待适配", "why": "x"})
@@ -124,6 +156,7 @@ def main():
 
     try:
         import sdk
+        sdk._all_skills = R.装了哪些     # 让 sdk 看同一个(自造的)技能目录
         ck("技能集合跟着状态走:停用的不再上场,试运行的上场",
            自有 not in sdk.skills_for("own") and 第三方好 in sdk.skills_for("own"))
     except ImportError as e:
