@@ -1,7 +1,7 @@
 {
  "说明": "脚本里手写的 `咬合` 清单和 tools/bite_specs.json 的 `预期红` 字面对不上的处数。同一件事两份记录,不一致时谁也不知道。",
  "怎么还": "把两边的那句话改成**逐字一样**(以判据里那条 ck 的名字为准),再把处数减掉;减到 0 **必须删掉那一行** —— 留着这个检查会红。",
- "登记于": "2026-10-20",
+ "登记于": "2026-10-23",
  "欠着的": {
   "agent/compare.py": 7,
   "agent/factory_eval_judgetest.py": 3,
@@ -13,7 +13,7 @@
   "agent/pickup_eval_judgetest.py": 2,
   "agent/rating_eval_judgetest.py": 2,
   "agent/repair_eval_judgetest.py": 2,
-  "agent/rounds.py": 10,
+  "agent/rounds.py": 5,
   "agent/rounds_check.py": 2,
   "agent/scheme_eval.py": 3,
   "agent/spans.py": 5,
@@ -73,7 +73,7 @@
   "tools/delivered_images.py": 4,
   "tools/determinism_check.py": 1,
   "tools/doc_numbers_check.py": 1,
-  "tools/eval_provenance_check.py": 11,
+  "tools/eval_provenance_check.py": 7,
   "tools/fixture_check.py": 2,
   "tools/hook_sync_check.py": 2,
   "tools/impact.py": 2,
