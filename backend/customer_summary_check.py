@@ -80,28 +80,31 @@ def 造库():
     c = sqlite3.connect(":memory:")
     c.executescript(SCHEMA)
     x = c.executemany
-    x("INSERT INTO customer VALUES(?,?,?,?)", [("CX1", "甲", "S01", "一店"), ("CX2", "乙", "S02", "一店"),
+    x("INSERT INTO customer(id,name,advisor_no,shop) VALUES(?,?,?,?)", [("CX1", "甲", "S01", "一店"), ("CX2", "乙", "S02", "一店"),
                                               ("CX3", "丙", "S02", "一店")])
-    x("INSERT INTO staff VALUES(?,?,?)", [("S01", "林岚", "A01"), ("S02", "陆微", "A02")])
-    x("INSERT INTO xingzhi VALUES(?,?)", [("XZ01", "马面裙")]); x("INSERT INTO material VALUES(?,?)", [("MT01", "云锦")])
-    x("INSERT INTO craft VALUES(?,?)", [("KF01", "平绣")]); x("INSERT INTO pattern VALUES(?,?)", [("PT01", "马面裙·标准")])
+    x("INSERT INTO staff(no,name,adv_code) VALUES(?,?,?)", [("S01", "林岚", "A01"), ("S02", "陆微", "A02")])
+    x("INSERT INTO xingzhi(code,name) VALUES(?,?)", [("XZ01", "马面裙")]); x("INSERT INTO material(code,name) VALUES(?,?)", [("MT01", "云锦")])
+    x("INSERT INTO craft(code,name) VALUES(?,?)", [("KF01", "平绣")]); x("INSERT INTO pattern(code,name) VALUES(?,?)", [("PT01", "马面裙·标准")])
     # 商机:一条开着(跟进中)、一条搁置(不是终态)、一条已关闭(终态,下一步不该进)、一条开着但没写下一步
     o = lambda i, cid, st, nx: (i, cid, "沟通发现", "TS-1", st, None, nx, None, None, None, "S01", None, None,
                                 "2026-10-01", "2026-10-01")
-    x("INSERT INTO opportunity VALUES(" + ",".join("?" * 15) + ")", [
+    x("INSERT INTO opportunity(id,customer_id,source,call_id,status,budget,next_step,close_reason,"
+      "wait_for,scheme_id,advisor_no,confirmed_by,confirmed_at,created,updated) VALUES(" + ",".join("?" * 15) + ")", [
         o("OP-A", "CX1", "跟进中", "约她来店看面料"),
         o("OP-B", "CX1", "搁置等供给", "等红色云锦到货再联系"),
         o("OP-C", "CX1", "已关闭", "【不该出现】已关闭商机的下一步"),
         o("OP-D", "CX1", "跟进中", ""),
         o("OP-X", "CX2", "跟进中", "【不该出现】别的客户的商机"),
     ])
-    x("INSERT INTO opportunity_need VALUES(?,?,?,?,?)", [
+    x("INSERT INTO opportunity_need(opp_id,dim,val,quote,call_id) VALUES(?,?,?,?,?)", [
         ("OP-A", "颜色", "红", "我想要那种正红的,喜庆一点", "TS-1"),
         ("OP-X", "颜色", "蓝", "【不该出现】别的客户的原话", "TS-9")])
     # 日程:编号顺序和到期顺序故意反着(SC09 最早,SC01 最晚)
     s = lambda i, cid, st, t0, t1, note, typ="电话回电": (i, typ, "S01", cid, t0, t1, st, None, None, "一店", "S01",
                                                        None, None, note, None, None, None, None, None)
-    x("INSERT INTO schedule VALUES(" + ",".join("?" * 19) + ")", [
+    x("INSERT INTO schedule(id,type,advisor_no,customer_id,start_ts,end_ts,status,summary,"
+      "cancel_reason,shop,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id,reassigned_from,"
+      "reassign_reason,reassigned_at) VALUES(" + ",".join("?" * 19) + ")", [
         s("SC01", "CX1", "有效", "2026-11-20 10:00", "2026-11-20 11:00", "回访量体结果"),
         s("SC05", "CX1", "有效", "2026-10-10 10:00", None, "确认取件时间"),        # 没有结束时间 → 用开始时间
         s("SC09", "CX1", "有效", "2026-09-01 09:00", "2026-09-01 10:00", "电话确认尺码"),
@@ -112,20 +115,21 @@ def 造库():
         s("SC08", "CX1", "完结", "2026-10-02 09:00", "2026-10-02 18:00", "【不该出现】完结的商机任务", "商机提醒"),
         s("SC99", "CX2", "有效", "2026-09-01 09:00", "2026-09-01 10:00", "【不该出现】别的客户的日程"),
     ])
-    x("INSERT INTO opportunity_task VALUES(?,?,?,?,?,?,?,?)", [
+    x("INSERT INTO opportunity_task(schedule_id,opp_id,kind,detail,created,answer,answered_by,answered_at) VALUES(?,?,?,?,?,?,?,?)", [
         ("SC07", "OP-B", "回捞", None, "2026-10-20", None, None, None),
         ("SC08", "OP-A", "回捞", None, "2026-10-01", "已联系", "S01", "2026-10-02")])
-    x("INSERT INTO scheme VALUES(" + ",".join("?" * 15) + ")", [
+    x("INSERT INTO scheme(id,customer_id,name,status,xz,mt,kf,color,ps,pattern,advisor_no,note,"
+      "created,updated,opportunity_id) VALUES(" + ",".join("?" * 15) + ")", [
         ("FA1", "CX1", "红马面", "已锁定", "XZ01", "MT01", "KF01", "红", "云肩", "PT01", "S01", None,
          "2026-10-05", "2026-10-06", "OP-A"),
         ("FA9", "CX2", "【不该出现】别人的方案", "草稿", None, None, None, None, None, None, "S02", None,
          "2026-10-05", "2026-10-05", None)])
-    x("INSERT INTO ordr VALUES(?,?,?,?,?,?)", [("O1", "CX1", "待生产", 3200, "2026-10-07", "FA1"),
+    x("INSERT INTO ordr(id,customer_id,status,amount,created,scheme_id) VALUES(?,?,?,?,?,?)", [("O1", "CX1", "待生产", 3200, "2026-10-07", "FA1"),
                                               ("O2", "CX1", "已完成", 800, "2026-09-01", None),
                                               ("O9", "CX2", "待生产", 999, "2026-10-07", "FA9")])
     x("INSERT INTO cust_owner_log(customer_id,frm,too,action,basis,actor,ts) VALUES(?,?,?,?,?,?,?)",
       [("CX2", "S01", "S02", "转移", "顾问离职", "店长", "2026-09-01")])
-    x("INSERT INTO followup VALUES(?,?,?,?)", [("F1", "CX1", "2026-10-06", 承诺原话)])
+    x("INSERT INTO followup(id,customer_id,ts,content) VALUES(?,?,?,?)", [("F1", "CX1", "2026-10-06", 承诺原话)])
     return c
 
 
