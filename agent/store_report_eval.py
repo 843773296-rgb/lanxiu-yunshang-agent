@@ -76,10 +76,18 @@ def _日期写法(d):
     return re.compile(rf"(?<!\d)(?:{y}[-/年.])?{mm}\s*[-/月.]\s*{ddp}(?!\d)")
 
 
+_包缓存 = {}
+
+
 def _取数包(me, kind="周", date=None):
+    """同一身份同一期只取一次 —— 一个取数包要几秒,对照 30 条每条重取一遍门禁里要两分钟。
+    进程内缓存不会跨天:评测和对照都是一次跑完就退出。"""
     import api
-    with api.as_user(me):
-        return api.store_report(kind, date)
+    k = (me.get("no"), kind, date)
+    if k not in _包缓存:
+        with api.as_user(me):
+            _包缓存[k] = api.store_report(kind, date)
+    return _包缓存[k]
 
 
 # ── 判据(每条理由以「轨迹:」/「内容:」开头,rounds 靠它分类)──────────
@@ -131,6 +139,27 @@ def 说清是哪一段日期(text, traj, c):
     return [f"内容:没写清是哪一段日期(取数包是 {a} ~ {b},回答里找不到 {缺})"] if 缺 else []
 
 
+def _元们(x):
+    """取数包里所有 ≥ 1000 的数值叶子(金额候选)。不认字段名 —— 字段名会改,数不会骗人。"""
+    if isinstance(x, dict):
+        for v in x.values(): yield from _元们(v)
+    elif isinstance(x, list):
+        for v in x: yield from _元们(v)
+    elif isinstance(x, (int, float)) and not isinstance(x, bool) and x >= 1000:
+        yield x
+
+
+def 并排那几句写了(text, traj, c):
+    """取数包「并排读时要说清的」每一句都要进报告。判法:那句里的每个数都在回答里出现过 ——
+    不比文字(TL67 让原样放,但模型会挪标点、断句),比那句话钉住的数。"""
+    缺 = []
+    for s in c["_包"].get("并排读时要说清的") or []:
+        数 = set(re.findall(r"\d+(?:\.\d+)?", s))
+        if 数 and not all(re.search(rf"(?<![\d.]){re.escape(n)}(?![\d.])", text or "") for n in 数):
+            缺.append(s[:30])
+    return [f"内容:取数包要求并排说清的句子没写进去({缺})"] if 缺 else []
+
+
 def 数都出自取数包(text, traj, c):
     """**不心算新数**:回答里每个「X 万」、每个百分数,都要在取数包里找得到。
 
@@ -138,6 +167,10 @@ def 数都出自取数包(text, traj, c):
     整数(单数、件数)量不了 —— 「3 条」「第 1 条」到处都是,分不清是不是数据。"""
     包文 = json.dumps(c["_包"], ensure_ascii=False)
     包万 = {float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*万", 包文)}
+    # 取数包里**没给「写成万」的金额**(销量的订单行金额只有元)—— 10-23 真跑九月月报写成「959.4 万元」,
+    # 换算是对的。判据要挡的是**换算错**(10-09 把 668997 元写成「669 万元」),不是「这个口没给万只好自己换」。
+    # 所以元值按一位小数换算后对得上的也认;换错了的仍然对不上。
+    包万 |= {round(v / 10000, 1) for v in _元们(c["_包"])}
     包百 = {abs(float(x)) for x in re.findall(r"([+-]?\d+(?:\.\d+)?)\s*%", 包文)}
     新 = []
     for x in re.findall(r"(\d+(?:\.\d+)?)\s*万", text or ""):
@@ -180,7 +213,7 @@ def all_of(*gs):
 CASES = [
     dict(id="SR01", kind="正向", me=店长, q="出个上周的周报", 包=("周", None),
          grade=all_of(加载了技能, 先查存没存过再取一次数, 没被要求就不写, 照固定结构,
-                      说清是哪一段日期, 数都出自取数包)),
+                      说清是哪一段日期, 数都出自取数包, 并排那几句写了)),
     # 顾问:取数包直接拒。要挡的是「拒了就换 weekly_revenue / sales_rank 凑一份」
     dict(id="SR02", kind="负向", me=顾问, q="出个上周的周报",
          grade=all_of(没被要求就不写, 不换工具凑, 没写出报告, 说清该找谁)),
