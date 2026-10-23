@@ -483,6 +483,15 @@ class H(BaseHTTPRequestHandler):
             if not isinstance(分, int) or not (1 <= 分 <= 5):
                 return self._send({"error": f"评分要是 1-5,给的是 {分!r}"}, code=400)
             r = _评一次检索(rid, 分, body.get("评语"))
+            if r.get("ok"):
+                # 门店这边留一份分数(知识问题的复验要挑低分,外部复审第 4 节 E)。正本仍在管理后台;
+                # 留不下**不装作留下了**,也不把已经评成功的分说成没评上
+                try:
+                    m = _post_回体("/api/kb-rag-record", {"op": "评分", "试跑id": rid, "评分": 分},
+                                  cookie=self.headers.get("cookie"))
+                    if not m.get("ok"): r["门店留档"] = m.get("reason") or "没留下"
+                except Exception as e:
+                    r["门店留档"] = f"没留下:后台连不上({type(e).__name__})"
             return self._send(r, code=(200 if r.get("ok") else 502))
         if p == "/run":
             try: body = json.loads(raw or b"{}")
@@ -535,6 +544,7 @@ class H(BaseHTTPRequestHandler):
                                             me=me, skills=body.get("skills"),
                                             effort=body.get("effort")))
                 sessions.own(r.get("session_id"), me)
+                _记知识检索(r, self.headers.get("cookie"))
                 return self._send(r)
             except Exception as e:
                 return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)
@@ -832,6 +842,47 @@ def _评一次检索(试跑id, 分, 评语=None):
                 "怎么办": "管理后台没起的话,这个分数记不下来 —— "
                         "起法:`管理后台/tools/dev.sh`。"
                         f"({type(e).__name__})"}
+
+
+def 知识检索记录们(r):
+    """这一轮里 kb_rag 的**真返回值**(轨迹上挂的,不是模型复述的)→ 门店检索记录要的那几样。
+    零命中也有 `试跑id`(外部复审第 4 节 E)—— 所以不按 hit 过滤。"""
+    出 = []
+    for x in (r or {}).get("trajectory") or []:
+        t = x.get("result") if isinstance(x, dict) else None
+        if str((x or {}).get("tool") or "").split("__")[-1] != "kb_rag" or not isinstance(t, dict):
+            continue
+        if not t.get("试跑id"):
+            continue
+        出.append({"试跑id": t["试跑id"], "问的是": t.get("问的是"), "hit": t.get("hit") or 0,
+                  "出处们": [e.get("出处") for e in (t.get("证据们") or []) if isinstance(e, dict)],
+                  "知识库": t.get("知识库")})
+    return 出
+
+
+def _post_回体(path, payload, cookie=None):
+    """同 `_post`,但 4xx 也把后台的回体读回来(没登录 / 被拒要照实说原因,不说成「连不上」)。"""
+    try:
+        return _post(path, payload, timeout=10, cookie=cookie)
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read())
+        except Exception:
+            return {"ok": False, "reason": f"后台回了 {e.code}"}
+
+
+def _记知识检索(r, cookie):
+    """跑完一轮,把这轮的知识检索记进门店检索记录(提问人 = 登录的人,后台按 cookie 判)。
+    记不下**不拖垮这一轮回答**,但在返回里说出来 —— 一条没记下的检索和一条没发生的,在问题清单上长得一样。"""
+    记 = 知识检索记录们(r)
+    if not 记:
+        return
+    try:
+        m = _post_回体("/api/kb-rag-record", {"op": "记录", "记录们": 记}, cookie=cookie)
+        if not m.get("ok"):
+            r["知识检索留档"] = m.get("reason") or "没记下"
+    except Exception as e:
+        r["知识检索留档"] = f"没记下:后台连不上({type(e).__name__})"
 
 
 def _tr_cfg():

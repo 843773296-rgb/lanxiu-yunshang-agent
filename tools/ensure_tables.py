@@ -49,6 +49,7 @@ import tasks
 import skill_registry
 import mcp_registry
 import alert_dispatch
+import kb_issue
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -99,6 +100,9 @@ import alert_dispatch
     # 预警 → 任务的来源(2026-10-23,复审第 4 节 D):第一次有人从预警那一行派单才建 —— 同上,建死免得表数漂。
     # 两列日期:key_date(超期的承诺完工日)、created(世界的钟),都是整列日期、系统写的,不是人填的自由文本
     (alert_dispatch, "建表", ["alert_task"]),
+    # 知识问题(2026-10-23,外部复审第 4 节 E):门店检索记录 / 改动日志 / 复验存档。
+    # chat 第一次查知识库、或有人打开「知识问题」页才建 —— 同上,建死免得表数漂
+    (kb_issue, "确保表", ["kb_rag_record", "kb_rag_record_log", "kb_recheck"]),
 ]
 
 

@@ -11160,5 +11160,65 @@
    }
   ],
   "预期红": "自己除了一个占比"
+ },
+ {
+  "script": "backend/kb_issue_check.py",
+  "改坏": "零命中那一支又把试跑id 丢了",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        return {\"hit\": 0, \"问的是\": q, \"试跑id\": d.get(\"试跑id\"), \"知识库\": d.get(\"知识库\"),",
+    "new": "        return {\"hit\": 0, \"问的是\": q, \"知识库\": d.get(\"知识库\"),"
+   }
+  ],
+  "预期红": "零命中也带回记录编号(真调 kb_rag,管理后台回包零选片)"
+ },
+ {
+  "script": "backend/kb_issue_check.py",
+  "改坏": "改状态不查角色(谁都能改)",
+  "file": [
+   {
+    "path": "backend/kb_issue.py",
+    "old": "    if 我.get(\"role\") not in 可处理角色:\n        return f\"只有",
+    "new": "    if False:\n        return f\"只有"
+   }
+  ],
+  "预期红": "顾问改状态:拒"
+ },
+ {
+  "script": "backend/kb_issue_check.py",
+  "改坏": "提问题类型不查是不是本人",
+  "file": [
+   {
+    "path": "backend/kb_issue.py",
+    "old": "    return 我.get(\"role\") in 可处理角色 or r.get(\"asker_no\") == 我.get(\"no\")",
+    "new": "    return True"
+   }
+  ],
+  "预期红": "别人的检索记录:报不了类型"
+ },
+ {
+  "script": "backend/kb_issue_check.py",
+  "改坏": "指定维护人不留痕",
+  "file": [
+   {
+    "path": "backend/kb_issue.py",
+    "old": "        _日志(c, rid, \"维护人\", r.get(\"maintainer_name\") or \"\", s[\"name\"], 理由, 我)\n",
+    "new": ""
+   }
+  ],
+  "预期红": "指定维护人留痕(带理由和署名)"
+ },
+ {
+  "script": "backend/kb_issue_check.py",
+  "改坏": "复验声明改成「就是答对了」",
+  "file": [
+   {
+    "path": "backend/kb_issue.py",
+    "old": "「找到了相关片段」**不等于答对了**",
+    "new": "「找到了相关片段」**就是答对了**"
+   }
+  ],
+  "预期红": "复验输出写明「找到片段不等于答对」"
  }
 ]

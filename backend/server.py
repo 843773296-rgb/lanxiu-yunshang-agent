@@ -3281,6 +3281,18 @@ class H(BaseHTTPRequestHandler):
             if not _me(self): return self._send({"error":"请先登录"},401)
             if p=="/api/mcp-health": return self._send({"rows": _mr.体检()})
             return self._send(dict(_mr.总览(), 改动=_mr.改动记录(), 超时范围=list(_mr.超时范围), 限流范围=list(_mr.限流范围)))
+        if p=="/api/kb-issues" or p.startswith("/api/kb-issue/"):
+            # 知识问题(外部复审第 4 节 E):门店检索记录 + 问题类型 / 维护人 / 处理状态 / 复验。
+            # 要登录;非总部运营只看得到自己问的(在 kb_issue 里按登录的人判,不收前端传的人)
+            import kb_issue as _ki
+            u = _me(self)
+            if not u: return self._send({"error":"请先登录"},401)
+            if p=="/api/kb-issues":
+                g = lambda k: (Q.get(k) or [""])[0] or None
+                r = _ki.清单(u, 状态=g("status"), 类型=g("type"), 范围=g("scope") or "有问题")
+            else:
+                r = _ki.详情(p.split("/api/kb-issue/",1)[1], u)
+            return self._send(r, 403 if r.get("error") and "不是你问的" in r["error"] else 404 if r.get("error") else 200)
         if p=="/api/skills" or p.startswith("/api/skill/"):
             # Skill 管理(用户 10-23 拍「做完整配置页」):状态 / 配置 / 依赖就绪 / 使用。要登录;能不能改在写的那头判
             import skill_registry as _sr
@@ -3685,6 +3697,27 @@ class H(BaseHTTPRequestHandler):
                           body.get("rate"), body.get("why"), u)
             log_op(u["name"], "mcp-tool", str(body.get("name") or "-"), "-", "save", bool(r.get("ok")),
                    "" if r.get("ok") else "MCP_CFG", (r.get("reason") or "")[:200], {})
+        if p in ("/api/kb-rag-record","/api/kb-issue-type","/api/kb-issue-assign","/api/kb-issue-status"):
+            # 知识问题的写口(外部复审第 4 节 E)。身份只从登录会话取(请求体里自报的不认);
+            # 提问题类型只认提问人本人或总部运营,指定维护人 / 改状态只认总部运营、都要理由 —— 判在 kb_issue 里
+            import kb_issue as _ki
+            u = _me(self)
+            if not u:
+                return self._send(dict(ok=False, reason="没登录 —— 要登录,署名用登录的人"), 401)
+            rid = str(body.get("试跑id") or "").strip()
+            if p=="/api/kb-rag-record":
+                r = (_ki.记评分(rid, body.get("评分"), u) if body.get("op")=="评分"
+                     else _ki.记检索(body.get("记录们") or [], u))
+            elif p=="/api/kb-issue-type":
+                r = _ki.提类型(rid, str(body.get("类型") or ""), body.get("说明"), u)
+            elif p=="/api/kb-issue-assign":
+                r = _ki.指定维护人(rid, str(body.get("维护人工号") or ""), body.get("理由"), u)
+            else:
+                r = _ki.改状态(rid, str(body.get("到") or ""), body.get("理由"), u,
+                              修订版本=body.get("修订版本"), 修订说明=body.get("修订说明"))
+            if p!="/api/kb-rag-record":
+                log_op(u["name"], "kb_issue", rid or "-", "-", p.rsplit("-",1)[-1], bool(r.get("ok")),
+                       "" if r.get("ok") else "KB_ISSUE", (r.get("reason") or "")[:200], {})
             return self._send(r, 200 if r.get("ok") else 400)
         if p=="/api/skill-save" or p=="/api/skill-status":
             # Skill 管理的两个写口。身份只从登录会话取(请求体里自报的不认);只有总部运营能改、要写理由、

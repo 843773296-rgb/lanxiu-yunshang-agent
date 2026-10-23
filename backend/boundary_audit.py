@@ -213,6 +213,34 @@ def a_mcp_tool_off():
     finally:
         _sh.rmtree(d, ignore_errors=True)
     raise PermissionError("停用的工具列不出、调不动 —— 开关在协议层生效,不只是库里一行字")
+def a_kb_issue_wrong_role():
+    """知识问题(外部复审第 4 节 E):顾问能不能指定维护人 / 改处理状态,能不能给别人的检索记录报类型。
+    在库副本上:顾问甲记一条检索、报「答不上」,然后甲去指定维护人、改状态,顾问乙去报类型 —— 都该被拒。"""
+    import kb_issue as _K, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq
+    原 = _K.DB
+    d = _tf.mkdtemp(prefix="ba-kbi-"); p = _os.path.join(d, "lanxiu.db")
+    _sh.copy(原, p)
+    try:
+        _K.DB = p
+        c = _sq.connect(p)
+        人 = c.execute("SELECT no,name,role FROM staff WHERE role='顾问' AND status='启用' ORDER BY no LIMIT 2").fetchall()
+        c.close()
+        if len(人) < 2:
+            return "库里不到两个在职顾问 —— 这一刀没东西可打,不是守住了"
+        甲, 乙 = [dict(no=x[0], name=x[1], role=x[2]) for x in 人]
+        _K.记检索([{"试跑id": "rr_ba_kbi", "问的是": "攻击用", "hit": 0}], 甲)
+        if not _K.提类型("rr_ba_kbi", "答不上", "攻击用", 甲).get("ok"):
+            return "提问人本人报类型都报不上 —— 前置没成,下面的拒绝不作数"
+        if _K.指定维护人("rr_ba_kbi", 甲["no"], "我自己来", 甲).get("ok"):
+            return "顾问给自己指定了维护人 —— 只有总部运营能指定"
+        if _K.改状态("rr_ba_kbi", "不处理", "不想处理", 甲).get("ok"):
+            return "顾问把问题改成了「不处理」—— 只有总部运营能改状态"
+        if _K.提类型("rr_ba_kbi", "答错", "改别人的", 乙).get("ok"):
+            return "顾问乙给顾问甲的检索记录报了类型 —— 只认提问人本人或总部运营"
+    finally:
+        _K.DB = 原
+        _sh.rmtree(d, ignore_errors=True)
+    raise PermissionError("顾问定不了维护人、改不了状态、报不了别人的 —— 判在 kb_issue 写口里,身份从会话来")
 
 
 def a_resolve_wrong_role():
@@ -874,6 +902,12 @@ STRUCT = [
   a_mcp_tool_off, "在库副本上停用 get_stock,真起商品领域服务去列、去调",
   "协议层每 5 秒读一次开关(只读连接):停用的 tools/list 不列、tools/call 拒;另有超时、限流。三样都只能收紧,"
   "页面上没有能放大权限的开关;只有总部运营能改、要理由、留痕。读不到配置 = 全部启用(和原来一样)"),
+ ("知识问题只有总部运营能指定维护人、改处理状态;报类型只认提问人本人", "backend/kb_issue.py 写口;backend/server.py /api/kb-issue-*",
+  a_kb_issue_wrong_role, "在库副本上:顾问给自己定维护人、把问题改成不处理、给别人的检索记录报类型",
+  "身份只从登录会话取(请求体里自报的不认);每次改动带理由记进 kb_rag_record_log、写口成败都进 op_log。"
+  "复验(tools/kb_recheck.py)结论只有「找到了相关片段 / 仍然零命中 / 复验没跑成」三种、输出写明不等于答对 —— "
+  "kb_issue_check 打 HTTP 层验。⚠️ 门店检索记录的**内容**(问题、命中几段)是智能运维平台从轨迹转来的,"
+  "后台只核身份不核内容 —— 伪造只能伪造到自己名下"),
  ("研判销账只有对应角色能做,而且留痕", "backend/ops.py 能销吗 / resolve;backend/server.py /api/ops-resolve",
   a_resolve_wrong_role, "在库副本上拿顾问身份去销一条财务人工任务",
   "接口层身份只从登录态取(不读请求体里的 handler);`resolve` 里按类型查角色,**所有调用方都过这一道**,"

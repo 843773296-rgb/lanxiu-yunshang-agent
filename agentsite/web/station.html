@@ -859,20 +859,51 @@ function ragRunId(m){
   return t.length ? t[t.length - 1].result.试跑id : null;   // 一轮查了多次就评最后那次
 }
 
+/* 知识问题(外部复审第 4 节 E,10-23):**零命中也给记录编号**,员工能就这一条报问题类型
+ * (答不上 / 答错 / 过期 / 冲突 / 其他,要写说明)。维护人和处理状态只有总部运营在管理后台「知识问题」页改 ——
+ * 这里不放那两个控件,能不能改在后台写口里判,页面不另判一遍。 */
+const 问题类型们 = ["答不上", "答错", "过期", "冲突", "其他"];
+const REPORTED = {};     // 试跑id → 报过的类型(这一页内记着)
+function ragHit(m){
+  const t = (m.trajectory || []).filter(
+    x => String(x.tool || "").split("__").pop() === "kb_rag" && x.result && x.result.试跑id);
+  return t.length ? (t[t.length - 1].result.hit || 0) : null;
+}
+function issueBar(rid){
+  if(REPORTED[rid]) return `<span class="done">已报「${esc(REPORTED[rid])}」—— 进了后台「知识问题」待处理</span>`;
+  return `<select data-issue-type="${esc(rid)}"><option value="">报问题…</option>`
+    + 问题类型们.map(t => `<option>${esc(t)}</option>`).join("") + `</select>`
+    + `<input data-issue-note="${esc(rid)}" placeholder="一句说明:哪儿答不上 / 错在哪" style="min-width:180px">`
+    + `<button data-issue-send="${esc(rid)}">报</button>`;
+}
 function rateBar(m, i){
   const rid = ragRunId(m);
   if(!rid) return "";                       // 这一轮没查知识库 —— 不显示
+  const 编号 = `<span style="font-size:11.5px">记录编号 <code>${esc(rid)}</code>${ragHit(m) === 0 ? " · 这次知识库零命中" : ""}</span>`;
   const 已 = RATED[rid];
   if(已 != null){
     const 坏 = 已 < 3;
-    return `<div class="rate"><span class="${坏 ? "bad" : "done"}">`
+    return `<div class="rate">${编号}<span class="${坏 ? "bad" : "done"}">`
       + `已评 ${已} 分${坏 ? " —— 这条会进管理后台的「要分析」清单" : ""}</span>`
-      + `<button data-rid="${esc(rid)}" data-again="1" title="改分">改</button></div>`;
+      + `<button data-rid="${esc(rid)}" data-again="1" title="改分">改</button>${issueBar(rid)}</div>`;
   }
-  return `<div class="rate"><span>这次找得怎么样?</span>`
+  return `<div class="rate">${编号}<span>这次找得怎么样?</span>`
     + [1,2,3,4,5].map(n => `<button data-rid="${esc(rid)}" data-score="${n}"`
         + ` title="${esc(档位名[n])}">${n}</button>`).join("")
-    + `<span style="font-size:11.5px">1 完全没用 · 5 正好是我要的</span></div>`;
+    + `<span style="font-size:11.5px">1 完全没用 · 5 正好是我要的</span>${issueBar(rid)}</div>`;
+}
+
+async function 报问题(rid){
+  const 类型 = ([...document.querySelectorAll("[data-issue-type]")].find(e => e.dataset.issueType === rid) || {}).value;
+  const 说明 = (([...document.querySelectorAll("[data-issue-note]")].find(e => e.dataset.issueNote === rid) || {}).value || "").trim();
+  if(!类型){ alert("先选问题类型"); return; }
+  if(!说明){ alert("写一句说明 —— 维护人要照着改"); return; }
+  const r = await fetch("/api/kb-issue-type", {
+    method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({试跑id: rid, 类型, 说明}),
+  }).then(x => x.json()).catch(e => ({reason: String(e)}));
+  if(r.ok){ REPORTED[rid] = 类型; drawStream(); return; }
+  alert(r.reason || r.error || "没报上");    // 失败不装作成功
 }
 
 const 档位名 = {1:"完全答错 / 帮不上", 2:"找得不对,得自己重查", 3:"勉强能用,还要补",
@@ -1009,6 +1040,9 @@ function drawStream(){
   });
   s.querySelectorAll(".rate button[data-again]").forEach(b => {
     b.onclick = () => { delete RATED[b.dataset.rid]; drawStream(); };
+  });
+  s.querySelectorAll(".rate button[data-issue-send]").forEach(b => {
+    b.onclick = () => 报问题(b.dataset.issueSend);
   });
 }
 

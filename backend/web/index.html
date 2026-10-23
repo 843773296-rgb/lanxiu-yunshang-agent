@@ -454,7 +454,7 @@ const MENU=[
  {k:"goods",i:"goods",t:"商品",subs:[["products","商品库"],["categories","品类管理"],
    ["stock","库存查询"],["stocklog","库存变更日志"]]},
  {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["freight","运费表"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"],["factory","工厂回传"]]},
- {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"]]},
+ {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"],["kbissues","知识问题"]]},
  {k:"sys",i:"sys",t:"系统",subs:[["approvals","审批中心"],["staff","权限管理"],["syscodes","系统编码"],
    ["downloads","下载中心"],["oplog","操作日志"],["skills","Skill 管理"],["mcp","MCP 服务与工具"]]}];
 
@@ -481,7 +481,7 @@ const CRUMB_ROUTE={"首页":"workbench","客户管理":"customers","客户档案
   "营销":"activities","营销活动":"activities","邀请码管理":"invites",
   "页面":"pages","页面配置":"pages","系统编码":"syscodes","下载中心":"downloads","审批中心":"approvals","会员等级":"levels","客户标签管理":"tags",
   "售后工单":"aftersales","维保工单":"maintains","工厂回传":"factory","导购业绩":"perf","库存变更日志":"stocklog","工艺知识库":"kb",
-  "客户合并确认":"merge","客户预约":"appts","客户生命周期类型":"lifecycle",
+  "客户合并确认":"merge","知识问题":"kbissues","客户预约":"appts","客户生命周期类型":"lifecycle",
   "消费与售后":"finance","押金退款异常":"finance","系统":"oplog","操作日志":"oplog"};
 function chrome(crumbs,body){
   const last=crumbs.length-1;
@@ -538,7 +538,7 @@ const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合
   activities:"营销活动",invites:"邀请码管理",pages:"页面配置",
   syscodes:"系统编码",skills:"Skill 管理",skill:"Skill",mcp:"MCP 服务与工具",downloads:"下载中心",approvals:"审批中心",
   levels:"会员等级",tags:"客户标签管理",
-  aftersales:"售后工单",maintains:"维保工单",factory:"工厂回传",perf:"导购业绩",stocklog:"库存变更日志",kb:"工艺知识库"};
+  aftersales:"售后工单",maintains:"维保工单",factory:"工厂回传",perf:"导购业绩",stocklog:"库存变更日志",kb:"工艺知识库",kbissues:"知识问题",kbissue:"知识问题"};
 async function view(v,arg,fromTab){
   CUR=(["task","cust","appt"].includes(v)?CUR:v); renderNav();
   if(!fromTab){
@@ -611,6 +611,8 @@ async function route(v,arg){
   if(v==="factory")   return factoryPage();
   if(v==="stocklog")  return stockLog();
   if(v==="kb")        return kbPage();
+  if(v==="kbissues")  return kbIssueList();
+  if(v==="kbissue")   return kbIssueDetail(arg);
   if(v==="aftersale") return afterDetail(arg);
   if(v==="maintain")  return maintainDetail(arg);
   if(v==="cust")     return custDetail(arg);
@@ -2653,6 +2655,91 @@ async function skillDetail(name){
     const f={}; M.querySelectorAll("[data-skc]").forEach(e=>f[e.dataset.skc]=e.value);
     doOp("/api/skill-save",{name,fields:f},()=>skillDetail(name));
   };
+  M.querySelectorAll("[data-cr]").forEach(e=>e.onclick=()=>view(e.dataset.cr,e.dataset.ca||undefined));
+}
+
+/* ── 知识问题(外部复审第 4 节 E,10-23)────────────────────────────────────
+   门店检索记录:员工在 chat 里就一条检索报问题类型(零命中也有编号);总部运营在这里指定维护人、改处理状态、
+   写修订到的知识版本。谁能改判在服务端(kb_issue),页面不另判一遍 —— 按钮对谁都显示,不能改的会被拒并说清为什么。
+   复验(tools/kb_recheck.py)只重跑检索:「找到了相关片段」不等于答对了,仍要人评。 */
+let KI_F={status:"",type:"",scope:"有问题"};
+const KI_PILL={"待处理":"p-warn","处理中":"p-mut","已修订":"p-ok","不处理":"p-bad"};
+async function kbIssueList(){
+  const q=new URLSearchParams(); if(KI_F.status)q.set("status",KI_F.status); if(KI_F.type)q.set("type",KI_F.type);
+  q.set("scope",KI_F.scope);
+  const d=await get("/api/kb-issues?"+q.toString()), R=d.rows;
+  const sel=(k,opts,全="全部")=>`<select data-kif="${k}">${全!==null?`<option value="">${全}</option>`:""}${opts.map(o=>
+    `<option ${KI_F[k]===o?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+  M.innerHTML=chrome([["首页","workbench"],"业务内容","知识问题"],`
+   <div class="card"><div class="hd"><h3>知识问题</h3>
+     <span class="n">${d.状态们.map(s=>`${esc(s)} ${d.各状态[s]||0}`).join(" · ")}${d.能处理?"":" —— 你只看得到自己问的"}</span></div>
+    <div class="form" style="margin-top:10px">
+      <div><label>范围</label>${sel("scope",["有问题","全部"],null)}</div>
+      <div><label>处理状态</label>${sel("status",d.状态们)}</div>
+      <div><label>问题类型</label>${sel("type",d.类型们)}</div></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:150px">记录编号</th><th>问的是</th><th style="width:70px">命中</th><th style="width:60px">评分</th>
+     <th style="width:80px">类型</th><th style="width:80px">状态</th><th style="width:90px">维护人</th>
+     <th style="width:90px">提问人</th><th style="width:140px">时间</th></tr></thead><tbody>
+     ${R.length?R.map(r=>`<tr>
+      <td class="mono"><a class="lk" data-cr="kbissue" data-ca="${esc(r.run_id)}">${esc(r.run_id)}</a></td>
+      <td>${esc(r.question)}</td><td>${r.hit?r.hit+" 段":'<span style="color:var(--bad)">零命中</span>'}</td>
+      <td>${r.rating==null?"—":r.rating}</td><td>${esc(r.issue_type||"—")}</td>
+      <td>${r.status?`<span class="pill ${KI_PILL[r.status]||"p-mut"}">${esc(r.status)}</span>`:"—"}</td>
+      <td>${esc(r.maintainer_name||"—")}</td><td>${esc(r.asker_name||"")}</td>
+      <td class="mono" style="color:var(--ink3)">${esc(r.created||"")}</td></tr>`).join("")
+      :'<tr><td colspan="9" style="color:var(--ink2)">这个筛选下没有记录</td></tr>'}
+    </tbody></table>
+    <div style="color:var(--ink2);font-size:12px;margin-top:8px">共 ${R.length} 条(最多列 500 条)</div></div>`);
+  M.querySelectorAll("[data-kif]").forEach(e=>e.onchange=()=>{KI_F[e.dataset.kif]=e.value; kbIssueList();});
+  M.querySelectorAll("[data-cr]").forEach(e=>e.onclick=()=>view(e.dataset.cr,e.dataset.ca||undefined));
+}
+async function kbIssueDetail(rid){
+  const d=await get("/api/kb-issue/"+encodeURIComponent(rid)), r=d.记录;
+  M.innerHTML=chrome([["首页","workbench"],"业务内容",["知识问题","kbissues"],rid],`
+   <div class="card"><div class="hd"><h3>${esc(r.question)}</h3>
+     ${r.status?`<span class="pill ${KI_PILL[r.status]||"p-mut"}">${esc(r.status)}</span>`:""}
+     <span class="n">记录编号 <span class="mono">${esc(r.run_id)}</span> · ${esc(r.asker_name||"")}(${esc(r.asker_role||"")})${esc(r.created||"")}</span></div>
+    <table class="tb"><tbody>
+     <tr><td style="width:140px">当时命中</td><td>${r.hit?r.hit+" 段":"<b style='color:var(--bad)'>零命中</b>"}${r.sources.length?"<br>"+r.sources.map(esc).join("<br>"):""}</td></tr>
+     <tr><td>评分</td><td>${r.rating==null?"没评":r.rating+" 分"}</td></tr>
+     <tr><td>问题类型</td><td>${esc(r.issue_type||"还没人报")}${r.issue_note?" —— "+esc(r.issue_note):""}${r.issue_by?`(${esc(r.issue_by)})`:""}</td></tr>
+     <tr><td>维护人</td><td>${esc(r.maintainer_name||"未指定")}</td></tr>
+     <tr><td>修订到的知识版本</td><td>${esc(r.revised_version||"—")}</td></tr>
+     <tr><td>修订说明</td><td>${esc(r.revised_note||"—")}</td></tr>
+    </tbody></table>
+    <div class="ops">
+      <button class="btn" data-ki-type>报问题类型</button>
+      <button class="btn" data-ki-assign>指定维护人</button>
+      <button class="btn sol" data-ki-status>改处理状态</button>
+      <span style="color:var(--ink2);font-size:12px">指定维护人、改状态只有总部运营能做,都要写理由;报类型只认提问人本人或总部运营</span></div></div>
+   <div class="card"><div class="hd"><h3>复验记录</h3><span class="n">${esc(d.复验声明)}</span></div>
+    <table class="tb"><thead><tr><th style="width:150px">时间</th><th style="width:150px">为什么挑它</th><th style="width:120px">结论</th><th style="width:90px">前 → 后</th><th>新出现 / 不见了的出处</th></tr></thead><tbody>
+     ${d.复验.length?d.复验.map(x=>`<tr><td class="mono">${esc(x.at)}</td><td>${esc(x.why_selected||"")}</td><td>${esc(x.verdict)}${x.error?`<br><span style="color:var(--bad);font-size:12px">${esc(x.error)}</span>`:""}</td>
+       <td>${x.before_hit??"—"} → ${x.after_hit??"—"}</td>
+       <td style="font-size:12px">${x.after_sources.filter(s=>!x.before_sources.includes(s)).map(s=>"+ "+esc(s)).join("<br>")}
+         ${x.before_sources.filter(s=>!x.after_sources.includes(s)).map(s=>"<br>− "+esc(s)).join("")}</td></tr>`).join("")
+       :'<tr><td colspan="5" style="color:var(--ink2)">还没复验过(跑 tools/kb_recheck.py)</td></tr>'}</tbody></table></div>
+   <div class="card"><div class="hd"><h3>改动记录</h3><span class="n">只增不改</span></div>
+    <table class="tb"><thead><tr><th style="width:150px">时间</th><th style="width:90px">谁</th><th style="width:100px">改了什么</th><th>从 → 到</th><th>理由</th></tr></thead><tbody>
+     ${d.日志.length?d.日志.map(x=>`<tr><td class="mono">${esc(x.at)}</td><td>${esc(x.by_name||"")}</td><td>${esc(x.what)}</td>
+       <td>${esc((x.before||"").slice(0,40))} → ${esc((x.after||"").slice(0,40))}</td><td>${esc(x.why||"")}</td></tr>`).join("")
+       :'<tr><td colspan="5" style="color:var(--ink2)">还没改过</td></tr>'}</tbody></table></div>`);
+  const 人=d.可选维护人.map(x=>`${x.no} ${x.name}(${x.role})`);
+  M.querySelector("[data-ki-type]").onclick=()=>modal("报问题类型",
+    [{k:"类型",label:"问题类型",type:"select",opts:d.类型们,val:r.issue_type||d.类型们[0],req:true},
+     {k:"说明",label:"说明",type:"text",req:true,ph:"哪儿答不上 / 错在哪 / 过期成了什么样"}],
+    v=>doOp("/api/kb-issue-type",{试跑id:rid,类型:v.类型,说明:v.说明},()=>kbIssueDetail(rid)));
+  M.querySelector("[data-ki-assign]").onclick=()=>modal("指定维护人",
+    [{k:"人",label:"维护人",type:"select",opts:人.length?人:["(只有总部运营能指定)"],req:true},
+     {k:"理由",label:"理由",type:"text",req:true,ph:"为什么归他"}],
+    v=>doOp("/api/kb-issue-assign",{试跑id:rid,维护人工号:String(v.人||"").split(" ")[0],理由:v.理由},()=>kbIssueDetail(rid)));
+  M.querySelector("[data-ki-status]").onclick=()=>modal("改处理状态",
+    [{k:"到",label:"改成",type:"select",opts:d.状态们,val:r.status||d.状态们[0],req:true},
+     {k:"修订版本",label:"修订到的知识版本",ph:"改成「已修订」时版本或说明至少写一样"},
+     {k:"修订说明",label:"修订说明",type:"text",ph:"改了哪一篇哪一节"},
+     {k:"理由",label:"理由",type:"text",req:true,ph:"以后有人问「为什么关了 / 为什么不处理」,答案在这里"}],
+    v=>doOp("/api/kb-issue-status",{试跑id:rid,到:v.到,理由:v.理由,修订版本:v.修订版本,修订说明:v.修订说明},()=>kbIssueDetail(rid)),true);
   M.querySelectorAll("[data-cr]").forEach(e=>e.onclick=()=>view(e.dataset.cr,e.dataset.ca||undefined));
 }
 
