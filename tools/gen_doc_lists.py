@@ -20,56 +20,57 @@ import api
 
 写 = set(api.WRITE_TOOLS)
 
-# ⚠️⚠️ **这张分组表 2026-10-23 补齐过一次,而它漏的不是零碎,是整族能力。**
+# ⚠️⚠️ **归属不在这儿,在 `backend/domains.py`** —— 2026-10-23 下午改的。
 #
-# 当时的账:分组覆盖 41 个、库里真有 79 个,**漏 38 个** ——
-# 报修五个、签收四个、下单两个、经营报告五个、差评四个、工厂回传四个全不在。
-# 而产品说明里那张表只列了 48 个,**紧跟在「shop 工具 79 个」这个标题下面**:
-# > 标题说 79、表里 48,中间差 31 个,**而没有任何东西报出来** ——
-# > 「79」那个数是对账过的(`doc_numbers_check` 盯着),那张表没人对账。
-# 读的人只会相信表,于是一份漏掉整个报修族的清单,会让人以为系统不能报修。
-# **比没有清单更糟。**
+# 上午这里还是一张**手写的**分组表,而它漂到了:覆盖 41 个、库里真有 79 个,
+# 漏 38 个(报修 / 签收 / 下单 / 经营报告 / 差评 / 工厂回传整族全不在)。
+# 我把它补齐成 17 组,当天下午并行会话把 MCP 按 8 个业务领域拆开 ——
+# **那份归属才是唯一来源**(`domains.领域`,服务入口 / 角色名单 / 提示词前缀都从它取)。
+# 于是这里不再自己分组:**手写的那张表就是会漂,上午刚证过一次。**
 #
-# 现在这张表的对账进了门禁(`--check`),所以它不会再悄悄漂。
-# 📌 **分组按「业务动作」分,不按数据表分** —— 读这份文档的人问的是
-# 「这个岗位能干什么」,不是「这个工具读哪张表」。
+# 📌 **只留下会漂的那一半和不会漂的那一半的分界**:
+#     工具**归谁** —— 会漂(每加一个工具就可能漏登记)→ 从 `domains.py` 现读
+#     八个领域的**中文名** —— 不漂 → 留在这儿一张极小的映射
+#   并配一条断言:`domains.领域` 里每个领域都必须有中文名 ——
+#   他哪天加第九个领域会**当场红**,而不是安静地少一节。
+# ⚠️ 这份清单 2026-10-23 下午**被我自己删掉过一次** —— 把分组改成读 `domains.py` 时,
+#    替换的那一段正好把它一起吞了,`bite_check` 的棘轮当场红在
+#    「没有咬合记录的脚本不超过 0 个」。**那条棘轮值这个钱。**
 咬合 = [
-    ("把分组表里「报修」那一族整个去掉(四个工具谁也不属于任何一组)", "对账不过"),
-    ("把产品说明那张表里「报修」的小标题删掉", "产品说明里那张工具表和代码对不上"),
+    ("把 backend/domains.py 里某个工具从它的领域里去掉(它从此谁也不归)", "对账不过"),
+    ("把产品说明那张表里某个领域的小标题删掉", "产品说明里那张工具表和代码对不上"),
 ]
 
-分组 = {
-    "任务与派工": ["get_tasks", "task_types",
-                "assign_task", "dispatch_task", "reassign_task", "finish_task",
-                "assign_batch", "dispatch_batch"],
-    "排班与复盘": ["week_grid", "monthly_review", "appt_funnel", "on_shift"],
-    "会员与审批": ["get_member", "points_ledger", "approval_queue",
-                "apply_adjust", "decide_approval"],
-    "客户与方案": ["get_scheme", "get_order", "can_order", "get_wearer",
-                "customer_history", "deal_credit"],
-    "客户经营与挽回": ["recovery_queue", "revive_list", "churn_watch",
-                     "call_opportunity", "ownerless_list", "conversion_rate"],
-    "下单 · 量体 · 签收": ["open_order", "confirm_order", "record_measure",
-                          "record_pickup", "verify_fit_code", "ratify_complete"],
-    "订单流水与取消": ["orders_by_date", "order_log", "cancel_fee"],
-    "库存与产能": ["get_stock", "stock_alert", "get_capacity", "get_workorder",
-                "my_workorders"],
-    # 版师:核占比 / 推档 / 开裁,加上受欢迎与易损(2026-10-22 接上入口)
-    "版师相关":   ["pattern_queue", "grading_audit", "set_piece_ratio", "start_cutting",
-                "summarize_products", "product_ranking", "wear_risk"],
-    "白坯试衣与工厂催单": ["fitting_queue", "factory_chase"],
-    "工厂回传与报工": ["delay_pending", "mark_delay_told", "rollback_order",
-                     "report_production"],
-    "报修": ["create_repair", "decide_repair", "advance_repair", "verify_repair_return"],
-    "售后与维保": ["get_aftersale", "get_maintain", "get_review_queue", "record_fitting"],
-    "评价与差评": ["bad_ratings", "rating_overview", "close_bad_rating", "service_records"],
-    "经营报告": ["store_report", "weekly_revenue", "sales_rank",
-               "save_report", "confirm_report", "list_reports"],
-    "渠道与活动": ["activity_roi", "channel_compare"],
-    "推算与校验": ["plan_for_event", "forecast_growth", "check_write"],
+import domains as _D
+
+领域中文名 = {
+    "knowledge":   "知识与工艺",
+    "customer":    "客户与会员",
+    "commerce":    "商品与交易",
+    "fulfillment": "生产与交付",
+    "finance":     "财务与结算",
+    "service":     "售后与评价",
+    "work":        "任务与排班",
+    "analytics":   "经营分析",
 }
+缺名 = [d for d in _D.领域 if d not in 领域中文名]
+if 缺名:
+    sys.exit(f"❌ `domains.领域` 里这几个领域没有中文名:{缺名} —— "
+             f"加了新领域就要在 `tools/gen_doc_lists.py` 的 `领域中文名` 里补一行,"
+             f"否则产品说明里会**安静地少一节**")
+多名 = [d for d in 领域中文名 if d not in _D.领域]
+if 多名:
+    sys.exit(f"❌ `领域中文名` 里有 `domains.领域` 没有的:{多名} —— 领域删了名字没删")
+
+# 按领域把 shop 那一段分组:取每个领域和 SHOP_SCHEMAS 的交集,
+# **顺序照 `domains.领域` 的顺序**(它是唯一来源,连次序也从它来)。
+分组 = {}
 
 全部 = [t["name"] for t in api.SHOP_SCHEMAS]
+for 域, 名们 in _D.领域.items():
+    这组 = [n for n in 名们 if n in set(全部)]
+    if 这组:
+        分组[f"{领域中文名[域]}(`{域}`)"] = 这组
 在组里 = [n for g in 分组.values() for n in g]
 漏 = [n for n in 全部 if n not in 在组里]
 编的 = [n for n in 在组里 if n not in 全部]
