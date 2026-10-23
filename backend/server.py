@@ -1781,8 +1781,12 @@ def resolve_combo(d, actor="魏欣新", _role=None):
     打完样由这里写回去,那一格的依据就从「没有」变成「人工确认」,
     从此 kb_combo 会直接给结论,也不再进队列。
 
-    **写在后台,不在工具层** —— 「工具层一个写接口都没有」那条保证靠
-    mode=ro 连接结构性成立,不能为了方便就破。模型能看队列,不能回填。
+    **写在后台,不在工具层** —— 模型能看队列,不能回填。
+    ⚠️ 原来这儿写的理由是「『工具层一个写接口都没有』那条保证不能破」,
+    而**那句话早就不是真的了**(2026-09-10 起有写工具,现在 28 个)。
+    现在的理由是别的、而且仍然成立:**回填是把「没有依据」覆盖成「验证过」**,
+    它要的是打样看到了什么 —— 那是人在工位上做完事之后的登记,
+    不是模型在对话里该替人做的判断。写错格子等于给没人验过的组合发合格证。
     """
     # **名字和编码都收,而且回显名字。**
     # 演示时当场栽了一次:我手输编码 KF11 × MT44,以为那是「平绣×棉麻」,
@@ -1812,6 +1816,31 @@ def resolve_combo(d, actor="魏欣新", _role=None):
     cur = rows("SELECT verdict,rule FROM craft_combo WHERE craft=? AND material=?", ck, mk)
     if not cur: return dict(ok=False, code="NO_CELL", reason=f"矩阵里没有 {ck} × {mk} 这一格")
     old = cur[0]
+    # ⚠️⚠️ **写两处,而且归档文件那一处是主的。**
+    #
+    # 2026-10-23(业务需求池 P3)查出来:原来只写库,而那 16 格「人工确认」
+    # **写死在 `knowledge/derive_combo.py` 的 OVERRIDE 字典里**。
+    # 于是「人确认过的事实」有两个家,**而只有一个家被推导当真** ——
+    # 回填一格之后,落库对账报「落库漂移,md 改过但没重新 seed」:
+    # **那是个错的诊断**(md 一个字没改),而照着它去跑 `seed.py` 会把那格
+    # 人工确认**抹掉** —— 那一格回到待核实队列,**而人已经打过样了**。
+    # > 它红了,所以不是静默的 —— 比静默好得多。
+    # > 但**红错理由比不红更费事**,而这一条更糟:**照着它去做会造成损失。**
+    #
+    # 所以现在:**先写归档文件**(手写源,进版本库,推导从它读),再写库(推导的产物)。
+    # 顺序是有意的 —— 文件写失败就整个拒,**不留下一个「库里有、文件里没有」的格子**,
+    # 那正是上面那个错诊断的来源。
+    import combo_manual as _CM
+    import worldclock as _wc2
+    try:
+        动作, _ = _CM.记一格(ck, mk, v, d["reason"],
+                             核的人=f"{actor}({role})",
+                             核的日期=_wc2.今天().isoformat())
+    except Exception as e:
+        return dict(ok=False, code="ARCHIVE_FAIL",
+                    reason=f"写不进归档文件({_CM.档}):{type(e).__name__}: {e}。"
+                           f"**整个回填没做** —— 只写库的话,下次推导会把这一格抹掉,"
+                           f"而报错理由会指向「md 改过但没重新 seed」,照着它做会丢掉你刚打的样")
     with _conn() as c:
         c.execute("UPDATE craft_combo SET verdict=?,reason=?,rule='人工确认',src_type='demo' "
                   "WHERE craft=? AND material=?", (v, d["reason"], ck, mk))
@@ -1819,9 +1848,13 @@ def resolve_combo(d, actor="魏欣新", _role=None):
            f"核实回填 {ck}×{mk}:{old['rule'] or '无依据'} → 人工确认;{d['reason'][:50]}",
            {"role": role})
     return dict(ok=True, code="RESOLVE", 组合=f"{cname} × {mname}", 编码=f"{ck} × {mk}",
+                归档=f"{_CM.档}({动作})",
                 reason=f"**{cname} × {mname}**({ck} × {mk})已回填为「{v}」,"
                        f"依据等级升为「人工确认」,这一格从待核实队列里消失。"
-                       f"原来是「{old['verdict']} / {old['rule'] or '无依据'}」")
+                       f"原来是「{old['verdict']} / {old['rule'] or '无依据'}」。"
+                       f"⚠️ **结论同时写进了归档文件**(`knowledge/相容矩阵-人工确认.json`,"
+                       f"{动作})—— 那是推导读的那一份,**记得把它提交进版本库**,"
+                       f"否则重建一次库这一格就回到「没有依据」,而你已经打过样了")
 
 
 # 排任务的全部逻辑搬进 backend/tasks.py —— **HTTP 入口和智能体工具共用同一份**。

@@ -11640,5 +11640,53 @@
    }
   ],
   "预期红": "报档差时把**每一条**档差核过没有一起报出去"
+ },
+ {
+  "script": "backend/combo_manual_check.py",
+  "改坏": "把推导里「读不到归档文件就拒跑」改成当 0 格接着推 —— 那 16 格人工确认会被规则重新填一遍,**而结果看起来完全正常**(273 格全有判定),只是人打样的判断被规则的猜测换掉了",
+  "file": [
+   {
+    "path": "knowledge/derive_combo.py",
+    "old": "    except FileNotFoundError:\n        sys.exit(",
+    "new": "    except FileNotFoundError:\n        return {}\n    if False:\n        sys.exit("
+   }
+  ],
+  "预期红": "归档文件读不到:**拒跑**,不许当成「0 格人工确认」"
+ },
+ {
+  "script": "backend/combo_manual_check.py",
+  "改坏": "让核实回填只写库、不写归档文件 —— 下一次推导就把它抹掉,而对账会报「md 改过但没重新 seed」这个错诊断",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "        动作, _ = _CM.记一格(ck, mk, v, d[\"reason\"],",
+    "new": "        动作 = \"跳过\"\n        _ = _CM.读 and (lambda *a, **k: None)(ck, mk, v, d[\"reason\"],"
+   }
+  ],
+  "预期红": "回填必须先写归档文件 —— 只写库的话下一次推导会把它抹掉"
+ },
+ {
+  "script": "tools/realign_report_periods.py",
+  "改坏": "月报按「挪 30 天」对齐而不按自然月 —— 二月必然错(月末不是 30 也不是 31)",
+  "file": [
+   {
+    "path": "tools/realign_report_periods.py",
+    "old": "        一 = dt.date(起.year, 起.month, 1)\n        return 一, 月末(一),",
+    "new": "        一 = 起 - dt.timedelta(days=30)\n        return 一, 一 + dt.timedelta(days=30),"
+   }
+  ],
+  "预期红": "二月的月报:月末是 28 号"
+ },
+ {
+  "script": "tools/realign_report_periods.py",
+  "改坏": "让它顺手改正文和取数包里的日期 —— 那会把取数包里的**来路日期**(「用户 2026-10-20 定」)也改掉,而那是一个现在是对的日期",
+  "file": [
+   {
+    "path": "tools/realign_report_periods.py",
+    "old": "            c.execute(\"UPDATE store_report_doc SET period_start=?, period_end=? WHERE id=?\",\n                      (新起.isoformat(), 新止.isoformat(), i))",
+    "new": "            r = c.execute(\"SELECT body, pack FROM store_report_doc WHERE id=?\", (i,)).fetchone()\n            c.execute(\"UPDATE store_report_doc SET period_start=?, period_end=?, body=?, pack=? WHERE id=?\",\n                      (新起.isoformat(), 新止.isoformat(),\n                       _挪文字里的日期(r[0], 校正) if r[0] else r[0],\n                       _挪文字里的日期(r[1], 校正) if r[1] else r[1], i))"
+   }
+  ],
+  "预期红": "正文**一个字节都没动**(修它该走重新渲染,不是正则替换)"
  }
 ]
