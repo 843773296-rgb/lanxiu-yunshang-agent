@@ -411,7 +411,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py \
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
              test_artifact_page_actions.js test_member_page_actions.js \
-             test_release_page_actions.js
+             test_release_page_actions.js test_workflow_save_gate.js
 
 test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
 	@echo "▸ 端到端(CI 版):$(words $(E2E_CI)) 份 Python + $(words $(E2E_CI_JS)) 份 JS"
@@ -483,11 +483,15 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  **「接口对」和「页面把它接对了」是两件事** —— 冒烟只证明取到数并渲染了,它不点任何东西"
 	@node tests/e2e/test_release_page_actions.js
 	@echo ""
+	@echo "▸ 编排页:草稿没存上,校验 / 冻结 / 试运行一律停下(15 条,不起服务)"
+	@echo "  原来存失败只弹框不告诉调用方 —— 页面是新图,实际冻结、试跑的是旧稿"
+	@node tests/e2e/test_workflow_save_gate.js
+	@echo ""
 	@echo "▸ 任务事件流 SSE(17 条:按 seq 续传、终态要发结束、流开着也重新鉴权)"
 	@echo "  **全后台最后一条「已实现未验」** —— 主要在打「空流和什么都没发生长得一样」"
 	@./.venv/bin/python tests/e2e/test_job_events_sse.py
 	@echo ""
-	@echo "▸ 编排端到端(44 条:建图→校验→冻结→试运行→Worker;Agent 那一条同理)"
+	@echo "▸ 编排端到端(45 条:建图→校验→冻结→试运行→Worker;Agent 那一条同理)"
 	@echo "  **这一份是为了把「我手敲 curl 验过」变成可重跑的断言** —— 它第一次跑就抓到一个 500"
 	@./.venv/bin/python tests/e2e/test_orchestration_flow.py
 	@echo ""
@@ -659,6 +663,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_release_page_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_release_page_actions.log; exit 1; }
 	@tail -2 /tmp/prog-test_release_page_actions.log
+	@node tests/e2e/test_workflow_save_gate.js > /tmp/prog-test_workflow_save_gate.log 2>&1 \
+	  || { echo "  ❌ test_workflow_save_gate 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_save_gate.log; exit 1; }
+	@tail -2 /tmp/prog-test_workflow_save_gate.log
 	@./.venv/bin/python tests/e2e/test_job_events_sse.py > /tmp/prog-test_job_events_sse.log 2>&1 \
 	  || { echo "  ❌ test_job_events_sse 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_job_events_sse.log; exit 1; }

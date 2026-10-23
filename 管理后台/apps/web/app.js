@@ -951,18 +951,30 @@ async function 做_存草稿() {
     // 改过就把上次的校验报告作废 —— **一份对着旧图的报告比没有报告更糟**
     图态.报告 = null;
     画_画布();
+    return true;
   } catch (e) {
+    // **没存上就返回 false,调用方必须停下** —— 校验 / 冻结 / 试运行都是对着服务端那份草稿做的,
+    // 存失败了还往下走,页面上是新图,实际冻结、试跑的是旧稿,而界面看不出来。
+    // 冲突时也不自动刷新:刷新会把这一页没存上的改动扔掉,让人自己决定先抄下来还是放弃。
     if (e.码 === 409) {
       alert(`版本冲突:${e.message}\n\n下一步:${e.体?.advice || ""}\n\n`
-        + `这一页不会替你覆盖 —— 刷新看一眼别人改了什么再合并。`);
-      return 路由();
+        + `这一页不会替你覆盖,你的改动还留在页面上 —— 刷新会丢掉它们,先记下再刷新看别人改了什么。`);
+      return false;
     }
     alert(`${e.体?.code || "出错"}:${e.message}\n\n下一步:${e.体?.advice || "—"}`);
+    return false;
   }
 }
 
+// 测试入口(tests/e2e/test_workflow_save_gate.js):**存失败之后,后面三个动作都不许发请求**
+const 编排动作 = {
+  设图态: (s) => { 图态 = s; },
+  存草稿: () => 做_存草稿(), 校验: () => 做_校验(), 冻结: () => 做_冻结(), 试运行: () => 做_试运行(),
+};
+if (typeof globalThis !== "undefined") globalThis.编排动作 = 编排动作;
+
 async function 做_校验() {
-  if (图态.脏) { await 做_存草稿(); }
+  if (图态.脏 && !(await 做_存草稿())) return;
   try {
     图态.报告 = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/validate`,
                         { method: "POST" });
@@ -974,7 +986,7 @@ async function 做_冻结() {
   const 说明 = prompt("变更说明(必填)——「这一版改了什么、为什么」。\n\n"
     + "它是版本对比时唯一能说清意图的东西:哈希只能说明「变了」。");
   if (说明 === null) return;
-  if (图态.脏) { await 做_存草稿(); }
+  if (图态.脏 && !(await 做_存草稿())) return;
   try {
     const d = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/versions`,
       { method: "POST", body: JSON.stringify({ 变更说明: 说明 }) });
@@ -1000,7 +1012,7 @@ async function 做_试运行() {
     if (v === null) return;
     输入[k] = v;
   }
-  if (图态.脏) { await 做_存草稿(); }
+  if (图态.脏 && !(await 做_存草稿())) return;
   try {
     const d = await 请求(`${P()}/execution-runs`, {
       method: "POST",
