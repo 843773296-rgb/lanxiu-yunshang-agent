@@ -64,6 +64,9 @@ SDK_SRC = open(os.path.join(ROOT, "agentsite", "sdk.py"), encoding="utf-8").read
 咬合 = [
     ('把工具层的只读连接开成可写(读连接从此也能改库)',
      '工具层的读连接写不了库'),
+    ('按需加载的名单闸被拆掉(调用时不按这一轮名单核)', '按需加载只取回自己名单里的工具'),
+    ('ToolSearch 的点名例外写成按前缀放行(Bash 也一并放了)', '按需加载只取回自己名单里的工具'),
+    ('全能助手顺手挂上了版师那一包(ToolSearch 搜得到版师写口)', '按需加载只取回自己名单里的工具'),
 ]
 
 def _must_fail(fn, *exc):
@@ -745,6 +748,77 @@ def a_budget():
         return "_max_usd 没有返回任何值"
     raise PermissionError("预算上限已传入 options,且按供应商取正值")
 
+def a_toolsearch_scope():
+    """按需加载放行 ToolSearch 之后,三道闸还在不在(用户 10-23 拍「工具按需加载」,数据工厂提的四问)。
+
+    要 venv(sdk / guards 的钩子要 claude_agent_sdk)—— **跑不起来就算破,不算拦下**:
+    跑不起来的攻击什么都没验(agentsite/runtime.py 开篇那次)。
+    攻五处,每处都真调被测代码:
+      ① 全能助手真挂上的服务里,搜不搜得出别的角色的写口(版师 set_piece_ratio)——
+         按 mcp_config 真起那个领域的服务进程去 tools/list、tools/call
+      ② 真钩子(make_hooks 的 PreToolUse):名单外的 mcp 工具 → 拦,理由点到「白名单」;Bash → 照拦
+      ③ 同一进程先按版师建一次、再按顾问建一次 —— 第二次不许带着版师的工具
+      ④ 研判那条收窄:钩子按研判名单,close_bad_rating 调不动
+      ⑤ 只有全能助手开了按需加载,别的入口 ToolSearch 仍在 disallowed_tools 里
+    """
+    import subprocess as _sp, json as _js, os as _os
+    py = _os.path.join(ROOT, "agentsite", ".venv", "bin", "python")
+    if not _os.path.exists(py):
+        return "agentsite/.venv 不在 —— 这条攻击跑不起来,不算拦下"
+    src = r"""
+import sys, json, asyncio, os, subprocess
+sys.path[:0] = ['agentsite', 'backend']
+import sdk, guards
+out = {}
+全 = sdk.生效工具('all', None)
+cfg = sdk.mcp_config(None, 'all', 名单=全)
+out['挂了版师写口'] = any('set_piece_ratio' in c['env']['LANXIU_TOOLS'].split(',') for c in cfg.values())
+if 'knowledge' in cfg:
+    msgs = [{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-11-25",
+             "capabilities": {}, "clientInfo": {"name": "ba", "version": "0"}}},
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "set_piece_ratio", "arguments": {}}}]
+    c = cfg['knowledge']
+    r = subprocess.run([c['command']] + c['args'], input="\n".join(json.dumps(m) for m in msgs) + "\n",
+                       capture_output=True, text=True, timeout=60, env={**os.environ, **c['env']})
+    回 = {x.get('id'): x.get('result') or x.get('error') for x in map(json.loads, filter(str.strip, r.stdout.splitlines()))}
+    out['列了几个'] = len((回.get(1) or {}).get('tools') or [])
+    out['列得出'] = any(t['name'] == 'set_piece_ratio' for t in (回.get(1) or {}).get('tools') or [])
+    out['调得动'] = bool(回.get(2)) and not (回.get(2) or {}).get('isError') and 'code' not in (回.get(2) or {})
+def 钩(名单, 名):
+    h = guards.make_hooks({'生效工具': 名单})['PreToolUse'][0].hooks[0]
+    r = asyncio.run(h({'tool_name': 名, 'tool_input': {}}, 'ba', None))
+    return r.get('reason') if r.get('decision') == 'block' else None
+out['名单外'] = 钩(全, 'mcp__knowledge__set_piece_ratio')
+out['Bash'] = 钩(全, 'Bash')
+out['ToolSearch'] = 钩(全, 'ToolSearch')
+sdk.mcp_config(None, 'pattern')
+顾问 = sdk.mcp_config(None, 'kb')
+out['换身份后'] = any('set_piece_ratio' in c['env']['LANXIU_TOOLS'].split(',') for c in 顾问.values())
+out['研判'] = 钩(list(sdk.研判工具), 'mcp__service__close_bad_rating')
+out['开给'] = sorted(sdk.按需加载的角色)
+print(json.dumps(out, ensure_ascii=False))
+"""
+    r = _sp.run([py, "-c", src], capture_output=True, text=True, timeout=180, cwd=ROOT)
+    try:
+        o = _js.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        return f"攻击脚本没跑完,不算拦下:{(r.stderr or r.stdout)[-300:]}"
+    if o["挂了版师写口"]: return "全能助手的服务挂上了版师写口 set_piece_ratio —— ToolSearch 搜得到"
+    if not o.get("列了几个"): return "全能助手的知识领域服务没起来或一个工具都没列 —— 「列不出版师写口」没验到"
+    if o.get("列得出"): return "真起的服务把 set_piece_ratio 列给了全能助手"
+    if o.get("调得动"): return "真起的服务让全能助手调动了 set_piece_ratio"
+    if not o["名单外"] or "白名单" not in o["名单外"]: return f"名单外的工具没被钩子按白名单拦:{o['名单外']}"
+    if not o["Bash"]: return "放行 ToolSearch 之后 Bash 也放行了"
+    if o["ToolSearch"]: return f"ToolSearch 没放行(按需加载用不了):{o['ToolSearch']}"
+    if o["换身份后"]: return "同一进程先按版师建、再按顾问建,顾问那份带着版师写口"
+    if not o["研判"] or "白名单" not in o["研判"]: return f"研判名单外的 close_bad_rating 没被拦:{o['研判']}"
+    if o["开给"] != ["all"]: return f"按需加载开给了 {o['开给']},不只全能助手"
+    if '+ ([] if kind in 按需加载的角色 else ["ToolSearch"])' not in SDK_SRC:
+        return "别的入口没把 ToolSearch 放进 disallowed_tools"
+    raise PermissionError("名单外的写口搜不出、调不动,钩子按白名单拦;Bash 照拦;换身份不串;研判收窄还在;只开给全能助手")
+
+
 def a_disallowed():
     miss = [t for t in ("Bash", "Write", "Edit", "Read", "Task", "WebFetch")
             if f'"{t}"' not in SDK_SRC]
@@ -1039,6 +1113,11 @@ STRUCT = [
  ("配置层也点名封了内置工具", "sdk.py disallowed_tools",
   a_disallowed, "检查危险工具是否都在 disallowed_tools 里",
   "**双锁**:配置一道 + Hook 一道。配置会被人改错,Hook 是兜底"),
+ ("按需加载只取回自己名单里的工具", "agentsite/sdk.py 按需加载的角色 / guards.py ToolSearch 点名例外 + 名单闸",
+  a_toolsearch_scope, "全能助手放行 ToolSearch 后:真起服务搜版师写口、钩子判名单外工具和 Bash、换身份重建、研判名单",
+  "**靠结构**:服务按名单建(CLI 不认识名单外的工具)+ 调用时钩子按同一份名单再核一次。"
+  "ToolSearch 按名字放行、不按「只读」放 —— 再加一个得再改代码再过咬合。"
+  "规矩仍按名单全集启动时装配,不读运行时取回了哪些(P6 的静态前提不变)"),
  ("店长改不了商品(全国主数据)", "server.py save_product",
   a_product_by_manager, "以店长身份调 save_product",
   "**原来是「店长及以上」,那是个漏洞** —— 商品挂的版型决定用料和报价,"

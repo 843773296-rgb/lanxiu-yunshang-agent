@@ -1594,6 +1594,13 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
                 return None
             _态 = "未知"
         return (f"技能「{_sk or '?'}」现在的状态是「{_态}」,没有放行(只有试运行 / 已发布的能用),已拦下。")
+    # ── 唯一点名的例外:ToolSearch(用户 2026-10-23 拍「工具按需加载」)──────────────
+    # **按名字放行,不按「只读」这个属性放** —— 属性是判断,下一个人会接着判「Read 也只读」;
+    # 名字是结构,要再加一个就得再改这里、再过一次咬合。
+    # 它本身不写,但它让别的工具变得可调;所以取回来的工具**照样要过下面这道前缀闸**,
+    # 外加 make_hooks 里按这一轮名单的那道 —— 取回 Bash 的 schema 也调不动它。
+    if name == "ToolSearch":
+        return None
     if name and not name.startswith("mcp__"):
         return (f"工具「{name}」不在本系统挂载的 MCP 工具里,已拦下。"
                 "这个助手**只能用挂载的只读业务工具**,不能读写文件、"
@@ -1958,6 +1965,14 @@ def make_hooks(state, 注日期=True):
 
     async def pre_tool(inp, tool_use_id, ctx):
         name, args = inp.get("tool_name", ""), inp.get("tool_input") or {}
+        # ── 名单闸:调用那一刻按**这一轮生效的名单**核一次 ──────────────────────
+        # 服务按名单建,名单外的工具 CLI 本来就不认识;这一道是给「按需加载」配的第二层 ——
+        # 名单和注入用的是同一份(sdk.run 的 `工具` → state["生效工具"]),不抄第二份。
+        _名单 = state.get("生效工具")
+        if _名单 is not None and name.startswith("mcp__") and name not in _名单:
+            state.setdefault("blocked_tools", []).append(name)
+            return {"decision": "block",
+                    "reason": f"工具「{name}」不在你这个入口的白名单里,已拦下。只能用这一轮挂上的工具。"}
         called = [c["tool"] for c in (state.get("calls") or [])]
         v = pre_tool_verdict(name, args, state.get("prompt", ""),
                              state_reads=called, state_writes=state.get("wrote") or [])

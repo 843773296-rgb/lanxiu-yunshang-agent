@@ -471,6 +471,10 @@ SHOP_TOOLS = [
 # 所以 skills_check.py 加了结构检查:**白名单必须和 MCP 暴露的完全一致**,
 # 靠人记得同步是不行的。
 KB_ONLY_TOOLS = [
+    # 门店顾问要看得到客户档位(用户 10-23 拍「补上」)—— 召回名单真跑时顾问入口拿不到档位,只能写「档位未知」。
+    # ⚠️ 写在**名单字面量里**,别写进 _ROLE_TOOLS 的 lambda:规矩检查(P3/P6)从源码读字面量,
+    # 写在 lambda 里它看不见 —— 顾问挂上了而 P6 一声不响(10-23 第一版就是这么写的)。
+    "mcp__customer__get_member",
     "mcp__customer__get_wearer", "mcp__customer__forecast_growth",
     "mcp__commerce__plan_for_event",
     # 方案 =「一件事」的单位。**只给工艺顾问,不进 SHOP_TOOLS** ——
@@ -854,13 +858,24 @@ def roles():
     return out
 
 
+# ── 工具按需加载(用户 2026-10-23 拍「工具按需加载」)──────────────────────
+# 全能助手一次挂 95 个工具,开口就占约 19 万 token(Haiku 实测 192665),其中工具说明约 10 万。
+# 开了之后工具说明不全量进上下文,模型先用 ToolSearch 取回要用的那几个。
+#
+# **范围仍是这个角色的名单**:CLI 只认识 mcp_servers 里挂的工具,而服务按 名单 建(见 mcp_config),
+# ToolSearch 搜的是 CLI 已知的那一份 —— 搜不出别的角色的工具。这一条**有真攻击**
+# (backend/boundary_audit.py「按需加载搜不出名单外的工具」),不靠读代码确认。
+# 规矩照旧启动时按名单全集装配(prompts.assemble 读的是名单,不是运行时取回了哪些)—— P6 的静态前提不变。
+#
+# 只开给 all:按岗位的入口工具少,省不了多少,却多一次搜索往返。
+按需加载的角色 = frozenset({"all"})
+
+
 _ROLE_TOOLS = {
     # 全能助手:所有工具一次给全。**分装的机制没删**,只是默认入口先合起来。
     "all":      lambda: sorted(set(KB_TOOLS + KB_ONLY_TOOLS + WORKSHOP_TOOLS
                                    + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS)),
-    # 门店顾问要看得到客户档位(用户 10-23 拍「补上」)—— 召回名单真跑时顾问入口拿不到档位,
-    # 只能写「档位未知」。管它的规矩(TL19 / TK08 / TK09)按 needs 跟着工具进,P6 会验。
-    "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS + ["mcp__customer__get_member"],
+    "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS,
     "workshop": lambda: WORKSHOP_TOOLS,           # 工坊不看订单流水,只看产能和工单
     "task":     lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS,
     # 财务只对账,**不看量体/版型/产能** —— 给多余的工具它就会去用。
@@ -1089,9 +1104,12 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         # 「模型没用」和「模型不能用」是两回事,安全边界不能建在前者上。
         disallowed_tools=[
             "Bash", "BashOutput", "KillShell", "Read", "Write", "Edit", "NotebookEdit",
-            "Glob", "Grep", "WebFetch", "WebSearch", "Task", "Agent", "ToolSearch",
+            "Glob", "Grep", "WebFetch", "WebSearch", "Task", "Agent",
             "TodoWrite", "SlashCommand", "Artifact", "SendUserFile",
-        ],
+        ] + ([] if kind in 按需加载的角色 else ["ToolSearch"]),
+        # 按需加载:工具说明先不进上下文,模型用 ToolSearch 按名字 / 关键词取回再调。
+        # CLI 对非官方地址(DeepSeek)默认关着,要显式开;只开给 按需加载的角色。
+        env={"ENABLE_TOOL_SEARCH": "true"} if kind in 按需加载的角色 else {},
         model=model,
         max_turns=max_turns,
         permission_mode="bypassPermissions",   # 工具全是只读的,不需要逐次批准

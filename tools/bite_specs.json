@@ -11496,5 +11496,53 @@
    }
   ],
   "预期红": "两头都写出来、算对的倍数不算编数"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "按需加载的名单闸被拆掉(调用时不按这一轮名单核)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if _名单 is not None and name.startswith(\"mcp__\") and name not in _名单:\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "按需加载只取回自己名单里的工具"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "ToolSearch 的点名例外写成按前缀放行(Bash 也一并放了)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if name == \"ToolSearch\":\n        return None\n",
+    "new": "    if name == \"ToolSearch\" or name == \"Bash\":\n        return None\n"
+   }
+  ],
+  "预期红": "按需加载只取回自己名单里的工具"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "全能助手顺手挂上了版师那一包(ToolSearch 搜得到版师写口)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS)),",
+    "new": "                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + PATTERN_TOOLS)),"
+   }
+  ],
+  "预期红": "按需加载只取回自己名单里的工具"
+ },
+ {
+  "script": "tools/prompts_check.py",
+  "改坏": "规矩改成跟着运行时取回的工具装(按需加载之后 P6 就成了摆设)",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "kind, {t.rsplit(\"__\", 1)[-1] for t in 工具} | ({\"图片\"}",
+    "new": "kind, {t.rsplit(\"__\", 1)[-1] for t in state.get(\"已取回\", 工具)} | ({\"图片\"}"
+   }
+  ],
+  "预期红": "规矩按名单启动时装配,不跟着运行时取回的工具走"
  }
 ]
