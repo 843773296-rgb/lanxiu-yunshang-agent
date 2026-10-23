@@ -113,6 +113,13 @@ def main():
     # **那种不触发是权限挡的,不是描述不好**,混在一起测就分不清谁的责任。
     sys.path.insert(0, os.path.join(ROOT, "backend"))
     me = {"no": "60000001", "name": "张静静", "role": "店长", "shop": "SH001 静安旗舰店"}
+    # 用例可以写 `"身份": "顾问"` 换身份(10-23 经营报告加的):「我这周做得怎么样」由顾问问是业绩、
+    # 由店长问可以读成门店经营 —— **同一句话换个人问,标准答案就变了**,不换身份测不出那条边界。
+    身份们 = {"店长": me,
+             "顾问": {"no": "60000002", "name": "林岚", "role": "顾问", "shop": "SH001 静安旗舰店"}}
+    _错身份 = [c["id"] for c in cases if (c.get("身份") or "店长") not in 身份们]
+    if _错身份:   # 写错的身份不许落进「跑崩了」那一类 —— 那一类不进分母,题会安静地消失
+        sys.exit(f"用例 {_错身份} 的「身份」认不出,只认 {list(身份们)}")
 
     import importlib as _il; _mid = _il.import_module("sdk").default_model_id()
     print(f"\n\033[1m技能触发评测 · {len(cases)} 条 · 模型 {_mid} · "
@@ -143,7 +150,8 @@ def main():
             g1 = None
             for _t in range(a.retry + 1):
                 try:
-                    g1, _r = asyncio.run(_run_with_identity(sdk, c["prompt"], me, a.set))
+                    g1, _r = asyncio.run(_run_with_identity(
+                        sdk, c["prompt"], 身份们[c.get("身份") or "店长"], a.set))
                     break
                 except Exception as e:
                     g1 = f"ERR:{type(e).__name__}"
