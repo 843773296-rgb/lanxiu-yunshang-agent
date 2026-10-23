@@ -3697,6 +3697,7 @@ class H(BaseHTTPRequestHandler):
                           body.get("rate"), body.get("why"), u)
             log_op(u["name"], "mcp-tool", str(body.get("name") or "-"), "-", "save", bool(r.get("ok")),
                    "" if r.get("ok") else "MCP_CFG", (r.get("reason") or "")[:200], {})
+            return self._send(r, 200 if r.get("ok") else 400)
         if p in ("/api/kb-rag-record","/api/kb-issue-type","/api/kb-issue-assign","/api/kb-issue-status"):
             # 知识问题的写口(外部复审第 4 节 E)。身份只从登录会话取(请求体里自报的不认);
             # 提问题类型只认提问人本人或总部运营,指定维护人 / 改状态只认总部运营、都要理由 —— 判在 kb_issue 里
