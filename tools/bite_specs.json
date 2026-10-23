@@ -9710,12 +9710,12 @@
  },
  {
   "script": "tools/bite_check.py",
-  "改坏": "把欠债表里 backend/stock_check.py 的处数从 12 改小(等于声称已经还了一部分)",
+  "改坏": "把欠债表里 backend/source_check.py 的处数从 4 改小(等于声称已经还了一部分)",
   "file": [
    {
     "path": "tools/咬合两份记录欠债.json",
-    "old": "\"backend/stock_check.py\": 12",
-    "new": "\"backend/stock_check.py\": 11"
+    "old": "\"backend/source_check.py\": 4",
+    "new": "\"backend/source_check.py\": 3"
    }
   ],
   "预期红": "欠债表里的,声称了却没有规格的处数只许少不许多"
@@ -10512,5 +10512,149 @@
    }
   ],
   "预期红": "真跑 10-23"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "把 可售天数() 里的「笔数不够」那道闸删掉",
+  "file": [
+   {
+    "path": "knowledge/stockalert.py",
+    "old": "    if 卖过几笔 < 最少笔数:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "工具出口:笔数不够的,那一栏是话不是数"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "把 可用() 改成直接返回 在手(不减已占用)",
+  "file": [
+   {
+    "path": "knowledge/stockalert.py",
+    "old": "    return (在手 or 0) - (已占用 or 0)",
+    "new": "    return (在手 or 0)"
+   }
+  ],
+  "预期红": "可用 = 在手 − 已占用"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "把「发不出」那一档并进「断货」",
+  "file": [
+   {
+    "path": "knowledge/stockalert.py",
+    "old": "        return (\"发不出\", f\"在手 {在手} 件但",
+    "new": "        return (\"断货\", f\"在手 {在手} 件但"
+   }
+  ],
+  "预期红": "「断货」档里不许有在手 > 0 的"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "把停用的 SKU 也算进预警",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        if r[\"status\"] == \"停用\":\n            停用 += 1",
+    "new": "        if False:\n            停用 += 1"
+   }
+  ],
+  "预期红": "停用的 SKU 不进预警"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "把 TL29 挂的工具从 stock_alert 换掉(规矩和工具分家)",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "Rule(\"TL29\", (\"stock_alert\",),",
+    "new": "Rule(\"TL29\", (\"get_order\",),"
+   }
+  ],
+  "预期红": "TL29 和 stock_alert 要在同一个角色身上"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "数销量时不看订单状态(取消单、待付款单也算卖出)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        算, 为啥 = _sa.卖掉了(r[\"status\"], r[\"refund_status\"])\n        if not 算:",
+    "new": "        算, 为啥 = True, None\n        if not 算:"
+   }
+  ],
+  "预期红": "工具数的销量和口径算的**完全一样**"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "把「认不出的状态」改成默认算进销量(黑名单)",
+  "file": [
+   {
+    "path": "knowledge/stockalert.py",
+    "old": "    if 状态 not in 算卖掉:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "销量口径:认不出的状态不算"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "把可卖窗口改回全局跨度(不看每个 SKU 自己的上架日)",
+  "file": [
+   {
+    "path": "knowledge/stockalert.py",
+    "old": "    起 = max(上架日[:10], 区间起) if 上架日 else 区间起",
+    "new": "    起 = 区间起"
+   }
+  ],
+  "预期红": "速度的分母是这个 SKU 自己能卖的那段"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "把「还没上架」也算成能卖 0 天以上",
+  "file": [
+   {
+    "path": "knowledge/stockalert.py",
+    "old": "    if 起 > 区间止:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "上架日晚于统计区间的,算不出"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "让可用 > 0 的行也返回 0 天(把「不知道」写成 0)",
+  "file": [
+   {
+    "path": "knowledge/stockalert.py",
+    "old": "    return round(a / 速度, 1), None",
+    "new": "    return 0.0, None"
+   }
+  ],
+  "预期红": "0 天只能出现在可用为 0 的行上"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "把「这个 0 是什么意思」那一栏去掉",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "            \"这个 0 是什么意思\": (",
+    "new": "            \"这个 0 是什么意思_\": ("
+   }
+  ],
+  "预期红": "真的 0 天要说清它是真的"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "把明细改回按可用件数排序",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        return (0, d) if isinstance(d, (int, float)) else (1, x.get(\"可用\") or 0)",
+    "new": "        return (0, x.get(\"可用\") or 0)"
+   }
+  ],
+  "预期红": "明细按可售天数排,算不出的排后面"
  }
 ]

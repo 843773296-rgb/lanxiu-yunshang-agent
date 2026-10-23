@@ -45,7 +45,6 @@
   "backend/rating_rebuild_check.py": 2,
   "backend/rating_write_check.py": 3,
   "backend/source_check.py": 4,
-  "backend/stock_check.py": 12,
   "backend/supplier_check.py": 2,
   "backend/syscode_check.py": 1,
   "backend/tool_schema_check.py": 2,
