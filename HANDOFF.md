@@ -15,29 +15,66 @@
 
 
 
-## 🗺 10-23 用户拍板的一大批(主会话这条线)· 按这个顺序做
+## 🧊 压缩前交接 · 2026-10-23 下午(主会话)
 
-用户读完外部《MCP 与 Skill 现状核查及建设方案》后当场拍:**MCP 全部拆 / Skill 后台做完整配置页 /
-第三方挑几个审查改造接入 / 新做经营报告、客户召回、差评与维修研判三个**;另拍了「读接口一律要登录」。
+最后刷新:2026-10-23 约 15:00 · 上下文 79% · 本次变化:开了两批并行子任务(git worktree),合并到主检出;MCP 拆 8 领域 / Skill 后台 / MCP 后台 / 读接口要登录 / 复审 A B D 已推;C、E、经营报告 Skill 已合未推
 
-| 顺序 | 做什么 | intent | 状态 |
-|---|---|---|---|
-| 1 | 带客户信息的读接口一律要登录(客户档案三个已收 27bfa56) | `read-login` | ⬜ |
-| 2 | 先修 Skill 统计四处毛病(后台页要靠它) | `skill-admin` ① | ⬜ |
-| 3 | MCP 拆 8 个领域:先定归属清单(单一来源)→ 兼容映射 → 拆服务 → 角色工具集逐个对账 | `mcp-domains` | ⬜ |
-| 4 | Skill 后台完整配置页(状态写库、执行闸读状态) | `skill-admin` ②–⑤ | ⬜ |
-| 5 | 新 Skill:经营报告 → 客户召回 → 差评与维修研判 | `skill-new-batch` | ⬜ |
-| 6 | 第三方 236 个归四类,挑 2–3 个改造进试运行 | `skill-third-party` | ⬜ |
-| 7 | 复审第 4 节 A 客户业务摘要(读接口已要登录;**下一步三个来源都列、标来源**,按到期排) | 卡 A | ⬜ |
-| 8 | 复审第 4 节 B 方案配置:客户搜索 + 选着装人(必须明确点选) | 卡 B | ⬜ |
-| 9 | 复审第 4 节 C 报告受控模板(指标只能从已登记的里选,模板版本随报告冻结) | 卡 C | ⬜ |
-| 10 | 复审第 4 节 D 预警转任务:**延期后又超期算新事可再派**(上一条没办完不重派);**库存预警开口子**:新任务类型不挂客户、派给店长 / 总部运营 | 卡 D | ⬜ |
-| 11 | 复审第 4 节 E 知识问题处理入口 | 卡 E | ⬜ |
+### 现在在哪(主检出 `main`,比 origin 多若干提交,**还没推**)
+- 已推(origin 693df82):MCP 拆 8 领域、MCP 服务与工具管理页、Skill 管理后台、读接口要登录(26 个)、复审 A 客户摘要、B 方案搜客户选着装人、D 预警转任务、常驻服务(launchd)。
+- **本地已合、未推**:经营报告 Skill(5 提交)、复审 E 知识问题入口、表数 129 / 技能数 8 文档、2be62ae(合并 E 时 MCP 写口丢 return 的修复 + 修订版本不许整串是日期)。
+- 上一轮全量(gate-1023i)**红 1 条 = mcp_registry_check 4 处**,原因已查实已修(2be62ae),**修后没再跑全量**。
+- **子任务 C(报告受控模板)已交回、还没合**:分支 `worktree-agent-a6bd14a887a935c8c` 提交 `2e13a2b`;它给 store_report_doc 加了 template_ver 列、改了 report_doc.保存 / 取、api.store_report / save_report 的 kind 默认 None。合并时表数要 +1(report_template_ver)→ 130。
+- **还在跑的子任务**:客户召回 Skill(`worktree-agent-a7ced631cc25278be`)、差评与维修研判 Skill(`…a03a3524f3a80e8af`)、第三方 Skill 审查改造(`…a4292c3f1e608b03e`)。都在排队跑真模型评测(评测锁 /tmp/lanxiu-eval.lock)。交回后照 `merge_specs` 合。
 
-用户 10-23 追加「之前的新功能也得做」= 复审第 4 节 A–E 全做;上面括号里是当场拍的细节(四问四答)。
+### 1. 未验证的预判
+- 🔮 **预判**:2be62ae 之后全量会绿。**没验。** 验法:`./tools/gate_lock.sh --who 主会话 ./check.sh`,看退出码。
+- 🔮 **预判**:C 合进来只会在 index.html / server.py / api.py / check.sh / bite_specs / ensure_tables / 文档表数上冲突。**没验。** 验法:cherry-pick 2e13a2b,冲突文件逐个看;**server.py 别再无脑「两边都保留」**(见判据 ②)。
+- 🔮 **预判**:经营报告 Skill 的结果评测不稳主要因为 RPT000001 期被挪歪。**半验**(删掉那份后 1 过 1 没走流程)。等数据工厂改回那一行后重跑 `agent/store_report_eval.py` 两轮(走评测锁)。
 
-⚠️ 拆 MCP 会改 `mcp__服务__工具` 前缀 —— 角色白名单、提示词 P6、hook、评测判据、bite_specs、日志查询全挂着旧名,
-**兼容映射先于拆分**。客户召回动到生命周期口径时先问数据工厂(造数那条线常碰)。差评正式考仍然不跑。
+### 2. 判据
+- ① 合并子任务的咬合登记表用 scratchpad 的 `merge_specs.py <提交>`:**以主线为底 + 只接那个提交的纯新增,并丢掉它替换掉的旧版**(数据工厂踩过「新旧两版都留」)。脚本若丢了:逻辑是 父=show(c^)、我=show(c)、底=show(HEAD);out=底−(父−我)+(我−父−底)。
+- ② **server.py 冲突不能无脑「两边都保留」**:两边共用的最后一行(return)会被一边偷走 → 写口执行完掉到 404。合完必须跑所有写口检查(mcp_registry / skill_registry / kb_issue / customer_read_auth / scheme_customer_search / alert_dispatch / authgate / page_smoke)。
+- ③ 子任务不跑全量门禁(用户要提速、机器 10 核负载 9–10,并发门禁会让带超时的检查假红);全量只在合并后的主检出跑一次,走 `tools/gate_lock.sh`。
+- ④ 生成文件(安全边界审计.md、待办清单.md、README.md)冲突一律取主线再重生成,不三方合并。
+- ⑤ 拉代码**不用 --autostash**(stash 栈全仓共享);主检出那三份运行日志(.feynman/tool-eval.json、agentsite/evals/funnel.jsonl、skill_usage.jsonl)先复制到 scratchpad、checkout 掉、变基完再放回。
+
+### 3. 作废的结果
+- ❌ gate-1023i(706dc69 上那轮全量)**不作数**:红在 MCP 写口丢 return,已修,要重跑。
+- ❌ 经营报告 Skill 子任务早期那几轮真模型评测,和召回 / 差评子任务**同时跑过**(共享运行目录 `~/.lanxiu-runtime/.claude` 会被各工作区改指),结果可能被污染。
+
+### 4. 禁区(逐字)
+- 「0:00–4:55 窗口期不动夜跑会 import 的代码、不占库、不起服务」
+- 「不碰差评正式题和第 4 节动手」—— 第 4 节用户 10-23 已改口全做;**差评正式考仍然不跑**。
+- 数据工厂说「**归我做,你别碰 `shift_world` 和 `store_report_doc`**」(报告期按整周挪 / RPT000001 改回);「挽回清单一键建跟进、报价一键转订单、待核实队列写回知识库、推档档差写回、咬合欠债」归数据工厂。
+- 主检出 `agentsite/.claude/skills/` 是共享目录:**不挪、不改、不删**(10-23 我挪过一次一分钟,已认错)。
+- 子任务提示词里写死:完全不许用 git stash;真模型评测包 `LANXIU_LOCK_DIR=/tmp/lanxiu-eval.lock tools/gate_lock.sh`。
+
+### 5. 下一步第一个动作
+1. `cd ~/Desktop/澜绣云裳agent && ./tools/gate_lock.sh --who 主会话 ./check.sh > <scratchpad>/gate.log 2>&1; echo $?` —— 绿了:`./tools/scan_secrets.sh`、`git fetch` 后核 `merge-base HEAD origin/main == origin/main`、`git push`、`./tools/always_on.sh restart`、SendMessage 告诉数据工厂(`uds:/tmp/cc-socks/71443.sock`,名 eureka-dd)。
+2. 合 C:`git cherry-pick 2e13a2b`,解冲突(判据 ①②④),`ensure_tables` 走锁建 report_template_ver,文档表数 → 130,跑 report_template_check 等,再全量、推。
+3. **修运行目录按工作区分开**(`agentsite/runtime.py`,`~/.lanxiu-runtime/.claude` 全机共用、各工作区改指)—— 数据工厂建议排在功能前面:它污染所有真模型评测、分数上看不出来。
+4. 报告正文:数据工厂把「期对齐」做成 `tools/realign_report_periods.py`(只改 period 两列,**等两半一起落**),**正文那一半归我**。⚠️ 我还没回它:store_report_doc 的正文是**模型写的**,不是模板生成的,没法「重渲染」—— 要和数据工厂、用户商量怎么改(候选:按该报告的校正量只挪正文里落在旧报告期内的日期;或正文不动、页面上标注)。另外它指出 pack 里混着来路日期(「用户 2026-10-20 定」)被平移误挪 —— 结构修法是 pack 只在已知键里挪日期。
+5. 剩下的子任务交回后逐个合。
+
+### 6. 悬而未决(等用户拍)
+- **D 的三张选型卡**:① 同一次超期已办完能否再派(现状不能;我建议改成能)② 店长能否把补货跟进派给总部运营(现状不能)③ 未回接单类办完后能否再派(现状不能)。
+- **B 的搜索规则**(暂定):姓名包含即命中 / 客户号整号 / 尾号≥4 位 / 最多 20 条;只有一个着装人也要点选。
+- **C 的五张选型卡**:能否多加必选项;章节能否混放期内存量;新增指标默认显示还是隐藏;隐藏项要不要在规矩里明写不进正文;改模板要不要走草稿→试运行→发布。
+- **退款判分器**:模型说「核实没到账再按原幂等号重试」算对还是错(现状算错,我建议维持)。
+- 报告正文怎么改(见第 5 步第 4 条)。
+
+### 原来的排期表(10-23 早上立的,状态更新)
+| 项 | 状态 |
+|---|---|
+| 读接口要登录 | ✅ 已推 |
+| Skill 统计四处 | ✅ 已推 |
+| MCP 拆 8 领域 + MCP 管理页 | ✅ 已推 |
+| Skill 后台完整配置页 | ✅ 已推 |
+| 新 Skill:经营报告 | 🟡 已合未推;召回 / 差评维修 子任务在跑 |
+| 第三方审查改造 | 🟡 子任务在跑 |
+| 复审 A / B / D | ✅ 已推 |
+| 复审 C | 🟡 交回未合 |
+| 复审 E | 🟡 已合未推 |
 
 ## 🌙 今晚长期任务 · 2026-10-22 20:00 → 10-23 早(主会话,用户说「一整晚都是你的」)
 
@@ -10786,31 +10823,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-22 20:15。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-23 12:29。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | 74123c2 · 2026-10-22 · 运行日志:10-22 受欢迎与易损那一轮的调用记录;项目日志重新生成(两个会话都在追加,一次提交) |
-| 代码量 | 779 个 Python 文件 / 153657 行(不含 .venv) |
-| 验收 | `./check.sh` 共 311 项 —— **接手第一件事就是跑它** |
-| 服务 | 管理后台 :8760 → 没起来 · 智能运维平台 :8770 → 没起来 |
+| 分支 | `main` |
+| 最新提交 | 2be62ae · 2026-10-23 · 合并 E 时 MCP 写口丢了最后那行 return(落到 404),补回;知识问题的修订版本不许整串是日期 |
+| 代码量 | 799 个 Python 文件 / 158632 行(不含 .venv) |
+| 验收 | `./check.sh` 共 322 项 —— **接手第一件事就是跑它** |
+| 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-?? .feynman/bite-all-20261016.log
+M HANDOFF.md
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
+?? .feynman/nightly-eval.log
+?? .feynman/world-shift-launchd.log
+?? .wip-muslin/
+?? .wip-store-report-SKILL.md
+?? agent/example-ab-results.jsonl
+?? agent/triage-lure-paper-results.jsonl.0of2.partial
+?? agent/triage-lure-paper-results.jsonl.1of2.partial
+?? agent/triage-lure-paper-results.jsonl.A2-0of2.partial
+?? agent/triage-lure-paper-results.jsonl.A2-1of2.partial
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-74123c2 运行日志:10-22 受欢迎与易损那一轮的调用记录;项目日志重新生成(两个会话都在追加,一次提交)
-4b1dde5 受欢迎与易损接到版师手上:口径 09-18 就做完了,而工具层一个字都没有
-376eceb 管理后台切页:看得出在载入、失败说清原因、连点不再把旧页盖上来(外部复审 3.5)
-dc7747d 差评 AI 档位读法:讲规则时顺口提到的处置不再被读成建议
-171dc54 交接:业务场景回归三条已推送,列下一步候选
+2be62ae 合并 E 时 MCP 写口丢了最后那行 return(落到 404),补回;知识问题的修订版本不许整串是日期
+706dc69 表数 126 → 129(知识问题三张表已建)、自有技能 7 → 8(经营报告);README / 待办清单 / 安全边界审计重生成;CLAUDE.md 目录地图里「一个 quote Skill」改成指向 skills_own
+237d085 知识问题处理入口(复审第 4 节 E 最小一刀):零命中也给记录编号,员工能报问题,总部运营定维护人和状态,复验只说「找到了片段」
+1e089a2 经营报告结果评测:明细里留 store_report 的入参
+5d117ba 经营报告:真跑九月月报钉回判分器;Skill 去掉单开的「并排」段、改进事项不写目标数、描述点名顾问问业绩不走
 ```
 <!--/AUTO-->
 ## 一句话在做什么
