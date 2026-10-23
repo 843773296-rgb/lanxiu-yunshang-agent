@@ -20,6 +20,7 @@
         "kb_lookup", "kb_detail", "kb_combo", "kb_rag", "kb_read", "kb_tables",
         "kb_pattern", "kb_size", "kb_lead", "kb_bom", "get_review_queue",
         "pattern_queue", "grading_audit", "set_piece_ratio",
+        "set_grade_diff",
     ),
     "customer": (    # 客户与会员:档案、着装人、量体、会员、商机、生命周期、挽回
         "get_customer", "get_member", "get_wearer", "customer_history", "kb_fit",

@@ -251,6 +251,10 @@ run "量体模版 / 测量项 · 改一个被引用的东西是最危险的动�
 run "分部位可选料 · 部位从裁片归并,报价口径要跟着出" python3 backend/part_check.py
 run "订单部位选择 · 什么钱都要有对应的记录" python3 backend/part_choice_check.py
 run "裁片用料占比 · 估出来的和版师给的不许长得一样" python3 backend/piece_ratio_check.py
+# 2026-10-23(业务需求池 P2):版师核档差的写口。⚠️ 它**只记「核过这件事」**,不改 md ——
+# 档差在 knowledge/10-版型库.md 里,改它是人的活。判据的主轴是:
+# **一条标着「版师核过」而版师核的是另一个数的档差,和一条真的核过的,长得一模一样。**
+run "版师核档差 · 只记核过不改 md、连当时那个值一起记、md 改过就失效(库副本)" python3 backend/grade_diff_check.py
 run "方案引用 · 存编码不存名字,而且落到具体版型(否则算不出用料)" python3 backend/scheme_check.py
 run "报价口径 · 报价是事件不是状态、算错了作废不改(31 条自测)" python3 knowledge/quote.py
 run "报价写口 · 五样缺一不许落库、报两次两行、作废留痕(库副本)" python3 backend/quote_write_check.py

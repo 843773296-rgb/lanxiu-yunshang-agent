@@ -11592,5 +11592,53 @@
    }
   ],
   "预期红": "点编辑:库里存的那几项都带进来了(方案号、形制、面料、两样工艺、版型、客户)"
+ },
+ {
+  "script": "backend/grade_diff_check.py",
+  "改坏": "登记时不写「核的时候那个值」(只记核过了)—— md 改过之后那条核过就会**漂到一个没人核过的新值上**,而它和一条真的核过的长得一模一样",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "(键, verdict, float(现值), 提案, why.strip(), who, now))",
+    "new": "(键, verdict, None, 提案, why.strip(), who, now))"
+   }
+  ],
+  "预期红": "核过:**连「核的时候那个值」一起记下来了**"
+ },
+ {
+  "script": "backend/grade_diff_check.py",
+  "改坏": "把「只有版师能核档差」那道判断去掉(谁都能核,而改一条档差对全部尺码生效)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if me.get(\"role\") != \"版师\":\n        return {\"error\": f\"核档差要由版师来做",
+    "new": "    if False:\n        return {\"error\": f\"核档差要由版师来做"
+   }
+  ],
+  "预期红": "顾问来核:拒"
+ },
+ {
+  "script": "backend/grade_diff_check.py",
+  "改坏": "把「说不对必须给建议值」那道判断去掉 —— 一条「这条档差不对」而没有建议值的记录,下一个人读到了也动不了手,**而它看起来像一条有用的记录**",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        if propose is None:\n            return {\"error\": f\"说「不对」就得给 propose",
+    "new": "        if False:\n            return {\"error\": f\"说「不对」就得给 propose"
+   }
+  ],
+  "预期红": "说不对而不给建议值:拒"
+ },
+ {
+  "script": "backend/grade_diff_check.py",
+  "改坏": "把 grading_audit 返回里「这 12 条核过没有」那一栏去掉 —— 版师看到的就是一张12 行的档差表,而**核过的和没人核过的在那张表上长得一模一样**",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "            \"这 12 条核过没有\": 核况[\"逐条\"],",
+    "new": ""
+   }
+  ],
+  "预期红": "报档差时把**每一条**档差核过没有一起报出去"
  }
 ]

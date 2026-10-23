@@ -45,6 +45,7 @@ import refund_write
 import triage_config
 import triage_trial
 import rating_shadow
+import grade_diff          # 版师核档差的登记表(2026-10-23,P2)
 import tasks
 import skill_registry
 import mcp_registry
@@ -107,6 +108,15 @@ import report_template
     # 报告模板(2026-10-23,复审第 4 节 C):第一次有人打开报告模板页、或取报告时才建 —— 同上,建死免得表数漂。
     # 空表 = 代码默认(全部显示),和模板上线前一样。日期列只有 at(世界时间,整列日期);why 是人填的自由文本
     (report_template, "确保表", ["report_template_ver"]),
+    # 版师核档差的登记(2026-10-23,业务需求池 P2):第一次有版师核一条档差才建 ——
+    # 同上,建死免得表数漂。
+    # ⚠️ 这张表**不存档差本身**(档差在 `knowledge/10-版型库.md` 里,这个口不改 md),
+    # 它存的是「谁、什么时候、凭什么核过的」+ **核的时候那个值是多少** ——
+    # 少了最后那样,md 改过之后「核过」会漂到一个没人核过的新值上。
+    # 日期只有 `checked_at`(世界的钟,整列日期 → 平移自动挪);
+    # ⚠️ 而 `why` 是**人当时写下的原话**,里面的日期不许挪 —— 已登记进
+    # `shift_world` 的「文字里不挪」(同 skill_cfg_log.why)。
+    (grade_diff, "确保表", ["grade_diff_check"]),
 ]
 
 

@@ -595,6 +595,11 @@ WRITE_TOOLS = ("apply_adjust", "decide_approval","assign_task", "dispatch_task",
                # 上一版它没进来,于是它是**唯一一个没人管的写口**,
                # 而边界审计只能靠名字里有没有 `set_` 猜它存在。
                "set_piece_ratio",
+               # 版师核档差(业务需求池 P2)。⚠️ **它不改档差** —— 档差在 md 里,
+               # 改 md 是人的活;这个口记的是「谁、什么时候、凭什么核过的,
+               # 以及核的时候那个值是多少」。登记在这张表里才会被
+               # `isolation_check` / `guards.pre_tool_verdict` / `funnel` 一起管住。
+               "set_grade_diff",
                # 关差评(业务 09-27 归店长跟 + 10-11 售后确认结案)。
                # ⚠️ 它 2026-10-12 才进这张表 —— 写口在这之前**没有任何入口**。
                "close_bad_rating",
@@ -2155,9 +2160,15 @@ def grading_audit(pattern=None):
     import grading as _g
     if not pattern:
         r = _grading_scan()
+        # ⚠️ **把「这条核过没有」和档差表并排给出来。**
+        # 少了这一栏,版师看到的是一张 12 行的档差表 —— 而「核过的」和「没人核过的」
+        # 在那张表上长得一模一样,于是他每次都得从头核一遍,或者干脆都当核过的。
+        核况 = _档差核况()
         return _nz({
             "扫了": f"{r['扫了']} 个版型 / {r['格子']} 条尺码",
             "档差规则": _g.档差(),
+            "这 12 条核过没有": 核况["逐条"],
+            "核过的 / 没人核过的 / 核过但失效的": 核况["小结"],
             "有疑点的版型": r["疑点"] or None,
             "note": (f"要核的是上面那 {len(_g.档差())} 条档差和各版型的基码,"
                      f"**不是 {r['格子']} 个数** —— 尺码表是推出来的,"
@@ -2207,6 +2218,165 @@ def grading_audit(pattern=None):
                  + ("  量纲体检全过(值为正、领围小于胸围、马面宽小于腰围)——"
                     "**扫了全部 " + str(len(tbl)) + " 个码,不是没扫**。" if not 体 else "")),
     })
+
+
+def _档差核况():
+    """那 12 条档差各自核过没有、核过的还算不算数。**判定走 `grading.核过还算数吗`,这里只取数。**
+
+    (项目第 9 节①:谁负责判定,谁就不该同时负责取数。)
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "knowledge"))
+    import grading as _g
+    表 = _g.档差()
+    记 = {}
+    try:
+        记 = {r["item"]: r for r in _rows(
+            "SELECT item, verdict, value_at_check, propose, why, checked_by, checked_at "
+            "FROM grade_diff_check")}
+    except Exception:
+        # 表还没建(CI 从零、或者这个口还没被用过)——
+        # **「一条核过记录都没有」和「表不存在」要给出同一句人话**,
+        # 但都不能说成「核过了」
+        记 = {}
+    # ⚠️ **四个桶要加得起来等于 12** —— 第一版「说不对」那一档没计数,
+    # 于是小结里 核过+没核+失效 < 12,而**少掉的那几条看不出来**:
+    # 读的人会以为剩下的都在前三类里。所以下面最后断言一次。
+    逐条, 核过, 没核, 失效, 说不对 = {}, 0, 0, 0, 0
+    for 项, 现值 in sorted(表.items()):
+        r = 记.get(项)
+        if not r:
+            逐条[项] = f"{现值} —— **没人核过**(机器推的规则,没有人签过字)"
+            没核 += 1
+            continue
+        算, 话 = _g.核过还算数吗(r["value_at_check"], 现值)
+        if r["verdict"] == _g.不对:
+            逐条[项] = (f"{现值} —— ⚠️ **版师核过说这条不对**,建议 {r['propose']}"
+                        f"(核于 {r['checked_at']},{r['checked_by']}):{r['why']}。"
+                        f"**md 还没改,库里所有码用的还是 {现值}**")
+            说不对 += 1
+        elif 算:
+            逐条[项] = (f"{现值} —— ✅ 版师核过({r['checked_at']},{r['checked_by']}):{r['why']}")
+            核过 += 1
+        else:
+            逐条[项] = (f"{现值} —— ⚠️ **核过但已失效**:{话}"
+                        f"(原核于 {r['checked_at']},{r['checked_by']})")
+            失效 += 1
+    assert 核过 + 没核 + 失效 + 说不对 == len(表), (
+        f"四个桶加起来 {核过 + 没核 + 失效 + 说不对} ≠ 档差 {len(表)} 条 —— "
+        f"**有档差落在任何一类之外**,而小结里看不出来")
+    return {"逐条": 逐条,
+            "小结": (f"核过且还算数 {核过} 条 / 没人核过 {没核} 条 / "
+                     f"核过但失效 {失效} 条 / 版师说不对 {说不对} 条 / 共 {len(表)} 条。"
+                     + ("**一条都没人核过** —— 这 12 条全是机器推的规则,"
+                        "报给版师时别说成「核过的」。" if 核过 == 0 else "")
+                     + ("⚠️ 失效的那几条是 **md 改过而没人重新核** —— "
+                        "照着「版师核过」用它们,等于拿没人核过的数当实测。"
+                        if 失效 else ""))}
+
+
+def set_grade_diff(item, verdict, why="", propose=None):
+    """**登记「这条档差核过了」**,或者「这条不对、我建议改成多少」。
+
+    `grading_audit` 把「要核 1237 个数」压成「要核 **12 条档差**」——
+    而核完之前没处写(业务需求池 P2)。这是那个写口。
+
+    ## ⚠️ 它**不改档差**,而这不是偷懒
+
+    档差**不在库里** —— 在 `knowledge/10-版型库.md` 的「四、档差规则」那张表里,
+    `grading.档差()` 从 md 现读、`derive_pattern.py` 再推出 1237 条尺码。
+    所以改一条档差是**人的活**:改 md → 重跑推导。
+    这个工具要是直接改库,下次跑推导就把它**盖掉,而且不报错**;
+    要是改 md,它就成了「代码改手写真相源」——
+    **两条路都会让 md 和库变成两份真相,而两份不一致时没人知道哪个是真的。**
+
+    所以它记的是 `set_piece_ratio` 的**本质**而不是形式:**来源标记 + 理由**。
+
+    ## ⚠️ 登记时连「当时那个值」一起记
+
+    光记「核过了」会造出一个假象:**md 里那个数以后被改了,
+    那条「核过」会漂到一个没人核过的新值上。**
+    > **「核过的档差」和「核过时是另一个数、后来被改了的档差」,
+    > 在那条记录上长得一模一样。**
+    读的时候拿它和现在的 md 比(`grading.核过还算数吗`),不一样就报**失效**。
+    同一个形状:`order_contract.terms_ver` —— 正是那一列没被平移挪,
+    才看出确认书正文里的条款版本被挪歪了(2026-10-22)。
+
+    item:档差的部位名(胸围 / 肩宽 / 上襦衣长……),认 `grading.档差()` 里的那 12 个。
+    verdict:核过 / 不对。judgment 是「不对」时 **propose 必填**(建议改成多少)。
+    why:凭什么。**必填** —— 三个月后有人问「这条档差为什么是 +1.5」,
+         答得上来的是这句理由,不是「版师核过」四个字。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "..", "knowledge"))
+    import grading as _g
+    import grade_diff as _GD
+    me = whoami()
+    if not me:
+        return {"error": "不知道现在是谁在核 —— 请先登录。"
+                         "**核过的记录必须查得到是谁核的**,匿名核不了"}
+    if me.get("role") != "版师":
+        return {"error": f"核档差要由版师来做,你的角色是「{me.get('role')}」。"
+                         f"**改一条档差对全部尺码生效** —— 核错了整批衣服的码都偏"}
+    表 = _g.档差()
+    键 = (item or "").strip()
+    if 键 not in 表:
+        return {"error": f"档差表里没有「{item}」这一项。它有这 {len(表)} 项:{sorted(表)}",
+                "note": "档差表在 `knowledge/10-版型库.md` 的「四、档差规则」那一节"}
+    if verdict not in _g.档差结论:
+        return {"error": f"verdict 只能是 {' / '.join(_g.档差结论)},收到「{verdict}」"}
+    if not (why or "").strip():
+        return {"error": "why 必填:这条档差是量的、照老版比的、还是按国标?"
+                         "**不写的话下次有人问「为什么是这个数」就查不到了**"}
+    现值 = 表[键]
+    提案 = None
+    if verdict == _g.不对:
+        # ⚠️ **说「不对」而不说该是多少,等于没说。**
+        # 一条「这条档差不对」的记录,下一个人读到了也动不了手 ——
+        # 而它看起来像一条有用的记录。
+        if propose is None:
+            return {"error": f"说「不对」就得给 propose(建议改成多少)。"
+                             f"现在 md 里是 {现值}。"
+                             f"**只说不对、不说该是多少,下一个人读到了也动不了手** —— "
+                             f"而那条记录看起来像一条有用的记录"}
+        try:
+            提案 = float(propose)
+        except Exception:
+            return {"error": f"propose 要是数字(每升一码加多少厘米),收到「{propose}」"}
+        if abs(提案 - float(现值)) <= 0.05:
+            return {"error": f"propose({提案})和现在的值({现值})是同一个数 —— "
+                             f"那就不是「不对」。要是核过没问题,verdict 用「{_g.核过了}」"}
+    import sqlite3 as _sq
+    # 工号那一栏叫 `no` 不叫 `id`(同 set_piece_ratio 那条注释里记的坑)
+    who = f"{me.get('no') or me.get('id') or ''}|{me.get('name') or ''}".strip("|")
+    now = _wc.当下().strftime("%Y-%m-%d %H:%M:%S")
+    with _sq.connect(DB) as cx:
+        _GD.确保表(cx)
+        cx.execute("INSERT INTO grade_diff_check"
+                   "(item, verdict, value_at_check, propose, why, checked_by, checked_at) "
+                   "VALUES(?,?,?,?,?,?,?) "
+                   "ON CONFLICT(item) DO UPDATE SET verdict=excluded.verdict, "
+                   "value_at_check=excluded.value_at_check, propose=excluded.propose, "
+                   "why=excluded.why, checked_by=excluded.checked_by, "
+                   "checked_at=excluded.checked_at",
+                   (键, verdict, float(现值), 提案, why.strip(), who, now))
+    out = {"ok": True, "档差": 键, "结论": verdict,
+           "核的时候这个数是": 现值, "核的人": who, "时间": now, "理由": why.strip()}
+    if verdict == _g.不对:
+        out["建议改成"] = 提案
+        # ⚠️ **必须在返回里说清这个工具没改 md** —— 不然模型会把「登记了提案」
+        # 转述成「已经改了」,而那两句话在版师耳朵里差别极大。
+        out["⚠️ 这个工具没有改档差"] = (
+            f"档差在 `knowledge/10-版型库.md` 的「四、档差规则」里,**这里只登记了提案**。"
+            f"真要改成 {提案},得**人去改那张 md,再重跑 `derive_pattern.py` 重推 1237 条尺码** —— "
+            f"在那之前,库里所有码用的还是 {现值}。")
+    else:
+        out["⚠️ 这条核过会失效"] = (
+            f"登记里记下了「核的时候是 {现值}」。以后 md 里这个数被改了,"
+            f"这条核过**自动失效**并报「核的是 {现值},现在是 X」—— "
+            f"因为**改之后没人重新核过**,而那时照着「版师核过」用新数,"
+            f"等于拿一个没人核过的数当实测。")
+    return _nz(out)
 
 
 def set_piece_ratio(pattern, piece, ratio, why=""):
@@ -6363,6 +6533,7 @@ SHOP_SCHEMAS=[
  {"name":"pattern_queue","description":"**版师的排队看板 —— 「今天该我核什么」。**不用传任何参数。把版师手上的活一次列全:裁片用料占比的进度(并按**影响面**排出先核哪几个 —— 挂多少商品、多少订单行已经按这个数备料)、推档有疑点的版型、「推得出但不作数」的尺码格子、配置页上架了却没有版型的定制品。**每一摊都报「总数 / 已完成 / 还剩」** —— 一摊显示 0 的时候要说得出是「做完了」还是「一条都没扫到」。版师进来第一句话就该调它。\n\n**传 pattern(认编码 PT06 和全名)就转看那一个版型的裁片用料占比明细**,每条带来源:`估算`(机器估的没人看过)/ `复核`(规则核过但这个数没人核过)/ `行业规范`(规则对过行业面积计算法,数没人核过)/ `版师`(人核过数)/ `BOM`(明写的用量)——**三种可信度不许混为一谈**。还给出占比折合多少米:**版师判断的是米数不是百分比**,「袖片 15.7%」看不出对不对,「袖片 0.63 米」一眼就知道。","input_schema":{"type":"object","properties":{}}},
  {"name":"grading_audit","description":"**推档自检 —— 把「要核 1237 个数」压成「要核 12 条档差」。**尺码表全部是推出来的(基码值 + 档差 × 尺码序号),版师真正该核的只有基码和那 12 条档差。不传 pattern 给全局(扫了多少、哪几个版型有疑点、档差规则是什么);传 pattern 给这一个版型的逐部位明细:实际档差 / 规则档差 / **覆盖范围**(这个版型能做多大的人)/ 量纲体检 / 哪几项「推得出但不作数」。**判据是定义性的,不是阈值** —— 相邻码的差必须处处相等且等于档差表,不一致就是真的有一格不对。","input_schema":{"type":"object","properties":{"pattern":{"type":"string","description":"版型编码或全名,不传则给全局"}}}},
  {"name":"set_piece_ratio","description":"**改一片的用料占比,并标成「版师核过」**。改完这一片就锁住,不会再被估算覆盖;同版型其余**没核过**的片按比例重新归一,让总和回到 1,而**已核过的片不动** —— 人核过的数不许被自动调。ratio 填 0–1 之间的小数(0.25 = 25%)。**why 要写** —— 不写的话下次有人问「这个数为什么是这样」就查不到了。","input_schema":{"type":"object","properties":{"pattern":{"type":"string"},"piece":{"type":"string","description":"裁片名,如「袖片」"},"ratio":{"type":"number"},"why":{"type":"string","description":"为什么改成这个数"}},"required":["pattern","piece","ratio"]}},
+ {"name":"set_grade_diff","description":"**登记「这条档差核过了」**(只读不改档差)。版师核完 `grading_audit` 压出来的那 12 条档差之后用它。⚠️⚠️ **它不改档差,只记「核过这件事」** —— 档差在 `knowledge/10-版型库.md` 的「四、档差规则」里,改它是**人的活**(改 md 再重跑推导重算 1237 条尺码)。所以版师说「那你改成 1.5」时**不许说成「已经改了」**,说得出来的只有「登记了你的提案,md 还没改,库里所有码用的还是原来那个数」。⚠️ **登记时连「核的时候那个值」一起记下来** —— 以后 md 里那个数被改了,这条核过**自动失效**并报「核的是 X,现在是 Y」,因为改之后没人重新核过;照着「版师核过」用新数等于拿一个没人核过的数当实测。⚠️ **说「不对」就必须给 propose(建议改成多少)**,只说不对不说该是多少的登记会被拒 —— 那种记录下一个人读到了也动不了手,而它看起来像一条有用的记录。⚠️ **why 必填**:三个月后有人问「这条档差为什么是 +1.5」,答得上来的是那句理由,不是「版师核过」四个字。只有版师能用;身份从登录会话取,**不收身份参数**。","input_schema":{"type":"object","properties":{"item":{"type":"string","description":"档差的部位名(胸围 / 肩宽 / 上襦衣长……),认 `grading_audit` 返回的那 12 项"},"verdict":{"type":"string","description":"核过 = 这条没问题;不对 = 这条该改(必须同时给 propose)","enum":["核过","不对"]},"why":{"type":"string","description":"**必填**,凭什么:量过几件成衣 / 照哪一版比的 / 按哪个国标"},"propose":{"type":"number","description":"建议改成多少(每升一码加多少厘米)。**只有 verdict=不对 时填**,而且不能和现在的值相同"}},"required":["item","verdict","why"]}},
  {"name":"my_workorders","description":"**我手上的工单**。工匠看自己的,工坊管事看本坊,总部运营看全部 —— 范围跟身份走。带**在制上限**和当前在制数:接不接得下一件,这两个数说了算,不用猜(上限是工艺约束 —— 手工活同时开太多件每件都慢,而且染色、绣线批次会串味)。逾期的排在最前。status 可选,写「在制/待开工/已完成」等。",
   "input_schema":{"type":"object","properties":{
     "status":{"type":"string","description":"只看某个状态的,不给就是全部"}},"required":[]}},
@@ -7519,7 +7690,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

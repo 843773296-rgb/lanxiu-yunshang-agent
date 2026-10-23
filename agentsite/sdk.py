@@ -539,6 +539,11 @@ PATTERN_TOOLS = [
     "mcp__analytics__product_ranking",   # 当月最受欢迎:两张榜并列 + 形制/面料/工艺分布
     "mcp__analytics__wear_risk",         # 易损率:分子分母一起给,不显著不报第一名
     "mcp__knowledge__set_piece_ratio",   # 写 —— 改占比并标「版师」
+    # 写 —— 登记「这条档差核过了 / 这条不对」(业务需求池 P2)。
+    # ⚠️ **它不改档差**:档差在 `10-版型库.md` 里,改 md 是人的活。
+    # 它记的是来源标记 + 理由 + **核的时候那个值是多少** ——
+    # 少了最后那样,md 改过之后「核过」会漂到一个没人核过的新值上。规矩 TL75。
+    "mcp__knowledge__set_grade_diff",
     # 写 —— 开裁(待生产 → 生产中)。**闸在订单状态机上**:白坯该试没试 / 没签字整单拒绝。
     # 版型定了才能裁,所以归版师;规矩 TL41:被拒不许换说法再试。
     "mcp__fulfillment__start_cutting",
