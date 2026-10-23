@@ -136,6 +136,12 @@ run "只读入口冒烟 · 54 个入口真跑一遍(handler 存在≠跑得起�
 run "管理后台切页加载状态 · 慢 / 接口报错 / 不是数据 / 服务关了 / 超时 / 没登录 / 连点 / 重试,不把旧页当新页(外部复审 3.5,不起服务)" node backend/page_load_check.mjs
 run "写接口冒烟 · 在库的副本上真写一遍(返回 ok≠写进去了)" python3 backend/write_smoke_check.py
 run "产品文档 · 写死的数字和代码对账(文档变假时不会报错)" python3 tools/doc_numbers_check.py
+# 2026-10-23 装进来:上面那条对的是**数字**,这条对的是**那张表本身**。
+# 当时量出来:产品说明里 shop 那张工具表列了 48 个、库里 79 个,**漏 31 个**,
+# 漏的是整族能力(报修 / 签收 / 下单 / 经营报告 / 差评 / 工厂回传)。
+# 而它就贴在「shop 工具 79 个」这个**对账过的**标题下面 —— 标题说 79、表里 48,
+# **而读的人只会相信表**。交接里早记着「要么修要么登记退役」,这次修了。
+run "产品文档 · MCP 工具表和代码对账(标题的数对过账,表本身没人对)" python3 tools/gen_doc_lists.py
 run "README = 入口 + 产品说明全文,两边一致(用户 10-20:产品文档放进 README、去重)" python3 tools/make_readme.py --check
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
 run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py
