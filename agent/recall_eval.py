@@ -60,6 +60,40 @@ def _该重放(n):
     return n in api.TOOLS and n not in api.WRITE_TOOLS
 
 
+
+def _今天():
+    """世界时钟的今天 —— 和工具算天数用的是同一个钟,不取机器日期。"""
+    import worldclock
+    return worldclock.今天().isoformat()
+
+
+def _算得出(池数, 池文, 今天=None):
+    """回答里写出的(工具给过的)任意两个数 a+b / a−b / a÷b(四舍五入到一位小数),以及回答里写出的每个日期到「今天」的天数。"""
+    import datetime as _dt
+    数 = sorted({float(x) for x in 池数 if re.fullmatch(r"\d+(\.\d+)?", x) and float(x) < 1e6})
+    出 = set()
+    def 记(v):
+        if v < 0: return
+        r1 = round(v, 1)
+        出.add(str(int(r1)) if r1 == int(r1) else f"{r1}")
+    for i, a in enumerate(数):
+        for b in 数[i:]:
+            记(a + b); 记(b - a)
+            if a: 记(b / a)
+            if b: 记(a / b)
+    if 今天:
+        t0 = _dt.date.fromisoformat(今天)
+        日 = [(int(y), int(m), int(d)) for y, m, d in re.findall(r"(20\d\d)-(\d{1,2})-(\d{1,2})", 池文)]
+        # 「7 月 17 日」这种没写年的:按今天往回推最近的那一个
+        日 += [(t0.year if (int(m), int(d)) <= (t0.month, t0.day) else t0.year - 1, int(m), int(d))
+              for m, d in re.findall(r"(?<![\d-])(\d{1,2})\s*月\s*(\d{1,2})\s*日", 池文)]
+        for y, m, d in 日:
+            try:
+                出.add(str((t0 - _dt.date(y, m, d)).days))
+            except ValueError:
+                pass
+    return 出
+
 def _短名(t):
     return str(t or "").rsplit("__", 1)[-1]
 
@@ -119,7 +153,7 @@ def 取事实(traj, me, 可用工具=None):
                   or (m.get("生命周期") or {}).get("生命周期"))
             rv = (api.revive_list(customer=cid) or {}).get("这一个人") or {}
             客户[cid] = dict(档位=档, 由头事实=sorted(_由头事实(rv.get("理由") if rv.get("该不该联系") else "")))
-    return dict(池文=文, 池数=sorted(_数们(文)), 客户=客户, 名单=sorted(名单), 预警=sorted(预警),
+    return dict(池文=文, 池数=sorted(_数们(文)), 今天=_今天(), 客户=客户, 名单=sorted(名单), 预警=sorted(预警),
                 有get_member=(可用工具 is None or "get_member" in 可用工具))
 
 
@@ -164,9 +198,16 @@ def 判(text, traj, 事实):
     池数 = set(事实.get("池数") or [])
     # 一位整数不查(列表序号会全部误报);**看整串长度,不看整数部分** —— 带小数的串至少 3 位,一律查。
     # 10-23 第四次真跑:「超过她往年节奏 2.7 倍」(196 ÷ 73 自己算的),原来只看整数部分位数,漏了
-    编的数 = sorted(x for x in _数们(text) if len(x) >= 2 and x not in 池数)
+    疑 = [x for x in _数们(text) if len(x) >= 2 and x not in 池数]
+    # **算对的数 ≠ 编的数**(10-23 五次真跑挂的全是这一类:641−4=637、196÷73≈2.7、101+51=152、
+    # 7-17 到今天 98 天 —— 全算对了)。真正伤人的是编出来的数和算错的数,所以:
+    # 能由工具里两个数 加 / 减 / 除(一位小数)、或「工具里的日期到今天」算出来的,放过;算错了照样红。
+    # ⚠️ 运算的两头必须**都写在回答里**(且是工具给过的数):工具返回里几百个数,任取两个相减几乎凑得出
+    # 任何两位数 —— 不限的话「编一个数」也会被当成「算出来的」,这条判据就废了。读的人看得见两头,才核得了
+    算得出 = _算得出(set(_数们(text)) & 池数, text, 事实.get("今天")) if 疑 else set()
+    编的数 = sorted(x for x in 疑 if x not in 算得出)
     if 编的数:
-        坏.append(f"数:工具返回里没有这些数 {编的数[:8]}")
+        坏.append(f"数:工具返回里没有这些数,也不是拿工具里的数算对的 {编的数[:8]}")
 
     名单 = set(事实.get("名单") or [])
     提到 = [c for c in 答号 if c in 名单]

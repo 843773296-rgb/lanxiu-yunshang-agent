@@ -150,7 +150,7 @@ def 判(事实, today):
     闲置 = 事实.get("idle_days")
     if 节奏 is not None and 闲置 is not None and 闲置 > 节奏 * 断节奏倍数:
         理由.append(("RHYTHM_BREAK",
-                     f"他平均 {节奏:.0f} 天来一次,这次已经 {闲置} 天了"
+                     f"他平均 {节奏:.0f} 天来一次,这次已经 {闲置} 天了,是平均的 {闲置 / 节奏:.1f} 倍"
                      f"(**{断节奏倍数} 倍这个门槛是待校准的默认值**)"))
 
     if not 理由:

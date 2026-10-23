@@ -11371,8 +11371,8 @@
   "file": [
    {
     "path": "agent/recall_eval.py",
-    "old": "    编的数 = sorted(x for x in _数们(text) if len(x) >= 2 and x not in 池数)",
-    "new": "    编的数 = []"
+    "old": "    疑 = [x for x in _数们(text) if len(x) >= 2 and x not in 池数]",
+    "new": "    疑 = []"
    }
   ],
   "预期红": "编了一个挽回金额"
@@ -11443,8 +11443,8 @@
   "file": [
    {
     "path": "agent/recall_eval.py",
-    "old": "    编的数 = sorted(x for x in _数们(text) if len(x) >= 2 and x not in 池数)",
-    "new": "    编的数 = sorted(x for x in _数们(text) if len(x.split(\".\")[0]) >= 2 and x not in 池数)"
+    "old": "    疑 = [x for x in _数们(text) if len(x) >= 2 and x not in 池数]",
+    "new": "    疑 = [x for x in _数们(text) if len(x.split(\".\")[0]) >= 2 and x not in 池数]"
    }
   ],
   "预期红": "自己算的倍数"
@@ -11472,5 +11472,17 @@
    }
   ],
   "预期红": "轨迹里有 decide_repair → 只挂③"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "算对的数也当编的(判据退回只认工具原样给过的数)",
+  "file": [
+   {
+    "path": "agent/recall_eval.py",
+    "old": "算得出 = _算得出(set(_数们(text)) & 池数, text, 事实.get(\"今天\")) if 疑 else set()",
+    "new": "算得出 = set()"
+   }
+  ],
+  "预期红": "两头都写出来、算对的倍数不算编数"
  }
 ]
