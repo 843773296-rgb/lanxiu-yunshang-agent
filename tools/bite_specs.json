@@ -12096,5 +12096,41 @@
    }
   ],
   "预期红": "痕迹写进了**这个库**"
+ },
+ {
+  "script": "backend/report_realign_note_check.py",
+  "改坏": "取痕迹时取第一条而不是最后一条",
+  "file": [
+   {
+    "path": "backend/report_doc.py",
+    "old": "\"ORDER BY id DESC LIMIT 1\", (report_id,))",
+    "new": "\"ORDER BY id ASC LIMIT 1\", (report_id,))"
+   }
+  ],
+  "预期红": "有两条痕迹:按最后一条取,字段从 ctx 读"
+ },
+ {
+  "script": "backend/report_realign_note_check.py",
+  "改坏": "页面不看「正文已改」,一律说是校正前生成的",
+  "file": [
+   {
+    "path": "agentsite/web/report.html",
+    "old": "(!校.正文已改 || !校.取数包已改 ?",
+    "new": "(true ?"
+   }
+  ],
+  "预期红": "页面:正文和取数包都改过了,不再说「校正前生成的」"
+ },
+ {
+  "script": "backend/report_realign_note_check.py",
+  "改坏": "后台不把痕迹带给页面",
+  "file": [
+   {
+    "path": "backend/report_doc.py",
+    "old": "    d[\"统计期校正\"] = 统计期校正(report_id, db)\n",
+    "new": "    d[\"统计期校正\"] = None\n"
+   }
+  ],
+  "预期红": "有两条痕迹:按最后一条取,字段从 ctx 读"
  }
 ]

@@ -273,4 +273,34 @@ def 取(me, report_id, db=None):
     # 怎么显示:**只按取数包里冻结的模板**(report_template.视图 不读模板表)—— 模板之后再改,这份报告不跟着变
     import report_template
     d["模板视图"] = report_template.视图(d["pack"])
+    d["统计期校正"] = 统计期校正(report_id, db)
     return d
+
+
+def 统计期校正(report_id, db=None):
+    """这份报告的统计期有没有被「平移后重对齐」校正过(用户 10-23 拍:正文不改写,页面上标注「统计期已校正」)。
+
+    读 tools/realign_report_periods.py 落的痕迹:op_log 里 machine='report_period'、code='REALIGN'、target=报告号,
+    **取最后一条**;日期读 ctx 里结构化的 旧起 / 旧止 / 新起 / 新止(不从 reason 里抠),「于」用 ts(真实时钟)。
+    **有痕迹就标** —— 哪怕现在的期已经是周一对齐的(用户 10-23 拍的页面规矩)。
+    ⚠️ ctx 登记成「文字里不挪」,里面那四个日期是**校正那一刻**的世界日期;period 两列之后每天还在被平移挪,
+    所以页面上**不拿 ctx 的绝对日期当现在的区间**,只说「挪了几天、按什么对齐」,区间以 period 两列为准。
+    → None(没校正过)或 dict(于, 校正天数, 种类, 旧起, 旧止, 新起, 新止, 正文已改, 取数包已改)。"""
+    c = sqlite3.connect(db or DB)
+    try:
+        r = c.execute("SELECT ts, ctx FROM op_log WHERE machine='report_period' AND code='REALIGN' AND target=? "
+                      "ORDER BY id DESC LIMIT 1", (report_id,)).fetchone()
+    except sqlite3.Error:
+        r = None        # 库里还没有 op_log(从零建库的半路上)= 没有痕迹
+    finally:
+        c.close()
+    if not r:
+        return None
+    try:
+        x = json.loads(r[1] or "{}")
+    except ValueError:
+        x = {}
+    return dict(于=r[0], 校正天数=x.get("校正天数"), 种类=x.get("kind"), 旧起=x.get("旧起"), 旧止=x.get("旧止"),
+                新起=x.get("新起"), 新止=x.get("新止"),
+                # 数据工厂 10-23:这两个 false 不是占位 —— 哪天真能改正文了,改的人得把它们翻成 true,否则标注永远挂着
+                正文已改=bool(x.get("正文已改")), 取数包已改=bool(x.get("取数包已改")))

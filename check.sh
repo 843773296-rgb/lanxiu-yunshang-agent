@@ -579,6 +579,7 @@ run "Skill 使用统计 · 一轮多个都记、被拦单列、从未触发列�
 run "Skill 管理 · 状态管得住执行闸、依赖没就绪放不出去、只有总部运营能改(用户 10-23 拍,库副本)" ./agentsite/.venv/bin/python backend/skill_registry_check.py
 run "知识问题处理入口 · 零命中也有编号、员工能报类型、只有总部运营能定维护人和状态、改动留痕、复验不说答对(外部复审第 4 节 E,库副本)" ./agentsite/.venv/bin/python backend/kb_issue_check.py
 run "报告模板 · 清单外指标拒存、必选取消不了、只有总部运营能改、旧报告按冻结的那一版显示、隐藏和取不到分开(复审第 4 节 C,库副本)" python3 backend/report_template_check.py
+run "经营报告「统计期已校正」标注 · 有痕迹就标、取最后一条、没改正文时说清(用户 10-23 拍:正文不改写)" python3 backend/report_realign_note_check.py
 run "差评与维修研判 · 结果判分器人造对照(四段顺序 / 事实带出处 / 不自动写 / 判责引现读的判定表行)" python3 agentsite/skill_rating_repair_eval.py --selftest
 run "聊天页常用语按钮 · 点了只填进输入框不发送;版师有正常 / 异常两组(静态)" ./agentsite/.venv/bin/python agentsite/phrase_check.py
 run "吸顶条让开全站导航 · 挂了导航的页面不许再有条吸在 top:0(静态扫)" python3 agentsite/sticky_nav_check.py
