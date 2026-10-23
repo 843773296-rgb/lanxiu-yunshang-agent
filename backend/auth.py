@@ -13,9 +13,14 @@
 
 ## 存哪
 
-会话存在内存里(进程重启就全掉线),这是**故意的**:
-· 假数据项目不需要持久会话
-· 而把会话写进业务库,会让「谁登录过」变成一张要维护的表,还要处理过期清理
+会话在内存里一份,**另落一份到库旁边的小文件**(`.auth_sessions.json`,不进版本库)。
+原来只在内存里(「假数据项目不需要持久会话」),2026-10-23 用户撞到:
+「为什么我登录后会自动退出登录?」—— 那天为了让改动生效重启了好几次服务,**每重启一次全员掉线**,
+而在用的人看到的就是「莫名其妙被踢出去」。
+· 文件里**不存令牌本身**,只存它的 sha256 指纹 —— 文件被人看到也拿不出能用的令牌
+· 不写进业务库:不想让「谁登录过」变成一张要维护、要被每日平移扫的表
+· 文件跟着 DB 走(库副本旁边就是副本自己的文件)—— 检查在副本上登录,不会往真文件里写
+· 过期照旧 12 小时,退出登录照旧立刻失效(两边一起删)
 真上线要换成 Redis 或带签名的 cookie —— 那时候这个模块的接口不用变。
 
 ## 口令
@@ -24,7 +29,7 @@
 **明文一个字都不落库**,只存 PBKDF2 + 每人独立 salt。
 真上线要加「首次登录强制改密」。
 """
-import hashlib, hmac, os, secrets, sqlite3, threading, datetime as dt
+import hashlib, hmac, json, os, secrets, sqlite3, threading, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DB = os.path.join(HERE, "lanxiu.db")
@@ -66,6 +71,38 @@ def _bump_fail(no, reset=False):
                 c.execute("UPDATE staff SET locked_until=? WHERE no=?", (until, no))
 
 
+# ── 落盘那一份 ─────────────────────────────────────────────────────────
+def _文件():
+    return os.path.join(os.path.dirname(os.path.abspath(DB)), ".auth_sessions.json")
+
+
+def _指纹(tok):
+    return hashlib.sha256((tok or "").encode()).hexdigest()
+
+
+def _读盘():
+    try:
+        with open(_文件(), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _写盘(d):
+    """调用方已持 _LOCK。顺手清掉过期的;写临时文件再换名 —— 半截文件比没有文件更难查。"""
+    限 = (dt.datetime.now() - dt.timedelta(hours=TTL_HOURS)).isoformat()
+    d = {k: v for k, v in d.items() if (v.get("at") or "") > 限}
+    try:
+        tmp = _文件() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, _文件())
+    except OSError:
+        pass        # 写不进去就只剩内存那份(重启掉线),不因此拒绝登录
+
+
 def login(login_name, password):
     """返回 (token, 用户信息) 或 (None, 错误原因)。
 
@@ -93,7 +130,10 @@ def login(login_name, password):
     _bump_fail(u["no"], reset=True)
     tok = secrets.token_urlsafe(24)
     who = {"no": u["no"], "name": u["name"], "role": u["role"], "shop": u["shop"]}
-    with _LOCK: _SESS[tok] = dict(who, at=dt.datetime.now())
+    now = dt.datetime.now()
+    with _LOCK:
+        _SESS[tok] = dict(who, at=now)
+        d = _读盘(); d[_指纹(tok)] = dict(who, at=now.isoformat()); _写盘(d)
     return tok, who
 
 
@@ -101,6 +141,15 @@ def who(token):
     """token → 用户信息;无效或过期返回 None。"""
     with _LOCK:
         s = _SESS.get(token or "")
+        if not s and token:
+            # 内存里没有:可能是服务重启过 —— 去落盘那份按指纹找回来
+            p = _读盘().get(_指纹(token))
+            if p:
+                try:
+                    s = dict(p, at=dt.datetime.fromisoformat(p["at"]))
+                    _SESS[token] = s
+                except (KeyError, ValueError):
+                    s = None
         if not s: return None
         if (dt.datetime.now() - s["at"]).total_seconds() > TTL_HOURS * 3600:
             _SESS.pop(token, None); return None
@@ -108,7 +157,11 @@ def who(token):
 
 
 def logout(token):
-    with _LOCK: _SESS.pop(token or "", None)
+    with _LOCK:
+        _SESS.pop(token or "", None)
+        d = _读盘()
+        if d.pop(_指纹(token), None) is not None:
+            _写盘(d)
 
 
 def sessions():

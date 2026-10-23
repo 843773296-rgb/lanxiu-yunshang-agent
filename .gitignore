@@ -131,3 +131,7 @@ agent/nightly/agentsite__evals__withheld*
 !agentsite/.claude/skills/metric-diagnostics-lanxiu/
 !agentsite/.claude/skills/activity-review-lanxiu/
 !agentsite/.claude/skills/stock-patrol-lanxiu/
+
+# 登录会话落盘(只存令牌指纹,backend/auth.py)—— 本机运行态,不进版本库
+backend/.auth_sessions.json
+backend/.auth_sessions.json.tmp

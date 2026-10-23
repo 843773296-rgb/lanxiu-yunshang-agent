@@ -129,6 +129,7 @@ sys.exit(rc)' "$CHK_TIMEOUT" "$CHK_TIMES" "$name" "$@" > "$CHK_OUT" 2>&1 || rc=$
   fi }
 run "数据层 · truth 表隔离"   python3 backend/selftest.py
 run "写入口身份闸 · 没登录不许改业务数据(打 HTTP 层)" python3 backend/authgate_check.py
+run "登录会话跨重启 · 服务重启不掉线、文件里只存指纹、过期 / 退出即失效(用户 10-23 撞到被踢出)" python3 backend/auth_persist_check.py
 run "管理后台客户读接口 · 要登录、按门店划范围(用户 10-23 拍,打 HTTP 层)" python3 backend/customer_read_auth_check.py
 run "方案页客户搜索 · 要登录、只搜本店;着装人必须明确点选、不默认第一个(复审第 4 节 B,页面在 node 里真跑)" python3 backend/scheme_customer_search_check.py
 run "员工登录 · 5 条自测" python3 backend/auth.py
