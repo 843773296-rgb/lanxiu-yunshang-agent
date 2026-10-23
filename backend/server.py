@@ -2842,7 +2842,14 @@ def customer_detail(cid):
     # 它是主档 → 列出关联档案,**各列各的订单 / 积分,不相加**(产品文档:只关联不累计)
     import merge as _mg
     _主 = _mg.主档(cid)
-    return dict(customer=c,appts=appts,followups=fus,deposits=deps,logs=logs,calls=calls,
+    # 业务摘要(复审第 4 节 A,用户 10-23 拍):只读拼现有数据,取数口径全在 customer_summary.py,路由里不写
+    import customer_summary as _cs, worldclock as _wc
+    _sc = _conn()
+    try:
+        _摘 = _cs.摘要(_sc, cid, _wc.今天().isoformat())
+    finally:
+        _sc.close()
+    return dict(customer=c,业务摘要=_摘,appts=appts,followups=fus,deposits=deps,logs=logs,calls=calls,
                 measures=measure_of(cid),binds=binds,points_log=plog,
                 level_cfg=lv[0] if lv else None,
                 # 日历的「今天」用世界的今天(10-19 外部复审 3.3):页面原来写死 2026-08-31,数据每天平移、日历停在 8 月

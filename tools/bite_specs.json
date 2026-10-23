@@ -10932,5 +10932,77 @@
    }
   ],
   "预期红": "限流 1 次/分钟:同一个服务里第二次被拒"
+ },
+ {
+  "script": "backend/customer_summary_check.py",
+  "改坏": "完结的商机任务也列进下一步(去掉状态过滤)",
+  "file": [
+   {
+    "path": "backend/customer_summary.py",
+    "old": "            if t[\"status\"] != 日程开着:\n                continue",
+    "new": "            if False:\n                continue"
+   }
+  ],
+  "预期红": "已完成的不进:完结的商机任务"
+ },
+ {
+  "script": "backend/customer_summary_check.py",
+  "改坏": "下一步不排序",
+  "file": [
+   {
+    "path": "backend/customer_summary.py",
+    "old": "    out.sort(key=lambda x: (x[\"到期\"] is None",
+    "new": "    (lambda **k: None)(key=lambda x: (x[\"到期\"] is None"
+   }
+  ],
+  "预期红": "按到期排"
+ },
+ {
+  "script": "backend/customer_summary_check.py",
+  "改坏": "商机任务不从日程里排除(同一条列两遍)",
+  "file": [
+   {
+    "path": "backend/customer_summary.py",
+    "old": "        if s[\"id\"] in 商机任务号:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "商机任务只列一次"
+ },
+ {
+  "script": "backend/customer_summary_check.py",
+  "改坏": "终态商机的下一步也列进来",
+  "file": [
+   {
+    "path": "backend/customer_summary.py",
+    "old": "if o[\"status\"] in oppo_obj.终态 or not",
+    "new": "if not"
+   }
+  ],
+  "预期红": "已完成的不进:已关闭商机的下一步"
+ },
+ {
+  "script": "backend/customer_summary_check.py",
+  "改坏": "承诺栏编出一条",
+  "file": [
+   {
+    "path": "backend/customer_summary.py",
+    "old": "承诺=dict(有结构化记录=False, 条目=[], 说明=承诺说明)",
+    "new": "承诺=dict(有结构化记录=False, 条目=[x[\"内容\"] for x in _q(conn, \"SELECT content 内容 FROM followup WHERE customer_id=?\", cid)] if _有表(conn, \"followup\") else [], 说明=承诺说明)"
+   }
+  ],
+  "预期红": "承诺栏不编造"
+ },
+ {
+  "script": "backend/customer_summary_check.py",
+  "改坏": "样本为 0 也判通过",
+  "file": [
+   {
+    "path": "backend/customer_summary_check.py",
+    "old": "        return \"没东西可验\"\n    return \"有样本\"",
+    "new": "        return \"有样本\"\n    return \"有样本\""
+   }
+  ],
+  "预期红": "样本量为 0 时报「没东西可验」"
  }
 ]
