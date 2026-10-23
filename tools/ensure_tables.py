@@ -50,6 +50,7 @@ import skill_registry
 import mcp_registry
 import alert_dispatch
 import kb_issue
+import report_template
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -103,6 +104,9 @@ import kb_issue
     # 知识问题(2026-10-23,外部复审第 4 节 E):门店检索记录 / 改动日志 / 复验存档。
     # chat 第一次查知识库、或有人打开「知识问题」页才建 —— 同上,建死免得表数漂
     (kb_issue, "确保表", ["kb_rag_record", "kb_rag_record_log", "kb_recheck"]),
+    # 报告模板(2026-10-23,复审第 4 节 C):第一次有人打开报告模板页、或取报告时才建 —— 同上,建死免得表数漂。
+    # 空表 = 代码默认(全部显示),和模板上线前一样。日期列只有 at(世界时间,整列日期);why 是人填的自由文本
+    (report_template, "确保表", ["report_template_ver"]),
 ]
 
 

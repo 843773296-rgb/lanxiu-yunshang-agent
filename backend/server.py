@@ -3301,6 +3301,14 @@ class H(BaseHTTPRequestHandler):
                                                     "分类们": [x for x in _sr.分类们 if x]})
             r = _sr.详情(p.split("/api/skill/",1)[1])
             return self._send(r, 404 if "error" in r else 200)
+        if p=="/api/report-templates" or p.startswith("/api/report-template/"):
+            # 报告模板(复审第 4 节 C,用户 10-23 拍):列表 / 一个模板的当前内容与版本记录 / 已登记指标。
+            # 要登录;能不能改在写的那头判(report_template.保存)
+            import report_template as _rtp
+            if not _me(self): return self._send({"error":"请先登录"},401)
+            if p=="/api/report-templates": return self._send(_rtp.概览(db=backend.DB))
+            r = _rtp.详情(p.split("/api/report-template/",1)[1], db=backend.DB)
+            return self._send(r, 404 if "error" in r else 200)
         if p=="/api/triage-run":
             # 研判运行进度(用户 10-18 拍「自建运行记录」):按批次号或运行号查,读之前先收一遍中断。
             # ⚠️ 放在 `/api/ops-` 那层外面 —— 路径不带 ops- 前缀,放里面永远进不去(fetch_route_check 当场逮到过)
@@ -3734,6 +3742,15 @@ class H(BaseHTTPRequestHandler):
             log_op(u["name"], "skill", str(body.get("name") or "-"), "-", p.rsplit("-",1)[-1], bool(r.get("ok")),
                    "" if r.get("ok") else "SKILL_CFG", (r.get("reason") or "")[:200], {})
             return self._send(r, 200 if r.get("ok") else 400)
+        if p=="/api/report-template-save":
+            # 报告模板的写口:身份只从登录会话取(请求体里自报的不认);只有总部运营能改、要写理由、
+            # 清单外的指标名拒存、锁定必选项取消不了 —— 都在 report_template.保存 里判,页面不另判一遍
+            import report_template as _rtp
+            u = _me(self)
+            if not u:
+                return self._send(dict(ok=False, reason="没登录 —— 改报告模板要登录,署名用登录的人"), 401)
+            r = _rtp.保存(str(body.get("name") or ""), body.get("payload") or {}, body.get("why"), u, db=backend.DB)
+            return self._send(r, 200 if r.get("ok") else (403 if r.get("code") == "FORBIDDEN" else 400))
         if p=="/api/triage-config":
             # 研判设置:总部运营存草稿 / 试运行。**发布和退回不在这里** —— 只有开发能做(tools/triage_config.py)
             import triage_config as _tc

@@ -456,7 +456,7 @@ const MENU=[
  {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["freight","运费表"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"],["factory","工厂回传"]]},
  {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"],["kbissues","知识问题"]]},
  {k:"sys",i:"sys",t:"系统",subs:[["approvals","审批中心"],["staff","权限管理"],["syscodes","系统编码"],
-   ["downloads","下载中心"],["oplog","操作日志"],["skills","Skill 管理"],["mcp","MCP 服务与工具"]]}];
+   ["downloads","下载中心"],["oplog","操作日志"],["skills","Skill 管理"],["mcp","MCP 服务与工具"],["rtpls","报告模板"]]}];
 
 function renderNav(){
   NAV.innerHTML=MENU.map(m=>{
@@ -536,7 +536,7 @@ const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合
   products:"商品库",categories:"品类管理",stock:"库存查询",
   mitems:"量体配置",mtpls:"量体模版",contents:"内容管理",freight:"运费表",
   activities:"营销活动",invites:"邀请码管理",pages:"页面配置",
-  syscodes:"系统编码",skills:"Skill 管理",skill:"Skill",mcp:"MCP 服务与工具",downloads:"下载中心",approvals:"审批中心",
+  syscodes:"系统编码",skills:"Skill 管理",skill:"Skill",mcp:"MCP 服务与工具",rtpls:"报告模板",rtpl:"报告模板",downloads:"下载中心",approvals:"审批中心",
   levels:"会员等级",tags:"客户标签管理",
   aftersales:"售后工单",maintains:"维保工单",factory:"工厂回传",perf:"导购业绩",stocklog:"库存变更日志",kb:"工艺知识库",kbissues:"知识问题",kbissue:"知识问题"};
 async function view(v,arg,fromTab){
@@ -601,6 +601,8 @@ async function route(v,arg){
   if(v==="mcp")      return mcpPage();
   if(v==="skills")   return skillList();
   if(v==="skill")    return skillDetail(arg);
+  if(v==="rtpls")    return rtplList();
+  if(v==="rtpl")     return rtplDetail(arg);
   if(v==="downloads")return downloadList();
   if(v==="approvals")return approvalCenter();
   if(v==="levels")   return levelPage();
@@ -2741,6 +2743,89 @@ async function kbIssueDetail(rid){
      {k:"理由",label:"理由",type:"text",req:true,ph:"以后有人问「为什么关了 / 为什么不处理」,答案在这里"}],
     v=>doOp("/api/kb-issue-status",{试跑id:rid,到:v.到,理由:v.理由,修订版本:v.修订版本,修订说明:v.修订说明},()=>kbIssueDetail(rid)),true);
   M.querySelectorAll("[data-cr]").forEach(e=>e.onclick=()=>view(e.dataset.cr,e.dataset.ca||undefined));
+}
+/* ── 报告模板(复审第 4 节 C,用户 10-23 拍「要,做受控模板」)──────────────────
+   只管显示:章节、每项显示 / 隐藏、必选、默认期间、适用门店。**统计公式一行不动**。
+   指标只能从「已登记指标」里选 —— 清单由服务端读取数包的代码现算,这页不另抄一份。
+   每存一次是新的一版(只增不改);报告保存那一刻把当时的那一版冻进报告,之后再改模板,旧报告不跟着变。
+   只有总部运营能改、要写理由、锁定必选项取消不了 —— 判在服务端(report_template.保存),页面不另判一遍。 */
+async function rtplList(){
+  const d=await get("/api/report-templates");
+  M.innerHTML=chrome([["首页","workbench"],"系统","报告模板"],`
+   <div class="card"><div class="hd"><h3>报告模板</h3>
+     <span class="n">${d.模板们.length} 个模板 · 已登记指标 ${d.已登记指标.length} 项(从取数包代码现算)· 锁定必选:${d.锁定必选.map(esc).join("、")}</span>
+     <span class="more" data-rtnew>新建专用模板 ›</span></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:160px">模板</th><th style="width:80px">当前版本</th><th style="width:200px">适用门店</th>
+     <th style="width:80px">默认期间</th><th style="width:150px">最后修改</th><th>理由</th></tr></thead><tbody>
+     ${d.模板们.map(t=>`<tr><td><a class="lk" data-cr="rtpl" data-ca="${esc(t.名称)}">${esc(t.名称)}</a></td>
+       <td>${t.版本?"第 "+t.版本+" 版":"代码默认"}</td>
+       <td>${(t.适用门店||[]).length?(t.适用门店||[]).map(s=>esc(d.门店们[s]||s)).join("、"):'<span style="color:var(--ink2)">停用(没认领任何店)</span>'}</td>
+       <td>${esc(t.默认期间||"")}</td><td class="mono">${t.更新?esc(t.更新)+" · "+esc(t.更新人||""):"—"}</td>
+       <td style="color:var(--ink2);font-size:12.5px">${esc(t.理由||"")}</td></tr>`).join("")}
+    </tbody></table>
+    <div style="color:var(--ink2);font-size:12px;margin-top:8px">「默认」模板管没被专用模板认领的所有门店;一家店最多被一个专用模板认领。</div></div>
+   <div class="card"><div class="hd"><h3>已登记指标</h3><span class="n">模板里只能写这些名字;写了别的服务端拒存</span></div>
+    <table class="tb"><thead><tr><th style="width:160px">指标</th><th style="width:80px">段</th><th>必选</th></tr></thead><tbody>
+     ${d.已登记指标.map(x=>`<tr><td>${esc(x.名)}</td><td>${esc(x.段)}</td><td>${x.必选?'<span class="pill p-warn">锁定必选</span>':"—"}</td></tr>`).join("")}
+    </tbody></table></div>`);
+  M.querySelector("[data-rtnew]").onclick=()=>modal("新建专用模板",[{k:"name",label:"模板名",req:true,ph:"比如:徐汇店专用"}],
+    v=>{ if(v.name&&v.name.trim()) rtplDetail(v.name.trim(), true); });
+  M.querySelectorAll("[data-cr]").forEach(e=>e.onclick=()=>view(e.dataset.cr,e.dataset.ca||undefined));
+}
+async function rtplDetail(name, 新建){
+  const o=await get("/api/report-templates");
+  let d;
+  if(新建){
+    const 默=await get("/api/report-template/"+encodeURIComponent("默认"));
+    d={名称:name,当前:Object.assign({},默.当前,{适用门店:[]}),版本:0,版本记录:[],已登记指标:o.已登记指标,锁定必选:o.锁定必选,期间们:o.期间们};
+  } else d=await get("/api/report-template/"+encodeURIComponent(name));
+  const 店们=o.门店们, 当=d.当前, 是默认=name==="默认";
+  const 节名=当.章节.map(s=>s.标题);
+  const 在哪={}, 显={};
+  当.章节.forEach(s=>s.指标.forEach(x=>{在哪[x.名]=s.标题; 显[x.名]=x.显示!==false;}));
+  const 锁=new Set(d.锁定必选);
+  M.innerHTML=chrome([["首页","workbench"],"系统",["报告模板","rtpls"],name],`
+   <div class="card"><div class="hd"><h3>${esc(name)}</h3>
+     <span class="n">${d.版本?"当前第 "+d.版本+" 版":"还没存过(下面是代码默认)"} · 只有总部运营能改,存一次是新的一版,要写理由</span></div>
+    <div class="form" style="margin-top:10px">
+      <div><label>默认期间</label><select data-rtp>${d.期间们.map(x=>`<option ${当.默认期间===x?"selected":""}>${esc(x)}</option>`).join("")}</select></div>
+      <div style="grid-column:span 2"><label>适用门店</label>${是默认
+        ?'<span style="color:var(--ink2)">全部(没被专用模板认领的店都用它,改不了)</span>'
+        :Object.entries(店们).map(([k,v])=>`<label style="display:inline-flex;gap:4px;margin-right:12px"><input type="checkbox" data-rts="${esc(k)}" ${(当.适用门店||[]).includes(k)?"checked":""}>${esc(v)}</label>`).join("")}</div></div>
+    <div style="margin-top:12px"><label>章节(一行一个,按顺序)</label>
+      <textarea data-rtsec style="width:100%;min-height:60px">${esc(节名.join("\n"))}</textarea>
+      <div style="color:var(--ink2);font-size:12px">改了章节名后点「按新章节刷新」,下面每项的章节下拉框跟着变</div>
+      <button class="btn" data-rtref style="margin-top:6px">按新章节刷新</button></div></div>
+   <div class="card"><div class="hd"><h3>每项显示 / 隐藏</h3><span class="n">隐藏只是不显示,数照取;锁定必选的两项不能隐藏</span></div>
+    <table class="tb"><thead><tr><th style="width:160px">指标</th><th style="width:70px">段</th><th style="width:200px">章节</th><th style="width:80px">显示</th><th>必选</th></tr></thead><tbody data-rtrows></tbody></table>
+    <div class="ops" style="margin-top:10px"><button class="btn sol" data-rtsave>存成新的一版</button></div></div>
+   <div class="card"><div class="hd"><h3>版本记录</h3><span class="n">只增不改 · 报告里冻的是「版本号」那一列</span></div>
+    <table class="tb"><thead><tr><th style="width:70px">版本</th><th style="width:70px">版本号</th><th style="width:150px">时间</th><th style="width:90px">谁</th><th style="width:180px">隐藏的</th><th>理由</th></tr></thead><tbody>
+     ${d.版本记录.length?d.版本记录.map(v=>`<tr><td>第 ${v.版本} 版</td><td class="mono">${v.版本号}</td><td class="mono">${esc(v.时间)}</td><td>${esc(v.谁||"")}</td>
+       <td>${esc(v.内容.章节.flatMap(s=>s.指标.filter(x=>x.显示===false).map(x=>x.名)).join("、")||"无")}</td><td>${esc(v.理由)}</td></tr>`).join("")
+       :'<tr><td colspan="6" style="color:var(--ink2)">还没存过</td></tr>'}</tbody></table></div>`);
+  const 画行=()=>{
+    const 节=M.querySelector("[data-rtsec]").value.split("\n").map(s=>s.trim()).filter(Boolean);
+    M.querySelector("[data-rtrows]").innerHTML=d.已登记指标.map(x=>`<tr><td>${esc(x.名)}</td><td>${esc(x.段)}</td>
+      <td><select data-rtin="${esc(x.名)}">${节.map(s=>`<option ${在哪[x.名]===s?"selected":""}>${esc(s)}</option>`).join("")}</select></td>
+      <td><input type="checkbox" data-rtshow="${esc(x.名)}" ${显[x.名]!==false?"checked":""} ${锁.has(x.名)?"disabled":""}></td>
+      <td>${锁.has(x.名)?'<span class="pill p-warn">锁定必选</span>':"—"}</td></tr>`).join("");
+    M.querySelectorAll("[data-rtin]").forEach(e=>e.onchange=()=>{在哪[e.dataset.rtin]=e.value;});
+    M.querySelectorAll("[data-rtshow]").forEach(e=>e.onchange=()=>{显[e.dataset.rtshow]=e.checked;});
+  };
+  画行();
+  M.querySelector("[data-rtref]").onclick=画行;
+  M.querySelector("[data-rtsave]").onclick=()=>modal("存成新的一版",
+    [{k:"why",label:"理由",type:"text",req:true,ph:"以后有人问「这一版为什么把某项藏了」,答案在这里"}],
+    v=>{
+      const 节=M.querySelector("[data-rtsec]").value.split("\n").map(s=>s.trim()).filter(Boolean);
+      M.querySelectorAll("[data-rtin]").forEach(e=>在哪[e.dataset.rtin]=e.value);
+      const payload={默认期间:M.querySelector("[data-rtp]").value,
+        适用门店:是默认?["全部"]:[...M.querySelectorAll("[data-rts]")].filter(e=>e.checked).map(e=>e.dataset.rts),
+        章节:节.map(s=>({标题:s,指标:d.已登记指标.filter(x=>在哪[x.名]===s).map(x=>({名:x.名,显示:锁.has(x.名)||显[x.名]!==false,必选:锁.has(x.名)}))}))};
+      doOp("/api/report-template-save",{name,payload,why:v.why},()=>rtplDetail(name));
+    });
 }
 
 async function downloadList(){

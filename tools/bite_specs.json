@@ -11232,5 +11232,65 @@
    }
   ],
   "预期红": "修订版本整串是日期:拒写"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "校验不查已登记清单(随便写个指标名也存得进)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "            if n not in 登:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "清单外的指标名:拒存,而且说清能选哪些"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "锁定必选项的检查拿掉(营收能隐藏)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "                if not x.get(\"必选\") or not x.get(\"显示\", True):",
+    "new": "                if False:"
+   }
+  ],
+  "预期红": "锁定必选项隐藏不了(营收)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "改模板不查角色(谁都能改)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "    if me.get(\"role\") not in 可编辑角色:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "顾问改模板:拒(403)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "打开报告时按现行模板现算(不读冻结的那一份)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "    t = pack.get(\"报告模板\")",
+    "new": "    t = 冻结用(None) if pack.get(\"报告模板\") else None"
+   }
+  ],
+  "预期红": "改完模板,旧报告仍按冻结的第 1 版显示(评价仍隐藏、库存仍显示)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "被隐藏的也标成取不到(两种状态混成一种)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "            状 = \"被隐藏\"",
+    "new": "            状 = \"取不到\""
+   }
+  ],
+  "预期红": "日报:隐藏的标「被隐藏」、取不到的标「取不到」,两种分开"
  }
 ]

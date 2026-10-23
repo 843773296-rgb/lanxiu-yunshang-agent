@@ -4787,7 +4787,7 @@ def weekly_revenue(week=None, start=None, end=None):
     return out
 
 
-def store_report(kind="周", date=None):
+def store_report(kind=None, date=None):
     """**门店经营报告的取数包** —— 日报 / 周报 / 月报共用(用户 2026-10-09:三种都要)。
 
     只取数、不写文字:每一项都带**出处**(哪个查询、什么参数)和**口径**,让写报告的那一步只能照着说。
@@ -4807,6 +4807,11 @@ def store_report(kind="周", date=None):
         return {"error": "没有登录身份,不知道看哪家店"}
     if me.get("role") not in MANAGER_ROLES:
         return {"error": "经营报告给店长 / 总部看(首版只做店长经营报告,方案 1.2)"}
+    # 报告模板(复审第 4 节 C,用户 10-23 拍):只管显示(章节、显示 / 隐藏、默认期间),**不碰下面任何一个数的算法**。
+    # 当时生效的那一版整份放进取数包 —— 存报告时随取数包一起冻结,打开旧报告按冻结的那一版显示
+    import report_template as _rt
+    _模板 = _rt.冻结用(me.get("shop") if me.get("role") != "总部运营" else None, db=DB)
+    kind = kind or _模板["默认期间"]
     try:
         起, 止, 名 = _wk.报告期(kind, date, TODAY)
     except ValueError as e:
@@ -4993,6 +4998,7 @@ def store_report(kind="周", date=None):
             "规则版本": _报告规则版本(),
             "期内": 期内, **({"环比": 环比} if 环比 else {}), "存量(截至今天)": 存, "取不到的": 缺口,
             "并排读时要说清的": 并排, "上期定的行动": 上期行动,
+            "报告模板": _模板,
             "必选指标": list(必选), "必选缺了的": 必缺,
             "能不能确认": not 必缺,
             "怎么用": "**只照这份数说**:每一项都有出处;「期内」说这一期发生了多少,「存量」说截至今天还压着多少,"
@@ -5066,7 +5072,7 @@ def _报告规则版本():
             "规矩指纹": {k: hashlib.sha1(v.encode("utf-8")).hexdigest()[:10] for k, v in sorted(规.items())}}
 
 
-def save_report(body=None, kind="周", date=None, report_id=None):
+def save_report(body=None, kind=None, date=None, report_id=None):
     """(写)**把写好的经营报告存成草稿** —— 每存一次是新的一版,保存时冻结当时的取数包。
     口径和规则在 backend/report_doc.py;这里只取身份、取数包。"""
     import report_doc as _rd
@@ -6321,11 +6327,11 @@ SHOP_SCHEMAS=[
  {"name":"mark_delay_told","description":"**(写)记下「已经把延期告诉顾客了」。** 只标本店的;标之前要跟用户确认他真的通知过了 —— 标错了这张单就从清单里消失,顾客再也等不到那个电话。","input_schema":{"type":"object","properties":{"delay_id":{"type":"integer"}},"required":["delay_id"]}},
  {"name":"rollback_order","description":"**(写)人工回退**:工厂发错件(退回等发货)/ 到店发现要返工(退回生产中,算重新生产)。**只有店长能点**,必须写清哪件不对、怎么发现的;运费公司承担。这是系统里唯一能让订单往回走的口子,回退记录一直留着。cause 只能是「发错件」或「到店返工」,note 写理由。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"cause":{"type":"string","enum":["发错件","到店返工"]},"note":{"type":"string"}},"required":["order_id","cause","note"]}},
  {"name":"report_production","description":"**(写)自有工坊报工**:这几件做完了 / 质检过了 / 发出去了。**工匠报自己做的那件,店长报本店**;顾问和版师报不了(不在生产环节)。\n\n⚠️ **外发工厂的单谁都不许替它报** —— 工厂没回传,真相就是「工厂还没报」,而不是「我们知道它做完了」。替它报一条,订单往前走了,而工厂那边什么都没发生。工具会自己查这张单的生产方,不是自有工坊就拒。\n\n和工厂回传**走同一个收件箱、同一套判定**:重复只记一次、来早了暂存、报「发出」必须带快递单号、车间工单还在制却报完工会挂异常(报完工会顺手把工单收掉)。被拒收或挂异常时**照「理由」去处理,不要换个说法再报一次** —— 每次都会留痕。\n\nevent:完工 / 质检通过 / 发出。item 给订单行号(只报某一件),不给就是整单。发出要传 tracking_no。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"},"event":{"type":"string","enum":["完工","质检通过","发出"]},"item":{"type":"string","description":"订单行号;不给就是整单"},"tracking_no":{"type":"string","description":"报「发出」时必填"}},"required":["order_id","event"]}},
-{"name":"save_report","description":"**(写)把写好的日报 / 周报 / 月报存成草稿。** ⚠️ **只在用户明说「存一下 / 保存」时调**,先把正文给他看过;不要写完就自动存。每存一次是**新的一版**(旧版不覆盖),保存时冻结当时的取数包 —— 之后数据变了,这份报告的数不跟着变。kind / date 要和写这份报告时用的取数包一致;改的是已有报告就带上 report_id。返回报告号和「能不能确认」。只有店长 / 总部能存。","input_schema":{"type":"object","properties":{"body":{"type":"string","description":"报告正文(就是给用户看过的那一份)"},"kind":{"type":"string","description":"日 / 周 / 月,默认 周"},"date":{"type":"string","description":"那一期里任意一天 `YYYY-MM-DD`;不给 = 上一个完整的那一期"},"report_id":{"type":"string","description":"改已有报告时给它的报告号"}},"required":["body"]}},
+{"name":"save_report","description":"**(写)把写好的日报 / 周报 / 月报存成草稿。** ⚠️ **只在用户明说「存一下 / 保存」时调**,先把正文给他看过;不要写完就自动存。每存一次是**新的一版**(旧版不覆盖),保存时冻结当时的取数包 —— 之后数据变了,这份报告的数不跟着变。kind / date 要和写这份报告时用的取数包一致;改的是已有报告就带上 report_id。返回报告号和「能不能确认」。只有店长 / 总部能存。","input_schema":{"type":"object","properties":{"body":{"type":"string","description":"报告正文(就是给用户看过的那一份)"},"kind":{"type":"string","description":"日 / 周 / 月;不给 = 报告模板里的默认期间(总部没配过就是 周)"},"date":{"type":"string","description":"那一期里任意一天 `YYYY-MM-DD`;不给 = 上一个完整的那一期"},"report_id":{"type":"string","description":"改已有报告时给它的报告号"}},"required":["body"]}},
 {"name":"confirm_report","description":"**(写)店长确认一份经营报告。** ⚠️ **只在店长明说「确认」时调,不要替他点。** 必选指标(下单数、营收)缺了不许确认;只能确认这一期**最新那一版**;确认后不能改,要改再存一版。第一版**不自动发送给任何人**。","input_schema":{"type":"object","properties":{"report_id":{"type":"string","description":"要确认的报告号(RPT 开头)"}},"required":["report_id"]}},
 {"name":"list_reports","description":"**存过的经营报告**(只读)。不给 report_id 就列每一期最新那一版(状态:草稿 / 已确认,带版本数);给了 report_id 就看那一版的正文和保存时冻结的取数包。只给店长 / 总部。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"只看 日 / 周 / 月"},"report_id":{"type":"string","description":"看某一份的正文"},"limit":{"type":"integer","description":"列几份,默认 20"}}}},
 {"name":"summarize_products","description":"**商品归纳总结**(只读):给一套衣服,从**颜色、纹样(花型)、面料(材质 / 布料)、工艺、形制**归纳规律。三种给法:spus(款号,逗号分隔)/ keyword(商品名里含的词,如「马面裙」)/ category(分类编码前缀);或者给 customer(客户号或姓名)归纳她近 24 个月买过的东西(喜好)。返回「规律」(这一套里明显多于对照组的值,每条带一句现成的说法)、「共性」(几乎都是、但对照组里本来就常见 —— **不是规律**)、「覆盖」(每个维度认得出几件)、「结论」。⚠️ **结论说「没有发现规律」就照说没有**,不要自己从商品名里另找一条;⚠️ 只照返回的说法讲,不心算比例;认不出的件数要说出来。用于商机研判、版师看版型共性、运营看选品。","input_schema":{"type":"object","properties":{"spus":{"type":"string","description":"款号,逗号分隔"},"keyword":{"type":"string","description":"商品名里含的词"},"category":{"type":"string","description":"分类编码前缀,如 C0102"},"customer":{"type":"string","description":"客户号或姓名:归纳她买过的东西"},"limit":{"type":"integer","description":"最多归纳多少款,默认 40,最多 80"}}}},
- {"name":"store_report","description":"**门店经营报告的取数包**(只读)—— 店长说「生成上周周报」「出个九月月报」「昨天的日报」时**先调它**,再照它写。日报 / 周报 / 月报共用:kind=日 / 周 / 月,date 给那一期里任意一天 `YYYY-MM-DD`,**不给就是上一个完整的那一期**(昨天 / 上周 / 上个月)。返回分两栏:**「期内」这一期发生了多少**(订单、销量、营收、进店客流、评价、进入休眠、任务、成交率)和**「存量(截至今天)」还压着多少**(待付款、该催工厂、延期没告诉顾客、白坯、库存、差评待跟、流失预警)—— ⚠️ **两栏不许混**,别把存量说成本期新增。⚠️ 每一项都带「出处」和「口径」,写报告**只照这份数说**,数字不许改写、不许心算新数;「取不到的」要照实写进报告。周报的成交率是**最近 4 周滚动**;日报不报成交率。原因和建议要标成判断,不写成已安排。只给店长 / 总部。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"日 / 周 / 月,默认 周"},"date":{"type":"string","description":"那一期里任意一天 `YYYY-MM-DD`;不给 = 上一个完整的那一期"}}}},
+ {"name":"store_report","description":"**门店经营报告的取数包**(只读)—— 店长说「生成上周周报」「出个九月月报」「昨天的日报」时**先调它**,再照它写。日报 / 周报 / 月报共用:kind=日 / 周 / 月,date 给那一期里任意一天 `YYYY-MM-DD`,**不给就是上一个完整的那一期**(昨天 / 上周 / 上个月)。返回分两栏:**「期内」这一期发生了多少**(订单、销量、营收、进店客流、评价、进入休眠、任务、成交率)和**「存量(截至今天)」还压着多少**(待付款、该催工厂、延期没告诉顾客、白坯、库存、差评待跟、流失预警)—— ⚠️ **两栏不许混**,别把存量说成本期新增。⚠️ 每一项都带「出处」和「口径」,写报告**只照这份数说**,数字不许改写、不许心算新数;「取不到的」要照实写进报告。周报的成交率是**最近 4 周滚动**;日报不报成交率。原因和建议要标成判断,不写成已安排。只给店长 / 总部。","input_schema":{"type":"object","properties":{"kind":{"type":"string","description":"日 / 周 / 月;不给 = 报告模板里的默认期间(总部没配过就是 周)"},"date":{"type":"string","description":"那一期里任意一天 `YYYY-MM-DD`;不给 = 上一个完整的那一期"}}}},
 {"name":"weekly_revenue","description":"**按周营收 = 实收减退款**(只读,周报用)。「上周营收多少」「这周进了多少钱」用它。⚠️ 业务周是**周一到周日**;实收按**付款日**、退款按**退款日**归周,**不是按下单日** —— 和 orders_by_date 的「下单数」不是一回事。⚠️ 退款日是近似(用售后单最后更新时间),返回里写着。预约押金不算营收。不给 week 就是上一个完整周;week 给那一周里任意一天 `YYYY-MM-DD`。范围随身份:总部全部 / 店长本店 / 顾问名下∪经手。","input_schema":{"type":"object","properties":{"week":{"type":"string","description":"那一周里任意一天 `YYYY-MM-DD`;不给 = 上一个完整周"},"start":{"type":"string","description":"自由区间的**起**那天 `YYYY-MM-DD`。⚠️ **要和 end 一起给**,只给一个会被拒。给了区间就不看 week —— 用它来答「国庆那一周到现在」这种现成档位表达不了的跨度"},"end":{"type":"string","description":"自由区间的**止**那天 `YYYY-MM-DD`(含当天)。要和 start 一起给"}}}},
 {"name":"sales_rank","description":"**商品销量排行**(只读)。「九月卖得最好的商品是什么」「这个月哪个品类卖得多」「标品前十」用它 —— 按商品 / SKU / 品类汇总订单行,不用逐单去查。⚠️ **时间段必须写成 `month=YYYY-MM` 或 `start`+`end`**,「九月」先换成具体年月,拿不准是哪一年就问。⚠️ **默认按件数排**(一单买 3 件算 3);定制品每单一件、单价高 —— 按件数几乎上不了榜、按金额会霸榜,**用户没说按什么时按件数答,再照返回里「各排法的第一」说按金额是谁 —— 不要从榜单里自己推**。⚠️ 取消 / 待付款 / 已退款的行**不算销量**(口径同库存预警),返回里「没算进销量的订单行」写了各有多少。⚠️ 报总量用「合计」,不要拿榜单相加;返回「并列」时要说出前 N 名不唯一。范围随身份:总部全部 / 店长本店 / 顾问名下∪经手。","input_schema":{"type":"object","properties":{"month":{"type":"string","description":"月份 `YYYY-MM`,如 `2026-09`"},"start":{"type":"string","description":"起始日 `YYYY-MM-DD`(和 end 一起给)"},"end":{"type":"string","description":"截止日 `YYYY-MM-DD`(含当天)"},"by":{"type":"string","description":"按什么汇总:商品(默认,同款不同尺码颜色合一)/ SKU / 品类"},"metric":{"type":"string","description":"按什么排:件数(默认)/ 金额 / 单数"},"kind":{"type":"string","description":"只看 标品 或 定制品;不给就是都算"},"field":{"type":"string","description":"按哪个日期归月:下单(默认)/ 完工 / 发货 / 交付"},"limit":{"type":"integer","description":"列前几名,默认 10,最多 50"}}}},
  {"name":"orders_by_date","description":"**按时间段列订单**(只读)。「下周有哪些单要交付」「最近一周下了多少单」这类问法用它 —— 这是唯一一个不用先给订单号或客户号就能列单的入口。\n\n⚠️ **「下一周」是歧义的,这个工具不替人猜**:`direction` 要么「往后」(今天→N 天后,问的是接下来要发生什么)、要么「往前」(N 天前→今天,问的是刚过去这段做了多少)。不给 direction 它会返回「判不了」,并把两种读法各有多少单一起给你 —— **把这两个数原样告诉用户让他选**,不要自己挑一个:两种读法的单子几乎没有交集,而猜错的表现是一份看起来很正常的清单,没有任何地方会提示这不是他要的那一批。\n\n`field` 决定查哪一列:**下单 / 完工 / 发货 / 交付**,四列是四份不同的单子(同一张单「下单」在上个月、「交付」在下周)。用户说「下周要交的货」是**交付**,说「这周下了多少单」是**下单**;拿不准就问。默认按下单日,返回里会写明用的是哪一列。\n\n`days` 默认 7。\n\n**按日历月 / 按起止日期查**:`month`(`YYYY-MM`,比如「九月」= `2026-09`,查的是那个月 1 号到月底)或 `start` + `end`(`YYYY-MM-DD`,两个一起给)。给了它们就**不要再给 direction / days**。用户只说「一月」而没说哪年时,`month` 原样传「一月」,工具会把「今年 1 月」和「最近一个月」两种读法各有多少单摆出来 —— 照样**不替他挑**。\n\n范围跟身份走:顾问只看自己的,店长看本店,总部运营看全部。","input_schema":{"type":"object","properties":{"direction":{"type":"string","enum":["往后","往前"],"description":"往后=今天到 N 天后;往前=N 天前到今天。不给会返回判不了;用 month / start+end 时不给"},"days":{"type":"integer","description":"几天,默认 7"},"month":{"type":"string","description":"按日历月查:YYYY-MM(如 2026-09 = 9 月 1 日到 30 日)"},"start":{"type":"string","description":"按起止日期查的起点 YYYY-MM-DD,要和 end 一起给"},"end":{"type":"string","description":"按起止日期查的终点 YYYY-MM-DD(含这一天)"},"field":{"type":"string","enum":["下单","完工","发货","交付"],"description":"按哪一列的时间算,默认下单"},"limit":{"type":"integer","description":"最多返回几条,默认 50"}}}},

@@ -241,6 +241,45 @@ def a_kb_issue_wrong_role():
         _K.DB = 原
         _sh.rmtree(d, ignore_errors=True)
     raise PermissionError("顾问定不了维护人、改不了状态、报不了别人的 —— 判在 kb_issue 写口里,身份从会话来")
+def a_report_template():
+    """报告模板(复审第 4 节 C,用户 10-23 拍):顾问改模板、改完模板旧报告跟着变 —— 两刀都要砍不下去。
+    在库副本上:顾问去存一版模板;总部存第 1 版(隐藏评价)→ 店长存一份报告 → 总部存第 2 版(评价放出来)→
+    打开那份旧报告,评价必须仍是「被隐藏」。显示要是按现行模板现算,改一次模板所有旧报告都跟着变。"""
+    import report_template as _T, report_doc as _rd, oplog as _ol, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq
+    原 = (_T.DB, _rd.DB, _ol.DB, api.DB)
+    d = _tf.mkdtemp(prefix="ba-rtpl-"); p = _os.path.join(d, "lanxiu.db")
+    _sh.copy(原[3], p)
+    _T.DB = _rd.DB = _ol.DB = api.DB = p
+    try:
+        c = _sq.connect(p); _T.确保表(c); c.execute("DELETE FROM report_template_ver"); c.commit()
+        店 = c.execute("SELECT shop FROM ordr WHERE shop IS NOT NULL GROUP BY shop ORDER BY COUNT(*) DESC LIMIT 1").fetchone()
+        c.close()
+        if not 店:
+            return "没有有单的门店 —— 没攻击成,不算守住"
+
+        def 模(藏):
+            m = _T.默认内容()
+            for 节 in m["章节"]:
+                for x in 节["指标"]:
+                    x["显示"] = x["名"] not in 藏
+            return m
+        r = _T.保存("默认", 模(("评价",)), "审计:顾问想藏评价", dict(no="BA-G", name="审计顾问", role="顾问"))
+        if r.get("ok"):
+            return "顾问存进了一版报告模板 —— 只有总部运营能改这条没守住"
+        总部 = dict(no="BA-H", name="审计总部", role="总部运营")
+        if not _T.保存("默认", 模(("评价",)), "审计:第 1 版", 总部).get("ok"):
+            return "总部运营存不进第 1 版 —— 攻击自己没走通"
+        with api.as_user(dict(no="BA-SM", name="审计店长", role="店长", shop=店[0])):
+            rid = api.save_report(body="## 审计周报", kind="周").get("报告号")
+            _T.保存("默认", 模(()), "审计:第 2 版把评价放出来", 总部)
+            视 = (api.list_reports(report_id=rid) or {}).get("模板视图") or {}
+        态 = next((x["状态"] for 节 in 视.get("章节") or [] for x in 节["指标"] if x["名"] == "评价"), None)
+        if 态 != "被隐藏":
+            return f"改完模板,旧报告 {rid} 里评价变成了「{态}」—— 显示是按现行模板现算的,冻结没成立"
+    finally:
+        _T.DB, _rd.DB, _ol.DB, api.DB = 原
+        _sh.rmtree(d, ignore_errors=True)
+    raise PermissionError("顾问存不进模板;改完模板,旧报告仍按冻结的那一版显示")
 
 
 def a_resolve_wrong_role():
@@ -908,6 +947,11 @@ STRUCT = [
   "复验(tools/kb_recheck.py)结论只有「找到了相关片段 / 仍然零命中 / 复验没跑成」三种、输出写明不等于答对 —— "
   "kb_issue_check 打 HTTP 层验。⚠️ 门店检索记录的**内容**(问题、命中几段)是智能运维平台从轨迹转来的,"
   "后台只核身份不核内容 —— 伪造只能伪造到自己名下"),
+ ("报告模板只有总部运营能改,改了也不动已存的报告", "backend/report_template.py 保存 / 视图;backend/report_doc.py 取",
+  a_report_template, "在库副本上拿顾问身份存一版模板;总部改模板后打开改之前存的报告",
+  "写口里按登录身份判角色(HTTP 层身份只从会话取);模板随取数包在保存那一刻冻结,打开时只读冻结的那一份、不读模板表。"
+  "指标名只能从取数包代码现算的已登记清单里选,锁定必选(下单数、营收)取消不了 —— report_template_check 打 HTTP 层验。"
+  "⚠️ 模板只管显示:写报告正文的那一步「隐藏的不写进正文」靠取数包里的说明,是约定"),
  ("研判销账只有对应角色能做,而且留痕", "backend/ops.py 能销吗 / resolve;backend/server.py /api/ops-resolve",
   a_resolve_wrong_role, "在库副本上拿顾问身份去销一条财务人工任务",
   "接口层身份只从登录态取(不读请求体里的 handler);`resolve` 里按类型查角色,**所有调用方都过这一道**,"

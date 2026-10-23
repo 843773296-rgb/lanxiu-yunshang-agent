@@ -94,6 +94,22 @@ function 指标表(栏){
       "</div><div class='src'>" + esc(x && x.出处 || "") + "</div></td></tr>").join("") + "</tbody></table>";
 }
 
+// 按**保存那一刻冻结的报告模板**画(后台 report_template.视图 算好,这页不读现行模板)。
+// 「被隐藏」和「取不到」分开标:隐藏 = 总部在模板里关了(数有,不显示);取不到 = 要显示、但这一期没取到数
+function 模板节(节){
+  const 显 = 节.指标.filter(x => x.状态 !== "被隐藏"), 藏 = 节.指标.filter(x => x.状态 === "被隐藏");
+  return `<h3 style="font-size:13.5px;margin:14px 0 4px">${esc(节.标题)}</h3>` +
+    (显.length ? "<table><thead><tr><th>指标</th><th>数</th><th>口径 / 出处</th></tr></thead><tbody>" +
+      显.map(x => "<tr><td class='n'>" + esc(x.名) + (x.必选 ? ' <span class="tag must">必选</span>' : "") +
+        (x.段 === "存量" ? ' <span class="tag">截至今天</span>' : "") + "</td><td class='v'>" +
+        (x.状态 === "取不到" ? '<span class="tag" style="background:var(--errbg);color:var(--err)">取不到</span>' +
+          (x.取不到的原因 ? ' <span class="src">' + esc(x.取不到的原因) + "</span>" : "") : 值(x.值)) +
+        "</td><td><div>" + esc(x.口径 || "") + "</div><div class='src'>" + esc(x.出处 || "") + "</div></td></tr>").join("") +
+      "</tbody></table>" : '<div class="empty">这一节没有显示的项</div>') +
+    (藏.length ? '<p class="hint" style="margin-top:6px"><span class="tag">被隐藏</span> 按报告模板不显示(数据有,不是缺了):' +
+      藏.map(x => esc(x.名)).join("、") + "</p>" : "");
+}
+
 function 环比表(h){
   if(!h) return "";
   const rows = Object.entries(h).filter(([, x]) => x && typeof x === "object" && "本期" in x);
@@ -147,9 +163,12 @@ function 画单份(d){
     `<div class="card body">${md(d.body)}</div>` +
     `<div class="card"><h2>保存那一刻的数</h2><p class="hint">报告里的数以这一份为准 —— 存的时候冻结了,` +
     `之后数据再变,这份报告不跟着漂。${esc(p.时区 || "")}</p>` +
-    `<h3 style="font-size:13.5px;margin:12px 0 4px">本期发生的</h3>${指标表(p.期内)}` +
-    (p.环比 ? `<h3 style="font-size:13.5px;margin:16px 0 4px">和上一期比</h3>${环比表(p.环比)}` : "") +
-    `<h3 style="font-size:13.5px;margin:16px 0 4px">截至 ${esc(p.截至 || "")} 还压着的</h3>${指标表(p["存量(截至今天)"])}</div>`;
+    (d.模板视图
+      ? `<p class="hint">${esc(d.模板视图.说明)}</p>` + d.模板视图.章节.map(模板节).join("") +
+        (p.环比 ? `<h3 style="font-size:13.5px;margin:16px 0 4px">和上一期比</h3>${环比表(p.环比)}` : "")
+      : `<h3 style="font-size:13.5px;margin:12px 0 4px">本期发生的</h3>${指标表(p.期内)}` +
+        (p.环比 ? `<h3 style="font-size:13.5px;margin:16px 0 4px">和上一期比</h3>${环比表(p.环比)}` : "") +
+        `<h3 style="font-size:13.5px;margin:16px 0 4px">截至 ${esc(p.截至 || "")} 还压着的</h3>${指标表(p["存量(截至今天)"])}`) + `</div>`;
 }
 
 (async () => {

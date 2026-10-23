@@ -45,6 +45,9 @@ CREATE INDEX IF NOT EXISTS ix_rptdoc_key ON store_report_doc(shop, kind, period_
     ("rejected_at", "TEXT"),     # AI 管理平台打回:什么时候、谁、为什么 —— 打回的那一版不许确认
     ("rejected_by", "TEXT"),
     ("reject_reason", "TEXT"),
+    # 报告模板(复审第 4 节 C,10-23):保存那一刻生效的模板版本行号(report_template_ver.id)。
+    # 模板全文冻在 pack 的「报告模板」里;这一列只为「哪份报告用的哪一版」能直接查。代码默认(没存过模板)为空
+    ("template_ver", "INTEGER"),
 ]
 
 管理角色 = ("店长", "总部运营")
@@ -133,9 +136,10 @@ def 保存(me, pack, body, report_id=None, db=None, trace=None):
         while c.execute("SELECT 1 FROM store_report_doc WHERE id=?", (rid,)).fetchone():
             序 += 1; rid = f"RPT{序:06d}"
         c.execute("INSERT INTO store_report_doc(id,shop,kind,period_start,period_end,revision,status,body,pack,"
-                  "supersedes,created_at,created_by,trace_id) VALUES(?,?,?,?,?,?,'草稿',?,?,?,?,?,?)",
+                  "supersedes,created_at,created_by,trace_id,template_ver) VALUES(?,?,?,?,?,?,'草稿',?,?,?,?,?,?,?)",
                   (rid, shop, pack["种类"], 起, 止, 版, body, json.dumps(pack, ensure_ascii=False, default=str),
-                   上一版已确认[0] if 上一版已确认 else None, _今天(), me.get("no"), trace))
+                   上一版已确认[0] if 上一版已确认 else None, _今天(), me.get("no"), trace,
+                   (pack.get("报告模板") or {}).get("版本号")))
         c.commit()
     finally:
         c.close()
@@ -257,4 +261,7 @@ def 取(me, report_id, db=None):
     if not r or not _能管(me, r["shop"]):
         return dict(error=f"没有 {report_id} 这份报告,或者它不在你的范围里")
     d = dict(r); d["pack"] = json.loads(d["pack"]); d["链接"], d["下载"] = 链接(report_id), 下载(report_id)
+    # 怎么显示:**只按取数包里冻结的模板**(report_template.视图 不读模板表)—— 模板之后再改,这份报告不跟着变
+    import report_template
+    d["模板视图"] = report_template.视图(d["pack"])
     return d
