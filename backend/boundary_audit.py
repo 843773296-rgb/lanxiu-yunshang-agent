@@ -158,6 +158,32 @@ def a_skill_gate():
     raise PermissionError("停用的被拦、没登记的第三方被拦 —— 闸读的是状态,不是写死的清单")
 
 
+def a_mcp_tool_off():
+    """后台把一个工具停用,模型那一侧还看不看得见、调不调得动(用户 10-23 拍「MCP 管理带配置」)。
+    在库副本上停用 get_stock,真起商品领域服务(env 指副本)去列、去调。"""
+    import mcp_registry as _M, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq, subprocess as _sp, json as _js, sys as _sys
+    d = _tf.mkdtemp(prefix="ba-mcp-"); p = _os.path.join(d, "lanxiu.db")
+    _sh.copy(_M.DB, p)
+    try:
+        c = _sq.connect(p); _M.确保表(c)
+        c.execute("INSERT OR REPLACE INTO mcp_tool_cfg(name,enabled,version) VALUES('get_stock',0,1)"); c.commit(); c.close()
+        msgs = [{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-11-25",
+                 "capabilities": {}, "clientInfo": {"name": "ba", "version": "0"}}},
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "get_stock", "arguments": {"material": "棉麻"}}}]
+        r = _sp.run([_sys.executable, _os.path.join(ROOT, "mcp", "domain_server.py"), "commerce"],
+                    input="\n".join(_js.dumps(m) for m in msgs) + "\n", capture_output=True, text=True,
+                    timeout=60, env=dict(_os.environ, LANXIU_DB=p), cwd=ROOT)
+        回 = {x.get("id"): x.get("result") for x in map(_js.loads, filter(str.strip, r.stdout.splitlines()))}
+        if any(t["name"] == "get_stock" for t in (回.get(1) or {}).get("tools") or []):
+            return "后台停用了 get_stock,服务照样把它列给模型"
+        if not (回.get(2) or {}).get("isError"):
+            return "后台停用了 get_stock,模型照样调得动"
+    finally:
+        _sh.rmtree(d, ignore_errors=True)
+    raise PermissionError("停用的工具列不出、调不动 —— 开关在协议层生效,不只是库里一行字")
+
+
 def a_resolve_wrong_role():
     """研判销账拿错角色 —— 在库副本上让顾问去销一条财务任务,应该抛 PermissionError。
     2026-10-12 前谁都能销、署名随便填、销完不留痕(用户拍「修」)。"""
@@ -763,6 +789,10 @@ STRUCT = [
   a_skill_gate, "在库副本上把自有技能标成已停用,问执行闸放不放行;再问一个没登记过的第三方",
   "执行闸读的就是后台里的状态(只放试运行 / 已发布);没登记的按来源取默认,库读不到时退回原来的写死清单(第三方照样拦)。"
   "改状态只有总部运营、要写理由、依赖没就绪的放不出去 —— 判在 skill_registry 写口里,skill_registry_check 打 HTTP 层验"),
+ ("后台停用的 MCP 工具,模型看不见也调不动", "mcp/protocol.py 三个开关;backend/mcp_registry.py",
+  a_mcp_tool_off, "在库副本上停用 get_stock,真起商品领域服务去列、去调",
+  "协议层每 5 秒读一次开关(只读连接):停用的 tools/list 不列、tools/call 拒;另有超时、限流。三样都只能收紧,"
+  "页面上没有能放大权限的开关;只有总部运营能改、要理由、留痕。读不到配置 = 全部启用(和原来一样)"),
  ("研判销账只有对应角色能做,而且留痕", "backend/ops.py 能销吗 / resolve;backend/server.py /api/ops-resolve",
   a_resolve_wrong_role, "在库副本上拿顾问身份去销一条财务人工任务",
   "接口层身份只从登录态取(不读请求体里的 handler);`resolve` 里按类型查角色,**所有调用方都过这一道**,"

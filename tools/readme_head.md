@@ -153,7 +153,7 @@
 backend/        数据的家:SQLite 库 + 管理后台(server.py)+ 状态机(fsm.py)+ 写入规则
                 + 研判队列(ops.py)+ 各写口(order_write / measure_write / refund_write …)+ 各项检查
 knowledge/      领域知识:手写知识 md(真相源)+ 推导脚本 + 口径模块(口径模块不自己取当前日期)
-mcp/            三个 MCP 服务:知识库 / 任务 / 店务。裸手写 JSON-RPC,没用 SDK
+mcp/            8 个业务领域 MCP 服务(domain_server.py + backend/domains.py)。裸手写 JSON-RPC,没用 SDK
 agent/          V1、V2,全部评测集、判分器、调用记录仪;nightly/ 是每晚的评测结果
 agentsite/      V3 与 AI 运营平台:Agent SDK 内核、Hook、页面
 fakedata/       假数据工厂:给任意库灌「库允许、业务也允许」的测试数据,能回滚

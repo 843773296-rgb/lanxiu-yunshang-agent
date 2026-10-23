@@ -51,7 +51,7 @@
 | ↳ 账户与身份 | `account`(手机号唯一,可自设账号密码)。**账户在门店档案之上**:一个人一个账户,`customer` 可以有好几条 —— 那正是「客户合并」要处理的事 |
 | ↳ 用户生命周期 | `wearer` / `consent` / `growth_forecast` 三张表 + `lifecycle_check.py`。**身份绑 `account`,不绑 `customer`** —— 档案可能有多条,账户只有一个 |
 | `knowledge/` | **领域知识层**。14 篇手写知识 md + 7 个推导脚本(相容矩阵 / 版型推档 / BOM / 量体 / 工期 / 产能) |
-| `mcp/` | **三个 MCP 服务**:`kb`(知识库 10 个工具)/ `task`(任务 5 个)/ `shop`(店务 4 个)。裸手写 JSON-RPC,没用 SDK |
+| `mcp/` | **8 个业务领域 MCP 服务**(2026-10-23 由 kb / task / shop 三个拆开):`mcp/domain_server.py <领域>` 一个入口,工具归哪个领域只在 `backend/domains.py` 写一次。V1 / V2 的 MCP 通道仍走旧三服务(三代对比条件不动)。后台「系统 → MCP 服务与工具」可停用工具、设超时和限流(只能收紧)。裸手写 JSON-RPC,没用 SDK |
 | `agent/` | **V1 和 V2**,以及全部评测集、记录仪、判分器 |
 | `agentsite/` | **V3**。Claude Agent SDK 为内核,四个 Hook 全程把关,一个 `quote` Skill |
 | `fakedata/` | **假数据工厂**。给任意库灌假数据:反射 → 挖关系 → 出方案 → 确定性生成 → 灌入 → 自检 → 照 manifest 回滚。模型层只判统计推不出来的四件事(否决误报关系/认领无语义列/推状态机/判禁配组合是真规则还是样本太小),走 `agent/v1.py::call()` 那个唯一发请求口,记录仪自动接上。两条入口:数据库直连、写接口驱动;`generalize.py` 用一个处处相反的靶子(英文/整数主键/明写外键)守泛化能力(后者顺带产出「库允许但业务不允许」的差集清单)。详见 `假数据工厂.md`。实测 176 万行/50 秒(`fakedata/bench.py`,不进 check.sh)。SQLite 与 **MySQL 都实跑验证过**(MySQL 那条要人手起实例:`fakedata/mysql_e2e.py`,不进 check.sh) |

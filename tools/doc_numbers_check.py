@@ -131,7 +131,11 @@ def 库中(表, 条件=""):
 
 
 def 服务数():
-    return 3          # kb / shop / task —— 见 mcp/ 目录,由下面的规格顺带钉住
+    # 10-23 起按业务领域起服务(backend/domains.py);原来写死 3(kb / shop / task)
+    import importlib.util as _u
+    sp = _u.spec_from_file_location("domains", str(ROOT / "backend" / "domains.py"))
+    m = _u.module_from_spec(sp); sp.loader.exec_module(m)
+    return len(m.领域)
 
 
 # ── 规格:行正则(带一个捕获组)→ 现算 ─────────────────────────────────
@@ -184,6 +188,10 @@ def 顶栏项数():
       r"确立三条业务线、(\d+)\s*个工具",
       r"三个服务[,，]\s*(\d+)\s*个工具",
       r"工具<br/>(\d+)\s*个\s*·\s*三个服务",
+      # 10-23 拆成 8 个业务领域服务之后的写法(PRD / 产品说明 / README)
+      r"工具<br/>(\d+)\s*个\s*·\s*\d+\s*个业务领域服务",
+      r"\d+\s*个业务领域服务[,，]\s*(\d+)\s*个工具",
+      r"共\s*(\d+)\s*个，按\s*\d+\s*个业务领域分服务挂载",
       # ⚠️ 下面这几条是给**画图脚本**用的:那里是 Python 字符串,
       # 换行写成字面的 `\n`(反斜杠 + n 两个字符),不是 md 的 `<br/>`。
       # **同一个数、同一句话,两种换行符** —— 规格只认一种时,

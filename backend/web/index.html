@@ -456,7 +456,7 @@ const MENU=[
  {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["freight","运费表"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"],["factory","工厂回传"]]},
  {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"]]},
  {k:"sys",i:"sys",t:"系统",subs:[["approvals","审批中心"],["staff","权限管理"],["syscodes","系统编码"],
-   ["downloads","下载中心"],["oplog","操作日志"],["skills","Skill 管理"]]}];
+   ["downloads","下载中心"],["oplog","操作日志"],["skills","Skill 管理"],["mcp","MCP 服务与工具"]]}];
 
 function renderNav(){
   NAV.innerHTML=MENU.map(m=>{
@@ -536,7 +536,7 @@ const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合
   products:"商品库",categories:"品类管理",stock:"库存查询",
   mitems:"量体配置",mtpls:"量体模版",contents:"内容管理",freight:"运费表",
   activities:"营销活动",invites:"邀请码管理",pages:"页面配置",
-  syscodes:"系统编码",skills:"Skill 管理",skill:"Skill",downloads:"下载中心",approvals:"审批中心",
+  syscodes:"系统编码",skills:"Skill 管理",skill:"Skill",mcp:"MCP 服务与工具",downloads:"下载中心",approvals:"审批中心",
   levels:"会员等级",tags:"客户标签管理",
   aftersales:"售后工单",maintains:"维保工单",factory:"工厂回传",perf:"导购业绩",stocklog:"库存变更日志",kb:"工艺知识库"};
 async function view(v,arg,fromTab){
@@ -598,6 +598,7 @@ async function route(v,arg){
   if(v==="pages")    return pageList();
   if(v==="page")     return pageDetail(arg);
   if(v==="syscodes") return syscodeList();
+  if(v==="mcp")      return mcpPage();
   if(v==="skills")   return skillList();
   if(v==="skill")    return skillDetail(arg);
   if(v==="downloads")return downloadList();
@@ -2471,6 +2472,65 @@ async function syscodeList(){
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-newsc]").forEach(e=>e.onclick=()=>formSyscode(syscodeList));
   bindToggle(syscodeList); bindTable(st,syscodeList);
+}
+
+/* ── MCP 服务与工具(用户 10-23 拍「做,带配置」)──────────────────────────────────
+   页面上只开三个开关:停用 / 超时 / 限流 —— 三样都只能让工具更少、更慢地被用,没有一个能放大权限。
+   身份传递、写入审批、权限这些是写口里的业务规则,不在这里改(改它们走代码提交)。判在服务端(mcp_registry)。 */
+let MCP_F={领域:"",读写:"",启用:"",q:""}, MCP_体检=null;
+async function mcpPage(){
+  const d=await get("/api/mcp"), T=d.工具;
+  const 筛=T.filter(t=>(!MCP_F.q||t.名称.includes(MCP_F.q))&&(!MCP_F.领域||t.领域===MCP_F.领域)
+    &&(!MCP_F.读写||t.读写===MCP_F.读写)&&(!MCP_F.启用||(MCP_F.启用==="启用")===t.启用));
+  const sel=(k,opts)=>`<select data-mcf="${k}"><option value="">全部</option>${opts.map(([v,l])=>
+    `<option value="${esc(v)}" ${MCP_F[k]===v?"selected":""}>${esc(l)}</option>`).join("")}</select>`;
+  const 检=MCP_体检?Object.fromEntries(MCP_体检.map(x=>[x.领域,x])):{};
+  M.innerHTML=chrome([["首页","workbench"],"系统","MCP 服务与工具"],`
+   <div class="card"><div class="hd"><h3>服务(按业务领域)</h3>
+     <span class="n">${d.服务.length} 个服务 · ${T.length} 个工具 · 写工具 ${T.filter(t=>t.读写==="写").length} 个 · 停用 ${T.filter(t=>!t.启用).length} 个</span>
+     <span class="more" data-mcpchk>${MCP_体检?"重新体检 ›":"体检:真起一遍八个服务 ›"}</span></div>
+    <table class="tb" style="margin-top:10px"><thead><tr><th>领域</th><th style="width:90px">工具数</th><th style="width:90px">停用</th>
+      <th style="width:260px">体检(握手 + 列工具,不调工具)</th></tr></thead><tbody>
+     ${d.服务.map(s=>{const k=检[s.领域];return `<tr><td>${esc(s.名)} <span class="mono" style="color:var(--ink2)">${esc(s.领域)}</span></td>
+       <td class="mono">${s.工具数}</td><td class="mono">${s.停用||"—"}</td>
+       <td>${!k?'<span style="color:var(--ink2)">没体检</span>':k.起得来&&k.列出工具===k.应有-0?`起得来 · 列出 ${k.列出工具} 个 · ${k.毫秒} ms`
+         :k.起得来?`起得来 · 列出 ${k.列出工具} / 应有 ${k.应有}(停用的不列)`:`<b style="color:var(--bad)">起不来</b> ${esc(k.错误||"")}`}</td></tr>`}).join("")}
+    </tbody></table></div>
+   <div class="card"><div class="hd"><h3>工具目录</h3><span class="n">${esc(d.说明)}${d.角色取得到?"":" · <b style='color:var(--bad)'>角色这一栏这次取不到</b>"}</span></div>
+    <div class="form" style="margin-top:10px">
+      <div><label>工具名</label><input data-mcf="q" value="${esc(MCP_F.q)}" placeholder="请输入"></div>
+      <div><label>领域</label>${sel("领域",d.服务.map(s=>[s.领域,s.名]))}</div>
+      <div><label>读写</label>${sel("读写",[["读","读"],["写","写"]])}</div>
+      <div><label>状态</label>${sel("启用",[["启用","启用"],["停用","停用"]])}</div></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:170px">工具</th><th style="width:110px">领域</th><th style="width:50px">读写</th><th style="width:70px">状态</th>
+     <th style="width:80px">超时</th><th style="width:90px">限流/分钟</th><th>挂在哪些角色</th>
+     <th style="width:170px">最近一段调用</th><th style="width:60px"></th></tr></thead><tbody>
+     ${筛.map(t=>`<tr${t.启用?"":' style="opacity:.55"'}>
+      <td class="mono">${esc(t.名称)}</td><td>${esc(t.领域名||"")}</td>
+      <td>${t.读写==="写"?'<span class="pill p-warn">写</span>':"读"}</td>
+      <td>${t.启用?"启用":'<span style="color:var(--bad)">停用</span>'}</td>
+      <td class="mono">${t.超时?t.超时+" 秒":"不限"}</td><td class="mono">${t.限流||"不限"}</td>
+      <td style="font-size:12px">${t.角色===null?"取不到":esc((t.角色||[]).join("、"))||"—"}</td>
+      <td class="mono" style="font-size:12px">${t.使用?`${t.使用.次数} 次${t.使用.报错?` · <span style="color:var(--bad)">错 ${t.使用.报错}</span>`:""}${t.使用.平均毫秒!=null?` · ${t.使用.平均毫秒}ms`:""}`:"—"}</td>
+      <td><a class="lk" data-mcfg="${esc(t.名称)}">配置</a></td></tr>`).join("")}
+    </tbody></table></div>
+   <div class="card"><div class="hd"><h3>改动记录</h3><span class="n">只增不改</span></div>
+    <table class="tb"><thead><tr><th style="width:150px">时间</th><th style="width:90px">谁</th><th style="width:160px">工具</th><th>从 → 到</th><th>理由</th></tr></thead><tbody>
+     ${d.改动.length?d.改动.map(x=>`<tr><td class="mono">${esc(x.at)}</td><td>${esc(x.by_name)}</td><td class="mono">${esc(x.name)}</td>
+       <td style="font-size:12px">${esc(x.before)} → ${esc(x.after)}</td><td>${esc(x.why||"")}</td></tr>`).join("")
+       :'<tr><td colspan="5" style="color:var(--ink2)">还没改过 —— 没登记过的工具都是启用、不限时、不限流</td></tr>'}</tbody></table></div>`);
+  M.querySelectorAll("[data-mcf]").forEach(e=>e.onchange=()=>{MCP_F[e.dataset.mcf]=e.value; mcpPage();});
+  M.querySelector("[data-mcpchk]").onclick=async()=>{ MCP_体检=(await get("/api/mcp-health")).rows; mcpPage(); };
+  M.querySelectorAll("[data-mcfg]").forEach(e=>e.onclick=()=>{
+    const t=T.find(x=>x.名称===e.dataset.mcfg);
+    modal(`配置 ${t.名称}(${t.读写}工具)`,[
+      {k:"enabled",label:"状态",type:"select",opts:["启用","停用"],val:t.启用?"启用":"停用"},
+      {k:"timeout",label:`超时(秒,${d.超时范围.join("–")},空 = 不限)`,val:t.超时||""},
+      {k:"rate",label:`每分钟最多(次,${d.限流范围.join("–")},空 = 不限)`,val:t.限流||""},
+      {k:"why",label:"理由",type:"text",req:true,ph:"以后有人问「这个工具怎么调不动了」,答案在这里"+(t.读写==="写"?";写工具超时返回时这一笔可能已落库":"")}],
+      v=>doOp("/api/mcp-tool-save",{name:t.名称,enabled:v.enabled==="启用",timeout:v.timeout,rate:v.rate,why:v.why},mcpPage));
+  });
 }
 
 /* ── Skill 管理(用户 10-23 拍「做完整配置页」,intent/skill-admin.md)──────────────────

@@ -47,6 +47,7 @@ import triage_trial
 import rating_shadow
 import tasks
 import skill_registry
+import mcp_registry
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -92,6 +93,8 @@ import skill_registry
     # Skill 管理(2026-10-23,用户拍「做完整配置页」):第一次有人打开 Skill 管理页、或执行闸第一次查状态才建 ——
     # 同上,建死免得表数漂。没登记过的技能按来源取默认状态,所以空表就是「和原来一样」
     (skill_registry, "确保表", ["skill_cfg", "skill_cfg_log"]),
+    # MCP 工具开关(2026-10-23,用户拍「MCP 管理带配置」):第一次有人在页面上改才建 —— 同上,建死免得表数漂
+    (mcp_registry, "确保表", ["mcp_tool_cfg", "mcp_tool_cfg_log"]),
 ]
 
 

@@ -151,6 +151,35 @@ def log(*a):
     print(*a, file=sys.stderr, flush=True)
 
 
+# ── 后台可配的三个开关(用户 2026-10-23 拍「MCP 管理带配置」,backend/mcp_registry.py)──────────────
+# 停用 / 超时 / 限流。**三样都只能让工具更少、更慢地被用**,没有一个能放大权限。
+# 每 5 秒重读一次(只读连接):新开的对话立即生效,开着的对话 5 秒内跟上。读不到 = 全部启用、不限(和原来一样)。
+_配 = {"值": {}, "时": 0.0}
+
+
+def _工具配置():
+    import time as _t
+    if _t.time() - _配["时"] > 5:
+        try:
+            import importlib.util as _u
+            _p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend", "mcp_registry.py")
+            sp = _u.spec_from_file_location("mcp_registry", _p)
+            m = _u.module_from_spec(sp); sp.loader.exec_module(m)
+            _配["值"] = m.配置(os.environ.get("LANXIU_DB") or None)
+        except Exception:
+            _配["值"] = {}
+        _配["时"] = _t.time()
+    return _配["值"]
+
+
+def _是写(nm):
+    try:
+        import api
+        return nm in api.WRITE_TOOLS
+    except Exception:
+        return True    # 判不了就当写 —— 宁可多提醒一句「可能已落库」
+
+
 class Server:
     def __init__(self, name, version, tools):
         """tools: [(name, description, input_schema, fn), ...]"""
@@ -163,6 +192,7 @@ class Server:
         # 财务(名义 5 个工具)每轮带的工具说明反而比后台运营(41 个)还多。
         # 没设这个变量(自测、直连)就照旧全挂 —— 名单为空串时一个都不挂。
         指到副本()
+        self._近调 = {}
         only = os.environ.get("LANXIU_TOOLS")
         if only is not None:
             keep = {x for x in only.split(",") if x}
@@ -191,17 +221,48 @@ class Server:
         if m == "ping":
             return self._ok(rid, {})
         if m == "tools/list":
+            配 = _工具配置()
             return self._ok(rid, {"tools": [
                 {"name": n, "description": d, "inputSchema": s}
-                for n, d, s, _ in self.tools.values()]})
+                for n, d, s, _ in self.tools.values() if (配.get(n) or {}).get("启用", True)]})
         if m == "tools/call":
             nm = p.get("name"); args = p.get("arguments") or {}
             t = self.tools.get(nm)
             if not t:
                 return self._ok(rid, {"content": [{"type": "text",
                     "text": f"没有名为 {nm} 的工具。可用:{list(self.tools)}"}], "isError": True})
+            c = _工具配置().get(nm) or {}
+            if not c.get("启用", True):
+                return self._ok(rid, {"content": [{"type": "text",
+                    "text": f"工具 {nm} 已在后台停用(MCP 服务与工具管理),这一轮用不了 —— 照实告诉用户,不要换别的工具硬凑"}],
+                    "isError": True})
+            if c.get("限流"):
+                import time as _t, collections as _c
+                q = self._近调.setdefault(nm, _c.deque())
+                while q and _t.time() - q[0] > 60: q.popleft()
+                if len(q) >= c["限流"]:
+                    return self._ok(rid, {"content": [{"type": "text",
+                        "text": f"工具 {nm} 一分钟内已经调了 {len(q)} 次,到了后台设的上限 —— 先用已经拿到的结果"}],
+                        "isError": True})
+                q.append(_t.time())
+            if c.get("超时"):
+                import threading as _th
+                结果 = {}
+                def _跑():
+                    try: 结果["out"] = t[3](**args)
+                    except Exception as e: 结果["err"] = e
+                th = _th.Thread(target=_跑, daemon=True); th.start(); th.join(c["超时"])
+                if th.is_alive():
+                    return self._ok(rid, {"content": [{"type": "text",
+                        "text": f"工具 {nm} {c['超时']} 秒没回(后台设的超时),不等了"
+                                + ("。⚠️ 这是写工具,**这一笔可能已经落库**,先查一下再决定要不要重试" if _是写(nm) else "")}],
+                        "isError": True})
             try:
-                out = 遮被判那笔押金(遮被判那条(t[3](**args)))
+                if c.get("超时"):
+                    if "err" in 结果: raise 结果["err"]
+                    out = 遮被判那笔押金(遮被判那条(结果["out"]))
+                else:
+                    out = 遮被判那笔押金(遮被判那条(t[3](**args)))
                 return self._ok(rid, {"content": [{"type": "text",
                     "text": json.dumps(out, ensure_ascii=False, indent=1)}], "isError": False})
             except TypeError as e:

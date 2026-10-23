@@ -10884,5 +10884,53 @@
    }
   ],
   "预期红": "被包命令的退出码原样传回"
+ },
+ {
+  "script": "backend/mcp_registry_check.py",
+  "改坏": "协议层 tools/list 不看开关(停用的照样列出来)",
+  "file": [
+   {
+    "path": "mcp/protocol.py",
+    "old": "                for n, d, s, _ in self.tools.values() if (配.get(n) or {}).get(\"启用\", True)]})",
+    "new": "                for n, d, s, _ in self.tools.values()]})"
+   }
+  ],
+  "预期红": "停用 get_stock:真起的商品服务里列不出"
+ },
+ {
+  "script": "backend/mcp_registry_check.py",
+  "改坏": "协议层 tools/call 不看开关(停用的照样调得动)",
+  "file": [
+   {
+    "path": "mcp/protocol.py",
+    "old": "            if not c.get(\"启用\", True):\n                return self._ok(rid, {\"content\": [{\"type\": \"text\",\n                    \"text\": f\"工具 {nm} 已在后台停用",
+    "new": "            if False:\n                return self._ok(rid, {\"content\": [{\"type\": \"text\",\n                    \"text\": f\"工具 {nm} 已在后台停用"
+   }
+  ],
+  "预期红": "停用 get_stock:真起的商品服务里调不动"
+ },
+ {
+  "script": "backend/mcp_registry_check.py",
+  "改坏": "改开关不查角色(谁都能改)",
+  "file": [
+   {
+    "path": "backend/mcp_registry.py",
+    "old": "    if 我.get(\"role\") not in 可编辑角色:\n        return dict(ok=False, reason=f\"只有{'/'.join(可编辑角色)}能改工具配置",
+    "new": "    if False:\n        return dict(ok=False, reason=f\"只有{'/'.join(可编辑角色)}能改工具配置"
+   }
+  ],
+  "预期红": "顾问改开关:拒"
+ },
+ {
+  "script": "backend/mcp_registry_check.py",
+  "改坏": "限流不数(到了上限照样放)",
+  "file": [
+   {
+    "path": "mcp/protocol.py",
+    "old": "                if len(q) >= c[\"限流\"]:",
+    "new": "                if False:"
+   }
+  ],
+  "预期红": "限流 1 次/分钟:同一个服务里第二次被拒"
  }
 ]

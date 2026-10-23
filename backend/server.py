@@ -3239,6 +3239,12 @@ class H(BaseHTTPRequestHandler):
             import triage_config as _tc
             if not _me(self): return self._send({"error":"请先登录"},401)
             return self._send(_tc.概览())
+        if p=="/api/mcp" or p=="/api/mcp-health":
+            # MCP 服务与工具管理(用户 10-23 拍「做,带配置」):总览 / 体检。要登录;能不能改在写的那头判
+            import mcp_registry as _mr
+            if not _me(self): return self._send({"error":"请先登录"},401)
+            if p=="/api/mcp-health": return self._send({"rows": _mr.体检()})
+            return self._send(dict(_mr.总览(), 改动=_mr.改动记录(), 超时范围=list(_mr.超时范围), 限流范围=list(_mr.限流范围)))
         if p=="/api/skills" or p.startswith("/api/skill/"):
             # Skill 管理(用户 10-23 拍「做完整配置页」):状态 / 配置 / 依赖就绪 / 使用。要登录;能不能改在写的那头判
             import skill_registry as _sr
@@ -3626,6 +3632,17 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(error=f"不认识的 op:{op}"), 400)
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]), 400)
+        if p=="/api/mcp-tool-save":
+            # MCP 工具的三个开关(停用 / 超时 / 限流)。身份只从登录会话取;只有总部运营、要写理由 —— 判在 mcp_registry
+            import mcp_registry as _mr
+            u = _me(self)
+            if not u:
+                return self._send(dict(ok=False, reason="没登录 —— 改工具配置要登录,署名用登录的人"), 401)
+            r = _mr.改工具(str(body.get("name") or ""), body.get("enabled", True), body.get("timeout"),
+                          body.get("rate"), body.get("why"), u)
+            log_op(u["name"], "mcp-tool", str(body.get("name") or "-"), "-", "save", bool(r.get("ok")),
+                   "" if r.get("ok") else "MCP_CFG", (r.get("reason") or "")[:200], {})
+            return self._send(r, 200 if r.get("ok") else 400)
         if p=="/api/skill-save" or p=="/api/skill-status":
             # Skill 管理的两个写口。身份只从登录会话取(请求体里自报的不认);只有总部运营能改、要写理由、
             # 依赖没就绪的进不了试运行 / 已发布 —— 都在 skill_registry 里判,页面不另判一遍
