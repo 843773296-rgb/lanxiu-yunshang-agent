@@ -9,7 +9,7 @@ DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lanxiu.db")
 _真库 = os.path.realpath(DB)
 
 
-def _检查漏写了真库():
+def _检查漏写了真库(目标=None):
     """门禁里(check.sh 设了 LANXIU_CHECK_LEAK)往**真库**的台账写 → 记一笔漏、不写,返回 True。
 
     2026-10-19 发现:不少检查把业务数据写在库副本上,`oplog.DB` 却没跟着指过去 ——
@@ -17,7 +17,7 @@ def _检查漏写了真库():
     业务表干净、检查全绿,只有翻台账才看得出:**台账本来就该有新行,所以多几行假的没人会觉得怪。**
     人在页面上点(服务进程不在门禁里,没有这个环境变量)照常记。"""
     漏 = os.environ.get("LANXIU_CHECK_LEAK")
-    if not 漏 or os.path.realpath(DB) != _真库:
+    if not 漏 or os.path.realpath(目标 or DB) != _真库:
         return False
     import sys
     try:
@@ -28,10 +28,26 @@ def _检查漏写了真库():
     return True
 
 
-def log_op(actor, mid, target, frm, to, ok, code, reason, ctx):
-    if _检查漏写了真库():
+def log_op(actor, mid, target, frm, to, ok, code, reason, ctx, db=None):
+    """`db` 不给就写真库(112 个调用方都是这样,全是位置参数,加这个参数不影响它们)。
+
+    ⚠️ **给 `db` 是为了「自己带着库路径跑」的那几个脚本。** 它们的 `db` 是参数 ——
+    自测和咬合都在**副本**上跑,而这个模块把真库路径**写死在模块级 `DB` 里**。
+    在副本上跑却调 `log_op()` 不带 `db`,就会往**真库**塞一行假痕迹:
+    业务表干净、检查全绿,只有翻台账才看得出 ——
+    > **台账本来就该有新行,所以多几行假的没人会觉得怪。**
+    (这正是下面 `_检查漏写了真库` 那段注释记的 2026-10-19 那个坑;
+     那次是「`oplog.DB` 没跟着副本指过去」,而这次是反过来
+     「脚本的 db 指着副本,而 log_op 指着真库」—— **同一个病的两头**。)
+    漏写检查也跟着看 `db`:显式写副本是正当的,不算漏。
+
+    ⚠️ 参数叫 `mid`,写进去的列叫 `machine`(2026-10-23 两个会话为这个各说对了一半)。
+    那一列实际装的是**模块名** —— staff / schedule / download / approval / ordr / customer…
+    """
+    目标 = db or DB
+    if _检查漏写了真库(目标):
         return
-    with sqlite3.connect(DB) as c:
+    with sqlite3.connect(目标) as c:
         # 真实时钟:操作台账记「谁在什么时候真的点了这一下」—— 那是运维痕迹,
         # 不是演示世界里的事。用世界时钟反而会让台账对不上真实的排查时间线。
         c.execute("INSERT INTO op_log(ts,actor,machine,target,frm,too,allowed,code,reason,ctx)"

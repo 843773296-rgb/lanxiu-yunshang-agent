@@ -72,15 +72,36 @@ def 扫建表(路径, 已看=None, 深度=0):
     #   ② 下午:改成 `[\w\s,]+` 之后,`import a, b`\n`import c` 里的 c
     #      被并进上一行当成 b 的一部分丢掉了 —— 于是 `seed_quote` 建的表看起来没人建。
     # **它对「一行」的定义和 Python 对「一行」的定义不一样**,而症状是「那张表没人建」。
-    for m in re.finditer(r"^[^\S\n]*import[^\S\n]+([\w,][\w\s,]*?)[^\S\n]*$"
-                         r"|^[^\S\n]*from[^\S\n]+(\w+)[^\S\n]+import", src, re.M):
-        名们 = [x.strip().split()[0] for x in (m.group(1) or "").split(",") if x.strip()] \
-               or ([m.group(2)] if m.group(2) else [])          # `import x as y` 只取 x
-        for 名 in 名们:
-            for d in ("backend", "tools", "knowledge"):
-                p = os.path.join(ROOT, d, f"{名}.py")
-                if os.path.isfile(p):
-                    表 |= 扫建表(p, 已看, 深度 + 1)
+    # ⚠️⚠️ **2026-10-23 第三次栽在同一族上,所以改成用 `ast` 取 import,不再补正则。**
+    # 这次是:`import grade_diff          # 版师核档差的登记表` —— **带行尾注释**。
+    # 那个正则要求 `import` 之后到行尾只剩 `[\w\s,]` 和空白,`#` 一进来整条就断了,
+    # 于是那一行**在这条检查眼里不存在**,`grade_diff_check` 变成「没人建的孤儿表」。
+    # 而它只在 CI 上红:本地那个库还没重建过,**表压根不在库里,也就没什么可判成孤儿**。
+    # > 一张「没人建的表」和一张「建它那行被正则漏看了的表」,
+    # > **在这条检查的输出上长得一模一样** —— 它报的是第一句,而真相是第二句。
+    # > 照着它报的理由去做(「把建表挂进 ensure_tables」)会发现**早就挂着了**。
+    #
+    # 前两次(都记在下面那段历史注释里)的修法都是**再改一次正则**,而这是打地鼠:
+    # Python 对「一行 import」的定义,正则追不上(注释、续行、`as`、括号分组、
+    # 相对 import……)。`ast` 用的就是 Python 自己那个定义。
+    名们 = set()
+    try:
+        import ast as _ast
+        for n in _ast.walk(_ast.parse(src)):
+            if isinstance(n, _ast.Import):
+                名们 |= {a.name.split(".")[0] for a in n.names}   # `import x as y` 只取 x
+            elif isinstance(n, _ast.ImportFrom) and n.module and not n.level:
+                名们.add(n.module.split(".")[0])
+    except SyntaxError:
+        # 解析不了就照实说 —— **别静默当成「这个文件没有 import」**,
+        # 那会让它跟进的所有表变成孤儿,而红的理由指向完全错的地方。
+        print(f"  {Y}⚠{D} {os.path.relpath(路径, ROOT)} 解析不了(语法错?)"
+              f"—— **它 import 的模块建的表这一轮扫不到**,孤儿名单会虚高")
+    for 名 in sorted(名们):
+        for d in ("backend", "tools", "knowledge"):
+            p = os.path.join(ROOT, d, f"{名}.py")
+            if os.path.isfile(p):
+                表 |= 扫建表(p, 已看, 深度 + 1)
     return 表
 
 

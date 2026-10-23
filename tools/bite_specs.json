@@ -11687,7 +11687,7 @@
     "new": "            r = c.execute(\"SELECT body, pack FROM store_report_doc WHERE id=?\", (i,)).fetchone()\n            c.execute(\"UPDATE store_report_doc SET period_start=?, period_end=?, body=?, pack=? WHERE id=?\",\n                      (新起.isoformat(), 新止.isoformat(),\n                       _挪文字里的日期(r[0], 校正) if r[0] else r[0],\n                       _挪文字里的日期(r[1], 校正) if r[1] else r[1], i))"
    }
   ],
-  "预期红": "正文**一个字节都没动**(修它该走重新渲染,不是正则替换)"
+  "预期红": "正文**一个字节都没动**(它改不了 —— 模型写的,没有重渲染这条路)"
  },
  {
   "script": "tools/eval_provenance_check.py",
@@ -12084,5 +12084,17 @@
    }
   ],
   "预期红": "退出登录之后,重启也不认"
+ },
+ {
+  "script": "tools/realign_report_periods.py",
+  "改坏": "写痕迹时忘了带 db= —— 在副本上跑却往真库塞一行假痕迹(页面会给一份没校正过的报告挂标注)",
+  "file": [
+   {
+    "path": "tools/realign_report_periods.py",
+    "old": "                    \"正文已改\": False, \"取数包已改\": False},\n                   db=db)",
+    "new": "                    \"正文已改\": False, \"取数包已改\": False})"
+   }
+  ],
+  "预期红": "痕迹写进了**这个库**"
  }
 ]
