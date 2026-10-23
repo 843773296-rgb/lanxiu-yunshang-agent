@@ -3784,6 +3784,16 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(ok=False, reason="没登录 —— 改报告模板要登录,署名用登录的人"), 401)
             r = _rtp.保存(str(body.get("name") or ""), body.get("payload") or {}, body.get("why"), u, db=backend.DB)
             return self._send(r, 200 if r.get("ok") else (403 if r.get("code") == "FORBIDDEN" else 400))
+        if p=="/api/report-template-status":
+            # 报告模板一版的状态(用户 10-23 选「草稿 → 试运行 → 发布」):身份只从登录会话取;
+            # 只有总部运营、要写理由、不许跳、试点门店必须是真门店 —— 都在 report_template.改状态 里判
+            import report_template as _rtp
+            u = _me(self)
+            if not u:
+                return self._send(dict(ok=False, reason="没登录 —— 改报告模板状态要登录,署名用登录的人"), 401)
+            r = _rtp.改状态(str(body.get("name") or ""), body.get("version"), str(body.get("to") or ""), body.get("why"), u,
+                          试点门店=body.get("shops") or [], db=backend.DB)
+            return self._send(r, 200 if r.get("ok") else (403 if r.get("code") == "FORBIDDEN" else 400))
         if p=="/api/triage-config":
             # 研判设置:总部运营存草稿 / 试运行。**发布和退回不在这里** —— 只有开发能做(tools/triage_config.py)
             import triage_config as _tc

@@ -175,6 +175,15 @@ def 确认(me, report_id, db=None):
         if not pack.get("能不能确认"):
             return dict(ok=False, code="MISSING_REQUIRED",
                         reason=f"必选指标缺了:{pack.get('必选缺了的')} —— 缺了不许确认(用户 10-09 定:下单数和营收必选)")
+        # 报告模板里总部另标的必选项(用户 10-23 选 B):读这份报告**冻结的**模板,必选项取不到就不许确认。
+        # 「取不到」= 取数包里没有这一项、或值是 None —— 0 / 空串 / 空列表都算取到(新客真是 0 也得能确认)。
+        # 没冻结模板的旧报告:冻结了模板=False,照旧能确认
+        import report_template as _rt
+        冻, 模板缺 = _rt.必选取不到(pack)
+        if 冻 and 模板缺:
+            return dict(ok=False, code="TEMPLATE_REQUIRED_MISSING", 必选取不到=模板缺,
+                        reason=f"报告模板里标了必选、这一期却取不到:{'、'.join(模板缺)} —— 缺了不许确认;"
+                               "要么换一期 / 换一种报告重新取数,要么请总部在报告模板里把它改回可选")
         c.execute("UPDATE store_report_doc SET status='已确认', confirmed_at=?, confirmed_by=? WHERE id=?",
                   (_今天(), me.get("no"), report_id))
         c.commit()

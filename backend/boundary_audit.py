@@ -68,6 +68,10 @@ SDK_SRC = open(os.path.join(ROOT, "agentsite", "sdk.py"), encoding="utf-8").read
     ('ToolSearch 的点名例外写成按前缀放行(Bash 也一并放了)', '按需加载只取回自己名单里的工具'),
     ('全能助手顺手挂上了版师那一包(ToolSearch 搜得到版师写口)', '按需加载只取回自己名单里的工具'),
     ('聊天站 /run 没登录也照样往下跑', '没登录调不动聊天站的智能体'),
+    ('store_report 不再拿掉被模板隐藏的指标(_藏 恒为空)',
+     '报告模板隐藏的指标,写报告的 AI 拿不到它的数'),
+    ('隐藏了销量,环比里销量那一行照旧留着',
+     '报告模板隐藏的指标,写报告的 AI 拿不到它的数'),
 ]
 
 def _must_fail(fn, *exc):
@@ -271,11 +275,19 @@ def a_report_template():
         if r.get("ok"):
             return "顾问存进了一版报告模板 —— 只有总部运营能改这条没守住"
         总部 = dict(no="BA-H", name="审计总部", role="总部运营")
-        if not _T.保存("默认", 模(("评价",)), "审计:第 1 版", 总部).get("ok"):
-            return "总部运营存不进第 1 版 —— 攻击自己没走通"
+
+        def 发(版, 藏, 理由):
+            # 存一版是草稿(10-23 起不生效),走 草稿 → 试运行 → 已发布 才生效
+            if not _T.保存("默认", 模(藏), 理由, 总部).get("ok"):
+                return False
+            return (_T.改状态("默认", 版, "试运行", "审计:试运行", 总部, 试点门店=[店[0]]).get("ok")
+                    and _T.改状态("默认", 版, "已发布", "审计:发布", 总部).get("ok"))
+        if not 发(1, ("评价",), "审计:第 1 版"):
+            return "总部运营存不进 / 发布不了第 1 版 —— 攻击自己没走通"
         with api.as_user(dict(no="BA-SM", name="审计店长", role="店长", shop=店[0])):
             rid = api.save_report(body="## 审计周报", kind="周").get("报告号")
-            _T.保存("默认", 模(()), "审计:第 2 版把评价放出来", 总部)
+            if not 发(2, (), "审计:第 2 版把评价放出来"):
+                return "第 2 版发布不了 —— 攻击自己没走通"
             视 = (api.list_reports(report_id=rid) or {}).get("模板视图") or {}
         态 = next((x["状态"] for 节 in 视.get("章节") or [] for x in 节["指标"] if x["名"] == "评价"), None)
         if 态 != "被隐藏":
@@ -284,6 +296,68 @@ def a_report_template():
         _T.DB, _rd.DB, _ol.DB, api.DB = 原
         _sh.rmtree(d, ignore_errors=True)
     raise PermissionError("顾问存不进模板;改完模板,旧报告仍按冻结的那一版显示")
+
+
+def a_report_hidden_not_in_pack():
+    """报告模板隐藏的指标,AI 拿到的取数包里**整项没有**(用户 10-23 选 A)—— 写正文的那一步结构上写不出它。
+    在库副本上:先按代码默认取一次周报取数包(基线,拿到销量的值和出处);总部存一版隐藏「销量」的模板并发布;
+    再取一次,在返回的**整个 JSON** 里按键和值都找:任何一层的键里不许出现「销量」(期内、环比那一行都算),
+    基线里销量的值对象、出处串不许出现。选销量是因为它的数除了期内那一项,还会经环比、并排读的说明漏出去。"""
+    import report_template as _T, report_doc as _rd, oplog as _ol, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq
+    原 = (_T.DB, _rd.DB, _ol.DB, api.DB)
+    d = _tf.mkdtemp(prefix="ba-rtpl-hide-"); p = _os.path.join(d, "lanxiu.db")
+    _sh.copy(原[3], p)
+    _T.DB = _rd.DB = _ol.DB = api.DB = p
+    名 = "销量"
+    try:
+        c = _sq.connect(p); _T.确保表(c); c.execute("DELETE FROM report_template_ver"); c.commit()
+        店 = c.execute("SELECT shop FROM ordr WHERE shop IS NOT NULL GROUP BY shop ORDER BY COUNT(*) DESC LIMIT 1").fetchone()
+        c.close()
+        if not 店:
+            return "没有有单的门店 —— 没攻击成,不算守住"
+        店长 = dict(no="BA-SM2", name="审计店长", role="店长", shop=店[0])
+        with api.as_user(店长):
+            基 = api.store_report(kind="周")
+        基项 = (基.get("期内") or {}).get(名)
+        if not (基项 and 基项.get("值") and 基项.get("出处")):
+            return f"基线取数包里没有{名}的值 —— 攻击自己没走通(要先有这一项,隐藏之后才看得出它没了)"
+        m = _T.默认内容()
+        for 节 in m["章节"]:
+            for x in 节["指标"]:
+                if x["名"] == 名:
+                    x["显示"] = False
+        总部 = dict(no="BA-H2", name="审计总部", role="总部运营")
+        if not (_T.保存("默认", m, f"审计:隐藏{名}", 总部).get("ok")
+                and _T.改状态("默认", 1, "试运行", "审计", 总部, 试点门店=[店[0]]).get("ok")
+                and _T.改状态("默认", 1, "已发布", "审计", 总部).get("ok")):
+            return "隐藏销量的模板存不进 / 发布不了 —— 攻击自己没走通"
+        with api.as_user(店长):
+            包 = api.store_report(kind="周")
+        if (包.get("报告模板") or {}).get("隐藏的") != [名]:
+            return f"取数包里的模板不是刚发布那一版(隐藏的={(包.get('报告模板') or {}).get('隐藏的')})—— 攻击自己没走通"
+        漏键, 漏值 = [], []
+
+        def 走(x, 路):
+            if isinstance(x, dict):
+                for k, v in x.items():
+                    if 名 in str(k):
+                        漏键.append(f"{路}/{k}")
+                    走(v, f"{路}/{k}")
+            elif isinstance(x, list):
+                for i, v in enumerate(x):
+                    走(v, f"{路}[{i}]")
+            if x == 基项["值"]:
+                漏值.append(路)
+        走(包, "")
+        文 = json.dumps(包, ensure_ascii=False, default=str)
+        if 基项["出处"] in 文:
+            漏值.append(f"出处串「{基项['出处']}」")
+        if 漏键 or 漏值:
+            return f"隐藏了{名},AI 拿到的取数包里还在:键 {漏键[:3]} · 值 {漏值[:3]}"
+    finally:
+        _T.DB, _rd.DB, _ol.DB, api.DB = 原
+        _sh.rmtree(d, ignore_errors=True)
+    raise PermissionError(f"隐藏了{名}:取数包里一层层找,键和值都没有它 —— 只剩「报告模板 · 隐藏的」名单")
 
 
 def a_resolve_wrong_role():
@@ -1072,7 +1146,13 @@ STRUCT = [
   a_report_template, "在库副本上拿顾问身份存一版模板;总部改模板后打开改之前存的报告",
   "写口里按登录身份判角色(HTTP 层身份只从会话取);模板随取数包在保存那一刻冻结,打开时只读冻结的那一份、不读模板表。"
   "指标名只能从取数包代码现算的已登记清单里选,锁定必选(下单数、营收)取消不了 —— report_template_check 打 HTTP 层验。"
-  "⚠️ 模板只管显示:写报告正文的那一步「隐藏的不写进正文」靠取数包里的说明,是约定"),
+  "10-23 起存一版是草稿,要走 草稿 → 试运行 → 已发布 才生效(不许跳);隐藏项不交给 AI 见下一条"),
+ ("报告模板隐藏的指标,写报告的 AI 拿不到它的数", "backend/api.py store_report(_藏 那一段);backend/report_template.py 冻结用",
+  a_report_hidden_not_in_pack, "在库副本上发布一版隐藏「销量」的模板,再取周报取数包,在整份 JSON 里按键和值找销量",
+  "store_report 把被隐藏的指标整项拿掉(期内 / 存量 / 环比 / 取不到的 / 上期行动都不留它的数),"
+  "只在「报告模板 · 隐藏的」里留名字;锁定必选(订单、营收)模板不许隐藏。原来「隐藏的不写进正文」只靠取数包里一句说明,"
+  "是约定 —— 现在是**数没给,写不出来**。保存报告冻结的就是拿掉之后的包。"
+  "⚠️ 只管这份取数包:模型要是另调 sales_rank 等工具自己去取,不在这一条里(取数包的说明叫它别去补取,那一半是约定)"),
  ("研判销账只有对应角色能做,而且留痕", "backend/ops.py 能销吗 / resolve;backend/server.py /api/ops-resolve",
   a_resolve_wrong_role, "在库副本上拿顾问身份去销一条财务人工任务",
   "接口层身份只从登录态取(不读请求体里的 handler);`resolve` 里按类型查角色,**所有调用方都过这一道**,"

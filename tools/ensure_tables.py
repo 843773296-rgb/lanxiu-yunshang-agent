@@ -106,7 +106,10 @@ import report_template
     # chat 第一次查知识库、或有人打开「知识问题」页才建 —— 同上,建死免得表数漂
     (kb_issue, "确保表", ["kb_rag_record", "kb_rag_record_log", "kb_recheck"]),
     # 报告模板(2026-10-23,复审第 4 节 C):第一次有人打开报告模板页、或取报告时才建 —— 同上,建死免得表数漂。
-    # 空表 = 代码默认(全部显示),和模板上线前一样。日期列只有 at(世界时间,整列日期);why 是人填的自由文本
+    # 空表 = 代码默认(全部显示),和模板上线前一样。日期列只有 at(世界时间,整列日期);why 是人填的自由文本。
+    # 10-23 加状态线(草稿 → 试运行 → 已发布 / 已撤下):补列在 report_template.确保表 的 `后加列` 里走 ALTER(同 report_doc),
+    # 老库加列时 status 默认「已发布」。新日期列 trial_at / publish_at / withdraw_at 是世界时间、整列日期(平移自动挪);
+    # trial_why / publish_why / withdraw_why 和 why 一样是人填的原话;trial_shops 是 JSON 门店标识(不含日期)
     (report_template, "确保表", ["report_template_ver"]),
     # 版师核档差的登记(2026-10-23,业务需求池 P2):第一次有版师核一条档差才建 ——
     # 同上,建死免得表数漂。

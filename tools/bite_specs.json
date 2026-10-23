@@ -11808,5 +11808,149 @@
    }
   ],
   "预期红": "参数单独成格"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "指标登记里删掉一项(任务没登记主题 / 重要度)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "    (\"任务\", \"运营\", \"参考\", ()),\n",
+    "new": ""
+   }
+  ],
+  "预期红": "每个已登记指标都登记了主题和重要度(登记表和清单一一对应)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "校验不查一节里混没混放期内和存量",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "        if len(段们) > 1:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "一节混放期内和存量:拒存,说清哪一节"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "插位不看关联(关联那一步整个跳过)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "        if 候:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "新指标紧挨着关联指标插(到店客户数排在成交率后面)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "校验不查必选项在这种报告里取不取得到",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "                if n in 取不到:",
+    "new": "                if False:"
+   }
+  ],
+  "预期红": "日报模板里成交率标必选:拒(这一项日报取不到)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "确认那一步不看模板里的必选项",
+  "file": [
+   {
+    "path": "backend/report_doc.py",
+    "old": "        if 冻 and 模板缺:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "必选项缺失 → 确认被拒,库里那一行仍是草稿"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "确认闸用 `not 值` 判取不到(0 也被判成取不到)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "            if not isinstance(项, dict) or \"值\" not in 项 or 项[\"值\"] is None:",
+    "new": "            if not isinstance(项, dict) or not 项.get(\"值\"):"
+   }
+  ],
+  "预期红": "必选项值为 0 → 确认放行,库里那一行写成已确认"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "存一版直接写成已发布(草稿那一步没了)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "\"VALUES(?,?,?,?,?,?,?,'草稿')\"",
+    "new": "\"VALUES(?,?,?,?,?,?,?,'已发布')\""
+   }
+  ],
+  "预期红": "存一版 = 草稿,不生效(取数包里还是代码默认)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "状态机放开草稿 → 已发布(能跳过试运行)",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "    \"草稿\": (\"试运行\",),",
+    "new": "    \"草稿\": (\"试运行\", \"已发布\"),"
+   }
+  ],
+  "预期红": "草稿不能直接发布(不许跳)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "发布时不把同一模板的旧发布撤下",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "            旧 = [x for x in _全部(c) if x[\"name\"] == name and x[\"status\"] == \"已发布\"]",
+    "new": "            旧 = []"
+   }
+  ],
+  "预期红": "新发布的把旧发布的顶成已撤下(同一模板最多一版已发布)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "store_report 不再拿掉被隐藏的指标",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    _藏 = [k for k in _模板.get(\"隐藏的\") or [] if k not in 必选]",
+    "new": "    _藏 = []"
+   }
+  ],
+  "预期红": "隐藏库存之后:取数包里整项没有库存,其余每一个数不变"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "store_report 不再拿掉被模板隐藏的指标(_藏 恒为空)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    _藏 = [k for k in _模板.get(\"隐藏的\") or [] if k not in 必选]",
+    "new": "    _藏 = []"
+   }
+  ],
+  "预期红": "报告模板隐藏的指标,写报告的 AI 拿不到它的数"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "隐藏了销量,环比里销量那一行照旧留着",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "                环比.pop(键, None)",
+    "new": "                pass"
+   }
+  ],
+  "预期红": "报告模板隐藏的指标,写报告的 AI 拿不到它的数"
  }
 ]

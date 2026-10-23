@@ -29,7 +29,24 @@ store_report 把**当时生效的那一版**整份放进取数包的「报告模
 > 一份「按当时模板显示」的旧报告和一份「按现行模板现算」的,在页面上长得一模一样 ——
 > 而后者改一次模板,所有旧报告看到的指标都变了。
 
-「被隐藏」和「取不到」分开标:隐藏 = 模板说不显示(数据有);取不到 = 要显示、但取数包里没有这一项或值为空。
+「被隐藏」和「取不到」分开标:隐藏 = 模板说不显示(数这一期没交给写报告的 AI);取不到 = 要显示、但取数包里没有这一项或值为空。
+
+## 10-23 用户在五张选型卡上拍的板(这一版落的)
+
+  ① **指标登记**:每个已登记指标在 `指标登记` 里登记主题 / 重要度 / 关联(用户审过)。取数包新加一项不登记 →
+     `登记问题()` 非空 → report_template_check 红(过不了门禁)。
+  ② **每节只放一种**:一节里不许混放「期内」和「存量」;代码默认按「主题 × 段」分节。库里已有的旧版不动,只在新存时拦。
+  ③ **新指标插位**:模板存了之后取数包又新加的指标,默认显示,位置按「关联 → 同主题同段的节按重要度 → 另开一节」,
+     带「新增未配」标记,页面上提示总部去配。
+  ④ **必选可加,缺了拦确认**:任何已登记指标都能标必选(订单、营收仍锁定);但默认期间里**结构上取不到**的
+     (api.报告期取不到,和 store_report 用的是同一份)不许标必选。确认那一步(report_doc.确认)读冻结的模板,
+     必选项取不到就拒绝确认 —— 「取不到」= 取数包里没有这一项、或值是 None;0 / 空串 / 空列表都算取到。
+  ⑤ **隐藏项不交给 AI**:store_report 把被隐藏的指标整项从取数包里拿掉(期内 / 存量 / 环比都不留),
+     只在「报告模板」里留「隐藏的」名单 —— 写正文的那一步**结构上**写不出它(boundary_audit 真攻击)。
+  ⑥ **草稿 → 试运行 → 发布**:存一版 = 草稿(不生效);试运行要写试点门店(真门店);不许跳;
+     同一模板同一时刻最多一版试运行、一版已发布(新发布的把旧发布的顶成已撤下)。
+     生效:这家店在某版试运行的试点里 → 那一版;否则最新已发布;都没有 → 代码默认。
+     库里加状态列之前存的版本,加列时默认「已发布」(和加列前的生效规则一样)。
 """
 import ast
 import json
@@ -50,6 +67,33 @@ _API = os.path.join(HERE, "api.py")
 全部门店 = "全部"
 _段名 = {"期内": "期内", "存": "存量"}
 存量键 = "存量(截至今天)"
+段标题 = {"期内": "本期", "存量": "截至今天"}
+
+# ── 指标登记(用户 10-23 审过、按这版生效):名 / 主题 / 重要度 / 关联 ──────────────
+# 和 已登记指标() 一一对应 —— 取数包新加一项、这里没登记 → 登记问题() 非空 → report_template_check 红。
+# 顺序 = 「同档按登记顺序」的那个顺序。
+主题们 = ("销售", "客流", "交付", "售后口碑", "客户", "运营")
+重要度们 = ("核心", "常看", "参考")          # 核心 > 常看 > 参考
+指标登记 = [
+    ("营收", "销售", "核心", ("订单", "销量")),
+    ("订单", "销售", "核心", ("营收", "待付款")),
+    ("成交率", "销售", "核心", ("到店客户数", "订单")),
+    ("销量", "销售", "常看", ("营收", "库存")),
+    ("待付款", "销售", "常看", ("订单",)),
+    ("到店客户数", "客流", "核心", ("进店客流", "成交率")),
+    ("进店客流", "客流", "常看", ("到店客户数",)),
+    ("约了没来", "客流", "常看", ("到店客户数",)),
+    ("该催工厂", "交付", "核心", ("延期没告诉顾客", "白坯试衣")),
+    ("延期没告诉顾客", "交付", "核心", ("该催工厂",)),
+    ("白坯试衣", "交付", "常看", ("该催工厂",)),
+    ("库存", "交付", "常看", ("销量",)),
+    ("差评待跟", "售后口碑", "核心", ("评价", "售后")),
+    ("评价", "售后口碑", "常看", ("差评待跟",)),
+    ("售后", "售后口碑", "常看", ("差评待跟",)),
+    ("流失预警", "客户", "常看", ("进入休眠",)),
+    ("进入休眠", "客户", "参考", ("流失预警",)),
+    ("任务", "运营", "参考", ()),
+]
 
 
 # ── 已登记指标:读 api.store_report 的源码现算 ─────────────────────────────
@@ -57,7 +101,8 @@ _缓存 = {}
 
 
 def _解析():
-    """→ (指标们 [(名, 段)], 必选 (名…))。按 api.py 的修改时间缓存;解析不出来就抛 —— 清单空了不许当成「没有限制」。"""
+    """→ (指标们 [(名, 段)], 必选 (名…), 报告期取不到 {期间: (名…)})。按 api.py 的修改时间缓存;
+    解析不出来就抛 —— 清单空了不许当成「没有限制」。"""
     st = os.stat(_API)
     键 = (st.st_mtime_ns, st.st_size)
     if _缓存.get("键") == 键:
@@ -83,27 +128,87 @@ def _解析():
         raise RuntimeError("store_report 里一项指标都没认出来 —— 清单空了不许当成「随便写」")
     if not 必选:
         raise RuntimeError("store_report 里找不到 `必选 = (...)` —— 锁定必选项算不出来")
-    值 = (指标, 必选)
+    # 哪一种报告结构上取不到哪几项:读 api.py 模块级的 `报告期取不到 = {...}` —— store_report 自己也用它置空,
+    # 所以「模板说取不到」和「取数包真的取不到」是同一份,不手抄
+    取不到 = None
+    for n in 树.body:
+        if (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "报告期取不到" for t in n.targets)):
+            取不到 = {k: tuple(v) for k, v in ast.literal_eval(n.value).items()}
+    if 取不到 is None:
+        raise RuntimeError("api.py 里找不到 `报告期取不到 = {...}` —— 哪种报告取不到哪几项算不出来")
+    值 = (指标, 必选, 取不到)
     _缓存.update(键=键, 值=值)
     return 值
 
 
+def _登():
+    return {n: dict(主题=主, 重要度=重, 关联=tuple(关)) for n, 主, 重, 关 in 指标登记}
+
+
 def 已登记指标():
-    """→ [{名, 段, 必选}]。段 = 期内 / 存量。"""
-    指标, 必选 = _解析()
-    return [dict(名=n, 段=s, 必选=n in 必选) for n, s in 指标]
+    """→ [{名, 段, 必选, 主题, 重要度, 关联}]。段 = 期内 / 存量。主题 / 重要度没登记的为 None(登记问题() 会报)。"""
+    指标, 必选, _ = _解析()
+    登 = _登()
+    return [dict(名=n, 段=s, 必选=n in 必选, 主题=(登.get(n) or {}).get("主题"), 重要度=(登.get(n) or {}).get("重要度"),
+                 关联=list((登.get(n) or {}).get("关联") or ())) for n, s in 指标]
 
 
 def 锁定必选():
     return _解析()[1]
 
 
+def 报告期取不到():
+    """→ {期间: (名…)}:这一种报告**结构上**取不到的指标(不是这一期碰巧没数)。和 store_report 置空用的是同一份。"""
+    return _解析()[2]
+
+
+def 登记问题():
+    """→ 错误列表:已登记指标里有没登记主题 / 重要度的、登记表里有清单外的名字、关联指向不存在的指标、主题 / 重要度写错。"""
+    错 = []
+    清单 = [x["名"] for x in 已登记指标()]
+    名们 = [n for n, *_ in 指标登记]
+    for n in 清单:
+        if n not in 名们:
+            错.append(f"「{n}」在取数包里(已登记指标),却没在指标登记里登记主题 / 重要度 —— 新加一项指标要一起登记")
+    for n in 名们:
+        if n not in 清单:
+            错.append(f"指标登记里的「{n}」不在已登记指标清单里(取数包没有这一项)")
+    重 = sorted({n for n in 名们 if 名们.count(n) > 1})
+    if 重:
+        错.append(f"指标登记里重复登记了:{'、'.join(重)}")
+    for n, 主, 度, 关 in 指标登记:
+        if 主 not in 主题们:
+            错.append(f"「{n}」的主题「{主}」不在 {' / '.join(主题们)} 里")
+        if 度 not in 重要度们:
+            错.append(f"「{n}」的重要度「{度}」不在 {' / '.join(重要度们)} 里")
+        for a in 关:
+            if a not in 名们 or a not in 清单:
+                错.append(f"「{n}」关联的「{a}」不是已登记的指标")
+    return 错
+
+
+def 节标题(主题, 段):
+    return f"{主题 or '其他'} · {段标题.get(段, 段)}"
+
+
+def _档(重要度):
+    return 重要度们.index(重要度) if 重要度 in 重要度们 else len(重要度们)
+
+
 def 默认内容():
-    """没存过任何一版时的模板:两节(期内 / 存量),全部显示,必选按 store_report。和模板上线前的报告页一模一样。"""
+    """没存过任何一版时的模板:按「主题 × 段」分节(用户 10-23 选「每节只放一种」),标题形如「销售 · 本期」
+    「销售 · 截至今天」;节内按重要度、同档按登记顺序;没有指标的组合不出节。全部显示,必选按 store_report。"""
     指标 = 已登记指标()
-    return {"名称": 默认模板名, "适用门店": [全部门店], "默认期间": "周",
-            "章节": [{"标题": "本期发生的", "指标": [dict(名=x["名"], 显示=True, 必选=x["必选"]) for x in 指标 if x["段"] == "期内"]},
-                     {"标题": "截至今天还压着的", "指标": [dict(名=x["名"], 显示=True, 必选=x["必选"]) for x in 指标 if x["段"] == "存量"]}]}
+    序 = {n: i for i, (n, *_) in enumerate(指标登记)}
+    组 = [(主, 段) for 主 in 主题们 for 段 in ("期内", "存量")]
+    组 += [(None, 段) for 段 in ("期内", "存量")]      # 没登记主题的(登记问题() 会红)也别丢,放最后
+    章节 = []
+    for 主, 段 in 组:
+        项 = sorted((x for x in 指标 if x["主题"] == 主 and x["段"] == 段),
+                   key=lambda x: (_档(x["重要度"]), 序.get(x["名"], len(序))))
+        if 项:
+            章节.append({"标题": 节标题(主, 段), "指标": [dict(名=x["名"], 显示=True, 必选=x["必选"]) for x in 项]})
+    return {"名称": 默认模板名, "适用门店": [全部门店], "默认期间": "周", "章节": 章节}
 
 
 # ── 表 ───────────────────────────────────────────────────────────────
@@ -118,6 +223,28 @@ def _连(db=None):
     return c
 
 
+# 每一版的状态(用户 10-23 选「草稿 → 试运行 → 发布」)。不许跳;已发布的只会被同一模板新发布的那一版顶成已撤下
+状态们 = ("草稿", "试运行", "已发布", "已撤下")
+可走 = {
+    "草稿": ("试运行",),
+    "试运行": ("已发布", "已撤下"),
+    "已发布": (),
+    "已撤下": (),
+}
+# 后加的列(10-23 状态线):建表语句不改 —— 老库里表已经在,CREATE IF NOT EXISTS 不会补列;补列走 ALTER,有就跳过。
+# ⚠️ status 加列时默认「已发布」:加列之前存的版本当时一存就生效,迁移成已发布,生效规则和加列前一样(别丢)。
+#    新存的一版写口里**显式**写「草稿」。
+# 日期列:trial_at / publish_at / withdraw_at(世界时间,整列日期,和 at 一样);
+# 人填的文本:trial_why / publish_why / withdraw_why(和 why 一样是原话);trial_shops 是 JSON 门店标识列表
+后加列 = [
+    ("status", "TEXT NOT NULL DEFAULT '已发布'"),
+    ("trial_shops", "TEXT"),
+    ("trial_at", "TEXT"), ("trial_by", "TEXT"), ("trial_why", "TEXT"),
+    ("publish_at", "TEXT"), ("publish_by", "TEXT"), ("publish_why", "TEXT"),
+    ("withdraw_at", "TEXT"), ("withdraw_by", "TEXT"), ("withdraw_why", "TEXT"),
+]
+
+
 def 确保表(c):
     c.execute("""CREATE TABLE IF NOT EXISTS report_template_ver(
         id INTEGER PRIMARY KEY AUTOINCREMENT,   -- 版本行号:报告里冻的就是它(全表唯一)
@@ -128,14 +255,41 @@ def 确保表(c):
         by_no TEXT, by_name TEXT,
         at TEXT NOT NULL,                       -- 世界时间
         UNIQUE(name, version))""")
+    有 = {r[1] for r in c.execute("PRAGMA table_info(report_template_ver)")}
+    for 列, 型 in 后加列:
+        if 列 not in 有:
+            c.execute(f"ALTER TABLE report_template_ver ADD COLUMN {列} {型}")
+
+
+def _行(r):
+    """库里一行 → dict;还没补状态列的老库(只读连接补不了)按「已发布」读 —— 和加列时的默认值一致。"""
+    d = dict(r)
+    d["status"] = d.get("status") or "已发布"
+    d["试点"] = json.loads(d.get("trial_shops") or "[]")
+    return d
+
+
+def _全部(c):
+    return [_行(r) for r in c.execute("SELECT * FROM report_template_ver ORDER BY name, version")]
 
 
 def _各模板最新(c, 建=True):
     if 建:
         确保表(c)
-    return [dict(r) for r in c.execute(
+    return [_行(r) for r in c.execute(
         "SELECT v.* FROM report_template_ver v WHERE v.version=(SELECT MAX(version) FROM report_template_ver x "
         "WHERE x.name=v.name) ORDER BY v.name")]
+
+
+def _在用(行们):
+    """→ {模板名: dict(发布=那一行或 None, 试运行=那一行或 None)}。同一模板最多各一版;老数据迁移后可能多版已发布,取最新那版。"""
+    出 = {}
+    for r in 行们:
+        d = 出.setdefault(r["name"], {"发布": None, "试运行": None})
+        键 = {"已发布": "发布", "试运行": "试运行"}.get(r["status"])
+        if 键 and (d[键] is None or r["version"] > d[键]["version"]):
+            d[键] = r
+    return 出
 
 
 def _门店们(c):
@@ -148,21 +302,28 @@ def _门店们(c):
 
 # ── 生效 ─────────────────────────────────────────────────────────────
 def 生效(shop, db=None):
-    """→ 这家店此刻生效的那一版:dict(模板, 版本, 版本号, 内容)。版本号 = 版本行号;代码默认时为 None。
-    认领顺序:列了这家店的专用模板 → 「默认」模板 → 代码默认。库读不到时退回代码默认(全部显示,和上线前一样)。"""
-    # 只读连接:取数包是读路径,不许顺手建表;表还没建(没人存过模板)→ 走代码默认
+    """→ 这家店此刻生效的那一版:dict(模板, 版本, 版本号, 状态, 内容)。版本号 = 版本行号;代码默认时为 None。
+    顺序(用户 10-23 拍):这家店在某版**试运行**的试点里 → 那一版;否则**最新已发布**(列了这家店的专用模板 →
+    「默认」模板);都没有 → 代码默认。**草稿和已撤下永远不生效。** 库读不到时退回代码默认(全部显示,和上线前一样)。"""
+    # 只读连接:取数包是读路径,不许顺手建表 / 补列;表还没建(没人存过模板)→ 走代码默认
     try:
         with closing(sqlite3.connect(f"file:{db or DB}?mode=ro", uri=True, timeout=5)) as c:
             c.row_factory = sqlite3.Row
-            行 = _各模板最新(c, 建=False)
+            行 = _全部(c)
     except sqlite3.Error:
         行 = []
-    专用 = [r for r in 行 if r["name"] != 默认模板名 and shop in (json.loads(r["payload"]).get("适用门店") or [])]
-    默 = [r for r in 行 if r["name"] == 默认模板名]
+    if shop:
+        试 = [r for r in 行 if r["status"] == "试运行" and shop in r["试点"]]
+        if 试:
+            r = max(试, key=lambda x: x["id"])
+            return dict(模板=r["name"], 版本=r["version"], 版本号=r["id"], 状态="试运行", 内容=json.loads(r["payload"]))
+    发 = [d["发布"] for _, d in sorted(_在用(行).items()) if d["发布"]]
+    专用 = [r for r in 发 if r["name"] != 默认模板名 and shop in (json.loads(r["payload"]).get("适用门店") or [])]
+    默 = [r for r in 发 if r["name"] == 默认模板名]
     r = (专用 or 默 or [None])[0]
     if r is None:
-        return dict(模板=默认模板名, 版本=0, 版本号=None, 内容=默认内容())
-    return dict(模板=r["name"], 版本=r["version"], 版本号=r["id"], 内容=json.loads(r["payload"]))
+        return dict(模板=默认模板名, 版本=0, 版本号=None, 状态="代码默认", 内容=默认内容())
+    return dict(模板=r["name"], 版本=r["version"], 版本号=r["id"], 状态="已发布", 内容=json.loads(r["payload"]))
 
 
 def 冻结用(shop, db=None):
@@ -170,16 +331,17 @@ def 冻结用(shop, db=None):
     (取数包那一列登记了每日平移,日期形状的串会被挪)。"""
     g = 生效(shop, db)
     隐 = [x["名"] for 节 in g["内容"]["章节"] for x in 节["指标"] if not x.get("显示", True)]
-    return {"模板": g["模板"], "版本": g["版本"], "版本号": g["版本号"],
+    return {"模板": g["模板"], "版本": g["版本"], "版本号": g["版本号"], "状态": g["状态"],
             "默认期间": g["内容"].get("默认期间", "周"), "章节": g["内容"]["章节"], "隐藏的": 隐,
-            "怎么用": "报告按这份模板的章节排;「隐藏的」那几项数据照取、**不写进正文**(总部在报告模板里隐藏了);"
-                     "必选项永远显示。模板只管显示,不改任何一个数的算法。"}
+            "怎么用": "报告按这份模板的章节排;「隐藏的」那几项总部在报告模板里隐藏了 —— **它们的数已经从这份取数包里拿掉**,"
+                     "正文里不要提、也不要去别的工具补取;必选项永远显示。模板只管显示,不改任何一个数的算法。"}
 
 
 def 视图(pack):
     """打开一份存过的报告时怎么显示 —— **只读取数包里冻结的模板**,不读模板表。
-    → dict(冻结了模板, 模板, 版本, 说明, 章节=[{标题, 指标=[{名, 段, 状态, 必选, 值, 口径, 出处}]}])
-    状态:显示 / 被隐藏 / 取不到。被隐藏优先于取不到(模板说不显示,就不去论它取没取到)。"""
+    → dict(冻结了模板, 模板, 版本, 说明, 章节=[{标题, 指标=[{名, 段, 状态, 必选, 值, 口径, 出处, 新增未配?}]}])
+    状态:显示 / 被隐藏 / 取不到。被隐藏优先于取不到(模板说不显示,就不去论它取没取到)。
+    被隐藏的那几项取数包里已经没有了(store_report 拿掉的),段从已登记清单里补。"""
     pack = pack or {}
     t = pack.get("报告模板")
     冻 = bool(t and t.get("章节"))
@@ -187,12 +349,16 @@ def 视图(pack):
         {"标题": "本期发生的", "指标": [dict(名=k, 显示=True, 必选=bool((v or {}).get("必选"))) for k, v in (pack.get("期内") or {}).items()]},
         {"标题": "截至今天还压着的", "指标": [dict(名=k, 显示=True) for k in (pack.get(存量键) or {})]}]
     缺 = [str(x) for x in (pack.get("取不到的") or [])]
+    try:
+        登段 = {x["名"]: x["段"] for x in 已登记指标()}
+    except Exception:
+        登段 = {}
 
     def 找(名):
         for 段, 键 in (("期内", "期内"), ("存量", 存量键)):
             if 名 in (pack.get(键) or {}):
                 return 段, pack[键][名]
-        return None, None
+        return 登段.get(名), None
 
     def 行(x):
         段, v = 找(x["名"])
@@ -212,40 +378,107 @@ def 视图(pack):
     列了 = {x["名"] for 节 in 章节 for x in 节["指标"]}
     漏 = [k for 键 in ("期内", 存量键) for k in (pack.get(键) or {}) if k not in 列了]
     if 漏:
-        # 模板存了之后取数包又新加的指标:模板没说隐藏,就照「默认全选」显示,单独一节标出来
-        出.append(dict(标题="模板里没列到的(模板存了之后新登记的指标)", 指标=[行(dict(名=k, 显示=True)) for k in 漏]))
+        # 模板存了之后取数包又新加的指标:模板没说隐藏,就默认显示,按「关联 → 同主题同段按重要度 → 另开一节」插位
+        # (用户 10-23 原话:默认展示,显示位置根据重要性 / 指标互相关联的优先级排序)
+        插新指标(出, [行(dict(名=k, 显示=True)) for k in 漏])
     return dict(冻结了模板=冻, 模板=(t or {}).get("模板"), 版本=(t or {}).get("版本"), 版本号=(t or {}).get("版本号"),
+                状态=(t or {}).get("状态"),
                 说明=(f"按保存那一刻冻结的模板「{t.get('模板')}」第 {t.get('版本')} 版显示 —— 之后模板再改,这份报告不跟着变"
                       if 冻 else "这份报告存于报告模板上线之前,没有冻结模板 —— 按取数包原样全部显示(不拿现行模板去套)"),
+                新增未配=[x["名"] for 节 in 出 for x in 节["指标"] if x.get("新增未配")],
                 章节=出)
 
 
+def 插新指标(出, 新行们):
+    """把模板没列到的指标插进章节(就地改 出)。每一项按顺序找位置:
+      ① 它关联的指标在模板某一节里、且那一节的段和它相同 → 紧挨着排在那个关联指标后面
+         (多个关联取模板里位置最靠前的那个;同一个关联后面已经插过的,排在它们后面);
+      ② 否则找同主题同段的节(按节里已有指标的主题判断,取第一个),按重要度插进去,同档排在已有的后面;
+      ③ 都没有才另开一节「<主题> · 本期 / 截至今天」。
+    插进去的每一项带 新增未配=True —— 页面上提示「模板里没配过,按重要度自动放的」,让总部知道要去配。"""
+    登 = _登()
+    主题 = lambda 名: (登.get(名) or {}).get("主题")
+    档 = lambda 名: _档((登.get(名) or {}).get("重要度"))
+    节段 = lambda 节: {x["段"] for x in 节["指标"] if x.get("段")}
+    原位 = {x["名"]: (i, j) for i, 节 in enumerate(出) for j, x in enumerate(节["指标"])}
+    for r in 新行们:
+        r["新增未配"] = True
+        名, 段 = r["名"], r["段"]
+        候 = sorted((原位[a], a) for a in (登.get(名) or {}).get("关联", ()) if a in 原位 and 节段(出[原位[a][0]]) == {段})
+        if 候:
+            (i, _), 锚 = 候[0]            # 节的下标不会变(新开的节只往后加);节内位置按名字现找
+            列 = 出[i]["指标"]
+            k = next(n for n, x in enumerate(列) if x["名"] == 锚) + 1
+            while k < len(列) and 列[k].get("新增未配") and 列[k].get("_锚") == 锚:
+                k += 1
+            r["_锚"] = 锚
+            列.insert(k, r)
+            continue
+        节 = next((节 for 节 in 出 if 主题(名) and 节段(节) == {段}
+                   and any(主题(x["名"]) == 主题(名) for x in 节["指标"])), None)
+        if 节 is None:
+            标题 = 节标题(主题(名), 段)
+            节 = next((节 for 节 in 出 if 节.get("_新开") and 节["标题"] == 标题), None)
+            if 节 is None:
+                节 = dict(标题=标题, 指标=[], _新开=True)
+                出.append(节)
+        列 = 节["指标"]
+        同 = [n for n, x in enumerate(列) if 主题(x["名"]) == 主题(名)] or list(range(len(列)))
+        不弱 = [n for n in 同 if 档(列[n]["名"]) <= 档(名)]
+        列.insert((max(不弱) + 1) if 不弱 else (min(同) if 同 else 0), r)
+    for 节 in 出:
+        节.pop("_新开", None)
+        for x in 节["指标"]:
+            x.pop("_锚", None)
+    return 出
+
+
 # ── 读(页面)──────────────────────────────────────────────────────────
+def _版行(v):
+    """一版 → 页面上的一行(含状态与留痕)。"""
+    return dict(版本=v["version"], 版本号=v["id"], 理由=v["why"], 谁=v["by_name"], 时间=v["at"],
+                内容=json.loads(v["payload"]) if isinstance(v["payload"], str) else v["payload"],
+                状态=v["status"], 试点门店=v["试点"],
+                留痕=[dict(到=到, 时间=v.get(f"{k}_at"), 谁=v.get(f"{k}_by"), 理由=v.get(f"{k}_why"))
+                    for 到, k in (("试运行", "trial"), ("已发布", "publish"), ("已撤下", "withdraw")) if v.get(f"{k}_at")])
+
+
 def 概览(db=None):
     with closing(_连(db)) as c:
         行 = _各模板最新(c)
+        用 = _在用(_全部(c))
         店 = _门店们(c)
-    模板们 = [dict(名称=r["name"], 版本=r["version"], 版本号=r["id"], 更新=r["at"], 更新人=r["by_name"],
-                理由=r["why"], **{k: v for k, v in json.loads(r["payload"]).items() if k in ("适用门店", "默认期间")})
+
+    def 在用(n):
+        d = 用.get(n) or {}
+        发, 试 = d.get("发布"), d.get("试运行")
+        return dict(已发布版本=发["version"] if 发 else None, 试运行版本=试["version"] if 试 else None,
+                    试点门店=试["试点"] if 试 else [])
+    模板们 = [dict(名称=r["name"], 版本=r["version"], 版本号=r["id"], 状态=r["status"], 更新=r["at"], 更新人=r["by_name"],
+                理由=r["why"], **在用(r["name"]),
+                **{k: v for k, v in json.loads(r["payload"]).items() if k in ("适用门店", "默认期间")})
            for r in 行]
     if not any(r["name"] == 默认模板名 for r in 行):
-        模板们.insert(0, dict(名称=默认模板名, 版本=0, 版本号=None, 更新=None, 更新人=None,
-                           理由="还没存过 —— 用的是代码默认(全部显示)", 适用门店=[全部门店], 默认期间="周"))
+        模板们.insert(0, dict(名称=默认模板名, 版本=0, 版本号=None, 状态=None, 更新=None, 更新人=None,
+                           理由="还没存过 —— 用的是代码默认(全部显示)", 已发布版本=None, 试运行版本=None, 试点门店=[],
+                           适用门店=[全部门店], 默认期间="周"))
     return dict(模板们=模板们, 已登记指标=已登记指标(), 锁定必选=list(锁定必选()), 期间们=list(期间们),
-                门店们=店, 可编辑角色=list(可编辑角色))
+                主题们=list(主题们), 重要度们=list(重要度们), 报告期取不到={k: list(v) for k, v in 报告期取不到().items()},
+                门店们=店, 可编辑角色=list(可编辑角色), 状态们=list(状态们), 可走={k: list(v) for k, v in 可走.items()})
 
 
 def 详情(name, db=None):
     with closing(_连(db)) as c:
         确保表(c)
-        版们 = [dict(r, payload=json.loads(r["payload"])) for r in c.execute(
+        版们 = [_行(r) for r in c.execute(
             "SELECT * FROM report_template_ver WHERE name=? ORDER BY version DESC", (name,))]
     if not 版们 and name != 默认模板名:
         return {"error": f"没有这个模板:{name}"}
-    return dict(名称=name, 当前=(版们[0]["payload"] if 版们 else 默认内容()), 版本=(版们[0]["version"] if 版们 else 0),
-                版本记录=[dict(版本=v["version"], 版本号=v["id"], 理由=v["why"], 谁=v["by_name"], 时间=v["at"], 内容=v["payload"])
-                      for v in 版们],
-                已登记指标=已登记指标(), 锁定必选=list(锁定必选()), 期间们=list(期间们))
+    return dict(名称=name, 当前=(json.loads(版们[0]["payload"]) if 版们 else 默认内容()), 版本=(版们[0]["version"] if 版们 else 0),
+                版本记录=[_版行(v) for v in 版们],
+                已登记指标=已登记指标(), 锁定必选=list(锁定必选()), 期间们=list(期间们),
+                报告期取不到={k: list(v) for k, v in 报告期取不到().items()},
+                状态们=list(状态们), 可走={k: list(v) for k, v in 可走.items()})
 
 
 # ── 写 ───────────────────────────────────────────────────────────────
@@ -258,17 +491,20 @@ def _闸(me):
 
 
 def 校验(p, c, name):
-    """→ 错误列表。名字在不在已登记清单、必选取消没有、适用门店是不是真店、有没有被两个模板认领。"""
+    """→ 错误列表。名字在不在已登记清单、必选取消没有、必选项这种报告取不取得到、一节有没有混放期内和存量、
+    适用门店是不是真店、有没有被两个模板认领。"""
     错 = []
     if not isinstance(p, dict):
         return ["模板要是一个对象"]
     多 = set(p) - {"名称", "适用门店", "默认期间", "章节"}
     if 多:
         错.append(f"这些不开放配置:{sorted(多)}(模板只管章节、显示 / 隐藏、必选、默认期间、适用门店)")
-    if p.get("默认期间") not in 期间们:
-        错.append(f"默认期间只能是 {' / '.join(期间们)},不能是「{p.get('默认期间')}」")
+    期 = p.get("默认期间")
+    if 期 not in 期间们:
+        错.append(f"默认期间只能是 {' / '.join(期间们)},不能是「{期}」")
     登 = {x["名"]: x for x in 已登记指标()}
     锁 = 锁定必选()
+    取不到 = 报告期取不到().get(期, ())
     章 = p.get("章节")
     if not isinstance(章, list) or not 章:
         错.append("至少要有一个章节")
@@ -278,11 +514,14 @@ def 校验(p, c, name):
         if not isinstance(节, dict) or not str(节.get("标题") or "").strip():
             错.append(f"第 {i} 个章节没有标题")
             continue
+        段们 = {}
         for x in 节.get("指标") or []:
             n = (x or {}).get("名")
             if n not in 登:
                 错.append(f"「{n}」不是已登记的指标 —— 只能从取数包现有的这些里选:{'、'.join(登)}")
                 continue
+            if n in 登:
+                段们.setdefault(登[n]["段"], []).append(n)
             if n in 见:
                 错.append(f"「{n}」出现了两次(「{见[n]}」和「{节['标题']}」)")
             见[n] = 节["标题"]
@@ -290,7 +529,15 @@ def 校验(p, c, name):
                 if not x.get("必选") or not x.get("显示", True):
                     错.append(f"「{n}」是锁定必选项(用户 10-09 定:下单数和营收必选)—— 不能取消必选、不能隐藏")
             elif x.get("必选"):
-                错.append(f"「{n}」不能标必选 —— 现在只有 {'、'.join(锁)} 两项必选;要加必选项先找业务拍板")
+                # 用户 10-23 选 B:任何已登记指标都能标必选;但这种报告结构上取不到的不许 —— 不然每一期都确认不了
+                if n in 取不到:
+                    错.append(f"「{n}」:这一项{期}报取不到,设成必选会导致每一期都确认不了")
+                if not x.get("显示", True):
+                    错.append(f"「{n}」标了必选又隐藏 —— 隐藏的项不交给写报告的 AI,必选了就每一期都确认不了")
+        if len(段们) > 1:
+            # 用户 10-23 选「每节只放一种」:一节里混着「这一期发生的」和「截至今天还压着的」,读的人分不清哪个是本期新增
+            错.append(f"「{节['标题']}」一节里混放了期内({'、'.join(段们.get('期内', []))})和存量"
+                      f"({'、'.join(段们.get('存量', []))})的指标 —— 一节只放一种")
     for n in 锁:
         if n not in 见:
             错.append(f"「{n}」是锁定必选项,模板里不能删掉它")
@@ -306,17 +553,41 @@ def 校验(p, c, name):
         for s in 店:
             if s not in 真店:
                 错.append(f"「{s}」不是门店(有:{'、'.join(真店)})")
+        # 别的模板的最新一版、在用的已发布 / 试运行那一版,认领的店都算 —— 只看最新版的话,
+        # 别人草稿里放掉的店、而它已发布的那一版还认领着,就会被两个专用模板同时认领
+        用 = _在用(_全部(c))
         for r in _各模板最新(c):
             if r["name"] in (name, 默认模板名):
                 continue
-            重 = set(店) & set(json.loads(r["payload"]).get("适用门店") or [])
+            他 = [r] + [x for x in (用.get(r["name"]) or {}).values() if x]
+            重 = set(店) & {s for x in 他 for s in (json.loads(x["payload"]).get("适用门店") or [])}
             if 重:
                 错.append(f"{'、'.join(sorted(重))} 已经被模板「{r['name']}」认领了 —— 一家店只能用一个专用模板")
     return 错
 
 
+def 必选取不到(pack):
+    """确认闸用(report_doc.确认):→ (冻结了模板, [取不到的必选项名])。
+    必选项从**冻结的模板**读(视图(pack));「取不到」= 取数包里没有这一项、或这一项的值是 None / 缺「值」。
+    ⚠️ 不用 `not 值` —— 那样会把 0、空串、空列表都判成取不到:这一期新客真的是 0、比率就是 0%,都算取到了。"""
+    pack = pack or {}
+    视 = 视图(pack)
+    if not 视["冻结了模板"]:
+        return False, []
+    缺 = []
+    for 节 in 视["章节"]:
+        for x in 节["指标"]:
+            if not x.get("必选"):
+                continue
+            项 = next(((pack.get(键) or {})[x["名"]] for 键 in ("期内", 存量键) if x["名"] in (pack.get(键) or {})), None)
+            if not isinstance(项, dict) or "值" not in 项 or 项["值"] is None:
+                缺.append(x["名"])
+    return True, 缺
+
+
 def 保存(name, payload, 理由, me, db=None):
-    """存一版(只增不改)。→ {ok, 版本, 版本号} 或 {ok:False, reason, 错}。"""
+    """存一版(只增不改)= **草稿,不生效**。要生效走 改状态:草稿 → 试运行 → 已发布。
+    → {ok, 版本, 版本号, 状态} 或 {ok:False, reason, 错}。"""
     e = _闸(me)
     if e:
         return dict(ok=False, code="NO_AUTH" if not (me or {}).get("no") else "FORBIDDEN", reason=e)
@@ -333,13 +604,90 @@ def 保存(name, payload, 理由, me, db=None):
         if 错:
             return dict(ok=False, reason=";".join(错[:3]) + (f" 等 {len(错)} 处" if len(错) > 3 else ""), 错=错)
         版 = (c.execute("SELECT MAX(version) FROM report_template_ver WHERE name=?", (name,)).fetchone()[0] or 0) + 1
-        rid = c.execute("INSERT INTO report_template_ver(name,version,payload,why,by_no,by_name,at) VALUES(?,?,?,?,?,?,?)",
+        rid = c.execute("INSERT INTO report_template_ver(name,version,payload,why,by_no,by_name,at,status) "
+                        "VALUES(?,?,?,?,?,?,?,'草稿')",
                         (name, 版, json.dumps(p, ensure_ascii=False), 理由.strip(), me["no"], me.get("name"), _now())).lastrowid
         c.commit()
     try:
         from oplog import log_op
-        log_op(f"{me.get('name')}({me['no']})", "report_template", f"{name}#{版}", f"第 {版 - 1} 版", f"第 {版} 版",
+        log_op(f"{me.get('name')}({me['no']})", "report_template", f"{name}#{版}", f"第 {版 - 1} 版", f"第 {版} 版(草稿)",
                True, "RPT_TPL_SAVE", 理由.strip()[:120], {"版本号": rid})
     except Exception:
         pass
-    return dict(ok=True, 模板=name, 版本=版, 版本号=rid)
+    return dict(ok=True, 模板=name, 版本=版, 版本号=rid, 状态="草稿",
+                note="存的是草稿,还没生效 —— 先试运行(写试点门店),再发布")
+
+
+def 改状态(name, 版本, 到, 理由, me, 试点门店=None, db=None):
+    """改一版的状态(只有总部运营,要写理由,留痕在这一行的 trial_* / publish_* / withdraw_* 和 op_log)。
+    草稿 → 试运行(要试点门店,必须是真门店)→ 已发布;试运行也可以撤下。**不许跳。**
+    同一模板同一时刻最多一版试运行、一版已发布:新发布的把旧发布的变成已撤下。"""
+    e = _闸(me)
+    if e:
+        return dict(ok=False, code="NO_AUTH" if not (me or {}).get("no") else "FORBIDDEN", reason=e)
+    if 到 not in 状态们:
+        return dict(ok=False, reason=f"状态只能是 {' / '.join(状态们)}")
+    if not (理由 or "").strip():
+        return dict(ok=False, reason="改状态要写理由 —— 以后有人问「这一版为什么放出来了 / 为什么撤了」,答案在这里")
+    理由 = 理由.strip()
+    谁 = f"{me.get('name')}({me['no']})"
+    try:
+        版本 = int(版本)
+    except (TypeError, ValueError):
+        return dict(ok=False, reason="版本要是第几版(数字)")
+    撤下的 = None
+    with closing(_连(db)) as c:
+        确保表(c)
+        r = c.execute("SELECT * FROM report_template_ver WHERE name=? AND version=?", (name, 版本)).fetchone()
+        if not r:
+            return dict(ok=False, reason=f"没有模板「{name}」的第 {版本} 版")
+        r = _行(r)
+        现 = r["status"]
+        if 到 not in 可走.get(现, ()):
+            return dict(ok=False, code="BAD_STEP",
+                        reason=f"「{现}」不能直接到「{到}」,能走的是:{' / '.join(可走.get(现, ())) or '无'}"
+                               "(草稿 → 试运行 → 已发布,不许跳)")
+        用 = _在用(_全部(c))
+        now = _now()
+        if 到 in ("试运行", "已发布"):
+            # 草稿存的时候校验过;到生效这一步再校一遍 —— 中间别的模板可能认领了同一家店
+            错 = 校验(json.loads(r["payload"]), c, name)
+            if 错:
+                return dict(ok=False, reason=";".join(错[:3]), 错=错)
+        if 到 == "试运行":
+            店 = [str(s) for s in (试点门店 or []) if str(s).strip()]
+            真店 = _门店们(c)
+            if not 店:
+                return dict(ok=False, reason="试运行要写试点门店(哪几家店先用这一版)")
+            假 = [s for s in 店 if s not in 真店]
+            if 假:
+                return dict(ok=False, reason=f"{'、'.join(假)} 不是门店(有:{'、'.join(真店)})")
+            试 = (用.get(name) or {}).get("试运行")
+            if 试:
+                return dict(ok=False, reason=f"模板「{name}」第 {试['version']} 版已经在试运行 —— 同一模板同一时刻最多一版试运行;"
+                                             "先把它发布或撤下")
+            for 他名, d in 用.items():
+                重 = set(店) & set((d.get("试运行") or {}).get("试点") or [])
+                if 他名 != name and 重:
+                    return dict(ok=False, reason=f"{'、'.join(sorted(重))} 已经在模板「{他名}」的试运行里 —— 一家店同一时刻只试一版")
+            c.execute("UPDATE report_template_ver SET status='试运行', trial_shops=?, trial_at=?, trial_by=?, trial_why=? "
+                      "WHERE id=?", (json.dumps(店, ensure_ascii=False), now, 谁, 理由, r["id"]))
+        elif 到 == "已发布":
+            旧 = [x for x in _全部(c) if x["name"] == name and x["status"] == "已发布"]
+            for x in 旧:
+                c.execute("UPDATE report_template_ver SET status='已撤下', withdraw_at=?, withdraw_by=?, withdraw_why=? "
+                          "WHERE id=?", (now, 谁, f"第 {版本} 版发布,自动撤下(同一模板同一时刻只有一版已发布)", x["id"]))
+            撤下的 = [x["version"] for x in 旧]
+            c.execute("UPDATE report_template_ver SET status='已发布', publish_at=?, publish_by=?, publish_why=? WHERE id=?",
+                      (now, 谁, 理由, r["id"]))
+        else:   # 已撤下(只从试运行来)
+            c.execute("UPDATE report_template_ver SET status='已撤下', withdraw_at=?, withdraw_by=?, withdraw_why=? WHERE id=?",
+                      (now, 谁, 理由, r["id"]))
+        c.commit()
+    try:
+        from oplog import log_op
+        log_op(谁, "report_template", f"{name}#{版本}", 现, 到, True, "RPT_TPL_STATUS", 理由[:120],
+               {"版本号": r["id"], **({"试点": 试点门店} if 到 == "试运行" else {}), **({"撤下": 撤下的} if 撤下的 else {})})
+    except Exception:
+        pass
+    return dict(ok=True, 模板=name, 版本=版本, 从=现, 到=到, **({"顶下来的": 撤下的} if 撤下的 else {}))
