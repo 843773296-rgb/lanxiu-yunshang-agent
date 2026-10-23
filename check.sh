@@ -142,6 +142,9 @@ run "产品文档 · 写死的数字和代码对账(文档变假时不会报错)
 # 而它就贴在「shop 工具 79 个」这个**对账过的**标题下面 —— 标题说 79、表里 48,
 # **而读的人只会相信表**。交接里早记着「要么修要么登记退役」,这次修了。
 run "产品文档 · MCP 工具表和代码对账(标题的数对过账,表本身没人对)" python3 tools/gen_doc_lists.py
+# 2026-10-23 装进来:这台机器上同一时刻只许一轮门禁 / 冒烟 / 写共享库(6 个工作区共用)。
+# 自测在**临时锁目录**上跑,不碰那把真锁 —— 所以它在门禁里跑不会和持锁的那一轮打架。
+run "共享资源锁 · 陈锁会被抢、活锁不许抢、被打断照样还锁、退出码原样传回" ./tools/gate_lock.sh --selftest
 run "README = 入口 + 产品说明全文,两边一致(用户 10-20:产品文档放进 README、去重)" python3 tools/make_readme.py --check
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
 run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py

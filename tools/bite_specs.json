@@ -10860,5 +10860,29 @@
    }
   ],
   "预期红": "待审查不能直接跳到已发布"
+ },
+ {
+  "script": "./tools/gate_lock.sh --selftest",
+  "改坏": "把「原主进程已经不在了就抢锁」那一支关掉 —— 一次崩掉就让后面所有工作区**静默卡死**,而「别人正在跑」和「两小时前有人崩了」在那个转圈的终端里长得一样",
+  "file": [
+   {
+    "path": "tools/gate_lock.sh",
+    "old": "  if [ -n \"$OWNER_PID\" ] && ! kill -0 \"$OWNER_PID\" 2>/dev/null; then",
+    "new": "  if false; then"
+   }
+  ],
+  "预期红": "陈锁(原主进程已不在)被抢走"
+ },
+ {
+  "script": "./tools/gate_lock.sh --selftest",
+  "改坏": "让包装器永远退 0(吃掉被包命令的退出码)—— 门禁从此永远绿。同一族:打印 ❌ 和拦截是两件事",
+  "file": [
+   {
+    "path": "tools/gate_lock.sh",
+    "old": "exit $RC\n",
+    "new": "exit 0\n"
+   }
+  ],
+  "预期红": "被包命令的退出码原样传回"
  }
 ]
