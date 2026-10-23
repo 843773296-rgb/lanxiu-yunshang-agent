@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 管理后台 :8760 常驻(用户 2026-10-23 拍:「系统常态启动、不要关闭,不唤起 Claude 的时候也能展示」)。
+     装 / 卸 / 看状态:./tools/always_on.sh install | uninstall | status
+     · RunAtLoad + KeepAlive:登录就起,进程退出(崩了、被 kill)launchd 自动再拉起来
+     · ThrottleInterval 10:真起不来(端口被占、库坏了)时别每秒狂拉,10 秒一次 -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.lanxiu.backend</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.14/bin/python3</string>
+    <string>server.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/eureka/Desktop/澜绣云裳agent/backend</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>/tmp/lanxiu-backend.log</string>
+  <key>StandardErrorPath</key><string>/tmp/lanxiu-backend.log</string>
+  <!-- launchd 起的进程环境极简,PATH 要自己给。和终端里 ./start.sh 用同一个 python3。 -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+</dict>
+</plist>

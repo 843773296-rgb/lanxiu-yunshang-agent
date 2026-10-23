@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 智能运维平台 :8770 常驻(用户 2026-10-23 拍,同 com.lanxiu.backend.plist)。
+     装 / 卸 / 看状态:./tools/always_on.sh install | uninstall | status
+     ⚠️ 环境变量和 ./start.sh 起的一样(没设 LANXIU_PROVIDER)—— 模型走哪家不在这里改,
+        常驻和手起两种方式跑出来的必须是同一个东西。 -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.lanxiu.agentsite</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/eureka/Desktop/澜绣云裳agent/agentsite/.venv/bin/python</string>
+    <string>app.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/eureka/Desktop/澜绣云裳agent/agentsite</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>/tmp/lanxiu-agentsite.log</string>
+  <key>StandardErrorPath</key><string>/tmp/lanxiu-agentsite.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+</dict>
+</plist>

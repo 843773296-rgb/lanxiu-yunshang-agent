@@ -3,6 +3,14 @@
 #   管理后台   :8760  —— 记录系统,数据的家
 #   智能运维平台 :8770  —— Agent SDK 为内核,值班台 / 研判队列 / 智能体健康
 cd "$(dirname "$0")"
+# 装了常驻(./tools/always_on.sh install)就只重启常驻那两个 —— 再 kill + nohup 一份的话,
+# launchd 会把被 kill 的那份立刻拉回来,两份抢一个端口,抢输的那份起来就退、每 10 秒重拉一次。
+if launchctl print "gui/$(id -u)/com.lanxiu.backend" >/dev/null 2>&1; then
+  echo "两个服务是常驻的 —— 重启常驻服务,不另起一份(卸掉常驻:./tools/always_on.sh uninstall)"
+  ./tools/always_on.sh restart
+  ALWAYS_ON=1
+fi
+if [ -z "$ALWAYS_ON" ]; then
 kill $(lsof -nP -iTCP:8760 -sTCP:LISTEN -t 2>/dev/null) 2>/dev/null
 kill $(lsof -nP -iTCP:8770 -sTCP:LISTEN -t 2>/dev/null) 2>/dev/null
 sleep 1
@@ -32,6 +40,7 @@ fi
 sleep 3
 printf "  管理后台     http://127.0.0.1:8760  HTTP %s\n" "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8760/)"
 printf "  智能运维平台  http://127.0.0.1:8770  HTTP %s\n" "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8770/)"
+fi
 
 # ── 连 AI 管理平台(管理后台/,:8801)——用户 2026-10-10 定:本机要连 ─────────────────
 # 连上之后每 30 秒一轮:推用量(A1)、推产出(报告 / 建议)、拉「打回」回来执行。
