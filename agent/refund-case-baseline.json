@@ -1,5 +1,5 @@
 {
- "冻于": "2026-10-16 16:23",
+ "冻于": "2026-10-23 23:12",
  "单": {
   "DQ9001": {
    "get_deposit": {
@@ -16,7 +16,7 @@
     {
      "amount": 1200.0,
      "channel": "微信支付",
-     "channel_serial": "WX9000000000",
+     "channel_serial": "WX9000009001",
      "direction": "in",
      "id": "PFDQ9001I",
      "status": "success",
@@ -25,7 +25,7 @@
     {
      "amount": 1200.0,
      "channel": "微信支付",
-     "channel_serial": "WX9100000000",
+     "channel_serial": "WX9100009001",
      "direction": "out",
      "id": "PFDQ9001O",
      "status": "success",
@@ -68,7 +68,8 @@
      "ref_id": "DQ9001",
      "status": "待处理",
      "summary": null,
-     "type": "财务人工任务"
+     "type": "财务人工任务",
+     "waiting": null
     }
    ],
    "出事于": "T+0 出事+0分"
@@ -88,7 +89,7 @@
     {
      "amount": 800.0,
      "channel": "微信支付",
-     "channel_serial": "WX9000000001",
+     "channel_serial": "WX9000009002",
      "direction": "in",
      "id": "PFDQ9002I",
      "status": "success",
@@ -131,7 +132,8 @@
      "ref_id": "DQ9002",
      "status": "待处理",
      "summary": null,
-     "type": "财务人工任务"
+     "type": "财务人工任务",
+     "waiting": null
     }
    ],
    "出事于": "T+0 出事+0分"
@@ -151,7 +153,7 @@
     {
      "amount": 2000.0,
      "channel": "微信支付",
-     "channel_serial": "WX9000000002",
+     "channel_serial": "WX9000009003",
      "direction": "in",
      "id": "PFDQ9003I",
      "status": "success",
@@ -194,7 +196,8 @@
      "ref_id": "DQ9003",
      "status": "待处理",
      "summary": null,
-     "type": "财务人工任务"
+     "type": "财务人工任务",
+     "waiting": null
     }
    ],
    "出事于": "T+0 出事+0分"

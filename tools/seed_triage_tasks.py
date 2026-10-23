@@ -98,6 +98,24 @@ def 已经有的(c):
         "SELECT id FROM task WHERE id LIKE 'TDQ%' OR id LIKE 'TMQ%'")}
 
 
+def 渠道流水号(did, 方向):
+    """造数用的渠道流水号 —— **这是唯一实现,别抄第二份。**
+
+    绑 `did`(全局递增的押金号),**不绑循环下标**。只读审计 2026-10-23 第 1 条:
+    原来拼的是「常量 + 这次循环的第几条」,而重跑一次下标归零、押金号接着走 ——
+    **同一个号就配到了另一笔押金上**。
+
+    为什么抽成函数:修复脚本(`tools/fix_payment_serials.py`)和判据
+    (`backend/payment_serial_check.py`)都要知道「这笔押金的号该是什么」。
+    各写一份的话,哪天改了算号方式,**修复脚本会把对的数据改成错的**,
+    而它不报错 —— 它只是按另一份算法算出了另一个号。
+    (同 CLAUDE.md §7-2 的同源谬误那一族:**让那段逻辑只剩一份,别人真调它**。)
+    """
+    assert 方向 in ("in", "out"), 方向
+    序 = int("".join(ch for ch in str(did) if ch.isdigit()) or 0)
+    return f"WX{(9000000000 if 方向 == 'in' else 9100000000) + 序}"
+
+
 def 造财务(c, 现在, 真写, 要几条=3):
     """押金退款失败 → 财务人工任务。业务事实:押金单 + 收款流水 + 三次失败轨迹。"""
     出 = []
@@ -105,6 +123,27 @@ def 造财务(c, 现在, 真写, 要几条=3):
         "SELECT id FROM customer WHERE archived=0 ORDER BY id LIMIT 3")]
     for i, (因, traces, 已退) in enumerate(退款真因[:要几条]):
         did = 下一个号(c, "deposit", "DQ"); tid = f"T{did}"
+        # ⚠️ **渠道流水号绑 `did`,不绑 `i`。**(只读审计 2026-10-23 第 1 条)
+        #
+        # 原来两处拼的是「九十亿打头的常量 **加 i**」,而 `i` 是**这次循环的第几条**,
+        # `did` 是**全局递增**的押金号。重跑一次 `i` 归零、`did` 接着走 ——
+        # 于是**同一个渠道流水号配到了另一笔押金上**。
+        # 真库里当场有两条(2026-10-23 查到):
+        #     微信支付 / WX9000000000 / in   两条
+        #     微信支付 / WX9100000000 / out  两条
+        # 而正常的流水号长 `WX548899456486` 这样(12 位),一眼就看得出那两条是造的。
+        #
+        # > 一个「两笔不同的钱共用一个渠道流水号」的库,和一个正常的库,
+        # > **在任何一张页面上长得一模一样** —— 按押金查流水照样一条不多一条不少,
+        # > 因为所有页面都是**按 deposit_id 查**的,**没人按流水号反查**。
+        # > 而这正是对账时唯一能把两边对起来的那个号。
+        #
+        # 引用面已核:`api.py` 只按 `deposit_id` 列它、`refund_sets.py` 只把它当输出 ——
+        # **没有任何代码按 `channel_serial` 反查**,所以改它不打断任何判据。
+        #
+        # ⚠️ 写这段注释时踩了一次:注释里**照抄**那个错写法,于是替换脚本把注释
+        # 自己也匹配上了(count 从 1 变 2)。同 CLAUDE.md 那条
+        # 「被扫描文件里要举例就**描述**它,别照抄」—— 所以上面写的是「加 i」。
         cid = cust[i % len(cust)]
         amt = [1200.0, 800.0, 2000.0][i]
         if 真写:
@@ -117,11 +156,11 @@ def 造财务(c, 现在, 真写, 要几条=3):
                       (did, cid, None, amt, _RR.出事时押金状态, f"IDEM-{did}", 现在[:10], 现在[:10]))
             c.execute("INSERT INTO payment_flow(id,deposit_id,direction,amount,channel,channel_serial,status,ts)"
                       " VALUES(?,?,'in',?,'微信支付',?,'success',?)",
-                      (f"PF{did}I", did, amt, f"WX{9000000000 + i}", 现在))
+                      (f"PF{did}I", did, amt, 渠道流水号(did, "in"), 现在))
             if 已退:   # 「渠道超时但实际已退」:正向查询显示已退,所以真有一条出账流水
                 c.execute("INSERT INTO payment_flow(id,deposit_id,direction,amount,channel,channel_serial,status,ts)"
                           " VALUES(?,?,'out',?,'微信支付',?,'success',?)",
-                          (f"PF{did}O", did, amt, f"WX{9100000000 + i}", 现在))
+                          (f"PF{did}O", did, amt, 渠道流水号(did, "out"), 现在))
             for a, (code, msg) in enumerate(traces, 1):
                 c.execute("INSERT INTO refund_trace(deposit_id,attempt,ts,channel,req_amount,resp_code,resp_msg,idem_key)"
                           " VALUES(?,?,?,'微信支付',?,?,?,?)",
