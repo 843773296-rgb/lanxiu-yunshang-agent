@@ -29,7 +29,7 @@
 
 ## 为什么 DDL 单独放在 backend
 
-两个检查各自要求一件事,而要求的位置不一样(同 `backend/rating_shadow.py`):
+两个检查各自要求一件事,而要求的位置不一样(同影子台账那张表的 DDL 模块):
 · `tools/ensure_tables.py` —— 「用到时才建」的表要在重建流水线里显式建出来。
   **本地建过就一直在,CI 每次从零。**
 · `tools/table_origin_check.py` —— 「库里有一张表,谁也建不出它」要红,
@@ -45,7 +45,7 @@ def 确保表(c):
     ⚠️ 表名在 DDL 里**写死,不用 f-string** —— `table_origin_check` 按正则从源码里
     找 `CREATE TABLE ... <表名>`,而 `{表名}` 里的 `{` 不是字母,
     **它看不见这张表叫什么**,于是这张表在它眼里是「谁也建不出来」。
-    (`rating_shadow` 第一版就是这么红的。)
+    (闸四影子台账那张表的 DDL 第一版就是这么红的。)
     """
     c.execute("""CREATE TABLE IF NOT EXISTS grade_diff_check(
         item TEXT PRIMARY KEY,          -- 档差的部位名(胸围 / 肩宽 / 上襦衣长……)

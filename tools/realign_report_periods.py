@@ -224,7 +224,11 @@ def 自测():
               "period_start TEXT, period_end TEXT, body TEXT, pack TEXT)")
     # ⚠️ **参数化 INSERT,不把 JSON 拼进 SQL 字面量。**
     # 第一版拼进去了,而里面既有单引号又有双引号又有反斜杠 —— 转义当场写坏。
-    c.execute("INSERT INTO store_report_doc VALUES(?,?,?,?,?,?)",
+    # ⚠️ **点名列,不用位置参数。** 门禁有一条专门盯这个:
+    # 「列数恰好相等而顺序错了**是不报错的**,值会整体挪一格」——
+    # 而挪了一格的那份数据,和对的那份,在行数和每一行上都长得一模一样。
+    c.execute("INSERT INTO store_report_doc"
+              "(id, kind, period_start, period_end, body, pack) VALUES(?,?,?,?,?,?)",
               ("R1", "周", "2026-10-16", "2026-10-22",
                "本周 2026-10-16 至 2026-10-22 的经营情况",
                '{"区间":"2026-10-16","取数口径":"2026-10-21.1"}'))
