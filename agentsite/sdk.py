@@ -616,11 +616,17 @@ SKILL_SETS = {
     "all":  _all_skills,
     "none": lambda: [],
 }
-SKILL_SET_DESC = {
-    "own":  "只用自己写的(报价 / 成长方案 / 排班)",
-    "all":  "全部 239 个(含 236 个 Accio 提取的)",
-    "none": "都不用(看模型裸答什么样)",
-}
+# ⚠️ 数字**现算**。原来写死「全部 239 个」「自己写的三个」,而现在是 243 个、7 个 ——
+# 一句写死的数,会比它描述的东西活得久(外部核查 10-22 指出)。
+def _集合说明():
+    全 = _all_skills()
+    自 = [x for x in 全 if _own.is_ours(x)]
+    return {
+        "own":  f"只用自己写的 {len(自)} 个({' / '.join(自)})",
+        "all":  f"全部 {len(全)} 个(含 {len(全) - len(自)} 个 Accio 提取的;第三方的执行闸照样拦)",
+        "none": "都不用(看模型裸答什么样)",
+    }
+SKILL_SET_DESC = _集合说明()
 
 
 # 运行目录**故意放在项目之外** —— 整段理由和实测证据在 `runtime.py` 里。
@@ -1377,11 +1383,10 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 只记触发的话分母就没了,「触发了 12 次」单独看毫无意义。
     try:
         import skill_stats as _ss
-        _sk = next((( (t.get("args") or {}).get("skill") or "?")
-                    for t in traj if (t.get("tool") or "") == "Skill"), None)
-        _ss.record(_sk, prompt if isinstance(prompt, str) else "(带图)",
-                   role=(me or {}).get("role"), tools=traj,
-                   seconds=round(time.time() - t0, 1), ok=not budget_hit)
+        # 一轮里**每一次** Skill 调用都记、被拦的单列 —— 挑法在 skill_stats.记一轮(判据真调它)
+        _ss.记一轮(traj, prompt if isinstance(prompt, str) else "(带图)",
+                   role=(me or {}).get("role"), seconds=round(time.time() - t0, 1),
+                   撞预算=bool(budget_hit))
     except Exception:
         pass    # 埋点不许影响主流程 —— 记录仪坏了不该让业务跟着坏
     # 存下这一轮结束时的跨轮状态。SDK 续聊可能换一个 session id(分叉)—— 换了就按新会话存,不基于旧版本

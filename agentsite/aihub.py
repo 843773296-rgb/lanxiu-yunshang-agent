@@ -378,7 +378,9 @@ def 列表(mod, 限=200):
                 for i, r in enumerate(rs)][::-1][:限]
     if mod == "skills":
         rs = _读(os.path.join(ROOT, "agentsite", "evals", "skill_usage.jsonl"))
-        return [dict(id=str(i), 时间=r.get("ts"), 技能=r.get("skill") or "(没触发)",
+        return [dict(id=str(i), 时间=r.get("ts"),
+                     技能=" / ".join(r.get("skills") or ([r["skill"]] if r.get("skill") else [])) or "(没触发)",
+                     被拦=" / ".join(r.get("被拦") or []) or None,
                      角色=r.get("role"), 秒=r.get("seconds"), 成=r.get("ok"),
                      问=(r.get("prompt") or "")[:60]) for i, r in enumerate(rs)][::-1][:限]
     if mod == "evals":
