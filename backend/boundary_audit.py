@@ -134,6 +134,30 @@ def a_customer_read_no_login():
     raise PermissionError("没登录 401、跨店 403(这正是期望的)")
 
 
+def a_skill_gate():
+    """Skill 管理后台里停用一个技能,模型还调不调得动(用户 10-23 拍「做完整配置页」)。
+    在库副本上把自有的 quote 标成「已停用」,问执行闸本身 —— 状态要是只在页面上显示、闸照旧读写死清单,
+    「页面上停用了」和「模型真调不动」就是两件事,而它们在页面上长得一模一样。"""
+    import skill_registry as _R, shutil as _sh, tempfile as _tf, os as _os, sqlite3 as _sq, sys as _sys
+    _sys.path.append(_os.path.join(ROOT, "agentsite"))
+    import guards as _g
+    原, 原闸 = _R.DB, _g._REG
+    d = _tf.mkdtemp(prefix="ba-skill-"); p = _os.path.join(d, "lanxiu.db")
+    _sh.copy(原, p)
+    try:
+        _R.DB = p; _g._REG = _R
+        c = _sq.connect(p); _R.确保表(c)
+        c.execute("INSERT OR REPLACE INTO skill_cfg(name,status,version) VALUES('quote','已停用',1)"); c.commit(); c.close()
+        if _g.pre_tool_verdict("Skill", {"skill": "quote"}) is None:
+            return "页面上停用了 quote,执行闸照样放行 —— 状态只是个显示字段"
+        if _g.pre_tool_verdict("Skill", {"skill": "multi-platform-inventory-warning"}) is None:
+            return "没登记过的第三方技能被放行了(默认应是待审查、拦下)"
+    finally:
+        _R.DB, _g._REG = 原, 原闸
+        _sh.rmtree(d, ignore_errors=True)
+    raise PermissionError("停用的被拦、没登记的第三方被拦 —— 闸读的是状态,不是写死的清单")
+
+
 def a_resolve_wrong_role():
     """研判销账拿错角色 —— 在库副本上让顾问去销一条财务任务,应该抛 PermissionError。
     2026-10-12 前谁都能销、署名随便填、销完不留痕(用户拍「修」)。"""
@@ -735,6 +759,10 @@ STRUCT = [
   a_customer_read_no_login, "不带登录翻客户详情;拿店长会话翻别家店的客户",
   "身份只从登录态取,门店范围跟登录走、不跟请求参数走(列表传别家店也被本店覆盖);"
   "总部运营 / 售后跨店,和差评隔离同一个常量。⚠️ 只管这三个接口 —— 订单、预约等页面里带出的客户信息不在这一条里"),
+ ("Skill 管理里停用的技能,模型调不动", "backend/skill_registry.py 状态;agentsite/guards.py Skill 那一支",
+  a_skill_gate, "在库副本上把自有技能标成已停用,问执行闸放不放行;再问一个没登记过的第三方",
+  "执行闸读的就是后台里的状态(只放试运行 / 已发布);没登记的按来源取默认,库读不到时退回原来的写死清单(第三方照样拦)。"
+  "改状态只有总部运营、要写理由、依赖没就绪的放不出去 —— 判在 skill_registry 写口里,skill_registry_check 打 HTTP 层验"),
  ("研判销账只有对应角色能做,而且留痕", "backend/ops.py 能销吗 / resolve;backend/server.py /api/ops-resolve",
   a_resolve_wrong_role, "在库副本上拿顾问身份去销一条财务人工任务",
   "接口层身份只从登录态取(不读请求体里的 handler);`resolve` 里按类型查角色,**所有调用方都过这一道**,"

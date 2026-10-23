@@ -46,6 +46,7 @@ import triage_config
 import triage_trial
 import rating_shadow
 import tasks
+import skill_registry
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -88,6 +89,9 @@ import tasks
     # 经营改进 → 报告的哪一项(2026-10-21,经营复盘闭环):第一次有人派「经营改进」才建 —— 同上,建死免得表数漂。
     # 只有一列日期(created,世界的钟,整列日期 → 平移自动挪),其余三列是编号和指标名,不用登记进平移
     (tasks, "建表", ["report_action"]),
+    # Skill 管理(2026-10-23,用户拍「做完整配置页」):第一次有人打开 Skill 管理页、或执行闸第一次查状态才建 ——
+    # 同上,建死免得表数漂。没登记过的技能按来源取默认状态,所以空表就是「和原来一样」
+    (skill_registry, "确保表", ["skill_cfg", "skill_cfg_log"]),
 ]
 
 

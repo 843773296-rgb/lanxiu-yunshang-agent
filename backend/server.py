@@ -3239,6 +3239,14 @@ class H(BaseHTTPRequestHandler):
             import triage_config as _tc
             if not _me(self): return self._send({"error":"请先登录"},401)
             return self._send(_tc.概览())
+        if p=="/api/skills" or p.startswith("/api/skill/"):
+            # Skill 管理(用户 10-23 拍「做完整配置页」):状态 / 配置 / 依赖就绪 / 使用。要登录;能不能改在写的那头判
+            import skill_registry as _sr
+            if not _me(self): return self._send({"error":"请先登录"},401)
+            if p=="/api/skills": return self._send({"rows": _sr.清单(), "状态们": list(_sr.状态们),
+                                                    "分类们": [x for x in _sr.分类们 if x]})
+            r = _sr.详情(p.split("/api/skill/",1)[1])
+            return self._send(r, 404 if "error" in r else 200)
         if p=="/api/triage-run":
             # 研判运行进度(用户 10-18 拍「自建运行记录」):按批次号或运行号查,读之前先收一遍中断。
             # ⚠️ 放在 `/api/ops-` 那层外面 —— 路径不带 ops- 前缀,放里面永远进不去(fetch_route_check 当场逮到过)
@@ -3618,6 +3626,20 @@ class H(BaseHTTPRequestHandler):
                 return self._send(dict(error=f"不认识的 op:{op}"), 400)
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]), 400)
+        if p=="/api/skill-save" or p=="/api/skill-status":
+            # Skill 管理的两个写口。身份只从登录会话取(请求体里自报的不认);只有总部运营能改、要写理由、
+            # 依赖没就绪的进不了试运行 / 已发布 —— 都在 skill_registry 里判,页面不另判一遍
+            import skill_registry as _sr
+            u = _me(self)
+            if not u:
+                return self._send(dict(ok=False, reason="没登录 —— 改技能配置要登录,署名用登录的人"), 401)
+            if p=="/api/skill-save":
+                r = _sr.保存配置(str(body.get("name") or ""), body.get("fields") or {}, u)
+            else:
+                r = _sr.改状态(str(body.get("name") or ""), str(body.get("to") or ""), body.get("why"), u)
+            log_op(u["name"], "skill", str(body.get("name") or "-"), "-", p.rsplit("-",1)[-1], bool(r.get("ok")),
+                   "" if r.get("ok") else "SKILL_CFG", (r.get("reason") or "")[:200], {})
+            return self._send(r, 200 if r.get("ok") else 400)
         if p=="/api/triage-config":
             # 研判设置:总部运营存草稿 / 试运行。**发布和退回不在这里** —— 只有开发能做(tools/triage_config.py)
             import triage_config as _tc

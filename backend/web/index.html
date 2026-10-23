@@ -456,7 +456,7 @@ const MENU=[
  {k:"pay",i:"pay",t:"消费与售后",subs:[["orders","交易查询"],["freight","运费表"],["finance","押金退款异常"],["aftersales","售后工单"],["maintains","维保工单"],["factory","工厂回传"]]},
  {k:"biz",i:"biz",t:"业务内容",subs:[["kb","工艺知识库"],["mitems","量体配置"],["mtpls","量体模版"],["contents","内容管理"]]},
  {k:"sys",i:"sys",t:"系统",subs:[["approvals","审批中心"],["staff","权限管理"],["syscodes","系统编码"],
-   ["downloads","下载中心"],["oplog","操作日志"]]}];
+   ["downloads","下载中心"],["oplog","操作日志"],["skills","Skill 管理"]]}];
 
 function renderNav(){
   NAV.innerHTML=MENU.map(m=>{
@@ -536,7 +536,7 @@ const TAB_TITLE={workbench:"工作台",customers:"客户档案",merge:"客户合
   products:"商品库",categories:"品类管理",stock:"库存查询",
   mitems:"量体配置",mtpls:"量体模版",contents:"内容管理",freight:"运费表",
   activities:"营销活动",invites:"邀请码管理",pages:"页面配置",
-  syscodes:"系统编码",downloads:"下载中心",approvals:"审批中心",
+  syscodes:"系统编码",skills:"Skill 管理",skill:"Skill",downloads:"下载中心",approvals:"审批中心",
   levels:"会员等级",tags:"客户标签管理",
   aftersales:"售后工单",maintains:"维保工单",factory:"工厂回传",perf:"导购业绩",stocklog:"库存变更日志",kb:"工艺知识库"};
 async function view(v,arg,fromTab){
@@ -598,6 +598,8 @@ async function route(v,arg){
   if(v==="pages")    return pageList();
   if(v==="page")     return pageDetail(arg);
   if(v==="syscodes") return syscodeList();
+  if(v==="skills")   return skillList();
+  if(v==="skill")    return skillDetail(arg);
   if(v==="downloads")return downloadList();
   if(v==="approvals")return approvalCenter();
   if(v==="levels")   return levelPage();
@@ -2469,6 +2471,87 @@ async function syscodeList(){
     </tbody></table>${pagerC(d)}</div>`);
   M.querySelectorAll("[data-newsc]").forEach(e=>e.onclick=()=>formSyscode(syscodeList));
   bindToggle(syscodeList); bindTable(st,syscodeList);
+}
+
+/* ── Skill 管理(用户 10-23 拍「做完整配置页」,intent/skill-admin.md)──────────────────
+   状态不是展示用的字段:执行闸(agentsite/guards.py)读的就是它 —— 只有「试运行 / 已发布」放行。
+   依赖就绪是现算的(读 SKILL.md:缺的脚本、要的外部能力),不是手填的勾;没就绪的服务端拒绝放行。
+   改动只有总部运营能做、要写理由,判在服务端(skill_registry),页面不另判一遍。 */
+let SK_F={q:"",状态:"",来源:"",就绪:""};
+const SK_PILL={"已发布":"p-ok","试运行":"p-warn","待适配":"p-mut","已安装待审查":"p-mut","已停用":"p-bad"};
+async function skillList(){
+  const d=await get("/api/skills"), R=d.rows;
+  const 数=(k,v)=>R.filter(r=>r[k]===v).length;
+  const 筛=R.filter(r=>(!SK_F.q||(r.名称+r.说明).includes(SK_F.q))&&(!SK_F.状态||r.状态===SK_F.状态)
+    &&(!SK_F.来源||r.来源===SK_F.来源)&&(!SK_F.就绪||(SK_F.就绪==="就绪")===r.依赖就绪));
+  const sel=(k,opts)=>`<select data-skf="${k}"><option value="">全部</option>${opts.map(o=>
+    `<option ${SK_F[k]===o?"selected":""}>${esc(o)}</option>`).join("")}</select>`;
+  M.innerHTML=chrome([["首页","workbench"],"系统","Skill 管理"],`
+   <div class="card"><div class="hd"><h3>Skill 管理</h3>
+     <span class="n">装了 ${R.length} 个 · 放行 ${R.filter(r=>["试运行","已发布"].includes(r.状态)).length} 个
+      (已发布 ${数("状态","已发布")} · 试运行 ${数("状态","试运行")})· 依赖就绪 ${R.filter(r=>r.依赖就绪).length} 个
+      · 最近有调用 ${R.filter(r=>r.调用次数).length} 个 —— 「装了」「放行」「依赖齐」「真被用」是四个数,别混</span></div>
+    <div class="form" style="margin-top:10px">
+      <div><label>名称 / 说明</label><input data-skf="q" value="${esc(SK_F.q)}" placeholder="请输入"></div>
+      <div><label>状态</label>${sel("状态",d.状态们)}</div>
+      <div><label>来源</label>${sel("来源",["自有","第三方"])}</div>
+      <div><label>依赖</label>${sel("就绪",["就绪","没就绪"])}</div></div>
+    <table class="tb" style="margin-top:14px"><thead><tr>
+     <th style="width:220px">名称</th><th style="width:70px">来源</th><th style="width:110px">状态</th>
+     <th style="width:90px">执行闸</th><th style="width:150px">依赖</th><th style="width:100px">分类</th>
+     <th style="width:150px">最近调用</th><th>说明</th></tr></thead><tbody>
+     ${筛.map(r=>`<tr>
+      <td><a class="lk" data-cr="skill" data-ca="${esc(r.名称)}">${esc(r.名称)}</a></td>
+      <td>${esc(r.来源)}</td><td><span class="pill ${SK_PILL[r.状态]||"p-mut"}">${esc(r.状态)}</span></td>
+      <td>${["试运行","已发布"].includes(r.状态)?"放行":'<span style="color:var(--ink2)">拦下</span>'}</td>
+      <td>${r.依赖就绪?"就绪":`<span style="color:var(--bad)" title="${esc(r.依赖缺口.join(" / "))}">没就绪 · ${r.依赖缺口.length}</span>`}</td>
+      <td>${esc(r.分类||"—")}</td>
+      <td class="mono">${r.最近调用?esc(r.最近调用.slice(5,16))+" · "+r.调用次数+" 次":"—"}${r.被拦次数?` <span style="color:var(--bad)">拦 ${r.被拦次数}</span>`:""}</td>
+      <td style="color:var(--ink2);font-size:12.5px">${esc(r.说明)}</td></tr>`).join("")}
+    </tbody></table>
+    <div style="color:var(--ink2);font-size:12px;margin-top:8px">共 ${筛.length} 个(调用次数只看最近 200 轮的明细)</div></div>`);
+  M.querySelectorAll("[data-skf]").forEach(e=>e.onchange=()=>{SK_F[e.dataset.skf]=e.value; skillList();});
+  // 筛选是本页重画、不经过 view(),链接要自己绑一次(view 只在切页那次绑)
+  M.querySelectorAll("[data-cr]").forEach(e=>e.onclick=()=>view(e.dataset.cr,e.dataset.ca||undefined));
+}
+async function skillDetail(name){
+  const d=await get("/api/skill/"+encodeURIComponent(name)), 依=d.依赖, 用=d.使用;
+  const 栏=Object.keys(d.配置);
+  M.innerHTML=chrome([["首页","workbench"],"系统",["Skill 管理","skills"],name],`
+   <div class="card"><div class="hd"><h3>${esc(name)}</h3>
+     <span class="pill ${SK_PILL[d.状态]||"p-mut"}">${esc(d.状态)}</span>
+     <span class="n">${esc(d.来源)} · 执行闸:<b>${esc(d.执行闸)}</b> · 配置版本 ${d.版本}${d.更新?" · "+esc(d.更新人||"")+" "+esc(d.更新):""}</span></div>
+    <p style="color:var(--ink2);font-size:13px">${esc(d.说明)}</p>
+    <div class="ops">${d.可走到.map(t=>`<button class="btn ${["试运行","已发布"].includes(t)?"sol":""}" data-skto="${esc(t)}">改成「${esc(t)}」</button>`).join("")}
+      <span style="color:var(--ink2);font-size:12px">只有总部运营能改;改状态要写理由;依赖没就绪的进不了试运行 / 已发布</span></div></div>
+   <div class="card"><div class="hd"><h3>依赖就绪(现算)</h3><span class="n">${依.就绪?"就绪":"<b style='color:var(--bad)'>没就绪</b>"}</span></div>
+    <table class="tb"><tbody>
+     <tr><td style="width:140px">缺的脚本</td><td>${依.缺的脚本.length?依.缺的脚本.map(esc).join("<br>"):"无"}</td></tr>
+     <tr><td>要的外部能力</td><td>${依.外部能力.length?依.外部能力.map(esc).join("、"):"无"}</td></tr>
+     <tr><td>点名的本系统工具</td><td class="mono">${依.本系统工具.length?依.本系统工具.map(esc).join("、"):"无"}</td></tr>
+     <tr><td>最近使用</td><td>${用.次数} 次${用.最近?" · 最近 "+esc(用.最近):""}${用.被拦?` · 被执行闸拦下 ${用.被拦} 次`:""}(只看最近 200 轮)</td></tr>
+    </tbody></table></div>
+   <div class="card"><div class="hd"><h3>配置</h3><span class="n">触发条件、适用岗位、输出契约、操作边界、失败处置、测试与发布(核查方案 6.2)</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 18px">
+     ${栏.map(k=>k==="分类"
+       ? `<div><label>${esc(k)}</label><select data-skc="${k}"><option value=""></option>${["可借鉴方法","可适配","缺依赖","不适用"].map(o=>`<option ${d.配置[k]===o?"selected":""}>${o}</option>`).join("")}</select></div>`
+       : `<div><label>${esc(k)}</label><textarea data-skc="${k}" style="width:100%;min-height:54px">${esc(d.配置[k])}</textarea></div>`).join("")}
+    </div><div class="ops" style="margin-top:10px"><button class="btn sol" data-sksave>保存配置</button></div></div>
+   <div class="card"><div class="hd"><h3>改动记录</h3><span class="n">只增不改</span></div>
+    <table class="tb"><thead><tr><th style="width:150px">时间</th><th style="width:90px">谁</th><th style="width:100px">改了什么</th><th>从 → 到</th><th>理由</th></tr></thead><tbody>
+     ${d.日志.length?d.日志.map(x=>`<tr><td class="mono">${esc(x.at)}</td><td>${esc(x.by_name)}</td><td>${esc(x.what)}</td>
+       <td>${esc((x.before||"").slice(0,40))} → ${esc((x.after||"").slice(0,40))}</td><td>${esc(x.why||"")}</td></tr>`).join("")
+       :'<tr><td colspan="5" style="color:var(--ink2)">还没改过</td></tr>'}</tbody></table></div>
+   <div class="card"><div class="hd"><h3>SKILL.md 正文</h3><span class="n">正文改动走代码提交,不在这里编辑</span></div>
+    <pre style="white-space:pre-wrap;font-size:12px;max-height:420px;overflow:auto">${esc(d.正文)}</pre></div>`);
+  M.querySelectorAll("[data-skto]").forEach(e=>e.onclick=()=>modal(`改成「${e.dataset.skto}」`,
+    [{k:"why",label:"理由",type:"text",req:true,ph:"以后有人问「为什么放出来 / 为什么停了」,答案在这里"}],
+    v=>doOp("/api/skill-status",{name,to:e.dataset.skto,why:v.why},()=>skillDetail(name))));
+  M.querySelector("[data-sksave]").onclick=()=>{
+    const f={}; M.querySelectorAll("[data-skc]").forEach(e=>f[e.dataset.skc]=e.value);
+    doOp("/api/skill-save",{name,fields:f},()=>skillDetail(name));
+  };
+  M.querySelectorAll("[data-cr]").forEach(e=>e.onclick=()=>view(e.dataset.cr,e.dataset.ca||undefined));
 }
 
 async function downloadList(){

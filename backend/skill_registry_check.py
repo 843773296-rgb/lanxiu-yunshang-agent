@@ -1,0 +1,141 @@
+# -*- coding: utf-8 -*-
+"""Skill 管理:状态真管得住执行闸、依赖没就绪放不出去、只有总部运营能改(用户 2026-10-23 拍,intent/skill-admin.md)。
+
+**在库副本上真改状态,再问执行闸本身**(agentsite/guards.pre_tool_verdict)放不放行 ——
+不在这里照着规则另判一遍:状态要是只在页面上显示、闸照旧读写死清单,
+「页面上停用了」和「模型真调不动」会是两件事,而它们在页面上长得一模一样。
+
+写口打 HTTP 层(server.do_POST,假 handler):身份只从登录会话来,请求体里自报的不认。
+用法:./agentsite/.venv/bin/python backend/skill_registry_check.py   (不调模型;写的是库副本)
+"""
+import datetime as _dt, io, json, os, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path[:0] = [HERE]
+# ⚠️ 写口模块**先 import 再切库** —— 用副本只改已经加载的模块;之后才 import 的会写真库
+import skill_registry as R, server, auth, oplog   # noqa: F401
+sys.path.append(os.path.join(ROOT, "agentsite"))
+import guards
+guards._REG = R          # 闸用的就是这一份,不另载一份
+import check_copy
+副本 = check_copy.用副本("skill-reg-")
+
+G, Rd, D = "\033[32m", "\033[31m", "\033[0m"
+坏 = 0
+
+咬合 = [
+    ("执行闸改回读写死的自有清单(不看状态)", "停用一个自有技能:执行闸真拦下"),
+    ("放行时不查依赖就绪", "依赖没就绪的(缺脚本、要淘宝登录):进不了试运行"),
+    ("改状态不查角色(谁都能改)", "顾问改状态:拒"),
+    ("状态边不限制(待审查能直接发布)", "待审查不能直接跳到已发布"),
+]
+
+
+def ck(名, ok, 细=""):
+    global 坏
+    if not ok: 坏 += 1
+    print(f"  {G+'✅'+D if ok else Rd+'❌'+D} {名}{'  ' + 细 if 细 else ''}")
+
+
+class 假请求:
+    def __init__(self, path, body, tok=None):
+        self.path = path
+        self._b = json.dumps(body, ensure_ascii=False).encode()
+        self.headers = {"content-length": str(len(self._b))}
+        if tok: self.headers["cookie"] = f"lx_token={tok}"
+        self.rfile, self.wfile = io.BytesIO(self._b), io.BytesIO()
+    def send_response(self, *a): pass
+    def send_header(self, *a): pass
+    def end_headers(self): pass
+    def log_message(self, *a): pass
+
+
+def 打(path, body, tok=None):
+    h = 假请求(path, body, tok); 回 = {}
+    def _send(obj, code=200): 回.update(码=code, 体=obj)
+    h._send = _send
+    server.H.do_POST(h)
+    return 回.get("码"), 回.get("体") or {}
+
+
+def 会话(role):
+    r = server.rows("SELECT no,name,role,shop FROM staff WHERE role=? AND status='启用' LIMIT 1", role)
+    if not r: return None, None
+    tok = f"skill-reg-{role}"
+    with auth._LOCK: auth._SESS[tok] = dict(r[0], at=_dt.datetime.now())
+    return tok, dict(r[0])
+
+
+def 闸(n):
+    return guards.pre_tool_verdict("Skill", {"skill": n}) is None
+
+
+def main():
+    print("\n\033[1m▸ Skill 管理 · 在库副本上改状态,问执行闸本身\033[0m")
+    import oplog as _ol
+    if os.path.realpath(R.DB) != os.path.realpath(副本) or os.path.realpath(_ol.DB) != os.path.realpath(副本):
+        print(f"  {Rd}❌ 写口没切到副本(R.DB={R.DB} oplog.DB={_ol.DB})—— 不跑,免得写真库{D}"); return 1
+    自有, 第三方缺 = "quote", "multi-platform-inventory-warning"
+    第三方好 = next((n for n in R.装了哪些() if n not in R._ours() and R.依赖(n)["就绪"]), None)
+    if not 第三方好:
+        print(f"  {Rd}❌ 没扫到一个依赖就绪的第三方技能 —— 没东西可验,不是验过了{D}"); return 1
+    tH, 总部 = 会话("总部运营"); tG, _ = 会话("顾问")
+    if not (tH and tG):
+        print(f"  {Rd}❌ 库里找不到在职的总部运营 / 顾问 —— 没东西可验{D}"); return 1
+
+    ck("默认:自有的已发布、第三方的待审查(上线那一刻和原来一样)",
+       R.状态(自有) == "已发布" and R.状态(第三方好) == "已安装待审查")
+    ck("默认:执行闸放自有、拦第三方", 闸(自有) and not 闸(第三方好))
+
+    依 = R.依赖(第三方缺)
+    ck("依赖现算:淘宝库存预警那个缺脚本、要外部登录", not 依["就绪"] and 依["缺的脚本"] and 依["外部能力"],
+       f"缺 {len(依['缺的脚本'])} 个脚本 · 外部 {依['外部能力'][:2]}")
+
+    码, 体 = 打("/api/skill-status", {"name": 第三方好, "to": "待适配", "why": "x"})
+    ck("没登录改状态:拒(401)", 码 == 401, f"回了 {码}")
+    码, 体 = 打("/api/skill-status", {"name": 第三方好, "to": "待适配", "why": "x"}, tG)
+    ck("顾问改状态:拒", not 体.get("ok") and "总部运营" in (体.get("reason") or ""), f"{体}")
+    码, 体 = 打("/api/skill-status", {"name": 第三方好, "to": "已发布", "why": "直接发布"}, tH)
+    ck("待审查不能直接跳到已发布", not 体.get("ok") and "不能直接到" in (体.get("reason") or ""), f"{体}")
+    码, 体 = 打("/api/skill-status", {"name": 第三方好, "to": "待适配", "why": ""}, tH)
+    ck("改状态不写理由:拒", not 体.get("ok") and "理由" in (体.get("reason") or ""), f"{体}")
+
+    for 到 in ("待适配", "试运行"):
+        码, 体 = 打("/api/skill-status", {"name": 第三方好, "to": 到, "why": "检查里走一遍"}, tH)
+    ck("依赖就绪的第三方:走到试运行,执行闸真放行", 体.get("ok") and 闸(第三方好), f"{体} 闸={'放' if 闸(第三方好) else '拦'}")
+
+    打("/api/skill-status", {"name": 第三方缺, "to": "待适配", "why": "检查"}, tH)
+    码, 体 = 打("/api/skill-status", {"name": 第三方缺, "to": "试运行", "why": "检查"}, tH)
+    ck("依赖没就绪的(缺脚本、要淘宝登录):进不了试运行", not 体.get("ok") and "依赖没就绪" in (体.get("reason") or "")
+       and not 闸(第三方缺), f"{体}")
+
+    码, 体 = 打("/api/skill-status", {"name": 自有, "to": "已停用", "why": "检查里停一下"}, tH)
+    ck("停用一个自有技能:执行闸真拦下", 体.get("ok") and not 闸(自有), f"{体} 闸={'放' if 闸(自有) else '拦'}")
+
+    码, 体 = 打("/api/skill-save", {"name": 自有, "fields": {"负责人": "检查", "分类": "瞎填"}}, tH)
+    ck("配置:分类只能是那四种", not 体.get("ok"), f"{体}")
+    码, 体 = 打("/api/skill-save", {"name": 自有, "fields": {"负责人": "检查人", "适用岗位": "顾问"}}, tH)
+    d = R.详情(自有)
+    ck("配置:存得进、版本加一、记了改动", 体.get("ok") and d["配置"]["负责人"] == "检查人"
+       and any(x["what"] == "负责人" for x in d["日志"]), f"版本 {d['版本']} · 日志 {len(d['日志'])} 条")
+    ck("改动记录带理由和署名(状态那几条)",
+       any(x["what"] == "状态" and x["why"] and x["by_name"] == 总部["name"] for x in d["日志"]))
+
+    try:
+        import sdk
+        ck("技能集合跟着状态走:停用的不再上场,试运行的上场",
+           自有 not in sdk.skills_for("own") and 第三方好 in sdk.skills_for("own"))
+    except ImportError as e:
+        ck("技能集合跟着状态走:停用的不再上场,试运行的上场", False, f"sdk 导不进来:{e} —— 要用 venv 的 python 跑")
+
+    with auth._LOCK:
+        for t in (tH, tG): auth._SESS.pop(t, None)
+    print()
+    if 坏:
+        print(f"{Rd}❌ Skill 管理 {坏} 处不符合预期{D}"); return 1
+    print(f"{G}✅ Skill 管理:状态管得住执行闸,依赖没就绪放不出去,只有总部运营能改{D}"); return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

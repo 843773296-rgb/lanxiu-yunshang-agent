@@ -10812,5 +10812,53 @@
    }
   ],
   "预期红": "⑦ 八个服务的 tools/list 合起来恰好是全部"
+ },
+ {
+  "script": "backend/skill_registry_check.py",
+  "改坏": "执行闸改回读写死的自有清单(不看状态)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "            _reg = _skill_registry()\n            if _reg.放行吗(_sk):",
+    "new": "            _reg = _skill_registry()\n            from skills_own import OURS as _O2\n            if _sk in _O2:"
+   }
+  ],
+  "预期红": "停用一个自有技能:执行闸真拦下"
+ },
+ {
+  "script": "backend/skill_registry_check.py",
+  "改坏": "放行时不查依赖就绪",
+  "file": [
+   {
+    "path": "backend/skill_registry.py",
+    "old": "        if 到 in 放行的状态:\n            依 = 依赖(name)",
+    "new": "        if False:\n            依 = 依赖(name)"
+   }
+  ],
+  "预期红": "依赖没就绪的(缺脚本、要淘宝登录):进不了试运行"
+ },
+ {
+  "script": "backend/skill_registry_check.py",
+  "改坏": "改状态不查角色(谁都能改)",
+  "file": [
+   {
+    "path": "backend/skill_registry.py",
+    "old": "    if 我.get(\"role\") not in 可编辑角色:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "顾问改状态:拒"
+ },
+ {
+  "script": "backend/skill_registry_check.py",
+  "改坏": "状态边不限制(待审查能直接发布)",
+  "file": [
+   {
+    "path": "backend/skill_registry.py",
+    "old": "        if 到 not in 可走.get(现, ()):",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "待审查不能直接跳到已发布"
  }
 ]

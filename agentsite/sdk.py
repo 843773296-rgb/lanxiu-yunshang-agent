@@ -614,7 +614,10 @@ def _all_skills():
 import skills_own as _own
 
 SKILL_SETS = {
-    "own":  lambda: [x for x in _all_skills() if _own.is_ours(x)],
+    # 10-23 起「own」= **Skill 管理后台里放行的**(试运行 / 已发布),不再是写死的自有清单 ——
+    # 没登记过的默认:自有 = 已发布、第三方 = 待审查,所以和原来一样;在后台发布一个第三方的,它才进来。
+    # 执行闸(guards)读的是同一个状态,路由和执行不会一边放一边拦。
+    "own":  lambda: [x for x in _all_skills() if guards._skill_registry().放行吗(x)],
     "all":  _all_skills,
     "none": lambda: [],
 }
@@ -623,8 +626,10 @@ SKILL_SETS = {
 def _集合说明():
     全 = _all_skills()
     自 = [x for x in 全 if _own.is_ours(x)]
+    放 = SKILL_SETS["own"]()
     return {
-        "own":  f"只用自己写的 {len(自)} 个({' / '.join(自)})",
+        "own":  f"只用已放行的 {len(放)} 个(其中自己写的 {len([x for x in 放 if x in 自])} 个;"
+                f"放不放行在 Skill 管理后台改)",
         "all":  f"全部 {len(全)} 个(含 {len(全) - len(自)} 个 Accio 提取的;第三方的执行闸照样拦)",
         "none": "都不用(看模型裸答什么样)",
     }

@@ -1528,6 +1528,20 @@ def _读了(short, 读过):
     return any(n in 读过 for n in 先读.get(short, ()))
 
 
+_REG = None
+
+
+def _skill_registry():
+    """按路径载入 backend/skill_registry.py(不往 sys.path 插 backend,免得同名模块顶掉本目录的)。"""
+    global _REG
+    if _REG is None:
+        import importlib.util as _u
+        _p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend", "skill_registry.py")
+        sp = _u.spec_from_file_location("skill_registry", _p)
+        _REG = _u.module_from_spec(sp); sp.loader.exec_module(_REG)
+    return _REG
+
+
 def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None):
     """PreToolUse 的判定逻辑,**纯函数版**。返回拦截理由,None = 放行。
 
@@ -1563,16 +1577,23 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
     # 报价 / 工期救援 / 换货等**自家技能的正文从来没加载过**,而技能评测只看模型「想不想调」,
     # 所以一直没人发现。放行**只限 skills_own.OURS**:第三方技能照旧拦 ——
     # 它们和汉服门店无关,放进来就是给模型多余的选择。
+    # ── 10-23 起放不放行看 **Skill 管理后台里的状态**(backend/skill_registry.py,intent/skill-admin.md):
+    # 只有「试运行 / 已发布」放行。没登记过的按来源取默认 —— 自有 = 已发布、第三方 = 已安装待审查,
+    # 所以上线那一刻和原来写死「只放自有清单」一模一样;库读不到时也退回这个默认(第三方照样拦,fail closed)。
+    # 页面上停用了,模型就真调不动 —— 状态不是展示用的字段,是这道闸读的东西。
     if name == "Skill":
         _sk = str((args or {}).get("skill") or (args or {}).get("command") or "").strip().lstrip("/")
         try:
-            from skills_own import OURS as _OURS
+            _reg = _skill_registry()
+            if _reg.放行吗(_sk):
+                return None
+            _态 = _reg.状态(_sk)
         except Exception:
-            _OURS = ()
-        if _sk in _OURS:
-            return None
-        return (f"技能「{_sk or '?'}」不是本系统自家的技能,已拦下。"
-                f"能用的只有:{'、'.join(_OURS)}。")
+            from skills_own import OURS as _OURS   # 管理模块载不进来:退回原来的写死清单
+            if _sk in _OURS:
+                return None
+            _态 = "未知"
+        return (f"技能「{_sk or '?'}」现在的状态是「{_态}」,没有放行(只有试运行 / 已发布的能用),已拦下。")
     if name and not name.startswith("mcp__"):
         return (f"工具「{name}」不在本系统挂载的 MCP 工具里,已拦下。"
                 "这个助手**只能用挂载的只读业务工具**,不能读写文件、"

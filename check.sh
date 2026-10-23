@@ -555,6 +555,7 @@ run "回答体检 · 人造用例(正反各半)" python3 agentsite/guards_test.p
 run "「当前方案」注入 · 列清单不算取过" ./agentsite/.venv/bin/python agentsite/scheme_hook_test.py
 run "Skill 与配置面 · 设置源放开后的锁" ./agentsite/.venv/bin/python agentsite/skills_check.py
 run "Skill 使用统计 · 一轮多个都记、被拦单列、从未触发列得出来(外部核查 10-22)" ./agentsite/.venv/bin/python agentsite/skill_stats_check.py
+run "Skill 管理 · 状态管得住执行闸、依赖没就绪放不出去、只有总部运营能改(用户 10-23 拍,库副本)" ./agentsite/.venv/bin/python backend/skill_registry_check.py
 run "聊天页常用语按钮 · 点了只填进输入框不发送;版师有正常 / 异常两组(静态)" ./agentsite/.venv/bin/python agentsite/phrase_check.py
 run "吸顶条让开全站导航 · 挂了导航的页面不许再有条吸在 top:0(静态扫)" python3 agentsite/sticky_nav_check.py
 run "差评研判产线路 · 接通但默认关、工具层只遮被判那一条、记下提示词版本和取没取材料(不调模型)" ./agentsite/.venv/bin/python agentsite/rating_triage_check.py

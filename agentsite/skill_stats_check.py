@@ -69,7 +69,8 @@ def main():
         全 = sdk._all_skills(); 自 = [x for x in 全 if OWN.is_ours(x)]
         说 = sdk.SKILL_SET_DESC
         ck("技能集合的说明是现算的数(不是写死的 239 / 3)",
-           f"全部 {len(全)} 个" in 说["all"] and f"自己写的 {len(自)} 个" in 说["own"],
+           f"全部 {len(全)} 个" in 说["all"] and f"自己写的 {len(自)} 个" in 说["own"]
+           and f"已放行的 {len(sdk.skills_for('own'))} 个" in 说["own"],
            f"all={说['all'][:30]} own={说['own'][:20]}")
     except ImportError as e:
         ck("技能集合的说明是现算的数(不是写死的 239 / 3)", False, f"sdk 导不进来:{e} —— 要用 venv 的 python 跑")
