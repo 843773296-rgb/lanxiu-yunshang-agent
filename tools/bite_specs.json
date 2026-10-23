@@ -12012,5 +12012,17 @@
    }
   ],
   "预期红": "已发布能直接撤下,回到被它顶下来的那一版;再撤就回默认(第 1 版是系统撤的,不救回来)"
+ },
+ {
+  "script": "backend/report_template_check.py",
+  "改坏": "救回上一版时把撤下留痕清成空串",
+  "file": [
+   {
+    "path": "backend/report_template.py",
+    "old": "SET status='已发布', withdraw_at=NULL, withdraw_by=NULL, withdraw_why=NULL ",
+    "new": "SET status='已发布', withdraw_at='', withdraw_by='', withdraw_why='' "
+   }
+  ],
+  "预期红": "救回来的那一版,撤下留痕清成 NULL(不是空串 —— 空串会让每日平移判它是坏日期)"
  }
 ]
