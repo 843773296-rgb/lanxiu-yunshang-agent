@@ -121,7 +121,7 @@ body>.wrap{padding-top:0}
   真正的拦截在服务端 —— 绕过页面直接调 <code>POST /api/scheme-save</code>,一样会被拒(HTTP 409)。
   <b>只做前端 = 没做。</b></p>
   <p class="note" id="savedNote"><b>保存会存下</b>:客户、形制、面料、工艺、颜色、配饰、版型。
-  <b>只用来试算、不会存</b>:尺码、用件日期、人手、局部 / 整幅 —— 重开方案时要重新选。</p>
+  <b>只用来试算、不会存</b>:着装人、尺码、用件日期、人手、局部 / 整幅 —— 重开方案时要重新选。</p>
 </section>
 
 <section>
@@ -137,7 +137,15 @@ body>.wrap{padding-top:0}
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let OPT=null, CUS=[], SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null,cust:"",need_date:"",workers:2,scope:"局部"}, ISS=[];
+const SEL0=()=>({xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null,cust:"",wearer:"",need_date:"",workers:2,scope:"局部"});
+let OPT=null, CUS=[], SEL=SEL0(), ISS=[];
+// 客户改成输入搜索、选定后点选着装人(复审第 4 节 B,用户 10-23 拍)。
+// CUSQ 搜索框里的字 · CUSMSG 后台回的说明 · CUSPICK 选中的那位 · WEARERS 他名下的着装人
+// (null = 正在取;数组 = 取到了;{error} = 取不了)
+let CUSQ="", CUSMSG="", CUSPICK=null, WEARERS=[], _cqT=null;
+// ⚠️ **着装人不默认、不预选**:选错 = 拿另一个人的尺寸去裁,报表上看不出来。
+// 选了客户而没点选穿的人 → 不出尺码、不让保存。名下一个在用的着装人都没有时没得选,不拦保存(也推不了码)。
+function 缺着装人(){ return !!SEL.cust && !SEL.wearer && !(Array.isArray(WEARERS) && WEARERS.length===0); }
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");setTimeout(()=>t.classList.remove("on"),3200);}
 
 const GRPS=[["xz","形制","单选 · 决定裁法和关键尺寸",false],
@@ -176,6 +184,8 @@ function render(){
     // 直接 [3] 会抛 TypeError,按钮看起来绑了、一点就死。
     // **控件审计查的是"有没有绑",查不出"绑了但一点就报错"** —— 这类只能靠自己看。
     const g=b.dataset.g, v=b.dataset.v, gr=GRPS.find(x=>x[0]===g), multi=gr?gr[3]:false;
+    if(g==="cust") return;                          // 搜索结果的按钮由 bindCres 管(它们会单独重画)
+    if(g==="wearer") return pickWearer(v);
     if(multi){ SEL[g]=SEL[g].includes(v)?SEL[g].filter(x=>x!==v):[...SEL[g],v]; }
     else { SEL[g]=SEL[g]===v?null:v; }
     if(g==="xz"){ SEL.pt=null; SEL.size=null; }     // 换形制,原来的版型多半不适用
@@ -183,12 +193,14 @@ function render(){
     check();
   }));
   $("nm").addEventListener("input",e=>SEL.name=e.target.value);
-  if($("cust")) $("cust").addEventListener("change",e=>{SEL.cust=e.target.value;check();});
+  if($("cq")) $("cq").addEventListener("input",e=>{CUSQ=e.target.value; clearTimeout(_cqT); _cqT=setTimeout(searchCus,250);});
+  if($("cclear")) $("cclear").addEventListener("click",()=>{SEL.cust="";SEL.wearer="";CUSPICK=null;WEARERS=[];check();});
+  bindCres();
   if($("nd")) $("nd").addEventListener("change",e=>{SEL.need_date=e.target.value;check();});
   if($("wk")) $("wk").addEventListener("change",e=>{SEL.workers=+e.target.value||2;check();});
   if($("sc")) $("sc").addEventListener("change",e=>{SEL.scope=e.target.value;check();});
   $("save").addEventListener("click",save);
-  $("reset").addEventListener("click",()=>{SEL={xz:null,mt:null,kf:[],color:null,ps:[],id:null,name:"",pt:null,size:null,cust:"",need_date:"",workers:2,scope:"局部"};ISS=[];render();});
+  $("reset").addEventListener("click",()=>{SEL=SEL0();ISS=[];CUSQ="";CUS=[];CUSMSG="";CUSPICK=null;WEARERS=[];render();});
   paintIssues();
 }
 function planGroup(){
@@ -207,15 +219,61 @@ function planGroup(){
 }
 
 function custGroup(){
-  const c=CUS.find(x=>x.id===SEL.cust);
+  const c=CUSPICK;
   return `<div class="grp"><div class="h"><span class="n">8</span>
-    <span class="t">客户</span><span class="hint">选填 · 选了就按他的量体记录推荐尺码</span></div>
-    <select id="cust" class="csel"><option value="">（不选客户,自己挑码）</option>${
-      CUS.map(x=>`<option value="${esc(x.id)}" ${x.id===SEL.cust?"selected":""}>${esc(x.name)} · ${
-        esc(x.tpl_code)} · ${x.items}项${x.method==="远程"?" · 远程量体":""}${
-        x.feature?" · ⚠"+esc(x.feature):""}</option>`).join("")}</select>
-    ${c&&c.feature?`<div class="hint" style="margin-top:6px">⚠ 这位客户记了体型特征「${esc(c.feature)}」——
-      按判断线<b>直接全定制</b>,和差多少厘米无关。</div>`:""}</div>`;
+    <span class="t">客户与着装人</span><span class="hint">选填 · 输入姓名 / 手机尾号 / 客户号来搜;选了客户还要点选穿的人,尺码按那个人出</span></div>
+    ${c?`<div class="hint">已选客户 <b>${esc(c.name)}</b> · ${esc(c.id)} · ${esc(c.shop||"")}${c.尾号?" · 尾号 "+esc(c.尾号):""}
+        <button class="ghost" id="cclear" style="padding:2px 9px;font-size:12px;margin-left:6px">换一位</button></div>
+        ${wearerGroup()}`
+      :`<input id="cq" class="csel" placeholder="姓名 / 手机尾号 / 客户号" autocomplete="off" value="${esc(CUSQ)}">
+        <div id="cres">${custResults()}</div>`}</div>`;
+}
+function custResults(){
+  if(!CUSQ.trim()) return "";
+  if(!CUS.length) return `<div class="hint" style="margin-top:6px">${esc(CUSMSG||"没搜到")}</div>`;
+  return `<div class="opts" data-g="cust" style="margin-top:8px">${CUS.map(x=>`<button class="opt" data-g="cust"
+      data-v="${esc(x.id)}" aria-pressed="false">${esc(x.name)} · ${esc(x.id)}${x.尾号?" · 尾号 "+esc(x.尾号):""}${
+      x.method==="远程"?" · 远程量体":""}</button>`).join("")}</div>
+    ${CUSMSG?`<div class="hint" style="margin-top:6px">${esc(CUSMSG)}</div>`:""}`;
+}
+function bindCres(){
+  document.querySelectorAll('#cres .opt[data-g="cust"]').forEach(b=>b.addEventListener("click",()=>pickCus(b.dataset.v)));
+}
+function paintCres(){ const el=$("cres"); if(!el) return; el.innerHTML=custResults(); bindCres(); }
+async function searchCus(){
+  const q=CUSQ;
+  if(!q.trim()){ CUS=[]; CUSMSG=""; return paintCres(); }
+  try{
+    const r=await fetch("/api/scheme-customers?q="+encodeURIComponent(q));
+    const j=await r.json();
+    if(q!==CUSQ) return;                            // 打字比接口快:旧结果回来了不许盖掉新的
+    CUS=j.rows||[]; CUSMSG=r.status===401?"请先登录 —— 客户资料要登录才能搜":(j.说明||j.error||"");
+  }catch(e){ if(q!==CUSQ) return; CUS=[]; CUSMSG="搜索没载入(后台连不上),再输一下重试"; }
+  paintCres();
+}
+async function pickCus(id){
+  CUSPICK=CUS.find(x=>x.id===id)||{id,name:id};
+  SEL.cust=id; SEL.wearer=""; SEL.size=null; WEARERS=null;   // 换客户:着装人清空、不预选
+  check();
+  let w;
+  try{
+    const r=await fetch("/api/scheme-wearers?customer="+encodeURIComponent(id));
+    const j=await r.json();
+    w = j.error ? {error:j.error} : (j.rows||[]);
+  }catch(e){ w={error:"名下的着装人没载入(后台连不上),点「换一位」再选一次"}; }
+  if(SEL.cust!==id) return;                         // 等的时候已经换了别人
+  WEARERS=w; check();
+}
+function pickWearer(v){ SEL.wearer=v; SEL.size=null; return check(); }   // 换人了,原来的码不算数
+function wearerGroup(){
+  if(WEARERS===null) return `<div class="hint" style="margin-top:6px">正在取名下的着装人…</div>`;
+  if(!Array.isArray(WEARERS)) return `<div class="hint" style="margin-top:6px;color:var(--fail)">${esc(WEARERS.error)}</div>`;
+  if(!WEARERS.length) return `<div class="hint" style="margin-top:6px">这位客户名下没有在用的着装人 —— 推不了码,先去着装人页建档</div>`;
+  return `<div style="margin-top:8px"><div class="hint">这件衣服穿在谁身上?<b>必须点选一个</b> ——
+      选错 = 拿另一个人的尺寸去裁</div>
+    <div class="opts" data-g="wearer" style="margin-top:6px">${WEARERS.map(w=>`<button class="opt" data-g="wearer"
+      data-v="${esc(w.id)}" aria-pressed="${SEL.wearer===w.id}">${esc(w.name)} · ${esc(w.relation||"")}${
+      w.量过体?"":" · 没量过体"}</button>`).join("")}</div></div>`;
 }
 
 function patGroups(){
@@ -241,8 +299,10 @@ const GRADE={"标准码":"ok","调号":"warn","全定制":"bad","需补量":"bad
 async function paintFit(){
   const el=$("fit"); if(!el) return;
   if(!(SEL.cust && SEL.pt)){ el.innerHTML=""; return; }
+  if(!SEL.wearer){ el.innerHTML=`<div class="fitwrap"><div class="hint">还没点选这件衣服穿在谁身上 ——
+      <b>不出推荐尺码</b>(一个客户名下可能有本人和孩子,尺寸各不相同)</div></div>`; return; }
   const r=await (await fetch("/api/fit",{method:"POST",headers:{"content-type":"application/json"},
-    body:JSON.stringify({customer:SEL.cust,pattern:SEL.pt})})).json();
+    body:JSON.stringify({customer:SEL.cust,pattern:SEL.pt,wearer:SEL.wearer})})).json();
   if(r.error && !r.档位){ el.innerHTML=`<div class="fitwrap"><div class="hint">${esc(r.error)}</div></div>`; return; }
   const det=(r.明细||[]).map(d=>`<tr class="${d.关键?"key":""}">
       <td>${esc(d.部位)}${d.关键?' <span class="kk">关键</span>':""}</td>
@@ -330,9 +390,10 @@ function paintIssues(){
   $("iss").innerHTML = ISS.map(i=>`<div class="iss ${i.level}">
       <span class="k">${esc(i.kind)}</span>${i.pair?`<b>${esc(i.pair)}</b> — `:""}${esc(i.msg)}</div>`).join("");
   const btn=$("save");
-  btn.disabled = blocked.length>0;
+  btn.disabled = blocked.length>0 || 缺着装人();
   $("why").textContent = blocked.length
     ? `有 ${blocked.length} 个「不可」组合,不能保存 —— 换一个工艺或换一种面料`
+    : 缺着装人() ? "选了客户还没点选着装人 —— 先点选这件衣服穿在谁身上"
     : (ISS.length? `有 ${ISS.length} 项需工艺负责人确认,但可以保存(会留痕)` : "");
 }
 async function check(){
@@ -378,6 +439,5 @@ async function loadList(){
 }
 (async()=>{
   OPT=await (await fetch("/api/scheme-options")).json();
-  CUS=(await (await fetch("/api/fit-customers")).json()).rows||[];
   await check(); loadList(); })();
 </script>

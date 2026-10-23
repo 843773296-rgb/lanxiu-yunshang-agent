@@ -134,6 +134,37 @@ def a_customer_read_no_login():
     raise PermissionError("没登录 401、跨店 403(这正是期望的)")
 
 
+def a_scheme_customer_search():
+    """方案页搜客户(复审第 4 节 B,10-23):没登录去搜、店长按客户号搜别家店的客户、
+    拿别家客户的着装人去推码。打路由不调函数(搜索的门店范围在路由里取登录身份)。"""
+    import customer_read_auth_check as _C, server as _S, api as _A
+    码, _ = _C.打("/api/scheme-customers?q=C1")
+    if 码 != 401:
+        return f"没登录搜客户回了 {码} —— 门没守住"
+    店长 = _S.rows("SELECT s.no,s.name,s.role,s.shop FROM staff s WHERE s.role='店长' AND s.status='启用' "
+                   "AND EXISTS(SELECT 1 FROM customer c JOIN measure_rec r ON r.customer_id=c.id "
+                   "WHERE c.shop<>s.shop) LIMIT 1")
+    if not 店长:
+        return "没有可攻击的店长 —— 没攻击成,不算守住"
+    别 = _S.rows("SELECT c.id FROM customer c WHERE c.shop<>? AND EXISTS("
+                 "SELECT 1 FROM measure_rec r WHERE r.customer_id=c.id) LIMIT 1", 店长[0]["shop"])[0]["id"]
+    t = _C.会话(dict(店长[0]))
+    try:
+        _, 回 = _C.打(f"/api/scheme-customers?q={别}", t)
+    finally:
+        import auth as _a
+        with _a._LOCK: _a._SESS.pop(t, None)
+    if any(x.get("id") == 别 for x in (回 or {}).get("rows") or []):
+        return f"店长按客户号搜到了别家店的客户 {别} —— 门店范围没守住"
+    两 = _S.rows("SELECT w.id FROM wearer w JOIN customer k ON k.account_id=w.account_id WHERE k.id<>? "
+                 "AND w.account_id <> (SELECT account_id FROM customer WHERE id=?) LIMIT 1", 别, 别)
+    if 两:
+        d = _A.kb_fit(别, "PT04", wearer=两[0]["id"])
+        if d.get("推荐尺码"):
+            return f"拿别家客户的着装人 {两[0]['id']} 给 {别} 推出了 {d['推荐尺码']} 码 —— 拿另一个人的尺寸去裁"
+    raise PermissionError("没登录 401、跨店搜不到、别家着装人不推码(这正是期望的)")
+
+
 def a_skill_gate():
     """Skill 管理后台里停用一个技能,模型还调不调得动(用户 10-23 拍「做完整配置页」)。
     在库副本上把自有的 quote 标成「已停用」,问执行闸本身 —— 状态要是只在页面上显示、闸照旧读写死清单,
@@ -830,6 +861,11 @@ STRUCT = [
   a_customer_read_no_login, "不带登录翻客户详情;拿店长会话翻别家店的客户",
   "身份只从登录态取,门店范围跟登录走、不跟请求参数走(列表传别家店也被本店覆盖);"
   "总部运营 / 售后跨店,和差评隔离同一个常量。⚠️ 只管这三个接口 —— 订单、预约等页面里带出的客户信息不在这一条里"),
+ ("方案页搜客户要登录、只搜本店;着装人必须是这位客户名下的", "backend/server.py /api/scheme-customers · /api/scheme-wearers;api.本店范围 / kb_fit",
+  a_scheme_customer_search, "不带登录搜客户;拿店长会话按客户号搜别家店的客户;拿别家客户的着装人去推码",
+  "身份只从登录态取,范围走 api.本店范围(和客户读接口同一个函数、同一个跨店角色常量);"
+  "kb_fit 给了着装人就核他在不在这位客户的账户名下。⚠️ 「页面上不默认选第一个着装人」是页面行为,不是闸 ——"
+  "后台那道闸是 kb_fit 名下多人量过体时不猜;守页面那一半的是 scheme_customer_search_check 在 node 里真跑页面脚本"),
  ("Skill 管理里停用的技能,模型调不动", "backend/skill_registry.py 状态;agentsite/guards.py Skill 那一支",
   a_skill_gate, "在库副本上把自有技能标成已停用,问执行闸放不放行;再问一个没登记过的第三方",
   "执行闸读的就是后台里的状态(只放试运行 / 已发布);没登记的按来源取默认,库读不到时退回原来的写死清单(第三方照样拦)。"

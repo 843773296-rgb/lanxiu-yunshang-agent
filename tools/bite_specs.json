@@ -7853,18 +7853,6 @@
   "预期红": "只有一人量过体时照常出码"
  },
  {
-  "script": "backend/order_gate_check.py",
-  "改坏": "让 kb_fit 忽略传进来的 wearer(传了也当没传)",
-  "file": [
-   {
-    "path": "backend/api.py",
-    "old": "    if not wearer:\n        _候选 = _rows(",
-    "new": "    if True:\n        _候选 = _rows("
-   }
-  ],
-  "预期红": "传了着装人就真的按他算"
- },
- {
   "script": "backend/ops_wait_check.py",
   "改坏": "把算等待用的基准换回 now()(世界日期+机器时刻),于是今天下午那些记录在上午算出负的等待时长。⚠️ **这条 2026-10-17 深夜的全量重放逮到过假绿**:夹具原来把样本写死在「今天 23:00」,于是这处破坏**上午验得到、晚上验不到** —— 墙上时钟过了 23:00,改坏后的基准仍然晚于样本,等待照旧是正数。现在夹具摆在**正确基准那一刻本身**(今天 23:59:59),一天里只有最后 1 秒分辨不出来,而那一秒判据会明说分辨不出来",
   "file": [
@@ -11076,5 +11064,77 @@
    }
   ],
   "预期红": "key_date 只收 YYYY-MM-DD 或空"
+ },
+ {
+  "script": "backend/order_gate_check.py",
+  "改坏": "让 kb_fit 忽略传进来的 wearer(传了也当没传)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if not wearer:\n        _候选 = _名下着装人(",
+    "new": "    if True:\n        _候选 = _名下着装人("
+   }
+  ],
+  "预期红": "传了着装人就真的按他算"
+ },
+ {
+  "script": "backend/scheme_customer_search_check.py",
+  "改坏": "店长也当成跨店角色(搜索不按门店划)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "跨店角色 = (\"总部运营\", \"售后\")",
+    "new": "跨店角色 = (\"总部运营\", \"售后\", \"店长\")"
+   }
+  ],
+  "预期红": "店长按客户号搜别家店的客户:搜不到"
+ },
+ {
+  "script": "backend/scheme_customer_search_check.py",
+  "改坏": "搜索接口从登录闸清单里拿掉",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    \"/api/scheme-customers\", \"/api/scheme-wearers\",",
+    "new": "    \"/api/scheme-wearers\","
+   }
+  ],
+  "预期红": "没登录:搜客户拒(401)"
+ },
+ {
+  "script": "backend/scheme_customer_search_check.py",
+  "改坏": "选了客户就默认选中第一个着装人",
+  "file": [
+   {
+    "path": "agentsite/web/scheme.html",
+    "old": "  WEARERS=w; check();",
+    "new": "  WEARERS=w; if(Array.isArray(w)&&w.length) SEL.wearer=w[0].id; check();"
+   }
+  ],
+  "预期红": "名下两个着装人:选了客户之后一个都没预选"
+ },
+ {
+  "script": "backend/scheme_customer_search_check.py",
+  "改坏": "没点选着装人也照发尺码请求",
+  "file": [
+   {
+    "path": "agentsite/web/scheme.html",
+    "old": "  if(!SEL.wearer){ el.innerHTML=",
+    "new": "  if(false){ el.innerHTML="
+   }
+  ],
+  "预期红": "没点选着装人:不发尺码请求"
+ },
+ {
+  "script": "backend/scheme_customer_search_check.py",
+  "改坏": "kb_fit 不核着装人是不是这位客户名下的",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if wearer and not _rows(\"\"\"SELECT 1 FROM wearer w",
+    "new": "    if False and not _rows(\"\"\"SELECT 1 FROM wearer w"
+   }
+  ],
+  "预期红": "传一个别家客户的着装人:不推码"
  }
 ]

@@ -3893,6 +3893,90 @@ def fit_customers():
         " GROUP BY c.id,c.name ORDER BY c.name")}
 
 
+def 本店范围(me):
+    """登录的人能看哪家店的客户 → None 表示跨店(全部),否则是那一家店的名字。
+
+    口径只有一条:`跨店角色`(总部运营 / 售后)看全部,其余角色只看自己那家店。
+    客户读接口、方案页的客户搜索都调这一个函数 —— **同一个「本店」,两处各写一套,迟早对不上**。
+    ⚠️ 返回空串(登录的人没挂门店)时,怎么处置由调用方定:客户搜索按「只看空店」收紧(搜不到任何人),
+    客户读接口沿用它原来的写法(空串不加门店条件)—— 那一处不是这次改的,没动它的口径。"""
+    me = me or {}
+    return None if me.get("role") in 跨店角色 else (me.get("shop") or "")
+
+
+# 方案页的客户搜索(复审第 4 节 B,用户 10-23 拍)。
+# ⚠️ 下面三样是**暂定**,业务没拍过,见交付报告的选型卡:
+#   · 姓名按「包含」匹配;客户号按「整号相等」(不分大小写);手机按「尾号」,至少 4 位数字才认
+#   · 一次最多回 `方案搜客户_每页` 条,另报一共命中多少条(多了就提示再输入多一点)
+方案搜客户_每页 = 20
+方案搜客户_尾号最少位数 = 4
+
+
+def search_fit_customers(q, me, 每页=None):
+    """方案页用:按姓名 / 手机尾号 / 客户号搜**量过体**的客户,只搜得到登录的人那家店的(跨店角色除外)。
+
+    原来方案页一次把 5155 位量过体的客户全拉下来平铺成下拉框 —— 不分门店、也没法搜。
+    人群口径和 `fit_customers` 一样(有量体记录的才列,没量过体推不了码)。
+    返回里**不给完整手机号**,只给尾号 —— 顾问拿尾号跟客户对一下就够了。"""
+    每页 = 每页 or 方案搜客户_每页
+    q = (q or "").strip()
+    if not q:
+        return dict(rows=[], 共=0, 说明="输入姓名、手机尾号或客户号来搜")
+    范围 = 本店范围(me)
+    条件, 参 = ["c.name LIKE ?", "UPPER(c.id)=UPPER(?)"], [f"%{q}%", q]
+    if q.isdigit() and len(q) >= 方案搜客户_尾号最少位数:
+        条件.append("c.phone LIKE ?"); 参.append(f"%{q}")
+    where = "(" + " OR ".join(条件) + ")"
+    if 范围 is not None:
+        where += " AND c.shop=?"; 参.append(范围)
+    base = (" FROM customer c WHERE " + where +
+            " AND EXISTS(SELECT 1 FROM measure_rec r WHERE r.customer_id=c.id)")
+    共 = _rows("SELECT COUNT(*) n" + base, *参)[0]["n"]
+    rs = _rows(
+        "SELECT c.id, c.name, c.shop, SUBSTR(c.phone,-4) 尾号,"
+        " (SELECT MAX(r.method) FROM measure_rec r WHERE r.customer_id=c.id) method,"
+        " (SELECT COUNT(DISTINCT r.item) FROM measure_rec r WHERE r.customer_id=c.id) items,"
+        " (SELECT MIN(r.tpl) FROM measure_rec r WHERE r.customer_id=c.id) tpl_code"
+        + base + " ORDER BY (UPPER(c.id)=UPPER(?)) DESC, (c.name=?) DESC, c.name, c.id LIMIT ?",
+        *参, q, q, 每页)
+    return dict(rows=rs, 共=共, 每页=每页,
+                说明=("只列量过体的客户" + ("" if 范围 is None else f",只搜 {范围 or '(你没挂门店)'} 的")
+                      + (f";命中 {共} 位,只列了前 {每页} 位 —— 再多输入几个字" if 共 > 每页 else "")))
+
+
+def _名下着装人(customer_id):
+    """这条客户档案所属**账户**名下在用的着装人(按 id 排)。
+
+    `kb_fit` 判「判不了」用的候选、方案页让顾问点选的列表,都是这一份 —— 不各写一条查询。
+    粒度按账户(身份绑 account,见 CLAUDE.md),和 `kb_fit` 一直用的一致。"""
+    return _rows("""SELECT w.id, w.name, w.relation, w.gender, w.birthday FROM wearer w
+                      JOIN customer k ON k.account_id = w.account_id
+                     WHERE k.id=? AND w.status='在用' ORDER BY w.id""", customer_id)
+
+
+def scheme_wearers(customer, me):
+    """方案页选定客户后,列出他名下的着装人,让顾问**明确点选一个**(复审第 4 节 B)。
+
+    风险在卡片上写着:选错着装人 = 拿另一个人的尺寸去裁,报表上看不出来。
+    所以这里只列、**不标默认**;页面也不替顾问预选第一个。范围和客户搜索同一条(`本店范围`)。"""
+    人们, _ = _认客户(customer)
+    if not 人们:
+        return dict(error=f"没有客户「{customer}」", code="NO_CUSTOMER")
+    cid = 人们[0]["id"]
+    范围 = 本店范围(me)
+    if 范围 is not None:
+        店 = (_rows("SELECT shop FROM customer WHERE id=?", cid) or [{}])[0].get("shop")
+        if 店 != 范围:
+            return dict(error=f"这位客户不是本店的(你是 {范围 or '没挂门店'}),看不了", code="OTHER_SHOP")
+    本人 = 本人着装人(cid)
+    out = []
+    for w in _名下着装人(cid):
+        ms, mth, _ = _以哪次为准(w["id"])
+        out.append(dict(w, 本人=(w["id"] == 本人), 量过体=bool(ms), 量体方式=mth))
+    return dict(customer=cid, rows=out,
+                说明="点选这件衣服穿在谁身上 —— 尺码按选中的那个人出;不替你预选")
+
+
 def kb_fit(customer, pattern, wearer=None):
     """拿量体记录比对版型尺码表,给出推荐尺码和档位(标准码 / 调号 / 全定制)。
 
@@ -3930,10 +4014,16 @@ def kb_fit(customer, pattern, wearer=None):
     #    「身份绑 account,不绑 customer」一致)。`can_order` 按的是 **customer**,
     #    两者在少数跨店重复建档的客户上算出来不一样 ——
     #    这一点没统一,业务没拍过,**别静默改它**。
+    # ⚠️ 给了着装人,就必须是**这个客户账户名下**的(10-23 方案页接着装人时补的)。
+    # 原来不验:传一个别人家的着装人,量体照取、体型照取,返回里「客户」写的却是这位客户 ——
+    # 方案页把着装人 id 交给前端去发,前端发什么都会照单推码,那就是「拿另一个人的尺寸去裁」。
+    # 按账户核(不限在用),和下面的候选同一粒度。
+    if wearer and not _rows("""SELECT 1 FROM wearer w JOIN customer k ON k.account_id = w.account_id
+                                WHERE k.id=? AND w.id=?""", cu["id"], wearer):
+        return dict(error=f"着装人 {wearer} 不在「{cu['name']}」名下 —— 不推码", 档位="判不了",
+                    note="选错着装人 = 拿另一个人的尺寸去裁;先从这位客户名下重新点选")
     if not wearer:
-        _候选 = _rows("""SELECT w.id, w.name, w.relation FROM wearer w
-                          JOIN customer k ON k.account_id = w.account_id
-                          WHERE k.id=? AND w.status='在用' ORDER BY w.id""", cu["id"])
+        _候选 = _名下着装人(cu["id"])
         _量过 = [x for x in _候选 if (_以哪次为准(x["id"])[0])]
         if len(_量过) > 1:
             return dict(

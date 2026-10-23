@@ -61,6 +61,7 @@ def _wtoday():
     "/api/fit-customers", "/api/schemes", "/api/oplog", "/api/appts2", "/api/appts", "/api/orders",
     "/api/aftersales", "/api/maintains", "/api/guide-perf", "/api/approvals", "/api/approval-list",
     "/api/schedule", "/api/staff", "/api/factory-feed",
+    "/api/scheme-customers", "/api/scheme-wearers",   # 方案页搜客户 / 列着装人(复审第 4 节 B,10-23)
 )
 要登录的读_前缀 = (
     "/api/task/", "/api/export/", "/api/appt/", "/api/chat-order/", "/api/aftersale/",
@@ -3405,6 +3406,13 @@ class H(BaseHTTPRequestHandler):
             return self._send(_api.plan_for_event(g("w"), g("d"), g("p","PT04"),
                                                   g("m","云锦"), cs, g("s","局部")))
         if p=="/api/fit-customers": return self._send(backend.fit_customers())
+        # 方案页:客户改成输入搜索、选定后列着装人(复审第 4 节 B,用户 10-23 拍)。
+        # 登录闸在上面 `要登录的读`;范围(只搜本店)由 `backend.本店范围` 定,和客户读接口同一个函数
+        if p=="/api/scheme-customers":
+            return self._send(backend.search_fit_customers((Q.get("q") or [""])[0], _me(self)))
+        if p=="/api/scheme-wearers":
+            _r = backend.scheme_wearers((Q.get("customer") or [""])[0], _me(self))
+            return self._send(_r, {"NO_CUSTOMER": 404, "OTHER_SHOP": 403}.get(_r.get("code"), 200))
         if p=="/api/agent-run":
             import time as _t
             tid=(Q.get("task") or [None])[0]
@@ -3454,7 +3462,7 @@ class H(BaseHTTPRequestHandler):
             _uc = _me(self)
             if not _uc:
                 return self._send({"error": "请先登录 —— 客户资料要登录才能看", "code": "NO_AUTH"}, 401)
-            _本店 = None if _uc.get("role") in backend.跨店角色 else _uc.get("shop")
+            _本店 = backend.本店范围(_uc)   # 口径只在 api.本店范围 写一次(方案页搜客户也调它)
             if p=="/api/customers2":
                 if _本店: Q = dict(Q, shop=[_本店])   # 自己传了别的店也不认 —— 范围跟登录走,不跟参数走
                 return self._send(customer_list(Q))
@@ -3769,7 +3777,9 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
         if p=="/api/fit":
-            return self._send(backend.kb_fit(body.get("customer"),body.get("pattern")))
+            # 着装人一起传 —— 尺码按顾问在方案页点选的那个人出(复审第 4 节 B);不在这位客户名下的 kb_fit 会拒
+            return self._send(backend.kb_fit(body.get("customer"),body.get("pattern"),
+                                             wearer=body.get("wearer") or None))
         if p=="/api/scheme-lead":
             import scheme as _sc
             return self._send(_sc.lead(body.get("xz"),body.get("mt"),body.get("kf"),
