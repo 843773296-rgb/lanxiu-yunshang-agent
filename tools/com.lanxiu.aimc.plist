@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AI 管理后台 :8801 常驻(用户 2026-10-23 拍「设成常驻吧」)—— 和另外两个同一套:./tools/always_on.sh install | status | restart
+     · 跑的是 管理后台/tools/dev.sh:API + 页面 + Worker 一起起(Worker 不起的话异步任务永远停在「排队中」)
+     · 用的库是本机常驻的 PostgreSQL(aimc_dev);库没起来时它起不来,launchd 每 10 秒再拉一次
+     · launchd 的环境极简:PATH / USER / HOME 要自己给(dev.sh 拿 $USER 拼库地址) -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.lanxiu.aimc</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>tools/dev.sh</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/eureka/Desktop/澜绣云裳agent/管理后台</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>/tmp/lanxiu-aimc.log</string>
+  <key>StandardErrorPath</key><string>/tmp/lanxiu-aimc.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Library/Frameworks/Python.framework/Versions/3.14/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>USER</key><string>eureka</string>
+    <key>HOME</key><string>/Users/eureka</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+</dict>
+</plist>
