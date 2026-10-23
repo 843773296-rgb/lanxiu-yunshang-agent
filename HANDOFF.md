@@ -48,6 +48,13 @@
 3. 全能助手入口太胖 —— **要用户拍**(见第 6 节),拍了再做。
 4. 重跑召回结果评测两轮验上面那条预判。
 
+### 5.5 用户 10-23 傍晚拍板(AskUserQuestion 原选项)
+- 全能助手太胖 → **「工具按需加载(推荐)」**:放行只读的 ToolSearch(sdk.py disallowed_tools 里去掉、guards.py 非 mcp__ 拦截给 ToolSearch 开例外),让 MCP 工具说明延迟加载;**要配检查**(ToolSearch 放行后 Bash 等内置工具仍拦得住 —— boundary_audit 真攻击一次)+ 实测 all 入口开口 token(现 192665)。先查 CLI 的延迟加载开关(ENABLE_TOOL_SEARCH 之类)怎么在 SDK 里开。
+- 门店顾问入口 → **「补上(推荐)」**:kb 角色挂 get_member(sdk._ROLE_TOOLS / prompts 规矩跟着走,P6 会验)。
+- Skill 状态 → **「召回试运行、改造版也试运行(推荐)」**:Skill 管理写口以总部运营身份、写理由,走锁:customer-recall → 试运行;metric-diagnostics-lanxiu / activity-review-lanxiu / stock-patrol-lanxiu → 试运行。
+- 选型卡 → **「我逐张看」**:一次只摆一张(用户规矩:一次一题),D①→D②→D③→B 搜索规则→C 五张→退款判分器。
+- 报告正文:数据工厂**同意**三条。痕迹形状:op_log `mid='report_period'`、`code='REALIGN'`、`target=<报告id>`,取最后一条,读 `ctx` 里 旧起/旧止/新起/新止(**别解析 frm/to 字符串**),「已于 X 校正」用 `ts`(真实时钟)。页面规矩:**有 REALIGN 痕迹就显示**,哪怕期现在是周一对齐的。数据工厂会确认 op_log.ctx 不被每日平移挪;它落完会喊我,我做页面标注后两半一起推。
+
 ### 6. 悬而未决(等用户拍)—— 用户说「剩下的都做完」,有建议的按建议落,没建议的维持现状,最后统一列给他
 - **全能助手入口太胖**(新):候选 A 开工具按需加载(放行 ToolSearch,工具说明不再全量进上下文,省约 10 万;要动安全守卫 —— 只读的元工具)/ B 这个入口换 100 万窗口的模型(每次贵)/ C 不再把全能助手当默认入口,按岗位进 / D 精简工具说明和规矩(慢、只省两三成)。
 - 门店顾问入口要不要补 get_member(顾问看得到档位 vs 每次调用更贵)。
