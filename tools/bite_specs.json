@@ -12425,5 +12425,17 @@
    }
   ],
   "预期红": "每个 _insert 传的键都是表上真有的列"
+ },
+ {
+  "script": "backend/shop_key_check.py",
+  "改坏": "把 fitting 建表语句里的 shop_code 删掉,改回靠流水线那一步 ALTER 补 —— 2026-10-24 CI 为这件事红了**第二次**。fitting 是流水线第 4 步才建的(run_journey 里执行 seed_fitting.DDL),而加列那一步在第 2 步、**压根跳过了它**;紧接着同一步里的写口要写这一列就当场抛,而 run_journey 把单条旅程的异常吞掉继续,**那一步的退出码还是 0** —— 断在半路的旅程没走到「把时间挪回过去」,留下一批落在世界未来的记录,最后红在**平移**那一步,离真因隔着 24 步",
+  "file": [
+   {
+    "path": "backend/seed_fitting.py",
+    "old": "  shop_code TEXT,\n",
+    "new": ""
+   }
+  ],
+  "预期红": "流水线中途才建的表,建表语句里就带着 shop_code"
  }
 ]

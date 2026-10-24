@@ -25,6 +25,7 @@ DDL = """
 CREATE TABLE IF NOT EXISTS store_report_doc(
   id TEXT PRIMARY KEY,          -- RPT + 自增序号;**一版一行**,旧版不覆盖
   shop TEXT NOT NULL,           -- 哪家店的报告(总部看全部时也必须落到一家店)
+  shop_code TEXT,               -- 门店码(2026-10-24):写在建表语句里,不靠 ALTER
   kind TEXT NOT NULL,           -- 日 / 周 / 月
   period_start TEXT NOT NULL,   -- 报告期起止(含两端,YYYY-MM-DD)
   period_end TEXT NOT NULL,

@@ -113,6 +113,7 @@ def 建表(c):
                    d        TEXT not null,
                    shift    TEXT not null references shift_tpl(code),
                    shop     TEXT,
+                   shop_code TEXT,       -- 门店码(2026-10-24):写在建表语句里,不靠 ALTER
                    status   TEXT not null,      -- 草稿 / 已发布
                    created_by TEXT, created TEXT,
                    published_by TEXT, published_at TEXT,

@@ -81,6 +81,11 @@ G, Rd, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
     # (已经存在的库上那一列永远都在)。
     ("把加列那一步往后挪一步(从零重建时写口跑在加列之前就炸,本地看不见)",
      "加列紧跟在 seed.py 之后"),
+    # 第六条:流水线**中途**才建的表,列必须写在它自己的建表语句里。
+    # 2026-10-24 CI 为这件事红了第二次 —— 第一次修的是「加列排在写口之后」,
+    # 而 fitting 这张表是第 4 步才建的,加列在第 2 步**压根跳过了它**。
+    ("把 fitting 建表语句里的 shop_code 删掉(靠流水线那一步 ALTER 补,就有缺口)",
+     "流水线中途才建的表,建表语句里就带着 shop_code"),
     # 第二条打的是那张明写名单 —— 名单一空,「留空」就退回「不知道」,
     # 而**真库全绿**:工坊那 21 行照样是留空的,只是没人能说清它们为什么空。
     # ⚠️ 删的是**苏州织造坊**,不是上海工坊 —— 后者在下面「自造五种形状」里用着,
@@ -278,6 +283,84 @@ if _m:
        bool(回填) and max(回填) >= len(步) - 3,
        "回填排得太早 —— **它后面那些造数步骤写进去的行,"
        "门店码会一直是空的**,而缺一列不报错、只是按它筛返回零行")
+
+# ── 流水线**中途**才建的表,列必须写在它自己的建表语句里 ─────────────────
+#
+# ⚠️ 2026-10-24 CI 为这件事红了**第二次**。第一次修的是「加列排在写口之后」,
+# 把加列挪到第 2 步(seed 之后)和第 19 步(ensure_tables 之后)。
+# 但 `fitting` 这张表是**第 4 步**才建的(run_journey 里执行 seed_fitting.DDL)——
+# 第 2 步那轮加列时它还不存在,**被跳过了**;紧接着同一步里的写口就要写这一列,
+# 当场抛,而 run_journey 把单条旅程的异常吞掉继续,**那一步的退出码还是 0**。
+# 断在半路的那几条旅程没走到「把时间挪回过去」那一段,于是留下一批
+# 落在「世界的未来」的记录,最后红在**平移**那一步 —— 离真因隔着 24 步。
+#
+# > 把列交给「流水线顺序」去保证,就永远有一个「表在这一步之后才建」的缺口。
+# > **列应该是表定义的一部分。**
+#
+# 所以规则是:**不在 seed.py 的 SCHEMA 里(= 中途才建)的表,
+# 它自己的建表语句里就得有 shop_code**。SCHEMA 里那几张不要求
+# (它们在第 1 步就存在,第 2 步加列够得上;而给 SCHEMA 加列会打破
+#  三处位置参数 INSERT 的列数 —— 那是另一笔账,登记在 insert_shape_check 的欠债表里)。
+import re as _re3
+
+
+def _建表列清单(src, 表):
+    """从源码里取 `CREATE TABLE … 表(…)` 的列清单。**手工配括号**,不用正则 ——
+    `references staff(no)` 这种嵌套括号会把非贪婪正则截断在第一个 `)` 上。"""
+    出 = []
+    for m in _re3.finditer(rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"`\[]?{表}[\"`\]]?\s*\(",
+                           src, _re3.I):
+        i, 深 = m.end() - 1, 0
+        for j in range(i, len(src)):
+            if src[j] == "(": 深 += 1
+            elif src[j] == ")":
+                深 -= 1
+                if 深 == 0:
+                    出.append(src[i + 1:j])
+                    break
+    return 出
+
+
+_seed2 = os.path.join(ROOT, "backend", "seed.py")
+_m3 = _re3.search(r"SCHEMA\s*=\s*(?:r?\"\"\"|r?\'\'\')(.*?)(?:\"\"\"|\'\'\')",
+                  open(_seed2, encoding="utf-8").read(), _re3.S)
+ck("取得到 seed.py 的 SCHEMA(取不到就分不清哪张表是中途建的)",
+   bool(_m3), "seed.py 里 SCHEMA 的写法变了 —— **这条判据要跟着改**,别当成通过")
+if _m3:
+    _mem2 = sqlite3.connect(":memory:")
+    _mem2.executescript(_m3.group(1))
+    _在SCHEMA = {r[0] for r in _mem2.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    _mem2.close()
+    中途建的 = [t for t, _ in SK.带门店键的 if t not in _在SCHEMA]
+    ck(f"认得出哪几张表是流水线中途才建的(现在 {中途建的})",
+       bool(中途建的),
+       "一张都没认出来 —— 要么 11 张全在 SCHEMA 里了(那挺好,但这条判据就该改),"
+       "要么 SCHEMA 解析坏了。**这不是通过**")
+    漏的 = []
+    for t in 中途建的:
+        找到, 带了 = False, False
+        for d, ds, fs in os.walk(ROOT):
+            ds[:] = [x for x in ds if x not in {".git", "__pycache__", ".venv", "node_modules"}
+                     and not x.startswith(".")]
+            for f in fs:
+                if not f.endswith(".py"):
+                    continue
+                try:
+                    src = open(os.path.join(d, f), encoding="utf-8").read()
+                except Exception:
+                    continue
+                for 列 in _建表列清单(src, t):
+                    找到 = True
+                    if "shop_code" in 列:
+                        带了 = True
+        漏的.append((t, 找到, 带了))
+    坏表 = [t for t, 找, 带 in 漏的 if not 找 or not 带]
+    ck(f"流水线中途才建的表,建表语句里就带着 shop_code(验了 {len(中途建的)} 张)",
+       not 坏表,
+       f"这几张不行:{[(t, '找不到建表语句' if not 找 else '建表语句里没有 shop_code') for t, 找, 带 in 漏的 if not 找 or not 带]}"
+       f" —— **加列那一步排在它们建表之前,会把它们整张跳过**,"
+       f"而紧接着的写口要写这一列就当场抛;外层吞掉异常之后那一步退出码还是 0,"
+       f"真因离红的地方隔着二十几步。把 `shop_code TEXT` 写进它自己的建表语句。")
 
 print("  " + "=" * 80)
 if 坏:
