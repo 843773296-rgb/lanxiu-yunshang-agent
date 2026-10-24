@@ -10867,50 +10867,32 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-23 21:59。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-24 09:48。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `main` |
-| 最新提交 | 7b083fa · 2026-10-23 · 统计期校正标注:写明「于」是操作时间(真实时钟),不是演示世界的日期 |
-| 代码量 | 812 个 Python 文件 / 163332 行(不含 .venv) |
-| 验收 | `./check.sh` 共 330 项 —— **接手第一件事就是跑它** |
+| 分支 | `w75` |
+| 最新提交 | 94ab2c6 · 2026-10-24 · 查询索引三条(只读审计第 4 条,用户 10-24 拍「现在就加」)—— 加哪三条是量出来的,不是照审计抄的 |
+| 代码量 | 817 个 Python 文件 / 164736 行(不含 .venv) |
+| 验收 | `./check.sh` 共 333 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
- M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
-?? .claude/
-?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? .feynman/authprobe.log
-?? .feynman/authprobe.sh
-?? .feynman/multi-date/
-?? .feynman/nightly-aimc.log
-?? .feynman/nightly-eval-launchd.log
-?? .feynman/nightly-eval-ok
-?? .feynman/nightly-eval-tried
-?? .feynman/nightly-eval.log
-?? .feynman/world-shift-launchd.log
-?? .wip-muslin/
-?? .wip-store-report-SKILL.md
-?? agent/example-ab-results.jsonl
-?? agent/triage-lure-paper-results.jsonl.0of2.partial
-?? agent/triage-lure-paper-results.jsonl.1of2.partial
+M agentsite/evals/funnel.jsonl
+?? .feynman/bite-all-20261016.log
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-7b083fa 统计期校正标注:写明「于」是操作时间(真实时钟),不是演示世界的日期
-1b31271 经营报告页挂「统计期已校正」标注(用户 10-23 拍:正文不改写,页面上标注)
-4360f1c 架构图工具那格的写法登进文档数字对账
-3af9834 产品说明架构图:工具那格改成 8 个业务领域,闸改成四层(加了进门的闸)
-f2340f4 报告期痕迹落地;修 CI 第二组:带行尾注释的 import 被正则漏看,害一张表被判成孤儿
+94ab2c6 查询索引三条(只读审计第 4 条,用户 10-24 拍「现在就加」)—— 加哪三条是量出来的,不是照审计抄的
+36b692d 边界审计:按需加载 / 没登录聊天这两条攻击的「跑不起来」改成抛前提不成立
+b51341f 编排页两处硬伤:配置面板没输入框、存草稿失败还接着冻结/试跑旧稿
+9596596 交接:今晚夜跑被门禁顶掉(没数不是 0 分);boundary_audit 两边分工
+2be350d 交接:记下窗口期后第一件(两条攻击的「跑不起来」改成 raise 前提不成立)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
