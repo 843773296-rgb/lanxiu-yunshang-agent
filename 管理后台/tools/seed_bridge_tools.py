@@ -61,6 +61,18 @@ sys.path[:0] = [os.path.join(根, "services", "api", "app"),
          output_schema={"type": "object", "properties": {
              "数据": {"type": "object"}, "指纹": {"type": "string"}, "结果": {"type": "string"}},
              "required": ["数据", "指纹"]}),
+    # 录音加回电(10-24,用户拍「两个都要」):派「电话回电」。负责人和截止时间由核对人填,不让模型猜
+    dict(name="assign_task", side="reversible",
+         confirm={"方式": "人工确认", "绑定": "负责人 + 截止时间 + 定稿", "由谁承担": "工作流里的人工核对节点",
+                  "执行侧再查": "runtime/桥闸.py —— 这次运行里没有人工节点的批准就不记单"},
+         purpose="派一条任务(录音流程里是「电话回电」),以核对人绑定的澜绣员工身份,权限判定和页面上派一样",
+         input_schema={"type": "object", "properties": {
+             "type": {"type": "string"}, "assignee": {"type": "string", "description": "工号或姓名"},
+             "note": {"type": "string"}, "end": {"type": "string", "description": "YYYY-MM-DD HH:MM"},
+             "start": {"type": "string"}, "ref_id": {"type": "string", "description": "客户号"}},
+             "required": ["type", "assignee", "note", "end"], "additionalProperties": False},
+         output_schema={"type": "object", "properties": {
+             "数据": {"type": "object"}, "结果": {"type": "string"}}, "required": ["结果"]}),
     dict(name="save_report", side="reversible",
          confirm={"方式": "人工确认", "绑定": "定稿正文", "由谁承担": "工作流里的人工核对节点",
                   "执行侧再查": "runtime/桥闸.py —— 这次运行里没有人工节点的批准就不记单"},
@@ -88,10 +100,12 @@ sys.path[:0] = [os.path.join(根, "services", "api", "app"),
             "不给成单概率,不编店里有没有货。"),
     user=("客户号:{{客户}}\n\n通话转写:\n{{转写}}\n\n"
           "按 JSON 输出:需求(一段话,每条带原话)、时间、预算、待确认项(列表)、"
-          "跟进草稿(顾问能直接存进客户档案的一段话:客户要什么、下一步做什么)。查不到的写「没提到」。"),
+          "跟进草稿(顾问能直接存进客户档案的一段话:客户要什么、下一步做什么)、"
+          "类别(只能是 明确需求 / 考虑中 / 无明确需求 / 信息不足 之一:「好看,但现在不买」是无明确需求,"
+          "客户说「不方便联系」也不算有意向)。查不到的写「没提到」。"),
     变量=[{"名称": "转写", "必填": True, "来源": "上一步结果", "类型": "string", "说明": "取转写那一步的原文"},
           {"名称": "客户", "必填": True, "来源": "用户输入", "类型": "string", "说明": "客户号"}],
-    输出={"格式": "json", "必含项": ["需求", "时间", "预算", "待确认项", "跟进草稿"],
+    输出={"格式": "json", "必含项": ["需求", "时间", "预算", "待确认项", "跟进草稿", "类别"],
           "未知值规则": "没提到就写「没提到」,**不要编一个数,也不要留空**"},
 )
 

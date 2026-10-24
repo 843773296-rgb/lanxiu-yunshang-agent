@@ -688,6 +688,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_audio_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_audio_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_audio_flow.log
+	@./.venv/bin/python tests/e2e/test_store_report_flow.py > /tmp/prog-test_store_report_flow.log 2>&1 \
+	  || { echo "  ❌ test_store_report_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_store_report_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_store_report_flow.log
 	@./.venv/bin/python tests/e2e/test_knowledge_flow.py > /tmp/prog-test_knowledge_flow.log 2>&1 \
 	  || { echo "  ❌ test_knowledge_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_knowledge_flow.log; exit 1; }

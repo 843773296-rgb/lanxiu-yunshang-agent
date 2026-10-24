@@ -9,7 +9,7 @@
   ② 试运行 → 停在「取转写」等澜绣回执(waiting_external),桥上有一张待执行的单
   ③ 回执转写 → 运行接着走,停在「人工核对」(waiting_approval),待办里看得到摘要和原文
   ④ 批准(改了定稿)→ 停在「写跟进」等回执,单上的内容是**人改过的定稿**
-  ⑤ 回执写好了 → 运行成功,输出是写跟进的结果;前面的步骤没重跑(取转写那张单仍只有一张)
+  ⑤ 回执写好了 → 运行成功,输出说写了跟进;前面的步骤没重跑(取转写那张单仍只有一张)
   ⑥ 另一条:退回 → 写跟进一张单都没有,输出是退回理由
   ⑦ 一张把写跟进直接接在模型后面的图(没经过核对)→ 运行失败 WRITE_NEEDS_REVIEW,桥上不出写跟进的单
   ⑧ 重复回执同一张单 → 409,不排第二次恢复
@@ -120,7 +120,7 @@ subprocess.run([PY, os.path.join(根, "tools", "seed_bridge_tools.py"), "--项�
 print("▸ ⓪ 模板卡片 / 下拉资源")
 c, t = 打("GET", P + "/workflow-templates")
 ck("模板卡片:音频整理排第一(弹窗默认选它),写明要哪些资源", c == 200 and t["items"][0]["名"] == "音频整理"
-   and len(t["items"][0]["需要的资源"]) == 4, t)
+   and len(t["items"][0]["需要的资源"]) == 5, t)   # 10-24 加回电:多了「派任务」
 ck("这个项目里资源齐了 → 标「能直接跑」", t["items"][0]["能直接跑吗"] is True, t["items"][0])
 c, rs = 打("GET", P + "/workflow-resources")
 ck("搭建下拉:模型 / 处理要求 / 业务动作 / 角色都有,业务动作里有澜绣的两个",
@@ -188,7 +188,8 @@ ck("待办详情看得到摘要、待确认项和原文(原文是回执带回来
    {"摘要", "待确认项", "原文"} <= set(参) and "宋制褙子" in str(参.get("原文")), 参)
 ck("**原文是全文**(核对就是对着原文看;不是「N 字 · 开头……」的形状),手机号打了码",
    参.get("原文") == 原文.replace("13800138000", "138****8000"), 参.get("原文"))
-ck("允许编辑的字段只有「定稿」", (d or {}).get("允许编辑的字段") == ["定稿"], (d or {}).get("允许编辑的字段"))
+ck("允许编辑的字段只有「定稿」和回电那两样(负责人 / 截止,10-24 加回电)",
+   (d or {}).get("允许编辑的字段") == ["定稿", "回电负责人", "回电截止"], (d or {}).get("允许编辑的字段"))
 
 print("\n▸ ④ 批准(改了定稿)→ 停在写跟进")
 定稿 = "顾客要宋制褙子,秋款,预算约 3000,11 月中交;面料待确认。"
@@ -208,7 +209,8 @@ c, b = 打("POST", P + f"/bridge-calls/{s2[0]['id']}/ack", "U004",
 st, r5 = 等到(rid, ("succeeded", "failed", "incomplete"))
 ck("运行成功", st == "succeeded", (st, r5))
 c, r = 打("GET", P + f"/execution-runs/{rid}", "U004")
-ck("输出是写跟进的结果", "FU-E2E-1" in json.dumps(r, ensure_ascii=False), str(r)[:300])
+ck("输出带着写跟进回来的跟进号(这一次核对人没填回电负责人 → 只写跟进,10-24 加回电)",
+   "FU-E2E-1" in json.dumps((r or {}).get("输出"), ensure_ascii=False), (r or {}).get("输出"))
 ck("**取转写只有一张单**(恢复时前面的步骤没重跑)",
    [x["工具"] for x in 单(rid, "已执行")].count("取转写") == 1, 单(rid, "已执行"))
 c, b = 打("POST", P + f"/bridge-calls/{s2[0]['id']}/ack", "U004",
@@ -346,9 +348,67 @@ c, b = 打("POST", P + "/chat-takeovers/call-notes/runs", "U001", 头={"Idempote
 ck("**关掉之后聊天站拿着旧清单来发起 → 409 TAKEOVER_OFF**(开没开由服务端判)",
    c == 409 and (b or {}).get("code") == "TAKEOVER_OFF", (c, b))
 
+print("\n▸ ⑬ 录音加回电(用户 10-24 拍「两个都要:先写跟进,有意向再派回电」;负责人和时间由核对人填)")
+def 走到核对(wid_, 客户="C10001"):
+    c, r = 发起(wid_, {"call_id": "TS-001", "customer_id": 客户}); rid_ = r["resource_id"]
+    等到(rid_, ("waiting_external",))
+    打("POST", P + f"/bridge-calls/{单(rid_)[0]['id']}/ack", "U004",
+      体={"结果": "已执行", "输出": {"text": "我想做一件宋制褙子,下个月婚礼穿", "call_id": "TS-001", "customer_id": 客户}})
+    等到(rid_, ("waiting_approval",))
+    return rid_
+def 写完跟进(rid_):
+    等到(rid_, ("waiting_external",))
+    s_ = [x for x in 单(rid_) if x["工具"] == "写跟进"]
+    打("POST", P + f"/bridge-calls/{s_[0]['id']}/ack", "U004",
+      体={"结果": "已执行", "输出": {"跟进号": "FU-E2E-CB", "是新写的": True, "结果": "已写跟进 FU-E2E-CB"}})
+wcb, _ = 建图("e2e 录音回电")
+c, v = 打("POST", P + f"/workflows/{wcb}/validate")
+ck("加了回电分支的模板,补上模型后校验通过", v.get("通过") is True, v)
+rcb = 走到核对(wcb)
+c, det = 打("GET", P + f"/human-requests/{待办(rcb)[0]['id']}", "U006")
+ck("核对材料里有 AI 判断的类别,可改字段里有回电负责人 / 回电截止",
+   (det.get("核对材料") or {}).get("类别") in ("明确需求", "考虑中", "无明确需求", "信息不足")
+   and {"回电负责人", "回电截止"} <= set(det.get("允许编辑的字段") or []), (det.get("核对材料"), det.get("允许编辑的字段")))
+决定(待办(rcb)[0]["id"], "approved", edits={"定稿": "顾客要宋制褙子,下月婚礼", "回电负责人": "60000003",
+                                          "回电截止": "2026-12-31 10:00"})
+写完跟进(rcb)
+st, _ = 等到(rcb, ("waiting_external", "failed", "succeeded"))
+派 = [x for x in 单(rcb) if x["工具"] == "assign_task"]
+ck("**有意向 + 填了负责人和截止 → 写完跟进再派「电话回电」**,负责人 / 截止 / 客户号都是核对人填的和发起时的",
+   st == "waiting_external" and 派 and 派[0]["参数"].get("type") == "电话回电"
+   and 派[0]["参数"].get("assignee") == "60000003" and 派[0]["参数"].get("end") == "2026-12-31 10:00"
+   and 派[0]["参数"].get("ref_id") == "C10001" and 派[0]["参数"].get("note") == "顾客要宋制褙子,下月婚礼",
+   (st, 派 and 派[0]["参数"]))
+打("POST", P + f"/bridge-calls/{派[0]['id']}/ack", "U004", 体={"结果": "已执行", "输出": {"数据": {"ok": True}, "结果": "已派"}}) if 派 else None
+st, rr = 等到(rcb, ("succeeded", "failed", "incomplete"))
+ck("派完 → 成功,输出说「派了电话回电」", st == "succeeded" and "派了电话回电" in json.dumps((rr or {}).get("输出"), ensure_ascii=False),
+   (st, (rr or {}).get("输出")))
+rcb2 = 走到核对(wcb)
+决定(待办(rcb2)[0]["id"], "approved", edits={"回电负责人": "60000003"})
+写完跟进(rcb2)
+st, rr = 等到(rcb2, ("succeeded", "failed", "incomplete", "waiting_external"))
+ck("**只填了负责人、没填截止 → 不派**,输出说明为什么",
+   st == "succeeded" and not [x for s_ in ("待执行", "已执行") for x in 单(rcb2, s_) if x["工具"] == "assign_task"]
+   and "没填回电截止" in json.dumps((rr or {}).get("输出"), ensure_ascii=False), (st, (rr or {}).get("输出")))
+def 只认考虑中(d):
+    for n in d["nodes"]:
+        if n["id"] == "intent":
+            n["config"]["branches"][0]["when"]["left"]["value"] = ["考虑中"]   # mock 出的是第一个可选值「明确需求」
+wcb3, _ = 建图("e2e 录音回电·没意向", 只认考虑中)
+rcb3 = 走到核对(wcb3)
+决定(待办(rcb3)[0]["id"], "approved", edits={"回电负责人": "60000003", "回电截止": "2026-12-31 10:00"})
+写完跟进(rcb3)
+st, rr = 等到(rcb3, ("succeeded", "failed", "incomplete", "waiting_external"))
+ck("**类别不在「有意向」里 → 填了负责人和截止也不派**(不是有人填了就派)",
+   st == "succeeded" and not [x for s_ in ("待执行", "已执行") for x in 单(rcb3, s_) if x["工具"] == "assign_task"]
+   and "不派回电" in json.dumps((rr or {}).get("输出"), ensure_ascii=False), (st, (rr or {}).get("输出")))
+
 print("\n▸ ⑦ 没经过核对就写跟进 → 拒")
 def 绕过核对(d):
-    d["nodes"] = [n for n in d["nodes"] if n["id"] not in ("review", "decide", "rejected", "merge")]
+    d["nodes"] = [n for n in d["nodes"] if n["id"] not in ("review", "decide", "rejected", "merge",
+                                                         # 10-24 加的回电那一串也引用核对结果,一起删
+                                                         "intent", "who", "when", "callback", "cb_done",
+                                                         "no_intent", "no_who", "no_when")]
     for n in d["nodes"]:
         if n["id"] == "save":
             n["config"]["bindings"]["内容"] = {"source": "node", "node_id": "extract", "pointer": "/跟进草稿"}

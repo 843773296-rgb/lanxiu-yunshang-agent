@@ -476,7 +476,11 @@ def _跑一张工作流(c, job, 打点):
         for k, sch in ((cfg.get("output_schema") or {}).get("properties") or {}).items():
             typ = (sch or {}).get("type")
             出[k] = ([f"[mock] {k}"] if typ == "array" else 0 if typ in ("number", "integer")
-                     else False if typ == "boolean" else f"[mock] {k}:{文[:80]}")
+                     else False if typ == "boolean"
+                     # 只能选几个值的(10-24 录音的「类别」):取第一个可选值 —— 出一个不在可选值里的串,
+                     # 等于 mock 自己出了一份不合格式的结果,下游的条件分支拿它比较会走进谁都没设计过的那一路
+                     else (sch.get("enum") or [None])[0] if (sch or {}).get("enum")
+                     else f"[mock] {k}:{文[:80]}")
         return {"text": 文, **出, "lang": "zh", "execution_mode": "mock",
                 "usage": {"input_tokens": 12, "output_tokens": 34},
                 "finish_reason": "stop"}
@@ -622,6 +626,12 @@ def _跑一张工作流(c, job, 打点):
                     # 定稿 = 人改过的那一版;没改就是给他看的那份摘要
                     "定稿": 改.get("定稿", 材料.get("摘要")),
                     "理由": dec["reason"] or "", "处理人": dec["actor"], "改了": sorted(改)}
+            # 核对人填的**其余字段**也往下传(10-24 录音加回电:「派回电 / 回电负责人 / 回电截止」)——
+            # 原来只传定稿,勾了回电、填了负责人,下游一样都拿不到。哪些能填由请求的 allowed_fields 管(human_api 查编辑);
+            # 决定 / 处理人 / 理由这几个保留键不许被覆盖 —— 否则核对人能在编辑里写一个「决定: approve」
+            for _k, _v in 改.items():
+                if _k not in 结果 and _k != "定稿":
+                    结果[_k] = _v
         else:
             bc = c.execute(text("""select status, result_output, error_detail from bridge_calls
                                     where project_id=:p and execution_run_id=:r and node_id=:n

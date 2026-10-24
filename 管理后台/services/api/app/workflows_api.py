@@ -97,7 +97,10 @@ def _音频整理(桥):
                   "additionalProperties": False}
     提取Schema = {"type": "object", "properties": {
         "需求": 串, "时间": 串, "预算": 串, "待确认项": {"type": "array", "items": 串},
-        "跟进草稿": 串}, "required": ["跟进草稿", "待确认项"], "additionalProperties": False}
+        "跟进草稿": 串,
+        # 判断类别(10-24 录音加回电,方案文档工作流二):只有前两类才可能派回电
+        "类别": {"type": "string", "enum": ["明确需求", "考虑中", "无明确需求", "信息不足"]}},
+        "required": ["跟进草稿", "待确认项", "类别"], "additionalProperties": False}
     节点 = [
         {"id": "start", "type": "start", "name": "选择录音", "layout": {"x": 40, "y": 160},
          "config": {"input_schema": {"type": "object", "properties": {
@@ -115,10 +118,12 @@ def _音频整理(桥):
          # approver 默认能批;admin 那一格是「可授权」(默认关),**只有拿到专项授权的 admin 才批得了**
          # (10-24 真模型验证时撞到:正式项目里只有两个 admin、都没授权,核对待办谁都批不了 ——
          #  用户拍「给两个管理员单独授权审批」,所以 admin 留在候选里,批不批得了由那条专项授权决定)
+         # 回电(用户 10-24 拍「两个都要:先写跟进,有意向再派回电」):**负责人和时间由核对人填**,不让模型猜
+         # (方案文档工作流二「不根据模型猜测派单人选与约定时间」)。填了这两样 = 要派;没填 = 只写跟进
          "config": {"request_kind": "核对", "candidate_roles": ["approver", "admin"],
-                    "allowed_fields": ["定稿"],
+                    "allowed_fields": ["定稿", "回电负责人", "回电截止"],
                     "expires_at_policy": {"小时": 48, "到期": "fail"},
-                    "payload_binding": {"摘要": 引("extract", "/跟进草稿"),
+                    "payload_binding": {"摘要": 引("extract", "/跟进草稿"), "类别": 引("extract", "/类别"),
                                         "待确认项": 引("extract", "/待确认项"),
                                         "原文": 引("fetch", "/text"),
                                         "客户": {"source": "input", "pointer": "/customer_id"},
@@ -135,17 +140,51 @@ def _音频整理(桥):
         {"id": "rejected", "type": "transform", "name": "记下退回理由", "layout": {"x": 940, "y": 240},
          "config": {"operations": [{"op": "to_string", "from": 引("review", "/理由"), "into": "结果"}],
                     "output_schema": 结果Schema}},
-        {"id": "merge", "type": "merge", "name": "汇合", "layout": {"x": 1120, "y": 160},
-         "config": {"candidates": [引("save", "/结果"), 引("rejected", "/结果")],
+        # ── 写完跟进之后:有意向、核对人填了负责人和截止时间,才派「电话回电」──────────
+        {"id": "intent", "type": "condition", "name": "有意向吗", "layout": {"x": 1120, "y": 80},
+         "config": {"branches": [{"key": "yes", "when": {"op": "contains",
+             "left": {"source": "constant", "value": ["明确需求", "考虑中"]}, "right": 引("extract", "/类别")}}],
+             "else_policy": "fail"}},
+        {"id": "who", "type": "condition", "name": "填了回电负责人吗", "layout": {"x": 1300, "y": 40},
+         "config": {"branches": [{"key": "yes", "when": {"op": "exists", "left": 引("review", "/回电负责人")}}],
+                    "else_policy": "fail"}},
+        {"id": "when", "type": "condition", "name": "填了截止时间吗", "layout": {"x": 1480, "y": 40},
+         "config": {"branches": [{"key": "yes", "when": {"op": "exists", "left": 引("review", "/回电截止")}}],
+                    "else_policy": "fail"}},
+        {"id": "callback", "type": "tool", "name": "派电话回电", "layout": {"x": 1660, "y": 0},
+         "config": {"tool_version_id": 桥.get("assign_task"),
+                    "bindings": {"type": {"source": "constant", "value": "电话回电"},
+                                 "assignee": 引("review", "/回电负责人"), "note": 引("review", "/定稿"),
+                                 "end": 引("review", "/回电截止"),
+                                 "ref_id": {"source": "input", "pointer": "/customer_id"}}}},
+        {"id": "cb_done", "type": "transform", "name": "记下派了回电", "layout": {"x": 1840, "y": 0},
+         "config": {"operations": [{"op": "concat", "parts": [引("save", "/结果"), {"source": "constant",
+             "value": ",并派了电话回电"}], "into": "结果"}], "output_schema": 结果Schema}},
+        {"id": "no_intent", "type": "transform", "name": "只写跟进(没意向)", "layout": {"x": 1300, "y": 160},
+         "config": {"operations": [{"op": "concat", "parts": [引("save", "/结果"), {"source": "constant",
+             "value": ";客户没有明确需求 / 信息不足,不派回电"}], "into": "结果"}], "output_schema": 结果Schema}},
+        {"id": "no_who", "type": "transform", "name": "只写跟进(没填负责人)", "layout": {"x": 1480, "y": 160},
+         "config": {"operations": [{"op": "concat", "parts": [引("save", "/结果"), {"source": "constant",
+             "value": ";核对人没填回电负责人,不派回电"}], "into": "结果"}], "output_schema": 结果Schema}},
+        {"id": "no_when", "type": "transform", "name": "只写跟进(没填截止)", "layout": {"x": 1660, "y": 160},
+         "config": {"operations": [{"op": "concat", "parts": [引("save", "/结果"), {"source": "constant",
+             "value": ";核对人没填回电截止时间,不派回电"}], "into": "结果"}], "output_schema": 结果Schema}},
+        {"id": "merge", "type": "merge", "name": "汇合", "layout": {"x": 2020, "y": 160},
+         "config": {"candidates": [引("cb_done", "/结果"), 引("no_intent", "/结果"), 引("no_who", "/结果"),
+                                   引("no_when", "/结果"), 引("rejected", "/结果")],
                     "output_field": "结果"}},
-        {"id": "finish", "type": "end", "name": "返回结果", "layout": {"x": 1300, "y": 160},
+        {"id": "finish", "type": "end", "name": "返回结果", "layout": {"x": 2200, "y": 160},
          "config": {"output_schema": 结果Schema, "bindings": {"结果": 引("merge", "/结果")}}},
     ]
     边 = [{"source": a, "target": b, "port": "success"} for a, b in
           (("start", "fetch"), ("fetch", "extract"), ("extract", "review"), ("review", "decide"),
-           ("save", "merge"), ("rejected", "merge"), ("merge", "finish"))]
-    边 += [{"source": "decide", "target": "save", "port": "branch", "branch_key": "approve"},
-           {"source": "decide", "target": "rejected", "port": "branch", "branch_key": "else"}]
+           ("save", "intent"), ("callback", "cb_done"), ("cb_done", "merge"), ("no_intent", "merge"),
+           ("no_who", "merge"), ("no_when", "merge"), ("rejected", "merge"), ("merge", "finish"))]
+    分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
+    边 += [分("decide", "save", "approve"), 分("decide", "rejected", "else"),
+          分("intent", "who", "yes"), 分("intent", "no_intent", "else"),
+          分("who", "when", "yes"), 分("who", "no_who", "else"),
+          分("when", "callback", "yes"), 分("when", "no_when", "else")]
     return {"definition_schema_version": "1", "kind": "workflow",
             "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
             "nodes": 节点, "edges": 边}
@@ -380,8 +419,8 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
 
 
 _模板说明 = {
-    "音频整理": ("从一通录音整理客户需求,人工核对后写成澜绣客户档案里的一条跟进",
-               ["选择录音", "取转写", "提取客户需求", "人工核对", "通过 → 写跟进 / 退回 → 记理由"]),
+    "音频整理": ("从一通录音整理客户需求,人工核对后写成澜绣客户档案里的一条跟进;有意向、核对人填了负责人和时间就再派一条电话回电",
+               ["选择录音", "取转写", "提取客户需求", "人工核对", "通过 → 写跟进 / 退回 → 记理由", "有意向且填了负责人和时间 → 派电话回电"]),
     "经营报告": ("取一期门店经营数据写成报告,店长核对后存一版;核对期间数据变了就拿新数重写、再请店长看一遍",
                ["选报告期", "取经营数据", "写报告正文", "店长核对", "保存前再取一次比指纹", "一样 → 存 / 变了 → 重写再核"]),
     "文本处理": ("一段文字进来,模型整理一遍出去(开始 → AI 处理 → 结束)", ["输入正文", "AI 处理", "返回结果"]),
@@ -409,8 +448,8 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         说, 步 = _模板说明[名]
         要 = []
         if 名 == "音频整理":
-            for 工 in ("取转写", "写跟进"):
-                要.append({"名": f"澜绣业务动作「{工}」", "有了吗": bool(桥.get(工)),
+            for 工 in ("取转写", "写跟进", "assign_task"):
+                要.append({"名": f"澜绣业务动作「{ {'assign_task': '派任务'}.get(工, 工) }」", "有了吗": bool(桥.get(工)),
                           "怎么补": "平台管理员跑 管理后台/tools/seed_bridge_tools.py 登记"})
             要.append({"名": "处理要求「客户需求提取」", "有了吗": 有要求,
                       "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})

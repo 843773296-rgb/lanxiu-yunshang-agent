@@ -2908,6 +2908,8 @@ async function 页_人工待办() {
 function 画_核对页(hid, d, 头) {
   const 材 = d["核对材料"] || {}, 请 = d["请求"] || {}, 影 = d["影响对象"] || {};
   const 能改 = (d["允许编辑的字段"] || []).includes("定稿");
+  // 回电(10-24 录音加回电):负责人和截止时间由核对人填,不让模型猜;**填了这两样 = 要派,没填 = 只写跟进**
+  const 能派回电 = (d["允许编辑的字段"] || []).includes("回电负责人");
   const 待 = Array.isArray(材["待确认项"]) ? 材["待确认项"] : [];
   $("#main").innerHTML = 头 + `
     <div class="note">${材["客户"] ? `客户 <b>${esc(材["客户"])}</b>` : ""} ${材["通话"] ? ` · 通话 <b>${esc(材["通话"])}</b>` : ""}
@@ -2922,6 +2924,11 @@ function 画_核对页(hid, d, 头) {
         <h4>定稿(通过后写进客户档案的那一版)</h4>
         ${能改 ? `<textarea id="rv-fin" rows="6">${esc(材["摘要"] || "")}</textarea>`
                : `<div class="k">这一步不允许改定稿 —— 通过就按上面的摘要写。</div>`}
+        ${能派回电 ? `<h4>派电话回电(可选)</h4>
+        <div class="k">AI 判断的类别:<b>${esc(材["类别"] || "—")}</b>。只有「明确需求 / 考虑中」才会派;
+          负责人和截止时间<b>都填了才派</b>,不填就只写跟进。</div>
+        <label class="f">回电负责人(工号或姓名)</label><input id="rv-cbwho" placeholder="如 60000003">
+        <label class="f">回电截止</label><input id="rv-cbend" type="datetime-local">` : ""}
         <label class="f">理由(退回必填)</label><textarea id="rv-why" rows="2"></textarea>
         <button class="pri" id="rv-ok">通过,写进跟进</button> <button id="rv-no">退回</button>
         <div id="rv-res"></div>` : `<div class="state err"><h3>你不能处理这条</h3><p>${md(d["为什么"] || "")}</p></div>`}
@@ -2937,6 +2944,11 @@ function 画_核对页(hid, d, 头) {
     if (决定 === "rejected" && !理由) { $("#rv-why").focus(); $("#rv-res").innerHTML = `<div class="k">退回要写理由 —— 不然发起的人不知道错在哪。</div>`; return; }
     const edits = {};
     if (决定 === "approved" && 能改 && $("#rv-fin").value.trim() !== (材["摘要"] || "").trim()) edits["定稿"] = $("#rv-fin").value.trim();
+    if (决定 === "approved" && 能派回电) {
+      const 谁 = $("#rv-cbwho").value.trim(), 截 = $("#rv-cbend").value.trim();
+      if (谁 && 截) { edits["回电负责人"] = 谁; edits["回电截止"] = 截.replace("T", " "); }
+      else if (谁 || 截) { $("#rv-res").innerHTML = `<div class="k">回电负责人和截止时间要么都填、要么都不填 —— 只填一样不会派。</div>`; return; }
+    }
     $("#rv-res").innerHTML = `<div class="k">提交中…</div>`;
     try {
       const r = await 请求(`${P()}/human-requests/${encodeURIComponent(hid)}/decisions`, {
