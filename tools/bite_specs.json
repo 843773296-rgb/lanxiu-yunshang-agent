@@ -12622,5 +12622,41 @@
    }
   ],
   "预期红": "页面上看到的是店名,不是编码"
+ },
+ {
+  "script": "agentsite/role_tools_literal_check.py",
+  "改坏": "用 `+=` 往名单里加一个工具 —— **这就是 2026 年那次咬合失效的原形**:检查用正则读 `SHOP_TOOLS = [...]` 字面量,而改动写成 `SHOP_TOOLS += [...]`,**改了它根本看不见**,于是「没红」被当成了「守得住」。后果不是少一个工具,是**工具给了、管它的规矩没给**(P6 从源码读字面量)—— 模型会去用它,而没有任何一句话告诉它怎么算用错",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "TAKEOVER_TOOLS = [\"mcp__work__start_workflow\"]",
+    "new": "TAKEOVER_TOOLS = [\"mcp__work__start_workflow\"]\nTAKEOVER_TOOLS += [\"mcp__shop__某个没人管的工具\"]"
+   }
+  ],
+  "预期红": "没有人用 `+=` 往名单里加工具"
+ },
+ {
+  "script": "agentsite/role_tools_literal_check.py",
+  "改坏": "把名单从字面量改成 `list([...])` 算出来的 —— 运行时一模一样,**而从源码读字面量的那几道判据(P3/P6、工具收窄、边界审计)全都读不到它**。⚠️ 故意选了一个**语义完全不变**的改法:它证明这条判据守的是「判据读不读得到」,不是「名单对不对」",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "TAKEOVER_TOOLS = [\"mcp__work__start_workflow\"]",
+    "new": "TAKEOVER_TOOLS = list([\"mcp__work__start_workflow\"])"
+   }
+  ],
+  "预期红": "每个名单都是字面量,元素全是字符串常量"
+ },
+ {
+  "script": "agentsite/role_tools_literal_check.py",
+  "改坏": "把某个角色的工具改成调一个函数算出来 —— 那样「这个角色挂了哪些工具」就提取不出来了。⚠️ 这一条同时也是上面那条「提取失效会得到空集合」的反面:提取不出来的时候,**空集合上另外三条性质全部成立**,输出会是一片绿",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    \"pattern\":  lambda: PATTERN_TOOLS + TAKEOVER_TOOLS,",
+    "new": "    \"pattern\":  lambda: _算版师工具(),"
+   }
+  ],
+  "预期红": "`_ROLE_TOOLS` 的每个角色只拿名单用 `+` 拼"
  }
 ]
