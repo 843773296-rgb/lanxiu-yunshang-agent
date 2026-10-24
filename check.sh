@@ -586,6 +586,7 @@ run "知识问题处理入口 · 零命中也有编号、员工能报类型、�
 run "报告模板 · 清单外指标拒存、必选取消不了、只有总部运营能改、旧报告按冻结的那一版显示、隐藏和取不到分开(复审第 4 节 C,库副本)" python3 backend/report_template_check.py
 run "经营报告「统计期已校正」标注 · 有痕迹就标、取最后一条、没改正文时说清(用户 10-23 拍:正文不改写)" python3 backend/report_realign_note_check.py
 run "聊天接管的技能登记 · 管理后台能接管的技能和聊天站的自有技能两边一致(用户 10-24 拍「默认关;打开时聊天站改走工作流」)" python3 tools/takeover_skills_check.py
+run "澜绣桥名单 · 管理后台和澜绣两边一致、写口不许放进「只读」(放进去就不经核对写进澜绣)、库约束的迁移跟得上" python3 tools/bridge_tools_check.py
 run "澜绣桥 · 管理后台工作流来要的取转写 / 写跟进:同一个键只写一条、录音和客户对不上就拒(用户 10-24 拍「核对即定稿」,库副本)" python3 backend/workflow_bridge_check.py
 # 两边真接(管理后台真服务 + supervise_sync 真跑桥,澜绣库用副本)。管理后台没起就打印「不适用,不是通过」并退 0
 run "音频整理全流程 · 两边真接:取真转写 → 人工核对 → 写一条跟进,重跑不写第二条(管理后台没起 = 不适用)" python3 tools/audio_flow_live_check.py

@@ -570,7 +570,11 @@ def _跑一张工作流(c, job, 打点):
     桥工具名 = {}
 
     def _工具(cfg, 实参):
-        """工具步骤。**这一版只接澜绣桥的两个工具**(取转写 / 写跟进),别的照旧缺适配器。
+        """工具步骤。**只接澜绣桥**:名单在 runtime/桥工具.py(10-24 扩到六条流程要的能力),别的照旧缺适配器。
+
+        澜绣的工具在后台有两种登记:早先专门做的 `lanxiu_bridge`(取转写 / 写跟进),和从澜绣导入的
+        业务工具(adapter = lanxiu-shop / lanxiu-kb / lanxiu-task,名字就是 api.py 里的工具名)。
+        两种都按**名字在不在桥名单里**判,不按适配器放 —— 导入了 97 个,桥只接名单里那 26 个。
 
         桥工具不在这里执行:抛 `需要等待`,运行挂起;挂起时在下面记一张桥请求,
         澜绣拉回去用它自己的函数执行、回执,再恢复。
@@ -582,12 +586,14 @@ def _跑一张工作流(c, job, 打点):
                                       and td.id=tv.tool_definition_id
                                     where tv.project_id=:p and tv.id=:i"""),
                            {"p": job["project_id"], "i": tv}).mappings().first()
-            桥工具名[tv] = (行["name"] if 行 and 行["adapter"] == "lanxiu_bridge"
-                         and 行["name"] in ("取转写", "写跟进") else None)
+            import 桥工具 as _桥
+            桥工具名[tv] = (行["name"] if 行 and (行["adapter"] == "lanxiu_bridge"
+                                               or str(行["adapter"] or "").startswith("lanxiu-"))
+                         and _桥.种类(行["name"]) else None)
         名 = 桥工具名[tv]
         if not 名:
             raise RN.节点失败("ADAPTER_MISSING", f"工具版本 {tv} 没有可用的执行通道",
-                            "这一版工作流里的工具步骤只接澜绣桥(取转写 / 写跟进);"
+                            "工作流里的工具步骤只接澜绣桥名单里的(runtime/桥工具.py);"
                             "**缺适配器要报出来,不能当成这一步不需要做**")
         raise RN.需要等待("external", {"工具": 名, "参数": 实参, "tool_version_id": tv})
 

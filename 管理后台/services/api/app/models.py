@@ -28,6 +28,10 @@ import os, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "contract"))
 import entities as EN, fieldtypes as FT
+import importlib.util as _ilu
+_桥spec = _ilu.spec_from_file_location("桥工具", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                            "runtime", "桥工具.py"))
+_桥 = _ilu.module_from_spec(_桥spec); _桥spec.loader.exec_module(_桥)
 
 from sqlalchemy import (Date, MetaData, Table, Column, Text, Integer, BigInteger, Boolean,
                         Numeric, TIMESTAMP, Index, UniqueConstraint,
@@ -303,7 +307,8 @@ _额外检查 = {
     ],
     "bridge_calls": [
         ("ck_bridge_calls_status", "status in ('待执行', '已执行', '执行失败')"),
-        ("ck_bridge_calls_tool_name", "tool_name in ('取转写', '写跟进')"),
+        # 名单只在 runtime/桥工具.py 一处 —— 名单外的单在库这一层就记不进去
+        ("ck_bridge_calls_tool_name", "tool_name in (" + ", ".join(f"'{n}'" for n in _桥.全部) + ")"),
     ],
     "artifact_decisions": [
         ("ck_artifact_decisions_action", "action in ('打回')"),

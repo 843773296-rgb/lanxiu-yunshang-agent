@@ -5155,8 +5155,8 @@ async function 页_成员与权限() {
 
 /* 账号 ↔ 澜绣员工绑定(10-24)。一对一:工号已绑给别人 → 409 STAFF_TAKEN,原样显示 advice */
 function 挂绑定事件() {
-  const 说 = (html, 坏) => { if ($("#mmsg")) $("#mmsg").innerHTML =
-    `<div class="state${坏 ? " err" : ""}"><p>${html}</p></div>`; };
+  const 说 = (html, 坏) => { if ($("#mmsg")) $("#mmsg").innerHTML = 坏
+    ? `<div class="state err"><p>${html}</p></div>` : `<div class="state"><p>${html}</p></div>`; };
   document.querySelectorAll("[data-bind]").forEach((b) => {
     b.onclick = async () => {
       const 账号 = b.dataset.bind;

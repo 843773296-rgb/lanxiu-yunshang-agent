@@ -12509,5 +12509,34 @@
    }
   ],
   "预期红": "门店条件:回填过的改名也命中、没回填的按串兜住"
+ },
+ {
+  "script": "tools/bridge_tools_check.py",
+  "改坏": "把一个写口(assign_task)从「要批准」挪进管理后台的「只读」—— 桥闸照只读放行,派任务不经人工核对就写进澜绣",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/桥工具.py",
+    "old": "    \"stock_alert\",\n)",
+    "new": "    \"stock_alert\",\n    \"assign_task\",\n)"
+   },
+   {
+    "path": "管理后台/services/api/app/runtime/桥工具.py",
+    "old": "    \"assign_task\",                            # 回电 / 处理 / 回访 / 补货跟进,都是派一条任务\n",
+    "new": ""
+   }
+  ],
+  "预期红": "管理后台「只读」里没有写口(放进去就不经核对写进澜绣)"
+ },
+ {
+  "script": "tools/bridge_tools_check.py",
+  "改坏": "澜绣执行表多接一个管理后台名单里没有的工具(开单 open_order)",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "    \"save_report\", \"confirm_report\", \"assign_task\", \"create_repair\", \"decide_repair\", \"close_bad_rating\",\n",
+    "new": "    \"save_report\", \"confirm_report\", \"assign_task\", \"create_repair\", \"decide_repair\", \"close_bad_rating\", \"open_order\",\n"
+   }
+  ],
+  "预期红": "两边名单一样(澜绣能执行的 == 管理后台能记单的)"
  }
 ]

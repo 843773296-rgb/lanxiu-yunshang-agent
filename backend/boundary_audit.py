@@ -1008,11 +1008,19 @@ b = c.execute("SELECT id FROM customer WHERE id<>? ORDER BY id LIMIT 1", (a[1],)
 # 账号绑定(10-24):核对人没绑定澜绣员工 → 不写,不以服务身份顶替
 空 = WB.执行({"工具": "写跟进", "幂等键": "ba:x:4", "办事人": "ba",
               "参数": {"customer_id": a[1], "内容": "审计", "call_id": a[0]}}, 谁="ba"); 空后 = 数()
+# 10-24 桥扩到业务工具:名单外的写口(开单)不接;派任务不带绑定不执行(都不许以服务身份顶替)
+任前 = sqlite3.connect(副本).execute("SELECT COUNT(*) FROM schedule").fetchone()[0]
+开单 = WB.执行({"工具": "open_order", "幂等键": "ba:x:5", "办事人": "ba", "办事人澜绣工号": 员, "参数": {}}, 谁="ba")
+派 = WB.执行({"工具": "assign_task", "幂等键": "ba:x:6", "办事人": "ba",
+             "参数": {"type": "电话回电", "assignee": 员, "note": "审计", "end": "2026-12-31", "ref_id": a[1]}}, 谁="ba")
+任后 = sqlite3.connect(副本).execute("SELECT COUNT(*) FROM schedule").fetchone()[0]
 错 = WB.执行({"工具": "写跟进", "幂等键": "ba:x:2", "参数": {"customer_id": b, "内容": "审计", "call_id": a[0]}}, 谁="ba")
 野 = WB.执行({"工具": "改订单", "幂等键": "ba:x:3", "参数": {}}, 谁="ba")
 print(json.dumps({"对照": [一[0], 中 - 前], "重来": [二[0], 后 - 中], "错客户": [错[0], (错[2] or {}).get("code"), 数() - 后],
                   "野工具": [野[0], (野[2] or {}).get("code")],
-                  "没绑定": [空[0], (空[2] or {}).get("code"), 空后 - 后]}, ensure_ascii=False))
+                  "没绑定": [空[0], (空[2] or {}).get("code"), 空后 - 后],
+                  "名单外": [开单[0], (开单[2] or {}).get("code")],
+                  "派任务没绑定": [派[0], (派[2] or {}).get("code"), 任后 - 任前]}, ensure_ascii=False))
 """
     r = _sp.run([sys.executable, "-c", src], capture_output=True, text=True, timeout=120, cwd=ROOT)
     try:
@@ -1029,8 +1037,12 @@ print(json.dumps({"对照": [一[0], 中 - 前], "重来": [二[0], 后 - 中], 
         return f"桥执行了认不出的工具:{o['野工具']}"
     if o["没绑定"][0] != "执行失败" or o["没绑定"][2]:
         return f"核对人没绑定澜绣员工,桥照样写了跟进(以服务身份顶替):{o['没绑定']}"
+    if o["名单外"][0] != "执行失败":
+        return f"桥执行了名单外的写口(开单):{o['名单外']}"
+    if o["派任务没绑定"][0] != "执行失败" or o["派任务没绑定"][2]:
+        return f"没绑定澜绣员工,桥照样派了任务:{o['派任务没绑定']}"
     raise PermissionError("同一个幂等键只写一条;录音和客户对不上就拒、一行不写;认不出的工具不执行;"
-                          "核对人没绑定澜绣员工就不写")
+                          "核对人没绑定澜绣员工就不写;名单外的写口不接;业务写口没绑定不执行")
 
 
 def a_disallowed():
@@ -1334,7 +1346,7 @@ STRUCT = [
   a_disallowed, "检查危险工具是否都在 disallowed_tools 里",
   "**双锁**:配置一道 + Hook 一道。配置会被人改错,Hook 是兜底"),
  ("工作流写跟进:重试不写第二条、不记到别人名下", "backend/workflow_bridge.py 写跟进(用户 10-24 拍「核对即定稿」)",
-  a_bridge_followup, "库副本上:同一张写跟进单执行两次 / 通话号是 A 的录音而客户号写 B / 工具名写成改订单 / 核对人没绑定澜绣员工",
+  a_bridge_followup, "库副本上:同一张写跟进单执行两次 / 通话号是 A 的录音而客户号写 B / 工具名写成改订单 / 核对人没绑定澜绣员工 / 名单外的开单 / 不带绑定去派任务",
   "**靠结构**:写之前按幂等键查台账(键记在 create_followup 的台账 ctx 里);"
   "录音的客户和单子上的客户对不上就拒;执行表只有取转写 / 写跟进两项;"
   "核对人没绑定澜绣员工就不写(10-24 账号绑定,不以服务身份顶替)。"

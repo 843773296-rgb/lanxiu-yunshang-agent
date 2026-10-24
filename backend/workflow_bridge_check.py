@@ -119,6 +119,49 @@ def main():
     ck("认不出的工具 → 不执行", r[0] == "执行失败" and r[2]["code"] == "UNKNOWN_TOOL", r)
     ck("拒的这几次一行都没写", 数(副本, "SELECT COUNT(*) FROM followup") == 前)
 
+    print("\n▸ ⑥ 业务工具:照名单调澜绣现成的函数,以绑定员工的身份(10-24 六条流程要的能力)")
+    店长 = "60000001"
+    r = WB.执行({"工具": "get_customer", "办事人": "U001", "办事人澜绣工号": 店长, "参数": {"customer_id": 有稿[1]}})
+    ck("读(get_customer)以绑定员工的身份执行 → 已执行,带工具原样的返回",
+       r[0] == "已执行" and isinstance((r[1] or {}).get("数据"), dict) and not r[1]["数据"].get("error"), r)
+    r = WB.执行({"工具": "get_customer", "办事人": "U001", "参数": {"customer_id": 有稿[1]}})
+    ck("**读也要绑定**:没绑定 → NOT_BOUND(读的范围按身份定,不以服务身份顶替)",
+       r[0] == "执行失败" and r[2]["code"] == "NOT_BOUND", r)
+    r = WB.执行({"工具": "open_order", "办事人": "U001", "办事人澜绣工号": 店长, "幂等键": "xr_chk:x", "参数": {}})
+    ck("名单外的写口(开单 open_order)→ UNKNOWN_TOOL,不执行", r[0] == "执行失败" and r[2]["code"] == "UNKNOWN_TOOL", r)
+    任务前 = 数(副本, "SELECT COUNT(*) FROM schedule")
+    派 = {"工具": "assign_task", "办事人": "U001", "办事人澜绣工号": 店长, "幂等键": "xr_chk:task:1",
+          "参数": {"type": "电话回电", "assignee": "60000003", "note": "检查:回电确认宋制褙子尺寸", "end": "2026-12-31",
+                   "ref_id": 有稿[1]}}
+    r1 = WB.执行(dict(派))
+    ck("写(assign_task 派回电)→ 已执行,任务表多一条", r1[0] == "已执行" and r1[1]["是新执行的"] is True
+       and 数(副本, "SELECT COUNT(*) FROM schedule") == 任务前 + 1, (r1, 数(副本, "SELECT COUNT(*) FROM schedule") - 任务前))
+    r2 = WB.执行(dict(派))
+    ck("**同一个幂等键再来一次:不派第二条,回原来的结果**", r2[0] == "已执行" and r2[1]["是新执行的"] is False
+       and 数(副本, "SELECT COUNT(*) FROM schedule") == 任务前 + 1, (r2, 数(副本, "SELECT COUNT(*) FROM schedule") - 任务前))
+    ck("台账里 START / DONE 各一笔,actor 是绑定员工 + 管理后台账号",
+       数(副本, "SELECT COUNT(*) FROM op_log WHERE machine='bridge' AND target='xr_chk:task:1' AND code='START' "
+                "AND actor LIKE '%张静静(60000001)%U001%'") == 1
+       and 数(副本, "SELECT COUNT(*) FROM op_log WHERE machine='bridge' AND target='xr_chk:task:1' AND code='DONE'") == 1)
+    # 进程死在「写进去」和「记 DONE」之间:台账只有 START —— 重来不许盲目重做
+    oplog.log_op("检查", "bridge", "xr_chk:task:2", "—", "assign_task", True, "START", "模拟写了一半", {})
+    r3 = WB.执行(dict(派, 幂等键="xr_chk:task:2"))
+    ck("**只见 START 不见 DONE → IN_DOUBT,不重做**(上一次可能写了一半,交给人核)",
+       r3[0] == "执行失败" and r3[2]["code"] == "IN_DOUBT"
+       and 数(副本, "SELECT COUNT(*) FROM schedule") == 任务前 + 1, r3)
+    拒 = WB.执行(dict(派, 幂等键="xr_chk:task:4", 参数=dict(派["参数"], ref_id=None)))
+    ck("**工具拒了(回电没给客户号,返回 ok=False)→ TOOL_REFUSED,台账记 FAIL 不记 DONE**(被拒不许当成成功)",
+       拒[0] == "执行失败" and 拒[2]["code"] == "TOOL_REFUSED"
+       and 数(副本, "SELECT COUNT(*) FROM op_log WHERE machine='bridge' AND target='xr_chk:task:4' AND code='DONE'") == 0, 拒)
+    拒2 = WB.执行(dict(派, 幂等键="xr_chk:task:4", 参数=dict(派["参数"], ref_id=None)))
+    ck("被拒之后同一个键再来:照样去判(没记 DONE,不会回一个假的「已经执行过」)",
+       拒2[0] == "执行失败" and 拒2[2]["code"] == "TOOL_REFUSED", 拒2)
+    r4 = WB.执行(dict(派, 幂等键=None))
+    ck("写口没带幂等键 → 不执行", r4[0] == "执行失败" and r4[2]["code"] == "NO_IDEMPOTENCY_KEY", r4)
+    r5 = WB.执行(dict(派, 幂等键="xr_chk:task:3", 参数={"type": "电话回电"}))
+    ck("参数不对 → BAD_ARGS,一条都没派", r5[0] == "执行失败" and r5[2]["code"] == "BAD_ARGS"
+       and 数(副本, "SELECT COUNT(*) FROM schedule") == 任务前 + 1, r5)
+
     print("\n▸ ⑤ 写进的是副本")
     ck("真库的台账里没有这次检查的幂等键",
        数(真库, "SELECT COUNT(*) FROM op_log WHERE ctx LIKE '%xr_chk:save:%'") == 0)

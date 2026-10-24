@@ -131,9 +131,107 @@ def 写跟进(参数, 幂等键, 谁, db=None, 办事人=None, 工号=None):
                    "结果": f"已写跟进 {r['id']}"}}
 
 
+# ── 业务工具:照名单调澜绣现成的函数(2026-10-24,六条业务工作流要的能力)──────────────────
+# 和聊天站调的是**同一个函数**(api.TOOLS),以绑定员工的身份(api.as_user)—— 权限判定和人在页面上点一样,
+# 不因为是工作流来要的就多一分权。名单和管理后台 runtime/桥工具.py 那一份对不对得上,由 tools/bridge_tools_check.py 盯着。
+业务工具 = (
+    "store_report", "list_reports", "call_opportunity", "get_customer", "customer_history", "get_stock",
+    "get_order", "order_log", "get_workorder", "factory_chase", "delay_pending",
+    "bad_ratings", "service_records", "get_aftersale", "get_maintain", "revive_list", "churn_watch", "stock_alert",
+    "save_report", "confirm_report", "assign_task", "create_repair", "decide_repair", "close_bad_rating",
+)
+
+
+def 员工身份(工号, db=None):
+    """澜绣工号 → 和登录时一样的身份(auth.login 那四样);不存在 / 停用 → None。"""
+    if not 工号:
+        return None
+    c = _连(db)
+    try:
+        r = c.execute("SELECT no, name, role, shop, status FROM staff WHERE no=?", (str(工号),)).fetchone()
+    finally:
+        c.close()
+    if not r or r["status"] != "启用":
+        return None
+    return {"no": r["no"], "name": r["name"], "role": r["role"], "shop": r["shop"]}
+
+
+def _桥账(幂等键, db=None):
+    """这张单在台账里记过什么:(开始过吗, 完成时存下的结果 或 None)。"""
+    c = _连(db)
+    try:
+        rs = c.execute("SELECT code, ctx FROM op_log WHERE machine='bridge' AND target=? ORDER BY id",
+                       (幂等键,)).fetchall()
+    finally:
+        c.close()
+    开始 = any(r["code"] == "START" for r in rs)
+    完成 = [json.loads(r["ctx"] or "{}").get("结果") for r in rs if r["code"] == "DONE"]
+    失败了 = sum(r["code"] == "FAIL" for r in rs) >= sum(r["code"] == "START" for r in rs) and 开始
+    return 开始 and not 失败了, (完成[-1] if 完成 else None)
+
+
+def 调业务工具(名, 参数, 幂等键, 办事人=None, 工号=None, db=None):
+    """→ {"输出": {"数据": 工具返回, ...}} 或 {"失败": {...}}
+
+    **写的那几个**(api.WRITE_TOOLS 里的)多两道:
+      · 没幂等键不执行
+      · 执行前在台账记一笔 START、做完记 DONE(带结果)。重来时见 DONE → 回原来的结果、不再做一遍;
+        **见 START 没有 DONE → 不重做,报 IN_DOUBT**:上一次可能写了一半(进程死在写完和记账之间),
+        盲目重做可能派出第二条任务 —— 这种情形交给人去核,而不是猜
+    核对过没有由管理后台那一侧的桥闸守(只认人工节点的批准);这里只管「以谁的身份、做不做第二遍」。"""
+    import api
+    if 名 not in 业务工具 or 名 not in api.TOOLS:
+        return _失败("UNKNOWN_TOOL", f"澜绣桥不接「{名}」")
+    me = 员工身份(工号, db)
+    if not me:
+        return _失败("NOT_BOUND", f"管理后台账号「{办事人 or '?'}」没有绑定可用的澜绣员工"
+                     + (f"(工号 {工号} 不存在或已停用)" if 工号 else "") + " —— 不以服务身份顶替,没执行",
+                     "请管理员在管理后台「成员与权限」里绑上澜绣工号,再重新发起一次")
+    写 = 名 in api.WRITE_TOOLS
+    if 写:
+        if not 幂等键:
+            return _失败("NO_IDEMPOTENCY_KEY", f"「{名}」会写库,单子没带幂等键 —— 不执行,重试会做第二遍")
+        开始过, 旧 = _桥账(幂等键, db)
+        if 旧 is not None:
+            return {"输出": {"数据": 旧, "是新执行的": False, "结果": f"这张单已经执行过「{名}」(没做第二遍)"}}
+        if 开始过:
+            return _失败("IN_DOUBT", f"「{名}」上一次开始执行了但没记下结果 —— 可能写了一半,不重做",
+                       "请到澜绣后台核实这一步有没有生效,再决定要不要在管理后台重新发起")
+    import oplog
+    账人 = f"{me['name']}({me['no']})· 管理后台 {办事人 or '?'} 工作流"
+    if 写:
+        oplog.log_op(账人, "bridge", 幂等键, "—", 名, True, "START", f"工作流来要「{名}」",
+                     {"工具": 名, "参数": 参数, "管理后台账号": 办事人, "澜绣工号": me["no"]})
+    try:
+        with api.as_user(me):
+            r = api.TOOLS[名](**(参数 or {}))
+    except TypeError as e:
+        if 写:
+            oplog.log_op(账人, "bridge", 幂等键, 名, "—", False, "FAIL", f"参数不对:{e}", {"工具": 名})
+        return _失败("BAD_ARGS", f"「{名}」的参数不对:{e}"[:200], "回管理后台检查这一步的参数配置")
+    except Exception as e:
+        # 不记 FAIL:异常可能发生在写进去之后 —— 留着 START,下一次重来会报 IN_DOUBT 让人核
+        return _失败("BRIDGE_CRASHED", f"{type(e).__name__}: {e}"[:200])
+    # 工具拒绝有两种写法:`{"error": …}`(多数读工具)和 `{"ok": False, "code", "reason"}`(写口走 tasks 那套判定)。
+    # ⚠️ 只认前一种的话,被拒的派任务会被当成成功、记下 DONE —— 下次重来就回「已经执行过」(10-24 检查当场抓到)
+    拒 = isinstance(r, dict) and (r.get("error") or r.get("ok") is False)
+    if 拒:
+        因 = r.get("error") or r.get("reason") or r.get("code") or "被拒"
+        if 写:
+            oplog.log_op(账人, "bridge", 幂等键, 名, "—", False, "FAIL", str(因)[:200], {"工具": 名, "返回": r})
+        return _失败("TOOL_REFUSED", f"「{名}」没做:{因}"[:300], r.get("code") if r.get("code") else None)
+    if 写:
+        oplog.log_op(账人, "bridge", 幂等键, 名, "done", True, "DONE", f"工作流「{名}」执行完",
+                     {"工具": 名, "结果": r})
+    return {"输出": {"数据": r, "是新执行的": True, "结果": f"已执行「{名}」"}}
+
+
 执行表 = {"取转写": lambda 单, 谁, db=None: 取转写(单.get("参数"), db=db),
           "写跟进": lambda 单, 谁, db=None: 写跟进(单.get("参数"), 单.get("幂等键"), 谁, db=db,
                                                  办事人=单.get("办事人"), 工号=单.get("办事人澜绣工号"))}
+执行表.update({名: (lambda 名: lambda 单, 谁, db=None: 调业务工具(
+    名, 单.get("参数"), 单.get("幂等键"), 办事人=单.get("办事人"), 工号=单.get("办事人澜绣工号"), db=db))(名)
+    for 名 in 业务工具})
 
 
 def 执行(单, 谁="AI 管理平台", db=None):
