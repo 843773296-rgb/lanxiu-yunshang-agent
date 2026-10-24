@@ -22,6 +22,7 @@
     "call_opportunity", "get_customer", "customer_history", "get_stock",
     # 订单交付风险
     "get_order", "order_log", "get_workorder", "factory_chase", "delay_pending",
+    "订单交付风险",          # 桥专门做的:这一单的交付风险,规则分档(用户 10-25 拍「全用规则分档」)
     # 差评返修
     "bad_ratings", "service_records", "get_aftersale", "get_maintain",
     # 老客召回

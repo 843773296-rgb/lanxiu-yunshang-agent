@@ -73,6 +73,16 @@ sys.path[:0] = [os.path.join(根, "services", "api", "app"),
              "required": ["type", "assignee", "note", "end"], "additionalProperties": False},
          output_schema={"type": "object", "properties": {
              "数据": {"type": "object"}, "结果": {"type": "string"}}, "required": ["结果"]}),
+    # 订单交付风险(10-25,六条第三条,用户拍「全用规则分档,模型只写建议」):桥专门做的读,只查这一单
+    dict(name="订单交付风险", side="read_only",
+         purpose="查这一笔订单的交付风险:档(已延期 / 需关注 / 暂无已识别风险 / 无法判断 / 已结束 / 不适用)由规则判,带依据和缺什么",
+         input_schema={"type": "object", "properties": {
+             "order_id": {"type": "string", "description": "订单号"},
+             "临近天数": {"type": "integer", "description": "离承诺完工日几天内算需关注,默认 3"}},
+             "required": ["order_id"], "additionalProperties": False},
+         output_schema={"type": "object", "properties": {
+             "数据": {"type": "object"}, "指纹": {"type": "string"}, "结果": {"type": "string"}},
+             "required": ["数据", "指纹"]}),
     dict(name="save_report", side="reversible",
          confirm={"方式": "人工确认", "绑定": "定稿正文", "由谁承担": "工作流里的人工核对节点",
                   "执行侧再查": "runtime/桥闸.py —— 这次运行里没有人工节点的批准就不记单"},
@@ -127,7 +137,23 @@ sys.path[:0] = [os.path.join(根, "services", "api", "app"),
     变更说明="经营报告模板默认的处理要求(10-24)",
 )
 
-处理要求们 = (处理要求, 报告撰写)
+风险建议 = dict(
+    key="order_risk_advise",
+    用途="订单风险建议:照规则判出的风险档和依据,写给店长的处理建议和要核实的问题",
+    标签=["订单风险"],
+    system=("你是汉服定制门店的交付风险助手。**风险档已经由规则判好了,你不改档、不重新判**。"
+            "只用取数包里的事实:承诺完工日、离承诺完工日几天、该催的理由、订单时间线。"
+            "不写「预计某日完成」这类没有依据的承诺;不建议改交期、退款、通知客户 —— 那些不在这个流程里。"
+            "建议的动作只有一种:派一条「订单跟踪」任务,写清跟踪人要去核实什么。"),
+    user=("取数包(JSON):\n{{取数包}}\n\n"
+          "按 JSON 输出:建议(给店长的一段话:为什么是这一档、建议跟踪人去做什么)、"
+          "需要核实(列表:跟踪人要去问清的事)。"),
+    变量=[{"名称": "取数包", "必填": True, "来源": "上一步结果", "类型": "object", "说明": "订单交付风险那一步的数据"}],
+    输出={"格式": "json", "必含项": ["建议", "需要核实"], "未知值规则": "取数包里没有的写「不知道」,不编日期"},
+    变更说明="订单风险模板默认的处理要求(10-25)",
+)
+
+处理要求们 = (处理要求, 报告撰写, 风险建议)
 
 
 def 登记处理要求(c, 项目, org, 处理要求=处理要求):

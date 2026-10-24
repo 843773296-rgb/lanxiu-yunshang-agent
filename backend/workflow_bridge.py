@@ -237,9 +237,47 @@ def 调业务工具(名, 参数, 幂等键, 办事人=None, 工号=None, db=None
     return {"输出": 出}
 
 
+def 订单交付风险(参数, 办事人=None, 工号=None, db=None):
+    """**这一笔**订单的交付风险(六条第三条,用户 10-25 拍「全用规则分档,模型只写建议」)。
+
+    以绑定员工的身份调 api.get_order(范围和页面上一样),从它的「工厂回传 → 进度」里取承诺完工日、
+    该不该催、演示世界的今天 —— **只取这一单的**(「该催工厂」那个工具给的是全店,拼进来就把别的单的风险算到这单头上);
+    分档在 knowledge/delivery_risk.py(口径模块,不取数、不取日期)。临近天数默认 3,工作流可传。"""
+    import api, sys as _s
+    _s.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
+    import delivery_risk as _dr
+    oid = str((参数 or {}).get("order_id") or "").strip()
+    if not oid:
+        return _失败("MISSING", "没给订单号")
+    me = 员工身份(工号, db)
+    if not me:
+        return _失败("NOT_BOUND", f"管理后台账号「{办事人 or '?'}」没有绑定可用的澜绣员工 —— 不以服务身份顶替,没查",
+                   "请管理员在管理后台「成员与权限」里绑上澜绣工号")
+    with api.as_user(me):
+        o = api.get_order(order_id=oid)
+    if not isinstance(o, dict) or o.get("error"):
+        return _失败("TOOL_REFUSED", f"查不到订单 {oid}:{(o or {}).get('error') if isinstance(o, dict) else o}")
+    进 = ((o.get("工厂回传") or {}).get("进度") or {})
+    from seed import TODAY
+    今天 = 进.get("截至(演示世界的今天)") or TODAY
+    临近 = int((参数 or {}).get("临近天数") or 3)
+    风险 = _dr.分档(o.get("类型"), o.get("PRD状态"), 进.get("承诺完工日"), 进.get("该不该催") == "该催",
+                  今天, 临近, 进.get("为什么"))
+    数据 = {"订单号": oid, "客户": o.get("客户"), "类型": o.get("类型"), "状态": o.get("PRD状态"),
+            "页面状态": o.get("页面状态"), "承诺完工日": 进.get("承诺完工日"), "今天": 今天, "临近天数": 临近,
+            "风险": 风险, "要跟踪吗": 风险["档"] in _dr.要跟踪的档, "订单": o}
+    return {"输出": {"数据": 数据, "指纹": 数据指纹(数据), "是新执行的": True,
+                   "结果": f"{oid}:{风险['档']}"}}
+
+
+# 桥专门做的几样(不在 api.TOOLS 里的):两边名单对账时和业务工具合在一起算
+专用工具 = ("取转写", "写跟进", "订单交付风险")
+
 执行表 = {"取转写": lambda 单, 谁, db=None: 取转写(单.get("参数"), db=db),
           "写跟进": lambda 单, 谁, db=None: 写跟进(单.get("参数"), 单.get("幂等键"), 谁, db=db,
                                                  办事人=单.get("办事人"), 工号=单.get("办事人澜绣工号"))}
+执行表["订单交付风险"] = lambda 单, 谁, db=None: 订单交付风险(单.get("参数"), 办事人=单.get("办事人"),
+                                                            工号=单.get("办事人澜绣工号"), db=db)
 执行表.update({名: (lambda 名: lambda 单, 谁, db=None: 调业务工具(
     名, 单.get("参数"), 单.get("幂等键"), 办事人=单.get("办事人"), 工号=单.get("办事人澜绣工号"), db=db))(名)
     for 名 in 业务工具})

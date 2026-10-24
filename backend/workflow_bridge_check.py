@@ -168,6 +168,29 @@ def main():
     ck("参数不对 → BAD_ARGS,一条都没派", r5[0] == "执行失败" and r5[2]["code"] == "BAD_ARGS"
        and 数(副本, "SELECT COUNT(*) FROM schedule") == 任务前 + 1, r5)
 
+    print("\n▸ ⑦ 订单交付风险(六条第三条,用户 10-25 拍「全用规则分档」):只查这一单、以绑定员工身份")
+    在产 = sqlite3.connect(副本).execute(
+        "SELECT o.id FROM ordr o JOIN staff s ON s.no=? WHERE o.kind='定制品订单' AND o.prd_status='待发货' "
+        "AND o.shop_code=s.shop_code ORDER BY o.id LIMIT 1", (店长,)).fetchone()
+    ck("夹具:店长那家店有一笔在产的定制单", bool(在产), 在产)
+    if 在产:
+        r = WB.执行({"工具": "订单交付风险", "办事人": "U001", "办事人澜绣工号": 店长, "参数": {"order_id": 在产[0]}})
+        数据 = (r[1] or {}).get("数据") or {}
+        sys.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
+        import delivery_risk as _DR
+        ck("查到 → 已执行,订单号就是这一单,档是六档之一,带指纹",
+           r[0] == "已执行" and 数据.get("订单号") == 在产[0] and 数据.get("风险", {}).get("档") in _DR.档们
+           and (r[1] or {}).get("指纹"), (r[0], 数据.get("订单号"), 数据.get("风险")))
+        ck("**取数包里只有这一单**(不把「该催工厂」全店那张清单拼进来)",
+           (数据.get("订单") or {}).get("订单") in (在产[0], None) and "该催" not in 数据,
+           list(数据.keys()))
+        ck("要不要跟踪由档决定(已延期 / 需关注才要)",
+           数据.get("要跟踪吗") == (数据.get("风险", {}).get("档") in _DR.要跟踪的档), 数据.get("要跟踪吗"))
+    r = WB.执行({"工具": "订单交付风险", "办事人": "U001", "参数": {"order_id": "6488012800001279984"}})
+    ck("没绑定 → NOT_BOUND,不以服务身份顶替", r[0] == "执行失败" and r[2]["code"] == "NOT_BOUND", r)
+    r = WB.执行({"工具": "订单交付风险", "办事人": "U001", "办事人澜绣工号": 店长, "参数": {"order_id": "NOPE"}})
+    ck("没有这一单 → 拒,不编", r[0] == "执行失败" and r[2]["code"] == "TOOL_REFUSED", r)
+
     print("\n▸ ⑤ 写进的是副本")
     ck("真库的台账里没有这次检查的幂等键",
        数(真库, "SELECT COUNT(*) FROM op_log WHERE ctx LIKE '%xr_chk:save:%'") == 0)

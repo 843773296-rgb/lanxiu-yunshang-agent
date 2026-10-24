@@ -2908,8 +2908,9 @@ async function 页_人工待办() {
 function 画_核对页(hid, d, 头) {
   const 材 = d["核对材料"] || {}, 请 = d["请求"] || {}, 影 = d["影响对象"] || {};
   const 能改 = (d["允许编辑的字段"] || []).includes("定稿");
-  // 回电(10-24 录音加回电):负责人和截止时间由核对人填,不让模型猜;**填了这两样 = 要派,没填 = 只写跟进**
-  const 能派回电 = (d["允许编辑的字段"] || []).includes("回电负责人");
+  // 定稿之外核对人能填的(10-24 录音的回电负责人 / 回电截止、10-25 订单风险的跟踪负责人 / 跟踪截止):
+  // 负责人和时间由人填,不让模型猜;**全填了 = 要派,全空 = 不派**,只填一部分不提交。按字段名通用地画,不按流程写死
+  const 额外 = (d["允许编辑的字段"] || []).filter((k) => k !== "定稿");
   const 待 = Array.isArray(材["待确认项"]) ? 材["待确认项"] : [];
   $("#main").innerHTML = 头 + `
     <div class="note">${材["客户"] ? `客户 <b>${esc(材["客户"])}</b>` : ""} ${材["通话"] ? ` · 通话 <b>${esc(材["通话"])}</b>` : ""}
@@ -2924,13 +2925,15 @@ function 画_核对页(hid, d, 头) {
         <h4>定稿(通过后写进客户档案的那一版)</h4>
         ${能改 ? `<textarea id="rv-fin" rows="6">${esc(材["摘要"] || "")}</textarea>`
                : `<div class="k">这一步不允许改定稿 —— 通过就按上面的摘要写。</div>`}
-        ${能派回电 ? `<h4>派电话回电(可选)</h4>
-        <div class="k">AI 判断的类别:<b>${esc(材["类别"] || "—")}</b>。只有「明确需求 / 考虑中」才会派;
-          负责人和截止时间<b>都填了才派</b>,不填就只写跟进。</div>
-        <label class="f">回电负责人(工号或姓名)</label><input id="rv-cbwho" placeholder="如 60000003">
-        <label class="f">回电截止</label><input id="rv-cbend" type="datetime-local">` : ""}
+        ${额外.length ? `<h4>派任务(可选)</h4>
+        ${材["类别"] ? `<div class="k">AI 判断的类别:<b>${esc(材["类别"])}</b>。只有「明确需求 / 考虑中」才会派。</div>` : ""}
+        ${材["风险"] ? `<div class="k">规则判的风险档:<b>${esc((材["风险"] || {})["档"] || "—")}</b>
+          ${esc(((材["风险"] || {})["依据"] || []).join(";"))}</div>` : ""}
+        <div class="k">下面几项<b>都填了才派</b>,全空就不派。</div>
+        ${额外.map((k, i) => `<label class="f">${esc(k)}${/负责人/.test(k) ? "(工号或姓名)" : ""}</label>
+          <input data-rvx="${i}" ${/截止/.test(k) ? 'type="datetime-local"' : 'placeholder="如 60000003"'}>`).join("")}` : ""}
         <label class="f">理由(退回必填)</label><textarea id="rv-why" rows="2"></textarea>
-        <button class="pri" id="rv-ok">通过,写进跟进</button> <button id="rv-no">退回</button>
+        <button class="pri" id="rv-ok">通过</button> <button id="rv-no">退回</button>
         <div id="rv-res"></div>` : `<div class="state err"><h3>你不能处理这条</h3><p>${md(d["为什么"] || "")}</p></div>`}
       </div></div>
     <h2>处理记录</h2>`
@@ -2944,17 +2947,18 @@ function 画_核对页(hid, d, 头) {
     if (决定 === "rejected" && !理由) { $("#rv-why").focus(); $("#rv-res").innerHTML = `<div class="k">退回要写理由 —— 不然发起的人不知道错在哪。</div>`; return; }
     const edits = {};
     if (决定 === "approved" && 能改 && $("#rv-fin").value.trim() !== (材["摘要"] || "").trim()) edits["定稿"] = $("#rv-fin").value.trim();
-    if (决定 === "approved" && 能派回电) {
-      const 谁 = $("#rv-cbwho").value.trim(), 截 = $("#rv-cbend").value.trim();
-      if (谁 && 截) { edits["回电负责人"] = 谁; edits["回电截止"] = 截.replace("T", " "); }
-      else if (谁 || 截) { $("#rv-res").innerHTML = `<div class="k">回电负责人和截止时间要么都填、要么都不填 —— 只填一样不会派。</div>`; return; }
+    if (决定 === "approved" && 额外.length) {
+      const 值 = 额外.map((k, i) => (document.querySelector(`[data-rvx="${i}"]`).value || "").trim());
+      const 填了 = 值.filter(Boolean).length;
+      if (填了 === 额外.length) 额外.forEach((k, i) => { edits[k] = 值[i].replace("T", " "); });
+      else if (填了) { $("#rv-res").innerHTML = `<div class="k">${esc(额外.join("、"))} 要么都填、要么都不填 —— 只填一部分不会派。</div>`; return; }
     }
     $("#rv-res").innerHTML = `<div class="k">提交中…</div>`;
     try {
       const r = await 请求(`${P()}/human-requests/${encodeURIComponent(hid)}/decisions`, {
         method: "POST", headers: { "Idempotency-Key": 新键() },
         body: JSON.stringify({ decision: 决定, request_revision: 请.revision, reason: 理由 || null, edits }) });
-      $("#rv-res").innerHTML = `<div class="note">${决定 === "approved" ? "已通过 —— 流程接着走,澜绣的同步程序会把定稿写成一条跟进"
+      $("#rv-res").innerHTML = `<div class="note">${决定 === "approved" ? "已通过 —— 流程接着走,接下来的写入由澜绣的同步程序按定稿去办"
         : "已退回 —— 这次运行记下理由后结束,什么都不写"}${r["运行"] ? ` · <a href="#/wfrun/${encodeURIComponent(r["运行"].id)}">看这次运行</a>` : ""}</div>`;
       setTimeout(() => 页_待办详情(hid), 1500);
     } catch (e) { const s = 错误块(e, null); $("#rv-res").innerHTML = s.html; }

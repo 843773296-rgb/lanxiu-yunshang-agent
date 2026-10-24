@@ -12658,5 +12658,29 @@
    }
   ],
   "预期红": "`_ROLE_TOOLS` 的每个角色只拿名单用 `+` 拼"
+ },
+ {
+  "script": "knowledge/delivery_risk_check.py",
+  "改坏": "临近线从「≤ 3 天」改成「< 3 天」—— 正好还剩 3 天的单从需关注掉进暂无风险,而方案写的是「≤ 3 个自然日」",
+  "file": [
+   {
+    "path": "knowledge/delivery_risk.py",
+    "old": "    if 天 <= int(临近天数) or 该催:\n",
+    "new": "    if 天 < int(临近天数) or 该催:\n"
+   }
+  ],
+  "预期红": "**还有 3 天(正好在临近线上)→ 需关注**"
+ },
+ {
+  "script": "knowledge/delivery_risk_check.py",
+  "改坏": "在产但缺承诺完工日时判成暂无已识别风险 —— 方案原话「无法判断不可被压成低风险」",
+  "file": [
+   {
+    "path": "knowledge/delivery_risk.py",
+    "old": "        缺.append(\"承诺完工日(工厂还没回接单,或接单时没报日期)\")\n        return 出(\"无法判断\")\n",
+    "new": "        缺.append(\"承诺完工日(工厂还没回接单,或接单时没报日期)\")\n        return 出(\"暂无已识别风险\")\n"
+   }
+  ],
+  "预期红": "**在产但没有承诺完工日 → 无法判断,不压成低风险**"
  }
 ]

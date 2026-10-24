@@ -270,7 +270,86 @@ def _经营报告(桥):
             "nodes": 节点, "edges": 边}
 
 
-模板们 = ("空白", "文本处理", "音频整理", "经营报告")
+def _订单风险(桥):
+    """**订单 → 交付风险 → 处理与复查**(六条第三条,10-25)。用户拍「全用规则分档,模型只写建议」:
+    档由澜绣桥那一侧的规则判(knowledge/delivery_risk.py),模型只组织建议;店长核对时填跟踪负责人和截止时间
+    (方案文档「不根据模型猜测派单人选与约定时间」);派之前再取一次比指纹 —— 核对期间订单变了就不派,请店长重新发起
+    (方案「核查期间订单状态变化:审核前重新核验,变化明显时请店长重新查看」)。首版不自动复查、不改交期。"""
+    def 引(n, p):
+        return {"source": "node", "node_id": n, "pointer": p}
+    串 = {"type": "string"}
+    结果Schema = {"type": "object", "properties": {"结果": 串}, "required": ["结果"], "additionalProperties": False}
+    建议Schema = {"type": "object", "properties": {"建议": 串, "需要核实": {"type": "array", "items": 串}},
+                 "required": ["建议", "需要核实"], "additionalProperties": False}
+    def 取(id_, x, y):
+        return {"id": id_, "type": "tool", "name": "取这一单的交付风险", "layout": {"x": x, "y": y},
+                "config": {"tool_version_id": 桥.get("订单交付风险"),
+                           "bindings": {"order_id": {"source": "input", "pointer": "/order_id"}}}}
+    def 记(id_, 名, 来, 尾, x, y):
+        return {"id": id_, "type": "transform", "name": 名, "layout": {"x": x, "y": y},
+                "config": {"operations": [{"op": "concat", "parts": [来, {"source": "constant", "value": 尾}],
+                                           "into": "结果"}], "output_schema": 结果Schema}}
+    def 判(id_, 名, when, x, y):
+        return {"id": id_, "type": "condition", "name": 名, "layout": {"x": x, "y": y},
+                "config": {"branches": [{"key": "yes", "when": when}], "else_policy": "fail"}}
+    节点 = [
+        {"id": "start", "type": "start", "name": "选订单", "layout": {"x": 40, "y": 160},
+         "config": {"input_schema": {"type": "object", "properties": {
+             "order_id": {"type": "string", "minLength": 1, "title": "订单号"}},
+             "required": ["order_id"], "additionalProperties": False}}},
+        取("fetch1", 200, 160),
+        判("track", "要跟踪吗", {"op": "equals", "left": 引("fetch1", "/数据/要跟踪吗"),
+                              "right": {"source": "constant", "value": True}}, 360, 160),
+        记("no_track", "不派(档不用跟踪)", 引("fetch1", "/结果"), " —— 这一档不派跟踪任务", 520, 300),
+        {"id": "advise", "type": "llm", "name": "写处理建议", "layout": {"x": 520, "y": 80},
+         "config": {"output_schema": 建议Schema, "prompt_version_id": 桥.get("处理要求"),
+                    "bindings": {"取数包": 引("fetch1", "/数据")}}},
+        {"id": "review", "type": "human", "name": "店长决定", "layout": {"x": 680, "y": 80},
+         "config": {"request_kind": "核对", "candidate_roles": ["approver", "admin"],
+                    "allowed_fields": ["定稿", "跟踪负责人", "跟踪截止"],
+                    "expires_at_policy": {"小时": 48, "到期": "fail"},
+                    "payload_binding": {"摘要": 引("advise", "/建议"), "待确认项": 引("advise", "/需要核实"),
+                                        "风险": 引("fetch1", "/数据/风险"), "订单": {"source": "input", "pointer": "/order_id"}}}},
+        判("ok", "店长确认了吗", {"op": "equals", "left": 引("review", "/决定"),
+                               "right": {"source": "constant", "value": "approve"}}, 840, 80),
+        {"id": "rejected", "type": "transform", "name": "记下店长的理由(误报 / 退回)", "layout": {"x": 1000, "y": 300},
+         "config": {"operations": [{"op": "to_string", "from": 引("review", "/理由"), "into": "结果"}],
+                    "output_schema": 结果Schema}},
+        取("fetch2", 1000, 80),
+        判("same", "核对期间订单变了没有", {"op": "equals", "left": 引("fetch1", "/指纹"), "right": 引("fetch2", "/指纹")}, 1160, 80),
+        记("changed", "不派(核对期间变了)", 引("fetch2", "/结果"), " —— 店长核对期间这一单的情况变了,没派;请重新发起一次看最新的", 1320, 220),
+        判("who", "填了跟踪负责人吗", {"op": "exists", "left": 引("review", "/跟踪负责人")}, 1320, 80),
+        判("when", "填了截止时间吗", {"op": "exists", "left": 引("review", "/跟踪截止")}, 1480, 80),
+        记("no_who", "不派(没填负责人)", 引("fetch1", "/结果"), " —— 店长没填跟踪负责人,没派", 1480, 220),
+        记("no_when", "不派(没填截止)", 引("fetch1", "/结果"), " —— 店长没填跟踪截止时间,没派", 1640, 220),
+        {"id": "task", "type": "tool", "name": "派订单跟踪", "layout": {"x": 1640, "y": 0},
+         "config": {"tool_version_id": 桥.get("assign_task"),
+                    "bindings": {"type": {"source": "constant", "value": "订单跟踪"},
+                                 "assignee": 引("review", "/跟踪负责人"), "note": 引("review", "/定稿"),
+                                 "end": 引("review", "/跟踪截止"),
+                                 "ref_id": {"source": "input", "pointer": "/order_id"}}}},
+        记("tasked", "记下派了", 引("fetch1", "/结果"), " —— 已派订单跟踪任务", 1800, 0),
+        {"id": "merge", "type": "merge", "name": "汇合", "layout": {"x": 1960, "y": 160},
+         "config": {"candidates": [引("tasked", "/结果"), 引("no_track", "/结果"), 引("rejected", "/结果"),
+                                   引("changed", "/结果"), 引("no_who", "/结果"), 引("no_when", "/结果")],
+                    "output_field": "结果"}},
+        {"id": "finish", "type": "end", "name": "返回结果", "layout": {"x": 2120, "y": 160},
+         "config": {"output_schema": 结果Schema, "bindings": {"结果": 引("merge", "/结果")}}},
+    ]
+    边 = [{"source": a, "target": b, "port": "success"} for a, b in (
+        ("start", "fetch1"), ("fetch1", "track"), ("advise", "review"), ("review", "ok"), ("fetch2", "same"),
+        ("task", "tasked"), ("tasked", "merge"), ("no_track", "merge"), ("rejected", "merge"),
+        ("changed", "merge"), ("no_who", "merge"), ("no_when", "merge"), ("merge", "finish"))]
+    分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
+    边 += [分("track", "advise", "yes"), 分("track", "no_track", "else"), 分("ok", "fetch2", "yes"),
+          分("ok", "rejected", "else"), 分("same", "who", "yes"), 分("same", "changed", "else"),
+          分("who", "when", "yes"), 分("who", "no_who", "else"), 分("when", "task", "yes"), 分("when", "no_when", "else")]
+    return {"definition_schema_version": "1", "kind": "workflow",
+            "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
+            "nodes": 节点, "edges": 边}
+
+
+模板们 = ("空白", "文本处理", "音频整理", "经营报告", "订单风险")
 
 # ── 聊天接管(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」)──────────────────
 # 能被接管的只有澜绣**自有**技能(agentsite/skills_own.py 的 OURS)—— 第三方技能没有业务写口,接管它没有意义。
@@ -281,7 +360,7 @@ def _经营报告(桥):
     "quote": "报价", "growth-plan": "成长计划", "roster": "排班", "exchange": "换货",
     "pattern-draft": "打版",
 }
-_模板技能 = {"音频整理": "call-notes", "经营报告": "store-report"}
+_模板技能 = {"音频整理": "call-notes", "经营报告": "store-report", "订单风险": "deadline-rescue"}
 
 
 def _审计(c, me, action, target, reason=None):
@@ -315,7 +394,7 @@ def _默认处理要求(c, project_id, key="customer_needs_extract"):
                              order by version_no desc limit 1"""), {"p": project_id, "k": key}).scalar()
 
 
-_模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write"}
+_模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write", "订单风险": "order_risk_advise"}
 
 
 def _模板(名, 桥=None):
@@ -324,6 +403,8 @@ def _模板(名, 桥=None):
         return _音频整理(桥 or {})
     if 名 == "经营报告":
         return _经营报告(桥 or {})
+    if 名 == "订单风险":
+        return _订单风险(桥 or {})
     开始 = {"id": "start", "type": "start", "layout": {"x": 40, "y": 120},
             "config": {"input_schema": {"type": "object",
                                         "properties": {"article": {"type": "string",
@@ -423,6 +504,8 @@ _模板说明 = {
                ["选择录音", "取转写", "提取客户需求", "人工核对", "通过 → 写跟进 / 退回 → 记理由", "有意向且填了负责人和时间 → 派电话回电"]),
     "经营报告": ("取一期门店经营数据写成报告,店长核对后存一版;核对期间数据变了就拿新数重写、再请店长看一遍",
                ["选报告期", "取经营数据", "写报告正文", "店长核对", "保存前再取一次比指纹", "一样 → 存 / 变了 → 重写再核"]),
+    "订单风险": ("选一笔订单,规则判出交付风险档(已延期 / 需关注 / 暂无已识别风险 / 无法判断),要跟踪的由店长填负责人和时间后派「订单跟踪」",
+               ["选订单", "取这一单的交付风险(规则分档)", "要跟踪?", "写处理建议", "店长决定", "派之前再核一次", "派订单跟踪"]),
     "文本处理": ("一段文字进来,模型整理一遍出去(开始 → AI 处理 → 结束)", ["输入正文", "AI 处理", "返回结果"]),
     "空白": ("只有开始和结束,自己从头搭", []),
 }
@@ -443,8 +526,9 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                               {"p": project_id}).first())
         有要求 = bool(_默认处理要求(c, project_id))
         有报告要求 = bool(_默认处理要求(c, project_id, "store_report_write"))
+        有风险要求 = bool(_默认处理要求(c, project_id, "order_risk_advise"))
     出 = []
-    for 名 in ("音频整理", "经营报告", "文本处理", "空白"):   # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
+    for 名 in ("音频整理", "经营报告", "订单风险", "文本处理", "空白"):   # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
         说, 步 = _模板说明[名]
         要 = []
         if 名 == "音频整理":
@@ -453,13 +537,19 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                           "怎么补": "平台管理员跑 管理后台/tools/seed_bridge_tools.py 登记"})
             要.append({"名": "处理要求「客户需求提取」", "有了吗": 有要求,
                       "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
+        if 名 == "订单风险":
+            for 工, 中 in (("订单交付风险", "取这一单的交付风险"), ("assign_task", "派任务")):
+                要.append({"名": f"澜绣业务动作「{中}」", "有了吗": bool(桥.get(工)),
+                          "怎么补": "跑 管理后台/tools/seed_bridge_tools.py 登记(派任务在正式项目里用从澜绣导入的)"})
+            要.append({"名": "处理要求「订单风险建议」", "有了吗": 有风险要求,
+                      "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
         if 名 == "经营报告":
             for 工, 中 in (("store_report", "取经营数据"), ("save_report", "存报告")):
                 要.append({"名": f"澜绣业务动作「{中}」", "有了吗": bool(桥.get(工)),
                           "怎么补": "正式项目从澜绣导入;别的项目跑 管理后台/tools/seed_bridge_tools.py 登记"})
             要.append({"名": "处理要求「经营报告撰写」", "有了吗": 有报告要求,
                       "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
-        if 名 in ("音频整理", "经营报告", "文本处理"):
+        if 名 in ("音频整理", "经营报告", "订单风险", "文本处理"):
             要.append({"名": "一个可用的模型", "有了吗": 有模型, "怎么补": "平台管理员在「模型与连接」里接一个"})
         出.append({"名": 名, "说明": 说, "步骤": 步, "需要的资源": 要,
                    "能直接跑吗": all(x["有了吗"] for x in 要) and 名 != "空白"})
