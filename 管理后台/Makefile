@@ -418,6 +418,7 @@ test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 mak
 	@echo "  ⚠️ **排掉了两份要真调 Claude 的** —— 排掉哪几份、为什么,"
 	@echo "     看 Makefile 里 'E2E_CI跳过';'test_registry_check' 验「没有谁从两个名单之间漏掉」"
 	@./.venv/bin/python tools/seed_datasets.py > /dev/null
+	@./.venv/bin/python tools/seed_bridge_tools.py --项目 project_demo_a > /dev/null
 	@./.venv/bin/python tools/seed_training.py > /dev/null
 # ⚠️ **失败时把输出贴全,不 `tail` 截。**
 # 第一版截 12 行,而挂的详情(每条断言的 `补`)在更前面 ——
@@ -576,6 +577,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  (过完闸一条不剩 → 422 而不是 200+空文件;声明了要脱而脱敏器没选型 → 不给不脱的版本)"
 	@echo "  ⚠️ 要先 python3 tools/seed_datasets.py 铺那六份「每份专考一道闸」的数据集"
 	@./.venv/bin/python tools/seed_datasets.py > /dev/null
+	@./.venv/bin/python tools/seed_bridge_tools.py --项目 project_demo_a > /dev/null
 	@./.venv/bin/python tests/e2e/test_datasets_flow.py
 	@echo ""
 # ⚠️ **评测那一份必须排在数据集之后。** 它要一个**已冻结的数据集版本**,

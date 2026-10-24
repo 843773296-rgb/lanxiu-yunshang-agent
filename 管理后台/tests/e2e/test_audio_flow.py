@@ -112,6 +112,11 @@ def 决定(hid, decision, **kw):
              头={"Idempotency-Key": str(uuid.uuid4())})
 
 
+# 资源先登记(重复跑不增加对象):CI 是一个全新的库,没登记过澜绣桥工具和「客户需求提取」——
+# 10-24 第一次推上去 CI 就红在这儿(模板拿到 [None, None]),而本地库早就登记过,所以本地一直绿
+subprocess.run([PY, os.path.join(根, "tools", "seed_bridge_tools.py"), "--项目", 项目],
+               capture_output=True, text=True, timeout=120, cwd=根, check=True)
+
 print("▸ ⓪ 模板卡片 / 下拉资源")
 c, t = 打("GET", P + "/workflow-templates")
 ck("模板卡片:音频整理排第一(弹窗默认选它),写明要哪些资源", c == 200 and t["items"][0]["名"] == "音频整理"

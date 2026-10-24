@@ -344,10 +344,16 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
             # 所以改成两个名字各指一件事,**不再有裸 `id`**。
             # 顺带:`新的 revision` 也补上 —— 前端在读它,重放时拿不到会显示
             # 「rev undefined」,而那个不报错。
-            return {"待办id": req_id, "决定id": 老["id"], "记了吗": False,
+            重放 = {"待办id": req_id, "决定id": 老["id"], "记了吗": False,
                     "decision": 老["decision"], "当前状态": d["status"],
                     "新的 revision": d["revision"],
                     "note": "**同一个幂等键 → 返回原决定,没有记第二条**"}
+            if d["execution_run_id"]:
+                # 两条路径的字段名要一样(test_handover_flow 盯着):新建那条带「运行」,重放也带 ——
+                # 只是重放**不再排一次恢复**(恢复任务 None,说明写清)
+                重放["运行"] = {"id": d["execution_run_id"], "恢复任务": None,
+                              "说明": "同一个幂等键的重放 —— 没有再排一次恢复"}
+            return 重放
         # ⚠️ **乐观锁在权限判断之前**:revision 对不上说明别人已经处理过了,
         # 这时候该报「有人先处理了」,而不是报「你没权限」——
         # 两个理由会让人做完全不同的下一步。

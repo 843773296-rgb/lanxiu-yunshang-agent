@@ -99,7 +99,11 @@ async function 跑(名, 动作) {
   ck("对照 · 试运行照常发出", (await 跑("试运行", () => 动.试运行({}))).some((r) => r.includes("/execution-runs")));
 
   if (走过.length !== 该跑几组) 挂.push(`该跑 ${该跑几组} 组,只走了 ${走过.length} 组`);
-  console.log(挂.length ? `\n❌ ${挂.length} 条不过(验了 ${过 + 挂.length} 条):${挂.join(" / ")}`
-                        : `\n✅ 草稿没存上就停:校验 / 冻结 / 试运行 × 500 / 409,冲突不刷新(验了 ${过} 条)`);
+  // ⚠️ 收尾两行的形状照这一组的规矩:**倒数第二行是结论**(make test-e2e-ci 取 tail -2 | head -1)。
+  // 第一版结论前面带了个换行,CI 汇总那一栏就是一片空白 —— 绿了,却读不出是什么绿
+  console.log("");
+  console.log(挂.length ? `❌ ${挂.length} 条不过(验了 ${过 + 挂.length} 条):${挂.join(" / ")}`
+                        : `✅ 过 ${过} / 挂 0 —— 草稿没存上就停:校验 / 冻结 / 试运行 × 500 / 409,冲突不刷新`);
+  console.log(`(走了 ${走过.length} / ${该跑几组} 组)`);
   process.exit(挂.length ? 1 : 0);
 })();
