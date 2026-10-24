@@ -67,6 +67,10 @@ G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
     ("在 server.py 新建方案那段加一句 `INSERT INTO scheme VALUES(?×14)`(列数对得上,只是位置参数)",
      "没有新增的位置参数 INSERT"),
     ("把 derive_xingzhi 那句改成具名列、但不删欠债表", "欠债表里的都还欠着"),
+    # 2026-10-24 新增:`_insert(表, {键…})` 这条路**绕开了上面四条** ——
+    # 它不写 `INSERT INTO`,所以那个正则看不见它,而它照样在往库里写。
+    ("把 create_appointment 的 `advisor_no` 键改回 `advisor`(表上没有这一列)",
+     "每个 _insert 传的键都是表上真有的列"),
 ]
 
 跳过目录 = {".git", "__pycache__", ".venv", "node_modules", ".fakedata", "static"}
@@ -291,7 +295,82 @@ def main():
     if n欠:
         print(f"     ℹ️ 欠着 {n欠} 处({len(欠)} 个文件)—— 不拦门禁,但**只许少不许多**。"
               f"最多的:{列([f'{f} {sum(t.values())}' for f, t in sorted(欠.items(), key=lambda kv: -sum(kv[1].values()))], 3)}")
-    print((f"{R}❌ INSERT 形状 {len(失败)} 条不过{D}") if 失败 else f"{G}✅ INSERT 都对得上建表,没有新增位置参数{D}")
+    # ── ⑤ `_insert(表, {键…})` 传的键必须是表上真有的列 ──────────────────
+    #
+    # ⚠️ 这条路**绕开了上面那四条**:它不写 `INSERT INTO`,
+    # 所以那个正则一个字都看不见它,而它照样在往库里写。
+    # > 一个用辅助函数写库的写口,和一个不存在的写口,在正则眼里长得一模一样。
+    #
+    # 2026-10-24 为这件事栽了一次,**而且躺了很久**:
+    # `create_appointment` / `create_followup` 传的是 `"advisor"`,
+    # 两张表上的列都叫 `advisor_no`,而 `_insert` 当时对非必填的未知列
+    # 只在 stderr 打一行就丢 —— **从页面建的每一条预约和跟进,顾问都是空的,
+    # 而接口返回 ok:true**。库里现有的都带着顾问,那是 seed 直接写进去的。
+    #
+    # `_insert` 现在改成**抛**了,但那只在那条路径真被走到时才炸;
+    # 这条静态检查永远在。两样都要:
+    # **「这条路没人走过」和「这条路是对的」,在没有报错这件事上长得一模一样。**
+    print()
+    print("_insert 传的键")
+    import sqlite3 as _sq
+    _db = os.path.join(ROOT, "backend", "lanxiu.db")
+    _调用 = []
+    for d, ds, fs in os.walk(ROOT):
+        ds[:] = [x for x in ds if x not in 跳过目录 and not x.startswith(".")]
+        if os.path.relpath(d, ROOT).split(os.sep)[0] in 不在范围:
+            ds[:] = []
+            continue
+        for f in fs:
+            if not f.endswith(".py") or os.path.abspath(os.path.join(d, f)) == os.path.abspath(__file__):
+                continue
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", SyntaxWarning)
+                    树 = ast.parse(open(os.path.join(d, f), encoding="utf-8").read())
+            except Exception:
+                continue
+            for 节 in ast.walk(树):
+                if not (isinstance(节, ast.Call)
+                        and getattr(节.func, "id", "") == "_insert"
+                        and len(节.args) >= 2
+                        and isinstance(节.args[0], ast.Constant)
+                        and isinstance(节.args[1], ast.Dict)):
+                    continue
+                键 = [k.value for k in 节.args[1].keys
+                      if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+                拼 = len(节.args[1].keys) - len(键)
+                _调用.append((os.path.relpath(os.path.join(d, f), ROOT),
+                             节.lineno, 节.args[0].value, 键, 拼))
+    # **样本量** —— 一处都没扫到就红:空集合上这条性质恒成立,
+    # 而「没有 _insert 调用」和「AST 取法改坏了」在这条上长得一模一样。
+    # ⚠️ 这份文件的 `ck` 不分绿红都会把说明打出来,所以说明要**两种情况都读得通**
+    ck(bool(_调用), f"扫到 _insert 的调用(共 {len(_调用)} 处)",
+       "一处都没扫到 —— **这不是通过,是没扫到东西**(`_insert` 改名了?AST 取法坏了?)"
+       if not _调用 else f"{len(_调用)} 处,键都是字面量才读得到(下一条验这个)")
+    拼出来的 = [f"{f}:{l} {t}" for f, l, t, _, 拼 in _调用 if 拼]
+    ck(not 拼出来的, "没有哪处 _insert 的键是拼出来的(拼的键这条检查读不到)",
+       列(拼出来的) if 拼出来的 else f"{len(_调用)} 处的键全是字面量")
+    if not os.path.exists(_db):
+        ck(False, "每个 _insert 传的键都是表上真有的列",
+           "库不在,**没法比** —— 这不是通过。先 `python3 backend/seed.py` 或跑 rebuild")
+    elif _调用:
+        _c = _sq.connect(f"file:{_db}?mode=ro", uri=True)
+        坏键 = []
+        for f, l, t, 键, _ in _调用:
+            真 = [r[1] for r in _c.execute(f"PRAGMA table_info({t})")]
+            if not 真:
+                坏键.append(f"{f}:{l} 表 {t} 在库里不存在")
+                continue
+            丢 = [k for k in 键 if k not in 真]
+            if 丢:
+                坏键.append(f"{f}:{l} {t} 没有这些列 {丢}(表上是 {真})")
+        _c.close()
+        ck(not 坏键, f"每个 _insert 传的键都是表上真有的列(验了 {len(_调用)} 处)",
+           列(坏键) + " —— **这几栏会写不进去**。"
+           "`advisor` / `advisor_no` 那次就是这样,而接口返回 ok:true"
+           if 坏键 else f"{len(_调用)} 处的键一个不差")
+
+    print((f"{R}❌ INSERT 形状 {len(失败)} 条不过{D}") if 失败 else f"{G}✅ INSERT 都对得上建表、_insert 的键也都在,没有新增位置参数{D}")
     return 1 if 失败 else 0
 
 

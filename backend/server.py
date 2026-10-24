@@ -1768,8 +1768,23 @@ def _insert(table, vals, required):
                                f"现有列:{sorted(cols)}")
         use = [k for k in vals if k in cols]
         dropped = [k for k in vals if k not in cols]
-        if dropped:   # 非必填的对不上也要出声,别让它悄悄消失
-            print(f"⚠ {table}: 字段 {dropped} 不在表里,已忽略", file=sys.stderr)
+        if dropped:
+            # ⚠️ **2026-10-24 从「打一行 stderr」改成抛。**
+            # 原来这儿的理由是「非必填的对不上也要出声,别让它悄悄消失」——
+            # 而**一行 stderr 不是出声**:它混在成百上千行门禁输出里,没有任何检查看它,
+            # 于是 `advisor` 写成这样在两个写口上躺了很久:
+            # **从页面建的每一条预约和跟进,顾问都是空的,而接口返回 ok:true。**
+            # 库里现有的都带着顾问 —— 那是 seed 直接写进去的,所以一直没人发现。
+            #
+            # > 一条「顾问没填」的跟进和一条「顾问丢了」的跟进,在那条记录上长得一模一样。
+            #
+            # 这正是这个函数文件头自己写着的那句话,只是上次只对**必填**列兑现了:
+            # **崩溃是好事,静默丢数据不是。** 现在对所有列都兑现。
+            # ⚠️ 要真想「传了不写」,那就别传 —— 调用处少写一个键,比在这儿留个后门好。
+            raise RuntimeError(
+                f"{table} 表没有这些列:{dropped} —— 代码和库结构对不上。"
+                f"现有列:{sorted(cols)}。"
+                f"**这以前只打一行 stderr 就丢掉**,结果是接口返回 ok 而那几栏是空的")
         c.execute(f"INSERT INTO {table}({','.join(use)}) VALUES({','.join('?' * len(use))})",
                   [vals[k] for k in use])
 

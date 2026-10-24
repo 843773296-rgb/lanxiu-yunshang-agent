@@ -12413,5 +12413,17 @@
    }
   ],
   "预期红": "加列紧跟在 seed.py 之后"
+ },
+ {
+  "script": "tools/insert_shape_check.py",
+  "改坏": "把 create_appointment 的 `advisor_no` 键改回 `advisor`(表上没有这一列)—— 这条路**绕开了这份检查原有的四条**:它不写 `INSERT INTO`,那个正则一个字都看不见它,而它照样在往库里写。2026-10-24 真栽过:两条写口传的都是 `advisor`,而 `_insert` 当时对非必填的未知列只在 stderr 打一行就丢 —— **从页面建的每一条预约和跟进,顾问都是空的,而接口返回 ok:true**",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "             \"advisor_no\": 顾问工号(d.get(\"advisor\")), \"status\": \"待确认\",",
+    "new": "             \"advisor\": 顾问工号(d.get(\"advisor\")), \"status\": \"待确认\","
+   }
+  ],
+  "预期红": "每个 _insert 传的键都是表上真有的列"
  }
 ]
