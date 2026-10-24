@@ -222,6 +222,14 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
     状态 = {"input": 输入, "节点": {}, "system": 系统, "scope": {}}
     步骤, 用量 = [], {"模型调用": 0, "工具调用": 0}
     节点 = 计划["节点"]
+    # 选填的输入(10-24 经营报告:「那一期里的任意一天」不填 = 上一个完整的那一期):下游绑定它而它没给时
+    # **不传这个参数**,不算缺失 —— 必填的照样在开始节点那道拦。从图里的开始节点现算,不靠走过开始节点:
+    # 挂起再恢复时开始节点不重跑,靠它记的话恢复之后就丢了
+    for _n in 节点.values() if isinstance(节点, dict) else 节点:
+        _c = (_n.get("config") or {}) if isinstance(_n, dict) else {}
+        if isinstance(_n, dict) and _n.get("type") == "start":
+            _sch = _c.get("input_schema") or {}
+            状态["选填输入"] = sorted(set(_sch.get("properties") or {}) - set(_sch.get("required") or []))
     后继 = 计划["后继"]
 
     # 先把所有节点标成「待执行」。**跑完之后没被执行到的就是 skipped** ——
@@ -321,7 +329,11 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     执行状态, 完成原因 = "incomplete", "max_turns"
                     记一步(当前, 失败, error_code="MAX_TURNS")
                     break
-                实参, 缺 = 解绑定(cfg.get("bindings"), 状态)
+                选填 = set(状态.get("选填输入") or ())
+                实参, 缺 = 解绑定(cfg.get("bindings"), 状态, 允许缺失=[
+                    字段 for 字段, 引 in (cfg.get("bindings") or {}).items()
+                    if isinstance(引, dict) and 引.get("source") == "input"
+                    and str(引.get("pointer") or "").lstrip("/") in 选填])
                 if 缺:
                     raise 节点失败("BIND_MISSING_AT_RUNTIME",
                                  f"运行时取不到这些绑定:{缺}",

@@ -397,7 +397,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 #
 # ⚠️ 顺序和 `test-e2e` 一致(数据集要排在训练和评测之前)——
 # 那条依赖的理由写在 `test-e2e` 里同一处。
-E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py test_audio_flow.py \
+E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py test_audio_flow.py test_store_report_flow.py \
           test_upload_flow.py test_usage_flow.py test_runctl_flow.py \
           test_connections_flow.py test_release_flow.py \
           test_datasets_flow.py test_debug_evals_flow.py \
@@ -499,6 +499,9 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 音频整理全流程(24 条:取转写 → 提取 → 人工核对 → 写跟进;挂起 / 恢复 / 退回 / 绕过核对)"
 	@echo "  澜绣那一侧由测试扮演(拉单、回执)—— 管理后台不碰澜绣的库,真的那半在 supervise_sync"
 	@./.venv/bin/python tests/e2e/test_audio_flow.py
+	@echo ""
+	@echo "▸ 经营报告(13 条:没变就存 / 变了拿新数重写再核 / 两轮都变不存 / 退回不存 —— 用户 10-24 拍「比对指纹,变了就重写」)"
+	@./.venv/bin/python tests/e2e/test_store_report_flow.py
 	@echo ""
 	@echo "▸ 知识与 RAG 端到端:三条接口 + **整条链路**(§9.5)"
 	@echo "  ⚠️ 其中一条会**真调一次 Claude 精排**(月租额度);另一条走 要精排=false 不花钱"

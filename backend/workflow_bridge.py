@@ -170,6 +170,12 @@ def _桥账(幂等键, db=None):
     return 开始 and not 失败了, (完成[-1] if 完成 else None)
 
 
+def 数据指纹(数据):
+    """规范 JSON(键排序)的 sha256 前 16 位。只在「同一个工具、同一组参数」之间比才有意义。"""
+    import hashlib
+    return hashlib.sha256(json.dumps(数据, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
 def 调业务工具(名, 参数, 幂等键, 办事人=None, 工号=None, db=None):
     """→ {"输出": {"数据": 工具返回, ...}} 或 {"失败": {...}}
 
@@ -223,7 +229,12 @@ def 调业务工具(名, 参数, 幂等键, 办事人=None, 工号=None, db=None
     if 写:
         oplog.log_op(账人, "bridge", 幂等键, 名, "done", True, "DONE", f"工作流「{名}」执行完",
                      {"工具": 名, "结果": r})
-    return {"输出": {"数据": r, "是新执行的": True, "结果": f"已执行「{名}」"}}
+    出 = {"数据": r, "是新执行的": True, "结果": f"已执行「{名}」"}
+    if not 写:
+        # 指纹(10-24 经营报告,用户拍「比对指纹,变了就重写」):同样的数据 → 同样的指纹。工作流在保存前再取一次,
+        # 两次指纹不同就说明核对期间数据变了 —— 正文照旧存的话,正文和保存时冻结的取数包对不上,而且不报错
+        出["指纹"] = 数据指纹(r)
+    return {"输出": 出}
 
 
 执行表 = {"取转写": lambda 单, 谁, db=None: 取转写(单.get("参数"), db=db),

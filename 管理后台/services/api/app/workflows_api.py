@@ -151,7 +151,87 @@ def _音频整理(桥):
             "nodes": 节点, "edges": 边}
 
 
-模板们 = ("空白", "文本处理", "音频整理")
+def _经营报告(桥):
+    """**经营报告**(六条业务工作流第一条,10-24):取数 → 写正文 → 店长核对 →(通过)保存前再取一次比指纹 → 存。
+
+    用户 10-24 拍「比对指纹,变了就重写」:澜绣存报告时会**重新取数**并冻结那一份,正文要是照旧数写的,
+    正文和冻结的取数包就对不上,而且不报错。所以存之前再取一次:指纹一样才存;变了就拿新数重写、请店长再看一遍。
+    **展开成最多两轮,不用循环节点**(循环里挂人工核对没验过);第二轮还变就停下说明,不硬存。
+    只存不确认:确认要过必选指标,留给店长在澜绣页面上点。
+    """
+    def 引(n, p):
+        return {"source": "node", "node_id": n, "pointer": p}
+    入 = lambda k: {"source": "input", "pointer": "/" + k}
+    串 = {"type": "string"}
+    结果Schema = {"type": "object", "properties": {"结果": 串}, "required": ["结果"], "additionalProperties": False}
+    写Schema = {"type": "object", "properties": {"正文": 串, "待确认项": {"type": "array", "items": 串}},
+               "required": ["正文", "待确认项"], "additionalProperties": False}
+    def 取(id_, x):
+        return {"id": id_, "type": "tool", "name": "取经营数据", "layout": {"x": x, "y": 160},
+                "config": {"tool_version_id": 桥.get("store_report"),
+                           "bindings": {"kind": 入("kind"), "date": 入("date")}}}
+    def 写(id_, 包, x, y):
+        return {"id": id_, "type": "llm", "name": "写报告正文", "layout": {"x": x, "y": y},
+                "config": {"output_schema": 写Schema, "prompt_version_id": 桥.get("处理要求"),
+                           "bindings": {"取数包": 引(包, "/数据")}}}
+    def 核(id_, 稿, x, y):
+        return {"id": id_, "type": "human", "name": "店长核对", "layout": {"x": x, "y": y},
+                "config": {"request_kind": "核对", "candidate_roles": ["approver", "admin"],
+                           "allowed_fields": ["定稿"], "expires_at_policy": {"小时": 48, "到期": "fail"},
+                           "payload_binding": {"摘要": 引(稿, "/正文"), "待确认项": 引(稿, "/待确认项")}}}
+    def 批了吗(id_, 核点, x, y):
+        return {"id": id_, "type": "condition", "name": "通过了吗", "layout": {"x": x, "y": y},
+                "config": {"branches": [{"key": "approve", "when": {"op": "equals", "left": 引(核点, "/决定"),
+                                         "right": {"source": "constant", "value": "approve"}}}],
+                           "else_policy": "fail"}}
+    def 一样吗(id_, 甲, 乙, x, y):
+        return {"id": id_, "type": "condition", "name": "数据变了没有", "layout": {"x": x, "y": y},
+                "config": {"branches": [{"key": "same", "when": {"op": "equals", "left": 引(甲, "/指纹"),
+                                         "right": 引(乙, "/指纹")}}], "else_policy": "fail"}}
+    def 存(id_, 核点, x, y):
+        return {"id": id_, "type": "tool", "name": "存报告", "layout": {"x": x, "y": y},
+                "config": {"tool_version_id": 桥.get("save_report"),
+                           "bindings": {"body": 引(核点, "/定稿"), "kind": 入("kind"), "date": 入("date")}}}
+    def 记(id_, 来, x, y):
+        return {"id": id_, "type": "transform", "name": "记下结果", "layout": {"x": x, "y": y},
+                "config": {"operations": [{"op": "to_string", "from": 来, "into": "结果"}],
+                           "output_schema": 结果Schema}}
+    节点 = [
+        {"id": "start", "type": "start", "name": "选报告期", "layout": {"x": 40, "y": 160},
+         "config": {"input_schema": {"type": "object", "properties": {
+             "kind": {"type": "string", "enum": ["日", "周", "月"], "title": "报告种类", "description": "日 / 周 / 月"},
+             "date": {"type": "string", "title": "那一期里的任意一天", "description": "不填就是上一个完整的那一期"}},
+             "required": ["kind"], "additionalProperties": False}}},
+        取("fetch1", 200), 写("write1", "fetch1", 360, 160), 核("review1", "write1", 520, 160),
+        批了吗("ok1", "review1", 680, 160), 取("fetch2", 840), 一样吗("same1", "fetch1", "fetch2", 1000, 160),
+        存("save1", "review1", 1160, 60),
+        写("write2", "fetch2", 1160, 260), 核("review2", "write2", 1320, 260), 批了吗("ok2", "review2", 1480, 260),
+        {**取("fetch3", 1640), "layout": {"x": 1640, "y": 260}}, 一样吗("same2", "fetch2", "fetch3", 1800, 260),
+        存("save2", "review2", 1960, 200),
+        记("rejected1", 引("review1", "/理由"), 840, 320), 记("rejected2", 引("review2", "/理由"), 1640, 420),
+        记("unstable", {"source": "constant", "value": "核对期间数据又变了一次 —— 没存。数据稳定后重新发起"}, 1960, 340),
+        {"id": "merge", "type": "merge", "name": "汇合", "layout": {"x": 2120, "y": 160},
+         "config": {"candidates": [引("save1", "/结果"), 引("save2", "/结果"), 引("rejected1", "/结果"),
+                                   引("rejected2", "/结果"), 引("unstable", "/结果")], "output_field": "结果"}},
+        {"id": "finish", "type": "end", "name": "返回结果", "layout": {"x": 2280, "y": 160},
+         "config": {"output_schema": 结果Schema, "bindings": {"结果": 引("merge", "/结果")}}},
+    ]
+    边 = [{"source": a, "target": b, "port": "success"} for a, b in (
+        ("start", "fetch1"), ("fetch1", "write1"), ("write1", "review1"), ("review1", "ok1"),
+        ("fetch2", "same1"), ("write2", "review2"), ("review2", "ok2"), ("fetch3", "same2"),
+        ("save1", "merge"), ("save2", "merge"), ("rejected1", "merge"), ("rejected2", "merge"),
+        ("unstable", "merge"), ("merge", "finish"))]
+    分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
+    边 += [分("ok1", "fetch2", "approve"), 分("ok1", "rejected1", "else"),
+          分("same1", "save1", "same"), 分("same1", "write2", "else"),
+          分("ok2", "fetch3", "approve"), 分("ok2", "rejected2", "else"),
+          分("same2", "save2", "same"), 分("same2", "unstable", "else")]
+    return {"definition_schema_version": "1", "kind": "workflow",
+            "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
+            "nodes": 节点, "edges": 边}
+
+
+模板们 = ("空白", "文本处理", "音频整理", "经营报告")
 
 # ── 聊天接管(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」)──────────────────
 # 能被接管的只有澜绣**自有**技能(agentsite/skills_own.py 的 OURS)—— 第三方技能没有业务写口,接管它没有意义。
@@ -162,7 +242,7 @@ def _音频整理(桥):
     "quote": "报价", "growth-plan": "成长计划", "roster": "排班", "exchange": "换货",
     "pattern-draft": "打版",
 }
-_模板技能 = {"音频整理": "call-notes"}
+_模板技能 = {"音频整理": "call-notes", "经营报告": "store-report"}
 
 
 def _审计(c, me, action, target, reason=None):
@@ -181,21 +261,30 @@ def _桥工具(c, project_id):
         select td.name, (select tv.id from tool_versions tv where tv.project_id=td.project_id
                           and tv.tool_definition_id=td.id order by tv.version_no desc limit 1) vid
           from tool_definitions td
-         where td.project_id=:p and td.adapter='lanxiu_bridge' and td.archived_at is null"""),
+         where td.project_id=:p and td.archived_at is null
+           and (td.adapter='lanxiu_bridge' or left(td.adapter, 7) = 'lanxiu-')"""),
                    {"p": project_id}).mappings().all()
-    return {r["name"]: r["vid"] for r in rs if r["vid"]}
+    # 两种登记都认(10-24):早先专门做的 lanxiu_bridge,和从澜绣导入的业务工具(lanxiu-*);**只认桥名单里的名字**
+    import 桥工具 as _桥
+    return {r["name"]: r["vid"] for r in rs if r["vid"] and _桥.种类(r["name"])}
 
 
-def _默认处理要求(c, project_id):
-    """音频整理默认选上的处理要求:key = customer_needs_extract 的最新版本(seed_bridge_tools 登记)。"""
-    return c.execute(text("""select id from prompt_versions where project_id=:p and key='customer_needs_extract'
-                             order by version_no desc limit 1"""), {"p": project_id}).scalar()
+def _默认处理要求(c, project_id, key="customer_needs_extract"):
+    """模板默认选上的处理要求的最新版本(seed_bridge_tools 登记):音频整理 = customer_needs_extract,
+    经营报告 = store_report_write。"""
+    return c.execute(text("""select id from prompt_versions where project_id=:p and key=:k
+                             order by version_no desc limit 1"""), {"p": project_id, "k": key}).scalar()
+
+
+_模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write"}
 
 
 def _模板(名, 桥=None):
     """**模板只预填草稿**,不调模型、不绑生产环境(§4.2)。"""
     if 名 == "音频整理":
         return _音频整理(桥 or {})
+    if 名 == "经营报告":
+        return _经营报告(桥 or {})
     开始 = {"id": "start", "type": "start", "layout": {"x": 40, "y": 120},
             "config": {"input_schema": {"type": "object",
                                         "properties": {"article": {"type": "string",
@@ -293,6 +382,8 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
 _模板说明 = {
     "音频整理": ("从一通录音整理客户需求,人工核对后写成澜绣客户档案里的一条跟进",
                ["选择录音", "取转写", "提取客户需求", "人工核对", "通过 → 写跟进 / 退回 → 记理由"]),
+    "经营报告": ("取一期门店经营数据写成报告,店长核对后存一版;核对期间数据变了就拿新数重写、再请店长看一遍",
+               ["选报告期", "取经营数据", "写报告正文", "店长核对", "保存前再取一次比指纹", "一样 → 存 / 变了 → 重写再核"]),
     "文本处理": ("一段文字进来,模型整理一遍出去(开始 → AI 处理 → 结束)", ["输入正文", "AI 处理", "返回结果"]),
     "空白": ("只有开始和结束,自己从头搭", []),
 }
@@ -312,8 +403,9 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                                         where cv.project_id=:p and m.status='active' and m.purpose='generate' limit 1"""),
                               {"p": project_id}).first())
         有要求 = bool(_默认处理要求(c, project_id))
+        有报告要求 = bool(_默认处理要求(c, project_id, "store_report_write"))
     出 = []
-    for 名 in ("音频整理", "文本处理", "空白"):          # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
+    for 名 in ("音频整理", "经营报告", "文本处理", "空白"):   # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
         说, 步 = _模板说明[名]
         要 = []
         if 名 == "音频整理":
@@ -322,7 +414,13 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                           "怎么补": "平台管理员跑 管理后台/tools/seed_bridge_tools.py 登记"})
             要.append({"名": "处理要求「客户需求提取」", "有了吗": 有要求,
                       "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
-        if 名 in ("音频整理", "文本处理"):
+        if 名 == "经营报告":
+            for 工, 中 in (("store_report", "取经营数据"), ("save_report", "存报告")):
+                要.append({"名": f"澜绣业务动作「{中}」", "有了吗": bool(桥.get(工)),
+                          "怎么补": "正式项目从澜绣导入;别的项目跑 管理后台/tools/seed_bridge_tools.py 登记"})
+            要.append({"名": "处理要求「经营报告撰写」", "有了吗": 有报告要求,
+                      "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
+        if 名 in ("音频整理", "经营报告", "文本处理"):
             要.append({"名": "一个可用的模型", "有了吗": 有模型, "怎么补": "平台管理员在「模型与连接」里接一个"})
         出.append({"名": 名, "说明": 说, "步骤": 步, "需要的资源": 要,
                    "能直接跑吗": all(x["有了吗"] for x in 要) and 名 != "空白"})
@@ -596,8 +694,8 @@ async def 建工作流(project_id: str, request: Request,
                   "不摆一个选了没反应的选项")
     wid, did = _新id("wf"), _新id("gd")
     with 事务() as c:
-        定义 = _模板(模板名, ({**_桥工具(c, project_id), "处理要求": _默认处理要求(c, project_id)}
-                             if 模板名 == "音频整理" else None))
+        定义 = _模板(模板名, ({**_桥工具(c, project_id), "处理要求": _默认处理要求(c, project_id, _模板要求[模板名])}
+                             if 模板名 in _模板要求 else None))
         c.execute(text("""
             insert into workflows (id, organization_id, project_id, name, purpose,
                 owner, tags, draft_revision, validation_status, status,

@@ -50,7 +50,28 @@ sys.path[:0] = [os.path.join(根, "services", "api", "app"),
              "跟进号": {"type": "string"}, "customer_id": {"type": "string"},
              "是新写的": {"type": "boolean"}, "结果": {"type": "string"}},
              "required": ["跟进号", "结果"]}),
+    # 经营报告(10-24,六条流程第一条)。名字就是澜绣 api.py 的工具名;正式项目里从澜绣导入过同名工具的,
+    # **跳过、用导入的那份** —— 往导入的定义上追加版本,等于改了别人登记的东西
+    dict(name="store_report", side="read_only",
+         purpose="取门店经营报告的取数包(日 / 周 / 月;期内和存量分开,每项带口径)。桥回来时附「指纹」,保存前比它判数据变没变",
+         input_schema={"type": "object", "properties": {
+             "kind": {"type": "string", "description": "日 / 周 / 月;不给按模板默认"},
+             "date": {"type": "string", "description": "那一期里的任意一天;不给就是上一个完整的那一期"}},
+             "additionalProperties": False},
+         output_schema={"type": "object", "properties": {
+             "数据": {"type": "object"}, "指纹": {"type": "string"}, "结果": {"type": "string"}},
+             "required": ["数据", "指纹"]}),
+    dict(name="save_report", side="reversible",
+         confirm={"方式": "人工确认", "绑定": "定稿正文", "由谁承担": "工作流里的人工核对节点",
+                  "执行侧再查": "runtime/桥闸.py —— 这次运行里没有人工节点的批准就不记单"},
+         purpose="把店长核对过的报告正文存成一版草稿(每存一次是新的一版,保存时澜绣冻结当时的取数包)",
+         input_schema={"type": "object", "properties": {
+             "body": {"type": "string"}, "kind": {"type": "string"}, "date": {"type": "string"}},
+             "required": ["body"], "additionalProperties": False},
+         output_schema={"type": "object", "properties": {
+             "数据": {"type": "object"}, "结果": {"type": "string"}}, "required": ["结果"]}),
 ]
+
 
 
 # 处理要求:照澜绣现有的「通话整理」技能(agentsite/.claude/skills/call-notes)的口径写 ——
@@ -75,11 +96,31 @@ sys.path[:0] = [os.path.join(根, "services", "api", "app"),
 )
 
 
-def 登记处理要求(c, 项目, org):
+# 经营报告撰写(10-24):照澜绣「经营报告」技能(agentsite/.claude/skills/store-report)的口径 —— 不新造一套
+报告撰写 = dict(
+    key="store_report_write",
+    用途="经营报告撰写:照取数包写一期门店经营报告,期内和存量分开,每个数带口径,原因标成判断",
+    标签=["经营报告"],
+    system=("你是汉服定制门店的经营报告撰写助手。**只用取数包里的数**,一个数都不许自己算或编。"
+            "期内(这一期里发生的)和存量(截至今天还压着的)分开写,不许混在一句里。"
+            "每个数后面带上它的口径(取数包里写着)。取数包「取不到的」照实列出来,不许略过。"
+            "说原因时标明「这是判断」,不当成事实。下期改进只写建议,不替店长定。"),
+    user=("取数包(JSON):\n{{取数包}}\n\n"
+          "按 JSON 输出:正文(一份店长能直接存的报告,分「期内 / 存量 / 取不到的 / 原因判断 / 下期建议」几段)、"
+          "待确认项(列表:店长需要自己核一下的地方)。"),
+    变量=[{"名称": "取数包", "必填": True, "来源": "上一步结果", "类型": "object", "说明": "store_report 那一步的数据"}],
+    输出={"格式": "json", "必含项": ["正文", "待确认项"], "未知值规则": "取数包里没有的写「取不到」,不编"},
+    变更说明="经营报告模板默认的处理要求(10-24)",
+)
+
+处理要求们 = (处理要求, 报告撰写)
+
+
+def 登记处理要求(c, 项目, org, 处理要求=处理要求):
     """→ (版本 id, 怎么了)。内容没变不出新版本。"""
     from sqlalchemy import text
     m = {"用途": 处理要求["用途"], "标签": 处理要求["标签"], "system": 处理要求["system"],
-         "user": 处理要求["user"], "变更说明": "音频整理模板默认的处理要求(10-24)"}
+         "user": 处理要求["user"], "变更说明": 处理要求.get("变更说明", "音频整理模板默认的处理要求(10-24)")}
     h = hashlib.sha256(json.dumps([m, 处理要求["变量"], 处理要求["输出"]], sort_keys=True,
                                   ensure_ascii=False).encode()).hexdigest()[:32]
     c.execute(text("""insert into prompt_drafts (id, organization_id, project_id, key, messages,
@@ -125,8 +166,11 @@ def main():
         if not org:
             print(f"❌ 没有项目 {a.项目}"); return 1
         for t in 工具们:
-            旧 = c.execute(text("""select id from tool_definitions where project_id=:p and name=:n
-                                   and archived_at is null"""), {"p": a.项目, "n": t["name"]}).scalar()
+            旧行 = c.execute(text("""select id, adapter from tool_definitions where project_id=:p and name=:n
+                                   and archived_at is null"""), {"p": a.项目, "n": t["name"]}).mappings().first()
+            if 旧行 and 旧行["adapter"] != "lanxiu_bridge":
+                出.append((t["name"], 旧行["id"], f"项目里已有导入的同名工具({旧行['adapter']}),用它、不动它")); continue
+            旧 = 旧行["id"] if 旧行 else None
             if 旧:
                 did = 旧
             else:
@@ -163,8 +207,9 @@ def main():
                                           ensure_ascii=False),
                        "rp": json.dumps({"重试": "不重试 —— 等回执,不重发"}, ensure_ascii=False), "h": h})
             出.append((t["name"], vid, "新版本" if 末 else "新建"))
-        v, how = 登记处理要求(c, a.项目, org)
-        出.append(("处理要求「客户需求提取」", v, how))
+        for 要 in 处理要求们:
+            v, how = 登记处理要求(c, a.项目, org, 要)
+            出.append((f"处理要求「{要['用途'].split(':')[0]}」", v, how))
     for n, v, how in 出:
         print(f"  {n:4s} {v}  {how}")
     print(f"✅ 音频整理要的资源登记好了({a.项目},{len(出)} 项)")
