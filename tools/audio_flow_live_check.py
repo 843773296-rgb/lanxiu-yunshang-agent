@@ -38,6 +38,10 @@ WPY = os.path.join(ROOT, "管理后台", ".venv", "bin", "python")
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 坏, n = [], 0
 
+咬合 = [
+    ("supervise_sync 执行了却不回执", "运行接着走,停在人工核对"),
+]
+
 
 def ck(名, ok, 附=""):
     global n
@@ -65,12 +69,17 @@ def 打(方法, 路, 谁="U002", 体=None, 头=None):
 
 
 def 等到(rid, 想要, 最多=8):
-    for _ in range(最多):
+    """有管理后台的 venv 就自己跑一轮 worker;没有(比如咬合在工作区副本里跑)就等常驻的那个 worker ——
+    ⚠️ 原来没有 venv 就整条判「不适用」,于是咬合在副本里跑时这条检查**什么都没验就退 0**,读起来像「没红」。"""
+    for _ in range(最多 * (1 if os.path.exists(WPY) else 6)):
         c, r = 打("GET", P + f"/execution-runs/{rid}", "U004")
         if (r or {}).get("执行状态") in 想要:
             return r["执行状态"]
-        subprocess.run([WPY, WK, "--一轮"], capture_output=True, text=True, timeout=180,
-                       cwd=os.path.join(ROOT, "管理后台"))
+        if os.path.exists(WPY):
+            subprocess.run([WPY, WK, "--一轮"], capture_output=True, text=True, timeout=180,
+                           cwd=os.path.join(ROOT, "管理后台"))
+        else:
+            time.sleep(1.5)
     return (打("GET", P + f"/execution-runs/{rid}", "U004")[1] or {}).get("执行状态")
 
 
@@ -81,9 +90,6 @@ def main():
         urllib.request.urlopen(基址 + "/", timeout=3)
     except Exception as e:
         print(f"⏸ 管理后台({基址})没起 —— **不适用,不是通过**:{type(e).__name__}")
-        return 0
-    if not os.path.exists(WPY):
-        print("⏸ 管理后台的 venv 不在 —— 不适用,不是通过")
         return 0
     副本 = check_copy.用副本("audio-live-")
     ck("夹具:写口都指到了副本", os.path.realpath(server.DB) == os.path.realpath(副本) == os.path.realpath(WB.DB))

@@ -12317,5 +12317,17 @@
    }
   ],
   "预期红": "工作流写跟进:重试不写第二条、不记到别人名下"
+ },
+ {
+  "script": "tools/audio_flow_live_check.py",
+  "改坏": "supervise_sync 执行了却不回执(回执打到一个不存在的地址)—— 运行就一直停在取转写",
+  "file": [
+   {
+    "path": "tools/supervise_sync.py",
+    "old": "        ok, 回 = AR._curl(\"POST\", f\"/bridge-calls/{单['id']}/ack\", cfg,",
+    "new": "        ok, 回 = AR._curl(\"POST\", f\"/bridge-calls/{单['id']}/nope\", cfg,"
+   }
+  ],
+  "预期红": "运行接着走,停在人工核对"
  }
 ]
