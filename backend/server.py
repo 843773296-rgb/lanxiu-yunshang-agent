@@ -616,11 +616,17 @@ def scheme_save(body, me=None):
 def shop_list(q):
     kw=(q.get("q") or [""])[0].strip(); stt=(q.get("status") or [""])[0]
     rs=rows("SELECT * FROM shop ORDER BY code")
+    import shop_key as _SK
+    _c0 = _conn()          # 一条连接给整个循环用,别每家店开一次
     for r in rs:
         # 原来是 `shop LIKE '编码%'` —— 那个写法**碰巧**是改名安全的(前缀是编码),
         # 但它把「按门店筛」表达成了字符串前缀匹配,而手里本来就有编码。
-        r["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE shop_code=? AND {_人头()}",r["code"])[0]["c"]   # 按人,归主档所在店
-        r["staff"]=rows("SELECT COUNT(*) c FROM staff WHERE shop_code=?",r["code"])[0]["c"]
+        # 走 `门店条件()` 而不是裸 `shop_code=?` —— 它带着「回填还没到」的兜底,
+        # 所以在**半建好的库**上也不会变成 0(见 shop_key.py 那段注释)
+        _片, _参 = _SK.门店条件(_c0, r["code"])
+        r["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE {_片} AND {_人头()}",*_参)[0]["c"]   # 按人,归主档所在店
+        r["staff"]=rows(f"SELECT COUNT(*) c FROM staff WHERE {_片}",*_参)[0]["c"]
+    _c0.close()
     if kw: rs=[r for r in rs if kw in r["name"] or kw in r["code"]]
     if stt: rs=[r for r in rs if r["status"]==stt]
     d=_page(rs,q); d["facets"]=dict(status=["有效","无效"]); return d
@@ -629,9 +635,12 @@ def shop_detail(code):
     r=rows("SELECT * FROM shop WHERE code=?",code)
     if not r: return {"error":"店铺不存在"}
     s=r[0]
-    s["staff"]=rows("SELECT * FROM staff WHERE shop_code=? ORDER BY role,no",code)
-    s["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE shop_code=? AND {_人头()}",code)[0]["c"]   # 按人,归主档所在店
-    s["appt"]=rows("SELECT COUNT(*) c FROM appointment WHERE shop_code=?",code)[0]["c"]
+    import shop_key as _SK
+    with _conn() as _c1:
+        _片, _参 = _SK.门店条件(_c1, code)   # 同上:带「回填还没到」的兜底
+    s["staff"]=rows(f"SELECT * FROM staff WHERE {_片} ORDER BY role,no",*_参)
+    s["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE {_片} AND {_人头()}",*_参)[0]["c"]   # 按人,归主档所在店
+    s["appt"]=rows(f"SELECT COUNT(*) c FROM appointment WHERE {_片}",*_参)[0]["c"]
     s["logs"]=rows("SELECT * FROM op_log WHERE target=? ORDER BY id DESC LIMIT 20",code)
     return s
 

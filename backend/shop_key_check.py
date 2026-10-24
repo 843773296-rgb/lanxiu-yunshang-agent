@@ -136,6 +136,44 @@ ck("「不认识」单独一类,**不混进「不是门店」** "
    SK.认得出("没见过的坊", 假门店)[0] == "不认识"
    and SK.认得出("上海工坊", 假门店)[0] == "工坊",
    "两者归成一类的话,脏数据会被当成合法的留空")
+# ── 自造四种状态,直接拿 `门店条件()` 生成的 WHERE 去查 ────────────────────
+# 内存库,不碰真库。四种状态里有**一种是已知破口**,连它一起断言 ——
+# 不写出来的话,下一个人会以为四种都稳。
+_mm = sqlite3.connect(":memory:")
+_mm.executescript("CREATE TABLE shop(code TEXT, name TEXT);"
+                  "CREATE TABLE t(shop TEXT, shop_code TEXT);")
+# 具名列 —— `tools/insert_shape_check.py` 的棘轮逮过这两句:
+# **列数恰好相等而顺序错了是不报错的**,值会整体挪一格。
+_mm.execute("INSERT INTO shop(code,name) VALUES('SH001','甲店')")
+_mm.execute("INSERT INTO t(shop,shop_code) VALUES('SH001 甲店','SH001')")
+
+
+def _查():
+    串 = next((k for k, v in SK.门店表(_mm).items() if v == "SH001"), None)
+    片, 参 = SK.门店条件(_mm, 串)
+    return _mm.execute(f"SELECT COUNT(*) FROM t WHERE {片}", 参).fetchone()[0] if 片 else -1
+
+
+_态 = {}
+_态["①回填过·没改名"] = _查()
+_mm.execute("UPDATE shop SET name='乙店'")
+_态["②回填过·改过名"] = _查()
+_mm.execute("UPDATE t SET shop_code=NULL")
+_态["④没回填·改过名"] = _查()
+_mm.execute("UPDATE shop SET name='甲店'")
+_态["③没回填·没改名"] = _查()
+_mm.close()
+ck(f"门店条件:回填过的改名也命中、没回填的按串兜住({_态})",
+   _态["①回填过·没改名"] == 1 and _态["②回填过·改过名"] == 1 and _态["③没回填·没改名"] == 1,
+   f"{_态} —— ①②③ 都该是 1。② 是这一笔买的东西(改名后按串筛会变 0);"
+   f"③ 是 2026-10-24 CI 红的那一条:`--建列` 只加列不填值,"
+   f"回填排在流水线最后,而中间就有查询在按码筛 —— "
+   f"**「列还没回填」和「这家店真的没人」在查询结果上长得一模一样**")
+ck(f"而「既没回填又改过名」确实查不到,这是**已知破口**,不是意外({_态['④没回填·改过名']} 行)",
+   _态["④没回填·改过名"] == 0,
+   f"④ 居然是 {_态['④没回填·改过名']} —— 那说明兜底比预期宽,"
+   f"**而那更糟**:它会让「回填漏了」这件事也查得到,于是永远没人去回填")
+
 ck("该填的码:只有门店给码,其余一律留空",
    [SK.该填的码(v, 假门店) for v, _, _ in 样] == [c for _, _, c in 样],
    f"{[SK.该填的码(v, 假门店) for v, _, _ in 样]}")
