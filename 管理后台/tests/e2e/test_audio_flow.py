@@ -305,10 +305,46 @@ c, d2 = 打("GET", P + f"/workflows/{wid2}")
 c, b = 打("PATCH", P + f"/workflows/{wid2}", 体={"名称": d2["名称"], "聊天接管": True}, 头={"If-Match": str(d2["revision"])})
 ck("**同一个技能第二条也想接管 → 409 TAKEOVER_TAKEN**(聊天站不能不知道该发起哪条)",
    c == 409 and (b or {}).get("code") == "TAKEOVER_TAKEN", (c, b))
+
+print("\n▸ ⑫ 账号绑定 + 聊天站发起被接管的工作流(用户 10-24 拍「一对一绑定」「打开时聊天站改走工作流」)")
+工号 = "E2E" + uuid.uuid4().hex[:6]
+打("DELETE", P + "/staff-bindings/U002", "U001")          # 上一轮挂在半路留下的绑定
+c, b = 打("PUT", P + "/staff-bindings/U002", "U002", 体={"澜绣工号": 工号})
+ck("编辑者不能绑账号 → 403(绑定 = 决定以谁的身份办事,和管凭证同一档)", c == 403, (c, b))
+c, b = 打("POST", P + "/chat-takeovers/call-notes/runs", "U001", 头={"Idempotency-Key": str(uuid.uuid4())},
+         体={"澜绣工号": 工号, "输入": {"call_id": "TS-001", "customer_id": "C10000"}})
+ck("工号没绑定 → 409 NOT_BOUND(不拿服务账号顶替)", c == 409 and (b or {}).get("code") == "NOT_BOUND", (c, b))
+c, b = 打("PUT", P + "/staff-bindings/U002", "U001", 体={"澜绣工号": 工号, "备注": "e2e"})
+ck("管理员绑定 U002 ↔ 这个工号 → 200", c == 200, (c, b))
+c, b = 打("PUT", P + "/staff-bindings/U006", "U001", 体={"澜绣工号": 工号})
+ck("**同一个工号再绑给第二个账号 → 409 STAFF_TAKEN**(一对一)",
+   c == 409 and (b or {}).get("code") == "STAFF_TAKEN", (c, b))
+键 = str(uuid.uuid4())
+c, b = 打("POST", P + "/chat-takeovers/call-notes/runs", "U001", 头={"Idempotency-Key": 键},
+         体={"澜绣工号": 工号, "输入": {"call_id": "TS-001", "customer_id": "C10000"}})
+ck("接管开着 + 已绑定 → 202,带运行号和核对入口", c == 202 and (b or {}).get("resource_id")
+   and "/#/wfrun/" in (b or {}).get("核对入口", ""), (c, b))
+接管运行 = (b or {}).get("resource_id")
+c, r = 打("GET", P + f"/execution-runs/{接管运行}", "U004")
+ck("**运行的发起人是绑定的那个人(U002),不是调用方 U001**", (r or {}).get("请求人") == "U002"
+   or (r or {}).get("principal") == "U002", {k: (r or {}).get(k) for k in ("请求人", "principal")})
+c, b2 = 打("POST", P + "/chat-takeovers/call-notes/runs", "U001", 头={"Idempotency-Key": 键},
+          体={"澜绣工号": 工号, "输入": {"call_id": "TS-001", "customer_id": "C10000"}})
+ck("同一个幂等键再发一次 → 还是原来那条,不新建", (b2 or {}).get("resource_id") == 接管运行, (c, b2))
+c, b = 打("POST", P + "/chat-takeovers/quote/runs", "U001", 头={"Idempotency-Key": str(uuid.uuid4())},
+         体={"澜绣工号": 工号, "输入": {}})
+ck("没被接管的技能 → 409 TAKEOVER_OFF(交给 harness)", c == 409 and (b or {}).get("code") == "TAKEOVER_OFF", (c, b))
+打("POST", P + f"/execution-runs/{接管运行}/cancel", "U002", 体={"reason": "e2e 收尾"})
+c, b = 打("DELETE", P + "/staff-bindings/U002", "U001")
+ck("解绑 → 200", c == 200, (c, b))
 c, d = 打("GET", P + f"/workflows/{wid}")
 c, b = 打("PATCH", P + f"/workflows/{wid}", 体={"名称": d["名称"], "聊天接管": False}, 头={"If-Match": str(d["revision"])})
 c, tk = 打("GET", P + "/chat-takeovers")
 ck("关掉 → 清单里没有它了(交还给 harness)", c == 200 and not [x for x in tk["items"] if x["workflow_id"] == wid], tk)
+c, b = 打("POST", P + "/chat-takeovers/call-notes/runs", "U001", 头={"Idempotency-Key": str(uuid.uuid4())},
+         体={"澜绣工号": 工号, "输入": {"call_id": "TS-001", "customer_id": "C10000"}})
+ck("**关掉之后聊天站拿着旧清单来发起 → 409 TAKEOVER_OFF**(开没开由服务端判)",
+   c == 409 and (b or {}).get("code") == "TAKEOVER_OFF", (c, b))
 
 print("\n▸ ⑦ 没经过核对就写跟进 → 拒")
 def 绕过核对(d):

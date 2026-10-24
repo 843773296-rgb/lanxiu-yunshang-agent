@@ -267,6 +267,9 @@ _额外唯一 = {
                          ("project_id", "idempotency_key")],
     "execution_runs": [("project_id", "idempotency_key")],
     "bridge_calls": [("project_id", "idempotency_key")],
+    # 账号绑定一对一(2026-10-24):两个方向各一条 —— 少了哪条都会退化成多对一,
+    # 而多对一的绑定在列表上照样每行一个名字,看不出有人被绑了两次
+    "staff_bindings": [("project_id", "user_id"), ("project_id", "lanxiu_staff_code")],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,
     # 第二个撞唯一键 → 返回冲突和最新状态,而不是两条都记下来。
     # 「要求补充」之后 revision 前进,于是下一轮还能再批 —— 这正是想要的。

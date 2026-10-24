@@ -166,6 +166,10 @@ export const ENDPOINTS = [
   { method: "GET", path: "/workflows", summary: "工作流列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/workflow-templates", summary: "新建工作流的模板卡片(每张写明要哪些资源、这个项目里有没有)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/workflow-resources", summary: "搭建页的下拉:模型 / 处理要求 / 业务动作 / 角色", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/chat-takeovers/{skill}/runs", summary: "聊天站发起一条被接管的工作流", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "GET", path: "/staff-bindings", summary: "管理后台账号和澜绣员工的绑定", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "PUT", path: "/staff-bindings/{user_id}", summary: "绑定 / 改绑一个账号的澜绣工号", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "DELETE", path: "/staff-bindings/{user_id}", summary: "解绑", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/chat-takeovers", summary: "现在哪些技能被工作流接管了(给澜绣聊天站问)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/workflows/{id}", summary: "改工作流的名称 / 用途 / 负责人 / 对应技能 / 聊天接管(不碰定义)", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/workflows", summary: "建工作流", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -233,4 +237,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 146 条接口 · 22 条异步 · 29 条要幂等键 · 16 条要 If-Match */
+/** 共 150 条接口 · 23 条异步 · 30 条要幂等键 · 16 条要 If-Match */

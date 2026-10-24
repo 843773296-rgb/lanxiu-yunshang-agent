@@ -454,6 +454,131 @@ def 聊天接管清单(project_id: str, me: 身份 = Depends(要权限("查看�
             "note": "不在清单里的技能 = 交给 harness(聊天站照常用技能做)。默认一条都没有"}
 
 
+@router.get(前缀 + "/staff-bindings")
+def 账号绑定清单(project_id: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """管理后台账号 ↔ 澜绣员工(工号),一对一(用户 10-24 拍)。"""
+    with 连接() as c:
+        rs = c.execute(text("""select id, user_id, lanxiu_staff_code, note, revision, updated_at
+                                 from staff_bindings where project_id=:p and archived_at is null
+                                order by user_id"""), {"p": project_id}).mappings().all()
+    return {"items": [{"id": r["id"], "账号": r["user_id"], "澜绣工号": r["lanxiu_staff_code"],
+                       "备注": r["note"], "revision": r["revision"]} for r in rs]}
+
+
+@router.put(前缀 + "/staff-bindings/{user_id}")
+async def 绑定账号(project_id: str, user_id: str, request: Request,
+               me: 身份 = Depends(要权限("配置密钥与预算"))):
+    """绑定 / 改绑。**谁能绑 = 谁能决定「这个账号以哪个澜绣员工的身份办事」**,
+    和管凭证是同一件事,所以用「配置密钥与预算」,不给编辑者。"""
+    体 = await request.json()
+    工号 = str(体.get("澜绣工号") or "").strip()
+    if not 工号:
+        raise _错(422, "VALIDATION", "澜绣工号不能空", "填这个人在澜绣的员工工号",
+                  field_errors={"澜绣工号": "必填"})
+    with 事务() as c:
+        成员 = c.execute(text("""select 1 from memberships where user_id=:u and status='active'
+                                  and (project_id=:p or project_id is null) limit 1"""),
+                         {"u": user_id, "p": project_id}).first()
+        if not 成员:
+            raise _错(404, "NOT_FOUND", "这个项目里没有这个账号", "先在「成员与权限」里加他")
+        占 = c.execute(text("""select user_id from staff_bindings where project_id=:p
+                                and lanxiu_staff_code=:g and user_id<>:u and archived_at is null"""),
+                       {"p": project_id, "g": 工号, "u": user_id}).first()
+        if 占:
+            raise _错(409, "STAFF_TAKEN", f"澜绣工号 {工号} 已经绑给了 {占[0]}",
+                      "一对一:先解绑那个账号,再绑这里 —— 两个账号共用一个员工,台账上就说不清是谁做的")
+        老 = c.execute(text("""select id, lanxiu_staff_code from staff_bindings
+                                where project_id=:p and user_id=:u"""),
+                       {"p": project_id, "u": user_id}).mappings().first()
+        if 老:
+            c.execute(text("""update staff_bindings set lanxiu_staff_code=:g, note=:n, archived_at=null,
+                                  updated_at=now(), revision=coalesce(revision,0)+1
+                               where project_id=:p and id=:i"""),
+                      {"g": 工号, "n": 体.get("备注"), "p": project_id, "i": 老["id"]})
+        else:
+            c.execute(text("""insert into staff_bindings (id, organization_id, project_id, user_id,
+                                  lanxiu_staff_code, note, created_at, created_by, updated_at, revision)
+                               values (:i,:o,:p,:u,:g,:n, now(), :by, now(), 1)"""),
+                      {"i": _新id("sb"), "o": me.org_id, "p": project_id, "u": user_id, "g": 工号,
+                       "n": 体.get("备注"), "by": me.user_id})
+        _审计(c, me, "staff_binding.set", {"账号": user_id, "澜绣工号": 工号,
+                                           "原来": 老["lanxiu_staff_code"] if 老 else None})
+    return {"账号": user_id, "澜绣工号": 工号}
+
+
+@router.delete(前缀 + "/staff-bindings/{user_id}")
+def 解绑账号(project_id: str, user_id: str, me: 身份 = Depends(要权限("配置密钥与预算"))):
+    with 事务() as c:
+        老 = c.execute(text("""update staff_bindings set archived_at=now(), updated_at=now(),
+                                  revision=coalesce(revision,0)+1
+                                where project_id=:p and user_id=:u and archived_at is null
+                            returning lanxiu_staff_code"""), {"p": project_id, "u": user_id}).first()
+        if not 老:
+            raise _错(404, "NOT_FOUND", "这个账号没有绑定", "回绑定列表看一眼")
+        _审计(c, me, "staff_binding.unset", {"账号": user_id, "澜绣工号": 老[0]})
+    return {"账号": user_id, "解绑": 老[0]}
+
+
+@router.post(前缀 + "/chat-takeovers/{skill}/runs", status_code=202)
+async def 聊天发起接管(project_id: str, skill: str, request: Request,
+                 idempotency_key: str = Header(default=None, alias="Idempotency-Key"),
+                 me: 身份 = Depends(要权限("运行编排测试"))):
+    """澜绣聊天站碰到一件被接管的事 → 来这里发起(用户 10-24 拍「打开时聊天站改走工作流」)。
+
+    两件事**只在这里判**,聊天站不判第二份:
+      · 这个技能**现在真开着接管**吗 —— 聊天站手里的清单可能是几十秒前的,关掉之后不许再发起
+      · 澜绣工号绑的是哪个管理后台账号 —— **以那个人的身份**发起(运行的发起人、核对页、审计都记他);
+        没绑定就不发起,不拿调用方(服务账号)顶替"""
+    if not idempotency_key:
+        raise _错(409, "IDEMPOTENCY_KEY_REQUIRED", "要带 Idempotency-Key",
+                  "聊天站按「会话 + 这一次工具调用」生成 —— 模型重试同一次调用不会发起第二条")
+    体 = await request.json()
+    工号 = str(体.get("澜绣工号") or "").strip()
+    输入 = 体.get("输入") or {}
+    with 事务() as c:
+        w = c.execute(text("""select w.id, w.name,
+                                  (select v.id from workflow_versions v where v.project_id=w.project_id
+                                    and v.workflow_id=w.id order by v.version_no desc limit 1) vid
+                                from workflows w
+                               where w.project_id=:p and w.takeover_skill_name=:s
+                                 and coalesce(w.chat_takeover_enabled, false) and w.archived_at is null"""),
+                      {"p": project_id, "s": skill}).mappings().first()
+        if not w or not w["vid"]:
+            raise _错(409, "TAKEOVER_OFF", f"技能「{skill}」现在没有被工作流接管",
+                      "交给 harness:聊天站照常用技能做")
+        绑 = c.execute(text("""select user_id from staff_bindings where project_id=:p
+                                and lanxiu_staff_code=:g and archived_at is null"""),
+                       {"p": project_id, "g": 工号}).first()
+        if not 绑:
+            raise _错(409, "NOT_BOUND", f"澜绣工号「{工号 or '?'}」没有绑定管理后台账号",
+                      "请管理员在「账号绑定」里绑上 —— 没绑定不发起,不拿服务账号顶替")
+        m = c.execute(text("""select user_id, organization_id, role, special_grants from memberships
+                               where user_id=:u and (project_id=:p or project_id is null) and status='active'
+                               order by (project_id is null) limit 1"""),
+                      {"u": 绑[0], "p": project_id}).mappings().first()
+        if not m:
+            raise _错(409, "NOT_BOUND", f"绑定的账号 {绑[0]} 在这个项目里已经没有成员记录", "请管理员改绑")
+        本人 = 身份(m["user_id"], m["organization_id"], project_id, m["role"], m["special_grants"] or [])
+        能, 为什么 = 本人.能("运行编排测试")
+        if not 能:
+            raise _错(403, "FORBIDDEN", f"绑定的账号 {本人.user_id} 没有发起运行的权限", 为什么 or "")
+        v = c.execute(text("select * from workflow_versions where project_id=:p and id=:i"),
+                      {"p": project_id, "i": w["vid"]}).mappings().first()
+        定义 = {"definition_schema_version": v["definition_schema_version"], "kind": "workflow",
+                "nodes": v["nodes"], "edges": v["edges"], "input_schema": v["input_schema"],
+                "output_schema": v["output_schema"]}
+        来源 = {"kind": "workflow_version", "id": w["id"], "version_id": w["vid"],
+                "version_no": v["version_no"], "发起": "聊天接管", "技能": skill,
+                "澜绣工号": 工号, "代发": me.user_id}
+        回 = _受理运行(c, 本人, project_id, 定义, 来源, 输入, idempotency_key)
+        if not 回.get("note", "").startswith("同一个幂等键"):
+            _审计(c, 本人, "workflow.chat_takeover_run",
+                  {"运行": 回["resource_id"], "技能": skill, "澜绣工号": 工号, "代发": me.user_id})
+    回["工作流"] = w["name"]
+    回["核对入口"] = f"/#/wfrun/{回['resource_id']}"
+    return 回
+
+
 @router.post(前缀 + "/workflows", status_code=201)
 async def 建工作流(project_id: str, request: Request,
                me: 身份 = Depends(要权限("改编排草稿"))):
@@ -714,15 +839,6 @@ async def 发起运行(project_id: str, request: Request,
     if 体.get("模式") not in (None, "mock", "live"):
         raise _错(422, "VALIDATION", "模式只收 mock / live,或者不给", "一般不用给 —— 按每一步选的模型连接定")
     with 事务() as c:
-        老 = c.execute(text("""select id, status, target_ref from jobs
-                             where project_id=:p and idempotency_key=:k"""),
-                       {"p": project_id, "k": idempotency_key}).mappings().first()
-        if 老:
-            return {"job_id": 老["id"], "status": 老["status"],
-                    "resource_id": (老["target_ref"] or {}).get("run_id"),
-                    "status_url": f"{前缀.format(project_id=project_id)}/jobs/{老['id']}",
-                    "trace_id": None,
-                    "note": "同一个幂等键 → **返回原任务,不新建**"}
         # 取定义:冻结版本优先(生产必须用版本;草稿只给调试)
         if 版本id:
             v = c.execute(text("""select * from workflow_versions
@@ -744,73 +860,90 @@ async def 发起运行(project_id: str, request: Request,
                 raise _错(404, "NOT_FOUND", "没有这条工作流的草稿", "回列表重新进入")
             定义 = d["definition"] or {}
             来源 = {"kind": "graph_draft", "id": wid, "draft_revision": d["revision"]}
-        # **编译在这里做,不留到 worker**:配置错了要当场知道,
-        # 而不是排队等一会儿再看到一条「失败」。
-        try:
-            计划 = CP.编译(定义, 依赖存在=_依赖查询(c, project_id))
-        except CP.编译失败 as e:
-            阻 = [p for p in e.问题们 if p["级别"] == V.阻断]
-            raise _错(422, "VALIDATION", f"这张图有 {len(阻)} 条阻断,跑不了",
-                      "先点「校验」按报告改完 —— **一个模型都没调,这次不花钱**",
-                      field_errors={(p["node_id"] or "图") + "." + (p["field_path"] or ""):
-                                    p["消息"] for p in 阻})
-        # 这次运行算 mock 还是 live:**有一个 AI 步骤选了真连接就是 live**(而部署没明确选只跑 mock)
-        cvs = [n["config"].get("connection_version_id") for n in 定义.get("nodes") or []
-               if n.get("type") == "llm" and (n.get("config") or {}).get("connection_version_id")]
-        真的 = c.execute(text("""select count(*) from connection_versions where project_id=:p and id = any(:ids)
-                                   and coalesce(capabilities->>'execution_mode', '') <> 'mock'"""),
-                         {"p": project_id, "ids": cvs}).scalar() if cvs else 0
-        模式 = "live" if (真的 and not __import__("runtime_cfg").模型是mock()) else "mock"
-        job, run, trace = _新id("job"), _新id("xr"), _新id("tr")
-        # trace 先建:execution_runs 有一条指向 traces 的复合外键
-        c.execute(text("""
-            insert into traces (id, organization_id, project_id, session_id, request_id,
-                environment, started_at, created_at, created_by)
-            values (:i,:o,:p,:s,:rq,:e, now(), now(), :u)
-        """), {"i": trace, "o": me.org_id, "p": project_id, "s": run, "rq": job,
-               "e": os.environ.get("APP_ENV", "development"), "u": me.user_id})
-        c.execute(text("""
-            insert into execution_runs (id, organization_id, project_id, kind,
-                definition_ref, input_snapshot, definition_hash, principal, status,
-                limits, environment, execution_mode, quality_evaluation_status,
-                started_at, trace_id, idempotency_key,
-                created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,'workflow',:dr,:isn,:dh,:pr,'queued',:lm,:env,:md,
-                    '未评', null, :t, :k, now(), :u, now(), 1)
-        """), {"i": run, "o": me.org_id, "p": project_id,
-               "dr": json.dumps(来源, ensure_ascii=False),
-               "isn": json.dumps(输入, ensure_ascii=False),
-               "dh": 计划["逻辑哈希"], "pr": me.user_id,
-               "lm": json.dumps(体.get("上限") or {"max_model_turns": 8},
-                                ensure_ascii=False),
-               "env": os.environ.get("APP_ENV", "development"),
-               "t": trace, "k": idempotency_key, "u": me.user_id, "md": 模式})
-        c.execute(text("""
-            insert into jobs (id, organization_id, project_id, type, target_ref, status,
-                attempts, max_attempts, snapshot_hash, idempotency_key,
-                created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,'workflow_run',:t,'排队中',0,3,:sh,:k, now(), :u, now(), 1)
-        """), {"i": job, "o": me.org_id, "p": project_id,
-               "t": json.dumps({"run_id": run}, ensure_ascii=False),
-               "sh": 计划["逻辑哈希"], "k": idempotency_key, "u": me.user_id})
-        c.execute(text("""
-            insert into job_events (id, organization_id, project_id, job_id, seq, kind,
-                payload, at, created_at, created_by)
-            values (:i,:o,:p,:j,1,'已受理',:pl, now(), now(), :u)
-        """), {"i": _新id("je"), "o": me.org_id, "p": project_id, "j": job,
-               # 「已受理」不是「开始」—— 到这一刻一个模型都还没调。
-               # 写「开始」会让事件流上出现两个开始,读的人分不清真起点。
-               "pl": json.dumps({"阶段": "排队", "说明": "已受理,等 worker 捞"},
-                                ensure_ascii=False), "u": me.user_id})
-        c.execute(text("""
-            insert into run_events (id, organization_id, project_id, execution_run_id,
-                seq, event_type, payload, occurred_at, created_at, created_by)
-            values (:i,:o,:p,:r,1,'run.accepted',:pl, now(), now(), :u)
-        """), {"i": _新id("re"), "o": me.org_id, "p": project_id, "r": run,
-               "pl": json.dumps({"来源": 来源, "模式": 模式}, ensure_ascii=False),
-               "u": me.user_id})
-        OB.入箱(c, org=me.org_id, 项目=project_id, job_id=job, topic="workflow_run",
-               payload={"run_id": run}, 新id=_新id("ob"))
+        return _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, 体.get("上限"))
+
+
+def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, 上限=None):
+    """编译 + 建 trace / run / job / 事件 + 入箱,**在调用方的同一个事务里**。
+
+    抽出来的理由(2026-10-24 聊天接管):聊天站发起被接管的工作流也要走这一整套,
+    抄第二份的话,下次改受理(比如模式怎么算)只会改到一处,而两处都「能跑」。"""
+    老 = c.execute(text("""select id, status, target_ref from jobs
+                         where project_id=:p and idempotency_key=:k"""),
+                   {"p": project_id, "k": idempotency_key}).mappings().first()
+    if 老:
+        return {"job_id": 老["id"], "status": 老["status"],
+                "resource_id": (老["target_ref"] or {}).get("run_id"),
+                "status_url": f"{前缀.format(project_id=project_id)}/jobs/{老['id']}",
+                "trace_id": None,
+                "note": "同一个幂等键 → **返回原任务,不新建**"}
+    # **编译在这里做,不留到 worker**:配置错了要当场知道,
+    # 而不是排队等一会儿再看到一条「失败」。
+    try:
+        计划 = CP.编译(定义, 依赖存在=_依赖查询(c, project_id))
+    except CP.编译失败 as e:
+        阻 = [p for p in e.问题们 if p["级别"] == V.阻断]
+        raise _错(422, "VALIDATION", f"这张图有 {len(阻)} 条阻断,跑不了",
+                  "先点「校验」按报告改完 —— **一个模型都没调,这次不花钱**",
+                  field_errors={(p["node_id"] or "图") + "." + (p["field_path"] or ""):
+                                p["消息"] for p in 阻})
+    # 这次运行算 mock 还是 live:**有一个 AI 步骤选了真连接就是 live**(而部署没明确选只跑 mock)
+    cvs = [n["config"].get("connection_version_id") for n in 定义.get("nodes") or []
+           if n.get("type") == "llm" and (n.get("config") or {}).get("connection_version_id")]
+    真的 = c.execute(text("""select count(*) from connection_versions where project_id=:p and id = any(:ids)
+                               and coalesce(capabilities->>'execution_mode', '') <> 'mock'"""),
+                     {"p": project_id, "ids": cvs}).scalar() if cvs else 0
+    模式 = "live" if (真的 and not __import__("runtime_cfg").模型是mock()) else "mock"
+    job, run, trace = _新id("job"), _新id("xr"), _新id("tr")
+    # trace 先建:execution_runs 有一条指向 traces 的复合外键
+    c.execute(text("""
+        insert into traces (id, organization_id, project_id, session_id, request_id,
+            environment, started_at, created_at, created_by)
+        values (:i,:o,:p,:s,:rq,:e, now(), now(), :u)
+    """), {"i": trace, "o": me.org_id, "p": project_id, "s": run, "rq": job,
+           "e": os.environ.get("APP_ENV", "development"), "u": me.user_id})
+    c.execute(text("""
+        insert into execution_runs (id, organization_id, project_id, kind,
+            definition_ref, input_snapshot, definition_hash, principal, status,
+            limits, environment, execution_mode, quality_evaluation_status,
+            started_at, trace_id, idempotency_key,
+            created_at, created_by, updated_at, revision)
+        values (:i,:o,:p,'workflow',:dr,:isn,:dh,:pr,'queued',:lm,:env,:md,
+                '未评', null, :t, :k, now(), :u, now(), 1)
+    """), {"i": run, "o": me.org_id, "p": project_id,
+           "dr": json.dumps(来源, ensure_ascii=False),
+           "isn": json.dumps(输入, ensure_ascii=False),
+           "dh": 计划["逻辑哈希"], "pr": me.user_id,
+           "lm": json.dumps(上限 or {"max_model_turns": 8},
+                            ensure_ascii=False),
+           "env": os.environ.get("APP_ENV", "development"),
+           "t": trace, "k": idempotency_key, "u": me.user_id, "md": 模式})
+    c.execute(text("""
+        insert into jobs (id, organization_id, project_id, type, target_ref, status,
+            attempts, max_attempts, snapshot_hash, idempotency_key,
+            created_at, created_by, updated_at, revision)
+        values (:i,:o,:p,'workflow_run',:t,'排队中',0,3,:sh,:k, now(), :u, now(), 1)
+    """), {"i": job, "o": me.org_id, "p": project_id,
+           "t": json.dumps({"run_id": run}, ensure_ascii=False),
+           "sh": 计划["逻辑哈希"], "k": idempotency_key, "u": me.user_id})
+    c.execute(text("""
+        insert into job_events (id, organization_id, project_id, job_id, seq, kind,
+            payload, at, created_at, created_by)
+        values (:i,:o,:p,:j,1,'已受理',:pl, now(), now(), :u)
+    """), {"i": _新id("je"), "o": me.org_id, "p": project_id, "j": job,
+           # 「已受理」不是「开始」—— 到这一刻一个模型都还没调。
+           # 写「开始」会让事件流上出现两个开始,读的人分不清真起点。
+           "pl": json.dumps({"阶段": "排队", "说明": "已受理,等 worker 捞"},
+                            ensure_ascii=False), "u": me.user_id})
+    c.execute(text("""
+        insert into run_events (id, organization_id, project_id, execution_run_id,
+            seq, event_type, payload, occurred_at, created_at, created_by)
+        values (:i,:o,:p,:r,1,'run.accepted',:pl, now(), now(), :u)
+    """), {"i": _新id("re"), "o": me.org_id, "p": project_id, "r": run,
+           "pl": json.dumps({"来源": 来源, "模式": 模式}, ensure_ascii=False),
+           "u": me.user_id})
+    OB.入箱(c, org=me.org_id, 项目=project_id, job_id=job, topic="workflow_run",
+           payload={"run_id": run}, 新id=_新id("ob"))
     return {"job_id": job, "status": "排队中", "resource_id": run,
             "status_url": f"/api/v1/projects/{project_id}/jobs/{job}",
             "trace_id": None,
