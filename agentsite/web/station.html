@@ -1193,6 +1193,9 @@ async function 补返回值(){
   let spans = [];
   try{
     const r = await fetch("/spans?trace=" + encodeURIComponent(tid)).then(r => r.json());
+    // 被拒(没登录 / 不是你的会话)要说被拒,不能显示成「没记到」—— 那是两件事(10-24 /spans 加了权限)
+    if(r.error){ rows.forEach(el => { const d = el.querySelector(".ret");
+      if(d) d.textContent = "返回值看不到:" + r.error; }); return; }
     spans = (r.spans || []).filter(s => (s.attr || {})["gen_ai.operation.name"] === "execute_tool");
   }catch(e){
     rows.forEach(el => { const d = el.querySelector(".ret");

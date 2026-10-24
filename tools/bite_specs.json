@@ -12538,5 +12538,29 @@
    }
   ],
   "预期红": "两边名单一样(澜绣能执行的 == 管理后台能记单的)"
+ },
+ {
+  "script": "agentsite/spans_access_check.py",
+  "改坏": "单条执行记录不查会话归属 —— 谁登录了都能看别人对话里的原话和查回来的客户数据",
+  "file": [
+   {
+    "path": "agentsite/sessions.py",
+    "old": "    行, 为什么 = check(会话号, me)\n",
+    "new": "    行, 为什么 = True, \"\"\n"
+   }
+  ],
+  "预期红": "顾问看别人会话的执行记录 → 404(不说「有这条但你没权限」)"
+ },
+ {
+  "script": "agentsite/spans_access_check.py",
+  "改坏": "不登录也放行(10-24 实测前就是这个样子)",
+  "file": [
+   {
+    "path": "agentsite/sessions.py",
+    "old": "        return False, 401, \"没登录 —— 执行记录里有对话原文和查回来的业务数据\"\n",
+    "new": "        return True, 200, \"\"\n"
+   }
+  ],
+  "预期红": "没登录 → 401"
  }
 ]

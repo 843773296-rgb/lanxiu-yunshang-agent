@@ -1045,6 +1045,30 @@ print(json.dumps({"对照": [一[0], 中 - 前], "重来": [二[0], 后 - 中], 
                           "核对人没绑定澜绣员工就不写;名单外的写口不接;业务写口没绑定不执行")
 
 
+def a_spans_scope():
+    """聊天站执行记录(/spans:用户原话、工具参数和返回)只给本人和总部运营(2026-10-24 实测原来不登录就给 200)。"""
+    import tempfile as _tf
+    sys.path.insert(0, os.path.join(ROOT, "agentsite"))
+    import sessions as _S
+    原 = _S.PATH
+    _S.PATH = os.path.join(_tf.mkdtemp(), "s.json")
+    try:
+        甲 = {"no": "60000002", "name": "甲", "role": "顾问", "shop": "SH001 静安旗舰店"}
+        乙 = {"no": "60000004", "name": "乙", "role": "店长", "shop": "SH002 徐汇店"}
+        _S.own("会话-甲", 甲)
+        if _S.能看执行记录吗(None, 会话号="会话-甲")[0]:
+            return "没登录也能看执行记录"
+        if _S.能看执行记录吗(乙, 会话号="会话-甲")[0]:
+            return "别的门店的店长看得到甲会话里的执行记录"
+        if _S.能看执行记录吗(乙, 列全部=True)[0]:
+            return "店长能列全部对话的执行记录"
+        if not _S.能看执行记录吗(甲, 会话号="会话-甲")[0]:
+            raise 前提不成立("本人看自己的会话都被拒了 —— 「被拒」不作数")
+    finally:
+        _S.PATH = 原
+    raise PermissionError("没登录 401;只看自己会话的;列全部只给总部运营")
+
+
 def a_disallowed():
     miss = [t for t in ("Bash", "Write", "Edit", "Read", "Task", "WebFetch")
             if f'"{t}"' not in SDK_SRC]
@@ -1339,6 +1363,10 @@ STRUCT = [
  ("看完整号码一定留痕", "同上(用户 10-10 定:点一下看完整并留痕)",
   a_card_reveal_unlogged, "让台账写不进,再以本人身份去取全号",
   "**台账写不进就不给全号** —— 「看了但没留痕」正是用户要防的那件事,不能因为台账出故障就放行"),
+ ("聊天站执行记录只给本人和总部运营", "agentsite/sessions.py 能看执行记录吗(10-24 实测原来不登录就给 200)",
+  a_spans_scope, "不登录取 / 别的门店店长取甲的会话 / 店长列全部",
+  "**靠结构**:/spans 两处都调同一个判定;单条按会话归属(和续聊同一个 check),查不到归属就拒。"
+  "端口只绑 127.0.0.1,所以原来的暴露范围是本机"),
  ("模型不能执行命令", "prompts.py 铁律 TL05「你没有任何写权限」",
   a_bash, "让 PreToolUse 判定 Bash 工具", "非 mcp__ 开头的工具一律拦下(Hook 运行时)"),
  ("模型不能开子智能体", "同上", a_task, "让 PreToolUse 判定 Task 工具", "同上"),

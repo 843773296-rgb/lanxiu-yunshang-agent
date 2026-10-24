@@ -447,9 +447,20 @@ class H(BaseHTTPRequestHandler):
                 import spans as _sp
                 q = dict(qp.split("=", 1) for qp in (urlparse(self.path).query or "").split("&") if "=" in qp)
                 tid = unquote(q.get("trace", ""))
+                # 谁能看(2026-10-24 实测:原来不登录就给 200,登录后谁都能看全公司的)—— 判定在 sessions.能看执行记录吗
+                import sessions as _ss
+                _me = _who(self)
+                if not tid:
+                    行, 码, 因 = _ss.能看执行记录吗(_me, 列全部=True)
+                    if not 行:
+                        return self._send({"error": 因}, code=码)
                 棵 = _sp.读(限=int(q.get("limit", "40")) if not tid else None)
                 if tid:
                     rows = 棵.get(tid) or []
+                    根 = next((x for x in rows if not x.get("parent_span_id")), rows[0] if rows else {})
+                    行, 码, 因 = _ss.能看执行记录吗(_me, 会话号=根.get("会话号"))
+                    if not 行:
+                        return self._send({"error": 因}, code=码)
                     return self._send({"trace": tid, "spans": rows,
                                        "账": _sp.一棵的账(rows) if rows else None})
                 out = []
