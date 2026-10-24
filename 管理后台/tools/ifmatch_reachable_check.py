@@ -157,6 +157,11 @@ P = f"{基址}/api/v1/projects/{项目}"
         说明="2026-10-02:旋钮方案的乐观锁。方案号就是 key(它也是文件名),"
              "所以读接口的路径参数是方案号而不是一个 id"),
 
+    "PATCH /workflows/{id}": dict(
+        取id=("/workflows", "items[0].id"),
+        读="/workflows/{id}", 字段="revision",
+        说明="2026-10-24 工作流改版:设置页改名称 / 用途。比的是**工作流自己的** revision,"
+             "不是草稿那个(草稿有自己的 If-Match)—— 详情接口同一天开始给它"),
     "PATCH /tools/{id}/draft": dict(
         取id=("/tools", "items[0].id"),
         读="/tools/{id}", 字段="草稿.revision",

@@ -325,7 +325,10 @@ def _agent模板(c, project_id):
     pv = c.execute(text("""select id from prompt_versions where project_id=:p
                           order by version_no desc limit 1"""),
                    {"p": project_id}).first()
-    工具们 = list(_工具目录(c, project_id))
+    # 澜绣桥的工具(取转写 / 写跟进)**只给工作流用**:Agent 这条路上没有它们的执行通道,
+    # 而写跟进之前必须过工作流里的人工核对 —— 塞进 Agent 模板就是给模型一个调了只会失败、
+    # 而且绕开核对那道闸的写口(2026-10-24 登记这两个工具后,Agent 模板第一次把它们带了进来)
+    工具们 = [k for k, v in _工具目录(c, project_id).items() if v.get("adapter") != "lanxiu_bridge"]
     return {
         "kind": "agent", "definition_schema_version": "1",
         "connection_version_id": (行[0] if 行 else None),

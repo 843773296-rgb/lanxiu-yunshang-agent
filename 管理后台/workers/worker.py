@@ -1358,6 +1358,46 @@ def 跑一轮(类型=None, 项目=None):
         return f"{名}:崩了 {type(e).__name__}: {e}"
 
 
+def 扫过期核对(c):
+    """工作流里的人工核对过了截止时间没人处理 → **这次运行结束,记「已过期」**(用户 10-24 拍)。
+
+    原来到期只是「不能再批」,运行却一直挂在等待审批 —— 运行列表里会攒一堆永远挂着的,
+    而「在等人」和「没人会来了」长得一模一样。现在到点就收:待办标过期、运行进终态 expired、
+    停着的那一步记失败(HUMAN_REVIEW_EXPIRED)。不写任何东西;想补就重新发起一次。
+
+    `for update skip locked`:两个 worker 同时扫,同一条只被收一次。返回收了几条。
+    """
+    import json as _j
+    rs = c.execute(text("""
+        select h.project_id, h.organization_id, h.id hid, h.execution_run_id rid,
+               h.target_ref->>'node_id' node
+          from human_requests h
+          join execution_runs r on r.project_id=h.project_id and r.id=h.execution_run_id
+         where h.status='pending' and h.expires_at is not null and h.expires_at < now()
+           and r.status='waiting_approval'
+         for update of h, r skip locked""")).mappings().all()
+    for x in rs:
+        p = {"p": x["project_id"], "h": x["hid"], "r": x["rid"], "n": x["node"]}
+        c.execute(text("""update human_requests set status='expired', updated_at=now(), revision=revision+1
+                           where project_id=:p and id=:h"""), p)
+        c.execute(text("""update execution_runs set status='expired', completion_reason='HUMAN_REVIEW_EXPIRED',
+                                 ended_at=now(), updated_at=now(), revision=revision+1
+                           where project_id=:p and id=:r"""), p)
+        c.execute(text("""update run_steps set status='failed', error_code='HUMAN_REVIEW_EXPIRED',
+                                 ended_at=now(), updated_at=now(), revision=revision+1
+                           where project_id=:p and execution_run_id=:r and node_id=:n
+                             and status='waiting_human'"""), p)
+        seq = c.execute(text("""select coalesce(max(seq), 1) + 1 from run_events
+                                 where project_id=:p and execution_run_id=:r"""), p).scalar()
+        c.execute(text("""insert into run_events (id, organization_id, project_id, execution_run_id, seq,
+                              event_type, payload, occurred_at, created_at, created_by)
+                          values (:i, :o, :p, :r, :s, 'run.expired', cast(:pl as jsonb), now(), now(), :u)"""),
+                  {**p, "i": _新("re"), "o": x["organization_id"], "s": seq, "u": 我是谁,
+                   "pl": _j.dumps({"为什么": "人工核对过了截止时间没人处理 —— 这次运行结束,什么都没写;要补就重新发起"},
+                                    ensure_ascii=False)})
+    return len(rs)
+
+
 def main():
     一轮 = "--一轮" in sys.argv
     类型 = None
@@ -1390,6 +1430,10 @@ def main():
     while True:
         with 事务() as c:
             发, 卡 = OB.发布一批(c)
+        with 事务() as c:
+            过 = 扫过期核对(c)
+        if 过:
+            print(f"  人工核对到期没人处理:{过} 次运行记成「已过期」")
         if 卡:
             print(f"  ⚠️ 发件箱里有 {卡} 条到了尝试上限还没发出去 —— **人要看一眼**:"
                   f"一条永远发不出去的消息会把发布器卡住,而卡住的发布器"

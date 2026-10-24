@@ -354,7 +354,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 		r=u.Request('http://127.0.0.1:8801/api/v1/projects/project_demo_a/workflows', \
 		headers={'X-Dev-User':'U002'}); d=json.load(u.urlopen(r)); \
 		print(d['items'][0]['id'] if d['items'] else '')" 2>/dev/null); \
-	  if [ -n "$$W" ]; then out=$$(node tests/e2e/page_smoke.js "$(HASH)/workflow/$$W" 2>&1); \
+	  if [ -n "$$W" ]; then out=$$(node tests/e2e/page_smoke.js "$(HASH)/workflow/$$W/搭建" 2>&1); \
 	    if [ $$? -ne 0 ]; then echo "❌"; echo "$$out" | tail -8; exit 1; fi; \
 	    echo "$$out" | tail -2; \
 	  else echo "  ⚠️ 演示库里没有工作流 —— 先 make seed-demo 或在页面上建一个。"; \

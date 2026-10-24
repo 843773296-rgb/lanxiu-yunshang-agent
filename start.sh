@@ -49,10 +49,17 @@ fi
 export LANXIU_USAGE_URL="${LANXIU_USAGE_URL:-http://127.0.0.1:8801}"
 export LANXIU_USAGE_PROJECT="${LANXIU_USAGE_PROJECT:-project_demo_a}"
 export LANXIU_USAGE_USER="${LANXIU_USAGE_USER:-U001}"
-pkill -f "tools/supervise_sync.py --循环" 2>/dev/null
-if curl -s -o /dev/null -m 3 "$LANXIU_USAGE_URL/"; then
-  nohup python3 tools/supervise_sync.py --循环 30 > /tmp/lanxiu-supervise-sync.log 2>&1 &
-  echo "  AI 管理平台   $LANXIU_USAGE_URL  已连(每 30 秒同步一次,日志 /tmp/lanxiu-supervise-sync.log)"
+# 工作流桥(取转写 / 写跟进)只连「澜绣云裳」正式项目 —— 测试在演示项目里造单子,别让真同步去抢(10-24)
+export LANXIU_BRIDGE_PROJECT="${LANXIU_BRIDGE_PROJECT:-project_lanxiu}"
+if launchctl print "gui/$(id -u)/com.lanxiu.supervise" >/dev/null 2>&1; then
+  # 常驻了(./tools/always_on.sh install)就不再手起一份 —— 两份同时跑会抢同一张单
+  echo "  AI 管理平台   同步程序是常驻的(com.lanxiu.supervise),日志 /tmp/lanxiu-supervise.log"
 else
-  echo "  AI 管理平台   $LANXIU_USAGE_URL  没起 —— 没连。先在 管理后台/ 里 make dev,再重跑 ./start.sh"
+  pkill -f "tools/supervise_sync.py --循环" 2>/dev/null
+  if curl -s -o /dev/null -m 3 "$LANXIU_USAGE_URL/"; then
+    nohup python3 tools/supervise_sync.py --循环 30 > /tmp/lanxiu-supervise-sync.log 2>&1 &
+    echo "  AI 管理平台   $LANXIU_USAGE_URL  已连(每 30 秒同步一次,日志 /tmp/lanxiu-supervise-sync.log)"
+  else
+    echo "  AI 管理平台   $LANXIU_USAGE_URL  没起 —— 没连。先在 管理后台/ 里 make dev,再重跑 ./start.sh"
+  fi
 fi

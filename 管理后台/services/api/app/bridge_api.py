@@ -51,6 +51,9 @@ def 桥请求列表(project_id: str, me: 身份 = Depends(要权限("运行评�
               from bridge_calls
              where project_id=:p and status=:s
                and (cast(:r as text) is null or execution_run_id = cast(:r as text))
+               -- 待执行的单只给还挂着等它的运行(运行被取消 / 过期之后,澜绣不该再去写跟进)
+               and (:s <> '待执行' or exists (select 1 from execution_runs x where x.project_id=bridge_calls.project_id
+                        and x.id=bridge_calls.execution_run_id and x.status='waiting_external'))
              order by created_at, id
              limit :n"""), {"p": project_id, "s": 状态, "r": execution_run_id,
                             "n": limit}).mappings().all()

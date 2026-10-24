@@ -275,7 +275,7 @@ ck("**冻结 Agent v1**,工具和策略固定成确切版本",
 键 = str(uuid.uuid4())
 c, r = 打("POST", P + "/agent-runs", 头={"Idempotency-Key": 键},
          体={"agent_id": aid, "输入": {"products": ["甲", "乙"]}})
-ck("**跑 Agent 返回 202 排队中**", c == 202 and r["status"] == "排队中", c)
+ck("**跑 Agent 返回 202 排队中**", c == 202 and r["status"] == "排队中", (c, r))
 arid = r["resource_id"]
 
 c, b = 打("POST", P + "/agent-runs", 头={"Idempotency-Key": str(uuid.uuid4())},

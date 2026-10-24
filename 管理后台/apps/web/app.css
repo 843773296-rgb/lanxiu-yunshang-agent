@@ -193,3 +193,27 @@ summary{cursor:pointer;font-size:13px;color:var(--pri)}
  * 而「改了」这件事正是那张对照表唯一要传达的东西。
  * **一个引用不存在的样式类,和忘了标记是一回事,只是它在代码里看着像做了。** */
 tr.warn-row td{background:#fff7e8}
+
+/* ── 工作流改版(2026-10-24):六个页签 / 步骤列表 / 弹窗 ─────────────── */
+.wftabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 16px}
+.wftabs a{padding:8px 14px;color:var(--ink2);border-bottom:2px solid transparent;margin-bottom:-1px}
+.wftabs a.on{color:var(--pri);border-bottom-color:var(--pri);font-weight:600}
+.wfbuild{display:grid;grid-template-columns:minmax(320px,1fr) 420px;gap:16px;align-items:start}
+.wfbuild .wfpanel{position:static;width:auto;max-height:none}
+.steps{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;min-height:240px;overflow:auto}
+.step{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 10px;margin:6px 0;
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
+.step.sel{border-color:var(--pri);background:var(--pri-bg)}
+.step .t{border:0;background:none;font-weight:600;cursor:pointer;padding:0;color:var(--ink)}
+.step .acts{margin-left:auto;display:flex;gap:4px}
+.mask{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:50;display:flex;align-items:flex-start;
+  justify-content:center;padding-top:8vh}
+.modal{background:var(--card);border-radius:6px;width:min(560px,92vw);max-height:84vh;overflow:auto;
+  box-shadow:0 8px 32px rgba(0,0,0,.18)}
+.modal .mh{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.modal .mh button{border:0;background:none;font-size:20px;cursor:pointer}
+.modal .mb{padding:12px 16px}
+.modal .mb input:not([type]),.modal .mb textarea,.modal .mb select{width:100%}
+.tpl{display:block;border:1px solid var(--line);border-radius:var(--radius);padding:8px 10px;margin:6px 0;cursor:pointer}
+.wfpanel .tabs{display:flex;gap:4px;margin:8px 0}
+.wfpanel .tabs button.on{border-color:var(--pri);color:var(--pri)}

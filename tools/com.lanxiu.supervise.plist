@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 澜绣 ↔ AI 管理后台同步程序常驻(用户 2026-10-24 拍「设成常驻」)—— 和另外三个同一套:./tools/always_on.sh install | status | restart
+     · 每 30 秒:推用量 / 产出、拉打回执行、拉工作流的取转写 / 写跟进单执行再回执
+     · 它不常驻的话,音频整理流程会一直停在「等澜绣回执」
+     · 桥只连 project_lanxiu(写的是真库);管理后台的端到端测试在演示项目里自己扮演澜绣,两边不抢单
+     · launchd 的环境极简:PATH / USER / HOME 要自己给 -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.lanxiu.supervise</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.14/bin/python3</string>
+    <string>tools/supervise_sync.py</string>
+    <string>--循环</string>
+    <string>30</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/eureka/Desktop/澜绣云裳agent</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>/tmp/lanxiu-supervise.log</string>
+  <key>StandardErrorPath</key><string>/tmp/lanxiu-supervise.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Library/Frameworks/Python.framework/Versions/3.14/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>USER</key><string>eureka</string>
+    <key>HOME</key><string>/Users/eureka</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+    <key>LANXIU_USAGE_URL</key><string>http://127.0.0.1:8801</string>
+    <key>LANXIU_USAGE_PROJECT</key><string>project_demo_a</string>
+    <key>LANXIU_USAGE_USER</key><string>U001</string>
+    <key>LANXIU_BRIDGE_PROJECT</key><string>project_lanxiu</string>
+  </dict>
+</dict>
+</plist>

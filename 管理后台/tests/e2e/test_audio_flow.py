@@ -83,8 +83,8 @@ def 建图(名, 改=None):
     定义 = d["草稿"]["定义"]
     for n in 定义["nodes"]:
         if n["type"] == "llm":
+            # 只补模型 —— 处理要求模板已经默认选上了「客户需求提取」(用户 10-24 拍)
             n["config"]["connection_version_id"] = "cv_mock_" + 项目
-            n["config"]["prompt_version_id"] = "pv_seed_article_summary"
     if 改:
         改(定义)
     c, b = 打("PATCH", P + f"/workflows/{w['id']}/draft", 体={"定义": 定义},
@@ -112,8 +112,29 @@ def 决定(hid, decision, **kw):
              头={"Idempotency-Key": str(uuid.uuid4())})
 
 
-print("▸ ① 建模板 → 补模型 → 校验")
+print("▸ ⓪ 模板卡片 / 下拉资源")
+c, t = 打("GET", P + "/workflow-templates")
+ck("模板卡片:音频整理排第一(弹窗默认选它),写明要哪些资源", c == 200 and t["items"][0]["名"] == "音频整理"
+   and len(t["items"][0]["需要的资源"]) == 4, t)
+ck("这个项目里资源齐了 → 标「能直接跑」", t["items"][0]["能直接跑吗"] is True, t["items"][0])
+c, rs = 打("GET", P + "/workflow-resources")
+ck("搭建下拉:模型 / 处理要求 / 业务动作 / 角色都有,业务动作里有澜绣的两个",
+   c == 200 and rs["模型"] and rs["处理要求"] and {"取转写", "写跟进"} <= {x["名"] for x in rs["工具"]}
+   and any(x["能审批"] for x in rs["角色"]), {k: len(v) for k, v in (rs or {}).items()})
+
+print("\n▸ ① 建模板 → 补模型 → 校验")
 wid, 定义 = 建图("e2e 音频整理")
+提取 = [n for n in 定义["nodes"] if n["type"] == "llm"][0]
+ck("处理要求默认选上了「客户需求提取」(用户 10-24 拍「带一份、默认选上」)",
+   提取["config"].get("prompt_version_id") in {x["版本id"] for x in rs["处理要求"] if x["key"] == "customer_needs_extract"},
+   提取["config"].get("prompt_version_id"))
+c, d0 = 打("GET", P + f"/workflows/{wid}")
+c, b = 打("PATCH", P + f"/workflows/{wid}", 体={"名称": "e2e 改过名", "用途": "录音 → 跟进"},
+         头={"If-Match": str(d0["revision"])})
+ck("设置页改名称 / 用途(带 If-Match)", c == 200 and b["名称"] == "e2e 改过名" and b["用途"] == "录音 → 跟进", (c, b))
+c, b = 打("PATCH", P + f"/workflows/{wid}", 体={"名称": "后到的", "用途": "x"}, 头={"If-Match": str(d0["revision"])})
+ck("拿旧 revision 再改 → 409(两个人同时改,后到的不许悄悄盖掉)",
+   c == 409 and (b or {}).get("code") == "REVISION_CONFLICT", (c, b))
 ck("模板预填了取转写 / 写跟进两个澜绣桥工具(项目里登记过的那两个)",
    all(n["config"].get("tool_version_id") for n in 定义["nodes"] if n["type"] == "tool"),
    [n["config"].get("tool_version_id") for n in 定义["nodes"] if n["type"] == "tool"])
@@ -126,6 +147,17 @@ ck("受理 202", c == 202, (c, r))
 rid = r["resource_id"]
 st, _ = 等到(rid, ("waiting_external", "failed", "succeeded"))
 ck("停在 waiting_external(等澜绣回执)", st == "waiting_external", st)
+c, r = 打("GET", P + f"/execution-runs/{rid}", "U004")
+等 = (r or {}).get("在等什么") or {}
+ck("运行详情说清在等什么:等澜绣执行「取转写」,停在 fetch",
+   等.get("种类") == "external" and 等.get("工具") == "取转写" and 等.get("步骤") == "fetch", 等)
+ck("挂起中「继续」这个控制动作不可用,而且说了为什么",
+   any(a["动作"] == "resume" and not a["现在能吗"] and "自动接着跑" in (a["为什么不能"] or "")
+       for a in r["可执行的控制动作"]), r["可执行的控制动作"])
+c, b = 打("POST", P + f"/execution-runs/{rid}/resume", "U002", 体={},
+         头={"Idempotency-Key": str(uuid.uuid4()), "If-Match": str(r["revision"])})
+ck("**硬点「继续」→ 409 WAITING_FOR_EVENT**(结构闸,不只是按钮藏起来)",
+   c == 409 and (b or {}).get("code") == "WAITING_FOR_EVENT", (c, b))
 s1 = 单(rid)
 ck("桥上有一张「取转写」待执行单,参数是通话号", len(s1) == 1 and s1[0]["工具"] == "取转写"
    and s1[0]["参数"] == {"call_id": "TS-001"}, s1)
@@ -140,6 +172,10 @@ ck("回执成功,而且排上了恢复任务", c == 200 and b.get("恢复任务"
 st, _ = 等到(rid, ("waiting_approval", "failed", "succeeded"))
 ck("停在 waiting_approval(等人工核对)", st == "waiting_approval", st)
 hs = 待办(rid)
+c, r = 打("GET", P + f"/execution-runs/{rid}", "U004")
+ck("运行详情说清在等人工核对,带待办号和截止时间",
+   (r.get("在等什么") or {}).get("种类") == "human" and (r.get("在等什么") or {}).get("待办") == (hs[0]["id"] if hs else None)
+   and (r.get("在等什么") or {}).get("截止"), r.get("在等什么"))
 ck("待办里有一条这次运行的核对", len(hs) == 1, hs)
 c, d = 打("GET", P + f"/human-requests/{hs[0]['id']}", "U006") if hs else (0, {})
 参 = (d or {}).get("核对材料") or {}
@@ -188,6 +224,40 @@ ck("**写跟进一张单都没有**", not [x for s in ("待执行", "已执行",
                               if x["工具"] == "写跟进"])
 c, r = 打("GET", P + f"/execution-runs/{rid2}", "U004")
 ck("输出是退回理由", "录音里没有需求" in json.dumps(r, ensure_ascii=False))
+
+print("\n▸ ⑨ 运行被取消了,澜绣就拉不到它的单")
+c, r = 发起(wid, {"call_id": "TS-009", "customer_id": "C10009"})
+rid9 = r["resource_id"]
+等到(rid9, ("waiting_external",))
+ck("(取消前)单子在待执行列表里", len(单(rid9)) == 1, 单(rid9))
+c, d9 = 打("GET", P + f"/execution-runs/{rid9}", "U004")
+c, b = 打("POST", P + f"/execution-runs/{rid9}/cancel", "U002", 体={},
+         头={"Idempotency-Key": str(uuid.uuid4()), "If-Match": str(d9["revision"])})
+ck("取消成功", c in (200, 202), (c, b))
+ck("**取消之后待执行列表里没有它了**(澜绣不会再去执行一张没人等的单)", 单(rid9) == [], 单(rid9))
+
+print("\n▸ ⑩ 人工核对到期没人处理 → 这次运行结束,记「已过期」")
+def 秒过期(d):
+    for n in d["nodes"]:
+        if n["id"] == "review":
+            n["config"]["expires_at_policy"] = {"小时": 0.0005, "到期": "fail"}     # 1.8 秒
+wid10, _ = 建图("e2e 过期", 秒过期)
+c, r = 发起(wid10, {"call_id": "TS-010", "customer_id": "C10010"})
+rid10 = r["resource_id"]
+等到(rid10, ("waiting_external",))
+打("POST", P + f"/bridge-calls/{单(rid10)[0]['id']}/ack", "U004",
+  体={"结果": "已执行", "输出": {"text": "随便一段", "call_id": "TS-010"}})
+等到(rid10, ("waiting_approval",))
+import time as _t
+_t.sleep(2.5)
+st, _ = 等到(rid10, ("expired", "succeeded", "failed"))
+c, r = 打("GET", P + f"/execution-runs/{rid10}", "U004")
+ck("到点 → 运行终态「已过期」,原因 HUMAN_REVIEW_EXPIRED", st == "expired" and r.get("停止原因") == "HUMAN_REVIEW_EXPIRED",
+   (st, r.get("停止原因")))
+c, b = 打("GET", P + "/human-requests?status=expired&limit=200", "U006")
+ck("待办也标成过期了", any(x.get("execution_run_id") == rid10 for x in (b or {}).get("items") or []))
+ck("**什么都没写**:写跟进一张单都没有",
+   not [x for s in ("待执行", "已执行", "执行失败") for x in 单(rid10, s) if x["工具"] == "写跟进"])
 
 print("\n▸ ⑦ 没经过核对就写跟进 → 拒")
 def 绕过核对(d):

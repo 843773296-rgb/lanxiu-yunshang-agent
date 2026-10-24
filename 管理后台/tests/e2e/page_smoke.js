@@ -128,35 +128,36 @@ setTimeout(() => {
    * 和几条 <path>。数量从**接口返回的定义**里数,不从页面自己数 ——
    * 从页面数就是拿被测的东西算期望值(同源谬误)。 */
   if (/^#\/workflow\//.test(global.location.hash)) {
-    const wid = decodeURIComponent(global.location.hash.slice(11));
+    // 2026-10-24 改版:详情是六个页签,冒烟打「搭建」页签(#/workflow/<id>/搭建)。
+    // 对账换成步骤列表:**接口说定义里有几步,#steps 里就该有几个 .step**;
+    // 除了「返回结果」每一步都有「在此后添加」—— 拖拽不能是唯一操作方法(§3.3)。
+    const [wid, 签] = decodeURIComponent(global.location.hash.slice(11)).split("/");
     const 结构错 = [];
     realFetch(`${基址}/api/v1/projects/${页面用的项目()}/workflows/${wid}`,
               { headers: { "X-Dev-User": 页面用的身份() } })
       .then((r) => r.json()).then((d) => {
         const 定义 = (d["草稿"] || {})["定义"] || { nodes: [], edges: [] };
-        const cv = 写过.get("cv") || "";
-        const 节点数 = (cv.match(/class="wfnode/g) || []).length;
-        const 连线数 = (cv.match(/<path /g) || []).length;
-        if (节点数 !== 定义.nodes.length)
-          结构错.push(`画布上 ${节点数} 个节点,定义里有 ${定义.nodes.length} 个`);
-        if (连线数 !== (定义.edges || []).length)
-          结构错.push(`画布上 ${连线数} 条连线,定义里有 ${(定义.edges || []).length} 条`);
-        const lib = 写过.get("lib") || "";
-        const 可用数 = (d["节点库"] || []).filter((n) => n["可用"]).length;
-        const 加入数 = (lib.match(/data-add=/g) || []).length;
-        if (加入数 !== 可用数)
-          结构错.push(`节点库 ${加入数} 个「加入」按钮,可用节点 ${可用数} 个 —— `
-            + `**拖拽不能是唯一操作方法**(§3.3)`);
-        if (!/未实现/.test(lib))
-          结构错.push("节点库里没有标「未实现」的项 —— 那四个节点该显示但禁用");
+        if (签 !== "搭建") {
+          console.log(`  (页签「${签 || "概览"}」不做步骤对账 —— 冒烟要打 #/workflow/<id>/搭建)`);
+          return;
+        }
+        const st = 写过.get("steps") || "";
+        const 步数 = (st.match(/class="step[ "]/g) || []).length;
+        const 加数 = (st.match(/data-after=/g) || []).length;
+        const 该加 = 定义.nodes.filter((n) => n.type !== "end").length;
+        if (步数 !== 定义.nodes.length)
+          结构错.push(`步骤列表里 ${步数} 步,定义里有 ${定义.nodes.length} 个节点`);
+        if (加数 !== 该加)
+          结构错.push(`「在此后添加」${加数} 个,该有 ${该加} 个(除了返回结果每一步都有)`);
+        if (!/class="wftabs"/.test(写过.get("main") || ""))
+          结构错.push("没画出六个页签");
         if (结构错.length) {
           console.log("=".repeat(70));
           结构错.forEach((e) => console.log("  ❌ " + e));
-          console.log("❌ 画布是个空壳 —— **「有内容」不等于「画出来了」**");
+          console.log("❌ 搭建页是个空壳 —— **「有内容」不等于「画出来了」**");
           process.exit(1);
         }
-        console.log(`  画布结构对账:${节点数} 个节点 / ${连线数} 条连线 / `
-          + `${加入数} 个「加入」按钮,和接口返回的定义一致`);
+        console.log(`  搭建页结构对账:${步数} 步 / ${加数} 个「在此后添加」,和接口返回的定义一致`);
       }).catch((e) => { console.log("  ⚠️ 结构对账没跑成:" + e.message); });
   }
 

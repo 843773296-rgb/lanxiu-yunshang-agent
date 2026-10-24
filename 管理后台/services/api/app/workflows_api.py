@@ -86,7 +86,9 @@ def _音频整理(桥):
 
     `桥` = {"取转写": 工具版本id, "写跟进": 工具版本id}(项目里登记过的澜绣桥工具;没登记就留空,
     校验会点名缺哪一个 —— 不摆一个看着能跑、一跑就挂的模板)。
-    模型和处理要求**故意不预填**:用哪个模型是项目的决定,模板替你选了就等于没问过你。
+    **模型不预填**:用哪个模型是项目的决定,模板替你选了就等于没问过你。
+    **处理要求默认选上**「客户需求提取」(用户 10-24 拍「带一份、默认选上」),随时可以换;
+    项目里没登记就留空,校验会点名。
     """
     def 引(n, p):
         return {"source": "node", "node_id": n, "pointer": p}
@@ -106,7 +108,7 @@ def _音频整理(桥):
          "config": {"tool_version_id": 桥.get("取转写"),
                     "bindings": {"call_id": {"source": "input", "pointer": "/call_id"}}}},
         {"id": "extract", "type": "llm", "name": "提取客户需求", "layout": {"x": 400, "y": 160},
-         "config": {"output_schema": 提取Schema,
+         "config": {"output_schema": 提取Schema, "prompt_version_id": 桥.get("处理要求"),
                     "bindings": {"转写": 引("fetch", "/text"),
                                  "客户": {"source": "input", "pointer": "/customer_id"}}}},
         {"id": "review", "type": "human", "name": "人工核对", "layout": {"x": 580, "y": 160},
@@ -158,6 +160,12 @@ def _桥工具(c, project_id):
          where td.project_id=:p and td.adapter='lanxiu_bridge' and td.archived_at is null"""),
                    {"p": project_id}).mappings().all()
     return {r["name"]: r["vid"] for r in rs if r["vid"]}
+
+
+def _默认处理要求(c, project_id):
+    """音频整理默认选上的处理要求:key = customer_needs_extract 的最新版本(seed_bridge_tools 登记)。"""
+    return c.execute(text("""select id from prompt_versions where project_id=:p and key='customer_needs_extract'
+                             order by version_no desc limit 1"""), {"p": project_id}).scalar()
 
 
 def _模板(名, 桥=None):
@@ -215,7 +223,13 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
                    (select max(version_no) from workflow_versions v
                      where v.project_id=w.project_id and v.workflow_id=w.id) 最新冻结,
                    (select count(*) from workflow_versions v
-                     where v.project_id=w.project_id and v.workflow_id=w.id) 版本数
+                     where v.project_id=w.project_id and v.workflow_id=w.id) 版本数,
+                   (select jsonb_build_object('id', r.id, 'status', r.status, 'at',
+                           coalesce(r.ended_at, r.updated_at, r.created_at))
+                      from execution_runs r
+                     where r.project_id=w.project_id and r.kind='workflow'
+                       and r.definition_ref->>'id' = w.id
+                     order by r.created_at desc limit 1) 最近运行
               from workflows w
              where w.project_id=:p and w.archived_at is null
              order by w.updated_at desc limit :n
@@ -239,8 +253,123 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
                             "**这是「还没接」,不是「线上没在用」**",
             "校验状态": r["validation_status"] or "没校验过",
             "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None,
+            # 列表上回答「最近跑得怎么样」(改版方案 §5.1)。没跑过就是 None,不写「—」
+            "最近运行": ({"id": r["最近运行"]["id"], "状态": r["最近运行"]["status"],
+                         "状态中文": ST.找("execution_run")["中文状态"].get(
+                             r["最近运行"]["status"], r["最近运行"]["status"]),
+                         "时间": r["最近运行"]["at"]} if r["最近运行"] else None),
         })
     return {"items": 出, "next_cursor": None, "total": 总}
+
+
+_模板说明 = {
+    "音频整理": ("从一通录音整理客户需求,人工核对后写成澜绣客户档案里的一条跟进",
+               ["选择录音", "取转写", "提取客户需求", "人工核对", "通过 → 写跟进 / 退回 → 记理由"]),
+    "文本处理": ("一段文字进来,模型整理一遍出去(开始 → AI 处理 → 结束)", ["输入正文", "AI 处理", "返回结果"]),
+    "空白": ("只有开始和结束,自己从头搭", []),
+}
+
+
+@router.get(前缀 + "/workflow-templates")
+def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """新建弹窗里的模板卡片:**每张写明要哪些资源、这个项目里有没有**(改版方案 §5.1)。
+
+    缺资源的模板照样能建(建完在「搭建」里补),但卡片上标「待配置」——
+    不能标成「可直接运行」,而那正是「看着能跑、一跑就挂」的来源。"""
+    with 连接() as c:
+        桥 = _桥工具(c, project_id)
+        有模型 = bool(c.execute(text("""select 1 from connection_versions cv
+                                         join model_connections m on m.project_id=cv.project_id
+                                          and m.id=cv.connection_id
+                                        where cv.project_id=:p and m.status='active' and m.purpose='generate' limit 1"""),
+                              {"p": project_id}).first())
+        有要求 = bool(_默认处理要求(c, project_id))
+    出 = []
+    for 名 in ("音频整理", "文本处理", "空白"):          # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
+        说, 步 = _模板说明[名]
+        要 = []
+        if 名 == "音频整理":
+            for 工 in ("取转写", "写跟进"):
+                要.append({"名": f"澜绣业务动作「{工}」", "有了吗": bool(桥.get(工)),
+                          "怎么补": "平台管理员跑 管理后台/tools/seed_bridge_tools.py 登记"})
+            要.append({"名": "处理要求「客户需求提取」", "有了吗": 有要求,
+                      "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
+        if 名 in ("音频整理", "文本处理"):
+            要.append({"名": "一个可用的模型", "有了吗": 有模型, "怎么补": "平台管理员在「模型与连接」里接一个"})
+        出.append({"名": 名, "说明": 说, "步骤": 步, "需要的资源": 要,
+                   "能直接跑吗": all(x["有了吗"] for x in 要) and 名 != "空白"})
+    return {"items": 出, "note": "模板只预填草稿 —— 不调模型、不绑生产环境"}
+
+
+@router.get(前缀 + "/workflow-resources")
+def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """搭建页的下拉:模型 / 处理要求 / 业务动作 / 角色。**按名字和用途选,底层存确切版本**(方案 §4.3)。
+
+    只列这个项目里的、可用的。前端隐藏不是授权 —— 运行时还会按版本再查一遍(编译时的依赖检查)。"""
+    import perms as PM
+    with 连接() as c:
+        模 = c.execute(text("""select cv.id vid, m.display_name, m.adapter, cv.capabilities
+                                from connection_versions cv
+                                join model_connections m on m.project_id=cv.project_id
+                                 and m.id=cv.connection_id
+                               where cv.project_id=:p and m.status='active' and m.purpose='generate'
+                               order by m.display_name, cv.created_at desc"""), {"p": project_id}).mappings().all()
+        要 = c.execute(text("""select distinct on (v.key) v.id, v.key, v.version_no, d.messages
+                                from prompt_versions v
+                                left join prompt_drafts d on d.project_id=v.project_id and d.key=v.key
+                               where v.project_id=:p
+                               order by v.key, v.version_no desc"""), {"p": project_id}).mappings().all()
+        工 = c.execute(text("""select distinct on (td.id) tv.id vid, td.name, td.purpose, td.adapter,
+                                       tv.side_effect_type, tv.output_schema
+                                  from tool_definitions td
+                                  join tool_versions tv on tv.project_id=td.project_id
+                                   and tv.tool_definition_id=td.id
+                                 where td.project_id=:p and td.archived_at is null and td.status='active'
+                                 order by td.id, tv.version_no desc"""), {"p": project_id}).mappings().all()
+    读写 = {"read_only": "只读", "write": "写入", "irreversible": "写入 · 不可撤"}
+    能批 = {r for r in PM.角色们 if PM.判("审批工具动作", r, [])[0]}
+    return {
+        "模型": [{"版本id": r["vid"], "名": r["display_name"] or r["adapter"],
+                  "是假的": ((r["capabilities"] or {}).get("execution_mode") == "mock"),
+                  "支持的参数": (r["capabilities"] or {}).get("支持的参数") or []} for r in 模],
+        "处理要求": [{"版本id": r["id"], "名": ((r["messages"] or {}).get("用途") or r["key"]),
+                      "key": r["key"], "版本": r["version_no"],
+                      "用途": (r["messages"] or {}).get("用途")} for r in 要],
+        "工具": [{"版本id": r["vid"], "名": r["name"], "说明": r["purpose"],
+                  "读写": 读写.get(r["side_effect_type"], r["side_effect_type"]),
+                  "接入方式": r["adapter"], "出参": r["output_schema"] or {}}
+                 for r in sorted(工, key=lambda x: (x["adapter"] != "lanxiu_bridge", x["name"]))],
+        "角色": [{"码": r, "中文": PM.角色中文.get(r, r), "能审批": r in 能批} for r in PM.角色们],
+    }
+
+
+@router.patch(前缀 + "/workflows/{wid}")
+async def 改工作流信息(project_id: str, wid: str, request: Request,
+                 if_match: str = Header(default=None, alias="If-Match"),
+                 me: 身份 = Depends(要权限("改编排草稿"))):
+    """名称 / 用途 / 负责人。**不碰定义** —— 定义只走草稿那条。**要 If-Match**(工作流的 revision)。"""
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match",
+                  "把详情里工作流的 revision 放进 If-Match 头再提交 —— 两个人同时改,后到的不许悄悄盖掉先到的")
+    体 = await request.json()
+    名 = (体.get("名称") or "").strip()
+    if not 名:
+        raise _错(422, "VALIDATION", "名称不能空", "给这条流程起个名字", field_errors={"名称": "必填"})
+    with 事务() as c:
+        现 = c.execute(text("select revision from workflows where project_id=:p and id=:i for update"),
+                       {"p": project_id, "i": wid}).scalar()
+        if 现 is None:
+            raise _错(404, "NOT_FOUND", "没有这条工作流", "回列表重新进入")
+        if str(现) != str(if_match).strip('"'):
+            raise _错(409, "REVISION_CONFLICT", f"这条工作流已经被改过了(你拿到的是 {if_match},现在是 {现})",
+                      "刷新看一眼别人改了什么再改 —— **不要直接覆盖**")
+        r = c.execute(text("""update workflows set name=:n, purpose=:pu, owner=coalesce(:ow, owner),
+                                     updated_at=now(), revision=revision+1
+                               where project_id=:p and id=:i
+                           returning name, purpose, owner, revision"""),
+                      {"n": 名, "pu": 体.get("用途"), "ow": 体.get("负责人"), "p": project_id,
+                       "i": wid}).mappings().first()
+    return {"id": wid, "名称": r["name"], "用途": r["purpose"], "负责人": r["owner"], "revision": r["revision"]}
 
 
 @router.post(前缀 + "/workflows", status_code=201)
@@ -260,7 +389,8 @@ async def 建工作流(project_id: str, request: Request,
                   "不摆一个选了没反应的选项")
     wid, did = _新id("wf"), _新id("gd")
     with 事务() as c:
-        定义 = _模板(模板名, _桥工具(c, project_id) if 模板名 == "音频整理" else None)
+        定义 = _模板(模板名, ({**_桥工具(c, project_id), "处理要求": _默认处理要求(c, project_id)}
+                             if 模板名 == "音频整理" else None))
         c.execute(text("""
             insert into workflows (id, organization_id, project_id, name, purpose,
                 owner, tags, draft_revision, validation_status, status,
@@ -303,6 +433,7 @@ def 工作流详情(project_id: str, wid: str,
         """), {"p": project_id, "i": wid}).mappings().all()
     return {
         "id": w["id"], "名称": w["name"], "用途": w["purpose"], "负责人": w["owner"],
+        "revision": w["revision"],      # 改名称 / 用途要拿它做 If-Match(草稿有自己那一个)
         "标签": w["tags"] or [], "校验状态": w["validation_status"],
         "草稿": {
             "revision": d["revision"] if d else None,
@@ -674,10 +805,13 @@ def _控制动作们(当前):
         能 = 目标 in 去的地方
         if 名 == "cancel" and not 能:
             能 = "cancelled" in 去的地方
-        出.append({"动作": 名, "中文": 中文, "现在能吗": 能,
-                   "为什么不能": (None if 能 else
-                              f"状态机里「{当前}」走不到「{目标}」—— "
-                              f"它现在能去的是 {sorted(去的地方) or '哪儿都去不了(终态)'}")})
+        为什么 = (None if 能 else f"状态机里「{当前}」走不到「{目标}」—— "
+                                f"它现在能去的是 {sorted(去的地方) or '哪儿都去不了(终态)'}")
+        if 名 == "resume" and 当前 in ("waiting_approval", "waiting_external"):
+            # 等人 / 等澜绣的运行**没有「手动继续」**:那件事办完自动接着跑(run_resume.排恢复)。
+            # 手动继续只会把它排回队列却没有结果可接 —— worker 拿不到决定 / 回执,只能报错
+            能, 为什么 = False, "它在等人工核对 / 澜绣回执 —— 办完会自动接着跑,不能手动继续"
+        出.append({"动作": 名, "中文": 中文, "现在能吗": 能, "为什么不能": 为什么})
     # ⚠️ `reconcile` 单独列:它**不改状态**(只去问一次外部系统),
     # 所以只要不是终态就能做 —— 和上面三个的判据不是一回事。
     出.append({"动作": "reconcile", "中文": "核实外部状态",
@@ -705,6 +839,25 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
             select seq, event_type, payload, occurred_at from run_events
              where project_id=:p and execution_run_id=:i order by seq
         """), {"p": project_id, "i": rid}).mappings().all()
+        等 = None
+        if r["status"] in ("waiting_approval", "waiting_external"):
+            # **挂着的运行要说清在等谁**(方案 §8.3「业务进度」):只写「运行中」的话,
+            # 「在等人批」「在等澜绣」和「卡死了」长得一模一样
+            停 = (r["resume_snapshot"] or {}).get("从") or r["current_step_id"]
+            if r["status"] == "waiting_approval":
+                h = c.execute(text("""select id, expires_at from human_requests
+                                       where project_id=:p and execution_run_id=:i and status='pending'
+                                       order by created_at desc limit 1"""),
+                              {"p": project_id, "i": rid}).mappings().first()
+                等 = {"种类": "human", "步骤": 停, "待办": h and h["id"],
+                      "截止": h and h["expires_at"] and h["expires_at"].isoformat()}
+            else:
+                b = c.execute(text("""select id, tool_name, created_at from bridge_calls
+                                       where project_id=:p and execution_run_id=:i and status='待执行'
+                                       order by created_at desc limit 1"""),
+                              {"p": project_id, "i": rid}).mappings().first()
+                等 = {"种类": "external", "步骤": 停, "桥请求": b and b["id"], "工具": b and b["tool_name"],
+                      "排于": b and b["created_at"].isoformat()}
     def _脱(v):
         if 看原文:
             return v
@@ -730,6 +883,7 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
         # 或者藏掉一个其实能用的,**两者都不报错**。
         # 所以这里从 `states.py` 现读,前端只管照着摆。
         "可执行的控制动作": _控制动作们(r["status"]),
+        "在等什么": 等,
         "执行状态中文": ST.找("execution_run")["中文状态"].get(r["status"], r["status"]),
         "是终态吗": r["status"] in ST.找("execution_run")["终态"],
         "停止原因": r["completion_reason"],

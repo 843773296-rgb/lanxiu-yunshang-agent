@@ -161,6 +161,12 @@ async def 继续(project_id: str, run_id: str, request: Request,
         # 放宽状态机去让它过,是拿一个真实区别去换一次少写代码 ——
         # 而丢掉的那个区别正是「请求暂停」和「已暂停」的区别,
         # 这一组接口的全部意义就在那儿。
+        if r["status"] in ("waiting_approval", "waiting_external"):
+            # 结构闸(2026-10-24):挂起的运行只能由「人工决定 / 澜绣回执」恢复(run_resume.排恢复)。
+            # 这里放行的话它被排回队列却没有结果可接,worker 只能报 RESUME_WITHOUT_* —— 而运行停在「排队中」
+            raise _错(409, "WAITING_FOR_EVENT",
+                      "这次运行在等人工核对 / 澜绣回执,不能手动继续",
+                      "去处理那条待办(或等澜绣回执),办完它会自动接着跑;不想等了就取消")
         if r["status"] == "pause_requested":
             raise _错(409, "NOT_PAUSED_YET",
                       "这次运行**还没真的停下来**(现在是「暂停请求中」)",

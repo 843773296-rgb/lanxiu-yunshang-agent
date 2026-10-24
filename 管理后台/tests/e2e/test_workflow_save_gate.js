@@ -79,9 +79,9 @@ async function 跑(名, 动作) {
     组(`草稿 PATCH 回 ${码}`);
     const 校 = await 跑("校验", 动.校验);
     ck(`校验:存失败(${码})后没发校验请求`, !校.some((r) => r.includes("/validate")), 校);
-    const 冻 = await 跑("冻结", 动.冻结);
+    const 冻 = await 跑("冻结", () => 动.冻结("测试说明"));
     ck(`冻结:存失败(${码})后没发冻结请求`, !冻.some((r) => r.includes("/versions")), 冻);
-    const 试 = await 跑("试运行", 动.试运行);
+    const 试 = await 跑("试运行", () => 动.试运行({}));
     ck(`试运行:存失败(${码})后没发运行请求`, !试.some((r) => r.includes("/execution-runs")), 试);
     ck(`存失败(${码})时告诉了人(弹框)`, 弹框.length > 0);
   }
@@ -95,8 +95,8 @@ async function 跑(名, 动作) {
   组("对照:存成功时三个动作照常发请求(不然「拦住了」和「桩坏了」分不开)");
   草稿回 = 200;
   ck("对照 · 校验照常发出", (await 跑("校验", 动.校验)).some((r) => r.includes("/validate")));
-  ck("对照 · 冻结照常发出", (await 跑("冻结", 动.冻结)).some((r) => r.includes("/versions")));
-  ck("对照 · 试运行照常发出", (await 跑("试运行", 动.试运行)).some((r) => r.includes("/execution-runs")));
+  ck("对照 · 冻结照常发出", (await 跑("冻结", () => 动.冻结("测试说明"))).some((r) => r.includes("/versions")));
+  ck("对照 · 试运行照常发出", (await 跑("试运行", () => 动.试运行({}))).some((r) => r.includes("/execution-runs")));
 
   if (走过.length !== 该跑几组) 挂.push(`该跑 ${该跑几组} 组,只走了 ${走过.length} 组`);
   console.log(挂.length ? `\n❌ ${挂.length} 条不过(验了 ${过 + 挂.length} 条):${挂.join(" / ")}`

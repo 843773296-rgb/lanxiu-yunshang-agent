@@ -36,7 +36,19 @@ create_followup(server.py,只追加)、call_opportunity(MCP 只读)、call-notes
 4. 页面:列表列 / 详情六页签(概览·搭建·测试·运行记录·版本与发布·设置)/ 字段改业务控件 / 在此后添加 + 连线 / 类型化试运行表单 / 人工核对页(原文和摘要并排)
 5. 音频整理模板:选录音 → 取转写 → 提取需求 → 人工核对 →(通过)写跟进 /(退回)记原因结束
 
-**下一步第一个动作**:改 `管理后台/services/api/app/runtime/runner.py` 的 `跑一张图`,加 `恢复=` 参数和 `需要等待` 异常 + human 分支,先写夹具测试。
+**进度(10-24 中午)**:1 / 2 / 5 已推(a731140);3 只做了「mock 按结果字段出形状」,真模型按节点连接 + 处理要求跑**还没做**;4 页面改版本地已改完、测过(见下),待门禁 → 推。
+
+**用户 10-24 上午拍板(AskUserQuestion 原选项)**:
+- 澜绣同步程序常驻?→「设成常驻(推荐)」→ tools/com.lanxiu.supervise.plist + always_on.sh 第四个;**桥只连 project_lanxiu**(LANXIU_BRIDGE_PROJECT),
+  因为常驻同步写真库,而管理后台端到端在 project_demo_a 里自己扮演澜绣 —— 共用项目会抢单、把测试编的跟进写进真客户档案
+- 人工核对过期?→「到期自动结束,记「已过期」(推荐)」→ worker 每轮 扫过期核对:待办 expired、运行 expired / HUMAN_REVIEW_EXPIRED、什么都不写
+- 音频整理带处理要求?→「带一份、默认选上(推荐)」→ seed_bridge_tools 登记 customer_needs_extract(照 call-notes 口径),模板默认选上
+- 夜跑提交 autostash?→「有未保存改动就不拉,只提交自己的(推荐)」→ nightly_eval 不 pull、不变基:上游没动就直接推,动过就留本地明早人工推
+
+**判据(这一段新增)**:写跟进前必须有人批过 —— **只认人工节点的输出**(模型 JSON 里写 决定=approve 骗不过);挂起中的运行**没有手动继续**(runctl 409 WAITING_FOR_EVENT);
+运行取消 / 过期后它的桥单从待执行列表消失(澜绣不再去写);Agent 模板不带桥工具(Agent 路上没有它们的执行通道,也绕开核对)。
+
+**下一步第一个动作**:门禁 → 推 → `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.lanxiu.supervise.plist`(先 cp)装常驻同步 → 段 3(真模型按节点配置跑)。
 
 
 

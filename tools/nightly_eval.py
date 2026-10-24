@@ -360,10 +360,20 @@ def 提交夜跑结果(报告):
                 "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>", "--", *路径)
         if r.returncode:
             return "提交失败:" + (r.stdout + r.stderr).strip()[-160:]
-        for 步 in (("pull", "--rebase", "--autostash"), ("push",)):
-            r = git(*步)
-            if r.returncode:
-                return f"提交了没推上去({' '.join(步)} 失败)—— 本地有这次提交,人工推一下:" + (r.stdout + r.stderr).strip()[-120:]
+        # ⚠️ **不拉、不变基、不动工作区**(用户 10-24 拍「有未保存改动就不拉,只提交自己的」)。
+        # 原来是 pull --rebase --autostash:它会把并行会话**没保存的改动**收起来、拉完再放回 ——
+        # 放回撞了冲突,那份从没提交过的改动就得人去救,而 git 历史里查不到它。
+        # 现在只做一件不碰工作区的事:上游没有我没见过的提交(快进)就直接推;
+        # 上游动过 → 本地这次提交留着,明早人工 pull --rebase 再推。代价是偶尔晚一天上去。
+        r = git("fetch", "--quiet")
+        if r.returncode:
+            return "提交了没推上去(fetch 失败)—— 本地有这次提交,人工推一下:" + (r.stdout + r.stderr).strip()[-120:]
+        if git("merge-base", "--is-ancestor", "@{u}", "HEAD").returncode:
+            return ("提交了没推上去:上游有新提交,要变基 —— **夜跑不动工作区**(用户 10-24 拍),"
+                    "本地留着这次提交,明早人工 pull --rebase 再推")
+        r = git("push")
+        if r.returncode:
+            return "提交了没推上去(push 失败)—— 本地有这次提交,人工推一下:" + (r.stdout + r.stderr).strip()[-120:]
         return f"已提交并推送({len(路径)} 个文件)"
     except Exception as e:                                                   # noqa: BLE001
         return f"提交出错:{type(e).__name__}: {e}"
