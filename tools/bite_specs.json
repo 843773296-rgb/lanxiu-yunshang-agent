@@ -12221,5 +12221,53 @@
    }
   ],
   "预期红": "这条攻击自己跑不起来,它什么都没验"
+ },
+ {
+  "script": "backend/query_index_check.py",
+  "改坏": "把覆盖索引里多带的那一列从登记的 DDL 里删掉(看着像「精简了一下索引」)—— ⚠️ 这个攻击**不碰库**:索引在库里还是覆盖的,计划里照样有 COVERING,所以红的必须是「库里的 DDL 和登记逐字一致」那条。这正是最阴的那种退化:少带一列之后它仍然是 SEARCH、仍然「生效」,而收益从 35 倍掉回 1.2 倍,**一行错都不报**",
+  "file": [
+   {
+    "path": "backend/query_index.py",
+    "old": "本体=\"CREATE INDEX ix_cust_adv_cov ON customer(advisor_no, merged_into)\",",
+    "new": "本体=\"CREATE INDEX ix_cust_adv_cov ON customer(advisor_no)\","
+   }
+  ],
+  "预期红": "ix_cust_adv_cov · 库里的 DDL 和登记逐字一致"
+ },
+ {
+  "script": "backend/query_index_check.py",
+  "改坏": "把 tasks.py 那条查询的 WHERE 两个条件换个前后顺序 —— **语义上是空操作**(`status='有效'` 里没有占位符,`?` 的顺序一点没变,索引照样用得上),它唯一改变的就是这条判据盯着的那段文本。⚠️ 故意挑这么窄的攻击点:除了「登记对不对得上代码」,别的什么都没动,所以红的只可能是那一条。守的是同源谬误 —— 登记表不能变成那条 SQL 的第二份手抄件",
+  "file": [
+   {
+    "path": "backend/tasks.py",
+    "old": "\"SELECT id FROM schedule WHERE assignee_no=? AND status='有效' \"",
+    "new": "\"SELECT id FROM schedule WHERE status='有效' AND assignee_no=? \""
+   }
+  ],
+  "预期红": "ix_sched_busy · 登记的那条查询还在 backend/tasks.py 里"
+ },
+ {
+  "script": "backend/query_index_check.py",
+  "改坏": "把 seed.py 里建索引那一步删掉(登记了,而没人去建)—— ⚠️ 这个缺口**在本地库上完全隐形**:索引早就建好了,一路绿,只有 CI 从零重建才会红。所以必须有一条**从文本上**看「有没有人调它」的判据,否则它就是「本地绿 ≠ CI 绿」的第三种机制(库的新旧)又一次",
+  "file": [
+   {
+    "path": "backend/seed.py",
+    "old": "    import query_index as _qi\n    _qi.建索引(c)\n",
+    "new": ""
+   }
+  ],
+  "预期红": "backend/seed.py 里真的有人调 建索引()(从零建库)"
+ },
+ {
+  "script": "backend/query_index_check.py",
+  "改坏": "把 seed.py 的 SCHEMA 里 customer 那一列改个名 —— **调 建索引() 那一步还在**,而从零建库会当场抛 no such column。这正是「有人调」这个文本判据漏掉的那一半:`customer.advisor_no` 真有过这个病(事后 ALTER 加的列,seed 的世界里压根不存在)。⚠️ 攻击点故意挑在 SCHEMA 的列名上:碰登记的 DDL 会先触发「库里的 DDL 和登记逐字一致」那条,就不是点名这一条了",
+  "file": [
+   {
+    "path": "backend/seed.py",
+    "old": "  merged_into TEXT);",
+    "new": "  merged_into_x TEXT);"
+   }
+  ],
+  "预期红": "从零建库(seed.py 的 SCHEMA)上这三条索引建得出来"
  }
 ]

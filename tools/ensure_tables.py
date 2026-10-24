@@ -52,6 +52,7 @@ import mcp_registry
 import alert_dispatch
 import kb_issue
 import report_template
+import query_index          # 为真实查询加的索引(2026-10-24,只读审计第 4 条)
 
 # (模块, 建表函数名, 这个模块建的表)  —— **表名列出来是为了能自检**
 登记 = [
@@ -131,6 +132,11 @@ def main():
         建了 += 表们
     c.commit()
 
+    # 索引和上面那些表是**同一个毛病**:本地建过就一直在,CI 每次从零。
+    # 而索引比表更难发现 —— 缺一张表会抛异常,**缺一条索引只是慢**。
+    新索引 = query_index.建索引(c)
+    c.commit()
+
     # 自检:登记的表**真的存在**。
     # 光调建表函数不够 —— 函数名写错、表名改过,都会静默什么都不做。
     有 = {r[0] for r in c.execute("select name from sqlite_master where type='table'")}
@@ -139,6 +145,13 @@ def main():
         sys.exit(f"❌ 登记了但没建出来:{缺} —— 多半是建表函数改了名或表名改了")
 
     print(f"  确保 {len(建了)} 张「用到时才建」的表存在:{'、'.join(建了)}")
+    # 索引也自检一次:调了建索引函数不等于索引真的建出来了(名字写错、DDL 语法错都会静默)。
+    有索引 = {r[0] for r in c.execute("select name from sqlite_master where type='index'")}
+    缺索引 = [ix["名"] for ix in query_index.索引 if ix["名"] not in 有索引]
+    if 缺索引:
+        sys.exit(f"❌ 登记了但没建出来的**索引**:{缺索引} —— 见 backend/query_index.py")
+    print(f"  确保 {len(query_index.索引)} 条查询索引存在(这次新建 {新索引} 条):"
+          f"{'、'.join(ix['名'] for ix in query_index.索引)}")
     print(f"  ⚠️ 这一步存在的理由:**本地建过就一直在,CI 每次从零** —— 今天为这个红过两次")
     c.close()
 

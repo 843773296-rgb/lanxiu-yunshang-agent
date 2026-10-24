@@ -924,6 +924,13 @@ def run():
       CREATE INDEX IF NOT EXISTS ix_maintain_order  ON maintain(order_id);
       CREATE INDEX IF NOT EXISTS ix_aftersale_order ON aftersale(order_id);
     """)
+    # 为**真实查询**加的那几条(只读审计第 4 条,用户 10-24 拍):登记在
+    # `backend/query_index.py`,连实测倍数和代价一起写在那儿。
+    # ⚠️ **别把 DDL 抄到这儿** —— 抄一份就有两份会漂的定义,而漂了之后
+    # 「库里的索引」和「代码里登记的索引」不一致**不报错,只是慢**。
+    # 上面那一批是「怕门禁按平方涨」加的,这一批是量过收益才加的,所以分开放。
+    import query_index as _qi
+    _qi.建索引(c)
     SHOPS=["SH001 静安旗舰店","SH002 徐汇店","SH003 杭州湖滨店"]
     # ADV 平铺列表已删。顾问一律按门店取 —— 见 advisors_of()。
     ADV_BY_SHOP = {sh: advisors_with_no(sh) for sh in SHOPS}
