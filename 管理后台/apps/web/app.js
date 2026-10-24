@@ -147,28 +147,16 @@ async function 画顶栏() {
   const h = await 请求("/api/healthz").catch(() => null);
   if (h) {
     环境 = h.env;
-    $("#env").textContent = h.env;
-    $("#env").className = "envtag" + (h.env === "production" ? " prod" : "");
-    if (h.演示模式) {
-      // ⚠️ 2026-09-29 用户要求**去掉那条占满一行的黄条**。
-      //
-      // 规格第 3 条(实施必须遵守)写的是「演示模式……和**醒目标记**」,
-      // 所以这里不是把标记删干净,而是**换了个不占一行的地方**:
-      // 顶栏那个环境标签后面挂一句话,鼠标停上去有全文。
-      //
-      // ⚠️ **接口里那个标记一个字没动**(`/api/healthz` 的 `演示模式` /
-      // `演示说明`),`test_api_flow` 那条断言验的正是它 ——
-      // 所以那条判据仍然验着真东西,没有变成一条守着空气的绿检查。
-      // > **把界面上的提示删掉、而判据还在绿着,比两个都删掉更糟** ——
-      // > 它让人以为还有人在看着。
-      document.body.classList.add("demo");
-      const t = $("#env");
-      if (t) {
-        t.classList.add("demo-env");
-        t.title = "演示模式:" + (h.演示说明 || "").replace(/\*\*/g, "");
-        t.textContent = h.env + " · 演示";
-      }
-    }
+    // 顶栏的环境标签**只在生产环境显示**(红框加文字,§4 —— 那是防止在生产上误操作的提醒)。
+    // ⚠️ 2026-09-29 用户要求去掉那条占满一行的演示黄条,当时把「演示」标记挪进了这个标签;
+    // 10-25 用户又说「development · 演示的标签也不要」—— 开发 / 演示环境下顶栏什么都不挂。
+    // **接口里的演示标记一个字没动**(`/api/healthz` 的 `演示模式` / `演示说明`,test_api_flow 验它),
+    // 只是界面上不再显示。
+    const 生产 = h.env === "production";
+    $("#env").hidden = !生产;
+    $("#env").textContent = 生产 ? h.env : "";
+    $("#env").className = "envtag" + (生产 ? " prod" : "");
+    if (h.演示模式) document.body.classList.add("demo");
   }
   let ps = [];
   try { ps = (await 请求("/api/v1/projects")).items || []; }
@@ -2931,7 +2919,7 @@ function 画_核对页(hid, d, 头) {
           ${esc(((材["风险"] || {})["依据"] || []).join(";"))}</div>` : ""}
         <div class="k">下面几项<b>都填了才派</b>,全空就不派。</div>
         ${额外.map((k, i) => `<label class="f">${esc(k)}${/负责人/.test(k) ? "(工号或姓名)" : ""}</label>
-          <input data-rvx="${i}" ${/截止/.test(k) ? 'type="datetime-local"' : 'placeholder="如 60000003"'}>`).join("")}` : ""}
+          <input data-rvx="${i}" ${/截止/.test(k) ? 'type="datetime-local"' : /客户号/.test(k) ? 'placeholder="逗号分隔,如 C36892,C36090"' : 'placeholder="如 60000003"'}>`).join("")}` : ""}
         <label class="f">理由(退回必填)</label><textarea id="rv-why" rows="2"></textarea>
         <button class="pri" id="rv-ok">通过</button> <button id="rv-no">退回</button>
         <div id="rv-res"></div>` : `<div class="state err"><h3>你不能处理这条</h3><p>${md(d["为什么"] || "")}</p></div>`}

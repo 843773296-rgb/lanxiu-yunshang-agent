@@ -185,7 +185,6 @@ summary{cursor:pointer;font-size:13px;color:var(--pri)}
 /* 演示模式的标记 —— 2026-09-29 从占一行的黄条改成顶栏上的一小块。
    规格第 3 条要的是「醒目标记」,不是「占一行」。
    ⚠️ 接口里那个 `演示模式` 字段一个字没动,`test_api_flow` 验的是它。 */
-.envtag.demo-env{background:#fff7e8;border-color:#ffcf8b;color:#7d4e00;font-weight:600}
 
 /* 左右对照里**两边不同**的那一行。
  * ⚠️ 2026-09-29:我在 app.js 里先引了 `.warn-row`,而它当时**不存在** ——
