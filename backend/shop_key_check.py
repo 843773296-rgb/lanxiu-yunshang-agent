@@ -188,6 +188,14 @@ else:
        len(门店) >= 1,
        "shop 表是空的 —— **这不是「没什么要验的」,是没有口径可用**,"
        "空口径下每一行都会被判成「不认识」")
+    # 具名常量和名单是两份东西,**而对不上的时候两边都不报错** ——
+    # SQL 里按串比「全部渠道」会稳定查出 0 行活动,看起来就像「这家店本期没投放」
+    ck("「全渠道」这个具名常量登记在「不是门店的」名单里,归「范围」一类",
+       SK.不是门店的.get(getattr(SK, "全渠道", None)) == "范围",
+       f"`shop_key.全渠道` 现在是「{getattr(SK, '全渠道', '(没有这个名字)')}」,"
+       f"而名单里给它的分类是「{SK.不是门店的.get(getattr(SK, '全渠道', None))}」 —— "
+       f"两份说法对不上。api.py 查活动用的是这个常量,**对不上就稳定查出 0 条,不报错**")
+
     混 = sorted(set(SK.不是门店的) & set(门店))
     混2 = sorted(k for k in SK.不是门店的 if k in set(门店.values()))
     ck("「不是门店的」名单里没有一项是真门店(串或码)",
@@ -440,7 +448,10 @@ _去SQL注释 = lambda t: _re2.sub(r"/\*.*?\*/", " ",
     ("backend/server.py", "SELECT DISTINCT shop v FROM customer"):
         "筛选下拉的选项,要的就是显示名",
 }
-欠债上限, 豁免上限 = 8, 2      # **2026-10-24 第二批之后的实际数。只许降不许涨。**
+欠债上限, 豁免上限 = 0, 2      # **2026-10-24 第三批(api.py 那 8 处)做完,清零。只许降不许涨。**
+# ⚠️ 清零之后这条判据的性质变了:原来它是进度条(只许少),现在是**闸** ——
+# 生产代码里再出现一处按门店串筛就红。要真有一处本来就该按串比(工坊 / 投放范围),
+# 走 `门店条件()`(它认不出就退回按串),**别来加豁免** —— 豁免上限也是只许降不许涨的。
 
 def _串们(文件):
     try:
@@ -487,6 +498,115 @@ if 现:
     print(f"      ℹ️ 还欠 {现} 处(第二阶段没做完):{欠}")
     print(f"         ⚠️ 这不是豁免 —— 它说的是「这几处还没改」,不是「这几处不用改」。")
     print(f"         ⚠️ 降下来之后把 `欠债上限` 一起改小,不然空间会被下一个人悄悄用掉。")
+
+# ── ⑨ api.py 那 8 处:**条件算出来了,还得真拼进执行的 SQL** ─────────────
+#
+# 上面那条棘轮守的是「别按门店串筛」,而它**看不见「压根没筛」**:
+# 假如有人把 `+ (f" AND {_片}" if _片 else "")` 写丢了,
+#   · 棘轮绿 —— SQL 里确实没有 `shop=?`
+#   · 语法绿、接口照样返回数据 —— 只是**不分门店了**,店长看到的是全公司
+#
+# > **「算了门店条件」和「把门店条件用上了」在棘轮上长得一模一样。**
+#
+# 所以这一条**真调**那几个函数,抓它们实际执行过的 SQL,看里头有没有 `shop_code`。
+# 身份是**自造**的(一个挂着真门店串的店长 dict)—— 不靠库里碰巧有哪个店长;
+# 门店串必须是真的(认不出就会退回按串比),所以从 shop 表取,上面那条
+# 「门店表里有数据可用」顶着这个前提。
+# ⚠️ 不断言「查出几行」:那会变成在量库里碰巧有什么数据。只断言**条件进没进 SQL**,
+# 这在空库上一样成立。
+if not os.path.exists(SK.DB):
+    print(f"  {Y}⏭{D} 库不在,跳过 api.py 那 8 处的真调 —— **跳过不是通过**")
+else:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import api as _api, datetime as _dt9, sqlite3 as _sq9
+    from seed import TODAY as _今9          # 业务今天。`api.TODAY` 只在函数里导,顶层没有
+    _c9 = _sq9.connect(f"file:{SK.DB}?mode=ro", uri=True); _c9.row_factory = _sq9.Row
+    _店9 = [f"{r['code']} {r['name']}" for r in _c9.execute("SELECT code, name FROM shop ORDER BY code")]
+    _有表9 = {r[0] for r in _c9.execute(
+        "SELECT name FROM sqlite_master WHERE name IN ('store_report_doc','report_action')")}
+    _c9.close()
+    if not _店9:
+        ck("api.py 真调:取得到一个真门店串", False, "shop 表空 —— 没有口径可用,下面那几条验不了")
+    else:
+        _串9 = _店9[0]
+        _我9 = {"no": "ZZ0001", "name": "(自造店长)", "role": "店长", "shop": _串9}
+        # 抓所有执行过的 SQL。
+        # ⚠️ **`sqlite3.Connection` 是不可变类型,它的 `execute` patch 不上**
+        # (`TypeError: cannot set 'execute' attribute of immutable type`)。
+        # 所以从 `connect` 这一层挂官方的 `set_trace_callback` —— api.py 自己开的那些
+        # 连接也走这个函数,抓得全(它顶部 `import sqlite3`,和这里是同一个模块对象)。
+        _原9 = _sq9.connect
+        _捕9 = []
+        def _探9(*a, **k):
+            con = _原9(*a, **k)
+            con.set_trace_callback(_捕9.append)
+            return con
+
+        def 真调(名, 指纹, f, 前提=True, 为什么=""):
+            """调一次,断言**它自己那条** SQL 带上了 shop_code。
+
+            ⚠️ **指纹是必需的,不能只问「这次调用里有没有谁按码筛」。**
+            第一版就是那么写的,咬合当场报「改坏了却没红」:`factory_chase` 里还调了
+            `factory_inbox.该催清单()`,**那边早就走 `门店条件()`**,它那条 SQL 带着
+            shop_code —— 于是「有任一条带码」照旧成立,而被攻击的那条已经不筛门店了。
+            > **「这个函数自己筛了」和「这次调用里有别人筛了」,在一次真调的输出上
+            > 长得一模一样。** 这是咬合失效的第五型(攻击被别的条件顺手挡住)。
+            所以指纹落在**表名 / 特征子句**上(结构,不会漂),只看它命中的那几条。
+            ⚠️ 指纹一条都没命中也要红 —— 不然「没抓到那条 SQL」会伪装成「验过了」。
+            ⚠️ **`set_trace_callback` 给的是参数已经展开的语句**(`kind='周'`,不是 `kind=?`),
+            所以指纹里**不要写 `?`** —— 第一版的 ⑤ 指纹写成 `WHERE kind=?`,一条都没命中,
+            而那条「命中 0 条也要红」的断言当场把它逮住了(不然它会显示成绿的)。"""
+            if not 前提:
+                print(f"  {Y}⏭{D} {名} —— 前提不成立({为什么}),**跳过不是通过**")
+                return
+            del _捕9[:]
+            _sq9.connect = _探9
+            try:
+                f()
+            except Exception as e:
+                ck(f"api.py 真调:{名}", False, f"{type(e).__name__}: {e} —— **跑都跑不起来**")
+                return
+            finally:
+                _sq9.connect = _原9
+            规整 = [" ".join(q.split()) for q in _捕9]
+            目标 = [q for q in 规整 if 指纹 in q]
+            if not 目标:
+                ck(f"api.py 真调:{名} —— 抓到了它那条 SQL", False,
+                   f"指纹「{指纹}」在这一次执行的 {len(规整)} 条 SQL 里一条都没命中 —— "
+                   f"**那就是什么都没验**(函数可能提前返回了,或者那条语句改了写法)")
+                return
+            漏 = [q for q in 目标 if "shop_code" not in q]
+            ck(f"api.py 真调:{名} —— 门店条件进了执行的 SQL",
+               not 漏,
+               f"它那条 SQL(指纹「{指纹}」,命中 {len(目标)} 条)里有 {len(漏)} 条**不带 shop_code**:"
+               f"{(漏 or [''])[0][:160]}… —— 条件算出来了却没拼进去。"
+               f"**「算了」和「用上了」在棘轮上长得一模一样**:棘轮只看得见「按串筛」,"
+               f"看不见「压根不筛」,而不筛的后果是一个店长看到全公司")
+
+        真调("① lifecycle_entered(本店)", "FROM customer WHERE last_interact IS NOT NULL",
+             lambda: _api.lifecycle_entered("休眠", month=_今9[:7], shop=_串9))
+        with _api.as_user(_我9):
+            真调("② activity_roi(店长)", "FROM activity WHERE",
+                 lambda: _api.activity_roi())
+            真调("④ factory_chase(店长)", "FROM factory_msg f LEFT JOIN ordr o",
+                 lambda: _api.factory_chase())
+            真调("⑦ deal_credit(店长)", "SELECT no FROM staff WHERE",
+                 lambda: _api.deal_credit())
+            真调("⑧ on_shift(店长)", "FROM staff WHERE role='顾问' AND status='启用'",
+                 lambda: _api.on_shift(days=1))
+        真调("③ search_fit_customers(店长)", "FROM customer c WHERE",
+             lambda: _api.search_fit_customers("张", _我9))
+        真调("⑤ _上期行动(本店)", "FROM store_report_doc WHERE kind=",
+             lambda: _api._上期行动("周", _dt9.date.fromisoformat(_今9) - _dt9.timedelta(days=7),
+                                  _串9, {}, {}, _今9),
+             前提=len(_有表9) == 2, 为什么="store_report_doc / report_action 还没建,它会在执行那条 SQL 之前就返回")
+
+        # ⑥ `_订单范围` **不执行 SQL**,只把片段交给调用方 —— 探针抓不到,直接看片段
+        _片6, _参6, _话6, _no6 = _api._订单范围(_我9)
+        ck("api.py 真调:⑥ _订单范围(店长)给出的片段按门店码",
+           "shop_code" in _片6 and len(_参6) >= 1,
+           f"它返回的片段是「{_片6}」参数 {_参6} —— 这个函数只给片段不执行,"
+           f"所以上面那个探针抓不到它,得直接看片段")
 
 print("  " + "=" * 80)
 if 坏:

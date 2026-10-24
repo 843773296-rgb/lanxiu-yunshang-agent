@@ -36,6 +36,23 @@ _CRED_MSG = ("账户凭据(密码哈希 / 盐)**不允许经工具层访问** �
              "见 backend/boundary_audit.py。")
 
 
+def _门店条件(值, 别名="", c=None, 列="shop"):
+    """**这个文件里「按门店筛」的唯一入口** → `(WHERE 片段, 参数列表)`;片段**不带** `AND` 前缀,
+    值为空时片段是空串。按门店**码**筛,不按显示串 —— 门店在后台改个名,按串筛就变成 0 行,
+    **而且不报错**(`backend/shop_key_check.py` 的棘轮盯着这件事,上限已经是 0)。
+
+    ⚠️ 别在这个文件里再写裸 `shop=?`。认不出的值(工坊 / 全渠道 / 老串)`门店条件()`
+    会退回按串比,所以工坊的人、全渠道的活动照样查得到。
+
+    `门店条件()` 要读 `shop` 表的「串 → 码」对照,所以它要一条连接:
+    手上已经有的传进来(`c=`),没有就自己开一条只读的。"""
+    import contextlib as _cl
+    if c is not None:
+        return _SK.门店条件(c, 值, 别名, 列)
+    with _cl.closing(_c()) as _x:
+        return _SK.门店条件(_x, 值, 别名, 列)
+
+
 # 跨店看全量的角色。**售后不属于某一家店**(判责是工艺判断、差评跨店),所以和总部运营一样。
 # 差评、退押金、管理后台客户读接口都用这一个 —— 「本店」两处各写一套,迟早对不上。
 跨店角色 = ("总部运营", "售后")
@@ -218,6 +235,7 @@ TOOLS={"list_tasks":list_tasks,"get_deposit":get_deposit,"get_refund_trace":get_
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                              "knowledge"))
 import rating as _R方式                                       # noqa: E402
+import shop_key as _SK                                         # noqa: E402  门店关联键的唯一来源
 _方式表 = " / ".join(_R方式.处理方式)
 _出钱表 = " / ".join(_R方式.出钱的处理方式)
 _不出钱表 = " / ".join(x for x in _R方式.处理方式
@@ -488,11 +506,12 @@ def lifecycle_entered(lifecycle, month=None, week=None, start=None, end=None, sh
     截 = min(末, 今)
     天 = _lc.进入天数[lifecycle]
     # shop:门店报告只看本店(store_report 传进来);不给就是全部 —— 原来这里不分店,模型问本店时报的是全公司
+    _片, _参 = _门店条件(shop)      # 按门店码,不按显示串
     rs = _rows("SELECT id,name,lifecycle,last_interact,idle_days FROM customer "
                "WHERE last_interact IS NOT NULL AND date(last_interact) BETWEEN ? AND ?"
                + f" AND {_人头()}"      # 按人数,归主档所在店(10-14 拍)
-               + (" AND shop=?" if shop else "") + " ORDER BY last_interact",
-               (起 - _dt.timedelta(days=天)).isoformat(), (截 - _dt.timedelta(days=天)).isoformat(), *([shop] if shop else []))
+               + (f" AND {_片}" if _片 else "") + " ORDER BY last_interact",
+               (起 - _dt.timedelta(days=天)).isoformat(), (截 - _dt.timedelta(days=天)).isoformat(), *_参)
     out = []
     for r in rs:
         d = dict(r)
@@ -1410,8 +1429,14 @@ def activity_roi(code=None):
     where, args = ("1=1", [])
     if code: where, args = ("code=?", [code.strip()])
     elif me.get("role") != "总部运营":
-        # 店长只看得到本店的活动 + 全渠道的
-        where, args = ("(shop=? OR shop='全渠道')", [me.get("shop")])
+        # 店长只看得到本店的活动 + 全渠道的。本店按门店**码**筛,而「全渠道」那一支只能按串 ——
+        # 它不是门店、没有码(`activity.shop` 里真有「全渠道」这个值)。
+        # ⚠️ **算不出本店不等于看全部**:那时只剩全渠道那一支。
+        # (原来写的是 `shop=NULL`,永不成立,效果一样 —— 这里只是把它写明白,没放宽。)
+        _片, _参 = _门店条件(me.get("shop"))
+        _渠片, _渠参 = _门店条件(_SK.全渠道)      # 认不出 → 按串比,这正是它该走的路
+        where, args = ((f"({_片} OR {_渠片})", list(_参) + list(_渠参)) if _片
+                       else (_渠片, list(_渠参)))
     acts = _rows(f"SELECT code,name,kind,status,start_d,end_d,shop,budget "
                  f"FROM activity WHERE {where} ORDER BY start_d DESC", *args)
     if not acts:
@@ -4125,7 +4150,10 @@ def search_fit_customers(q, me, 每页=None, 页=1):
         条件.append("c.phone LIKE ?"); 参.append(f"%{q}")
     where = "(" + " OR ".join(条件) + ")"
     if 范围 is not None:
-        where += " AND c.shop=?"; 参.append(范围)
+        # 按门店码筛。`本店范围()` 给空串(登录的人没挂门店)时按「搜不到任何人」收紧 ——
+        # 原来写 `c.shop=''` 也是 0 行,`1=0` 只是把它写明白,口径没动
+        _片, _参 = _门店条件(范围, "c")
+        where += f" AND {_片 or '1=0'}"; 参.extend(_参)
     base = (" FROM customer c WHERE " + where +
             " AND EXISTS(SELECT 1 FROM measure_rec r WHERE r.customer_id=c.id)")
     共 = _rows("SELECT COUNT(*) n" + base, *参)[0]["n"]
@@ -4806,9 +4834,10 @@ def factory_chase():
         # ⚠️ 「条数」原来是 len(看) —— 而明细被 LIMIT 50 截住,超过 50 条就会报成 50。
         # 和 get_lifecycle 那次「休眠 40 个、实际 1395」同一个洞(2026-10-08 用户撞到的):
         # 「截断了」和「一共就这么多」在返回里长得一模一样。总数单独数一遍
+        _片, _参 = _门店条件(shop, "o", c)      # 按门店码;复用手上这条只读连接
         从 = (" FROM factory_msg f LEFT JOIN ordr o ON o.id=f.order_id WHERE f.result IN ('挂异常','拒收','暂存')"
-             + (" AND o.shop=?" if shop else ""))
-        参 = (shop,) if shop else ()
+             + (f" AND {_片}" if _片 else ""))
+        参 = tuple(_参)
         看总 = c.execute("SELECT COUNT(*)" + 从, 参).fetchone()[0]
         看 = [dict(zip(("订单", "回传", "生产方", "工厂报的时间", "处理", "为什么"), r)) for r in c.execute(
             "SELECT f.order_id, f.event, f.factory, f.at, f.result, f.reason" + 从
@@ -5240,10 +5269,12 @@ def _上期行动(kind, 起, shop, 期内, 存, 今天):
         有表 = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE name IN ('store_report_doc','report_action')")}
         if len(有表) < 2:
             return {"条数": 0, "说明": "上一期没有照报告定过行动(还没存过报告,或从没派过「经营改进」)"}
-        报 = c.execute("""SELECT id, shop, pack FROM store_report_doc
-                         WHERE kind=? AND period_start=? AND status='已确认' AND rejected_at IS NULL
-                           AND (? IS NULL OR shop=?) ORDER BY revision""",
-                      (kind, 上起.isoformat(), shop, shop)).fetchall()
+        # 按门店码筛;shop 为空就是不限门店(原来写成 `? IS NULL OR shop=?`,同一个意思)
+        _片, _参 = _门店条件(shop, c=c)
+        报 = c.execute("SELECT id, shop, pack FROM store_report_doc"
+                       " WHERE kind=? AND period_start=? AND status='已确认' AND rejected_at IS NULL"
+                       + (f" AND {_片}" if _片 else "") + " ORDER BY revision",
+                       (kind, 上起.isoformat(), *_参)).fetchall()
         出 = []
         for rid, rshop, pack in 报:
             旧 = _j.loads(pack or "{}")
@@ -5435,7 +5466,10 @@ def _订单范围(me):
             # ⚠️ **判不了不等于看全部。** 口径那边同一条:算不出「本店」就不放行。
             # 这里给一条永远不成立的 where —— 返回空清单,而 `话` 里写着为什么。
             return " AND 1=0", [], 话, None
-        return " AND o.shop=?", [shop], 话, None
+        # 按门店码筛。`_片` 为空走不到这儿(上面那条 `if not shop` 已经拦了),
+        # `or '1=0'` 是防御 —— **判不了也不许兜底成看全部**,那是上面那条注释的同一件事
+        _片, _参 = _门店条件(shop, "o")
+        return f" AND {_片 or '1=0'}", list(_参), 话, None
     if role == _范.顾问:
         if not no:
             return " AND 1=0", [], 话, None
@@ -7086,8 +7120,10 @@ def deal_credit(order=None, staff=None, limit=20):
         # 范围跟身份走:顾问只看自己参与的,店长看本店的人,总部看全部。
         if me.get("role") in MANAGER_ROLES:
             if me.get("role") != "总部运营" and me.get("shop"):
+                # 按门店码筛;`staff.shop` 里有 12 个工坊名,认不出的值退回按串比
+                _片, _参 = _门店条件(me["shop"], c=con)
                 人 = [r["no"] for r in con.execute(
-                    "SELECT no FROM staff WHERE shop=?", (me["shop"],))]
+                    f"SELECT no FROM staff WHERE {_片 or '1=0'}", tuple(_参))]
                 范围 = f"{me.get('shop')}(你的门店)"
             else:
                 人, 范围 = None, "全部门店"
@@ -7228,9 +7264,10 @@ def on_shift(staff=None, date=None, at=None, days=7):
     n = max(1, min(int(days or 7), 14))
     con = _sq.connect(f"file:{DB}?mode=ro", uri=True); con.row_factory = _sq.Row
     try:
+        _片, _参 = _门店条件(店, c=con)      # 按门店码;工坊名认不出时退回按串比
         people = [dict(x) for x in con.execute(
             "SELECT no,name FROM staff WHERE role='顾问' AND status='启用'"
-            + ("" if 店 is None else " AND shop=?"), () if 店 is None else (店,))]
+            + ("" if 店 is None else f" AND {_片 or '1=0'}"), tuple(_参))]
     finally:
         con.close()
     每天 = []
