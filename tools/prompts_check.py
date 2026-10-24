@@ -71,23 +71,26 @@ def wl(name):
 KB, SHOP, TASK = wl("KB_TOOLS"), wl("SHOP_TOOLS"), wl("TASK_TOOLS")
 KBONLY, WORK = wl("KB_ONLY_TOOLS"), wl("WORKSHOP_TOOLS")
 TASKONLY = wl("TASK_ONLY_TOOLS")
+# 发起被接管的工作流(10-24):sdk 里**每个角色**都拼上这一组。这里漏拼的话 TL76 「没有调用方装得上」——
+# 而它真装上了,是这张手抄的组合表跟丢了。真名单由 agentsite/takeover_check.py 从 sdk._ROLE_TOOLS 现取核对
+TAKEOVER = wl("TAKEOVER_TOOLS")
 KBSET = {t["name"] for t in api.KB_SCHEMAS}
 CALLERS = {
-    "工作站·全能助手(sdk)":   ("all",  KB | KBONLY | WORK | TASK | TASKONLY | SHOP | {"图片"}),
-    "工作站·工艺顾问(sdk)":   ("kb",   KB | KBONLY | SHOP | {"图片"}),
-    "工作站·工坊排产(sdk)":   ("workshop", WORK),
+    "工作站·全能助手(sdk)":   ("all",  KB | KBONLY | WORK | TASK | TASKONLY | SHOP | TAKEOVER | {"图片"}),
+    "工作站·工艺顾问(sdk)":   ("kb",   KB | KBONLY | SHOP | TAKEOVER | {"图片"}),
+    "工作站·工坊排产(sdk)":   ("workshop", WORK | TAKEOVER),
     # ⚠️ **新角色要加到这儿,否则 P3/P6 根本不看它。**
     # 财务角色刚加上时忘了这一行 —— 于是它挂了 5 个工具、拿了 4 条规矩,
     # 而 P6 一个字都没验过它。**一条检查漏掉某个调用方,
     # 和这个调用方不存在,在检查输出上长得一模一样。**
-    "工作站·财务对账(sdk)":   ("finance", wl("FINANCE_TOOLS")),
+    "工作站·财务对账(sdk)":   ("finance", wl("FINANCE_TOOLS") | TAKEOVER),
     # 上面那条注释说的事又发生了一次:加版师角色时忘了这一行,
     # P3 当场红「TL25 没有任何调用方装得上」—— **而它拦对了**:
     # 一条装不上的铁律和一条不存在的铁律,在源码里长得一模一样。
-    "工作站·版师核料(sdk)":   ("pattern", wl("PATTERN_TOOLS")),
+    "工作站·版师核料(sdk)":   ("pattern", wl("PATTERN_TOOLS") | TAKEOVER),
     # 第三次了 —— 财务漏过、版师漏过,所以建售后角色时**先加这一行再写别的**。
-    "工作站·售后(sdk)":       ("aftersale", wl("AFTERSALE_TOOLS")),
-    "工作站·任务助手(sdk)":   ("task", TASK | TASKONLY | SHOP),
+    "工作站·售后(sdk)":       ("aftersale", wl("AFTERSALE_TOOLS") | TAKEOVER),
+    "工作站·任务助手(sdk)":   ("task", TASK | TASKONLY | SHOP | TAKEOVER),
     "后台聊天(chat.py)":      ("kb",   KBSET),
     "一代任务循环(v1.py)":    ("task", {t["name"] for t in api.SCHEMAS} | {"submit_finding"}),
 }

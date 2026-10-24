@@ -22,6 +22,10 @@
   <dict>
     <key>PATH</key><string>/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>PYTHONUNBUFFERED</key><string>1</string>
+    <!-- 工作流接管(10-24):聊天站问开关、发起被接管的工作流。只连澜绣正式项目 -->
+    <key>LANXIU_USAGE_URL</key><string>http://127.0.0.1:8801</string>
+    <key>LANXIU_BRIDGE_PROJECT</key><string>project_lanxiu</string>
+    <key>LANXIU_USAGE_USER</key><string>U001</string>
   </dict>
 </dict>
 </plist>

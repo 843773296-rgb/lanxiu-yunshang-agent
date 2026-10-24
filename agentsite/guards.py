@@ -1528,6 +1528,20 @@ def _读了(short, 读过):
     return any(n in 读过 for n in 先读.get(short, ()))
 
 
+def 接管查询(技能):
+    """这个技能现在被哪条工作流接管 → dict;没被接管 → None。
+
+    **做成模块级的名字**,检查里直接换掉它(guards.接管查询 = …),判定本身不联网也测得到。
+    模块载不进来当没接管:这一步出错时退回原来的行为(照常用技能),不把所有技能一起拦掉。"""
+    try:
+        import sys as _s, os as _o
+        _s.path.insert(0, _o.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend"))
+        import takeover_client as _tc
+        return _tc.接管中(技能)
+    except Exception:
+        return None
+
+
 _REG = None
 
 
@@ -1583,6 +1597,15 @@ def pre_tool_verdict(name, args, prompt="", state_reads=None, state_writes=None)
     # 页面上停用了,模型就真调不动 —— 状态不是展示用的字段,是这道闸读的东西。
     if name == "Skill":
         _sk = str((args or {}).get("skill") or (args or {}).get("command") or "").strip().lstrip("/")
+        # ── 被工作流接管的技能**结构上**调不动(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」)──
+        # 放在登记状态之前:接管是「这件事由谁做」的路由,一个已发布的技能被接管了也要拦。
+        # 只在提示词里说「请走工作流」是祈使句 —— 模型照样能调技能自己做,同一件事就有了两种做法。
+        # 清单怎么拉、拉不到怎么办见 backend/takeover_client.py;查询口可替换,这里仍然离线可测。
+        _管 = 接管查询(_sk)
+        if _管:
+            return (f"「{_sk}」这件事现在由工作流「{_管.get('名称') or _管.get('workflow_id')}」接管,"
+                    f"不要用技能自己做。改调 start_workflow(skill=\"{_sk}\", inputs={{…}}) 发起它,"
+                    "把返回的运行号和核对入口告诉用户;要等人工核对通过才会写进系统。")
         try:
             _reg = _skill_registry()
             if _reg.放行吗(_sk):

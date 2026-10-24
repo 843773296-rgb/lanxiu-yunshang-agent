@@ -321,6 +321,7 @@ run "花费闸 · 阈值够聊几轮 + 撞线说不说得清" ./agentsite/.venv/
 run "聊天页模型下拉框 · 一登录就有值(默认 opus-5)、跟着会话走、下架了回到默认(用户 10-20)" node agentsite/model_sync_check.mjs
 run "成本口径 · 项目算的钱要和官方计费规则对得上(期望值手抄官方价,不从价目表现算)" ./agentsite/.venv/bin/python agentsite/cost_check.py
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
+run "工作流接管 · 聊天站这一半(被接管的技能调不动 / 拉不到清单的退路 / 每个角色都能发起)" ./agentsite/.venv/bin/python agentsite/takeover_check.py
 run "技能形状 · 该有的段落齐不齐" ./agentsite/.venv/bin/python agentsite/skill_shape.py
 run "工具路由用例 · 点名的工具真的挂着(改了名就永远被跳过)" ./agentsite/.venv/bin/python agentsite/tool_eval.py --check
 run "读不读得出效果 · 判据本身要能被测" ./agentsite/.venv/bin/python agentsite/evalnoise_test.py

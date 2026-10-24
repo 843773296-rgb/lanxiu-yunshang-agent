@@ -330,6 +330,11 @@ def mcp_config(me=None, kind=None, 名单=None, trace=None, 被判包裹=None, �
     if trace:
         # 这一轮的 trace_id —— 工具写下的产出(存报告)带着它,AI 管理平台才能从产出跳回生成它的那一轮
         env = {**env, "LANXIU_TRACE": trace}
+    # 工作流接管(10-24):start_workflow 在服务进程里调管理后台,地址 / 项目 / 服务账号从这里带过去 ——
+    # env 是显式拼的,不带就到不了服务进程,而那时它只会说「没配管理后台地址」
+    for _k in ("LANXIU_USAGE_URL", "LANXIU_BRIDGE_PROJECT", "LANXIU_USAGE_USER"):
+        if os.environ.get(_k):
+            env = {**env, _k: os.environ[_k]}
     if os.environ.get("LANXIU_DB"):
         # 隔离试运行:整个工具服务改读遮蔽过的库副本(mcp/protocol.指到副本)。和下面几条同理,**显式拼进去**,
         # 不指望继承 —— 到不了的话工具读的是真库、顾客信息没遮;服务那头会留凭证,试跑那头核
@@ -899,18 +904,23 @@ def _代理环境():
 按需加载的角色 = frozenset({"all"})
 
 
+# 发起被接管的工作流(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」)。**每个角色都挂**:
+# 哪件事被接管是管理后台拨的,和岗位无关 —— 某个角色没挂它,那件事一被接管,这个角色就既不能用技能、也发不起工作流。
+# 默认一条都没接管时它也在名单里,但不会被用:规矩 TL76 只让它在技能被拦、拦截理由点名时用。
+TAKEOVER_TOOLS = ["mcp__work__start_workflow"]
+
 _ROLE_TOOLS = {
     # 全能助手:所有工具一次给全。**分装的机制没删**,只是默认入口先合起来。
     "all":      lambda: sorted(set(KB_TOOLS + KB_ONLY_TOOLS + WORKSHOP_TOOLS
-                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS)),
-    "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS,
-    "workshop": lambda: WORKSHOP_TOOLS,           # 工坊不看订单流水,只看产能和工单
-    "task":     lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS,
+                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS)),
+    "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS,
+    "workshop": lambda: WORKSHOP_TOOLS + TAKEOVER_TOOLS,           # 工坊不看订单流水,只看产能和工单
+    "task":     lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS,
     # 财务只对账,**不看量体/版型/产能** —— 给多余的工具它就会去用。
-    "finance":  lambda: FINANCE_TOOLS,
-    "pattern":  lambda: PATTERN_TOOLS,
+    "finance":  lambda: FINANCE_TOOLS + TAKEOVER_TOOLS,
+    "pattern":  lambda: PATTERN_TOOLS + TAKEOVER_TOOLS,
     # 售后只管判责和差评,**不看订单流水、不看量体版型、不看消费额和等级**
-    "aftersale": lambda: AFTERSALE_TOOLS,
+    "aftersale": lambda: AFTERSALE_TOOLS + TAKEOVER_TOOLS,
 }
 
 def _tools_for(kind):

@@ -2023,6 +2023,18 @@ PATTERN_RULES = _pattern_rules()
 
 FINANCE_RULES = _finance_rules()
 
+# ── 工作流接管(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」)──────────────
+# 每个角色都挂了 start_workflow(sdk.TAKEOVER_TOOLS),所以每个角色都要拿到这条 —— P6:工具给了、规矩没给比不给更危险。
+# 结构上的那一半在 guards:被接管的技能调不动;这条只管「被拦之后怎么做、怎么跟用户说」。
+TAKEOVER_RULE = Rule("TL76", ("start_workflow",), scope="工具", text="""
+**只在调技能被拦下、拦截理由点名让你改调它时用。** 那件事现在由管理后台的工作流做,你别再自己做一遍(别换个说法重调技能,也别用别的工具拼出同样的结果)。
+- 输入照这件事真实的值填(录音整理要录音号和客户号);不知道就先问用户,**别编一个号去发起**。
+- 发起成功后原样告诉用户三样:运行号、核对入口、**「已发起,要等人工核对通过才会写进系统」** —— 别说成已经办完。
+- 返回里带「交还」:接管刚被关掉,照常用技能做;返回别的错误:如实告诉用户没发起成,**别退回去用技能自己做**。""")
+for _rs in (ALL_RULES, FINANCE_RULES, KB_RULES, WORKSHOP_RULES, TASK_RULES, PATTERN_RULES, AFTERSALE_RULES):
+    _rs.append(TAKEOVER_RULE)
+
+
 ROLES = {"all": (ALL_HEAD, ALL_RULES, ALL_FOOT),
          "finance": (FINANCE_HEAD, FINANCE_RULES, FINANCE_FOOT),
          "kb": (KB_HEAD, KB_RULES, KB_FOOT),

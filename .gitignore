@@ -135,3 +135,6 @@ agent/nightly/agentsite__evals__withheld*
 # 登录会话落盘(只存令牌指纹,backend/auth.py)—— 本机运行态,不进版本库
 backend/.auth_sessions.json
 backend/.auth_sessions.json.tmp
+
+# 聊天站最后一次拉到的工作流接管清单(backend/takeover_client.py 落盘,运行时状态)
+backend/.takeover_last.json

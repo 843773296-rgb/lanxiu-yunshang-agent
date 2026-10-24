@@ -51,6 +51,7 @@
         "list_tasks", "get_tasks", "task_types", "week_grid", "on_shift",
         "assign_task", "assign_batch", "dispatch_task", "dispatch_batch",
         "reassign_task", "finish_task", "check_write", "monthly_review",
+        "start_workflow",   # 发起被接管的工作流(10-24):派活的一种,归任务
     ),
     "analytics": (   # 经营分析与报告:统一口径的统计、报告取数 / 保存 / 确认
         "store_report", "save_report", "confirm_report", "list_reports",

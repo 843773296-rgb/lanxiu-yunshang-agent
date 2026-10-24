@@ -11527,8 +11527,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS)),",
-    "new": "                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + PATTERN_TOOLS)),"
+    "old": "                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS)),",
+    "new": "                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS + PATTERN_TOOLS)),"
    }
   ],
   "预期红": "按需加载只取回自己名单里的工具"
@@ -12461,5 +12461,29 @@
    }
   ],
   "预期红": "生产代码里按门店串筛的只许少不许多"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "把 guards 里接管那道拦截删掉 —— 只剩提示词里劝它走工作流,模型照样能调技能自己做,同一件事就有了两种做法",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        _管 = 接管查询(_sk)\n",
+    "new": "        _管 = None\n"
+   }
+  ],
+  "预期红": "被接管的技能调不动,拦截理由点名改调 start_workflow"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "拉不到清单时一律当全关、不用落盘的上一次 —— 接管开着时管理后台抖一下,聊天站就悄悄换回技能那条路",
+  "file": [
+   {
+    "path": "backend/takeover_client.py",
+    "old": "                items = json.load(f).get(\"items\") or {}\n",
+    "new": "                items = {}\n"
+   }
+  ],
+  "预期红": "管理后台连不上:用最后一次拉成功的清单"
  }
 ]
