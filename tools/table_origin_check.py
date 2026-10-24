@@ -38,6 +38,11 @@ G, R, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 咬合 = [
     ('把某张表从 ensure_tables 的登记里删掉(它就没人建了)',
      '每张表都能从 rebuild.sh 建出来'),
+    # 反方向那条(2026-10-24 补):攻击点是**往登记里加一张不存在的表**。
+    # ⚠️ 注意这两条咬合攻的是**同一张登记表的两个方向** ——
+    # 删一条打的是「库里有、没人建」,加一条打的是「登记了、库里没有」。
+    ('往 ensure_tables 的登记里加一张库里不存在的表',
+     '登记过的表,这个库里真的都有'),
 ]
 
 
@@ -105,6 +110,38 @@ def 扫建表(路径, 已看=None, 深度=0):
     return 表
 
 
+def 登记的表():
+    r"""从 `ensure_tables.py` 的 `登记` 里**静态**取出表名。
+
+    ⚠️ **用 ast,不 import** —— import 它会连带 import 二十多个 backend 模块,
+    一条只读判据不该有那么大的副作用面。而**正则在这个文件上已经栽过三次**
+    (逗号 import 只认第一个 / `\s` 吃掉下一行 / 行尾注释),所以不再写正则。
+    ⚠️ 形状对不上就**抛**,不静默返回空集 ——
+    空集上「登记的表都在库里」恒成立,而**那和真的验过了长得一模一样**。
+    """
+    import ast
+    src = open(os.path.join(ROOT, "tools", "ensure_tables.py"), encoding="utf-8").read()
+    登记 = None
+    for node in ast.parse(src).body:
+        if isinstance(node, ast.Assign) and any(
+                getattr(x, "id", "") == "登记" for x in node.targets):
+            登记 = node.value
+    if not isinstance(登记, ast.List):
+        sys.exit("❌ ensure_tables.py 里找不到 `登记 = [...]` —— 格式变了,这条检查得跟着改")
+    出 = []
+    for el in 登记.elts:
+        if not (isinstance(el, ast.Tuple) and len(el.elts) == 3
+                and isinstance(el.elts[2], ast.List)):
+            sys.exit(f"❌ `登记` 里有一条形状不是 (模块, 函数名, [表名…]):"
+                     f"{ast.dump(el)[:120]} —— 这条检查得跟着改")
+        for x in el.elts[2].elts:
+            if not (isinstance(x, ast.Constant) and isinstance(x.value, str)):
+                sys.exit(f"❌ `登记` 里有个表名不是字面字符串:{ast.dump(x)[:80]} —— "
+                         f"**拼出来的表名这条检查读不到**,等于那张表没被守住")
+            出.append(x.value)
+    return 出
+
+
 def main():
     if not os.path.exists(DB):
         print(f"  {Y}⏭{D} 库不在,跳过 —— **跳过不是通过**")
@@ -121,18 +158,67 @@ def main():
 
     print("\n\033[1m▸ 表的来路 · 每张表都要能从 rebuild.sh 建出来\033[0m")
     print("  " + "=" * 80)
+    坏 = []
     if 孤儿:
         print(f"  {R}❌{D} 每张表都能从 rebuild.sh 建出来 —— 这 {len(孤儿)} 张不行:")
         for t in 孤儿[:8]:
             print(f"      {t}")
+        if len(孤儿) > 8:
+            print(f"      ……还有 {len(孤儿) - 8} 张(共 {len(孤儿)})")
         print(f"\n      它们**只在这台机器上存在**:某段代码运行时建了,而它一直留着。")
         print(f"      **CI 每次从零 —— 那些表不存在**,于是表数对不上、依赖它们的检查会炸。")
         print(f"      修法:把建表挂进 `tools/ensure_tables.py` 的登记表。")
-        return 1
+        坏.append("每张表都能从 rebuild.sh 建出来")
+    else:
+        print(f"  {G}✅{D} 每张表都能从 rebuild.sh 建出来(库里 {len(库)} 张)")
 
-    print(f"  {G}✅{D} 每张表都能从 rebuild.sh 建出来(库里 {len(库)} 张)")
+    # ── 反方向:**登记了,而这个库里没有** ───────────────────────────────
+    #
+    # 上面那条只查一个方向:库里有、rebuild 建不出(孤儿表)。
+    # 反方向在本地**完全隐形**,而且隐形得更彻底 ——
+    # 孤儿表好歹出现在 `sqlite_master` 里、扫得到;
+    # **一张「登记了却没建」的表压根不存在,它不出现在任何扫描里**。
+    # 症状是「依赖它的那条检查炸了」,而炸的地方和这件事隔着好几层。
+    #
+    # > 一张「还没被建出来」的表,和一张「这条检查根本没去看」的表,
+    # > **在库的表清单上长得一模一样** —— 两边都是「它不在」。
+    #
+    # 怎么会发生:在库里手工建了表、代码里也登记了,但**这个库**是在那之前建的,
+    # 而 `ensure_tables.py` 只在 `rebuild.sh` 里跑。于是本地那个库一直缺着,
+    # 直到谁去重建、或者谁写了一条真去查它的判据。
+    # (2026-10-23 记在交接里「仍然没人守」,10-24 补上。)
+    登记表 = 登记的表()
+    # **样本量** —— 空集上「登记的表都在库里」恒成立。
+    # ⚠️ 下限只防「一张都没读到」(AST 取法改坏时会这样),**不是说该有多少张**:
+    # 写一个贴着现状的数就是夹具写死会漂的东西(每登记一张新表它就该跟着涨)。
+    if len(set(登记表)) < 10:
+        print(f"  {R}❌{D} 登记过的表,这个库里真的都有 —— "
+              f"只从 `登记` 里读到 {len(set(登记表))} 张,**这不是通过,是没读到东西**"
+              f"(下限 10 只防空扫)")
+        坏.append("登记过的表,这个库里真的都有")
+    else:
+        缺 = sorted(t for t in set(登记表) if t not in 库)
+        if 缺:
+            print(f"  {R}❌{D} 登记过的表,这个库里真的都有 —— "
+                  f"这 {len(缺)} 张登记了却不在库里:")
+            for t in 缺[:8]:
+                print(f"      {t}")
+            if len(缺) > 8:
+                print(f"      ……还有 {len(缺) - 8} 张(共 {len(缺)})")
+            print(f"\n      **缺一张表不报错,只会让依赖它的那条检查炸在别处。**")
+            print(f"      修法:`python3 tools/ensure_tables.py`(它只建表,不铺数据)。")
+            print(f"      ⚠️ 要是那张表是新登记的,记得**代码和库一起推** ——")
+            print(f"      只建库不推代码,另一个检出的门禁会红在它没碰过的检查上。")
+            坏.append("登记过的表,这个库里真的都有")
+        else:
+            print(f"  {G}✅{D} 登记过的表,这个库里真的都有"
+                  f"(登记 {len(set(登记表))} 张,一张不缺)")
+
     print(f"      **「表存在」和「表被建过」不是一回事** —— 本地建过就一直在,CI 每次从零。")
     print(f"      今天为这个形状红过两次 CI,两次都是本地全绿。")
+    if 坏:
+        print(f"  {R}❌ {len(坏)} 条没过:{坏}{D}")
+        return 1
     return 0
 
 
