@@ -112,7 +112,9 @@ def _音频整理(桥):
                     "bindings": {"转写": 引("fetch", "/text"),
                                  "客户": {"source": "input", "pointer": "/customer_id"}}}},
         {"id": "review", "type": "human", "name": "人工核对", "layout": {"x": 580, "y": 160},
-         "config": {"request_kind": "核对", "candidate_roles": ["approver", "admin"],
+         # 只写**默认就能审批**的角色:admin 那一格是「可授权」(默认关),写进来看着有人能批、实际没有
+         # (10-24 真模型验证时撞到:正式项目里只有两个 admin,核对待办谁都批不了)
+         "config": {"request_kind": "核对", "candidate_roles": ["approver"],
                     "allowed_fields": ["定稿"],
                     "expires_at_policy": {"小时": 48, "到期": "fail"},
                     "payload_binding": {"摘要": 引("extract", "/跟进草稿"),
@@ -624,11 +626,10 @@ async def 发起运行(project_id: str, request: Request,
     wid = 体.get("workflow_id")
     版本id = 体.get("workflow_version_id")          # 给了就跑冻结版本,否则跑草稿快照
     输入 = 体.get("输入") or {}
-    模式 = 体.get("模式") or "mock"
-    if 模式 != "mock":
-        raise _错(422, "LIVE_NOT_CONFIGURED", "真实模式还没接",
-                  "现在只有 mock 适配器(没有真实模型连接和凭证)。"
-                  "**缺资源要明确报出来,不能算通过**(§18)")
+    # 模式不再由请求说了算(段 3,2026-10-24):每个 AI 步骤用**它自己选的那条连接**,
+    # 选的是演示连接就是 mock、选的是真连接就真跑 —— 运行上记的 execution_mode 由下面按节点算出来
+    if 体.get("模式") not in (None, "mock", "live"):
+        raise _错(422, "VALIDATION", "模式只收 mock / live,或者不给", "一般不用给 —— 按每一步选的模型连接定")
     with 事务() as c:
         老 = c.execute(text("""select id, status, target_ref from jobs
                              where project_id=:p and idempotency_key=:k"""),
@@ -670,6 +671,13 @@ async def 发起运行(project_id: str, request: Request,
                       "先点「校验」按报告改完 —— **一个模型都没调,这次不花钱**",
                       field_errors={(p["node_id"] or "图") + "." + (p["field_path"] or ""):
                                     p["消息"] for p in 阻})
+        # 这次运行算 mock 还是 live:**有一个 AI 步骤选了真连接就是 live**(而部署没明确选只跑 mock)
+        cvs = [n["config"].get("connection_version_id") for n in 定义.get("nodes") or []
+               if n.get("type") == "llm" and (n.get("config") or {}).get("connection_version_id")]
+        真的 = c.execute(text("""select count(*) from connection_versions where project_id=:p and id = any(:ids)
+                                   and coalesce(capabilities->>'execution_mode', '') <> 'mock'"""),
+                         {"p": project_id, "ids": cvs}).scalar() if cvs else 0
+        模式 = "live" if (真的 and not __import__("runtime_cfg").模型是mock()) else "mock"
         job, run, trace = _新id("job"), _新id("xr"), _新id("tr")
         # trace 先建:execution_runs 有一条指向 traces 的复合外键
         c.execute(text("""
@@ -684,7 +692,7 @@ async def 发起运行(project_id: str, request: Request,
                 limits, environment, execution_mode, quality_evaluation_status,
                 started_at, trace_id, idempotency_key,
                 created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,'workflow',:dr,:isn,:dh,:pr,'queued',:lm,:env,'mock',
+            values (:i,:o,:p,'workflow',:dr,:isn,:dh,:pr,'queued',:lm,:env,:md,
                     '未评', null, :t, :k, now(), :u, now(), 1)
         """), {"i": run, "o": me.org_id, "p": project_id,
                "dr": json.dumps(来源, ensure_ascii=False),
@@ -693,7 +701,7 @@ async def 发起运行(project_id: str, request: Request,
                "lm": json.dumps(体.get("上限") or {"max_model_turns": 8},
                                 ensure_ascii=False),
                "env": os.environ.get("APP_ENV", "development"),
-               "t": trace, "k": idempotency_key, "u": me.user_id})
+               "t": trace, "k": idempotency_key, "u": me.user_id, "md": 模式})
         c.execute(text("""
             insert into jobs (id, organization_id, project_id, type, target_ref, status,
                 attempts, max_attempts, snapshot_hash, idempotency_key,
@@ -716,7 +724,7 @@ async def 发起运行(project_id: str, request: Request,
                 seq, event_type, payload, occurred_at, created_at, created_by)
             values (:i,:o,:p,:r,1,'run.accepted',:pl, now(), now(), :u)
         """), {"i": _新id("re"), "o": me.org_id, "p": project_id, "r": run,
-               "pl": json.dumps({"来源": 来源, "模式": "mock"}, ensure_ascii=False),
+               "pl": json.dumps({"来源": 来源, "模式": 模式}, ensure_ascii=False),
                "u": me.user_id})
         OB.入箱(c, org=me.org_id, 项目=project_id, job_id=job, topic="workflow_run",
                payload={"run_id": run}, 新id=_新id("ob"))

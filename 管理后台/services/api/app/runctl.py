@@ -222,6 +222,12 @@ async def 请求取消(project_id: str, run_id: str, request: Request,
         新rev = _换状态(c, project_id, run_id, r, 目标, rev,
                      谁=me.user_id, 动作="cancel",
                      额外={"cancel_requested": True})
+        if 直接取消 and r["status"] == "waiting_approval":
+            # **它挂着的核对待办一起关掉**(2026-10-24 真模型验证时撞到):运行取消了,
+            # 待办列表上还挂着一条「待处理」—— 有人点进去批了,决定记下了,却什么都不会发生
+            c.execute(text("""update human_requests set status='cancelled', updated_at=now(), revision=revision+1
+                               where project_id=:p and execution_run_id=:r and status='pending'"""),
+                      {"p": project_id, "r": run_id})
         if 直接取消:
             return {"id": run_id, "status": "cancelled", "改了吗": True,
                     "revision": 新rev,

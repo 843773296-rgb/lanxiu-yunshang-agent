@@ -241,6 +241,19 @@ c, b = 打("POST", P + f"/execution-runs/{rid9}/cancel", "U002", 体={},
 ck("取消成功", c in (200, 202), (c, b))
 ck("**取消之后待执行列表里没有它了**(澜绣不会再去执行一张没人等的单)", 单(rid9) == [], 单(rid9))
 
+print("\n▸ ⑨b 等核对时取消 → 那条核对待办一起关掉(10-24 真模型验证时撞到它还挂着)")
+c, r = 发起(wid, {"call_id": "TS-011", "customer_id": "C10011"})
+rid11 = r["resource_id"]
+等到(rid11, ("waiting_external",))
+打("POST", P + f"/bridge-calls/{单(rid11)[0]['id']}/ack", "U004",
+  体={"结果": "已执行", "输出": {"text": "随便一段", "call_id": "TS-011"}})
+等到(rid11, ("waiting_approval",))
+ck("(取消前)待办在待处理里", len(待办(rid11)) == 1, 待办(rid11))
+c, d11 = 打("GET", P + f"/execution-runs/{rid11}", "U004")
+打("POST", P + f"/execution-runs/{rid11}/cancel", "U002", 体={},
+  头={"Idempotency-Key": str(uuid.uuid4()), "If-Match": str(d11["revision"])})
+ck("**取消之后待处理里没有它了**(不留一条批了也不会发生任何事的待办)", 待办(rid11) == [], 待办(rid11))
+
 print("\n▸ ⑩ 人工核对到期没人处理 → 这次运行结束,记「已过期」")
 def 秒过期(d):
     for n in d["nodes"]:

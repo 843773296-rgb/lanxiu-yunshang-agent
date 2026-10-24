@@ -966,7 +966,7 @@ function 加节点(类型, 接 = null) {
                     end: { output_schema: { type: "object", properties: {}, required: [] }, bindings: {} },
                     condition: { branches: [], else_policy: "fail" },
                     merge: { candidates: [], output_field: "out" },
-                    human: { request_kind: "核对", candidate_roles: ["approver", "admin"], allowed_fields: ["定稿"],
+                    human: { request_kind: "核对", candidate_roles: ["approver"], allowed_fields: ["定稿"],
                              expires_at_policy: { 小时: 48, 到期: "fail" }, payload_binding: {} },
                     llm: { bindings: {}, output_schema: { type: "object", properties: { text: { type: "string" } },
                            required: ["text"], additionalProperties: false } },

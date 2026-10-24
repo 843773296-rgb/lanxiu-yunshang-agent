@@ -447,9 +447,19 @@ def _跑一张工作流(c, job, 打点):
     import 执行模式 as _模式
     连接 = _取冻结的模型连接(c, job["project_id"], r["input_snapshot"] or {})
     try:
-        模式, 替身 = _模式.定(连接=连接)
+        # 工作流的模型连接是**每个 AI 步骤自己选的**(段 3),整次那个连接只用来回答
+        # 「这个部署是不是明确选了只跑 mock」—— 没有整次连接不是错,真缺连接的在节点上报
+        模式, 替身 = _模式.定(连接=连接) if 连接 else (
+            (_模式.假, [{"哪一样": "模型", "换成了": "mock 适配器", "为什么": "明确选的:MODEL_ADAPTER=mock"}])
+            if __import__("runtime_cfg").模型是mock() else (_模式.真, []))
     except _模式.不能跑 as e:
         raise 干不了(e.码, {"为什么": e.细节, "入口": "Workflow 的 LLM 节点"})
+    if r["execution_mode"] == "live" and 模式 == _模式.假:
+        # **受理时定成真跑,这台 worker 却明确只跑 mock** —— 不悄悄用 mock 跑完。
+        # 那样运行上写着 live、答案却是编的,而两者在数据形状上一模一样
+        raise 干不了("RUN_MODE_MISMATCH",
+                      {"为什么": "这次运行受理时定成真跑(live),而这台 worker 是 MODEL_ADAPTER=mock",
+                       "怎么办": "用真模型模式起 worker 再跑,或者把这一步的模型换成演示连接重新发起"})
     留痕 = _模式.记一笔(模式, 替身, 入口="Workflow 的 LLM 节点")
     打点("定执行模式", 留痕)
 
@@ -471,24 +481,91 @@ def _跑一张工作流(c, job, 打点):
                 "usage": {"input_tokens": 12, "output_tokens": 34},
                 "finish_reason": "stop"}
 
-    def _真llm(cfg, 实参):
-        """真模型。**失败就抛** —— 没有退回 mock 的分支。
 
-        ⚠️ 抛出去之后这张图会按它自己的失败策略处理(`跑一张图` 里那套),
-        而**不是**在这里换一个能成功的东西:
-        > 一次悄悄换了模型的运行,比一次失败的运行难查得多。
-        """
+    # ── 段 3(2026-10-24):AI 步骤按**它自己选的**模型和处理要求跑 ─────────────────
+    # 原来整张图只认 input_snapshot 里那一个连接,节点上的 connection_version_id / prompt_version_id
+    # 填了也不读 —— 页面上选了「客户需求提取」,跑的时候模型根本没见过那份要求。
+    import re as _re
+    连接缓存, 要求缓存 = {}, {}
+
+    def _节点连接(cv):
+        if cv not in 连接缓存:
+            连接缓存[cv] = c.execute(text("""
+                select cv.id 连接版本id, cv.connection_id id, cv.endpoint, cv.secret_ref, cv.capabilities,
+                       cv.capabilities is not null 探过吗, mc.status, mc.adapter
+                  from connection_versions cv join model_connections mc
+                    on mc.project_id=cv.project_id and mc.id=cv.connection_id
+                 where cv.project_id=:p and cv.id=:i"""), {"p": job["project_id"], "i": cv}).mappings().first()
+        return 连接缓存[cv]
+
+    def _处理要求(pv):
+        if pv not in 要求缓存:
+            要求缓存[pv] = c.execute(text("""select messages from prompt_versions
+                                             where project_id=:p and id=:i"""),
+                                     {"p": job["project_id"], "i": pv}).scalar()
+        return 要求缓存[pv] or {}
+
+    def _渲染(模板, 实参):
+        def 换(m):
+            k = m.group(1).strip()
+            if k not in 实参:
+                return m.group(0)        # 没绑的变量原样留着 —— 填一个空串会让模型以为「这一项是空的」
+            v = 实参[k]
+            return v if isinstance(v, str) else _j.dumps(v, ensure_ascii=False)
+        return _re.sub(r"\{\{\s*([^{}]+?)\s*\}\}", 换, 模板 or "")
+
+    def _按节点llm(cfg, 实参):
+        连 = _节点连接(cfg.get("connection_version_id"))
+        if not 连:
+            raise RN.节点失败("NO_MODEL_CONNECTION", "这一步选的模型连接在这个项目里找不到",
+                            "回「搭建」重新选一个模型")
+        if 连["status"] != "active":
+            raise RN.节点失败("MODEL_CONNECTION_DISABLED", "这一步选的模型连接已停用",
+                            "换一个,或者请管理员在「模型与连接」里启用")
+        if (连["capabilities"] or {}).get("execution_mode") == "mock" or r["execution_mode"] != "live":
+            # 选的就是演示连接,或者这次运行受理时就定成了 mock —— 都是**明确的选择**。
+            # 看的是**运行上记的模式**,不是这台 worker 的环境:模式在受理那一刻定,跑的人不许改
+            return _mock_llm(cfg, 实参)
+        if not 连["探过吗"]:
+            raise RN.节点失败("MODEL_CONNECTION_UNPROBED",
+                            "这一步选的模型连接从没探测过 —— 没探过的和配错了的长得一模一样",
+                            "去「模型与连接」探一次再跑。**不退回 mock**")
+        要 = _处理要求(cfg.get("prompt_version_id"))
+        props = ((cfg.get("output_schema") or {}).get("properties") or {})
+        结构化 = bool(set(props) - {"text"})
+        用户 = _渲染(要.get("user"), 实参) if 要.get("user") else \
+            "\n\n".join(f"{k}:\n{v if isinstance(v, str) else _j.dumps(v, ensure_ascii=False)}"
+                         for k, v in sorted(实参.items()))
+        if 结构化:
+            用户 += ("\n\n只输出一个 JSON 对象,不要别的文字。键:" + "、".join(props)
+                     + "。没提到的写「没提到」,列表类的没有就写 []。")
         import 真模型 as _真
-        用户 = " / ".join(f"{k}={v}" for k, v in sorted(实参.items()))
-        出 = _真.生成(连接=连接, 系统=cfg.get("system") or None, 用户=用户,
-                   参数=cfg.get("params") or {})
-        return {"text": 出["text"], "lang": "zh",
-                "execution_mode": "live",
-                "usage": 出["usage"], "finish_reason": 出["finish_reason"],
-                # 审阅 §5.3:**报端点实际返回的型号**,不报我们请求的那个
-                "actual_model": 出["actual_model"]}
+        参 = {"max_tokens": cfg.get("max_output_tokens") or 1500, **(cfg.get("sampling_params") or {})}
+        try:
+            出 = _真.生成(连接=dict(连), 系统=_渲染(要.get("system"), 实参) or None, 用户=用户, 参数=参)
+        except _真.调不动 as e:
+            raise RN.节点失败(e.码, str(e.细节)[:200], "看「模型与连接」那条连接还通不通;**不退回 mock**")
+        结果 = {"text": 出["text"], "lang": "zh", "execution_mode": "live", "usage": 出["usage"],
+                "finish_reason": 出["finish_reason"], "actual_model": 出["actual_model"]}
+        if 结构化:
+            文 = 出["text"].strip()
+            m = _re.search(r"\{.*\}", 文, _re.S)
+            try:
+                解 = _j.loads(m.group(0)) if m else None
+            except ValueError:
+                解 = None
+            if not isinstance(解, dict):
+                raise RN.节点失败("OUTPUT_NOT_JSON", "模型没按要求输出 JSON 对象",
+                                "看这一步的原文(运行详情);常见原因是处理要求里没说清输出格式")
+            缺 = [k for k in ((cfg.get("output_schema") or {}).get("required") or []) if k not in 解]
+            if 缺:
+                raise RN.节点失败("OUTPUT_FIELD_MISSING", f"模型的结果里缺必填字段:{缺}",
+                                "**「跑完了」和「结果齐了」是两件事** —— 改处理要求,把这几个字段说清")
+            结果.update({k: 解[k] for k in props if k in 解})
+        return 结果
 
-    _llm = _mock_llm if 模式 == _模式.假 else _真llm
+    # 工作流:按节点;别的入口(Agent Loop / Prompt 调试)照旧按整次的连接
+    _llm = _按节点llm
 
     桥工具名 = {}
 

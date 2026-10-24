@@ -3,8 +3,8 @@
 """音频整理流程要的资源登记进后台(2026-10-24):澜绣桥的两个工具(取转写 / 写跟进)
 + 一份处理要求「客户需求提取」(用户 10-24 拍「带一份、默认选上」—— 建模板时自动选上它)。
 
-    ./.venv/bin/python tools/seed_bridge_tools.py                   # 默认 project_lanxiu
-    ./.venv/bin/python tools/seed_bridge_tools.py --项目 project_demo_a
+    ./.venv/bin/python tools/seed_bridge_tools.py                         # 默认 project_demo_a(CI / 端到端用)
+    ./.venv/bin/python tools/seed_bridge_tools.py --项目 project_lanxiu   # 澜绣正式项目(常驻同步的桥只连它)
 
 **重复跑不增加对象**:同名工具已在就不新建;契约(说明 / 入参 / 出参)变了才出新版本。
 
@@ -113,7 +113,9 @@ def _哈希(t):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--项目", default="project_lanxiu")
+    # 默认演示项目:CI 是新库,seed_demo 只建演示项目 —— 默认正式项目的话,
+    # seed_rerun_check 一跑就「没有项目」(正式项目由人显式点名)
+    ap.add_argument("--项目", default="project_demo_a")
     a = ap.parse_args()
     from sqlalchemy import text
     from db import 事务
