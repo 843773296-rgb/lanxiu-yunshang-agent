@@ -77,8 +77,12 @@ def _写过的(幂等键, db):
         c.close()
 
 
-def 写跟进(参数, 幂等键, 谁, db=None):
-    """→ {"输出": {跟进号, customer_id, 是新写的, 结果}} 或 {"失败": {...}}"""
+def 写跟进(参数, 幂等键, 谁, db=None, 办事人=None, 工号=None):
+    """→ {"输出": {跟进号, customer_id, 是新写的, 结果}} 或 {"失败": {...}}
+
+    办事人 / 工号(2026-10-24 账号绑定,用户拍「一对一绑定」):管理后台里批准核对的那个账号,和他绑定的澜绣工号。
+    **台账以这位员工的名义记,管理后台账号一起记上**;没绑定就不写 —— 不拿服务身份顶替
+    (顶替写出来的跟进在台账上和本人写的长得一样,而「谁做的」正是台账要回答的)。"""
     参数 = 参数 or {}
     if not 幂等键:
         return _失败("NO_IDEMPOTENCY_KEY", "写跟进的单子没带幂等键 —— 不写,重试会写出第二条")
@@ -104,14 +108,23 @@ def 写跟进(参数, 幂等键, 谁, db=None):
     # ⚠️ 写走 server 的正门,它用**它自己模块里的 DB**,不认这里的 db 参数。
     # 要在副本上跑(检查 / 咬合),先 import 本模块和 server / oplog,再 check_copy.用副本 ——
     # 它把已加载模块的 DB 一次全指过去;顺序反了就是往真库写(CLAUDE.md「检查切库前先 import 写口」)
+    if not 工号:
+        return _失败("NOT_BOUND", f"批准核对的账号「{办事人 or '?'}」没有绑定澜绣员工 —— 不以服务身份顶替,没写",
+                   "请管理员在管理后台「成员与权限」里给他绑上澜绣工号,再重新发起一次")
+    with _连(db) as c2:
+        员 = c2.execute("SELECT name, status FROM staff WHERE no=?", (str(工号),)).fetchone()
+    if not 员 or 员["status"] != "启用":
+        return _失败("STAFF_NOT_FOUND", f"绑定的澜绣工号 {工号} " + ("不存在" if not 员 else f"状态是「{员['status']}」") + ",没写",
+                   "请管理员在管理后台改绑")
     import server
     with _连(db) as c2:
         顾 = c2.execute("SELECT advisor_no FROM customer WHERE id=?", (客户,)).fetchone()
     # 跟进记在这位客户的顾问名下(和页面上顾问自己记的一样)—— 客户没有顾问就留空,不编一个
     r = server.create_followup({"customer_id": 客户, "content": 内容, "channel": "电话",
                                 "advisor_no": 顾["advisor_no"] if 顾 else None},
-                               actor=f"{谁}(AI 管理平台 · 工作流核对后)",
-                               ctx={"幂等键": 幂等键, "通话": 通话 or None, "来自": "工作流"})
+                               actor=f"{员['name']}({工号})· 管理后台 {办事人 or 谁} 工作流核对后",
+                               ctx={"幂等键": 幂等键, "通话": 通话 or None, "来自": "工作流",
+                                    "管理后台账号": 办事人, "澜绣工号": 工号})
     if not r.get("ok"):
         return _失败(r.get("code") or "WRITE_FAILED", r.get("reason") or "没写成")
     return {"输出": {"跟进号": r["id"], "customer_id": 客户, "是新写的": True,
@@ -119,7 +132,8 @@ def 写跟进(参数, 幂等键, 谁, db=None):
 
 
 执行表 = {"取转写": lambda 单, 谁, db=None: 取转写(单.get("参数"), db=db),
-          "写跟进": lambda 单, 谁, db=None: 写跟进(单.get("参数"), 单.get("幂等键"), 谁, db=db)}
+          "写跟进": lambda 单, 谁, db=None: 写跟进(单.get("参数"), 单.get("幂等键"), 谁, db=db,
+                                                 办事人=单.get("办事人"), 工号=单.get("办事人澜绣工号"))}
 
 
 def 执行(单, 谁="AI 管理平台", db=None):

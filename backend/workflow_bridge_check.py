@@ -8,6 +8,7 @@
   ④ 没带幂等键 → 拒;客户不存在 → 拒;认不出的工具 → 不执行
   ⑤ 写进的是副本:真库的 followup 没多出这次检查写的那一条
 """
+import json
 import os
 import sqlite3
 import sys
@@ -73,7 +74,7 @@ def main():
 
     print("\n▸ ② 写跟进 + 幂等")
     前 = 数(副本, "SELECT COUNT(*) FROM followup")
-    单 = {"工具": "写跟进", "幂等键": "xr_chk:save:1",
+    单 = {"工具": "写跟进", "幂等键": "xr_chk:save:1", "办事人": "U006", "办事人澜绣工号": "60000001",
           "参数": {"customer_id": 有稿[1], "内容": "检查:顾客要宋制褙子", "call_id": 有稿[0]}}
     r1 = WB.执行(单, 谁="U006")
     ck("第一次 → 已执行,是新写的", r1[0] == "已执行" and r1[1]["是新写的"] is True, r1)
@@ -85,6 +86,11 @@ def main():
     ck("台账 ctx 带着幂等键,actor 说清是工作流核对后写的",
        数(副本, "SELECT COUNT(*) FROM op_log WHERE machine='followup' AND code='CREATE' "
                 "AND ctx LIKE '%xr_chk:save:1%' AND actor LIKE '%工作流核对后%'") == 1)
+    账 = sqlite3.connect(副本).execute("SELECT actor, ctx FROM op_log WHERE machine='followup' AND code='CREATE' "
+                                       "AND ctx LIKE '%xr_chk:save:1%'").fetchone() or ("", "{}")
+    ck("**台账以绑定员工的名义记,管理后台账号一起记上**(用户 10-24 拍「台账两个名字都记」)",
+       "张静静(60000001)" in 账[0] and "U006" in 账[0]
+       and json.loads(账[1]).get("澜绣工号") == "60000001" and json.loads(账[1]).get("管理后台账号") == "U006", 账)
     r2 = WB.执行(单, 谁="U006")
     ck("同一个幂等键再来一次:不写第二条,回同一个跟进号",
        r2[0] == "已执行" and r2[1]["是新写的"] is False and r2[1]["跟进号"] == r1[1]["跟进号"]
@@ -99,7 +105,15 @@ def main():
        and 数(副本, "SELECT COUNT(*) FROM followup") == 前, r)
     r = WB.执行({"工具": "写跟进", "参数": {"customer_id": 有稿[1], "内容": "x"}})
     ck("没带幂等键 → 拒", r[0] == "执行失败" and r[2]["code"] == "NO_IDEMPOTENCY_KEY", r)
-    r = WB.执行({"工具": "写跟进", "幂等键": "xr_chk:save:3", "参数": {"customer_id": "C-NOPE", "内容": "x"}})
+    r = WB.执行({"工具": "写跟进", "幂等键": "xr_chk:save:4", "办事人": "U001",
+                 "参数": {"customer_id": 有稿[1], "内容": "x"}})
+    ck("**核对人没绑定澜绣员工 → NOT_BOUND,不以服务身份顶替**",
+       r[0] == "执行失败" and r[2]["code"] == "NOT_BOUND" and "U001" in r[2]["消息"], r)
+    r = WB.执行({"工具": "写跟进", "幂等键": "xr_chk:save:5", "办事人": "U001", "办事人澜绣工号": "99999999",
+                 "参数": {"customer_id": 有稿[1], "内容": "x"}})
+    ck("绑定的工号在澜绣不存在 → STAFF_NOT_FOUND", r[0] == "执行失败" and r[2]["code"] == "STAFF_NOT_FOUND", r)
+    r = WB.执行({"工具": "写跟进", "幂等键": "xr_chk:save:3", "办事人": "U006", "办事人澜绣工号": "60000001",
+                 "参数": {"customer_id": "C-NOPE", "内容": "x"}})
     ck("客户不存在 → 拒", r[0] == "执行失败" and r[2]["code"] == "NO_CUSTOMER", r)
     r = WB.执行({"工具": "改订单", "参数": {}})
     ck("认不出的工具 → 不执行", r[0] == "执行失败" and r[2]["code"] == "UNKNOWN_TOOL", r)

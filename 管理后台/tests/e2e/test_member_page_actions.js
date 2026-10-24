@@ -33,7 +33,7 @@ const P = 桩.P(项目);
 const 根 = path.join(__dirname, "..", "..");
 const src = fs.readFileSync(path.join(根, "apps", "web", "app.js"), "utf8");
 
-const 该跑几组 = 4;
+const 该跑几组 = 5;
 const { ck, 组, 结束, 状 } = 桩.计分(该跑几组);
 
 const 临时工号 = "Umem" + Math.random().toString(16).slice(2, 8);
@@ -173,6 +173,31 @@ let 动过seed成员 = false;
        + "忽略的话界面上那一条看着是给了的)",
        坏专项 && 坏专项.码 === 422, 坏专项 && { 码: 坏专项.码 });
 
+    // ── ③½ 账号 ↔ 澜绣员工绑定(10-24,用户拍「一对一」)──────────────────
+    // 聊天站发起被接管的工作流时按澜绣工号换成这里的账号 —— 一个工号绑两个人,台账就说不清是谁做的
+    组("③½ 账号绑定:一对一,工号被占时说清怎么办");
+    const 绑 = globalThis.绑定动作;
+    ck("app.js 把 `绑定动作` 导出来了(按钮和测试走同一份接线)",
+       绑 && typeof 绑.绑 === "function" && typeof 绑.解绑 === "function", 绑 ? Object.keys(绑) : null);
+    const 测工号 = "E2EM" + Math.random().toString(16).slice(2, 8);
+    await 绑.绑(临时工号, 测工号);
+    const [, b1] = await 桩.直打("GET", `${P}/staff-bindings`, null, "U001");
+    ck("绑上之后列表里有这一对", ((b1 || {}).items || []).some(
+       (x) => x["账号"] === 临时工号 && x["澜绣工号"] === 测工号), (b1 || {}).items);
+    let 占 = null;
+    try { await 绑.绑("U002", 测工号); } catch (e) { 占 = e; }
+    ck("**同一个工号再绑给第二个账号 → 409 STAFF_TAKEN**,而且 advice 说了先解绑那个",
+       占 && 占.码 === 409 && (占.体 || {}).code === "STAFF_TAKEN"
+       && String((占.体 || {}).advice || "").includes("先解绑"),
+       占 && { 码: 占.码, code: (占.体 || {}).code });
+    const 列表段2 = src.slice(src.indexOf("function 挂绑定事件"), src.indexOf("function 挂绑定事件") + 1600);
+    ck("页面上被拒时把 advice 一起显示(只显示 message 的话,人不知道该先去解绑谁)",
+       列表段2.includes("e.体.advice"), 列表段2.length);
+    await 绑.解绑(临时工号);
+    const [, b2] = await 桩.直打("GET", `${P}/staff-bindings`, null, "U001");
+    ck("解绑之后列表里没有它了", !((b2 || {}).items || []).some((x) => x["账号"] === 临时工号),
+       (b2 || {}).items);
+
     // ── ④ **那道「做完没法回头」的闸** ───────────────────────────────
     组("④ 不许把最后一个能改权限的人去掉");
     // 先把临时工号升成 admin —— 这样「能改权限的」里就有一个**我能降的**。
@@ -259,6 +284,8 @@ sys.path.insert(0, os.path.join('services','api','app'))
 from sqlalchemy import text
 from db import 事务
 with 事务() as c:
+    c.execute(text(\\"\\"\\"delete from staff_bindings where project_id=:p
+        and user_id like 'Umem%'\\"\\"\\"), {'p': '${项目}'})
     n = c.execute(text(\\"\\"\\"delete from memberships where project_id=:p
         and user_id like 'Umem%'\\"\\"\\"), {'p': '${项目}'}).rowcount
 print('清掉', n)

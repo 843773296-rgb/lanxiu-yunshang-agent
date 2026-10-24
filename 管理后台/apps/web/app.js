@@ -5018,6 +5018,17 @@ const 成员动作 = {
   },
 };
 if (typeof globalThis !== "undefined") globalThis.成员动作 = 成员动作;
+// 账号 ↔ 澜绣员工一对一绑定(10-24)。按钮只调这两个 —— 测试也调这两个,接线只有一份
+const 绑定动作 = {
+  async 绑(账号, 澜绣工号) {
+    return await 请求(`${P()}/staff-bindings/${encodeURIComponent(账号)}`,
+      { method: "PUT", body: JSON.stringify({ "澜绣工号": 澜绣工号 }) });
+  },
+  async 解绑(账号) {
+    return await 请求(`${P()}/staff-bindings/${encodeURIComponent(账号)}`, { method: "DELETE" });
+  },
+};
+if (typeof globalThis !== "undefined") globalThis.绑定动作 = 绑定动作;
 
 function 页_成员表单(d, 预填) {
   const 能配 = 我的角色 === "admin";
@@ -5098,8 +5109,13 @@ async function 页_成员与权限() {
     <div id="list"><div class="state">加载中…</div></div>`;
   try {
     const d = await 请求(`${P()}/memberships`);
+    // 账号 ↔ 澜绣员工一对一绑定(用户 10-24 拍):聊天站发起被接管的工作流时,按澜绣工号换成这里的账号
+    const 绑 = {};
+    try {
+      ((await 请求(`${P()}/staff-bindings`)).items || []).forEach((x) => { 绑[x["账号"]] = x["澜绣工号"]; });
+    } catch (e) { /* 读不到绑定不挡成员列表;那一栏显示「读不到」 */ 绑.__坏 = true; }
     $("#list").innerHTML = `<table><thead><tr><th>工号</th><th>角色</th>
-      <th>这条生效吗</th><th>专项授权</th><th>实际能做的</th><th>改</th>
+      <th>这条生效吗</th><th>专项授权</th><th>实际能做的</th><th>绑的澜绣员工</th><th>改</th>
       </tr></thead><tbody>`
       + d["成员"].map((r) => `<tr>
         <td><b>${esc(r["工号"])}</b></td>
@@ -5109,6 +5125,13 @@ async function 页_成员与权限() {
         <td class="k">${esc((r["专项授权"] || []).join("、") || "—")}</td>
         <td>${(r["实际能做的"] || []).map((x) =>
               `<span class="pill">${esc(x)}</span>`).join(" ")}</td>
+        <td>${绑.__坏 ? `<span class="k">读不到</span>`
+            : 我的角色 === "admin"
+            ? `<input data-bindin="${esc(r["工号"])}" value="${esc(绑[r["工号"]] || "")}" size="9"
+                 placeholder="澜绣工号">
+               <button data-bind="${esc(r["工号"])}">保存</button>
+               ${绑[r["工号"]] ? `<button data-unbind="${esc(r["工号"])}">解绑</button>` : ""}`
+            : esc(绑[r["工号"]] || "—")}</td>
         <td>${我的角色 === "admin"
             ? `<button data-edit="${esc(r["工号"])}">改权限</button>`
             : `<span class="k">要「配置密钥与预算」</span>`}</td></tr>`).join("")
@@ -5126,7 +5149,42 @@ async function 页_成员与权限() {
       + `<div id="mmsg"></div><div id="mform"></div>`;
     if ($("#mform")) $("#mform").innerHTML = 页_成员表单(d, null);
     挂成员事件(d);
+    挂绑定事件();
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+/* 账号 ↔ 澜绣员工绑定(10-24)。一对一:工号已绑给别人 → 409 STAFF_TAKEN,原样显示 advice */
+function 挂绑定事件() {
+  const 说 = (html, 坏) => { if ($("#mmsg")) $("#mmsg").innerHTML =
+    `<div class="state${坏 ? " err" : ""}"><p>${html}</p></div>`; };
+  document.querySelectorAll("[data-bind]").forEach((b) => {
+    b.onclick = async () => {
+      const 账号 = b.dataset.bind;
+      const 框 = document.querySelector(`[data-bindin="${CSS.escape(账号)}"]`);
+      const 工号 = ((框 && 框.value) || "").trim();
+      if (!工号) { 说("要填澜绣工号;想解绑就点「解绑」", true); return; }
+      b.disabled = true;
+      try {
+        await 绑定动作.绑(账号, 工号);
+        await 页_成员与权限();
+        说(`绑好了:${esc(账号)} ↔ 澜绣 ${esc(工号)}`);
+      } catch (e) {
+        说(`${esc(e.message)}${e.体 && e.体.advice ? " —— " + md(e.体.advice) : ""}`, true);
+        b.disabled = false;
+      }
+    };
+  });
+  document.querySelectorAll("[data-unbind]").forEach((b) => {
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await 绑定动作.解绑(b.dataset.unbind);
+        const 谁 = b.dataset.unbind;
+        await 页_成员与权限();
+        说(`解绑了 ${esc(谁)} —— 他在聊天里碰到被接管的事,将发起不了工作流`);
+      } catch (e) { 说(esc(e.message), true); b.disabled = false; }
+    };
+  });
 }
 
 async function 页_数据集() {

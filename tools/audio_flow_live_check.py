@@ -124,6 +124,10 @@ def main():
     ck("待办里的原文就是库里这通录音的转写(审核人能看全文 / 至少开头对得上)",
        原文[:40] in str(看.get("原文")), (原文[:40], str(看.get("原文"))[:80]))
     定稿 = f"两边真接:{call} 的需求已核(检查写的)"
+    # 账号绑定(10-24):写跟进以**批准核对的人绑定的澜绣员工**名义记台账,没绑就不写 —— 这里临时给 U006 绑一个,跑完解绑
+    打("DELETE", P + "/staff-bindings/U006", "U001")
+    cb, bb = 打("PUT", P + "/staff-bindings/U006", "U001", 体={"澜绣工号": "60000001", "备注": "两边真接检查,跑完解绑"})
+    ck("夹具:给核对人 U006 临时绑上澜绣工号 60000001", cb == 200, (cb, bb))
     c6, b = 打("POST", P + f"/human-requests/{hs[0]['id']}/decisions", "U006",
               体={"decision": "approved", "request_revision": det["请求"]["revision"], "edits": {"定稿": 定稿}},
               头={"Idempotency-Key": str(uuid.uuid4())})
@@ -136,6 +140,11 @@ def main():
     行 = sqlite3.connect(副本).execute("SELECT id, content FROM followup WHERE customer_id=? AND content=?",
                                      (cust, 定稿)).fetchall()
     ck("副本里多了**一条**跟进,内容是人改过的定稿", len(行) == 1, 行)
+    账 = sqlite3.connect(副本).execute("SELECT actor FROM op_log WHERE machine='followup' AND code='CREATE' AND target=?",
+                                       (行[0][0] if 行 else "",)).fetchone()
+    ck("**台账以核对人绑定的员工名义记(60000001),管理后台账号 U006 一起记上**",
+       bool(账) and "60000001" in 账[0] and "U006" in 账[0], 账)
+    打("DELETE", P + "/staff-bindings/U006", "U001")
     张, 错 = SS.跑桥(cfg)
     后 = sqlite3.connect(副本).execute("SELECT COUNT(*) FROM followup WHERE customer_id=?", (cust,)).fetchone()[0]
     ck("再跑一次桥:跟进仍只多一条(没有待执行的单 / 重复也不写)", 后 == 前 + 1, (前, 后))
