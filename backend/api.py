@@ -631,15 +631,14 @@ def start_workflow(skill, inputs=None):
 
     只在那个技能被拦下、拦截理由点名要它时才用。开没开、你的工号绑的是哪个管理后台账号,
     都由管理后台在这一刻再判一次 —— 这里不判第二份(见 backend/takeover_client.py)。
-    幂等键按「工号 + 技能 + 输入 + 这 10 分钟」算:模型对同一件事重发一次不会排出第二条运行。"""
-    import hashlib, json as _j, time as _t, uuid as _u
+    幂等键见 takeover_client.幂等键(带工作流、一分钟窗口 —— 10-24 真跑踩过拿回旧运行)。"""
+    import time as _t
     import takeover_client as _tc
     try: me = _need_me()
     except _NoIdentity: return dict(error="不知道现在是谁在发起 —— 请先登录")
     sk = (skill or "").strip().lstrip("/")
     if not sk: return dict(error="要说清是哪件事(技能名),比如 call-notes")
-    指纹 = _j.dumps([me["no"], sk, inputs or {}, int(_t.time() // 600)], ensure_ascii=False, sort_keys=True)
-    键 = str(_u.UUID(hashlib.sha256(指纹.encode()).hexdigest()[:32]))
+    键 = _tc.幂等键(me["no"], sk, (_tc.接管中(sk) or {}).get("workflow_id"), inputs, _t.time())
     ok, 回 = _tc.发起(sk, me["no"], inputs or {}, 键)
     if ok:
         _agent_log(me, "WF_START", f"发起工作流「{回.get('工作流')}」(接管 {sk}),运行 {回.get('运行号')}")

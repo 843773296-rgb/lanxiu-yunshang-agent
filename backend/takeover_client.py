@@ -87,6 +87,18 @@ def 接管中(技能):
     return 清单().get((技能 or "").strip().lstrip("/"))
 
 
+def 幂等键(澜绣工号, 技能, workflow_id, 输入, 现在):
+    """同一个人、同一条工作流、同样的输入、**同一分钟**里 → 同一个键(模型重发不排出第二条)。
+
+    ⚠️ 2026-10-24 真跑踩过:原来按「工号 + 技能 + 输入 + 10 分钟」算 —— 没带工作流、窗口又宽,
+    第二次试跑在新建的工作流上发起,拿回的是**上一次那条已经取消的运行**,模型照样对用户说「已发起」。
+    这把钥匙只为挡**同一轮里的重发**(同一轮同参数重试另有 guards 的写闸拦着),一分钟够了;
+    换了工作流必须是另一把钥匙。"""
+    import hashlib, uuid
+    指纹 = json.dumps([澜绣工号, 技能, workflow_id, 输入 or {}, int(现在 // 60)], ensure_ascii=False, sort_keys=True)
+    return str(uuid.UUID(hashlib.sha256(指纹.encode()).hexdigest()[:32]))
+
+
 def 发起(技能, 澜绣工号, 输入, 幂等键):
     """返回 (成没成, 回给模型的 dict)。开没开、绑没绑都由管理后台判,这里只转述。"""
     cfg = 配置()
@@ -95,9 +107,11 @@ def 发起(技能, 澜绣工号, 输入, 幂等键):
     码, 体 = _curl("POST", f"/chat-takeovers/{技能}/runs", cfg,
                    {"澜绣工号": 澜绣工号, "输入": 输入 or {}}, 幂等键)
     if 码 == "202" and isinstance(体, dict):
+        重放 = str(体.get("note") or "").startswith("同一个幂等键")
         return True, dict(已发起=True, 运行号=体.get("resource_id"), 工作流=体.get("工作流"),
                           核对入口=cfg["地址"].rstrip("/") + (体.get("核对入口") or ""),
-                          说明="已排队,还没跑完;要等人工核对通过才会写进系统")
+                          说明=("**这是刚才已经发起的那一条,没有新建**;" if 重放 else "")
+                               + "已排队,还没跑完;要等人工核对通过才会写进系统")
     if 码 is None:
         return False, dict(error=f"{体} —— 工作流没发起,也别改用技能自己做;请稍后再试或告诉店长")
     码文 = (体 or {}).get("code") if isinstance(体, dict) else None

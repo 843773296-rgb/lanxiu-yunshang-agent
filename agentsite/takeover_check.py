@@ -96,6 +96,16 @@ def main():
             if v is None: os.environ.pop(k, None)
             else: os.environ[k] = v
 
+    print("\n▸ ②½ 防重复的钥匙(10-24 真跑踩过:新建的工作流上发起,拿回上一次已取消的那条)")
+    t = 1_000_000 * 60.0
+    同 = tc.幂等键("60000001", "call-notes", "wf_1", {"call_id": "TS-001"}, t)
+    ck("同一个人、同一条工作流、同样输入、同一分钟 → 同一把钥匙(模型重发不排第二条)",
+       同 == tc.幂等键("60000001", "call-notes", "wf_1", {"call_id": "TS-001"}, t + 30))
+    ck("**换了工作流 → 另一把钥匙**(不许拿回别的工作流上的旧运行)",
+       同 != tc.幂等键("60000001", "call-notes", "wf_2", {"call_id": "TS-001"}, t))
+    ck("过了这一分钟 → 另一把钥匙(用户隔一会儿再要,是新的一次)",
+       同 != tc.幂等键("60000001", "call-notes", "wf_1", {"call_id": "TS-001"}, t + 60))
+
     print("\n▸ ③ 每个角色都能发起")
     import sdk
     角色们 = sorted(sdk._ROLE_TOOLS)
