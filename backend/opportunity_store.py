@@ -177,9 +177,11 @@ def _派提醒(c, oid, kind, note, 今天, detail=None):
     while c.execute("SELECT 1 FROM schedule WHERE id=?", (sid,)).fetchone():
         n += 1; sid = f"SC{7000 + n + 1}"
     止 = 今天 + _dt.timedelta(days=K.提醒期限天)
-    c.execute("INSERT INTO schedule(id, type, advisor_no, customer_id, start_ts, end_ts, status, shop, "
-              "assignee_no, assigned_by, assigned_at, note, ref_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    import shop_key as _SK              # 门店码的唯一入口
+    c.execute("INSERT INTO schedule(id, type, advisor_no, customer_id, start_ts, end_ts, status, shop, shop_code, "
+              "assignee_no, assigned_by, assigned_at, note, ref_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
               (sid, "商机提醒", adv if 在职 else None, cid, f"{今天} 09:00", f"{止} 18:00", "有效", shop,
+               _SK.码(c, shop),
                adv if 在职 else None, "SYS" if 在职 else None, f"{今天} 09:00" if 在职 else None, note, cid))
     c.execute("INSERT INTO opportunity_task(schedule_id, opp_id, kind, detail, created) VALUES(?,?,?,?,?)",
               (sid, oid, kind, json.dumps(detail or {}, ensure_ascii=False), str(今天)))

@@ -164,9 +164,10 @@ def book(d):
 
     with sqlite3.connect(DB) as c:
         # 预约单(客户视角:我约了几点)
-        c.execute("INSERT INTO appointment(id,customer_id,shop,advisor_no,"
-                  "start_ts,end_ts,status) VALUES(?,?,?,?,?,?,?)",
-                  (aid, cust["id"], cust.get("shop"), adv_no,
+        import shop_key as _SK          # 门店码的唯一入口
+        c.execute("INSERT INTO appointment(id,customer_id,shop,shop_code,advisor_no,"
+                  "start_ts,end_ts,status) VALUES(?,?,?,?,?,?,?,?)",
+                  (aid, cust["id"], cust.get("shop"), _SK.码(c, cust.get("shop")), adv_no,
                    t.strftime("%Y-%m-%d %H:%M"), end.strftime("%Y-%m-%d %H:%M"), "待确认"))
         # 任务单(门店视角:谁去接待)—— **两张表是两个视角,不是冗余**:
         # 客户取消预约,任务单要留痕说明为什么白排了一小时。

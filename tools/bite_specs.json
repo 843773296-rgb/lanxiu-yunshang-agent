@@ -813,12 +813,12 @@
  },
  {
   "script": "backend/write_check.py",
-  "改坏": "让建客户不写门店字段(接口说成功,库里那一栏是空的)",
+  "改坏": "让建客户不写门店字段(接口说成功,库里那一栏是空的) ⚠️ 2026-10-24 这条锚挪过一次:给 customer 加 shop_code 列时那一行的列清单变了,**锚当场过期** —— 它会报「改坏了却没红」,而那不是判据的错。(这就是『按改过的文件算完备集』那条规矩要盯的东西:规格自己一个字没变,周围的代码变了。)",
   "file": [
    {
     "path": "backend/server.py",
-    "old": "        c.execute(\"\"\"INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,",
-    "new": "        d[\"shop\"]=None\n        c.execute(\"\"\"INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,"
+    "old": "        c.execute(\"\"\"INSERT INTO customer(id,name,phone,phone_tail,shop,shop_code,advisor_no,",
+    "new": "        d[\"shop\"]=None\n        c.execute(\"\"\"INSERT INTO customer(id,name,phone,phone_tail,shop,shop_code,advisor_no,"
    }
   ],
   "预期红": "建客户:接口说成功"
@@ -12341,5 +12341,53 @@
   "script": "tools/table_origin_check.py",
   "改坏": "往 ensure_tables 的登记里加一张库里不存在的表 —— 守的是**反方向**那个盲区:上面那条咬合(删一条登记)打的是「库里有、没人建」,这一条打的是「登记了、库里没有」。⚠️ 后者隐形得更彻底:孤儿表好歹出现在 sqlite_master 里扫得到,而一张「登记了却没建」的表**压根不存在**,不出现在任何扫描里 ——症状是「依赖它的那条检查炸了」,而炸的地方和这件事隔着好几层",
   "预期红": "登记过的表,这个库里真的都有"
+ },
+ {
+  "script": "backend/shop_key_check.py",
+  "改坏": "把「串→码」的映射改成「串→名字」—— 库里的码是对的,口径变了,两边说不到一块去。⚠️ 第一版我攻的是 `tools/add_shop_code.py` 的 UPDATE 行,**那是个空操作**:咬合重放只跑这个判据,那个脚本压根不会被执行,数据一个字都不会变 —— 它显示成「改坏了却没红」。注意自造那几条用的是字面假门店表、不走 `门店表()`,所以照旧绿,红的只会是逐行对账那一条",
+  "file": [
+   {
+    "path": "backend/shop_key.py",
+    "old": "    return {f\"{r[0]} {r[1]}\": r[0] for r in c.execute(\"SELECT code, name FROM shop\")}",
+    "new": "    return {f\"{r[0]} {r[1]}\": r[1] for r in c.execute(\"SELECT code, name FROM shop\")}"
+   }
+  ],
+  "预期红": "每一行的 shop_code 都和它的 shop 串对得上"
+ },
+ {
+  "script": "backend/shop_key_check.py",
+  "改坏": "把**苏州织造坊**从「不是门店的」明写名单里删掉 —— 「留空」就没了来路,退回「不知道」。⚠️ 真库上数据一个字没变,工坊那 21 行照样留空,只是没人能说清它们为什么空 —— 「不归任何门店」和「不知道是哪家」该触发相反的动作。⚠️ 删的不是上海工坊:后者在「自造五种形状」里用着,删它会让自造那条先红",
+  "file": [
+   {
+    "path": "backend/shop_key.py",
+    "old": "    \"苏州缂丝坊\": \"工坊\", \"苏州织造坊\": \"工坊\", \"浙南染坊\": \"工坊\",",
+    "new": "    \"苏州缂丝坊\": \"工坊\", \"浙南染坊\": \"工坊\","
+   }
+  ],
+  "预期红": "留空的那些行,它的 shop 都在明写名单里"
+ },
+ {
+  "script": "backend/shop_key_check.py",
+  "改坏": "把回填那一步从 rebuild.sh 的步骤清单里删掉 —— ⚠️ **本地库上完全隐形**:列和数据早就在了,一路绿;只有从零重建才会整列全空,而那时红的是别的检查。同 query_index_check 里那一条,同一个形状:「登记了」≠「有人去跑」",
+  "file": [
+   {
+    "path": "tools/rebuild.sh",
+    "old": "            \"tools/add_shop_code.py --做\" \\\n",
+    "new": ""
+   }
+  ],
+  "预期红": "rebuild.sh 的步骤清单里真的有人跑回填"
+ },
+ {
+  "script": "backend/shop_key_check.py",
+  "改坏": "把 ordr 从「带门店键的」明写名单里删掉 —— 判据会**少验一张 2.6 万行的表而照样全绿**。守的是覆盖面那个不对称:上面那些断言都在问「名单里这几处对不对」,而名单自己漏一张表,它们一条都不会红。「这张表没问题」和「这张表没人看」在绿勾上长得一模一样 —— 同 table_origin_check 今天补的那个反方向,换了个地方又出现一次",
+  "file": [
+   {
+    "path": "backend/shop_key.py",
+    "old": "    (\"ordr\", \"shop\"), (\"appointment\", \"shop\"), (\"customer\", \"shop\"),",
+    "new": "    (\"appointment\", \"shop\"), (\"customer\", \"shop\"),"
+   }
+  ],
+  "预期红": "明写的「带门店键的」和库里真有 shop 列的表,一张不差"
  }
 ]

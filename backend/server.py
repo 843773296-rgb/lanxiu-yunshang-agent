@@ -1888,11 +1888,13 @@ def create_customer(d, actor="魏欣新", _role=None):
         # ⚠️ **工号也要写。** 表单里填的是显示串,而库里要存的是引用。
         # 认不出来时 `顾问工号` 返回 None —— **不挑一个最像的**:
         # 挑错的话这条客户会挂到另一个顾问名下,而页面上完全正常。
-        c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,advisor_no,
+        import shop_key as _SK          # 门店码的唯一入口
+        c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,shop_code,advisor_no,
                      lifecycle,
                      level,created,order_cnt,paid_amount,addr,birthday,archived,idle_days)
-                     VALUES(?,?,?,?,?,?,'潜在','普通',?,0,0,?,?,0,0)""",
+                     VALUES(?,?,?,?,?,?,?,'潜在','普通',?,0,0,?,?,0,0)""",
                   (cid, d.get("name"), ph, (ph or "")[-4:], d.get("shop"),
+                   _SK.码(c, d.get("shop")),
                    顾问工号(d.get("advisor")),
                    _wtoday(), d.get("addr"), d.get("birthday")))
     log_op(actor, "customer", cid, "—", "潜在", True, "CREATE",
@@ -2043,13 +2045,15 @@ def import_customers(text,actor="魏欣新",role="顾问",dry=True):
         with _conn() as c:
             for j,(ln,d) in enumerate(good):
                 nid=f"C{40000+n+j}"
-                c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,
+                import shop_key as _SK  # 门店码的唯一入口
+                c.execute("""INSERT INTO customer(id,name,phone,phone_tail,shop,shop_code,
                   advisor_no,lifecycle,
                   level,created,order_cnt,paid_amount,last_interact,addr,birthday,archived,
                   first_order,orders_12m,quarters_12m,amount_12m,idle_days,matched,manual_lc,manual_at)
-                  VALUES(?,?,?,?,?,?,'潜在','普通',wtoday(),0,0,wtoday(),
+                  VALUES(?,?,?,?,?,?,?,'潜在','普通',wtoday(),0,0,wtoday(),
                   '','',0,NULL,0,0,0,0,'潜在',NULL,NULL)""",
                   (nid,d["name"],d["phone"],d["phone"][-4:],d["shop"],
+                   _SK.码(c, d["shop"]),
                    顾问工号(d["advisor"])))
         # 疑似重复进人工确认队列
         with _conn() as c:

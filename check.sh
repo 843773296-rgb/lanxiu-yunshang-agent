@@ -307,6 +307,7 @@ run "闸四影子运行真的是影子(不改流程 / 台账不经任何口暴�
 run "差评研判判分器 · 55 条对照(跨档漏报两句原话 + 夹缝那一列 + 小额档悬空不许报成通过)" python3 agent/triage_sets_judgetest.py
 run "三条退款异常研判题的判分器 · 17 条人造对照(含一条**实录的错答案**:只说渠道故障、漏了那条出账流水)" python3 agent/refund_sets_judgetest.py
 run "渠道流水号 · 对账时唯一能把两边对起来的那个号不许重复(只读审计 10-23 第 1 条;判据自己造一对重复)" python3 backend/payment_serial_check.py
+run "门店关联键 · shop_code 是真相,不许和 shop 串打架(只读审计 10-23 第 3 条,用户 10-24 拍根治;改一次名按串筛就是 0 单而且不报错)" python3 backend/shop_key_check.py
 run "查询索引 · 还在、还被用上、而且用的是覆盖的那一版(只读审计 10-23 第 4 条,用户 10-24 拍加;少带一列就从 35 倍掉回 1.2 倍而不报错)" python3 backend/query_index_check.py
 run "三条退款研判题的题面材料是**出事时**的样子(DQ9001 已走完闭环;遮住处置痕迹 / 不遮掉考点 / 和出事时的基准逐处比 / 平移一天不假红 / 漏遮会红)" python3 agent/refund_case_check.py
 run "差评产线路的判定读法 · 七种自造形状(段首/段内/全文/读不出 + 讲规则时顺口提到的不算建议),段名从 TK04 现取而不是手抄(不调模型)" python3 agent/triage_pipeline_eval.py --自测读法

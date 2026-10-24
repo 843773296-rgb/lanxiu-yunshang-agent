@@ -218,10 +218,11 @@ def open_order(d, me):
     合计 = round(amt + 运费, 2)
     import fsm
     with sqlite3.connect(DB) as c:
-        c.execute("""INSERT INTO ordr(id,customer_id,kind,status,advisor_no,shop,source,delivery,amount,payable,
+        import shop_key as _SK          # 门店码的唯一入口(别在这儿自己拆串)
+        c.execute("""INSERT INTO ordr(id,customer_id,kind,status,advisor_no,shop,shop_code,source,delivery,amount,payable,
                      created,updated,prd_status,goods_amount,freight,received,refund_status,appt_src,scheme_id)
-                     VALUES(?,?,'定制品订单','待确认',?,?,'门店 Pad',?,?,?,?,?,?,?,?,0,'未退款','未接入',?)""",
-                  (oid, cid, me["no"], me.get("shop"), 送法, 合计, 合计, now, now,
+                     VALUES(?,?,'定制品订单','待确认',?,?,?,'门店 Pad',?,?,?,?,?,?,?,?,0,'未退款','未接入',?)""",
+                  (oid, cid, me["no"], me.get("shop"), _SK.码(c, me.get("shop")), 送法, 合计, 合计, now, now,
                    fsm.ORDER_PRD.get("待确认", "待付款"), amt, 运费, 方案))
         # **版型版本在开单这一刻记下快照**(grading_check 查)—— 现算给的是今天那一版,
         # 版型改过之后就对不上当初量的、裁的是哪一版

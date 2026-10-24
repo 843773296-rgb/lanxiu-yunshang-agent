@@ -135,9 +135,10 @@ def 保存(me, pack, body, report_id=None, db=None, trace=None):
         rid = f"RPT{序:06d}"
         while c.execute("SELECT 1 FROM store_report_doc WHERE id=?", (rid,)).fetchone():
             序 += 1; rid = f"RPT{序:06d}"
-        c.execute("INSERT INTO store_report_doc(id,shop,kind,period_start,period_end,revision,status,body,pack,"
-                  "supersedes,created_at,created_by,trace_id,template_ver) VALUES(?,?,?,?,?,?,'草稿',?,?,?,?,?,?,?)",
-                  (rid, shop, pack["种类"], 起, 止, 版, body, json.dumps(pack, ensure_ascii=False, default=str),
+        import shop_key as _SK          # 门店码的唯一入口
+        c.execute("INSERT INTO store_report_doc(id,shop,shop_code,kind,period_start,period_end,revision,status,body,pack,"
+                  "supersedes,created_at,created_by,trace_id,template_ver) VALUES(?,?,?,?,?,?,?,'草稿',?,?,?,?,?,?,?)",
+                  (rid, shop, _SK.码(c, shop), pack["种类"], 起, 止, 版, body, json.dumps(pack, ensure_ascii=False, default=str),
                    上一版已确认[0] if 上一版已确认 else None, _今天(), me.get("no"), trace,
                    (pack.get("报告模板") or {}).get("版本号")))
         c.commit()

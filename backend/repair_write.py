@@ -143,10 +143,11 @@ def create(d, me, 来源="售后"):
     mid = "MX" + datetime.datetime.now().strftime("%m%d%H%M%S%f")[:14]
     now = _now()
     with sqlite3.connect(DB) as c:
-        c.execute("INSERT INTO maintain(id,order_id,customer_id,item,status,issue,shop,advisor_no,created,updated,"
-                  "ext_system,order_item_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+        import shop_key as _SK          # 门店码的唯一入口
+        c.execute("INSERT INTO maintain(id,order_id,customer_id,item,status,issue,shop,shop_code,advisor_no,created,updated,"
+                  "ext_system,order_item_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
                   (mid, d.get("order_id"), it["customer_id"], it["name"], "待确认", issue, it["shop"],
-                   me["no"], now, now, "澜绣", it["id"]))
+                   _SK.码(c, it["shop"]), me["no"], now, now, "澜绣", it["id"]))
         c.execute("INSERT INTO maintain_decision(maintain_id, source) VALUES(?,?)", (mid, 来源))
         if d.get("尺寸差"):
             # 实测差是**报修单的事实**(顾问量出来的),挂在 maintain 上;判责记录只记「谁判的、判成什么」

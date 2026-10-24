@@ -122,9 +122,11 @@ def record(d, me):
                            "只写「试了」的记录,出尺寸争议时说不清客户认可的是哪一版")
     rnd = (max((r["round"] for r in recs), default=0) or 0) + 1
     with sqlite3.connect(DB) as c:
-        c.execute("INSERT INTO fitting(item_id,order_id,wearer_id,round,ts,advisor_no,shop,adjust,"
-                  "signed,signed_at,note) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                  (it["id"], it["oid"], it["wearer_id"], rnd, now, me["no"], it["shop"], adjust,
+        import shop_key as _SK          # 门店码的唯一入口
+        c.execute("INSERT INTO fitting(item_id,order_id,wearer_id,round,ts,advisor_no,shop,shop_code,adjust,"
+                  "signed,signed_at,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (it["id"], it["oid"], it["wearer_id"], rnd, now, me["no"], it["shop"],
+                   _SK.码(c, it["shop"]), adjust,
                    1 if signed else 0, now if signed else None, note or None))
     log_op(me["name"], "fitting", f"{it['oid']}#{it['id']}", "—", "已签" if signed else "未签", True, "FIT_ADD",
            f"{me['name']} 登记订单 {it['oid']} 第 {it['id']} 行「{it['name']}」第 {rnd} 轮试衣:"
