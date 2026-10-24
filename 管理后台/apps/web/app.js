@@ -662,7 +662,7 @@ async function 页_工作流列表() {
     }
     $("#list").innerHTML = `<table><thead><tr>
       <th>名称</th><th>负责人</th><th>草稿</th><th>当前版本</th><th>最近一次运行</th>
-      <th>更新时间</th><th>操作</th></tr></thead><tbody>`
+      <th>聊天里谁来做</th><th>更新时间</th><th>操作</th></tr></thead><tbody>`
       + d.items.map((r) => {
         const 链 = (t) => `#/workflow/${encodeURIComponent(r.id)}/${encodeURIComponent(t)}`;
         const 跑 = r["最近运行"];
@@ -677,13 +677,34 @@ async function 页_工作流列表() {
             <div class="k" title="${esc(去粗(r["生产引用说明"]))}">线上生效:还没接</div></td>
         <td>${跑 ? `<a href="#/wfrun/${encodeURIComponent(跑.id)}">${esc(跑["状态中文"])}</a>
               <div class="k">${时间(跑["时间"])}</div>` : '<span class="k">还没跑过</span>'}</td>
+        <td>${!r["对应技能"] ? '<span class="k">没登记对应技能</span>'
+              : r["聊天接管"] ? `<button class="pri" data-tk="${esc(r.id)}" data-on="0">工作流接管中 · 关掉</button>
+                  <div class="k">「${esc(r["对应技能中文"] || r["对应技能"])}」改走这条工作流</div>`
+              : `<button data-tk="${esc(r.id)}" data-on="1">交给 harness · 打开接管</button>
+                  <div class="k">「${esc(r["对应技能中文"] || r["对应技能"])}」由聊天站的技能自己做</div>`}</td>
         <td class="k">${时间(r["更新时间"])}</td>
         <td class="acts"><a href="${链("搭建")}">编辑</a> · <a href="${链("测试")}">运行</a>
             · <a href="${链("运行记录")}">看记录</a></td>
       </tr>`; }).join("") + `</tbody></table>
       <div class="note">共 ${d.total} 条。「当前版本」是<b>候选</b>:冻结了不等于上线了 ——
-        发布到环境这一步还没接(规格 §15.3),所以「线上生效」写的是「还没接」,不是「没在用」。</div>`;
+        发布到环境这一步还没接(规格 §15.3),所以「线上生效」写的是「还没接」,不是「没在用」。
+        <br>「聊天里谁来做」<b>默认交给 harness</b>(聊天站的技能自己做,不受固定步骤束缚);打开接管后,
+        聊天站碰到这件事改为发起这条工作流的最新候选版本。同一个技能同时只能被一条工作流接管。</div>`;
+    $("#list").querySelectorAll("[data-tk]").forEach((b) => {
+      b.onclick = async () => { b.disabled = true; await 拨接管(b.dataset.tk, b.dataset.on === "1"); 页_工作流列表(); };
+    });
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+async function 拨接管(wid, 开, 技能) {
+  // 拿最新的 revision 再改 —— 两个人同时拨,后到的不许悄悄盖掉先到的(PATCH /workflows/{id} 要 If-Match)
+  try {
+    const d = await 请求(`${P()}/workflows/${encodeURIComponent(wid)}`);
+    return await 请求(`${P()}/workflows/${encodeURIComponent(wid)}`, { method: "PATCH",
+      headers: { "If-Match": String(d.revision) },
+      body: JSON.stringify(Object.assign({ 名称: d["名称"], 用途: d["用途"], 负责人: d["负责人"], 聊天接管: 开 },
+        技能 === undefined ? {} : { 对应技能: 技能 || null })) });
+  } catch (e) { 报错(e); return null; }
 }
 
 async function 弹_新建工作流() {
@@ -733,6 +754,7 @@ async function 页_画布(路) {
       请求(`${P()}/workflow-resources`).catch(() => ({ 模型: [], 处理要求: [], 工具: [], 角色: [], 拉取失败: true })),
     ]);
     图态 = { wid, 名称: d["名称"], 用途: d["用途"], 负责人: d["负责人"], 信息rev: d["revision"],
+             对应技能: d["对应技能"], 聊天接管: d["聊天接管"], 可接管技能: d["可接管技能"],
              定义: d["草稿"]["定义"] || { nodes: [], edges: [] },
              布局: d["草稿"]["布局"] || {}, revision: d["草稿"]["revision"],
              节点库: d["节点库"], 版本们: d["版本们"], 选中: null, 面板页: "设置", 视图: "步骤",
@@ -1503,15 +1525,28 @@ function 画_设置() {
     <label class="f">用途(一句话:谁用、解决什么)</label><input id="st-p" value="${esc(g.用途 || "")}">
     <label class="f">负责人</label><input id="st-o" value="${esc(g.负责人 || "")}">
     <button class="pri" id="st-ok">保存</button> <span id="st-msg" class="k"></span>
-    <h4>什么时候运行</h4><div>手动(在「测试」或接口里发起)。<span class="k">定时触发还没做 —— 不摆一个选了没反应的选项。</span></div>
+    <h4>聊天里谁来做这件事</h4>
+    <label class="f">对应澜绣聊天站的哪个技能</label>
+    <select id="st-sk"><option value="">(不对应任何技能)</option>${Object.entries(g.可接管技能 || {}).map(([k, v]) =>
+      `<option value="${esc(k)}" ${k === g.对应技能 ? "selected" : ""}>${esc(v)}(${esc(k)})</option>`).join("")}</select>
+    <div style="margin:8px 0">${g.聊天接管
+      ? '<button class="pri" id="st-tk" data-on="0">工作流接管中 · 关掉(交给 harness)</button>'
+      : '<button id="st-tk" data-on="1">现在交给 harness · 打开接管</button>'}</div>
+    <div class="k"><b>默认交给 harness</b>:聊天站用技能自己判断怎么做,不受固定步骤束缚。打开接管:聊天站碰到这件事,
+      改为发起这条工作流的<b>最新候选版本</b>(要先生成过一版),回给用户运行进度和核对入口。同一个技能同时只能被一条工作流接管。</div>
+    <h4>什么时候运行</h4><div>手动(在「测试」或接口里发起),或者打开聊天接管后由聊天站发起。<span class="k">定时触发还没做 —— 不摆一个选了没反应的选项。</span></div>
     <h4>运行上限</h4><div>每次最多调模型 8 次(发起时带的默认值)。<span class="k">超过就停、记「没完整完成」,不会无限调。</span></div>
     <h4>人工核对的截止</h4><div>每个核对步骤自己设(搭建 → 人工核对 → 设置)。到点没人处理,这次运行结束、记「已过期」。</div></div>`;
+  $("#st-tk").onclick = async () => {
+    const r = await 拨接管(g.wid, $("#st-tk").dataset.on === "1", $("#st-sk").value);
+    if (r) { Object.assign(g, { 对应技能: r["对应技能"], 聊天接管: r["聊天接管"], 信息rev: r.revision }); 画_画布(); }
+  };
   $("#st-ok").onclick = async () => {
     try {
       const d = await 请求(`${P()}/workflows/${encodeURIComponent(g.wid)}`, { method: "PATCH",
         headers: { "If-Match": String(g.信息rev) },
         body: JSON.stringify({ 名称: $("#st-n").value.trim(), 用途: $("#st-p").value.trim() || null,
-                               负责人: $("#st-o").value.trim() || null }) });
+                               负责人: $("#st-o").value.trim() || null, 对应技能: $("#st-sk").value || null }) });
       Object.assign(g, { 名称: d["名称"], 用途: d["用途"], 负责人: d["负责人"], 信息rev: d["revision"] });
       画_画布();
     } catch (e) { 报错(e); }

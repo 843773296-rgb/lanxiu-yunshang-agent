@@ -12437,5 +12437,17 @@
    }
   ],
   "预期红": "流水线中途才建的表,建表语句里就带着 shop_code"
+  },
+  {
+  "script": "tools/takeover_skills_check.py",
+  "改坏": "管理后台登记了一个聊天站没有的技能",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/workflows_api.py",
+    "old": "\"call-notes\": \"通话整理\", \"store-report\": \"经营报告\", \"customer-recall\": \"客户召回\",",
+    "new": "\"call-notes\": \"通话整理\", \"ghost-skill\": \"不存在的\", \"store-report\": \"经营报告\", \"customer-recall\": \"客户召回\","
+   }
+  ],
+  "预期红": "管理后台登记的可接管技能,聊天站都真有"
  }
 ]

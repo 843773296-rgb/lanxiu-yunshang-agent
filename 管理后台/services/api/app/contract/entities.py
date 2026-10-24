@@ -682,8 +682,12 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     # ① Workflow
     E("workflows", "工作流", 项目级, 可改,
       ["name", "purpose", "owner", "tags", "draft_revision", "validation_status",
-       "status"],
-      ["**不能跨项目引用**;**名称不等于执行 ID**(§16.3)—— "
+       "status", "takeover_skill_name", "chat_takeover_enabled"],
+      ["**聊天接管开关**(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」):"
+       "`takeover_skill_name` 登记这条工作流对应澜绣聊天站的哪个技能;`chat_takeover_enabled` 打开时,"
+       "聊天站碰到这件事不再用技能自己做,改为发起这条工作流的**最新候选版本**。默认关 = 交给 harness。"
+       "**同一个项目里同一个技能同时只能被一条工作流接管**(库里的部分唯一索引)—— 两条都接管的话聊天站不知道该发起哪条",
+       "**不能跨项目引用**;**名称不等于执行 ID**(§16.3)—— "
        "node_id 和 workflow id 稳定,改名不影响任何引用",
        "draft_revision 给乐观锁用:两个人同时编一张图,后写的会悄悄盖掉前一个"]),
     E("workflow_versions", "工作流版本", 子对象, 不可变,

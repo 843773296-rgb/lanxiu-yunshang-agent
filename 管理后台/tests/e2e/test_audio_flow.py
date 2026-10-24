@@ -277,6 +277,39 @@ ck("待办也标成过期了", any(x.get("execution_run_id") == rid10 for x in (
 ck("**什么都没写**:写跟进一张单都没有",
    not [x for s in ("待执行", "已执行", "执行失败") for x in 单(rid10, s) if x["工具"] == "写跟进"])
 
+print("\n▸ ⑪ 聊天接管开关(用户 10-24 拍「默认关;打开时聊天站改走工作流」)")
+# 先把演示项目里别的测试留下的接管关掉 —— 同一个技能只许一条接管,上一轮中途挂了会占着
+c, ls = 打("GET", P + "/workflows?limit=100")
+for x in (ls or {}).get("items") or []:
+    if x.get("聊天接管"):
+        c, dx = 打("GET", P + f"/workflows/{x['id']}")
+        打("PATCH", P + f"/workflows/{x['id']}", 体={"名称": dx["名称"], "聊天接管": False}, 头={"If-Match": str(dx["revision"])})
+c, d = 打("GET", P + f"/workflows/{wid}")
+ck("音频整理模板登记了对应技能 call-notes,**默认不接管**(交给 harness)",
+   d.get("对应技能") == "call-notes" and d.get("聊天接管") is False, (d.get("对应技能"), d.get("聊天接管")))
+c, tk = 打("GET", P + "/chat-takeovers")
+ck("默认接管清单里没有它", not [x for x in tk["items"] if x["workflow_id"] == wid], tk)
+c, b = 打("PATCH", P + f"/workflows/{wid}", 体={"名称": d["名称"], "聊天接管": True}, 头={"If-Match": str(d["revision"])})
+ck("没有候选版本就打开 → 422 TAKEOVER_NO_VERSION(聊天里接管跑的是定稿,不跑草稿)",
+   c == 422 and (b or {}).get("code") == "TAKEOVER_NO_VERSION", (c, b))
+c, v = 打("POST", P + f"/workflows/{wid}/versions", 体={"变更说明": "e2e:接管前先生成一版"})
+c, d = 打("GET", P + f"/workflows/{wid}")
+c, b = 打("PATCH", P + f"/workflows/{wid}", 体={"名称": d["名称"], "聊天接管": True}, 头={"If-Match": str(d["revision"])})
+ck("有候选版本后打开 → 200", c == 200 and b.get("聊天接管") is True, (c, b))
+c, tk = 打("GET", P + "/chat-takeovers")
+项 = [x for x in tk["items"] if x["workflow_id"] == wid]
+ck("接管清单里有它:技能 call-notes、带最新候选版本", 项 and 项[0]["技能"] == "call-notes" and 项[0]["版本id"], tk)
+wid2, _ = 建图("e2e 抢接管")
+c, 版2 = 打("POST", P + f"/workflows/{wid2}/versions", 体={"变更说明": "e2e"})
+c, d2 = 打("GET", P + f"/workflows/{wid2}")
+c, b = 打("PATCH", P + f"/workflows/{wid2}", 体={"名称": d2["名称"], "聊天接管": True}, 头={"If-Match": str(d2["revision"])})
+ck("**同一个技能第二条也想接管 → 409 TAKEOVER_TAKEN**(聊天站不能不知道该发起哪条)",
+   c == 409 and (b or {}).get("code") == "TAKEOVER_TAKEN", (c, b))
+c, d = 打("GET", P + f"/workflows/{wid}")
+c, b = 打("PATCH", P + f"/workflows/{wid}", 体={"名称": d["名称"], "聊天接管": False}, 头={"If-Match": str(d["revision"])})
+c, tk = 打("GET", P + "/chat-takeovers")
+ck("关掉 → 清单里没有它了(交还给 harness)", c == 200 and not [x for x in tk["items"] if x["workflow_id"] == wid], tk)
+
 print("\n▸ ⑦ 没经过核对就写跟进 → 拒")
 def 绕过核对(d):
     d["nodes"] = [n for n in d["nodes"] if n["id"] not in ("review", "decide", "rejected", "merge")]

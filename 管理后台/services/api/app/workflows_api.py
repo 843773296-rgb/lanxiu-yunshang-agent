@@ -153,6 +153,27 @@ def _音频整理(桥):
 
 模板们 = ("空白", "文本处理", "音频整理")
 
+# ── 聊天接管(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」)──────────────────
+# 能被接管的只有澜绣**自有**技能(agentsite/skills_own.py 的 OURS)—— 第三方技能没有业务写口,接管它没有意义。
+# 这张表是登记,不是猜:新加一个自有技能要在这里加一行,而 tools/takeover_skills_check.py 盯着两边一致。
+可接管技能 = {
+    "call-notes": "通话整理", "store-report": "经营报告", "customer-recall": "客户召回",
+    "rating-repair": "差评与维修研判", "deadline-rescue": "工期抢救",
+    "quote": "报价", "growth-plan": "成长计划", "roster": "排班", "exchange": "换货",
+    "pattern-draft": "打版",
+}
+_模板技能 = {"音频整理": "call-notes"}
+
+
+def _审计(c, me, action, target, reason=None):
+    c.execute(text("""
+        insert into audit_events (id, organization_id, project_id, actor, action,
+            target_ref, environment, at, result, reason, created_at, created_by)
+        values (:i,:o,:p,:a,:ac,cast(:t as jsonb),:e, now(), 'ok', :rs, now(), :a)
+    """), {"i": _新id("aud"), "o": me.org_id, "p": me.project_id, "a": me.user_id, "ac": action,
+           "t": json.dumps(target, ensure_ascii=False), "e": os.environ.get("APP_ENV", "development"),
+           "rs": reason})
+
 
 def _桥工具(c, project_id):
     """项目里登记过的澜绣桥工具 → {名字: 最新版本 id}(`tools/seed_bridge_tools.py` 登记)。"""
@@ -222,7 +243,8 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
     with 连接() as c:
         rs = c.execute(text("""
             select w.id, w.name, w.purpose, w.owner, w.tags, w.draft_revision,
-                   w.validation_status, w.updated_at,
+                   w.validation_status, w.updated_at, w.takeover_skill_name,
+                   coalesce(w.chat_takeover_enabled, false) chat_takeover_enabled,
                    (select max(version_no) from workflow_versions v
                      where v.project_id=w.project_id and v.workflow_id=w.id) 最新冻结,
                    (select count(*) from workflow_versions v
@@ -256,6 +278,9 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
                             "**这是「还没接」,不是「线上没在用」**",
             "校验状态": r["validation_status"] or "没校验过",
             "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None,
+            "对应技能": r["takeover_skill_name"],
+            "对应技能中文": 可接管技能.get(r["takeover_skill_name"]),
+            "聊天接管": bool(r["chat_takeover_enabled"]),
             # 列表上回答「最近跑得怎么样」(改版方案 §5.1)。没跑过就是 None,不写「—」
             "最近运行": ({"id": r["最近运行"]["id"], "状态": r["最近运行"]["status"],
                          "状态中文": ST.找("execution_run")["中文状态"].get(
@@ -358,21 +383,75 @@ async def 改工作流信息(project_id: str, wid: str, request: Request,
     名 = (体.get("名称") or "").strip()
     if not 名:
         raise _错(422, "VALIDATION", "名称不能空", "给这条流程起个名字", field_errors={"名称": "必填"})
+    技能 = 体.get("对应技能", ...)
+    if 技能 is not ... and 技能 not in (None, "") and 技能 not in 可接管技能:
+        raise _错(422, "VALIDATION", f"没有这个可接管的技能:{技能}", f"只收 {sorted(可接管技能)}",
+                  field_errors={"对应技能": "不在可接管技能里"})
+    接管 = 体.get("聊天接管", ...)
+    if 接管 is not ... and not isinstance(接管, bool):
+        raise _错(422, "VALIDATION", "聊天接管要 true / false", "不给就是不改", field_errors={"聊天接管": "要布尔值"})
     with 事务() as c:
-        现 = c.execute(text("select revision from workflows where project_id=:p and id=:i for update"),
-                       {"p": project_id, "i": wid}).scalar()
+        老 = c.execute(text("""select revision, takeover_skill_name, coalesce(chat_takeover_enabled, false) on_
+                                from workflows where project_id=:p and id=:i for update"""),
+                       {"p": project_id, "i": wid}).mappings().first()
+        现 = 老["revision"] if 老 else None
         if 现 is None:
             raise _错(404, "NOT_FOUND", "没有这条工作流", "回列表重新进入")
         if str(现) != str(if_match).strip('"'):
             raise _错(409, "REVISION_CONFLICT", f"这条工作流已经被改过了(你拿到的是 {if_match},现在是 {现})",
                       "刷新看一眼别人改了什么再改 —— **不要直接覆盖**")
+        新技能 = 老["takeover_skill_name"] if 技能 is ... else (技能 or None)
+        新接管 = 老["on_"] if 接管 is ... else 接管
+        if 新接管:
+            # 打开接管的前提:**登记了对应技能 + 有候选版本**。聊天里接管时跑的是最新候选版本,
+            # 不跑还在改的草稿 —— 草稿每改一下,聊天站的行为就跟着变,而那一刻没人点过「生成版本」
+            if not 新技能:
+                raise _错(422, "TAKEOVER_NO_SKILL", "还没登记这条工作流对应哪个技能",
+                          "先在「对应技能」里选一个,再打开聊天接管")
+            if not c.execute(text("select 1 from workflow_versions where project_id=:p and workflow_id=:i limit 1"),
+                             {"p": project_id, "i": wid}).first():
+                raise _错(422, "TAKEOVER_NO_VERSION", "这条工作流还没有候选版本",
+                          "聊天接管跑的是最新候选版本 —— 先在「版本与发布」里生成一版")
+            占 = c.execute(text("""select id, name from workflows where project_id=:p and id<>:i
+                                    and takeover_skill_name=:s and coalesce(chat_takeover_enabled, false)"""),
+                           {"p": project_id, "i": wid, "s": 新技能}).mappings().first()
+            if 占:
+                raise _错(409, "TAKEOVER_TAKEN", f"「{可接管技能[新技能]}」已经被「{占['name']}」接管了",
+                          "同一个技能同时只能由一条工作流接管 —— 先把那一条关掉")
         r = c.execute(text("""update workflows set name=:n, purpose=:pu, owner=coalesce(:ow, owner),
+                                     takeover_skill_name=:s, chat_takeover_enabled=:t,
                                      updated_at=now(), revision=revision+1
                                where project_id=:p and id=:i
-                           returning name, purpose, owner, revision"""),
+                           returning name, purpose, owner, revision, takeover_skill_name, chat_takeover_enabled"""),
                       {"n": 名, "pu": 体.get("用途"), "ow": 体.get("负责人"), "p": project_id,
-                       "i": wid}).mappings().first()
-    return {"id": wid, "名称": r["name"], "用途": r["purpose"], "负责人": r["owner"], "revision": r["revision"]}
+                       "i": wid, "s": 新技能, "t": bool(新接管)}).mappings().first()
+        if bool(新接管) != bool(老["on_"]) or 新技能 != 老["takeover_skill_name"]:
+            _审计(c, me, "workflow.takeover", {"workflow_id": wid, "对应技能": 新技能, "聊天接管": bool(新接管),
+                                               "之前": {"对应技能": 老["takeover_skill_name"], "聊天接管": bool(老["on_"])}},
+                  reason=("打开:聊天站碰到这件事改走工作流" if 新接管 else "关闭:交给 harness(技能自己做)"))
+    return {"id": wid, "名称": r["name"], "用途": r["purpose"], "负责人": r["owner"], "revision": r["revision"],
+            "对应技能": r["takeover_skill_name"], "聊天接管": bool(r["chat_takeover_enabled"])}
+
+
+@router.get(前缀 + "/chat-takeovers")
+def 聊天接管清单(project_id: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """给澜绣聊天站问的:**现在哪些技能被工作流接管了**,各发起哪条工作流的哪一版。
+
+    没在清单里的技能 = 交给 harness(聊天站照常用技能做)。版本取最新候选 —— 接管打开时要求过至少有一版。"""
+    with 连接() as c:
+        rs = c.execute(text("""
+            select w.id, w.name, w.takeover_skill_name,
+                   (select v.id from workflow_versions v where v.project_id=w.project_id and v.workflow_id=w.id
+                     order by v.version_no desc limit 1) vid,
+                   (select max(v.version_no) from workflow_versions v
+                     where v.project_id=w.project_id and v.workflow_id=w.id) vno
+              from workflows w
+             where w.project_id=:p and coalesce(w.chat_takeover_enabled, false) and w.archived_at is null"""),
+                       {"p": project_id}).mappings().all()
+    return {"items": [{"技能": r["takeover_skill_name"], "技能中文": 可接管技能.get(r["takeover_skill_name"]),
+                       "workflow_id": r["id"], "名称": r["name"], "版本id": r["vid"], "版本": f"v{r['vno']}"}
+                      for r in rs],
+            "note": "不在清单里的技能 = 交给 harness(聊天站照常用技能做)。默认一条都没有"}
 
 
 @router.post(前缀 + "/workflows", status_code=201)
@@ -397,9 +476,10 @@ async def 建工作流(project_id: str, request: Request,
         c.execute(text("""
             insert into workflows (id, organization_id, project_id, name, purpose,
                 owner, tags, draft_revision, validation_status, status,
+                takeover_skill_name, chat_takeover_enabled,
                 created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,:n,:pu,:ow,:tg,1,'没校验过','草稿', now(), :u, now(), 1)
-        """), {"i": wid, "o": me.org_id, "p": project_id, "n": 名,
+            values (:i,:o,:p,:n,:pu,:ow,:tg,1,'没校验过','草稿', :sk, false, now(), :u, now(), 1)
+        """), {"i": wid, "o": me.org_id, "p": project_id, "n": 名, "sk": _模板技能.get(模板名),
                "pu": 体.get("用途"), "ow": 体.get("负责人") or me.user_id,
                "tg": json.dumps(体.get("标签") or [], ensure_ascii=False),
                "u": me.user_id})
@@ -437,6 +517,8 @@ def 工作流详情(project_id: str, wid: str,
     return {
         "id": w["id"], "名称": w["name"], "用途": w["purpose"], "负责人": w["owner"],
         "revision": w["revision"],      # 改名称 / 用途要拿它做 If-Match(草稿有自己那一个)
+        "对应技能": w["takeover_skill_name"], "聊天接管": bool(w["chat_takeover_enabled"]),
+        "可接管技能": 可接管技能,
         "标签": w["tags"] or [], "校验状态": w["validation_status"],
         "草稿": {
             "revision": d["revision"] if d else None,

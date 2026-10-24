@@ -3510,6 +3510,112 @@
         "x-权限": "配置密钥与预算"
       }
     },
+    "/api/v1/projects/{project_id}/chat-takeovers": {
+      "get": {
+        "description": "不在清单里的技能 = 交给 harness;默认一条都没有(用户 10-24 拍「默认关」)",
+        "operationId": "get_chat-takeovers",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "详情"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "现在哪些技能被工作流接管了(给澜绣聊天站问)",
+        "tags": [
+          "工作流"
+        ],
+        "x-字段权限": [],
+        "x-审计": false,
+        "x-权限": "查看有权配置"
+      }
+    },
     "/api/v1/projects/{project_id}/chunks/{id}": {
       "get": {
         "description": "「看不到」和「不存在」**对外同形**(都 404)—— 否则它是个存在性探测器。里头明说**不能单独设这一段的权限**并给出替代动作,否则界面上那行「谁看得到」会被当成「可以在这里改」",
@@ -16653,7 +16759,7 @@
             "description": "服务问题"
           }
         },
-        "summary": "改工作流的名称 / 用途 / 负责人(不碰定义)",
+        "summary": "改工作流的名称 / 用途 / 负责人 / 对应技能 / 聊天接管(不碰定义)",
         "tags": [
           "工作流"
         ],

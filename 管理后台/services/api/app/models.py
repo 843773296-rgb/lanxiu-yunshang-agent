@@ -435,6 +435,12 @@ def _建一张(e):
         # 「这个任务的所有 Run 段」—— 预算账本按任务共享,
         # 查「这一本账被哪几段用过」走它。
         Index("ix_traces_task", t.c.project_id, t.c.task_ref)
+    if 名 == "workflows":
+        # 同一个项目里**同一个技能同时只能被一条工作流接管**(2026-10-24 聊天接管开关)。
+        # 用库的部分唯一索引钉住,不只靠接口里的 if:两个人同时拨开两条,两个 if 都会看到「还没有」
+        from sqlalchemy import text as _t
+        Index("uq_workflows_one_takeover", t.c.project_id, t.c.takeover_skill_name,
+              unique=True, postgresql_where=_t("chat_takeover_enabled"))
     if 名 == "artifact_decisions":
         # 同一份产出**同时只能有一条待执行的打回**(2026-10-10)。用库里的部分唯一索引钉住,
         # 不只靠接口里那个 if:两个人同时点打回,两个 if 都会看到「还没有」——
