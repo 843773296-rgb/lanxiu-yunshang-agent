@@ -371,8 +371,19 @@ async def 处理待办(project_id: str, req_id: str, request: Request,
                            where project_id=:p and id=:i and revision=:old"""),
                   {"st": 新状态, "rev": 新rev, "p": project_id, "i": req_id,
                    "old": d["revision"]})
+        恢复 = None
+        if d["execution_run_id"] and 决定 in (AP.已批准, AP.已驳回):
+            # **工作流里的人工核对**(2026-10-24):有了决定,停在这一步的运行排回队列接着走。
+            # 「要求补充」不排 —— 那一步还没有结论,运行继续停着。
+            # 排恢复和记决定在**同一个事务**里:记下了决定却没排上,运行会永远停着,
+            # 而待办列表上它已经「处理过了」。
+            import run_resume as RR
+            恢复 = RR.排恢复(c, project_id=project_id, run_id=d["execution_run_id"],
+                           为什么=f"人工核对 {req_id}:{决定}", 谁=me.user_id)
     出 = {"待办id": req_id, "决定id": did, "记了吗": True, "decision": 决定,
           "当前状态": 新状态, "新的 revision": 新rev, "处理人": me.user_id}
+    if 恢复 is not None:
+        出["运行"] = {"id": d["execution_run_id"], "恢复任务": 恢复[0], "说明": 恢复[1]}
     if 决定 == AP.已批准:
         出["note"] = ("**批准只产生批准记录,不等于已执行**(§12.2)—— "
                       "真正执行时还要再查一遍权限和工具当前可用性。"

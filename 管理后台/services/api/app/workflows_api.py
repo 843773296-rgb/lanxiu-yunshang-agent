@@ -81,8 +81,89 @@ def _新id(前缀):
 
 
 # ── 模板(§4.2:模板仅预填草稿)─────────────────────────────────────
-def _模板(名):
+def _音频整理(桥):
+    """**音频整理**(用户 2026-10-24 拍):选录音 → 取转写 → 提取需求 → 人工核对 →(通过)写跟进 /(退回)记理由。
+
+    `桥` = {"取转写": 工具版本id, "写跟进": 工具版本id}(项目里登记过的澜绣桥工具;没登记就留空,
+    校验会点名缺哪一个 —— 不摆一个看着能跑、一跑就挂的模板)。
+    模型和处理要求**故意不预填**:用哪个模型是项目的决定,模板替你选了就等于没问过你。
+    """
+    def 引(n, p):
+        return {"source": "node", "node_id": n, "pointer": p}
+    串 = {"type": "string"}
+    结果Schema = {"type": "object", "properties": {"结果": 串}, "required": ["结果"],
+                  "additionalProperties": False}
+    提取Schema = {"type": "object", "properties": {
+        "需求": 串, "时间": 串, "预算": 串, "待确认项": {"type": "array", "items": 串},
+        "跟进草稿": 串}, "required": ["跟进草稿", "待确认项"], "additionalProperties": False}
+    节点 = [
+        {"id": "start", "type": "start", "name": "选择录音", "layout": {"x": 40, "y": 160},
+         "config": {"input_schema": {"type": "object", "properties": {
+             "call_id": {"type": "string", "minLength": 1, "title": "通话号", "description": "如 TS-001"},
+             "customer_id": {"type": "string", "minLength": 1, "title": "客户号", "description": "如 C10001"}},
+             "required": ["call_id", "customer_id"], "additionalProperties": False}}},
+        {"id": "fetch", "type": "tool", "name": "取转写", "layout": {"x": 220, "y": 160},
+         "config": {"tool_version_id": 桥.get("取转写"),
+                    "bindings": {"call_id": {"source": "input", "pointer": "/call_id"}}}},
+        {"id": "extract", "type": "llm", "name": "提取客户需求", "layout": {"x": 400, "y": 160},
+         "config": {"output_schema": 提取Schema,
+                    "bindings": {"转写": 引("fetch", "/text"),
+                                 "客户": {"source": "input", "pointer": "/customer_id"}}}},
+        {"id": "review", "type": "human", "name": "人工核对", "layout": {"x": 580, "y": 160},
+         "config": {"request_kind": "核对", "candidate_roles": ["approver", "admin"],
+                    "allowed_fields": ["定稿"],
+                    "expires_at_policy": {"小时": 48, "到期": "fail"},
+                    "payload_binding": {"摘要": 引("extract", "/跟进草稿"),
+                                        "待确认项": 引("extract", "/待确认项"),
+                                        "原文": 引("fetch", "/text"),
+                                        "客户": {"source": "input", "pointer": "/customer_id"},
+                                        "通话": {"source": "input", "pointer": "/call_id"}}}},
+        {"id": "decide", "type": "condition", "name": "通过了吗", "layout": {"x": 760, "y": 160},
+         "config": {"branches": [{"key": "approve", "when": {
+             "op": "equals", "left": 引("review", "/决定"),
+             "right": {"source": "constant", "value": "approve"}}}], "else_policy": "fail"}},
+        {"id": "save", "type": "tool", "name": "写跟进", "layout": {"x": 940, "y": 80},
+         "config": {"tool_version_id": 桥.get("写跟进"),
+                    "bindings": {"customer_id": {"source": "input", "pointer": "/customer_id"},
+                                 "内容": 引("review", "/定稿"),
+                                 "call_id": {"source": "input", "pointer": "/call_id"}}}},
+        {"id": "rejected", "type": "transform", "name": "记下退回理由", "layout": {"x": 940, "y": 240},
+         "config": {"operations": [{"op": "to_string", "from": 引("review", "/理由"), "into": "结果"}],
+                    "output_schema": 结果Schema}},
+        {"id": "merge", "type": "merge", "name": "汇合", "layout": {"x": 1120, "y": 160},
+         "config": {"candidates": [引("save", "/结果"), 引("rejected", "/结果")],
+                    "output_field": "结果"}},
+        {"id": "finish", "type": "end", "name": "返回结果", "layout": {"x": 1300, "y": 160},
+         "config": {"output_schema": 结果Schema, "bindings": {"结果": 引("merge", "/结果")}}},
+    ]
+    边 = [{"source": a, "target": b, "port": "success"} for a, b in
+          (("start", "fetch"), ("fetch", "extract"), ("extract", "review"), ("review", "decide"),
+           ("save", "merge"), ("rejected", "merge"), ("merge", "finish"))]
+    边 += [{"source": "decide", "target": "save", "port": "branch", "branch_key": "approve"},
+           {"source": "decide", "target": "rejected", "port": "branch", "branch_key": "else"}]
+    return {"definition_schema_version": "1", "kind": "workflow",
+            "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
+            "nodes": 节点, "edges": 边}
+
+
+模板们 = ("空白", "文本处理", "音频整理")
+
+
+def _桥工具(c, project_id):
+    """项目里登记过的澜绣桥工具 → {名字: 最新版本 id}(`tools/seed_bridge_tools.py` 登记)。"""
+    rs = c.execute(text("""
+        select td.name, (select tv.id from tool_versions tv where tv.project_id=td.project_id
+                          and tv.tool_definition_id=td.id order by tv.version_no desc limit 1) vid
+          from tool_definitions td
+         where td.project_id=:p and td.adapter='lanxiu_bridge' and td.archived_at is null"""),
+                   {"p": project_id}).mappings().all()
+    return {r["name"]: r["vid"] for r in rs if r["vid"]}
+
+
+def _模板(名, 桥=None):
     """**模板只预填草稿**,不调模型、不绑生产环境(§4.2)。"""
+    if 名 == "音频整理":
+        return _音频整理(桥 or {})
     开始 = {"id": "start", "type": "start", "layout": {"x": 40, "y": 120},
             "config": {"input_schema": {"type": "object",
                                         "properties": {"article": {"type": "string",
@@ -172,14 +253,14 @@ async def 建工作流(project_id: str, request: Request,
         raise _错(422, "VALIDATION", "名称不能空", "给这条流程起个名字",
                   field_errors={"名称": "必填"})
     模板名 = 体.get("模板") or "空白"
-    if 模板名 not in ("空白", "文本处理"):
+    if 模板名 not in 模板们:
         raise _错(422, "VALIDATION", f"没有这个模板:{模板名}",
-                  "现在只有「空白」和「文本处理」两个模板。"
+                  f"现在有:{'、'.join(模板们)}。"
                   "**规格 §4.2 还列了「RAG 问答」和「受控调研」,那两个还没做** —— "
                   "不摆一个选了没反应的选项")
     wid, did = _新id("wf"), _新id("gd")
-    定义 = _模板(模板名)
     with 事务() as c:
+        定义 = _模板(模板名, _桥工具(c, project_id) if 模板名 == "音频整理" else None)
         c.execute(text("""
             insert into workflows (id, organization_id, project_id, name, purpose,
                 owner, tags, draft_revision, validation_status, status,

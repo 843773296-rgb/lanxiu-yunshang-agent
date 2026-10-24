@@ -291,6 +291,77 @@ def _跑一次prompt(c, job, 打点):
     return {"trace_id": trace, "execution_mode": r["execution_mode"]}
 
 
+def _挂起(c, job, r, run_id, 定义, 结果, 记事):
+    """跑到要等的那一步:存检查点、记要等的东西(人工待办 / 桥请求),运行停在挂起态,**任务结束**。
+
+    不占着 Worker 干等(§12.4)。等的那件事办完,human_api / bridge_api 调 run_resume.排恢复
+    把运行排回队列,Worker 从检查点接着跑。
+    """
+    import json as _j
+    from datetime import datetime, timedelta, timezone
+    点 = 结果["检查点"]
+    等 = 点["等待"]
+    载 = 等["载荷"]
+    第几次 = int(r["checkpoint_seq"] or 0) + 1
+    if 等["种类"] == "human":
+        策 = 载.get("expires_at_policy") or {}
+        小时 = 策.get("小时") if isinstance(策, dict) else None
+        到期 = (datetime.now(timezone.utc) + timedelta(hours=float(小时))) if 小时 else None
+        c.execute(text("""
+            insert into human_requests (id, organization_id, project_id, execution_run_id,
+                kind, payload_ref, allowed_fields, candidate_roles, status, expires_at,
+                target_ref, risk_note, created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:r,:k,:pl, cast(:af as jsonb), cast(:cr as jsonb), 'pending', :ex,
+                    cast(:t as jsonb), :rn, now(), :u, now(), 1)
+        """), {"i": _新("hr"), "o": job["organization_id"], "p": job["project_id"], "r": run_id,
+               "k": 载.get("request_kind") or "核对",
+               "pl": _j.dumps(载.get("材料") or {}, ensure_ascii=False),
+               "af": _j.dumps(载.get("allowed_fields") or [], ensure_ascii=False),
+               "cr": _j.dumps(载.get("candidate_roles") or [], ensure_ascii=False), "ex": 到期,
+               "t": _j.dumps({"node_id": 等["node_id"], "运行": run_id, "第几次挂起": 第几次},
+                             ensure_ascii=False),
+               "rn": "工作流里的人工核对:批准 = 按定稿接着走;退回 = 记下理由结束这一路",
+               "u": 我是谁})
+    else:
+        import 桥闸
+        放行, 为什么不 = 桥闸.放行吗(载.get("工具"), 点.get("节点输出"),
+                                 {n["id"]: n["type"] for n in 定义.get("nodes") or []})
+        # **写跟进之前必须有人批过**(用户 10-24 拍「核对即定稿」)—— 判据在 runtime/桥闸.py
+        if not 放行:
+            c.execute(text("""update execution_runs set status='failed',
+                                     completion_reason='WRITE_NEEDS_REVIEW', ended_at=now(),
+                                     updated_at=now(), revision=revision+1
+                               where project_id=:p and id=:i"""),
+                      {"p": job["project_id"], "i": run_id})
+            记事("run.failed", {"code": "WRITE_NEEDS_REVIEW", "node_id": 等["node_id"],
+                              "为什么": 为什么不})
+            return {"run_id": run_id, "执行状态": "failed", "完成原因": "WRITE_NEEDS_REVIEW"}
+        c.execute(text("""
+            insert into bridge_calls (id, organization_id, project_id, execution_run_id, node_id,
+                tool_name, arguments_snapshot, idempotency_key, status,
+                created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:r,:n,:t, cast(:a as jsonb), :k, '待执行', now(), :u, now(), 1)
+            on conflict (project_id, idempotency_key) do nothing
+        """), {"i": _新("bc"), "o": job["organization_id"], "p": job["project_id"], "r": run_id,
+               "n": 等["node_id"], "t": 载["工具"],
+               "a": _j.dumps(载.get("参数") or {}, ensure_ascii=False, default=str),
+               # **(运行, 步骤, 第几次挂起)** —— 澜绣写跟进也按它去重,重复投递写不出第二条
+               "k": f"{run_id}:{等['node_id']}:{第几次}", "u": 我是谁})
+    c.execute(text("""
+        update execution_runs
+           set status=:st, resume_snapshot=cast(:snap as jsonb), checkpoint_seq=:seq,
+               current_step_id=:cur, usage_snapshot=cast(:us as jsonb),
+               updated_at=now(), revision=revision+1
+         where project_id=:p and id=:i
+    """), {"st": 结果["执行状态"], "seq": 第几次, "cur": 等["node_id"],
+           "snap": _j.dumps({**点, "定义": 定义}, ensure_ascii=False, default=str),
+           "us": _j.dumps(结果["用量"], ensure_ascii=False),
+           "p": job["project_id"], "i": run_id})
+    记事("run.suspended", {"node_id": 等["node_id"], "等的是": 等["种类"],
+                         "说明": "人工核对" if 等["种类"] == "human" else f"等澜绣执行「{载.get('工具')}」并回执"})
+    return {"run_id": run_id, "执行状态": 结果["执行状态"], "停在": 等["node_id"]}
+
+
 @处理("workflow_run")
 def _跑一张工作流(c, job, 打点):
     """跑一次 Workflow。**照 `_跑一次prompt` 的形状**:
@@ -317,6 +388,11 @@ def _跑一张工作流(c, job, 打点):
     if r["status"] in ("succeeded", "incomplete", "failed", "cancelled", "expired"):
         # **已经跑完了** —— 重复投递是正常故障场景,不重做
         return {"run_id": run_id, "已经是终态": r["status"]}
+    if r["status"] in ("waiting_approval", "waiting_external"):
+        # **还挂着**(等人工 / 等澜绣回执)—— 原来那个任务被重复投递到这儿。
+        # 不跑:等的那件事没办完,接着跑只会在同一步再挂一次;从头跑会重复取数、重复调模型
+        return {"run_id": run_id, "还在挂起": r["status"]}
+    快照 = r["resume_snapshot"]          # 有检查点 = 这是一次恢复(不管是哪个任务投递进来的)
 
     import sys as _s
     _rt = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -327,7 +403,11 @@ def _跑一张工作流(c, job, 打点):
     import runner as RN
 
     来源 = r["definition_ref"] or {}
-    if 来源.get("kind") == "workflow_version":
+    if 快照:
+        # **恢复只用挂起时存下的那一版定义**,不重读草稿 —— 挂着的几个小时里草稿可能改了,
+        # 拿新图接旧进度,已完成节点的输出可能对不上新图里任何一个节点
+        定义 = 快照["定义"]
+    elif 来源.get("kind") == "workflow_version":
         v = c.execute(text("""select * from workflow_versions
                              where project_id=:p and id=:i"""),
                       {"p": job["project_id"], "i": 来源["version_id"]}).mappings().first()
@@ -379,7 +459,15 @@ def _跑一张工作流(c, job, 打点):
         # 唯一的区别就是这个字段(§19.4)。
         文 = f"[mock:{cfg.get('prompt_version_id')}] " + \
              " / ".join(f"{k}={str(v)[:40]}" for k, v in sorted(实参.items()))
-        return {"text": 文, "lang": "zh", "execution_mode": "mock",
+        # **按这一步声明的结果字段出形状**(2026-10-24):原来只回 text,于是任何声明了
+        # 结构化结果的步骤(提取需求 → 跟进草稿 / 待确认项)在 mock 下下游一律取不到值。
+        # 值里带 [mock] —— 一份 mock 跑出来的跟进草稿,不许长得像真模型写的
+        出 = {}
+        for k, sch in ((cfg.get("output_schema") or {}).get("properties") or {}).items():
+            typ = (sch or {}).get("type")
+            出[k] = ([f"[mock] {k}"] if typ == "array" else 0 if typ in ("number", "integer")
+                     else False if typ == "boolean" else f"[mock] {k}:{文[:80]}")
+        return {"text": 文, **出, "lang": "zh", "execution_mode": "mock",
                 "usage": {"input_tokens": 12, "output_tokens": 34},
                 "finish_reason": "stop"}
 
@@ -402,7 +490,72 @@ def _跑一张工作流(c, job, 打点):
 
     _llm = _mock_llm if 模式 == _模式.假 else _真llm
 
-    事件序号 = [1]
+    桥工具名 = {}
+
+    def _工具(cfg, 实参):
+        """工具步骤。**这一版只接澜绣桥的两个工具**(取转写 / 写跟进),别的照旧缺适配器。
+
+        桥工具不在这里执行:抛 `需要等待`,运行挂起;挂起时在下面记一张桥请求,
+        澜绣拉回去用它自己的函数执行、回执,再恢复。
+        """
+        tv = cfg.get("tool_version_id")
+        if tv not in 桥工具名:
+            行 = c.execute(text("""select td.name, td.adapter from tool_versions tv
+                                     join tool_definitions td on td.project_id=tv.project_id
+                                      and td.id=tv.tool_definition_id
+                                    where tv.project_id=:p and tv.id=:i"""),
+                           {"p": job["project_id"], "i": tv}).mappings().first()
+            桥工具名[tv] = (行["name"] if 行 and 行["adapter"] == "lanxiu_bridge"
+                         and 行["name"] in ("取转写", "写跟进") else None)
+        名 = 桥工具名[tv]
+        if not 名:
+            raise RN.节点失败("ADAPTER_MISSING", f"工具版本 {tv} 没有可用的执行通道",
+                            "这一版工作流里的工具步骤只接澜绣桥(取转写 / 写跟进);"
+                            "**缺适配器要报出来,不能当成这一步不需要做**")
+        raise RN.需要等待("external", {"工具": 名, "参数": 实参, "tool_version_id": tv})
+
+    恢复 = None
+    if 快照:
+        等 = 快照.get("等待") or {}
+        if 等.get("种类") == "human":
+            hr = c.execute(text("""select id, payload_ref from human_requests
+                                    where project_id=:p and execution_run_id=:r
+                                      and target_ref->>'node_id' = :n
+                                    order by created_at desc limit 1"""),
+                           {"p": job["project_id"], "r": run_id, "n": 快照["从"]}).mappings().first()
+            dec = hr and c.execute(text("""select actor, decision, reason,
+                                                  cast(edited_fields as text) ed
+                                             from human_decisions
+                                            where project_id=:p and human_request_id=:h
+                                              and decision in ('approved', 'rejected')
+                                            order by at desc, id desc limit 1"""),
+                                   {"p": job["project_id"], "h": hr["id"]}).mappings().first()
+            if not dec:
+                raise 干不了("RESUME_WITHOUT_DECISION",
+                              {"为什么": "运行被排回队列,但停着的那一步还没有批准 / 退回的决定 —— 不猜"})
+            改 = _j.loads(dec["ed"]) if dec["ed"] else {}
+            材料 = _j.loads(hr["payload_ref"]) if hr["payload_ref"] else {}
+            结果 = {"决定": "approve" if dec["decision"] == "approved" else "reject",
+                    # 定稿 = 人改过的那一版;没改就是给他看的那份摘要
+                    "定稿": 改.get("定稿", 材料.get("摘要")),
+                    "理由": dec["reason"] or "", "处理人": dec["actor"], "改了": sorted(改)}
+        else:
+            bc = c.execute(text("""select status, result_output, error_detail from bridge_calls
+                                    where project_id=:p and execution_run_id=:r and node_id=:n
+                                    order by created_at desc limit 1"""),
+                           {"p": job["project_id"], "r": run_id, "n": 快照["从"]}).mappings().first()
+            if not bc or bc["status"] == "待执行":
+                raise 干不了("RESUME_WITHOUT_RECEIPT",
+                              {"为什么": "运行被排回队列,但桥请求还没有回执 —— 不猜"})
+            结果 = (dict(bc["result_output"] or {}, execution_mode="live")
+                    if bc["status"] == "已执行" else {"失败": bc["error_detail"] or {}})
+        恢复 = {**快照, "结果": 结果}
+        打点("从检查点恢复", {"从": 快照["从"], "等的是": 等.get("种类")})
+
+    # 事件序号接着已有的往后排(恢复时这次运行已经有一批事件了)
+    事件序号 = [int(c.execute(text("""select coalesce(max(seq), 1) from run_events
+                                     where project_id=:p and execution_run_id=:r"""),
+                            {"p": job["project_id"], "r": run_id}).scalar() or 1)]
 
     def 记事(种类, 载荷):
         事件序号[0] += 1
@@ -414,9 +567,9 @@ def _跑一张工作流(c, job, 打点):
                "r": run_id, "s": 事件序号[0], "k": 种类,
                "pl": _j.dumps(载荷, ensure_ascii=False, default=str), "u": 我是谁})
 
-    结果 = RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm},
+    结果 = RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm, "tool": _工具},
                     记事=记事, run_id=run_id, 上限=r["limits"] or {},
-                    系统={"project_id": job["project_id"]})
+                    系统={"project_id": job["project_id"]}, 恢复=恢复)
     打点("执行完", {"状态": 结果["执行状态"]})
 
     for s in 结果["步骤"]:
@@ -427,7 +580,12 @@ def _跑一张工作流(c, job, 打点):
                 started_at, ended_at, created_at, created_by, updated_at, revision)
             values (:i,:o,:p,:r,:n,:k,'/',:a,:ek,:st,:bk,:sr,:ec,:ed,null,
                     now(), now(), now(), :u, now(), 1)
-            on conflict (project_id, execution_key) do nothing
+            on conflict (project_id, execution_key) do update
+               set status=excluded.status, branch_key=excluded.branch_key,
+                   error_code=excluded.error_code, error_detail=excluded.error_detail,
+                   ended_at=now(), updated_at=now(), revision=run_steps.revision+1
+             -- 只有挂起的那一行会被改成结果;已经有结论的行不许被覆盖(每次 attempt 一行)
+             where run_steps.status in ('waiting_human', 'waiting_external')
         """), {"i": _新("rs"), "o": job["organization_id"], "p": job["project_id"],
                "r": run_id, "n": s["node_id"], "k": s["kind"], "a": s.get("attempt", 1),
                "ek": s["execution_key"], "st": s["status"],
@@ -436,6 +594,8 @@ def _跑一张工作流(c, job, 打点):
                "ed": _j.dumps(s.get("error_detail"), ensure_ascii=False)
                      if s.get("error_detail") else None,
                "u": 我是谁})
+    if 结果.get("检查点"):
+        return _挂起(c, job, r, run_id, 定义, 结果, 记事)
     c.execute(text("""
         update execution_runs
            set status=:st, completion_reason=:cr, output_ref=:out,

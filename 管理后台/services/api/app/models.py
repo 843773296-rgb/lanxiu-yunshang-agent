@@ -266,6 +266,7 @@ _额外唯一 = {
     "tool_invocations": [("project_id", "logical_action_id"),
                          ("project_id", "idempotency_key")],
     "execution_runs": [("project_id", "idempotency_key")],
+    "bridge_calls": [("project_id", "idempotency_key")],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,
     # 第二个撞唯一键 → 返回冲突和最新状态,而不是两条都记下来。
     # 「要求补充」之后 revision 前进,于是下一轮还能再批 —— 这正是想要的。
@@ -296,6 +297,10 @@ _额外检查 = {
         ("ck_artifacts_kind", "kind in ('报告', '建议')"),
         ("ck_artifacts_generation_type", "generation_type is null or generation_type in ('模型', '规则', '对话')"),
         ("ck_artifacts_version_no", "version_no >= 1"),
+    ],
+    "bridge_calls": [
+        ("ck_bridge_calls_status", "status in ('待执行', '已执行', '执行失败')"),
+        ("ck_bridge_calls_tool_name", "tool_name in ('取转写', '写跟进')"),
     ],
     "artifact_decisions": [
         ("ck_artifact_decisions_action", "action in ('打回')"),

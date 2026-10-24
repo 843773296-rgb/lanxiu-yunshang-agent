@@ -535,6 +535,16 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
       ["**只收澜绣推过来的** —— 管理后台不反查应用层的库",
        "(项目, 外部id, 版本) 唯一,重复上报返回原记录",
        "规矩和输入**按上报那一刻的快照存**:之后规矩改了,这一版当时照着什么写的仍然看得到"]),
+    E("bridge_calls", "澜绣桥请求", 子对象, 可改,
+      ["execution_run_id", "node_id", "tool_name", "arguments_snapshot", "idempotency_key",
+       "status", "result_output", "error_detail", "acked_at"],
+      ["**这边只记请求,不执行**(2026-10-24,音频整理那条流程):读转写、写跟进都由澜绣拉回去"
+       "**用它自己的函数**执行,再回执 —— 管理后台不碰澜绣的库,和打回同一个形状",
+       "**幂等键唯一**:同一次运行同一步只排一张单。恢复后重跑、重复投递都撞这个键,"
+       "澜绣那边写跟进也按它去重 —— 「重试写出两条跟进」在两头都被挡住",
+       "只有待执行的能被回执,回执过的不许再改;**没回执就一直挂着待执行**,"
+       "不是「发出去了」就当办成了"],
+      依赖=["execution_runs"]),
     E("artifact_decisions", "产出打回决定", 子对象, 可改,
       ["artifact_id", "action", "reason", "status", "result", "result_note",
        "new_version_no", "acked_at"],
@@ -1149,7 +1159,7 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "started_at", "ended_at", "deadline_at", "current_step_id", "output_ref",
        "usage_snapshot", "checkpoint_seq", "pause_requested", "cancel_requested",
        "idempotency_key", "trace_id",
-       "policy_snapshot", "adopted_policy_snapshot"],
+       "policy_snapshot", "adopted_policy_snapshot", "resume_snapshot"],
       ["**完整快照**:启动时固定发布清单和输入(§3.2);"
        "**正在执行的 Run 保持原版本**,但当前权限和停用开关**仍须实时检查**",
        "**status 和 quality_evaluation_status 是两件事**(§16.4):"
@@ -1173,7 +1183,10 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "**已发布策略 / 本地回退 / 内置兜底**(`runtime/兜底上限.py`)。"
        "系统里**不存在「无限制」这个档** —— "
        "一个「没有策略所以不限制」的运行,和一个「策略说了不限制」的,"
-       "在运行记录上长得一模一样,所以那一栏必须点名是哪一种"],
+       "在运行记录上长得一模一样,所以那一栏必须点名是哪一种",
+       "**`resume_snapshot` 是挂起时的检查点**(2026-10-24):停在哪一步、已完成节点的输出、"
+       "用量、**挂起时那一版定义**。恢复只认它,不重读草稿 —— 挂着的那几个小时里草稿可能已经改了,"
+       "而拿新图接旧进度,「已完成节点的输出」可能对不上新图里任何一个节点"],
       依赖=["applications", "release_manifests", "traces"]),
     E("run_steps", "运行步骤", 子对象, 可改,
       ["execution_run_id", "node_id", "kind", "iteration_path", "attempt",

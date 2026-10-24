@@ -197,15 +197,15 @@ def S(名, 中文, 状态, 起点, 终态, 流转, 备注=(), 中文状态=None)
     # 前三条合并了会**谎报**,第四条合并了会**让人去重跑一个还在花钱的任务**。
     S("execution_run", "执行运行",
       ["queued", "running", "pause_requested", "paused", "waiting_input",
-       "waiting_approval", "reconciling", "cancel_requested",
+       "waiting_approval", "waiting_external", "reconciling", "cancel_requested",
        "succeeded", "incomplete", "failed", "cancelled", "expired"],
       起点="queued",
       终态=["succeeded", "incomplete", "failed", "cancelled", "expired"],
       流转={
           "queued": ["running", "cancelled", "expired"],
           "running": ["succeeded", "incomplete", "failed", "waiting_input",
-                      "waiting_approval", "pause_requested", "cancel_requested",
-                      "reconciling", "expired"],
+                      "waiting_approval", "waiting_external", "pause_requested",
+                      "cancel_requested", "reconciling", "expired"],
           # 暂停请求中:在途调用未必立即停 —— 它可能直接走到真实终态,
           # 也可能要先核实。**保留「暂停请求」这件事发生过**(§16.4)
           "pause_requested": ["paused", "reconciling", "succeeded", "incomplete",
@@ -214,6 +214,9 @@ def S(名, 中文, 状态, 起点, 终态, 流转, 备注=(), 中文状态=None)
           "paused": ["queued", "cancelled", "expired"],
           "waiting_input": ["queued", "cancelled", "expired"],
           "waiting_approval": ["queued", "cancelled", "expired"],
+          # 等澜绣那边用它自己的函数执行完、回执(2026-10-24:管理后台不碰澜绣的库,
+          # 读转写 / 写跟进都是「这边记请求 → 那边拉去执行 → 回执」)。回执到了 → 重新排队接着跑
+          "waiting_external": ["queued", "cancelled", "expired"],
           # 核实完了回到运行/等待/暂停,或者查清了就是真实终态。**禁止盲重试**
           "reconciling": ["running", "waiting_input", "waiting_approval", "paused",
                           "succeeded", "incomplete", "failed", "cancelled", "expired"],
@@ -226,7 +229,8 @@ def S(名, 中文, 状态, 起点, 终态, 流转, 备注=(), 中文状态=None)
       },
       中文状态={"queued": "排队中", "running": "运行中", "pause_requested": "暂停请求中",
                "paused": "已暂停", "waiting_input": "等待人工输入",
-               "waiting_approval": "等待审批", "reconciling": "核实外部状态中",
+               "waiting_approval": "等待审批", "waiting_external": "等澜绣回执",
+               "reconciling": "核实外部状态中",
                "cancel_requested": "取消请求中", "succeeded": "已完成",
                "incomplete": "未完整完成", "failed": "失败", "cancelled": "已取消",
                "expired": "已过期"},
@@ -237,20 +241,22 @@ def S(名, 中文, 状态, 起点, 终态, 流转, 备注=(), 中文状态=None)
     # ── 运行步骤(§8:skipped 和 failed 不是一回事)────────────────────
     S("run_step", "运行步骤",
       ["pending", "running", "succeeded", "failed", "skipped", "reconciling",
-       "waiting_human", "cancelled"],
+       "waiting_human", "waiting_external", "cancelled"],
       起点="pending",
       终态=["succeeded", "failed", "skipped", "cancelled"],
       流转={
           "pending": ["running", "skipped", "cancelled"],
-          "running": ["succeeded", "failed", "waiting_human", "reconciling",
-                      "cancelled"],
-          "waiting_human": ["running", "failed", "cancelled"],
+          "running": ["succeeded", "failed", "waiting_human", "waiting_external",
+                      "reconciling", "cancelled"],
+          "waiting_human": ["running", "succeeded", "failed", "cancelled"],
+          "waiting_external": ["running", "succeeded", "failed", "cancelled"],
           "reconciling": ["succeeded", "failed", "cancelled"],
           "succeeded": [], "failed": [], "skipped": [], "cancelled": [],
       },
       中文状态={"pending": "待执行", "running": "执行中", "succeeded": "成功",
                "failed": "失败", "skipped": "未激活(跳过)",
                "reconciling": "核实中", "waiting_human": "等待人工",
+               "waiting_external": "等澜绣回执",
                "cancelled": "已取消"},
       备注=["**`skipped` 和 `failed` 不同**(§8):未激活的支路不阻塞条件汇合,"
             "**也不能作为「完成了的工作」计入** —— 把跳过算成成功,"

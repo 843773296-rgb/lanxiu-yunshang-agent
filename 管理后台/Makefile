@@ -397,7 +397,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 #
 # ⚠️ 顺序和 `test-e2e` 一致(数据集要排在训练和评测之前)——
 # 那条依赖的理由写在 `test-e2e` 里同一处。
-E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py \
+E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py test_audio_flow.py \
           test_upload_flow.py test_usage_flow.py test_runctl_flow.py \
           test_connections_flow.py test_release_flow.py \
           test_datasets_flow.py test_debug_evals_flow.py \
@@ -494,6 +494,10 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 编排端到端(45 条:建图→校验→冻结→试运行→Worker;Agent 那一条同理)"
 	@echo "  **这一份是为了把「我手敲 curl 验过」变成可重跑的断言** —— 它第一次跑就抓到一个 500"
 	@./.venv/bin/python tests/e2e/test_orchestration_flow.py
+	@echo ""
+	@echo "▸ 音频整理全流程(23 条:取转写 → 提取 → 人工核对 → 写跟进;挂起 / 恢复 / 退回 / 绕过核对)"
+	@echo "  澜绣那一侧由测试扮演(拉单、回执)—— 管理后台不碰澜绣的库,真的那半在 supervise_sync"
+	@./.venv/bin/python tests/e2e/test_audio_flow.py
 	@echo ""
 	@echo "▸ 知识与 RAG 端到端:三条接口 + **整条链路**(§9.5)"
 	@echo "  ⚠️ 其中一条会**真调一次 Claude 精排**(月租额度);另一条走 要精排=false 不花钱"
@@ -675,6 +679,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_orchestration_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_orchestration_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_orchestration_flow.log
+	@./.venv/bin/python tests/e2e/test_audio_flow.py > /tmp/prog-test_audio_flow.log 2>&1 \
+	  || { echo "  ❌ test_audio_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_audio_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_audio_flow.log
 	@./.venv/bin/python tests/e2e/test_knowledge_flow.py > /tmp/prog-test_knowledge_flow.log 2>&1 \
 	  || { echo "  ❌ test_knowledge_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_knowledge_flow.log; exit 1; }
@@ -836,6 +844,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@echo "▸ 执行:**预期激活路径手写 + 模型响应脚本化**(模型调用次数由 mock 那侧数)"
 	@./.venv/bin/python tests/orchestration/test_execution.py
+	@echo ""
+	@echo "▸ 挂起与恢复:人工核对 / 等澜绣回执时停下,办完从停下那一步接着走(已完成的不重跑)"
+	@./.venv/bin/python tests/orchestration/test_suspend_resume.py
 	@echo ""
 	@echo "▸ 知识链:解析 + 切片,**判据是「证据链真的能指回原文」**(跑真语料)"
 	@./.venv/bin/python tests/orchestration/test_knowledge_chain.py

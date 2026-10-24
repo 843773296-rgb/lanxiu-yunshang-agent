@@ -43,6 +43,26 @@ import compiler as CP  # noqa: E402
 待执行, 执行中, 成功, 失败, 跳过 = "pending", "running", "succeeded", "failed", "skipped"
 
 
+class 需要等待(Exception):
+    """这一步要等外面的事(人工核对 / 澜绣那边执行完回执),**整张图在这里挂起**。
+
+    挂起不是失败,也不是成功:执行器把已完成节点的输出、用量、停在哪一步
+    装进 `检查点` 交给调用方存库,然后**返回**(不占着 Worker 干等 —— §12.4)。
+    等的那件事办完,调用方带着 `恢复=` 再调一次 `跑一张图`,从这一步接着走。
+
+    > 一个挂在那里等人批的后台线程,等的是小时级 —— 那不是等待,那是泄漏。
+    """
+
+    def __init__(self, 种类, 载荷):
+        self.种类, self.载荷 = 种类, 载荷
+        super().__init__(f"等待 {种类}")
+
+
+# 挂起时这一步和整次运行分别记成什么(和 contract/states.py 对齐)
+等待态 = {"human": ("waiting_human", "waiting_approval"),
+          "external": ("waiting_external", "waiting_external")}
+
+
 class 节点失败(Exception):
     def __init__(self, code, 消息, 建议):
         self.code, self.消息, self.建议 = code, 消息, 建议
@@ -183,11 +203,18 @@ def _转换一步(op, 入, 状态):
 
 # ── 主循环 ─────────────────────────────────────────────────────────
 def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统=None,
-            上限=None):
+            上限=None, 恢复=None):
     """按计划跑一遍。返回 dict(执行状态, 完成原因, 输出, 步骤, 用量)。
 
     `适配器` = {"llm": fn(节点配置, 编译后的输入) -> dict, "retrieve": ..., "tool": ...}
     `记事(种类, 载荷)` 每一步都会被调 —— Worker 拿它写 run_events。
+
+    **挂起与恢复**:某一步抛 `需要等待`(人工节点总是;工具适配器在要等澜绣回执时),
+    返回的 执行状态 是 waiting_approval / waiting_external,另带 `检查点`。
+    `恢复` = 上次返回的检查点 + `结果`(等的那件事的结果)。恢复时:
+      · 已完成节点的输出原样装回,**不重跑**(重跑会重复发消息 / 重复写入);
+      · 停着的那一步直接拿 `结果` 当输出;`结果` 里带 `失败` 就按这一步失败处理;
+      · 返回的 `步骤` 只含这一次新走的(停着的那一步会以成功再出现一次,同一个执行键)。
     """
     记事 = 记事 or (lambda 种类, 载荷: None)
     系统 = 系统 or {}
@@ -200,6 +227,20 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
     # 先把所有节点标成「待执行」。**跑完之后没被执行到的就是 skipped** ——
     # 这个初值让「哪些节点没跑」变成可以读出来的事实,而不是靠倒推。
     状态表 = {i: 待执行 for i in 节点}
+    注入 = {}
+    if 恢复:
+        if 恢复.get("逻辑哈希") and 恢复["逻辑哈希"] != 计划["逻辑哈希"]:
+            # **检查点是对着哪一版图存的,就只能拿那一版接着跑** —— 换了图,
+            # 「已完成节点的输出」可能对不上新图里的任何一个节点
+            raise ValueError("检查点的逻辑哈希和这份计划对不上 —— 恢复要用挂起时那一版定义")
+        if 恢复["从"] not in 节点:
+            raise ValueError(f"检查点停在 {恢复['从']},这份计划里没有这个节点")
+        状态["节点"] = dict(恢复.get("节点输出") or {})
+        用量 = dict(恢复.get("用量") or 用量)
+        for i, st in (恢复.get("已完成") or {}).items():
+            if i in 状态表:
+                状态表[i] = st
+        注入[恢复["从"]] = 恢复.get("结果") or {}
 
     def 记一步(i, st, **kw):
         步 = dict(node_id=i, kind=节点[i]["type"], status=st,
@@ -212,8 +253,19 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
         记事(f"node.{st}", 步)
         return 步
 
-    当前 = 计划["入口"]
+    当前 = 恢复["从"] if 恢复 else 计划["入口"]
     完成原因, 执行状态, 输出 = None, "succeeded", {}
+    检查点 = None
+
+    def _拿注入(i):
+        """恢复时停着的那一步:结果带 `失败` 就当这一步失败,否则它就是这一步的输出。"""
+        r = 注入.pop(i)
+        if r.get("失败"):
+            f = r["失败"]
+            raise 节点失败(f.get("code") or "EXTERNAL_FAILED", f.get("消息") or "外部那一步没办成",
+                         f.get("建议") or "看这一步的详情")
+        return r
+
     while 当前:
         n = 节点[当前]
         t = n["type"]
@@ -237,7 +289,33 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 当前 = 下[0] if 下 else None
                 continue
 
+            if t == "human":
+                if 当前 in 注入:
+                    状态["节点"][当前] = _拿注入(当前)
+                    记一步(当前, 成功, branch_key=状态["节点"][当前].get("决定"))
+                    下 = 后继[当前].get((DS.成功, None), [])
+                    当前 = 下[0] if 下 else None
+                    continue
+                载荷, 缺 = 解绑定(cfg.get("payload_binding"), 状态)
+                if 缺:
+                    raise 节点失败("BIND_MISSING_AT_RUNTIME", f"要给人看的材料取不到:{缺}",
+                                 "上游那一步这一路没跑,或者绑定写错了")
+                raise 需要等待("human", {
+                    "node_id": 当前, "request_kind": cfg.get("request_kind"),
+                    "candidate_roles": cfg.get("candidate_roles") or [],
+                    "allowed_fields": cfg.get("allowed_fields") or [],
+                    "expires_at_policy": cfg.get("expires_at_policy"), "材料": 载荷})
+
             if t in ("llm", "retrieve", "tool", "agent"):
+                if 当前 in 注入:
+                    r = _拿注入(当前)
+                    if t == "tool":
+                        用量["工具调用"] += 1
+                    状态["节点"][当前] = r
+                    记一步(当前, 成功, execution_mode=r.get("execution_mode"))
+                    下 = 后继[当前].get((DS.成功, None), [])
+                    当前 = 下[0] if 下 else None
+                    continue
                 if t == "llm" and 上限.get("max_model_turns") is not None and \
                         用量["模型调用"] >= 上限["max_model_turns"]:
                     执行状态, 完成原因 = "incomplete", "max_turns"
@@ -363,6 +441,16 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
             raise 节点失败("NODE_NOT_RUNNABLE", f"执行器还不支持 {t} 节点",
                          "换成已实现的节点;**未实现的节点不会被静默跳过**")
 
+        except 需要等待 as w:
+            步态, 执行状态 = 等待态[w.种类]
+            记一步(当前, 步态, waiting_for=w.种类)
+            检查点 = {"从": 当前, "逻辑哈希": 计划["逻辑哈希"], "节点输出": 状态["节点"],
+                      "用量": 用量, "已完成": {i: st for i, st in 状态表.items()
+                                               if st not in (待执行, 步态)},
+                      "等待": {"种类": w.种类, "node_id": 当前, "载荷": w.载荷}}
+            当前 = None
+            break
+
         except 节点失败 as e:
             记一步(当前, 失败, error_code=e.code, error_detail={"消息": e.消息,
                                                             "建议": e.建议})
@@ -374,6 +462,13 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
             执行状态 = "failed"
             完成原因 = e.code
             当前 = None
+
+    if 检查点:
+        # **挂起时不算跳过** —— 后面的节点还没轮到,不是「这条路径没被激活」
+        return dict(执行状态=执行状态, 完成原因=None, 输出={}, 步骤=步骤, 用量=用量,
+                    逻辑哈希=计划["逻辑哈希"], quality_evaluation_status="未评",
+                    走过的路径=[s["node_id"] for s in 步骤 if s["status"] == 成功],
+                    跳过的节点=[], 检查点=检查点)
 
     # 没被执行到的节点 = **跳过**,不是成功也不是失败(§8)
     for i, st in 状态表.items():
