@@ -24,6 +24,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("写跟进之前不查幂等键", "同一个幂等键再来一次:不写第二条,回同一个跟进号"),
     ("写跟进不核录音是不是这个客户的", "录音不是这个客户的 → 拒,一行都不写"),
     ("取转写没有稿时也回成功", "还没转写的录音 → NO_TRANSCRIPT(不是笼统的失败)"),
+    ("create_followup 写回 advisor(表上没有这一列,被静默丢掉)", "新写的跟进记在这位客户的顾问名下(advisor_no 不空、和客户档案一致)"),
 ]
 
 
@@ -77,6 +78,10 @@ def main():
     r1 = WB.执行(单, 谁="U006")
     ck("第一次 → 已执行,是新写的", r1[0] == "已执行" and r1[1]["是新写的"] is True, r1)
     ck("followup 多了一条", 数(副本, "SELECT COUNT(*) FROM followup") == 前 + 1)
+    ck("新写的跟进记在这位客户的顾问名下(advisor_no 不空、和客户档案一致)",
+       sqlite3.connect(副本).execute("""SELECT COUNT(*) FROM followup f JOIN customer c ON c.id=f.customer_id
+                                        WHERE f.id=? AND f.advisor_no IS NOT NULL AND f.advisor_no=c.advisor_no""",
+                                     (r1[1]["跟进号"],)).fetchone()[0] == 1, r1)
     ck("台账 ctx 带着幂等键,actor 说清是工作流核对后写的",
        数(副本, "SELECT COUNT(*) FROM op_log WHERE machine='followup' AND code='CREATE' "
                 "AND ctx LIKE '%xr_chk:save:1%' AND actor LIKE '%工作流核对后%'") == 1)

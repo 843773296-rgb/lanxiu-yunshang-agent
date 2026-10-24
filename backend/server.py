@@ -1946,7 +1946,10 @@ def create_followup(d, actor="魏欣新", ctx=None):
              "ts": _wnow().strftime("%Y-%m-%d %H:%M"),
              "channel": d.get("channel") or "电话",
              "content": d.get("content") or d.get("note"),
-             "advisor": d.get("advisor")},
+             # ⚠️ 列叫 advisor_no(2026-10-24 数据工厂看出来的):原来这里写 "advisor",
+             # _insert 对不认识的非必填列只打一行 stderr 就丢 —— 从页面 / 接口新建的跟进**顾问一直是空的**,
+             # 而库里那 8801 条是 seed 直接写的、都有,所以没人发现。老调用方传 advisor 的照收
+             "advisor_no": d.get("advisor_no") or d.get("advisor")},
             required=["id", "customer_id", "ts", "content"])
     log_op(actor, "followup", fid, "—", "已记录", True, "CREATE",
            f"跟进 {d['customer_id']}:{(d.get('content') or d.get('note'))[:40]}", ctx or {})

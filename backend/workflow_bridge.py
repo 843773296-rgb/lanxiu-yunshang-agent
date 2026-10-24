@@ -105,7 +105,11 @@ def 写跟进(参数, 幂等键, 谁, db=None):
     # 要在副本上跑(检查 / 咬合),先 import 本模块和 server / oplog,再 check_copy.用副本 ——
     # 它把已加载模块的 DB 一次全指过去;顺序反了就是往真库写(CLAUDE.md「检查切库前先 import 写口」)
     import server
-    r = server.create_followup({"customer_id": 客户, "content": 内容, "channel": "电话"},
+    with _连(db) as c2:
+        顾 = c2.execute("SELECT advisor_no FROM customer WHERE id=?", (客户,)).fetchone()
+    # 跟进记在这位客户的顾问名下(和页面上顾问自己记的一样)—— 客户没有顾问就留空,不编一个
+    r = server.create_followup({"customer_id": 客户, "content": 内容, "channel": "电话",
+                                "advisor_no": 顾["advisor_no"] if 顾 else None},
                                actor=f"{谁}(AI 管理平台 · 工作流核对后)",
                                ctx={"幂等键": 幂等键, "通话": 通话 or None, "来自": "工作流"})
     if not r.get("ok"):

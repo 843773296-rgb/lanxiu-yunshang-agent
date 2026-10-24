@@ -12389,5 +12389,17 @@
    }
   ],
   "预期红": "明写的「带门店键的」和库里真有 shop 列的表,一张不差"
+ },
+ {
+  "script": "backend/workflow_bridge_check.py",
+  "改坏": "create_followup 写回 advisor(表上没有这一列,被静默丢掉)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "\"advisor_no\": d.get(\"advisor_no\") or d.get(\"advisor\")},",
+    "new": "\"advisor\": d.get(\"advisor_no\") or d.get(\"advisor\")},"
+   }
+  ],
+  "预期红": "新写的跟进记在这位客户的顾问名下(advisor_no 不空、和客户档案一致)"
  }
 ]
