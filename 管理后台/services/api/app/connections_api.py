@@ -351,8 +351,11 @@ def _真探(endpoint, secret_ref):
                       "messages": []}, ensure_ascii=False)
     t0 = time.time()
     try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime"))
+        import 真模型 as _真
+        # 探测和真调走同一套出网环境(代理)—— 探得通、真调却 403 的话,「探过了」就是假的
         out = subprocess.run(cmd, input=探包, capture_output=True,
-                             text=True, timeout=25)
+                             text=True, timeout=25, env=_真.curl环境())
     except Exception as e:
         trace.record(用途="模型连接探测", 模型="(发不出去)", 成功=False,
                      是mock=False, 细节={"失败": "REQUEST_NOT_SENT",

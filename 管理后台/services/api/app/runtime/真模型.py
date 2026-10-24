@@ -45,6 +45,28 @@ sys.path.insert(0, os.path.join(os.path.dirname(_这儿), "knowledge"))
 import llmtrace as trace  # noqa: E402
 
 
+_代理键 = ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy")
+
+
+def curl环境():
+    """→ 给 curl 子进程的环境:**进程里没有代理变量时,从用户的 ~/.claude/settings.json 里只取那几项**。
+
+    2026-10-24 正式项目首跑撞到:临时从终端起的那份(带着代理)真调通了,常驻那份(launchd 起的,环境极简)
+    同一个请求回 http 403「Request not allowed」—— 不是凭据错,是这台机器出去要走代理,而 launchd 不给。
+    澜绣聊天站 10-23 栽过同一处(agentsite/sdk.py::_代理环境),照它的做法:只转代理那几项,不搬整份设置。
+    """
+    env = dict(os.environ)
+    if any(os.environ.get(k) for k in _代理键):
+        return env
+    try:
+        with open(os.path.expanduser("~/.claude/settings.json"), encoding="utf-8") as f:
+            设 = (_json.load(f).get("env") or {})
+    except (OSError, ValueError):
+        return env
+    env.update({k: str(设[k]) for k in _代理键 if 设.get(k)})
+    return env
+
+
 class 调不动(Exception):
     """真实调用失败。**不退回 mock** —— 带上够排查的东西,但不带凭据。"""
 
@@ -93,7 +115,7 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
     t0 = time.time()
     try:
         out = subprocess.run(cmd, input=_json.dumps(包, ensure_ascii=False),
-                             capture_output=True, text=True, timeout=超时 + 5)
+                             capture_output=True, text=True, timeout=超时 + 5, env=curl环境())
     except Exception as e:
         # ⚠️ **发不出去也是失败,不是「那就跑 mock」。**
         # ⚠️ **失败也记。** 一次发不出去的调用照样花了时间,

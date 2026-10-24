@@ -850,6 +850,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 挂起与恢复:人工核对 / 等澜绣回执时停下,办完从停下那一步接着走(已完成的不重跑)"
 	@./.venv/bin/python tests/orchestration/test_suspend_resume.py
 	@echo ""
+	@echo "▸ 真模型的出网环境:常驻服务(launchd)也带上代理,只搬代理那几项(10-24 正式项目首跑 403 撞出来的)"
+	@./.venv/bin/python tests/orchestration/test_proxy_env.py
+	@echo ""
 	@echo "▸ 知识链:解析 + 切片,**判据是「证据链真的能指回原文」**(跑真语料)"
 	@./.venv/bin/python tests/orchestration/test_knowledge_chain.py
 	@echo ""
