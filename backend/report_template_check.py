@@ -350,8 +350,14 @@ def main():
     with sqlite3.connect(副本) as c:
         留 = c.execute("SELECT status, trial_shops, trial_why, publish_why, publish_by, publish_at FROM report_template_ver "
                       "WHERE name='默认' AND version=1").fetchone()
-    ck("状态留痕:试点门店、试运行 / 发布的理由、谁、什么时候都在这一版那一行",
-       留[0] == "已发布" and json.loads(留[1]) == [店] and 留[2] and 留[3] == "检查:试过了,发布" and 留[4] and 留[5], f"{留}")
+    # ⚠️ 试点门店存的是**门店编码**(2026-10-24 改的:存显示串的话,门店一改名那一版就对不上了,
+    # 而且不报错)。所以这里拿编码比,不拿显示串比 —— 原来写的是 `== [店]`,`店` 是显示串。
+    import shop_key as _SK9
+    with sqlite3.connect(副本) as _c9:
+        _码9 = _SK9.码(_c9, 店) or 店
+    ck("状态留痕:试点门店(按编码存)、试运行 / 发布的理由、谁、什么时候都在这一版那一行",
+       留[0] == "已发布" and json.loads(留[1]) == [_码9] and 留[2] and 留[3] == "检查:试过了,发布" and 留[4] and 留[5],
+       f"{留} —— 试点门店该存成 {[_码9]}(门店编码),存显示串的话改一次名就对不上了")
 
     # ④ 冻结:v1 隐藏评价 → 存报告 A → v2 改成隐藏库存 → A 照旧、新报告 B 按 v2
     with api.as_user(店长):

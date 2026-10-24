@@ -5037,7 +5037,17 @@ def store_report(kind=None, date=None):
     # 报告模板(复审第 4 节 C,用户 10-23 拍):只管显示(章节、显示 / 隐藏、默认期间),**不碰下面任何一个数的算法**。
     # 当时生效的那一版整份放进取数包 —— 存报告时随取数包一起冻结,打开旧报告按冻结的那一版显示
     import report_template as _rt
-    _模板 = _rt.冻结用(me.get("shop") if me.get("role") != "总部运营" else None, db=DB)
+    # ⚠️ 给它**门店码**,不给显示串。模板里存的是编码,而 `staff.shop` 这一列存的是
+    # 「SH001 静安旗舰店」这种显示串 —— **门店一改名,这个串就再也算不出码了**
+    # (名字已经对不上 `shop` 表了),于是那家店的专用模板 / 试运行会**静默掉回「默认」**。
+    # 码从 staff 行上取:第一阶段回填的那 5 万行就是为了这一下。取不到就退回原来的串
+    # (比不上的话走默认,和改之前一样,不更差)。
+    _本店 = me.get("shop") if me.get("role") != "总部运营" else None
+    if _本店:
+        with _c() as _c5:
+            _r5 = _c5.execute("SELECT shop_code FROM staff WHERE no=?", (me.get("no"),)).fetchone()
+        _本店 = (_r5[0] if _r5 and _r5[0] else None) or _本店
+    _模板 = _rt.冻结用(_本店, db=DB)
     kind = kind or _模板["默认期间"]
     try:
         起, 止, 名 = _wk.报告期(kind, date, TODAY)

@@ -63,6 +63,8 @@ _API = os.path.join(HERE, "api.py")
 
 可编辑角色 = ("总部运营",)
 期间们 = ("日", "周", "月")
+import shop_key as _SK                         # 门店关联键的唯一来源
+
 默认模板名 = "默认"
 全部门店 = "全部"
 _段名 = {"期内": "期内", "存": "存量"}
@@ -251,6 +253,92 @@ def _连(db=None):
 ]
 
 
+def _店表(c):
+    """→ `{显示串: 门店编码}`;**`shop` 表还没建就给空表**(不抛)。
+
+    ⚠️ 容错要写在**取数**上,不是写在判断上。我第一版写的是
+    `店表 = _店表(c)` 然后 `if not 店表: return 0` —— 而取那张表本身就会抛:
+    `report_template_check` 在一个只建了模板表的**最小库**上跑真写口,当场
+    `no such table: shop`。而它在全量门禁里是绿的(那条走的是有 shop 表的库)——
+    **同一个脚本在两个库上说法不同**。
+    空表时 `_归一` 什么都不改,所以这条退路不会把好数据洗坏。"""
+    try:
+        return _SK.门店表(c)
+    except sqlite3.Error:
+        return {}
+
+
+def _归一(店表, 值):
+    """门店标识 → 门店**编码**;认不出的原样返回(「全部」这个常量、工坊、改过名的老串)。
+
+    `店表` 是 `shop_key.门店表(c)`,即 `{显示串: 编码}`。**做成纯函数**(只吃一张表,
+    不吃连接)是故意的:判据可以直接喂一张假门店表验它,不用连库。
+
+    ## 为什么模板这一处要自己守
+
+    试点门店和适用门店存在 **JSON 数组**里,`shop_key_check` 那套棘轮扫的是 SQL 字符串里的
+    `shop=?`,**扫不到它们**。而改一个门店名之后,坏的不是读路径(存的和传进来的都是老串,
+    照旧命中),是另外两处:
+
+      · `改状态` 把老串判成「不是门店」—— 功能当场卡住,这个看得见
+      · **「一家店同一时刻只试一版」那条互斥拿字符串比** —— 老串和新串被当成两家店,
+        于是同一家店能同时试两版,**而且不报错**
+
+    > **两个指同一家店的标识,在字符串比较上长得不一样。**
+    """
+    s = str(值).strip()
+    return 店表.get(s) or s          # 传进来本来就是编码时,`get` 取不到,原样留着
+
+
+def _显示(店表, 码):
+    """门店编码 → 显示串(给页面看的)。认不出的原样返回。
+
+    ⚠️ 存的是编码,**而页面要给人看店名** —— 少了这一步,后台模板页上门店会变成「SH001」。"""
+    s = str(码).strip()
+    return next((k for k, v in 店表.items() if v == s), s)
+
+
+def _迁门店标识(c):
+    """**幂等**:把已经存下来的门店标识(显示串)换成门店编码 → 改了几行。
+
+    ⚠️ 它挂在 `确保表()` 里,跟建表 / 补列同一处,**不新开流水线步骤** ——
+    今天 CI 为「让生产查询依赖某个流水线步骤已经跑过」红了第三次,这是同一个教训:
+    新开一步就会多出「迁移还没跑」这个状态,而那个状态和「迁过了」在查询结果上长得一样。
+    现在这张表是空的,所以它平时是个空操作;真有数据的环境第一次写入时就迁掉。"""
+    店表 = _店表(c)
+    if not 店表:
+        return 0                     # 门店表取不到 → 什么都不改(**别拿空口径去改数据**)
+    改 = 0
+    for r in c.execute("SELECT id, payload, trial_shops FROM report_template_ver").fetchall():
+        rid, payload, trial = r[0], r[1], r[2]
+        新payload, 新trial = payload, trial
+        try:
+            p = json.loads(payload or "{}")
+            店 = p.get("适用门店")
+            if isinstance(店, list):
+                归 = [_归一(店表, s) for s in 店]
+                if 归 != 店:
+                    p["适用门店"] = 归
+                    新payload = json.dumps(p, ensure_ascii=False)
+        except (ValueError, TypeError):
+            pass                     # 存坏了的 JSON 不在这一步处理,原样留着让校验那边去报
+        try:
+            t = json.loads(trial or "[]")
+            if isinstance(t, list):
+                归t = [_归一(店表, s) for s in t]
+                if 归t != t:
+                    新trial = json.dumps(归t, ensure_ascii=False)
+        except (ValueError, TypeError):
+            pass
+        if 新payload != payload or 新trial != trial:
+            c.execute("UPDATE report_template_ver SET payload=?, trial_shops=? WHERE id=?",
+                      (新payload, 新trial, rid))
+            改 += 1
+    if 改:
+        c.commit()
+    return 改
+
+
 def 确保表(c):
     c.execute("""CREATE TABLE IF NOT EXISTS report_template_ver(
         id INTEGER PRIMARY KEY AUTOINCREMENT,   -- 版本行号:报告里冻的就是它(全表唯一)
@@ -265,6 +353,7 @@ def 确保表(c):
     for 列, 型 in 后加列:
         if 列 not in 有:
             c.execute(f"ALTER TABLE report_template_ver ADD COLUMN {列} {型}")
+    _迁门店标识(c)        # 幂等,平时是空操作;**跟补列同一处,就不会有「迁移还没跑」这个状态**
 
 
 def _行(r):
@@ -349,21 +438,26 @@ def 生效(shop, db=None):
     顺序(用户 10-23 拍):这家店在某版**试运行**的试点里 → 那一版;否则**最新已发布**(列了这家店的专用模板 →
     「默认」模板);都没有 → 代码默认。**草稿和已撤下永远不生效。** 库读不到时退回代码默认(全部显示,和上线前一样)。"""
     # 只读连接:取数包是读路径,不许顺手建表 / 补列;表还没建(没人存过模板)→ 走代码默认
+    行, 店表 = [], {}
     try:
         with closing(sqlite3.connect(f"file:{db or DB}?mode=ro", uri=True, timeout=5)) as c:
             c.row_factory = sqlite3.Row
             行 = _全部(c)
+            店表 = _店表(c)      # {显示串: 编码} —— 下面比门店一律先归一到编码
     except sqlite3.Error:
-        行 = []
+        pass          # 读不到就走代码默认(和原来一样);`行` / `店表` 保持上面那两个初值
     if shop:
         # 满期的试运行不生效,哪怕还没人打开页面把它落成「已撤下」—— 读路径是只读连接,不靠写来保证
         今 = _世界今天()
-        试 = [r for r in 行 if r["status"] == "试运行" and shop in r["试点"] and not _过期(r, 今)]
+        码 = _归一(店表, shop)
+        试 = [r for r in 行 if r["status"] == "试运行"
+              and 码 in {_归一(店表, s) for s in r["试点"]} and not _过期(r, 今)]
         if 试:
             r = max(试, key=lambda x: x["id"])
             return dict(模板=r["name"], 版本=r["version"], 版本号=r["id"], 状态="试运行", 内容=json.loads(r["payload"]))
     发 = [d["发布"] for _, d in sorted(_在用(行).items()) if d["发布"]]
-    专用 = [r for r in 发 if r["name"] != 默认模板名 and shop in (json.loads(r["payload"]).get("适用门店") or [])]
+    专用 = [r for r in 发 if r["name"] != 默认模板名
+            and _归一(店表, shop) in {_归一(店表, s) for s in (json.loads(r["payload"]).get("适用门店") or [])}]
     默 = [r for r in 发 if r["name"] == 默认模板名]
     r = (专用 or 默 or [None])[0]
     if r is None:
@@ -479,11 +573,18 @@ def 插新指标(出, 新行们):
 
 
 # ── 读(页面)──────────────────────────────────────────────────────────
-def _版行(v):
-    """一版 → 页面上的一行(含状态与留痕)。"""
+def _版行(v, 店表=None):
+    """一版 → 页面上的一行(含状态与留痕)。
+
+    ⚠️ `店表` 给了就把门店编码转回显示串 —— **库里存的是编码,而页面要给人看店名**。
+    不给就原样输出(编码),所以调用方该传。"""
+    店表 = 店表 or {}
+    内容 = json.loads(v["payload"]) if isinstance(v["payload"], str) else v["payload"]
+    if 店表 and isinstance(内容, dict) and isinstance(内容.get("适用门店"), list):
+        内容 = dict(内容, 适用门店=[_显示(店表, s) for s in 内容["适用门店"]])
     return dict(版本=v["version"], 版本号=v["id"], 理由=v["why"], 谁=v["by_name"], 时间=v["at"],
-                内容=json.loads(v["payload"]) if isinstance(v["payload"], str) else v["payload"],
-                状态=v["status"], 试点门店=v["试点"],
+                内容=内容,
+                状态=v["status"], 试点门店=[_显示(店表, s) for s in v["试点"]] if 店表 else v["试点"],
                 留痕=[dict(到=到, 时间=v.get(f"{k}_at"), 谁=v.get(f"{k}_by"), 理由=v.get(f"{k}_why"))
                     for 到, k in (("试运行", "trial"), ("已发布", "publish"), ("已撤下", "withdraw")) if v.get(f"{k}_at")])
 
@@ -495,15 +596,17 @@ def 概览(db=None):
         行 = _各模板最新(c)
         用 = _在用(_全部(c))
         店 = _门店们(c)
+        店表 = _店表(c)
 
     def 在用(n):
         d = 用.get(n) or {}
         发, 试 = d.get("发布"), d.get("试运行")
         return dict(已发布版本=发["version"] if 发 else None, 试运行版本=试["version"] if 试 else None,
-                    试点门店=试["试点"] if 试 else [])
+                    试点门店=[_显示(店表, s) for s in 试["试点"]] if 试 else [])
     模板们 = [dict(名称=r["name"], 版本=r["version"], 版本号=r["id"], 状态=r["status"], 更新=r["at"], 更新人=r["by_name"],
                 理由=r["why"], **在用(r["name"]),
-                **{k: v for k, v in json.loads(r["payload"]).items() if k in ("适用门店", "默认期间")})
+                **{k: ([_显示(店表, s) for s in v] if k == "适用门店" and isinstance(v, list) else v)
+                   for k, v in json.loads(r["payload"]).items() if k in ("适用门店", "默认期间")})
            for r in 行]
     if not any(r["name"] == 默认模板名 for r in 行):
         模板们.insert(0, dict(名称=默认模板名, 版本=0, 版本号=None, 状态=None, 更新=None, 更新人=None,
@@ -520,10 +623,14 @@ def 详情(name, db=None):
         _撤过期(c)
         版们 = [_行(r) for r in c.execute(
             "SELECT * FROM report_template_ver WHERE name=? ORDER BY version DESC", (name,))]
+        _表 = _店表(c)
     if not 版们 and name != 默认模板名:
         return {"error": f"没有这个模板:{name}"}
-    return dict(名称=name, 当前=(json.loads(版们[0]["payload"]) if 版们 else 默认内容()), 版本=(版们[0]["version"] if 版们 else 0),
-                版本记录=[_版行(v) for v in 版们],
+    _当前 = json.loads(版们[0]["payload"]) if 版们 else 默认内容()
+    if isinstance(_当前.get("适用门店"), list):      # 存的是编码,页面要店名
+        _当前 = dict(_当前, 适用门店=[_显示(_表, s) for s in _当前["适用门店"]])
+    return dict(名称=name, 当前=_当前, 版本=(版们[0]["version"] if 版们 else 0),
+                版本记录=[_版行(v, _表) for v in 版们],
                 已登记指标=已登记指标(), 锁定必选=list(锁定必选()), 期间们=list(期间们),
                 报告期取不到={k: list(v) for k, v in 报告期取不到().items()},
                 状态们=list(状态们), 可走={k: list(v) for k, v in 可走.items()}, 试运行天数=试运行天数)
@@ -598,9 +705,12 @@ def 校验(p, c, name):
             错.append(f"「{默认模板名}」模板永远适用全部门店(没被专用模板认领的店都用它),适用门店只能是 [{全部门店}]")
     else:
         真店 = _门店们(c)
+        店表 = _店表(c)
+        码们 = set(店表.values())
         for s in 店:
-            if s not in 真店:
-                错.append(f"「{s}」不是门店(有:{'、'.join(真店)})")
+            # 在**编码**上比。存的是编码,而页面传来的是显示串,两种都要认得出来
+            if _归一(店表, s) not in 码们:
+                错.append(f"「{_显示(店表, s)}」不是门店(有:{'、'.join(真店)})")
         # 别的模板的最新一版、在用的已发布 / 试运行那一版,认领的店都算 —— 只看最新版的话,
         # 别人草稿里放掉的店、而它已发布的那一版还认领着,就会被两个专用模板同时认领
         用 = _在用(_全部(c))
@@ -608,9 +718,14 @@ def 校验(p, c, name):
             if r["name"] in (name, 默认模板名):
                 continue
             他 = [r] + [x for x in (用.get(r["name"]) or {}).values() if x]
-            重 = set(店) & {s for x in 他 for s in (json.loads(x["payload"]).get("适用门店") or [])}
+            # ⚠️ **两边都归一到编码再取交集。** 一边存着老串、一边存着新串时,
+            # 直接 `set & set` 会把同一家店当成两家,于是**一家店被两个专用模板同时认领而不报错**
+            重 = {_归一(店表, s) for s in 店} & {_归一(店表, s)
+                                              for x in 他
+                                              for s in (json.loads(x["payload"]).get("适用门店") or [])}
             if 重:
-                错.append(f"{'、'.join(sorted(重))} 已经被模板「{r['name']}」认领了 —— 一家店只能用一个专用模板")
+                错.append(f"{'、'.join(sorted(_显示(店表, s) for s in 重))} 已经被模板「{r['name']}」认领了"
+                         f" —— 一家店只能用一个专用模板")
     return 错
 
 
@@ -648,6 +763,11 @@ def 保存(name, payload, 理由, me, db=None):
     p["名称"] = name
     with closing(_连(db)) as c:
         确保表(c)
+        # 存**编码**(不存显示串)—— 门店改名之后,存编码的那一版照旧对得上,存显示串的对不上了。
+        # 「全部」这个常量和认不出的值原样留着(`_归一` 不认识就不动)
+        _表 = _店表(c)
+        if isinstance(p.get("适用门店"), list):
+            p["适用门店"] = [_归一(_表, s) for s in p["适用门店"]]
         错 = 校验(p, c, name)
         if 错:
             return dict(ok=False, reason=";".join(错[:3]) + (f" 等 {len(错)} 处" if len(错) > 3 else ""), 错=错)
@@ -705,27 +825,34 @@ def 改状态(name, 版本, 到, 理由, me, 试点门店=None, db=None):
             if 错:
                 return dict(ok=False, reason=";".join(错[:3]), 错=错)
         if 到 == "试运行":
-            店 = [str(s) for s in (试点门店 or []) if str(s).strip()]
             真店 = _门店们(c)
+            店表 = _店表(c)
+            # 页面传来的是显示串,**存进去的是编码** —— 归一在进门这一步做完,后面全在编码上比
+            店 = [_归一(店表, s) for s in (试点门店 or []) if str(s).strip()]
             if not 店:
                 return dict(ok=False, reason="试运行要写试点门店(哪几家店先用这一版)")
-            假 = [s for s in 店 if s not in 真店]
+            假 = [s for s in 店 if s not in set(店表.values())]
             if 假:
-                return dict(ok=False, reason=f"{'、'.join(假)} 不是门店(有:{'、'.join(真店)})")
+                return dict(ok=False, reason=f"{'、'.join(_显示(店表, s) for s in 假)} 不是门店(有:{'、'.join(真店)})")
             # 专用模板只在它适用的门店里试(用户 10-23 拍);「默认」适用全部,不受限
             if name != 默认模板名:
-                适用 = json.loads(r["payload"]).get("适用门店") or []
+                适用 = {_归一(店表, s) for s in (json.loads(r["payload"]).get("适用门店") or [])}
                 外 = [s for s in 店 if s not in 适用]
                 if 外:
-                    return dict(ok=False, reason=f"{'、'.join(外)} 不在模板「{name}」的适用门店里 —— 专用模板只在它适用的门店里试运行")
+                    return dict(ok=False, reason=f"{'、'.join(_显示(店表, s) for s in 外)} 不在模板「{name}」的适用门店里"
+                                                f" —— 专用模板只在它适用的门店里试运行")
             试 = (用.get(name) or {}).get("试运行")
             if 试:
                 return dict(ok=False, reason=f"模板「{name}」第 {试['version']} 版已经在试运行 —— 同一模板同一时刻最多一版试运行;"
                                              "先把它发布或撤下")
             for 他名, d in 用.items():
-                重 = set(店) & set((d.get("试运行") or {}).get("试点") or [])
+                # ⚠️ **这条互斥是这一笔要修的主角。** 两边都归一到编码:
+                # 一边老串一边新串时,直接比字符串会把同一家店当成两家,
+                # **于是同一家店同时试两版,而且不报错**
+                重 = set(店) & {_归一(店表, s) for s in ((d.get("试运行") or {}).get("试点") or [])}
                 if 他名 != name and 重:
-                    return dict(ok=False, reason=f"{'、'.join(sorted(重))} 已经在模板「{他名}」的试运行里 —— 一家店同一时刻只试一版")
+                    return dict(ok=False, reason=f"{'、'.join(sorted(_显示(店表, s) for s in 重))} 已经在模板「{他名}」"
+                                                f"的试运行里 —— 一家店同一时刻只试一版")
             c.execute("UPDATE report_template_ver SET status='试运行', trial_shops=?, trial_at=?, trial_by=?, trial_why=? "
                       "WHERE id=?", (json.dumps(店, ensure_ascii=False), now, 谁, 理由, r["id"]))
         elif 到 == "已发布":
