@@ -106,6 +106,9 @@ def main():
                             from tool_definitions d
                             join tool_versions v on v.tool_definition_id=d.id
                            where d.project_id=:p and d.archived_at is null
+                             -- 澜绣桥工具(取转写 / 写跟进,2026-10-24)是**工作流**用的,由 seed_bridge_tools 登记,
+                             -- 不是聊天站的 MCP 工具:拿它们和 api.py 对账,只会把它们报成「澜绣下架了」
+                             and coalesce(d.adapter, '') <> 'lanxiu_bridge'
                              and v.version_no = (select max(version_no)
                                                  from tool_versions
                                                 where tool_definition_id=d.id)"""),
