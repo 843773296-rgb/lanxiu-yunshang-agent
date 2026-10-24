@@ -12400,7 +12400,7 @@
     "new": "\"advisor\": d.get(\"advisor_no\") or d.get(\"advisor\")},"
    }
   ],
-  "预期红": "新写的跟进记在这位客户的顾问名下(advisor_no 不空、和客户档案一致)"
+  "预期红": "第一次 → 已执行,是新写的"
  },
  {
   "script": "backend/shop_key_check.py",
@@ -12682,5 +12682,53 @@
    }
   ],
   "预期红": "**在产但没有承诺完工日 → 无法判断,不压成低风险**"
+ },
+ {
+  "script": "backend/workflow_bridge_check.py",
+  "改坏": "派回访任务不查客户号在不在召回名单里",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "        if cid not in 名单:\n            跳过.append(f\"{cid}:不在这次的召回名单里,没派\")",
+    "new": "        if False:\n            跳过.append(f\"{cid}:不在这次的召回名单里,没派\")"
+   }
+  ],
+  "预期红": "不在这次召回名单里的客户号 → 跳过,不派"
+ },
+ {
+  "script": "backend/workflow_bridge_check.py",
+  "改坏": "派回访任务不查已有未完成的回访",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "        if g.get(\"已有未完成回访任务\"):\n            跳过.append(",
+    "new": "        if False:\n            跳过.append("
+   }
+  ],
+  "预期红": "已有未完成回访任务的客户 → 跳过,不派第二条"
+ },
+ {
+  "script": "backend/workflow_bridge_check.py",
+  "改坏": "召回名单只看促活那一页,不逐人问流失预警",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "        一 = 问流失(p[\"客户号\"])",
+    "new": "        一 = {}"
+   }
+  ],
+  "预期红": "名单上每个人的「同时在流失预警里」都和单独问流失预警的结果一致"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "派回访任务派之前不再核由头 —— 名单里塞进来的没由头的人也派了,边界审计那条要报「攻破」",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "        if not 一.get(\"该不该联系\"):\n            跳过.append(f\"{cid}:派之前再核一次",
+    "new": "        if False:\n            跳过.append(f\"{cid}:派之前再核一次"
+   }
+  ],
+  "预期红": "工作流派回访:只派给名单里、此刻仍有由头的人,重试不派第二条"
  }
 ]

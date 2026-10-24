@@ -7,6 +7,8 @@
   ③ 录音不是这个客户的 → 拒(CALL_CUSTOMER_MISMATCH),一行都不写
   ④ 没带幂等键 → 拒;客户不存在 → 拒;认不出的工具 → 不执行
   ⑤ 写进的是副本:真库的 followup 没多出这次检查写的那一条
+  ⑧ 召回名单 / 派回访任务(六条第五条,10-25):交叉对得上逐人真调的两份名单;派的时候逐人跳过(不在名单 / 顾问不在职 /
+     已有未完成回访 / 派之前已没由头 / 上次开始了没结果),同一个键重来不派第二条
 """
 import json
 import os
@@ -16,6 +18,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "knowledge")]
 import server, oplog, workflow_bridge as WB   # noqa: E401 —— 写口先加载,用副本才改得到它们的 DB
+import api, tasks, revive, slipping             # noqa: E401,F401 —— 召回的两份名单在函数里懒加载 revive / slipping,不先加载就读真库
 import check_copy
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -25,7 +28,11 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("写跟进之前不查幂等键", "同一个幂等键再来一次:不写第二条,回同一个跟进号"),
     ("写跟进不核录音是不是这个客户的", "录音不是这个客户的 → 拒,一行都不写"),
     ("取转写没有稿时也回成功", "还没转写的录音 → NO_TRANSCRIPT(不是笼统的失败)"),
-    ("create_followup 写回 advisor(表上没有这一列,被静默丢掉)", "新写的跟进记在这位客户的顾问名下(advisor_no 不空、和客户档案一致)"),
+    # 10-25:_insert 改成对不上的列名直接抛(0069803)之后,这处破坏在写的那一刻就崩 —— 红在「第一次已执行」,比原来那条更早
+    ("create_followup 写回 advisor(表上没有这一列,被静默丢掉)", "第一次 → 已执行,是新写的"),
+    ("派回访任务不查客户号在不在召回名单里", "不在这次召回名单里的客户号 → 跳过,不派"),
+    ("派回访任务不查已有未完成的回访", "已有未完成回访任务的客户 → 跳过,不派第二条"),
+    ("召回名单只看促活那一页,不逐人问流失预警", "名单上每个人的「同时在流失预警里」都和单独问流失预警的结果一致"),
 ]
 
 
@@ -191,9 +198,86 @@ def main():
     r = WB.执行({"工具": "订单交付风险", "办事人": "U001", "办事人澜绣工号": 店长, "参数": {"order_id": "NOPE"}})
     ck("没有这一单 → 拒,不编", r[0] == "执行失败" and r[2]["code"] == "TOOL_REFUSED", r)
 
+    print("\n▸ ⑧ 召回名单 / 派回访任务(六条第五条,10-25;交叉复用「客户召回」技能第二步)")
+    r = WB.执行({"工具": "召回名单", "办事人": "U001", "办事人澜绣工号": 店长, "参数": {"上限": 6}})
+    召 = (r[1] or {}).get("数据") or {}
+    人 = 召.get("名单") or []
+    ck("店长 → 已执行,列出 ≤ 上限,带指纹,样本至少 5 人(下面派的五种情形要用)",
+       r[0] == "已执行" and len(人) == 召.get("列出") and 5 <= len(人) <= 6 and r[1].get("指纹"), (r[0], len(人), r[2]))
+    with api.as_user(WB.员工身份(店长)):
+        逐 = {p["客户号"]: (api.churn_watch(customer=p["客户号"]) or {}).get("这一个人") or {} for p in 人}
+        等 = [(w["客户号"], (api.revive_list(customer=w["客户号"]) or {}).get("这一个人") or {})
+             for w in 召.get("在流失、等由头") or []]
+    ck("真库上:名单上每个人的标注和单独问流失预警一致",
+       all(p["同时在流失预警里"] == bool(逐[p["客户号"]].get("在不在往下走")) for p in 人),
+       [(p["客户号"], p["同时在流失预警里"], 逐[p["客户号"]].get("在不在往下走")) for p in 人])
+    ck("「在流失、等由头」里的人单独问促活都是没由头的(有由头的应该进名单)",
+       all(not x.get("该不该联系") for _, x in 等), 等[:3])
+    ck("两份都在的排在前面(同时在流失的不会排在只在促活的后面)",
+       [p["同时在流失预警里"] for p in 人] == sorted([p["同时在流失预警里"] for p in 人], reverse=True))
+    ck("每个人带归属顾问和在不在职、名单文字里有每个客户号",
+       all("归属顾问在职" in p and p["客户号"] in 召.get("名单文字", "") for p in 人))
+    # 自造两页,真调交叉那一份:真库上两页的头部往往是同一批人,「没逐人问」的破坏被截断盖住(10-25 咬合当场没红)
+    促页 = [{"客户号": "A", "客户": "甲", "由头": "BIRTHDAY"}, {"客户号": "B", "客户": "乙", "由头": "RHYTHM_BREAK"},
+           {"客户号": "C", "客户": "丙", "由头": "SAME_SEASON"}]
+    流页 = {"高": [{"客户号": "D", "客户": "丁", "走到哪一步": "忠诚 → 沉睡"}],
+           "中": [{"客户号": "B", "客户": "乙"}, {"客户号": "E", "客户": "戊", "走到哪一步": "活跃 → 沉睡"}]}
+    在流失 = {"A": "低", "B": "中", "D": "高", "E": "中"}           # A 在流失但不在流失那一页(页外)
+    有由头 = {"A", "B", "C", "D"}                                  # D 有由头但不在促活那一页
+    名, 等, 截 = WB.交叉(促页, 流页, lambda x: {"在不在往下走": x in 在流失, "严重程度": 在流失.get(x)},
+                      lambda x: {"该不该联系": x in 有由头, "码": "BIRTHDAY" if x in 有由头 else "NO_REASON", "理由": "造的"}, 10)
+    标 = {p["客户号"]: (p["同时在流失预警里"], p["流失严重程度"]) for p in 名}
+    ck("名单上每个人的「同时在流失预警里」都和单独问流失预警的结果一致",
+       标 == {"A": (True, "低"), "B": (True, "中"), "C": (False, None), "D": (True, "高")}, 标)
+    ck("流失页上有由头的(D)进名单、没由头的(E)进「在流失、等由头」",
+       "D" in 标 and [w["客户号"] for w in 等] == ["E"], ([*标], 等))
+    ck("两份都在的按严重程度排前面,只在促活的(C)排最后", [p["客户号"] for p in 名] == ["D", "B", "A", "C"],
+       [p["客户号"] for p in 名])
+    名, _, 截 = WB.交叉(促页, 流页, lambda x: {"在不在往下走": x in 在流失, "严重程度": 在流失.get(x)},
+                     lambda x: {"该不该联系": x in 有由头}, 2)
+    ck("截到上限时,被挤出去的人数报出来(不然「还有没列出的」少算)", [p["客户号"] for p in 名] == ["D", "B"] and 截 == 2, (名, 截))
+    r = WB.执行({"工具": "召回名单", "办事人": "U001", "参数": {}})
+    ck("召回名单没绑定 → NOT_BOUND", r[0] == "执行失败" and r[2]["code"] == "NOT_BOUND", r)
+
+    if len(人) >= 5:
+        a, b, c_, e, f = (p["客户号"] for p in 人[:5])
+        c = sqlite3.connect(副本)
+        c.execute("UPDATE customer SET advisor_no='69999999' WHERE id=?", (b,))          # 顾问不在了
+        c.execute("INSERT INTO schedule(id,type,advisor_no,customer_id,start_ts,end_ts,status,shop,assignee_no,note) "
+                  "VALUES('SC-CHK-OPEN','电话回电',?,?,'2026-10-01 10:00','2026-12-31 18:00','有效','x',?,'检查造的')",
+                  (人[2]["归属顾问工号"], c_, 人[2]["归属顾问工号"]))                       # 已有未完成回访
+        c.execute("INSERT INTO followup(id,customer_id,ts,content) VALUES('FU-CHK-RECENT',?,?,'检查造的:刚联系过')",
+                  (e, str(__import__("worldclock").今天())[:10] + " 09:00"))                 # 派之前已经没由头了
+        c.commit(); c.close()
+        oplog.log_op("检查", "bridge", f"xr_chk:recall:1:{f}", "—", "派回访任务", True, "START", "检查造的:开始了没结果", {})
+        前 = 数(副本, "SELECT COUNT(*) FROM schedule")
+        参 = {"客户号们": f"{a},{b}, {c_},C00000000,{e},{f}", "截止": "2026-12-31", "名单": 人,
+             "话术": [{"客户号": a, "开口说什么": "检查造的开口话"}]}
+        单 = {"工具": "派回访任务", "幂等键": "xr_chk:recall:1", "办事人": "U001", "办事人澜绣工号": 店长, "参数": 参}
+        r = WB.执行(单)
+        出 = (r[1] or {}).get("数据") or {}
+        跳 = " ".join(出.get("跳过") or [])
+        ck("正常的那个 → 派了一条「电话回电」给归属顾问,挂客户号,描述带由头和话术",
+           r[0] == "已执行" and 数(副本, "SELECT COUNT(*) FROM schedule WHERE type='电话回电' AND customer_id=? AND assignee_no=? "
+                                  "AND status='有效' AND note LIKE '%检查造的开口话%' AND end_ts='2026-12-31 18:00'",
+                                  a, 人[0]["归属顾问工号"]) == 1, (r, 出))
+        ck("不在这次召回名单里的客户号 → 跳过,不派", "C00000000:不在这次的召回名单里" in 跳, 跳)
+        ck("归属顾问不在职 → 跳过,说转店长分配", f"{b}:" in 跳 and "转店长分配" in 跳, 跳)
+        ck("已有未完成回访任务的客户 → 跳过,不派第二条", f"{c_}:已有未完成的回访任务 SC-CHK-OPEN" in 跳, 跳)
+        ck("派之前再核一次已经没由头了(刚联系过)→ 跳过", f"{e}:派之前再核一次" in 跳, 跳)
+        ck("上次开始了没记结果 → 不重做,请人核实", f"{f}:上一次开始派了但没记下结果" in 跳, 跳)
+        ck("这一轮只多了一条任务", 数(副本, "SELECT COUNT(*) FROM schedule") == 前 + 1, 数(副本, "SELECT COUNT(*) FROM schedule") - 前)
+        r = WB.执行(单)
+        ck("同一个键再来一次 → 不派第二条,说之前派过", 数(副本, "SELECT COUNT(*) FROM schedule") == 前 + 1
+           and "没派第二遍" in " ".join(((r[1] or {}).get("数据") or {}).get("派了") or []), r)
+        r = WB.执行({**单, "幂等键": None})
+        ck("没幂等键 → 不派", r[0] == "执行失败" and r[2]["code"] == "NO_IDEMPOTENCY_KEY", r)
+        r = WB.执行({**单, "幂等键": "xr_chk:recall:2", "参数": {**参, "名单": []}})
+        ck("没带召回名单 → 一个都不派(不知道哪些人是核过的)", r[0] == "执行失败" and r[2]["code"] == "MISSING", r)
+
     print("\n▸ ⑤ 写进的是副本")
     ck("真库的台账里没有这次检查的幂等键",
-       数(真库, "SELECT COUNT(*) FROM op_log WHERE ctx LIKE '%xr_chk:save:%'") == 0)
+       数(真库, "SELECT COUNT(*) FROM op_log WHERE ctx LIKE '%xr_chk:save:%' OR target LIKE 'xr_chk:recall:%'") == 0)
 
     print()
     if 坏:

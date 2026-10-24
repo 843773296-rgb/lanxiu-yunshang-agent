@@ -349,7 +349,81 @@ def _订单风险(桥):
             "nodes": 节点, "edges": 边}
 
 
-模板们 = ("空白", "文本处理", "音频整理", "经营报告", "订单风险")
+def _老客召回(桥):
+    """**老客召回 → 回访名单 → 回访任务**(六条第五条,10-25)。交叉规则复用澜绣「客户召回」技能第二步(不新造口径),
+    由澜绣桥的「召回名单」逐人核实(两份名单一次最多 100 个,拿两页去交叉会漏)。模型只写每人的依据和开口话术,
+    **不增删人**;店长勾要派的客户号、填回访截止才派。派的那一步在澜绣逐人再核:不在名单里 / 顾问离职 /
+    已有未完成回访 / 派之前已经没由头的,跳过并写明(方案文档「归属顾问已离职:转店长分配」「不重复派」)。"""
+    def 引(n, p):
+        return {"source": "node", "node_id": n, "pointer": p}
+    串 = {"type": "string"}
+    结果Schema = {"type": "object", "properties": {"结果": 串}, "required": ["结果"], "additionalProperties": False}
+    话术Schema = {"type": "object", "properties": {
+        "逐人": {"type": "array", "items": {"type": "object", "properties": {
+            "客户号": 串, "为什么是他": 串, "为什么是现在": 串, "开口说什么": 串},
+            "required": ["客户号", "为什么是他", "为什么是现在", "开口说什么"], "additionalProperties": False}},
+        "摘要": 串}, "required": ["逐人", "摘要"], "additionalProperties": False}
+    def 记(id_, 名, 来, 尾, x, y):
+        return {"id": id_, "type": "transform", "name": 名, "layout": {"x": x, "y": y},
+                "config": {"operations": [{"op": "concat", "parts": [来, {"source": "constant", "value": 尾}],
+                                           "into": "结果"}], "output_schema": 结果Schema}}
+    def 判(id_, 名, when, x, y):
+        return {"id": id_, "type": "condition", "name": 名, "layout": {"x": x, "y": y},
+                "config": {"branches": [{"key": "yes", "when": when}], "else_policy": "fail"}}
+    节点 = [
+        {"id": "start", "type": "start", "name": "开始", "layout": {"x": 40, "y": 160},
+         "config": {"input_schema": {"type": "object", "properties": {
+             "上限": {"type": "integer", "minimum": 1, "maximum": 100, "title": "最多列几个人(默认 20)"}},
+             "additionalProperties": False}}},
+        {"id": "fetch", "type": "tool", "name": "取召回名单(促活 × 流失逐人交叉)", "layout": {"x": 200, "y": 160},
+         "config": {"tool_version_id": 桥.get("召回名单"),
+                    "bindings": {"上限": {"source": "input", "pointer": "/上限"}}}},
+        判("any", "有该联系的吗", {"op": "equals", "left": 引("fetch", "/数据/列出"),
+                               "right": {"source": "constant", "value": 0}}, 360, 160),
+        记("none", "没人可列", 引("fetch", "/结果"), " —— 这一次没有有由头的人,不硬凑名单", 520, 300),
+        {"id": "write", "type": "llm", "name": "逐人写依据和话术", "layout": {"x": 520, "y": 80},
+         "config": {"output_schema": 话术Schema, "prompt_version_id": 桥.get("处理要求"),
+                    "bindings": {"取数包": 引("fetch", "/数据")}}},
+        {"id": "review", "type": "human", "name": "店长勾选", "layout": {"x": 680, "y": 80},
+         "config": {"request_kind": "核对", "candidate_roles": ["approver", "admin"],
+                    "allowed_fields": ["要派的客户号", "回访截止"],
+                    "expires_at_policy": {"小时": 72, "到期": "fail"},
+                    "payload_binding": {"原文": 引("fetch", "/数据/名单文字"), "摘要": 引("write", "/摘要"),
+                                        "逐人": 引("write", "/逐人")}}},
+        判("ok", "店长通过了吗", {"op": "equals", "left": 引("review", "/决定"),
+                               "right": {"source": "constant", "value": "approve"}}, 840, 80),
+        {"id": "rejected", "type": "transform", "name": "记下店长的理由", "layout": {"x": 1000, "y": 300},
+         "config": {"operations": [{"op": "to_string", "from": 引("review", "/理由"), "into": "结果"}],
+                    "output_schema": 结果Schema}},
+        判("who", "勾了要派的人吗", {"op": "exists", "left": 引("review", "/要派的客户号")}, 1000, 80),
+        判("when", "填了回访截止吗", {"op": "exists", "left": 引("review", "/回访截止")}, 1160, 80),
+        记("no_who", "只出名单不派", 引("fetch", "/结果"), " —— 店长没勾要派的人,名单归档、没派任务", 1160, 220),
+        记("no_when", "不派(没填截止)", 引("fetch", "/结果"), " —— 店长没填回访截止,没派", 1320, 220),
+        {"id": "task", "type": "tool", "name": "派回访任务", "layout": {"x": 1320, "y": 0},
+         "config": {"tool_version_id": 桥.get("派回访任务"),
+                    "bindings": {"客户号们": 引("review", "/要派的客户号"), "截止": 引("review", "/回访截止"),
+                                 "名单": 引("fetch", "/数据/名单"), "话术": 引("write", "/逐人")}}},
+        记("tasked", "记下派了谁", 引("task", "/结果"), "", 1480, 0),
+        {"id": "merge", "type": "merge", "name": "汇合", "layout": {"x": 1640, "y": 160},
+         "config": {"candidates": [引("tasked", "/结果"), 引("none", "/结果"), 引("rejected", "/结果"),
+                                   引("no_who", "/结果"), 引("no_when", "/结果")],
+                    "output_field": "结果"}},
+        {"id": "finish", "type": "end", "name": "返回结果", "layout": {"x": 1800, "y": 160},
+         "config": {"output_schema": 结果Schema, "bindings": {"结果": 引("merge", "/结果")}}},
+    ]
+    边 = [{"source": a, "target": b, "port": "success"} for a, b in (
+        ("start", "fetch"), ("fetch", "any"), ("write", "review"), ("review", "ok"),
+        ("task", "tasked"), ("tasked", "merge"), ("none", "merge"), ("rejected", "merge"),
+        ("no_who", "merge"), ("no_when", "merge"), ("merge", "finish"))]
+    分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
+    边 += [分("any", "none", "yes"), 分("any", "write", "else"), 分("ok", "who", "yes"), 分("ok", "rejected", "else"),
+          分("who", "when", "yes"), 分("who", "no_who", "else"), 分("when", "task", "yes"), 分("when", "no_when", "else")]
+    return {"definition_schema_version": "1", "kind": "workflow",
+            "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
+            "nodes": 节点, "edges": 边}
+
+
+模板们 = ("空白", "文本处理", "音频整理", "经营报告", "订单风险", "老客召回")
 
 # ── 聊天接管(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」)──────────────────
 # 能被接管的只有澜绣**自有**技能(agentsite/skills_own.py 的 OURS)—— 第三方技能没有业务写口,接管它没有意义。
@@ -360,7 +434,8 @@ def _订单风险(桥):
     "quote": "报价", "growth-plan": "成长计划", "roster": "排班", "exchange": "换货",
     "pattern-draft": "打版",
 }
-_模板技能 = {"音频整理": "call-notes", "经营报告": "store-report", "订单风险": "deadline-rescue"}
+_模板技能 = {"音频整理": "call-notes", "经营报告": "store-report", "订单风险": "deadline-rescue",
+            "老客召回": "customer-recall"}
 
 
 def _审计(c, me, action, target, reason=None):
@@ -394,7 +469,8 @@ def _默认处理要求(c, project_id, key="customer_needs_extract"):
                              order by version_no desc limit 1"""), {"p": project_id, "k": key}).scalar()
 
 
-_模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write", "订单风险": "order_risk_advise"}
+_模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write", "订单风险": "order_risk_advise",
+            "老客召回": "recall_script"}
 
 
 def _模板(名, 桥=None):
@@ -405,6 +481,8 @@ def _模板(名, 桥=None):
         return _经营报告(桥 or {})
     if 名 == "订单风险":
         return _订单风险(桥 or {})
+    if 名 == "老客召回":
+        return _老客召回(桥 or {})
     开始 = {"id": "start", "type": "start", "layout": {"x": 40, "y": 120},
             "config": {"input_schema": {"type": "object",
                                         "properties": {"article": {"type": "string",
@@ -506,6 +584,8 @@ _模板说明 = {
                ["选报告期", "取经营数据", "写报告正文", "店长核对", "保存前再取一次比指纹", "一样 → 存 / 变了 → 重写再核"]),
     "订单风险": ("选一笔订单,规则判出交付风险档(已延期 / 需关注 / 暂无已识别风险 / 无法判断),要跟踪的由店长填负责人和时间后派「订单跟踪」",
                ["选订单", "取这一单的交付风险(规则分档)", "要跟踪?", "写处理建议", "店长决定", "派之前再核一次", "派订单跟踪"]),
+    "老客召回": ("促活名单和流失预警逐人交叉出一张有由头的回访名单,逐人写依据和开口话术;店长勾人、填截止后,给客户的归属顾问各派一条电话回电",
+               ["取召回名单(逐人交叉)", "有该联系的?", "逐人写依据和话术", "店长勾选", "派回访任务(逐人再核,不合适的跳过并写明)"]),
     "文本处理": ("一段文字进来,模型整理一遍出去(开始 → AI 处理 → 结束)", ["输入正文", "AI 处理", "返回结果"]),
     "空白": ("只有开始和结束,自己从头搭", []),
 }
@@ -527,8 +607,9 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         有要求 = bool(_默认处理要求(c, project_id))
         有报告要求 = bool(_默认处理要求(c, project_id, "store_report_write"))
         有风险要求 = bool(_默认处理要求(c, project_id, "order_risk_advise"))
+        有召回要求 = bool(_默认处理要求(c, project_id, "recall_script"))
     出 = []
-    for 名 in ("音频整理", "经营报告", "订单风险", "文本处理", "空白"):   # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
+    for 名 in ("音频整理", "经营报告", "订单风险", "老客召回", "文本处理", "空白"):   # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
         说, 步 = _模板说明[名]
         要 = []
         if 名 == "音频整理":
@@ -543,13 +624,19 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                           "怎么补": "跑 管理后台/tools/seed_bridge_tools.py 登记(派任务在正式项目里用从澜绣导入的)"})
             要.append({"名": "处理要求「订单风险建议」", "有了吗": 有风险要求,
                       "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
+        if 名 == "老客召回":
+            for 工, 中 in (("召回名单", "取召回名单"), ("派回访任务", "派回访任务")):
+                要.append({"名": f"澜绣业务动作「{中}」", "有了吗": bool(桥.get(工)),
+                          "怎么补": "跑 管理后台/tools/seed_bridge_tools.py 登记"})
+            要.append({"名": "处理要求「召回话术」", "有了吗": 有召回要求,
+                      "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
         if 名 == "经营报告":
             for 工, 中 in (("store_report", "取经营数据"), ("save_report", "存报告")):
                 要.append({"名": f"澜绣业务动作「{中}」", "有了吗": bool(桥.get(工)),
                           "怎么补": "正式项目从澜绣导入;别的项目跑 管理后台/tools/seed_bridge_tools.py 登记"})
             要.append({"名": "处理要求「经营报告撰写」", "有了吗": 有报告要求,
                       "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
-        if 名 in ("音频整理", "经营报告", "订单风险", "文本处理"):
+        if 名 in ("音频整理", "经营报告", "订单风险", "老客召回", "文本处理"):
             要.append({"名": "一个可用的模型", "有了吗": 有模型, "怎么补": "平台管理员在「模型与连接」里接一个"})
         出.append({"名": 名, "说明": 说, "步骤": 步, "需要的资源": 要,
                    "能直接跑吗": all(x["有了吗"] for x in 要) and 名 != "空白"})

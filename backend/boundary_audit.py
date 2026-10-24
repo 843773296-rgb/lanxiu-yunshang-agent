@@ -1045,6 +1045,59 @@ print(json.dumps({"对照": [一[0], 中 - 前], "重来": [二[0], 后 - 中], 
                           "核对人没绑定澜绣员工就不写;名单外的写口不接;业务写口没绑定不执行")
 
 
+def a_bridge_recall():
+    """老客召回派回访(六条第五条,10-25):只派给这次名单里、派的那一刻仍有由头的人;同一张单重来不派第二条。
+
+    子进程、库副本上真调 workflow_bridge.执行。攻三处:① 店长填了名单外的客户号 ② 名单本身被改过 ——
+    塞进一个**眼下没由头**的人(桥收的名单来自工作流上一步,不是澜绣自己算的)③ 同一张单回执丢了再执行一次。
+    **带对照**:名单里那个有由头的正常人必须真派成一条。"""
+    import subprocess as _sp, json as _js
+    src = r"""
+import sys, os, json, sqlite3
+sys.path[:0] = ['backend', 'knowledge']
+import server, oplog, api, tasks, revive, slipping, workflow_bridge as WB, check_copy
+副本 = check_copy.用副本('ba-recall-')
+店长 = '60000001'
+me = WB.员工身份(店长)
+c = sqlite3.connect(副本)
+候 = [r[0] for r in c.execute("SELECT cu.id FROM customer cu JOIN staff s ON s.no=cu.advisor_no AND s.status='启用' "
+      "WHERE cu.shop=? AND cu.merged_into IS NULL AND NOT EXISTS (SELECT 1 FROM schedule x WHERE x.customer_id=cu.id "
+      "AND x.status='有效' AND x.type IN ('电话回电','商机提醒')) ORDER BY cu.id LIMIT 400", (me['shop'],))]
+有, 没 = None, None
+with api.as_user(me):
+    for cid in 候:
+        判 = (api.revive_list(customer=cid) or {}).get('这一个人') or {}
+        if 判.get('该不该联系') and not 有: 有 = cid
+        if not 判.get('该不该联系') and not 没: 没 = cid
+        if 有 and 没: break
+数 = lambda: sqlite3.connect(副本).execute("SELECT COUNT(*) FROM schedule").fetchone()[0]
+名单 = [{"客户号": 有, "由头": "审计"}, {"客户号": 没, "由头": "审计塞进来的"}]
+单 = {"工具": "派回访任务", "幂等键": "ba:recall:1", "办事人": "ba", "办事人澜绣工号": 店长,
+      "参数": {"客户号们": f"{有},{没},C00000000", "截止": "2026-12-31", "名单": 名单}}
+前 = 数(); 一 = WB.执行(单, 谁="ba"); 中 = 数(); 二 = WB.执行(单, 谁="ba"); 后 = 数()
+派给 = sqlite3.connect(副本).execute("SELECT customer_id FROM schedule WHERE status='有效' AND type='电话回电' "
+       "AND note LIKE '老客召回%' ORDER BY rowid DESC LIMIT 5").fetchall()
+print(json.dumps({"样本": [有, 没], "对照": [一[0], 中 - 前], "重来": 后 - 中, "派给": [r[0] for r in 派给],
+                  "跳过": ((一[1] or {}).get('数据') or {}).get('跳过')}, ensure_ascii=False))
+"""
+    r = _sp.run([sys.executable, "-c", src], capture_output=True, text=True, timeout=300, cwd=ROOT)
+    try:
+        o = _js.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        raise 前提不成立(f"攻击脚本没跑完,什么都没验:{(r.stderr or r.stdout)[-300:]}")
+    if not all(o["样本"]):
+        raise 前提不成立(f"找不到一个有由头 + 一个没由头的客户({o['样本']})—— 没东西可攻")
+    if o["对照"][0] != "已执行" or o["对照"][1] < 1:
+        raise 前提不成立(f"对照没派成({o['对照']})—— 「没派」不作数")
+    if o["对照"][1] > 1:
+        return f"一张单派了 {o['对照'][1]} 条:名单外的客户号或塞进来的没由头的人也派了(派给 {o['派给']})"
+    if o["样本"][1] in o["派给"] or "C00000000" in o["派给"]:
+        return f"派给了不该派的人:{o['派给']}"
+    if o["重来"]:
+        return f"同一张单第二次执行又派了 {o['重来']} 条"
+    raise PermissionError("名单外的客户号不派;名单被塞进一个眼下没由头的人也不派(派的那一刻逐人再核);同一张单只派一次")
+
+
 def a_spans_scope():
     """聊天站执行记录(/spans:用户原话、工具参数和返回)只给本人和总部运营(2026-10-24 实测原来不登录就给 200)。"""
     import tempfile as _tf
@@ -1373,6 +1426,10 @@ STRUCT = [
  ("配置层也点名封了内置工具", "sdk.py disallowed_tools",
   a_disallowed, "检查危险工具是否都在 disallowed_tools 里",
   "**双锁**:配置一道 + Hook 一道。配置会被人改错,Hook 是兜底"),
+ ("工作流派回访:只派给名单里、此刻仍有由头的人,重试不派第二条", "backend/workflow_bridge.py 派回访任务(六条第五条,10-25)",
+  a_bridge_recall, "库副本上:店长填名单外的客户号 / 名单里塞一个眼下没由头的人 / 同一张单执行两次",
+  "**靠结构**:只认这次名单里的客户号;派的那一刻以绑定员工身份逐人再问一次促活(范围和由头都按澜绣自己的口径,"
+  "不信名单上写的);每人一笔台账,做过的不再做、开始了没结果的报待核实不重做"),
  ("工作流写跟进:重试不写第二条、不记到别人名下", "backend/workflow_bridge.py 写跟进(用户 10-24 拍「核对即定稿」)",
   a_bridge_followup, "库副本上:同一张写跟进单执行两次 / 通话号是 A 的录音而客户号写 B / 工具名写成改订单 / 核对人没绑定澜绣员工 / 名单外的开单 / 不带绑定去派任务",
   "**靠结构**:写之前按幂等键查台账(键记在 create_followup 的台账 ctx 里);"

@@ -71,10 +71,18 @@ import reactivate as _口径
 售后终态 = ("已完成", "审批拒绝")
 
 
+_连 = {}
+
+
 def _rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    # 只读、按库路径复用一个连接(10-25 量出来的):促活名单对一家店近 4000 个客户每人查 6 次,
+    # 原来每次都新开连接 —— 2.4 万次开库、每次重读 65 张表的结构,一次名单 22 秒;查询本身每条 0.01 毫秒。
+    # 加索引没用(实测 22 → 20 秒),慢的不是查询。按 DB 路径取连接:检查切到库副本后自然换一个
+    c = _连.get(DB)
+    if c is None:
+        c = _连[DB] = sqlite3.connect(DB, check_same_thread=False)
         c.row_factory = sqlite3.Row
-        return [dict(r) for r in c.execute(sql, a)]
+    return [dict(r) for r in c.execute(sql, a)]
 
 
 def _today():

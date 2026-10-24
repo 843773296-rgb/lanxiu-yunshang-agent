@@ -72,10 +72,10 @@ def main():
     后台 = os.path.join(ROOT, "管理后台", "services", "api", "app", "runtime", "桥工具.py")
     只读, 要批准 = set(_字面(后台, "只读")), set(_字面(后台, "要批准"))
     _桥 = os.path.join(ROOT, "backend", "workflow_bridge.py")
-    专用 = set(_字面(_桥, "专用工具"))           # 桥专门做的(取转写 / 写跟进 / 订单交付风险),不在 api.TOOLS 里
+    专用 = set(_字面(_桥, "专用工具"))           # 桥专门做的(取转写 / 写跟进 / 订单交付风险 / 召回名单 / 派回访任务),不在 api.TOOLS 里
     澜绣 = set(_字面(_桥, "业务工具")) | 专用
     import api
-    写口 = set(api.WRITE_TOOLS) | {"写跟进"}          # 写跟进是桥专门做的写,不在 api 里(专用工具里只有它会写)
+    写口 = set(api.WRITE_TOOLS) | {"写跟进", "派回访任务"}   # 桥专门做的两个写,不在 api 里(专用工具里只有它俩会写)
     print(f"  管理后台:只读 {len(只读)} · 要批准 {len(要批准)} ;澜绣执行表 {len(澜绣)}")
     if not (只读 and 要批准 and 澜绣):
         ck("两边名单都读到了东西", False, "有一边是空的 —— 没东西可比,不算通过")

@@ -397,7 +397,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 #
 # ⚠️ 顺序和 `test-e2e` 一致(数据集要排在训练和评测之前)——
 # 那条依赖的理由写在 `test-e2e` 里同一处。
-E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py test_audio_flow.py test_store_report_flow.py test_order_risk_flow.py \
+E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py test_audio_flow.py test_store_report_flow.py test_order_risk_flow.py test_recall_flow.py \
           test_upload_flow.py test_usage_flow.py test_runctl_flow.py \
           test_connections_flow.py test_release_flow.py \
           test_datasets_flow.py test_debug_evals_flow.py \
@@ -505,6 +505,9 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo ""
 	@echo "▸ 订单风险(11 条:不用跟踪不派 / 填齐了再核一次才派 / 变了不派 / 没填不派 / 退回不派 —— 用户 10-25 拍「全用规则分档」)"
 	@./.venv/bin/python tests/e2e/test_order_risk_flow.py
+	@echo ""
+	@echo "▸ 老客召回(12 条:0 人不派 / 勾了人填了截止才派、带原名单 / 没勾不派 / 没截止不派 / 退回不派 —— 六条第五条)"
+	@./.venv/bin/python tests/e2e/test_recall_flow.py
 	@echo ""
 	@echo "▸ 知识与 RAG 端到端:三条接口 + **整条链路**(§9.5)"
 	@echo "  ⚠️ 其中一条会**真调一次 Claude 精排**(月租额度);另一条走 要精排=false 不花钱"
@@ -699,6 +702,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_order_risk_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_order_risk_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_order_risk_flow.log
+	@./.venv/bin/python tests/e2e/test_recall_flow.py > /tmp/prog-test_recall_flow.log 2>&1 \
+	  || { echo "  ❌ test_recall_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_recall_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_recall_flow.log
 	@./.venv/bin/python tests/e2e/test_knowledge_flow.py > /tmp/prog-test_knowledge_flow.log 2>&1 \
 	  || { echo "  ❌ test_knowledge_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_knowledge_flow.log; exit 1; }
