@@ -48,7 +48,18 @@ create_followup(server.py,只追加)、call_opportunity(MCP 只读)、call-notes
 **判据(这一段新增)**:写跟进前必须有人批过 —— **只认人工节点的输出**(模型 JSON 里写 决定=approve 骗不过);挂起中的运行**没有手动继续**(runctl 409 WAITING_FOR_EVENT);
 运行取消 / 过期后它的桥单从待执行列表消失(澜绣不再去写);Agent 模板不带桥工具(Agent 路上没有它们的执行通道,也绕开核对)。
 
-**下一步第一个动作**:门禁 → 推 → `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.lanxiu.supervise.plist`(先 cp)装常驻同步 → 段 3(真模型按节点配置跑)。
+**进度(10-24 下午)**:五段全部落地并推送(400b535);常驻同步 com.lanxiu.supervise 已装、在跑。
+段 3 真模型验证过一次(project_lanxiu、真录音 TS-001、claude-haiku-4-5,需求带原话、拿不准的进待确认;核对那步取消,**没写跟进**)。
+
+**用户 10-24 下午又拍两件(AskUserQuestion 原选项)**:
+- 正式项目谁来核对?→「给两个管理员单独授权审批」。⚠️ 这是**放宽权限闸**(perms.py 里写明 admin 的审批默认关、职责分离要在默认值上成立),
+  所以 SQL 备好了**给用户自己 `!` 执行**:scratchpad 里 grant_lanxiu_reviewers.sql(U001 / U007 加专项「审批工具动作」+ 一条审计)。
+  🔮 **用户执行了没有,没验** —— 验法:`psql -d aimc_dev -Atc "select user_id, special_grants from memberships where project_id='project_lanxiu'"`
+  模板候选审批角色因此改回 ["approver", "admin"](admin 只在有专项授权时批得了)
+- 常驻管理后台切真模型?→「切到真模型(推荐)」→ com.lanxiu.aimc.plist 加 MODEL_ADAPTER=anthropic,已重装。
+  ⚠️ 之后本地 `make test-e2e-ci` 有两条按 mock 假设写的红(test_prompt_snapshot_flow / test_exec_mode_flow)—— 环境不同,不是回归;CI 自起 mock,那边绿
+
+**下一步第一个动作**:看 400b535 的 CI(admin-e2e 应该转绿)→ 用户执行授权后在 project_lanxiu 真跑一遍「通过 → 写跟进」(会往真库写一条跟进,先问用户)→ 产品说明补「工作流改版 + 音频整理」一节并发飞书。
 
 
 

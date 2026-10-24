@@ -24,6 +24,9 @@
     <key>USER</key><string>eureka</string>
     <key>HOME</key><string>/Users/eureka</string>
     <key>PYTHONUNBUFFERED</key><string>1</string>
+    <!-- 用户 2026-10-24 拍「切到真模型」:AI 步骤选了真连接就真调(钥匙串里的 Claude 登录态,月租);
+         选演示连接的照旧 mock。管理后台里别的用到模型的地方(知识问答改写、Prompt 调试)也跟着变成真调 -->
+    <key>MODEL_ADAPTER</key><string>anthropic</string>
   </dict>
 </dict>
 </plist>

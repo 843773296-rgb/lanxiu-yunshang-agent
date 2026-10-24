@@ -966,7 +966,7 @@ function 加节点(类型, 接 = null) {
                     end: { output_schema: { type: "object", properties: {}, required: [] }, bindings: {} },
                     condition: { branches: [], else_policy: "fail" },
                     merge: { candidates: [], output_field: "out" },
-                    human: { request_kind: "核对", candidate_roles: ["approver"], allowed_fields: ["定稿"],
+                    human: { request_kind: "核对", candidate_roles: ["approver", "admin"], allowed_fields: ["定稿"],
                              expires_at_policy: { 小时: 48, 到期: "fail" }, payload_binding: {} },
                     llm: { bindings: {}, output_schema: { type: "object", properties: { text: { type: "string" } },
                            required: ["text"], additionalProperties: false } },
@@ -1096,7 +1096,7 @@ function 表_设置(n) {
         c.candidate_roles = [...s];
       });
       return `<label class="k"><input type="checkbox" data-k="${k}" ${有 ? "checked" : ""}> ${esc(r["中文"])}
-        ${r["能审批"] ? "" : "<span class='k'>(这个角色默认不能审批)</span>"}</label>`;
+        ${r["能审批"] ? "" : "<span class='k'>(默认不能审批,要专项授权)</span>"}</label>`;
     }).join(" ")
       + `<label class="f">审核人能改哪些内容</label>`
       + ["定稿"].map((f) => {

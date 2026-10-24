@@ -112,9 +112,10 @@ def _音频整理(桥):
                     "bindings": {"转写": 引("fetch", "/text"),
                                  "客户": {"source": "input", "pointer": "/customer_id"}}}},
         {"id": "review", "type": "human", "name": "人工核对", "layout": {"x": 580, "y": 160},
-         # 只写**默认就能审批**的角色:admin 那一格是「可授权」(默认关),写进来看着有人能批、实际没有
-         # (10-24 真模型验证时撞到:正式项目里只有两个 admin,核对待办谁都批不了)
-         "config": {"request_kind": "核对", "candidate_roles": ["approver"],
+         # approver 默认能批;admin 那一格是「可授权」(默认关),**只有拿到专项授权的 admin 才批得了**
+         # (10-24 真模型验证时撞到:正式项目里只有两个 admin、都没授权,核对待办谁都批不了 ——
+         #  用户拍「给两个管理员单独授权审批」,所以 admin 留在候选里,批不批得了由那条专项授权决定)
+         "config": {"request_kind": "核对", "candidate_roles": ["approver", "admin"],
                     "allowed_fields": ["定稿"],
                     "expires_at_policy": {"小时": 48, "到期": "fail"},
                     "payload_binding": {"摘要": 引("extract", "/跟进草稿"),
