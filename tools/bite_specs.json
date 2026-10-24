@@ -12401,5 +12401,17 @@
    }
   ],
   "预期红": "新写的跟进记在这位客户的顾问名下(advisor_no 不空、和客户档案一致)"
+ },
+ {
+  "script": "backend/shop_key_check.py",
+  "改坏": "把加列那一步从「紧跟 seed.py」往后挪一步 —— 这是 2026-10-24 CI 真红过的那一次:`opportunity_store` 往 schedule 写 shop_code(第 15 步),而加列原来挂在第 41 步,从零重建时写口跑在加列之前,`OperationalError: table schedule has no column named shop_code`。⚠️ 要害是**本地怎么跑都是绿的** —— 在一个已经存在的库上那一列永远都在,只有「从零」才会让写口跑在加列之前。所以判据不只问「有没有人跑」,还问「跑在哪一步」",
+  "file": [
+   {
+    "path": "tools/rebuild.sh",
+    "old": "for STEP in \"backend/seed.py\" \"tools/add_shop_code.py --建列\" \"tools/backfill_scene.py\"",
+    "new": "for STEP in \"backend/seed.py\" \"tools/backfill_scene.py\" \"tools/add_shop_code.py --建列\""
+   }
+  ],
+  "预期红": "加列紧跟在 seed.py 之后"
  }
 ]

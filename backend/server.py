@@ -1915,9 +1915,24 @@ def create_appointment(d, actor="魏欣新", _role=None):
     aid = f"AP{_wnow():%y%m%d}{n + 1:04d}"
     # 列名以**表**为准:appointment 是 start_ts / end_ts,不是 appt_at。
     # 校验读的也是 d["start"] / d["end"](见 rules.validate_appointment),两头对齐。
+    # ⚠️ 列名是 `advisor_no`,**不是 `advisor`**。原来这儿写的是后者,
+    # 而 `_insert` 对非必填的未知列只在 stderr 打一行就丢掉 ——
+    # 于是**从页面建的每一条预约,顾问都是空的**,而接口返回 ok:true。
+    # 库里现有那些预约都带着顾问,是 seed 直接写进去的,所以一直没人发现。
+    # (2026-10-24 数据工厂那条线查出来的;`create_followup` 那一处同病,归他修。)
+    # ⚠️ `shop_code` 也是这次补的:**这是预约的第二条写口**,
+    # 而我给门店键加列那一轮是按字面 `INSERT INTO` 普查写口的,
+    # **用辅助函数写库的这一条压根没进视野**。
+    # > 一个用辅助函数写库的写口,和一个不存在的写口,在 grep 眼里长得一模一样。
+    import shop_key as _SK
+    # ⚠️ 在 `with` 里算 —— `_conn()` 返回的是**裸连接**,直接当参数传进去
+    # 会每建一条预约漏一个连接(它不是会自己关的那种上下文管理器)。
+    with _conn() as _c:
+        _门店码 = _SK.码(_c, d.get("shop"))
     _insert("appointment",
             {"id": aid, "customer_id": d.get("customer_id"), "shop": d.get("shop"),
-             "advisor": d.get("advisor"), "status": "待确认",
+             "shop_code": _门店码,
+             "advisor_no": 顾问工号(d.get("advisor")), "status": "待确认",
              "start_ts": (d.get("start") or "").replace("T", " "),
              "end_ts": (d.get("end") or "").replace("T", " ")},
             required=["id", "customer_id", "start_ts", "end_ts", "status"])

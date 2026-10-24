@@ -174,7 +174,7 @@ if [ "$FRESH_ONLY" = 1 ]; then
     echo "   真要重建,请直接敲 ./tools/rebuild.sh(它会先说清楚要删什么,并留 3 秒反悔)。"
     exit 1
   fi
-  echo "📦 首次建库:下面 41 步**全跑完**才算建好,少一步都会让某几张表空着。"
+  echo "📦 首次建库:下面 43 步**全跑完**才算建好,少一步都会让某几张表空着。"
 else
   echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
   sleep 3
@@ -193,9 +193,9 @@ BUILD_T0=$SECONDS
 # 白坯试衣必试的三类里「婚服」按商品的「婚礼婚服」场合标签认,而旅程会把订单推到开裁 ——
 # 标签还没挂的话婚服判不出、闸判「判不了」、旅程卡在待生产,**时间没挪回过去,留下一批未来日期**
 # (数据规范 C4 / A15 当场红)。场合标签只依赖商品和知识库,放前面不缺任何输入。
-for STEP in "backend/seed.py" "tools/backfill_scene.py" "tools/run_journey.py 42" "tools/grow_customers.py" "tools/simulate_sales.py" \
+for STEP in "backend/seed.py" "tools/add_shop_code.py --建列" "tools/backfill_scene.py" "tools/run_journey.py 42" "tools/grow_customers.py" "tools/simulate_sales.py" \
             "tools/order_mix.py" "tools/backfill_order_measure.py" "backend/seed_fitting.py" "backend/seed_pickup.py" "backend/seed_repair.py" "tools/backfill_color.py" \
-            "tools/backfill_transcript.py" "tools/backfill_terms.py" "tools/backfill_opportunity.py" "tools/backfill_roster.py" "tools/backfill_credit.py" "tools/ensure_tables.py" "tools/backfill_fixtures.py" "tools/backfill_biz_fields.py" "tools/backfill_link.py" "tools/backfill_wattr.py" \
+            "tools/backfill_transcript.py" "tools/backfill_terms.py" "tools/backfill_opportunity.py" "tools/backfill_roster.py" "tools/backfill_credit.py" "tools/ensure_tables.py" "tools/add_shop_code.py --建列" "tools/backfill_fixtures.py" "tools/backfill_biz_fields.py" "tools/backfill_link.py" "tools/backfill_wattr.py" \
             "tools/seed_factory_feed.py" "backend/seed_pickup.py --铺到包裹" "tools/seed_pending_orders.py" \
             "tools/clamp_future_done.py" "tools/level_customer_orders.py" \
             "tools/shift_world.py" "tools/backfill_rating.py" \
@@ -229,8 +229,8 @@ done
 # ⚠️ **加步骤要改这个数。** 2026-10-09 加了 daily_fresh / lifecycle_refresh 两步,
 # 忘了改 —— `backend/firstrun_check.py` 当场逮到「步骤表 31 步,自校验却写着 29 步」。
 # 这个数存在的理由正是「循环没跑全,而上面看起来是顺利的」,所以它自己不能过期。
-if [ "$DONE" -ne 41 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 41 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 43 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 43 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 # ── 耗时账(2026-10-19 加的,和 check.sh 那本是同一件事)────────────────────

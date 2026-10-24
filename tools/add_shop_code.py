@@ -39,8 +39,19 @@ import shop_key as SK
 G, Rd, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
 
+def 表在吗(c, 表):
+    return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                          (表,)).fetchone())
+
+
 def 要加列的(c):
-    return [(t, col) for t, col in SK.带门店键的 if not SK.有列(c, t)]
+    """只算**表已经存在**的那几处。表还没建出来的单独报,不混进来。"""
+    return [(t, col) for t, col in SK.带门店键的
+            if 表在吗(c, t) and not SK.有列(c, t)]
+
+
+def 表还没建的(c):
+    return [t for t, _ in SK.带门店键的 if not 表在吗(c, t)]
 
 
 def 要回填的(c, 门店):
@@ -63,6 +74,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=SK.DB)
     ap.add_argument("--做", action="store_true", dest="做", help="真改;不加就是试跑")
+    ap.add_argument("--建列", action="store_true", dest="建列",
+                    help="**只加列、不回填**,给重建流水线的前段用(见下面那段注释)")
     a, 野 = ap.parse_known_args()
     if 野:
         print(f"{Rd}❌ 不认识这些参数:{野} —— **不认识就不跑**{D}")
@@ -83,7 +96,45 @@ def main():
     print(f"门店表:{len(门店)} 家 —— {sorted(门店.values())}")
 
     缺列 = 要加列的(c)
+    没建 = 表还没建的(c)
     print(f"\n要加列的 {len(缺列)} 处:{[t for t, _ in 缺列] or '一处都不缺'}")
+    if 没建:
+        print(f"  {Y}这几张表还没建出来,这一轮跳过:{没建}{D}")
+
+    # ── `--建列`:只加列,给重建流水线的**前段**用 ─────────────────────
+    #
+    # ⚠️ 2026-10-24 CI 红在这件事上,而**本地怎么跑都是绿的**:
+    # `opportunity_store` 往 `schedule` 写 `shop_code`,它在重建流水线第 15 步跑;
+    # 而加列那一步原来挂在**第 41 步**(所有铺数据的步骤之后,为了回填能覆盖全)。
+    # 于是从零重建时写口跑在加列之前,当场
+    # `OperationalError: table schedule has no column named shop_code`。
+    #
+    # > 在一个已经存在的库上,那一列**永远都在** —— 所以本地看不见这件事。
+    # > 只有「从零」才会让写口跑在加列之前。
+    #
+    # 修法是把两件事分开,各放在该放的位置:
+    #   **加列**要在**第一个写口之前**(所以挂在 seed.py 之后、ensure_tables 之后各一次,
+    #            后者是因为 roster / store_report_doc 是 ensure_tables 才建的);
+    #   **回填**要在**所有造数之后**(所以仍然留在最后那一批)。
+    # 两件都幂等,多跑一次只是多读一遍。
+    if a.建列:
+        if 缺列:
+            with c:
+                for 表, _ in 缺列:
+                    c.execute(f"ALTER TABLE {表} ADD COLUMN shop_code TEXT")
+                    print(f"  + {表}.shop_code")
+        print(f"  {G}加列完毕(这一轮只加列、不回填;回填在流水线最后那一批){D}")
+        c.close()
+        return 0
+
+    # 到这儿就是**回填那一轮** —— 它要求 11 张表一张不少。
+    # ⚠️ 表还没建出来就红:**「表不在」和「这一处不用管」长得一模一样**,
+    # 而前者意味着回填漏了一整张表,后者才是真的没事。
+    if 没建:
+        print(f"  {Rd}❌ 回填这一轮要求 11 张表都在,而这几张不在:{没建}{D}")
+        print(f"      这一步在流水线里排得太早了,或者那张表的建表步骤没跑。")
+        c.close()
+        return 1
 
     if 缺列 and not a.做:
         print(f"  {Y}(试跑:列还没加,所以回填也没法算。确认之后加 `--做`){D}")

@@ -76,6 +76,11 @@ G, Rd, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
     # 「这张表没问题」和「这张表没人看」在绿勾上长得一模一样。
     ("把 ordr 从「带门店键的」名单里删掉(少验一张 2.6 万行的表,照样全绿)",
      "明写的「带门店键的」和库里真有 shop 列的表,一张不差"),
+    # 第五条守**顺序**,它是 2026-10-24 CI 真红过的那一次:
+    # 加列排在写口之后,从零重建当场炸,而本地怎么跑都是绿的
+    # (已经存在的库上那一列永远都在)。
+    ("把加列那一步往后挪一步(从零重建时写口跑在加列之前就炸,本地看不见)",
+     "加列紧跟在 seed.py 之后"),
     # 第二条打的是那张明写名单 —— 名单一空,「留空」就退回「不知道」,
     # 而**真库全绿**:工坊那 21 行照样是留空的,只是没人能说清它们为什么空。
     # ⚠️ 删的是**苏州织造坊**,不是上海工坊 —— 后者在下面「自造五种形状」里用着,
@@ -220,13 +225,59 @@ else:
 # ⚠️ 这条在本地库上**完全隐形**:列和数据早就在了,一路绿;
 # 只有从零重建才会整列全空。所以要有一条**从文本上**看的判据。
 # (同 `backend/query_index_check.py` 里那一条,同一个形状。)
+import re as _re2
+
 sh = os.path.join(ROOT, "tools", "rebuild.sh")
 文 = open(sh, encoding="utf-8").read() if os.path.exists(sh) else ""
+# ⚠️ 查的是**那一次调用**(带 `--做` 的回填),不是「这个脚本名出现过没有」。
+# 2026-10-24 这条栽过一次:原来查的是脚本名,而后来加了两个 `--建列` 步骤
+# **让那个名字永远都在** —— 于是删掉回填那一步,它照样绿。
+# > 一条「查的是含义」和一条「恰好匹配上了」,在它变绿这件事上长得一模一样。
 ck("rebuild.sh 的步骤清单里真的有人跑回填",
-   "tools/add_shop_code.py" in 文,
-   "rebuild.sh 里没有 `tools/add_shop_code.py` —— **登记了但没人去跑**。"
+   "add_shop_code.py --做" in 文,
+   "rebuild.sh 里没有 `tools/add_shop_code.py --做` —— **登记了但没人去跑回填**"
+   "(只有 `--建列` 不算:它只加列、不填值)。"
    "这个缺口在本地完全隐形(列和数据早就在了),只有 CI 从零重建才会"
    "整列全空,而那时红的是别的检查。")
+
+# ── **顺序**:加列要在建表之后、所有写口之前;回填要在所有造数之后 ─────
+#
+# ⚠️ 2026-10-24 CI 为这件事红了一次,而**本地怎么跑都是绿的**:
+# `opportunity_store` 往 schedule 写 shop_code(第 15 步),而加列原来挂在第 41 步,
+# 从零重建时写口跑在加列之前 ——
+# `OperationalError: table schedule has no column named shop_code`。
+#
+# > 在一个已经存在的库上,那一列**永远都在**。只有「从零」才会让写口跑在加列之前。
+#
+# 所以这条判据不只问「有没有人跑」,还问「**跑在哪一步**」:
+# 加列必须**紧跟在建表之后**(seed.py 建 SCHEMA 那批、ensure_tables 建另几张),
+# 回填必须在**最后那一批**。挪动步骤的人会被它拦住。
+_m = _re2.search(r"for STEP in (.+?); do", 文, _re2.S) if 文 else None
+ck("取得到 rebuild.sh 的步骤清单(取不到就没法验顺序)",
+   bool(_m), "rebuild.sh 的 `for STEP in …; do` 写法变了 —— **这条判据要跟着改**,别当成通过")
+if _m:
+    步 = [x.split()[0] for x in _re2.findall(r'"([^"]+)"', _m.group(1))]
+    全 = _re2.findall(r'"([^"]+)"', _m.group(1))
+    def 第几(名, 带=""):
+        return [i for i, (p, q) in enumerate(zip(步, 全))
+                if p == 名 and (带 in q if 带 else True)]
+    建列 = 第几("tools/add_shop_code.py", "--建列")
+    回填 = [i for i in 第几("tools/add_shop_code.py") if i not in 建列]
+    seed = 第几("backend/seed.py")
+    ens = 第几("tools/ensure_tables.py")
+    ck(f"加列紧跟在 seed.py 之后(现在:seed 第 {[i+1 for i in seed]} 步、"
+       f"加列第 {[i+1 for i in 建列]} 步)",
+       bool(seed) and bool(建列) and min(建列) == seed[0] + 1,
+       "加列那一步不是紧跟在 seed.py 后面 —— **中间插进来的任何步骤,"
+       "只要它调了带 shop_code 的写口,从零重建就当场炸**,而本地看不见")
+    ck(f"加列也紧跟在 ensure_tables.py 之后(roster / store_report_doc 是它建的)",
+       bool(ens) and any(i == ens[0] + 1 for i in 建列),
+       "ensure_tables 建的那几张表,后面没有紧跟一次加列 —— "
+       "它们的列会一直缺到最后那次回填,中间谁写就谁炸")
+    ck(f"回填排在最后那一批(现在第 {[i+1 for i in 回填]} 步 / 共 {len(步)} 步)",
+       bool(回填) and max(回填) >= len(步) - 3,
+       "回填排得太早 —— **它后面那些造数步骤写进去的行,"
+       "门店码会一直是空的**,而缺一列不报错、只是按它筛返回零行")
 
 print("  " + "=" * 80)
 if 坏:
