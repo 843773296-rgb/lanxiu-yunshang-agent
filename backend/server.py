@@ -1925,8 +1925,11 @@ def create_appointment(d, actor="魏欣新", _role=None):
     return dict(ok=True, code="CREATE", id=aid, reason=f"已建预约 {aid},状态「待确认」")
 
 
-def create_followup(d, actor="魏欣新"):
-    """新建跟进记录。跟进是**只增不改**的流水 —— 改跟进等于改历史。"""
+def create_followup(d, actor="魏欣新", ctx=None):
+    """新建跟进记录。跟进是**只增不改**的流水 —— 改跟进等于改历史。
+
+    `ctx` 进台账(2026-10-24):AI 管理后台的工作流来写时带着幂等键,
+    `workflow_bridge.写跟进` 写之前按它查台账 —— 重试不写第二条。"""
     import datetime
     if not (d.get("customer_id") and (d.get("content") or d.get("note"))):
         return dict(ok=False, code="MISSING", reason="客户号和跟进内容都必填")
@@ -1944,7 +1947,7 @@ def create_followup(d, actor="魏欣新"):
              "advisor": d.get("advisor")},
             required=["id", "customer_id", "ts", "content"])
     log_op(actor, "followup", fid, "—", "已记录", True, "CREATE",
-           f"跟进 {d['customer_id']}:{(d.get('content') or d.get('note'))[:40]}", {})
+           f"跟进 {d['customer_id']}:{(d.get('content') or d.get('note'))[:40]}", ctx or {})
     return dict(ok=True, code="CREATE", id=fid, reason=f"已记录跟进 {fid}")
 
 

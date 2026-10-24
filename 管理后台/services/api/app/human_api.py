@@ -73,6 +73,37 @@ def _现在():
     return datetime.now(timezone.utc)
 
 
+import re as _re
+_手机号 = _re.compile(r"(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)")
+
+
+def _核对材料(载荷):
+    """**工作流里的人工核对**(2026-10-24):材料要给全文,只把手机号打码。
+
+    `_脱敏参数` 那套「超过 160 字就只给形状」是给工具审批的 —— 批一次写入要看的是写哪儿、写什么类型。
+    而核对的活**就是对着原文看**:转写 419 字只给「开头 40 字」,审核人核不了模型漏没漏、编没编,
+    只能照着摘要点通过 —— 那这一步就成了走过场。
+    手机号照样打码(转写里常有客户念出来的号码;核对需求用不着它)。密钥类键名照样脱。
+    """
+    if 载荷 is None:
+        return None
+    try:
+        d = _json.loads(载荷) if isinstance(载荷, str) else dict(载荷)
+    except (ValueError, TypeError):
+        return {"__不是JSON__": True}
+    敏 = ("secret", "token", "api_key", "apikey", "password", "credential", "authorization", "bearer")
+
+    def 码(v):
+        if isinstance(v, str):
+            return _手机号.sub(lambda m: m.group(1) + "****" + m.group(3), v)
+        if isinstance(v, list):
+            return [码(x) for x in v]
+        if isinstance(v, dict):
+            return {k: 码(x) for k, x in v.items()}
+        return v
+    return {k: ("<已脱敏>" if any(w in str(k).lower() for w in 敏) else 码(v)) for k, v in d.items()}
+
+
 def _脱敏参数(载荷):
     """**给形状,不给原文** —— 和 `runs_api.脱敏` 同一条规矩。
 
@@ -225,6 +256,9 @@ def 待办详情(project_id: str, req_id: str,
         "看得到原文吗": 看得到原文,
         "允许编辑的字段": d["allowed_fields"] or [],
     }
+    if d["execution_run_id"] and d["kind"] == "核对":
+        # 能处理它的人(或本来就看得到原文的人)拿全文;别人仍是形状
+        出["核对材料"] = _核对材料(d["payload_ref"]) if (能 or 看得到原文) else _脱敏参数(d["payload_ref"])
     有人能批, 为啥 = AP.候选角色里有人能审吗(d["candidate_roles"], _谁有审批能力())
     出["有人能批吗"] = 有人能批
     if not 有人能批:

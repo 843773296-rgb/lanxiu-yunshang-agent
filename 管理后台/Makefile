@@ -495,7 +495,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "  **这一份是为了把「我手敲 curl 验过」变成可重跑的断言** —— 它第一次跑就抓到一个 500"
 	@./.venv/bin/python tests/e2e/test_orchestration_flow.py
 	@echo ""
-	@echo "▸ 音频整理全流程(23 条:取转写 → 提取 → 人工核对 → 写跟进;挂起 / 恢复 / 退回 / 绕过核对)"
+	@echo "▸ 音频整理全流程(24 条:取转写 → 提取 → 人工核对 → 写跟进;挂起 / 恢复 / 退回 / 绕过核对)"
 	@echo "  澜绣那一侧由测试扮演(拉单、回执)—— 管理后台不碰澜绣的库,真的那半在 supervise_sync"
 	@./.venv/bin/python tests/e2e/test_audio_flow.py
 	@echo ""

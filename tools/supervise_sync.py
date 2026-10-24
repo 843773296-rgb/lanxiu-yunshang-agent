@@ -4,6 +4,8 @@
 
     ① 推:产出投递箱(报告 / 建议)里还没送到的,推给管理后台
     ② 拉:管理后台上「打回、待执行」的决定拉回来,**用这边自己的函数执行**,再回执
+    ③ 桥:管理后台工作流记下的「取转写 / 写跟进」单拉回来,交给 backend/workflow_bridge.py 执行,再回执
+       (2026-10-24,音频整理全流程;回执到了,那次运行才从停下的那一步接着走)
 
     python3 tools/supervise_sync.py            # 推 + 拉,各做一轮
     python3 tools/supervise_sync.py --看        # 只报积压和待执行,什么都不发、不执行
@@ -18,7 +20,7 @@
 执行完回执(ack),管理后台上那条决定才变成「已执行」—— **没回执的就一直挂着「待执行」**,
 而不是「点了打回」就显示成功、这边其实什么都没发生。
 """
-import argparse, os, sys, time
+import argparse, json, os, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:0] = [os.path.join(ROOT, "agent"), os.path.join(ROOT, "backend"), os.path.join(ROOT, "knowledge")]
@@ -44,6 +46,31 @@ def 执行(决定):
         return "执行失败", f"认不出外部id「{外部}」是哪种产出", None
     except Exception as e:
         return "执行失败", f"{type(e).__name__}: {e}"[:200], None
+
+
+def 跑桥(cfg):
+    """③ 桥:拉待执行的桥请求 → workflow_bridge 执行 → 回执。返回 (执行了几张, 错误)。
+
+    回执没送到的单**下一轮还会被拉到** —— 写跟进靠幂等键不写第二条,取转写本来就无害。
+    """
+    import workflow_bridge as WB
+    码, 体 = AR._curl("GET", "/bridge-calls?%E7%8A%B6%E6%80%81=%E5%BE%85%E6%89%A7%E8%A1%8C", cfg)  # 状态=待执行
+    if 码 == "404":
+        return 0, None          # 管理后台还没有这条接口(老版本)—— 不算错
+    if 码 != "200":
+        return 0, f"HTTP {码}:{(体 or '')[:160]}" if 码 else 体
+    try:
+        单们 = json.loads(体).get("rows") or []
+    except Exception as e:
+        return 0, f"返回不是 JSON:{e}"
+    for 单 in 单们:
+        结果, 输出, 失败 = WB.执行(单, 谁=单.get("created_by") or "AI 管理平台")
+        ok, 回 = AR._curl("POST", f"/bridge-calls/{单['id']}/ack", cfg,
+                          {k: v for k, v in dict(结果=结果, 输出=输出, 失败=失败).items() if v is not None})
+        说 = (输出 or {}).get("结果") or (失败 or {}).get("消息") or ""
+        print(f"   桥 {单.get('工具')} {单['id']} → {结果}:{str(说)[:60]}"
+              + ("" if ok in ("200", "201") else f"(⚠️ 回执没送到:{ok} {(回 or '')[:80]})"))
+    return len(单们), None
 
 
 def 补上报(db=None):
@@ -94,6 +121,8 @@ def 一轮(只看=False):
         print(f"拉:取不到待执行的打回 —— {错}")
         return 1
     print(f"拉:待执行的打回 {len(行们)} 条")
+    n桥, 错桥 = 跑桥(cfg)
+    print(f"桥:待执行的取转写 / 写跟进 {n桥} 张" + (f"(拉取失败:{错桥})" if 错桥 else ""))
     for d in 行们:
         结果, 说, 新 = 执行(d)
         ok, 回 = AR.回执(cfg, d["id"], 结果, 说, 新)

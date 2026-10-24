@@ -981,6 +981,49 @@ print(json.dumps({'匿名': 打(None), '登录': 打({'no': '60000008', 'name': 
     raise PermissionError("没登录 POST /run → 401,智能体一次都没调;登录身份照常走到")
 
 
+def a_bridge_followup():
+    """AI 管理后台的工作流写澜绣跟进(用户 10-24 拍「核对即定稿,直接写跟进」):重试写不出第二条、记不到别人名下。
+
+    在库副本上真调 workflow_bridge.执行(子进程里切库 —— 切库会改已加载模块的 DB,不能在审计进程里做)。
+    攻三处:① 同一张单(同一个幂等键)回执没送到、下一轮再拉到 → 再执行一次
+           ② 单子上的通话号是 A 客户的录音、客户号写 B
+           ③ 单子上的工具名写成澜绣别的函数(改订单)
+    **带对照**:正常那一张必须真写成一条 —— 不然「被拒」可能只是夹具没搭好。"""
+    import subprocess as _sp, json as _js
+    src = r"""
+import sys, os, json, sqlite3
+sys.path[:0] = ['backend', 'knowledge']
+import server, oplog, workflow_bridge as WB, check_copy
+副本 = check_copy.用副本('ba-bridge-')
+c = sqlite3.connect(副本)
+a = c.execute("SELECT a.id, a.customer_id FROM call_audio a JOIN call_transcript t ON t.audio_id=a.id "
+              "JOIN customer cu ON cu.id=a.customer_id ORDER BY a.id LIMIT 1").fetchone()
+b = c.execute("SELECT id FROM customer WHERE id<>? ORDER BY id LIMIT 1", (a[1],)).fetchone()[0]
+数 = lambda: sqlite3.connect(副本).execute("SELECT COUNT(*) FROM followup").fetchone()[0]
+前 = 数()
+单 = {"工具": "写跟进", "幂等键": "ba:x:1", "参数": {"customer_id": a[1], "内容": "审计", "call_id": a[0]}}
+一 = WB.执行(单, 谁="ba"); 中 = 数(); 二 = WB.执行(单, 谁="ba"); 后 = 数()
+错 = WB.执行({"工具": "写跟进", "幂等键": "ba:x:2", "参数": {"customer_id": b, "内容": "审计", "call_id": a[0]}}, 谁="ba")
+野 = WB.执行({"工具": "改订单", "幂等键": "ba:x:3", "参数": {}}, 谁="ba")
+print(json.dumps({"对照": [一[0], 中 - 前], "重来": [二[0], 后 - 中], "错客户": [错[0], (错[2] or {}).get("code"), 数() - 后],
+                  "野工具": [野[0], (野[2] or {}).get("code")]}, ensure_ascii=False))
+"""
+    r = _sp.run([sys.executable, "-c", src], capture_output=True, text=True, timeout=120, cwd=ROOT)
+    try:
+        o = _js.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        raise 前提不成立(f"攻击脚本没跑完,什么都没验:{(r.stderr or r.stdout)[-300:]}")
+    if o["对照"] != ["已执行", 1]:
+        raise 前提不成立(f"对照没写成一条({o['对照']})—— 「被拒」不作数")
+    if o["重来"][1]:
+        return f"同一个幂等键第二次执行又写了 {o['重来'][1]} 条跟进"
+    if o["错客户"][0] != "执行失败" or o["错客户"][2]:
+        return f"A 客户的录音记到了 B 客户名下:{o['错客户']}"
+    if o["野工具"][0] != "执行失败":
+        return f"桥执行了认不出的工具:{o['野工具']}"
+    raise PermissionError("同一个幂等键只写一条;录音和客户对不上就拒、一行不写;认不出的工具不执行")
+
+
 def a_disallowed():
     miss = [t for t in ("Bash", "Write", "Edit", "Read", "Task", "WebFetch")
             if f'"{t}"' not in SDK_SRC]
@@ -1281,6 +1324,11 @@ STRUCT = [
  ("配置层也点名封了内置工具", "sdk.py disallowed_tools",
   a_disallowed, "检查危险工具是否都在 disallowed_tools 里",
   "**双锁**:配置一道 + Hook 一道。配置会被人改错,Hook 是兜底"),
+ ("工作流写跟进:重试不写第二条、不记到别人名下", "backend/workflow_bridge.py 写跟进(用户 10-24 拍「核对即定稿」)",
+  a_bridge_followup, "库副本上:同一张写跟进单执行两次 / 通话号是 A 的录音而客户号写 B / 工具名写成改订单",
+  "**靠结构**:写之前按幂等键查台账(键记在 create_followup 的台账 ctx 里);"
+  "录音的客户和单子上的客户对不上就拒;执行表只有取转写 / 写跟进两项。"
+  "「写之前必须有人批过」在管理后台执行侧(runtime/桥闸.py,只认人工节点的批准),由它那边的夹具和端到端守"),
  ("没登录调不动聊天站的智能体", "agentsite/app.py /run(用户 10-23 拍「先修复」)",
   a_run_no_login, "不带登录身份直接 POST /run 问客户手机号",
   "**靠结构**:身份只从后台会话换(_who),换不出就在调 sdk.run 之前回 401。"

@@ -12269,5 +12269,53 @@
    }
   ],
   "预期红": "从零建库(seed.py 的 SCHEMA)上这三条索引建得出来"
+ },
+ {
+  "script": "backend/workflow_bridge_check.py",
+  "改坏": "写跟进之前不查幂等键",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "    老 = _写过的(幂等键, db)\n",
+    "new": "    老 = None\n"
+   }
+  ],
+  "预期红": "同一个幂等键再来一次:不写第二条,回同一个跟进号"
+ },
+ {
+  "script": "backend/workflow_bridge_check.py",
+  "改坏": "写跟进不核录音是不是这个客户的",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "            if a[\"customer_id\"] != 客户:",
+    "new": "            if False:"
+   }
+  ],
+  "预期红": "录音不是这个客户的 → 拒,一行都不写"
+ },
+ {
+  "script": "backend/workflow_bridge_check.py",
+  "改坏": "取转写没有稿时也回成功",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "        if not t:\n            # 排队",
+    "new": "        if False:\n            # 排队"
+   }
+  ],
+  "预期红": "还没转写的录音 → NO_TRANSCRIPT(不是笼统的失败)"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "写跟进之前不查幂等键 —— 边界审计那条真攻击要报「攻破」(不是「跑不起来」)",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "    老 = _写过的(幂等键, db)\n",
+    "new": "    老 = None\n"
+   }
+  ],
+  "预期红": "工作流写跟进:重试不写第二条、不记到别人名下"
  }
 ]
