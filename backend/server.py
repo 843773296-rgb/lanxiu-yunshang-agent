@@ -170,12 +170,17 @@ def workbench():
         if not _当(k, 昨): return None
         return round((_当(k, 今) - _当(k, 昨)) / _当(k, 昨) * 100, 1)
 
-    shops=rows("""SELECT shop, COUNT(*) cust, SUM(order_cnt) orders, SUM(paid_amount) amt
-                  FROM customer WHERE shop!='' GROUP BY shop ORDER BY shop""")
+    # `shop` 那一列留着给页面显示;**筛和比一律用 shop_code**。
+    # 门店串:分组出来的是显示名,页面要拿它当标题 —— 这一处按串分组是对的。
+    shops=rows("""SELECT shop, shop_code, COUNT(*) cust, SUM(order_cnt) orders, SUM(paid_amount) amt
+                  FROM customer WHERE shop!='' GROUP BY shop, shop_code ORDER BY shop""")   # 门店串:看板按门店显示名分组,`shop!=''` 是「非空」不是门店筛
     for sh in shops:
         sh["deposit"]=rows("""SELECT COUNT(*) c FROM deposit d JOIN customer c2
-                              ON d.customer_id=c2.id WHERE c2.shop=?""",sh["shop"])[0]["c"]
-        sh["open"]= sh["shop"]!="SH003 杭州湖滨店"
+                              ON d.customer_id=c2.id WHERE c2.shop_code=?""",sh["shop_code"])[0]["c"]
+        # ⚠️ 原来这儿写的是 `sh["shop"]!="SH003 杭州湖滨店"` —— **写死了门店的显示串**。
+        # 那家店改个名,这一行就判成「开着的」,而页面上只是多出一家店,**不报错**。
+        # 编码不会因为改名而变,所以比编码。
+        sh["open"]= sh["shop_code"]!="SH003"
 
     return dict(
       trend=trend, codes=codes, lifecycle=lifec, dod=dict(n=dod("n"),amt=dod("amt")),
@@ -612,8 +617,10 @@ def shop_list(q):
     kw=(q.get("q") or [""])[0].strip(); stt=(q.get("status") or [""])[0]
     rs=rows("SELECT * FROM shop ORDER BY code")
     for r in rs:
-        r["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE shop LIKE ? AND {_人头()}",f"{r['code']}%")[0]["c"]   # 按人,归主档所在店
-        r["staff"]=rows("SELECT COUNT(*) c FROM staff WHERE shop LIKE ?",f"{r['code']}%")[0]["c"]
+        # 原来是 `shop LIKE '编码%'` —— 那个写法**碰巧**是改名安全的(前缀是编码),
+        # 但它把「按门店筛」表达成了字符串前缀匹配,而手里本来就有编码。
+        r["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE shop_code=? AND {_人头()}",r["code"])[0]["c"]   # 按人,归主档所在店
+        r["staff"]=rows("SELECT COUNT(*) c FROM staff WHERE shop_code=?",r["code"])[0]["c"]
     if kw: rs=[r for r in rs if kw in r["name"] or kw in r["code"]]
     if stt: rs=[r for r in rs if r["status"]==stt]
     d=_page(rs,q); d["facets"]=dict(status=["有效","无效"]); return d
@@ -622,9 +629,9 @@ def shop_detail(code):
     r=rows("SELECT * FROM shop WHERE code=?",code)
     if not r: return {"error":"店铺不存在"}
     s=r[0]
-    s["staff"]=rows("SELECT * FROM staff WHERE shop LIKE ? ORDER BY role,no",f"{code}%")
-    s["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE shop LIKE ? AND {_人头()}",f"{code}%")[0]["c"]   # 按人,归主档所在店
-    s["appt"]=rows("SELECT COUNT(*) c FROM appointment WHERE shop LIKE ?",f"{code}%")[0]["c"]
+    s["staff"]=rows("SELECT * FROM staff WHERE shop_code=? ORDER BY role,no",code)
+    s["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE shop_code=? AND {_人头()}",code)[0]["c"]   # 按人,归主档所在店
+    s["appt"]=rows("SELECT COUNT(*) c FROM appointment WHERE shop_code=?",code)[0]["c"]
     s["logs"]=rows("SELECT * FROM op_log WHERE target=? ORDER BY id DESC LIMIT 20",code)
     return s
 
@@ -2890,7 +2897,7 @@ def customer_list(q):
     for c in d["rows"]: c.pop("phone",None)
     d["facets"]=dict(
       lifecycle=[r["v"] for r in rows("SELECT DISTINCT lifecycle v FROM customer ORDER BY v")],
-      shop=[r["v"] for r in rows("SELECT DISTINCT shop v FROM customer WHERE shop!='' ORDER BY v")],
+      shop=[r["v"] for r in rows("SELECT DISTINCT shop v FROM customer WHERE shop!='' ORDER BY v")],   # 门店串:下拉选项要的就是显示名
       # ⚠️ **筛选项也要从员工表来,不能读那一列。**
       # 实测:把名字列抹空之后这个下拉**直接变空**,而页面照常打开、
       # 表格照常有行 —— 少一个筛选框没有人会去跑测试。
@@ -3560,11 +3567,15 @@ class H(BaseHTTPRequestHandler):
                 if _本店: Q = dict(Q, shop=[_本店])   # 自己传了别的店也不认 —— 范围跟登录走,不跟参数走
                 return self._send(customer_list(Q))
             if p=="/api/customers":
+                # 按门店码收范围 —— 店长改过名之后按串筛会**一个客户都看不到**(不报错)
+                import shop_key as _SK
+                with _conn() as _c:
+                    _片, _参 = _SK.门店条件(_c, _本店)
                 return self._send(填顾问名(rows(
                     "SELECT id,name,phone,shop,advisor_no,lifecycle,level,order_cnt,"
                     "paid_amount FROM customer"
-                    + (" WHERE shop=?" if _本店 else "") + " ORDER BY id LIMIT 200",
-                    *([_本店] if _本店 else []))))
+                    + (f" WHERE {_片}" if _片 else "") + " ORDER BY id LIMIT 200",
+                    *_参)))
             _cid = p.split("/api/customer/")[1]
             if _本店:
                 _店 = rows("SELECT shop FROM customer WHERE id=?", _cid)

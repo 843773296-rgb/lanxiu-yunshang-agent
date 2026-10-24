@@ -265,8 +265,13 @@ def suggest(task):
     店里没有在职顾问时硬凑一个人出来,比说「提不出」有害得多。
     """
     shop = task.get("shop")
-    pool = _rows("SELECT no,name,adv_code FROM staff "
-                 "WHERE role='顾问' AND status='启用' AND shop=? ORDER BY no", shop)
+    # 按门店码筛 —— 改过名之后按串筛会「店里没有在职顾问」,
+    # 而那条路返回的是「提不出建议」:**一个正常结果**,所以没人会发现它坏了。
+    import shop_key as _SK
+    with sqlite3.connect(DB) as _c:
+        _片, _参 = _SK.门店条件(_c, shop)
+    pool = _rows(f"SELECT no,name,adv_code FROM staff "
+                 f"WHERE role='顾问' AND status='启用' AND {_片 or '1=0'} ORDER BY no", *_参)
     if not pool:
         return None
 

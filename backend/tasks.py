@@ -150,8 +150,15 @@ def my_staff(me):
     if not me or me.get("role") not in MANAGER_ROLES: return []
     if me["role"] == "总部运营":
         return rows("SELECT no,name,role,shop,adv_code FROM staff WHERE role='顾问' AND status='启用' ORDER BY no")
-    return rows("SELECT no,name,role,shop,adv_code FROM staff "
-                "WHERE role='顾问' AND status='启用' AND shop=? ORDER BY no", me.get("shop"))
+    # 按门店码筛。⚠️ `me.get("shop")` 可能是**工坊名**(匠人),那种值没有门店码 ——
+    # `门店条件()` 会退回按串比,所以工坊的人照样查得到(一刀换成按码筛会一个都查不到)。
+    import shop_key as _SK
+    with sqlite3.connect(DB) as _c:
+        _片, _参 = _SK.门店条件(_c, me.get("shop"))
+    if not _片:
+        return []
+    return rows(f"SELECT no,name,role,shop,adv_code FROM staff "
+                f"WHERE role='顾问' AND status='启用' AND {_片} ORDER BY no", *_参)
 
 
 def pool_for(kind, me):
@@ -174,8 +181,13 @@ def pool_for(kind, me):
     角色 = [r for r in 角色 if r != "总部运营"]
     if not 角色: return []
     ph = ",".join("?" * len(角色))
+    import shop_key as _SK            # 同上:工坊名没有门店码,会退回按串比
+    with sqlite3.connect(DB) as _c:
+        _片, _参 = _SK.门店条件(_c, me.get("shop"))
+    if not _片:
+        return []
     return rows(f"SELECT no,name,role,shop,adv_code FROM staff WHERE role IN ({ph}) "
-                "AND status='启用' AND shop=? ORDER BY no", *角色, me.get("shop"))
+                f"AND status='启用' AND {_片} ORDER BY no", *角色, *_参)
 
 
 # 经营改进 → 报告的哪一项。**行动挂在任务上,盯的指标挂在这张表上** —— schedule 不为一种任务加一列。

@@ -224,9 +224,12 @@ def 列(me, kind=None, limit=20, db=None):
         # 每一期只列最新那一版(历史版本数一起给)
         sql = ("SELECT d.id,d.shop,d.kind,d.period_start,d.period_end,d.revision,d.status,d.created_at,d.confirmed_at, "
                "d.rejected_at,d.reject_reason, "
-               "(SELECT COUNT(*) FROM store_report_doc x WHERE x.shop=d.shop AND x.kind=d.kind "
+               # 这两处是**两行之间自比**(两边都是存着的值),按串比本来就不受改名影响 ——
+               # 换成按码只是少两条豁免、口径统一。store_report_doc 的 shop 非空且都是门店,
+               # 所以它的 shop_code 一定有值。
+               "(SELECT COUNT(*) FROM store_report_doc x WHERE x.shop_code=d.shop_code AND x.kind=d.kind "
                "AND x.period_start=d.period_start) 版本数 FROM store_report_doc d WHERE " + " AND ".join(where) +
-               " AND d.revision=(SELECT MAX(revision) FROM store_report_doc y WHERE y.shop=d.shop AND y.kind=d.kind "
+               " AND d.revision=(SELECT MAX(revision) FROM store_report_doc y WHERE y.shop_code=d.shop_code AND y.kind=d.kind "
                "AND y.period_start=d.period_start)")
         rs = [dict(r) for r in c.execute(sql + " ORDER BY d.period_start DESC, d.kind", args)]
     finally:
