@@ -12437,8 +12437,8 @@
    }
   ],
   "预期红": "流水线中途才建的表,建表语句里就带着 shop_code"
-  },
-  {
+ },
+ {
   "script": "tools/takeover_skills_check.py",
   "改坏": "管理后台登记了一个聊天站没有的技能",
   "file": [
@@ -12449,5 +12449,17 @@
    }
   ],
   "预期红": "管理后台登记的可接管技能,聊天站都真有"
+ },
+ {
+  "script": "backend/shop_key_check.py",
+  "改坏": "在 factory_inbox 里加回一处按门店串筛的查询 —— 棘轮涨了就红。守的是第二阶段的进度:第一阶段买的是保险(码建好、回填、新写的行带码),**而读还没切**,所以保险还没换上。「改了 8 处」和「改完了」在绿勾上长得一模一样,所以把剩下的登记成欠债,只许少不许多",
+  "file": [
+   {
+    "path": "backend/factory_inbox.py",
+    "old": "def 待通知清单(shop=None, db=None):",
+    "new": "def _按串筛的老写法(c, shop):\n    return c.execute(\"SELECT 1 FROM ordr WHERE shop=?\", (shop,)).fetchone()\n\n\ndef 待通知清单(shop=None, db=None):"
+   }
+  ],
+  "预期红": "生产代码里按门店串筛的只许少不许多"
  }
 ]

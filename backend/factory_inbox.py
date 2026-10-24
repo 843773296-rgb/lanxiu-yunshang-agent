@@ -365,8 +365,10 @@ def 该催清单(今天, shop=None, db=None):
     import factory_feed as K
     c = _c(db); ensure(c)
     out = []
+    import shop_key as _SK
+    _片, _参 = _SK.门店条件(c, shop)      # 按门店码,不按显示串(改名后按串筛是 0 行)
     for o in c.execute("SELECT id, shop, advisor_no, cut_at, audit_at FROM ordr WHERE kind='定制品订单' "
-                       "AND status='生产中'" + (" AND shop=?" if shop else ""), ((shop,) if shop else ())):
+                       "AND status='生产中'" + (f" AND {_片}" if _片 else ""), tuple(_参)):
         承诺, 延 = _最新承诺(c, o["id"])
         接 = c.execute("SELECT 1 FROM factory_msg WHERE order_id=? AND event='接单' AND result='收下' "
                       "AND void_at IS NULL LIMIT 1", (o["id"],)).fetchone()
@@ -397,8 +399,10 @@ def 待通知清单(shop=None, db=None):
     q = """SELECT d.id, d.order_id, d.old_promise, d.new_promise, d.reason, d.at, o.shop, o.advisor_no
            FROM factory_delay d JOIN ordr o ON o.id=d.order_id
            WHERE d.told_at IS NULL AND o.status NOT IN ('取消','完成')"""
-    rs = [dict(r) for r in c.execute(q + (" AND o.shop=?" if shop else "") + " ORDER BY d.at DESC",
-                                     ((shop,) if shop else ()))]
+    import shop_key as _SK
+    _片, _参 = _SK.门店条件(c, shop, "o")   # 按门店码,不按显示串
+    rs = [dict(r) for r in c.execute(q + (f" AND {_片}" if _片 else "") + " ORDER BY d.at DESC",
+                                     tuple(_参))]
     c.close()
     return rs
 

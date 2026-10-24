@@ -163,8 +163,13 @@ def 一周排了吗(shop, 周一, db=DB):
     d7 = [(datetime.date.fromisoformat(周一) + datetime.timedelta(days=i)).isoformat()
           for i in range(7)]
     with sqlite3.connect(db) as c:
-        n = c.execute(f"""select count(*) from roster where shop=? and status=?
-                          and d in ({','.join('?'*7)})""", (shop, 已发布, *d7)).fetchone()[0]
+        # 按门店码筛 —— 「这家店这周排了没有」答错的代价是单边的:
+        # 改过名之后按串筛恒为「没排」,而「没排」会触发去排班。
+        import shop_key as _SK
+        _片, _参 = _SK.门店条件(c, shop)
+        n = c.execute(f"""select count(*) from roster where {_片 or '1=1'} and status=?
+                          and d in ({','.join('?'*7)})""",
+                      (*_参, 已发布, *d7)).fetchone()[0]
     return n > 0, n
 
 

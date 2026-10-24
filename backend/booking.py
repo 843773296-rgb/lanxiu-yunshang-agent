@@ -223,7 +223,13 @@ def unassigned(shop=None):
            # 而且类型清单要从 tasktypes 取 —— 这里写死一份就是第二个来源。
            "AND s.type IN (%s)" % ",".join("?" * len(_tt.CUSTOMER_TYPES)))
     a = list(_tt.CUSTOMER_TYPES)
-    if shop: sql += " AND s.shop=?"; a.append(shop)
+    if shop:
+        # 按门店码筛 —— 改过名之后按串筛会「一条待分派都没有」,而那看着像活都派完了
+        import shop_key as _SK
+        with sqlite3.connect(DB) as _c:
+            _片, _参 = _SK.门店条件(_c, shop, "s")
+        if _片:
+            sql += f" AND {_片}"; a.extend(_参)
     out = _rows(sql + " ORDER BY s.start_ts", *a)
     # 每条现算一个建议。**现算不存库** —— 存下来的建议会变味(人离职了、
     # 负载变了),而且从存下到店长确认之间,库里那张单看起来已经有人负责了。

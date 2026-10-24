@@ -126,10 +126,16 @@ def 保存(me, pack, body, report_id=None, db=None, trace=None):
                 return dict(ok=False, code="PERIOD_MISMATCH",
                             reason=f"{report_id} 是 {前[3]} 的{前[2]}报,这次取的是 {起} 的{pack['种类']}报 —— "
                                    "换了报告期就是另一份报告,不要接在它后面存")
-        版 = (c.execute("SELECT MAX(revision) FROM store_report_doc WHERE shop=? AND kind=? AND period_start=?",
-                       (shop, pack["种类"], 起)).fetchone()[0] or 0) + 1
-        上一版已确认 = c.execute("SELECT id FROM store_report_doc WHERE shop=? AND kind=? AND period_start=? "
-                            "AND status='已确认' ORDER BY revision DESC LIMIT 1", (shop, pack["种类"], 起)).fetchone()
+        # ⚠️ 按**门店码**筛,不按显示串 —— 门店改个名,按串筛会变成 0 行而且不报错。
+        # 走 `shop_key.门店条件()` 这个唯一入口:它认不出的值(工坊 / 全渠道 / 老串)
+        # 会退回按串比,所以每一种情形都不比原来差。
+        import shop_key as _SK
+        _片, _参 = _SK.门店条件(c, shop)
+        版 = (c.execute(f"SELECT MAX(revision) FROM store_report_doc WHERE {_片} AND kind=? AND period_start=?",
+                       (*_参, pack["种类"], 起)).fetchone()[0] or 0) + 1
+        上一版已确认 = c.execute(f"SELECT id FROM store_report_doc WHERE {_片} AND kind=? AND period_start=? "
+                            "AND status='已确认' ORDER BY revision DESC LIMIT 1",
+                            (*_参, pack["种类"], 起)).fetchone()
         # 编号取**现有最大的 + 1**,不按行数 —— 按行数的话删过行就会把一个用过的号再发一次
         # (10-10:RPT000002 先被检查副本的假报告用过、推上了管理平台,后来真库又发给了店长的月报)
         序 = (c.execute("SELECT MAX(CAST(substr(id,4) AS INTEGER)) FROM store_report_doc").fetchone()[0] or 0) + 1
@@ -163,8 +169,12 @@ def 确认(me, report_id, db=None):
             return dict(ok=False, code="NOT_FOUND", reason=f"没有 {report_id} 这份报告,或者它不在你的范围里")
         if r[5] == "已确认":
             return dict(ok=False, code="ALREADY", reason=f"{report_id} 已经确认过了;要改就再存一版")
-        最新 = c.execute("SELECT MAX(revision) FROM store_report_doc WHERE shop=? AND kind=? AND period_start=?",
-                        (r[1], r[2], r[3])).fetchone()[0]
+        # 同上:按码筛。r[1] 是那一行**存着的**门店串 —— 认得出就换成码,
+        # 认不出(已经改过名的老串)就按原样比,照样匹配得上存着老串的那几行。
+        import shop_key as _SK
+        _片2, _参2 = _SK.门店条件(c, r[1])
+        最新 = c.execute(f"SELECT MAX(revision) FROM store_report_doc WHERE {_片2} AND kind=? AND period_start=?",
+                        (*_参2, r[2], r[3])).fetchone()[0]
         if r[4] != 最新:
             return dict(ok=False, code="NOT_LATEST",
                         reason=f"{report_id} 是第 {r[4]} 版,这一期最新的是第 {最新} 版 —— 确认最新那一版")
@@ -204,7 +214,11 @@ def 列(me, kind=None, limit=20, db=None):
         建表(c)
         where, args = ["1=1"], []
         if me.get("role") != "总部运营":
-            where.append("shop=?"); args.append(me.get("shop"))
+            # 按门店码收范围 —— 店长改过名之后按串筛会一份报告都看不到(见 shop_key.py)
+            import shop_key as _SK
+            _片3, _参3 = _SK.门店条件(c, me.get("shop"))
+            if _片3:
+                where.append(_片3); args.extend(_参3)
         if kind:
             where.append("kind=?"); args.append(kind)
         # 每一期只列最新那一版(历史版本数一起给)
