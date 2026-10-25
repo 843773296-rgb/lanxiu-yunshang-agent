@@ -12516,8 +12516,8 @@
   "file": [
    {
     "path": "管理后台/services/api/app/runtime/桥工具.py",
-    "old": "    \"stock_alert\",\n)",
-    "new": "    \"stock_alert\",\n    \"assign_task\",\n)"
+    "old": "    \"stock_alert\",\n",
+    "new": "    \"stock_alert\",\n    \"assign_task\",\n"
    },
    {
     "path": "管理后台/services/api/app/runtime/桥工具.py",
@@ -12730,5 +12730,41 @@
    }
   ],
   "预期红": "工作流派回访:只派给名单里、此刻仍有由头的人,重试不派第二条"
+ },
+ {
+  "script": "backend/workflow_bridge_check.py",
+  "改坏": "差评处置不先查金额授权(超店长权限照样建单)",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "            if 谁 != \"店长\":\n                # 停下是",
+    "new": "            if False:\n                # 停下是"
+   }
+  ],
+  "预期红": "判给企业、预估 2000 元(超店长权限)→ OVER_AUTHORITY,返修单一张没多"
+ },
+ {
+  "script": "backend/workflow_bridge_check.py",
+  "改坏": "补货跟进绕过预警派单直接派(派的那一刻不重算档位)",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "    r = _ad.派({\"kind\": \"库存预警\", \"obj\": p.get(\"sku\"), \"assignee_no\": p.get(\"负责人\"), \"end\": 截止,\n               \"note\": p.get(\"note\")}, me)",
+    "new": "    import tasks as _tk\n    r = _tk.assign_task({\"type\": \"补货跟进\", \"ref_id\": p.get(\"sku\"), \"assignee_no\": p.get(\"负责人\"), \"end\": 截止,\n               \"note\": p.get(\"note\") or \"x\"}, me, _来源={\"kind\": \"库存预警\", \"obj\": p.get(\"sku\"), \"key_date\": None, \"key_tag\": \"x\"})"
+   }
+  ],
+  "预期红": "卖不动的 SKU 硬派 → 拒(不在要补货的预警里)"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "差评处置不先查金额授权 —— 超店长权限照样先建了返修单,边界审计那条要报「攻破」(出钱的关闭方式那一处底下写口还有一道闸,拆一层不破,所以攻这一处)",
+  "file": [
+   {
+    "path": "backend/workflow_bridge.py",
+    "old": "            if 谁 != \"店长\":\n                # 停下是",
+    "new": "            if False:\n                # 停下是"
+   }
+  ],
+  "预期红": "工作流差评处置不经手超权限的钱"
  }
 ]

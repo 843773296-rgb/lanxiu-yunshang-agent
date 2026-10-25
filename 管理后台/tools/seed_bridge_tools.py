@@ -107,6 +107,41 @@ sys.path[:0] = [os.path.join(根, "services", "api", "app"),
              "required": ["客户号们", "截止", "名单"], "additionalProperties": False},
          output_schema={"type": "object", "properties": {
              "数据": {"type": "object"}, "结果": {"type": "string"}}, "required": ["结果"]}),
+    # 库存补货(10-25,六条第六条):档用澜绣现成的库存预警口径;派走现成的预警派单(防重复派、只派店长 / 总部)
+    dict(name="补货预警", side="read_only",
+         purpose="这一个 SKU 现在在哪一档(发不出 / 断货 / 快没了 / 卖不动 / 够,库存预警同一把尺)、要不要派补货跟进、有没有没办完的补货跟进",
+         input_schema={"type": "object", "properties": {"sku": {"type": "string", "description": "SKU 号"}},
+                       "required": ["sku"], "additionalProperties": False},
+         output_schema={"type": "object", "properties": {
+             "数据": {"type": "object"}, "指纹": {"type": "string"}, "结果": {"type": "string"}},
+             "required": ["数据", "结果"]}),
+    dict(name="派补货跟进", side="reversible",
+         confirm={"方式": "人工确认", "绑定": "补货负责人 + 补货截止", "由谁承担": "工作流里的人工核对节点",
+                  "执行侧再查": "runtime/桥闸.py —— 这次运行里没有人工节点的批准就不记单"},
+         purpose="从库存预警派一条「补货跟进」(澜绣现成的预警派单:档位当场重算、不在预警里不派、同一件事没办完不重派、只派店长 / 总部运营)",
+         input_schema={"type": "object", "properties": {
+             "sku": {"type": "string"}, "负责人": {"type": "string", "description": "工号"},
+             "截止": {"type": "string", "description": "YYYY-MM-DD 或 YYYY-MM-DD HH:MM"}, "note": {"type": "string"}},
+             "required": ["sku", "负责人", "截止"], "additionalProperties": False},
+         output_schema={"type": "object", "properties": {
+             "数据": {"type": "object"}, "结果": {"type": "string"}}, "required": ["结果"]}),
+    # 差评返修(10-25,六条第四条):判责复用现成的返修判定表;用户拍「超店长权限的停下报总部,不写」
+    dict(name="差评研判", side="read_only",
+         purpose="这一条差评的事实(差评、这一单的服务记录和售后)+ 按现成返修判定表给的判责建议;判定表没覆盖就说交店长判",
+         input_schema={"type": "object", "properties": {"pkg": {"type": "string", "description": "差评的包裹号"}},
+                       "required": ["pkg"], "additionalProperties": False},
+         output_schema={"type": "object", "properties": {
+             "数据": {"type": "object"}, "指纹": {"type": "string"}, "结果": {"type": "string"}},
+             "required": ["数据", "结果"]}),
+    dict(name="差评处置", side="irreversible",
+         confirm={"方式": "人工确认", "绑定": "店长定的处置 / 责任方 / 费用", "由谁承担": "工作流里的人工核对节点",
+                  "执行侧再查": "runtime/桥闸.py —— 这次运行里没有人工节点的批准就不记单"},
+         purpose="店长定了之后办:返修(建返修单 → 判责)或说明后关闭差评;我方出钱超店长权限、或关闭方式要出钱 → 不写,报总部 / 回澜绣办",
+         input_schema={"type": "object", "properties": {
+             "pkg": {"type": "string"}, "店长定的": {"type": "object", "description": "人工核对节点的整个输出"}},
+             "required": ["pkg", "店长定的"], "additionalProperties": False},
+         output_schema={"type": "object", "properties": {
+             "数据": {"type": "object"}, "结果": {"type": "string"}}, "required": ["结果"]}),
     dict(name="save_report", side="reversible",
          confirm={"方式": "人工确认", "绑定": "定稿正文", "由谁承担": "工作流里的人工核对节点",
                   "执行侧再查": "runtime/桥闸.py —— 这次运行里没有人工节点的批准就不记单"},
@@ -195,7 +230,37 @@ sys.path[:0] = [os.path.join(根, "services", "api", "app"),
     变更说明="老客召回模板默认的处理要求(10-25)",
 )
 
-处理要求们 = (处理要求, 报告撰写, 风险建议, 召回话术)
+补货建议 = dict(
+    key="restock_advise",
+    用途="补货建议:照规则判出的库存档和库存明细,写给店长 / 总部的补货建议和要核实的问题",
+    标签=["库存补货"],
+    system=("你是汉服定制门店的库存助手。**档已经由规则判好了,你不改档**。只用取数包里的数:在手、占用、可用、卖过几件。"
+            "补货量只给区间和依据,不给精确下单量 —— 下单量由店长或总部定。"
+            "「发不出」是库存被未完成订单占住了:先建议核这些订单是不是真在做,不直接建议补货。"
+            "没有销量数据就写「无法估算可售天数」,不编速度。"),
+    user=("取数包(JSON):\n{{取数包}}\n\n"
+          "按 JSON 输出:建议(给店长的一段话:为什么是这一档、补不补、补多少的区间和依据)、需要核实(列表)。"),
+    变量=[{"名称": "取数包", "必填": True, "来源": "上一步结果", "类型": "object", "说明": "补货预警那一步的数据"}],
+    输出={"格式": "json", "必含项": ["建议", "需要核实"], "未知值规则": "取数包里没有的写「不知道」,不编数"},
+    变更说明="库存补货模板默认的处理要求(10-25)",
+)
+
+差评研判要求 = dict(
+    key="rating_review",
+    用途="差评研判:照这一条差评的事实和判定表的判责建议,写「事实 / 判责依据 / 处置建议 / 待确认项」四段",
+    标签=["差评返修"],
+    system=("你是汉服定制门店的售后研判助手。**判责以取数包里判定表给的建议为准,你不改判、不自拟标准**;"
+            "判定表没覆盖的,写「判定表没覆盖,交店长判」,不套最近的一行。"
+            "事实只用这一单的服务记录和售后,同一客户别的单不进判责依据。事实互相矛盾的列出来,不替店长选边。"
+            "涉及钱的(返修费用、退款)只写「需店长 / 总部定」,不给金额。"),
+    user=("取数包(JSON):\n{{取数包}}\n\n"
+          "按 JSON 输出:事实、判责依据(引判定表的那一行;没覆盖就照实说)、处置建议(返修 / 说明后关闭,给理由)、待确认项(列表)。"),
+    变量=[{"名称": "取数包", "必填": True, "来源": "上一步结果", "类型": "object", "说明": "差评研判那一步的数据"}],
+    输出={"格式": "json", "必含项": ["事实", "判责依据", "处置建议", "待确认项"], "未知值规则": "取数包里没有的写「没查到」,不编"},
+    变更说明="差评返修模板默认的处理要求(10-25)",
+)
+
+处理要求们 = (处理要求, 报告撰写, 风险建议, 召回话术, 补货建议, 差评研判要求)
 
 
 def 登记处理要求(c, 项目, org, 处理要求=处理要求):

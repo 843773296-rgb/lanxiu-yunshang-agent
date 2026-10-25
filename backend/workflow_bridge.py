@@ -451,8 +451,195 @@ def 派回访任务(参数, 幂等键, 办事人=None, 工号=None, db=None):
                    "结果": f"派了 {len(派了)} 条回访" + (f",跳过 {len(跳过)} 个:" + ";".join(跳过) if 跳过 else "")}}
 
 
+def 补货预警(参数, 办事人=None, 工号=None, db=None):
+    """**这一个 SKU** 现在在哪一档、要不要派补货跟进(六条第六条,10-25)。档由澜绣现成的库存预警口径判
+    (knowledge/stockalert.py,经 alert_dispatch.sku档 —— 和库存预警页、预警派单同一把尺),不新造。
+    可派的只有 发不出 / 断货 / 快没了;卖不动(压货)/ 够 → 不派补货。带上同一 SKU 还没办完的补货跟进。"""
+    import api, alert_dispatch as _ad
+    sku = str((参数 or {}).get("sku") or "").strip()
+    if not sku:
+        return _失败("MISSING", "没给 SKU")
+    me = 员工身份(工号, db)
+    if not me:
+        return _失败("NOT_BOUND", f"管理后台账号「{办事人 or '?'}」没有绑定可用的澜绣员工 —— 不以服务身份顶替,没查",
+                   "请管理员在管理后台「成员与权限」里绑上澜绣工号")
+    c = _连(db)
+    try:
+        档, 话 = _ad.sku档(c, sku)
+        已有 = [f"{r['id']}(截止 {r['end_ts']})" for r in c.execute(
+            "SELECT id, end_ts FROM schedule WHERE type='补货跟进' AND status='有效' AND ref_id=?", (sku,))]
+    finally:
+        c.close()
+    if 档 is None:
+        return _失败("TOOL_REFUSED", f"{sku}:{话}")
+    with api.as_user(me):
+        库存 = api.get_stock(sku=sku)
+    可派 = 档 in _ad.可派档
+    数据 = {"SKU": sku, "档": 档, "依据": 话, "可派补货吗": 可派, "已有未完成补货跟进": 已有,
+            "要派吗": 可派 and not 已有, "库存": 库存,
+            "说明": ("压货:只出处理建议(调拨 / 活动),不派补货" if 档 == "卖不动" else
+                   "库存够,不用补" if 档 == "够" else
+                   f"已有没办完的补货跟进 {'、'.join(已有)},不重复派" if 已有 else "可以派补货跟进")}
+    return {"输出": {"数据": 数据, "指纹": 数据指纹(数据), "是新执行的": True, "结果": f"{sku}:{档} —— {数据['说明']}"}}
+
+
+def 派补货跟进(参数, 幂等键, 办事人=None, 工号=None, db=None):
+    """店长 / 总部确认后派「补货跟进」。**直接走澜绣现成的预警派单**(alert_dispatch.派):档位当场重算、
+    不在预警里的不派、同一件事没办完不重派(写的那个事务里再判)、只派给店长 / 总部运营 —— 一条都不在这里另写。
+    这一层只加:绑定员工身份、台账 START / DONE(重来不派第二条,开始了没结果报待核实)。"""
+    import alert_dispatch as _ad, oplog
+    p = 参数 or {}
+    if not 幂等键:
+        return _失败("NO_IDEMPOTENCY_KEY", "派补货跟进会写库,单子没带幂等键 —— 不执行,重试会派第二遍")
+    me = 员工身份(工号, db)
+    if not me:
+        return _失败("NOT_BOUND", f"管理后台账号「{办事人 or '?'}」没有绑定可用的澜绣员工 —— 不以服务身份顶替,没派",
+                   "请管理员在管理后台「成员与权限」里绑上澜绣工号")
+    开始过, 旧 = _桥账(幂等键, db)
+    if 旧 is not None:
+        return {"输出": {"数据": 旧, "是新执行的": False, "结果": f"这张单已经派过补货跟进(没派第二遍)"}}
+    if 开始过:
+        return _失败("IN_DOUBT", "上一次开始派了但没记下结果 —— 可能派了一半,不重做", "请到澜绣核实有没有这条补货跟进")
+    截止 = str(p.get("截止") or "").replace("T", " ").strip()
+    if len(截止) == 10:
+        截止 += " 18:00"
+    账人 = f"{me['name']}({me['no']})· 管理后台 {办事人 or '?'} 工作流"
+    oplog.log_op(账人, "bridge", 幂等键, "—", "派补货跟进", True, "START", f"工作流派补货跟进 {p.get('sku')}",
+                 {"工具": "派补货跟进", "参数": p, "管理后台账号": 办事人, "澜绣工号": me["no"]})
+    r = _ad.派({"kind": "库存预警", "obj": p.get("sku"), "assignee_no": p.get("负责人"), "end": 截止,
+               "note": p.get("note")}, me)
+    if not r.get("ok"):
+        oplog.log_op(账人, "bridge", 幂等键, "派补货跟进", "—", False, "FAIL", str(r.get("reason"))[:200], {"返回": r})
+        return _失败("TOOL_REFUSED", f"澜绣没派:{r.get('reason')}"[:300], r.get("code"))
+    oplog.log_op(账人, "bridge", 幂等键, "派补货跟进", "done", True, "DONE", f"派补货跟进 {p.get('sku')}", {"结果": r})
+    return {"输出": {"数据": r, "是新执行的": True, "结果": f"已派补货跟进:{r.get('reason') or ''}"[:300]}}
+
+
+def 差评研判(参数, 办事人=None, 工号=None, db=None):
+    """**这一条差评**的事实 + 判责建议(六条第四条,10-25)。判责**复用**澜绣现成的返修判定表(knowledge/liability.py),
+    归不到表里任何一类就写「判定表没覆盖,交店长判」,不硬套。只取这一单的服务记录和售后,不混同一客户别的单。
+    看得到哪些差评跟着绑定员工(和差评清单同一个范围:店长 / 售后,本店)。"""
+    import api, rating_write as _rw, sys as _s
+    _s.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
+    import liability as _lb
+    pkg = str((参数 or {}).get("pkg") or "").strip()
+    if not pkg:
+        return _失败("MISSING", "没给差评的包裹号")
+    me = 员工身份(工号, db)
+    if not me:
+        return _失败("NOT_BOUND", f"管理后台账号「{办事人 or '?'}」没有绑定可用的澜绣员工 —— 不以服务身份顶替,没查",
+                   "请管理员在管理后台「成员与权限」里绑上澜绣工号")
+    if me["role"] not in _rw.能关差评的角色:
+        return _失败("TOOL_REFUSED", f"差评归 {' / '.join(_rw.能关差评的角色)} 跟,绑定的员工是「{me['role']}」")
+    c = _连(db)
+    try:
+        r = c.execute("""SELECT t.id 工单, t.status 状态, r.pkg_id 包裹, r.order_id 订单, r.star 星, r.note 顾客说,
+                                r.rated_at 评于, o.shop 门店, k.name 客户
+                           FROM task t JOIN rating r ON r.task_id=t.id LEFT JOIN ordr o ON o.id=r.order_id
+                           LEFT JOIN customer k ON k.id=r.customer_id
+                          WHERE t.type='评价差评' AND r.pkg_id=?""", (pkg,)).fetchone()
+    finally:
+        c.close()
+    if not r:
+        return _失败("TOOL_REFUSED", f"没有包裹 {pkg} 的差评")
+    差 = dict(r)
+    if me["role"] not in ("总部运营",) and me.get("shop") and 差.get("门店") != me["shop"]:
+        return _失败("TOOL_REFUSED", f"这条差评是「{差.get('门店')}」的,不在你的范围里")
+    with api.as_user(me):
+        服务 = api.service_records(pkg=pkg)
+        售后 = api.get_aftersale(order_id=差["订单"]) if 差.get("订单") else None
+    判 = _lb.judge(差.get("顾客说") or "")
+    数据 = {"差评": 差, "服务记录": 服务, "售后": 售后,
+            "判责建议": {k: 判.get(k) for k in ("归类", "责任", "处理", "规则行", "依据", "判得出")},
+            "说明": ("判定表能判:" + str(判.get("依据")) if 判.get("判得出")
+                   else "判定表没覆盖这一类(或缺判它要的事实)—— 交店长判,不硬套最近的一行"),
+            "已处理": 差.get("状态") != "待处理",
+            "金额授权": f"我方出钱 ≤{_lb.授权档[0]} 店长定;{_lb.授权档[0]}–{_lb.授权档[1]} 报总部;>{_lb.授权档[1]} 走专项"}
+    return {"输出": {"数据": 数据, "指纹": 数据指纹(数据), "是新执行的": True,
+                   "结果": f"差评 {pkg}({差.get('星')} 星):" + 数据["说明"]}}
+
+
+def 差评处置(参数, 幂等键, 办事人=None, 工号=None, db=None):
+    """店长定了之后办:**返修**(建返修单 → 店长判责)或**说明后关闭**(关差评)。全走澜绣现成的写口和它们的闸。
+
+    用户 10-25 拍「停下报总部,不写」:判给企业(我方出钱)而预估费用超过店长权限 → **什么都不写**,
+    报「要报总部」,由总部在澜绣里办。出钱的关闭方式(退款)要第二个人批,流程不经手钱 → 也不写,回澜绣办。"""
+    import api, oplog, sys as _s
+    _s.path.insert(0, os.path.join(os.path.dirname(HERE), "knowledge"))
+    import liability as _lb, rating as _rt
+    # 店长在核对页填的那几样整包传进来(「店长定的」= 人工节点的整个输出):选填的字段没填就不在里面 ——
+    # 逐个绑定的话,一个没填的字段就让整次运行失败
+    p = {**((参数 or {}).get("店长定的") or {}), **{k: v for k, v in (参数 or {}).items() if k != "店长定的"}}
+    if not 幂等键:
+        return _失败("NO_IDEMPOTENCY_KEY", "差评处置会写库,单子没带幂等键 —— 不执行,重试会做第二遍")
+    me = 员工身份(工号, db)
+    if not me:
+        return _失败("NOT_BOUND", f"管理后台账号「{办事人 or '?'}」没有绑定可用的澜绣员工 —— 不以服务身份顶替,没办",
+                   "请管理员在管理后台「成员与权限」里绑上澜绣工号")
+    处置 = str(p.get("处置") or "").strip()
+    pkg = str(p.get("pkg") or "").strip()
+    if 处置 not in ("返修", "说明后关闭"):
+        return _失败("BAD_ARGS", f"处置只能是「返修」或「说明后关闭」,填的是「{处置}」")
+    if 处置 == "返修":
+        责任 = str(p.get("责任方") or "").strip()
+        if 责任 not in ("企业", "顾客"):
+            return _失败("BAD_ARGS", f"返修要写责任方(企业 / 顾客),填的是「{责任}」")
+        try:
+            费 = float(p.get("预估费用") or 0)
+        except (TypeError, ValueError):
+            return _失败("BAD_ARGS", f"预估费用不是数:{p.get('预估费用')}")
+        if 责任 == "企业":
+            谁, 话 = _lb.谁能拍板(费)
+            if 谁 != "店长":
+                # 停下是**这一档该有的结局**,不是出错 —— 回成功、写明「没写」,运行不标失败
+                return {"输出": {"数据": {"写了": False, "停在": "OVER_AUTHORITY", "谁能拍板": 谁}, "是新执行的": False,
+                               "结果": f"{话} —— 流程到这里停下,没建返修单、没关差评;请报总部在澜绣里办"}}
+    else:
+        方式 = str(p.get("关闭方式") or "").strip()
+        if 方式 in _rt.出钱的处理方式:
+            return {"输出": {"数据": {"写了": False, "停在": "MONEY_NOT_IN_FLOW"}, "是新执行的": False,
+                           "结果": f"「{方式}」要出钱,得第二个人批 —— 流程不经手钱,没关差评;请回澜绣差评页办"}}
+    开始过, 旧 = _桥账(幂等键, db)
+    if 旧 is not None:
+        return {"输出": {"数据": 旧, "是新执行的": False, "结果": "这张单已经办过(没做第二遍)"}}
+    if 开始过:
+        return _失败("IN_DOUBT", "上一次开始办了但没记下结果 —— 可能做了一半,不重做", "请到澜绣核实返修单 / 差评状态")
+    账人 = f"{me['name']}({me['no']})· 管理后台 {办事人 or '?'} 工作流"
+    oplog.log_op(账人, "bridge", 幂等键, "—", "差评处置", True, "START", f"工作流差评处置 {pkg}:{处置}",
+                 {"工具": "差评处置", "参数": p, "管理后台账号": 办事人, "澜绣工号": me["no"]})
+    拒 = lambda r: isinstance(r, dict) and (r.get("error") or r.get("ok") is False)
+    因 = lambda r: r.get("error") or r.get("reason") or r.get("code")
+    with api.as_user(me):
+        if 处置 == "返修":
+            c = _连(db)
+            try:
+                行 = c.execute("SELECT order_id, note FROM rating WHERE pkg_id=?", (pkg,)).fetchone()
+            finally:
+                c.close()
+            if not 行:
+                oplog.log_op(账人, "bridge", 幂等键, "差评处置", "—", False, "FAIL", "没有这条差评", {})
+                return _失败("TOOL_REFUSED", f"没有包裹 {pkg} 的差评")
+            建 = api.create_repair(order_id=行["order_id"], issue=p.get("问题") or 行["note"] or "差评返修")
+            if 拒(建):
+                oplog.log_op(账人, "bridge", 幂等键, "差评处置", "—", False, "FAIL", str(因(建))[:200], {"返回": 建})
+                return _失败("TOOL_REFUSED", f"返修单没建成:{因(建)}"[:300])
+            判 = api.decide_repair(maintain_id=建["返修单"], liable=责任, plan="返修", fee_est=费 or None,
+                                  customer_agreed=bool(p.get("顾客同意凭据")) or None, agree_note=p.get("顾客同意凭据"))
+            结果 = {"返修单": 建["返修单"], "建单": 建, "判责": 判}
+            话 = (f"建了返修单 {建['返修单']}," + (f"判责没过:{因(判)} —— 返修单停在「待确认」,请店长在澜绣补齐再判"
+                                                if 拒(判) else f"判给{责任},{判.get('reason') or '已判'}"))
+        else:
+            r = api.close_bad_rating(pkg=pkg, note=p.get("说明") or "", way=p.get("关闭方式") or "只回访")
+            if 拒(r):
+                oplog.log_op(账人, "bridge", 幂等键, "差评处置", "—", False, "FAIL", str(因(r))[:200], {"返回": r})
+                return _失败("TOOL_REFUSED", f"差评没关:{因(r)}"[:300])
+            结果, 话 = {"关闭": r}, f"差评 {pkg} 已关闭({p.get('关闭方式') or '只回访'})"
+    oplog.log_op(账人, "bridge", 幂等键, "差评处置", "done", True, "DONE", 话[:200], {"结果": 结果})
+    return {"输出": {"数据": 结果, "是新执行的": True, "结果": 话[:300]}}
+
+
 # 桥专门做的几样(不在 api.TOOLS 里的):两边名单对账时和业务工具合在一起算
-专用工具 = ("取转写", "写跟进", "订单交付风险", "召回名单", "派回访任务")
+专用工具 = ("取转写", "写跟进", "订单交付风险", "召回名单", "派回访任务", "补货预警", "派补货跟进", "差评研判", "差评处置")
 
 执行表 = {"取转写": lambda 单, 谁, db=None: 取转写(单.get("参数"), db=db),
           "写跟进": lambda 单, 谁, db=None: 写跟进(单.get("参数"), 单.get("幂等键"), 谁, db=db,
@@ -463,6 +650,14 @@ def 派回访任务(参数, 幂等键, 办事人=None, 工号=None, db=None):
                                                     工号=单.get("办事人澜绣工号"), db=db)
 执行表["派回访任务"] = lambda 单, 谁, db=None: 派回访任务(单.get("参数"), 单.get("幂等键"), 办事人=单.get("办事人"),
                                                       工号=单.get("办事人澜绣工号"), db=db)
+执行表["补货预警"] = lambda 单, 谁, db=None: 补货预警(单.get("参数"), 办事人=单.get("办事人"),
+                                                    工号=单.get("办事人澜绣工号"), db=db)
+执行表["派补货跟进"] = lambda 单, 谁, db=None: 派补货跟进(单.get("参数"), 单.get("幂等键"), 办事人=单.get("办事人"),
+                                                      工号=单.get("办事人澜绣工号"), db=db)
+执行表["差评研判"] = lambda 单, 谁, db=None: 差评研判(单.get("参数"), 办事人=单.get("办事人"),
+                                                    工号=单.get("办事人澜绣工号"), db=db)
+执行表["差评处置"] = lambda 单, 谁, db=None: 差评处置(单.get("参数"), 单.get("幂等键"), 办事人=单.get("办事人"),
+                                                    工号=单.get("办事人澜绣工号"), db=db)
 执行表.update({名: (lambda 名: lambda 单, 谁, db=None: 调业务工具(
     名, 单.get("参数"), 单.get("幂等键"), 办事人=单.get("办事人"), 工号=单.get("办事人澜绣工号"), db=db))(名)
     for 名 in 业务工具})

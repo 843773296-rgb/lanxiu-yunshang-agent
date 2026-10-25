@@ -423,7 +423,145 @@ def _老客召回(桥):
             "nodes": 节点, "edges": 边}
 
 
-模板们 = ("空白", "文本处理", "音频整理", "经营报告", "订单风险", "老客召回")
+def _库存补货(桥):
+    """**库存预警 → 补货跟进**(六条第六条,10-25)。档由澜绣现成的库存预警口径判(不新造),只有
+    发不出 / 断货 / 快没了才往下走;卖不动(压货)/ 够 / 已有没办完的补货跟进 → 不派,说明为什么。
+    模型只写建议(补货量只给区间);店长 / 总部填负责人和截止才派;派走澜绣现成的预警派单 ——
+    派的那一刻档位当场重算、同一件事没办完不重派(方案文档「补货任务不许从预警以外的入口派出」)。"""
+    def 引(n, p):
+        return {"source": "node", "node_id": n, "pointer": p}
+    串 = {"type": "string"}
+    结果Schema = {"type": "object", "properties": {"结果": 串}, "required": ["结果"], "additionalProperties": False}
+    建议Schema = {"type": "object", "properties": {"建议": 串, "需要核实": {"type": "array", "items": 串}},
+                 "required": ["建议", "需要核实"], "additionalProperties": False}
+    def 记(id_, 名, 来, 尾, x, y):
+        return {"id": id_, "type": "transform", "name": 名, "layout": {"x": x, "y": y},
+                "config": {"operations": [{"op": "concat", "parts": [来, {"source": "constant", "value": 尾}],
+                                           "into": "结果"}], "output_schema": 结果Schema}}
+    def 判(id_, 名, when, x, y):
+        return {"id": id_, "type": "condition", "name": 名, "layout": {"x": x, "y": y},
+                "config": {"branches": [{"key": "yes", "when": when}], "else_policy": "fail"}}
+    节点 = [
+        {"id": "start", "type": "start", "name": "选 SKU", "layout": {"x": 40, "y": 160},
+         "config": {"input_schema": {"type": "object", "properties": {
+             "sku": {"type": "string", "minLength": 1, "title": "SKU 号(库存预警那一行)"}},
+             "required": ["sku"], "additionalProperties": False}}},
+        {"id": "fetch", "type": "tool", "name": "取这个 SKU 的预警", "layout": {"x": 200, "y": 160},
+         "config": {"tool_version_id": 桥.get("补货预警"),
+                    "bindings": {"sku": {"source": "input", "pointer": "/sku"}}}},
+        判("go", "要派补货吗", {"op": "equals", "left": 引("fetch", "/数据/要派吗"),
+                             "right": {"source": "constant", "value": True}}, 360, 160),
+        记("no_go", "不派(档不用补 / 已有人在跟)", 引("fetch", "/结果"), "", 520, 300),
+        {"id": "advise", "type": "llm", "name": "写补货建议", "layout": {"x": 520, "y": 80},
+         "config": {"output_schema": 建议Schema, "prompt_version_id": 桥.get("处理要求"),
+                    "bindings": {"取数包": 引("fetch", "/数据")}}},
+        {"id": "review", "type": "human", "name": "店长 / 总部确认", "layout": {"x": 680, "y": 80},
+         "config": {"request_kind": "核对", "candidate_roles": ["approver", "admin"],
+                    "allowed_fields": ["补货负责人", "补货截止"],
+                    "expires_at_policy": {"小时": 48, "到期": "fail"},
+                    "payload_binding": {"原文": 引("fetch", "/结果"), "摘要": 引("advise", "/建议"),
+                                        "待确认项": 引("advise", "/需要核实")}}},
+        判("ok", "确认了吗", {"op": "equals", "left": 引("review", "/决定"),
+                            "right": {"source": "constant", "value": "approve"}}, 840, 80),
+        {"id": "rejected", "type": "transform", "name": "记下理由(误报 / 退回)", "layout": {"x": 1000, "y": 300},
+         "config": {"operations": [{"op": "to_string", "from": 引("review", "/理由"), "into": "结果"}],
+                    "output_schema": 结果Schema}},
+        判("who", "填了负责人吗", {"op": "exists", "left": 引("review", "/补货负责人")}, 1000, 80),
+        判("when", "填了截止吗", {"op": "exists", "left": 引("review", "/补货截止")}, 1160, 80),
+        记("no_who", "不派(没填负责人)", 引("fetch", "/结果"), " —— 没填补货负责人,没派", 1160, 220),
+        记("no_when", "不派(没填截止)", 引("fetch", "/结果"), " —— 没填补货截止,没派", 1320, 220),
+        {"id": "task", "type": "tool", "name": "派补货跟进", "layout": {"x": 1320, "y": 0},
+         "config": {"tool_version_id": 桥.get("派补货跟进"),
+                    "bindings": {"sku": {"source": "input", "pointer": "/sku"}, "负责人": 引("review", "/补货负责人"),
+                                 "截止": 引("review", "/补货截止"), "note": 引("advise", "/建议")}}},
+        记("tasked", "记下派了", 引("task", "/结果"), "", 1480, 0),
+        {"id": "merge", "type": "merge", "name": "汇合", "layout": {"x": 1640, "y": 160},
+         "config": {"candidates": [引("tasked", "/结果"), 引("no_go", "/结果"), 引("rejected", "/结果"),
+                                   引("no_who", "/结果"), 引("no_when", "/结果")], "output_field": "结果"}},
+        {"id": "finish", "type": "end", "name": "返回结果", "layout": {"x": 1800, "y": 160},
+         "config": {"output_schema": 结果Schema, "bindings": {"结果": 引("merge", "/结果")}}},
+    ]
+    边 = [{"source": a, "target": b, "port": "success"} for a, b in (
+        ("start", "fetch"), ("fetch", "go"), ("advise", "review"), ("review", "ok"),
+        ("task", "tasked"), ("tasked", "merge"), ("no_go", "merge"), ("rejected", "merge"),
+        ("no_who", "merge"), ("no_when", "merge"), ("merge", "finish"))]
+    分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
+    边 += [分("go", "advise", "yes"), 分("go", "no_go", "else"), 分("ok", "who", "yes"), 分("ok", "rejected", "else"),
+          分("who", "when", "yes"), 分("who", "no_who", "else"), 分("when", "task", "yes"), 分("when", "no_when", "else")]
+    return {"definition_schema_version": "1", "kind": "workflow",
+            "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
+            "nodes": 节点, "edges": 边}
+
+
+def _差评返修(桥):
+    """**差评 → 判责 → 返修处置**(六条第四条,10-25)。判责复用澜绣现成的返修判定表(knowledge/liability.py),
+    模型只组织四段、不改判;店长在核对页定处置(返修 / 说明后关闭)、责任方、预估费用。
+    用户 10-25 拍「停下报总部,不写」:我方出钱超过店长权限(> 1000)→ 澜绣那一侧什么都不写,结果写明要报总部;
+    出钱的关闭方式(退款)要第二个人批,流程不经手钱 → 也不写。返修件回店核码等现有的闸照旧在澜绣里。"""
+    def 引(n, p):
+        return {"source": "node", "node_id": n, "pointer": p}
+    串 = {"type": "string"}
+    结果Schema = {"type": "object", "properties": {"结果": 串}, "required": ["结果"], "additionalProperties": False}
+    四段Schema = {"type": "object", "properties": {"事实": 串, "判责依据": 串, "处置建议": 串,
+                                                 "待确认项": {"type": "array", "items": 串}},
+                 "required": ["事实", "判责依据", "处置建议", "待确认项"], "additionalProperties": False}
+    def 记(id_, 名, 来, 尾, x, y):
+        return {"id": id_, "type": "transform", "name": 名, "layout": {"x": x, "y": y},
+                "config": {"operations": [{"op": "concat", "parts": [来, {"source": "constant", "value": 尾}],
+                                           "into": "结果"}], "output_schema": 结果Schema}}
+    def 判(id_, 名, when, x, y):
+        return {"id": id_, "type": "condition", "name": 名, "layout": {"x": x, "y": y},
+                "config": {"branches": [{"key": "yes", "when": when}], "else_policy": "fail"}}
+    节点 = [
+        {"id": "start", "type": "start", "name": "选差评", "layout": {"x": 40, "y": 160},
+         "config": {"input_schema": {"type": "object", "properties": {
+             "pkg": {"type": "string", "minLength": 1, "title": "差评的包裹号(待处理差评那一行)"}},
+             "required": ["pkg"], "additionalProperties": False}}},
+        {"id": "fetch", "type": "tool", "name": "取差评事实和判责建议", "layout": {"x": 200, "y": 160},
+         "config": {"tool_version_id": 桥.get("差评研判"),
+                    "bindings": {"pkg": {"source": "input", "pointer": "/pkg"}}}},
+        判("done", "已经处理过了吗", {"op": "equals", "left": 引("fetch", "/数据/已处理"),
+                                 "right": {"source": "constant", "value": True}}, 360, 160),
+        记("already", "不再办(已处理过)", 引("fetch", "/结果"), " —— 这条差评已经不是待处理,没再办", 520, 300),
+        {"id": "write", "type": "llm", "name": "写四段研判", "layout": {"x": 520, "y": 80},
+         "config": {"output_schema": 四段Schema, "prompt_version_id": 桥.get("处理要求"),
+                    "bindings": {"取数包": 引("fetch", "/数据")}}},
+        {"id": "review", "type": "human", "name": "店长判定", "layout": {"x": 680, "y": 80},
+         "config": {"request_kind": "核对", "candidate_roles": ["approver", "admin"],
+                    "allowed_fields": ["处置", "责任方", "预估费用", "关闭方式", "说明", "顾客同意凭据"],
+                    "expires_at_policy": {"小时": 72, "到期": "fail"},
+                    "payload_binding": {"原文": 引("fetch", "/结果"), "摘要": 引("write", "/处置建议"),
+                                        "待确认项": 引("write", "/待确认项")}}},
+        判("ok", "店长通过了吗", {"op": "equals", "left": 引("review", "/决定"),
+                               "right": {"source": "constant", "value": "approve"}}, 840, 80),
+        {"id": "rejected", "type": "transform", "name": "记下店长的理由", "layout": {"x": 1000, "y": 300},
+         "config": {"operations": [{"op": "to_string", "from": 引("review", "/理由"), "into": "结果"}],
+                    "output_schema": 结果Schema}},
+        判("pick", "选了处置吗", {"op": "exists", "left": 引("review", "/处置")}, 1000, 80),
+        记("no_pick", "只出研判不办", 引("fetch", "/结果"), " —— 店长没选处置,研判归档、没建单没关差评", 1160, 220),
+        {"id": "act", "type": "tool", "name": "差评处置", "layout": {"x": 1160, "y": 0},
+         "config": {"tool_version_id": 桥.get("差评处置"),
+                    "bindings": {"pkg": {"source": "input", "pointer": "/pkg"}, "店长定的": 引("review", "/")}}},
+        记("acted", "记下办了什么", 引("act", "/结果"), "", 1320, 0),
+        {"id": "merge", "type": "merge", "name": "汇合", "layout": {"x": 1480, "y": 160},
+         "config": {"candidates": [引("acted", "/结果"), 引("already", "/结果"), 引("rejected", "/结果"),
+                                   引("no_pick", "/结果")], "output_field": "结果"}},
+        {"id": "finish", "type": "end", "name": "返回结果", "layout": {"x": 1640, "y": 160},
+         "config": {"output_schema": 结果Schema, "bindings": {"结果": 引("merge", "/结果")}}},
+    ]
+    边 = [{"source": a, "target": b, "port": "success"} for a, b in (
+        ("start", "fetch"), ("fetch", "done"), ("write", "review"), ("review", "ok"),
+        ("act", "acted"), ("acted", "merge"), ("already", "merge"), ("rejected", "merge"),
+        ("no_pick", "merge"), ("merge", "finish"))]
+    分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
+    边 += [分("done", "already", "yes"), 分("done", "write", "else"), 分("ok", "pick", "yes"), 分("ok", "rejected", "else"),
+          分("pick", "act", "yes"), 分("pick", "no_pick", "else")]
+    return {"definition_schema_version": "1", "kind": "workflow",
+            "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
+            "nodes": 节点, "edges": 边}
+
+
+模板们 = ("空白", "文本处理", "音频整理", "经营报告", "订单风险", "老客召回", "库存补货", "差评返修")
 
 # ── 聊天接管(用户 2026-10-24 拍「默认关;打开时聊天站改走工作流」)──────────────────
 # 能被接管的只有澜绣**自有**技能(agentsite/skills_own.py 的 OURS)—— 第三方技能没有业务写口,接管它没有意义。
@@ -435,7 +573,7 @@ def _老客召回(桥):
     "pattern-draft": "打版",
 }
 _模板技能 = {"音频整理": "call-notes", "经营报告": "store-report", "订单风险": "deadline-rescue",
-            "老客召回": "customer-recall"}
+            "老客召回": "customer-recall", "差评返修": "rating-repair"}
 
 
 def _审计(c, me, action, target, reason=None):
@@ -470,7 +608,7 @@ def _默认处理要求(c, project_id, key="customer_needs_extract"):
 
 
 _模板要求 = {"音频整理": "customer_needs_extract", "经营报告": "store_report_write", "订单风险": "order_risk_advise",
-            "老客召回": "recall_script"}
+            "老客召回": "recall_script", "库存补货": "restock_advise", "差评返修": "rating_review"}
 
 
 def _模板(名, 桥=None):
@@ -483,6 +621,10 @@ def _模板(名, 桥=None):
         return _订单风险(桥 or {})
     if 名 == "老客召回":
         return _老客召回(桥 or {})
+    if 名 == "库存补货":
+        return _库存补货(桥 or {})
+    if 名 == "差评返修":
+        return _差评返修(桥 or {})
     开始 = {"id": "start", "type": "start", "layout": {"x": 40, "y": 120},
             "config": {"input_schema": {"type": "object",
                                         "properties": {"article": {"type": "string",
@@ -586,6 +728,10 @@ _模板说明 = {
                ["选订单", "取这一单的交付风险(规则分档)", "要跟踪?", "写处理建议", "店长决定", "派之前再核一次", "派订单跟踪"]),
     "老客召回": ("促活名单和流失预警逐人交叉出一张有由头的回访名单,逐人写依据和开口话术;店长勾人、填截止后,给客户的归属顾问各派一条电话回电",
                ["取召回名单(逐人交叉)", "有该联系的?", "逐人写依据和话术", "店长勾选", "派回访任务(逐人再核,不合适的跳过并写明)"]),
+    "库存补货": ("选库存预警里的一个 SKU,规则判档;要断了 / 发不出的写补货建议,店长或总部填负责人和截止后派「补货跟进」(同一件事没办完不重派)",
+               ["选 SKU", "取这个 SKU 的预警(规则判档)", "要派补货?", "写补货建议", "店长 / 总部确认", "派补货跟进(现成的预警派单)"]),
+    "差评返修": ("选一条待处理差评,按现成的返修判定表给判责建议,写成四段;店长定处置后建返修单或关差评 —— 我方出钱超店长权限的不写、报总部",
+               ["选差评", "取事实和判责建议(判定表)", "写四段研判", "店长判定", "返修 / 说明后关闭(超权限停下报总部)"]),
     "文本处理": ("一段文字进来,模型整理一遍出去(开始 → AI 处理 → 结束)", ["输入正文", "AI 处理", "返回结果"]),
     "空白": ("只有开始和结束,自己从头搭", []),
 }
@@ -608,8 +754,10 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         有报告要求 = bool(_默认处理要求(c, project_id, "store_report_write"))
         有风险要求 = bool(_默认处理要求(c, project_id, "order_risk_advise"))
         有召回要求 = bool(_默认处理要求(c, project_id, "recall_script"))
+        有补货要求 = bool(_默认处理要求(c, project_id, "restock_advise"))
+        有差评要求 = bool(_默认处理要求(c, project_id, "rating_review"))
     出 = []
-    for 名 in ("音频整理", "经营报告", "订单风险", "老客召回", "文本处理", "空白"):   # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
+    for 名 in ("音频整理", "经营报告", "订单风险", "老客召回", "库存补货", "差评返修", "文本处理", "空白"):   # 弹窗里第一张默认选中 —— 业务模板在前,空白在后
         说, 步 = _模板说明[名]
         要 = []
         if 名 == "音频整理":
@@ -630,13 +778,25 @@ def 模板列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
                           "怎么补": "跑 管理后台/tools/seed_bridge_tools.py 登记"})
             要.append({"名": "处理要求「召回话术」", "有了吗": 有召回要求,
                       "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
+        if 名 == "差评返修":
+            for 工, 中 in (("差评研判", "取差评事实和判责建议"), ("差评处置", "差评处置")):
+                要.append({"名": f"澜绣业务动作「{中}」", "有了吗": bool(桥.get(工)),
+                          "怎么补": "跑 管理后台/tools/seed_bridge_tools.py 登记"})
+            要.append({"名": "处理要求「差评研判」", "有了吗": 有差评要求,
+                      "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
+        if 名 == "库存补货":
+            for 工, 中 in (("补货预警", "取这个 SKU 的预警"), ("派补货跟进", "派补货跟进")):
+                要.append({"名": f"澜绣业务动作「{中}」", "有了吗": bool(桥.get(工)),
+                          "怎么补": "跑 管理后台/tools/seed_bridge_tools.py 登记"})
+            要.append({"名": "处理要求「补货建议」", "有了吗": 有补货要求,
+                      "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
         if 名 == "经营报告":
             for 工, 中 in (("store_report", "取经营数据"), ("save_report", "存报告")):
                 要.append({"名": f"澜绣业务动作「{中}」", "有了吗": bool(桥.get(工)),
                           "怎么补": "正式项目从澜绣导入;别的项目跑 管理后台/tools/seed_bridge_tools.py 登记"})
             要.append({"名": "处理要求「经营报告撰写」", "有了吗": 有报告要求,
                       "怎么补": "同一个脚本会一起登记;也可以建完后自己选一份"})
-        if 名 in ("音频整理", "经营报告", "订单风险", "老客召回", "文本处理"):
+        if 名 in ("音频整理", "经营报告", "订单风险", "老客召回", "库存补货", "差评返修", "文本处理"):
             要.append({"名": "一个可用的模型", "有了吗": 有模型, "怎么补": "平台管理员在「模型与连接」里接一个"})
         出.append({"名": 名, "说明": 说, "步骤": 步, "需要的资源": 要,
                    "能直接跑吗": all(x["有了吗"] for x in 要) and 名 != "空白"})

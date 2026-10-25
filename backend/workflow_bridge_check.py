@@ -18,7 +18,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "knowledge")]
 import server, oplog, workflow_bridge as WB   # noqa: E401 —— 写口先加载,用副本才改得到它们的 DB
-import api, tasks, revive, slipping             # noqa: E401,F401 —— 召回的两份名单在函数里懒加载 revive / slipping,不先加载就读真库
+import api, tasks, revive, slipping, alert_dispatch, rating_write, repair_write   # noqa: E401,F401 —— 召回的两份名单在函数里懒加载 revive / slipping,不先加载就读真库
 import check_copy
 
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
@@ -33,6 +33,8 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("派回访任务不查客户号在不在召回名单里", "不在这次召回名单里的客户号 → 跳过,不派"),
     ("派回访任务不查已有未完成的回访", "已有未完成回访任务的客户 → 跳过,不派第二条"),
     ("召回名单只看促活那一页,不逐人问流失预警", "名单上每个人的「同时在流失预警里」都和单独问流失预警的结果一致"),
+    ("差评处置不先查金额授权(超店长权限照样建单)", "判给企业、预估 2000 元(超店长权限)→ OVER_AUTHORITY,返修单一张没多"),
+    ("补货跟进绕过预警派单直接派(派的那一刻不重算档位)", "卖不动的 SKU 硬派 → 拒(不在要补货的预警里)"),
 ]
 
 
@@ -275,9 +277,74 @@ def main():
         r = WB.执行({**单, "幂等键": "xr_chk:recall:2", "参数": {**参, "名单": []}})
         ck("没带召回名单 → 一个都不派(不知道哪些人是核过的)", r[0] == "执行失败" and r[2]["code"] == "MISSING", r)
 
+    print("\n▸ ⑨ 补货预警 / 派补货跟进(六条第六条,10-25;档和防重复派都用澜绣现成的预警派单)")
+    cc = sqlite3.connect(副本); cc.row_factory = sqlite3.Row
+    档们 = alert_dispatch.全部sku档(cc)
+    sh = cc.execute("SELECT shop FROM staff WHERE no=?", (店长,)).fetchone()[0]
+    cc.close()
+    快 = next((k for k, v in sorted(档们.items()) if v == "快没了"), None)
+    压 = next((k for k, v in sorted(档们.items()) if v == "卖不动"), None)
+    ck("夹具:库里有「快没了」和「卖不动」的 SKU", bool(快 and 压), (快, 压))
+    r = WB.执行({"工具": "补货预警", "办事人": "U001", "办事人澜绣工号": 店长, "参数": {"sku": 快}})
+    ck("快没了 → 要派,带库存和指纹", r[0] == "已执行" and r[1]["数据"]["要派吗"] is True and r[1].get("指纹"), r)
+    r = WB.执行({"工具": "补货预警", "办事人": "U001", "办事人澜绣工号": 店长, "参数": {"sku": 压}})
+    ck("卖不动(压货)→ 不派补货,说明只出处理建议", r[0] == "已执行" and r[1]["数据"]["要派吗"] is False
+       and "压货" in r[1]["数据"]["说明"], r)
+    前 = 数(副本, "SELECT COUNT(*) FROM schedule WHERE type='补货跟进'")
+    单 = {"工具": "派补货跟进", "幂等键": "xr_chk:restock:1", "办事人": "U001", "办事人澜绣工号": 店长,
+         "参数": {"sku": 快, "负责人": 店长, "截止": "2026-12-31", "note": "检查造的补货"}}
+    r = WB.执行(单)
+    ck("派补货跟进 → 派了一条,挂这个 SKU", r[0] == "已执行" and
+       数(副本, "SELECT COUNT(*) FROM schedule WHERE type='补货跟进' AND ref_id=? AND status='有效'", 快) >= 1
+       and 数(副本, "SELECT COUNT(*) FROM schedule WHERE type='补货跟进'") == 前 + 1, r)
+    r = WB.执行(单)
+    ck("同一张单再来一次 → 不派第二条", 数(副本, "SELECT COUNT(*) FROM schedule WHERE type='补货跟进'") == 前 + 1
+       and r[1] and r[1].get("是新执行的") is False, r)
+    r = WB.执行({**单, "幂等键": "xr_chk:restock:2"})
+    ck("同一个 SKU 换一张单再派 → 拒(上一条没办完)", r[0] == "执行失败" and
+       数(副本, "SELECT COUNT(*) FROM schedule WHERE type='补货跟进'") == 前 + 1, r)
+    r = WB.执行({**单, "幂等键": "xr_chk:restock:3", "参数": {**单["参数"], "sku": 压}})
+    ck("卖不动的 SKU 硬派 → 拒(不在要补货的预警里)", r[0] == "执行失败" and "不在要补货的预警里" in r[2]["消息"], r)
+
+    print("\n▸ ⑩ 差评研判 / 差评处置(六条第四条,10-25;用户拍「超店长权限的停下报总部,不写」)")
+    cc = sqlite3.connect(副本)
+    待 = [x[0] for x in cc.execute("""SELECT r.pkg_id FROM task t JOIN rating r ON r.task_id=t.id JOIN ordr o ON o.id=r.order_id
+                                     WHERE t.type='评价差评' AND t.status='待处理' AND o.shop=? ORDER BY r.pkg_id LIMIT 3""", (sh,))]
+    外 = cc.execute("""SELECT r.pkg_id FROM task t JOIN rating r ON r.task_id=t.id JOIN ordr o ON o.id=r.order_id
+                      WHERE t.type='评价差评' AND o.shop<>? LIMIT 1""", (sh,)).fetchone()
+    cc.close()
+    ck("夹具:本店有 3 条待处理差评、别店有 1 条", len(待) == 3 and 外, (待, 外))
+    if len(待) == 3 and 外:
+        r = WB.执行({"工具": "差评研判", "办事人": "U001", "办事人澜绣工号": 店长, "参数": {"pkg": 待[0]}})
+        ck("研判 → 带差评、服务记录、判责建议(判得出就引判定表,判不出说交店长)",
+           r[0] == "已执行" and "判责建议" in r[1]["数据"] and ("判定表" in r[1]["数据"]["说明"]), r)
+        r = WB.执行({"工具": "差评研判", "办事人": "U001", "办事人澜绣工号": 店长, "参数": {"pkg": 外[0]}})
+        ck("别店的差评 → 拒", r[0] == "执行失败", r)
+        修前 = 数(副本, "SELECT COUNT(*) FROM maintain")
+        r = WB.执行({"工具": "差评处置", "幂等键": "xr_chk:rating:1", "办事人": "U001", "办事人澜绣工号": 店长,
+                    "参数": {"pkg": 待[0], "处置": "返修", "责任方": "企业", "预估费用": 2000}})
+        ck("判给企业、预估 2000 元(超店长权限)→ OVER_AUTHORITY,返修单一张没多",
+           r[0] == "已执行" and r[1]["数据"].get("写了") is False and r[1]["数据"].get("停在") == "OVER_AUTHORITY"
+           and "报总部" in r[1]["结果"]
+           and 数(副本, "SELECT COUNT(*) FROM maintain") == 修前, r)
+        r = WB.执行({"工具": "差评处置", "幂等键": "xr_chk:rating:2", "办事人": "U001", "办事人澜绣工号": 店长,
+                    "参数": {"pkg": 待[1], "处置": "说明后关闭", "关闭方式": "全额退款", "说明": "x"}})
+        ck("关闭方式要出钱(全额退款)→ 不关,回澜绣办", r[0] == "已执行" and r[1]["数据"].get("停在") == "MONEY_NOT_IN_FLOW"
+           and 数(副本, "SELECT COUNT(*) FROM task t JOIN rating r ON r.task_id=t.id WHERE r.pkg_id=? AND t.status='待处理'", 待[1]) == 1, r)
+        关单 = {"工具": "差评处置", "幂等键": "xr_chk:rating:3", "办事人": "U001", "办事人澜绣工号": 店长,
+               "参数": {"pkg": 待[1], "处置": "说明后关闭", "关闭方式": "只回访", "说明": "检查造的:已电话回访,顾客接受说明"}}
+        r = WB.执行(关单)
+        ck("说明后关闭(只回访)→ 差评关了", r[0] == "已执行", r)
+        r2 = WB.执行(关单)
+        ck("同一张单再来一次 → 不做第二遍", r2[0] == "已执行" and r2[1].get("是新执行的") is False, r2)
+        r = WB.执行({"工具": "差评处置", "幂等键": "xr_chk:rating:4", "办事人": "U001", "办事人澜绣工号": 店长,
+                    "参数": {"pkg": 待[2], "店长定的": {"处置": "返修", "责任方": "企业", "预估费用": "300", "决定": "approve"}}})
+        ck("判给企业、300 元(店长权限内,店长定的整包传进来)→ 建了返修单并判责", r[0] == "已执行" and r[1]["数据"].get("返修单")
+           and 数(副本, "SELECT COUNT(*) FROM maintain") == 修前 + 1, r)
+
     print("\n▸ ⑤ 写进的是副本")
     ck("真库的台账里没有这次检查的幂等键",
-       数(真库, "SELECT COUNT(*) FROM op_log WHERE ctx LIKE '%xr_chk:save:%' OR target LIKE 'xr_chk:recall:%'") == 0)
+       数(真库, "SELECT COUNT(*) FROM op_log WHERE ctx LIKE '%xr_chk:save:%' OR target LIKE 'xr_chk:%'") == 0)
 
     print()
     if 坏:

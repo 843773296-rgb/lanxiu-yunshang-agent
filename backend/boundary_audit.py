@@ -1098,6 +1098,48 @@ print(json.dumps({"样本": [有, 没], "对照": [一[0], 中 - 前], "重来":
     raise PermissionError("名单外的客户号不派;名单被塞进一个眼下没由头的人也不派(派的那一刻逐人再核);同一张单只派一次")
 
 
+def a_bridge_rating_money():
+    """差评处置不经手超权限的钱(用户 10-25 拍「停下报总部,不写」)。子进程、库副本上真调 workflow_bridge.执行。
+    攻两处:① 判给企业、预估 2000 元(超店长 1000 的权限)② 关闭方式写成全额退款(要第二个人批)。
+    **带对照**:同一个店长「只回访」关闭一条必须真关成 —— 不然「没写」可能只是夹具没搭好。"""
+    import subprocess as _sp, json as _js
+    src = r"""
+import sys, os, json, sqlite3
+sys.path[:0] = ['backend', 'knowledge']
+import server, oplog, api, tasks, rating_write, repair_write, workflow_bridge as WB, check_copy
+副本 = check_copy.用副本('ba-rating-')
+店长 = '60000001'
+me = WB.员工身份(店长)
+c = sqlite3.connect(副本)
+待 = [r[0] for r in c.execute("SELECT r.pkg_id FROM task t JOIN rating r ON r.task_id=t.id JOIN ordr o ON o.id=r.order_id "
+      "WHERE t.type='评价差评' AND t.status='待处理' AND o.shop=? ORDER BY r.pkg_id LIMIT 3", (me['shop'],))]
+修 = lambda: sqlite3.connect(副本).execute("SELECT COUNT(*) FROM maintain").fetchone()[0]
+关了 = lambda k: sqlite3.connect(副本).execute("SELECT t.status FROM task t JOIN rating r ON r.task_id=t.id WHERE r.pkg_id=?", (k,)).fetchone()[0]
+跑 = lambda 键, k, 定: WB.执行({"工具": "差评处置", "幂等键": 键, "办事人": "ba", "办事人澜绣工号": 店长,
+                             "参数": {"pkg": k, "店长定的": 定}}, 谁="ba")
+前 = 修()
+超 = 跑("ba:rating:1", 待[0], {"处置": "返修", "责任方": "企业", "预估费用": "2000"}); 超后 = 修()
+退 = 跑("ba:rating:2", 待[1], {"处置": "说明后关闭", "关闭方式": "全额退款", "说明": "审计"})
+对 = 跑("ba:rating:3", 待[2], {"处置": "说明后关闭", "关闭方式": "只回访", "说明": "审计:已回访"})
+print(json.dumps({"样本": len(待), "超权限多了返修单": 超后 - 前, "超": 超[0], "退款后状态": 关了(待[1]),
+                  "对照": [对[0], 关了(待[2])]}, ensure_ascii=False))
+"""
+    r = _sp.run([sys.executable, "-c", src], capture_output=True, text=True, timeout=300, cwd=ROOT)
+    try:
+        o = _js.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        raise 前提不成立(f"攻击脚本没跑完,什么都没验:{(r.stderr or r.stdout)[-300:]}")
+    if o["样本"] < 3:
+        raise 前提不成立(f"本店待处理差评不到 3 条({o['样本']})—— 没东西可攻")
+    if o["对照"][0] != "已执行" or o["对照"][1] == "待处理":
+        raise 前提不成立(f"对照没关成({o['对照']})—— 「没关」不作数")
+    if o["超权限多了返修单"]:
+        return f"判给企业 2000 元(超店长权限)照样建了 {o['超权限多了返修单']} 张返修单"
+    if o["退款后状态"] != "待处理":
+        return f"全额退款的关闭方式没经第二个人批就把差评关了(状态 {o['退款后状态']})"
+    raise PermissionError("超店长权限的我方出钱不建单不判责;要出钱的关闭方式不关 —— 都回澜绣由人办")
+
+
 def a_spans_scope():
     """聊天站执行记录(/spans:用户原话、工具参数和返回)只给本人和总部运营(2026-10-24 实测原来不登录就给 200)。"""
     import tempfile as _tf
@@ -1426,6 +1468,10 @@ STRUCT = [
  ("配置层也点名封了内置工具", "sdk.py disallowed_tools",
   a_disallowed, "检查危险工具是否都在 disallowed_tools 里",
   "**双锁**:配置一道 + Hook 一道。配置会被人改错,Hook 是兜底"),
+ ("工作流差评处置不经手超权限的钱", "backend/workflow_bridge.py 差评处置(六条第四条,用户 10-25 拍「停下报总部,不写」)",
+  a_bridge_rating_money, "库副本上:判给企业预估 2000 元 / 关闭方式写成全额退款",
+  "**靠结构**:写之前按现成的金额授权档(knowledge/liability.谁能拍板)判,不是店长的档一行都不写;"
+  "出钱的关闭方式(knowledge/rating.出钱的处理方式)不经流程关。底下的判责写口自己也有授权闸(repair_write.decide),两道"),
  ("工作流派回访:只派给名单里、此刻仍有由头的人,重试不派第二条", "backend/workflow_bridge.py 派回访任务(六条第五条,10-25)",
   a_bridge_recall, "库副本上:店长填名单外的客户号 / 名单里塞一个眼下没由头的人 / 同一张单执行两次",
   "**靠结构**:只认这次名单里的客户号;派的那一刻以绑定员工身份逐人再问一次促活(范围和由头都按澜绣自己的口径,"
