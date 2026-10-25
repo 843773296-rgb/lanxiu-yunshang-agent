@@ -13347,8 +13347,8 @@
   "file": [
    {
     "path": "backend/api.py",
-    "old": "    return f\"{r[0]['name']}({r[0]['role']})\" if r and r[0].get(\"name\") else None",
-    "new": "    return f\"{r[0]['name']}({r[0]['role']})\" if r and r[0].get(\"name\") else \"某员工(顾问)\""
+    "old": "    if not (r and r[0].get(\"name\")):\n        return None\n",
+    "new": "    if not (r and r[0].get(\"name\")):\n        return \"某员工(顾问)\"\n"
    }
   ],
   "预期红": "工号在员工表里查不到 → 不编名字"
@@ -13456,5 +13456,41 @@
    }
   ],
   "预期红": "智能体的客户档案工具只看本店"
+ },
+ {
+  "script": "backend/staff_name_check.py",
+  "改坏": "停用的员工不标停用",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    停 = \"\" if (r[0].get(\"status\") or \"启用\") == \"启用\" else f\"·{r[0]['status']},派不了任务\"",
+    "new": "    停 = \"\""
+   }
+  ],
+  "预期红": "归属顾问已停用 → 名字旁边标出停用、派不了任务"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g28 不看同一句有没有范围限定(凡说没有就拦)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if not _范围限定.search(句):",
+    "new": "        if True:"
+   }
+  ],
+  "预期红": "同一句贴着「你的门店里」→ 放过"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g28 没接进交付前检查清单",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "g27_notfound_without_lookup, g28_scope_as_absence]",
+    "new": "g27_notfound_without_lookup]"
+   }
+  ],
+  "预期红": "真跑钉回:王青梧在别店,工具标了范围,回答说「库里没有」"
  }
 ]

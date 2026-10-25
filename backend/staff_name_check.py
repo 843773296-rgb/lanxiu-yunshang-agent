@@ -18,6 +18,7 @@ import api
 咬合 = [
     ("会员详情不给归属顾问", "会员详情带归属顾问:工号 + 「姓名(岗位)」,和员工表一致"),
     ("查不到的工号编一个名字", "工号在员工表里查不到 → 不编名字"),
+    ("停用的员工不标停用", "归属顾问已停用 → 名字旁边标出停用、派不了任务"),
     ("客户档案只认客户号", "客户档案按姓名也认得到人(唯一命中 → 给档案并注明认到哪个客户号)"),
 ]
 
@@ -39,7 +40,8 @@ def main():
     ck("库里有「带归属顾问」的客户可验(样本量不能是 0)", 有 is not None)
     if 有 is None:
         print("❌ 没东西可验 —— 这不叫通过"); return 1
-    称呼 = f"{有['name']}({有['role']})"
+    称呼 = api._员工称呼(有["advisor_no"])
+    ck("样本里的归属顾问名字从员工表来(不是编的)", (称呼 or "").startswith(f"{有['name']}({有['role']}"), 称呼)
 
     c = api.get_customer(有["id"])
     ck("客户档案:归属顾问是「姓名(岗位)」,工号那一栏原样还在",
@@ -68,6 +70,13 @@ def main():
     finally:
         api._ME.reset(_t)
     ck("挂着同一家店的顾问,看得到本店客户的档案(限店不能把自己店也挡掉)", c4.get("id") == 有["id"], c4.get("error"))
+    停 = db.execute("SELECT no, name FROM staff WHERE status<>'启用' ORDER BY no LIMIT 1").fetchone()
+    if 停 is not None:
+        ck("归属顾问已停用 → 名字旁边标出停用、派不了任务",
+           (api._员工称呼(停["no"]) or "").startswith(停["name"]) and "派不了任务" in (api._员工称呼(停["no"]) or ""),
+           api._员工称呼(停["no"]))
+    在 = db.execute("SELECT no FROM staff WHERE status='启用' ORDER BY no LIMIT 1").fetchone()
+    ck("在职的员工不标停用(别把所有人都标上)", "派不了" not in (api._员工称呼(在["no"]) or "派不了"), 在 and api._员工称呼(在["no"]))
     ck("工号在员工表里查不到 → 不编名字", api._员工称呼("99999999") is None and api._员工称呼(None) is None)
 
     api._ME.set({"no": "60000008", "name": "检查", "role": "总部运营", "shop": ""})

@@ -1468,6 +1468,39 @@ def g27_notfound_without_lookup(text, calls):
             "(客户的归属顾问在会员详情里),查过了确实没有再照实说没有")
 
 
+# 工具按身份限了范围、在返回里标 `范围: 本店 / 名下` 的那几处(客户档案、接触史)。认的是**工具标的字段**,不是它那句话怎么写
+_限了范围 = re.compile(r'范围\\?"\s*:\s*\\?"(本店|名下)')
+_说没有 = re.compile(r"没有|不存在|查不到|没查到|找不到|没找到|查无")
+_范围限定 = re.compile(r"本店|你的门店|您的门店|你店|门店里|店里|这家店|名下|你这边的客户|你能看的")
+
+
+def g28_scope_as_absence(text, calls):
+    """**工具说「你的门店里没有」,回答说成「库里没有」。**(用户 2026-10-25 拍)
+
+    来由:店长问「给王青梧派个回访」—— 王青梧是别店的客户,档案工具按只看本店拦了,原话「你的门店里没有」;
+    模型复述成「库里没有『王青梧』」。**不是泄露,是把范围说丢了**:店长会以为这人从没建过档,
+    客户刚从别店转来的时候就会去重建一份档案。
+    > 「本店看不到」和「全公司都没有」,在一句「没有这个人」里长得一模一样。
+
+    判据(结构,不是词表):这一轮有工具在返回里**标了范围**(`范围: 本店 / 名下`),
+    回答里说「没有」的那一句,同一句里要贴着范围限定(本店 / 你的门店 / 名下……)。没标范围的轮次不归这条管。
+    """
+    看过 = " ".join(json.dumps(c.get("output"), ensure_ascii=False, default=str) for c in calls or [])
+    if not _限了范围.search(看过):
+        return None
+    丢了 = []
+    for m in _说没有.finditer(text or ""):
+        if _有告诫(text, m.start()) or tm.negated(text, m.start()):
+            continue
+        句 = _整句(text, m.start())
+        if not _范围限定.search(句):
+            丢了.append(句.strip()[:40])
+    if not 丢了:
+        return None
+    return (f"工具说的是**你的门店里**没有(按身份限了范围),回答说成了没有这个人:「{丢了[0]}」—— "
+            "改成「你的门店里没有 / 不在你名下」,别说成库里、系统里没有;也别猜他在哪家店")
+
+
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer,
           g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
@@ -1475,7 +1508,7 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g17_liability_promise, g18_vision_conclusion,
           g19_account_state, g20_consent_version, g21_apply_as_done,
           g22_agree_without_reading, g23_discount_promise, g24_growth_not_statistical,
-          g25_count_without_lookup, g26_wan_mismatch, g27_notfound_without_lookup]
+          g25_count_without_lookup, g26_wan_mismatch, g27_notfound_without_lookup, g28_scope_as_absence]
 
 
 def check_answer(text, calls, prompt="", 带图=False, 规矩=""):

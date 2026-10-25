@@ -211,8 +211,12 @@ def _员工称呼(no):
     **工号那一栏原样留着**(判分器和检查按工号对),名字另起一栏。"""
     if not no:
         return None
-    r = _rows("SELECT name, role FROM staff WHERE no=?", str(no))
-    return f"{r[0]['name']}({r[0]['role']})" if r and r[0].get("name") else None
+    r = _rows("SELECT name, role, status FROM staff WHERE no=?", str(no))
+    if not (r and r[0].get("name")):
+        return None
+    # 停用的要标出来(10-25 用户实测:C10007 归属顾问何苓已停用,模型照档案说「默认派给何苓」,派单才撞上「找不到何苓」)
+    停 = "" if (r[0].get("status") or "启用") == "启用" else f"·{r[0]['status']},派不了任务"
+    return f"{r[0]['name']}({r[0]['role']}{停})"
 
 
 def get_customer(customer_id):
@@ -230,7 +234,7 @@ def get_customer(customer_id):
             店码={r["id"]: r["shop_code"] or _SK.码(_x, r["shop"])     # 当天新写、还没回填的行按串兜住
                   for r in _x.execute("SELECT id, shop, shop_code FROM customer WHERE id=? OR name=?", (customer_id, customer_id))}
         if not 我店:
-            return {"error":"你的账号没挂门店,看不了客户档案 —— 跨店看档案只有总部运营和售后可以"}
+            return {"error":"你的账号没挂门店,看不了客户档案 —— 跨店看档案只有总部运营和售后可以","范围":"本店"}
         本店 = lambda cid: 店码.get(cid) == 我店
     else:
         本店 = lambda cid: True
@@ -245,13 +249,14 @@ def get_customer(customer_id):
             return {"error":f"「{customer_id}」命中 {len(人们)} 个客户,要客户号才能给档案",
                     "候选":[{"客户号":p["id"],"姓名":p["name"]} for p in 人们]}
         if not 人们:
-            return {"error":f"客户 {customer_id} 不存在(客户号和姓名都没对上)" if not 限店 else
-                    f"你的门店里没有客户号或姓名是「{customer_id}」的客户"}
+            return ({"error":f"客户 {customer_id} 不存在(客户号和姓名都没对上)"} if not 限店 else
+                    # 范围:给交付前检查认的(说成「库里没有」会被打回)—— 别店有没有这个人,这里不说
+                    {"error":f"你的门店里没有客户号或姓名是「{customer_id}」的客户(只查了本店)","范围":"本店"})
         r=_rows("SELECT * FROM customer WHERE id=?",人们[0]["id"])
         认=f"按姓名「{customer_id}」认到客户号 {人们[0]['id']}"
     elif not 本店(customer_id):
         # 不说他在哪家店、也不给档案里任何一个字段 —— 说了就等于把别店客户的归属透出去了
-        return {"error":f"{customer_id} 不在你的门店({me.get('shop')}),看不了他的档案"}
+        return {"error":f"{customer_id} 不在你的门店({me.get('shop')}),看不了他的档案","范围":"本店"}
     d=r[0]
     if 认: d["认人"]=认
     p=d.get("phone") or ""
@@ -7152,9 +7157,9 @@ def customer_history(customer=None, limit=30):
     c0 = cs[0]
     if me.get("role") in MANAGER_ROLES:
         if me.get("role") != "总部运营" and me.get("shop") and c0["shop"] != me["shop"]:
-            return dict(error=f"{c0['name']} 在 {c0['shop']},不在你的门店")
+            return dict(error=f"{c0['name']} 在 {c0['shop']},不在你的门店", 范围="本店")
     elif (c0.get("advisor_no") or "") != (me.get("no") or "?"):
-        return dict(error=f"{c0['name']} 不在你名下 —— **这不是他没有接触记录**")
+        return dict(error=f"{c0['name']} 不在你名下 —— **这不是他没有接触记录**", 范围="名下")
 
     旅 = _tp.客户旅程(c0["id"])
     能算, 码, 说 = _口径_journey().够不够算(旅)
