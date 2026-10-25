@@ -688,6 +688,14 @@ class 定义里有密钥(Exception):
     """定义里出现了看起来像凭据的键。**抛,不是过滤掉。**"""
 
 
+def _声明过的配置名():
+    """节点登记表里每个节点声明过的配置字段名(从登记表现算,不手抄)。"""
+    名 = set()
+    for n in 节点表:
+        名 |= set(n["配置"])
+    return 名
+
+
 def _扫密钥(v, 路=""):
     """**全树深扫**密钥明文,只抛不改。
 
@@ -700,6 +708,11 @@ def _扫密钥(v, 路=""):
     """
     if isinstance(v, dict):
         for k in v:
+            # 用户 2026-10-25 拍「只放过系统自己的设置名」:DSL 节点登记表里声明过的配置名(现在只有 max_output_tokens
+            # 撞这条规则),**就在节点 config 下、值是数字**才放 —— 名字可疑而值是字符串的,照样当密钥拒
+            if (str(k) in _声明过的配置名() and 路.endswith("config.")
+                    and isinstance(v[k], (int, float)) and not isinstance(v[k], bool)):
+                continue
             if _密钥形状.search(str(k)) and not str(k).endswith(("_ref", "_refs")):
                 raise 定义里有密钥(
                     f"定义里出现了 `{路}{k}` —— **节点配置里不许有密钥明文**"

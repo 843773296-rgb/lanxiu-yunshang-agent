@@ -189,19 +189,29 @@ rid = 走到确认(wid)
 st, rr = 等到(rid, ("succeeded", "failed", "incomplete"))
 ck("退回 → 不派,输出是理由", st == "succeeded" and 几张(rid, "派补货跟进") == 0 and "下架" in 出(rr), (st, 出(rr)))
 
-print("\n▸ ⑤ 冻结版本时定义里有像凭据的键名 → 422 说清,不是 500(10-25 实测回过 500)")
-c, d = 打("GET", P + f"/workflows/{wid}")
-定义 = d["草稿"]["定义"]
-for n in 定义["nodes"]:
-    if n["type"] == "llm":
-        n["config"]["max_output_tokens"] = 4000          # DSL 自己声明的配置项,但键名会被密钥规则拦(按键名判)
-打("PATCH", P + f"/workflows/{wid}/draft", 体={"定义": 定义}, 头={"If-Match": str(d["草稿"]["revision"])})
-c, v = 打("POST", P + f"/workflows/{wid}/versions", 体={"变更说明": "e2e"}, 头={"Idempotency-Key": str(uuid.uuid4())})
-ck("**照样拒(没放宽),但回 422 + 说清在哪一层**,不是 500", c == 422 and (v or {}).get("code") == "DEFINITION_KEY_REJECTED"
-   and "nodes" in (v or {}).get("message", ""), (c, v))
+print("\n▸ ⑤ 冻结版本时的密钥扫描(10-25 用户拍「只放过系统自己的设置名」)")
+def 冻结(改):
+    c, d = 打("GET", P + f"/workflows/{wid}")
+    定义 = d["草稿"]["定义"]
+    for n in 定义["nodes"]:
+        n["config"].pop("max_output_tokens", None); n["config"].pop("api_token", None)
+        if n["type"] == "llm":
+            改(n["config"])
+    打("PATCH", P + f"/workflows/{wid}/draft", 体={"定义": 定义}, 头={"If-Match": str(d["草稿"]["revision"])})
+    return 打("POST", P + f"/workflows/{wid}/versions", 体={"变更说明": f"e2e {uuid.uuid4().hex[:6]}"},
+             头={"Idempotency-Key": str(uuid.uuid4())})
+c, v = 冻结(lambda cfg: cfg.update(max_output_tokens=4000))
+ck("**DSL 自己声明的 max_output_tokens、值是数 → 能冻结**(原来被当成密钥拒掉)", c == 201, (c, v))
+c, v = 冻结(lambda cfg: cfg.update(max_output_tokens="看起来像一串密钥"))
+ck("同一个名字、值是字符串 → 照样拒(422,说清在哪一层)", c == 422 and (v or {}).get("code") == "DEFINITION_KEY_REJECTED", (c, v))
+c, v = 冻结(lambda cfg: cfg.update(api_token=1))
+# 没声明过的配置键先被校验器拒(VALIDATION);以前校验报告把键名原样放进 field_errors,撞上错误体的凭据闸变成 500
+ck("没声明过的、名字像凭据的键 → 照样拒(422),不是 500,而且错误里不回显那个键名",
+   c == 422 and (v or {}).get("code") in ("VALIDATION", "DEFINITION_KEY_REJECTED")
+   and "api_token" not in json.dumps(v, ensure_ascii=False), (c, v))
 
 print()
 if 挂:
     print(f"❌ 库存补货:{len(挂)} 条不过(验了 {len(过) + len(挂)} 条)")
     sys.exit(1)
-print(f"✅ 库存补货:不用派直接结束 / 填齐了才派、带 SKU 和建议 / 没填不派 / 退回不派 / 像凭据的键名回 422(验了 {len(过)} 条)")
+print(f"✅ 库存补货:不用派直接结束 / 填齐了才派、带 SKU 和建议 / 没填不派 / 退回不派 / 密钥扫描只放过声明过的数值配置(验了 {len(过)} 条)")

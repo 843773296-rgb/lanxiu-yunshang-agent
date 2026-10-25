@@ -1213,6 +1213,16 @@ def 校验图(project_id: str, wid: str, me: 身份 = Depends(要权限("查看�
     return 报告
 
 
+def _遮凭据词(s):
+    """校验报告里的字段路径 / 消息带着用户写的键名;键名像凭据(api_token 之类)时,错误体那道闸(errors.错)会整条拒 ——
+    于是一条本该是 422 的校验错误变成 500(10-25 实测)。只把像凭据的那个词换成占位,**闸本身不动、拒的东西不变**。
+    用的是错误体那道闸**自己的**词表,两边不会一个改了一个没改。"""
+    import re as _re
+    import errors as _E
+    return _re.sub(r"[A-Za-z0-9_\-]*(?:" + _E._密钥形状.pattern + r")[A-Za-z0-9_\-]*", "(像凭据的键名)", str(s or ""),
+                   flags=_re.I)
+
+
 @router.post(前缀 + "/workflows/{wid}/versions", status_code=201)
 async def 冻结版本(project_id: str, wid: str, request: Request,
                me: 身份 = Depends(要权限("改编排草稿"))):
@@ -1240,8 +1250,8 @@ async def 冻结版本(project_id: str, wid: str, request: Request,
             raise _错(422, "VALIDATION", f"还有 {sum(1 for p in 问题们 if p['级别'] == V.阻断)} 条阻断,不能冻结",
                       "先按校验报告改完 —— **一张有阻断的图冻结出来的版本,"
                       "发布清单指着它却跑不起来**",
-                      field_errors={(p["node_id"] or "图") + "." + (p["field_path"] or ""):
-                                    p["消息"] for p in 问题们 if p["级别"] == V.阻断})
+                      field_errors={_遮凭据词((p["node_id"] or "图") + "." + (p["field_path"] or "")):
+                                    _遮凭据词(p["消息"]) for p in 问题们 if p["级别"] == V.阻断})
         计划 = CP.编译(定义, 依赖存在=_依赖查询(c, project_id))
         哈希 = 计划["逻辑哈希"]
         上一版 = c.execute(text("""
