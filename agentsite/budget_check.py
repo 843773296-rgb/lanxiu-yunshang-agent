@@ -81,7 +81,7 @@ def main():
     # 原来默认 DeepSeek(按量计费),在浏览器里聊一句花一句 ——
     # 默认值设反的代价不是「不好用」,是每次用都在漏钱,而且没人会注意到。
     did = sdk.网站默认模型()
-    ck("网站默认是 claude-opus-5(用户 10-20 拍)", did, "claude:claude-opus-5",
+    ck("网站默认是 claude-opus-5-5(用户 10-25 拍,原来 10-20 拍的是 opus-5)", did, "claude:claude-opus-5-5",
        "  ← 页面头部一打开就该显示它")
     ck("网站默认走订阅内的那个", "是" if did.startswith("claude:") else f"是 {did}", "是",
        "  ← 默认按量计费的话,随手聊一句就花一句")

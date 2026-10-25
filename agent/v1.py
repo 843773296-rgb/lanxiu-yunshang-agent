@@ -57,7 +57,14 @@ def price_now(pv, ts=None):
     return p
 
 # Anthropic 官方单价(美元 / 百万 token),缓存读取按输入的 0.1 倍
-PRICE={"claude-opus-5":  dict(inp=5.0, cache=0.5,  out=25.0),
+# 10-25 加新一代三个(官方价,查于 Claude API 资料 2026-10-25):Opus 5.5 缓存读是输入的 0.05 倍(不是常见的 0.1 倍)。
+# ⚠️ Haiku 5.5 有两档:单次提示 ≤10 万 token 按 $0.10 / $0.50,超过按 $0.50 / $2.50。这里只记了 ≤10 万那档 ——
+# 成本是按一轮的用量总和算的,拿不到「每一次调用的提示有多长」,分不了档;全能助手按需加载后单次约 5 万,在这一档里。
+# 有人把它用在单次超过 10 万的地方,这里会**少算 5 倍**,而且不报错。
+PRICE={"claude-opus-5-5":dict(inp=4.0, cache=0.2,  out=20.0),
+       "claude-sonnet-5-5":dict(inp=2.0, cache=0.2, out=10.0),
+       "claude-haiku-5-5":dict(inp=0.1, cache=0.01, out=0.5),
+       "claude-opus-5":  dict(inp=5.0, cache=0.5,  out=25.0),
        "claude-opus-4-8":dict(inp=5.0, cache=0.5,  out=25.0),
        "claude-sonnet-5":dict(inp=2.0, cache=0.2,  out=10.0),
        "claude-haiku-4-5":dict(inp=1.0,cache=0.1,  out=5.0)}
