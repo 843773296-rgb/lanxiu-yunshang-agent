@@ -1200,6 +1200,16 @@ function drawEv(){
    先画出框架再异步填,**不让一次网络请求挡住整个面板**:
    取不到的时候要留下一句话说清是取不到,而不是留一个空位 ——
    空位和「这个工具没返回东西」长得一模一样。 */
+// 技能三态(证据中心 P1):能用几个 / 请求了哪几个 / 加载了还是被拦 —— 分类在服务端(agentsite/skill_states.py)
+function 画技能(k){
+  const box = document.getElementById("ev-skill"); if(!box) return;
+  if(!k){ box.textContent = "这一轮的技能记录读不出来"; return; }
+  const 行 = (k.请求 || []).map(x => `<div class="kv"><span>${esc(x.技能 || "?")}</span><span>${esc(x.状态)}`
+    + (x.版本 ? ` <span class="dim">版本 ${esc(x.版本)}</span>` : "") + (x.理由 ? ` <span class="dim">${esc(x.理由)}</span>` : "") + `</span></div>`).join("");
+  box.innerHTML = `<div class="kv"><span>能用</span><span>${(k.可用 || []).length} 个${(k.没用上的 || []).length ? `(没用上 ${(k.没用上的 || []).length} 个)` : ""}</span></div>`
+    + (行 || `<div class="kv"><span>请求</span><span>这一轮一个技能都没请求</span></div>`)
+    + `<div class="dim">${esc(k.说明 || "")}</div>`;
+}
 // 一次工具调用 ↔ 工具服务那边观测到的「这一次读了哪些表」(证据中心第五个工作包)。纯函数,evidence_pair_check 真调它。
 // 按「工具短名 + 参数指纹」对;同一个指纹调了几次就按先后取第几个(参数完全一样,读的表也一样)。对不上的回 null。
 function 库表对位(spans, 库表){
@@ -1257,6 +1267,7 @@ async function 补返回值(){
       if(d) d.textContent = "返回值看不到:" + r.error; }); return; }
     spans = (r.spans || []).filter(s => (s.attr || {})["gen_ai.operation.name"] === "execute_tool");
     库表 = r.库表;
+    画技能(r.技能);
   }catch(e){
     rows.forEach(el => { const d = el.querySelector(".ret");
       if(d) d.textContent = "返回值取不到:" + e.message; });
@@ -1315,6 +1326,7 @@ function evEvidence(){
      <div class="kv"><span>范围</span><span>工具按工号取数,看不到别店的单</span></div>
    </div>
    <div class="grp"><h4>这一轮调了什么(${traj.length} 次)</h4>${工具}</div>
+   ${last.trace_id ? `<div class="grp"><h4>技能</h4><div id="ev-skill">读取中…</div></div>` : ""}
    <div class="grp"><h4>每轮都注入的上下文</h4>
      ${注入登记.map(x => `<div class="kv"><span>${esc(x[0])}</span><span>${esc(x[1])}</span></div>`).join("")}
      <div class="empty" style="padding-top:6px">同一件事只许一处说了算 —— 门禁里有条检查盯着;两处打架时,贴着你这句话的那处会赢。</div>

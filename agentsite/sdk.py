@@ -1197,6 +1197,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                       "gen_ai.request.max_tokens": None,
                       "lanxiu.gen": "V3", "lanxiu.kind": kind,
                       "lanxiu.effort": eff,
+                      # 这一轮**能用**哪些技能(证据中心 P1「Skill 三态」第一态:可用 ≠ 请求 ≠ 加载 ≠ 用对)
+                      "lanxiu.skills.available": sorted(skills_for(skills)),
                       # **拧过的旋钮进 span** —— 不记的话,两轮分数不同时归不了因,
                       # 而「归不了因的实验」和「没做实验」价值一样
                       **({"lanxiu.knobs": "; ".join(_旋话)} if _旋话 else {}),
@@ -1286,6 +1288,20 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                             参数=getattr(b, "input", {}), 调用号=_tu, 起=_now,
                             全名=getattr(b, "name", None))
                         if _tu: _工具span[_tu] = _sid
+                        # 请求了哪个技能、**当时那一版**的指令文件哈希(证据中心 P1「Skill 三态」):
+                        # 之后技能改了,这一轮用的是哪一版仍然查得到。只读,不碰技能目录
+                        if getattr(b, "name", "") == "Skill":
+                            try:
+                                import hashlib as _hl
+                                _sk = str((getattr(b, "input", {}) or {}).get("skill") or "").lstrip("/")
+                                _f = os.path.join(HERE, ".claude", "skills", _sk, "SKILL.md")
+                                _s2 = _树.找(_sid)
+                                if _s2 is not None:
+                                    _s2["attr"]["lanxiu.skill.name"] = _sk
+                                    _s2["attr"]["lanxiu.skill.sha256"] = (_hl.sha256(open(_f, "rb").read()).hexdigest()[:12]
+                                                                          if os.path.exists(_f) else None)
+                            except Exception:
+                                pass
                         # 参数指纹(证据中心第五个工作包):工具服务那边记「这一次读了哪些表」用的是同一个函数算的同一个指纹,
                         # 证据面板按「trace + 工具 + 指纹」对上 —— 不按先后猜
                         try:

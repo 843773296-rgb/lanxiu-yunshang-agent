@@ -325,6 +325,7 @@ run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/b
 run "工作流接管 · 聊天站这一半(被接管的技能调不动 / 拉不到清单的退路 / 每个角色都能发起)" ./agentsite/.venv/bin/python agentsite/takeover_check.py
 run "执行记录(/spans)谁能看 · 没登录 401、只看自己会话的、列全部只给总部运营(10-24 实测原来不登录就给 200)" ./agentsite/.venv/bin/python agentsite/spans_access_check.py
 run "证据面板 · 工具返回值按调用号对位(没记到的不错位、不拿别人的顶上;老对话按顺序并标出)" python3 agentsite/evidence_pair_check.py
+run "技能三态 · 能用 / 请求 / 加载 / 被拦 / 失败 / 没回执分得开,不重判历史(证据中心 P1)" python3 agentsite/skill_states_check.py
 run "执行记录原文 · 不截断不打码只抹凭据、改了查得出、只给总部和本店店长、30 天到期留说明" python3 agentsite/raw_log_check.py
 run "执行记录推送 · 进行中不推、推过不重推、变了重推、工具步优先原文(推到管理后台的运行记录)" python3 tools/spans_push_check.py
 run "库表观测 · 这一次工具调用实际读了哪些表(联表的表和列都在、不记参数值、语句缓存不吃掉、按参数指纹对位)" python3 backend/db_observe_check.py

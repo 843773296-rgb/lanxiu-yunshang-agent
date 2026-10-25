@@ -13088,5 +13088,29 @@
    }
   ],
   "预期红": "登记的索引就是这"
+ },
+ {
+  "script": "agentsite/skill_states_check.py",
+  "改坏": "被守卫拦下的技能也记成已加载",
+  "file": [
+   {
+    "path": "agentsite/skill_states.py",
+    "old": "            状 = \"被拦\" if (\"拦\" in 回 or \"没有放行\" in 回 or \"接管\" in 回) else \"加载失败\"",
+    "new": "            状 = \"已加载\""
+   }
+  ],
+  "预期红": "被拦下的技能 → 「被拦」,带拦截原话,不算加载"
+ },
+ {
+  "script": "agentsite/skill_states_check.py",
+  "改坏": "没请求的技能也算进请求",
+  "file": [
+   {
+    "path": "agentsite/skill_states.py",
+    "old": "    return {\"可用\": 可用, \"请求\": 请求, \"没用上的\": [x for x in 可用 if x not in 用过],",
+    "new": "    请求 += [{\"技能\": x, \"状态\": \"已加载\", \"版本\": None, \"理由\": None} for x in 可用 if x not in 用过]\n    return {\"可用\": 可用, \"请求\": 请求, \"没用上的\": [x for x in 可用 if x not in 用过],"
+   }
+  ],
+  "预期红": "能用但没请求的 → 只出现在「没用上的」,不出现在请求里"
  }
 ]

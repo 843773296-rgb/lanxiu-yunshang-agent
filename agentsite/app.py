@@ -497,7 +497,12 @@ class H(BaseHTTPRequestHandler):
                         库表 = _dbo.读(tid)
                     except Exception:
                         库表 = None
-                    return self._send({"trace": tid, "spans": rows, "库表": 库表,
+                    try:
+                        import skill_states as _ks
+                        技能 = _ks.分类(rows)
+                    except Exception:
+                        技能 = None
+                    return self._send({"trace": tid, "spans": rows, "库表": 库表, "技能": 技能,
                                        "账": _sp.一棵的账(rows) if rows else None})
                 out = []
                 for k, v in 棵.items():
