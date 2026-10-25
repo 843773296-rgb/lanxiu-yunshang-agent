@@ -112,12 +112,93 @@ def _文本(x):
     except Exception: return str(x)
 
 
+# 展示副本给手机号打码(证据中心 10-25,用户拍「顾问看脱敏版」):前三后四,中间四位换星号。
+# **原文另存一份不打码**(见下面「原文」),只给有专项权限的人看 —— 打码只动展示,不动来源
+_手机 = re.compile(r"(?<!\d)(1[3-9]\d)(\d{4})(\d{4})(?!\d)")
+
+
+def 打码(s):
+    return _手机.sub(r"\1****\3", s) if isinstance(s, str) else s
+
+
 def 装值(x):
-    """抹 → 转字符串 → 截断。返回 (字符串, 截断了吗)。"""
-    s = _文本(_抹(x))
+    """抹凭据 → 转字符串 → 手机号打码 → 截断。返回 (字符串, 截断了吗)。这是**展示副本**,不是原文。"""
+    s = 打码(_文本(_抹(x)))
     if s is None: return None, False
     if os.environ.get("SPANS_FULL") == "1" or len(s) <= 上限: return s, False
     return s[:上限] + f"…〔还有 {len(s)-上限} 字未记〕", True
+
+
+# ── 原文(证据中心 P0「原始日志」,10-25)────────────────────────────────
+# 展示副本(上面那份)抹了凭据、打了码、截到 4000 字 —— 它**不是**发生过的原样。原文另存:
+#   · 每轮一个文件 原文目录/<trace>.jsonl,每条 {span, 哪段: 参数 / 返回, 内容, sha256, 字数, 处理}
+#   · **只抹凭据键**(密钥不落日志,需求文档 5.5.2),不截断、不打码 —— 「处理」一栏照实写做了什么
+#   · sha256 存的时候算,读的时候重算比对:只能说明这条存下以后没被改过,**不能证明采集完整**(需求文档 5.5.3 原话)
+#   · 留 30 天(用户 10-25 拍),到期删文件、留一条不带正文的到期说明
+# 谁能看:总部运营 + 这轮会话所属门店的店长(sessions.能看原文吗);每次看都记一笔(聊天站 /spans/raw)
+原文目录 = os.path.join(HERE, "..", ".feynman", "raw")
+原文留天 = 30
+原文处理 = "只抹了凭据类键名的值;没截断、没打码"
+
+
+def _原文路径(tid, 目录=None):
+    return os.path.join(目录 or 原文目录, f"{re.sub(r'[^0-9a-zA-Z_-]', '', str(tid))}.jsonl")
+
+
+def 记原文(tid, sid, 哪段, x, 目录=None):
+    import hashlib
+    内容 = _文本(_抹(x))
+    if 内容 is None: return
+    d = 目录 or 原文目录
+    os.makedirs(d, exist_ok=True)
+    with open(_原文路径(tid, d), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"span": sid, "哪段": 哪段, "内容": 内容, "字数": len(内容),
+                            "sha256": hashlib.sha256(内容.encode("utf-8")).hexdigest(),
+                            "处理": 原文处理, "记于": time.time()}, ensure_ascii=False) + "\n")
+
+
+def 读原文(tid, 目录=None):
+    """→ (条目们, 说明)。每条带「校验」:存下以后改没改过。没有文件 = 没采到或已过期,说明里分开写。"""
+    import hashlib
+    d = 目录 or 原文目录
+    p = _原文路径(tid, d)
+    if not os.path.exists(p):
+        墓 = [x for x in _读墓碑(d) if x.get("trace") == str(tid)]
+        return [], (f"原文已按保留期删除({墓[-1].get('删于')})" if 墓
+                    else "这一轮没有原文 —— 10-25 之前的记录不采原文,或者这一轮没调工具")
+    出 = []
+    for line in open(p, encoding="utf-8"):
+        try: x = json.loads(line)
+        except Exception:
+            出.append({"校验": "这一行坏了(解析不了)"}); continue
+        x["校验"] = ("一致" if hashlib.sha256(str(x.get("内容", "")).encode("utf-8")).hexdigest() == x.get("sha256")
+                    else "不一致 —— 存下以后被改过")
+        出.append(x)
+    return 出, f"{len(出)} 条;{原文处理};保留 {原文留天} 天"
+
+
+def _读墓碑(目录):
+    p = os.path.join(目录, "_到期删除.jsonl")
+    if not os.path.exists(p): return []
+    return [json.loads(l) for l in open(p, encoding="utf-8") if l.strip()]
+
+
+def 清过期原文(目录=None, 天=None, 现在=None):
+    """删掉超过保留期的原文文件,每删一个留一条不带正文的说明。→ 删了几个。"""
+    d = 目录 or 原文目录
+    if not os.path.isdir(d): return 0
+    现在 = 现在 or time.time()
+    限 = (天 or 原文留天) * 86400
+    n = 0
+    for f in os.listdir(d):
+        if not f.endswith(".jsonl") or f.startswith("_"): continue
+        p = os.path.join(d, f)
+        if 现在 - os.path.getmtime(p) > 限:
+            os.remove(p); n += 1
+            with open(os.path.join(d, "_到期删除.jsonl"), "a", encoding="utf-8") as g:
+                g.write(json.dumps({"trace": f[:-6], "删于": time.strftime("%Y-%m-%d %H:%M", time.localtime(现在)),
+                                    "原因": f"超过保留期 {天 or 原文留天} 天"}, ensure_ascii=False) + "\n")
+    return n
 
 
 class 一棵树:
@@ -140,6 +221,8 @@ class 一棵树:
         self.开始 = time.time()
         self.元 = dict(角色=角色, 会话号=会话号, 模型=模型, 供应商=供应商, gen=gen)
         self.边跑边记, self.路径, self.已写 = 边跑边记, 路径, set()
+        # 原文跟着日志走:给了自己的日志路径(检查用临时文件)就把原文也放在它旁边,不往真目录里写
+        self.原文目录 = os.path.join(os.path.dirname(路径), "raw") if 路径 else None
 
     def _写(self, s, *, 进行中=False):
         """把一个 span 现在的样子追加一行。进行中 = 根刚开、还没收(读的人看到的是「这一轮在跑 / 断在这儿」)。"""
@@ -172,6 +255,8 @@ class 一棵树:
             except OSError:
                 pass
             self._写(s, 进行中=True)
+            try: 清过期原文(self.原文目录)
+            except OSError: pass
         return s["span_id"]
 
     def 找(self, sid):
@@ -216,6 +301,8 @@ class 一棵树:
         # 全名带着服务前缀(mcp__analytics__store_report):短名在 gen_ai.tool.name 里照旧(读它的地方不动),
         # 全名另记一份 —— 同一个短名可能在两个服务里各有一个,只看短名分不出是哪一个(证据中心 10-25)
         a, 截 = 装值(参数)
+        if self.边跑边记 and 调用号:
+            记原文(self.tid, 调用号, "参数", 参数, self.原文目录)
         return self.开("execute_tool", f"execute_tool {工具}", 父=父, sid=调用号, 起=起,
                        属性={"gen_ai.tool.name": 工具, "gen_ai.tool.call.id": 调用号,
                             "lanxiu.tool.full_name": 全名 if 全名 and 全名 != 工具 else None,
@@ -225,6 +312,8 @@ class 一棵树:
 
     def 工具回来了(self, 调用号, 返回, *, 出错=False, 止=None):
         r, 截 = 装值(返回)
+        if self.边跑边记 and 调用号:
+            记原文(self.tid, 调用号, "返回", 返回, self.原文目录)
         self.收(调用号, 止=止,
                 属性={"gen_ai.tool.call.result": r,
                      "lanxiu.result.truncated": True if 截 else None},

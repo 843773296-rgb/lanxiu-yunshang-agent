@@ -1193,7 +1193,7 @@ function drawEv(){
   $("#evt2").classList.toggle("on", EVTAB === "子助手");
   $("#evbody").innerHTML = EVTAB === "证据" ? evEvidence() : evSub();
   if(EVTAB === "子助手") bindSub();
-  else 补返回值();
+  else { 补返回值(); const b = document.getElementById("ev-raw"); if(b) b.onclick = () => 看原文(b.dataset.t); }
 }
 
 /* 工具**返回了什么** —— 从树状记录仪(.feynman/spans.jsonl)按 trace 号取。
@@ -1309,7 +1309,24 @@ function evEvidence(){
      <div class="kv"><span>trace</span><span>${last.trace_id
        ? `${esc(String(last.trace_id).slice(0,12))} —— 去 AI 管理后台的运行记录查这一次`
        : "没记(这条是记录仪上线前的老对话)"}</span></div>
-   </div>`;
+   </div>
+   ${last.trace_id ? `<div class="grp"><h4>原文</h4>
+     <div class="empty" style="padding:0 0 6px">上面的返回值是<b>展示副本</b>:手机号打了码、太长的截了。
+       原文没截断、没打码(凭据照样不留),只给总部运营和本店店长,每次查看都会留记录。</div>
+     <button class="tbtn" id="ev-raw" data-t="${esc(last.trace_id)}">看原文</button><div id="ev-rawbox"></div></div>` : ""}`;
+}
+// 原文:放不放行**由服务端判**(sessions.能看原文吗),这里只是去要;被拒就照原话显示为什么
+async function 看原文(tid){
+  const box = document.getElementById("ev-rawbox"); if(!box) return;
+  box.textContent = "读取中…";
+  try{
+    const r = await fetch("/spans/raw?trace=" + encodeURIComponent(tid)).then(r => r.json());
+    if(r.error){ box.textContent = "看不了:" + r.error; return; }
+    box.innerHTML = `<div class="dim">${esc(r.说明 || "")} · ${esc(r.提醒 || "")}</div>`
+      + (r.条目 || []).map(x => `<div class="toolrow"><b>${esc(x.哪段 || "")}</b>`
+          + ` <span class="dim">${esc(String(x.字数 || 0))} 字 · 校验${esc(x.校验 || "")}</span>`
+          + `<pre>${esc(String(x.内容 || ""))}</pre></div>`).join("");
+  }catch(e){ box.textContent = "取不到:" + e.message; }
 }
 function evSub(){
   const c = cur();

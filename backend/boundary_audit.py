@@ -1164,6 +1164,32 @@ def a_spans_scope():
     raise PermissionError("没登录 401;只看自己会话的;列全部只给总部运营")
 
 
+def a_raw_log_scope():
+    """执行记录**原文**(没截断、没打码)只给总部运营和本店店长(证据中心 10-25,用户拍「1+2 都要」)。
+    攻三处:会话主人(顾问)自己要原文 / 别店店长要 / 查不到归属的会话店长要。**带对照**:本店店长必须放行。"""
+    import tempfile as _tf
+    sys.path.insert(0, os.path.join(ROOT, "agentsite"))
+    import sessions as _S
+    原 = _S.PATH
+    _S.PATH = os.path.join(_tf.mkdtemp(), "s.json")
+    try:
+        顾 = {"no": "60000002", "name": "甲", "role": "顾问", "shop": "SH001 静安旗舰店"}
+        本 = {"no": "60000001", "name": "乙", "role": "店长", "shop": "SH001 静安旗舰店"}
+        别 = {"no": "60000004", "name": "丙", "role": "店长", "shop": "SH002 徐汇店"}
+        _S.own("会话-甲", 顾)
+        if not _S.能看原文吗(本, "会话-甲")[0]:
+            raise 前提不成立("本店店长都看不了原文 —— 「被拒」不作数")
+        if _S.能看原文吗(顾, "会话-甲")[0]:
+            return "顾问拿到了自己会话的原文(该看打了码的那份)"
+        if _S.能看原文吗(别, "会话-甲")[0]:
+            return "别店的店长拿到了原文"
+        if _S.能看原文吗(本, "查不到的会话")[0]:
+            return "查不到归属的会话,店长也拿到了原文"
+    finally:
+        _S.PATH = 原
+    raise PermissionError("原文只给总部运营和本店店长;顾问看打码副本;查不到归属不猜")
+
+
 def a_disallowed():
     miss = [t for t in ("Bash", "Write", "Edit", "Read", "Task", "WebFetch")
             if f'"{t}"' not in SDK_SRC]
@@ -1458,6 +1484,9 @@ STRUCT = [
  ("看完整号码一定留痕", "同上(用户 10-10 定:点一下看完整并留痕)",
   a_card_reveal_unlogged, "让台账写不进,再以本人身份去取全号",
   "**台账写不进就不给全号** —— 「看了但没留痕」正是用户要防的那件事,不能因为台账出故障就放行"),
+ ("执行记录原文只给总部和本店店长", "agentsite/sessions.py 能看原文吗(证据中心 10-25,用户拍「1+2 都要」)",
+  a_raw_log_scope, "顾问要自己会话的原文 / 别店店长要 / 查不到归属的会话店长要",
+  "**靠结构**:/spans/raw 只调这一个判定;原文另存在 .feynman/raw/(不进版本库),展示副本照旧打码截断"),
  ("聊天站执行记录只给本人和总部运营", "agentsite/sessions.py 能看执行记录吗(10-24 实测原来不登录就给 200)",
   a_spans_scope, "不登录取 / 别的门店店长取甲的会话 / 店长列全部",
   "**靠结构**:/spans 两处都调同一个判定;单条按会话归属(和续聊同一个 check),查不到归属就拒。"

@@ -186,6 +186,21 @@ def _注入登录守卫(html):
     return html[:m.end()] + 块 + html[m.end():] if m else 块 + html
 
 
+def _记原文访问(me, tid, 行, 因):
+    """看原文的每一次请求(放行的、被拒的)记一行:谁、什么角色和门店、看的哪一轮、结果。证据中心 10-25。"""
+    import time
+    try:
+        p = os.path.join(os.path.dirname(HERE), ".feynman", "raw-access.jsonl")
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"时间": time.strftime("%Y-%m-%d %H:%M:%S"), "谁": (me or {}).get("no"),
+                                "姓名": (me or {}).get("name"), "角色": (me or {}).get("role"),
+                                "门店": (me or {}).get("shop"), "trace": tid, "放行": bool(行),
+                                "理由": 因 or None}, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
 def _who(handler):
     """现在是谁在跟智能体说话 —— 从**后台的会话**换出来,不信前端说自己是谁。
 
@@ -450,6 +465,20 @@ class H(BaseHTTPRequestHandler):
                 # 谁能看(2026-10-24 实测:原来不登录就给 200,登录后谁都能看全公司的)—— 判定在 sessions.能看执行记录吗
                 import sessions as _ss
                 _me = _who(self)
+                if p == "/spans/raw":
+                    # **原文**(没截断、没打码):权限比执行记录严(sessions.能看原文吗),每次请求都记一笔 ——
+                    # 被拒的也记(谁试过看什么,本身就是要留的证据)。用户 10-25 拍「1+2 都要」
+                    rows = (_sp.读().get(tid) or []) if tid else []
+                    根 = next((x for x in rows if not x.get("parent_span_id")), {})
+                    行, 码, 因 = _ss.能看原文吗(_me, 会话号=根.get("会话号"))
+                    _记原文访问(_me, tid, 行, 因)
+                    if not tid:
+                        return self._send({"error": "要给 trace"}, code=400)
+                    if not 行:
+                        return self._send({"error": 因}, code=码)
+                    条, 说明 = _sp.读原文(tid)
+                    return self._send({"trace": tid, "条目": 条, "说明": 说明,
+                                       "提醒": "sha256 只说明这条存下以后没被改过,不证明采集完整"})
                 if not tid:
                     行, 码, 因 = _ss.能看执行记录吗(_me, 列全部=True)
                     if not 行:

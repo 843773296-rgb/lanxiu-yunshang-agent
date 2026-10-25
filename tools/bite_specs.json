@@ -12908,5 +12908,53 @@
    }
   ],
   "预期红": "补记中断之后:根是「出错 + 为什么」,而原来的提问和角色还在"
+ },
+ {
+  "script": "agentsite/raw_log_check.py",
+  "改坏": "原文也截断(存的就是展示副本)",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "    内容 = _文本(_抹(x))\n    if 内容 is None: return\n    d = 目录 or 原文目录",
+    "new": "    内容 = 装值(x)[0]\n    if 内容 is None: return\n    d = 目录 or 原文目录"
+   }
+  ],
+  "预期红": "原文没截断:5000 字的返回原样存下,展示副本才截"
+ },
+ {
+  "script": "agentsite/raw_log_check.py",
+  "改坏": "店长看原文不核门店",
+  "file": [
+   {
+    "path": "agentsite/sessions.py",
+    "old": "    if not me.get(\"shop\") or 主.get(\"shop\") != me.get(\"shop\"):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "别店的店长 → 看不了原文"
+ },
+ {
+  "script": "agentsite/raw_log_check.py",
+  "改坏": "读原文时不重算 sha256(校验恒为一致)",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "        x[\"校验\"] = (\"一致\" if hashlib.sha256(str(x.get(\"内容\", \"\")).encode(\"utf-8\")).hexdigest() == x.get(\"sha256\")",
+    "new": "        x[\"校验\"] = (\"一致\" if True"
+   }
+  ],
+  "预期红": "原文存下以后被改 → 读出来校验「不一致」"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "店长看原文不核门店 —— 别店店长拿到原文,边界审计那条要报「攻破」",
+  "file": [
+   {
+    "path": "agentsite/sessions.py",
+    "old": "    if not me.get(\"shop\") or 主.get(\"shop\") != me.get(\"shop\"):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "执行记录原文只给总部和本店店长"
  }
 ]

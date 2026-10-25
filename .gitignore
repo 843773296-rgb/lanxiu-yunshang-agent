@@ -38,6 +38,9 @@ llm-trace.jsonl
 # 它按设计就记工具的参数和返回值,而返回值里是客户档案、订单、量体数据。
 # 凭据类键名在写的时候已经抹掉,但**客户资料本身是记着的**,所以一律不进版本库。
 .feynman/spans.jsonl
+# 执行记录原文(证据中心 10-25):没截断、没打码,带客户完整手机号和原始业务数据 —— **仓库是公开的**,绝不能进
+.feynman/raw/
+.feynman/raw-access.jsonl
 .feynman/spans.jsonl.1
 
 # 说明:agent/*-results.jsonl 是评测结果,**要进版本库** ——
