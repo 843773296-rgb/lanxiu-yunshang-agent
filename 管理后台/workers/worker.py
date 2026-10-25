@@ -544,7 +544,9 @@ def _跑一张工作流(c, job, 打点):
             用户 += ("\n\n只输出一个 JSON 对象,不要别的文字。键:" + "、".join(props)
                      + "。没提到的写「没提到」,列表类的没有就写 []。")
         import 真模型 as _真
-        参 = {"max_tokens": cfg.get("max_output_tokens") or 1500, **(cfg.get("sampling_params") or {})}
+        # 默认上限 1500 → 4000(10-25 聊天接管实测:真模型写一份周报的 JSON 写不完,被截断)。
+        # 不在模板里写 max_output_tokens:定义冻结时的密钥扫描按键名里有没有 token 判,会把它当成密钥拒掉(已报给用户)
+        参 = {"max_tokens": cfg.get("max_output_tokens") or 4000, **(cfg.get("sampling_params") or {})}
         try:
             出 = _真.生成(连接=dict(连), 系统=_渲染(要.get("system"), 实参) or None, 用户=用户, 参数=参)
         except _真.调不动 as e:
@@ -552,6 +554,10 @@ def _跑一张工作流(c, job, 打点):
         结果 = {"text": 出["text"], "lang": "zh", "execution_mode": "live", "usage": 出["usage"],
                 "finish_reason": 出["finish_reason"], "actual_model": 出["actual_model"]}
         if 结构化:
+            # 被输出上限掐断的,先说清是掐断 —— 截了一半的 JSON 解析不了,报「没按要求输出 JSON」会让人去改提示词(10-25 实测踩过)
+            if 出.get("finish_reason") in ("max_tokens", "length"):
+                raise RN.节点失败("OUTPUT_TRUNCATED", f"模型写到输出上限({参['max_tokens']} token)被截断了,结果不完整",
+                                "把这一步的「最大输出」调大(max_output_tokens),或者让处理要求写短一点")
             文 = 出["text"].strip()
             m = _re.search(r"\{.*\}", 文, _re.S)
             try:

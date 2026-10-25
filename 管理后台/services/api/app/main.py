@@ -73,6 +73,25 @@ async def _校验错(request: Request, exc: _RVE):
         http=422, field_errors=fe))
 
 
+import dsl as _DSL   # noqa: E402
+
+
+@app.exception_handler(_DSL.定义里有密钥)
+async def _定义里有密钥(request: Request, exc: Exception):
+    """密钥扫描拒了这一版定义 → **422 说清是哪个键被哪条规则拦了**,不是 500(10-25 实测:冻结版本回 500,
+    看着像服务端崩了,真因是一条规则)。只改报法,**拒的东西一样都没少** —— 不是放宽。"""
+    # 错误体自己也有一道闸:不许带凭据类的词(errors.错)—— 所以**键名本身不写进来**(它就是因为带了那类词才被拦),
+    # 只报它在哪一层(路径去掉最后一段)
+    import re as _re
+    m = _re.search(r"`([^`]*)`", str(exc))
+    在哪 = (m.group(1).rsplit(".", 1)[0] if m and "." in m.group(1) else "定义") or "定义"
+    return JSONResponse(status_code=422, content=ER.错(
+        "DEFINITION_KEY_REJECTED", f"定义里「{在哪}」这一层有个键名被密钥规则拦下了,这一版没冻结",
+        "规则按**键名**判(名字里带口令 / 令牌 / 密码那类英文词就拦),不看值。真是凭据就改成引用;"
+        "不是凭据就换个键名。键名本身不写在这条错误里 —— 错误信息不许带那类词",
+        http=422))
+
+
 @app.exception_handler(Exception)
 async def _兜底(request: Request, exc: Exception):
     """没预料到的错误也要符合错误契约 —— **包括 advice**。
