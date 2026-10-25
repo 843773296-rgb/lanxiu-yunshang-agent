@@ -140,6 +140,27 @@ def _一个顾问(c):
         取参=lambda c: (_一个顾问(c),),
         实测="4.342 → 0.245 ms(17.7x)",
     ),
+    dict(
+        名="ix_ordr_cust_adv",
+        表="ordr",
+        本体="CREATE INDEX ix_ordr_cust_adv ON ordr(cust_advisor_no)",
+        要求="用上",          # 不是覆盖:MULTI-INDEX OR 取完并集还要回表取别的列
+        为什么="顾问看自己的单(`_订单范围` 那一支):"
+               "`(o.advisor_no=? OR o.cust_advisor_no=?)`。"
+               "`cust_advisor_no` 是 2026-10-25 冗余上来的一列,"
+               "**为的就是让这个 OR 落在同一张表上** —— "
+               "跨两表的 OR **用不上任何索引**(19–20 ms 全表扫 2.6 万行),"
+               "同表的 OR 走 `MULTI-INDEX OR` 两个索引取并集。"
+               "⚠️ 拆 UNION 那个方案量过:16.17 ms,**只有 1.2 倍,已否决**。",
+        锚=("backend/api.py", "AND (o.advisor_no=? OR o.cust_advisor_no=?)"),
+        查询="SELECT COUNT(*) FROM ordr o WHERE o.created IS NOT NULL "
+             "AND o.created>=? AND o.created<=? "
+             "AND (o.advisor_no=? OR o.cust_advisor_no=?)",
+        取参=lambda c: ("2026-01-01", "2026-12-31 23:59:59",
+                        _一个顾问(c), _一个顾问(c)),
+        实测="19.03 → 8.22 ms(2.3x,真库副本上量的);"
+             "拆 UNION 那条路 16.17 ms(1.2x)已否决",
+    ),
 ]
 
 # 建库路径上必须有人调 `建索引()`。判据按这张表逐个去文本里找 ——

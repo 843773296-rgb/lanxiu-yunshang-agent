@@ -12408,8 +12408,8 @@
   "file": [
    {
     "path": "tools/rebuild.sh",
-    "old": "for STEP in \"backend/seed.py\" \"tools/add_shop_code.py --建列\" \"tools/backfill_scene.py\"",
-    "new": "for STEP in \"backend/seed.py\" \"tools/backfill_scene.py\" \"tools/add_shop_code.py --建列\""
+    "old": "for STEP in \"backend/seed.py\" \"tools/add_shop_code.py --建列\" \"tools/add_cust_advisor.py --建列\" \"tools/backfill_scene.py\"",
+    "new": "for STEP in \"backend/seed.py\" \"tools/add_cust_advisor.py --建列\" \"tools/add_shop_code.py --建列\" \"tools/backfill_scene.py\""
    }
   ],
   "预期红": "加列紧跟在 seed.py 之后"
@@ -13028,5 +13028,65 @@
    }
   ],
   "预期红": "同一个连接第二次跑同样的查询,读的表照样记全(不被语句缓存吃掉)"
+ },
+ {
+  "script": "backend/cust_advisor_check.py",
+  "改坏": "把「客户换顾问」那个触发器的 DDL 改成只同步未完成的单(照抄 appointment 那边的部分同步)",
+  "file": [
+   {
+    "path": "tools/add_cust_advisor.py",
+    "old": "  UPDATE ordr SET {列} = NEW.advisor_no WHERE customer_id = NEW.id;",
+    "new": "  UPDATE ordr SET {列} = NEW.advisor_no WHERE customer_id = NEW.id AND status NOT IN ('完成','已取消');"
+   }
+  ],
+  "预期红": "客户换顾问,他名下的单全部跟着改"
+ },
+ {
+  "script": "backend/cust_advisor_check.py",
+  "改坏": "把「新开一单自动填」那个触发器的 body 改成填 NULL(名字还在,行为没了)",
+  "file": [
+   {
+    "path": "tools/add_cust_advisor.py",
+    "old": "  UPDATE ordr SET {列} = (SELECT advisor_no FROM customer WHERE id = NEW.customer_id)\n   WHERE id = NEW.id;\nEND\"\"\",\n    \"trg_cust_adv_sync\"",
+    "new": "  UPDATE ordr SET {列} = NULL WHERE id = NEW.id;\nEND\"\"\",\n    \"trg_cust_adv_sync\""
+   }
+  ],
+  "预期红": "新开一单(没写那一列)触发器自动填上"
+ },
+ {
+  "script": "backend/cust_advisor_check.py",
+  "改坏": "把顾问那条范围条件改回 `cu.advisor_no=?`(跨表 OR,结果一样只是慢,功能测试全过)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        return \" AND (o.advisor_no=? OR o.cust_advisor_no=?)\", [no, no], 话, no",
+    "new": "        return \" AND (o.advisor_no=? OR cu.advisor_no=?)\", [no, no], 话, no"
+   }
+  ],
+  "预期红": "顾问那条范围条件读的是订单上那一列"
+ },
+ {
+  "script": "backend/cust_advisor_check.py",
+  "改坏": "把 `--校验` 那一步从 daily_shift.sh 里删掉(触发器哪天没了,当天完全隐形)",
+  "file": [
+   {
+    "path": "tools/daily_shift.sh",
+    "old": "if OUT6=$(python3 tools/add_cust_advisor.py --校验 2>&1); then",
+    "new": "if OUT6=$(true 2>&1); then"
+   }
+  ],
+  "预期红": "每日平移那条路径也体检这一列"
+ },
+ {
+  "script": "backend/query_index_check.py",
+  "改坏": "把 ix_ordr_cust_adv 从「守着的索引」名单里删掉(它照旧登记着,但没人盯了)",
+  "file": [
+   {
+    "path": "backend/query_index_check.py",
+    "old": "守着的索引 = [\"ix_sched_busy\", \"ix_cust_adv_cov\", \"ix_ordr_adv_cov\",\n            \"ix_ordr_cust_adv\"]   # 2026-10-25:顾问那条范围条件的冗余列(19→6.5 ms,3.1x)",
+    "new": "守着的索引 = [\"ix_sched_busy\", \"ix_cust_adv_cov\", \"ix_ordr_adv_cov\"]"
+   }
+  ],
+  "预期红": "登记的索引就是这"
  }
 ]

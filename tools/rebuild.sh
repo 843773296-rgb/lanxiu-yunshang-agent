@@ -111,6 +111,22 @@
 #        > 一个「补足跑过了」和一个「它跑的时候还不需要补」,
 #        > **在重建日志上长得一模一样。**
 #        脚本在流程里、逻辑也对,**只是位置不对**:它检查的时候条件还没成立。
+#   add_cust_advisor.py --建列   订单上冗余「客户现在归谁」那一列的**三个触发器** + 回填
+#                         ⚠️ **必须紧跟 seed.py**:那一列写在建表语句里(seed 第 933 行
+#                         就会按它建索引 `ix_ordr_cust_adv`),而**触发器不在建表语句里**,
+#                         所以 seed 插的那 2.6 万单这一列是 NULL —— 这一步回填它们。
+#                         之后每一步造的新单由触发器自动填,不用再管。
+#   add_cust_advisor.py --校验   **触发器的体检**,排在所有造数之后。
+#                         它应该**一行都不用回填** —— 填了就说明有写口绕过了触发器,
+#                         那是要去查的事。⚠️ **这行注释故意不照抄门店码那一步的命令** ——
+#                         判据查的就是那个串,注释里写一遍的话,
+#                         攻击把步骤表里真正那一项删掉之后,判据照样绿
+#                         (咬合当场逮住过;今天在 daily_shift.sh 上已经踩过一次)。
+#                         它和门店码那一步(上面倒数第二项)**不是一回事**:
+#                         后者是真的回填(门店码没有触发器,靠每轮补),
+#                         这一个是**验触发器还在工作**。
+#                         > 一个「触发器在工作」和一个「触发器没了但每轮有人回填」,
+#                         > 在那一列的数据上长得一模一样。
 #   make_todo.py     待办清单(从 intent/ 生成)
 #
 # ⚠️ **后面每一步都依赖前面那一步的产物**,跳一步不会报错,
@@ -174,7 +190,7 @@ if [ "$FRESH_ONLY" = 1 ]; then
     echo "   真要重建,请直接敲 ./tools/rebuild.sh(它会先说清楚要删什么,并留 3 秒反悔)。"
     exit 1
   fi
-  echo "📦 首次建库:下面 43 步**全跑完**才算建好,少一步都会让某几张表空着。"
+  echo "📦 首次建库:下面 45 步**全跑完**才算建好,少一步都会让某几张表空着。"
 else
   echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
   sleep 3
@@ -193,7 +209,7 @@ BUILD_T0=$SECONDS
 # 白坯试衣必试的三类里「婚服」按商品的「婚礼婚服」场合标签认,而旅程会把订单推到开裁 ——
 # 标签还没挂的话婚服判不出、闸判「判不了」、旅程卡在待生产,**时间没挪回过去,留下一批未来日期**
 # (数据规范 C4 / A15 当场红)。场合标签只依赖商品和知识库,放前面不缺任何输入。
-for STEP in "backend/seed.py" "tools/add_shop_code.py --建列" "tools/backfill_scene.py" "tools/run_journey.py 42" "tools/grow_customers.py" "tools/simulate_sales.py" \
+for STEP in "backend/seed.py" "tools/add_shop_code.py --建列" "tools/add_cust_advisor.py --建列" "tools/backfill_scene.py" "tools/run_journey.py 42" "tools/grow_customers.py" "tools/simulate_sales.py" \
             "tools/order_mix.py" "tools/backfill_order_measure.py" "backend/seed_fitting.py" "backend/seed_pickup.py" "backend/seed_repair.py" "tools/backfill_color.py" \
             "tools/backfill_transcript.py" "tools/backfill_terms.py" "tools/backfill_opportunity.py" "tools/backfill_roster.py" "tools/backfill_credit.py" "tools/ensure_tables.py" "tools/add_shop_code.py --建列" "tools/backfill_fixtures.py" "tools/backfill_biz_fields.py" "tools/backfill_link.py" "tools/backfill_wattr.py" \
             "tools/seed_factory_feed.py" "backend/seed_pickup.py --铺到包裹" "tools/seed_pending_orders.py" \
@@ -207,6 +223,7 @@ for STEP in "backend/seed.py" "tools/add_shop_code.py --建列" "tools/backfill_
             "tools/seed_triage_samples.py --做" \
             "tools/seed_triage_tasks.py --写" \
             "tools/add_shop_code.py --做" \
+            "tools/add_cust_advisor.py --校验" \
             "tools/make_todo.py"; do
   printf "\n\033[1m▸ %s\033[0m\n" "$STEP"
   STEP_T0=$SECONDS
@@ -229,8 +246,8 @@ done
 # ⚠️ **加步骤要改这个数。** 2026-10-09 加了 daily_fresh / lifecycle_refresh 两步,
 # 忘了改 —— `backend/firstrun_check.py` 当场逮到「步骤表 31 步,自校验却写着 29 步」。
 # 这个数存在的理由正是「循环没跑全,而上面看起来是顺利的」,所以它自己不能过期。
-if [ "$DONE" -ne 43 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 43 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 45 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 45 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 # ── 耗时账(2026-10-19 加的,和 check.sh 那本是同一件事)────────────────────

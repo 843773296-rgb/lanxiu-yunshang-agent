@@ -222,7 +222,27 @@ CREATE TABLE ordr(id TEXT PRIMARY KEY, customer_id TEXT, kind TEXT, status TEXT,
   -- 这单从哪条方案来。可空:标品单、方案接入前的老单都没有。
   -- ⚠️ 注释必须**单独占一行**:第一版写在列的同一行,后面紧跟的 `);` 被卷进了注释,
   -- 这张表一直没闭合,下一句 CREATE 才报语法错 —— 报错位置和出错位置隔着一张表。
-  scheme_id TEXT);
+  scheme_id TEXT,
+  -- 这个客户**现在归谁**(顾问号)—— 从 `customer.advisor_no` 冗余过来的。
+  -- (⚠️ 注释单独占一行,别写在列的同一行 —— 见上面 scheme_id 那条教训。)
+  --
+  -- **为什么冗余**:`api._订单范围()` 给顾问的条件是
+  -- 「这一单是他做的 ∪ 这个客户现在归他」,原来写成
+  -- `(o.advisor_no=? OR cu.advisor_no=?)` —— 那个 OR **跨了两张表**,
+  -- SQLite 只能全表扫 ordr(2.6 万行,19–20 ms),**而加索引修不了**
+  -- (2026-10-24 建的那两条覆盖索引对它一点用都没有)。
+  -- 冗余到同一张表之后,计划变成 `MULTI-INDEX OR`(两个索引取并集),
+  -- 实测 **8.22 ms,2.3 倍**。拆 UNION 那个方案也量过:**16.17 ms,只有 1.2 倍,已否决**
+  -- (索引省下的扫表被去重和回表吃掉了)。用户 2026-10-25 拍「加冗余列」。
+  --
+  -- ⚠️ **它和 `customer.advisor_no` 必须全量一致**,由**三个触发器**保证
+  -- (开单填 / 客户换顾问同步 / 订单换客户重算,见 `tools/add_cust_advisor.py`)。
+  -- **别照抄 appointment 那边的 `AND status='已预约'`** —— 那是部分同步,
+  -- 对预约是对的,**对这一列是错的**:查询问的是「客户**现在**归谁」、不分订单状态。
+  --
+  -- ⚠️ **seed 跑完的那一刻这一列是空的,这是正常的** ——
+  -- 触发器由流水线第 2 步(`add_cust_advisor.py --建列`)建,那一步会回填。
+  cust_advisor_no TEXT);
 CREATE TABLE ordr_item(id INTEGER PRIMARY KEY AUTOINCREMENT, order_id TEXT, sku TEXT,
   name TEXT, tag TEXT, price REAL, qty INT,
   spu TEXT, base_amount REAL, custom_amount REAL, total REAL,
