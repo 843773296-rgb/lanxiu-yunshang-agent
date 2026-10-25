@@ -183,10 +183,13 @@ class 一棵树:
         self.收(sid, 止=起)          # 模型调用是「收到时才知道它发生过」,起止同一刻
         return sid
 
-    def 一次工具调用(self, *, 父, 工具, 参数, 调用号=None, 起=None):
+    def 一次工具调用(self, *, 父, 工具, 参数, 调用号=None, 起=None, 全名=None):
+        # 全名带着服务前缀(mcp__analytics__store_report):短名在 gen_ai.tool.name 里照旧(读它的地方不动),
+        # 全名另记一份 —— 同一个短名可能在两个服务里各有一个,只看短名分不出是哪一个(证据中心 10-25)
         a, 截 = 装值(参数)
         return self.开("execute_tool", f"execute_tool {工具}", 父=父, sid=调用号, 起=起,
                        属性={"gen_ai.tool.name": 工具, "gen_ai.tool.call.id": 调用号,
+                            "lanxiu.tool.full_name": 全名 if 全名 and 全名 != 工具 else None,
                             "gen_ai.tool.type": "function",
                             "gen_ai.tool.call.arguments": a,
                             "lanxiu.arguments.truncated": True if 截 else None})

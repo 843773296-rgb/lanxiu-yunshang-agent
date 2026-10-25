@@ -1265,15 +1265,18 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                     if bt == "TextBlock" and getattr(b, "text", ""):
                         cur += b.text
                     elif bt == "ToolUseBlock":
-                        traj.append({"tool": getattr(b, "name", "?"),
-                                     "args": getattr(b, "input", {})})
                         _tu = getattr(b, "id", None)
+                        # 调用号跟着轨迹走(证据中心 10-25):证据面板按它对返回值,不按「第几个」——
+                        # 按下标对的话,中间有一次没记到,后面每一条都错位,而且不报错
+                        traj.append({"tool": getattr(b, "name", "?"),
+                                     "args": getattr(b, "input", {}), "id": _tu})
                         # 记住「这次调用对应 traj 里第几条」—— 返回值是以 user 角色
                         # 回流的(下面那一支),那时候要能找回来挂上去。
                         if _tu: _traj下标[_tu] = len(traj) - 1
                         _sid = _树.一次工具调用(
                             父=_当前模型span, 工具=(getattr(b, "name", "?") or "?").rsplit("__", 1)[-1],
-                            参数=getattr(b, "input", {}), 调用号=_tu, 起=_now)
+                            参数=getattr(b, "input", {}), 调用号=_tu, 起=_now,
+                            全名=getattr(b, "name", None))
                         if _tu: _工具span[_tu] = _sid
                 if cur.strip(): turns.append(cur)
                 _上次时刻 = _now

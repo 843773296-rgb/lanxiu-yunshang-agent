@@ -323,6 +323,7 @@ run "成本口径 · 项目算的钱要和官方计费规则对得上(期望值�
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
 run "工作流接管 · 聊天站这一半(被接管的技能调不动 / 拉不到清单的退路 / 每个角色都能发起)" ./agentsite/.venv/bin/python agentsite/takeover_check.py
 run "执行记录(/spans)谁能看 · 没登录 401、只看自己会话的、列全部只给总部运营(10-24 实测原来不登录就给 200)" ./agentsite/.venv/bin/python agentsite/spans_access_check.py
+run "证据面板 · 工具返回值按调用号对位(没记到的不错位、不拿别人的顶上;老对话按顺序并标出)" python3 agentsite/evidence_pair_check.py
 run "技能形状 · 该有的段落齐不齐" ./agentsite/.venv/bin/python agentsite/skill_shape.py
 run "工具路由用例 · 点名的工具真的挂着(改了名就永远被跳过)" ./agentsite/.venv/bin/python agentsite/tool_eval.py --check
 run "读不读得出效果 · 判据本身要能被测" ./agentsite/.venv/bin/python agentsite/evalnoise_test.py

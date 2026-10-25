@@ -1003,7 +1003,8 @@ function drawStream(){
         <div class="bub">${esc(m.text)}</div></div></div></div>`;
     }
     if(m.error)
-      return `<div class="msg a"><div class="wrap"><div class="err">${esc(m.error)}</div></div></div>`;
+      return `<div class="msg a"><div class="wrap"><div class="err">${esc(m.error)}</div>
+        <div class="meta"><a href="#" class="evlink" data-i="${i}">执行记录</a></div></div></div>`;
     // 交付状态分开写:「修正后通过」和「未通过检查,需人工核对」是两回事;没查到的不显示成通过
     const 交 = (m.交付检查 || {}).状态;
     const 交说 = {"修正后通过": "修正后通过检查", "未通过": "未通过检查,需人工核对",
@@ -1023,7 +1024,7 @@ function drawStream(){
       ${(m.trajectory || []).map(toolChip).join("")}
       ${卡}
       <div class="body">${md(m.text)}</div>${gv}
-      <div class="meta">${esc(metaLine(m))}</div>
+      <div class="meta">${esc(metaLine(m))} · <a href="#" class="evlink" data-i="${i}">执行记录</a></div>
       ${rateBar(m, i)}</div></div>`;
   }).join("");
   s.scrollTop = s.scrollHeight;
@@ -1031,6 +1032,10 @@ function drawStream(){
   // 而「绑了但被冲掉」和「没绑」在点不动这件事上长得一模一样。
   s.querySelectorAll(".ordcard").forEach(b => {
     b.onclick = () => openOrder(b.dataset.oid);
+  });
+  // 每条回答各自的「执行记录」(证据中心 10-25)—— 同样每次重绘重绑
+  s.querySelectorAll(".evlink").forEach(b => {
+    b.onclick = (e) => { e.preventDefault(); evPick(+b.dataset.i); };
   });
   // 评分按钮每次重绘都要重绑 —— 和上面那条同一个理由:
   // innerHTML 一改,旧的 onclick 全被冲掉,而「绑了但被冲掉」和「没绑」
@@ -1162,6 +1167,16 @@ async function ask(){
    ⚠️ 工具**返回了什么**现在还列不出来 —— 轨迹里只有工具名和参数。要看返回值得在钩子里
    把结果收下来,那是运行时改动,等评测跑完再做。**写在界面上,免得看的人以为这里已经全了。** */
 let EVTAB = "证据";
+// 证据面板看的是**哪一条**回答(证据中心 10-25):原来固定取「最后一条成功的」,
+// 点不了早先的,失败的那条也打不开。现在每条回答下面有「执行记录」,点哪条看哪条;没点过时照旧看最后一条。
+// 记的是「哪个会话的第几条」:只记下标的话,切到别的会话还会去取那个下标,看到的是另一段对话里的另一条
+let EVMSG = null;
+function evMsg(){
+  const c = cur(); const ms = (c && c.msgs) || [];
+  if(EVMSG && EVMSG.conv === (c && c.id) && ms[EVMSG.i] && ms[EVMSG.i].role === "assistant") return ms[EVMSG.i];
+  return [...ms].reverse().find(m => m.role === "assistant" && !m.error);
+}
+function evPick(i){ EVMSG = {conv: (cur() || {}).id, i}; EVTAB = "证据"; evOpen(true); }
 const 注入登记 = [["业务今天", "日期 —— 这里是权威,规矩只是复述"],
                   ["工作日记", "最近三条,只给背景不定口径"],
                   ["当前方案", "这一轮说的是哪一份方案"],
@@ -1184,9 +1199,15 @@ function drawEv(){
    先画出框架再异步填,**不让一次网络请求挡住整个面板**:
    取不到的时候要留下一句话说清是取不到,而不是留一个空位 ——
    空位和「这个工具没返回东西」长得一模一样。 */
+// 轨迹第 i 行 ↔ 哪一个工具 span。纯函数,agentsite/evidence_pair_check.py 用 node 真调它。
+// 有调用号就**只按号找**(找不到 = 没记到,不拿别人的顶上);没有调用号(老对话)才按先后,并标出来
+function 返回值对位(号们, spans){
+  const 按号 = {};
+  spans.forEach(sp => { const k = (sp.attr || {})["gen_ai.tool.call.id"]; if(k) 按号[k] = sp; });
+  return 号们.map((号, i) => 号 ? {sp: 按号[号] || null, 按顺序: false} : {sp: spans[i] || null, 按顺序: true});
+}
 async function 补返回值(){
-  const c = cur();
-  const last = c && [...(c.msgs || [])].reverse().find(m => m.role === "assistant" && !m.error);
+  const last = evMsg();
   const tid = last && last.trace_id;
   const rows = [...document.querySelectorAll("#evbody .toolrow")];
   if(!tid || !rows.length) return;
@@ -1202,22 +1223,29 @@ async function 补返回值(){
       if(d) d.textContent = "返回值取不到:" + e.message; });
     return;
   }
-  // 按顺序对位:轨迹和 span 都是按调用先后排的,同名工具可能调好几次,
-  // **不能按工具名去 find** —— 那样三次 kb_read 会全都显示第一次的返回值。
+  // **按调用号对位**(证据中心 10-25):轨迹里每条带着调用号,span 记着同一个号。
+  // 原来按「第几个」对 —— 中间有一次没记到,后面每一条都错一位,而错位的返回值看着和对的一样。
+  // 不能按工具名去 find:三次 kb_read 会全都显示第一次的返回值。老对话的轨迹没有调用号,才退回按顺序,并写明。
+  const 对 = 返回值对位(rows.map(el => el.dataset.call || ""), spans);
   rows.forEach((el, i) => {
     const d = el.querySelector(".ret"); if(!d) return;
-    const sp = spans[i];
+    const sp = 对[i].sp;
+    if(对[i].按顺序 && sp) d.dataset.byIndex = "1";
     if(!sp){ d.textContent = "(这一次的返回值没记到)"; return; }
     const v = (sp.attr || {})["gen_ai.tool.call.result"];
     const 截 = (sp.attr || {})["lanxiu.result.truncated"];
     d.innerHTML = `<b>返回</b> <span class="dim">${sp.duration_ms}ms</span>`
       + `<pre>${esc(typeof v === "string" ? v : JSON.stringify(v, null, 1))}</pre>`
-      + (截 ? `<span class="dim">(太长,只记了前一段)</span>` : "");
+      + (截 ? `<span class="dim">(太长,只记了前一段)</span>` : "")
+      + (d.dataset.byIndex ? `<span class="dim">(早先的对话没记调用号,按先后顺序对的)</span>` : "");
   });
 }
 function evEvidence(){
   const c = cur();
-  const last = c && [...(c.msgs || [])].reverse().find(m => m.role === "assistant" && !m.error);
+  const last = evMsg();
+  if(last && last.error) return `<div class="empty"><b>这一条没答成</b>:${esc(last.error)}<br>`
+    + `这一轮的执行记录没留下来 —— 现在只在一轮正常结束时才写记录,中途出错的那一轮什么都不剩。`
+    + `(「边跑边记、断了也留下已经发生的」是下一项要做的)</div>`;
   if(!last) return `<div class="empty">还没有回答。问一句之后,这里会列出它<b>凭什么</b>这么说。</div>`;
   const R = KINDS[c.kind] || {};
   const traj = last.trajectory || [];
@@ -1227,7 +1255,10 @@ function evEvidence(){
       ? Object.entries(t.args).map(([k, v]) =>
           `${esc(k)}=${esc(String(typeof v === "object" ? JSON.stringify(v) : v).slice(0, 60))}`).join(" · ")
       : "(没带参数)";
-    return `<div class="toolrow"><b>${esc(n)}</b><br><code>${a}</code>
+    const 全 = String(t.tool || "");
+    return `<div class="toolrow" data-call="${esc(t.id || "")}"><b>${esc(n)}</b>`
+      + (全.includes("__") ? ` <span class="dim">${esc(全.split("__").slice(0, -1).join("__"))}</span>` : "")
+      + `<br><code>${a}</code>
       <div class="ret">${last.trace_id ? "返回值读取中…" : "(这一轮没记 trace,看不到返回值)"}</div></div>`;
   }).join("") || `<div class="empty">这一轮<b>一个工具都没调</b> —— 结论没有取数撑着,要当心。</div>`;
   const 体检 = (last.guard_violations || []).map(v =>

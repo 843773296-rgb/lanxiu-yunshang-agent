@@ -12860,5 +12860,29 @@
    }
   ],
   "预期红": "公开档的出处给得出链接"
+ },
+ {
+  "script": "agentsite/evidence_pair_check.py",
+  "改坏": "返回值退回按下标对(不看调用号)",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "号 ? {sp: 按号[号] || null, 按顺序: false}",
+    "new": "号 ? {sp: spans[i] || null, 按顺序: false}"
+   }
+  ],
+  "预期红": "中间一次没记到:后面那条仍对到自己的返回值,不错位"
+ },
+ {
+  "script": "agentsite/evidence_pair_check.py",
+  "改坏": "调用号找不到时拿下标那条顶上",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "号 ? {sp: 按号[号] || null, 按顺序: false}",
+    "new": "号 ? {sp: 按号[号] || spans[i] || null, 按顺序: false}"
+   }
+  ],
+  "预期红": "有调用号但没记到 → 显示没记到,不拿别人的返回值顶上"
  }
 ]
