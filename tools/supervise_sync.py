@@ -161,6 +161,13 @@ if __name__ == "__main__":
                 if 末: print("用量:" + 末[-1].strip(), flush=True)
             except Exception as e:
                 print(f"⚠️ 用量这一轮没推:{type(e).__name__}: {e}", flush=True)
+            # 执行记录(证据中心第四个工作包,10-25):聊天站每一轮收尾后推一次,管理后台「运行记录」页才看得到
+            try:
+                r = _sp.run([sys.executable, os.path.join(ROOT, "tools", "spans_push.py")], capture_output=True, text=True)
+                末 = [l for l in (r.stdout or "").splitlines() if l.strip()]
+                if 末 and r.returncode != 0 or (末 and "推了" in 末[-1]): print("执行记录:" + 末[-1].strip(), flush=True)
+            except Exception as e:
+                print(f"⚠️ 执行记录这一轮没推:{type(e).__name__}: {e}", flush=True)
             try: 一轮()
             except Exception as e: print(f"⚠️ 这一轮出错:{type(e).__name__}: {e}", flush=True)
             sys.stdout.flush(); time.sleep(max(10, a.循环))

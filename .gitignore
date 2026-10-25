@@ -41,6 +41,7 @@ llm-trace.jsonl
 # 执行记录原文(证据中心 10-25):没截断、没打码,带客户完整手机号和原始业务数据 —— **仓库是公开的**,绝不能进
 .feynman/raw/
 .feynman/raw-access.jsonl
+.feynman/spans-pushed.json
 .feynman/spans.jsonl.1
 
 # 说明:agent/*-results.jsonl 是评测结果,**要进版本库** ——

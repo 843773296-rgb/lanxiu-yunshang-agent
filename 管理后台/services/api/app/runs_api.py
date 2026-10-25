@@ -36,7 +36,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "con
 from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy import text
 
-from db import 连接
+from db import 连接, 事务
 from deps import 身份, 要权限, _错
 
 router = APIRouter()
@@ -71,7 +71,7 @@ def 脱敏(值):
 @router.get(前缀 + "/traces")
 def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
             limit: int = Query(30, ge=1, le=200),
-            end_reason: str = Query(None)):
+            end_reason: str = Query(None), entry_kind: str = Query(None)):
     """运行记录列表。**每条要带「花了多少」和「有几步」** ——
 
     一个只有 id 和时间的列表,回答不了「哪次贵、哪次慢」,
@@ -79,7 +79,7 @@ def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看�
     """
     with 连接() as c:
         rs = c.execute(text("""
-            select count(*) over () 全量, t.id, t.request_id, t.environment, t.started_at, t.ended_at,
+            select count(*) over () 全量, t.id, t.request_id, t.session_id, t.entry_kind, t.environment, t.started_at, t.ended_at,
                    t.end_reason, t.created_by,
                    (select count(*) from spans s
                      where s.project_id=t.project_id and s.trace_id=t.id) 步数,
@@ -99,9 +99,10 @@ def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看�
               from traces t
              where t.project_id=:p
                and (cast(:er as text) is null or t.end_reason = cast(:er as text))
+               and (cast(:ek as text) is null or t.entry_kind = cast(:ek as text))
              order by t.started_at desc
              limit :n
-        """), {"p": project_id, "er": end_reason, "n": limit}).mappings().all()
+        """), {"p": project_id, "er": end_reason, "ek": entry_kind, "n": limit}).mappings().all()
     出 = []
     for r in rs:
         d = dict(r)
@@ -478,3 +479,82 @@ def 实验对比(project_id: str, a: str = Query(..., description="甲:第一个
     出["note"] = ("**「没打分」不参与平均** —— 把它当 0 会让一个只评了一半的实验"
                   "看起来分数腰斩,而真相是另一半没测")
     return 出
+
+
+# ── 从聊天站导入一轮的执行记录(证据中心第四个工作包,10-25)──────────────────────────────
+# 原来管理后台的 traces / spans 只有用量上报那一条腿(每次一个汇总 span),聊天站一轮里调了哪些工具、
+# 传了什么、回了什么,这边一样都看不到 —— 需求文档 1.2「上报接收端生成自己的 trace,不能等同于完整业务调用树」。
+# 映射**按确切的键,不按全文 LIKE 猜**(需求文档 5.1):request_id = 「lanxiu-chat:<聊天站 trace 号>」。
+# 原文(没打码、没截断)存进 input_ref / output_ref —— 看不看得到由详情接口现有的字段权限管
+# (「查看敏感输入」这条专项授权;没有的只看到形状)。这就是用户 10-25 拍的「平台管理员看原文」那一半。
+聊天站来源 = "lanxiu-chat"
+原文留天 = 30            # 和聊天站那边同一个数(用户 10-25 拍);到期把正文换成一句到期说明
+
+
+def _时刻(x):
+    import datetime as _dt
+    try:
+        return _dt.datetime.fromtimestamp(float(x), tz=_dt.timezone.utc) if x is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+@router.post(前缀 + "/trace-imports", status_code=201)
+async def 导入执行记录(project_id: str, request: Request, me: 身份 = Depends(要权限("运行评测"))):
+    """体:{外部trace, 会话号?, 状态, 开始, 结束?, 步们:[{id, parent, stage, 开始, 结束?, 状态, 入?, 出?, 错?}]}。
+
+    · 同一个外部 trace 再来:**已经收尾的(completed / failed / interrupted)不重写**;还在「进行中」的整棵换成新的
+      —— 聊天站边跑边记,一轮可能先以「进行中」推过来,跑完再推一次
+    · 每次导入顺手把超过 30 天的聊天站原文换成到期说明(trace 和步骤的骨架留着,正文不留)"""
+    import uuid as _uu
+    体 = await request.json()
+    外 = str(体.get("外部trace") or "").strip()
+    if not 外:
+        raise _错(422, "VALIDATION", "要给外部trace", "聊天站那一轮的 trace 号", field_errors={"外部trace": "必填"})
+    步们 = 体.get("步们") or []
+    if not isinstance(步们, list) or len(步们) > 2000:
+        raise _错(422, "VALIDATION", "步们要是列表,一轮最多 2000 步", "检查推送端", field_errors={"步们": "格式不对"})
+    状 = {"进行中": "running", "中断": "interrupted", "error": "failed"}.get(体.get("状态"), "completed")
+    键 = f"{聊天站来源}:{外}"
+    with 事务() as c:
+        老 = c.execute(text("select id, end_reason from traces where project_id=:p and request_id=:k"),
+                       {"p": project_id, "k": 键}).mappings().first()
+        if 老 and 老["end_reason"] != "running":
+            return {"trace_id": 老["id"], "导入了吗": False, "note": "这一轮已经收尾、导入过了,没重写"}
+        tid = 老["id"] if 老 else f"tr_{_uu.uuid4().hex[:12]}"
+        if 老:
+            c.execute(text("delete from spans where project_id=:p and trace_id=:t"), {"p": project_id, "t": tid})
+            c.execute(text("""update traces set end_reason=:er, ended_at=:en, session_id=:s where project_id=:p and id=:t"""),
+                      {"er": 状, "en": _时刻(体.get("结束")), "s": 体.get("会话号"), "p": project_id, "t": tid})
+        else:
+            c.execute(text("""insert into traces (id, organization_id, project_id, request_id, session_id, entry_kind,
+                                  environment, started_at, ended_at, end_reason, created_at, created_by)
+                              values (:i,:o,:p,:k,:s,'聊天站',:e,:st,:en,:er, now(), :u)"""),
+                      {"i": tid, "o": me.org_id, "p": project_id, "k": 键, "s": 体.get("会话号"),
+                       "e": os.environ.get("APP_ENV", "development"), "st": _时刻(体.get("开始")),
+                       "en": _时刻(体.get("结束")), "er": 状, "u": me.user_id})
+        短 = _uu.uuid5(_uu.NAMESPACE_URL, 键).hex[:8]
+        for x in 步们:
+            sid = str(x.get("id") or "")
+            c.execute(text("""insert into spans (id, organization_id, project_id, trace_id, parent_span_id, stage,
+                                  input_ref, output_ref, started_at, ended_at, error, created_at, created_by)
+                              values (:i,:o,:p,:t,:pa,:st, cast(:ir as jsonb), cast(:orf as jsonb), :sa, :ea,
+                                      cast(:err as jsonb), now(), :u)"""),
+                      {"i": f"cs_{短}_{sid}", "o": me.org_id, "p": project_id, "t": tid,
+                       "pa": f"cs_{短}_{x['parent']}" if x.get("parent") else None, "st": str(x.get("stage") or "?")[:200],
+                       "ir": _json.dumps(x.get("入"), ensure_ascii=False) if x.get("入") is not None else None,
+                       "orf": _json.dumps(x.get("出"), ensure_ascii=False) if x.get("出") is not None else None,
+                       "sa": _时刻(x.get("开始")), "ea": _时刻(x.get("结束")),
+                       "err": _json.dumps(x.get("错"), ensure_ascii=False) if x.get("错") else None, "u": me.user_id})
+        到期 = c.execute(text(f"""
+            update spans s set input_ref = :z, output_ref = :z
+              from traces t
+             where t.project_id = s.project_id and t.id = s.trace_id and s.project_id = :p
+               and t.entry_kind = '聊天站' and t.started_at < now() - interval '{原文留天} days'
+               and (s.input_ref is distinct from :z or s.output_ref is distinct from :z)
+               and (s.input_ref is not null or s.output_ref is not null)"""),
+            {"p": project_id, "z": _json.dumps({"到期删除": f"聊天站原文保留 {原文留天} 天,已删(骨架留着)"},
+                                               ensure_ascii=False)}).rowcount
+    return {"trace_id": tid, "导入了吗": True, "步数": len(步们), "这次到期清掉的步": 到期,
+            "note": "原文在 input_ref / output_ref;看不看得到由详情接口的字段权限管(查看敏感输入)"}
+

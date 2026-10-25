@@ -12968,5 +12968,29 @@
    }
   ],
   "预期红": "「没做完的」那一段取得对"
+ },
+ {
+  "script": "tools/spans_push_check.py",
+  "改坏": "还在进行中的也推",
+  "file": [
+   {
+    "path": "tools/spans_push.py",
+    "old": "        if not 根 or 根.get(\"status\") == \"进行中\":",
+    "new": "        if not 根:"
+   }
+  ],
+  "预期红": "还「进行中」的不推(跑完或判中断以后再推)"
+ },
+ {
+  "script": "tools/spans_push_check.py",
+  "改坏": "工具那步不用原文,只推展示副本",
+  "file": [
+   {
+    "path": "tools/spans_push.py",
+    "old": "            参, 返 = 原.get((s[\"span_id\"], \"参数\")), 原.get((s[\"span_id\"], \"返回\"))",
+    "new": "            参, 返 = None, None"
+   }
+  ],
+  "预期红": "工具那步有原文就推原文,并标「是原文」"
  }
 ]

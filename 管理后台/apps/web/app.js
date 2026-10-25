@@ -561,15 +561,39 @@ async function 页_prompt详情(pid) {
 
 /* ── 运行记录(占位:列表已有接口,详情页还没做)────────────────── */
 async function 页_运行记录() {
-  $("#main").innerHTML = `<div class="crumb">运行记录</div>
+  // 证据中心第四个工作包(10-25):原来是占位页。现在列**聊天站**推过来的每一轮(entry_kind=聊天站),
+  // 点进去是同一个调用树页 —— 原文看不看得到由那边的字段权限管(查看敏感输入),这一页不另判
+  const 头 = `<div class="crumb">运行记录</div>
     <div class="head"><div><h1>运行记录</h1>
-      <div class="sub">每次请求实际经过了哪些阶段、收到什么、返回什么。</div></div></div>`
-    + 状态("", "这一页还没实现",
-        "接口已经有了(`GET /traces`、`GET /traces/{id}`,原文按**字段级权限**返回),"
-        + "页面还没做。**保留入口是有意的** —— 规格里有这一页。\n\n"
-        + "现在能看到 trace 的地方:Prompt 详情里跑一次测试,下方会展开阶段、用量和 Trace 号。",
-        { 文: "去 Prompt 管理", 做: () => { location.hash = "#/prompts"; } }).html;
-  const s = $("#st-act"); if (s) s.onclick = () => { location.hash = "#/prompts"; };
+      <div class="sub">${md("聊天站每一轮实际调了哪些工具、传了什么、回了什么。**原文要「查看敏感输入」授权**,没有的只看到形状。")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/traces?limit=100&entry_kind=${encodeURIComponent("聊天站")}`); }
+  catch (e) { const s = 错误块(e, 页_运行记录); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  if (!d.items.length) {
+    $("#main").innerHTML = 头 + 状态("", "还没有聊天站的运行记录",
+      "聊天站每一轮跑完(或断了)之后,由澜绣的同步程序推过来;刚上线时这里是空的,在聊天页问一句再回来看。").html;
+    return;
+  }
+  const 状 = { running: "进行中", interrupted: "中断", failed: "出错", completed: "完成" };
+  $("#main").innerHTML = 头 + `<table><thead><tr>
+      <th>什么时候</th><th>会话</th><th class="num">步</th><th>结果</th><th></th>
+    </tr></thead><tbody>`
+    + d.items.map((r) => { const t = 状[r.end_reason] || r.end_reason || "?";
+      return `<tr>
+        <td class="k">${esc(String(r.started_at || "").slice(5, 19).replace("T", " "))}
+          <div class="k">${esc(String(r.request_id || "").replace("lanxiu-chat:", "聊天站 ").slice(0, 26))}</div></td>
+        <td class="k">${esc(String(r.session_id || "—").slice(0, 12))}</td>
+        <td class="num">${r["步数"]}${r["出错的步数"] ? ` <span class="pill fail">${r["出错的步数"]} 步出错</span>` : ""}</td>
+        <td>${r.end_reason === "completed" ? `<span class="pill ok">${esc(t)}</span>`
+            : r.end_reason === "running" ? `<span class="pill warn">${esc(t)}</span>`
+            : `<span class="pill fail">${esc(t)}</span>`}</td>
+        <td><button data-tr="${esc(r.id)}">看调用树</button></td>
+      </tr>`; }).join("")
+    + `</tbody></table><div class="note">${md("「进行中」超过半小时没收尾的,聊天站那边会判成「中断」再推一次。")}</div>`;
+  $("#main").querySelectorAll("[data-tr]").forEach((b) => {
+    b.onclick = () => { location.hash = "#/trace/" + encodeURIComponent(b.dataset.tr); };
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════════
