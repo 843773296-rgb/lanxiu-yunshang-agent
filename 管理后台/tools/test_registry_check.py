@@ -55,6 +55,10 @@ R, G, Y, D = "\033[31m", "\033[32m", "\033[33m", "\033[0m"
         "2026-09-29 补的:在那之前文件头写着「单独 make test-browser」"
         "而那个目标并不存在,于是这份测试没有任何入口能跑它,"
         "**那和没有这份测试是一回事**,只是它躺在目录里看起来像有覆盖",
+    "test_workflow_editor_browser.py":
+        "要本机 Chrome + selenium(故意不进 requirements.lock)—— 起无窗口浏览器、只碰专用的测试工作流;"
+        "放进门禁会变成随机拦路。**它有自己的入口:`make test-browser-editor`**;"
+        "它不打新路由(只用工作流详情 / 草稿那几条,账本里已由别的测试记着)",
 }
 
 
@@ -138,6 +142,9 @@ def main():
             "第 ⑥ 条同上(真调 Claude 精排)",
         "test_upload_page_firefox.py":
             "要可见的 Firefox 窗口 + selenium —— 本地 `make test-browser`",
+        "test_workflow_editor_browser.py":
+            "要本机 Chrome + selenium(不在 requirements.lock 里),CI 没装 —— 本地 `make test-browser-editor`;"
+            "图逻辑和保存那两份(test_workflow_graph_logic / test_workflow_editor_actions)不起浏览器,进了 CI",
     }
     CI名单 = ""
     for 变量 in ("E2E_CI", "E2E_CI_JS"):

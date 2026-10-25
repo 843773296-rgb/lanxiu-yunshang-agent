@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 # `#` 在 make 的配方里要用变量传,直接写 `\#` 会把反斜杠一起带给 shell
 HASH := \#
-.PHONY: help bootstrap dev seed-demo test test-e2e test-e2e-ci page-smoke test-browser test-live contract doctor migrate gen worker worker-once progress \
+.PHONY: help bootstrap dev seed-demo test test-e2e test-e2e-ci page-smoke test-browser test-browser-editor bite-editor test-live contract doctor migrate gen worker worker-once progress \
         test-orchestration test-orchestration-e2e test-orchestration-live
 
 help:
@@ -236,6 +236,15 @@ seed-demo:     ## 灌合成演示数据(**只在开发环境,重复跑不增加�
 # 它为什么不进门禁,文件头里写清了:要可见的 Firefox 窗口
 # (headless 下 Firefox 156 卡在一个关不掉的模态框上)、要 selenium
 # (**故意不进 requirements.lock** —— 钉进去 CI 也会去装)。
+bite-editor:   ## 流程图编辑器两份测试的咬合重放(临时副本里改坏,验红在指定那条)
+	@python3 tools/wf_editor_bite.py
+
+test-browser-editor:  ## 真浏览器拖一遍流程图编辑器 T01–T21(无窗口 Chrome + selenium + make dev)
+	@echo "▸ 真浏览器(无窗口 Chrome + Selenium):流程图编辑器的拖动 / 连线 / 重连 / 删除 / 键盘 / 保存重开"
+	@echo "  ⚠️ 只碰一条专用工作流「编辑器验收(自动测试)」,每次重置它的草稿;不运行、不冻结、不发布"
+	@echo "  ⚠️ 要 selenium(不在 requirements.lock 里)和本机 Chrome"
+	@./.venv/bin/python tests/e2e/test_workflow_editor_browser.py
+
 test-browser:  ## 真浏览器点一遍「加资料」页(要 Firefox + selenium + make dev)
 	@echo "▸ 真浏览器(Firefox + Selenium):「加资料」页的三步链路"
 	@echo "  ⚠️ 会在屏幕上**弹一个 Firefox 窗口** —— 所以它不在 test-e2e 里"
@@ -411,7 +420,8 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
              test_artifact_page_actions.js test_member_page_actions.js \
-             test_release_page_actions.js test_workflow_save_gate.js
+             test_release_page_actions.js test_workflow_save_gate.js \
+             test_workflow_graph_logic.js test_workflow_editor_actions.js
 
 test-e2e-ci:   ## 端到端(CI 版):排掉要真调模型的那两份(要先 make dev)
 	@echo "▸ 端到端(CI 版):$(words $(E2E_CI)) 份 Python + $(words $(E2E_CI_JS)) 份 JS"
@@ -487,6 +497,13 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo "▸ 编排页:草稿没存上,校验 / 冻结 / 试运行一律停下(15 条,不起服务)"
 	@echo "  原来存失败只弹框不告诉调用方 —— 页面是新图,实际冻结、试跑的是旧稿"
 	@node tests/e2e/test_workflow_save_gate.js
+	@echo ""
+	@echo "▸ 编排页 · 图操作逻辑层(连 / 删 / 重连 / 插入 / 复制粘贴 / 分支 / 变量可达 / 撤销 / 冲突,不起服务)"
+	@echo "  所有改图入口(拖线、下拉「下一步」、快捷键、菜单)调的都是这一份 —— 两套判断总有一套判松"
+	@node tests/e2e/test_workflow_graph_logic.js
+	@echo ""
+	@echo "▸ 编排页 · 保存与命令层(保存中继续编辑、失败 / 冲突不丢改动、撤销、只读、检查过期)"
+	@node tests/e2e/test_workflow_editor_actions.js
 	@echo ""
 	@echo "▸ 任务事件流 SSE(17 条:按 seq 续传、终态要发结束、流开着也重新鉴权)"
 	@echo "  **全后台最后一条「已实现未验」** —— 主要在打「空流和什么都没发生长得一样」"
@@ -691,6 +708,14 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_workflow_save_gate 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_workflow_save_gate.log; exit 1; }
 	@tail -2 /tmp/prog-test_workflow_save_gate.log
+	@node tests/e2e/test_workflow_graph_logic.js > /tmp/prog-test_workflow_graph_logic.log 2>&1 \
+	  || { echo "  ❌ test_workflow_graph_logic 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_graph_logic.log; exit 1; }
+	@tail -1 /tmp/prog-test_workflow_graph_logic.log
+	@node tests/e2e/test_workflow_editor_actions.js > /tmp/prog-test_workflow_editor_actions.log 2>&1 \
+	  || { echo "  ❌ test_workflow_editor_actions 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_workflow_editor_actions.log; exit 1; }
+	@tail -1 /tmp/prog-test_workflow_editor_actions.log
 	@./.venv/bin/python tests/e2e/test_job_events_sse.py > /tmp/prog-test_job_events_sse.log 2>&1 \
 	  || { echo "  ❌ test_job_events_sse 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_job_events_sse.log; exit 1; }

@@ -11,7 +11,9 @@
  * 否则「被拦住了」和「桩坏了根本没走到」长得一模一样。
  */
 const fs = require("fs"), path = require("path"), vm = require("vm");
-const src = fs.readFileSync(path.join(__dirname, "..", "..", "apps", "web", "app.js"), "utf8");
+// 编辑器 2026-10-25 拆成三份(图逻辑 → 画布 → 主程序),照 index.html 的顺序一起加载
+const src = ["wf_graph.js", "wf_canvas.js", "app.js"].map((f) =>
+  fs.readFileSync(path.join(__dirname, "..", "..", "apps", "web", f), "utf8")).join("\n;\n");
 
 let 过 = 0; const 挂 = [];
 const 该跑几组 = 4; const 走过 = [];
@@ -38,8 +40,11 @@ const ctx = {
   console, setTimeout, clearTimeout, Promise, JSON, Math, String, Number, Array, Object, Map, Set, Date,
   encodeURIComponent, decodeURIComponent, URLSearchParams, Error,
   CSS: { escape: (s) => s },
-  document: { querySelector: 取, querySelectorAll: () => [], getElementById: 取, createElement: () => 造("new"),
-              addEventListener() {}, body: { classList: { add() {}, remove() {}, contains: () => false } } },
+  document: { querySelector: 取, querySelectorAll: () => [], getElementById: (id) => (id === "mask" ? null : 取(id)),
+              createElement: () => 造("new"), addEventListener() {},
+              body: { classList: { add() {}, remove() {}, contains: () => false },
+                      // 弹层挂上来时把它的内容记进「告诉了人」—— 409 现在用的是带三个选项的弹层,不是系统弹框
+                      appendChild: (el) => 弹框.push(String(el.innerHTML || "")) } },
   window: { addEventListener() {} }, location: { hash: "#/apps" },
   localStorage: { getItem: (k) => ({ "aimc.user": "U002", "aimc.proj": "p" })[k] ?? null, setItem() {}, removeItem() {} },
   crypto: { randomUUID: () => "k" + Math.random() },
@@ -90,7 +95,8 @@ async function 跑(名, 动作) {
   const ok = await 动.存草稿().catch(() => "抛了");
   ck("409 时存草稿返回 false", ok === false, ok);
   ck("409 后没有重新拉详情(没刷新)", !请求们.some((r) => r.startsWith("GET ")), 请求们);
-  ck("409 的提示里说了改动还留在页面上", 弹框.some((m) => m.includes("还留在页面上")), 弹框);
+  ck("409 的提示里说了改动还留在页面上", 弹框.some((m) => m.includes("还留在页面上") || m.includes("修改仍在本页")), 弹框);
+  ck("409 不提供强制覆盖(没有明确权限和服务端支持,§10.3)", 弹框.length > 0 && !弹框.some((m) => m.includes("覆盖对方") || m.includes("强制")), 弹框);
 
   组("对照:存成功时三个动作照常发请求(不然「拦住了」和「桩坏了」分不开)");
   草稿回 = 200;

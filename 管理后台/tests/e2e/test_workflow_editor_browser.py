@@ -1,0 +1,283 @@
+"""编排页 · 流程图编辑器在**真浏览器**里拖一遍(无窗口 Chrome + Selenium)—— 交互控件详细设计 V1.0 的 T01–T21。
+
+## 为什么要真浏览器
+拖动、拖线、框选、缩放后拖动、Esc 取消 —— 这些是**指针事件序列**,桩里只能直接调函数,
+「函数对」和「手势接到了函数上」是两件事。这一份用真的鼠标动作去拖,然后**读页面里的 图态**核对结果
+(读的是页面自己的数据,不是看截图猜)。
+
+## 它碰什么
+只碰一条专用工作流「编辑器验收(自动测试)」:没有就建,每次跑之前把草稿重置成固定的小图。
+不运行、不冻结、不发布。要 `make dev`(管理后台在 8801)和本机 Chrome;缺哪个都**明确报出来并退非 0**。
+
+  ./.venv/bin/python tests/e2e/test_workflow_editor_browser.py
+"""
+import json
+import os
+import sys
+import time
+import urllib.request
+
+基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
+项目 = os.environ.get("AIMC_PROJECT", "project_demo_a")
+我 = os.environ.get("AIMC_USER", "U002")
+名称 = "编辑器验收(自动测试)"
+
+过, 挂 = [0], []
+
+
+def ck(名, 真, 补=None):
+    print(f"  {'✅' if 真 else '❌'} {名}" + ("" if 真 or 补 is None else "  " + json.dumps(补, ensure_ascii=False, default=str)[:240]))
+    if 真:
+        过[0] += 1
+    else:
+        挂.append(名)
+
+
+def 打(方法, 路, 体=None, 头=None):
+    h = {"X-Dev-User": 我, "content-type": "application/json", **(头 or {})}
+    r = urllib.request.Request(基址 + f"/api/v1/projects/{项目}" + 路, method=方法,
+                               data=json.dumps(体).encode() if 体 is not None else None, headers=h)
+    with urllib.request.urlopen(r, timeout=20) as x:
+        return json.loads(x.read() or b"{}")
+
+
+夹具定义 = {
+    "nodes": [
+        {"id": "start", "type": "start", "name": "开始", "config": {"input_schema": {"type": "object", "properties": {"单号": {"type": "string"}}, "required": []}}},
+        {"id": "llm_1", "type": "llm", "name": "整理问题", "config": {"bindings": {"单号": {"source": "input", "pointer": "/单号"}},
+                                                                   "output_schema": {"type": "object", "properties": {"text": {"type": "string"}, "风险": {"type": "string"}}, "required": ["text"]}}},
+        {"id": "condition_1", "type": "condition", "name": "判断风险", "config": {"branches": [{"key": "需关注", "when": {"op": "equals",
+            "left": {"source": "node", "node_id": "llm_1", "pointer": "/风险"}, "right": {"source": "constant", "value": "高"}}}], "else_policy": "fail"}},
+        {"id": "human_1", "type": "human", "name": "人工核对", "config": {"request_kind": "核对", "candidate_roles": ["approver"], "allowed_fields": ["定稿"],
+            "expires_at_policy": {"小时": 48, "到期": "fail"}, "payload_binding": {"摘要": {"source": "node", "node_id": "llm_1", "pointer": "/text"}}}},
+        {"id": "tool_1", "type": "tool", "name": "写入", "config": {"bindings": {"定稿": {"source": "node", "node_id": "human_1", "pointer": "/定稿"}}}},
+        {"id": "end", "type": "end", "name": "返回结果", "config": {"output_schema": {"type": "object", "properties": {}, "required": []}, "bindings": {}}},
+    ],
+    "edges": [
+        {"source": "start", "target": "llm_1", "port": "success"},
+        {"source": "llm_1", "target": "condition_1", "port": "success"},
+        {"source": "condition_1", "target": "human_1", "port": "branch", "branch_key": "需关注"},
+        {"source": "condition_1", "target": "end", "port": "branch", "branch_key": "else"},
+        {"source": "human_1", "target": "tool_1", "port": "success"},
+        {"source": "tool_1", "target": "end", "port": "success"},
+    ],
+}
+夹具布局 = {"start": {"x": 40, "y": 160}, "llm_1": {"x": 280, "y": 160}, "condition_1": {"x": 520, "y": 160},
+            "human_1": {"x": 760, "y": 80}, "tool_1": {"x": 1000, "y": 80}, "end": {"x": 1000, "y": 280}}
+
+
+def 准备工作流():
+    ws = 打("GET", "/workflows").get("items") or 打("GET", "/workflows").get("rows") or []
+    wid = next((w.get("id") for w in ws if w.get("名称") == 名称 or w.get("name") == 名称), None)
+    if not wid:
+        wid = 打("POST", "/workflows", {"名称": 名称, "用途": "编辑器浏览器测试专用,每次跑会重置草稿", "模板": "空白"})["id"]
+    d = 打("GET", f"/workflows/{wid}")
+    打("PATCH", f"/workflows/{wid}/draft", {"定义": 夹具定义, "布局": 夹具布局}, {"If-Match": str(d["草稿"]["revision"])})
+    return wid
+
+
+def main():
+    print("编排页 · 流程图编辑器在真浏览器里拖一遍(T01–T21)")
+    try:
+        urllib.request.urlopen(基址 + "/", timeout=5)
+    except Exception as e:
+        print(f"❌ 管理后台没起(make dev):{e}"); return 2
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.common.action_chains import ActionChains
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.common.keys import Keys
+    except ImportError:
+        print("❌ 没装 selenium:./.venv/bin/pip install selenium"); return 2
+    wid = 准备工作流()
+    o = webdriver.ChromeOptions()
+    o.add_argument("--headless=new"); o.add_argument("--window-size=1500,1000")
+    d = webdriver.Chrome(options=o)
+    js = d.execute_script
+    try:
+        d.get(基址 + "/")
+        js(f"localStorage.setItem('aimc.user','{我}');localStorage.setItem('aimc.proj','{项目}');"
+           f"localStorage.removeItem('wf.视口.{wid}');localStorage.setItem('wf.自动保存','0');")
+        d.get(基址 + f"/#/workflow/{wid}/搭建")
+        等(d, lambda: js("return !!(window.图态 || (typeof 图态!=='undefined' && 图态)) && !!document.querySelector('#vw-g')"))
+        d.find_element(By.ID, "vw-g").click()
+        等(d, lambda: js("return document.querySelectorAll('.wfnode2').length") == 6)
+        js("画布动作.缩放到(1); const v=画布动作.视口(); v.x=0; v.y=0; 画_视口();")
+        cv = d.find_element(By.ID, "cv")
+        态 = lambda: js("return {布局: 图态.布局, 边: 图态.定义.edges.map(图逻辑.边键), 节点: 图态.定义.nodes.map(n=>n.id), 脏: 图态.脏, 撤: 历史().条数(), 选: [...图态.画.选], 线: 图态.画.线}")
+        节 = lambda id: d.find_element(By.CSS_SELECTOR, f'.wfnode2[data-id="{id}"]')
+        A = lambda: ActionChains(d)
+
+        print("\n▸ T01 拖动节点:线跟着走,位置按缩放换算,一次撤销恢复")
+        前 = 态()
+        A().move_to_element_with_offset(节("llm_1"), 0, -20).click_and_hold().move_by_offset(10, 0).move_by_offset(70, 40).release().perform()
+        后 = 态()
+        p0, p1 = 前["布局"]["llm_1"], 后["布局"]["llm_1"]
+        ck("100%:拖 80×40 屏幕像素 → 位置挪 80×40(8 像素网格吸附)", (p1["x"] - p0["x"], p1["y"] - p0["y"]) == (80, 40), [p0, p1])
+        d0 = js("return document.querySelector('[data-edge=\"start|success||llm_1\"]').getAttribute('d')")
+        ck("拖完之后进线的终点跟着节点走(线是实时重画的)", d0.endswith(f"{p1['x']},{p1['y'] + 20}"), d0)
+        ck("松手只记一条历史", 后["撤"] == 前["撤"] + 1, [前["撤"], 后["撤"]])
+        js("画布动作.缩放到(0.5); const v=画布动作.视口(); v.x=0; v.y=0; 画_视口();")
+        A().move_to_element_with_offset(节("llm_1"), 0, -8).click_and_hold().move_by_offset(10, 0).move_by_offset(30, 20).release().perform()
+        p2 = 态()["布局"]["llm_1"]
+        ck("50%:拖 40×20 屏幕像素 → 位置挪 80×40(不会偏一倍)", (p2["x"] - p1["x"], p2["y"] - p1["y"]) == (80, 40), [p1, p2])
+        js("画布动作.缩放到(1); const v=画布动作.视口(); v.x=0; v.y=0; 画_视口();")
+        cv.click(); 按(d, cv, Keys.COMMAND, "z"); 按(d, cv, Keys.COMMAND, "z")
+        ck("撤销两次 → 回到拖之前", 态()["布局"]["llm_1"] == p0, 态()["布局"]["llm_1"])
+        # Esc 取消拖动:回到原位、不记历史
+        前 = 态()
+        A().move_to_element_with_offset(节("llm_1"), 0, -20).click_and_hold().move_by_offset(60, 60).perform()
+        A().send_keys(Keys.ESCAPE).perform(); A().release().perform()
+        ck("拖到一半按 Esc → 回到原位,不留半次位移、不记历史", 态()["布局"]["llm_1"] == 前["布局"]["llm_1"] and 态()["撤"] == 前["撤"], 态()["布局"]["llm_1"])
+
+        print("\n▸ T02 区分点击与拖动")
+        前 = 态()
+        节("llm_1").find_element(By.CSS_SELECTOR, ".more").click()
+        ck("点节点上的「⋯」→ 菜单打开,节点没被拖走、没标位置已改",
+           js("return !!document.querySelector('#wf-menu')") and 态()["布局"] == 前["布局"] and 态()["撤"] == 前["撤"])
+        A().send_keys(Keys.ESCAPE).perform(); js("关菜单()")
+        A().move_to_element_with_offset(节("llm_1"), 0, -20).click_and_hold().move_by_offset(2, 2).release().perform()
+        ck("移动不到 4 像素算单击:选中它,不改位置", 态()["选"] == ["llm_1"] and 态()["布局"] == 前["布局"], 态()["选"])
+
+        print("\n▸ T03 点线删线")
+        k = "tool_1|success||end"
+        A().move_to_element(d.find_element(By.CSS_SELECTOR, f'[data-edge="{k}"]')).click().perform()
+        ck("点线 → 选中这条线,工具条出来", 态()["线"] == k and js("return !document.querySelector('#wf-edgebar').hidden"), 态()["线"])
+        cv.send_keys(Keys.DELETE)
+        s = 态()
+        ck("Delete → 只删这条线,6 个步骤都在", k not in s["边"] and len(s["节点"]) == 6, s["边"])
+        ck("提示「已断开」并带撤销", "已断开" in js("return document.querySelector('#wf-toast').textContent") and js("return !!document.querySelector('#wf-toast-u')"))
+        d.find_element(By.ID, "wf-toast-u").click()
+        ck("点提示里的撤销 → 线回来了", k in 态()["边"])
+
+        print("\n▸ T04 连线取消")
+        前 = 态()
+        出 = 节("llm_1").find_element(By.CSS_SELECTOR, '[data-out="llm_1"]')
+        A().move_to_element(出).click_and_hold().move_by_offset(0, 200).release().perform()
+        ck("从出口拖到空白处松开 → 不建线、不删线、不建步骤", 态()["边"] == 前["边"] and 态()["节点"] == 前["节点"], 态()["边"])
+
+        print("\n▸ T05 / T06 重连与替换")
+        js("适应画布()")       # 整张图放进视野:人只会拖看得见的东西(拖到可视区外,事件落在别的元素上)
+        k = "human_1|success||tool_1"
+        A().move_to_element(d.find_element(By.CSS_SELECTOR, f'[data-edge="{k}"]')).click().perform()
+        dst = d.find_element(By.CSS_SELECTOR, '[data-endh="dst"]')
+        A().move_to_element(dst).click_and_hold().move_to_element(节("llm_1")).release().perform()
+        ck("T05 把终点拖到会成环的步骤上 → 原线保留,提示原因", k in 态()["边"] and "原线保留" in js("return document.querySelector('#wf-toast').textContent"),
+           js("return document.querySelector('#wf-toast').textContent"))
+        A().move_to_element(d.find_element(By.CSS_SELECTOR, f'[data-edge="{k}"]')).click().perform()
+        dst = d.find_element(By.CSS_SELECTOR, '[data-endh="dst"]')
+        A().move_to_element(dst).click_and_hold().move_to_element_with_offset(节("end"), 0, -10).release().perform()
+        s = 态()
+        ck("T05 拖到合法步骤 → 原子替换:旧线没了,新线在", k not in s["边"] and "human_1|success||end" in s["边"], s["边"])
+        js("撤销()")
+        出 = 节("llm_1").find_element(By.CSS_SELECTOR, '[data-out="llm_1"]')
+        A().move_to_element(出).click_and_hold().move_to_element_with_offset(节("end"), 0, -10).release().perform()
+        ck("T06 已连着 A→B 再拖到 C → 先弹「将把下一步从 B 改为 C」", "将把下一步从" in (js("return (document.querySelector('#mb')||{}).textContent") or ""))
+        d.find_element(By.ID, "rp-ok").click()
+        s = 态()
+        ck("T06 确认后只剩一条(整理问题 → 返回结果),不会两条线同时执行",
+           [e for e in s["边"] if e.startswith("llm_1|success")] == ["llm_1|success||end"], s["边"])
+        js("撤销()")
+
+        print("\n▸ T07 / T08 删除节点")
+        js("画布动作.选节点(['human_1'])"); cv.send_keys(Keys.DELETE)
+        mb = js("return (document.querySelector('#mb')||{}).textContent") or ""
+        ck("T07 删人工核对 → 弹影响(删 1 步 2 条线、写入在用它的定稿)", "1 个步骤" in mb and "2 条连线" in mb and "写入" in mb, mb[:200])
+        ck("T07 人工核对不给「接通前后步骤」(不能删了核对直接写入)", not js("return !!document.querySelector('#dl-br')"))
+        d.find_element(By.ID, "dl-ok").click()
+        s = 态()
+        ck("T07 删完:判断风险 → 写入 没被接上", "condition_1|branch|需关注|tool_1" not in s["边"] and "human_1" not in s["节点"], s["边"])
+        js("画布动作.选节点(['tool_1'])")
+        ck("T08 写入那一步的数据来源标「原来源已删除」(不清空、不改成别的)",
+           "原来源" in js("return document.querySelector('#pn').textContent") and "已删除" in js("return document.querySelector('#pn').textContent"))
+        js("撤销()")
+        ck("T08 撤销一次 → 步骤、连线、引用全回来", "human_1" in 态()["节点"] and "human_1|success||tool_1" in 态()["边"])
+
+        print("\n▸ T11 / T12 值控件与快捷键")
+        js("图态.选中='llm_1'; 图态.面板页='高级'; 画_面板();")
+        框 = d.find_element(By.CSS_SELECTOR, "#pn .inwrap input")
+        前 = js("return 节点('llm_1').config.max_output_tokens")
+        框.clear(); 框.send_keys("1.8"); 框.send_keys(Keys.TAB)
+        ck("T11 整数框填 1.8 → 显示错误,不写进定义(不截成 1)",
+           js("return 节点('llm_1').config.max_output_tokens") == 前 and "整数" in js("return document.querySelector('#pn .ferr').textContent"))
+        框 = d.find_element(By.CSS_SELECTOR, "#pn .inwrap input")
+        框.click(); 框.send_keys(Keys.BACKSPACE); 框.send_keys(Keys.DELETE)
+        ck("T12 在输入框里按 Delete / Backspace → 只删文字,步骤一个没少", len(态()["节点"]) == 6)
+
+        print("\n▸ T17 不用拖也能做完:键盘移动、点出口再点目标")
+        js("适应画布()")
+        js("画布动作.选节点(['end'])")
+        前 = 态()["布局"]["end"]
+        节("end").send_keys(Keys.ARROW_RIGHT); 节("end").send_keys(Keys.SHIFT, Keys.ARROW_DOWN)
+        后 = 态()["布局"]["end"]
+        ck("方向键 8 像素、Shift+方向键 24 像素", (后["x"] - 前["x"], 后["y"] - 前["y"]) == (8, 24), [前, 后])
+        js("撤销()")
+        ck("连续方向键微调合并成一条历史:撤销一次就回到原位", 态()["布局"]["end"] == 前, 态()["布局"]["end"])
+        出 = 节("tool_1").find_element(By.CSS_SELECTOR, '[data-out="tool_1"][data-oi="1"]')
+        A().move_to_element(出).click().perform()
+        ck("点一下出口(不拖)→ 进入「点目标」模式", js("return !!图态.画.待连"))
+        A().move_to_element_with_offset(节("llm_1"), 0, -10).click().perform()
+        ck("再点目标 → 不合法(会成环)时不建线,说原因", "tool_1|error||llm_1" not in 态()["边"])
+        出 = 节("tool_1").find_element(By.CSS_SELECTOR, '[data-out="tool_1"][data-oi="1"]')
+        A().move_to_element(出).click().perform(); time.sleep(0.3)
+        ck("(再点一次出口,重新进入「点目标」模式)", js("return !!图态.画.待连"), js("return [(document.querySelector('#wf-toast')||{}).textContent]"))
+        A().move_to_element(节("end")).click().perform()
+        ck("点出口 → 点合法目标 → 建线(写入 · 失败时 → 返回结果)", "tool_1|error||end" in 态()["边"],
+           态()["边"])
+        ck("没选中连线时,连线工具条真的藏起来了(不挂在旧位置挡住步骤)",
+           js("return getComputedStyle(document.querySelector('#wf-edgebar')).display") == "none")
+        js("撤销()")
+
+        print("\n▸ T15 未保存时离开")
+        ck("有未保存的修改(上面这些都是本地编辑)", 态()["脏"])
+        js("location.hash='#/workflows'")
+        time.sleep(0.4)
+        ck("切到别的页 → 拦下来问:保存并离开 / 留在此页 / 放弃", js("return !!document.querySelector('#lv-save') && !!document.querySelector('#lv-stay')"))
+        d.find_element(By.ID, "lv-stay").click(); time.sleep(0.3)
+        ck("选「留在此页」→ 还在这条工作流,修改还在", js("return location.hash").startswith(f"#/workflow/") and 态()["脏"])
+
+        print("\n▸ T21 完整链路:加步骤 → 连线 → 配置 → 删线 → 撤销 → 保存 → 重开")
+        js("加到视口中间('transform')")
+        新 = [n for n in 态()["节点"] if n.startswith("transform_")]
+        ck("步骤库「添加」→ 放进画布并选中", len(新) == 1 and 态()["选"] == 新, 态()["选"])
+        新 = 新[0]
+        js(f"画布动作.连上('tool_1', {{port:'error', branch_key:null}}, '{新}')")
+        js(f"画布动作.删线('{新}'.length ? 'tool_1|error||{新}' : '')"); js("撤销()")
+        ck("连上 → 删线 → 撤销:线还在", f"tool_1|error||{新}" in 态()["边"])
+        保 = js("return 做_存草稿()")
+        等(d, lambda: js("return 图态.保存态") == "已保存")
+        存时 = 态()
+        rev = js("return 图态.revision")
+        ck("保存后状态写着「已保存 rN」", f"r{rev}" in d.find_element(By.ID, "savest").text, d.find_element(By.ID, "savest").text)
+        d.refresh()
+        等(d, lambda: js("return typeof 图态!=='undefined' && !!图态 && 图态.wid") == wid)
+        重开 = js("return {布局: 图态.布局, 边: 图态.定义.edges.map(图逻辑.边键), 节点: 图态.定义.nodes.map(n=>n.id)}")
+        ck("重开之后步骤、连线、布局和保存前一致",
+           sorted(重开["节点"]) == sorted(存时["节点"]) and sorted(重开["边"]) == sorted(存时["边"])
+           and all(重开["布局"].get(k) == v for k, v in 存时["布局"].items() if k != "$线"), 重开)
+    finally:
+        d.quit()
+    print(f"\n{'❌' if 挂 else '✅'} 流程图编辑器真浏览器 {过[0]} 条过" + (f",挂 {len(挂)} 条:{' / '.join(挂)}" if 挂 else ""))
+    return 1 if 挂 else 0
+
+
+def 等(d, 条件, 秒=10):
+    限 = time.time() + 秒
+    while time.time() < 限:
+        try:
+            if 条件():
+                return True
+        except Exception:
+            pass
+        time.sleep(0.1)
+    raise TimeoutError("等不到页面就绪")
+
+
+def 按(d, el, 修饰, 键):
+    from selenium.webdriver.common.action_chains import ActionChains
+    from selenium.webdriver.common.keys import Keys
+    ActionChains(d).key_down(修饰).send_keys(键).key_up(修饰).perform()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

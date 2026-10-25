@@ -837,10 +837,12 @@ if os.path.isdir(_web):
         """
         _p = os.path.join(_web, "index.html")
         try:
-            _js = os.path.join(_web, "app.js")
-            _v = hashlib.sha256(open(_js, "rb").read()).hexdigest()[:12]
-            _html = open(_p, encoding="utf-8").read().replace(
-                'src="/static/app.js"', f'src="/static/app.js?v={_v}"')
+            # 每个脚本**各按自己的内容**加版本号(2026-10-25 编辑器拆出 wf_graph.js / wf_canvas.js):
+            # 只给 app.js 加的话,新 app.js 会配着缓存里的旧画布跑 —— 两份对不上,而报错指向 app.js
+            _html = open(_p, encoding="utf-8").read()
+            for _名 in ("wf_graph.js", "wf_canvas.js", "app.js"):
+                _v = hashlib.sha256(open(os.path.join(_web, _名), "rb").read()).hexdigest()[:12]
+                _html = _html.replace(f'src="/static/{_名}"', f'src="/static/{_名}?v={_v}"')
             # ⚠️ **首页本身也不许缓存。** 2026-10-08 用户验收时撞上:
             # app.js 用内容寻址的 `?v=<哈希>`,缓存绕不过去 —— 但那个地址
             # **写在这个 HTML 里**。HTML 被缓存住,就永远拿到旧的 `?v=`,

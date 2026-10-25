@@ -804,7 +804,11 @@ async function 页_画布(路) {
              布局: d["草稿"]["布局"] || {}, revision: d["草稿"]["revision"],
              节点库: d["节点库"], 版本们: d["版本们"], 选中: null, 面板页: "设置", 视图: "步骤",
              报告: d["草稿"]["上次校验报告"], 脏: false, 底Tab: "问题", 事件: [], 资源,
-             最近测试: null };
+             最近测试: null,
+             // 检查报告对着哪一份定义(§10.4):定义变了报告就标过期,不清掉也不冒充当前。
+             // 服务端说「改过之后没再校验」时,载入的这份报告本来就过期了
+             报告定义: d["校验状态"] === "改过之后没再校验" ? null : JSON.stringify(d["草稿"]["定义"] || { nodes: [], edges: [] }),
+             报告rev: d["草稿"]["revision"], 编辑序号: 0, 已存序号: 0, 保存态: "已保存" };
   }
   图态.页签 = 工作流页签.includes(decodeURIComponent(签 || "")) ? decodeURIComponent(签) : "概览";
   画_画布();
@@ -818,20 +822,24 @@ function 画_画布() {
   $("#main").innerHTML = `
     <div class="crumb"><a href="#/workflows">工作流</a> / ${esc(g.名称)}</div>
     <div class="head"><div><h1>${esc(g.名称)}</h1>
-      <div class="sub">草稿 r${g.revision}
-        <span id="dirty" class="stale" style="display:${g.脏 ? "" : "none"}">有未保存的改动</span>
+      <div class="sub"><span id="savest" role="status" aria-live="polite"></span>
         ${g.用途 ? ` · ${esc(g.用途)}` : ""}</div></div>
-      <div><button id="save">保存草稿</button> <button id="v">检查配置</button>
+      <div><label class="k" title="只存草稿:停顿 1.5 秒后保存;不运行、不发布"><input type="checkbox" id="autosave"> 自动保存草稿</label>
+        <button id="save">保存草稿</button> <button id="v">检查配置</button>
         <button class="pri" id="freeze">准备发布</button></div></div>
     <nav class="wftabs">${签}</nav>
     <div id="tabbody"></div>
     <div class="footbar"><span id="fb"></span></div>`;
   $("#save").onclick = 做_存草稿;
+  $("#autosave").checked = 自动保存开着();
+  $("#autosave").disabled = !能改图();
+  $("#autosave").onchange = (e) => { try { localStorage.setItem("wf.自动保存", e.target.checked ? "1" : "0"); } catch (er) { /* 存不了就只对这一页有效 */ }
+    if (e.target.checked) 自动保存排队(); };
   $("#v").onclick = 做_校验;
   $("#freeze").onclick = 弹_准备发布;
   ({ 概览: 画_概览, 搭建: 画_搭建, 测试: 画_测试, 运行记录: 画_运行记录, 版本与发布: 画_版本, 设置: 画_设置 }
     [g.页签] || 画_概览)();
-  画_底栏();
+  画_底栏(); 画_保存状态();
 }
 
 function 画_底栏() {
@@ -843,7 +851,81 @@ function 画_底栏() {
             : `上次检查配置:<b>${r["阻断数"]} 处要改</b> / ${r["警告数"]} 条提醒(在「搭建」下方)`)
          : "还没检查过配置 —— 页面上看着没问题,不代替服务端检查");
 }
-function 标脏() { 图态.脏 = true; if ($("#dirty")) $("#dirty").style.display = ""; 画_底栏(); }
+function 标脏() {
+  图态.脏 = true; 图态.编辑序号 = (图态.编辑序号 || 0) + 1;
+  if (图态.保存态 !== "保存中" && 图态.保存态 !== "冲突") 图态.保存态 = "未保存";
+  画_保存状态(); 画_底栏(); 自动保存排队();
+  if (typeof 画_工具条态 === "function" && $("#cv")) 画_工具条态();
+}
+
+/* ── 保存状态(W02):未保存 / 保存中 / 已保存 rN / 失败 / 冲突 —— 一直看得见,**不靠提示消失代表成功** ── */
+function 画_保存状态() {
+  const el = $("#savest"); if (!el) return;
+  const g = 图态, 态 = g.保存态;
+  const 文 = { 已保存: `已保存 · 草稿 r${g.revision}`, 未保存: `有未保存的修改 · 草稿 r${g.revision}`,
+    保存中: g.脏 && g.编辑序号 !== g.保存中序号 ? "保存中…(保存发出后你又改了,这些还没存)" : "保存中…",
+    失败: "未保存成功,本页修改仍保留 —— 点「保存草稿」重试", 冲突: "其他人已更新这张图,你的修改仍在本页 —— 先处理冲突" }[态] || 态;
+  el.textContent = 文;
+  el.className = { 已保存: "ok", 未保存: "stale", 保存中: "stale", 失败: "err", 冲突: "err" }[态] || "";
+  const b = $("#save"); if (b) b.disabled = 态 === "保存中" || !能改图();
+}
+
+/* ── 图编辑命令层(§12):所有改图的入口都从这里过 —— 记撤销、标未保存、判检查报告过期 ──
+ * fn 返回 false = 这次不改(比如校验没过);fn 里抛错 = 回到改之前,不留半次。 */
+function 能改图() { return typeof 我的角色 === "undefined" || 我的角色 === "editor" || 我的角色 === "admin"; }
+function 历史() { return 图态.历史 || (图态.历史 = 图逻辑.历史()); }
+function 改图(名, fn, { 合并键 = null, 重绘 = true } = {}) {
+  if (!能改图()) { 提示("只读:你没有「改编排草稿」的权限 —— 可以查看、缩放、查找"); return false; }
+  const g = 图态, 前 = 图逻辑.快照(g.定义, g.布局);
+  let r;
+  try { r = fn(); } catch (e) { 回到(前); throw e; }
+  if (r === false) { 回到(前); if (重绘) 重画全部(); return false; }
+  const 后 = 图逻辑.快照(g.定义, g.布局);
+  if (前 === 后) return r;
+  历史().记(名, 前, 后, 合并键);
+  标脏();
+  if (重绘) 重画全部();
+  return r === undefined ? true : r;
+}
+function 回到(快照) { const o = JSON.parse(快照); 图态.定义 = o.定义; 图态.布局 = o.布局; }
+function 撤销() {
+  if (!能改图()) return;
+  const x = 历史().撤销();
+  if (!x) { 提示("没有可以撤销的编辑"); return; }
+  回到(x.快照); if (typeof 清理选择 === "function") 清理选择(); 标脏(); 重画全部();
+  提示(`已撤销:${x.名}`);
+}
+function 重做() {
+  if (!能改图()) return;
+  const x = 历史().重做();
+  if (!x) { 提示("没有可以重做的编辑"); return; }
+  回到(x.快照); if (typeof 清理选择 === "function") 清理选择(); 标脏(); 重画全部();
+  提示(`已重做:${x.名}`);
+}
+function 重画全部() {
+  if (!图态 || 图态.页签 !== "搭建" || !$("#pn")) { 画_底栏(); return; }
+  if (图态.视图 === "流程图" && $("#steps")) 画_图(); else if ($("#steps")) 画_步骤();
+  画_面板(); 画_问题(); 画_底栏();
+}
+const 检查过期 = () => !!(图态.报告 && 图态.报告定义 !== JSON.stringify(图态.定义));
+
+/* 编辑区底部的结果提示 + 撤销入口(W29)。**自动消失不清撤销历史** */
+let _提示时 = 0;
+function 提示(文, { 撤销: 可撤 = false } = {}) {
+  let el = document.getElementById("wf-toast");
+  if (!el) { el = document.createElement("div"); el.id = "wf-toast"; el.className = "wftoast"; el.setAttribute("role", "status"); document.body.appendChild(el); }
+  el.innerHTML = `<span>${esc(文)}</span>${可撤 && 能改图() ? ' <button id="wf-toast-u">撤销</button>' : ""}`;
+  el.hidden = false;
+  const u = document.getElementById("wf-toast-u"); if (u) u.onclick = () => { 撤销(); el.hidden = true; };
+  clearTimeout(_提示时); _提示时 = setTimeout(() => { el.hidden = true; }, 6000);
+}
+
+/* 敏感节点:人工核对、写入类业务动作 —— 删的时候不提供快捷桥接(§7.1) */
+function 是敏感节点(n) {
+  if (n.type === "human") return true;
+  if (n.type === "tool") { const t = 工具资源((n.config || {}).tool_version_id); return !t || t["读写"] !== "只读"; }
+  return false;
+}
 
 /* 节点辅助:业务名、次级标签、缺了哪几项 */
 const 节点 = (id) => 图态.定义.nodes.find((n) => n.id === id);
@@ -948,17 +1030,16 @@ function 画_搭建() {
                          : '<button id="vw-s">步骤列表</button> <button class="pri" id="vw-g">流程图</button>'}
       <span class="k">两种视图改的是同一份定义。挪流程图上的位置只改画法,不改执行顺序。</span>
     </div>
-    <div class="wfbuild">
+    <div class="wfbuild ${g.视图 === "流程图" ? "graph" : ""}">
       <div class="steps" id="steps"></div>
       <div class="wfpanel" id="pn"></div>
     </div>
     <div class="wfbottom"><div class="body" id="bt"></div></div>`;
+  // 切视图不丢配置、选中和定位(W07):两种视图读写同一份 图态
   $("#vw-s").onclick = () => { 图态.视图 = "步骤"; 画_搭建(); };
   $("#vw-g").onclick = () => { 图态.视图 = "流程图"; 画_搭建(); };
-  if (g.视图 === "流程图") {
-    $("#steps").innerHTML = `<div class="wfcanvas" id="cv" tabindex="0"></div>`;
-    画_图();
-  } else 画_步骤();
+  if (g.视图 === "流程图") { if (图态.画 && 图态.选中) 图态.画.选 = new Set([图态.选中]); 画_图(); }
+  else 画_步骤();
   画_面板(); 画_问题();
 }
 
@@ -979,13 +1060,16 @@ function 画_步骤() {
         ${缺.length ? `<span class="pill warn">缺 ${缺.length} 项</span>` : ""}
         ${坏[s.id] ? '<span class="pill fail">有要改的</span>' : ""}
         <span class="acts">
-          ${n.type === "end" ? "" : `<button data-after="${esc(s.id)}">在此后添加</button>`}
-          ${n.type === "start" ? "" : `<button data-del="${esc(s.id)}">删除</button>`}
+          ${n.type === "end" || !能改图() ? "" : `<button data-after="${esc(s.id)}">在此后添加</button>`}
+          ${n.type === "start" || !能改图() ? "" : `<button data-del="${esc(s.id)}">删除</button>`}
         </span></div>`;
-  }).join("") + `<div class="note">按执行顺序排。「在此后添加」会自动接好前后两条线;
-    要改去向,在右边「设置」最下面的「下一步」里选。</div>`;
+  }).join("") + `<div class="note">按执行顺序排。「在此后添加」会把新的一步接在这个出口和它原来的下一步之间;
+    要改去向,在右边「设置」最下面的「下一步」里选。删除不会自动接通前后步骤。</div>
+    ${能改图() ? `<div class="acts"><button id="st-undo" ${历史().能撤() ? "" : "disabled"}>撤销${历史().能撤() ? ":" + esc(历史().下一撤()) : ""}</button>
+      <button id="st-redo" ${历史().能重() ? "" : "disabled"}>重做</button></div>` : ""}`;
+  if ($("#st-undo")) { $("#st-undo").onclick = 撤销; $("#st-redo").onclick = 重做; }
   $("#steps").querySelectorAll("[data-sel]").forEach((b) => {
-    b.onclick = () => { 图态.选中 = b.dataset.sel; 画_步骤(); 画_面板(); };
+    b.onclick = () => { 图态.选中 = b.dataset.sel; if (图态.画) 图态.画.选 = new Set([b.dataset.sel]); 画_步骤(); 画_面板(); };
   });
   $("#steps").querySelectorAll("[data-after]").forEach((b) => { b.onclick = () => 弹_在此后添加(b.dataset.after); });
   $("#steps").querySelectorAll("[data-del]").forEach((b) => { b.onclick = () => 弹_删除步骤(b.dataset.del); });
@@ -1025,36 +1109,42 @@ function 弹_在此后添加(id) {
   };
 }
 
+function 默认配置(类型) {
+  return { start: { input_schema: { type: "object", properties: {}, required: [] } },
+           end: { output_schema: { type: "object", properties: {}, required: [] }, bindings: {} },
+           condition: { branches: [], else_policy: "fail" },
+           merge: { candidates: [], output_field: "out" },
+           human: { request_kind: "核对", candidate_roles: ["approver", "admin"], allowed_fields: ["定稿"],
+                    expires_at_policy: { 小时: 48, 到期: "fail" }, payload_binding: {} },
+           llm: { bindings: {}, output_schema: { type: "object", properties: { text: { type: "string" } },
+                  required: ["text"], additionalProperties: false } },
+           tool: { bindings: {} },
+           transform: { operations: [], output_schema: { type: "object" } } }[类型] || {};
+}
+
+/* 在某个出口后面加一步:新的一步接在这个出口和它原来的下一步之间 —— **加节点、删原线、加两条线是一个原子动作**,撤销一次全回来(§5.2) */
 function 加节点(类型, 接 = null) {
   const g = 图态;
-  let i = 1, id;
-  do { id = `${类型}_${i++}`; } while (g.定义.nodes.some((n) => n.id === id));
-  const 默认配置 = { start: { input_schema: { type: "object", properties: {}, required: [] } },
-                    end: { output_schema: { type: "object", properties: {}, required: [] }, bindings: {} },
-                    condition: { branches: [], else_policy: "fail" },
-                    merge: { candidates: [], output_field: "out" },
-                    human: { request_kind: "核对", candidate_roles: ["approver", "admin"], allowed_fields: ["定稿"],
-                             expires_at_policy: { 小时: 48, 到期: "fail" }, payload_binding: {} },
-                    llm: { bindings: {}, output_schema: { type: "object", properties: { text: { type: "string" } },
-                           required: ["text"], additionalProperties: false } },
-                    tool: { bindings: {} },
-                    transform: { operations: [], output_schema: { type: "object" } } }[类型] || {};
-  g.定义.nodes.push({ id, type: 类型, name: 步类型名[类型], config: JSON.parse(JSON.stringify(默认配置)) });
-  g.定义.edges = g.定义.edges || [];
-  if (接) {
-    // 原来从这个出口出去的线,改成从新的一步出去;再从这个出口接到新的一步
-    g.定义.edges.forEach((e) => {
-      if (e.source === 接.在后 && 同口(e, 接.口)) { e.source = id; e.port = "success"; delete e.branch_key; }
-    });
-    g.定义.edges.push(Object.assign({ source: 接.在后, target: id, port: 接.口.port },
-      接.口.branch_key ? { branch_key: 接.口.branch_key } : {}));
-  }
-  const 前 = (接 && g.布局[接.在后]) || null;
-  const 已 = Object.values(g.布局);
-  g.布局[id] = 前 ? { x: 前.x + 200, y: 前.y + 90 }
-                 : { x: 40 + (已.length % 4) * 200, y: 40 + Math.floor(已.length / 4) * 110 };
-  g.选中 = id; g.面板页 = "设置"; 标脏();
-  if (g.页签 === "搭建") 画_搭建();
+  let id = null;
+  改图(`添加「${步类型名[类型] || 类型}」`, () => {
+    id = 图逻辑.新id(g.定义, 类型);
+    g.定义.nodes.push({ id, type: 类型, name: 步类型名[类型], config: JSON.parse(JSON.stringify(默认配置(类型))) });
+    g.定义.edges = g.定义.edges || [];
+    if (接) {
+      const 原 = g.定义.edges.find((e) => e.source === 接.在后 && 图逻辑.同口(e, 接.口));
+      if (原 && !图逻辑.能插入吗(类型, 元).可以) {
+        提示(`没加:${图逻辑.能插入吗(类型, 元).为什么}`); return false;
+      }
+      if (原) 图逻辑.插入到线(g.定义, 图逻辑.边键(原), g.定义.nodes.pop(), 元);
+      else 图逻辑.连(g.定义, 接.在后, 接.口, id);
+    }
+    const 前 = (接 && g.布局[接.在后]) || null;
+    const 已 = Object.keys(g.布局).filter((k) => k !== "$线").length;
+    g.布局[id] = 前 ? { x: 前.x + 200, y: 前.y + 90 }
+                   : { x: 40 + (已 % 4) * 200, y: 40 + Math.floor(已 / 4) * 110 };
+    g.选中 = id; g.面板页 = "设置";
+  }, { 重绘: false });
+  if (id && 节点(id)) { if (g.画) g.画.选 = new Set([id]); if (g.页签 === "搭建") 画_搭建(); }
 }
 
 function 引用了它的(id) {
@@ -1064,24 +1154,45 @@ function 引用了它的(id) {
   return 图态.定义.nodes.filter((n) => n.id !== id && 找(n.config || {}));
 }
 
-function 弹_删除步骤(id) {
-  const n = 节点(id), 用它 = 引用了它的(id);
-  弹层(`删除「${业务名(n)}」`, `
-    ${用它.length ? `<div class="state err"><h3>有 ${用它.length} 步在用它的结果</h3>
-        <p>${用它.map((x) => esc(业务名(x))).join("、")} —— 删掉之后它们会取不到值,检查配置会点名报出来,要去改它们的数据来源。</p></div>`
-      : '<div class="k">没有别的步骤在用它的结果。</div>'}
-    <div class="note">删掉后,如果它只有一条进线和一条出线,会把前后两步直接接上;否则那几条线一起删掉。</div>
-    <div class="acts"><button class="pri danger" id="dl-ok">删除</button> <button id="dl-no">取消</button></div>`);
-  $("#dl-no").onclick = 关弹层;
-  $("#dl-ok").onclick = () => {
-    const g = 图态, 进 = g.定义.edges.filter((e) => e.target === id), 出 = g.定义.edges.filter((e) => e.source === id);
-    g.定义.edges = g.定义.edges.filter((e) => e.source !== id && e.target !== id);
-    if (进.length === 1 && 出.length === 1) g.定义.edges.push({ ...进[0], target: 出[0].target });
-    g.定义.nodes = g.定义.nodes.filter((x) => x.id !== id);
-    delete g.布局[id];
-    if (g.选中 === id) g.选中 = null;
-    关弹层(); 标脏(); 画_搭建();
+function 弹_删除步骤(id) { 弹_删除([id]); }
+
+/* 删除影响弹层(W28 · §7.1)。数量来自当前图,不是模板数字;**默认不自动接通前后步骤**。
+ * 没有引用、没有连线的普通步骤直接删 + 可撤销,不逐次弹确认。 */
+function 弹_删除(ids) {
+  if (!能改图()) return;
+  const g = 图态, 影 = 图逻辑.删除影响(g.定义, ids, 是敏感节点);
+  // 名字**删之前**就记下来:删完再取,那一步已经不在图里了(2026-10-25 桩测试逮到的崩溃)
+  const 名表 = {}; g.定义.nodes.forEach((n) => { 名表[n.id] = 业务名(n); });
+  const 名 = (id) => 名表[id] || id;
+  if (!影.要删.length) { 提示(影.跳过.map((x) => x.为什么).join(";") || "没有可删的步骤"); return; }
+  const 做 = (桥接) => {
+    改图(影.要删.length > 1 ? `删除 ${影.要删.length} 步` : `删除「${名(影.要删[0])}」`, () => {
+      图逻辑.删节点(g.定义, g.布局, 影.要删, { 桥接, 元, 是敏感: 是敏感节点 });
+      if (g.画) { 影.要删.forEach((x) => g.画.选.delete(x)); g.画.线 = null; }
+      if (影.要删.includes(g.选中)) g.选中 = null;
+    });
+    提示(`已删除 ${影.要删.map(名).join("、") || ""}` + (影.跳过.length ? `;保留:${影.跳过.map((x) => x.为什么).join(";")}` : "")
+      + (影.引用.length ? `;${影.引用.length} 处数据来源标成「原来源已删除」,要改` : ""), { 撤销: true });
   };
+  const 简单 = !影.删边.length && !影.引用.length && !影.跳过.length && !影.删结束;
+  if (简单) { 做(false); return; }
+  const 名们 = 影.要删.map(名);
+  弹层(影.要删.length > 1 ? `删除 ${影.要删.length} 步?` : `删除「${名们[0]}」?`, `
+    <p>将删除:<b>${影.要删.length}</b> 个步骤、<b>${影.删边.length}</b> 条连线。</p>
+    ${影.跳过.length ? `<p class="k">保留:${影.跳过.map((x) => esc(x.为什么)).join(";")}</p>` : ""}
+    ${影.引用.length ? `<div class="state err"><b>影响:</b>${影.引用.map((r) =>
+        `「${esc(名(r.节点id))}」正在用「${esc(名(r.引用的))}」的「${esc(r.字段 || r.路径)}」`).join(";")}
+        <br>删后那些地方会标「原来源已删除」,<b>不会自动改成别的来源</b>;运行和生成候选版本前要改好。</div>` : ""}
+    ${影.删结束 ? `<p class="k">⚠ 删掉「结束」后这条流程就没有合法的出口了,检查配置会报出来。</p>` : ""}
+    ${影.敏感.length ? `<p class="k">「${esc(影.敏感.map(名).join("、"))}」是人工核对或写入类步骤 —— 不提供「接通前后步骤」,免得删掉核对后直接写入。</p>` : ""}
+    <p>默认:删除步骤并断开关联线。后续步骤保留,需要重新选择数据来源。</p>
+    <div class="acts"><button id="dl-no">取消</button>
+      ${影.可桥接 ? `<button id="dl-br">删除并接通「${esc(名(影.可桥接.从.source))}」→「${esc(名(影.可桥接.到))}」</button>` : ""}
+      <button class="pri danger" id="dl-ok">删除步骤</button></div>`);
+  $("#dl-no").onclick = 关弹层;
+  $("#dl-ok").onclick = () => { 关弹层(); 做(false); };
+  if ($("#dl-br")) $("#dl-br").onclick = () => { 关弹层(); 做(true); };
+  $("#dl-no").focus();
 }
 
 /* ── 右边表单 ─────────────────────────────────────────────────── */
@@ -1105,27 +1216,55 @@ function 画_面板() {
   $("#pn").innerHTML = `
     <h3 style="margin:0">${esc(业务名(n))}</h3><div class="k">${esc(次级标签(n))}</div>
     ${缺.length ? `<div class="note">还缺:${缺.map((f) => `<b>${esc(中文名(f))}</b>`).join("、")}</div>` : ""}
+    ${(() => { const 失 = 图逻辑.失效引用(g.定义).filter((x) => x.节点id === n.id);
+      // 删除后「随即标记并定位」(§6.3 §7.1):不管停在哪个页签都看得到,不藏在「输入数据」里
+      return 失.length ? `<div class="ferr" role="alert">有 ${失.length} 处数据来源的原来源已删除:${失.map((x) =>
+        `「${esc(x.原名)} · ${esc(x.字段)}」`).join("、")} —— 在「输入数据」里选新来源,或撤销那次删除</div>` : ""; })()}
     ${问.map((q) => `<div class="err" style="padding:6px;margin:6px 0">${md(q["消息"])}<br>
         <span class="k">怎么改:${md(q["建议"])}</span></div>`).join("")}
     <div class="tabs">${头}</div>
     <div id="pp">${({ 设置: 表_设置, 输入数据: 表_输入, 结果字段: 表_结果, 高级: 表_高级 }[g.面板页] || 表_设置)(n)}</div>`;
   $("#pn").querySelectorAll("[data-pp]").forEach((b) => { b.onclick = () => { 图态.面板页 = b.dataset.pp; 画_面板(); }; });
+  if ($("#adv-cancel")) $("#adv-cancel").onclick = () => { $("#adv-json").value = JSON.stringify(n.config, null, 1); $("#adv-err").textContent = ""; };
+  $("#pn").querySelectorAll("[data-clr]").forEach((b) => {
+    b.onclick = () => { const i = $("#pn").querySelector(`[data-k="${b.dataset.clr}"]`); if (!i) return; i.value = ""; i.dispatchEvent(new Event("change")); i.focus(); };
+  });
   $("#pn").querySelectorAll("[data-k]").forEach((el) => {
     const fn = 控件表[+el.dataset.k];
-    const 触 = () => { fn(el); 标脏(); };
+    if (!能改图()) { el.disabled = true; return; }
+    // 每个控件的改动都走命令层(撤销 / 未保存 / 检查过期)。fn 返回 false = 输入不合法,**不写进定义、留在框里**
+    const 触 = () => 改图(`改「${业务名(n)}」的${el.dataset.lb || "配置"}`, () => fn(el),
+      { 合并键: el.tagName === "BUTTON" ? null : `${n.id}:${el.dataset.k}`, 重绘: false });
     if (el.tagName === "BUTTON") el.onclick = 触; else el.onchange = 触;
   });
 }
 // 改完要重画的控件(比如加了一行字段):先改数据,再重画面板和步骤
-const 重画 = () => { 画_面板(); if (图态.视图 === "步骤" && $("#steps")) 画_步骤(); else if ($("#cv")) 画_图(); };
+const 重画 = () => 重画全部();
 
 function 下拉(值, 选项, fn, 空 = "请选择") {
   const k = 挂控件(fn);
   return `<select data-k="${k}"><option value="">${esc(空)}</option>${选项.map(([v, t]) =>
     `<option value="${esc(v)}" ${v === 值 ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
 }
-function 输入框(值, fn, 提示 = "") {
-  return `<input data-k="${挂控件(fn)}" value="${esc(值 ?? "")}" placeholder="${esc(提示)}">`;
+function 输入框(值, fn, 提示 = "", { 可清空 = false } = {}) {
+  const k = 挂控件(fn);
+  // 「清空」只清文字,不删字段、不重置配置 —— 三个动作三种文案(§7.3)
+  return `<span class="inwrap"><input data-k="${k}" value="${esc(值 ?? "")}" placeholder="${esc(提示)}">${可清空
+    ? `<button type="button" class="clr" data-clr="${k}" aria-label="清空" title="清空这一格">×</button>` : ""}</span>`;
+}
+/* 整数 / 小数:**非法值不写进定义**,原样留在框里并说明(§8.3:不把 1.8 静默截成 1) */
+function 数字框(值, fn, { 整数 = false, 最小 = null, 提示 = "" } = {}) {
+  return 输入框(值, (el) => {
+    const t = String(el.value).trim(), 错 = el.parentNode && el.parentNode.nextElementSibling;
+    const 说 = (m) => { if (错 && 错.classList && 错.classList.contains("ferr")) 错.textContent = m; };
+    if (t === "") { 说(""); return fn(undefined); }
+    const v = Number(t);
+    if (!Number.isFinite(v) || (整数 && !Number.isInteger(v)) || (最小 != null && v < 最小)) {
+      说(`没改:要填${整数 ? "整数" : "数字"}${最小 != null ? `,不小于 ${最小}` : ""} —— 「${t}」不行`);
+      return false;
+    }
+    说(""); return fn(v);
+  }, 提示) + `<div class="ferr" role="alert"></div>`;
 }
 
 function 表_设置(n) {
@@ -1179,16 +1318,27 @@ function 表_设置(n) {
       + `<div class="k">到点没人处理:这次运行结束、记「已过期」,不写任何东西;想补就重新发起一次。</div>`;
   } else if (n.type === "condition") {
     const 源们 = 上游字段(n.id);
-    体 += `<label class="f">满足什么条件(从上往下,第一个满足的生效)</label>`
+    体 += `<label class="f">满足什么条件</label>
+      <div class="note">从上往下,<b>第一个满足的分支生效</b> —— 调顺序就是改执行逻辑,改完要重新检查。</div>`
       + (c.branches || []).map((b, i) => `<div class="card">
-          <div class="k">第 ${i + 1} 路 · 叫</div>${输入框(b.key, (el) => { b.key = el.value.trim(); 重画(); })}
+          <div class="k">第 ${i + 1} 路 · 叫</div>${输入框(b.key, (el) => {
+            const r = 图逻辑.分支改名(图态.定义, n.id, b.key, el.value);
+            if (!r.可以) { if (!r.没变) 提示(`没改名:${r.为什么}`); el.value = b.key; return false; }
+            重画(); })}
           <div class="k">取哪个值</div>${下拉(引用值(b.when?.left), 源们, (el) => { b.when = b.when || { op: "equals" }; b.when.left = 解引用(el.value); })}
           <div class="k">怎么比</div>${下拉(b.when?.op || "equals", [["equals", "等于"], ["not_equals", "不等于"],
               ["gt", "大于"], ["lt", "小于"], ["exists", "有值"], ["contains", "包含"]], (el) => { b.when.op = el.value; })}
           <div class="k">和什么比(固定值)</div>${输入框(b.when?.right?.value ?? "", (el) => {
-              b.when.right = { source: "constant", value: el.value }; })}
-          <button data-k="${挂控件(() => { c.branches.splice(i, 1); 重画(); })}">删掉这一路</button></div>`).join("")
-      + `<button data-k="${挂控件(() => { (c.branches = c.branches || []).push({ key: `第${(c.branches.length + 1)}路`,
+              b.when.right = { source: "constant", value: el.value }; }, "", { 可清空: true })}
+          ${!b.when?.left && b.when?.op !== "exists" ? `<div class="ferr">这一路还没选「取哪个值」—— 条件为空不会当成始终满足,检查配置会拦</div>` : ""}
+          <div class="acts">
+            <button data-k="${挂控件(() => { 图逻辑.分支移动(图态.定义, n.id, i, -1); 重画(); })}" ${i === 0 ? "disabled" : ""} aria-label="第 ${i + 1} 路上移">上移</button>
+            <button data-k="${挂控件(() => { 图逻辑.分支移动(图态.定义, n.id, i, 1); 重画(); })}" ${i === c.branches.length - 1 ? "disabled" : ""} aria-label="第 ${i + 1} 路下移">下移</button>
+            <button class="danger" data-k="${挂控件(() => {
+              const r = 图逻辑.删分支(图态.定义, n.id, i);
+              提示(`已删除「${r.键}」这一路` + (r.删边.length ? `和它的 ${r.删边.length} 条连线(目标步骤保留)` : ""), { 撤销: true }); 重画(); })}">删除分支</button></div></div>`).join("")
+      + `<button data-k="${挂控件(() => { let j = (c.branches || []).length + 1; while ((c.branches || []).some((x) => x.key === `第${j}路`)) j++;
+            (c.branches = c.branches || []).push({ key: `第${j}路`,
             when: { op: "equals", left: null, right: { source: "constant", value: "" } } }); 重画(); })}">加一路</button>`
       + `<label class="f">都不满足时</label>`
       + 下拉(c.else_policy, [["fail", "记成没完成(incomplete)"], ["end", "正常结束"]], (el) => { c.else_policy = el.value; })
@@ -1203,13 +1353,21 @@ function 表_设置(n) {
   // 下一步(连线编辑)
   const 口们 = 出口们(n);
   if (口们.length) {
-    const 候选 = 图态.定义.nodes.filter((x) => x.id !== n.id && x.type !== "start").map((x) => [x.id, 业务名(x)]);
+    // 同名步骤加简短序号区分 —— 业务人员不需要认内部 id(§6.2)
+    const 同名 = {};
+    const 候选 = 图态.定义.nodes.filter((x) => x.id !== n.id && x.type !== "start").map((x) => {
+      const 名 = 业务名(x); 同名[名] = (同名[名] || 0) + 1;
+      return [x.id, `${名}${图态.定义.nodes.filter((y) => 业务名(y) === 名).length > 1 ? ` #${同名[名]}` : ""} · ${次级标签(x)}`];
+    });
     体 += `<h4>下一步</h4>` + 口们.map((o) => {
       const e = 图态.定义.edges.find((x) => x.source === n.id && 同口(x, o));
+      // 和图上拖线**同一套校验**(连接校验:环 / 开始 / 作用域);不合法 → 不改,说为什么
       return `<div class="fieldrow"><label>${esc(o.名)}</label>${下拉(e ? e.target : "", 候选, (el) => {
-        图态.定义.edges = 图态.定义.edges.filter((x) => !(x.source === n.id && 同口(x, o)));
-        if (el.value) 图态.定义.edges.push(Object.assign({ source: n.id, target: el.value, port: o.port },
-          o.branch_key ? { branch_key: o.branch_key } : {}));
+        if (!el.value) { if (e) 图逻辑.删边(图态.定义, 图逻辑.边键(e)); 重画(); return; }
+        const v = 图逻辑.连接校验(图态.定义, n.id, o, el.value, 元);
+        if (!v.可以) { 提示(`没改:${v.为什么}`); el.value = e ? e.target : ""; return false; }
+        图逻辑.连(图态.定义, n.id, o, el.value);
+        if (v.替换) 提示(`已把「${o.名}」的下一步从「${业务名(节点(v.替换.target))}」改为「${业务名(节点(el.value))}」`, { 撤销: true });
         重画();
       }, o.port === "error" ? "失败就结束这次运行" : "(不接)")}</div>`;
     }).join("");
@@ -1222,14 +1380,11 @@ function 上游字段(id) {
   const g = 图态, 出 = [];
   const 起 = g.定义.nodes.find((n) => n.type === "start");
   Object.keys(((起 || {}).config?.input_schema || {}).properties || {}).forEach((k) => 出.push([`i:${k}`, `使用者输入 · ${k}`]));
-  // 只列**在它之前**的步骤(沿边倒着走)—— 列它之后的步骤,运行时一定取不到
-  const 前 = new Set(), 栈 = [id];
-  while (栈.length) {
-    const x = 栈.pop();
-    g.定义.edges.filter((e) => e.target === x).forEach((e) => { if (!前.has(e.source)) { 前.add(e.source); 栈.push(e.source); } });
-  }
+  // 只列**在它之前**的步骤(沿边倒着走)—— 列它之后的步骤,运行时一定取不到。
+  // 而「在它之前」≠「一定走过」:分支 A 的结果在分支 B 那条路上没有值 —— 标出来,不悄悄当成必有(§8.2)
+  const { 前驱: 前, 必经 } = 图逻辑.前驱与必经(g.定义, id);
   g.定义.nodes.filter((n) => 前.has(n.id) && n.type !== "start").forEach((n) => {
-    结果字段名(n).forEach((f) => 出.push([`n:${n.id}:${f}`, `${业务名(n)} · ${f}`]));
+    结果字段名(n).forEach((f) => 出.push([`n:${n.id}:${f}`, `${业务名(n)} → ${f}${必经.has(n.id) ? "" : "(仅部分路径有值)"}`]));
   });
   return 出;
 }
@@ -1263,15 +1418,23 @@ function 绑定编辑(n, 键名) {
   const 源们 = 上游字段(n.id);
   const 行 = Object.entries(绑).map(([k, r]) => {
     const 是固定 = r && r.source === "constant";
-    return `<div class="card">
+    const 失效 = r && r.source === "node" && !节点(r.node_id);
+    const 部分 = r && r.source === "node" && 节点(r.node_id) && !图逻辑.前驱与必经(图态.定义, n.id).必经.has(r.node_id);
+    return `<div class="card ${失效 ? "bad" : ""}">
+      ${失效 ? `<div class="ferr">原来源「${esc(r.原名 || r.node_id)} · ${esc(String(r.pointer || "").replace(/^\//, ""))}」已删除 —— 选一个新来源,或撤销那次删除。运行和生成候选版本前要改好。</div>` : ""}
+      ${部分 ? `<div class="ferr">这个来源只在部分路径上有值 —— 走另一条路时取不到。要么改成必经的来源,要么在汇合之后再取</div>` : ""}
       <div class="k">字段</div>${输入框(k, (el) => {
         const 新 = el.value.trim(); if (!新 || 新 === k) return;
         绑[新] = 绑[k]; delete 绑[k]; 重画(); })}
-      <div class="k">从哪来</div>${下拉(是固定 ? "固定值" : 引用值(r), [["固定值", "固定值(自己填)"], ...源们], (el) => {
-        绑[k] = el.value === "固定值" ? { source: "constant", value: "" } : 解引用(el.value); 重画(); }, "选一个来源")}
-      ${是固定 ? `<div class="k">填什么</div>${输入框(r.value, (el) => { r.value = el.value; })}` : ""}
-      <div class="k">${r && r.source === "node" ? "正式运行时取那一步的真实结果;还没跑过,所以这里没有样例" : ""}</div>
-      <button data-k="${挂控件(() => { delete 绑[k]; 重画(); })}">不要这个字段</button></div>`;
+      <div class="k">从哪来</div>${下拉(是固定 ? "固定值" : 失效 ? "" : 引用值(r), [["固定值", "固定值(自己填)"], ...源们], (el) => {
+        if (!el.value) { 绑[k] = null; 重画(); return; }
+        const 新 = el.value === "固定值" ? { source: "constant", value: "" } : 解引用(el.value);
+        if (新 && 新.source === "node" && 节点(新.node_id)) 新.原名 = 业务名(节点(新.node_id));   // 留原名:来源被删后还认得出是谁
+        绑[k] = 新; 重画(); }, r ? "选一个来源" : "未设置来源")}
+      ${是固定 ? `<div class="k">填什么</div>${输入框(r.value, (el) => { r.value = el.value; }, "", { 可清空: true })}` : ""}
+      <div class="k">${r && r.source === "node" && !失效 ? "正式运行时取那一步的真实结果;还没跑过,所以这里没有样例" : r ? "" : "未设置来源 —— 字段还在,运行前要选"}</div>
+      <div class="acts">${r ? `<button data-k="${挂控件(() => { 绑[k] = null; 重画(); })}">移除来源</button>` : ""}
+        <button class="danger" data-k="${挂控件(() => { delete 绑[k]; 提示(`已删除字段「${k}」`, { 撤销: true }); 重画(); })}">删除字段</button></div></div>`;
   }).join("");
   return 行 + `<button data-k="${挂控件(() => {
       let i = 1; while (绑[`字段${i}`]) i++; 绑[`字段${i}`] = null; 重画(); })}">加一个字段</button>`
@@ -1290,20 +1453,47 @@ function 表_输入(n) {
   return `<div class="k">这一步要用的数据,各自从哪来。</div>` + 绑定编辑(n, "bindings");
 }
 
+/* 哪些结构化引用指着这张字段表里的 k:开始节点的输入 → {source:"input"};某一步的结果 → {source:"node", node_id} */
+function 字段引用(sch, k) {
+  const g = 图态, 主 = g.定义.nodes.find((n) => n.config && (n.config.input_schema === sch || n.config.output_schema === sch));
+  if (!主) return [];
+  const 出 = [];
+  const 扫 = (v) => {
+    if (!v || typeof v !== "object") return;
+    const 指 = String(v.pointer || "").replace(/^\//, "").split("/")[0];
+    if (主.type === "start" && v.source === "input" && 指 === k) 出.push(v);
+    if (主.type !== "start" && v.source === "node" && v.node_id === 主.id && 指 === k) 出.push(v);
+    Object.values(v).forEach(扫);
+  };
+  g.定义.nodes.forEach((n) => { if (n !== 主) 扫(n.config); });
+  return 出;
+}
 function 字段表编辑(sch, 是输入) {
   sch.properties = sch.properties || {}; sch.required = sch.required || [];
   const 行 = Object.entries(sch.properties).map(([k, v]) => `<tr>
-      <td>${输入框(k, (el) => { const 新 = el.value.trim(); if (!新 || 新 === k || sch.properties[新]) return;
+      <td>${输入框(k, (el) => {
+        const 新 = el.value.trim();
+        if (!新 || 新 === k) { el.value = k; return false; }
+        if (sch.properties[新]) { 提示(`没改:已经有字段叫「${新}」`); el.value = k; return false; }
+        // 改的是**字段标识**:引用它的地方要同步,否则那几处会安静地取不到值
+        const 引 = 字段引用(sch, k);
         sch.properties[新] = v; delete sch.properties[k];
-        sch.required = sch.required.map((x) => (x === k ? 新 : x)); 重画(); })}</td>
+        sch.required = sch.required.map((x) => (x === k ? 新 : x));
+        if (引.length) 引.forEach((r) => { r.pointer = "/" + 新; });
+        提示(引.length ? `已改字段标识「${k}」→「${新}」,同步更新了 ${引.length} 处引用(提示词正文里的文字不会被替换)` : `已改字段标识「${k}」→「${新}」`, { 撤销: true });
+        重画(); })}</td>
       ${是输入 ? `<td>${输入框(v.title || "", (el) => { v.title = el.value.trim() || undefined; }, "页面上显示的名字")}</td>` : ""}
       <td>${下拉(v.type || "string", 结果类型们, (el) => { v.type = el.value; })}</td>
       <td><input type="checkbox" data-k="${挂控件((el) => {
         sch.required = el.checked ? [...new Set([...sch.required, k])] : sch.required.filter((x) => x !== k); })}"
         ${sch.required.includes(k) ? "checked" : ""}></td>
       <td>${输入框(v.description || "", (el) => { v.description = el.value.trim() || undefined; }, "说明 / 例子")}</td>
-      <td><button data-k="${挂控件(() => { delete sch.properties[k];
-        sch.required = sch.required.filter((x) => x !== k); 重画(); })}">删</button></td></tr>`).join("");
+      <td><button class="danger" data-k="${挂控件(() => {
+        const 引 = 字段引用(sch, k);
+        delete sch.properties[k];
+        sch.required = sch.required.filter((x) => x !== k);
+        提示(`已删除字段「${k}」` + (引.length ? `;有 ${引.length} 处还在用它,已标「来源字段已删除」,要改` : ""), { 撤销: true });
+        重画(); })}" aria-label="删除字段 ${esc(k)}">删除</button></td></tr>`).join("");
   return `<table><thead><tr><th>字段</th>${是输入 ? "<th>显示名</th>" : ""}<th>类型</th><th>必填</th><th>说明</th><th></th></tr></thead>
     <tbody>${行 || `<tr><td colspan="6" class="k">还没有字段</td></tr>`}</tbody></table>
     <button data-k="${挂控件(() => { let i = 1; while (sch.properties[`字段${i}`]) i++;
@@ -1340,24 +1530,31 @@ function 表_高级(n) {
       [["fail_run", "这次运行失败"], ["branch", "走「失败时」那条线"]], (el) => { c.failure_policy = el.value; });
   }
   if (n.type === "llm") {
-    体 += `<label class="f">最多输出多少 token</label>` + 输入框(c.max_output_tokens ?? "", (el) => {
-      const v = parseInt(el.value, 10); c.max_output_tokens = v > 0 ? v : undefined; }, "不填 = 用模型默认值");
+    体 += `<label class="f">最多输出多少 token</label>` + 数字框(c.max_output_tokens ?? "", (v) => {
+      c.max_output_tokens = v; }, { 整数: true, 最小: 1, 提示: "不填 = 用模型默认值" });
     const m = (g.资源.模型 || []).find((x) => x["版本id"] === c.connection_version_id);
     if (m && (m["支持的参数"] || []).includes("temperature")) {
-      体 += `<label class="f">随机程度(temperature)</label>` + 输入框((c.sampling_params || {}).temperature ?? "", (el) => {
-        const v = parseFloat(el.value);
-        c.sampling_params = Number.isFinite(v) ? { ...(c.sampling_params || {}), temperature: v } : undefined; }, "不填 = 用模型默认值");
+      体 += `<label class="f">随机程度(temperature)</label>` + 数字框((c.sampling_params || {}).temperature ?? "", (v) => {
+        if (v === undefined) { if (c.sampling_params) delete c.sampling_params.temperature; return; }
+        c.sampling_params = { ...(c.sampling_params || {}), temperature: v }; }, { 最小: 0, 提示: "不填 = 用模型默认值" });
     }
   }
   体 += `<details><summary>技术详情</summary>
       <div class="k">步骤编号 <code>${esc(n.id)}</code>(改名不会改它)</div>
-      <div class="fieldrow"><label>X</label>${输入框(p.x, (el) => { g.布局[n.id] = { ...(g.布局[n.id] || p), x: +el.value || 0 }; })}</div>
-      <div class="fieldrow"><label>Y</label>${输入框(p.y, (el) => { g.布局[n.id] = { ...(g.布局[n.id] || p), y: +el.value || 0 }; })}</div>
+      <div class="fieldrow"><label>X</label>${数字框(p.x, (v) => { g.布局[n.id] = { ...(g.布局[n.id] || p), x: v ?? 0 }; 重画(); }, { 最小: 0 })}</div>
+      <div class="fieldrow"><label>Y</label>${数字框(p.y, (v) => { g.布局[n.id] = { ...(g.布局[n.id] || p), y: v ?? 0 }; 重画(); }, { 最小: 0 })}</div>
       <div class="k">位置只影响画法,不进逻辑哈希。</div>
       <label class="f">完整配置(JSON,直接改要懂结构)</label>
-      <textarea rows="8" data-k="${挂控件((el) => {
-        try { n.config = JSON.parse(el.value); 重画(); } catch (e) { alert("不是合法 JSON,没改:" + e.message); }
-      })}">${esc(JSON.stringify(c, null, 1))}</textarea>
+      <textarea rows="8" id="adv-json" spellcheck="false">${esc(JSON.stringify(c, null, 1))}</textarea>
+      <div class="ferr" id="adv-err" role="alert"></div>
+      <div class="acts"><button data-k="${挂控件(() => {
+        // 应用前先解析:**不合法就不覆盖**现有有效配置,错误位置写在框下面(不弹框打断)
+        const t = ($("#adv-json") || {}).value || "";
+        try { const v = JSON.parse(t); if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("顶层要是一个对象 {}");
+          n.config = v; 重画(); }
+        catch (e) { const m = /position (\d+)/.exec(e.message), 行 = m ? t.slice(0, +m[1]).split("\n").length : null;
+          if ($("#adv-err")) $("#adv-err").textContent = `没应用:${行 ? `第 ${行} 行附近 —— ` : ""}${e.message}`; return false; }
+      })}">应用</button> <button type="button" id="adv-cancel">取消改动</button></div>
     </details>`;
   return 体;
 }
@@ -1366,75 +1563,34 @@ function 画_问题() {
   const r = 图态.报告;
   if (!$("#bt")) return;
   if (!r) { $("#bt").innerHTML = `<div class="k">还没检查过配置 —— 点右上「检查配置」。</div>`; return; }
+  const 过期 = 检查过期();
+  const 头 = `<div class="k">这是对草稿 r${esc(String(图态.报告rev ?? "?"))} 的检查${图态.报告时 ? ` · ${时间(图态.报告时)}` : ""}
+    ${过期 ? `<b class="stale">· 配置已修改,需重新检查</b>(下面的结论对着的是修改前的图)` : ""}</div>`;
   if (!r["问题"].length) {
-    $("#bt").innerHTML = `<div class="k">✅ 配置检查通过。<b>它只说明定义合法</b> —— 模型答得对不对、澜绣那边通不通,要去「测试」里跑一条。</div>`;
+    $("#bt").innerHTML = 头 + `<div class="k">✅ 配置检查通过。<b>它只说明定义合法</b> —— 模型答得对不对、澜绣那边通不通,要去「测试」里跑一条。</div>`;
     return;
   }
-  $("#bt").innerHTML = r["问题"].map((p, i) => `
-    <button class="issue ${p["级别"] === "blocking" ? "b" : "w"}" data-i="${i}">
-      ${p.node_id && 节点(p.node_id) ? `<b>${esc(业务名(节点(p.node_id)))}</b> · ` : ""}
+  $("#bt").innerHTML = 头 + `<div class="acts"><button id="is-prev">定位上一项</button> <button id="is-next">定位下一项</button>
+      <span class="k">共 ${r["问题"].length} 项</span></div>` + r["问题"].map((p, i) => `
+    <button class="issue ${p["级别"] === "blocking" ? "b" : "w"} ${图态.问题位 === i ? "on" : ""}" data-i="${i}">
+      ${p.node_id && 节点(p.node_id) ? `<b>${esc(业务名(节点(p.node_id)))}</b> · ` : p.node_id ? `<b>${esc(p.node_id)}(已删除)</b> · ` : ""}
       ${p.field_path ? `${esc(中文名(String(p.field_path).split(/[./[]/)[0]))} · ` : ""}${md(p["消息"])}
       <br><span class="k">怎么改:${md(p["建议"])}</span></button>`).join("");
-  $("#bt").querySelectorAll(".issue").forEach((b) => {
-    b.onclick = () => {
-      const p = r["问题"][+b.dataset.i];
-      if (!p.node_id) return;
-      图态.选中 = p.node_id; 图态.面板页 = "设置"; 画_搭建();
-    };
-  });
+  const 到 = (i) => {
+    const p = r["问题"][i]; 图态.问题位 = i;
+    if (!p.node_id || !节点(p.node_id)) { 画_问题(); return; }
+    图态.选中 = p.node_id; 图态.面板页 = "设置";
+    if (图态.画) 图态.画.选 = new Set([p.node_id]);
+    画_搭建();
+    if (图态.视图 === "流程图" && typeof 画布动作 !== "undefined") 画布动作.选节点([p.node_id]);
+  };
+  $("#bt").querySelectorAll(".issue").forEach((b) => { b.onclick = () => 到(+b.dataset.i); });
+  const n = r["问题"].length;
+  $("#is-prev").onclick = () => 到(((图态.问题位 ?? 0) - 1 + n) % n);
+  $("#is-next").onclick = () => 到(((图态.问题位 ?? -1) + 1) % n);
 }
 
-/* 流程图视图(和步骤列表改同一份定义)*/
-function 画_图() {
-  const g = 图态, 坏 = {};
-  (g.报告?.问题 || []).forEach((p) => { if (p.node_id && p["级别"] === "blocking") 坏[p.node_id] = true; });
-  const 位 = (id) => g.布局[id] || { x: 20, y: 20 };
-  const W = 176, H = 62;
-  const 线 = (g.定义.edges || []).map((e) => {
-    const a = 位(e.source), b = 位(e.target);
-    const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, mx = (x1 + x2) / 2;
-    const 标 = e.port === "branch" ? (e.branch_key === "else" ? "都不满足" : e.branch_key) : (e.port === "error" ? "失败时" : "");
-    return `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" fill="none"
-              stroke="${e.port === "error" ? "#f53f3f" : "#86909c"}" stroke-width="1.5"
-              stroke-dasharray="${e.port === "error" ? "4 3" : "0"}"/>`
-      + (标 ? `<text x="${mx}" y="${(y1 + y2) / 2 - 4}" font-size="11" fill="#4e5969" text-anchor="middle">${esc(标)}</text>` : "");
-  }).join("");
-  const 宽 = Math.max(720, ...g.定义.nodes.map((n) => 位(n.id).x + W + 40));
-  const 高 = Math.max(360, ...g.定义.nodes.map((n) => 位(n.id).y + H + 40));
-  $("#cv").innerHTML = `<svg width="${宽}" height="${高}">${线}</svg>`
-    + g.定义.nodes.map((n) => {
-      const p = 位(n.id), 缺 = 缺项(n);
-      const 开 = 坏[n.id] ? (g.选中 === n.id ? '<div class="wfnode sel bad"' : '<div class="wfnode bad"')
-                         : (g.选中 === n.id ? '<div class="wfnode sel"' : '<div class="wfnode"');
-      return `${开} style="left:${p.x}px;top:${p.y}px" data-id="${esc(n.id)}" tabindex="0" role="button"
-          aria-label="${esc(业务名(n) + (缺.length ? ",缺 " + 缺.length + " 项" : ""))}">
-        <div class="t">${esc(业务名(n))}</div><div class="k">${esc(次级标签(n))}</div>
-        ${缺.length ? `<div class="miss">缺 ${缺.length} 项</div>` : ""}</div>`;
-    }).join("");
-  $("#cv").querySelectorAll(".wfnode").forEach((el) => {
-    el.onclick = () => { 图态.选中 = el.dataset.id; 画_图(); 画_面板(); };
-    // **键盘挪位置**:方向键 8px 一步,Shift 24px。拖拽只是另一条路(§3.3)
-    el.onkeydown = (ev) => {
-      const 步 = ev.shiftKey ? 24 : 8;
-      const d = { ArrowLeft: [-步, 0], ArrowRight: [步, 0], ArrowUp: [0, -步], ArrowDown: [0, 步] }[ev.key];
-      if (!d) return;
-      ev.preventDefault();
-      const q = 图态.布局[el.dataset.id] || { x: 20, y: 20 };
-      图态.布局[el.dataset.id] = { x: Math.max(0, q.x + d[0]), y: Math.max(0, q.y + d[1]) };
-      标脏(); 画_图();
-      const m = $(`.wfnode[data-id="${CSS.escape(el.dataset.id)}"]`); if (m) m.focus();
-    };
-    el.onmousedown = (ev) => {
-      const id = el.dataset.id, 起 = 图态.布局[id] || { x: 20, y: 20 }, x0 = ev.clientX, y0 = ev.clientY;
-      const 动 = (m) => {
-        图态.布局[id] = { x: Math.max(0, 起.x + m.clientX - x0), y: Math.max(0, 起.y + m.clientY - y0) };
-        el.style.left = 图态.布局[id].x + "px"; el.style.top = 图态.布局[id].y + "px";
-      };
-      const 停 = () => { document.removeEventListener("mousemove", 动); document.removeEventListener("mouseup", 停); 标脏(); 画_图(); };
-      document.addEventListener("mousemove", 动); document.addEventListener("mouseup", 停);
-    };
-  });
-}
+/* 流程图视图在 wf_canvas.js(和步骤列表改同一份定义;图怎么改走 wf_graph.js)*/
 
 /* ── 测试 ─────────────────────────────────────────────────────── */
 function 画_测试() {
@@ -1479,6 +1635,9 @@ function 画_测试() {
     await 做_试运行(输入);
   };
   if (g.最近测试) 盯运行(g.最近测试);
+  // 运行固定的是发起时的定义;之后改了图,这份结果就是旧版本的(§10.4 T20)—— 标出来,不覆盖到新图上
+  if (g.最近测试 && g.最近测试定义 && g.最近测试定义 !== JSON.stringify(g.定义) && $("#tr-st"))
+    $("#tr-st").insertAdjacentHTML("beforebegin", `<div class="note"><b>这是修改前版本的运行结果</b> —— 之后你又改了图;要看当前草稿的效果,再跑一次。</div>`);
 }
 
 async function 盯运行(rid) {
@@ -1599,30 +1758,117 @@ function 画_设置() {
 }
 
 /* ── 动作:保存 / 检查 / 生成版本 / 试运行 ─────────────────────────── */
+/* 保存(§10.2):**请求固定为发起时的快照**。保存中继续改的,成功回来也只确认旧快照,新改动照旧标「未保存」;
+ * 不同时发多个互相覆盖的保存请求 —— 正在存时再点,等这一次完了再存下一次。 */
 async function 做_存草稿() {
-  try {
-    const d = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/draft`, {
-      method: "PATCH", headers: { "If-Match": String(图态.revision) },
-      body: JSON.stringify({ 定义: 图态.定义, 布局: 图态.布局 }),
-    });
-    图态.revision = d.revision; 图态.脏 = false;
-    // 改过就把上次的检查报告作废 —— **一份对着旧图的报告比没有报告更糟**
-    图态.报告 = null;
-    画_画布();
-    return true;
-  } catch (e) {
-    // **没存上就返回 false,调用方必须停下** —— 检查 / 生成版本 / 试运行都是对着服务端那份草稿做的,
-    // 存失败了还往下走,页面上是新图,实际冻结、试跑的是旧稿,而界面看不出来。
-    // 冲突时也不自动刷新:刷新会把这一页没存上的改动扔掉,让人自己决定先抄下来还是放弃。
-    if (e.码 === 409) {
-      alert(`版本冲突:${e.message}\n\n下一步:${e.体?.advice || ""}\n\n`
-        + `这一页不会替你覆盖,你的改动还留在页面上 —— 刷新会丢掉它们,先记下再刷新看别人改了什么。`);
-      return false;
-    }
-    报错(e);
-    return false;
+  if (!图态) return false;
+  if (图态.存中) {                     // 串行:等手上这一次,然后看还有没有没存的
+    const r = await 图态.存中;
+    if (!r) return false;
+    return 图态.脏 ? 做_存草稿() : true;
   }
+  const 发 = (async () => {
+    const g = 图态, 体 = JSON.stringify({ 定义: g.定义, 布局: g.布局 }), 序 = g.编辑序号 || 0;
+    g.保存态 = "保存中"; g.保存中序号 = 序; 画_保存状态();
+    try {
+      const d = await 请求(`${P()}/workflows/${encodeURIComponent(g.wid)}/draft`, {
+        method: "PATCH", headers: { "If-Match": String(g.revision) }, body: 体,
+      });
+      g.revision = d.revision; g.已存序号 = 序;
+      g.已存快照 = 体;
+      g.脏 = (g.编辑序号 || 0) !== 序;        // 保存期间又改过 → 那些改动还没存
+      g.保存态 = g.脏 ? "未保存" : "已保存";
+      // 不整页重画:正在输入的框、输入法组合、焦点都留着(§8.3 T12/T13)
+      画_保存状态(); 画_底栏(); 画_问题();
+      return true;
+    } catch (e) {
+      // **没存上就返回 false,调用方必须停下** —— 检查 / 生成版本 / 试运行都是对着服务端那份草稿做的,
+      // 存失败了还往下走,页面上是新图,实际冻结、试跑的是旧稿,而界面看不出来。
+      // 冲突时也不自动刷新:刷新会把这一页没存上的改动扔掉,让人自己决定(§10.3)。
+      if (e.码 === 409) { g.保存态 = "冲突"; 画_保存状态(); 弹_冲突(e); return false; }
+      g.保存态 = "失败"; 画_保存状态();
+      报错(e);
+      return false;
+    } finally {
+      g.存中 = null;
+    }
+  })();
+  图态.存中 = 发;
+  return 发;
 }
+
+/* 409:其他人已更新。**不提供强制覆盖**(没有明确权限和服务端支持)—— 查看差异 / 保留本地副本 / 重新载入 */
+function 弹_冲突(e) {
+  const g = 图态;
+  弹层("其他人已更新这张图", `<p>${esc(e.message)}</p>
+    <p><b>你的修改仍在本页</b>,没有被覆盖,也没有被丢掉。</p>
+    <div id="cf-diff" class="k"></div>
+    <div class="acts"><button id="cf-diff-b">查看差异</button> <button id="cf-keep">保留本地副本(下载)</button>
+      <button id="cf-reload" class="danger">重新载入(放弃本页修改)</button> <button id="cf-no">先留在这页</button></div>`);
+  $("#cf-no").onclick = 关弹层;
+  $("#cf-diff-b").onclick = async () => {
+    try {
+      const d = await 请求(`${P()}/workflows/${encodeURIComponent(g.wid)}`);
+      const x = 图逻辑.差异(g.定义, d["草稿"]["定义"] || { nodes: [], edges: [] });
+      const 列 = (t, a) => a.length ? `<div>${t}:${a.map(esc).join("、")}</div>` : "";
+      $("#cf-diff").innerHTML = `对方现在是 r${esc(String(d["草稿"]["revision"]))}。`
+        + 列("只在你这页的步骤", x.只在本地的步骤) + 列("只在对方那份的步骤", x.只在对方的步骤)
+        + 列("两边都改了的步骤", x.两边都改了的步骤) + 列("只在你这页的连线", x.只在本地的线) + 列("只在对方那份的连线", x.只在对方的线)
+        || "两份的步骤和连线一样(可能只差布局或名称)。";
+    } catch (er) { $("#cf-diff").textContent = "读不到对方那份:" + er.message; }
+  };
+  $("#cf-keep").onclick = () => {
+    const 文 = JSON.stringify({ 工作流: g.wid, 基于草稿: g.revision, 定义: g.定义, 布局: g.布局 }, null, 1);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([文], { type: "application/json" }));
+    a.download = `工作流-${g.wid}-本地副本.json`; a.click();
+    $("#cf-diff").textContent = "已下载本地副本。重新载入后可以对照着把改动补回去。";
+  };
+  $("#cf-reload").onclick = async () => {
+    if (!confirm("重新载入会丢掉本页没存上的修改(已下载的副本不受影响)。确定?")) return;
+    关弹层(); 图态 = null; await 页_画布(`${g.wid}/${g.页签}`);
+  };
+}
+
+/* 自动保存(第三批,§10.2「未来自动保存」):**默认关**、个人开关;只存草稿,停顿 1.5 秒后串行提交;
+ * 不运行、不发布、不改生效版本。保存失败 / 冲突时停下,不重试刷屏。 */
+let _自存时 = 0;
+function 自动保存开着() { try { return localStorage.getItem("wf.自动保存") === "1"; } catch (e) { return false; } }
+function 自动保存排队() {
+  clearTimeout(_自存时);
+  if (!自动保存开着() || !图态 || ["冲突", "失败"].includes(图态.保存态) || !能改图()) return;
+  _自存时 = setTimeout(() => { if (图态 && 图态.脏) 做_存草稿(); }, 1500);
+}
+
+/* 离开(W30):站内切走时 保存并离开 / 留在此页 / 放弃本地修改;保存失败留在原页。关浏览器用原生提示 */
+let _上个地址 = location.hash, _放行一次 = false;
+function 离开拦截() {
+  const 到 = location.hash;
+  if (_放行一次) { _放行一次 = false; _上个地址 = 到; return false; }
+  const g = 图态, 本页 = g ? `#/workflow/${encodeURIComponent(g.wid)}` : null;
+  const 还在本条 = 本页 && (到 === 本页 || 到.startsWith(本页 + "/") || decodeURIComponent(到).startsWith(`#/workflow/${g.wid}/`));
+  if (!g || !g.脏 || 还在本条) { _上个地址 = 到; return false; }
+  const 回 = _上个地址;
+  _放行一次 = true; location.hash = 回;           // 先回到原页,等人选
+  弹层("有未保存的修改", `<p>这张图有还没保存的修改。</p>
+    <div class="acts"><button class="pri" id="lv-save">保存并离开</button> <button id="lv-stay">留在此页</button>
+      <button class="danger" id="lv-drop">放弃本地修改</button></div>`);
+  $("#lv-stay").onclick = 关弹层;
+  $("#lv-save").onclick = async () => { 关弹层(); if (await 做_存草稿()) { _放行一次 = true; location.hash = 到; } };
+  $("#lv-drop").onclick = () => { 关弹层(); 图态 = null; location.hash = 到; };
+  return true;
+}
+window.addEventListener("beforeunload", (e) => { if (图态 && 图态.脏) { e.preventDefault(); e.returnValue = ""; } });
+/* Ctrl/Cmd+S:先让正在输入的框提交(失焦触发 change),再保存;非法输入会留在框里并标出来 */
+window.addEventListener("keydown", (e) => {
+  if (!图态 || !location.hash.startsWith("#/workflow/")) return;
+  if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+    e.preventDefault();
+    if (e.isComposing) return;
+    const a = document.activeElement; if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) a.blur();
+    setTimeout(() => 做_存草稿(), 0);
+  }
+});
 
 // 测试入口(tests/e2e/test_workflow_save_gate.js):**存失败之后,后面三个动作都不许发请求**
 const 编排动作 = {
@@ -1634,7 +1880,9 @@ if (typeof globalThis !== "undefined") globalThis.编排动作 = 编排动作;
 async function 做_校验() {
   if (图态.脏 && !(await 做_存草稿())) return;
   try {
+    const 定 = JSON.stringify(图态.定义), rev = 图态.revision;
     图态.报告 = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/validate`, { method: "POST" });
+    图态.报告定义 = 定; 图态.报告rev = rev; 图态.报告时 = new Date().toISOString(); 图态.问题位 = null;
     if (图态.页签 !== "搭建") { location.hash = `#/workflow/${encodeURIComponent(图态.wid)}/搭建`; return; }
     画_画布();
   } catch (e) { 报错(e); }
@@ -1666,6 +1914,7 @@ async function 做_试运行(输入 = {}) {
       body: JSON.stringify({ workflow_id: 图态.wid, 输入 }),
     });
     图态.最近测试 = d.resource_id;
+    图态.最近测试定义 = JSON.stringify(图态.定义);     // 这次试运行固定的是哪份定义(§10.4)
     if ($("#tr-st")) $("#tr-st").innerHTML = `已受理 —— <b>排队中,一个模型都还没调</b>。`;
     await 盯运行(d.resource_id);
     try {
@@ -5577,6 +5826,7 @@ async function 页_模型产物() {
 }
 
 async function 路由() {
+  if (离开拦截()) return;
   画侧栏();
   const h = location.hash || "#/workbench";
   try {

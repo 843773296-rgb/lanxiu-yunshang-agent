@@ -216,3 +216,101 @@ tr.warn-row td{background:#fff7e8}
 .tpl{display:block;border:1px solid var(--line);border-radius:var(--radius);padding:8px 10px;margin:6px 0;cursor:pointer}
 .wfpanel .tabs{display:flex;gap:4px;margin:8px 0}
 .wfpanel .tabs button.on{border-color:var(--pri);color:var(--pri)}
+
+/* ── Workflow 编辑器画布(交互控件详细设计 V1.0,2026-10-25)──────────────
+ * 尺寸都是设计稿的**建议值**:连接点圆点 10–12px、点击热区至少 24×24;连线可见 2px、命中区 16px;
+ * 步骤库 216–280px;画布可视宽度尽量 ≥480px。状态**不只靠颜色**:同时有图标、文字和焦点描边(§6.1)。 */
+.wfbuild.graph{grid-template-columns:minmax(560px,1fr) 380px}
+/* ⚠️ 作者样式里写了 display:flex 的元素,hidden 属性就藏不住了(浏览器默认的 [hidden]{display:none} 优先级更低)——
+   连线工具条就是这样:代码说藏起来,它一直挂在上一条线旁边挡着步骤(2026-10-25 真浏览器测试逮到的) */
+.wfstage [hidden],.wftool [hidden],.wftoast[hidden]{display:none!important}
+.wftool{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.wftool .seg{display:inline-flex}.wftool .seg button{border-radius:0}
+.wftool .seg button:first-child{border-radius:var(--radius) 0 0 var(--radius)}
+.wftool .seg button:last-child{border-radius:0 var(--radius) var(--radius) 0;margin-left:-1px}
+.wftool button[aria-pressed="true"]{border-color:var(--pri);color:var(--pri);background:var(--pri-bg)}
+.wftool .find input{height:32px;width:150px;border:1px solid var(--line);border-radius:var(--radius);padding:0 8px}
+.wfstage{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;height:560px;background:var(--card)}
+.wflib2{width:236px;flex:none;border-right:1px solid var(--line);padding:10px;overflow:auto}
+.wflib2 input{width:100%;height:30px;border:1px solid var(--line);border-radius:var(--radius);padding:0 8px;margin-bottom:8px}
+.wflib2 .libit{border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-bottom:6px;background:var(--bg);cursor:grab;
+  display:grid;grid-template-columns:1fr auto;gap:2px 6px;font-size:13px;touch-action:none}
+.wflib2 .libit .k{grid-column:1;font-size:11px;color:var(--ink3)}
+.wflib2 .libit button{grid-row:1/span 2;grid-column:2;height:26px;padding:0 8px;font-size:12px;align-self:center}
+.wflib2 .libit.off{opacity:.55;cursor:not-allowed}
+.wfcv{position:relative;flex:1;min-width:480px;overflow:hidden;outline:none;touch-action:none;cursor:default;
+  background:repeating-linear-gradient(0deg,transparent 0 23px,#f2f3f5 23px 24px),repeating-linear-gradient(90deg,#fff 0 23px,#f2f3f5 23px 24px)}
+.wfcv:focus-visible{box-shadow:inset 0 0 0 2px var(--pri)}
+.wfcv.panning,.wfcv.panning *{cursor:grabbing!important}
+.wfcv.dragging .wfedgebar,.wfcv.dragging .wfzoom,.wfcv.dragging .wfmini,.wfcv.dragging .wfstatus{pointer-events:none;opacity:.35}
+.wfworld{position:absolute;left:0;top:0;transform-origin:0 0}
+.wfsvg{position:absolute;left:0;top:0;overflow:visible}
+.wfsvg.top{pointer-events:none}.wfsvg.top .endh,.wfsvg.top .bend{pointer-events:all}
+.wfsvg .edge .vis{fill:none;stroke:#86909c;stroke-width:2;pointer-events:none}
+.wfsvg .edge.err .vis{stroke:var(--fail);stroke-dasharray:5 4}
+.wfsvg .edge .hit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer;pointer-events:stroke}
+.wfsvg .edge:hover .vis{stroke:#4e5969}
+.wfsvg .edge.sel .vis{stroke:var(--pri);stroke-width:3.5}
+.wfsvg .edge text{font-size:11px;fill:#4e5969;pointer-events:none;paint-order:stroke;stroke:#fff;stroke-width:3px}
+.wfsvg .endh{fill:#fff;stroke:var(--pri);stroke-width:2;cursor:move}
+.wfsvg .bend{fill:var(--pri);cursor:move}
+.wfsvg .temp{fill:none;stroke:var(--pri);stroke-width:2;stroke-dasharray:6 4;pointer-events:none}
+.wfsvg .temp.bad{stroke:var(--fail)}
+.wfnode2{position:absolute;width:184px;border:1px solid var(--line);border-radius:8px;background:var(--card);
+  padding:6px 10px;font-size:12px;box-shadow:0 1px 2px rgba(0,0,0,.06);cursor:grab;user-select:none;touch-action:none}
+.wfnode2:focus-visible{outline:2px solid var(--pri);outline-offset:2px}
+.wfnode2.sel{border-color:var(--pri);box-shadow:0 0 0 2px var(--pri-bg)}
+.wfnode2.bad{border-color:var(--fail)}
+.wfnode2.canlink{outline:2px dashed var(--ok);outline-offset:2px}
+.wfnode2.canlink::after{content:"✓ 可连";position:absolute;right:6px;bottom:4px;font-size:10px;color:var(--ok)}
+.wfnode2.nolink{opacity:.55}
+.wfnode2.nolink::after{content:"✕ 不能连";position:absolute;right:6px;bottom:4px;font-size:10px;color:var(--fail)}
+.wfnode2 .nh{display:flex;align-items:center;gap:4px;height:22px}
+.wfnode2 .t{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wfnode2 .more{height:22px;width:24px;padding:0;border:0;background:none;font-size:16px;cursor:pointer;color:var(--ink3)}
+.wfnode2 .k{color:var(--ink3);font-size:11px}
+.wfnode2 .tags .miss{color:var(--fail);font-size:11px}
+/* 连接点:圆点 11px,热区 24×24(触屏 44×44);出口标签贴在点旁边,条件分支随数量加高、不重叠 */
+.wfport{position:absolute;width:24px;height:24px;padding:0;border:0;background:none;display:flex;align-items:center;justify-content:center;cursor:crosshair}
+.wfport i{display:block;width:11px;height:11px;border-radius:50%;background:#fff;border:2px solid #86909c}
+.wfport.in{left:-12px;top:10px;cursor:default}
+.wfport.in::before{content:"";width:9px;height:9px;border-radius:50%;background:#fff;border:2px solid #c9cdd4}
+.wfport.out{right:-12px}
+.wfport.out.down{right:auto}
+.wfport.out:hover i,.wfport.out:focus-visible i{border-color:var(--pri);background:var(--pri-bg)}
+.wfport.out:focus-visible{outline:2px solid var(--pri);border-radius:50%}
+.wfport.out.err i{border-color:var(--fail)}
+.wfport .pl{position:absolute;right:26px;white-space:nowrap;font-size:10.5px;color:var(--ink3);pointer-events:none}
+.wfport.down .pl{right:auto;top:22px}
+@media (pointer:coarse){.wfport{width:44px;height:44px}.wfport.in{left:-22px}.wfport.out{right:-22px}}
+.wfmarq{position:absolute;border:1px dashed var(--pri);background:rgba(22,93,255,.06);pointer-events:none}
+.wfedgebar{position:absolute;z-index:5;transform:translateX(-50%);display:flex;gap:4px;align-items:center;flex-wrap:wrap;
+  background:var(--card);border:1px solid var(--line);border-radius:6px;padding:4px 6px;box-shadow:0 2px 8px rgba(0,0,0,.12);max-width:520px}
+.wfedgebar button{height:26px;padding:0 8px;font-size:12px}
+.wfzoom{position:absolute;left:8px;bottom:8px;display:flex;gap:4px;align-items:center;background:var(--card);
+  border:1px solid var(--line);border-radius:6px;padding:4px}
+.wfzoom button{height:28px;padding:0 8px;font-size:12px}.wfzoom select{height:28px}
+.wfmini{position:absolute;right:8px;bottom:8px;background:var(--card);border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.wfmini rect{fill:#c9cdd4}.wfmini rect.s{fill:var(--pri)}.wfmini rect.vp{fill:rgba(22,93,255,.08);stroke:var(--pri)}
+.wfstatus{position:absolute;left:8px;top:8px;right:8px;font-size:12px;color:var(--ink2);pointer-events:none;
+  background:rgba(255,255,255,.85);border-radius:4px;padding:2px 6px;width:max-content;max-width:calc(100% - 16px)}
+.wfmenu{position:fixed;z-index:60;background:var(--card);border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.14);
+  padding:4px;display:flex;flex-direction:column;min-width:150px}
+.wfmenu button{border:0;text-align:left;height:30px}.wfmenu button:focus-visible{outline:2px solid var(--pri)}
+.wfghost{position:fixed;z-index:70;pointer-events:none;background:var(--pri-bg);border:1px solid var(--pri);border-radius:6px;padding:4px 10px;font-size:12px}
+.wftoast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:80;background:#1f2329;color:#fff;
+  border-radius:6px;padding:8px 12px;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.2);max-width:72vw}
+.wftoast{pointer-events:none}   /* 提示条不挡画布:只有「撤销」能点(真浏览器测试逮到它盖住了目标步骤) */
+.wftoast button{pointer-events:auto;height:26px;margin-left:8px;color:#fff;background:transparent;border-color:#86909c}
+button.danger{color:var(--fail);border-color:#fbaca3}
+.inwrap{display:inline-flex;align-items:center;gap:2px;max-width:100%}
+.inwrap input{min-width:0}
+.inwrap .clr{height:24px;width:24px;padding:0;border:0;background:none;color:var(--ink3);cursor:pointer}
+.ferr{color:var(--fail);font-size:12px;min-height:0}
+.card.bad{border-color:var(--fail)}
+.issue.on{outline:2px solid var(--pri)}
+#savest.ok{color:var(--ok)}#savest.stale{color:var(--warn)}#savest.err{color:var(--fail);font-weight:600}
+.tpl.off{opacity:.6}
+/* 可用宽度不足 1200:步骤库收起成按钮;不足 900:默认用步骤列表(§3) */
+@media (max-width:1200px){.wflib2{position:absolute;z-index:6;height:100%;box-shadow:2px 0 8px rgba(0,0,0,.1)}.wfstage{position:relative}
+  .wfbuild.graph{grid-template-columns:1fr}}
