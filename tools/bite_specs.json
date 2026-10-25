@@ -13160,5 +13160,29 @@
    }
   ],
   "预期红": "4xx 和 5xx 说法不同"
+ },
+ {
+  "script": "agentsite/model_route_check.py",
+  "改坏": "撞花费上限不上报",
+  "file": [
+   {
+    "path": "agentsite/model_route.py",
+    "old": "    if r.get(\"budget_hit\"):\n        return {\"类\": \"撞花费上限\"",
+    "new": "    if False:\n        return {\"类\": \"撞花费上限\""
+   }
+  ],
+  "预期红": "撞了花费上限 → 上报「撞花费上限」,理由带上限"
+ },
+ {
+  "script": "tools/spans_push_check.py",
+  "改坏": "轮末补记的上报不算进签名",
+  "file": [
+   {
+    "path": "tools/spans_push.py",
+    "old": "    return f\"{len(rows)}:{根.get('status')}\" + (f\":报={报}\" if 报 else \"\")",
+    "new": "    return f\"{len(rows)}:{根.get('status')}\""
+   }
+  ],
+  "预期红": "推过之后轮末补记了上报 → 签名变了,重推"
  }
 ]

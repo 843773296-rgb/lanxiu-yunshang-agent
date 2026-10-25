@@ -15,6 +15,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
 咬合 = [
     ("手选了模型也照样分流", "页面手选过模型 → 不分流(手选的优先)"),
     ("环境故障也升级", "环境故障(锁库 / 连不上)→ 不升级,换模型救不了"),
+    ("撞花费上限不上报", "撞了花费上限 → 上报「撞花费上限」,理由带上限"),
     ("工具报错后自己调成功了也升级", "报错后同一个工具又调成功了(10-25 实测那一轮的样子)→ 不升级"),
 ]
 
@@ -54,16 +55,34 @@ def main():
        M.该升级吗({**通过, "交付检查": {"状态": "不完整"}, "环境故障": [{"tool": "kb_size"}]})[0] is False)
     ck("撞了花费上限 → 不升级,再跑只会更贵", M.该升级吗({**通过, "交付检查": {"状态": "不完整"}, "budget_hit": True})[0] is False)
 
+    # ── 换模型也没用的 → 直接上报平台管理员(用户 10-25 拍)──
+    # 环境故障的形状用 sdk.找环境故障 **真吐出来的**,不手写一份 —— 手写的话两边字段名对不上这里照样绿
+    import sdk
+    故 = sdk.找环境故障([{"tool": "mcp__knowledge__kb_size", "output": "sqlite3.OperationalError: database is locked"}])
+    报 = M.该上报吗({**通过, "环境故障": 故})
+    ck("环境故障 → 上报「环境故障」,理由点名工具和错误", (报 or {}).get("类") == "环境故障"
+       and "kb_size" in 报["理由"] and "database is locked" in 报["理由"], 报)
+    报 = M.该上报吗({**通过, "budget_hit": True, "budget_limit": 50})
+    ck("撞了花费上限 → 上报「撞花费上限」,理由带上限", (报 or {}).get("类") == "撞花费上限" and "50" in 报["理由"], 报)
+    ck("正常答完 → 不上报", M.该上报吗(通过) is None)
+    ck("交付检查没通过(换模型能救的)→ 不上报,走升级", M.该上报吗({**通过, "交付检查": {"状态": "未通过"}}) is None)
+    # 上报的类必须是管理后台 CHECK 认的那两个 —— 认不出的话推过去 422,单子建不起来而聊天站以为报了
+    import re
+    库 = open(os.path.join(HERE, "..", "管理后台", "services", "api", "app", "models.py"), encoding="utf-8").read()
+    认 = set(re.findall(r"'([^']+)'", re.search(r"ck_trace_incidents_kind\", \"kind in \(([^)]*)\)", 库).group(1)))
+    出 = {M.该上报吗({"环境故障": 故})["类"], M.该上报吗({"budget_hit": True})["类"]}
+    ck("上报的类正好是管理后台故障单认的那几个", 出 == 认, (出, 认))
+
     app = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
     sdk = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()
-    ck("接线:/run 按 model_route 判分流和升级、只升级一次;sdk 回传报错和调成功的工具",
-       "_mr.分流开着吗(" in app and app.count("_mr.该升级吗(") == 1 and "工具成功=[c.get(\"tool\")" in sdk
+    ck("接线:/run 按 model_route 判分流和升级、只升级一次;sdk 回传报错和调成功的工具;该上报的记到根上",
+       "_mr.分流开着吗(" in app and app.count("_mr.该升级吗(") == 1 and "_mr.该上报吗(r)" in app and "_sp.记上报(" in app and "工具成功=[c.get(\"tool\")" in sdk
        and "fork_session=bool(分叉 and resume)" in sdk)
     print()
     if 坏:
         print(f"{R}❌ 难题分流 {len(坏)} 条不过(验了 {数[0]} 条){D}")
         return 1
-    print(f"{G}✅ 难题分流:手选优先、出问题(没纠正过来)才换 Opus 一次、换模型救不了的不升(验了 {数[0]} 条){D}")
+    print(f"{G}✅ 难题分流:手选优先、出问题(没纠正过来)才换 Opus 一次、换模型救不了的直接上报(验了 {数[0]} 条){D}")
     return 0
 
 

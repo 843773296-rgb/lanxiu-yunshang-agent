@@ -628,6 +628,16 @@ class H(BaseHTTPRequestHandler):
                             r["路由"] = {"分流": True, "答的": _mr.升级到, "升级": True, "理由": 因,
                                         "先试的": mid, "先试trace": (r0 or {}).get("trace_id"),
                                         "先试花费": (r0 or {}).get("cost_usd")}
+                # 换模型也没用的(库故障 / 撞花费上限)→ 不升级,直接上报平台管理员(用户 10-25 拍):
+                # 记到这一轮根上,推送端带去管理后台建「执行故障上报」;页面照实告诉提问的人
+                报 = _mr.该上报吗(r)
+                if 报:
+                    try:
+                        import spans as _sp
+                        _sp.记上报(r.get("trace_id"), (getattr(sdk, "最近一轮", None) or (None, None))[1], 报)
+                        r["上报"] = {**报, "给谁": "平台管理员", "说明": "系统出了问题,已上报平台管理员处理"}
+                    except Exception as e:
+                        r["上报"] = {**报, "给谁": "平台管理员", "说明": f"系统出了问题,但上报没记上({type(e).__name__})"}
                 sessions.own(r.get("session_id"), me)
                 _记知识检索(r, self.headers.get("cookie"))
                 return self._send(r)

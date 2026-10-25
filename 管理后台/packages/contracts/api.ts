@@ -154,6 +154,9 @@ export const ENDPOINTS = [
   { method: "POST", path: "/applications/{id}/runs", summary: "按环境绑定执行", capability: "查看有权配置", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/traces", summary: "运行记录列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/traces/{id}", summary: "运行详情(脱敏)", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/trace-imports", summary: "聊天站推一轮执行记录进来", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/trace-incidents", summary: "执行故障上报:换模型也没用、要平台管理员处理的", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/trace-incidents/{id}/handle", summary: "把一张执行故障单标成已处理", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/jobs/{id}", summary: "任务详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/jobs/{id}/events", summary: "任务事件(SSE)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/model-calls", summary: "应用层上报一次模型调用", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
@@ -237,4 +240,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 150 条接口 · 23 条异步 · 30 条要幂等键 · 16 条要 If-Match */
+/** 共 153 条接口 · 23 条异步 · 30 条要幂等键 · 16 条要 If-Match */

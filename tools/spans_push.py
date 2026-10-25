@@ -33,7 +33,9 @@ import spans as SP
 
 def 签名(rows):
     根 = next((x for x in rows if not x.get("parent_span_id")), {})
-    return f"{len(rows)}:{根.get('status')}"
+    # 上报是轮末补记到根上的(读的时候合并,行数和状态都不变)—— 不算进签名的话,先推过的那一轮带着上报也不会再推
+    报 = (根.get("attr") or {}).get("lanxiu.report.kind")
+    return f"{len(rows)}:{根.get('status')}" + (f":报={报}" if 报 else "")
 
 
 def 要推的(棵们, 已推, 现在=None, 最多=一次最多):
@@ -78,8 +80,11 @@ def 载荷(tid, rows, 原文条):
              if s.get("status") in ("error", "未收尾", "中断") else None)
         步们.append({"id": s["span_id"], "parent": s.get("parent_span_id"), "stage": s.get("name"),
                    "开始": s.get("start"), "结束": s.get("end"), "状态": s.get("status"), "入": 入, "出": 出, "错": 错})
+    ra = 根.get("attr") or {}
+    报 = ({"类": ra["lanxiu.report.kind"], "理由": ra.get("lanxiu.report.reason") or ""}
+         if ra.get("lanxiu.report.kind") else None)
     return {"外部trace": tid, "会话号": 根.get("会话号"), "状态": 根.get("status"),
-            "开始": 根.get("start"), "结束": 根.get("end"), "步们": 步们}
+            "开始": 根.get("start"), "结束": 根.get("end"), "步们": 步们, **({"上报": 报} if 报 else {})}
 
 
 def 配置():

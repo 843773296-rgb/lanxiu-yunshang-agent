@@ -570,13 +570,45 @@ async function 页_运行记录() {
   let d;
   try { d = await 请求(`${P()}/traces?limit=100&entry_kind=${encodeURIComponent("聊天站")}`); }
   catch (e) { const s = 错误块(e, 页_运行记录); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  // 执行故障上报(用户 10-25 拍「换模型也没用的直接上报」「上报给平台管理员」):只有能「配置密钥与预算」的人拿得到,
+  // 拿不到(403)就不显示这一块 —— 前端隐藏不是授权,接口那边照样判
+  let 故 = null;
+  try { 故 = await 请求(`${P()}/trace-incidents?status=${encodeURIComponent("待处理")}`); }
+  catch (e) { 故 = e.码 === 403 ? null : { 错: e }; }
+  const 故障块 = !故 ? "" : 故.错 ? `<div class="note">${esc("执行故障上报没取到:" + 故.错.message)}</div>`
+    : !故.items.length ? `<div class="note">${md("**执行故障上报:没有待处理的。** 库连不上、撞花费上限这类换模型也没用的问题,聊天站会直接报到这里。")}</div>`
+    : `<h2>执行故障上报 · 待处理 ${故["待处理"]} 条</h2>
+       <div class="sub">${md("换模型也没用、店里的人修不了的:**库连不上 / 锁住**、**撞花费上限**。处理完写一句怎么处理的再标。")}</div>
+       <table><thead><tr><th>什么时候</th><th>什么故障</th><th>为什么</th><th></th></tr></thead><tbody>`
+      + 故.items.map((i) => `<tr>
+          <td class="k">${esc(String(i.created_at || "").slice(5, 19).replace("T", " "))}</td>
+          <td><span class="pill fail">${esc(i.kind)}</span></td>
+          <td>${esc(i.reason)}</td>
+          <td><button data-tr="${esc(i.trace_id)}">看调用树</button>
+            <input data-note="${esc(i.id)}" placeholder="怎么处理的(必填)">
+            <button data-handle="${esc(i.id)}">标已处理</button></td>
+        </tr>`).join("") + `</tbody></table>`;
+  const 挂故障 = () => { $("#main").querySelectorAll("[data-tr]").forEach((b) => {
+    b.onclick = () => { location.hash = "#/trace/" + encodeURIComponent(b.dataset.tr); };
+  }); $("#main").querySelectorAll("[data-handle]").forEach((b) => {
+    b.onclick = async () => {
+      const 话 = ($("#main").querySelector(`[data-note="${b.dataset.handle}"]`) || {}).value || "";
+      b.disabled = true;
+      try {
+        await 请求(`${P()}/trace-incidents/${encodeURIComponent(b.dataset.handle)}/handle`,
+          { method: "POST", body: JSON.stringify({ note: 话 }) });
+        页_运行记录();
+      } catch (e) { b.disabled = false; b.textContent = "没标上:" + ((e.体 && e.体.advice) || e.message); }
+    };
+  }); };
   if (!d.items.length) {
-    $("#main").innerHTML = 头 + 状态("", "还没有聊天站的运行记录",
+    $("#main").innerHTML = 头 + 故障块 + 状态("", "还没有聊天站的运行记录",
       "聊天站每一轮跑完(或断了)之后,由澜绣的同步程序推过来;刚上线时这里是空的,在聊天页问一句再回来看。").html;
+    挂故障();
     return;
   }
   const 状 = { running: "进行中", interrupted: "中断", failed: "出错", completed: "完成" };
-  $("#main").innerHTML = 头 + `<table><thead><tr>
+  $("#main").innerHTML = 头 + 故障块 + `<h2>每一轮</h2><table><thead><tr>
       <th>什么时候</th><th>会话</th><th class="num">步</th><th>结果</th><th></th>
     </tr></thead><tbody>`
     + d.items.map((r) => { const t = 状[r.end_reason] || r.end_reason || "?";
@@ -594,6 +626,7 @@ async function 页_运行记录() {
   $("#main").querySelectorAll("[data-tr]").forEach((b) => {
     b.onclick = () => { location.hash = "#/trace/" + encodeURIComponent(b.dataset.tr); };
   });
+  挂故障();
 }
 
 /* ══════════════════════════════════════════════════════════════════

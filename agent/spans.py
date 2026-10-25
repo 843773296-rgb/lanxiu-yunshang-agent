@@ -356,6 +356,15 @@ def 记中断(tid, 根, 原因, path=None):
                             "attr": {"lanxiu.interrupted": str(原因)[:400]}}, ensure_ascii=False) + "\n")
 
 
+def 记上报(tid, 根, 报, path=None):
+    """这一轮碰到换模型也没用的问题(model_route.该上报吗):给根补上「上报了什么」,推送端带着它去管理后台建故障单。"""
+    if not (tid and 根 and 报): return
+    with open(path or LOG, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"trace_id": tid, "span_id": 根,
+                            "attr": {"lanxiu.report.kind": 报.get("类"), "lanxiu.report.reason": str(报.get("理由") or "")[:400]}},
+                           ensure_ascii=False) + "\n")
+
+
 def 读(path=None, 限=None):
     """{trace_id: [span, ...]},按时间排。限=只要最近几棵。"""
     p = path or LOG

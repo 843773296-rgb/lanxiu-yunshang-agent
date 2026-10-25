@@ -499,6 +499,72 @@ def _时刻(x):
         return None
 
 
+# ── 执行故障上报(用户 2026-10-25 拍「换模型也没用的情况不升级直接上报」「上报给平台管理员,进管理后台」)──
+# 类的名单和库里的 CHECK 是同一份意思(models.py ck_trace_incidents_kind);聊天站那边谁该报见 agentsite/model_route.py 该上报吗
+故障类 = ("环境故障", "撞花费上限")
+
+
+def _建故障单(c, me, project_id, trace_id, 报):
+    """一轮只一张:(项目, trace)唯一,同一轮再推过来不新建、不改已有那张(已处理的不会被重新打开)。"""
+    import uuid as _uu
+    c.execute(text("""insert into trace_incidents (id, organization_id, project_id, trace_id, kind, reason, status,
+                          created_at, created_by)
+                      values (:i,:o,:p,:t,:k,:r,'待处理', now(), :u)
+                      on conflict (project_id, trace_id) do nothing"""),
+              {"i": f"inc_{_uu.uuid4().hex[:12]}", "o": me.org_id, "p": project_id, "t": trace_id,
+               "k": 报["类"], "r": str(报["理由"])[:500], "u": me.user_id})
+
+
+@router.get(前缀 + "/trace-incidents")
+def 执行故障列表(project_id: str, me: 身份 = Depends(要权限("配置密钥与预算")),
+             status: str = Query(None), limit: int = Query(50, ge=1, le=200)):
+    """待处理的排前面,同状态里新的在前。每条带它那一轮的 trace(点进去看断在哪)。"""
+    with 连接() as c:
+        rs = c.execute(text("""
+            select count(*) over () 全量,
+                   count(*) filter (where i.status = '待处理') over () 待处理总数,
+                   i.id, i.trace_id, i.kind, i.reason, i.status, i.created_at, i.handled_by, i.handled_at, i.note,
+                   t.request_id, t.session_id, t.started_at
+              from trace_incidents i
+              join traces t on t.project_id = i.project_id and t.id = i.trace_id
+             where i.project_id = :p and (cast(:s as text) is null or i.status = cast(:s as text))
+             order by (i.status = '待处理') desc, i.created_at desc
+             limit :n"""), {"p": project_id, "s": status, "n": limit}).mappings().all()
+    出 = [{k: v for k, v in dict(r).items() if k not in ("全量", "待处理总数")} for r in rs]
+    return {"items": 出, "next_cursor": None, "total": (int(rs[0]["全量"]) if rs else 0),
+            "待处理": (int(rs[0]["待处理总数"]) if rs else 0), "这一页几条": len(出)}
+
+
+@router.post(前缀 + "/trace-incidents/{incident_id}/handle")
+async def 标故障已处理(project_id: str, incident_id: str, request: Request,
+                 me: 身份 = Depends(要权限("配置密钥与预算"))):
+    体 = await request.json()
+    话 = str((体 or {}).get("note") or "").strip()
+    if not 话:
+        raise _错(422, "VALIDATION", "要写怎么处理的", "比如「库锁是夜间造数占的,已错开」「预算从 $50 调到 $80」",
+                  field_errors={"note": "必填"})
+    with 事务() as c:
+        老 = c.execute(text("select status from trace_incidents where project_id=:p and id=:i for update"),
+                       {"p": project_id, "i": incident_id}).first()
+        if not 老:
+            raise _错(404, "NOT_FOUND", "没有这张故障单", "刷新列表再试", field_errors={})
+        if 老[0] != "待处理":
+            raise _错(409, "ALREADY_HANDLED", "这张单已经处理过了", "标过的不再改;同样的问题再出现会是新的一轮、新的单",
+                      field_errors={})
+        c.execute(text("""update trace_incidents set status='已处理', handled_by=:u, handled_at=now(), note=:n,
+                              updated_at=now(), revision=coalesce(revision, 0) + 1
+                           where project_id=:p and id=:i"""),
+                  {"u": me.user_id, "n": 话[:1000], "p": project_id, "i": incident_id})
+        import uuid as _uu
+        c.execute(text("""insert into audit_events (id, organization_id, project_id, actor, action,
+                              target_ref, environment, at, result, reason, created_at, created_by)
+                          values (:i,:o,:p,:a,'trace_incident.handle',cast(:t as jsonb),:e, now(), 'ok', :rs, now(), :a)"""),
+                  {"i": f"aud_{_uu.uuid4().hex[:12]}", "o": me.org_id, "p": project_id, "a": me.user_id,
+                   "t": _json.dumps({"故障单": incident_id}, ensure_ascii=False),
+                   "e": os.environ.get("APP_ENV", "development"), "rs": 话[:500]})
+    return {"id": incident_id, "status": "已处理"}
+
+
 @router.post(前缀 + "/trace-imports", status_code=201)
 async def 导入执行记录(project_id: str, request: Request, me: 身份 = Depends(要权限("运行评测"))):
     """体:{外部trace, 会话号?, 状态, 开始, 结束?, 步们:[{id, parent, stage, 开始, 结束?, 状态, 入?, 出?, 错?}]}。
@@ -516,10 +582,16 @@ async def 导入执行记录(project_id: str, request: Request, me: 身份 = Dep
         raise _错(422, "VALIDATION", "步们要是列表,一轮最多 2000 步", "检查推送端", field_errors={"步们": "格式不对"})
     状 = {"进行中": "running", "中断": "interrupted", "error": "failed"}.get(体.get("状态"), "completed")
     键 = f"{聊天站来源}:{外}"
+    报 = 体.get("上报")
+    if 报 is not None and (not isinstance(报, dict) or 报.get("类") not in 故障类 or not str(报.get("理由") or "").strip()):
+        raise _错(422, "VALIDATION", f"上报要给 {{类, 理由}},类只能是 {' / '.join(故障类)}", "检查推送端",
+                  field_errors={"上报": "格式不对"})
     with 事务() as c:
         老 = c.execute(text("select id, end_reason from traces where project_id=:p and request_id=:k"),
                        {"p": project_id, "k": 键}).mappings().first()
         if 老 and 老["end_reason"] != "running":
+            # 收尾了不重写 —— 但**上报照样要建**:上报是轮末才知道的,可能正好赶上这一轮最后那次推送
+            if 报: _建故障单(c, me, project_id, 老["id"], 报)
             return {"trace_id": 老["id"], "导入了吗": False, "note": "这一轮已经收尾、导入过了,没重写"}
         tid = 老["id"] if 老 else f"tr_{_uu.uuid4().hex[:12]}"
         if 老:
@@ -555,6 +627,7 @@ async def 导入执行记录(project_id: str, request: Request, me: 身份 = Dep
                and (s.input_ref is not null or s.output_ref is not null)"""),
             {"p": project_id, "z": _json.dumps({"到期删除": f"聊天站原文保留 {原文留天} 天,已删(骨架留着)"},
                                                ensure_ascii=False)}).rowcount
-    return {"trace_id": tid, "导入了吗": True, "步数": len(步们), "这次到期清掉的步": 到期,
+        if 报: _建故障单(c, me, project_id, tid, 报)
+    return {"trace_id": tid, "导入了吗": True, "步数": len(步们), "这次到期清掉的步": 到期, "上报了吗": bool(报),
             "note": "原文在 input_ref / output_ref;看不看得到由详情接口的字段权限管(查看敏感输入)"}
 

@@ -274,6 +274,8 @@ _额外唯一 = {
     # 账号绑定一对一(2026-10-24):两个方向各一条 —— 少了哪条都会退化成多对一,
     # 而多对一的绑定在列表上照样每行一个名字,看不出有人被绑了两次
     "staff_bindings": [("project_id", "user_id"), ("project_id", "lanxiu_staff_code")],
+    # 执行故障上报(2026-10-25):一轮只一张单 —— 聊天站同一轮会推不止一次
+    "trace_incidents": [("project_id", "trace_id")],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,
     # 第二个撞唯一键 → 返回冲突和最新状态,而不是两条都记下来。
     # 「要求补充」之后 revision 前进,于是下一轮还能再批 —— 这正是想要的。
@@ -304,6 +306,11 @@ _额外检查 = {
         ("ck_artifacts_kind", "kind in ('报告', '建议')"),
         ("ck_artifacts_generation_type", "generation_type is null or generation_type in ('模型', '规则', '对话')"),
         ("ck_artifacts_version_no", "version_no >= 1"),
+    ],
+    "trace_incidents": [
+        # 只有这两种是「换模型也没用」的(agentsite/model_route.py 该上报吗);别的问题走升级,不上报
+        ("ck_trace_incidents_kind", "kind in ('环境故障', '撞花费上限')"),
+        ("ck_trace_incidents_status", "status in ('待处理', '已处理')"),
     ],
     "bridge_calls": [
         ("ck_bridge_calls_status", "status in ('待执行', '已执行', '执行失败')"),

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """执行记录推送 · 推哪几轮、推什么(证据中心第四个工作包,10-25)。真调 tools/spans_push.py 的 要推的 / 载荷。"""
+import json
 import os
 import sys
 import time
@@ -13,6 +14,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
 咬合 = [
     ("还在进行中的也推", "还「进行中」的不推(跑完或判中断以后再推)"),
     ("工具那步不用原文,只推展示副本", "工具那步有原文就推原文,并标「是原文」"),
+    ("轮末补记的上报不算进签名", "推过之后轮末补记了上报 → 签名变了,重推"),
 ]
 
 
@@ -53,11 +55,28 @@ def main():
     ck("工具那步有原文就推原文,并标「是原文」", 步["c1"]["入"]["参数"] == "{\"phone\": \"13812345678\"}" and 步["c1"]["入"]["是原文"] is True, 步["c1"])
     ck("原文校验不一致的不推它,退回展示副本并标「不是原文」", 步["c1"]["出"]["返回"] == "打码的" and 步["c1"]["出"]["是原文"] is False, 步["c1"])
     ck("工具名带服务前缀;根带提问", 步["c1"]["入"]["工具"] == "mcp__crm__get_customer" and 步["r"]["入"]["提问"] == "问")
+    # 上报:真走一遍「写一棵 → 轮末 spans.记上报 补到根上 → spans.读 合并」—— 合并后行数和状态都不变,签名要靠上报那一项变
+    import tempfile
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agent"))
+    import spans as _SPN
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "s.jsonl")
+        with open(f, "w", encoding="utf-8") as w:
+            w.write(json.dumps(根("U", "unset", 现在), ensure_ascii=False) + "\n")
+        前 = _SPN.读(f)["U"]
+        已2 = {"U": SP.签名(前)}
+        _SPN.记上报("U", "r", {"类": "环境故障", "理由": "工具 kb_size 碰到数据库故障(database is locked)"}, path=f)
+        后 = _SPN.读(f)["U"]
+    ck("推过之后轮末补记了上报 → 签名变了,重推", "U" in SP.要推的({"U": 后}, 已2, 现在), (SP.签名(前), SP.签名(后)))
+    体2 = SP.载荷("U", 后, [])
+    ck("带上报的那一轮,推的体里有「上报」{类, 理由}", (体2.get("上报") or {}).get("类") == "环境故障"
+       and "locked" in 体2["上报"].get("理由", ""), 体2.get("上报"))
+    ck("没上报的那一轮,体里不带「上报」(不推空单)", "上报" not in SP.载荷("U", 前, []))
     print()
     if 坏:
         print(f"{R}❌ 执行记录推送 {len(坏)} 条不过(验了 {数[0]} 条){D}")
         return 1
-    print(f"{G}✅ 执行记录推送:进行中不推、推过不重推、变了重推、工具步优先原文(验了 {数[0]} 条){D}")
+    print(f"{G}✅ 执行记录推送:进行中不推、推过不重推、变了重推(含轮末补记的上报)、工具步优先原文(验了 {数[0]} 条){D}")
     return 0
 
 
