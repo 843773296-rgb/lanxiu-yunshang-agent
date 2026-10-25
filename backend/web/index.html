@@ -2947,10 +2947,10 @@ async function approvalCenter(定位单){
      ${d.risky.map(r=>`<tr id="rk-${esc(r.id)}"${r.id===定位单?' style="background:#fff7e6"':""}><td class="mono">${esc(r.id)}</td>
       <td><span class="pill p-warn">${esc(r.kind)}</span></td>
       <td class="mono">${esc(r.target)} <span style="color:var(--ink3)">${esc(r.target_name||"")}</span></td>
-      <td class="mono" style="font-size:12.5px">${esc(Object.entries(r.pl||{}).map(([k,v])=>k+"="+v).join(" · "))}</td>
-      <td class="mono">${esc(r.applied_by)}</td>
+      <td>${esc(r.内容||"")}</td>
+      <td>${esc(r.申请人名||r.applied_by)}</td>
       <td class="mono" style="color:var(--ink3)">${esc(r.applied_at)}</td>
-      <td style="color:var(--ink2)">${esc(r.note||"—")}</td>
+      <td style="color:var(--ink2)">${esc(r.原因||"—")}</td>
       <td>${r.我能批
         ? `<span class="lk" data-rkok="${esc(r.id)}">通过</span><span class="lk" data-rkno="${esc(r.id)}">驳回</span>`
         : `<span style="color:var(--ink4);font-size:12.5px" title="${esc(r.为什么||"")}">${esc(r.为什么||"需总部运营")}</span>`}</td></tr>`).join("")}

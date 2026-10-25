@@ -2228,6 +2228,20 @@ def approvals(me=None):
         except Exception: r["pl"]={}
         nm=rows("SELECT name FROM customer WHERE id=?",(r["target"] or "").split("|")[0])
         r["target_name"]=nm[0]["name"] if nm else ""
+        # 给人看的三栏(10-26 用户截图):理由在 payload.reason 里,原来那栏读的是审批批注(待审批时恒空);
+        # 申请人只给工号;调整内容把 to_advisor_no / reason 这些内部键原样摊出来
+        pl=r["pl"] if isinstance(r["pl"],dict) else {}
+        r["原因"]=pl.get("reason") or r.get("note") or ""
+        r["申请人名"]=backend._员工称呼(r["applied_by"]) or r["applied_by"]
+        if r["kind"]=="客户转移":
+            n=len([x for x in (r["target"] or "").split("|") if x.strip()])
+            r["内容"]=f"转给 {backend._员工称呼(pl.get('to_advisor_no')) or pl.get('to_advisor') or '?'}"+(f" · 共 {n} 位" if n>1 else "")
+        elif "from" in pl or "to" in pl:
+            r["内容"]=f"{pl.get('from','?')} → {pl.get('to','?')}"
+        elif "delta" in pl:
+            r["内容"]=f"积分 {'+' if str(pl['delta'])[:1] not in '+-' else ''}{pl['delta']}"
+        else:
+            r["内容"]=" · ".join(f"{k}={v}" for k,v in pl.items() if k!="reason")
         # 这个登录的人能不能批这一张 —— 页面照这个显示按钮;**真判在 decide_approval 的 fsm.check**,这里只是同一份预判
         d=approval_detail(r["id"],me) if me else {"看不到":True}
         r["我能批"]=bool(d.get("我能批")); r["为什么"]=d.get("为什么") or ("没登录" if not me else "")
