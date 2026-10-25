@@ -16,6 +16,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("手选了模型也照样分流", "页面手选过模型 → 不分流(手选的优先)"),
     ("环境故障也升级", "环境故障(锁库 / 连不上)→ 不升级,换模型救不了"),
     ("撞花费上限不上报", "撞了花费上限 → 上报「撞花费上限」,理由带上限"),
+    ("新会话照抄下拉框的模型",  "上一条会话没手选(老默认 Opus 5)→ 新会话用网站默认,分流才开得了"),
     ("工具报错后自己调成功了也升级", "报错后同一个工具又调成功了(10-25 实测那一轮的样子)→ 不升级"),
 ]
 
@@ -72,6 +73,22 @@ def main():
     认 = set(re.findall(r"'([^']+)'", re.search(r"ck_trace_incidents_kind\", \"kind in \(([^)]*)\)", 库).group(1)))
     出 = {M.该上报吗({"环境故障": 故})["类"], M.该上报吗({"budget_hit": True})["类"]}
     ck("上报的类正好是管理后台故障单认的那几个", 出 == 认, (出, 认))
+
+    # ── 新会话用哪个模型(station.html 的 新会话模型,node 真调)──
+    import json, re, subprocess
+    页 = open(os.path.join(HERE, "web", "station.html"), encoding="utf-8").read()
+    m = re.search(r"function 新会话模型\(前, 默认, 下拉\)\{.*?\n\}", 页, re.S)
+    ck("station.html 里找得到 新会话模型(找不到这几条就是没验)", bool(m))
+    def 新(前):
+        js = (m.group(0) if m else "") + f"\nconsole.log(JSON.stringify(新会话模型({json.dumps(前)}, {json.dumps(默)}, 'claude:claude-opus-5')));"
+        r = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=30)
+        return json.loads(r.stdout) if r.returncode == 0 else {"node": r.stderr[-200:]}
+    x = 新({"model": "claude:claude-opus-5"})
+    ck("上一条会话没手选(老默认 Opus 5)→ 新会话用网站默认,分流才开得了", x == {"model": 默, "模型手选": False}, x)
+    x = 新({"model": "claude:claude-opus-5", "模型手选": True})
+    ck("上一条会话手选过 → 新会话带过去,而且仍标手选(不分流)", x == {"model": "claude:claude-opus-5", "模型手选": True}, x)
+    ck("没有上一条会话 → 网站默认", 新(None) == {"model": 默, "模型手选": False}, 新(None))
+    ck("接线:新建会话走 新会话模型", "新会话模型(cur(), MODEL_DEFAULT" in 页)
 
     app = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
     sdk = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()

@@ -606,10 +606,19 @@ const KINDS = {};      // kind → 角色对象,拉到之后填
 // 顾问那条会话里模型手上有 17 个工具,工坊那条只有 6 个。
 let PICKING = false;   // 正在选角色
 
+// 新会话用哪个模型。纯函数,model_route_check 用 node 真调它。
+// 10-25 修:原来直接抄下拉框当前值 —— 老会话是默认还是 Opus 5 那几天开的,新会话就悄悄继承 Opus 5,
+// 而它既不是网站默认、又没标手选,难题分流一次都不开(那一轮 $0.68)。
+// 现在:上一条会话**手选过**才带过去(连同手选标记);否则一律用网站默认。
+function 新会话模型(前, 默认, 下拉){
+  if(前 && 前.模型手选 && 前.model) return {model: 前.model, 模型手选: true};
+  return {model: 默认 || 下拉 || "", 模型手选: false};
+}
 function newConv(kind){
+  const 模 = 新会话模型(cur(), MODEL_DEFAULT, $("#model").value);
   const c = {id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
              title:"新会话", kind: kind || "all",
-             model: $("#model").value || MODEL_DEFAULT,
+             model: 模.model, 模型手选: 模.模型手选,
              session:null, at:Date.now(), msgs:[]};
   DB.convs.unshift(c); DB.cur = c.id; save(); return c;
 }

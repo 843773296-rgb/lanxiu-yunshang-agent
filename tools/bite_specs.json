@@ -13304,5 +13304,17 @@
    }
   ],
   "预期红": "中断的根:结束时刻拉到已知最后一步(子不比根久)"
+ },
+ {
+  "script": "agentsite/model_route_check.py",
+  "改坏": "新会话照抄下拉框的模型",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "  return {model: 默认 || 下拉 || \"\", 模型手选: false};",
+    "new": "  return {model: 下拉 || 默认 || \"\", 模型手选: false};"
+   }
+  ],
+  "预期红": "上一条会话没手选(老默认 Opus 5)→ 新会话用网站默认,分流才开得了"
  }
 ]
