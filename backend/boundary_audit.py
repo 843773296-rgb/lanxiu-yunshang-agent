@@ -169,6 +169,33 @@ def a_customer_read_no_login():
     raise PermissionError("没登录 401、跨店 403(这正是期望的)")
 
 
+def a_triage_queue_no_login():
+    """研判队列:不带登录去取(2026-10-25 补)。
+
+    ⚠️ 这条和上面那条客户读接口**不是一种形状**,所以单独一条:
+    别的接口泄的是**字段**(customer.name / phone / addr),裁字段、打码、
+    按角色挑列都拦得住。这个口泄的是 `ai_root_cause` —— **模型写的研判根因**,
+    「同一客户跨店重复建档」那一类里整句写着姓名、生日、详细地址。
+    **PII 不在结构里,在自由文本里**,所以字段级的手段一个都不适用,
+    只有这道登录闸挡得住。
+
+    它在 10-23 收那 26 个读接口时是**故意留的例外**(运维平台服务端不带 cookie 来取),
+    而那个例外在提交说明里写得清清楚楚 —— 两天里没人回头看它漏了什么。
+    """
+    import customer_read_auth_check as _C
+    码, 回 = _C.打("/api/ops-queue")
+    if 码 != 401:
+        return f"不带登录取研判队列回了 {码} —— 门没守住(根因文本里有客户姓名 / 生日 / 地址)"
+    # 第二刀:闸收了,但服务端那头要是还绕 HTTP 来取,自动研判就坏了 ——
+    # 而「坏了」和「守住了」在这条审计上长得一样,所以连它一起断言。
+    站 = open(os.path.join(ROOT, "agentsite", "app.py"), encoding="utf-8").read()
+    绕 = [l.strip()[:60] for l in 站.splitlines()
+          if "ops-queue" in l and ("urlopen" in l or "BACKEND" in l) and not l.strip().startswith("#")]
+    if 绕:
+        return f"闸收了,但运维平台服务端还在绕 HTTP 取队列({len(绕)} 处)—— 自动研判会挂"
+    raise PermissionError("没登录 401,而且服务端改成直接调 ops.队列载荷()(这正是期望的)")
+
+
 def a_scheme_customer_search():
     """方案页搜客户(复审第 4 节 B,10-23):没登录去搜、店长按客户号搜别家店的客户、
     拿别家客户的着装人去推码。打路由不调函数(搜索的门店范围在路由里取登录身份)。"""
@@ -1433,6 +1460,11 @@ STRUCT = [
   a_customer_read_no_login, "不带登录翻客户详情;拿店长会话翻别家店的客户",
   "身份只从登录态取,门店范围跟登录走、不跟请求参数走(列表传别家店也被本店覆盖);"
   "总部运营 / 售后跨店,和差评隔离同一个常量。⚠️ 只管这三个接口 —— 订单、预约等页面里带出的客户信息不在这一条里"),
+ ("研判队列要登录(根因文本里有客户姓名 / 生日 / 地址)", "backend/server.py 要登录的读;ops.队列载荷;agentsite/app.py 不绕 HTTP",
+  a_triage_queue_no_login, "不带登录取研判队列;并查服务端有没有改回绕 HTTP(绕了就得给这个口留例外)",
+  "这一条泄的是**模型写的自由文本**,不是字段 —— 裁字段 / 打码 / 按角色挑列全都不适用,"
+  "只有登录闸挡得住。10-23 它是个有理由的例外(服务端不带 cookie),2026-10-25 把理由去掉了:"
+  "站和后台同机同仓,取队列改成直接 import。⚠️ 跨机部署时服务端要换回 HTTP,那时这道闸得认服务端身份"),
  ("方案页搜客户要登录、只搜本店;着装人必须是这位客户名下的", "backend/server.py /api/scheme-customers · /api/scheme-wearers;api.本店范围 / kb_fit",
   a_scheme_customer_search, "不带登录搜客户;拿店长会话按客户号搜别家店的客户;拿别家客户的着装人去推码",
   "身份只从登录态取,范围走 api.本店范围(和客户读接口同一个函数、同一个跨店角色常量);"

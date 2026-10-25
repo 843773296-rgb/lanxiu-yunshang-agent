@@ -777,17 +777,22 @@ class H(BaseHTTPRequestHandler):
             ids = body.get("task_ids") or ([body["task_id"]] if body.get("task_id") else [])
             if not ids:
                 # 不传就从队列里自动取:超时的排在前面,取几条由 n 决定(默认 3,别一口气烧钱)
+                # ⚠️ **直接调 `ops` 模块,不绕 HTTP**(2026-10-25 改)。
+                # 原来这里 `urlopen(BACKEND + "/api/ops-queue")`,而那个口因此**不能要求登录** ——
+                # 队列里 `ai_root_cause` 是模型写的研判根因,「同一客户跨店重复建档」那一类
+                # 整句写着客户姓名、生日、详细地址,实测不登录能翻到 40 位客户的这三项。
+                # 站和后台同机同仓,本文件早就直接 import 它拿研判提示词(见 `_ops_mod`),
+                # 取队列同理。**跨机部署时这里要换回走 HTTP(那时后台的闸要认服务端身份),
+                # 但不许在这边复制一份筛档逻辑** —— 口径只在 `ops.队列载荷()` 那一份。
+                #
+                # 原来那段 try 分「超时」和「连不上」报错(后台单线程、忙起来要排队),
+                # **直接调模块之后这两种失败都不存在了**;读库真出错就往上抛,
+                # 由 /run-triage 那层收 —— 留一句假的「后台连不上」比没有更误导。
                 try:
-                    q = json.loads(urllib.request.urlopen(
-                        BACKEND + "/api/ops-queue?state=" + quote("未研判"), timeout=30).read())["rows"]
+                    q = _ops_mod().队列载荷("未研判")["rows"]
                 except Exception as e:
-                    # **「超时」和「连不上」要分开说。** 后台(server.py)是单线程的:它正忙着处理别的长请求时,
-                    # 取队列要排队,30 秒没轮到就超时 —— 那时它是**在忙**,不是**连不上**。
-                    # 10-14 数据工厂拿到「后台连不上:timed out」,而单独取队列 6 毫秒就回 —— 差点照着这句去查 8760 挂没挂。
-                    慢 = isinstance(e, TimeoutError) or "timed out" in str(e)
-                    return self._send({"error": ("取研判队列时后台 30 秒没回:它一次只处理一个请求,多半正忙着别的,"
-                                                 "稍后再点一次;**不是连不上,也不是研判跑挂了**。" if 慢 else
-                                                 f"取研判队列时连不上后台(8760 可能没起):{e}")}, code=502)
+                    return self._send({"error": f"取研判队列时读库出错(不是后台没起,这里不走 HTTP 了):{e}"},
+                                      code=500)
                 # ⚠️ **跳过没有 AI 研判分支的**(2026-10-15)。
                 # 「未研判」档里超时的排最前,而超时的最前面恰好全是评价差评 ——
                 # 差评的 AI 辅助按业务 2026-10-10 拍板默认关闭(由店长人工确认)。
@@ -837,8 +842,9 @@ class H(BaseHTTPRequestHandler):
         # 一条工单研判过一次就变「待复核」,再想重跑就找不到了。
         # (原来这儿对比的是后台 /api/agent-tasks,那个接口 2026-09-28 随
         #  单条试跑页一起删了;留着一条指向不存在接口的注释比没注释更误导。)
-        q = json.loads(urllib.request.urlopen(
-            BACKEND + "/api/ops-queue", timeout=30).read())["rows"]
+        # 直接调模块,不绕 HTTP —— 和上面 /run-triage 自动挑单那处同一个理由
+        # (那个口 2026-10-25 起要登录:根因文本里有客户姓名 / 生日 / 地址)。
+        q = _ops_mod().队列载荷()["rows"]
         t = next((x for x in q if x["task_id"] == tid), None)
         # 研判队列 10-15 起只放 AI 能跑的 —— 找不到的多半是不走 AI 的(差评),它们在值班台
         if not t: raise ValueError(f"研判队列里没有 {tid}(不走 AI 的类型,比如差评,在值班台「差评待店长确认」)")

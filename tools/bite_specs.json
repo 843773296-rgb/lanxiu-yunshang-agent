@@ -13564,5 +13564,29 @@
    }
   ],
   "预期红": "不能批的人打开 → 批准 / 拒绝两个按钮都是灰的,旁边写为什么"
+ },
+ {
+  "script": "backend/customer_read_auth_check.py",
+  "改坏": "把研判队列从 `要登录的读` 里删掉(回到 10-23 那个例外)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    \"/api/ops-queue\",\n)",
+    "new": ")"
+   }
+  ],
+  "预期红": "没登录:点名的带客户信息读接口全拒(401)"
+ },
+ {
+  "script": "backend/customer_read_auth_check.py",
+  "改坏": "让运维平台服务端改回绕 HTTP 取研判队列",
+  "file": [
+   {
+    "path": "agentsite/app.py",
+    "old": "        q = _ops_mod().队列载荷()[\"rows\"]",
+    "new": "        q = json.loads(urllib.request.urlopen(BACKEND + \"/api/ops-queue\", timeout=30).read())[\"rows\"]"
+   }
+  ],
+  "预期红": "运维平台服务端不绕 HTTP 取研判队列(绕了就必须给那个口留例外)"
  }
 ]

@@ -63,6 +63,14 @@ def _wtoday():
     "/api/aftersales", "/api/maintains", "/api/guide-perf", "/api/approvals", "/api/approval-list",
     "/api/schedule", "/api/staff", "/api/factory-feed",
     "/api/scheme-customers", "/api/scheme-wearers",   # 方案页搜客户 / 列着装人(复审第 4 节 B,10-23)
+    # 研判队列(2026-10-25 补)。10-23 收那 26 个时**故意漏了它**,理由是运维平台服务端
+    # 不带 cookie 来取队列、加闸会让自动研判悄悄坏掉。那个理由现在不成立:取队列改成
+    # 直接调 `ops.队列载荷()`(同机同仓,`agentsite/app.py` 早就直接 import 它拿研判提示词)。
+    # ⚠️ 它泄的东西和这份清单上其它接口**不是一种形状**:别的接口是字段里有客户姓名电话,
+    # 它是 `ai_root_cause` —— **模型写的研判根因**,「同一客户跨店重复建档」那一类
+    # 整句写着姓名、生日、详细地址。实测不登录从两个端口都能翻到 40 位客户的这三项。
+    # **字段级的脱敏对它无效**(PII 不在结构里,在自由文本里),只有这道闸挡得住。
+    "/api/ops-queue",
 )
 要登录的读_前缀 = (
     "/api/task/", "/api/export/", "/api/appt/", "/api/chat-order/", "/api/aftersale/",
@@ -3194,7 +3202,12 @@ class H(BaseHTTPRequestHandler):
             u = _me(self)
             return self._send(u or {"error": "没登录"}, 200 if u else 401)
         # 带客户信息的读接口一律要登录(用户 10-23 拍,见 intent/read-login.md)。
-        # **点名,不一刀切**:运维平台服务端取研判队列不带 cookie,全站一刀切会让自动研判悄悄坏掉。
+        # **点名,不一刀切** —— 但 2026-10-25 起**没有例外了**:原来唯一那个例外
+        # (研判队列,因为运维平台服务端不带 cookie 来取)已经收进清单,
+        # 服务端那头改成直接调 `ops.队列载荷()`。
+        # ⚠️ 留一个「为了别处能跑」的例外,代价是它**不会再被审一次** ——
+        # 那条例外在 10-23 的提交说明里写得清清楚楚,而两天里没人发现它漏着 40 位客户的
+        # 姓名生日地址。例外写进注释不等于例外被记住。
         # 新加一个会带出客户姓名 / 电话 / 地址的读接口,要加进 `要登录的读`。
         if _要登录(p) and not _me(self):
             return self._send({"error": "请先登录 —— 这一页带着客户信息", "code": "NO_AUTH"}, 401)
@@ -3438,18 +3451,10 @@ class H(BaseHTTPRequestHandler):
             # 这里只负责转发 —— 路由层不放业务规则,SLA 改了不用翻两个文件。
             import ops as _ops
             if p=="/api/ops-queue":
-                # 各档计数一起给 —— 页面要在「待办」那档说出「另有 N 条已超时」。
-                # 让页面自己数会漂:它手上只有本档的行,数不出别档的。
-                # 研判队列**只放 AI 能跑的**(用户 10-15 拍),差评挪到值班台 —— 计数也只数这些,
-                # 另报挪走了多少,页面上写一句「差评 N 条在值班台」,不让人以为它们消失了
-                _所有 = _ops.queue()
-                _全 = _ops.研判队列(_所有)
-                _挪 = _ops.待店长确认(_所有)
-                _st = (Q.get("state") or [None])[0]
-                return self._send(dict(rows=[x for x in _全 if _ops.档位[_st](x)] if _st in _ops.档位 else _全,
-                                       counts=_ops.各档计数(_全),
-                                       挪到值班台=dict(开着=_挪["开着"], 已超时=_挪["已超时"],
-                                                     没走正门关的=_挪["没走正门关的"])))
+                # 登录闸在上面那份 `要登录的读` 里(2026-10-25 加),**这里不再写第二道** ——
+                # 档位 / 名单类的东西在这个项目里已经有四份各自维护的先例,每多一份就多一次
+                # 「改了一处漏了另一处,而漏的那一处不报错」。口径(筛档 + 计数)在 `ops.队列载荷()`。
+                return self._send(_ops.队列载荷((Q.get("state") or [None])[0]))
             if p=="/api/ops-manual":
                 # 值班台「差评待店长确认」(用户 10-15 拍)—— 和研判队列同一份 queue() 分出来,不另算
                 return self._send(_ops.待店长确认())

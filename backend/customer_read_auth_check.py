@@ -29,6 +29,10 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
     ("店长也当成跨店角色(不按门店划)", "店长看别家店的客户:拒(403)"),
     ("列表照用请求里传的门店(不按登录的店覆盖)", "店长翻列表时传别家店:照样只回本店"),
     ("从点名清单里删掉订单列表", "没登录:点名的带客户信息读接口全拒(401)"),
+    ("把研判队列从 `要登录的读` 里删掉(回到 10-23 那个例外)",
+     "没登录:点名的带客户信息读接口全拒(401)"),
+    ("让运维平台服务端改回绕 HTTP 取研判队列",
+     "运维平台服务端不绕 HTTP 取研判队列(绕了就必须给那个口留例外)"),
 ]
 
 
@@ -103,7 +107,11 @@ def main():
             "/api/orders", "/api/aftersales", "/api/maintains", "/api/guide-perf", "/api/approvals",
             "/api/approval-list", "/api/schedule", "/api/staff", "/api/factory-feed",
             "/api/task/X", "/api/export/X", "/api/appt/X", "/api/chat-order/X", "/api/aftersale/X",
-            "/api/maintain/X", "/api/order-log/X"]
+            "/api/maintain/X", "/api/order-log/X",
+            # 研判队列(2026-10-25 补)。10-23 收这批时它是**故意留的例外** ——
+            # 理由是运维平台服务端不带 cookie 来取。它漏的是 `ai_root_cause`:
+            # 模型写的研判根因,「同一客户跨店重复建档」那一类整句写着姓名、生日、详细地址。
+            "/api/ops-queue"]
     漏 = [x for x in 点名 if 打(x)[0] != 401]
     ck("没登录:点名的带客户信息读接口全拒(401)", bool(点名) and not 漏,
        f"{len(点名)} 个" + (f",漏了 {漏[:4]}" if 漏 else ""))
@@ -114,6 +122,40 @@ def main():
         except Exception:
             pass   # 跑到业务函数里出错不是这条要验的事(page_smoke 管它跑不跑得通);要验的只是没被登录闸挡
     ck("登录了:这些接口不被登录闸挡", not 挡错, f"被挡的 {挡错[:4]}" if 挡错 else f"{len(server.要登录的读)} 个")
+
+    # ── 研判队列那个口:闸收了之后,服务端那头**不能再绕 HTTP** ──────────────
+    # 这条判据和上面那些不一样:它不打 HTTP,扫的是 `agentsite/app.py` 的源码。
+    # 为什么要它:加闸和改调用方是**一对**,只做一半的后果不对称 ——
+    #   · 只加闸、服务端还绕 HTTP → 自动研判当场坏,而坏法是「点研判没反应」,
+    #     用户 10-14 为这个形状报过一次 bug,查了很久(那次是取到的单跑不了)。
+    #   · 只改调用方、不加闸 → 什么都不坏,**于是没人会发现闸没加上**。
+    # 所以把「不绕 HTTP」钉成判据:哪天有人图省事改回 urlopen,这条先红,
+    # 而不是等自动研判在半夜的批量里挂掉。
+    _站 = io.open(os.path.join(os.path.dirname(HERE), "agentsite", "app.py"), encoding="utf-8").read()
+    # 查结构不查字面:任何一处把 ops-queue 拼进 URL 都算绕 HTTP(urlopen / Request / requests 都一样)
+    _绕 = [l.strip()[:70] for l in _站.splitlines()
+           if "ops-queue" in l and ("urlopen" in l or "Request(" in l or "BACKEND" in l)
+           and not l.strip().startswith("#")]
+    ck("运维平台服务端不绕 HTTP 取研判队列(绕了就必须给那个口留例外)", not _绕,
+       f"还有 {len(_绕)} 处:{_绕[:2]}" if _绕 else "改成直接调 ops.队列载荷()")
+    ck("研判队列在统一的 `要登录的读` 清单里(不是在路由里另写一道 if)",
+       "/api/ops-queue" in server.要登录的读,
+       f"清单里现在 {len(server.要登录的读)} 个")
+
+    # ── 「这个库上有几条根因带客户信息」:只报数,**不判红** ─────────────────
+    # 它取决于 triage 表里碰巧有什么,而 CI 上没有模型凭据 → 不造研判样本 → 这张表恒空。
+    # 按 CLAUDE.md 那条教训拆开:**闸在不在**由上面两条硬断言守(两个环境都真验得到);
+    # 这里只打印,让人看见「闸拦的是不是一个真的带 PII 的口」。
+    try:
+        import ops as _ops_m
+        _行 = _ops_m.队列载荷()["rows"]
+        _文 = json.dumps(_行, ensure_ascii=False)
+        _名 = [r["name"] for r in server.rows("SELECT name FROM customer WHERE name<>''")]
+        _中 = {n for n in _名 if n in _文}
+        print(f"  ◻️  这个库上:研判队列 {len(_行)} 条,根因文本里出现了 {len(_中)} 位客户的姓名"
+              f" —— **这一行不是判据**,它取决于库里有没有研判样本(CI 上 triage 表是空的)")
+    except Exception as _e:
+        print(f"  ◻️  这个库上的根因 PII 没数出来({type(_e).__name__})—— 同样不是判据")
 
     码, 回 = 打(f"/api/customer/{本店客}", t店)
     ck("店长看本店客户:看得到", 码 in (None, 200) and ((回 or {}).get("customer") or {}).get("id") == 本店客,
