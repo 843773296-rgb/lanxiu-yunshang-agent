@@ -89,6 +89,8 @@ def main():
     ck("上一条会话手选过 → 新会话带过去,而且仍标手选(不分流)", x == {"model": "claude:claude-opus-5", "模型手选": True}, x)
     ck("没有上一条会话 → 网站默认", 新(None) == {"model": 默, "模型手选": False}, 新(None))
     ck("接线:新建会话走 新会话模型", "新会话模型(cur(), MODEL_DEFAULT" in 页)
+    ck("接线:选助手时复用空会话也按 新会话模型 重定,选完同步下拉框",
+       "Object.assign(c, 新会话模型(c, MODEL_DEFAULT" in 页 and "PICKING = false; 同步模型();" in 页)
 
     app = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
     sdk = open(os.path.join(HERE, "sdk.py"), encoding="utf-8").read()

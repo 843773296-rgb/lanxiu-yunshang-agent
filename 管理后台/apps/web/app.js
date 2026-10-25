@@ -3303,6 +3303,30 @@ async function 页_调用链() {
   });
 }
 
+// 聊天站那一轮的「结论 ↔ 证据逐句核对」(用户 2026-10-25 拍:后台也要看得到)。规则在聊天站 agentsite/claims.py 判,
+// 这里只画。有问题的句子排前面;没授权时服务端只给状态和出处路径,句子正文不给(和每一步的入 / 出同一条授权)
+const _核色 = { "已核对": "ok", "存在冲突": "fail", "缺少依据": "warn", "未判定": "" };
+function 画逐句核对(k, 脱) {
+  if (!k) return `<h2>结论和证据逐句核对</h2><div class="state">这一轮没有逐句核对 —— 不是聊天站的运行,或是 10-25 之前推过来的</div>`;
+  const 计 = k["计数"] || {};
+  const 序 = { "存在冲突": 0, "缺少依据": 1, "已核对": 2, "未判定": 3 };
+  const 句们 = (k["句们"] || []).filter((x) => x["状态"] !== "未判定")
+    .sort((a, b) => 序[a["状态"]] - 序[b["状态"]]);
+  return `<h2>结论和证据逐句核对</h2>
+    <div class="cards">
+      ${["已核对", "存在冲突", "缺少依据", "未判定"].map((n) =>
+        _卡(n, 计[n] || 0, n === "存在冲突" && (计[n] || 0) > 0, "", "聊天站推送时判的快照")).join("")}
+    </div>`
+    + 句们.map((x) => `<div class="card">
+        <div class="k"><span class="pill ${_核色[x["状态"]] || ""}">${esc(x["状态"])}</span>
+          ${脱 ? `<span class="k">(句子正文要「查看敏感输入」授权)</span>` : esc(String(x["句"] || "").slice(0, 160))}</div>
+        ${!脱 && x["理由"] ? `<div class="k">${esc(x["理由"])}</div>` : ""}
+        ${(x["依据"] || []).length ? `<div class="k">出处:${(x["依据"] || []).map((d) =>
+            `${!脱 && d["值"] ? esc(d["值"]) + " ← " : ""}${esc(d["工具"] || "")} ${esc(d["路径"] || "")}`).join(" · ")}</div>` : ""}
+      </div>`).join("")
+    + `<div class="note">${esc(k["说明"] || "")}</div>`;
+}
+
 async function 页_调用树(tid) {
   const 头 = `<div class="crumb"><a href="#/traces">调用链</a> · 调用树</div>
     <div class="head"><div><h1>调用树</h1>
@@ -3332,6 +3356,7 @@ async function 页_调用树(tid) {
                     : `$${Number(u["已知金额"]).toFixed(4)}`}</td></tr>`).join("")
           + `</tbody></table>`
         : `<div class="state">这次运行没有用量记录</div>`)
+    + 画逐句核对(d["结论"], 脱)
     + `<h2>每一步</h2>`
     + (d["步们"] || []).map((s2, i) => `<div class="card">
         <div class="k">${i + 1}. ${esc(s2.stage)}

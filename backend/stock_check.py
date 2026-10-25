@@ -40,6 +40,7 @@ sys.path[:0] = [HERE, ROOT, os.path.join(ROOT, "knowledge")]
 # 每一条都手动改坏过一次,确认对应那条检查**真的会红**。
 # 一条从没红过的检查,和没有这条检查是一样的。
 咬合 = [
+    ("不传档位时照旧四档各给 30 条", "不传档位 = 概览:每档明细最多 5 个,并告诉模型要整档清单传哪一档"),
     ("把 15 篇第一节「补货_服务水平」那一行依据里的业务日期去掉",
      "我们的决定每一行都带业务日期"),
     ("在 stockalert 里把缺货容忍写回 `服务水平 = 0.95`(第二个来源)",
@@ -151,12 +152,26 @@ def main():
        all(k in r for k in 档), len(档),
        "**在手有货但全被占用**是唯一一种「在库存表上看起来没问题」的缺货")
 
-    行 = [x for k in 档 for x in (r[k].get("明细") or [])]
+    # 明细按档单独取(每档前 30)—— 不传 scope 的概览 10-25 起每档只列 5 个,拿它扫样本会从 150 行掉到 25 行
+    行 = [x for k in 档 for x in (api.stock_alert(k)[k].get("明细") or [])]
     坏 = [x for x in 行 if (x.get("卖过几笔") or 0) < SA.最少笔数
           and not isinstance(x.get("可售天数"), str)]
     ck("工具出口:笔数不够的,那一栏是话不是数", not 坏, len(行),
        f"{len(坏)} 行给出了编造的天数:{[x['SKU'] for x in 坏[:3]]}" if 坏
        else f"{len(行)} 行,**没有一个编出来的天数**")
+
+    # ── 概览(不传 scope)要放得进一次返回(用户 10-25 拍)──────────────────
+    # 原来四档各 30 条约 6 万字,超过 SDK 单次返回上限:每轮先撞一次「exceeds maximum allowed tokens」再分档重取
+    import json as _json
+    字数 = len(_json.dumps(r, ensure_ascii=False))
+    多 = {k: len(r[k].get("明细") or []) for k in 档 + ["到了补货点的"] if isinstance(r.get(k), dict)}
+    ck("不传档位 = 概览:每档明细最多 5 个,并告诉模型要整档清单传哪一档",
+       all(n <= 5 for n in 多.values()) and any("scope" in str(v) for k in 档 for v in (r[k] or {}).values()),
+       len(多), str(多))
+    ck("概览整份放得进一次返回(< 2.5 万字;原来 6 万字被 SDK 拒收)", 字数 < 25000, 1, f"{字数} 字")
+    快 = api.stock_alert("快没了")["快没了"]
+    ck("传了档位 → 照旧给前 30(概览收窄不影响要整档清单的)",
+       len(快.get("明细") or []) == min(30, 快.get("个数") or 0), 1, f"{len(快.get('明细') or [])} / {快.get('个数')}")
 
     # ⚠️ **这条判据 2026-09-15 收窄过一次,而原来那版画错了边。**
     #

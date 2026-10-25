@@ -35,7 +35,9 @@ def 签名(rows):
     根 = next((x for x in rows if not x.get("parent_span_id")), {})
     # 上报是轮末补记到根上的(读的时候合并,行数和状态都不变)—— 不算进签名的话,先推过的那一轮带着上报也不会再推
     报 = (根.get("attr") or {}).get("lanxiu.report.kind")
-    return f"{len(rows)}:{根.get('status')}" + (f":报={报}" if 报 else "")
+    # 「:核」(10-25 起):推的时候带上了逐句核对。签名一变,10-25 之前推过的那些轮会再推一次 ——
+    # 接收端对已收尾的轮只补这一栏(空的才补),不重写别的,所以补推是安全的
+    return f"{len(rows)}:{根.get('status')}" + (f":报={报}" if 报 else "") + ":核"
 
 
 def 要推的(棵们, 已推, 现在=None, 最多=一次最多):
@@ -54,7 +56,21 @@ def 要推的(棵们, 已推, 现在=None, 最多=一次最多):
     return [t for _, t in sorted(候)[:最多]]
 
 
-def 载荷(tid, rows, 原文条):
+def 逐句核对(rows, 原文条):
+    """这一轮的「结论 ↔ 证据逐句核对」—— 和聊天站 /spans 同一个函数(agentsite/claims.py),不另写一份。没有回答的轮给 None。"""
+    根 = next((x for x in rows if not x.get("parent_span_id")), {})
+    答 = (根.get("attr") or {}).get("lanxiu.answer")
+    if not 答:
+        return None
+    for d in ("agentsite", "backend"):
+        if os.path.join(ROOT, d) not in sys.path:
+            sys.path.insert(0, os.path.join(ROOT, d))
+    import claims as _cc
+    import api as _api
+    return _cc.核对(答, rows, 原文条, _api.WRITE_TOOLS, _cc.当时的业务今天(根.get("start")))
+
+
+def 载荷(tid, rows, 原文条, 结论=None):
     """一轮 → 接收端要的体。工具那几步优先用原文(有就用,标「是原文」),没有才用展示副本(并标出来)。"""
     原 = {(x.get("span"), x.get("哪段")): x.get("内容") for x in 原文条 if x.get("校验") == "一致"}
     根 = next((x for x in rows if not x.get("parent_span_id")), {})
@@ -84,7 +100,8 @@ def 载荷(tid, rows, 原文条):
     报 = ({"类": ra["lanxiu.report.kind"], "理由": ra.get("lanxiu.report.reason") or ""}
          if ra.get("lanxiu.report.kind") else None)
     return {"外部trace": tid, "会话号": 根.get("会话号"), "状态": 根.get("status"),
-            "开始": 根.get("start"), "结束": 根.get("end"), "步们": 步们, **({"上报": 报} if 报 else {})}
+            "开始": 根.get("start"), "结束": 根.get("end"), "步们": 步们, **({"上报": 报} if 报 else {}),
+            **({"结论": 结论} if 结论 else {})}
 
 
 def 配置():
@@ -122,7 +139,12 @@ def main():
     成, 败 = 0, {}
     for tid in 要:
         条, _ = SP.读原文(tid)
-        码, 回 = _发(cfg, 载荷(tid, 棵们[tid], 条))
+        try:
+            结 = 逐句核对(棵们[tid], 条)
+        except Exception as e:      # 核对算不出不挡推送 —— 执行记录本身比核对结果重要
+            print(f"  ⚠️ {tid[:12]} 逐句核对算不出:{type(e).__name__}: {e}")
+            结 = None
+        码, 回 = _发(cfg, 载荷(tid, 棵们[tid], 条, 结))
         if 码 in ("200", "201"):
             已推[tid] = 签名(棵们[tid]); 成 += 1
         else:

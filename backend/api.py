@@ -205,6 +205,16 @@ def get_payment_flow(deposit_id):
     r=_rows("SELECT id,direction,amount,channel,channel_serial,status,ts FROM payment_flow WHERE deposit_id=?",deposit_id)
     return r if r else {"error":f"押金单 {deposit_id} 无支付流水"}
 
+def _员工称呼(no):
+    """工号 → 「顾晚(顾问)」;查不到回 None(不编)。用户 2026-10-25 拍:客户类工具里出现工号的地方,旁边带上姓名和岗位 ——
+    原来只给工号,模型在回答里只能写「经手 60000012」,派任务时也说不出「派给她的顾问顾晚」。
+    **工号那一栏原样留着**(判分器和检查按工号对),名字另起一栏。"""
+    if not no:
+        return None
+    r = _rows("SELECT name, role FROM staff WHERE no=?", str(no))
+    return f"{r[0]['name']}({r[0]['role']})" if r and r[0].get("name") else None
+
+
 def get_customer(customer_id):
     """客户档案。敏感字段按后台规则脱敏:手机号中间四位、地址门牌号"""
     r=_rows("SELECT * FROM customer WHERE id=?",customer_id)
@@ -212,6 +222,8 @@ def get_customer(customer_id):
     d=r[0]
     p=d.get("phone") or ""
     d["phone"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
+    if d.get("advisor_no"):
+        d["归属顾问"] = _员工称呼(d["advisor_no"]) or "(工号在员工表里查不到)"
     return d
 
 TOOLS={"list_tasks":list_tasks,"get_deposit":get_deposit,"get_refund_trace":get_refund_trace,
@@ -1773,7 +1785,7 @@ def stock_alert(scope=None):
     补多少、什么时候补是**采购的决定**。而且补货点 = 补货周期内的销量 + 安全库存,
     前者算不出、后者要业务定「缺货一次的代价」——**两样都没有,任何一个数都是编的**。
 
-    scope: 不传给全部;传「发不出」「断货」「快没了」「卖不动」只要一档。
+    scope: 不传给**概览**(四档的个数 + 每档最急的 5 个);传「发不出」「断货」「快没了」「卖不动」只要一档,明细给前 30。
     """
     import sys as _s, os as _o
     _s.path.insert(0, _o.path.join(_o.path.dirname(_o.path.abspath(__file__)),
@@ -1914,13 +1926,18 @@ def stock_alert(scope=None):
         d = x.get("可售天数")
         return (0, d) if isinstance(d, (int, float)) else (1, x.get("可用") or 0)
 
+    # 不传 scope = **概览**:每档只列最急的 5 个(用户 2026-10-25 拍)。原来四档各 30 条全给,约 6 万字,
+    # 超过 SDK 单次返回上限 —— 每轮先撞一次「exceeds maximum allowed tokens」,模型再一档一档重取(那轮多调了 3 次)。
+    # 要整档清单就传 scope,照旧给前 30。**个数**扫的是全部 SKU,不受明细条数影响。
+    列 = 30 if scope in 摊 else 5
     for k in 要哪些:
         lst = sorted(摊.get(k, []), key=_排)
         out[k] = _nz({
             "个数": len(lst),
             "是什么": 档说明.get(k),
-            "明细": lst[:30],
-            **({"（只列了前 30 个）": f"共 {len(lst)} 个"} if len(lst) > 30 else {}),
+            "明细": lst[:列],
+            **({f"（只列了前 {列} 个）": f"共 {len(lst)} 个"
+                + ("" if scope in 摊 else f";要这一档的完整清单(前 30)传 scope=「{k}」")} if len(lst) > 列 else {}),
         })
 
     # ⚠️ 原来这里**固定**输出一句「为什么没有可售天数 —— 是装饰不是指标」,写于全库只有 71 个 SKU
@@ -1935,8 +1952,8 @@ def stock_alert(scope=None):
         "是什么": (f"可用 ≤ 补货点。补货点 = 交期内平均销量 + 安全库存(缺货容忍 {_sa.服务水平:.0%},"
                   f"{_sa.服务水平_来源});交期取供应商登记的天数。"
                   "**它回答「什么时候该补」,补多少件仍是采购的决定。**"),
-        "明细": sorted(到点, key=lambda x: (x["可用"] - x["补货点"]))[:30],
-        **({"（只列了前 30 个）": f"共 {len(到点)} 个"} if len(到点) > 30 else {}),
+        "明细": sorted(到点, key=lambda x: (x["可用"] - x["补货点"]))[:列],
+        **({f"（只列了前 {列} 个）": f"共 {len(到点)} 个"} if len(到点) > 列 else {}),
     })
     压 = {}
     for k in 摊:
@@ -6489,7 +6506,7 @@ SHOP_SCHEMAS=[
     "assignee":{"type":"string","description":"只看这一个人,工号或姓名(等同 scope=团队 再筛一个人)"},
     "status":{"type":"string","description":"只看这一档:有效 / 完结 / 取消 / 无效。不传看全部。"}},
    "required":[]}},
- {"name":"get_member","description":"**查会员分层 —— 等级和生命周期一次给全。** 给 customer(客户号或姓名)返回这个人的**会员等级档**(凭什么、离下一档还差多少)和**生命周期档**(八档中的哪一档、凭什么、有没有人工覆盖);给 lifecycle 列这一档里有哪些人(**人数看 hit,rows 最多列 40 个**);再加 rank=true 按 **RFM 三维**排出「先联系谁」;再加 entered_month 查「某个月进入这一档的有多少」(九月 / 本月进入休眠的…)。\n\n⚠️ **这是两套各答各的判定,不要互相推导**:会员等级看的是滚动 12 个月的实付或完成单数(满足任一条即可,**不是「且」**,依据取客户档案上的 12 个月快照字段、**不是去订单表现算**);生命周期看的是多久没来,判定口径**全是含端边界**(第 90 天算活跃、第 91 天进休眠、第 181 天进潜在流失、第 366 天才算流失;实付满 15000 **含端**计高价值)—— 这些不要心算,直接看返回值。\n\n多条命中时**必须把命中列表一起说出来**,只报结论运营无从判断算得对不对。出现「提醒」字段说明库里存的值和按今天重算的不一致,照实说,不要替它选一个。**RFM 是相对分,只在返回的这一批人内部可比** —— 排序解决的是「先打给谁」,不是「谁更值钱」。**这是判定和排序,不是预测。**\n\n⚠️ 按姓名查会重名 —— 命中不止一个时不给等级明细,会明说要客户号。",
+ {"name":"get_member","description":"**查会员分层 —— 等级和生命周期一次给全。** 给 customer(客户号或姓名)返回这个人的**会员等级档**(凭什么、离下一档还差多少)、**生命周期档**(八档中的哪一档、凭什么、有没有人工覆盖)和**归属顾问**(工号 + 姓名岗位;**给某个客户派回访 / 跟进任务前先查这里,别说「没查到归属顾问」就去问人**);给 lifecycle 列这一档里有哪些人(**人数看 hit,rows 最多列 40 个**);再加 rank=true 按 **RFM 三维**排出「先联系谁」;再加 entered_month 查「某个月进入这一档的有多少」(九月 / 本月进入休眠的…)。\n\n⚠️ **这是两套各答各的判定,不要互相推导**:会员等级看的是滚动 12 个月的实付或完成单数(满足任一条即可,**不是「且」**,依据取客户档案上的 12 个月快照字段、**不是去订单表现算**);生命周期看的是多久没来,判定口径**全是含端边界**(第 90 天算活跃、第 91 天进休眠、第 181 天进潜在流失、第 366 天才算流失;实付满 15000 **含端**计高价值)—— 这些不要心算,直接看返回值。\n\n多条命中时**必须把命中列表一起说出来**,只报结论运营无从判断算得对不对。出现「提醒」字段说明库里存的值和按今天重算的不一致,照实说,不要替它选一个。**RFM 是相对分,只在返回的这一批人内部可比** —— 排序解决的是「先打给谁」,不是「谁更值钱」。**这是判定和排序,不是预测。**\n\n⚠️ 按姓名查会重名 —— 命中不止一个时不给等级明细,会明说要客户号。",
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号(如 C10001)或姓名。姓名可能重名,重名时要改用客户号。"},
     "lifecycle":{"type":"string","description":"按档位筛,如「潜在流失」「休眠」"},
@@ -6609,7 +6626,7 @@ SHOP_SCHEMAS=[
     "kind":{"type":"string","description":"定制品订单 / 标品订单,默认定制品订单"},
     "wearer_id":{"type":"string","description":"着装人编号(W 开头)。客户名下不止一个人时必传。"}},
    "required":["customer_id"]}},
- {"name":"stock_alert","description":"**库存预警** —— 哪些 SKU 要断了、哪些**看着有货其实一件都发不出**(在手有货但全被订单占用)、哪些在压货。805 个 SKU 全有库存数而在这之前没有任何工具会说「这个要断了」。⚠️ **在手 ≠ 可用**:客户问「还有货吗」要的是 **可用 = 在手 − 已占用**,只报在手会让客户白等。⚠️ **可售天数和补货点按每个 SKU 自己的销量算,算不出的会直说**(一件没卖过、或只卖过一笔 —— 一笔画不出速度)。**不许把「算不出」说成 0 天,也不许退回成「低于 N 件就预警」。** 补货点 = 交期内平均销量 + 安全库存(缺货容忍 95%,业务定),回答「什么时候该补」;**补多少件是采购的决定**。另报压货:多少天没卖出过一件,按 90 / 180 / 365 天分档,只提醒不改价。⚠️ 只看成品 SKU,**面料库存是另一摊**。","input_schema":{"type":"object","properties":{"scope":{"type":"string","description":"发不出 / 断货 / 快没了 / 卖不动;不传则全给"}}}},
+ {"name":"stock_alert","description":"**库存预警** —— 哪些 SKU 要断了、哪些**看着有货其实一件都发不出**(在手有货但全被订单占用)、哪些在压货。805 个 SKU 全有库存数而在这之前没有任何工具会说「这个要断了」。⚠️ **在手 ≠ 可用**:客户问「还有货吗」要的是 **可用 = 在手 − 已占用**,只报在手会让客户白等。⚠️ **可售天数和补货点按每个 SKU 自己的销量算,算不出的会直说**(一件没卖过、或只卖过一笔 —— 一笔画不出速度)。**不许把「算不出」说成 0 天,也不许退回成「低于 N 件就预警」。** 补货点 = 交期内平均销量 + 安全库存(缺货容忍 95%,业务定),回答「什么时候该补」;**补多少件是采购的决定**。另报压货:多少天没卖出过一件,按 90 / 180 / 365 天分档,只提醒不改价。⚠️ 只看成品 SKU,**面料库存是另一摊**。","input_schema":{"type":"object","properties":{"scope":{"type":"string","description":"发不出 / 断货 / 快没了 / 卖不动。不传 = 概览(四档个数 + 每档最急的 5 个);要某一档的完整清单(前 30)就传那一档"}}}},
  {"name":"order_log","description":"**这张单发生过什么**(只读)。状态变化、每一条工厂回传(**被拒收和作废的也在里面**)、人工回退、工厂延期、按件签收,按时间排成一条;还带这张单的包裹清单(分批发货时一个包裹一条)。顾客问「我的衣服到哪了」「为什么晚了」、店长查「这单为什么退回去过」都用它。只能看本店的单(总部运营看全部)。","input_schema":{"type":"object","properties":{"order_id":{"type":"string"}},"required":["order_id"]}},
  {"name":"delay_pending","description":"**工厂延期了、还没告诉顾客的单**(只读)。带原定完工日、延到什么时候、为什么、归属顾问、是不是你的。**联系顾客是对外动作,由人去做**;通知完用 mark_delay_told 标一下,不标这份清单只进不出。","input_schema":{"type":"object","properties":{}}},
  {"name":"mark_delay_told","description":"**(写)记下「已经把延期告诉顾客了」。** 只标本店的;标之前要跟用户确认他真的通知过了 —— 标错了这张单就从清单里消失,顾客再也等不到那个电话。","input_schema":{"type":"object","properties":{"delay_id":{"type":"integer"}},"required":["delay_id"]}},
@@ -6834,7 +6851,10 @@ def get_member(customer=None, lifecycle=None, rank=False, limit=None, entered_mo
         if len(rs) != 1:
             return {**lc, "note": (lc.get("note") or "") +
                     f" ⚠️ 这个说法命中 {len(rs)} 个客户,没法给等级明细 —— 给客户号(如 C10001)才行。"}
+        _顾 = (_rows("SELECT advisor_no FROM customer WHERE id=?", rs[0]["id"]) or [{}])[0].get("advisor_no")
         return {"客户": rs[0].get("name"), "客户号": rs[0].get("id"),
+                # 归属顾问(用户 10-25 拍带名字):派回访任务时要知道派给谁 —— 那一轮模型没查到就去问用户了
+                "归属顾问": ({"工号": _顾, "是谁": _员工称呼(_顾) or "(工号在员工表里查不到)"} if _顾 else "没有归属顾问"),
                 "会员等级": member_level(rs[0]["id"]),
                 "生命周期": rs[0],
                 "note": "会员等级看的是滚动 12 个月的钱和单数;生命周期看的是多久没来。"
@@ -7101,10 +7121,11 @@ def customer_history(customer=None, limit=30):
     return {
         "客户": f"{c0['name']}({c0['id']})",
         "触点数": len(旅),
+        # 「谁」是工号(原样留着),「是谁」是姓名和岗位(用户 10-25 拍)。⚠️ 这是**这一次的经手人**,不是归属顾问 —— 归属顾问看 get_member
         "最近一次": ({"什么时候": 近.get("时间"), "干了什么": 近.get("类型"),
-                     "谁": 近.get("经手人"), "备注": 近.get("备注")} if 近 else None),
+                     "谁": 近.get("经手人"), "是谁": _员工称呼(近.get("经手人")), "备注": 近.get("备注")} if 近 else None),
         "按时间": [{"时间": x.get("时间"), "类型": x.get("类型"),
-                   "谁": x.get("经手人"), "备注": x.get("备注")} for x in 旅[:n]],
+                   "谁": x.get("经手人"), "是谁": _员工称呼(x.get("经手人")), "备注": x.get("备注")} for x in 旅[:n]],
         "还有": max(0, len(旅) - n),
         "够不够算归因": {"能不能": 能算, "码": 码, "为什么": 说,
                        "下一步": _口径_journey().下一步.get(码, "")},

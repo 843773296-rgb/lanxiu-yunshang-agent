@@ -641,7 +641,11 @@ def g23_discount_promise(text, calls):
             return ("「不开票就便宜点」是让价,而且违反发票管理办法 —— 业务 10-10 晚定为**不许说**。"
                     "顾客要发票就开(默认数电普票,付清后开全额);价钱和开不开票无关")
     # 折扣词表在模块级(见 上面 折扣词)—— 评测里的判官复核要用同一份
-    for m in re.finditer(折扣词, text or ""):
+    # 查库存的内部回答(用户 2026-10-25 批准放宽,和上面内部报告同一个形状):这一轮查过库存、而且**挑不出任何对顾客说的话**
+    # → 给店长看的库存清单,「这个数要打折看」是「打个折扣来看」,不是许折扣。当天真跑:Haiku 被这句打回两次,换 Opus 重答,1.5 美分变 73 美分。
+    # ⚠️ 只免这一层(明着的折扣词);夹着对顾客说的话照旧严判,不开票换钱、软性让价照旧判
+    _内部库存 = not _对客 and any(_called(calls or [], t) for t in ("stock_alert", "get_stock"))
+    for m in ([] if _内部库存 else re.finditer(折扣词, text or "")):
         句 = _整句(text or "", m.start())
         if _有告诫(text or "", m.start()):   # 在告诫顾问别这么说 —— 不是在这么说
             continue
@@ -1431,6 +1435,39 @@ def g26_wan_mismatch(text, calls, prompt=""):
             "要写成万就照返回里给好的那个写法")
 
 
+# 「查不到」的几种说法。**不靠它单独判** —— 判据的锚是下面的结构条件(点名的那个号这一轮压根没进过任何一次查询),
+# 这张表只用来认出「这句在说查不到」;锚兜着,措辞上多一个少一个,误拦面都很小
+_没查到 = re.compile(r"查不到|没查到|没有查到|未查到|找不到|没找到|没有找到|查无")
+_点名号 = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z]{1,6}_?\d{2,}(?:-\d{1,3})?)(?![A-Za-z0-9_])")
+
+
+def g27_notfound_without_lookup(text, calls):
+    """**说「查不到」,而点名的那个号这一轮根本没查过。**(用户 2026-10-25 拍:交付前打回重答)
+
+    来由:「给张青梧派个回访任务」—— 模型只调了找工具和任务类型,一次都没打开客户档案,
+    回答却写「张青梧(C10026)名下归属的顾问是谁,我这边没查到」。而档案里归属顾问明明写着。
+    > 「查过了确实没有」和「压根没去查」,在一句「没查到」里长得一模一样 —— 用户会照着去问人、去手工找。
+
+    判据:句子里点名了某个号(客户号 / 单号 / 款号这类),这句在说查不到,而**这一轮每一次工具调用的
+    参数和返回里都没出现过这个号**。查过了、真的没有,放过(那是照实说);告诫语放过。
+    局限:只认带号的;只说名字(「张青梧我没查到」)不带号的首版认不出。
+    """
+    看过 = " ".join(json.dumps(c.get("input"), ensure_ascii=False, default=str) + " "
+                  + json.dumps(c.get("output"), ensure_ascii=False, default=str) for c in calls or [])
+    没查 = []
+    for m in _没查到.finditer(text or ""):
+        if _有告诫(text, m.start()) or tm.negated(text, m.start()):
+            continue
+        句 = _整句(text, m.start())
+        for 号 in _点名号.findall(句):
+            if not re.search(r"(?<![A-Za-z0-9_])" + re.escape(号) + r"(?![A-Za-z0-9_])", 看过):
+                没查.append(号)
+    if not 没查:
+        return None
+    return (f"说查不到,而 {'、'.join(dict.fromkeys(没查))} 这一轮**一次都没查过** —— 先调对应的工具去查"
+            "(客户的归属顾问在会员详情里),查过了确实没有再照实说没有")
+
+
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer,
           g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
@@ -1438,7 +1475,7 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g17_liability_promise, g18_vision_conclusion,
           g19_account_state, g20_consent_version, g21_apply_as_done,
           g22_agree_without_reading, g23_discount_promise, g24_growth_not_statistical,
-          g25_count_without_lookup, g26_wan_mismatch]
+          g25_count_without_lookup, g26_wan_mismatch, g27_notfound_without_lookup]
 
 
 def check_answer(text, calls, prompt="", 带图=False, 规矩=""):

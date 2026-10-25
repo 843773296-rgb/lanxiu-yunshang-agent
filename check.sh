@@ -506,6 +506,7 @@ run "顾问写入 · 写了名字列就必须一起写工号" python3 backend/ad
 run "顾问名字 · 页面上那一栏有名字,而且对得上" python3 backend/advisor_name_check.py
 run "来源等级 · 声称可溯源的得真溯得了源" python3 backend/source_check.py
 run "库存预警 · 算不出可售天数的不许算出一个数来" python3 backend/stock_check.py
+run "客户类工具 · 工号旁边带姓名和岗位(用户 10-25 拍:派任务要说得出派给谁)" python3 backend/staff_name_check.py
 run "量体口径 · 按次登记、订单以绑定的下单量体为准、缺项不拼" python3 knowledge/measure.py
 run "量体录入写口 · 权限 / 同意 / 校验 / 下单量体绑定(在库副本上跑)" python3 backend/measure_write_check.py
 run "下单口径 · 逐件判下单量体(没有 / 早于开单 / 缺项不可以,判不了不当可以)" python3 knowledge/order_place.py

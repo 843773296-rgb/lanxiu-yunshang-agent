@@ -978,9 +978,11 @@ function drawRoles(){
       const r = ROLES[+b.dataset.i];
       const c = cur();
       // 当前会话还没说过话,就直接把它定成这个角色;否则开一条新的
-      if(c && !c.msgs.length){ c.kind = r.kind; save(); }
+      // 复用空会话时模型也按新会话的规矩重定:没手选过就回网站默认(10-25 修:原来原样留着老会话的 Opus 5)
+      if(c && !c.msgs.length){ c.kind = r.kind; Object.assign(c, 新会话模型(c, MODEL_DEFAULT, $("#model").value)); save(); }
       else newConv(r.kind);
-      PICKING = false; syncHint(); drawSide(); drawStream(); $("#q").focus();
+      // 下拉框跟着新会话走 —— 原来不同步,会话存的是 Haiku、下拉框还显示上一条的 Opus
+      PICKING = false; 同步模型(); syncHint(); drawSide(); drawStream(); $("#q").focus();
     };
   });
 }
@@ -1237,10 +1239,13 @@ function 画结论(k){
   const 计 = k.计数 || {};
   box.innerHTML = `<div class="kv"><span>结果</span><span>已核对 ${计["已核对"] || 0} · 存在冲突 ${计["存在冲突"] || 0}`
       + ` · 缺少依据 ${计["缺少依据"] || 0} · 未判定 ${计["未判定"] || 0}</span></div>`
-    + 句们.map(x => { const 据 = (x.依据 || [])[0];
+    + 句们.map(x => {
+        // 每个值一行出处(10-25 用户截图:金额那句只显示了「12 个月」的出处,金额本身的看不到)
+        const 据们 = (x.依据 || []).map(d => `${d.值 ? esc(d.值) + " ← " : ""}${esc(d.工具 || "")} ${esc(d.路径 || "")}`
+          + `${d.是原文 === false ? "(展示副本)" : ""}`);
         return `<div class="toolrow"><b class="${色[x.状态] || ""}">${esc(x.状态)}</b> ${esc(String(x.句).slice(0, 120))}`
           + (x.理由 ? `<br><span class="dim">${esc(x.理由)}</span>` : "")
-          + (据 ? `<br><span class="dim">出处:${esc(据.工具 || "")} ${esc(据.路径 || "")}${据.是原文 === false ? "(展示副本)" : ""}</span>` : "")
+          + (据们.length ? `<br><span class="dim">出处:${据们.join("<br>　　　")}</span>` : "")
           + `</div>`; }).join("")
     + `<div class="dim">${esc(k.说明 || "")}</div>`;
 }

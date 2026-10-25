@@ -314,7 +314,7 @@ def 核一句(句, 上下文单号, 证们, 写工具=(), 业务今天=None):
                 # 没有那一轮当时的业务日期:算不了,不能因此判它冲突 —— 落缺少依据,理由写明
                 结果[-1] = {"原样": v["原样"], "判": "没找到", "理由": "返回里没有现成的天数,又没有当时的业务日期,没法重算"}
         if 处:
-            依据.append(处)
+            依据.append({**处, "值": v["原样"]})      # 每条依据标明对的是哪个值 —— 面板逐个列(10-25:原来只显示第一条)
             if v["类"] != "单号":
                 结果.append({"原样": v["原样"], "判": "对上", "理由": None})
     判们 = {x["判"] for x in 结果}
@@ -338,3 +338,21 @@ def 核对(答案, rows, 原文条=None, 写工具=(), 业务今天=None):
             + ("" if 业务今天 else "没给业务日期,「超期 N 天」不重算,只认返回里的现成数。")
             + ("回答在记录里被截断了,后半段没核。" if "〔还有" in str(答案 or "") else ""))
     return {"句们": 句们, "计数": 计数, "说明": 说明}
+
+
+# ── 下面这个**读库**,不是纯函数:聊天站 /spans 和推送管理后台(tools/spans_push.py)共用,不各写一份 ──
+def 当时的业务今天(开始, 库=None):
+    """「超期 N 天」重算要用**那一轮当时的**业务日期。世界每天平移一次(world_meta.shifted_at):
+    这一轮在最近一次平移之后跑的,当时的业务今天就是现在的 world_today;更早的给 None(不重算,说明里写明)。"""
+    import os
+    import sqlite3
+    库 = 库 or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "backend", "lanxiu.db")
+    try:
+        c = sqlite3.connect(f"file:{库}?mode=ro", uri=True)
+        kv = dict(c.execute("select k, v from world_meta where k in ('world_today', 'shifted_at')").fetchall())
+        c.close()
+        if 开始 and kv.get("shifted_at") and float(开始) >= _dt.datetime.fromisoformat(kv["shifted_at"]).timestamp():
+            return kv.get("world_today")
+    except Exception:
+        pass
+    return None

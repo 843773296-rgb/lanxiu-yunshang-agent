@@ -13316,5 +13316,89 @@
    }
   ],
   "预期红": "上一条会话没手选(老默认 Opus 5)→ 新会话用网站默认,分流才开得了"
+ },
+ {
+  "script": "backend/stock_check.py",
+  "改坏": "不传档位时照旧四档各给 30 条",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    列 = 30 if scope in 摊 else 5",
+    "new": "    列 = 30"
+   }
+  ],
+  "预期红": "不传档位 = 概览:每档明细最多 5 个,并告诉模型要整档清单传哪一档"
+ },
+ {
+  "script": "backend/staff_name_check.py",
+  "改坏": "会员详情不给归属顾问",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "                \"归属顾问\": ({\"工号\": _顾, \"是谁\": _员工称呼(_顾) or \"(工号在员工表里查不到)\"} if _顾 else \"没有归属顾问\"),\n",
+    "new": ""
+   }
+  ],
+  "预期红": "会员详情带归属顾问:工号 + 「姓名(岗位)」,和员工表一致"
+ },
+ {
+  "script": "backend/staff_name_check.py",
+  "改坏": "查不到的工号编一个名字",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    return f\"{r[0]['name']}({r[0]['role']})\" if r and r[0].get(\"name\") else None",
+    "new": "    return f\"{r[0]['name']}({r[0]['role']})\" if r and r[0].get(\"name\") else \"某员工(顾问)\""
+   }
+  ],
+  "预期红": "工号在员工表里查不到 → 不编名字"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g27 不看这一轮查没查过(凡说查不到带号就拦)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "            if not re.search(r\"(?<![A-Za-z0-9_])\" + re.escape(号) + r\"(?![A-Za-z0-9_])\", 看过):",
+    "new": "            if True:"
+   }
+  ],
+  "预期红": "同一句、但这一轮查过 C10026(会员详情)→ 照实说查不到,放过"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "g27 号在全文里找(不限说查不到的那一句)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        句 = _整句(text, m.start())\n        for 号 in _点名号.findall(句):",
+    "new": "        句 = text\n        for 号 in _点名号.findall(句):"
+   }
+  ],
+  "预期红": "号出现在别的句子里、说查不到的那句没点名 → 不连坐"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "库存放宽不看有没有对顾客说的话",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    _内部库存 = not _对客 and any(_called(calls or [], t) for t in (\"stock_alert\", \"get_stock\"))",
+    "new": "    _内部库存 = any(_called(calls or [], t) for t in (\"stock_alert\", \"get_stock\"))"
+   }
+  ],
+  "预期红": "查过库存,但回答里夹着对顾客说的折扣话 → 那部分照旧拦"
+ },
+ {
+  "script": "tools/spans_push_check.py",
+  "改坏": "推送不带逐句核对",
+  "file": [
+   {
+    "path": "tools/spans_push.py",
+    "old": "            **({\"结论\": 结论} if 结论 else {})}",
+    "new": "            }"
+   }
+  ],
+  "预期红": "有回答的一轮:推的体里带逐句核对,用的是原文(和聊天站 /spans 同一个函数)"
  }
 ]

@@ -79,6 +79,7 @@ def main():
     x = 句(r, "5215.6")
     ck("单号在小标题里、值在小点里 → 已核对,依据指到那次调用的字段", x["状态"] == "已核对"
        and any(d.get("调用号") == "t1" and "这段时间实付" in d.get("路径", "") for d in x.get("依据") or []), x)
+    ck("每条依据标明对的是哪个值:金额那句两个出处都在(10-25 截图里只显示了「12 个月」那个)", {d.get("值") for d in x.get("依据") or []} == {"12 个月", "5215.6 元"}, x.get("依据"))
     ck("「4 天后」在返回的串里原样有 → 已核对", 句(r, "4 天后")["状态"] == "已核对", 句(r, "4 天后"))
     x = 判("C90001 近 6 个月实付 5215.6 元。")["句们"][0]
     ck("「6 个月」是时间窗口,顶不上记录里别的「6 个」/ 6 —— 记录里没写这个窗口就判冲突", x["状态"] == "存在冲突" and "6 个月" in (x["理由"] or ""), x)
@@ -151,7 +152,7 @@ def main():
     app = open(os.path.join(HERE, "app.py"), encoding="utf-8").read()
     页 = open(os.path.join(HERE, "web", "station.html"), encoding="utf-8").read()
     ck("接线:/spans?trace= 带回「结论」(原文 + 写工具清单 + 当时的业务日期);证据面板画出来",
-       "_cc.核对(" in app and "_api.WRITE_TOOLS" in app and "_这一轮的业务今天(" in app and '"结论": 结论' in app
+       "_cc.核对(" in app and "_api.WRITE_TOOLS" in app and "_cc.当时的业务今天(" in app and '"结论": 结论' in app
        and "画结论(r.结论)" in 页 and 'id="ev-claim"' in 页)
     print()
     if 坏:

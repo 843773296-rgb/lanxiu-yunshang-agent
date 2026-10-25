@@ -46,20 +46,6 @@ from urllib.parse import urlparse, unquote, quote, parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-
-def _这一轮的业务今天(开始):
-    """「超期 N 天」重算要用**那一轮当时的**业务日期。世界每天平移一次(world_meta.shifted_at):
-    这一轮在最近一次平移之后跑的,当时的业务今天就是现在的 world_today;更早的给 None(不重算,说明里写明)。"""
-    import datetime as _d, sqlite3 as _q
-    try:
-        c = _q.connect(f"file:{os.path.join(os.path.dirname(HERE), 'backend', 'lanxiu.db')}?mode=ro", uri=True)
-        kv = dict(c.execute("select k, v from world_meta where k in ('world_today', 'shifted_at')").fetchall())
-        c.close()
-        if 开始 and kv.get("shifted_at") and float(开始) >= _d.datetime.fromisoformat(kv["shifted_at"]).timestamp():
-            return kv.get("world_today")
-    except Exception:
-        pass
-    return None
 BACKEND = os.environ.get("LANXIU_BACKEND", "http://127.0.0.1:8760")
 PORT = int(os.environ.get("AGENTSITE_PORT", "8770"))
 # 首页是值班台,不是导航页 —— 打开就该看见「今天还剩多少件」。
@@ -524,7 +510,7 @@ class H(BaseHTTPRequestHandler):
                         import api as _api
                         条, _ = _sp.读原文(tid)
                         结论 = _cc.核对((根.get("attr") or {}).get("lanxiu.answer"), rows, 条,
-                                       _api.WRITE_TOOLS, _这一轮的业务今天(根.get("start")))
+                                       _api.WRITE_TOOLS, _cc.当时的业务今天(根.get("start")))
                     except Exception as e:
                         结论 = {"error": f"{type(e).__name__}: {e}"}
                     return self._send({"trace": tid, "spans": rows, "库表": 库表, "技能": 技能, "结论": 结论,

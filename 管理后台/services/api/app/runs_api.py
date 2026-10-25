@@ -120,6 +120,33 @@ def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看�
                      "算不出参考价的那些显示「—」而不是 0")}
 
 
+def _结论给谁看(核, 看得到原文):
+    """聊天站推来的「结论 ↔ 证据逐句核对」(用户 2026-10-25 拍)。
+    计数和每句的状态人人可见;**句子正文、理由、核对到的值**是回答原文的一部分(会带客户号、金额),
+    跟 span 的入 / 出同一条授权(查看敏感输入)—— 没授权只给状态和出处的工具名 / 字段路径。"""
+    if not 核:
+        return None
+    if 看得到原文:
+        return 核
+    return {"计数": 核.get("计数"), "说明": 核.get("说明"), "脱敏了": True,
+            "句们": [{"状态": x.get("状态"),
+                     "依据": [{"工具": d.get("工具"), "路径": d.get("路径")} for d in (x.get("依据") or [])]}
+                    for x in (核.get("句们") or [])]}
+
+
+def _验结论(结):
+    """推送端给的逐句核对:{计数:{四种状态: 数}, 句们:[{句, 状态, ...}], 说明}。格式不对 422,不半存。"""
+    if 结 is None:
+        return None
+    态 = ("已核对", "存在冲突", "缺少依据", "未判定")
+    if (not isinstance(结, dict) or not isinstance(结.get("句们"), list) or len(结["句们"]) > 2000
+            or not isinstance(结.get("计数"), dict) or any(k not in 态 for k in 结["计数"])
+            or any(not isinstance(x, dict) or x.get("状态") not in 态 for x in 结["句们"])):
+        raise _错(422, "VALIDATION", f"结论要给 {{计数, 句们}},状态只能是 {' / '.join(态)}", "检查推送端",
+                  field_errors={"结论": "格式不对"})
+    return 结
+
+
 @router.get(前缀 + "/traces/{trace_id}")
 def 运行详情(project_id: str, trace_id: str,
          me: 身份 = Depends(要权限("查看有权配置"))):
@@ -173,7 +200,9 @@ def 运行详情(project_id: str, trace_id: str,
             d["错_形状"] = 脱敏(s["错"])
         步们.append(d)
 
-    出 = {"trace": dict(t), "步们": 步们, "步数": len(步们),
+    tr = dict(t)
+    核 = tr.pop("claims_snapshot", None)   # ⚠️ 不跟着 trace 整行出去:里面有回答原句,要按权限另给(见 _结论给谁看)
+    出 = {"trace": tr, "步们": 步们, "步数": len(步们), "结论": _结论给谁看(核, 看得到原文),
          "用量": [dict(x) for x in 账],
          "看得到原文吗": 看得到原文}
     out_note = []
@@ -567,7 +596,7 @@ async def 标故障已处理(project_id: str, incident_id: str, request: Request
 
 @router.post(前缀 + "/trace-imports", status_code=201)
 async def 导入执行记录(project_id: str, request: Request, me: 身份 = Depends(要权限("运行评测"))):
-    """体:{外部trace, 会话号?, 状态, 开始, 结束?, 步们:[{id, parent, stage, 开始, 结束?, 状态, 入?, 出?, 错?}]}。
+    """体:{外部trace, 会话号?, 状态, 开始, 结束?, 步们:[{id, parent, stage, 开始, 结束?, 状态, 入?, 出?, 错?}], 上报?, 结论?}。
 
     · 同一个外部 trace 再来:**已经收尾的(completed / failed / interrupted)不重写**;还在「进行中」的整棵换成新的
       —— 聊天站边跑边记,一轮可能先以「进行中」推过来,跑完再推一次
@@ -586,25 +615,35 @@ async def 导入执行记录(project_id: str, request: Request, me: 身份 = Dep
     if 报 is not None and (not isinstance(报, dict) or 报.get("类") not in 故障类 or not str(报.get("理由") or "").strip()):
         raise _错(422, "VALIDATION", f"上报要给 {{类, 理由}},类只能是 {' / '.join(故障类)}", "检查推送端",
                   field_errors={"上报": "格式不对"})
+    结 = _验结论(体.get("结论"))
+    结串 = _json.dumps(结, ensure_ascii=False) if 结 is not None else None
     with 事务() as c:
-        老 = c.execute(text("select id, end_reason from traces where project_id=:p and request_id=:k"),
+        老 = c.execute(text("select id, end_reason, claims_snapshot is not null 有结论 from traces "
+                            "where project_id=:p and request_id=:k"),
                        {"p": project_id, "k": 键}).mappings().first()
         if 老 and 老["end_reason"] != "running":
             # 收尾了不重写 —— 但**上报照样要建**:上报是轮末才知道的,可能正好赶上这一轮最后那次推送
             if 报: _建故障单(c, me, project_id, 老["id"], 报)
-            return {"trace_id": 老["id"], "导入了吗": False, "note": "这一轮已经收尾、导入过了,没重写"}
+            # 逐句核对同理:10-25 之前导入的那些轮没有,补推时只补这一栏(已经有的不覆盖 —— 快照,当时判成什么就是什么)
+            补了 = bool(结串 and not 老["有结论"] and c.execute(text(
+                "update traces set claims_snapshot = cast(:j as jsonb) where project_id=:p and id=:t and claims_snapshot is null"),
+                {"j": 结串, "p": project_id, "t": 老["id"]}).rowcount)
+            return {"trace_id": 老["id"], "导入了吗": False, "补了逐句核对吗": 补了,
+                    "note": "这一轮已经收尾、导入过了,没重写"}
         tid = 老["id"] if 老 else f"tr_{_uu.uuid4().hex[:12]}"
         if 老:
             c.execute(text("delete from spans where project_id=:p and trace_id=:t"), {"p": project_id, "t": tid})
-            c.execute(text("""update traces set end_reason=:er, ended_at=:en, session_id=:s where project_id=:p and id=:t"""),
-                      {"er": 状, "en": _时刻(体.get("结束")), "s": 体.get("会话号"), "p": project_id, "t": tid})
+            c.execute(text("""update traces set end_reason=:er, ended_at=:en, session_id=:s,
+                                  claims_snapshot = coalesce(cast(:j as jsonb), claims_snapshot)
+                              where project_id=:p and id=:t"""),
+                      {"er": 状, "en": _时刻(体.get("结束")), "s": 体.get("会话号"), "j": 结串, "p": project_id, "t": tid})
         else:
             c.execute(text("""insert into traces (id, organization_id, project_id, request_id, session_id, entry_kind,
-                                  environment, started_at, ended_at, end_reason, created_at, created_by)
-                              values (:i,:o,:p,:k,:s,'聊天站',:e,:st,:en,:er, now(), :u)"""),
+                                  environment, started_at, ended_at, end_reason, claims_snapshot, created_at, created_by)
+                              values (:i,:o,:p,:k,:s,'聊天站',:e,:st,:en,:er, cast(:j as jsonb), now(), :u)"""),
                       {"i": tid, "o": me.org_id, "p": project_id, "k": 键, "s": 体.get("会话号"),
                        "e": os.environ.get("APP_ENV", "development"), "st": _时刻(体.get("开始")),
-                       "en": _时刻(体.get("结束")), "er": 状, "u": me.user_id})
+                       "en": _时刻(体.get("结束")), "er": 状, "j": 结串, "u": me.user_id})
         短 = _uu.uuid5(_uu.NAMESPACE_URL, 键).hex[:8]
         for x in 步们:
             sid = str(x.get("id") or "")
@@ -629,5 +668,6 @@ async def 导入执行记录(project_id: str, request: Request, me: 身份 = Dep
                                                ensure_ascii=False)}).rowcount
         if 报: _建故障单(c, me, project_id, tid, 报)
     return {"trace_id": tid, "导入了吗": True, "步数": len(步们), "这次到期清掉的步": 到期, "上报了吗": bool(报),
+            "带了逐句核对吗": 结 is not None,
             "note": "原文在 input_ref / output_ref;看不看得到由详情接口的字段权限管(查看敏感输入)"}
 
