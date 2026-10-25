@@ -136,7 +136,11 @@ def check(mid, frm, to, ctx=None):
     edges={tuple(e) for e in m["edges"]}
     if mid=="bk-approval" and (frm,to) in edges:
         need=APPROVAL_ROLE.get((frm,to))
-        if need and ctx.get("role")!=need:
+        # 用户 2026-10-25 拍:**本店的客户转移,店长也能批**。「本店」由调用方按库现算后放进 ctx
+        # (api.本店转移 —— 客户全在这家店、接手顾问也在这家店且在职),这里只认那个结论,不自己判。
+        # 跨店转移、等级 / 积分调整照旧只认总部运营。
+        本店放行 = (ctx.get("kind")=="客户转移" and ctx.get("role")=="店长" and ctx.get("本店转移") is True)
+        if need and ctx.get("role")!=need and not 本店放行:
             return False,"WRONG_ROLE",f"审批须由{need}操作,当前角色:{ctx.get('role') or '未指定'}"
         return True,"OK",""
     if mid=="bk-merge" and (frm,to) in edges:

@@ -2144,36 +2144,57 @@ def apply_approval(kind,target,payload,note,actor="魏欣新",role="顾问"):
     return dict(ok=True,code="APPLY",id=aid,
       reason=f"{kind}申请 {aid} 已提交,等待总部运营审批")
 
-def decide_approval(aid,to,note,actor="魏欣新",role="顾问"):
+def decide_approval(aid,to,note,actor="魏欣新",role="顾问",me=None):
     r=rows("SELECT * FROM approval WHERE id=?",aid)
     if not r: return {"error":"审批单不存在"}
     a=r[0]; cur=a["status"]
-    ok,code,why=fsm.check("bk-approval",cur,to,{"role":role})
+    # 能不能批、批了改什么,和智能体那条路(api.decide_approval)**同一份**:api.审批上下文 / api.审批生效。
+    # 原来这里只按角色判、自己写一段转移 —— 两个入口各写一份,10-25 发现一个批了转、一个批了不转。
+    ctx=backend.审批上下文(me or {"role":role},a)
+    ok,code,why=fsm.check("bk-approval",cur,to,ctx)
     log_op(actor,"bk-approval",aid,cur,to,ok,code,why or (note or ""),{"role":role})
     if not ok: return dict(ok=False,code=code,reason=why)
-    pl=_j.loads(a["payload"] or "{}")
     applied=""
-    if to=="已通过":
-        with _conn() as c:
-            if a["kind"]=="等级调整":
-                c.execute("UPDATE customer SET level=? WHERE id=?",(pl.get("to"),a["target"]))
-                applied=f";已将 {a['target']} 等级调整为「{pl.get('to')}」"
-            elif a["kind"]=="积分调整":
-                applied=f";已为 {a['target']} 调整积分 {pl.get('delta'):+d}"
-            elif a["kind"]=="客户转移":
-                ids=a["target"].split("|")
-                # ⚠️ 名字列已删 —— 转移写的是**工号**。页面传来的仍是显示串,
-                # 用 `顾问工号()` 翻译;**翻不出来就写 None,不猜**。
-                _to = 顾问工号(pl.get("to_advisor"))
-                for i in ids: c.execute("UPDATE customer SET advisor_no=? WHERE id=?",(_to,i))
-                c.executemany("UPDATE appointment SET advisor_no=? WHERE customer_id=? AND status='已预约'",
-                              [(_to,i) for i in ids])
-                applied=f";已将 {len(ids)} 位客户转至 {pl.get('to_advisor')},未完成预约同步迁移"
-        log_op(actor,a["kind"],a["target"],"审批通过","已执行",True,"APPLIED",applied.lstrip(";"),{})
     with _conn() as c:
+        if to=="已通过":
+            applied=backend.审批生效(c,a)
         c.execute("UPDATE approval SET status=?,decided_by=?,decided_at=wnow(),note=? WHERE id=?",
-                  (to,actor,(a["note"] or "")+" | 审批:"+(note or ""),aid))
-    return dict(ok=True,code=to,reason=f"审批单 {aid} {to}"+applied)
+                  (to,(me or {}).get("no") or actor,(a["note"] or "")+" | 审批:"+(note or ""),aid))
+    if applied:
+        log_op(actor,a["kind"],a["target"],"审批通过","已执行",True,"APPLIED",applied,{})
+    return dict(ok=True,code=to,reason=f"审批单 {aid} {to}"+(";"+applied if applied else ""))
+
+def approval_detail(aid,me):
+    """聊天卡片的「看详情」弹窗 / 审批中心定位用:一张审批单的全部事实 + **登录的这个人能不能批**。
+
+    看得到的范围:总部运营看全部;店长只看客户都在他店里的那几张。**别人的单和不存在的单对外是同一句话** ——
+    否则这个接口本身就成了「这张单存不存在」的探测器。"""
+    r=rows("SELECT * FROM approval WHERE id=?",aid)
+    看不到=dict(看不到=True,为什么="这张审批单不在你能看的范围里(或者不存在)")
+    if not r or not me: return 看不到
+    a=r[0]
+    try: pl=_j.loads(a["payload"] or "{}")
+    except Exception: pl={}
+    核=backend.转移核对(a["target"],pl) if a["kind"]=="客户转移" else None
+    if me.get("role")!="总部运营":
+        范=backend.本店范围(me)
+        if 范 is not None:
+            with _conn() as c: 我店=backend._SK.码(c,范) if 范 else None
+            店们={x["店码"] for x in (核 or {}).get("客户们") or []} if 核 else {None}
+            if not 我店 or 店们!={我店}: return 看不到
+    if a["status"]!="待审批":
+        能,为何=False,f"这张单已经{a['status']}了"
+    elif 核 is not None:
+        能,为何=backend.能批转移吗(me,核)
+    else:
+        能,为何=(me.get("role")=="总部运营"),("总部运营可以批" if me.get("role")=="总部运营" else "这一类只有总部运营能批")
+    申请人=rows("SELECT name,role FROM staff WHERE no=? OR name=?",a["applied_by"] or "",a["applied_by"] or "")
+    return dict(单号=a["id"],类型=a["kind"],状态=a["status"],对象=a["target"],要改成什么=pl,
+                理由=pl.get("reason") or a["note"],申请人=(f"{申请人[0]['name']}({申请人[0]['role']})" if 申请人 else a["applied_by"]),
+                申请时间=a["applied_at"],审批人=a["decided_by"],审批时间=a["decided_at"],批注=a["note"],
+                客户们=(核 or {}).get("客户们"),转给=(backend._员工称呼(核["接手"]["no"]) if 核 and 核.get("接手") else pl.get("to_advisor")),
+                核对问题=(核 or {}).get("问题") or None,我能批=能,为什么=为何,
+                说明="批准即生效:客户归属改过去、未完成的预约一起迁;驳回什么都不改。批注必填。")
 
 def approval_list(q):
     d=_simple("approval",q,["id","target"],{"id","applied_at"},["kind","status"],"applied_at DESC")
@@ -2184,8 +2205,8 @@ def approval_list(q):
         r["target_name"]=nm[0]["name"] if nm else ""
     return d
 
-def approvals():
-    """审批中心:待总部运营审批的事项(后台 PRD 6.2 / 8.1)"""
+def approvals(me=None):
+    """审批中心:待总部运营审批的事项(后台 PRD 6.2 / 8.1)。高风险那几张带「我能批」—— 本店的客户转移店长也能批(10-25)"""
     merge=rows("SELECT * FROM task WHERE type='客户合并确认' AND status='待总部审批' ORDER BY id")
     for m in merge:
         a,b=(m["ref_id"] or "|").split("|")[:2]
@@ -2199,10 +2220,13 @@ def approvals():
         except Exception: r["pl"]={}
         nm=rows("SELECT name FROM customer WHERE id=?",(r["target"] or "").split("|")[0])
         r["target_name"]=nm[0]["name"] if nm else ""
+        # 这个登录的人能不能批这一张 —— 页面照这个显示按钮;**真判在 decide_approval 的 fsm.check**,这里只是同一份预判
+        d=approval_detail(r["id"],me) if me else {"看不到":True}
+        r["我能批"]=bool(d.get("我能批")); r["为什么"]=d.get("为什么") or ("没登录" if not me else "")
     return dict(merge=merge, export=exp, risky=risky,
       rules=[["客户合并","由店长发起、总部运营审批;保留最早客户编号;订单积分只建立关联不重复累计","后台 PRD 6.2"],
              ["批量导出","须经总部运营负责人审批;导出文件添加操作人及时间水印;下载链接 24 小时后失效","后台 PRD 8.1"],
-             ["客户转移","同店转移自动迁移未完成跟进任务和未来预约;跨店转移保留已确认预约","后台 PRD 6.2"],
+             ["客户转移","同店转移自动迁移未完成跟进任务和未来预约;跨店转移保留已确认预约。本店的转移那家店的店长也能批(2026-10-25 业务拍),批准即生效","后台 PRD 6.2"],
              ["等级与积分调整","总部运营可人工调整,但须填写原因并记录日志","后台 PRD 6.1"]],
       todo=len(merge)+len(exp)+len(risky))
 
@@ -3628,7 +3652,9 @@ class H(BaseHTTPRequestHandler):
         if p.startswith("/api/page/"): return self._send(page_detail(p.split("/api/page/")[1]))
         if p=="/api/syscodes": return self._send(syscode_list(Q))
         if p=="/api/downloads": return self._send(download_list(Q))
-        if p=="/api/approvals": return self._send(approvals())
+        if p=="/api/approvals": return self._send(approvals(_me(self)))
+        if p.startswith("/api/approval/"):
+            return self._send(approval_detail(unquote(p.split("/api/approval/")[1]),_me(self)))
         if p=="/api/approval-list": return self._send(approval_list(Q))
         if p=="/api/aftersales": return self._send(aftersale_list(Q))
         if p=="/api/maintains": return self._send(maintain_list(Q))
@@ -4043,8 +4069,11 @@ class H(BaseHTTPRequestHandler):
             return self._send(apply_approval(body.get("kind"),body.get("target"),
                 body.get("payload") or {},body.get("note"),role=_role_of(self)))
         if p=="/api/approval-decide":
+            # 批注必填(和智能体那条路一样):同意不写理由,出事之后没人说得清当时看了什么
+            if len((body.get("note") or "").strip())<4:
+                return self._send(dict(ok=False,code="NEED_NOTE",reason="批注必填,至少 4 个字"))
             return self._send(decide_approval(body.get("id"),body.get("to"),body.get("note"),
-                                              role=_role_of(self)))
+                                              actor=_actor_of(self),role=_role_of(self),me=_me(self)))
         if p=="/api/import":
             return self._send(import_customers(body.get("text"),role=_role_of(self),
                                                dry=bool(body.get("dry",True))))

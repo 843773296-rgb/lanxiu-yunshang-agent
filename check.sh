@@ -321,6 +321,7 @@ run "版师角色 · 写工具只有改占比和开裁两个,而且真的得能�
 run "会话归属 · 续聊不能续别人的(身份判得对也挡不住换历史)" python3 agentsite/sessions_check.py
 run "花费闸 · 阈值够聊几轮 + 撞线说不说得清" ./agentsite/.venv/bin/python agentsite/budget_check.py
 run "聊天页模型下拉框 · 一登录就有值(默认 opus-5)、跟着会话走、下架了回到默认(用户 10-20)" node agentsite/model_sync_check.mjs
+run "聊天里的客户转移卡片 · 照审批单本身画、去后台 / 看详情两个按钮、批注必填、批完显示后台真状态(用户 10-25)" node agentsite/approval_card_check.mjs
 run "成本口径 · 项目算的钱要和官方计费规则对得上(期望值手抄官方价,不从价目表现算)" ./agentsite/.venv/bin/python agentsite/cost_check.py
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
 run "工作流接管 · 聊天站这一半(被接管的技能调不动 / 拉不到清单的退路 / 每个角色都能发起)" ./agentsite/.venv/bin/python agentsite/takeover_check.py
@@ -531,6 +532,7 @@ run "用量上报 · 供应商拼法/是mock不默认/写不进去也不抛(15 �
 run "评价概况(看的那一头)· 口径承诺的两个切分工具真给了、趋势不拿残月当起点(14 条)" python3 backend/rating_view_check.py
 run "评价判分器 · 25 条对照(星级不是衣服质量/不换算满意度/不给人排序)" python3 agent/rating_eval_judgetest.py
 run "报修写口 · 哪一件不猜、店长判责、同意要凭据、回店输码才完成(在库副本上跑)" python3 backend/repair_write_check.py
+run "客户转移审批 · 建单核对本店、本店店长能批、批准即生效、聊天和审批中心同一段(用户 10-25 拍,在库副本上跑)" python3 backend/approval_transfer_check.py
 run "多渠道对比 · 数算得对,而这张表不能用来比渠道" python3 backend/channel_check.py
 run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/eval_provenance_check.py
 run "评测来路章 · 章上的供应商和真正发请求的是同一家" ./agentsite/.venv/bin/python tools/evalrec_provider_check.py

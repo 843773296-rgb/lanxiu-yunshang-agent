@@ -13492,5 +13492,77 @@
    }
   ],
   "预期红": "真跑钉回:王青梧在别店,工具标了范围,回答说「库里没有」"
+ },
+ {
+  "script": "backend/approval_transfer_check.py",
+  "改坏": "状态机不放行店长批本店转移(只认总部运营)",
+  "file": [
+   {
+    "path": "backend/fsm.py",
+    "old": "        本店放行 = (ctx.get(\"kind\")==\"客户转移\" and ctx.get(\"role\")==\"店长\" and ctx.get(\"本店转移\") is True)",
+    "new": "        本店放行 = False"
+   }
+  ],
+  "预期红": "店长批本店的客户转移 → 通过,客户真的转过去了"
+ },
+ {
+  "script": "backend/approval_transfer_check.py",
+  "改坏": "智能体那条路批了不改档案(批准和执行又分开了)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "            改了 = 审批生效(c, a)",
+    "new": "            改了 = \"\""
+   }
+  ],
+  "预期红": "店长批本店的客户转移 → 通过,客户真的转过去了"
+ },
+ {
+  "script": "backend/approval_transfer_check.py",
+  "改坏": "建单不核客户在不在本店",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "            if 别店:\n                return dict(ok=False, code=\"NOT_MY_SHOP\"",
+    "new": "            if False:\n                return dict(ok=False, code=\"NOT_MY_SHOP\""
+   }
+  ],
+  "预期红": "店长给别店的客户建转移单 → 不建(范围:本店)"
+ },
+ {
+  "script": "backend/approval_transfer_check.py",
+  "改坏": "能不能批不看是不是他那家店",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if 我店 != 核.get(\"店码\"):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "别家店的店长批这张单 → 拒,客户不动"
+ },
+ {
+  "script": "agentsite/approval_card_check.mjs",
+  "改坏": "批完不重新取,页面自己当成批好了",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "    if(r && r.ok){ openApproval(aid); return; }",
+    "new": "    if(r && r.ok){ return; }"
+   }
+  ],
+  "预期红": "批完重新向后台取一遍,显示的是后台的真状态(已通过),不是页面自己改的字"
+ },
+ {
+  "script": "agentsite/approval_card_check.mjs",
+  "改坏": "能不能批不照后台,按钮一律亮着",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "<button class=\"ok\" id=\"apvok\" ${d[\"我能批\"] ? \"\" : \"disabled\"}>批准</button>",
+    "new": "<button class=\"ok\" id=\"apvok\">批准</button>"
+   }
+  ],
+  "预期红": "不能批的人打开 → 批准 / 拒绝两个按钮都是灰的,旁边写为什么"
  }
 ]

@@ -290,6 +290,21 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 .ordhead{margin:10px 0 6px;font-size:12px;color:var(--dim);line-height:1.7}
 .ordhead b{color:#23242a}
 .ordhead .warn{color:var(--warn)}
+/* 客户转移卡片(用户 10-25):聊天里说一句就建审批单;卡片照单子本身画,两个按钮 —— 去后台确认 / 看详情直接批 */
+.apvcard{border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;margin:4px 0 8px;font-size:13px}
+.apvcard .h{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.apvcard .h b{font-size:13.5px}.apvcard .st{font-size:11.5px;padding:1px 8px;border-radius:999px;background:#fff7e6;color:#ad6800}
+.apvcard .ln{color:var(--dim);margin-top:4px;line-height:1.6}
+.apvcard .bt{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+.apvcard .bt a,.apvcard .bt button{font:inherit;font-size:12.5px;padding:4px 12px;border-radius:7px;cursor:pointer;
+  border:1px solid var(--accent);text-decoration:none}
+.apvcard .bt a{color:var(--accent);background:#fff}.apvcard .bt button{color:#fff;background:var(--accent)}
+.apvact{margin-top:10px}.apvact textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px}
+.apvact .row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
+.apvact button{font:inherit;font-size:13px;padding:5px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:#fff}
+.apvact button.ok{background:var(--accent);color:#fff;border-color:var(--accent)}
+.apvact button.no{color:#c4302b;border-color:#e8b4b1}
+.apvact button:disabled{opacity:.45;cursor:not-allowed}
 .ordcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:8px;margin:4px 0 8px}
 .ordcard{border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 11px;
   cursor:pointer;text-align:left;font:inherit;transition:border-color .12s,box-shadow .12s}
@@ -834,6 +849,81 @@ async function openOrder(oid){
 }
 
 function closeOrder(){ $("#od").classList.remove("on"); }
+
+/* ── 客户转移卡片 + 详情弹窗(用户 2026-10-25)────────────────────────────
+   ⚠️ 卡片数据来自 `apply_adjust` 的**真返回值**(t.result.卡片),不是模型说的话 ——
+      一张编出来的「已提交审批」和一张真建了的,在屏幕上长得一模一样。
+   ⚠️ 「我能批」只决定按钮亮不亮;**点下去照样由后台按登录身份再判一次**(api.审批上下文 → fsm.check)。
+      页面上亮着的按钮,和服务端真放行的,不是同一件事。 */
+const 审批工具 = "apply_adjust";
+
+function apvCard(t){
+  const r = t && t.result;
+  if(!r || typeof r !== "object") return "";
+  if(((t.args || {}).kind || "") !== "客户转移") return "";     // 等级 / 积分调整不出这张卡
+  if(r.ok === false && r.reason)
+    return `<div class="apvcard"><div class="h"><b>客户转移没建成</b></div><div class="ln">${esc(r.reason)}</div></div>`;
+  const k = r["卡片"];
+  if(!k || k["类型"] !== "客户转移") return "";
+  const 客 = (k["客户们"] || []).map(c => `${esc(c["姓名"]||"")}(${esc(c["客户号"]||"")},原:${esc(c["原顾问"]||"—")})`).join("、");
+  return `<div class="apvcard">
+    <div class="h"><b>客户转移 · ${esc(k["单号"])}</b><span class="st">${esc(k["状态"]||"")}</span></div>
+    <div class="ln">${客}<br>转给 <b>${esc(k["转给"]||"")}</b>${k["门店"] ? " · " + esc(k["门店"]) : ""}<br>理由:${esc(k["理由"]||"")}</div>
+    <div class="bt"><a href="/ops#approvals/${encodeURIComponent(k["单号"])}" target="_blank" rel="noopener">前往后台确认</a>
+      <button data-apvopen="${esc(k["单号"])}">查看详情</button></div></div>`;
+}
+
+async function openApproval(aid){
+  const ov = $("#od"), bx = $("#odp");
+  ov.classList.add("on");
+  const 关 = () => { bx.innerHTML = ""; closeOrder(); };
+  bx.innerHTML = `<button id="odclose">关闭</button><h3>${esc(aid)}</h3><div class="sub">在取…</div>`;
+  $("#odclose").onclick = 关;
+  let d;
+  try{ d = await (await fetch("/api/approval/" + encodeURIComponent(aid))).json(); }
+  catch(e){
+    bx.innerHTML = `<button id="odclose">关闭</button><h3>取不到</h3>
+      <div class="sub">${esc(String(e))} —— 这是取数失败,<b>不是「这张单不存在」</b></div>`;
+    $("#odclose").onclick = 关; return;
+  }
+  if(d && d["看不到"]){
+    bx.innerHTML = `<button id="odclose">关闭</button><h3>看不到这张审批单</h3><div class="sub">${esc(d["为什么"]||"")}</div>`;
+    $("#odclose").onclick = 关; return;
+  }
+  const kv = (k, v) => `<div class="kv"><span>${esc(k)}</span><span>${esc(v == null ? "—" : String(v))}</span></div>`;
+  const 客 = (d["客户们"] || []).map(c => `<div class="kv"><span>${esc(c["客户号"])}</span>
+      <span>${esc(c["姓名"]||"")} · ${esc(c["门店"]||"")} · 原顾问 ${esc(c["原顾问"]||"—")}</span></div>`).join("");
+  const 待 = d["状态"] === "待审批";
+  bx.innerHTML = `<button id="odclose">关闭</button>
+    <h3>${esc(d["类型"]||"")} · ${esc(d["单号"]||"")}</h3>
+    <div class="sub">状态 <b>${esc(d["状态"]||"")}</b> · ${esc(d["申请人"]||"")} 于 ${esc(d["申请时间"]||"")} 提交</div>
+    <h4>转哪几位</h4>${客 || '<div class="note">这张单里没有客户</div>'}
+    ${kv("转给", d["转给"])}${kv("理由", d["理由"])}
+    ${(d["核对问题"]||[]).length ? `<div class="note"><b>按现在的库核对,有问题:</b>${(d["核对问题"]||[]).map(esc).join(";")}</div>` : ""}
+    ${待 ? `<div class="apvact">
+        <div class="note">${esc(d["说明"]||"")}</div>
+        <textarea id="apvnote" rows="2" placeholder="批注(必填,至少 4 个字):为什么批 / 为什么驳回"></textarea>
+        <div class="row"><button class="ok" id="apvok" ${d["我能批"] ? "" : "disabled"}>批准</button>
+          <button class="no" id="apvno" ${d["我能批"] ? "" : "disabled"}>拒绝</button>
+          <span class="sub" id="apvwhy">${esc(d["为什么"]||"")}</span></div></div>`
+      : `${kv("审批人", d["审批人"])}${kv("审批时间", d["审批时间"])}${kv("批注", d["批注"])}`}`;
+  $("#odclose").onclick = 关;
+  const 决 = async (to) => {
+    const note = ($("#apvnote").value || "").trim();
+    if(note.length < 4){ $("#apvwhy").textContent = "批注至少 4 个字 —— 同意不写理由,出事之后没人说得清当时看了什么"; return; }
+    $("#apvok").disabled = $("#apvno").disabled = true;
+    $("#apvwhy").textContent = "在提交…";
+    let r;
+    try{
+      r = await (await fetch("/api/approval-decide", {method: "POST", headers: {"content-type": "application/json"},
+        body: JSON.stringify({id: aid, to, note})})).json();
+    }catch(e){ r = {ok: false, reason: "没提交上:" + e + "(这是网络问题,单子状态没变)"}; }
+    if(r && r.ok){ openApproval(aid); return; }    // 重新取一遍:显示的是后台批完之后的真状态,不是页面自己改的字
+    $("#apvwhy").textContent = (r && (r.reason || r.error)) || "没批成";
+    $("#apvok").disabled = $("#apvno").disabled = !d["我能批"];
+  };
+  if(待){ $("#apvok").onclick = () => 决("已通过"); $("#apvno").onclick = () => 决("已驳回"); }
+}
 // 点遮罩空白处关掉(和「?」教学层同一个习惯)。**不关 #odp 内部的点击** ——
 // 否则在详情里选文字也会把它关掉。
 document.addEventListener("click", e => {
@@ -1036,7 +1126,10 @@ function drawStream(){
     // 两者不一致时先看到数据,而不是先被那段话带走。
     const 卡 = (m.trajectory || [])
       .filter(t => String(t.tool || "").split("__").pop() === 订单工具)
-      .map(ordCards).join("");
+      .map(ordCards).join("")
+      + (m.trajectory || [])
+      .filter(t => String(t.tool || "").split("__").pop() === 审批工具)
+      .map(apvCard).join("");
     return `<div class="msg a"><div class="wrap">
       ${(m.trajectory || []).map(toolChip).join("")}
       ${卡}
@@ -1049,6 +1142,9 @@ function drawStream(){
   // 而「绑了但被冲掉」和「没绑」在点不动这件事上长得一模一样。
   s.querySelectorAll(".ordcard").forEach(b => {
     b.onclick = () => openOrder(b.dataset.oid);
+  });
+  s.querySelectorAll("[data-apvopen]").forEach(b => {
+    b.onclick = () => openApproval(b.dataset.apvopen);
   });
   // 每条回答各自的「执行记录」(证据中心 10-25)—— 同样每次重绘重绑
   s.querySelectorAll(".evlink").forEach(b => {

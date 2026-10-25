@@ -225,6 +225,41 @@ def a_customer_profile_other_shop():
     raise PermissionError("按客户号、按姓名都翻不到别家店的客户(这正是期望的)")
 
 
+def a_transfer_approve_other_shop():
+    """客户转移审批(用户 10-25 拍「本店的转移店长也能批」)放宽之后,攻它的边:
+    ① 店长批**别家店**客户的转移 ② 店长批等级调整 ③ 顾问批本店转移。**不写库**:拿一张自造的单(dict)
+    走真的判定链 —— api.审批上下文 算 ctx、fsm.check 放不放。任何一刀放行 = 边界破了。"""
+    import api as _A, fsm as _F, sqlite3 as _sq
+    c = _sq.connect(f"file:{_A.DB}?mode=ro", uri=True)
+    try:
+        店们 = c.execute("SELECT code, code||' '||name FROM shop WHERE EXISTS(SELECT 1 FROM customer WHERE shop_code=shop.code) "
+                        "ORDER BY code LIMIT 2").fetchall()
+        if len(店们) < 2:
+            return "不够两家有客户的店 —— 没攻击成,不算守住"
+        乙客 = c.execute("SELECT id FROM customer WHERE shop_code=? ORDER BY id LIMIT 1", (店们[1][0],)).fetchone()[0]
+        乙顾 = c.execute("SELECT no FROM staff WHERE shop=? AND status='启用' AND role='顾问' ORDER BY no LIMIT 1", (店们[1][1],)).fetchone()
+        甲客 = c.execute("SELECT id FROM customer WHERE shop_code=? ORDER BY id LIMIT 1", (店们[0][0],)).fetchone()[0]
+        甲顾 = c.execute("SELECT no FROM staff WHERE shop=? AND status='启用' AND role='顾问' ORDER BY no LIMIT 1", (店们[0][1],)).fetchone()
+    finally:
+        c.close()
+    if not 乙顾 or not 甲顾:
+        return "挑不出在职顾问 —— 没攻击成,不算守住"
+    import json as _j
+    甲店长 = {"no": "ZZ0101", "role": "店长", "shop": 店们[0][1]}
+    刀 = [("甲店店长批乙店客户的转移", 甲店长, {"kind": "客户转移", "target": 乙客, "payload": _j.dumps({"to_advisor_no": 乙顾[0]})}),
+          ("甲店店长批本店的等级调整", 甲店长, {"kind": "等级调整", "target": 甲客, "payload": _j.dumps({"to": "黑金"})}),
+          ("甲店顾问批本店转移", {"no": "ZZ0102", "role": "顾问", "shop": 店们[0][1]},
+           {"kind": "客户转移", "target": 甲客, "payload": _j.dumps({"to_advisor_no": 甲顾[0]})})]
+    for 名, me, a in 刀:
+        ok, _, _ = _F.check("bk-approval", "待审批", "已通过", _A.审批上下文(me, a))
+        if ok:
+            return f"{名} —— 状态机放行了,边界是破的"
+    ok, _, _ = _F.check("bk-approval", "待审批", "已通过", _A.审批上下文(甲店长, 刀[2][2]))
+    if not ok:
+        return "对照没过:甲店店长批**本店**转移也被拒 —— 攻击证明不了任何事(放宽没生效)"
+    raise PermissionError("三刀都被拦下,本店转移照常放行")
+
+
 def a_skill_gate():
     """Skill 管理后台里停用一个技能,模型还调不调得动(用户 10-23 拍「做完整配置页」)。
     在库副本上把自有的 quote 标成「已停用」,问执行闸本身 —— 状态要是只在页面上显示、闸照旧读写死清单,
@@ -1403,6 +1438,10 @@ STRUCT = [
   "身份只从登录态取,范围走 api.本店范围(和客户读接口同一个函数、同一个跨店角色常量);"
   "kb_fit 给了着装人就核他在不在这位客户的账户名下。⚠️ 「页面上不默认选第一个着装人」是页面行为,不是闸 ——"
   "后台那道闸是 kb_fit 名下多人量过体时不猜;守页面那一半的是 scheme_customer_search_check 在 node 里真跑页面脚本"),
+ ("审批:店长只能批本店的客户转移,别的照旧只有总部运营", "backend/fsm.py bk-approval;api.审批上下文 / 能批转移吗 / 转移核对",
+  a_transfer_approve_other_shop, "自造三张单走真判定链:甲店店长批乙店客户转移、店长批等级调整、顾问批本店转移;外加对照(店长批本店转移要放行)",
+  "状态机只认调用方算好的「本店转移」结论,这个结论只有 api.审批上下文 一处算(客户全在批的人那家店、接手的人也在这家店且在职);"
+  "聊天弹窗、审批中心、智能体批单三个入口都走它。批准即生效(api.审批生效 一处)"),
  ("智能体的客户档案工具只看本店", "backend/api.py get_customer;api.本店范围",
   a_customer_profile_other_shop, "自造一个挂门店的顾问身份,按客户号、按姓名翻别家店的客户",
   "门店范围从会话身份取(和客户读接口同一个 本店范围);按姓名认人时只在本店里认,别店同名的不进候选。"

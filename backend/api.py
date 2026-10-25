@@ -1339,6 +1339,121 @@ def approval_queue(status=None, kind=None):
                     说明=None if out else "这个筛选条件下一条审批单都没有"))
 
 
+# ── 客户转移(用户 2026-10-25):聊天里说一句就建单;**本店的转移店长也能批**;**批准即生效** ──────────
+#
+# 三个入口共用这里:智能体建单 / 批单(api.apply_adjust / decide_approval)、管理后台审批中心
+# (server.decide_approval)、聊天卡片的详情弹窗(server /api/approval/<id>)。
+# 「是不是本店转移」「这个人能不能批」「批了改什么」**各只写一份** —— 两个入口各判一次,总有一处判松,
+# 而判松的那处看起来完全正常(10-25 就是这么发现的:聊天这条路批了不转,审批中心批了才转)。
+
+def _认顾问(值, c):
+    """工号 / 姓名 / 「短号 姓名」→ staff 行。**认不出或重名都不猜**,回 (None, 为什么)。"""
+    v = str(值 or "").strip()
+    if not v:
+        return None, "没说转给谁"
+    c.row_factory = sqlite3.Row
+    r = c.execute("SELECT no, name, role, shop, status FROM staff WHERE no=?", (v,)).fetchall()
+    if not r:
+        名 = v.split()[-1]
+        r = c.execute("SELECT no, name, role, shop, status FROM staff WHERE name=?", (名,)).fetchall()
+    if not r:
+        return None, f"员工表里没有「{v}」"
+    if len(r) > 1:
+        return None, f"「{v}」重名 {len(r)} 个,要给工号(" + "、".join(f"{x['no']} {x['shop']}" for x in r) + ")"
+    return dict(r[0]), None
+
+
+def 转移核对(target, payload):
+    """一张客户转移单的事实,**按库现算**:客户们、接手顾问、门店、是不是「本店转移」。
+
+    本店转移 = 客户全在同一家店、接手的人也在这家店而且在职。**不看谁在问** ——「这个人能不能批」另在 能批转移吗。
+    """
+    pl = payload if isinstance(payload, dict) else {}
+    with _cl_closing(_c()) as c:
+        c.row_factory = sqlite3.Row
+        客户们, 问题 = [], []
+        for cid in [x.strip() for x in str(target or "").split("|") if x.strip()]:
+            r = c.execute("SELECT id, name, shop, shop_code, advisor_no FROM customer WHERE id=?", (cid,)).fetchone()
+            if not r:
+                问题.append(f"没有客户 {cid}"); continue
+            码 = r["shop_code"] or _SK.码(c, r["shop"])
+            客户们.append(dict(客户号=r["id"], 姓名=r["name"], 门店=r["shop"], 店码=码,
+                               原顾问=_员工称呼(r["advisor_no"]) if r["advisor_no"] else "没有归属顾问",
+                               原顾问工号=r["advisor_no"]))
+        接, 为何 = _认顾问(pl.get("to_advisor_no") or pl.get("to_advisor"), c)
+        if 接 is None:
+            问题.append(为何)
+        else:
+            接["店码"] = _SK.码(c, 接["shop"])
+            if (接.get("status") or "启用") != "启用":
+                问题.append(f"{接['name']} 已{接['status']},不能接客户")
+    店码们 = {x["店码"] for x in 客户们}
+    if len(店码们) > 1:
+        问题.append("这几位客户不在同一家店 —— 一张单只转一家店的客户")
+    店码 = next(iter(店码们)) if len(店码们) == 1 else None
+    if 接 and 店码 and 接["店码"] != 店码:
+        问题.append(f"{接['name']} 在 {接['shop']},客户在别的店 —— 接手的人要和客户同一家店")
+    本店 = bool(客户们) and 接 is not None and not 问题 and 店码 is not None
+    return dict(客户们=客户们, 接手=接, 店码=店码, 本店转移=本店, 问题=问题)
+
+
+def 能批转移吗(me, 核):
+    """→ (能不能批, 为什么)。总部运营 / 售后照旧都能批;店长只能批**自己那家店**的本店转移(用户 10-25 拍)。
+    这里只给页面和智能体一个预判;**真正的判定在 fsm.check**,它认的是 ctx["本店转移"](由 审批上下文 算)。"""
+    if not me:
+        return False, "没登录"
+    if me.get("role") == "总部运营":
+        return True, "总部运营可以批所有审批单"
+    if me.get("role") != "店长":
+        return False, f"「{me.get('role')}」不能批审批单 —— 本店的客户转移店长能批,其余只有总部运营能批"
+    if not 核.get("本店转移"):
+        return False, "这张单不是本店转移(" + ";".join(核.get("问题") or ["客户或接手的人不在同一家店"]) + ")—— 要总部运营批"
+    with _cl_closing(_c()) as c:
+        我店 = _SK.码(c, me.get("shop")) if me.get("shop") else None
+    if 我店 != 核.get("店码"):
+        return False, "这几位客户不在你的门店 —— 要那家店的店长或总部运营批"
+    return True, "本店的客户转移,店长可以批"
+
+
+def 审批上下文(me, a):
+    """给 fsm.check 的 ctx。店长批本店转移时 ctx["本店转移"]=True(**已经核过是他那家店**);其余一律 False。"""
+    ctx = {"role": (me or {}).get("role"), "kind": a.get("kind"), "本店转移": False}
+    if a.get("kind") == "客户转移" and ctx["role"] == "店长":
+        try: pl = json.loads(a.get("payload") or "{}")
+        except Exception: pl = {}
+        ctx["本店转移"] = 能批转移吗(me, 转移核对(a.get("target"), pl))[0]
+    return ctx
+
+
+def 审批生效(c, a):
+    """批准之后**真的改**。→ 一句改了什么。和审批中心原来那段是同一件事,搬到这里两边共用。
+
+    客户转移写的是**工号**(名字是 staff 的副本、会漂);未完成的预约跟着迁。认不出接手的人就**不改、照实说**,不猜。
+    """
+    try: pl = json.loads(a.get("payload") or "{}")
+    except Exception: pl = {}
+    if a.get("kind") == "等级调整":
+        c.execute("UPDATE customer SET level=? WHERE id=?", (pl.get("to"), a["target"]))
+        return f"已将 {a['target']} 等级调整为「{pl.get('to')}」"
+    if a.get("kind") == "积分调整":
+        return f"已为 {a['target']} 调整积分 {pl.get('delta')}"
+    if a.get("kind") == "客户转移":
+        接, 为何 = _认顾问(pl.get("to_advisor_no") or pl.get("to_advisor"), c)
+        if 接 is None:
+            return f"⚠️ 单子批了,但没转:{为何} —— 认不出接手的人就不改,请重新提一张写清工号的单"
+        ids = [x.strip() for x in (a["target"] or "").split("|") if x.strip()]
+        for i in ids:
+            c.execute("UPDATE customer SET advisor_no=? WHERE id=?", (接["no"], i))
+        c.executemany("UPDATE appointment SET advisor_no=? WHERE customer_id=? AND status='已预约'",
+                      [(接["no"], i) for i in ids])
+        return f"已将 {len(ids)} 位客户转至 {接['name']}({接['no']}),未完成的预约一起迁过去"
+    return ""
+
+
+import contextlib as _cl_mod
+_cl_closing = _cl_mod.closing
+
+
 def apply_adjust(kind, target, payload, reason):
     """**提一张审批单**(等级调整 / 积分调整 / 客户转移)——**只是申请,不生效**。
 
@@ -1380,6 +1495,25 @@ def apply_adjust(kind, target, payload, reason):
         except Exception: payload = {"原文": payload}
     if not isinstance(payload, dict) or not payload:
         return dict(ok=False, code="NEED_PAYLOAD", reason="要改成什么?payload 必填")
+    核 = None
+    if kind == "客户转移":
+        # 建单前就按库核一遍(10-25):别等批的那一刻才发现转给了一个停用的人、或者客户根本不在本店
+        核 = 转移核对(tgt, payload)
+        if 本店范围(me) is not None:
+            with _cl_closing(_c()) as _x:
+                我店 = _SK.码(_x, 本店范围(me)) if 本店范围(me) else None
+            别店 = [x["客户号"] for x in 核["客户们"] if x["店码"] != 我店]
+            if 别店:
+                return dict(ok=False, code="NOT_MY_SHOP", 范围="本店",
+                            reason=f"{'、'.join(别店)} 不在你的门店,转不了 —— 跨店的转移找总部运营提")
+        if 核["问题"]:
+            return dict(ok=False, code="BAD_TRANSFER", reason=";".join(核["问题"]),
+                        客户们=核["客户们"] or None)
+        已经是 = [x["客户号"] for x in 核["客户们"] if x["原顾问工号"] == 核["接手"]["no"]]
+        if len(已经是) == len(核["客户们"]):
+            return dict(ok=False, code="NOTHING_TO_DO",
+                        reason=f"这几位的归属顾问已经是 {核['接手']['name']},不用转")
+        payload = {**payload, "to_advisor_no": 核["接手"]["no"], "to_advisor": 核["接手"]["name"]}
 
     pre = {"等级调整": "AP-LV", "积分调整": "AP-PT", "客户转移": "AP-TR"}[kind]
     n = len(_rows2("SELECT id FROM approval WHERE id LIKE ?", pre + "-%")) + 1
@@ -1396,6 +1530,16 @@ def apply_adjust(kind, target, payload, reason):
     oplog.log_op(me.get("name"), "approval", aid, "—", "待审批", True, "APPLY",
                  f"{me.get('name')}({me.get('role')})提了一张{kind}:{tgt} —— {why}"[:120],
                  {"kind": kind, "payload": payload, "by_agent": True})
+    if kind == "客户转移":
+        能, 为何 = 能批转移吗(me, 核)
+        return dict(ok=True, code="APPLY", 单号=aid, 状态="待审批",
+                    reason=f"已提交 {aid}(客户转移)。**这只是申请,还没生效** —— 批准之后客户才会转过去。"
+                           f"{'你自己就能批(本店转移)' if 能 else '要' + ('那家店的店长或' if 核['本店转移'] else '') + '总部运营批'}",
+                    # 卡片:聊天页照这个画,**数据来自这张单和库,不是模型复述**(sdk 结构化回前端)
+                    卡片=dict(类型="客户转移", 单号=aid, 状态="待审批", 门店=(核["客户们"][0]["门店"] if 核["客户们"] else None),
+                              客户们=[{k: x[k] for k in ("客户号", "姓名", "原顾问")} for x in 核["客户们"]],
+                              转给=_员工称呼(核["接手"]["no"]), 转给工号=核["接手"]["no"], 理由=why,
+                              我能批=能, 为什么=为何))
     return dict(ok=True, code="APPLY", 单号=aid, 状态="待审批",
                 reason=f"已提交 {aid}({kind}·{tgt})。**这只是申请,还没生效** —— "
                        f"「待审批 → 已通过/已驳回」这一步只有 **{m.审批角色}** 能走")
@@ -1420,7 +1564,7 @@ def decide_approval(approval_id, agree, note):
     if not r: return dict(ok=False, code="NO_APPROVAL", reason=f"没有审批单 {aid}")
     a = r[0]
     to = "已通过" if agree else "已驳回"
-    ok, code, why = fsm.check("bk-approval", a["status"], to, {"role": me.get("role")})
+    ok, code, why = fsm.check("bk-approval", a["status"], to, 审批上下文(me, a))
     if not ok:
         oplog.log_op(me.get("name"), "approval", aid, a["status"], to, False, code, why[:120],
                      {"role": me.get("role")})
@@ -1431,9 +1575,13 @@ def decide_approval(approval_id, agree, note):
                     reason="批注必填 —— 驳回不写理由,申请人不知道该补什么;"
                            "**同意不写理由,出事之后没人说得清当时看了什么**")
     now = _wc.当下().strftime("%Y-%m-%d %H:%M")
+    改了 = ""
     with sqlite3.connect(DB) as c:
         c.execute("UPDATE approval SET status=?,decided_by=?,decided_at=?,note=? WHERE id=?",
                   (to, me.get("no"), now, txt, aid))
+        # 批准即生效(用户 10-25 拍)—— 和审批中心同一段;同一个事务里,改单和改档要么都成要么都不成
+        if agree:
+            改了 = 审批生效(c, a)
     try: pl = _js.loads(a["payload"] or "{}")
     except Exception: pl = {}
     oplog.log_op(me.get("name"), "approval", aid, a["status"], to, True, "DECIDE",
@@ -1441,11 +1589,8 @@ def decide_approval(approval_id, agree, note):
                  f"{aid}({a['kind']}·{a['target']}):{txt}"[:120],
                  {"kind": a["kind"], "agree": bool(agree),
                   "applied_by": a["applied_by"], "payload": pl})
-    return dict(ok=True, code="DECIDE", 单号=aid, 状态=to,
-                reason=f"{aid} 已{'通过' if agree else '驳回'}。"
-                       f"⚠️ **审批只改审批单的状态,没有替你去改客户档案** —— "
-                       f"实际调整要走各自的业务动作。这是有意的:"
-                       f"批准和执行分开,才查得出「谁批的」和「谁做的」")
+    return dict(ok=True, code="DECIDE", 单号=aid, 状态=to, 改了=改了 or None,
+                reason=f"{aid} 已{'通过' if agree else '驳回'}。" + (改了 or ("没有改任何业务数据" if agree else "")))
 
 
 def _by_agent(approval_id):
@@ -6651,14 +6796,14 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "status":{"type":"string","description":"待审批 / 已通过 / 已驳回 / 已撤回,不给就是全部"},
     "kind":{"type":"string","description":"等级调整 / 积分调整 / 客户转移,不给就是全部"}},"required":[]}},
- {"name":"apply_adjust","description":"**提一张审批单**(等级调整 / 积分调整 / 客户转移)—— ⚠️ **只是申请,不生效**。这三件事都绕过了某条本该自动成立的规则,所以一律走审批。理由必填:**没有理由的申请,审批的人只能靠猜,而猜出来的「同意」等于没审**。店长及以上才能提。",
+ {"name":"apply_adjust","description":"**提一张审批单**(等级调整 / 积分调整 / 客户转移)—— ⚠️ **只是申请,不生效**。这三件事都绕过了某条本该自动成立的规则,所以一律走审批。理由必填:**没有理由的申请,审批的人只能靠猜,而猜出来的「同意」等于没审**。店长及以上才能提。**客户转移**:target 写客户号(多位用 | 隔开,一张单只转一家店的客户),payload 写 {\"to_advisor\": 接手顾问的工号或姓名};建单时就核客户在不在本店、接手的人在不在职 —— 不过就不建。建好后聊天里会出一张卡片(去后台确认 / 看详情直接批),**你不用再复述单子内容**。",
   "input_schema":{"type":"object","properties":{
     "kind":{"type":"string","description":"等级调整 / 积分调整 / 客户转移"},
     "target":{"type":"string","description":"客户号;客户转移可多个,用 | 隔开"},
-    "payload":{"type":"object","description":"要改成什么,如 {\"from\":\"金卡\",\"to\":\"黑金\"} 或 {\"delta\":5000}"},
+    "payload":{"type":"object","description":"要改成什么,如 {\"from\":\"金卡\",\"to\":\"黑金\"}、{\"delta\":5000};客户转移写 {\"to_advisor\":\"60000002\"}(工号或姓名)"},
     "reason":{"type":"string","description":"为什么要改。必填,至少 4 个字"}},
    "required":["kind","target","payload","reason"]}},
- {"name":"decide_approval","description":"**批一张审批单**:同意或驳回。「待审批 → 已通过/已驳回」这一步**只有总部运营能走**(角色判定在状态机里,不在这个工具里)。批注必填,同意和驳回都要 —— 驳回不写理由申请人不知道该补什么,**同意不写理由出事之后没人说得清当时看了什么**。⚠️ 审批**只改审批单的状态**,不会替你去改客户档案 —— 批准和执行分开,才查得出「谁批的」和「谁做的」。",
+ {"name":"decide_approval","description":"**批一张审批单**:同意或驳回。「待审批 → 已通过/已驳回」默认**只有总部运营能走**,本店的客户转移那家店的店长也能走(角色判定在状态机里,不在这个工具里)。批注必填,同意和驳回都要 —— 驳回不写理由申请人不知道该补什么,**同意不写理由出事之后没人说得清当时看了什么**。**批准即生效**(用户 2026-10-25 拍):客户转移批了客户就转过去、未完成预约一起迁,等级调整批了等级就改 —— 和审批中心同一段代码。**本店的客户转移,那家店的店长也能批**,其余只有总部运营。",
   "input_schema":{"type":"object","properties":{
     "approval_id":{"type":"string","description":"审批单号,如 AP-LV-001"},
     "agree":{"type":"boolean","description":"true=通过,false=驳回"},

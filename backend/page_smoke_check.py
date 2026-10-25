@@ -141,6 +141,10 @@ def 带身份的handler():
     # 它是真的页面入口,而且是管权限的那种。
     # 身份从 cookie 取(`_me`),所以参数里要带一个真会话的 handler ——
     # 不带的话它会**正确地**返回「看不到」,而冒烟会把那当成失败。
+    # 聊天里点开客户转移卡片的那条(2026-10-25 加):身份是**参数**(server 从会话换好再传进来),
+    # 用总部运营 —— 它能看全部;范围本身由 approval_transfer_check 的 HTTP 层那几条专门验
+    "approval_detail": [(SQL("SELECT id FROM approval ORDER BY applied_at DESC LIMIT 1"),
+                         SQL行("SELECT no,name,role,shop FROM staff WHERE role='总部运营' AND status='启用' LIMIT 1"))],
     "chat_order_detail": [(SQL("SELECT id FROM ordr WHERE kind='定制品订单' LIMIT 1"),
                            ("带身份", None)),
                           # 标品单也跑一遍:定制那条路会走 `item_part_choice`,

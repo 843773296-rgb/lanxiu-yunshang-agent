@@ -604,7 +604,7 @@ async function route(v,arg){
   if(v==="rtpls")    return rtplList();
   if(v==="rtpl")     return rtplDetail(arg);
   if(v==="downloads")return downloadList();
-  if(v==="approvals")return approvalCenter();
+  if(v==="approvals")return approvalCenter(arg);
   if(v==="levels")   return levelPage();
   if(v==="tags")     return tagPage();
   if(v==="aftersales")return afterList();
@@ -2895,7 +2895,8 @@ async function downloadList(){
   bindTable(st,downloadList);
 }
 
-async function approvalCenter(){
+async function approvalCenter(定位单){
+  // 定位单:从聊天卡片「前往后台确认」进来时带的单号(#approvals/AP-TR-xxx)—— 那一行标黄并滚到眼前
   const d=await get("/api/approvals");
   M.innerHTML=chrome([["首页","workbench"],"系统","审批中心"],`
    <div class="row r-4" style="margin-bottom:14px">
@@ -2943,16 +2944,16 @@ async function approvalCenter(){
      <th style="width:130px">申请单</th><th style="width:110px">类型</th><th style="width:180px">对象</th>
      <th>调整内容</th><th style="width:130px">申请人</th><th style="width:150px">申请时间</th>
      <th>申请原因</th><th style="width:150px">操作</th></tr></thead><tbody>
-     ${d.risky.map(r=>`<tr><td class="mono">${esc(r.id)}</td>
+     ${d.risky.map(r=>`<tr id="rk-${esc(r.id)}"${r.id===定位单?' style="background:#fff7e6"':""}><td class="mono">${esc(r.id)}</td>
       <td><span class="pill p-warn">${esc(r.kind)}</span></td>
       <td class="mono">${esc(r.target)} <span style="color:var(--ink3)">${esc(r.target_name||"")}</span></td>
       <td class="mono" style="font-size:12.5px">${esc(Object.entries(r.pl||{}).map(([k,v])=>k+"="+v).join(" · "))}</td>
       <td class="mono">${esc(r.applied_by)}</td>
       <td class="mono" style="color:var(--ink3)">${esc(r.applied_at)}</td>
       <td style="color:var(--ink2)">${esc(r.note||"—")}</td>
-      <td>${ROLE==="总部运营"
+      <td>${r.我能批
         ? `<span class="lk" data-rkok="${esc(r.id)}">通过</span><span class="lk" data-rkno="${esc(r.id)}">驳回</span>`
-        : '<span style="color:var(--ink4);font-size:12.5px">需总部运营</span>'}</td></tr>`).join("")}
+        : `<span style="color:var(--ink4);font-size:12.5px" title="${esc(r.为什么||"")}">${esc(r.为什么||"需总部运营")}</span>`}</td></tr>`).join("")}
      </tbody></table>`:'<div class="empty">当前没有待审批的高风险操作</div>'}</div>
 
    <div class="card"><div class="hd"><h3>需要审批的规则</h3>
@@ -2963,6 +2964,9 @@ async function approvalCenter(){
       <td style="color:var(--ink2)">${esc(b)}</td>
       <td class="mono" style="font-size:12px;color:var(--ink3)">${esc(c)}</td></tr>`).join("")}
     </tbody></table></div>`);
+  if(定位单){const tr=document.getElementById("rk-"+定位单);
+    if(tr)tr.scrollIntoView({block:"center"});
+    else M.insertAdjacentHTML("afterbegin",`<div class="empty" style="margin-bottom:12px">审批单 ${esc(定位单)} 不在待审批里 —— 可能已经批过,或者不在你能看的范围</div>`);}
   M.querySelectorAll("[data-apv]").forEach(e=>e.onclick=()=>view("task",e.dataset.apv));
   M.querySelectorAll("[data-apok]").forEach(e=>e.onclick=()=>
     modal("审批通过并合并",[{k:"note",type:"text",req:1,label:"审批意见"}],
