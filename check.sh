@@ -445,6 +445,7 @@ run "V1 循环 · 离线自测"       python3 agent/offline_test.py
 run "V2 工作流 · 40 条工单纯规则(不调模型)" python3 agent/v2.py
 run "记录仪覆盖 · 每个调模型的地方都接了" python3 agent/trace_check.py
 run "树状记录仪 · 自测(抹凭据/截断/排树/孤儿不丢)" python3 agent/spans.py --selftest
+run "树状记录仪 · 边跑边记(崩了也留下已收尾的、补记中断不丢原属性、久未收尾判中断、正常跑完不重复)" python3 agent/spans_incremental_check.py
 run "树状记录仪结构 · 接没接上、树是不是树、凭据没进日志(8 条咬合)" python3 agent/spans_check.py
 run "实验对比 · 先判对比成不成立再给分(题号字段各套不同/换模型拒收)" python3 agent/compare.py --selftest
 run "页面骨架 · 一块放错父容器,框架正常但内容被顶出可视区(2 条咬合)" python3 agentsite/layout_check.py

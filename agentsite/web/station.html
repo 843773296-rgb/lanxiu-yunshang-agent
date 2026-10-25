@@ -1155,7 +1155,8 @@ async function ask(){
 
   // **会话号要存下来** —— 多轮靠 CLI 续会话,不靠把历史拼进 prompt。
   if(r && r.session_id) c.session = r.session_id;
-  c.msgs.push(r && r.error ? {role:"assistant", error: r.error} : Object.assign({role:"assistant"}, r));
+  c.msgs.push(r && r.error ? {role:"assistant", error: r.error, trace_id: r.trace_id || null}
+                           : Object.assign({role:"assistant"}, r));
   c.at = Date.now(); save(); drawSide(); drawStream();
   if($("#ev").classList.contains("on")) drawEv();   // 侧栏开着就跟着刷新证据
 }
@@ -1206,8 +1207,27 @@ function 返回值对位(号们, spans){
   spans.forEach(sp => { const k = (sp.attr || {})["gen_ai.tool.call.id"]; if(k) 按号[k] = sp; });
   return 号们.map((号, i) => 号 ? {sp: 按号[号] || null, 按顺序: false} : {sp: spans[i] || null, 按顺序: true});
 }
+// 失败的那一轮:没有轨迹,直接按记录列出已经发生的步骤(工具名、参数、返回、出没出错)
+async function 补断前步骤(tid){
+  const box = document.getElementById("ev-broken"); if(!box) return;
+  try{
+    const r = await fetch("/spans?trace=" + encodeURIComponent(tid)).then(r => r.json());
+    if(r.error){ box.textContent = "看不到:" + r.error; return; }
+    const 根 = (r.spans || []).find(x => !x.parent_span_id) || {};
+    const 步 = (r.spans || []).filter(x => (x.attr || {})["gen_ai.operation.name"] === "execute_tool");
+    box.innerHTML = (根.status ? `<div class="dim">这一轮的状态:${esc(根.status)}`
+        + ((根.attr || {})["lanxiu.interrupted"] ? ` —— ${esc(根.attr["lanxiu.interrupted"])}` : "") + `</div>` : "")
+      + (步.map(x => { const a = x.attr || {};
+          return `<div class="toolrow"><b>${esc(a["gen_ai.tool.name"] || x.name)}</b> <span class="dim">${esc(x.status || "")}</span>`
+            + `<br><code>${esc(String(a["gen_ai.tool.call.arguments"] || "").slice(0, 160))}</code>`
+            + (a["gen_ai.tool.call.result"] !== undefined
+               ? `<pre>${esc(String(a["gen_ai.tool.call.result"]).slice(0, 600))}</pre>` : `<div class="dim">(没有返回 —— 断在这一步,或者还没回来)</div>`)
+            + `</div>`; }).join("") || `<div class="dim">断之前一个工具都没调。</div>`);
+  }catch(e){ box.textContent = "取不到:" + e.message; }
+}
 async function 补返回值(){
   const last = evMsg();
+  if(last && last.error){ if(last.trace_id) 补断前步骤(last.trace_id); return; }
   const tid = last && last.trace_id;
   const rows = [...document.querySelectorAll("#evbody .toolrow")];
   if(!tid || !rows.length) return;
@@ -1243,9 +1263,11 @@ async function 补返回值(){
 function evEvidence(){
   const c = cur();
   const last = evMsg();
-  if(last && last.error) return `<div class="empty"><b>这一条没答成</b>:${esc(last.error)}<br>`
-    + `这一轮的执行记录没留下来 —— 现在只在一轮正常结束时才写记录,中途出错的那一轮什么都不剩。`
-    + `(「边跑边记、断了也留下已经发生的」是下一项要做的)</div>`;
+  if(last && last.error) return `<div class="empty"><b>这一条没答成</b>:${esc(last.error)}</div>`
+    + (last.trace_id
+      ? `<div class="grp"><h4>断之前已经做了什么</h4><div id="ev-broken">读取中…</div>
+         <div class="dim">记录是边跑边写的:断之前收尾的每一步都在;正在做的那一步没有返回值。</div></div>`
+      : `<div class="empty">这一条没有执行记录可看 —— 它出在开跑之前(参数、登录、模型这一类),或者是 10-25 之前的老记录(那时只在正常结束时才写)。</div>`);
   if(!last) return `<div class="empty">还没有回答。问一句之后,这里会列出它<b>凭什么</b>这么说。</div>`;
   const R = KINDS[c.kind] || {};
   const traj = last.trajectory || [];

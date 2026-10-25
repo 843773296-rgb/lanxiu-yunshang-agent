@@ -123,18 +123,37 @@ def 装值(x):
 class 一棵树:
     """一次提问的 trace。用法:开根 → 中间开/收若干 span → 落盘。
 
-    **不在中途写文件。** 中途写的话,一次运行会散在文件里几十行中间,
-    而运行是并发的(两个人同时用),读的时候要靠 trace_id 重新拼 —— 能拼,但没必要。
-    一次运行几十个 span,攒在内存里几十 KB,结束时一次写完。
+    原来**不在中途写文件**,结束时一次写完 —— 代价是进程中途崩了,这一轮**一条都不剩**,
+    而跑崩的那一轮恰恰最需要看(证据中心 P0「记录恢复与完整性」,10-25)。
+    `边跑边记=True`(聊天站这么开):根一开就先写一条「进行中」,每个 span **收的那一刻**就写;
+    结束时只补还没写的(没收尾的标出来)。同一个 span 可能写两次(根:开头一次、收尾一次),
+    读的时候按 span_id 合并、后写的盖先写的。读的时候靠 trace_id 重新拼 —— 并发的两轮各写各的行,拼得开。
+    默认关:自测和别的调用方给的是自己的路径,开了会往真日志里写。
     """
 
-    def __init__(self, *, 角色=None, 会话号=None, 模型=None, 供应商=None, gen="V3", tid=None):
+    def __init__(self, *, 角色=None, 会话号=None, 模型=None, 供应商=None, gen="V3", tid=None,
+                 边跑边记=False, 路径=None):
         # tid 可以由调用方先定:工具子进程要在**建树之前**就拿到它(sdk 先算 MCP 配置再开树),
         # 存报告之类的产出要记下「是哪一轮生成的」,AI 管理平台才能从产出跳回那一轮(用户 10-10)
         self.tid = tid or uuid.uuid4().hex
         self.spans = []
         self.开始 = time.time()
         self.元 = dict(角色=角色, 会话号=会话号, 模型=模型, 供应商=供应商, gen=gen)
+        self.边跑边记, self.路径, self.已写 = 边跑边记, 路径, set()
+
+    def _写(self, s, *, 进行中=False):
+        """把一个 span 现在的样子追加一行。进行中 = 根刚开、还没收(读的人看到的是「这一轮在跑 / 断在这儿」)。"""
+        p = self.路径 or LOG
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        行 = dict(s, attr=dict(s["attr"]))
+        if 进行中:
+            行["end"], 行["status"] = 行["start"], "进行中"
+        行["duration_ms"] = round(max(0.0, (行["end"] or 行["start"]) - 行["start"]) * 1000)
+        行["ts"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(行["start"]))
+        for k, v in self.元.items():
+            if v is not None: 行.setdefault(k, v)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(json.dumps(行, ensure_ascii=False) + "\n")
 
     # ── 开一个 span ────────────────────────────────────────────────
     def 开(self, 操作, 名, *, 父=None, 属性=None, sid=None, 起=None):
@@ -146,6 +165,13 @@ class 一棵树:
         if self.元.get("供应商"): s["attr"]["gen_ai.provider.name"] = self.元["供应商"]
         if 属性: s["attr"].update({k: v for k, v in 属性.items() if v is not None})
         self.spans.append(s)
+        if self.边跑边记 and 父 is None:
+            try:
+                p = self.路径 or LOG
+                if os.path.exists(p) and os.path.getsize(p) > 轮转字节: os.replace(p, p + ".1")
+            except OSError:
+                pass
+            self._写(s, 进行中=True)
         return s["span_id"]
 
     def 找(self, sid):
@@ -158,6 +184,9 @@ class 一棵树:
         if 属性: s["attr"].update({k: v for k, v in 属性.items() if v is not None})
         if 出错:
             s["status"] = "error"
+        if self.边跑边记:
+            self._写(s)
+            self.已写.add(sid)
             s["attr"]["error.type"] = str(出错)[:200]
         elif s["status"] == "unset":
             s["status"] = "ok"
@@ -218,13 +247,26 @@ class 一棵树:
             s["ts"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(s["start"]))
             for k, v in self.元.items():
                 if v is not None: s.setdefault(k, v)
+        要写 = [s for s in self.spans if s["span_id"] not in self.已写] if self.边跑边记 else self.spans
         with open(p, "a", encoding="utf-8") as f:
-            for s in self.spans:
+            for s in 要写:
                 f.write(json.dumps(s, ensure_ascii=False) + "\n")
-        return len(self.spans)
+        return len(要写)
 
 
 # ── 读回来 ─────────────────────────────────────────────────────────
+中断秒 = 1800   # 一轮跑得再久也不过半小时(sdk 的轮数和花费上限都比这先掐);过了还「进行中」就是断了
+
+
+def 记中断(tid, 根, 原因, path=None):
+    """一轮跑到一半抛了异常:给它的根补一条「出错 + 为什么」(读的时候和前面写的合并)。调用方是聊天站接口的异常分支。"""
+    if not (tid and 根): return
+    p = path or LOG
+    with open(p, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"trace_id": tid, "span_id": 根, "status": "error", "end": time.time(),
+                            "attr": {"lanxiu.interrupted": str(原因)[:400]}}, ensure_ascii=False) + "\n")
+
+
 def 读(path=None, 限=None):
     """{trace_id: [span, ...]},按时间排。限=只要最近几棵。"""
     p = path or LOG
@@ -235,7 +277,20 @@ def 读(path=None, 限=None):
         if not line: continue
         try: s = json.loads(line)
         except Exception: continue
-        出.setdefault(s.get("trace_id", "?"), []).append(s)
+        # 同一个 span 写过不止一次(边跑边记:根开头一次、收尾一次;中断补记一次)→ 合并,后写的盖先写的
+        树 = 出.setdefault(s.get("trace_id", "?"), {})
+        旧 = 树.get(s.get("span_id"))
+        if 旧:
+            s = {**旧, **s, "attr": {**(旧.get("attr") or {}), **(s.get("attr") or {})}}
+        树[s.get("span_id")] = s
+    现在 = time.time()
+    for k, 树 in list(出.items()):
+        v = list(树.values())
+        for s in v:
+            # 根还停在「进行中」而且早就该结束了 —— 断在半路(进程崩了 / 被杀了),不是还在跑
+            if s.get("status") == "进行中" and 现在 - (s.get("start") or 现在) > 中断秒:
+                s["status"] = "中断"
+        出[k] = v
     for v in 出.values(): v.sort(key=lambda s: s.get("start", 0))
     棵 = sorted(出.items(), key=lambda kv: kv[1][0].get("start", 0))
     if 限: 棵 = 棵[-限:]

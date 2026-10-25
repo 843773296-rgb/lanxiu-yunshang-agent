@@ -44,6 +44,8 @@ import spans as _spans   # noqa: E402  树状记录仪(agent/spans.py):一次提
 # 两代分开记就没法横向对比了,而「一代 vs 三代到底差多少」这个问题
 # 只有手上同时有两套实现的人答得了 —— 别把这个优势浪费在格式不一致上。
 
+最近一轮 = None   # (trace 号, 根 span 号),见 run() 里 query 之前那一行
+
 # 花费上限。研判队列支持批量跑,一条失控就是真金白银 —— 不设等于没有闸门。
 #
 # ⚠️ 两件事要写清楚,不然这个闸会莫名其妙掐掉正常的对话:
@@ -1184,7 +1186,9 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 而「成功之后才记」的记录仪在出事的时候正好是空的。
     _pv0 = (provider or os.environ.get("LANXIU_PROVIDER") or "claude").lower()
     _树 = _spans.一棵树(角色=(ROLE_META.get(kind) or {}).get("name", kind),
-                        会话号=resume, 模型=model, 供应商=_pv0, tid=_tid)
+                        会话号=resume, 模型=model, 供应商=_pv0, tid=_tid, 边跑边记=True)
+    global 最近一轮
+    最近一轮 = None
     _根 = _树.开("invoke_agent", f"invoke_agent {(ROLE_META.get(kind) or {}).get('name', kind)}",
                  属性={"gen_ai.agent.name": (ROLE_META.get(kind) or {}).get("name", kind),
                       "gen_ai.conversation.id": resume,
@@ -1212,6 +1216,9 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
     # 不知道是预算、不知道该怎么办。**一个说不清自己为什么拦你的闸,和随机失败没区别。**
     budget_err = None
     try:
+        # 这一轮是哪棵树、根是哪个(证据中心 10-25):跑到一半抛了,聊天站接口拿它给根补「中断 + 为什么」、
+        # 并把 trace 号回给页面 —— 失败的那条回答才点得开「执行记录」。聊天站一次只跑一轮(RUNLOCK),记一个就够
+        最近一轮 = (_tid, _根)
         async for m in query(prompt=_p, options=opts):
             cls = type(m).__name__
             _now = time.time()

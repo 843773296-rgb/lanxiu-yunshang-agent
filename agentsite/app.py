@@ -564,7 +564,15 @@ class H(BaseHTTPRequestHandler):
                 _记知识检索(r, self.headers.get("cookie"))
                 return self._send(r)
             except Exception as e:
-                return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)
+                # 跑到一半抛了:根补一条「中断 + 为什么」,trace 号回给页面 —— 失败的那条点得开执行记录,
+                # 看得到断之前已经调了哪些工具(证据中心 P0 记录恢复,10-25)
+                轮 = getattr(sdk, "最近一轮", None) or (None, None)
+                try:
+                    import spans as _sp
+                    _sp.记中断(轮[0], 轮[1], f"{type(e).__name__}: {e}")
+                except Exception:
+                    pass
+                return self._send({"error": f"{type(e).__name__}: {e}"[:400], "trace_id": 轮[0]}, code=500)
             finally:
                 if tmpdir: shutil.rmtree(tmpdir, ignore_errors=True)
         if p == "/ai/candidate":

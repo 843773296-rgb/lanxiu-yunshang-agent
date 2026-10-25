@@ -12884,5 +12884,29 @@
    }
   ],
   "预期红": "有调用号但没记到 → 显示没记到,不拿别人的返回值顶上"
+ },
+ {
+  "script": "agent/spans_incremental_check.py",
+  "改坏": "span 收的时候不写(还是只在结束时整棵写)",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "        if self.边跑边记:\n            self._写(s)\n            self.已写.add(sid)",
+    "new": "        if False:\n            self._写(s)\n            self.已写.add(sid)"
+   }
+  ],
+  "预期红": "崩在半路:已经收尾的那次工具调用(带返回值)照样在"
+ },
+ {
+  "script": "agent/spans_incremental_check.py",
+  "改坏": "读的时候同一个 span 后写的整条替换前写的(不合并)",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "            s = {**旧, **s, \"attr\": {**(旧.get(\"attr\") or {}), **(s.get(\"attr\") or {})}}",
+    "new": "            s = s"
+   }
+  ],
+  "预期红": "补记中断之后:根是「出错 + 为什么」,而原来的提问和角色还在"
  }
 ]
