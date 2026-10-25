@@ -125,6 +125,35 @@ def main():
         elif {x.split("(")[0] for x in 甲} != {x.split("(")[0] for x in 乙}:
             不一致.append(f"{code} {name}:01 写「{'、'.join(甲)}」/ "
                         f"08 写「{'、'.join(乙)}」")
+    # ── 库里的档位必须和 01-形制.md 的标记一致 ────────────────────────────
+    #
+    # ⚠️⚠️ **2026-10-25 加这一条,因为那天栽的那一次本地完全看不见。**
+    # 把 5 条形制从 `demo` 改成 `biz` 之后,`derive_xingzhi` 把不认识的档位
+    # 一律记成「实」(它原来只认 `demo`,那个 else 分支是死代码),
+    # 而「实」**不在口径表的四档里** —— CI 从零重建当场红在
+    # 「每条主数据的来源等级都在口径表里」,**而开发机上改完、刷完库、
+    # 全量门禁全绿**。
+    #
+    # 根因是一条缺口:`tools/refresh_kb.py` **只动 craft 表**,
+    # 而 xingzhi 只在 `seed.py` 从零重建时才由推导器重算。
+    # 所以「刷过库」和「刷全了」在那条绿勾上长得一模一样 ——
+    # 同一天我还为「refresh_kb 不带 --做 是 dry-run」栽过一次,
+    # 那次是「md 改了库没刷」,这次反过来:**库刷了,但只刷了一张表**。
+    #
+    # 这条判据把那个缺口挪到**本地**:md 的档位标记一改、这张表没重算,它就红。
+    import derive_xingzhi as _dxz
+    _md档 = {r[0]: r[4] for r in _dxz.parse()}
+    _库档 = dict(c.execute("SELECT code,src_type FROM xingzhi").fetchall())
+    _漂 = [f"{k}:md 写 `{_md档[k]}`、库里是 `{_库档.get(k)}`"
+           for k in sorted(_md档) if _库档.get(k) != _md档[k]]
+    ck("库里形制的档位和 01-形制.md 的标记一致", not _漂, len(_md档),
+       ("、".join(_漂[:3]) + (f"(共 {len(_漂)} 条)" if len(_漂) > 3 else "")
+        + " —— **改了 md 的档位要重算这张表**:从零重建,或单跑 "
+          "`knowledge/derive_xingzhi.py`;`refresh_kb.py` 只刷 craft,不刷它"
+        if _漂 else
+        "**改了 md 的档位而没重算这张表,原来只有 CI 从零重建时才看得见** —— "
+        "这条让它在本地就红"))
+
     ck("两处关键尺寸说的是同一件事", not 不一致, len(两处),
        ("、".join(不一致[:2]) if 不一致
         else "01-形制.md 和 08-量体与版型.md 各存了一份 —— 一致靠检查,不靠记性"))

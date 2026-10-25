@@ -13400,5 +13400,13 @@
    }
   ],
   "预期红": "有回答的一轮:推的体里带逐句核对,用的是原文(和聊天站 /spans 同一个函数)"
+ },
+ {
+  "script": "backend/xingzhi_check.py",
+  "改坏": "把库里一条形制的档位改成 md 里没写的值 —— 复现 2026-10-25 那次:derive_xingzhi 原来只认 `demo`、把不认识的档位一律记成「实」,而「实」不在口径表的四档里;那次 CI 从零重建红了,而开发机上全量门禁全绿(refresh_kb 只刷 craft,不刷 xingzhi)",
+  "sql": [
+   "UPDATE xingzhi SET src_type='实' WHERE code='XZ02'"
+  ],
+  "预期红": "库里形制的档位和 01-形制.md 的标记一致"
  }
 ]

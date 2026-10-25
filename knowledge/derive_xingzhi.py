@@ -66,7 +66,28 @@ def parse():
         if not m:
             continue
         code, name = m.group(1), m.group(2)
-        src = "demo" if re.match(r"XZ\d+\s+\S+\s+`demo`", b) else "实"
+        # ⚠️⚠️ 2026-10-25 修:原来写的是
+        #     src = "demo" if re.match(r"XZ\d+\s+\S+\s+`demo`", b) else "实"
+        # **它只认 `demo`,别的一律记成「实」—— 而「实」不在口径表的四档里。**
+        # 43 条 XZ 原本全是 `demo`,所以那个 else 分支是**死代码**;
+        # 当天把 5 条形制改成 `biz`,正好把它激活了,CI 当场红在
+        # 「每条主数据的来源等级都在口径表里」(xingzhi.实 5 条)。
+        #
+        # ⚠️ **本地不会红,这是它最毒的地方**:`tools/refresh_kb.py` 只动 craft 表,
+        # 而 xingzhi 只在 `seed.py` 从零重建时才由这个推导器重算 ——
+        # 所以开发机上改完档位、刷完库、门禁全绿,CI 从零一建就红。
+        #
+        # 现在**原样取标记里的字面值,不在这里枚举档位**:
+        # 档位合不合法由 `source_check` 的「来源等级都在口径表里」那条判据管
+        # (它就是报出这个 bug 的那条)。在两个地方各记一份档位名单,
+        # 就是在制造下一次「改了一边忘了另一边」。
+        _s = re.match(r"XZ\d+\s+\S+\s+`([a-z]+)`", b)
+        if not _s:
+            raise SystemExit(
+                "01-形制.md 里这一条没有档位标记,推导器不替它猜:%s\n"
+                "   —— 猜出来的值会进库,而库里一个不在口径表里的值,"
+                "只有从零重建时才看得见。" % b.split("\n")[0][:40])
+        src = _s.group(1)
         a = re.search(r"\*\*别名\*\*[::]\s*(.+)", b)
         k = re.search(r"\*\*关键尺寸\*\*[::]\s*(.+)", b)
         尺寸 = []
