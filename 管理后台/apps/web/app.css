@@ -314,3 +314,10 @@ button.danger{color:var(--fail);border-color:#fbaca3}
 /* 可用宽度不足 1200:步骤库收起成按钮;不足 900:默认用步骤列表(§3) */
 @media (max-width:1200px){.wflib2{position:absolute;z-index:6;height:100%;box-shadow:2px 0 8px rgba(0,0,0,.1)}.wfstage{position:relative}
   .wfbuild.graph{grid-template-columns:1fr}}
+.ressel{display:flex;flex-direction:column;gap:4px}.ressel input{height:30px;border:1px solid var(--line);border-radius:var(--radius);padding:0 8px}
+.rawlog .rlrow{border-top:1px solid var(--line);padding:6px 0}.rawlog .rlrow.bad{border-left:3px solid var(--fail);padding-left:6px}
+.rawlog .rlh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:12px}
+.rawlog pre.io{max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:4px 0}
+.rawlog .seg button[aria-pressed="true"]{border-color:var(--pri);color:var(--pri);background:var(--pri-bg)}
+button.lk{height:auto;padding:0 2px;border:0;background:none;color:var(--pri);cursor:pointer;font-size:12px}
+button.lk:hover{text-decoration:underline}

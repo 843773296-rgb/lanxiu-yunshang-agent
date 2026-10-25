@@ -136,6 +136,9 @@ def main():
         ck("点节点上的「⋯」→ 菜单打开,节点没被拖走、没标位置已改",
            js("return !!document.querySelector('#wf-menu')") and 态()["布局"] == 前["布局"] and 态()["撤"] == 前["撤"])
         A().send_keys(Keys.ESCAPE).perform(); js("关菜单()")
+        A().context_click(节("llm_1")).perform()
+        ck("右键步骤 → 弹出同一个菜单(和「⋯」同一套能力)", js("return !!document.querySelector('#wf-menu') && document.querySelector('#wf-menu').textContent.includes('定位引用')"))
+        js("关菜单()")
         A().move_to_element_with_offset(节("llm_1"), 0, -20).click_and_hold().move_by_offset(2, 2).release().perform()
         ck("移动不到 4 像素算单击:选中它,不改位置", 态()["选"] == ["llm_1"] and 态()["布局"] == 前["布局"], 态()["选"])
 
@@ -255,6 +258,42 @@ def main():
         ck("重开之后步骤、连线、布局和保存前一致",
            sorted(重开["节点"]) == sorted(存时["节点"]) and sorted(重开["边"]) == sorted(存时["边"])
            and all(重开["布局"].get(k) == v for k, v in 存时["布局"].items() if k != "$线"), 重开)
+        print("\n▸ L-T 原始日志(§15):真记录、筛选标子集、节点定位、导出记审计")
+        rs = 打("GET", "/execution-runs?limit=30").get("items") or []
+        rid = None
+        for r in rs:
+            x = 打("GET", f"/execution-runs/{r['id']}/raw-log")
+            if x["按来源"]["步骤尝试"] >= 2 and x["按来源"]["事件"] >= 2:
+                rid, 全 = r["id"], x; break
+        ck("项目里有带步骤和事件的运行可验(样本量不能是 0)", rid is not None)
+        if rid:
+            js("图态 && (图态.脏 = false)")      # 上面那几段留下的本地编辑不影响这一段;别让离开拦截挡路
+            d.get(基址 + f"/#/wfrun/{rid}")
+            等(d, lambda: js("return !!document.querySelector('#rl-open')"))
+            d.find_element(By.ID, "rl-open").click()
+            等(d, lambda: js("return !!document.querySelector('.rawlog')"))
+            文 = lambda: js("return document.querySelector('.rawlog').textContent")
+            ck("打开 → 列出这次运行的全部原始记录(条数和接口一致)", f"共 {全['共']} 条" in 文() and js("return document.querySelectorAll('.rlrow').length") == 全["共"], 文()[:120])
+            ck("每条写着来源表、主键、字节数、指纹", "run_events" in 文() and "指纹" in 文() and "字节" in 文())
+            ck("没有「查看敏感输入」授权 → 标明部分打码(不冒充原件)", "部分打码" in 文())
+            from selenium.webdriver.support.ui import Select
+            Select(d.find_element(By.ID, "rl-src")).select_by_visible_text("事件")
+            等(d, lambda: "筛选子集" in 文())
+            ck("按来源筛 → 写明「筛选子集 x / 共 y」,不把子集说成全部", f"筛选子集 {全['按来源']['事件']} / 共 {全['共']}" in 文(), 文()[:120])
+            d.find_element(By.ID, "rl-fmt").click()
+            ck("切到格式化 → 换排法,原件还是那几条(条数不变)", js("return document.querySelectorAll('.rlrow').length") == 全["按来源"]["事件"])
+            d.find_element(By.CSS_SELECTOR, "[data-rlnode]").click()
+            等(d, lambda: js("return !!document.querySelector('#rl-node') && document.querySelector('#rl-node').value !== ''"))
+            ck("「查看该节点日志」→ 带着节点筛选打开", js("return document.querySelector('#rl-node').value") != "")
+            def 审计数():
+                r = urllib.request.Request(基址 + f"/api/v1/projects/{项目}/audit-events?limit=200", headers={"X-Dev-User": "U001"})
+                with urllib.request.urlopen(r) as x:
+                    return sum(1 for e in json.loads(x.read()).get("记录", []) if e.get("做了什么") == "导出原始日志")
+            前审 = 审计数()
+            js("document.querySelector('#rl-dl').scrollIntoView({block:'center'})")
+            d.find_element(By.ID, "rl-dl").click()
+            等(d, lambda: "记进了审计" in (js("return (document.querySelector('#wf-toast')||{}).textContent") or ""))
+            ck("下载 → 走单独的导出接口,这次导出记进审计", 审计数() == 前审 + 1, [前审, 审计数()])
     finally:
         d.quit()
     print(f"\n{'❌' if 挂 else '✅'} 流程图编辑器真浏览器 {过[0]} 条过" + (f",挂 {len(挂)} 条:{' / '.join(挂)}" if 挂 else ""))

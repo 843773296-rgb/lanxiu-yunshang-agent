@@ -85,6 +85,7 @@ function 画_图() {
         <button id="wf-layout" ${改 ? "" : "disabled"}>整理布局</button>
         <span class="find"><input id="wf-find" placeholder="查找步骤" aria-label="查找步骤"><span id="wf-findmsg" class="k" role="status"></span></span>
         <button id="wf-libtg" aria-expanded="true">步骤库</button>
+        <button id="wf-import" ${改 ? "" : "disabled"}>从其他工作流导入</button>
       </div>
       <div class="wfstage">
         <div class="wflib2" id="wf-lib"></div>
@@ -338,6 +339,7 @@ function 挂画布事件() {
   $("#wf-redo").onclick = () => 重做();
   $("#wf-layout").onclick = 整理布局;
   $("#wf-libtg").onclick = () => { s.库开 = !s.库开; 画_工具条态(); };
+  $("#wf-import").onclick = 弹_导入;
   $("#wf-minitg").onclick = () => { s.小地图 = !s.小地图; 画_工具条态(); 画_小地图(); };
   $("#wf-zo").onclick = () => 缩放到(视口().z - 0.25);
   $("#wf-zi").onclick = () => 缩放到(视口().z + 0.25);
@@ -355,6 +357,12 @@ function 挂画布事件() {
   cv.addEventListener("click", (ev) => {
     const m = ev.target.closest("[data-more]");
     if (m) { ev.stopPropagation(); 节点菜单(m.dataset.more, m); }
+  });
+  // 右键菜单和「⋯」/ 连线工具条是同一套能力(§9:右键菜单和工具条提供相同能力,菜单关闭后焦点回原对象)
+  cv.addEventListener("contextmenu", (ev) => {
+    const nd = ev.target.closest(".wfnode2"), ed = ev.target.closest("[data-edge]");
+    if (nd) { ev.preventDefault(); if (!画态().选.has(nd.dataset.id)) 选节点([nd.dataset.id]); 节点菜单(nd.dataset.id, nd); }
+    else if (ed) { ev.preventDefault(); 选线(ed.dataset.edge); }
   });
   cv.addEventListener("keydown", 画布按键);
   cv.addEventListener("keyup", (e) => { if (e.key === " " && s.空格) { s.空格 = false; 画_状态栏(); } });
@@ -901,3 +909,55 @@ function 画布按键(e) {
 }
 
 if (typeof globalThis !== "undefined") globalThis.画布动作 = { 连上, 删线, 重连, 粘贴, 复制选中, 查找, 缩放到, 适应画布, 选节点, 选线, 画态, 视口, 节点按下, 出口按下, 画布按键, 整理布局 };
+
+
+/* ── 从其他工作流导入(第三批 · §5.3「跨项目导入需独立设计,不复用无校验的剪贴板粘贴」)──────────
+ * 只在**同一个项目**里导(权限、连接是同一套);逐步核对资源在本项目可选列表里有没有;
+ * 外部引用(指向没一起导入的步骤)**改成明确的「来源在另一条工作流」**,显示为待修、运行前必须改 ——
+ * 不照旧指 node_id:两条流程都有 llm_1 时,那样会无声地挂到另一个步骤上。 */
+async function 弹_导入() {
+  let 列 = [];
+  try { const d = await 请求(`${P()}/workflows`); 列 = (d.items || d.rows || []).filter((w) => (w.id || w["id"]) !== 图态.wid); }
+  catch (e) { 提示("读不到工作流列表:" + e.message); return; }
+  if (!列.length) { 提示("这个项目里没有别的工作流可以导入"); return; }
+  弹层("从其他工作流导入步骤", `<label class="f">从哪条工作流</label>
+    <select id="im-w">${列.map((w) => `<option value="${esc(w.id)}">${esc(w["名称"] || w.name || w.id)}</option>`).join("")}</select>
+    <button id="im-read">读取它的步骤</button><div id="im-list" class="k">选一条,点「读取它的步骤」。</div>`);
+  $("#im-read").onclick = async () => {
+    const wid = $("#im-w").value, 名 = $("#im-w").selectedOptions ? $("#im-w").selectedOptions[0].textContent : wid;
+    let d;
+    try { d = await 请求(`${P()}/workflows/${encodeURIComponent(wid)}`); }
+    catch (e) { $("#im-list").textContent = "读不到:" + e.message; return; }
+    const 定 = d["草稿"]["定义"] || { nodes: [], edges: [] }, 布 = d["草稿"]["布局"] || {};
+    const 资 = 图态.资源 || {}, 有 = (表, id) => !id || (表 || []).some((x) => x["版本id"] === id);
+    const 核 = (n) => { const c = n.config || {}, 缺 = [];
+      if (!有(资.模型, c.connection_version_id)) 缺.push("模型");
+      if (!有(资.处理要求, c.prompt_version_id)) 缺.push("处理要求");
+      if (!有(资.工具, c.tool_version_id)) 缺.push("业务动作");
+      return 缺; };
+    const 可 = 定.nodes.filter((n) => n.type !== "start");
+    $("#im-list").innerHTML = 可.length ? 可.map((n) => { const 缺 = 核(n);
+        return `<label class="tpl"><input type="checkbox" data-imn="${esc(n.id)}" checked> <b>${esc(n.name || 步类型名[n.type] || n.type)}</b>
+          <span class="k">${esc(步类型名[n.type] || n.type)}</span>
+          ${缺.length ? `<span class="ferr">它用的${缺.join("、")}在本项目可选列表里没有 —— 导入后原值保留并标出来,要换</span>` : ""}</label>`; }).join("")
+        + `<div class="note">没一起导入的上一步,在这里取不到值 —— 那些数据来源会标成「来源在另一条工作流」,运行前要改。</div>
+           <div class="acts"><button class="pri" id="im-ok">导入选中的步骤</button></div>`
+      : "这条工作流除了开始没有别的步骤。";
+    if (!$("#im-ok")) return;
+    $("#im-ok").onclick = () => {
+      const ids = [...document.querySelectorAll("[data-imn]")].filter((x) => x.checked).map((x) => x.dataset.imn);
+      if (!ids.length) { 提示("没选步骤"); return; }
+      关弹层();
+      const 板 = 图逻辑.复制(定, 布, ids);
+      const r0 = $("#cv").getBoundingClientRect(), c = 屏到图(r0.left + r0.width / 2, r0.top + r0.height / 2);
+      const xs = Object.values(板.位).map((p) => p.x), ys = Object.values(板.位).map((p) => p.y);
+      const 偏 = { x: Math.round(c.x - Math.min(...xs)), y: Math.round(c.y - Math.min(...ys)) };
+      let r = null;
+      改图(`从「${名}」导入 ${板.节点们.length} 步`, () => {
+        r = 图逻辑.粘贴(图态.定义, 图态.布局, 板, 偏, (v) => { v.原名 = `「${名}」里的 ${v.node_id}`; v.node_id = `外部:${wid}:${v.node_id}`; });
+      });
+      选节点(r.新ids);
+      提示(`已从「${名}」导入 ${r.新ids.length} 步(未保存)` + (r.外部引用.length ? `;${r.外部引用.length} 处数据来源在另一条工作流,标成待修了` : ""), { 撤销: true });
+    };
+  };
+}

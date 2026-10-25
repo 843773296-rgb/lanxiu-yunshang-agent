@@ -230,7 +230,9 @@
     return { 节点们, 线, 位, 跳过 };
   };
   /* 粘贴:新 id 唯一;集合内部的引用重映射到新 id;**外部引用照旧指原步骤,并列出来让人核对**(不悄悄换来源) */
-  逻.粘贴 = function (定义, 布局, 板, 偏移 = { x: 40, y: 40 }) {
+  /* 外部处理:跨流程导入时给(第三批)—— 原步骤不在这张图里,**同名步骤可能恰好存在**(两条流程都有 llm_1),
+   * 照旧指 node_id 就会无声地挂到另一个步骤上。由调用方把外部引用改成一个明确不存在的来源。 */
+  逻.粘贴 = function (定义, 布局, 板, 偏移 = { x: 40, y: 40 }, 外部处理 = null) {
     if (!板 || !板.节点们 || !板.节点们.length) return { 新ids: [], 外部引用: [] };
     const 映 = {}, 占 = new Set();
     板.节点们.forEach((n) => { 映[n.id] = 逻.新id(定义, n.type, 占); 占.add(映[n.id]); });
@@ -239,7 +241,7 @@
       if (!v || typeof v !== "object") return;
       if (v.source === "node" && v.node_id) {
         if (映[v.node_id]) v.node_id = 映[v.node_id];
-        else 外部引用.push({ 节点id: 新id, 路径: 路, 仍引用: v.node_id });
+        else { 外部引用.push({ 节点id: 新id, 路径: 路, 仍引用: v.node_id }); if (外部处理) 外部处理(v); }
       }
       for (const [k, x] of Object.entries(v)) 改引用(x, 新id, 路 ? `${路}.${k}` : k);
     };

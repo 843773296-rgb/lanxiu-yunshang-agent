@@ -6686,6 +6686,236 @@
         "x-权限": "运行编排测试"
       }
     },
+    "/api/v1/projects/{project_id}/execution-runs/{id}/raw-log": {
+      "get": {
+        "description": "交互控件设计 §15:事件 / 步骤尝试 / 工具调用 / 人工决定 / 桥请求五类原件;**不重新执行任何东西、不让模型生成日志**。原件按「查看敏感输入」给,没授权给打码副本并标明;每条带来源表、主键、字节数、指纹;分页给总数与范围",
+        "operationId": "get_execution-runs_id_raw-log",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "详情"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "原始日志(只读库里已记下的原始记录)",
+        "tags": [
+          "工作流"
+        ],
+        "x-字段权限": [
+          "查看敏感输入/独立测试答案"
+        ],
+        "x-审计": false,
+        "x-权限": "查看有权配置"
+      }
+    },
+    "/api/v1/projects/{project_id}/execution-runs/{id}/raw-log/export": {
+      "post": {
+        "description": "单独鉴权、**每次导出记审计**;文件附定义哈希、是全部还是筛选子集、缺口清单、整份指纹",
+        "operationId": "post_execution-runs_id_raw-log_export",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已创建"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "导出原始日志",
+        "tags": [
+          "工作流"
+        ],
+        "x-字段权限": [],
+        "x-审计": true,
+        "x-权限": "查看有权配置"
+      }
+    },
     "/api/v1/projects/{project_id}/execution-runs/{id}/reconcile": {
       "post": {
         "description": "**去查真实外部状态,不直接重做动作**(§17.1)。这条接口存在的理由:HTTP 超时不代表对方没做事",
@@ -17909,6 +18139,128 @@
         "x-字段权限": [],
         "x-审计": true,
         "x-权限": "改编排草稿"
+      }
+    },
+    "/api/v1/projects/{project_id}/workflows/{id}/versions/{vid}": {
+      "get": {
+        "description": "编辑器「版本与发布」里打开历史版本只读看(交互控件设计 §10.4):**冻结版本不可原地编辑**,要改先「复制为草稿」(那一步走 PATCH 草稿,乐观锁照旧)",
+        "operationId": "get_workflows_id_versions_vid",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "详情"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "看一个冻结版本的图(只读)",
+        "tags": [
+          "工作流"
+        ],
+        "x-字段权限": [],
+        "x-审计": false,
+        "x-权限": "查看有权配置"
       }
     }
   },

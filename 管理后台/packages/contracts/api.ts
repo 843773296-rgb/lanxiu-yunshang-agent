@@ -179,6 +179,7 @@ export const ENDPOINTS = [
   { method: "GET", path: "/workflows/{id}", summary: "工作流详情", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/workflows/{id}/draft", summary: "改图草稿", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/workflows/{id}/validate", summary: "校验图", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/workflows/{id}/versions/{vid}", summary: "看一个冻结版本的图(只读)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/workflows/{id}/versions", summary: "冻结图版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/execution-policy-versions", summary: "冻结一版执行策略", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/execution-policy-versions", summary: "执行策略版本列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -228,6 +229,8 @@ export const ENDPOINTS = [
   { method: "POST", path: "/node-tests", summary: "从选中节点测试", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "GET", path: "/execution-runs", summary: "运行列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/execution-runs/{id}", summary: "运行详情", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/execution-runs/{id}/raw-log", summary: "原始日志(只读库里已记下的原始记录)", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/execution-runs/{id}/raw-log/export", summary: "导出原始日志", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/execution-runs/{id}/events", summary: "运行事件(SSE)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/execution-runs/{id}/pause", summary: "请求暂停", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: true },
   { method: "POST", path: "/execution-runs/{id}/resume", summary: "继续", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: true },
@@ -240,4 +243,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 153 条接口 · 23 条异步 · 30 条要幂等键 · 16 条要 If-Match */
+/** 共 156 条接口 · 23 条异步 · 30 条要幂等键 · 16 条要 If-Match */

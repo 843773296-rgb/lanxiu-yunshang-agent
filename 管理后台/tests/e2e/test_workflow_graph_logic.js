@@ -132,6 +132,16 @@ console.log("\n▸ 复制粘贴(§5.3 T16)");
   ck("内部的线也复制了(新核对 → 新写入)", 定义.edges.some((e) => e.source === ids[0] && e.target === ids[1]));
 }
 
+console.log("\n▸ 跨流程导入(第三批):外部引用不许挂到本图里同名的步骤上");
+{
+  const 源 = 图(), 本 = 图();
+  const 板 = 逻.复制(源.定义, 源.布局, ["human_1"]);       // 人工核对引用了源图里的 tool_1(查订单)
+  const r = 逻.粘贴(本.定义, 本.布局, 板, { x: 0, y: 300 }, (v) => { v.原名 = `另一条里的 ${v.node_id}`; v.node_id = `外部:wf_x:${v.node_id}`; });
+  const 新 = 本.定义.nodes.find((n) => n.id === r.新ids[0]);
+  ck("本图里恰好也有 tool_1 —— 导入的引用**没有**挂到它上面", 新.config.payload_binding.摘要.node_id !== "tool_1", 新.config.payload_binding);
+  ck("改成明确不存在的外部来源,失效引用点得出来、带原名", 逻.失效引用(本.定义).some((x) => x.节点id === 新.id && x.原名.includes("另一条里的 tool_1")));
+}
+
 console.log("\n▸ 条件分支(§7.2 T09 T10)");
 {
   const { 定义 } = 图();

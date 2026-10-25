@@ -822,7 +822,7 @@ def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看�
                                where v.project_id=:p
                                order by v.key, v.version_no desc"""), {"p": project_id}).mappings().all()
         工 = c.execute(text("""select distinct on (td.id) tv.id vid, td.name, td.purpose, td.adapter,
-                                       tv.side_effect_type, tv.output_schema
+                                       tv.side_effect_type, tv.output_schema, tv.input_schema, tv.version_no
                                   from tool_definitions td
                                   join tool_versions tv on tv.project_id=td.project_id
                                    and tv.tool_definition_id=td.id
@@ -839,7 +839,10 @@ def 搭建用的资源(project_id: str, me: 身份 = Depends(要权限("查看�
                       "用途": (r["messages"] or {}).get("用途")} for r in 要],
         "工具": [{"版本id": r["vid"], "名": r["name"], "说明": r["purpose"],
                   "读写": 读写.get(r["side_effect_type"], r["side_effect_type"]),
-                  "接入方式": r["adapter"], "出参": r["output_schema"] or {}}
+                  "接入方式": r["adapter"], "出参": r["output_schema"] or {},
+                  # 编辑器换业务动作前要摆出「新增必填 / 移除 / 类型变化」的真实差异(交互控件设计 §8.1),
+                  # 所以入参和版本号也给 —— 没有入参,页面只能悄悄把旧参数原样送进新工具
+                  "入参": r["input_schema"] or {}, "版本": r["version_no"]}
                  for r in sorted(工, key=lambda x: (x["adapter"] != "lanxiu_bridge", x["name"]))],
         "角色": [{"码": r, "中文": PM.角色中文.get(r, r), "能审批": r in 能批} for r in PM.角色们],
     }
@@ -1299,6 +1302,23 @@ async def 冻结版本(project_id: str, wid: str, request: Request,
             "note": "**冻结了,但没发布。**生产指针没有任何变化(§15.6)"}
 
 
+@router.get(前缀 + "/workflows/{wid}/versions/{vid}")
+def 看冻结版本(project_id: str, wid: str, vid: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """一个冻结版本的图(只读)。**冻结版本不可原地编辑**(交互控件设计 §10.4)——
+    这里只给看;要在它的基础上改,前端「复制为草稿」走 PATCH 草稿(乐观锁照旧,会覆盖当前草稿,前端先确认)。"""
+    with 连接() as c:
+        v = c.execute(text("""select id, version_no, nodes, edges, layout, logical_hash, change_note, created_at, created_by
+                                from workflow_versions where project_id=:p and workflow_id=:w and id=:v"""),
+                      {"p": project_id, "w": wid, "v": vid}).mappings().first()
+    if not v:
+        # 404 而不是 403:不泄露「这个版本 ID 在别处存在」(§17.4)
+        raise _错(404, "NOT_FOUND", "没有这个版本", "回「版本与发布」重新选一个")
+    return {"id": v["id"], "版本": f"v{v['version_no']}", "逻辑哈希": v["logical_hash"], "变更说明": v["change_note"],
+            "冻结于": v["created_at"].isoformat() if v["created_at"] else None, "冻结人": v["created_by"],
+            "定义": {"nodes": v["nodes"] or [], "edges": v["edges"] or []}, "布局": v["layout"] or {},
+            "只读": True, "note": "冻结版本只读 —— 要改先「复制为草稿」,不会原地覆盖历史版本"}
+
+
 # ── 试运行 ─────────────────────────────────────────────────────────
 @router.post(前缀 + "/execution-runs", status_code=202)
 async def 发起运行(project_id: str, request: Request,
@@ -1527,6 +1547,142 @@ def _控制动作们(当前):
                "为什么不能": (None if 当前 not in 机["终态"]
                           else "已经是终态了,没有外部状态要核实")})
     return 出
+
+
+# ── 原始日志(交互控件设计 §15 · L01–L07)──────────────────────────────
+#
+# **只读库里已经记下的原始记录**,不重新执行任何模型 / 工具 / SQL,不让模型生成「日志」:
+#   run_events(只追加,事件原件)· run_steps(每次尝试一行)· tool_invocations(先登记意图、再登记结果)·
+#   human_decisions(只追加)· bridge_calls(澜绣桥请求与回执)
+# 原件按「查看敏感输入/独立测试答案」决定给不给 —— 和运行详情同一条规矩;没授权给的是**打码副本**,并且标明。
+# 每条带「来源表 + 主键 + 字节数 + 内容指纹」:截断 / 打码 / 缺失分开标,不把子集说成全部(§15.2)。
+_日志来源 = ("事件", "步骤尝试", "工具调用", "人工决定", "桥请求")
+
+
+def _原始记录(c, project_id, rid):
+    出 = []
+    for r in c.execute(text("""select seq, event_type, step_id, payload_ref, payload, occurred_at from run_events
+                               where project_id=:p and execution_run_id=:i order by seq"""), {"p": project_id, "i": rid}).mappings():
+        出.append({"来源": "事件", "来源表": "run_events", "主键": f"seq={r['seq']}", "时间": r["occurred_at"], "节点": None,
+                   "步骤": r["step_id"], "类型": r["event_type"], "是错误": "fail" in (r["event_type"] or "") or "error" in (r["event_type"] or ""),
+                   "原件": r["payload"], "外部引用": r["payload_ref"]})
+    步 = {}
+    for r in c.execute(text("""select id, node_id, kind, attempt, status, execution_key, branch_key, skipped_reason,
+                                      error_code, error_detail, input_ref, output_ref, started_at, ended_at
+                                 from run_steps where project_id=:p and execution_run_id=:i
+                                order by started_at nulls last, node_id, attempt"""), {"p": project_id, "i": rid}).mappings():
+        步[r["id"]] = r["node_id"]
+        出.append({"来源": "步骤尝试", "来源表": "run_steps", "主键": r["id"], "时间": r["started_at"] or r["ended_at"],
+                   "节点": r["node_id"], "尝试": r["attempt"], "类型": f"{r['kind']}:{r['status']}", "是错误": bool(r["error_code"]),
+                   "原件": {k: r[k] for k in ("status", "attempt", "execution_key", "branch_key", "skipped_reason", "error_code",
+                                              "error_detail", "input_ref", "output_ref")}
+                         | {"开始": r["started_at"] and r["started_at"].isoformat(), "结束": r["ended_at"] and r["ended_at"].isoformat()},
+                   "外部引用": None})
+    for r in c.execute(text("""select t.* from tool_invocations t join run_steps s on s.project_id=t.project_id and s.id=t.run_step_id
+                               where t.project_id=:p and s.execution_run_id=:i order by t.intent_at nulls last"""),
+                       {"p": project_id, "i": rid}).mappings():
+        出.append({"来源": "工具调用", "来源表": "tool_invocations", "主键": r["id"], "时间": r["intent_at"] or r["responded_at"],
+                   "节点": 步.get(r["run_step_id"]), "类型": f"tool:{r['status']}", "是错误": bool(r["error_code"]),
+                   "原件": {k: r[k] for k in ("tool_version_id", "side_effect_type", "arguments_hash", "idempotency_key", "outcome",
+                                              "status", "execution_mode", "result_ref", "duration_ms", "error_code", "error_detail",
+                                              "needs_human_check")}
+                         | {"登记意图": r["intent_at"] and r["intent_at"].isoformat(), "收到响应": r["responded_at"] and r["responded_at"].isoformat()},
+                   "外部引用": r["result_ref"]})
+    for r in c.execute(text("""select d.*, h.run_step_id from human_decisions d join human_requests h
+                                 on h.project_id=d.project_id and h.id=d.human_request_id
+                               where d.project_id=:p and h.execution_run_id=:i order by d.at"""), {"p": project_id, "i": rid}).mappings():
+        出.append({"来源": "人工决定", "来源表": "human_decisions", "主键": r["id"], "时间": r["at"], "节点": 步.get(r["run_step_id"]),
+                   "类型": f"human:{r['decision']}", "是错误": False,
+                   "原件": {k: r[k] for k in ("actor", "decision", "edited_fields", "reason", "request_revision", "idempotency_key")},
+                   "外部引用": None})
+    for r in c.execute(text("""select * from bridge_calls where project_id=:p and execution_run_id=:i order by created_at"""),
+                       {"p": project_id, "i": rid}).mappings():
+        出.append({"来源": "桥请求", "来源表": "bridge_calls", "主键": r["id"], "时间": r["created_at"], "节点": r["node_id"],
+                   "类型": f"bridge:{r['status']}", "是错误": bool(r["error_detail"]),
+                   "原件": {k: r[k] for k in ("tool_name", "arguments_snapshot", "idempotency_key", "status", "result_output", "error_detail")}
+                         | {"回执于": r["acked_at"] and r["acked_at"].isoformat()},
+                   "外部引用": None})
+    出.sort(key=lambda x: (x["时间"].isoformat() if x["时间"] else "9999", x["来源"]))
+    return 出
+
+
+# 带业务内容的字段才打码 —— 和运行详情同一口径(那里事件和步骤人人可见,只打码输入快照和输出)。
+# 打得比详情页还多,就成了「同一条记录换个页面看不到」,人会以为是两份不同的数据
+_日志敏感键 = {"桥请求": ("arguments_snapshot", "result_output"), "人工决定": ("edited_fields", "reason")}
+
+
+def _日志条(x, 看原文):
+    import hashlib
+    原 = json.dumps(x["原件"], ensure_ascii=False, sort_keys=True, default=str)
+    件, 打了 = x["原件"], False
+    if not 看原文 and isinstance(件, dict):
+        件 = dict(件)
+        for k in _日志敏感键.get(x["来源"], ()):
+            if 件.get(k) not in (None, {}, [], ""):
+                件[k] = "***(要「查看敏感输入/独立测试答案」专项授权)"; 打了 = True
+    return {"来源": x["来源"], "来源表": x["来源表"], "主键": x["主键"], "时间": x["时间"] and x["时间"].isoformat(),
+            "节点": x["节点"], "步骤": x.get("步骤"), "尝试": x.get("尝试"), "类型": x["类型"], "是错误": x["是错误"],
+            "原件": 件, "是打码副本": 打了,
+            "字节数": len(原.encode()), "指纹": hashlib.sha256(原.encode()).hexdigest()[:16],
+            "载荷在外部存储": x["外部引用"] or None}
+
+
+def _筛(rs, 节点, 来源, 只看错误, 尝试):
+    return [x for x in rs if (not 节点 or x["节点"] == 节点 or x.get("步骤") == 节点)
+            and (not 来源 or x["来源"] == 来源) and (not 只看错误 or x["是错误"])
+            and (尝试 is None or x.get("尝试") == 尝试)]
+
+
+@router.get(前缀 + "/execution-runs/{rid}/raw-log")
+def 原始日志(project_id: str, rid: str, 节点: str = None, 来源: str = None, 只看错误: bool = False,
+         尝试: int = None, 从: int = 0, 条数: int = 100, me: 身份 = Depends(要权限("查看有权配置"))):
+    """L01–L05:看一次运行的原始记录。分页按位置游标续,**给出总数和这一页的范围**,不把前 N 条说成全部。"""
+    看原文, _ = me.能("查看敏感输入/独立测试答案")
+    条数 = max(1, min(int(条数 or 100), 500))
+    with 连接() as c:
+        r = c.execute(text("select id, definition_hash, definition_ref, status from execution_runs where project_id=:p and id=:i"),
+                      {"p": project_id, "i": rid}).mappings().first()
+        if not r:
+            raise _错(404, "NOT_FOUND", "没有这次运行", "回运行列表")
+        全 = _原始记录(c, project_id, rid)
+    if 来源 and 来源 not in _日志来源:
+        raise _错(422, "VALIDATION", f"来源只收 {list(_日志来源)}", "不给就是全部来源")
+    中 = _筛(全, 节点, 来源, 只看错误, 尝试)
+    页 = 中[从:从 + 条数]
+    return {"运行": r["id"], "运行状态": r["status"], "定义哈希": r["definition_hash"], "定义来源": r["definition_ref"],
+            "共": len(全), "筛选后": len(中), "这一页": [从, 从 + len(页)], "下一页从": (从 + len(页)) if 从 + len(页) < len(中) else None,
+            "能看原文": bool(看原文), "条目": [_日志条(x, 看原文) for x in 页],
+            "按来源": {k: sum(1 for x in 全 if x["来源"] == k) for k in _日志来源},
+            "采集边界": "只列管理后台自己记下的五类原始记录(事件 / 步骤尝试 / 工具调用 / 人工决定 / 桥请求)。"
+                       "模型请求与响应的原文在运行记录(traces / spans)那一侧,这里不重复列;"
+                       "服务商内部过程拿不到,不承诺。查看不会重新执行任何东西。"}
+
+
+@router.post(前缀 + "/execution-runs/{rid}/raw-log/export")
+async def 导出原始日志(project_id: str, rid: str, request: Request, me: 身份 = Depends(要权限("查看有权配置"))):
+    """L06:下载(单独一个接口,**每次导出记审计**)。附来源、定义版本、筛选范围、条数、整份指纹、缺口;
+    原件还是副本跟着授权走,文件里写明。"""
+    import hashlib
+    体 = await request.json() if (request.headers.get("content-length") or "0") != "0" else {}
+    看原文, _ = me.能("查看敏感输入/独立测试答案")
+    with 事务() as c:
+        r = c.execute(text("select id, definition_hash, definition_ref from execution_runs where project_id=:p and id=:i"),
+                      {"p": project_id, "i": rid}).mappings().first()
+        if not r:
+            raise _错(404, "NOT_FOUND", "没有这次运行", "回运行列表")
+        全 = _原始记录(c, project_id, rid)
+        中 = _筛(全, 体.get("节点"), 体.get("来源"), bool(体.get("只看错误")), 体.get("尝试"))
+        条 = [_日志条(x, 看原文) for x in 中]
+        _审计(c, me, "导出原始日志", {"运行": rid, "条数": len(条), "原件": bool(看原文),
+                                     "筛选": {k: 体.get(k) for k in ("节点", "来源", "只看错误", "尝试") if 体.get(k) not in (None, "", False)}})
+    包 = {"运行": rid, "定义哈希": r["definition_hash"], "定义来源": r["definition_ref"],
+          "是全部还是子集": "全部" if len(中) == len(全) else f"筛选子集({len(中)} / {len(全)})",
+          "内容": "原件" if 看原文 else "部分打码(没有「查看敏感输入」授权:桥请求的参数 / 回执、人工决定的改动 / 理由打了码,其余是原件)",
+          "导出人": me.user_id, "条目": 条,
+          "缺口": [x["主键"] for x in 条 if x["载荷在外部存储"]] or None,
+          "缺口说明": "「载荷在外部存储」的条目只带了引用,正文不在这份文件里" }
+    包["整份指纹"] = hashlib.sha256(json.dumps(包, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+    return 包
 
 
 @router.get(前缀 + "/execution-runs/{rid}")

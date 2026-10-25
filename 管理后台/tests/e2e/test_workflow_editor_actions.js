@@ -45,6 +45,9 @@ const ctx = {
   fetch: (u, o) => {
     const 方法 = (o && o.method) || "GET", 地址 = String(u);
     请求们.push({ 方法, 地址, 体: o && o.body ? JSON.parse(o.body) : null, 头: (o && o.headers) || {} });
+    if (方法 === "GET" && 地址.includes("/versions/v_old"))
+      return 回(200, { id: "v_old", 版本: "v1", 定义: { nodes: [{ id: "start", type: "start", config: {} }, { id: "end", type: "end", config: {} }],
+        edges: [{ source: "start", target: "end", port: "success" }] }, 布局: { start: { x: 0, y: 0 }, end: { x: 200, y: 0 } }, 只读: true });
     if (方法 === "PATCH" && 地址.includes("/draft")) {
       if (挂住) return new Promise((r) => { 挂住.放 = () => r(回(200, { revision: 挂住.rev })); });
       if (草稿回 !== 200) return 回(草稿回, { code: 草稿回 === 409 ? "REVISION_CONFLICT" : "BOOM", message: "桩", advice: "桩" });
@@ -154,6 +157,51 @@ function 新图态() {
   const 前名 = 跑("节点('llm_1').name");
   ck("只读角色 → 改图被拒,定义不动", 跑(`改图("x", () => { 节点("llm_1").name = "改了"; }) === false`) && 跑("节点('llm_1').name") === 前名);
   跑(`我的角色 = "editor"`);
+
+  console.log("\n▸ 资源选择器 / 换业务动作(§8.1 W22 W24 T18)");
+  新图态();
+  跑(`图态.资源.工具 = [
+    { 版本id: "tv_a", 名: "建跟进", 读写: "写入", 版本: 1, 入参: { properties: { 客户: { type: "string" }, 内容: { type: "string" }, 时间: { type: "string" } }, required: ["客户"] } },
+    { 版本id: "tv_b", 名: "建跟进2", 读写: "写入", 版本: 2, 入参: { properties: { 客户: { type: "string" }, 时间: { type: "number" }, 渠道: { type: "string" } }, required: ["客户", "渠道"] } }];
+    图态.定义.nodes.push({ id: "tool_1", type: "tool", name: "建跟进", config: { tool_version_id: "tv_a",
+      bindings: { 客户: { source: "input", pointer: "/客户" }, 内容: { source: "constant", value: "x" }, 时间: { source: "constant", value: "1" } } } });`);
+  const 差 = 跑(`入参差异(工具资源("tv_a").入参, 工具资源("tv_b").入参)`);
+  ck("换版本前算出真实差异:新增必填 1(渠道)、移除 1(内容)、类型变化 1(时间)",
+     差.新增必填.join() === "渠道" && 差.移除.join() === "内容" && 差.类型变化.join() === "时间", 差);
+  弹层们 = [];
+  跑(`换业务动作(节点("tool_1"), "tv_b")`);
+  ck("换业务动作 → 先弹差异,没确认之前定义不动", 跑("节点('tool_1').config.tool_version_id === 'tv_a'") && 弹层们.some((h) => h.includes("新增必填 <b>1</b>")), 弹层们.slice(-1));
+  跑(`document.querySelector("#tw-ok").onclick()`);
+  ck("确认 → 换成新版本;同名兼容的绑定保留(客户),新的不要的去掉(内容)",
+     跑("节点('tool_1').config.tool_version_id === 'tv_b' && !!节点('tool_1').config.bindings.客户 && !节点('tool_1').config.bindings.内容"));
+  ck("类型变了的(时间)绑定保留并标待核对,不悄悄转字符串", 跑("!!节点('tool_1').config.bindings.时间 && (图态.待核对.tool_1 || []).includes('时间')"));
+  跑("撤销()");
+  ck("撤销一次 → 回到旧版本和原来的三项绑定", 跑("节点('tool_1').config.tool_version_id === 'tv_a' && !!节点('tool_1').config.bindings.内容"));
+  跑("控件表 = []");
+  const 失败 = 跑(`图态.资源.拉取失败 = true; 资源选择器("业务动作", "tv_a", [], () => {}, "空")`);
+  ck("T18 列表拉取失败 → 保留当前选择 + 重试,不说「不存在」", 失败.includes("已保留当前选择") && 失败.includes("重试") && 失败.includes("不是「原来那个不存在了」"), 失败.slice(0, 120));
+  跑("图态.资源.拉取失败 = false");
+  const 历史版 = 跑(`资源选择器("业务动作", "tv_old", [{ id: "tv_b", 名: "建跟进2", 版: "v2", 说: "", 标: "写入" }], () => {}, "空")`);
+  ck("T18 当前选的是历史版本 / 已停用(不在列表里)→ 原值保留并说明", 历史版.includes("不在可选列表里") && 历史版.includes("原值保留"), 历史版.slice(0, 160));
+  const 空 = 跑(`资源选择器("模型", "", [], () => {}, "这个项目还没有可用的模型")`);
+  ck("T18 空列表 → 说清为什么空、去哪补", 空.includes("还没有可用的模型"));
+  const 契 = 跑(`图态.选中 = "tool_1"; 控件表 = []; 绑定编辑(节点("tool_1"), "bindings", 工具资源("tv_a").入参)`);
+  ck("业务动作的参数行按它的契约生成:必填的不给删除,只能移除来源(W24)", 契.includes("必填参数不能删") && 契.includes("移除来源"));
+
+  console.log("\n▸ T20 冻结版本只读 + 复制为草稿");
+  新图态(); 弹层们 = [];
+  const 前PATCH = 请求们.filter((r) => r.方法 === "PATCH").length;
+  await 跑(`看冻结版本("v_old")`);
+  const 看 = 跑(`document.querySelector("#vview").innerHTML`);
+  ck("只读查看:写着「冻结版本不可原地编辑」,只有「复制为草稿」一个改动入口", 看.includes("不可原地编辑") && 看.includes("复制为草稿") && !看.includes("data-k="), 看.slice(0, 120));
+  ck("只读查看本身不改草稿", 跑("节点('llm_1') !== undefined && !图态.脏"));
+  跑(`document.querySelector("#vv-copy").onclick()`);
+  ck("点「复制为草稿」→ 先确认(说明会替换当前草稿、冻结版本不受影响)", 弹层们.some((h) => h.includes("冻结的") && h.includes("不受影响")));
+  跑(`document.querySelector("#vc-ok").onclick()`);
+  ck("确认后草稿换成那一版(本地、未保存),没有自动发保存", 跑("!节点('llm_1') && 图态.定义.nodes.length === 2 && 图态.脏")
+     && 请求们.filter((r) => r.方法 === "PATCH").length === 前PATCH);
+  跑("撤销()");
+  ck("撤销一次 → 回到复制之前的草稿", 跑("!!节点('llm_1')"));
 
   console.log("\n▸ T20 运行结果固定到发起时的定义");
   新图态();

@@ -415,7 +415,8 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_lanxiu_knobs_flow.py test_toolgroups_flow.py \
           test_selection_policy_flow.py test_eval_items_flow.py \
           test_tool_modelcard_flow.py test_prompt_snapshot_flow.py \
-          test_exec_mode_flow.py test_retrieval_runs_flow.py
+          test_exec_mode_flow.py test_retrieval_runs_flow.py \
+          test_raw_log_flow.py
 
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
@@ -525,6 +526,9 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@echo ""
 	@echo "▸ 老客召回(12 条:0 人不派 / 勾了人填了截止才派、带原名单 / 没勾不派 / 没截止不派 / 退回不派 —— 六条第五条)"
 	@./.venv/bin/python tests/e2e/test_recall_flow.py
+	@echo ""
+	@echo "▸ 运行的原始日志(13 条:原件 / 打码副本指纹一致、筛选写明子集、分页接得上、导出记审计 —— 交互控件设计 §15)"
+	@./.venv/bin/python tests/e2e/test_raw_log_flow.py
 	@echo ""
 	@echo "▸ 库存补货(12 条:不用派直接结束 / 填齐了才派 / 没填不派 / 退回不派 / 密钥扫描只放过声明过的数值配置 —— 六条第六条)"
 	@./.venv/bin/python tests/e2e/test_restock_flow.py
@@ -736,6 +740,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_order_risk_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_order_risk_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_order_risk_flow.log
+	@./.venv/bin/python tests/e2e/test_raw_log_flow.py > /tmp/prog-test_raw_log_flow.log 2>&1 \
+	  || { echo "  ❌ test_raw_log_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_raw_log_flow.log; exit 1; }
+	@tail -2 /tmp/prog-test_raw_log_flow.log
 	@./.venv/bin/python tests/e2e/test_recall_flow.py > /tmp/prog-test_recall_flow.log 2>&1 \
 	  || { echo "  ❌ test_recall_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_recall_flow.log; exit 1; }

@@ -1267,32 +1267,89 @@ function 数字框(值, fn, { 整数 = false, 最小 = null, 提示 = "" } = {})
   }, 提示) + `<div class="ferr" role="alert"></div>`;
 }
 
+/* 资源选择器(W22 · §8.1):搜索、版本、用途、状态;**选的是明确版本**,不要用户手填版本 id。
+ * · 当前选的不在列表里(历史版本 / 已停用 / 没权限)→ 保留原值并说明,不当成「没选」
+ * · 列表拉取失败 → 保留当前选择 + 重试,**不当成「原资源不存在」**
+ * 列表很长时先搜:输入框只筛选项,不改配置。 */
+function 资源选择器(种类, 当前, 项们, 选了, 空话) {
+  const g = 图态;
+  if (g.资源.拉取失败) {
+    return `<div class="note">暂时读取不到${esc(种类)}列表,<b>已保留当前选择</b>${当前 ? `(<code>${esc(当前)}</code>)` : ""} —— 不是「原来那个不存在了」。
+      <button data-k="${挂控件(async () => { await 重取资源(); 重画(); return false; })}">重试</button></div>`;
+  }
+  if (!项们.length) return `<div class="note">${esc(空话)}</div>`;
+  const 词 = (g.资源搜 || {})[种类] || "";
+  const 中 = 项们.filter((x) => !词 || `${x.名}${x.说}${x.版 || ""}${x.标}`.includes(词));
+  const 现 = 项们.find((x) => x.id === 当前);
+  const k搜 = 挂控件((el) => { (g.资源搜 = g.资源搜 || {})[种类] = el.value.trim(); 画_面板(); return false; });
+  return `<div class="ressel">
+    ${项们.length > 6 ? `<input data-k="${k搜}" value="${esc(词)}" placeholder="搜${esc(种类)}:名称、用途、版本" aria-label="搜索${esc(种类)}">` : ""}
+    ${下拉(现 ? 当前 : "", 中.map((x) => [x.id, `${x.名}${x.版 ? " · " + x.版 : ""} · ${x.标}`]), (el) => 选了(el.value), 当前 && !现 ? "(当前的不在列表里)" : `请选择${种类}`)}
+    ${词 && !中.length ? `<div class="k">没有包含「${esc(词)}」的${esc(种类)}。</div>` : ""}
+    ${现 ? `<div class="k">${esc(现.说 || "")}${现.版 ? ` · 版本 ${esc(现.版)}` : ""} · ${esc(现.标)}</div>` : ""}
+    ${当前 && !现 ? `<div class="ferr">当前选的${esc(种类)}(<code>${esc(当前)}</code>)不在可选列表里 —— 可能是历史版本、已停用,或你没有它的权限。
+       <b>原值保留着</b>;要换就在上面选一个,运行前检查配置会报出来。</div>` : ""}
+  </div>`;
+}
+async function 重取资源() {
+  try { 图态.资源 = await 请求(`${P()}/workflow-resources`); 提示("资源列表已重新取到"); }
+  catch (e) { 图态.资源 = { ...图态.资源, 拉取失败: true }; 提示("还是取不到:" + e.message + "(当前选择没动)"); }
+}
+/* 换业务动作:先摆出入参的**真实差异**(新增必填 / 移除 / 类型变化),确认后才换;
+ * 同名且类型兼容的绑定保留,对不上的列出来待核对 —— **不把旧参数原样送进新工具,也不悄悄清空整份表单**(§8.1) */
+function 入参差异(旧, 新) {
+  const op = (旧 || {}).properties || {}, np = (新 || {}).properties || {}, nr = new Set((新 || {}).required || []);
+  return { 新增必填: Object.keys(np).filter((k) => !op[k] && nr.has(k)), 新增选填: Object.keys(np).filter((k) => !op[k] && !nr.has(k)),
+    移除: Object.keys(op).filter((k) => !np[k]), 类型变化: Object.keys(np).filter((k) => op[k] && (op[k].type || "") !== (np[k].type || "")) };
+}
+function 换业务动作(n, id) {
+  const c = n.config, 旧t = 工具资源(c.tool_version_id), 新t = 工具资源(id);
+  if (!id) { c.tool_version_id = undefined; 重画(); return; }
+  if (!旧t || !新t || !Object.keys(c.bindings || {}).length) { c.tool_version_id = id; 重画(); return; }
+  const 差 = 入参差异(旧t["入参"], 新t["入参"]);
+  const 要删 = Object.keys(c.bindings || {}).filter((k) => 差.移除.includes(k));
+  弹层(`把「${业务名(n)}」换成「${新t["名"]}」?`, `
+    <p>参数的真实差异:新增必填 <b>${差.新增必填.length}</b> 项、移除 <b>${差.移除.length}</b> 项、类型变化 <b>${差.类型变化.length}</b> 项。</p>
+    ${差.新增必填.length ? `<p class="k">新增必填:${差.新增必填.map(esc).join("、")} —— 换完要给它们选来源</p>` : ""}
+    ${要删.length ? `<p class="k">新的不再要:${要删.map(esc).join("、")} —— 这几行绑定会去掉(可撤销)</p>` : ""}
+    ${差.类型变化.length ? `<p class="k">类型变了:${差.类型变化.map(esc).join("、")} —— 绑定保留但要核对,不会悄悄转成字符串</p>` : ""}
+    <p>同名、类型没变的绑定原样保留。</p>
+    <div class="acts"><button class="pri" id="tw-ok">换</button> <button id="tw-no">取消</button></div>`);
+  $("#tw-no").onclick = () => { 关弹层(); 画_面板(); };
+  $("#tw-ok").onclick = () => {
+    关弹层();
+    改图(`换业务动作为「${新t["名"]}」`, () => { c.tool_version_id = id; 要删.forEach((k) => { delete c.bindings[k]; }); });
+    if (差.类型变化.length) (图态.待核对 = 图态.待核对 || {})[n.id] = 差.类型变化;
+    提示(`已换成「${新t["名"]}」` + (差.类型变化.length ? `;${差.类型变化.join("、")} 类型变了,请核对` : ""), { 撤销: true });
+  };
+  return false;     // 真改在确认之后;这一次控件变更本身不改定义
+}
+
 function 表_设置(n) {
   const g = 图态, c = n.config;
   let 体 = `<label class="f">这一步叫什么</label>${输入框(n.name || "", (el) => { n.name = el.value.trim() || undefined; 重画(); })}`;
   if (n.type === "llm") {
     const 模 = g.资源.模型 || [], 处 = g.资源.处理要求 || [];
     体 += `<label class="f">用哪个模型</label>`
-      + (模.length ? 下拉(c.connection_version_id, 模.map((m) => [m["版本id"], `${m["名"]}${m["是假的"] ? "(演示用,不真调)" : ""}`]),
-          (el) => { c.connection_version_id = el.value || undefined; 重画(); })
-        : `<div class="note">这个项目还没有可用的模型 —— 请平台管理员在「模型与连接」里接一个。</div>`)
+      + 资源选择器("模型", c.connection_version_id, 模.map((m) => ({ id: m["版本id"], 名: m["名"],
+          说: (m["支持的参数"] || []).length ? `支持:${m["支持的参数"].join("、")}` : "", 标: m["是假的"] ? "演示用,不真调" : "可用" })),
+          (id) => { c.connection_version_id = id || undefined; 重画(); },
+          "这个项目还没有可用的模型 —— 请平台管理员在「模型与连接」里接一个。")
       + `<label class="f">这一步要完成什么(处理要求)</label>`
-      + (处.length ? 下拉(c.prompt_version_id, 处.map((p) => [p["版本id"], `${p["名"]} · v${p["版本"]}`]),
-          (el) => { c.prompt_version_id = el.value || undefined; 重画(); })
-        : `<div class="note">还没有处理要求 —— 去「Prompt 管理」写一份并存版本。</div>`)
-      + (处.find((p) => p["版本id"] === c.prompt_version_id)
-          ? `<div class="k">${esc(处.find((p) => p["版本id"] === c.prompt_version_id)["用途"] || "")}</div>` : "");
+      + 资源选择器("处理要求", c.prompt_version_id, 处.map((p) => ({ id: p["版本id"], 名: p["名"], 版: `v${p["版本"]}`, 说: p["用途"] || "", 标: "已存版本" })),
+          (id) => { c.prompt_version_id = id || undefined; 重画(); },
+          "还没有处理要求 —— 去「Prompt 管理」写一份并存版本。")
+      + `<div class="k">要改处理要求本身,去「Prompt 管理」—— 这里只选用哪一版,不改所有流程共用的正式版本。</div>`;
   } else if (n.type === "tool") {
     const 工 = g.资源.工具 || [];
     体 += `<label class="f">执行哪个业务动作</label>`
-      + (工.length ? 下拉(c.tool_version_id, 工.map((t) => [t["版本id"], `${t["名"]}(${t["读写"]})`]),
-          (el) => { c.tool_version_id = el.value || undefined; 重画(); })
-        : `<div class="note">这个项目还没有登记业务动作。</div>`);
+      + 资源选择器("业务动作", c.tool_version_id, 工.map((t) => ({ id: t["版本id"], 名: t["名"], 版: t["版本"] != null ? `v${t["版本"]}` : "",
+          说: t["说明"] || "", 标: t["读写"] + (t["接入方式"] === "lanxiu_bridge" ? " · 由澜绣执行" : "") })),
+          (id) => 换业务动作(n, id),
+          "这个项目还没有登记业务动作。");
     const t = 工具资源(c.tool_version_id);
-    if (t) 体 += `<div class="k">${esc(t["说明"] || "")}</div>`
-      + (t["接入方式"] === "lanxiu_bridge"
-        ? `<div class="note">这一步<b>由澜绣执行</b>:管理后台只记一张单、流程停下等;澜绣的同步程序拉回去用它自己的函数做完、回执,流程再接着走。
-            ${t["读写"] !== "只读" ? "<b>写入类的动作之前必须有人工核对通过</b>,否则这次运行会直接失败。" : ""}</div>` : "");
+    if (t && t["接入方式"] === "lanxiu_bridge") 体 += `<div class="note">这一步<b>由澜绣执行</b>:管理后台只记一张单、流程停下等;澜绣的同步程序拉回去用它自己的函数做完、回执,流程再接着走。
+            ${t["读写"] !== "只读" ? "<b>写入类的动作之前必须有人工核对通过</b>,否则这次运行会直接失败。" : ""}</div>`;
   } else if (n.type === "human") {
     const 角 = g.资源.角色 || [];
     体 += `<label class="f">谁来处理</label>` + 角.map((r) => {
@@ -1413,19 +1470,29 @@ function 解引用(v) {
   return { source: "constant", value: v.slice(2) };
 }
 
-function 绑定编辑(n, 键名) {
+function 绑定编辑(n, 键名, 契约 = null) {
   const 绑 = n.config[键名] = n.config[键名] || {};
   const 源们 = 上游字段(n.id);
-  const 行 = Object.entries(绑).map(([k, r]) => {
+  // 业务动作有自己的参数契约:**契约里的参数行由它生成、名字只读**,必填的不能删(只能移除来源后显示缺失);
+  // 契约里没有的参数标出来(填了也不会用上)。工具定义在「工具目录」里改,不在流程里改(W24 · §7.3)
+  const 契 = (契约 && 契约.properties) || null, 必 = new Set((契约 && 契约.required) || []);
+  const 键们 = 契 ? [...new Set([...Object.keys(契), ...Object.keys(绑)])] : Object.keys(绑);
+  const 待核 = ((图态.待核对 || {})[n.id]) || [];
+  const 行 = 键们.map((k) => [k, 绑[k]]).map(([k, r]) => {
+    const 在契约 = 契 && Object.prototype.hasOwnProperty.call(契, k);
+    const 契约外 = 契 && !在契约;
     const 是固定 = r && r.source === "constant";
     const 失效 = r && r.source === "node" && !节点(r.node_id);
     const 部分 = r && r.source === "node" && 节点(r.node_id) && !图逻辑.前驱与必经(图态.定义, n.id).必经.has(r.node_id);
     return `<div class="card ${失效 ? "bad" : ""}">
       ${失效 ? `<div class="ferr">原来源「${esc(r.原名 || r.node_id)} · ${esc(String(r.pointer || "").replace(/^\//, ""))}」已删除 —— 选一个新来源,或撤销那次删除。运行和生成候选版本前要改好。</div>` : ""}
       ${部分 ? `<div class="ferr">这个来源只在部分路径上有值 —— 走另一条路时取不到。要么改成必经的来源,要么在汇合之后再取</div>` : ""}
-      <div class="k">字段</div>${输入框(k, (el) => {
+      ${在契约 ? `<div class="k">参数</div><div><b>${esc(k)}</b> <span class="k">${esc(契[k].type || "")}${必.has(k) ? " · 必填" : " · 选填"}${契[k].description ? " · " + esc(契[k].description) : ""}</span></div>`
+        : `<div class="k">字段</div>${输入框(k, (el) => {
         const 新 = el.value.trim(); if (!新 || 新 === k) return;
-        绑[新] = 绑[k]; delete 绑[k]; 重画(); })}
+        绑[新] = 绑[k]; delete 绑[k]; 重画(); })}`}
+      ${契约外 ? `<div class="ferr">「${esc(业务名(n))}」没有「${esc(k)}」这个参数 —— 填了不会用上,可以删掉</div>` : ""}
+      ${待核.includes(k) ? `<div class="ferr">换业务动作后这个参数的类型变了 —— 核对来源的类型,不会悄悄转成字符串</div>` : ""}
       <div class="k">从哪来</div>${下拉(是固定 ? "固定值" : 失效 ? "" : 引用值(r), [["固定值", "固定值(自己填)"], ...源们], (el) => {
         if (!el.value) { 绑[k] = null; 重画(); return; }
         const 新 = el.value === "固定值" ? { source: "constant", value: "" } : 解引用(el.value);
@@ -1434,10 +1501,11 @@ function 绑定编辑(n, 键名) {
       ${是固定 ? `<div class="k">填什么</div>${输入框(r.value, (el) => { r.value = el.value; }, "", { 可清空: true })}` : ""}
       <div class="k">${r && r.source === "node" && !失效 ? "正式运行时取那一步的真实结果;还没跑过,所以这里没有样例" : r ? "" : "未设置来源 —— 字段还在,运行前要选"}</div>
       <div class="acts">${r ? `<button data-k="${挂控件(() => { 绑[k] = null; 重画(); })}">移除来源</button>` : ""}
-        <button class="danger" data-k="${挂控件(() => { delete 绑[k]; 提示(`已删除字段「${k}」`, { 撤销: true }); 重画(); })}">删除字段</button></div></div>`;
+        ${在契约 && 必.has(k) ? `<span class="k">必填参数不能删,只能移除来源</span>`
+          : 在契约 && !r ? "" : `<button class="danger" data-k="${挂控件(() => { delete 绑[k]; 提示(`已删除字段「${k}」`, { 撤销: true }); 重画(); })}">删除字段</button>`}</div></div>`;
   }).join("");
-  return 行 + `<button data-k="${挂控件(() => {
-      let i = 1; while (绑[`字段${i}`]) i++; 绑[`字段${i}`] = null; 重画(); })}">加一个字段</button>`
+  return 行 + (契 ? "" : `<button data-k="${挂控件(() => {
+      let i = 1; while (绑[`字段${i}`]) i++; 绑[`字段${i}`] = null; 重画(); })}">加一个字段</button>`)
     + (源们.length ? "" : `<div class="note">这一步前面还没有能取值的步骤 —— 先把它接到流程里(左边「在此后添加」或「下一步」)。</div>`);
 }
 
@@ -1450,6 +1518,11 @@ function 表_输入(n) {
     + (n.config.candidates || []).map((r, i) => `<div class="fieldrow"><label>第 ${i + 1} 路</label>${下拉(引用值(r), 上游字段(n.id),
         (el) => { n.config.candidates[i] = 解引用(el.value); })}</div>`).join("")
     + `<button data-k="${挂控件(() => { (n.config.candidates = n.config.candidates || []).push(null); 重画(); })}">加一路</button>`;
+  if (n.type === "tool") {
+    const t = 工具资源(n.config.tool_version_id);
+    if (!t) return `<div class="k">先在「设置」里选一个业务动作 —— 参数由它决定。</div>`;
+    return `<div class="k">「${esc(t["名"])}」要这些参数(由它自己定义,这里只选每一项从哪来):</div>` + 绑定编辑(n, "bindings", t["入参"] || {});
+  }
   return `<div class="k">这一步要用的数据,各自从哪来。</div>` + 绑定编辑(n, "bindings");
 }
 
@@ -1667,7 +1740,8 @@ function 运行卡(d, rid) {
             <span class="k">澜绣的同步程序每 30 秒拉一次;单子排于 ${时间(等["排于"])}。</span></div>`) : ""}
     <ul>${步 || '<li class="k">排队中 —— 一个模型都还没调</li>'}</ul>
     ${d["是终态吗"] && d["输出"] ? `<div class="k">输出</div><pre class="io">${esc(JSON.stringify(d["输出"], null, 1))}</pre>` : ""}
-    <button id="tr-rf">刷新</button> <a href="#/wfrun/${encodeURIComponent(rid)}">完整详情 →</a>`;
+    <button id="tr-rf">刷新</button> <a href="#/wfrun/${encodeURIComponent(rid)}">完整详情 →</a>
+    <a href="#/wfrun/${encodeURIComponent(rid)}" title="完整详情页上点「原始日志」—— 失败 / 取消的运行一样能看">原始日志 →</a>`;
 }
 
 /* ── 运行记录 ─────────────────────────────────────────────────── */
@@ -1690,15 +1764,56 @@ async function 画_运行记录() {
 function 画_版本() {
   const g = 图态;
   $("#tabbody").innerHTML = (g.版本们.length
-    ? `<table><thead><tr><th>版本</th><th>变更说明</th><th>生成于</th><th>谁生成的</th><th>逻辑哈希</th></tr></thead><tbody>`
+    ? `<table><thead><tr><th>版本</th><th>变更说明</th><th>生成于</th><th>谁生成的</th><th>逻辑哈希</th><th></th></tr></thead><tbody>`
       + g.版本们.map((v) => `<tr><td><span class="pill">${esc(v["版本"])} · 候选</span></td>
           <td>${esc(v["变更说明"] || "")}</td><td class="k">${时间(v["冻结于"])}</td>
-          <td class="k">${esc(v["冻结人"] || "")}</td><td><code>${esc(v["逻辑哈希"])}</code></td></tr>`).join("") + `</tbody></table>`
+          <td class="k">${esc(v["冻结人"] || "")}</td><td><code>${esc(v["逻辑哈希"])}</code></td>
+          <td>${v.id ? `<button data-vview="${esc(v.id)}">只读查看</button>` : ""}</td></tr>`).join("") + `</tbody></table>`
     : `<div class="k">还没生成过候选版本。</div>`)
-    + `<div class="note">路径:保存草稿 → 检查配置 → 测试 → <b>生成候选版本</b> → 选环境发布 → 核对生效版本。
+    + `<div id="vview"></div>
+      <div class="note">路径:保存草稿 → 检查配置 → 测试 → <b>生成候选版本</b> → 选环境发布 → 核对生效版本。
         <b>后两步还没接</b>(发布清单还没扩展到工作流,规格 §15.3)—— 所以这里的版本都是「候选版本已生成,尚未生效」。</div>
       <button class="pri" id="pb">准备发布</button>`;
   $("#pb").onclick = 弹_准备发布;
+  document.querySelectorAll("[data-vview]").forEach((b) => { b.onclick = () => 看冻结版本(b.dataset.vview); });
+}
+
+/* 冻结版本只读(§10.4 T20):**不可原地编辑**,只给看 + 「复制为草稿」。
+ * 复制为草稿 = 一次可撤销的本地编辑(覆盖当前草稿的定义和布局),要保存才落到服务端 —— 不碰那个冻结版本本身 */
+async function 看冻结版本(vid) {
+  const el = $("#vview"); if (!el) return;
+  el.innerHTML = `<div class="state">在取…</div>`;
+  let v;
+  try { v = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/versions/${encodeURIComponent(vid)}`); }
+  catch (e) { el.innerHTML = `<div class="state err"><h3>取不到这个版本</h3><p>${esc(e.message)}</p></div>`; return; }
+  const 定 = v["定义"] || { nodes: [], edges: [] }, 布 = v["布局"] || {}, 位 = (id) => 布[id] || { x: 0, y: 0 };
+  const W = 176, H = 54;
+  const 宽 = Math.max(400, ...定.nodes.map((n) => 位(n.id).x + W + 20)), 高 = Math.max(160, ...定.nodes.map((n) => 位(n.id).y + H + 20));
+  const 线 = (定.edges || []).map((e) => { const a = 位(e.source), b = 位(e.target);
+    return `<path d="M${a.x + W},${a.y + H / 2} C${a.x + W + 60},${a.y + H / 2} ${b.x - 60},${b.y + H / 2} ${b.x},${b.y + H / 2}" fill="none" stroke="#86909c" stroke-width="1.5"/>`; }).join("");
+  const 点 = 定.nodes.map((n) => { const p = 位(n.id);
+    return `<g><rect x="${p.x}" y="${p.y}" width="${W}" height="${H}" rx="8" fill="#fff" stroke="#c9cdd4"/>
+      <text x="${p.x + 10}" y="${p.y + 22}" font-size="13" font-weight="600">${esc(业务名(n))}</text>
+      <text x="${p.x + 10}" y="${p.y + 40}" font-size="11" fill="#86909c">${esc(步类型名[n.type] || n.type)}</text></g>`; }).join("");
+  el.innerHTML = `<div class="card"><h3>${esc(v["版本"])} · 只读</h3>
+    <div class="k">${esc(v["变更说明"] || "")} · ${时间(v["冻结于"])} · ${esc(v["冻结人"] || "")} · 逻辑哈希 <code>${esc(String(v["逻辑哈希"] || "").slice(0, 19))}…</code></div>
+    <div class="note"><b>冻结版本不可原地编辑。</b>要在它的基础上改,点「复制为草稿」—— 会替换当前草稿(可撤销,保存后才落到服务端),这个版本本身不变。</div>
+    <div style="overflow:auto;max-height:420px;border:1px solid var(--line);border-radius:6px"><svg width="${宽}" height="${高}">${线}${点}</svg></div>
+    <div class="acts">${能改图() ? `<button class="pri" id="vv-copy">复制为草稿</button>` : `<span class="k">只读:你没有改草稿的权限</span>`}
+      <button id="vv-close">收起</button></div></div>`;
+  $("#vv-close").onclick = () => { el.innerHTML = ""; };
+  if ($("#vv-copy")) $("#vv-copy").onclick = () => {
+    弹层(`把 ${v["版本"]} 复制为草稿?`, `<p>当前草稿的定义和布局会被替换成 ${esc(v["版本"])} 的内容。</p>
+      ${图态.脏 ? `<p class="ferr">当前草稿还有未保存的修改 —— 替换后可以撤销回来,但建议先保存。</p>` : ""}
+      <p class="k">这一步只改本页的草稿,要点「保存草稿」才落到服务端;冻结的 ${esc(v["版本"])} 不受影响。</p>
+      <div class="acts"><button class="pri" id="vc-ok">复制为草稿</button> <button id="vc-no">取消</button></div>`);
+    $("#vc-no").onclick = 关弹层;
+    $("#vc-ok").onclick = () => {
+      关弹层();
+      改图(`复制 ${v["版本"]} 为草稿`, () => { 图态.定义 = JSON.parse(JSON.stringify(定)); 图态.布局 = JSON.parse(JSON.stringify(布)); 图态.选中 = null; });
+      提示(`已把 ${v["版本"]} 复制为草稿(未保存)`, { 撤销: true });
+    };
+  };
 }
 
 function 弹_准备发布() {
@@ -1725,6 +1840,14 @@ function 弹_准备发布() {
 function 画_设置() {
   const g = 图态;
   $("#tabbody").innerHTML = `<div class="card" style="max-width:640px">
+    <h3>日志采集</h3>
+    <div class="k">这条流程的每次运行,管理后台会记下五类原始记录:<b>事件</b>(只追加)、<b>步骤的每一次尝试</b>、
+      <b>工具调用</b>(先记意图再记结果)、<b>人工决定</b>(只追加)、<b>澜绣桥请求与回执</b>。
+      在「运行记录」→ 某次运行 →「原始日志」里看;看原件要「查看敏感输入」专项授权,没有的看到的是部分打码副本;每次下载都记审计。</div>
+    <div class="note"><b>可配置的采集策略(来源开关、正文策略、容量、保留期、告警)还没有做</b> —— 这里不摆开关,免得拧了不算数。
+      现在的边界是固定的:采上面五类、模型请求与响应原文在运行记录(traces / spans)那一侧、服务商内部过程拿不到。</div>
+  </div>
+  <div class="card" style="max-width:640px">
     <label class="f">名称</label><input id="st-n" value="${esc(g.名称)}">
     <label class="f">用途(一句话:谁用、解决什么)</label><input id="st-p" value="${esc(g.用途 || "")}">
     <label class="f">负责人</label><input id="st-o" value="${esc(g.负责人 || "")}">
@@ -1894,7 +2017,7 @@ async function 做_冻结(说明) {
   try {
     const d = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/versions`,
       { method: "POST", body: JSON.stringify({ 变更说明: 说明 }) });
-    图态.版本们 = [{ 版本: d["版本"], 逻辑哈希: d["逻辑哈希"].slice(0, 19) + "…", 变更说明: 说明,
+    图态.版本们 = [{ id: d.id, 版本: d["版本"], 逻辑哈希: d["逻辑哈希"].slice(0, 19) + "…", 变更说明: 说明,
                     冻结于: new Date().toISOString(), 冻结人: "你" }, ...图态.版本们];
     location.hash = `#/workflow/${encodeURIComponent(图态.wid)}/版本与发布`;
     画_画布();
@@ -2059,6 +2182,108 @@ function 挂运行控制(rid, d) {
   });
 }
 
+/* ── 原始日志查看器(交互控件设计 §15 · L01–L07)───────────────────────
+ * **只显示服务端库里已记下的原始记录**(事件 / 步骤尝试 / 工具调用 / 人工决定 / 桥请求),
+ * 不重新执行任何东西,不让模型生成「日志」。默认原始视图;格式化只是换个排法,不覆盖原件。
+ * 筛选后的结果写明「筛选子集 x / 共 y」,不把子集冒充全部;分页「加载更多」并写已加载多少。
+ * 外部内容一律按纯文本显示(esc),不执行日志里的任何脚本或指令。 */
+async function 原始日志(rid, 筛 = {}, 运行 = null) {
+  const el = $("#rawlog"); if (!el) return;
+  const 态 = { rid, 筛: { 节点: 筛.节点 || "", 来源: "", 只看错误: false, 尝试: 筛.尝试 ?? null }, 条目: [], 下一页: 0, 格式化: false, 跟随: false, 回: null };
+  const 取 = async (续) => {
+    const q = new URLSearchParams();
+    if (态.筛.节点) q.set("节点", 态.筛.节点);
+    if (态.筛.来源) q.set("来源", 态.筛.来源);
+    if (态.筛.只看错误) q.set("只看错误", "true");
+    if (态.筛.尝试 != null) q.set("尝试", String(态.筛.尝试));
+    q.set("从", String(续 ? 态.下一页 : 0)); q.set("条数", "100");
+    const d = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}/raw-log?${q}`);
+    态.回 = d; 态.条目 = 续 ? [...态.条目, ...d["条目"]] : d["条目"]; 态.下一页 = d["下一页从"];
+  };
+  const 画 = () => {
+    const d = 态.回 || {}, 全 = d["共"] ?? 0, 筛后 = d["筛选后"] ?? 0, 是子集 = 筛后 !== 全;
+    const 节点们 = [...new Set((运行 && 运行["步骤"] || []).map((x) => x["节点"]))];
+    el.innerHTML = `<div class="card rawlog">
+      <div class="acts" role="group" aria-label="原始日志筛选">
+        <select id="rl-src" aria-label="来源"><option value="">全部来源</option>${["事件", "步骤尝试", "工具调用", "人工决定", "桥请求"].map((k) =>
+          `<option ${态.筛.来源 === k ? "selected" : ""}>${k}</option>`).join("")}</select>
+        <select id="rl-node" aria-label="节点"><option value="">全部节点</option>${节点们.map((k) => `<option ${态.筛.节点 === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select>
+        <label class="k"><input type="checkbox" id="rl-err" ${态.筛.只看错误 ? "checked" : ""}> 只看错误</label>
+        ${态.筛.尝试 != null ? `<span class="pill">第 ${esc(态.筛.尝试)} 次尝试 <button id="rl-att-x" aria-label="不按尝试筛">×</button></span>` : ""}
+        <span class="seg"><button id="rl-raw" aria-pressed="${!态.格式化}">原始记录</button><button id="rl-fmt" aria-pressed="${态.格式化}">格式化</button></span>
+        ${运行 && !运行["是终态吗"] ? `<label class="k"><input type="checkbox" id="rl-follow" ${态.跟随 ? "checked" : ""}> 跟随新记录</label>` : ""}
+        <button id="rl-copy">复制已加载的</button> <button id="rl-dl">下载</button> <button id="rl-x">收起</button>
+      </div>
+      <div class="k">${是子集 ? `<b>筛选子集</b> ${筛后} / 共 ${全} 条` : `共 ${全} 条`} · 已加载 ${态.条目.length} 条
+        · 按来源:${Object.entries(d["按来源"] || {}).map(([k, v]) => `${esc(k)} ${v}`).join("、")}
+        · ${d["能看原文"] ? "原件" : "<b>部分打码</b>(没有「查看敏感输入」授权)"}</div>
+      <div class="note">${esc(d["采集边界"] || "")}</div>
+      ${态.条目.length ? 态.条目.map((x, i) => `<div class="rlrow ${x["是错误"] ? "bad" : ""}">
+          <div class="rlh"><span class="k">${时间(x["时间"])}</span> <b>${esc(x["来源"])}</b> <code>${esc(x["类型"])}</code>
+            ${x["节点"] ? `<button class="lk" data-rlgo="${esc(x["节点"])}" title="到这一步">节点 ${esc(x["节点"])}</button>` : ""}
+            ${x["尝试"] != null ? `<span class="k">第 ${esc(x["尝试"])} 次</span>` : ""}
+            <span class="k" title="来源表 + 主键;指纹是原件的 SHA-256 前 16 位,打码副本和原件指纹一样,可以对">${esc(x["来源表"])} · ${esc(x["主键"])} · ${esc(x["字节数"])} 字节 · 指纹 ${esc(x["指纹"])}</span>
+            ${x["是打码副本"] ? `<span class="pill warn">打码副本</span>` : ""}
+            ${x["载荷在外部存储"] ? `<span class="pill warn" title="这一条只带了引用,正文不在这里">载荷在外部存储:${esc(x["载荷在外部存储"])}</span>` : ""}</div>
+          <pre class="io">${esc(态.格式化 ? 格式化日志(x["原件"]) : JSON.stringify(x["原件"]))}</pre></div>`).join("")
+        : `<div class="k">${全 ? "这个筛选条件下一条都没有。" : "这次运行还没有任何已记录的原始记录(排队中的运行一条都没有是正常的)。"}</div>`}
+      ${态.下一页 != null ? `<button id="rl-more">加载更多(还有 ${筛后 - 态.条目.length} 条)</button>` : ""}
+    </div>`;
+    const 重取 = async () => { try { await 取(false); } catch (e) { 报错(e); } 画(); };
+    $("#rl-src").onchange = (e) => { 态.筛.来源 = e.target.value; 重取(); };
+    $("#rl-node").onchange = (e) => { 态.筛.节点 = e.target.value; 重取(); };
+    $("#rl-err").onchange = (e) => { 态.筛.只看错误 = e.target.checked; 重取(); };
+    if ($("#rl-att-x")) $("#rl-att-x").onclick = () => { 态.筛.尝试 = null; 重取(); };
+    $("#rl-raw").onclick = () => { 态.格式化 = false; 画(); };
+    $("#rl-fmt").onclick = () => { 态.格式化 = true; 画(); };
+    $("#rl-x").onclick = () => { 态.跟随 = false; el.innerHTML = ""; };
+    if ($("#rl-more")) $("#rl-more").onclick = async () => { try { await 取(true); } catch (e) { 报错(e); } 画(); };
+    if ($("#rl-follow")) $("#rl-follow").onchange = (e) => { 态.跟随 = e.target.checked; if (态.跟随) 跟随(); };
+    $("#rl-copy").onclick = () => {
+      const 文 = JSON.stringify({ 运行: rid, 说明: 是子集 || 态.下一页 != null ? `这是已加载的 ${态.条目.length} 条(筛选后 ${筛后} / 共 ${全}),不是全部` : "全部",
+        内容: d["能看原文"] ? "原件" : "部分打码", 条目: 态.条目 }, null, 1);
+      (navigator.clipboard ? navigator.clipboard.writeText(文) : Promise.reject(new Error("浏览器不给剪贴板")))
+        .then(() => 提示(`已复制 ${态.条目.length} 条(写明了是不是全部)`), (e) => 提示("复制不了:" + e.message));
+    };
+    $("#rl-dl").onclick = async () => {
+      try {
+        const 包 = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}/raw-log/export`, { method: "POST",
+          body: JSON.stringify({ 节点: 态.筛.节点 || null, 来源: 态.筛.来源 || null, 只看错误: 态.筛.只看错误, 尝试: 态.筛.尝试 }) });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(包, null, 1)], { type: "application/json" }));
+        a.download = `原始日志-${rid}${是子集 ? "-筛选子集" : ""}.json`; a.click();
+        提示(`已下载 ${包["条目"].length} 条(${包["是全部还是子集"]} · ${包["内容"].slice(0, 4)});这次导出记进了审计`);
+      } catch (e) { 报错(e); }
+    };
+    el.querySelectorAll("[data-rlgo]").forEach((b) => {
+      b.onclick = () => {
+        // L07:回到当时的步骤。当前草稿里已经没有它 → 明说,**不跳到当前同名步骤**
+        const id = b.dataset.rlgo, wid = 运行 && 运行["定义来源"] && (运行["定义来源"].id || 运行["定义来源"].workflow_id);
+        if (图态 && 图态.wid === wid && 节点(id)) { 图态.选中 = id; location.hash = `#/workflow/${encodeURIComponent(wid)}/搭建`; return; }
+        提示(`「${id}」在你现在打开的草稿里没有 —— 这条记录属于当时的定义(定义哈希 ${String((态.回 || {})["定义哈希"] || "").slice(0, 12)}…),不跳到同名的当前步骤`);
+      };
+    });
+  };
+  const 跟随 = async () => {
+    while (态.跟随 && el.isConnected !== false && $("#rawlog") === el) {
+      await new Promise((r) => setTimeout(r, 3000));
+      if (!态.跟随) break;
+      try { await 取(false); 画(); } catch (e) { 态.跟随 = false; 提示("跟随中断:" + e.message + "(已加载的还在)"); 画(); }
+    }
+  };
+  el.innerHTML = `<div class="state">在取原始记录…</div>`;
+  try { await 取(false); } catch (e) {
+    el.innerHTML = `<div class="state err"><h3>${e.码 === 403 ? "没有权限看这次运行" : "取不到原始日志"}</h3><p>${esc(e.message)}</p>
+      <p class="k">${e.码 === 403 ? "这是权限问题,不是没有记录。" : "这是取数失败,不是这次运行没有记录。"}</p></div>`;
+    return;
+  }
+  画();
+}
+function 格式化日志(v) {
+  if (!v || typeof v !== "object") return String(v ?? "");
+  return Object.entries(v).map(([k, x]) => `${k}: ${typeof x === "object" && x !== null ? JSON.stringify(x) : x}`).join("\n");
+}
+
 async function 页_运行详情(rid) {
   const d = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}`);
   const 步 = d["步骤"] || [];
@@ -2086,9 +2311,10 @@ async function 页_运行详情(rid) {
         <div class="note" style="margin-top:6px">费用记成<b>「未知」不是 0</b> ——
           mock 没有真实计价。</div></div>
     </div>
-    <h3>步骤(${步.length})</h3>
+    <h3>步骤(${步.length}) <button id="rl-open">原始日志</button></h3>
+    <div id="rawlog"></div>
     <table><thead><tr><th>节点</th><th>类型</th><th>状态</th><th>尝试</th>
-      <th>执行键</th><th>分支 / 为什么跳过</th><th>错误</th></tr></thead><tbody>`
+      <th>执行键</th><th>分支 / 为什么跳过</th><th>错误</th><th></th></tr></thead><tbody>`
     + 步.map((s) => `<tr>
         <td><b>${esc(s["节点"])}</b></td><td class="k">${esc(s["类型"])}</td>
         <td>${s["状态"] === "succeeded" ? `<span class="pill ok">成功</span>`
@@ -2097,7 +2323,8 @@ async function 页_运行详情(rid) {
         <td class="k">${esc(s["尝试"])}</td>
         <td><code style="font-size:11px">${esc(s["执行键"])}</code></td>
         <td class="k">${esc(s["走的分支"] || s["为什么跳过"] || "")}</td>
-        <td class="k">${esc(s["错误码"] || "")}</td></tr>`).join("")
+        <td class="k">${esc(s["错误码"] || "")}</td>
+        <td><button data-rlnode="${esc(s["节点"])}" data-rlatt="${esc(s["尝试"] ?? "")}">查看该节点日志</button></td></tr>`).join("")
     + `</tbody></table>
     <div class="note"><b>「未激活(跳过)」和「失败」是两个状态</b>(§8)——
       未激活的支路既不阻塞汇合,<b>也不算「完成了的工作」</b>。
@@ -2123,6 +2350,10 @@ async function 页_运行详情(rid) {
   // ⚠️ 事件要在 innerHTML 写完**之后**挂 —— 写之前挂的话那些按钮还不存在,
   // 而 `querySelectorAll` 返回空数组**不报错**:表现是「点了没反应」。
   挂运行控制(rid, d);
+  $("#rl-open").onclick = () => 原始日志(rid, {}, d);
+  document.querySelectorAll("[data-rlnode]").forEach((b) => {
+    b.onclick = () => 原始日志(rid, { 节点: b.dataset.rlnode, 尝试: b.dataset.rlatt === "" ? null : +b.dataset.rlatt }, d);
+  });
 }
 
 /* ══════════════════════════════════════════════════════════════════
