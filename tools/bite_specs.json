@@ -13184,5 +13184,125 @@
    }
   ],
   "预期红": "推过之后轮末补记了上报 → 签名变了,重推"
+ },
+ {
+  "script": "agentsite/claims_check.py",
+  "改坏": "小标题里的单号不传给下面的小点",
+  "file": [
+   {
+    "path": "agentsite/claims.py",
+    "old": "            承 = list(上下文)",
+    "new": "            承 = []"
+   }
+  ],
+  "预期红": "小标题里的单号管到下面的小点:实付写错了要判冲突"
+ },
+ {
+  "script": "agentsite/claims_check.py",
+  "改坏": "分组维度(门店号)也当记录键",
+  "file": [
+   {
+    "path": "agentsite/claims.py",
+    "old": "if _是记录键(号, 证们)]",
+    "new": "]"
+   }
+  ],
+  "预期红": "「6 条(本店 SH909)」—— 门店号落在每一条上,不当记录键,不判冲突"
+ },
+ {
+  "script": "agentsite/claims_check.py",
+  "改坏": "串里的数不看单位",
+  "file": [
+   {
+    "path": "agentsite/claims.py",
+    "old": "if 等(v) and (_同族(u, 要.get(\"单位\")) or (not 严 and not u)):",
+    "new": "if 等(v):"
+   }
+  ],
+  "预期红": "「闲置 17 天」顶不上记录里的「17 个测量项」"
+ },
+ {
+  "script": "agentsite/claims_check.py",
+  "改坏": "日期里的数字也算数",
+  "file": [
+   {
+    "path": "agentsite/claims.py",
+    "old": "    s = re.sub(r\"\\d{1,2}:\\d{2}\", \" \", _日期.sub(\" \", str(s)))",
+    "new": "    s = str(s)"
+   }
+  ],
+  "预期红": "「闲置 9 天」顶不上记录里日期「2026-09-20」的 09"
+ },
+ {
+  "script": "agentsite/claims_check.py",
+  "改坏": "「已经派出去的旧单」也算说做了",
+  "file": [
+   {
+    "path": "agentsite/claims.py",
+    "old": "r\"|^(?:已经?|刚刚?)(?:\" + _动词 + r\")(?:了|好|完)\")",
+    "new": "r\"|^(?:已经?|刚刚?)(?:\" + _动词 + r\")\")"
+   }
+  ],
+  "预期红": "「已经派出去的旧单仍然有效」不是说自己做了 → 不判冲突"
+ },
+ {
+  "script": "agentsite/claims_check.py",
+  "改坏": "说做了不看回执",
+  "file": [
+   {
+    "path": "agentsite/claims.py",
+    "old": "回执 = [e for e in 证们 if _写成功(e, 写工具)]",
+    "new": "回执 = [e for e in 证们 if e[\"工具\"] in 写工具]"
+   }
+  ],
+  "预期红": "说「已派好」而写工具报错了 → 存在冲突"
+ },
+ {
+  "script": "agentsite/claims_check.py",
+  "改坏": "没有业务日期也照判冲突",
+  "file": [
+   {
+    "path": "agentsite/claims.py",
+    "old": "            elif not 业务今天 and _是天差(句, v):",
+    "new": "            elif False:"
+   }
+  ],
+  "预期红": "没有当时的业务日期 → 「超期 5 天」落缺少依据,不判冲突"
+ },
+ {
+  "script": "agent/spans_incremental_check.py",
+  "改坏": "落盘只写没写过的(收尾后改过的不重写)",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "if s[\"span_id\"] not in self.已写 or _改过(s)]",
+    "new": "if s[\"span_id\"] not in self.已写]"
+   }
+  ],
+  "预期红": "收尾后被抹掉的分步输出数,落盘后读出来是空(不是旧值)"
+ },
+ {
+  "script": "agent/spans_incremental_check.py",
+  "改坏": "收尾时先写盘再标出错类型",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "        if 出错:\n            s[\"status\"] = \"error\"\n            # 10-25 修:「边跑边记就写」那段原来插在这行和上面一行中间 —— 于是每个 span 收尾都被记上 error.type=\"None\"、\n            # 真出错的那个先写盘后补类型(盘上没有),而且下面的 elif 挂到了「边跑边记」上:边跑边记的 span 收尾一律停在 unset,不是 ok\n            s[\"attr\"][\"error.type\"] = str(出错)[:200]\n        elif s[\"status\"] == \"unset\":\n            s[\"status\"] = \"ok\"\n        if self.边跑边记:\n            self._写(s)\n            self.已写.add(sid)\n",
+    "new": "        if self.边跑边记:\n            self._写(s)\n            self.已写.add(sid)\n        if 出错:\n            s[\"status\"] = \"error\"\n            # 10-25 修:「边跑边记就写」那段原来插在这行和上面一行中间 —— 于是每个 span 收尾都被记上 error.type=\"None\"、\n            # 真出错的那个先写盘后补类型(盘上没有),而且下面的 elif 挂到了「边跑边记」上:边跑边记的 span 收尾一律停在 unset,不是 ok\n            s[\"attr\"][\"error.type\"] = str(出错)[:200]\n        elif s[\"status\"] == \"unset\":\n            s[\"status\"] = \"ok\"\n"
+   }
+  ],
+  "预期红": "边跑边记收尾:出错的 span 盘上带着 error.type(不是写盘之后才补)"
+ },
+ {
+  "script": "agent/spans_incremental_check.py",
+  "改坏": "中断的根结束时刻不拉长",
+  "file": [
+   {
+    "path": "agent/spans.py",
+    "old": "                if 末 > (s.get(\"end\") or 0):",
+    "new": "                if False:"
+   }
+  ],
+  "预期红": "中断的根:结束时刻拉到已知最后一步(子不比根久)"
  }
 ]

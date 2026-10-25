@@ -161,6 +161,7 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 .rate button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .rate .done{color:var(--ok,#2a7)}
 .rate .bad{color:var(--fail,#c0392b)}
+.cl-ok{color:var(--ok,#2e7d32)} .cl-bad{color:var(--fail,#c0392b)} .cl-warn{color:var(--warn,#b26a00)}
 .gv{background:var(--warnbg);border:1px solid #fed7aa;color:var(--warn);
   border-radius:9px;padding:8px 11px;font-size:12px;margin-top:10px}
 .err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:9px;padding:10px 12px}
@@ -1216,6 +1217,24 @@ function 画技能(k){
     + (行 || `<div class="kv"><span>请求</span><span>这一轮一个技能都没请求</span></div>`)
     + `<div class="dim">${esc(k.说明 || "")}</div>`;
 }
+// 结论 ↔ 证据逐句核对(需求文档 3.6):服务端纯规则判(agentsite/claims.py),这里只画。
+// 有问题的句子排前面;未判定的收起来只报个数 —— 它们是建议和话术,不是「没核过的结论」
+function 画结论(k){
+  const box = document.getElementById("ev-claim"); if(!box) return;
+  if(!k || k.error){ box.textContent = "逐句核对没算出来" + (k && k.error ? ":" + k.error : ""); return; }
+  const 色 = {"已核对": "cl-ok", "存在冲突": "cl-bad", "缺少依据": "cl-warn", "未判定": "dim"};
+  const 序 = {"存在冲突": 0, "缺少依据": 1, "已核对": 2};
+  const 句们 = (k.句们 || []).filter(x => x.状态 !== "未判定").sort((a, b) => 序[a.状态] - 序[b.状态]);
+  const 计 = k.计数 || {};
+  box.innerHTML = `<div class="kv"><span>结果</span><span>已核对 ${计["已核对"] || 0} · 存在冲突 ${计["存在冲突"] || 0}`
+      + ` · 缺少依据 ${计["缺少依据"] || 0} · 未判定 ${计["未判定"] || 0}</span></div>`
+    + 句们.map(x => { const 据 = (x.依据 || [])[0];
+        return `<div class="toolrow"><b class="${色[x.状态] || ""}">${esc(x.状态)}</b> ${esc(String(x.句).slice(0, 120))}`
+          + (x.理由 ? `<br><span class="dim">${esc(x.理由)}</span>` : "")
+          + (据 ? `<br><span class="dim">出处:${esc(据.工具 || "")} ${esc(据.路径 || "")}${据.是原文 === false ? "(展示副本)" : ""}</span>` : "")
+          + `</div>`; }).join("")
+    + `<div class="dim">${esc(k.说明 || "")}</div>`;
+}
 // 一次工具调用 ↔ 工具服务那边观测到的「这一次读了哪些表」(证据中心第五个工作包)。纯函数,evidence_pair_check 真调它。
 // 按「工具短名 + 参数指纹」对;同一个指纹调了几次就按先后取第几个(参数完全一样,读的表也一样)。对不上的回 null。
 function 库表对位(spans, 库表){
@@ -1274,6 +1293,7 @@ async function 补返回值(){
     spans = (r.spans || []).filter(s => (s.attr || {})["gen_ai.operation.name"] === "execute_tool");
     库表 = r.库表;
     画技能(r.技能);
+    画结论(r.结论);
   }catch(e){
     rows.forEach(el => { const d = el.querySelector(".ret");
       if(d) d.textContent = "返回值取不到:" + e.message; });
@@ -1333,6 +1353,7 @@ function evEvidence(){
    </div>
    <div class="grp"><h4>这一轮调了什么(${traj.length} 次)</h4>${工具}</div>
    ${last.trace_id ? `<div class="grp"><h4>技能</h4><div id="ev-skill">读取中…</div></div>` : ""}
+   ${last.trace_id ? `<div class="grp"><h4>结论和证据逐句核对</h4><div id="ev-claim">读取中…</div></div>` : ""}
    <div class="grp"><h4>每轮都注入的上下文</h4>
      ${注入登记.map(x => `<div class="kv"><span>${esc(x[0])}</span><span>${esc(x[1])}</span></div>`).join("")}
      <div class="empty" style="padding-top:6px">同一件事只许一处说了算 —— 门禁里有条检查盯着;两处打架时,贴着你这句话的那处会赢。</div>

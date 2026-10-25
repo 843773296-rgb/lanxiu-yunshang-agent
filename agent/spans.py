@@ -221,6 +221,7 @@ class 一棵树:
         self.开始 = time.time()
         self.元 = dict(角色=角色, 会话号=会话号, 模型=模型, 供应商=供应商, gen=gen)
         self.边跑边记, self.路径, self.已写 = 边跑边记, 路径, set()
+        self._写时 = {}      # span → 上次写的时候它的 attr;收尾后又被改过(对账抹分步、后补输出数)的,落盘时要重写
         # 原文跟着日志走:给了自己的日志路径(检查用临时文件)就把原文也放在它旁边,不往真目录里写
         self.原文目录 = os.path.join(os.path.dirname(路径), "raw") if 路径 else None
 
@@ -237,6 +238,7 @@ class 一棵树:
             if v is not None: 行.setdefault(k, v)
         with open(p, "a", encoding="utf-8") as f:
             f.write(json.dumps(行, ensure_ascii=False) + "\n")
+        self._写时[s["span_id"]] = json.loads(json.dumps(s["attr"], ensure_ascii=False, default=str))
 
     # ── 开一个 span ────────────────────────────────────────────────
     def 开(self, 操作, 名, *, 父=None, 属性=None, sid=None, 起=None):
@@ -269,12 +271,14 @@ class 一棵树:
         if 属性: s["attr"].update({k: v for k, v in 属性.items() if v is not None})
         if 出错:
             s["status"] = "error"
-        if self.边跑边记:
-            self._写(s)
-            self.已写.add(sid)
+            # 10-25 修:「边跑边记就写」那段原来插在这行和上面一行中间 —— 于是每个 span 收尾都被记上 error.type="None"、
+            # 真出错的那个先写盘后补类型(盘上没有),而且下面的 elif 挂到了「边跑边记」上:边跑边记的 span 收尾一律停在 unset,不是 ok
             s["attr"]["error.type"] = str(出错)[:200]
         elif s["status"] == "unset":
             s["status"] = "ok"
+        if self.边跑边记:
+            self._写(s)
+            self.已写.add(sid)
 
     # ── 两种最常开的 span,给个顺手的写法 ───────────────────────────
     def 一次模型调用(self, *, 父, 模型, usage=None, 停因=None, 花费=None,
@@ -336,10 +340,19 @@ class 一棵树:
             s["ts"] = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(s["start"]))
             for k, v in self.元.items():
                 if v is not None: s.setdefault(k, v)
-        要写 = [s for s in self.spans if s["span_id"] not in self.已写] if self.边跑边记 else self.spans
+        # 边跑边记:没写过的写;**写过之后又被改了的也重写**(10-25 修:对账时抹掉的分步输出数从没落过盘,
+        # 读出来还是旧值 —— 树状记录仪结构检查在 7007fe4e / 1199e603 两轮上红)。读的时候按 span 合并,
+        # 所以删掉的字段要显式写成空,否则合并会把旧值留下来
+        def _改过(s):
+            旧 = self._写时.get(s["span_id"])
+            return 旧 is not None and 旧 != json.loads(json.dumps(s["attr"], ensure_ascii=False, default=str))
+        要写 = ([s for s in self.spans if s["span_id"] not in self.已写 or _改过(s)]
+                if self.边跑边记 else self.spans)
         with open(p, "a", encoding="utf-8") as f:
             for s in 要写:
-                f.write(json.dumps(s, ensure_ascii=False) + "\n")
+                旧 = self._写时.get(s["span_id"]) or {}
+                行 = dict(s, attr={**{k: None for k in 旧 if k not in s["attr"]}, **s["attr"]})
+                f.write(json.dumps(行, ensure_ascii=False, default=str) + "\n")
         return len(要写)
 
 
@@ -388,6 +401,13 @@ def 读(path=None, 限=None):
             # 根还停在「进行中」而且早就该结束了 —— 断在半路(进程崩了 / 被杀了),不是还在跑
             if s.get("status") == "进行中" and 现在 - (s.get("start") or 现在) > 中断秒:
                 s["status"] = "中断"
+            # 进行中 / 中断的根,盘上的结束时刻就是开头那一刻(没收尾)—— 拉到已知最后一步的结束,
+            # 否则「子比根还久」(10-25:10:58 那一轮中断后树状记录仪结构检查红在这上面)
+            if s.get("status") in ("进行中", "中断") and not s.get("parent_span_id"):
+                末 = max([x.get("end") or 0 for x in v] + [s.get("end") or s.get("start") or 0])
+                if 末 > (s.get("end") or 0):
+                    s["end"] = 末
+                    s["duration_ms"] = round(max(0.0, 末 - (s.get("start") or 末)) * 1000)
         出[k] = v
     for v in 出.values(): v.sort(key=lambda s: s.get("start", 0))
     棵 = sorted(出.items(), key=lambda kv: kv[1][0].get("start", 0))

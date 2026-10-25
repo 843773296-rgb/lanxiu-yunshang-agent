@@ -20,6 +20,9 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
 咬合 = [
     ("span 收的时候不写(还是只在结束时整棵写)", "崩在半路:已经收尾的那次工具调用(带返回值)照样在"),
     ("读的时候同一个 span 后写的整条替换前写的(不合并)", "补记中断之后:根是「出错 + 为什么」,而原来的提问和角色还在"),
+    ("落盘只写没写过的(收尾后改过的不重写)", "收尾后被抹掉的分步输出数,落盘后读出来是空(不是旧值)"),
+    ("中断的根结束时刻不拉长", "中断的根:结束时刻拉到已知最后一步(子不比根久)"),
+    ("收尾时先写盘再标出错类型", "边跑边记收尾:出错的 span 盘上带着 error.type(不是写盘之后才补)"),
 ]
 
 
@@ -63,6 +66,13 @@ def main():
     t2 = S.一棵树(tid="T2", 边跑边记=True, 路径=p2)
     t2.开("invoke_agent", "invoke_agent 旧", 起=time.time() - S.中断秒 - 60)
     ck("开了一个多小时还「进行中」→ 读出来是「中断」", S.读(p2)["T2"][0].get("status") == "中断", S.读(p2)["T2"])
+    p2b = 新路径()
+    t2b = S.一棵树(tid="T2b", 边跑边记=True, 路径=p2b)
+    r2b = t2b.开("invoke_agent", "invoke_agent 旧", 起=time.time() - S.中断秒 - 60)
+    t2b.一次模型调用(父=r2b, 模型="m", 起=time.time() - S.中断秒 - 50)
+    读b = {x["span_id"]: x for x in S.读(p2b)["T2b"]}
+    ck("中断的根:结束时刻拉到已知最后一步(子不比根久)", 读b[r2b]["duration_ms"] >= max(x["duration_ms"] for x in 读b.values())
+       and 读b[r2b]["end"] >= max(x["end"] for x in 读b.values()), 读b)
     t3 = S.一棵树(tid="T3", 边跑边记=True, 路径=p2)
     t3.开("invoke_agent", "invoke_agent 新")
     ck("刚开的那一轮读出来仍是「进行中」(不误判成中断)", S.读(p2)["T3"][0].get("status") == "进行中")
@@ -79,6 +89,29 @@ def main():
     ck("没收尾的那次调用在落盘时标「未收尾」", {s["span_id"]: s.get("status") for s in 读到}.get("d2") == "未收尾", 读到)
     行数 = sum(1 for _ in open(p3, encoding="utf-8"))
     ck("文件里的行数 = 根两次 + 每个 span 一次(落盘不把收过的再写一遍)", 行数 == 4, 行数)
+    # ④b 收尾之后又改了(sdk 收尾对账:分步输出数对不上整轮就抹掉)—— 10-25 真日志里两轮抹了却读回旧值
+    p5 = 新路径()
+    t6 = S.一棵树(tid="T6", 边跑边记=True, 路径=p5)
+    r6 = t6.开("invoke_agent", "invoke_agent 对账")
+    m6 = t6.一次模型调用(父=r6, 模型="m", usage={"output_tokens": 4})
+    t6.找(m6)["attr"].pop("gen_ai.usage.output_tokens")
+    t6.找(m6)["attr"]["lanxiu.usage.output_unknown"] = True
+    t6.收(r6); t6.落盘(p5)
+    a6 = {s["span_id"]: s for s in S.读(p5)["T6"]}[m6].get("attr") or {}
+    ck("收尾后被抹掉的分步输出数,落盘后读出来是空(不是旧值)",
+       not a6.get("gen_ai.usage.output_tokens") and a6.get("lanxiu.usage.output_unknown") is True, a6)
+    盘 = {}
+    for l in open(p3, encoding="utf-8"):
+        x = json.loads(l); 盘[x["span_id"]] = x
+    ck("边跑边记收尾:正常的 span 盘上是 ok(不是 unset)、也没有 error.type", 盘["d1"].get("status") == "ok"
+       and "error.type" not in (盘["d1"].get("attr") or {}), 盘["d1"])
+    p6 = 新路径()
+    t7 = S.一棵树(tid="T7", 边跑边记=True, 路径=p6)
+    r7 = t7.开("invoke_agent", "x")
+    e7 = t7.一次工具调用(父=r7, 工具="g", 参数={}, 调用号="e1"); t7.工具回来了(e7, "坏了", 出错=True)
+    x7 = json.loads(open(p6, encoding="utf-8").read().strip().split("\n")[-1])
+    ck("边跑边记收尾:出错的 span 盘上带着 error.type(不是写盘之后才补)", x7.get("status") == "error"
+       and (x7.get("attr") or {}).get("error.type") == "tool_error", x7)
     # ⑤ 默认不边跑边记:落盘之前一行都不写(自测和别的调用方给的是自己的路径)
     p4 = 新路径()
     t5 = S.一棵树(tid="T5", 路径=p4); t5.开("invoke_agent", "x")

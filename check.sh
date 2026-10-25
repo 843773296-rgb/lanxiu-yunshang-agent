@@ -329,6 +329,7 @@ run "证据面板 · 工具返回值按调用号对位(没记到的不错位、�
 run "技能三态 · 能用 / 请求 / 加载 / 被拦 / 失败 / 没回执分得开,不重判历史(证据中心 P1)" python3 agentsite/skill_states_check.py
 # 要 venv:环境故障的形状真调 sdk.找环境故障(import sdk 要 claude_agent_sdk)
 run "难题分流 · 手选优先、出问题(没纠正过来)才换 Opus 一次、换模型救不了的直接上报(用户 10-25)" ./agentsite/.venv/bin/python agentsite/model_route_check.py
+run "结论↔证据逐句核对 · 规则比对不调模型:单号绑记录、写入看回执、超期按当时的业务日期重算(用户 10-25 选)" python3 agentsite/claims_check.py
 run "执行记录原文 · 不截断不打码只抹凭据、改了查得出、只给总部和本店店长、30 天到期留说明" python3 agentsite/raw_log_check.py
 run "执行记录推送 · 进行中不推、推过不重推、变了重推、工具步优先原文(推到管理后台的运行记录)" python3 tools/spans_push_check.py
 run "库表观测 · 这一次工具调用实际读了哪些表(联表的表和列都在、不记参数值、语句缓存不吃掉、按参数指纹对位)" python3 backend/db_observe_check.py
