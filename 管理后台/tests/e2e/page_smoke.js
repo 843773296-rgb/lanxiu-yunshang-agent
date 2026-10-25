@@ -8,8 +8,13 @@
 const fs = require("fs"), path = require("path");
 const 基址 = process.env.AIMC_BASE || "http://127.0.0.1:8801";
 const 页面 = path.join(__dirname, "..", "..", "apps", "web");
-const src = fs.readFileSync(path.join(页面, "app.js"), "utf8");
 const html = fs.readFileSync(path.join(页面, "index.html"), "utf8");
+// 按 index.html 里 <script src="/static/…"> 的顺序全部加载,不写死只读 app.js ——
+// 2026-10-25 编辑器拆出 wf_graph.js / wf_canvas.js 之后,只读 app.js 的桩里「搭建」页
+// 拿不到 图逻辑 / 画布,渲染一抛就成了空壳;浏览器里是好的,CI 连红五次。
+const 脚本们 = [...html.matchAll(/<script src="\/static\/([^"?]+)/g)].map((m) => m[1]);
+if (!脚本们.includes("app.js")) { console.log("  ❌ index.html 里没找到 app.js 的 <script>"); process.exit(1); }
+const src = 脚本们.map((f) => fs.readFileSync(path.join(页面, f), "utf8")).join("\n;\n");
 
 const errs = [];
 const 写过 = new Map();
