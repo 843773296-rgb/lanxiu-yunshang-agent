@@ -925,6 +925,9 @@ function metaLine(r){
   const u = r.usage || {};
   const bits = [];
   if(r.model) bits.push("模型 " + r.model);
+  // 难题分流:被升级的那条写清楚为什么、先试的那遍花了多少(两边都要付)
+  const 路 = r.路由 || {};
+  if(路.升级) bits.push("自动换强模型:" + (路.理由 || "") + (路.先试花费 != null ? "(先试 $" + 路.先试花费 + ")" : ""));
   bits.push("工具 " + ((r.trajectory || []).length) + " 次");
   if(r.seconds != null) bits.push(r.seconds + "s");
   if(r.cost_usd != null) bits.push("$" + r.cost_usd);
@@ -1144,6 +1147,7 @@ async function ask(){
       signal: RUNNING.signal,
       body: JSON.stringify({kind: c.kind, prompt: text,
                             session: c.session || null, model: c.model || null,
+                            model_picked: !!c.模型手选,
                             images: imgs.length ? imgs : undefined,
                             skills: c.skillset || "own",
                             effort: c.effort || "medium"})});
@@ -1670,7 +1674,8 @@ function 同步模型(){
 }
 $("#model").onchange = () => {
   const c = cur(); if(!c) return;
-  c.model = $("#model").value; save(); drawSide(); checkVision(); cfgHint();
+  // 手动选过 → 这条会话不再自动分流(model_route.py ①:手选的模型优先)
+  c.model = $("#model").value; c.模型手选 = true; save(); drawSide(); checkVision(); cfgHint();
   // 换模型**不新开会话**,也不清 session —— 续着问,让它接着上文回答。
   // 每条答案下方的元信息里写着当时用的是哪个模型,所以对照得出来。
 };

@@ -1031,7 +1031,7 @@ def _记规矩(state, 系统):
 
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
               provider=None, model_name=None, me=None, skills=None, effort=None, 被判包裹=None,
-              被判押金=None):
+              被判押金=None, 分叉=False, 根属性=None):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
 
     被判包裹:**判差评时**给被判那条的包裹号 —— 工具服务会把它自己的人工处置抹掉
@@ -1046,6 +1046,9 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
 
     images:本地图片路径列表。**给了图就走流式输入通道** ——
     字符串 prompt 塞不进图片块,这是接识图时唯一需要动的地方。
+
+    分叉 / 根属性:难题分流用(见 model_route.py)。分叉 = 续聊时另开一条新会话号 —— Haiku 那一遍如果被换掉,原会话里不留它半截的痕迹,Opus 接着原会话重答;
+    根属性 = 额外记到根 span 上的分流记录(谁答的、为什么升级、上一遍的 trace)。
 
     resume:上一轮返回的 session_id。**多轮不是把历史拼进 prompt** ——
     那样每轮都要重发全部上下文,又贵又容易被截断,而且工具调用记录会丢。
@@ -1176,6 +1179,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         setting_sources=["project"],
         skills=skills_for(skills),
         resume=resume,          # 见 docstring:多轮靠 CLI 续会话,不靠拼历史
+        fork_session=bool(分叉 and resume),
     )
     # 按「一段回答」分开收,不是一路拼下去。
     # 体检打回后模型会重答,而 hook 的反馈是以 user 角色进流的 ——
@@ -1205,7 +1209,8 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                       **({"lanxiu.knobs": "; ".join(_旋话)} if _旋话 else {}),
                       "lanxiu.role": (me or {}).get("role"),
                       "lanxiu.skills": ",".join(skills) if skills else None,
-                      "lanxiu.prompt_chars": len(prompt) if isinstance(prompt, str) else None})
+                      "lanxiu.prompt_chars": len(prompt) if isinstance(prompt, str) else None,
+                      **(根属性 or {})})
     _当前模型span = _根        # 工具挂在「是哪次模型调用要的它」下面
     _工具span = {}             # tool_use_id → span_id,等返回值回来时对得上
     _traj下标 = {}             # tool_use_id → traj 里的第几条(返回值要挂回去)
@@ -1522,6 +1527,9 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             tool_calls_seen=len(state.get("calls") or []),
             会话状态=dict(恢复说明=state.get("会话恢复") or [], 存=_存话),
             环境故障=_故障,
+            # 难题分流看这两项(model_route.该升级吗):报过错的工具、调成功过的工具 —— 报错后同一个工具又调成功了算它自己纠正
+            工具失败=[f.get("tool") for f in state.get("工具失败") or []],
+            工具成功=[c.get("tool") for c in state.get("calls") or []],
             answer_turns=len(turns), text_all="\n\n".join(turns))
 
 

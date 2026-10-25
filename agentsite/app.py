@@ -596,11 +596,38 @@ class H(BaseHTTPRequestHandler):
                 ok_s, why_s = sessions.check(sid_in, me)
                 if not ok_s:
                     return self._send({"error": why_s, "code": "SESSION_NOT_YOURS"}, code=403)
-                with RUNLOCK:
-                    r = asyncio.run(sdk.run(kind, prompt, resume=sid_in,
-                                            provider=prov, model_name=mdl, images=imgs or None,
+                # ── 难题分流(用户 10-25 拍,算法见 model_route.py)── 只在用默认模型、页面没手选过时开:
+                # 先 Haiku 跑,出问题 → 换 Opus 重答一次。**不按事情类型分**:意图分类交给 harness 统一调配(用户 10-25)
+                import model_route as _mr
+                分流 = _mr.分流开着吗(mid, bool(body.get("model_picked")), sdk.网站默认模型())
+                跑 = lambda pv, md, **kw: asyncio.run(sdk.run(kind, prompt, resume=sid_in,
+                                            provider=pv, model_name=md, images=imgs or None,
                                             me=me, skills=body.get("skills"),
-                                            effort=body.get("effort")))
+                                            effort=body.get("effort"), **kw))
+                with RUNLOCK:
+                    if not 分流:
+                        r = 跑(prov, mdl)
+                        r["路由"] = {"分流": False, "答的": mid}
+                    else:
+                        r0, 错0 = None, None
+                        try:
+                            # 分叉:Haiku 这一遍要是被换掉,原会话里不留它半截的痕迹
+                            r0 = 跑(prov, mdl, 分叉=True)
+                        except Exception as e:
+                            错0 = f"{type(e).__name__}: {e}"
+                        升, 因 = _mr.该升级吗(r0, 错0)
+                        if not 升:
+                            r = r0
+                            r["路由"] = {"分流": True, "答的": mid, "升级": False}
+                        else:
+                            up_pv, up_md = _mr.升级到.split(":", 1)
+                            r = 跑(up_pv, up_md, 根属性={"lanxiu.route.upgraded": True,
+                                                       "lanxiu.route.reason": 因,
+                                                       "lanxiu.route.from_model": mid,
+                                                       "lanxiu.route.from_trace": (r0 or {}).get("trace_id")})
+                            r["路由"] = {"分流": True, "答的": _mr.升级到, "升级": True, "理由": 因,
+                                        "先试的": mid, "先试trace": (r0 or {}).get("trace_id"),
+                                        "先试花费": (r0 or {}).get("cost_usd")}
                 sessions.own(r.get("session_id"), me)
                 _记知识检索(r, self.headers.get("cookie"))
                 return self._send(r)

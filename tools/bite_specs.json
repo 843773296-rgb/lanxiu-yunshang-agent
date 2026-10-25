@@ -13112,5 +13112,41 @@
    }
   ],
   "预期红": "能用但没请求的 → 只出现在「没用上的」,不出现在请求里"
+ },
+ {
+  "script": "agentsite/model_route_check.py",
+  "改坏": "手选了模型也照样分流",
+  "file": [
+   {
+    "path": "agentsite/model_route.py",
+    "old": "    return (not 手选了) and 用的模型 == 默认 and 默认 != 升级到",
+    "new": "    return 用的模型 == 默认 and 默认 != 升级到"
+   }
+  ],
+  "预期红": "页面手选过模型 → 不分流(手选的优先)"
+ },
+ {
+  "script": "agentsite/model_route_check.py",
+  "改坏": "环境故障也升级",
+  "file": [
+   {
+    "path": "agentsite/model_route.py",
+    "old": "    if r.get(\"环境故障\"):\n        return False, None\n",
+    "new": ""
+   }
+  ],
+  "预期红": "环境故障(锁库 / 连不上)→ 不升级,换模型救不了"
+ },
+ {
+  "script": "agentsite/model_route_check.py",
+  "改坏": "工具报错后自己调成功了也升级",
+  "file": [
+   {
+    "path": "agentsite/model_route.py",
+    "old": "        if n not in 好 and n not in out:",
+    "new": "        if n not in out:"
+   }
+  ],
+  "预期红": "报错后同一个工具又调成功了(10-25 实测那一轮的样子)→ 不升级"
  }
 ]
