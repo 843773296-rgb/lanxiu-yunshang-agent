@@ -12,6 +12,25 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 🔁 10-25 11 点前后:用户拍板一轮(最新,压缩后先读这一段)
+
+**最后刷新:2026-10-25 11:1x** · 本次变化:645dcb9(密钥扫描放宽,用户本人执行)、5a6f18a(默认 Opus 5.5)、dd0d16c(INSERT 具名列)
+
+- ✅ **密钥扫描**:用户拍「只放过系统自己的设置名」并亲手跑了 `tools/patch_secret_scan_declared_keys.py`。三条同时满足才放
+  (声明过的节点配置名 / 就在 config 下 / 值是数)。顺带修了「像凭据的未知键 → 校验报告带键名 → 撞错误体闸 → 500」
+- ✅ **实测周报运行 xr_7bb01e3c29f0 已取消**(用户拍),什么都没写
+- ✅ **聊天站默认 Opus 5.5**(用户拍「先默认 opus5.5,模型切换功能线上」):单价表加 Opus 5.5 / Sonnet 5.5 / Haiku 5.5;
+  agentsite 的 claude-agent-sdk 升到 0.2.174(旧版内置 CLI 2.1.259 不认 Opus 5.5);线上 /models 已回 opus-5-5 为默认。
+  按标价每轮约 $0.3–0.6(订阅内不额外花钱)
+- 🔍 **「找工具连卡六七次」根因已查清**:Haiku 4.5 不支持按需加载工具(Claude API 资料:tool search 是 Haiku 5.5 新增);
+  Haiku 5.5 实测 6/6、Opus 5.5 实测 2/2 都正常。**现在默认已是 Opus 5.5,这个问题在默认模型上不再出现**;
+  只有页面上手动选 Haiku 4.5 才会碰到。⚠️ 试过「拦住重复搜索、让它直接调」**更糟**(2/4 失败,模型说要先拿定义)—— 已撤,别再试
+- ⏳ **用户问「Haiku 5.5 和 Opus 5 哪个好用」**:我答了按用途分、Opus 要选 5.5 不选 5、只实测过 Haiku 5.5 那几轮;
+  提议在两个模型上各跑一遍全能助手的评测题集对比,**用户还没回**
+
+**下一步第一个动作**:用户拍的顺序是「差评工具先、证据中心 P1 后」—— 差评那件根因已查清、默认模型已绕开,
+接着做证据中心 P1(问题理解 / Skill 三态 / 结论 ↔ 证据;结论证据关联要先摆选型卡)
+
 ## 🧾 10-25 上午(续):证据中心五个工作包全部推了(最新,压缩后先读这一段)
 
 **最后刷新:2026-10-25 10:2x** · 本次变化:daeaacf / 3b79527 / 6e66bf3 / eed9c81 / 3e391f2 已推,CI 绿
@@ -11344,33 +11363,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-25 11:01。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-25 11:04。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | 0671740 · 2026-10-25 · 订单上冗余「客户现在归谁」:顾问那条范围查询 20.5 → 6.5 ms(3.1 倍),同步交给三个触发器 |
-| 代码量 | 863 个 Python 文件 / 170846 行(不含 .venv) |
+| 分支 | `HEAD` |
+| 最新提交 | 4ac810c · 2026-10-25 · 交接:10-25 三轮拍板全部落地(溯源欠账归零 + 冗余列 3.1 倍)+ 项目日志发飞书 |
+| 代码量 | 864 个 Python 文件 / 170905 行(不含 .venv) |
 | 验收 | `./check.sh` 共 349 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
- M agentsite/evals/funnel.jsonl
-?? .feynman/bite-all-20261016.log
+UU HANDOFF.md
+UU "\346\276\234\347\273\243\344\272\221\350\243\263agent-\351\241\271\347\233\256\346\227\245\345\277\227.md"
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
+?? .feynman/nightly-eval.log
+?? .feynman/world-shift-launchd.log
+?? .wip-muslin/
+?? .wip-store-report-SKILL.md
+?? agent/example-ab-results.jsonl
+?? agent/triage-lure-paper-results.jsonl.0of2.partial
+?? agent/triage-lure-paper-results.jsonl.1of2.partial
+?? agent/triage-lure-paper-results.jsonl.A2-0of2.partial
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+4ac810c 交接:10-25 三轮拍板全部落地(溯源欠账归零 + 冗余列 3.1 倍)+ 项目日志发飞书
+5a6f18a 聊天站默认模型改 Opus 5.5,模型切换加上新一代三个(Opus 5.5 / Sonnet 5.5 / Haiku 5.5)—— 用户 10-25 拍「先默认 opus5.5,模型切换功能线上」
+645dcb9 冻结版本的密钥扫描放过 DSL 自己声明过的节点配置名(值得是数)—— 用户拍「只放过系统自己的设置名」,由用户本人执行
+dd0d16c 库表观测检查的临时库改用具名列 INSERT(insert_shape_check 在 CI 上逮住)
 0671740 订单上冗余「客户现在归谁」:顾问那条范围查询 20.5 → 6.5 ms(3.1 倍),同步交给三个触发器
-b4dc412 交接:证据中心五个工作包全推完(表格:包 / 落点 / 判据),下一步 P1 三样;悬而未决六条
-3e391f2 证据中心第五个工作包:每次工具调用实际读了哪些库表 —— 在库这一层观测,不拿工具声明顶替
-eed9c81 证据中心第四个工作包:聊天站执行记录推进管理后台,「运行记录」页不再是占位;平台管理员按「查看敏感输入」看原文
-95180f6 intent 判据的待办段结束锚跨段:「已经做完的」整段被当成待办,CI 连红两轮
 ```
 <!--/AUTO-->
 ## 一句话在做什么
