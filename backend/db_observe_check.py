@@ -43,7 +43,7 @@ def main():
     库 = os.path.join(d, "t.db")
     c = sqlite3.connect(库)
     c.executescript("CREATE TABLE customer(id TEXT, name TEXT, phone TEXT); CREATE TABLE ordr(id TEXT, customer_id TEXT, amt REAL);"
-                    "INSERT INTO customer VALUES('C1','甲','13812345678'); INSERT INTO ordr VALUES('O1','C1',9);")
+                    "INSERT INTO customer(id,name,phone) VALUES('C1','甲','13812345678'); INSERT INTO ordr(id,customer_id,amt) VALUES('O1','C1',9);")
     c.commit(); c.close()
     with O.一次调用("mcp__crm__get_customer", {"customer": "C1"}, trace="TQ", 路径=日志):
         c = sqlite3.connect(库)
