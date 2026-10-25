@@ -326,6 +326,7 @@ run "执行记录(/spans)谁能看 · 没登录 401、只看自己会话的、�
 run "证据面板 · 工具返回值按调用号对位(没记到的不错位、不拿别人的顶上;老对话按顺序并标出)" python3 agentsite/evidence_pair_check.py
 run "执行记录原文 · 不截断不打码只抹凭据、改了查得出、只给总部和本店店长、30 天到期留说明" python3 agentsite/raw_log_check.py
 run "执行记录推送 · 进行中不推、推过不重推、变了重推、工具步优先原文(推到管理后台的运行记录)" python3 tools/spans_push_check.py
+run "库表观测 · 这一次工具调用实际读了哪些表(联表的表和列都在、不记参数值、语句缓存不吃掉、按参数指纹对位)" python3 backend/db_observe_check.py
 run "技能形状 · 该有的段落齐不齐" ./agentsite/.venv/bin/python agentsite/skill_shape.py
 run "工具路由用例 · 点名的工具真的挂着(改了名就永远被跳过)" ./agentsite/.venv/bin/python agentsite/tool_eval.py --check
 run "读不读得出效果 · 判据本身要能被测" ./agentsite/.venv/bin/python agentsite/evalnoise_test.py

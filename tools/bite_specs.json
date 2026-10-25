@@ -12992,5 +12992,41 @@
    }
   ],
   "预期红": "工具那步有原文就推原文,并标「是原文」"
+ },
+ {
+  "script": "backend/db_observe_check.py",
+  "改坏": "授权回调不记 SQLITE_READ(只数语句)",
+  "file": [
+   {
+    "path": "backend/db_observe.py",
+    "old": "                if 动作 == sqlite3.SQLITE_READ and a1:",
+    "new": "                if False:"
+   }
+  ],
+  "预期红": "联表查询读到的两张表、用到的列都记下了"
+ },
+ {
+  "script": "backend/db_observe_check.py",
+  "改坏": "证据面板库表按先后对、不看参数指纹",
+  "file": [
+   {
+    "path": "agentsite/web/station.html",
+    "old": "    if(!fp) return null;\n    const k = String(a[\"gen_ai.tool.name\"] || \"\").split(\"__\").pop() + \"|\" + fp;",
+    "new": "    if(!fp) return null;\n    const k = Object.keys(池)[Object.keys(用).length] || \"\";"
+   }
+  ],
+  "预期红": "两次调用顺序和观测顺序不一样:按参数指纹各对各的"
+ },
+ {
+  "script": "backend/db_observe_check.py",
+  "改坏": "连接照旧缓存准备好的语句",
+  "file": [
+   {
+    "path": "backend/db_observe.py",
+    "old": "    k.setdefault(\"cached_statements\", 0)\n",
+    "new": ""
+   }
+  ],
+  "预期红": "同一个连接第二次跑同样的查询,读的表照样记全(不被语句缓存吃掉)"
  }
 ]

@@ -490,7 +490,14 @@ class H(BaseHTTPRequestHandler):
                     行, 码, 因 = _ss.能看执行记录吗(_me, 会话号=根.get("会话号"))
                     if not 行:
                         return self._send({"error": 因}, code=码)
-                    return self._send({"trace": tid, "spans": rows,
+                    # 这一轮每次工具调用实际读了哪些库表(证据中心第五个工作包):工具服务进程里在库这一层观测到的
+                    try:
+                        sys.path.insert(0, os.path.join(os.path.dirname(HERE), "backend"))
+                        import db_observe as _dbo
+                        库表 = _dbo.读(tid)
+                    except Exception:
+                        库表 = None
+                    return self._send({"trace": tid, "spans": rows, "库表": 库表,
                                        "账": _sp.一棵的账(rows) if rows else None})
                 out = []
                 for k, v in 棵.items():

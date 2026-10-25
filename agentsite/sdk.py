@@ -1285,6 +1285,17 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                             参数=getattr(b, "input", {}), 调用号=_tu, 起=_now,
                             全名=getattr(b, "name", None))
                         if _tu: _工具span[_tu] = _sid
+                        # 参数指纹(证据中心第五个工作包):工具服务那边记「这一次读了哪些表」用的是同一个函数算的同一个指纹,
+                        # 证据面板按「trace + 工具 + 指纹」对上 —— 不按先后猜
+                        try:
+                            if os.path.join(ROOT, "backend") not in sys.path:
+                                sys.path.insert(0, os.path.join(ROOT, "backend"))
+                            import db_observe as _dbo
+                            _s = _树.找(_sid)
+                            if _s is not None:
+                                _s["attr"]["lanxiu.args_fp"] = _dbo.参数指纹(getattr(b, "name", ""), getattr(b, "input", {}))
+                        except Exception:
+                            pass
                 if cur.strip(): turns.append(cur)
                 _上次时刻 = _now
             elif cls == "UserMessage":

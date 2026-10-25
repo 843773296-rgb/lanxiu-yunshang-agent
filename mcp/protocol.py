@@ -193,6 +193,14 @@ class Server:
         # 没设这个变量(自测、直连)就照旧全挂 —— 名单为空串时一个都不挂。
         指到副本()
         self._近调 = {}
+        # 这一次工具调用实际读了哪些库表(证据中心第五个工作包,10-25):这个进程里新开的每个 sqlite 连接都挂观测。
+        # 装不上(没有 backend 路径的直连自测)就不观测 —— 观测是证据,不是业务,它坏了不许拦住工具
+        try:
+            import db_observe as _dbo
+            _dbo.装上()
+            self._观测 = _dbo
+        except Exception:
+            self._观测 = None
         only = os.environ.get("LANXIU_TOOLS")
         if only is not None:
             keep = {x for x in only.split(",") if x}
@@ -245,36 +253,45 @@ class Server:
                         "text": f"工具 {nm} 一分钟内已经调了 {len(q)} 次,到了后台设的上限 —— 先用已经拿到的结果"}],
                         "isError": True})
                 q.append(_t.time())
-            if c.get("超时"):
-                import threading as _th
-                结果 = {}
-                def _跑():
-                    try: 结果["out"] = t[3](**args)
-                    except Exception as e: 结果["err"] = e
-                th = _th.Thread(target=_跑, daemon=True); th.start(); th.join(c["超时"])
-                if th.is_alive():
-                    return self._ok(rid, {"content": [{"type": "text",
-                        "text": f"工具 {nm} {c['超时']} 秒没回(后台设的超时),不等了"
-                                + ("。⚠️ 这是写工具,**这一笔可能已经落库**,先查一下再决定要不要重试" if _是写(nm) else "")}],
-                        "isError": True})
-            try:
-                if c.get("超时"):
-                    if "err" in 结果: raise 结果["err"]
-                    out = 遮被判那笔押金(遮被判那条(结果["out"]))
-                else:
-                    out = 遮被判那笔押金(遮被判那条(t[3](**args)))
-                return self._ok(rid, {"content": [{"type": "text",
-                    "text": json.dumps(out, ensure_ascii=False, indent=1)}], "isError": False})
-            except TypeError as e:
-                return self._ok(rid, {"content": [{"type": "text",
-                    "text": f"参数不对:{e}"}], "isError": True})
-            except Exception as e:
-                log("工具执行失败", nm, traceback.format_exc())
-                return self._ok(rid, {"content": [{"type": "text",
-                    "text": f"{type(e).__name__}: {e}"}], "isError": True})
+            import contextlib as _cl
+            观 = self._观测.一次调用(nm, args) if self._观测 else _cl.nullcontext()
+            with 观:
+                return self._执行一次(rid, nm, args, t, c)
         if rid is None:
             return None                                   # 未知通知,忽略
         return self._err(rid, -32601, f"未实现的方法 {m}")
+
+    def _执行一次(self, rid, nm, args, t, c):
+        """tools/call 真正执行那一段(拆出来是为了整段包在库表观测里)。"""
+        if c.get("超时"):
+            import threading as _th
+            结果 = {}
+            def _跑():
+                try: 结果["out"] = t[3](**args)
+                except Exception as e: 结果["err"] = e
+            # 线程不继承 contextvars —— 不在复制的上下文里跑的话,这一次读了什么表就**悄悄**记不到
+            import contextvars as _cv
+            th = _th.Thread(target=_cv.copy_context().run, args=(_跑,), daemon=True); th.start(); th.join(c["超时"])
+            if th.is_alive():
+                return self._ok(rid, {"content": [{"type": "text",
+                    "text": f"工具 {nm} {c['超时']} 秒没回(后台设的超时),不等了"
+                            + ("。⚠️ 这是写工具,**这一笔可能已经落库**,先查一下再决定要不要重试" if _是写(nm) else "")}],
+                    "isError": True})
+        try:
+            if c.get("超时"):
+                if "err" in 结果: raise 结果["err"]
+                out = 遮被判那笔押金(遮被判那条(结果["out"]))
+            else:
+                out = 遮被判那笔押金(遮被判那条(t[3](**args)))
+            return self._ok(rid, {"content": [{"type": "text",
+                "text": json.dumps(out, ensure_ascii=False, indent=1)}], "isError": False})
+        except TypeError as e:
+            return self._ok(rid, {"content": [{"type": "text",
+                "text": f"参数不对:{e}"}], "isError": True})
+        except Exception as e:
+            log("工具执行失败", nm, traceback.format_exc())
+            return self._ok(rid, {"content": [{"type": "text",
+                "text": f"{type(e).__name__}: {e}"}], "isError": True})
 
     def run(self):
         log(f"[{self.name}] 就绪,{len(self.tools)} 个工具")

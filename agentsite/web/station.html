@@ -1200,6 +1200,24 @@ function drawEv(){
    先画出框架再异步填,**不让一次网络请求挡住整个面板**:
    取不到的时候要留下一句话说清是取不到,而不是留一个空位 ——
    空位和「这个工具没返回东西」长得一模一样。 */
+// 一次工具调用 ↔ 工具服务那边观测到的「这一次读了哪些表」(证据中心第五个工作包)。纯函数,evidence_pair_check 真调它。
+// 按「工具短名 + 参数指纹」对;同一个指纹调了几次就按先后取第几个(参数完全一样,读的表也一样)。对不上的回 null。
+function 库表对位(spans, 库表){
+  const 池 = {};
+  (库表 || []).forEach(x => { const k = String(x.工具 || "").split("__").pop() + "|" + x.参数指纹; (池[k] = 池[k] || []).push(x); });
+  const 用 = {};
+  return spans.map(sp => { const a = sp.attr || {}; const fp = a["lanxiu.args_fp"];
+    if(!fp) return null;
+    const k = String(a["gen_ai.tool.name"] || "").split("__").pop() + "|" + fp;
+    const i = 用[k] || 0; 用[k] = i + 1;
+    return (池[k] || [])[i] || null; });
+}
+function 库表一句(x){
+  if(!x) return "";
+  const 段 = Object.entries(x.读了 || {}).flatMap(([库, 表们]) => Object.entries(表们).map(([t, cols]) =>
+    `${t}(${cols.slice(0, 6).join("、")}${cols.length > 6 ? "…" : ""})`));
+  return 段.length ? `读了 ${段.join(" · ")}(${x.语句数} 条语句)` : "这一次没读库";
+}
 // 轨迹第 i 行 ↔ 哪一个工具 span。纯函数,agentsite/evidence_pair_check.py 用 node 真调它。
 // 有调用号就**只按号找**(找不到 = 没记到,不拿别人的顶上);没有调用号(老对话)才按先后,并标出来
 function 返回值对位(号们, spans){
@@ -1231,13 +1249,14 @@ async function 补返回值(){
   const tid = last && last.trace_id;
   const rows = [...document.querySelectorAll("#evbody .toolrow")];
   if(!tid || !rows.length) return;
-  let spans = [];
+  let spans = [], 库表 = null;
   try{
     const r = await fetch("/spans?trace=" + encodeURIComponent(tid)).then(r => r.json());
     // 被拒(没登录 / 不是你的会话)要说被拒,不能显示成「没记到」—— 那是两件事(10-24 /spans 加了权限)
     if(r.error){ rows.forEach(el => { const d = el.querySelector(".ret");
       if(d) d.textContent = "返回值看不到:" + r.error; }); return; }
     spans = (r.spans || []).filter(s => (s.attr || {})["gen_ai.operation.name"] === "execute_tool");
+    库表 = r.库表;
   }catch(e){
     rows.forEach(el => { const d = el.querySelector(".ret");
       if(d) d.textContent = "返回值取不到:" + e.message; });
@@ -1247,6 +1266,7 @@ async function 补返回值(){
   // 原来按「第几个」对 —— 中间有一次没记到,后面每一条都错一位,而错位的返回值看着和对的一样。
   // 不能按工具名去 find:三次 kb_read 会全都显示第一次的返回值。老对话的轨迹没有调用号,才退回按顺序,并写明。
   const 对 = 返回值对位(rows.map(el => el.dataset.call || ""), spans);
+  const 库 = 库表对位(对.map(x => x.sp || {}), 库表);
   rows.forEach((el, i) => {
     const d = el.querySelector(".ret"); if(!d) return;
     const sp = 对[i].sp;
@@ -1257,7 +1277,10 @@ async function 补返回值(){
     d.innerHTML = `<b>返回</b> <span class="dim">${sp.duration_ms}ms</span>`
       + `<pre>${esc(typeof v === "string" ? v : JSON.stringify(v, null, 1))}</pre>`
       + (截 ? `<span class="dim">(太长,只记了前一段)</span>` : "")
-      + (d.dataset.byIndex ? `<span class="dim">(早先的对话没记调用号,按先后顺序对的)</span>` : "");
+      + (d.dataset.byIndex ? `<span class="dim">(早先的对话没记调用号,按先后顺序对的)</span>` : "")
+      + `<div class="dim">${库[i] ? esc(库表一句(库[i]))
+          : !(sp.attr || {})["lanxiu.tool.full_name"] ? "不读库(内置步骤:找工具 / 加载技能)"
+          : (库表 === null ? "库表:这一轮的观测读不出来" : "库表:没观测到(10-25 之前的记录,或者这个工具不在工具服务进程里读库)")}</div>`;
   });
 }
 function evEvidence(){

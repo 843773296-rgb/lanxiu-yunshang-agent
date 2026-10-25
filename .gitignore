@@ -42,6 +42,7 @@ llm-trace.jsonl
 .feynman/raw/
 .feynman/raw-access.jsonl
 .feynman/spans-pushed.json
+.feynman/db-access.jsonl
 .feynman/spans.jsonl.1
 
 # 说明:agent/*-results.jsonl 是评测结果,**要进版本库** ——
