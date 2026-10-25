@@ -217,14 +217,56 @@ def _员工称呼(no):
 
 def get_customer(customer_id):
     """客户档案。敏感字段按后台规则脱敏:手机号中间四位、地址门牌号"""
+    # 只看本店(用户 2026-10-25 拍)。会员详情 / 接触史早就按身份限了,唯独档案没有 ——
+    # 顾问按客户号或姓名能翻到别家店的档案(消费额、生日、归属顾问)。
+    # 跨店角色照旧看全量。**没有身份时不限**:那只会是 V1/V2 后台研判和管理后台内部调用;
+    # 聊天站这条路没登录进不来(app.py NO_LOGIN),登录了 sdk 必带 LANXIU_ME —— 这条是约定,登记在边界审计
+    me=whoami()
+    限店 = bool(me) and 本店范围(me) is not None          # 「本店」只有一份口径,和客户读接口 / 方案页搜客户同一个函数
+    if 限店:
+        import shop_key as _SK, contextlib as _cl
+        with _cl.closing(_c()) as _x:
+            我店=_SK.码(_x, 本店范围(me)) if 本店范围(me) else None
+            店码={r["id"]: r["shop_code"] or _SK.码(_x, r["shop"])     # 当天新写、还没回填的行按串兜住
+                  for r in _x.execute("SELECT id, shop, shop_code FROM customer WHERE id=? OR name=?", (customer_id, customer_id))}
+        if not 我店:
+            return {"error":"你的账号没挂门店,看不了客户档案 —— 跨店看档案只有总部运营和售后可以"}
+        本店 = lambda cid: 店码.get(cid) == 我店
+    else:
+        本店 = lambda cid: True
     r=_rows("SELECT * FROM customer WHERE id=?",customer_id)
-    if not r: return {"error":f"客户 {customer_id} 不存在"}
+    认=None
+    if not r:
+        # 也认姓名(10-25 用户实测:「给张青梧派回访」,模型只拿到这个只认客户号的工具,就答「没有按姓名查的工具」去问人)
+        # 重名只给候选不给档案 —— 默默取第一个,档案会安静地挂在错的人身上。
+        # 限店时**只在本店里认**:别店的同名客户既不算重名、也不进候选(候选本身就是别店客户的客户号和姓名)
+        人们=[p for p in _认客户(customer_id)[0] if 本店(p["id"]) or (限店 and p["id"] not in 店码 and 本店_主档(p, 我店))]
+        if len(人们)>1:
+            return {"error":f"「{customer_id}」命中 {len(人们)} 个客户,要客户号才能给档案",
+                    "候选":[{"客户号":p["id"],"姓名":p["name"]} for p in 人们]}
+        if not 人们:
+            return {"error":f"客户 {customer_id} 不存在(客户号和姓名都没对上)" if not 限店 else
+                    f"你的门店里没有客户号或姓名是「{customer_id}」的客户"}
+        r=_rows("SELECT * FROM customer WHERE id=?",人们[0]["id"])
+        认=f"按姓名「{customer_id}」认到客户号 {人们[0]['id']}"
+    elif not 本店(customer_id):
+        # 不说他在哪家店、也不给档案里任何一个字段 —— 说了就等于把别店客户的归属透出去了
+        return {"error":f"{customer_id} 不在你的门店({me.get('shop')}),看不了他的档案"}
     d=r[0]
+    if 认: d["认人"]=认
     p=d.get("phone") or ""
     d["phone"]=p[:3]+"****"+p[-4:] if len(p)>=11 else p
     if d.get("advisor_no"):
         d["归属顾问"] = _员工称呼(d["advisor_no"]) or "(工号在员工表里查不到)"
     return d
+
+
+def 本店_主档(人, 我店):
+    """按副档的名字认到的主档,主档号不在 SELECT 命中里 —— 现查它的门店码。"""
+    import shop_key as _SK, contextlib as _cl
+    with _cl.closing(_c()) as _x:
+        r=_x.execute("SELECT shop, shop_code FROM customer WHERE id=?", (人["id"],)).fetchone()
+        return bool(r) and (r[1] or _SK.码(_x, r[0])) == 我店
 
 TOOLS={"list_tasks":list_tasks,"get_deposit":get_deposit,"get_refund_trace":get_refund_trace,
        "get_payment_flow":get_payment_flow,"get_customer":get_customer}
@@ -272,8 +314,8 @@ SCHEMAS=[
   "input_schema":{"type":"object","properties":{"deposit_id":{"type":"string"}},"required":["deposit_id"]}},
  {"name":"get_payment_flow","description":"读取支付流水,direction=in 为收款,out 为退款,含渠道流水号与最终状态",
   "input_schema":{"type":"object","properties":{"deposit_id":{"type":"string"}},"required":["deposit_id"]}},
- {"name":"get_customer","description":"读取客户档案(手机号与地址已脱敏)",
-  "input_schema":{"type":"object","properties":{"customer_id":{"type":"string"}},"required":["customer_id"]}},
+ {"name":"get_customer","description":"读取客户档案(手机号与地址已脱敏,带归属顾问的姓名岗位)。customer_id 给客户号或姓名都行;姓名重名时只给候选,要客户号才给档案。**只看得到本店的客户**(总部运营 / 售后看全部);别店的客户会明说「不在你的门店」,不是没有这个人。",
+  "input_schema":{"type":"object","properties":{"customer_id":{"type":"string","description":"客户号(如 C10001)或客户姓名"}},"required":["customer_id"]}},
 ]
 
 # ── 工艺知识库工具(只读)──────────────────────────────────────────

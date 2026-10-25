@@ -106,6 +106,8 @@ G, Rd, Y, D = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
      "⚠️ 那个文件的注释里**不许照抄**这条命令 —— 照抄过一次,"
      "删掉真正那一行之后判据照样绿)",
      "每日平移那条路径也跑回填"),
+    ("派任务的写口不写 shop_code(10-25 用户在聊天站派的回电任务就是这么漏的)",
+     "backend/ 里运行时的写口:写 shop 的地方都同时写 shop_code"),
 ]
 
 坏, n = [], 0
@@ -630,6 +632,30 @@ else:
            "shop_code" in _片6 and len(_参6) >= 1,
            f"它返回的片段是「{_片6}」参数 {_参6} —— 这个函数只给片段不执行,"
            f"所以上面那个探针抓不到它,得直接看片段")
+
+# ── ⑩ 运行时写口:**写了 shop 串就得同时写 shop_code** ─────────────────────
+#
+# 回填只在重建和每日平移里跑,**白天用户在聊天站里派的任务没人补** ——
+# 10-25 实测:派了一条回电任务,shop_code 空着,第二天店维度的查询就查不到它(按码筛不报错,只是少一行)。
+# 判据落结构:扫 backend/ 生产文件里所有 INSERT 的列清单。seed.py 是流水线第一步、后面紧跟回填,不算运行时。
+import glob as _gl10
+_表10 = {x if isinstance(x, str) else x[0] for x in SK.带门店键的}
+_漏10, _验10 = [], 0
+for _f10 in sorted(_gl10.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), "*.py"))):
+    _名10 = os.path.basename(_f10)
+    if _名10.endswith("_check.py") or _名10 in ("seed.py", "boundary_audit.py", "selftest.py"):
+        continue
+    _s10 = open(_f10, encoding="utf-8").read()
+    for _m10 in _re2.finditer(r"INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s*\(([^)]*)\)", _s10):
+        _列10 = [c.strip() for c in _m10.group(2).split(",")]
+        if _m10.group(1) in _表10 and "shop" in _列10:
+            _验10 += 1
+            if "shop_code" not in _列10:
+                _漏10.append(f"{_名10}:{_s10[:_m10.start()].count(chr(10)) + 1} {_m10.group(1)}")
+ck(f"backend/ 里运行时的写口:写 shop 的地方都同时写 shop_code(验了 {_验10} 处)",
+   _验10 > 0 and not _漏10,
+   (f"这几处只写了门店串:{_漏10} —— 回填白天不跑,这一行的门店码会一直空着,按码筛的查询安静地少它一行"
+    if _漏10 else "一处写口都没扫到 —— 是没扫到,不是都通过"))
 
 print("  " + "=" * 80)
 if 坏:

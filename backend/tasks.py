@@ -318,11 +318,12 @@ def assign_task(d, me, _来源=None):
                 return dict(ok=False, code=拦[0], reason=拦[1], 上一条=拦[2])
         # ⚠️ **工号也要写。** 名字是 staff 的副本、会漂;工号才是引用。
         # 工号本来就在手边(`him["no"]`),原来只是没写进去。
+        import shop_key as _SK          # 门店码的唯一入口;10-25 用户实测派的回电任务漏了它,店维度的查询就查不到这条
         c.execute("""INSERT INTO schedule(id,type,advisor_no,customer_id,start_ts,end_ts,status,
-                     shop,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)
-                     VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
+                     shop,shop_code,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)
+                     VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?,?)""",
                   (sid, kind, him["no"], cid,
-                   st, en, him.get("shop"), to, me["no"],
+                   st, en, him.get("shop"), _SK.码(c, him.get("shop")), to, me["no"],
                    _wnow(), note, ac, ref_id))
         if _来源:
             _ad.记来源(c, sid, _来源, _wnow())
@@ -497,12 +498,13 @@ def assign_batch(items, me):
     with _sq.connect(DB) as c:
         for k, a in enumerate(plan, 1):
             sid = f"SC{7000 + n + k}"
+            import shop_key as _SK
             c.execute("""INSERT INTO schedule(id,type,advisor_no,customer_id,start_ts,end_ts,status,
-                         shop,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)
-                         VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)""",
+                         shop,shop_code,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)
+                         VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?,?)""",
                       (sid, a["kind"], a["him"]["no"], a["cid"],
                        a["t0"].strftime("%Y-%m-%d %H:%M"), a["t1"].strftime("%Y-%m-%d %H:%M"),
-                       a["him"].get("shop"), a["him"]["no"], me["no"], now,
+                       a["him"].get("shop"), _SK.码(c, a["him"].get("shop")), a["him"]["no"], me["no"], now,
                        a["note"], a["activity"], a["ref_id"]))
             made.append(dict(任务号=sid, 类型=a["kind"], 派给=a["him"]["name"],
                              时间=f"{a['t0']:%m-%d %H:%M}–{a['t1']:%H:%M}", 内容=a["note"]))

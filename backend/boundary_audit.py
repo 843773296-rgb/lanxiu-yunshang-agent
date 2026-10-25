@@ -200,6 +200,31 @@ def a_scheme_customer_search():
     raise PermissionError("没登录 401、跨店搜不到、别家着装人不推码(这正是期望的)")
 
 
+def a_customer_profile_other_shop():
+    """客户档案工具只看本店(用户 10-25 拍):拿一个挂着门店的顾问身份,按客户号、按姓名去翻别家店的客户。
+    身份是**自造**的(从库里挑一家有客户的店和一个只在别店出现的名字),不靠库里碰巧有哪个顾问。"""
+    import api as _A, sqlite3 as _sq
+    c = _sq.connect(f"file:{_A.DB}?mode=ro", uri=True)
+    try:
+        店 = c.execute("SELECT code||' '||name, code FROM shop WHERE EXISTS(SELECT 1 FROM customer WHERE shop_code=shop.code) "
+                      "ORDER BY code LIMIT 1").fetchone()
+        别 = c.execute("SELECT id, name FROM customer WHERE shop_code<>? AND merged_into IS NULL AND name NOT IN "
+                      "(SELECT name FROM customer WHERE shop_code=? AND name IS NOT NULL) ORDER BY id LIMIT 1", (店[1], 店[1])).fetchone() if 店 else None
+    finally:
+        c.close()
+    if not 店 or not 别:
+        return "没有可攻击的门店 / 别店客户 —— 没攻击成,不算守住"
+    t = _A._ME.set({"no": "ZZ0002", "name": "(自造顾问)", "role": "顾问", "shop": 店[0]})
+    try:
+        for 问 in (别[0], 别[1]):
+            r = _A.get_customer(问)
+            if r.get("id") or r.get("phone") or any((x or {}).get("客户号") == 别[0] for x in r.get("候选") or []):
+                return f"顾问按「{问}」翻到了别家店的客户 {别[0]} —— 门店范围没守住"
+    finally:
+        _A._ME.reset(t)
+    raise PermissionError("按客户号、按姓名都翻不到别家店的客户(这正是期望的)")
+
+
 def a_skill_gate():
     """Skill 管理后台里停用一个技能,模型还调不调得动(用户 10-23 拍「做完整配置页」)。
     在库副本上把自有的 quote 标成「已停用」,问执行闸本身 —— 状态要是只在页面上显示、闸照旧读写死清单,
@@ -1378,6 +1403,10 @@ STRUCT = [
   "身份只从登录态取,范围走 api.本店范围(和客户读接口同一个函数、同一个跨店角色常量);"
   "kb_fit 给了着装人就核他在不在这位客户的账户名下。⚠️ 「页面上不默认选第一个着装人」是页面行为,不是闸 ——"
   "后台那道闸是 kb_fit 名下多人量过体时不猜;守页面那一半的是 scheme_customer_search_check 在 node 里真跑页面脚本"),
+ ("智能体的客户档案工具只看本店", "backend/api.py get_customer;api.本店范围",
+  a_customer_profile_other_shop, "自造一个挂门店的顾问身份,按客户号、按姓名翻别家店的客户",
+  "门店范围从会话身份取(和客户读接口同一个 本店范围);按姓名认人时只在本店里认,别店同名的不进候选。"
+  "⚠️ 没有身份时不限 —— 见约定类「客户档案工具没身份时不限店」"),
  ("Skill 管理里停用的技能,模型调不动", "backend/skill_registry.py 状态;agentsite/guards.py Skill 那一支",
   a_skill_gate, "在库副本上把自有技能标成已停用,问执行闸放不放行;再问一个没登记过的第三方",
   "执行闸读的就是后台里的状态(只放试运行 / 已发布);没登记的按来源取默认,库读不到时退回原来的写死清单(第三方照样拦)。"
@@ -1589,6 +1618,9 @@ CHECKED = [
 
 # ── 约定类:只有提示词说,没有任何东西会失败 ────────────────────────────
 CONVENTION = [
+ ("客户档案工具没身份时不限店", "backend/api.py get_customer",
+  "V1/V2 后台研判、管理后台任务详情直接调它,不带身份,所以没身份时照旧看全部。"
+  "聊天站那条路没登录进不来、登录了必带身份 —— 但**要是哪条新路径忘了带身份,它会静默放开**,没有任何东西会拦"),
  # 这一条是**新补的,而且是主动认领的**:它以前根本没被记下来,
  # 因为我从没声称过它是保证 —— 但「没写下来的约定,和结构锁在平时长得一模一样」。
  ("智能体调工具时没有身份", "backend/api.py check_write 文档",

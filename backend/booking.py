@@ -173,11 +173,11 @@ def book(d):
         # 客户取消预约,任务单要留痕说明为什么白排了一小时。
         c.execute("""INSERT INTO schedule(id,type,advisor_no,customer_id,
                      start_ts,end_ts,
-                     status,shop,assignee_no,assigned_by,assigned_at,note)
-                     VALUES(?,'预约到店',?,?,?,?, '有效',?,?,?,?,?)""",
+                     status,shop,shop_code,assignee_no,assigned_by,assigned_at,note)
+                     VALUES(?,'预约到店',?,?,?,?, '有效',?,?,?,?,?,?)""",
                   (sid, adv_no, cust["id"],
                    t.strftime("%Y-%m-%d %H:%M"), end.strftime("%Y-%m-%d %H:%M"),
-                   cust.get("shop"), assignee,
+                   cust.get("shop"), _SK.码(c, cust.get("shop")), assignee,
                    "SYS" if assignee else None,          # 派单人是系统,不是某个人
                    _now().strftime("%Y-%m-%d %H:%M") if assignee else None,
                    f"{need}(客户 {cust['name']} 手机端自助预约 {aid})"))

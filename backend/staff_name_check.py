@@ -18,6 +18,7 @@ import api
 咬合 = [
     ("会员详情不给归属顾问", "会员详情带归属顾问:工号 + 「姓名(岗位)」,和员工表一致"),
     ("查不到的工号编一个名字", "工号在员工表里查不到 → 不编名字"),
+    ("客户档案只认客户号", "客户档案按姓名也认得到人(唯一命中 → 给档案并注明认到哪个客户号)"),
 ]
 
 
@@ -32,7 +33,7 @@ def main():
     print("客户类工具 · 工号旁边带姓名和岗位")
     db = sqlite3.connect(f"file:{os.path.join(HERE, 'lanxiu.db')}?mode=ro", uri=True)
     db.row_factory = sqlite3.Row
-    有 = db.execute("SELECT c.id, c.advisor_no, s.name, s.role FROM customer c JOIN staff s ON s.no = c.advisor_no "
+    有 = db.execute("SELECT c.id, c.advisor_no, c.shop, s.name, s.role FROM customer c JOIN staff s ON s.no = c.advisor_no "
                    "WHERE c.advisor_no IS NOT NULL ORDER BY c.id LIMIT 1").fetchone()
     没 = db.execute("SELECT id FROM customer WHERE advisor_no IS NULL OR advisor_no = '' ORDER BY id LIMIT 1").fetchone()
     ck("库里有「带归属顾问」的客户可验(样本量不能是 0)", 有 is not None)
@@ -49,6 +50,24 @@ def main():
     if 没 is not None:
         m2 = api.get_member(没["id"])
         ck("没有归属顾问的客户 → 明说「没有归属顾问」(不空着、不编)", m2.get("归属顾问") == "没有归属顾问", m2.get("归属顾问"))
+    # 按姓名认人(10-25:模型说「没有按姓名查的工具」)—— 唯一的名字和重名的名字都从库里现找
+    唯 = db.execute("SELECT id, name FROM customer WHERE name IS NOT NULL AND name<>'' GROUP BY name HAVING COUNT(*)=1 ORDER BY name LIMIT 1").fetchone()
+    重 = db.execute("SELECT name FROM customer WHERE name IS NOT NULL AND name<>'' GROUP BY name HAVING COUNT(*)>1 ORDER BY name LIMIT 1").fetchone()
+    if 唯 is not None:
+        c2 = api.get_customer(唯["name"])
+        ck("客户档案按姓名也认得到人(唯一命中 → 给档案并注明认到哪个客户号)",
+           c2.get("id") == api._认客户(唯["name"])[0][0]["id"] and 唯["name"] in (c2.get("认人") or ""), c2.get("error") or c2.get("认人"))
+    if 重 is not None:
+        c3 = api.get_customer(重["name"])
+        ck("姓名重名 → 只给候选不给档案", "error" in c3 and len(c3.get("候选") or []) >= 1 and "phone" not in c3, c3)
+    ck("客户号姓名都对不上 → 明说不存在", "error" in api.get_customer("不存在的人ZZ"))
+    # 只看本店(10-25):本店的人照样看得到 —— 别家店翻不到的那一半在边界审计里真攻击
+    _t = api._ME.set({"no": "ZZ0003", "name": "(自造顾问)", "role": "顾问", "shop": 有["shop"]})
+    try:
+        c4 = api.get_customer(有["id"])
+    finally:
+        api._ME.reset(_t)
+    ck("挂着同一家店的顾问,看得到本店客户的档案(限店不能把自己店也挡掉)", c4.get("id") == 有["id"], c4.get("error"))
     ck("工号在员工表里查不到 → 不编名字", api._员工称呼("99999999") is None and api._员工称呼(None) is None)
 
     api._ME.set({"no": "60000008", "name": "检查", "role": "总部运营", "shop": ""})

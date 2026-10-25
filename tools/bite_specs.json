@@ -13408,5 +13408,53 @@
    "UPDATE xingzhi SET src_type='实' WHERE code='XZ02'"
   ],
   "预期红": "库里形制的档位和 01-形制.md 的标记一致"
+ },
+ {
+  "script": "agentsite/claims_check.py",
+  "改坏": "举例的值也当事实核",
+  "file": [
+   {
+    "path": "agentsite/claims.py",
+    "old": "    段 = _举例段(句)\n",
+    "new": "    段 = []\n"
+   }
+  ],
+  "预期红": "「格式如 2026-10-30」是举例 → 未判定,不判缺少依据"
+ },
+ {
+  "script": "backend/staff_name_check.py",
+  "改坏": "客户档案只认客户号",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "        人们=[p for p in _认客户(customer_id)[0] if",
+    "new": "        人们=[p for p in [] if"
+   }
+  ],
+  "预期红": "客户档案按姓名也认得到人(唯一命中 → 给档案并注明认到哪个客户号)"
+ },
+ {
+  "script": "backend/shop_key_check.py",
+  "改坏": "派任务的写口不写 shop_code(10-25 用户在聊天站派的回电任务就是这么漏的)",
+  "file": [
+   {
+    "path": "backend/tasks.py",
+    "old": "                     shop,shop_code,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)\n                     VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?,?)\"\"\",\n                  (sid, kind, him[\"no\"], cid,\n                   st, en, him.get(\"shop\"), _SK.码(c, him.get(\"shop\")), to, me[\"no\"],",
+    "new": "                     shop,assignee_no,assigned_by,assigned_at,note,activity_code,ref_id)\n                     VALUES(?,?,?,?,?,?, '有效',?,?,?,?,?,?,?)\"\"\",\n                  (sid, kind, him[\"no\"], cid,\n                   st, en, him.get(\"shop\"), to, me[\"no\"],"
+   }
+  ],
+  "预期红": "backend/ 里运行时的写口:写 shop 的地方都同时写 shop_code"
+ },
+ {
+  "script": "backend/boundary_audit.py",
+  "改坏": "客户档案工具不限店(10-25 用户拍只看本店之前就是这样)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    限店 = bool(me) and 本店范围(me) is not None",
+    "new": "    限店 = False"
+   }
+  ],
+  "预期红": "智能体的客户档案工具只看本店"
  }
 ]
