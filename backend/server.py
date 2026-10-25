@@ -11,6 +11,7 @@ import fsm, rules
 import lifecycle as _lc     # 生命周期口径的唯一源头,页面不再自己抄一份
 import stockalert as _sa     # 「快没了」件数线的唯一源头(业务 2026-09-22 定 ≤5),页面不再自己写一个数
 import auth                     # 员工登录:**角色只从服务端会话取,不从请求体读**
+import source as _src            # 来源档位的口径(README 那张表是唯一源头),页面不再自己抄一份
 
 
 
@@ -2804,7 +2805,7 @@ def kb_search(q):
     """领域知识检索 —— 这是 Agent 的 kb_search 工具,当前由页面直接调用"""
     kw=(q.get("q") or [""])[0].strip()
     cat=(q.get("cat") or [""])[0]
-    src=(q.get("src") or [""])[0]          # public / scale / demo
+    src=(q.get("src") or [""])[0]          # public / scale / biz / demo
     rs=rows("SELECT * FROM craft ORDER BY code")
     if cat: rs=[r for r in rs if r["cat"]==cat]
     # 按来源过滤 —— 顾问要对客户说话之前,先筛出「能说的那部分」
@@ -2825,7 +2826,10 @@ def kb_search(q):
     return dict(rows=rs,total=len(rs),
         cats=[r["v"] for r in rows("SELECT DISTINCT cat v FROM craft ORDER BY v")],
         srcs=[r["v"] for r in rows("SELECT DISTINCT src_type v FROM craft ORDER BY v")],
-        src_note={"public":"公开来源,可溯源","scale":"公开资料量级,非本企业数据","demo":"演示数据"})
+        # ⚠️ **从 README 那张档位表现读,不在这里抄第二份。**
+        # 原来这里手抄着三档的说明;2026-10-25 立 `biz` 时,它会是
+        # 「库里筛得出这一档、而 UI 上这一档没有任何说明」—— 而那不报错。
+        src_note={k: v[0].replace("**", "") for k, v in _src.档位().items()})
 
 def combo_matrix():
     crafts=rows("SELECT code,name FROM craft WHERE cat='工艺' ORDER BY code")
@@ -3475,7 +3479,12 @@ class H(BaseHTTPRequestHandler):
                                if x.strip() and not __import__("re").fullmatch(r"[^:：]{1,8}[:：]\s*", x.strip())])
                 out.append(d)
             return self._send(dict(rows=out,
+                # ⚠️ 这一句是**给人读的用法说明**,和 README 那张表(定义)不是一份东西,
+                # 所以这里是手抄的 —— **新立一档就要来补这一句**,
+                # 否则顾问看到的是「这一档没写怎么用」。2026-10-25 加 biz 时补的。
                 说明="来源等级 public 可直接对客户说;scale 要注明「行业参考」;"
+                     "biz 是业务负责人拍板的口径,**要说明「这是我们家的口径」、"
+                     "不得说成国家标准或公开资料**;"
                      "demo 是内部演示数据,**不可作为对客户的承诺**。"
                      "「备料天」是下单到面料到位的天数,现货为 1–3 天。"))
         if p=="/api/wearers":

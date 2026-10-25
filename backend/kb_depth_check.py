@@ -70,7 +70,7 @@ def main():
          for f, t, d in es if any(not d.get(k) for k in 必填)]
     ck("每条详解都带齐六样(回答的问题 / 要点 / 讲法 / 来源类型 / 抓取日期 / 出处)", not 缺, len(es),
        f"共 {len(缺)} 条:" + "；".join(缺[:3]) if 缺 else f"{len(es)} 条")
-    无标 = [f"{f}「{t[4:24]}」" for f, t, _ in es if not re.search(r"`(public|scale|demo)`\s*$", t)]
+    无标 = [f"{f}「{t[4:24]}」" for f, t, _ in es if not re.search(r"`(public|scale|biz|demo)`\s*$", t)]
     ck("每条详解标题都标了来源等级(kb_read 按它给对客口径)", not 无标, len(es),
        f"共 {len(无标)} 条:" + "、".join(无标[:3]) if 无标 else "")
     问 = [d.get("回答的问题", "") for _, _, d in es]

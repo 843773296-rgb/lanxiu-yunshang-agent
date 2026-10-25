@@ -3,7 +3,7 @@
 
 三件事:
   ① md 里的编码和后台 craft 表对不对得上
-  ② 每个条目有没有来源标注(public / scale / demo)
+  ② 每个条目有没有来源标注(public / scale / biz / demo)
   ③ 同一条知识在两处的来源等级一不一致
 不做「打印一句 ✅ 就完事」—— 任一不符退出码非 0。
 """
@@ -16,7 +16,7 @@ import kb
 
 # 未带来源标注的标题:kb.py 的正则要求必须有标注,所以这里单独扫一遍找漏网的
 LOOSE = re.compile(r"^###\s+((?:XZ|MT|KF|PS|SE)\d{2})\s+(.+?)\s*$", re.M)
-TIERED = re.compile(r"^###\s+((?:XZ|MT|KF|PS|SE)\d{2})\s+(.+?)\s+`(?:public|scale|demo)`\s*$", re.M)
+TIERED = re.compile(r"^###\s+((?:XZ|MT|KF|PS|SE)\d{2})\s+(.+?)\s+`(?:public|scale|biz|demo)`\s*$", re.M)
 notier = []
 for fn in sorted(f for f in os.listdir(HERE) if f.endswith(".md")):
     txt = open(os.path.join(HERE, fn), encoding="utf-8").read()
@@ -58,14 +58,14 @@ if name_bad:
     bad += len(name_bad); print(f"❌ 名称不一致({len(name_bad)}):")
     for c_, m, d in name_bad: print(f"     {c_} 文档「{m}」 vs 表「{d}」")
 if tier_bad:
-    bad += len(tier_bad); print(f"❌ 来源等级不一致({len(tier_bad)}) —— 以文档为准,须回改 seed.py:")
+    bad += len(tier_bad); print(f"❌ 来源等级不一致({len(tier_bad)}) —— 以文档为准,须刷库:python3 tools/refresh_kb.py --做:")
     for c_, m, d in tier_bad: print(f"     {c_} 文档 {m} vs 表 {d}")
 if 出处_bad:
     bad += len(出处_bad); print(f"❌ 出处不一致({len(出处_bad)}) —— md 补了出处、库没刷新(或反过来):")
     for c_, m, d in 出处_bad[:5]: print(f"     {c_} 文档 {m} vs 表 {d}")
     if len(出处_bad) > 5: print(f"     ……还有 {len(出处_bad) - 5} 条")
 if notier:
-    bad += len(notier); print(f"❌ 缺来源标注({len(notier)}) —— 每条知识都必须标 public/scale/demo:")
+    bad += len(notier); print(f"❌ 缺来源标注({len(notier)}) —— 每条知识都必须标 public/scale/biz/demo:")
     for c_, n, f in notier: print(f"     {c_} {n}  ({f})")
 if only_md:
     print(f"ℹ️  文档里有、表里还没有({len(only_md)}) —— 待入库,不算错:")

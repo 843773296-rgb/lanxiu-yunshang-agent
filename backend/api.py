@@ -266,7 +266,7 @@ SCHEMAS=[
 
 # ── 工艺知识库工具(只读)──────────────────────────────────────────
 def kb_lookup(keyword=None, cat=None, src=None):
-    """按关键词/分类/来源等级查工艺知识。cat: 形制/材质/工艺/配饰;src: public/scale/demo"""
+    """按关键词/分类/来源等级查工艺知识。cat: 形制/材质/工艺/配饰;src: public/scale/biz/demo"""
     rs=_rows("SELECT code,name,cat,alias,brief,fit,lead_days,cost_level,src_type,src_url FROM craft ORDER BY code")
     if cat: rs=[r for r in rs if r["cat"]==cat]
     if src: rs=[r for r in rs if r["src_type"]==src]
@@ -3505,7 +3505,11 @@ def kb_read(doc=None, section=None):
 
     def 档(块):
         """这一块里出现过哪些来源标记 —— **按最低那一档给口径**。"""
-        有 = [g for g in ("demo", "scale", "public") if f"`{g}`" in 块]
+        # ⚠️ **这个顺序有语义** —— 取的是 `有[0]`,即「按最低那一档给口径」。
+        # `biz`(业务口径,2026-10-25 立)排在 demo 之后、scale 之前:
+        # 它比演示数据可信(**有具名的责任人**),比公开资料弱(**没有公开出处**)。
+        # 放错位置不会报错,只会让一篇混排的知识**按偏高的那一档对客户说**。
+        有 = [g for g in ("demo", "biz", "scale", "public") if f"`{g}`" in 块]
         低 = 有[0] if 有 else None
         return 有, 低
 
@@ -7958,11 +7962,11 @@ TOOLS.update({"kb_lookup":kb_lookup,"kb_detail":kb_detail,"kb_tables":kb_tables,
 for _k in list(TOOLS): TOOLS[_k] = _masked(TOOLS[_k])
 
 KB_SCHEMAS=[
- {"name":"kb_lookup","description":"按关键词查工艺知识库。也可按分类(形制/材质/工艺/配饰)或来源等级(public/scale/demo)筛选。查不到会明确返回 hit=0。",
+ {"name":"kb_lookup","description":"按关键词查工艺知识库。也可按分类(形制/材质/工艺/配饰)或来源等级(public/scale/biz/demo)筛选。查不到会明确返回 hit=0。",
   "input_schema":{"type":"object","properties":{
     "keyword":{"type":"string","description":"关键词,如「香云纱」「盘金」「金线」"},
     "cat":{"type":"string","enum":["形制","材质","工艺","配饰"]},
-    "src":{"type":"string","enum":["public","scale","demo"]}},"required":[]}},
+    "src":{"type":"string","enum":["public","scale","biz","demo"]}},"required":[]}},
  {"name":"kb_detail","description":"按编码取一条知识的完整内容(含出处链接)。编码形如 KF01 / MT01 / XZ01 / PS01。",
   "input_schema":{"type":"object","properties":{"code":{"type":"string"}},"required":["code"]}},
  {"name":"kb_combo","description":"查某工艺能否用于某面料。**工艺名和面料名直接写中文即可**(如「妆花」「云锦」),不必也不要猜编码 —— 名字对不上会明确报错并列出现有选项。返回「可/需评估/不可」、理由,以及 rule 字段(依据的规则号,或「人工确认」)—— 判「不可」时请把依据一并告诉用户;该组合未录入时返回「未定义」;返回里的 resolved 字段是实际解析到的那一对,回答前请核对它和用户问的是不是同一对。",

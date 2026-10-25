@@ -12,7 +12,13 @@ CAT = {"01": "形制", "02": "材质", "03": "工艺", "04": "配饰"}
 BRIEF_KEYS = ["特征", "特点", "结构", "说明", "技法", "织法", "工艺", "手感"]
 FIT_KEYS   = ["适合", "配伍", "用途"]
 LEAD_KEYS  = ["工期", "备料周期"]
-HEAD = re.compile(r"^###\s+((?:XZ|MT|KF|PS|SE)\d{2})\s+(.+?)\s+`(public|scale|demo)`\s*$")
+HEAD = re.compile(r"^###\s+((?:XZ|MT|KF|PS|SE)\d{2})\s+(.+?)\s+`(public|scale|biz|demo)`\s*$")
+# craft 表的列名,**顺序与建表语句一致** —— `load()` 返回的元组按这个顺序。
+# ⚠️ **别在别处再抄一份。** 2026-10-25 加 biz 的判据时要按列名读解析结果,
+# 抄一份的话这里加一列、那边不改就整体**错位,而错位不报错** ——
+# 和 seed.py 那条「具名列、不用位置参数」是同一个坑的另一半。
+COLS = ["code", "name", "cat", "alias", "brief", "detail", "fit", "lead",
+        "cost", "src_type", "url", "src_name"]
 BULLET = re.compile(r"^-\s+\*\*(.+?)\*\*\s*[::]\s*(.*)$")
 
 
@@ -49,9 +55,16 @@ def load():
                     左, _, 右 = v.partition("→")
                     u = re.search(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", 右)
                     名 = re.split(r"[::]", 左.strip(), maxsplit=1)[0].strip()
-                    if u and 名:
-                        cur["url"] = u.group(0).rstrip(").,")
-                        cur["src"] = 名
+                    # ⚠️ **出处名和链接各自独立记。** 原来这里是 `if u and 名` ——
+                    # **没有链接就连出处名也不记**。2026-10-25 立 `biz`(业务口径)这一档时
+                    # 撞上了:业务拍板**本来就没有链接**,于是出处行写了也白写,
+                    # 库里 `src_name` 仍是空、仍然计欠账,而 md 上看着明明写了出处。
+                    # 改这一行之前先查过:当时 md 里「有出处名但没链接」的条目**一条都没有**,
+                    # 所以它当下只对新立的那 5 条 biz 生效,**没有任何条目因此悄悄脱账**。
+                    # 以后谁在 `public` / `scale` 上写一个不带链接的出处行,它会直接脱账 ——
+                    # 那一口由 `source.py::档位出处对得上()` 堵着(那两档的出处**必须有链接**)。
+                    if 名: cur["src"] = 名
+                    if u: cur["url"] = u.group(0).rstrip(").,")
                 cur["extra"].append(f"{k}:{v}")
             elif line.strip().startswith("→ http") and cur.get("url") is None:
                 u = re.match(r"→\s*(https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+)", line.strip())
@@ -94,7 +107,7 @@ if __name__ == "__main__":
     if empty: print(" ⚠️ 无 brief 的条目:", empty)
     for r in rows[:2]:
         print()
-        for k, v in zip(["code","name","cat","alias","brief","detail","fit","lead","cost","src_type","url","src_name"], r):
+        for k, v in zip(COLS, r):
             print(f"   {k:9s} {str(v)[:80]}")
 
 

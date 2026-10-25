@@ -12766,5 +12766,99 @@
    }
   ],
   "预期红": "工作流差评处置不经手超权限的钱"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "把 MT32 真丝欧根纱的出处改成国标号 + 链接(业务口径冒充国家标准)",
+  "file": [
+   {
+    "path": "knowledge/02-面料.md",
+    "old": "- **出处**:业务 2026-10-25 拍板(2026-10-12 那轮查到的摘要把 Organdy / Organza 写成一个词,**那是两种布**;此处按 Organza 定)",
+    "new": "- **出处**:GB/T 26380-2022《纺织品 丝绸术语》 → https://openstd.samr.gov.cn/bzgk/gb/std_list?p.p2=GB/T%2026380"
+   }
+  ],
+  "预期红": "档位和出处的类型对得上"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "把 MT21 提花暗纹缎出处里的日期去掉(「业务拍板」不写日期,和「没人定过」长得一样)",
+  "file": [
+   {
+    "path": "knowledge/02-面料.md",
+    "old": "- **出处**:业务 2026-10-25 拍板(行业也叫「暗花缎」。",
+    "new": "- **出处**:业务拍板(行业也叫「暗花缎」。"
+   }
+  ],
+  "预期红": "档位和出处的类型对得上"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "把 MT14 杭罗改标 biz 并把出处换成合规的业务拍板(模拟洗账:档位和出处都合规、有名无链那本账还降一条,**只有名单对不上**)",
+  "file": [
+   {
+    "path": "knowledge/02-面料.md",
+    "old": "### MT14 杭罗 `scale`",
+    "new": "### MT14 杭罗 `biz`"
+   },
+   {
+    "path": "knowledge/02-面料.md",
+    "old": "- **非遗**:杭罗织造技艺,2009 年列入人类非遗「中国蚕桑丝织技艺」",
+    "new": "- **出处**:业务 2026-10-25 拍板(咬合用:格式完全合规的一次洗账)"
+   }
+  ],
+  "预期红": "业务口径那一档只有登记过的"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "让「档位和出处类型对得上」那个函数直接放行(签名照旧;真数据上那条判据会照样全绿)",
+  "file": [
+   {
+    "path": "knowledge/source.py",
+    "old": "    名, 链 = (出处名 or \"\").strip(), (出处链接 or \"\").strip()",
+    "new": "    return (True, None, None)   # 咬合:退化成放行,**签名照旧**(少一个值会变成崩,而崩不是漏)\n    名, 链 = (出处名 or \"\").strip(), (出处链接 or \"\").strip()"
+   }
+  ],
+  "预期红": "那个判定函数认得出九种形状"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "把管理后台前端里 biz 那两处(样式类 + 显示名)删掉(那一档的标签渲染成 undefined)",
+  "file": [
+   {
+    "path": "backend/web/index.html",
+    "old": "const SRCP={public:\"p-ok\",scale:\"p-warn\",biz:\"p-warn\",demo:\"p-mut\"};",
+    "new": "const SRCP={public:\"p-ok\",scale:\"p-warn\",demo:\"p-mut\"};"
+   },
+   {
+    "path": "backend/web/index.html",
+    "old": "const SRCT={public:\"公开来源\",scale:\"公开量级\",biz:\"业务口径\",demo:\"演示数据\"};",
+    "new": "const SRCT={public:\"公开来源\",scale:\"公开量级\",demo:\"演示数据\"};"
+   }
+  ],
+  "预期红": "每一档在前端那"
+ },
+ {
+  "script": "backend/shop_key_check.py",
+  "改坏": "把回填那一步从 daily_shift.sh 里删掉(当天全绿,第二天早上才红;注释里不许照抄那个串)",
+  "file": [
+   {
+    "path": "tools/daily_shift.sh",
+    "old": "if OUT5=$(python3 tools/add_shop_code.py --做 2>&1); then",
+    "new": "if OUT5=$(true 2>&1); then"
+   }
+  ],
+  "预期红": "每日平移那条路径也跑回填"
+ },
+ {
+  "script": "backend/source_check.py",
+  "改坏": "把 MT33 亚麻出处里的链接删掉(「公开可查」却给不出链接,欠债涨了)",
+  "file": [
+   {
+    "path": "knowledge/02-面料.md",
+    "old": "- **出处**:全国标准信息公共服务平台:亚麻印染布 → https://std.samr.gov.cn/hb/search/stdHBDetailed?id=8B1827F21B10BB19E05397BE0A0AB44A (只证明品类)",
+    "new": "- **出处**:全国标准信息公共服务平台:亚麻印染布(只证明品类)"
+   }
+  ],
+  "预期红": "公开档的出处给得出链接"
  }
 ]

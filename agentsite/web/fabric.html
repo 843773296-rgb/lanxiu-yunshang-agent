@@ -268,6 +268,7 @@ aside.agent.off{display:none}
         <button data-f="all" class="on">全部</button>
         <button data-f="public">可对客户说</button>
         <button data-f="scale">行业参考</button>
+        <button data-f="biz">我们家的口径</button>
         <button data-f="demo">内部演示</button>
         <button data-f="stock">有现货</button>
         <input id="fabq" placeholder="搜面料名或别名…">
@@ -441,7 +442,7 @@ const sw=n=>HUE[Object.keys(HUE).find(k=>n.includes(k))]||"#C8BFB4";
 /* 掌握度目前是**占位值**(按来源等级 + 名字算的稳定假数)。
    真实版应来自「顾问问过多少次、练习答对多少」——
    **写死一个假进度条比不放更危险:它看起来像真的**,所以这行注释不能删。 */
-const lvl=f=>{const b={public:78,scale:56,demo:38}[f.src_type]??50;
+const lvl=f=>{const b={public:78,scale:56,biz:48,demo:38}[f.src_type]??50;
   return Math.max(12,Math.min(96,b+((f.name.length*7+f.code.charCodeAt(3))%22)-10));};
 const lvc=v=>v>=70?"":v>=45?"w":"c";
 
@@ -484,10 +485,13 @@ $("#fabfilters").addEventListener("click",e=>{
 });
 
 function tree(){
-  const grp={public:"可对客户说",scale:"行业参考",demo:"内部演示"};
+  const grp={public:"可对客户说",scale:"行业参考",biz:"我们家的口径",demo:"内部演示"};
   const pool=filtered();
   const cnt=$("#fabcount"); if(cnt) cnt.textContent=`${pool.length} / ${FAB.length} 种`;
-  $("#tree").innerHTML=["public","scale","demo"].map(g=>{
+  // ⚠️ **这张清单漏一档,那一档的面料就整组不渲染,而且不报错。**
+  // 2026-10-25 加 biz 时就是这样:5 条面料在页面上直接没有了,
+  // 看起来像「数据没进库」,而库里好好的。
+  $("#tree").innerHTML=["public","scale","biz","demo"].map(g=>{
     const rows=pool.filter(f=>f.src_type===g); if(!rows.length) return "";
     return `<div class="grp">${grp[g]} · ${rows.length}</div>`+rows.map(f=>{const v=lvl(f);
       return `<button data-c="${esc(f.code)}" class="${CUR===f.code?"on":""}">

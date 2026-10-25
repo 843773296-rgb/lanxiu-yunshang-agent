@@ -3644,8 +3644,8 @@ function formContent(after){
 }
 
 Q.kb={};
-const SRCP={public:"p-ok",scale:"p-warn",demo:"p-mut"};
-const SRCT={public:"公开来源",scale:"公开量级",demo:"演示数据"};
+const SRCP={public:"p-ok",scale:"p-warn",biz:"p-warn",demo:"p-mut"};
+const SRCT={public:"公开来源",scale:"公开量级",biz:"业务口径",demo:"演示数据"};
 async function kbPage(){
   const st=Q.kb, d=await get("/api/kb?"+qs(st)), mx=await get("/api/kb-matrix");
   const VP={"可":"p-ok","不可":"p-bad","需评估":"p-warn","未定义":"p-mut"};
