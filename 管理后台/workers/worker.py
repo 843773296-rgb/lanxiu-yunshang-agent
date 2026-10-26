@@ -59,6 +59,23 @@ class 干不了(Exception):
 def _新(前缀): return f"{前缀}_{uuid.uuid4().hex[:12]}"
 
 
+# 每一步的输入输出存多大(10-26)。一个 LLM 步骤读进整份转写稿就可能几万字 ——
+# 不设上限的话,一次跑坏的循环能把库撑大。超了就存前一段并**明说没存全**,不静默截断
+# (静默截断的输入,和「它真的只收到这么多」长得一模一样)
+步骤留痕上限 = 64_000
+
+
+def _步骤留痕(v):
+    import json as _j        # 这个文件的习惯是在函数里各自 import(模块顶层没有 _j)
+    if v is None:
+        return None
+    串 = _j.dumps(v, ensure_ascii=False, default=str)
+    if len(串) <= 步骤留痕上限:
+        return 串
+    return _j.dumps({"__没存全__": f"原文 {len(串)} 字,只存了前 {步骤留痕上限} 字",
+                     "前一段": 串[:步骤留痕上限]}, ensure_ascii=False)
+
+
 # ── 处理器登记表 ────────────────────────────────────────────────────
 # ⚠️ **认不出的任务类型不许静默跳过。** 一个被跳过的任务会一直停在「排队中」,
 # 而「没人处理」和「排在后面」在界面上长得一模一样。
@@ -675,13 +692,16 @@ def _跑一张工作流(c, job, 打点):
         c.execute(text("""
             insert into run_steps (id, organization_id, project_id, execution_run_id,
                 node_id, kind, iteration_path, attempt, execution_key, status,
-                branch_key, skipped_reason, error_code, error_detail, output_ref,
+                branch_key, skipped_reason, error_code, error_detail, input_ref, output_ref,
                 started_at, ended_at, created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,:r,:n,:k,'/',:a,:ek,:st,:bk,:sr,:ec,:ed,null,
+            values (:i,:o,:p,:r,:n,:k,'/',:a,:ek,:st,:bk,:sr,:ec,:ed,:ir,:or,
                     now(), now(), now(), :u, now(), 1)
             on conflict (project_id, execution_key) do update
                set status=excluded.status, branch_key=excluded.branch_key,
                    error_code=excluded.error_code, error_detail=excluded.error_detail,
+                   -- 挂起那一行在挂起时记下了「收到了什么」;恢复时执行器只知道结果 —— 别拿空值把它盖掉
+                   input_ref=coalesce(excluded.input_ref, run_steps.input_ref),
+                   output_ref=excluded.output_ref,
                    ended_at=now(), updated_at=now(), revision=run_steps.revision+1
              -- 只有挂起的那一行会被改成结果;已经有结论的行不许被覆盖(每次 attempt 一行)
              where run_steps.status in ('waiting_human', 'waiting_external')
@@ -692,6 +712,7 @@ def _跑一张工作流(c, job, 打点):
                "ec": s.get("error_code"),
                "ed": _j.dumps(s.get("error_detail"), ensure_ascii=False)
                      if s.get("error_detail") else None,
+               "ir": _步骤留痕(s.get("input")), "or": _步骤留痕(s.get("output")),
                "u": 我是谁})
     if 结果.get("检查点"):
         return _挂起(c, job, r, run_id, 定义, 结果, 记事)

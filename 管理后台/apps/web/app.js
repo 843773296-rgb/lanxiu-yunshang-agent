@@ -1317,6 +1317,11 @@ function 画_面板() {
       ${段("用到的数据", "输入数据", 表_输入(n))}
       ${段("结果", "结果字段", 表_结果(n))}
       <details class="psec" data-sec="高级"${高开 ? " open" : ""}><summary class="psh">高级</summary>${表_高级(n)}</details>
+      ${(() => { const 跑 = g.运行态 && g.运行态[n.id];   // 上次试运行这一步收到 / 交出了什么(10-26)
+        if (!跑) return "";
+        const io = 步骤IO({ 输入: 跑.输入, 输出: 跑.输出 }, 跑.原文, true);
+        return 段("上次试运行", "上次运行", `<div class="k">${esc(运行状态中文[跑.状态] || 跑.状态)}${跑.错误码 ? ` · <code>${esc(跑.错误码)}</code>` : ""}</div>`
+          + (io || `<div class="k">这一步没有记下输入输出(没跑到它,或是改版前跑的)。</div>`)); })()}
     </div>`;
   const 高 = $("#pn").querySelector('[data-sec="高级"]');
   if (高) 高.ontoggle = () => { 图态.高级开 = 高.open; };
@@ -1832,7 +1837,8 @@ const 运行状态中文 = { succeeded: "成功", failed: "失败", waiting_huma
 function 记运行态(d) {
   if (!图态) return;
   const 态 = {};
-  (d["步骤"] || []).forEach((s) => { 态[s["节点"]] = { 状态: s["状态"], 错误码: s["错误码"], 分支: s["走的分支"] }; });
+  (d["步骤"] || []).forEach((s) => { 态[s["节点"]] = { 状态: s["状态"], 错误码: s["错误码"], 分支: s["走的分支"],
+    输入: s["输入"], 输出: s["输出"], 原文: !!d["看得到原文"] }; });
   const 等 = d["在等什么"]; if (等 && 等["步骤"]) 态[等["步骤"]] = { 状态: 等["种类"] === "human" ? "waiting_human" : "waiting_external" };
   图态.运行态 = 态;
   if (document.body.classList.contains("wf-full")) { if (图态.视图 === "流程图") { if (typeof 画_节点 === "function") 画_节点(); } else if ($("#steps")) 画_步骤(); }
@@ -1848,12 +1854,24 @@ function 运行标(id) {
   const x = 图态 && 图态.运行态 && 图态.运行态[id];
   return x ? `<span class="pill" data-run="${esc(x.状态)}">${esc(运行状态中文[x.状态] || x.状态)}</span>` : "";
 }
+/* 每一步实际收到的 / 交出的(10-26)。没有「查看敏感输入」授权时接口只给形状(有哪些项、各多长),
+ * 这里照实标出来 —— 不标的话,「<str · 1203 字>」会被当成这一步真的输出了这么一串 */
+function 步骤IO(s, 原文, 开 = false) {
+  const 有入 = s["输入"] != null, 有出 = s["输出"] != null;
+  if (!有入 && !有出) return "";
+  const 块 = (标, v) => v == null ? "" : `<div class="k">${标}</div><pre class="io">${esc(JSON.stringify(v, null, 1))}</pre>`;
+  const 没存全 = [s["输入"], s["输出"]].some((v) => v && typeof v === "object" && v["__没存全__"]);
+  return `<details class="stepio"${开 ? " open" : ""}><summary>看这一步收到 / 交出了什么</summary>
+    ${原文 ? "" : `<div class="note">只看得到<b>形状</b>(有哪些项、各多长),看原文要「查看敏感输入」专项授权。</div>`}
+    ${没存全 ? `<div class="note">内容太长,只存了前一段。</div>` : ""}
+    ${块("收到的(输入)", s["输入"])}${块("交出的(输出)", s["输出"])}</details>`;
+}
 function 运行卡(d, rid) {
   const 等 = d["在等什么"];
   const 步 = (d["步骤"] || []).map((s) => `<li>${节点(s["节点"]) ? `<button class="lk" data-goto="${esc(s["节点"])}">${esc(业务名(节点(s["节点"])))}</button>`
         : esc(业务名({ type: s["类型"] }))}:${esc(运行状态中文[s["状态"]] || s["状态"])}
       ${s["走的分支"] && s["走的分支"] !== "None" ? ` <span class="k">→ ${esc(图逻辑.分支名(s["走的分支"]))}</span>` : ""}
-      ${s["错误码"] ? ` <code>${esc(s["错误码"])}</code>` : ""}</li>`).join("");
+      ${s["错误码"] ? ` <code>${esc(s["错误码"])}</code>` : ""}${步骤IO(s, d["看得到原文"])}</li>`).join("");
   return `<div><b>${esc(d["执行状态中文"])}</b> ${d["停止原因"] ? `<code>${esc(d["停止原因"])}</code>` : ""}</div>
     ${等 ? (等["种类"] === "human"
         ? `<div class="note">停在「${esc(业务名(节点(等["步骤"]) || {}))}」等人工核对。
@@ -2438,7 +2456,7 @@ async function 页_运行详情(rid) {
     <h3>步骤(${步.length}) <button id="rl-open">原始日志</button></h3>
     <div id="rawlog"></div>
     <table><thead><tr><th>节点</th><th>类型</th><th>状态</th><th>尝试</th>
-      <th>执行键</th><th>分支 / 为什么跳过</th><th>错误</th><th></th></tr></thead><tbody>`
+      <th>执行键</th><th>分支 / 为什么跳过</th><th>错误</th><th>输入 / 输出</th><th></th></tr></thead><tbody>`
     + 步.map((s) => `<tr>
         <td><b>${esc(s["节点"])}</b></td><td class="k">${esc(s["类型"])}</td>
         <td>${s["状态"] === "succeeded" ? `<span class="pill ok">成功</span>`
@@ -2448,6 +2466,7 @@ async function 页_运行详情(rid) {
         <td><code style="font-size:11px">${esc(s["执行键"])}</code></td>
         <td class="k">${esc(s["走的分支"] || s["为什么跳过"] || "")}</td>
         <td class="k">${esc(s["错误码"] || "")}</td>
+        <td>${步骤IO(s, d["看得到原文"]) || '<span class="k">—</span>'}</td>
         <td><button data-rlnode="${esc(s["节点"])}" data-rlatt="${esc(s["尝试"] ?? "")}">查看该节点日志</button></td></tr>`).join("")
     + `</tbody></table>
     <div class="note"><b>「未激活(跳过)」和「失败」是两个状态</b>(§8)——

@@ -206,6 +206,29 @@ ck("**U002 看不到输出原文(脱敏),U004 有专项授权看得到**",
    "***" in str(脱["输出"]) and "***" not in str(run["输出"]),
    f"U002:{str(脱['输出'])[:24]} / U004:{str(run['输出'])[:24]}")
 
+# ── 每一步的输入输出(10-26):真写进库、有授权看原文、没授权只给形状、原始日志 / 导出同口径 ──────
+走过 = [s for s in run["步骤"] if s["状态"] == "succeeded"]
+ck("**走过的每一步都带输出**(Worker 真的把它写进了库,不是只在内存里)",
+   走过 and all(s.get("输出") is not None for s in 走过), [(s["节点"], s.get("输出") is not None) for s in 走过])
+起 = [s for s in 走过 if s["类型"] == "start"]
+ck("开始那一步记的输入 = 这次运行的输入快照(U004 有授权,看到原文)",
+   起 and 起[0].get("输入") == run["输入快照"] and run.get("看得到原文") is True,
+   起 and [起[0].get("输入"), run["输入快照"]])
+# 只拿内容类的值来查「漏没漏」:execution_mode 这种系统字段(「mock」)本来就会出现在事件里,算它会假红
+原值 = [v for s in 走过 for side in ("输入", "输出") if isinstance(s.get(side), dict)
+        for k, v in s[side].items() if k != "execution_mode" and isinstance(v, str) and len(v) >= 6]
+脱串 = json.dumps(脱["步骤"], ensure_ascii=False)
+ck("**U002 没授权:步骤的输入输出只有形状,原文一个字都不出现**",
+   原值 and 脱.get("看得到原文") is False and not [v for v in 原值 if v in 脱串]
+   and all(s.get("输出") is not None for s in 脱["步骤"] if s["状态"] == "succeeded"),
+   [v for v in 原值 if v in 脱串][:3])
+c, 日 = 打("GET", P + f"/execution-runs/{rid}/raw-log", "U002")
+步日 = [e for e in (日 or {}).get("条目", []) if e["来源"] == "步骤尝试" and e["原件"].get("output_ref")]
+ck("**原始日志里 U002 看到的步骤输入输出也打了码**(换个页面不许就看得到)",
+   c == 200 and 步日 and all("***" in str(e["原件"]["output_ref"]) and e["是打码副本"] for e in 步日)
+   and not [v for v in 原值 if v in json.dumps(日, ensure_ascii=False)],
+   [c, len(步日)])
+
 c, b = 打("GET", P + f"/execution-runs/{rid}", "U005")
 ck("**拿 A 项目的 Run ID 用 B 项目的人去读 → 404**(不确认它存在)", c == 404, c)
 

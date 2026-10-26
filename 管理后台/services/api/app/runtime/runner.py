@@ -250,15 +250,22 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 状态表[i] = st
         注入[恢复["从"]] = 恢复.get("结果") or {}
 
-    def 记一步(i, st, **kw):
+    def 记一步(i, st, *, 入=None, 出=None, **kw):
         步 = dict(node_id=i, kind=节点[i]["type"], status=st,
                   # **唯一执行键**(§8)。现在没有循环和列表迭代,
                   # 路径段固定是 "/" 和 attempt=1 —— 但**键的形状现在就定下来**,
                   # 否则加循环的那天要改所有读这个键的地方。
                   execution_key=f"{run_id}:{i}:/:1", attempt=1, **kw)
+        # 这一步实际收到的 / 交出的(用户 10-26 拍「记录每一步的输入输出」,方案 §8.3「节点记录」那一层)。
+        # ⚠️ **只放进步骤,不放进事件载荷** —— 运行详情把事件原样返回、不按授权打码,
+        # 放进去等于让没有「查看敏感输入」授权的人也读到客户原文。None = 这一步没有这一侧,不是「值为空」
+        if 入 is not None:
+            步["input"] = 入
+        if 出 is not None:
+            步["output"] = 出
         步骤.append(步)
         状态表[i] = st
-        记事(f"node.{st}", 步)
+        记事(f"node.{st}", {k: v for k, v in 步.items() if k not in ("input", "output")})
         return 步
 
     当前 = 恢复["从"] if 恢复 else 计划["入口"]
@@ -278,6 +285,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
         n = 节点[当前]
         t = n["type"]
         cfg = n.get("config") or {}
+        本步入 = None          # 这一步解出来的入参 —— 挂起 / 失败时也要记得它收到了什么
         记事("node.started", {"node_id": 当前, "kind": t})
         try:
             if t == "start":
@@ -292,7 +300,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                                  "在试运行表单里把这些字段填上 —— "
                                  "**这次一个模型调用都没发出去**")
                 状态["节点"][当前] = dict(输入)
-                记一步(当前, 成功)
+                记一步(当前, 成功, 入=dict(输入 or {}), 出=dict(输入))
                 下 = 后继[当前].get((DS.成功, None), [])
                 当前 = 下[0] if 下 else None
                 continue
@@ -300,11 +308,12 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
             if t == "human":
                 if 当前 in 注入:
                     状态["节点"][当前] = _拿注入(当前)
-                    记一步(当前, 成功, branch_key=状态["节点"][当前].get("决定"))
+                    记一步(当前, 成功, branch_key=状态["节点"][当前].get("决定"), 出=状态["节点"][当前])
                     下 = 后继[当前].get((DS.成功, None), [])
                     当前 = 下[0] if 下 else None
                     continue
                 载荷, 缺 = 解绑定(cfg.get("payload_binding"), 状态)
+                本步入 = 载荷
                 if 缺:
                     raise 节点失败("BIND_MISSING_AT_RUNTIME", f"要给人看的材料取不到:{缺}",
                                  "上游那一步这一路没跑,或者绑定写错了")
@@ -320,7 +329,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     if t == "tool":
                         用量["工具调用"] += 1
                     状态["节点"][当前] = r
-                    记一步(当前, 成功, execution_mode=r.get("execution_mode"))
+                    记一步(当前, 成功, execution_mode=r.get("execution_mode"), 出=r)
                     下 = 后继[当前].get((DS.成功, None), [])
                     当前 = 下[0] if 下 else None
                     continue
@@ -334,6 +343,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     字段 for 字段, 引 in (cfg.get("bindings") or {}).items()
                     if isinstance(引, dict) and 引.get("source") == "input"
                     and str(引.get("pointer") or "").lstrip("/") in 选填])
+                本步入 = 实参
                 if 缺:
                     raise 节点失败("BIND_MISSING_AT_RUNTIME",
                                  f"运行时取不到这些绑定:{缺}",
@@ -365,16 +375,20 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 if t == "tool":
                     用量["工具调用"] += 1
                 状态["节点"][当前] = r
-                记一步(当前, 成功, execution_mode=r.get("execution_mode"))
+                记一步(当前, 成功, execution_mode=r.get("execution_mode"), 入=实参, 出=r)
                 下 = 后继[当前].get((DS.成功, None), [])
                 当前 = 下[0] if 下 else None
                 continue
 
             if t == "condition":
                 选中 = None
+                本步入 = []    # 每一路拿什么跟什么比 —— 「为什么走了这一路」要看得见
                 for b in cfg["branches"]:
                     左 = 取值(b["when"]["left"], 状态)
                     右 = 取值(b["when"]["right"], 状态) if "right" in b["when"] else None
+                    本步入.append({"这一路": b["key"], "比较": b["when"].get("op"),
+                                 "左边": None if 左 is DS.缺失 else 左,
+                                 **({"右边": None if 右 is DS.缺失 else 右} if "right" in b["when"] else {})})
                     try:
                         if DS.判(b["when"]["op"], 左,
                                  *([右] if "right" in b["when"] else [])):
@@ -396,13 +410,13 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 if not 下 and not 选中:
                     策 = cfg.get("else_policy")
                     if 策 in ("fail", "end"):
-                        记一步(当前, 成功, branch_key="else")
+                        记一步(当前, 成功, branch_key="else", 入=本步入, 出={"branch": "else"})
                         执行状态 = "succeeded" if 策 == "end" else "incomplete"
                         完成原因 = None if 策 == "end" else "missing_evidence"
                         当前 = None
                         continue
-                记一步(当前, 成功, branch_key=选中 or "else")
                 状态["节点"][当前] = {"branch": 选中 or "else"}
+                记一步(当前, 成功, branch_key=选中 or "else", 入=本步入, 出=状态["节点"][当前])
                 当前 = 下[0] if 下 else None
                 continue
 
@@ -422,7 +436,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                                  "检查每条分支是不是都产出了那个字段;"
                                  "**这不是「值为空」,是一路都没跑成**")
                 状态["节点"][当前] = {cfg["output_field"]: 值}
-                记一步(当前, 成功)
+                记一步(当前, 成功, 出=状态["节点"][当前])
                 下 = 后继[当前].get((DS.成功, None), [])
                 当前 = 下[0] if 下 else None
                 continue
@@ -432,7 +446,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 for op in cfg["operations"]:
                     出.update(_转换一步(op, 出, 状态))
                 状态["节点"][当前] = 出
-                记一步(当前, 成功)
+                记一步(当前, 成功, 出=出)
                 下 = 后继[当前].get((DS.成功, None), [])
                 当前 = 下[0] if 下 else None
                 continue
@@ -446,7 +460,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                                  f"必需输出字段取不到值:{真缺}",
                                  "**「跑完了」和「输出完整」是两件事** —— "
                                  "这次算 incomplete,不算成功")
-                记一步(当前, 成功)
+                记一步(当前, 成功, 出=输出)
                 当前 = None
                 continue
 
@@ -455,7 +469,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
 
         except 需要等待 as w:
             步态, 执行状态 = 等待态[w.种类]
-            记一步(当前, 步态, waiting_for=w.种类)
+            记一步(当前, 步态, waiting_for=w.种类, 入=本步入)
             检查点 = {"从": 当前, "逻辑哈希": 计划["逻辑哈希"], "节点输出": 状态["节点"],
                       "用量": 用量, "已完成": {i: st for i, st in 状态表.items()
                                                if st not in (待执行, 步态)},
@@ -465,7 +479,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
 
         except 节点失败 as e:
             记一步(当前, 失败, error_code=e.code, error_detail={"消息": e.消息,
-                                                            "建议": e.建议})
+                                                            "建议": e.建议}, 入=本步入)
             策 = (cfg.get("failure_policy") or "fail_run")
             错边 = 后继[当前].get((DS.失败, None), [])
             if 策 == "branch" and 错边:

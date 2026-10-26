@@ -39,6 +39,7 @@ import states as ST
 import validator as V
 import compiler as CP
 import outbox as OB
+from runs_api import 脱敏 as _形状
 from db import 连接, 事务
 from deps import 身份, 要权限, _错
 
@@ -1608,7 +1609,11 @@ def _原始记录(c, project_id, rid):
 
 # 带业务内容的字段才打码 —— 和运行详情同一口径(那里事件和步骤人人可见,只打码输入快照和输出)。
 # 打得比详情页还多,就成了「同一条记录换个页面看不到」,人会以为是两份不同的数据
-_日志敏感键 = {"桥请求": ("arguments_snapshot", "result_output"), "人工决定": ("edited_fields", "reason")}
+# 10-26:步骤尝试的 input_ref / output_ref 原来一直是空的,所以没进这张表也没漏过东西;
+# 开始记每一步的输入输出之后它们装的就是客户原文,必须跟着打码。工具调用的 result_ref 同理(Agent 运行的工具结果),
+# 它还会以「载荷在外部存储」再出现一次 —— 两处都要打,只打一处等于没打
+_日志敏感键 = {"桥请求": ("arguments_snapshot", "result_output"), "人工决定": ("edited_fields", "reason"),
+            "步骤尝试": ("input_ref", "output_ref"), "工具调用": ("result_ref",)}
 
 
 def _日志条(x, 看原文):
@@ -1624,7 +1629,8 @@ def _日志条(x, 看原文):
             "节点": x["节点"], "步骤": x.get("步骤"), "尝试": x.get("尝试"), "类型": x["类型"], "是错误": x["是错误"],
             "原件": 件, "是打码副本": 打了,
             "字节数": len(原.encode()), "指纹": hashlib.sha256(原.encode()).hexdigest()[:16],
-            "载荷在外部存储": x["外部引用"] or None}
+            "载荷在外部存储": (x["外部引用"] if 看原文 or x["来源"] != "工具调用" or not x["外部引用"]
+                          else "***(要「查看敏感输入/独立测试答案」专项授权)")}
 
 
 def _筛(rs, 节点, 来源, 只看错误, 尝试):
@@ -1677,7 +1683,7 @@ async def 导出原始日志(project_id: str, rid: str, request: Request, me: �
                                      "筛选": {k: 体.get(k) for k in ("节点", "来源", "只看错误", "尝试") if 体.get(k) not in (None, "", False)}})
     包 = {"运行": rid, "定义哈希": r["definition_hash"], "定义来源": r["definition_ref"],
           "是全部还是子集": "全部" if len(中) == len(全) else f"筛选子集({len(中)} / {len(全)})",
-          "内容": "原件" if 看原文 else "部分打码(没有「查看敏感输入」授权:桥请求的参数 / 回执、人工决定的改动 / 理由打了码,其余是原件)",
+          "内容": "原件" if 看原文 else "部分打码(没有「查看敏感输入」授权:桥请求的参数 / 回执、人工决定的改动 / 理由、每一步的输入 / 输出、工具调用的结果打了码,其余是原件)",
           "导出人": me.user_id, "条目": 条,
           "缺口": [x["主键"] for x in 条 if x["载荷在外部存储"]] or None,
           "缺口说明": "「载荷在外部存储」的条目只带了引用,正文不在这份文件里" }
@@ -1695,7 +1701,7 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
             raise _错(404, "NOT_FOUND", "没有这次运行", "回运行列表")
         steps = c.execute(text("""
             select node_id, kind, status, attempt, execution_key, branch_key,
-                   skipped_reason, error_code, error_detail, output_ref, started_at
+                   skipped_reason, error_code, error_detail, input_ref, output_ref, started_at
               from run_steps where project_id=:p and execution_run_id=:i
              order by started_at nulls last, node_id
         """), {"p": project_id, "i": rid}).mappings().all()
@@ -1726,6 +1732,18 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
         if 看原文:
             return v
         return "***(要「查看敏感输入/独立测试答案」专项授权)" if v else v
+
+    def _步(v):
+        """每一步的输入输出(10-26)。有授权看原文;没有只给**形状**(有哪些项、各多长)——
+        配流程的人靠形状就能看出「这一步收到的东西是空的 / 少了一项」,而不读到客户原文。"""
+        if v is None:
+            return None
+        if not 看原文:
+            return _形状(v)
+        try:
+            return json.loads(v)
+        except (ValueError, TypeError):
+            return v
     return {
         "id": r["id"], "执行状态": r["status"],
         # ⚠️ **revision 必须给出来。** 暂停 / 继续 / 取消三条接口都要拿它做
@@ -1765,8 +1783,11 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
         "步骤": [{"节点": s["node_id"], "类型": s["kind"], "状态": s["status"],
                 "尝试": s["attempt"], "执行键": s["execution_key"],
                 "走的分支": s["branch_key"], "为什么跳过": s["skipped_reason"],
-                "错误码": s["error_code"], "错误细节": s["error_detail"]}
+                "错误码": s["error_code"], "错误细节": s["error_detail"],
+                "输入": _步(s["input_ref"]), "输出": _步(s["output_ref"])}
                for s in steps],
+        # 前端据此决定写「原文」还是「只看得到形状」—— 不让它从值长什么样去猜
+        "看得到原文": bool(看原文),
         "事件": [{"seq": e["seq"], "类型": e["event_type"], "载荷": e["payload"],
                 "时间": e["occurred_at"].isoformat() if e["occurred_at"] else None}
                for e in evs],

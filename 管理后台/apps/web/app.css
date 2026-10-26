@@ -403,3 +403,8 @@ body.wf-full .wfstatus{top:auto;bottom:22px;left:50%;right:auto;transform:transl
 .wfnode2[data-run="succeeded"]{box-shadow:0 0 0 2px #7be188}
 .wfnode2[data-run="failed"]{box-shadow:0 0 0 2px #f76560}
 .wfnode2[data-run="waiting_human"],.wfnode2[data-run="waiting_external"]{box-shadow:0 0 0 2px #ffb65d}
+
+/* 每一步的输入输出(10-26) */
+details.stepio{margin:4px 0 6px}
+details.stepio>summary{cursor:pointer;color:var(--ink3);font-size:12px}
+details.stepio pre.io{max-height:240px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:2px 0 6px}

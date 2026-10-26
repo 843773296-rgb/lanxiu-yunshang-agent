@@ -216,6 +216,27 @@ ck("值真的是 null 就返回 None(两件事分开)",
    RN.取指针({"a": None}, "/a") is None, 1)
 ck("数组下标越界也返回 缺失", RN.取指针({"a": [1]}, "/a/3") is DS.缺失, 1)
 
+# ── 每一步的输入输出(用户 10-26「记录每一步的输入输出」)───────────────
+# 判据的另一头在模型那一侧:「这一步收到了什么」拿脚本模型**自己记下的**入参对,不拿执行器自报的对执行器。
+print("\n▸ 每一步记下收到 / 交出了什么(模型那一侧的记录当真值)")
+r, m, 事件 = 跑(分支图, {"article": "x"}, [{"lang": "zh", "text": "检测"}, {"text": "中文总结"}])
+走过 = [s for s in r["步骤"] if s["status"] == "succeeded"]
+ck("走过的每一步都记了输出", all("output" in s for s in 走过), len(走过),
+   [s["node_id"] for s in 走过 if "output" not in s])
+llm步 = [s for s in 走过 if s["kind"] == "llm"]
+ck("**模型步骤记的输入 = 模型实际收到的**(按调用顺序逐个对)",
+   len(llm步) == len(m.被调) > 0 and all(s.get("input") == c["入"] for s, c in zip(llm步, m.被调)),
+   len(m.被调), [(s["node_id"], s.get("input")) for s in llm步])
+条件步 = [s for s in 走过 if s["kind"] == "condition"]
+ck("条件那一步记下了拿什么比的(「为什么走了这一路」看得见)",
+   条件步 and any(x.get("左边") == "zh" for x in 条件步[0].get("input") or []), len(条件步),
+   条件步 and 条件步[0].get("input"))
+跳 = [s for s in r["步骤"] if s["status"] == "skipped"]
+ck("跳过的步骤**不**记输入输出(没跑就没有,不填空值冒充)",
+   all("input" not in s and "output" not in s for s in 跳), len(跳))
+漏 = [种 for 种, 载 in 事件 if isinstance(载, dict) and ({"input", "output"} & set(载))]
+ck("**事件载荷里没有输入输出**(运行详情把事件原样给人看、不按授权打码)", not 漏 and 事件, len(事件), 漏[:3])
+
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 for x in 挂:
     print(f"   · {x}")
