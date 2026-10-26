@@ -272,8 +272,13 @@ def main():
         # 服务是以 mock 起的,所以**这一条只在 live 模式下才有意义**:
         # 下面先问一句「现在这个服务是什么模式」,
         # 而不是假设它是 live(假设错了的话这条断言会变成空验)。
+        # ⚠️ **问服务,不问自己。** 原来看的是**测试进程**的 MODEL_ADAPTER(没设就是 mock),
+        # 而跑这次运行的是常驻服务的 Worker —— 10-24 起它是真模型模式。两边对不上,于是走了 mock 那一支、
+        # 等「已完成」等来的是 SECRET_UNRESOLVED,在本机恒红(10-26 查到)。
         import runtime_cfg as CFG
-        if CFG.模型是mock():
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import _模型模式 as MM
+        if MM.模型是mock(基址):
             ck("⏸ **这个服务是以 `MODEL_ADAPTER=mock` 起的,所以这一条验不出来** —— "
                "它不是通过,是**没验**(要验:`MODEL_ADAPTER=anthropic make dev` 再跑)",
                True, f"MODEL_ADAPTER={CFG.MODEL_ADAPTER}")

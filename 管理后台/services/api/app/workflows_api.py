@@ -1866,6 +1866,44 @@ async def 导出原始日志(project_id: str, rid: str, request: Request, me: �
     return 包
 
 
+# ── 业务结果:「流程跑完了」和「业务上合格」分开说(10-26,方案 §8.2)──────────────
+# 执行状态只说流程走没走完;这一栏用人话说「这次结果能不能用、差什么、下一步干什么」。
+# 例:流程按定义跑完、但条件都不满足 → 不是「失败」,是「已完成,需补充资料」;某一步失败 → 说是哪一步、它自己的报错。
+_停止原因说法 = {
+    "missing_evidence": "流程跑完了,但没产出要求的结果(比如条件都不满足,或必需的结果没出来)",
+    "max_turns": "到了这次运行允许的模型调用次数上限",
+    "INPUT_MISSING": "使用者没填必填的内容",
+    "END_OUTPUT_MISSING": "最后要返回的内容缺了几项",
+    "BIND_MISSING_AT_RUNTIME": "某一步要用的数据取不到(前面那一步这一路没跑)",
+    "MERGE_NO_CANDIDATE": "分支汇合的几路一个都没有结果",
+    "NO_MODEL_CONNECTION": "选的模型在这个项目里找不到",
+    "HUMAN_REVIEW_EXPIRED": "人工核对到期没人处理",
+}
+
+
+def _业务结论(状态, 原因, 步骤们, 等):
+    失败步 = next((s for s in 步骤们 if s["status"] == "failed"), None)
+    if 状态 == "succeeded":
+        return {"结论": "已完成", "说明": "流程按定义跑完了。内容对不对还要人看(任务达标:未评)"}
+    if 状态 == "incomplete":
+        if 原因 == "max_turns":
+            return {"结论": "没做完", "说明": _停止原因说法["max_turns"] + ";要么调高上限,要么减少要调模型的步骤"}
+        return {"结论": "已完成,需补充资料",
+                "说明": _停止原因说法.get(原因 or "missing_evidence", "流程跑完了,但结果不完整") + ";补上资料再跑一次"}
+    if 状态 == "failed":
+        细 = (失败步 or {}).get("error_detail") or {}
+        if isinstance(细, str):
+            try:
+                细 = json.loads(细)
+            except ValueError:
+                细 = {"消息": 细}
+        说 = 细.get("消息") or _停止原因说法.get(原因 or "", "") or "有一步没做成"
+        return {"结论": "失败", "哪一步": 失败步 and 失败步["node_id"], "说明": 说, "下一步": 细.get("建议")}
+    if 等:
+        return {"结论": "进行中", "说明": "停着等人工核对" if 等.get("种类") == "human" else "停着等澜绣执行并回执"}
+    return {"结论": ST.找("execution_run")["中文状态"].get(状态, 状态), "说明": ""}
+
+
 @router.get(前缀 + "/execution-runs/{rid}")
 def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查看有权配置"))):
     看原文, _ = me.能("查看敏感输入/独立测试答案")
@@ -1944,6 +1982,9 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
         "执行状态中文": ST.找("execution_run")["中文状态"].get(r["status"], r["status"]),
         "是终态吗": r["status"] in ST.找("execution_run")["终态"],
         "停止原因": r["completion_reason"],
+        "停止原因说法": _停止原因说法.get(r["completion_reason"] or "", None),
+        # 用人话说这次结果能不能用、差什么、下一步干什么(§8.2)—— 页面先摆这一栏,执行状态放在后面
+        "业务结果": _业务结论(r["status"], r["completion_reason"], [dict(x) for x in steps], 等),
         # **两栏分开**(§16.4):succeeded 只说流程按定义跑完了、
         # 确定性输出检查过了,**不说明里面的事实都对**
         "任务达标": r["quality_evaluation_status"],

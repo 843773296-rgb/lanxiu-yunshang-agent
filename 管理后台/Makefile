@@ -902,6 +902,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "     而分叉时两边各自都「有样式」,只是不一样"
 	@./.venv/bin/python tools/css_class_check.py
 	@echo ""
+	@echo "▸ 后台页面不许用浏览器原生弹框(露内部码、星号不渲染、整页卡住;10-26 换成页内的 提示 / 问一句 / 报错)"
+	@./.venv/bin/python tools/native_dialog_check.py
+	@echo ""
 	@echo "▸ 页面文案里的加粗真的渲染了吗(别把星号显示给人看)"
 	@echo "  2026-10-08 用户验收一眼看到的:知识库页上那两个星号是**字面显示**的 ——"
 	@echo "  把它变成粗体的是 md(),而那些文案直接写进 HTML、没经过它。全站 32 处"
@@ -927,6 +930,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo ""
 	@echo "▸ 单步测试:拼「开始 → 这一步 → 结束」小图真跑一遍;写入类业务动作不许单测(会跳过人工核对)"
 	@./.venv/bin/python tests/orchestration/test_step_test.py
+	@echo ""
+	@echo "▸ 运行的业务结果:跑完了 ≠ 业务合格,用人话分开说(已完成 / 需补充资料 / 没做完 / 失败卡在哪一步)"
+	@./.venv/bin/python tests/orchestration/test_business_result.py
 	@echo ""
 	@echo "▸ 真模型的出网环境:常驻服务(launchd)也带上代理,只搬代理那几项(10-24 正式项目首跑 403 撞出来的)"
 	@./.venv/bin/python tests/orchestration/test_proxy_env.py

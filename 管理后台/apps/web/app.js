@@ -290,10 +290,10 @@ async function 页_prompt列表() {
         <span>共 ${d.total == null ? "未知条(没做全量计数 —— <b>不编一个数</b>)" : d.total + " 条"}</span>
         <div class="right">${d.next_cursor ? `<button id="more">下一页</button>` : ""}</div>
       </div>`;
-    if (d.next_cursor) $("#more").onclick = () => alert("翻页还没接 —— 游标已经从服务端给了");
+    if (d.next_cursor) $("#more").onclick = () => 提示("还不能翻页", "翻页还没接 —— 服务端已经给了游标,前端还没用上。");
   };
   const 新建 = async () => {
-    const key = prompt("给它一个稳定标识(项目内唯一,创建后不随意改):");
+    const key = await 问一句("新建 Prompt", "给它一个稳定标识:项目内唯一,建好之后不随意改。", { 输入: "比如 customer_needs_extract", 确定: "新建", 必填: true });
     if (!key) return;
     try {
       await 请求(`${P()}/prompts`, {
@@ -302,8 +302,7 @@ async function 页_prompt列表() {
       });
       画();
     } catch (e) {
-      const b = e.体 || {};
-      alert(`没建成:${b.message || e.message}\n\n下一步:${b.advice || "(服务端没给建议)"}`);
+      报错(e);
     }
   };
   $("#np").onclick = 新建;
@@ -441,9 +440,9 @@ async function 页_prompt详情(pid) {
   };
   校验提示(d.能存版本吗);
 
-  $("#b-cancel").onclick = () => {
+  $("#b-cancel").onclick = async () => {
     // **未保存离开时提示**(§5.2)
-    if (脏 && !confirm("有未保存的改动,离开会丢掉。确定?")) return;
+    if (脏 && !(await 问一句("离开这一页?", "有没保存的改动,离开会丢掉。", { 确定: "丢掉并离开", 取消: "留下" }))) return;
     location.hash = "#/prompts";
   };
 
@@ -478,7 +477,7 @@ async function 页_prompt详情(pid) {
   };
 
   $("#b-ver").onclick = async () => {
-    if (脏 && !confirm("有未保存的草稿改动。正式版本是从**草稿**建的 —— 先保存草稿再存版本?")) return;
+    if (脏 && !(await 问一句("先保存草稿?", "有没保存的改动。正式版本是从<b>已保存的草稿</b>建的 —— 不先保存,这些改动不会进这一版。", { 确定: "照旧存版本", 取消: "回去先保存" }))) return;
     $("#b-ver").disabled = true;
     try {
       const r = await 请求(`${P()}/prompts/${encodeURIComponent(pid)}/versions`, { method: "POST" });
@@ -684,6 +683,35 @@ function 弹层(标题, 内容) {
   return el;
 }
 function 关弹层() { const m = document.getElementById("mask"); if (m) m.remove(); }
+/* 页面里的「告诉你一件事」和「问你一句」—— 换掉浏览器原生的 alert / confirm / prompt(10-26,方案 §10.2 点名)。
+ * 原生的三个毛病:露出内部码、**加粗**不渲染成了星号、整页卡住点不了别的 */
+function 提示(标题, 内容html) {
+  弹层(标题, `${内容html}<div class="acts" style="margin-top:12px"><button class="pri" id="tsok">知道了</button></div>`);
+  $("#tsok").onclick = 关弹层; $("#tsok").focus();
+}
+// → Promise:给了 `输入` 就返回填的字(取消 → null);没给就是确认框,返回 true / false
+function 问一句(标题, 说明html, { 输入 = null, 多行 = false, 默认 = "", 确定 = "确定", 取消 = "取消", 必填 = false } = {}) {
+  return new Promise((done) => {
+    const 框 = 输入 === null ? "" : 多行
+      ? `<textarea id="wq-in" rows="3" style="width:100%" placeholder="${esc(输入)}">${esc(默认)}</textarea>`
+      : `<input id="wq-in" style="width:100%" placeholder="${esc(输入)}" value="${esc(默认)}">`;
+    const el = 弹层(标题, `<div>${说明html}</div>${框}<div id="wq-err" class="k"></div>
+      <div class="acts" style="margin-top:12px"><button class="pri" id="wq-ok">${esc(确定)}</button> <button id="wq-no">${esc(取消)}</button></div>`);
+    let 完 = false;
+    const 结 = (v) => { if (完) return; 完 = true; 关弹层(); done(v); };
+    $("#wq-ok").onclick = () => {
+      if (输入 === null) return 结(true);
+      const v = $("#wq-in").value.trim();
+      if (必填 && !v) { $("#wq-err").textContent = "这一项要填。"; $("#wq-in").focus(); return; }
+      结(v);
+    };
+    $("#wq-no").onclick = () => 结(输入 === null ? false : null);
+    $("#mx").onclick = () => 结(输入 === null ? false : null);
+    el.onclick = (e) => { if (e.target === el) 结(输入 === null ? false : null); };
+    const i = $("#wq-in"); (i || $("#wq-ok")).focus();
+    if (i && !多行) i.onkeydown = (e) => { if (e.key === "Enter") $("#wq-ok").click(); };
+  });
+}
 // 报错用页面里的弹层,不用 alert(10-26 用户截图:原生弹窗里露着 VALIDATION / write2.config.connection_version_id、星号没渲染)。
 // 字段键「节点id.config.xxx」换成步骤名;同名的步骤(比如两个「写报告正文」)标「第几个」,不然分不清是哪一个
 // 同名步骤(比如两个「写报告正文」)在列表、图上、面板标题都标「第几个」,不然分不清改的是哪一个(10-26)
@@ -1868,13 +1896,22 @@ function 步骤IO(s, 原文, 开 = false) {
     ${没存全 ? `<div class="note">内容太长,只存了前一段。</div>` : ""}
     ${块("收到的(输入)", s["输入"])}${块("交出的(输出)", s["输出"])}</details>`;
 }
+/* 业务结果(10-26,方案 §8.2):先说「这次结果能不能用、差什么、下一步干什么」,执行状态退到小字 */
+function 业务结果块(d) {
+  const r = d["业务结果"]; if (!r) return `<div><b>${esc(d["执行状态中文"])}</b></div>`;
+  const 色 = { "已完成": "ok", "已完成,需补充资料": "warn", "没做完": "warn", "失败": "err", "进行中": "" }[r["结论"]] || "";
+  const 步名 = r["哪一步"] ? (节点(r["哪一步"]) ? 业务名(节点(r["哪一步"])) : r["哪一步"]) : "";
+  return `<div class="bizres" data-res="${色}"><b>${esc(r["结论"])}</b>${步名 ? ` · 卡在「${esc(步名)}」` : ""}
+    ${r["说明"] ? `<div>${md(r["说明"])}</div>` : ""}${r["下一步"] ? `<div class="k">下一步:${md(r["下一步"])}</div>` : ""}
+    <div class="k">执行状态:${esc(d["执行状态中文"])}${d["停止原因"] ? ` <code>${esc(d["停止原因"])}</code>` : ""}</div></div>`;
+}
 function 运行卡(d, rid) {
   const 等 = d["在等什么"];
   const 步 = (d["步骤"] || []).map((s) => `<li>${节点(s["节点"]) ? `<button class="lk" data-goto="${esc(s["节点"])}">${esc(业务名(节点(s["节点"])))}</button>`
         : esc(业务名({ type: s["类型"] }))}:${esc(运行状态中文[s["状态"]] || s["状态"])}
       ${s["走的分支"] && s["走的分支"] !== "None" ? ` <span class="k">→ ${esc(图逻辑.分支名(s["走的分支"]))}</span>` : ""}
       ${s["错误码"] ? ` <code>${esc(s["错误码"])}</code>` : ""}${步骤IO(s, d["看得到原文"])}</li>`).join("");
-  return `<div><b>${esc(d["执行状态中文"])}</b> ${d["停止原因"] ? `<code>${esc(d["停止原因"])}</code>` : ""}</div>
+  return `${业务结果块(d)}
     ${等 ? (等["种类"] === "human"
         ? `<div class="note">停在「${esc(业务名(节点(等["步骤"]) || {}))}」等人工核对。
             ${等["待办"] ? `<a href="#/human/${encodeURIComponent(等["待办"])}">去核对 →</a>` : ""}
@@ -2091,7 +2128,7 @@ function 弹_冲突(e) {
     $("#cf-diff").textContent = "已下载本地副本。重新载入后可以对照着把改动补回去。";
   };
   $("#cf-reload").onclick = async () => {
-    if (!confirm("重新载入会丢掉本页没存上的修改(已下载的副本不受影响)。确定?")) return;
+    if (!(await 问一句("重新载入?", "会丢掉这一页没存上的修改(已下载的本地副本不受影响)。", { 确定: "重新载入", 取消: "先不" }))) return;
     关弹层(); 图态 = null; await 页_画布(`${g.wid}/${g.页签}`);
   };
 }
@@ -2165,7 +2202,7 @@ async function 做_冻结(说明) {
                     冻结于: new Date().toISOString(), 冻结人: "你" }, ...图态.版本们];
     location.hash = `#/workflow/${encodeURIComponent(图态.wid)}/版本与发布`;
     画_画布();
-    alert(`候选版本 ${d["版本"]} 已生成,尚未生效 —— 发布到环境这一步还没接。`);
+    提示("候选版本已生成", `<b>${esc(d["版本"])}</b> 已生成,<b>尚未生效</b> —— 发布到环境这一步还没接。`);
   } catch (e) {
     报错(e);
     if ((e.体 || {}).code === "VALIDATION") return 做_校验();
@@ -2334,7 +2371,7 @@ async function 盯单测(rid, nid) {
     }
     const 完 = d["是终态吗"] || d["在等什么"];
     if ($("#st-st") && 图态.选中 === nid) {
-      $("#st-st").innerHTML = `<b>${esc(d["执行状态中文"])}</b>${d["停止原因"] ? ` <code>${esc(d["停止原因"])}</code>` : ""}
+      $("#st-st").innerHTML = `${业务结果块(d)}
         ${s ? 步骤IO(s, d["看得到原文"], true) : ""}<a href="#/wfrun/${encodeURIComponent(rid)}">完整详情 →</a>`;
     }
     if (完) {
@@ -2591,6 +2628,7 @@ async function 页_运行详情(rid) {
       <div>${运行控制按钮(d)}</div>
     </div>
     <div id="rcmsg"></div>
+    ${业务结果块(d)}
     <div class="cards">
       <div class="card"><div class="kpi">${esc(d["执行状态中文"])}</div>
         <div class="k">执行状态 <code>${esc(d["执行状态"])}</code>
@@ -2716,12 +2754,12 @@ async function 页_agent列表() {
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
 }
 
-function 弹_新建agent() {
-  const 名 = prompt("Agent 名称:");
+async function 弹_新建agent() {
+  const 名 = await 问一句("新建 Agent", "给它起个名字,一眼看得出它是干什么的。", { 输入: "比如 退款研判助手", 确定: "新建", 必填: true });
   if (!名) return;
   请求(`${P()}/agents`, { method: "POST", body: JSON.stringify({ 名称: 名 }) })
     .then((d) => { location.hash = `#/agent/${encodeURIComponent(d.id)}`; })
-    .catch((e) => alert(`${e.体?.code || "出错"}:${e.message}\n\n下一步:${e.体?.advice || "—"}`));
+    .catch(报错);
 }
 
 let agent态 = null;
@@ -2905,7 +2943,7 @@ function 画_agent正文() {
     const t = $("#body").querySelector('[data-k="__输入"]');
     if (t) t.onchange = () => {
       try { agent态.调试输入 = JSON.parse(t.value); }
-      catch (e) { alert(`输入不是合法 JSON:${e.message}`); }
+      catch (e) { 提示("输入格式不对", `调试输入要是合法的 JSON(比如 <code>{"问题": "…"}</code>),没记下这次的改动。<br><span class="k">${esc(e.message)}</span>`); }
     };
   } else {
     $("#body").innerHTML = g["版本们"].length
@@ -2930,7 +2968,7 @@ function 画_agent正文() {
       if (!v) { delete cfg2[k]; }
       else if (v[0] === "{" || v[0] === "[") {
         try { cfg2[k] = JSON.parse(v); }
-        catch (e) { alert(`${k} 不是合法 JSON:${e.message}\n\n没保存这一项。`); return; }
+        catch (e) { 提示("格式不对,这一项没保存", `「${esc(k)}」要是合法的 JSON。<br><span class="k">${esc(e.message)}</span>`); return; }
       } else { cfg2[k] = v; }
       agent态.脏 = true; $("#fb").innerHTML = 報状态(null, true);
     };
@@ -2950,10 +2988,11 @@ async function 做_存agent() {
     画_agent();
   } catch (e) {
     if (e.码 === 409) {
-      alert(`版本冲突:${e.message}\n\n下一步:${e.体?.advice || ""}`);
-      return 路由();
+      await 路由();
+      提示("别人刚改过", `${md(e.message)}<br>下一步:${md(e.体?.advice || "看一眼最新内容再改")}`);
+      return;
     }
-    alert(`${e.体?.code || "出错"}:${e.message}\n\n下一步:${e.体?.advice || "—"}`);
+    报错(e);
   }
 }
 
@@ -2964,23 +3003,22 @@ async function 做_校验agent() {
       await 请求(`${P()}/agents/${encodeURIComponent(agent态.aid)}/validate`,
                 { method: "POST" });
     画_agent();
-  } catch (e) { alert(`${e.体?.code || "出错"}:${e.message}`); }
+  } catch (e) { 报错(e); }
 }
 
 async function 做_冻结agent() {
-  const 说明 = prompt("变更说明(必填)——「这一版改了什么、为什么」。");
+  const 说明 = await 问一句("生成版本", "写一句变更说明:这一版改了什么、为什么。", { 输入: "比如 收紧了退款判定,只认原路退回", 多行: true, 确定: "生成版本", 必填: true });
   if (说明 === null) return;
   if (agent态.脏) await 做_存agent();
   try {
     const d = await 请求(`${P()}/agents/${encodeURIComponent(agent态.aid)}/versions`,
       { method: "POST", body: JSON.stringify({ 变更说明: 说明 }) });
-    alert(`冻结成 ${d["版本"]}。\n\n内容哈希 ${d["内容哈希"].slice(0, 26)}…\n\n${d.note}`);
-    return 路由();
+    await 路由();
+    提示("版本已生成", `生成了 <b>${esc(d["版本"])}</b>。<br><span class="k">内容哈希 ${esc(d["内容哈希"].slice(0, 26))}…</span><br>${md(d.note || "")}`);
+    return;
   } catch (e) {
     const b = e.体 || {};
-    alert(`${b.code || "出错"}:${e.message}\n\n下一步:${b.advice || "—"}`
-      + (b.field_errors ? "\n\n" + Object.entries(b.field_errors)
-          .map(([k, v]) => `· ${k}:${v}`).join("\n") : ""));
+    报错(e);
     if (b.code === "VALIDATION") return 做_校验agent();
   }
 }
@@ -3003,13 +3041,10 @@ async function 做_跑agent() {
       if (r["是终态吗"]) { agent态.跑结果 = r; 画_agent(); return; }
       画_agent正文();
     }
-    alert("轮询了 12 秒还没到终态。**这不代表它失败了** —— "
-      + "可能 Worker 没起来(make dev 会一起起)。");
+    提示("还在跑", "等了 12 秒还没出结果。<b>这不代表它失败了</b> —— 可能后台执行程序没起来;过一会儿刷新再看。");
   } catch (e) {
     const b = e.体 || {};
-    alert(`${b.code || "出错"}:${e.message}\n\n下一步:${b.advice || "—"}`
-      + (b.field_errors ? "\n\n" + Object.entries(b.field_errors)
-          .map(([k, v]) => `· ${k}:${v}`).join("\n") : ""));
+    报错(e);
     if (b.code === "VALIDATION") return 做_校验agent();
   }
 }

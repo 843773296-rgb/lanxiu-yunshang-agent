@@ -416,3 +416,9 @@ details.stepio pre.io{max-height:240px;overflow:auto;white-space:pre-wrap;word-b
 .smpbar .smpsave{display:flex;gap:6px;flex:1 1 220px}
 .smpbar .smpsave input{flex:1;min-width:0}
 .smpbar>div{flex-basis:100%}
+/* 业务结果(10-26,§8.2) */
+.bizres{border:1px solid var(--line);border-left:4px solid var(--line);border-radius:var(--radius);padding:8px 12px;margin:6px 0 10px;background:var(--card)}
+.bizres[data-res="ok"]{border-left-color:#00b42a}
+.bizres[data-res="warn"]{border-left-color:#ff7d00}
+.bizres[data-res="err"]{border-left-color:#f53f3f}
+.bizres>div{margin-top:4px}
