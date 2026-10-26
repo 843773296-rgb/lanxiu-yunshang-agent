@@ -82,7 +82,8 @@ def 盖章(db=None):
     c = sqlite3.connect(db or DB)
     try:
         c.execute("CREATE TABLE IF NOT EXISTS world_meta(k TEXT PRIMARY KEY, v TEXT)")
-        for k, v in zip(键, (头, datetime.now().isoformat(timespec="seconds"), fp, str(n))):
+        建于 = datetime.now().isoformat(timespec="seconds")   # 真实时钟:记库在真实世界里什么时候建的,和演示世界日期无关
+        for k, v in zip(键, (头, 建于, fp, str(n))):
             c.execute("INSERT INTO world_meta(k, v) VALUES(?, ?) ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, v))
         c.commit()
     finally:
