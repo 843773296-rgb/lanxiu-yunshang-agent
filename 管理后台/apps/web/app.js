@@ -4398,9 +4398,9 @@ async function 页_产出详情(id) {
                    : `<span class="k">${esc(链["说明"] || "没有")}</span>`)
     + `</div><h2>用了哪些规矩(上报那一刻的快照)</h2>`
     + ((d["规则"] || []).length ? d["规则"].map((r) => `<div class="card"><div class="k">${esc(r["编号"])}</div>
-        <pre class="io">${esc(r["正文"])}</pre></div>`).join("")
+        <pre class="io" data-raw="原文">${esc(r["正文"])}</pre></div>`).join("")
                                   : `<div class="state">这份产出没有登记规矩</div>`)
-    + `<h2>输出</h2><div class="card"><pre class="io">${esc(d["输出"])}</pre></div>`
+    + `<h2>输出</h2><div class="card"><pre class="io" data-raw="原文">${esc(d["输出"])}</pre></div>`
     + `<h2>输入(照着什么数据写的)</h2><details><summary>展开看完整输入</summary>
         <pre data-raw="原文" class="k">${esc(JSON.stringify(d["输入"], null, 2))}</pre></details>`
     + `<h2>版本历史</h2><table><thead><tr><th class="num">版本</th><th>什么时候</th><th>状态</th></tr></thead><tbody>`
