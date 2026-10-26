@@ -1368,6 +1368,46 @@ async def 发起运行(project_id: str, request: Request,
         return _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, 体.get("上限"))
 
 
+@router.post(前缀 + "/workflows/{wid}/steps/{node_id}/test-runs", status_code=202)
+async def 单步测试(project_id: str, wid: str, node_id: str, request: Request,
+               idempotency_key: str = Header(default=None, alias="Idempotency-Key"),
+               me: 身份 = Depends(要权限("运行编排测试"))):
+    """只跑草稿里的这一步(10-26,方案 §8.1)。拼一张「开始 → 这一步 → 结束」的小图,
+    **走试运行同一个受理口** —— 幂等、排队、按连接定 mock / 真跑、记用量、记输入输出、打码全是同一套。
+    哪些步骤能单测、为什么写入类不行,见 runtime/单步测试.py 文件头。"""
+    import 单步测试 as ST1
+    if not idempotency_key:
+        raise _错(409, "IDEMPOTENCY_KEY_REQUIRED", "要带 Idempotency-Key",
+                  "前端为这一次点击生成一个 UUID 放进 Idempotency-Key 头 —— 网络超时重发时不会跑第二遍")
+    体 = await request.json()
+    输入 = 体.get("输入") or {}
+    if not isinstance(输入, dict):
+        raise _错(422, "VALIDATION", "测试输入格式不对", "每一项填一个值再试", field_errors={"输入": "要是一组「项: 值」"})
+    with 事务() as c:
+        d = c.execute(text("""select definition, revision from graph_drafts
+                             where project_id=:p and workflow_id=:i"""),
+                      {"p": project_id, "i": wid}).mappings().first()
+        if not d:
+            raise _错(404, "NOT_FOUND", "没有这条工作流的草稿", "回列表重新进入")
+
+        def 工具读写(tv):
+            if not tv:
+                return None
+            return c.execute(text("select side_effect_type from tool_versions where project_id=:p and id=:i"),
+                             {"p": project_id, "i": tv}).scalar()
+        try:
+            小图, 要填 = ST1.拼小图(d["definition"] or {}, node_id, 工具读写=工具读写)
+        except ST1.不能单测 as e:
+            raise _错(422, "STEP_TEST_UNSUPPORTED", e.消息, e.建议)
+        缺 = [f for f in 要填 if f not in 输入 or 输入[f] in (None, "")]
+        if 缺:
+            raise _错(422, "VALIDATION", f"还有 {len(缺)} 项没填,这次没有开始运行",
+                      "把每一项都填上再测。这次一个模型都没调用,不花钱",
+                      field_errors={f: "必填" for f in 缺})
+        来源 = {"kind": "step_test", "id": wid, "node_id": node_id, "draft_revision": d["revision"]}
+        return _受理运行(c, me, project_id, 小图, 来源, {f: 输入[f] for f in 要填}, idempotency_key, 体.get("上限"))
+
+
 def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, 上限=None):
     """编译 + 建 trace / run / job / 事件 + 入箱,**在调用方的同一个事务里**。
 

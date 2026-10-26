@@ -925,6 +925,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 挂起与恢复:人工核对 / 等澜绣回执时停下,办完从停下那一步接着走(已完成的不重跑)"
 	@./.venv/bin/python tests/orchestration/test_suspend_resume.py
 	@echo ""
+	@echo "▸ 单步测试:拼「开始 → 这一步 → 结束」小图真跑一遍;写入类业务动作不许单测(会跳过人工核对)"
+	@./.venv/bin/python tests/orchestration/test_step_test.py
+	@echo ""
 	@echo "▸ 真模型的出网环境:常驻服务(launchd)也带上代理,只搬代理那几项(10-24 正式项目首跑 403 撞出来的)"
 	@./.venv/bin/python tests/orchestration/test_proxy_env.py
 	@echo ""

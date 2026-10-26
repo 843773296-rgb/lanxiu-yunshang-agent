@@ -229,6 +229,38 @@ ck("**原始日志里 U002 看到的步骤输入输出也打了码**(换个页�
    and not [v for v in 原值 if v in json.dumps(日, ensure_ascii=False)],
    [c, len(步日)])
 
+# ── 单步测试(10-26):只跑草稿里的某一步,走试运行同一个受理口 ─────────────────
+模型步 = next(n for n in 定义["nodes"] if n["type"] == "llm")
+要填 = [k for k, r in (模型步["config"].get("bindings") or {}).items()
+        if not (isinstance(r, dict) and r.get("source") in ("constant", "system"))]
+单测路 = P + f"/workflows/{wid}/steps/{模型步['id']}/test-runs"
+c, b = 打("POST", 单测路, "U004", {"输入": {}})
+ck("单步测试**不带幂等键 → 409**(和试运行同一条规矩)", c == 409 and (b or {}).get("code") == "IDEMPOTENCY_KEY_REQUIRED", c)
+c, b = 打("POST", 单测路, "U004", {"输入": {}}, 头={"Idempotency-Key": uuid.uuid4().hex})
+ck("没填要填的项 → 422,而且没开始运行", (not 要填) or (c == 422 and (b or {}).get("code") == "VALIDATION"),
+   [c, 要填, (b or {}).get("message")])
+单入 = {k: "单测用的一段正文" for k in 要填}
+c, b = 打("POST", 单测路, "U004", {"输入": 单入}, 头={"Idempotency-Key": uuid.uuid4().hex})
+ck("**单步测试 → 202 排队**(和试运行一样,一个模型都还没调)", c == 202 and (b or {}).get("resource_id"), [c, b])
+单 = 等到终态(b["resource_id"]) if c == 202 else {}
+单步 = {s["节点"]: s for s in 单.get("步骤", [])}
+ck("跑完是成功,而且**这次运行里只有这一步**(加上拼出来的开始 / 结束),前后的步骤一个都没跑",
+   单.get("执行状态") == "succeeded" and 模型步["id"] in 单步
+   and {k for k in 单步 if not k.startswith("__单测")} == {模型步["id"]}, [单.get("执行状态"), list(单步)])
+ck("这一步记下的输入就是填进去的那几项,输出也记下了(结果就看它)",
+   单步.get(模型步["id"], {}).get("输入", {}) == {**单入, **{k: r.get("value") for k, r in
+       (模型步["config"].get("bindings") or {}).items() if isinstance(r, dict) and r.get("source") == "constant"}}
+   and 单步.get(模型步["id"], {}).get("输出") is not None,
+   单步.get(模型步["id"], {}).get("输入"))
+ck("运行上标着它是单步测试、测的是哪一步(运行记录里分得清)",
+   (单.get("定义来源") or {}).get("kind") == "step_test" and (单.get("定义来源") or {}).get("node_id") == 模型步["id"],
+   单.get("定义来源"))
+起步 = next(n for n in 定义["nodes"] if n["type"] == "start")
+c, b = 打("POST", P + f"/workflows/{wid}/steps/{起步['id']}/test-runs", "U004", {"输入": {}},
+          头={"Idempotency-Key": uuid.uuid4().hex})
+ck("不能单测的步骤(开始)→ 422,并说清为什么、该怎么办",
+   c == 422 and (b or {}).get("code") == "STEP_TEST_UNSUPPORTED" and (b or {}).get("advice"), [c, (b or {}).get("message")])
+
 c, b = 打("GET", P + f"/execution-runs/{rid}", "U005")
 ck("**拿 A 项目的 Run ID 用 B 项目的人去读 → 404**(不确认它存在)", c == 404, c)
 

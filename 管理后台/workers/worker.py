@@ -436,6 +436,16 @@ def _跑一张工作流(c, job, 打点):
                              where project_id=:p and workflow_id=:i"""),
                       {"p": job["project_id"], "i": 来源["id"]}).mappings().first()
         定义 = (d["definition"] if d else None) or {}
+        if 来源.get("kind") == "step_test":
+            # 单步测试(10-26):照受理时同一个函数从草稿拼小图 —— 草稿排队期间改了,下面的哈希比对照样拦。
+            # 「写入类业务动作不许单测」在这儿**再查一次**:受理之后有人把这个动作改登记成写入,也不能跑
+            import 单步测试 as ST1
+            try:
+                定义, _ = ST1.拼小图(定义, 来源.get("node_id"), 工具读写=lambda tv: tv and c.execute(text(
+                    "select side_effect_type from tool_versions where project_id=:p and id=:i"),
+                    {"p": job["project_id"], "i": tv}).scalar())
+            except ST1.不能单测 as e:
+                raise 干不了("STEP_TEST_UNSUPPORTED", {"为什么": e.消息, "怎么办": e.建议})
     打点("取到定义", {"来源": 来源})
 
     try:

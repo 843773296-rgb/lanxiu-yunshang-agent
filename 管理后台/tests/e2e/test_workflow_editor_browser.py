@@ -199,9 +199,15 @@ def main():
         print("\n▸ T11 / T12 值控件与快捷键")
         js("图态.选中='llm_1'; 图态.面板页='设置'; 图态.高级开=false; 画_面板();")
         段 = js("return [...document.querySelectorAll('#pn .psec')].map(x=>x.dataset.sec)")
-        ck("面板不分页签、从上到下分段(10-26 改版):基本 / 用到的数据 / 结果 / 高级,高级默认收起",
-           段 == ["设置", "输入数据", "结果字段", "高级"] and not js("return !!document.querySelector('#pn [data-pp]')")
+        ck("面板不分页签、从上到下分段(10-26 改版):基本 / 用到的数据 / 结果 / 高级,高级默认收起;模型步骤最后多一段「试这一步」",
+           段 == ["设置", "输入数据", "结果字段", "高级", "试这一步"] and not js("return !!document.querySelector('#pn [data-pp]')")
            and js("return document.querySelector('#pn [data-sec=\"高级\"]').open") is False, 段)
+        # 单步测试(10-26):能单测的类型才摆按钮;不能单测的不摆一个点了被拒的按钮
+        有钮 = js("return !!document.querySelector('#pn #st-go')")
+        js("图态.选中='human_1'; 画_面板();")
+        人工有钮 = js("return !!document.querySelector('#pn #st-go')")
+        ck("模型步骤有「单独测这一步」;人工核对没有(不摆点了没用的按钮)", 有钮 and not 人工有钮, [有钮, 人工有钮])
+        js("图态.选中='llm_1'; 画_面板();")
         把 = d.find_element(By.CSS_SELECTOR, ".pgrip")
         ActionChains(d).click_and_hold(把).move_by_offset(-80, 0).release().perform()
         宽 = js("return localStorage.getItem('wf.面板宽')")

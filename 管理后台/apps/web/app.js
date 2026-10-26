@@ -1317,12 +1317,13 @@ function 画_面板() {
       ${段("用到的数据", "输入数据", 表_输入(n))}
       ${段("结果", "结果字段", 表_结果(n))}
       <details class="psec" data-sec="高级"${高开 ? " open" : ""}><summary class="psh">高级</summary>${表_高级(n)}</details>
-      ${(() => { const 跑 = g.运行态 && g.运行态[n.id];   // 上次试运行这一步收到 / 交出了什么(10-26)
-        if (!跑) return "";
-        const io = 步骤IO({ 输入: 跑.输入, 输出: 跑.输出 }, 跑.原文, true);
-        return 段("上次试运行", "上次运行", `<div class="k">${esc(运行状态中文[跑.状态] || 跑.状态)}${跑.错误码 ? ` · <code>${esc(跑.错误码)}</code>` : ""}</div>`
-          + (io || `<div class="k">这一步没有记下输入输出(没跑到它,或是改版前跑的)。</div>`)); })()}
+      ${(() => { const 跑 = g.运行态 && g.运行态[n.id];   // 上次跑这一步收到 / 交出了什么(10-26)+ 单独测这一步
+        const 上次 = 跑 ? `<div class="k">上次:${esc(运行状态中文[跑.状态] || 跑.状态)}${跑.错误码 ? ` · <code>${esc(跑.错误码)}</code>` : ""}</div>`
+          + (步骤IO({ 输入: 跑.输入, 输出: 跑.输出 }, 跑.原文, true) || `<div class="k">这一步没有记下输入输出(没跑到它,或是改版前跑的)。</div>`) : "";
+        const 测 = 单测表(n);
+        return 上次 || 测 ? 段("试这一步", "试这一步", 上次 + 测) : ""; })()}
     </div>`;
+  挂单测(n);
   const 高 = $("#pn").querySelector('[data-sec="高级"]');
   if (高) 高.ontoggle = () => { 图态.高级开 = 高.open; };
   if ($("#adv-cancel")) $("#adv-cancel").onclick = () => { $("#adv-json").value = JSON.stringify(n.config, null, 1); $("#adv-err").textContent = ""; };
@@ -2189,6 +2190,78 @@ async function 做_试运行(输入 = {}) {
   } catch (e) {
     报错(e);
     if ((e.体 || {}).code === "VALIDATION") return 做_校验();
+  }
+}
+
+
+/* ── 单步测试(10-26,方案 §8.1):只跑选中的这一步,不从头跑整条流程 ──────────────
+ * 服务端拼「开始 → 这一步 → 结束」小图、走试运行同一个受理口;哪些能测、写入类为什么不行,
+ * 以服务端为准(runtime/单步测试.py)。这里只是**不摆点了没用的按钮**:明知会被拒的类型直接说为什么 */
+const 单测类型 = { llm: "模型", retrieve: "知识检索", tool: "业务动作" };
+function 单测字段(n) {
+  return Object.entries((n.config || {}).bindings || {})
+    .filter(([, r]) => !(r && (r.source === "constant" || r.source === "system"))).map(([k]) => k);
+}
+function 单测表(n) {
+  if (!单测类型[n.type]) return "";
+  if (n.type === "tool") {
+    const t = 工具资源((n.config || {}).tool_version_id);
+    if (!t) return `<div class="k">先在「基本」里选好业务动作,才能单独测。</div>`;
+    if (t["读写"] !== "只读") return `<div class="note">这个业务动作会写数据,<b>不能单独测</b>:单测会跳过前面的人工核对,写出一条没人核对过的真实记录。要看它的效果,点「试运行」从头跑。</div>`;
+  }
+  const 跑 = 图态.运行态 && 图态.运行态[n.id], 上次入 = 跑 && 跑.原文 && 跑.输入 && typeof 跑.输入 === "object" ? 跑.输入 : {};
+  const 框 = 单测字段(n).map((f) => {
+    const v = 上次入[f], 默 = v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v);
+    return `<label class="f">${esc(f)}</label><textarea rows="2" data-st="${esc(f)}">${esc(默)}</textarea>`;
+  }).join("");
+  return `<div class="stest"><div class="k">单独跑这一步,不从头跑整条流程。${Object.keys(上次入).length ? "下面已填上它上次收到的内容,可以改。" : ""}
+      用的是这一步选的模型:演示模型不花钱,真模型按一次调用计费。</div>
+    ${框 || '<div class="k">这一步不需要填任何内容。</div>'}
+    <button id="st-go">单独测这一步</button><div id="st-st" class="k"></div></div>`;
+}
+function 挂单测(n) {
+  const b = $("#st-go"); if (!b) return;
+  if (!能改图()) { b.disabled = true; b.title = "你只有查看权限"; return; }
+  b.onclick = () => 做_单测(n.id);
+}
+async function 做_单测(nid) {
+  if (图态.脏 && !(await 做_存草稿())) return;      // 服务端读的是已保存的草稿
+  const 输入 = {};
+  document.querySelectorAll("[data-st]").forEach((el) => {
+    const v = el.value.trim(); if (!v) return;
+    // 以 { 或 [ 开头的按 JSON 读(上次的输入是对象 / 列表时原样回填的就是 JSON);其余当文字
+    if (/^[{[]/.test(v)) { try { 输入[el.dataset.st] = JSON.parse(v); return; } catch (e) { /* 不是 JSON 就当文字 */ } }
+    输入[el.dataset.st] = v;
+  });
+  const 盒 = () => $("#st-st");
+  try {
+    const d = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/steps/${encodeURIComponent(nid)}/test-runs`, {
+      method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ 输入 }) });
+    if (盒()) 盒().innerHTML = `已受理 —— <b>排队中,还没调模型</b>。`;
+    await 盯单测(d.resource_id, nid);
+  } catch (e) { 报错(e); }
+}
+async function 盯单测(rid, nid) {
+  for (let i = 0; i < 40; i++) {
+    let d;
+    try { d = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}`); } catch (e) { break; }
+    const s = (d["步骤"] || []).find((x) => x["节点"] === nid);
+    // 只更新这一步的标记,不覆盖其它步骤上次整条试运行的结果(小图里只有这一步)
+    if (s) {
+      图态.运行态 = Object.assign({}, 图态.运行态 || {}, { [nid]: { 状态: s["状态"], 错误码: s["错误码"], 分支: s["走的分支"],
+        输入: s["输入"], 输出: s["输出"], 原文: !!d["看得到原文"] } });
+    }
+    const 完 = d["是终态吗"] || d["在等什么"];
+    if ($("#st-st") && 图态.选中 === nid) {
+      $("#st-st").innerHTML = `<b>${esc(d["执行状态中文"])}</b>${d["停止原因"] ? ` <code>${esc(d["停止原因"])}</code>` : ""}
+        ${s ? 步骤IO(s, d["看得到原文"], true) : ""}<a href="#/wfrun/${encodeURIComponent(rid)}">完整详情 →</a>`;
+    }
+    if (完) {
+      if (图态.选中 === nid) 画_面板();
+      if (图态.视图 === "流程图") { if (typeof 画_节点 === "function") 画_节点(); } else if ($("#steps")) 画_步骤();   // 列表 / 图上的标记跟着更新
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 1200));
   }
 }
 
