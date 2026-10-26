@@ -188,6 +188,10 @@ function render(){
 }
 async function load(){
   const q=await fetch("/api/ops-queue"+(state?"?state="+encodeURIComponent(state):"")).then(r=>r.json());
+  // 研判队列要登录才给(带客户信息)—— 没登录照其它页的做法去登录页,别拿 q.rows 当它在
+  // (10-26:那个口回 401 之后 `rows=undefined`,render() 里 `rows.length` 当场 TypeError,
+  //  **整段 load 停在这儿** —— 浏览器里是「框架有、数据一个都不加载」,不是一句报错)
+  if(q.code==="NO_AUTH"){location.href="/login?back="+encodeURIComponent(location.pathname+location.search);return}
   rows=q.rows; render();
   if(q.counts) 更新档位计数(q.counts);
   const 挪=q.挪到值班台;
