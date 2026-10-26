@@ -53,12 +53,15 @@ ck("评价:上周差评条数(≤3 星)对得上", r.get("差评几条") == 期[
 ck("评价:窗口写的是业务周,不是「最近 N 天」", "业务周" in str(r.get("窗口")), str(r.get("窗口")))
 
 # ── 进入休眠:进入日 = 最后互动 + 91 天,落在上周、且不晚于今天
-r = api.get_member(lifecycle="休眠", entered_week=起)
+# get_member 按身份限名单范围(10-26):期望值是全公司,用总部身份问
+with api.as_user(总部):
+    r = api.get_member(lifecycle="休眠", entered_week=起)
+    r止 = api.get_member(lifecycle="休眠", entered_week=止)
 期 = c.execute("SELECT COUNT(*) FROM customer WHERE last_interact IS NOT NULL "
               "AND date(last_interact, '+91 day') BETWEEN ? AND ?", (起, min(止, TODAY))).fetchone()[0]
 ck("进入休眠:上周有样本", 期 > 0)
 ck("进入休眠:上周人数和独立 SQL 对得上", r.get("人数") == 期, f"工具 {r.get('人数')} / SQL {期}")
-ck("进入休眠:给周里任意一天都是同一周", api.get_member(lifecycle="休眠", entered_week=止).get("人数") == r.get("人数"))
+ck("进入休眠:给周里任意一天都是同一周", r止.get("人数") == r.get("人数"))
 
 # ── 任务复盘:按截止日(end_ts)归周,逐周对 —— 任务少,单看一周容易恰好是 0,所以连看 6 周
 对不上, 有样本 = [], 0

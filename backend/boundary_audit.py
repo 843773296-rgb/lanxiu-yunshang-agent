@@ -252,6 +252,64 @@ def a_customer_profile_other_shop():
     raise PermissionError("按客户号、按姓名都翻不到别家店的客户(这正是期望的)")
 
 
+def a_member_other_scope():
+    """会员 / 服务记录只看名下(顾问)、本店(店长)(用户 10-26 拍「收紧,和另外两个一致」;并行会话查到 get_member 原来不判)。
+    身份**全自造**:不在名下的顾问、别店店长、没挂店的版师去翻同一个客户;对照:总部运营要看得到,否则攻击证明不了什么。"""
+    import api as _A, sqlite3 as _sq
+    c = _sq.connect(f"file:{_A.DB}?mode=ro", uri=True)
+    try:
+        客 = c.execute("SELECT id, name, shop FROM customer WHERE shop IS NOT NULL AND advisor_no IS NOT NULL "
+                      "AND merged_into IS NULL ORDER BY id LIMIT 1").fetchone()
+        别店 = c.execute("SELECT DISTINCT shop FROM customer WHERE shop IS NOT NULL AND shop<>? LIMIT 1",
+                        (客[2],)).fetchone() if 客 else None
+    finally:
+        c.close()
+    if not 客 or not 别店:
+        return "没有可攻击的客户 / 别店 —— 没攻击成,不算守住"
+    def 看(me, f):
+        t = _A._ME.set(me)
+        try:
+            return f(客[0])
+        finally:
+            _A._ME.reset(t)
+    总 = 看({"no": "ZZ0009", "name": "(自造总部)", "role": "总部运营", "shop": ""}, _A.get_member)
+    if "会员等级" not in 总:
+        return f"对照没过:总部运营也看不到 {客[0]} 的会员 —— 攻击证明不了任何事({str(总)[:80]})"
+    for 谁, me in (("不在名下的顾问", {"no": "ZZ0003", "name": "(自造顾问)", "role": "顾问", "shop": 客[2]}),
+                   ("别店店长", {"no": "ZZ0004", "name": "(自造店长)", "role": "店长", "shop": 别店[0]}),
+                   ("没挂店的版师", {"no": "ZZ0005", "name": "(自造版师)", "role": "版师", "shop": ""})):
+        for 名, f in (("get_member", _A.get_member), ("customer_history", _A.customer_history)):
+            r = 看(me, f)
+            if "error" not in r or 客[1] in str(r) or any(k in str(r) for k in ("会员等级", "归属顾问", "积分")):
+                return f"{谁}用 {名} 翻到了 {客[0]} 的信息,或拒绝语里带着姓名 —— 范围没守住({str(r)[:80]})"
+    # 名单这条路(用户 10-26 拍「也收,和单个客户一致」):按档列人 / 排先联系谁 —— 列出来的人必须都在这个人的范围里
+    import sqlite3 as _sq2
+    c2 = _sq2.connect(f"file:{_A.DB}?mode=ro", uri=True)
+    try:
+        归 = {r[0]: (r[1], r[2]) for r in c2.execute("SELECT id, shop, advisor_no FROM customer")}
+        档 = c2.execute("SELECT lifecycle FROM customer WHERE lifecycle IS NOT NULL AND advisor_no IS NOT NULL "
+                        "GROUP BY lifecycle ORDER BY COUNT(*) DESC LIMIT 1").fetchone()[0]
+    finally:
+        c2.close()
+    总列 = 看({"no": "ZZ0009", "name": "(自造总部)", "role": "总部运营", "shop": ""}, lambda _: _A.get_member(lifecycle=档))
+    for 谁, me, 在范围 in (("顾问", {"no": "ZZ0003", "name": "(自造顾问)", "role": "顾问", "shop": 客[2]},
+                            lambda cid: False),       # 自造工号名下一个客户都没有
+                           ("别店店长", {"no": "ZZ0004", "name": "(自造店长)", "role": "店长", "shop": 别店[0]},
+                            lambda cid: (归.get(cid) or ("", ""))[0] == 别店[0])):
+        for 名, 调 in (("按档列人", lambda _: _A.get_member(lifecycle=档)),
+                       ("先联系谁", lambda _: _A.get_member(lifecycle=档, rank=True))):
+            r = 看(me, 调)
+            越 = [x.get("id") for x in r.get("rows") or [] if not 在范围(x.get("id"))]
+            if 越:
+                return f"{谁}用 get_member {名}列出了范围外的客户 {越[:3]} —— 名单范围没守住"
+            if 谁 == "顾问" and (r.get("hit") or r.get("人数") or 0):
+                return f"顾问名下一个客户都没有,{名}却数出 {r.get('hit') or r.get('人数')} 个 —— 人数是全公司的"
+    if not (总列.get("hit") or 0):
+        return f"对照没过:总部按档「{档}」列不出人 —— 名单那半的攻击证明不了任何事"
+    raise PermissionError("单客:不在名下的顾问、别店店长、没挂店的版师都看不到,拒绝语里也没有姓名;"
+                          "名单:顾问 / 别店店长按档列人、排先联系谁,列出的都在自己范围里;总部照常看得到")
+
+
 def a_transfer_approve_other_shop():
     """客户转移审批(用户 10-25 拍「本店的转移店长也能批」)放宽之后,攻它的边:
     ① 店长批**别家店**客户的转移 ② 店长批等级调整 ③ 顾问批本店转移。**不写库**:拿一张自造的单(dict)
@@ -1474,6 +1532,11 @@ STRUCT = [
   a_transfer_approve_other_shop, "自造三张单走真判定链:甲店店长批乙店客户转移、店长批等级调整、顾问批本店转移;外加对照(店长批本店转移要放行)",
   "状态机只认调用方算好的「本店转移」结论,这个结论只有 api.审批上下文 一处算(客户全在批的人那家店、接手的人也在这家店且在职);"
   "聊天弹窗、审批中心、智能体批单三个入口都走它。批准即生效(api.审批生效 一处)"),
+ ("智能体的会员 / 服务记录工具:顾问只看名下,店长只看本店(单客和名单)", "backend/api.py get_member / customer_history;api._单客范围 / _名单范围",
+  a_member_other_scope, "自造不在名下的顾问、别店店长、没挂店的版师翻同一个客户;对照:总部运营要看得到",
+  "两个工具共用 api._单客范围 一处判;身份从会话取,没身份直接拒。拒绝语只说客户号,不带姓名 / 门店 / 等级。"
+  "按档列名单 / 数人数(lifecycle / rank / entered_*)同一套范围(api._名单范围),回答里带「范围」说清是名下 / 本店 / 全公司。"
+  "⚠️ 只收在模型的工具入口:报告 / 检查直接调底层函数不传范围,口径不变"),
  ("智能体的客户档案工具只看本店", "backend/api.py get_customer;api.本店范围",
   a_customer_profile_other_shop, "自造一个挂门店的顾问身份,按客户号、按姓名翻别家店的客户",
   "门店范围从会话身份取(和客户读接口同一个 本店范围);按姓名认人时只在本店里认,别店同名的不进候选。"

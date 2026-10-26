@@ -46,11 +46,15 @@ def main():
     c = api.get_customer(有["id"])
     ck("客户档案:归属顾问是「姓名(岗位)」,工号那一栏原样还在",
        c.get("归属顾问") == 称呼 and c.get("advisor_no") == 有["advisor_no"], c.get("归属顾问"))
-    m = api.get_member(有["id"])
+    # get_member 按身份限范围(10-26):没身份直接拒 —— 用总部身份看,验的是「带不带名字」不是范围
+    _总 = {"no": "60000008", "name": "检查", "role": "总部运营", "shop": ""}
+    with api.as_user(_总):
+        m = api.get_member(有["id"])
     ck("会员详情带归属顾问:工号 + 「姓名(岗位)」,和员工表一致",
        m.get("归属顾问") == {"工号": 有["advisor_no"], "是谁": 称呼}, m.get("归属顾问"))
     if 没 is not None:
-        m2 = api.get_member(没["id"])
+        with api.as_user(_总):
+            m2 = api.get_member(没["id"])
         ck("没有归属顾问的客户 → 明说「没有归属顾问」(不空着、不编)", m2.get("归属顾问") == "没有归属顾问", m2.get("归属顾问"))
     # 按姓名认人(10-25:模型说「没有按姓名查的工具」)—— 唯一的名字和重名的名字都从库里现找
     唯 = db.execute("SELECT id, name FROM customer WHERE name IS NOT NULL AND name<>'' GROUP BY name HAVING COUNT(*)=1 ORDER BY name LIMIT 1").fetchone()

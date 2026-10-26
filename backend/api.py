@@ -462,7 +462,7 @@ def get_workorder(workorder_id=None, artisan=None, status=None, ref=None, overdu
                     "一个师傅手上的在制件数超过 wip_limit,说明他已经排满,再派活只会更晚。"}
 
 
-def get_lifecycle(customer=None, lifecycle=None):
+def get_lifecycle(customer=None, lifecycle=None, 范围=None):
     """查会员生命周期判定:这个客户属于哪一档、**凭什么**、有没有被人工覆盖。
 
     口径在 knowledge/lifecycle.py,这里只取数和包装 ——
@@ -484,6 +484,8 @@ def get_lifecycle(customer=None, lifecycle=None):
     if lifecycle: where.append("lifecycle=?"); args.append(lifecycle)
     if not customer:
         where.append(_人头())        # 某档多少人:按人数(已并入别人的档案不另算一个人)
+        if 范围 and 范围[0]:
+            where.append(范围[0]); args += 范围[1]      # 名单范围(get_member 传进来,10-26)
     sql = ("SELECT id,name,lifecycle,order_cnt,idle_days,amount_12m,orders_12m,"
            "quarters_12m,first_order,manual_lc,manual_at,last_interact FROM customer")
     if where: sql += " WHERE " + " AND ".join(where)
@@ -520,7 +522,7 @@ def get_lifecycle(customer=None, lifecycle=None):
                     "**多条命中时要把命中列表说出来** —— 只报结论,运营无从判断算得对不对。"}
 
 
-def lifecycle_entered(lifecycle, month=None, week=None, start=None, end=None, shop=None):
+def lifecycle_entered(lifecycle, month=None, week=None, start=None, end=None, shop=None, 范围=None):
     """**某个月进入某一档的客户** —— 「九月 / 本月进入休眠的有多少」(业务 2026-10-08)。
 
     系统**没记换档历史**,只知道「现在在哪一档」。按无互动天数判的三档(休眠 / 潜在流失 / 流失)
@@ -566,11 +568,12 @@ def lifecycle_entered(lifecycle, month=None, week=None, start=None, end=None, sh
     天 = _lc.进入天数[lifecycle]
     # shop:门店报告只看本店(store_report 传进来);不给就是全部 —— 原来这里不分店,模型问本店时报的是全公司
     _片, _参 = _门店条件(shop)      # 按门店码,不按显示串
+    _范片, _范参 = (范围[0], 范围[1]) if 范围 and 范围[0] else ("", [])    # 名单范围(get_member 传进来,10-26)
     rs = _rows("SELECT id,name,lifecycle,last_interact,idle_days FROM customer "
                "WHERE last_interact IS NOT NULL AND date(last_interact) BETWEEN ? AND ?"
                + f" AND {_人头()}"      # 按人数,归主档所在店(10-14 拍)
-               + (f" AND {_片}" if _片 else "") + " ORDER BY last_interact",
-               (起 - _dt.timedelta(days=天)).isoformat(), (截 - _dt.timedelta(days=天)).isoformat(), *_参)
+               + (f" AND {_片}" if _片 else "") + (f" AND {_范片}" if _范片 else "") + " ORDER BY last_interact",
+               (起 - _dt.timedelta(days=天)).isoformat(), (截 - _dt.timedelta(days=天)).isoformat(), *_参, *_范参)
     out = []
     for r in rs:
         d = dict(r)
@@ -588,7 +591,7 @@ def lifecycle_entered(lifecycle, month=None, week=None, start=None, end=None, sh
                     + (f" rows 只列了前 40 个,人数以「人数」为准。" if len(out) > 40 else "")}
 
 
-def get_member_priority(lifecycle=None, limit=10):
+def get_member_priority(lifecycle=None, limit=10, 范围=None):
     """同一档里**先联系谁**。给一个生命周期档位,按 RFM 排出优先次序。
 
     八档答「这个客户处在什么阶段」,答不了「潜在流失这 16 个人我先打给谁」——
@@ -607,6 +610,8 @@ def get_member_priority(lifecycle=None, limit=10):
     args = []
     sql += f" WHERE {_人头()}"           # 按人数(10-14 拍)
     if lifecycle: sql += " AND lifecycle=?"; args.append(lifecycle)
+    if 范围 and 范围[0]:
+        sql += f" AND {范围[0]}"; args += 范围[1]      # 名单范围(get_member 传进来,10-26)
     rs = _rows(sql, *args)
     if not rs:
         return {"hit": 0, "note": "这一档一个人都没有,不要凭印象回答"}
@@ -6696,7 +6701,7 @@ SHOP_SCHEMAS=[
     "assignee":{"type":"string","description":"只看这一个人,工号或姓名(等同 scope=团队 再筛一个人)"},
     "status":{"type":"string","description":"只看这一档:有效 / 完结 / 取消 / 无效。不传看全部。"}},
    "required":[]}},
- {"name":"get_member","description":"**查会员分层 —— 等级和生命周期一次给全。** 给 customer(客户号或姓名)返回这个人的**会员等级档**(凭什么、离下一档还差多少)、**生命周期档**(八档中的哪一档、凭什么、有没有人工覆盖)和**归属顾问**(工号 + 姓名岗位;**给某个客户派回访 / 跟进任务前先查这里,别说「没查到归属顾问」就去问人**);给 lifecycle 列这一档里有哪些人(**人数看 hit,rows 最多列 40 个**);再加 rank=true 按 **RFM 三维**排出「先联系谁」;再加 entered_month 查「某个月进入这一档的有多少」(九月 / 本月进入休眠的…)。\n\n⚠️ **这是两套各答各的判定,不要互相推导**:会员等级看的是滚动 12 个月的实付或完成单数(满足任一条即可,**不是「且」**,依据取客户档案上的 12 个月快照字段、**不是去订单表现算**);生命周期看的是多久没来,判定口径**全是含端边界**(第 90 天算活跃、第 91 天进休眠、第 181 天进潜在流失、第 366 天才算流失;实付满 15000 **含端**计高价值)—— 这些不要心算,直接看返回值。\n\n多条命中时**必须把命中列表一起说出来**,只报结论运营无从判断算得对不对。出现「提醒」字段说明库里存的值和按今天重算的不一致,照实说,不要替它选一个。**RFM 是相对分,只在返回的这一批人内部可比** —— 排序解决的是「先打给谁」,不是「谁更值钱」。**这是判定和排序,不是预测。**\n\n⚠️ 按姓名查会重名 —— 命中不止一个时不给等级明细,会明说要客户号。",
+ {"name":"get_member","description":"**查会员分层 —— 等级和生命周期一次给全。** 给 customer(客户号或姓名)返回这个人的**会员等级档**(凭什么、离下一档还差多少)、**生命周期档**(八档中的哪一档、凭什么、有没有人工覆盖)和**归属顾问**(工号 + 姓名岗位;**给某个客户派回访 / 跟进任务前先查这里,别说「没查到归属顾问」就去问人**);给 lifecycle 列这一档里有哪些人(**人数看 hit,rows 最多列 40 个**);再加 rank=true 按 **RFM 三维**排出「先联系谁」;再加 entered_month 查「某个月进入这一档的有多少」(九月 / 本月进入休眠的…)。\n\n⚠️ **这是两套各答各的判定,不要互相推导**:会员等级看的是滚动 12 个月的实付或完成单数(满足任一条即可,**不是「且」**,依据取客户档案上的 12 个月快照字段、**不是去订单表现算**);生命周期看的是多久没来,判定口径**全是含端边界**(第 90 天算活跃、第 91 天进休眠、第 181 天进潜在流失、第 366 天才算流失;实付满 15000 **含端**计高价值)—— 这些不要心算,直接看返回值。\n\n多条命中时**必须把命中列表一起说出来**,只报结论运营无从判断算得对不对。出现「提醒」字段说明库里存的值和按今天重算的不一致,照实说,不要替它选一个。**RFM 是相对分,只在返回的这一批人内部可比** —— 排序解决的是「先打给谁」,不是「谁更值钱」。**这是判定和排序,不是预测。**\n\n**范围跟身份走**:顾问只看自己名下的客户,店长只看本店,总部运营看全部 —— 单个客户和按档列名单、数人数都一样。范围外的客户只回一句「看不了」;人数和名单都是这个范围里的,**回答时说清是谁的数**(看返回里的「范围」:你名下 / 本店 / 全公司),别把本店的数说成全公司。\n\n⚠️ 按姓名查会重名 —— 命中不止一个时不给等级明细,会明说要客户号。",
   "input_schema":{"type":"object","properties":{
     "customer":{"type":"string","description":"客户号(如 C10001)或姓名。姓名可能重名,重名时要改用客户号。"},
     "lifecycle":{"type":"string","description":"按档位筛,如「潜在流失」「休眠」"},
@@ -7016,6 +7021,35 @@ def get_tasks(task_id=None, scope=None, assignee=None, status=None):
     return my_tasks(status=status)
 
 
+def _单客范围(me, c):
+    """看**某一个客户**的明细,这个人够不够得着 → None(能看)或拒绝的 dict。c 要有 id / shop / advisor_no。
+
+    顾问只看自己名下的;店长看本店;总部运营看全部(用户 2026-10-26 拍「收紧,和另外两个一致」)。
+    服务记录(customer_history)和会员(get_member)共用这一份 —— 原来 get_member 不判,
+    别店、别人名下的客户照样给出名字、等级、积分和归属顾问(并行会话 10-26 查到)。
+    **拒绝时只说客户号,不带姓名 / 门店** —— 一句「看不了」里带着名字,就已经漏了一样。"""
+    if me.get("role") in MANAGER_ROLES:
+        if me.get("role") != "总部运营" and me.get("shop") and c["shop"] != me["shop"]:
+            return dict(error=f"{c['id']} 不在你的门店,看不了 —— 跨店看客户只有总部运营可以", 范围="本店")
+        return None
+    if (c.get("advisor_no") or "") != (me.get("no") or "?"):
+        return dict(error=f"{c['id']} 不在你名下,看不了 —— **这不是他没有记录**;要看请找店长", 范围="名下")
+    return None
+
+
+def _名单范围(me):
+    """按档**列名单 / 数人数**时,这个人能看哪一批 → (SQL 片段, 参数, 说法)。和 _单客范围 同一套口径:
+    顾问 = 自己名下;店长 = 本店(按门店码,和门店报告同一个 _门店条件);总部运营 = 全公司(片段为空)。
+    用户 10-26 拍「也收,和单个客户一致」—— 原来谁问都列全公司的名字和人数。
+    **只在模型的工具入口(get_member)上收**;报告 / 检查 / 评测直接调底层函数时不传,口径不变。"""
+    if me.get("role") in MANAGER_ROLES:
+        if me.get("role") == "总部运营" or not me.get("shop"):
+            return "", [], "全公司"
+        片, 参 = _门店条件(me["shop"])
+        return 片, list(参), f"本店({me['shop']})"
+    return "advisor_no=?", [me.get("no") or "?"], "你名下"
+
+
 def get_member(customer=None, lifecycle=None, rank=False, limit=None, entered_month=None, entered_week=None):
     """查会员分层。**会员等级和生命周期是两套判定**,问一个客户时一次给全 ——
     原来要调两次才拼得出「这个客户值不值得跟」。
@@ -7023,17 +7057,36 @@ def get_member(customer=None, lifecycle=None, rank=False, limit=None, entered_mo
     customer → 这个人的等级档 + 生命周期档;
     lifecycle → 这一档里有哪些人;再加 rank=true → 这一档里先联系谁(RFM 排序)。
     """
-    if lifecycle and entered_week:
-        return lifecycle_entered(lifecycle, week=entered_week)
-    if lifecycle and entered_month:
-        return lifecycle_entered(lifecycle, entered_month)
-    if lifecycle and rank:
-        return get_member_priority(lifecycle=lifecycle, limit=limit)
+    me = whoami()
+    if not me:
+        return dict(error="不知道现在是谁在问 —— 请先登录")
+    if not customer and lifecycle:
+        范围 = _名单范围(me)
+        if entered_week:
+            r = lifecycle_entered(lifecycle, week=entered_week, 范围=范围)
+        elif entered_month:
+            r = lifecycle_entered(lifecycle, entered_month, 范围=范围)
+        elif rank:
+            r = get_member_priority(lifecycle=lifecycle, limit=limit, 范围=范围)
+        else:
+            r = get_lifecycle(lifecycle=lifecycle, 范围=范围)
+        # 人数和名单都只算这个人看得到的那一批 —— 回答时要说清是「你名下 / 本店」的数,不是全公司
+        return {**r, "范围": 范围[2]} if isinstance(r, dict) and "error" not in r else r
     if customer:
         lc = get_lifecycle(customer=customer)
         if lc.get("error"):
             return lc
         rs = lc.get("rows") or []
+        # 范围闸(10-26):先按人逐个判,够不着的**连名字都不留在返回里**(重名时 rows 里也会带别店的人)
+        if rs:
+            档 = {r["id"]: r for r in _rows("SELECT id, shop, advisor_no FROM customer WHERE id IN (%s)"
+                                           % ",".join("?" * len(rs)), *[r["id"] for r in rs])}
+            拒们 = {r["id"]: _单客范围(me, 档.get(r["id"]) or {"id": r["id"], "shop": None, "advisor_no": None}) for r in rs}
+            rs = [r for r in rs if not 拒们[r["id"]]]
+            if not rs:
+                拒 = next(iter(拒们.values()))
+                return 拒 if len(拒们) == 1 else dict(error=f"「{customer}」命中的客户都不在你的范围里,看不了", 范围=拒["范围"])
+            lc = {**lc, "rows": rs, "hit": len(rs)}
         # ⚠️ **命中一个和命中多个必须长得不一样。**
         #    按姓名查是会重名的(库里「蔡青梧」就命中 3 个)。
         #    默默取第一个的话,等级明细会安静地挂在错的人身上,
@@ -7049,8 +7102,6 @@ def get_member(customer=None, lifecycle=None, rank=False, limit=None, entered_mo
                 "生命周期": rs[0],
                 "note": "会员等级看的是滚动 12 个月的钱和单数;生命周期看的是多久没来。"
                         "**两套判定各答各的**,不要互相推导。"}
-    if lifecycle:
-        return get_lifecycle(lifecycle=lifecycle)
     return {"error": "要么给 customer(某个人),要么给 lifecycle(某一档)"}
 
 
@@ -7298,11 +7349,9 @@ def customer_history(customer=None, limit=30):
         return {"error": f"「{customer}」命中 {len(cs)} 个客户,要改用客户号",
                 "候选": [{"客户号": c["id"], "门店": c["shop"]} for c in cs[:5]]}
     c0 = cs[0]
-    if me.get("role") in MANAGER_ROLES:
-        if me.get("role") != "总部运营" and me.get("shop") and c0["shop"] != me["shop"]:
-            return dict(error=f"{c0['name']} 在 {c0['shop']},不在你的门店", 范围="本店")
-    elif (c0.get("advisor_no") or "") != (me.get("no") or "?"):
-        return dict(error=f"{c0['name']} 不在你名下 —— **这不是他没有接触记录**", 范围="名下")
+    拒 = _单客范围(me, c0)
+    if 拒:
+        return 拒
 
     旅 = _tp.客户旅程(c0["id"])
     能算, 码, 说 = _口径_journey().够不够算(旅)
