@@ -123,6 +123,24 @@ DECISIONS = ("已采纳", "已改判", "已升级")
      '过期的没拦住'),
 ]
 
+def _取(行, 列, 默认=None):
+    """从一行里取一个**可能还不存在的列** —— 老库里那几列是事后 ALTER 补的。
+
+    ⚠️ `sqlite3.Row` 对不存在的键**抛 IndexError**,不是给 None(实测过)。
+    所以 `tr["delivery_check"]` 在一条「补列之前写进去的老数据」上会直接炸,
+    而它炸的位置是 `queue()` —— **整个研判队列页一条都列不出来**。
+    > 一列「值是空的」和一列「这张表上还没有这一列」,
+    > 在「我没取到值」这件事上长得一模一样,而前者该给 None、后者会抛异常。
+    2026-10-26 加,给 `delivery_check` / `withheld_draft` 用。
+    """
+    if 行 is None:
+        return 默认
+    try:
+        return 行[列]
+    except (IndexError, KeyError):
+        return 默认
+
+
 def _c():
     c = sqlite3.connect(DB); c.row_factory = sqlite3.Row; return c
 
@@ -290,6 +308,23 @@ def 正门关单凭据():
 #    漂了的表现是「按钮上写 14,点进去 11 条」,而两边分别看都正常。
 # 📌 `backlog()` 的 `待办` 这个数**没跟着变** —— 它是看板的积压总量(含超时),
 #    和这里的「待办档」是两个口径,别让人去相减。
+
+
+def 待完善吗(x):
+    """这一条是**草稿待完善**吗 —— 跑过、但交付前体检没放它出去(2026-10-26)。
+
+    口径只在这一处写:`档位` 的「待完善」和「待复核」两条都调它,
+    **两边各写一遍迟早会对不上**(而对不上的后果是同一条记录在两档里各出现一次,
+    或者两档都不出现 —— 后者更糟,因为它从看板上消失了)。
+
+    判据:交付检查是「未通过」或「不完整」,而且这件事还没结束。
+    ⚠️ **不看「有没有草稿」** —— 草稿是 2026-10-26 才开始落库的,
+    那之前被扣下的那些 `withheld_draft` 是空的,而它们照样是「没出结论、要人接手」。
+    拿「有草稿」当判据会把那批老数据漏掉,而它们恰恰是最该有人去看的。
+    """
+    return (_取(x, "交付检查") in ("未通过", "不完整")) and not x["done"]
+
+
 档位 = {
     "待办":   lambda x: not x["done"] and x["level"] != "已超时",
     "已超时": lambda x: not x["done"] and x["level"] == "已超时",
@@ -297,7 +332,19 @@ def 正门关单凭据():
     # 180 条里 166 条早已关单 —— 自动挑单从这一档取,关掉的单会被挑去重跑)。
     # 关了但没研判过的那些在「已销账」档里,带着「没走正门」的标,不在这一档重复出现。
     "未研判": lambda x: x["state"] == "未研判" and not x["done"],
-    "待复核": lambda x: x["state"] == "待复核",
+    # 「待完善」—— 草稿箱(用户 2026-10-26 拍:「草稿箱里的东西不是结论是待定,
+    # 是待完善的东西,交给人工来完善」)。进这一档的是**跑过、但没交付出去**的:
+    # 交付前体检判「未通过 / 不完整」,于是 `ai_root_cause` 那几列是空的或半截,
+    # 而草稿留在 `withheld_draft` 里等人接着改。
+    #
+    # ⚠️ **它必须从「待复核」里排除掉**,不能两档都算:
+    # `save_triage()` 把 status 写死成「待复核」,所以这些条目**本来就落在那一档**。
+    # 不排除的话同一条会在两档各出现一次,`各档计数()` 也会把它数两遍 ——
+    # 而那个计数是页面上「待复核 N 条」那个数字,看板会凭空多出活。
+    # > 一条「待复核」和一条「没出结论、待人接着写」,在 status 上长得一模一样,
+    # > 而前者是**复核别人的结论**、后者是**自己把结论写出来** —— 两件事。
+    "待完善": lambda x: 待完善吗(x),
+    "待复核": lambda x: x["state"] == "待复核" and not 待完善吗(x),
     # 升级出去、还没人接单复核的(10-17 起不算销账,计时接着走)
     "已升级": lambda x: x["state"] == "已升级" and not x["done"],
     # 改判了、等总部运营审的(10-19 起改判不直接进评测集)—— 工单本身已销账,这一档是给审核人的活
@@ -444,6 +491,13 @@ def queue(state=None):
             ai_root_cause=tr["ai_root_cause"] if tr else None,
             ai_confidence=tr["ai_confidence"] if tr else None,
             cost=tr["cost"] if tr else None,
+            # 这一条研判**最终交付出去了没有**,和有没有一份被扣下的草稿留着。
+            # 2026-10-26 加:「待完善」那一档要靠它分,而档位函数只看 `queue()` 给的行。
+            # ⚠️ 用 `_取(tr, ...)` 而不是 `tr["delivery_check"]`:老库里这两列是
+            # `_确保后加的列` 事后补的,而 `sqlite3.Row` 对**不存在的列**是抛
+            # IndexError,不是给 None —— 那样整个队列页会在一条老数据上崩掉。
+            交付检查=_取(tr, "delivery_check"),
+            有草稿=bool(_取(tr, "withheld_draft")),
             # 没走正门 = 工单关了、没走过研判、**也查不到一条真实的正门关单记录**(用户 10-14 拍:默认收起、计数亮着)。
             # 166 条全是造数直接写库造的(正门 10-12 才有,造数不走正门)—— 以后再有人绕过正门关单,也自动落进这一档
             没走正门=bool(工单已关闭 and not 研判有结论 and t["id"] not in 正门关过),
@@ -832,7 +886,8 @@ def 研判提示词版本(任务类型):
 def save_triage(task_id, breakpoint, case_id, text, trajectory,
                 cost=None, latency_ms=None, model=None, usage=None,
                 guard_blocked=False, guard_violations=None, answer_turns=1,
-                trace_id=None, prompt_ver=None, delivery_check=None):
+                trace_id=None, prompt_ver=None, delivery_check=None,
+                withheld_draft=None):
     """⚠️ `trace_id` 2026-09-28 补:它一直在 `sdk.run()` 的返回里,
     但到这一跳就丢了 —— 于是库里每条研判都答不出「它是哪一次调用的产物」。
     没有它,A3 的判读回流只能进总数,挂不到具体调用上。**空值合法,不许拿别的顶上。**
@@ -883,6 +938,23 @@ def save_triage(task_id, breakpoint, case_id, text, trajectory,
             # 是这个文件里风险最高的一种改法(插错位不报错,只是把值写进隔壁列)。
             c.execute("UPDATE triage SET delivery_check=? WHERE id=?",
                       (delivery_check, cur.lastrowid))
+        if withheld_draft:
+            # 被交付前体检扣下的**草稿原文**(2026-10-26,用户拍「做一个草稿箱」)。
+            #
+            # ⚠️ **为什么非得单存一列,而不能看 `ai_text`**:被扣下时
+            # `sdk.run()` 返回的 `text` **不是草稿**,是一段说明文字
+            # (「这条回答没有通过交付前检查…没有作为正式答复给出」),
+            # 草稿在它的 `未通过草稿` 字段里。于是 `ai_text` 存下来的是那段说明,
+            # 而 `parse_draft()` 在说明文字上解析出的根因 / 建议 / 证据全是空的。
+            # > 一条「模型什么都没说」和一条「它说了、但被闸扣下了」,
+            # > 在 `ai_root_cause` 为空这件事上长得一模一样。
+            #
+            # ⚠️ 这一列的东西**是草稿、不是结论**:它没过闸,不许当结论用。
+            # 用户 10-26 的原话是「草稿箱里的东西不是结论是待定,是待完善的东西,
+            # 交给人工来完善」—— 所以页面上它必须带着「草稿 · 待完善」的标,
+            # 而且不走 `ai_root_cause` 那几个字段(那几个是**结论**的位置)。
+            c.execute("UPDATE triage SET withheld_draft=? WHERE id=?",
+                      (withheld_draft, cur.lastrowid))
         # 2026-10-16:**不再写 task.summary**。那一列是工单的处理记录(工单页带绿色 ✔ 显示),
         # AI 的根因写进去就像已经办完;重跑时还会读到上一轮答案,两轮不独立。根因只在 triage 里。
         c.execute("UPDATE task SET status='待复核' WHERE id=?", (task_id,))
@@ -1013,7 +1085,7 @@ def _确保后加的列(c):
     那些写入会撞「no such column」。
     """
     有 = {r[1] for r in c.execute("PRAGMA table_info(triage)")}
-    for col in ("receipt", "receipt_kind", "prompt_ver", "delivery_check"):
+    for col in ("receipt", "receipt_kind", "prompt_ver", "delivery_check", "withheld_draft"):
         if col not in 有:
             c.execute(f"ALTER TABLE triage ADD COLUMN {col} TEXT")
 

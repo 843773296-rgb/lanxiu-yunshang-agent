@@ -13643,8 +13643,8 @@
   "file": [
    {
     "path": "backend/server.py",
-    "old": "                                     delivery_check=body.get(\"交付检查\"))",
-    "new": "                                     )"
+    "old": "                                     delivery_check=body.get(\"交付检查\"),",
+    "new": ""
    }
   ],
   "预期红": "打真的 /api/ops-triage:请求体里的「交付检查」真的落进库"
@@ -13660,5 +13660,41 @@
    }
   ],
   "预期红": "打真的 /api/ops-triage:请求体里的「交付检查」真的落进库"
+ },
+ {
+  "script": "backend/delivery_check_col_check.py",
+  "改坏": "写口不把「未通过草稿」传下去(草稿箱里永远没有草稿)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "                                     withheld_draft=body.get(\"未通过草稿\"))",
+    "new": "                                     )"
+   }
+  ],
+  "预期红": "被扣下的**草稿原文**也落进库(用户 10-26 拍的草稿箱;草稿在 `未通过草稿` 里,不在 text 里)"
+ },
+ {
+  "script": "backend/delivery_check_col_check.py",
+  "改坏": "把草稿写进 ai_text(草稿占了结论的位置)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "            c.execute(\"UPDATE triage SET withheld_draft=? WHERE id=?\",\n                      (withheld_draft, cur.lastrowid))",
+    "new": "            c.execute(\"UPDATE triage SET withheld_draft=?, ai_text=? WHERE id=?\",\n                      (withheld_draft, withheld_draft, cur.lastrowid))"
+   }
+  ],
+  "预期红": "草稿和 ai_text 是两列、没串位(草稿不许占结论的位置)"
+ },
+ {
+  "script": "backend/delivery_check_col_check.py",
+  "改坏": "队列页去掉「待完善」那个筛选按钮(后端分了档、人看不见)",
+  "file": [
+   {
+    "path": "agentsite/web/queue.html",
+    "old": "      <button data-s=\"待完善\">待完善</button>",
+    "new": ""
+   }
+  ],
+  "预期红": "后端分出来的每一档,队列页上都有筛选按钮(手抄 7 档,防同源)"
  }
 ]

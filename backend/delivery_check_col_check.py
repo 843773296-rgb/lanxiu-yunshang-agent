@@ -122,22 +122,35 @@ else:
             return None, f"{type(e).__name__}: {e}"
         return h.回, None
 
+    # 草稿原文:**故意和 text 写得不一样**。被扣下时 `sdk.run()` 的 `text`
+    # 是一段说明文字、草稿在 `未通过草稿` 里 —— 两者必须分别落到不同的列,
+    # 所以这里给两个能区分开的值,再回库里各查一次。
+    _草稿 = "## 根因\n【草稿】账户已注销\n## 建议动作\n【草稿】这一段没写完"
     回, 错 = 打(dict(task_id=任务, bp="BP-01", case="判据·交付状态",
                      text="## 根因\n判据造的\n## 建议动作\n判据造的\n## 证据\n判据造的\n## 置信度\n低",
-                     trajectory=[], 交付检查="未通过"))
+                     trajectory=[], 交付检查="未通过", 未通过草稿=_草稿))
     if 错:
         ck("打真的 /api/ops-triage:请求体里的「交付检查」真的落进库", False, 错)
     else:
         码, 体 = 回 if 回 else (None, None)
         tid = (体 or {}).get("triage_id")
-        存 = None
+        存 = 存草 = 存正文 = None
         if tid:
             r = sqlite3.connect(copy).execute(
-                "SELECT delivery_check FROM triage WHERE id=?", (tid,)).fetchone()
-            存 = r[0] if r else None
+                "SELECT delivery_check, withheld_draft, ai_text FROM triage WHERE id=?",
+                (tid,)).fetchone()
+            存, 存草, 存正文 = (r[0], r[1], r[2]) if r else (None, None, None)
         ck("打真的 /api/ops-triage:请求体里的「交付检查」真的落进库",
            存 == "未通过",
            f"HTTP {码} · triage_id {tid} · 库里存的是 {存!r}(期望 '未通过')")
+        ck("被扣下的**草稿原文**也落进库(用户 10-26 拍的草稿箱;草稿在 `未通过草稿` 里,不在 text 里)",
+           存草 == _草稿, f"库里存的是 {str(存草)[:60]!r}")
+        # ⚠️ 这一条守的是「草稿没被当成结论」:两者必须在**不同的列**里。
+        # 少了它,把 withheld_draft 写进 ai_text 也照样绿 ——
+        # 而那样页面就会把一份没过闸的草稿当结论显示出来。
+        ck("草稿和 ai_text 是两列、没串位(草稿不许占结论的位置)",
+           存草 != 存正文 and bool(存正文) and "判据造的" in str(存正文),
+           f"ai_text={str(存正文)[:40]!r} · withheld_draft={str(存草)[:40]!r}")
 
         # ③ 不传时不写 —— 空值合法,不许拿别的顶上
         回2, 错2 = 打(dict(task_id=任务, bp="BP-01", case="判据·没传",
@@ -166,6 +179,34 @@ ck("运维平台那头真的在传这个字段(agentsite/app.py 的 _triage_one)
 页 = open(os.path.join(os.path.dirname(HERE), "agentsite", "web", "queue.html"), encoding="utf-8").read()
 ck("研判详情页显示这个状态(后端存了而页面不显示 = 用户照旧看不见)",
    "delivery_check" in 页, f"queue.html 里出现 {页.count('delivery_check')} 次")
+
+# ── ⑥ 后端分出来的档,页面上得有入口 ────────────────────────────────────
+# 「草稿箱」这件事的另一半:`ops.档位` 里加了「待完善」,而页面不加按钮的话
+# 人照旧看不见它 —— 和上面第⑤条同一个形状(10-23:销账来源三个字段
+# 后端报了、`queue.html` 里出现 0 次)。
+#
+# ⚠️ **名单故意手抄,不读 `ops.档位`** —— 拿被测的清单去验被测的清单,
+# 删掉一档判据跟着少验一档、照样绿(同源谬误,CLAUDE.md 第 7 节第 2 条)。
+# 这里对的是「页面按钮」和「我手抄的这份档位名单」。
+该有按钮的档 = ["待办", "已超时", "未研判", "待完善", "待复核", "改判待审", "已销账"]
+# 反向那一半:**故意不摆按钮的档要写明理由**,而且这份名单只许少不许多。
+# 不写理由的话,下一次有人加了档忘了加按钮,只要往这儿塞一行就「绿」了。
+不摆按钮的档 = {
+    "已升级": "10-17 起升级 = 正式转交,**不算销账**、条目留在「待办」里继续计时"
+              "(587a1c03:原来交上去就从待办里消失)。所以它不需要单独一档;"
+              "详情页有升级摘要和升级 / 接单 / 退回入口。",
+}
+import re as _re                                                # noqa: E402
+_页 = open(os.path.join(os.path.dirname(HERE), "agentsite", "web", "queue.html"),
+           encoding="utf-8").read()
+_钮 = set(_re.findall(r'data-s="([^"]*)"', _页)) - {""}
+_缺 = [d for d in 该有按钮的档 if d not in _钮]
+ck(f"后端分出来的每一档,队列页上都有筛选按钮(手抄 {len(该有按钮的档)} 档,防同源)",
+   not _缺, f"缺按钮的:{_缺}" if _缺 else f"页面按钮 {len(_钮)} 个")
+_无理由 = [d for d in 不摆按钮的档 if not (不摆按钮的档.get(d) or "").strip()]
+ck("「故意不摆按钮」的那几档都写了理由(豁免不许囤积)",
+   not _无理由 and len(不摆按钮的档) <= 1,
+   f"没写理由的:{_无理由}" if _无理由 else f"豁免 {len(不摆按钮的档)} 档(上限 1)")
 
 print("=" * 74)
 shutil.rmtree(tmp, ignore_errors=True)

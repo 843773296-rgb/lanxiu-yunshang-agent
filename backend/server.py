@@ -3770,7 +3770,14 @@ class H(BaseHTTPRequestHandler):
                                      # 读调用方的人会以为它存下去了,**而两边都不报错**。
                                      # 后果:库里只有 `guard_blocked`(曾被打回过),
                                      # 于是分不开「被闸扣下」和「打回一次之后通过了」。
-                                     delivery_check=body.get("交付检查"))
+                                     delivery_check=body.get("交付检查"),
+                                     # 被扣下的**草稿原文**(2026-10-26 用户拍「做一个草稿箱」)。
+                                     # ⚠️ 和上面那个字段一样,请求体里**一直都有**
+                                     # (`app.py` 传了 `未通过草稿=r.get("未通过草稿")`),
+                                     # 而这一跳从来没读它 —— 这是同一条缝里漏下去的第二个字段。
+                                     # 查缝的时候要把那一跳的**每一个字段**都对一遍,
+                                     # 别只补被点名的那一个。
+                                     withheld_draft=body.get("未通过草稿"))
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
             return self._send(dict(ok=True, triage_id=tid, row=_ops.get_triage(tid)))

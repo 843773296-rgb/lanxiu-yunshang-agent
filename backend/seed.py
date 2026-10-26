@@ -134,7 +134,20 @@ CREATE TABLE triage(
   -- 所以:**新建的库由这条建表语句负责,老库由 `_确保后加的列` 补** ——
   -- 后者不是前者的替代品。(`ops.py` 里那句「新建的库 seed 里就有」
   -- 讲的就是这个分工,而我加列时漏了它的前半句。)
-  delivery_check TEXT
+  delivery_check TEXT,
+  -- 被交付前体检扣下的**草稿原文**(2026-10-26,用户拍「做一个草稿箱 ——
+  -- 草稿箱里的东西不是结论是待定,是待完善的东西,交给人工来完善」)。
+  --
+  -- ⚠️ **为什么不能看 `ai_text`**:被扣下时 `sdk.run()` 返回的 `text` 不是草稿,
+  -- 是一段说明文字(「这条回答没有通过交付前检查…没有作为正式答复给出」);
+  -- 草稿在它的 `未通过草稿` 字段里。于是 `ai_text` 存的是那段说明,
+  -- 而 `parse_draft()` 在说明文字上解析出的根因 / 建议 / 证据**全是空的**。
+  -- > 一条「模型什么都没说」和一条「它说了、但被闸扣下了」,
+  -- > 在 `ai_root_cause` 为空这件事上长得一模一样。
+  --
+  -- ⚠️ 这里的东西**是草稿、不是结论**,不许当结论用,也不许写进
+  -- `ai_root_cause` 那几列(那几列是结论的位置)。
+  withheld_draft TEXT
 );
 CREATE TABLE shop(code TEXT PRIMARY KEY, name TEXT, status TEXT, manager TEXT,
   phone TEXT, province TEXT, addr TEXT, updated TEXT);
