@@ -177,7 +177,7 @@ function 画_节点() {
       失效.has(n.id) ? `<span class="miss" title="它取值的那一步已经被删了">⚠ 原来源已删除</span>` : "",
       坏[n.id] ? `<span class="miss">有要改的</span>` : ""].filter(Boolean).join(" ");
     const 跑 = 图态.运行态 && 图态.运行态[n.id];   // 试运行结果标在图上(10-26 第 4 块)
-    return `<div class="wfnode2 ${选 ? "sel" : ""} ${坏[n.id] ? "bad" : ""} ${可连} ${跑 ? "run-" + esc(跑.状态) : ""}" data-id="${esc(n.id)}" tabindex="0" role="button"
+    return `<div class="wfnode2 ${选 ? "sel" : ""} ${坏[n.id] ? "bad" : ""} ${可连}"${跑 ? ` data-run="${esc(跑.状态)}"` : ""} data-id="${esc(n.id)}" tabindex="0" role="button"
         style="left:${p.x}px;top:${p.y}px;height:${h}px"
         aria-label="${esc(业务名(n) + "," + 次级标签(n) + (缺.length ? ",缺 " + 缺.length + " 项" : "") + (选 ? ",已选中" : ""))}">
       <div class="nh"><span class="t">${esc(业务名(n))}${typeof 同名后缀 === "function" ? 同名后缀(n) : ""}</span>${typeof 运行标 === "function" ? 运行标(n.id) : ""}

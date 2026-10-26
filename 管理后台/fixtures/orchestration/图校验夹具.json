@@ -1134,6 +1134,228 @@
         ]
       }
     },
+    "非法_条件兜底没选": {
+      "为什么": "「都不满足时怎么办」整个没选:只报一条「还没选」(NODE_MISSING_CONFIG)。**不许再叠一条 COND_NO_ELSE** —— 同一处两种说法,人会以为是两个问题、改完一条还是红(10-26 改人话时查出的多报)",
+      "期望阻断": [
+        "NODE_MISSING_CONFIG"
+      ],
+      "图": {
+        "definition_schema_version": "1",
+        "kind": "workflow",
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "nodes": [
+          {
+            "id": "start",
+            "type": "start",
+            "config": {
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "article": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "article"
+                ]
+              }
+            }
+          },
+          {
+            "id": "detect",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "lang",
+            "type": "condition",
+            "config": {
+              "branches": [
+                {
+                  "key": "zh",
+                  "when": {
+                    "op": "equals",
+                    "left": {
+                      "source": "node",
+                      "node_id": "detect",
+                      "pointer": "/lang"
+                    },
+                    "right": {
+                      "source": "constant",
+                      "value": "zh"
+                    }
+                  }
+                },
+                {
+                  "key": "en",
+                  "when": {
+                    "op": "equals",
+                    "left": {
+                      "source": "node",
+                      "node_id": "detect",
+                      "pointer": "/lang"
+                    },
+                    "right": {
+                      "source": "constant",
+                      "value": "en"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "id": "zh_sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "en_sum",
+            "type": "llm",
+            "config": {
+              "connection_version_id": "cv1",
+              "prompt_version_id": "p1",
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          {
+            "id": "merge",
+            "type": "merge",
+            "config": {
+              "candidates": [
+                {
+                  "source": "node",
+                  "node_id": "zh_sum",
+                  "pointer": "/text"
+                },
+                {
+                  "source": "node",
+                  "node_id": "en_sum",
+                  "pointer": "/text"
+                }
+              ],
+              "output_field": "summary"
+            }
+          },
+          {
+            "id": "end",
+            "type": "end",
+            "config": {
+              "output_schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "bindings": {
+                "summary": {
+                  "source": "node",
+                  "node_id": "merge",
+                  "pointer": "/summary"
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "start",
+            "target": "detect",
+            "port": "success"
+          },
+          {
+            "source": "detect",
+            "target": "lang",
+            "port": "success"
+          },
+          {
+            "source": "lang",
+            "target": "zh_sum",
+            "port": "branch",
+            "branch_key": "zh"
+          },
+          {
+            "source": "lang",
+            "target": "en_sum",
+            "port": "branch",
+            "branch_key": "en"
+          },
+          {
+            "source": "zh_sum",
+            "target": "merge",
+            "port": "success"
+          },
+          {
+            "source": "en_sum",
+            "target": "merge",
+            "port": "success"
+          },
+          {
+            "source": "merge",
+            "target": "end",
+            "port": "success"
+          }
+        ]
+      }
+    },
     "非法_两个开始节点": {
       "为什么": "§6.1:每个顶层 Workflow 唯一一个开始。两个入口的话『执行从哪儿开始』不确定",
       "期望阻断": [

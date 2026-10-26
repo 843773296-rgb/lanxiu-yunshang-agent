@@ -627,7 +627,7 @@ async def 导入执行记录(project_id: str, request: Request, me: 身份 = Dep
             # 逐句核对同理:10-25 之前导入的那些轮没有,补推时只补这一栏(已经有的不覆盖 —— 快照,当时判成什么就是什么)
             补了 = bool(结串 and not 老["有结论"] and c.execute(text(
                 "update traces set claims_snapshot = cast(:j as jsonb) where project_id=:p and id=:t and claims_snapshot is null"),
-                {"j": 结串, "p": project_id, "t": 老["id"]}).rowcount)
+                {"j": _json.dumps(结, ensure_ascii=False) if 结 is not None else None, "p": project_id, "t": 老["id"]}).rowcount)
             return {"trace_id": 老["id"], "导入了吗": False, "补了逐句核对吗": 补了,
                     "note": "这一轮已经收尾、导入过了,没重写"}
         tid = 老["id"] if 老 else f"tr_{_uu.uuid4().hex[:12]}"
@@ -636,14 +636,14 @@ async def 导入执行记录(project_id: str, request: Request, me: 身份 = Dep
             c.execute(text("""update traces set end_reason=:er, ended_at=:en, session_id=:s,
                                   claims_snapshot = coalesce(cast(:j as jsonb), claims_snapshot)
                               where project_id=:p and id=:t"""),
-                      {"er": 状, "en": _时刻(体.get("结束")), "s": 体.get("会话号"), "j": 结串, "p": project_id, "t": tid})
+                      {"er": 状, "en": _时刻(体.get("结束")), "s": 体.get("会话号"), "j": _json.dumps(结, ensure_ascii=False) if 结 is not None else None, "p": project_id, "t": tid})
         else:
             c.execute(text("""insert into traces (id, organization_id, project_id, request_id, session_id, entry_kind,
                                   environment, started_at, ended_at, end_reason, claims_snapshot, created_at, created_by)
                               values (:i,:o,:p,:k,:s,'聊天站',:e,:st,:en,:er, cast(:j as jsonb), now(), :u)"""),
                       {"i": tid, "o": me.org_id, "p": project_id, "k": 键, "s": 体.get("会话号"),
                        "e": os.environ.get("APP_ENV", "development"), "st": _时刻(体.get("开始")),
-                       "en": _时刻(体.get("结束")), "er": 状, "j": 结串, "u": me.user_id})
+                       "en": _时刻(体.get("结束")), "er": 状, "j": _json.dumps(结, ensure_ascii=False) if 结 is not None else None, "u": me.user_id})
         短 = _uu.uuid5(_uu.NAMESPACE_URL, 键).hex[:8]
         for x in 步们:
             sid = str(x.get("id") or "")

@@ -78,6 +78,35 @@ ck("**每条都写了「怎么改」**(建议必填,和 contract/errors.py 同�
    all((p["建议"] or "").strip() for p in 问题们), len(问题们))
 ck("那条跨分支报错的建议里点名了**分支汇合**这个解法(§7.2 说的正是它)",
    那条 and "汇合" in 那条[0]["建议"], 1)
+
+# ── 报错写给配流程的人看(用户 10-26「报错改人话」)─────────────────
+# 判据落在结构上,不枚举「哪些词不许出现」:**这张图自己的内部 id、登记过的英文字段名、规格章节号**
+# 一个都不许出现在 消息 / 建议 里。界面已经按 node_id / field_path 把步骤名和字段中文名标在前面了。
+# 依赖查询给「一律不存在」,让 REF_NOT_FOUND 那条也进视野。
+import re  # noqa: E402
+print("\n▸ 报错是人话(不露内部 id / 英文字段名 / 章节号)")
+DS = V.DS
+字段名们 = {f for n in DS.节点表 for f in n["配置"]} | set(DS._通用名)
+露馅, 重复, 扫过 = [], [], 0
+for 名, c in 夹具.items():
+    ids = {n.get("id") for n in (c["图"].get("nodes") or []) if n.get("id")}
+    词 = sorted(ids | 字段名们, key=len, reverse=True)
+    pat = re.compile(r"(?<![A-Za-z0-9_])(" + "|".join(map(re.escape, 词)) + r")(?![A-Za-z0-9_])")
+    ps = V.校验(c["图"], 依赖存在=lambda f, v: False)
+    for p in ps:
+        扫过 += 1
+        for 栏 in ("消息", "建议"):
+            m = pat.search(p[栏]) or re.search(r"§|config\.", p[栏])
+            if m:
+                露馅.append(f"{名}/{p['code']}/{栏} 露出「{m.group(0)}」")
+    全id = [n.get("id") for n in (c["图"].get("nodes") or [])]
+    if len(全id) != len(set(全id)):
+        continue            # id 重复的图里,同一个 node_id 指两个不同步骤 —— 「同一处」本身就不成立
+    键 = [(p["node_id"], p["field_path"]) for p in ps if p["级别"] == V.阻断 and p["field_path"]]
+    重复 += [f"{名}:{k}" for k in set(键) if 键.count(k) > 1]
+ck("每条 消息 / 建议 里都没有内部 id、英文字段名、规格章节号", not 露馅 and 扫过 > 0, 扫过, 露馅[:3])
+ck("同一步的同一个字段不报两条阻断(两种说法会让人以为是两个问题)", not 重复 and 扫过 > 0, 扫过, 重复[:3])
+
 r = V.报告(问题们)
 ck("报告信封齐(通过 / 阻断数 / 警告数 / 问题 / 说明)",
    set(r) == {"通过", "阻断数", "警告数", "问题", "说明"} and r["通过"] is False, 5)

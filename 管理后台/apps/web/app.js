@@ -1012,7 +1012,7 @@ const 字段中文 = { connection_version_id: "用哪个模型", prompt_version_
   candidate_roles: "谁来处理", expires_at_policy: "多久没处理就结束", operations: "怎么整理",
   knowledge_base_id: "查哪个资料库", retrieval_config_version_id: "怎么查", candidates: "汇合哪几路",
   output_field: "汇合后叫什么", agent_version_id: "用哪个 Agent", task_binding: "交给它的任务",
-  sub_limits: "这一步的上限" };
+  sub_limits: "这一步的上限", bindings: "用到的数据" };
 const 中文名 = (f) => 字段中文[f] || f;
 
 /* 执行顺序:从开始沿边走;条件的每一路缩进一层。没接进流程的放最后 */
@@ -1743,7 +1743,7 @@ function 画_问题() {
       <span class="k">共 ${r["问题"].length} 项</span></div>` + r["问题"].map((p, i) => `
     <button class="issue ${p["级别"] === "blocking" ? "b" : "w"} ${图态.问题位 === i ? "on" : ""}" data-i="${i}">
       ${p.node_id && 节点(p.node_id) ? `<b>${esc(业务名(节点(p.node_id)))}</b> · ` : p.node_id ? `<b>${esc(p.node_id)}(已删除)</b> · ` : ""}
-      ${p.field_path ? `${esc(中文名(String(p.field_path).split(/[./[]/)[0]))} · ` : ""}${md(p["消息"])}
+      ${p.field_path ? `${esc(中文名(String(p.field_path).replace(/^config\./, "").split(/[./[]/)[0]))} · ` : ""}${md(p["消息"])}
       <br><span class="k">怎么改:${md(p["建议"])}</span></button>`).join("");
   const 到 = (i) => {
     const p = r["问题"][i]; 图态.问题位 = i;
@@ -1779,7 +1779,7 @@ function 画_测试(盒 = null) {
         <input data-in="${esc(k)}" data-t="array" placeholder="多项用逗号隔开">${说}`;
     return `<label class="f">${标}</label><textarea rows="2" data-in="${esc(k)}" data-t="string"></textarea>${说}`;
   }).join("");
-  盒.innerHTML = `<div class="${侧 ? "stack" : "two"}">
+  盒.innerHTML = (侧 ? `<div class="stack">` : `<div class="two">`) + `
     <div class="card"><h3>填一条测试输入</h3>
       ${框 || '<div class="k">这条流程不需要使用者提供任何东西。</div>'}
       <div class="note">测试用的是<b>草稿</b>,不是候选版本。模型连接是演示用的那条时不真调模型(结果带 [mock]);
@@ -1846,7 +1846,7 @@ function 定位步骤(id) {
 }
 function 运行标(id) {
   const x = 图态 && 图态.运行态 && 图态.运行态[id];
-  return x ? `<span class="pill run-${esc(x.状态)}">${esc(运行状态中文[x.状态] || x.状态)}</span>` : "";
+  return x ? `<span class="pill" data-run="${esc(x.状态)}">${esc(运行状态中文[x.状态] || x.状态)}</span>` : "";
 }
 function 运行卡(d, rid) {
   const 等 = d["在等什么"];

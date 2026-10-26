@@ -396,10 +396,10 @@ body.wf-full .wfstatus{top:auto;bottom:22px;left:50%;right:auto;transform:transl
 /* ── 第 4 块(10-26 方案 §4):试运行面板在编排页右侧;每一步标上这次运行的结果 ───────── */
 .wfpanel .phd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .wfpanel .stack{display:grid;gap:12px}
-.pill.run-succeeded{background:#e8ffea;color:#00a023;border-color:#aff0b5}
-.pill.run-failed{background:#ffece8;color:#f53f3f;border-color:#fbaca3}
-.pill.run-waiting_human,.pill.run-waiting_external{background:#fff7e8;color:#d25f00;border-color:#ffcf8b}
-.pill.run-skipped,.pill.run-cancelled,.pill.run-pending,.pill.run-running{background:var(--bg);color:var(--ink3)}
-.wfnode2.run-succeeded{box-shadow:0 0 0 2px #7be188}
-.wfnode2.run-failed{box-shadow:0 0 0 2px #f76560}
-.wfnode2.run-waiting_human,.wfnode2.run-waiting_external{box-shadow:0 0 0 2px #ffb65d}
+.pill[data-run="succeeded"]{background:#e8ffea;color:#00a023;border-color:#aff0b5}
+.pill[data-run="failed"]{background:#ffece8;color:#f53f3f;border-color:#fbaca3}
+.pill[data-run="waiting_human"],.pill[data-run="waiting_external"]{background:#fff7e8;color:#d25f00;border-color:#ffcf8b}
+.pill[data-run="skipped"],.pill[data-run="cancelled"],.pill[data-run="pending"],.pill[data-run="running"]{background:var(--bg);color:var(--ink3)}
+.wfnode2[data-run="succeeded"]{box-shadow:0 0 0 2px #7be188}
+.wfnode2[data-run="failed"]{box-shadow:0 0 0 2px #f76560}
+.wfnode2[data-run="waiting_human"],.wfnode2[data-run="waiting_external"]{box-shadow:0 0 0 2px #ffb65d}

@@ -1250,9 +1250,9 @@ async def 冻结版本(project_id: str, wid: str, request: Request,
         定义 = d["definition"] or {}
         问题们 = V.校验(定义, 依赖存在=_依赖查询(c, project_id))
         if V.有阻断(问题们):
-            raise _错(422, "VALIDATION", f"还有 {sum(1 for p in 问题们 if p['级别'] == V.阻断)} 条阻断,不能冻结",
-                      "先按校验报告改完 —— **一张有阻断的图冻结出来的版本,"
-                      "发布清单指着它却跑不起来**",
+            # 一张有阻断的图冻结出来的版本,发布清单指着它却跑不起来
+            raise _错(422, "VALIDATION", f"还有 {sum(1 for p in 问题们 if p['级别'] == V.阻断)} 处没配好,暂时不能生成版本",
+                      "按下面列出的逐处改好,再点「准备发布」",
                       field_errors={_遮凭据词((p["node_id"] or "图") + "." + (p["field_path"] or "")):
                                     _遮凭据词(p["消息"]) for p in 问题们 if p["级别"] == V.阻断})
         计划 = CP.编译(定义, 依赖存在=_依赖查询(c, project_id))
@@ -1387,8 +1387,8 @@ def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, �
         计划 = CP.编译(定义, 依赖存在=_依赖查询(c, project_id))
     except CP.编译失败 as e:
         阻 = [p for p in e.问题们 if p["级别"] == V.阻断]
-        raise _错(422, "VALIDATION", f"这张图有 {len(阻)} 条阻断,跑不了",
-                  "先点「校验」按报告改完 —— **一个模型都没调,这次不花钱**",
+        raise _错(422, "VALIDATION", f"还有 {len(阻)} 处没配好,这次没有开始运行",
+                  "按下面列出的逐处改好再试运行。这次一个模型都没调用,不花钱",
                   field_errors={(p["node_id"] or "图") + "." + (p["field_path"] or ""):
                                 p["消息"] for p in 阻})
     # 这次运行算 mock 还是 live:**有一个 AI 步骤选了真连接就是 live**(而部署没明确选只跑 mock)
