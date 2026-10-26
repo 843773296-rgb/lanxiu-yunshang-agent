@@ -636,6 +636,17 @@ def _跑一张工作流(c, job, 打点):
             raise RN.节点失败("ADAPTER_MISSING", f"工具版本 {tv} 没有可用的执行通道",
                             "工作流里的工具步骤只接澜绣桥名单里的(runtime/桥工具.py);"
                             "**缺适配器要报出来,不能当成这一步不需要做**")
+        if 跑法 == "集成验证":
+            # 集成验证(10-26):写入真发给澜绣,但**只许写测试客户** —— 发出前在这里核一次,澜绣执行前再核一次
+            import dsl as _DS
+            import 执行模式 as _EM
+            _se = c.execute(text("select side_effect_type from tool_versions where project_id=:p and id=:i"),
+                            {"p": job["project_id"], "i": tv}).scalar()
+            if _se != _DS.只读:          # 读写登记不明的按写入处理(和连接测试同一条)
+                _ok, _目标, _为什么 = _EM.集成验证放行吗(名, 实参)
+                if not _ok:
+                    raise RN.节点失败("INTEGRATION_TARGET_NOT_TEST", _为什么,
+                                    "集成验证只用来验「真写进澜绣」这条路 —— 输入里换成测试客户(IT- 开头,每家店一个)再跑")
         if 跑法 == "连接测试":
             import dsl as _DS
             tvr = c.execute(text("select side_effect_type, output_schema from tool_versions where project_id=:p and id=:i"),
@@ -705,9 +716,28 @@ def _跑一张工作流(c, job, 打点):
                "r": run_id, "s": 事件序号[0], "k": 种类,
                "pl": _j.dumps(载荷, ensure_ascii=False, default=str), "u": 我是谁})
 
+    样例 = None
+    if 跑法 == "样例预览":
+        # 每一步取这条流程**这一步最近一次成功的输出**。不算样例的:样例预览自己跑出来的(越抄越旧)、
+        # 当时太大没存全的(存的是「前一段」,不是真输出 —— 拿它往下跑会在下游错得莫名其妙)
+        样例 = {}
+        for 行 in c.execute(text("""
+                select distinct on (s.node_id) s.node_id, s.output_ref
+                  from run_steps s join execution_runs x on x.project_id=s.project_id and x.id=s.execution_run_id
+                 where s.project_id=:p and x.definition_ref->>'id' = :w and s.status='succeeded'
+                   and s.output_ref is not null and coalesce(x.definition_ref->>'跑法', '正常') <> '样例预览'
+                 order by s.node_id, s.ended_at desc nulls last"""),
+                {"p": job["project_id"], "w": 来源.get("id")}).mappings():
+            try:
+                v = _j.loads(行["output_ref"])
+            except Exception:
+                continue
+            if isinstance(v, dict) and "__没存全__" not in v:
+                样例[行["node_id"]] = v
+        打点("样例预览:取到样例", {"有样例的步骤": sorted(样例)})
     结果 = RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm, "tool": _工具},
                     记事=记事, run_id=run_id, 上限=r["limits"] or {},
-                    系统={"project_id": job["project_id"]}, 恢复=恢复)
+                    系统={"project_id": job["project_id"]}, 恢复=恢复, 样例=样例)
     打点("执行完", {"状态": 结果["执行状态"]})
 
     for s in 结果["步骤"]:

@@ -43,6 +43,8 @@ def 桥请求列表(project_id: str, me: 身份 = Depends(要权限("运行评�
     if 状态 not in 状态们:
         raise _错(422, "VALIDATION", "状态不对", "只收 待执行 / 已执行 / 执行失败",
                   field_errors={"状态": "只收 待执行 / 已执行 / 执行失败"})
+    # 跑法(10-26):集成验证的单,澜绣执行前要再核一次「是不是测试客户」—— 两边各守一道。
+    # (这句注释原来写在 SQL 的 -- 注释里,冒号后面那几个字被 text() 当成了绑定参数,接口一调就 500 —— 体检当场抓到)
     with 连接() as c:
         rs = c.execute(text("""
             select count(*) over () 全量, id, execution_run_id, node_id, tool_name,
@@ -56,7 +58,9 @@ def 桥请求列表(project_id: str, me: 身份 = Depends(要权限("运行评�
                                 and h.execution_run_id=bridge_calls.execution_run_id
                                 and d.decision='approved' order by d.at desc limit 1),
                             (select x.principal from execution_runs x where x.project_id=bridge_calls.project_id
-                                and x.id=bridge_calls.execution_run_id)) 办事人
+                                and x.id=bridge_calls.execution_run_id)) 办事人,
+                   (select x.definition_ref->>'跑法' from execution_runs x where x.project_id=bridge_calls.project_id
+                       and x.id=bridge_calls.execution_run_id) 跑法
               from bridge_calls
              where project_id=:p and status=:s
                and (cast(:r as text) is null or execution_run_id = cast(:r as text))
@@ -72,7 +76,7 @@ def 桥请求列表(project_id: str, me: 身份 = Depends(要权限("运行评�
     页 = [dict(id=r["id"], 运行=r["execution_run_id"], 步骤=r["node_id"], 工具=r["tool_name"],
                参数=r["arguments_snapshot"] or {}, 幂等键=r["idempotency_key"], 状态=r["status"],
                结果=r["result_output"], 失败=r["error_detail"], created_by=r["created_by"],
-               办事人=r["办事人"], 办事人澜绣工号=绑定.get(r["办事人"]),
+               办事人=r["办事人"], 办事人澜绣工号=绑定.get(r["办事人"]), 跑法=r["跑法"] or "正常",
                created_at=r["created_at"].isoformat(),
                acked_at=r["acked_at"].isoformat() if r["acked_at"] else None) for r in rs]
     总 = int(rs[0]["全量"]) if rs else 0

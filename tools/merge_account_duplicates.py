@@ -4,8 +4,8 @@
   · 同一人   → merge.并入(软合并:副档标 merged_into,一行数据不搬,能撤,写 op_log)
   · 不同人 / 判不了 → 不动,列出来交人
 
-⚠️ 其中有 C21* —— 造数时故意建的「客户合并」评测用例,和真实客户 C100xx 同名同号,账户统一后落进了同一个账户。
-用户知道合并会让那一组评测题的标准答案对不上、要另外重造,仍然拍了合并(10-26)。
+⚠️ 挂在「客户合并确认」待处理工单上的档案不批量合(那是在等人判)—— C21* 合并评测题就是这种。
+(10-26 下午 C21* 和真实客户同号、被这里合过一次;当晚改按账户口径重造,C21* 不再和真实客户同号。)
 
   python3 tools/merge_account_duplicates.py            # 演练:只列出每对怎么判,不写
   python3 tools/merge_account_duplicates.py --做       # 真合并(写库前先拿锁:./tools/gate_lock.sh)
@@ -26,12 +26,17 @@ def 待合并(c):
     """返回 [(账户, [档案 dict…])]:同一账户下还有 >1 条独立(没归档、没并入别人)的档案。"""
     MG._确保列(c)
     c.row_factory = sqlite3.Row
+    # 已经挂在「客户合并确认」待处理工单上的档案**不批量合** —— 那是在等人判的事,批量脚本不替人抢先决定。
+    # (C21* 合并评测题正是这种单:10-26 改按账户口径后,账户内重复那几题要留给模型 / 人去判,不能被重建时先合掉)
+    待人判 = {x for (r,) in c.execute("SELECT ref_id FROM task WHERE type='客户合并确认' AND status='待处理'")
+              for x in (r or "").split("|") if x}
     accs = [r[0] for r in c.execute("""SELECT account_id FROM customer
             WHERE account_id IS NOT NULL AND COALESCE(archived,0)=0 AND (merged_into IS NULL OR merged_into='')
             GROUP BY account_id HAVING COUNT(*) > 1""")]
-    return [(a, [dict(r) for r in c.execute("""SELECT id, name, phone, birthday, addr, shop, created FROM customer
+    组们 = [(a, [dict(r) for r in c.execute("""SELECT id, name, phone, account_id, birthday, addr, shop, created FROM customer
               WHERE account_id=? AND COALESCE(archived,0)=0 AND (merged_into IS NULL OR merged_into='')
-              ORDER BY created, id""", (a,))]) for a in accs]
+              ORDER BY created, id""", (a,)) if r["id"] not in 待人判]) for a in accs]
+    return [(a, 档) for a, 档 in 组们 if len(档) > 1]
 
 
 def main(argv):

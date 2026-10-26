@@ -663,11 +663,57 @@ def 差评处置(参数, 幂等键, 办事人=None, 工号=None, db=None):
     for 名 in 业务工具})
 
 
+# ── 集成验证(10-26,用户拍:只许写专用测试客户;两边各核一次)──────────────────────
+# 管理后台发出前核过一次(管理后台/services/api/app/runtime/执行模式.py 集成验证放行吗),**这里执行前再核一次** ——
+# 只靠一边守,另一边一改就破。这边比那边多一步:订单号 / 返修单号反查成客户再核。认不出写给谁的一律不写。
+_桥写入 = ("写跟进", "派回访任务", "派补货跟进", "差评处置")
+_客户参数名 = ("customer_id", "customer", "cid", "客户号", "客户号们", "客户", "ref_id")
+
+
+def _是写入(工具):
+    import api as _A
+    return 工具 in _桥写入 or 工具 in _A.WRITE_TOOLS
+
+
+def _集成验证目标(参数, db=None):
+    """参数里写给的客户号们(订单号 / 返修单号反查成客户)。"""
+    import re as _re
+    import it_customer as _TC
+    形 = _re.compile(r"^(C\d{4,}|" + _re.escape(_TC.前缀) + r"[A-Za-z0-9-]+|FX-[A-Za-z0-9-]+)$")
+    p, out = 参数 or {}, []
+    for k in _客户参数名:
+        v = p.get(k)
+        for x in (v if isinstance(v, list) else (str(v).replace("，", ",").split(",") if v not in (None, "") else [])):
+            x = str(x).strip()
+            if 形.match(x) and x not in out:
+                out.append(x)
+    c = _连(db)
+    try:
+        for k, sql in (("order_id", "select customer_id from ordr where id=?"),
+                       ("maintain_id", "select o.customer_id from maintain m join ordr o on o.id=m.order_id where m.id=?")):
+            if p.get(k):
+                r = c.execute(sql, (p[k],)).fetchone()
+                if r and r[0] and r[0] not in out:
+                    out.append(r[0])
+    finally:
+        c.close()
+    return out
+
+
 def 执行(单, 谁="AI 管理平台", db=None):
     """管理后台拉来的一张单 → (回执结果, 输出, 失败)。认不出的工具一律不执行。"""
     fn = 执行表.get(单.get("工具"))
     if not fn:
         return "执行失败", None, {"code": "UNKNOWN_TOOL", "消息": f"澜绣不认识「{单.get('工具')}」"}
+    if 单.get("跑法") == "集成验证" and _是写入(单.get("工具")):
+        import it_customer as _TC
+        目标 = _集成验证目标(单.get("参数"), db=db)
+        不是 = [x for x in 目标 if not _TC.是测试客户(x)]
+        if not 目标 or 不是:
+            return "执行失败", None, {"code": "INTEGRATION_TARGET_NOT_TEST",
+                                      "消息": (f"集成验证只许写测试客户({_TC.前缀} 开头):"
+                                             + (f"{'、'.join(不是)} 不是测试客户" if 不是 else "认不出这张单写给哪位客户")
+                                             + " —— 澜绣这边没有执行")}
     try:
         r = fn(单, 谁, db=db)
     except Exception as e:

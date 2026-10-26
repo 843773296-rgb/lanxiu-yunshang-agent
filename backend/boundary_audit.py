@@ -310,6 +310,40 @@ def a_member_other_scope():
                           "名单:顾问 / 别店店长按档列人、排先联系谁,列出的都在自己范围里;总部照常看得到")
 
 
+def a_integration_write_non_test():
+    """集成验证只许写 IT- 测试客户(用户 10-26 拍),澜绣执行桥请求前再核一次。在**库副本**上攻:
+    集成验证的写跟进写给真实客户、认不出写给谁的存报告、建返修单的订单属于真实客户 —— 三张都要被拒;
+    对照:同一张写真实客户的单,跑法是「正常」时照常执行(否则攻击证明不了任何事)。"""
+    import sqlite3 as _sq, tempfile, os as _os
+    import workflow_bridge as WB
+    d = tempfile.mkdtemp(prefix="itattack-")
+    副 = _os.path.join(d, "lanxiu.db")
+    src = _sq.connect(f"file:{WB.DB}?mode=ro", uri=True); dst = _sq.connect(副)
+    try:
+        src.backup(dst)
+    finally:
+        src.close(); dst.close()
+    c = _sq.connect(副)
+    客 = c.execute("SELECT id FROM customer WHERE id NOT LIKE 'IT-%' AND id NOT LIKE 'FX-%' "
+                   "AND (merged_into IS NULL OR merged_into='') ORDER BY id LIMIT 1").fetchone()
+    单号 = c.execute("SELECT o.id FROM ordr o JOIN customer cu ON cu.id=o.customer_id "
+                    "WHERE cu.id NOT LIKE 'IT-%' ORDER BY o.id LIMIT 1").fetchone()
+    c.close()
+    if not 客 or not 单号:
+        return "库副本里没有真实客户 / 订单 —— 没攻击成,不算守住"
+    攻 = [("写跟进", {"customer_id": 客[0], "text": "攻击:集成验证写真实客户"}),
+          ("save_report", {"period": "2026-10"}),
+          ("create_repair", {"order_id": 单号[0], "issue": "攻击:订单属于真实客户"})]
+    for 工具, 参数 in 攻:
+        结果, _, 失败 = WB.执行({"工具": 工具, "跑法": "集成验证", "参数": 参数, "幂等键": f"attack-{工具}"}, db=副)
+        if 结果 != "执行失败" or (失败 or {}).get("code") != "INTEGRATION_TARGET_NOT_TEST":
+            return f"集成验证的「{工具}」({参数})没被拦下:{结果} {失败} —— 测试客户闸没守住"
+    结果, _, 失败 = WB.执行({"工具": "写跟进", "跑法": "正常", "参数": 攻[0][1], "幂等键": "attack-ctrl"}, db=副)
+    if (失败 or {}).get("code") == "INTEGRATION_TARGET_NOT_TEST":
+        return "对照没过:跑法「正常」也被测试客户闸拦了 —— 攻击证明不了闸只管集成验证"
+    raise PermissionError("集成验证写真实客户 / 认不出写给谁 / 订单反查到真实客户,三张都被拒;正常跑法不受影响")
+
+
 def a_transfer_approve_other_shop():
     """客户转移审批(用户 10-25 拍「本店的转移店长也能批」)放宽之后,攻它的边:
     ① 店长批**别家店**客户的转移 ② 店长批等级调整 ③ 顾问批本店转移。**不写库**:拿一张自造的单(dict)
@@ -1532,6 +1566,10 @@ STRUCT = [
   a_transfer_approve_other_shop, "自造三张单走真判定链:甲店店长批乙店客户转移、店长批等级调整、顾问批本店转移;外加对照(店长批本店转移要放行)",
   "状态机只认调用方算好的「本店转移」结论,这个结论只有 api.审批上下文 一处算(客户全在批的人那家店、接手的人也在这家店且在职);"
   "聊天弹窗、审批中心、智能体批单三个入口都走它。批准即生效(api.审批生效 一处)"),
+ ("集成验证只许写 IT- 测试客户:澜绣执行前再核一次", "backend/workflow_bridge.py 执行();backend/it_customer.py",
+  a_integration_write_non_test, "库副本上发三张集成验证写入单:写真实客户、认不出写给谁、订单反查到真实客户;对照:正常跑法照常执行",
+  "两边各守一道:管理后台 worker 发出前核一次(runtime/执行模式.集成验证放行吗),澜绣执行前再核一次(这里)。"
+  "认不出写给谁的一律拒;订单号 / 返修单号反查成客户再核。只管写入类(api.WRITE_TOOLS + 桥写入),只读照常"),
  ("智能体的会员 / 服务记录工具:顾问只看名下,店长只看本店(单客和名单)", "backend/api.py get_member / customer_history;api._单客范围 / _名单范围",
   a_member_other_scope, "自造不在名下的顾问、别店店长、没挂店的版师翻同一个客户;对照:总部运营要看得到",
   "两个工具共用 api._单客范围 一处判;身份从会话取,没身份直接拒。拒绝语只说客户号,不带姓名 / 门店 / 等级。"

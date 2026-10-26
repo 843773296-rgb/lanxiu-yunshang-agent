@@ -102,6 +102,9 @@
 #                     它要读客户建档日和订单下单日比大小,得等所有造单的步骤都跑完)
 #                    (业务 2026-09-18 的数据集规格,intent/order-aftersale-dataset.md)
 #   seed_fitting.py  白坯试衣记录(要先有定制订单行)
+#   seed_test_customers.py  集成验证专用测试客户(IT- 开头,每家店一个,用户 10-26 拍)。**排在最后一批、门店码回填之前**
+#                    (回填要在最后一批 —— shop_code_check 盯着;它自己也写门店码,放回填前面两边都对):
+#                    前面造数看不到它们,账户号 UIT- 不占顺序编号(多一个号会让后面账户整体错位);不进统计(merge.人头条件)
 #   seed_triage_tasks.py  几条 AI 真跑得动的未研判工单(**必须排在 seed_triage_samples 之后**)
 #     ⚠️ 2026-10-15:它在 `daily_fresh` 里也会跑(「不够 3 条就补到 3 条」),
 #        但那一步排在第 181 行 —— **那时 seed.py 造的 52 条工单还没被研判**,
@@ -190,7 +193,7 @@ if [ "$FRESH_ONLY" = 1 ]; then
     echo "   真要重建,请直接敲 ./tools/rebuild.sh(它会先说清楚要删什么,并留 3 秒反悔)。"
     exit 1
   fi
-  echo "📦 首次建库:下面 47 步**全跑完**才算建好,少一步都会让某几张表空着。"
+  echo "📦 首次建库:下面 48 步**全跑完**才算建好,少一步都会让某几张表空着。"
 else
   echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
   sleep 3
@@ -224,6 +227,7 @@ for STEP in "backend/seed.py" "tools/add_shop_code.py --建列" "tools/add_cust_
             "tools/seed_triage_tasks.py --写" \
             "tools/unify_account_advisor.py --做" \
             "tools/merge_account_duplicates.py --做" \
+            "tools/seed_test_customers.py" \
             "tools/add_shop_code.py --做" \
             "tools/add_cust_advisor.py --校验" \
             "tools/make_todo.py"; do
@@ -248,8 +252,8 @@ done
 # ⚠️ **加步骤要改这个数。** 2026-10-09 加了 daily_fresh / lifecycle_refresh 两步,
 # 忘了改 —— `backend/firstrun_check.py` 当场逮到「步骤表 31 步,自校验却写着 29 步」。
 # 这个数存在的理由正是「循环没跑全,而上面看起来是顺利的」,所以它自己不能过期。
-if [ "$DONE" -ne 47 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 47 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 48 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 48 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 # ── 耗时账(2026-10-19 加的,和 check.sh 那本是同一件事)────────────────────

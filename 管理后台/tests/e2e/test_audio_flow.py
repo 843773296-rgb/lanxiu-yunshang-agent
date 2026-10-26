@@ -495,6 +495,54 @@ ck("业务结果标着「连接测试」,并写明几处写入没发给澜绣(�
    (详.get("业务结果") or {}).get("跑法") == "连接测试" and "1 处写入没有发给澜绣" in (详.get("业务结果") or {}).get("说明", "")
    and 详.get("跑法") == "连接测试", 详.get("业务结果"))
 
+print("\n▸ ⑫¾ 样例预览 / 集成验证(10-26,方案 §8.1;用户拍「照你的建议走」+ 集成验证只许写 IT- 测试客户)")
+# 样例预览:用上面「连接测试」那条刚跑通的流程 —— 它每一步都有成功的输出可当样例
+c, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())},
+         体={"workflow_id": wct, "输入": {"call_id": "TS-002", "customer_id": "C10002"}, "跑法": "样例预览"})
+rsp = (r or {}).get("resource_id")
+st, 详 = 等到(rsp, ("succeeded", "failed", "waiting_external", "waiting_approval"))
+ck("**样例预览一路跑完**:模型 / 取转写 / 人工核对 / 写跟进都用上次的输出,不停下来等人",
+   st == "succeeded", (st, (详 or {}).get("停止原因")))
+桥 = [x for s_ in ("待执行", "已执行", "执行失败") for x in 单(rsp, s_)]
+ck("**样例预览一张桥请求都没有**(没读也没写澜绣)", not 桥, 桥)
+ck("样例预览不产生核对待办", 待办(rsp) == [], 待办(rsp))
+c, 详 = 打("GET", P + f"/execution-runs/{rsp}", "U004")
+ck("运行详情写明这是样例预览、什么都没写", "样例预览" in json.dumps((详 or {}).get("业务结果") or {}, ensure_ascii=False)
+   and (详 or {}).get("跑法") == "样例预览", ((详 or {}).get("跑法"), (详 or {}).get("业务结果")))
+wns, _ = 建图("e2e 没样例")
+c, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())},
+         体={"workflow_id": wns, "输入": {"call_id": "TS-002", "customer_id": "C10002"}, "跑法": "样例预览"})
+st, 详 = 等到((r or {}).get("resource_id"), ("succeeded", "failed"))
+ck("**从没跑过的流程用样例预览 → 停在第一个没样例的步骤,说清原因**(不编结果)",
+   st == "failed" and "NO_SAMPLE_OUTPUT" in json.dumps(详, ensure_ascii=False), (st, (详 or {}).get("停止原因")))
+
+
+def 集成验证到写跟进(客户):
+    c, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())},
+             体={"workflow_id": wct, "输入": {"call_id": "TS-001", "customer_id": 客户}, "跑法": "集成验证"})
+    rid_ = (r or {}).get("resource_id")
+    等到(rid_, ("waiting_external",))
+    读 = [x for x in 单(rid_) if x["工具"] == "取转写"]
+    ck(f"集成验证({客户}):只读的取转写照常交给澜绣、单上标着「集成验证」",
+       len(读) == 1 and 读[0].get("跑法") == "集成验证", 读)
+    打("POST", P + f"/bridge-calls/{读[0]['id']}/ack", "U004",
+      体={"结果": "已执行", "输出": {"text": "我想做一件宋制褙子,下个月婚礼穿", "call_id": "TS-001", "customer_id": 客户}})
+    等到(rid_, ("waiting_approval",))
+    决定(待办(rid_)[0]["id"], "approved")
+    return rid_, 等到(rid_, ("succeeded", "failed", "waiting_external"))
+
+
+rx, (st, 详) = 集成验证到写跟进("C10001")
+写 = [x for s_ in ("待执行", "已执行", "执行失败") for x in 单(rx, s_) if x["工具"] == "写跟进"]
+ck("**集成验证写真实客户 C10001 → 这一步失败、一张写跟进都没发给澜绣**",
+   st == "failed" and not 写 and "INTEGRATION_TARGET_NOT_TEST" in json.dumps(详, ensure_ascii=False),
+   (st, 写, (详 or {}).get("停止原因")))
+rt, (st, 详) = 集成验证到写跟进("IT-SH001-01")
+写 = [x for x in 单(rt) if x["工具"] == "写跟进"]
+ck("**集成验证写测试客户 IT-SH001-01 → 写跟进真的交给澜绣,单上标着「集成验证」**(澜绣执行前还会再核一次)",
+   st == "waiting_external" and len(写) == 1 and 写[0].get("跑法") == "集成验证", (st, 写))
+收掉(rt, "集成验证")
+
 print("\n▸ ⑬ 录音加回电(用户 10-24 拍「两个都要:先写跟进,有意向再派回电」;负责人和时间由核对人填)")
 def 走到核对(wid_, 客户="C10001"):
     c, r = 发起(wid_, {"call_id": "TS-001", "customer_id": 客户}); rid_ = r["resource_id"]

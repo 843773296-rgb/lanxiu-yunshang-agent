@@ -186,12 +186,14 @@ def 撤销(副档, me, 来源="页面"):
 # 一过滤就撞号。这两条都写在 intent/customer-soft-merge.md。
 
 def 人头条件(c, 别名=""):
-    """WHERE 里加的那一段:只数主档(没并入别人的)。老库没这一列 → 1=1(谁都没并过)。
+    """WHERE 里加的那一段:只数主档(没并入别人的),且不是集成验证测试客户。老库没 merged_into 这一列 → 只排测试客户。
     数 customer 表的人头用它 —— 剩下的都是主档,按 shop 分组自然就「归主档所在店」。"""
+    # 集成验证测试客户(IT-,用户 10-26 拍「不进任何统计和评测」)在这一个口子里统一排除 —— 认法只在 it_customer.py
+    import it_customer as _TC
     if not _有列(c):
-        return "1=1"
+        return _TC.排除条件(别名)
     p = f"{别名}." if 别名 else ""
-    return f"({p}merged_into IS NULL OR {p}merged_into='')"
+    return f"({p}merged_into IS NULL OR {p}merged_into='') AND {_TC.排除条件(别名)}"
 
 
 def 人(c, 列):
@@ -214,7 +216,7 @@ def 合并过吗(a, b):
 # ── 判「是不是同一个人」:提示词 TK05 那张标准的代码版(10-26 批量合并要用)──────────
 # 提示词里那份是给模型读的;批量处理不能靠模型判,所以照同一张标准写成规则。
 # 两份讲的是同一套标准 —— **改标准两处一起改**(prompts.py TK05 · 这里)。
-# 只认标准写到的三种;标准覆盖不到的如实说「判不了」,交人(TK05 最后一句)。
+# 10-26 起按账户判(用户定「一个手机号一个账户、不跨账户合并档案」);标准覆盖不到的如实说「判不了」,交人。
 def _号(p):
     import re
     p = re.sub(r"[\s\-()]", "", p or "")
@@ -224,19 +226,23 @@ def _号(p):
 
 
 def 判同一人(x, y):
-    """x、y 是两条档案(dict,至少带 name / phone / birthday / addr)。
-    返回 (结论, 理由):结论 ∈ {"同一人", "不同人", "判不了"}。"""
+    """x、y 是两条档案(dict,带 name,最好带 account_id;没有就拿完整手机号代 —— 账户就是按手机号建的)。
+    返回 (结论, 理由):结论 ∈ {"同一人", "不同账户", "不同人", "判不了"};**只有「同一人」才合并**。
+
+    用户 2026-10-26 定:一个手机号一个账户,导购和档案按账户走,**不跨账户合并档案**。
+    原来「姓名 + 生日 + 地址三项全同 → 合并(手机号不同不是反对理由)」作废 —— 那等于跨账户合并。"""
     名 = (x.get("name") or "").strip()
     if not 名 or 名 != (y.get("name") or "").strip():
-        return "判不了", "姓名不同 —— 标准只覆盖同名的情况"
-    hx, hy = _号(x.get("phone")), _号(y.get("phone"))
-    if len(hx) == 11 and hx == hy:
-        return "同一人", "姓名相同 + 完整手机号相同(业务 10-08:就是同一个用户)"
+        return "判不了", "姓名不同 —— 同一账户下的家人也可能是这样,交人"
+    ax, ay = (x.get("account_id") or "").strip(), (y.get("account_id") or "").strip()
+    if not (ax and ay):
+        hx, hy = _号(x.get("phone")), _号(y.get("phone"))
+        if len(hx) != 11 or len(hy) != 11:
+            return "判不了", "看不到账户号,手机号也不完整 —— 认不出是不是同一个账户,交人"
+        ax, ay = "号" + hx, "号" + hy
+    if ax == ay:
+        return "同一人", "同一个账户(同一手机号)下、姓名相同 —— 账户内重复建档"
     同 = lambda k: bool((x.get(k) or "").strip()) and (x.get(k) or "").strip() == (y.get(k) or "").strip()
     if 同("birthday") and 同("addr"):
-        return "同一人", "姓名 + 生日 + 地址三项全同(跨店重复建档)"
-    有 = lambda k: (x.get(k) or "").strip() and (y.get(k) or "").strip()
-    if 有("birthday") and 有("addr") and not 同("birthday") and not 同("addr"):
-        return "不同人", "只有姓名相同,生日和地址都不同(同名不同人)"
-    # 只是尾号相同、或生日地址一同一不同 —— 标准没写,不猜
-    return "判不了", "标准覆盖不到(比如只有尾号相同、或生日地址一同一不同)—— 交人确认"
+        return "不同账户", "姓名、生日、地址都相同,但属于两个账户(两个手机号)—— 可能是同一人换号,账户各自独立,不跨账户合并"
+    return "不同人", "只有姓名相同,属于两个账户 —— 同名不同人,不合并"

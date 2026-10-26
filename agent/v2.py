@@ -13,7 +13,8 @@
         INSUFFICIENT_BALANCE→余额不足  NOT_APPROVED→审批未完成  TIMEOUT→超时但实际已退
 
     BP-02 客户合并:真因 ↔ 字段相同性,**零交叉**
-        姓名+生日+地址 全同 → 同一客户跨店重复建档
+        同一账户 + 姓名同   → 同一账户下重复建档(合并)          —— 10-26 起按账户判
+        姓名+生日+地址 全同 → 跨账户同人不合并(两个手机号 = 两个账户)
         只有姓名同        → 同名不同人
 
 **所以结论是:这两类工单根本不需要一个 Agent 去推理。**
@@ -78,11 +79,16 @@ ACTION = {
     "渠道超时但实际已退": "**不得重新发起退款**。先按渠道流水号向渠道核对,确认已出款则直接登记结果。",
 }
 MERGE_RULE = [
-    (("name", "birthday", "addr"), "同一客户跨店重复建档",
-     "两条档案的姓名、生日、地址完全一致,判为同一人。合并前需人工二次确认,"
+    # 用户 2026-10-26 定:一个手机号一个账户,导购和档案按账户走,**不跨账户合并档案**。
+    # 顺序有意义:先看是不是同一账户 —— 账户不同时,姓名生日地址全同也不合并。和 prompts.py TK05、backend/merge.判同一人 是同一套。
+    (("account_id", "name"), "同一账户下重复建档",
+     "两条档案属于同一个账户(同一手机号)、姓名相同,判为账户内重复建档,建议合并。合并前需人工二次确认,"
      "**保留下单记录较早的那条为主档**,积分与权益合并。"),
+    (("name", "birthday", "addr"), "跨账户同人不合并",
+     "姓名、生日、地址都相同,但属于**两个账户**(两个手机号)—— 可能是同一人换了号,"
+     "**账户各自独立,不跨账户合并档案**,导购和档案都按账户走。"),
     (("name",), "同名不同人",
-     "**只有姓名相同**,生日与地址均不同 —— 判为同名不同人,**建议不合并**。"
+     "**只有姓名相同**,属于两个账户 —— 判为同名不同人,**建议不合并**。"
      "合并会把两个人的消费记录和权益混在一起,事后极难拆开。"),
 ]
 
@@ -273,7 +279,7 @@ def _(s):
 @bp02.node("规则判同异", nxt="写草稿")
 def _(s):
     a, b = s["a"] or {}, s["b"] or {}
-    same = [k for k in ("name", "birthday", "addr", "phone", "wechat", "email")
+    same = [k for k in ("account_id", "name", "birthday", "addr", "phone", "wechat", "email")
             if a.get(k) and a.get(k) == b.get(k)]
     s["same_fields"] = same
     for need, cause, action in MERGE_RULE:
@@ -287,7 +293,7 @@ def _(s):
                 f"({a.get('birthday')} / {b.get('birthday')});"
                 f"地址 {'一致' if 'addr' in same else '不同'}"
                 f"({a.get('addr')} / {b.get('addr')});"
-                f"手机号不同({a.get('phone')} / {b.get('phone')})。"
+                f"账户 {'相同' if 'account_id' in same else '不同'}({a.get('account_id')} / {b.get('account_id')})。"
                 f"相同字段 {same},不同 {diff}。")
             return
     s["rule_decided"] = False
