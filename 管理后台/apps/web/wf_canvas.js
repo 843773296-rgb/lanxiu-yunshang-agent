@@ -32,7 +32,7 @@ function 存视口() {
   try { const v = 视口(); localStorage.setItem(`wf.视口.${图态.wid}`, JSON.stringify({ x: v.x, y: v.y, z: v.z })); } catch (e) { /* 存不了不影响编辑 */ }
 }
 function 画态() {
-  return 图态.画 || (图态.画 = { 工具: "选择", 选: new Set(), 线: null, 待连: null, 剪贴板: null, 小地图: true, 库开: !(typeof innerWidth === "number" && innerWidth < 1200), 找: { 词: "", i: -1 } });   // 窄屏默认收起步骤库(§3)
+  return 图态.画 || (图态.画 = { 工具: "选择", 选: new Set(), 线: null, 待连: null, 剪贴板: null, 小地图: true, 库开: false, 找: { 词: "", i: -1 } });   // 窄屏默认收起步骤库(§3)
 }
 const 位 = (id) => 图态.布局[id] || { x: 20, y: 20 };
 
@@ -84,8 +84,8 @@ function 画_图() {
         <button id="wf-undo">撤销</button><button id="wf-redo">重做</button>
         <button id="wf-layout" ${改 ? "" : "disabled"}>整理布局</button>
         <span class="find"><input id="wf-find" placeholder="查找步骤" aria-label="查找步骤"><span id="wf-findmsg" class="k" role="status"></span></span>
-        <button id="wf-libtg" aria-expanded="true">步骤库</button>
-        <button id="wf-import" ${改 ? "" : "disabled"}>从其他工作流导入</button>
+        <button id="wf-libtg" aria-expanded="false">＋ 添加步骤</button>
+        <button id="wf-import" ${改 ? "" : "disabled"}>导入步骤</button>
       </div>
       <div class="wfstage">
         <div class="wflib2" id="wf-lib"></div>
@@ -139,6 +139,8 @@ function 画_状态栏(临时) {
     选.length === 1 ? `当前选中:${业务名(节点(选[0]))};移位置不影响执行顺序` : (能改图() ? "点一步选中;拖步骤移位置,从右侧圆点拖线连到下一步" : "只读:你没有改编排草稿的权限,只能查看、缩放和查找");
 }
 
+// 说明文字里的设计文档章节号(§6.1)不给用户看(10-26 改版)
+const 去章节 = (t) => String(t).replace(/[(（]\s*§[^)）]*[)）]/g, "").replace(/§[\d.]+/g, "").replace(/\s{2,}/g, " ").trim();
 function 画_库() {
   const el = $("#wf-lib"); if (!el || !能改图()) return;
   const 词 = (el.querySelector("input") || {}).value || "";
@@ -146,9 +148,9 @@ function 画_库() {
   const 中 = 类.filter((x) => !词 || `${x["中文"]}${步类型名[x["名"]] || ""}${x["说明"] || ""}`.includes(词));
   const 有焦 = document.activeElement && document.activeElement.id === "wf-libq";
   el.innerHTML = `<input id="wf-libq" placeholder="搜索步骤:名称、用途" value="${esc(词)}" aria-label="搜索步骤">
-    ${中.length ? 中.map((x) => `<div class="libit ${x["可用"] ? "" : "off"}" data-lib="${esc(x["名"])}" title="${esc(去粗(x["说明"] || ""))}">
+    ${中.length ? 中.map((x) => `<div class="libit ${x["可用"] ? "" : "off"}" data-lib="${esc(x["名"])}" title="${esc(去章节(去粗(x["说明"] || "")))}">
         <b>${esc(步类型名[x["名"]] || x["中文"])}</b>
-        <span class="k">${esc(去粗(x["说明"] || "").slice(0, 34))}</span>
+        <span class="k">${esc(去章节(去粗(x["说明"] || "")).slice(0, 34))}</span>
         ${x["可用"] ? `<button data-libadd="${esc(x["名"])}">添加</button>` : `<span class="k">还没实现,不能加</span>`}</div>`).join("")
       : `<div class="k">没有叫「${esc(词)}」的步骤类型。试试「模型」「业务」「核对」「条件」。</div>`}
     <div class="k">点「添加」放到画布中间;也可以按住拖进画布。</div>`;
@@ -177,7 +179,7 @@ function 画_节点() {
     return `<div class="wfnode2 ${选 ? "sel" : ""} ${坏[n.id] ? "bad" : ""} ${可连}" data-id="${esc(n.id)}" tabindex="0" role="button"
         style="left:${p.x}px;top:${p.y}px;height:${h}px"
         aria-label="${esc(业务名(n) + "," + 次级标签(n) + (缺.length ? ",缺 " + 缺.length + " 项" : "") + (选 ? ",已选中" : ""))}">
-      <div class="nh"><span class="t">${esc(业务名(n))}</span>
+      <div class="nh"><span class="t">${esc(业务名(n))}${typeof 同名后缀 === "function" ? 同名后缀(n) : ""}</span>
         ${改 || n.type !== "start" ? `<button class="more" data-more="${esc(n.id)}" aria-label="更多操作" tabindex="-1">⋯</button>` : ""}</div>
       <div class="k">${esc(次级标签(n))}</div><div class="tags">${标}</div>
       ${n.type === "start" ? "" : `<span class="wfport in" data-in="${esc(n.id)}" title="入口" aria-hidden="true"></span>`}
@@ -294,10 +296,12 @@ function 缩放到(z, 锚 = null) {
 function 适应画布() {
   const cv = $("#cv"), ns = 图态.定义.nodes; if (!cv || !ns.length) return;
   const r = cv.getBoundingClientRect(), 边 = 40;
+  // 全屏编排页的工具条浮在画布顶上、缩放条和小地图在底下(10-26):适应时上下各让出它们的高度,别让步骤藏在工具条底下
+  const 上 = document.body.classList.contains("wf-full") ? 64 : 0, 下 = document.body.classList.contains("wf-full") ? 56 : 0;
   const xs = ns.map((n) => 位(n.id).x), ys = ns.map((n) => 位(n.id).y);
   const x0 = Math.min(...xs), y0 = Math.min(...ys), x1 = Math.max(...ns.map((n) => 位(n.id).x + 画布.W)), y1 = Math.max(...ns.map((n) => 位(n.id).y + 节点高(n)));
-  const z = Math.min(1, Math.max(画布.最小缩放, Math.min((r.width - 边 * 2) / Math.max(1, x1 - x0), (r.height - 边 * 2) / Math.max(1, y1 - y0))));
-  const v = 视口(); v.z = z || 1; v.x = 边 - x0 * v.z; v.y = 边 - y0 * v.z;
+  const z = Math.min(1, Math.max(画布.最小缩放, Math.min((r.width - 边 * 2) / Math.max(1, x1 - x0), (r.height - 边 * 2 - 上 - 下) / Math.max(1, y1 - y0))));
+  const v = 视口(); v.z = z || 1; v.x = 边 - x0 * v.z; v.y = 边 + 上 - y0 * v.z;
   画_视口(); 存视口();
 }
 function 定位到(ids) {

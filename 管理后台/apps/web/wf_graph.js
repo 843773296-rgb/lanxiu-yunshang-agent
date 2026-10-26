@@ -27,15 +27,18 @@
   逻.出口们 = function (n, 元) {
     if (!n || n.type === "end") return [];
     if (n.type === "condition") {
-      return [...((n.config || {}).branches || []).map((b) => ({ port: "branch", branch_key: b.key, 名: `满足「${b.key}」` })),
+      return [...((n.config || {}).branches || []).map((b) => ({ port: "branch", branch_key: b.key, 名: 逻.分支名(b.key) })),
               { port: "branch", branch_key: "else", 名: "都不满足" }];
     }
     const 口 = [{ port: "success", branch_key: null, 名: "完成后" }];
     if (((元(n.type) || {})["端口"] || []).includes("error")) 口.push({ port: "error", branch_key: null, 名: "失败时" });
     return 口;
   };
+  /* 分支名给人看(10-26 改版):approve / same 这类内部键换成业务话;认不出的照原样带引号,不猜 */
+  const 分支中文 = { approve: "通过了", reject: "退回了", same: "数据没变", changed: "数据变了", yes: "是", no: "否" };
+  逻.分支名 = function (k) { return k === "else" ? "都不满足" : 分支中文[k] ? `${分支中文[k]}` : `满足「${k}」`; };
   逻.口名 = function (e) {
-    if (e.port === "branch") return e.branch_key === "else" ? "都不满足" : `满足「${e.branch_key}」`;
+    if (e.port === "branch") return 逻.分支名(e.branch_key);
     return e.port === "error" ? "失败时" : "完成后";
   };
 

@@ -376,3 +376,19 @@ body.wf-full .wfbuild.graph{grid-template-columns:minmax(0,1fr) var(--pw,440px)}
 .wfpanel select,.wfpanel input[type=text],.wfpanel input:not([type]),.wfpanel textarea{width:100%;max-width:100%;box-sizing:border-box}
 .wfpanel select{height:32px;border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
 .wfpanel input[type=text],.wfpanel input:not([type]){height:32px;border:1px solid var(--line);border-radius:var(--radius);padding:0 8px}
+
+/* ── 第 3 块(10-26 方案 §3):画布满屏、工具条浮在底部、步骤库是弹出面板;列表里「＋」悬停才显 ───────── */
+.dup{color:var(--ink3);font-weight:400;font-size:.9em}
+body.wf-full .wfbuild.graph .steps{padding:0;position:relative;display:flex;flex-direction:column}
+body.wf-full .wfstage{flex:1;height:auto;min-height:0;border:0;border-radius:0;position:relative}
+body.wf-full .wftool{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:6;margin:0;white-space:nowrap;
+  background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 8px;box-shadow:0 6px 20px rgba(0,0,0,.12);flex-wrap:nowrap}
+body.wf-full .wftool button{white-space:nowrap}
+body.wf-full .wflib2{position:absolute;left:12px;top:64px;bottom:16px;width:260px;z-index:7;background:var(--card);
+  border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.14)}
+body.wf-full .wfzoom{bottom:16px}
+body.wf-full .steps .step .acts button{height:28px;padding:0 10px}
+body.wf-full .steps .step .acts{opacity:0;transition:opacity .12s}
+body.wf-full .steps .step:hover .acts,body.wf-full .steps .step:focus-within .acts,body.wf-full .steps .step.sel .acts{opacity:1}
+@media (hover:none){body.wf-full .steps .step .acts{opacity:1}}
+body.wf-full .wfstatus{top:auto;bottom:22px;left:50%;right:auto;transform:translateX(-50%);white-space:nowrap}

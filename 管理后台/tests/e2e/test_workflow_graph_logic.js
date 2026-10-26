@@ -196,6 +196,13 @@ console.log("\n▸ 冲突看差异 / 整理布局 / 逻辑变没变");
   const 改了 = JSON.parse(JSON.stringify(定义)); 改了.edges.pop();
   ck("改连线算逻辑变了", 逻.逻辑变了(前, 逻.快照(改了, 布局)));
 }
+{
+  console.log("\n▸ 分支名给人看(10-26 改版:approve / same 这类内部键换成业务话)");
+  ck("认得出的内部键 → 中文(approve → 通过了、same → 数据没变)", 逻.分支名("approve") === "通过了" && 逻.分支名("same") === "数据没变");
+  ck("认不出的照原样带引号,不猜一个意思", 逻.分支名("高风险") === "满足「高风险」");
+  ck("else 仍是「都不满足」;出口名和分支名同一份", 逻.分支名("else") === "都不满足"
+     && 逻.口名({ port: "branch", branch_key: "approve" }) === "通过了");
+}
 
 console.log(`\n${挂.length ? "❌" : "✅"} 图操作逻辑层 ${过} 条过${挂.length ? `,挂 ${挂.length} 条:${挂.join(" / ")}` : ""}`);
 process.exit(挂.length ? 1 : 0);

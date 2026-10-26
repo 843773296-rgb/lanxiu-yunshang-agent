@@ -686,6 +686,12 @@ function 弹层(标题, 内容) {
 function 关弹层() { const m = document.getElementById("mask"); if (m) m.remove(); }
 // 报错用页面里的弹层,不用 alert(10-26 用户截图:原生弹窗里露着 VALIDATION / write2.config.connection_version_id、星号没渲染)。
 // 字段键「节点id.config.xxx」换成步骤名;同名的步骤(比如两个「写报告正文」)标「第几个」,不然分不清是哪一个
+// 同名步骤(比如两个「写报告正文」)在列表、图上、面板标题都标「第几个」,不然分不清改的是哪一个(10-26)
+function 同名后缀(n) {
+  const ns = (图态 && 图态.定义 && 图态.定义.nodes) || [], 名 = 业务名(n);
+  const 同 = ns.filter((x) => 业务名(x) === 名);
+  return 同.length > 1 ? ` <span class="dup">(第 ${同.indexOf(n) + 1} 个)</span>` : "";
+}
 function 步骤称呼(id) {
   const ns = (typeof 图态 !== "undefined" && 图态 && 图态.定义 && 图态.定义.nodes) || [];
   const n = ns.find((x) => x.id === id);
@@ -1018,7 +1024,7 @@ function 排步骤() {
     见.add(id); 出.push({ id, 深, 入口 });
     const 边 = 后继(id);
     if (节点(id).type === "condition") {
-      边.forEach((e) => 走(e.target, 深 + 1, e.branch_key === "else" ? "都不满足" : `满足「${e.branch_key}」`));
+      边.forEach((e) => 走(e.target, 深 + 1, 图逻辑.分支名(e.branch_key)));
     } else {
       边.filter((e) => e.port !== "error").forEach((e) => 走(e.target, 深, null));
       边.filter((e) => e.port === "error").forEach((e) => 走(e.target, 深 + 1, "失败时"));
@@ -1133,12 +1139,12 @@ function 画_步骤() {
     return `${s.入口 ? `<div class="k" style="margin-left:${s.深 * 18}px">↳ ${esc(s.入口)}</div>` : ""}
       ${s.散 && 序.findIndex((x) => x.散) === 序.indexOf(s) ? '<h4>还没接进流程</h4>' : ""}
       ${头} style="margin-left:${s.深 * 18}px" data-id="${esc(s.id)}">
-        <button class="t" data-sel="${esc(s.id)}">${号}. ${esc(业务名(n))}</button>
+        <button class="t" data-sel="${esc(s.id)}">${号}. ${esc(业务名(n))}${同名后缀(n)}</button>
         <span class="pill">${esc(次级标签(n))}</span>
         ${缺.length ? `<span class="pill warn">缺 ${缺.length} 项</span>` : ""}
         ${坏[s.id] ? '<span class="pill fail">有要改的</span>' : ""}
         <span class="acts">
-          ${n.type === "end" || !能改图() ? "" : `<button data-after="${esc(s.id)}">在此后添加</button>`}
+          ${n.type === "end" || !能改图() ? "" : `<button data-after="${esc(s.id)}" title="在此后添加一步" aria-label="在「${esc(业务名(n))}」后添加一步">＋</button>`}
           ${n.type === "start" || !能改图() ? "" : `<button data-del="${esc(s.id)}">删除</button>`}
         </span></div>`;
   }).join("") + `<div class="note">按执行顺序排。「在此后添加」会把新的一步接在这个出口和它原来的下一步之间;
@@ -1157,7 +1163,7 @@ function 画_步骤() {
 function 出口们(n) {
   if (n.type === "end") return [];
   if (n.type === "condition") {
-    return [...(n.config.branches || []).map((b) => ({ port: "branch", branch_key: b.key, 名: `满足「${b.key}」` })),
+    return [...(n.config.branches || []).map((b) => ({ port: "branch", branch_key: b.key, 名: 图逻辑.分支名(b.key) })),
             { port: "branch", branch_key: "else", 名: "都不满足" }];
   }
   const 口 = [{ port: "success", branch_key: null, 名: "完成后" }];
@@ -1292,7 +1298,7 @@ function 画_面板() {
   const 缺 = 缺项(n);
   const 问 = (g.报告?.问题 || []).filter((q) => q.node_id === n.id);
   $("#pn").innerHTML = `
-    <h3 style="margin:0">${esc(业务名(n))}</h3><div class="k">${esc(次级标签(n))}</div>
+    <h3 style="margin:0">${esc(业务名(n))}${同名后缀(n)}</h3><div class="k">${esc(次级标签(n))}</div>
     ${缺.length ? `<div class="note">还缺:${缺.map((f) => `<b>${esc(中文名(f))}</b>`).join("、")}</div>` : ""}
     ${(() => { const 失 = 图逻辑.失效引用(g.定义).filter((x) => x.节点id === n.id);
       // 删除后「随即标记并定位」(§6.3 §7.1):不管停在哪个页签都看得到,不藏在「输入数据」里
