@@ -410,3 +410,9 @@ details.stepio>summary{cursor:pointer;color:var(--ink3);font-size:12px}
 details.stepio pre.io{max-height:240px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:2px 0 6px}
 .stest{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
 .stest textarea{width:100%}
+/* 测试样例栏(10-26) */
+.smpbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0 8px}
+.smpbar select{max-width:100%;flex:1 1 200px}
+.smpbar .smpsave{display:flex;gap:6px;flex:1 1 220px}
+.smpbar .smpsave input{flex:1;min-width:0}
+.smpbar>div{flex-basis:100%}

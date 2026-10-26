@@ -1787,21 +1787,22 @@ function 画_测试(盒 = null) {
   }).join("");
   盒.innerHTML = (侧 ? `<div class="stack">` : `<div class="two">`) + `
     <div class="card"><h3>填一条测试输入</h3>
+      ${样例条("tr")}
       ${框 || '<div class="k">这条流程不需要使用者提供任何东西。</div>'}
       <div class="note">测试用的是<b>草稿</b>,不是候选版本。模型连接是演示用的那条时不真调模型(结果带 [mock]);
         「由澜绣执行」的步骤会真的去澜绣取数 / 写跟进 —— 写入之前一定先停在人工核对。</div>
       <button class="pri" id="tr-go">试运行</button></div>
     <div class="card"><h3>这次运行</h3><div id="tr-st" class="k">还没跑。</div></div></div>`;
+  挂样例条({ 前缀: "tr", node: null,
+    填: (v) => document.querySelectorAll("[data-in]").forEach((el) => {
+      const x = (v || {})[el.dataset.in];
+      el.value = x === undefined || x === null ? "" : Array.isArray(x) ? x.join(",") : typeof x === "object" ? JSON.stringify(x) : String(x);
+    }),
+    取: () => 读试运行输入(sch).输入 });
   $("#tr-go").onclick = async () => {
-    const 输入 = {}, 坏 = [];
-    document.querySelectorAll("[data-in]").forEach((el) => {
-      const k = el.dataset.in, t = el.dataset.t, v = el.value.trim();
-      if (!v) return;
-      if (t === "number" || t === "integer") { const x = Number(v); if (!Number.isFinite(x)) 坏.push(k); else 输入[k] = t === "integer" ? Math.trunc(x) : x; }
-      else if (t === "boolean") 输入[k] = v === "true";
-      else if (t === "array") 输入[k] = v.split(/[,,]/).map((x) => x.trim()).filter(Boolean);
-      else 输入[k] = v;
-    });
+    const 选 = 图态.样例选 && 图态.样例选.tr;
+    if (选) return 做_试运行({}, 选.参数);       // 看不到原文的样例 / 历史输入:由服务端按 id 填
+    const { 输入, 坏 } = 读试运行输入(sch);
     const 缺 = (sch.required || []).filter((k) => !(k in 输入));
     if (坏.length || 缺.length) {
       $("#tr-st").innerHTML = `<div class="err" style="padding:6px">${缺.length ? `还没填:${esc(缺.map((k) => (sch.properties[k] || {}).title || k).join("、"))}。` : ""}
@@ -2171,13 +2172,25 @@ async function 做_冻结(说明) {
   }
 }
 
-async function 做_试运行(输入 = {}) {
+function 读试运行输入(sch) {
+  const 输入 = {}, 坏 = [];
+  document.querySelectorAll("[data-in]").forEach((el) => {
+    const k = el.dataset.in, t = el.dataset.t, v = el.value.trim();
+    if (!v) return;
+    if (t === "number" || t === "integer") { const x = Number(v); if (!Number.isFinite(x)) 坏.push(k); else 输入[k] = t === "integer" ? Math.trunc(x) : x; }
+    else if (t === "boolean") 输入[k] = v === "true";
+    else if (t === "array") 输入[k] = v.split(/[,,]/).map((x) => x.trim()).filter(Boolean);
+    else 输入[k] = v;
+  });
+  return { 输入, 坏 };
+}
+async function 做_试运行(输入 = {}, 额外 = {}) {
   if (图态.脏 && !(await 做_存草稿())) return;
   try {
     const d = await 请求(`${P()}/execution-runs`, {
       method: "POST",
       headers: { "Idempotency-Key": crypto.randomUUID() },
-      body: JSON.stringify({ workflow_id: 图态.wid, 输入 }),
+      body: JSON.stringify({ workflow_id: 图态.wid, 输入, ...额外 }),
     });
     图态.最近测试 = d.resource_id;
     图态.最近测试定义 = JSON.stringify(图态.定义);     // 这次试运行固定的是哪份定义(§10.4)
@@ -2197,6 +2210,62 @@ async function 做_试运行(输入 = {}) {
 /* ── 单步测试(10-26,方案 §8.1):只跑选中的这一步,不从头跑整条流程 ──────────────
  * 服务端拼「开始 → 这一步 → 结束」小图、走试运行同一个受理口;哪些能测、写入类为什么不行,
  * 以服务端为准(runtime/单步测试.py)。这里只是**不摆点了没用的按钮**:明知会被拒的类型直接说为什么 */
+/* ── 测试样例与历史输入(10-26,方案 §8.1)───────────────────────────────
+ * 一条栏两处用:试运行(整条流程,node 为空)和「试这一步」(node = 那一步)。
+ * 选中时:看得到原文 → 直接填进输入框,可以改了再跑;看不到 → 输入框留空,
+ * 记下「用哪条」,跑的时候只发 id、由服务端填 —— 原文不经过这个浏览器,但照样能用 */
+function 样例条(前缀) {
+  return `<div class="smpbar" id="${前缀}-smp"><select id="${前缀}-smpsel" aria-label="选一条样例或最近的输入"><option value="">加载样例…</option></select>
+    <button id="${前缀}-smpdel" hidden>删掉这条样例</button>
+    <span class="smpsave"><input id="${前缀}-smpname" placeholder="给这次填的起个名字" maxlength="60"><button id="${前缀}-smpsave">存为样例</button></span>
+    <div id="${前缀}-smpmsg" class="k"></div></div>`;
+}
+async function 挂样例条({ 前缀, node, 填, 取 }) {
+  const sel = $(`#${前缀}-smpsel`); if (!sel) return;
+  const 话 = (h) => { const m = $(`#${前缀}-smpmsg`); if (m) m.innerHTML = h; };
+  图态.样例选 = 图态.样例选 || {};
+  图态.样例选[前缀] = null;
+  const q = node ? `?node_id=${encodeURIComponent(node)}` : "";
+  const 基 = `${P()}/workflows/${encodeURIComponent(图态.wid)}`;
+  let 样, 近;
+  try { [样, 近] = await Promise.all([请求(`${基}/test-samples${q}`), 请求(`${基}/recent-inputs${q}`)]); }
+  catch (e) { sel.innerHTML = `<option value="">样例加载不了</option>`; return; }
+  if (!$(`#${前缀}-smpsel`)) return;                    // 等的时候面板已经换了
+  const 表 = {};
+  (样.items || []).forEach((x) => { 表["s:" + x.id] = { 名: x["名称"], 内容: x["内容"], 参数: { 样例id: x.id }, 样例: x.id }; });
+  (近.items || []).filter((x) => !x["没存全"]).forEach((x) => {
+    表["r:" + x["运行"]] = { 名: `${时间(x["时间"])} 那次(${运行状态中文[x["状态"]] || x["状态"]})`, 内容: x["内容"], 参数: { 沿用运行: x["运行"] }, 运行: x["运行"] }; });
+  const 原文 = !!样["看得到原文"];
+  const 组 = (k, 标) => { const ks = Object.keys(表).filter((x) => x.startsWith(k)); return ks.length
+    ? `<optgroup label="${标}">${ks.map((x) => `<option value="${esc(x)}">${esc(表[x].名)}</option>`).join("")}</optgroup>` : ""; };
+  sel.innerHTML = `<option value="">${Object.keys(表).length ? "选一条样例或最近的输入…" : "还没有样例,也还没跑过"}</option>`
+    + 组("s:", "存过的样例") + 组("r:", "最近运行收到的");
+  sel.onchange = () => {
+    const x = 表[sel.value]; const 删 = $(`#${前缀}-smpdel`);
+    图态.样例选[前缀] = null; if (删) 删.hidden = !(x && x.样例);
+    if (!x) { 话(""); return; }
+    if (原文) { 填(x.内容); 话(`已填上「${esc(x.名)}」,可以改了再跑。`); return; }
+    填({}); 图态.样例选[前缀] = x;
+    话(`已选「${esc(x.名)}」。你没有「查看敏感输入」授权,看不到原文 —— <b>跑的时候由服务端把内容填进去</b>,照样能用。改选「选一条…」就回到手填。`);
+  };
+  const 删 = $(`#${前缀}-smpdel`);
+  if (删) 删.onclick = async () => {
+    const x = 表[sel.value]; if (!x || !x.样例) return;
+    try { await 请求(`${基}/test-samples/${encodeURIComponent(x.样例)}`, { method: "DELETE" }); 话(`已删掉「${esc(x.名)}」。`); 挂样例条({ 前缀, node, 填, 取 }); }
+    catch (e) { 报错(e); }
+  };
+  const 存 = $(`#${前缀}-smpsave`);
+  if (存) 存.onclick = async () => {
+    const 名 = ($(`#${前缀}-smpname`).value || "").trim();
+    if (!名) { 话("先给这条样例起个名字。"); return; }
+    const 选 = 图态.样例选[前缀];
+    // 看不到原文时选的是「最近运行收到的」:服务端从那次运行原样拷,不经过浏览器
+    const 体 = 选 && 选.运行 ? { 名称: 名, node_id: node, 来自运行: 选.运行 } : { 名称: 名, node_id: node, 输入: 取() };
+    try { await 请求(`${基}/test-samples`, { method: "POST", body: JSON.stringify(体) }); 话(`已存为样例「${esc(名)}」,团队里的人都能用。`); 挂样例条({ 前缀, node, 填, 取 }); }
+    catch (e) { 报错(e); }
+  };
+}
+
 const 单测类型 = { llm: "模型", retrieve: "知识检索", tool: "业务动作" };
 function 单测字段(n) {
   return Object.entries((n.config || {}).bindings || {})
@@ -2216,6 +2285,7 @@ function 单测表(n) {
   }).join("");
   return `<div class="stest"><div class="k">单独跑这一步,不从头跑整条流程。${Object.keys(上次入).length ? "下面已填上它上次收到的内容,可以改。" : ""}
       用的是这一步选的模型:演示模型不花钱,真模型按一次调用计费。</div>
+    ${样例条("st")}
     ${框 || '<div class="k">这一步不需要填任何内容。</div>'}
     <button id="st-go">单独测这一步</button><div id="st-st" class="k"></div></div>`;
 }
@@ -2223,9 +2293,14 @@ function 挂单测(n) {
   const b = $("#st-go"); if (!b) return;
   if (!能改图()) { b.disabled = true; b.title = "你只有查看权限"; return; }
   b.onclick = () => 做_单测(n.id);
+  挂样例条({ 前缀: "st", node: n.id,
+    填: (v) => document.querySelectorAll("[data-st]").forEach((el) => {
+      const x = (v || {})[el.dataset.st];
+      el.value = x === undefined || x === null ? "" : typeof x === "string" ? x : JSON.stringify(x);
+    }),
+    取: 读单测输入 });
 }
-async function 做_单测(nid) {
-  if (图态.脏 && !(await 做_存草稿())) return;      // 服务端读的是已保存的草稿
+function 读单测输入() {
   const 输入 = {};
   document.querySelectorAll("[data-st]").forEach((el) => {
     const v = el.value.trim(); if (!v) return;
@@ -2233,10 +2308,16 @@ async function 做_单测(nid) {
     if (/^[{[]/.test(v)) { try { 输入[el.dataset.st] = JSON.parse(v); return; } catch (e) { /* 不是 JSON 就当文字 */ } }
     输入[el.dataset.st] = v;
   });
+  return 输入;
+}
+async function 做_单测(nid) {
+  if (图态.脏 && !(await 做_存草稿())) return;      // 服务端读的是已保存的草稿
+  const 选 = 图态.样例选 && 图态.样例选.st;
+  const 体 = 选 ? { 输入: {}, ...选.参数 } : { 输入: 读单测输入() };   // 看不到原文的样例:由服务端按 id 填
   const 盒 = () => $("#st-st");
   try {
     const d = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/steps/${encodeURIComponent(nid)}/test-runs`, {
-      method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({ 输入 }) });
+      method: "POST", headers: { "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(体) });
     if (盒()) 盒().innerHTML = `已受理 —— <b>排队中,还没调模型</b>。`;
     await 盯单测(d.resource_id, nid);
   } catch (e) { 报错(e); }

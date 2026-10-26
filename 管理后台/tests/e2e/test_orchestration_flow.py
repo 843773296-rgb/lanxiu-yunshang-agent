@@ -261,6 +261,54 @@ c, b = 打("POST", P + f"/workflows/{wid}/steps/{起步['id']}/test-runs", "U004
 ck("不能单测的步骤(开始)→ 422,并说清为什么、该怎么办",
    c == 422 and (b or {}).get("code") == "STEP_TEST_UNSUPPORTED" and (b or {}).get("advice"), [c, (b or {}).get("message")])
 
+# ── 测试样例与历史输入(10-26,方案 §8.1)────────────────────────────────
+样路 = P + f"/workflows/{wid}/test-samples"
+秘 = "宋制褙子要配织金马面,预算三千"            # 一段只在样例里出现的原文 —— 用来查「没授权的人一个字都拿不到」
+c, b = 打("POST", 样路, "U004", {"名称": "e2e 样例", "输入": {"article": 秘}})
+ck("存一条手填的样例 → 201,来路是「手填」", c == 201 and (b or {}).get("来路") == "手填", [c, b])
+样id = (b or {}).get("id")
+c, 有 = 打("GET", 样路, "U004")
+c2, 无 = 打("GET", 样路, "U002")
+ck("**有授权(U004)看得到样例原文;没授权(U002)只有形状,原文一个字都不出现**",
+   any(x["id"] == 样id and x["内容"] == {"article": 秘} for x in (有 or {}).get("items", []))
+   and any(x["id"] == 样id for x in (无 or {}).get("items", [])) and 秘 not in json.dumps(无, ensure_ascii=False),
+   [c, c2])
+c, b = 打("POST", 样路, "U002", {"名称": "e2e 从运行存", "来自运行": rid})
+ck("**没授权的人也能把一次运行的输入原样存成样例**(服务端拷,原文不经过他)",
+   c == 201 and (b or {}).get("来路") == "来自运行", [c, b])
+c, b = 打("POST", P + "/execution-runs", "U002", {"workflow_id": wid, "样例id": 样id},
+          头={"Idempotency-Key": uuid.uuid4().hex})
+ck("**没授权的人拿样例跑 → 202**(只发 id,由服务端填)", c == 202, [c, (b or {}).get("message")])
+样跑 = 等到终态(b["resource_id"]) if c == 202 else {}
+ck("那次运行的输入就是样例的内容,运行上记着输入来自哪条样例",
+   样跑.get("输入快照") == {"article": 秘} and (样跑.get("定义来源") or {}).get("输入来自") == {"样例": 样id},
+   [样跑.get("输入快照"), 样跑.get("定义来源")])
+c, 近 = 打("GET", P + f"/workflows/{wid}/recent-inputs", "U004")
+ck("「最近的输入」里列得出刚才那几次整条流程的运行(单步测试的不混进来)",
+   c == 200 and any(x["运行"] == 样跑.get("id") for x in 近.get("items", []))
+   and not any(x["运行"] == 单.get("id") for x in 近.get("items", [])), [c, len((近 or {}).get("items", []))])
+单测近 = 打("GET", P + f"/workflows/{wid}/recent-inputs?node_id={模型步['id']}", "U004")[1]
+ck("「最近的输入」按步骤也列得出(那一步记下的输入)",
+   any(x["内容"] == 单入 or (isinstance(x["内容"], dict) and set(单入) <= set(x["内容"])) for x in (单测近 or {}).get("items", [])),
+   [x["内容"] for x in (单测近 or {}).get("items", [])][:2])
+c, b = 打("POST", 单测路, "U004", {"输入": {}, "沿用运行": 单.get("id")}, 头={"Idempotency-Key": uuid.uuid4().hex})
+沿 = 等到终态(b["resource_id"]) if c == 202 else {}
+ck("单步测试沿用某次运行里**这一步**收到的输入 → 跑出来输入一样",
+   c == 202 and {s["节点"]: s for s in 沿.get("步骤", [])}.get(模型步["id"], {}).get("输入", {}).get(要填[0] if 要填 else "")
+   == 单入.get(要填[0] if 要填 else ""), [c, (b or {}).get("message")])
+c, 步样 = 打("POST", 样路, "U004", {"名称": "e2e 单步样例", "node_id": 模型步["id"], "输入": 单入})
+c, b = 打("POST", P + "/execution-runs", "U004", {"workflow_id": wid, "样例id": (步样 or {}).get("id")},
+          头={"Idempotency-Key": uuid.uuid4().hex})
+ck("给某一步存的样例拿去跑整条流程 → 422(格式对不上,不硬塞)", c == 422, [c, (b or {}).get("message")])
+c, _ = 打("DELETE", 样路 + f"/{样id}", "U004")
+c2, 列 = 打("GET", 样路, "U004")
+c3, b = 打("POST", P + "/execution-runs", "U004", {"workflow_id": wid, "样例id": 样id},
+           头={"Idempotency-Key": uuid.uuid4().hex})
+ck("删掉的样例不再列出,也不能再拿来跑(404)",
+   c == 200 and not any(x["id"] == 样id for x in (列 or {}).get("items", [])) and c3 == 404, [c, c3])
+c, b = 打("POST", 样路, "U003", {"名称": "查看者", "输入": {"article": "x"}})
+ck("只读的人(U003)存样例 → 403", c == 403, c)
+
 c, b = 打("GET", P + f"/execution-runs/{rid}", "U005")
 ck("**拿 A 项目的 Run ID 用 B 项目的人去读 → 404**(不确认它存在)", c == 404, c)
 

@@ -1321,6 +1321,131 @@ def 看冻结版本(project_id: str, wid: str, vid: str, me: 身份 = Depends(�
 
 
 # ── 试运行 ─────────────────────────────────────────────────────────
+# ── 测试样例与历史输入(10-26,方案 §8.1「保存样例、选择历史输入」)─────────────────
+# 整条流程用的样例 node_id 为空;单步测试用的样例记着是哪一步。
+# **用样例 / 沿用某次运行的输入跑,都由服务端按 id 取出来填进去** —— 没有「查看敏感输入」授权的人
+# 看不到原文,但照样能拿它跑;原文不经过他的浏览器。看不到原文和用不了是两件事。
+def _样例内容(c, project_id, wid, node_id, 样例id=None, 沿用运行=None):
+    if 样例id:
+        r = c.execute(text("""select node_id, input_snapshot from workflow_test_samples
+                               where project_id=:p and id=:i and workflow_id=:w and archived_at is null"""),
+                      {"p": project_id, "i": 样例id, "w": wid}).mappings().first()
+        if not r:
+            raise _错(404, "NOT_FOUND", "这条样例不在了,可能刚被删掉", "刷新后重新选一条")
+        if (r["node_id"] or None) != (node_id or None):
+            raise _错(422, "VALIDATION", "这条样例是给别的步骤用的" if r["node_id"] else "这条样例是给整条流程用的",
+                      "选一条给这一步存的样例" if node_id else "选一条给整条流程存的样例")
+        return r["input_snapshot"] or {}
+    r = c.execute(text("""select definition_ref, input_snapshot from execution_runs
+                           where project_id=:p and id=:i and definition_ref->>'id' = :w"""),
+                  {"p": project_id, "i": 沿用运行, "w": wid}).mappings().first()
+    if not r:
+        raise _错(404, "NOT_FOUND", "这条流程没有这次运行", "从「最近的输入」里重新选")
+    if not node_id:
+        if (r["definition_ref"] or {}).get("kind") == "step_test":
+            raise _错(422, "VALIDATION", "那次是单步测试,它的输入只是一步的,不能当整条流程的输入", "选一次整条流程的试运行")
+        return r["input_snapshot"] or {}
+    i = c.execute(text("""select input_ref from run_steps
+                           where project_id=:p and execution_run_id=:r and node_id=:n and input_ref is not null
+                           order by attempt desc limit 1"""), {"p": project_id, "r": 沿用运行, "n": node_id}).scalar()
+    if i is None:
+        raise _错(422, "VALIDATION", "那次运行没有记下这一步的输入(没跑到它,或是改版前跑的)", "换一次跑到过这一步的运行")
+    v = json.loads(i)
+    if isinstance(v, dict) and "__没存全__" in v:
+        raise _错(422, "VALIDATION", "那次这一步的输入太长,只存了前一段,不能原样再用", "手动填一份,或换一次运行")
+    return v
+
+
+def _样例原文或形状(v, 看原文):
+    from runs_api import 脱敏 as _形状
+    return v if 看原文 else _形状(v)
+
+
+@router.get(前缀 + "/workflows/{wid}/test-samples")
+def 测试样例列表(project_id: str, wid: str, node_id: str = Query(default=None),
+             me: 身份 = Depends(要权限("查看有权配置"))):
+    看原文, _ = me.能("查看敏感输入/独立测试答案")
+    with 连接() as c:
+        rs = c.execute(text("""select id, node_id, name, input_snapshot, source, source_run_id, note, created_at, created_by
+                                from workflow_test_samples
+                               where project_id=:p and workflow_id=:w and archived_at is null
+                                 and coalesce(node_id, '') = coalesce(cast(:n as text), '')
+                               order by created_at desc"""), {"p": project_id, "w": wid, "n": node_id}).mappings().all()
+    return {"看得到原文": bool(看原文), "items": [
+        {"id": r["id"], "名称": r["name"], "步骤": r["node_id"], "来路": r["source"], "来自运行": r["source_run_id"],
+         "说明": r["note"], "建于": r["created_at"] and r["created_at"].isoformat(), "建者": r["created_by"],
+         "内容": _样例原文或形状(r["input_snapshot"], 看原文)} for r in rs]}
+
+
+@router.get(前缀 + "/workflows/{wid}/recent-inputs")
+def 最近的输入(project_id: str, wid: str, node_id: str = Query(default=None),
+          me: 身份 = Depends(要权限("查看有权配置"))):
+    """最近几次运行收到的输入 —— 整条流程的(试运行的输入快照),或某一步的(那一步记下的输入)。"""
+    看原文, _ = me.能("查看敏感输入/独立测试答案")
+    with 连接() as c:
+        if node_id:
+            rs = c.execute(text("""select r.id, r.status, r.created_at, s.input_ref as v
+                                    from execution_runs r join run_steps s on s.project_id=r.project_id
+                                     and s.execution_run_id=r.id and s.node_id=:n and s.input_ref is not null
+                                   where r.project_id=:p and r.definition_ref->>'id' = :w
+                                   order by r.created_at desc limit 10"""),
+                           {"p": project_id, "w": wid, "n": node_id}).mappings().all()
+            rs = [dict(r, v=json.loads(r["v"])) for r in rs]
+        else:
+            rs = c.execute(text("""select id, status, created_at, input_snapshot as v from execution_runs
+                                   where project_id=:p and definition_ref->>'id' = :w
+                                     and coalesce(definition_ref->>'kind', '') <> 'step_test'
+                                   order by created_at desc limit 10"""), {"p": project_id, "w": wid}).mappings().all()
+    return {"看得到原文": bool(看原文), "items": [
+        {"运行": r["id"], "状态": r["status"], "时间": r["created_at"] and r["created_at"].isoformat(),
+         "没存全": isinstance(r["v"], dict) and "__没存全__" in r["v"],
+         "内容": _样例原文或形状(r["v"], 看原文)} for r in rs]}
+
+
+@router.post(前缀 + "/workflows/{wid}/test-samples", status_code=201)
+async def 存测试样例(project_id: str, wid: str, request: Request,
+                me: 身份 = Depends(要权限("运行编排测试"))):
+    """存一条样例。内容要么是这次填的(`输入`),要么**从某次运行原样拷**(`来自运行`)——
+    后者在服务端拷,没授权看原文的人也能把一次跑得好的输入存下来。"""
+    体 = await request.json()
+    名 = (体.get("名称") or "").strip()
+    node_id = 体.get("node_id") or None
+    if not 名:
+        raise _错(422, "VALIDATION", "样例要起个名字", "比如「宋制褙子 · 预算三千」,下次一眼认得出", field_errors={"名称": "必填"})
+    if len(名) > 60:
+        raise _错(422, "VALIDATION", "名字太长了", "60 个字以内", field_errors={"名称": "太长"})
+    with 事务() as c:
+        if not c.execute(text("select 1 from workflows where project_id=:p and id=:w"), {"p": project_id, "w": wid}).first():
+            raise _错(404, "NOT_FOUND", "没有这条工作流", "回列表重新进入")
+        if 体.get("来自运行"):
+            内容, 来路, 源 = _样例内容(c, project_id, wid, node_id, 沿用运行=体["来自运行"]), "来自运行", 体["来自运行"]
+        else:
+            内容, 来路, 源 = 体.get("输入"), "手填", None
+            if not isinstance(内容, dict) or not 内容:
+                raise _错(422, "VALIDATION", "样例里一项内容都没有", "先填好测试输入再存", field_errors={"输入": "不能空"})
+        sid = _新id("smp")
+        c.execute(text("""insert into workflow_test_samples (id, organization_id, project_id, workflow_id, node_id,
+                              name, input_snapshot, source, source_run_id, note, created_at, created_by, updated_at, revision)
+                          values (:i,:o,:p,:w,:n,:nm,cast(:v as jsonb),:s,:sr,:nt, now(), :u, now(), 1)"""),
+                  {"i": sid, "o": me.org_id, "p": project_id, "w": wid, "n": node_id, "nm": 名,
+                   "v": json.dumps(内容, ensure_ascii=False), "s": 来路, "sr": 源, "nt": 体.get("说明"), "u": me.user_id})
+        _审计(c, me, "存测试样例", {"工作流": wid, "样例": sid, "步骤": node_id, "来路": 来路})
+    return {"id": sid, "名称": 名, "来路": 来路}
+
+
+@router.delete(前缀 + "/workflows/{wid}/test-samples/{sid}")
+def 删测试样例(project_id: str, wid: str, sid: str, me: 身份 = Depends(要权限("运行编排测试"))):
+    """归档,不物理删 —— 用它跑过的运行还指着它的来路。"""
+    with 事务() as c:
+        n = c.execute(text("""update workflow_test_samples set archived_at=now(), updated_at=now(), revision=revision+1
+                              where project_id=:p and workflow_id=:w and id=:i and archived_at is null"""),
+                      {"p": project_id, "w": wid, "i": sid}).rowcount
+        if not n:
+            raise _错(404, "NOT_FOUND", "这条样例不在了", "刷新看看")
+        _审计(c, me, "删测试样例", {"工作流": wid, "样例": sid})
+    return {"id": sid, "已删": True}
+
+
 @router.post(前缀 + "/execution-runs", status_code=202)
 async def 发起运行(project_id: str, request: Request,
                idempotency_key: str = Header(default=None, alias="Idempotency-Key"),
@@ -1365,6 +1490,10 @@ async def 发起运行(project_id: str, request: Request,
                 raise _错(404, "NOT_FOUND", "没有这条工作流的草稿", "回列表重新进入")
             定义 = d["definition"] or {}
             来源 = {"kind": "graph_draft", "id": wid, "draft_revision": d["revision"]}
+            if 体.get("样例id") or 体.get("沿用运行"):
+                # 输入由服务端按 id 取 —— 没有原文授权的人也能用(原文不经过他的浏览器)
+                输入 = _样例内容(c, project_id, wid, None, 体.get("样例id"), 体.get("沿用运行"))
+                来源["输入来自"] = {"样例": 体.get("样例id")} if 体.get("样例id") else {"运行": 体.get("沿用运行")}
         return _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, 体.get("上限"))
 
 
@@ -1399,12 +1528,18 @@ async def 单步测试(project_id: str, wid: str, node_id: str, request: Request
             小图, 要填 = ST1.拼小图(d["definition"] or {}, node_id, 工具读写=工具读写)
         except ST1.不能单测 as e:
             raise _错(422, "STEP_TEST_UNSUPPORTED", e.消息, e.建议)
+        if 体.get("样例id") or 体.get("沿用运行"):
+            输入 = _样例内容(c, project_id, wid, node_id, 体.get("样例id"), 体.get("沿用运行"))
+            if not isinstance(输入, dict):
+                raise _错(422, "VALIDATION", "那份输入的格式不对", "手动填一份再测")
         缺 = [f for f in 要填 if f not in 输入 or 输入[f] in (None, "")]
         if 缺:
             raise _错(422, "VALIDATION", f"还有 {len(缺)} 项没填,这次没有开始运行",
                       "把每一项都填上再测。这次一个模型都没调用,不花钱",
                       field_errors={f: "必填" for f in 缺})
         来源 = {"kind": "step_test", "id": wid, "node_id": node_id, "draft_revision": d["revision"]}
+        if 体.get("样例id") or 体.get("沿用运行"):
+            来源["输入来自"] = {"样例": 体.get("样例id")} if 体.get("样例id") else {"运行": 体.get("沿用运行")}
         return _受理运行(c, me, project_id, 小图, 来源, {f: 输入[f] for f in 要填}, idempotency_key, 体.get("上限"))
 
 

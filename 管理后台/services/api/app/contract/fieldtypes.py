@@ -334,6 +334,7 @@
     "staff_bindings": {"user_id", "lanxiu_staff_code"},
     # 执行故障上报(2026-10-25):少了哪一列这张单都没法处理 —— 不知道是哪一轮、什么故障、为什么、现在什么状态
     "trace_incidents": {"trace_id", "kind", "reason", "status"},
+    "workflow_test_samples": {"workflow_id", "name", "input_snapshot", "source"},
     # 检索试跑记录(2026-10-08):这五列**一列都不能空**,否则那一行没有用 ——
     #   · `source` 空 → 分不出是实验室跑的还是 chat 跑的,而这张表存在的理由
     #     就是「哪些是 chat 的」(chat 现在还没接上这条链)

@@ -312,6 +312,10 @@ _额外检查 = {
         ("ck_trace_incidents_kind", "kind in ('环境故障', '撞花费上限')"),
         ("ck_trace_incidents_status", "status in ('待处理', '已处理')"),
     ],
+    # 测试样例(2026-10-26):来路只有两种 —— 另起一种说法(「导入」之类)要先在这里登记,不许悄悄写进去
+    "workflow_test_samples": [
+        ("ck_workflow_test_samples_source", "source in ('手填', '来自运行')"),
+    ],
     "bridge_calls": [
         ("ck_bridge_calls_status", "status in ('待执行', '已执行', '执行失败')"),
         # 名单只在 runtime/桥工具.py 一处 —— 名单外的单在库这一层就记不进去
