@@ -80,6 +80,7 @@ const realFetch = global.fetch;
    口令从 seed.py 的 DEMO_PW 读(公开的演示口令,本来就写在 seed 里)。抄一份,改了那边这边就过期。 */
 const 要登录 = {"contract.html": "店长", "pad.html": "工匠", "report.html": "店长", "tasks.html": "店长",
                 "triage-settings.html": "总部运营", "triage-board.html": "总部运营",   // 研判设置(10-19):只有总部运营改,读要登录
+                "duty.html": "总部运营", "queue.html": "总部运营",   // 值班台 / 研判队列(10-26):研判队列接口加了登录闸(带客户信息),这两页跟着要登录
                 // 方案页 / 着装人页(10-23):它们取的「客户列表 / 方案 / 着装人」接口带客户信息,用户拍了一律要登录
                 "scheme.html": "顾问", "wearers.html": "顾问"};
 let 饼 = "";

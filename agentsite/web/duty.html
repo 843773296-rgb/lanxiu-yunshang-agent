@@ -152,6 +152,8 @@ async function load(){
     fetch("/api/ops-backlog").then(r=>r.json()),
     fetch("/api/ops-queue?state=待办").then(r=>r.json()),
     fetch("/api/ops-manual").then(r=>r.json())]);
+  // 研判队列要登录才给(带客户信息)—— 没登录照其它页的做法去登录页,别拿 q.rows 当它在(10-26 冒烟撞到:未捕获 TypeError,页面框架有、数据没有)
+  if(q.code==="NO_AUTH"){location.href="/login?back="+encodeURIComponent(location.pathname+location.search);return}
   kpi(b);
   // 研判队列见底 ≠ 今天没活了 —— 差评在下面那一块,原来这句「可以下班」会把它们说没
   $("#rows").innerHTML=q.rows.length?q.rows.slice(0,8).map(row).join(""):
