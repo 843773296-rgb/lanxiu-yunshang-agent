@@ -209,3 +209,34 @@ def 合并过吗(a, b):
     with _c() as c:
         ra, rb = 主档(a, c), 主档(b, c)
     return bool(ra and rb and ra == rb)
+
+
+# ── 判「是不是同一个人」:提示词 TK05 那张标准的代码版(10-26 批量合并要用)──────────
+# 提示词里那份是给模型读的;批量处理不能靠模型判,所以照同一张标准写成规则。
+# 两份讲的是同一套标准 —— **改标准两处一起改**(prompts.py TK05 · 这里)。
+# 只认标准写到的三种;标准覆盖不到的如实说「判不了」,交人(TK05 最后一句)。
+def _号(p):
+    import re
+    p = re.sub(r"[\s\-()]", "", p or "")
+    if p.startswith("+86"):
+        p = p[3:]
+    return p
+
+
+def 判同一人(x, y):
+    """x、y 是两条档案(dict,至少带 name / phone / birthday / addr)。
+    返回 (结论, 理由):结论 ∈ {"同一人", "不同人", "判不了"}。"""
+    名 = (x.get("name") or "").strip()
+    if not 名 or 名 != (y.get("name") or "").strip():
+        return "判不了", "姓名不同 —— 标准只覆盖同名的情况"
+    hx, hy = _号(x.get("phone")), _号(y.get("phone"))
+    if len(hx) == 11 and hx == hy:
+        return "同一人", "姓名相同 + 完整手机号相同(业务 10-08:就是同一个用户)"
+    同 = lambda k: bool((x.get(k) or "").strip()) and (x.get(k) or "").strip() == (y.get(k) or "").strip()
+    if 同("birthday") and 同("addr"):
+        return "同一人", "姓名 + 生日 + 地址三项全同(跨店重复建档)"
+    有 = lambda k: (x.get(k) or "").strip() and (y.get(k) or "").strip()
+    if 有("birthday") and 有("addr") and not 同("birthday") and not 同("addr"):
+        return "不同人", "只有姓名相同,生日和地址都不同(同名不同人)"
+    # 只是尾号相同、或生日地址一同一不同 —— 标准没写,不猜
+    return "判不了", "标准覆盖不到(比如只有尾号相同、或生日地址一同一不同)—— 交人确认"

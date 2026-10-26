@@ -114,16 +114,24 @@ def run(T):
        r1.get("ok") and 卡.get("单号") == r1.get("单号") and 卡.get("我能批") is True
        and len(卡.get("客户们") or []) == 2 and 卡.get("转给工号") == 接["no"], r1)
     aid = r1.get("单号")
-    # 一个账户只归一位导购(10-26):点名转一条,同户的另一条档案也在单子上
-    双 = c.execute("""SELECT k.id, o.id AS 同户 FROM customer k JOIN customer o ON o.account_id=k.account_id AND o.id<>k.id
-                     AND o.merged_into IS NULL WHERE k.shop_code=? AND k.merged_into IS NULL AND COALESCE(k.account_id,'')<>''
-                     ORDER BY k.id LIMIT 1""", (码,)).fetchone()
+    # 一个账户只归一位导购(10-26):点名转一条,同户的另一条档案也在单子上。
+    # **样本自己造**(在副本上):原来是从库里挑「碰巧有同户两条档案」的客户 —— 10-26 用户拍板把重复档案都合并了,
+    # 库里一条都不剩,这条断言就成了「没东西可验」。红不红不该取决于库里碰巧有什么(CLAUDE.md 第 8 节)
+    已用 = {x["id"] for x in 客}
+    两 = c.execute("""SELECT id, account_id, advisor_no FROM customer WHERE shop_code=? AND merged_into IS NULL
+                     AND COALESCE(account_id,'')<>'' AND id NOT IN (%s) ORDER BY id LIMIT 2""" % ",".join("?" * len(已用)),
+                   (码, *已用)).fetchall()
+    双 = None
+    if len(两) == 2:
+        c.execute("UPDATE customer SET account_id=?, advisor_no=? WHERE id=?", (两[0]["account_id"], 两[0]["advisor_no"], 两[1]["id"]))
+        c.commit()
+        双 = {"id": 两[0]["id"], "同户": 两[1]["id"]}
     if 双:
         rr = 以(店长, api.apply_adjust, "客户转移", 双["id"], {"to_advisor": 接["no"]}, "同户整户转的断言")
         ck("转一条有同户档案的客户 → 单子上连同户那条一起列出来(整户转)",
            rr.get("ok") and {x.get("客户号") for x in (rr.get("卡片") or {}).get("客户们") or []} >= {双["id"], 双["同户"]}, rr)
     else:
-        ck("副本这家店里有同户两条档案的客户可验(样本量不能是 0)", False)
+        ck("副本这家店里挑得出两条档案来造「同户两条」(样本量不能是 0)", False)
     ck("建单不等于生效:客户归属一个都没动", all(顾问号(k) == 前[k] for k in 前))
     import json
     pl = json.loads(c.execute("SELECT payload FROM approval WHERE id=?", (aid,)).fetchone()[0])

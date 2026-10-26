@@ -63,7 +63,12 @@ def 员工(角色):
 
 店长, 总部 = 员工("店长"), 员工("总部运营")
 # 挑两条**都有订单**的档案,建档时间摆成已知先后:甲早、乙晚
-两条 = c.execute("SELECT customer_id FROM ordr GROUP BY customer_id HAVING COUNT(*)>=1 ORDER BY customer_id LIMIT 2").fetchall()
+# ⚠️ 只挑**没卷进任何合并**的档案(自己没并入别人、也没有别人并入它)。10-26 用户拍板把账户下的重复档案都并了,
+# 原来「按编号取前两条」正好取到 C10001 —— 它名下已经并着一条,于是「关联档 == [甲, 乙]」多出一条而红,和被测代码无关
+两条 = c.execute("""SELECT o.customer_id FROM ordr o JOIN customer k ON k.id=o.customer_id
+                    WHERE COALESCE(k.merged_into,'')=''
+                      AND NOT EXISTS (SELECT 1 FROM customer x WHERE x.merged_into=k.id)
+                    GROUP BY o.customer_id ORDER BY o.customer_id LIMIT 2""").fetchall()
 ck("有店长、总部运营、两条有订单的档案可拿来造(空集合上什么都成立)", bool(店长 and 总部 and len(两条) == 2))
 if 店长 and 总部 and len(两条) == 2:
     甲, 乙 = 两条[0][0], 两条[1][0]
@@ -89,7 +94,8 @@ if 店长 and 总部 and len(两条) == 2:
     ck("合并写进 op_log,查得到是谁", lg and lg["code"] == "MERGE" and 总部["no"] in lg["actor"], dict(lg) if lg else None)
     ck("已经是同一个人的再并 → 不重复", MG.并入(甲, 乙, 总部).get("code") == "ALREADY")
 
-    列 = {x["id"]: x for x in SV.customer_list({"size": ["100000"]})["rows"]}
+    # 按档案号各搜一次 —— 列表一页只给 10 条(`size` 不认),原来靠「这两条正好在第一页」才验得到
+    列 = {x["id"]: x for k in (甲, 乙) for x in SV.customer_list({"q": [k]})["rows"]}
     ck("客户列表照样列副档,并标上并入了谁(各店还要在本店那份上开单)",
        乙 in 列 and 列[乙].get("已并入") == 甲 and 甲 in 列 and not 列[甲].get("已并入"), 列.get(乙))
     详乙, 详甲 = SV.customer_detail(乙), SV.customer_detail(甲)
