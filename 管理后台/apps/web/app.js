@@ -684,9 +684,26 @@ function 弹层(标题, 内容) {
   return el;
 }
 function 关弹层() { const m = document.getElementById("mask"); if (m) m.remove(); }
+// 报错用页面里的弹层,不用 alert(10-26 用户截图:原生弹窗里露着 VALIDATION / write2.config.connection_version_id、星号没渲染)。
+// 字段键「节点id.config.xxx」换成步骤名;同名的步骤(比如两个「写报告正文」)标「第几个」,不然分不清是哪一个
+function 步骤称呼(id) {
+  const ns = (typeof 图态 !== "undefined" && 图态 && 图态.定义 && 图态.定义.nodes) || [];
+  const n = ns.find((x) => x.id === id);
+  if (!n) return id === "图" ? "整张图" : id;
+  const 同名 = ns.filter((x) => (x.name || x.id) === (n.name || n.id));
+  return `「${n.name || n.id}」` + (同名.length > 1 ? `(第 ${同名.indexOf(n) + 1} 个)` : "");
+}
+function 中文化(s) { return String(s).replace(/[a-z][a-z_]*[a-z]/g, (k) => 字段中文[k] || k); }   // 字段中文 在搭建页那段定义(全局一份)
 function 报错(e) {
-  alert(`${e.体?.code || "出错"}:${e.message}\n\n下一步:${e.体?.advice || "—"}`
-    + (e.体?.field_errors ? "\n\n" + Object.entries(e.体.field_errors).map(([k, v]) => `· ${k}:${v}`).join("\n") : ""));
+  const b = e.体 || {};
+  const 条 = Object.entries(b.field_errors || {}).map(([k, v]) => {
+    const [id, ...余] = String(k).split(".");
+    const 处 = 余.filter((x) => x !== "config").map(中文化).join(" · ");
+    return `<li><b>${esc(步骤称呼(id))}</b>${处 ? " · " + esc(处) : ""}:${md(中文化(v))}</li>`;
+  }).join("");
+  弹层(b.code === "VALIDATION" ? "跑不了,先改这几处" : "没办成",
+    `<p>${md(e.message)}</p>${条 ? `<ul>${条}</ul>` : ""}<p>下一步:${md(b.advice || "—")}</p>`
+    + (b.code === "VALIDATION" ? `<p class="k">关掉这个框,下面的问题列表里点一条就能定位到那一步。</p>` : ""));
 }
 const 时间 = (s) => esc(String(s || "").slice(0, 16).replace("T", " "));
 
