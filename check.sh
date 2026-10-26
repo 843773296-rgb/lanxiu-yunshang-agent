@@ -562,6 +562,11 @@ run "研判队列只放能跑的 · 差评挪到值班台、一条不丢(用户 
 run "研判升级 = 正式转交 · 有接收人和期限、超时退回、接单人复核、计时不停(用户 10-17 拍)" python3 backend/escalation_check.py
 run "售后 / 客户合并的办结入口 · 页面照后端预检画、回执和角色由后端判(未做项第 7 项)" python3 backend/close_entry_check.py
 run "研判运行记录 · 不重复跑、看得到排到哪、断了标中断、排队的接着跑、超时可转人工(用户 10-18 拍)" python3 backend/triage_run_check.py
+# 2026-10-26 装进来:`sdk.run()` 算出的「最终交付状态」一直在返回里、`app.py` 也明确传了,
+# 而后台那一跳**一个字都没读** —— 和同一个函数上 `trace_id` 那次(09-28)是同一个形状。
+# 这条判据**真打 /api/ops-triage**(假 handler + 库副本),不扫源码:
+# 这个 bug 活在两个文件之间的契约上,而请求体里那个字段一直都在。
+run "研判交付状态 · 从请求体到库到页面这一条链(真打写口,库副本)" python3 backend/delivery_check_col_check.py
 run "改判先审核 · 进候选、总部运营审、不能自审、并入才进评测集(用户 10-19 拍)" python3 backend/relabel_check.py
 run "重开 / 更正 · 谁能重开、旧结论留档、计时不重置、已办结开更正工单(用户 10-19 拍)" python3 backend/reopen_check.py
 run "登录失效就去登录页 · 刷新走服务端跳转,点按钮 / 401 / 切回标签页走守卫(用户 10-19 要)" python3 agentsite/auth_guard_check.py

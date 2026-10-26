@@ -3761,7 +3761,16 @@ class H(BaseHTTPRequestHandler):
                                      trace_id=body.get("trace_id"),
                                      # 这条是哪版提示词跑的(研判队列未做项第 5 项第一步,10-19)—— 原来这里没往下传,
                                      # 库里那一列从来是空的:换了提示词之后,新旧研判混在一起分不开
-                                     prompt_ver=body.get("prompt_ver"))
+                                     prompt_ver=body.get("prompt_ver"),
+                                     # 这条研判**最终有没有交付出去**(2026-10-26 补)。
+                                     # ⚠️ 这个字段请求体里**一直都有**(`agentsite/app.py` 的
+                                     # `_triage_one` 明确传了 `交付检查=r.get("交付检查")`),
+                                     # 而这一跳**一个字都没读过** —— 和同一个函数上 `trace_id`
+                                     # 那次(09-28)是同一个形状,这次更隐蔽:发送方传了,
+                                     # 读调用方的人会以为它存下去了,**而两边都不报错**。
+                                     # 后果:库里只有 `guard_blocked`(曾被打回过),
+                                     # 于是分不开「被闸扣下」和「打回一次之后通过了」。
+                                     delivery_check=body.get("交付检查"))
             except Exception as e:
                 return self._send(dict(error=f"{type(e).__name__}: {e}"[:200]),400)
             return self._send(dict(ok=True, triage_id=tid, row=_ops.get_triage(tid)))

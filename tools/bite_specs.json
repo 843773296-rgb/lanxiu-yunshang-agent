@@ -8724,8 +8724,8 @@
   "file": [
    {
     "path": "backend/server.py",
-    "old": "                                     prompt_ver=body.get(\"prompt_ver\"))",
-    "new": "                                     )"
+    "old": "                                     prompt_ver=body.get(\"prompt_ver\"),",
+    "new": ""
    }
   ],
   "预期红": "后台 /api/ops-triage 把版本号往下传"
@@ -13636,5 +13636,29 @@
    }
   ],
   "预期红": "回放 24 条真跑原文,判定和人工标的一致"
+ },
+ {
+  "script": "backend/delivery_check_col_check.py",
+  "改坏": "后台写口不再把请求体里的「交付检查」传给 save_triage(回到 2026-10-26 之前)",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "                                     delivery_check=body.get(\"交付检查\"))",
+    "new": "                                     )"
+   }
+  ],
+  "预期红": "打真的 /api/ops-triage:请求体里的「交付检查」真的落进库"
+ },
+ {
+  "script": "backend/delivery_check_col_check.py",
+  "改坏": "save_triage 收了这个参数却不写库(UPDATE 那行删掉)",
+  "file": [
+   {
+    "path": "backend/ops.py",
+    "old": "            c.execute(\"UPDATE triage SET delivery_check=? WHERE id=?\",\n                      (delivery_check, cur.lastrowid))",
+    "new": "            pass"
+   }
+  ],
+  "预期红": "打真的 /api/ops-triage:请求体里的「交付检查」真的落进库"
  }
 ]

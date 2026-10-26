@@ -417,10 +417,25 @@ async function open_(tid){
   当前改判选项=d.改判选项||[];
   // 「已升级」10-17 起不算结论(用户拍「升级 = 正式转交」):交出去等人接单,计时接着走
   const done=["已采纳","已改判"].includes(d.status), 升=d.升级, 升着=d.status==="已升级";
+  // 这条研判**最终有没有交付出去**(2026-10-26)。取值:通过 / 修正后通过 / 未通过 / 未检查 / 不完整。
+  // ⚠️ 为什么要单独摆出来、而不是只看 guard_blocked:那一列是「**曾被**打回过」,
+  // 而 sdk.py 自己的注释写着「只有通过 / 修正后通过算交付成功」——
+  // 「被扣下、没出结论」和「打回一次之后通过了」在 guard_blocked 上**长得一模一样**,
+  // 而这两者下一步动作相反(前者要人工接手,后者照常复核)。
+  const 交 = d.delivery_check || "", 扣下 = 交 === "未通过" || 交 === "不完整";
+  const 打回几次 = (() => { try { return (JSON.parse(d.guard_violations || "[]") || []).length } catch (e) { return 0 } })();
   $("#panel").innerHTML=`<div class="hd">${hd}
     <span class="tag ${CF[d.ai_confidence]||""}">置信度 ${esc(d.ai_confidence)}</span>
-    <span class="tag ${done?"dye":""}">${esc(d.status)}</span></div>
+    <span class="tag ${done?"dye":""}">${esc(d.status)}</span>
+    ${交 ? `<span class="tag ${扣下 ? "over" : "ok"}">${扣下 ? "没出结论 · 交付前被拦下" : esc(交)}</span>` : ""}</div>
   <div class="bd">
+    ${扣下 ? fld("为什么没出结论",
+        `这条回答没通过交付前体检(${esc(交)})${打回几次 ? `,一共被打回 ${打回几次} 次` : ""},`
+        + `**没有作为结论给出** —— 这件事要人工接手。\n`
+        + `下面「智能体给的根因」那几段可能是空的或不完整的,**别照着它做决定**。`
+        + `被拦的理由在本条的打回记录里(开发查 agentsite/evals/withheld.jsonl 看草稿原文)。`) : ""}
+    ${!扣下 && 打回几次 ? fld("交付前体检",
+        `打回过 ${打回几次} 次,改完**通过了**(${esc(交)})—— 结论可用,但这条值得看一眼它被打回什么。`) : ""}
     ${fld("智能体给的根因",d.ai_root_cause)}
     ${fld("建议动作",d.ai_action)}
     ${fld("证据",d.ai_evidence)}

@@ -832,15 +832,33 @@ def 研判提示词版本(任务类型):
 def save_triage(task_id, breakpoint, case_id, text, trajectory,
                 cost=None, latency_ms=None, model=None, usage=None,
                 guard_blocked=False, guard_violations=None, answer_turns=1,
-                trace_id=None, prompt_ver=None):
+                trace_id=None, prompt_ver=None, delivery_check=None):
     """⚠️ `trace_id` 2026-09-28 补:它一直在 `sdk.run()` 的返回里,
     但到这一跳就丢了 —— 于是库里每条研判都答不出「它是哪一次调用的产物」。
-    没有它,A3 的判读回流只能进总数,挂不到具体调用上。**空值合法,不许拿别的顶上。**"""
+    没有它,A3 的判读回流只能进总数,挂不到具体调用上。**空值合法,不许拿别的顶上。**
+
+    ⚠️ **`delivery_check` 2026-10-26 补,而它是同一个形状的第二次** ——
+    上面那句写的就是「它一直在返回里,但到这一跳就丢了」。这次更隐蔽:
+    `agentsite/app.py` 的 `_triage_one` **明确传了** `交付检查=r.get("交付检查")`,
+    所以读调用方的人会以为它存下去了,而这个函数的签名里根本没有这个参数,
+    请求体里那个字段**一个字都没被读过**。
+    > 发送方传了、接收方不读,**两边都不报错**。
+    后果命中业务那条基准(「出错时用户看到什么」):库里只有 `guard_blocked`
+    (曾被打回过),而 `agentsite/sdk.py` 自己的注释写着
+    「只有『通过 / 修正后通过』算交付成功 —— **别拿 guard_blocked 当最终合格**」。
+    于是库里**分不开「被闸扣下」和「打回一次之后通过了」**:
+    评测分得开(它直接读 `sdk.run()` 的返回、没走库),**产品分不开**。
+    取值:通过 / 修正后通过 / 未通过 / 未检查 / 不完整。
+
+    ⚠️ **被扣下的草稿不进库**(它在 `agentsite/evals/withheld.jsonl`):
+    那是**不合格的回答**,存进业务库就会有人把它当结论看;顾问要知道的是
+    「这条没出结论、要人工接手」,而不是去读一份没过闸的草稿。
+    要查「为什么被扣下」,库里的 `guard_violations` 有每条规则的原话。
+    """
     p = parse_draft(text)
     conf = confidence(trajectory, p)
     with _c() as c:
-        if prompt_ver:
-            _确保回执列(c)
+        _确保后加的列(c)            # 每次都调(幂等,一次 PRAGMA)—— 见那个函数的注释
         cur = c.execute(
             "INSERT INTO triage(task_id,breakpoint,case_id,created,ai_root_cause,ai_action,"
             "ai_evidence,ai_confidence,ai_text,tool_calls,cost,latency_ms,model,"
@@ -859,6 +877,12 @@ def save_triage(task_id, breakpoint, case_id, text, trajectory,
             # **这条建议是哪版提示词、有没有取材料**(数据工厂 10-13:两轮之间动了两个变量就归因不干净,
             # 落库的这一行是事后唯一能分开它们的东西)
             c.execute("UPDATE triage SET prompt_ver=? WHERE id=?", (prompt_ver, cur.lastrowid))
+        if delivery_check:
+            # 照 prompt_ver 的写法用 UPDATE,**故意不动上面那条 INSERT** ——
+            # 那条语句有 21 个列名和 21 个占位符手工对齐,往里插一个列
+            # 是这个文件里风险最高的一种改法(插错位不报错,只是把值写进隔壁列)。
+            c.execute("UPDATE triage SET delivery_check=? WHERE id=?",
+                      (delivery_check, cur.lastrowid))
         # 2026-10-16:**不再写 task.summary**。那一列是工单的处理记录(工单页带绿色 ✔ 显示),
         # AI 的根因写进去就像已经办完;重跑时还会读到上一轮答案,两轮不独立。根因只在 triage 里。
         c.execute("UPDATE task SET status='待复核' WHERE id=?", (task_id,))
@@ -980,9 +1004,16 @@ def 回执对照没漏():
     return [x for x in _R.处理方式 if x not in 差评回执]
 
 
-def _确保回执列(c):
+def _确保后加的列(c):
+    """补那些**后来才加的列**(SQLite 没有 ADD COLUMN IF NOT EXISTS,所以先读 PRAGMA)。
+
+    ⚠️ 原名 `_确保回执列`,2026-10-26 改名并**改成每次都调** ——
+    原来它只在「传了 prompt_ver」时才跑,而 `delivery_check` 不像回执那样
+    只有某一条路径会写:**每一条研判都该有它**,条件调的话没传 prompt_ver 的
+    那些写入会撞「no such column」。
+    """
     有 = {r[1] for r in c.execute("PRAGMA table_info(triage)")}
-    for col in ("receipt", "receipt_kind", "prompt_ver"):
+    for col in ("receipt", "receipt_kind", "prompt_ver", "delivery_check"):
         if col not in 有:
             c.execute(f"ALTER TABLE triage ADD COLUMN {col} TEXT")
 
@@ -1105,7 +1136,7 @@ def 办结(triage_id, 单号, me, 来源="页面"):
         _记(False, "ALREADY", 话)
         return dict(ok=False, code="ALREADY", reason=话)
     with _c() as c:
-        _确保回执列(c)      # 老库没有这两列(新建的库 seed 里就有);补列不改任何已有数据
+        _确保后加的列(c)    # 老库没有这几列(新建的库 seed 里就有);补列不改任何已有数据
         行, 类, 话 = 回执行不行(c, 任务, 单号)
         if not 行:
             _记(False, "NO_RECEIPT", 话)
