@@ -197,13 +197,24 @@ def main():
         ck("T08 撤销一次 → 步骤、连线、引用全回来", "human_1" in 态()["节点"] and "human_1|success||tool_1" in 态()["边"])
 
         print("\n▸ T11 / T12 值控件与快捷键")
+        js("图态.选中='llm_1'; 图态.面板页='设置'; 图态.高级开=false; 画_面板();")
+        段 = js("return [...document.querySelectorAll('#pn .psec')].map(x=>x.dataset.sec)")
+        ck("面板不分页签、从上到下分段(10-26 改版):基本 / 用到的数据 / 结果 / 高级,高级默认收起",
+           段 == ["设置", "输入数据", "结果字段", "高级"] and not js("return !!document.querySelector('#pn [data-pp]')")
+           and js("return document.querySelector('#pn [data-sec=\"高级\"]').open") is False, 段)
+        把 = d.find_element(By.CSS_SELECTOR, ".pgrip")
+        ActionChains(d).click_and_hold(把).move_by_offset(-80, 0).release().perform()
+        宽 = js("return localStorage.getItem('wf.面板宽')")
+        js("画_搭建()")
+        ck("面板拖宽后记住宽度(重画之后还是那么宽)",
+           宽 and int(宽) > 440 and js("return getComputedStyle(document.querySelector('.wfbuild')).getPropertyValue('--pw').trim()") == f"{宽}px", 宽)
         js("图态.选中='llm_1'; 图态.面板页='高级'; 画_面板();")
-        框 = d.find_element(By.CSS_SELECTOR, "#pn .inwrap input")
+        框 = d.find_element(By.CSS_SELECTOR, '#pn [data-sec="高级"] .inwrap input')
         前 = js("return 节点('llm_1').config.max_output_tokens")
         框.clear(); 框.send_keys("1.8"); 框.send_keys(Keys.TAB)
         ck("T11 整数框填 1.8 → 显示错误,不写进定义(不截成 1)",
            js("return 节点('llm_1').config.max_output_tokens") == 前 and "整数" in js("return document.querySelector('#pn .ferr').textContent"))
-        框 = d.find_element(By.CSS_SELECTOR, "#pn .inwrap input")
+        框 = d.find_element(By.CSS_SELECTOR, '#pn [data-sec="高级"] .inwrap input')
         框.click(); 框.send_keys(Keys.BACKSPACE); 框.send_keys(Keys.DELETE)
         ck("T12 在输入框里按 Delete / Backspace → 只删文字,步骤一个没少", len(态()["节点"]) == 6)
 

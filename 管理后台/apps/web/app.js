@@ -1093,7 +1093,26 @@ function 画_搭建() {
   $("#vw-g").onclick = () => { 图态.视图 = "流程图"; 画_搭建(); };
   if (g.视图 === "流程图") { if (图态.画 && 图态.选中) 图态.画.选 = new Set([图态.选中]); 画_图(); }
   else 画_步骤();
-  画_面板(); 画_问题(); 摆问题区();
+  画_面板(); 画_问题(); 摆问题区(); 挂面板拖宽();
+}
+// 右侧面板可拖宽,记住上次的宽度(10-26 方案 §2);只在全屏编排页
+function 挂面板拖宽() {
+  const 建 = document.querySelector(".wfbuild"), pn = $("#pn");
+  if (!建 || !pn || !document.body.classList.contains("wf-full") || !pn.insertAdjacentHTML) return;
+  let 宽 = 440; try { 宽 = +localStorage.getItem("wf.面板宽") || 440; } catch (e) { /* 读不到就用默认 */ }
+  const 设 = (w) => { 宽 = Math.max(340, Math.min(720, Math.round(w))); 建.style.setProperty("--pw", 宽 + "px"); };
+  设(宽);
+  if (建.querySelector(".pgrip")) return;
+  建.insertAdjacentHTML("beforeend", '<div class="pgrip" role="separator" aria-orientation="vertical" aria-label="拖动调整面板宽度" tabindex="0"></div>');
+  const 把 = 建.querySelector(".pgrip");
+  const 存 = () => { try { localStorage.setItem("wf.面板宽", String(宽)); } catch (e) { /* 存不了只影响下次 */ } };
+  把.onpointerdown = (e) => {
+    e.preventDefault(); 把.setPointerCapture(e.pointerId);
+    const 右 = 建.getBoundingClientRect().right;
+    把.onpointermove = (m) => 设(右 - m.clientX);
+    把.onpointerup = () => { 把.onpointermove = null; 存(); };
+  };
+  把.onkeydown = (e) => { if (e.key === "ArrowLeft") { 设(宽 + 20); 存(); } if (e.key === "ArrowRight") { 设(宽 - 20); 存(); } };
 }
 // 编排页的问题列表默认收起,点顶栏「N 处要改」才展开(10-26:常驻底栏挤掉编排区);检查出了要改的会自动展开
 function 摆问题区() {
@@ -1267,9 +1286,9 @@ function 画_面板() {
   }
   const n = 节点(g.选中);
   n.config = n.config || {};
-  const 页们 = ["设置", "输入数据", "结果字段", "高级"];
-  const 头 = 页们.map((t) => t === g.面板页 ? `<button class="on" data-pp="${t}">${t}</button>`
-                                           : `<button data-pp="${t}">${t}</button>`).join("");
+  // 不分页签,从上到下分段(10-26 用户:横向切来切去、超出屏幕的太多);「高级」默认收起
+  const 段 = (标, 键, 体) => `<section class="psec" data-sec="${键}"><h4 class="psh">${标}</h4>${体}</section>`;
+  const 高开 = g.面板页 === "高级" || g.高级开;
   const 缺 = 缺项(n);
   const 问 = (g.报告?.问题 || []).filter((q) => q.node_id === n.id);
   $("#pn").innerHTML = `
@@ -1278,12 +1297,17 @@ function 画_面板() {
     ${(() => { const 失 = 图逻辑.失效引用(g.定义).filter((x) => x.节点id === n.id);
       // 删除后「随即标记并定位」(§6.3 §7.1):不管停在哪个页签都看得到,不藏在「输入数据」里
       return 失.length ? `<div class="ferr" role="alert">有 ${失.length} 处数据来源的原来源已删除:${失.map((x) =>
-        `「${esc(x.原名)} · ${esc(x.字段)}」`).join("、")} —— 在「输入数据」里选新来源,或撤销那次删除</div>` : ""; })()}
+        `「${esc(x.原名)} · ${esc(x.字段)}」`).join("、")} —— 在下面「用到的数据」里选新来源,或撤销那次删除</div>` : ""; })()}
     ${问.map((q) => `<div class="err" style="padding:6px;margin:6px 0">${md(q["消息"])}<br>
         <span class="k">怎么改:${md(q["建议"])}</span></div>`).join("")}
-    <div class="tabs">${头}</div>
-    <div id="pp">${({ 设置: 表_设置, 输入数据: 表_输入, 结果字段: 表_结果, 高级: 表_高级 }[g.面板页] || 表_设置)(n)}</div>`;
-  $("#pn").querySelectorAll("[data-pp]").forEach((b) => { b.onclick = () => { 图态.面板页 = b.dataset.pp; 画_面板(); }; });
+    <div id="pp">
+      ${段("基本", "设置", 表_设置(n))}
+      ${段("用到的数据", "输入数据", 表_输入(n))}
+      ${段("结果", "结果字段", 表_结果(n))}
+      <details class="psec" data-sec="高级"${高开 ? " open" : ""}><summary class="psh">高级</summary>${表_高级(n)}</details>
+    </div>`;
+  const 高 = $("#pn").querySelector('[data-sec="高级"]');
+  if (高) 高.ontoggle = () => { 图态.高级开 = 高.open; };
   if ($("#adv-cancel")) $("#adv-cancel").onclick = () => { $("#adv-json").value = JSON.stringify(n.config, null, 1); $("#adv-err").textContent = ""; };
   $("#pn").querySelectorAll("[data-clr]").forEach((b) => {
     b.onclick = () => { const i = $("#pn").querySelector(`[data-k="${b.dataset.clr}"]`); if (!i) return; i.value = ""; i.dispatchEvent(new Event("change")); i.focus(); };
@@ -1386,7 +1410,8 @@ function 换业务动作(n, id) {
 
 function 表_设置(n) {
   const g = 图态, c = n.config;
-  let 体 = `<label class="f">这一步叫什么</label>${输入框(n.name || "", (el) => { n.name = el.value.trim() || undefined; 重画(); })}`;
+  let 体 = `<div class="two"><div><label class="f">这一步叫什么</label>${输入框(n.name || "", (el) => { n.name = el.value.trim() || undefined; 重画(); })}</div>
+    <div><label class="f">类型</label><div class="ro">${esc(次级标签(n))}</div></div></div>`;
   if (n.type === "llm") {
     const 模 = g.资源.模型 || [], 处 = g.资源.处理要求 || [];
     体 += `<label class="f">用哪个模型</label>`
@@ -1462,9 +1487,9 @@ function 表_设置(n) {
   } else if (n.type === "start") {
     体 += `<label class="f">使用者要提供什么</label>` + 字段表编辑(c.input_schema = c.input_schema || { type: "object", properties: {}, required: [] }, true);
   } else if (n.type === "end") {
-    体 += `<div class="k">返回哪些内容、各从哪来 —— 在「结果字段」和「输入数据」里配。</div>`;
+    体 += `<div class="k">返回哪些内容、各从哪来 —— 在下面「结果」和「用到的数据」里配。</div>`;
   } else {
-    体 += `<div class="note">${md(元(n.type)["说明"] || "")}</div><div class="k">这一类步骤的细项在「高级」里。</div>`;
+    体 += `<div class="note">${md(元(n.type)["说明"] || "")}</div><div class="k">这一类步骤的细项在下面「高级」里(默认收起)。</div>`;
   }
   // 下一步(连线编辑)
   const 口们 = 出口们(n);
@@ -1475,7 +1500,7 @@ function 表_设置(n) {
       const 名 = 业务名(x); 同名[名] = (同名[名] || 0) + 1;
       return [x.id, `${名}${图态.定义.nodes.filter((y) => 业务名(y) === 名).length > 1 ? ` #${同名[名]}` : ""} · ${次级标签(x)}`];
     });
-    体 += `<h4>下一步</h4>` + 口们.map((o) => {
+    体 += `<h4>下一步</h4><div class="two">` + 口们.map((o) => {
       const e = 图态.定义.edges.find((x) => x.source === n.id && 同口(x, o));
       // 和图上拖线**同一套校验**(连接校验:环 / 开始 / 作用域);不合法 → 不改,说为什么
       return `<div class="fieldrow"><label>${esc(o.名)}</label>${下拉(e ? e.target : "", 候选, (el) => {
@@ -1486,7 +1511,7 @@ function 表_设置(n) {
         if (v.替换) 提示(`已把「${o.名}」的下一步从「${业务名(节点(v.替换.target))}」改为「${业务名(节点(el.value))}」`, { 撤销: true });
         重画();
       }, o.port === "error" ? "失败就结束这次运行" : "(不接)")}</div>`;
-    }).join("");
+    }).join("") + `</div>`;
   }
   return 体;
 }
@@ -1546,17 +1571,17 @@ function 绑定编辑(n, 键名, 契约 = null) {
     return `<div class="card ${失效 ? "bad" : ""}">
       ${失效 ? `<div class="ferr">原来源「${esc(r.原名 || r.node_id)} · ${esc(String(r.pointer || "").replace(/^\//, ""))}」已删除 —— 选一个新来源,或撤销那次删除。运行和生成候选版本前要改好。</div>` : ""}
       ${部分 ? `<div class="ferr">这个来源只在部分路径上有值 —— 走另一条路时取不到。要么改成必经的来源,要么在汇合之后再取</div>` : ""}
-      ${在契约 ? `<div class="k">参数</div><div><b>${esc(k)}</b> <span class="k">${esc(契[k].type || "")}${必.has(k) ? " · 必填" : " · 选填"}${契[k].description ? " · " + esc(契[k].description) : ""}</span></div>`
+      <div class="two"><div>${在契约 ? `<div class="k">参数</div><div><b>${esc(k)}</b> <span class="k">${esc(契[k].type || "")}${必.has(k) ? " · 必填" : " · 选填"}${契[k].description ? " · " + esc(契[k].description) : ""}</span></div>`
         : `<div class="k">字段</div>${输入框(k, (el) => {
         const 新 = el.value.trim(); if (!新 || 新 === k) return;
-        绑[新] = 绑[k]; delete 绑[k]; 重画(); })}`}
-      ${契约外 ? `<div class="ferr">「${esc(业务名(n))}」没有「${esc(k)}」这个参数 —— 填了不会用上,可以删掉</div>` : ""}
-      ${待核.includes(k) ? `<div class="ferr">换业务动作后这个参数的类型变了 —— 核对来源的类型,不会悄悄转成字符串</div>` : ""}
+        绑[新] = 绑[k]; delete 绑[k]; 重画(); })}`}</div><div>
       <div class="k">从哪来</div>${下拉(是固定 ? "固定值" : 失效 ? "" : 引用值(r), [["固定值", "固定值(自己填)"], ...源们], (el) => {
         if (!el.value) { 绑[k] = null; 重画(); return; }
         const 新 = el.value === "固定值" ? { source: "constant", value: "" } : 解引用(el.value);
         if (新 && 新.source === "node" && 节点(新.node_id)) 新.原名 = 业务名(节点(新.node_id));   // 留原名:来源被删后还认得出是谁
-        绑[k] = 新; 重画(); }, r ? "选一个来源" : "未设置来源")}
+        绑[k] = 新; 重画(); }, r ? "选一个来源" : "未设置来源")}</div></div>
+      ${契约外 ? `<div class="ferr">「${esc(业务名(n))}」没有「${esc(k)}」这个参数 —— 填了不会用上,可以删掉</div>` : ""}
+      ${待核.includes(k) ? `<div class="ferr">换业务动作后这个参数的类型变了 —— 核对来源的类型,不会悄悄转成字符串</div>` : ""}
       ${是固定 ? `<div class="k">填什么</div>${输入框(r.value, (el) => { r.value = el.value; }, "", { 可清空: true })}` : ""}
       <div class="k">${r && r.source === "node" && !失效 ? "正式运行时取那一步的真实结果;还没跑过,所以这里没有样例" : r ? "" : "未设置来源 —— 字段还在,运行前要选"}</div>
       <div class="acts">${r ? `<button data-k="${挂控件(() => { 绑[k] = null; 重画(); })}">移除来源</button>` : ""}
@@ -1569,17 +1594,17 @@ function 绑定编辑(n, 键名, 契约 = null) {
 }
 
 function 表_输入(n) {
-  if (n.type === "start") return `<div class="k">开始这一步没有上游 —— 使用者要提供什么在「设置」里配。</div>`;
+  if (n.type === "start") return `<div class="k">开始这一步没有上游 —— 使用者要提供什么在上面「基本」里配。</div>`;
   if (n.type === "human") return `<div class="k">审核人会看到这些(左边原文、右边摘要)。「摘要」就是通过时默认的定稿。</div>`
     + 绑定编辑(n, "payload_binding");
-  if (n.type === "condition") return `<div class="k">条件用到的值在「设置」里每一路单独选。</div>`;
+  if (n.type === "condition") return `<div class="k">条件用到的值在上面「基本」里每一路单独选。</div>`;
   if (n.type === "merge") return `<div class="k">汇合会取下面<b>第一个有值</b>的那一路(条件没走的那一路没有值)。</div>`
     + (n.config.candidates || []).map((r, i) => `<div class="fieldrow"><label>第 ${i + 1} 路</label>${下拉(引用值(r), 上游字段(n.id),
         (el) => { n.config.candidates[i] = 解引用(el.value); })}</div>`).join("")
     + `<button data-k="${挂控件(() => { (n.config.candidates = n.config.candidates || []).push(null); 重画(); })}">加一路</button>`;
   if (n.type === "tool") {
     const t = 工具资源(n.config.tool_version_id);
-    if (!t) return `<div class="k">先在「设置」里选一个业务动作 —— 参数由它决定。</div>`;
+    if (!t) return `<div class="k">先在上面「基本」里选一个业务动作 —— 参数由它决定。</div>`;
     return `<div class="k">「${esc(t["名"])}」要这些参数(由它自己定义,这里只选每一项从哪来):</div>` + 绑定编辑(n, "bindings", t["入参"] || {});
   }
   return `<div class="k">这一步要用的数据,各自从哪来。</div>` + 绑定编辑(n, "bindings");
@@ -1639,12 +1664,12 @@ function 表_结果(n) {
     const ps = Object.entries((((t || {})["出参"]) || {}).properties || {});
     return t ? `<div class="k">「${esc(t["名"])}」会返回这些(由它自己定义,这里不改):</div>
       <ul>${ps.map(([k, v]) => `<li><b>${esc(k)}</b> <span class="k">${esc(v.type || "")}</span></li>`).join("")}</ul>`
-      : `<div class="k">先在「设置」里选一个业务动作。</div>`;
+      : `<div class="k">先在上面「基本」里选一个业务动作。</div>`;
   }
   if (n.type === "human") return `<div class="k">人工核对固定返回:<b>决定</b>(approve / reject)、<b>定稿</b>、<b>理由</b>、<b>处理人</b>。</div>`;
   if (n.type === "end") {
     c.output_schema = c.output_schema || { type: "object", properties: {}, required: [] };
-    return `<div class="k">最后返回哪些内容;每一项从哪来在「输入数据」里选(字段名要和这里一致)。</div>`
+    return `<div class="k">最后返回哪些内容;每一项从哪来在上面「用到的数据」里选(字段名要和这里一致)。</div>`
       + 字段表编辑(c.output_schema, false);
   }
   if (["llm", "transform"].includes(n.type)) {

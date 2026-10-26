@@ -355,3 +355,24 @@ body.wf-full .wfbuild{flex:1;min-height:0;gap:0;align-items:stretch;grid-templat
 body.wf-full .wfbuild .steps{border:0;border-radius:0;overflow:auto;padding:16px 24px}
 body.wf-full .wfbuild .wfpanel{border-left:1px solid var(--line);overflow:auto;background:var(--card)}
 body.wf-full .wfbottom{flex:none;max-height:32vh;overflow:auto}
+
+/* ── 右侧配置面板(10-26 方案 §2):不分页签,纵向分段;短字段两列;可拖宽 ───────── */
+body.wf-full .wfbuild{position:relative;grid-template-columns:minmax(0,1fr) var(--pw,440px)}
+body.wf-full .wfbuild.graph{grid-template-columns:minmax(0,1fr) var(--pw,440px)}
+.pgrip{position:absolute;top:0;bottom:0;right:calc(var(--pw,440px) - 3px);width:6px;cursor:col-resize;z-index:4}
+.pgrip:hover,.pgrip:focus-visible{background:var(--pri-bg);outline:none}
+.wfpanel .psec{border-top:1px solid var(--line);padding:12px 0 4px;margin-top:8px}
+.wfpanel .psec:first-child{border-top:0;margin-top:4px}
+.wfpanel .psh{margin:0 0 6px;font-size:12px;font-weight:600;color:var(--ink3);letter-spacing:.06em}
+.wfpanel details.psec>summary{cursor:pointer;list-style:none}
+.wfpanel details.psec>summary::before{content:"▸ ";color:var(--ink3)}
+.wfpanel details.psec[open]>summary::before{content:"▾ "}
+.wfpanel h4{margin:12px 0 6px;font-size:13px}
+.wfpanel .two{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;align-items:start}
+.wfpanel .two>*{min-width:0}
+.wfpanel .two .fieldrow{display:grid;gap:4px}
+.wfpanel .ro{height:32px;display:flex;align-items:center;padding:0 8px;border:1px dashed var(--line);
+  border-radius:var(--radius);color:var(--ink2);font-size:13px}
+.wfpanel select,.wfpanel input[type=text],.wfpanel input:not([type]),.wfpanel textarea{width:100%;max-width:100%;box-sizing:border-box}
+.wfpanel select{height:32px;border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
+.wfpanel input[type=text],.wfpanel input:not([type]){height:32px;border:1px solid var(--line);border-radius:var(--radius);padding:0 8px}
