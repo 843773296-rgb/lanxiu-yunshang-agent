@@ -831,9 +831,46 @@ async function 页_画布(路) {
   画_画布();
 }
 
+/* 编排页是独立的全屏页(用户 10-26 拍):不带后台菜单,顶栏一行。地址仍是 #/workflow/<id>/搭建 ——
+ * 撤销、保存、冲突、离开拦截这一套全挂在「搭建」上,换地址等于把它们全迁一遍 */
+function 画_编排页() {
+  const g = 图态, 链 = (t) => `#/workflow/${encodeURIComponent(g.wid)}/${encodeURIComponent(t)}`;
+  document.body.classList.add("wf-full");
+  $("#main").innerHTML = `
+    <div class="wfbar" role="toolbar" aria-label="编排">
+      <a class="back" href="${链("概览")}" title="回到这条工作流的概览">← 返回</a>
+      <b class="nm" title="${esc(g.用途 || "")}">${esc(g.名称)}</b>
+      <span id="savest" role="status" aria-live="polite"></span>
+      <span class="grow"></span>
+      <span class="seg" role="group" aria-label="视图"><button id="vw-s">列表</button><button id="vw-g">流程图</button></span>
+      <button id="issues" hidden></button>
+      <button id="trun" title="去「测试」页填一条输入试跑">▶ 试运行</button>
+      <button class="pri" id="freeze">发布</button>
+      <details class="more"><summary aria-label="更多">⋯</summary><div class="menu">
+        <button id="save">保存草稿</button>
+        <button id="v">检查配置</button>
+        <label title="只存草稿:停顿 1.5 秒后保存;不运行、不发布"><input type="checkbox" id="autosave"> 自动保存草稿</label>
+        <a href="${链("版本与发布")}">版本与发布</a><a href="${链("设置")}">设置</a><a href="${链("运行记录")}">运行记录</a>
+      </div></details>
+    </div>
+    <div id="tabbody"></div>`;
+  $("#save").onclick = 做_存草稿;
+  $("#autosave").checked = 自动保存开着();
+  $("#autosave").disabled = !能改图();
+  $("#autosave").onchange = (e) => { try { localStorage.setItem("wf.自动保存", e.target.checked ? "1" : "0"); } catch (er) { /* 存不了就只对这一页有效 */ }
+    if (e.target.checked) 自动保存排队(); };
+  $("#v").onclick = 做_校验;
+  $("#freeze").onclick = 弹_准备发布;
+  $("#trun").onclick = () => { location.hash = 链("测试"); };
+  $("#issues").onclick = () => { 图态.问题开 = !图态.问题开; 图态.底Tab = "问题"; 画_问题(); 摆问题区(); };
+  画_搭建(); 画_底栏(); 画_保存状态();
+}
+
 function 画_画布() {
   const g = 图态;
-  const 签 = 工作流页签.map((t) => t === g.页签
+  if (g.页签 === "搭建") return 画_编排页();
+  document.body.classList.remove("wf-full");
+  const 签 = 工作流页签.filter((t) => t !== "搭建").map((t) => t === g.页签
     ? `<a class="on" href="#/workflow/${encodeURIComponent(g.wid)}/${encodeURIComponent(t)}">${t}</a>`
     : `<a href="#/workflow/${encodeURIComponent(g.wid)}/${encodeURIComponent(t)}">${t}</a>`).join("");
   $("#main").innerHTML = `
@@ -841,18 +878,11 @@ function 画_画布() {
     <div class="head"><div><h1>${esc(g.名称)}</h1>
       <div class="sub"><span id="savest" role="status" aria-live="polite"></span>
         ${g.用途 ? ` · ${esc(g.用途)}` : ""}</div></div>
-      <div><label class="k" title="只存草稿:停顿 1.5 秒后保存;不运行、不发布"><input type="checkbox" id="autosave"> 自动保存草稿</label>
-        <button id="save">保存草稿</button> <button id="v">检查配置</button>
-        <button class="pri" id="freeze">准备发布</button></div></div>
+      <div><a class="btn pri" id="edit" href="#/workflow/${encodeURIComponent(g.wid)}/搭建">编辑编排</a>
+        <button id="freeze">准备发布</button></div></div>
     <nav class="wftabs">${签}</nav>
     <div id="tabbody"></div>
     <div class="footbar"><span id="fb"></span></div>`;
-  $("#save").onclick = 做_存草稿;
-  $("#autosave").checked = 自动保存开着();
-  $("#autosave").disabled = !能改图();
-  $("#autosave").onchange = (e) => { try { localStorage.setItem("wf.自动保存", e.target.checked ? "1" : "0"); } catch (er) { /* 存不了就只对这一页有效 */ }
-    if (e.target.checked) 自动保存排队(); };
-  $("#v").onclick = 做_校验;
   $("#freeze").onclick = 弹_准备发布;
   ({ 概览: 画_概览, 搭建: 画_搭建, 测试: 画_测试, 运行记录: 画_运行记录, 版本与发布: 画_版本, 设置: 画_设置 }
     [g.页签] || 画_概览)();
@@ -861,11 +891,19 @@ function 画_画布() {
 
 function 画_底栏() {
   const g = 图态, r = g.报告;
+  const ib = $("#issues");   // 编排页没有底栏:「N 处要改」放顶栏,点开是下面的问题列表
+  if (ib) {
+    const 过 = 检查过期(), n = r && !r["通过"] ? r["阻断数"] : 0;
+    ib.hidden = !r || (r["通过"] && !过);
+    ib.className = n ? "warn" : "";
+    ib.textContent = !r ? "" : 过 ? "配置改过,要重新检查" : n ? `⚠ ${n} 处要改` : `${r["警告数"]} 条提醒`;
+    if (r && r["通过"] && !过 && r["警告数"]) ib.hidden = false;
+  }
   if (!$("#fb")) return;
   $("#fb").innerHTML = g.脏
     ? "<b>有未保存的改动</b> —— 保存草稿不影响任何已生成的版本,也不影响线上。"
     : (r ? (r["通过"] ? "上次检查配置:<b>通过</b>"
-            : `上次检查配置:<b>${r["阻断数"]} 处要改</b> / ${r["警告数"]} 条提醒(在「搭建」下方)`)
+            : `上次检查配置:<b>${r["阻断数"]} 处要改</b> / ${r["警告数"]} 条提醒(在编排页)`)
          : "还没检查过配置 —— 页面上看着没问题,不代替服务端检查");
 }
 function 标脏() {
@@ -1041,12 +1079,10 @@ async function 画_概览() {
 /* ── 搭建 ─────────────────────────────────────────────────────── */
 function 画_搭建() {
   const g = 图态;
+  // 视图切换在顶栏(全屏编排页,10-26);两种视图改的是同一份定义,挪图上的位置只改画法
+  $("#vw-s").className = g.视图 === "步骤" ? "on" : ""; $("#vw-g").className = g.视图 === "流程图" ? "on" : "";
+  $("#vw-s").setAttribute("aria-pressed", String(g.视图 === "步骤")); $("#vw-g").setAttribute("aria-pressed", String(g.视图 === "流程图"));
   $("#tabbody").innerHTML = `
-    <div class="filters">
-      ${g.视图 === "步骤" ? '<button class="pri" id="vw-s">步骤列表</button> <button id="vw-g">流程图</button>'
-                         : '<button id="vw-s">步骤列表</button> <button class="pri" id="vw-g">流程图</button>'}
-      <span class="k">两种视图改的是同一份定义。挪流程图上的位置只改画法,不改执行顺序。</span>
-    </div>
     <div class="wfbuild ${g.视图 === "流程图" ? "graph" : ""}">
       <div class="steps" id="steps"></div>
       <div class="wfpanel" id="pn"></div>
@@ -1057,7 +1093,13 @@ function 画_搭建() {
   $("#vw-g").onclick = () => { 图态.视图 = "流程图"; 画_搭建(); };
   if (g.视图 === "流程图") { if (图态.画 && 图态.选中) 图态.画.选 = new Set([图态.选中]); 画_图(); }
   else 画_步骤();
-  画_面板(); 画_问题();
+  画_面板(); 画_问题(); 摆问题区();
+}
+// 编排页的问题列表默认收起,点顶栏「N 处要改」才展开(10-26:常驻底栏挤掉编排区);检查出了要改的会自动展开
+function 摆问题区() {
+  const wb = document.querySelector(".wfbottom");
+  if (wb && document.body.classList.contains("wf-full")) wb.hidden = !图态.问题开;
+  const ib = $("#issues"); if (ib) ib.setAttribute("aria-expanded", String(!!图态.问题开));
 }
 
 function 画_步骤() {
@@ -2023,6 +2065,7 @@ async function 做_校验() {
     const 定 = JSON.stringify(图态.定义), rev = 图态.revision;
     图态.报告 = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/validate`, { method: "POST" });
     图态.报告定义 = 定; 图态.报告rev = rev; 图态.报告时 = new Date().toISOString(); 图态.问题位 = null;
+    图态.问题开 = !图态.报告["通过"];
     if (图态.页签 !== "搭建") { location.hash = `#/workflow/${encodeURIComponent(图态.wid)}/搭建`; return; }
     画_画布();
   } catch (e) { 报错(e); }
@@ -6075,6 +6118,7 @@ async function 页_模型产物() {
 
 async function 路由() {
   if (离开拦截()) return;
+  if (!location.hash.startsWith("#/workflow/")) document.body.classList.remove("wf-full");   // 只有编排页是全屏
   画侧栏();
   const h = location.hash || "#/workbench";
   try {

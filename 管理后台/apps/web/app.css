@@ -321,3 +321,37 @@ button.danger{color:var(--fail);border-color:#fbaca3}
 .rawlog .seg button[aria-pressed="true"]{border-color:var(--pri);color:var(--pri);background:var(--pri-bg)}
 button.lk{height:auto;padding:0 2px;border:0;background:none;color:var(--pri);cursor:pointer;font-size:12px}
 button.lk:hover{text-decoration:underline}
+
+/* ── 全屏编排页(10-26 用户拍):不带后台菜单,顶栏一行,下面整块给编排 ───────── */
+a.btn{display:inline-flex;align-items:center;height:32px;padding:0 14px;border:1px solid var(--line);
+  border-radius:var(--radius);color:var(--ink);background:var(--card);text-decoration:none}
+a.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+body.wf-full #top,body.wf-full #side{display:none}
+body.wf-full #main{margin-left:0;padding:0;height:100vh;display:flex;flex-direction:column}
+.wfbar{display:flex;align-items:center;gap:10px;height:52px;padding:0 16px;flex:none;
+  background:var(--card);border-bottom:1px solid var(--line);position:relative;z-index:5}
+.wfbar .back{color:var(--ink2);white-space:nowrap}
+.wfbar .nm{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:28vw}
+.wfbar #savest{font-size:12.5px;white-space:nowrap}
+.wfbar .grow{flex:1}
+.wfbar .seg{display:inline-flex}
+.wfbar .seg button{border-radius:0}
+.wfbar .seg button:first-child{border-radius:var(--radius) 0 0 var(--radius)}
+.wfbar .seg button:last-child{border-radius:0 var(--radius) var(--radius) 0;margin-left:-1px}
+.wfbar .seg button.on{background:var(--pri-bg);border-color:var(--pri);color:var(--pri);position:relative}
+.wfbar #issues.warn{border-color:var(--warn,#d46b08);color:var(--warn,#d46b08)}
+.wfbar .more{position:relative}
+.wfbar .more summary{list-style:none;cursor:pointer;height:32px;width:32px;display:grid;place-items:center;
+  border:1px solid var(--line);border-radius:var(--radius);background:var(--card)}
+.wfbar .more summary::-webkit-details-marker{display:none}
+.wfbar .more .menu{position:absolute;right:0;top:38px;min-width:180px;background:var(--card);
+  border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 6px 20px rgba(0,0,0,.12);
+  padding:6px;display:grid;gap:2px;z-index:30}
+.wfbar .more .menu button,.wfbar .more .menu a,.wfbar .more .menu label{display:flex;align-items:center;gap:6px;
+  height:32px;padding:0 10px;border:0;border-radius:4px;background:none;color:var(--ink);text-align:left;font-size:13.5px}
+.wfbar .more .menu button:hover,.wfbar .more .menu a:hover{background:var(--bg)}
+body.wf-full #tabbody{flex:1;min-height:0;display:flex;flex-direction:column}
+body.wf-full .wfbuild{flex:1;min-height:0;gap:0;align-items:stretch;grid-template-columns:minmax(0,1fr) 440px}
+body.wf-full .wfbuild .steps{border:0;border-radius:0;overflow:auto;padding:16px 24px}
+body.wf-full .wfbuild .wfpanel{border-left:1px solid var(--line);overflow:auto;background:var(--card)}
+body.wf-full .wfbottom{flex:none;max-height:32vh;overflow:auto}

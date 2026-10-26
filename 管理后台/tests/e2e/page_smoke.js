@@ -23,6 +23,7 @@ function 造(id) {
     id, value: "", textContent: "", style: {}, dataset: {}, disabled: false,
     className: "", classList: { add() {}, remove() {}, contains: () => false },
     addEventListener() {}, removeEventListener() {}, appendChild() {}, remove() {},
+    setAttribute() {}, getAttribute: () => null, scrollIntoView() {},
     querySelectorAll: () => [], querySelector: () => null, focus() {},
     set innerHTML(v) { this._h = String(v); 写过.set(id, String(v)); },
     get innerHTML() { return this._h || ""; },
@@ -154,8 +155,10 @@ setTimeout(() => {
           结构错.push(`步骤列表里 ${步数} 步,定义里有 ${定义.nodes.length} 个节点`);
         if (加数 !== 该加)
           结构错.push(`「在此后添加」${加数} 个,该有 ${该加} 个(除了返回结果每一步都有)`);
-        if (!/class="wftabs"/.test(写过.get("main") || ""))
-          结构错.push("没画出六个页签");
+        // 10-26 起搭建是独立的全屏编排页:没有页签,顶栏一行(返回 / 视图切换 / 试运行 / 发布)
+        const 主 = 写过.get("main") || "";
+        if (!/class="wfbar"/.test(主) || !/id="vw-g"/.test(主) || !/id="freeze"/.test(主) || !/class="back"/.test(主))
+          结构错.push("没画出编排页顶栏(返回 / 视图切换 / 发布)");
         if (结构错.length) {
           console.log("=".repeat(70));
           结构错.forEach((e) => console.log("  ❌ " + e));
