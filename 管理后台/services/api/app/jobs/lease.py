@@ -251,6 +251,19 @@ def 收尾(conn, 项目, job_id, 我是谁, 到, *, error_code=None, error_detai
         # 租约已经不是我的了 —— **不覆盖**。规格 §11.5 的同一条道理:
         # 「我跑完了所以我写结果」会盖掉接手者的进度,而两份结果哪份对事后看不出来。
         return False, "租约已经不在你手上(过期或被接手)—— **不许覆盖别人的结果**"
+    if 到 == "失败":
+        # ⚠️ 任务最终失败时,它带的那次**运行**也要跟着收尾(10-26 查到):原来只记 job 失败,
+        # 运行(execution_runs)还停在 queued —— 页面上它永远「排队中」,看不出早就失败了、为什么失败。
+        # 只动**还没到终态**的运行;运行自己已经跑完(成功 / 失败)的不覆盖。prompt_run 的目标不在这张表,改不到也无妨
+        终态 = tuple(ST.找("execution_run")["终态"])
+        conn.execute(text("""
+            update execution_runs r
+               set status='failed', completion_reason=:ec, ended_at=coalesce(r.ended_at, now()),
+                   updated_at=now(), revision=r.revision+1
+              from jobs j
+             where j.project_id=:p and j.id=:i and r.project_id=j.project_id
+               and r.id = j.target_ref->>'run_id' and r.status <> all(:终态)
+        """), {"ec": error_code or "JOB_FAILED", "p": 项目, "i": job_id, "终态": list(终态)})
     if 取消未生效原因:
         # 取消请求和自然完成并发:**保留真实终态,并记下取消为什么没生效**(§11.5)
         #

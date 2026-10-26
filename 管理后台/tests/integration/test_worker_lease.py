@@ -323,6 +323,42 @@ finally:
         c.execute(text("delete from jobs where project_id=:p and id=:i"),
                   {"p": PROJ, "i": 日志任务})
 
+# ── ⑩ 任务最终失败 → 它带的运行也收尾(10-26 查到:原来运行永远停在 queued)──────────
+# 那天的现场:常驻 worker 抢到 Agent 任务 → NO_MODEL_CONNECTION → 不重试 → 只有 job 记了失败,
+# 运行还是 queued,页面上永远「排队中」。对照:运行自己已经到终态的,不许被覆盖。
+def 建运行(c, 状态):
+    rid = "xr_t_" + uuid.uuid4().hex[:10]
+    c.execute(text("""insert into execution_runs (id, organization_id, project_id, kind, status, principal,
+                          created_at, created_by, updated_at, revision)
+                      values (:i,:o,:p,'agent',:s,'test', now(),'test', now(),1)"""),
+              {"i": rid, "o": ORG, "p": PROJ, "s": 状态})
+    return rid
+运行们 = []
+try:
+    with eng.begin() as c:
+        r_挂 = 建运行(c, "queued"); r_完 = 建运行(c, "succeeded"); 运行们 += [r_挂, r_完]
+        j_挂, j_完 = 建任务(c, 类型="带运行"), 建任务(c, 类型="带运行2")
+        for j, r in ((j_挂, r_挂), (j_完, r_完)):
+            c.execute(text("update jobs set target_ref=cast(:t as jsonb) where project_id=:p and id=:i"),
+                      {"t": json.dumps({"run_id": r}), "p": PROJ, "i": j})
+    for 类, j, 谁 in (("带运行", j_挂, "worker-W"), ("带运行2", j_完, "worker-W2")):
+        with eng.begin() as c:
+            L.取一个(c, 谁, 类型=类, 项目=PROJ)
+        with eng.begin() as c:
+            L.退回重试(c, PROJ, j, 谁, "NO_MODEL_CONNECTION")
+    with eng.connect() as c:
+        挂态 = c.execute(text("select status, completion_reason from execution_runs where project_id=:p and id=:i"),
+                         {"p": PROJ, "i": r_挂}).first()
+        完态 = c.execute(text("select status, completion_reason from execution_runs where project_id=:p and id=:i"),
+                         {"p": PROJ, "i": r_完}).first()
+    ck("**任务最终失败 → 还停在 queued 的运行跟着记失败,并写明原因**(不再永远「排队中」)",
+       挂态 and 挂态[0] == "failed" and 挂态[1] == "NO_MODEL_CONNECTION", 挂态)
+    ck("对照:运行自己已经跑完(succeeded)的,任务失败也不覆盖它", 完态 and 完态[0] == "succeeded" and not 完态[1], 完态)
+finally:
+    with eng.begin() as c:
+        c.execute(text("delete from jobs where project_id=:p and type in ('带运行', '带运行2')"), {"p": PROJ})
+        c.execute(text("delete from execution_runs where project_id=:p and id = any(:ids)"), {"p": PROJ, "ids": 运行们})
+
 print(f"\n{'❌ ' + str(len(挂)) + ' 条挂了' if 挂 else '✅ ' + str(len(过)) + ' 条全过'}")
 if 挂:
     for x in 挂: print("   ·", x)
