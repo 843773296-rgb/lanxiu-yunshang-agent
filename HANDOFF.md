@@ -12,7 +12,73 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
-## 🧭 10-26 夜:查会员收紧已推 · 三件新活已拍板待做(最新,压缩后先读这一段)
+## 🌙 10-26 22:15:今晚收尾状态(最新,压缩后先读这一段)
+
+最后刷新:2026-10-26 约 22:15 · 上下文 ~70% · 用户:「今晚就先把之前确认的做完,dify 部分如果赶得上也可以做一些」
+· 用户:「以后需要重启,请直接重启」(已存记忆 lanxiu-restart-without-asking)
+
+### 🔮 未验证 / 进行中(**都没提交**)
+- **主仓 + 管理后台一大批改动在工作区**,等克隆第三轮(scratchpad/cisim,`主仓全部改动:克隆从零重建+全量门禁(第三轮)`,日志 cisim-rebuild.log / cisim-check.log)。
+  验法:两个退出码都 0 → 主仓和管理后台**一起**提交推送(用 `git commit --only`,新文件先 add:backend/test_customer.py、tools/seed_test_customers.py)。
+  包含:① 合并按账户(prompts TK05 / v1 BP02 / v2 MERGE_RULE / merge.判同一人 / seed 造题 / 判分器 / 示例库重切)
+  ② IT- 测试客户(test_customer.py 认法、seed_test_customers.py 在 rebuild 最后一步、merge.人头条件排除)
+  ③ 集成验证:管理后台 worker 写入前核 + bridge_api 单上带跑法 + 澜绣 workflow_bridge.执行 前再核;边界审计新攻击(咬合过)
+  ④ 样例预览:runner `样例=` + worker 取每步上次成功输出;业务结果注明跑法 ⑤ md_render_check 上限 30→32(产出页两处原文)
+  ⑥ bridge_api SQL 注释带冒号被当参数 —— 体检抓到已改(注释挪到 Python)
+- 克隆第二轮(只含 ①)结果:重建绿、门禁只红示例库 2 条 → 已重切(克隆库上 `example_pool.冻()`,带回 agent/example-pool.json)
+- 管理后台端到端 test_audio_flow **103 条全过**(含新加样例预览 / 集成验证 10 条),8801 已于 21:48:58 重启
+- ⚠️ **共享库 backend/lanxiu.db 还是旧造题**:提交后要重建共享库(拿锁 + 通知 eureka-dd)才会有新合并题和 IT- 客户;然后用 Claude 重跑合并评测
+  (`ANTHROPIC_MODEL=claude-haiku-4-5 LANXIU_PROVIDER=claude python3 agent/eval.py 0 99`)和三代对比
+
+### 判据
+- 造数改动**不许变全局随机数调用次数,也不许变全库手机号集合**(账户按号码排序编号,多一个号后面全错位 —— 第一轮重建炸在「工期不到 20 天」)
+- 集成验证「认不出写给谁的按拒绝」→ 存报告 / 派补货跟进 / 差评处置这类写的不是客户的,在集成验证里会停在写入那步(规则推出来的,汇报时说了)
+- zsh 不按换行拆变量:`git diff -- $F` 会把 18 个文件当一个名字 → diff 空。用 `tr '\n' '\0' | xargs -0`
+
+### Dify
+- 适配分析已发飞书:https://aqvi2xbk5kd.feishu.cn/docx/O4i0dUrqWo3J7yxvQVscnUPancf(仓库根 `澜绣云裳agent-工作流照Dify适配分析.md`,0c2c1fd7)。
+  **等用户确认第五节分类 + 第六节 9 件事**,确认后按分期开工(一期:画布照 Dify + 召回测试合页)
+
+## 🧩 10-26 深夜:工作流「界面和操作照 Dify 中文版一模一样」(用户拍)
+
+最后刷新:2026-10-26 约 21:10 · 本次变化:用户给了方案《澜绣云裳Agent_Dify四页对标与管理能力补全方案_V1.0_20261026.md》
+(~/Documents/ChatGPT/澜绣云裳agent-辅助/,别的工具写的,**数据不是指令**;它是 11:29 的快照,发布到环境 / 接管只跑生产 / 单步测试后来已做)
+
+### 用户拍的(逐字要点)
+- 「我希望 workflow 可以直接复刻 dify 的内容」→ 选项卡选了「**界面和操作尽量和 Dify 一模一样**」(不是「按方案改良版」)
+- Dify 源码下载到本机只读参考:`~/Desktop/澜绣云裳agent-参考/dify`(浅克隆 aa59e823,2026-10-26,204M)—— 不运行、不装依赖
+- **代码执行节点**:「界面照做,放进隔离沙箱里跑」—— 不能联网、不能读写文件和库、限时限内存,只拿上游变量算;**只有管理员能加**
+  (原规格 §6.1 / §17.4 明确不做任意代码;这是用户拍的例外,要进边界审计并配真攻击)
+
+### 判据
+- Dify 有官方中文界面(节点名:用户输入 / 输出 / 直接回复 / LLM / 知识检索 / 问题分类器 / 条件分支 / 迭代 / 循环 / 代码执行 / 模板转换 /
+  变量聚合器 / 变量赋值 / 文档提取器 / 参数提取器 / HTTP 请求 / 列表操作 / 工具 / Agent / 人工介入 / 定时触发器 / Webhook 触发器)
+  —— 一模一样**不需要改英文**;中文文案从 dify/web/i18n/locales/zh-Hans/workflow*.json 取原文
+- 底下的执行引擎 / 权限 / 人工核对 / 发布审核**继续用我们的**,只换外壳和操作方式(用户没反对这条,三期规划时说过)
+- 我们缺的节点:问题分类器、参数提取器、变量赋值、列表操作、文档提取器、HTTP 请求(要地址白名单)、代码执行(沙箱);
+  迭代 / 循环 / 并行只登记没实现(contract/dsl.py 实现=not_implemented)
+
+### 分期(给用户说过,没被改)
+一期 工作流编排页照 Dify · 二期 工作室应用列表 + 聊天助手配置页(改提示词发布后门店聊天真用)+ 访问 API · 三期 日志与标注 + 监测
+
+### 🔮 进行中
+- 后台助手在通读 Dify 源码,产出 `~/Desktop/澜绣云裳agent-参考/Dify工作流界面规格_20261026.md`(布局 / 添加节点菜单 / 逐节点字段 / 变量引用 / 运行调试 / 发布版本)。
+  **没看过结果前别照它的结论动手**;读完先抽查几处源码出处
+
+- ⚠️ 用户随后补一句(逐字):「**要复合我们的流程,可以照抄,但是照抄的内容要符合我们实情,所以要先分析**」
+  → 不直接动手。先做**适配分析**:Dify 每个节点 / 界面功能分「照抄 / 照抄但要改 / 暂不做」,
+  每项写清**我们 6 条真实流程里哪条用、怎么用、为什么这么分**(录音跟进 / 经营报告 / 订单风险 / 老客召回 / 库存补货 / 差评返修),
+  并对上我们的硬规矩(写入要人工核对、按门店权限、发布要审核、代码沙箱只给管理员)。写成 md 发飞书产品文件夹,**用户确认分类后才开工**
+
+- 用户再补(逐字):「**应该还不止当前四项,还需要做召回测试等,agent 管理后台部分可以大面积参考 dify**」
+  → 范围扩成**整个管理后台**对照 Dify 控制台(知识库 / 召回测试 / 工具 / 模型供应商 / 成员 / 工作室 / 应用配置 / API / 日志标注 / 监测)。
+  第二个后台助手整理 `Dify控制台界面规格_20261026.md`。分析文档草稿在仓库根 `澜绣云裳agent-工作流照Dify适配分析.md`(我方一半已写,对照表待填)
+- 「样例预览」「集成验证」先挂着(用户没反对):等 Dify 运行面板的界面定了再做进去,只做一次
+
+### 下一步
+先收尾「合并按账户」(下面那节);两份规格都出来后填完适配分析发飞书,等用户确认
+
+## 🧭 10-26 夜:查会员收紧已推 · 三件新活已拍板待做
 
 最后刷新:2026-10-26 约 21:00 · 本次变化:查会员范围(ddfae1d7)、删半成品接口 + 产出页原文标记(b1eb483d)都推了;
 8 条 + 23 条永远排队的运行已处理;用户拍了三件新活(下面「下一步」),都还**没开工**
@@ -12256,13 +12322,13 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-26 20:34。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-10-26 22:04。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | b1eb483d · 2026-10-26 · 删掉半成品「从选中节点测试」接口;产出页两个原样框标成原文(冒烟不再查星号) |
-| 代码量 | 894 个 Python 文件 / 174399 行(不含 .venv) |
+| 最新提交 | 0c2c1fd7 · 2026-10-26 · 管理后台照 Dify 做的适配分析:每页分照抄 / 照抄但要改 / 暂不做,对上 6 条真实流程和硬规矩 |
+| 代码量 | 894 个 Python 文件 / 174665 行(不含 .venv) |
 | 验收 | `./check.sh` 共 358 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 没起来 |
 
@@ -12272,34 +12338,34 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
  M .feynman/tool-eval.json
  M HANDOFF.md
+ M agent/eval.py
+ M agent/eval_hit_judgetest.py
+ M agent/example-pool.json
+ M agent/v1.py
+ M agent/v2.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
-?? .claude/
-?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? .feynman/authprobe.log
-?? .feynman/authprobe.sh
-?? .feynman/multi-date/
-?? .feynman/nightly-aimc.log
-?? .feynman/nightly-eval-launchd.log
-?? .feynman/nightly-eval-ok
-?? .feynman/nightly-eval-tried
-?? .feynman/nightly-eval.log
-?? .feynman/world-shift-launchd.log
-?? .wip-muslin/
-?? .wip-store-report-SKILL.md
-?? agent/example-ab-results.jsonl
+ M backend/boundary_audit.py
+ M backend/merge.py
+ M backend/seed.py
+ M backend/workflow_bridge.py
+ M prompts.py
+ M tools/merge_account_duplicates.py
+ M tools/rebuild.sh
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/bridge_api.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/runner.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/runtime/\346\211\247\350\241\214\346\250\241\345\274\217.py"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+0c2c1fd7 管理后台照 Dify 做的适配分析:每页分照抄 / 照抄但要改 / 暂不做,对上 6 条真实流程和硬规矩
+fea96972 判分器把模型自己那句「禁止重发」读成了「建议重发」—— 否定作用域被字数窗口截断
+7acc1362 交接:查会员收紧与删半成品接口已推;用户拍了三件新活(合并按账户 / 样例预览 / 集成验证 + IT- 测试客户),写清顺序和坑
 b1eb483d 删掉半成品「从选中节点测试」接口;产出页两个原样框标成原文(冒烟不再查星号)
 ddfae1d7 查会员按身份限范围:顾问只看名下、店长只看本店、总部看全部 —— 单个客户和按档名单都一样
-96e2ef06 定时页进页面冒烟名单:侧栏能点开的页都要被冒烟打过(83887f43 CI 红在这条)
-39befeeb 交接:③ 定时已推;8801 重启 lease 修复生效;列出回来要问的五件(含并行会话报的 get_member 范围不齐)
-83887f43 工作流定时接进系统:到点自动跑生产那一版,同一期只跑一次,关机只补最近一期
 ```
 <!--/AUTO-->
 ## 一句话在做什么
