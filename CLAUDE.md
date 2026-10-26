@@ -44,6 +44,13 @@
 
 无第三方依赖,纯 Python 标准库 —— 只有 `agentsite/` 例外(它要 `claude-agent-sdk`,装在 `agentsite/.venv`,所以 `skills_check.py` 得用 `./agentsite/.venv/bin/python` 跑)。
 
+另有一个**一次性产出工具**不在这条主张里:`tools/make_kb_pdf.py`(把 `knowledge/` 合成一份
+给 Dify 做 RAG 的中文 PDF)要 `reportlab` + `pypdf`,**不进 `check.sh`**。
+没装它会给一句能照着做的话、**不会崩在 import 上** —— 因为「崩了」和「这台机器没装它」
+是两件事,而后者该给一句能照着做的话。它跑完**自己验一遍**(页数 / 缺字形 / 裸标记 /
+URL 残留 / 8 个汉服生僻字提不提得出),验不过**退非零**;没装 `pypdf` 时它明说
+「这一版没被验过」—— **别把「没验」当成「验过了」**。
+
 ---
 
 ## 2. 目录地图
