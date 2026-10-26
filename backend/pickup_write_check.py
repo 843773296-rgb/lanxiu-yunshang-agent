@@ -131,8 +131,27 @@ def run(T):
     包号 = r.get("包裹")
     ck("码按包裹出(键是 P:包裹号,和返修的 R: 不串)", bool(包号) and bool(
         c.execute("SELECT 1 FROM fit_code WHERE order_id=?", (f"P:{包号}",)).fetchone()))
-    ck("库里只存哈希,不存明文", not c.execute("SELECT 1 FROM fit_code WHERE code_hash LIKE ?", (f"%{码}%",)).fetchone()
-       and not c.execute("SELECT 1 FROM op_log WHERE reason LIKE ? OR ctx LIKE ?", (f"%{码}%", f"%{码}%")).fetchone())
+    # ⚠️ 2026-10-26 拆成两条、并且把撞到的那一行**打出来**。
+    # 原来是一条断言包着两件事(哈希里有明文 / 台账里有明文),CI 上红过一次,
+    # 而输出只有一行「❌ 库里只存哈希,不存明文」——
+    # **红了分不清是哪一件**,也分不清是真泄露还是 LIKE 撞了。
+    # 6 位数字串在长数字里会碰撞:台账的 ctx 里有 19 位的订单号,
+    # 一个 19 位数字串包含某个特定 6 位子串的概率并不为零(本地实测
+    # 随机 6 位码在 6809 条 op_log 上命中率 0.1%,而 CI 从零建的库不是这一份)。
+    # 所以这里不缩小查询范围(缩了就不是「全库没有明文」这条保证了),
+    # 而是**撞到时把那一行原样打出来**,让人一眼看出是泄露还是碰撞。
+    # > 一个「真的把码写进了台账」和一个「某个订单号里恰好有这 6 位」,
+    # > 在「LIKE 命中了」这件事上长得一模一样。
+    _哈 = c.execute("SELECT order_id, code_hash FROM fit_code WHERE code_hash LIKE ?",
+                     (f"%{码}%",)).fetchone()
+    ck("fit_code 里只存哈希、不存明文", not _哈,
+       f"撞到:order_id={_哈[0]!r} code_hash={_哈[1]!r}(码 {码})" if _哈 else "")
+    _台 = c.execute("SELECT id, reason, ctx FROM op_log WHERE reason LIKE ? OR ctx LIKE ?",
+                     (f"%{码}%", f"%{码}%")).fetchone()
+    ck("操作台账里不留明文码", not _台,
+       (f"撞到 op_log id={_台[0]} · reason={str(_台[1])[:80]!r} · ctx={str(_台[2])[:120]!r}"
+        f" —— 码是 {码};**先看这一行是真写了码,还是某个长数字里恰好含这 6 位**")
+       if _台 else "")
     错 = "000000" if 码 != "000000" else "111111"
     r = pw.verify({"order_id": oid, "code": 错}, 顾问)
     ck("错的码 → 不签收", not r["ok"] and 状态(oid) == "已发货", r.get("reason"))
