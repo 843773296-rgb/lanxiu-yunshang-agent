@@ -100,6 +100,7 @@ const 导航 = [
   ["#/tryout", "单条试跑", true, true],
   ["grp", "编排"],
   ["#/workflows", "工作流 Workflow", true, true],
+  ["#/schedules", "定时", true, true],
   ["#/agents", "智能体 Agent", true, true],
   ["#/tools", "工具与能力", true, true],
   ["#/human", "人工待办", true, true],
@@ -1979,11 +1980,83 @@ async function 画_版本() {
     + `<div id="vview"></div>
       <div class="note">路径:保存草稿 → 检查配置 → 测试 → <b>生成候选版本</b> → 发到测试 / 预发试用 → <b>审核后发到生产</b>。
         测试、预发直接切;生产只认审核过的那一版。要切回旧版,把旧的那一版再发一次生产(记成一次新的发布,历史不动)。</div>
-      <button class="pri" id="pb">生成候选版本</button>`;
+      <button class="pri" id="pb">生成候选版本</button>
+      <div id="schedbox"></div>`;
   $("#pb").onclick = 弹_准备发布;
+  画_定时块(wid);
   document.querySelectorAll("[data-vview]").forEach((b) => { b.onclick = () => 看冻结版本(b.dataset.vview); });
   document.querySelectorAll("[data-pub]").forEach((b) => { b.onclick = () => 做_发布工作流(b.dataset.pub, b.dataset.env, 各环境); });
   document.querySelectorAll("[data-rv]").forEach((b) => { b.onclick = () => 做_审核发布(b.dataset.rv, b.dataset.ok === "1"); });
+}
+/* 定时(10-26,方案 §8.5):日 / 周 / 月,默认北京时间 8:00,**只跑生产那一版**,以打开它的人的身份跑。
+ * 周报周一早上跑、统计上周一到上周日;关机错过的只补最近一期,更早的列在「最近几期」里,要补就手动发起。 */
+const 周期说法 = { 日: "每天", 周: "每周一", 月: "每月 1 号" };
+const 统计说法 = { 日: "前一天", 周: "上一个自然周(周一到周日)", 月: "上一个自然月" };
+const 期结果 = (x) => `${x["结果"] === "已发起" ? `<span class="pill ok">已发起</span>` : `<span class="pill warn">${esc(x["结果"])}</span>`}
+  ${esc(x["起"])}${x["止"] !== x["起"] ? " ~ " + esc(x["止"]) : ""}
+  ${x["运行"] ? ` · <a href="#/wfrun/${encodeURIComponent(x["运行"])}">看这次运行</a>` : ""}
+  ${x["为什么"] ? `<div class="k">${esc(x["为什么"])}</div>` : ""}`;
+async function 画_定时块(wid) {
+  const el = $("#schedbox"); if (!el) return;
+  let d;
+  try { d = await 请求(`${P()}/workflows/${encodeURIComponent(wid)}/schedule`); }
+  catch (e) { el.innerHTML = `<div class="note">${esc("定时没取到:" + e.message)}</div>`; return; }
+  if (!图态 || 图态.wid !== wid || 图态.页签 !== "版本与发布") return;
+  const s = d["定时"], 要填 = d["要填"] || [], 固定 = (s && s["固定输入"]) || {};
+  const 记录 = ((s && s["记录"]) || []).slice(-5).reverse();
+  el.innerHTML = `<h2>定时</h2>
+    <div class="sub">${md("到点自动跑**生产那一版**,以打开定时的人的身份跑。同一期只跑一次;关机错过的**只补最近一期**,更早的列在下面,要补就手动发起。")}</div>
+    ${!d["生产版本"] ? `<div class="note">${md("这条工作流**还没发布到生产**,定时打不开 —— 先在上面把一版审核后发到生产。")}</div>` : ""}
+    <div class="card"><div class="schedform">
+      <label>多久跑一次 <select id="sc-c">${["日", "周", "月"].map((p) =>
+        `<option value="${p}" ${(s ? s["周期"] : "周") === p ? "selected" : ""}>${周期说法[p]}(统计${统计说法[p]})</option>`).join("")}</select></label>
+      <label>几点跑 <input id="sc-t" value="${esc(s ? s["时刻"] : "08:00")}" size="6"> <span class="k">北京时间</span></label>
+      ${要填.map((f) => `<label>${esc(f["说明"] || f["字段"])} <input data-fx="${esc(f["字段"])}" value="${esc(固定[f["字段"]] ?? "")}"
+        placeholder="每次定时都用这个值"></label>`).join("")}
+    </div>
+    <div class="k">${s ? (s["开着"] ? `<span class="pill ok">开着</span> 以 ${esc(s["以谁的身份"])} 的身份跑`
+        + (s["下次"] ? ` · 下次 ${时间(s["下次"]["时刻"])},统计 ${esc(s["下次"]["统计起"])} ~ ${esc(s["下次"]["统计止"])}` : "")
+        : `<span class="pill">关着</span>`) : "还没设过定时。"}</div>
+    <button class="pri" id="sc-on" ${d["生产版本"] ? "" : "disabled"}>${s && s["开着"] ? "保存" : "打开定时"}</button>
+    ${s && s["开着"] ? `<button id="sc-off">关掉定时</button>` : ""}</div>
+    ${记录.length ? `<h3>最近几期</h3><ul class="schedlog">${记录.map((x) => `<li>${期结果(x)}</li>`).join("")}</ul>` : ""}`;
+  const 存 = async (开) => {
+    const 固定输入 = {};
+    el.querySelectorAll("[data-fx]").forEach((i) => { if (i.value.trim()) 固定输入[i.dataset.fx] = i.value.trim(); });
+    if (开 && !(await 问一句(s && s["开着"] ? "保存定时?" : "打开定时?",
+        `${周期说法[$("#sc-c").value]} ${esc($("#sc-t").value)} 自动跑<b>生产那一版</b>,<b>以你的身份</b>发起 —— 每跑一次就按真实用量花一次钱。`,
+        { 确定: s && s["开着"] ? "保存" : "打开", 取消: "先不" }))) return;
+    try {
+      await 请求(`${P()}/workflows/${encodeURIComponent(wid)}/schedule`, { method: "PUT",
+        body: JSON.stringify({ 周期: $("#sc-c").value, 时刻: $("#sc-t").value.trim(), 开着: 开, 固定输入 }) });
+      提示(开 ? "定时已保存" : "定时已关掉", 开 ? "到点会自动发起,结果出现在「最近几期」和运行记录里。" : "不会再自动发起。已经发起的运行不受影响。");
+    } catch (e) { 报错(e); }
+    await 画_定时块(wid);
+  };
+  $("#sc-on").onclick = () => 存(true);
+  if ($("#sc-off")) $("#sc-off").onclick = () => 存(false);
+}
+async function 页_定时() {
+  const 头 = `<div class="crumb">定时</div>
+    <div class="head"><div><h1>定时</h1>
+      <div class="sub">${md("哪些工作流会到点自动跑、下次什么时候、统计哪一段、最近一期怎样。**在每条工作流的「版本与发布」里设。**")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/schedules`); }
+  catch (e) { const st = 错误块(e, 页_定时); $("#main").innerHTML = 头 + st.html; st.挂(); return; }
+  if (!d.items.length) {
+    $("#main").innerHTML = 头 + 状态("", "还没有设过定时的工作流", "打开一条已经发布到生产的工作流,在「版本与发布」页下面设。").html;
+    return;
+  }
+  $("#main").innerHTML = 头 + `<table><thead><tr><th>工作流</th><th>规则</th><th>生产在跑</th><th>下次</th><th>最近一期</th></tr></thead><tbody>`
+    + d.items.map((x) => { const 末 = (x["记录"] || []).slice(-1)[0];
+      return `<tr><td><a href="#/workflow/${encodeURIComponent(x["工作流"])}/${encodeURIComponent("版本与发布")}">${esc(x["名称"])}</a></td>
+        <td>${x["开着"] ? `<span class="pill ok">开着</span>` : `<span class="pill">关着</span>`} ${周期说法[x["周期"]] || esc(x["周期"])} ${esc(x["时刻"])}
+          <div class="k">统计${统计说法[x["周期"]] || ""} · 以 ${esc(x["以谁的身份"])} 的身份</div></td>
+        <td>${x["生产版本"] ? "v" + esc(String(x["生产版本"]["版本号"])) : `<span class="pill warn">没发布到生产</span>`}</td>
+        <td>${x["下次"] ? `${时间(x["下次"]["时刻"])}<div class="k">统计 ${esc(x["下次"]["统计起"])} ~ ${esc(x["下次"]["统计止"])}</div>` : "—"}</td>
+        <td>${末 ? 期结果(末) : `<span class="k">还没到过点</span>`}</td></tr>`; }).join("")
+    + `</tbody></table>`;
 }
 async function 做_发布工作流(vid, 环境, 各环境) {
   const v = 图态.版本们.find((x) => x.id === vid) || {};
@@ -6477,6 +6550,7 @@ async function 路由() {
     if (h.startsWith("#/output/")) return await 页_产出详情(decodeURIComponent(h.slice(9)));
     if (h === "#/runs") return await 页_运行记录();
     if (h === "#/workflows") return await 页_工作流列表();
+    if (h === "#/schedules") return await 页_定时();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
     if (h.startsWith("#/wfrun/")) return await 页_运行详情(decodeURIComponent(h.slice(8)));
     if (h === "#/agents") return await 页_agent列表();

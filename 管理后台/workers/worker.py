@@ -1540,6 +1540,19 @@ def 扫过期核对(c):
     return len(rs)
 
 
+def 扫定时(现在=None):
+    """到点的定时发起最近一期(10-26)。口径在 runtime/定时.py,发起走接口层同一个 `_受理运行` —— 这里不抄第二份。
+
+    **扫挂了不许把 worker 一起带走**:定时出错只少发一期(且记在日志里),而 worker 停了是所有任务都没人跑。"""
+    from datetime import datetime, timezone
+    try:
+        import workflows_api as WA
+        with 事务() as c:
+            return WA.定时扫一遍(c, 现在 or datetime.now(timezone.utc))
+    except Exception as e:
+        return [f"⚠️ 这一遍扫定时出错了,下一分钟再扫:{type(e).__name__}: {str(e)[:200]}"]
+
+
 def main():
     一轮 = "--一轮" in sys.argv
     类型 = None
@@ -1569,7 +1582,12 @@ def main():
     sys.stdout.reconfigure(line_buffering=True)
     print(f"worker 起来了:{我是谁}" + (f"(只跑 {类型})" if 类型 else ""), flush=True)
     空转 = 0
+    上次定时 = 0.0
     while True:
+        if time.monotonic() - 上次定时 >= 60:
+            上次定时 = time.monotonic()
+            for x in 扫定时():
+                print("  定时:" + x)
         with 事务() as c:
             发, 卡 = OB.发布一批(c)
         with 事务() as c:

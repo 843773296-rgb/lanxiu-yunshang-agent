@@ -1130,21 +1130,15 @@ async def 聊天发起接管(project_id: str, skill: str, request: Request,
         if not 绑:
             raise _错(409, "NOT_BOUND", f"澜绣工号「{工号 or '?'}」没有绑定管理后台账号",
                       "请管理员在「账号绑定」里绑上 —— 没绑定不发起,不拿服务账号顶替")
-        m = c.execute(text("""select user_id, organization_id, role, special_grants from memberships
-                               where user_id=:u and (project_id=:p or project_id is null) and status='active'
-                               order by (project_id is null) limit 1"""),
-                      {"u": 绑[0], "p": project_id}).mappings().first()
-        if not m:
+        本人 = _成员身份(c, project_id, 绑[0])
+        if not 本人:
             raise _错(409, "NOT_BOUND", f"绑定的账号 {绑[0]} 在这个项目里已经没有成员记录", "请管理员改绑")
-        本人 = 身份(m["user_id"], m["organization_id"], project_id, m["role"], m["special_grants"] or [])
         能, 为什么 = 本人.能("运行编排测试")
         if not 能:
             raise _错(403, "FORBIDDEN", f"绑定的账号 {本人.user_id} 没有发起运行的权限", 为什么 or "")
         v = c.execute(text("select * from workflow_versions where project_id=:p and id=:i"),
                       {"p": project_id, "i": w["vid"]}).mappings().first()
-        定义 = {"definition_schema_version": v["definition_schema_version"], "kind": "workflow",
-                "nodes": v["nodes"], "edges": v["edges"], "input_schema": v["input_schema"],
-                "output_schema": v["output_schema"]}
+        定义 = _版本定义(v)
         来源 = {"kind": "workflow_version", "id": w["id"], "version_id": w["vid"],
                 "version_no": v["version_no"], "环境": "production", "清单id": w["清单id"], "发起": "聊天接管", "技能": skill,
                 "澜绣工号": 工号, "代发": me.user_id}
@@ -1155,6 +1149,207 @@ async def 聊天发起接管(project_id: str, skill: str, request: Request,
     回["工作流"] = w["name"]
     回["核对入口"] = f"/#/wfrun/{回['resource_id']}"
     return 回
+
+
+# ── 定时触发(10-26,方案 §8.5;用户拍「照你的建议走」+「现在做,验完就推」)──────────────
+# 时间口径(哪天跑、统计哪一段、该补哪一期)只在 runtime/定时.py 算;这里只管存规则、核前提、照常受理。
+# **发起走 `_受理运行` 那一个口**(和聊天接管、手动试运行同一套),幂等键 = 期键 —— 同一期重启、两个 worker 同时扫都只跑一次。
+_定时统计字段 = ("统计起", "统计止")
+
+
+def _版本定义(v):
+    return {"definition_schema_version": v["definition_schema_version"], "kind": "workflow",
+            "nodes": v["nodes"], "edges": v["edges"], "input_schema": v["input_schema"],
+            "output_schema": v["output_schema"]}
+
+
+def _成员身份(c, project_id, user_id):
+    """某个账号在这个项目里的身份;没有成员记录就 None(聊天接管、定时都**以那个人**发起,不拿服务账号顶替)。"""
+    m = c.execute(text("""select user_id, organization_id, role, special_grants from memberships
+                           where user_id=:u and (project_id=:p or project_id is null) and status='active'
+                           order by (project_id is null) limit 1"""),
+                  {"u": user_id, "p": project_id}).mappings().first()
+    return 身份(m["user_id"], m["organization_id"], project_id, m["role"], m["special_grants"] or []) if m else None
+
+
+def _定时出(c, project_id, s, 现在=None):
+    import 定时 as T
+    from datetime import datetime, timezone
+    if not s:
+        return None
+    规则 = {"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"]}
+    下次 = T.下次执行(规则, 现在 or datetime.now(timezone.utc)) if s["schedule_enabled"] else None
+    return {"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"], "开着": bool(s["schedule_enabled"]),
+            "以谁的身份": s["principal"], "固定输入": s["input_snapshot"] or {},
+            "打开于": s["armed_at"].isoformat() if s["armed_at"] else None,
+            "最近一期": s["last_period_start"].isoformat() if s["last_period_start"] else None,
+            "最近运行": s["last_run_id"], "记录": s["missed_detail"] or [],
+            "下次": {"时刻": 下次[0].isoformat(), "统计起": 下次[1].isoformat(), "统计止": 下次[2].isoformat()}
+                    if 下次 else None,
+            "revision": s["revision"]}
+
+
+@router.get(前缀 + "/workflows/{wid}/schedule")
+def 看定时(project_id: str, wid: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    with 连接() as c:
+        s = c.execute(text("select * from workflow_schedules where project_id=:p and workflow_id=:w"),
+                      {"p": project_id, "w": wid}).mappings().first()
+        生产 = _生产版本(c, project_id, wid)
+        要填 = []
+        if 生产:
+            sch = c.execute(text("select input_schema from workflow_versions where project_id=:p and id=:i"),
+                            {"p": project_id, "i": 生产["版本id"]}).scalar() or {}
+            属性 = sch.get("properties") or {}
+            要填 = [{"字段": f, "说明": (属性.get(f) or {}).get("title") or (属性.get(f) or {}).get("description") or ""}
+                    for f in (sch.get("required") or []) if f not in _定时统计字段]
+        # 要填:生产版的必填项里,定时没法自己填的那几项 —— 页面按它出输入框(统计起 / 统计止定时自己填)
+        return {"定时": _定时出(c, project_id, s), "生产版本": 生产, "要填": 要填}
+
+
+@router.get(前缀 + "/schedules")
+def 定时列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """「定时」页:所有设过定时的流程 + 下次什么时候跑、最近一期怎样。"""
+    with 连接() as c:
+        rs = c.execute(text("""select s.*, w.name 流程名 from workflow_schedules s
+                                 join workflows w on w.project_id=s.project_id and w.id=s.workflow_id
+                                where s.project_id=:p and s.archived_at is null and w.archived_at is null
+                                order by s.schedule_enabled desc, w.name"""), {"p": project_id}).mappings().all()
+        return {"items": [{"工作流": r["workflow_id"], "名称": r["流程名"],
+                           "生产版本": _生产版本(c, project_id, r["workflow_id"]),
+                           **_定时出(c, project_id, r)} for r in rs]}
+
+
+@router.put(前缀 + "/workflows/{wid}/schedule")
+async def 设定时(project_id: str, wid: str, request: Request, me: 身份 = Depends(要权限("改编排草稿"))):
+    """设 / 改 / 关定时。**打开**有三个前提,缺一个当场说清,不留到早上 8 点才失败:
+    已发布到生产、设的人自己能发起运行(之后每次就以他的身份跑)、生产版要的必填项都有着落(固定输入 + 统计起止)。"""
+    import 定时 as T
+    体 = await request.json()
+    try:
+        规则 = T.校验规则(体)
+    except T.规则不对 as e:
+        raise _错(422, "VALIDATION", str(e), "周期选 日 / 周 / 月;时刻写 08:00 这样;时区不填就是北京时间")
+    开 = 体.get("开着", True)
+    if not isinstance(开, bool):
+        raise _错(422, "VALIDATION", "开着 要 true / false", "不给就是打开", field_errors={"开着": "要布尔值"})
+    固定 = 体.get("固定输入") or {}
+    if not isinstance(固定, dict):
+        raise _错(422, "VALIDATION", "固定输入要是一组「字段: 值」", "每次定时运行都会带上这些,再加上统计起 / 统计止")
+    with 事务() as c:
+        if not c.execute(text("select 1 from workflows where project_id=:p and id=:w and archived_at is null"),
+                         {"p": project_id, "w": wid}).first():
+            raise _错(404, "NOT_FOUND", "没有这条工作流", "回列表重新进入")
+        老 = c.execute(text("select * from workflow_schedules where project_id=:p and workflow_id=:w for update"),
+                       {"p": project_id, "w": wid}).mappings().first()
+        if 开:
+            生产 = _生产版本(c, project_id, wid)
+            if not 生产:
+                raise _错(422, "SCHEDULE_NO_VERSION", "这条工作流还没有发布到生产",
+                          "定时只跑生产环境里的那一版 —— 先在「版本与发布」里审核后发布到生产")
+            能, 为什么 = me.能("运行编排测试")
+            if not 能:
+                raise _错(403, "FORBIDDEN", "你自己没有发起运行的权限,不能打开定时",
+                          "定时以打开它的人的身份跑 —— 请有「运行编排测试」权限的人来打开。" + (为什么 or ""))
+            v = c.execute(text("select input_schema from workflow_versions where project_id=:p and id=:i"),
+                          {"p": project_id, "i": 生产["版本id"]}).mappings().first()
+            缺 = sorted(set((v["input_schema"] or {}).get("required") or []) - set(固定) - set(_定时统计字段))
+            if 缺:
+                raise _错(422, "SCHEDULE_INPUT_MISSING", f"生产版要的这几项没有着落:{'、'.join(缺)}",
+                          "定时运行没人在场填 —— 在「固定输入」里写上它们(每次都用同一个值),"
+                          "统计起 / 统计止由定时自己填", field_errors={f"固定输入.{f}": "必填" for f in 缺})
+        # 重新打开(原来关着 / 改了周期)才重置「打开于」—— 打开之前的期不算错过;一直开着只改时刻不重置
+        重开 = 开 and (not 老 or not 老["schedule_enabled"] or 老["cadence"] != 规则["周期"])
+        if 老:
+            c.execute(text("""update workflow_schedules set cadence=:c, fire_time=:t, timezone=:z, schedule_enabled=:on,
+                                     principal=case when :on then :u else principal end,
+                                     input_snapshot=cast(:in as jsonb),
+                                     armed_at=case when :rk then now() else armed_at end,
+                                     last_period_start=case when :rk then null else last_period_start end,
+                                     archived_at=null, updated_at=now(), revision=revision+1
+                               where project_id=:p and workflow_id=:w"""),
+                      {"p": project_id, "w": wid, "c": 规则["周期"], "t": 规则["时刻"], "z": 规则["时区"], "on": 开,
+                       "u": me.user_id, "in": json.dumps(固定, ensure_ascii=False), "rk": 重开})
+        else:
+            c.execute(text("""insert into workflow_schedules (id, organization_id, project_id, workflow_id, cadence,
+                                  fire_time, timezone, schedule_enabled, armed_at, principal, input_snapshot,
+                                  created_at, created_by, updated_at, revision)
+                              values (:i, :o, :p, :w, :c, :t, :z, :on, case when :on then now() end, :u,
+                                      cast(:in as jsonb), now(), :u, now(), 1)"""),
+                      {"i": _新id("sch"), "o": me.org_id, "p": project_id, "w": wid, "c": 规则["周期"], "t": 规则["时刻"],
+                       "z": 规则["时区"], "on": 开, "u": me.user_id, "in": json.dumps(固定, ensure_ascii=False)})
+        _审计(c, me, "workflow.schedule", {"workflow_id": wid, "规则": 规则, "开着": 开, "固定输入字段": sorted(固定)},
+              reason=("打开定时:以本人身份跑生产版" if 开 else "关掉定时"))
+        s = c.execute(text("select * from workflow_schedules where project_id=:p and workflow_id=:w"),
+                      {"p": project_id, "w": wid}).mappings().first()
+        return {"定时": _定时出(c, project_id, s)}
+
+
+def _定时发起一期(c, s, 起, 止):
+    """发起一期 → (结果, 为什么, 运行id)。结果:已发起 / 跳过。每一期只判这一次 —— 跳过的不会下一分钟再试。"""
+    p, wid = s["project_id"], s["workflow_id"]
+    if s["last_run_id"]:
+        状 = c.execute(text("select status from execution_runs where project_id=:p and id=:r"),
+                       {"p": p, "r": s["last_run_id"]}).scalar()
+        if 状 and 状 not in ST.找("execution_run")["终态"]:
+            return "跳过", f"上一期那次运行还没结束({ST.找('execution_run')['中文状态'].get(状, 状)})—— 两期叠着跑会互相覆盖", None
+    生产 = _生产版本(c, p, wid)
+    if not 生产:
+        return "跳过", "到点时这条工作流没有发布到生产(可能被撤下了)—— 定时只跑生产那一版", None
+    本人 = _成员身份(c, p, s["principal"])
+    能, 为什么 = 本人.能("运行编排测试") if 本人 else (False, "")
+    if not 能:
+        return "跳过", f"打开定时的人({s['principal']})已经没有发起运行的权限 —— 请有权限的人重新打开定时。{为什么 or ''}", None
+    import 定时 as T
+    v = c.execute(text("select * from workflow_versions where project_id=:p and id=:i"),
+                  {"p": p, "i": 生产["版本id"]}).mappings().first()
+    规则 = {"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"]}
+    来源 = {"kind": "workflow_version", "id": wid, "version_id": v["id"], "version_no": v["version_no"],
+            "环境": "production", "清单id": 生产["清单id"], "发起": "定时", "周期": s["cadence"],
+            "统计起": 起.isoformat(), "统计止": 止.isoformat()}
+    输入 = {**(s["input_snapshot"] or {}), "统计起": 起.isoformat(), "统计止": 止.isoformat()}
+    try:
+        回 = _受理运行(c, 本人, p, _版本定义(v), 来源, 输入, T.期键(wid, T.校验规则(规则), 起))
+    except Exception as e:      # 编译不过(_错 是 HTTPException):记下来,不让一条坏流程卡住别的定时
+        细 = getattr(e, "detail", None)
+        return "跳过", "生产版编译不过:" + (细.get("message") if isinstance(细, dict) else str(e))[:200], None
+    if not 回.get("note", "").startswith("同一个幂等键"):
+        _审计(c, 本人, "workflow.scheduled_run", {"运行": 回["resource_id"], "workflow_id": wid,
+                                                "统计起": 起.isoformat(), "统计止": 止.isoformat()})
+    return "已发起", "", 回["resource_id"]
+
+
+def 定时扫一遍(c, 现在, 只看=None):
+    """worker 每分钟调一次:到点的发起最近一期,关机错过的更早几期只记下来不补。→ 这一遍做了什么(给日志)。
+
+    `for update skip locked`:两个 worker 同时扫,同一条定时只被一个处理;就算漏过这一层,期键当幂等键也只受理一次。
+    `只看`:只扫这几条工作流(给检查用 —— 拿一个假的「现在」去扫,不许顺手把库里别的定时也发起了)。"""
+    import 定时 as T
+    话 = []
+    rs = c.execute(text("""select s.* from workflow_schedules s
+                             join workflows w on w.project_id=s.project_id and w.id=s.workflow_id
+                            where s.schedule_enabled and s.archived_at is null and w.archived_at is null
+                              and (cast(:only as text[]) is null or s.workflow_id = any(cast(:only as text[])))
+                              for update of s skip locked"""), {"only": list(只看) if 只看 else None}).mappings().all()
+    for s in rs:
+        规则 = T.校验规则({"周期": s["cadence"], "时刻": s["fire_time"], "时区": s["timezone"]})
+        判 = T.该发起吗(规则, 现在, 上次统计起=s["last_period_start"], 设定于=s["armed_at"])
+        if not 判["发起"]:
+            continue
+        _, 起, 止 = 判["发起"]
+        记 = list(s["missed_detail"] or [])
+        for o, z in reversed(判["错过"]):
+            记.append({"起": o.isoformat(), "止": z.isoformat(), "结果": "错过",
+                       "为什么": "到点时后台没在跑(关机 / 停机)。只补最近一期 —— 这一期要补请手动发起"})
+        结果, 为什么, 运行 = _定时发起一期(c, s, 起, 止)
+        记.append({"起": 起.isoformat(), "止": 止.isoformat(), "结果": 结果, "为什么": 为什么, "运行": 运行,
+                   "于": 现在.isoformat()})
+        c.execute(text("""update workflow_schedules set last_period_start=:o, last_run_id=coalesce(:r, last_run_id),
+                                 missed_detail=cast(:m as jsonb), updated_at=now(), revision=revision+1
+                           where project_id=:p and id=:i"""),
+                  {"o": 起, "r": 运行, "m": json.dumps(记[-30:], ensure_ascii=False), "p": s["project_id"], "i": s["id"]})
+        话.append(f"{s['workflow_id']} {起}~{止}:{结果}" + (f"({为什么})" if 为什么 else "")
+                  + (f",另有 {len(判['错过'])} 期错过未补" if 判["错过"] else ""))
+    return 话
 
 
 @router.post(前缀 + "/workflows", status_code=201)

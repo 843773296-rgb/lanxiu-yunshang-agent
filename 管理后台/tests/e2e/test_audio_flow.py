@@ -357,6 +357,76 @@ c, b = 打("PATCH", P + f"/workflows/{wid2}", 体={"名称": d2["名称"], "聊�
 ck("**同一个技能第二条也想接管 → 409 TAKEOVER_TAKEN**(聊天站不能不知道该发起哪条)",
    c == 409 and (b or {}).get("code") == "TAKEOVER_TAKEN", (c, b))
 
+print("\n▸ ⑫¼ 定时(10-26,方案 §8.5):只跑生产那一版、以打开的人的身份、同一期只一次、上一期没跑完跳过、关机只补最近一期")
+# 「到点」用一个假的「现在」在进程内扫(只扫这一条)—— 等真到早上 8 点不现实;发起走的仍是接口层同一个受理口,运行落在真库里
+sys.path[:0] = [os.path.join(根, "services", "api", "app"), os.path.join(根, "services", "api", "app", "runtime")]
+import workflows_api as WA                     # noqa: E402
+from db import 事务 as _事务                    # noqa: E402
+from datetime import datetime as _dt, timedelta as _td, date as _d
+
+
+def 扫(现在):
+    with _事务() as cx:
+        return WA.定时扫一遍(cx, 现在, 只看=[wid2])
+
+
+def 定时():
+    return 打("GET", P + f"/workflows/{wid2}/schedule")[1]
+
+
+def 收掉(rid_, 名):
+    """取消要带 If-Match(那一刻的 revision)—— 不带会被拒,而不看返回码的话运行就一直挂着,下一期会被当成「还没跑完」。"""
+    等到(rid_, ("waiting_external", "waiting_approval", "running", "failed", "cancelled", "succeeded"))
+    c_, d_ = 打("GET", P + f"/execution-runs/{rid_}", "U004")
+    c_, b_ = 打("POST", P + f"/execution-runs/{rid_}/cancel", "U002", 体={"reason": f"e2e {名}收尾"},
+               头={"Idempotency-Key": str(uuid.uuid4()), "If-Match": str(d_["revision"])})
+    st_, _ = 等到(rid_, ("cancelled", "failed", "succeeded"))
+    ck(f"({名}收尾)取消那次运行,真的停了", c_ in (200, 202) and st_ == "cancelled", (c_, b_, st_))
+
+
+c, b = 打("PUT", P + f"/workflows/{wid2}/schedule", 体={"周期": "年"})
+ck("周期写错 → 422,说人话", c == 422 and "日 / 周 / 月" in (b or {}).get("message", ""), (c, b))
+c, b = 打("PUT", P + f"/workflows/{wid2}/schedule", 体={"周期": "日"})
+ck("**生产版要的必填项没着落 → 422 SCHEDULE_INPUT_MISSING**(不留到早上 8 点才失败)",
+   c == 422 and (b or {}).get("code") == "SCHEDULE_INPUT_MISSING", (c, b))
+ck("查看定时会列出要固定填的那几项(统计起止不算,定时自己填)",
+   sorted(x["字段"] for x in 定时().get("要填", [])) == ["call_id", "customer_id"], 定时().get("要填"))
+c, b = 打("PUT", P + f"/workflows/{wid2}/schedule", 体={"周期": "日", "固定输入": {"call_id": "TS-001", "customer_id": "C10001"}})
+s0 = (b or {}).get("定时") or {}
+ck("填上之后打开 → 200,以打开的人(U002)的身份,给出下次时刻和统计哪一天",
+   c == 200 and s0.get("开着") and s0.get("以谁的身份") == "U002" and (s0.get("下次") or {}).get("统计起"), (c, b))
+到点 = _dt.fromisoformat(s0["下次"]["时刻"]) + _td(minutes=1)
+话 = 扫(到点 - _td(minutes=2))
+ck("没到点 → 不发起", 话 == [], 话)
+话 = 扫(到点)
+s1 = 定时()["定时"]
+末 = (s1.get("记录") or [{}])[-1]
+ck("**到点 → 发起一期**,统计的是前一天", 末.get("结果") == "已发起" and 末.get("运行")
+   and 末.get("起") == (到点.date() - _td(days=1)).isoformat(), (话, 末))
+r1 = 末.get("运行")
+from sqlalchemy import text as _text      # noqa: E402
+with _事务() as cx:
+    r = cx.execute(_text("select principal, definition_ref, input_snapshot from execution_runs where id=:r"), {"r": r1}).mappings().first()
+ck("这次运行跑的是**生产那一版**、发起人是 U002、来源记着「定时」、输入带上了统计起止",
+   r and r["principal"] == "U002" and r["definition_ref"].get("version_id") == 版2["id"]
+   and r["definition_ref"].get("发起") == "定时" and r["input_snapshot"].get("统计起") == 末.get("起"), dict(r or {}))
+ck("**同一期再扫一遍 → 不再发起**(重启、两个 worker 同时扫都只跑一次)", 扫(到点 + _td(minutes=5)) == [], s1.get("最近一期"))
+话 = 扫(到点 + _td(days=1))
+末 = 定时()["定时"]["记录"][-1]
+ck("**下一期到点时上一期还没跑完 → 这期跳过,写清为什么**", 末.get("结果") == "跳过" and "还没结束" in 末.get("为什么", ""), 末)
+收掉(r1, "定时第一期")
+话 = 扫(到点 + _td(days=5))
+记 = 定时()["定时"]["记录"]
+末 = 记[-1]
+错 = [x for x in 记 if x.get("结果") == "错过"]
+ck("**关机错过了三期 → 只发起最近一期,另外三期记成「错过」不补**",
+   末.get("结果") == "已发起" and len(错) == 3 and 末.get("起") == (到点.date() + _td(days=4)).isoformat(), (话, 记[-5:]))
+收掉(末.get("运行"), "定时补的那一期")
+c, b = 打("PUT", P + f"/workflows/{wid2}/schedule", 体={"周期": "日", "开着": False, "固定输入": {"call_id": "TS-001", "customer_id": "C10001"}})
+ck("关掉之后再到点 → 不发起", c == 200 and 扫(到点 + _td(days=9)) == [], (c, b))
+c, b = 打("GET", P + "/schedules")
+ck("「定时」页的列表里有它,标着关着", any(x["工作流"] == wid2 and x["开着"] is False for x in (b or {}).get("items", [])), b)
+
 print("\n▸ ⑫ 账号绑定 + 聊天站发起被接管的工作流(用户 10-24 拍「一对一绑定」「打开时聊天站改走工作流」)")
 工号 = "E2E" + uuid.uuid4().hex[:6]
 打("DELETE", P + "/staff-bindings/U002", "U001")          # 上一轮挂在半路留下的绑定
@@ -385,7 +455,7 @@ ck("同一个幂等键再发一次 → 还是原来那条,不新建", (b2 or {})
 c, b = 打("POST", P + "/chat-takeovers/quote/runs", "U001", 头={"Idempotency-Key": str(uuid.uuid4())},
          体={"澜绣工号": 工号, "输入": {}})
 ck("没被接管的技能 → 409 TAKEOVER_OFF(交给 harness)", c == 409 and (b or {}).get("code") == "TAKEOVER_OFF", (c, b))
-打("POST", P + f"/execution-runs/{接管运行}/cancel", "U002", 体={"reason": "e2e 收尾"})
+收掉(接管运行, "聊天接管")
 c, b = 打("DELETE", P + "/staff-bindings/U002", "U001")
 ck("解绑 → 200", c == 200, (c, b))
 c, d = 打("GET", P + f"/workflows/{wid}")

@@ -276,6 +276,8 @@ _额外唯一 = {
     # 账号绑定一对一(2026-10-24):两个方向各一条 —— 少了哪条都会退化成多对一,
     # 而多对一的绑定在列表上照样每行一个名字,看不出有人被绑了两次
     "staff_bindings": [("project_id", "user_id"), ("project_id", "lanxiu_staff_code")],
+    # 一条工作流只有一份定时 —— 两份会让同一期按两套规则各发起一次
+    "workflow_schedules": [("project_id", "workflow_id")],
     # 执行故障上报(2026-10-25):一轮只一张单 —— 聊天站同一轮会推不止一次
     "trace_incidents": [("project_id", "trace_id")],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,
@@ -313,6 +315,10 @@ _额外检查 = {
         # 只有这两种是「换模型也没用」的(agentsite/model_route.py 该上报吗);别的问题走升级,不上报
         ("ck_trace_incidents_kind", "kind in ('环境故障', '撞花费上限')"),
         ("ck_trace_incidents_status", "status in ('待处理', '已处理')"),
+    ],
+    # 定时(2026-10-26):周期只有三种,口径在 runtime/定时.py —— 库里多一种它就算不出该跑哪一期
+    "workflow_schedules": [
+        ("ck_workflow_schedules_cadence", "cadence in ('日', '周', '月')"),
     ],
     # 测试样例(2026-10-26):来路只有两种 —— 另起一种说法(「导入」之类)要先在这里登记,不许悄悄写进去
     "workflow_test_samples": [

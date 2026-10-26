@@ -584,6 +584,18 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "(服务端按 id 取出来填进去,原文不经过他的浏览器)—— 看不到原文和用不了样例是两件事",
        "source 记来路:手填 / 来自运行(source_run_id 指那次运行)—— 「这条样例是不是从真实运行里抄的」要查得出"],
       依赖=["workflows"]),
+    E("workflow_schedules", "工作流定时", 子对象, 可改,
+      ["workflow_id", "cadence", "fire_time", "timezone", "schedule_enabled", "armed_at", "principal",
+       "input_snapshot", "last_period_start", "last_run_id", "missed_detail"],
+      ["**一条工作流只有一份定时**(用户 2026-10-26 拍「照你的建议走」,方案 §8.5):日 / 周 / 月,默认北京时间 8:00;"
+       "统计哪一段、什么时候跑由 runtime/定时.py 算,这里只存规则和跑到哪一期",
+       "**只跑生产环境指着的那一版** —— 还没发布到生产就不发起(跟聊天接管同一个口径),不跑最新候选版",
+       "以 principal(打开定时的那个人)的身份发起;**每次发起前重新核一遍他还有没有发起运行的权限**,没有就停下记原因,"
+       "不拿服务账号顶替",
+       "同一期只发起一次:幂等键 = 定时:流程:周期:统计起始日;last_period_start 记最近发起的那一期",
+       "关机错过的期**只补最近一期**,更早的写进 missed_detail 让人决定,不自动补;到点时上一次还没跑完 → 这次跳过",
+       "armed_at = 最近一次打开的时间:**打开之前的期不算错过**(不然一打开就要补一堆)"],
+      依赖=["workflows"]),
     E("artifact_decisions", "产出打回决定", 子对象, 可改,
       ["artifact_id", "action", "reason", "status", "result", "result_note",
        "new_version_no", "acked_at"],

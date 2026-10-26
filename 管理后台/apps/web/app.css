@@ -425,3 +425,6 @@ details.stepio pre.io{max-height:240px;overflow:auto;white-space:pre-wrap;word-b
 /* 版本与发布(10-26) */
 .envcard{min-width:140px}
 .relacts button{margin:2px 0}
+.schedform{display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:8px}
+.schedlog{margin:4px 0;padding-left:18px}
+.schedlog li{margin:4px 0}

@@ -270,6 +270,9 @@
     # 这两个是**带类型的引用**({kind, id, version_id}),和 candidate_ref /
     # baseline_ref / target_ref 一样钉成 JSONB。
     "definition_ref": "JSONB", "release_ref": "JSONB",
+    # 工作流定时(2026-10-26):周期是枚举(日/周/月)、时刻是「08:00」这样的字符串、
+    # 统计起始日是**日期不是时间点** —— 周报统计的是「上周一」这一天,不是哪一刻
+    "cadence": "TEXT", "fire_time": "TEXT", "last_period_start": "DATE",
     # 运行与人工介入
     "principal": "TEXT",        # 执行身份:**不由用户输入字段指定**(§6.1)
     "decision": "TEXT", "outcome": "TEXT", "attempt": "INTEGER",
@@ -335,6 +338,9 @@
     # 执行故障上报(2026-10-25):少了哪一列这张单都没法处理 —— 不知道是哪一轮、什么故障、为什么、现在什么状态
     "trace_incidents": {"trace_id", "kind", "reason", "status"},
     "workflow_test_samples": {"workflow_id", "name", "input_snapshot", "source"},
+    # 工作流定时(2026-10-26):周期 / 时刻 / 时区 / 以谁的身份 —— 少一样都算不出该不该发起、以谁发起
+    "workflow_schedules": {"workflow_id", "cadence", "fire_time", "timezone", "schedule_enabled", "principal",
+                           "input_snapshot"},
     # 检索试跑记录(2026-10-08):这五列**一列都不能空**,否则那一行没有用 ——
     #   · `source` 空 → 分不出是实验室跑的还是 chat 跑的,而这张表存在的理由
     #     就是「哪些是 chat 的」(chat 现在还没接上这条链)
