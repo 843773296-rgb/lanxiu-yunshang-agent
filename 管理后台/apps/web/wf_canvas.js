@@ -176,10 +176,11 @@ function 画_节点() {
       丢.has(n.id) && n.type !== "start" ? `<span class="miss" title="从开始走不到这一步">⚠ 没接进流程</span>` : "",
       失效.has(n.id) ? `<span class="miss" title="它取值的那一步已经被删了">⚠ 原来源已删除</span>` : "",
       坏[n.id] ? `<span class="miss">有要改的</span>` : ""].filter(Boolean).join(" ");
-    return `<div class="wfnode2 ${选 ? "sel" : ""} ${坏[n.id] ? "bad" : ""} ${可连}" data-id="${esc(n.id)}" tabindex="0" role="button"
+    const 跑 = 图态.运行态 && 图态.运行态[n.id];   // 试运行结果标在图上(10-26 第 4 块)
+    return `<div class="wfnode2 ${选 ? "sel" : ""} ${坏[n.id] ? "bad" : ""} ${可连} ${跑 ? "run-" + esc(跑.状态) : ""}" data-id="${esc(n.id)}" tabindex="0" role="button"
         style="left:${p.x}px;top:${p.y}px;height:${h}px"
         aria-label="${esc(业务名(n) + "," + 次级标签(n) + (缺.length ? ",缺 " + 缺.length + " 项" : "") + (选 ? ",已选中" : ""))}">
-      <div class="nh"><span class="t">${esc(业务名(n))}${typeof 同名后缀 === "function" ? 同名后缀(n) : ""}</span>
+      <div class="nh"><span class="t">${esc(业务名(n))}${typeof 同名后缀 === "function" ? 同名后缀(n) : ""}</span>${typeof 运行标 === "function" ? 运行标(n.id) : ""}
         ${改 || n.type !== "start" ? `<button class="more" data-more="${esc(n.id)}" aria-label="更多操作" tabindex="-1">⋯</button>` : ""}</div>
       <div class="k">${esc(次级标签(n))}</div><div class="tags">${标}</div>
       ${n.type === "start" ? "" : `<span class="wfport in" data-in="${esc(n.id)}" title="入口" aria-hidden="true"></span>`}

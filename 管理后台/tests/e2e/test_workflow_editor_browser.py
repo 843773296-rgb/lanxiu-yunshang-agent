@@ -208,6 +208,14 @@ def main():
         js("画_搭建()")
         ck("面板拖宽后记住宽度(重画之后还是那么宽)",
            宽 and int(宽) > 440 and js("return getComputedStyle(document.querySelector('.wfbuild')).getPropertyValue('--pw').trim()") == f"{宽}px", 宽)
+        d.find_element(By.ID, "trun").click(); time.sleep(0.3)
+        ck("顶栏「试运行」→ 右侧面板换成试运行(不跳页签)",
+           js("return document.querySelector('#pn h3').textContent") == "试运行" and bool(js("return !!document.getElementById('tr-go')"))
+           and js("return decodeURIComponent(location.hash)").endswith("/搭建"))
+        js("window._原视图=图态.视图; 图态.视图='步骤'; 画_搭建(); 记运行态({步骤:[{节点:'llm_1',状态:'succeeded'},{节点:'tool_1',状态:'failed',错误码:'X'}], 在等什么:{种类:'human',步骤:'human_1'}})")
+        标 = js("return Object.fromEntries([...document.querySelectorAll('#steps .step')].map(x=>[x.dataset.id,(x.querySelector('.pill[class*=run-]')||{}).textContent||'']))")
+        ck("试运行结果标到每一步:成功 / 失败 / 等人工核对", 标.get("llm_1") == "成功" and 标.get("tool_1") == "失败" and 标.get("human_1") == "等人工核对", 标)
+        js("图态.运行态=null; 图态.试面板=false; 图态.视图=window._原视图; 画_搭建()")
         js("图态.选中='llm_1'; 图态.面板页='高级'; 画_面板();")
         框 = d.find_element(By.CSS_SELECTOR, '#pn [data-sec="高级"] .inwrap input')
         前 = js("return 节点('llm_1').config.max_output_tokens")

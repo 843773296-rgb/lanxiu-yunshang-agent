@@ -850,7 +850,7 @@ function 画_编排页() {
       <span class="grow"></span>
       <span class="seg" role="group" aria-label="视图"><button id="vw-s">列表</button><button id="vw-g">流程图</button></span>
       <button id="issues" hidden></button>
-      <button id="trun" title="去「测试」页填一条输入试跑">▶ 试运行</button>
+      <button id="trun" title="在右侧填一条输入试跑;跑完每一步标上结果" aria-pressed="false">▶ 试运行</button>
       <button class="pri" id="freeze">发布</button>
       <details class="more"><summary aria-label="更多">⋯</summary><div class="menu">
         <button id="save">保存草稿</button>
@@ -867,7 +867,7 @@ function 画_编排页() {
     if (e.target.checked) 自动保存排队(); };
   $("#v").onclick = 做_校验;
   $("#freeze").onclick = 弹_准备发布;
-  $("#trun").onclick = () => { location.hash = 链("测试"); };
+  $("#trun").onclick = () => { 图态.试面板 = !图态.试面板; 画_面板(); $("#trun").setAttribute("aria-pressed", String(!!图态.试面板)); };
   $("#issues").onclick = () => { 图态.问题开 = !图态.问题开; 图态.底Tab = "问题"; 画_问题(); 摆问题区(); };
   画_搭建(); 画_底栏(); 画_保存状态();
 }
@@ -1141,7 +1141,7 @@ function 画_步骤() {
       ${头} style="margin-left:${s.深 * 18}px" data-id="${esc(s.id)}">
         <button class="t" data-sel="${esc(s.id)}">${号}. ${esc(业务名(n))}${同名后缀(n)}</button>
         <span class="pill">${esc(次级标签(n))}</span>
-        ${缺.length ? `<span class="pill warn">缺 ${缺.length} 项</span>` : ""}
+        ${缺.length ? `<span class="pill warn">缺 ${缺.length} 项</span>` : ""}${运行标(s.id)}
         ${坏[s.id] ? '<span class="pill fail">有要改的</span>' : ""}
         <span class="acts">
           ${n.type === "end" || !能改图() ? "" : `<button data-after="${esc(s.id)}" title="在此后添加一步" aria-label="在「${esc(业务名(n))}」后添加一步">＋</button>`}
@@ -1286,6 +1286,12 @@ const 挂控件 = (fn) => { 控件表.push(fn); return 控件表.length - 1; };
 function 画_面板() {
   const g = 图态;
   控件表 = [];
+  if (g.试面板 && document.body.classList.contains("wf-full")) {
+    $("#pn").innerHTML = `<div class="phd"><h3 style="margin:0">试运行</h3><button id="tr-x" aria-label="关闭试运行面板">关闭</button></div><div id="trbox"></div>`;
+    $("#tr-x").onclick = () => { 图态.试面板 = false; 画_面板(); const b = $("#trun"); if (b) b.setAttribute("aria-pressed", "false"); };
+    画_测试($("#trbox"));
+    return;
+  }
   if (!g.选中 || !节点(g.选中)) {
     $("#pn").innerHTML = `<div class="k">在左边选一步,右边配置它。</div>`;
     return;
@@ -1756,8 +1762,9 @@ function 画_问题() {
 /* 流程图视图在 wf_canvas.js(和步骤列表改同一份定义;图怎么改走 wf_graph.js)*/
 
 /* ── 测试 ─────────────────────────────────────────────────────── */
-function 画_测试() {
-  const g = 图态;
+function 画_测试(盒 = null) {
+  const g = 图态, 侧 = !!盒;   // 侧 = 画在编排页右侧面板里(10-26 第 4 块):单列
+  盒 = 盒 || $("#tabbody");
   const 起 = g.定义.nodes.find((n) => n.type === "start");
   const sch = (起 && 起.config.input_schema) || { properties: {}, required: [] };
   const 框 = Object.entries(sch.properties || {}).map(([k, v]) => {
@@ -1772,7 +1779,7 @@ function 画_测试() {
         <input data-in="${esc(k)}" data-t="array" placeholder="多项用逗号隔开">${说}`;
     return `<label class="f">${标}</label><textarea rows="2" data-in="${esc(k)}" data-t="string"></textarea>${说}`;
   }).join("");
-  $("#tabbody").innerHTML = `<div class="two">
+  盒.innerHTML = `<div class="${侧 ? "stack" : "two"}">
     <div class="card"><h3>填一条测试输入</h3>
       ${框 || '<div class="k">这条流程不需要使用者提供任何东西。</div>'}
       <div class="note">测试用的是<b>草稿</b>,不是候选版本。模型连接是演示用的那条时不真调模型(结果带 [mock]);
@@ -1811,15 +1818,41 @@ async function 盯运行(rid) {
     try { d = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}`); } catch (e) { break; }
     if (!$("#tr-st") || (图态 && 图态.最近测试 !== rid)) return;
     $("#tr-st").innerHTML = 运行卡(d, rid);
+    记运行态(d);
     const 刷 = $("#tr-rf"); if (刷) 刷.onclick = () => 盯运行(rid);
+    $("#tr-st").querySelectorAll("[data-goto]").forEach((b) => { b.onclick = () => 定位步骤(b.dataset.goto); });
     if (d["是终态吗"] || d["在等什么"]) return;
     await new Promise((r) => setTimeout(r, 1200));
   }
 }
 
+// 这次试运行每一步的结果(按节点):编排页的列表和图上都标出来(10-26 第 4 块)。只标发起时那份定义里的步骤
+const 运行状态中文 = { succeeded: "成功", failed: "失败", waiting_human: "等人工核对", waiting_external: "等澜绣回执",
+  running: "进行中", skipped: "跳过", cancelled: "取消", pending: "排队" };
+function 记运行态(d) {
+  if (!图态) return;
+  const 态 = {};
+  (d["步骤"] || []).forEach((s) => { 态[s["节点"]] = { 状态: s["状态"], 错误码: s["错误码"], 分支: s["走的分支"] }; });
+  const 等 = d["在等什么"]; if (等 && 等["步骤"]) 态[等["步骤"]] = { 状态: 等["种类"] === "human" ? "waiting_human" : "waiting_external" };
+  图态.运行态 = 态;
+  if (document.body.classList.contains("wf-full")) { if (图态.视图 === "流程图") { if (typeof 画_节点 === "function") 画_节点(); } else if ($("#steps")) 画_步骤(); }
+}
+// 运行结果里点一步 → 在列表 / 图上选中并滚到它(试运行面板留着,好对照着看)
+function 定位步骤(id) {
+  if (!图态 || !节点(id)) return;
+  图态.选中 = id;
+  if (图态.视图 === "流程图" && typeof 画布动作 !== "undefined") { 画布动作.选节点([id]); }
+  else if ($("#steps")) { 画_步骤(); const el = document.querySelector(`.step[data-id="${CSS.escape(id)}"]`); if (el) el.scrollIntoView({ block: "center" }); }
+}
+function 运行标(id) {
+  const x = 图态 && 图态.运行态 && 图态.运行态[id];
+  return x ? `<span class="pill run-${esc(x.状态)}">${esc(运行状态中文[x.状态] || x.状态)}</span>` : "";
+}
 function 运行卡(d, rid) {
   const 等 = d["在等什么"];
-  const 步 = (d["步骤"] || []).map((s) => `<li>${esc(业务名(节点(s["节点"]) || { type: s["类型"] }))}:${esc(s["状态"])}
+  const 步 = (d["步骤"] || []).map((s) => `<li>${节点(s["节点"]) ? `<button class="lk" data-goto="${esc(s["节点"])}">${esc(业务名(节点(s["节点"])))}</button>`
+        : esc(业务名({ type: s["类型"] }))}:${esc(运行状态中文[s["状态"]] || s["状态"])}
+      ${s["走的分支"] && s["走的分支"] !== "None" ? ` <span class="k">→ ${esc(图逻辑.分支名(s["走的分支"]))}</span>` : ""}
       ${s["错误码"] ? ` <code>${esc(s["错误码"])}</code>` : ""}</li>`).join("");
   return `<div><b>${esc(d["执行状态中文"])}</b> ${d["停止原因"] ? `<code>${esc(d["停止原因"])}</code>` : ""}</div>
     ${等 ? (等["种类"] === "human"
