@@ -11,6 +11,16 @@
   - `check.sh` 里「假数据工厂 · 推断/生成/闸门/灌回滚」那一行全绿(`fakedata/selftest.py`)
   - 对着一个处处相反的靶子也跑得通(`fakedata/generalize.py`:英文列名、整数主键、明写外键)
   - SQLite 和 MySQL 都实跑过(MySQL 那条要人手起实例,跑 `fakedata/mysql_e2e.py`)
+    · **2026-10-26 重跑过一次 MySQL 这条,仍然通**:7 步全过、造 74061 行、
+      照 manifest 回滚到基线,退出码 0(MySQL 26.7.0)。
+      起实例:`brew services start mysql`,然后
+      `python3 fakedata/mysql_e2e.py "mysql://root:@127.0.0.1:3306/lanxiu_e2e"`
+      (库要先 `CREATE DATABASE lanxiu_e2e CHARACTER SET utf8mb4`)。
+      ⚠️ **`mysqladmin ping` 会连不上而服务其实是活的** —— 它默认走 unix socket,
+      而 brew 这个实例听 TCP;用 `mysql -h 127.0.0.1 -P 3306 -uroot` 才连得上。
+      我为此干等了两分钟,而日志里连接号一直在涨(那正是我自己每秒 ping 一次)。
+      > 一个「服务没起来」和一个「服务起来了但我用错了连法」,
+      > 在 `connect to server failed` 这一行上长得一模一样。
   - 业务规则都够得着:写接口驱动那条路径 11/11 条规则都触发过拒绝
 
 - **明确不做什么**:
