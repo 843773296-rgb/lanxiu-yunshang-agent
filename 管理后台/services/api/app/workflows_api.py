@@ -1568,6 +1568,7 @@ async def 发起运行(project_id: str, request: Request,
     # 选的是演示连接就是 mock、选的是真连接就真跑 —— 运行上记的 execution_mode 由下面按节点算出来
     if 体.get("模式") not in (None, "mock", "live"):
         raise _错(422, "VALIDATION", "模式只收 mock / live,或者不给", "一般不用给 —— 按每一步选的模型连接定")
+    跑法 = _跑法(体)
     with 事务() as c:
         # 取定义:冻结版本优先(生产必须用版本;草稿只给调试)
         if 版本id:
@@ -1594,7 +1595,21 @@ async def 发起运行(project_id: str, request: Request,
                 # 输入由服务端按 id 取 —— 没有原文授权的人也能用(原文不经过他的浏览器)
                 输入 = _样例内容(c, project_id, wid, None, 体.get("样例id"), 体.get("沿用运行"))
                 来源["输入来自"] = {"样例": 体.get("样例id")} if 体.get("样例id") else {"运行": 体.get("沿用运行")}
+        if 跑法 != "正常":
+            来源["跑法"] = 跑法
         return _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, 体.get("上限"))
+
+
+跑法们 = ("正常", "连接测试")
+
+
+def _跑法(体):
+    """试运行 / 单步测试的跑法(10-26,方案 §8.1)。正常 = 照现在这样;连接测试 = 模型真调、澜绣数据真读,
+    **写入类业务动作不发给澜绣**,只记「本来会写什么」(Worker 的 _工具 里拦)。"""
+    v = (体.get("跑法") or "正常").strip()
+    if v not in 跑法们:
+        raise _错(422, "VALIDATION", "跑法只收「正常」或「连接测试」", "不给就是正常", field_errors={"跑法": "正常 / 连接测试"})
+    return v
 
 
 @router.post(前缀 + "/workflows/{wid}/steps/{node_id}/test-runs", status_code=202)
@@ -1610,6 +1625,7 @@ async def 单步测试(project_id: str, wid: str, node_id: str, request: Request
                   "前端为这一次点击生成一个 UUID 放进 Idempotency-Key 头 —— 网络超时重发时不会跑第二遍")
     体 = await request.json()
     输入 = 体.get("输入") or {}
+    跑法 = _跑法(体)
     if not isinstance(输入, dict):
         raise _错(422, "VALIDATION", "测试输入格式不对", "每一项填一个值再试", field_errors={"输入": "要是一组「项: 值」"})
     with 事务() as c:
@@ -1625,7 +1641,7 @@ async def 单步测试(project_id: str, wid: str, node_id: str, request: Request
             return c.execute(text("select side_effect_type from tool_versions where project_id=:p and id=:i"),
                              {"p": project_id, "i": tv}).scalar()
         try:
-            小图, 要填 = ST1.拼小图(d["definition"] or {}, node_id, 工具读写=工具读写)
+            小图, 要填 = ST1.拼小图(d["definition"] or {}, node_id, 工具读写=工具读写, 写入只演练=(跑法 == "连接测试"))
         except ST1.不能单测 as e:
             raise _错(422, "STEP_TEST_UNSUPPORTED", e.消息, e.建议)
         if 体.get("样例id") or 体.get("沿用运行"):
@@ -1638,6 +1654,8 @@ async def 单步测试(project_id: str, wid: str, node_id: str, request: Request
                       "把每一项都填上再测。这次一个模型都没调用,不花钱",
                       field_errors={f: "必填" for f in 缺})
         来源 = {"kind": "step_test", "id": wid, "node_id": node_id, "draft_revision": d["revision"]}
+        if 跑法 != "正常":
+            来源["跑法"] = 跑法
         if 体.get("样例id") or 体.get("沿用运行"):
             来源["输入来自"] = {"样例": 体.get("样例id")} if 体.get("样例id") else {"运行": 体.get("沿用运行")}
         return _受理运行(c, me, project_id, 小图, 来源, {f: 输入[f] for f in 要填}, idempotency_key, 体.get("上限"))
@@ -2004,6 +2022,21 @@ def _业务结论(状态, 原因, 步骤们, 等):
     return {"结论": ST.找("execution_run")["中文状态"].get(状态, 状态), "说明": ""}
 
 
+def _连接测试注(结论, 跑法, 步骤们):
+    """连接测试跑完,业务结果里写明「几处写入没真的执行」—— 不写的话,「已完成」会被读成「已经写进澜绣了」(10-26)。"""
+    if 跑法 != "连接测试":
+        return 结论
+    没写 = 0
+    for s in 步骤们:
+        try:
+            if (json.loads(s["output_ref"]) if s["output_ref"] else {}).get("未执行"):
+                没写 += 1
+        except (ValueError, TypeError, AttributeError):
+            pass
+    return dict(结论, 跑法="连接测试",
+                说明=(结论.get("说明") or "") + f"。这是连接测试:{没写} 处写入没有发给澜绣" + ("" if 没写 else "(这次没走到写入)"))
+
+
 @router.get(前缀 + "/execution-runs/{rid}")
 def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查看有权配置"))):
     看原文, _ = me.能("查看敏感输入/独立测试答案")
@@ -2084,7 +2117,9 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
         "停止原因": r["completion_reason"],
         "停止原因说法": _停止原因说法.get(r["completion_reason"] or "", None),
         # 用人话说这次结果能不能用、差什么、下一步干什么(§8.2)—— 页面先摆这一栏,执行状态放在后面
-        "业务结果": _业务结论(r["status"], r["completion_reason"], [dict(x) for x in steps], 等),
+        "业务结果": _连接测试注(_业务结论(r["status"], r["completion_reason"], [dict(x) for x in steps], 等),
+                              (r["definition_ref"] or {}).get("跑法"), steps),
+        "跑法": (r["definition_ref"] or {}).get("跑法") or "正常",
         # **两栏分开**(§16.4):succeeded 只说流程按定义跑完了、
         # 确定性输出检查过了,**不说明里面的事实都对**
         "任务达标": r["quality_evaluation_status"],

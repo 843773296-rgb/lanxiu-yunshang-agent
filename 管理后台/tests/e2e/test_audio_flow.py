@@ -397,6 +397,34 @@ c, b = 打("POST", P + "/chat-takeovers/call-notes/runs", "U001", 头={"Idempote
 ck("**关掉之后聊天站拿着旧清单来发起 → 409 TAKEOVER_OFF**(开没开由服务端判)",
    c == 409 and (b or {}).get("code") == "TAKEOVER_OFF", (c, b))
 
+print("\n▸ ⑫½ 连接测试跑法(10-26,方案 §8.1):模型真调、取转写真读,**写跟进不发给澜绣**,只记会写什么")
+wct, _ = 建图("e2e 连接测试")
+c, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())},
+         体={"workflow_id": wct, "输入": {"call_id": "TS-001", "customer_id": "C10001"}, "跑法": "连接测试"})
+rct = (r or {}).get("resource_id")
+ck("连接测试 → 202 排队", c == 202 and rct, (c, r))
+c, b = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())},
+         体={"workflow_id": wct, "输入": {}, "跑法": "随便写的"})
+ck("跑法写错 → 422(不认的跑法不能悄悄当成「正常」真写)", c == 422 and (b or {}).get("code") == "VALIDATION", (c, b))
+等到(rct, ("waiting_external",))
+取 = [x for x in 单(rct) if x["工具"] == "取转写"]
+ck("只读的取转写照常交给澜绣(连接测试也真读)", len(取) == 1, 单(rct))
+打("POST", P + f"/bridge-calls/{取[0]['id']}/ack", "U004",
+  体={"结果": "已执行", "输出": {"text": "我想做一件宋制褙子,下个月婚礼穿", "call_id": "TS-001", "customer_id": "C10001"}})
+等到(rct, ("waiting_approval",))
+决定(待办(rct)[0]["id"], "approved")
+st, 详 = 等到(rct, ("succeeded", "failed", "incomplete", "waiting_external"))
+写 = [x for s_ in ("待执行", "已执行", "执行失败") for x in 单(rct, s_) if x["工具"] == "写跟进"]
+ck("**核对通过后流程跑完,而写跟进一张桥请求都没有**(没发给澜绣)", st == "succeeded" and not 写, (st, 写))
+c, 详 = 打("GET", P + f"/execution-runs/{rct}", "U004")
+写步 = [s_ for s_ in 详.get("步骤", []) if (s_.get("输出") or {}).get("未执行")]
+ck("写跟进那一步的输出记着「本来会写什么」:动作名 + 参数,并标着未执行",
+   写步 and (写步[0]["输出"].get("本来会写") or {}).get("业务动作") == "写跟进"
+   and (写步[0]["输出"].get("本来会写") or {}).get("参数"), [s_.get("输出") for s_ in 写步])
+ck("业务结果标着「连接测试」,并写明几处写入没发给澜绣(不让「已完成」被读成「已经写进去了」)",
+   (详.get("业务结果") or {}).get("跑法") == "连接测试" and "1 处写入没有发给澜绣" in (详.get("业务结果") or {}).get("说明", "")
+   and 详.get("跑法") == "连接测试", 详.get("业务结果"))
+
 print("\n▸ ⑬ 录音加回电(用户 10-24 拍「两个都要:先写跟进,有意向再派回电」;负责人和时间由核对人填)")
 def 走到核对(wid_, 客户="C10001"):
     c, r = 发起(wid_, {"call_id": "TS-001", "customer_id": 客户}); rid_ = r["resource_id"]

@@ -420,6 +420,9 @@ def _跑一张工作流(c, job, 打点):
     import runner as RN
 
     来源 = r["definition_ref"] or {}
+    # 跑法(10-26,方案 §8.1):「连接测试」= 模型真调、澜绣数据真读,**写入类业务动作不发给澜绣**(见 _工具)。
+    # 记在运行的来源上,不另加列;恢复时照样从这里读 —— 挂起再恢复不能变成真写
+    跑法 = (来源 or {}).get("跑法") or "正常"
     if 快照:
         # **恢复只用挂起时存下的那一版定义**,不重读草稿 —— 挂着的几个小时里草稿可能改了,
         # 拿新图接旧进度,已完成节点的输出可能对不上新图里任何一个节点
@@ -441,7 +444,8 @@ def _跑一张工作流(c, job, 打点):
             # 「写入类业务动作不许单测」在这儿**再查一次**:受理之后有人把这个动作改登记成写入,也不能跑
             import 单步测试 as ST1
             try:
-                定义, _ = ST1.拼小图(定义, 来源.get("node_id"), 工具读写=lambda tv: tv and c.execute(text(
+                定义, _ = ST1.拼小图(定义, 来源.get("node_id"), 写入只演练=(来源.get("跑法") == "连接测试"),
+                                   工具读写=lambda tv: tv and c.execute(text(
                     "select side_effect_type from tool_versions where project_id=:p and id=:i"),
                     {"p": job["project_id"], "i": tv}).scalar())
             except ST1.不能单测 as e:
@@ -632,6 +636,14 @@ def _跑一张工作流(c, job, 打点):
             raise RN.节点失败("ADAPTER_MISSING", f"工具版本 {tv} 没有可用的执行通道",
                             "工作流里的工具步骤只接澜绣桥名单里的(runtime/桥工具.py);"
                             "**缺适配器要报出来,不能当成这一步不需要做**")
+        if 跑法 == "连接测试":
+            import dsl as _DS
+            tvr = c.execute(text("select side_effect_type, output_schema from tool_versions where project_id=:p and id=:i"),
+                            {"p": job["project_id"], "i": tv}).mappings().first() or {}
+            # 读写登记不明的按写入处理 —— 偏错的代价朝「少读一次」,不朝「多写一条真记录」(和单步测试同一条)
+            if tvr.get("side_effect_type") != _DS.只读:
+                import 执行模式 as _EM
+                return _EM.连接测试替身(名, 实参, tvr.get("output_schema"))
         raise RN.需要等待("external", {"工具": 名, "参数": 实参, "tool_version_id": tv})
 
     恢复 = None

@@ -1815,9 +1815,10 @@ function 画_测试(盒 = null) {
   盒.innerHTML = (侧 ? `<div class="stack">` : `<div class="two">`) + `
     <div class="card"><h3>填一条测试输入</h3>
       ${样例条("tr")}
+      ${跑法选择("tr")}
       ${框 || '<div class="k">这条流程不需要使用者提供任何东西。</div>'}
       <div class="note">测试用的是<b>草稿</b>,不是候选版本。模型连接是演示用的那条时不真调模型(结果带 [mock]);
-        「由澜绣执行」的步骤会真的去澜绣取数 / 写跟进 —— 写入之前一定先停在人工核对。</div>
+        「由澜绣执行」的步骤会真的去澜绣取数;写跟进这类写入:<b>连接测试</b>只记会写什么、不发给澜绣,<b>正常</b>跑会真的写(写入之前一定先停在人工核对)。</div>
       <button class="pri" id="tr-go">试运行</button></div>
     <div class="card"><h3>这次运行</h3><div id="tr-st" class="k">还没跑。</div></div></div>`;
   挂样例条({ 前缀: "tr", node: null,
@@ -1900,7 +1901,7 @@ function 业务结果块(d) {
   const r = d["业务结果"]; if (!r) return `<div><b>${esc(d["执行状态中文"])}</b></div>`;
   const 色 = { "已完成": "ok", "已完成,需补充资料": "warn", "没做完": "warn", "失败": "err", "进行中": "" }[r["结论"]] || "";
   const 步名 = r["哪一步"] ? (节点(r["哪一步"]) ? 业务名(节点(r["哪一步"])) : r["哪一步"]) : "";
-  return `<div class="bizres" data-res="${色}"><b>${esc(r["结论"])}</b>${步名 ? ` · 卡在「${esc(步名)}」` : ""}
+  return `<div class="bizres" data-res="${色}">${r["跑法"] === "连接测试" ? '<span class="pill">连接测试</span> ' : ""}<b>${esc(r["结论"])}</b>${步名 ? ` · 卡在「${esc(步名)}」` : ""}
     ${r["说明"] ? `<div>${md(r["说明"])}</div>` : ""}${r["下一步"] ? `<div class="k">下一步:${md(r["下一步"])}</div>` : ""}
     <div class="k">执行状态:${esc(d["执行状态中文"])}${d["停止原因"] ? ` <code>${esc(d["停止原因"])}</code>` : ""}</div></div>`;
 }
@@ -2281,7 +2282,7 @@ async function 做_试运行(输入 = {}, 额外 = {}) {
     const d = await 请求(`${P()}/execution-runs`, {
       method: "POST",
       headers: { "Idempotency-Key": crypto.randomUUID() },
-      body: JSON.stringify({ workflow_id: 图态.wid, 输入, ...额外 }),
+      body: JSON.stringify({ workflow_id: 图态.wid, 输入, 跑法: 选的跑法("tr"), ...额外 }),
     });
     图态.最近测试 = d.resource_id;
     图态.最近测试定义 = JSON.stringify(图态.定义);     // 这次试运行固定的是哪份定义(§10.4)
@@ -2357,6 +2358,16 @@ async function 挂样例条({ 前缀, node, 填, 取 }) {
   };
 }
 
+/* 跑法(10-26,方案 §8.1):连接测试 = 模型真调、澜绣数据真读,**写入类业务动作不发给澜绣**,只显示会写什么。
+ * 默认连接测试(日常调提示词、换模型最常用);要真写选「正常」—— 写入前照旧停在人工核对 */
+function 跑法选择(前缀, 只能演练 = false) {
+  return `<label class="f">跑法</label><select id="${前缀}-mode" ${只能演练 ? "disabled" : ""}>
+      <option value="连接测试">连接测试:真调模型、真读数据,写入类不真写</option>
+      ${只能演练 ? "" : '<option value="正常">正常:写入类真的写(写前停在人工核对)</option>'}</select>
+    ${只能演练 ? `<div class="k">这个业务动作会写数据,单独测时只能用连接测试 —— 正常跑会跳过前面的人工核对写出真记录。</div>` : ""}`;
+}
+function 选的跑法(前缀) { const el = $(`#${前缀}-mode`); return el ? el.value : "正常"; }
+
 const 单测类型 = { llm: "模型", retrieve: "知识检索", tool: "业务动作" };
 function 单测字段(n) {
   return Object.entries((n.config || {}).bindings || {})
@@ -2364,10 +2375,12 @@ function 单测字段(n) {
 }
 function 单测表(n) {
   if (!单测类型[n.type]) return "";
+  let 只能演练 = false;
   if (n.type === "tool") {
     const t = 工具资源((n.config || {}).tool_version_id);
     if (!t) return `<div class="k">先在「基本」里选好业务动作,才能单独测。</div>`;
-    if (t["读写"] !== "只读") return `<div class="note">这个业务动作会写数据,<b>不能单独测</b>:单测会跳过前面的人工核对,写出一条没人核对过的真实记录。要看它的效果,点「试运行」从头跑。</div>`;
+    // 写入类:正常跑法会跳过前面的人工核对写出真记录 —— 只许「连接测试」(不发给澜绣,只显示会写什么)
+    只能演练 = t["读写"] !== "只读";
   }
   const 跑 = 图态.运行态 && 图态.运行态[n.id], 上次入 = 跑 && 跑.原文 && 跑.输入 && typeof 跑.输入 === "object" ? 跑.输入 : {};
   const 框 = 单测字段(n).map((f) => {
@@ -2377,6 +2390,7 @@ function 单测表(n) {
   return `<div class="stest"><div class="k">单独跑这一步,不从头跑整条流程。${Object.keys(上次入).length ? "下面已填上它上次收到的内容,可以改。" : ""}
       用的是这一步选的模型:演示模型不花钱,真模型按一次调用计费。</div>
     ${样例条("st")}
+    ${跑法选择("st", 只能演练)}
     ${框 || '<div class="k">这一步不需要填任何内容。</div>'}
     <button id="st-go">单独测这一步</button><div id="st-st" class="k"></div></div>`;
 }
@@ -2404,7 +2418,7 @@ function 读单测输入() {
 async function 做_单测(nid) {
   if (图态.脏 && !(await 做_存草稿())) return;      // 服务端读的是已保存的草稿
   const 选 = 图态.样例选 && 图态.样例选.st;
-  const 体 = 选 ? { 输入: {}, ...选.参数 } : { 输入: 读单测输入() };   // 看不到原文的样例:由服务端按 id 填
+  const 体 = { ...(选 ? { 输入: {}, ...选.参数 } : { 输入: 读单测输入() }), 跑法: 选的跑法("st") };   // 看不到原文的样例:由服务端按 id 填
   const 盒 = () => $("#st-st");
   try {
     const d = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/steps/${encodeURIComponent(nid)}/test-runs`, {
