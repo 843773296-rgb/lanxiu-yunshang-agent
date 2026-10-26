@@ -44,6 +44,9 @@ import credit as C
      "ownership 的 NO_SUCH 分支:档案写了个员工表里没有的工号 —— **数据要修**,不是业务问题"),
     ("FX-XSHOP-01", "夹具·跨店客户", None, "SH001 静安旗舰店",
      "ownership 的 CROSS_SHOP 分支:归属顾问不在客户所在门店 —— 顾问号在下面按实际门店填"),
+    ("FX-LEFT-01", "夹具·离职顾问的客户", None, "SH001 静安旗舰店",
+     "ownership 的 LEFT 分支:归属顾问已停用 —— 该落池。原来靠何苓名下碰巧挂着的真客户,"
+     "10-26「一个账户只归一位导购」把那两位按规则顺延走了,样本跟着没了;改成专门造一条、不挂账户"),
 ]
 
 
@@ -60,6 +63,12 @@ def main():
             if not 别店顾问:
                 sys.exit("❌ 没有别的门店的在职顾问 —— 跨店夹具造不出来")
             adv = 别店顾问[0]
+        if cid == "FX-LEFT-01":
+            停 = c.execute("""select no from staff where role='顾问' and coalesce(status,'启用')<>'启用'
+                             and shop=? limit 1""", (shop,)).fetchone()
+            if not 停:
+                sys.exit("❌ 这家店没有停用的顾问 —— 离职夹具造不出来")
+            adv = 停[0]
         # ⚠️ **等级要按口径现算,不能留空。**
         # `membership_check` 逐例验「每个客户的等级都算得出来」——
         # 留空的话那条会红,而红的理由是「等级对不上」,
@@ -70,10 +79,12 @@ def main():
                   for r in c.execute("select code,name,amount,orders,sort,need_points "
                                      "from level_cfg where status='启用'")]
         档 = mb.判档(0, 0, 档位表)
-        c.execute("""insert into customer(id,name,phone,shop,advisor_no,lifecycle,level,
+        # 门店码当场写(10-26):单独重跑本脚本时,后面那步 add_shop_code 不会跟着跑,漏填会让门店码对账红
+        import shop_key as _SK
+        c.execute("""insert into customer(id,name,phone,shop,shop_code,advisor_no,lifecycle,level,
                                           created,archived,order_cnt,orders_12m,amount_12m,idle_days)
-                     values(?,?,?,?,?,?,?,?,0,0,0,0,0)""",
-                  (cid, name, "000" + cid[-8:].replace("-", ""), shop, adv, "潜在", 档, TODAY))
+                     values(?,?,?,?,?,?,?,?,?,0,0,0,0,0)""",
+                  (cid, name, "000" + cid[-8:].replace("-", ""), shop, _SK.码(c, shop), adv, "潜在", 档, TODAY))
 
     # ── 归因来源夹具 ─────────────────────────────────────────
     # 「人工填」和「算法算」两条路径,规则算的样本覆盖不到

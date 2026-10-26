@@ -1372,7 +1372,8 @@ def 转移核对(target, payload):
     with _cl_closing(_c()) as c:
         c.row_factory = sqlite3.Row
         客户们, 问题 = [], []
-        for cid in [x.strip() for x in str(target or "").split("|") if x.strip()]:
+        import account_owner as _AO   # 一个账户只归一位导购(10-26):同户的档案一起转,单子上也列出来
+        for cid in _AO.同户档案(c, [x.strip() for x in str(target or "").split("|") if x.strip()]):
             r = c.execute("SELECT id, name, shop, shop_code, advisor_no FROM customer WHERE id=?", (cid,)).fetchone()
             if not r:
                 问题.append(f"没有客户 {cid}"); continue
@@ -1441,12 +1442,9 @@ def 审批生效(c, a):
         接, 为何 = _认顾问(pl.get("to_advisor_no") or pl.get("to_advisor"), c)
         if 接 is None:
             return f"⚠️ 单子批了,但没转:{为何} —— 认不出接手的人就不改,请重新提一张写清工号的单"
-        ids = [x.strip() for x in (a["target"] or "").split("|") if x.strip()]
-        for i in ids:
-            c.execute("UPDATE customer SET advisor_no=? WHERE id=?", (接["no"], i))
-        c.executemany("UPDATE appointment SET advisor_no=? WHERE customer_id=? AND status='已预约'",
-                      [(接["no"], i) for i in ids])
-        return f"已将 {len(ids)} 位客户转至 {接['name']}({接['no']}),未完成的预约一起迁过去"
+        import account_owner as _AO   # 整户转:同一账户下的档案一起走(10-26 用户拍:一个账户只归一位导购)
+        ids = _AO.改导购(c, [x.strip() for x in (a["target"] or "").split("|") if x.strip()], 接["no"])
+        return f"已将 {len(ids)} 条客户档案(连同同户的)转至 {接['name']}({接['no']}),未完成的预约一起迁过去"
     return ""
 
 

@@ -63,7 +63,10 @@ def run(T):
     店 = None
     for s in c.execute("SELECT code, code||' '||name AS 串 FROM shop ORDER BY code"):
         客 = c.execute("""SELECT k.id, k.advisor_no FROM customer k JOIN staff t ON t.no=k.advisor_no
-                         WHERE k.shop_code=? AND t.status='启用' AND k.merged_into IS NULL ORDER BY k.id LIMIT 3""",
+                         WHERE k.shop_code=? AND t.status='启用' AND k.merged_into IS NULL
+                           AND (COALESCE(k.account_id,'')='' OR NOT EXISTS (SELECT 1 FROM customer o WHERE o.account_id=k.account_id
+                                AND o.id<>k.id AND o.merged_into IS NULL))   -- 单档案的:同户整户转另有一条断言(10-26)
+                         ORDER BY k.id LIMIT 3""",
                        (s["code"],)).fetchall()
         if len(客) < 3:
             continue
@@ -111,6 +114,16 @@ def run(T):
        r1.get("ok") and 卡.get("单号") == r1.get("单号") and 卡.get("我能批") is True
        and len(卡.get("客户们") or []) == 2 and 卡.get("转给工号") == 接["no"], r1)
     aid = r1.get("单号")
+    # 一个账户只归一位导购(10-26):点名转一条,同户的另一条档案也在单子上
+    双 = c.execute("""SELECT k.id, o.id AS 同户 FROM customer k JOIN customer o ON o.account_id=k.account_id AND o.id<>k.id
+                     AND o.merged_into IS NULL WHERE k.shop_code=? AND k.merged_into IS NULL AND COALESCE(k.account_id,'')<>''
+                     ORDER BY k.id LIMIT 1""", (码,)).fetchone()
+    if 双:
+        rr = 以(店长, api.apply_adjust, "客户转移", 双["id"], {"to_advisor": 接["no"]}, "同户整户转的断言")
+        ck("转一条有同户档案的客户 → 单子上连同户那条一起列出来(整户转)",
+           rr.get("ok") and {x.get("客户号") for x in (rr.get("卡片") or {}).get("客户们") or []} >= {双["id"], 双["同户"]}, rr)
+    else:
+        ck("副本这家店里有同户两条档案的客户可验(样本量不能是 0)", False)
     ck("建单不等于生效:客户归属一个都没动", all(顾问号(k) == 前[k] for k in 前))
     import json
     pl = json.loads(c.execute("SELECT payload FROM approval WHERE id=?", (aid,)).fetchone()[0])

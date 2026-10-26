@@ -13588,5 +13588,29 @@
    }
   ],
   "预期红": "运维平台服务端不绕 HTTP 取研判队列(绕了就必须给那个口留例外)"
+ },
+ {
+  "script": "backend/account_owner_check.py",
+  "改坏": "定归属不再跳过停用的导购",
+  "file": [
+   {
+    "path": "backend/account_owner.py",
+    "old": "if d.get(\"advisor_no\") and 在职.get(d[\"advisor_no\"])]",
+    "new": "if d.get(\"advisor_no\")]"
+   }
+  ],
+  "预期红": "最近那位已停用 → 顺延给下一位在职的(不归给派不了任务的人)"
+ },
+ {
+  "script": "backend/account_owner_check.py",
+  "改坏": "整户转退回成只转点名的那一条",
+  "file": [
+   {
+    "path": "backend/account_owner.py",
+    "old": "    全 = 同户档案(c, ids)\n    for i in 全:",
+    "new": "    全 = list(ids)\n    for i in 全:"
+   }
+  ],
+  "预期红": "转一位 = 整户转(c3 转给 B,同户的 c4 也跟着)"
  }
 ]

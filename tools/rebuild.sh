@@ -190,7 +190,7 @@ if [ "$FRESH_ONLY" = 1 ]; then
     echo "   真要重建,请直接敲 ./tools/rebuild.sh(它会先说清楚要删什么,并留 3 秒反悔)。"
     exit 1
   fi
-  echo "📦 首次建库:下面 45 步**全跑完**才算建好,少一步都会让某几张表空着。"
+  echo "📦 首次建库:下面 46 步**全跑完**才算建好,少一步都会让某几张表空着。"
 else
   echo "⚠️  这会删掉 backend/lanxiu.db 重新生成。Ctrl-C 可中止,3 秒后开始。"
   sleep 3
@@ -222,6 +222,7 @@ for STEP in "backend/seed.py" "tools/add_shop_code.py --建列" "tools/add_cust_
             "tools/seed_customer_tasks.py --做" "tools/seed_new_products.py --做" \
             "tools/seed_triage_samples.py --做" \
             "tools/seed_triage_tasks.py --写" \
+            "tools/unify_account_advisor.py --做" \
             "tools/add_shop_code.py --做" \
             "tools/add_cust_advisor.py --校验" \
             "tools/make_todo.py"; do
@@ -246,8 +247,8 @@ done
 # ⚠️ **加步骤要改这个数。** 2026-10-09 加了 daily_fresh / lifecycle_refresh 两步,
 # 忘了改 —— `backend/firstrun_check.py` 当场逮到「步骤表 31 步,自校验却写着 29 步」。
 # 这个数存在的理由正是「循环没跑全,而上面看起来是顺利的」,所以它自己不能过期。
-if [ "$DONE" -ne 45 ]; then
-  echo "❌ 只跑了 $DONE 步(应该 45 步)—— **循环没跑全,而上面看起来是顺利的**"
+if [ "$DONE" -ne 46 ]; then
+  echo "❌ 只跑了 $DONE 步(应该 46 步)—— **循环没跑全,而上面看起来是顺利的**"
   exit 1
 fi
 # ── 耗时账(2026-10-19 加的,和 check.sh 那本是同一件事)────────────────────

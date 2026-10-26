@@ -4125,9 +4125,9 @@ class H(BaseHTTPRequestHandler):
                     reason=f"客户转移须由店长及以上操作,当前角色:{role}"))
             with _conn() as c:
                 _adv_no = 顾问工号(adv)
-                for i in ids: c.execute("UPDATE customer SET advisor_no=? WHERE id=?",(_adv_no,i))
-                c.executemany("UPDATE appointment SET advisor_no=? WHERE customer_id=? AND status='已预约'",
-                              [(adv,i) for i in ids])
+                # 整户转(10-26):同一账户下的档案一起走。顺手修:预约原来写的是显示串 adv,不是工号
+                import account_owner as _AO
+                ids = _AO.改导购(c, ids, _adv_no)
             log_op("魏欣新","customer","|".join(ids[:5]),"—","转移",True,"TRANSFER",
                    f"{len(ids)} 人转至 {adv};同店转移已迁移未完成预约。{body.get('note','')}",{})
             return self._send(dict(ok=True,code="TRANSFER",

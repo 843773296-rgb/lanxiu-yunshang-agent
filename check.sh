@@ -202,6 +202,7 @@ run "录音接进流程 · 双声道按声道分、单声道模型分(答歪整�
 run "录音同意 · 不能撤回所以界面没有撤回入口、不进 consent 表、每通录音记着依据(业务 D9)" python3 backend/recording_terms_check.py
 run "排班 · 五种状态逐例标真值(没排班和休息长得一样)" python3 backend/roster_check.py
 run "客户归属 · 「有顾问」≠「有人管」(只查不改)" python3 backend/ownership_check.py
+run "账户归属 · 一个账户只归一位导购(用户 10-26 拍:家人、同户档案都跟着同一位;转移整户转)" python3 backend/account_owner_check.py
 run "成交归因 · 收入分成必须=100,影响力分成可以超(规则相反)" python3 backend/credit_check.py
 run "表的来路 · 每张表都要能从 rebuild.sh 建出来(本地有≠CI有)" python3 tools/table_origin_check.py
 run "订单↔预约链路 · 空值要说清是哪一种空" python3 backend/link_check.py
