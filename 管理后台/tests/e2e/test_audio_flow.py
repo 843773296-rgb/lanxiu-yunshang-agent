@@ -292,17 +292,66 @@ ck("音频整理模板登记了对应技能 call-notes,**默认不接管**(交�
 c, tk = 打("GET", P + "/chat-takeovers")
 ck("默认接管清单里没有它", not [x for x in tk["items"] if x["workflow_id"] == wid], tk)
 c, b = 打("PATCH", P + f"/workflows/{wid}", 体={"名称": d["名称"], "聊天接管": True}, 头={"If-Match": str(d["revision"])})
-ck("没有候选版本就打开 → 422 TAKEOVER_NO_VERSION(聊天里接管跑的是定稿,不跑草稿)",
+ck("没发布到生产就打开 → 422 TAKEOVER_NO_VERSION(聊天接管只跑生产那一版,不跑草稿、也不跑候选)",
    c == 422 and (b or {}).get("code") == "TAKEOVER_NO_VERSION", (c, b))
 c, v = 打("POST", P + f"/workflows/{wid}/versions", 体={"变更说明": "e2e:接管前先生成一版"})
 c, d = 打("GET", P + f"/workflows/{wid}")
 c, b = 打("PATCH", P + f"/workflows/{wid}", 体={"名称": d["名称"], "聊天接管": True}, 头={"If-Match": str(d["revision"])})
-ck("有候选版本后打开 → 200", c == 200 and b.get("聊天接管") is True, (c, b))
+ck("**只生成了候选版本、没发布到生产 → 还是 422**(10-26:生成一版不等于上线)",
+   c == 422 and (b or {}).get("code") == "TAKEOVER_NO_VERSION", (c, b))
+
+
+# ── 发布到环境(10-26,方案 §8.4):每条工作流对应一个应用,清单 / 审核 / 环境指针全用应用那套 ──
+def 发到(wid_, vid_, 环境, 谁="U001"):
+    return 打("POST", P + f"/workflows/{wid_}/releases", 谁, 体={"版本id": vid_, "环境": 环境},
+             头={"Idempotency-Key": str(uuid.uuid4())})
+
+
+def 发到生产(wid_, vid_):
+    """审核 + 发生产,一步到位(给后面要用生产版的地方)。"""
+    c, b = 发到(wid_, vid_, "production")
+    if c == 422:
+        打("POST", P + f"/releases/{(b.get('field_errors') or {}).get('清单id')}/reviews", "U001", 体={"结论": "通过"})
+        c, b = 发到(wid_, vid_, "production")
+    return c, b
+
+
+v1 = v["id"]
+c, b = 发到(wid, v1, "staging", "U002")
+ck("编辑者(U002)不能发布 → 403(发布和改草稿不是同一档权限)", c == 403, (c, b))
+c, b = 发到(wid, v1, "staging")
+ck("发到预发 → 202,不要审核(预发就是用来试的)", c == 202 and b.get("清单id"), (c, b))
+c, rs = 打("GET", P + f"/workflows/{wid}/releases")
+ck("「各环境」里预发在跑 v1、生产还没发布",
+   (rs["各环境"]["staging"] or {}).get("版本id") == v1 and not (rs["各环境"]["production"] or {}).get("版本id"), rs["各环境"])
+c, b = 发到(wid, v1, "production")
+清单1 = ((b or {}).get("field_errors") or {}).get("清单id")
+ck("**没审核就发生产 → 422 CANNOT_DEPLOY,并带回清单号去审**(生产只认审过的)",
+   c == 422 and (b or {}).get("code") == "CANNOT_DEPLOY" and 清单1, (c, b))
+c, _ = 打("POST", P + f"/releases/{清单1}/reviews", "U001", 体={"结论": "通过"})
+c, b = 发到(wid, v1, "production")
+ck("审核通过之后发生产 → 202", c == 202, (c, b))
+c, d = 打("GET", P + f"/workflows/{wid}")
+c, b = 打("PATCH", P + f"/workflows/{wid}", 体={"名称": d["名称"], "聊天接管": True}, 头={"If-Match": str(d["revision"])})
+ck("发布到生产之后打开接管 → 200", c == 200 and b.get("聊天接管") is True, (c, b))
 c, tk = 打("GET", P + "/chat-takeovers")
 项 = [x for x in tk["items"] if x["workflow_id"] == wid]
-ck("接管清单里有它:技能 call-notes、带最新候选版本", 项 and 项[0]["技能"] == "call-notes" and 项[0]["版本id"], tk)
+ck("接管清单里有它:技能 call-notes、版本是**生产那一版**", 项 and 项[0]["技能"] == "call-notes" and 项[0]["版本id"] == v1, tk)
+# 生成新一版要**逻辑上**有变化(改名字不算)—— 把人工核对的到期时间从 48 改成 72 小时
+c, d = 打("GET", P + f"/workflows/{wid}")
+定 = d["草稿"]["定义"]
+for n in 定["nodes"]:
+    if n.get("type") == "human":
+        n.setdefault("config", {})["expires_at_policy"] = {"小时": 72, "到期": "fail"}
+打("PATCH", P + f"/workflows/{wid}/draft", 体={"定义": 定}, 头={"If-Match": str(d["草稿"]["revision"])})
+c, v2 = 打("POST", P + f"/workflows/{wid}/versions", 体={"变更说明": "e2e:生成新一版但不发布"})
+c, tk = 打("GET", P + "/chat-takeovers")
+项 = [x for x in tk["items"] if x["workflow_id"] == wid]
+ck("**又生成了新一版但没发布 → 接管清单照旧是生产那一版**(生成 ≠ 上线,这正是这次要堵的)",
+   c == 200 and (v2 or {}).get("id") and 项 and 项[0]["版本id"] == v1, (项, (v2 or {}).get("id")))
 wid2, _ = 建图("e2e 抢接管")
 c, 版2 = 打("POST", P + f"/workflows/{wid2}/versions", 体={"变更说明": "e2e"})
+发到生产(wid2, 版2["id"])
 c, d2 = 打("GET", P + f"/workflows/{wid2}")
 c, b = 打("PATCH", P + f"/workflows/{wid2}", 体={"名称": d2["名称"], "聊天接管": True}, 头={"If-Match": str(d2["revision"])})
 ck("**同一个技能第二条也想接管 → 409 TAKEOVER_TAKEN**(聊天站不能不知道该发起哪条)",

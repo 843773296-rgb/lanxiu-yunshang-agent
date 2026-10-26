@@ -770,7 +770,7 @@ async function 页_工作流列表() {
               : `<span class="pill warn">${esc(r["校验状态"])}</span>`}</td>
         <td>${r["最新冻结版本"] ? `<span class="pill">${esc(r["最新冻结版本"])} · 候选</span>`
               : '<span class="k">还没生成版本</span>'}
-            <div class="k" title="${esc(去粗(r["生产引用说明"]))}">线上生效:还没接</div></td>
+            <div class="k" title="${esc(去粗(r["生产引用说明"]))}">线上(生产):${r["生产引用版本"] ? `<b>${esc(r["生产引用版本"])}</b>` : "还没发布"}</div></td>
         <td>${跑 ? `<a href="#/wfrun/${encodeURIComponent(跑.id)}">${esc(跑["状态中文"])}</a>
               <div class="k">${时间(跑["时间"])}</div>` : '<span class="k">还没跑过</span>'}</td>
         <td>${!r["对应技能"] ? '<span class="k">没登记对应技能</span>'
@@ -782,10 +782,9 @@ async function 页_工作流列表() {
         <td class="acts"><a href="${链("搭建")}">编辑</a> · <a href="${链("测试")}">运行</a>
             · <a href="${链("运行记录")}">看记录</a></td>
       </tr>`; }).join("") + `</tbody></table>
-      <div class="note">共 ${d.total} 条。「当前版本」是<b>候选</b>:冻结了不等于上线了 ——
-        发布到环境这一步还没接(规格 §15.3),所以「线上生效」写的是「还没接」,不是「没在用」。
+      <div class="note">共 ${d.total} 条。「当前版本」是<b>候选</b>:生成了不等于上线了 —— 要在「版本与发布」里发到生产(生产要审核)才算上线。
         <br>「聊天里谁来做」<b>默认交给 harness</b>(聊天站的技能自己做,不受固定步骤束缚);打开接管后,
-        聊天站碰到这件事改为发起这条工作流的最新候选版本。同一个技能同时只能被一条工作流接管。</div>`;
+        聊天站碰到这件事改为发起这条工作流<b>生产环境里的那一版</b>。同一个技能同时只能被一条工作流接管。</div>`;
     $("#list").querySelectorAll("[data-tk]").forEach((b) => {
       b.onclick = async () => { b.disabled = true; await 拨接管(b.dataset.tk, b.dataset.on === "1"); 页_工作流列表(); };
     });
@@ -879,7 +878,7 @@ function 画_编排页() {
       <span class="seg" role="group" aria-label="视图"><button id="vw-s">列表</button><button id="vw-g">流程图</button></span>
       <button id="issues" hidden></button>
       <button id="trun" title="在右侧填一条输入试跑;跑完每一步标上结果" aria-pressed="false">▶ 试运行</button>
-      <button class="pri" id="freeze">发布</button>
+      <button class="pri" id="freeze">生成版本</button>
       <details class="more"><summary aria-label="更多">⋯</summary><div class="menu">
         <button id="save">保存草稿</button>
         <button id="v">检查配置</button>
@@ -913,7 +912,7 @@ function 画_画布() {
       <div class="sub"><span id="savest" role="status" aria-live="polite"></span>
         ${g.用途 ? ` · ${esc(g.用途)}` : ""}</div></div>
       <div><a class="btn pri" id="edit" href="#/workflow/${encodeURIComponent(g.wid)}/搭建">编辑编排</a>
-        <button id="freeze">准备发布</button></div></div>
+        <button id="freeze">生成版本</button></div></div>
     <nav class="wftabs">${签}</nav>
     <div id="tabbody"></div>
     <div class="footbar"><span id="fb"></span></div>`;
@@ -1941,21 +1940,76 @@ async function 画_运行记录() {
 }
 
 /* ── 版本与发布 ───────────────────────────────────────────────── */
-function 画_版本() {
-  const g = 图态;
-  $("#tabbody").innerHTML = (g.版本们.length
-    ? `<table><thead><tr><th>版本</th><th>变更说明</th><th>生成于</th><th>谁生成的</th><th>逻辑哈希</th><th></th></tr></thead><tbody>`
-      + g.版本们.map((v) => `<tr><td><span class="pill">${esc(v["版本"])} · 候选</span></td>
-          <td>${esc(v["变更说明"] || "")}</td><td class="k">${时间(v["冻结于"])}</td>
-          <td class="k">${esc(v["冻结人"] || "")}</td><td><code>${esc(v["逻辑哈希"])}</code></td>
-          <td>${v.id ? `<button data-vview="${esc(v.id)}">只读查看</button>` : ""}</td></tr>`).join("") + `</tbody></table>`
-    : `<div class="k">还没生成过候选版本。</div>`)
+/* 版本与发布(10-26 接上发布,方案 §8.4):上面三个环境各跑哪一版,下面每一版「发到测试 / 预发 / 生产」。
+ * 生产只认审核过的清单:没审过点「发到生产」→ 服务端先出好清单再拦,这一行就出现「审核通过 / 驳回」;
+ * 有生产审核权的人点了通过,再发。回滚 = 把旧的那一版再发一次生产(记成一次新发布,历史不动)。
+ * 聊天接管和定时只跑「生产」指着的那一版。 */
+const 环境中文 = { test: "测试", staging: "预发", production: "生产" };
+async function 画_版本() {
+  const g = 图态, wid = g.wid;
+  $("#tabbody").innerHTML = `<div class="state">在取各环境的版本…</div>`;
+  let 发;
+  try { 发 = await 请求(`${P()}/workflows/${encodeURIComponent(wid)}/releases`); }
+  catch (e) { const st = 错误块(e, 画_版本); $("#tabbody").innerHTML = st.html; st.挂(); return; }
+  if (!图态 || 图态.wid !== wid || 图态.页签 !== "版本与发布") return;
+  const 各环境 = 发["各环境"] || {}, 各版本 = 发["各版本"] || {};
+  const 卡 = ["test", "staging", "production"].map((e) => { const x = 各环境[e] || {};
+    return `<div class="card envcard"><div class="k">${环境中文[e]}${e === "production" ? " · 聊天接管和定时跑这个" : ""}</div>
+      <div class="kpi">${x["版本号"] ? "v" + esc(String(x["版本号"])) : "还没发布"}</div></div>`; }).join("");
+  const 行 = g.版本们.map((v) => {
+    const 在 = ["test", "staging", "production"].filter((e) => (各环境[e] || {})["版本id"] === v.id);
+    const 审 = 各版本[v.id] || null;
+    const 生产态 = !审 ? "" : 审["生产能发吗"] ? `<span class="pill ok">生产审核通过</span>`
+      : 审["审核"] === "驳回" ? `<span class="pill warn">生产审核被驳回</span>`
+      : `<span class="pill warn">等生产审核</span>`;
+    const 要审 = 审 && !审["生产能发吗"];
+    return `<tr><td><span class="pill">${esc(v["版本"])}</span>${在.map((e) => ` <span class="pill ok">${环境中文[e]}在跑</span>`).join("")}</td>
+      <td>${esc(v["变更说明"] || "")}</td><td class="k">${时间(v["冻结于"])}<div>${esc(v["冻结人"] || "")}</div></td>
+      <td>${生产态}</td>
+      <td class="relacts">${v.id ? ["test", "staging", "production"].map((e) =>
+          `<button data-pub="${esc(v.id)}" data-env="${e}" ${在.includes(e) ? "disabled" : ""}>发到${环境中文[e]}</button>`).join(" ") : ""}
+        ${要审 ? `<div class="k">生产要先审核这一版:<button data-rv="${esc(审["清单id"])}" data-ok="1">审核通过</button>
+          <button data-rv="${esc(审["清单id"])}" data-ok="0">驳回</button></div>` : ""}
+        ${v.id ? `<button data-vview="${esc(v.id)}">只读查看</button>` : ""}</td></tr>`;
+  }).join("");
+  $("#tabbody").innerHTML = `<div class="cards">${卡}</div>`
+    + (g.版本们.length ? `<table><thead><tr><th>版本</th><th>变更说明</th><th>生成</th><th>生产审核</th><th>发布</th></tr></thead><tbody>${行}</tbody></table>`
+      : `<div class="k">还没生成过候选版本。</div>`)
     + `<div id="vview"></div>
-      <div class="note">路径:保存草稿 → 检查配置 → 测试 → <b>生成候选版本</b> → 选环境发布 → 核对生效版本。
-        <b>后两步还没接</b>(发布清单还没扩展到工作流,规格 §15.3)—— 所以这里的版本都是「候选版本已生成,尚未生效」。</div>
-      <button class="pri" id="pb">准备发布</button>`;
+      <div class="note">路径:保存草稿 → 检查配置 → 测试 → <b>生成候选版本</b> → 发到测试 / 预发试用 → <b>审核后发到生产</b>。
+        测试、预发直接切;生产只认审核过的那一版。要切回旧版,把旧的那一版再发一次生产(记成一次新的发布,历史不动)。</div>
+      <button class="pri" id="pb">生成候选版本</button>`;
   $("#pb").onclick = 弹_准备发布;
   document.querySelectorAll("[data-vview]").forEach((b) => { b.onclick = () => 看冻结版本(b.dataset.vview); });
+  document.querySelectorAll("[data-pub]").forEach((b) => { b.onclick = () => 做_发布工作流(b.dataset.pub, b.dataset.env, 各环境); });
+  document.querySelectorAll("[data-rv]").forEach((b) => { b.onclick = () => 做_审核发布(b.dataset.rv, b.dataset.ok === "1"); });
+}
+async function 做_发布工作流(vid, 环境, 各环境) {
+  const v = 图态.版本们.find((x) => x.id === vid) || {};
+  if (环境 === "production" && !(await 问一句(`把 ${v["版本"]} 发到生产?`,
+      "发出去之后,<b>聊天接管和定时从这一刻起跑这一版</b>。生产只认审核过的那一版;没审过的会先停在「等生产审核」。",
+      { 确定: "发到生产", 取消: "先不" }))) return;
+  try {
+    await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/releases`, { method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ 版本id: vid, 环境, 环境revision: (各环境[环境] || {}).revision ?? undefined }) });
+    提示("已发布", `<b>${esc(v["版本"] || "")}</b> 已发到<b>${环境中文[环境]}</b>。${环境 === "production" ? "聊天接管和定时从现在起跑这一版。" : "只影响这个环境,生产不变。"}`);
+  } catch (e) {
+    const b = e.体 || {};
+    if (b.code === "CANNOT_DEPLOY" && 环境 === "production") {
+      提示("等生产审核", `这一版还没审核过,没有发到生产。<br>审核入口已经出现在这一行:有生产审核权限的人点「审核通过」后,再点一次「发到生产」。`);
+    } else 报错(e);
+  }
+  await 画_版本();
+}
+async function 做_审核发布(清单id, 通过) {
+  const 理由 = 通过 ? "" : await 问一句("驳回这一版", "写一句为什么驳回,发起的人会看到。", { 输入: "比如 测试里写跟进的格式不对", 必填: true, 确定: "驳回" });
+  if (!通过 && 理由 === null) return;
+  try {
+    await 请求(`${P()}/releases/${encodeURIComponent(清单id)}/reviews`, { method: "POST",
+      body: JSON.stringify({ 结论: 通过 ? "通过" : "驳回", 理由: 理由 || undefined }) });
+  } catch (e) { 报错(e); }
+  await 画_版本();
 }
 
 /* 冻结版本只读(§10.4 T20):**不可原地编辑**,只给看 + 「复制为草稿」。
@@ -2003,7 +2057,7 @@ function 弹_准备发布() {
     [!!(g.报告 && g.报告["通过"]), "配置检查通过", "还没通过 —— 服务端会再查一遍,不通过就生成不了"],
     [g.最近测试状态 === "succeeded", "最近一次测试跑通了", "这次打开页面后还没跑通过一次测试(不拦,但建议先测)"],
   ];
-  弹层("准备发布", `<ul>${查.map(([ok, 好, 坏]) => `<li>${ok ? "✅ " + esc(好) : "⚠️ " + esc(坏)}</li>`).join("")}</ul>
+  弹层("生成候选版本", `<ul>${查.map(([ok, 好, 坏]) => `<li>${ok ? "✅ " + esc(好) : "⚠️ " + esc(坏)}</li>`).join("")}</ul>
     <label class="f">这一版改了什么、为什么(必填)</label><textarea id="pb-n" rows="3"></textarea>
     <div class="note">它是以后对比版本时唯一能说清意图的东西 —— 哈希只能说明「变了」。
       生成的是<b>候选版本</b>,线上不会因此改变。</div>
@@ -2040,7 +2094,7 @@ function 画_设置() {
       ? '<button class="pri" id="st-tk" data-on="0">工作流接管中 · 关掉(交给 harness)</button>'
       : '<button id="st-tk" data-on="1">现在交给 harness · 打开接管</button>'}</div>
     <div class="k"><b>默认交给 harness</b>:聊天站用技能自己判断怎么做,不受固定步骤束缚。打开接管:聊天站碰到这件事,
-      改为发起这条工作流的<b>最新候选版本</b>(要先生成过一版),回给用户运行进度和核对入口。同一个技能同时只能被一条工作流接管。</div>
+      改为发起这条工作流<b>生产环境里的那一版</b>(要先在「版本与发布」里发布到生产),回给用户运行进度和核对入口。同一个技能同时只能被一条工作流接管。</div>
     <h4>什么时候运行</h4><div>手动(在「测试」或接口里发起),或者打开聊天接管后由聊天站发起。<span class="k">定时触发还没做 —— 不摆一个选了没反应的选项。</span></div>
     <h4>运行上限</h4><div>每次最多调模型 8 次(发起时带的默认值)。<span class="k">超过就停、记「没完整完成」,不会无限调。</span></div>
     <h4>人工核对的截止</h4><div>每个核对步骤自己设(搭建 → 人工核对 → 设置)。到点没人处理,这次运行结束、记「已过期」。</div></div>`;
@@ -2202,7 +2256,7 @@ async function 做_冻结(说明) {
                     冻结于: new Date().toISOString(), 冻结人: "你" }, ...图态.版本们];
     location.hash = `#/workflow/${encodeURIComponent(图态.wid)}/版本与发布`;
     画_画布();
-    提示("候选版本已生成", `<b>${esc(d["版本"])}</b> 已生成,<b>尚未生效</b> —— 发布到环境这一步还没接。`);
+    提示("候选版本已生成", `<b>${esc(d["版本"])}</b> 已生成,<b>还没上线</b> —— 在「版本与发布」里选环境发布;生产要先审核。`);
   } catch (e) {
     报错(e);
     if ((e.体 || {}).code === "VALIDATION") return 做_校验();

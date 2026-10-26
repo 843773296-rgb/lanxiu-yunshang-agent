@@ -300,18 +300,33 @@ async def 建应用(project_id: str, request: Request,
     坏 = {}
     if not 名: 坏["名字"] = "必填"
     if 流水线 not in RL.流水线们:
-        坏["流水线"] = f"只收 {list(RL.流水线们)}(首版只有这两种)"
+        坏["流水线"] = f"只收 {list(RL.流水线们)}"
+    wid = (体.get("工作流") or 体.get("workflow_id") or "").strip() or None
+    if 流水线 == "workflow" and not wid:
+        坏["工作流"] = "流水线是「工作流」时必填 —— 这个应用发布的是哪条工作流"
+    if 流水线 != "workflow" and wid:
+        坏["工作流"] = "只有流水线是「工作流」的应用才对应一条工作流"
     if 坏:
         raise _错(422, "VALIDATION", "字段不合格", "名字和流水线都要给", field_errors=坏)
     aid = _新id("app")
     with 事务() as c:
         org = c.execute(text("select organization_id from projects where id=:p"),
                         {"p": project_id}).scalar()
+        if wid:
+            if not c.execute(text("select 1 from workflows where project_id=:p and id=:w and archived_at is null"),
+                             {"p": project_id, "w": wid}).first():
+                raise _错(404, "NOT_FOUND", "这个项目里没有这条工作流", "回工作流列表重新进入")
+            老 = c.execute(text("select id from applications where project_id=:p and workflow_id=:w"),
+                           {"p": project_id, "w": wid}).scalar()
+            if 老:
+                # 一条工作流只对应一个应用(库里还有唯一约束兜底)—— 两个的话「生产在跑哪一版」有两个答案
+                raise _错(409, "ALREADY_EXISTS", "这条工作流已经有对应的应用了", f"直接用那一个:{老}",
+                          field_errors={"已有": 老})
         c.execute(text("""insert into applications
-            (id, organization_id, project_id, name, pipeline_type,
+            (id, organization_id, project_id, name, pipeline_type, workflow_id,
              created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,:n,:t, now(), :by, now(), 1)"""),
-                  {"i": aid, "o": org, "p": project_id, "n": 名, "t": 流水线,
+            values (:i,:o,:p,:n,:t,:w, now(), :by, now(), 1)"""),
+                  {"i": aid, "o": org, "p": project_id, "n": 名, "t": 流水线, "w": wid,
                    "by": me.user_id})
         # 顺手建一份空候选 —— 没有它的话 PATCH 要先处理「草稿不存在」,
         # 而一个应用天然就该有一份候选(哪怕是空的)。
@@ -391,6 +406,17 @@ async def 改候选配置(project_id: str, aid: str, request: Request,
                 坏[k] = (f"`{值}` 在 {表} 里找不到 —— "
                         f"填的是不是**别的东西的 id**?"
                         f"(比如把 Prompt 的 id 当成 Prompt 版本的 id)")
+        wv = 改.get("workflow_version_id")
+        if wv and "workflow_version_id" not in 坏 and str(wv).strip() != "latest":
+            # 工作流应用只能钉**自己那条工作流**的版本 —— 钉了别条的,发布出去跑的是另一条流程,而清单看着正常
+            应 = c.execute(text("select pipeline_type, workflow_id from applications where project_id=:p and id=:a"),
+                           {"p": project_id, "a": aid}).mappings().first() or {}
+            属 = c.execute(text("select workflow_id from workflow_versions where project_id=:p and id=:i"),
+                           {"p": project_id, "i": str(wv).strip()}).scalar()
+            if 应.get("pipeline_type") != "workflow":
+                坏["workflow_version_id"] = "这个应用不是「工作流」流水线,不钉工作流版本"
+            elif 属 != 应.get("workflow_id"):
+                坏["workflow_version_id"] = "这一版属于别的工作流 —— 只能选这条工作流自己的版本"
         if 坏:
             raise _错(422, "DEPENDENCY_NOT_FOUND",
                       "候选里有填不存在的版本号",
@@ -418,6 +444,53 @@ async def 改候选配置(project_id: str, aid: str, request: Request,
 
 
 # ── 发布清单 ────────────────────────────────────────────────────
+def _出清单(c, project_id, aid, me):
+    """候选 → 发布清单(在调用方的事务里)。应用页的「出发布」和工作流页的「发布到某环境」共用这一份(10-26)。"""
+    app = c.execute(text("""select id, pipeline_type, organization_id
+                          from applications
+                         where project_id=:p and id=:i and archived_at is null"""),
+                    {"p": project_id, "i": aid}).mappings().first()
+    if not app:
+        raise _错(404, "NOT_FOUND", f"没有应用 {aid}", "回列表重新进入")
+    草 = _取草稿(c, project_id, aid)
+    定义 = (草 or {}).get("definition") or {}
+    问 = RL.可以出候选吗(流水线=app["pipeline_type"], 草稿=定义)
+    if 问:
+        raise _错(422, "CANNOT_RELEASE", "这份候选还不能出清单",
+                  "按下面每一条补齐再来", field_errors={"闸": 问})
+    内容 = {k: (定义.get(k) or None) for k, _ in RL.依赖项}
+    哈 = _哈希({"应用": aid, "流水线": app["pipeline_type"], **RL.内容哈希用(内容)})
+    老 = c.execute(text("""select id from release_manifests
+                         where project_id=:p and application_id=:a
+                           and content_hash=:h"""),
+                   {"p": project_id, "a": aid, "h": 哈}).scalar()
+    if 老:
+        # ⚠️ 同样的依赖组合冻两次 → **同一份清单**,不新建。
+        # 两个 id 指着同一组版本之后,「那次发布用的是哪一份」
+        # 就有了两个同样成立的答案。
+        return {"id": 老, "新建了吗": False,
+                "note": "**依赖组合和这一份完全一样,所以没有新建** —— "
+                        "同样的内容两个清单号,「发布的是哪一份」就有两个答案"}
+    rid = _新id("rel")
+    c.execute(text("""insert into release_manifests
+        (id, organization_id, project_id, application_id, prompt_version_id,
+         connection_version_id, index_build_id, retrieval_config_version_id,
+         model_artifact_id, evaluation_id, workflow_version_id, content_hash,
+         created_at, created_by, updated_at, revision)
+        values (:i,:o,:p,:a,:pv,:cv,:ib,:rc,:ma,:ev,:wv,:h, now(), :by, now(), 1)"""),
+              {"i": rid, "o": app["organization_id"], "p": project_id, "a": aid,
+               "pv": 内容["prompt_version_id"], "cv": 内容["connection_version_id"],
+               "ib": 内容["index_build_id"],
+               "rc": 内容["retrieval_config_version_id"],
+               "ma": 内容["model_artifact_id"], "ev": 内容["evaluation_id"],
+               "wv": 内容["workflow_version_id"],
+               "h": 哈, "by": me.user_id})
+    _审计(c, me, "release.create", {"release_id": rid, "application_id": aid})
+    return {"id": rid, "新建了吗": True, "内容哈希": 哈, "清单": 内容,
+        "note": ("**写下就不许改** —— 之后改候选不会动到这一份。"
+                 "要发到生产还得先审核,而审核认的是这个内容哈希")}
+
+
 @router.post(前缀 + "/applications/{aid}/releases", status_code=201)
 async def 出发布候选(project_id: str, aid: str,
               me: 身份 = Depends(要权限("改 Prompt/知识候选"))):
@@ -427,48 +500,7 @@ async def 出发布候选(project_id: str, aid: str,
     之后改候选不会动到这一份 —— 这正是「上周二在跑哪一版」答得出来的原因。
     """
     with 事务() as c:
-        app = c.execute(text("""select id, pipeline_type, organization_id
-                              from applications
-                             where project_id=:p and id=:i and archived_at is null"""),
-                        {"p": project_id, "i": aid}).mappings().first()
-        if not app:
-            raise _错(404, "NOT_FOUND", f"没有应用 {aid}", "回列表重新进入")
-        草 = _取草稿(c, project_id, aid)
-        定义 = (草 or {}).get("definition") or {}
-        问 = RL.可以出候选吗(流水线=app["pipeline_type"], 草稿=定义)
-        if 问:
-            raise _错(422, "CANNOT_RELEASE", "这份候选还不能出清单",
-                      "按下面每一条补齐再来", field_errors={"闸": 问})
-        内容 = {k: (定义.get(k) or None) for k, _ in RL.依赖项}
-        哈 = _哈希({"应用": aid, "流水线": app["pipeline_type"], **内容})
-        老 = c.execute(text("""select id from release_manifests
-                             where project_id=:p and application_id=:a
-                               and content_hash=:h"""),
-                       {"p": project_id, "a": aid, "h": 哈}).scalar()
-        if 老:
-            # ⚠️ 同样的依赖组合冻两次 → **同一份清单**,不新建。
-            # 两个 id 指着同一组版本之后,「那次发布用的是哪一份」
-            # 就有了两个同样成立的答案。
-            return {"id": 老, "新建了吗": False,
-                    "note": "**依赖组合和这一份完全一样,所以没有新建** —— "
-                            "同样的内容两个清单号,「发布的是哪一份」就有两个答案"}
-        rid = _新id("rel")
-        c.execute(text("""insert into release_manifests
-            (id, organization_id, project_id, application_id, prompt_version_id,
-             connection_version_id, index_build_id, retrieval_config_version_id,
-             model_artifact_id, evaluation_id, content_hash,
-             created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,:a,:pv,:cv,:ib,:rc,:ma,:ev,:h, now(), :by, now(), 1)"""),
-                  {"i": rid, "o": app["organization_id"], "p": project_id, "a": aid,
-                   "pv": 内容["prompt_version_id"], "cv": 内容["connection_version_id"],
-                   "ib": 内容["index_build_id"],
-                   "rc": 内容["retrieval_config_version_id"],
-                   "ma": 内容["model_artifact_id"], "ev": 内容["evaluation_id"],
-                   "h": 哈, "by": me.user_id})
-        _审计(c, me, "release.create", {"release_id": rid, "application_id": aid})
-    return {"id": rid, "新建了吗": True, "内容哈希": 哈, "清单": 内容,
-            "note": ("**写下就不许改** —— 之后改候选不会动到这一份。"
-                     "要发到生产还得先审核,而审核认的是这个内容哈希")}
+        return _出清单(c, project_id, aid, me)
 
 
 @router.post(前缀 + "/releases/{rid}/reviews", status_code=201)
@@ -507,6 +539,79 @@ async def 审核发布(project_id: str, rid: str, request: Request,
                      "那一份要重新审")}
 
 
+def _切指针(c, project_id, rid, 环境, me, if_match=None):
+    """把环境指针切到这份清单(在调用方的事务里)。→ (被拦的理由们 或 None, 从哪一份切过来)。
+    应用页的「发布」和工作流页的「发布到某环境」共用这一份(10-26)—— 闸、审计、乐观锁都只写一次。"""
+    从 = None
+    r = c.execute(text("""select * from release_manifests
+                         where project_id=:p and id=:i"""),
+                  {"p": project_id, "i": rid}).mappings().first()
+    r = dict(r) if r else None
+    审核 = _审核体((r or {}).get("approval"))
+    # 这份清单钉的那个连接配置版本,探过 capabilities 没有。
+    # ⚠️ **三值**:查不到那一行 → None(不判这一条),而不是 False ——
+    # 「没有这个版本」和「有但没探过」下一步不同。
+    探过 = None
+    if r and r.get("connection_version_id"):
+        cv = c.execute(text("""select capabilities from connection_versions
+                             where project_id=:p and id=:i"""),
+                       {"p": project_id,
+                        "i": r["connection_version_id"]}).mappings().first()
+        if cv:
+            import connections as _CN
+            探过 = _CN.探过吗(dict(cv))
+    if r and r.get("workflow_version_id"):
+        # 工作流的模型连接钉在每一个模型步骤里(10-26)—— 同一条规矩照到每一步:
+        # 有一步的连接没探过就当没探过;一步模型都没有就不判(None)
+        import connections as _CN
+        节点们 = c.execute(text("select nodes from workflow_versions where project_id=:p and id=:i"),
+                           {"p": project_id, "i": r["workflow_version_id"]}).scalar() or []
+        cvs = sorted({(n.get("config") or {}).get("connection_version_id") for n in 节点们
+                      if n.get("type") == "llm" and (n.get("config") or {}).get("connection_version_id")})
+        if cvs:
+            各 = [c.execute(text("select capabilities from connection_versions where project_id=:p and id=:i"),
+                            {"p": project_id, "i": x}).mappings().first() for x in cvs]
+            探过 = all(x is not None and _CN.探过吗(dict(x)) for x in 各)
+    问 = RL.可以发布吗(环境=环境, 清单=r, 审核=审核, 连接探过吗=探过)
+    if 问:
+        _审计(c, me, "release.deploy.blocked",
+              {"release_id": rid, "environment": 环境},
+              result="blocked", reason="; ".join(问)[:400])
+        拦了 = 问
+    else:
+        拦了 = None
+        老 = c.execute(text("""select id, release_manifest_id, revision
+                             from environment_bindings
+                            where project_id=:p and application_id=:a
+                              and environment=:e for update"""),
+                       {"p": project_id, "a": r["application_id"],
+                        "e": 环境}).mappings().first()
+        if 老:
+            if if_match and str(老["revision"]) != str(if_match):
+                raise _错(409, "REVISION_CONFLICT",
+                          f"这个环境的指针已经被切过了"
+                          f"(你拿的是 {if_match},现在是 {老['revision']})",
+                          "刷新看一眼现在指着哪一版;**不要直接覆盖**")
+            c.execute(text("""update environment_bindings
+                                 set release_manifest_id=:r, revision=revision+1,
+                                     updated_at=now()
+                               where project_id=:p and id=:i"""),
+                      {"r": rid, "p": project_id, "i": 老["id"]})
+            从 = 老["release_manifest_id"]
+        else:
+            c.execute(text("""insert into environment_bindings
+                (id, organization_id, project_id, application_id, environment,
+                 release_manifest_id, created_at, created_by, updated_at, revision)
+                values (:i,:o,:p,:a,:e,:r, now(), :by, now(), 1)"""),
+                      {"i": _新id("envb"), "o": r["organization_id"],
+                       "p": project_id, "a": r["application_id"], "e": 环境,
+                       "r": rid, "by": me.user_id})
+            从 = None
+        _审计(c, me, "release.deploy",
+              {"release_id": rid, "environment": 环境, "从": 从})
+    return 拦了, 从
+
+
 @router.post(前缀 + "/releases/{rid}/deploy", status_code=202)
 async def 发布(project_id: str, rid: str, request: Request,
            idempotency_key: str = Header(default=None, alias="Idempotency-Key"),
@@ -524,60 +629,7 @@ async def 发布(project_id: str, rid: str, request: Request,
     体 = await request.json()
     环境 = (体.get("环境") or 体.get("environment") or "").strip()
     with 事务() as c:
-        r = c.execute(text("""select * from release_manifests
-                             where project_id=:p and id=:i"""),
-                      {"p": project_id, "i": rid}).mappings().first()
-        r = dict(r) if r else None
-        审核 = _审核体((r or {}).get("approval"))
-        # 这份清单钉的那个连接配置版本,探过 capabilities 没有。
-        # ⚠️ **三值**:查不到那一行 → None(不判这一条),而不是 False ——
-        # 「没有这个版本」和「有但没探过」下一步不同。
-        探过 = None
-        if r and r.get("connection_version_id"):
-            cv = c.execute(text("""select capabilities from connection_versions
-                                 where project_id=:p and id=:i"""),
-                           {"p": project_id,
-                            "i": r["connection_version_id"]}).mappings().first()
-            if cv:
-                import connections as _CN
-                探过 = _CN.探过吗(dict(cv))
-        问 = RL.可以发布吗(环境=环境, 清单=r, 审核=审核, 连接探过吗=探过)
-        if 问:
-            _审计(c, me, "release.deploy.blocked",
-                  {"release_id": rid, "environment": 环境},
-                  result="blocked", reason="; ".join(问)[:400])
-            拦了 = 问
-        else:
-            拦了 = None
-            老 = c.execute(text("""select id, release_manifest_id, revision
-                                 from environment_bindings
-                                where project_id=:p and application_id=:a
-                                  and environment=:e for update"""),
-                           {"p": project_id, "a": r["application_id"],
-                            "e": 环境}).mappings().first()
-            if 老:
-                if if_match and str(老["revision"]) != str(if_match):
-                    raise _错(409, "REVISION_CONFLICT",
-                              f"这个环境的指针已经被切过了"
-                              f"(你拿的是 {if_match},现在是 {老['revision']})",
-                              "刷新看一眼现在指着哪一版;**不要直接覆盖**")
-                c.execute(text("""update environment_bindings
-                                     set release_manifest_id=:r, revision=revision+1,
-                                         updated_at=now()
-                                   where project_id=:p and id=:i"""),
-                          {"r": rid, "p": project_id, "i": 老["id"]})
-                从 = 老["release_manifest_id"]
-            else:
-                c.execute(text("""insert into environment_bindings
-                    (id, organization_id, project_id, application_id, environment,
-                     release_manifest_id, created_at, created_by, updated_at, revision)
-                    values (:i,:o,:p,:a,:e,:r, now(), :by, now(), 1)"""),
-                          {"i": _新id("envb"), "o": r["organization_id"],
-                           "p": project_id, "a": r["application_id"], "e": 环境,
-                           "r": rid, "by": me.user_id})
-                从 = None
-            _审计(c, me, "release.deploy",
-                  {"release_id": rid, "environment": 环境, "从": 从})
+        拦了, 从 = _切指针(c, project_id, rid, 环境, me, if_match)
     if 拦了:
         raise _错(422, "CANNOT_DEPLOY", "这份清单不能发到这个环境",
                   "按下面每一条处理。**被拦这件事已经记进审计**",

@@ -225,6 +225,8 @@ _额外唯一 = {
     "document_versions": [("project_id", "document_id", "content_hash")],
     "dataset_versions": [("project_id", "dataset_id", "content_hash")],
     "release_manifests": [("project_id", "application_id", "content_hash")],
+    # 一条工作流只对应一个应用(10-26)—— 两个的话「生产在跑哪一版」有两个答案。workflow_id 为空的(Prompt / RAG 应用)不受影响
+    "applications": [("project_id", "workflow_id")],
     # 任务事件按 job 内 seq 单调:SSE 续传靠它,重号会让客户端丢事件或重放
     "job_events": [("project_id", "job_id", "seq")],
 

@@ -422,3 +422,6 @@ details.stepio pre.io{max-height:240px;overflow:auto;white-space:pre-wrap;word-b
 .bizres[data-res="warn"]{border-left-color:#ff7d00}
 .bizres[data-res="err"]{border-left-color:#f53f3f}
 .bizres>div{margin-top:4px}
+/* 版本与发布(10-26) */
+.envcard{min-width:140px}
+.relacts button{margin:2px 0}

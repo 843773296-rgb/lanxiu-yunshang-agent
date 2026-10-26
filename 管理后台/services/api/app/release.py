@@ -43,6 +43,8 @@
     ("retrieval_config_version_id", "检索配置版本"),
     ("model_artifact_id", "模型产物"),
     ("evaluation_id", "评测实验"),
+    # 2026-10-26:流水线为「工作流」的应用钉的是工作流版本(方案 §8.4)
+    ("workflow_version_id", "工作流版本"),
 )
 
 # 每个依赖项指向哪张表。**填的时候就能拦住「这个版本号不存在」。**
@@ -66,6 +68,7 @@
     "retrieval_config_version_id": "retrieval_config_versions",
     "model_artifact_id": "model_artifacts",
     "evaluation_id": "evaluations",
+    "workflow_version_id": "workflow_versions",
 }
 
 # 哪些依赖对哪种流水线是必须的。
@@ -76,6 +79,8 @@
     "prompt": ("prompt_version_id", "connection_version_id"),
     "rag": ("prompt_version_id", "connection_version_id",
             "index_build_id", "retrieval_config_version_id"),
+    # 工作流的模型 / 处理要求 / 业务动作都钉在工作流版本的每一步里,清单这一层只钉那一版
+    "workflow": ("workflow_version_id",),
 }
 流水线们 = tuple(流水线必填)
 
@@ -163,3 +168,12 @@ def 可以回滚吗(*, 目标清单, 当前指针):
         问.append("**这个环境现在就指着它** —— 回滚到自己不是一个动作,"
                   "而返回「成功」会让人以为回滚发生过")
     return 问
+
+
+def 内容哈希用(内容):
+    """算清单内容哈希时用的那一份(2026-10-26)。
+
+    ⚠️ 加「工作流版本」这一项时,**Prompt / RAG 应用的哈希不许跟着变**:同样的依赖组合冻两次要认成同一份清单
+    (见出清单那段),而原来的哈希里没有这个键 —— 直接加进去,老应用再冻一次就会因为多了个 `null` 而另出一份,
+    「发布的是哪一份」就有了两个答案。所以这一项**只在有值时**进哈希。"""
+    return {k: v for k, v in (内容 or {}).items() if not (k == "workflow_version_id" and v is None)}

@@ -692,6 +692,7 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
         总 = c.execute(text("""select count(*) from workflows
                              where project_id=:p and archived_at is null"""),
                        {"p": project_id}).scalar()
+        生产们 = {r["id"]: _生产版本(c, project_id, r["id"]) for r in rs}
     出 = []
     for r in rs:
         出.append({
@@ -700,12 +701,10 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
             "草稿 revision": r["draft_revision"],
             "最新冻结版本": (f"v{r['最新冻结']}" if r["最新冻结"] else None),
             "版本数": r["版本数"],
-            # ⚠️ **发布链还没接**(landing.py 里 Evaluation Adapter / 发布扩展未落地),
-            # 所以这里是**「还没接」而不是「没有引用」**。
-            # 给 null + 一句说明,不给「—」:一个「—」会被读成「线上没在用」。
-            "生产引用版本": None,
-            "生产引用说明": "发布清单还没扩展到 Workflow(规格 §15.3)—— "
-                            "**这是「还没接」,不是「线上没在用」**",
+            # 10-26 发布接上了:生产环境现在指着哪一版(聊天接管 / 定时跑的就是它);None = 还没发布到生产
+            "生产引用版本": (f"v{生产们[r['id']]['版本号']}" if 生产们.get(r["id"]) else None),
+            "生产引用说明": ("聊天接管和定时跑的是这一版" if 生产们.get(r["id"])
+                            else "还没发布到生产 —— 聊天接管不会跑它,只在测试里能跑"),
             "校验状态": r["validation_status"] or "没校验过",
             "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None,
             "对应技能": r["takeover_skill_name"],
@@ -881,15 +880,14 @@ async def 改工作流信息(project_id: str, wid: str, request: Request,
         新技能 = 老["takeover_skill_name"] if 技能 is ... else (技能 or None)
         新接管 = 老["on_"] if 接管 is ... else 接管
         if 新接管:
-            # 打开接管的前提:**登记了对应技能 + 有候选版本**。聊天里接管时跑的是最新候选版本,
-            # 不跑还在改的草稿 —— 草稿每改一下,聊天站的行为就跟着变,而那一刻没人点过「生成版本」
+            # 打开接管的前提:**登记了对应技能 + 已经发布到生产**(10-26 改:原来是「有候选版本」,
+            # 而聊天里跑最新候选版 = 生成一版就上线、没人审)。草稿、候选都不跑,只跑生产指着的那一版
             if not 新技能:
                 raise _错(422, "TAKEOVER_NO_SKILL", "还没登记这条工作流对应哪个技能",
                           "先在「对应技能」里选一个,再打开聊天接管")
-            if not c.execute(text("select 1 from workflow_versions where project_id=:p and workflow_id=:i limit 1"),
-                             {"p": project_id, "i": wid}).first():
-                raise _错(422, "TAKEOVER_NO_VERSION", "这条工作流还没有候选版本",
-                          "聊天接管跑的是最新候选版本 —— 先在「版本与发布」里生成一版")
+            if not _生产版本(c, project_id, wid):
+                raise _错(422, "TAKEOVER_NO_VERSION", "这条工作流还没有发布到生产",
+                          "聊天接管只跑生产环境里的那一版 —— 先在「版本与发布」里生成一版、审核后发布到生产")
             占 = c.execute(text("""select id, name from workflows where project_id=:p and id<>:i
                                     and takeover_skill_name=:s and coalesce(chat_takeover_enabled, false)"""),
                            {"p": project_id, "i": wid, "s": 新技能}).mappings().first()
@@ -911,24 +909,124 @@ async def 改工作流信息(project_id: str, wid: str, request: Request,
             "对应技能": r["takeover_skill_name"], "聊天接管": bool(r["chat_takeover_enabled"])}
 
 
+# ── 工作流接进发布(10-26,方案 §8.4,用户拍「照你的建议走」)──────────────────────────
+# 每条工作流对应一个流水线为「工作流」的应用(applications.workflow_id),清单钉确切的工作流版本;
+# 清单 / 审核 / 环境指针 / 回滚全用应用那一套(apps_api._出清单 / _切指针),**不另写一份**。
+# **聊天接管和定时只认生产环境指着的那一版** —— 原来跑「最新生成的候选版」,生成一版就等于上线、没人审。
+def _生产版本(c, project_id, wid, 环境="production"):
+    """这条工作流在某个环境现在跑的是哪一版 → {版本id, 版本号, 清单id, 应用id} 或 None(还没发布到这个环境)。"""
+    r = c.execute(text("""select a.id 应用id, m.id 清单id, v.id 版本id, v.version_no 版本号
+                            from applications a
+                            join environment_bindings b on b.project_id=a.project_id and b.application_id=a.id
+                                                       and b.environment=:e
+                            join release_manifests m on m.project_id=b.project_id and m.id=b.release_manifest_id
+                            join workflow_versions v on v.project_id=m.project_id and v.id=m.workflow_version_id
+                           where a.project_id=:p and a.workflow_id=:w and a.archived_at is null"""),
+                  {"p": project_id, "w": wid, "e": 环境}).mappings().first()
+    return dict(r) if r else None
+
+
+def _工作流应用(c, project_id, wid, me=None, 名=None):
+    """这条工作流对应的应用 id;没有且给了 me 就建一个(连同空候选)。"""
+    aid = c.execute(text("select id from applications where project_id=:p and workflow_id=:w and archived_at is null"),
+                    {"p": project_id, "w": wid}).scalar()
+    if aid or me is None:
+        return aid
+    aid, org = _新id("app"), me.org_id
+    c.execute(text("""insert into applications (id, organization_id, project_id, name, pipeline_type, workflow_id,
+                          created_at, created_by, updated_at, revision)
+                      values (:i,:o,:p,:n,'workflow',:w, now(), :by, now(), 1)"""),
+              {"i": aid, "o": org, "p": project_id, "n": 名 or wid, "w": wid, "by": me.user_id})
+    c.execute(text("""insert into application_drafts (id, organization_id, project_id, application_id, definition,
+                          created_at, created_by, updated_at, revision)
+                      values (:i,:o,:p,:a, cast('{}' as jsonb), now(), :by, now(), 1)"""),
+              {"i": _新id("appd"), "o": org, "p": project_id, "a": aid, "by": me.user_id})
+    _审计(c, me, "application.create", {"application_id": aid, "工作流": wid, "来源": "工作流发布"})
+    return aid
+
+
+@router.get(前缀 + "/workflows/{wid}/releases")
+def 工作流发布状态(project_id: str, wid: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """每个环境现在跑的是哪一版 + 每一版出过的清单和审核情况(给「版本与发布」页)。"""
+    import release as RL
+    with 连接() as c:
+        aid = _工作流应用(c, project_id, wid)
+        环境们 = {}
+        for e in RL.环境们:
+            x = _生产版本(c, project_id, wid, e)
+            rev = c.execute(text("""select revision from environment_bindings where project_id=:p
+                                    and application_id=:a and environment=:e"""),
+                            {"p": project_id, "a": aid, "e": e}).scalar() if aid else None
+            环境们[e] = {**(x or {}), "revision": rev}
+        清单们 = [dict(r) for r in c.execute(text("""select m.id, m.workflow_version_id, m.approval, m.content_hash, m.created_at
+                                                  from release_manifests m where m.project_id=:p and m.application_id=:a
+                                                 order by m.created_at desc"""), {"p": project_id, "a": aid}).mappings()] if aid else []
+    各版 = {}
+    for m in 清单们:
+        审 = m["approval"] or {}
+        if isinstance(审, str):
+            审 = json.loads(审)
+        行, 为什么 = RL.审核还算数吗(审核=审, 清单内容哈希=m["content_hash"] or "")
+        各版.setdefault(m["workflow_version_id"], {"清单id": m["id"], "审核": 审.get("结论"), "审核人": 审.get("审核人"),
+                                                 "生产能发吗": 行, "为什么不能": 为什么})
+    return {"应用id": aid, "各环境": 环境们, "各版本": 各版,
+            "环境中文": {"test": "测试", "staging": "预发", "production": "生产"},
+            "note": "聊天接管和定时只跑「生产」指着的那一版;测试 / 预发直接切,生产要审核过才能切"}
+
+
+@router.post(前缀 + "/workflows/{wid}/releases", status_code=202)
+async def 发布工作流(project_id: str, wid: str, request: Request,
+                idempotency_key: str = Header(default=None, alias="Idempotency-Key"),
+                me: 身份 = Depends(要权限("生产审核/发布/回滚"))):
+    """把第几版发到某个环境:`{版本id, 环境, 环境revision?}`。一步办完:建应用(第一次)→ 候选钉这一版 → 出清单 → 切指针。
+    **生产要先审核过这份清单**(POST /releases/{清单id}/reviews,审核人是有生产审核权的人);没审过 → 422,带上清单id 去审。"""
+    import apps_api as AP
+    import release as RL
+    if not idempotency_key:
+        raise _错(409, "IDEMPOTENCY_KEY_REQUIRED", "要带 Idempotency-Key", "发布是对外的动作,超时重发是常态")
+    体 = await request.json()
+    vid, 环境 = (体.get("版本id") or "").strip(), (体.get("环境") or "").strip()
+    if 环境 not in RL.环境们:
+        raise _错(422, "VALIDATION", "环境只收 测试 / 预发 / 生产", "选一个环境", field_errors={"环境": "test / staging / production"})
+    with 事务() as c:
+        w = c.execute(text("select id, name from workflows where project_id=:p and id=:w and archived_at is null"),
+                      {"p": project_id, "w": wid}).mappings().first()
+        if not w:
+            raise _错(404, "NOT_FOUND", "没有这条工作流", "回列表重新进入")
+        if not c.execute(text("select 1 from workflow_versions where project_id=:p and id=:v and workflow_id=:w"),
+                         {"p": project_id, "v": vid, "w": wid}).first():
+            raise _错(422, "VALIDATION", "这一版不是这条工作流的,或者不存在", "在「版本与发布」里选这条工作流自己的版本",
+                      field_errors={"版本id": "不属于这条工作流"})
+        aid = _工作流应用(c, project_id, wid, me, w["name"])
+        c.execute(text("""update application_drafts set definition=cast(:d as jsonb), revision=revision+1, updated_at=now()
+                          where project_id=:p and application_id=:a"""),
+                  {"d": json.dumps({"workflow_version_id": vid}), "p": project_id, "a": aid})
+        单 = AP._出清单(c, project_id, aid, me)
+        拦了, 从 = AP._切指针(c, project_id, 单["id"], 环境, me, 体.get("环境revision"))
+    if 拦了:
+        raise _错(422, "CANNOT_DEPLOY", "这一版还不能发到" + {"test": "测试", "staging": "预发", "production": "生产"}[环境],
+                  "生产要先有人审核这份清单;按下面每一条处理", field_errors={"闸": 拦了, "清单id": 单["id"]})
+    return {"环境": 环境, "清单id": 单["id"], "版本id": vid, "从": 从,
+            "note": "已切换。" + ("聊天接管和定时从现在起跑这一版" if 环境 == "production" else "只影响这个环境,生产不变")}
+
+
 @router.get(前缀 + "/chat-takeovers")
 def 聊天接管清单(project_id: str, me: 身份 = Depends(要权限("查看有权配置"))):
     """给澜绣聊天站问的:**现在哪些技能被工作流接管了**,各发起哪条工作流的哪一版。
 
-    没在清单里的技能 = 交给 harness(聊天站照常用技能做)。版本取最新候选 —— 接管打开时要求过至少有一版。"""
+    没在清单里的技能 = 交给 harness(聊天站照常用技能做)。版本取**生产环境指着的那一版**(10-26);
+    开着接管但生产还没发布过的,不列 —— 聊天站照常用技能做,不跑没审过的版本。"""
     with 连接() as c:
         rs = c.execute(text("""
-            select w.id, w.name, w.takeover_skill_name,
-                   (select v.id from workflow_versions v where v.project_id=w.project_id and v.workflow_id=w.id
-                     order by v.version_no desc limit 1) vid,
-                   (select max(v.version_no) from workflow_versions v
-                     where v.project_id=w.project_id and v.workflow_id=w.id) vno
+            select w.id, w.name, w.takeover_skill_name
               from workflows w
              where w.project_id=:p and coalesce(w.chat_takeover_enabled, false) and w.archived_at is null"""),
                        {"p": project_id}).mappings().all()
+        生产 = {r["id"]: _生产版本(c, project_id, r["id"]) for r in rs}
     return {"items": [{"技能": r["takeover_skill_name"], "技能中文": 可接管技能.get(r["takeover_skill_name"]),
-                       "workflow_id": r["id"], "名称": r["name"], "版本id": r["vid"], "版本": f"v{r['vno']}"}
-                      for r in rs],
+                       "workflow_id": r["id"], "名称": r["name"], "版本id": 生产[r["id"]]["版本id"],
+                       "版本": f"v{生产[r['id']]['版本号']}"}
+                      for r in rs if 生产[r["id"]]],
             "note": "不在清单里的技能 = 交给 harness(聊天站照常用技能做)。默认一条都没有"}
 
 
@@ -1014,16 +1112,18 @@ async def 聊天发起接管(project_id: str, skill: str, request: Request,
     工号 = str(体.get("澜绣工号") or "").strip()
     输入 = 体.get("输入") or {}
     with 事务() as c:
-        w = c.execute(text("""select w.id, w.name,
-                                  (select v.id from workflow_versions v where v.project_id=w.project_id
-                                    and v.workflow_id=w.id order by v.version_no desc limit 1) vid
-                                from workflows w
+        w = c.execute(text("""select w.id, w.name from workflows w
                                where w.project_id=:p and w.takeover_skill_name=:s
                                  and coalesce(w.chat_takeover_enabled, false) and w.archived_at is null"""),
                       {"p": project_id, "s": skill}).mappings().first()
-        if not w or not w["vid"]:
-            raise _错(409, "TAKEOVER_OFF", f"技能「{skill}」现在没有被工作流接管",
+        生产 = _生产版本(c, project_id, w["id"]) if w else None
+        if not w or not 生产:
+            # 没开接管,或开着但**生产还没发布过** —— 都交还给技能(聊天站认这个码:交还 + 重拉清单)。
+            # 不跑最新候选版:那等于生成一版就上线、没人审(10-26)
+            raise _错(409, "TAKEOVER_OFF", f"技能「{skill}」现在没有被工作流接管"
+                      + ("(那条工作流还没发布到生产)" if w else ""),
                       "交给 harness:聊天站照常用技能做")
+        w = dict(w, vid=生产["版本id"], 清单id=生产["清单id"])
         绑 = c.execute(text("""select user_id from staff_bindings where project_id=:p
                                 and lanxiu_staff_code=:g and archived_at is null"""),
                        {"p": project_id, "g": 工号}).first()
@@ -1046,7 +1146,7 @@ async def 聊天发起接管(project_id: str, skill: str, request: Request,
                 "nodes": v["nodes"], "edges": v["edges"], "input_schema": v["input_schema"],
                 "output_schema": v["output_schema"]}
         来源 = {"kind": "workflow_version", "id": w["id"], "version_id": w["vid"],
-                "version_no": v["version_no"], "发起": "聊天接管", "技能": skill,
+                "version_no": v["version_no"], "环境": "production", "清单id": w["清单id"], "发起": "聊天接管", "技能": skill,
                 "澜绣工号": 工号, "代发": me.user_id}
         回 = _受理运行(c, 本人, project_id, 定义, 来源, 输入, idempotency_key)
         if not 回.get("note", "").startswith("同一个幂等键"):
