@@ -312,7 +312,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	@echo ""
 	@echo "▸ 页面冒烟(一级页 + 详情页)"
 	@rc=0; \
-	for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/uploads' \
+	for h in '#/workbench' '#/prompts' '#/runs' '#/workflows' '#/schedules' '#/uploads' \
 	         '#/kb' '#/retrieval' '#/rruns' '#/usage' '#/traces' '#/health' '#/tryout' \
 	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' \
 	         '#/datasets' '#/training' '#/artifacts' '#/audit' '#/outputs' \
