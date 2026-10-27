@@ -667,7 +667,7 @@ async function 页_运行记录() {
 const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本与发布", "设置"];
 // 10-27 照 Dify 改了两个名字(适配分析 5.1 定的):结束 →「输出」、分支汇合 →「变量聚合器」;其余保留业务叫法
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
-  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器" };
+  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -1209,7 +1209,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier"]
+  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "template"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -1239,6 +1239,7 @@ function 默认配置(类型) {
                   required: ["text"], additionalProperties: false } },
            tool: { bindings: {} },
            answer: { template: "", bindings: {} },
+           template: { template: "", bindings: {} },
            classifier: { classes: [{ key: "类别一", 说明: "" }, { key: "类别二", 说明: "" }], bindings: {}, instruction: "" },
            transform: { operations: [], output_schema: { type: "object" } },
            loop: { max_iterations: 3, condition: { op: "equals", left: null, right: { source: "constant", value: true } },
@@ -1612,8 +1613,8 @@ function 表_设置(n) {
       + `<div class="k">循环里的步骤在「用到的数据」里能选「循环状态 · 名字」。这一轮没走到「取自」的那一步 → 那一项保持不变。</div>`;
   } else if (n.type === "start") {
     体 += `<label class="f">使用者要提供什么</label>` + 字段表编辑(c.input_schema = c.input_schema || { type: "object", properties: {}, required: [] }, true);
-  } else if (n.type === "answer") {
-    // 直接回复(10-27):模板里写 {{名字}},名字在下面「用到的数据」里选来源。写了新名字就**自动加一行待选来源** ——
+  } else if (n.type === "answer" || n.type === "template") {
+    // 直接回复 / 模板转换(10-27):模板里写 {{名字}},名字在下面「用到的数据」里选来源。写了新名字就**自动加一行待选来源** ——
     // 不加的话,人写完模板以为好了,检查配置才说「单号没有来源」
     const 名们 = 回复占位名(c.template), 缺 = 名们.filter((k) => !(k in (c.bindings || {})));
     const k = 挂控件((el) => {
@@ -1622,9 +1623,14 @@ function 表_设置(n) {
       回复占位名(el.value).forEach((x) => { if (!(x in c.bindings)) c.bindings[x] = null; });
       重画();
     });
-    体 += `<label class="f">回复什么</label>
+    体 += n.type === "answer" ? `<label class="f">回复什么</label>
       <textarea data-k="${k}" data-lb="回复内容" rows="4" placeholder="例如:{{客户}}您好,您的需求已记下,店长核对后会联系您">${esc(c.template || "")}</textarea>
-      <div class="k">这句话会发回聊天里;管理后台试运行时用对话气泡显示。要带上前面的结果就写 <code>{{名字}}</code>,名字在下面「用到的数据」里选来源。</div>
+      <div class="k">这句话会发回聊天里;管理后台试运行时用对话气泡显示。要带上前面的结果就写 <code>{{名字}}</code>,名字在下面「用到的数据」里选来源。</div>`
+      : `<label class="f">模板</label>
+      <textarea data-k="${k}" data-lb="模板" rows="5" placeholder="例如:{{客户}} 想要 {{款式}},预算 {{预算}},下次跟进 {{日期}}">${esc(c.template || "")}</textarea>
+      <div class="k">把前面的结果拼成一段文字,交给后面的步骤用(不发给聊天里的人)。写 <code>{{名字}}</code>,名字在下面「用到的数据」里选来源。
+        只做替换 —— 要按条件写不同的话,用「条件分支」分开写。</div>`;
+    体 += `
       ${缺.length ? `<div class="ferr">模板里的 ${缺.map((x) => `「${esc(x)}」`).join("、")} 还没在「用到的数据」里 —— 运行前要选来源</div>` : ""}`;
   } else if (n.type === "end") {
     体 += `<div class="k">返回哪些内容、各从哪来 —— 在下面「结果」和「用到的数据」里配。</div>`;
@@ -1676,6 +1682,7 @@ function 结果字段名(n) {
   const c = n.config || {};
   if (n.type === "human") return ["决定", "定稿", "理由", "处理人"];
   if (n.type === "answer") return ["回复"];
+  if (n.type === "template") return ["文本"];
   if (n.type === "classifier") return ["类别", "理由"];
   if (n.type === "condition") return ["branch"];
   if (n.type === "merge") return [c.output_field || "out"];
@@ -1815,6 +1822,7 @@ function 表_结果(n) {
   }
   if (n.type === "human") return `<div class="k">人工核对固定返回:<b>决定</b>(approve / reject)、<b>定稿</b>、<b>理由</b>、<b>处理人</b>。</div>`;
   if (n.type === "classifier") return `<div class="k">固定返回:<b>类别</b>(模型挑的那一个名字)、<b>理由</b>(它为什么这么分)。走哪条线由类别定。</div>`;
+  if (n.type === "template") return `<div class="k">固定返回:<b>文本</b>(填好名字之后的那一段)。后面的步骤在「用到的数据」里选它。</div>`;
   if (n.type === "answer") return `<div class="k">固定返回:<b>回复</b>(填好名字之后的那一句)。后面的步骤也能取它。</div>`;
   if (n.type === "end") {
     c.output_schema = c.output_schema || { type: "object", properties: {}, required: [] };

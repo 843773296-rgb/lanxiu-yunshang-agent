@@ -639,15 +639,17 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
 
     # ⑨ 直接回复:模板里每个名字都要在「用到的数据」里有一项(10-27)───────────
     # 不查的话,手写的 {{单号}} 运行到这一步才失败 —— 而那时前面的模型钱已经花了
+    # 模板转换(10-27)同一条:它的模板没人看着发出去,但下游拿到带花括号的一段字,照样当成真内容往下用
     for n in 节点们:
-        if n.get("type") != "answer":
+        if n.get("type") not in ("answer", "template"):
             continue
         cfg = n.get("config") or {}
         绑 = cfg.get("bindings") or {}
+        回 = n.get("type") == "answer"
         for k in DS.回复占位名(cfg.get("template")):
             if k not in 绑:
-                出.append(问(阻断, "ANSWER_PLACEHOLDER_UNBOUND",
-                           f"回复里写了「{{{{{k}}}}}」,但「用到的数据」里没有叫「{k}」的一项 —— 运行时会原样发出花括号",
+                出.append(问(阻断, "ANSWER_PLACEHOLDER_UNBOUND" if 回 else "TEMPLATE_PLACEHOLDER_UNBOUND",
+                           f"{'回复' if 回 else '模板'}里写了「{{{{{k}}}}}」,但「用到的数据」里没有叫「{k}」的一项 —— 运行时会原样发出花括号",
                            f"在右侧「用到的数据」里加一项叫「{k}」并选来源,或者把模板里的这个名字删掉",
                            node_id=n.get("id"), field_path="config.template"))
 

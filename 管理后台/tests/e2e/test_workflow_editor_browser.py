@@ -312,6 +312,23 @@ def main():
             js(f"画布动作.选节点(['{分}'])"); d.find_element(By.ID, "cv").send_keys(Keys.DELETE)
             ck("删掉分类器那一步(不留到后面的保存里)", not any(n.startswith("classifier_") for n in 态()["节点"]), 态()["节点"])
 
+        print("\n▸ 模板转换:写了 {{名字}} 自动加一行待选来源;下游能选它的「文本」")
+        js("加到视口中间('template')")
+        模 = [n for n in 态()["节点"] if n.startswith("template_")]
+        ck("步骤库能加「模板转换」并选中", len(模) == 1 and 态()["选"] == 模, 态()["节点"])
+        if 模:
+            模 = 模[0]
+            ta = d.find_element(By.CSS_SELECTOR, '#pn textarea[data-lb="模板"]')
+            ta.send_keys("{{客户}} 想要 {{款式}}"); ta.send_keys(Keys.TAB)
+            绑 = js(f"return 图态.定义.nodes.find(n => n.id === '{模}').config.bindings")
+            ck("写完模板,「客户」「款式」两行待选来源自动加上", sorted(绑 or {}) == ["客户", "款式"], 绑)
+            js(f"画布动作.连上('{模}', {{port:'success', branch_key:null}}, 'end')")
+            能选 = js("return 上游字段('end').map(x => x[1])")
+            ck("下一步「用到的数据」里能选「模板转换 → 文本」", any("文本" in x and "模板转换" in x for x in 能选), 能选)
+            js(f"画布动作.删线('{模}|success||end')")   # 连着线删步骤会弹「删除影响」确认,先删线
+            js(f"画布动作.选节点(['{模}'])"); d.find_element(By.ID, "cv").send_keys(Keys.DELETE)
+            ck("删掉模板转换那一步(不留到后面的保存里)", not any(n.startswith("template_") for n in 态()["节点"]), 态()["节点"])
+
         print("\n▸ T21 完整链路:加步骤 → 连线 → 配置 → 删线 → 撤销 → 保存 → 重开")
         js("加到视口中间('transform')")
         新 = [n for n in 态()["节点"] if n.startswith("transform_")]
@@ -361,7 +378,9 @@ def main():
             def 审计数():
                 r = urllib.request.Request(基址 + f"/api/v1/projects/{项目}/audit-events?limit=200", headers={"X-Dev-User": "U001"})
                 with urllib.request.urlopen(r) as x:
-                    return sum(1 for e in json.loads(x.read()).get("记录", []) if e.get("做了什么") == "导出原始日志")
+                    # 数「动作分布」里的总次数,不数「记录」:记录只给最近 200 条,新的一条进来、最老的一条导出被挤出去,
+                    # 数出来前后一样 —— 10-27 撞到过 [11, 11]。分布是整段时间范围里的计数,只增不减
+                    return next((a["次数"] for a in json.loads(x.read()).get("这个范围里的动作分布", []) if a.get("动作") == "导出原始日志"), 0)
             前审 = 审计数()
             js("document.querySelector('#rl-dl').scrollIntoView({block:'center'})")
             d.find_element(By.ID, "rl-dl").click()
