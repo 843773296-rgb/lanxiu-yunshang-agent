@@ -667,7 +667,7 @@ async function 页_运行记录() {
 const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本与发布", "设置"];
 // 10-27 照 Dify 改了两个名字(适配分析 5.1 定的):结束 →「输出」、分支汇合 →「变量聚合器」;其余保留业务叫法
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
-  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", human: "人工核对", agent: "Agent", answer: "直接回复" };
+  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -1023,11 +1023,12 @@ const 元 = (t) => 图态.节点库.find((x) => x["名"] === t) || {};
 function 业务名(n) { return n.name || 步类型名[n.type] || n.type; }
 function 工具资源(tv) { return (图态.资源.工具 || []).find((x) => x["版本id"] === tv); }
 function 次级标签(n) {
+  const 在 = n.container && 图态 && 图态.定义 && 节点(n.container) ? ` · 在「${业务名(节点(n.container))}」里` : "";
   if (n.type === "tool") {
     const t = 工具资源((n.config || {}).tool_version_id);
-    return t ? `业务动作 · ${t["读写"]}` : "业务动作";
+    return (t ? `业务动作 · ${t["读写"]}` : "业务动作") + 在;
   }
-  return 步类型名[n.type] || n.type;
+  return (步类型名[n.type] || n.type) + 在;
 }
 function 缺项(n) {
   return (元(n.type)["必填"] || []).filter((f) => {
@@ -1199,6 +1200,7 @@ function 出口们(n) {
     return [...(n.config.branches || []).map((b) => ({ port: "branch", branch_key: b.key, 名: 图逻辑.分支名(b.key) })),
             { port: "branch", branch_key: "else", 名: "都不满足" }];
   }
+  if (n.type === "loop") return 图逻辑.出口们(n, 元);   // 进循环体 / 循环结束后 / 失败时 —— 和画布同一份
   const 口 = [{ port: "success", branch_key: null, 名: "完成后" }];
   if ((元(n.type)["端口"] || []).includes("error")) 口.push({ port: "error", branch_key: null, 名: "失败时" });
   return 口;
@@ -1207,7 +1209,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer"]
+  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -1237,7 +1239,9 @@ function 默认配置(类型) {
                   required: ["text"], additionalProperties: false } },
            tool: { bindings: {} },
            answer: { template: "", bindings: {} },
-           transform: { operations: [], output_schema: { type: "object" } } }[类型] || {};
+           transform: { operations: [], output_schema: { type: "object" } },
+           loop: { max_iterations: 3, condition: { op: "equals", left: null, right: { source: "constant", value: true } },
+                   loop_state: { 还要做: { initial: true } } } }[类型] || {};
 }
 
 /* 在某个出口后面加一步:新的一步接在这个出口和它原来的下一步之间 —— **加节点、删原线、加两条线是一个原子动作**,撤销一次全回来(§5.2) */
@@ -1555,6 +1559,31 @@ function 表_设置(n) {
       + `<label class="f">都不满足时</label>`
       + 下拉(c.else_policy, [["fail", "记成没完成(incomplete)"], ["end", "正常结束"]], (el) => { c.else_policy = el.value; })
       + `<div class="k">接了「都不满足」那条线时,走那条线;没接才按这里的办法结束。</div>`;
+  } else if (n.type === "loop") {
+    // 有界循环(10-27):先判断后执行 —— 每一轮开始前看「继续条件」,满足才再跑一轮;跑满上限还没停 = 没做完
+    const 源们 = 上游字段(n.id), 状 = c.loop_state = c.loop_state || {};
+    c.condition = c.condition || { op: "equals", left: null, right: { source: "constant", value: true } };
+    const w = c.condition;
+    体 += `<label class="f">最多跑几轮(1–10)</label>` + 数字框(c.max_iterations ?? "", (v) => { c.max_iterations = v; }, { 整数: true, 最小: 1, 提示: "经营报告是 4:第一稿 + 3 次重写" })
+      + `<div class="k">跑满还没停下 → 这次运行记「没做完」,不当成功。</div>`
+      + `<label class="f">满足什么条件就再跑一轮</label>
+        <div class="condrow"><div class="k">取哪个值</div>${下拉(引用值(w.left), 源们, (el) => { w.left = 解引用(el.value); })}
+        <div class="k">怎么比</div>${下拉(w.op || "equals", [["equals", "等于"], ["not_equals", "不等于"], ["exists", "有值"]], (el) => {
+          w.op = el.value; if (el.value === "exists") delete w.right; else w.right = w.right || { source: "constant", value: true }; 重画(); })}
+        ${w.op === "exists" ? "" : `<div class="k">和什么比</div>${下拉(String(w.right?.value), [["true", "是"], ["false", "否"]], (el) => {
+          w.right = { source: "constant", value: el.value === "true" }; })}`}
+        ${!w.left ? `<div class="ferr">还没选「取哪个值」—— 一般选一项循环状态,比如「还要写」</div>` : ""}</div>`
+      + `<label class="f">循环状态(每一轮之间记着的值)</label>`
+      + Object.entries(状).map(([k, v]) => `<div class="condrow"><div class="k">名字</div><b>${esc(k)}</b>
+          <div class="k">一开始是</div>${v && v.initial && typeof v.initial === "object" && v.initial.source
+            ? `<div class="ro">取自 ${esc(引用值(v.initial))}</div>`
+            : 输入框(v && v.initial != null ? JSON.stringify(v.initial) : "", (el) => {
+                try { 状[k].initial = el.value.trim() === "" ? null : JSON.parse(el.value); } catch (e) { 状[k].initial = el.value; } }, "比如 true、\"\"、0")}
+          <div class="k">每一轮结束取自</div>${下拉(引用值(v && v.update), 源们.filter(([x]) => x.startsWith("n:")), (el) => { 状[k].update = 解引用(el.value) || undefined; },
+            "不更新(保持一开始的值)")}
+          <button class="danger" data-k="${挂控件(() => { delete 状[k]; 重画(); })}">删掉</button></div>`).join("")
+      + `<div class="two"><div>${输入框("", (el) => { const k = el.value.trim(); if (!k || 状[k]) return false; 状[k] = { initial: null }; 重画(); }, "新的状态名,回车加上")}</div></div>`
+      + `<div class="k">循环里的步骤在「用到的数据」里能选「循环状态 · 名字」。这一轮没走到「取自」的那一步 → 那一项保持不变。</div>`;
   } else if (n.type === "start") {
     体 += `<label class="f">使用者要提供什么</label>` + 字段表编辑(c.input_schema = c.input_schema || { type: "object", properties: {}, required: [] }, true);
   } else if (n.type === "answer") {
@@ -1606,6 +1635,9 @@ function 上游字段(id) {
   const g = 图态, 出 = [];
   const 起 = g.定义.nodes.find((n) => n.type === "start");
   Object.keys(((起 || {}).config?.input_schema || {}).properties || {}).forEach((k) => 出.push([`i:${k}`, `使用者输入 · ${k}`]));
+  // 循环里的步骤(和循环自己的继续条件)能取「循环状态」(10-27)
+  const 本 = g.定义.nodes.find((x) => x.id === id), 环 = 本 && (本.type === "loop" ? 本 : 本.container && 节点(本.container));
+  if (环) Object.keys((环.config || {}).loop_state || {}).forEach((k) => 出.push([`s:${k}`, `循环状态 · ${k}`]));
   // 只列**在它之前**的步骤(沿边倒着走)—— 列它之后的步骤,运行时一定取不到。
   // 而「在它之前」≠「一定走过」:分支 A 的结果在分支 B 那条路上没有值 —— 标出来,不悄悄当成必有(§8.2)
   const { 前驱: 前, 必经 } = 图逻辑.前驱与必经(g.定义, id);
@@ -1631,12 +1663,14 @@ function 引用值(r) {
   if (r.source === "input") return `i:${String(r.pointer || "").replace(/^\//, "")}`;
   if (r.source === "node") return `n:${r.node_id}:${String(r.pointer || "").replace(/^\//, "")}`;
   if (r.source === "constant") return `c:${r.value ?? ""}`;
+  if (r.source === "scope") return `s:${String(r.pointer || "").replace(/^\//, "")}`;
   return "";
 }
 function 解引用(v) {
   if (!v) return null;
   if (v.startsWith("i:")) return { source: "input", pointer: "/" + v.slice(2) };
   if (v.startsWith("n:")) { const [, id, ...f] = v.split(":"); return { source: "node", node_id: id, pointer: "/" + f.join(":") }; }
+  if (v.startsWith("s:")) return { source: "scope", pointer: "/" + v.slice(2) };
   return { source: "constant", value: v.slice(2) };
 }
 
@@ -1769,6 +1803,13 @@ function 表_结果(n) {
 function 表_高级(n) {
   const c = n.config, g = 图态, p = g.布局[n.id] || { x: 0, y: 0 };
   let 体 = "";
+  // 放在哪个循环里(10-27):循环里的步骤每一轮都跑;循环本身、开始、输出不能放进去(不支持循环套循环)
+  const 环们 = g.定义.nodes.filter((x) => x.type === "loop" && x.id !== n.id);
+  if (环们.length && !["start", "end", "loop"].includes(n.type)) {
+    体 += `<label class="f">放在哪个循环里</label>` + 下拉(n.container || "", 环们.map((x) => [x.id, 业务名(x)]), (el) => {
+      if (el.value) n.container = el.value; else delete n.container; 重画(); }, "不在循环里")
+      + `<div class="k">放进去之后:从循环的「进循环体」出口连到第一步;循环里走到头(或连回循环)= 这一轮做完。</div>`;
+  }
   if ((元(n.type)["端口"] || []).includes("error")) {
     体 += `<label class="f">失败后怎么办</label>` + 下拉(c.failure_policy || "fail_run",
       [["fail_run", "这次运行失败"], ["branch", "走「失败时」那条线"]], (el) => { c.failure_policy = el.value; });
