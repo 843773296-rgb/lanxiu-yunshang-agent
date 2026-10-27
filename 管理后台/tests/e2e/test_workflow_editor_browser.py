@@ -466,11 +466,14 @@ def main():
         d.get(基址 + "/#/conns")
         等(d, lambda: js("return location.hash") == "#/integrations/models")
         ck("旧地址 #/conns → 集成 → 模型供应商", js("return document.querySelector('#subnav .subtabs a.on').textContent") == "模型供应商")
-        # 等模型页的数据回来再切:页面切走之后,上一页晚到的渲染会把新页盖掉(列表页没有「我还是当前页吗」的检查 ——
-        # 10-28 在这里撞到,是原来就有的毛病,记在交接里,这里先等稳)
-        等(d, lambda: "加载中" not in d.find_element(By.ID, "main").text and d.find_elements(By.CSS_SELECTOR, "#main table"))
+        # **不等**模型页的数据回来就切走(10-28):上一页晚到的渲染原来会把新页盖掉;
+        # 现在 请求() 换过页就不交回读数据的结果 —— 这里故意切得快,验它
         d.get(基址 + "/#/studio/chat")
-        等(d, lambda: "这一类还没接上" in d.find_element(By.ID, "main").text)
+        try:
+            等(d, lambda: "这一类还没接上" in d.find_element(By.ID, "main").text)
+        except TimeoutError:
+            pass          # 被上一页晚到的渲染盖掉时等不到 —— 交给下面那条判,红在点名的那一条上,不让整份崩
+        time.sleep(1.5)   # 再给上一页晚到的数据一点时间:守卫坏了的话,它会在这段时间里把这页盖掉
         ck("还没接上的类型(聊天助手)页签在、点进去写明为什么", "店长任务助手" in d.find_element(By.ID, "main").text, d.find_element(By.ID, "main").text[:120])
         d.get(基址 + "/#/runs")
         等(d, lambda: js("return document.getElementById('subnav').hidden"))

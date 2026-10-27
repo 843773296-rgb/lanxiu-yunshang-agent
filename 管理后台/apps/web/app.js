@@ -57,10 +57,16 @@ let 我的角色 = "";      // ⚠️ **只用来决定「摆不摆按钮 + 说�
 /* ── 请求 ─────────────────────────────────────────────────────────
  * 失败一律走错误契约:code / message / advice。
  * **advice 必须显示出来** —— 一个只说「失败了」的提示,和没有提示是一回事。 */
+/* 换页序号(10-28):每进一次路由加一。**读数据的请求回来时已经换过页 → 不交回去**(返回一个永远不结束的 Promise),
+ * 那一页后面的渲染就不会跑 —— 不然上一页晚到的数据会把新页盖掉(浏览器测试「#/conns → #/studio/chat」撞到过)。
+ * 只拦 GET:提交 / 保存这类写的结果照常交回,哪怕人已经走开了 —— 写成功了却不告诉调用方,比盖掉一页糟得多 */
+let 换页序 = 0;
 async function 请求(path, opt = {}) {
   const h = Object.assign({ "X-Dev-User": 我 }, opt.headers || {});
   if (opt.body) h["content-type"] = "application/json";
+  const 读 = !opt.method || String(opt.method).toUpperCase() === "GET", 序 = 换页序;
   const r = await fetch(path, Object.assign({}, opt, { headers: h }));
+  if (读 && 序 !== 换页序) return new Promise(() => {});
   let b = null;
   try { b = await r.json(); } catch (e) { b = null; }
   if (!r.ok) {
@@ -6891,6 +6897,7 @@ async function 路由() {
   if (!location.hash.startsWith("#/workflow/")) document.body.classList.remove("wf-full");   // 只有编排页是全屏
   // 旧地址跳到新位置(10-28 导航照 Dify):replace 不留一条历史,点「后退」不会又跳回来
   if (旧地址跳[location.hash]) { location.replace(旧地址跳[location.hash]); return; }
+  换页序++;
   画侧栏();
   $("#subnav").hidden = true; $("#subnav").innerHTML = "";
   const h = location.hash || "#/workbench";
