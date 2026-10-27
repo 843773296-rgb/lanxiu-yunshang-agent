@@ -1831,15 +1831,23 @@ function 画_测试(盒 = null) {
         <input data-in="${esc(k)}" data-t="array" placeholder="多项用逗号隔开">${说}`;
     return `<label class="f">${标}</label><textarea rows="2" data-in="${esc(k)}" data-t="string"></textarea>${说}`;
   }).join("");
-  盒.innerHTML = (侧 ? `<div class="stack">` : `<div class="two">`) + `
-    <div class="card"><h3>填一条测试输入</h3>
+  // 照 Dify「测试运行」面板(10-27):输入 / 结果 / 详情 / 追踪 四个页签,跑起来自动切页 ——
+  // 点「开始运行」→ 结果;跑完(成功 / 失败)→ 详情;停在人工核对 → 结果(那里有「去核对」)
+  盒.innerHTML = `<div class="trtabs" role="tablist">${["输入", "结果", "详情", "追踪"].map((t) =>
+      `<button role="tab" data-trtab="${t}" aria-selected="false">${t}</button>`).join("")}</div>
+    <div data-trpane="输入"><div class="card">
       ${样例条("tr")}
       ${跑法选择("tr")}
       ${框 || '<div class="k">这条流程不需要使用者提供任何东西。</div>'}
       <div class="note">测试用的是<b>草稿</b>,不是候选版本。模型连接是演示用的那条时不真调模型(结果带 [mock]);
         「由澜绣执行」的步骤会真的去澜绣取数;写跟进这类写入:<b>连接测试</b>只记会写什么、不发给澜绣,<b>正常</b>跑会真的写(写入之前一定先停在人工核对)。</div>
-      <button class="pri" id="tr-go">试运行</button></div>
-    <div class="card"><h3>这次运行</h3><div id="tr-st" class="k">还没跑。</div></div></div>`;
+      <div id="tr-err"></div>
+      <button class="pri" id="tr-go">开始运行</button></div></div>
+    <div data-trpane="结果" hidden><div id="tr-st" class="k">还没跑。点「输入」页的「开始运行」。</div></div>
+    <div data-trpane="详情" hidden><div id="tr-det" class="k">还没跑。</div></div>
+    <div data-trpane="追踪" hidden><div id="tr-trace" class="k">还没跑。</div></div>`;
+  盒.querySelectorAll("[data-trtab]").forEach((b) => { b.onclick = () => 试页(b.dataset.trtab); });
+  试页(g.最近测试 ? (g.试页 || "结果") : "输入");
   挂样例条({ 前缀: "tr", node: null,
     填: (v) => document.querySelectorAll("[data-in]").forEach((el) => {
       const x = (v || {})[el.dataset.in];
@@ -1852,7 +1860,7 @@ function 画_测试(盒 = null) {
     const { 输入, 坏 } = 读试运行输入(sch);
     const 缺 = (sch.required || []).filter((k) => !(k in 输入));
     if (坏.length || 缺.length) {
-      $("#tr-st").innerHTML = `<div class="err" style="padding:6px">${缺.length ? `还没填:${esc(缺.map((k) => (sch.properties[k] || {}).title || k).join("、"))}。` : ""}
+      $("#tr-err").innerHTML = `<div class="err" style="padding:6px">${缺.length ? `还没填:${esc(缺.map((k) => (sch.properties[k] || {}).title || k).join("、"))}。` : ""}
         ${坏.length ? `不是数字:${esc(坏.join("、"))}。` : ""}<b>一个模型都没调。</b></div>`;
       return;
     }
@@ -1861,10 +1869,16 @@ function 画_测试(盒 = null) {
   if (g.最近测试) 盯运行(g.最近测试);
   // 运行固定的是发起时的定义;之后改了图,这份结果就是旧版本的(§10.4 T20)—— 标出来,不覆盖到新图上
   if (g.最近测试 && g.最近测试定义 && g.最近测试定义 !== JSON.stringify(g.定义) && $("#tr-st"))
-    $("#tr-st").insertAdjacentHTML("beforebegin", `<div class="note"><b>这是修改前版本的运行结果</b> —— 之后你又改了图;要看当前草稿的效果,再跑一次。</div>`);
+    document.querySelector(".trtabs").insertAdjacentHTML("afterend", `<div class="note"><b>这是修改前版本的运行结果</b> —— 之后你又改了图;要看当前草稿的效果,再跑一次。</div>`);
 }
 
-async function 盯运行(rid) {
+function 试页(t) {
+  if (图态) 图态.试页 = t;
+  document.querySelectorAll("[data-trtab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.trtab === t)));
+  document.querySelectorAll("[data-trpane]").forEach((x) => { x.hidden = x.dataset.trpane !== t; });
+}
+
+async function 盯运行(rid, 自动切 = false) {
   // 轮询到「终态」或「停下来等」为止。等人 / 等澜绣都可能是几分钟到几小时 —— **离开页面不丢**:
   // 运行在服务端,回来点「刷新」或去运行记录都看得到
   for (let i = 0; i < 40; i++) {
@@ -1872,10 +1886,16 @@ async function 盯运行(rid) {
     try { d = await 请求(`${P()}/execution-runs/${encodeURIComponent(rid)}`); } catch (e) { break; }
     if (!$("#tr-st") || (图态 && 图态.最近测试 !== rid)) return;
     $("#tr-st").innerHTML = 运行卡(d, rid);
+    if ($("#tr-det")) $("#tr-det").innerHTML = 测试详情(d);
+    if ($("#tr-trace")) $("#tr-trace").innerHTML = 测试追踪(d);
     记运行态(d);
-    const 刷 = $("#tr-rf"); if (刷) 刷.onclick = () => 盯运行(rid);
-    $("#tr-st").querySelectorAll("[data-goto]").forEach((b) => { b.onclick = () => 定位步骤(b.dataset.goto); });
-    if (d["是终态吗"] || d["在等什么"]) return;
+    document.querySelectorAll("#tr-rf").forEach((b) => { b.onclick = () => 盯运行(rid); });
+    document.querySelectorAll("#tr-trace [data-goto], #tr-st [data-goto]").forEach((b) => { b.onclick = () => 定位步骤(b.dataset.goto); });
+    if (d["是终态吗"] || d["在等什么"]) {
+      // 自动切页只在「这次是我点的开始运行」时做;回到页面重画时不抢人正在看的页签
+      if (自动切) 试页(d["在等什么"] && d["在等什么"]["种类"] === "human" ? "结果" : d["是终态吗"] ? "详情" : "结果");
+      return;
+    }
     await new Promise((r) => setTimeout(r, 1200));
   }
 }
@@ -1940,10 +1960,7 @@ function 业务结果块(d) {
 }
 function 运行卡(d, rid) {
   const 等 = d["在等什么"];
-  const 步 = (d["步骤"] || []).map((s) => `<li>${节点(s["节点"]) ? `<button class="lk" data-goto="${esc(s["节点"])}">${esc(业务名(节点(s["节点"])))}</button>`
-        : esc(业务名({ type: s["类型"] }))}:${esc(运行状态中文[s["状态"]] || s["状态"])}
-      ${s["走的分支"] && s["走的分支"] !== "None" ? ` <span class="k">→ ${esc(图逻辑.分支名(s["走的分支"]))}</span>` : ""}
-      ${s["错误码"] ? ` <code>${esc(s["错误码"])}</code>` : ""}${步骤IO(s, d["看得到原文"])}</li>`).join("");
+  const 步 = (d["步骤"] || []).length;      // 每一步的列表在「追踪」页(测试追踪);这里只看有没有开始跑
   return `${业务结果块(d)}
     ${回复气泡(d)}
     ${等 ? (等["种类"] === "human"
@@ -1952,10 +1969,42 @@ function 运行卡(d, rid) {
             ${等["截止"] ? `<span class="k">截止 ${时间(等["截止"])},到点没人处理这次运行就结束</span>` : ""}</div>`
         : `<div class="note">停在「${esc(业务名(节点(等["步骤"]) || {}))}」等澜绣执行「${esc(等["工具"] || "")}」并回执。
             <span class="k">澜绣的同步程序每 30 秒拉一次;单子排于 ${时间(等["排于"])}。</span></div>`) : ""}
-    <ul>${步 || '<li class="k">排队中 —— 一个模型都还没调</li>'}</ul>
-    ${d["是终态吗"] && d["输出"] ? `<div class="k">输出</div><pre class="io">${esc(JSON.stringify(d["输出"], null, 1))}</pre>` : ""}
+    ${步 ? "" : '<div class="k">排队中 —— 一个模型都还没调</div>'}
+    ${d["是终态吗"] && d["输出"] && typeof d["输出"] === "object" ? `<h4>输出</h4>` + Object.entries(d["输出"]).map(([k, v]) =>
+        `<div class="k">${esc(k)}</div>` + (typeof v === "string" ? `<div class="card"><div class="body">${md(v)}</div></div>`
+          : `<pre class="io">${esc(JSON.stringify(v, null, 1))}</pre>`)).join("")
+      : d["是终态吗"] && d["输出"] ? `<pre class="io">${esc(String(d["输出"]))}</pre>` : ""}
     <button id="tr-rf">刷新</button> <a href="#/wfrun/${encodeURIComponent(rid)}">完整详情 →</a>
     <a href="#/wfrun/${encodeURIComponent(rid)}" title="完整详情页上点「原始日志」—— 失败 / 取消的运行一样能看">原始日志 →</a>`;
+}
+
+/* 「详情」页(照 Dify):状态 / 运行时间 / 用量 → 输入 → 输出 → 元数据 */
+function 测试详情(d) {
+  const 时 = (d["事件"] || []).map((e) => e["时间"]).filter(Boolean);
+  const 秒 = 时.length > 1 ? ((new Date(时[时.length - 1]) - new Date(时[0])) / 1000).toFixed(1) + " 秒" : "—";
+  const 用 = d["用量"] || {};
+  const 块 = (标, v) => `<div class="k">${标}</div><pre class="io">${esc(JSON.stringify(v ?? null, null, 1))}</pre>`;
+  return `<div class="trmeta"><div><div class="k">状态</div><b>${esc(d["执行状态中文"])}</b></div>
+      <div><div class="k">运行时间</div><b>${esc(秒)}</b></div>
+      <div><div class="k">用量</div><b>${esc(Object.entries(用).map(([k, v]) => `${k} ${v}`).join(" · ") || "—")}</b></div></div>
+    ${d["看得到原文"] ? "" : `<div class="note">只看得到<b>形状</b>,看原文要「查看敏感输入」专项授权。</div>`}
+    ${块("输入", d["输入快照"])}${块("输出", d["输出"])}
+    <h4>元数据</h4><table><tbody>
+      <tr><td class="k">执行人</td><td>${esc(d["请求人"] || "—")}</td></tr>
+      <tr><td class="k">跑法</td><td>${esc(d["跑法"] || "正常")}</td></tr>
+      <tr><td class="k">开始时间</td><td>${esc(时[0] ? 时间(时[0]) : "—")}</td></tr>
+      <tr><td class="k">运行步数</td><td>${(d["步骤"] || []).filter((x) => x["状态"] !== "skipped").length}</td></tr>
+      <tr><td class="k">运行号</td><td><a href="#/wfrun/${encodeURIComponent(d.id)}">${esc(d.id)}</a></td></tr></tbody></table>`;
+}
+/* 「追踪」页(照 Dify):按执行顺序列每一步,点开看这一步收到 / 交出了什么;点名字在图上定位 */
+function 测试追踪(d) {
+  const 步 = d["步骤"] || [];
+  if (!步.length) return `<div class="k">排队中 —— 一个模型都还没调</div>`;
+  return `<ul class="trlist">` + 步.map((s) => `<li>${节点(s["节点"]) ? `<button class="lk" data-goto="${esc(s["节点"])}">${esc(业务名(节点(s["节点"])))}</button>`
+        : esc(业务名({ type: s["类型"] }))} <span class="pill" data-run="${esc(s["状态"])}">${esc(运行状态中文[s["状态"]] || s["状态"])}</span>
+      ${s["走的分支"] && s["走的分支"] !== "None" ? ` <span class="k">→ ${esc(图逻辑.分支名(s["走的分支"]))}</span>` : ""}
+      ${s["错误码"] ? ` <code>${esc(s["错误码"])}</code>` : ""}${步骤IO(s, d["看得到原文"])}</li>`).join("") + `</ul>
+    <div class="k">「跳过」是这一路没走到,不是失败。<a href="#/wfrun/${encodeURIComponent(d.id)}">完整运行详情 →</a></div>`;
 }
 
 /* ── 运行记录 ─────────────────────────────────────────────────── */
@@ -2394,8 +2443,10 @@ async function 做_试运行(输入 = {}, 额外 = {}) {
     });
     图态.最近测试 = d.resource_id;
     图态.最近测试定义 = JSON.stringify(图态.定义);     // 这次试运行固定的是哪份定义(§10.4)
+    if ($("#tr-err")) $("#tr-err").innerHTML = "";
     if ($("#tr-st")) $("#tr-st").innerHTML = `已受理 —— <b>排队中,一个模型都还没调</b>。`;
-    await 盯运行(d.resource_id);
+    试页("结果");
+    await 盯运行(d.resource_id, true);
     try {
       const r = await 请求(`${P()}/execution-runs/${encodeURIComponent(d.resource_id)}`);
       图态.最近测试状态 = r["执行状态"];

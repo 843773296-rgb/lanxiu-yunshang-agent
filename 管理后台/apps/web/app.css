@@ -461,3 +461,10 @@ tr.hitrow:hover td{background:var(--pri-bg)}
 .bi-brand{background:#085AFC}.bi-indigo{background:#6172F3}.bi-blue{background:#2E90FA}.bi-orange{background:#F79009}
 .bi-cyan{background:#06AED4}.bi-violet{background:#875BF7}.bi-green{background:#17B26A}
 .wflib2{width:264px}
+/* 试运行面板四个页签(10-27,照 Dify):输入 / 结果 / 详情 / 追踪 */
+.trtabs{display:flex;gap:4px;margin:4px 0 8px;border-bottom:1px solid var(--line)}
+.trtabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:6px 10px}
+.trtabs button[aria-selected="true"]{border-bottom-color:var(--pri);color:var(--pri);font-weight:600}
+.trmeta{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0 10px}
+.trlist{padding-left:18px}
+.trlist li{margin:4px 0}
