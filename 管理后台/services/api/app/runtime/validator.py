@@ -104,6 +104,7 @@ _缺项说法 = {
     "sub_limits": ("还没设这一步的上限", "在右侧「高级」里填最多跑几轮、最多花多少"),
     "condition": ("还没写循环什么时候继续", "在右侧「基本」里写「满足什么条件就再跑一轮」,比如「还要重写 等于 是」"),
     "max_iterations": ("还没填最多跑几轮", "在右侧「基本」里填一个 1 到 10 的数;经营报告是 4(第一稿 + 最多重写 3 次)"),
+    "assignments": ("还没写要改哪一项、怎么改", "在右侧「基本」里点「加一条」,选循环状态里的一项和改法"),
     "parameters": ("还没写要提取哪几项", "在右侧「基本」里至少加一项,写上名字、类型和说明"),
     "classes": ("还没写要分成哪几类", "在右侧「基本」里至少写两个类别,比如「有意向」「没意向」「说不清」"),
     "template": ("还没写要回复什么", "在右侧「基本」里写回复内容;要带上前面的结果,写 {{名字}} 并在「用到的数据」里给它选来源"),
@@ -517,6 +518,37 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                 出.append(问(阻断, "EXTRACT_BAD_TYPE", f"参数「{p.get('name')}」的类型系统不认识",
                            f"在右侧「基本」里重新选类型(可选:{'、'.join(DS.参数类型中文.values())})",
                            node_id=i, field_path="config.parameters"))
+
+    # ④d 变量赋值:在循环里、改的是那个循环声明过的状态、不和「每一轮结束取自」抢着写(10-27)────
+    for n in 节点们:
+        if n.get("type") != "assigner":
+            continue
+        i, 容 = n.get("id"), 按id.get(n.get("container") or "")
+        if not 容 or 容.get("type") != "loop":
+            出.append(问(阻断, "ASSIGN_NOT_IN_LOOP", "变量赋值现在只能放在循环里 —— 它改的是循环状态",
+                       "在右侧「放在哪个循环里」选一个循环;会话变量等对话流那一期", node_id=i))
+            continue
+        声明 = (容.get("config") or {}).get("loop_state") or {}
+        for j, a in enumerate((n.get("config") or {}).get("assignments") or [], 1):
+            a = a if isinstance(a, dict) else {}
+            k, 法, fp = a.get("variable"), a.get("op"), f"config.assignments[{j}]"
+            if k not in 声明:
+                出.append(问(阻断, "ASSIGN_UNKNOWN_VAR", f"第 {j} 条要改的「{k or '(没选)'}」不是{_称(容)}的循环状态",
+                           "在右侧选循环状态里的一项;要的那项还没有,先去循环的设置里加", node_id=i, field_path=fp))
+                continue
+            if 法 not in DS.赋值改法:
+                出.append(问(阻断, "ASSIGN_BAD_OP", f"第 {j} 条还没选怎么改", "在右侧选:覆盖 / 加上 / 追加 / 清空",
+                           node_id=i, field_path=fp))
+            elif 法 in ("set", "append") and not isinstance(a.get("value"), dict):
+                出.append(问(阻断, "ASSIGN_NO_VALUE", f"第 {j} 条「{DS.赋值改法[法]}」还没选值从哪来", "在右侧给它选来源或填一个固定值",
+                           node_id=i, field_path=fp))
+            elif 法 == "add" and not DS.类型对吗((a.get("value") or {}).get("value") if isinstance(a.get("value"), dict) else a.get("value"), "number"):
+                出.append(问(阻断, "ASSIGN_ADD_NOT_NUMBER", f"第 {j} 条「加上」后面要填一个数字", "填一个数字,比如 1",
+                           node_id=i, field_path=fp))
+            if isinstance(声明.get(k), dict) and 声明[k].get("update"):
+                出.append(问(阻断, "ASSIGN_CONFLICT_UPDATE",
+                           f"「{k}」在循环设置里已经是「每一轮结束取自某一步」,这一步又改它 —— 两个写的人,最后算谁的取决于走到哪",
+                           f"二选一:去掉循环设置里「{k}」的「每一轮结束取自」,或者删掉这一条", node_id=i, field_path=fp))
 
     # ⑤ 变量可用性:**靠支配关系,不靠找名字** ───────────────────────
     跳过 = []

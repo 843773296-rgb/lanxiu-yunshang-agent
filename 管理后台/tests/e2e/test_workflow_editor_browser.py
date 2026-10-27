@@ -352,6 +352,26 @@ def main():
             js(f"画布动作.选节点(['{提}'])"); d.find_element(By.ID, "cv").send_keys(Keys.DELETE)
             ck("删掉参数提取器那一步(不留到后面的保存里)", not any(n.startswith("extractor_") for n in 态()["节点"]), 态()["节点"])
 
+        print("\n▸ 变量赋值:不在循环里先提示;放进循环后能选那个循环的状态")
+        js("加到视口中间('loop')")
+        环 = [n for n in 态()["节点"] if n.startswith("loop_")]
+        js("加到视口中间('assigner')")
+        赋 = [n for n in 态()["节点"] if n.startswith("assigner_")]
+        ck("步骤库能加「变量赋值」并选中", len(赋) == 1 and 态()["选"] == 赋 and len(环) == 1, 态()["节点"])
+        if 赋 and 环:
+            赋, 环 = 赋[0], 环[0]
+            ck("还不在循环里 → 面板提示先选循环", "先在下面「高级」的「放在哪个循环里」选一个循环" in d.find_element(By.ID, "pn").text)
+            js(f"图态.定义.nodes.find(n => n.id === '{赋}').container = '{环}'; 画_面板();")
+            加 = next((b for b in d.find_elements(By.CSS_SELECTOR, "#pn button") if b.text == "加一条"), None)
+            if 加:
+                加.click()
+            选项 = js("return [...document.querySelectorAll('#pn select')].map(s => [...s.options].map(o => o.value))")
+            配 = js(f"return 图态.定义.nodes.find(n => n.id === '{赋}').config.assignments")
+            ck("放进循环后「加一条」:能选那个循环的状态「还要做」,默认改法覆盖", any("还要做" in o for o in 选项)
+               and 配 == [{"variable": "还要做", "op": "set"}], (选项, 配))
+            js(f"画布动作.选节点(['{赋}','{环}'])"); d.find_element(By.ID, "cv").send_keys(Keys.DELETE)
+            ck("删掉这两步(不留到后面的保存里)", not any(n.startswith(("assigner_", "loop_")) for n in 态()["节点"]), 态()["节点"])
+
         print("\n▸ T21 完整链路:加步骤 → 连线 → 配置 → 删线 → 撤销 → 保存 → 重开")
         js("加到视口中间('transform')")
         新 = [n for n in 态()["节点"] if n.startswith("transform_")]

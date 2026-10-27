@@ -667,7 +667,7 @@ async function 页_运行记录() {
 const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本与发布", "设置"];
 // 10-27 照 Dify 改了两个名字(适配分析 5.1 定的):结束 →「输出」、分支汇合 →「变量聚合器」;其余保留业务叫法
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
-  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器" };
+  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器", assigner: "变量赋值" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -1209,7 +1209,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template"]
+  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template", "assigner"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -1240,6 +1240,7 @@ function 默认配置(类型) {
            tool: { bindings: {} },
            answer: { template: "", bindings: {} },
            template: { template: "", bindings: {} },
+           assigner: { assignments: [] },
            extractor: { parameters: [{ name: "", type: "string", description: "", required: false }], bindings: {}, instruction: "" },
            classifier: { classes: [{ key: "类别一", 说明: "" }, { key: "类别二", 说明: "" }], bindings: {}, instruction: "" },
            transform: { operations: [], output_schema: { type: "object" } },
@@ -1515,6 +1516,27 @@ function 表_设置(n) {
       + `<label class="f">分类时还要注意(选填)</label>`
       + 输入框(c.instruction || "", (el) => { c.instruction = el.value.trim() || undefined; }, "例如:只看客户说的话,别看顾问说的", { 可清空: true })
       + `<div class="k">要分类的内容在下面「用到的数据」里选,比如录音转写。</div>`;
+  } else if (n.type === "assigner") {
+    // 变量赋值(10-27,用户拍要做):改所在循环的循环状态,改完马上生效
+    const 环 = n.container && 节点(n.container), 状 = (环 && (环.config || {}).loop_state) || {};
+    c.assignments = c.assignments || [];
+    if (!环) {
+      体 += `<div class="ferr">变量赋值改的是循环状态 —— 先在下面「高级」的「放在哪个循环里」选一个循环。</div>`;
+    } else {
+      const 源们 = 上游字段(n.id);
+      体 += `<label class="f">改「${esc(业务名(环))}」的哪几项</label>
+        <div class="note">改完<b>马上生效</b>:这一轮后面的步骤取「循环状态 · 名字」就是新值。循环设置里已经写了「每一轮结束取自」的那一项不能在这里再改(两个写的人会打架)。</div>`
+        + c.assignments.map((a, i) => `<div class="card">
+          <div class="two"><div><div class="k">第 ${i + 1} 条 · 改哪一项</div>${下拉(a.variable || "", Object.keys(状).map((k) => [k, k]), (el) => { a.variable = el.value || undefined; 重画(); }, "选一项循环状态")}</div>
+            <div><div class="k">怎么改</div>${下拉(a.op || "", [["set", "覆盖成"], ["add", "加上(数字)"], ["append", "追加到列表后面"], ["clear", "清空"]],
+              (el) => { a.op = el.value || undefined; if (a.op === "clear") delete a.value; if (a.op === "add") a.value = { source: "constant", value: 1 }; 重画(); }, "选改法")}</div></div>
+          ${a.op === "set" || a.op === "append" ? `<div class="k">${a.op === "set" ? "改成" : "追加"}什么</div>${下拉(引用值(a.value), 源们, (el) => { a.value = 解引用(el.value) || undefined; }, "选来源")}` : ""}
+          ${a.op === "add" ? `<div class="k">加多少</div>${数字框(a.value?.value ?? 1, (v) => { a.value = v === undefined ? undefined : { source: "constant", value: v }; }, { 提示: "比如 1" })}` : ""}
+          ${a.variable && 状[a.variable] && 状[a.variable].update ? `<div class="ferr">「${esc(a.variable)}」在循环设置里已经是「每一轮结束取自某一步」,检查配置会拦</div>` : ""}
+          <div class="acts"><button class="danger" data-k="${挂控件(() => { c.assignments.splice(i, 1); 重画(); })}" aria-label="删掉第 ${i + 1} 条赋值">删掉这一条</button></div></div>`).join("")
+        + `<button data-k="${挂控件(() => { c.assignments.push({ variable: Object.keys(状)[0], op: "set" }); 重画(); })}">加一条</button>`
+        + (Object.keys(状).length ? "" : `<div class="k">这个循环还没有循环状态 —— 先去循环的设置里加一项。</div>`);
+    }
   } else if (n.type === "extractor") {
     // 参数提取器(10-27,照 Dify):每项一行 —— 名字 / 类型 / 说明 / 必填;名字就是后面步骤取它用的名字
     const 模 = g.资源.模型 || [];
@@ -1705,6 +1727,7 @@ function 结果字段名(n) {
   if (n.type === "human") return ["决定", "定稿", "理由", "处理人"];
   if (n.type === "answer") return ["回复"];
   if (n.type === "template") return ["文本"];
+  if (n.type === "assigner") return [...new Set((c.assignments || []).map((a) => a.variable).filter(Boolean))];
   if (n.type === "extractor") return (c.parameters || []).map((p) => p.name).filter(Boolean);
   if (n.type === "classifier") return ["类别", "理由"];
   if (n.type === "condition") return ["branch"];
@@ -1846,6 +1869,7 @@ function 表_结果(n) {
   if (n.type === "human") return `<div class="k">人工核对固定返回:<b>决定</b>(approve / reject)、<b>定稿</b>、<b>理由</b>、<b>处理人</b>。</div>`;
   if (n.type === "classifier") return `<div class="k">固定返回:<b>类别</b>(模型挑的那一个名字)、<b>理由</b>(它为什么这么分)。走哪条线由类别定。</div>`;
   if (n.type === "extractor") return `<div class="k">返回上面「基本」里列的每一项参数;<b>原文没提到的那一项是空</b>,必填的没抽到这一步就失败。</div>`;
+  if (n.type === "assigner") return `<div class="k">返回改完之后的值(每一项一个)。循环里后面的步骤直接取「循环状态 · 名字」就是新值。</div>`;
   if (n.type === "template") return `<div class="k">固定返回:<b>文本</b>(填好名字之后的那一段)。后面的步骤在「用到的数据」里选它。</div>`;
   if (n.type === "answer") return `<div class="k">固定返回:<b>回复</b>(填好名字之后的那一句)。后面的步骤也能取它。</div>`;
   if (n.type === "end") {

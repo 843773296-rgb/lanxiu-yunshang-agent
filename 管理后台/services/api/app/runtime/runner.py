@@ -533,6 +533,47 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 当前 = 下[0] if 下 else 循环回(当前)
                 continue
 
+            if t == "assigner":
+                # 变量赋值(10-27):直接改当前循环的状态(状态["scope"] 就是那一帧的状态,同一个 dict)—— 进检查点、恢复不丢
+                if not 帧们 or n.get("container") != 帧们[-1]["循环"]:
+                    raise 节点失败("ASSIGN_NOT_IN_LOOP", "这一步不在正在跑的循环里,没有可改的循环状态",
+                                 "把它放进循环里(右侧「放在哪个循环里」);会话变量等对话流那一期")
+                域 = 状态["scope"]
+                改了, 本步入 = {}, []
+                for a in cfg.get("assignments") or []:
+                    k, 法 = a.get("variable"), a.get("op")
+                    if k not in 域:
+                        raise 节点失败("ASSIGN_UNKNOWN_VAR", f"循环状态里没有「{k}」", "在循环的设置里先加上这一项,再来改它")
+                    旧 = 域[k]
+                    if 法 in ("set", "append"):
+                        v = 取值(a.get("value") or {}, 状态)
+                        if v is DS.缺失:
+                            raise 节点失败("ASSIGN_VALUE_MISSING", f"要写进「{k}」的值取不到",
+                                         "来源那一步这一轮没跑到;在右侧核对来源,或者加「分支汇合」")
+                    if 法 == "set":
+                        新 = v
+                    elif 法 == "add":
+                        增 = a.get("value", {}).get("value") if isinstance(a.get("value"), dict) else a.get("value")
+                        if not DS.类型对吗(旧 if 旧 is not None else 0, "number") or not DS.类型对吗(增, "number"):
+                            raise 节点失败("ASSIGN_NOT_NUMBER", f"「{k}」现在是「{str(旧)[:30]}」,不是数字,没法加",
+                                         "把这一项的初值设成数字(比如 0)")
+                        新 = (旧 or 0) + 增
+                    elif 法 == "append":
+                        if 旧 is not None and not isinstance(旧, list):
+                            raise 节点失败("ASSIGN_NOT_LIST", f"「{k}」现在不是列表,没法往后追加", "把这一项的初值设成 []")
+                        新 = list(旧 or []) + [v]
+                    elif 法 == "clear":
+                        新 = [] if isinstance(旧, list) else "" if isinstance(旧, str) else None
+                    else:
+                        raise 节点失败("ASSIGN_BAD_OP", f"不认识的改法「{法}」", "在右侧重新选改法")
+                    本步入.append({"改": k, "怎么改": DS.赋值改法.get(法, 法), "原来": 旧})
+                    域[k] = 改了[k] = 新
+                状态["节点"][当前] = dict(改了)
+                记一步(当前, 成功, 入=本步入, 出=dict(改了))
+                下 = 后继[当前].get((DS.成功, None), [])
+                当前 = 下[0] if 下 else 循环回(当前)
+                continue
+
             if t == "extractor":
                 # 参数提取器(10-27,照 Dify):借 LLM 那条适配器,结果形状按这一步列的参数现拼
                 参们 = [p for p in (cfg.get("parameters") or []) if isinstance(p, dict) and p.get("name")]
