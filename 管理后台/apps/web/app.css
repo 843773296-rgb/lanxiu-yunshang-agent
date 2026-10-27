@@ -468,3 +468,4 @@ tr.hitrow:hover td{background:var(--pri-bg)}
 .trmeta{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0 10px}
 .trlist{padding-left:18px}
 .trlist li{margin:4px 0}
+.wfnode2 .run1{height:22px;width:22px;padding:0;border:0;background:none;font-size:12px;cursor:pointer;color:var(--pri)}

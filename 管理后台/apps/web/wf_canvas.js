@@ -268,6 +268,7 @@ function 画_节点() {
         style="left:${p.x}px;top:${p.y}px;height:${h}px"
         aria-label="${esc(业务名(n) + "," + 次级标签(n) + (缺.length ? ",缺 " + 缺.length + " 项" : "") + (选 ? ",已选中" : ""))}">
       <div class="nh"><span class="t">${esc(业务名(n))}${typeof 同名后缀 === "function" ? 同名后缀(n) : ""}</span>${typeof 运行标 === "function" ? 运行标(n.id) : ""}
+        ${改 && typeof 单测类型 !== "undefined" && 单测类型[n.type] ? `<button class="run1" data-run1="${esc(n.id)}" title="单独测这一步" aria-label="单独测「${esc(业务名(n))}」这一步" tabindex="-1">▶</button>` : ""}
         ${改 || n.type !== "start" ? `<button class="more" data-more="${esc(n.id)}" aria-label="更多操作" tabindex="-1">⋯</button>` : ""}</div>
       <div class="k">${esc(次级标签(n))}</div><div class="tags">${标}</div>
       ${n.type === "start" ? "" : `<span class="wfport in" data-in="${esc(n.id)}" title="入口" aria-hidden="true"></span>`}
@@ -449,6 +450,14 @@ function 挂画布事件() {
   cv.addEventListener("click", (ev) => {
     const m = ev.target.closest("[data-more]");
     if (m) { ev.stopPropagation(); 节点菜单(m.dataset.more, m); }
+    // 节点上的 ▶(照 Dify 单步运行):选中这一步,右侧面板直接到「试这一步」,光标放在第一个要填的框 ——
+    // 填什么、用什么跑法、写入类只能连接测试,都沿用面板里那一份(不在卡片上另做一份表单)
+    const r1 = ev.target.closest("[data-run1]");
+    if (r1) {
+      ev.stopPropagation(); 选节点([r1.dataset.run1]);
+      const 段 = document.querySelector('#pn [data-sec="试这一步"]');
+      if (段) { 段.scrollIntoView({ block: "start" }); const 框 = 段.querySelector("textarea[data-st]") || $("#st-go"); if (框) 框.focus(); }
+    }
   });
   // 右键菜单和「⋯」/ 连线工具条是同一套能力(§9:右键菜单和工具条提供相同能力,菜单关闭后焦点回原对象)
   cv.addEventListener("contextmenu", (ev) => {
@@ -468,7 +477,7 @@ function 画布按下(ev) {
   if (ev.button === 2) return;              // 右键留给上下文菜单
   const out = t.closest("[data-out]");
   if (out && 能改图()) { ev.preventDefault(); return 出口按下(ev, out); }
-  if (t.closest("[data-more]")) return;
+  if (t.closest("[data-more]") || t.closest("[data-run1]")) return;
   const eh = t.closest("[data-endh]");
   if (eh && 能改图()) { ev.preventDefault(); return 拖端点(ev, eh.dataset.endh); }
   const bd = t.closest("[data-bend]");
