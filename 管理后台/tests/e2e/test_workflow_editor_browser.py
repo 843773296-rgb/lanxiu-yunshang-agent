@@ -286,6 +286,32 @@ def main():
         js("撤销(); 图态.定义.nodes.forEach(n => delete n.container); 画_节点(); 画_线();")
         ck("摘掉之后框就没了", js("return document.querySelectorAll('.loopbox').length") == 0)
 
+        print("\n▸ 问题分类器:每个类别一个出口;面板里改类别名线跟着改;删一类连线一起删")
+        js("加到视口中间('classifier')")
+        分 = [n for n in 态()["节点"] if n.startswith("classifier_")]
+        ck("步骤库能加「问题分类器」并选中", len(分) == 1 and 态()["选"] == 分, 态()["节点"])
+        if 分:
+            分 = 分[0]
+            口 = js(f"return [...document.querySelectorAll('[data-out=\"{分}\"]')].map(b => b.getAttribute('aria-label') || b.title || b.textContent)")
+            ck("画布上 3 个出口:类别一 / 类别二 / 失败时", len(口) == 3 and "失败" in str(口[2]) and "类别一" in str(口[0]), 口)
+            js(f"画布动作.连上('{分}', {{port:'branch', branch_key:'类别一'}}, 'tool_1')")
+            ck("从「类别一」连到下一步", f"{分}|branch|类别一|tool_1" in 态()["边"], 态()["边"])
+            js(f"画布动作.选节点(['{分}']); 图态.选中='{分}'; 图态.面板页='设置'; 画_面板();")
+            框 = next((x for x in d.find_elements(By.CSS_SELECTOR, "#pn input") if x.get_attribute("value") == "类别一"), None)
+            ck("面板里有「分成哪几类」,第一类的名字框找得到", 框 is not None and "分成哪几类" in d.find_element(By.ID, "pn").text)
+            if 框:
+                d.execute_script("arguments[0].focus(); arguments[0].select()", 框); 框.send_keys("有意向"); 框.send_keys(Keys.TAB)
+                边 = 态()["边"]
+                ck("改名「类别一 → 有意向」:线跟着改,不留旧名", f"{分}|branch|有意向|tool_1" in 边 and not any("|类别一|" in e for e in 边), 边)
+            删 = next((b for b in d.find_elements(By.CSS_SELECTOR, "#pn button") if b.get_attribute("aria-label") == "删掉第 1 类"), None)
+            if 删:
+                删.click()
+            边 = 态()["边"]
+            ck("删掉第 1 类:它的线一起删,下一步那一步还在", not any(e.startswith(f"{分}|branch|") for e in 边) and "tool_1" in 态()["节点"]
+               and js(f"return 图态.定义.nodes.find(n => n.id === '{分}').config.classes.map(c => c.key)") == ["类别二"], 边)
+            js(f"画布动作.选节点(['{分}'])"); d.find_element(By.ID, "cv").send_keys(Keys.DELETE)
+            ck("删掉分类器那一步(不留到后面的保存里)", not any(n.startswith("classifier_") for n in 态()["节点"]), 态()["节点"])
+
         print("\n▸ T21 完整链路:加步骤 → 连线 → 配置 → 删线 → 撤销 → 保存 → 重开")
         js("加到视口中间('transform')")
         新 = [n for n in 态()["节点"] if n.startswith("transform_")]

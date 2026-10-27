@@ -943,6 +943,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 有界循环:先判断后执行、跑满上限受限停止、每轮执行键不同、停在循环里等人恢复后轮数不清零"
 	@./.venv/bin/python tests/orchestration/test_loop_node.py
 	@echo ""
+	@echo "▸ 问题分类器:按模型答的类别走同名出口;答了不在类别里的就失败、不猜最像的;类别少于两个 / 重名 / 没连线 检查配置就拦"
+	@./.venv/bin/python tests/orchestration/test_classifier_node.py
+	@echo ""
 	@echo "▸ 定时触发的时间口径:日报前一天 / 周报上一个自然周 / 月报上一个自然月;同一期只发起一次;关机只补最近一期"
 	@./.venv/bin/python tests/orchestration/test_schedule.py
 	@echo ""

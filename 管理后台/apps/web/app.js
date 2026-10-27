@@ -667,7 +667,7 @@ async function 页_运行记录() {
 const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本与发布", "设置"];
 // 10-27 照 Dify 改了两个名字(适配分析 5.1 定的):结束 →「输出」、分支汇合 →「变量聚合器」;其余保留业务叫法
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
-  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复" };
+  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -1200,7 +1200,7 @@ function 出口们(n) {
     return [...(n.config.branches || []).map((b) => ({ port: "branch", branch_key: b.key, 名: 图逻辑.分支名(b.key) })),
             { port: "branch", branch_key: "else", 名: "都不满足" }];
   }
-  if (n.type === "loop") return 图逻辑.出口们(n, 元);   // 进循环体 / 循环结束后 / 失败时 —— 和画布同一份
+  if (n.type === "loop" || n.type === "classifier") return 图逻辑.出口们(n, 元);   // 进循环体 / 循环结束后 / 失败时 —— 和画布同一份
   const 口 = [{ port: "success", branch_key: null, 名: "完成后" }];
   if ((元(n.type)["端口"] || []).includes("error")) 口.push({ port: "error", branch_key: null, 名: "失败时" });
   return 口;
@@ -1209,7 +1209,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop"]
+  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -1239,6 +1239,7 @@ function 默认配置(类型) {
                   required: ["text"], additionalProperties: false } },
            tool: { bindings: {} },
            answer: { template: "", bindings: {} },
+           classifier: { classes: [{ key: "类别一", 说明: "" }, { key: "类别二", 说明: "" }], bindings: {}, instruction: "" },
            transform: { operations: [], output_schema: { type: "object" } },
            loop: { max_iterations: 3, condition: { op: "equals", left: null, right: { source: "constant", value: true } },
                    loop_state: { 还要做: { initial: true } } } }[类型] || {};
@@ -1487,6 +1488,31 @@ function 表_设置(n) {
           (id) => { c.prompt_version_id = id || undefined; 重画(); },
           "还没有处理要求 —— 去「Prompt 管理」写一份并存版本。")
       + `<div class="k">要改处理要求本身,去「Prompt 管理」—— 这里只选用哪一版,不改所有流程共用的正式版本。</div>`;
+  } else if (n.type === "classifier") {
+    // 问题分类器(10-27,照 Dify):类别名同时是交给模型的选项和出口名 —— 改名走 分支改名,线跟着改
+    const 模 = g.资源.模型 || [];
+    c.classes = c.classes || [];
+    体 += `<label class="f">用哪个模型</label>`
+      + 资源选择器("模型", c.connection_version_id, 模.map((m) => ({ id: m["版本id"], 名: m["名"], 说: "", 标: m["是假的"] ? "演示用,不真调" : "可用" })),
+          (id) => { c.connection_version_id = id || undefined; 重画(); },
+          "这个项目还没有可用的模型 —— 请平台管理员在「模型与连接」里接一个。")
+      + `<label class="f">分成哪几类</label>
+        <div class="note">模型只能从这几个名字里挑一个,挑哪个就走哪个出口。答了不在里面的 → 这一步失败(可在「高级」里设成走「失败时」那条线,接人工)。</div>`
+      + c.classes.map((x, i) => `<div class="card">
+          <div class="k">第 ${i + 1} 类 · 叫</div>${输入框(x.key || "", (el) => {
+            const r = 图逻辑.分支改名(图态.定义, n.id, x.key, el.value);
+            if (!r.可以) { if (!r.没变) 提示(`没改名:${r.为什么}`); el.value = x.key || ""; return false; }
+            重画(); })}
+          <div class="k">什么样的算这一类(写给模型看)</div>${输入框(x.说明 || "", (el) => { x.说明 = el.value.trim() || undefined; }, "例如:客户问了价格、档期或约了到店", { 可清空: true })}
+          <div class="acts"><button class="danger" data-k="${挂控件(() => {
+              const r = 图逻辑.删分支(图态.定义, n.id, i);
+              提示(`已删除「${r.键}」这一类` + (r.删边.length ? `和它的 ${r.删边.length} 条连线(目标步骤保留)` : ""), { 撤销: true }); 重画(); })}"
+              aria-label="删掉第 ${i + 1} 类">删掉这一类</button></div></div>`).join("")
+      + `<button data-k="${挂控件(() => { let j = c.classes.length + 1; while (c.classes.some((x) => x.key === `类别${j}`)) j++;
+            c.classes.push({ key: `类别${j}` }); 重画(); })}">加一类</button>`
+      + `<label class="f">分类时还要注意(选填)</label>`
+      + 输入框(c.instruction || "", (el) => { c.instruction = el.value.trim() || undefined; }, "例如:只看客户说的话,别看顾问说的", { 可清空: true })
+      + `<div class="k">要分类的内容在下面「用到的数据」里选,比如录音转写。</div>`;
   } else if (n.type === "tool") {
     const 工 = g.资源.工具 || [];
     体 += `<label class="f">执行哪个业务动作</label>`
@@ -1650,6 +1676,7 @@ function 结果字段名(n) {
   const c = n.config || {};
   if (n.type === "human") return ["决定", "定稿", "理由", "处理人"];
   if (n.type === "answer") return ["回复"];
+  if (n.type === "classifier") return ["类别", "理由"];
   if (n.type === "condition") return ["branch"];
   if (n.type === "merge") return [c.output_field || "out"];
   if (n.type === "tool") {
@@ -1787,6 +1814,7 @@ function 表_结果(n) {
       : `<div class="k">先在上面「基本」里选一个业务动作。</div>`;
   }
   if (n.type === "human") return `<div class="k">人工核对固定返回:<b>决定</b>(approve / reject)、<b>定稿</b>、<b>理由</b>、<b>处理人</b>。</div>`;
+  if (n.type === "classifier") return `<div class="k">固定返回:<b>类别</b>(模型挑的那一个名字)、<b>理由</b>(它为什么这么分)。走哪条线由类别定。</div>`;
   if (n.type === "answer") return `<div class="k">固定返回:<b>回复</b>(填好名字之后的那一句)。后面的步骤也能取它。</div>`;
   if (n.type === "end") {
     c.output_schema = c.output_schema || { type: "object", properties: {}, required: [] };

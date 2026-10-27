@@ -104,6 +104,7 @@ _缺项说法 = {
     "sub_limits": ("还没设这一步的上限", "在右侧「高级」里填最多跑几轮、最多花多少"),
     "condition": ("还没写循环什么时候继续", "在右侧「基本」里写「满足什么条件就再跑一轮」,比如「还要重写 等于 是」"),
     "max_iterations": ("还没填最多跑几轮", "在右侧「基本」里填一个 1 到 10 的数;经营报告是 4(第一稿 + 最多重写 3 次)"),
+    "classes": ("还没写要分成哪几类", "在右侧「基本」里至少写两个类别,比如「有意向」「没意向」「说不清」"),
     "template": ("还没写要回复什么", "在右侧「基本」里写回复内容;要带上前面的结果,写 {{名字}} 并在「用到的数据」里给它选来源"),
 }
 
@@ -469,6 +470,32 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                        "删掉这条线;还要这一路的话,先在「基本」里把它加回来再连",
                        node_id=i))
 
+    # ④b 问题分类器:类别至少两个、名字不重复、每个类别连了线(10-27)──────────
+    for n in 节点们:
+        if n.get("type") != "classifier":
+            continue
+        i = n.get("id")
+        类们 = (n.get("config") or {}).get("classes")
+        if 类们 in (None, "", [], {}):
+            continue                       # 必填那条已经报了
+        名们 = [str((c or {}).get("key") or "").strip() for c in 类们 if isinstance(c, dict)]
+        if len([x for x in 名们 if x]) < 2:
+            出.append(问(阻断, "CLASSIFY_TOO_FEW", "类别不到两个,没什么可分的",
+                       "在右侧「基本」里至少写两个类别", node_id=i, field_path="config.classes"))
+        if "" in 名们:
+            出.append(问(阻断, "CLASSIFY_NO_NAME", "有一个类别没起名字 —— 名字就是交给模型的选项,也是出口名",
+                       "在右侧「基本」里给它起个名字,用不上就删掉", node_id=i, field_path="config.classes"))
+        for k in sorted({x for x in 名们 if x and 名们.count(x) > 1}):
+            出.append(问(阻断, "CLASSIFY_DUP", f"类别「{k}」写了两次,模型答它时不知道走哪一路",
+                       "删掉一个,或者改个名字", node_id=i, field_path="config.classes"))
+        出边键 = {e.get("branch_key") for e in 边们 if e.get("source") == i and e.get("port") == DS.分支}
+        for k in sorted(set(x for x in 名们 if x) - 出边键):
+            出.append(问(阻断, "CLASSIFY_NO_EDGE", f"「{k}」这一类没有连到下一步 —— 模型分到这一类时流程就停在这里",
+                       "从这一类的出口连一条线到下一步;用不上就删掉这个类别", node_id=i, field_path=f"config.classes[{k}]"))
+        for k in sorted(出边键 - set(名们) - {None}):
+            出.append(问(阻断, "CLASSIFY_EDGE_NO_CLASS", f"有一条连线挂在「{k}」这一类上,但类别里已经没有它了",
+                       "删掉这条线;还要这一类的话,先在「基本」里加回来再连", node_id=i))
+
     # ⑤ 变量可用性:**靠支配关系,不靠找名字** ───────────────────────
     跳过 = []
     for n in 节点们:
@@ -504,7 +531,7 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                            node_id=i, field_path=fp))
                 continue
             # **密钥绝不进模型上下文**(§7.1):进过一次提示词,它就已经进过日志、Trace,可能进过导出
-            if not 来源["进模型上下文"] and t in ("llm", "agent"):
+            if not 来源["进模型上下文"] and t in ("llm", "agent", "classifier"):
                 出.append(问(阻断, "BIND_SECRET_INTO_MODEL",
                            f"「{字段}」用的是密钥,而这一步会把内容交给模型,密钥会被记进日志",
                            f"在右侧「用到的数据」里给「{字段}」换一个来源。"

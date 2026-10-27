@@ -406,6 +406,46 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 当前 = 下[0] if 下 else 循环回(当前)
                 continue
 
+            if t == "classifier":
+                # 问题分类器(10-27,照 Dify):借 LLM 那条适配器问一次「属于哪一类」,按答案走同名出口。
+                # 类别名同时是出口名、也是交给模型的可选值 —— 三处一个名字,不会「模型答 A、线连在 B」
+                类们 = [c for c in (cfg.get("classes") or []) if isinstance(c, dict) and c.get("key")]
+                if 上限.get("max_model_turns") is not None and 用量["模型调用"] >= 上限["max_model_turns"]:
+                    执行状态, 完成原因 = "incomplete", "max_turns"
+                    记一步(当前, 失败, error_code="MAX_TURNS")
+                    break
+                实参, 缺 = 解绑定(cfg.get("bindings"), 状态)
+                本步入 = 实参
+                if 缺:
+                    raise 节点失败("BIND_MISSING_AT_RUNTIME", f"要分类的内容取不到:{'、'.join(缺)}",
+                                 "产出这些内容的那一步这次没跑到;在右侧「用到的数据」里核对来源")
+                if len(类们) < 2:
+                    raise 节点失败("CLASSIFY_TOO_FEW", "类别不到两个,没什么可分的", "在右侧「基本」里至少写两个类别")
+                fn = 适配器.get("llm")
+                if fn is None:
+                    raise 节点失败("ADAPTER_MISSING", "这类步骤在当前环境还跑不了",
+                                 "请联系技术管理员 —— 这一步没有执行,不是执行成功")
+                名们 = [c["key"] for c in 类们]
+                问模型 = {**实参, "可选的类别(只能从这里挑一个,原样写名字)": "\n".join(
+                    f"- {c['key']}" + (f":{c['说明']}" if c.get("说明") else "") for c in 类们)}
+                if (cfg.get("instruction") or "").strip():
+                    问模型["分类时还要注意"] = cfg["instruction"].strip()
+                r = fn({"connection_version_id": cfg.get("connection_version_id"),
+                        "sampling_params": cfg.get("sampling_params"),
+                        "max_output_tokens": cfg.get("max_output_tokens") or 300,
+                        "output_schema": {"type": "object", "required": ["类别"], "properties": {
+                            "类别": {"type": "string", "enum": 名们}, "理由": {"type": "string"}}}}, 问模型)
+                用量["模型调用"] += 1
+                类 = str(r.get("类别") or "").strip()
+                if 类 not in 名们:
+                    raise 节点失败("CLASSIFY_OUT_OF_SET", f"模型答的类别「{类[:40]}」不在设好的类别里({'、'.join(名们)})",
+                                 "把每个类别的说明写清楚;要兜底就从「失败」出口接一个人工核对")
+                状态["节点"][当前] = {"类别": 类, "理由": r.get("理由") or "", "branch": 类}
+                记一步(当前, 成功, branch_key=类, execution_mode=r.get("execution_mode"), 入=问模型, 出=状态["节点"][当前])
+                下 = 后继[当前].get((DS.分支, 类), [])
+                当前 = 下[0] if 下 else 循环回(当前)
+                continue
+
             if t == "condition":
                 选中 = None
                 本步入 = []    # 每一路拿什么跟什么比 —— 「为什么走了这一路」要看得见

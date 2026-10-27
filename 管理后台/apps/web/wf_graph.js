@@ -30,6 +30,10 @@
       return [...((n.config || {}).branches || []).map((b) => ({ port: "branch", branch_key: b.key, 名: 逻.分支名(b.key) })),
               { port: "branch", branch_key: "else", 名: "都不满足" }];
     }
+    if (n.type === "classifier") {   // 10-27 问题分类器:每个类别一个出口,类别名就是出口名
+      return [...((n.config || {}).classes || []).map((c) => ({ port: "branch", branch_key: c.key, 名: c.key || "(没起名)" })),
+              { port: "error", branch_key: null, 名: "失败时" }];
+    }
     if (n.type === "loop") {   // 10-27 有界循环:进循环体 / 循环结束后 / 失败时
       return [{ port: "loop_body", branch_key: null, 名: "进循环体" }, { port: "loop_exit", branch_key: null, 名: "循环结束后" },
               { port: "error", branch_key: null, 名: "失败时" }];
@@ -267,15 +271,18 @@
   };
 
   // ── 条件分支(§7.2)──────────────────────────────────────────────
+  /* 分路的那张表:条件分支是 branches、问题分类器是 classes(10-27)—— 改名 / 删一路两种步骤共用,线跟着走 */
+  逻.分路 = (n) => !n ? null : n.type === "condition" ? ((n.config = n.config || {}).branches = n.config.branches || [])
+    : n.type === "classifier" ? ((n.config = n.config || {}).classes = n.config.classes || []) : null;
   /* 改分支名:**连线的 branch_key 跟着改**,不留旧键(否则线和分支对不上,运行时那一路没人接) */
   逻.分支改名 = function (定义, 节点id, 旧, 新) {
     const n = 逻.节点(定义, 节点id);
     新 = String(新 || "").trim();
-    if (!n || n.type !== "condition") return { 可以: false, 为什么: "这一步不是条件判断" };
+    if (!n || !逻.分路(n)) return { 可以: false, 为什么: "这一步不是条件判断或问题分类器" };
     if (!新) return { 可以: false, 为什么: "分支名不能为空" };
     if (新 === "else") return { 可以: false, 为什么: "「else」留给「都不满足」那一路" };
     if (新 === 旧) return { 可以: false, 为什么: "未更改", 没变: true };
-    const bs = (n.config || {}).branches || [];
+    const bs = 逻.分路(n);
     if (bs.some((b) => b.key === 新)) return { 可以: false, 为什么: `已经有一路叫「${新}」了` };
     const b = bs.find((x) => x.key === 旧);
     if (!b) return { 可以: false, 为什么: `没有「${旧}」这一路` };
@@ -293,7 +300,7 @@
   };
   /* 删一路:那一路的线一起删;目标节点和其余分支保留 */
   逻.删分支 = function (定义, 节点id, i) {
-    const n = 逻.节点(定义, 节点id), bs = ((n || {}).config || {}).branches || [];
+    const n = 逻.节点(定义, 节点id), bs = 逻.分路(n) || [];
     if (!bs[i]) return { 删边: [] };
     const 键 = bs[i].key;
     const 删边 = (定义.edges || []).filter((e) => e.source === 节点id && e.port === "branch" && e.branch_key === 键);
