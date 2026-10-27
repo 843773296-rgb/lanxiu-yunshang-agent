@@ -13744,5 +13744,65 @@
    }
   ],
   "预期红": "kb_fit 这一跑走到了推出码的正路,不是「判不了」早退分支"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "把库指纹「先查缺失、再比相等」的顺序颠倒 —— 于是两边都没盖章的库被判成「同一版」",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "    if 旧 and 新:",
+    "new": "    if True:"
+   }
+  ],
+  "预期红": "不许**说成「同一版库」"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "不再把 build_logic_n == 0 当缺失 —— 于是空集合上算出来的指纹被当成真指纹(两个空集合当然两两相等)",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "        return 库.get(\"build_logic_fp\") if n > 0 else None",
+    "new": "        return 库.get(\"build_logic_fp\")"
+   }
+  ],
+  "预期红": "n=0 的空集合指纹 → **不许**说成「同一版库」"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "库指纹不同时不再拦 —— 于是换了库照样下「这个对比有意义」的结论",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "    拦, 库说 = _库的说法(基线章, 本)\n    if 拦:\n        return False, 库说",
+    "new": "    拦, 库说 = _库的说法(基线章, 本)\n    if False:\n        return False, 库说"
+   }
+  ],
+  "预期红": "两版库不同时不许照样下结论"
+ },
+ {
+  "script": "agent/rounds.py",
+  "改坏": "库指纹的文件数只认整数 —— 而真库给的是字符串(db_build 写 str(n),列型 TEXT),于是每个真库都被当成「没盖过章」",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "            n = int(库.get(\"build_logic_n\") or 0)",
+    "new": "            n = 库.get(\"build_logic_n\") if isinstance(库.get(\"build_logic_n\"), int) else 0"
+   }
+  ],
+  "预期红": "build_logic_n 是字符串(真库读回来的样子)时照样要认出「同一版库」"
+ },
+ {
+  "script": "tools/evalrec_provider_check.py",
+  "改坏": "章不再看 LANXIU_DB —— 而真评测切库走的就是它(agent/triage_sets.py),于是副本库上的成绩单被盖上默认库的指纹",
+  "file": [
+   {
+    "path": "agent/evalrec.py",
+    "old": "    env = os.environ.get(\"LANXIU_DB\")\n    if env:\n        return env",
+    "new": "    env = os.environ.get(\"LANXIU_DB\")\n    if False:\n        return env"
+   }
+  ],
+  "预期红": "env 指乙 + api.DB 指甲 → 章上是乙"
  }
 ]

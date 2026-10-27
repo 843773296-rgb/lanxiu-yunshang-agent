@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""评测来路章上的「供应商」,和真正发请求的那两处必须说同一家。
+"""评测来路章上写的,和这一轮真正用的必须是同一个 —— **供应商**和**库**两样。
 
 ⚠️ 2026-10-07 栽的:`v1.provider()` 和 `agentsite/sdk.py` 09-22 都改成了「没设开关默认 Claude」,
 `agent/evalrec.py::供应商()` 没跟着改,还是「找得到 DeepSeek 凭证就记 deepseek」——
@@ -48,9 +48,66 @@ for 名, 值 in 情形:
         bad.append(名)
 os.environ.clear(); os.environ.update(保)
 
+# ===== 第二样:章上的库,必须是**这一轮真正在读的那个库** =====
+# 和上面那一节同形:章上写的和真实用的不是同一个,而**两者在结果文件里长得一模一样**。
+# 这里开的是**真 sqlite 库**(临时目录),所以顺带验到了一件手写用例验不到的事:
+# `build_logic_n` 从库里读回来是**字符串**(`db_build` 写 str(n),world_meta.v 是 TEXT 列)。
+import sqlite3, tempfile
+
+def _造库(fp):
+    p = os.path.join(tempfile.mkdtemp(), "lanxiu.db")
+    c = sqlite3.connect(p)
+    c.execute("CREATE TABLE world_meta(k TEXT PRIMARY KEY, v TEXT)")
+    c.executemany("INSERT INTO world_meta(k, v) VALUES(?, ?)",
+                  [("build_commit", "c-" + fp), ("build_at", "2026-10-27T00:00:00"),
+                   ("build_logic_fp", fp), ("build_logic_n", "12")])   # str,和真库一样
+    c.commit(); c.close()
+    return p
+
+def _章上的fp():
+    evalrec._库章缓存.clear()        # 缓存按库路径存,清掉是为了让这几步各读一次
+    return (evalrec._库章() or {}).get("build_logic_fp")
+
+甲, 乙 = _造库("FPJIA"), _造库("FPYI")
+import api as _api
+_原DB, _原env = _api.DB, os.environ.get("LANXIU_DB")
+库案 = []
+try:
+    os.environ["LANXIU_DB"] = 甲
+    库案.append(("LANXIU_DB 指甲库 → 章上是甲", _章上的fp(), "FPJIA"))
+
+    os.environ["LANXIU_DB"] = 乙
+    库案.append(("同进程换成乙库 → 章跟着变(缓存按库路径分开,不许串)", _章上的fp(), "FPYI"))
+
+    # **顺序这一条是重点**:真评测切库走 env(agent/triage_sets.py),
+    # 而改 api.DB 的是门禁判据(它们不盖章)。api.DB 的初值就是默认路径,
+    # 所以「改过」和「没改过」在值上分不出 —— 拿它去压一个显式的环境变量,
+    # 结果就是真正切了库的那条路被盖上默认库的指纹。
+    _api.DB = 甲
+    os.environ["LANXIU_DB"] = 乙
+    库案.append(("env 指乙 + api.DB 指甲 → 章上是乙(显式的那条赢)", _章上的fp(), "FPYI"))
+
+    os.environ.pop("LANXIU_DB", None)
+    _api.DB = 甲
+    库案.append(("没设 env → 退回 api.DB(指甲)", _章上的fp(), "FPJIA"))
+finally:
+    _api.DB = _原DB
+    os.environ.pop("LANXIU_DB", None)
+    if _原env is not None:
+        os.environ["LANXIU_DB"] = _原env
+    evalrec._库章缓存.clear()
+
+for 名, 得, 应 in 库案:
+    n += 1
+    ok = 得 == 应
+    print(f"  {G + '✅' + D if ok else R + '❌' + D} {名}:章上={得} · 应为={应}")
+    if not ok:
+        bad.append(名)
+
 if n == 0:
     print(f"{R}❌ 一种情形都没验{D}"); sys.exit(1)
 if bad:
     print(f"{R}❌ {len(bad)} 种情形下章和实际发请求的不是同一家 —— 结果文件上的来路是假的{D}")
     sys.exit(1)
-print(f"{G}✅ 来路章和两处发请求的判据一致(验了 {n} 种开关设置){D}")
+print(f"{G}✅ 来路章对得上真实:供应商 = 两处发请求的那家,库 = 这一轮真正在读的那个"
+      f"(共验了 {n} 种情形,库那几条开的是真 sqlite){D}")
