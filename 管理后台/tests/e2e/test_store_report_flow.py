@@ -189,30 +189,40 @@ ck("第三次取和第二次一样 → 存的是**第二轮**的定稿", 存单 
 回执(rid2, "save_report", {"数据": {"ok": True, "id": "RPT-E2E-2"}, "结果": "已执行「save_report」"})
 ck("运行成功", 等到(rid2, ("succeeded", "failed", "incomplete"))[0] == "succeeded")
 
-print("\n▸ ③ 两轮都在变 → 停下不存")
+print("\n▸ ③ 一直在变 → 跑满 4 轮(第一稿 + 3 次重写)停下,没做完、不存(10-27 改成循环,用户拍最多重写 3 次)")
 c, r = 发起(wid, {"kind": "周"}); rid3 = r["resource_id"]
-等到(rid3, ("waiting_external",)); 回执(rid3, "store_report", 取数("fp-A", 100))
-等到(rid3, ("waiting_approval",)); 批(rid3, "定稿一")
-等到(rid3, ("waiting_external",)); 回执(rid3, "store_report", 取数("fp-B", 120))
-等到(rid3, ("waiting_approval",)); 批(rid3, "定稿二")
-等到(rid3, ("waiting_external",)); 回执(rid3, "store_report", 取数("fp-C", 130))
+等到(rid3, ("waiting_external",)); 回执(rid3, "store_report", 取数("fp-0", 100))
+for 轮 in range(1, 5):
+    等到(rid3, ("waiting_approval",)); 批(rid3, f"定稿{轮}")
+    等到(rid3, ("waiting_external",)); 回执(rid3, "store_report", 取数(f"fp-{轮}", 100 + 轮))
 st, rr = 等到(rid3, ("succeeded", "failed", "incomplete"))
-ck("**第三次又变 → 不存**,桥上一张存报告的单都没有,输出说明数据又变了",
-   st == "succeeded" and 存了几张(rid3) == 0 and "又变" in json.dumps((rr or {}).get("输出"), ensure_ascii=False),
-   (st, 存了几张(rid3), (rr or {}).get("输出")))
+ck("**4 轮都在变 → 没做完(incomplete / max_iterations)**,桥上一张存报告的单都没有,不多写第 5 稿",
+   st == "incomplete" and (rr or {}).get("停止原因") == "max_iterations" and 存了几张(rid3) == 0
+   and len([s_ for s_ in (rr or {}).get("步骤") or [] if s_["节点"] == "write" and s_["状态"] == "succeeded"]) == 4,
+   (st, (rr or {}).get("停止原因"), 存了几张(rid3)))
 
-print("\n▸ ④ 店长退回")
+print("\n▸ ④ 店长退回 → 带着理由重写一轮、再核,通过才存(10-27 用户拍:原来退回就结束)")
 c, r = 发起(wid, {"kind": "周"}); rid4 = r["resource_id"]
 等到(rid4, ("waiting_external",)); 回执(rid4, "store_report", 取数("fp-A", 100))
 等到(rid4, ("waiting_approval",))
-hs = 待办(rid4); 决定(hs[0]["id"], "rejected", reason="营收口径不对,先别存")
-st, rr = 等到(rid4, ("succeeded", "failed", "incomplete"))
-ck("退回 → 不再取数、不存,输出是退回理由",
-   st == "succeeded" and 存了几张(rid4) == 0 and len([x for x in 单(rid4, "已执行") if x["工具"] == "store_report"]) == 1
-   and "口径" in json.dumps((rr or {}).get("输出"), ensure_ascii=False), (st, (rr or {}).get("输出")))
+hs = 待办(rid4); 决定(hs[0]["id"], "rejected", reason="营收口径不对,按实收重写")
+st, rr = 等到(rid4, ("waiting_approval", "succeeded", "failed", "incomplete"))
+第二轮写 = [s_ for s_ in (rr or {}).get("步骤") or [] if s_["节点"] == "write" and "[2]" in (s_.get("执行键") or "")]
+ck("退回 → 不重新取数、重写后又停在店长核对,第二稿收到了店长的理由",
+   st == "waiting_approval" and 存了几张(rid4) == 0
+   and len([x for x in 单(rid4, "已执行") if x["工具"] == "store_report"]) == 1
+   and 第二轮写 and "按实收重写" in json.dumps(第二轮写[0].get("输入"), ensure_ascii=False),
+   (st, 存了几张(rid4), 第二轮写 and 第二轮写[0].get("输入")))
+批(rid4, "定稿二:按实收")
+等到(rid4, ("waiting_external",)); 回执(rid4, "store_report", 取数("fp-A", 100))
+等到(rid4, ("waiting_external",))
+存单 = [x for x in 单(rid4) if x["工具"] == "save_report"]
+ck("再核通过、数据没变 → 存的是第二稿的定稿", 存单 and 存单[0]["参数"].get("body") == "定稿二:按实收", 存单 and 存单[0]["参数"])
+回执(rid4, "save_report", {"数据": {"ok": True, "id": "RPT-E2E-4"}, "结果": "已执行「save_report」"})
+ck("运行成功", 等到(rid4, ("succeeded", "failed", "incomplete"))[0] == "succeeded")
 
 print()
 if 挂:
     print(f"❌ 经营报告:{len(挂)} 条不过(验了 {len(过) + len(挂)} 条)")
     sys.exit(1)
-print(f"✅ 经营报告:没变就存 / 变了重写再核 / 两轮都变不存 / 退回不存(验了 {len(过)} 条)")
+print(f"✅ 经营报告:没变就存 / 变了重写再核 / 一直变跑满 4 轮没做完 / 退回带理由重写再核(验了 {len(过)} 条)")

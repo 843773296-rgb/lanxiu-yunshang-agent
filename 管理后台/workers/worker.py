@@ -571,6 +571,15 @@ def _跑一张工作流(c, job, 打点):
         用户 = _渲染(要.get("user"), 实参) if 要.get("user") else \
             "\n\n".join(f"{k}:\n{v if isinstance(v, str) else _j.dumps(v, ensure_ascii=False)}"
                          for k, v in sorted(实参.items()))
+        if 要.get("user"):
+            # ⚠️ 绑定了、处理要求的模板里却没写 {{它}} 的数据,原来**静默丢掉** —— 模型看不见,而配置上它「用到了」。
+            # 10-27 经营报告改循环时撞到:店长退回的意见绑给「写报告正文」,模板没写它,重写就成了瞎写。
+            # 现在有值的照「名字:内容」接在后面(空的不接,免得模型以为「这一项是空的」)
+            用到 = set(_re.findall(r"\{\{\s*([^{}]+?)\s*\}\}", (要.get("user") or "") + (要.get("system") or "")))
+            补 = [(k, v) for k, v in sorted(实参.items()) if k not in 用到 and v not in (None, "", [], {})]
+            if 补:
+                用户 += "\n\n" + "\n\n".join(f"{k}:\n{v if isinstance(v, str) else _j.dumps(v, ensure_ascii=False)}"
+                                              for k, v in 补)
         if 结构化:
             用户 += ("\n\n只输出一个 JSON 对象,不要别的文字。键:" + "、".join(props)
                      + "。没提到的写「没提到」,列表类的没有就写 []。")

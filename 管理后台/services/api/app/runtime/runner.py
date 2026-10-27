@@ -517,8 +517,14 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 # 按 loop_state 的 update 从这一轮的结果更新状态,再回到这里判下一轮
                 上 = int(cfg.get("max_iterations") or 0)
                 if not 帧们 or 帧们[-1]["循环"] != 当前:
-                    初 = {k: (v.get("initial") if isinstance(v, dict) else None)
-                          for k, v in (cfg.get("loop_state") or {}).items()}
+                    # 初值可以是固定值,也可以引用循环前面某一步的结果(经营报告:循环前先取一次数,第一轮拿它写)
+                    def _初(v):
+                        x = v.get("initial") if isinstance(v, dict) else None
+                        if isinstance(x, dict) and "source" in x:
+                            x = 取值(x, 状态)
+                            return None if x is DS.缺失 else x
+                        return x
+                    初 = {k: _初(v) for k, v in (cfg.get("loop_state") or {}).items()}
                     帧们.append({"循环": 当前, "第几轮": 0, "状态": 初})
                 else:
                     帧 = 帧们[-1]

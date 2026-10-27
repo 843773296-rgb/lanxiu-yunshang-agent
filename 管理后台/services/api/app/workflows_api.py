@@ -201,7 +201,7 @@ def _经营报告(桥):
 
     用户 10-24 拍「比对指纹,变了就重写」:澜绣存报告时会**重新取数**并冻结那一份,正文要是照旧数写的,
     正文和冻结的取数包就对不上,而且不报错。所以存之前再取一次:指纹一样才存;变了就拿新数重写、请店长再看一遍。
-    **展开成最多两轮,不用循环节点**(循环里挂人工核对没验过);第二轮还变就停下说明,不硬存。
+    10-27 起是**一个有界循环**(原来展开成最多两轮;退回就结束):数据变了或店长退回都再写一轮,最多 4 轮,跑满还没存 = 没做完。
     只存不确认:确认要过必选指标,留给店长在澜绣页面上点。
     """
     def 引(n, p):
@@ -229,48 +229,65 @@ def _经营报告(桥):
                 "config": {"branches": [{"key": "approve", "when": {"op": "equals", "left": 引(核点, "/决定"),
                                          "right": {"source": "constant", "value": "approve"}}}],
                            "else_policy": "fail"}}
-    def 一样吗(id_, 甲, 乙, x, y):
-        return {"id": id_, "type": "condition", "name": "数据变了没有", "layout": {"x": x, "y": y},
-                "config": {"branches": [{"key": "same", "when": {"op": "equals", "left": 引(甲, "/指纹"),
-                                         "right": 引(乙, "/指纹")}}], "else_policy": "fail"}}
     def 存(id_, 核点, x, y):
         return {"id": id_, "type": "tool", "name": "存报告", "layout": {"x": x, "y": y},
                 "config": {"tool_version_id": 桥.get("save_report"),
                            "bindings": {"body": 引(核点, "/定稿"), "kind": 入("kind"), "date": 入("date")}}}
-    def 记(id_, 来, x, y):
-        return {"id": id_, "type": "transform", "name": "记下结果", "layout": {"x": x, "y": y},
-                "config": {"operations": [{"op": "to_string", "from": 来, "into": "结果"}],
-                           "output_schema": 结果Schema}}
+    # 10-27 改成**有界循环**(用户拍「核对不过 → AI 重写 → 店长再核,最多重写 3 次」):原来是整段复制两遍、退回就结束。
+    # 一轮 = 拿循环里的数据写 → 店长核对 → 通过就再取一次比指纹:一样 → 存、不再写;变了 → 带新数据再来一轮;
+    # **退回 → 带着店长的理由再写一轮**(用户拍,原来退回就结束)。上限 4 轮 = 第一稿 + 3 次重写,跑满还没存 → 没做完
+    S = lambda k: {"source": "scope", "pointer": "/" + k}
+    常 = lambda v: {"source": "constant", "value": v}
+    def 本轮(id_, 名, 还要写, 意见=None, 结果=None, x=0, y=0):
+        ops = [{"op": "default", "from": 常(还要写), "value": 还要写, "into": "还要写"}]
+        if 意见 is not None:
+            ops.append({"op": "to_string", "from": 意见, "into": "店长意见"})
+        if 结果 is not None:
+            ops.append({"op": "to_string", "from": 结果, "into": "结果"})
+        return {"id": id_, "type": "transform", "name": 名, "container": "rounds", "layout": {"x": x, "y": y},
+                "config": {"operations": ops, "output_schema": {"type": "object"}}}
+    写节点 = 写("write", "fetch0", 520, 160)
+    写节点["config"]["bindings"] = {"取数包": S("取数包"), "店长意见": S("店长意见")}
     节点 = [
         {"id": "start", "type": "start", "name": "选报告期", "layout": {"x": 40, "y": 160},
          "config": {"input_schema": {"type": "object", "properties": {
              "kind": {"type": "string", "enum": ["日", "周", "月"], "title": "报告种类", "description": "日 / 周 / 月"},
              "date": {"type": "string", "title": "那一期里的任意一天", "description": "不填就是上一个完整的那一期"}},
              "required": ["kind"], "additionalProperties": False}}},
-        取("fetch1", 200), 写("write1", "fetch1", 360, 160), 核("review1", "write1", 520, 160),
-        批了吗("ok1", "review1", 680, 160), 取("fetch2", 840), 一样吗("same1", "fetch1", "fetch2", 1000, 160),
-        存("save1", "review1", 1160, 60),
-        写("write2", "fetch2", 1160, 260), 核("review2", "write2", 1320, 260), 批了吗("ok2", "review2", 1480, 260),
-        {**取("fetch3", 1640), "layout": {"x": 1640, "y": 260}}, 一样吗("same2", "fetch2", "fetch3", 1800, 260),
-        存("save2", "review2", 1960, 200),
-        记("rejected1", 引("review1", "/理由"), 840, 320), 记("rejected2", 引("review2", "/理由"), 1640, 420),
-        记("unstable", {"source": "constant", "value": "核对期间数据又变了一次 —— 没存。数据稳定后重新发起"}, 1960, 340),
-        {"id": "merge", "type": "merge", "name": "汇合", "layout": {"x": 2120, "y": 160},
-         "config": {"candidates": [引("save1", "/结果"), 引("save2", "/结果"), 引("rejected1", "/结果"),
-                                   引("rejected2", "/结果"), 引("unstable", "/结果")], "output_field": "结果"}},
-        {"id": "finish", "type": "end", "name": "返回结果", "layout": {"x": 2280, "y": 160},
-         "config": {"output_schema": 结果Schema, "bindings": {"结果": 引("merge", "/结果")}}},
+        取("fetch0", 200),
+        {"id": "rounds", "type": "loop", "name": "写到店长通过为止", "layout": {"x": 360, "y": 160},
+         "config": {"max_iterations": 4,
+                    "condition": {"op": "equals", "left": S("还要写"), "right": 常(True)},
+                    "loop_state": {"还要写": {"initial": True, "update": 引("本轮", "/本轮/还要写")},
+                                   "取数包": {"initial": 引("fetch0", "/数据"), "update": 引("refetch", "/数据")},
+                                   "指纹": {"initial": 引("fetch0", "/指纹"), "update": 引("refetch", "/指纹")},
+                                   "店长意见": {"initial": "", "update": 引("本轮", "/本轮/店长意见")},
+                                   "结果": {"initial": "", "update": 引("本轮", "/本轮/结果")}}}},
+        {**写节点, "container": "rounds"},
+        {**核("review", "write", 680, 160), "container": "rounds"},
+        {**批了吗("ok", "review", 840, 160), "container": "rounds"},
+        {**取("refetch", 1000), "container": "rounds", "name": "存之前再取一次数"},
+        {"id": "same", "type": "condition", "name": "数据变了没有", "container": "rounds", "layout": {"x": 1160, "y": 160},
+         "config": {"branches": [{"key": "same", "when": {"op": "equals", "left": 引("refetch", "/指纹"),
+                                  "right": S("指纹")}}], "else_policy": "fail"}},
+        {**存("save", "review", 1320, 60), "container": "rounds"},
+        本轮("saved", "存好了,不再写", False, 结果=引("save", "/结果"), x=1480, y=60),
+        本轮("changed", "数据变了,用新数再写", True,
+             意见=常("核对期间数据变了 —— 用新数据重写,上一版店长已经看过"), x=1320, y=260),
+        本轮("rejected", "店长退回,带着理由再写", True, 意见=引("review", "/理由"), x=1000, y=320),
+        {"id": "本轮", "type": "merge", "name": "这一轮的结论", "container": "rounds", "layout": {"x": 1640, "y": 160},
+         "config": {"candidates": [引("saved", "/"), 引("changed", "/"), 引("rejected", "/")], "output_field": "本轮"}},
+        {"id": "finish", "type": "end", "name": "返回结果", "layout": {"x": 1800, "y": 160},
+         "config": {"output_schema": 结果Schema, "bindings": {"结果": 引("rounds", "/结果")}}},
     ]
     边 = [{"source": a, "target": b, "port": "success"} for a, b in (
-        ("start", "fetch1"), ("fetch1", "write1"), ("write1", "review1"), ("review1", "ok1"),
-        ("fetch2", "same1"), ("write2", "review2"), ("review2", "ok2"), ("fetch3", "same2"),
-        ("save1", "merge"), ("save2", "merge"), ("rejected1", "merge"), ("rejected2", "merge"),
-        ("unstable", "merge"), ("merge", "finish"))]
+        ("start", "fetch0"), ("fetch0", "rounds"), ("write", "review"), ("review", "ok"), ("refetch", "same"),
+        ("save", "saved"), ("saved", "本轮"), ("changed", "本轮"), ("rejected", "本轮"))]
     分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
-    边 += [分("ok1", "fetch2", "approve"), 分("ok1", "rejected1", "else"),
-          分("same1", "save1", "same"), 分("same1", "write2", "else"),
-          分("ok2", "fetch3", "approve"), 分("ok2", "rejected2", "else"),
-          分("same2", "save2", "same"), 分("same2", "unstable", "else")]
+    边 += [{"source": "rounds", "target": "write", "port": "loop_body"},
+          {"source": "rounds", "target": "finish", "port": "loop_exit"},
+          分("ok", "refetch", "approve"), 分("ok", "rejected", "else"),
+          分("same", "save", "same"), 分("same", "changed", "else")]
     return {"definition_schema_version": "1", "kind": "workflow",
             "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
             "nodes": 节点, "edges": 边}
