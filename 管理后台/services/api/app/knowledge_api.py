@@ -1634,7 +1634,7 @@ def 记一次试跑(project_id, me, 链, *, 构建id, 来源="检索实验室"):
 def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
           limit: int = Query(50, ge=1, le=200),
           source: str = Query(None), 只看没评的: bool = Query(False),
-          只看要分析的: bool = Query(False)):
+          只看要分析的: bool = Query(False), offset: int = Query(0, ge=0)):
     """检索试跑列表。**分数、来源、答案那一档都要在列表上看得见。**
 
     ⚠️ 这一页回答的是「**这一版检索好不好用**」—— 不是「跑过几次」。
@@ -1644,7 +1644,9 @@ def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
     limit = _直调默认(limit, 50)
     source = _直调默认(source, None)
     只看没评的 = bool(_直调默认(只看没评的, False))
-    条件, 参 = ["rr.project_id = :p"], {"p": project_id, "n": limit}
+    # 翻页(10-27 召回测试照 Dify 每页 10 条):原来只有 limit,超过一页的记录在页面上根本到不了
+    offset = _直调默认(offset, 0)
+    条件, 参 = ["rr.project_id = :p"], {"p": project_id, "n": limit, "off": offset}
     if source:
         条件.append("rr.source = :src")
         参["src"] = source
@@ -1668,8 +1670,8 @@ def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
               left join knowledge_bases kb on kb.project_id = rr.project_id
                                           and kb.id = rr.knowledge_base_id
              where {' and '.join(条件)}
-             order by rr.created_at desc
-             limit :n
+             order by rr.created_at desc, rr.id desc
+             limit :n offset :off
         """), 参).mappings().all()
         # ⚠️ 汇总**另算一次,不筛**:筛着看的时候那个平均分只代表筛出来的那几条,
         # 而人读到的是「这一版检索的平均分」。
@@ -1717,7 +1719,7 @@ def 试跑列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         # ⚠️ `total` 是**筛选后的全量**(汇总那一块才是不筛的整表数)——
         # 两个数不是一回事,所以键名也不同。
         "items": 出, "total": (int(rs[0]["全量"]) if rs else 0),
-        "这一页几条": len(出),
+        "这一页几条": len(出), "offset": offset, "limit": limit,
         "汇总": {
             "一共几条": 总["条数"], "评过的": 总["评过的"],
             "还没评的": (总["条数"] or 0) - (总["评过的"] or 0),

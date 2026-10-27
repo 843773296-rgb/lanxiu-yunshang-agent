@@ -115,6 +115,14 @@ ck("存档失败时会说清为什么(这次成功,所以只验它带了下一�
 print("\n▸ ② 列表:分数 / 来源 / 答案那一档都要看得见")
 s, L = 打("GET", f"{P}/retrieval-runs?limit=100")
 ck("200", s == 200, s)
+# 翻页(10-27 召回测试照 Dify 每页 10 条):第二页接着第一页往下,不重、不漏,总数不随页变
+s1, A1 = 打("GET", f"{P}/retrieval-runs?limit=1&offset=0")
+s2, A2 = 打("GET", f"{P}/retrieval-runs?limit=1&offset=1")
+ck("翻页:第 1 条和第 2 条是两条不同的记录、各自就是整表排序里的第 1、2 条,总数一样",
+   s1 == s2 == 200 and A1["total"] >= 2 and A1["total"] == A2["total"]
+   and [x["id"] for x in A1["items"] + A2["items"]] == [x["id"] for x in L["items"][:2]],
+   ([x["id"] for x in (A1 or {}).get("items", [])], [x["id"] for x in (A2 or {}).get("items", [])],
+    [x["id"] for x in L["items"][:2]]))
 我的 = [x for x in L["items"] if x["id"] == rid]
 ck("刚跑的那条在列表里", len(我的) == 1, len(我的))
 r0 = 我的[0] if 我的 else {}

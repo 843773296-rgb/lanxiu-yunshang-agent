@@ -107,8 +107,7 @@ const 导航 = [
   ["grp", "知识与 RAG"],
   ["#/uploads", "加资料", true, true],
   ["#/kb", "知识库", true, true],
-  ["#/retrieval", "检索实验室", true, true],
-  ["#/rruns", "检索试跑记录", true, true],
+  ["#/retrieval", "召回测试", true, true],
   ["#/datasets", "数据集", true],
   ["grp", "微调训练"],
   ["#/training", "训练任务", true, true],
@@ -4264,7 +4263,7 @@ async function 页_调用链() {
   catch (e) { const s = 错误块(e, 页_调用链); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
   if (!d.items.length) {
     $("#main").innerHTML = 头 + 状态("", "还没有运行记录",
-      "跑一次检索实验室,或者让门店助手上报一次调用(A1)。").html;
+      "跑一次召回测试,或者让门店助手上报一次调用(A1)。").html;
     return;
   }
   $("#main").innerHTML = 头 + `<table><thead><tr>
@@ -5017,14 +5016,27 @@ async function 页_索引构建(kbId) {
          它们会被强制重建,**因为「没记」不等于「一样」**。`)}</div>`;
 }
 
-async function 页_检索实验室() {
+/* ── 召回测试(10-27,照 Dify「召回测试」一页;用户 10-26 拍「检索实验室 + 检索试跑记录合成一页」)──
+ *
+ * 左:源文本输入框 + 测试记录(每页 10 条,点一行把那次的问题填回输入框);右:这次召回到的段落。
+ * 和 Dify 不一样的地方,都是我们原来就有、不能丢的:
+ *   · 右边结果还是「整条链路」(改写 → 召回 → 精排 → 选片 → 生成),Dify 只给段落和分数;
+ *     片段对、答案错这种 RAG 最常见的失效,只看段落看不出来
+ *   · 记录里带评价(聊天里的人打的 5 档)和「要分析」
+ * ⚠️ **打开页面不再自动跑一次**:原来一进来就真调 Claude 精排,每打开一次都花钱;Dify 也是点「测试」才跑。
+ * 「召回设置」只影响这一次测试,不改知识库的设置(Dify 同样如此)。
+ */
+let 召回态 = { 索引: null, 精排: true, 生成: false, 页: 0, 只看要分析的: false };
+const 召回字数上限 = 200;
+
+async function 页_召回测试() {
   const 头 = `<div class="crumb">知识与 RAG</div>
-    <div class="head"><div><h1>检索实验室</h1>
-      <div class="sub">${md(`问一句话,看**整条链路**怎么走到那几段(§9.5)。`)}</div></div></div>`;
+    <div class="head"><div><h1>召回测试</h1>
+      <div class="sub">根据给定的查询文本测试知识的召回效果。</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let kbs;
   try { kbs = await 请求(`${P()}/knowledge-bases`); }
-  catch (e) { const s = 错误块(e, 页_检索实验室); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  catch (e) { const s = 错误块(e, 页_召回测试); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
   const 可用 = kbs.items.filter((x) => x["能检索吗"]);
   if (!可用.length) {
     $("#main").innerHTML = 头 + 状态("", "没有能检索的知识库",
@@ -5034,51 +5046,120 @@ async function 页_检索实验室() {
     const b = $("#st-act"); if (b) b.onclick = () => { location.hash = "#/kb"; };
     return;
   }
-  // 取第一个能检索的知识库的已就绪索引
   let builds = { items: [] };
   try { builds = await 请求(`${P()}/knowledge-bases/${encodeURIComponent(可用[0].id)}/index-builds`); }
   catch (e) { /* 下面会显示「没有可用索引」 */ }
   const 就绪 = builds.items.filter((x) => x.status === "已就绪");
-  $("#main").innerHTML = 头 + `<div class="card"><div class="body">
-      <label class="k">索引</label>
-      <select id="rt-ib">${就绪.map((x) => `<option value="${esc(x.id)}">${esc(x.id)} · ${esc(x.embedding_model_id || "")} ${x["是mock吗"] ? "(mock)" : ""}</option>`).join("")}</select>
-      <label class="k" style="margin-left:10px">问题</label>
-      <input id="rt-q" style="width:44%" placeholder="客户给了差评要怎么处理"
-             value="客户给了差评要怎么处理">
-      <label class="k" style="margin-left:10px">
-        <input type="checkbox" id="rt-rr" checked> Claude 精排</label>
-      <label class="k" style="margin-left:10px">
-        <input type="checkbox" id="rt-gen"> 生成答案</label>
-      <button id="rt-go" style="margin-left:10px">检索</button>
-      <div class="note">${md(`⚠️ 两个勾各**真调一次 Claude**(一次检索最多两次调用,
-        几百毫秒到几秒),用量记在记录仪**和账本**里。
-        去掉精排只走向量 —— **那个排序不可靠**:实测一个表格头排到过第 1 名(0.6849),
-        而真答案第 2(0.6329)。
-        **「生成答案」默认不勾**(一打开这一页就跑两次模型太贵)——
-        勾上再点「检索」,底下会多一张答案卡。
-        不看答案就看不到 **RAG 最常见的那种失效**:片段选对了,
-        而模型答的时候自己补了内容 —— 只看检索结果看不出来。`)}</div>
-    </div></div><div id="rt-out"></div>`;
+  if (!就绪.find((x) => x.id === 召回态.索引)) 召回态.索引 = 就绪[0] ? 就绪[0].id : null;
+  const 方式名 = () => `${召回态.精排 ? "向量 + Claude 精排" : "只走向量"}${召回态.生成 ? " · 生成答案" : ""}`;
+  $("#main").innerHTML = 头 + `<div class="hit2">
+      <div>
+        <div class="card"><div class="body">
+          <div class="hitbar"><b>源文本</b><button id="ht-set" title="召回设置">${esc(方式名())}</button></div>
+          <textarea id="ht-q" rows="5" placeholder="请输入文本,建议使用简短的陈述句。"></textarea>
+          <div class="hitbar"><span class="k" id="ht-n">0/${召回字数上限}</span>
+            <button class="pri" id="ht-go" disabled>测试</button></div>
+          <div class="k" id="ht-err"></div>
+        </div></div>
+        <h3>记录</h3><div id="ht-rec"><div class="state">加载中…</div></div>
+      </div>
+      <div><div id="ht-out"><div class="state">召回测试结果将展示在这里</div></div></div>
+    </div>`;
+  const 框 = $("#ht-q");
+  const 核 = () => {
+    const n = 框.value.trim().length;
+    $("#ht-n").textContent = `${n}/${召回字数上限}`;
+    $("#ht-err").textContent = n > 召回字数上限 ? `不超过 ${召回字数上限} 个字符` : "";
+    $("#ht-go").disabled = !n || n > 召回字数上限 || !召回态.索引;
+  };
+  框.oninput = 核;
+  框.onkeydown = (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !$("#ht-go").disabled) 跑(); };
   const 跑 = async () => {
-    const ib = $("#rt-ib") ? $("#rt-ib").value : "";
-    const q = ($("#rt-q").value || "").trim();
-    const rr = $("#rt-rr").checked;
-    const gen = $("#rt-gen") ? $("#rt-gen").checked : false;
-    const 几次 = (rr ? 1 : 0) + (gen ? 1 : 0);
-    $("#rt-out").innerHTML = `<div class="state">检索中${
-      几次 ? `(要调 ${几次} 次模型,稍等)` : ""}…</div>`;
+    const q = 框.value.trim();
+    const 几次 = (召回态.精排 ? 1 : 0) + (召回态.生成 ? 1 : 0);
+    $("#ht-out").innerHTML = `<div class="state">检索中${几次 ? `(要调 ${几次} 次模型,稍等)` : ""}…</div>`;
     let d;
     try {
       d = await 请求(`${P()}/retrieval-tests`, {
         method: "POST",
-        body: JSON.stringify({ 索引构建id: ib, 问题: q, 要精排: rr, 要生成: gen }),
+        body: JSON.stringify({ 索引构建id: 召回态.索引, 问题: q, 要精排: 召回态.精排, 要生成: 召回态.生成 }),
       });
-    } catch (e) { const s = 错误块(e, 跑); $("#rt-out").innerHTML = s.html; s.挂(); return; }
-    $("#rt-out").innerHTML = 画链路(d);
+    } catch (e) { const s = 错误块(e, 跑); $("#ht-out").innerHTML = s.html; s.挂(); return; }
+    $("#ht-out").innerHTML = `<h3 style="margin-top:0">${esc(d["选了几片"] ?? 0)} 个召回段落</h3>` + 画链路(d);
+    召回态.页 = 0; 画召回记录();
   };
-  $("#rt-go").onclick = 跑;
-  $("#rt-q").onkeydown = (e) => { if (e.key === "Enter") 跑(); };
-  await 跑();
+  $("#ht-go").onclick = 跑;
+  $("#ht-set").onclick = () => 召回设置(就绪, () => { $("#ht-set").textContent = 方式名(); 核(); });
+  核();
+  await 画召回记录();
+}
+
+/* 召回设置:右侧抽屉。**只影响这一次测试**,不改知识库 */
+function 召回设置(就绪, 存后) {
+  关召回设置();
+  const el = document.createElement("div");
+  el.id = "drawer-mask"; el.className = "drawer-mask";
+  el.innerHTML = `<div class="drawer" role="dialog" aria-modal="true" aria-label="召回设置">
+      <div class="mh"><b>召回设置</b><button id="hs-x" aria-label="关闭">×</button></div>
+      <div class="mb">
+        <div class="k">只影响这一次测试,不改知识库的设置。</div>
+        <label class="f">索引</label>
+        <select id="hs-ib">${就绪.map((x) => `<option value="${esc(x.id)}" ${x.id === 召回态.索引 ? "selected" : ""}>${esc(x.id)} · ${esc(x.embedding_model_id || "")}${x["是mock吗"] ? "(mock)" : ""}</option>`).join("")}</select>
+        <label class="f">检索方式</label>
+        <label class="tpl"><input type="checkbox" id="hs-rr" ${召回态.精排 ? "checked" : ""}> <b>Claude 精排</b>
+          <div class="k">每次测试真调一次 Claude。去掉就只走向量 —— 那个排序不可靠:实测一个表格头排到过第 1 名,真答案第 2。</div></label>
+        <label class="tpl"><input type="checkbox" id="hs-gen" ${召回态.生成 ? "checked" : ""}> <b>生成答案</b>
+          <div class="k">再多调一次 Claude,底下多一张答案卡。片段选对了、模型答的时候自己补了内容 —— 只看段落看不出这种失效。</div></label>
+        <div class="acts"><button class="pri" id="hs-ok">保存</button> <button id="hs-no">取消</button></div>
+      </div></div>`;
+  document.body.appendChild(el);
+  $("#hs-x").onclick = 关召回设置; $("#hs-no").onclick = 关召回设置;
+  el.onclick = (e) => { if (e.target === el) 关召回设置(); };
+  $("#hs-ok").onclick = () => {
+    召回态.索引 = $("#hs-ib").value || 召回态.索引;
+    召回态.精排 = $("#hs-rr").checked; 召回态.生成 = $("#hs-gen").checked;
+    关召回设置(); 存后();
+  };
+}
+function 关召回设置() { const m = $("#drawer-mask"); if (m) m.remove(); }
+
+/* 测试记录:每页 10 条,点一行把问题填回输入框;评价(聊天里打的)和「要分析」照旧显示 */
+async function 画召回记录() {
+  const 盒 = $("#ht-rec"); if (!盒) return;
+  let d;
+  try {
+    d = await 请求(`${P()}/retrieval-runs?limit=10&offset=${召回态.页 * 10}`
+      + (召回态.只看要分析的 ? "&只看要分析的=true" : ""));
+  } catch (e) { const s = 错误块(e, 画召回记录); 盒.innerHTML = s.html; s.挂(); return; }
+  const 汇 = d["汇总"] || {}, 共 = d.total || 0, 页数 = Math.max(1, Math.ceil(共 / 10));
+  const 头 = `<div class="hitbar"><span class="k">${md(`共 ${共} 条 · 平均分 ${汇["平均分"] ?? "—"}(${汇["平均分怎么读"] || ""})`)}</span>
+      ${汇["要分析的有几条"] || 召回态.只看要分析的 ? `<button id="hr-bad">${召回态.只看要分析的 ? "看全部" : `只看要分析的(${汇["要分析的有几条"]} 条低于 3 分)`}</button>` : ""}</div>`;
+  if (!d.items.length) {
+    盒.innerHTML = 头 + `<div class="state">最近无查询结果</div>`;
+  } else {
+    盒.innerHTML = 头 + `<table><thead><tr><th>查询内容</th><th>数据源</th><th>时间</th><th>评价</th><th></th></tr></thead><tbody>`
+      + d.items.map((r, i) => `<tr class="hitrow" data-hi="${i}" title="点一下把这句填回输入框">
+          <td><b>${esc(r["问题"])}</b>${r["改写"] && r["改写"] !== r["问题"] ? `<div class="k">改写:${esc(r["改写"])}</div>` : ""}</td>
+          <td>${r["来源"] === "chat" ? `<span class="pill ok">聊天</span>` : `<span class="pill none">召回测试</span>`}</td>
+          <td class="k" style="white-space:nowrap">${esc(String(r["什么时候"] || "").slice(0, 16))}</td>
+          <td>${评分块(r)}</td>
+          <td><a href="#/rrun/${encodeURIComponent(r.id)}">看详情</a></td></tr>`).join("")
+      + `</tbody></table>
+      <div class="hitbar"><button id="hr-prev" ${召回态.页 === 0 ? "disabled" : ""}>上一页</button>
+        <span class="k">第 ${召回态.页 + 1} / ${页数} 页</span>
+        <button id="hr-next" ${召回态.页 + 1 >= 页数 ? "disabled" : ""}>下一页</button></div>`;
+    盒.querySelectorAll("[data-hi]").forEach((tr) => {
+      tr.onclick = (e) => {
+        if (e.target.closest("a")) return;
+        const q = $("#ht-q"); if (!q) return;
+        q.value = d.items[+tr.dataset.hi]["问题"] || ""; q.dispatchEvent(new Event("input")); q.focus();
+      };
+    });
+    $("#hr-prev").onclick = () => { 召回态.页 -= 1; 画召回记录(); };
+    $("#hr-next").onclick = () => { 召回态.页 += 1; 画召回记录(); };
+  }
+  const bad = $("#hr-bad");
+  if (bad) bad.onclick = () => { 召回态.只看要分析的 = !召回态.只看要分析的; 召回态.页 = 0; 画召回记录(); };
 }
 
 /* ⚠️ **片段正文带 `data-raw="原文"`,而且故意用 `esc()` 不用 `md()`。**
@@ -5315,93 +5396,6 @@ let 档位名 = {};        // 从接口的档位表来(不在前端写死一份,
  * 静默覆盖那条)。删掉它等于让 chat 那条路也没法评。
  */
 
-/* 「只看要分析的」= 评分低于 3 分(业务 2026-10-08 拍)。
- * ⚠️ 这个阈值**不在前端** —— 接口给 `要分析吗` / `只看要分析的`,
- * 界面只传开关。前端比数的话,阈值就有了第二个定义点。*/
-let _只看要分析的 = false;
-
-async function 页_试跑记录() {
-  const 头 = `<div class="crumb">知识与 RAG</div>
-    <div class="head"><div><h1>检索试跑记录</h1>
-      <div class="sub">${md(`每次检索试跑攒在这儿,**带 5 档评价** ——
-        一次试跑是个印象,二十次才是个判断。`)}</div></div></div>`;
-  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
-  const 拉 = async () => {
-    let d;
-    try {
-      d = await 请求(`${P()}/retrieval-runs?limit=100`
-        + (_只看要分析的 ? "&只看要分析的=true" : ""));
-    }
-    catch (e) { const s = 错误块(e, 页_试跑记录); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
-    const 汇 = d["汇总"] || {};
-    // 档位名从接口来 —— 列表没给的话去详情拿;两处都没有就只显示数字。
-    if (d.items[0]) {
-      try {
-        const one = await 请求(`${P()}/retrieval-runs/${encodeURIComponent(d.items[0].id)}`);
-        档位名 = (one["评价"] || {})["档位表"] || {};
-      } catch (e) { /* 拿不到就只显示数字,不挡住整页 */ }
-    }
-    const 汇总块 = `<div class="cards">
-      ${[["一共几条", 汇["一共几条"]], ["评过的", 汇["评过的"]],
-         ["还没评的", 汇["还没评的"]],
-         // 🔑 业务要的那一格:低于 3 分 = 要打开分析的
-         ["要分析的(<3 分)", 汇["要分析的有几条"]],
-         ["平均分", 汇["平均分"] === null || 汇["平均分"] === undefined
-            ? "—" : 汇["平均分"]]].map(([k, v]) =>
-        `<div class="card kpi"><div class="body"><div class="k">${esc(k)}</div>
-           <div style="font-size:22px;font-weight:700">${esc(String(v ?? "—"))}</div>
-         </div></div>`).join("")}
-      </div>
-      <div class="note">${md("**平均分怎么读**:" + (汇["平均分怎么读"] || "—"))}</div>
-      ${汇["要分析的有几条"]
-        ? `<div class="note warn">${md("**" + 汇["要分析的有几条"]
-            + " 条要分析** —— " + (汇["什么算要分析"] || ""))}
-            <div style="margin-top:6px"><button id="rr-bad">${
-              _只看要分析的 ? "看全部" : "只看要分析的"}</button></div></div>`
-        : `<div class="note">${md("没有低于 3 分的记录 —— "
-            + (汇["什么算要分析"] || ""))}</div>`}
-      ${Object.keys(汇["各档分布"] || {}).length
-        ? `<div class="note">各档分布:${Object.entries(汇["各档分布"]).map(
-            ([k, v]) => `${esc(k)} <b>${v}</b> 条`).join(" · ")}</div>` : ""}
-      ${汇["chat 的有几条"]
-        ? `<div class="note">${md(汇["note"] || "")}</div>`
-        : `<div class="note warn">${md(汇["note"] || "")}</div>`}`;
-    if (!d.items.length) {
-      $("#main").innerHTML = 头 + 汇总块 + 状态("", "还没有试跑记录",
-        "去**检索实验室**问一句话 —— 跑完会自动记在这儿。\n\n"
-        + "⚠️ 而 **chat 现在不走这条检索链**,所以这里不会自己长出 chat 的记录。",
-        { 文: "去检索实验室", 做: () => { location.hash = "#/retrieval"; } }).html;
-      const b = $("#st-act"); if (b) b.onclick = () => { location.hash = "#/retrieval"; };
-      return;
-    }
-    $("#main").innerHTML = 头 + 汇总块 + `<table><thead><tr>
-        <th>什么时候</th><th>来源</th><th>问题</th><th>知识库</th>
-        <th class="num">选片</th><th>答案</th><th>评价(点数字打分)</th><th></th>
-        </tr></thead><tbody>`
-      + d.items.map((r) => `<tr>
-          <td class="k" style="white-space:nowrap">${esc(String(r["什么时候"] || "").slice(0, 19))}
-            <div class="k">${esc(r["谁跑的"] || "—")}</div></td>
-          <td>${r["来源"] === "chat" ? `<span class="pill ok">chat</span>`
-                : `<span class="pill none">实验室</span>`}</td>
-          <td><a href="#/rrun/${encodeURIComponent(r.id)}"><b>${esc(r["问题"])}</b></a>
-            ${r["改写"] && r["改写"] !== r["问题"]
-              ? `<div class="k">改写:${esc(r["改写"])}</div>` : ""}</td>
-          <td class="k">${esc(r["知识库"] || "—")}</td>
-          <td class="num">${r["选了几片"] ?? "—"} / ${r["召回数"] ?? "—"}</td>
-          <td>${答案档标(r["答案那一档"])}
-            ${r["答案摘要"] ? `<div class="k">${esc(r["答案摘要"])}…</div>` : ""}</td>
-          <td>${评分块(r)}</td>
-          <td><a href="#/rrun/${encodeURIComponent(r.id)}">看详情</a></td>
-        </tr>`).join("")
-      + `</tbody></table>
-         <div class="note">${md(`⚠️ **「答案」那一栏的四档不是同一类事**:
-           「这次没要」是人去掉了勾(一个选择),「跑不成」是一次故障 ——
-           **合成一句「没有答案」的话,这两种在列表上长得一模一样**。`)}</div>`;
-    const bad = $("#rr-bad");
-    if (bad) bad.onclick = () => { _只看要分析的 = !_只看要分析的; 拉(); };
-  };
-  await 拉();
-}
 
 function 答案档标(档) {
   if (档 === "答了") return `<span class="pill ok">答了</span>`;
@@ -5412,7 +5406,7 @@ function 答案档标(档) {
 }
 
 async function 页_试跑详情(rid) {
-  const 头 = `<div class="crumb"><a href="#/rruns">检索试跑记录</a> / 详情</div>`;
+  const 头 = `<div class="crumb"><a href="#/retrieval">召回测试</a> / 记录详情</div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   const 拉 = async () => {
     let d;
@@ -6598,11 +6592,11 @@ async function 路由() {
     if (h.startsWith("#/chunks/")) return await 页_切片列表(decodeURIComponent(h.slice(9)));
     if (h.startsWith("#/chunk/")) return await 页_切片详情(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/kb/")) return await 页_索引构建(decodeURIComponent(h.slice(5)));
-    if (h === "#/retrieval") return await 页_检索实验室();
+    if (h === "#/retrieval") return await 页_召回测试();
     // ⚠️ 带参的写在前面(`#/rrun/` 比 `#/rruns` 长,但两者第 7 个字符不同,
     // 不会互相吃掉)—— 顺序照 `#/chunks/` 那段的理由。
     if (h.startsWith("#/rrun/")) return await 页_试跑详情(decodeURIComponent(h.slice(7)));
-    if (h === "#/rruns") return await 页_试跑记录();
+    if (h === "#/rruns") return await 页_召回测试();   // 旧地址(检索试跑记录)并进了召回测试
     if (h === "#/audit") return await 页_审计记录();
     if (h === "#/apps") return await 页_应用与发布();
     if (h.startsWith("#/app/")) return await 页_应用详情(decodeURIComponent(h.slice(6)));
