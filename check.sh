@@ -536,6 +536,7 @@ run "报修写口 · 哪一件不猜、店长判责、同意要凭据、回店�
 run "客户转移审批 · 建单核对本店、本店店长能批、批准即生效、聊天和审批中心同一段(用户 10-25 拍,在库副本上跑)" python3 backend/approval_transfer_check.py
 run "多渠道对比 · 数算得对,而这张表不能用来比渠道" python3 backend/channel_check.py
 run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/eval_provenance_check.py
+run "纹样业务核定 · 核过的不被重算覆盖,写口六道拦(含原话校验:模型替人猜的核不进去)" python3 backend/motif_review_check.py
 run "评测来路章 · 章上的供应商 = 真正发请求的那家,章上的库 = 真正在读的那个库" ./agentsite/.venv/bin/python tools/evalrec_provider_check.py
 run "提示词里的数 · 体检认它算出处,所以它得在知识库里找得到" ./agentsite/.venv/bin/python tools/prompt_numbers_check.py
 run "按月查 · 某月进入休眠的客户 / 某月的订单(期望值另用 SQL 算)" python3 backend/month_query_check.py

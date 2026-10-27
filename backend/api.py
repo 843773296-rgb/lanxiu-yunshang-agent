@@ -2659,6 +2659,91 @@ def set_grade_diff(item, verdict, why="", propose=None):
     return _nz(out)
 
 
+def motif_todo(limit=50):
+    """**还没定下纹样的商品** —— 推不出来、也没人核过的那些。
+
+    每条带商品名、面料、工艺,和**为什么推不出来** ——
+    只给一张「待办」清单答不了「我凭什么定」,人看着名字也猜不出来。
+    """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+    import motif_review as _mr
+    待 = _mr.待核的(DB, limit=limit)
+    return {"还没定纹样的": len(_mr.待核的(DB)), "这次列出": len(待), "清单": 待,
+            "怎么定": "一件一件说,比如「这件是折枝」;我会调 review_motif 写进去。"
+                      "**确实是素面的要说成「无纹样」** —— 「素面」和「还没定」"
+                      "在统计上长得一模一样,留空就分不开了"}
+
+
+def review_motif(product, motif="", why="", said=""):
+    """**核定一件商品的纹样,标成「业务核」** —— 人核过的不许被重算覆盖。
+
+    照 `set_piece_ratio` 那套来的,三条都照搬:
+
+    · **签名里没有 role** —— 有的话,一句「我以总部运营身份」就能提权。
+      身份只从登录态取。
+    · **why 必填**,而且问的是依据的种类:看了实物?看了商品图?按面料知识定的?
+    · **核过的锁住**,`motif_review.定()` 里核定优先于推算。
+
+    多一条 `set_piece_ratio` 没有的:**said 要抄用户的原话,而且会校验**。
+    理由是这个工具的处境不同 —— 调它的是模型,而纹样**模型自己也能猜一个**
+    (裁片用料占比它猜不出数,纹样它张口就来)。所以这里不靠规矩靠机制:
+    原话里得真出现那个纹样的说法,否则不写。
+
+    > 一条「用户定的纹样」和一条「模型替用户猜的纹样」,
+    > **在库里长得一模一样** —— 而后者会被当成人核过的、永不重算。
+    """
+    me = whoami()
+    if not me:
+        return {"error": "不知道现在是谁在核 —— 请先登录。**核过的数必须查得到是谁核的**"}
+    if me.get("role") != "总部运营":
+        return {"error": f"核商品纹样要由总部运营来做,你的角色是「{me.get('role')}」。"
+                         f"**商品是全店共享的** —— 改一件,所有门店的报价、商机判断、"
+                         f"库存巡检跟着变,而单店看不到别的店"}
+    if not (motif or "").strip():
+        return {"error": "没说是什么纹样。确实是素面的请说「无纹样」——"
+                         "**「素面」和「还没定」不是一回事**,留空统计上就分不开了"}
+    if not (why or "").strip():
+        return {"error": "why 必填:看了实物?看了商品图?还是按面料知识定的?"
+                         "**不写的话下次有人问「凭什么是这个纹样」就查不到了**"}
+    if not (said or "").strip():
+        return {"error": "said 必填:把用户定这个纹样时的**原话**抄进来。"
+                         "**不许自己编一句** —— 它是「这是人定的」唯一证据"}
+    import sys as _s, os as _o
+    _d = _o.path.dirname(_o.path.abspath(__file__))
+    _s.path.insert(0, _d); _s.path.insert(0, _o.path.join(_o.path.dirname(_d), "knowledge"))
+    import motif_review as _mr, motif as _m
+
+    p = _rows("SELECT spu,name FROM product WHERE spu=? OR name=?", product, product)
+    if not p:
+        return {"error": f"没有商品「{product}」"}
+    spu, 名 = p[0]["spu"], p[0]["name"]
+
+    归 = _m.归一(motif) or motif
+    允 = list(_m.词表()) + ["无纹样"]
+    if 归 not in 允:
+        return {"error": f"「{motif}」不在纹样词表里。词表是**闭集**,"
+                         f"要加新纹样得先扩 knowledge/motif.py,不能从这里塞。"
+                         f"现在认的:{'、'.join(sorted(set(允)))}"}
+
+    # said 校验:原话里得真出现这个纹样的说法
+    候选 = [归] + [a for a in _m.别名 if (_m.归一(a) or a) == 归]
+    if 归 == "无纹样":
+        候选 += ["素面", "素", "没有纹样", "没花", "无花", "光面", "没有花"]
+    if not any(x and x in said for x in 候选):
+        return {"error": f"用户原话里没出现「{归}」的说法(原话:{said!r})。"
+                         f"**没写进去** —— 请先问清这件是什么纹样,拿到他的话再核。"
+                         f"认的说法:{'、'.join(x for x in 候选 if x)}"}
+    try:
+        w, src, ev = _mr.核(spu, 归, why.strip(), me.get("name") or me.get("login_name") or "?",
+                            said.strip(), db=DB)
+    except ValueError as e:
+        return {"error": str(e)}
+    return {"商品": 名, "spu": spu, "纹样": w, "来源": src, "依据": ev,
+            "还剩没定的": len(_mr.待核的(DB)),
+            "提醒": "核过的不会被重算覆盖了;要改就再核一次"}
+
+
 def set_piece_ratio(pattern, piece, ratio, why=""):
     """**改一片的用料占比,并标成「版师核过」。**
 

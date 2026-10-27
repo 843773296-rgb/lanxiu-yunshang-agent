@@ -21,6 +21,9 @@
         "kb_pattern", "kb_size", "kb_lead", "kb_bom", "get_review_queue",
         "pattern_queue", "grading_audit", "set_piece_ratio",
         "set_grade_diff",
+        # 纹样核定(2026-10-27):纹样是**面料和商品知识**,归这个领域。
+        # 写口要总部运营 —— 商品是全店共享的,单店改了别的店看不到。
+        "motif_todo", "review_motif",
     ),
     "customer": (    # 客户与会员:档案、着装人、量体、会员、商机、生命周期、挽回
         "get_customer", "get_member", "get_wearer", "customer_history", "kb_fit",

@@ -13804,5 +13804,41 @@
    }
   ],
   "预期红": "env 指乙 + api.DB 指甲 → 章上是乙"
+ },
+ {
+  "script": "backend/motif_review_check.py",
+  "改坏": "写口不再校验用户原话 —— 于是模型自己猜一个纹样就能核进去,而核进去的东西永不重算",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if not any(x and x in said for x in 候选):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "原话里没出现那个纹样的说法 → 拒"
+ },
+ {
+  "script": "backend/motif_review_check.py",
+  "改坏": "核定不再优先于推算 —— 于是人核过的纹样被重算悄悄冲掉(冲掉后和从没核过长得一样)",
+  "file": [
+   {
+    "path": "backend/motif_review.py",
+    "old": "    r = (表 or {}).get(spu)\n    if r:",
+    "new": "    r = (表 or {}).get(spu)\n    if False:"
+   }
+  ],
+  "预期红": "核过之后 `定()` 返回核定值,不是推算值"
+ },
+ {
+  "script": "backend/motif_review_check.py",
+  "改坏": "写口不再查角色 —— 任何登录身份都能改全店共享的商品纹样",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    if me.get(\"role\") != \"总部运营\":\n        return {\"error\": f\"核商品纹样要由总部运营来做",
+    "new": "    if False:\n        return {\"error\": f\"核商品纹样要由总部运营来做"
+   }
+  ],
+  "预期红": "顾问身份 → 拒(要总部运营)"
  }
 ]

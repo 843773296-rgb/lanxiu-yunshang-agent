@@ -38,6 +38,7 @@ import ownership, asr, credit, roster, seed_rating
 import seed_quote
 import report_doc
 import arrival_card
+import motif_review
 import order_contract
 import escalation
 import triage_run
@@ -72,6 +73,10 @@ import query_index          # 为真实查询加的索引(2026-10-24,只读审�
     (report_doc, "建表", ["store_report_doc"]),
     # 上新卡片的 agent 建议(2026-10-10):绑定那一刻写一次 —— 运行时才写
     (arrival_card, "建表", ["recall_advice", "recall_advice_log"]),
+    # 纹样业务核定(2026-10-27):**只建表,不铺数据** —— 核定是人做的,造不出来。
+    # 登记在这里而不是挂某个 backfill:纹样本来就不落库(是算出来的),
+    # 所以没有任何一步会顺带建它。
+    (motif_review, "建表", ["product_motif"]),
     # 定制订单确认书(2026-10-10):确认下单时在同一事务里写 —— 运行时才写
     (order_contract, "建表", ["order_contract"]),
     # 研判升级记录(2026-10-17):第一次有人点「升级」时才建 —— 而造研判样本那步(真调模型)会升级一条,
