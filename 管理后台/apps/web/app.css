@@ -480,3 +480,4 @@ tr.hitrow:hover td{background:var(--pri-bg)}
 .wfvar .viright{padding:8px 10px}
 .wfvar .viright textarea{width:100%;font:12px/1.5 ui-monospace,Menlo,monospace}
 .wfvar .vihead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.condrow{border-left:3px solid var(--line);padding:2px 0 6px 8px;margin:6px 0}

@@ -426,6 +426,21 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                        "所有条件都不满足时,流程不知道往哪走",
                        "在右侧「基本」的「都不满足时怎么办」里选一项,或者从「都不满足」出口连一条线",
                        node_id=i, field_path="config.else_policy"))
+        # 每一路至少一条条件、每条选了取哪个值(10-27 一路可以几条):空的一路按「且」算会永远满足
+        for b in (cfg.get("branches") or []):
+            if not isinstance(b, dict):
+                continue
+            条们, _ = DS.分支条件(b)
+            if not 条们:
+                出.append(问(阻断, "COND_EMPTY", f"「{b.get('key')}」这一路一条条件都没有 —— 空条件不会当成始终满足",
+                           "在右侧「基本」里给这一路加一条条件,用不上就删掉这一路",
+                           node_id=i, field_path=f"config.branches[{b.get('key')}]"))
+            for j, w in enumerate(条们, 1):
+                if not w.get("op") or not isinstance(w.get("left"), dict):
+                    出.append(问(阻断, "COND_INCOMPLETE",
+                               f"「{b.get('key')}」这一路第 {j} 条条件还没选「取哪个值」或「怎么比」",
+                               "在右侧「基本」里把这条条件填完,或者删掉它",
+                               node_id=i, field_path=f"config.branches[{b.get('key')}].conditions[{j}]"))
         # 声明了分支但没连线出去(分支名是配置者自己起的,原样用)
         for k in sorted(分支键 - 出边键):
             出.append(问(阻断, "COND_BRANCH_NO_EDGE",

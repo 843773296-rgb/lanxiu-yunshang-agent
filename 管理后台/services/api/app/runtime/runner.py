@@ -396,27 +396,43 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 选中 = None
                 本步入 = []    # 每一路拿什么跟什么比 —— 「为什么走了这一路」要看得见
                 for b in cfg["branches"]:
-                    左 = 取值(b["when"]["left"], 状态)
-                    右 = 取值(b["when"]["right"], 状态) if "right" in b["when"] else None
-                    本步入.append({"这一路": b["key"], "比较": b["when"].get("op"),
-                                 "左边": None if 左 is DS.缺失 else 左,
-                                 **({"右边": None if 右 is DS.缺失 else 右} if "right" in b["when"] else {})})
-                    try:
-                        if DS.判(b["when"]["op"], 左,
-                                 *([右] if "right" in b["when"] else [])):
-                            选中 = b["key"]
+                    # 一路可以有几条条件,用「且 / 或」连(10-27 照 Dify;用户拍把一串「填了 X 吗」合成一个节点)。
+                    # 老定义只有一条 `when` —— 当成只有一条的列表,意思不变
+                    条们, 连 = DS.分支条件(b)
+                    if not 条们:
+                        # 一条条件都没有:按「且」算会**永远满足**(没有哪条不满足)—— 不许,校验器那道在前面
+                        raise 节点失败("COND_EMPTY", f"「{b.get('key')}」这一路一条条件都没有",
+                                     "在右侧「基本」里给这一路至少加一条条件,用不上就删掉这一路")
+                    满足 = 连 == "and"
+                    for 序, w in enumerate(条们, 1):
+                        左 = 取值(w["left"], 状态)
+                        右 = 取值(w["right"], 状态) if "right" in w else None
+                        本步入.append({"这一路": b["key"], **({"第几条": 序, "连接": "且" if 连 == "and" else "或"} if len(条们) > 1 else {}),
+                                     "比较": w.get("op"), "左边": None if 左 is DS.缺失 else 左,
+                                     **({"右边": None if 右 is DS.缺失 else 右} if "right" in w else {})})
+                        try:
+                            真 = DS.判(w["op"], 左, *([右] if "right" in w else []))
+                        except DS.变量缺失 as e:
+                            # **缺变量按声明的缺失策略处理,不默默当 false**(§6.3);每条自己声明,老写法挂在这一路上
+                            if (w.get("on_missing") or b.get("on_missing") or "fail") == "false":
+                                真 = False
+                            else:
+                                # 默认当「不满足」会把配置错误藏起来,所以缺值就停
+                                raise 节点失败("COND_VAR_MISSING", f"「{b.get('key')}」这一路的条件要用的数据没有值",
+                                             "检查这一路条件里比较的数据从哪来;那一项本来就可能没有的话,告诉技术管理员把它设成「缺值按不满足算」")
+                        except DS.类型不匹配 as e:
+                            raise 节点失败("COND_TYPE", f"「{b.get('key')}」这一路的条件比较的两边类型对不上(比如拿文字跟数字比)",
+                                         "在条件前面加一个「字段转换」把类型转成一样的")
+                        # 短路(和 Dify 一样):「且」碰到一条不满足就定了,「或」碰到一条满足就定了 —— 后面的不再取值
+                        if 连 == "and" and not 真:
+                            满足 = False
                             break
-                    except DS.变量缺失 as e:
-                        # **缺变量按声明的缺失策略处理,不默默当 false**(§6.3)
-                        策 = b.get("on_missing", "fail")
-                        if 策 == "false":
-                            continue
-                        # 默认当「不满足」会把配置错误藏起来,所以缺值就停
-                        raise 节点失败("COND_VAR_MISSING", f"「{b.get('key')}」这一路的条件要用的数据没有值",
-                                     "检查这一路条件里比较的数据从哪来;那一项本来就可能没有的话,告诉技术管理员把它设成「缺值按不满足算」")
-                    except DS.类型不匹配 as e:
-                        raise 节点失败("COND_TYPE", f"「{b.get('key')}」这一路的条件比较的两边类型对不上(比如拿文字跟数字比)",
-                                     "在条件前面加一个「字段转换」把类型转成一样的")
+                        if 连 == "or" and 真:
+                            满足 = True
+                            break
+                    if 满足:
+                        选中 = b["key"]
+                        break
                 键 = (DS.分支, 选中 if 选中 else "else")
                 下 = 后继[当前].get(键, [])
                 if not 下 and not 选中:

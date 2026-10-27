@@ -1460,6 +1460,13 @@ function 换业务动作(n, id) {
   return false;     // 真改在确认之后;这一次控件变更本身不改定义
 }
 
+/* 条件分支一路的条件:新写法 conditions(+ logic),老写法只有一条 when —— 和后端 dsl.分支条件 同一个认法 */
+function 分支条件们(b) { return Array.isArray(b.conditions) ? b.conditions : (b.when ? [b.when] : []); }
+function 转新写法(b) {
+  if (Array.isArray(b.conditions)) return;
+  b.conditions = b.when ? [b.when] : []; b.logic = "and"; delete b.when;
+  if (b.on_missing) { b.conditions.forEach((w) => { if (!w.on_missing) w.on_missing = b.on_missing; }); delete b.on_missing; }
+}
 function 表_设置(n) {
   const g = 图态, c = n.config;
   let 体 = `<div class="two"><div><label class="f">这一步叫什么</label>${输入框(n.name || "", (el) => { n.name = el.value.trim() || undefined; 重画(); })}</div>
@@ -1518,12 +1525,24 @@ function 表_设置(n) {
             const r = 图逻辑.分支改名(图态.定义, n.id, b.key, el.value);
             if (!r.可以) { if (!r.没变) 提示(`没改名:${r.为什么}`); el.value = b.key; return false; }
             重画(); })}
-          <div class="k">取哪个值</div>${下拉(引用值(b.when?.left), 源们, (el) => { b.when = b.when || { op: "equals" }; b.when.left = 解引用(el.value); })}
-          <div class="k">怎么比</div>${下拉(b.when?.op || "equals", [["equals", "等于"], ["not_equals", "不等于"],
-              ["gt", "大于"], ["lt", "小于"], ["exists", "有值"], ["contains", "包含"]], (el) => { b.when.op = el.value; })}
-          <div class="k">和什么比(固定值)</div>${输入框(b.when?.right?.value ?? "", (el) => {
-              b.when.right = { source: "constant", value: el.value }; }, "", { 可清空: true })}
-          ${!b.when?.left && b.when?.op !== "exists" ? `<div class="ferr">这一路还没选「取哪个值」—— 条件为空不会当成始终满足,检查配置会拦</div>` : ""}
+          ${(() => {
+            // 一路几条条件,「且 / 或」连(10-27 照 Dify)。老写法只有一条 when:显示成一条;一动就转成新写法
+            const 条们 = 分支条件们(b), 多 = 条们.length > 1;
+            return (多 ? `<div class="k">这几条之间</div>` + 下拉(b.logic === "or" ? "or" : "and",
+                  [["and", "且:都满足才走这一路"], ["or", "或:有一条满足就走"]], (el) => { 转新写法(b); b.logic = el.value; 重画(); }) : "")
+              + 条们.map((w, j) => `<div class="condrow">
+                ${多 ? `<div class="k">第 ${j + 1} 条${j ? (b.logic === "or" ? " · 或" : " · 且") : ""}</div>` : ""}
+                <div class="k">取哪个值</div>${下拉(引用值(w.left), 源们, (el) => { 转新写法(b); b.conditions[j].left = 解引用(el.value); })}
+                <div class="k">怎么比</div>${下拉(w.op || "equals", [["equals", "等于"], ["not_equals", "不等于"],
+                    ["gt", "大于"], ["lt", "小于"], ["exists", "有值"], ["contains", "包含"]], (el) => {
+                    转新写法(b); b.conditions[j].op = el.value; if (el.value === "exists") delete b.conditions[j].right; 重画(); })}
+                ${w.op === "exists" ? "" : `<div class="k">和什么比(固定值)</div>${输入框(w.right?.value ?? "", (el) => {
+                    转新写法(b); b.conditions[j].right = { source: "constant", value: el.value }; }, "", { 可清空: true })}`}
+                ${!w.left ? `<div class="ferr">这条还没选「取哪个值」—— 条件为空不会当成始终满足,检查配置会拦</div>` : ""}
+                ${多 ? `<button class="danger" data-k="${挂控件(() => { 转新写法(b); b.conditions.splice(j, 1); 重画(); })}" aria-label="删掉第 ${i + 1} 路第 ${j + 1} 条条件">删掉这条</button>` : ""}
+              </div>`).join("")
+              + `<button data-k="${挂控件(() => { 转新写法(b); b.conditions.push({ op: "exists", left: null }); 重画(); })}">加一条条件</button>`;
+          })()}
           <div class="acts">
             <button data-k="${挂控件(() => { 图逻辑.分支移动(图态.定义, n.id, i, -1); 重画(); })}" ${i === 0 ? "disabled" : ""} aria-label="第 ${i + 1} 路上移">上移</button>
             <button data-k="${挂控件(() => { 图逻辑.分支移动(图态.定义, n.id, i, 1); 重画(); })}" ${i === c.branches.length - 1 ? "disabled" : ""} aria-label="第 ${i + 1} 路下移">下移</button>
@@ -1531,8 +1550,8 @@ function 表_设置(n) {
               const r = 图逻辑.删分支(图态.定义, n.id, i);
               提示(`已删除「${r.键}」这一路` + (r.删边.length ? `和它的 ${r.删边.length} 条连线(目标步骤保留)` : ""), { 撤销: true }); 重画(); })}">删除分支</button></div></div>`).join("")
       + `<button data-k="${挂控件(() => { let j = (c.branches || []).length + 1; while ((c.branches || []).some((x) => x.key === `第${j}路`)) j++;
-            (c.branches = c.branches || []).push({ key: `第${j}路`,
-            when: { op: "equals", left: null, right: { source: "constant", value: "" } } }); 重画(); })}">加一路</button>`
+            (c.branches = c.branches || []).push({ key: `第${j}路`, logic: "and",
+            conditions: [{ op: "equals", left: null, right: { source: "constant", value: "" } }] }); 重画(); })}">加一路</button>`
       + `<label class="f">都不满足时</label>`
       + 下拉(c.else_policy, [["fail", "记成没完成(incomplete)"], ["end", "正常结束"]], (el) => { c.else_policy = el.value; })
       + `<div class="k">接了「都不满足」那条线时,走那条线;没接才按这里的办法结束。</div>`;

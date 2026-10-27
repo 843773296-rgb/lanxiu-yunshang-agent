@@ -937,6 +937,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 直接回复:模板里的名字都要有来源(检查配置就拦);取不到值这一步失败、不回半句;回复不进事件"
 	@./.venv/bin/python tests/orchestration/test_answer_node.py
 	@echo ""
+	@echo "▸ 条件分支一路几条条件(且 / 或):短路、每条自己的缺值策略、老写法意思不变、空条件拦"
+	@./.venv/bin/python tests/orchestration/test_condition_multi.py
+	@echo ""
 	@echo "▸ 定时触发的时间口径:日报前一天 / 周报上一个自然周 / 月报上一个自然月;同一期只发起一次;关机只补最近一期"
 	@./.venv/bin/python tests/orchestration/test_schedule.py
 	@echo ""
