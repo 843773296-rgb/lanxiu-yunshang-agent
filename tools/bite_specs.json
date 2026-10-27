@@ -13840,5 +13840,29 @@
    }
   ],
   "预期红": "顾问身份 → 拒(要总部运营)"
+ },
+ {
+  "script": "backend/db_build.py",
+  "改坏": "造数脚本新 import 一个谁都没认领的本地模块 —— 并行会话 10-27 指出的「漏算」原形:ensure_tables 只是 import motif_review 去建表,改那个模块会改重建结果而指纹不动。攻击借一个仓库里真有、造数脚本原来走不到的模块(boundary_audit),只在源码里 import(检查读 AST,不执行)",
+  "file": [
+   {
+    "path": "tools/seed_reports.py",
+    "old": "import api  # noqa: E402\n",
+    "new": "import api  # noqa: E402\nimport boundary_audit  # noqa: E402\n"
+   }
+  ],
+  "预期红": "没认领"
+ },
+ {
+  "script": "backend/db_build.py",
+  "改坏": "「不算」里登记一个早就走不到的模块 —— 豁免不许囤积:一张记着已经用不到的豁免的表,和一张记着真豁免的,在「认领过」上长得一样",
+  "file": [
+   {
+    "path": "backend/db_build.py",
+    "old": "    \"prompts.py\": \"提示词:给模型看的规矩,不进库\",\n",
+    "new": "    \"prompts.py\": \"提示词:给模型看的规矩,不进库\",\n    \"backend/早就删了的模块.py\": \"咬合用\",\n"
+   }
+  ],
+  "预期红": "登记了却走不到"
  }
 ]

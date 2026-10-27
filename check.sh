@@ -128,6 +128,7 @@ sys.exit(rc)' "$CHK_TIMEOUT" "$CHK_TIMES" "$name" "$@" > "$CHK_OUT" 2>&1 || rc=$
     fi
   fi }
 run "数据层 · truth 表隔离"   python3 backend/selftest.py
+run "库指纹范围 · 造数脚本 import 到的每个本地模块都认领过「算 / 不算」(用户 10-27 拍方案 A;不读库)" python3 backend/db_build.py --范围检查
 run "写入口身份闸 · 没登录不许改业务数据(打 HTTP 层)" python3 backend/authgate_check.py
 run "登录会话跨重启 · 服务重启不掉线、文件里只存指纹、过期 / 退出即失效(用户 10-23 撞到被踢出)" python3 backend/auth_persist_check.py
 run "管理后台客户读接口 · 要登录、按门店划范围(用户 10-23 拍,打 HTTP 层)" python3 backend/customer_read_auth_check.py

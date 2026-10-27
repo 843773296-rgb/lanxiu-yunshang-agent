@@ -162,4 +162,10 @@ def main():
 
 
 if __name__ == "__main__":
+    # ⚠️ 这个脚本**会写共享库**(建表)。原来没有任何参数分支,`--help` 想看用法也会真跑一遍 ——
+    # 并行会话 10-27 就这样没拿锁写了一次共享库。带任何认不出的参数一律只打印用法、不动库
+    if len(sys.argv) > 1:
+        print(__doc__)
+        print("用法:python3 tools/ensure_tables.py   (不带参数;会写 backend/lanxiu.db,先拿锁 ./tools/gate_lock.sh)")
+        sys.exit(0 if sys.argv[1] in ("-h", "--help") else 2)
     main()
