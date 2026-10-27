@@ -665,8 +665,9 @@ async function 页_运行记录() {
  * 拼出来的 class 由 css_class_check 钉着只许少不许多;浏览器对不认识的 class 完全静默。
  */
 const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本与发布", "设置"];
-const 步类型名 = { start: "开始", end: "返回结果", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
-  condition: "按条件分流", transform: "整理字段", merge: "汇合", human: "人工核对", agent: "Agent", answer: "直接回复" };
+// 10-27 照 Dify 改了两个名字(适配分析 5.1 定的):结束 →「输出」、分支汇合 →「变量聚合器」;其余保留业务叫法
+const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
+  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", human: "人工核对", agent: "Agent", answer: "直接回复" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 

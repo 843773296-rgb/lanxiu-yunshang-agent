@@ -447,3 +447,17 @@ tr.hitrow:hover td{background:var(--pri-bg)}
   box-shadow:-4px 0 16px rgba(0,0,0,.12);display:flex;flex-direction:column}
 .drawer .mh{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
 .drawer .mb{padding:12px 16px;overflow:auto}
+/* 添加节点菜单(10-27,照 Dify):页签 / 分组标题 / 彩色图标方块 / 悬停预览卡 */
+.wflib2 .libtabs{display:flex;gap:4px;margin-bottom:6px}
+.wflib2 .libtabs button{flex:1;height:28px;font-size:12.5px}
+.wflib2 .libtabs button[aria-selected="true"]{background:var(--pri-bg);color:var(--pri);border-color:var(--pri)}
+.wflib2 .libbody{max-height:480px;overflow:auto}
+.wflib2 .libgrp{font-size:11px;color:var(--ink3);margin:8px 0 4px}
+.wflib2 .libit{display:flex;align-items:center;gap:6px;flex-wrap:wrap;cursor:pointer}
+.wflib2 .libit .k{flex-basis:100%;margin-left:26px}
+.wflib2 .libit b{font-size:13px}
+.wflib2 .libpv{border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--card);margin:6px 0;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.bi{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;color:#fff;font-size:10px;font-weight:700;flex:none}
+.bi-brand{background:#085AFC}.bi-indigo{background:#6172F3}.bi-blue{background:#2E90FA}.bi-orange{background:#F79009}
+.bi-cyan{background:#06AED4}.bi-violet{background:#875BF7}.bi-green{background:#17B26A}
+.wflib2{width:264px}

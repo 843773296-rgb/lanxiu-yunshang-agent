@@ -141,24 +141,111 @@ function 画_状态栏(临时) {
 
 // 说明文字里的设计文档章节号(§6.1)不给用户看(10-26 改版)
 const 去章节 = (t) => String(t).replace(/[(（]\s*§[^)）]*[)）]/g, "").replace(/§[\d.]+/g, "").replace(/\s{2,}/g, " ").trim();
+/* ── 添加节点菜单(10-27,照 Dify「添加节点」:节点 / 工具 / 开始 三个页签)──────────────
+ * 分组和顺序照 Dify:(默认组)→ 问题理解 → 逻辑 → 转换 → 工具;组内顺序也照它。
+ * **Dify 有、我们还没做的照样列出来,置灰写「还没做」** —— 不藏起来(藏了就看不出离照抄还差几个),
+ * 也不摆一个点了没反应的按钮(规格 §6.1:未完成的节点标「未实现」)。
+ * 「工具」页签列的是我们自己的业务动作(工具注册表),选一个直接生成那个业务动作的一步。
+ * ⚠️ 图标颜色每种写一整段字面 class(css_class_check 钉着拼接 class 的条数)。 */
+const 图标色 = {
+  蓝: (字) => `<span class="bi bi-blue">${字}</span>`, 靛: (字) => `<span class="bi bi-indigo">${字}</span>`,
+  橙: (字) => `<span class="bi bi-orange">${字}</span>`, 青: (字) => `<span class="bi bi-cyan">${字}</span>`,
+  紫: (字) => `<span class="bi bi-violet">${字}</span>`, 绿: (字) => `<span class="bi bi-green">${字}</span>`,
+  品: (字) => `<span class="bi bi-brand">${字}</span>`,
+};
+// [我们的类型(没做的为 null), Dify 名, 图标字, 颜色, 没做时说明]
+const 菜单节点组 = [
+  ["", [["llm", "LLM", "AI", "靛"], ["retrieve", "知识检索", "检", "绿"], ["end", "输出", "出", "橙"],
+        ["answer", "直接回复", "回", "橙"], ["agent", "Agent", "A", "靛"]]],
+  ["问题理解", [[null, "问题分类器", "分", "绿", "还没做(一期:录音跟进按「有意向 / 没意向 / 说不清」分三路)"]]],
+  ["逻辑", [["condition", "条件分支", "if", "青"], ["human", "人工介入", "人", "青"],
+           ["foreach", "迭代", "迭", "青"], ["loop", "循环", "环", "青"]]],
+  ["转换", [[null, "代码执行", "码", "蓝", "还没做(放进隔离沙箱,只有管理员能加)"],
+           [null, "模板转换", "模", "蓝", "还没做(写一段模板拼一句话;现在的「整理字段」只能做固定几种转换)"],
+           ["transform", "整理字段", "转", "蓝"], ["merge", "变量聚合器", "聚", "蓝"],   // 整理字段是我们自己的,Dify 没有对应节点
+           [null, "文档提取器", "文", "绿", "暂不做(6 条流程都没有上传文件)"],
+           [null, "变量赋值", "赋", "蓝", "还没做(用户 10-27 拍要做)"],
+           [null, "参数提取器", "参", "蓝", "还没做"]]],
+  ["工具", [[null, "HTTP 请求", "H", "紫", "还没做(只许访问登记过的地址)"], [null, "列表操作", "列", "青", "还没做"]]],
+];
+const 菜单开始项 = [["start", "用户输入", "入", "品"],
+  [null, "定时触发器", "时", "紫", "现在在「版本与发布」页设定;挪到画布上还没做"],
+  [null, "自定义 Webhook", "W", "蓝", "暂不做(二期和「访问 API」一起)"]];
+function 菜单项(类型, 名, 字, 色, 没做, 附 = "") {
+  const 元信息 = 类型 ? (元(类型) || {}) : {};
+  const 能 = 类型 && 元信息["可用"];
+  const 为什么 = 没做 || (类型 && !能 ? "还没做" : "");
+  return `<div class="libit ${能 ? "" : "off"}" ${能 ? `data-lib="${esc(类型)}"` : ""} data-pv="${esc(名)}"
+      data-pvs="${esc(为什么 || 去章节(去粗(元信息["说明"] || "")).slice(0, 120))}" tabindex="${能 ? 0 : -1}">
+    ${(图标色[色] || 图标色.蓝)(esc(字))}<b>${esc(类型 && 步类型名[类型] || 名)}</b>${类型 && 步类型名[类型] && 步类型名[类型] !== 名 ? `<span class="k">Dify:${esc(名)}</span>` : ""}${附}
+    ${能 ? "" : `<span class="k">${esc(为什么)}</span>`}</div>`;
+}
+
 function 画_库() {
   const el = $("#wf-lib"); if (!el || !能改图()) return;
-  const 词 = (el.querySelector("input") || {}).value || "";
-  const 类 = 图态.节点库.filter((x) => !["start", "end"].includes(x["名"]));
-  const 中 = 类.filter((x) => !词 || `${x["中文"]}${步类型名[x["名"]] || ""}${x["说明"] || ""}`.includes(词));
+  const s = 画态(); s.库页 = s.库页 || "节点"; s.库词 = s.库词 || {};
+  const 页 = s.库页, 词 = s.库词[页] || "";
   const 有焦 = document.activeElement && document.activeElement.id === "wf-libq";
-  el.innerHTML = `<input id="wf-libq" placeholder="搜索步骤:名称、用途" value="${esc(词)}" aria-label="搜索步骤">
-    ${中.length ? 中.map((x) => `<div class="libit ${x["可用"] ? "" : "off"}" data-lib="${esc(x["名"])}" title="${esc(去章节(去粗(x["说明"] || "")))}">
-        <b>${esc(步类型名[x["名"]] || x["中文"])}</b>
-        <span class="k">${esc(去章节(去粗(x["说明"] || "")).slice(0, 34))}</span>
-        ${x["可用"] ? `<button data-libadd="${esc(x["名"])}">添加</button>` : `<span class="k">还没实现,不能加</span>`}</div>`).join("")
-      : `<div class="k">没有叫「${esc(词)}」的步骤类型。试试「模型」「业务」「核对」「条件」。</div>`}
-    <div class="k">点「添加」放到画布中间;也可以按住拖进画布。</div>`;
+  const 占位 = { 节点: "搜索节点、Agent、人工、知识库", 工具: "搜索业务动作", 开始: "搜索触发器" }[页];
+  let 体 = "";
+  if (页 === "节点") {
+    体 = 菜单节点组.map(([组, 项]) => {
+      const 中 = 项.filter((x) => !词 || x[1].includes(词) || (x[0] && (步类型名[x[0]] || "").includes(词)));
+      if (!中.length) return "";
+      return `${组 ? `<div class="libgrp">${esc(组)}</div>` : ""}` + 中.map((x) => {
+        const 已有 = x[0] === "end" && 图态.定义.nodes.some((n) => n.type === "end");
+        return 已有 ? 菜单项(null, x[1], x[2], x[3], "已添加(一条流程只有一个输出)") : 菜单项(...x);
+      }).join("");
+    }).join("");
+  } else if (页 === "工具") {
+    const 工 = (图态.资源.工具 || []).filter((t) => !词 || `${t["名"]}${t["说明"] || ""}`.includes(词));
+    体 = 工.map((t) => `<div class="libit" data-lib="tool" data-tool="${esc(t["版本id"])}" data-pv="${esc(t["名"])}"
+        data-pvs="${esc((t["读写"] || "") + (t["接入方式"] === "lanxiu_bridge" ? " · 由澜绣执行" : "") + " · " + (t["说明"] || ""))}" tabindex="0">
+        ${图标色.蓝("工")}<b>${esc(t["名"])}</b><span class="k">${esc(t["读写"] || "")}</span></div>`).join("");
+    if (!(图态.资源.工具 || []).length) 体 = `<div class="k">这个项目还没有登记业务动作。</div>`;
+  } else {
+    体 = 菜单开始项.filter((x) => !词 || x[1].includes(词)).map((x) => {
+      const 已有 = x[0] === "start" && 图态.定义.nodes.some((n) => n.type === "start");
+      return 已有 ? 菜单项(null, x[1], x[2], x[3], "已添加(原始开始节点)") : 菜单项(...x);
+    }).join("");
+  }
+  el.innerHTML = `<div class="libtabs" role="tablist">${["节点", "工具", "开始"].map((t) =>
+      `<button role="tab" data-libtab="${t}" aria-selected="${t === 页}">${t}</button>`).join("")}</div>
+    <input id="wf-libq" placeholder="${esc(占位)}" value="${esc(词)}" aria-label="${esc(占位)}">
+    <div class="libbody">${体 || `<div class="k">未找到匹配项</div>`}</div>
+    <div class="libpv" id="wf-libpv" hidden></div>
+    <div class="k">点一下放到画布中间;也可以按住拖进画布。</div>`;
+  el.querySelectorAll("[data-libtab]").forEach((b) => { b.onclick = () => { s.库页 = b.dataset.libtab; 画_库(); }; });
   const q = $("#wf-libq");
-  q.oninput = () => { 画_库(); const q2 = $("#wf-libq"); q2.focus(); q2.setSelectionRange(q2.value.length, q2.value.length); };
+  q.oninput = () => { s.库词[页] = q.value; 画_库(); const q2 = $("#wf-libq"); q2.focus(); q2.setSelectionRange(q2.value.length, q2.value.length); };
   if (有焦) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
-  el.querySelectorAll("[data-libadd]").forEach((b) => { b.onclick = () => 加到视口中间(b.dataset.libadd); });
-  el.querySelectorAll(".libit:not(.off)").forEach((it) => { it.onpointerdown = (ev) => { if (ev.target.closest("button")) return; 从库拖入(ev, it.dataset.lib); }; });
+  const pv = $("#wf-libpv");
+  let 计时 = null;
+  el.querySelectorAll(".libit").forEach((it) => {
+    // 悬停 150ms 弹预览卡(Dify 同样的延迟):名称 + 说明;没做的写为什么没做
+    it.onmouseenter = () => { clearTimeout(计时); 计时 = setTimeout(() => {
+      pv.innerHTML = `<b>${esc(it.dataset.pv)}</b><div class="k">${esc(it.dataset.pvs || "")}</div>`; pv.hidden = false; }, 150); };
+    it.onmouseleave = () => { clearTimeout(计时); pv.hidden = true; };
+  });
+  el.querySelectorAll(".libit:not(.off)").forEach((it) => {
+    const 预设 = it.dataset.tool ? 工具预设(it.dataset.tool) : null;
+    // 点一下 = 放到画布中间;按住移动超过 4px 才算拖 —— 一按下就进拖拽的话,单击也会走一遍「拖到画布外」
+    let 拖了 = false;
+    it.onclick = () => { if (拖了) { 拖了 = false; return; } 加到视口中间(it.dataset.lib, 预设); };
+    it.onkeydown = (e) => { if (e.key === "Enter") 加到视口中间(it.dataset.lib, 预设); };
+    it.onpointerdown = (ev) => {
+      if (ev.button !== 0) return;
+      const x0 = ev.clientX, y0 = ev.clientY;
+      const 动 = (e) => { if (Math.hypot(e.clientX - x0, e.clientY - y0) > 4) { 停(); 拖了 = true; 从库拖入(e, it.dataset.lib, 预设); } };
+      const 停 = () => { window.removeEventListener("pointermove", 动); window.removeEventListener("pointerup", 停); };
+      window.addEventListener("pointermove", 动); window.addEventListener("pointerup", 停);
+    };
+  });
+}
+/* 「工具」页签选中一个业务动作:生成的那一步直接选好它,名字用它的名字(Dify:标题为工具名) */
+function 工具预设(版本id) {
+  const t = (图态.资源.工具 || []).find((x) => x["版本id"] === 版本id);
+  return t ? { name: t["名"], config: { tool_version_id: 版本id } } : null;
 }
 
 function 画_节点() {
@@ -707,24 +794,29 @@ function 弹_重新连接(键) {
 }
 
 /* ── 节点操作 ───────────────────────────────────────────────────── */
-function 新节点(类型) {
+function 新节点(类型, 预设 = null) {
   const id = 图逻辑.新id(图态.定义, 类型);
-  return { id, type: 类型, name: 步类型名[类型], config: JSON.parse(JSON.stringify(默认配置(类型))) };
+  const 配 = Object.assign(JSON.parse(JSON.stringify(默认配置(类型))), (预设 && 预设.config) || {});
+  // 同名再加时标题自动编号「AI 处理 2」「AI 处理 3」(照 Dify)—— 两步同名,连线和报错里分不清是哪一步
+  const 基 = (预设 && 预设.name) || 步类型名[类型];
+  const 名们 = new Set(图态.定义.nodes.map((n) => n.name));
+  let 名 = 基, k = 2; while (名们.has(名)) 名 = `${基} ${k++}`;
+  return { id, type: 类型, name: 名, config: 配 };
 }
 function 空位(x, y) {
   const 占 = (px, py) => 图态.定义.nodes.some((n) => { const p = 位(n.id); return Math.abs(p.x - px) < 画布.W && Math.abs(p.y - py) < 80; });
   let k = 0; while (占(x, y) && k++ < 40) y += 88;
   return { x: Math.round(x / 8) * 8, y: Math.round(y / 8) * 8 };
 }
-function 加到视口中间(类型) {
+function 加到视口中间(类型, 预设 = null) {
   if (!(元(类型) || {})["可用"]) { 提示("这类步骤还没实现,不能加入"); return; }
   const r = $("#cv").getBoundingClientRect(), c = 屏到图(r.left + r.width / 2, r.top + r.height / 2);
   let id = null;
-  改图(`添加「${步类型名[类型] || 类型}」`, () => { const n = 新节点(类型); 图态.定义.nodes.push(n); 图态.布局[n.id] = 空位(c.x - 画布.W / 2, c.y - 30); id = n.id; });
+  改图(`添加「${步类型名[类型] || 类型}」`, () => { const n = 新节点(类型, 预设); 图态.定义.nodes.push(n); 图态.布局[n.id] = 空位(c.x - 画布.W / 2, c.y - 30); id = n.id; });
   选节点([id]);
   提示(`已添加「${业务名(节点(id))}」,还没接进流程 —— 从上一步的出口拖线连过来`, { 撤销: true });
 }
-function 从库拖入(ev, 类型) {
+function 从库拖入(ev, 类型, 预设 = null) {
   ev.preventDefault();
   const 影 = document.createElement("div");
   影.className = "wfghost"; 影.textContent = 步类型名[类型] || 类型;
@@ -739,7 +831,7 @@ function 从库拖入(ev, 类型) {
     if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) { 画_状态栏("拖到画布外,没有添加"); return; }
     const p = 屏到图(e.clientX, e.clientY);
     let id = null;
-    改图(`添加「${步类型名[类型] || 类型}」`, () => { const n = 新节点(类型); 图态.定义.nodes.push(n); 图态.布局[n.id] = { x: Math.max(0, Math.round((p.x - 画布.W / 2) / 8) * 8), y: Math.max(0, Math.round((p.y - 16) / 8) * 8) }; id = n.id; });
+    改图(`添加「${步类型名[类型] || 类型}」`, () => { const n = 新节点(类型, 预设); 图态.定义.nodes.push(n); 图态.布局[n.id] = { x: Math.max(0, Math.round((p.x - 画布.W / 2) / 8) * 8), y: Math.max(0, Math.round((p.y - 16) / 8) * 8) }; id = n.id; });
     选节点([id]); 提示(`已添加「${业务名(节点(id))}」`, { 撤销: true });
   };
   const esc键 = (e) => { if (e.key === "Escape") { 收(); 画_状态栏("已取消添加"); } };
