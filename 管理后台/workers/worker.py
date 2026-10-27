@@ -1318,8 +1318,12 @@ def _跑一个agent(c, job, 打点):
     # > **在那次运行出的报告上长得一模一样**。
     import 执行模式 as _模式
     try:
+        # 按**这次运行受理时记的模式**定,不按这台 worker 的环境(10-27):和工作流那条入口同一个口径。
+        # 原来看 MODEL_ADAPTER —— 受理成 mock 的运行被真模型模式的常驻 worker 抢到,就报「没有冻结的模型连接」失败;
+        # 被测试自己起的 mock worker 抢到就成功。同一次运行,结果取决于谁先抢到,看起来就是偶发
         模式, 替身 = _模式.定(连接=_取冻结的模型连接(
-            c, job["project_id"], r["input_snapshot"] or {}))
+            c, job["project_id"], r["input_snapshot"] or {}),
+            允许mock=(r["execution_mode"] == "mock") if r["execution_mode"] in ("mock", "live") else None)
     except _模式.不能跑 as e:
         raise 干不了(e.码, {"为什么": e.细节, "入口": "后台 Agent Loop"})
     if 模式 == _模式.真:
