@@ -82,6 +82,17 @@ def _新id(前缀):
 
 
 # ── 模板(§4.2:模板仅预填草稿)─────────────────────────────────────
+
+def _两项都填了吗(id_, 名, 谁, 何时, x, y):
+    """「填了负责人吗 → 填了截止吗」两个节点合成一个(用户 10-27 拍「重搭,旧版留着可退」;条件分支一路几条条件之后才做得到)。
+    三个出口,**结果和原来一模一样**:都填了 → yes;没填负责人 → no_who(不管截止填没填,和原来先判负责人一致);
+    填了负责人、没填截止 → 都不满足(else)→ no_when。两条「没派」的说明还是分开写 —— 合成一个节点不等于把原因也合掉"""
+    return {"id": id_, "type": "condition", "name": 名, "layout": {"x": x, "y": y},
+            "config": {"branches": [
+                {"key": "yes", "logic": "and", "conditions": [{"op": "exists", "left": 谁}, {"op": "exists", "left": 何时}]},
+                {"key": "no_who", "conditions": [{"op": "not_exists", "left": 谁}]}],
+                "else_policy": "fail"}}
+
 def _音频整理(桥):
     """**音频整理**(用户 2026-10-24 拍):选录音 → 取转写 → 提取需求 → 人工核对 →(通过)写跟进 /(退回)记理由。
 
@@ -146,12 +157,7 @@ def _音频整理(桥):
          "config": {"branches": [{"key": "yes", "when": {"op": "contains",
              "left": {"source": "constant", "value": ["明确需求", "考虑中"]}, "right": 引("extract", "/类别")}}],
              "else_policy": "fail"}},
-        {"id": "who", "type": "condition", "name": "填了回电负责人吗", "layout": {"x": 1300, "y": 40},
-         "config": {"branches": [{"key": "yes", "when": {"op": "exists", "left": 引("review", "/回电负责人")}}],
-                    "else_policy": "fail"}},
-        {"id": "when", "type": "condition", "name": "填了截止时间吗", "layout": {"x": 1480, "y": 40},
-         "config": {"branches": [{"key": "yes", "when": {"op": "exists", "left": 引("review", "/回电截止")}}],
-                    "else_policy": "fail"}},
+        _两项都填了吗("who", "负责人和截止都填了吗", 引("review", "/回电负责人"), 引("review", "/回电截止"), 1300, 40),
         {"id": "callback", "type": "tool", "name": "派电话回电", "layout": {"x": 1660, "y": 0},
          "config": {"tool_version_id": 桥.get("assign_task"),
                     "bindings": {"type": {"source": "constant", "value": "电话回电"},
@@ -184,8 +190,7 @@ def _音频整理(桥):
     分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
     边 += [分("decide", "save", "approve"), 分("decide", "rejected", "else"),
           分("intent", "who", "yes"), 分("intent", "no_intent", "else"),
-          分("who", "when", "yes"), 分("who", "no_who", "else"),
-          分("when", "callback", "yes"), 分("when", "no_when", "else")]
+          分("who", "callback", "yes"), 分("who", "no_who", "no_who"), 分("who", "no_when", "else")]
     return {"definition_schema_version": "1", "kind": "workflow",
             "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
             "nodes": 节点, "edges": 边}
@@ -319,8 +324,7 @@ def _订单风险(桥):
         取("fetch2", 1000, 80),
         判("same", "核对期间订单变了没有", {"op": "equals", "left": 引("fetch1", "/指纹"), "right": 引("fetch2", "/指纹")}, 1160, 80),
         记("changed", "不派(核对期间变了)", 引("fetch2", "/结果"), " —— 店长核对期间这一单的情况变了,没派;请重新发起一次看最新的", 1320, 220),
-        判("who", "填了跟踪负责人吗", {"op": "exists", "left": 引("review", "/跟踪负责人")}, 1320, 80),
-        判("when", "填了截止时间吗", {"op": "exists", "left": 引("review", "/跟踪截止")}, 1480, 80),
+        _两项都填了吗("who", "负责人和截止都填了吗", 引("review", "/跟踪负责人"), 引("review", "/跟踪截止"), 1320, 80),
         记("no_who", "不派(没填负责人)", 引("fetch1", "/结果"), " —— 店长没填跟踪负责人,没派", 1480, 220),
         记("no_when", "不派(没填截止)", 引("fetch1", "/结果"), " —— 店长没填跟踪截止时间,没派", 1640, 220),
         {"id": "task", "type": "tool", "name": "派订单跟踪", "layout": {"x": 1640, "y": 0},
@@ -344,7 +348,7 @@ def _订单风险(桥):
     分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
     边 += [分("track", "advise", "yes"), 分("track", "no_track", "else"), 分("ok", "fetch2", "yes"),
           分("ok", "rejected", "else"), 分("same", "who", "yes"), 分("same", "changed", "else"),
-          分("who", "when", "yes"), 分("who", "no_who", "else"), 分("when", "task", "yes"), 分("when", "no_when", "else")]
+          分("who", "task", "yes"), 分("who", "no_who", "no_who"), 分("who", "no_when", "else")]
     return {"definition_schema_version": "1", "kind": "workflow",
             "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
             "nodes": 节点, "edges": 边}
@@ -396,8 +400,7 @@ def _老客召回(桥):
         {"id": "rejected", "type": "transform", "name": "记下店长的理由", "layout": {"x": 1000, "y": 300},
          "config": {"operations": [{"op": "to_string", "from": 引("review", "/理由"), "into": "结果"}],
                     "output_schema": 结果Schema}},
-        判("who", "勾了要派的人吗", {"op": "exists", "left": 引("review", "/要派的客户号")}, 1000, 80),
-        判("when", "填了回访截止吗", {"op": "exists", "left": 引("review", "/回访截止")}, 1160, 80),
+        _两项都填了吗("who", "勾了人、也填了截止吗", 引("review", "/要派的客户号"), 引("review", "/回访截止"), 1000, 80),
         记("no_who", "只出名单不派", 引("fetch", "/结果"), " —— 店长没勾要派的人,名单归档、没派任务", 1160, 220),
         记("no_when", "不派(没填截止)", 引("fetch", "/结果"), " —— 店长没填回访截止,没派", 1320, 220),
         {"id": "task", "type": "tool", "name": "派回访任务", "layout": {"x": 1320, "y": 0},
@@ -418,7 +421,7 @@ def _老客召回(桥):
         ("no_who", "merge"), ("no_when", "merge"), ("merge", "finish"))]
     分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
     边 += [分("any", "none", "yes"), 分("any", "write", "else"), 分("ok", "who", "yes"), 分("ok", "rejected", "else"),
-          分("who", "when", "yes"), 分("who", "no_who", "else"), 分("when", "task", "yes"), 分("when", "no_when", "else")]
+          分("who", "task", "yes"), 分("who", "no_who", "no_who"), 分("who", "no_when", "else")]
     return {"definition_schema_version": "1", "kind": "workflow",
             "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
             "nodes": 节点, "edges": 边}
@@ -467,8 +470,7 @@ def _库存补货(桥):
         {"id": "rejected", "type": "transform", "name": "记下理由(误报 / 退回)", "layout": {"x": 1000, "y": 300},
          "config": {"operations": [{"op": "to_string", "from": 引("review", "/理由"), "into": "结果"}],
                     "output_schema": 结果Schema}},
-        判("who", "填了负责人吗", {"op": "exists", "left": 引("review", "/补货负责人")}, 1000, 80),
-        判("when", "填了截止吗", {"op": "exists", "left": 引("review", "/补货截止")}, 1160, 80),
+        _两项都填了吗("who", "负责人和截止都填了吗", 引("review", "/补货负责人"), 引("review", "/补货截止"), 1000, 80),
         记("no_who", "不派(没填负责人)", 引("fetch", "/结果"), " —— 没填补货负责人,没派", 1160, 220),
         记("no_when", "不派(没填截止)", 引("fetch", "/结果"), " —— 没填补货截止,没派", 1320, 220),
         {"id": "task", "type": "tool", "name": "派补货跟进", "layout": {"x": 1320, "y": 0},
@@ -488,7 +490,7 @@ def _库存补货(桥):
         ("no_who", "merge"), ("no_when", "merge"), ("merge", "finish"))]
     分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
     边 += [分("go", "advise", "yes"), 分("go", "no_go", "else"), 分("ok", "who", "yes"), 分("ok", "rejected", "else"),
-          分("who", "when", "yes"), 分("who", "no_who", "else"), 分("when", "task", "yes"), 分("when", "no_when", "else")]
+          分("who", "task", "yes"), 分("who", "no_who", "no_who"), 分("who", "no_when", "else")]
     return {"definition_schema_version": "1", "kind": "workflow",
             "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
             "nodes": 节点, "edges": 边}
