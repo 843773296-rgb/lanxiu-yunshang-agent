@@ -65,7 +65,10 @@ def 当前指纹():
 
 
 def 读(db=None):
-    """库上盖的章 → {build_commit, build_at, build_logic_fp, build_logic_n};没盖过的键值是 None。"""
+    """库上盖的章 → {build_commit, build_at, build_logic_fp, build_logic_n};没盖过的键值是 None。
+
+    ⚠️ **值全是字符串**(world_meta.v 是 TEXT 列):build_logic_n 读回来是 "12" 不是 12 ——
+    要比大小先转 int(并行会话 10-27 接评测来路时撞到:自造的整数对照全绿,真库一跑 TypeError)。"""
     c = sqlite3.connect(f"file:{db or DB}?mode=ro", uri=True)
     try:
         有 = c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='world_meta'").fetchone()
