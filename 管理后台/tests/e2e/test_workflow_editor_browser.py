@@ -99,6 +99,10 @@ def main():
         js(f"localStorage.setItem('aimc.user','{我}');localStorage.setItem('aimc.proj','{项目}');"
            f"localStorage.removeItem('wf.视口.{wid}');localStorage.setItem('wf.自动保存','0');")
         d.get(基址 + f"/#/workflow/{wid}/搭建")
+        # ⚠️ 要**重新载入**:页面只在载入时读一次 localStorage 里的项目。上面那次 d.get 只改了 #,同一页没重载,
+        # 页面还拿着第一次打开时的项目(空 → 选了列表第一个),在别的项目里找这条工作流,落回工作台 ——
+        # 表现就是「等不到页面就绪」(10-27 查出来的,这份测试之前一直卡在这里)
+        d.refresh()
         等(d, lambda: js("return !!(window.图态 || (typeof 图态!=='undefined' && 图态)) && !!document.querySelector('#vw-g')"))
         d.find_element(By.ID, "vw-g").click()
         等(d, lambda: js("return document.querySelectorAll('.wfnode2').length") == 6)

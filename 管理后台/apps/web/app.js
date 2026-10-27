@@ -951,7 +951,8 @@ function 标脏() {
 function 画_保存状态() {
   const el = $("#savest"); if (!el) return;
   const g = 图态, 态 = g.保存态;
-  const 文 = { 已保存: `已保存 · 草稿 r${g.revision}`, 未保存: `有未保存的修改 · 草稿 r${g.revision}`,
+  const 时 = g.存于 ? g.存于.toLocaleTimeString("zh-CN", { hour12: false }) : "";
+  const 文 = { 已保存: 自动保存开着() && 时 ? `自动保存于 ${时} · 草稿 r${g.revision}` : `已保存 · 草稿 r${g.revision}`, 未保存: `有未保存的修改 · 草稿 r${g.revision}`,
     保存中: g.脏 && g.编辑序号 !== g.保存中序号 ? "保存中…(保存发出后你又改了,这些还没存)" : "保存中…",
     失败: "未保存成功,本页修改仍保留 —— 点「保存草稿」重试", 冲突: "其他人已更新这张图,你的修改仍在本页 —— 先处理冲突" }[态] || 态;
   el.textContent = 文;
@@ -2237,7 +2238,7 @@ async function 做_存草稿() {
       const d = await 请求(`${P()}/workflows/${encodeURIComponent(g.wid)}/draft`, {
         method: "PATCH", headers: { "If-Match": String(g.revision) }, body: 体,
       });
-      g.revision = d.revision; g.已存序号 = 序;
+      g.revision = d.revision; g.已存序号 = 序; g.存于 = new Date();
       g.已存快照 = 体;
       g.脏 = (g.编辑序号 || 0) !== 序;        // 保存期间又改过 → 那些改动还没存
       g.保存态 = g.脏 ? "未保存" : "已保存";
@@ -2293,10 +2294,12 @@ function 弹_冲突(e) {
   };
 }
 
-/* 自动保存(第三批,§10.2「未来自动保存」):**默认关**、个人开关;只存草稿,停顿 1.5 秒后串行提交;
- * 不运行、不发布、不改生效版本。保存失败 / 冲突时停下,不重试刷屏。 */
+/* 自动保存(第三批,§10.2「未来自动保存」):只存草稿,停顿 1.5 秒后串行提交;
+ * 不运行、不发布、不改生效版本。保存失败 / 冲突时停下,不重试刷屏。
+ * 10-27 起**默认开**(用户拍「照 Dify 编辑即保存,两人同时改仍提示冲突」);个人仍可关,关了记在本机。
+ * 冲突照旧:两个人改同一张图,后存的那个拿到「其他人已更新」,不悄悄盖掉别人的 */
 let _自存时 = 0;
-function 自动保存开着() { try { return localStorage.getItem("wf.自动保存") === "1"; } catch (e) { return false; } }
+function 自动保存开着() { try { return localStorage.getItem("wf.自动保存") !== "0"; } catch (e) { return true; } }
 function 自动保存排队() {
   clearTimeout(_自存时);
   if (!自动保存开着() || !图态 || ["冲突", "失败"].includes(图态.保存态) || !能改图()) return;
