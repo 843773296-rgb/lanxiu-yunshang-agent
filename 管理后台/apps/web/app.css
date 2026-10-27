@@ -246,6 +246,8 @@ tr.warn-row td{background:#fff7e8}
 .wfworld{position:absolute;left:0;top:0;transform-origin:0 0}
 .wfsvg{position:absolute;left:0;top:0;overflow:visible}
 .wfsvg.top{pointer-events:none}.wfsvg.top .endh,.wfsvg.top .bend{pointer-events:all}
+.wfsvg .loopbox{pointer-events:none}.wfsvg .loopbox rect{fill:rgba(22,93,255,.04);stroke:#94bfff;stroke-width:1.5;stroke-dasharray:6 4}
+.wfsvg .loopbox text{font-size:12px;fill:#165dff;font-weight:600}
 .wfsvg .edge .vis{fill:none;stroke:#86909c;stroke-width:2;pointer-events:none}
 .wfsvg .edge.err .vis{stroke:var(--fail);stroke-dasharray:5 4}
 .wfsvg .edge .hit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer;pointer-events:stroke}

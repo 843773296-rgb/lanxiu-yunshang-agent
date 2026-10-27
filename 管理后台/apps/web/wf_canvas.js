@@ -280,6 +280,22 @@ function 画_节点() {
   }).join("");
 }
 
+/* 循环体外框:同一个 container 的步骤取坐标包围盒 + 边距,框头写循环名。
+ * 画在线那一层的最底下(步骤卡片下面),不接鼠标 —— 框只是看的,点 / 拖还是落到步骤和线上。
+ * 跟线一起重画,所以拖动步骤时框跟着变(拖动走 下一帧重画线)。 */
+function 循环框() {
+  const 组 = {};
+  图态.定义.nodes.forEach((n) => { if (n.container && 节点(n.container)) (组[n.container] = 组[n.container] || []).push(n); });
+  const 边 = 16, 头 = 22;
+  return Object.entries(组).map(([cid, ns]) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    ns.forEach((n) => { const p = 位(n.id); x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + 画布.W); y1 = Math.max(y1, p.y + 节点高(n)); });
+    const x = x0 - 边, y = y0 - 边 - 头, w = x1 - x0 + 边 * 2, h = y1 - y0 + 边 * 2 + 头;
+    return `<g class="loopbox" data-loopbox="${esc(cid)}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="10"/>
+      <text x="${x + 10}" y="${y + 15}">循环 · ${esc(业务名(节点(cid)))}(${ns.length} 步)</text></g>`;
+  }).join("");
+}
+
 function 画_线(拖中 = null) {
   const g = 图态, s = 画态(), 折们 = (g.布局.$线 || {});
   let 宽 = 800, 高 = 500;
@@ -300,7 +316,7 @@ function 画_线(拖中 = null) {
   const 临 = 拖中 ? `<path class="temp ${拖中.坏 ? "bad" : ""}" d="${线路径(拖中.a, 拖中.b)}"/>` : "";
   const svg = $("#wf-svg");
   svg.setAttribute("width", 宽); svg.setAttribute("height", 高);
-  svg.innerHTML = 段;
+  svg.innerHTML = 循环框() + 段;
   // 选中那条线的端点把手 / 折点 / 拖线时的临时线画在**步骤卡片上面**一层 ——
   // 画在下面的话,终点把手正好压在目标步骤的左边缘,按下去拿到的是步骤,于是「拖端点」变成了「拖走整个步骤」
   // (2026-10-25 真浏览器测试逮到的)。把手半径随缩放反向调,屏幕上始终约 9 像素。

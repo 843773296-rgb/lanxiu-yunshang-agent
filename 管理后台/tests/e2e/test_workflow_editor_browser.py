@@ -268,6 +268,24 @@ def main():
         d.find_element(By.ID, "lv-stay").click(); time.sleep(0.3)
         ck("选「留在此页」→ 还在这条工作流,修改还在", js("return location.hash").startswith(f"#/workflow/") and 态()["脏"])
 
+        print("\n▸ 循环体外框:同一个循环里的步骤圈一个框,拖步骤时框跟着变")
+        # 只在页面内存里把两步标成「在同一个循环里」(画框只看 container 字段),验完原样摘掉,不保存
+        js("['llm_1','tool_1'].forEach(k => 图态.定义.nodes.find(n => n.id === k).container = 'start'); 画_节点(); 画_线();")
+        框 = lambda: js("const r=document.querySelector('.loopbox[data-loopbox=\"start\"] rect'); return r && {x:+r.getAttribute('x'), y:+r.getAttribute('y'), w:+r.getAttribute('width'), h:+r.getAttribute('height'), 字: r.parentNode.textContent}")
+        步框 = lambda k: js(f"const p=图态.布局['{k}']; return {{x:p.x, y:p.y, x1:p.x+画布.W, y1:p.y+节点高(图态.定义.nodes.find(n=>n.id==='{k}'))}}")
+        b, s1, s2 = 框(), 步框("llm_1"), 步框("tool_1")
+        ck("框把两步都圈在里面,框头写「循环 · … (2 步)」",
+           bool(b) and all(b["x"] < s["x"] and b["y"] < s["y"] and b["x"] + b["w"] > s["x1"] and b["y"] + b["h"] > s["y1"] for s in (s1, s2))
+           and "(2 步)" in b["字"], [b, s1, s2])
+        ck("框不接鼠标(点 / 拖还落在步骤和线上)", js("return getComputedStyle(document.querySelector('.loopbox')).pointerEvents") == "none")
+        右步 = "llm_1" if s1["x1"] >= s2["x1"] else "tool_1"
+        A().move_to_element_with_offset(节(右步), 0, -20).click_and_hold().move_by_offset(10, 0).move_by_offset(150, 0).release().perform()
+        b2, 挪 = 框(), 步框(右步)["x1"] - max(s1["x1"], s2["x1"])
+        ck("把最右那一步往右拖 → 框右边跟着挪同样多(左边不动)", bool(b and b2) and 挪 > 0 and b2["x"] == b["x"] and round(b2["w"] - b["w"]) == 挪, [b, b2, 挪])
+        # 先撤销拖动再摘标记:撤销恢复的是拖之前的整张图快照(里面带着刚才临时加的 container)
+        js("撤销(); 图态.定义.nodes.forEach(n => delete n.container); 画_节点(); 画_线();")
+        ck("摘掉之后框就没了", js("return document.querySelectorAll('.loopbox').length") == 0)
+
         print("\n▸ T21 完整链路:加步骤 → 连线 → 配置 → 删线 → 撤销 → 保存 → 重开")
         js("加到视口中间('transform')")
         新 = [n for n in 态()["节点"] if n.startswith("transform_")]
