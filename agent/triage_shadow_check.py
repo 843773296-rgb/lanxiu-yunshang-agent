@@ -218,7 +218,10 @@ for _p in _扫:
         _t = open(_p, encoding="utf-8").read()
     except Exception:                                              # noqa: BLE001
         continue
-    if S.表名 in _t and rel not in 放过:
+    # 「rating_shadow.py」是**模块文件的路径**,不是这张表 —— 库指纹的登记表(backend/db_build.py,10-27)
+    # 要逐个写出造数用到的模块路径,写出它不等于有了读口。只去掉「表名.py」这一种写法:
+    # SQL 里的表名、`import 表名` 照样算提到(后者正是一条新读口的样子)
+    if S.表名 in _t.replace(S.表名 + ".py", "") and rel not in 放过:
         _露.append(rel)
 ck(f"后端 / 工具层 / 站点那 {len(_扫)} 个文件里,除了建表那一个都没提到这张表", not _露,
    f"{_露} —— 它一旦经口露出去,新量轨那一半的证据就没了,"
