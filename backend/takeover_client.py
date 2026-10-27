@@ -120,3 +120,45 @@ def 发起(技能, 澜绣工号, 输入, 幂等键):
         _内存["items"] = None            # 清单旧了:下一次重拉
         return False, dict(error=f"{话}。这件事已经交还给你自己做了 —— 照常用技能", 交还=True)
     return False, dict(error=f"发起失败(HTTP {码}{' ' + 码文 if 码文 else ''}):{话}")
+
+
+def 取回复(运行号, 澜绣工号):
+    """这条从聊天发起的运行**现在说了什么、跑到哪了**(用户 10-27 拍「发起时等一会儿 + 可追问」)。
+
+    只认自己发起的那条:管理后台按「聊天发起 + 同一个工号」核,对不上回 404 —— 这里照实转述,不另判。"""
+    from urllib.parse import quote
+    cfg = 配置()
+    if not cfg:
+        return False, dict(error="聊天站没配管理后台地址,查不了工作流 —— 请管理员检查聊天站的常驻配置")
+    rid = (运行号 or "").strip()
+    if not rid:
+        return False, dict(error="要说清是哪一条运行(运行号),发起时回过")
+    码, 体 = _curl("GET", f"/chat-takeovers/runs/{quote(rid, safe='')}/replies?澜绣工号={quote(str(澜绣工号 or ''), safe='')}", cfg)
+    if 码 == "200" and isinstance(体, dict):
+        return True, dict(运行号=rid, 状态=体.get("执行状态中文"), 跑完了=bool(体.get("是终态吗")),
+                          在等人工核对=bool(体.get("在等人工核对")), 回复=体.get("回复们") or [],
+                          核对入口=cfg["地址"].rstrip("/") + (体.get("核对入口") or ""))
+    if 码 is None:
+        return False, dict(error=f"{体} —— 现在查不到这条运行,稍后再问")
+    话 = (体 or {}).get("message") if isinstance(体, dict) else str(体)[:160]
+    return False, dict(error=f"查不到(HTTP {码}):{话}")
+
+
+def 等回复(运行号, 澜绣工号, 最多秒=None, 间隔=2.0, 睡=time.sleep):
+    """发起后**等一会儿**:跑完、停在人工核对、或到点,哪个先到停哪个;回最后一次查到的。
+
+    为什么不一直等:人工核对是小时级的,聊天这一轮不能挂着;到点没说完的,用户追问时用 workflow_replies 取。
+    `最多秒` 默认 20,`LANXIU_TAKEOVER_WAIT` 可改(检查里设成 0,不真等)。"""
+    if 最多秒 is None:
+        try:
+            最多秒 = float(os.environ.get("LANXIU_TAKEOVER_WAIT") or 20)
+        except ValueError:
+            最多秒 = 20.0
+    起 = time.time()
+    ok, 回 = 取回复(运行号, 澜绣工号)
+    while ok and not (回["跑完了"] or 回["在等人工核对"]) and time.time() - 起 + 间隔 <= 最多秒:
+        睡(间隔)
+        ok, 回 = 取回复(运行号, 澜绣工号)
+    if ok:
+        回["还在跑"] = not (回["跑完了"] or 回["在等人工核对"])
+    return ok, 回

@@ -12629,8 +12629,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "TAKEOVER_TOOLS = [\"mcp__work__start_workflow\"]",
-    "new": "TAKEOVER_TOOLS = [\"mcp__work__start_workflow\"]\nTAKEOVER_TOOLS += [\"mcp__shop__某个没人管的工具\"]"
+    "old": "TAKEOVER_TOOLS = [\"mcp__work__start_workflow\", \"mcp__work__workflow_replies\"]",
+    "new": "TAKEOVER_TOOLS = [\"mcp__work__start_workflow\", \"mcp__work__workflow_replies\"]\nTAKEOVER_TOOLS += [\"mcp__shop__某个没人管的工具\"]"
    }
   ],
   "预期红": "没有人用 `+=` 往名单里加工具"
@@ -12641,7 +12641,7 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "TAKEOVER_TOOLS = [\"mcp__work__start_workflow\"]",
+    "old": "TAKEOVER_TOOLS = [\"mcp__work__start_workflow\", \"mcp__work__workflow_replies\"]",
     "new": "TAKEOVER_TOOLS = list([\"mcp__work__start_workflow\"])"
    }
   ],

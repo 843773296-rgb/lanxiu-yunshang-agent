@@ -667,7 +667,7 @@ async function 页_运行记录() {
  */
 const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本与发布", "设置"];
 const 步类型名 = { start: "开始", end: "返回结果", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
-  condition: "按条件分流", transform: "整理字段", merge: "汇合", human: "人工核对", agent: "Agent" };
+  condition: "按条件分流", transform: "整理字段", merge: "汇合", human: "人工核对", agent: "Agent", answer: "直接回复" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -1202,7 +1202,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge"]
+  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -1231,6 +1231,7 @@ function 默认配置(类型) {
            llm: { bindings: {}, output_schema: { type: "object", properties: { text: { type: "string" } },
                   required: ["text"], additionalProperties: false } },
            tool: { bindings: {} },
+           answer: { template: "", bindings: {} },
            transform: { operations: [], output_schema: { type: "object" } } }[类型] || {};
 }
 
@@ -1532,6 +1533,20 @@ function 表_设置(n) {
       + `<div class="k">接了「都不满足」那条线时,走那条线;没接才按这里的办法结束。</div>`;
   } else if (n.type === "start") {
     体 += `<label class="f">使用者要提供什么</label>` + 字段表编辑(c.input_schema = c.input_schema || { type: "object", properties: {}, required: [] }, true);
+  } else if (n.type === "answer") {
+    // 直接回复(10-27):模板里写 {{名字}},名字在下面「用到的数据」里选来源。写了新名字就**自动加一行待选来源** ——
+    // 不加的话,人写完模板以为好了,检查配置才说「单号没有来源」
+    const 名们 = 回复占位名(c.template), 缺 = 名们.filter((k) => !(k in (c.bindings || {})));
+    const k = 挂控件((el) => {
+      c.template = el.value;
+      c.bindings = c.bindings || {};
+      回复占位名(el.value).forEach((x) => { if (!(x in c.bindings)) c.bindings[x] = null; });
+      重画();
+    });
+    体 += `<label class="f">回复什么</label>
+      <textarea data-k="${k}" data-lb="回复内容" rows="4" placeholder="例如:{{客户}}您好,您的需求已记下,店长核对后会联系您">${esc(c.template || "")}</textarea>
+      <div class="k">这句话会发回聊天里;管理后台试运行时用对话气泡显示。要带上前面的结果就写 <code>{{名字}}</code>,名字在下面「用到的数据」里选来源。</div>
+      ${缺.length ? `<div class="ferr">模板里的 ${缺.map((x) => `「${esc(x)}」`).join("、")} 还没在「用到的数据」里 —— 运行前要选来源</div>` : ""}`;
   } else if (n.type === "end") {
     体 += `<div class="k">返回哪些内容、各从哪来 —— 在下面「结果」和「用到的数据」里配。</div>`;
   } else {
@@ -1578,6 +1593,7 @@ function 上游字段(id) {
 function 结果字段名(n) {
   const c = n.config || {};
   if (n.type === "human") return ["决定", "定稿", "理由", "处理人"];
+  if (n.type === "answer") return ["回复"];
   if (n.type === "condition") return ["branch"];
   if (n.type === "merge") return [c.output_field || "out"];
   if (n.type === "tool") {
@@ -1713,6 +1729,7 @@ function 表_结果(n) {
       : `<div class="k">先在上面「基本」里选一个业务动作。</div>`;
   }
   if (n.type === "human") return `<div class="k">人工核对固定返回:<b>决定</b>(approve / reject)、<b>定稿</b>、<b>理由</b>、<b>处理人</b>。</div>`;
+  if (n.type === "answer") return `<div class="k">固定返回:<b>回复</b>(填好名字之后的那一句)。后面的步骤也能取它。</div>`;
   if (n.type === "end") {
     c.output_schema = c.output_schema || { type: "object", properties: {}, required: [] };
     return `<div class="k">最后返回哪些内容;每一项从哪来在上面「用到的数据」里选(字段名要和这里一致)。</div>`
@@ -1897,6 +1914,20 @@ function 步骤IO(s, 原文, 开 = false) {
     ${没存全 ? `<div class="note">内容太长,只存了前一段。</div>` : ""}
     ${块("收到的(输入)", s["输入"])}${块("交出的(输出)", s["输出"])}</details>`;
 }
+/* 「直接回复」说了什么(10-27,用户:「要呈现出来,不然测试时候不好看结果」)—— 按执行先后摆成对话气泡。
+ * 认 {{名字}} 的写法和后端 dsl.回复占位名 是同一条:`{{` 空白 名字 空白 `}}` */
+function 回复占位名(t) {
+  return [...new Set([...String(t || "").matchAll(/\{\{\s*([^{}\s]+)\s*\}\}/g)].map((m) => m[1]))];
+}
+function 回复气泡(d) {
+  const 们 = d["回复们"] || [];
+  if (!们.length) return "";
+  return `<div class="chatbox"><div class="k">直接回复(发回聊天的话,共 ${们.length} 句)</div>`
+    + 们.map((x) => `<div class="chatmsg"><div class="chatwho">${esc(图态 && 图态.定义 && 节点(x["节点"]) ? 业务名(节点(x["节点"])) : x["节点"])}</div>
+        <div class="chatbub">${x["文本"] != null ? esc(x["文本"]) : `<span class="k">(${esc(x["说明"] || "看不到原文")};共 ${esc(x["长度"])} 字)</span>`}</div>
+        ${x["没存全"] ? `<div class="k">回复太长,只存了前一段</div>` : ""}</div>`).join("")
+    + `</div>`;
+}
 /* 业务结果(10-26,方案 §8.2):先说「这次结果能不能用、差什么、下一步干什么」,执行状态退到小字 */
 function 业务结果块(d) {
   const r = d["业务结果"]; if (!r) return `<div><b>${esc(d["执行状态中文"])}</b></div>`;
@@ -1913,6 +1944,7 @@ function 运行卡(d, rid) {
       ${s["走的分支"] && s["走的分支"] !== "None" ? ` <span class="k">→ ${esc(图逻辑.分支名(s["走的分支"]))}</span>` : ""}
       ${s["错误码"] ? ` <code>${esc(s["错误码"])}</code>` : ""}${步骤IO(s, d["看得到原文"])}</li>`).join("");
   return `${业务结果块(d)}
+    ${回复气泡(d)}
     ${等 ? (等["种类"] === "human"
         ? `<div class="note">停在「${esc(业务名(节点(等["步骤"]) || {}))}」等人工核对。
             ${等["待办"] ? `<a href="#/human/${encodeURIComponent(等["待办"])}">去核对 →</a>` : ""}
@@ -2770,6 +2802,7 @@ async function 页_运行详情(rid) {
     </div>
     <div id="rcmsg"></div>
     ${业务结果块(d)}
+    ${回复气泡(d)}
     <div class="cards">
       <div class="card"><div class="kpi">${esc(d["执行状态中文"])}</div>
         <div class="k">执行状态 <code>${esc(d["执行状态"])}</code>

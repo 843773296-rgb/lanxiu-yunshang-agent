@@ -3616,6 +3616,120 @@
         "x-权限": "查看有权配置"
       }
     },
+    "/api/v1/projects/{project_id}/chat-takeovers/runs/{rid}/replies": {
+      "get": {
+        "description": "用户 10-27 拍「发起时等一会儿 + 可追问」:回「直接回复」那几步的话(按执行先后)和当前状态。**只回聊天发起的、并且就是这个澜绣工号发起的**运行,对不上一律 404 —— 服务账号能调,不等于谁报个号都能读",
+        "operationId": "get_chat-takeovers_runs_rid_replies",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "详情"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "聊天站取一条从聊天发起的运行说了什么、跑到哪了",
+        "tags": [
+          "工作流"
+        ],
+        "x-字段权限": [],
+        "x-审计": false,
+        "x-权限": "运行编排测试"
+      }
+    },
     "/api/v1/projects/{project_id}/chat-takeovers/{skill}/runs": {
       "post": {
         "description": "只在这里判两件事:技能**现在**真开着接管(否则 409 TAKEOVER_OFF)、澜绣工号绑的是谁(没绑 409 NOT_BOUND)。**以绑定的那个人的身份**发起,不拿调用方顶替;跑的是最新候选版本",

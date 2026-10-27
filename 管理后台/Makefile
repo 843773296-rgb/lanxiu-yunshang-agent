@@ -934,6 +934,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 运行的业务结果:跑完了 ≠ 业务合格,用人话分开说(已完成 / 需补充资料 / 没做完 / 失败卡在哪一步)"
 	@./.venv/bin/python tests/orchestration/test_business_result.py
 	@echo ""
+	@echo "▸ 直接回复:模板里的名字都要有来源(检查配置就拦);取不到值这一步失败、不回半句;回复不进事件"
+	@./.venv/bin/python tests/orchestration/test_answer_node.py
+	@echo ""
 	@echo "▸ 定时触发的时间口径:日报前一天 / 周报上一个自然周 / 月报上一个自然月;同一期只发起一次;关机只补最近一期"
 	@./.venv/bin/python tests/orchestration/test_schedule.py
 	@echo ""

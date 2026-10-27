@@ -106,6 +106,37 @@ def main():
     ck("过了这一分钟 → 另一把钥匙(用户隔一会儿再要,是新的一次)",
        同 != tc.幂等键("60000001", "call-notes", "wf_1", {"call_id": "TS-001"}, t + 60))
 
+    print("\n▸ ②¾ 发起后等一会儿(10-27「直接回复」):跑完 / 停在人工核对 / 到点,哪个先到停哪个")
+    原取 = tc.取回复
+    try:
+        def 假取(序列):
+            it = iter(序列)
+            查了 = []
+            def f(rid, 工号):
+                查了.append((rid, 工号))
+                return True, dict(next(it), 运行号=rid, 回复=["收到"], 核对入口="x")
+            return f, 查了
+        tc.取回复, 查了 = 假取([dict(跑完了=False, 在等人工核对=False), dict(跑完了=False, 在等人工核对=True)])
+        睡了 = []
+        ok, 回 = tc.等回复("xr_1", "60000005", 最多秒=20, 睡=睡了.append)
+        ck("停在人工核对就不再等(查 2 次、睡 1 次),不算还在跑",
+           ok and len(查了) == 2 and len(睡了) == 1 and 回["还在跑"] is False and 回["回复"] == ["收到"], (查了, 睡了, 回))
+        ck("查的是自己的工号(管理后台按工号核)", all(x == ("xr_1", "60000005") for x in 查了), 查了)
+        tc.取回复, 查了 = 假取([dict(跑完了=False, 在等人工核对=False)] * 50)
+        睡了 = []
+        ok, 回 = tc.等回复("xr_2", "60000005", 最多秒=0, 睡=睡了.append)
+        ck("最多等 0 秒:只查一次、不睡,标「还在跑」(留给 workflow_replies 追问)",
+           ok and len(查了) == 1 and not 睡了 and 回["还在跑"] is True, (查了, 睡了, 回))
+    finally:
+        tc.取回复 = 原取
+    旧环境2 = {k: os.environ.pop(k, None) for k in ("LANXIU_USAGE_URL", "LANXIU_BRIDGE_PROJECT", "LANXIU_USAGE_USER")}
+    try:
+        ok, 回 = tc.取回复("xr_1", "60000005")
+        ck("没配管理后台地址:取回复明说没配", not ok and "没配" in 回.get("error", ""), 回)
+    finally:
+        for k, v in 旧环境2.items():
+            if v is not None: os.environ[k] = v
+
     print("\n▸ ③ 每个角色都能发起")
     import sdk
     角色们 = sorted(sdk._ROLE_TOOLS)
@@ -114,6 +145,10 @@ def main():
     import api, domains
     ck("start_workflow 登记成写口(一轮只发一次、同参数不许重试)", "start_workflow" in api.WRITE_TOOLS)
     ck("start_workflow 归 work 领域(和 mcp__work__ 前缀对得上)", "start_workflow" in domains.领域["work"])
+    缺2 = [k for k in 角色们 if "mcp__work__workflow_replies" not in sdk._tools_for(k)]
+    ck(f"每个角色都挂了 workflow_replies(发起了就得能追问)", not 缺2, 缺2)
+    ck("workflow_replies 是只读(不在写口名单里)", "workflow_replies" not in api.WRITE_TOOLS)
+    ck("workflow_replies 归 work 领域", "workflow_replies" in domains.领域["work"])
 
     print()
     if 挂:

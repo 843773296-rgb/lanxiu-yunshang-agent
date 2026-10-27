@@ -170,6 +170,7 @@ export const ENDPOINTS = [
   { method: "GET", path: "/workflow-templates", summary: "新建工作流的模板卡片(每张写明要哪些资源、这个项目里有没有)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/workflow-resources", summary: "搭建页的下拉:模型 / 处理要求 / 业务动作 / 角色", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/chat-takeovers/{skill}/runs", summary: "聊天站发起一条被接管的工作流", capability: "运行编排测试", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "GET", path: "/chat-takeovers/runs/{rid}/replies", summary: "聊天站取一条从聊天发起的运行说了什么、跑到哪了", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/staff-bindings", summary: "管理后台账号和澜绣员工的绑定", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PUT", path: "/staff-bindings/{user_id}", summary: "绑定 / 改绑一个账号的澜绣工号", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "DELETE", path: "/staff-bindings/{user_id}", summary: "解绑", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -252,4 +253,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 165 条接口 · 24 条异步 · 31 条要幂等键 · 16 条要 If-Match */
+/** 共 166 条接口 · 24 条异步 · 31 条要幂等键 · 16 条要 If-Match */

@@ -102,6 +102,7 @@ _缺项说法 = {
     "agent_version_id": ("还没选用哪个 Agent", "在右侧面板里选一个已生成版本的 Agent"),
     "task_binding": ("还没写交给 Agent 的任务", "在右侧「用到的数据」里选任务内容从哪来"),
     "sub_limits": ("还没设这一步的上限", "在右侧「高级」里填最多跑几轮、最多花多少"),
+    "template": ("还没写要回复什么", "在右侧「基本」里写回复内容;要带上前面的结果,写 {{名字}} 并在「用到的数据」里给它选来源"),
 }
 
 # 引用的资源找不到时怎么叫它
@@ -565,6 +566,20 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                        f"最后要返回「{f}」,但还没选它从哪来",
                        f"在右侧「用到的数据」里给「{f}」选一个前面步骤的结果", node_id=i,
                        field_path=f"config.bindings.{f}"))
+
+    # ⑨ 直接回复:模板里每个名字都要在「用到的数据」里有一项(10-27)───────────
+    # 不查的话,手写的 {{单号}} 运行到这一步才失败 —— 而那时前面的模型钱已经花了
+    for n in 节点们:
+        if n.get("type") != "answer":
+            continue
+        cfg = n.get("config") or {}
+        绑 = cfg.get("bindings") or {}
+        for k in DS.回复占位名(cfg.get("template")):
+            if k not in 绑:
+                出.append(问(阻断, "ANSWER_PLACEHOLDER_UNBOUND",
+                           f"回复里写了「{{{{{k}}}}}」,但「用到的数据」里没有叫「{k}」的一项 —— 运行时会原样发出花括号",
+                           f"在右侧「用到的数据」里加一项叫「{k}」并选来源,或者把模板里的这个名字删掉",
+                           node_id=n.get("id"), field_path="config.template"))
 
     # 跳过的检查不能写成通过(§C.4)
     for s in 跳过:

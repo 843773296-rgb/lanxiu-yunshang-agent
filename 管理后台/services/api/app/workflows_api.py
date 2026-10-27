@@ -1151,6 +1151,35 @@ async def 聊天发起接管(project_id: str, skill: str, request: Request,
     return 回
 
 
+@router.get(前缀 + "/chat-takeovers/runs/{rid}/replies")
+def 聊天取回复(project_id: str, rid: str, 澜绣工号: str = "",
+          me: 身份 = Depends(要权限("运行编排测试"))):
+    """澜绣聊天站来问:**这条从聊天发起的运行,现在说了什么、跑到哪了**(用户 10-27 拍「发起时等一会儿 + 可追问」)。
+
+    只回**聊天发起的、并且就是这个澜绣工号发起的**运行 —— 服务账号能调这个口,不等于聊天里任何人
+    报一个运行号就能读别人那条运行的回复。对不上一律 404(不说「有这条但不是你的」)。
+    回复是要说给发起人听的,所以这里给原文,不按管理后台的「查看敏感输入」授权打码。"""
+    工号 = (澜绣工号 or "").strip()
+    with 连接() as c:
+        r = c.execute(text("""select id, status, completion_reason, definition_ref from execution_runs
+                               where project_id=:p and id=:i"""), {"p": project_id, "i": rid}).mappings().first()
+        来 = (r or {}).get("definition_ref") or {}
+        if not r or 来.get("发起") != "聊天接管" or not 工号 or 来.get("澜绣工号") != 工号:
+            raise _错(404, "NOT_FOUND", "没有这条从聊天发起的运行", "核对运行号;只能查自己从聊天发起的那几条")
+        steps = c.execute(text("""select node_id, kind, status, output_ref from run_steps
+                                   where project_id=:p and execution_run_id=:i"""),
+                          {"p": project_id, "i": rid}).mappings().all()
+        steps = _按回复先后(c, project_id, rid, steps)
+    状态 = r["status"]
+    return {"运行号": rid, "执行状态": 状态,
+            "执行状态中文": ST.找("execution_run")["中文状态"].get(状态, 状态),
+            "是终态吗": 状态 in ST.找("execution_run")["终态"],
+            "在等人工核对": 状态 == "waiting_approval",
+            "回复们": [x["文本"] for x in _回复们(steps)
+                     if x["文本"]],
+            "核对入口": f"/#/wfrun/{rid}"}
+
+
 # ── 定时触发(10-26,方案 §8.5;用户拍「照你的建议走」+「现在做,验完就推」)──────────────
 # 时间口径(哪天跑、统计哪一段、该补哪一期)只在 runtime/定时.py 算;这里只管存规则、核前提、照常受理。
 # **发起走 `_受理运行` 那一个口**(和聊天接管、手动试运行同一套),幂等键 = 期键 —— 同一期重启、两个 worker 同时扫都只跑一次。
@@ -2243,6 +2272,39 @@ def _连接测试注(结论, 跑法, 步骤们):
                 说明=(结论.get("说明") or "") + f"。这是连接测试:{没写} 处写入没有发给澜绣" + ("" if 没写 else "(这次没走到写入)"))
 
 
+def _按回复先后(c, project_id, rid, 步骤们):
+    """「直接回复」要按**执行的先后**排:同一批写进来的步骤 started_at 相同,按 node_id 排就乱了。
+    事件 seq 才是真顺序 —— 取每一步「node.succeeded」那条事件的 seq。"""
+    序 = {e["node_id"]: e["seq"] for e in c.execute(text("""
+        select payload->>'node_id' as node_id, min(seq) as seq from run_events
+         where project_id=:p and execution_run_id=:i and event_type='node.succeeded'
+           and payload->>'kind'='answer' group by 1"""), {"p": project_id, "i": rid}).mappings()}
+    return sorted(步骤们, key=lambda s: 序.get(s["node_id"], 1 << 30))
+
+
+def _回复们(步骤们, 看原文=True):
+    """这次运行里「直接回复」那几步说了什么,按发生顺序(10-27)。运行详情、试运行面板、聊天站取回复**都调这一处**。
+
+    没有原文授权 → 只说「有一句、多长」,不给文字(和每一步的输入输出同一条打码规矩);
+    回复太长被截过 → 给存下的前一段并标出来,不冒充是全文。"""
+    出 = []
+    for s in 步骤们:
+        if s["kind"] != "answer" or s["status"] != "succeeded":
+            continue
+        try:
+            v = json.loads(s["output_ref"]) if s["output_ref"] else {}
+        except (ValueError, TypeError):
+            v = {}
+        全 = isinstance(v, dict) and "回复" in v
+        文 = v["回复"] if 全 else (v.get("前一段") if isinstance(v, dict) else None)
+        出.append({"节点": s["node_id"],
+                   "文本": 文 if 看原文 else None,
+                   "长度": len(文 or ""),
+                   "没存全": not 全,
+                   **({} if 看原文 else {"说明": "看回复原文要「查看敏感输入/独立测试答案」专项授权"})})
+    return 出
+
+
 @router.get(前缀 + "/execution-runs/{rid}")
 def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查看有权配置"))):
     看原文, _ = me.能("查看敏感输入/独立测试答案")
@@ -2257,6 +2319,7 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
               from run_steps where project_id=:p and execution_run_id=:i
              order by started_at nulls last, node_id
         """), {"p": project_id, "i": rid}).mappings().all()
+        回复步 = _按回复先后(c, project_id, rid, steps)
         evs = c.execute(text("""
             select seq, event_type, payload, occurred_at from run_events
              where project_id=:p and execution_run_id=:i order by seq
@@ -2345,6 +2408,8 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
                for s in steps],
         # 前端据此决定写「原文」还是「只看得到形状」—— 不让它从值长什么样去猜
         "看得到原文": bool(看原文),
+        # 「直接回复」那几步说的话(10-27,用户:「要呈现出来,不然测试时不好看结果」)—— 页面用对话气泡摆
+        "回复们": _回复们(回复步, 看原文),
         "事件": [{"seq": e["seq"], "类型": e["event_type"], "载荷": e["payload"],
                 "时间": e["occurred_at"].isoformat() if e["occurred_at"] else None}
                for e in evs],

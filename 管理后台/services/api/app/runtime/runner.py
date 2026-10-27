@@ -463,6 +463,24 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 当前 = 下[0] if 下 else None
                 continue
 
+            if t == "answer":
+                # 直接回复(10-27):模板里每个名字取「用到的数据」里同名那一项。**缺一项就失败,不回半句** ——
+                # 「您的订单{{单号}}已…」带着花括号发给顾客,比这一步失败糟得多
+                模板 = cfg.get("template") or ""
+                值, 缺 = 解绑定(cfg.get("bindings"), 状态)
+                本步入 = 值
+                缺 = sorted(set(缺) | (set(DS.回复占位名(模板)) - set(值) - set(缺)))
+                if 缺:
+                    raise 节点失败("ANSWER_VALUE_MISSING", f"回复里要填的内容取不到:{'、'.join(缺)}",
+                                 "在右侧「用到的数据」里给这几项选来源;来源那一步这次没跑到的话,加「分支汇合」")
+                if not 模板.strip():
+                    raise 节点失败("ANSWER_EMPTY", "这一步没写要回复什么", "在右侧「基本」里写回复内容")
+                状态["节点"][当前] = {"回复": DS.填回复(模板, 值)}
+                记一步(当前, 成功, 入=值, 出=状态["节点"][当前])
+                下 = 后继[当前].get((DS.成功, None), [])
+                当前 = 下[0] if 下 else None
+                continue
+
             if t == "end":
                 必需 = set((计划["输出Schema"].get("required") or []))
                 输出, 缺 = 解绑定(cfg.get("bindings"), 状态)

@@ -467,6 +467,56 @@ c, b = 打("POST", P + "/chat-takeovers/call-notes/runs", "U001", 头={"Idempote
 ck("**关掉之后聊天站拿着旧清单来发起 → 409 TAKEOVER_OFF**(开没开由服务端判)",
    c == 409 and (b or {}).get("code") == "TAKEOVER_OFF", (c, b))
 
+print("\n▸ ⑫⅜ 直接回复(用户 10-27 拍「要做,接聊天技能;要呈现出来,不然测试时不好看结果」)")
+回复文 = "收到 C10000 的录音 TS-001,整理好请店长核对"
+
+
+def 插回复(定):
+    """开始之后先回一句 —— 放在取转写之前,于是第一次停下(等回执)时这句已经说出去了。"""
+    起 = next(n for n in 定["nodes"] if n["type"] == "start")
+    e = next(x for x in 定["edges"] if x["source"] == 起["id"] and x["port"] == "success")
+    定["nodes"].append({"id": "say", "type": "answer", "name": "先回一句", "layout": {"x": 200, "y": 300},
+                       "config": {"template": "收到 {{客户}} 的录音 {{录音}},整理好请店长核对",
+                                  "bindings": {"客户": {"source": "input", "pointer": "/customer_id"},
+                                               "录音": {"source": "input", "pointer": "/call_id"}}}})
+    定["edges"].append({"source": "say", "target": e["target"], "port": "success"})
+    e["target"] = "say"
+
+
+wid3, _ = 建图("e2e 直接回复", 插回复)
+c, r = 发起(wid3, {"call_id": "TS-001", "customer_id": "C10000"})
+试跑 = (r or {}).get("resource_id")
+st, d = 等到(试跑, {"waiting_external"})
+ck("停在取转写等回执时,「先回一句」已经说了,运行详情的「回复们」就是手写期望那一句(有原文授权)",
+   st == "waiting_external" and [x["文本"] for x in d.get("回复们") or []] == [回复文], (st, (d or {}).get("回复们")))
+c, d2 = 打("GET", P + f"/execution-runs/{试跑}", "U002")
+ck("没有原文授权(U002):只看得到「有一句、多长」,看不到文字",
+   [(x["文本"], x["长度"]) for x in (d2 or {}).get("回复们") or []] == [(None, len(回复文))], (d2 or {}).get("回复们"))
+c, v3 = 打("POST", P + f"/workflows/{wid3}/versions", 体={"变更说明": "e2e:直接回复"})
+发到生产(wid3, v3["id"])
+c, d3 = 打("GET", P + f"/workflows/{wid3}")
+c, b = 打("PATCH", P + f"/workflows/{wid3}", 体={"名称": d3["名称"], "聊天接管": True}, 头={"If-Match": str(d3["revision"])})
+工号3 = "E2E" + uuid.uuid4().hex[:6]
+打("DELETE", P + "/staff-bindings/U002", "U001")
+打("PUT", P + "/staff-bindings/U002", "U001", 体={"澜绣工号": 工号3, "备注": "e2e 直接回复"})
+c, b = 打("POST", P + "/chat-takeovers/call-notes/runs", "U001", 头={"Idempotency-Key": str(uuid.uuid4())},
+         体={"澜绣工号": 工号3, "输入": {"call_id": "TS-001", "customer_id": "C10000"}})
+聊跑 = (b or {}).get("resource_id")
+等到(聊跑, {"waiting_external"})
+from urllib.parse import quote as _q
+c, rp = 打("GET", P + f"/chat-takeovers/runs/{聊跑}/replies?{_q('澜绣工号')}={工号3}", "U001")
+ck("聊天站按运行号取回复:就是那一句,并说清现在停着(还没跑完、不是在等人工核对)",
+   c == 200 and rp["回复们"] == [回复文] and rp["是终态吗"] is False and rp["在等人工核对"] is False, (c, rp))
+c, rp = 打("GET", P + f"/chat-takeovers/runs/{聊跑}/replies?{_q('澜绣工号')}={_q('E2E-别人')}", "U001")
+ck("**别的工号拿这个运行号来取 → 404**(服务账号能调,不等于谁报个号都能读)", c == 404, (c, rp))
+c, rp = 打("GET", P + f"/chat-takeovers/runs/{试跑}/replies?{_q('澜绣工号')}={工号3}", "U001")
+ck("不是从聊天发起的运行(管理后台试运行)→ 404", c == 404, (c, rp))
+收掉(试跑, "直接回复试跑")
+收掉(聊跑, "直接回复聊天发起")
+打("DELETE", P + "/staff-bindings/U002", "U001")
+c, d3 = 打("GET", P + f"/workflows/{wid3}")
+打("PATCH", P + f"/workflows/{wid3}", 体={"名称": d3["名称"], "聊天接管": False}, 头={"If-Match": str(d3["revision"])})
+
 print("\n▸ ⑫½ 连接测试跑法(10-26,方案 §8.1):模型真调、取转写真读,**写跟进不发给澜绣**,只记会写什么")
 wct, _ = 建图("e2e 连接测试")
 c, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())},
