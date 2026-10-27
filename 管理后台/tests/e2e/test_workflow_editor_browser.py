@@ -475,6 +475,33 @@ def main():
             pass          # 被上一页晚到的渲染盖掉时等不到 —— 交给下面那条判,红在点名的那一条上,不让整份崩
         time.sleep(1.5)   # 再给上一页晚到的数据一点时间:守卫坏了的话,它会在这段时间里把这页盖掉
         ck("还没接上的类型(聊天助手)页签在、点进去写明为什么", "店长任务助手" in d.find_element(By.ID, "main").text, d.find_element(By.ID, "main").text[:120])
+        print("\n▸ 工作室卡片(10-28):全部 = 工作流 + Agent 的卡;创建应用先选五种类型")
+        d.get(基址 + "/#/studio")
+        等(d, lambda: js("return location.hash") == "#/studio/all" and bool(js("return document.querySelector('.appcards')")))
+        接口数 = js("""const P = `/api/v1/projects/${项目}`, h = {headers: {'X-Dev-User': 我}};
+          return Promise.all([fetch(P + '/workflows', h).then(r => r.json()), fetch(P + '/agents', h).then(r => r.json())])
+            .then(([w, a]) => ({流: w.items.map(x => x.id), 智: a.items.map(x => x.id)}))""")
+        卡 = js("return [...document.querySelectorAll('.appcard[data-id]')].map(c => c.dataset.kind + ':' + c.dataset.id)")
+        要 = [f"workflow:{x}" for x in 接口数["流"]] + [f"agent:{x}" for x in 接口数["智"]]
+        ck(f"#/studio 跳到「全部」;每条工作流、每个 Agent 各一张卡,类型标对(工作流 {len(接口数['流'])} / Agent {len(接口数['智'])})",
+           sorted(卡) == sorted(要) and len(接口数["流"]) > 0 and len(接口数["智"]) > 0, [len(卡), len(要)])
+        d.find_element(By.ID, "new").click()
+        等(d, lambda: js("return document.querySelectorAll('.apptype').length") == 5)
+        型 = js("return [...document.querySelectorAll('.apptype')].map(b => [b.dataset.type, b.classList.contains('off'), (b.querySelector('.why')||{}).textContent || ''])")
+        ck("创建应用:五种类型都摆着;对话流 / 聊天助手 / 文本生成灰着并写明为什么,工作流 / Agent 能点",
+           [x[0] for x in 型] == ["workflow", "chatflow", "chat", "agent", "completion"]
+           and all(x[1] == (x[0] in ("chatflow", "chat", "completion")) for x in 型)
+           and all((len(x[2]) > 4) == x[1] for x in 型), 型)
+        d.find_element(By.CSS_SELECTOR, '.apptype[data-type="chat"]').click(); time.sleep(0.3)
+        ck("点灰着的那种:什么都不发生(弹层还在,没跳走)", js("return document.querySelectorAll('.apptype').length") == 5
+           and js("return location.hash") == "#/studio/all")
+        d.find_element(By.CSS_SELECTOR, '.apptype[data-type="workflow"]').click()
+        等(d, lambda: bool(js("return document.querySelector('#nw-n')")))
+        ck("选「工作流」→ 进到新建工作流(填名称、挑模板)", bool(js("return document.querySelector('input[name=tpl]')")))
+        js("关弹层()")
+        d.get(基址 + "/#/studio/agent")
+        等(d, lambda: bool(js("return document.querySelector('.appcards')")))
+        ck("Agent 页签只出 Agent 的卡", sorted(js("return [...document.querySelectorAll('.appcard[data-id]')].map(c => c.dataset.kind)")) == ["agent"] * len(接口数["智"]))
         d.get(基址 + "/#/runs")
         等(d, lambda: js("return document.getElementById('subnav').hidden"))
         ck("离开工作室 / 集成,页签那一条收起来", js("return document.getElementById('subnav').hidden") is True)

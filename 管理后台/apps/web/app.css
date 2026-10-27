@@ -493,3 +493,23 @@ body.demo #subnav{padding-top:calc(var(--top) + 45px)}
 .subtabs a{padding:8px 14px;border-radius:6px 6px 0 0;color:inherit;text-decoration:none}
 .subtabs a.on{background:rgba(22,93,255,.08);color:#165dff;font-weight:600}
 .subtabs a.todo{color:#86909c;cursor:not-allowed}
+/* 工作室卡片(10-28 照 Dify) */
+.appcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin:12px 0}
+.appcard{border:1px solid var(--line);border-radius:8px;background:var(--card);padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.appcard .ah{display:flex;gap:10px;align-items:flex-start}
+.appcard .an{flex:1;min-width:0}
+.appcard .an b{overflow-wrap:anywhere}
+.appcard .ad{color:var(--ink2);font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.appcard .af{display:flex;gap:6px;align-items:center;margin-top:auto;padding-top:6px;border-top:1px solid var(--line)}
+.appcard.new{border-style:dashed;align-items:center;justify-content:center;cursor:pointer;color:var(--pri);min-height:150px;font:inherit;text-align:center}
+.appcard.new:hover{background:var(--pri-bg)}
+.ico{display:inline-flex;width:32px;height:32px;flex:none;align-items:center;justify-content:center;border-radius:8px;background:var(--pri-bg);color:var(--pri);font-weight:600}
+.ico.ag{background:#fff3e8;color:var(--warn)}
+.apptypes{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:8px}
+.apptype{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;border:1px solid var(--line);border-radius:8px;background:var(--card);padding:10px 12px;cursor:pointer;font:inherit;color:var(--ink)}
+.apptype:hover{border-color:var(--pri)}
+.apptype.off{opacity:.55;cursor:not-allowed}
+.apptype.off:hover{border-color:var(--line)}
+.apptype .why{font-size:12px;color:var(--warn)}
+button.mini{height:22px;padding:0 8px;font-size:12px}
+.appcard .grow{flex:1}

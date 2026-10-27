@@ -131,15 +131,18 @@ const 导航 = [
 ];
 /* 工作室、集成的页签(照 Dify:工作室按应用类型分、集成分模型供应商 / 工具)。
  * 没接上的类型**留着入口、写明为什么**,不藏(侧栏同一条规矩) */
-const 工作室类型 = [["workflow", "工作流", () => 页_工作流列表()], ["agent", "Agent", () => 页_agent列表()],
-  ["app", "应用与发布", () => 页_应用与发布()],
+// 10-28 工作室做成卡片(二期第 2 项):页签照 Dify 的筛选 —— 全部 / 工作流 / 对话流 / 聊天助手 / Agent / 文本生成;
+// 「应用与发布」不是一种应用类型(它答的是「哪一版在给用户跑」),放在最右
+const 工作室类型 = [["all", "全部", () => 页_工作室("all")], ["workflow", "工作流", () => 页_工作室("workflow")],
+  ["chatflow", "对话流", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
   ["chat", "聊天助手", null, "澜绣聊天站里的各个岗位助手;先拿店长任务助手试点,配置页还在做"],
+  ["agent", "Agent", () => 页_工作室("agent")],
   ["completion", "文本生成", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
-  ["chatflow", "对话流", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"]];
+  ["app", "应用与发布", () => 页_应用与发布()]];
 const 集成类型 = [["models", "模型供应商", () => 页_模型与连接()], ["tools", "工具", () => 页_工具目录()]];
 const 旧地址跳 = { "#/workflows": "#/studio/workflow", "#/agents": "#/studio/agent", "#/apps": "#/studio/app",
   "#/conns": "#/integrations/models", "#/tools": "#/integrations/tools",
-  "#/studio": "#/studio/workflow", "#/integrations": "#/integrations/models" };
+  "#/studio": "#/studio/all", "#/integrations": "#/integrations/models" };
 async function 页_分页签(根, 表, 键) {
   const 项 = 表.find((x) => x[0] === 键);
   const 条 = `<div class="subtabs" role="tablist">${表.map(([k, 名, fn, 为什么]) => fn
@@ -770,53 +773,86 @@ function 报错(e) {
 const 时间 = (s) => esc(String(s || "").slice(0, 16).replace("T", " "));
 
 /* ── 列表 ─────────────────────────────────────────────────────── */
-async function 页_工作流列表() {
-  $("#main").innerHTML = `<div class="crumb">编排 / 工作流</div>
-    <div class="head"><div><h1>工作流</h1>
-      <div class="sub">按固定步骤跑的流程:选好每一步用什么、数据从哪来,测试通过再生成候选版本。</div></div>
-      <div><button class="pri" id="new">新建工作流</button></div></div>
+/* ── 工作室:应用卡片(10-28 照 Dify;用户 10-27 拍第 9 条「应用类型五种都留」)────────────
+ * 卡片上只放**一眼要判断的**:是什么类型、干什么用、线上跑的哪一版、最近跑得怎样、聊天里谁来做。
+ * 版本 / 测试 / 发布这些进详情做。没接上的三种类型在「创建应用」里**摆出来、写明为什么点不了**,不藏 */
+const 应用类型 = [
+  ["workflow", "工作流", "流", "按固定步骤跑的流程:每一步用什么、数据从哪来都事先定好。", () => 弹_新建工作流()],
+  ["chatflow", "对话流", "话", "带记忆的多轮对话,每一轮按固定步骤跑。", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
+  ["chat", "聊天助手", "聊", "澜绣聊天站里的岗位助手(店长、顾问…):改提示词、选模型和工具。", null, "配置页还在做,先拿店长任务助手试点"],
+  ["agent", "Agent", "智", "模型自己决定下一步做什么,程序校验、执行、记录和限制它。", () => 弹_新建agent()],
+  ["completion", "文本生成", "文", "给一段输入,出一段文字,没有多轮对话。", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
+];
+
+function 卡_工作流(r) {
+  const 链 = (t) => `#/workflow/${encodeURIComponent(r.id)}/${encodeURIComponent(t)}`, 跑 = r["最近运行"];
+  return `<div class="appcard" data-kind="workflow" data-id="${esc(r.id)}">
+    <div class="ah"><span class="ico wf">流</span><div class="an"><a href="${链("概览")}"><b>${esc(r["名称"])}</b></a>
+      <div class="k">工作流 · ${esc(r["负责人"] || "没写负责人")}</div></div>
+      ${r["校验状态"] === "通过" ? '<span class="pill ok">校验通过</span>' : `<span class="pill warn">${esc(r["校验状态"])}</span>`}</div>
+    <div class="ad">${esc(r["用途"] || "还没写用途")}</div>
+    <div class="k" title="${esc(去粗(r["生产引用说明"]))}">线上(生产):${r["生产引用版本"] ? `<b>${esc(r["生产引用版本"])}</b>` : "还没发布"}
+      ${r["最新冻结版本"] ? ` · 最新候选 ${esc(r["最新冻结版本"])}` : ""}</div>
+    <div class="k">最近运行:${跑 ? `<a href="#/wfrun/${encodeURIComponent(跑.id)}">${esc(跑["状态中文"])}</a> ${时间(跑["时间"])}` : "还没跑过"}</div>
+    <div class="k">${!r["对应技能"] ? "聊天里:没登记对应技能"
+      : r["聊天接管"] ? `聊天里:「${esc(r["对应技能中文"] || r["对应技能"])}」<b>工作流接管中</b> <button class="mini" data-tk="${esc(r.id)}" data-on="0">关掉</button>`
+      : `聊天里:「${esc(r["对应技能中文"] || r["对应技能"])}」交给 harness <button class="mini" data-tk="${esc(r.id)}" data-on="1">打开接管</button>`}</div>
+    <div class="af"><span class="k">更新于 ${时间(r["更新时间"])}</span><span class="grow"></span>
+      <a href="${链("搭建")}">编辑</a> · <a href="${链("测试")}">运行</a> · <a href="${链("运行记录")}">看记录</a></div>
+  </div>`;
+}
+
+function 卡_agent(r) {
+  const 链 = `#/agent/${encodeURIComponent(r.id)}`;
+  return `<div class="appcard" data-kind="agent" data-id="${esc(r.id)}">
+    <div class="ah"><span class="ico ag">智</span><div class="an"><a href="${链}"><b>${esc(r["名称"])}</b></a>
+      <div class="k">Agent · ${esc(r["模型连接"] || "没选模型连接")}</div></div>
+      ${r["校验状态"] === "通过" ? '<span class="pill ok">校验通过</span>' : `<span class="pill warn">${esc(r["校验状态"])}</span>`}</div>
+    <div class="ad">${esc(r["用途"] || "还没写用途")}</div>
+    <div class="k">最新版本:${r["最新冻结版本"] ? esc(r["最新冻结版本"]) : "还没冻结过"}
+      · <span title="${esc(去粗(r["工具数说明"]))}">${r["工具数"]} 个候选工具</span></div>
+    <div class="k" title="${esc(去粗(r["生产引用说明"]))}">线上(生产):<span class="stale">还没接</span></div>
+    <div class="af"><span class="grow"></span><a href="${链}">配置</a></div>
+  </div>`;
+}
+
+async function 页_工作室(类) {
+  $("#main").innerHTML = `<div class="head"><div><h1>工作室</h1>
+      <div class="sub">这个项目里的应用:按固定步骤跑的工作流、模型自己决定下一步的 Agent,以及聊天站里的岗位助手。</div></div></div>
     <div id="list"><div class="state">加载中…</div></div>`;
-  $("#new").onclick = 弹_新建工作流;
   try {
-    const d = await 请求(`${P()}/workflows`);
-    if (!d.items.length) {
-      const s = 状态("", "还没有工作流", "点「新建工作流」,从模板起一条(音频整理 / 文本处理 / 空白)。"
-        + "\n\n模板**只预填草稿** —— 不调模型、不绑生产环境。", { 文: "新建工作流", 做: 弹_新建工作流 });
-      $("#list").innerHTML = s.html; s.挂(); return;
-    }
-    $("#list").innerHTML = `<table><thead><tr>
-      <th>名称</th><th>负责人</th><th>草稿</th><th>当前版本</th><th>最近一次运行</th>
-      <th>聊天里谁来做</th><th>更新时间</th><th>操作</th></tr></thead><tbody>`
-      + d.items.map((r) => {
-        const 链 = (t) => `#/workflow/${encodeURIComponent(r.id)}/${encodeURIComponent(t)}`;
-        const 跑 = r["最近运行"];
-        return `<tr>
-        <td><a href="${链("概览")}"><b>${esc(r["名称"])}</b></a>
-            <div class="k">${esc(r["用途"] || "还没写用途")}</div></td>
-        <td>${esc(r["负责人"] || "—")}</td>
-        <td>${r["校验状态"] === "通过" ? '<span class="pill ok">校验通过</span>'
-              : `<span class="pill warn">${esc(r["校验状态"])}</span>`}</td>
-        <td>${r["最新冻结版本"] ? `<span class="pill">${esc(r["最新冻结版本"])} · 候选</span>`
-              : '<span class="k">还没生成版本</span>'}
-            <div class="k" title="${esc(去粗(r["生产引用说明"]))}">线上(生产):${r["生产引用版本"] ? `<b>${esc(r["生产引用版本"])}</b>` : "还没发布"}</div></td>
-        <td>${跑 ? `<a href="#/wfrun/${encodeURIComponent(跑.id)}">${esc(跑["状态中文"])}</a>
-              <div class="k">${时间(跑["时间"])}</div>` : '<span class="k">还没跑过</span>'}</td>
-        <td>${!r["对应技能"] ? '<span class="k">没登记对应技能</span>'
-              : r["聊天接管"] ? `<button class="pri" data-tk="${esc(r.id)}" data-on="0">工作流接管中 · 关掉</button>
-                  <div class="k">「${esc(r["对应技能中文"] || r["对应技能"])}」改走这条工作流</div>`
-              : `<button data-tk="${esc(r.id)}" data-on="1">交给 harness · 打开接管</button>
-                  <div class="k">「${esc(r["对应技能中文"] || r["对应技能"])}」由聊天站的技能自己做</div>`}</td>
-        <td class="k">${时间(r["更新时间"])}</td>
-        <td class="acts"><a href="${链("搭建")}">编辑</a> · <a href="${链("测试")}">运行</a>
-            · <a href="${链("运行记录")}">看记录</a></td>
-      </tr>`; }).join("") + `</tbody></table>
-      <div class="note">共 ${d.total} 条。「当前版本」是<b>候选</b>:生成了不等于上线了 —— 要在「版本与发布」里发到生产(生产要审核)才算上线。
-        <br>「聊天里谁来做」<b>默认交给 harness</b>(聊天站的技能自己做,不受固定步骤束缚);打开接管后,
-        聊天站碰到这件事改为发起这条工作流<b>生产环境里的那一版</b>。同一个技能同时只能被一条工作流接管。</div>`;
+    const [流, 智] = await Promise.all([类 !== "agent" ? 请求(`${P()}/workflows`) : null,
+                                        类 !== "workflow" ? 请求(`${P()}/agents`) : null]);
+    const 卡们 = [...((流 && 流.items) || []).map(卡_工作流), ...((智 && 智.items) || []).map(卡_agent)];
+    const 新 = `<button class="appcard new" id="new"><b>+ 创建应用</b>
+        <span class="k">选一种类型:工作流 / 对话流 / 聊天助手 / Agent / 文本生成</span></button>`;
+    // 空的时候也要一句人话(冒烟对账按结构判:state 块带标题和说明)
+    const 空 = 卡们.length ? "" : 状态("", 类 === "agent" ? "还没有 Agent" : 类 === "workflow" ? "还没有工作流" : "还没有应用",
+      "点「创建应用」选一种类型。工作流从模板起(音频整理 / 文本处理 / 空白);模板**只预填草稿** —— 不调模型、不绑生产环境。").html;
+    $("#list").innerHTML = `${空}<div class="appcards">${新}${卡们.join("")}</div>
+      <div class="note">${[[流, "工作流"], [智, "Agent"]].filter((x) => x[0]).map(([d, 名]) =>
+          `${名} ${d.total != null && d.total > d.items.length ? `显示 ${d.items.length} / 共 ${d.total}(翻页还没做)` : `${d.items.length}`}`).join(" · ")}。
+        「线上(生产)」之外的版本都只是<b>候选</b> —— 要在「版本与发布」里发到生产(生产要审核)才算上线。
+        ${流 ? "<br>「聊天里」<b>默认交给 harness</b>(聊天站的技能自己做);打开接管后改为发起这条工作流<b>生产环境里的那一版</b>,同一个技能同时只能被一条工作流接管。" : ""}
+        ${智 ? "<br>Agent 的「候选工具」数只表示授权候选集合的规模 —— 规格 §9.1 明写<b>不按工具数量给 Agent 打能力强弱分</b>。" : ""}</div>`;
+    $("#new").onclick = 弹_新建应用;
     $("#list").querySelectorAll("[data-tk]").forEach((b) => {
-      b.onclick = async () => { b.disabled = true; await 拨接管(b.dataset.tk, b.dataset.on === "1"); 页_工作流列表(); };
+      b.onclick = async () => { b.disabled = true; await 拨接管(b.dataset.tk, b.dataset.on === "1"); 页_工作室(类); };
     });
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
+}
+
+/* 创建应用:先选类型(照 Dify)。没接上的三种摆出来、灰着、写明为什么 —— 点不了的东西不藏,藏了人会以为「没这功能」 */
+function 弹_新建应用() {
+  弹层("创建应用", `<div class="k">选一种应用类型</div>
+    <div class="apptypes">${应用类型.map(([k, 名, 字, 说, fn, 为什么]) => `<button class="apptype${fn ? "" : " off"}" data-type="${k}"
+        ${fn ? "" : `aria-disabled="true" title="${esc(为什么)}"`}>
+        <span class="ico">${字}</span><b>${esc(名)}</b><span class="k">${esc(说)}</span>
+        ${fn ? "" : `<span class="why">${esc(为什么)}</span>`}</button>`).join("")}</div>`);
+  document.querySelectorAll(".apptype").forEach((b) => {
+    const 项 = 应用类型.find((x) => x[0] === b.dataset.type);
+    b.onclick = () => { if (!项[4]) return; 关弹层(); 项[4](); };
+  });
 }
 
 async function 拨接管(wid, 开, 技能) {
@@ -3222,47 +3258,6 @@ async function 页_运行详情(rid) {
  * ④ 那几个默认值(回合 8 / 工具 12 / 期限 180 秒)标着「**设计初值**」——
  *    §9.6 结尾:「当前没有性能或模型优劣的实测结论」。
  */
-async function 页_agent列表() {
-  $("#main").innerHTML = `<div class="crumb">编排 / 智能体</div>
-    <div class="head"><div><h1>智能体 Agent</h1>
-      <div class="sub">模型自己决定下一步做什么,<b>而程序校验、执行、记录和限制它</b>。
-        模型说「调用工具」是请求 —— 真正执行的是服务端的工具网关。</div></div>
-      <div><button class="pri" id="new">新建 Agent</button></div></div>
-    <div id="list"><div class="state">加载中…</div></div>`;
-  $("#new").onclick = 弹_新建agent;
-  try {
-    const d = await 请求(`${P()}/agents`);
-    if (!d.items.length) {
-      const s = 状态("", "还没有 Agent",
-        "新建一个 —— 模板会预填**一条声明了支持原生工具调用的连接**、"
-        + "两个演示工具(搜索 / 写报告)和一组限制初值。\n\n"
-        + "模板**只预填草稿**:不调模型、不绑生产环境。",
-        { 文: "新建 Agent", 做: 弹_新建agent });
-      $("#list").innerHTML = s.html; s.挂(); return;
-    }
-    $("#list").innerHTML = `<table><thead><tr>
-      <th>名称</th><th>用途</th><th>模型连接</th><th>工具数</th>
-      <th>最新冻结版本</th><th>生产引用版本</th><th>校验状态</th><th></th>
-      </tr></thead><tbody>`
-      + d.items.map((r) => `<tr>
-        <td><a href="#/agent/${encodeURIComponent(r.id)}">${esc(r["名称"])}</a></td>
-        <td>${esc(r["用途"] || "—")}</td>
-        <td class="k">${esc(r["模型连接"] || "没选")}</td>
-        <td title="${esc(去粗(r["工具数说明"]))}">${r["工具数"]}
-            <span class="k">个候选</span></td>
-        <td>${r["最新冻结版本"] ? `<span class="pill">${esc(r["最新冻结版本"])}</span>`
-              : `<span class="k">还没冻结过</span>`}</td>
-        <td><span class="stale" title="${esc(去粗(r["生产引用说明"]))}">还没接</span></td>
-        <td>${r["校验状态"] === "通过" ? `<span class="pill ok">通过</span>`
-              : `<span class="pill warn">${esc(r["校验状态"])}</span>`}</td>
-        <td><a href="#/agent/${encodeURIComponent(r.id)}">配置</a></td>
-      </tr>`).join("") + `</tbody></table>
-      <div class="note"><b>「工具数」那一栏只表示授权候选集合的规模</b> ——
-        规格 §9.1 明写<b>不按工具数量给 Agent 打能力强弱分</b>。
-        一个显示 7 的会被读成「比那个 3 的强」,而那两件事没有关系。</div>`;
-  } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
-}
-
 async function 弹_新建agent() {
   const 名 = await 问一句("新建 Agent", "给它起个名字,一眼看得出它是干什么的。", { 输入: "比如 退款研判助手", 确定: "新建", 必填: true });
   if (!名) return;

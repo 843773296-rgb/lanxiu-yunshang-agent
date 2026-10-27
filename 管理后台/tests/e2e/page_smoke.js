@@ -235,6 +235,8 @@ setTimeout(() => {
     "#/workflows": { 接口: "/workflows", 列表: "items" },
     // 10-28 导航照 Dify:旧地址跳到工作室 / 集成的页签 —— 新旧两个地址都对账,跳过去渲的必须是同一份
     "#/studio/workflow": { 接口: "/workflows", 列表: "items" },
+    // 「全部」页签同时画工作流和 Agent 两种卡片;这里对工作流那一份(Agent 那份由 #/studio/agent 对)
+    "#/studio/all": { 接口: "/workflows", 列表: "items" },
     "#/studio/agent": { 接口: "/agents", 列表: "items" },
     "#/studio/app": { 接口: "/applications", 列表: "应用" },
     "#/integrations/models": { 接口: "/model-connections", 列表: "连接" },
