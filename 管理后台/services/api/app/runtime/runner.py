@@ -236,6 +236,17 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
     # 这个初值让「哪些节点没跑」变成可以读出来的事实,而不是靠倒推。
     状态表 = {i: 待执行 for i in 节点}
     注入 = {}
+    # 正在跑的循环(10-27):[{循环, 第几轮, 状态}]。**进检查点、恢复不清零**(§6.3)—— 停在循环里等人核对,
+    # 回来接着是同一轮;清零的计数等于没有上限。现在只支持一层(嵌套循环校验器拦)
+    帧们 = []
+
+    def 路径():
+        return "".join(f"/{f['循环']}[{f['第几轮']}]" for f in 帧们) or "/"
+
+    def 循环回(i):
+        """i 是循环体里的一步、而且它后面没有下一步 → 这一轮做完,回到循环本身判下一轮;否则 None(整条流程到头)。"""
+        c = 节点[i].get("container") if i in 节点 else None
+        return c if c and 帧们 and 帧们[-1]["循环"] == c else None
     if 恢复:
         if 恢复.get("逻辑哈希") and 恢复["逻辑哈希"] != 计划["逻辑哈希"]:
             # **检查点是对着哪一版图存的,就只能拿那一版接着跑** —— 换了图,
@@ -249,13 +260,16 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
             if i in 状态表:
                 状态表[i] = st
         注入[恢复["从"]] = 恢复.get("结果") or {}
+        帧们[:] = [dict(f) for f in (恢复.get("循环帧") or [])]
+        if 帧们:
+            状态["scope"] = 帧们[-1]["状态"]
 
     def 记一步(i, st, *, 入=None, 出=None, **kw):
         步 = dict(node_id=i, kind=节点[i]["type"], status=st,
                   # **唯一执行键**(§8)。现在没有循环和列表迭代,
                   # 路径段固定是 "/" 和 attempt=1 —— 但**键的形状现在就定下来**,
                   # 否则加循环的那天要改所有读这个键的地方。
-                  execution_key=f"{run_id}:{i}:/:1", attempt=1, **kw)
+                  execution_key=f"{run_id}:{i}:{路径()}:1", attempt=1, **kw)
         # 这一步实际收到的 / 交出的(用户 10-26 拍「记录每一步的输入输出」,方案 §8.3「节点记录」那一层)。
         # ⚠️ **只放进步骤,不放进事件载荷** —— 运行详情把事件原样返回、不按授权打码,
         # 放进去等于让没有「查看敏感输入」授权的人也读到客户原文。None = 这一步没有这一侧,不是「值为空」
@@ -301,7 +315,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 状态["节点"][当前] = dict(输入)
                 记一步(当前, 成功, 入=dict(输入 or {}), 出=dict(输入))
                 下 = 后继[当前].get((DS.成功, None), [])
-                当前 = 下[0] if 下 else None
+                当前 = 下[0] if 下 else 循环回(当前)
                 continue
 
             if 样例 is not None and t in ("llm", "retrieve", "tool", "agent", "human"):
@@ -315,14 +329,14 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 记一步(当前, 成功, 出=状态["节点"][当前])
                 记事("node.sample_used", {"node_id": 当前, "说明": "样例预览:用的是这一步上次成功的输出,没有真调"})
                 下 = 后继[当前].get((DS.成功, None), [])
-                当前 = 下[0] if 下 else None
+                当前 = 下[0] if 下 else 循环回(当前)
                 continue
             if t == "human":
                 if 当前 in 注入:
                     状态["节点"][当前] = _拿注入(当前)
                     记一步(当前, 成功, branch_key=状态["节点"][当前].get("决定"), 出=状态["节点"][当前])
                     下 = 后继[当前].get((DS.成功, None), [])
-                    当前 = 下[0] if 下 else None
+                    当前 = 下[0] if 下 else 循环回(当前)
                     continue
                 载荷, 缺 = 解绑定(cfg.get("payload_binding"), 状态)
                 本步入 = 载荷
@@ -343,7 +357,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     状态["节点"][当前] = r
                     记一步(当前, 成功, execution_mode=r.get("execution_mode"), 出=r)
                     下 = 后继[当前].get((DS.成功, None), [])
-                    当前 = 下[0] if 下 else None
+                    当前 = 下[0] if 下 else 循环回(当前)
                     continue
                 if t == "llm" and 上限.get("max_model_turns") is not None and \
                         用量["模型调用"] >= 上限["max_model_turns"]:
@@ -389,7 +403,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 状态["节点"][当前] = r
                 记一步(当前, 成功, execution_mode=r.get("execution_mode"), 入=实参, 出=r)
                 下 = 后继[当前].get((DS.成功, None), [])
-                当前 = 下[0] if 下 else None
+                当前 = 下[0] if 下 else 循环回(当前)
                 continue
 
             if t == "condition":
@@ -445,7 +459,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                         continue
                 状态["节点"][当前] = {"branch": 选中 or "else"}
                 记一步(当前, 成功, branch_key=选中 or "else", 入=本步入, 出=状态["节点"][当前])
-                当前 = 下[0] if 下 else None
+                当前 = 下[0] if 下 else 循环回(当前)
                 continue
 
             if t == "merge":
@@ -466,7 +480,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 状态["节点"][当前] = {cfg["output_field"]: 值}
                 记一步(当前, 成功, 出=状态["节点"][当前])
                 下 = 后继[当前].get((DS.成功, None), [])
-                当前 = 下[0] if 下 else None
+                当前 = 下[0] if 下 else 循环回(当前)
                 continue
 
             if t == "transform":
@@ -476,7 +490,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 状态["节点"][当前] = 出
                 记一步(当前, 成功, 出=出)
                 下 = 后继[当前].get((DS.成功, None), [])
-                当前 = 下[0] if 下 else None
+                当前 = 下[0] if 下 else 循环回(当前)
                 continue
 
             if t == "answer":
@@ -494,7 +508,64 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 状态["节点"][当前] = {"回复": DS.填回复(模板, 值)}
                 记一步(当前, 成功, 入=值, 出=状态["节点"][当前])
                 下 = 后继[当前].get((DS.成功, None), [])
-                当前 = 下[0] if 下 else None
+                当前 = 下[0] if 下 else 循环回(当前)
+                continue
+
+            if t == "loop":
+                # 有界循环(10-27;用户拍经营报告「核对不过最多重写 3 次」)。**先判断后执行**:每一轮开始前
+                # 拿循环状态判条件,不满足就从「循环出」出去;满足就进循环体。循环体里走到头(或连回循环本身)= 这一轮做完,
+                # 按 loop_state 的 update 从这一轮的结果更新状态,再回到这里判下一轮
+                上 = int(cfg.get("max_iterations") or 0)
+                if not 帧们 or 帧们[-1]["循环"] != 当前:
+                    初 = {k: (v.get("initial") if isinstance(v, dict) else None)
+                          for k, v in (cfg.get("loop_state") or {}).items()}
+                    帧们.append({"循环": 当前, "第几轮": 0, "状态": 初})
+                else:
+                    帧 = 帧们[-1]
+                    for k, v in (cfg.get("loop_state") or {}).items():
+                        u = v.get("update") if isinstance(v, dict) else None
+                        if u:
+                            新 = 取值(u, 状态)
+                            if 新 is not DS.缺失:          # 这一轮没走到那一步 → 状态不变,不填成 None
+                                帧["状态"][k] = 新
+                帧 = 帧们[-1]
+                状态["scope"] = 帧["状态"]
+                条们, 连 = DS.分支条件(cfg["condition"] if "conditions" in (cfg.get("condition") or {})
+                                       else {"when": cfg.get("condition")})
+                判们 = []
+                for w in 条们:
+                    try:
+                        判们.append(bool(DS.判(w["op"], 取值(w["left"], 状态),
+                                               *([取值(w["right"], 状态)] if "right" in w else []))))
+                    except DS.变量缺失:
+                        判们.append(False)        # 循环状态还没有那一项 = 不满足,不进下一轮(不会因为缺值多跑一轮)
+                继续 = (all(判们) if 连 == "and" else any(判们)) if 判们 else False
+                if 继续 and 帧["第几轮"] >= 上:
+                    # 到上限还没达标:**受限停止**,不是成功(§6.1)—— 和模型轮数到上限同一种说法
+                    记一步(当前, 失败, error_code="MAX_ITERATIONS", 出={"轮数": 帧["第几轮"], "状态": 帧["状态"]},
+                           error_detail={"消息": f"循环跑满 {上} 轮还没做完", "建议": "看最后一轮停在哪;要再试就重新发起"})
+                    执行状态, 完成原因 = "incomplete", "max_iterations"
+                    帧们.pop()
+                    状态["scope"] = 帧们[-1]["状态"] if 帧们 else {}
+                    break
+                if not 继续:
+                    帧们.pop()
+                    状态["scope"] = 帧们[-1]["状态"] if 帧们 else {}
+                    状态["节点"][当前] = {"轮数": 帧["第几轮"], **帧["状态"]}
+                    记一步(当前, 成功, 出=状态["节点"][当前])
+                    下 = 后继[当前].get((DS.循环出, None), [])
+                    当前 = 下[0] if 下 else 循环回(当前)
+                    continue
+                帧["第几轮"] += 1
+                # 新的一轮:循环体里上一轮的结果清掉 —— 这一轮引用的必须是这一轮跑出来的(没跑到就是取不到,不拿上一轮的冒充)
+                for i2, n2 in 节点.items():
+                    if n2.get("container") == 当前:
+                        状态["节点"].pop(i2, None)
+                记事("loop.iteration", {"node_id": 当前, "第几轮": 帧["第几轮"]})
+                下 = 后继[当前].get((DS.循环体, None), [])
+                if not 下:
+                    raise 节点失败("SCOPE_NO_ENTRY", "循环里面的步骤没有连上", "从循环连一条线到循环里的第一步")
+                当前 = 下[0]
                 continue
 
             if t == "end":
@@ -517,7 +588,7 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
         except 需要等待 as w:
             步态, 执行状态 = 等待态[w.种类]
             记一步(当前, 步态, waiting_for=w.种类, 入=本步入)
-            检查点 = {"从": 当前, "逻辑哈希": 计划["逻辑哈希"], "节点输出": 状态["节点"],
+            检查点 = {"从": 当前, "逻辑哈希": 计划["逻辑哈希"], "节点输出": 状态["节点"], "循环帧": 帧们,
                       "用量": 用量, "已完成": {i: st for i, st in 状态表.items()
                                                if st not in (待执行, 步态)},
                       "等待": {"种类": w.种类, "node_id": 当前, "载荷": w.载荷}}

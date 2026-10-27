@@ -191,7 +191,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
 
     N("loop", "有界循环",
       端口=[循环体, 循环出, 失败], 配置=["condition", "loop_state", "max_iterations"],
-      调用外部=False, 实现=未实现, 可含子图=True,
+      调用外部=False, 实现=已实现, 可含子图=True,   # 10-27 实现(用户拍经营报告「核对不过最多重写 3 次」)
       不适用=["timeout_seconds", "retryable_errors", "max_retries"],
       必填=["condition", "max_iterations"],
       说明="**先判断后执行**(while 语义):进入条件为 false 时**零次执行**。"

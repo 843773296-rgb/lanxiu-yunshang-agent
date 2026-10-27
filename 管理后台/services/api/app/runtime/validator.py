@@ -102,6 +102,8 @@ _缺项说法 = {
     "agent_version_id": ("还没选用哪个 Agent", "在右侧面板里选一个已生成版本的 Agent"),
     "task_binding": ("还没写交给 Agent 的任务", "在右侧「用到的数据」里选任务内容从哪来"),
     "sub_limits": ("还没设这一步的上限", "在右侧「高级」里填最多跑几轮、最多花多少"),
+    "condition": ("还没写循环什么时候继续", "在右侧「基本」里写「满足什么条件就再跑一轮」,比如「还要重写 等于 是」"),
+    "max_iterations": ("还没填最多跑几轮", "在右侧「基本」里填一个 1 到 10 的数;经营报告是 4(第一稿 + 最多重写 3 次)"),
     "template": ("还没写要回复什么", "在右侧「基本」里写回复内容;要带上前面的结果,写 {{名字}} 并在「用到的数据」里给它选来源"),
 }
 
@@ -384,6 +386,20 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                        "往里面放至少一个步骤,或者删掉它",
                        node_id=i))
 
+    # 有界循环的设置(10-27):轮数上限 1–10、不许循环套循环(检查点只存一层循环帧)
+    for n in 节点们:
+        if n.get("type") != "loop":
+            continue
+        cfg = n.get("config") or {}
+        上 = cfg.get("max_iterations")
+        if 上 not in (None, "") and not (isinstance(上, int) and 1 <= 上 <= 10):
+            出.append(问(阻断, "LOOP_MAX_RANGE", "循环最多跑几轮要填 1 到 10 之间的整数",
+                       "在右侧「基本」里改「最多跑几轮」;要无人值守地多跑,先找技术管理员", node_id=n.get("id"),
+                       field_path="config.max_iterations"))
+        if n.get("container"):
+            出.append(问(阻断, "LOOP_NESTED", "循环里面又放了一个循环,现在还不支持",
+                       "把里面那个循环挪到外面,或者拆成两条流程", node_id=n.get("id")))
+
     可达, dom = {}, {}
     for 容器, ns in 按域.items():
         e0 = 入口.get(容器)
@@ -517,6 +533,18 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
             d = dom.get(域, {})
             if i not in d:
                 continue                      # i 自己不可达,上面已经报过
+            if 属于.get(m) != 域:
+                # 循环体里引用循环外面的一步(10-27):不在同一个作用域里比支配 —— 改问「那一步是不是一定在**这个循环**之前跑」
+                容 = 域
+                while 容 is not None and 属于.get(容) != 属于.get(m):
+                    容 = 属于.get(容)
+                外 = dom.get(属于.get(m), {})
+                if 容 is not None and 容 in 外 and m not in 外[容]:
+                    出.append(问(阻断, "BIND_MAYBE_MISSING",
+                               f"「{字段}」取的是{_称(按id[m])}的结果,但走另一条分支时它不会执行,到循环这里就取不到值",
+                               "在分支之后加一个「分支汇合」,把几条分支的结果并成一项,再从汇合那一步取",
+                               node_id=i, field_path=fp))
+                continue
             if m == i:
                 出.append(问(阻断, "BIND_SELF",
                            f"「{字段}」取的是这一步自己的结果,可这一步还没跑完",
