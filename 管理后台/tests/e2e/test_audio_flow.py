@@ -82,7 +82,7 @@ def 建图(名, 改=None):
     c, d = 打("GET", P + f"/workflows/{w['id']}")
     定义 = d["草稿"]["定义"]
     for n in 定义["nodes"]:
-        if n["type"] == "llm":
+        if n["type"] in ("llm", "classifier"):   # 10-27 有意向吗改成了问题分类器,它也要模型
             # 只补模型 —— 处理要求模板已经默认选上了「客户需求提取」(用户 10-24 拍)
             n["config"]["connection_version_id"] = "cv_mock_" + 项目
     if 改:
@@ -686,24 +686,62 @@ st, rr = 等到(rcb2, ("succeeded", "failed", "incomplete", "waiting_external"))
 ck("**只填了负责人、没填截止 → 不派**,输出说明为什么",
    st == "succeeded" and not [x for s_ in ("待执行", "已执行") for x in 单(rcb2, s_) if x["工具"] == "assign_task"]
    and "没填回电截止" in json.dumps((rr or {}).get("输出"), ensure_ascii=False), (st, (rr or {}).get("输出")))
-def 只认考虑中(d):
-    for n in d["nodes"]:
-        if n["id"] == "intent":
-            n["config"]["branches"][0]["when"]["left"]["value"] = ["考虑中"]   # mock 出的是第一个可选值「明确需求」
-wcb3, _ = 建图("e2e 录音回电·没意向", 只认考虑中)
+def 先列(类):
+    # mock 模型总是挑第一个可选的类别 —— 把要验的那一类挪到最前面(10-27 有意向吗改成问题分类器)
+    def 改(d):
+        for n in d["nodes"]:
+            if n["id"] == "intent":
+                cs = n["config"]["classes"]
+                n["config"]["classes"] = [c for c in cs if c["key"] == 类] + [c for c in cs if c["key"] != 类]
+    return 改
+wcb3, _ = 建图("e2e 录音回电·没意向", 先列("没意向"))
 rcb3 = 走到核对(wcb3)
 决定(待办(rcb3)[0]["id"], "approved", edits={"回电负责人": "60000003", "回电截止": "2026-12-31 10:00"})
 写完跟进(rcb3)
 st, rr = 等到(rcb3, ("succeeded", "failed", "incomplete", "waiting_external"))
-ck("**类别不在「有意向」里 → 填了负责人和截止也不派**(不是有人填了就派)",
+ck("**分类器判「没意向」→ 填了负责人和截止也不派**(不是有人填了就派)",
    st == "succeeded" and not [x for s_ in ("待执行", "已执行") for x in 单(rcb3, s_) if x["工具"] == "assign_task"]
    and "不派回电" in json.dumps((rr or {}).get("输出"), ensure_ascii=False), (st, (rr or {}).get("输出")))
+
+print("\n▸ ⑬½ 说不清 → 交人(用户 10-27 拍):人来定要不要派、派给谁")
+wcb4, _ = 建图("e2e 录音回电·说不清", 先列("说不清"))
+rcb4 = 走到核对(wcb4)
+决定(待办(rcb4)[0]["id"], "approved", edits={"定稿": "顾客问了一句就挂了"})     # 核对时没填负责人 —— 说不清那条路不看它
+写完跟进(rcb4)
+st, _ = 等到(rcb4, ("waiting_approval", "failed", "succeeded"))
+问 = 待办(rcb4)
+c, det = 打("GET", P + f"/human-requests/{问[0]['id']}", "U006") if 问 else (0, {})
+ck("**分类器判「说不清」→ 停在第二个待办「人来定要不要回电」**,能填回电负责人 / 截止",
+   st == "waiting_approval" and 问 and {"回电负责人", "回电截止"} <= set(det.get("允许编辑的字段") or []),
+   (st, det.get("允许编辑的字段")))
+if 问:
+    决定(问[0]["id"], "approved", edits={"回电负责人": "60000007", "回电截止": "2026-12-30 15:00"})
+st, _ = 等到(rcb4, ("waiting_external", "failed", "succeeded"))
+派 = [x for x in 单(rcb4) if x["工具"] == "assign_task"]
+ck("**人定了要派 → 派电话回电,负责人 / 截止是交人那一步填的**(不是核对那一步的)",
+   st == "waiting_external" and 派 and 派[0]["参数"].get("assignee") == "60000007"
+   and 派[0]["参数"].get("end") == "2026-12-30 15:00" and 派[0]["参数"].get("note") == "顾客问了一句就挂了",
+   (st, 派 and 派[0]["参数"]))
+if 派:
+    打("POST", P + f"/bridge-calls/{派[0]['id']}/ack", "U004", 体={"结果": "已执行", "输出": {"数据": {"ok": True}, "结果": "已派"}})
+st, rr = 等到(rcb4, ("succeeded", "failed", "incomplete"))
+ck("派完 → 成功", st == "succeeded" and "派了电话回电" in json.dumps((rr or {}).get("输出"), ensure_ascii=False), (st, (rr or {}).get("输出")))
+rcb5 = 走到核对(wcb4)
+决定(待办(rcb5)[0]["id"], "approved", edits={"定稿": "说不清"})
+写完跟进(rcb5)
+等到(rcb5, ("waiting_approval",))
+决定(待办(rcb5)[0]["id"], "rejected", reason="听了录音,没意向")
+st, rr = 等到(rcb5, ("succeeded", "failed", "incomplete", "waiting_external"))
+ck("**人定了不派(退回)→ 只写跟进、不派**",
+   st == "succeeded" and not [x for s_ in ("待执行", "已执行") for x in 单(rcb5, s_) if x["工具"] == "assign_task"],
+   (st, (rr or {}).get("输出")))
 
 print("\n▸ ⑦ 没经过核对就写跟进 → 拒")
 def 绕过核对(d):
     d["nodes"] = [n for n in d["nodes"] if n["id"] not in ("review", "decide", "rejected", "merge",
                                                          # 10-24 加的回电那一串也引用核对结果,一起删
                                                          "intent", "who", "when", "callback", "cb_done",
+                                                         "ask", "asked", "who2", "callback2",   # 10-27 说不清交人那一串
                                                          "no_intent", "no_who", "no_when")]
     for n in d["nodes"]:
         if n["id"] == "save":

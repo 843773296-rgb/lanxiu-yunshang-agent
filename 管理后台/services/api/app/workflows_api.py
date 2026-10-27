@@ -152,10 +152,27 @@ def _音频整理(桥):
         {"id": "rejected", "type": "transform", "name": "记下退回理由", "layout": {"x": 940, "y": 240},
          "config": {"operations": [{"op": "to_string", "from": 引("review", "/理由"), "into": "结果"}],
                     "output_schema": 结果Schema}},
-        # ── 写完跟进之后:有意向、核对人填了负责人和截止时间,才派「电话回电」──────────
-        {"id": "intent", "type": "condition", "name": "有意向吗", "layout": {"x": 1120, "y": 80},
-         "config": {"branches": [{"key": "yes", "when": {"op": "contains",
-             "left": {"source": "constant", "value": ["明确需求", "考虑中"]}, "right": 引("extract", "/类别")}}],
+        # ── 写完跟进之后:问题分类器分三路(用户 10-27 拍:有意向 / 没意向 / 说不清,**说不清交人**)──────────
+        # 原来是条件分支看提取结果里的「类别」字段;现在让模型按定稿和原文判一次。模型没选模型 = 模板不替你选(同提取那一步)。
+        # 分类器答了不在三类里的(或调用失败)→ 也交人,不猜
+        {"id": "intent", "type": "classifier", "name": "有意向吗", "layout": {"x": 1120, "y": 80},
+         "config": {"classes": [
+             {"key": "有意向", "说明": "客户提了明确需求,或在考虑:问了款式、价格、档期,或者约了到店 / 量体"},
+             {"key": "没意向", "说明": "客户明确说不需要,或者只是随便问问、没有要做的意思"},
+             {"key": "说不清", "说明": "前两类都不像,或者通话太短、信息不够判断"}],
+             "instruction": "只看客户说的话,别把顾问的推销当成客户的意向",
+             "bindings": {"跟进定稿": 引("review", "/定稿"), "通话原文": 引("fetch", "/text")},
+             "failure_policy": "branch"}},
+        # 说不清 → 交人:核对人看原文和分类理由,定要不要派回电;要派就填负责人和截止(和核对那一步同一套字段)
+        {"id": "ask", "type": "human", "name": "说不清:人来定要不要回电", "layout": {"x": 1120, "y": 280},
+         "config": {"request_kind": "核对", "candidate_roles": ["approver", "admin"],
+                    "allowed_fields": ["回电负责人", "回电截止"],
+                    "expires_at_policy": {"小时": 48, "到期": "fail"},
+                    "payload_binding": {"摘要": 引("review", "/定稿"), "原文": 引("fetch", "/text"),
+                                        "客户": {"source": "input", "pointer": "/customer_id"}}}},
+        {"id": "asked", "type": "condition", "name": "要派回电吗", "layout": {"x": 1300, "y": 280},
+         "config": {"branches": [{"key": "approve", "when": {
+             "op": "equals", "left": 引("ask", "/决定"), "right": {"source": "constant", "value": "approve"}}}],
              "else_policy": "fail"}},
         _两项都填了吗("who", "负责人和截止都填了吗", 引("review", "/回电负责人"), 引("review", "/回电截止"), 1300, 40),
         {"id": "callback", "type": "tool", "name": "派电话回电", "layout": {"x": 1660, "y": 0},
@@ -163,6 +180,15 @@ def _音频整理(桥):
                     "bindings": {"type": {"source": "constant", "value": "电话回电"},
                                  "assignee": 引("review", "/回电负责人"), "note": 引("review", "/定稿"),
                                  "end": 引("review", "/回电截止"),
+                                 "ref_id": {"source": "input", "pointer": "/customer_id"}}}},
+        # 说不清那条路自己的「填了吗 → 派」:负责人和截止取交人那一步填的。**不用汇合把两路并成一项** ——
+        # 「填了吗」看的是字段在不在,两路都没填时汇合会直接失败,而不是走「没填就不派」(10-27 改的时候先这么写错过)
+        _两项都填了吗("who2", "负责人和截止都填了吗(交人定的)", 引("ask", "/回电负责人"), 引("ask", "/回电截止"), 1480, 280),
+        {"id": "callback2", "type": "tool", "name": "派电话回电(交人定的)", "layout": {"x": 1660, "y": 280},
+         "config": {"tool_version_id": 桥.get("assign_task"),
+                    "bindings": {"type": {"source": "constant", "value": "电话回电"},
+                                 "assignee": 引("ask", "/回电负责人"), "note": 引("review", "/定稿"),
+                                 "end": 引("ask", "/回电截止"),
                                  "ref_id": {"source": "input", "pointer": "/customer_id"}}}},
         {"id": "cb_done", "type": "transform", "name": "记下派了回电", "layout": {"x": 1840, "y": 0},
          "config": {"operations": [{"op": "concat", "parts": [引("save", "/结果"), {"source": "constant",
@@ -185,11 +211,14 @@ def _音频整理(桥):
     ]
     边 = [{"source": a, "target": b, "port": "success"} for a, b in
           (("start", "fetch"), ("fetch", "extract"), ("extract", "review"), ("review", "decide"),
-           ("save", "intent"), ("callback", "cb_done"), ("cb_done", "merge"), ("no_intent", "merge"),
+           ("save", "intent"), ("ask", "asked"), ("callback", "cb_done"), ("callback2", "cb_done"), ("cb_done", "merge"), ("no_intent", "merge"),
            ("no_who", "merge"), ("no_when", "merge"), ("rejected", "merge"), ("merge", "finish"))]
     分 = lambda a, b, k: {"source": a, "target": b, "port": "branch", "branch_key": k}
     边 += [分("decide", "save", "approve"), 分("decide", "rejected", "else"),
-          分("intent", "who", "yes"), 分("intent", "no_intent", "else"),
+          分("intent", "who", "有意向"), 分("intent", "no_intent", "没意向"), 分("intent", "ask", "说不清"),
+          {"source": "intent", "target": "ask", "port": "error"},
+          分("asked", "who2", "approve"), 分("asked", "no_intent", "else"),
+          分("who2", "callback2", "yes"), 分("who2", "no_who", "no_who"), 分("who2", "no_when", "else"),
           分("who", "callback", "yes"), 分("who", "no_who", "no_who"), 分("who", "no_when", "else")]
     return {"definition_schema_version": "1", "kind": "workflow",
             "input_schema": 节点[0]["config"]["input_schema"], "output_schema": 结果Schema,
