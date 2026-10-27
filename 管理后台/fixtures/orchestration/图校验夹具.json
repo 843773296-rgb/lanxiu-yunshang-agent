@@ -1734,7 +1734,7 @@
       }
     },
     "非法_用了未实现的节点": {
-      "为什么": "§6.1 结尾:『阶段中未完成的节点标未实现,**不得摆空按钮冒充可用**』。让它能冻结、能发布,然后运行时才发现跑不了 —— 比现在拦住贵得多。顺带钉一条 CONTAINER_EMPTY:这个 loop 容器里是**空的**,而空容器跑起来什么都不做 —— 这一条是「集合相等」判据抓出来的漏报",
+      "为什么": "§6.1 结尾:『阶段中未完成的节点标未实现,**不得摆空按钮冒充可用**』。让它能冻结、能发布,然后运行时才发现跑不了 —— 比现在拦住贵得多。顺带钉一条 CONTAINER_EMPTY:这个列表迭代容器里是**空的**,而空容器跑起来什么都不做 —— 这一条是「集合相等」判据抓出来的漏报(10-27 有界循环实现了,这条改用仍未实现的「列表迭代」当例子)",
       "期望阻断": [
         "NODE_NOT_IMPLEMENTED",
         "CONTAINER_EMPTY"
@@ -1774,17 +1774,13 @@
           },
           {
             "id": "lp",
-            "type": "loop",
+            "type": "foreach",
             "config": {
-              "condition": {
-                "op": "length_gt",
-                "left": {
-                  "source": "input",
-                  "pointer": "/items"
-                },
-                "right": 0
+              "array_binding": {
+                "source": "input",
+                "pointer": "/items"
               },
-              "max_iterations": 5
+              "item_failure_policy": "fail"
             }
           },
           {
