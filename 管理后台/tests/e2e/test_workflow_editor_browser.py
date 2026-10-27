@@ -451,6 +451,30 @@ def main():
         ck(f"每一版都有「起名字」;在跑的那几版删除是灰的、没在跑的可以点(在跑 {sum(x['在跑'] for x in 行们)} 版 / 没在跑 {sum(not x['在跑'] for x in 行们)} 版,两种都得有)",
            any(x["在跑"] for x in 行们) and any(not x["在跑"] for x in 行们)
            and all(x["有名"] and x["删灰"] == x["在跑"] for x in 行们), 行们)
+
+        print("\n▸ 导航照 Dify(10-28):主页 / 工作室 / 知识库 / 集成;旧地址跳到新位置")
+        d.get(基址 + "/#/workflows")
+        等(d, lambda: js("return location.hash") == "#/studio/workflow" and bool(js("return document.querySelector('#subnav .subtabs a.on')")))
+        侧 = d.find_element(By.ID, "side").text
+        ck("侧栏有 主页 / 工作室 / 知识库 / 集成", all(x in 侧 for x in ("主页", "工作室", "知识库", "集成")), 侧.replace("\n", " / ")[:160])
+        ck("旧地址 #/workflows → 跳到 #/studio/workflow,页签「工作流」亮着,侧栏「工作室」亮着",
+           js("return document.querySelector('#subnav .subtabs a.on').textContent") == "工作流"
+           and js("return document.querySelector('#side a.on').textContent") == "工作室")
+        js("history.back()")
+        time.sleep(1)
+        ck("跳转不留一条历史:后退不会又回到 #/workflows 再跳一次", js("return location.hash") != "#/workflows", js("return location.hash"))
+        d.get(基址 + "/#/conns")
+        等(d, lambda: js("return location.hash") == "#/integrations/models")
+        ck("旧地址 #/conns → 集成 → 模型供应商", js("return document.querySelector('#subnav .subtabs a.on').textContent") == "模型供应商")
+        # 等模型页的数据回来再切:页面切走之后,上一页晚到的渲染会把新页盖掉(列表页没有「我还是当前页吗」的检查 ——
+        # 10-28 在这里撞到,是原来就有的毛病,记在交接里,这里先等稳)
+        等(d, lambda: "加载中" not in d.find_element(By.ID, "main").text and d.find_elements(By.CSS_SELECTOR, "#main table"))
+        d.get(基址 + "/#/studio/chat")
+        等(d, lambda: "这一类还没接上" in d.find_element(By.ID, "main").text)
+        ck("还没接上的类型(聊天助手)页签在、点进去写明为什么", "店长任务助手" in d.find_element(By.ID, "main").text, d.find_element(By.ID, "main").text[:120])
+        d.get(基址 + "/#/runs")
+        等(d, lambda: js("return document.getElementById('subnav').hidden"))
+        ck("离开工作室 / 集成,页签那一条收起来", js("return document.getElementById('subnav').hidden") is True)
     finally:
         d.quit()
     print(f"\n{'❌' if 挂 else '✅'} 流程图编辑器真浏览器 {过[0]} 条过" + (f",挂 {len(挂)} 条:{' / '.join(挂)}" if 挂 else ""))

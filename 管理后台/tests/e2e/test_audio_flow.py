@@ -399,6 +399,15 @@ ck("删掉之后按 id 照样能打开 v2 的图(跑过它的运行要能看当�
 c, au = 打("GET", P + "/audit-events?limit=50", "U001")
 ck("起名字和删除都记进审计", {"workflow.version.name", "workflow.version.remove"} <= {e["做了什么"] for e in au.get("记录", [])},
    sorted({e["做了什么"] for e in au.get("记录", [])})[:12])
+# 再生成一版不发布的:留下「一版在跑、一版没在跑」—— 浏览器那份要在这样的流程上验版本页的删除按钮(没有它就是样本量 0)
+c, d = 打("GET", P + f"/workflows/{wid}")
+定 = d["草稿"]["定义"]
+for n in 定["nodes"]:
+    if n.get("type") == "human":
+        n.setdefault("config", {})["expires_at_policy"] = {"小时": 96, "到期": "fail"}
+打("PATCH", P + f"/workflows/{wid}/draft", 体={"定义": 定}, 头={"If-Match": str(d["草稿"]["revision"])})
+c, v3 = 打("POST", P + f"/workflows/{wid}/versions", 体={"变更说明": "e2e:留一版没发布的(给浏览器版本页验)"})
+ck("删完再生成一版 → 201(版本号接着往上,不复用删掉的那一号)", c == 201 and (v3 or {}).get("版本") not in (None, v2.get("版本")), (c, v3))
 
 wid2, _ = 建图("e2e 抢接管")
 c, 版2 = 打("POST", P + f"/workflows/{wid2}/versions", 体={"变更说明": "e2e"})

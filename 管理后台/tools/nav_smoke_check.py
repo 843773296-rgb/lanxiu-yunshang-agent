@@ -60,6 +60,12 @@ R, G, Y, D = "\033[31m", "\033[32m", "\033[33m", "\033[0m"
 # 所以分开:登记在这里的要**在 app.js 的路由里真有那一行**,而且仍在冒烟名单里 —— 两样缺一样都红
 旧地址 = {
     "#/rruns": "检索试跑记录 10-27 并进召回测试(#/retrieval),旧地址留着跳过去",
+    # 10-28 导航照 Dify(用户 10-27 拍「一次改完,旧路径自动跳到新位置」):这五页并进工作室 / 集成的页签
+    "#/workflows": "并进工作室 → 工作流页签(#/studio/workflow)",
+    "#/agents": "并进工作室 → Agent 页签(#/studio/agent)",
+    "#/apps": "并进工作室 → 应用与发布页签(#/studio/app)",
+    "#/conns": "并进集成 → 模型供应商页签(#/integrations/models)",
+    "#/tools": "并进集成 → 工具页签(#/integrations/tools)",
 }
 
 
@@ -103,7 +109,8 @@ def main():
 
     漏 = [h for h in 能点开的 if h not in 在冒烟里 and h not in 例外]
     幽灵 = [h for h in 在冒烟里 if h not in 能点开的 and h not in 旧地址]
-    路由没了 = [h for h in 旧地址 if f'h === "{h}"' not in 源]
+    # 跳转有两种写法:路由里一行 `h === "#/xxx"`,或者 `旧地址跳` 表里一条 `"#/xxx": "#/新位置"`(10-28)
+    路由没了 = [h for h in 旧地址 if f'h === "{h}"' not in 源 and f'"{h}": "#/' not in 源]
     旧不在冒烟 = [h for h in 旧地址 if h not in 在冒烟里]
     if 旧地址:
         print(f"  旧地址(侧栏没有、路由还在){len(旧地址)} 个:" + "、".join(旧地址))

@@ -92,43 +92,64 @@ function 错误块(e, 重试) {
 /* ── 侧栏(§4 的信息架构)─────────────────────────────────────────
  * 还没实现的入口**保留但标「未实现」**,不藏起来 ——
  * 规格 §3:「不能因为没有 GPU,就从需求中删除微调模块」。 */
+// 10-28 照 Dify 改(用户 10-27 拍第 8 条「导航一次改完,旧路径自动跳到新位置」;适配分析 5.5):
+// 主页 / 工作室(应用 + 工作流 + 智能体)/ 知识库(加资料 + 召回测试)/ 集成(模型 + 工具),
+// 再加 Dify 没有、我们保留的几组。旧地址(#/workflows #/agents #/apps #/conns #/tools)在路由里跳到新位置
 const 导航 = [
-  ["#/workbench", "工作台", true],
-  ["#/apps", "应用与发布", true],
-  ["#/conns", "模型与连接", true],
-  ["#/prompts", "Prompt 管理", true],
-  ["#/tryout", "单条试跑", true, true],
-  ["grp", "编排"],
-  ["#/workflows", "工作流 Workflow", true, true],
-  ["#/schedules", "定时", true, true],
-  ["#/agents", "智能体 Agent", true, true],
-  ["#/tools", "工具与能力", true, true],
-  ["#/human", "人工待办", true, true],
-  ["grp", "知识与 RAG"],
+  ["#/workbench", "主页", true],
+  ["#/studio", "工作室", true],
+  ["#/prompts", "Prompt 管理", true, true],
+  ["#/kb", "知识库", true],
   ["#/uploads", "加资料", true, true],
-  ["#/kb", "知识库", true, true],
   ["#/retrieval", "召回测试", true, true],
-  ["#/datasets", "数据集", true],
-  ["grp", "微调训练"],
+  ["#/integrations", "集成", true],
+  ["grp", "待办与定时"],
+  ["#/human", "人工待办", true, true],
+  ["#/schedules", "定时", true, true],
+  ["grp", "日志与监测"],
+  ["#/runs", "运行记录", true, true],
+  ["#/traces", "调用链", true, true],
+  ["#/outputs", "产出监督", true, true],
+  ["#/health", "智能体健康", true, true],
+  ["#/usage", "用量与成本", true, true],
+  ["grp", "评测与训练"],
+  ["#/evals", "评测中心", true, true],
+  ["#/compare", "实验对比", true, true],
+  ["#/tryout", "单条试跑", true, true],
+  ["#/datasets", "数据集", true, true],
   ["#/training", "训练任务", true, true],
   ["#/artifacts", "模型产物", true, true],
-  ["#/health", "智能体健康", true, true],
-  ["#/outputs", "产出监督", true, true],
-  ["#/evals", "评测中心", true],
-  ["#/compare", "实验对比", true, true],
-  ["#/runs", "运行记录", true],
-  ["#/traces", "调用链", true, true],
-  ["#/usage", "用量与成本", true],
   ["grp", "设置"],
   ["#/members", "成员与权限", true, true],
   ["#/audit", "审计记录", true, true],
 ];
+/* 工作室、集成的页签(照 Dify:工作室按应用类型分、集成分模型供应商 / 工具)。
+ * 没接上的类型**留着入口、写明为什么**,不藏(侧栏同一条规矩) */
+const 工作室类型 = [["workflow", "工作流", () => 页_工作流列表()], ["agent", "Agent", () => 页_agent列表()],
+  ["app", "应用与发布", () => 页_应用与发布()],
+  ["chat", "聊天助手", null, "澜绣聊天站里的各个岗位助手;先拿店长任务助手试点,配置页还在做"],
+  ["completion", "文本生成", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
+  ["chatflow", "对话流", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"]];
+const 集成类型 = [["models", "模型供应商", () => 页_模型与连接()], ["tools", "工具", () => 页_工具目录()]];
+const 旧地址跳 = { "#/workflows": "#/studio/workflow", "#/agents": "#/studio/agent", "#/apps": "#/studio/app",
+  "#/conns": "#/integrations/models", "#/tools": "#/integrations/tools",
+  "#/studio": "#/studio/workflow", "#/integrations": "#/integrations/models" };
+async function 页_分页签(根, 表, 键) {
+  const 项 = 表.find((x) => x[0] === 键);
+  const 条 = `<div class="subtabs" role="tablist">${表.map(([k, 名, fn, 为什么]) => fn
+    ? (k === 键 ? `<a role="tab" href="${根}/${k}" class="on" aria-selected="true">${esc(名)}</a>`
+                : `<a role="tab" href="${根}/${k}" aria-selected="false">${esc(名)}</a>`)
+    : `<a role="tab" class="todo" title="${esc(为什么 || "")}" aria-disabled="true">${esc(名)}</a>`).join("")}</div>`;
+  $("#subnav").innerHTML = 条; $("#subnav").hidden = false;
+  if (!项 || !项[2]) { $("#main").innerHTML = 状态("", "这一类还没接上", (项 && 项[3]) || "换一个页签看看").html; return; }
+  return await 项[2]();
+}
 function 画侧栏() {
   const cur = location.hash || "#/workbench";
   $("#side").innerHTML = 导航.map((x) => {
     if (x[0] === "grp") return `<div class="grp">${esc(x[1])}</div>`;
     const [href, 名, 做了, 子] = x;
-    const cls = [做了 ? "" : "todo", 子 ? "sub" : "", href === cur ? "on" : ""]
+    const cls = [做了 ? "" : "todo", 子 ? "sub" : "", href === cur || cur.startsWith(href + "/") ? "on" : ""]
       .filter(Boolean).join(" ");
     return 做了 ? `<a href="${href}" class="${cls}">${esc(名)}</a>`
                 : `<a class="${cls}" title="规格里有这一页,但还没实现 —— 保留入口是有意的">${esc(名)}</a>`;
@@ -6868,10 +6889,15 @@ async function 页_模型产物() {
 async function 路由() {
   if (离开拦截()) return;
   if (!location.hash.startsWith("#/workflow/")) document.body.classList.remove("wf-full");   // 只有编排页是全屏
+  // 旧地址跳到新位置(10-28 导航照 Dify):replace 不留一条历史,点「后退」不会又跳回来
+  if (旧地址跳[location.hash]) { location.replace(旧地址跳[location.hash]); return; }
   画侧栏();
+  $("#subnav").hidden = true; $("#subnav").innerHTML = "";
   const h = location.hash || "#/workbench";
   try {
     if (h === "#/workbench") return await 页_工作台();
+    if (h.startsWith("#/studio/")) return await 页_分页签("#/studio", 工作室类型, h.slice(9));
+    if (h.startsWith("#/integrations/")) return await 页_分页签("#/integrations", 集成类型, h.slice(15));
     if (h === "#/prompts") return await 页_prompt列表();
     if (h.startsWith("#/prompt/")) return await 页_prompt详情(decodeURIComponent(h.slice(9)));
     if (h === "#/human") return await 页_人工待办();
@@ -6885,13 +6911,10 @@ async function 路由() {
     if (h === "#/outputs") return await 页_产出监督();
     if (h.startsWith("#/output/")) return await 页_产出详情(decodeURIComponent(h.slice(9)));
     if (h === "#/runs") return await 页_运行记录();
-    if (h === "#/workflows") return await 页_工作流列表();
     if (h === "#/schedules") return await 页_定时();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
     if (h.startsWith("#/wfrun/")) return await 页_运行详情(decodeURIComponent(h.slice(8)));
-    if (h === "#/agents") return await 页_agent列表();
     if (h.startsWith("#/agent/")) return await 页_agent配置(decodeURIComponent(h.slice(8)));
-    if (h === "#/tools") return await 页_工具目录();
     if (h.startsWith("#/tool/")) return await 页_工具详情(decodeURIComponent(h.slice(7)));
     if (h === "#/usage") return await 页_用量与成本();
     if (h === "#/uploads") return await 页_加资料();
@@ -6907,9 +6930,7 @@ async function 路由() {
     if (h.startsWith("#/rrun/")) return await 页_试跑详情(decodeURIComponent(h.slice(7)));
     if (h === "#/rruns") return await 页_召回测试();   // 旧地址(检索试跑记录)并进了召回测试
     if (h === "#/audit") return await 页_审计记录();
-    if (h === "#/apps") return await 页_应用与发布();
     if (h.startsWith("#/app/")) return await 页_应用详情(decodeURIComponent(h.slice(6)));
-    if (h === "#/conns") return await 页_模型与连接();
     if (h === "#/members") return await 页_成员与权限();
     if (h === "#/datasets") return await 页_数据集();
     if (h.startsWith("#/samples/")) return await 页_样本(decodeURIComponent(h.slice(10)));

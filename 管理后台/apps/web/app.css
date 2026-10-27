@@ -485,3 +485,11 @@ tr.hitrow:hover td{background:var(--pri-bg)}
 .condrow{border-left:3px solid var(--line);padding:2px 0 6px 8px;margin:6px 0}
 /* 版本历史:当前草稿置顶那一行(10-27 照 Dify)—— 淡底色,和下面的冻结版本分开 */
 .draftrow td{background:rgba(255,125,0,.05)}
+/* 工作室 / 集成的页签(10-28 导航照 Dify):在主区上面一条;有它时主区不再让出顶栏的高度 */
+#subnav{margin-left:var(--side);padding:calc(var(--top) + 12px) var(--gap) 0}
+#subnav:not([hidden]) + #main{padding-top:12px}
+body.demo #subnav{padding-top:calc(var(--top) + 45px)}
+.subtabs{display:flex;gap:4px;border-bottom:1px solid var(--line,#e5e6eb)}
+.subtabs a{padding:8px 14px;border-radius:6px 6px 0 0;color:inherit;text-decoration:none}
+.subtabs a.on{background:rgba(22,93,255,.08);color:#165dff;font-weight:600}
+.subtabs a.todo{color:#86909c;cursor:not-allowed}

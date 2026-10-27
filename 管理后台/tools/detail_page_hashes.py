@@ -71,6 +71,14 @@ G, Y, R, D = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
     ("#/output/",   "页_产出详情",   "artifacts",        ""),
 )
 
+# 页签(2026-10-28 导航照 Dify):`#/studio/xxx` `#/integrations/xxx` 也是 startsWith 路由,但**不带 id** ——
+# 它们是工作室 / 集成里的固定几个页签,在 Makefile 的冒烟名单里逐个写着打。不进上面那张取 id 的表;
+# 下面会核对冒烟名单里真有它们(不许只登记不打 —— 豁免不许囤积)
+页签页 = {
+    "#/studio/": "工作室的页签(工作流 / Agent / 应用与发布 …),Makefile 冒烟名单里逐个打",
+    "#/integrations/": "集成的页签(模型供应商 / 工具),Makefile 冒烟名单里逐个打",
+}
+
 # 现状:取不到 id 的有几个。**多一个就红** —— 新增的「没数据所以冒烟不到」
 # 必须当场被看见,而不是悄悄涨上去。
 取不到上限 = 0
@@ -102,7 +110,12 @@ def main():
     # ── 先对一遍:路由里的详情页都登记了吗 ──────────────────────────
     路由 = 路由里的详情页()
     登记 = {x[0] for x in 页们}
-    漏登记 = sorted(路由 - 登记)
+    mk = open(os.path.join(ROOT, "Makefile"), encoding="utf-8").read()
+    页签没打 = sorted(k for k in 页签页 if f"'{k}" not in mk)
+    if 页签没打 and not a.只要hash:
+        print(f"\n  {R}❌ 登记成页签、冒烟名单里却一个都没打:{页签没打} —— 删掉这条登记,或者把页签加进冒烟名单{D}")
+        return 1
+    漏登记 = sorted(路由 - 登记 - set(页签页))
     多登记 = sorted(登记 - 路由)
     if (漏登记 or 多登记) and not a.只要hash:
         print(f"\n  {R}❌ 路由和登记对不上{D}")

@@ -79,7 +79,7 @@ global.document = {
   createElement: () => 造("new"), addEventListener() {},
 };
 global.window = { addEventListener() {} };
-global.location = { hash: "#/apps" };
+global.location = { hash: "#/studio/app" };   // 10-28 导航照 Dify:#/apps 跳到这里
 global.localStorage = {
   _d: { "aimc.user": "U002", "aimc.proj": 项目 },
   getItem(k) { return this._d[k] ?? null; },

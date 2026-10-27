@@ -55,8 +55,11 @@ function 装桩(opt = {}) {
     body: { classList: { add() {}, remove() {}, contains: () => false } },
     createElement: () => 造("new"), addEventListener() {},
   };
-  global.window = { addEventListener() {} };
-  global.location = { hash: opt.hash || "#/workbench" };
+  // 10-28 导航照 Dify:旧地址 location.replace 到新位置 —— 像浏览器那样改 hash 再触发 hashchange(和 page_smoke.js 同一个桩法)
+  const 换页听众 = [];
+  global.window = { addEventListener(种, fn) { if (种 === "hashchange") 换页听众.push(fn); } };
+  global.location = { hash: opt.hash || "#/workbench",
+    replace(h) { global.location.hash = h; setTimeout(() => 换页听众.forEach((fn) => fn()), 0); } };
   global.localStorage = {
     _d: { "aimc.user": opt.我 || "U002", "aimc.proj": opt.项目 || 默认项目 },
     getItem(k) { return this._d[k] ?? null; },

@@ -43,8 +43,12 @@ global.document = {
   createElement: () => 造("new"),
   addEventListener() {},
 };
-global.window = { addEventListener() {} };
-global.location = { hash: process.argv[2] || "#/workbench" };
+// 10-28 导航照 Dify:旧地址在路由里 location.replace 到新位置 —— 桩要像浏览器那样改 hash 再触发一次 hashchange,
+// 不然旧地址那几页在冒烟里什么都不渲(而「什么都没渲」在下面会被报成页面挂了,把人送去查一个没坏的页面)
+const 换页听众 = [];
+global.window = { addEventListener(种, fn) { if (种 === "hashchange") 换页听众.push(fn); } };
+global.location = { hash: process.argv[2] || "#/workbench",
+  replace(h) { global.location.hash = h; setTimeout(() => 换页听众.forEach((fn) => fn()), 0); } };
 global.localStorage = {
   // ⚠️ 允许从环境变量预置身份和项目 —— **为了能验「换个身份看另一个项目」**。
   // 不能预置的话,页面桩永远跑默认身份(U002)能看到的那个项目,
@@ -229,6 +233,12 @@ setTimeout(() => {
   const 对账表 = {
     "#/prompts": { 接口: "/prompts", 列表: "items" },
     "#/workflows": { 接口: "/workflows", 列表: "items" },
+    // 10-28 导航照 Dify:旧地址跳到工作室 / 集成的页签 —— 新旧两个地址都对账,跳过去渲的必须是同一份
+    "#/studio/workflow": { 接口: "/workflows", 列表: "items" },
+    "#/studio/agent": { 接口: "/agents", 列表: "items" },
+    "#/studio/app": { 接口: "/applications", 列表: "应用" },
+    "#/integrations/models": { 接口: "/model-connections", 列表: "连接" },
+    "#/integrations/tools": { 接口: "/tools", 列表: "items" },
     "#/agents": { 接口: "/agents", 列表: "items" },
     "#/tools": { 接口: "/tools", 列表: "items" },
     "#/human": { 接口: "/human-requests", 列表: "items" },
