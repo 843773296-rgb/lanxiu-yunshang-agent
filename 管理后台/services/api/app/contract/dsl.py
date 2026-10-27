@@ -249,6 +249,16 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
            "回复记在这一步的输出里(`回复`),**不进事件** —— 事件不按授权打码。"
            "从聊天发起的运行,聊天站会把它原样带回给用户;管理后台的试运行和运行详情用对话气泡显示"),
 
+    N("extractor", "参数提取器",
+      端口=[成功, 失败], 配置=["connection_version_id", "parameters", "instruction", "bindings",
+                              "sampling_params", "max_output_tokens"],
+      调用外部=True, 实现=已实现,
+      必填=["connection_version_id", "parameters"],
+      说明="**让模型从一段文字里抽出几项填好的参数**(照 Dify「参数提取器」,10-27 一期;"
+           "录音跟进「提取客户需求」本质就是它)。每项写名字、类型、说明、是否必填。"
+           "**原文没提到的那一项是空(null),不许编** —— 模型最常见的毛病是给一个看起来合理的值;"
+           "必填的没抽到、或类型不对,这一步失败(可从「失败」出口接人工),不把半套参数交给后面的业务动作"),
+
     N("template", "模板转换",
       端口=[成功, 失败], 配置=["template", "bindings"],
       调用外部=False, 实现=已实现,
@@ -306,6 +316,24 @@ def 分支条件(b):
 # `{{名字}}` 指「用到的数据」里同名那一项。**认法只在这里写一份**:校验器拿它查「模板里有、绑定里没有」,
 # 执行器拿它替换 —— 两边各写一个正则的话,一个认 `{{ 名字 }}`、一个不认,检查过了运行照样缺
 _回复占位 = re.compile(r"\{\{\s*([^{}\s]+)\s*\}\}")
+
+
+参数类型中文 = {"string": "文字", "number": "数字", "integer": "整数", "boolean": "是 / 否", "array": "列表"}
+
+
+def 类型对吗(v, 类型):
+    """参数提取器的类型检查。bool 不算数字(Python 里 True 是 int 的子类,不挡的话「是」会被当成 1)。"""
+    if 类型 == "string":
+        return isinstance(v, str)
+    if 类型 == "boolean":
+        return isinstance(v, bool)
+    if 类型 == "integer":
+        return isinstance(v, int) and not isinstance(v, bool)
+    if 类型 == "number":
+        return isinstance(v, (int, float)) and not isinstance(v, bool)
+    if 类型 == "array":
+        return isinstance(v, list)
+    return True
 
 
 def 回复占位名(模板):

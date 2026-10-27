@@ -949,6 +949,9 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 模板转换:{{名字}} 换成值交给下游;模板里的名字没来源检查配置就拦;取不到值这一步失败;只替换不执行(Jinja 原样留着)"
 	@./.venv/bin/python tests/orchestration/test_template_node.py
 	@echo ""
+	@echo "▸ 参数提取器:没提到的是空(不是「没提到」这个字);必填没抽到 / 类型不对这一步失败;没起名 / 重名 / 类型不认得 检查配置就拦"
+	@./.venv/bin/python tests/orchestration/test_extractor_node.py
+	@echo ""
 	@echo "▸ 定时触发的时间口径:日报前一天 / 周报上一个自然周 / 月报上一个自然月;同一期只发起一次;关机只补最近一期"
 	@./.venv/bin/python tests/orchestration/test_schedule.py
 	@echo ""

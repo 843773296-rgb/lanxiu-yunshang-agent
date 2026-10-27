@@ -667,7 +667,7 @@ async function 页_运行记录() {
 const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本与发布", "设置"];
 // 10-27 照 Dify 改了两个名字(适配分析 5.1 定的):结束 →「输出」、分支汇合 →「变量聚合器」;其余保留业务叫法
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
-  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换" };
+  condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器" };
 const 结果类型们 = [["string", "文本"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"],
   ["array", "列表"], ["object", "对象"]];
 
@@ -1209,7 +1209,7 @@ const 同口 = (e, o) => e.port === o.port && (e.branch_key || null) === (o.bran
 
 function 弹_在此后添加(id) {
   const n = 节点(id), 口们 = 出口们(n);
-  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "template"]
+  const 可加 = ["llm", "tool", "human", "condition", "transform", "retrieve", "merge", "answer", "loop", "classifier", "extractor", "template"]
     .filter((t) => (图态.节点库.find((x) => x["名"] === t) || {})["可用"]);
   弹层(`在「${业务名(n)}」之后添加一步`, `
     ${口们.length > 1 ? `<label class="f">从哪个出口接</label><select id="af-p">${口们.map((o, i) =>
@@ -1240,6 +1240,7 @@ function 默认配置(类型) {
            tool: { bindings: {} },
            answer: { template: "", bindings: {} },
            template: { template: "", bindings: {} },
+           extractor: { parameters: [{ name: "", type: "string", description: "", required: false }], bindings: {}, instruction: "" },
            classifier: { classes: [{ key: "类别一", 说明: "" }, { key: "类别二", 说明: "" }], bindings: {}, instruction: "" },
            transform: { operations: [], output_schema: { type: "object" } },
            loop: { max_iterations: 3, condition: { op: "equals", left: null, right: { source: "constant", value: true } },
@@ -1514,6 +1515,27 @@ function 表_设置(n) {
       + `<label class="f">分类时还要注意(选填)</label>`
       + 输入框(c.instruction || "", (el) => { c.instruction = el.value.trim() || undefined; }, "例如:只看客户说的话,别看顾问说的", { 可清空: true })
       + `<div class="k">要分类的内容在下面「用到的数据」里选,比如录音转写。</div>`;
+  } else if (n.type === "extractor") {
+    // 参数提取器(10-27,照 Dify):每项一行 —— 名字 / 类型 / 说明 / 必填;名字就是后面步骤取它用的名字
+    const 模 = g.资源.模型 || [];
+    c.parameters = c.parameters || [];
+    体 += `<label class="f">用哪个模型</label>`
+      + 资源选择器("模型", c.connection_version_id, 模.map((m) => ({ id: m["版本id"], 名: m["名"], 说: "", 标: m["是假的"] ? "演示用,不真调" : "可用" })),
+          (id) => { c.connection_version_id = id || undefined; 重画(); },
+          "这个项目还没有可用的模型 —— 请平台管理员在「模型与连接」里接一个。")
+      + `<label class="f">要提取哪几项</label>
+        <div class="note">原文没提到的那一项是<b>空</b>,不让模型编;<b>必填</b>的没抽到这一步就失败(可在「高级」里设成走「失败时」接人工)。</div>`
+      + c.parameters.map((p, i) => `<div class="card">
+          <div class="two"><div><div class="k">第 ${i + 1} 项 · 叫</div>${输入框(p.name || "", (el) => { p.name = el.value.trim(); 重画(); }, "例如:预算")}</div>
+            <div><div class="k">类型</div>${下拉(p.type || "string", [["string", "文字"], ["number", "数字"], ["integer", "整数"], ["boolean", "是 / 否"], ["array", "列表"]],
+              (el) => { p.type = el.value; })}</div></div>
+          <div class="k">说明(写给模型看)</div>${输入框(p.description || "", (el) => { p.description = el.value.trim() || undefined; }, "例如:单位元,只写数字", { 可清空: true })}
+          <label class="k"><input type="checkbox" data-k="${挂控件((el) => { p.required = el.checked; })}" ${p.required ? "checked" : ""}> 必填(没抽到就失败)</label>
+          <div class="acts"><button class="danger" data-k="${挂控件(() => { c.parameters.splice(i, 1); 重画(); })}" aria-label="删掉第 ${i + 1} 项参数">删掉这一项</button></div></div>`).join("")
+      + `<button data-k="${挂控件(() => { c.parameters.push({ name: "", type: "string" }); 重画(); })}">加一项</button>`
+      + `<label class="f">提取时还要注意(选填)</label>`
+      + 输入框(c.instruction || "", (el) => { c.instruction = el.value.trim() || undefined; }, "例如:金额按客户最后说的那个", { 可清空: true })
+      + `<div class="k">从哪段内容里提取,在下面「用到的数据」里选,比如录音转写。</div>`;
   } else if (n.type === "tool") {
     const 工 = g.资源.工具 || [];
     体 += `<label class="f">执行哪个业务动作</label>`
@@ -1683,6 +1705,7 @@ function 结果字段名(n) {
   if (n.type === "human") return ["决定", "定稿", "理由", "处理人"];
   if (n.type === "answer") return ["回复"];
   if (n.type === "template") return ["文本"];
+  if (n.type === "extractor") return (c.parameters || []).map((p) => p.name).filter(Boolean);
   if (n.type === "classifier") return ["类别", "理由"];
   if (n.type === "condition") return ["branch"];
   if (n.type === "merge") return [c.output_field || "out"];
@@ -1822,6 +1845,7 @@ function 表_结果(n) {
   }
   if (n.type === "human") return `<div class="k">人工核对固定返回:<b>决定</b>(approve / reject)、<b>定稿</b>、<b>理由</b>、<b>处理人</b>。</div>`;
   if (n.type === "classifier") return `<div class="k">固定返回:<b>类别</b>(模型挑的那一个名字)、<b>理由</b>(它为什么这么分)。走哪条线由类别定。</div>`;
+  if (n.type === "extractor") return `<div class="k">返回上面「基本」里列的每一项参数;<b>原文没提到的那一项是空</b>,必填的没抽到这一步就失败。</div>`;
   if (n.type === "template") return `<div class="k">固定返回:<b>文本</b>(填好名字之后的那一段)。后面的步骤在「用到的数据」里选它。</div>`;
   if (n.type === "answer") return `<div class="k">固定返回:<b>回复</b>(填好名字之后的那一句)。后面的步骤也能取它。</div>`;
   if (n.type === "end") {

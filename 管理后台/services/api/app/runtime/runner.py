@@ -533,6 +533,56 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                 当前 = 下[0] if 下 else 循环回(当前)
                 continue
 
+            if t == "extractor":
+                # 参数提取器(10-27,照 Dify):借 LLM 那条适配器,结果形状按这一步列的参数现拼
+                参们 = [p for p in (cfg.get("parameters") or []) if isinstance(p, dict) and p.get("name")]
+                if 上限.get("max_model_turns") is not None and 用量["模型调用"] >= 上限["max_model_turns"]:
+                    执行状态, 完成原因 = "incomplete", "max_turns"
+                    记一步(当前, 失败, error_code="MAX_TURNS")
+                    break
+                实参, 缺 = 解绑定(cfg.get("bindings"), 状态)
+                本步入 = 实参
+                if 缺:
+                    raise 节点失败("BIND_MISSING_AT_RUNTIME", f"要从里面提取的内容取不到:{'、'.join(缺)}",
+                                 "产出这些内容的那一步这次没跑到;在右侧「用到的数据」里核对来源")
+                if not 参们:
+                    raise 节点失败("EXTRACT_NO_PARAMS", "没写要提取哪几项", "在右侧「基本」里至少加一项参数")
+                fn = 适配器.get("llm")
+                if fn is None:
+                    raise 节点失败("ADAPTER_MISSING", "这类步骤在当前环境还跑不了",
+                                 "请联系技术管理员 —— 这一步没有执行,不是执行成功")
+                问模型 = {**实参, "要提取的参数": "\n".join(
+                    f"- {p['name']}({DS.参数类型中文.get(p.get('type') or 'string', p.get('type'))}"
+                    f"{'，必填' if p.get('required') else ''})" + (f":{p['description']}" if p.get("description") else "")
+                    for p in 参们),
+                    "规矩": "只从上面的内容里抽;原文没提到的那一项写 null,不要猜、不要写「没提到」"}
+                if (cfg.get("instruction") or "").strip():
+                    问模型["提取时还要注意"] = cfg["instruction"].strip()
+                r = fn({"connection_version_id": cfg.get("connection_version_id"),
+                        "sampling_params": cfg.get("sampling_params"),
+                        "max_output_tokens": cfg.get("max_output_tokens") or 1000,
+                        "output_schema": {"type": "object", "properties": {
+                            p["name"]: {"type": p.get("type") or "string"} for p in 参们}}}, 问模型)
+                用量["模型调用"] += 1
+                出 = {}
+                for p in 参们:
+                    v = r.get(p["name"])
+                    if isinstance(v, str) and v.strip() in ("", "没提到", "null", "无", "未提及"):
+                        v = None              # 通用适配器会提示「没提到的写『没提到』」—— 在这里归成空,别当成一个真值
+                    if v is not None and not DS.类型对吗(v, p.get("type") or "string"):
+                        raise 节点失败("EXTRACT_TYPE", f"「{p['name']}」要的是{DS.参数类型中文.get(p.get('type'), p.get('type'))},模型给的是「{str(v)[:40]}」",
+                                     "在这一项的说明里写清格式(比如「只写数字,单位元」);还不行就从「失败」出口接人工")
+                    出[p["name"]] = v
+                没抽到 = [p["name"] for p in 参们 if p.get("required") and 出[p["name"]] is None]
+                if 没抽到:
+                    raise 节点失败("EXTRACT_REQUIRED_MISSING", f"必填的没抽到:{'、'.join(没抽到)}",
+                                 "原文里可能真没说 —— 从「失败」出口接人工补;或者把它改成选填")
+                状态["节点"][当前] = 出
+                记一步(当前, 成功, execution_mode=r.get("execution_mode"), 入=问模型, 出=出)
+                下 = 后继[当前].get((DS.成功, None), [])
+                当前 = 下[0] if 下 else 循环回(当前)
+                continue
+
             if t == "template":
                 # 模板转换(10-27):和直接回复同一套填法,只是结果交给后面的步骤、不回给聊天里的人
                 模板 = cfg.get("template") or ""

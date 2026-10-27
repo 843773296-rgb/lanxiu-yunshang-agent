@@ -87,6 +87,7 @@ def main():
         from selenium.webdriver.common.action_chains import ActionChains
         from selenium.webdriver.common.by import By
         from selenium.webdriver.common.keys import Keys
+        from selenium.webdriver.support.ui import Select
     except ImportError:
         print("❌ 没装 selenium:./.venv/bin/pip install selenium"); return 2
     wid = 准备工作流()
@@ -328,6 +329,28 @@ def main():
             js(f"画布动作.删线('{模}|success||end')")   # 连着线删步骤会弹「删除影响」确认,先删线
             js(f"画布动作.选节点(['{模}'])"); d.find_element(By.ID, "cv").send_keys(Keys.DELETE)
             ck("删掉模板转换那一步(不留到后面的保存里)", not any(n.startswith("template_") for n in 态()["节点"]), 态()["节点"])
+
+        print("\n▸ 参数提取器:面板里填名字和类型;下游能按名字选它")
+        js("加到视口中间('extractor')")
+        提 = [n for n in 态()["节点"] if n.startswith("extractor_")]
+        ck("步骤库能加「参数提取器」并选中", len(提) == 1 and 态()["选"] == 提, 态()["节点"])
+        if 提:
+            提 = 提[0]
+            名框 = next((x for x in d.find_elements(By.CSS_SELECTOR, "#pn input") if x.get_attribute("placeholder") == "例如:预算"), None)
+            ck("面板里有「要提取哪几项」和第一项的名字框", 名框 is not None and "要提取哪几项" in d.find_element(By.ID, "pn").text)
+            if 名框:
+                名框.send_keys("预算"); 名框.send_keys(Keys.TAB)
+                类 = next((x for x in d.find_elements(By.CSS_SELECTOR, "#pn select") if "整数" in x.text), None)
+                if 类:
+                    Select(类).select_by_value("integer")
+                参 = js(f"return 图态.定义.nodes.find(n => n.id === '{提}').config.parameters")
+                ck("填了名字「预算」、类型选整数 → 写进配置", (参 or [{}])[0].get("name") == "预算" and 参[0].get("type") == "integer", 参)
+                js(f"画布动作.连上('{提}', {{port:'success', branch_key:null}}, 'end')")
+                能选 = js("return 上游字段('end').map(x => x[1])")
+                ck("下一步「用到的数据」里能选「参数提取器 → 预算」", any("预算" in x and "参数提取器" in x for x in 能选), 能选)
+                js(f"画布动作.删线('{提}|success||end')")
+            js(f"画布动作.选节点(['{提}'])"); d.find_element(By.ID, "cv").send_keys(Keys.DELETE)
+            ck("删掉参数提取器那一步(不留到后面的保存里)", not any(n.startswith("extractor_") for n in 态()["节点"]), 态()["节点"])
 
         print("\n▸ T21 完整链路:加步骤 → 连线 → 配置 → 删线 → 撤销 → 保存 → 重开")
         js("加到视口中间('transform')")

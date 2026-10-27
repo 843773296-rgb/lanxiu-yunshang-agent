@@ -104,6 +104,7 @@ _缺项说法 = {
     "sub_limits": ("还没设这一步的上限", "在右侧「高级」里填最多跑几轮、最多花多少"),
     "condition": ("还没写循环什么时候继续", "在右侧「基本」里写「满足什么条件就再跑一轮」,比如「还要重写 等于 是」"),
     "max_iterations": ("还没填最多跑几轮", "在右侧「基本」里填一个 1 到 10 的数;经营报告是 4(第一稿 + 最多重写 3 次)"),
+    "parameters": ("还没写要提取哪几项", "在右侧「基本」里至少加一项,写上名字、类型和说明"),
     "classes": ("还没写要分成哪几类", "在右侧「基本」里至少写两个类别,比如「有意向」「没意向」「说不清」"),
     "template": ("还没写要回复什么", "在右侧「基本」里写回复内容;要带上前面的结果,写 {{名字}} 并在「用到的数据」里给它选来源"),
 }
@@ -496,6 +497,27 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
             出.append(问(阻断, "CLASSIFY_EDGE_NO_CLASS", f"有一条连线挂在「{k}」这一类上,但类别里已经没有它了",
                        "删掉这条线;还要这一类的话,先在「基本」里加回来再连", node_id=i))
 
+    # ④c 参数提取器:名字不空、不重复、类型认得(10-27)──────────────────────
+    for n in 节点们:
+        if n.get("type") != "extractor":
+            continue
+        i = n.get("id")
+        参们 = (n.get("config") or {}).get("parameters")
+        if 参们 in (None, "", [], {}):
+            continue                       # 必填那条已经报了
+        名们 = [str((p or {}).get("name") or "").strip() for p in 参们 if isinstance(p, dict)]
+        if "" in 名们:
+            出.append(问(阻断, "EXTRACT_NO_NAME", "有一项参数没起名字 —— 后面的步骤按名字取它",
+                       "在右侧「基本」里给它起个名字,用不上就删掉", node_id=i, field_path="config.parameters"))
+        for k in sorted({x for x in 名们 if x and 名们.count(x) > 1}):
+            出.append(问(阻断, "EXTRACT_DUP", f"参数「{k}」写了两次,后面取它时不知道是哪一个",
+                       "删掉一个,或者改个名字", node_id=i, field_path="config.parameters"))
+        for p in 参们:
+            if isinstance(p, dict) and (p.get("type") or "string") not in DS.参数类型中文:
+                出.append(问(阻断, "EXTRACT_BAD_TYPE", f"参数「{p.get('name')}」的类型系统不认识",
+                           f"在右侧「基本」里重新选类型(可选:{'、'.join(DS.参数类型中文.values())})",
+                           node_id=i, field_path="config.parameters"))
+
     # ⑤ 变量可用性:**靠支配关系,不靠找名字** ───────────────────────
     跳过 = []
     for n in 节点们:
@@ -531,7 +553,7 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
                            node_id=i, field_path=fp))
                 continue
             # **密钥绝不进模型上下文**(§7.1):进过一次提示词,它就已经进过日志、Trace,可能进过导出
-            if not 来源["进模型上下文"] and t in ("llm", "agent", "classifier"):
+            if not 来源["进模型上下文"] and t in ("llm", "agent", "classifier", "extractor"):
                 出.append(问(阻断, "BIND_SECRET_INTO_MODEL",
                            f"「{字段}」用的是密钥,而这一步会把内容交给模型,密钥会被记进日志",
                            f"在右侧「用到的数据」里给「{字段}」换一个来源。"
