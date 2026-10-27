@@ -1122,7 +1122,11 @@ function 画_搭建() {
       <div class="steps" id="steps"></div>
       <div class="wfpanel" id="pn"></div>
     </div>
+    <div class="wfvarbar"><button id="vi-tg" aria-expanded="false">变量检查</button></div>
+    <div class="wfvar" id="vi" hidden></div>
     <div class="wfbottom"><div class="body" id="bt"></div></div>`;
+  $("#vi-tg").onclick = () => { 图态.变量开 = !图态.变量开; 画_变量检查(); };
+  画_变量检查();
   // 切视图不丢配置、选中和定位(W07):两种视图读写同一份 图态
   $("#vw-s").onclick = () => { 图态.视图 = "步骤"; 画_搭建(); };
   $("#vw-g").onclick = () => { 图态.视图 = "流程图"; 画_搭建(); };
@@ -2458,6 +2462,67 @@ async function 做_试运行(输入 = {}, 额外 = {}) {
 }
 
 
+/* ── 变量检查(10-27,照 Dify 画布底部那个抽屉)─────────────────────────────
+ * 左:上次试运行里每一步交出的结果(「使用者输入」= 开始那一步);右:选中那一步的值,**可以直接改**。
+ * 改过的值**只留在这一页**:不存服务端、不进运行记录;下一次「试这一步」会先用改过的值填输入框
+ * (这就是 Dify「改了变量再单步运行」那件事)。「还原至上一次运行」/「重置所有」撤掉修改。
+ * 没有「查看敏感输入」授权时上次的值只有形状 —— 只读,照实写为什么。 */
+function 变量值(nid) {
+  const 改 = (图态.变量改 || {})[nid];
+  if (改 !== undefined) return { 值: 改, 改过: true };
+  const 跑 = 图态.运行态 && 图态.运行态[nid];
+  return 跑 && 跑.输出 != null ? { 值: 跑.输出, 原文: 跑.原文 } : null;
+}
+function 取指针值(v, ptr) {
+  let 当前 = v;
+  for (const 段 of String(ptr || "").replace(/^\//, "").split("/").filter(Boolean)) {
+    if (当前 && typeof 当前 === "object" && 段 in 当前) 当前 = 当前[段]; else return undefined;
+  }
+  return 当前;
+}
+function 画_变量检查() {
+  const 盒 = $("#vi"), 钮 = $("#vi-tg"); if (!盒 || !钮) return;
+  const g = 图态, 开 = !!g.变量开;
+  钮.setAttribute("aria-expanded", String(开)); 钮.hidden = 开; 盒.hidden = !开;
+  if (!开) return;
+  const 有 = g.定义.nodes.filter((n) => 变量值(n.id));
+  if (!g.变量选 || !变量值(g.变量选)) g.变量选 = 有[0] ? 有[0].id : null;
+  const 名 = (n) => n.type === "start" ? "使用者输入" : 业务名(n);
+  const 左 = 有.length ? 有.map((n) => `${n.id === g.变量选 ? `<button class="lk on" data-vi="${esc(n.id)}">` : `<button class="lk" data-vi="${esc(n.id)}">`}${esc(名(n))}${
+      (g.变量改 || {})[n.id] !== undefined ? ' <span class="pill warn">已编辑</span>' : ""}</button>`).join("")
+    : `<div class="k">在画布上试运行或单独测一步之后,这里能看到每一步交出的结果。</div>`;
+  let 右 = "";
+  const 选 = g.变量选 && 节点(g.变量选), x = 选 && 变量值(选.id);
+  if (x) {
+    const 原文 = x.改过 || x.原文;
+    右 = `<div class="vihead"><b>${esc(名(选))}</b> <span class="k">${esc(Array.isArray(x.值) ? "列表" : typeof x.值 === "object" ? "对象" : typeof x.值)}</span>
+        ${x.改过 ? `<span class="pill warn">已编辑</span> <button id="vi-back">还原至上一次运行</button>` : ""}
+        <button id="vi-exp" title="导出变量为文件">导出</button></div>
+      ${原文 ? `<textarea id="vi-val" rows="8" spellcheck="false">${esc(JSON.stringify(x.值, null, 1))}</textarea>
+          <div class="k">直接改,点框外生效。改过的值只用在这一页的调试里(下一次「试这一步」会先用它填),不存、不进运行记录。</div><div id="vi-err" class="ferr"></div>`
+        : `<pre class="io">${esc(JSON.stringify(x.值, null, 1))}</pre>
+          <div class="note">只看得到<b>形状</b>(有哪些项、各多长)—— 看原文、改值要「查看敏感输入」专项授权。</div>`}`;
+  }
+  盒.innerHTML = `<div class="vihd"><b>变量检查</b> ${Object.keys(g.变量改 || {}).length ? '<button id="vi-reset">重置所有</button>' : ""}
+      <button id="vi-x" aria-label="关闭变量检查">×</button></div>
+    <div class="vibody"><div class="vileft">${左}</div><div class="viright">${右 || '<div class="k">在左边选一步。</div>'}</div></div>`;
+  $("#vi-x").onclick = () => { g.变量开 = false; 画_变量检查(); };
+  盒.querySelectorAll("[data-vi]").forEach((b) => { b.onclick = () => { g.变量选 = b.dataset.vi; 画_变量检查(); }; });
+  const 重置 = $("#vi-reset"); if (重置) 重置.onclick = () => { g.变量改 = {}; 画_变量检查(); 提示("已撤掉所有修改,回到上一次运行的值"); };
+  const 回 = $("#vi-back"); if (回) 回.onclick = () => { delete g.变量改[选.id]; 画_变量检查(); };
+  const 出 = $("#vi-exp");
+  if (出) 出.onclick = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(x.值, null, 1)], { type: "application/json" }));
+    a.download = `${名(选)}.json`; a.click(); URL.revokeObjectURL(a.href);
+  };
+  const 框 = $("#vi-val");
+  if (框) 框.onchange = () => {
+    try { (g.变量改 = g.变量改 || {})[选.id] = JSON.parse(框.value); 画_变量检查(); if (g.选中) 画_面板(); }
+    catch (e) { $("#vi-err").textContent = "不是合法的 JSON(文字要带引号)—— 没改,框里留着你写的"; }
+  };
+}
+
 /* ── 单步测试(10-26,方案 §8.1):只跑选中的这一步,不从头跑整条流程 ──────────────
  * 服务端拼「开始 → 这一步 → 结束」小图、走试运行同一个受理口;哪些能测、写入类为什么不行,
  * 以服务端为准(runtime/单步测试.py)。这里只是**不摆点了没用的按钮**:明知会被拒的类型直接说为什么 */
@@ -2542,8 +2607,15 @@ function 单测表(n) {
     只能演练 = t["读写"] !== "只读";
   }
   const 跑 = 图态.运行态 && 图态.运行态[n.id], 上次入 = 跑 && 跑.原文 && 跑.输入 && typeof 跑.输入 === "object" ? 跑.输入 : {};
+  // 先用「变量检查」里的值(改过的优先)按这一项的来源去取;取不到再用这一步上次收到的
+  const 起点 = 图态.定义.nodes.find((x) => x.type === "start");
+  const 从变量 = (f) => {
+    const r = ((n.config || {}).bindings || {})[f]; if (!r) return undefined;
+    const 源 = r.source === "node" ? 变量值(r.node_id) : r.source === "input" && 起点 ? 变量值(起点.id) : null;
+    return 源 && (源.改过 || 源.原文) ? 取指针值(源.值, r.pointer) : undefined;
+  };
   const 框 = 单测字段(n).map((f) => {
-    const v = 上次入[f], 默 = v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v);
+    const 变 = 从变量(f), v = 变 !== undefined ? 变 : 上次入[f], 默 = v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v);
     return `<label class="f">${esc(f)}</label><textarea rows="2" data-st="${esc(f)}">${esc(默)}</textarea>`;
   }).join("");
   return `<div class="stest"><div class="k">单独跑这一步,不从头跑整条流程。${Object.keys(上次入).length ? "下面已填上它上次收到的内容,可以改。" : ""}

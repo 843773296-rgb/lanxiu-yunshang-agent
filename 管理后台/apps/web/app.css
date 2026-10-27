@@ -469,3 +469,14 @@ tr.hitrow:hover td{background:var(--pri-bg)}
 .trlist{padding-left:18px}
 .trlist li{margin:4px 0}
 .wfnode2 .run1{height:22px;width:22px;padding:0;border:0;background:none;font-size:12px;cursor:pointer;color:var(--pri)}
+/* 变量检查(10-27,照 Dify 画布底部抽屉) */
+.wfvarbar{display:flex;justify-content:center;margin:6px 0}
+.wfvar{border:1px solid var(--line);border-radius:6px;background:var(--card);margin:6px 0;min-height:120px;max-height:360px;overflow:auto;resize:vertical}
+.wfvar .vihd{display:flex;gap:8px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line)}
+.wfvar .vihd #vi-x{margin-left:auto}
+.wfvar .vibody{display:grid;grid-template-columns:200px minmax(0,1fr);gap:0}
+.wfvar .vileft{border-right:1px solid var(--line);padding:6px;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.wfvar .vileft .on{font-weight:700;color:var(--pri)}
+.wfvar .viright{padding:8px 10px}
+.wfvar .viright textarea{width:100%;font:12px/1.5 ui-monospace,Menlo,monospace}
+.wfvar .vihead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
