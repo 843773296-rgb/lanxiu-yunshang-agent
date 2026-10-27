@@ -137,6 +137,8 @@ _依赖列 = {
     ("tool_selection_policy_versions", "evaluations"): "router_evidence_ref",
     ("tool_selection_policy_versions", "model_connections"):
         "router_connection_id",
+    # 2026-10-27 版本标记:列叫 version_id(推出来的是 workflow_version_id)—— 短名,点名在这里
+    ("workflow_version_marks", "workflow_versions"): "version_id",
 }
 
 # ## 唯一约束叫什么名字 —— **这个名字必须和迁移里那个一个字不差**
@@ -278,6 +280,8 @@ _额外唯一 = {
     "staff_bindings": [("project_id", "user_id"), ("project_id", "lanxiu_staff_code")],
     # 一条工作流只有一份定时 —— 两份会让同一期按两套规则各发起一次
     "workflow_schedules": [("project_id", "workflow_id")],
+    # 一个版本一行标记 —— 两行的话「它叫什么、删没删」各说各的
+    "workflow_version_marks": [("project_id", "version_id")],
     # 执行故障上报(2026-10-25):一轮只一张单 —— 聊天站同一轮会推不止一次
     "trace_incidents": [("project_id", "trace_id")],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,

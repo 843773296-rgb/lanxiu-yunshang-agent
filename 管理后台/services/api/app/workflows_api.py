@@ -1455,10 +1455,14 @@ def 工作流详情(project_id: str, wid: str,
         d = c.execute(text("""select * from graph_drafts
                              where project_id=:p and workflow_id=:i"""),
                       {"p": project_id, "i": wid}).mappings().first()
+        # 名字和「删掉了」在旁表上(10-27 版本历史照 Dify);删掉的不列,但版本行还在,运行和清单照样能打开它
         vs = c.execute(text("""
-            select id, version_no, logical_hash, change_note, created_at, created_by
-              from workflow_versions where project_id=:p and workflow_id=:i
-             order by version_no desc limit 20
+            select v.id, v.version_no, v.logical_hash, v.change_note, v.created_at, v.created_by, mk.version_name,
+                   coalesce(mk.revision, 0) mark_rev
+              from workflow_versions v
+              left join workflow_version_marks mk on mk.project_id=v.project_id and mk.version_id=v.id
+             where v.project_id=:p and v.workflow_id=:i and mk.removed_at is null
+             order by v.version_no desc limit 20
         """), {"p": project_id, "i": wid}).mappings().all()
     return {
         "id": w["id"], "名称": w["name"], "用途": w["purpose"], "负责人": w["owner"],
@@ -1474,7 +1478,7 @@ def 工作流详情(project_id: str, wid: str,
         },
         "版本们": [{"id": v["id"], "版本": f"v{v['version_no']}",
                   "逻辑哈希": (v["logical_hash"] or "")[:19] + "…",
-                  "变更说明": v["change_note"],
+                  "变更说明": v["change_note"], "名称": v["version_name"], "标记revision": v["mark_rev"],
                   "冻结于": v["created_at"].isoformat() if v["created_at"] else None,
                   "冻结人": v["created_by"]} for v in vs],
         "节点库": [{"名": n["名"], "中文": n["中文"], "可用": n["实现"] == DS.已实现,
@@ -1661,6 +1665,75 @@ def 看冻结版本(project_id: str, wid: str, vid: str, me: 身份 = Depends(�
             "冻结于": v["created_at"].isoformat() if v["created_at"] else None, "冻结人": v["created_by"],
             "定义": {"nodes": v["nodes"] or [], "edges": v["edges"] or []}, "布局": v["layout"] or {},
             "只读": True, "note": "冻结版本只读 —— 要改先「复制为草稿」,不会原地覆盖历史版本"}
+
+
+# ── 版本历史:命名 / 删除(10-27,用户确认照 Dify;适配分析「照抄但要改:生产在用的不能删」)──────────
+# **冻结版本那一行一个字都不改** —— 名字和「删掉了」记在 workflow_version_marks 上。
+# 改版本行会让「冻结」失效:内容哈希、发布清单、运行记录都指着它。
+def _版本标记(c, me, project_id, wid, vid, **改):
+    v = c.execute(text("select id from workflow_versions where project_id=:p and workflow_id=:w and id=:v"),
+                  {"p": project_id, "w": wid, "v": vid}).scalar()
+    if not v:
+        raise _错(404, "NOT_FOUND", "没有这个版本", "回「版本与发布」刷新一下")
+    已 = c.execute(text("select id from workflow_version_marks where project_id=:p and version_id=:v for update"),
+                   {"p": project_id, "v": vid}).scalar()
+    if not 已:
+        c.execute(text("""insert into workflow_version_marks (id, organization_id, project_id, workflow_id, version_id,
+                              created_at, created_by, updated_at, revision)
+                          values (:i, :o, :p, :w, :v, now(), :by, now(), 1)"""),
+                  {"i": _新id("wvm"), "o": me.org_id, "p": project_id, "w": wid, "v": vid, "by": me.user_id})
+    设 = ", ".join(f"{k}=:{k}" for k in 改)
+    c.execute(text(f"""update workflow_version_marks set {设}, updated_at=now(), revision=coalesce(revision,0)+1
+                       where project_id=:p and version_id=:v"""), {"p": project_id, "v": vid, **改})
+
+
+@router.patch(前缀 + "/workflows/{wid}/versions/{vid}")
+async def 给版本起名(project_id: str, wid: str, vid: str, request: Request,
+                 if_match: str = Header(default=None, alias="If-Match"),
+                 me: 身份 = Depends(要权限("改编排草稿"))):
+    """If-Match = 详情列表里这一版的「标记revision」(还没起过名字是 0)—— 两个人同时改名,后存的不许悄悄盖掉前一个"""
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "改名字要带 If-Match",
+                  "用详情列表里这一版的「标记revision」—— 两个人同时改,后到的不许悄悄盖掉先到的")
+    体 = await request.json()
+    名 = (体.get("名称") or "").strip()
+    if len(名) > 40:
+        raise _错(422, "VALIDATION", "名字太长了(最多 40 个字)", "写短一点,细节写在变更说明里", field_errors={"名称": "最多 40 个字"})
+    with 事务() as c:
+        现 = c.execute(text("select revision from workflow_version_marks where project_id=:p and version_id=:v for update"),
+                       {"p": project_id, "v": vid}).scalar() or 0
+        if str(现) != str(if_match).strip('"'):
+            raise _错(409, "REVISION_CONFLICT", f"这一版的名字刚被别人改过(你拿到的是 {if_match},现在是 {现})", "刷新一下再改")
+        _版本标记(c, me, project_id, wid, vid, version_name=名 or None)
+        _审计(c, me, "workflow.version.name", {"工作流": wid, "版本": vid, "名称": 名 or None})
+        新 = c.execute(text("select revision from workflow_version_marks where project_id=:p and version_id=:v"),
+                       {"p": project_id, "v": vid}).scalar()
+    return {"id": vid, "名称": 名 or None, "标记revision": 新}
+
+
+@router.delete(前缀 + "/workflows/{wid}/versions/{vid}")
+def 删掉版本(project_id: str, wid: str, vid: str, me: 身份 = Depends(要权限("生产审核/发布/回滚"))):
+    """从列表里藏起来,版本行不删。**任何环境正在用的、还有没跑完的运行在用的,不能删** ——
+    Dify 只拦生产在用的;停在人工核对里的运行恢复时要按它的图接着跑,删了就找不到了。"""
+    import release as RL
+    with 事务() as c:
+        在用 = [{"test": "测试", "staging": "预发", "production": "生产"}.get(e, e) for e in RL.环境们
+                if ((_生产版本(c, project_id, wid, e) or {}).get("版本id")) == vid]
+        if 在用:
+            raise _错(409, "VERSION_IN_USE", f"{'、'.join(在用)}环境正在跑这一版,不能删",
+                      "先把那个环境切到别的版本,再来删")
+        没完 = c.execute(text("""select count(*) from execution_runs where project_id=:p
+                                   and definition_ref->>'version_id' = :v
+                                   and status in ('queued', 'running', 'waiting_approval', 'waiting_external')"""),
+                         {"p": project_id, "v": vid}).scalar()
+        if 没完:
+            raise _错(409, "VERSION_HAS_LIVE_RUNS", f"还有 {没完} 次运行在用这一版没跑完(排队 / 在跑 / 等人核对)",
+                      "等它们跑完或取消之后再删 —— 删了之后它们恢复时找不到自己的图")
+        _版本标记(c, me, project_id, wid, vid, removed_by=me.user_id)
+        c.execute(text("update workflow_version_marks set removed_at=now() where project_id=:p and version_id=:v"),
+                  {"p": project_id, "v": vid})
+        _审计(c, me, "workflow.version.remove", {"工作流": wid, "版本": vid})
+    return {"id": vid, "已删": True, "note": "只是不在列表里显示了;跑过它的运行、出过的发布清单照样能打开"}
 
 
 # ── 试运行 ─────────────────────────────────────────────────────────

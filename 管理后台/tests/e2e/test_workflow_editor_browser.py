@@ -429,6 +429,28 @@ def main():
             d.find_element(By.ID, "rl-dl").click()
             等(d, lambda: "记进了审计" in (js("return (document.querySelector('#wf-toast')||{}).textContent") or ""))
             ck("下载 → 走单独的导出接口,这次导出记进审计", 审计数() == 前审 + 1, [前审, 审计数()])
+
+        print("\n▸ 版本历史(10-27 照 Dify):当前草稿置顶;每一版能起名字 / 删除,环境正在跑的那一版删除是灰的")
+        # 编辑器测试那条流程一个版本都没有 —— 在它上面验「每一版都…」是空转(10-27 撞到过:样本量 0 照样全绿)。
+        # 换一条**有生产版本、版本数 ≥ 2** 的流程(录音流程的端到端每次都会留下这样一条)
+        def 两种都有(w):
+            # 列表的「版本数」连删掉的也算 —— 按详情里还列着的版本和各环境指着谁现算
+            vs = [v["id"] for v in 打("GET", f"/workflows/{w}")["版本们"]]
+            在 = {(x or {}).get("版本id") for x in 打("GET", f"/workflows/{w}/releases")["各环境"].values()}
+            return any(v in 在 for v in vs) and any(v not in 在 for v in vs)
+        有版 = next((w["id"] for w in 打("GET", "/workflows?limit=100").get("items") or []
+                     if w.get("生产引用版本") and (w.get("版本数") or 0) >= 2 and 两种都有(w["id"])), None)
+        ck("找得到一条有生产版本、至少两版的流程来验(样本量不能是 0)", bool(有版))
+        d.get(基址 + f"/#/workflow/{有版 or wid}/版本与发布")
+        等(d, lambda: js("return !!document.querySelector('#tabbody tr.draftrow')"))
+        首行 = js("return document.querySelector('#tabbody tbody tr').className")
+        ck("第一行是「当前草稿」", 首行 == "draftrow", 首行)
+        行们 = js("""return [...document.querySelectorAll('#tabbody tr[data-vrow]')].map(r => ({
+            在跑: r.textContent.includes('在跑'), 删灰: !!(r.querySelector('[data-vdel]') || {}).disabled,
+            有名: !!r.querySelector('[data-vname]')}))""")
+        ck(f"每一版都有「起名字」;在跑的那几版删除是灰的、没在跑的可以点(在跑 {sum(x['在跑'] for x in 行们)} 版 / 没在跑 {sum(not x['在跑'] for x in 行们)} 版,两种都得有)",
+           any(x["在跑"] for x in 行们) and any(not x["在跑"] for x in 行们)
+           and all(x["有名"] and x["删灰"] == x["在跑"] for x in 行们), 行们)
     finally:
         d.quit()
     print(f"\n{'❌' if 挂 else '✅'} 流程图编辑器真浏览器 {过[0]} 条过" + (f",挂 {len(挂)} 条:{' / '.join(挂)}" if 挂 else ""))

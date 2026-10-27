@@ -19333,6 +19333,116 @@
       }
     },
     "/api/v1/projects/{project_id}/workflows/{id}/versions/{vid}": {
+      "delete": {
+        "description": "**任何环境正在用的、还有没跑完的运行在用的不能删**;删了只是不在列表里显示,跑过它的运行、出过的发布清单照样能打开(10-27 版本历史照 Dify)",
+        "operationId": "delete_workflows_id_versions_vid",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "删掉一个版本(从列表里藏起来)",
+        "tags": [
+          "工作流"
+        ],
+        "x-字段权限": [],
+        "x-审计": true,
+        "x-权限": "生产审核/发布/回滚"
+      },
       "get": {
         "description": "编辑器「版本与发布」里打开历史版本只读看(交互控件设计 §10.4):**冻结版本不可原地编辑**,要改先「复制为草稿」(那一步走 PATCH 草稿,乐观锁照旧)",
         "operationId": "get_workflows_id_versions_vid",
@@ -19452,6 +19562,135 @@
         "x-字段权限": [],
         "x-审计": false,
         "x-权限": "查看有权配置"
+      },
+      "patch": {
+        "description": "只改名字(记在旁表 workflow_version_marks 上),**版本内容不动**;空名字 = 去掉名字(10-27 版本历史照 Dify)",
+        "operationId": "patch_workflows_id_versions_vid",
+        "parameters": [
+          {
+            "description": "**服务端重新校验项目权限与对象范围** —— 改这个 ID 绕不过授权(§19.1)",
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "**必填**。不要的话就是「最后写的人赢」,而输的那个人看不到自己的改动被覆盖了。不匹配返回 409",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已更新(带新 revision)"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "未认证"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "无权"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "不存在,或按策略隐藏存在性"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "冲突(版本被人改过 / 幂等键同键不同请求)"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "输入无效"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "限额"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "服务问题"
+          }
+        },
+        "summary": "给一个版本起名字",
+        "tags": [
+          "工作流"
+        ],
+        "x-字段权限": [],
+        "x-审计": true,
+        "x-权限": "改编排草稿"
       }
     }
   },

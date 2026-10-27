@@ -349,6 +349,57 @@ c, tk = 打("GET", P + "/chat-takeovers")
 项 = [x for x in tk["items"] if x["workflow_id"] == wid]
 ck("**又生成了新一版但没发布 → 接管清单照旧是生产那一版**(生成 ≠ 上线,这正是这次要堵的)",
    c == 200 and (v2 or {}).get("id") and 项 and 项[0]["版本id"] == v1, (项, (v2 or {}).get("id")))
+
+print("\n▸ ⑫⅛ 版本历史:起名字 / 删除(10-27 照 Dify;名字和删除记在旁表上,冻结版本本身不动)")
+v2id = (v2 or {}).get("id")
+c, b = 打("PATCH", P + f"/workflows/{wid}/versions/{v2id}", "U002", 体={"名称": "旧名字"})
+ck("不带 If-Match 改名字 → 409 IF_MATCH_REQUIRED(两个人同时改名,后存的不许悄悄盖掉)",
+   c == 409 and (b or {}).get("code") == "IF_MATCH_REQUIRED", (c, b))
+c, b = 打("PATCH", P + f"/workflows/{wid}/versions/{v2id}", "U002", 体={"名称": "旧名字"}, 头={"If-Match": "0"})
+c2, b2 = 打("PATCH", P + f"/workflows/{wid}/versions/{v2id}", "U002", 体={"名称": "别人的名字"}, 头={"If-Match": "0"})
+ck("第一次(拿 0)改成功;另一个人也拿着 0 来改 → 409 REVISION_CONFLICT",
+   c == 200 and c2 == 409 and (b2 or {}).get("code") == "REVISION_CONFLICT", (c, b, c2, b2))
+c, b = 打("PATCH", P + f"/workflows/{wid}/versions/{v2id}", "U002", 体={"名称": "到期改成 72 小时"}, 头={"If-Match": str(b["标记revision"])})
+c2, d = 打("GET", P + f"/workflows/{wid}")
+行2 = [x for x in d["版本们"] if x["id"] == v2id]
+ck("编辑者能给版本起名字,详情列表里带着这个名字", c == 200 and 行2 and 行2[0]["名称"] == "到期改成 72 小时", (c, b, 行2))
+c, b = 打("PATCH", P + f"/workflows/{wid}/versions/{v2id}", "U002", 体={"名称": "长" * 41}, 头={"If-Match": "9"})
+ck("名字超过 40 个字 → 422", c == 422, (c, b))
+c, 前 = 打("GET", P + f"/workflows/{wid}/versions/{v2id}")
+ck("起名字不改版本内容:逻辑哈希还是生成时那个", c == 200 and 前["逻辑哈希"] == v2["逻辑哈希"], (前.get("逻辑哈希"), v2.get("逻辑哈希")))
+c, b = 打("DELETE", P + f"/workflows/{wid}/versions/{v1}", "U001")
+ck("**生产 / 预发正在跑的 v1 → 409 VERSION_IN_USE**,不能删", c == 409 and (b or {}).get("code") == "VERSION_IN_USE"
+   and "生产" in (b or {}).get("message", ""), (c, b))
+c, b = 打("DELETE", P + f"/workflows/{wid}/versions/{v2id}", "U002")
+ck("编辑者不能删版本 → 403(删版本和发布同一档权限)", c == 403, (c, b))
+# 造一条停在人工核对里、用着 v2 的运行(照抄一条已有运行,只改 id / 状态 / 指向的版本)—— 验「没跑完的不能删」
+sys.path[:0] = [os.path.join(根, "services", "api", "app")]
+from db import 事务 as _事务0                    # noqa: E402
+from sqlalchemy import text as _text0      # noqa: E402
+假运行 = "xr_e2e_vdel_" + uuid.uuid4().hex[:8]
+with _事务0() as _c:
+    列 = [r[0] for r in _c.execute(_text0("""select column_name from information_schema.columns
+                                            where table_name='execution_runs' order by ordinal_position"""))]
+    换 = {"id": ":新id", "status": "'waiting_approval'", "idempotency_key": ":新id",
+          "definition_ref": "jsonb_set(coalesce(definition_ref, '{}'::jsonb), '{version_id}', to_jsonb(cast(:v as text)))"}
+    _c.execute(_text0(f"""insert into execution_runs ({', '.join(列)})
+                          select {', '.join(换.get(k, k) for k in 列)} from execution_runs
+                           where project_id=:p and kind='workflow' order by created_at desc limit 1"""),
+               {"新id": 假运行, "v": v2id, "p": 项目})
+c, b = 打("DELETE", P + f"/workflows/{wid}/versions/{v2id}", "U001")
+ck("**还有停在人工核对里的运行用着 v2 → 409 VERSION_HAS_LIVE_RUNS**(删了它恢复时找不到图)",
+   c == 409 and (b or {}).get("code") == "VERSION_HAS_LIVE_RUNS", (c, b))
+with _事务0() as _c:
+    _c.execute(_text0("update execution_runs set status='cancelled' where project_id=:p and id=:i"), {"p": 项目, "i": 假运行})
+c, b = 打("DELETE", P + f"/workflows/{wid}/versions/{v2id}", "U001")
+c2, d = 打("GET", P + f"/workflows/{wid}")
+ck("那次运行结束后再删 → 200,列表里不再有 v2", c == 200 and not any(x["id"] == v2id for x in d["版本们"]), (c, b))
+c, 后 = 打("GET", P + f"/workflows/{wid}/versions/{v2id}")
+ck("删掉之后按 id 照样能打开 v2 的图(跑过它的运行要能看当时的图)", c == 200 and 后["逻辑哈希"] == 前["逻辑哈希"], c)
+c, au = 打("GET", P + "/audit-events?limit=50", "U001")
+ck("起名字和删除都记进审计", {"workflow.version.name", "workflow.version.remove"} <= {e["做了什么"] for e in au.get("记录", [])},
+   sorted({e["做了什么"] for e in au.get("记录", [])})[:12])
+
 wid2, _ = 建图("e2e 抢接管")
 c, 版2 = 打("POST", P + f"/workflows/{wid2}/versions", 体={"变更说明": "e2e"})
 发到生产(wid2, 版2["id"])

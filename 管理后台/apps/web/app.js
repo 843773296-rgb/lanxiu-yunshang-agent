@@ -2195,18 +2195,25 @@ async function 画_版本() {
       : 审["审核"] === "驳回" ? `<span class="pill warn">生产审核被驳回</span>`
       : `<span class="pill warn">等生产审核</span>`;
     const 要审 = 审 && !审["生产能发吗"];
-    return `<tr><td><span class="pill">${esc(v["版本"])}</span>${在.map((e) => ` <span class="pill ok">${环境中文[e]}在跑</span>`).join("")}</td>
+    return `<tr data-vrow="${esc(v.id)}"><td><span class="pill">${esc(v["版本"])}</span>${v["名称"] ? ` <b>${esc(v["名称"])}</b>` : ""}${在.map((e) => ` <span class="pill ok">${环境中文[e]}在跑</span>`).join("")}</td>
       <td>${esc(v["变更说明"] || "")}</td><td class="k">${时间(v["冻结于"])}<div>${esc(v["冻结人"] || "")}</div></td>
       <td>${生产态}</td>
       <td class="relacts">${v.id ? ["test", "staging", "production"].map((e) =>
           `<button data-pub="${esc(v.id)}" data-env="${e}" ${在.includes(e) ? "disabled" : ""}>发到${环境中文[e]}</button>`).join(" ") : ""}
         ${要审 ? `<div class="k">生产要先审核这一版:<button data-rv="${esc(审["清单id"])}" data-ok="1">审核通过</button>
           <button data-rv="${esc(审["清单id"])}" data-ok="0">驳回</button></div>` : ""}
-        ${v.id ? `<button data-vview="${esc(v.id)}">只读查看</button>` : ""}</td></tr>`;
+        ${v.id ? `<button data-vview="${esc(v.id)}">只读查看</button>
+          <button data-vname="${esc(v.id)}">${v["名称"] ? "改名字" : "起名字"}</button>
+          <button class="danger" data-vdel="${esc(v.id)}" ${在.length ? `disabled title="${esc(在.map((e) => 环境中文[e]).join("、"))}正在跑这一版,不能删"` : ""}>删除</button>` : ""}</td></tr>`;
   }).join("");
+  // 当前草稿置顶(10-27 照 Dify 版本历史):它不是一个版本,但人想知道「我现在改的这份」在哪、存没存
+  const 草稿行 = `<tr class="draftrow"><td><span class="pill warn">当前草稿</span></td>
+      <td class="k">在「搭建」里改的就是它;生成候选版本之后才会出现在下面</td>
+      <td class="k">${g.revision != null ? `r${esc(String(g.revision))}` : ""}<div>${esc(g.保存态 || "")}</div></td><td></td>
+      <td><a href="#/workflow/${encodeURIComponent(wid)}/${encodeURIComponent("搭建")}">去搭建</a></td></tr>`;
   $("#tabbody").innerHTML = `<div class="cards">${卡}</div>`
-    + (g.版本们.length ? `<table><thead><tr><th>版本</th><th>变更说明</th><th>生成</th><th>生产审核</th><th>发布</th></tr></thead><tbody>${行}</tbody></table>`
-      : `<div class="k">还没生成过候选版本。</div>`)
+    + (g.版本们.length ? `<table><thead><tr><th>版本</th><th>变更说明</th><th>生成</th><th>生产审核</th><th>发布</th></tr></thead><tbody>${草稿行}${行}</tbody></table>`
+      : `<table><tbody>${草稿行}</tbody></table><div class="k">还没生成过候选版本。</div>`)
     + `<div id="vview"></div>
       <div class="note">路径:保存草稿 → 检查配置 → 测试 → <b>生成候选版本</b> → 发到测试 / 预发试用 → <b>审核后发到生产</b>。
         测试、预发直接切;生产只认审核过的那一版。要切回旧版,把旧的那一版再发一次生产(记成一次新的发布,历史不动)。</div>
@@ -2215,8 +2222,39 @@ async function 画_版本() {
   $("#pb").onclick = 弹_准备发布;
   画_定时块(wid);
   document.querySelectorAll("[data-vview]").forEach((b) => { b.onclick = () => 看冻结版本(b.dataset.vview); });
+  document.querySelectorAll("[data-vname]").forEach((b) => { b.onclick = () => 弹_版本起名(b.dataset.vname); });
+  document.querySelectorAll("[data-vdel]").forEach((b) => { b.onclick = () => 做_删版本(b.dataset.vdel); });
   document.querySelectorAll("[data-pub]").forEach((b) => { b.onclick = () => 做_发布工作流(b.dataset.pub, b.dataset.env, 各环境); });
   document.querySelectorAll("[data-rv]").forEach((b) => { b.onclick = () => 做_审核发布(b.dataset.rv, b.dataset.ok === "1"); });
+}
+/* 版本命名 / 删除(10-27 照 Dify 版本历史):名字和「删掉了」记在旁表上,冻结版本本身一个字不改 */
+function 弹_版本起名(vid) {
+  const v = 图态.版本们.find((x) => x.id === vid) || {};
+  弹层(`给 ${esc(v["版本"] || "")} 起名字`, `
+    <label class="f">名字(最多 40 个字;清空 = 去掉名字)</label>
+    <input id="vn-in" value="${esc(v["名称"] || "")}" placeholder="例如:经营报告循环版" maxlength="40">
+    <div class="k">只改名字,版本内容不变。变更说明还是生成时写的那句。</div>
+    <div class="acts"><button class="pri" id="vn-ok">保存</button> <button id="vn-no">取消</button></div>`);
+  $("#vn-no").onclick = 关弹层;
+  $("#vn-ok").onclick = async () => {
+    const 名 = $("#vn-in").value.trim();
+    try {
+      const r = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/versions/${encodeURIComponent(vid)}`, { method: "PATCH",
+        headers: { "If-Match": String(v["标记revision"] ?? 0) }, body: JSON.stringify({ 名称: 名 }) });
+      v["名称"] = 名 || null; v["标记revision"] = r["标记revision"]; 关弹层(); 提示(名 ? `已改名:${名}` : "已去掉名字"); 画_版本();
+    } catch (e) { 报错(e); }
+  };
+}
+async function 做_删版本(vid) {
+  const v = 图态.版本们.find((x) => x.id === vid) || {};
+  if (!(await 问一句(`删掉 ${v["版本"]}${v["名称"] ? "(" + v["名称"] + ")" : ""}?`,
+      "删了之后它<b>不再出现在这张表里</b>,也不能再发到任何环境。跑过它的运行、出过的发布清单照样能打开。<b>不能撤销。</b>",
+      { 确定: "删掉", 取消: "先不" }))) return;
+  try {
+    await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/versions/${encodeURIComponent(vid)}`, { method: "DELETE" });
+    图态.版本们 = 图态.版本们.filter((x) => x.id !== vid);
+    提示(`已删除 ${v["版本"]}`, "跑过它的运行照样能打开。"); 画_版本();
+  } catch (e) { 报错(e); }
 }
 /* 定时(10-26,方案 §8.5):日 / 周 / 月,默认北京时间 8:00,**只跑生产那一版**,以打开它的人的身份跑。
  * 周报周一早上跑、统计上周一到上周日;关机错过的只补最近一期,更早的列在「最近几期」里,要补就手动发起。 */

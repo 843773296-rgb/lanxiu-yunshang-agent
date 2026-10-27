@@ -157,6 +157,11 @@ P = f"{基址}/api/v1/projects/{项目}"
         说明="2026-10-02:旋钮方案的乐观锁。方案号就是 key(它也是文件名),"
              "所以读接口的路径参数是方案号而不是一个 id"),
 
+    "PATCH /workflows/{id}/versions/{vid}": dict(
+        取id=("/workflows?limit=100", "items[0].id"), 挑=("items", "最新冻结版本"),
+        读="/workflows/{id}", 字段="版本们[0].标记revision",
+        说明="2026-10-27 版本命名:比的是旁表 workflow_version_marks 的 revision(还没起过名字是 0),"
+             "不是版本本身的(版本不可变)—— 详情列表每一版带着它"),
     "PATCH /workflows/{id}": dict(
         取id=("/workflows", "items[0].id"),
         读="/workflows/{id}", 字段="revision",
@@ -310,6 +315,11 @@ def main():
         if "{id}" in cfg["读"]:
             列路, id路 = cfg["取id"]
             体 = 打(列路, 项目覆盖=项)
+            if cfg.get("挑") and isinstance(体, dict):
+                # 列表里按某个字段挑第一个**有它的**(10-27 版本命名:按更新时间排第一的流程常常一个版本都没有,
+                # 取 items[0] 会「拿不到」—— 那是挑错了样本,不是界面拿不到)
+                键, 字 = cfg["挑"]
+                体 = {键: [x for x in (体.get(键) or []) if isinstance(x, dict) and x.get(字)]}
             ok, 值, 断 = 走(体 or {}, id路)
             if not ok:
                 # ⚠️ **拿不到 id ≠ 通过。** 列表是空的时候这一条什么都没验到,
