@@ -60,7 +60,10 @@
 和一条工作流的「日志」页签。顺手修了运行列表总数漏 workflow_id 筛选。全局「运行记录」(#/runs,走 /traces)**没做翻页**。
 开关监督已做:工作台「开关」一块(GET /switches)+ tools/takeover_effect_check.py(要 agentsite venv,真调聊天站代码核对接管)
 + 管理后台/tools/switch_registry_check.py(挂 make contract)。**新加一种开关:写 _审计 + 登记进 workflows_api.开关们**,否则门禁红。
-技能放行 / 工具停用的核对归对端(已告诉它,核对脚本挂不挂夜跑由它定)。
+技能放行 / 工具停用的核对归对端。对端 10-28:takeover_effect_check 它挂 check.sh(agentsite venv),不进夜跑。
+🔮 放行接到工作台要对端先出只读口(管理后台进程 import 不了 sdk / guards)。**接的时候放行状态和来源必须一起显示**:
+没登记过的默认「自有 = 已发布、第三方 = 待审查」(sdk.py:637),只显示 skill_cfg 会对第三方说反话。
+真挂了哪些:`sdk.skills_for('own')`;为什么没挂:`guards._skill_registry().放行吗()` + `skills_own.is_ours()`。
 **下一个:Agent 详情换侧栏**(现在还是页内按钮切页签),再之后聊天助手配置页(店长任务助手试点)。
 之后:聊天助手配置页 → 聊天助手配置页(店长任务助手试点)。
 ⚠️ 二期「聊天内审核」要改聊天站(agentsite),**并行会话 10-27 夜在那边摘 sdk.py 做实验**,先问它再碰。
