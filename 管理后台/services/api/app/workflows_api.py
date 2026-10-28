@@ -2557,6 +2557,7 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
     "release.deploy": ("生产版本", "聊天接管和定时跑的就是生产指着的那一版"),
     "release.rollback": ("生产版本(回滚)", "同上:回滚 = 把生产指针切回旧的那一版"),
     "workflow.schedule": ("定时", "到点以设置人的身份跑生产版"),
+    "chat_assistant.deploy": ("聊天助手生产版本", "⚠️ 第 1 步聊天站还没读它 —— 现在改了线上不变;第 2 步接上之后,聊天站用的就是生产指着的那一版"),
 }
 # 也改线上行为、但开关不在这个后台的 —— 摆出来写明在哪、归谁,不装作没有
 别处的开关 = [
@@ -2618,12 +2619,17 @@ def 开关现状(project_id: str, me: 身份 = Depends(要权限("查看有权�
             新 = t.get("release_id") or t.get("到")
             对象 = 版[新][1] if 新 in 版 else "(清单已不在)"
             从, 到 = 版本说(t.get("从")), 版本说(新)
-        else:     # workflow.schedule
+        elif a == "chat_assistant.deploy":
+            # 原来这里只有三种,最后一支 else 就是定时 —— 加第四种不单开一支,它会被翻成一条乱码的定时记录
+            对象, 从, 到 = t.get("名称") or t.get("角色键"), t.get("之前") or "还没指定", t.get("之后")
+        elif a == "workflow.schedule":
             规 = t.get("规则") or {}
             对象 = 名.get(t.get("workflow_id"), t.get("workflow_id"))
             到 = ("开 · " if t.get("开着") else "关 · ") + f"{规.get('周期', '')} {规.get('时刻', '')}".strip()
             从 = ("(这条审计早于记「之前」)" if "之前" not in t else "还没设过" if not 前
                  else ("开 · " if 前.get("开着") else "关 · ") + f"{前.get('周期', '')} {str(前.get('时刻', ''))[:5]}")
+        else:     # 登记了却没在这里写怎么翻的 —— 照实摆原始内容,不猜成别的那几种
+            对象, 从, 到 = a, "(这种开关还没写怎么显示)", json.dumps(t, ensure_ascii=False)[:120]
         变动.append({"时间": r["at"].isoformat() if r["at"] else None, "谁": r["actor"], "开关": 开关们[a][0],
                      "对象": 对象, "从": 从, "到": 到, "理由": r["reason"]})
     return {

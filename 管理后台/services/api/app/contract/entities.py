@@ -806,6 +806,30 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
       依赖=["agents", "prompt_versions", "connection_versions",
           "tool_selection_policy_versions"]),
 
+    # ②' 聊天助手(用户 2026-10-28 拍「分两步」)—— 澜绣聊天站上的那几个角色助手
+    E("chat_assistants", "聊天助手", 项目级, 可改,
+      ["role_key", "name", "purpose", "definition", "draft_revision",
+       "production_version_no", "production_set_at", "production_set_by", "status"],
+      ["**一个角色一行**(role_key = 聊天站 sdk.py 里的角色键,店长助手是 `task`;库里唯一约束)",
+       "**第 1 步只到后台这一半**:看 / 改 / 出版本 / 审核上生产。聊天站**还没读它**,"
+       "聊天现在用的仍是代码里那一份 —— 页面必须明写,否则「后台显示的」会被当成「在跑的」",
+       "生产指针存**版本号**不存版本 id:版本挂在助手下面,助手再用外键指回版本就成了互指。"
+       "代价:「指着的版本存在」靠服务端在改指针时验,**库里不拦**",
+       "改生产指针只许「生产审核/发布/回滚」,并记审计 `chat_assistant.deploy`(工作台「开关」那块看得见)"]),
+    E("chat_assistant_versions", "聊天助手版本", 子对象, 不可变,
+      ["chat_assistant_id", "version_no", "head_template", "foot_template", "tools",
+       "model_name", "rule_pool_ids", "rule_ids", "skill_snapshot", "prompt_snapshot",
+       "source_kind", "source_hash", "content_hash", "change_note"],
+      ["**v0 是从代码里算出来的基线**(source_kind=代码导入):调聊天站自己的 `prompts.assemble`,"
+       "不在后台照样子重写一份 —— 否则基线本身就可能和在跑的那份不一样",
+       "规矩**不另存正文**:rule_pool_ids 是这个角色的候选规矩(按代码里的顺序),"
+       "rule_ids 是按开着的工具挑出来的那几条;正文取后台导入的规矩(一条一个 Prompt),和铁律那页是同一份",
+       "后台编辑出的版本,rule_ids 是**按后台导入的规矩推算**的(同一条挑法:needs 全挂上、avoid 一个都没挂)。"
+       "推算 ≠ 聊天站真装上的,第 2 步的核对口才验得了",
+       "**技能被调起时另带一份规矩**(SKILL.md 自己定的格式 / 段名),不在这一版里 —— skill_snapshot 只记当时放行了哪些",
+       "content_hash 只算会改变模型收到什么的东西(开头 / 结尾 / 工具 / 模型 / 挑出的规矩),变更说明不进哈希"],
+      依赖=["chat_assistants"]),
+
     # ③ 工具 / 连接 / 指南 / 规则
     E("tool_definitions", "工具", 项目级, 可改,
       ["name", "purpose", "side_effect_type", "adapter", "owner", "draft_revision",

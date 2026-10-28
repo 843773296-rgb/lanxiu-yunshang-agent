@@ -87,6 +87,11 @@ P = f"{基址}/api/v1/projects/{项目}"
     "PATCH /agents/{id}/draft": dict(
         取id=("/agents", "items[0].id"),
         读="/agents/{id}", 字段="草稿.revision"),
+    # 聊天助手(2026-10-28)在 project_lanxiu(规矩导在那儿);含测试=true —— CI 新库里只有 e2e 那一个,
+    # 它在 test-e2e-ci 里排在这条前面(test_chat_assistant_flow 建的)
+    "PATCH /chat-assistants/{id}/draft": dict(
+        取id=("/chat-assistants?%E5%90%AB%E6%B5%8B%E8%AF%95=true", "items[0].id"),   # 参数名要编码:curl 发裸中文后台解析不了
+        读="/chat-assistants/{id}", 字段="草稿.revision", 项目="project_lanxiu"),
     "POST /human-requests/{id}/decisions": dict(
         取id=("/human-requests", "items[0].id"),
         读="/human-requests/{id}", 字段="请求.revision"),

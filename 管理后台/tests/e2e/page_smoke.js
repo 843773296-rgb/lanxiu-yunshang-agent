@@ -238,6 +238,8 @@ setTimeout(() => {
     // 「全部」页签同时画工作流和 Agent 两种卡片;这里对工作流那一份(Agent 那份由 #/studio/agent 对)
     "#/studio/all": { 接口: "/workflows", 列表: "items" },
     "#/studio/agent": { 接口: "/agents", 列表: "items" },
+    // 聊天助手页签(10-28):一个岗位一张卡,不分页
+    "#/studio/chat": { 接口: "/chat-assistants", 列表: "items" },
     "#/studio/app": { 接口: "/applications", 列表: "应用" },
     "#/integrations/models": { 接口: "/model-connections", 列表: "连接" },
     "#/integrations/tools": { 接口: "/tools", 列表: "items" },

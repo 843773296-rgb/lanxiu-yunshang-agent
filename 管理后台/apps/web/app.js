@@ -135,7 +135,7 @@ const 导航 = [
 // 「应用与发布」不是一种应用类型(它答的是「哪一版在给用户跑」),放在最右
 const 工作室类型 = [["all", "全部", (pg) => 页_工作室("all", pg)], ["workflow", "工作流", (pg) => 页_工作室("workflow", pg)],
   ["chatflow", "对话流", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
-  ["chat", "聊天助手", null, "澜绣聊天站里的各个岗位助手;先拿店长任务助手试点,配置页还在做"],
+  ["chat", "聊天助手", (pg) => 页_工作室("chat", pg)],
   ["agent", "Agent", (pg) => 页_工作室("agent", pg)],
   ["completion", "文本生成", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
   ["app", "应用与发布", () => 页_应用与发布()]];
@@ -833,7 +833,8 @@ function 挂页码(根, 去) { 根.querySelectorAll(".pager [data-pg]").forEach(
 const 应用类型 = [
   ["workflow", "工作流", "流", "按固定步骤跑的流程:每一步用什么、数据从哪来都事先定好。", () => 弹_新建工作流()],
   ["chatflow", "对话流", "话", "带记忆的多轮对话,每一轮按固定步骤跑。", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
-  ["chat", "聊天助手", "聊", "澜绣聊天站里的岗位助手(店长、顾问…):改提示词、选模型和工具。", null, "配置页还在做,先拿店长任务助手试点"],
+  ["chat", "聊天助手", "聊", "澜绣聊天站里的岗位助手(店长、顾问…):改提示词、选模型和工具。", null,
+    "聊天助手不在这里新建 —— 它们是聊天站代码里的岗位,用 tools/import_chat_assistant.py 导进来(先导了店长助手)"],
   ["agent", "Agent", "智", "模型自己决定下一步做什么,程序校验、执行、记录和限制它。", () => 弹_新建agent()],
   ["completion", "文本生成", "文", "给一段输入,出一段文字,没有多轮对话。", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
 ];
@@ -876,23 +877,29 @@ async function 页_工作室(类, 页) {
       <div class="sub">这个项目里的应用:按固定步骤跑的工作流、模型自己决定下一步的 Agent,以及聊天站里的岗位助手。</div></div></div>
     <div id="list"><div class="state">加载中…</div></div>`;
   try {
-    const [流, 智] = await Promise.all([类 !== "agent" ? 请求(`${P()}/workflows?page=${页}`) : null,
-                                        类 !== "workflow" ? 请求(`${P()}/agents?page=${页}`) : null]);
+    const [流, 智, 聊] = await Promise.all([["all", "workflow"].includes(类) ? 请求(`${P()}/workflows?page=${页}`) : null,
+                                        ["all", "agent"].includes(类) ? 请求(`${P()}/agents?page=${页}`) : null,
+                                        // 聊天助手一个岗位一个,不分页:只在第 1 页摆
+                                        ["all", "chat"].includes(类) && 页 === 1 ? 请求(`${P()}/chat-assistants`) : null]);
     // 「全部」两种各翻各的同一页码:页数取大的那个,翻过了一种的尾页,那一种这页就没有卡(下面的说明写着各几条)
     const 们 = [流, 智].filter(Boolean);
     const 翻 = { 页, 页数: 们.some((d) => d["页数"] == null) ? null : Math.max(...们.map((d) => d["页数"])),
                 total: 们.some((d) => d.total == null) ? null : 们.reduce((a, d) => a + d.total, 0) };
-    const 卡们 = [...((流 && 流.items) || []).map(卡_工作流), ...((智 && 智.items) || []).map(卡_agent)];
+    const 卡们 = [...((聊 && 聊.items) || []).map(卡_聊天助手), ...((流 && 流.items) || []).map(卡_工作流),
+                 ...((智 && 智.items) || []).map(卡_agent)];
     const 新 = `<button class="appcard new" id="new"><b>+ 创建应用</b>
         <span class="k">选一种类型:工作流 / 对话流 / 聊天助手 / Agent / 文本生成</span></button>`;
     // 空的时候也要一句人话(冒烟对账按结构判:state 块带标题和说明)
-    const 空 = 卡们.length || 页 > 1 ? "" : 状态("", 类 === "agent" ? "还没有 Agent" : 类 === "workflow" ? "还没有工作流" : "还没有应用",
-      "点「创建应用」选一种类型。工作流从模板起(音频整理 / 文本处理 / 空白);模板**只预填草稿** —— 不调模型、不绑生产环境。").html;
+    const 空 = 卡们.length || 页 > 1 ? "" : 状态("", 类 === "agent" ? "还没有 Agent" : 类 === "workflow" ? "还没有工作流"
+        : 类 === "chat" ? "还没有聊天助手" : "还没有应用",
+      类 === "chat" ? "聊天助手不在这里新建 —— 它们是聊天站代码里的岗位,用 tools/import_chat_assistant.py 导进来(店长助手导在「澜绣」项目里)。"
+        : "点「创建应用」选一种类型。工作流从模板起(音频整理 / 文本处理 / 空白);模板**只预填草稿** —— 不调模型、不绑生产环境。").html;
     $("#list").innerHTML = `${空}<div class="appcards">${新}${卡们.join("")}</div>${页码条(翻)}
       <div class="note">${[[流, "工作流"], [智, "Agent"]].filter((x) => x[0]).map(([d, 名]) =>
           `${名} ${d.total != null ? `共 ${d.total}` : "总数不知道"}(这一页 ${d.items.length})`).join(" · ")}。
         「线上(生产)」之外的版本都只是<b>候选</b> —— 要在「版本与发布」里发到生产(生产要审核)才算上线。
         ${流 ? "<br>「聊天里」<b>默认交给 harness</b>(聊天站的技能自己做);打开接管后改为发起这条工作流<b>生产环境里的那一版</b>,同一个技能同时只能被一条工作流接管。" : ""}
+        ${聊 ? `<br>聊天助手:${md(聊.note)}` : ""}
         ${智 ? "<br>Agent 的「候选工具」数只表示授权候选集合的规模 —— 规格 §9.1 明写<b>不按工具数量给 Agent 打能力强弱分</b>。" : ""}</div>`;
     $("#new").onclick = 弹_新建应用;
     挂页码($("#list"), (n) => { location.hash = `#/studio/${类}/${n}`; });
@@ -6970,6 +6977,138 @@ async function 页_模型产物() {
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
 }
 
+/* ── 聊天助手(10-28,用户拍「分两步」)───────────────────────────────────────────────
+ * 第 1 步只到后台这一半:看 / 改 / 出版本 / 上生产。**聊天站还没读这里** —— 每一屏顶上都写明,
+ * 否则「这里显示的」会被当成「聊天站在跑的」。和 Agent 一样页签是页内状态(没存的改动挂在 聊态 上) */
+let 聊态 = null;
+function 卡_聊天助手(r) {
+  const 链 = `#/chat/${encodeURIComponent(r.id)}`;
+  return `<div class="appcard" data-kind="chat" data-id="${esc(r.id)}">
+    <div class="ah"><span class="ico ch">聊</span><div class="an"><a href="${链}"><b>${esc(r["名称"])}</b></a>
+      <div class="k">聊天助手 · 角色 ${esc(r["角色键"])}</div></div><span class="pill warn">还没接到聊天站</span></div>
+    <div class="ad">${esc(r["用途"] || "还没写用途")}</div>
+    <div class="k">最新版本:${r["最新版本"] ? esc(r["最新版本"]) : "还没有"} · ${r["工具数"]} 个工具开着</div>
+    <div class="k">生产:${r["生产版本"] ? `<b>${esc(r["生产版本"])}</b>` : "还没指定"}
+      <span class="stale">聊天现在用的仍是代码里那一份</span></div>
+    <div class="af"><span class="grow"></span><a href="${链}">配置</a></div>
+  </div>`;
+}
+
+async function 页_聊天助手(cid) {
+  const d = await 请求(`${P()}/chat-assistants/${encodeURIComponent(cid)}`);
+  聊态 = { cid, ...d, 改: JSON.parse(JSON.stringify(d["草稿"]["配置"])), 脏: false,
+           Tab: (聊态 && 聊态.cid === cid && 聊态.Tab) || "编排" };
+  画_聊天助手();
+}
+
+function 画_聊天助手() {
+  const g = 聊态;
+  $("#side").innerHTML = `<a class="back" href="#/studio/chat">← 工作室</a>
+    <div class="apphead"><span class="ico ch">聊</span><div class="an"><b>${esc(g["名称"])}</b><div class="k">聊天助手</div></div></div>
+    ${["编排", "版本"].map((t) => `<a href="#" data-ctab="${t}"${g.Tab === t ? ' class="on"' : ""}>${t}</a>`).join("")}
+    <div class="grp">还没做</div><a class="todo" title="第 2 步:聊天站读后台这一版,并核对「后台这一版 == 模型真收到的」">接到聊天站</a>`;
+  $("#side").querySelectorAll("[data-ctab]").forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); 聊态.Tab = a.dataset.ctab; 画_聊天助手(); };
+  });
+  const 同 = g["草稿"]["和哪一版一样"];
+  $("#main").innerHTML = `<div class="head"><div><h1>${esc(g["名称"])}</h1>
+      <div class="sub">角色 ${esc(g["角色键"])} · 草稿 r${g["草稿"]["revision"]} · ${同 ? `和 ${esc(同)} 一样` : "<b>有没出版本的改动</b>"}
+        · 生产:${g["生产版本"] ? esc(g["生产版本"]) : "还没指定"}
+        ${g.脏 ? ' <span class="stale">有未保存的改动</span>' : ""}</div></div>
+      <div>${g.Tab === "编排" ? '<button id="c-save" class="pri">保存草稿</button>' : '<button id="c-ver" class="pri">出版本</button>'}</div></div>
+    <div class="err" id="c-notlive" style="padding:10px;margin-bottom:12px">${md(g.note)}</div>
+    <div id="body"></div>`;
+  if (g.Tab === "编排") { 画_聊天编排(); $("#c-save").onclick = 做_存聊天助手; }
+  else { 画_聊天版本(); $("#c-ver").onclick = 做_出聊天版本; }
+}
+
+function 画_聊天编排() {
+  const g = 聊态, c = g.改, 写 = (c["工具"] || []).filter((t) => t["写"]), 读 = (c["工具"] || []).filter((t) => !t["写"]);
+  const 勾 = (t) => `<label class="k" style="display:inline-block;min-width:260px"><input type="checkbox" data-tool="${esc(t["名"])}"
+      ${t["开"] ? "checked" : ""}> <code>${esc(t["名"].split("__").pop())}</code></label>`;
+  const 规 = g["规矩"];
+  $("#body").innerHTML = `<div class="card"><h4>开头提示词</h4>
+      <textarea id="c-head" rows="8" style="width:100%">${esc(c["开头"] || "")}</textarea>
+      <h4>结尾</h4><textarea id="c-foot" rows="2" style="width:100%">${esc(c["结尾"] || "")}</textarea>
+      <div class="note">模型收到的是:开头 + 下面那几条规矩(按开着的工具挑)+ 结尾。</div></div>
+    <div class="card"><h4>模型</h4><select id="c-model">${(g["草稿"]["可选模型"] || []).map((m) =>
+        `<option value="${esc(m)}"${m === c["模型"] ? " selected" : ""}>${esc(m)}</option>`).join("")}</select>
+      <div class="note">清单从聊天站带过来(有单价的才在里面)。聊天页上的人仍能临时换,这里定的是这个助手的默认。</div></div>
+    <div class="card" id="c-tools"><h4>工具(${(c["工具"] || []).filter((t) => t["开"]).length} / ${(c["工具"] || []).length} 开着)</h4>
+      <div><b>写入类 ${写.length} 个</b> <span class="pill warn">会改业务数据</span></div><div>${写.map(勾).join("")}</div>
+      <div style="margin-top:8px"><b>只读 ${读.length} 个</b></div><div>${读.map(勾).join("")}</div>
+      <div class="note">只能在聊天站这个角色挂的工具里开关 —— 后台加不出别的。关掉一个工具,跟着它的规矩也不再带上(保存后重新推算)。</div></div>
+    <div class="card" id="c-rules"><h4>随工具带上的规矩(${规["装上"].length} 条,只读)</h4>
+      <div class="note">${md(规["说明"])}</div>
+      ${规["后台没有的"].length ? `<div class="err">这几条后台还没导进来:${esc(规["后台没有的"].join("、"))}</div>` : ""}
+      <table class="swlog"><tr><th>编号</th><th>类</th><th>跟着哪些工具</th><th>正文</th></tr>
+      ${规["装上"].map((r) => `<tr><td>${esc(r["编号"])}</td><td>${esc(r["范围"] || "")}</td>
+        <td class="k">${esc((r["跟着哪些工具"] || []).join("、") || "(总带着)")}</td>
+        <td><details><summary>${esc(r["正文"].slice(0, 40))}…</summary><div class="k">${esc(r["正文"])}</div></details></td></tr>`).join("")}</table></div>
+    <div class="card"><h4>技能</h4><div class="k">当时放行的 ${(g["技能"]["当时放行的"] || []).length} 个:
+      ${esc((g["技能"]["当时放行的"] || []).join("、"))}</div><div class="note">${md(g["技能"]["说明"])}</div></div>`;
+  const 标脏 = () => { if (!聊态.脏) { 聊态.脏 = true; const s = $(".head .sub"); if (s) s.insertAdjacentHTML("beforeend", ' <span class="stale">有未保存的改动</span>'); } };
+  $("#c-head").oninput = (e) => { c["开头"] = e.target.value; 标脏(); };
+  $("#c-foot").oninput = (e) => { c["结尾"] = e.target.value; 标脏(); };
+  $("#c-model").onchange = (e) => { c["模型"] = e.target.value; 标脏(); };
+  $("#c-tools").querySelectorAll("[data-tool]").forEach((b) => {
+    b.onchange = () => { c["工具"].find((t) => t["名"] === b.dataset.tool)["开"] = b.checked; 标脏(); };
+  });
+}
+
+function 画_聊天版本() {
+  const g = 聊态;
+  $("#body").innerHTML = `<div class="card"><table class="swlog" id="c-vers">
+    <tr><th>版本</th><th>来源</th><th>模型</th><th>工具</th><th>规矩</th><th>变更说明</th><th>出版本</th><th>生产</th></tr>
+    ${g["版本们"].map((v) => `<tr data-v="${esc(v["版本"])}"><td><b>${esc(v["版本"])}</b> <span class="k">${esc(v["内容哈希"])}</span></td>
+      <td>${esc(v["来源"])}</td><td class="k">${esc(v["模型"])}</td><td>${v["工具数"]}</td><td>${v["规矩数"]}</td>
+      <td>${esc(v["变更说明"] || "")}</td><td class="k">${时间(v["冻结于"])} ${esc(v["冻结人"] || "")}</td>
+      <td>${v["生产"] ? '<span class="pill ok">生产</span>' : `<button class="mini" data-prod="${esc(v["版本"].slice(1))}">上生产</button>`}</td></tr>`).join("")}
+    </table><div class="note">「代码导入」= 从聊天站代码里算出来的那一份(导入那一刻和在跑的一样);「后台编辑」= 在这里改了出的版本。
+      上生产要「生产审核」权限,工作台「开关」那块记着谁什么时候把哪一版换成了哪一版。</div></div>`;
+  $("#c-vers").querySelectorAll("[data-prod]").forEach((b) => { b.onclick = () => 做_聊天上生产(+b.dataset.prod); });
+}
+
+async function 做_存聊天助手() {
+  const g = 聊态;
+  try {
+    await 请求(`${P()}/chat-assistants/${encodeURIComponent(g.cid)}/draft`, { method: "PATCH",
+      headers: { "If-Match": String(g["草稿"]["revision"]) }, body: JSON.stringify({ 配置: g.改 }) });
+    await 页_聊天助手(g.cid);
+  } catch (e) {
+    if (e.码 === 409) { await 页_聊天助手(g.cid); 提示("别人刚改过", `${md(e.message)}<br>下一步:${md(e.体?.advice || "看一眼最新内容再改")}`); return; }
+    报错(e);
+  }
+}
+
+function 做_出聊天版本() {
+  弹层("出版本", `<label class="f">变更说明(这一版改了什么、为什么)</label><input id="cv-n">
+    <div class="note">出版本<b>不等于上生产</b>;而且第 1 步聊天站还没读这里,上了生产线上也不变。</div>
+    <div class="acts"><button class="pri" id="cv-ok">出版本</button> <button id="cv-no">取消</button></div>`);
+  $("#cv-no").onclick = 关弹层;
+  $("#cv-ok").onclick = async () => {
+    try {
+      await 请求(`${P()}/chat-assistants/${encodeURIComponent(聊态.cid)}/versions`, { method: "POST",
+        body: JSON.stringify({ 变更说明: $("#cv-n").value.trim() }) });
+      关弹层(); await 页_聊天助手(聊态.cid);
+    } catch (e) { 报错(e); }
+  };
+}
+
+function 做_聊天上生产(号) {
+  弹层(`把生产换成 v${号}`, `<label class="f">理由(进审计)</label><input id="cp-r">
+    <div class="note">${md(聊态.note)}</div>
+    <div class="acts"><button class="pri" id="cp-ok">上生产</button> <button id="cp-no">取消</button></div>`);
+  $("#cp-no").onclick = 关弹层;
+  $("#cp-ok").onclick = async () => {
+    try {
+      await 请求(`${P()}/chat-assistants/${encodeURIComponent(聊态.cid)}/production`, { method: "POST",
+        body: JSON.stringify({ 版本号: 号, 理由: $("#cp-r").value.trim() || null }) });
+      关弹层(); await 页_聊天助手(聊态.cid);
+    } catch (e) { 报错(e); }
+  };
+}
+
 async function 路由() {
   if (离开拦截()) return;
   if (!location.hash.startsWith("#/workflow/")) document.body.classList.remove("wf-full");   // 只有编排页是全屏
@@ -7000,6 +7139,7 @@ async function 路由() {
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
     if (h.startsWith("#/wfrun/")) return await 页_运行详情(decodeURIComponent(h.slice(8)));
     if (h.startsWith("#/agent/")) return await 页_agent配置(decodeURIComponent(h.slice(8)));
+    if (h.startsWith("#/chat/")) return await 页_聊天助手(decodeURIComponent(h.slice(7)));
     if (h.startsWith("#/tool/")) return await 页_工具详情(decodeURIComponent(h.slice(7)));
     if (h === "#/usage") return await 页_用量与成本();
     if (h === "#/uploads") return await 页_加资料();

@@ -282,6 +282,9 @@ _额外唯一 = {
     "workflow_schedules": [("project_id", "workflow_id")],
     # 一个版本一行标记 —— 两行的话「它叫什么、删没删」各说各的
     "workflow_version_marks": [("project_id", "version_id")],
+    # 聊天助手一个角色一行 —— 两行的话聊天站(第 2 步)不知道该读哪一行
+    "chat_assistants": [("project_id", "role_key")],
+    "chat_assistant_versions": [("project_id", "chat_assistant_id", "version_no")],
     # 执行故障上报(2026-10-25):一轮只一张单 —— 聊天站同一轮会推不止一次
     "trace_incidents": [("project_id", "trace_id")],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,

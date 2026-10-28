@@ -15,6 +15,7 @@ import json
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 
 基址 = os.environ.get("AIMC_BASE", "http://127.0.0.1:8801")
@@ -470,11 +471,13 @@ def main():
         # 现在 请求() 换过页就不交回读数据的结果 —— 这里故意切得快,验它
         d.get(基址 + "/#/studio/chat")
         try:
-            等(d, lambda: "这一类还没接上" in d.find_element(By.ID, "main").text)
+            等(d, lambda: "还没有聊天助手" in d.find_element(By.ID, "main").text)
         except TimeoutError:
             pass          # 被上一页晚到的渲染盖掉时等不到 —— 交给下面那条判,红在点名的那一条上,不让整份崩
         time.sleep(1.5)   # 再给上一页晚到的数据一点时间:守卫坏了的话,它会在这段时间里把这页盖掉
-        ck("还没接上的类型(聊天助手)页签在、点进去写明为什么", "店长任务助手" in d.find_element(By.ID, "main").text, d.find_element(By.ID, "main").text[:120])
+        # 10-28 聊天助手页签接上了:演示项目里一个都没有 → 空状态要说清「不在这里新建、从哪导」(而不是「点创建应用」)
+        ck("聊天助手页签(演示项目里没有)→ 写明不在这里新建、用导入脚本导;没被上一页晚到的数据盖掉",
+           "import_chat_assistant" in d.find_element(By.ID, "main").text, d.find_element(By.ID, "main").text[:120])
         print("\n▸ 工作室卡片(10-28):全部 = 工作流 + Agent 的卡;创建应用先选五种类型")
         d.get(基址 + "/#/studio")
         等(d, lambda: js("return location.hash") == "#/studio/all" and bool(js("return document.querySelector('.appcards')")))
@@ -600,6 +603,41 @@ def main():
            and js("return agent态.Tab === '调试' && agent态.脏 === true"), [js("return location.hash"), 前址])
         js("agent态.脏 = false")
         ck("离开工作室 / 集成,页签那一条收起来", js("return document.getElementById('subnav').hidden") is True)
+
+        print("\n▸ 聊天助手配置页(10-28 第 1 步):顶上写明还没接到聊天站;工具 / 规矩 / 版本都和接口对得上")
+        # 聊天助手在 project_lanxiu(规矩导在那儿),要换项目、换管理员再重新载入 —— 页面只在载入时读一次项目
+        req = urllib.request.Request(基址 + "/api/v1/projects/project_lanxiu/chat-assistants?" + urllib.parse.quote("含测试") + "=true",
+                                     headers={"X-Dev-User": "U001"})
+        聊们 = json.loads(urllib.request.urlopen(req, timeout=20).read())["items"]
+        ck(f"有聊天助手可看({len(聊们)} 个;没有就先跑 import_chat_assistant.py 或 test_chat_assistant_flow.py)", bool(聊们))
+        if 聊们:
+            cid = 聊们[0]["id"]
+            req = urllib.request.Request(基址 + f"/api/v1/projects/project_lanxiu/chat-assistants/{cid}",
+                                         headers={"X-Dev-User": "U001"})
+            详 = json.loads(urllib.request.urlopen(req, timeout=20).read())
+            js("localStorage.setItem('aimc.user','U001');localStorage.setItem('aimc.proj','project_lanxiu');")
+            d.get(基址 + f"/#/chat/{cid}"); d.refresh()
+            try:
+                等(d, lambda: bool(js("return document.querySelector('#c-rules')")))
+            except TimeoutError:
+                pass
+            聊 = js("""return {横幅: (document.getElementById('c-notlive') || {}).textContent || '',
+                             项: [...document.querySelectorAll('#side a[data-ctab]')].map(a => a.textContent),
+                             亮: (document.querySelector('#side a.on') || {}).textContent,
+                             勾: document.querySelectorAll('#c-tools [data-tool]').length,
+                             规: document.querySelectorAll('#c-rules tr').length - 1}""")
+            ck("顶上写明「还没接到聊天站」;侧栏 编排 / 版本,编排亮着", "还没接到聊天站" in 聊["横幅"]
+               and 聊["项"] == ["编排", "版本"] and 聊["亮"] == "编排", 聊)
+            ck(f"工具勾选框 {聊['勾']} 个 == 接口 {len(详['草稿']['配置']['工具'])};规矩 {聊['规']} 行 == 接口 {len(详['规矩']['装上'])}",
+               聊["勾"] == len(详["草稿"]["配置"]["工具"]) and 聊["规"] == len(详["规矩"]["装上"]), 聊)
+            前址 = js("return location.hash")
+            try:
+                d.find_element(By.CSS_SELECTOR, '#side a[data-ctab="版本"]').click(); time.sleep(0.4)
+            except Exception:
+                pass
+            ck(f"点「版本」→ 地址没变,版本表 {len(详['版本们'])} 行和接口对得上",
+               js("return location.hash") == 前址 and js("return document.querySelectorAll('#c-vers tr[data-v]').length") == len(详["版本们"]))
+            js(f"localStorage.setItem('aimc.user','{我}');localStorage.setItem('aimc.proj','{项目}');")
     finally:
         d.quit()
     print(f"\n{'❌' if 挂 else '✅'} 流程图编辑器真浏览器 {过[0]} 条过" + (f",挂 {len(挂)} 条:{' / '.join(挂)}" if 挂 else ""))

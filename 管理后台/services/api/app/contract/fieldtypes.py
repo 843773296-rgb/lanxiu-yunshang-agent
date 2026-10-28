@@ -341,6 +341,11 @@
     # 工作流定时(2026-10-26):周期 / 时刻 / 时区 / 以谁的身份 —— 少一样都算不出该不该发起、以谁发起
     # 版本标记(2026-10-27):标在哪一条流程的哪一版上 —— 少一样就不知道藏的是谁
     "workflow_version_marks": {"workflow_id", "version_id"},
+    # 聊天助手(2026-10-28):哪个角色 —— 少了它就不知道后台这一行管的是聊天站上的谁
+    "chat_assistants": {"role_key", "name"},
+    # 聊天助手版本:开头 / 工具 / 模型 / 从哪来 / 哈希 —— 少一样就说不清「模型收到的是什么」
+    "chat_assistant_versions": {"chat_assistant_id", "version_no", "head_template", "tools",
+                                "model_name", "source_kind", "content_hash"},
     "workflow_schedules": {"workflow_id", "cadence", "fire_time", "timezone", "schedule_enabled", "principal",
                            "input_snapshot"},
     # 检索试跑记录(2026-10-08):这五列**一列都不能空**,否则那一行没有用 ——
