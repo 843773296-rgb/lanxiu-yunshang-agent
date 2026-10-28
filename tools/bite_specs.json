@@ -10394,8 +10394,8 @@
   "file": [
    {
     "path": "agent/triage_pipeline_eval.py",
-    "old": "        if w and (层 != \"段首\" or 是定下的(w, t)):",
-    "new": "        if w:"
+    "old": "    定了 = [w for w in 命中(第一句) if 是定下的(w, 第一句)]",
+    "new": "    定了 = 命中(第一句)"
    }
   ],
   "预期红": "⑥段首在讲规则"
@@ -14044,5 +14044,53 @@
    }
   ],
   "预期红": "逐条一致"
+ },
+ {
+  "script": "agent/triage_pipeline_eval.py --自测读法",
+  "改坏": "把 建议段名们() 改成只认 TK04 那一个(技能那套段名不认了)",
+  "file": [
+   {
+    "path": "agent/triage_pipeline_eval.py",
+    "old": "    return (\"建议动作\", \"处置建议\")",
+    "new": "    return (\"建议动作\",)"
+   }
+  ],
+  "预期红": "⑧用的是**技能那套段名**"
+ },
+ {
+  "script": "agent/triage_pipeline_eval.py --自测读法",
+  "改坏": "段首有两个「定下的」时取最靠后的那个(主档和附加对调)",
+  "file": [
+   {
+    "path": "agent/triage_pipeline_eval.py",
+    "old": "        出.update(主档=定了[0], 附加=定了[1:],",
+    "new": "        出.update(主档=定了[-1], 附加=定了[:-1],"
+   }
+  ],
+  "预期红": "⑨段首把两种"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把 _读不出按原因 里「没有答复可读」那一支的 continue 去掉(没答复的也被当成读法问题)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "            没答复.append(x[\"pkg_id\"])\n            continue",
+    "new": "            没答复.append(x[\"pkg_id\"])"
+   }
+  ],
+  "预期红": "三种「读不出」各归各类:没答复 / 切不到建议段 / 提了几档没定下来"
+ },
+ {
+  "script": "agent/triage_shadow_check.py",
+  "改坏": "把「没有答复可读」那一类改成只收 ai_way 也空的(和「没交付成功的」就不是同一批了)",
+  "file": [
+   {
+    "path": "agent/triage_shadow.py",
+    "old": "        if not 交出来了吗(x):",
+    "new": "        if not 交出来了吗(x) and not x[\"ai_way\"]:"
+   }
+  ],
+  "预期红": "「读不出建议」带着原因报,而「没有答复可读」那一类和「没交付成功的」是同一批"
  }
 ]
