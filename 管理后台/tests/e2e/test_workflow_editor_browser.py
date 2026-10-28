@@ -502,8 +502,31 @@ def main():
         d.get(基址 + "/#/studio/agent")
         等(d, lambda: bool(js("return document.querySelector('.appcards')")))
         ck("Agent 页签只出 Agent 的卡", sorted(js("return [...document.querySelectorAll('.appcard[data-id]')].map(c => c.dataset.kind)")) == ["agent"] * len(接口数["智"]))
+        print("\n▸ 应用详情侧栏(10-28):进到工作流里,左边换成这个应用自己的一列;离开换回主导航")
+        wid = 接口数["流"][0]
+        d.get(基址 + f"/#/workflow/{wid}/概览")
+        try:
+            等(d, lambda: bool(js("return document.querySelector('#side .apphead')")))
+        except TimeoutError:
+            pass          # 侧栏没换出来时交给下面那条判,红在点名的那一条上,不让整份崩
+        侧 = js("""return {项: [...document.querySelectorAll('#side a[data-tab]')].map(a => a.textContent),
+                         亮: (document.querySelector('#side a.on') || {}).textContent,
+                         待: [...document.querySelectorAll('#side a.todo')].map(a => [a.textContent, (a.title || '').length]),
+                         回: !!document.querySelector('#side a.back[href="#/studio/workflow"]'),
+                         名: (document.querySelector('#side .apphead b') || {}).textContent,
+                         旧签: !!document.querySelector('.wftabs')}""")
+        ck("侧栏:← 工作室、应用名、编排 / 概览 / 测试 / 日志 / 部署 / 设置,概览亮着;没做的三项摆着并写明为什么;页里不再有横排页签",
+           侧["项"] == ["编排", "概览", "测试", "日志", "部署", "设置"] and 侧["亮"] == "概览" and 侧["回"] and 侧["名"]
+           and [x[0] for x in 侧["待"]] == ["访问入口", "标注", "监测"] and all(x[1] > 4 for x in 侧["待"]) and not 侧["旧签"], 侧)
+        try:
+            d.find_element(By.CSS_SELECTOR, '#side a[data-tab="运行记录"]').click()
+            等(d, lambda: (js("return (document.querySelector('#side a.on')||{}).textContent") == "日志"))
+        except Exception:
+            pass
+        ck("点「日志」→ 地址还是 …/运行记录(地址不变,只换显示名),侧栏「日志」亮", js("return decodeURIComponent(location.hash)") == f"#/workflow/{wid}/运行记录")
         d.get(基址 + "/#/runs")
         等(d, lambda: js("return document.getElementById('subnav').hidden"))
+        ck("离开应用 → 侧栏换回主导航(没有应用头,有「主页」)", not js("return !!document.querySelector('#side .apphead')") and "主页" in d.find_element(By.ID, "side").text)
         ck("离开工作室 / 集成,页签那一条收起来", js("return document.getElementById('subnav').hidden") is True)
     finally:
         d.quit()

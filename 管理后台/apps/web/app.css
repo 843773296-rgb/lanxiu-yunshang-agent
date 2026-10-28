@@ -194,9 +194,6 @@ summary{cursor:pointer;font-size:13px;color:var(--pri)}
 tr.warn-row td{background:#fff7e8}
 
 /* ── 工作流改版(2026-10-24):六个页签 / 步骤列表 / 弹窗 ─────────────── */
-.wftabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:0 0 16px}
-.wftabs a{padding:8px 14px;color:var(--ink2);border-bottom:2px solid transparent;margin-bottom:-1px}
-.wftabs a.on{color:var(--pri);border-bottom-color:var(--pri);font-weight:600}
 .wfbuild{display:grid;grid-template-columns:minmax(320px,1fr) 420px;gap:16px;align-items:start}
 .wfbuild .wfpanel{position:static;width:auto;max-height:none}
 .steps{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;min-height:240px;overflow:auto}
@@ -513,3 +510,8 @@ body.demo #subnav{padding-top:calc(var(--top) + 45px)}
 .apptype .why{font-size:12px;color:var(--warn)}
 button.mini{height:22px;padding:0 8px;font-size:12px}
 .appcard .grow{flex:1}
+/* 应用详情侧栏(10-28) */
+#side a.back{color:var(--ink3);font-size:12px;padding:10px 16px 4px}
+#side .apphead{display:flex;gap:10px;align-items:center;padding:8px 16px 12px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+#side .apphead .an{min-width:0}
+#side .apphead b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

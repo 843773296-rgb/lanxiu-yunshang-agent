@@ -967,9 +967,7 @@ function 画_画布() {
   const g = 图态;
   if (g.页签 === "搭建") return 画_编排页();
   document.body.classList.remove("wf-full");
-  const 签 = 工作流页签.filter((t) => t !== "搭建").map((t) => t === g.页签
-    ? `<a class="on" href="#/workflow/${encodeURIComponent(g.wid)}/${encodeURIComponent(t)}">${t}</a>`
-    : `<a href="#/workflow/${encodeURIComponent(g.wid)}/${encodeURIComponent(t)}">${t}</a>`).join("");
+  画_应用侧栏(g);
   $("#main").innerHTML = `
     <div class="crumb"><a href="#/workflows">工作流</a> / ${esc(g.名称)}</div>
     <div class="head"><div><h1>${esc(g.名称)}</h1>
@@ -977,13 +975,28 @@ function 画_画布() {
         ${g.用途 ? ` · ${esc(g.用途)}` : ""}</div></div>
       <div><a class="btn pri" id="edit" href="#/workflow/${encodeURIComponent(g.wid)}/搭建">编辑编排</a>
         <button id="freeze">生成版本</button></div></div>
-    <nav class="wftabs">${签}</nav>
     <div id="tabbody"></div>
     <div class="footbar"><span id="fb"></span></div>`;
   $("#freeze").onclick = 弹_准备发布;
   ({ 概览: 画_概览, 搭建: 画_搭建, 测试: 画_测试, 运行记录: 画_运行记录, 版本与发布: 画_版本, 设置: 画_设置 }
     [g.页签] || 画_概览)();
   画_底栏(); 画_保存状态();
+}
+
+/* 应用详情侧栏(10-28 照 Dify,二期第 3 项;适配分析 5.5「照抄」):进到一个应用里,左边主导航换成这个应用自己的一列。
+ * 地址不变(#/workflow/<id>/<页签>),只换显示名 —— 改地址要把撤销 / 离开拦截 / 测试全迁一遍,换来的只是一个词。
+ * 没做的三项摆着、写明什么时候做,不藏。离开这条工作流时 路由() 会重画主导航 */
+const 应用侧栏项 = [["搭建", "编排"], ["概览", "概览"], ["测试", "测试"], ["运行记录", "日志"], ["版本与发布", "部署"], ["设置", "设置"]];
+const 应用侧栏待做 = [["访问入口", "二期后段:要先有对外 API 的鉴权,和 Webhook 触发一起做"],
+  ["标注", "三期:人对每次运行的结果打标,回流成样本"],
+  ["监测", "三期:这个应用自己的监测页,加一张 Dify 没有的「业务真完成率」(真写进了澜绣,不只是运行成功)"]];
+function 画_应用侧栏(g) {
+  const 链 = (t) => `#/workflow/${encodeURIComponent(g.wid)}/${encodeURIComponent(t)}`;
+  $("#side").innerHTML = `<a class="back" href="#/studio/workflow">← 工作室</a>
+    <div class="apphead"><span class="ico">流</span><div class="an"><b>${esc(g.名称)}</b><div class="k">工作流</div></div></div>
+    ${应用侧栏项.map(([k, 名]) => `<a href="${链(k)}" data-tab="${esc(k)}"${k === g.页签 ? ' class="on"' : ""}${名 !== k ? ` title="原来叫「${k}」"` : ""}>${名}</a>`).join("")}
+    <div class="grp">还没做</div>
+    ${应用侧栏待做.map(([名, 为什么]) => `<a class="todo" title="${esc(为什么)}">${名}</a>`).join("")}`;
 }
 
 function 画_底栏() {
