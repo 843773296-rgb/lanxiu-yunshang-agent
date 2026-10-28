@@ -119,9 +119,13 @@ def main():
             print(f"  {R}❌ 后台里没有 `{IMP.项目id}` 这个项目 —— "
                   f"先跑 `python3 tools/import_lanxiu_prompts.py`{D}")
             return 1
+        # 只对「从 prompts.py 导进来的」那些(params 里带「铁律编号」,导入脚本 `包一条()` 写的)——
+        # 同一个项目里还有工作流的「处理要求」(seed_bridge_tools 建的 store_report_write 等),它们不是铁律,
+        # 文件里本来就没有。10-28 前这 6 条被报成「文件里删了而后台还留着」,只是一直被前面那条「少导」挡着没露出来
         行 = c.execute(_t("""select key, content_hash, version_no
                            from prompt_versions v
                           where project_id=:p
+                            and params ? '铁律编号'
                             and version_no = (select max(version_no)
                                               from prompt_versions
                                              where project_id=v.project_id
