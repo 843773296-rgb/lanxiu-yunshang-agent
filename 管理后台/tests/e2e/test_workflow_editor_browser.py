@@ -502,6 +502,32 @@ def main():
         d.get(基址 + "/#/studio/agent")
         等(d, lambda: bool(js("return document.querySelector('.appcards')")))
         ck("Agent 页签只出 Agent 的卡", sorted(js("return [...document.querySelectorAll('.appcard[data-id]')].map(c => c.dataset.kind)")) == ["agent"] * len(接口数["智"]))
+        print("\n▸ 页码(10-28,用户拍「页码」):号码条自己造输入验;真翻页拿接口同一页对")
+        条 = lambda d: js(f"const e=document.createElement('div'); e.innerHTML=页码条({json.dumps(d, ensure_ascii=False)}); "
+                          "return [...e.querySelectorAll('button,span')].map(b => (b.disabled ? '#' : '') + b.textContent.trim())")
+        ck("第 5 / 10 页:上一页 1 … 3 4 [5] 6 7 … 10 下一页,写明共几条", 条({"页": 5, "页数": 10, "total": 200})
+           == ["上一页", "1", "…", "3", "4", "#5", "6", "7", "…", "10", "下一页", "第 5 / 10 页 · 共 200 条"], 条({"页": 5, "页数": 10, "total": 200}))
+        ck("第 1 页上一页灰、最后一页下一页灰;只有一页不画", 条({"页": 1, "页数": 2, "total": 30})[0] == "#上一页"
+           and 条({"页": 2, "页数": 2, "total": 30})[-2] == "#下一页" and 条({"页": 1, "页数": 1, "total": 3}) == [], [条({"页": 1, "页数": 2, "total": 30}), 条({"页": 2, "页数": 2, "total": 30})])
+        ck("翻过头(接口给的页数是 null,总数不知道):不编页数,只给「回第 1 页」", 条({"页": 7, "页数": None, "total": None})
+           == ["第 7 页没有东西了", "回第 1 页"], 条({"页": 7, "页数": None, "total": None}))
+        接2 = js("""return fetch(`/api/v1/projects/${项目}/agents?page=2`, {headers: {'X-Dev-User': 我}}).then(r => r.json())""")
+        d.get(基址 + "/#/studio/agent/2")
+        等(d, lambda: bool(js("return document.querySelector('.appcards')")))
+        卡2 = js("return [...document.querySelectorAll('.appcard[data-id]')].map(c => c.dataset.id)")
+        ck(f"#/studio/agent/2 出的正是接口第 2 页那 {len(接2['items'])} 个(页码进地址)", 卡2 == [x["id"] for x in 接2["items"]], [len(卡2), len(接2["items"])])
+        if (接2.get("页数") or 0) >= 2:
+            ck("号码条上 2 亮着", js("return (document.querySelector('.pager [aria-current]')||{}).textContent") == "2")
+        # 要挑一条**跑过**的工作流:没跑过的那条结果是空的,总数 0 在有没有这个 bug 时长得一样(咬合第一次就没红在这儿)
+        计 = js("""const P = `/api/v1/projects/${项目}`, h = {headers: {'X-Dev-User': 我}};
+          return fetch(P + '/execution-runs?limit=1', h).then(r => r.json()).then(全 =>
+            Promise.all(arguments[0].map(w => fetch(P + '/execution-runs?limit=100&workflow_id=' + w, h).then(r => r.json())
+              .then(a => [w, a.total, a.items.length, a['页数']])))
+            .then(xs => [xs.filter(x => x[2] > 0 && x[2] < 100), 全.total]))""", 接口数["流"])
+        有跑, 全数 = 计
+        ck(f"一条工作流的运行总数只数它自己的(验 {len(有跑)} 条跑过的工作流 / 全项目 {全数} 次)—— 原来漏了筛选,报的是全项目",
+           len(有跑) > 0 and all(x[1] == x[2] for x in 有跑) and any(x[1] < 全数 for x in 有跑), 有跑[:3])
+
         print("\n▸ 应用详情侧栏(10-28):进到工作流里,左边换成这个应用自己的一列;离开换回主导航")
         wid = 接口数["流"][0]
         d.get(基址 + f"/#/workflow/{wid}/概览")

@@ -710,9 +710,20 @@ def _模板(名, 桥=None):
 
 
 # ── 列表 ───────────────────────────────────────────────────────────
+def 分页信封(rs, 页, 每页):
+    """页码分页(用户 10-28 拍「页码」,不用游标)。总数取查询里的 `count(*) over ()` ——
+    **和这一页同一句 WHERE**,另写一句 count 就是第二份条件,改筛选时只改一边、两个数对不上也不报错
+    (运行列表的总数就这么漏过筛选)。
+    翻过头(这一页一条都没有)时拿不到窗口计数:第 1 页就是真的 0 条,别的页给 None ——「不知道」不写成 0。
+    ⚠️ 页码的代价(拍板时说过):翻页时有人新建 / 删除,下一页会重复或漏一条。排序带 id 兜底,至少同样的数据翻出来的顺序是定的"""
+    总 = int(rs[0]["全量"]) if rs else (0 if 页 == 1 else None)
+    return {"next_cursor": None, "total": 总, "页": 页, "每页": 每页,
+            "页数": (max(1, -(-总 // 每页)) if 总 is not None else None), "这一页几条": len(rs)}
+
+
 @router.get(前缀 + "/workflows")
 def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
-            limit: int = Query(20, ge=1, le=100)):
+            limit: int = Query(20, ge=1, le=100), page: int = Query(1, ge=1)):
     """**最新冻结版本和生产引用版本要同时给**(§4.1)。
 
     只显示一个的话,「我改完了」和「线上在跑的是这个」会被当成同一件事 ——
@@ -720,7 +731,7 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
     """
     with 连接() as c:
         rs = c.execute(text("""
-            select w.id, w.name, w.purpose, w.owner, w.tags, w.draft_revision,
+            select count(*) over () 全量, w.id, w.name, w.purpose, w.owner, w.tags, w.draft_revision,
                    w.validation_status, w.updated_at, w.takeover_skill_name,
                    coalesce(w.chat_takeover_enabled, false) chat_takeover_enabled,
                    (select max(version_no) from workflow_versions v
@@ -735,11 +746,8 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
                      order by r.created_at desc limit 1) 最近运行
               from workflows w
              where w.project_id=:p and w.archived_at is null
-             order by w.updated_at desc limit :n
-        """), {"p": project_id, "n": limit}).mappings().all()
-        总 = c.execute(text("""select count(*) from workflows
-                             where project_id=:p and archived_at is null"""),
-                       {"p": project_id}).scalar()
+             order by w.updated_at desc, w.id desc limit :n offset :o
+        """), {"p": project_id, "n": limit, "o": (page - 1) * limit}).mappings().all()
         生产们 = {r["id"]: _生产版本(c, project_id, r["id"]) for r in rs}
     出 = []
     for r in rs:
@@ -764,7 +772,7 @@ def 工作流列表(project_id: str, me: 身份 = Depends(要权限("查看有�
                              r["最近运行"]["status"], r["最近运行"]["status"]),
                          "时间": r["最近运行"]["at"]} if r["最近运行"] else None),
         })
-    return {"items": 出, "next_cursor": None, "total": 总}
+    return {"items": 出, **分页信封(rs, page, limit)}
 
 
 _模板说明 = {
@@ -2099,7 +2107,8 @@ def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, �
 
 @router.get(前缀 + "/execution-runs")
 def 运行列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
-           workflow_id: str = Query(default=None), limit: int = Query(20, ge=1, le=100)):
+           workflow_id: str = Query(default=None), limit: int = Query(20, ge=1, le=100),
+           page: int = Query(1, ge=1)):
     """运行列表。
 
     ## 两个坑记在这儿(都不能写进下面那段 SQL 里)
@@ -2121,17 +2130,16 @@ def 运行列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
     """
     with 连接() as c:
         rs = c.execute(text("""
-            select id, kind, definition_ref, status, completion_reason,
+            select count(*) over () 全量, id, kind, definition_ref, status, completion_reason,
                    quality_evaluation_status, execution_mode, principal,
                    started_at, ended_at, trace_id
               from execution_runs
              where project_id=:p
                and (cast(:w as text) is null
                     or definition_ref->>'id' = cast(:w as text))
-             order by started_at desc limit :n
-        """), {"p": project_id, "w": workflow_id, "n": limit}).mappings().all()
-        总 = c.execute(text("select count(*) from execution_runs where project_id=:p"),
-                       {"p": project_id}).scalar()
+             order by started_at desc, id desc limit :n offset :o
+        """), {"p": project_id, "w": workflow_id, "n": limit, "o": (page - 1) * limit}).mappings().all()
+        # 10-28:总数原来是另一句 count、**没带 workflow_id 筛选** —— 一条工作流的「日志」页报的是整个项目的运行数
     出 = []
     for r in rs:
         出.append({
@@ -2149,7 +2157,7 @@ def 运行列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
             "开始": r["started_at"].isoformat() if r["started_at"] else None,
             "结束": r["ended_at"].isoformat() if r["ended_at"] else None,
         })
-    return {"items": 出, "next_cursor": None, "total": 总}
+    return {"items": 出, **分页信封(rs, page, limit)}
 
 
 # 控制动作 → 它要把状态推到哪。**从状态机现读,不手抄一张表。**

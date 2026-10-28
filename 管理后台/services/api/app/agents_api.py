@@ -37,7 +37,7 @@ import validator as V
 import outbox as OB
 from db import 连接, 事务
 from deps import 身份, 要权限, _错
-from workflows_api import _依赖查询, _新id
+from workflows_api import _依赖查询, _新id, 分页信封
 
 import 策略解析 as _PR
 import 策略冻结 as _PF
@@ -278,7 +278,7 @@ async def 注册工具(project_id: str, request: Request,
 # ── Agent 接口 ─────────────────────────────────────────────────────
 @router.get(前缀 + "/agents")
 def agent列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
-            limit: int = Query(20, ge=1, le=100)):
+            limit: int = Query(20, ge=1, le=100), page: int = Query(1, ge=1)):
     with 连接() as c:
         rs = c.execute(text("""
             select count(*) over () 全量, a.id, a.name, a.purpose, a.owner, a.tags, a.draft_revision,
@@ -290,8 +290,8 @@ def agent列表(project_id: str, me: 身份 = Depends(要权限("查看有权配
               left join graph_drafts d
                 on d.project_id=a.project_id and d.agent_id=a.id
              where a.project_id=:p and a.archived_at is null
-             order by a.updated_at desc limit :n
-        """), {"p": project_id, "n": limit}).mappings().all()
+             order by a.updated_at desc, a.id desc limit :n offset :o
+        """), {"p": project_id, "n": limit, "o": (page - 1) * limit}).mappings().all()
     出 = []
     for r in rs:
         cfg = r["definition"] or {}
@@ -310,9 +310,7 @@ def agent列表(project_id: str, me: 身份 = Depends(要权限("查看有权配
             "校验状态": r["validation_status"] or "没校验过",
             "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None,
         })
-    return {"items": 出, "next_cursor": None,
-            "total": (int(rs[0]["全量"]) if rs else 0),
-            "这一页几条": len(出)}
+    return {"items": 出, **分页信封(rs, page, limit)}
 
 
 def _agent模板(c, project_id):

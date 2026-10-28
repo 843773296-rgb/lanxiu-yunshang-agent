@@ -133,17 +133,18 @@ const 导航 = [
  * 没接上的类型**留着入口、写明为什么**,不藏(侧栏同一条规矩) */
 // 10-28 工作室做成卡片(二期第 2 项):页签照 Dify 的筛选 —— 全部 / 工作流 / 对话流 / 聊天助手 / Agent / 文本生成;
 // 「应用与发布」不是一种应用类型(它答的是「哪一版在给用户跑」),放在最右
-const 工作室类型 = [["all", "全部", () => 页_工作室("all")], ["workflow", "工作流", () => 页_工作室("workflow")],
+const 工作室类型 = [["all", "全部", (pg) => 页_工作室("all", pg)], ["workflow", "工作流", (pg) => 页_工作室("workflow", pg)],
   ["chatflow", "对话流", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
   ["chat", "聊天助手", null, "澜绣聊天站里的各个岗位助手;先拿店长任务助手试点,配置页还在做"],
-  ["agent", "Agent", () => 页_工作室("agent")],
+  ["agent", "Agent", (pg) => 页_工作室("agent", pg)],
   ["completion", "文本生成", null, "暂无对应业务(用户 10-27 拍:五种都留,这一种先空着)"],
   ["app", "应用与发布", () => 页_应用与发布()]];
 const 集成类型 = [["models", "模型供应商", () => 页_模型与连接()], ["tools", "工具", () => 页_工具目录()]];
 const 旧地址跳 = { "#/workflows": "#/studio/workflow", "#/agents": "#/studio/agent", "#/apps": "#/studio/app",
   "#/conns": "#/integrations/models", "#/tools": "#/integrations/tools",
   "#/studio": "#/studio/all", "#/integrations": "#/integrations/models" };
-async function 页_分页签(根, 表, 键) {
+async function 页_分页签(根, 表, 路) {
+  const [键, 参] = String(路).split("/");   // #/studio/agent/3 → 第 3 页(页码进地址:后退、刷新都还在那一页)
   const 项 = 表.find((x) => x[0] === 键);
   const 条 = `<div class="subtabs" role="tablist">${表.map(([k, 名, fn, 为什么]) => fn
     ? (k === 键 ? `<a role="tab" href="${根}/${k}" class="on" aria-selected="true">${esc(名)}</a>`
@@ -151,7 +152,7 @@ async function 页_分页签(根, 表, 键) {
     : `<a role="tab" class="todo" title="${esc(为什么 || "")}" aria-disabled="true">${esc(名)}</a>`).join("")}</div>`;
   $("#subnav").innerHTML = 条; $("#subnav").hidden = false;
   if (!项 || !项[2]) { $("#main").innerHTML = 状态("", "这一类还没接上", (项 && 项[3]) || "换一个页签看看").html; return; }
-  return await 项[2]();
+  return await 项[2](参);
 }
 function 画侧栏() {
   const cur = location.hash || "#/workbench";
@@ -773,6 +774,26 @@ function 报错(e) {
 const 时间 = (s) => esc(String(s || "").slice(0, 16).replace("T", " "));
 
 /* ── 列表 ─────────────────────────────────────────────────────── */
+/* ── 页码条(用户 10-28 拍「页码」,不用「加载更多」)────────────────────────────
+ * 吃接口的分页信封(页 / 页数 / total)。翻过头时接口给的页数是 null(拿不到总数,不写成 0)→ 只给「回第 1 页」。
+ * 一页就够的不画。号码只摆当前页前后两个和首尾,中间用 … */
+function 页码条(d) {
+  const 页 = d["页"], 数 = d["页数"];
+  if (数 == null) return 页 > 1 ? `<div class="pager"><span class="k">第 ${页} 页没有东西了</span> <button data-pg="1">回第 1 页</button></div>` : "";
+  if (数 <= 1) return "";
+  const 号 = [...new Set([1, 页 - 2, 页 - 1, 页, 页 + 1, 页 + 2, 数])].filter((x) => x >= 1 && x <= 数).sort((a, b) => a - b);
+  let 前 = 0; const 钮 = [];
+  for (const x of 号) {
+    if (x - 前 > 1) 钮.push('<span class="k">…</span>');
+    钮.push(x === 页 ? `<button class="pri" aria-current="page" disabled>${x}</button>` : `<button data-pg="${x}">${x}</button>`);
+    前 = x;
+  }
+  return `<div class="pager"><button data-pg="${页 - 1}"${页 <= 1 ? " disabled" : ""}>上一页</button>${钮.join("")}
+    <button data-pg="${页 + 1}"${页 >= 数 ? " disabled" : ""}>下一页</button>
+    <span class="k">第 ${页} / ${数} 页 · 共 ${d.total} 条</span></div>`;
+}
+function 挂页码(根, 去) { 根.querySelectorAll(".pager [data-pg]").forEach((b) => { b.onclick = () => 去(+b.dataset.pg); }); }
+
 /* ── 工作室:应用卡片(10-28 照 Dify;用户 10-27 拍第 9 条「应用类型五种都留」)────────────
  * 卡片上只放**一眼要判断的**:是什么类型、干什么用、线上跑的哪一版、最近跑得怎样、聊天里谁来做。
  * 版本 / 测试 / 发布这些进详情做。没接上的三种类型在「创建应用」里**摆出来、写明为什么点不了**,不藏 */
@@ -816,28 +837,34 @@ function 卡_agent(r) {
   </div>`;
 }
 
-async function 页_工作室(类) {
+async function 页_工作室(类, 页) {
+  页 = Math.max(1, parseInt(页, 10) || 1);
   $("#main").innerHTML = `<div class="head"><div><h1>工作室</h1>
       <div class="sub">这个项目里的应用:按固定步骤跑的工作流、模型自己决定下一步的 Agent,以及聊天站里的岗位助手。</div></div></div>
     <div id="list"><div class="state">加载中…</div></div>`;
   try {
-    const [流, 智] = await Promise.all([类 !== "agent" ? 请求(`${P()}/workflows`) : null,
-                                        类 !== "workflow" ? 请求(`${P()}/agents`) : null]);
+    const [流, 智] = await Promise.all([类 !== "agent" ? 请求(`${P()}/workflows?page=${页}`) : null,
+                                        类 !== "workflow" ? 请求(`${P()}/agents?page=${页}`) : null]);
+    // 「全部」两种各翻各的同一页码:页数取大的那个,翻过了一种的尾页,那一种这页就没有卡(下面的说明写着各几条)
+    const 们 = [流, 智].filter(Boolean);
+    const 翻 = { 页, 页数: 们.some((d) => d["页数"] == null) ? null : Math.max(...们.map((d) => d["页数"])),
+                total: 们.some((d) => d.total == null) ? null : 们.reduce((a, d) => a + d.total, 0) };
     const 卡们 = [...((流 && 流.items) || []).map(卡_工作流), ...((智 && 智.items) || []).map(卡_agent)];
     const 新 = `<button class="appcard new" id="new"><b>+ 创建应用</b>
         <span class="k">选一种类型:工作流 / 对话流 / 聊天助手 / Agent / 文本生成</span></button>`;
     // 空的时候也要一句人话(冒烟对账按结构判:state 块带标题和说明)
-    const 空 = 卡们.length ? "" : 状态("", 类 === "agent" ? "还没有 Agent" : 类 === "workflow" ? "还没有工作流" : "还没有应用",
+    const 空 = 卡们.length || 页 > 1 ? "" : 状态("", 类 === "agent" ? "还没有 Agent" : 类 === "workflow" ? "还没有工作流" : "还没有应用",
       "点「创建应用」选一种类型。工作流从模板起(音频整理 / 文本处理 / 空白);模板**只预填草稿** —— 不调模型、不绑生产环境。").html;
-    $("#list").innerHTML = `${空}<div class="appcards">${新}${卡们.join("")}</div>
+    $("#list").innerHTML = `${空}<div class="appcards">${新}${卡们.join("")}</div>${页码条(翻)}
       <div class="note">${[[流, "工作流"], [智, "Agent"]].filter((x) => x[0]).map(([d, 名]) =>
-          `${名} ${d.total != null && d.total > d.items.length ? `显示 ${d.items.length} / 共 ${d.total}(翻页还没做)` : `${d.items.length}`}`).join(" · ")}。
+          `${名} ${d.total != null ? `共 ${d.total}` : "总数不知道"}(这一页 ${d.items.length})`).join(" · ")}。
         「线上(生产)」之外的版本都只是<b>候选</b> —— 要在「版本与发布」里发到生产(生产要审核)才算上线。
         ${流 ? "<br>「聊天里」<b>默认交给 harness</b>(聊天站的技能自己做);打开接管后改为发起这条工作流<b>生产环境里的那一版</b>,同一个技能同时只能被一条工作流接管。" : ""}
         ${智 ? "<br>Agent 的「候选工具」数只表示授权候选集合的规模 —— 规格 §9.1 明写<b>不按工具数量给 Agent 打能力强弱分</b>。" : ""}</div>`;
     $("#new").onclick = 弹_新建应用;
+    挂页码($("#list"), (n) => { location.hash = `#/studio/${类}/${n}`; });
     $("#list").querySelectorAll("[data-tk]").forEach((b) => {
-      b.onclick = async () => { b.disabled = true; await 拨接管(b.dataset.tk, b.dataset.on === "1"); 页_工作室(类); };
+      b.onclick = async () => { b.disabled = true; await 拨接管(b.dataset.tk, b.dataset.on === "1"); 页_工作室(类, 页); };
     });
   } catch (e) { const s = 错误块(e, 路由); $("#list").innerHTML = s.html; s.挂(); }
 }
@@ -2232,18 +2259,19 @@ function 测试追踪(d) {
 }
 
 /* ── 运行记录 ─────────────────────────────────────────────────── */
-async function 画_运行记录() {
+async function 画_运行记录(页 = 1) {
   $("#tabbody").innerHTML = `<div class="state">加载中…</div>`;
   try {
-    const r = await 请求(`${P()}/execution-runs?workflow_id=${encodeURIComponent(图态.wid)}&limit=50`);
+    const r = await 请求(`${P()}/execution-runs?workflow_id=${encodeURIComponent(图态.wid)}&page=${页}`);
     $("#tabbody").innerHTML = r.items.length ? `<table><thead><tr><th>状态</th><th>停止原因</th><th>用的哪版</th>
         <th>谁发起</th><th>开始</th><th>结束</th><th></th></tr></thead><tbody>`
       + r.items.map((x) => `<tr><td>${esc(x["执行状态中文"])}</td><td><code>${esc(x["停止原因"] || "")}</code></td>
           <td class="k">${esc(x["版本"] || "")}</td><td>${esc(x["请求人"] || "")}</td>
           <td class="k">${时间(x["开始"])}</td><td class="k">${时间(x["结束"])}</td>
           <td><a href="#/wfrun/${encodeURIComponent(x.id)}">看详情</a></td></tr>`).join("")
-      + `</tbody></table><div class="note">共 ${r.total} 次。停在「等待审批」「等澜绣回执」的是<b>还没结束</b>,不是失败。</div>`
-      : 状态("", "还没跑过", "去「测试」页签跑一条。").html;
+      + `</tbody></table>${页码条(r)}<div class="note">这条工作流共跑过 ${r.total} 次。停在「等待审批」「等澜绣回执」的是<b>还没结束</b>,不是失败。</div>`
+      : 页 > 1 ? 页码条(r) : 状态("", "还没跑过", "去「测试」页签跑一条。").html;
+    挂页码($("#tabbody"), (n) => 画_运行记录(n));
   } catch (e) { const s = 错误块(e, 画_运行记录); $("#tabbody").innerHTML = s.html; s.挂(); }
 }
 
