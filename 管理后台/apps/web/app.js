@@ -3359,8 +3359,6 @@ function 画_agent() {
         ${g.脏 ? `<span class="stale">有未保存的改动</span>` : ""}</div></div>
       <div><button id="v">校验</button><button id="run">试运行</button>
         <button class="pri" id="freeze">冻结为新版本</button></div></div>
-    <div class="filters">${tabs.map((t) =>
-      `<button data-tab="${t}" class="${g.Tab === t ? "pri" : ""}">${t}</button>`).join("")}</div>
     <div id="body"></div>
     <div class="footbar"><span id="fb">${報状态(报, g.脏)}</span>
       <span class="grow"></span><button id="save">保存草稿</button></div>`;
@@ -3368,10 +3366,21 @@ function 画_agent() {
   $("#run").onclick = 做_跑agent;
   $("#freeze").onclick = 做_冻结agent;
   $("#save").onclick = 做_存agent;
-  document.querySelectorAll("[data-tab]").forEach((b) => {
-    b.onclick = () => { agent态.Tab = b.dataset.tab; 画_agent(); };
-  });
+  画_agent侧栏(g, tabs);
   画_agent正文();
+}
+
+/* Agent 的应用侧栏(10-28,和工作流那一列同一个样子)。⚠️ 和工作流不同:这里**不改地址**,点了只换页签 ——
+ * Agent 的页签一直是页内状态,未保存的改动挂在 agent态 上;改成换地址会重新拉一遍,把没存的改动丢掉 */
+function 画_agent侧栏(g, tabs) {
+  $("#side").innerHTML = `<a class="back" href="#/studio/agent">← 工作室</a>
+    <div class="apphead"><span class="ico ag">智</span><div class="an"><b>${esc(g["名称"])}</b><div class="k">Agent</div></div></div>
+    ${tabs.map((t) => `<a href="#" data-atab="${esc(t)}"${g.Tab === t ? ' class="on"' : ""}>${esc(t)}</a>`).join("")}
+    <div class="grp">还没做</div>
+    ${应用侧栏待做.map(([名, 为什么]) => `<a class="todo" title="${esc(为什么)}">${名}</a>`).join("")}`;
+  $("#side").querySelectorAll("[data-atab]").forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); agent态.Tab = a.dataset.atab; 画_agent(); };
+  });
 }
 
 function 報状态(报, 脏) {

@@ -574,6 +574,31 @@ def main():
         d.get(基址 + "/#/runs")
         等(d, lambda: js("return document.getElementById('subnav').hidden"))
         ck("离开应用 → 侧栏换回主导航(没有应用头,有「主页」)", not js("return !!document.querySelector('#side .apphead')") and "主页" in d.find_element(By.ID, "side").text)
+        print("\n▸ Agent 详情也换成应用侧栏(10-28):页签在侧栏里切,**不改地址**,没存的改动跟着走")
+        aid = 接口数["智"][0]
+        d.get(基址 + f"/#/agent/{aid}")
+        try:
+            等(d, lambda: bool(js("return document.querySelector('#side .apphead') && document.querySelector('#body')")))
+        except TimeoutError:
+            pass
+        侧a = js("""return {项: [...document.querySelectorAll('#side a[data-atab]')].map(a => a.textContent),
+                          亮: (document.querySelector('#side a.on') || {}).textContent,
+                          类: (document.querySelector('#side .apphead .k') || {}).textContent,
+                          待: [...document.querySelectorAll('#side a.todo')].length,
+                          旧签: document.querySelectorAll('#main .filters [data-tab]').length}""")
+        ck("侧栏:应用头写 Agent;行为 / 工具与知识 / 权限与限制 / 调试 / 版本,行为亮着;没做的三项摆着;页里不再有那排按钮",
+           侧a["项"] == ["行为", "工具与知识", "权限与限制", "调试", "版本"] and 侧a["亮"] == "行为" and 侧a["类"] == "Agent"
+           and 侧a["待"] == 3 and 侧a["旧签"] == 0, 侧a)
+        前址 = js("return location.hash")
+        js("agent态.脏 = true")
+        try:
+            d.find_element(By.CSS_SELECTOR, '#side a[data-atab="调试"]').click(); time.sleep(0.4)
+        except Exception:
+            pass
+        ck("点「调试」→ 侧栏「调试」亮、地址没变、没存的改动还在(没有重新拉)",
+           js("return (document.querySelector('#side a.on')||{}).textContent") == "调试" and js("return location.hash") == 前址
+           and js("return agent态.Tab === '调试' && agent态.脏 === true"), [js("return location.hash"), 前址])
+        js("agent态.脏 = false")
         ck("离开工作室 / 集成,页签那一条收起来", js("return document.getElementById('subnav').hidden") is True)
     finally:
         d.quit()
