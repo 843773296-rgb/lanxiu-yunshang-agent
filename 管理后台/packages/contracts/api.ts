@@ -238,6 +238,7 @@ export const ENDPOINTS = [
   { method: "PUT", path: "/workflows/{id}/schedule", summary: "设 / 改 / 关定时", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/chat-assistants", summary: "聊天助手列表(澜绣聊天站上的角色助手)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/chat-assistants/import", summary: "从代码导入基线版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/chat-assistants/by-role/{role}/production", summary: "按角色取生产那一版(给聊天站拉)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/chat-assistants/{id}", summary: "聊天助手详情(草稿 / 推算出的规矩 / 版本)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PATCH", path: "/chat-assistants/{id}/draft", summary: "改草稿(开头 / 结尾 / 模型 / 工具开关)", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/chat-assistants/{id}/versions", summary: "出版本", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -262,4 +263,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 175 条接口 · 24 条异步 · 31 条要幂等键 · 18 条要 If-Match */
+/** 共 176 条接口 · 24 条异步 · 31 条要幂等键 · 18 条要 If-Match */

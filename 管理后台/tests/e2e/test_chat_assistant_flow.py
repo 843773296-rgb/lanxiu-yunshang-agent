@@ -175,6 +175,12 @@ def main():
     ck("工作台「开关」记着这次换版,从哪版到哪版写清楚", 记 and 记[0]["到"] == f"v{号}" and 记[0]["理由"] == "e2e 上生产",
        记[:1] or list((w or {}).keys()))
 
+    s, pv = 打("GET", f"{P}/chat-assistants/by-role/{角色}/production")
+    ck(f"按角色取生产(给聊天站拉):就是 v{号},工具是关掉那个之后的", s == 200 and pv.get("版本号") == 号
+       and 靶工具 not in pv.get("工具", []) and "mcp__e2e__只读那个" in pv.get("工具", []), (s, pv))
+    s, d = 打("GET", f"{P}/chat-assistants/by-role/没有这个角色/production")
+    ck("没有这个角色 → 404", s == 404, (s, d))
+
     print("\n▸ ⑦ 权限")
     s, d = 打("POST", "/api/v1/projects/project_demo_a/chat-assistants/随便/production", 谁="U002", 体={"版本号": 1})
     ck("编辑者(演示项目 U002)上生产 → 403", s == 403, (s, d))
@@ -185,6 +191,8 @@ def main():
     s, d = 打("POST", "/api/v1/projects/project_demo_a/chat-assistants/import", 体={**快, "角色键": "e2e_demo",
              "名称": "演示测试助手", "规矩池": [], "装上的规矩": []})
     ck("空规矩池 → 导得进(201)", s == 201, (s, d))
+    s, pv = 打("GET", "/api/v1/projects/project_demo_a/chat-assistants/by-role/e2e_demo/production")
+    ck("没指定生产 → 版本号 null(聊天站照用代码),不替它挑最新那一版", s == 200 and pv.get("版本号") is None, (s, pv))
 
     print(f"\n{'✅' if not 挂 else '❌'} {len(过)} 过 / {len(挂)} 挂" + (f":{' / '.join(挂)}" if 挂 else ""))
     return 1 if 挂 else 0

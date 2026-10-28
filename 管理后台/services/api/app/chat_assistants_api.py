@@ -200,6 +200,32 @@ async def 导入基线(project_id: str, request: Request, me: 身份 = Depends(�
     return {"id": aid, "版本": f"v{号}", "动了吗": True, "草稿": 草稿, "note": 还没接}
 
 
+@router.get(前缀 + "/chat-assistants/by-role/{role}/production")
+def 生产版本(project_id: str, role: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """给聊天站拉:这个角色的生产指针指着哪一版、那一版的内容(第 2 步用)。
+
+    没指定生产 → `版本号: null`,聊天站照用代码里那一份 —— 和「没配地址」「拉不到」是同一个落点,
+    **不许在这里替它挑「最新那一版」**:出了版本 ≠ 上了生产,那是审核那一步的事。"""
+    with 连接() as c:
+        a = c.execute(text("""select id, production_version_no from chat_assistants
+                             where project_id=:p and role_key=:k and archived_at is null"""),
+                      {"p": project_id, "k": role}).mappings().first()
+        if not a:
+            raise _错(404, "NOT_FOUND", f"没有角色 {role} 的聊天助手", "先用 import_chat_assistant.py 导入")
+        if a["production_version_no"] is None:
+            return {"角色键": role, "版本号": None, "note": "没指定生产 —— 聊天站照用代码里那一份"}
+        v = c.execute(text("""select version_no, head_template, foot_template, tools, model_name, rule_ids,
+                                     content_hash from chat_assistant_versions
+                               where project_id=:p and chat_assistant_id=:a and version_no=:n"""),
+                      {"p": project_id, "a": a["id"], "n": a["production_version_no"]}).mappings().first()
+    if not v:      # 指针存的是版本号、库里没外键(见契约)—— 指着一个不存在的版本要明说,不当成「没指定」
+        raise _错(409, "PRODUCTION_DANGLING", f"生产指着 v{a['production_version_no']},而这一版不在了",
+                  "回详情重新上一次生产")
+    return {"角色键": role, "版本号": v["version_no"], "开头": v["head_template"], "结尾": v["foot_template"] or "",
+            "工具": v["tools"] or [], "模型": v["model_name"], "规矩": v["rule_ids"] or [],
+            "内容哈希": v["content_hash"]}
+
+
 def _取(c, project_id, cid, 锁=False):
     a = c.execute(text("select * from chat_assistants where project_id=:p and id=:i"
                        + (" for update" if 锁 else "")), {"p": project_id, "i": cid}).mappings().first()
