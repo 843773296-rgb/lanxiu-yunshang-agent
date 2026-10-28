@@ -7042,6 +7042,8 @@ function 画_聊天编排() {
       <div class="note">只能在聊天站这个角色挂的工具里开关 —— 后台加不出别的。关掉一个工具,跟着它的规矩也不再带上(保存后重新推算)。</div></div>
     <div class="card" id="c-rules"><h4>随工具带上的规矩(${规["装上"].length} 条,只读)</h4>
       <div class="note">${md(规["说明"])}</div>
+      <div class="note">⚠️ <b>这一页管的是开头 / 结尾 / 工具 / 模型,规矩那一半不在这一页里</b> ——
+        规矩按开着的工具自动挑,正文在「Prompt 管理」里(从代码导入)。改了开头不等于改了整份提示词。</div>
       ${规["后台没有的"].length ? `<div class="err">这几条后台还没导进来:${esc(规["后台没有的"].join("、"))}</div>` : ""}
       <table class="swlog"><tr><th>编号</th><th>类</th><th>跟着哪些工具</th><th>正文</th></tr>
       ${规["装上"].map((r) => `<tr><td>${esc(r["编号"])}</td><td>${esc(r["范围"] || "")}</td>

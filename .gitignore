@@ -143,3 +143,5 @@ backend/.auth_sessions.json.tmp
 
 # 聊天站最后一次拉到的工作流接管清单(backend/takeover_client.py 落盘,运行时状态)
 backend/.takeover_last.json
+# 聊天助手配置最后一次拉成功的那份(assistant_client,10-28)—— 运行时状态,不进库
+backend/.assistant_*_last.json
