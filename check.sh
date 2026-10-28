@@ -537,6 +537,8 @@ run "报修写口 · 哪一件不猜、店长判责、同意要凭据、回店�
 run "客户转移审批 · 建单核对本店、本店店长能批、批准即生效、聊天和审批中心同一段(用户 10-25 拍,在库副本上跑)" python3 backend/approval_transfer_check.py
 run "多渠道对比 · 数算得对,而这张表不能用来比渠道" python3 backend/channel_check.py
 run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/eval_provenance_check.py
+run "聊天接管 · 后台开关改了真生效没有(真调聊天站的 guards 看它拦不拦)" ./agentsite/.venv/bin/python tools/takeover_effect_check.py
+run "技能放行只读口 · 四列齐(在目录里/自有吗/放行吗/真挂上了)—— 少一列就会对第三方技能说反话" python3 tools/skill_gate_status_check.py
 run "技能触发真值改写 · 接管/没放行→期望不触发、方向只有一个、拿不到清单不乱改(这段改坏了会让分数虚高)" python3 agentsite/skill_eval_truth_check.py
 run "保留期 · 默认不删、--执行才删超期的、没超期的一条不少(造夹具验的,不是靠「库里现在干净」)" python3 backend/retention_check.py
 run "员工表凭据 · 谁都不许对 staff 用星号查(只有登录验证点名豁免;api._rows 那道锁管不到自己开连接的地方)" python3 backend/staff_cred_check.py
