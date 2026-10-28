@@ -78,7 +78,7 @@ def main():
     check("归属顾问编号查无此人", code, "BAD_BIND")
 
     # ⑤ 绑定的顾问不在客户所在门店 → 落池
-    r = q("SELECT * FROM staff WHERE role='顾问' AND status='启用' AND shop='SH002 徐汇店' LIMIT 1")
+    r = q("SELECT no,name,role,shop,status,hired_at,updated_by,updated,login_name,fail_count,locked_until,last_login,adv_code,shop_code FROM staff WHERE role='顾问' AND status='启用' AND shop='SH002 徐汇店' LIMIT 1")  # 列名写死:staff 带 pwd_*,星号会把哈希和盐带出来(backend/staff_cred_check.py 盯着)
     if r:
         no, code, _ = booking.route({"advisor_no": r[0]["no"], "shop": "SH001 静安旗舰店"})
         check("绑定顾问不在客户所在门店", code, "CROSS_SHOP")

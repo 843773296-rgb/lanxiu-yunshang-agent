@@ -41,7 +41,7 @@ def _rows(sql, *a):
 # 名字列删掉之后档案里存的就是工号,这座桥不需要了 —— 一次查表就完。
 def staff_of_advisor(advisor_no):
     """按工号取员工。取不到返回 None(**不猜**)。"""
-    r = _rows("SELECT * FROM staff WHERE no=?", (advisor_no or "").strip())
+    r = _rows("SELECT no,name,role,shop,status,hired_at,updated_by,updated,login_name,fail_count,locked_until,last_login,adv_code,shop_code FROM staff WHERE no=?", (advisor_no or "").strip())  # 列名写死:staff 带 pwd_*,星号会把哈希和盐带出来(backend/staff_cred_check.py 盯着)
     return r[0] if r else None
 
 

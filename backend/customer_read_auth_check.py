@@ -21,6 +21,49 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import auth, server
 
+# ⚠️ **台账写到副本上,别写真库**(2026-10-27)。这个检查**真走 HTTP 接口**
+# (`server.H.do_GET`),而带客户信息的读接口按设计会记一笔审计
+# (「谁查看了客户资料」)—— 那是功能,不是 bug。但审计落在**真库**台账里,
+# 就会出现「张静静查看了某客户」这种没人做过的操作,
+# 而**台账本来就该有新行,多几行假的没人会觉得怪**(check.sh 第 23 行那条)。
+#
+# ⚠️ 这个漏子一直没被发现,**是因为被测接口一直是坏的**:
+# `server.py` 里有两处**拿星号查员工表**的写法(这里刻意不写出那个串 ——
+# `staff_cred_check.py` 扫的是字符,写出来这个文件自己就被扫出来了;
+# 铁律:被扫描的文件里要举例就描述它),把 pwd_* 塞进返回,接口走不到底、
+# 也就写不到台账那一步。2026-10-27 把那两处改成列名写死之后,接口跑通了,
+# 这 5 笔审计才冒出来、被门禁的台账闸逮住。
+# > 一个「接口没写台账因为它不该写」和一个「接口没写台账因为它根本没跑完」,
+# > **在台账里长得一模一样** —— 都是什么都没有。
+#
+# 做法照 `arrival_card_check.py`:台账指到真库的一份副本上。
+# 接口照旧读真库(这个检查验的是**权限**,要真数据),只有写台账那一头改道。
+import sqlite3 as _sq3, tempfile as _tf
+import oplog as _oplog
+
+
+def _台账改道():
+    """把台账写到副本上,**只在这个检查自己跑的时候调** —— 不放模块级。
+
+    ⚠️ 2026-10-28 的教训:这段原来在**模块级**,而 `boundary_audit.py` 有三处
+    `import customer_read_auth_check`(复用它打 HTTP 层的办法)。
+    模块级代码在 **import 那一刻就执行**,于是 boundary_audit 一 import 它,
+    `oplog.DB` 就被改掉了;而它后面那条攻击的切库逻辑是
+    「把所有 DB **指向真库**的模块切到副本」—— `oplog.DB` 已经不指真库,
+    **于是不在要切的名单里**,断言失败,报「这条攻击自己跑不起来」。
+    > 一个「模块被 import 了」和一个「模块的副作用被执行了」,
+    > **在那行 `import` 上长得一模一样。**
+    一句话:**全局状态的修改不许放模块级** —— 别人 import 你是为了用你的函数,
+    不是为了接受你改环境。
+    """
+    副本 = os.path.join(_tf.mkdtemp(), "oplog-only.db")
+    _s0, _d0 = _sq3.connect(f"file:{server.DB}?mode=ro", uri=True), _sq3.connect(副本)
+    with _d0:
+        _s0.backup(_d0)                 # 用 backup 不用 cp —— lanxiu.db 是软链
+    _s0.close(); _d0.close()
+    _oplog.DB = 副本
+    assert _oplog.DB != server.DB, "台账没改道 —— 下面会往真库写审计"
+
 G, R, D = "\033[32m", "\033[31m", "\033[0m"
 坏 = 0
 
@@ -71,6 +114,7 @@ def 会话(人):
 
 
 def main():
+    _台账改道()          # ← 副作用只在自己跑时生效(见那个函数的注释)
     print("\n\033[1m▸ 客户读接口:要登录、按门店划范围 · 打 HTTP 层\033[0m")
     店长 = server.rows(
         "SELECT s.no,s.name,s.role,s.shop FROM staff s WHERE s.role='店长' AND s.status='启用' "

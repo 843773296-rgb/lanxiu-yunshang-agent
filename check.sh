@@ -537,6 +537,9 @@ run "报修写口 · 哪一件不猜、店长判责、同意要凭据、回店�
 run "客户转移审批 · 建单核对本店、本店店长能批、批准即生效、聊天和审批中心同一段(用户 10-25 拍,在库副本上跑)" python3 backend/approval_transfer_check.py
 run "多渠道对比 · 数算得对,而这张表不能用来比渠道" python3 backend/channel_check.py
 run "评测来路 · 哪家跑的、同一版跑两次差多少" python3 tools/eval_provenance_check.py
+run "技能触发真值改写 · 接管/没放行→期望不触发、方向只有一个、拿不到清单不乱改(这段改坏了会让分数虚高)" python3 agentsite/skill_eval_truth_check.py
+run "保留期 · 默认不删、--执行才删超期的、没超期的一条不少(造夹具验的,不是靠「库里现在干净」)" python3 backend/retention_check.py
+run "员工表凭据 · 谁都不许对 staff 用星号查(只有登录验证点名豁免;api._rows 那道锁管不到自己开连接的地方)" python3 backend/staff_cred_check.py
 run "纹样业务核定 · 核过的不被重算覆盖,写口六道拦(含原话校验:模型替人猜的核不进去)" python3 backend/motif_review_check.py
 run "评测来路章 · 章上的供应商 = 真正发请求的那家,章上的库 = 真正在读的那个库" ./agentsite/.venv/bin/python tools/evalrec_provider_check.py
 run "提示词里的数 · 体检认它算出处,所以它得在知识库里找得到" ./agentsite/.venv/bin/python tools/prompt_numbers_check.py

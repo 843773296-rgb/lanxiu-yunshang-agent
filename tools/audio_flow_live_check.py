@@ -111,6 +111,24 @@ def main():
     c3, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())},
               体={"workflow_id": w["id"], "输入": {"call_id": call, "customer_id": cust}})
     ck("发起运行 202", c3 == 202, (c3, r))
+    # ⚠️ **`ck()` 只记一笔,它不中断** —— 这正是「打印 ❌ 和拦截是两件事」。
+    # 2026-10-28 撞上:管理后台回 422(`intent.config.connec…` 有一处没配好),
+    # 于是 `r` 里没有 resource_id,下一行 `KeyError`,
+    # 而门禁把它算进「**崩了 1 条**」而不是「判定不过 1 条」——
+    # 崩了的那条**一条都没验过**,两者处置完全不同。
+    # > 一个「流程跑挂了」和一个「流程没被允许开始、而代码没检查这件事」,
+    # > **在那个 KeyError 上长得一模一样** —— 堆栈指向 resource_id,
+    # > 而真正的信息在上一行的 422 里。
+    if c3 != 202 or not isinstance(r, dict) or "resource_id" not in r:
+        _因 = ""
+        if isinstance(r, dict):
+            _因 = str(r.get("message") or r.get("code") or "")[:120]
+            _场 = r.get("field_errors") or {}
+            if _场:
+                _因 += f" · 没配好的:{list(_场)[:3]}"
+        print(f"  ⏸ 管理后台没让这次运行开始(HTTP {c3}){(' —— ' + _因) if _因 else ''}")
+        print(f"     **这不是流程挂了,是它没被允许开始** —— 先把那处配置配好再跑这条检查")
+        return 1 if 坏 else 0
     rid = r["resource_id"]
     ck("停在取转写等澜绣", 等到(rid, ("waiting_external", "failed")) == "waiting_external")
 

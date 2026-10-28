@@ -79,6 +79,36 @@ async def _one(sdk, prompt, me, sset="own"):
     return _skill_of(r.get("trajectory")), r
 
 
+def 定真值(写着的, 接管中, 挂了):
+    """这一道题**这一轮**的真值 —— 按运行时的两样配置改写(用户 2026-10-27 / 10-28 拍)。
+
+    题面里写着「应触发 X」,而 X 这一轮可能根本不该触发,有两种情形:
+
+      · **X 被工作流接管** → `sdk.py` 的规矩是技能被拦、改走工作流 → 期望不触发
+      · **X 没放行、没挂给模型** → 模型调不到它 → 期望不触发
+        (own 档 10-23 起 = 「后台放行的」,而**第三方改造版默认待审查**)
+
+    > 一个「模型漏了该走的技能」和一个「这件事本来就不该走技能」,
+    > **在「漏触发」那一栏里长得一模一样** —— 而那一栏的标题是
+    > 「用户拿到的是随口答的东西」,挂错了就完全反了。
+
+    ⚠️ **抽成模块级函数是为了能单独验。** 内嵌在 `main()` 里的话,
+    验它得跑一整轮模型调用(70 分钟)——
+    **而一条要跑 70 分钟才能验的判据,等于没有判据。**
+    判据:`agentsite/skill_eval_truth_check.py`。
+
+    ⚠️ 期望**不触发**的题(`写着的` 为空)原样返回 —— 接管和放行都只会
+    「让该触发的变成不该触发」,不会反过来。
+    """
+    if not 写着的:
+        return 写着的
+    if 写着的 in (接管中 or []):
+        return None
+    if 挂了 is not None and 写着的 not in 挂了:
+        return None
+    return 写着的
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", type=int, help="只跑某一条")
@@ -122,8 +152,29 @@ def main():
         sys.exit(f"用例 {_错身份} 的「身份」认不出,只认 {list(身份们)}")
 
     import importlib as _il; _mid = _il.import_module("sdk").default_model_id()
+    # 这一轮的**工作流接管状态**(用户 2026-10-27 拍「评测读接管状态,动态定真值」)。
+    # 被接管的技能「应该走工作流,不走技能」—— 真值跟着它变,**而且要印出来**:
+    # 只改真值不印口径,以后两版基线的接管状态不同时照样分不开。
+    import sys as _sy, os as _os
+    _sy.path.insert(0, _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "agent"))
+    import takeover_guard as _tg
+    _接管开跑 = _tg.读状态()
+    # 这一轮**真挂上去**的技能(用户 2026-10-28 拍「评测按放行状态动态定真值」)。
+    # ⚠️ 这是 10-27 那三条漏触发的真正根因:own 档 10-23 起 = 「后台放行的」,
+    # 而**第三方改造版默认待审查**(sdk.py:637)—— 那三个技能根本没挂,模型调不到。
+    # > 一个「这个技能在仓库里」和一个「这一轮真的挂给了模型」,
+    # > **在查目录的结果上长得一模一样**(目录 13 个、挂上去 10 个)。
+    _挂了 = set(_il.import_module("sdk").skills_for(a.set))
     print(f"\n\033[1m技能触发评测 · {len(cases)} 条 · 模型 {_mid} · "
           f"技能档 {a.set}({len(_il.import_module('sdk').skills_for(a.set))} 个)\033[0m")
+    print(f"  \033[33m{_tg.一句话(_接管开跑)}\033[0m")
+    # 口径印出来 —— **只按放行状态改真值不印,分数就跟着后台配置走而看不出原因**。
+    _要的 = sorted({c.get("expect") for c in cases if c.get("expect")})
+    _没挂 = [x for x in _要的 if x not in _挂了]
+    print(f"  \033[33m放行状态:这一轮挂了 {len(_挂了)} 个技能" +
+          (f";**题里要的 {len(_没挂)} 个没挂**({'、'.join(_没挂)})—— "
+           f"它们按设计就不该触发,这几题的真值已改成「不触发」"
+           if _没挂 else ";题里要的技能全挂上了") + f"\033[0m")
     print("=" * 88)
     rows, t0 = [], time.time()
     # 每一遍就是一轮 —— 攒成 rounds.py 要的形状 `[{用例: 过没过}, ...]`。
@@ -133,7 +184,7 @@ def main():
     多轮 = [{} for _ in range(轮数)]
     轮因 = [{} for _ in range(轮数)]
     for c in cases:
-        want = c.get("expect")
+        want = 定真值(c.get("expect"), _接管开跑.get("接管中") or [], _挂了)
         # 跑 N 遍,**记下每一遍的结果** —— 稳定性本身是个要看的东西:
         # 一个「有时触发有时不触发」的技能,比稳定不触发更难查,
         # 因为它偶尔会给你一个「已经好了」的假象。
@@ -274,6 +325,13 @@ def main():
                 基线 = sum(1 for x in _b.get("明细", []) if x.get("ok"))
                 基线来路 = _b.get("来路")      # 老文件没有 → rounds 会拒收,这是对的
                 print(f"  (基线取自 {a.diff}:{基线}/{_n})")
+    # ⚠️ **收尾再读一次接管状态,变了就不写结果。** 它是运行时配置,`git log` 里看不见 ——
+    # 2026-10-27 并行会话在我跑评测的中间切了一次生产版本,我是从它的消息里才知道的。
+    # > 一份跑在两种配置上的成绩单,和一份跑在一种配置上的,在分数上长得一样。
+    _变, _变说 = _tg.变了吗(_接管开跑, _tg.读状态())
+    if _变:
+        print(f"\n\033[31m{_变说}\033[0m")
+        raise SystemExit("接管状态中途变了 —— **不写结果、不存基线**")
     rounds.报(多轮, 基线通过数=基线, 名="技能触发", 原因=轮因, 基线来路=基线来路)
 
     os.makedirs(RUNS, exist_ok=True)

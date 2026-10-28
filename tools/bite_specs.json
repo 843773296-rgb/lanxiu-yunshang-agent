@@ -13876,5 +13876,101 @@
    }
   ],
   "预期红": "fp 不同但指纹算法换了版本 → 要说「可能只是量法变了,先重新盖章」"
+ },
+ {
+  "script": "backend/staff_cred_check.py",
+  "改坏": "把正则里的表名改掉(扫不到任何地方)—— 这正是我 2026-10-27 真写坏过的那种情形:扫 904 个文件命中 0 处,而**不报错就是全绿**",
+  "file": [
+   {
+    "path": "backend/staff_cred_check.py",
+    "old": "r\"\\s+FROM\\s+staff\\b\", re.I)",
+    "new": "r\"\\s+FROM\\s+staff_zzz\\b\", re.I)"
+   }
+  ],
+  "预期红": "一处都没扫到"
+ },
+ {
+  "script": "backend/staff_cred_check.py",
+  "改坏": "往豁免名单里塞一条用不到的 —— 棘轮要逮住它(「还需要」和「早就不需要了」在名单上长得一样)",
+  "file": [
+   {
+    "path": "backend/staff_cred_check.py",
+    "old": "    \"backend/auth.py\": \"登录验证:要拿 pwd_hash / pwd_salt 比对密码,这是它的工作\",",
+    "new": "    \"backend/auth.py\": \"登录验证:要拿 pwd_hash / pwd_salt 比对密码,这是它的工作\",\n    \"backend/不存在的文件.py\": \"塞进来的,应该被逮住\","
+   }
+  ],
+  "预期红": "已经用不到了"
+ },
+ {
+  "script": "backend/retention_check.py",
+  "改坏": "把「默认只报告」那道闸去掉 —— 于是谁跑一下 purge_expired 就直接删了库里的台账,而删是不可逆的",
+  "file": [
+   {
+    "path": "tools/purge_expired.py",
+    "old": "        if not a.执行:",
+    "new": "        if False:"
+   }
+  ],
+  "预期红": "默认只报告 → **一条都没删**"
+ },
+ {
+  "script": "backend/retention_check.py",
+  "改坏": "读不到演示世界的今天时,退回真实时钟 —— 台账的时间戳是演示世界的,换一套时钟算出来的超期是假的,而那个假数看起来完全正常",
+  "file": [
+   {
+    "path": "tools/purge_expired.py",
+    "old": "        raise SystemExit(\"❌ 读不到 world_meta.world_today",
+    "new": "        import datetime as _dt; return _dt.date.today().isoformat()\n        raise SystemExit(\"❌ 读不到 world_meta.world_today"
+   }
+  ],
+  "预期红": "不拿真实时钟顶替"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "去掉「技能没放行就期望不触发」那一支 —— 于是没挂上的技能照旧被期望触发,那几条报成「漏触发」,而真相是模型调不到它",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "    if 挂了 is not None and 写着的 not in 挂了:\n        return None",
+    "new": "    if False:\n        return None"
+   }
+  ],
+  "预期红": "没挂上 → 改成期望不触发"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "去掉「技能被接管就期望不触发」那一支 —— 于是接管生效被报成漏触发,而那一栏的标题是「用户拿到的是随口答的东西」,完全反了",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "    if 写着的 in (接管中 or []):\n        return None",
+    "new": "    if False:\n        return None"
+   }
+  ],
+  "预期红": "被接管 → 改成期望不触发"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "把「拿不到挂载清单」也当成「没挂上」—— 「不知道」和「确凿没挂」混成一个,而前者瞎改真值会让分数虚高",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "    if 挂了 is not None and 写着的 not in 挂了:\n        return None",
+    "new": "    if 写着的 not in (挂了 or []):\n        return None"
+   }
+  ],
+  "预期红": "拿不到挂载清单(None)→ 真值不动"
+ },
+ {
+  "script": "backend/retention_check.py",
+  "改坏": "把删除条件从「早于保留界」改成「不晚于今天」—— 于是没超期的台账也被删了,而删是不可逆的",
+  "file": [
+   {
+    "path": "tools/purge_expired.py",
+    "old": "                c.execute(f\"DELETE FROM {t} WHERE {col} < ?\", (界,))",
+    "new": "                c.execute(f\"DELETE FROM {t} WHERE {col} <= ?\", (今天 + \" 23:59:59\",))"
+   }
+  ],
+  "预期红": "**没超期的一条都没少**"
  }
 ]

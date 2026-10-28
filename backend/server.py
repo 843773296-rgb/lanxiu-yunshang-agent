@@ -647,7 +647,14 @@ def shop_detail(code):
     import shop_key as _SK
     with _conn() as _c1:
         _片, _参 = _SK.门店条件(_c1, code)   # 同上:带「回填还没到」的兜底
-    s["staff"]=rows(f"SELECT * FROM staff WHERE {_片} ORDER BY role,no",*_参)
+    # ⚠️ **列名写死,不用星号** —— `staff` 表带着 pwd_algo / pwd_salt / pwd_hash,
+    # 而这一行的结果**直接拼进接口返回**,`rows()` 只做 dict(r)、不剥任何列。
+    # 用星号的话哈希和盐会进 HTTP 响应。(2026-10-27 并行会话 git grep 查出来的,
+    # 当天我自己也在终端上犯过同一个错。)
+    # 和 `api._rows` 那道锁同一条规矩,只是那道锁管不到 server.py 自己开的连接:
+    # 一个「按列名查员工」和一个「SELECT * 查员工」,在「拿到了这些人」上长得一模一样。
+    # 新加的展示列这里会漏 —— **漏一个展示列远好过泄露凭据**。
+    s["staff"]=rows(f"SELECT no,name,role,shop,status,hired_at,updated_by,updated,login_name,fail_count,locked_until,last_login,adv_code,shop_code FROM staff WHERE {_片} ORDER BY role,no",*_参)
     s["cust"]=rows(f"SELECT COUNT(*) c FROM customer WHERE {_片} AND {_人头()}",*_参)[0]["c"]   # 按人,归主档所在店
     s["appt"]=rows(f"SELECT COUNT(*) c FROM appointment WHERE {_片}",*_参)[0]["c"]
     s["logs"]=rows("SELECT * FROM op_log WHERE target=? ORDER BY id DESC LIMIT 20",code)
@@ -656,7 +663,7 @@ def shop_detail(code):
 def staff_list(q):
     kw=(q.get("q") or [""])[0].strip()
     ro=(q.get("role") or [""])[0]
-    rs=rows("SELECT * FROM staff ORDER BY no")
+    rs=rows("SELECT no,name,role,shop,status,hired_at,updated_by,updated,login_name,fail_count,locked_until,last_login,adv_code,shop_code FROM staff ORDER BY no")  # 列名写死:staff 带 pwd_*,星号会把哈希和盐带出来(backend/staff_cred_check.py 盯着)
     if kw: rs=[r for r in rs if kw in r["no"] or kw in r["name"]]
     if ro: rs=[r for r in rs if r["role"]==ro]
     d=_page(rs,q)
