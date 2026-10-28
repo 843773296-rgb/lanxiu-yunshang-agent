@@ -7030,7 +7030,9 @@ function 画_聊天编排() {
   $("#body").innerHTML = `<div class="card"><h4>开头提示词</h4>
       <textarea id="c-head" rows="8" style="width:100%">${esc(c["开头"] || "")}</textarea>
       <h4>结尾</h4><textarea id="c-foot" rows="2" style="width:100%">${esc(c["结尾"] || "")}</textarea>
-      <div class="note">模型收到的是:开头 + 下面那几条规矩(按开着的工具挑)+ 结尾。</div></div>
+      <div class="note">模型收到的是:开头 + 下面那几条规矩(按开着的工具挑)+ 结尾。</div>
+      <div class="note" id="c-perm">⚠️ <b>能不能改数据,以下面的工具清单为准,不以这段话为准</b> —— 现在开着 ${写.filter((t) => t["开"]).length} 个写入类工具。
+        提示词里写的「没有写权限」之类的话拦不住任何调用(10-28 查出店长助手开头写着「没有任何写权限」,而它挂着 26 个写入类工具)。</div></div>
     <div class="card"><h4>模型</h4><select id="c-model">${(g["草稿"]["可选模型"] || []).map((m) =>
         `<option value="${esc(m)}"${m === c["模型"] ? " selected" : ""}>${esc(m)}</option>`).join("")}</select>
       <div class="note">清单从聊天站带过来(有单价的才在里面)。聊天页上的人仍能临时换,这里定的是这个助手的默认。</div></div>
