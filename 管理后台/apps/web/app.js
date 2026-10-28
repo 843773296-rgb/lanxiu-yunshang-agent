@@ -257,11 +257,44 @@ async function 页_工作台() {
     $("#main").innerHTML = 头
       + `<div class="cards">${(d.卡片 || []).map(卡).join("")}</div>`
       + `<div class="note warn">${md(`**「未知」不是 0。** 费用未知是因为 mock 适配器没有真实计价;
-         质量分未知是因为还没有评测覆盖 —— 显示 0 会被读成「质量很差」,而真相是「没测过」。`)}</div>`;
+         质量分未知是因为还没有评测覆盖 —— 显示 0 会被读成「质量很差」,而真相是「没测过」。`)}</div>`
+      + `<div id="wb-sw"><div class="state">在取开关…</div></div>`;
     $("#wb-h").value = h;
     $("#wb-h").onchange = 画;
+    画_开关($("#wb-sw"));
   };
   await 画();
+}
+
+/* 开关现状 + 最近 7 天谁改了什么(10-28 用户拍「开关监督」)。
+ * 起因:并行会话三个技能被一个默认值弄得没挂上,功能测试全绿、两天没人知道 —— 改了线上行为的设置,变了要有人看得见。
+ * 只摆这个后台记着的;「聊天站真按它在跑吗」由 tools/takeover_effect_check.py 真调聊天站代码核对,这里不冒充 */
+async function 画_开关(根) {
+  let d;
+  try { d = await 请求(`${P()}/switches`); }
+  catch (e) { 根.innerHTML = `<div class="note">${esc("开关现状没取到:" + e.message)}</div>`; return; }
+  const x = d["现状"], 变 = d["最近变动"] || [];
+  const 列 = (名, xs, f) => `<div class="card swcard" data-sw="${esc(名)}"><div class="k">${esc(名)}</div>${xs.length
+    ? `<ul>${xs.map((i) => `<li>${f(i)}</li>`).join("")}</ul>` : `<div class="k">一个都没有</div>`}</div>`;
+  // 接管只列**开着**的:登记了对应技能而关着的(测试项目里有几百条)摆出来会把真开着的那一两条淹掉 —— 关着的只报个数
+  const 关着 = x["聊天接管"].filter((i) => !i["开着"]).length;
+  根.innerHTML = `<h2>开关 · 改了会换掉线上行为的设置</h2>
+    <div class="cards">
+      ${列("聊天接管", x["聊天接管"].filter((i) => i["开着"]), (i) => `<a href="#/workflow/${encodeURIComponent(i.workflow_id)}/概览">${esc(i["工作流"])}</a>
+        · ${esc(i["技能中文"] || i["技能"])} ${i["开着"] ? '<span class="pill ok">开着</span>' : '<span class="pill">关着</span>'}`)}
+      ${列("生产版本", x["生产版本"], (i) => `<a href="#/workflow/${encodeURIComponent(i.workflow_id)}/版本与发布">${esc(i["工作流"])}</a> · <b>${esc(i["版本"])}</b>`)}
+      ${列("开着的定时", x["开着的定时"], (i) => `<a href="#/workflow/${encodeURIComponent(i.workflow_id)}/设置">${esc(i["工作流"])}</a> · ${esc(i["规则"])}`)}
+    </div>
+    ${关着 ? `<div class="k">另有 ${关着} 条工作流登记了对应技能、接管关着(交给 harness)</div>` : ""}
+    <h3>最近 ${d["天数"]} 天谁改了什么(${变.length} 次)</h3>
+    ${变.length ? `<table class="swlog"><thead><tr><th>时间</th><th>谁</th><th>开关</th><th>哪一条</th><th>从</th><th>到</th><th>理由</th></tr></thead><tbody>
+      ${变.slice(0, 30).map((v) => `<tr><td class="k">${时间(v["时间"])}</td><td>${esc(v["谁"])}</td><td>${esc(v["开关"])}</td>
+        <td>${esc(v["对象"])}</td><td>${esc(v["从"])}</td><td><b>${esc(v["到"])}</b></td><td class="k">${esc(v["理由"] || "")}</td></tr>`).join("")}
+      </tbody></table>${变.length > 30 ? `<div class="k">只列最近 30 次,全部在「审计记录」里</div>` : ""}`
+      : `<div class="k">这几天没人动过这些开关。</div>`}
+    <div class="note">${md(`**这里是后台记着的状态**;聊天站是不是真按它在跑,另由核对脚本真调聊天站的代码去看(\`tools/takeover_effect_check.py\`)。`)}
+      <br>也会改线上行为、但开关不在这个后台的:${(d["别处的开关"] || []).map((o) =>
+        `<b>${esc(o["开关"])}</b>(${esc(o["在哪"])})`).join("、")}。</div>`;
 }
 
 /* ── Prompt 列表(§8.1)─────────────────────────────────────────── */

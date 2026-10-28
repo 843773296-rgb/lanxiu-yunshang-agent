@@ -35,6 +35,7 @@ contract:      ## 只跑契约覆盖检查(不需要数据库)
 	@echo "  顺着扫管理后台也有**九处**(Agent 98 / 调用链 1417 / 评测 73 / 上传 714,"
 	@echo "  而页面上都写着「共 20 条」)—— 改成 count(*) over () 在同一个查询里算"
 	@./.venv/bin/python tools/total_not_truncated_check.py
+	@./.venv/bin/python tools/switch_registry_check.py
 	@echo ""
 	@./.venv/bin/python tools/nav_smoke_check.py
 	@echo ""

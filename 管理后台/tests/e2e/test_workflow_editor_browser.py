@@ -528,6 +528,27 @@ def main():
         ck(f"一条工作流的运行总数只数它自己的(验 {len(有跑)} 条跑过的工作流 / 全项目 {全数} 次)—— 原来漏了筛选,报的是全项目",
            len(有跑) > 0 and all(x[1] == x[2] for x in 有跑) and any(x[1] < 全数 for x in 有跑), 有跑[:3])
 
+        print("\n▸ 开关监督(10-28):工作台摆出开关现状和最近谁改了什么,和接口逐条对上")
+        接口sw = js("""return fetch(`/api/v1/projects/${项目}/switches`, {headers: {'X-Dev-User': 我}}).then(r => r.json())""")
+        d.get(基址 + "/#/workbench")
+        try:
+            等(d, lambda: bool(js("return document.querySelector('#wb-sw .swcard')")))
+        except TimeoutError:
+            pass
+        页sw = js("""const 块 = k => document.querySelector(`#wb-sw .swcard[data-sw="${k}"]`);
+          return {接管: 块('聊天接管') ? 块('聊天接管').querySelectorAll('li').length : null,
+                  生产: 块('生产版本') ? 块('生产版本').querySelectorAll('li').length : null,
+                  定时: 块('开着的定时') ? 块('开着的定时').querySelectorAll('li').length : null,
+                  变动行: document.querySelectorAll('#wb-sw table.swlog tbody tr').length,
+                  别处: (document.querySelector('#wb-sw .note') || {}).textContent || ''}""")
+        x = 接口sw["现状"]
+        开着 = [i for i in x["聊天接管"] if i["开着"]]
+        ck(f"三块(开着的聊天接管 {len(开着)} / 生产版本 {len(x['生产版本'])} / 定时 {len(x['开着的定时'])})条数和接口一致;"
+           f"变动表 {min(30, len(接口sw['最近变动']))} 行;写明技能放行在澜绣后台",
+           页sw["接管"] == len(开着) and 页sw["生产"] == len(x["生产版本"]) and 页sw["定时"] == len(x["开着的定时"])
+           and 页sw["变动行"] == min(30, len(接口sw["最近变动"])) and "技能放行" in 页sw["别处"]
+           and len(接口sw["最近变动"]) + len(x["聊天接管"]) + len(x["生产版本"]) > 0, 页sw)
+
         print("\n▸ 应用详情侧栏(10-28):进到工作流里,左边换成这个应用自己的一列;离开换回主导航")
         wid = 接口数["流"][0]
         d.get(基址 + f"/#/workflow/{wid}/概览")

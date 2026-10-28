@@ -236,6 +236,7 @@ export const ENDPOINTS = [
   { method: "GET", path: "/workflows/{id}/recent-inputs", summary: "最近几次运行收到的输入", capability: "查看有权配置", fieldCapabilities: ["查看敏感输入/独立测试答案"], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/workflows/{id}/schedule", summary: "这条工作流的定时", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "PUT", path: "/workflows/{id}/schedule", summary: "设 / 改 / 关定时", capability: "改编排草稿", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/switches", summary: "开关现状 + 最近谁把什么从什么改成了什么(聊天接管 / 生产版本 / 定时;给工作台)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/schedules", summary: "所有定时(给「定时」页)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/workflows/{id}/releases", summary: "工作流各环境在跑哪一版", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/workflows/{id}/releases", summary: "把某一版发到某个环境", capability: "生产审核/发布/回滚", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
@@ -255,4 +256,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 168 条接口 · 24 条异步 · 31 条要幂等键 · 17 条要 If-Match */
+/** 共 169 条接口 · 24 条异步 · 31 条要幂等键 · 17 条要 If-Match */

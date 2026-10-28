@@ -517,3 +517,4 @@ button.mini{height:22px;padding:0 8px;font-size:12px}
 #side .apphead b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pager{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:12px 0}
 .pager button{min-width:32px}
+.swcard ul{margin:6px 0 0;padding-left:18px}.swcard li{margin:2px 0}

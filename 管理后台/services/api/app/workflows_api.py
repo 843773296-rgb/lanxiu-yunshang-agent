@@ -1362,7 +1362,10 @@ async def 设定时(project_id: str, wid: str, request: Request, me: 身份 = De
                                       cast(:in as jsonb), now(), :u, now(), 1)"""),
                       {"i": _新id("sch"), "o": me.org_id, "p": project_id, "w": wid, "c": 规则["周期"], "t": 规则["时刻"],
                        "z": 规则["时区"], "on": 开, "u": me.user_id, "in": json.dumps(固定, ensure_ascii=False)})
-        _审计(c, me, "workflow.schedule", {"workflow_id": wid, "规则": 规则, "开着": 开, "固定输入字段": sorted(固定)},
+        # 「之前」也记(10-28 开关监督):工作台要能说「从关到开」「从每天 9 点改成每周一」,只记改成什么说不出这句
+        _审计(c, me, "workflow.schedule", {"workflow_id": wid, "规则": 规则, "开着": 开, "固定输入字段": sorted(固定),
+                                           "之前": ({"开着": bool(老["schedule_enabled"]), "周期": 老["cadence"],
+                                                     "时刻": str(老["fire_time"])} if 老 else None)},
               reason=("打开定时:以本人身份跑生产版" if 开 else "关掉定时"))
         s = c.execute(text("select * from workflow_schedules where project_id=:p and workflow_id=:w"),
                       {"p": project_id, "w": wid}).mappings().first()
@@ -2542,4 +2545,97 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
         "事件": [{"seq": e["seq"], "类型": e["event_type"], "载荷": e["payload"],
                 "时间": e["occurred_at"].isoformat() if e["occurred_at"] else None}
                for e in evs],
+    }
+
+
+# ── 开关监督(用户 10-28 拍;起因见交接「没人看着的一件」)──────────────────────────────────────
+# 并行会话那三个技能就是这么丢的:后台一个默认值让它们没挂上,**功能测试照样全绿**,两天没人知道。
+# 这里只回答两件事:**现在各开关是什么状态**、**最近谁把什么从什么改成了什么**。
+# 「改了真生效没有」(聊天站眼里的接管清单和这里一致吗)由 tools/takeover_effect_check.py 真调聊天站的代码核对,不在这里猜。
+开关们 = {   # 审计动作 → (开关名, 改了线上会变什么)。新加一种开关:写审计 + 登记在这里,tools/switch_registry_check.py 盯着
+    "workflow.takeover": ("聊天接管", "打开后聊天站碰到这件事改走这条工作流的生产版,不再用技能"),
+    "release.deploy": ("生产版本", "聊天接管和定时跑的就是生产指着的那一版"),
+    "release.rollback": ("生产版本(回滚)", "同上:回滚 = 把生产指针切回旧的那一版"),
+    "workflow.schedule": ("定时", "到点以设置人的身份跑生产版"),
+}
+# 也改线上行为、但开关不在这个后台的 —— 摆出来写明在哪、归谁,不装作没有
+别处的开关 = [
+    {"开关": "技能放行", "在哪": "澜绣后台「系统 → Skill 管理」(backend/lanxiu.db 的 skill_cfg)",
+     "改了会变什么": "聊天站挂不挂这个技能。⚠️ 没登记过的第三方技能默认「待审查」= 不挂(10-28 三个经营分析技能就是这样两天没挂上)"},
+    {"开关": "工具停用 / 超时 / 限流", "在哪": "澜绣后台「系统 → MCP 服务与工具」",
+     "改了会变什么": "模型还能不能调那个工具、等多久"},
+]
+
+
+@router.get(前缀 + "/switches")
+def 开关现状(project_id: str, me: 身份 = Depends(要权限("查看有权配置")), 天: int = Query(7, ge=1, le=90)):
+    with 连接() as c:
+        接管 = c.execute(text("""select id, name, takeover_skill_name, coalesce(chat_takeover_enabled, false) 开
+                                  from workflows where project_id=:p and archived_at is null
+                                   and takeover_skill_name is not null order by name"""),
+                         {"p": project_id}).mappings().all()
+        定时 = c.execute(text("""select s.workflow_id, w.name, s.cadence, s.fire_time, s.schedule_enabled
+                                  from workflow_schedules s join workflows w on w.project_id=s.project_id and w.id=s.workflow_id
+                                 where s.project_id=:p and s.schedule_enabled order by w.name"""),
+                         {"p": project_id}).mappings().all()
+        生产 = c.execute(text("""select w.id, w.name, v.version_no
+                                  from applications a
+                                  join workflows w on w.project_id=a.project_id and w.id=a.workflow_id
+                                  join environment_bindings b on b.project_id=a.project_id and b.application_id=a.id
+                                                             and b.environment='production'
+                                  join release_manifests m on m.project_id=b.project_id and m.id=b.release_manifest_id
+                                  join workflow_versions v on v.project_id=m.project_id and v.id=m.workflow_version_id
+                                 where a.project_id=:p and a.archived_at is null order by w.name"""),
+                         {"p": project_id}).mappings().all()
+        变 = c.execute(text("""select at, actor, action, target_ref, reason from audit_events
+                                where project_id=:p and action = any(:a) and at > now() - make_interval(days => :d)
+                                order by at desc limit 200"""),
+                       {"p": project_id, "a": list(开关们), "d": 天}).mappings().all()
+        # 发布审计里记的是清单 id —— 翻成「哪条工作流的第几版」才看得懂
+        清单们 = {x for r in 变 for k in ("release_id", "从", "到") for x in [(r["target_ref"] or {}).get(k)] if x}
+        版 = {r["id"]: (r["wid"], r["name"], r["version_no"]) for r in c.execute(text("""
+                select m.id, w.id wid, w.name, v.version_no from release_manifests m
+                  join workflow_versions v on v.project_id=m.project_id and v.id=m.workflow_version_id
+                  join workflows w on w.project_id=v.project_id and w.id=v.workflow_id
+                 where m.project_id=:p and m.id = any(:i)"""), {"p": project_id, "i": list(清单们)}).mappings()} if 清单们 else {}
+        名 = {r["id"]: r["name"] for r in c.execute(text("select id, name from workflows where project_id=:p"),
+                                                    {"p": project_id}).mappings()}
+    def 版本说(mid):
+        return f"v{版[mid][2]}" if mid in 版 else ("还没发布" if mid is None else "(清单已不在)")
+    变动 = []
+    for r in 变:
+        t, a = r["target_ref"] or {}, r["action"]
+        前 = t.get("之前") or {}
+        if a == "workflow.takeover":
+            对象, 从, 到 = 名.get(t.get("workflow_id"), t.get("workflow_id")), \
+                ("开" if 前.get("聊天接管") else "关") + (f" · {可接管技能.get(前.get('对应技能'), 前.get('对应技能'))}" if 前.get("对应技能") else ""), \
+                ("开" if t.get("聊天接管") else "关") + (f" · {可接管技能.get(t.get('对应技能'), t.get('对应技能'))}" if t.get("对应技能") else "")
+            if not 前:
+                从 = "(这条审计早于记「之前」)"
+        elif a in ("release.deploy", "release.rollback"):
+            if t.get("environment") != "production":
+                continue      # 测试 / 预发换版本不改线上行为
+            新 = t.get("release_id") or t.get("到")
+            对象 = 版[新][1] if 新 in 版 else "(清单已不在)"
+            从, 到 = 版本说(t.get("从")), 版本说(新)
+        else:     # workflow.schedule
+            规 = t.get("规则") or {}
+            对象 = 名.get(t.get("workflow_id"), t.get("workflow_id"))
+            到 = ("开 · " if t.get("开着") else "关 · ") + f"{规.get('周期', '')} {规.get('时刻', '')}".strip()
+            从 = ("(这条审计早于记「之前」)" if "之前" not in t else "还没设过" if not 前
+                 else ("开 · " if 前.get("开着") else "关 · ") + f"{前.get('周期', '')} {str(前.get('时刻', ''))[:5]}")
+        变动.append({"时间": r["at"].isoformat() if r["at"] else None, "谁": r["actor"], "开关": 开关们[a][0],
+                     "对象": 对象, "从": 从, "到": 到, "理由": r["reason"]})
+    return {
+        "现状": {
+            "聊天接管": [{"workflow_id": r["id"], "工作流": r["name"], "技能": r["takeover_skill_name"],
+                          "技能中文": 可接管技能.get(r["takeover_skill_name"]), "开着": bool(r["开"])} for r in 接管],
+            "生产版本": [{"workflow_id": r["id"], "工作流": r["name"], "版本": f"v{r['version_no']}"} for r in 生产],
+            "开着的定时": [{"workflow_id": r["workflow_id"], "工作流": r["name"],
+                            "规则": f"{r['cadence']} {str(r['fire_time'])[:5]}"} for r in 定时],
+        },
+        "最近变动": 变动, "天数": 天,
+        "开关们": [{"审计动作": k, "开关": v[0], "改了会变什么": v[1]} for k, v in 开关们.items()],
+        "别处的开关": 别处的开关,
+        "note": "「现状」是这个后台记着的;**聊天站真按它在跑吗**另由 tools/takeover_effect_check.py 真调聊天站代码核对",
     }
