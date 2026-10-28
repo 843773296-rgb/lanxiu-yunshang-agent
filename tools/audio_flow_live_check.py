@@ -104,9 +104,16 @@ def main():
     c1, w = 打("POST", P + "/workflows", 体={"名称": f"两边真接 {uuid.uuid4().hex[:6]}", "模板": "音频整理"})
     c2, d = 打("GET", P + f"/workflows/{w['id']}")
     定义 = d["草稿"]["定义"]
+    # 谁要模型 / 处理要求,**问服务端的节点库**(每种节点的「必填」),不在这里列类型 ——
+    # 10-28 录音模板「有意向吗」从 llm 换成问题分类器,原来那句 `type == "llm"` 漏了它,运行被 422 拦下。
+    # 列类型等于把将来新加的节点默认排除在外;只填空着的,模板已选好的不覆盖
+    必填 = {x["名"]: set(x["必填"]) for x in d["节点库"]}
     for nd in 定义["nodes"]:
-        if nd["type"] == "llm":
-            nd["config"].update(connection_version_id="cv_mock_" + 项目, prompt_version_id="pv_seed_article_summary")
+        要 = 必填.get(nd["type"], set())
+        if "connection_version_id" in 要 and not nd["config"].get("connection_version_id"):
+            nd["config"]["connection_version_id"] = "cv_mock_" + 项目
+        if "prompt_version_id" in 要 and not nd["config"].get("prompt_version_id"):
+            nd["config"]["prompt_version_id"] = "pv_seed_article_summary"
     打("PATCH", P + f"/workflows/{w['id']}/draft", 体={"定义": 定义}, 头={"If-Match": str(d["草稿"]["revision"])})
     c3, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())},
               体={"workflow_id": w["id"], "输入": {"call_id": call, "customer_id": cust}})
