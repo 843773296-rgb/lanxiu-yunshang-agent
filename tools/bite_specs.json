@@ -14092,5 +14092,41 @@
    }
   ],
   "预期红": "「读不出建议」带着原因报,而「没有答复可读」那一类和「没交付成功的」是同一批"
+ },
+ {
+  "script": "tools/prompts_check.py",
+  "改坏": "把 assemble 里算能力标记「写」那一步删掉(有写工具的角色于是一条写纪律都不装)",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "            have.add(\"写\")",
+    "new": "            pass"
+   }
+  ],
+  "预期红": "手上有写工具的角色,都装上了写工具的通用纪律"
+ },
+ {
+  "script": "tools/prompts_check.py",
+  "改坏": "把那个能力标记改成无条件加(没有写工具的调用方也被告知「你手上有会改数据的工具」)",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "        if have & set(_api写.WRITE_TOOLS):",
+    "new": "        if True:"
+   }
+  ],
+  "预期红": "手上没有写工具的调用方,不会被告知它有"
+ },
+ {
+  "script": "tools/prompts_check.py",
+  "改坏": "把 assemble 里 head 的 `is None` 改成 `or`(后台把开头清空时静默回退到代码那一份)",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "    head = _head if head is None else head",
+    "new": "    head = head or _head"
+   }
+  ],
+  "预期红": "后台那一版的开头 / 结尾能顶上来,而不传时和代码那一份一字不差"
  }
 ]
