@@ -8,6 +8,7 @@
   · 只有接收岗位能接单 / 退回;退回要写理由;过了 4 个工作小时没人接 → 自动退回原负责人;
   · 接单之后只有接单人能复核;接单人复核完,升级记录办完。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import datetime as dt
 import os
 import shutil
@@ -147,7 +148,7 @@ else:
        and (E.当前(研["T-检查-升级-丙"], db) or {}).get("return_note"), r)
 
     # 旧数据:10-17 之前「已升级」的,没有升级记录
-    with sqlite3.connect(db) as cx:
+    with closing(sqlite3.connect(db)) as cx, cx:
         cx.execute("UPDATE triage SET status='已升级' WHERE id=?", (研["T-检查-升级-旧"],))
     旧 = 行("T-检查-升级-旧")
     ck("没有接收人的旧「已升级」不再算销账,标出来", not 旧.get("done")

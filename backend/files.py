@@ -11,6 +11,7 @@
 **别把图片塞进数据库** —— 几十兆的 BLOB 会让每一次 SELECT * 都变慢,
 而这个库里到处是 SELECT *。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, base64, hashlib, datetime, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -27,7 +28,7 @@ KINDS = ("派单", "总结")
 
 
 def _rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
@@ -71,7 +72,7 @@ def save(schedule_id, kind, name, data_url, actor):
     with open(os.path.join(d, fn), "wb") as f:
         f.write(raw)
     rel = os.path.join(schedule_id, fn)
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("INSERT INTO schedule_file(schedule_id,kind,name,mime,size,path,"
                   "uploaded_by,uploaded_at) VALUES(?,?,?,?,?,?,?,?)",
                   (schedule_id, kind, (name or fn)[:80], mime, len(raw), rel, actor,

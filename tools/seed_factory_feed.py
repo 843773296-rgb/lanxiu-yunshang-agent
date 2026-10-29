@@ -21,6 +21,7 @@
 每条的毛病、预期、实际记在 factory_outbox(**模拟工厂那一侧的表**,相当于答案 ——
 和 truth 表同一条规矩,不经任何工具露出去)。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, sqlite3, collections
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -95,11 +96,11 @@ def main():
             if got != 预期.split("→")[0]:
                 错.append((毛病 or "正常", m.get("消息号"), 预期, got))
         计[毛病 or "正常"] += 1
-        with sqlite3.connect(DB) as c:
+        with closing(sqlite3.connect(DB)) as c, c:
             c.execute("INSERT INTO factory_outbox(seq,order_id,msg_id,event,flaw,expect,got) VALUES(?,?,?,?,?,?,?)",
                       (i, m.get("订单号"), m.get("消息号"), m.get("事件"), 毛病, 预期, got))
     # 最终结果(暂存的后来放没放行)按收件箱里现在的样子对
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE factory_outbox SET final=(SELECT result FROM factory_msg f WHERE f.msg_id=factory_outbox.msg_id)")
         for r in c.execute("SELECT flaw, msg_id, expect, final FROM factory_outbox WHERE expect LIKE '%→%'"):
             if r[3] != r[2].split("→")[-1]:
@@ -134,7 +135,7 @@ def main():
               "别家报完工", "车间在制却报完工", "件不属于这张单", "整批延期", "撤回一条完工", "更正快递单号"):
         if not 计[k]:
             错.append((k, "", "至少 1 条", "0 条 —— 这一支没样本,等于没测"))
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         结 = collections.Counter(r[0] for r in c.execute(
             "SELECT result FROM factory_msg WHERE msg_id NOT LIKE 'H%'"))
         推 = collections.Counter(r[0] for r in c.execute(
@@ -148,7 +149,7 @@ def main():
         print(f"  ❌ {len(错)} 条和模拟工厂记的预期对不上:")
         for x in 错[:10]: print(f"     {x}")
         sys.exit(1)
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         包, 多包 = c.execute("SELECT COUNT(*), SUM(n>1) FROM (SELECT order_id, COUNT(*) n FROM pkg "
                             "WHERE void_at IS NULL GROUP BY order_id)").fetchone()
         延 = c.execute("SELECT COUNT(*) FROM factory_delay").fetchone()[0]

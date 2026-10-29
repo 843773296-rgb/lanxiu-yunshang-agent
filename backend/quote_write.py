@@ -26,6 +26,7 @@
 **这一列会不会被平移** —— 会的话就必须用世界时钟写。
 ⚠️ 两列都已登记进 `worldclock.已发生的时间列`(C4 和平移前置闸共用那份清单)。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -39,7 +40,7 @@ import quote as Q
 
 
 def rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
@@ -109,7 +110,7 @@ def 落一次报价(d, me):
     # 悄悄废掉了,**而且不报错**。
     # 所以序号从库里现数:同一个方案已经有几条,下一条就是几号。
     戳 = now.replace("-", "").replace(" ", "").replace(":", "")
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         序 = c.execute("SELECT COUNT(*) FROM quote WHERE scheme_id=?", (s["id"],)).fetchone()[0] + 1
     qid = f"Q{s['id']}-{戳}-{序:02d}"
     # ⚠️ 取值一律用 `.get()`,**缺了就拒,不崩**。
@@ -124,7 +125,7 @@ def 落一次报价(d, me):
         return dict(ok=False, code="NOT_READY",
                     reason=f"五样里有取不到值的({type(e).__name__})—— "
                            f"**缺项不许进 SQL**,缺一样就不落库")
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("""INSERT INTO quote(id,scheme_id,customer_id,quoted_at,advisor_no,
                         material_cost,lead_time,feasible,size_no,stock,note)
                      VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
@@ -160,7 +161,7 @@ def 作废一条报价(d, me):
     if not 能:
         return dict(ok=False, code="CANNOT_VOID", reason=话)
     now = _now()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         n = c.execute("UPDATE quote SET voided_at=?, void_reason=?, voided_by=? "
                       "WHERE id=? AND voided_at IS NULL",
                       (now, str(d["原因"]).strip(), me.get("no"), qid)).rowcount

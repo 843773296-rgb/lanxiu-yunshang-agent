@@ -39,6 +39,7 @@
 因为**空表上 EXPLAIN 照样会说用上了索引**,而「没东西可验」和「验过了」
 在那行计划上长得一模一样。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os
 import sqlite3
 import sys
@@ -144,7 +145,7 @@ for 文件, 干什么 in QI.建库路径:
 if not os.path.exists(QI.DB):
     print(f"  {Y}⏭{D} 库不在,跳过库上那三条 —— **跳过不是通过**")
 else:
-    with sqlite3.connect(f"file:{QI.DB}?mode=ro", uri=True) as c:
+    with closing(sqlite3.connect(f"file:{QI.DB}?mode=ro", uri=True)) as c, c:
         有 = {r[0]: r[1] for r in c.execute(
             "SELECT name, sql FROM sqlite_master WHERE type='index'")}
         for ix in QI.索引:

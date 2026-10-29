@@ -3,6 +3,7 @@
 
 铁律:truth 表绝不通过任何接口暴露。评测比对在 agent 之外做。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import sqlite3, os, json, sys, re, subprocess
 import datetime as _dt
 DB=os.path.join(os.path.dirname(os.path.abspath(__file__)),"lanxiu.db")
@@ -1546,7 +1547,7 @@ def apply_adjust(kind, target, payload, reason):
         n += 1; aid = f"{pre}-{n:03d}"
     now = _wc.当下().strftime("%Y-%m-%d %H:%M")
     payload = dict(payload); payload["reason"] = why
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("INSERT INTO approval(id,kind,target,payload,status,applied_by,applied_at)"
                   " VALUES(?,?,?,?,'待审批',?,?)",
                   (aid, kind, tgt, _js.dumps(payload, ensure_ascii=False),
@@ -1600,7 +1601,7 @@ def decide_approval(approval_id, agree, note):
                            "**同意不写理由,出事之后没人说得清当时看了什么**")
     now = _wc.当下().strftime("%Y-%m-%d %H:%M")
     改了 = ""
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE approval SET status=?,decided_by=?,decided_at=?,note=? WHERE id=?",
                   (to, me.get("no"), now, txt, aid))
         # 批准即生效(用户 10-25 拍)—— 和审批中心同一段;同一个事务里,改单和改档要么都成要么都不成
@@ -2883,7 +2884,7 @@ def my_workorders(status=None):
 
 def _rows2(sql, *a):
     """只取一列的裸元组 —— `_rows` 会过列名黑名单,这里只要 id,不必走那一遍。"""
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         return c.execute(sql, a).fetchall()
 
 

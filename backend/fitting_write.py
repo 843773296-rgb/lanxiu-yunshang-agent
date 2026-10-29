@@ -22,6 +22,7 @@
             才许从「待生产」进「生产中」。一家人各做一件时,只要有一件没过,整单不许裁 ——
             裁剪是按单排的,裁一半留一半等于把没过闸那件也推上了裁床。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -33,7 +34,7 @@ from oplog import log_op
 
 
 def rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
@@ -108,7 +109,7 @@ def record(d, me):
                                "给已有轮次只能用来补签(signed=true)")
         if old["signed"]:
             return dict(ok=False, code="ALREADY", reason=f"第 {rnd} 轮已经签过字了({old['signed_at']})")
-        with sqlite3.connect(DB) as c:
+        with closing(sqlite3.connect(DB)) as c, c:
             c.execute("UPDATE fitting SET signed=1, signed_at=?, note=COALESCE(note,'')||? WHERE id=?",
                       (now, (";补签:" + note) if note else ";补签", old["id"]))
         log_op(me["name"], "fitting", str(old["id"]), "未签", "已签", True, "FIT_SIGN",
@@ -121,7 +122,7 @@ def record(d, me):
                     reason="要写这一轮改了哪几处(没改就写「无需调整」)—— "
                            "只写「试了」的记录,出尺寸争议时说不清客户认可的是哪一版")
     rnd = (max((r["round"] for r in recs), default=0) or 0) + 1
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         import shop_key as _SK          # 门店码的唯一入口
         c.execute("INSERT INTO fitting(item_id,order_id,wearer_id,round,ts,advisor_no,shop,shop_code,adjust,"
                   "signed,signed_at,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -183,7 +184,7 @@ def start_cutting(d, me):
         return dict(ok=False, code="MUSLIN_GATE", reason=话, 逐件=明细,
                     能做什么="约客户来试白坯并签字(顾问登记试衣),或补齐判不了的那一项(比如亲自量体)")
     now = _now()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE ordr SET status='生产中', prd_status=?, cut_at=?, cut_by=? WHERE id=? AND status=?",
                   (fsm.ORDER_PRD["生产中"], now, me["no"], oid, o["status"]))
     log_op(me["name"], "ordr", oid, o["status"], "生产中", True, "CUT",

@@ -41,6 +41,7 @@ CLAUDE.md 记着这个项目为「枚举中文短语」栽过**七次**:
 「随便看看」「再想想」「帮朋友问问」之所以不算商机,
 不是因为我枚举了这三句,而是因为**它们里面没有任何具体的维度词**。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, re, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -60,7 +61,7 @@ import oppo as _口径
 
 
 def _rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 

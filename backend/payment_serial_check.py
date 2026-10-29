@@ -39,6 +39,7 @@
      (库里现在是干净的,不自己造的话这条分支永远走不到,
       而「没走到」和「验过了」在绿勾上长得一模一样)
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os
 import re
 import sqlite3
@@ -106,7 +107,7 @@ if not os.path.exists(DB):
     print(f"  {Y}⏭{D} 库不在,跳过 —— **跳过不是通过**")
     sys.exit(0)
 
-with sqlite3.connect(f"file:{DB}?mode=ro", uri=True) as c:
+with closing(sqlite3.connect(f"file:{DB}?mode=ro", uri=True)) as c, c:
     总 = c.execute("SELECT COUNT(*) FROM payment_flow "
                    "WHERE channel_serial IS NOT NULL AND TRIM(channel_serial) <> ''"
                    ).fetchone()[0]

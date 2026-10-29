@@ -31,6 +31,7 @@
 而新加的判据 `backend/payment_serial_check.py` 会一直红。
 跑一次就对了,之后造数自己绑押金号,不会再造出重复。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import argparse
 import os
 import sqlite3
@@ -86,7 +87,7 @@ def main():
     print("造数的渠道流水号 · 改成绑押金号(不绑循环下标)")
     print("=" * 78)
     print(f"库:{a.db}")
-    with sqlite3.connect(f"file:{a.db}?mode=ro", uri=True) as ro:
+    with closing(sqlite3.connect(f"file:{a.db}?mode=ro", uri=True)) as ro, ro:
         重前 = 重复的(ro)
         改 = 要改的(ro)
     print(f"造数流水里号不对的 **{len(改)} 行**;全库重复的「渠道+号+方向」**{len(重前)} 组**")
@@ -108,7 +109,7 @@ def main():
             # 那个坏值可能被别的、不是造数造的行用着,而那些行**不该被碰**。
             c.execute("UPDATE payment_flow SET channel_serial=? WHERE id=?", (该, fid))
     c.close()
-    with sqlite3.connect(f"file:{a.db}?mode=ro", uri=True) as ro:
+    with closing(sqlite3.connect(f"file:{a.db}?mode=ro", uri=True)) as ro, ro:
         重后 = 重复的(ro)
         剩 = 要改的(ro)
     print(f"  {G}改了 {len(改)} 行{D}")

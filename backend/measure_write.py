@@ -18,6 +18,7 @@
   · 方式 / 三个条件 / 合理范围 → `measure.校验一次`,**不改数、不猜单位**
   · 可以绑一件订单行(下单量体):那一件必须是**给这个着装人做的**
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, sqlite3, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -29,7 +30,7 @@ from oplog import log_op
 
 
 def rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
@@ -119,7 +120,7 @@ def record(d, me):
                         reason=f"这一件是给「{行['wearer_id'] or '(还没定给谁)'}」做的,不是 {wid} —— "
                                "**下单量体量的必须是穿这件的人**;还没定给谁的先定着装人")
     code = {r["name"]: r["code"] for r in rows("SELECT code, name FROM measure_item")}
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         for 名, v in 值们.items():
             c.execute("INSERT INTO measure_rec(customer_id,tpl,item,value,measured_by_no,measured_at,method,"
                       "wearer_id,order_item_id,cond_inner,cond_shoe,cond_breath) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",

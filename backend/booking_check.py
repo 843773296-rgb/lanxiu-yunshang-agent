@@ -8,6 +8,7 @@
 这里测四类派不出去的情况。它们全都可以被「随便派一个在职顾问」蒙混过去,
 而蒙混过去的结果看板上是全绿的 —— 这正是要专门查的原因。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import sys, os, sqlite3
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import booking, oplog, shutil, tempfile, atexit
@@ -112,7 +113,7 @@ def main():
             check("  └ 而且留了痕", "记了" if after > before else "没记", "记了",
                   "  ← 不吭声的话,另一条档案上的历史永远用不上")
             # 造出来的这条清掉,**检查不许改库**
-            with sqlite3.connect(DB) as _c:
+            with closing(sqlite3.connect(DB)) as _c, _c:
                 _c.execute("DELETE FROM schedule WHERE id=?", (r["task"],))
                 _c.execute("DELETE FROM appointment WHERE id=?", (r["appt"],))
                 _c.execute("DELETE FROM op_log WHERE code='DUP_PHONE' AND id>?", (before and
@@ -203,7 +204,7 @@ def main():
     # 造两个同名的人,按工号查仍然各是各的。
     dup = _一["name"]
     try:
-        with sqlite3.connect(DB) as w:
+        with closing(sqlite3.connect(DB)) as w, w:
             w.execute("INSERT INTO staff(no,name,role,shop,status,adv_code) "
                       "VALUES('69999999',?,'顾问','SH009 临时','启用','A99')", (dup,))
         st = booking.staff_of_advisor("69999999")
@@ -213,7 +214,7 @@ def main():
         check("  └ 原来那个也还查得到,没被同名顶掉",
               st["no"] if st else "查不到", _一["no"])
     finally:
-        with sqlite3.connect(DB) as w:
+        with closing(sqlite3.connect(DB)) as w, w:
             w.execute("DELETE FROM staff WHERE no='69999999'")
 
     print("\n\033[1m▸ 花名册 · 一个店长带几个人\033[0m")

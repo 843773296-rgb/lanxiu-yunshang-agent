@@ -28,6 +28,7 @@
 `quote` skill 里写着:「助手不给最终售价,物料成本 × 系数才是售价,
 系数由财务和店长定」。这张表**也不存** —— 存了就等于系统给出了一个它无权给的数。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -60,7 +61,7 @@ CREATE INDEX IF NOT EXISTS ix_quote_at ON quote(quoted_at);
 def 建表(c=None):
     """建表(已经在了就什么都不做)。`c` 可以是连接也可以是库路径 —— 同 seed_rating.建表。"""
     if c is None or isinstance(c, str):
-        with sqlite3.connect(c or DB) as cx:
+        with closing(sqlite3.connect(c or DB)) as cx, cx:
             cx.executescript(DDL)
     else:
         c.executescript(DDL)
@@ -68,7 +69,7 @@ def 建表(c=None):
 
 def main():
     建表()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         n = c.execute("SELECT COUNT(*) FROM quote").fetchone()[0]
     print(f"✅ 报价表就位(quote,现在 {n} 条)")
     print("   ⚠️ **这一版只建表,不铺数据** —— 报价是 `quote` skill 真跑出来的东西,")

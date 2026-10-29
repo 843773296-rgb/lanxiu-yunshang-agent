@@ -36,6 +36,7 @@ Apple Silicon 上走 Metal,速度够用。
 whisper 支持 `--prompt` 做上下文偏置 —— 把行业词表喂进去。
 `asr_check.py` 里有开/关两组的对照,**光说「加了热词」不算数,要量出差多少**。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, re, sqlite3, subprocess, shutil, time, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -69,7 +70,7 @@ def 行业词(limit=None):
     """
     类们 = []
     try:
-        with sqlite3.connect(DB) as c:
+        with closing(sqlite3.connect(DB)) as c, c:
             for 类 in ("形制", "材质", "工艺", "配饰"):
                 类们.append([w for (n,) in c.execute("SELECT name FROM craft WHERE cat=? ORDER BY code", (类,))
                              for w in _短名(n)])
@@ -210,7 +211,7 @@ def _世界当下():
 def 入库(audio_id, customer_id, wav, 文本, model, 用时, source, 用热词=True,
         ref_kind=None, ref_id=None, seconds=None, today=None):
     today = today or _世界今天()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         建表(c)
         c.execute("""insert into call_audio(id,customer_id,ref_kind,ref_id,path,seconds,source,created)
                      values(?,?,?,?,?,?,?,?)
@@ -625,7 +626,7 @@ def 处理(audio_id, db=None, call=None, 转写=None, 纠错call=None):
     「还在转」和「早就崩了」在页面上长得一模一样。`转写` 可注入假的转写函数(检查里用)。"""
     db = db or DB
     转写 = 转写 or 转写分段
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         建表(c)
         r = c.execute("SELECT path, customer_id FROM call_audio WHERE id=?", (audio_id,)).fetchone()
         if not r:
@@ -647,7 +648,7 @@ def 处理(audio_id, db=None, call=None, 转写=None, 纠错call=None):
         原稿 = 成稿(行们)
         # 同音纠错:**失败不算转写失败** —— 原稿照样落,fixes 里写清「没纠」,不然和「纠过、没有要改的」长得一样
         try:
-            with sqlite3.connect(db) as _c:
+            with closing(sqlite3.connect(db)) as _c, _c:
                 _核 = 已核验词对(_c)
             结 = 同音纠错(原稿, call=纠错call, 已核验=_核)
             文本 = 结["稿"]
@@ -658,7 +659,7 @@ def 处理(audio_id, db=None, call=None, 转写=None, 纠错call=None):
         import simplified
         繁 = "".join(simplified.繁体字(文本))
         today = _世界今天()
-        with sqlite3.connect(db) as c:
+        with closing(sqlite3.connect(db)) as c, c:
             c.execute("""insert into call_transcript(audio_id,text,engine,model,hotwords,cost_sec,trad,created,
                                                      speaker_src,raw_text,fixes)
                          values(?,?,?,?,?,?,?,?,?,?,?)
@@ -673,16 +674,16 @@ def 处理(audio_id, db=None, call=None, 转写=None, 纠错call=None):
             import sys as _sys
             _sys.path[:0] = [HERE, os.path.join(HERE, "..", "knowledge")]
             import opportunity_store as _os
-            with sqlite3.connect(db) as c:
+            with closing(sqlite3.connect(db)) as c, c:
                 _os.建表(c)
                 _os.从转写建(c, audio_id)
         except Exception as e:
-            with sqlite3.connect(db) as c:
+            with closing(sqlite3.connect(db)) as c, c:
                 c.execute("UPDATE call_audio SET fail_reason=? WHERE id=?",
                           (f"转写完成,但判商机时出错:{type(e).__name__}: {e}"[:300], audio_id))
         return True, 方式
     except Exception as e:
-        with sqlite3.connect(db) as c:
+        with closing(sqlite3.connect(db)) as c, c:
             c.execute("UPDATE call_audio SET status='失败', fail_reason=? WHERE id=?",
                       (f"{type(e).__name__}: {e}"[:300], audio_id))
         return False, str(e)

@@ -6,6 +6,7 @@
 「财务人工任务 / 客户合并确认」按类型全量取,已处理的也算待处理;「当日 / 较昨日」取的是最后两个有记录的日子。
 在库副本上自造这几种形状去调 `server.workbench()` —— 红不红不取决于主库被怎么用过。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import datetime as dt, os, re, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -37,7 +38,7 @@ db = check_copy.用副本("workbench-")
 今 = worldclock.今天(); 昨 = 今 - dt.timedelta(days=1); 前 = 今 - dt.timedelta(days=2)
 
 def 写(sql, *a):
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.execute(sql, a)
 
 # ── 失败原因 + 今天 / 昨天:清空退款轨迹,自造「今天 2 条(1 条成功)、前天 1 条、昨天没有」──

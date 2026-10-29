@@ -29,6 +29,7 @@
 
 所以这里只有两样:**查出来**、**变更时留痕**。没有一行自动 update。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, sys, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -74,7 +75,7 @@ def 明细(db=DB, 查经手=False):
     必须把动作带上;只给一个码,读的人还得自己去翻这几个码是什么意思。
     """
     out = []
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.row_factory = sqlite3.Row
         # ⚠️ **一条查询查完,不要逐客户循环。**
         # 这个项目为「对 965 个客户各跑 5 次查询」把门禁拖到超时过一次。
@@ -124,7 +125,7 @@ def 待确立(db=DB):
     接待人取**最早那次**到店的 —— 归属本来就在首次到店接待完成时定。
     """
     import merge as _并
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.row_factory = sqlite3.Row
         建表(c)
         已确立 = {r[0] for r in c.execute(
@@ -162,7 +163,7 @@ def 记一笔(customer_id, frm, too, action, basis, actor, ts=None, db=DB):
                          f"**不写依据等于把过程又丢了一次**")
     import worldclock   # 世界时钟:这一列会被平移(10-15:原来是机器的今天)
     ts = ts or worldclock.今天().isoformat()
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         建表(c)
         c.execute("""insert into cust_owner_log(customer_id,frm,too,action,basis,actor,ts)
                      values(?,?,?,?,?,?,?)""",

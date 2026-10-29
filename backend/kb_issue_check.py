@@ -7,6 +7,7 @@
 
 用法:./agentsite/.venv/bin/python backend/kb_issue_check.py   (不调模型;写的是库副本)
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import datetime as _dt, io, json, os, re, sys, types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -89,7 +90,7 @@ def main():
     if not (tH and tG and tG2):
         print(f"  {Rd}❌ 库里找不到在职的总部运营 / 两个顾问 —— 没东西可验{D}"); return 1
     import sqlite3
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         KI.确保表(c)
         for t in ("kb_rag_record", "kb_rag_record_log", "kb_recheck"):
             c.execute(f"DELETE FROM {t}")
@@ -122,7 +123,7 @@ def main():
         站._记知识检索(轮, f"lx_token={tG}")
     except ImportError as e:
         ck("轨迹里零命中那条也挑得出来(不按 hit 过滤),查不了的那条不算", False, f"app 导不进来:{e} —— 要用 venv 的 python 跑")
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         c.row_factory = sqlite3.Row
         行 = {x["run_id"]: dict(x) for x in c.execute("SELECT * FROM kb_rag_record")}
     ck("零命中那条进了门店检索记录,提问人是登录的那个顾问",
@@ -178,7 +179,7 @@ def main():
        any(x["what"] == "状态" and x["after"] == "已修订" and x["why"] and x["by_name"] == 总部["name"] for x in 日)
        and any(x["what"] == "修订版本" for x in 日), [x["what"] for x in 日])
     ck("报类型留痕(说明就是理由)", any(x["what"] == "问题类型" and x["why"] and x["by_name"] == 顾问["name"] for x in 日))
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         台 = c.execute("SELECT count(*) FROM op_log WHERE machine='kb_issue'").fetchone()[0]
     ck("写口成功 / 被拒都进操作日志", 台 >= 8, f"{台} 条")
 

@@ -22,6 +22,7 @@
 签收是**责任转移点**。「已发货 → 待完成」这一步只能由核验通过的码推动 ——
 页面上、智能体里、后台改状态,**都不许绕过它**(状态机上的闸在 fsm.py,和开裁那道同一个做法)。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, sqlite3, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +35,7 @@ import worldclock
 
 
 def rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
@@ -146,7 +147,7 @@ def _包里的件(pkg_id):
 
 def _确保有单行(oid):
     """完成确认仍然是**整单一次**,记在 pickup 那一行上 —— 先保证它在。"""
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("INSERT OR IGNORE INTO pickup(order_id) VALUES(?)", (oid,))
 
 
@@ -170,7 +171,7 @@ def _转(o, to, me_name, code, why, **ctx):
     ok, c, reason = fsm.check("bk-order", o["status"], to, {"kind": o["kind"], **ctx})
     if not ok:
         return False, c, reason
-    with sqlite3.connect(DB) as cx:
+    with closing(sqlite3.connect(DB)) as cx, cx:
         n = cx.execute("UPDATE ordr SET status=?, prd_status=? WHERE id=? AND status=?",
                        (to, fsm.ORDER_PRD[to], o["id"], o["status"])).rowcount
     if n != 1:
@@ -182,14 +183,14 @@ def _转(o, to, me_name, code, why, **ctx):
 def _完成(o, 谁, actor, code, why, note=None):
     """「待完成 → 完成」。**先记下是谁确认的,再走状态机** —— 状态机上的闸看的就是这一栏
     (后台改状态那条路也读它),所以先写、流转不成再撤回。"""
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE pickup SET complete_at=?, complete_by=?, ratify_note=? WHERE order_id=?",
                   (_now(), 谁, note, o["id"]))
     ok, c2, reason = _转(o, "完成", actor, code, why, 完成确认=谁)
     if ok:
         _记事(o["id"], "顾客确认完成" if 谁 == "顾客" else "顾问追认完成", _now(), me=None, 一句话=why)
     if not ok:
-        with sqlite3.connect(DB) as c:
+        with closing(sqlite3.connect(DB)) as c, c:
             c.execute("UPDATE pickup SET complete_at=NULL, complete_by=NULL, ratify_note=NULL WHERE order_id=?",
                       (o["id"],))
     return ok, c2, reason
@@ -208,7 +209,7 @@ def arrive(d, me):
         return dict(ok=False, code="ALREADY", reason=f"包裹 {k['pkg_id']} 已经登记过到店代收了")
     now = _now()
     _确保有单行(o["id"])
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("INSERT INTO pkg_pickup(pkg_id,order_id,arrived_at,received_by) VALUES(?,?,?,?)",
                   (k["pkg_id"], o["id"], now, me["no"]))
         c.execute("UPDATE pkg SET arrived_at=?, status='到店' WHERE pkg_id=?", (now, k["pkg_id"]))
@@ -251,7 +252,7 @@ def set_mode(d, me):
     if mode == "转寄" and not tn:
         return dict(ok=False, code="NO_TRACKING", reason="转寄要写物流单号 —— 没有单号,寄丢了查不到")
     now = _now()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE pkg_pickup SET mode=?, forwarded_at=?, tracking_no=? WHERE pkg_id=?",
                   (mode, now if mode == "转寄" else None, tn or None, k["pkg_id"]))
         c.execute("UPDATE pickup SET mode=?, forwarded_at=?, tracking_no=? WHERE order_id=?",
@@ -280,7 +281,7 @@ def verify(d, me):
     now = _now()
     结, 话, 改 = pickup.核验(码[0] if 码 else None, 键, d.get("code"), now)
     if 改.get("tries") is not None:
-        with sqlite3.connect(DB) as c:
+        with closing(sqlite3.connect(DB)) as c, c:
             c.execute("UPDATE fit_code SET tries=? WHERE rowid=?", (改["tries"], 码[0]["rid"]))
     if 结 != "通过":
         return _deny(me, "FIT_CODE", 话, k["pkg_id"]) if 结 in ("不对", "作废") else \
@@ -289,7 +290,7 @@ def verify(d, me):
     if not 待签:
         return dict(ok=False, code="ALL_NOT_FIT",
                     reason=f"包裹 {k['pkg_id']} 里的件都登记成不合身了,没有可签收的件 —— 它们在返修")
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE fit_code SET used_at=? WHERE rowid=?", (改["used_at"], 码[0]["rid"]))
         for x in 待签:
             c.execute("""INSERT INTO pickup_item(order_item_id,order_id,pkg_id,fit_result,fit_at,fit_verified_by)
@@ -348,7 +349,7 @@ def not_fit(d, me):
         return dict(ok=False, code="SIGNED", reason=f"这一件({件['商品名']})已经签收了 —— 签收后的问题走售后报修")
     谁, 怎么办, 话 = pickup.不合身判责(d.get("matches_record"), d.get("other_defect"), d.get("our_fault"))
     now = _now()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("""INSERT INTO pickup_item(order_item_id,order_id,pkg_id,fit_result,issue) VALUES(?,?,?,'不合身',?)
                      ON CONFLICT(order_item_id) DO UPDATE SET fit_result='不合身', issue=excluded.issue""",
                   (件["item_id"], o["id"], k["pkg_id"], 说明))
@@ -362,7 +363,7 @@ def not_fit(d, me):
                                                   other_defect=d.get("other_defect"), our_fault=d.get("our_fault"))),
                      me, 来源="签收不合身")
     if 返修.get("返修单"):
-        with sqlite3.connect(DB) as c:
+        with closing(sqlite3.connect(DB)) as c, c:
             c.execute("UPDATE pickup_item SET maintain_id=? WHERE order_item_id=?", (返修["返修单"], 件["item_id"]))
     _记事(o["id"], "某件不合身", now, k["pkg_id"], 件["item_id"], me,
           f"{件['商品名']} 试穿不合身:{说明[:40]}" + (f",转返修单 {返修.get('返修单')}" if 返修.get("返修单") else ""))
@@ -436,7 +437,7 @@ def customer_issue_code(order_id, phone_tail, pkg=None):
         k = 可签[0]
     键 = pickup.码键(k["pkg_id"])
     码, 行 = pickup.出码(键, _now())
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("INSERT INTO fit_code(order_id,code_hash,issued_at,expires_at,used_at,tries) VALUES(?,?,?,?,?,?)",
                   (行["order_id"], 行["code_hash"], 行["issued_at"], 行["expires_at"], None, 0))
     log_op("顾客", "fit_code", k["pkg_id"], "—", "出码", True, "FIT_CODE_ISSUED", "顾客点了试穿合身(码不入台账)", {})

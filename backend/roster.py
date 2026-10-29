@@ -45,6 +45,7 @@
 已发布休息→不可派;请假→不可派**且要提示重新分配已派的单**。
 **五种动作两两不同,所以五态都必要。**
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, sys, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -132,7 +133,7 @@ def 建表(c):
 # ── 查询:某人某天在不在班 ─────────────────────────────────────
 def 查排班事实(staff_no, 日期, db=DB):
     """把口径要的那几样查出来。**这里一条判定都没有。**"""
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.row_factory = sqlite3.Row
         请 = c.execute("""select * from leave_req where staff_no=? and status='已批准'
                           and d_from<=? and d_to>=? limit 1""",
@@ -162,7 +163,7 @@ def 一周排了吗(shop, 周一, db=DB):
     """这家店这一周排了没有。**「没排」要能被问出来**,而不是靠查不到人来推断。"""
     d7 = [(datetime.date.fromisoformat(周一) + datetime.timedelta(days=i)).isoformat()
           for i in range(7)]
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         # 按门店码筛 —— 「这家店这周排了没有」答错的代价是单边的:
         # 改过名之后按串筛恒为「没排」,而「没排」会触发去排班。
         import shop_key as _SK
@@ -174,7 +175,7 @@ def 一周排了吗(shop, 周一, db=DB):
 
 
 if __name__ == "__main__":
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         建表(c)
     print("排班表已建。班次:", "、".join(f"{n}({c})" for c, n, _, _ in 班次))
 
@@ -226,7 +227,7 @@ def 派得了吗(cust, 起, 止, db=DB):
 
 def 能排班吗(staff_no, db=DB):
     """(能不能, 人话) —— 判定在口径模块。"""
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.row_factory = sqlite3.Row
         r = c.execute("select no,name,role,status from staff where no=?", (staff_no,)).fetchone()
     return _口径.判排班权(dict(r) if r else None)
@@ -283,7 +284,7 @@ def 点名的人没空(cust, 点名工号, 起, 止, db=DB):
     if ok:
         return True, "ON", f"客户点名的顾问那个时段在班 —— 直接派给他"
 
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.row_factory = sqlite3.Row
         r = c.execute("select name from staff where no=?", (点名工号,)).fetchone()
     名 = r["name"] if r else 点名工号
@@ -318,7 +319,7 @@ def 预留(staff_no, 起, 止, customer_id=None, reason="客户点名,改约下�
     # conn 传进来就复用 —— 外层已持连接时再开一个会 `database is locked`
     if conn is not None:
         建预留表(conn); conn.execute(SQL, 行); return
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         建预留表(c); c.execute(SQL, 行)
 
 
@@ -326,7 +327,7 @@ def 时段被预留了吗(staff_no, 起, 止=None, db=DB):
     """这一天有没有被预留。**过期的不算** —— 那正是过期时间存在的理由。"""
     d = 起[:10]
     今 = _世界的今天()
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.row_factory = sqlite3.Row
         建预留表(c)
         r = c.execute("""select * from slot_hold where staff_no=? and d=? and status='预留中'

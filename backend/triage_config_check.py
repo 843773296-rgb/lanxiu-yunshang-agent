@@ -9,6 +9,7 @@
   · 只有总部运营能存草稿、试运行;**没试运行过的发布不了**;发布 / 退回要写明是哪位开发,页面接口不收「发布」;
   · 退回 = 再发布上一版,历史只增不改。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import datetime as dt
 import os
 import shutil
@@ -51,7 +52,7 @@ print("=" * 80)
 import ops, oplog, check_copy
 import triage_config as TC
 db = check_copy.用副本("tcfg-")
-with sqlite3.connect(db) as c:              # 副本里先清掉主库上真实的设置记录 —— 「生效哪一版」不许取决于主库被怎么用过
+with closing(sqlite3.connect(db)) as c, c:              # 副本里先清掉主库上真实的设置记录 —— 「生效哪一版」不许取决于主库被怎么用过
     TC.确保表(c)
     c.execute("DELETE FROM triage_config"); c.execute("DELETE FROM triage_prompt")
 c = sqlite3.connect(db)
@@ -71,7 +72,7 @@ ck("登记的指纹就是每条研判记的那个版本号", all(fps[k] == ops.�
 ck("店长存不了草稿(只有总部运营能改)", isinstance(抛(lambda: TC.草拟({"批量上限": 5}, 长)), PermissionError))
 r = TC.草拟({"复核角色": {"财务人工任务": ["店长"]}}, 部)
 ck("角色权限类的键拒收(用户 10-19 拍:一律不开放)", r.get("ok") is False and "不开放" in "".join(r.get("错", [])), r)
-with sqlite3.connect(db) as cx:
+with closing(sqlite3.connect(db)) as cx, cx:
     cx.execute("INSERT INTO triage_prompt(fp,task_type,template,created,verified) VALUES('未验证000000','财务人工任务','x','2026-01-01',0)")
 r = TC.草拟({"提示词版本": {"财务人工任务": "未验证000000"}}, 部)
 ck("没验证过的提示词版本选不了", r.get("ok") is False and "没验证" in "".join(r.get("错", [])), r)
@@ -87,7 +88,7 @@ ck("试运行说清「在办的不受影响,新建的才按新时限」", 试.ge
 ck("发布要写明是哪位开发", isinstance(抛(lambda: TC.发布(号, "")), PermissionError))
 import time as _t
 def 建单(tid):                               # 按**真实先后**造单:建单时刻 = 世界此刻
-    with sqlite3.connect(db) as cx:
+    with closing(sqlite3.connect(db)) as cx, cx:
         cx.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES(?,?,?,?,?,?)",
                    (tid, "财务人工任务", "P-x", "待处理", ops.now().strftime("%Y-%m-%d %H:%M:%S"), "检查"))
     _t.sleep(1.1)                            # 时刻精确到秒:两件事之间隔开一秒,先后才分得清

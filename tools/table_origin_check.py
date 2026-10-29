@@ -29,6 +29,7 @@
 对每个步骤文件扫 `CREATE TABLE`,**并跟进它 import 的本地模块一层**
 (`ensure_tables.py` 自己不写 SQL,它调各模块的建表函数)。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, re, sqlite3, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -146,7 +147,7 @@ def main():
     if not os.path.exists(DB):
         print(f"  {Y}⏭{D} 库不在,跳过 —— **跳过不是通过**")
         return 0
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         库 = {r[0] for r in c.execute(
             "select name from sqlite_master where type='table' and name not like 'sqlite_%'")}
 

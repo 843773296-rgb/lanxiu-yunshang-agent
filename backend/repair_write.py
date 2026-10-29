@@ -19,6 +19,7 @@
 判责取决于「成衣和留存数据对不对得上」,拿错一次量体就是收错了人的钱。
 量体按**着装人**取,不按客户号取(一家人的尺寸不许混,同 kb_fit 那次)。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, sqlite3, datetime, json as _json
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -30,7 +31,7 @@ from oplog import log_op
 
 
 def rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
@@ -142,7 +143,7 @@ def create(d, me, 来源="售后"):
     # 真实时钟:只用来拼一个不重复的编号后缀(到微秒),不是业务时间
     mid = "MX" + datetime.datetime.now().strftime("%m%d%H%M%S%f")[:14]
     now = _now()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         import shop_key as _SK          # 门店码的唯一入口
         c.execute("INSERT INTO maintain(id,order_id,customer_id,item,status,issue,shop,shop_code,advisor_no,created,updated,"
                   "ext_system,order_item_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -200,7 +201,7 @@ def decide(d, me):
         elif 谁 == "总部" and 批 == me["no"]:
             return dict(ok=False, code="SELF_APPROVE",
                         reason="判责人不能是批准人 —— 同一个人既判又批,这条授权线等于没有")
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE maintain_decision SET approved_by=?, approve_note=? WHERE maintain_id=?",
                   (批 or None, (d.get("approve_note") or "").strip() or None, m["id"]))
         c.execute("UPDATE maintain_decision SET liable=?, plan=?, fee_est=?, customer_agreed_at=?, agree_note=?, "
@@ -224,7 +225,7 @@ def _推(m, to, me, code, why):
                               {"判完了": 能, "签收核验": "已核验" if dec.get("return_fit_at") else None})
     if not ok:
         return dict(ok=False, code=c, reason=reason)
-    with sqlite3.connect(DB) as cx:
+    with closing(sqlite3.connect(DB)) as cx, cx:
         n = cx.execute("UPDATE maintain SET status=?, updated=? WHERE id=? AND status=?",
                        (to, _now(), m["id"], m["status"])).rowcount
     if n != 1:
@@ -262,7 +263,7 @@ def customer_issue_code(maintain_id, phone_tail):
     if m[0]["status"] != "待签收":
         return dict(ok=False, code="NOT_READY", reason=f"这张返修单现在是「{m[0]['status']}」,还没修好回店")
     码, 行 = pickup.出码(repair.码前缀 + maintain_id, _now())
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("INSERT INTO fit_code(order_id,code_hash,issued_at,expires_at,used_at,tries) VALUES(?,?,?,?,?,?)",
                   (行["order_id"], 行["code_hash"], 行["issued_at"], 行["expires_at"], None, 0))
     return dict(ok=True, code="FIT_CODE_ISSUED", 返修单=maintain_id, 试穿合身码=码, 有效到=行["expires_at"],
@@ -285,17 +286,17 @@ def verify_return(d, me):
     now = _now()
     结, 话, 改 = pickup.核验(码[0] if 码 else None, key, d.get("code"), now)
     if 改.get("tries") is not None:
-        with sqlite3.connect(DB) as c:
+        with closing(sqlite3.connect(DB)) as c, c:
             c.execute("UPDATE fit_code SET tries=? WHERE rowid=?", (改["tries"], 码[0]["rid"]))
     if 结 != "通过":
         return dict(ok=False, code="FIT_CODE", reason=话)
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE fit_code SET used_at=? WHERE rowid=?", (改["used_at"], 码[0]["rid"]))
         c.execute("UPDATE maintain_decision SET return_fit_at=?, return_verified_by=? WHERE maintain_id=?",
                   (now, me["no"], m["id"]))
     r = _推(m, "已完成", me, "REPAIR_DONE", f"{me['name']} 核验返修件试穿合身码,返修单 {m['id']} 完成")
     if not r.get("ok"):
-        with sqlite3.connect(DB) as c:
+        with closing(sqlite3.connect(DB)) as c, c:
             c.execute("UPDATE maintain_decision SET return_fit_at=NULL, return_verified_by=NULL WHERE maintain_id=?",
                       (m["id"],))
     return r

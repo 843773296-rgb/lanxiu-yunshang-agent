@@ -30,6 +30,7 @@
     python3 tools/run_journey.py 5          跑 5 条
     python3 tools/run_journey.py --dry      只看会发生什么,不写库
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, json, random, sqlite3, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -147,13 +148,13 @@ def _拆定制明细(item_id, spu, 总额):
            item_id, "工艺", 部位, 相容[(item_id + i) % len(相容)], None, 0.0, None)
 
 def q(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
 
 def ex(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute(sql, a)
 
 
@@ -549,7 +550,7 @@ def _journey(cust, dry=False):
             import fitting_write as _fw, seed_fitting as _sfit
             # 试衣表是 seed_fitting(第 7 步)建的,旅程跑在它前面 —— **用同一份建表语句**先建上,
             # 不另抄一份表结构(第一版没建,这里「no such table」崩在半路,又留下一批未来日期)
-            with sqlite3.connect(DB) as _cx: _cx.executescript(_sfit.DDL)
+            with closing(sqlite3.connect(DB)) as _cx, _cx: _cx.executescript(_sfit.DDL)
             _g, _w, _明细 = _fw.过闸(oid)
             if _g in ("不可以", "判不了"):
                 # 判不了该不该试的也先试 —— 门店拿不准时本来就该先试一轮(已试已签即放行)
@@ -569,7 +570,7 @@ def _journey(cust, dry=False):
         #    签收表是 seed_pickup 建的,旅程跑在它前面 —— 用同一份建表语句先建上(同白坯试衣)。
         if st in ("待完成", "完成"):
             import pickup_write as _pw, seed_pickup as _spk
-            with sqlite3.connect(DB) as _cx: _cx.executescript(_spk.DDL)
+            with closing(sqlite3.connect(DB)) as _cx, _cx: _cx.executescript(_spk.DDL)
             _尾 = (q("SELECT phone_tail FROM customer WHERE id=(SELECT customer_id FROM ordr WHERE id=?)", oid)
                   or [{"phone_tail": ""}])[0]["phone_tail"]
             if st == "待完成":

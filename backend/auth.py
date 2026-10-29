@@ -29,6 +29,7 @@
 **明文一个字都不落库**,只存 PBKDF2 + 每人独立 salt。
 真上线要加「首次登录强制改密」。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import hashlib, hmac, json, os, secrets, sqlite3, threading, datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -58,7 +59,7 @@ def _rows(sql, *a):
 
 def _bump_fail(no, reset=False):
     """失败计数写回。**这是登录路径唯一的写操作** —— 它必须写,否则锁定形同虚设。"""
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         if reset:
             c.execute("UPDATE staff SET fail_count=0,locked_until=NULL,last_login=? WHERE no=?",
                       (dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), no))

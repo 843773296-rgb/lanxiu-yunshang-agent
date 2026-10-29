@@ -9,6 +9,7 @@
   · 三类研判各有各的版本;同一份提示词算两次一样;
   · 站上真跑那条路把版本号带上,后台往下传、真落库。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os
 import shutil
 import sqlite3
@@ -56,7 +57,7 @@ tmp = tempfile.mkdtemp(prefix="pver-")
 db = os.path.join(tmp, "lanxiu.db")
 shutil.copy(os.path.join(HERE, "lanxiu.db"), db)
 ops.DB = oplog.DB = db
-with sqlite3.connect(db) as c:
+with closing(sqlite3.connect(db)) as c, c:
     c.execute("INSERT INTO task(id,type,ref_id,status,created,summary) VALUES('T-检查-版本','财务人工任务','P-x','待处理',"
               "'2026-01-01 10:00:00','检查')")
 号 = f"研判:{版['财务人工任务']}·系统:abcdef123456"

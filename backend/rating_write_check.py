@@ -17,6 +17,7 @@
 不直接 `INSERT pickup_item`。**自己插一条签收记录来测闸,测的就不是闸** ——
 插的时候想当然填上的那几列,正好是闸要读的那几列。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, shutil, sqlite3, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -423,7 +424,7 @@ def run(T):
                        LIMIT 1""").fetchone()
     ck("有一个「没签收过」的包裹当夹具", bool(o3))
     if o3:
-        with sqlite3.connect(T) as cx:      # 把订单状态改成「待完成」—— 模拟状态被别的路写过
+        with closing(sqlite3.connect(T)) as cx, cx:      # 把订单状态改成「待完成」—— 模拟状态被别的路写过
             cx.execute("UPDATE ordr SET status='待完成' WHERE id=?", (o3["oid"],))
         尾3 = c.execute("SELECT phone_tail FROM customer WHERE id=?", (o3["customer_id"],)).fetchone()[0]
         r = rt.customer_rate(o3["oid"], 尾3, 5, pkg=o3["pkg_id"])

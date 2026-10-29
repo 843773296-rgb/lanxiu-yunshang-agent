@@ -26,6 +26,7 @@
     提单不是生效             → 说成「已经改好了」
     理由必填不是形式         → 用户说「随便写一个」就真随便写
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import re
 import json, os, sys, sqlite3, time
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -385,13 +386,13 @@ class 不许留痕:
     def __enter__(self):
         import api
         self.db = api.DB
-        with sqlite3.connect(self.db) as c:
+        with closing(sqlite3.connect(self.db)) as c, c:
             c.row_factory = sqlite3.Row
             self.snap = [dict(r) for r in c.execute("SELECT * FROM approval")]
         return self
 
     def __exit__(self, *e):
-        with sqlite3.connect(self.db) as c:
+        with closing(sqlite3.connect(self.db)) as c, c:
             c.execute("DELETE FROM approval")
             for r in self.snap:
                 cols = ",".join(r); q = ",".join("?" * len(r))

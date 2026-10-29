@@ -15,6 +15,7 @@
 
 全部在库副本上跑,不碰主库。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import json, os, shutil, sqlite3, sys, tempfile, wave, array
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -124,7 +125,7 @@ def main():
     import datetime as _d
     def 入(aid, 声道):
         p = os.path.join(tmp, aid + ".wav"); 造wav(p, 声道)
-        with sqlite3.connect(db) as k:
+        with closing(sqlite3.connect(db)) as k, k:
             k.execute("INSERT INTO call_audio(id, customer_id, path, source, created, channel, status)"
                       " VALUES(?,?,?,?,?,?,?)", (aid, 客户[0], p, "真实录音", _d.date.today().isoformat(), "电话", "排队"))
     状态 = lambda aid: sqlite3.connect(db).execute(
@@ -177,7 +178,7 @@ def main():
     ck("两条替换重叠 → 后一条那个位置已经不是原字,不叠着改", len(叠) == 1, 1, str(叠))
 
     入("CA-T5", 1)
-    with sqlite3.connect(db) as k0:
+    with closing(sqlite3.connect(db)) as k0, k0:
         asr.核验词对(k0, "克斯", "缂丝", "测", "检查用")
     asr.处理("CA-T5", db=db, 转写=lambda p, 双: [(0, "我想要克斯的,香芸砂也行,香芸砂便宜吗。", None)], call=假返回('["客户"]'),
             纠错call=假返回('[{"原":"克斯","改":"缂丝","原读音":"ke si","改读音":"ke si"},'

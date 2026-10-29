@@ -41,6 +41,7 @@ CRM 里(Salesforce 的 Opportunity Splits)这是两张不同的东西:
 ② 触点数据(现在几乎没有)。两样都不到位,算出来的率没有意义。
 **先把结构立住** —— 它是 W 型和 Shapley 的共同前提,两条路都要用它。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -84,7 +85,7 @@ def 记一笔(order_id, staff_no, kind, role, pct, source, method=None, basis=No
              values(?,?,?,?,?,?,?,?,?)"""
     if conn is not None:
         建表(conn); conn.execute(SQL, 行); return
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         建表(c); c.execute(SQL, 行)
 
 
@@ -96,7 +97,7 @@ def 收入分成对不对(db=DB):
     会把一整批本来就该超 100 的记录判成错的。
     """
     assert _口径.总和该不该管(收入分成) and not _口径.总和该不该管(影响力分成)
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         return [(r[0], round(r[1], 2)) for r in c.execute(
             """select order_id, sum(pct) s from deal_credit where kind=?
                group by order_id having abs(s-100) > 0.01""", (收入分成,))]
@@ -104,7 +105,7 @@ def 收入分成对不对(db=DB):
 
 def 一单的贡献(order_id, db=DB):
     """这一单谁参与了、各占多少。**两种分成分开列**。"""
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.row_factory = sqlite3.Row
         rows = [dict(r) for r in c.execute(
             "select * from deal_credit where order_id=? order by kind, pct desc", (order_id,))]
@@ -115,7 +116,7 @@ def 一单的贡献(order_id, db=DB):
 
 
 if __name__ == "__main__":
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         建表(c)
         n = c.execute("select count(*) from deal_credit").fetchone()[0]
     print(f"归因记录表已建,现有 {n} 条")

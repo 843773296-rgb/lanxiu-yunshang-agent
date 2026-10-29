@@ -39,6 +39,7 @@
 **没有新建第二张清单表** —— 理由写在 `seed_rating.py` 里。
 处理到哪一步**只看 `task.status`**,`rating` 表故意不存 status。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -61,7 +62,7 @@ import rating as R
 
 
 def rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
@@ -161,7 +162,7 @@ def customer_rate(order_id, phone_tail, star, note=None, pkg=None):
     顾问 = next((x["fit_verified_by"] for x in 件 if x["fit_result"] == "合身" and x["fit_verified_by"]), None)
     now = _now()
     待办 = R.差评待办(n, note, o["id"], pid, now, 顾问=顾问)
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         tid = _建工单(c, pid, 待办) if 待办 else None
         c.execute("""INSERT INTO rating(pkg_id,order_id,customer_id,star,note,rated_at,src,advisor_no,
                                         edit_cnt,task_id) VALUES(?,?,?,?,?,?,?,?,0,?)""",
@@ -198,7 +199,7 @@ def customer_edit_rating(order_id, phone_tail, star, note=None, pkg=None):
         return dict(ok=False, code="BAD_STAR", reason=说)
     动作, 为什么 = R.改了之后清单怎么动(旧["star"], n, bool(旧["task_id"]))
     now = _now()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         tid = 旧["task_id"]
         if 动作 == "进清单":
             tid = _建工单(c, pid, R.差评待办(n, note if note is not None else 旧["note"],
@@ -279,7 +280,7 @@ def close_bad_rating(d, me):
     批 = str(d.get("approved_by") or "").strip() or None
     批说明 = str(d.get("approve_note") or "").strip() or None
     now = _now()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE task SET status='已关闭' WHERE id=?", (r["task_id"],))
         c.execute("UPDATE rating SET handled_at=?, handled_by=?, handle_note=?,"
                   " handle_way=?, handle_approved_by=?, handle_approve_note=?,"

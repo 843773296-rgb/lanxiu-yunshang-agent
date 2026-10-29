@@ -24,6 +24,7 @@
 两处都存的话,「工单关了但评价那行还是待处理」这种漂**不会报错**,
 它只是让两个页面显示不同的东西。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -108,7 +109,7 @@ def 建表(c=None):
     两种都收,省掉一个「为了迁就调用方而存在的第二个函数」。
     """
     if c is None or isinstance(c, str):
-        with sqlite3.connect(c or DB) as cx:
+        with closing(sqlite3.connect(c or DB)) as cx, cx:
             _建(cx)
     else:
         _建(c)
@@ -139,7 +140,7 @@ def _补列(c):
 
 def main():
     建表()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         n = c.execute("SELECT COUNT(*) FROM rating").fetchone()[0]
     print(f"✅ 评价表就位(rating,现在 {n} 条)")
     print("   ⚠️ **这一版只建表,不铺数据** —— 业务 2026-09-27:造数先别铺,")

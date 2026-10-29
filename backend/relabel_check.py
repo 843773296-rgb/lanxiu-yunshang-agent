@@ -9,6 +9,7 @@
   · 并入时那一单已有建库标注且不一致 → 不覆盖,列出来;
   · 页面不再说那句不成立的「回归时会单独统计通过率」。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os
 import shutil
 import sqlite3
@@ -84,11 +85,11 @@ else:
 
     e = 抛(lambda: RL.审核(研["T-检查-改判-甲"], 长, True, db=db, 来源="检查"))
     ck("不是总部运营审不了", isinstance(e, PermissionError), e)
-    with sqlite3.connect(db) as cx:          # 假装是这位总部运营自己改判的
+    with closing(sqlite3.connect(db)) as cx, cx:          # 假装是这位总部运营自己改判的
         cx.execute("UPDATE triage SET relabel_by_no=? WHERE id=?", (部["no"], 研["T-检查-改判-甲"]))
     e = 抛(lambda: RL.审核(研["T-检查-改判-甲"], 部, True, db=db, 来源="检查"))
     ck("改判人自己审不了(要第二个人把关)", isinstance(e, PermissionError) and 行(研["T-检查-改判-甲"])[0] == "待审核", e)
-    with sqlite3.connect(db) as cx:
+    with closing(sqlite3.connect(db)) as cx, cx:
         cx.execute("UPDATE triage SET relabel_by_no=? WHERE id=?", (长["no"], 研["T-检查-改判-甲"]))
     e = 抛(lambda: RL.审核(研["T-检查-改判-甲"], 部, False, "", db=db, 来源="检查"))
     ck("驳回不写理由被拒", isinstance(e, ValueError) and 行(研["T-检查-改判-甲"])[0] == "待审核", e)
@@ -100,7 +101,7 @@ else:
     # 乙:采用之后、并入之前,那一单有了建库标注(和改判不一致)
     ops.resolve(研["T-检查-改判-乙"], "已改判", 长, root_cause=选[0]["root_cause"], 来源="检查")
     RL.审核(研["T-检查-改判-乙"], 部, True, db=db, 来源="检查")
-    with sqlite3.connect(db) as cx:
+    with closing(sqlite3.connect(db)) as cx, cx:
         cx.execute("INSERT INTO truth(case_id,breakpoint,root_cause,expected_action,src) VALUES(?,?,?,?,'建库标注')",
                    (case["T-检查-改判-乙"], "BP-01", 选[1]["root_cause"], "检查"))
 

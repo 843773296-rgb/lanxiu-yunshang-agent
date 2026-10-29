@@ -11,6 +11,7 @@
   ④ 退出登录之后,重启也不认(两边一起删)
   ⑤ 会话文件写在副本旁边,不是真库旁边
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import datetime as _dt, json, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -44,7 +45,7 @@ def main():
     ck("会话文件写在库副本旁边,不是真库旁边",
        os.path.dirname(auth._文件()) == os.path.dirname(副本) and auth._文件() != 真文件, auth._文件())
     import sqlite3
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         行 = c.execute("SELECT no, login_name FROM staff WHERE status='启用' AND pwd_hash IS NOT NULL "
                       "AND login_name IS NOT NULL LIMIT 1").fetchone()
         c.execute("UPDATE staff SET fail_count=0, locked_until=NULL WHERE no=?", (行[0],))

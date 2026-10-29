@@ -11,6 +11,7 @@
 每条都报「验了多少个」。**空集合上所有性质都成立** —— 样本量为 0 要红,
 否则「什么都没验」和「验过了没问题」在输出上长得一模一样。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, json, sqlite3, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -42,7 +43,7 @@ def ck(name, ok, n, msg=""):
 
 
 def months():
-    with sqlite3.connect(api.DB) as c:
+    with closing(sqlite3.connect(api.DB)) as c, c:
         return [r[0] for r in c.execute(
             f"SELECT DISTINCT substr({rv.归月字段},1,7) FROM schedule ORDER BY 1") if r[0]]
 
@@ -87,7 +88,7 @@ def main():
     #    **漏一个月不会报错**,只会让某个月的活凭空消失。
     with api.as_user(MGR):
         tot = sum((api.monthly_review(m).get("任务") or {}).get("总数", 0) for m in ms)
-    with sqlite3.connect(api.DB) as c:
+    with closing(sqlite3.connect(api.DB)) as c, c:
         real = c.execute("SELECT COUNT(*) FROM schedule WHERE shop=?", (MGR["shop"],)).fetchone()[0]
     ck("各月加起来等于全部", tot == real, len(ms), f"各月合计 {tot} / 库里 {real}")
 
@@ -121,19 +122,19 @@ def main():
         _as(MGR, m))), None)
     n7 = 0; ok7 = True
     if m7:
-        with sqlite3.connect(api.DB) as c:
+        with closing(sqlite3.connect(api.DB)) as c, c:
             row = c.execute("SELECT id,status FROM schedule WHERE substr(end_ts,1,7)=? "
                             "AND shop=? AND status='完结' LIMIT 1", (m7, MGR["shop"])).fetchone()
         if row:
             other = [x for x in ms if x != m7]
             before = {x: _as(MGR, x).get("任务", {}).get("完结") for x in other}
-            with sqlite3.connect(api.DB) as c:
+            with closing(sqlite3.connect(api.DB)) as c, c:
                 c.execute("UPDATE schedule SET status='有效' WHERE id=?", (row[0],))
             try:
                 after = {x: _as(MGR, x).get("任务", {}).get("完结") for x in other}
                 n7 = len(other); ok7 = before == after
             finally:
-                with sqlite3.connect(api.DB) as c:
+                with closing(sqlite3.connect(api.DB)) as c, c:
                     c.execute("UPDATE schedule SET status=? WHERE id=?", (row[1], row[0]))
     ck("改一个月的数据不影响别的月", ok7, n7)
 

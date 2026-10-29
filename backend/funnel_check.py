@@ -15,6 +15,7 @@
     必须正好等于漏掉的那些,**多一条少一条都说明有一档没归进去**。
   · **最窄的一环要按比例找,不是按人数差找** —— 按人数差永远指向第一环。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -136,7 +137,7 @@ def main():
     # 违规数变 0,检查报「样本量 0 —— 没扫到东西」。
     # 可是**一个干净的库违规数本来就该是 0** —— 那样写会把「完全正常」
     # 判成「什么都没验」。**要求违规必须存在的检查,在问题修好那天会开始误报。**
-    with sqlite3.connect(api.DB) as cx:
+    with closing(sqlite3.connect(api.DB)) as cx, cx:
         全部状态 = [r[0] for r in cx.execute("SELECT DISTINCT status FROM appointment") if r[0]]
     野 = [x for x in 全部状态 if x not in af.状态机认的]
     d = f(HQ)

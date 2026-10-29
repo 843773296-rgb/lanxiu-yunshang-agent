@@ -10,6 +10,7 @@
 这里验的是**它真的没改** —— 一个声称只读的模块,和一个真的只读的模块,
 **在正常跑的时候长得一模一样**。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -61,7 +62,7 @@ def main():
        f"  ← {按码.get('LEFT',0)} 人。**他们的顾问字段非空,按「有没有顾问」筛查不出来**")
 
     # ② 四种码的语义不能合并 —— 逐例造输入验
-    with sqlite3.connect(O.DB) as c:
+    with closing(sqlite3.connect(O.DB)) as c, c:
         c.row_factory = sqlite3.Row
         建 = c.execute("select count(*) from customer where advisor_no is null "
                        "or advisor_no=''").fetchone()[0]
@@ -86,11 +87,11 @@ def main():
        "  ← 这一条是防误报:**一个见谁都报的检查会被人忽略**")
 
     # ③ **这个模块不许改数据** —— 跑一遍,customer 表必须一字不动
-    with sqlite3.connect(O.DB) as c:
+    with closing(sqlite3.connect(O.DB)) as c, c:
         前 = c.execute("select count(*), sum(length(coalesce(advisor_no,''))) "
                        "from customer").fetchone()
     O.实际无人管理(); O.待确立()
-    with sqlite3.connect(O.DB) as c:
+    with closing(sqlite3.connect(O.DB)) as c, c:
         后 = c.execute("select count(*), sum(length(coalesce(advisor_no,''))) "
                        "from customer").fetchone()
     ck("跑完之后 customer 表一字没动", "没动" if 前 == 后 else "被改了", "没动",
@@ -115,7 +116,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix="own-")
     副本 = os.path.join(tmp, "lanxiu.db")
     shutil.copy(O.DB, 副本)
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         造 = [("C-检查-两次", "SH001", None), ("C-检查-主", "SH001", None), ("C-检查-副", "SH002", "C-检查-主"),
               ("C-检查-确主", "SH001", None), ("C-检查-确副", "SH002", "C-检查-确主")]
         for cid, 店, 并 in 造:

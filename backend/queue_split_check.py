@@ -12,6 +12,7 @@
     「差评不见了」和「差评被挪走了」在研判队列那一页上长得一模一样,只有对得上总数才分得开;
   · 研判队列页**说了**挪去哪(否则用户看到的就是「差评不见了」)。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, shutil, sqlite3, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -83,7 +84,7 @@ if 店长:
     tr = ops.save_triage(造["财务"][0], "检查", "检查", "根因:检查造的\n建议动作:检查\n证据:无", [])
     记录 = lambda: sqlite3.connect(db).execute("SELECT summary FROM task WHERE id=?", (造["财务"][0],)).fetchone()[0]
     ck("研判落库不动工单的处理记录(AI 根因不冒充办结记录)", 记录() == "检查", 记录())
-    with sqlite3.connect(db) as cx:
+    with closing(sqlite3.connect(db)) as cx, cx:
         cx.execute("UPDATE triage SET ai_root_cause='' WHERE id=?", (tr,))
     ops.reparse()
     ck("重解析补出根因后也不回写处理记录", 记录() == "检查"

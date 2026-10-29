@@ -16,13 +16,14 @@
 所以这里的兜底方向是反的:派不出去就**不派**,显式落进待分配池,由店长决定。
 宁可看板上挂着 3 张没人认领的单,也不要 3 张挂着错人的单。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import sqlite3, os, datetime
 
 DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lanxiu.db")
 
 
 def _rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
@@ -162,7 +163,7 @@ def book(d):
     # **有名字没工号**的记录。删掉名字列的话,那一行就彻底没有顾问了。
     adv_no = cust.get("advisor_no") if code == "BOUND" else None
 
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         # 预约单(客户视角:我约了几点)
         import shop_key as _SK          # 门店码的唯一入口
         c.execute("INSERT INTO appointment(id,customer_id,shop,shop_code,advisor_no,"
@@ -226,7 +227,7 @@ def unassigned(shop=None):
     if shop:
         # 按门店码筛 —— 改过名之后按串筛会「一条待分派都没有」,而那看着像活都派完了
         import shop_key as _SK
-        with sqlite3.connect(DB) as _c:
+        with closing(sqlite3.connect(DB)) as _c, _c:
             _片, _参 = _SK.门店条件(_c, shop, "s")
         if _片:
             sql += f" AND {_片}"; a.extend(_参)
@@ -268,7 +269,7 @@ def suggest(task):
     # 按门店码筛 —— 改过名之后按串筛会「店里没有在职顾问」,
     # 而那条路返回的是「提不出建议」:**一个正常结果**,所以没人会发现它坏了。
     import shop_key as _SK
-    with sqlite3.connect(DB) as _c:
+    with closing(sqlite3.connect(DB)) as _c, _c:
         _片, _参 = _SK.门店条件(_c, shop)
     pool = _rows(f"SELECT no,name,adv_code FROM staff "
                  f"WHERE role='顾问' AND status='启用' AND {_片 or '1=0'} ORDER BY no", *_参)

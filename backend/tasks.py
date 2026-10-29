@@ -17,6 +17,7 @@
 而不是各自写一段 WHERE:各写一段的话,新加一个查询就会漏一处,
 **漏掉的那一处不会报错,只会多给出几行不该看见的数据**。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -40,7 +41,7 @@ def _wnow():
     return worldclock.当下().strftime("%Y-%m-%d %H:%M")
 
 def rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
@@ -153,7 +154,7 @@ def my_staff(me):
     # 按门店码筛。⚠️ `me.get("shop")` 可能是**工坊名**(匠人),那种值没有门店码 ——
     # `门店条件()` 会退回按串比,所以工坊的人照样查得到(一刀换成按码筛会一个都查不到)。
     import shop_key as _SK
-    with sqlite3.connect(DB) as _c:
+    with closing(sqlite3.connect(DB)) as _c, _c:
         _片, _参 = _SK.门店条件(_c, me.get("shop"))
     if not _片:
         return []
@@ -182,7 +183,7 @@ def pool_for(kind, me):
     if not 角色: return []
     ph = ",".join("?" * len(角色))
     import shop_key as _SK            # 同上:工坊名没有门店码,会退回按串比
-    with sqlite3.connect(DB) as _c:
+    with closing(sqlite3.connect(DB)) as _c, _c:
         _片, _参 = _SK.门店条件(_c, me.get("shop"))
     if not _片:
         return []
@@ -306,7 +307,7 @@ def assign_task(d, me, _来源=None):
     n = rows("SELECT COUNT(*) c FROM schedule")[0]["c"]
     sid = f"SC{7000 + n + 1}"
     him = allowed[to]
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         if _来源:
             # 防重复派**在写的那个事务里再判一次**:页面上看到「没人跟」和点下去之间,
             # 别人可能刚派过 —— 判在事务外,两个人同时点就会派出两条
@@ -393,7 +394,7 @@ def dispatch(d, me):
     # 重算是对的(不信前端报上来的建议),错的只是重算的时机。
     import booking as _bk
     sg = _bk.suggest(t)
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE schedule SET assignee_no=?,assigned_by=?,assigned_at=?,advisor_no=? WHERE id=?",
                   (to, me["no"], _wnow(),
                    him["no"], sid))
@@ -639,7 +640,7 @@ def my_tasks(me, status=None):
     # (业务 2026-09-22 确认,附录 A-169:和月度复盘同一个口径;今天到期的不算逾期)
     try:
         import opportunity_store as _os
-        with sqlite3.connect(DB) as c:
+        with closing(sqlite3.connect(DB)) as c, c:
             for r in rs:
                 if tt_norm(r.get("type")) == "商机提醒":
                     选 = _os.可选结论(c, r["id"]) if c.execute(
@@ -706,7 +707,7 @@ def reassign(d, me):
     old_name = old[0]["name"] if old else t["assignee_no"]
     him = allowed[to]
     now = _wnow()
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE schedule SET assignee_no=?,advisor_no=?,assigned_by=?,assigned_at=?,"
                   "reassigned_from=?,reassign_reason=?,reassigned_at=? WHERE id=?",
                   (to, him["no"], me["no"], now,
@@ -781,7 +782,7 @@ def finish_task(d, me):
     # 商机提醒:**完成时必须选结论**,商机按结论走(用户 10-03 定:规则判 + 顾问点头 —— 这一下就是点头)。
     # 结论和改任务状态在**同一个事务**里:商机改了而任务没完结(或反过来)都会让两边对不上
     结论话 = None
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         if tt.norm(t.get("type")) == "商机提醒":
             import opportunity_store as _os
             _os.建表(c)
@@ -815,7 +816,7 @@ def finish_task(d, me):
                     t["customer_id"], me["no"], t.get("end_ts") or t.get("start_ts") or "")
         if cand:
             closed = cand[0]["id"]
-            with sqlite3.connect(DB) as c:
+            with closing(sqlite3.connect(DB)) as c, c:
                 c.execute("UPDATE schedule SET status='完结',summary=? WHERE id=?",
                           (f"客户已上门接待(见 {sid})", closed))
             log_op(me["name"], "schedule", closed, "有效", "完结", True, "AUTO_CLOSE",

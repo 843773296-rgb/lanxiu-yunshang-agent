@@ -14128,5 +14128,41 @@
    }
   ],
   "预期红": "后台那一版的开头 / 结尾能顶上来,而不传时和代码那一份一字不差"
+ },
+ {
+  "script": "tools/prompts_check.py",
+  "改坏": "把 TL78 的 avoid=(\"写\",) 去掉(有写工具的角色同时读到「你有」和「你没有」)",
+  "file": [
+   {
+    "path": "prompts.py",
+    "old": "NO_WRITE_RULE = Rule(\"TL78\", (), avoid=(\"写\",), text=\"\"\"",
+    "new": "NO_WRITE_RULE = Rule(\"TL78\", (), text=\"\"\""
+   }
+  ],
+  "预期红": "有写工具和没写工具那两条交代,恰好装一条(不同时、也不都没有)"
+ },
+ {
+  "script": "tools/db_close_check.py",
+  "改坏": "把 backend/api.py 里某一处 closing(...) 去掉(回到那个只提交、不关连接的写法)",
+  "file": [
+   {
+    "path": "backend/api.py",
+    "old": "    with closing(sqlite3.connect(DB)) as c, c:\n        return c.execute(sql, a).fetchall()",
+    "new": "    with sqlite3.connect(DB) as c:\n        return c.execute(sql, a).fetchall()"
+   }
+  ],
+  "预期红": "with 里的连库都被"
+ },
+ {
+  "script": "tools/db_close_check.py",
+  "改坏": "把要匹配的函数名改掉(于是一处连库都扫不到,而输出会变成「全都对」)",
+  "file": [
+   {
+    "path": "tools/db_close_check.py",
+    "old": "_模块, _函数 = \"sqlite3\", \"connect\"",
+    "new": "_模块, _函数 = \"sqlite3\", \"connekt\""
+   }
+  ],
+  "预期红": "判据自检:一处连库都没扫到"
  }
 ]

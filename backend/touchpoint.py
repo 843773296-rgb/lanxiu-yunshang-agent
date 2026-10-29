@@ -36,6 +36,7 @@
 
 所以这个模块的产出只用来**跑通算法**,算出来的贡献分配**不能当成真实结论**。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -48,7 +49,7 @@ import journey as _口径
 
 
 def _rows(sql, *a, db=DB):
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 

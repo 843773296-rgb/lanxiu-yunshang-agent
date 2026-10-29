@@ -20,6 +20,7 @@
             **顾客要单独勾「不适用七天无理由退货」**(业务 10-10 晚 #7;实施条例 19「显著标注、顾客确认」)——
             不默认勾、没勾不让确认;勾的时间和账号记进订单确认书
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, sqlite3, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -31,7 +32,7 @@ from oplog import log_op
 
 
 def rows(sql, *a):
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory = sqlite3.Row
         return [dict(r) for r in c.execute(sql, a)]
 
@@ -194,7 +195,7 @@ def open_order(d, me):
         # **衣服和穿的人要对得上**(业务 09-22「肯定要」):女款不能开给男士、童装不能开给大人……
         # 口径在 order_place.穿的人对不对;判不了(没登记性别 / 生日)也当拦
         import order_place, fix_order_measure as _fx
-        with sqlite3.connect(DB) as _c:
+        with closing(sqlite3.connect(DB)) as _c, _c:
             顶 = _fx.顶级品类(_c, s["category"])
         g, why = order_place.穿的人对不对(s["gender"], 顶, w[0]["gender"], _周岁(w[0]["birthday"], _now()))
         if g != "可以":
@@ -217,7 +218,7 @@ def open_order(d, me):
     oid, now = str(int(mx) + 1), _now()
     合计 = round(amt + 运费, 2)
     import fsm
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         import shop_key as _SK          # 门店码的唯一入口(别在这儿自己拆串)
         c.execute("""INSERT INTO ordr(id,customer_id,kind,status,advisor_no,shop,shop_code,source,delivery,amount,payable,
                      created,updated,prd_status,goods_amount,freight,received,refund_status,appt_src,scheme_id)
@@ -272,7 +273,7 @@ def confirm_order(d, me):
                     能做什么="给缺下单量体的那几件量体并绑上(record_measure 带 order_id + item),或先定着装人")
     now = _now()
     import order_contract as _oc
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("UPDATE ordr SET status='待审核', prd_status=?, paid_at=?, received=amount, updated=? "
                   "WHERE id=? AND status='待确认'", (fsm.ORDER_PRD["待审核"], now, now, oid))
         # 订单确认书(业务 10-10:收预付款要有书面约定)—— **同一个事务**:写不进去就整个确认回滚,
@@ -286,7 +287,7 @@ def confirm_order(d, me):
     try:
         import opportunity_store as _os, worldclock as _wc
         cid = rows("SELECT customer_id FROM ordr WHERE id=?", oid)[0]["customer_id"]
-        with sqlite3.connect(DB) as c2:
+        with closing(sqlite3.connect(DB)) as c2, c2:
             _os.建表(c2)
             满足提醒 = _os.满足扫描(c2, _wc.今天(), 客户=cid)
     except Exception as e:      # noqa: BLE001 —— 提醒是附带的,确认已经成了

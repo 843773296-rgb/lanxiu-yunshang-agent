@@ -22,6 +22,7 @@
 确认走 api.confirm_report → report_doc.确认。
 用法:python3 backend/report_template_check.py   (不调模型;写的是库副本)
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import copy, datetime as _dt, io, json, os, sqlite3, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -134,12 +135,12 @@ def 态(视, 名):
 
 
 def 行(rid):
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         return c.execute("SELECT status, confirmed_by FROM store_report_doc WHERE id=?", (rid,)).fetchone()
 
 
 def 改包(rid, 改):
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         p = json.loads(c.execute("SELECT pack FROM store_report_doc WHERE id=?", (rid,)).fetchone()[0])
         改(p)
         c.execute("UPDATE store_report_doc SET pack=? WHERE id=?", (json.dumps(p, ensure_ascii=False), rid))
@@ -213,7 +214,7 @@ def 迁移():
     """老库(加状态列之前)里的版本:加列时默认「已发布」,生效规则和加列前一样。在一个临时小库上真调 确保表 / 生效。"""
     d = tempfile.mkdtemp(prefix="rpt-tpl-mig-")
     p = os.path.join(d, "lanxiu.db")
-    with sqlite3.connect(p) as c:
+    with closing(sqlite3.connect(p)) as c, c:
         c.execute("""CREATE TABLE report_template_ver(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
             version INTEGER NOT NULL, payload TEXT NOT NULL, why TEXT NOT NULL, by_no TEXT, by_name TEXT, at TEXT NOT NULL,
             UNIQUE(name, version))""")
@@ -223,7 +224,7 @@ def 迁移():
         c.execute("INSERT INTO report_template_ver(name,version,payload,why,by_no,by_name,at) VALUES('默认',1,?,'老版本','X','老总部','2026-10-20 10:00:00')",
                   (json.dumps(旧, ensure_ascii=False),))
     未迁 = RT.生效(None, db=p)
-    with sqlite3.connect(p) as c:
+    with closing(sqlite3.connect(p)) as c, c:
         RT.确保表(c); c.commit()
         r = c.execute("SELECT status, payload FROM report_template_ver").fetchone()
     已迁 = RT.生效(None, db=p)
@@ -347,13 +348,13 @@ def main():
        f"试点={试['报告模板']['版本']}/{试['报告模板']['状态']} 别店={别试['报告模板']['版本']}")
     码, 体 = 改态("默认", 1, "已发布", "检查:试过了,发布", tH)
     ck("试运行 → 已发布", 体.get("ok"), f"{体}")
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         留 = c.execute("SELECT status, trial_shops, trial_why, publish_why, publish_by, publish_at FROM report_template_ver "
                       "WHERE name='默认' AND version=1").fetchone()
     # ⚠️ 试点门店存的是**门店编码**(2026-10-24 改的:存显示串的话,门店一改名那一版就对不上了,
     # 而且不报错)。所以这里拿编码比,不拿显示串比 —— 原来写的是 `== [店]`,`店` 是显示串。
     import shop_key as _SK9
-    with sqlite3.connect(副本) as _c9:
+    with closing(sqlite3.connect(副本)) as _c9, _c9:
         _码9 = _SK9.码(_c9, 店) or 店
     ck("状态留痕:试点门店(按编码存)、试运行 / 发布的理由、谁、什么时候都在这一版那一行",
        留[0] == "已发布" and json.loads(留[1]) == [_码9] and 留[2] and 留[3] == "检查:试过了,发布" and 留[4] and 留[5],
@@ -364,7 +365,7 @@ def main():
         A = api.save_report(body="## 检查周报 A", kind="周")
     v2, 发2 = 发布("默认", 模板(隐藏=("库存",)), "检查:改藏库存", tH, 店)
     ck("再存是第 2 版(只增不改)", v2.get("ok") and v2.get("版本") == 2 and 发2.get("ok"), f"{v2} {发2}")
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         状 = dict(c.execute("SELECT version, status FROM report_template_ver WHERE name='默认'").fetchall())
     ck("新发布的把旧发布的顶成已撤下(同一模板最多一版已发布)",
        状.get(1) == "已撤下" and 状.get(2) == "已发布" and 发2.get("顶下来的") == [1], f"{状} {发2}")
@@ -382,7 +383,7 @@ def main():
     ck("新报告按第 2 版(库存隐藏、评价显示;隐藏项的段从登记里补)",
        视B.get("版本") == 2 and 态(视B, "库存") == "被隐藏" and 态(视B, "评价") == "显示" and 库B and 库B[3]["段"] == "存量",
        f"{视B.get('版本')} 评价={态(视B, '评价')} 库存={态(视B, '库存')}")
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         行们 = c.execute("SELECT version, payload FROM report_template_ver WHERE name='默认' ORDER BY version").fetchall()
     ck("版本记录只增不改:第 1 版内容原样留着", len(行们) == 2 and
        any(not x.get("显示", True) and x["名"] == "评价" for 节 in json.loads(行们[0][1])["章节"] for x in 节["指标"]), f"{行们[:1]}")
@@ -479,7 +480,7 @@ def main():
     ck("登录后能看模板列表、已登记指标(带主题 / 重要度)和每个模板的已发布 / 试运行版本",
        码 == 200 and len(体.get("已登记指标") or []) == len(登) and all(x.get("主题") for x in 体.get("已登记指标") or [])
        and any(t["名称"] == "检查专用" for t in 体.get("模板们") or []) and 默行.get("已发布版本") == 6, f"{码} {默行}")
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         几版 = c.execute("SELECT COUNT(*) FROM report_template_ver WHERE name='默认'").fetchone()[0]
     码, 体 = _打("do_GET", "/api/report-template/默认", tok=tG)
     ck("登录后能看一个模板的版本记录(带状态)", 码 == 200 and len(体.get("版本记录") or []) == 几版 >= 6
@@ -494,7 +495,7 @@ def main():
        s1.get("ok") and not 体.get("ok") and "不在模板" in (体.get("reason") or ""), f"{s1} {体}")
     码, 体 = 改态(名, s1.get("版本"), "试运行", "检查:在适用的店试", tH, [别店])
     在试 = RT.生效(别店)
-    with sqlite3.connect(副本) as c:     # 把试运行开始时间往回拨 试运行天数+1 天 = 满期
+    with closing(sqlite3.connect(副本)) as c, c:     # 把试运行开始时间往回拨 试运行天数+1 天 = 满期
         起 = (RT._世界今天() - _dt.timedelta(days=RT.试运行天数 + 1)).strftime("%Y-%m-%d %H:%M:%S")
         c.execute("UPDATE report_template_ver SET trial_at=? WHERE name=? AND version=?", (起, 名, s1.get("版本")))
     满期 = RT.生效(别店)
@@ -508,7 +509,7 @@ def main():
        f"在试={在试.get('模板')} 满期={满期.get('模板')} 状态={v1.get('状态')} 再发={再发}")
     码, 复 = _打("do_POST", "/api/report-template-copy", {"name": 名, "version": s1.get("版本"), "why": "再试一次"}, tH)
     码, 顾复 = _打("do_POST", "/api/report-template-copy", {"name": 名, "version": s1.get("版本"), "why": "顾问也想复制"}, tG)
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         新 = c.execute("SELECT status, payload FROM report_template_ver WHERE name=? AND version=?", (名, 复.get("版本"))).fetchone()
         旧 = c.execute("SELECT payload FROM report_template_ver WHERE name=? AND version=?", (名, s1.get("版本"))).fetchone()
     ck("撤下的另存成新草稿:新版本号、草稿、内容和原来那版一样;顾问复制不了",
@@ -520,7 +521,7 @@ def main():
     改态(名, s3.get("版本"), "试运行", "检查:第 3 版试", tH, [别店]); 改态(名, s3.get("版本"), "已发布", "检查:第 3 版发布", tH)
     码, 撤3 = 改态(名, s3.get("版本"), "已撤下", "检查:第 3 版有问题,直接撤", tH)
     回到 = RT.生效(别店)
-    with sqlite3.connect(副本) as c:
+    with closing(sqlite3.connect(副本)) as c, c:
         清 = c.execute("SELECT withdraw_at IS NULL AND withdraw_by IS NULL AND withdraw_why IS NULL "
                       "FROM report_template_ver WHERE name=? AND version=?", (名, v2)).fetchone()
     # 数据工厂 10-23 实测:清成空串的话,每日平移把 withdraw_at 判成整列日期,date('') 解析不出 → 平移门禁红,

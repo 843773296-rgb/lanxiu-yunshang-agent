@@ -67,6 +67,7 @@ SQLite 就一次都不用回表:
 **计划里真的用上了(要求覆盖的必须是覆盖)**,外加「建库路径上真的有人调它」——
 > **「我登记了一条索引」和「有人会去建它」是两件事。**
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os
 import re
 import sqlite3
@@ -206,7 +207,7 @@ def main():
     print("为真实查询登记的索引")
     print("=" * 78)
     print(f"库:{库}")
-    with sqlite3.connect(f"file:{库}?mode=ro", uri=True) as ro:
+    with closing(sqlite3.connect(f"file:{库}?mode=ro", uri=True)) as ro, ro:
         有 = {r[0]: r[1] for r in ro.execute(
             "SELECT name, sql FROM sqlite_master WHERE type='index'")}
     缺 = [ix for ix in 索引 if ix["名"] not in 有]

@@ -20,6 +20,7 @@
 这条口径就是白写的,而「滚动 12 个月」这五个字也就没有意义。
 **一条区分不出任何东西的规则,等于没有这条规则。**
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, sqlite3
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -57,13 +58,13 @@ class 不许留痕:
     **夹具和普通数据之间有边,而那条边从写的这一侧看不见。**
     """
     def __enter__(self):
-        with sqlite3.connect(api.DB) as c:
+        with closing(sqlite3.connect(api.DB)) as c, c:
             c.row_factory = sqlite3.Row
             self.snap = [dict(r) for r in c.execute("SELECT * FROM approval")]
         return self
 
     def __exit__(self, *e):
-        with sqlite3.connect(api.DB) as c:
+        with closing(sqlite3.connect(api.DB)) as c, c:
             c.execute("DELETE FROM approval")
             for r in self.snap:
                 cols = ",".join(r); q = ",".join("?" * len(r))

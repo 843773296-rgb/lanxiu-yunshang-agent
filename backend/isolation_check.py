@@ -30,6 +30,7 @@
     # > **在那份清单上长得一模一样** —— 而照着它去验,会得到「改坏了却没红」。
 ]
 
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sys, sqlite3
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -239,7 +240,7 @@ def main():
                        "看得出" if still[0].get("改派") else "只显示新负责人", "看得出",
                        "  ← 只显示「负责人:林岚」比少一行还糟")
         finally:
-            with sqlite3.connect(DB) as _c:
+            with closing(sqlite3.connect(DB)) as _c, _c:
                 _c.execute("UPDATE schedule SET assignee_no=?,advisor_no=?,reassigned_from=?,"
                            "reassign_reason=?,reassigned_at=? WHERE id=?",
                            (_before["assignee_no"], _before["advisor_no"], _before["reassigned_from"],

@@ -8,6 +8,7 @@
   ② **真库上现在是几** —— 四个数必须都是 0;不是 0 就是真有一件越权 / 重复执行 / 假成功 / 无依据办结。
      样本是 0(CI 从零建的库里没有研判日志)时明说「没验到」,不判过也不判红 —— 兜底的是 ①。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import json
 import os
 import sqlite3
@@ -67,7 +68,7 @@ ck("量法:正门走一遍(含被拒的两次、重复点一次办结)→ 四个
 
 # ① 四种坏形状各造一个 —— 直接往日志 / 表里写(模拟「某个写口坏了」留下的痕迹),每种要恰好数进那一类
 def 造(sql, *a):
-    with sqlite3.connect(db) as cc:
+    with closing(sqlite3.connect(db)) as cc, cc:
         cc.execute(sql, a)
 
 def 日志(target, frm, too, ok, code, me, machine="triage", reason="[检查] 造的"):

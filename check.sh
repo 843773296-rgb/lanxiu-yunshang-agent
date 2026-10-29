@@ -542,6 +542,7 @@ run "技能放行只读口 · 四列齐(在目录里/自有吗/放行吗/真挂�
 run "技能触发真值改写 · 接管/没放行→期望不触发、方向只有一个、拿不到清单不乱改(这段改坏了会让分数虚高)" python3 agentsite/skill_eval_truth_check.py
 run "保留期 · 默认不删、--执行才删超期的、没超期的一条不少(造夹具验的,不是靠「库里现在干净」)" python3 backend/retention_check.py
 run "员工表凭据 · 谁都不许对 staff 用星号查(只有登录验证点名豁免;api._rows 那道锁管不到自己开连接的地方)" python3 backend/staff_cred_check.py
+run "连库必须显式关 · 常驻服务不许漏文件描述符(2026-10-29:API 服务攒了 250 个没关的句柄,顶满 launchd 那 256 个之后每个请求都挂,而表现是「页面打得开、登录 502」)" python3 tools/db_close_check.py
 run "纹样业务核定 · 核过的不被重算覆盖,写口六道拦(含原话校验:模型替人猜的核不进去)" python3 backend/motif_review_check.py
 run "评测来路章 · 章上的供应商 = 真正发请求的那家,章上的库 = 真正在读的那个库" ./agentsite/.venv/bin/python tools/evalrec_provider_check.py
 run "提示词里的数 · 体检认它算出处,所以它得在知识库里找得到" ./agentsite/.venv/bin/python tools/prompt_numbers_check.py

@@ -35,6 +35,7 @@
 所以这里只收**简体中文里不会出现**的字。宁可漏,不可错。
 漏了的后果是少报一个;错了的后果是让人去改对的数据。
 """
+from contextlib import closing   # ← 连接要显式关:sqlite3 的 with 只管事务,不关连接(2026-10-29)
 import os, sqlite3, sys
 
 DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lanxiu.db")
@@ -79,7 +80,7 @@ def 繁体字(s):
 
 def 扫库(db=DB):
     问题 = []
-    with sqlite3.connect(db) as c:
+    with closing(sqlite3.connect(db)) as c, c:
         for 表, 列 in 守的列:
             try:
                 for (v,) in c.execute(f"select distinct {列} from {表} "
