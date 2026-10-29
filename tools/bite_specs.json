@@ -4725,8 +4725,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "        system_prompt=_记规矩(state, (_SYS[kind] if _收窄 is None else prompts.assemble(",
-    "new": "        system_prompt=_记规矩(state, (_SYS[kind] if True else prompts.assemble("
+    "old": "        system_prompt=_记规矩(state, (_助手系统 if _助手系统 is not None else _SYS[kind] if _收窄 is None else prompts.assemble(",
+    "new": "        system_prompt=_记规矩(state, (_助手系统 if _助手系统 is not None else _SYS[kind] if True else prompts.assemble("
    }
   ],
   "预期红": "收掉的工具,管它的规矩也不在提示词里"
@@ -14164,5 +14164,17 @@
    }
   ],
   "预期红": "判据自检:一处连库都没扫到"
+ },
+ {
+  "script": "tools/assistant_effect_check.py",
+  "改坏": "聊天站客户端不去后台拉、直接当「没配」退回代码 —— 于是后台改了什么聊天站都不知道,而它的回答和「后台没指定」时一模一样",
+  "file": [
+   {
+    "path": "backend/assistant_client.py",
+    "old": "    cfg = _tc.配置()\n    出 = None",
+    "new": "    cfg = None\n    出 = None"
+   }
+  ],
+  "预期红": "绕过缓存现拉到的就是后台生产那一版"
  }
 ]

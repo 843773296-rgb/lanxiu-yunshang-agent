@@ -72,15 +72,16 @@ def 规矩样本():
     return out
 
 
-def 我算(池, 规矩, 开着):
-    have = {t.rsplit("__", 1)[-1] for t in 开着}
+def 我算(池, 规矩, 开着, 写的=()):
+    """开着的里有写入类 → 多一个能力标记「写」(10-29 起写纪律 TL05 挂它)。"""
+    have = {t.rsplit("__", 1)[-1] for t in 开着} | ({"写"} if set(开着) & set(写的) else set())
     return [i for i in 池 if all(n in have for n in 规矩[i][0]) and not any(n in have for n in 规矩[i][1])]
 
 
 def main():
     print("聊天助手配置 · 端到端(第 1 步:后台这一半)\n")
     规矩 = 规矩样本()
-    跟工具 = [i for i, (n, a) in 规矩.items() if len(n) == 1 and not a]
+    跟工具 = [i for i, (n, a) in 规矩.items() if len(n) == 1 and not a and n[0] not in ("写", "图片")]
     总带 = [i for i, (n, a) in 规矩.items() if not n and not a]
     ck(f"样本够:跟着一个工具的 {len(跟工具)} 条、总带着的 {len(总带)} 条(各至少 1)", 跟工具 and 总带,
        "project_lanxiu 里没导规矩?CI 要先跑 import_lanxiu_prompts.py")
@@ -90,7 +91,7 @@ def main():
     靶工具 = f"mcp__e2e__{规矩[靶][0][0]}"
     池 = sorted(规矩)
     工具 = [{"名": 靶工具, "写": True}, {"名": "mcp__e2e__只读那个", "写": False}]
-    期望 = 我算(池, 规矩, [t["名"] for t in 工具])
+    期望 = 我算(池, 规矩, [t["名"] for t in 工具], [靶工具])
     ck(f"自造的这份里,「{靶}」会被装上(它跟着的工具开着)", 靶 in 期望)
     快 = {"角色键": 角色, "名称": "端到端测试助手", "用途": "测试用", "开头": "你是测试助手。\n## 铁律\n", "结尾": "",
          "工具": 工具, "能力标记": [], "模型": "claude:claude-haiku-5-5",
@@ -147,7 +148,7 @@ def main():
     ck("关掉一个工具 → 200", s == 200, (s, d))
     s, g = 打("GET", f"{P}/chat-assistants/{cid}")
     装 = [r["编号"] for r in g["规矩"]["装上"]]
-    ck(f"「{靶}」跟着它的工具一起下去了,其余照旧", 靶 not in 装 and 装 == 我算(池, 规矩, ["mcp__e2e__只读那个"]), 装)
+    ck(f"「{靶}」跟着它的工具一起下去了,其余照旧", 靶 not in 装 and 装 == 我算(池, 规矩, ["mcp__e2e__只读那个"], [靶工具]), 装)
 
     print("\n▸ ⑤ 出版本")
     s, d = 打("POST", f"{P}/chat-assistants/{cid}/versions", 体={})

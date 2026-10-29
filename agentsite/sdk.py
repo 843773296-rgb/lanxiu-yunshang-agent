@@ -1025,6 +1025,22 @@ def 找环境故障(calls):
     return out
 
 
+def _助手组装(kind, 版, 工具=None):
+    """后台那一版(开头 / 结尾 / 开着的工具)→ (系统提示词, 这一轮的工具, 装上的规矩编号)。
+    run() 和核对脚本(tools/assistant_effect_check.py)**调的是这同一个函数** —— 两处各拼一遍的话,
+    核对比的是核对脚本那一份,不是模型真收到的那一份。
+
+    工具只收不加(`assistant_client.收工具`);规矩照旧由 prompts.assemble 按这一轮开着的工具挑
+    (写纪律 TL05 跟着「写」标记自己进出)。开头 / 结尾**原样传**,不做 `or` 兜底:
+    后台把开头清空 = 这一版没有开头,不是「用代码那份」(prompts_check P13 钉着 assemble 那一侧)。"""
+    import assistant_client as _ac
+    工具 = _ac.收工具(工具 if 工具 is not None else _tools_for(kind), 版)
+    # 名单就地写出来(不先存进变量):P6b 从写法上认「规矩按这一轮交给模型的名单挑」
+    系统, ids = prompts.assemble(kind, {t.rsplit("__", 1)[-1] for t in 工具} | ({"图片"} if kind in ("kb", "all") else set()),
+                                 head=版["开头"], foot=版["结尾"])
+    return 系统, 工具, ids
+
+
 def _记规矩(state, 系统):
     """这一轮发给模型的系统提示词原样记进 state —— 体检 g1 认「规矩里原样写着的数」要读它(用户 10-08 拍板)。"""
     state["规矩原文"] = 系统
@@ -1033,7 +1049,7 @@ def _记规矩(state, 系统):
 
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
               provider=None, model_name=None, me=None, skills=None, effort=None, 被判包裹=None,
-              被判押金=None, 分叉=False, 根属性=None):
+              被判押金=None, 分叉=False, 根属性=None, 后台配置=False):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
 
     被判包裹:**判差评时**给被判那条的包裹号 —— 工具服务会把它自己的人工处置抹掉
@@ -1051,6 +1067,10 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
 
     分叉 / 根属性:难题分流用(见 model_route.py)。分叉 = 续聊时另开一条新会话号 —— Haiku 那一遍如果被换掉,原会话里不留它半截的痕迹,Opus 接着原会话重答;
     根属性 = 额外记到根 span 上的分流记录(谁答的、为什么升级、上一遍的 trace)。
+
+    后台配置:**只有聊天页那条路径传 True**(app.py)。打开时 task 角色用管理后台生产指着的那一版
+    (开头 / 结尾 / 开着的工具,见 _助手组装);研判、差评研判、评测一律照旧用代码 ——
+    后台一上生产评测就悄悄换一份提示词的话,和基线就没法比了。后台没指定生产 = 和今天一模一样。
 
     resume:上一轮返回的 session_id。**多轮不是把历史拼进 prompt** ——
     那样每轮都要重发全部上下文,又贵又容易被截断,而且工具调用记录会丢。
@@ -1083,6 +1103,15 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
 
     model = _env(provider, model_name)
     工具 = 生效工具(kind, _收窄)
+    # ── 聊天助手配置(用户 10-28 拍「分两步」,第 2 步)── 后台生产那一版:工具只收不加、开头 / 结尾换成后台的。
+    # 模型这一步先不接:聊天页的难题分流靠「是不是默认模型」判,接了要动分流;这一轮用的模型照实进核对字段
+    _助手 = None
+    _助手系统 = None
+    if 后台配置 and kind == "task" and not _研判:
+        import assistant_client as _ac
+        _助手 = _ac.生产版("task")
+        if _助手["版"]:
+            _助手系统, 工具, _ = _助手组装(kind, _助手["版"], 工具)
     state = {"生效工具": 工具}          # 进运行记录:这一轮实际给了哪些,不是配置意图
     if images:
         state["带图"] = True          # 体检 g18「看图直接下形制结论」只在带图的那一轮生效
@@ -1126,7 +1155,7 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         # 提示词里的身份是**告知**,env 里的身份才是**授权**。
         # **不用 .get 回落** —— 见上面 `_SYS` 那段。角色没配就该炸,不该静默降级。
         # 提示词按**这一轮生效的工具**装配:收掉的工具,管它的规矩也不该还在(否则模型被不存在的工具误导)
-        system_prompt=_记规矩(state, (_SYS[kind] if _收窄 is None else prompts.assemble(
+        system_prompt=_记规矩(state, (_助手系统 if _助手系统 is not None else _SYS[kind] if _收窄 is None else prompts.assemble(
             kind, {t.rsplit("__", 1)[-1] for t in 工具} | ({"图片"} if kind in ("kb", "all") else set()))[0]) + (
             f"\n\n## 现在是谁在跟你说话\n\n"
             f"{me['name']}(工号 {me['no']})· {me['role']}"
@@ -1212,6 +1241,12 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
                       "lanxiu.role": (me or {}).get("role"),
                       "lanxiu.skills": ",".join(skills) if skills else None,
                       "lanxiu.prompt_chars": len(prompt) if isinstance(prompt, str) else None,
+                      # 聊天助手核对字段(第 2 步):这一轮用的是后台第几版还是代码、从哪拿的、哪一刻拿的、工具指纹、模型。
+                      # 调起了哪个技能在工具 span 上(lanxiu.skill.name),不另记一份
+                      **({f"lanxiu.assistant.{k}": v for k, v in {
+                          "version": _账["提示词版本"], "source": _账["来源"], "fetched_at": _账["拉到于"],
+                          "tools_fp": _账["工具指纹"], "model": _账["模型"], "why": _账["原因"]}.items()}
+                         if (_账 := (_ac.记账(_助手, 工具, model) if _助手 else None)) else {}),
                       **(根属性 or {})})
     _当前模型span = _根        # 工具挂在「是哪次模型调用要的它」下面
     _工具span = {}             # tool_use_id → span_id,等返回值回来时对得上
@@ -1527,6 +1562,11 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
             # **评测判分用这一项**(用户 10-04 拍:按最终交付判);guard_violations 是历次打回全记录,只算打回率
             最终违规=guards.最终违规(state, 交付),
             tool_calls_seen=len(state.get("calls") or []),
+            # 聊天助手核对字段(第 2 步;只有聊天页那条路径有):第六样「这一轮调起了哪个技能」从轨迹里取 ——
+            # 技能被调起时另带它自己的规矩,后台那一版和模型收到的**只在这种轮次上分叉**(并行会话 10-28 量到)
+            助手配置=({**_ac.记账(_助手, 工具, model),
+                     "技能": [str((x.get("args") or {}).get("skill") or "") for x in traj if x.get("tool") == "Skill"]}
+                    if _助手 else None),
             会话状态=dict(恢复说明=state.get("会话恢复") or [], 存=_存话),
             环境故障=_故障,
             # 难题分流看这两项(model_route.该升级吗):报过错的工具、调成功过的工具 —— 报错后同一个工具又调成功了算它自己纠正

@@ -62,6 +62,11 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
 for d, _, fs in os.walk(ROOT):
     if any(x in d for x in (".git", ".venv", "node_modules", "__pycache__")):
         continue
+    # `.claude/worktrees/` 底下是子代理开的**别的检出**(各停在一个旧提交上),不是这份代码 ——
+    # 2026-10-29 主检出里有 10 份,这条把它们的旧 server.py 也扫进来,红了 50 处,而 CI 和别的检出上没有这个目录。
+    # **只跳这一层**:`agentsite/.claude/skills/` 里技能自己的脚本照样要扫(它们也可能查 staff)
+    if os.path.join(".claude", "worktrees") in d:
+        continue
     for f in fs:
         if not f.endswith(".py"):
             continue

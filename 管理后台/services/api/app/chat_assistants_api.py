@@ -80,6 +80,14 @@ def _开着的(cfg):
     return [t["名"] for t in cfg.get("工具") or [] if t.get("开")]
 
 
+def _标记(cfg):
+    """能力标记:导入带来的(如「图片」)+「写」—— 开着的工具里有一个写入类就加。
+    和 prompts.assemble 同一条(它拿 api.WRITE_TOOLS 现算;这里用导入时标的「写」)。
+    10-29 并行会话把写纪律 TL05 改成挂「写」,导入对账当场拦下了这里没跟上的那一次。"""
+    写 = any(t.get("开") and t.get("写") for t in cfg.get("工具") or [])
+    return list(cfg.get("能力标记") or []) + (["写"] if 写 else [])
+
+
 def 内容哈希(cfg, 规矩):
     """只算会改变模型收到什么的:开头 / 结尾 / 开着的工具 / 模型 / 装上的规矩。变更说明不进。"""
     料 = {"开头": cfg.get("开头") or "", "结尾": cfg.get("结尾") or "", "模型": cfg.get("模型"),
@@ -154,7 +162,7 @@ async def 导入基线(project_id: str, request: Request, me: 身份 = Depends(�
            "能力标记": 体.get("能力标记") or [], "规矩池": 体["规矩池"],
            "可选模型": 体.get("可选模型") or [体["模型"]], "技能": 体.get("技能") or []}
     with 事务() as c:
-        装, 缺 = 挑规矩(cfg["规矩池"], _规矩们(c, project_id), _开着的(cfg), cfg["能力标记"])
+        装, 缺 = 挑规矩(cfg["规矩池"], _规矩们(c, project_id), _开着的(cfg), _标记(cfg))
         if 缺:
             raise _错(422, "RULES_NOT_IMPORTED", f"这几条规矩后台还没有:{缺}",
                       "先跑 tools/import_lanxiu_prompts.py 把规矩导进来 —— 否则这一页列出来的规矩是缺的")
@@ -182,10 +190,16 @@ async def 导入基线(project_id: str, request: Request, me: 身份 = Depends(�
             if 上 and 上["content_hash"] == 内容哈希(cfg, 装):
                 return {"id": aid, "版本": f"v{上['version_no']}", "动了吗": False,
                         "note": "和最新一版内容一样,什么都没动。" + 还没接}
-            # 草稿没被人改过(还等于最新一版)才跟着换;改过的不覆盖 —— 那是别人没出版本的活
+            # 草稿没被人改过(还等于最新一版)才跟着换;改过的不覆盖 —— 那是别人没出版本的活。
+            # ⚠️ **比草稿自己的四样(开头 / 结尾 / 模型 / 开着的工具),不比「按规矩重算的哈希」**:
+            # 10-29 规矩的挑法变了(TL05 改挂「写」),一份没人动过的草稿重算出来哈希也变了,
+            # 被当成「有没出版本的改动」而没换 —— 规矩在它脚下变了,不等于有人改了草稿。
             旧 = a["definition"] or {}
-            旧装, _ = 挑规矩(旧.get("规矩池") or [], _规矩们(c, project_id), _开着的(旧), 旧.get("能力标记") or [])
-            if not 上 or 上["content_hash"] == 内容哈希(旧, 旧装):
+            上行 = c.execute(text("""select head_template, foot_template, model_name, tools
+                                    from chat_assistant_versions where project_id=:p and chat_assistant_id=:a
+                                    order by version_no desc limit 1"""), {"p": project_id, "a": aid}).mappings().first()
+            if not 上行 or ((旧.get("开头") or "") == 上行["head_template"] and (旧.get("结尾") or "") == (上行["foot_template"] or "")
+                          and 旧.get("模型") == 上行["model_name"] and sorted(_开着的(旧)) == sorted(上行["tools"] or [])):
                 c.execute(text("""update chat_assistants set definition=cast(:d as jsonb), updated_at=now(),
                                       draft_revision=coalesce(draft_revision,0)+1
                                   where project_id=:p and id=:i"""),
@@ -215,7 +229,7 @@ def 生产版本(project_id: str, role: str, me: 身份 = Depends(要权限("查
         if a["production_version_no"] is None:
             return {"角色键": role, "版本号": None, "note": "没指定生产 —— 聊天站照用代码里那一份"}
         v = c.execute(text("""select version_no, head_template, foot_template, tools, model_name, rule_ids,
-                                     content_hash from chat_assistant_versions
+                                     content_hash, source_kind, source_hash from chat_assistant_versions
                                where project_id=:p and chat_assistant_id=:a and version_no=:n"""),
                       {"p": project_id, "a": a["id"], "n": a["production_version_no"]}).mappings().first()
     if not v:      # 指针存的是版本号、库里没外键(见契约)—— 指着一个不存在的版本要明说,不当成「没指定」
@@ -223,7 +237,9 @@ def 生产版本(project_id: str, role: str, me: 身份 = Depends(要权限("查
                   "回详情重新上一次生产")
     return {"角色键": role, "版本号": v["version_no"], "开头": v["head_template"], "结尾": v["foot_template"] or "",
             "工具": v["tools"] or [], "模型": v["model_name"], "规矩": v["rule_ids"] or [],
-            "内容哈希": v["content_hash"]}
+            "内容哈希": v["content_hash"], "来源": v["source_kind"],
+            # 只有「代码导入」的版本存着当时真组装出的全文哈希 —— 核对口拿它逐字比;后台编辑出的没有,核对口要明说没比
+            "全文哈希": v["source_hash"] if v["source_kind"] == "代码导入" else None}
 
 
 def _取(c, project_id, cid, 锁=False):
@@ -245,7 +261,7 @@ def 聊天助手详情(project_id: str, cid: str, me: 身份 = Depends(要权限
               from chat_assistant_versions where project_id=:p and chat_assistant_id=:a
              order by version_no desc limit 50"""), {"p": project_id, "a": cid}).mappings().all()
     cfg = a["definition"] or {}
-    装, 缺 = 挑规矩(cfg.get("规矩池") or [], 规矩们, _开着的(cfg), cfg.get("能力标记") or [])
+    装, 缺 = 挑规矩(cfg.get("规矩池") or [], 规矩们, _开着的(cfg), _标记(cfg))
     哈希 = 内容哈希(cfg, 装)
     return {
         "id": a["id"], "角色键": a["role_key"], "名称": a["name"], "用途": a["purpose"],
@@ -320,7 +336,7 @@ async def 出聊天助手版本(project_id: str, cid: str, request: Request,
     with 事务() as c:
         a = _取(c, project_id, cid, 锁=True)
         cfg = a["definition"] or {}
-        装, 缺 = 挑规矩(cfg.get("规矩池") or [], _规矩们(c, project_id), _开着的(cfg), cfg.get("能力标记") or [])
+        装, 缺 = 挑规矩(cfg.get("规矩池") or [], _规矩们(c, project_id), _开着的(cfg), _标记(cfg))
         if 缺:
             raise _错(422, "RULES_NOT_IMPORTED", f"这几条规矩后台还没有:{缺}",
                       "先跑 tools/import_lanxiu_prompts.py —— 缺着规矩出的版本,列出来的规矩是不全的")

@@ -614,7 +614,9 @@ class H(BaseHTTPRequestHandler):
                 跑 = lambda pv, md, **kw: asyncio.run(sdk.run(kind, prompt, resume=sid_in,
                                             provider=pv, model_name=md, images=imgs or None,
                                             me=me, skills=body.get("skills"),
-                                            effort=body.get("effort"), **kw))
+                                            effort=body.get("effort"),
+                                            # 聊天页这条路径才读后台的聊天助手配置(第 2 步;后台没指定生产 = 照旧用代码)
+                                            后台配置=True, **kw))
                 with RUNLOCK:
                     if not 分流:
                         r = 跑(prov, mdl)
