@@ -2,14 +2,16 @@
 # -*- coding: utf-8 -*-
 """聊天助手配置(用户 2026-10-28 拍「分两步」)—— 澜绣聊天站上那几个角色助手。
 
-## 第 1 步只做后台这一半
+## 聊天站读了哪些(2026-11-02 起店长助手已切到后台生产 v2)
 
-看 / 改 / 出版本 / 审核上生产。**聊天站还没读这里**,聊天现在用的仍是代码里那一份
-(`agentsite/sdk.py` 的角色 + 根目录 `prompts.py`)。每个接口的返回都带这句话 ——
+第 1 步做后台这一半(看 / 改 / 出版本 / 审核上生产);第 2 步(cfe1d5e7)聊天站接上:
+**只读生产指针指着的那一版,而且只读开头 / 结尾 / 开着哪些工具**;草稿和没上生产的版本线上不变;
+默认模型还没接(聊天页难题分流认「是不是默认模型」,接它要另动分流)。
+每个接口的返回都按角色写明接没接 ——
 > 一个「后台改了、聊天站照着跑」的配置页,和一个「后台改了、聊天站根本没读」的,
 > **在这一页上长得一模一样**。所以只能靠写明。
 
-第 2 步才接聊天站,并加「后台这一版 == 模型真收到的那一版」的核对口。
+核对口:根目录 `tools/assistant_effect_check.py`(后台这一版 == 模型真收到的那一版)。
 
 ## 基线从哪来
 
@@ -40,8 +42,19 @@ from workflows_api import _新id, _审计
 router = APIRouter()
 前缀 = "/api/v1/projects/{project_id}"
 
-还没接 = ("**还没接到聊天站** —— 聊天现在用的仍是代码里那一份(agentsite/sdk.py + prompts.py)。"
-       "这里改了、上了生产,聊天站都不会变;第 2 步接上之后才生效")
+# 聊天站真读后台的角色 —— 照 `agentsite/sdk.py` run() 里 `后台配置 and kind == "task"` 那一句;
+# 那边多接一个角色,这里跟着加(两处不一致时,核对口 tools/assistant_effect_check.py 只验得到 task)
+聊天站读的角色 = {"task"}
+接上了 = ("**聊天站读的是生产指着的那一版** —— 只读开头 / 结尾 / 开着哪些工具;**默认模型还没接**。"
+       "草稿和没上生产的版本线上都不变;上了生产,聊天站 30 秒内拉到;后台停了,它沿用最后一次拉到的那一版")
+还没接 = ("**这个角色聊天站还没读这里** —— 聊天现在用的仍是代码里那一份(agentsite/sdk.py + prompts.py),"
+       "这里改了、上了生产,线上都不变")
+
+
+def _接线(角色):
+    return (True, 接上了) if 角色 in 聊天站读的角色 else (False, 还没接)
+
+
 可改的键 = ("开头", "结尾", "模型", "工具")
 
 
@@ -143,9 +156,10 @@ def 聊天助手列表(project_id: str, me: 身份 = Depends(要权限("查看�
                        "最新版本": (f"v{r['最新版']}" if r["最新版"] is not None else None),
                        "生产版本": (f"v{r['production_version_no']}"
                                     if r["production_version_no"] is not None else None),
-                       "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None}
+                       "更新时间": r["updated_at"].isoformat() if r["updated_at"] else None,
+                       "接上了吗": _接线(r["role_key"])[0]}
                       for r in rs],
-            "接上了吗": False, "note": 还没接}
+            "note": f"聊天站现在读后台的角色:{'、'.join(sorted(聊天站读的角色))};别的角色在这里改了线上不变"}
 
 
 @router.post(前缀 + "/chat-assistants/import", status_code=201)
@@ -189,7 +203,7 @@ async def 导入基线(project_id: str, request: Request, me: 身份 = Depends(�
             上 = _最新版(c, project_id, aid)
             if 上 and 上["content_hash"] == 内容哈希(cfg, 装):
                 return {"id": aid, "版本": f"v{上['version_no']}", "动了吗": False,
-                        "note": "和最新一版内容一样,什么都没动。" + 还没接}
+                        "note": "和最新一版内容一样,什么都没动。" + _接线(体["角色键"])[1]}
             # 草稿没被人改过(还等于最新一版)才跟着换;改过的不覆盖 —— 那是别人没出版本的活。
             # ⚠️ **比草稿自己的四样(开头 / 结尾 / 模型 / 开着的工具),不比「按规矩重算的哈希」**:
             # 10-29 规矩的挑法变了(TL05 改挂「写」),一份没人动过的草稿重算出来哈希也变了,
@@ -211,7 +225,7 @@ async def 导入基线(project_id: str, request: Request, me: 身份 = Depends(�
                    体.get("变更说明") or "从代码导入(prompts.assemble 装配的那一份)",
                    快照={"提示词全文": 体["提示词全文"], "装配": "prompts.assemble(真跑)"},
                    来源哈希="sha256:" + hashlib.sha256(体["提示词全文"].encode()).hexdigest())
-    return {"id": aid, "版本": f"v{号}", "动了吗": True, "草稿": 草稿, "note": 还没接}
+    return {"id": aid, "版本": f"v{号}", "动了吗": True, "草稿": 草稿, "note": _接线(体["角色键"])[1]}
 
 
 @router.get(前缀 + "/chat-assistants/by-role/{role}/production")
@@ -282,7 +296,7 @@ def 聊天助手详情(project_id: str, cid: str, me: 身份 = Depends(要权限
                   "冻结于": v["created_at"].isoformat() if v["created_at"] else None,
                   "冻结人": v["created_by"]} for v in vs],
         "生产版本": (f"v{a['production_version_no']}" if a["production_version_no"] is not None else None),
-        "接上了吗": False, "note": 还没接,
+        "接上了吗": _接线(a["role_key"])[0], "note": _接线(a["role_key"])[1],
     }
 
 
@@ -323,7 +337,7 @@ async def 改聊天助手草稿(project_id: str, cid: str, request: Request,
         c.execute(text("""update chat_assistants set definition=cast(:d as jsonb), draft_revision=:r,
                               updated_at=now() where project_id=:p and id=:i"""),
                   {"d": json.dumps(cfg, ensure_ascii=False), "r": 版, "p": project_id, "i": cid})
-    return {"revision": 版, "note": "草稿已保存。**不影响任何版本,也不影响生产。**" + 还没接}
+    return {"revision": 版, "note": "草稿已保存。**不影响任何版本,也不影响生产。**" + _接线(a["role_key"])[1]}
 
 
 @router.post(前缀 + "/chat-assistants/{cid}/versions", status_code=201)
@@ -345,7 +359,7 @@ async def 出聊天助手版本(project_id: str, cid: str, request: Request,
             raise _错(409, "NO_SEMANTIC_CHANGE", f"和 v{上['version_no']} 的内容完全一样",
                       "改了才出版本 —— 一串内容相同的版本号会让「版本变了」失去含义")
         号 = _插版本(c, me, project_id, cid, cfg, 装, "后台编辑", 说明)
-    return {"版本": f"v{号}", "note": "**出了版本,没上生产。**" + 还没接}
+    return {"版本": f"v{号}", "note": "**出了版本,没上生产。**" + _接线(a["role_key"])[1]}
 
 
 @router.post(前缀 + "/chat-assistants/{cid}/production")
@@ -374,4 +388,4 @@ async def 聊天助手上生产(project_id: str, cid: str, request: Request,
               {"chat_assistant_id": cid, "角色键": a["role_key"], "名称": a["name"],
                "之前": (f"v{之前}" if 之前 is not None else None), "之后": f"v{号}"},
               (体.get("理由") or "").strip() or None)
-    return {"生产版本": f"v{号}", "之前": (f"v{之前}" if 之前 is not None else None), "note": 还没接}
+    return {"生产版本": f"v{号}", "之前": (f"v{之前}" if 之前 is not None else None), "note": _接线(a["role_key"])[1]}

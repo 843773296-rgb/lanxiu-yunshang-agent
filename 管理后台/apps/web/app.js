@@ -6978,18 +6978,20 @@ async function 页_模型产物() {
 }
 
 /* ── 聊天助手(10-28,用户拍「分两步」)───────────────────────────────────────────────
- * 第 1 步只到后台这一半:看 / 改 / 出版本 / 上生产。**聊天站还没读这里** —— 每一屏顶上都写明,
- * 否则「这里显示的」会被当成「聊天站在跑的」。和 Agent 一样页签是页内状态(没存的改动挂在 聊态 上) */
+ * 第 1 步后台这一半:看 / 改 / 出版本 / 上生产;第 2 步聊天站读生产那一版(只有接口说「接上了吗」的角色)。
+ * 接没接每一屏顶上都写明(接上了 = 上生产就改线上;没接 = 改了线上不变)——
+ * 否则「这里显示的」会被当成「聊天站在跑的」,或反过来。和 Agent 一样页签是页内状态(没存的改动挂在 聊态 上) */
 let 聊态 = null;
 function 卡_聊天助手(r) {
   const 链 = `#/chat/${encodeURIComponent(r.id)}`;
   return `<div class="appcard" data-kind="chat" data-id="${esc(r.id)}">
     <div class="ah"><span class="ico ch">聊</span><div class="an"><a href="${链}"><b>${esc(r["名称"])}</b></a>
-      <div class="k">聊天助手 · 角色 ${esc(r["角色键"])}</div></div><span class="pill warn">还没接到聊天站</span></div>
+      <div class="k">聊天助手 · 角色 ${esc(r["角色键"])}</div></div>${r["接上了吗"] ? '<span class="pill">聊天站读它</span>' : '<span class="pill warn">还没接到聊天站</span>'}</div>
     <div class="ad">${esc(r["用途"] || "还没写用途")}</div>
     <div class="k">最新版本:${r["最新版本"] ? esc(r["最新版本"]) : "还没有"} · ${r["工具数"]} 个工具开着</div>
     <div class="k">生产:${r["生产版本"] ? `<b>${esc(r["生产版本"])}</b>` : "还没指定"}
-      <span class="stale">聊天现在用的仍是代码里那一份</span></div>
+      ${r["接上了吗"] ? (r["生产版本"] ? "" : '<span class="stale">没指定生产,聊天用代码里那一份</span>')
+                      : '<span class="stale">聊天现在用的仍是代码里那一份</span>'}</div>
     <div class="af"><span class="grow"></span><a href="${链}">配置</a></div>
   </div>`;
 }
@@ -7016,7 +7018,7 @@ function 画_聊天助手() {
         · 生产:${g["生产版本"] ? esc(g["生产版本"]) : "还没指定"}
         ${g.脏 ? ' <span class="stale">有未保存的改动</span>' : ""}</div></div>
       <div>${g.Tab === "编排" ? '<button id="c-save" class="pri">保存草稿</button>' : '<button id="c-ver" class="pri">出版本</button>'}</div></div>
-    <div class="err" id="c-notlive" style="padding:10px;margin-bottom:12px">${md(g.note)}</div>
+    <div class="${g["接上了吗"] ? "note" : "err"}" id="c-wire" style="padding:10px;margin-bottom:12px">${md(g.note)}</div>
     <div id="body"></div>`;
   if (g.Tab === "编排") { 画_聊天编排(); $("#c-save").onclick = 做_存聊天助手; }
   else { 画_聊天版本(); $("#c-ver").onclick = 做_出聊天版本; }
@@ -7087,7 +7089,7 @@ async function 做_存聊天助手() {
 
 function 做_出聊天版本() {
   弹层("出版本", `<label class="f">变更说明(这一版改了什么、为什么)</label><input id="cv-n">
-    <div class="note">出版本<b>不等于上生产</b>;而且第 1 步聊天站还没读这里,上了生产线上也不变。</div>
+    <div class="note">出版本<b>不等于上生产</b> —— 线上只认生产指着的那一版。</div>
     <div class="acts"><button class="pri" id="cv-ok">出版本</button> <button id="cv-no">取消</button></div>`);
   $("#cv-no").onclick = 关弹层;
   $("#cv-ok").onclick = async () => {

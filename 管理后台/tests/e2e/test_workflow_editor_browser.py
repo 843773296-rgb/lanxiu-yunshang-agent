@@ -604,7 +604,7 @@ def main():
         js("agent态.脏 = false")
         ck("离开工作室 / 集成,页签那一条收起来", js("return document.getElementById('subnav').hidden") is True)
 
-        print("\n▸ 聊天助手配置页(10-28 第 1 步):顶上写明还没接到聊天站;工具 / 规矩 / 版本都和接口对得上")
+        print("\n▸ 聊天助手配置页:顶上按接口「接上了吗」写明接没接;工具 / 规矩 / 版本都和接口对得上")
         # 聊天助手在 project_lanxiu(规矩导在那儿),要换项目、换管理员再重新载入 —— 页面只在载入时读一次项目
         req = urllib.request.Request(基址 + "/api/v1/projects/project_lanxiu/chat-assistants?" + urllib.parse.quote("含测试") + "=true",
                                      headers={"X-Dev-User": "U001"})
@@ -621,12 +621,17 @@ def main():
                 等(d, lambda: bool(js("return document.querySelector('#c-rules')")))
             except TimeoutError:
                 pass
-            聊 = js("""return {横幅: (document.getElementById('c-notlive') || {}).textContent || '',
+            聊 = js("""return {横幅: (document.getElementById('c-wire') || {}).textContent || '',
+                             横幅红: !!document.querySelector('#c-wire.err'),
                              项: [...document.querySelectorAll('#side a[data-ctab]')].map(a => a.textContent),
                              亮: (document.querySelector('#side a.on') || {}).textContent,
                              勾: document.querySelectorAll('#c-tools [data-tool]').length,
                              规: document.querySelectorAll('#c-rules tr').length - 1}""")
-            ck("顶上写明「还没接到聊天站」;侧栏 编排 / 版本,编排亮着", "还没接到聊天站" in 聊["横幅"]
+            接 = bool(详.get("接上了吗"))
+            ck(f"顶上写明接没接(接口 接上了吗 = {接}:接上 → 灰底「聊天站读的是生产…」,没接 → 红底「还没读这里」);"
+               "侧栏 编排 / 版本,编排亮着",
+               (("聊天站读的是生产指着的那一版" in 聊["横幅"] and not 聊["横幅红"]) if 接
+                else ("聊天站还没读这里" in 聊["横幅"] and 聊["横幅红"]))
                and 聊["项"] == ["编排", "版本"] and 聊["亮"] == "编排", 聊)
             ck(f"工具勾选框 {聊['勾']} 个 == 接口 {len(详['草稿']['配置']['工具'])};规矩 {聊['规']} 行 == 接口 {len(详['规矩']['装上'])}",
                聊["勾"] == len(详["草稿"]["配置"]["工具"]) and 聊["规"] == len(详["规矩"]["装上"]), 聊)
