@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  健康哨 —— 发现「跑着但答不了」就重启那个服务(用户 2026-11-02 拍)。
+
+  为什么要它:三个服务都配着 KeepAlive=true,而 2026-11-02 那次故障里
+  它从头到尾没有任何动作 —— 进程一直活着,每个请求都失败(文件描述符漏光)。
+  KeepAlive 只在进程**退出**时拉起来。
+  > 一个「服务在跑」和一个「服务在跑而且答得出来」,
+  > 在「进程还在不在」这件事上长得一模一样 —— 而 KeepAlive 只看前者。
+
+  装(这一步要你自己跑,Claude 装不了:装常驻任务会被权限分类器按
+  「未经授权的持久化」拦下,而那是对的):
+
+      cp tools/com.lanxiu.health.plist ~/Library/LaunchAgents/ && \
+      launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.lanxiu.health.plist
+
+  卸:
+      launchctl bootout gui/$(id -u)/com.lanxiu.health
+
+  看它在干什么:   tail -f /tmp/lanxiu-health.log
+  看它重启过几次:  cat .feynman/health/restarts.jsonl
+  不装也能用:     python3 tools/health_watch.py --探     (探一遍,只报不动手)
+
+  ⚠️ WorkingDirectory 指**主检出**(服务跑的是那一份代码),不是任何 worktree。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.lanxiu.health</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.14/bin/python3</string>
+    <string>tools/health_watch.py</string>
+    <string>--循环</string>
+    <string>60</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/eureka/Desktop/澜绣云裳agent</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>/tmp/lanxiu-health.log</string>
+  <key>StandardErrorPath</key><string>/tmp/lanxiu-health.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/eureka</string>
+    <key>USER</key><string>eureka</string>
+    <key>PATH</key><string>/Library/Frameworks/Python.framework/Versions/3.14/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+  </dict>
+</dict>
+</plist>
