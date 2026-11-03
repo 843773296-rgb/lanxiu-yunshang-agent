@@ -581,8 +581,11 @@ def _跑一张工作流(c, job, 打点):
                 用户 += "\n\n" + "\n\n".join(f"{k}:\n{v if isinstance(v, str) else _j.dumps(v, ensure_ascii=False)}"
                                               for k, v in 补)
         if 结构化:
+            # 「引原话用「」」(用户 11-02 拍):录音跟进连接测试 9 次坏 2 次(OUTPUT_NOT_JSON);成功那几次模型都拿英文双引号引客户原话、
+            # 靠转义才合法 —— 🔮 推断哪次忘了转义就整段解析不了(失败那两次原文当时没存,所以只是推断;下面起失败也存原文)
             用户 += ("\n\n只输出一个 JSON 对象,不要别的文字。键:" + "、".join(props)
-                     + "。没提到的写「没提到」,列表类的没有就写 []。")
+                     + "。没提到的写「没提到」,列表类的没有就写 []。"
+                     + "字符串里要引用原话时用「」,不要用英文双引号。")
         import 真模型 as _真
         # 默认上限 1500 → 4000(10-25 聊天接管实测:真模型写一份周报的 JSON 写不完,被截断)。
         # 不在模板里写 max_output_tokens:定义冻结时的密钥扫描按键名里有没有 token 判,会把它当成密钥拒掉(已报给用户)
@@ -598,15 +601,20 @@ def _跑一张工作流(c, job, 打点):
             if 出.get("finish_reason") in ("max_tokens", "length"):
                 raise RN.节点失败("OUTPUT_TRUNCATED", f"模型写到输出上限({参['max_tokens']} token)被截断了,结果不完整",
                                 "把这一步的「最大输出」调大(max_output_tokens),或者让处理要求写短一点")
-            文 = 出["text"].strip()
-            m = _re.search(r"\{.*\}", 文, _re.S)
-            try:
-                解 = _j.loads(m.group(0)) if m else None
-            except ValueError:
-                解 = None
-            if not isinstance(解, dict):
-                raise RN.节点失败("OUTPUT_NOT_JSON", "模型没按要求输出 JSON 对象",
-                                "看这一步的原文(运行详情);常见原因是处理要求里没说清输出格式")
+            # 解析不了重问一次、两次用量相加、还不行带着两次原文失败 —— 整段在 runtime/结构化输出.py(用户 11-02 拍)
+            import 结构化输出 as _结
+
+            def _重问():
+                try:
+                    return _真.生成(连接=dict(连), 系统=_渲染(要.get("system"), 实参) or None,
+                                   用户=用户 + "\n\n(注意:上一次的回答不是一个能解析的 JSON 对象。这次只输出 JSON 对象本身。)",
+                                   参数=参)
+                except _真.调不动 as e:     # 和第一次同一个处理:报连接的问题,不退回 mock
+                    raise RN.节点失败(e.码, str(e.细节)[:200], "看「模型与连接」那条连接还通不通;**不退回 mock**")
+            解, 出, 用, 重问过 = _结.要JSON(出, _重问)
+            if 重问过:
+                结果.update({"text": 出["text"], "usage": 用, "finish_reason": 出["finish_reason"],
+                             "actual_model": 出["actual_model"], "重问过": True})
             缺 = [k for k in ((cfg.get("output_schema") or {}).get("required") or []) if k not in 解]
             if 缺:
                 raise RN.节点失败("OUTPUT_FIELD_MISSING", f"模型的结果里缺必填字段:{缺}",

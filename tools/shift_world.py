@@ -443,6 +443,19 @@ def 标记路径(db):
 ]
 
 
+# ── world_meta 里**逐键**登记「不挪」的(2026-11-03)────────────────────────────
+# world_meta.v 整列是「也挪」(上面登记表),但有的键记的是**数据的属性**,不是世界里的日期:
+#   · rating_window:评价那批数据**按哪三个月**造的趋势。它跟着挪的话,`rating_check` 的守卫
+#     「数据的窗口 == 今天该看的窗口」就永远为真 —— 11-03 的事故正是这个形状:原来那条守卫比的是
+#     rating_built_on == 世界今天,而 rating_built_on 跟着平移一起挪,守卫从此永远绿,
+#     数据还是十月造的(7/8/9 月上升),检查已经改看 8/9/10 月,④ 评价趋势红了两天才查到。
+# > 一个「声明了不挪所以不挪」的键,和一个「碰巧正则匹配不上所以没挪」的键,**在平移后的值上长得一模一样**
+# > —— 所以这里显式登记,不靠值的写法躲过 `^\d{4}-\d{2}-\d{2}`。
+world_meta里不挪的键 = {
+    "rating_window": "评价数据按哪三个月造的趋势(数据的属性,跨月时由 daily_shift 自动重造评价来更新)",
+}
+
+
 def _挪一个(s, 天):
     """保持原样式地挪:`2026-08-31` → `2026-09-24`,`2026-02-16 9:16` 的单位数小时也留着。"""
     m = 整列日期.match(s.strip())
@@ -592,6 +605,7 @@ def 平移(db=DB, 到=None, 说=print):
     # 而「它被剔掉了」和「它从来没被扫到」在输出上长得一模一样。
     不挪了 = [x for x in 纯 if x in 整列日期不挪]
     纯 = [x for x in 纯 if x not in 整列日期不挪]
+    说(f"  · world_meta 里逐键不挪(登记过):{sorted(world_meta里不挪的键)}")
     if 不挪了:
         说(f"  · 不挪(登记过):{不挪了}")
         for x in 不挪了:
@@ -605,7 +619,11 @@ def 平移(db=DB, 到=None, 说=print):
     with c:
         for 名 in 纯 + 该挪文字:
             t, col = 名.split(".", 1)
-            rows = c.execute(f'select rowid, "{col}" from "{t}" where "{col}" is not null').fetchall()
+            跳 = ""
+            if 名 == "world_meta.v" and world_meta里不挪的键:
+                # 逐键登记「不挪」(见 world_meta里不挪的键)—— 不靠值的格式碰巧躲过日期正则
+                跳 = " and k not in (%s)" % ",".join("'%s'" % k for k in world_meta里不挪的键)
+            rows = c.execute(f'select rowid, "{col}" from "{t}" where "{col}" is not null{跳}').fetchall()
             挪 = _挪一个 if 名 in 纯 else _挪文字
             批 = [(挪(v, 天), rid) for rid, v in rows if isinstance(v, str)]
             批 = [(nv, rid) for nv, rid in 批 if nv is not None]
@@ -898,6 +916,21 @@ def _自测():
     _坏歪 = 查(_歪库, 说=_哑, 只问能不能挪=True)
     ck("库真不自洽(记的那天和数据实际那天对不上),问「能不能挪」→ **也要说不能**",
        any("对不上" in x for x in _坏歪), _坏歪)
+
+    # ── world_meta 逐键不挪(2026-11-03,④ 评价趋势那次事故)───────────────────
+    # 值故意写成**会被日期正则匹配上**的样子:验的是「登记了所以不挪」,不是「格式碰巧躲过去」
+    _窗库 = _造世界("2026-10-20")
+    k = sqlite3.connect(_窗库)
+    k.execute("insert into world_meta(k,v) values('rating_built_on','2026-10-20')")
+    k.execute("insert into world_meta(k,v) values('rating_window','2026-07-01|2026-08-01|2026-09-01')")
+    k.commit(); k.close()
+    平移(_窗库, "2026-11-03", 说=_哑)
+    k = sqlite3.connect(_窗库)
+    _m = dict(k.execute("select k, v from world_meta").fetchall()); k.close()
+    ck("平移后 rating_window 一个字都没变(登记了逐键不挪;值长得像日期也不挪)",
+       _m.get("rating_window") == "2026-07-01|2026-08-01|2026-09-01", _m)
+    ck("同一列里没登记的日期键照旧跟着挪(rating_built_on 2026-10-20 → 2026-11-03)",
+       _m.get("rating_built_on") == "2026-11-03", _m)
 
     # ── 「不认识的参数就拒跑」那道守卫 ────────────────────────────────────
     # **真去跑一次自己**(不在这儿重实现一份判断)—— 守卫活在 `__main__` 里,

@@ -503,6 +503,9 @@ body.demo #subnav{padding-top:calc(var(--top) + 45px)}
 .ico{display:inline-flex;width:32px;height:32px;flex:none;align-items:center;justify-content:center;border-radius:8px;background:var(--pri-bg);color:var(--pri);font-weight:600}
 .ico.ag{background:#fff3e8;color:var(--warn)}
 .ico.ch{background:#e8f6ef;color:var(--ok)}
+.ico.wf{background:var(--pri-bg);color:var(--pri)}   /* 工作流就用默认色;写出来是为了 .wf 这个名字有着落 */
+/* 变动记录 / 规矩 / 版本这几张表:行多、字多,比普通表紧一档,长正文顶端对齐 */
+.swlog th,.swlog td{padding:6px 10px;font-size:12.5px;vertical-align:top}
 .apptypes{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:8px}
 .apptype{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;border:1px solid var(--line);border-radius:8px;background:var(--card);padding:10px 12px;cursor:pointer;font:inherit;color:var(--ink)}
 .apptype:hover{border-color:var(--pri)}

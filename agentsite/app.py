@@ -569,6 +569,14 @@ class H(BaseHTTPRequestHandler):
             # 而且不会报错 —— 你以为在用订阅,其实在按量计费。
             prov = mdl = None
             mid = (body.get("model") or "").strip() or sdk.网站默认模型()
+            # 这个角色在后台生产那一版选的模型(用户 11-02 拍方案 A:它 = 分流里先试的那一档)。
+            # **页面手选过就不碰** —— 没手选时页面发来的就是网站默认,只有那时才换成角色默认
+            角色默认, 默认来由 = sdk.网站默认模型(), "网站默认"
+            if kind == "task":
+                import assistant_client as _ac
+                角色默认, 默认来由 = _ac.默认模型("task", sdk.网站默认模型(), [m["id"] for m in sdk.models()])
+                if not body.get("model_picked") and mid == sdk.网站默认模型():
+                    mid = 角色默认
             if mid:
                 if mid not in {m["id"] for m in sdk.models()}:
                     return self._send({"error": f"没有这个模型:{mid}"}, code=400)
@@ -610,7 +618,7 @@ class H(BaseHTTPRequestHandler):
                 # ── 难题分流(用户 10-25 拍,算法见 model_route.py)── 只在用默认模型、页面没手选过时开:
                 # 先 Haiku 跑,出问题 → 换 Opus 重答一次。**不按事情类型分**:意图分类交给 harness 统一调配(用户 10-25)
                 import model_route as _mr
-                分流 = _mr.分流开着吗(mid, bool(body.get("model_picked")), sdk.网站默认模型())
+                分流 = _mr.分流开着吗(mid, bool(body.get("model_picked")), 角色默认)
                 跑 = lambda pv, md, **kw: asyncio.run(sdk.run(kind, prompt, resume=sid_in,
                                             provider=pv, model_name=md, images=imgs or None,
                                             me=me, skills=body.get("skills"),
@@ -620,7 +628,7 @@ class H(BaseHTTPRequestHandler):
                 with RUNLOCK:
                     if not 分流:
                         r = 跑(prov, mdl)
-                        r["路由"] = {"分流": False, "答的": mid}
+                        r["路由"] = {"分流": False, "答的": mid, "默认来由": 默认来由}
                     else:
                         r0, 错0 = None, None
                         try:
@@ -631,7 +639,7 @@ class H(BaseHTTPRequestHandler):
                         升, 因 = _mr.该升级吗(r0, 错0)
                         if not 升:
                             r = r0
-                            r["路由"] = {"分流": True, "答的": mid, "升级": False}
+                            r["路由"] = {"分流": True, "答的": mid, "升级": False, "默认来由": 默认来由}
                         else:
                             up_pv, up_md = _mr.升级到.split(":", 1)
                             r = 跑(up_pv, up_md, 根属性={"lanxiu.route.upgraded": True,

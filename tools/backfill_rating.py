@@ -89,6 +89,21 @@ def 月目标_于(今):
     return out
 
 
+def 窗口串(月目标):
+    """{'2026-08':…, …} → '2026-08|2026-09|2026-10'(rating_window 存的就是它;造数和检查同一个写法)"""
+    return "|".join(sorted(月目标))
+
+
+def 跨月了吗(db=None):
+    """→ (跨了吗, 库里记的窗口, 今天该看的窗口)。库里没记 = 算跨了(那批数据不知道按哪三个月造的)。"""
+    import contextlib
+    with contextlib.closing(sqlite3.connect(db or DB)) as c:
+        有 = c.execute("SELECT 1 FROM sqlite_master WHERE name='world_meta'").fetchone()
+        记 = (c.execute("SELECT v FROM world_meta WHERE k='rating_window'").fetchone() or [None])[0] if 有 else None
+    应 = 窗口串(月目标_于(worldclock.今天()))
+    return 记 != 应, 记, 应
+
+
 月基线 = 4.45                    # 这三个月之前的月份(和当月)用它 —— 让「最近三个月上升」真的成立
 # 门店偏移相对**全年的平均月目标**算,不手写。
 # ⚠️ 原来手写 `全店基准 = 4.5`,而全年有 9 个月走 4.45 的基线、三个月 4.35/4.50/4.65 ——
@@ -548,6 +563,9 @@ def 铺(db=DB, 说=print):
     # 由 `backend/rating_check.py` 断言它和现在的世界日期一致。
     c.execute("CREATE TABLE IF NOT EXISTS world_meta(k TEXT PRIMARY KEY, v TEXT)")
     c.execute("INSERT OR REPLACE INTO world_meta VALUES('rating_built_on',?)", (今s,))
+    # 2026-11-03:**这批数据按哪三个月造的趋势**,另记一个键。rating_built_on 会跟着世界平移,
+    # 拿它当守卫永远为真;这个键在 shift_world.world_meta里不挪的键 里登记了不挪(见那里的事故说明)
+    c.execute("INSERT OR REPLACE INTO world_meta(k, v) VALUES('rating_window',?)", (窗口串(月目标),))
     # ⚠️⚠️ 2026-10-14 加:**造数这一刻,输入长什么样的指纹。**
     # 为什么要记它 —— 「库里那批和现在重跑不一致」有两种完全不同的原因:
     #   ① 造数的代码改了                              ← **这是要判红的**
@@ -780,6 +798,10 @@ def _自测():
     ck("记下了造数时的世界日期(顺序那道守卫靠它)", 建于 == 夹具今天,
        f"记的是 {建于} —— `rating_check` 的「造数之后世界没有再被平移过」靠这个值,"
        f"不记就等于那道守卫没有依据")
+    窗 = (c.execute("select v from world_meta where k='rating_window'").fetchone() or [None])[0]
+    ck("记下了这批数据按哪三个月造的(rating_window;rating_check 的跨月守卫靠它)",
+       窗 == 窗口串(月目标_于(dt.date.fromisoformat(夹具今天))),
+       f"记的是 {窗} —— 不记的话跨月守卫没有依据,只能退回按今天算,而那正是 11-03 漏掉的形状")
     ck("一条都没落在世界的未来", c.execute(
         "select count(*) from rating where substr(rated_at,1,10)>?", (夹具今天,)).fetchone()[0] == 0)
     c.close()
@@ -815,6 +837,15 @@ if __name__ == "__main__":
         print("只登记造数直关的差评工单(不重造评价)")
         print("=" * 78)
         sys.exit(只登记())
+    if "--跨月才重造" in sys.argv:
+        # daily_shift.sh 每天平移后调(用户 2026-11-03 拍「自动重造」,知情代价:每月换一次考卷 ——
+        # 评测真值跟着这批评价变,跨月前后的评测分数不能直接比)。没跨月就什么都不写
+        跨, 记, 应 = 跨月了吗()
+        if not 跨:
+            print(f"没跨月:评价数据的窗口 {记} 就是今天该看的,不重造"); sys.exit(0)
+        print(f"跨月了:库里那批评价按 {记} 造的,今天该看 {应} → 重造评价(换考卷)")
+        print("=" * 78)
+        sys.exit(铺())
     if "--selftest" in sys.argv:
         print("评价造数 · 自测(合成夹具,不碰真库)")
         print("=" * 78)

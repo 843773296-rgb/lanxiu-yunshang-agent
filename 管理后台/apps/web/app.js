@@ -7018,7 +7018,8 @@ function 画_聊天助手() {
         · 生产:${g["生产版本"] ? esc(g["生产版本"]) : "还没指定"}
         ${g.脏 ? ' <span class="stale">有未保存的改动</span>' : ""}</div></div>
       <div>${g.Tab === "编排" ? '<button id="c-save" class="pri">保存草稿</button>' : '<button id="c-ver" class="pri">出版本</button>'}</div></div>
-    <div class="${g["接上了吗"] ? "note" : "err"}" id="c-wire" style="padding:10px;margin-bottom:12px">${md(g.note)}</div>
+    ${g["接上了吗"] ? `<div class="note" id="c-wire" style="padding:10px;margin-bottom:12px">${md(g.note)}</div>`
+                     : `<div class="err" id="c-wire" style="padding:10px;margin-bottom:12px">${md(g.note)}</div>`}
     <div id="body"></div>`;
   if (g.Tab === "编排") { 画_聊天编排(); $("#c-save").onclick = 做_存聊天助手; }
   else { 画_聊天版本(); $("#c-ver").onclick = 做_出聊天版本; }

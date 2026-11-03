@@ -309,13 +309,31 @@ def main():
     ck("卖不动的 SKU 硬派 → 拒(不在要补货的预警里)", r[0] == "执行失败" and "不在要补货的预警里" in r[2]["消息"], r)
 
     print("\n▸ ⑩ 差评研判 / 差评处置(六条第四条,10-25;用户拍「超店长权限的停下报总部,不写」)")
+    # 夹具在副本里自己造足,不赌当天的抽样:造数(tools/backfill_rating.py:107)按「离今天几天」抽差评关没关,
+    # 店长那家店还剩几条待处理随日期漂 —— 11-02 CI 从零造库 SH001 刚好 0 条就红了(本地 5 条一直绿)。
+    # 不够 3 条 → 在**副本**里把本店已关的差评重新打开补齐(清掉处置字段;只挑订单上没有返修单的,免得撞「防重复派」)。
     cc = sqlite3.connect(副本)
-    待 = [x[0] for x in cc.execute("""SELECT r.pkg_id FROM task t JOIN rating r ON r.task_id=t.id JOIN ordr o ON o.id=r.order_id
+    _待 = lambda: [x[0] for x in cc.execute("""SELECT r.pkg_id FROM task t JOIN rating r ON r.task_id=t.id JOIN ordr o ON o.id=r.order_id
                                      WHERE t.type='评价差评' AND t.status='待处理' AND o.shop=? ORDER BY r.pkg_id LIMIT 3""", (sh,))]
+    待 = _待()
+    原有 = len(待)
+    if 原有 < 3:
+        补 = cc.execute("""SELECT t.id, r.pkg_id FROM task t JOIN rating r ON r.task_id=t.id JOIN ordr o ON o.id=r.order_id
+                         WHERE t.type='评价差评' AND t.status='已关闭' AND o.shop=?
+                           AND NOT EXISTS (SELECT 1 FROM maintain m WHERE m.order_id=r.order_id)
+                         ORDER BY r.pkg_id LIMIT ?""", (sh, 3 - 原有)).fetchall()
+        for tid, pkg in 补:
+            cc.execute("UPDATE task SET status='待处理' WHERE id=?", (tid,))
+            cc.execute("""UPDATE rating SET handled_at=NULL, handled_by=NULL, handle_note=NULL, handle_way=NULL,
+                          handle_approved_by=NULL, handle_approve_note=NULL, handle_amount=NULL WHERE pkg_id=?""", (pkg,))
+        cc.commit()
+        待 = _待()
     外 = cc.execute("""SELECT r.pkg_id FROM task t JOIN rating r ON r.task_id=t.id JOIN ordr o ON o.id=r.order_id
                       WHERE t.type='评价差评' AND o.shop<>? LIMIT 1""", (sh,)).fetchone()
     cc.close()
-    ck("夹具:本店有 3 条待处理差评、别店有 1 条", len(待) == 3 and 外, (待, 外))
+    # 凑不齐必须**红**,不许跳过 —— 红那一行自己说清「是造数不够,不是边界破了」
+    ck(f"夹具(副本里造足):本店有 3 条待处理差评(原有 {原有} 条,其余重新打开补齐)、别店有 1 条", len(待) == 3 and 外,
+       f"造数不够,不是差评处置的边界破了 —— 本店 {sh} 待处理 {待}(连已关的也凑不齐);别店 {外}")
     if len(待) == 3 and 外:
         r = WB.执行({"工具": "差评研判", "办事人": "U001", "办事人澜绣工号": 店长, "参数": {"pkg": 待[0]}})
         ck("研判 → 带差评、服务记录、判责建议(判得出就引判定表,判不出说交店长)",

@@ -214,12 +214,13 @@ def 查形状(c, n):
     店月 = {(r["shop"], r["ym"]): (r["n"], r["a"]) for r in c.execute(
         """SELECT o.shop, substr(r.rated_at,1,7) ym, COUNT(*) n, AVG(r.star) a
              FROM rating r JOIN ordr o ON o.id=r.order_id GROUP BY 1,2""")}
-    # 月份按**造数那天**的世界日期现算(造数和检查同一个口径);
-    # 「造数之后世界没再平移过」由下面 rating_built_on 那条守着。没记就退回今天。
-    import datetime as _dt
-    _建 = c.execute("SELECT v FROM world_meta WHERE k='rating_built_on'").fetchone() \
+    # 月份取**那批数据造的时候用的三个月**(rating_window,不跟着平移);没记就退回按今天算。
+    # 「窗口是不是今天该看的」由 main 里那条守卫判 —— 这里只判「按它造的那三个月,趋势造出来没有」。
+    # (原来按 rating_built_on 算,而它跟着平移挪,跨月后这里就去比一段没造趋势的月份,见 main 那段)
+    _窗 = c.execute("SELECT v FROM world_meta WHERE k='rating_window'").fetchone() \
         if c.execute("SELECT 1 FROM sqlite_master WHERE name='world_meta'").fetchone() else None
-    月目标 = SR.月目标_于(_dt.date.fromisoformat(_建[0]) if _建 else worldclock.今天())
+    月目标 = (dict(zip(_窗[0].split("|"), SR.月目标_值)) if _窗 and _窗[0]
+             else SR.月目标_于(worldclock.今天()))
     有的 = sorted(月目标)
     if len(有的) >= 2:
         头, 尾 = 有的[0], 有的[-1]
@@ -343,13 +344,21 @@ def main():
     # 而平移 +27 天把那批评价挪成了 9 月 —— **月份标签变了,目标没变**。
     # 业务拍的「三个月上升」被抹掉大半(设计 0.30,实现只剩 0.10~0.18)。
     # 「签收月 vs 评价月」那个错的第三个位置:前两次在一个文件里,这次藏在顺序里。
-    建于 = (c.execute("SELECT v FROM world_meta WHERE k='rating_built_on'").fetchone()
-           or [None])[0]
-    现在 = str(worldclock.今天())
-    ck("造数之后世界没有再被平移过(月份标签还是造数时那些)", 建于 == 现在, 1,
-       f"造数时世界停在 {建于},现在是 {现在} —— "
-       f"**`tools/backfill_rating.py` 必须排在 `tools/shift_world.py` 之后**"
-       if 建于 != 现在 else f"两边都是 {现在}")
+    # ⚠️⚠️ 2026-11-03 改:原来比的是 `rating_built_on == 世界今天`,而 rating_built_on **跟着平移一起挪**
+    # (shift_world 的 world_meta.v 登记成「也挪」),于是这条从此**永远为真** —— 世界跨进 11 月,
+    # 数据还是按 7/8/9 月造的趋势,检查已经改看 8/9/10 月,④ 红了两天才查到病根。
+    # > 「造数之后世界没再平移过」和「平移过、顺手把那个日期也改写了」**在 `建于 == 现在` 上长得一模一样**。
+    # 现在比的是**数据的属性**:那批评价按哪三个月造的(rating_window,shift_world 里逐键登记了不挪)
+    # == 按世界今天该看的那三个月。跨月了就红 —— daily_shift.sh 平移后会自动重造(用户 11-03 拍)。
+    建于, 记, 应 = None, None, None
+    try:
+        _, 记, 应 = SR.跨月了吗(DB)
+    except Exception as e:
+        记 = f"读不出来:{type(e).__name__}"
+    ck("评价数据的三个月窗口就是今天该看的那三个月(跨月后没重造会红)", 记 == 应, 1,
+       f"库里那批按 {记} 造,今天该看 {应} —— 跨月了没重造(或这个库是 11-03 之前造的,没记窗口)。"
+       f"重造:`./tools/gate_lock.sh python3 tools/backfill_rating.py --跨月才重造`(会换考卷)"
+       if 记 != 应 else f"都是 {应}")
 
     n = 查一遍(c)
     if n == 0:
@@ -376,17 +385,13 @@ def main():
     # 规格见 bite_specs.json 里 script 为 `tools/backfill_rating.py --selftest` 的那几条。
     ("(形状那几条的咬合挂在 backfill_rating 的自测上)", "门店之间真的拉开了差距"),
     ("让 评语和星级对不上() 只查一个方向", "评语和星级对不上"),
-    # ⚠️ 「造数之后世界没有再被平移过」这一条**没有可重放的文件级咬合** ——
-    # 咬合**不重新造数**,改造数脚本改不了库里那个 `rating_built_on`;
-    # 而它守的是 **rebuild 的步骤顺序**,那要真跑一次重建才动得了。
-    # 它是怎么被验的,写在这儿(**比一条假咬合有用**):
-    #   · **真实事故验过**:CI 连红两次(合并升 +0.10 / +0.175,而设计是 0.30),
-    #     根因正是 backfill_rating 排在 shift_world 之前;
-    #   · **改顺序之后从零重建**,同一条判据 +0.27,回到设计值附近;
-    #   · 它依赖的那个机制(造数记下自己用的世界日期)**有咬合**,
-    #     在 `tools/backfill_rating.py --selftest` 上(「记下了造数时的世界日期」)。
-    ("(顺序那条:文件级咬合打不到,见上面注释里它是怎么验的)",
-     "造数之后世界没有再被平移过"),
+    # ⚠️ 「评价数据的三个月窗口就是今天该看的那三个月」**没有可重放的文件级咬合** ——
+    # 咬合不重新造数,真库那个窗口改不了;它依赖的两个机制各有咬合:
+    #   · 造数记下窗口 → `tools/backfill_rating.py --selftest`「记下了这批数据按哪三个月造的」
+    #   · 平移不挪窗口 → `tools/shift_world.py --selftest`「平移后 rating_window 一个字都没变」
+    #   · 真实事故验过:2026-11-03 世界跨进 11 月、数据还是按 7/8/9 月造的,④ 评价趋势红(原守卫永远绿)
+    ("(跨月守卫:文件级咬合打不到,依赖的两个机制各有咬合,见上面注释)",
+     "评价数据的三个月窗口就是今天该看的那三个月"),
     ("让 没签收就评了() 只查签收于 IS NULL(不比先后)", "没签收就评了"),
     ("让 差评没进清单() 把 star<= 改成 star<(3 星就漏了)", "差评没进清单"),
     ("让 两处状态打架() 只看 task.status,不看 rating.handled_at(它会抓到别的行)", "两处状态打架"),

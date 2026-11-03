@@ -66,6 +66,7 @@ class 需要等待(Exception):
 class 节点失败(Exception):
     def __init__(self, code, 消息, 建议):
         self.code, self.消息, self.建议 = code, 消息, 建议
+        self.出 = None          # 失败时这一步交出的东西(比如模型原文);有就和成功输出一样落库
         super().__init__(f"{code}: {消息}")
 
 
@@ -750,8 +751,10 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
             break
 
         except 节点失败 as e:
+            # 失败也可以带输出(比如模型原文):走和成功输出同一条存储 —— 「看这一步的原文」才真看得到(11-02)
             记一步(当前, 失败, error_code=e.code, error_detail={"消息": e.消息,
-                                                            "建议": e.建议}, 入=本步入)
+                                                            "建议": e.建议}, 入=本步入,
+                  出=getattr(e, "出", None))
             策 = (cfg.get("failure_policy") or "fail_run")
             错边 = 后继[当前].get((DS.失败, None), [])
             if 策 == "branch" and 错边:
