@@ -1280,7 +1280,32 @@ print(json.dumps({"样本": [有, 没], "对照": [一[0], 中 - 前], "重来":
 def a_bridge_rating_money():
     """差评处置不经手超权限的钱(用户 10-25 拍「停下报总部,不写」)。子进程、库副本上真调 workflow_bridge.执行。
     攻两处:① 判给企业、预估 2000 元(超店长 1000 的权限)② 关闭方式写成全额退款(要第二个人批)。
-    **带对照**:同一个店长「只回访」关闭一条必须真关成 —— 不然「没写」可能只是夹具没搭好。"""
+    **带对照**:同一个店长「只回访」关闭一条必须真关成 —— 不然「没写」可能只是夹具没搭好。
+
+    ## 夹具在副本里自己造足,**不赌当天的抽样**(2026-11-03 补)
+
+    这条攻击要 3 条待处理差评(超权限 / 全额退款 / 对照各一条)。原来直接按现状查,
+    **而本店还剩几条待处理是随日期漂的**:造数 `tools/backfill_rating.py:107` 的
+    `关闭概率` 按「离今天几天」抽签决定差评关没关,CI 每次从零造库就重抽一次。
+    11-02 那天 SH001 刚好抽成 0 条,于是这条攻击**自己跑不起来,什么都没验**
+    (本地库当时有 5 条,所以本地一直绿 —— 本地绿 / CI 红,同一份代码)。
+
+    > 一条「边界守住了」和一条「攻击根本没发起」,
+    > **在「没建返修单」这件事上长得一模一样。**
+
+    原来这里已经做对了一半:凑不齐时抛 `前提不成立`,不混进「边界破了」。
+    但那只让红的**措辞**准确,不能让判据**不依赖抽签** —— 是两件事。
+    所以现在不够 3 条就在副本里把本店已关的差评重新打开补齐
+    (清处置字段;只挑订单上没有返修单的,免得撞「防重复」),补法和
+    `backend/workflow_bridge_check.py` ⑩ 保持一致。连已关的也凑不齐才红。
+
+    ⚠️ **「原有几条 / 补了几条」必须印出来**:一条「本来就有 3 条」和一条
+    「全靠补齐撑着」在那个 ✅ 上长得一样 —— 哪天造数彻底不出差评了,
+    得有人看得见是补齐在撑。
+
+    ⚠️ 顺带:`tools/bite_specs.json` 里那条咬合(破坏点在 `workflow_bridge.py`
+    的金额授权判断)**原来也吃同一个抽签** —— 夹具凑不出 3 条时这条报的是
+    「前提不成立」,于是 `bite_run` 判「红了,但红的不是那一条」。补齐一起救了它。"""
     import subprocess as _sp, json as _js
     src = r"""
 import sys, os, json, sqlite3
@@ -1290,8 +1315,25 @@ import server, oplog, api, tasks, rating_write, repair_write, workflow_bridge as
 店长 = '60000001'
 me = WB.员工身份(店长)
 c = sqlite3.connect(副本)
-待 = [r[0] for r in c.execute("SELECT r.pkg_id FROM task t JOIN rating r ON r.task_id=t.id JOIN ordr o ON o.id=r.order_id "
-      "WHERE t.type='评价差评' AND t.status='待处理' AND o.shop=? ORDER BY r.pkg_id LIMIT 3", (me['shop'],))]
+_查待 = lambda: [r[0] for r in c.execute(
+    "SELECT r.pkg_id FROM task t JOIN rating r ON r.task_id=t.id JOIN ordr o ON o.id=r.order_id "
+    "WHERE t.type='评价差评' AND t.status='待处理' AND o.shop=? ORDER BY r.pkg_id LIMIT 3", (me['shop'],))]
+待 = _查待()
+原有 = len(待)
+# 夹具在副本里自己造足,**不赌当天的抽样** —— 见外层那条注释。
+# 补法和 backend/workflow_bridge_check.py ⑩ 一致:把本店已关的差评重新打开,
+# 清掉处置字段;只挑订单上没有返修单的,免得撞上「防重复」。
+if 原有 < 3:
+    for tid, pkg in c.execute(
+            "SELECT t.id, r.pkg_id FROM task t JOIN rating r ON r.task_id=t.id JOIN ordr o ON o.id=r.order_id "
+            "WHERE t.type='评价差评' AND t.status='已关闭' AND o.shop=? "
+            "  AND NOT EXISTS (SELECT 1 FROM maintain m WHERE m.order_id=r.order_id) "
+            "ORDER BY r.pkg_id LIMIT ?", (me['shop'], 3 - 原有)).fetchall():
+        c.execute("UPDATE task SET status='待处理' WHERE id=?", (tid,))
+        c.execute("UPDATE rating SET handled_at=NULL, handled_by=NULL, handle_note=NULL, handle_way=NULL, "
+                  "handle_approved_by=NULL, handle_approve_note=NULL, handle_amount=NULL WHERE pkg_id=?", (pkg,))
+    c.commit()
+    待 = _查待()
 修 = lambda: sqlite3.connect(副本).execute("SELECT COUNT(*) FROM maintain").fetchone()[0]
 关了 = lambda k: sqlite3.connect(副本).execute("SELECT t.status FROM task t JOIN rating r ON r.task_id=t.id WHERE r.pkg_id=?", (k,)).fetchone()[0]
 跑 = lambda 键, k, 定: WB.执行({"工具": "差评处置", "幂等键": 键, "办事人": "ba", "办事人澜绣工号": 店长,
@@ -1300,7 +1342,8 @@ c = sqlite3.connect(副本)
 超 = 跑("ba:rating:1", 待[0], {"处置": "返修", "责任方": "企业", "预估费用": "2000"}); 超后 = 修()
 退 = 跑("ba:rating:2", 待[1], {"处置": "说明后关闭", "关闭方式": "全额退款", "说明": "审计"})
 对 = 跑("ba:rating:3", 待[2], {"处置": "说明后关闭", "关闭方式": "只回访", "说明": "审计:已回访"})
-print(json.dumps({"样本": len(待), "超权限多了返修单": 超后 - 前, "超": 超[0], "退款后状态": 关了(待[1]),
+print(json.dumps({"样本": len(待), "原有": 原有, "补了": len(待) - 原有,
+                  "超权限多了返修单": 超后 - 前, "超": 超[0], "退款后状态": 关了(待[1]),
                   "对照": [对[0], 关了(待[2])]}, ensure_ascii=False))
 """
     r = _sp.run([sys.executable, "-c", src], capture_output=True, text=True, timeout=300, cwd=ROOT)
@@ -1309,14 +1352,16 @@ print(json.dumps({"样本": len(待), "超权限多了返修单": 超后 - 前, 
     except Exception:
         raise 前提不成立(f"攻击脚本没跑完,什么都没验:{(r.stderr or r.stdout)[-300:]}")
     if o["样本"] < 3:
-        raise 前提不成立(f"本店待处理差评不到 3 条({o['样本']})—— 没东西可攻")
+        raise 前提不成立(f"本店待处理差评凑不到 3 条(副本里补齐后仍只有 {o['样本']} 条,"
+                      f"连已关的差评也不够重新打开)—— **这是造数不够,不是差评处置的边界破了**")
     if o["对照"][0] != "已执行" or o["对照"][1] == "待处理":
         raise 前提不成立(f"对照没关成({o['对照']})—— 「没关」不作数")
     if o["超权限多了返修单"]:
         return f"判给企业 2000 元(超店长权限)照样建了 {o['超权限多了返修单']} 张返修单"
     if o["退款后状态"] != "待处理":
         return f"全额退款的关闭方式没经第二个人批就把差评关了(状态 {o['退款后状态']})"
-    raise PermissionError("超店长权限的我方出钱不建单不判责;要出钱的关闭方式不关 —— 都回澜绣由人办")
+    raise PermissionError(f"超店长权限的我方出钱不建单不判责;要出钱的关闭方式不关 —— 都回澜绣由人办"
+                          f"(攻了 3 条:原有 {o['原有']} 条待处理 + 副本里补齐 {o['补了']} 条)")
 
 
 def a_spans_scope():
