@@ -106,8 +106,10 @@ def main():
         tc.subprocess.run = lambda cmd, **kw: (发了.append(cmd), _sp.CompletedProcess(cmd, 0, "{}\n200", ""))[1]
         tc.取回复("xr_1", "60000005")
         地址 = next((a for a in (发了[0] if 发了 else []) if a.startswith("http")), "")
+        from urllib.parse import quote as _q
+        # 参数名从客户端的唯一定义处现算(不在这里再抄一遍字面量 —— 抄的那份会在改名那天过期)
         ck("取回复:真走到 _curl 拼出来的地址是纯 ASCII,中文参数名已转码", bool(地址) and 地址.isascii()
-           and "%E6%BE%9C%E7%BB%A3%E5%B7%A5%E5%8F%B7=60000005" in 地址, 地址)
+           and f"{_q(tc.回复查询参数)}=60000005" in 地址, 地址)
     finally:
         tc.subprocess.run = 原跑
         for k, v in 旧环境2.items():

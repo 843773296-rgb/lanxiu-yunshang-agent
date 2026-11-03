@@ -128,6 +128,11 @@ def 发起(技能, 澜绣工号, 输入, 幂等键):
     return False, dict(error=f"发起失败(HTTP {码}{' ' + 码文 if 码文 else ''}):{话}")
 
 
+# 取回复的查询参数名 —— 和管理后台 `聊天取回复(澜绣工号: str)` 那个形参同名。**只写这一处**:
+# takeover_check 从这里现算它转码后的样子,参数名改了检查跟着动,不会因为夹具里抄了一份而过期
+回复查询参数 = "澜绣工号"
+
+
 def 取回复(运行号, 澜绣工号):
     """这条从聊天发起的运行**现在说了什么、跑到哪了**(用户 10-27 拍「发起时等一会儿 + 可追问」)。
 
@@ -139,7 +144,7 @@ def 取回复(运行号, 澜绣工号):
     rid = (运行号 or "").strip()
     if not rid:
         return False, dict(error="要说清是哪一条运行(运行号),发起时回过")
-    码, 体 = _curl("GET", f"/chat-takeovers/runs/{quote(rid, safe='')}/replies?澜绣工号={quote(str(澜绣工号 or ''), safe='')}", cfg)
+    码, 体 = _curl("GET", f"/chat-takeovers/runs/{quote(rid, safe='')}/replies?{回复查询参数}={quote(str(澜绣工号 or ''), safe='')}", cfg)
     if 码 == "200" and isinstance(体, dict):
         return True, dict(运行号=rid, 状态=体.get("执行状态中文"), 跑完了=bool(体.get("是终态吗")),
                           在等人工核对=bool(体.get("在等人工核对")), 回复=体.get("回复们") or [],

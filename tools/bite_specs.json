@@ -14296,5 +14296,53 @@
    }
   ],
   "预期红": "取回复:真走到 _curl 拼出来的地址是纯 ASCII"
+ },
+ {
+  "script": "agentsite/skill_stats_check.py",
+  "改坏": "「从未触发」又把被执行闸按设计拦下的算进去 —— 开了接管的技能看起来像白写了",
+  "file": [
+   {
+    "path": "agentsite/skill_stats.py",
+    "old": "        从未触发的=[s for s in _declared() if s not in by and s not in 拦] or None,",
+    "new": "        从未触发的=[s for s in _declared() if s not in by] or None,"
+   }
+  ],
+  "预期红": "接管开着:call-notes **不落进「从未触发的」**"
+ },
+ {
+  "script": "tools/url_ascii_check.py",
+  "改坏": "判据的正则坏了 —— 扫不到 11-03 出事那一行,仓库看起来就是干净的",
+  "file": [
+   {
+    "path": "tools/url_ascii_check.py",
+    "old": "规则 = re.compile(rf\"[?&]{中文}+=\")",
+    "new": "规则 = re.compile(r\"永远匹配不到的东西XYZ\")"
+   }
+  ],
+  "预期红": "判据自检:11-03 出事那一行扫得到"
+ },
+ {
+  "script": "tools/url_ascii_check.py",
+  "改坏": "欠债表里删掉一条、代码没改 —— 棘轮要把它当新增报出来",
+  "file": [
+   {
+    "path": "tools/url_ascii_check.py",
+    "old": "    \"管理后台/tests/e2e/test_chat_assistant_flow.py\": (\"/chat-assistants?含测试=true\", \"/switches?天=1\"),",
+    "new": ""
+   }
+  ],
+  "预期红": "没有新增的中文查询参数名"
+ },
+ {
+  "script": "tools/url_ascii_check.py",
+  "改坏": "拿不到 git 清单时不退回走目录 —— 没有 .git 的地方(咬合副本就是)一个文件都扫不到,欠债全被当成已修好。⚠️ 「git ls-files 不带 -z、中文路径被转义」那个形状(第一版真踩过)在没有 .git 的副本里打不出来,所以不写成规格;它由「跟踪的源文件都读得了」那一行在真仓库里守",
+  "file": [
+   {
+    "path": "tools/url_ascii_check.py",
+    "old": "    if not 文件们:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "真扫到了源文件"
  }
 ]

@@ -28,7 +28,7 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
 def ck(名, ok, 细=""):
     global 坏
     if not ok: 坏 += 1
-    print(f"  {G+'✅'+D if ok else R+'❌'+D} {名}{'  ' + 细 if 细 else ''}")
+    print(f"  {G+'✅'+D if ok else R+'❌'+D} {名}{'  ' + str(细) if 细 else ''}")
 
 
 def main():
@@ -36,8 +36,8 @@ def main():
     d = tempfile.mkdtemp(prefix="skill-stats-")
     SS.LOG = os.path.join(d, "skill_usage.jsonl")
     第三方 = "multi-platform-inventory-warning"
-    # 接管开关是**管理后台的现场状态**:11-03 用户批准打开 call-notes 接管之后,这里的 call-notes 被执行闸拦下、
-    # 不再算「用了」,这条检查就红了 —— 而它要验的是统计逻辑,不是哪个开关开着。夹具里固定成「一个都没接管」
+    # 接管开关是**管理后台的现场状态**(11-03 起 call-notes 接管开着)。这条检查验的是统计逻辑,
+    # 所以接管开 / 关**两侧都自造、都验**,不钉在其中一侧 —— 钉在「关着」那侧,就只验了一个和线上相反的状态
     guards.接管查询 = lambda sk: None
     ck("前提:执行闸放行自有、拦第三方", guards.pre_tool_verdict("Skill", {"skill": "quote"}) is None
        and bool(guards.pre_tool_verdict("Skill", {"skill": 第三方})))
@@ -64,6 +64,22 @@ def main():
     应 = [x for x in OWN.OURS if x not in ("quote", "growth-plan", "call-notes")]
     ck("从未触发的:列得出来,而且就是自有清单里没被用过的那几个", sorted(未) == sorted(应),
        f"列出 {未} · 应为 {应}")
+
+    # ── 另一侧:call-notes 被工作流接管(执行闸按设计拦下它)──────────────────────
+    print("\n\033[1m▸ 接管开着那一侧:被闸按设计拦下的,不算「从未触发」\033[0m")
+    SS.LOG = os.path.join(d, "skill_usage_接管开.jsonl")
+    guards.接管查询 = lambda sk: {"workflow_id": "wf_x", "名称": "录音跟进"} if sk == "call-notes" else None
+    ck("前提:接管开着时 call-notes 被执行闸拦下", bool(guards.pre_tool_verdict("Skill", {"skill": "call-notes"})))
+    SS.记一轮([调("call-notes")], "整理一下这通电话")
+    SS.记一轮([调("quote")], "报个价")
+    s2 = SS.stats()
+    ck("接管开着:call-notes 不算「用了」", "call-notes" not in (s2.get("各技能") or {}), s2.get("各技能"))
+    ck("接管开着:call-notes **不落进「从未触发的」**(它在工作,只是改走工作流)",
+       "call-notes" not in (s2.get("从未触发的") or []), s2.get("从未触发的"))
+    ck("接管开着:call-notes 落进「只被闸拦下过的」—— 两件下一步相反的事分开列",
+       (s2.get("只被闸拦下过的") or []) == ["call-notes"], s2.get("只被闸拦下过的"))
+    guards.接管查询 = lambda sk: None
+    两侧 = "接管关 / 接管开两侧都自造样本验过"
     ck("触发率的分母包括没触发的那一轮", s.get("总轮次") == 4 and s.get("触发了技能") == 3,
        f"总轮次 {s.get('总轮次')} 触发了 {s.get('触发了技能')}")
 
@@ -79,6 +95,8 @@ def main():
         ck("技能集合的说明是现算的数(不是写死的 239 / 3)", False, f"sdk 导不进来:{e} —— 要用 venv 的 python 跑")
 
     print()
+    # 收尾汇总一行(门禁 run 成功时只印最后 3 行 —— 印在中间的说明在门禁上等于没印)
+    print(f"  ℹ️ {两侧};现场接管清单不进判据")
     if 坏:
         print(f"{R}❌ Skill 使用统计 {坏} 处不符合预期{D}"); return 1
     print(f"{G}✅ Skill 使用统计符合预期{D}"); return 0

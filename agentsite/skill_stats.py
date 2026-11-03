@@ -91,7 +91,11 @@ def stats():
         # **一次都没触发过的技能要单独列。** 它不出现在计数里,
         # 所以最容易被当成「用得少」而不是「从来没用过」——
         # 后者是描述有问题,前者可能只是场景少。
-        从未触发的=[s for s in _declared() if s not in by] or None,
+        # ⚠️ 11-03 改:**被执行闸按设计拦下的不算「从未触发」**。打开工作流接管之后,自有技能的调用会被闸拦下、
+        # 改走工作流 —— 原来它会落进「从未触发的」,和「这个技能白写了、描述有问题」压成同一个数,
+        # 而两者下一步相反(一个去改描述,一个什么都不用做)。现在分两列:
+        从未触发的=[s for s in _declared() if s not in by and s not in 拦] or None,
+        只被闸拦下过的=[s for s in _declared() if s not in by and s in 拦] or None,
         平均耗时秒=_avg([r["seconds"] for r in rows if r.get("seconds")]),
         最近=[dict(时间=r["ts"][5:16], 技能=r.get("skill") or "(无)",
                   问的=r["prompt"][:34]) for r in rows[-8:]])
@@ -122,6 +126,8 @@ if __name__ == "__main__":
     if s.get("从未触发的"):
         print(f"  \033[33m从未触发过的:{s['从未触发的']}\033[0m")
         print(f"    一次都没触发和「用得少」不是一回事 —— 前者多半是描述有问题。")
+    if s.get("只被闸拦下过的"):
+        print(f"  只被执行闸拦下过的(多半是开了工作流接管,改走工作流了):{s['只被闸拦下过的']}")
     print(f"  平均耗时 {s.get('平均耗时秒')} 秒")
     print("\n  最近几轮:")
     for r in s.get("最近", []):
