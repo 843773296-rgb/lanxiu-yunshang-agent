@@ -152,6 +152,10 @@ run "README = 入口 + 产品说明全文,两边一致(用户 10-20:产品文档
 run "写接口 · 往返(临时副本上跑,不碰真库)" python3 backend/write_check.py
 run "业务写入规则 · 11 条触发覆盖" python3 backend/writerule_check.py
 run "边界审计 · 每条保证真的攻击一次" python3 backend/boundary_audit.py
+# ⚠️ 这条**必须排在上面那条之后**,不许挪到前面。咬合执行器拿脚本路径当键去这儿找
+#    第一条匹配的 run 行,挪到前面会让 13 条指着边界审计的规格全跑 --selftest,
+#    于是它们一起报「改坏了却没红」—— **看着像 13 个判据同时失效**。
+run "边界审计的出口不丢拦截理由 · 59 条诊断全从那一个出口出来" python3 backend/boundary_audit.py --selftest
 # chat 接管理后台那份 RAG 这条桥(2026-10-08 接的,业务拍的第 ④ 步)。
 # ⚠️ 盯三件**坏了不报错**的事:退路悄悄长回来 / 岗位→角色的映射被改大 /
 # 管它的那条规矩(TL64)被改软。零 IO,不调模型、不发请求,所以能进门禁。
