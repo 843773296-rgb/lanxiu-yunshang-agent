@@ -129,8 +129,19 @@ def main():
     跟踪 = subprocess.run(["git", "ls-files", "agentsite/.claude/skills"],
                         capture_output=True, text=True, cwd=ROOT).stdout
     漏 = [n for n in so.OURS if f"agentsite/.claude/skills/{n}/" not in 跟踪]
+    # ⚠️ **分清两种红。** `跟踪` 为空时**所有**技能都会进「漏」,于是这条照样红 ——
+    # 但报的理由会是「多半是 .gitignore 那份手写白名单漏了一行」,而真实原因是
+    # `git ls-files` 那一步根本没跑成。照着错理由去查 .gitignore 是白费功夫。
+    # 这个项目记过同族的一次:清空 customer 表之后 rfm_check 确实红了,
+    # 但报的是「分布塌了」—— **红错了理由**,照着那条去查分桶逻辑是白费功夫。
+    # (2026-11-03:同一天 scan_secrets.sh 和另一条新判据都栽在 git ls-files
+    #  返空上,那两处是**假绿**;这一处是红的,所以只需要把理由说对。)
+    列空了 = not 跟踪.strip()
     ck("自己写的技能都进了版本库", not 漏, len(so.OURS),
-       f"没被 git 跟踪:{漏} —— 多半是 .gitignore 那份手写白名单漏了一行"
+       (f"**git ls-files 一行都没列出来 —— 这是列文件那步失败,"
+        f"不是 .gitignore 漏了行**(不在 git 仓库里?在排除了 .git 的副本里?)"
+        if 列空了 else
+        f"没被 git 跟踪:{漏} —— 多半是 .gitignore 那份手写白名单漏了一行")
        if 漏 else "**「装了」和「提交了」长得一模一样**,所以要单独验")
 
     print("=" * 80)

@@ -63,9 +63,19 @@ def sh(cmd, default=""):
 
 
 def auto_block():
+    # ⚠️ 这两个数是 `git ls-files` 列出来的。列不出来时它返空,`wc -l` 就是 0 ——
+    # 而 **0 会被原样写进自动区**,看起来像一个真数。
+    # 自动区的规矩是「一律不许手写,手写会漂」,而这是另一种漂法:
+    # > 一个「这个仓库有 0 个 py 文件」和一个「列文件那步失败了」,
+    # > **在自动区那一行上长得一模一样** —— 而接手的人会照着一个假状态往下做。
+    # 失效路径是真的:不在 git 仓库里跑、git 坏了、或者在一个排除了 .git 的
+    # 副本里跑(`bite_run` 造的副本就排除 .git)。2026-11-03 同一天,
+    # `scan_secrets.sh`(假绿)和另一条新判据都栽在这同一个调用上。
     n_py = sh("git ls-files '*.py' | wc -l").strip()
     n_line = sh("git ls-files '*.py' | xargs wc -l | tail -1").split()
     n_line = n_line[0] if n_line else "?"
+    if n_py in ("0", ""):
+        n_py = n_line = "?(git ls-files 列不出文件 —— **不是真的 0 个**)"
     commits = sh("git log --oneline -5 --format='%h %s'")
     dirty = sh("git status --porcelain")
     branch = sh("git rev-parse --abbrev-ref HEAD", "?")
