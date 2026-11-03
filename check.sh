@@ -390,6 +390,7 @@ run "成本口径 · 项目算的钱要和官方计费规则对得上(期望值�
 run "写工具的闸 · 逐例(拦错和不拦都不可见)" ./agentsite/.venv/bin/python agentsite/gate_test.py
 run "工作流接管 · 聊天站这一半(被接管的技能调不动 / 拉不到清单的退路 / 每个角色都能发起)" ./agentsite/.venv/bin/python agentsite/takeover_check.py
 run "URL 查询参数名 · 不许中文字面量(11-03:中文参数名原样发出,管理后台回 400;试纸是出事那一行)" python3 tools/url_ascii_check.py
+run "聊天站内部口 · 凭证 / 只收本机 / 身份现查 / 会话归密钥 / 访问 API 那一轮写工具不挂(11-03)" ./agentsite/.venv/bin/python agentsite/internal_call_check.py
 run "执行记录(/spans)谁能看 · 没登录 401、只看自己会话的、列全部只给总部运营(10-24 实测原来不登录就给 200)" ./agentsite/.venv/bin/python agentsite/spans_access_check.py
 run "证据面板 · 工具返回值按调用号对位(没记到的不错位、不拿别人的顶上;老对话按顺序并标出)" python3 agentsite/evidence_pair_check.py
 run "技能三态 · 能用 / 请求 / 加载 / 被拦 / 失败 / 没回执分得开,不重判历史(证据中心 P1)" python3 agentsite/skill_states_check.py

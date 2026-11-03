@@ -556,6 +556,40 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     r["门店留档"] = f"没留下:后台连不上({type(e).__name__})"
             return self._send(r, code=(200 if r.get("ok") else 502))
+        if p == "/internal/chat":
+            # 管理后台转来的访问 API 聊天(11-03):凭证 / 本机 / 身份现查,见 internal_call.py。
+            # **写工具这一轮不挂**(sdk.run 只读=True)—— 机器调的不许直接写,网页上那张确认卡 API 那头没人看
+            import internal_call as _ic
+            ok_i, why_i = _ic.核对(self.headers.get(_ic.凭证头), self.client_address[0])
+            if not ok_i:
+                return self._send({"error": why_i, "code": "INTERNAL_DENIED"}, code=403)
+            try: body = json.loads(raw or b"{}")
+            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
+            kind = (body.get("角色键") or "").strip()
+            prompt = (body.get("问题") or "").strip()
+            kid = (body.get("密钥id") or "").strip()
+            if not (kind and prompt and kid):
+                return self._send({"error": "要带 角色键 / 问题 / 密钥id"}, code=400)
+            if kind not in sdk.ROLE_META:
+                return self._send({"error": f"没有这个角色:{kind}"}, code=400)
+            me = _ic.员工(body.get("澜绣工号"))
+            if not me:
+                return self._send({"error": f"澜绣工号 {body.get('澜绣工号')} 查不到在职员工", "code": "NO_STAFF"}, code=403)
+            主 = _ic.会话主(kid, me)
+            sid_in = body.get("会话") or None
+            ok_s, why_s = sessions.check(sid_in, 主)
+            if not ok_s:
+                return self._send({"error": why_s, "code": "SESSION_NOT_YOURS"}, code=403)
+            try:
+                with RUNLOCK:
+                    r = asyncio.run(sdk.run(kind, prompt, resume=sid_in, me=me, 后台配置=True, 只读=True))
+            except Exception as e:
+                return self._send({"error": f"{type(e).__name__}: {e}"[:400]}, code=500)
+            sessions.own(r.get("session_id"), 主)
+            return self._send({"回答": r.get("text"), "会话": r.get("session_id"), "trace_id": r.get("trace_id"),
+                               "花费usd": r.get("cost_usd"), "模型": r.get("model"),
+                               "用了哪一版": (r.get("助手配置") or {}).get("提示词版本") or "代码",
+                               "写工具": "这一轮没挂(访问 API 只读)"})
         if p == "/run":
             try: body = json.loads(raw or b"{}")
             except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)

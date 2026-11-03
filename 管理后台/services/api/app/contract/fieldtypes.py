@@ -344,7 +344,8 @@
     # 聊天助手(2026-10-28):哪个角色 —— 少了它就不知道后台这一行管的是聊天站上的谁
     "chat_assistants": {"role_key", "name"},
     # 访问密钥:哈希、绑哪个应用、一天上限、币种 —— 任何一样空着,这把密钥都说不清它能干什么、花多少
-    "access_keys": {"application_id", "name", "prefix_code", "lookup_hash", "daily_cap_amount", "currency"},
+    # (application_id / chat_assistant_id 二选一,由 models._额外检查 的 CHECK 守,所以都不进必填)
+    "access_keys": {"name", "prefix_code", "lookup_hash", "daily_cap_amount", "currency"},
     "access_key_calls": {"access_key_id", "endpoint_code", "outcome_code"},
     # 聊天助手版本:开头 / 工具 / 模型 / 从哪来 / 哈希 —— 少一样就说不清「模型收到的是什么」
     "chat_assistant_versions": {"chat_assistant_id", "version_no", "head_template", "tools",

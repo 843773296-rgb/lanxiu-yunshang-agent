@@ -940,7 +940,7 @@ async function 传录音(b){
   录音卡改(key, {aid: r.id, 标: "在转文字", 色: "", 话: r["说明"] || "已排队转写"});
   const 消息 = (cur() || {msgs: []}).msgs[+b.dataset.mi];
   if(消息){ 消息.录音 = Object.assign(消息.录音 || {}, {[b.dataset.j]: r.id}); save(); }
-  draw();                                   // 换成「已传」的样子:不再给上传按钮
+  drawStream();                             // 换成「已传」的样子:不再给上传按钮(11-03 真点抓到:原来写成 draw(),没有这个函数 —— 抛错之后查进度根本没启动)
   看录音进度(key, r.id);
 }
 

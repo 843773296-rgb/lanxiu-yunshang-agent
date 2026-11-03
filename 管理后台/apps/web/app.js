@@ -7079,7 +7079,7 @@ function 画_聊天助手() {
   const g = 聊态;
   $("#side").innerHTML = `<a class="back" href="#/studio/chat">← 工作室</a>
     <div class="apphead"><span class="ico ch">聊</span><div class="an"><b>${esc(g["名称"])}</b><div class="k">聊天助手</div></div></div>
-    ${["编排", "版本"].map((t) => `<a href="#" data-ctab="${t}"${g.Tab === t ? ' class="on"' : ""}>${t}</a>`).join("")}
+    ${["编排", "版本", "访问 API"].map((t) => `<a href="#" data-ctab="${t}"${g.Tab === t ? ' class="on"' : ""}>${t}</a>`).join("")}
     <div class="grp">还没做</div><a class="todo" title="第 2 步:聊天站读后台这一版,并核对「后台这一版 == 模型真收到的」">接到聊天站</a>`;
   $("#side").querySelectorAll("[data-ctab]").forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); 聊态.Tab = a.dataset.ctab; 画_聊天助手(); };
@@ -7089,12 +7089,58 @@ function 画_聊天助手() {
       <div class="sub">角色 ${esc(g["角色键"])} · 草稿 r${g["草稿"]["revision"]} · ${同 ? `和 ${esc(同)} 一样` : "<b>有没出版本的改动</b>"}
         · 生产:${g["生产版本"] ? esc(g["生产版本"]) : "还没指定"}
         ${g.脏 ? ' <span class="stale">有未保存的改动</span>' : ""}</div></div>
-      <div>${g.Tab === "编排" ? '<button id="c-save" class="pri">保存草稿</button>' : '<button id="c-ver" class="pri">出版本</button>'}</div></div>
+      <div>${g.Tab === "编排" ? '<button id="c-save" class="pri">保存草稿</button>' : g.Tab === "版本" ? '<button id="c-ver" class="pri">出版本</button>' : ""}</div></div>
     ${g["接上了吗"] ? `<div class="note" id="c-wire" style="padding:10px;margin-bottom:12px">${md(g.note)}</div>`
                      : `<div class="err" id="c-wire" style="padding:10px;margin-bottom:12px">${md(g.note)}</div>`}
     <div id="body"></div>`;
   if (g.Tab === "编排") { 画_聊天编排(); $("#c-save").onclick = 做_存聊天助手; }
+  else if (g.Tab === "访问 API") 画_聊天访问();
   else { 画_聊天版本(); $("#c-ver").onclick = 做_出聊天版本; }
+}
+
+/* 聊天助手的访问 API(11-03 第二步):外部系统带密钥问一轮;**这一轮写工具不挂**(只能查、不能改)。原文只弹一次 */
+async function 画_聊天访问() {
+  const g = 聊态, cid = encodeURIComponent(g.cid);
+  $("#body").innerHTML = `<div class="card"><div class="k">在取…</div></div>`;
+  let d;
+  try { d = await 请求(`${P()}/chat-assistants/${cid}/access-keys`); }
+  catch (e) {
+    $("#body").innerHTML = `<div class="card"><div class="note"><b>取不到</b>:${esc(e.message || String(e))}
+      —— 这是取数失败,不是「一把密钥都没有」。发密钥要「配置密钥与预算」权限(管理员)。</div></div>`;
+    return;
+  }
+  const 行 = (d["密钥"] || []).map((k) => `<tr><td>${esc(k["名字"])}</td><td><code>${esc(k["开头"])}</code></td>
+      <td>${esc(k["发的人"] || "")}</td><td>${k["今天花了"] == null ? "—" : esc(k["今天花了"].toFixed(4))} / ${esc(String(k["每天上限"]))} ${esc(k["币种"])}</td>
+      <td>${k["吊销于"] ? "已吊销" : `<button data-ak-revoke="${esc(k.id)}">吊销</button>`}</td></tr>`).join("");
+  $("#body").innerHTML = `<div class="card"><h4>外部系统怎么调</h4>
+      <div class="k">跑的是这个助手<b>生产指着的那一版</b>${d["生产版本号"] != null ? `(v${esc(String(d["生产版本号"]))})` : " —— <b>还没上生产,调用会被拒</b>"}${d["聊天站读后台配置吗"] ? "" : ";<b>这个角色聊天站还没读后台配置,调用会被拒</b>"}。
+        以发密钥那个人绑的澜绣工号取数;<b>这一轮写入类工具不挂</b> —— 只能查、不能改,要改的事回答里会说「它想做什么」。会话归这把密钥。</div>
+      <pre>POST ${esc(location.origin + d["调用地址"])}
+请求头:Authorization: Bearer lx-app-……
+请求体:{"问题": "……", "会话": null}   ← 续着问就带上回答里的「会话」
+→ {"回答": "……", "会话": "……", "用了哪一版": "后台 vN"}</pre>
+      <div class="k">限量:每把每分钟 30 次;每天花费到上限就拒(和工作流同一套)。</div></div>
+    <div class="card"><h4>密钥</h4>
+      ${行 ? `<table><tr><th>名字</th><th>开头</th><th>发的人</th><th>今天花了 / 每天上限</th><th></th></tr>${行}</table>` : `<div class="k">还没有发过密钥。</div>`}
+      <label class="f">名字(给谁用)</label><input id="cak-n" placeholder="比如:企业微信机器人">
+      <label class="f">每天最多花多少(美元,必填)</label><input id="cak-cap" placeholder="比如 2">
+      <button class="pri" id="cak-new">发密钥</button> <span id="cak-msg" class="k"></span>
+      <div class="k">原文只在发出那一刻显示一次;发密钥的人要绑了澜绣工号,不然调用会被拒(聊天站不知道以谁的身份取数)。</div></div>`;
+  $("#cak-new").onclick = async () => {
+    const 名 = $("#cak-n").value.trim(), 上限 = $("#cak-cap").value.trim();
+    if (!名 || !上限) { $("#cak-msg").textContent = "名字和每天上限都要填"; return; }
+    try {
+      const r = await 请求(`${P()}/chat-assistants/${cid}/access-keys`, { method: "POST", body: JSON.stringify({ 名字: 名, 每天上限: Number(上限) }) });
+      提示("密钥发好了 —— 现在就存好", `<div class="note"><b>这是唯一一次看得到原文</b>,关掉这个框就再也看不到了。</div><pre>${esc(r["原文"])}</pre>`);
+      画_聊天访问();
+    } catch (e) { 报错(e); }
+  };
+  $("#body").querySelectorAll("[data-ak-revoke]").forEach((b) => b.onclick = async () => {
+    const 理由 = await 问一句("吊销这把密钥", "吊销立刻生效。", { 输入: "理由", 必填: true });
+    if (!理由) return;
+    try { await 请求(`${P()}/access-keys/${encodeURIComponent(b.dataset.akRevoke)}/revoke`, { method: "POST", body: JSON.stringify({ 理由 }) }); 画_聊天访问(); }
+    catch (e) { 报错(e); }
+  });
 }
 
 function 画_聊天编排() {

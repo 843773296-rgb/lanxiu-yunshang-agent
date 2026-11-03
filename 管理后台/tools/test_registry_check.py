@@ -140,6 +140,9 @@ def main():
             "而「CI 只跑不花钱的」是这个项目的规矩",
         "test_knowledge_write_flow.py":
             "第 ⑥ 条同上(真调 Claude 精排)",
+        "test_access_api_chat_live.py":
+            "访问 API 聊天那一半要真起着的聊天站(:8770)+ 本机那份内部凭证文件,而且真调一轮模型 —— CI 三样都没有;"
+            "内部口自己的判据(凭证 / 本机 / 写工具不挂)在 agentsite/internal_call_check.py,进了根门禁",
         "test_upload_page_firefox.py":
             "要可见的 Firefox 窗口 + selenium —— 本地 `make test-browser`",
         "test_workflow_editor_browser.py":

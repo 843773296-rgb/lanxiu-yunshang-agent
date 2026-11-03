@@ -21,7 +21,9 @@
   <!-- launchd 起的进程环境极简,PATH 要自己给。和终端里 ./start.sh 用同一个 python3。 -->
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <!-- 11-03 加 /opt/homebrew/bin:转写要的 whisper-cli 装在那儿(brew install whisper-cpp)。没有它,上传的录音一律
+         「ASR 环境不全:没装 whisper-cli」—— 在终端里手跑看不出来(终端的 PATH 有它),只有这个常驻进程撞得到 -->
+    <key>PATH</key><string>/Library/Frameworks/Python.framework/Versions/3.14/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>PYTHONUNBUFFERED</key><string>1</string>
     <!-- 2026-11-03:聊天里传的录音转完,由这个进程的转写工人去管理后台发起「录音跟进」(用户拍「自动走录音跟进」)。
          和聊天站(com.lanxiu.agentsite)同三项;没配的话转完会落「没配管理后台地址」,不会静默 -->

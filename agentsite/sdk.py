@@ -1052,9 +1052,16 @@ def _记规矩(state, 系统):
     return 系统
 
 
+def 去掉写工具(工具):
+    """访问 API 那一轮的工具名单:把 api.WRITE_TOOLS 里的全拿掉(写口名单只有那一份,不在这里抄)。"""
+    import api as _api_w
+    写 = set(_api_w.WRITE_TOOLS)
+    return [t for t in 工具 if t.rsplit("__", 1)[-1] not in 写]
+
+
 async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
               provider=None, model_name=None, me=None, skills=None, effort=None, 被判包裹=None,
-              被判押金=None, 分叉=False, 根属性=None, 后台配置=False):
+              被判押金=None, 分叉=False, 根属性=None, 后台配置=False, 只读=False):
     """跑一轮。kind: kb(工艺顾问)/ task(人工任务)。返回文本、轨迹、用量。
 
     被判包裹:**判差评时**给被判那条的包裹号 —— 工具服务会把它自己的人工处置抹掉
@@ -1117,7 +1124,12 @@ async def run(kind, prompt, max_turns=12, guard=True, images=None, resume=None,
         _助手 = _ac.生产版("task")
         if _助手["版"]:
             _助手系统, 工具, _ = _助手组装(kind, _助手["版"], 工具)
-    state = {"生效工具": 工具}          # 进运行记录:这一轮实际给了哪些,不是配置意图
+    if 只读:
+        # 访问 API 调的聊天(用户 11-03 拍「机器调的不许直接写」):**写工具这一轮根本不挂** ——
+        # MCP 服务按同一份名单暴露工具,不在名单里的模型看不见、也调不到。靠结构,不靠提示词里那句「动手前先确认」
+        # (那句是约定 —— 网页上有人看着确认卡,API 那头没人)。提示词按收窄后的名单装配,管写工具的规矩跟着撤掉
+        工具 = 去掉写工具(工具)
+    state = {"生效工具": 工具, **({"只读": True} if 只读 else {})}          # 进运行记录:这一轮实际给了哪些,不是配置意图
     if images:
         state["带图"] = True          # 体检 g18「看图直接下形制结论」只在带图的那一轮生效
     # ── 跨轮业务状态(外部审阅 10-03 §4.2):续聊时把**当前方案 / 锚点 / 待消费的压缩标记**恢复回来 ──

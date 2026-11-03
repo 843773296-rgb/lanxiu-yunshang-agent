@@ -14404,5 +14404,29 @@
   ],
   "改坏": "不再问「窗口里已经有结论吗」,窗口外的 ✅ 一律补 —— **反方向的坏法**:每条子检查都印一个 ✅ 的脚本会从这儿刷屏,而 tail -3 本来就是为了防这个",
   "预期红": "会从这儿刷屏"
+ },
+ {
+  "script": "agentsite/internal_call_check.py",
+  "改坏": "内部口不再只收本机 —— 凭证一漏,任何能连上这台机器的都能以任意工号跑聊天",
+  "file": [
+   {
+    "path": "agentsite/internal_call.py",
+    "old": "    if (对端 or \"\") not in 本机:",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "② 对端不是本机 → 拒"
+ },
+ {
+  "script": "agentsite/internal_call_check.py",
+  "改坏": "访问 API 那一轮照样挂写工具 —— 机器调的就能直接改业务数据",
+  "file": [
+   {
+    "path": "agentsite/sdk.py",
+    "old": "    return [t for t in 工具 if t.rsplit(\"__\", 1)[-1] not in 写]",
+    "new": "    return list(工具)"
+   }
+  ],
+  "预期红": "⑥ 去掉之后一个写工具都不剩"
  }
 ]

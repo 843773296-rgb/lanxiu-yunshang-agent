@@ -12,6 +12,22 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 🔑 11-03 晚:访问 API 两半都做了 + 上传卡片真点(主检出)
+
+- **工作流那一半已推**(de8ce54e):记账(worker._记这一段的账,按价目表)、access_keys / access_key_calls、
+  /open/v1/apps/{id}/runs、/open/v1/runs/{id}、工作流侧栏「访问 API」。用户拍:先工作流再聊天、先补记账按金额封顶。
+- **聊天那一半**(这一轮提交):管理后台 /open/v1/chat-assistants/{id}/messages → 聊天站 /internal/chat(agentsite/internal_call.py:
+  凭证文件 `~/.lanxiu/internal-call`(**不在仓库**,本机生成,两边服务读同一份;没有 = 通道关着)、只收本机、工号现查身份、
+  会话归密钥 `访问密钥:<id>`),那一轮 `sdk.run(只读=True)` **写工具不挂**。每轮一笔进 usage_ledger(caller=访问密钥:<id>,
+  挂在管理后台自建的 trace 上,request_id = 聊天站 trace)。密钥可绑聊天助手(迁移 72a7e0a33c0e,CHECK 二选一)。
+  聊天助手详情页加「访问 API」页签。只有角色 task(店长助手)接上了后台配置,别的角色会被拒(NOT_WIRED)。
+- 验:test_access_api_flow 28 条(CI 跑)、test_access_api_chat_live 10 条(**只本机**,E2E_CI跳过,要聊天站 + 凭证 + 真模型)、
+  agentsite/internal_call_check 12 条(进根门禁,两条咬合)。
+- **上传卡片真点**:agentsite/call_upload_browser_smoke.mjs(无界面 Chrome,8 条全过;不进门禁,同 role_roundtrip_smoke)。
+  真点抓到两个真 bug:① 卡片调了不存在的 draw() → 查进度根本没启动;② **后台(8760)launchd 的 PATH 没有 /opt/homebrew/bin,
+  上传的录音一律转写失败**(终端里手跑看不出来)—— 两处都修了,装好的 plist 已更新、后台已重启。
+- 欠账:station.html 没有「调用的函数存不存在」的检查(js_check 只查语法)—— draw() 那种错门禁拦不住。
+- 测试留下的运行都已退回(合成录音,不写进系统)。
 ## 🪞 11-03 傍晚:**修了两次症状,才看见根因**(eureka-40 / 工 worktree)
 
 > 这一节是上面那节的续集,而且是**最该读的一节** ——

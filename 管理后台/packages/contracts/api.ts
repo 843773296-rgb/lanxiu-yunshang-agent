@@ -248,6 +248,9 @@ export const ENDPOINTS = [
   { method: "PATCH", path: "/access-keys/{id}", summary: "改小每天上限(只许改小)", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/access-keys/{id}/revoke", summary: "吊销(立刻生效)", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/apps/{id}/runs", summary: "对外:带访问密钥发起一次运行(跑生产那一版)", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: false },
+  { method: "GET", path: "/chat-assistants/{id}/access-keys", summary: "这个聊天助手的访问密钥", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/chat-assistants/{id}/access-keys", summary: "给聊天助手发一把访问密钥(原文只显示这一次)", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/chat-assistants/{id}/messages", summary: "对外:带访问密钥问聊天助手一轮(写工具不挂)", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/runs/{id}", summary: "对外:查这把密钥发起的那次运行", capability: "运行编排测试", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/chat-assistants/{id}/production", summary: "审核上生产(改生产指针)", capability: "生产审核/发布/回滚", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/switches", summary: "开关现状 + 最近谁把什么从什么改成了什么(聊天接管 / 生产版本 / 定时;给工作台)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -270,4 +273,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 183 条接口 · 24 条异步 · 32 条要幂等键 · 19 条要 If-Match */
+/** 共 186 条接口 · 24 条异步 · 32 条要幂等键 · 19 条要 If-Match */

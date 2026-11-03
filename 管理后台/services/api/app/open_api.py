@@ -72,18 +72,22 @@ def _项目日预算(c, project_id):
 
 def _今天花了(c, project_id, kid):
     """→ (已知金额之和, 算不出金额的账有几行)。按东八区的今天、按这把密钥发起的运行。"""
+    # 两路账:① 工作流运行(按运行的 trace 连回这把密钥)② 聊天(每轮一笔,caller 记成「访问密钥:<id>」)
     r = c.execute(text("""
         select coalesce(sum(u.amount) filter (where u.amount_known), 0) 花了,
                count(*) filter (where not u.amount_known) 算不出
           from usage_ledger u
-          join execution_runs e on e.project_id=u.project_id and e.trace_id=u.trace_id
-         where u.project_id=:p and e.definition_ref->>'密钥id' = :k and u.created_at >= :起"""),
-        {"p": project_id, "k": kid, "起": _今天起点()}).mappings().first()
+         where u.project_id=:p and u.created_at >= :起
+           and (u.caller = :ck
+                or exists (select 1 from execution_runs e where e.project_id=u.project_id and e.trace_id=u.trace_id
+                             and e.definition_ref->>'密钥id' = :k))"""),
+        {"p": project_id, "k": kid, "ck": f"访问密钥:{kid}", "起": _今天起点()}).mappings().first()
     return Decimal(r["花了"] or 0), int(r["算不出"] or 0)
 
 
 def _键的样子(r, 花了=None, 算不出=None):
     return {"id": r["id"], "名字": r["name"], "开头": r["prefix_code"] + "…", "应用id": r["application_id"],
+            "聊天助手id": r["chat_assistant_id"],
             "每天上限": float(r["daily_cap_amount"]), "币种": r["currency"], "发的人": r["created_by"],
             "发于": r["created_at"].isoformat() if r["created_at"] else None,
             "最后一次用": r["last_used_at"].isoformat() if r["last_used_at"] else None,
@@ -130,6 +134,30 @@ def 项目里的密钥(project_id: str, me: 身份 = Depends(要权限("配置�
     return {"条数": len(密钥们), "密钥": 密钥们}
 
 
+def _发一把(c, project_id, me, 名, 上限, 应用id=None, 助手id=None):
+    """建一行密钥 → (id, 原文)。上限、项目日预算由调用方先判;**原文只从这里返回一次**。"""
+    原文 = 密钥开头 + secrets.token_hex(20)
+    kid = WF._新id("ak")
+    c.execute(text("""insert into access_keys (id, organization_id, project_id, application_id, chat_assistant_id, name,
+                          prefix_code, lookup_hash, daily_cap_amount, currency, created_at, created_by, updated_at, revision)
+                      values (:i,:o,:p,:a,:ca,:n,:pc,:h,:cap,:cur, now(), :by, now(), 1)"""),
+              {"i": kid, "o": me.org_id, "p": project_id, "a": 应用id, "ca": 助手id, "n": 名, "pc": 原文[:13],
+               "h": _哈希(原文), "cap": 上限, "cur": 币种, "by": me.user_id})
+    WF._审计(c, me, "access_key.issue", {"密钥": kid, "应用": 应用id, "聊天助手": 助手id, "名字": 名, "每天上限": str(上限)})
+    return kid, 原文
+
+
+def _判上限(c, project_id, 上限):
+    预 = _项目日预算(c, project_id)
+    if 预:
+        if (预["currency"] or "").upper() != 币种:
+            raise _错(422, "VALIDATION", f"项目每日预算是 {预['currency']},而花费按 {币种} 记,比不了",
+                      "把项目每日预算改成美元,或者先不设项目预算", field_errors={"每天上限": "币种对不上"})
+        if 上限 > Decimal(预["limit_amount"]):
+            raise _错(422, "VALIDATION", f"每天上限 {上限} 超过了项目每日预算 {预['limit_amount']}",
+                      "改小,或者先调高项目预算", field_errors={"每天上限": "超过项目每日预算"})
+
+
 @router.post(前缀 + "/workflows/{wid}/access-keys", status_code=201)
 async def 发密钥(project_id: str, wid: str, request: Request, me: 身份 = Depends(要权限("配置密钥与预算"))):
     """`{名字, 每天上限}` → 原文(只这一次)。**上限必填**;设了项目每日预算的话不许超过它。"""
@@ -138,28 +166,14 @@ async def 发密钥(project_id: str, wid: str, request: Request, me: 身份 = De
     if not 名:
         raise _错(422, "VALIDATION", "名字不能空", "写清这把密钥给谁用,比如「门店小程序」", field_errors={"名字": "必填"})
     上限 = _金额(体.get("每天上限"), "每天上限")
-    原文 = 密钥开头 + secrets.token_hex(20)
     with 事务() as c:
         w = c.execute(text("select name from workflows where project_id=:p and id=:w and archived_at is null"),
                       {"p": project_id, "w": wid}).mappings().first()
         if not w:
             raise _错(404, "NOT_FOUND", "没有这条工作流", "回列表重新进入")
-        预 = _项目日预算(c, project_id)
-        if 预:
-            if (预["currency"] or "").upper() != 币种:
-                raise _错(422, "VALIDATION", f"项目每日预算是 {预['currency']},而花费按 {币种} 记,比不了",
-                          "把项目每日预算改成美元,或者先不设项目预算", field_errors={"每天上限": "币种对不上"})
-            if 上限 > Decimal(预["limit_amount"]):
-                raise _错(422, "VALIDATION", f"每天上限 {上限} 超过了项目每日预算 {预['limit_amount']}",
-                          "改小,或者先调高项目预算", field_errors={"每天上限": "超过项目每日预算"})
+        _判上限(c, project_id, 上限)
         aid = WF._工作流应用(c, project_id, wid, me, w["name"])
-        kid = WF._新id("ak")
-        c.execute(text("""insert into access_keys (id, organization_id, project_id, application_id, name, prefix_code,
-                              lookup_hash, daily_cap_amount, currency, created_at, created_by, updated_at, revision)
-                          values (:i,:o,:p,:a,:n,:pc,:h,:cap,:cur, now(), :by, now(), 1)"""),
-                  {"i": kid, "o": me.org_id, "p": project_id, "a": aid, "n": 名, "pc": 原文[:13],
-                   "h": _哈希(原文), "cap": 上限, "cur": 币种, "by": me.user_id})
-        WF._审计(c, me, "access_key.issue", {"密钥": kid, "应用": aid, "名字": 名, "每天上限": str(上限)})
+        kid, 原文 = _发一把(c, project_id, me, 名, 上限, 应用id=aid)
     return {"id": kid, "名字": 名, "原文": 原文, "开头": 原文[:13] + "…", "应用id": aid,
             "每天上限": float(上限), "币种": 币种, "调用地址": f"{对外}/apps/{aid}/runs",
             "note": "**这是唯一一次看得到原文** —— 现在就存好;库里只有哈希,谁都找不回,忘了就吊销重发"}
@@ -365,3 +379,151 @@ def 对外查结果(rid: str, authorization: str = Header(default=None)):
             "结果": 出 if e["status"] in ("succeeded", "incomplete") else None,
             "结论": 结论.get("结论"), "说明": 结论.get("说明"),
             "失败原因": 结论.get("说明") if e["status"] == "failed" else None}
+
+
+# ══ 聊天助手那一半(11-03 第二步)═══════════════════════════════════════════════
+# 管理后台跑不了聊天对话,所以核完密钥 / 限量 / 花费 / 身份之后,转给聊天站的内部口(agentsite/internal_call.py)跑一轮。
+# 那一轮**写工具不挂**:机器调的不许直接写(网页上那张「动手前先确认」的卡,API 那头没人看)。
+
+import os as _os
+import subprocess as _sp
+import chat_assistants_api as CA
+
+聊天站 = _os.environ.get("LANXIU_AGENTSITE_URL", "http://127.0.0.1:8770")
+单轮最多秒 = 240           # 一轮聊天(含难题分流、技能)常见 20~90 秒;再长多半是卡住了
+
+
+def _内部凭证():
+    路 = _os.environ.get("LANXIU_INTERNAL_FILE") or _os.path.expanduser("~/.lanxiu/internal-call")
+    try:
+        with open(路, encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def _问聊天站(体):
+    """→ (http 码, dict)。走 curl(这台机器 Python 的 TLS 会被拦,本地 http 也统一走一处)。凭证只进 curl 的参数。"""
+    凭 = _内部凭证()
+    if not 凭:
+        return None, {"error": "内部通道没开:本机没有凭证文件(~/.lanxiu/internal-call)"}
+    try:
+        r = _sp.run(["curl", "-sS", "-m", str(单轮最多秒), "-X", "POST", 聊天站.rstrip("/") + "/internal/chat",
+                     "-H", "Content-Type: application/json", "-H", f"X-Lanxiu-Internal: {凭}",
+                     "--data-binary", "@-", "-w", "\n%{http_code}"],
+                    input=json.dumps(体, ensure_ascii=False), capture_output=True, text=True, timeout=单轮最多秒 + 10)
+    except Exception as e:
+        return None, {"error": f"调聊天站起不来:{type(e).__name__}"}
+    if r.returncode != 0:
+        return None, {"error": f"连不上聊天站(curl 退 {r.returncode})"}
+    正文, _, 码 = r.stdout.rpartition("\n")
+    try:
+        return 码.strip(), json.loads(正文 or "null") or {}
+    except ValueError:
+        return 码.strip(), {"error": 正文[:200]}
+
+
+@router.get(前缀 + "/chat-assistants/{cid}/access-keys")
+def 聊天助手的密钥(project_id: str, cid: str, me: 身份 = Depends(要权限("配置密钥与预算"))):
+    with 连接() as c:
+        行 = c.execute(text("""select * from access_keys where project_id=:p and chat_assistant_id=:a
+                                order by created_at desc"""), {"p": project_id, "a": cid}).mappings().all()
+        密钥们 = [_键的样子(r, *_今天花了(c, project_id, r["id"])) for r in 行]
+        a = c.execute(text("select role_key, production_version_no from chat_assistants where project_id=:p and id=:i"),
+                      {"p": project_id, "i": cid}).mappings().first()
+    return {"条数": len(密钥们), "密钥": 密钥们, "调用地址": f"{对外}/chat-assistants/{cid}/messages",
+            "生产版本号": a and a["production_version_no"], "聊天站读后台配置吗": bool(a and CA._接线(a["role_key"])[0]),
+            "note": "原文只在发出那一刻显示一次;**API 调的这一轮写工具不挂** —— 只能查、不能改,要改的会说「它想做什么」"}
+
+
+@router.post(前缀 + "/chat-assistants/{cid}/access-keys", status_code=201)
+async def 给聊天助手发密钥(project_id: str, cid: str, request: Request, me: 身份 = Depends(要权限("配置密钥与预算"))):
+    体 = await request.json()
+    名 = (体.get("名字") or "").strip()
+    if not 名:
+        raise _错(422, "VALIDATION", "名字不能空", "写清这把密钥给谁用,比如「企业微信机器人」", field_errors={"名字": "必填"})
+    上限 = _金额(体.get("每天上限"), "每天上限")
+    with 事务() as c:
+        if not c.execute(text("select 1 from chat_assistants where project_id=:p and id=:i"), {"p": project_id, "i": cid}).first():
+            raise _错(404, "NOT_FOUND", "没有这个聊天助手", "回列表重新进入")
+        _判上限(c, project_id, 上限)
+        kid, 原文 = _发一把(c, project_id, me, 名, 上限, 助手id=cid)
+    return {"id": kid, "名字": 名, "原文": 原文, "开头": 原文[:13] + "…", "聊天助手id": cid,
+            "每天上限": float(上限), "币种": 币种, "调用地址": f"{对外}/chat-assistants/{cid}/messages",
+            "note": "**这是唯一一次看得到原文** —— 现在就存好;库里只有哈希,谁都找不回,忘了就吊销重发"}
+
+
+def _记聊天账(r, 回, 本人):
+    """一轮一笔进用量账,挂在管理后台自己建的一条 trace 上(trace_id 是真外键:查不到出处的钱和真的一样);
+    聊天站那一轮的编号记在 trace.request_id 上。花费算不出 → amount_known=false,不写 0。"""
+    花 = 回.get("花费usd")
+    with 事务() as c:
+        tid = WF._新id("tr")
+        c.execute(text("""insert into traces (id, organization_id, project_id, created_at, created_by, session_id,
+                              request_id, entry_kind, started_at, ended_at)
+                          values (:i,:o,:p, now(), :by, :s, :rq, '访问 API 聊天', now(), now())"""),
+                  {"i": tid, "o": r["organization_id"], "p": r["project_id"], "by": 本人.user_id,
+                   "s": 回.get("会话"), "rq": 回.get("trace_id")})
+        c.execute(text("""insert into usage_ledger (id, organization_id, project_id, event_key, trace_id, resource,
+                              quantity, unit, currency, amount, amount_known, source, caller, created_at, created_by)
+                          values (:i,:o,:p,:ek,:t,'chat',1,'turn','USD',:a,:k,'live',:ca, now(), :by)
+                          on conflict (project_id, event_key) do nothing"""),
+                  {"i": WF._新id("ul"), "o": r["organization_id"], "p": r["project_id"],
+                   "ek": f"open-chat:{r['id']}:{回.get('trace_id') or tid}", "t": tid,
+                   "a": 花, "k": 花 is not None, "ca": f"访问密钥:{r['id']}", "by": 本人.user_id})
+
+
+@router.post(对外 + "/chat-assistants/{cid}/messages")
+async def 对外聊天(cid: str, request: Request, authorization: str = Header(default=None)):
+    """问一轮。入参 `{问题, 会话?}` → `{回答, 会话, 用了哪一版}`。跑的是这个助手**生产指着的那一版**;
+    以发密钥那个人绑的澜绣工号取数;**写工具不挂**。会话归这把密钥:别的密钥(哪怕同一个人发的)续不了。"""
+    r = None
+    try:
+        with 连接() as c:
+            r = _认密钥(c, authorization)
+            本人 = _过闸(c, r)
+            if r["chat_assistant_id"] != cid:
+                raise _拒(403, "WRONG_APP", "应用不对", "这把访问密钥不是这个聊天助手的", "一把密钥只能调它绑的那一个")
+            花了, 算不出 = _今天花了(c, r["project_id"], r["id"])
+            if 算不出:
+                raise _拒(429, "COST_UNKNOWN", "超额", f"今天有 {算不出} 笔花费算不出金额,上限没法判",
+                          "请后台的人查一下那几轮的花费;在那之前这把密钥今天不再受理")
+            if 花了 >= Decimal(r["daily_cap_amount"]):
+                raise _拒(429, "DAILY_CAP_REACHED", "超额",
+                          f"这把访问密钥今天已经花了 {花了:.4f} {r['currency']},到了上限 {r['daily_cap_amount']}",
+                          "明天(东八区零点)再调;要更大的额度找后台的人")
+            a = c.execute(text("select role_key, production_version_no from chat_assistants where project_id=:p and id=:i"),
+                          {"p": r["project_id"], "i": cid}).mappings().first()
+            if not a or a["production_version_no"] is None:
+                raise _拒(409, "NOT_IN_PRODUCTION", "没上生产", "这个聊天助手还没有生产版本",
+                          "先在后台审核上生产;草稿和没上生产的版本不对外")
+            if not CA._接线(a["role_key"])[0]:
+                raise _拒(409, "NOT_WIRED", "没接线", "这个角色聊天站还没读后台的配置",
+                          "现在只有店长助手接上了;这个角色接上之前,API 跑出来的和后台配的不是一回事")
+            工号 = c.execute(text("""select lanxiu_staff_code from staff_bindings where project_id=:p and user_id=:u
+                                     and archived_at is null"""), {"p": r["project_id"], "u": 本人.user_id}).scalar()
+            if not 工号:
+                raise _拒(403, "NOT_BOUND", "没权限", f"发密钥的账号 {本人.user_id} 没有绑澜绣工号,聊天站不知道以谁的身份取数",
+                          "请管理员在「账号绑定」里给他绑上")
+        try:
+            体 = await request.json()
+        except ValueError:
+            体 = None
+        问 = (体 or {}).get("问题") if isinstance(体, dict) else None
+        if not isinstance(问, str) or not 问.strip():
+            raise _拒(422, "VALIDATION", "参数不对", "请求体要是 JSON,形如 {\"问题\": \"…\", \"会话\": null}", "照「访问入口」页上的样例改")
+        码, 回 = _问聊天站({"角色键": a["role_key"], "问题": 问.strip(), "会话": (体 or {}).get("会话"),
+                         "密钥id": r["id"], "澜绣工号": 工号})
+        if 码 is None:
+            raise _拒(502, "CHAT_UNREACHABLE", "聊天站不通", 回.get("error") or "聊天站不通", "稍后再试;一直不通就找后台的人")
+        if 码 != "200":
+            映射 = {"403": (403, "SESSION_NOT_YOURS" if 回.get("code") == "SESSION_NOT_YOURS" else (回.get("code") or "CHAT_DENIED"))}
+            http, code = 映射.get(码, (502, "CHAT_FAILED"))
+            raise _拒(http, code, "聊天站拒了", 回.get("error") or f"聊天站回 {码}", "会话续不了就开一条新的(不带会话)")
+    except _拒 as e:
+        _记一笔(r, "聊天", e.结果 or e.code, e.http, 说明=e.message)
+        raise _拒成错(e)
+    _记聊天账(r, 回, 本人)
+    _记一笔(r, "聊天", "受理", 200, 说明=f"会话 {回.get('会话')}")
+    return {"回答": 回.get("回答"), "会话": 回.get("会话"), "用了哪一版": 回.get("用了哪一版"),
+            "写工具": "这一轮没挂 —— API 只能查,不能改;要改的事回答里会说「它想做什么」,由人在聊天页或后台办"}

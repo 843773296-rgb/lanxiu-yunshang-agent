@@ -534,6 +534,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_raw_log_flow.py
 	@./.venv/bin/python tests/e2e/test_chat_assistant_flow.py
 	@./.venv/bin/python tests/e2e/test_access_api_flow.py
+	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py
 	@echo ""
 	@echo "▸ 库存补货(12 条:不用派直接结束 / 填齐了才派 / 没填不派 / 退回不派 / 密钥扫描只放过声明过的数值配置 —— 六条第六条)"
 	@./.venv/bin/python tests/e2e/test_restock_flow.py
@@ -757,6 +758,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_access_api_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_access_api_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_access_api_flow.log
+	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py > /tmp/prog-test_access_api_chat_live.log 2>&1 \
+	  || { echo "  ❌ test_access_api_chat_live 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_access_api_chat_live.log; exit 1; }
+	@tail -2 /tmp/prog-test_access_api_chat_live.log
 	@./.venv/bin/python tests/e2e/test_recall_flow.py > /tmp/prog-test_recall_flow.log 2>&1 \
 	  || { echo "  ❌ test_recall_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_recall_flow.log; exit 1; }
