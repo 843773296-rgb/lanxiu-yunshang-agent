@@ -308,6 +308,17 @@ async def 对外发起(aid: str, request: Request,
         with 事务() as c:
             老 = c.execute(text("select target_ref from jobs where project_id=:p and idempotency_key=:k"),
                           {"p": r["project_id"], "k": 键}).mappings().first()
+            if 老:
+                # 方案 C06(Dify 四页对标 §6.3):**同一个幂等键、参数不同 → 冲突**,不默默返回旧的那一次 ——
+                # 对方重复用了编号而参数变了,拿到的会是一个答非所问的旧结果,而它看起来完全正常
+                原 = c.execute(text("select input_snapshot from execution_runs where project_id=:p and idempotency_key=:k"),
+                              {"p": r["project_id"], "k": 键}).scalar()
+                if isinstance(原, str):
+                    原 = json.loads(原)
+                if 原 is not None and (原 or {}) != (体.get("输入") or {}):
+                    raise _拒(409, "IDEMPOTENCY_CONFLICT", "幂等键冲突",
+                              "这个幂等键之前用过,而那一次的输入和这次不一样",
+                              "新请求换一个新的幂等键;只有超时重发同一个请求时才带同一个")
             if not 老:
                 花了, 算不出 = _今天花了(c, r["project_id"], r["id"])
                 if 算不出:

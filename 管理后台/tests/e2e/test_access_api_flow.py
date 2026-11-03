@@ -144,6 +144,9 @@ def main():
     c, r2 = 外("POST", f"/open/v1/apps/{aid}/runs", 密, {"输入": {"article": "访问 API 端到端"}}, 键)
     ck("**同一个幂等键再发 → 同一条运行**(不跑第二遍、不多花钱)",
        c == 202 and r2.get("运行编号") == r1.get("运行编号"), (c, r2))
+    c, r3 = 外("POST", f"/open/v1/apps/{aid}/runs", 密, {"输入": {"article": "换了一段话"}}, 键)
+    ck("**同一个幂等键、参数不同 → 409 IDEMPOTENCY_CONFLICT**(方案 C06:不默默返回旧的那一次)",
+       c == 409 and 码(r3) == "IDEMPOTENCY_CONFLICT", (c, r3))
     rid = r1.get("运行编号")
     d = 等跑完(rid, 密)
     ck("查结果:跑完了,状态「已完成」,结果原样带回", d.get("跑完了吗") and d.get("状态") == "已完成"
