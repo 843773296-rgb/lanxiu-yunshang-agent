@@ -145,6 +145,10 @@ def 带身份的handler():
     # 用总部运营 —— 它能看全部;范围本身由 approval_transfer_check 的 HTTP 层那几条专门验
     "approval_detail": [(SQL("SELECT id FROM approval ORDER BY applied_at DESC LIMIT 1"),
                          SQL行("SELECT no,name,role,shop FROM staff WHERE role='总部运营' AND status='启用' LIMIT 1"))],
+    # 聊天里录音上传卡问进度那条(2026-11-03 加):参数顺序是 (身份, 录音号),返回 (dict, 状态码)。
+    # 用总部运营(能看全部);「只看得到本店」由 call_upload_flow 那几条专门验
+    "call_status": [(SQL行("SELECT no,name,role,shop FROM staff WHERE role='总部运营' AND status='启用' LIMIT 1"),
+                     SQL("SELECT id FROM call_audio ORDER BY created DESC LIMIT 1"))],
     "chat_order_detail": [(SQL("SELECT id FROM ordr WHERE kind='定制品订单' LIMIT 1"),
                            ("带身份", None)),
                           # 标品单也跑一遍:定制那条路会走 `item_part_choice`,
@@ -263,6 +267,9 @@ def main():
                 out = f(*真参)
             except Exception as e:
                 坏.append(f"{标} 抛了 {type(e).__name__}: {e}"); continue
+            # 返回 (dict, 状态码) 的入口:判的是那个 dict —— 不拆开的话,一个带 error 的元组照样「非空」、照样算通过
+            if isinstance(out, tuple) and len(out) == 2 and isinstance(out[0], dict):
+                out = out[0]
             if isinstance(out, dict) and out.get("error"):
                 坏.append(f"{标} 拿真参数却返回 error:{out['error']}")
             elif not out:

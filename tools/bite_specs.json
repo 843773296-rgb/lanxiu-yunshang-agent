@@ -4629,8 +4629,8 @@
   "file": [
    {
     "path": "backend/server.py",
-    "old": "                  (aid, cid, None, None, wav, round(秒, 1), \"真实录音\", _now(), 方式, \"排队\", me.get(\"no\"), 依据))",
-    "new": "                  (aid, cid, None, None, wav, round(秒, 1), \"真实录音\", _now(), 方式, \"排队\", me.get(\"no\"), None))"
+    "old": "                   \"排队\", me.get(\"no\"), 依据, 接着))",
+    "new": "                   \"排队\", me.get(\"no\"), None, 接着))"
    }
   ],
   "预期红": "上传那一刻记下同意依据"
@@ -11527,8 +11527,8 @@
   "file": [
    {
     "path": "agentsite/sdk.py",
-    "old": "                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS)),",
-    "new": "                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS + PATTERN_TOOLS)),"
+    "old": "                                   + CALL_UPLOAD_TOOLS)),",
+    "new": "                                   + CALL_UPLOAD_TOOLS + PATTERN_TOOLS)),"
    }
   ],
   "预期红": "按需加载只取回自己名单里的工具"
@@ -14200,5 +14200,53 @@
    }
   ],
   "预期红": "门禁占着锁时一律不动手"
+ },
+ {
+  "script": "tools/assistant_effect_check.py",
+  "改坏": "后台那一版选的模型一律当「不在可选清单里」、退回网站默认 —— 后台 v2 选的恰好就是网站默认,只比模型名看不出来,得靠来由",
+  "file": [
+   {
+    "path": "backend/assistant_client.py",
+    "old": "    if 想 not in set(可选):",
+    "new": "    if True:"
+   }
+  ],
+  "预期红": "没手选时用的就是后台那一版选的模型"
+ },
+ {
+  "script": "tools/shift_world.py",
+  "改坏": "world_meta 逐键不挪的登记清空 —— rating_window 又跟着平移挪,跨月守卫回到永远为真(11-03 ④ 那个形状)",
+  "file": [
+   {
+    "path": "tools/shift_world.py",
+    "old": "    \"rating_window\": \"评价数据按哪三个月造的趋势(数据的属性,跨月时由 daily_shift 自动重造评价来更新)\",",
+    "new": ""
+   }
+  ],
+  "预期红": "平移后 rating_window 一个字都没变"
+ },
+ {
+  "script": "tools/backfill_rating.py --selftest",
+  "改坏": "造数不记这批数据按哪三个月造的 —— 跨月守卫没有依据",
+  "file": [
+   {
+    "path": "tools/backfill_rating.py",
+    "old": "    c.execute(\"INSERT OR REPLACE INTO world_meta(k, v) VALUES('rating_window',?)\", (窗口串(月目标),))",
+    "new": "    pass"
+   }
+  ],
+  "预期红": "记下了这批数据按哪三个月造的"
+ },
+ {
+  "script": "backend/call_flow_check.py",
+  "改坏": "转完接着走不看「已经走过」—— 工人重启重跑同一通,管理后台就会多一条录音跟进",
+  "file": [
+   {
+    "path": "backend/server.py",
+    "old": "    if not r or not r[0][\"then_flow\"] or r[0][\"then_result\"]:",
+    "new": "    if not r or not r[0][\"then_flow\"]:"
+   }
+  ],
+  "预期红": "走过一次再来(工人重启重跑同一通)→ 不再发第二条"
  }
 ]

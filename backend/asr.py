@@ -177,7 +177,12 @@ def _补列(c):
     for 列, 型 in (("channel", "TEXT"),        # 沟通方式:电话 / 上门 / 到店(业务 D7)
                    ("status", "TEXT"),         # 排队 / 转写中 / 完成 / 失败;NULL = 不经过流水线(造的逐字稿)
                    ("fail_reason", "TEXT"),
-                   ("uploaded_by", "TEXT")):
+                   ("uploaded_by", "TEXT"),
+                   # 11-03 用户拍「聊天里传录音 → 自动走录音跟进」:传的那一刻记下要接着走什么,
+                   # 转写完成后由转写工人发起;结果(运行号 / 为什么没发起)落 then_result ——
+                   # 「没发起」和「还没轮到」在页面上长得一样,所以必须落库
+                   ("then_flow", "TEXT"),
+                   ("then_result", "TEXT")):
         if 列 not in 有:
             c.execute(f"ALTER TABLE call_audio ADD COLUMN {列} {型}")
     有 = {r[1] for r in c.execute("PRAGMA table_info(call_transcript)")}

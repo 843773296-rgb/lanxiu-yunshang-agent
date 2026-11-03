@@ -49,7 +49,7 @@ def ck(名, ok, n, 说明=""):
     global 坏
     if n == 0:
         print(f"  {R}❌{D} {名} —— **没扫到东西**,不是通过"); 坏 += 1; return
-    print(f"  {G + '✅' + D if ok else R + '❌' + D} {名}(验了 {n} 个){'' if ok else '  ' + 说明}")
+    print(f"  {G + '✅' + D if ok else R + '❌' + D} {名}(验了 {n} 个){'' if ok else '  ' + str(说明)}")
     坏 += 0 if ok else 1
 
 
@@ -253,6 +253,76 @@ def main():
            bool(行) and (行[0]["consent_basis"] or "").startswith(("条款接受:", "默认同意:")), 1, str(行))
         详 = server.customer_detail(客户[0])
         ck("客户详情里看得到这通录音", any(x["id"] == out.get("id") for x in 详.get("calls") or []), 1)
+
+        # ── 聊天里传录音 → 转完自动走录音跟进(用户 2026-11-03 提、拍「自动走录音跟进」)──
+        print("\n\033[1m▸ 聊天里传录音:挂任务、转完接着发起录音跟进、结果落库\033[0m")
+        k = sqlite3.connect(db)
+        任 = k.execute("SELECT id FROM schedule WHERE customer_id=? LIMIT 1", (客户[0],)).fetchone()
+        别任 = k.execute("SELECT id FROM schedule WHERE customer_id IS NOT NULL AND customer_id<>? LIMIT 1",
+                         (客户[0],)).fetchone()
+        k.close()
+        ck("夹具:这位客户有一条任务、别的客户也有一条", bool(任 and 别任), 1, (任, 别任))
+        基 = dict(customer_id=客户[0], channel="电话", data=数, filename="x.m4a")
+        out, code = server.call_upload(本店员, dict(基, then="随便什么"), 入队=False)
+        ck("传完要接着走的不认识 → 拒(400),不收", code == 400, 1, str(out))
+        out, code = server.call_upload(本店员, dict(基, then="录音跟进", task_id="没有这条"), 入队=False)
+        ck("挂的任务不存在 → 拒(404)", code == 404, 1, str(out))
+        if 别任:
+            out, code = server.call_upload(本店员, dict(基, then="录音跟进", task_id=别任[0]), 入队=False)
+            ck("挂到别的客户的任务上 → 拒(录音会成了别人那条任务的记录)", code == 400, 1, str(out))
+        out, code = server.call_upload(本店员, dict(基, then="录音跟进", task_id=任[0] if 任 else None), 入队=False)
+        aid = out.get("id")
+        行 = server.rows("SELECT then_flow, ref_kind, ref_id, then_result FROM call_audio WHERE id=?", aid)
+        ck("收下时记下「转完接着走录音跟进」、挂在那条任务上,还没发起",
+           code == 200 and 行 and 行[0]["then_flow"] == "录音跟进" and 行[0]["then_result"] is None
+           and (not 任 or (行[0]["ref_kind"] == "schedule" and 行[0]["ref_id"] == 任[0])), 1, f"{out} {行}")
+
+        import json as _j
+        def 结果(a):
+            v = server.rows("SELECT then_result FROM call_audio WHERE id=?", a)[0]["then_result"]
+            return _j.loads(v) if v else None
+        调过 = []
+        def 假发起(技能, 工号, 输入, 键):
+            调过.append((技能, 工号, 输入, 键)); return True, {"运行号": "xr_假", "工作流": "录音跟进", "说明": "已排队"}
+        server.录音接着走(aid, 发起=假发起, 接管中=lambda sk: None)
+        r = 结果(aid)
+        ck("管理后台没开接管 → 不发起,而且**落库说清为什么**(「没发起」和「还没轮到」不能长得一样)",
+           r and r["发起了"] is False and "没开接管" in r["为什么"] and not 调过, 1, r)
+        with server._conn() as cc:
+            cc.execute("UPDATE call_audio SET then_result=NULL WHERE id=?", (aid,))
+        server.录音接着走(aid, 发起=假发起, 接管中=lambda sk: {"workflow_id": "wf"})
+        r = 结果(aid)
+        ck("开了接管 → 以**上传的那个人**发起 call-notes,输入是这通录音和这位客户",
+           r and r["发起了"] is True and r["运行号"] == "xr_假" and len(调过) == 1
+           and 调过[0][:3] == ("call-notes", "T1", {"call_id": aid, "customer_id": 客户[0]}), 1, (r, 调过))
+        server.录音接着走(aid, 发起=假发起, 接管中=lambda sk: {"workflow_id": "wf"})
+        ck("走过一次再来(工人重启重跑同一通)→ 不再发第二条", len(调过) == 1, 1, 调过)
+        out2, _ = server.call_upload(本店员, dict(基, then="录音跟进"), 入队=False)
+        def 炸(*a): raise RuntimeError("管理后台连不上")
+        server.录音接着走(out2["id"], 发起=炸, 接管中=lambda sk: {"workflow_id": "wf"})
+        r = 结果(out2["id"])
+        ck("发起时出错 → 落「没发起」+ 原因,不吞掉", r and r["发起了"] is False and "连不上" in r["为什么"], 1, r)
+        out3, _ = server.call_upload(本店员, dict(基), 入队=False)
+        server.录音接着走(out3["id"], 发起=假发起, 接管中=lambda sk: {"workflow_id": "wf"})
+        ck("没要求接着走的(后台客户页传的)→ 什么都不发", 结果(out3["id"]) is None and len(调过) == 1, 1)
+
+        d, code = server.call_status(本店员, aid)
+        ck("问进度:看得到转写状态和「接着走」的结果", code == 200 and d["接着走结果"]["运行号"] == "xr_假", 1, d)
+        d, code = server.call_status(dict(本店员, shop="别的店"), aid)
+        ck("问进度:别店的人看不到", code == 403, 1, d)
+        d, code = server.call_status(None, aid)
+        ck("问进度:没登录 → 401", code == 401, 1, d)
+
+        import api
+        api.DB = db
+        with api.as_user(dict(本店员)):
+            卡 = api.offer_call_upload(客户[0], 任[0] if 任 else None)
+            外 = api.offer_call_upload(外店[0])
+            无 = api.offer_call_upload("C-没有这人")
+        ck("聊天工具:本店客户 → 给卡片(客户、任务、三种沟通方式、接着走录音跟进),本身不写",
+           (卡.get("卡片") or {}).get("类型") == "录音上传" and 卡["卡片"]["接着走"] == "录音跟进"
+           and 卡["卡片"]["沟通方式"] == list(server.沟通方式), 1, 卡)
+        ck("聊天工具:外店客户 / 不存在的客户 → 不给按钮,说清为什么", 外.get("error") and 无.get("error"), 1, (外, 无))
     finally:
         asr.规整 = 真规整
 

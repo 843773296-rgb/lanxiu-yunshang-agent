@@ -56,6 +56,7 @@
         "reassign_task", "finish_task", "check_write", "monthly_review",
         "start_workflow",   # 发起被接管的工作流(10-24):派活的一种,归任务
         "workflow_replies", # 查那条工作流说了什么、跑到哪了(10-27):和发起配对,归同一处
+        "offer_call_upload", # 聊天里出「上传录音」按钮(11-03):传完自动发起录音跟进,和发起同一处
     ),
     "analytics": (   # 经营分析与报告:统一口径的统计、报告取数 / 保存 / 确认
         "store_report", "save_report", "confirm_report", "list_reports",

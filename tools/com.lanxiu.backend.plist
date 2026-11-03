@@ -23,6 +23,11 @@
   <dict>
     <key>PATH</key><string>/Library/Frameworks/Python.framework/Versions/3.14/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     <key>PYTHONUNBUFFERED</key><string>1</string>
+    <!-- 2026-11-03:聊天里传的录音转完,由这个进程的转写工人去管理后台发起「录音跟进」(用户拍「自动走录音跟进」)。
+         和聊天站(com.lanxiu.agentsite)同三项;没配的话转完会落「没配管理后台地址」,不会静默 -->
+    <key>LANXIU_USAGE_URL</key><string>http://127.0.0.1:8801</string>
+    <key>LANXIU_BRIDGE_PROJECT</key><string>project_lanxiu</string>
+    <key>LANXIU_USAGE_USER</key><string>U001</string>
   </dict>
 </dict>
 </plist>

@@ -299,6 +299,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 .apvcard .bt a,.apvcard .bt button{font:inherit;font-size:12.5px;padding:4px 12px;border-radius:7px;cursor:pointer;
   border:1px solid var(--accent);text-decoration:none}
 .apvcard .bt a{color:var(--accent);background:#fff}.apvcard .bt button{color:#fff;background:var(--accent)}
+.callcard select,.callcard input[type=file]{font:inherit;font-size:12.5px;max-width:100%}
+.callcard .st.ok{background:#f6ffed;color:#389e0d}.callcard .st.bad{background:#fff1f0;color:#cf1322}
 .apvact{margin-top:10px}.apvact textarea{width:100%;box-sizing:border-box;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px}
 .apvact .row{display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap}
 .apvact button{font:inherit;font-size:13px;padding:5px 14px;border-radius:7px;cursor:pointer;border:1px solid var(--line);background:#fff}
@@ -873,6 +875,94 @@ function apvCard(t){
       <button data-apvopen="${esc(k["单号"])}">查看详情</button></div></div>`;
 }
 
+/* ── 录音上传卡(用户 2026-11-03 提、拍「传完自动走录音跟进」)──────────────────
+   ⚠️ 卡片来自 `offer_call_upload` 的**真返回值**(t.result.卡片);模型说「请上传」不会出按钮。
+   ⚠️ 上传走 /api/call-upload,本店 / 大小 / 时长都由后台按登录身份再判;转完由后台的转写工人去发起录音跟进 ——
+      **关掉页面也照样走**,这张卡只是看进度。
+   ⚠️ 状态存在 录音卡态 里、按「第几条消息 · 第几次调用」记:每次重绘 innerHTML 都会把卡片冲成初始样子,
+      而「传过了」和「还没传」在屏幕上不能长得一样。 */
+const 录音工具 = "offer_call_upload";
+const 录音卡态 = {};
+
+function callCard(t, key, m, j){
+  const r = t && t.result;
+  if(!r || typeof r !== "object") return "";
+  if(r.error) return `<div class="apvcard callcard"><div class="h"><b>上传录音没出来</b></div><div class="ln">${esc(r.error)}</div></div>`;
+  const k = r["卡片"];
+  if(!k || k["类型"] !== "录音上传") return "";
+  // 传过的录音号记在**消息上**(随会话存盘):刷新页面后不该又冒出一个上传按钮,让人把同一通再传一遍
+  const 存 = (m && m.录音 || {})[j];
+  if(存 && !(录音卡态[key] || {}).aid){ 录音卡态[key] = {aid: 存, 标: "在查进度"}; setTimeout(() => 看录音进度(key, 存), 0); }
+  const 态 = 录音卡态[key] || {};
+  const 头 = `<div class="h"><b>上传录音 · ${esc(k["姓名"]||"")}(${esc(k["客户号"])})</b>
+    <span class="st ${态.色||""}" id="cst-${esc(key)}">${esc(态.标||"待上传")}</span></div>`;
+  const 任 = k["任务号"] ? `<br>挂在任务 ${esc(k["任务号"])} 上` : "";
+  if(态.aid)
+    return `<div class="apvcard callcard">${头}<div class="ln">录音 ${esc(态.aid)}${任}<br>
+      <span id="cln-${esc(key)}">${esc(态.话||"")}</span></div></div>`;
+  return `<div class="apvcard callcard">${头}
+    <div class="ln">传完会先转成文字,再自动走「录音跟进」:判客户有没有意向、整理需求、起草跟进 ——
+      <b>要人核对通过才写进系统</b>。${任}</div>
+    <div class="bt"><input type="file" id="cf-${esc(key)}" accept="audio/*,.wav,.m4a,.mp3,.aac">
+      <select id="cch-${esc(key)}">${(k["沟通方式"]||[]).map(x => `<option>${esc(x)}</option>`).join("")}</select>
+      <button data-callup="${esc(key)}" data-j="${j}" data-mi="${esc(key.split("-")[1])}" data-cid="${esc(k["客户号"])}" data-tid="${esc(k["任务号"]||"")}">上传</button></div>
+    <div class="ln" id="cln-${esc(key)}">${esc(态.话||"")}</div></div>`;
+}
+
+function 录音卡改(key, 改){
+  Object.assign(录音卡态[key] = 录音卡态[key] || {}, 改);
+  const st = document.getElementById("cst-" + key), ln = document.getElementById("cln-" + key);
+  if(st){ st.textContent = 录音卡态[key].标 || ""; st.className = "st " + (录音卡态[key].色 || ""); }
+  if(ln) ln.textContent = 录音卡态[key].话 || "";
+}
+
+async function 传录音(b){
+  const key = b.dataset.callup, f = (document.getElementById("cf-" + key) || {}).files;
+  const ch = (document.getElementById("cch-" + key) || {}).value;
+  if(!f || !f[0]){ 录音卡改(key, {话: "先选一个录音文件"}); return; }
+  // 先在页面上挡一下太大的(后台上限 60MB,真正的闸在后台):不挡的话要等几十秒传完才被拒
+  if(f[0].size > 60 * 1024 * 1024){ 录音卡改(key, {标: "没传上", 色: "bad", 话: "文件超过 60MB —— 是不是传错了文件?"}); return; }
+  b.disabled = true;
+  录音卡改(key, {标: "在上传", 色: "", 话: "在上传 " + f[0].name + "…"});
+  let data;
+  try{
+    data = await new Promise((ok, no) => { const rd = new FileReader();
+      rd.onload = () => ok(String(rd.result).split(",")[1] || ""); rd.onerror = () => no(rd.error); rd.readAsDataURL(f[0]); });
+  }catch(e){ b.disabled = false; 录音卡改(key, {标: "没传上", 色: "bad", 话: "文件读不出来:" + e}); return; }
+  let r;
+  try{
+    const resp = await fetch("/api/call-upload", {method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({customer_id: b.dataset.cid, task_id: b.dataset.tid || null, channel: ch,
+                            filename: f[0].name, data, then: "录音跟进"})});
+    r = await resp.json();
+  }catch(e){ r = {error: "没传上:" + e + "(这是网络问题,录音没存)"}; }
+  if(!r || !r.ok){ b.disabled = false; 录音卡改(key, {标: "没传上", 色: "bad", 话: (r && r.error) || "没传上"}); return; }
+  录音卡改(key, {aid: r.id, 标: "在转文字", 色: "", 话: r["说明"] || "已排队转写"});
+  const 消息 = (cur() || {msgs: []}).msgs[+b.dataset.mi];
+  if(消息){ 消息.录音 = Object.assign(消息.录音 || {}, {[b.dataset.j]: r.id}); save(); }
+  draw();                                   // 换成「已传」的样子:不再给上传按钮
+  看录音进度(key, r.id);
+}
+
+async function 看录音进度(key, aid, 次 = 0){
+  let d;
+  try{ d = await (await fetch("/api/call-status/" + encodeURIComponent(aid))).json(); }
+  catch(e){ d = null; }
+  if(d && d.status === "失败"){ 录音卡改(key, {标: "转写失败", 色: "bad", 话: d.fail_reason || "转写失败"}); return; }
+  const 后 = d && d["接着走结果"];
+  if(d && d.status === "完成" && 后){
+    if(后["发起了"]) 录音卡改(key, {标: "已发起录音跟进", 色: "ok",
+      话: `运行 ${后["运行号"]||""}:${后["说明"]||"要人核对通过才写进系统"}(问「录音跟进怎么样了」可以查进度)`});
+    else 录音卡改(key, {标: "录音跟进没发起", 色: "bad", 话: 后["为什么"] || ""});
+    return;
+  }
+  if(次 > 120){ 录音卡改(key, {话: "还在转(录音长的要几分钟)—— 关掉页面也会照样走完,稍后再问进度"}); return; }
+  if(d && d.status === "完成") 录音卡改(key, {标: "在发起录音跟进", 话: "文字转好了,在发起录音跟进…"});
+  else if(d && d.error) 录音卡改(key, {话: "看不到进度:" + d.error + "(录音已经存了)"});
+  else 录音卡改(key, {标: "在转文字", 话: "在转文字(一次只转一通,录音长的要几分钟)"});
+  setTimeout(() => 看录音进度(key, aid, 次 + 1), 5000);
+}
+
 async function openApproval(aid){
   const ov = $("#od"), bx = $("#odp");
   ov.classList.add("on");
@@ -1129,7 +1219,9 @@ function drawStream(){
       .map(ordCards).join("")
       + (m.trajectory || [])
       .filter(t => String(t.tool || "").split("__").pop() === 审批工具)
-      .map(apvCard).join("");
+      .map(apvCard).join("")
+      + (m.trajectory || [])
+      .map((t, j) => String(t.tool || "").split("__").pop() === 录音工具 ? callCard(t, c.id + "-" + i + "-" + j, m, j) : "").join("");
     return `<div class="msg a"><div class="wrap">
       ${(m.trajectory || []).map(toolChip).join("")}
       ${卡}
@@ -1145,6 +1237,9 @@ function drawStream(){
   });
   s.querySelectorAll("[data-apvopen]").forEach(b => {
     b.onclick = () => openApproval(b.dataset.apvopen);
+  });
+  s.querySelectorAll("[data-callup]").forEach(b => {
+    b.onclick = () => 传录音(b);
   });
   // 每条回答各自的「执行记录」(证据中心 10-25)—— 同样每次重绘重绑
   s.querySelectorAll(".evlink").forEach(b => {

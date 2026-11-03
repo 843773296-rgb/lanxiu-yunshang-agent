@@ -915,13 +915,18 @@ def _代理环境():
 # 10-27 加 workflow_replies:工作流里「直接回复」说的话,发起时等不到的,用户追问时用它取(只读,和发起配对挂)
 TAKEOVER_TOOLS = ["mcp__work__start_workflow", "mcp__work__workflow_replies"]
 
+# 聊天里的「上传录音」按钮(用户 11-03 提、拍「传完自动走录音跟进」)。只给**面对客户**的入口:
+# 顾问(kb)、任务助手(task)、全能(all)。工坊 / 财务 / 版师 / 售后不跟客户通话,不挂 —— 多给的工具它会去用
+CALL_UPLOAD_TOOLS = ["mcp__work__offer_call_upload"]
+
 _ROLE_TOOLS = {
     # 全能助手:所有工具一次给全。**分装的机制没删**,只是默认入口先合起来。
     "all":      lambda: sorted(set(KB_TOOLS + KB_ONLY_TOOLS + WORKSHOP_TOOLS
-                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS)),
-    "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS,
+                                   + TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS
+                                   + CALL_UPLOAD_TOOLS)),
+    "kb":       lambda: KB_TOOLS + KB_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS + CALL_UPLOAD_TOOLS,
     "workshop": lambda: WORKSHOP_TOOLS + TAKEOVER_TOOLS,           # 工坊不看订单流水,只看产能和工单
-    "task":     lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS,
+    "task":     lambda: TASK_TOOLS + TASK_ONLY_TOOLS + SHOP_TOOLS + TAKEOVER_TOOLS + CALL_UPLOAD_TOOLS,
     # 财务只对账,**不看量体/版型/产能** —— 给多余的工具它就会去用。
     "finance":  lambda: FINANCE_TOOLS + TAKEOVER_TOOLS,
     "pattern":  lambda: PATTERN_TOOLS + TAKEOVER_TOOLS,

@@ -739,6 +739,33 @@ def start_workflow(skill, inputs=None):
     return 回
 
 
+def offer_call_upload(customer_id, task_id=None):
+    """**在聊天里给导购一个「上传录音」按钮**(用户 2026-11-03 提、拍「传完自动走录音跟进」)。
+
+    本身**不写任何东西**:只核客户在不在、是不是本店的,把卡片要的几样交给页面。
+    真上传走 /api/call-upload(服务端按登录身份再判一次本店、大小、时长);转写完成后由转写工人
+    按上传时带的 then=录音跟进 去管理后台发起,跟进要人核对通过才写进系统。"""
+    try: me = _need_me()
+    except _NoIdentity: return dict(error="不知道现在是谁在传 —— 请先登录")
+    cid = (customer_id or "").strip()
+    if not cid: return dict(error="要先知道是哪位客户(客户号);只知道姓名就先用 get_customer 认出客户号")
+    r = _rows("SELECT id, name, shop FROM customer WHERE id=?", cid)
+    if not r: return dict(error=f"没有客户 {cid} —— 只知道姓名的话先用 get_customer 认出客户号")
+    r = r[0]
+    if me.get("role") != "总部运营" and me.get("shop") != r["shop"]:
+        return dict(error="只能给本店客户传录音")
+    tid = (task_id or "").strip() or None
+    if tid:
+        t = _rows("SELECT id, customer_id FROM schedule WHERE id=?", tid)
+        if not t: return dict(error=f"没有任务 {tid}")
+        if t[0]["customer_id"] and t[0]["customer_id"] != cid:
+            return dict(error=f"任务 {tid} 不是客户 {cid} 的")
+    return dict(卡片={"类型": "录音上传", "客户号": cid, "姓名": r["name"], "任务号": tid,
+                     "沟通方式": ["电话", "上门", "到店"], "接着走": "录音跟进"},
+                说明="页面上已经出了「上传录音」按钮。告诉导购:选好录音文件和沟通方式点上传;"
+                     "转完文字会自动走录音跟进,整理出的跟进要人核对通过才写进系统。**别说成已经传了、已经写了**。")
+
+
 def workflow_replies(run_id):
     """**查一条从聊天发起的工作流现在说了什么、跑到哪了**(用户 2026-10-27 拍「发起时等一会儿 + 可追问」)。
 
@@ -7005,6 +7032,11 @@ SHOP_SCHEMAS=[
   "input_schema":{"type":"object","properties":{
     "run_id":{"type":"string","description":"运行号,照抄 start_workflow 回的(如 xr_7bb01e3c29f0)"}},
    "required":["run_id"]}},
+ {"name":"offer_call_upload","description":"**在聊天里给导购出一个「上传录音」按钮**(本身不写任何东西)。导购要提交跟进 / 回访记录、完成一条回访任务、说「刚跟客户打完电话 / 上门 / 到店聊完」时用 —— **别让他把录音内容打字复述**,让他直接传录音。要先知道客户号(只有姓名就先 get_customer);是在完成某条任务时就把任务号也带上。返回后照「说明」告诉导购:选文件和沟通方式点上传,转完文字会自动走录音跟进,整理出的跟进要人核对通过才写进系统;**别说成已经传了、已经写了**。",
+  "input_schema":{"type":"object","properties":{
+    "customer_id":{"type":"string","description":"客户号,如 C10009"},
+    "task_id":{"type":"string","description":"在完成哪条任务时传的(可不填),照抄任务号"}},
+   "required":["customer_id"]}},
  {"name":"get_scheme","description":"查方案。**方案是「一件事」的单位** —— 客户这次想做的这件衣服(形制/面料/工艺/颜色/配饰/版型都挂在它上面),有自己的生命周期:草稿 → 已保存 → 已锁定 → 已失效。三种问法:给 scheme_id 返回单条明细(并附上该客户的其他方案);给 customer(客户号或姓名)列这个客户的全部方案;给 status 按状态筛。⚠️ **同一个客户并行多条方案是常态** —— 客户或顾问说「那个方案」「刚才那套」时,**先调这个工具看清楚有几条,不要默认只有一条就往下推进**。推进(报价、下单、排产)之前必须确认说的是哪一个方案号。",
   "input_schema":{"type":"object","properties":{
     "scheme_id":{"type":"string","description":"方案号,形如 SC2601"},
@@ -8181,7 +8213,7 @@ TOOLS.update({"bad_ratings":bad_ratings,"rating_overview":rating_overview,
               "get_member_priority":get_member_priority,
               "check_write":check_write,
               "my_tasks":my_tasks,"task_types":task_types,"dispatch_pool":dispatch_pool,
-              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,"start_workflow":start_workflow,"workflow_replies":workflow_replies,
+              "team_tasks":team_tasks,"monthly_review":monthly_review,"member_level":member_level,"points_ledger":points_ledger,"approval_queue":approval_queue,"activity_roi":activity_roi,"can_order":can_order,"my_workorders":my_workorders,"piece_ratios":piece_ratios,"set_piece_ratio":set_piece_ratio,"set_grade_diff":set_grade_diff,"pattern_queue":_pattern_queue,"recovery_queue":recovery_queue,"stock_alert":stock_alert,"fitting_queue":fitting_queue,"factory_chase":factory_chase,"orders_by_date":orders_by_date,"sales_rank":sales_rank,"weekly_revenue":weekly_revenue,"store_report":store_report,"summarize_products":summarize_products,"save_report":save_report,"confirm_report":confirm_report,"list_reports":list_reports,"report_production":report_production,"order_log":order_log,"cancel_fee":cancel_fee,"delay_pending":delay_pending,"mark_delay_told":mark_delay_told,"rollback_order":rollback_order,"close_bad_rating":close_bad_rating,"service_records":service_records,"record_fitting":record_fitting,"record_measure":record_measure,"open_order":open_order,"confirm_order":confirm_order,"record_pickup":record_pickup,"verify_fit_code":verify_fit_code,"ratify_complete":ratify_complete,"create_repair":create_repair,"decide_repair":decide_repair,"advance_repair":advance_repair,"verify_repair_return":verify_repair_return,"start_cutting":start_cutting,"channel_compare":channel_compare,"product_ranking":product_ranking,"wear_risk":wear_risk,"grading_audit":grading_audit,"apply_adjust":apply_adjust,"decide_approval":decide_approval,"appt_funnel":appt_funnel,"week_grid":week_grid,"assign_batch":assign_batch,"dispatch_batch":dispatch_batch,"get_task":get_task,"assign_task":assign_task,"dispatch_task":dispatch_task,"reassign_task":reassign_task,"finish_task":finish_task,"start_workflow":start_workflow,"workflow_replies":workflow_replies,"offer_call_upload":offer_call_upload,
               "get_review_queue":get_review_queue,
               "ownerless_list":ownerless_list,
               "call_opportunity":call_opportunity,

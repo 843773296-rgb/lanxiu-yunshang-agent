@@ -3050,9 +3050,11 @@ def _转写工人():
         while True:
             aid = _转写队列.get()
             try:
-                asr.处理(aid)
+                ok, _ = asr.处理(aid)
+                if ok:
+                    录音接着走(aid)
             except Exception:
-                pass          # 处理() 自己会把失败落库;这里只保证工人不死
+                pass          # 处理() / 录音接着走() 自己会把失败落库;这里只保证工人不死
     threading.Thread(target=干, daemon=True).start()
     # 上次进程退出时还在「排队 / 转写中」的 —— 不重排的话它们会永远停在那儿,看着像还在转
     for r in rows("SELECT id FROM call_audio WHERE status IN ('排队','转写中') ORDER BY created"):
@@ -3075,6 +3077,17 @@ def call_upload(me, body, 入队=True):
         return {"error": "只能给本店客户上传录音", "code": "NOT_YOUR_SHOP"}, 403
     if 方式 not in 沟通方式:
         return {"error": f"沟通方式要选 {' / '.join(沟通方式)} 之一(没接通的电话不算沟通,不收录音)"}, 400
+    接着 = body.get("then") or None
+    if 接着 not in (None,) + tuple(录音后续):
+        return {"error": f"传完之后只能接着走 {' / '.join(录音后续)}"}, 400
+    任务号 = (body.get("task_id") or "").strip() or None
+    if 任务号:
+        # 挂到哪条任务上:任务要在,而且是这个客户的(挂错了,这通录音就成了别人那条任务的记录)
+        任 = rows("SELECT customer_id FROM schedule WHERE id=?", 任务号)
+        if not 任:
+            return {"error": f"没有任务 {任务号}"}, 404
+        if 任[0]["customer_id"] and 任[0]["customer_id"] != cid:
+            return {"error": f"任务 {任务号} 不是客户 {cid} 的,录音不能挂上去"}, 400
     try:
         数据 = base64.b64decode(body.get("data") or "", validate=True)
     except Exception:
@@ -3106,12 +3119,80 @@ def call_upload(me, body, 入队=True):
         # 同意依据**上传那一刻定下来**(业务 D9:不能撤回、默认同意 —— 不拦,只记依据是哪一种)
         依据 = terms_store.依据(c, cid)
         c.execute("INSERT INTO call_audio(id, customer_id, ref_kind, ref_id, path, seconds, source, created,"
-                  " channel, status, uploaded_by, consent_basis) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                  (aid, cid, None, None, wav, round(秒, 1), "真实录音", _now(), 方式, "排队", me.get("no"), 依据))
+                  " channel, status, uploaded_by, consent_basis, then_flow) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (aid, cid, "schedule" if 任务号 else None, 任务号, wav, round(秒, 1), "真实录音", _now(), 方式,
+                   "排队", me.get("no"), 依据, 接着))
     if 入队:
         _转写工人().put(aid)
     return {"ok": True, "id": aid, "seconds": round(秒, 1), "status": "排队", "同意依据": 依据,
-            "说明": "已排队转写。一次只转一通,几分钟后刷新这一页看结果。"}, 200
+            "接着走": 接着,
+            "说明": "已排队转写。一次只转一通,几分钟后刷新这一页看结果。"
+                    + (f"转完会自动发起「{接着}」,整理出的跟进要人核对通过才写进系统。" if 接着 else "")}, 200
+
+
+# 传录音时可以要求「转完接着走什么」→ 管理后台里接管它的技能(用户 11-03 拍「聊天里传录音 → 自动走录音跟进」)
+录音后续 = {"录音跟进": "call-notes"}
+
+
+def 录音接着走(aid, 发起=None, 接管中=None):
+    """转写完成后,按上传时记下的 then_flow 去管理后台发起那条工作流;**结果一定落 then_result**。
+
+    发起人是**上传录音的那个人**(不是系统):管理后台按他的工号再判一次权限和绑定,这里不判第二份。
+    幂等键只由录音编号定 —— 工人重启后重跑同一通,拿回的还是同一条运行,不会排出第二条。
+    `发起` / `接管中` 可注入(检查里用假的,不打管理后台)。"""
+    import json as _j, uuid, hashlib, takeover_client as _tc
+    没配 = 发起 is None and not _tc.配置()     # 真打管理后台时才查配置;检查里注入假的就不查
+    发起 = 发起 or _tc.发起
+    接管中 = 接管中 or _tc.接管中
+    r = rows("SELECT customer_id, uploaded_by, then_flow, then_result FROM call_audio WHERE id=?", aid)
+    if not r or not r[0]["then_flow"] or r[0]["then_result"]:
+        return None                       # 没要求接着走,或者已经走过(重跑不再发)
+    r = r[0]
+    技能 = 录音后续.get(r["then_flow"])
+    def 记(d):
+        with _conn() as c:
+            c.execute("UPDATE call_audio SET then_result=? WHERE id=?", (_j.dumps(d, ensure_ascii=False), aid))
+        return d
+    if not 技能:
+        return 记({"发起了": False, "为什么": f"不认识要接着走的「{r['then_flow']}」"})
+    if 没配:
+        # 不查这一句的话,没配地址时清单拉不到 → 会落成「没开接管」—— 一个配置错和一个业务开关,长得一模一样
+        return 记({"发起了": False, "为什么": "后台服务没配管理后台地址(LANXIU_USAGE_URL 等三项),发起不了 —— "
+                                             "这是配置问题,不是没开接管;录音和文字稿已经存好"})
+    try:
+        if not 接管中(技能):
+            return 记({"发起了": False, "为什么": f"管理后台还没把「{r['then_flow']}」交给工作流(没开接管),"
+                                                 "录音和文字稿已经存好,可以在聊天里说「整理一下这通电话」"})
+        键 = str(uuid.UUID(hashlib.sha256(f"录音接着走:{aid}".encode()).hexdigest()[:32]))
+        ok, 回 = 发起(技能, r["uploaded_by"], {"call_id": aid, "customer_id": r["customer_id"]}, 键)
+    except Exception as e:
+        return 记({"发起了": False, "为什么": f"发起时出错:{type(e).__name__}: {e}"[:300]})
+    if ok:
+        return 记({"发起了": True, "运行号": 回.get("运行号"), "工作流": 回.get("工作流"),
+                   "核对入口": 回.get("核对入口"), "说明": 回.get("说明")})
+    return 记({"发起了": False, "为什么": 回.get("error") or "管理后台没接这一单"})
+
+
+def call_status(me, aid):
+    """聊天里那张录音卡片问进度用:转到哪了、转完接着走的那条工作流发起了没有。只看得到本店客户的。"""
+    import json as _j, asr
+    if not me:
+        return {"error": "请先登录", "code": "NO_AUTH"}, 401
+    with _conn() as c:
+        asr.建表(c)
+    r = rows("SELECT a.id, a.status, a.fail_reason, a.seconds, a.then_flow, a.then_result, a.customer_id, cu.shop"
+             " FROM call_audio a JOIN customer cu ON cu.id=a.customer_id WHERE a.id=?", aid)
+    if not r:
+        return {"error": f"没有录音 {aid}"}, 404
+    r = r[0]
+    if me.get("role") != "总部运营" and me.get("shop") != r["shop"]:
+        return {"error": "只能看本店客户的录音", "code": "NOT_YOUR_SHOP"}, 403
+    try:
+        后 = _j.loads(r["then_result"]) if r["then_result"] else None
+    except ValueError:
+        后 = {"发起了": False, "为什么": r["then_result"]}
+    return {"id": r["id"], "status": r["status"], "fail_reason": r["fail_reason"], "seconds": r["seconds"],
+            "客户": r["customer_id"], "接着走": r["then_flow"], "接着走结果": 后}, 200
 
 
 def call_fix(me, body):
@@ -3681,6 +3762,9 @@ class H(BaseHTTPRequestHandler):
         if p=="/api/approvals": return self._send(approvals(_me(self)))
         if p.startswith("/api/approval/"):
             return self._send(approval_detail(unquote(p.split("/api/approval/")[1]),_me(self)))
+        if p.startswith("/api/call-status/"):
+            out, code = call_status(_me(self), unquote(p.split("/api/call-status/")[1]))
+            return self._send(out, code)
         if p=="/api/approval-list": return self._send(approval_list(Q))
         if p=="/api/aftersales": return self._send(aftersale_list(Q))
         if p=="/api/maintains": return self._send(maintain_list(Q))
