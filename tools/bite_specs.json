@@ -14284,5 +14284,17 @@
    }
   ],
   "预期红": "判据自检:一个拿裸名连库的函数都没扫到"
+ },
+ {
+  "script": "agentsite/takeover_check.py",
+  "改坏": "_curl 不再统一转码 —— 取回复的中文参数名原样发出,管理后台回 400(11-03 真跑撞到的)",
+  "file": [
+   {
+    "path": "backend/takeover_client.py",
+    "old": "    url = _q(url, safe=\":/?&=%#+,;@!$'()*[]~\")",
+    "new": "    pass"
+   }
+  ],
+  "预期红": "取回复:真走到 _curl 拼出来的地址是纯 ASCII"
  }
 ]

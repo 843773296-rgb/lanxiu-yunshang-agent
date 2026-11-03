@@ -36,6 +36,12 @@ def 配置():
 def _curl(方法, 路径, cfg, 体=None, 幂等键=None):
     """走 curl 不走 urllib:这台机器 Python 的证书校验会失败(本地 http 也统一走一处)。"""
     url = f"{cfg['地址'].rstrip('/')}/api/v1/projects/{cfg['项目']}{路径}"
+    # ⚠️ 11-03 真跑撞到:取回复的查询参数名是「澜绣工号」,原样带着中文字节发出去,
+    # 管理后台(uvicorn)直接回 400「Invalid HTTP request」—— 聊天里追问「工作流怎么样了」从来没成功过,
+    # 而单测把 _curl 整个换成假的,于是一直绿。**在这一处统一转码**,不靠每个调用方记得 quote
+    # (supervise_sync 那处是手写了 %E7…,下一个调用方未必记得)。已经转过码的 %XX 原样保留。
+    from urllib.parse import quote as _q
+    url = _q(url, safe=":/?&=%#+,;@!$'()*[]~")
     cmd = ["curl", "-sS", "-m", "8", "-X", 方法, url, "-H", "Content-Type: application/json",
            "-H", f"X-Dev-User: {cfg['工号']}", "-w", "\n%{http_code}"]
     if 幂等键:

@@ -36,6 +36,9 @@ def main():
     d = tempfile.mkdtemp(prefix="skill-stats-")
     SS.LOG = os.path.join(d, "skill_usage.jsonl")
     第三方 = "multi-platform-inventory-warning"
+    # 接管开关是**管理后台的现场状态**:11-03 用户批准打开 call-notes 接管之后,这里的 call-notes 被执行闸拦下、
+    # 不再算「用了」,这条检查就红了 —— 而它要验的是统计逻辑,不是哪个开关开着。夹具里固定成「一个都没接管」
+    guards.接管查询 = lambda sk: None
     ck("前提:执行闸放行自有、拦第三方", guards.pre_tool_verdict("Skill", {"skill": "quote"}) is None
        and bool(guards.pre_tool_verdict("Skill", {"skill": 第三方})))
 

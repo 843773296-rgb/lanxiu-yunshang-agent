@@ -96,6 +96,24 @@ def main():
             if v is None: os.environ.pop(k, None)
             else: os.environ[k] = v
 
+    print("\n▸ ②¼ 发出去的地址必须是纯 ASCII(11-03 真跑:中文参数名原样发出,管理后台回 400)")
+    import subprocess as _sp
+    发了 = []
+    原跑 = tc.subprocess.run
+    旧环境2 = {k: os.environ.get(k) for k in ("LANXIU_USAGE_URL", "LANXIU_BRIDGE_PROJECT", "LANXIU_USAGE_USER")}
+    try:
+        os.environ.update(LANXIU_USAGE_URL="http://127.0.0.1:9", LANXIU_BRIDGE_PROJECT="project_x", LANXIU_USAGE_USER="U001")
+        tc.subprocess.run = lambda cmd, **kw: (发了.append(cmd), _sp.CompletedProcess(cmd, 0, "{}\n200", ""))[1]
+        tc.取回复("xr_1", "60000005")
+        地址 = next((a for a in (发了[0] if 发了 else []) if a.startswith("http")), "")
+        ck("取回复:真走到 _curl 拼出来的地址是纯 ASCII,中文参数名已转码", bool(地址) and 地址.isascii()
+           and "%E6%BE%9C%E7%BB%A3%E5%B7%A5%E5%8F%B7=60000005" in 地址, 地址)
+    finally:
+        tc.subprocess.run = 原跑
+        for k, v in 旧环境2.items():
+            if v is None: os.environ.pop(k, None)
+            else: os.environ[k] = v
+
     print("\n▸ ②½ 防重复的钥匙(10-24 真跑踩过:新建的工作流上发起,拿回上一次已取消的那条)")
     t = 1_000_000 * 60.0
     同 = tc.幂等键("60000001", "call-notes", "wf_1", {"call_id": "TS-001"}, t)
