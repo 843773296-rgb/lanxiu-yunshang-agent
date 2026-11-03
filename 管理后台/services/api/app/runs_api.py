@@ -70,7 +70,7 @@ def 脱敏(值):
 
 @router.get(前缀 + "/traces")
 def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看有权配置")),
-            limit: int = Query(30, ge=1, le=200),
+            limit: int = Query(30, ge=1, le=200), page: int = Query(1, ge=1),
             end_reason: str = Query(None), entry_kind: str = Query(None)):
     """运行记录列表。**每条要带「花了多少」和「有几步」** ——
 
@@ -78,31 +78,40 @@ def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看�
     而那正是人打开这一页要找的东西。
     """
     with 连接() as c:
+        # ⚠️ 先在 traces 自己身上挑出这一页(带总数),**再**只给这一页的几条算步数 / 花费。
+        # 原来一句里 count(*) over () + 每行四个子查询 + offset:翻到后面的页,被跳过的每一行也要先算一遍,
+        # 第 99999 页直接 60 秒超时(11-03 加翻页时测出来的)
         rs = c.execute(text("""
-            select count(*) over () 全量, t.id, t.request_id, t.session_id, t.entry_kind, t.environment, t.started_at, t.ended_at,
-                   t.end_reason, t.created_by,
+            with 页 as (
+              select count(*) over () 全量, t.id, t.request_id, t.session_id, t.entry_kind, t.environment,
+                     t.started_at, t.ended_at, t.end_reason, t.created_by, t.project_id
+                from traces t
+               where t.project_id=:p
+                 and (cast(:er as text) is null or t.end_reason = cast(:er as text))
+                 and (cast(:ek as text) is null or t.entry_kind = cast(:ek as text))
+               order by t.started_at desc nulls last, t.id desc
+               limit :n offset :o)
+            select 页.全量, 页.id, 页.request_id, 页.session_id, 页.entry_kind, 页.environment, 页.started_at,
+                   页.ended_at, 页.end_reason, 页.created_by,
                    (select count(*) from spans s
-                     where s.project_id=t.project_id and s.trace_id=t.id) 步数,
+                     where s.project_id=页.project_id and s.trace_id=页.id) 步数,
                    (select count(*) from spans s
-                     where s.project_id=t.project_id and s.trace_id=t.id
+                     where s.project_id=页.project_id and s.trace_id=页.id
                        and s.error is not null) 出错的步数,
                    (select coalesce(sum(u.quantity), 0) from usage_ledger u
-                     where u.project_id=t.project_id and u.trace_id=t.id) token数,
+                     where u.project_id=页.project_id and u.trace_id=页.id) token数,
                    (select count(*) filter (where not u.amount_known)
                       from usage_ledger u
-                     where u.project_id=t.project_id and u.trace_id=t.id) 金额未知的行数,
+                     where u.project_id=页.project_id and u.trace_id=页.id) 金额未知的行数,
                    (select coalesce(sum(u.amount) filter (where u.amount_known), 0)
                       from usage_ledger u
-                     where u.project_id=t.project_id and u.trace_id=t.id) 已知金额,
+                     where u.project_id=页.project_id and u.trace_id=页.id) 已知金额,
                    (select max(u.caller) from usage_ledger u
-                     where u.project_id=t.project_id and u.trace_id=t.id) 调用方
-              from traces t
-             where t.project_id=:p
-               and (cast(:er as text) is null or t.end_reason = cast(:er as text))
-               and (cast(:ek as text) is null or t.entry_kind = cast(:ek as text))
-             order by t.started_at desc
-             limit :n
-        """), {"p": project_id, "er": end_reason, "ek": entry_kind, "n": limit}).mappings().all()
+                     where u.project_id=页.project_id and u.trace_id=页.id) 调用方
+              from 页
+             order by 页.started_at desc nulls last, 页.id desc
+        """), {"p": project_id, "er": end_reason, "ek": entry_kind, "n": limit,
+               "o": (page - 1) * limit}).mappings().all()
     出 = []
     for r in rs:
         d = dict(r)
@@ -113,9 +122,10 @@ def 运行记录列表(project_id: str, me: 身份 = Depends(要权限("查看�
         d["参考价算不出吗"] = bool(d["金额未知的行数"])
         d["成功吗"] = (d["end_reason"] not in ("failed", "error"))
         出.append(d)
-    return {"items": 出, "next_cursor": None,
-            "total": (int(rs[0]["全量"]) if rs else 0),
-            "这一页几条": len(出),
+    # 页码分页(Dify 四页对标 DF-03 / §3.2「只取前 100 条且没有下页」,11-03):和运行列表**同一个**信封,不另写一份。
+    # 排序加 id 兜底 —— 同一秒开始的两轮,不兜底的话翻页时顺序不定,会重复或漏一条
+    from workflows_api import 分页信封
+    return {"items": 出, **分页信封(rs, page, limit),
             "note": ("**「参考价」是按标价估的,不是账单。** 计量的硬事实是 token;"
                      "算不出参考价的那些显示「—」而不是 0")}
 

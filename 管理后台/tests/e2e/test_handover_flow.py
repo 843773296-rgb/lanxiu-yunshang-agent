@@ -204,7 +204,17 @@ def main():
     条 = (体 or {}).get("items") or (体 or {}).get("运行记录") or []
     if not 条:
         print("     一条 trace 都没有 —— 先 make seed-demo"); sys.exit(1)
-    tid = 条[0].get("id")
+    # 挑一条**真有步骤内容**的(11-03:原来取 items[0],库里最新一条恰好是一次「开始 → 结束」的空流程,
+    # 没有可遮的内容,「无授权那份有形状标记」这条就红了 —— 红的是样本挑错了,不是脱敏坏了)
+    # 再进一步:步数够还不够,步骤里得**真有输入 / 输出**(别的测试导入的夹具步骤是空的,没东西可遮)
+    tid = None
+    for x in [y for y in 条 if (y.get("步数") or 0) >= 2][:15]:
+        _, 看 = 打("GET", f"{P}/traces/{x['id']}", 谁="U002")
+        if any(st.get("入_形状") or st.get("出_形状") for st in (看 or {}).get("步们") or []):
+            tid = x["id"]; break
+    if not tid:
+        print("     前 15 条带步骤的 trace 里没有一条有输入输出 —— 先 make seed-demo(**没东西可验 ≠ 验过了**)"); sys.exit(1)
+    print(f"     样本:{tid}(第一条步骤里真有输入输出、需要遮的)")
 
     码无, 无授权 = 打("GET", f"{P}/traces/{tid}", 谁="U002")     # editor:没有那条授权
     码有, 有授权 = 打("GET", f"{P}/traces/{tid}", 谁="U004")     # annotator:有

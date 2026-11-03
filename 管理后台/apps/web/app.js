@@ -623,7 +623,7 @@ async function 页_prompt详情(pid) {
 }
 
 /* ── 运行记录(占位:列表已有接口,详情页还没做)────────────────── */
-async function 页_运行记录() {
+async function 页_运行记录(页 = 1) {
   // 证据中心第四个工作包(10-25):原来是占位页。现在列**聊天站**推过来的每一轮(entry_kind=聊天站),
   // 点进去是同一个调用树页 —— 原文看不看得到由那边的字段权限管(查看敏感输入),这一页不另判
   const 头 = `<div class="crumb">运行记录</div>
@@ -631,7 +631,7 @@ async function 页_运行记录() {
       <div class="sub">${md("聊天站每一轮实际调了哪些工具、传了什么、回了什么。**原文要「查看敏感输入」授权**,没有的只看到形状。")}</div></div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
-  try { d = await 请求(`${P()}/traces?limit=100&entry_kind=${encodeURIComponent("聊天站")}`); }
+  try { d = await 请求(`${P()}/traces?limit=50&page=${页}&entry_kind=${encodeURIComponent("聊天站")}`); }
   catch (e) { const s = 错误块(e, 页_运行记录); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
   // 执行故障上报(用户 10-25 拍「换模型也没用的直接上报」「上报给平台管理员」):只有能「配置密钥与预算」的人拿得到,
   // 拿不到(403)就不显示这一块 —— 前端隐藏不是授权,接口那边照样判
@@ -685,7 +685,8 @@ async function 页_运行记录() {
             : `<span class="pill fail">${esc(t)}</span>`}</td>
         <td><button data-tr="${esc(r.id)}">看调用树</button></td>
       </tr>`; }).join("")
-    + `</tbody></table><div class="note">${md("「进行中」超过半小时没收尾的,聊天站那边会判成「中断」再推一次。")}</div>`;
+    + `</tbody></table>${页码条(d)}<div class="note">${md("「进行中」超过半小时没收尾的,聊天站那边会判成「中断」再推一次。")}</div>`;
+  挂页码($("#main"), (n) => 页_运行记录(n));
   $("#main").querySelectorAll("[data-tr]").forEach((b) => {
     b.onclick = () => { location.hash = "#/trace/" + encodeURIComponent(b.dataset.tr); };
   });
@@ -4745,14 +4746,14 @@ async function 页_单条试跑() {
  * ⚠️ **重建不是搬。** 澜绣那一页读的是澜绣自己的 span 表,
  * 这里读的是管理后台自己的 `traces` / `spans` —— 而那两张表
  * 2026-09-28 之前基本是空的,是精排记账和 A1 上报让它们有了真内容。 */
-async function 页_调用链() {
+async function 页_调用链(页 = 1) {
   const 头 = `<div class="crumb">运行记录</div>
     <div class="head"><div><h1>调用链</h1>
       <div class="sub">${md(`每一次运行的调用树。**看得到 trace 不等于看得到原文。**`)}</div>
     </div></div>`;
   $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
   let d;
-  try { d = await 请求(`${P()}/traces?limit=50`); }
+  try { d = await 请求(`${P()}/traces?limit=50&page=${页}`); }
   catch (e) { const s = 错误块(e, 页_调用链); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
   if (!d.items.length) {
     $("#main").innerHTML = 头 + 状态("", "还没有运行记录",
@@ -4775,7 +4776,8 @@ async function 页_调用链() {
                           : `<span class="pill fail">${esc(r.end_reason || "失败")}</span>`}</td>
         <td><button data-tr="${esc(r.id)}">看调用树</button></td>
       </tr>`).join("")
-    + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
+    + `</tbody></table>${页码条(d)}<div class="note">${md(d.note || "")}</div>`;
+  挂页码($("#main"), (n) => 页_调用链(n));
   $("#main").querySelectorAll("[data-tr]").forEach((b) => {
     b.onclick = () => { location.hash = "#/trace/" + encodeURIComponent(b.dataset.tr); };
   });

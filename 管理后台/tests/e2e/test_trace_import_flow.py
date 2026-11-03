@@ -193,6 +193,16 @@ c, bad = 导({"外部trace": "e2e" + uuid.uuid4().hex[:10], "状态": "unset", "
 ck("认不出的状态 → 422(不存一份看不懂的核对)", c == 422, (c, bad))
 
 print()
+# ── 翻页(Dify 四页对标 DF-03,11-03):原来只取前 100 条、没有下一页 —— 老问题查不到 ──
+c1, p1 = 打("GET", P + "/traces?limit=2&page=1")
+c2, p2 = 打("GET", P + "/traces?limit=2&page=2")
+号1, 号2 = {x["id"] for x in (p1 or {}).get("items", [])}, {x["id"] for x in (p2 or {}).get("items", [])}
+ck("翻页:第 1 页、第 2 页各 2 条、互不重叠,页数和总数对得上",
+   c1 == 200 and c2 == 200 and len(号1) == 2 and len(号2) == 2 and not (号1 & 号2)
+   and p1.get("页数") == -(-p1["total"] // 2) and p1.get("页") == 1 and p2.get("页") == 2, (p1, p2))
+c3, p3 = 打("GET", P + "/traces?limit=2&page=99999")
+ck("翻过头:这一页 0 条,总数给「不知道」(None)而不是 0", c3 == 200 and p3.get("这一页几条") == 0 and p3.get("total") is None, p3)
+
 if 挂:
     print(f"❌ 执行记录导入:{len(挂)} 条不过(验了 {len(过) + len(挂)} 条)")
     sys.exit(1)
