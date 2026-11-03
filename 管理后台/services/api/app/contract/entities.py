@@ -830,6 +830,24 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "content_hash 只算会改变模型收到什么的东西(开头 / 结尾 / 工具 / 模型 / 挑出的规矩),变更说明不进哈希"],
       依赖=["chat_assistants"]),
 
+    # ②'' 访问 API(2026-11-03 用户拍:一把绑一个应用 / 以发密钥的人的身份 / 先工作流再聊天 / 先补记账按金额封顶)
+    E("access_keys", "访问密钥", 项目级, 可改,
+      ["application_id", "name", "prefix_code", "lookup_hash", "daily_cap_amount", "currency",
+       "last_used_at", "revoked_at", "revoked_by"],
+      ["**库里只有哈希**(lookup_hash = sha256(原文)):原文只在发出那一刻返回一次,谁都找不回 —— 忘了就吊销重发",
+       "**一把只绑一个应用**(application_id),只跑它生产环境指着的那一版;草稿和候选永远调不到",
+       "**以发密钥的那个人的身份跑**(created_by),每次调用前重核他还有没有「运行编排测试」;没了就拒",
+       "daily_cap_amount:这把密钥**一天最多花多少**(币种 currency,和价目表同一种);发的时候必填,"
+       "设了项目每日预算的话不许超过它;只许改小",
+       "吊销 = revoked_at 不空,**立刻生效**(每次调用都查);行不删 —— 运行记录还指着它"],
+      依赖=["applications"]),
+    E("access_key_calls", "访问密钥调用", 子对象, 只追加,
+      ["access_key_id", "endpoint_code", "outcome_code", "http_code", "execution_run_id", "detail_note"],
+      ["**每一次带着密钥的调用都记一行**,包括被拒的(没权限 / 超限 / 超额):限流按它数「最近 60 秒几次」",
+       "outcome_code:受理 / 重放 / 限流 / 超额 / 没权限 / 没上生产 / 查询 ……(页面上按它筛)",
+       "execution_run_id 只有发起成功(或重放)时有;**没有外键** —— 被拒的那几行本来就没有运行"],
+      依赖=["access_keys"]),
+
     # ③ 工具 / 连接 / 指南 / 规则
     E("tool_definitions", "工具", 项目级, 可改,
       ["name", "purpose", "side_effect_type", "adapter", "owner", "draft_revision",

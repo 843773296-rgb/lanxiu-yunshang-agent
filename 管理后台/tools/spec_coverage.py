@@ -347,16 +347,16 @@ else:
     def _有头(o_, 名):
         return any(x.get("name") == 名 and x.get("in") == "header" and x.get("required")
                    for x in o_.get("parameters", []))
-    _该幂等 = {(a["方法"].lower(), EP.前缀 + a["路径"]) for a in EP.接口表 if a["幂等"]}
+    _该幂等 = {(a["方法"].lower(), EP.全路径(a)) for a in EP.接口表 if a["幂等"]}
     _实幂等 = {(m_, p_) for p_, m_, o_ in _ops if _有头(o_, "Idempotency-Key")}
     ck("登记表说要幂等键的,OpenAPI 里真的有这个必填头",
        _该幂等 == _实幂等, len(_该幂等), sorted(_该幂等 ^ _实幂等)[:2])
-    _该锁 = {(a["方法"].lower(), EP.前缀 + a["路径"]) for a in EP.接口表 if a["乐观锁"]}
+    _该锁 = {(a["方法"].lower(), EP.全路径(a)) for a in EP.接口表 if a["乐观锁"]}
     _实锁 = {(m_, p_) for p_, m_, o_ in _ops if _有头(o_, "If-Match")}
     ck("登记表说要乐观锁的,OpenAPI 里真的有 If-Match 必填头",
        _该锁 == _实锁, len(_该锁), sorted(_该锁 ^ _实锁)[:2])
     # **异步的一律 202,而且不许出现 200「已完成」** —— 那就是用假完成冒充执行
-    _异步路径 = {(a["方法"].lower(), EP.前缀 + a["路径"]) for a in EP.接口表
+    _异步路径 = {(a["方法"].lower(), EP.全路径(a)) for a in EP.接口表
                 if a["形态"] == EP.异步}
     _坏异步 = [f"{m_.upper()} {p_}" for p_, m_, o_ in _ops
               if (m_, p_) in _异步路径 and "202" not in o_["responses"]]

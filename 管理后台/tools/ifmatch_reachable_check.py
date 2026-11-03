@@ -89,6 +89,10 @@ P = f"{基址}/api/v1/projects/{项目}"
         读="/agents/{id}", 字段="草稿.revision"),
     # 聊天助手(2026-10-28)在 project_lanxiu(规矩导在那儿);含测试=true —— CI 新库里只有 e2e 那一个,
     # 它在 test-e2e-ci 里排在这条前面(test_chat_assistant_flow 建的)
+    # 访问密钥(11-03):改小上限要的 revision 在密钥列表里(工作流「访问入口」页和项目级列表都给)。
+    # 样例由 test-e2e-ci 里的 test_access_api_flow 发的那几把提供(它排在 page-smoke 前面)
+    "PATCH /access-keys/{id}": dict(
+        取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),
     "PATCH /chat-assistants/{id}/draft": dict(
         取id=("/chat-assistants?%E5%90%AB%E6%B5%8B%E8%AF%95=true", "items[0].id"),   # 参数名要编码:curl 发裸中文后台解析不了
         读="/chat-assistants/{id}", 字段="草稿.revision", 项目="project_lanxiu"),

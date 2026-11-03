@@ -74,7 +74,7 @@ def 建():
 
     paths = {}
     for a in EP.接口表:
-        全路径 = EP.前缀 + a["路径"]
+        全路径 = EP.全路径(a)
         参数 = [{"name": "project_id", "in": "path", "required": True,
                  "schema": {"type": "string"},
                  "description": "**服务端重新校验项目权限与对象范围** —— "

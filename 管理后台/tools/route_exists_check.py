@@ -162,7 +162,7 @@ def main():
         print("     ⚠️ 这**不是**「路由对不上」—— 先修导入,再看这条检查")
         return 1
 
-    契约 = {(a["方法"].upper(), EP.前缀 + a["路径"]) for a in EP.接口表}
+    契约 = {(a["方法"].upper(), EP.全路径(a)) for a in EP.接口表}
 
     # ⚠️ **从 `app.openapi()` 读,不从 `app.routes` 数。**
     #

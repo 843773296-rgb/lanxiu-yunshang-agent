@@ -728,7 +728,7 @@ async function 页_运行记录() {
  * ⚠️ class 一律写**整段字面量**(两种写法各写一整段标签,三元选其一),不在 class 属性里拼变量 ——
  * 拼出来的 class 由 css_class_check 钉着只许少不许多;浏览器对不认识的 class 完全静默。
  */
-const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本与发布", "设置"];
+const 工作流页签 = ["概览", "搭建", "测试", "运行记录", "版本与发布", "访问入口", "设置"];
 // 10-27 照 Dify 改了两个名字(适配分析 5.1 定的):结束 →「输出」、分支汇合 →「变量聚合器」;其余保留业务叫法
 const 步类型名 = { start: "开始", end: "输出", llm: "AI 处理", tool: "业务动作", retrieve: "查资料",
   condition: "按条件分流", transform: "整理字段", merge: "变量聚合器", loop: "循环", human: "人工核对", agent: "Agent", answer: "直接回复", classifier: "问题分类器", template: "模板转换", extractor: "参数提取器", assigner: "变量赋值" };
@@ -1045,7 +1045,7 @@ function 画_画布() {
     <div id="tabbody"></div>
     <div class="footbar"><span id="fb"></span></div>`;
   $("#freeze").onclick = 弹_准备发布;
-  ({ 概览: 画_概览, 搭建: 画_搭建, 测试: 画_测试, 运行记录: 画_运行记录, 版本与发布: 画_版本, 设置: 画_设置 }
+  ({ 概览: 画_概览, 搭建: 画_搭建, 测试: 画_测试, 运行记录: 画_运行记录, 版本与发布: 画_版本, 访问入口: 画_访问入口, 设置: 画_设置 }
     [g.页签] || 画_概览)();
   画_底栏(); 画_保存状态();
 }
@@ -1053,8 +1053,8 @@ function 画_画布() {
 /* 应用详情侧栏(10-28 照 Dify,二期第 3 项;适配分析 5.5「照抄」):进到一个应用里,左边主导航换成这个应用自己的一列。
  * 地址不变(#/workflow/<id>/<页签>),只换显示名 —— 改地址要把撤销 / 离开拦截 / 测试全迁一遍,换来的只是一个词。
  * 没做的三项摆着、写明什么时候做,不藏。离开这条工作流时 路由() 会重画主导航 */
-const 应用侧栏项 = [["搭建", "编排"], ["概览", "概览"], ["测试", "测试"], ["运行记录", "日志"], ["版本与发布", "部署"], ["设置", "设置"]];
-const 应用侧栏待做 = [["访问入口", "二期后段:要先有对外 API 的鉴权,和 Webhook 触发一起做"],
+const 应用侧栏项 = [["搭建", "编排"], ["概览", "概览"], ["测试", "测试"], ["运行记录", "日志"], ["版本与发布", "部署"], ["访问入口", "访问 API"], ["设置", "设置"]];
+const 应用侧栏待做 = [
   ["标注", "三期:人对每次运行的结果打标,回流成样本"],
   ["监测", "三期:这个应用自己的监测页,加一张 Dify 没有的「业务真完成率」(真写进了澜绣,不只是运行成功)"]];
 function 画_应用侧栏(g) {
@@ -2598,6 +2598,78 @@ function 画_设置() {
       画_画布();
     } catch (e) { 报错(e); }
   };
+}
+
+/* 访问 API(11-03,用户拍:一把绑一个应用 / 以发密钥的人的身份 / 先补记账按金额封顶)。
+ * ⚠️ 原文**只在发出那一刻**弹一次 —— 列表接口从不返回原文,页面也不缓存它。 */
+async function 画_访问入口() {
+  const g = 图态, wid = encodeURIComponent(g.wid);
+  $("#tabbody").innerHTML = `<div class="card"><div class="k">在取…</div></div>`;
+  let d;
+  try { d = await 请求(`${P()}/workflows/${wid}/access-keys`); }
+  catch (e) {
+    $("#tabbody").innerHTML = `<div class="card"><div class="note"><b>取不到</b>:${esc(e.message || String(e))}
+      —— 这是取数失败,不是「一把密钥都没有」。发密钥要「配置密钥与预算」权限(管理员)。</div></div>`;
+    return;
+  }
+  const 址 = location.origin + (d["调用地址"] || "/open/v1/apps/<应用编号>/runs");
+  const 行 = (d["密钥"] || []).map((k) => `<tr><td>${esc(k["名字"])}</td><td><code>${esc(k["开头"])}</code></td>
+      <td>${esc(k["发的人"] || "")}</td><td>${k["今天花了"] == null ? "—" : esc(k["今天花了"].toFixed(4))} / ${esc(String(k["每天上限"]))} ${esc(k["币种"])}
+        ${k["今天算不出金额的账"] ? `<div class="k">今天有 ${esc(String(k["今天算不出金额的账"]))} 笔算不出金额 —— 这把今天不再受理</div>` : ""}</td>
+      <td>${esc((k["最后一次用"] || "从没用过").replace("T", " ").slice(0, 19))}</td>
+      <td>${k["吊销于"] ? `已吊销(${esc(k["吊销人"] || "")})` : `<button data-ak-lower="${esc(k.id)}" data-rev="${esc(String(k.revision))}">改小上限</button>
+        <button data-ak-revoke="${esc(k.id)}">吊销</button>`}</td></tr>`).join("");
+  const 调 = (d["最近调用"] || []).map((x) => `<tr><td>${esc((x["时间"] || "").replace("T", " ").slice(0, 19))}</td>
+      <td>${esc(x["密钥"])}</td><td>${esc(x["接口"])}</td><td>${esc(x["结果"])}(${esc(String(x["码"] || ""))})</td>
+      <td>${x["运行"] ? `<a href="#/wfrun/${encodeURIComponent(x["运行"])}">${esc(x["运行"])}</a>` : "—"}</td><td>${esc(x["说明"] || "")}</td></tr>`).join("");
+  $("#tabbody").innerHTML = `<div class="card">
+    <h3>外部系统怎么调</h3>
+    <div class="k">门店小程序、企业微信机器人这类外部系统带一把访问密钥调下面这个地址,跑的是这条流程<b>生产环境里的那一版</b>
+      ${d["生产版本号"] ? `(现在是 v${esc(String(d["生产版本号"]))})` : `—— <b>它现在还没有生产版本,调用会被拒</b>,先在「部署」里审核并发布到生产`}。
+      以<b>发密钥的那个人</b>的身份跑,他的权限每次都重核;要人核对的步骤照样要人核对。</div>
+    <pre>POST ${esc(址)}
+请求头:Authorization: Bearer lx-app-……   Idempotency-Key: 这次请求自己生成的编号
+请求体:{"输入": { …这条流程开始那一步要的字段… }}
+→ 202 {"运行编号": "xr_…", "状态": "排队中", "查结果": "/open/v1/runs/xr_…"}</pre>
+    <div class="k">限量:每把每分钟 30 次(<b>查结果也算一次</b>,轮询请隔几秒);每天花费到上限就拒(按价目表算的参考价,美元)。</div>
+  </div>
+  <div class="card"><h3>密钥</h3>
+    ${行 ? `<table><tr><th>名字</th><th>开头</th><th>发的人</th><th>今天花了 / 每天上限</th><th>最后一次用</th><th></th></tr>${行}</table>`
+         : `<div class="k">还没有发过密钥。</div>`}
+    <h4>发一把新的</h4>
+    <label class="f">名字(给谁用)</label><input id="ak-n" placeholder="比如:门店小程序">
+    <label class="f">每天最多花多少(美元,必填)</label><input id="ak-cap" placeholder="比如 5">
+    <button class="pri" id="ak-new">发密钥</button> <span id="ak-msg" class="k"></span>
+    <div class="k">原文只在发出那一刻显示一次,库里只存哈希 —— 忘了就吊销重发。上限只许改小;要更大的额度就吊销重发。</div>
+  </div>
+  <div class="card"><h3>最近 ${esc(String(d["最近调用只列了"] || 20))} 次调用</h3>
+    ${调 ? `<table><tr><th>时间</th><th>密钥</th><th>接口</th><th>结果</th><th>运行</th><th>说明</th></tr>${调}</table>`
+         : `<div class="k">还没有调用。</div>`}</div>`;
+  $("#ak-new").onclick = async () => {
+    const 名 = $("#ak-n").value.trim(), 上限 = $("#ak-cap").value.trim();
+    if (!名 || !上限) { $("#ak-msg").textContent = "名字和每天上限都要填"; return; }
+    try {
+      const r = await 请求(`${P()}/workflows/${wid}/access-keys`, { method: "POST", body: JSON.stringify({ 名字: 名, 每天上限: Number(上限) }) });
+      提示("密钥发好了 —— 现在就存好", `<div class="note"><b>这是唯一一次看得到原文</b>,关掉这个框就再也看不到了。</div>
+        <pre>${esc(r["原文"])}</pre><div class="k">调用地址:${esc(location.origin + r["调用地址"])}</div>`);
+      画_访问入口();
+    } catch (e) { 报错(e); }
+  };
+  $("#tabbody").querySelectorAll("[data-ak-revoke]").forEach((b) => b.onclick = async () => {
+    const 理由 = await 问一句("吊销这把密钥", "吊销立刻生效,用它的外部系统下一次调用就会被拒。", { 输入: "理由", 必填: true });
+    if (!理由) return;
+    try { await 请求(`${P()}/access-keys/${encodeURIComponent(b.dataset.akRevoke)}/revoke`, { method: "POST", body: JSON.stringify({ 理由 }) }); 画_访问入口(); }
+    catch (e) { 报错(e); }
+  });
+  $("#tabbody").querySelectorAll("[data-ak-lower]").forEach((b) => b.onclick = async () => {
+    const 新 = await 问一句("改小每天上限", "只许改小;要更大的额度就吊销重发。", { 输入: "新的每天上限(美元)", 必填: true });
+    if (!新) return;
+    try {
+      await 请求(`${P()}/access-keys/${encodeURIComponent(b.dataset.akLower)}`, { method: "PATCH",
+        headers: { "If-Match": b.dataset.rev }, body: JSON.stringify({ 每天上限: Number(新) }) });
+      画_访问入口();
+    } catch (e) { 报错(e); }
+  });
 }
 
 /* ── 动作:保存 / 检查 / 生成版本 / 试运行 ─────────────────────────── */

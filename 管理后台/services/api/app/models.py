@@ -285,6 +285,8 @@ _额外唯一 = {
     # 聊天助手一个角色一行 —— 两行的话聊天站(第 2 步)不知道该读哪一行
     "chat_assistants": [("project_id", "role_key")],
     "chat_assistant_versions": [("project_id", "chat_assistant_id", "version_no")],
+    # 密钥按哈希认 —— 两行同一个哈希的话,一把密钥会被认成两把(谁的上限、绑哪个应用都说不清)
+    "access_keys": [("project_id", "lookup_hash")],
     # 执行故障上报(2026-10-25):一轮只一张单 —— 聊天站同一轮会推不止一次
     "trace_incidents": [("project_id", "trace_id")],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,

@@ -194,6 +194,7 @@ import exec_policy_api as _EXP   # 执行上限:冻结 / 回执 / 查采用
 import artifacts_api as _ART      # 产出监督:澜绣推产出过来、打回决定由澜绣拉回去执行(2026-10-10)
 import bridge_api as _BR       # 澜绣桥:工作流里取转写 / 写跟进,由澜绣拉回去执行(2026-10-24)
 import chat_assistants_api as _CA   # 聊天助手配置(10-28 分两步;第 2 步聊天站读生产那一版,11-02 店长助手上了 v2)
+import open_api as _OA              # 访问 API(11-03):外部系统带密钥跑应用的生产版;先工作流,聊天那一半还没做
 app.include_router(_WF.router)
 app.include_router(_AG.router)
 app.include_router(_KB.router)
@@ -216,6 +217,7 @@ app.include_router(_EXP.router)
 app.include_router(_ART.router)
 app.include_router(_BR.router)
 app.include_router(_CA.router)
+app.include_router(_OA.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

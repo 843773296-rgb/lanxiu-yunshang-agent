@@ -379,6 +379,30 @@ def _挂起(c, job, r, run_id, 定义, 结果, 记事):
     return {"run_id": run_id, "执行状态": 结果["执行状态"], "停在": 等["node_id"]}
 
 
+# 连接上记的是协议,价目表按供应商登记。认不出的协议 → None → 这一笔金额记成「算不出」(token 照记),不猜
+连接协议到供应商 = {"anthropic-messages": "anthropic"}
+
+
+def _记这一段的账(c, job, r, run_id, 步骤们, 我是谁):
+    """这一段真跑过的 AI 步骤,每步一笔进 usage_ledger(走 knowledge/usage.写进库 —— 账本只有那一个写入口)。
+    → 记了几步。mock 步骤不记(没花钱,也没有供应商);没有 token 的不记(0 不是一笔花销)。"""
+    import knowledge.usage as _UG
+    记了 = 0
+    for s in 步骤们 or []:
+        出 = s.get("output") or {}
+        if s.get("kind") != "llm" or 出.get("execution_mode") != "live" or not 出.get("usage"):
+            continue
+        try:
+            _UG.写进库(c, 组织=job["organization_id"], 项目=job["project_id"], 谁=我是谁,
+                      用量=出["usage"], 模型=出.get("actual_model"), 提供方=出.get("提供方") or "未知",
+                      资源="generate", 事件键=s["execution_key"], trace_id=r["trace_id"],
+                      是mock=False, 调用方="工作流运行", _新id=_新)
+            记了 += 1
+        except _UG.用量不对:
+            continue
+    return 记了
+
+
 @处理("workflow_run")
 def _跑一张工作流(c, job, 打点):
     """跑一次 Workflow。**照 `_跑一次prompt` 的形状**:
@@ -595,7 +619,9 @@ def _跑一张工作流(c, job, 打点):
         except _真.调不动 as e:
             raise RN.节点失败(e.码, str(e.细节)[:200], "看「模型与连接」那条连接还通不通;**不退回 mock**")
         结果 = {"text": 出["text"], "lang": "zh", "execution_mode": "live", "usage": 出["usage"],
-                "finish_reason": 出["finish_reason"], "actual_model": 出["actual_model"]}
+                "finish_reason": 出["finish_reason"], "actual_model": 出["actual_model"],
+                # 记账要查价目表,价目表按「供应商」登记(anthropic),连接上记的是协议(anthropic-messages)
+                "提供方": 连接协议到供应商.get(连["adapter"])}
         if 结构化:
             # 被输出上限掐断的,先说清是掐断 —— 截了一半的 JSON 解析不了,报「没按要求输出 JSON」会让人去改提示词(10-25 实测踩过)
             if 出.get("finish_reason") in ("max_tokens", "length"):
@@ -783,6 +809,10 @@ def _跑一张工作流(c, job, 打点):
                      if s.get("error_detail") else None,
                "ir": _步骤留痕(s.get("input")), "or": _步骤留痕(s.get("output")),
                "u": 我是谁})
+    # 费用(11-03,访问 API 要按金额封顶,用户拍「先补记账」):**每个真跑的 AI 步骤一笔**,按实际型号查价目表算钱。
+    # 放在挂起之前:停在人工核对的运行,前面那几步的钱已经花了。事件键 = 这一步的执行键 ——
+    # 恢复之后只会带回新走的步骤,已记过的不会再来;万一重来,`on conflict do nothing` 也不会多记
+    真记了 = _记这一段的账(c, job, r, run_id, 结果["步骤"], 我是谁)
     if 结果.get("检查点"):
         return _挂起(c, job, r, run_id, 定义, 结果, 记事)
     c.execute(text("""
@@ -801,7 +831,9 @@ def _跑一张工作流(c, job, 打点):
     # 账本里多一行说不清的账比少一行糟 —— 按供应商/按模型的报表会把它算进分母。
     # ⚠️ 同一条规矩 `knowledge/usage.py` 里早就有,而 Worker 有**自己的写入口**,
     # 规矩没跟过来 —— **一条只写在一个写入口上的规矩,拦不住第二个写入口**。
-    if (结果["用量"]["模型调用"]) or 0:
+    # 只剩 mock 步骤的运行才写这一行「调了几次、金额不知道」;真跑过的已经按步骤记了带金额的账,
+    # 再写这一行会让同一次运行在「调用次数」上记两遍
+    if ((结果["用量"]["模型调用"]) or 0) and not 真记了:
         c.execute(text("""
             insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
                 resource, quantity, unit, currency, amount, amount_known, source,
