@@ -14476,5 +14476,89 @@
    }
   ],
   "预期红": "**报错说清楚:有几条独立建议、不自动删**"
+ },
+ {
+  "script": "backend/check_copy_check.py",
+  "改坏": "关掉『换函数位置参数默认值』那一支(用副本 看起来一切正常,而烤死在默认参数里的真库路径纹丝不动)",
+  "file": [
+   {
+    "path": "backend/check_copy.py",
+    "old": "            if ds:\n                新组 = tuple(新 if _是这个库(v, 真) else v for v in ds)",
+    "new": "            if False and ds:\n                新组 = tuple(新 if _是这个库(v, 真) else v for v in ds)"
+   }
+  ],
+  "预期红": "换函数默认参数:顶层 / 关键字"
+ },
+ {
+  "script": "backend/check_copy_check.py",
+  "改坏": "把『这是同一个库吗』改成比 basename(副本也叫 lanxiu.db,于是同名不同目录被当成同一个库)",
+  "file": [
+   {
+    "path": "backend/check_copy.py",
+    "old": "    return isinstance(值, str) and os.sep in 值 and os.path.realpath(值) == 真",
+    "new": "    return isinstance(值, str) and os.sep in 值 and os.path.basename(值) == os.path.basename(真)"
+   }
+  ],
+  "预期红": "同名不同目录是**两份**库"
+ },
+ {
+  "script": "backend/check_copy_check.py",
+  "改坏": "把『本项目的根』改回从真库算 —— 真库是条软链指向主检出,于是这个检出里一个模块都扫不到,而『切干净了』自动成立",
+  "file": [
+   {
+    "path": "backend/check_copy.py",
+    "old": "    根 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))",
+    "new": "    根 = os.path.dirname(os.path.dirname(真库))"
+   }
+  ],
+  "预期红": "「本项目」的根从**本文件**算"
+ },
+ {
+  "script": "backend/check_copy_check.py",
+  "改坏": "去掉切库前对真库路径的 realpath(macOS 上 /var 解成 /private/var,于是一处都匹配不上)",
+  "file": [
+   {
+    "path": "backend/check_copy.py",
+    "old": "    真 = os.path.realpath(真)   # ⚠️ 见 `换默认参数` 里那段警告",
+    "new": "    真 = 真"
+   }
+  ],
+  "预期红": "换模块变量:改得动"
+ },
+ {
+  "script": "tools/bite_check.py",
+  "改坏": "在某个脚本的咬合列表里塞一条三元组(多写一个元素 —— 原来会被一声不响丢掉)",
+  "file": [
+   {
+    "path": "backend/check_copy_check.py",
+    "old": "     \"换模块变量:改得动\"),             # 连带红 ⑪",
+    "new": "     \"换模块变量:改得动\"),             # 连带红 ⑪\n    (\"塞一条三元组进来\", \"换模块变量:改得动\", \"多余的第三个\"),"
+   }
+  ],
+  "预期红": "咬合列表每一条都是字面字符串"
+ },
+ {
+  "script": "tools/impact.py",
+  "改坏": "关掉『补未跟踪文件』那一支 —— 接线断了(纯函数用例照旧全对,这是第一版漏掉的那一关)",
+  "file": [
+   {
+    "path": "tools/impact.py",
+    "old": "    if not base:\n        res.update(未跟踪的(",
+    "new": "    if False:\n        res.update(未跟踪的("
+   }
+  ],
+  "预期红": "未跟踪的新文件也算改动 · **接线**断了"
+ },
+ {
+  "script": "tools/impact.py",
+  "改坏": "去掉『已经在 diff 里的文件不许再被当成新文件覆盖一遍』那个条件",
+  "file": [
+   {
+    "path": "tools/impact.py",
+    "old": "        if not f or not f.endswith(影响面认的扩展名) or f in 已有:",
+    "new": "        if not f or not f.endswith(影响面认的扩展名):"
+   }
+  ],
+  "预期红": "未跟踪的新文件也算改动 · **纯函数**坏了"
  }
 ]

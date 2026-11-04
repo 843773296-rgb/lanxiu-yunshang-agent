@@ -13857,50 +13857,33 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 13:10。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 14:44。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `main` |
-| 最新提交 | 7fb5171e · 2026-11-04 · hook 对账分开「还没推」和「真漂了」(用户执行);自动区的服务探测改成「<500 算答得出来」 |
-| 代码量 | 950 个 Python 文件 / 180924 行(不含 .venv) |
+| 分支 | `w75` |
+| 最新提交 | acc914bd · 2026-11-04 · 意见 → 待复核评测样本 → 店长在聊天站复核(两人点头才算标准答案) |
+| 代码量 | 951 个 Python 文件 / 180924 行(不含 .venv) |
 | 验收 | `./check.sh` 共 375 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
- M .feynman/tool-eval.json
- M HANDOFF.md
- M agentsite/answer_feedback.py
- M agentsite/answer_feedback_check.py
- M agentsite/app.py
- M agentsite/evals/funnel.jsonl
+M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M agentsite/web/station.html
- M "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/app.js"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/packages/contracts/api.ts"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/packages/contracts/openapi.json"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/endpoints.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/models.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/opinions_api.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_opinions_flow.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/tools/ifmatch_reachable_check.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/tools/opinions_page_browser_smoke.mjs"
-?? .claude/
-?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/bite-all-20261016.log
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+acc914bd 意见 → 待复核评测样本 → 店长在聊天站复核(两人点头才算标准答案)
 7fb5171e hook 对账分开「还没推」和「真漂了」(用户执行);自动区的服务探测改成「<500 算答得出来」
 dd5e599c 意见受理台:总部运营受理、1 个工作日首次处理(跳周末和法定假日)、处理时间线只追加
 8bd44050 收尾:交接记下第六件和一个结构性死锁;全量门禁 376 条跑在合并后的树上全绿
 e0e8bfd2 Merge branch 'main' of https://github.com/843773296-rgb/lanxiu-yunshang-agent into w75
-6cc88fcd 意见收集补齐第一阶段:导航「意见与建议」(独立建议)、「我的意见」进度、停掉的那一轮也能报
 ```
 <!--/AUTO-->
 ## 一句话在做什么
