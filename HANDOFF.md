@@ -12,7 +12,24 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
-## ➡️ 11-04 午后:下一步 = 期望结果 → 待审核样本(两人确认)—— **还没开始写代码**
+## ⚠️ 11-04 欠账登记:管理后台跨项目**读取**隔离是「约定 · 未攻击」(并行会话指出,**要报给用户**)
+
+- 写入侧是**结构**:跨项目引用撞复合外键(project_id 在每个外键里)→ 做不到
+- **读取侧是约定**:每一句 SQL 自己写 `project_id = :p`;漏一句就读到别家项目的数据,**接口照样回 200,什么都不报**
+  —— 这是生产环境下的客户数据隔离(CLAUDE.md 第 0 节「照生产标准判」),优先级高于一般欠账
+- 修法方向(别按行 grep:多行 SQL 的条件常在下一行,按行扫会误报 → 有人放宽 → 真漏的也不报了):
+  ① 运行时:取数口强制要项目参数,少传就抛(约定变结构)② 语法树扫 SQL 字面量。都要配真攻击的判据
+- 相关小事:演示项目留了一条样例意见(E2E-SAMPLE)。**以后加跨项目的意见统计(全平台积压之类)要排掉它,并配判据**
+
+## ✅ 11-04 午后:期望结果 → 待审核样本 → 店长在聊天站复核 —— **做完、验完、已提交**(下面是当时的设计草案,已照着落地)
+
+- 落地要点:后台 `POST /opinions/{id}/promote`;内部通道 `GET /opinion-samples/pending`、`POST /opinion-samples/{id}/review`;
+  判定只有一份 `opinions_api.能复核吗`;迁移 13fd23fe5b7f;聊天页「待我复核的样本」(店长);后台详情页「提为样本」表单
+- 真浏览器:`agentsite/review_browser_smoke.mjs`(店长测试账号 60000001,口令是 backend/seed.py 的公开演示口令)、
+  `管理后台/tools/opinions_page_browser_smoke.mjs`;都不进门禁、会写真数据,跑完要删(**删的顺序:时间线 → 意见 → 样本**,外键拦着)
+- **下一步候选**:① 跨项目读取隔离(上面那条欠账,要用户定优先级)② PRD 第三阶段剩下的:问题单(§4.2)、改进验证与发布关联(§4.3)
+
+### (原草案)
 
 - 用户拍(AskUserQuestion):**店长在聊天站里复核**(店长只登聊天站;身份用门店登录,不给店长开后台账号)
 - 我按常理定的(交代过用户,可改):**提问人所在门店的店长复核**;提问人没有门店(总部运营)的,任一店长可复核;
@@ -13840,37 +13857,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 12:44。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 13:10。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | dd5e599c · 2026-11-04 · 意见受理台:总部运营受理、1 个工作日首次处理(跳周末和法定假日)、处理时间线只追加 |
-| 代码量 | 950 个 Python 文件 / 180849 行(不含 .venv) |
+| 分支 | `main` |
+| 最新提交 | 7fb5171e · 2026-11-04 · hook 对账分开「还没推」和「真漂了」(用户执行);自动区的服务探测改成「<500 算答得出来」 |
+| 代码量 | 950 个 Python 文件 / 180924 行(不含 .venv) |
 | 验收 | `./check.sh` 共 375 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M HANDOFF.md
+M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
+ M .feynman/tool-eval.json
+ M HANDOFF.md
+ M agentsite/answer_feedback.py
+ M agentsite/answer_feedback_check.py
+ M agentsite/app.py
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M check.sh
- M tools/hook_sync_check.py
- M tools/make_handoff.py
-?? .feynman/bite-all-20261016.log
+ M agentsite/web/station.html
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/app.js"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/packages/contracts/api.ts"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/packages/contracts/openapi.json"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/endpoints.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/models.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/opinions_api.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_opinions_flow.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/tools/ifmatch_reachable_check.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/tools/opinions_page_browser_smoke.mjs"
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+7fb5171e hook 对账分开「还没推」和「真漂了」(用户执行);自动区的服务探测改成「<500 算答得出来」
 dd5e599c 意见受理台:总部运营受理、1 个工作日首次处理(跳周末和法定假日)、处理时间线只追加
 8bd44050 收尾:交接记下第六件和一个结构性死锁;全量门禁 376 条跑在合并后的树上全绿
 e0e8bfd2 Merge branch 'main' of https://github.com/843773296-rgb/lanxiu-yunshang-agent into w75
 6cc88fcd 意见收集补齐第一阶段:导航「意见与建议」(独立建议)、「我的意见」进度、停掉的那一轮也能报
-3fe3b751 「忘了改状态」和「刻意保持进行中」要分开报 —— 它们在提示上长得一模一样
 ```
 <!--/AUTO-->
 ## 一句话在做什么

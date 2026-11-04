@@ -365,6 +365,8 @@ def 意见详情(project_id: str, opinion_id: str, me: 身份 = Depends(要权�
                       {"p": project_id, "i": opinion_id, "pre": 聊天站来源 + ":"}).mappings().first()
         if not x:
             raise _错(404, "NOT_FOUND", "没有这条意见", "回清单重新进")
+        样 = c.execute(text("select id, review_status from samples where project_id=:p and id=:s"),
+                      {"p": project_id, "s": x["promoted_sample_id"]}).mappings().first() if x["promoted_sample_id"] else None
         线 = c.execute(text("""select created_at, created_by, action_code, from_status, to_status, note from opinion_events
                               where project_id=:p and opinion_id=:i order by created_at, id"""),
                        {"p": project_id, "i": opinion_id}).mappings().all()
@@ -373,6 +375,8 @@ def 意见详情(project_id: str, opinion_id: str, me: 身份 = Depends(要权�
             "状态": x["status"], "聊天站trace": x["chat_trace_ref"], "会话号": x["session_ref"], "管理后台trace": x["后台trace"],
             "改之前的版本": x["history_snapshot"] or [], "答复": x["reply_note"], "提交时间": x["created_at"].isoformat(),
             "revision": x["revision"], **_时限(x),
+            "样本": ({"id": 样["id"], "复核状态": 样["review_status"]} if 样 else None),
+            "能提样本": x["status"] in 能提样本的状态 and (not 样 or 样["review_status"] == "已退回"),
             "能做的动作": [{"动作": k, "到": v, "要写说明": k in 要说明的动作, "提的人看得到": k in 给提的人看的动作}
                         for k, v in 流转.get(x["status"], {}).items()],
             "时间线": [{"时间": e["created_at"].isoformat(), "谁": e["created_by"], "动作": e["action_code"],
@@ -426,3 +430,191 @@ async def 受理一步(project_id: str, opinion_id: str, request: Request,
     return {"id": opinion_id, "从": x["status"], "到": 到, "revision": r["revision"],
             "首次处理时刻": r["first_responded_at"].isoformat(),
             "note": ("提的人在「我的意见」里会看到这句话" if 动作 in 给提的人看的动作 else "这一步只记在时间线上,提的人看到的是进度变了")}
+
+
+# ── 期望结果 → 待审核样本 → 店长复核(PRD 第三阶段第一刀;用户 11-04 拍「总部运营提、店长复核」「店长在聊天站里复核」)──
+# 我按常理定、交代过用户的:**提问人所在门店的店长**复核(提问人没有门店的,任一店长);**提样本的人、提意见的人都不能复核**。
+# 样本进现有 samples 表(review_status:待复核 → 已通过 / 已退回),数据集「意见回流」按项目自动建 ——
+# **不声明脱敏策略**(它来自真实问答,导出时那道闸会拦住,要人想清楚再声明)。
+回流数据集名 = "意见回流"
+待复核最多 = 500
+能提样本的状态 = ("核实中", "已答复")
+
+
+def _回流数据集(c, project_id, org, me):
+    d = c.execute(text("select id from datasets where project_id=:p and name=:n and archived_at is null limit 1"),
+                  {"p": project_id, "n": 回流数据集名}).scalar()
+    if d:
+        return d
+    d = f"ds_{_uuid.uuid4().hex[:12]}"
+    c.execute(text("""insert into datasets (id, organization_id, project_id, name, format, purpose, created_at, created_by,
+                          updated_at, revision) values (:i, :o, :p, :n, 'qa', '评测', now(), :u, now(), 1)"""),
+              {"i": d, "o": org, "p": project_id, "n": 回流数据集名, "u": me.user_id})
+    return d
+
+
+@router.post(前缀 + "/opinions/{opinion_id}/promote", status_code=201)
+async def 提为样本(project_id: str, opinion_id: str, request: Request,
+              if_match: str = Header(default=None, alias="If-Match"),
+              me: 身份 = Depends(要权限("受理意见"))):
+    """总部运营把一条意见提成**待复核**的评测样本:`{题面, 期望答案, 说明?}`,带 If-Match(意见详情的 revision)。
+    题面要总部运营自己写 —— 意见单不存问答原文(原文在调用记录里,按「查看敏感输入」授权)。
+    **提的人要绑了澜绣工号**:两人点头要比得出「复核的不是同一个人」。"""
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match", "把这条意见详情里的 revision 放进 If-Match 头")
+    try:
+        体 = await request.json()
+    except Exception:
+        体 = None
+    体 = 体 if isinstance(体, dict) else {}
+    题面, 期望, 说明 = _字(体, "题面"), _字(体, "期望答案"), _字(体, "说明")
+    坏 = {}
+    if not 题面:
+        坏["题面"] = "要写这道题问的是什么(意见单不存原话;从调用记录里看了再写)"
+    if not 期望:
+        坏["期望答案"] = "要写期望的答案 —— 它就是以后判对错的标准,提的人写的「期望结果」只是候选"
+    for k, v in (("题面", 题面), ("期望答案", 期望), ("说明", 说明)):
+        if v and len(v) > 2000:
+            坏[k] = "最多 2000 字"
+    if 坏:
+        raise _错(422, "VALIDATION", "样本的字段不合格", "见字段错误", field_errors=坏)
+    from datasets_api import _哈希
+    with 事务() as c:
+        x = c.execute(text("""select status, revision, organization_id, promoted_sample_id, session_ref, chat_trace_ref,
+                                     asker_staff_code, asker_snapshot from opinions where project_id=:p and id=:i for update"""),
+                      {"p": project_id, "i": opinion_id}).mappings().first()
+        if not x:
+            raise _错(404, "NOT_FOUND", "没有这条意见", "回清单重新进")
+        if str(x["revision"]) != str(if_match).strip('"'):
+            raise _错(409, "REVISION_CONFLICT", "这条意见刚被别人处理过", "刷新看一眼最新状态再提")
+        if x["status"] not in 能提样本的状态:
+            raise _错(409, "TRANSITION_NOT_ALLOWED", f"「{x['status']}」的意见不能提样本",
+                      f"要先核实过(状态是 {list(能提样本的状态)} 之一)")
+        if x["promoted_sample_id"]:
+            老 = c.execute(text("select review_status from samples where project_id=:p and id=:s"),
+                          {"p": project_id, "s": x["promoted_sample_id"]}).scalar()
+            if 老 != "已退回":
+                raise _错(409, "ALREADY_PROMOTED", f"这条意见已经提过样本了(复核状态:{老})",
+                          "被店长退回之后才能重新提")
+        我工号 = c.execute(text("""select lanxiu_staff_code from staff_bindings
+                                   where project_id=:p and user_id=:u and archived_at is null"""),
+                          {"p": project_id, "u": me.user_id}).scalar()
+        if not 我工号:
+            raise _错(409, "NOT_BOUND", "你的管理后台账号没绑澜绣工号",
+                      "提样本要两人点头 —— 不绑工号就比不出复核的是不是同一个人;先在成员页绑上")
+        ds = _回流数据集(c, project_id, x["organization_id"], me)
+        sid = f"sm_{_uuid.uuid4().hex[:12]}"
+        内容 = {"题面": 题面, "期望答案": 期望, "说明": 说明, "来自意见": opinion_id, "聊天站trace": x["chat_trace_ref"],
+               "提意见的人": x["asker_staff_code"], "提意见的人门店": (x["asker_snapshot"] or {}).get("门店"),
+               "提样本的人": {"账号": me.user_id, "工号": 我工号}}
+        c.execute(text("""insert into samples (id, organization_id, project_id, created_at, created_by, updated_at, revision,
+                              dataset_id, content, source, review_status, split, group_id, content_hash)
+                          values (:i, :o, :p, now(), :u, now(), 1, :ds, cast(:ct as jsonb), '意见回流', '待复核', '验证',
+                                  :g, :h)"""),
+                  {"i": sid, "o": x["organization_id"], "p": project_id, "u": me.user_id, "ds": ds,
+                   "ct": _json.dumps(内容, ensure_ascii=False),
+                   # 同一个会话出来的样本算一组 —— 分集时不许一半进训练一半进测试(同一段对话是同源)
+                   "g": f"会话:{x['session_ref']}" if x["session_ref"] else f"意见:{opinion_id}", "h": _哈希(内容)})
+        c.execute(text("""insert into opinion_events (id, organization_id, project_id, created_at, created_by,
+                              opinion_id, action_code, from_status, to_status, note)
+                          values (:i, :o, :p, now(), :u, :op, '提为样本', :s, :s, :n)"""),
+                  {"i": f"oe_{_uuid.uuid4().hex[:12]}", "o": x["organization_id"], "p": project_id, "u": me.user_id,
+                   "op": opinion_id, "s": x["status"], "n": f"提成待复核样本 {sid}(数据集「{回流数据集名}」)"})
+        r = c.execute(text("""update opinions set promoted_sample_id=:s, revision=revision+1, updated_at=now()
+                               where project_id=:p and id=:i returning revision"""),
+                      {"s": sid, "p": project_id, "i": opinion_id}).mappings().first()
+    return {"样本": sid, "复核状态": "待复核", "数据集": ds, "revision": r["revision"],
+            "note": "等提问人所在门店的店长在聊天站里复核;**复核通过之前它不算标准答案**"}
+
+
+def 能复核吗(复核人, 内容):
+    """→ (行不行, 为什么)。纯函数:复核人 {工号, 角色, 门店} 来自聊天站登录会话;内容 = 样本 content。"""
+    if (复核人 or {}).get("角色") != "店长":
+        return False, "只有店长能复核样本(用户 11-04 拍「总部运营提、店长复核」)"
+    号 = str(复核人.get("工号") or "")
+    if not 号:
+        return False, "没有复核人工号"
+    if 号 == str(内容.get("提意见的人") or ""):
+        return False, "提意见的人不能复核自己那条意见出来的样本"
+    if 号 == str((内容.get("提样本的人") or {}).get("工号") or ""):
+        return False, "提样本的人不能自己复核 —— 两人点头要是两个人"
+    店 = 内容.get("提意见的人门店")
+    if 店 and 店 != 复核人.get("门店"):
+        return False, f"这条要「{店}」的店长复核"
+    return True, ""
+
+
+def _内部(request):
+    行, 因 = 内部通道核对(request.headers.get("X-Lanxiu-Internal"), request.client.host if request.client else None)
+    if not 行:
+        raise _错(403, "INTERNAL_ONLY", 因, "这个口只收聊天站转来的 —— 复核人是谁要由聊天站从登录会话换出来")
+
+
+@router.get(前缀 + "/opinion-samples/pending")
+def 待我复核(project_id: str, request: Request, 工号: str = Query(...), 角色: str = Query(""), 门店: str = Query(""),
+          me: 身份 = Depends(要权限("运行评测"))):
+    """店长在聊天站看「待我复核的样本」。只收内部通道;工号 / 角色 / 门店由聊天站从登录会话换出来。
+    只列**这个人能复核的**(同一个判定 能复核吗,不另写一份)。"""
+    _内部(request)
+    人 = {"工号": 工号, "角色": 角色, "门店": 门店 or None}
+    with 连接() as c:
+        rs = c.execute(text("""select count(*) over () 全量, s.id, s.revision, s.content, s.created_at from samples s
+                                where s.project_id=:p and s.source='意见回流' and s.review_status='待复核' and s.archived_at is null
+                                order by s.created_at, s.id limit :lim"""), {"p": project_id, "lim": 待复核最多}).mappings().all()
+    出 = [{"样本": x["id"], "revision": x["revision"], "题面": x["content"].get("题面"), "期望答案": x["content"].get("期望答案"),
+          "说明": x["content"].get("说明"), "来自意见": x["content"].get("来自意见"), "提的时间": x["created_at"].isoformat()}
+         for x in rs if 能复核吗(人, x["content"] or {})[0]]
+    全量 = int(rs[0]["全量"]) if rs else 0
+    # 先按时间取最多 待复核最多 条、再按「这个人能不能复核」筛 —— 筛完的条数**不是总数**,截断了要明说
+    return {"items": 出, "这一页几条": len(出), "全项目待复核": 全量, "截断了": 全量 > len(rs),
+            "note": ("通过 = 以后智能体答这道题按这个答案判对错;拿不准就退回并写理由"
+                     + (f"。⚠️ 全项目有 {全量} 条待复核,这里只看了最早的 {len(rs)} 条" if 全量 > len(rs) else ""))}
+
+
+@router.post(前缀 + "/opinion-samples/{sample_id}/review")
+async def 店长复核(project_id: str, sample_id: str, request: Request, me: 身份 = Depends(要权限("运行评测"))):
+    """`{决定: 通过|退回, 理由?, revision, 复核人: {工号, 姓名, 角色, 门店}}`。只收内部通道。
+    revision 放在请求体里(这一口只有聊天站调,它从「待我复核」拿到);对不上 → 409。退回要写理由。"""
+    _内部(request)
+    try:
+        体 = await request.json()
+    except Exception:
+        体 = None
+    体 = 体 if isinstance(体, dict) else {}
+    决定, 理由 = _字(体, "决定"), _字(体, "理由")
+    人 = 体.get("复核人") if isinstance(体.get("复核人"), dict) else {}
+    坏 = {}
+    if 决定 not in ("通过", "退回"):
+        坏["决定"] = "只收 通过 / 退回"
+    if 决定 == "退回" and not 理由:
+        坏["理由"] = "退回要写理由 —— 总部运营要照着改了再提"
+    if 理由 and len(理由) > 说明最长:
+        坏["理由"] = f"最多 {说明最长} 字"
+    if 坏:
+        raise _错(422, "VALIDATION", "复核的字段不合格", "见字段错误", field_errors=坏)
+    with 事务() as c:
+        s = c.execute(text("""select revision, review_status, content, organization_id from samples
+                               where project_id=:p and id=:i and source='意见回流' for update"""),
+                      {"p": project_id, "i": sample_id}).mappings().first()
+        if not s:
+            raise _错(404, "NOT_FOUND", "没有这条待复核样本", "回「待我复核」重新进")
+        行, 因 = 能复核吗(人, s["content"] or {})
+        if not 行:
+            raise _错(403, "NOT_REVIEWER", 因, "复核人由聊天站从登录会话换出来")
+        if s["review_status"] != "待复核":
+            raise _错(409, "ALREADY_REVIEWED", f"这条样本已经{s['review_status']}了", "刷新看一眼")
+        if str(s["revision"]) != str(体.get("revision")):
+            raise _错(409, "REVISION_CONFLICT", "这条样本刚被改过", "刷新看一眼最新的再复核")
+        到 = "已通过" if 决定 == "通过" else "已退回"
+        c.execute(text("""update samples set review_status=:t, revision=revision+1, updated_at=now()
+                           where project_id=:p and id=:i"""), {"t": 到, "p": project_id, "i": sample_id})
+        意见 = (s["content"] or {}).get("来自意见")
+        态 = c.execute(text("select status from opinions where project_id=:p and id=:i"), {"p": project_id, "i": 意见}).scalar()
+        c.execute(text("""insert into opinion_events (id, organization_id, project_id, created_at, created_by,
+                              opinion_id, action_code, from_status, to_status, note)
+                          values (:i, :o, :p, now(), :u, :op, :a, :s, :s, :n)"""),
+                  {"i": f"oe_{_uuid.uuid4().hex[:12]}", "o": s["organization_id"], "p": project_id,
+                   "u": f"聊天站:{人.get('工号')}", "op": 意见, "a": "店长通过" if 决定 == "通过" else "店长退回", "s": 态,
+                   "n": 理由})
+    return {"样本": sample_id, "复核状态": 到,
+            "note": ("通过了 —— 它现在是一道评测题的标准答案" if 到 == "已通过" else "退回了 —— 总部运营照理由改了可以重新提")}

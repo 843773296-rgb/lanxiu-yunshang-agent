@@ -95,6 +95,8 @@ P = f"{基址}/api/v1/projects/{项目}"
     # (正式项目里不留 —— 总部运营的受理台里不该多出一条测试数据)
     "POST /opinions/{id}/actions": dict(
         取id=("/opinions", "items[0].id"), 读="/opinions/{id}", 字段="revision", 项目="project_demo_a"),
+    "POST /opinions/{id}/promote": dict(
+        取id=("/opinions", "items[0].id"), 读="/opinions/{id}", 字段="revision", 项目="project_demo_a"),
     "PATCH /access-keys/{id}": dict(
         取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),
     "PATCH /chat-assistants/{id}/draft": dict(

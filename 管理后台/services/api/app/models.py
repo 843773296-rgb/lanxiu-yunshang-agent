@@ -321,9 +321,9 @@ _额外检查 = {
     # 访问密钥(11-03):绑工作流 / 绑聊天助手**二选一** —— 两个都填,一把密钥能调两样;都空,它什么都调不了却照样能发
     # 意见单(11-04,口径照意见收集 PRD §3.2 / §5.1):枚举只收这几个 —— 拼错的值会自成一档,受理台按状态筛时它哪一档都不算
     "opinion_events": [
-        ("ck_opinion_events_action", "action_code in ('开始核实', '请求补充', '关联问题', '答复', '不采纳', '重开', '提的人补充')"),
+        ("ck_opinion_events_action", "action_code in ('开始核实', '请求补充', '关联问题', '答复', '不采纳', '重开', '提的人补充', '提为样本', '店长通过', '店长退回')"),
         # 不采纳 / 重开 / 请求补充 / 答复 一定要写为什么(给提的人看的那句话也在这里)
-        ("ck_opinion_events_note", "action_code in ('开始核实', '关联问题', '提的人补充') or note is not null"),
+        ("ck_opinion_events_note", "action_code in ('开始核实', '关联问题', '提的人补充', '店长通过') or note is not null"),
     ],
     "opinions": [
         ("ck_opinions_source", "source in ('问答', '执行失败', '独立建议')"),

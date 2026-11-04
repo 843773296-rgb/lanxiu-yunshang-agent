@@ -339,13 +339,103 @@ def main():
               "说明": "端到端测试留的样例,供 If-Match 可达性检查用", "提问人": {"工号": "E2E-SAMPLE", "姓名": "e2e"}}
         c, b = 打("POST", "/api/v1/projects/project_demo_a/opinions", 样, 内)
         ck("演示项目里有一条样例意见(重复跑不会多出来)", c == 201, (c, b))
+
+        print("\n▸ ⑭ 期望结果 → 待复核样本(总部运营提)")
+        提人, 提人号, 没绑 = "E2EOPP" + uuid.uuid4().hex[:4], "E2EP" + uuid.uuid4().hex[:6], "E2EOPN" + uuid.uuid4().hex[:4]
+        打("POST", P + "/memberships", {"工号": 提人, "角色": "annotator"})
+        打("POST", P + "/memberships", {"工号": 没绑, "角色": "annotator"})
+        c, b = 打("PUT", P + f"/staff-bindings/{提人}", {"澜绣工号": 提人号, "备注": "e2e 提样本"})
+        ck("给提样本的人绑上澜绣工号", c in (200, 201), (c, b))
+        提样 = lambda oid, 体样, rev, 谁=提人: 打("POST", P + f"/opinions/{oid}/promote", 体样,
+                                              ({"If-Match": str(rev)} if rev is not None else {}), 谁=谁)
+        c, dq = 打("GET", P + f"/opinions/{q['id']}")
+        ck("核实中的意见:详情说「能提样本」,还没有样本", dq.get("能提样本") is True and dq.get("样本") is None, dq)
+        样体 = {"题面": "汉服定制工期多少个工作日?", "期望答案": "21 个工作日", "说明": "e2e"}
+        c, b = 提样(q["id"], 样体, None)
+        ck("不带 If-Match → 409", c == 409 and 码(b) == "IF_MATCH_REQUIRED", (c, b))
+        c, b = 提样(q["id"], {"题面": "x"}, dq["revision"])
+        ck("没写期望答案 → 422(提的人写的期望结果只是候选,标准答案要总部运营写)", c == 422 and "期望答案" in 字段(b), (c, b))
+        c, b = 提样(q["id"], 样体, dq["revision"], 谁=没绑)
+        ck("**提的人没绑澜绣工号 → 409 NOT_BOUND**(比不出复核的是不是同一个人)", c == 409 and 码(b) == "NOT_BOUND", (c, b))
+        c, sp = 提样(q["id"], 样体, dq["revision"])
+        ck("提成待复核样本 → 201", c == 201 and sp.get("复核状态") == "待复核", (c, sp))
+        with 库.connect() as cc:
+            行s = cc.execute(text("""select s.source, s.review_status, s.split, s.group_id, d.name, s.content
+                                       from samples s join datasets d on d.project_id=s.project_id and d.id=s.dataset_id
+                                      where s.project_id=:p and s.id=:i"""), {"p": 项目, "i": sp.get("样本")}).mappings().first()
+        ck("样本进了「意见回流」数据集:来源意见回流、待复核、验证集、按会话分组、记着提样本的人",
+           行s and 行s["source"] == "意见回流" and 行s["review_status"] == "待复核" and 行s["split"] == "验证"
+           and 行s["group_id"] == f"会话:s-{标}-补" and 行s["name"] == "意见回流"
+           and (行s["content"] or {}).get("提样本的人", {}).get("工号") == 提人号, dict(行s or {}))
+        c, dq2 = 打("GET", P + f"/opinions/{q['id']}")
+        c, b = 提样(q["id"], 样体, dq2["revision"])
+        ck("同一条再提 → 409 ALREADY_PROMOTED(被退回之后才能重提)", c == 409 and 码(b) == "ALREADY_PROMOTED", (c, b))
+        ck("详情里样本状态是待复核、不能再提", (dq2.get("样本") or {}).get("复核状态") == "待复核" and dq2.get("能提样本") is False, dq2)
+
+        print("\n▸ ⑮ 店长复核(聊天站转来,内部通道)")
+        待 = lambda 号, 角色, 店: 打("GET", P + "/opinion-samples/pending?" + urllib.parse.urlencode(
+            {"工号": 号, "角色": 角色, "门店": 店}), 头=内)
+        c, b = 打("GET", P + "/opinion-samples/pending?" + urllib.parse.urlencode({"工号": "x", "角色": "店长"}))
+        ck("不带内部凭证 → 403", c == 403, (c, b))
+        有它 = lambda r: any(x["样本"] == sp.get("样本") for x in (r or {}).get("items", []))
+        c, w = 待("E2ESM1", "店长", "杭州店")
+        ck("**提问人所在门店(杭州店)的店长看得到**", c == 200 and 有它(w), (c, w))
+        ck("待我复核如实给全项目待复核条数、有没有截断", isinstance(w.get("全项目待复核"), int) and w.get("截断了") is False, w)
+        ck("别家门店的店长看不到", not 有它(待("E2ESM2", "店长", "苏州店")[1]))
+        ck("门店顾问看不到(只有店长复核)", not 有它(待("E2ESM3", "门店顾问", "杭州店")[1]))
+        ck("**提样本的人自己(哪怕是店长)看不到**", not 有它(待(提人号, "店长", "杭州店")[1]))
+        ck("**提意见的人自己看不到**", not 有它(待(标, "店长", "杭州店")[1]))
+        审 = lambda 决定, 理由=None, rev=None, 人=None: 打("POST", P + f"/opinion-samples/{sp.get('样本')}/review",
+            {"决定": 决定, "理由": 理由, "revision": rev if rev is not None else next(
+                (x["revision"] for x in w.get("items", []) if x["样本"] == sp.get("样本")), None),
+             "复核人": 人 or {"工号": "E2ESM1", "姓名": "e2e 店长", "角色": "店长", "门店": "杭州店"}}, 内)
+        c, b = 审("退回")
+        ck("退回不写理由 → 422", c == 422 and "理由" in 字段(b), (c, b))
+        c, b = 审("通过", 人={"工号": "E2ESM3", "角色": "门店顾问", "门店": "杭州店"})
+        ck("**门店顾问直接打这个口 → 403 NOT_REVIEWER**(页面藏起来不算拦住)", c == 403 and 码(b) == "NOT_REVIEWER", (c, b))
+        c, b = 审("通过", 人={"工号": 提人号, "角色": "店长", "门店": "杭州店"})
+        ck("**提样本的人自己复核 → 403**(两人点头要是两个人)", c == 403 and 码(b) == "NOT_REVIEWER", (c, b))
+        c, b = 审("通过", rev=999)
+        ck("revision 对不上 → 409", c == 409 and 码(b) == "REVISION_CONFLICT", (c, b))
+        c, b = 审("通过")
+        ck("**杭州店店长通过 → 已通过**", c == 200 and b.get("复核状态") == "已通过", (c, b))
+        c, b = 审("退回", "改主意")
+        ck("已复核过的再复核 → 409 ALREADY_REVIEWED", c == 409 and 码(b) == "ALREADY_REVIEWED", (c, b))
+        c, dq3 = 打("GET", P + f"/opinions/{q['id']}")
+        末 = (dq3.get("时间线") or [{}])[-2:]
+        ck("时间线记了「提为样本」和「店长通过」,复核人记成聊天站那个工号",
+           [e["动作"] for e in 末] == ["提为样本", "店长通过"] and 末[-1].get("谁") == "聊天站:E2ESM1", 末)
+        # 退回之后能重提
+        c, r1 = 提(体(标 + "-样2", 工号=标))
+        c, dr = 打("GET", P + f"/opinions/{r1['id']}")
+        打("POST", P + f"/opinions/{r1['id']}/actions", {"动作": "开始核实"}, {"If-Match": str(dr["revision"])})
+        c, dr = 打("GET", P + f"/opinions/{r1['id']}")
+        c, sp2 = 提样(r1["id"], 样体, dr["revision"])
+        c, w2 = 待("E2ESM1", "店长", "杭州店")
+        rev2 = next((x["revision"] for x in w2.get("items", []) if x["样本"] == sp2.get("样本")), None)
+        c, b = 打("POST", P + f"/opinion-samples/{sp2.get('样本')}/review",
+                 {"决定": "退回", "理由": "期望答案没说加急的情况", "revision": rev2,
+                  "复核人": {"工号": "E2ESM1", "角色": "店长", "门店": "杭州店"}}, 内)
+        ck("店长退回 → 已退回", c == 200 and b.get("复核状态") == "已退回", (c, b))
+        c, dr = 打("GET", P + f"/opinions/{r1['id']}")
+        c, sp3 = 提样(r1["id"], {**样体, "期望答案": "21 个工作日;加急另算"}, dr["revision"])
+        ck("**退回之后能重提**(新的一条待复核样本)", c == 201 and sp3.get("样本") != sp2.get("样本"), (c, sp3))
+        打("DELETE", P + f"/staff-bindings/{提人}")
     finally:
         with 库.begin() as cc:
+            样们 = [r[0] for r in cc.execute(text("""select promoted_sample_id from opinions where project_id=:p
+                        and promoted_sample_id is not null and (chat_trace_ref like :t or asker_staff_code=:s)"""),
+                        {"p": 项目, "t": 标 + "%", "s": 标})]
+            样们 += [r[0] for r in cc.execute(text("""select id from samples where project_id=:p and source='意见回流'
+                        and content->>'来自意见' in (select id from opinions where project_id=:p
+                        and (chat_trace_ref like :t or asker_staff_code=:s))"""), {"p": 项目, "t": 标 + "%", "s": 标})]
             cc.execute(text("delete from opinion_events where project_id=:p and opinion_id in "
                             "(select id from opinions where project_id=:p and (chat_trace_ref like :t or asker_staff_code=:s))"),
                        {"p": 项目, "t": 标 + "%", "s": 标})
             cc.execute(text("delete from opinions where project_id=:p and (chat_trace_ref like :t or asker_staff_code=:s)"),
                        {"p": 项目, "t": 标 + "%", "s": 标})
+            if 样们:
+                cc.execute(text("delete from samples where project_id=:p and id = any(:ids)"), {"p": 项目, "ids": list(set(样们))})
         if 造的:
             os.remove(造的)
 

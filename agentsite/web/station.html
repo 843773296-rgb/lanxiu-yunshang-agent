@@ -1149,11 +1149,13 @@ async function openOpinions(预填){
       <select id="op-impact"><option value="">影响(选填)</option>${影响们.map(t => `<option>${esc(t)}</option>`).join("")}</select>
       <div class="row"><button class="ok" id="op-send">提交</button><span class="sub" id="op-why"></span></div>
     </div>
+    ${ME.role === "店长" ? `<h4>待我复核的样本</h4><div class="sub">总部运营从意见里提出来的评测题。<b>通过 = 以后智能体答这道题就按这个答案判对错</b>;拿不准就退回并写理由。</div><div id="op-review" class="sub">在取…</div>` : ""}
     <h4>我的意见</h4><div id="op-mine" class="sub">在取…</div>`;
   $("#odclose").onclick = closeOrder;
   $("#op-send").onclick = 提建议;
   if(预填){ $("#op-type").value = 预填.类 || ""; $("#op-note").value = 预填.说明 || ""; }
   画我的意见();
+  if(ME.role === "店长") 画待复核();
 }
 async function 提建议(){
   const 类 = $("#op-type").value, 说明 = ($("#op-note").value || "").trim();
@@ -1172,6 +1174,35 @@ async function 提建议(){
   }
   $("#op-why").textContent = (r.error || "没提上") + (r.怎么办 ? ":" + r.怎么办 : "");   // 失败不装作成功
 }
+/* 店长复核样本(用户 11-04 拍「总部运营提、店长复核」「在聊天站里复核」)。页面只按角色决定**显不显示**这一块 ——
+ * 能不能复核由聊天站和管理后台各判一遍(是不是店长、门店对不对得上、是不是本人),页面藏起来不是拦住。 */
+async function 画待复核(){
+  const 框 = $("#op-review"); if(!框) return;
+  const d = await fetch("/api/review-samples").then(x => x.json()).catch(e => ({error: String(e)}));
+  if(!d.ok){ 框.textContent = "取不到:" + (d.error || "") + " —— 这是取数失败,不是「没有要复核的」"; return; }
+  if(!(d.items || []).length){ 框.textContent = "现在没有要你复核的样本"; return; }
+  框.innerHTML = d.items.map(x => `<div class="kv"><span>${esc(String(x.提的时间).slice(5, 16).replace("T", " "))}</span><span>`
+    + `<b>题面:</b>${esc(x.题面 || "")}<br><b>标准答案:</b>${esc(x.期望答案 || "")}${x.说明 ? `<br><small>${esc(x.说明)}</small>` : ""}`
+    + `<br><input data-rvnote="${esc(x.样本)}" placeholder="理由(退回必填)" style="width:60%">`
+    + ` <button data-rvok="${esc(x.样本)}" data-rev="${esc(String(x.revision))}">通过</button>`
+    + ` <button data-rvno="${esc(x.样本)}" data-rev="${esc(String(x.revision))}">退回</button>`
+    + ` <small data-rvwhy="${esc(x.样本)}"></small></span></div>`).join("")
+    + (d.截断了 ? `<div class="note">全项目有 ${d.全项目待复核} 条待复核,这里只看了最早的一批</div>` : "");
+  const 审 = async (b, 决定) => {
+    const sid = b.dataset.rvok || b.dataset.rvno;
+    const 理由 = (([...document.querySelectorAll("[data-rvnote]")].find(e => e.dataset.rvnote === sid) || {}).value || "").trim();
+    const 说 = [...document.querySelectorAll("[data-rvwhy]")].find(e => e.dataset.rvwhy === sid);
+    if(决定 === "退回" && !理由){ if(说) 说.textContent = "退回要写理由 —— 总部运营要照着改"; return; }
+    b.disabled = true;
+    const r = await fetch("/api/review-sample/" + encodeURIComponent(sid), {method: "POST", headers: {"content-type": "application/json"},
+      body: JSON.stringify({决定, 理由, revision: +b.dataset.rev})}).then(x => x.json()).catch(e => ({error: String(e)}));
+    if(r.ok){ 画待复核(); return; }
+    b.disabled = false; if(说) 说.textContent = (r.error || "没复核上") + (r.怎么办 ? ":" + r.怎么办 : "");   // 失败不装作成功
+  };
+  框.querySelectorAll("[data-rvok]").forEach(b => { b.onclick = () => 审(b, "通过"); });
+  框.querySelectorAll("[data-rvno]").forEach(b => { b.onclick = () => 审(b, "退回"); });
+}
+
 async function 画我的意见(){
   const 框 = $("#op-mine"); if(!框) return;
   const d = await fetch("/api/my-opinions").then(x => x.json()).catch(e => ({error: String(e)}));

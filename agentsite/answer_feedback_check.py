@@ -10,6 +10,7 @@
   ⑥ 问题类型、影响:和管理后台、聊天页那两份是同一组(各写一份迟早分叉 —— 这条盯着它们没分叉)
   ⑦ 独立建议 / 我的意见:来源评价写死、不挂一轮、提问人只从登录身份取;提交键只收正常的
   ⑧ 真正发出去的命令:URL 全是 ASCII、查的是登录那个人的工号;独立建议带着提交键
+  ⑨ 店长复核:复核人只从登录身份取(页面冒充的被忽略);样本号不许拼路径;待复核的 URL 全是 ASCII
 """
 import ast
 import os
@@ -106,6 +107,27 @@ def main():
        url.isascii() and parse_qs(urlparse(url).query).get("工号") == [顾问["no"]], url)
     头们 = [发了[1][0][i + 1] for i, a in enumerate(发了[1][0]) if a == "-H"] if len(发了) > 1 else []
     ck("⑧ 独立建议:转发时带着提交键(Idempotency-Key)", "Idempotency-Key: k-123" in 头们, 头们)
+
+    # ⑨ 店长复核:复核人只从登录身份取;样本号进 URL,只收短的可见字符;查待复核的 URL 全是 ASCII
+    ck("⑨ 复核人就是登录的那个人(工号 / 角色 / 门店)", AF.复核人(店长) == {"工号": 店长["no"], "姓名": 店长["name"],
+                                                       "角色": "店长", "门店": 店长["shop"]}, AF.复核人(店长))
+    码3, d3 = AF.复核(店长, "../../opinions", {"决定": "通过", "revision": 1}, 凭证="x")
+    ck("⑨ 样本号带斜杠 / 点(想拼到别的路径上)→ 不发请求", 码3 is None and "样本号" in str(d3.get("error")), (码3, d3))
+    发了.clear()
+    AF.subprocess.run = lambda 参, **kw: (发了.append((参, kw.get("input"))), _假())[1]
+    try:
+        AF.查待我复核(店长, 凭证="x")
+        AF.复核(店长, "sm_abc123", {"决定": "退回", "理由": " 答案不全 ", "revision": 2, "复核人": {"工号": "冒充"}}, 凭证="x")
+    finally:
+        AF.subprocess.run = 原run
+    url9 = next((a for a in 发了[0][0] if str(a).startswith("http")), "") if 发了 else ""
+    q9 = parse_qs(urlparse(url9).query)
+    ck("⑨ 待我复核:URL 全是 ASCII,带的是登录那个人的工号 / 角色 / 门店", url9.isascii() and q9.get("工号") == [店长["no"]]
+       and q9.get("角色") == ["店长"] and q9.get("门店") == [店长["shop"]], url9)
+    import json as _json9
+    体9 = _json9.loads(发了[1][1]) if len(发了) > 1 else {}
+    ck("⑨ 复核:页面里冒充的复核人被忽略,理由去了空白", (体9.get("复核人") or {}).get("工号") == 店长["no"]
+       and 体9.get("理由") == "答案不全" and 体9.get("revision") == 2, 体9)
 
     码, d = AF.转给后台(体, 凭证="")
     ck("⑤ 没有内部凭证 → 不发请求、照实说通道没开", 码 is None and "没开" in str(d.get("error")), (码, d))

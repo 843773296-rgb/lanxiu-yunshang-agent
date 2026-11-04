@@ -676,12 +676,30 @@ async function 页_意见详情(id) {
     <h2>处理</h2>
     ${钮 ? `<textarea id="op-act-note" rows="2" placeholder="说明:不采纳 / 答复 / 请求补充 / 重开要写;答复、不采纳、请求补充写的这句话提的人看得到"></textarea>
       <div>${钮}</div><div class="k" id="op-act-why"></div>` : `<div class="note">这一步没有能做的动作(已是终态)。</div>`}
+    <h2>评测样本</h2>
+    ${d.样本 ? `<div class="note">${md(`已提成样本 \`${d.样本.id}\` · 复核状态 **${d.样本.复核状态}**`
+        + (d.样本.复核状态 === "待复核" ? "(等提问人所在门店的店长在聊天站里复核;**复核通过之前它不算标准答案**)" : ""))}</div>` : ""}
+    ${d.能提样本 ? `<div class="sub">${md("把这条意见变成一道评测题:**题面和标准答案由你写**(意见单不存原话,看调用树里的原文再写)。提的人写的「期望结果」只是候选。")}</div>
+      <input id="op-sm-q" placeholder="题面:这道题问的是什么" style="width:100%">
+      <textarea id="op-sm-a" rows="2" placeholder="标准答案(必填)" style="width:100%">${esc(d.期望结果 || "")}</textarea>
+      <input id="op-sm-n" placeholder="说明(选填)" style="width:100%">
+      <div><button id="op-sm-send">提为样本</button> <span class="k" id="op-sm-why"></span></div>` : ""}
     <h2>时间线</h2>
     ${(d.时间线 || []).length ? `<table><thead><tr><th>什么时候</th><th>谁</th><th>动作</th><th>从 → 到</th><th>说明</th></tr></thead><tbody>`
       + d.时间线.map((e) => `<tr><td class="k">${esc(String(e.时间).slice(5, 16).replace("T", " "))}</td><td>${esc(e.谁 || "")}</td>
           <td>${esc(e.动作)}</td><td>${esc(e.从 || "")} → ${esc(e.到)}</td><td>${esc(e.说明 || "")}</td></tr>`).join("") + `</tbody></table>`
       : `<div class="note">还没有人处理过。</div>`}`;
   $("#main").querySelectorAll("[data-optrace]").forEach((b) => { b.onclick = () => { location.hash = "#/trace/" + encodeURIComponent(b.dataset.optrace); }; });
+  if ($("#op-sm-send")) $("#op-sm-send").onclick = async () => {
+    const 题 = ($("#op-sm-q").value || "").trim(), 答 = ($("#op-sm-a").value || "").trim(), 注 = ($("#op-sm-n").value || "").trim();
+    if (!题 || !答) { $("#op-sm-why").textContent = "题面和标准答案都要写"; return; }
+    $("#op-sm-send").disabled = true;
+    try {
+      await 请求(`${P()}/opinions/${encodeURIComponent(id)}/promote`,
+        { method: "POST", headers: { "If-Match": String(d.revision) }, body: JSON.stringify({ 题面: 题, 期望答案: 答, 说明: 注 }) });
+      页_意见详情(id);
+    } catch (e) { $("#op-sm-send").disabled = false; $("#op-sm-why").textContent = "没提上:" + ((e.体 && (e.体.message + " " + (e.体.advice || ""))) || e.message); }
+  };
   $("#main").querySelectorAll("[data-opact]").forEach((b) => {
     b.onclick = async () => {
       const 话 = ($("#op-act-note") || {}).value || "";

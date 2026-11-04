@@ -115,3 +115,28 @@ def 转给后台(体, 凭证=None, 键=None):
     凭证只进 curl 的参数,不进日志。失败**照实说**,不装作成功。"""
     return _curl("POST", f"{后台基址}/api/v1/projects/{后台项目}/opinions", 体,
                  头=([f"Idempotency-Key: {键}"] if 键 else []), 凭证=凭证)
+
+
+# ── 店长复核样本(用户 11-04 拍「总部运营提、店长复核」「店长在聊天站里复核」)──
+# 复核人是谁、是不是店长、哪家门店,**只从登录会话取**;管理后台那边再用同一个判定(opinions_api.能复核吗)核一遍。
+def 复核人(me):
+    return {"工号": (me or {}).get("no"), "姓名": (me or {}).get("name"), "角色": (me or {}).get("role"),
+            "门店": (me or {}).get("shop")}
+
+
+def 查待我复核(me, 凭证=None):
+    from urllib.parse import urlencode
+    人 = 复核人(me)
+    return _curl("GET", f"{后台基址}/api/v1/projects/{后台项目}/opinion-samples/pending?"
+                 + urlencode({"工号": str(人["工号"] or ""), "角色": 人["角色"] or "", "门店": 人["门店"] or ""}), 凭证=凭证)
+
+
+def 复核(me, 样本, 页面, 凭证=None):
+    """页面只给 决定 / 理由 / revision;复核人从登录身份取。样本号只收短的可见字符(它进 URL)。"""
+    页面 = 页面 if isinstance(页面, dict) else {}
+    样本 = str(样本 or "")
+    if not (0 < len(样本) <= 64 and 样本.replace("_", "").isalnum() and 样本.isascii()):
+        return None, {"error": "样本号不对", "怎么办": "回「待我复核」重新点"}
+    体 = {"决定": 页面.get("决定"), "理由": (str(页面.get("理由") or "").strip() or None), "revision": 页面.get("revision"),
+         "复核人": 复核人(me)}
+    return _curl("POST", f"{后台基址}/api/v1/projects/{后台项目}/opinion-samples/{样本}/review", 体, 凭证=凭证)

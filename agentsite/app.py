@@ -316,6 +316,19 @@ class H(BaseHTTPRequestHandler):
                 return self._send({"ok": True, **d})
             return self._send({"error": d.get("message") or d.get("error") or f"取不到({码})",
                                "怎么办": d.get("advice") or d.get("怎么办") or ""}, code=502)
+        if p == "/api/review-samples":
+            # 店长复核样本(11-04):只给店长;复核人从登录会话取。⚠️ 和「我的意见」一样必须写在下面那行转发之前
+            import answer_feedback as _af
+            me = _who(self)
+            if not me:
+                return self._send({"error": "没登录"}, code=401)
+            if me.get("role") != "店长":
+                return self._send({"error": "只有店长能复核样本", "items": []}, code=403)
+            码, d = _af.查待我复核(me)
+            if 码 == 200:
+                return self._send({"ok": True, **d})
+            return self._send({"error": d.get("message") or d.get("error") or f"取不到({码})",
+                               "怎么办": d.get("advice") or d.get("怎么办") or ""}, code=502)
         if p.startswith("/api/") or p.startswith("/img/"): return self._proxy("GET")
         if p == "/report.pdf":
             # 报告导出 PDF(用户 10-10)。**先拿店长自己的 cookie 向后台取这一份** ——
@@ -598,6 +611,21 @@ class H(BaseHTTPRequestHandler):
                                # 字段错误直接说出来 —— 页面只弹 error / 怎么办,「见字段错误」四个字对提问人没有信息量
                                "怎么办": ";".join(str(v) for v in 字段.values()) or d.get("advice") or d.get("怎么办") or "",
                                "字段": 字段 or None}, code=(码 if 码 in (409, 422) else 502))
+        if p.startswith("/api/review-sample/"):
+            # 店长复核一条样本:通过 / 退回。复核人从登录会话取,管理后台那边再核一遍「是不是店长、门店对不对得上、是不是本人」
+            try: body = json.loads(raw or b"{}")
+            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
+            import answer_feedback as _af
+            me = _who(self)
+            if not me:
+                return self._send({"error": "没登录"}, code=401)
+            码, d = _af.复核(me, p[len("/api/review-sample/"):], body)
+            if 码 == 200:
+                return self._send({"ok": True, **d})
+            字段 = d.get("field_errors") or {}
+            return self._send({"error": d.get("message") or d.get("error") or f"没复核上({码})",
+                               "怎么办": ";".join(str(v) for v in 字段.values()) or d.get("advice") or d.get("怎么办") or ""},
+                              code=(码 if 码 in (403, 409, 422) else 502))
         if p == "/api/opinion":
             # 导航「意见与建议」:不挂任何一轮的独立建议(PRD §3.1);提问人从登录会话取,提交键防重复
             try: body = json.loads(raw or b"{}")
