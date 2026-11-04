@@ -436,7 +436,7 @@ def 对外事件(rid: str, authorization: str = Header(default=None), after_seq:
     **只给事件类型、步骤、时间,不给内容** —— 结果在 GET /runs/{id};步骤里的工具参数是内部的东西。"""
     r = None
     if after_seq < 0 or not (1 <= limit <= 1000):
-        raise _错(422, "VALIDATION", "after_seq 不能小于 0,limit 要在 1–1000", "", field_errors={"after_seq": "≥ 0", "limit": "1–1000"})
+        raise _错(422, "VALIDATION", "after_seq 不能小于 0,limit 要在 1–1000", "after_seq 用上一次返回的「下一次从这儿拉」;第一次从 0 开始", field_errors={"after_seq": "≥ 0", "limit": "1–1000"})
     try:
         with 连接() as c:
             r = _认密钥(c, authorization)

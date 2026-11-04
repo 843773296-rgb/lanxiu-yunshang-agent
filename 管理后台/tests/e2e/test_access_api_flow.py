@@ -303,6 +303,8 @@ def main():
     ck("**两条一段、带「下一次从这儿拉」接着拉 → 拼起来和一次拉全的一模一样**(断了接上,不重不漏)", 拼 == 号, (拼, 号))
     c, b = 外("GET", f"/open/v1/runs/{rn_id}/events", 密)
     ck("别的密钥拉这次运行的事件 → 404", c == 404, (c, b))
+    c, b = 外("GET", f"/open/v1/runs/{rn_id}/events?after_seq=-1", 新密)
+    ck("after_seq 是负数 → 422 且带「怎么办」(11-04 前这里会崩成 500)", c == 422 and (b or {}).get("advice"), (c, b))
 
     print("\n▸ 取消(规则和后台取消口同一份)")
     c, b = 外("POST", f"/open/v1/runs/{rn_id}/cancel", 密)

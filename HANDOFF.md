@@ -58,6 +58,17 @@ import `credit` / `ownership` / `roster` / `touchpoint` 再调 `用副本()`,
 ② `tools/bite_replay_touched.py` 那个结构性死锁(两个滚动 jsonl 让工作区永远脏,
   于是 `--工作区脏也跑` 永远要加 = 那道闸退化成一句提示)。
 
+## 📊 11-04 傍晚:DF-04 监测页做完(第一步)—— 验收全绿,提交中;**下一步 = 告警(C16)**
+
+- 用户拍(AskUserQuestion):**办成 = 跑完 + 每处写入都有澜绣「已执行」回执**;跑完没回执 → 跑完·没证实;没写入 → 单列不进办成率
+- `monitoring_api.py`:GET /monitoring,范围默认「业务」(live 且不是连接测试 / 样例预览 / 集成验证);**环境以 definition_ref.环境 为准**
+  (execution_runs.environment 一律是 development);kind 只算 workflow / application(node_test / fork_test 是调试)
+- **小样本线 20 是我定的产品默认值,用户没确认**(页面 note 每次写明)—— 告警那一步要做成配置项,问用户要不要改
+- 抓到并修了:三处 `_错(..., "", ...)` 空建议 → 500(监测范围 / 对外 after_seq 负数 / 意见说明超长);错误契约要求建议必填
+- 告警设计要点(方案 §8.1 / C16):名称、应用 / 环境、指标、窗口、**最小样本量**、阈值、**连续触发次数**、**去重周期**、负责人、**恢复条件**;
+  先做站内待办(human_requests?或新表),外部通知不做;阈值都是产品配置,别写成行业标准
+- 接入文档那一刀(88aaa407)已推、CI 绿
+
 ## 📄 11-04 傍晚:访问 API 最后一样「接入文档」—— **代码写完,没重启、没跑 e2e、没提交**
 
 - 做了:`GET /workflows/{id}/access-doc`(open_api.接入文档,按**生产那一版** input_schema / output_schema 现生成 markdown;没上生产 → 有文档吗=false)、
@@ -13931,12 +13942,12 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 16:03。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 16:24。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | 1d2efb76 · 2026-11-04 · Merge remote-tracking branch 'origin/main' into w75 |
+| 分支 | `main` |
+| 最新提交 | 95cd8417 · 2026-11-04 · 咬合失效的第六种形状:用例全打在纯函数上,而破坏点在接线上 |
 | 代码量 | 954 个 Python 文件 / 181573 行(不含 .venv) |
 | 验收 | `./check.sh` 共 376 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
@@ -13944,22 +13955,37 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 **未提交的改动:**
 
 ```
-M CLAUDE.md
- M HANDOFF.md
- M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
-?? .feynman/bite-all-20261016.log
+M  ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
+M  .feynman/tool-eval.json
+M  HANDOFF.md
+M  agentsite/evals/funnel.jsonl
+M  agentsite/evals/skill_usage.jsonl
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/Makefile"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/app.js"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/packages/contracts/api.ts"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/packages/contracts/openapi.json"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/endpoints.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/main.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/open_api.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/opinions_api.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_access_api_flow.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_opinions_flow.py"
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+95cd8417 咬合失效的第六种形状:用例全打在纯函数上,而破坏点在接线上
 1d2efb76 Merge remote-tracking branch 'origin/main' into w75
 88aaa407 访问 API 接入文档:按生产那一版的 schema 现生成;错误码说明表和代码两个方向对账
 07ce22bd Merge remote-tracking branch 'origin/main' into w75
 14f55658 切库口自己把烤死在默认参数里的库路径一起换掉 —— 11-03 丢 55 条评价那个窟窿到今天还是活的
-8bc9dc58 访问 API 补齐:订阅进度按序号续传、对外取消、密钥有效期(必选、最长 1 年)与轮换
 ```
 <!--/AUTO-->
 ## 一句话在做什么

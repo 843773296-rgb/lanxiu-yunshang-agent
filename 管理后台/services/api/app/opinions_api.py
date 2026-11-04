@@ -400,7 +400,7 @@ async def 受理一步(project_id: str, opinion_id: str, request: Request,
     动作 = _字(体, "动作")
     说明 = _字(体, "说明")
     if 说明 and len(说明) > 说明最长:
-        raise _错(422, "VALIDATION", f"说明最多 {说明最长} 字", "", field_errors={"说明": f"最多 {说明最长} 字"})
+        raise _错(422, "VALIDATION", f"说明最多 {说明最长} 字", "写短一点;详细的证据看调用树,不用抄进说明", field_errors={"说明": f"最多 {说明最长} 字"})
     with 事务() as c:
         x = c.execute(text("select status, revision, organization_id from opinions where project_id=:p and id=:i for update"),
                       {"p": project_id, "i": opinion_id}).mappings().first()

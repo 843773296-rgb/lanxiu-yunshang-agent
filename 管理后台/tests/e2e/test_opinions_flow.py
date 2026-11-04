@@ -294,6 +294,8 @@ def main():
         ck("待受理直接「答复」→ 409 TRANSITION_NOT_ALLOWED(要先核实)", c == 409 and 码(b) == "TRANSITION_NOT_ALLOWED", (c, b))
         c, b = 动(s1["id"], "请求补充", rev=rev)
         ck("「请求补充」不写说明 → 422", c == 422 and "说明" in 字段(b), (c, b))
+        c, b = 动(s1["id"], "请求补充", "长" * 1001, rev=rev)
+        ck("说明超过 1000 字 → 422 且带「怎么办」(11-04 前这里会崩成 500)", c == 422 and (b or {}).get("advice"), (c, b))
         无权 = "E2EOPV" + uuid.uuid4().hex[:4]
         打("POST", P + "/memberships", {"工号": 无权, "角色": "viewer"})
         c, b = 动(s1["id"], "开始核实", rev=rev, 谁=无权)

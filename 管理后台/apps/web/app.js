@@ -115,6 +115,7 @@ const 导航 = [
   ["grp", "日志与监测"],
   ["#/runs", "运行记录", true, true],
   ["#/opinions", "意见受理", true, true],
+  ["#/monitoring", "监测", true, true],
   ["#/traces", "调用链", true, true],
   ["#/outputs", "产出监督", true, true],
   ["#/health", "智能体健康", true, true],
@@ -621,6 +622,51 @@ async function 页_prompt详情(pid) {
       <div class="note">${md(`跑完可以「加入问题集」「保存为评测样本」—— 新样本**先进待审核**,
         避免把错误答案当成真值。(这两个按钮还没实现)`)}</div>`;
   }
+}
+
+/* ── 监测(11-04;Dify 对标 §8.1 / DF-04)────────────────────────────────────────────
+ * **口径全在服务端**(monitoring_api):办成 = 跑完 + 每处写入都有澜绣回执(用户拍);分母是 0 显示「—」不显示 0%;
+ * 算不出金额的单独数、费用写「至少」。页面只负责把同一个筛选同时作用到所有卡片上,不另算一遍。 */
+let 监测筛 = { 范围: "业务", 天: 7 };
+async function 页_监测() {
+  const 头 = `<div class="crumb">监测</div><div class="head"><div><h1>监测</h1>
+    <div class="sub">${md("按应用 / 环境 / 版本 / 入口看运行、办成和花费。**办成 = 跑完 + 每一处写入都拿到澜绣的回执**;等人核对的不算失败也不算成功;算不出的显示「—」,不显示 0。")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  const q = Object.entries(监测筛).filter(([, v]) => v !== "" && v != null).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+  let d;
+  try { d = await 请求(`${P()}/monitoring?${q}`); }
+  catch (e) { const s = 错误块(e, 页_监测); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 率 = (v, 分母) => v == null ? `— <span class="k">(分母 0,未知)</span>` : `${esc(String(v))}% <span class="k">(分母 ${esc(String(分母))})</span>`;
+  const 秒 = (x) => x["P50秒"] == null ? "—" : `P50 ${esc(String(x["P50秒"]))}s · P95 ${esc(String(x["P95秒"]))}s <span class="k">(${esc(String(x["样本数"]))} 条${x["样本少"] ? ",样本少" : ""})</span>`;
+  const 选 = (名, 值们) => `<label class="f">${esc(名)}</label><select data-monf="${esc(名)}"><option value="">全部</option>`
+    + 值们.map((v) => `<option${String(监测筛[名] ?? "") === String(v) ? " selected" : ""}>${esc(String(v))}</option>`).join("") + `</select>`;
+  const 可 = d["可用性"], 业 = d["业务"], 性 = d["性能"], 本 = d["成本"];
+  $("#main").innerHTML = 头 + `<div>${["业务", "调试", "全部"].map((t) => `<button data-monscope="${t}"${t === 监测筛.范围 ? ' class="on"' : ""}>${t}</button>`).join(" ")}
+      ${[1, 7, 30].map((n) => `<button data-mondays="${n}"${n === 监测筛.天 ? ' class="on"' : ""}>${n} 天</button>`).join(" ")}</div>
+    <div>${选("应用", d["可选"]["应用"])}${选("版本", d["可选"]["版本"])}${选("环境", d["可选"]["环境"])}${选("入口", d["可选"]["入口"])}</div>
+    ${d.note ? `<div class="note">${md(d.note)}</div>` : ""}
+    <h2>可用性</h2><table><tbody>
+      <tr><td class="k">接收</td><td>${esc(String(可["接收"]))}</td><td class="k">终态成功率</td><td>${率(可["终态成功率"], 可["终态成功率分母"])}</td></tr>
+      <tr><td class="k">跑完 / 失败 / 取消 / 没做完</td><td>${[可["跑完"], 可["失败"], 可["取消"], 可["没做完"]].join(" / ")}</td>
+          <td class="k">进行中 / 等人核对 / 等澜绣执行</td><td>${[可["进行中"], 可["等人核对"], 可["等澜绣执行"]].join(" / ")}</td></tr></tbody></table>
+    <h2>业务办成</h2><table><tbody>
+      <tr><td class="k">办成</td><td>${esc(String(业["办成"]))}</td><td class="k">写入办成率</td><td>${率(业["写入办成率"], 业["写入办成率分母"])}</td></tr>
+      <tr><td class="k">跑完·没证实</td><td>${esc(String(业["跑完·没证实"]))}</td><td class="k">跑完·这次不需要写入</td><td>${esc(String(业["跑完·这次不需要写入"]))}</td></tr></tbody></table>
+    <h2>性能</h2><table><tbody><tr><td class="k">端到端</td><td>${秒(性["端到端"])}</td><td class="k">排队</td><td>${秒(性["排队"])}</td></tr></tbody></table>
+    <h2>成本</h2><table><tbody>
+      <tr><td class="k">已知费用</td><td>${本["是至少吗"] ? "至少 " : ""}$${esc(String(本["已知费用"]))}${本["算不出金额的笔数"] ? ` <span class="k">另有 ${esc(String(本["算不出金额的笔数"]))} 笔算不出</span>` : ""}</td>
+          <td class="k">每个办成任务</td><td>${本["每个办成任务成本"] == null ? `— <span class="k">(没有办成的,未知)</span>` : `${本["是至少吗"] ? "至少 " : ""}$${esc(String(本["每个办成任务成本"]))}`}</td></tr>
+      <tr><td class="k">token</td><td>${esc(String(本["token"]))}</td><td></td><td></td></tr></tbody></table>
+    <h2>按应用 × 版本</h2>
+    ${(d["分组"] || []).length ? `<table><thead><tr><th>应用</th><th>版本</th><th>接收</th><th>终态成功率</th><th>办成</th><th>写入办成率</th><th>已知费用</th></tr></thead><tbody>`
+      + d["分组"].map((g) => `<tr><td>${esc(String(g["应用"] || "—"))}</td><td>${g["版本"] == null ? "—" : "v" + esc(String(g["版本"]))}</td>
+          <td>${esc(String(g["接收"]))}${g["样本少"] ? ' <span class="k">样本少</span>' : ""}</td><td>${率(g["终态成功率"], g["终态"])}</td>
+          <td>${esc(String(g["办成"]))}</td><td>${率(g["写入办成率"], g["有写入的跑完"])}</td><td>$${esc(String(g["已知费用"]))}${g["算不出笔数"] ? " 起" : ""}</td></tr>`).join("") + `</tbody></table>`
+      : 状态("", "这个范围里没有运行", "换个时间窗或范围看看;「调试」里是连接测试和 mock 跑的那些。").html}
+    <div class="k">更新于 ${esc(String(d["更新时刻"]).slice(0, 19).replace("T", " "))}</div>`;
+  $("#main").querySelectorAll("[data-monscope]").forEach((b) => { b.onclick = () => { 监测筛.范围 = b.dataset.monscope; 页_监测(); }; });
+  $("#main").querySelectorAll("[data-mondays]").forEach((b) => { b.onclick = () => { 监测筛.天 = +b.dataset.mondays; 页_监测(); }; });
+  $("#main").querySelectorAll("[data-monf]").forEach((sel) => { sel.onchange = () => { 监测筛[sel.dataset.monf] = sel.value; 页_监测(); }; });
 }
 
 /* ── 意见受理(11-04;意见收集 PRD §4.1 / §5.1;用户拍:总部运营统一受理、1 个工作日首次处理、跳周末和法定假日)──
@@ -7396,6 +7442,7 @@ async function 路由() {
     if (h.startsWith("#/output/")) return await 页_产出详情(decodeURIComponent(h.slice(9)));
     if (h === "#/runs") return await 页_运行记录();
     if (h === "#/opinions") return await 页_意见受理();
+    if (h === "#/monitoring") return await 页_监测();
     if (h.startsWith("#/opinion/")) return await 页_意见详情(decodeURIComponent(h.slice(10)));
     if (h === "#/schedules") return await 页_定时();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
