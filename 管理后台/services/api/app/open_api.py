@@ -92,6 +92,9 @@ def _键的样子(r, 花了=None, 算不出=None):
             "发于": r["created_at"].isoformat() if r["created_at"] else None,
             "最后一次用": r["last_used_at"].isoformat() if r["last_used_at"] else None,
             "吊销于": r["revoked_at"].isoformat() if r["revoked_at"] else None, "吊销人": r["revoked_by"],
+            "有效期至": r["expires_at"].isoformat() if r.get("expires_at") else None,
+            "过期了吗": bool(r.get("expires_at") and r["expires_at"] <= datetime.now(timezone.utc)),
+            "还剩几天": (max(0, (r["expires_at"] - datetime.now(timezone.utc)).days) if r.get("expires_at") else None),
             "今天花了": float(花了) if 花了 is not None else None, "今天算不出金额的账": 算不出,
             "revision": r["revision"]}
 
@@ -134,16 +137,35 @@ def 项目里的密钥(project_id: str, me: 身份 = Depends(要权限("配置�
     return {"条数": len(密钥们), "密钥": 密钥们}
 
 
-def _发一把(c, project_id, me, 名, 上限, 应用id=None, 助手id=None):
-    """建一行密钥 → (id, 原文)。上限、项目日预算由调用方先判;**原文只从这里返回一次**。"""
+# 有效期(用户 11-04 拍:必选、最长 1 年;页面默认 90)。**只收这几档** —— 任意天数会让「最多活一年」靠每个人自觉
+有效期档 = (30, 90, 180, 365)
+轮换宽限小时 = 24       # 轮换后旧钥还能用多久:给对方把新钥换上去的时间
+
+
+def _有效期(体):
+    v = 体.get("有效期天数")
+    try:
+        天 = int(v)
+    except (TypeError, ValueError):
+        天 = None
+    if 天 not in 有效期档:
+        raise _错(422, "VALIDATION", f"有效期要从 {list(有效期档)} 天里选", "页面默认 90 天;最长 1 年(用户 11-04 拍)",
+                  field_errors={"有效期天数": f"只收 {list(有效期档)}"})
+    return 天
+
+
+def _发一把(c, project_id, me, 名, 上限, 天数, 应用id=None, 助手id=None):
+    """建一行密钥 → (id, 原文)。上限、项目日预算、有效期由调用方先判;**原文只从这里返回一次**。"""
     原文 = 密钥开头 + secrets.token_hex(20)
     kid = WF._新id("ak")
     c.execute(text("""insert into access_keys (id, organization_id, project_id, application_id, chat_assistant_id, name,
-                          prefix_code, lookup_hash, daily_cap_amount, currency, created_at, created_by, updated_at, revision)
-                      values (:i,:o,:p,:a,:ca,:n,:pc,:h,:cap,:cur, now(), :by, now(), 1)"""),
+                          prefix_code, lookup_hash, daily_cap_amount, currency, created_at, created_by, updated_at, revision,
+                          expires_at)
+                      values (:i,:o,:p,:a,:ca,:n,:pc,:h,:cap,:cur, now(), :by, now(), 1, now() + make_interval(days => :d))"""),
               {"i": kid, "o": me.org_id, "p": project_id, "a": 应用id, "ca": 助手id, "n": 名, "pc": 原文[:13],
-               "h": _哈希(原文), "cap": 上限, "cur": 币种, "by": me.user_id})
-    WF._审计(c, me, "access_key.issue", {"密钥": kid, "应用": 应用id, "聊天助手": 助手id, "名字": 名, "每天上限": str(上限)})
+               "h": _哈希(原文), "cap": 上限, "cur": 币种, "by": me.user_id, "d": 天数})
+    WF._审计(c, me, "access_key.issue", {"密钥": kid, "应用": 应用id, "聊天助手": 助手id, "名字": 名, "每天上限": str(上限),
+                                         "有效期天数": 天数})
     return kid, 原文
 
 
@@ -166,6 +188,7 @@ async def 发密钥(project_id: str, wid: str, request: Request, me: 身份 = De
     if not 名:
         raise _错(422, "VALIDATION", "名字不能空", "写清这把密钥给谁用,比如「门店小程序」", field_errors={"名字": "必填"})
     上限 = _金额(体.get("每天上限"), "每天上限")
+    天数 = _有效期(体)
     with 事务() as c:
         w = c.execute(text("select name from workflows where project_id=:p and id=:w and archived_at is null"),
                       {"p": project_id, "w": wid}).mappings().first()
@@ -173,9 +196,9 @@ async def 发密钥(project_id: str, wid: str, request: Request, me: 身份 = De
             raise _错(404, "NOT_FOUND", "没有这条工作流", "回列表重新进入")
         _判上限(c, project_id, 上限)
         aid = WF._工作流应用(c, project_id, wid, me, w["name"])
-        kid, 原文 = _发一把(c, project_id, me, 名, 上限, 应用id=aid)
+        kid, 原文 = _发一把(c, project_id, me, 名, 上限, 天数, 应用id=aid)
     return {"id": kid, "名字": 名, "原文": 原文, "开头": 原文[:13] + "…", "应用id": aid,
-            "每天上限": float(上限), "币种": 币种, "调用地址": f"{对外}/apps/{aid}/runs",
+            "每天上限": float(上限), "币种": 币种, "调用地址": f"{对外}/apps/{aid}/runs", "有效期天数": 天数,
             "note": "**这是唯一一次看得到原文** —— 现在就存好;库里只有哈希,谁都找不回,忘了就吊销重发"}
 
 
@@ -224,6 +247,40 @@ async def 吊销(project_id: str, kid: str, request: Request, me: 身份 = Depen
     return {"id": kid, "吊销了吗": True, "note": "已吊销,从下一次调用起就拒"}
 
 
+@router.post(前缀 + "/access-keys/{kid}/rotate", status_code=201)
+async def 轮换(project_id: str, kid: str, request: Request,
+             if_match: str = Header(default=None, alias="If-Match"),
+             me: 身份 = Depends(要权限("配置密钥与预算"))):
+    """`{有效期天数}`(带 If-Match)→ 一把**绑同一个应用 / 聊天助手、同样上限**的新钥(原文只这一次);
+    旧的有效期缩到 24 小时后(原本更早到期的不拉长),给对方把新钥换上去。吊销了 / 已过期的不能轮换 —— 重发。"""
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match", "把列表里这把密钥的 revision 放进 If-Match 头")
+    体 = await request.json() if await request.body() else {}
+    天数 = _有效期(体)
+    with 事务() as c:
+        r = c.execute(text("select * from access_keys where project_id=:p and id=:i for update"),
+                      {"p": project_id, "i": kid}).mappings().first()
+        if not r:
+            raise _错(404, "NOT_FOUND", "没有这把密钥", "回列表重新进入")
+        if str(r["revision"]) != str(if_match).strip('"'):
+            raise _错(409, "REVISION_CONFLICT", "这把密钥已经被改过了", "刷新看一眼再轮换")
+        if r["revoked_at"] or r["expires_at"] <= datetime.now(timezone.utc):
+            raise _错(409, "NOT_ROTATABLE", "这把密钥已经" + ("吊销" if r["revoked_at"] else "过期") + "了,不能轮换",
+                      "直接重发一把新的 —— 轮换是给还在用的那把留切换时间的")
+        _判上限(c, project_id, Decimal(r["daily_cap_amount"]))
+        新id, 原文 = _发一把(c, project_id, me, r["name"], Decimal(r["daily_cap_amount"]), 天数,
+                         应用id=r["application_id"], 助手id=r["chat_assistant_id"])
+        旧到期 = c.execute(text(f"""update access_keys set expires_at = least(expires_at, now() + interval '{轮换宽限小时} hours'),
+                                     updated_at=now(), revision=revision+1
+                               where project_id=:p and id=:i returning expires_at"""),
+                          {"p": project_id, "i": kid}).scalar()
+        WF._审计(c, me, "access_key.rotate", {"旧密钥": kid, "新密钥": 新id, "旧的到期": 旧到期.isoformat()})
+    return {"新的": {"id": 新id, "原文": 原文, "开头": 原文[:13] + "…", "有效期天数": 天数},
+            "旧的": {"id": kid, "有效期至": 旧到期.isoformat()},
+            "note": (f"**新钥原文只这一次看得到**。旧的还能用到 {旧到期:%m-%d %H:%M}(最多 {轮换宽限小时} 小时),"
+                     "让对方在那之前换上新钥;到点自动拒,不用再手动吊销")}
+
+
 # ══ 对外这一半 ════════════════════════════════════════════════════════════════
 
 class _拒(Exception):
@@ -262,6 +319,10 @@ def _过闸(c, r):
     """吊销 / 限流 / 发密钥的人还有没有权限 → 他的身份。"""
     if r["revoked_at"]:
         raise _拒(401, "ACCESS_KEY_REVOKED", "已吊销", "这把访问密钥已经吊销", "找后台的人重发一把")
+    if r["expires_at"] <= datetime.now(timezone.utc):
+        # Dify 对标 C05:过期 → 拒绝并记原因(调用记录里记「已过期」),不建任何运行
+        raise _拒(401, "ACCESS_KEY_EXPIRED", "已过期", f"这把访问密钥 {r['expires_at']:%Y-%m-%d %H:%M} 已经过期",
+                  "找后台的人轮换一把新的(轮换后旧的还能用 24 小时,给你换上去)")
     n = c.execute(text("""select count(*) from access_key_calls
                            where project_id=:p and access_key_id=:k and created_at > now() - interval '60 seconds'"""),
                   {"p": r["project_id"], "k": r["id"]}).scalar()
@@ -353,7 +414,79 @@ async def 对外发起(aid: str, request: Request,
 
 _对外状态 = {"queued": "排队中", "running": "在跑", "waiting_approval": "在等人核对",
             "waiting_external": "在等澜绣执行", "succeeded": "已完成", "failed": "失败",
-            "cancelled": "已取消", "incomplete": "没做完"}
+            "cancelled": "已取消", "incomplete": "没做完", "cancel_requested": "取消请求中",
+            "paused": "暂停中", "pause_requested": "暂停请求中"}
+
+
+def _我的运行(c, r, rid, 锁=False):
+    """这把密钥发起的那一次运行;别的(哪怕同一个人发的)→ 404,不说它存不存在。"""
+    e = c.execute(text(f"""select * from execution_runs where project_id=:p and id=:i
+                            and definition_ref->>'密钥id' = :k {'for update' if 锁 else ''}"""),
+                  {"p": r["project_id"], "i": rid, "k": r["id"]}).mappings().first()
+    if not e:
+        raise _拒(404, "NOT_FOUND", "查不到", "这把访问密钥发起的运行里没有这一条", "核对运行编号;只查得到自己发起的")
+    return e
+
+
+@router.get(对外 + "/runs/{rid}/events")
+def 对外事件(rid: str, authorization: str = Header(default=None), after_seq: int = 0, limit: int = 200):
+    """订阅进度(Dify 对标 §6.3 / C07):**按事件序号续传**。断网不等于任务失败 —— 连回来带上
+    「下一次从这儿拉」那个 after_seq 接着拉,一条不重、一条不漏;运行本身不会因为没人在听而停。
+    做成一轮一请求的补拉(和后台那条同一个理由):**每一轮都重新过密钥的闸**,密钥吊销了 / 过期了下一轮就拒。
+    **只给事件类型、步骤、时间,不给内容** —— 结果在 GET /runs/{id};步骤里的工具参数是内部的东西。"""
+    r = None
+    if after_seq < 0 or not (1 <= limit <= 1000):
+        raise _错(422, "VALIDATION", "after_seq 不能小于 0,limit 要在 1–1000", "", field_errors={"after_seq": "≥ 0", "limit": "1–1000"})
+    try:
+        with 连接() as c:
+            r = _认密钥(c, authorization)
+            _过闸(c, r)
+            e = _我的运行(c, r, rid)
+            行 = [dict(x) for x in c.execute(text("""select seq, event_type, step_id, occurred_at from run_events
+                                                    where project_id=:p and execution_run_id=:i and seq > :a
+                                                    order by seq limit :lim"""),
+                                           {"p": r["project_id"], "i": rid, "a": after_seq, "lim": limit}).mappings()]
+            最大 = c.execute(text("select coalesce(max(seq), 0) from run_events where project_id=:p and execution_run_id=:i"),
+                           {"p": r["project_id"], "i": rid}).scalar()
+    except _拒 as x:
+        _记一笔(r, "订阅进度", x.结果 or x.code, x.http, 说明=x.message)
+        raise _拒成错(x)
+    _记一笔(r, "订阅进度", "查询", 200, 运行=rid)
+    终 = e["status"] in ("succeeded", "failed", "cancelled", "incomplete")
+    return {"运行编号": rid, "状态": _对外状态.get(e["status"], e["status"]), "跑完了吗": 终,
+            "事件": [{"序号": x["seq"], "类型": x["event_type"], "步骤": x["step_id"],
+                    "发生于": x["occurred_at"].isoformat() if x["occurred_at"] else None} for x in 行],
+            "after_seq": after_seq, "最新序号": 最大, "下一次从这儿拉": (行[-1]["seq"] if 行 else after_seq),
+            "还有吗": bool(行) and 行[-1]["seq"] < 最大,
+            "note": ("断了就带 `下一次从这儿拉` 那个数作为 after_seq 接着拉;**连接断了不等于运行失败**,"
+                     "状态以 `状态` / GET /runs/{id} 为准" + ("" if 行 or 终 else "。这一轮没有新事件,隔几秒再拉"))}
+
+
+@router.post(对外 + "/runs/{rid}/cancel", status_code=202)
+def 对外取消(rid: str, authorization: str = Header(default=None)):
+    """取消这把密钥发起的一次运行(Dify 对标 §6.3)。**规则和后台那个取消口是同一份**(runctl.取消一次):
+    已结束的保留真实终态、没开跑的直接取消、在跑的是「请求取消」。
+    **说清已经发生的写入**:这次运行已经让澜绣执行过的业务写入,取消不回来 —— 逐条列出来,不承诺撤销。"""
+    import runctl as RC
+    r = None
+    try:
+        with 事务() as c:
+            r = _认密钥(c, authorization)
+            本人 = _过闸(c, r)
+            e = _我的运行(c, r, rid, 锁=True)
+            出 = RC.取消一次(c, r["project_id"], rid, dict(e), e["revision"], 谁=f"访问密钥:{r['id']}")
+            写了 = [dict(x) for x in c.execute(text("""select tool_name, acked_at from bridge_calls
+                                                     where project_id=:p and execution_run_id=:i and status='已执行'
+                                                     order by acked_at"""), {"p": r["project_id"], "i": rid}).mappings()]
+    except _拒 as x:
+        _记一笔(r, "取消", x.结果 or x.code, x.http, 说明=x.message)
+        raise _拒成错(x)
+    _记一笔(r, "取消", "取消" if 出.get("改了吗") else "没改", 202, 运行=rid, 说明=出.get("note"))
+    return {"运行编号": rid, "状态": _对外状态.get(出["status"], 出["status"]), "改了吗": 出.get("改了吗"),
+            "已经发生的写入": [{"工具": w["tool_name"], "什么时候": w["acked_at"].isoformat() if w["acked_at"] else None}
+                           for w in 写了],
+            "note": (出.get("note", "") + (f"。⚠️ 这次运行已经让澜绣执行过 {len(写了)} 次业务写入(上面逐条列着),**取消撤不回它们**"
+                                          if 写了 else "。这次运行还没有让澜绣执行过任何业务写入"))}
 
 
 @router.get(对外 + "/runs/{rid}")
@@ -454,13 +587,14 @@ async def 给聊天助手发密钥(project_id: str, cid: str, request: Request, 
     if not 名:
         raise _错(422, "VALIDATION", "名字不能空", "写清这把密钥给谁用,比如「企业微信机器人」", field_errors={"名字": "必填"})
     上限 = _金额(体.get("每天上限"), "每天上限")
+    天数 = _有效期(体)
     with 事务() as c:
         if not c.execute(text("select 1 from chat_assistants where project_id=:p and id=:i"), {"p": project_id, "i": cid}).first():
             raise _错(404, "NOT_FOUND", "没有这个聊天助手", "回列表重新进入")
         _判上限(c, project_id, 上限)
-        kid, 原文 = _发一把(c, project_id, me, 名, 上限, 助手id=cid)
+        kid, 原文 = _发一把(c, project_id, me, 名, 上限, 天数, 助手id=cid)
     return {"id": kid, "名字": 名, "原文": 原文, "开头": 原文[:13] + "…", "聊天助手id": cid,
-            "每天上限": float(上限), "币种": 币种, "调用地址": f"{对外}/chat-assistants/{cid}/messages",
+            "每天上限": float(上限), "币种": 币种, "调用地址": f"{对外}/chat-assistants/{cid}/messages", "有效期天数": 天数,
             "note": "**这是唯一一次看得到原文** —— 现在就存好;库里只有哈希,谁都找不回,忘了就吊销重发"}
 
 

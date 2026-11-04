@@ -201,46 +201,52 @@ async def 请求取消(project_id: str, run_id: str, request: Request,
     rev = _要键和锁(idempotency_key, if_match, 体, "取消")
     with 事务() as c:
         r = _取(c, project_id, run_id, 锁=True)
-        if r["status"] in _机["终态"]:
-            # ⚠️ **保留真实终态,不谎报成已取消**(§11.5)。
-            # 和 `jobs.收尾` 那条同一个道理:一次已经成功的运行被标成
-            # 「已取消」,会让人以为它的产物不存在。
-            return {"id": run_id, "status": r["status"], "改了吗": False,
-                    "note": (f"这次运行已经结束了(「{r['status']}」)—— "
-                             f"**保留真实终态,不谎报成已取消**。"
-                             f"它的产物是真的,取消不掉")}
-        if r["status"] == "cancel_requested":
-            return {"id": run_id, "status": r["status"], "改了吗": False,
-                    "note": "已经在「取消请求中」了"}
-        # ⚠️ **还没开跑的直接取消,不走「取消请求中」。**
-        # 状态机里 `queued`/`paused`/`waiting_*` 只能直接到 `cancelled` ——
-        # 那是对的:**没有在途调用要掐,所以没有「请求」这一档**。
-        # 硬塞一个 `cancel_requested` 的坏法:界面上出现一个
-        # 永远不会变成 `cancelled` 的中间态(没有执行器会去处理它)。
-        直接取消 = "cancelled" in _机["流转"].get(r["status"], [])
-        目标 = "cancelled" if 直接取消 else "cancel_requested"
-        新rev = _换状态(c, project_id, run_id, r, 目标, rev,
-                     谁=me.user_id, 动作="cancel",
-                     额外={"cancel_requested": True})
-        if 直接取消 and r["status"] == "waiting_approval":
-            # **它挂着的核对待办一起关掉**(2026-10-24 真模型验证时撞到):运行取消了,
-            # 待办列表上还挂着一条「待处理」—— 有人点进去批了,决定记下了,却什么都不会发生
-            c.execute(text("""update human_requests set status='cancelled', updated_at=now(), revision=revision+1
-                               where project_id=:p and execution_run_id=:r and status='pending'"""),
-                      {"p": project_id, "r": run_id})
-        if 直接取消:
-            return {"id": run_id, "status": "cancelled", "改了吗": True,
-                    "revision": 新rev,
-                    "note": (f"这次运行还没开跑(之前是「{r['status']}」),"
-                             f"**没有在途调用要掐,所以直接取消了** —— "
-                             f"不走「取消请求中」那一档。"
-                             f"⚠️ 如果它之前跑过又暂停了,**已经发生的动作仍然撤不回来**")}
+        return 取消一次(c, project_id, run_id, r, rev, 谁=me.user_id)
+
+
+def 取消一次(c, project_id, run_id, r, rev, *, 谁):
+    """取消的规则**只写在这一处**:后台的取消口和访问 API 的对外取消口(open_api)都调它(11-04 抽出来)。
+    r = 已经 for update 锁住的那一行;rev = 调用方给的 revision(对外口给的是它刚读到的那个)。"""
+    if r["status"] in _机["终态"]:
+        # ⚠️ **保留真实终态,不谎报成已取消**(§11.5)。
+        # 和 `jobs.收尾` 那条同一个道理:一次已经成功的运行被标成
+        # 「已取消」,会让人以为它的产物不存在。
+        return {"id": run_id, "status": r["status"], "改了吗": False,
+                "note": (f"这次运行已经结束了(「{r['status']}」)—— "
+                         f"**保留真实终态,不谎报成已取消**。"
+                         f"它的产物是真的,取消不掉")}
+    if r["status"] == "cancel_requested":
+        return {"id": run_id, "status": r["status"], "改了吗": False,
+                "note": "已经在「取消请求中」了"}
+    # ⚠️ **还没开跑的直接取消,不走「取消请求中」。**
+    # 状态机里 `queued`/`paused`/`waiting_*` 只能直接到 `cancelled` ——
+    # 那是对的:**没有在途调用要掐,所以没有「请求」这一档**。
+    # 硬塞一个 `cancel_requested` 的坏法:界面上出现一个
+    # 永远不会变成 `cancelled` 的中间态(没有执行器会去处理它)。
+    直接取消 = "cancelled" in _机["流转"].get(r["status"], [])
+    目标 = "cancelled" if 直接取消 else "cancel_requested"
+    新rev = _换状态(c, project_id, run_id, r, 目标, rev,
+                 谁=谁, 动作="cancel",
+                 额外={"cancel_requested": True})
+    if 直接取消 and r["status"] == "waiting_approval":
+        # **它挂着的核对待办一起关掉**(2026-10-24 真模型验证时撞到):运行取消了,
+        # 待办列表上还挂着一条「待处理」—— 有人点进去批了,决定记下了,却什么都不会发生
+        c.execute(text("""update human_requests set status='cancelled', updated_at=now(), revision=revision+1
+                           where project_id=:p and execution_run_id=:r and status='pending'"""),
+                  {"p": project_id, "r": run_id})
+    if 直接取消:
+        return {"id": run_id, "status": "cancelled", "改了吗": True,
+                "revision": 新rev,
+                "note": (f"这次运行还没开跑(之前是「{r['status']}」),"
+                         f"**没有在途调用要掐,所以直接取消了** —— "
+                         f"不走「取消请求中」那一档。"
+                         f"⚠️ 如果它之前跑过又暂停了,**已经发生的动作仍然撤不回来**")}
     return {"id": run_id, "status": "cancel_requested", "改了吗": True,
-            "revision": 新rev,
-            "note": ("**这是「请求取消」,不是「已取消」。** 它停的是**新调度**,"
-                     "并尝试掐掉在途请求。⚠️ **已经发生的动作撤不回来** —— "
-                     "写出去的文件、发出去的消息,取消不掉。"
-                     "要知道到底做了什么,用 `/reconcile` 去查真实外部状态")}
+        "revision": 新rev,
+        "note": ("**这是「请求取消」,不是「已取消」。** 它停的是**新调度**,"
+                 "并尝试掐掉在途请求。⚠️ **已经发生的动作撤不回来** —— "
+                 "写出去的文件、发出去的消息,取消不掉。"
+                 "要知道到底做了什么,用 `/reconcile` 去查真实外部状态")}
 
 
 @router.post(前缀 + "/execution-runs/{run_id}/reconcile", status_code=202)

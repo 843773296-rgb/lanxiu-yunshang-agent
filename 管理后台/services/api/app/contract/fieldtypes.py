@@ -347,7 +347,7 @@
     "chat_assistants": {"role_key", "name"},
     # 访问密钥:哈希、绑哪个应用、一天上限、币种 —— 任何一样空着,这把密钥都说不清它能干什么、花多少
     # (application_id / chat_assistant_id 二选一,由 models._额外检查 的 CHECK 守,所以都不进必填)
-    "access_keys": {"name", "prefix_code", "lookup_hash", "daily_cap_amount", "currency"},
+    "access_keys": {"name", "prefix_code", "lookup_hash", "daily_cap_amount", "currency", "expires_at"},
     "access_key_calls": {"access_key_id", "endpoint_code", "outcome_code"},
     # 意见单(11-04):来路 / 好不好 / 谁提的 / 走到哪 —— 少一样受理人就没法处理(chat_trace_ref 可空:独立建议不挂任何一轮)
     "opinions": {"source", "verdict", "asker_staff_code", "status"},

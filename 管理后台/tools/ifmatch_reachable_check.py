@@ -97,6 +97,9 @@ P = f"{基址}/api/v1/projects/{项目}"
         取id=("/opinions", "items[0].id"), 读="/opinions/{id}", 字段="revision", 项目="project_demo_a"),
     "POST /opinions/{id}/promote": dict(
         取id=("/opinions", "items[0].id"), 读="/opinions/{id}", 字段="revision", 项目="project_demo_a"),
+    # 轮换(11-04)和改小上限同一个 revision 来源
+    "POST /access-keys/{id}/rotate": dict(
+        取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),
     "PATCH /access-keys/{id}": dict(
         取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),
     "PATCH /chat-assistants/{id}/draft": dict(

@@ -421,6 +421,25 @@ def main():
         c, sp3 = 提样(r1["id"], {**样体, "期望答案": "21 个工作日;加急另算"}, dr["revision"])
         ck("**退回之后能重提**(新的一条待复核样本)", c == 201 and sp3.get("样本") != sp2.get("样本"), (c, sp3))
         打("DELETE", P + f"/staff-bindings/{提人}")
+
+        print("\n▸ ⑯ 跨项目:拿正式项目的编号去演示项目里取(读取隔离靠每句查询带项目条件 —— 这里真攻击一次)")
+        PA = "/api/v1/projects/project_demo_a"
+        c, b = 打("GET", PA + f"/opinions/{q['id']}")
+        ck("演示项目里取正式项目的意见详情 → 404(不是 200 读到别家的)", c == 404, (c, b))
+        c, b = 打("POST", PA + f"/opinions/{q['id']}/actions", {"动作": "答复", "说明": "x"}, {"If-Match": "1"})
+        ck("演示项目里受理正式项目的意见 → 404", c == 404, (c, b))
+        c, b = 打("POST", PA + f"/opinions/{q['id']}/promote", 样体, {"If-Match": "1"})
+        ck("演示项目里把正式项目的意见提成样本 → 404", c == 404, (c, b))
+        c, l = 打("GET", PA + "/opinions?limit=200")
+        ck("演示项目的清单里没有正式项目的意见", c == 200 and not any(x["id"] in (q["id"], a["id"]) for x in l.get("items", [])), (c, l))
+        c, m = 打("GET", PA + "/opinions/mine?" + urllib.parse.urlencode({"工号": 标}), 头=内)
+        ck("演示项目的「我的意见」里没有这个人在正式项目提的", c == 200 and not m.get("items"), (c, m))
+        c, w = 打("GET", PA + "/opinion-samples/pending?" + urllib.parse.urlencode({"工号": "E2ESM1", "角色": "店长", "门店": "杭州店"}), 头=内)
+        ck("演示项目的「待我复核」里没有正式项目的样本", c == 200 and not any(x["样本"] in (sp.get("样本"), sp3.get("样本"))
+                                                           for x in w.get("items", [])), (c, w))
+        c, b = 打("POST", PA + f"/opinion-samples/{sp3.get('样本')}/review",
+                 {"决定": "通过", "revision": 1, "复核人": {"工号": "E2ESM1", "角色": "店长", "门店": "杭州店"}}, 内)
+        ck("演示项目里复核正式项目的样本 → 404", c == 404, (c, b))
     finally:
         with 库.begin() as cc:
             样们 = [r[0] for r in cc.execute(text("""select promoted_sample_id from opinions where project_id=:p

@@ -99,7 +99,7 @@ def main():
     c, m = 打("POST", P + "/memberships", 体={"工号": 发人, "角色": "admin"})
     ck("建了一个管理员(专门用来发密钥,后面会被降级)", c in (200, 201), (c, m))
 
-    c, k2 = 打("POST", P + f"/workflows/{wid2}/access-keys", 谁=发人, 体={"名字": "没上生产那条的", "每天上限": 5})
+    c, k2 = 打("POST", P + f"/workflows/{wid2}/access-keys", 谁=发人, 体={"名字": "没上生产那条的", "每天上限": 5, "有效期天数": 90})
     密2 = (k2 or {}).get("原文")
     c, b = 外("POST", f"/open/v1/apps/{k2['应用id']}/runs", 密2, {"输入": {"article": "访问 API 端到端"}}, str(uuid.uuid4()))
     ck("**应用没上生产 → 拒(409 NOT_IN_PRODUCTION)**,草稿和候选版本不对外", c == 409 and 码(b) == "NOT_IN_PRODUCTION", (c, b))
@@ -121,9 +121,9 @@ def main():
     ck("不填每天上限 → 拒(上限必填,「不限」不提供)", c == 422, (c, b))
     编 = "E2EAKE" + uuid.uuid4().hex[:4]
     打("POST", P + "/memberships", 体={"工号": 编, "角色": "editor"})
-    c, b = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=编, 体={"名字": "e2e", "每天上限": 5})
+    c, b = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=编, 体={"名字": "e2e", "每天上限": 5, "有效期天数": 90})
     ck("编辑者发不了(要「配置密钥与预算」)", c == 403, (c, b))
-    c, k = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e 主钥", "每天上限": 5})
+    c, k = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e 主钥", "每天上限": 5, "有效期天数": 90})
     密, kid, aid = (k or {}).get("原文", ""), (k or {}).get("id"), (k or {}).get("应用id")
     ck("发出来了,原文以 lx-app- 开头", c == 201 and 密.startswith("lx-app-") and kid and aid, (c, k))
     c, l = 打("GET", P + f"/workflows/{wid}/access-keys")
@@ -158,7 +158,7 @@ def main():
        and 来["definition_ref"].get("密钥id") == kid and 来["definition_ref"].get("version_id") == vid, dict(来 or {}))
 
     print("\n▸ 别的密钥 / 别的应用")
-    c, kb = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e 乙", "每天上限": 5})
+    c, kb = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e 乙", "每天上限": 5, "有效期天数": 90})
     密b = kb["原文"]
     c, b = 外("GET", f"/open/v1/runs/{rid}", 密b)
     ck("**乙密钥查甲密钥发起的运行 → 404**(同一个人发的也不行)", c == 404, (c, b))
@@ -168,7 +168,7 @@ def main():
     ck("不认识的密钥 → 401", c == 401 and 码(b) == "UNKNOWN_ACCESS_KEY", (c, b))
 
     print("\n▸ 每天花费上限(按用量账算)")
-    c, kc = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e 小额", "每天上限": 0.01})
+    c, kc = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e 小额", "每天上限": 0.01, "有效期天数": 90})
     密c, kidc = kc["原文"], kc["id"]
     c, rc = 外("POST", f"/open/v1/apps/{aid}/runs", 密c, {"输入": {"article": "访问 API 端到端"}}, str(uuid.uuid4()))
     等跑完(rc["运行编号"], 密c)
@@ -183,7 +183,7 @@ def main():
                     "t": tr["trace_id"], "p": 项目})
     c, b = 外("POST", f"/open/v1/apps/{aid}/runs", 密c, {"输入": {"article": "访问 API 端到端"}}, str(uuid.uuid4()))
     ck("**当天花费到上限 → 拒(429 DAILY_CAP_REACHED)**", c == 429 and 码(b) == "DAILY_CAP_REACHED", (c, b))
-    c, kd = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e 算不出", "每天上限": 5})
+    c, kd = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e 算不出", "每天上限": 5, "有效期天数": 90})
     密d = kd["原文"]
     c, rd = 外("POST", f"/open/v1/apps/{aid}/runs", 密d, {"输入": {"article": "访问 API 端到端"}}, str(uuid.uuid4()))
     等跑完(rd["运行编号"], 密d)
@@ -209,7 +209,7 @@ def main():
     ck("改小 → 成", c == 200 and b.get("每天上限") == 3, (c, b))
 
     print("\n▸ 限流:一分钟第 31 次")
-    c, ke = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e 限流", "每天上限": 5})
+    c, ke = 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": "e2e 限流", "每天上限": 5, "有效期天数": 90})
     密e = ke["原文"]
     码们 = [外("GET", f"/open/v1/runs/{rid}", 密e)[0] for _ in range(30)]
     c, b = 外("GET", f"/open/v1/runs/{rid}", 密e)
@@ -218,6 +218,93 @@ def main():
     with 库().connect() as cc:
         n = cc.execute(text("select count(*) from access_key_calls where access_key_id=:k"), {"k": ke["id"]}).scalar()
     ck("被拒的那一次也记了(31 行)—— 限流数的就是它", n == 31, n)
+
+    print("\n▸ 有效期(用户 11-04 拍:发的时候必选、最长 1 年;Dify 对标 C05)")
+    发 = lambda 名, **kw: 打("POST", P + f"/workflows/{wid}/access-keys", 谁=发人, 体={"名字": 名, "每天上限": 5, **kw})
+    c, b = 发("e2e 没选有效期")
+    ck("**没选有效期 → 422**(必选,不给「永不过期」)", c == 422 and "有效期天数" in ((b or {}).get("field_errors") or {}), (c, b))
+    c, b = 发("e2e 45 天", 有效期天数=45)
+    ck("不在 30 / 90 / 180 / 365 里 → 422", c == 422, (c, b))
+    c, b = 发("e2e 两年", 有效期天数=730)
+    ck("超过 1 年 → 422", c == 422, (c, b))
+    c, l = 打("GET", P + f"/workflows/{wid}/access-keys")
+    主 = next((x for x in l["密钥"] if x["id"] == kid), {})
+    ck("列表里给有效期至、还剩几天(90 天的那把:89–90)、没过期", 主.get("有效期至") and 主.get("还剩几天") in (89, 90)
+       and 主.get("过期了吗") is False, 主)
+    c, kx = 发("e2e 过期", 有效期天数=30)
+    with 库().begin() as cc:
+        cc.execute(text("""update access_keys set created_at = now() - interval '2 days', expires_at = now() - interval '1 hour'
+                            where id=:i"""), {"i": kx["id"]})
+    c, b = 外("POST", f"/open/v1/apps/{aid}/runs", kx["原文"], {"输入": {"article": "过期了还调"}}, str(uuid.uuid4()))
+    ck("**过期了还调 → 401 ACCESS_KEY_EXPIRED**", c == 401 and 码(b) == "ACCESS_KEY_EXPIRED", (c, b))
+    with 库().connect() as cc:
+        记 = cc.execute(text("select outcome_code from access_key_calls where access_key_id=:k"), {"k": kx["id"]}).scalars().all()
+        跑 = cc.execute(text("select count(*) from execution_runs where definition_ref->>'密钥id' = :k"), {"k": kx["id"]}).scalar()
+    ck("**被拒的那一次记了原因「已过期」,一条运行都没建**(C05:不创建业务任务)", 记 == ["已过期"] and 跑 == 0, (记, 跑))
+    c, l = 打("GET", P + f"/workflows/{wid}/access-keys")
+    ck("列表里标着已过期", next((x for x in l["密钥"] if x["id"] == kx["id"]), {}).get("过期了吗") is True)
+
+    print("\n▸ 轮换(新钥绑同一个应用,旧的再留 24 小时)")
+    c, kr = 发("e2e 轮换", 有效期天数=90)
+    c, l = 打("GET", P + f"/workflows/{wid}/access-keys")
+    rv = next((x["revision"] for x in l["密钥"] if x["id"] == kr["id"]), None)
+    轮 = lambda k, 体, rev: 打("POST", P + f"/access-keys/{k}/rotate", 体=体, 头=({"If-Match": str(rev)} if rev else {}))
+    c, b = 轮(kr["id"], {"有效期天数": 90}, None)
+    ck("不带 If-Match → 409", c == 409 and 码(b) == "IF_MATCH_REQUIRED", (c, b))
+    c, b = 轮(kr["id"], {"有效期天数": 7}, rv)
+    ck("新钥有效期不在档里 → 422", c == 422, (c, b))
+    c, b = 轮(kx["id"], {"有效期天数": 90}, 1)
+    ck("已过期的不能轮换 → 409 NOT_ROTATABLE(直接重发)", c == 409 and 码(b) == "NOT_ROTATABLE", (c, b))
+    c, rr = 轮(kr["id"], {"有效期天数": 180}, rv)
+    新密, 新id = ((rr or {}).get("新的") or {}).get("原文", ""), ((rr or {}).get("新的") or {}).get("id")
+    ck("轮换 → 201,给新钥原文(只这一次)", c == 201 and 新密.startswith("lx-app-") and 新id != kr["id"], (c, rr))
+    with 库().connect() as cc:
+        两 = {r["id"]: r for r in cc.execute(text("""select id, application_id, daily_cap_amount, expires_at, now() 此刻,
+                                                       expires_at - created_at 长 from access_keys where id in (:a, :b)"""),
+                                              {"a": kr["id"], "b": 新id}).mappings()}
+    旧, 新 = 两.get(kr["id"]), 两.get(新id)
+    ck("**旧钥的有效期缩到 24 小时内**,新钥绑同一个应用、同样上限、180 天",
+       旧 and 新 and (旧["expires_at"] - 旧["此刻"]).total_seconds() <= 24 * 3600 + 60
+       and 新["application_id"] == 旧["application_id"] and 新["daily_cap_amount"] == 旧["daily_cap_amount"]
+       and 179 <= 新["长"].days <= 180, (dict(旧 or {}), dict(新 or {})))
+    c, b = 外("GET", f"/open/v1/runs/{rid}", kr["原文"])
+    ck("宽限期内旧钥照样认得(查别人的运行 → 404,不是 401)", c == 404, (c, b))
+    c, rn = 外("POST", f"/open/v1/apps/{aid}/runs", 新密, {"输入": {"article": "新钥发起"}}, str(uuid.uuid4()))
+    ck("新钥能发起", c == 202 and (rn or {}).get("运行编号"), (c, rn))
+
+    print("\n▸ 订阅进度:按事件序号续传(Dify 对标 C07)")
+    rn_id = (rn or {}).get("运行编号")
+    等跑完(rn_id, 新密)
+    c, 全 = 外("GET", f"/open/v1/runs/{rn_id}/events", 新密)
+    号 = [e["序号"] for e in (全 or {}).get("事件", [])]
+    ck(f"拉得到事件,序号严格递增(这次 {len(号)} 条),跑完了", c == 200 and 号 and 号 == sorted(set(号)) and 全.get("跑完了吗"), (c, 全))
+    ck("事件只给类型 / 步骤 / 时间,**不给内容**", all(set(e) == {"序号", "类型", "步骤", "发生于"} for e in 全.get("事件", [])),
+       全.get("事件", [])[:2])
+    拼, 从 = [], 0
+    for _ in range(len(号) + 2):
+        c, 段 = 外("GET", f"/open/v1/runs/{rn_id}/events?after_seq={从}&limit=2", 新密)
+        拼 += [e["序号"] for e in 段.get("事件", [])]
+        从 = 段.get("下一次从这儿拉")
+        if not 段.get("还有吗"):
+            break
+    ck("**两条一段、带「下一次从这儿拉」接着拉 → 拼起来和一次拉全的一模一样**(断了接上,不重不漏)", 拼 == 号, (拼, 号))
+    c, b = 外("GET", f"/open/v1/runs/{rn_id}/events", 密)
+    ck("别的密钥拉这次运行的事件 → 404", c == 404, (c, b))
+
+    print("\n▸ 取消(规则和后台取消口同一份)")
+    c, b = 外("POST", f"/open/v1/runs/{rn_id}/cancel", 密)
+    ck("别的密钥取消 → 404", c == 404, (c, b))
+    c, b = 外("POST", f"/open/v1/runs/{rn_id}/cancel", 新密)
+    ck("**已经跑完的 → 202、什么都没改、保留真实终态「已完成」**(不谎报成已取消)",
+       c == 202 and b.get("改了吗") is False and b.get("状态") == "已完成", (c, b))
+    ck("说清已经发生的写入(这条流程没有业务写入 → 空清单,并写明)", b.get("已经发生的写入") == [] and "还没有" in b.get("note", ""), b)
+    c, rq = 外("POST", f"/open/v1/apps/{aid}/runs", 新密, {"输入": {"article": "发起就取消"}}, str(uuid.uuid4()))
+    c, b = 外("POST", f"/open/v1/runs/{rq['运行编号']}/cancel", 新密)
+    ck("刚发起的就取消 → 202,状态是取消了 / 取消请求中(赶上它已经跑完就保留已完成)",
+       c == 202 and b.get("状态") in ("已取消", "取消请求中", "已完成"), (c, b))
+    with 库().connect() as cc:
+        几次 = cc.execute(text("select count(*) from execution_runs where definition_ref->>'密钥id' = :k"), {"k": 新id}).scalar()
+    ck("取消没有另起一次运行(这把新钥一共正好 2 次运行)", 几次 == 2, 几次)
 
     print("\n▸ 吊销 / 发密钥的人没权限了")
     c, b = 打("POST", P + f"/access-keys/{kb['id']}/revoke", 体={"理由": "e2e 验吊销"})
