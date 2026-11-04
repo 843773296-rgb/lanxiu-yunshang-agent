@@ -14572,5 +14572,41 @@
    }
   ],
   "预期红": "代码里每个拒法都有说明"
+ },
+ {
+  "script": "tools/merge_append_json_check.py",
+  "改坏": "关掉「一边删过就拒绝」那一支 —— 看起来更能干(什么冲突都合得了),而它会把故意删掉的条目复活",
+  "file": [
+   {
+    "path": "tools/merge_append_json.py",
+    "old": "    if 我删的 or 他删的:\n        raise 不是纯追加(我删的, 他删的)",
+    "new": "    if False and (我删的 or 他删的):\n        raise 不是纯追加(我删的, 他删的)"
+   }
+  ],
+  "预期红": "该拒绝,**却合了**"
+ },
+ {
+  "script": "tools/merge_append_json_check.py",
+  "改坏": "把入口里调用三方合那一句换成直接取并集 —— 接线那一关,六条纯函数用例照旧全对",
+  "file": [
+   {
+    "path": "tools/merge_append_json.py",
+    "old": "        出, 我加的, 他加的 = 三方合(base, ours, theirs)",
+    "new": "        _u = {键(x) for x in base}\n        我加的 = [x for x in ours if 键(x) not in _u]\n        _v = _u | {键(x) for x in 我加的}\n        他加的 = [x for x in theirs if 键(x) not in _v]\n        出 = list(base) + 我加的 + 他加的"
+   }
+  ],
+  "预期红": "**接线 + 反向**"
+ },
+ {
+  "script": "tools/merge_append_json_check.py",
+  "改坏": "去掉条目身份里的 sort_keys —— 字段顺序不同的同一条会被当成两条,合完多出几条而没人觉得怪",
+  "file": [
+   {
+    "path": "tools/merge_append_json.py",
+    "old": "    return json.dumps(x, ensure_ascii=False, sort_keys=True)",
+    "new": "    return json.dumps(x, ensure_ascii=False)"
+   }
+  ],
+  "预期红": "字段顺序不同的同一条算**一条**"
  }
 ]
