@@ -138,20 +138,20 @@ HANDOFF.md 存在、是新的、已提交 —— 三个指标全绿。而它该�
 
 ### 下一步第一个动作(**就一个**)
 
-**等并行会话(eureka-40)把 `answer_feedback` 建表那一轮推完** —— 它已经说了会拿
-`./tools/gate_lock.sh`、建完重启 `com.lanxiu.aimc` 和 `com.lanxiu.agentsite`。
-我答应了等它推完再跑门禁(它重启期间我这轮的页面冒烟会红在跟我改动无关的原因上)。
+**跑一轮全量门禁,验合并后的树**(已经 pull 到并行会话的 `4184c371`:新表 opinions +
+聊天站每条问答能提意见;它还推了 `dcfaccd4`,要再 pull 一次)。
 
-它回信号之后:`git pull --autostash` → `./tools/gate_lock.sh ./check.sh` →
-绿了再 `python3 tools/make_handoff.py` 生成自动区 → `./tools/scan_secrets.sh` →
-`git commit --only` 这几个路径(check.sh / tools/impact.py / tools/hooks/handoff-gate.mjs /
-tools/hooks/README.md / tools/skills/handoff-before-compact/SKILL.md / HANDOFF.md
-+ 项目日志)→ push。
+    git pull --autostash --no-rebase origin main
+    ./tools/gate_lock.sh ./check.sh
 
-⚠️ **那两个 `agentsite/evals/*.jsonl` 不提交**(截断滚动副本)。
-⚠️ **`tools/hooks/handoff-gate.mjs` 实际在跑的是主检出那一份**(`~/.claude/hooks/` 的软链
-指向 `~/Desktop/澜绣云裳agent/tools/hooks/handoff-gate.mjs`)—— 我这边推了,
-**要等主检出 pull 才真正生效**。已经告诉并行会话了。
+绿了之后:`python3 tools/make_handoff.py`(它现在会顺手记那一笔)→
+`./tools/scan_secrets.sh` → `git commit --only` 第三刀那几个路径
+(`tools/hooks/handoff-gate.mjs` / `tools/make_handoff.py` / `HANDOFF.md` + 项目日志)→
+`git push origin HEAD:main`。
+
+⚠️ 并行会话新加了 `agentsite/answer_feedback_check.py`、`agentsite/opinion_browser_smoke.mjs`
+和两条咬合规格 —— 这一轮门禁能验到它们(`.mjs` 那个现在也进影响面了)。
+⚠️ 管理后台那三条在我这边照旧报「不适用」(没装 `管理后台/.venv`),**那不是通过**。
 
 ### 🚫 这一轮想过并否决的三条(交接门禁那条线)
 
@@ -13601,50 +13601,36 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 08:36。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 09:00。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `main` |
-| 最新提交 | 4184c371 · 2026-11-04 · 日志与标注 DF-03 第 2 步:聊天站每条问答都能提意见(失败的那一轮也能报),记的是提问的那个人 |
-| 代码量 | 945 个 Python 文件 / 180467 行(不含 .venv) |
+| 分支 | `w75` |
+| 最新提交 | dcfaccd4 · 2026-11-04 · 收尾:刷交接 + 项目日志(DF-03 第 2 步意见单做完,已发飞书) |
+| 代码量 | 945 个 Python 文件 / 180496 行(不含 .venv) |
 | 验收 | `./check.sh` 共 374 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
- M .feynman/tool-eval.json
- M HANDOFF.md
+M HANDOFF.md
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
-?? .claude/
-?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? .feynman/authprobe.log
-?? .feynman/authprobe.sh
-?? .feynman/multi-date/
-?? .feynman/nightly-aimc.log
-?? .feynman/nightly-eval-launchd.log
-?? .feynman/nightly-eval-ok
-?? .feynman/nightly-eval-tried
-?? .feynman/nightly-eval.log
-?? .feynman/world-shift-launchd.log
-?? .wip-muslin/
-?? .wip-store-report-SKILL.md
-?? agent/example-ab-results.jsonl
+ M tools/hooks/handoff-gate.mjs
+ M tools/make_handoff.py
+?? .feynman/bite-all-20261016.log
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+dcfaccd4 收尾:刷交接 + 项目日志(DF-03 第 2 步意见单做完,已发飞书)
 4184c371 日志与标注 DF-03 第 2 步:聊天站每条问答都能提意见(失败的那一轮也能报),记的是提问的那个人
 904774f5 交接门禁那条线从没触发过:写死 80%,而这台机器 30% 就自动压缩
 fbfab49e 夜跑评测结果 2026-11-04(自动提交:评测结果、报告、压缩过的运行日志)
 b5c8e324 日志与标注 DF-03 第 1 步:聊天记录能翻页(原来只取前 100 条);翻到后面的页不再 60 秒超时
-0b6befdc 访问 API:同一个幂等键、参数不同 → 409 冲突(Dify 四页对标方案 C06),不再默默返回旧的那一次
 ```
 <!--/AUTO-->
 ## 一句话在做什么

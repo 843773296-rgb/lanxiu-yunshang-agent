@@ -205,6 +205,34 @@ def 日志落后():
         return None
 
 
+
+def 记一笔():
+    """告诉交接门禁:这份交接**刚被真的刷过**。
+
+    ⚠️ 为什么需要这一笔:门禁原来拿 `HANDOFF.md` 的 mtime 判「刷过没有」,
+       而 `git pull` 也会更新 mtime —— 2026-11-04 实际撞到:并行会话改了交接
+       14 行,我 pull 之后门禁就说「本轮已刷新」,**而我并没有刷**。
+       > 「文件被动过」和「交接刷过了」,在 mtime 上长得一模一样。
+
+    ⚠️ **路径由 hook 自己算**(`--记一笔` 入口),这边不照样子算一遍 ——
+       两边各算一次就是两份会漂的实现。这也是为什么这里宁可起一个子进程。
+    ⚠️ 记不下来**不算刷新失败**:门禁没有记号时会退回看 mtime(并说明那不可靠),
+       所以这里只提示,不改退出码。
+    """
+    hook = os.path.join(ROOT, "tools", "hooks", "handoff-gate.mjs")
+    if not os.path.isfile(hook):
+        return
+    try:
+        r = subprocess.run(["node", hook, "--记一笔", os.path.abspath(DOC)],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode == 0:
+            print("  已告诉交接门禁这份交接刚刷过(它判「刷过没有」不再只看文件时间)")
+        else:
+            print(f"  ⚠ 没记上那一笔(门禁会退回看文件时间):{(r.stderr or r.stdout).strip()[:120]}")
+    except Exception as e:
+        print(f"  ⚠ 没记上那一笔(门禁会退回看文件时间):{e}")
+
+
 def 项目日志():
     """刷新交接 = 一个阶段做完 → **顺手重新生成项目日志并发飞书**(用户 2026-10-15 拍,两种里选的「交接时顺手做」)。
 
@@ -240,6 +268,7 @@ if __name__ == "__main__":
         sys.exit(1 if bad else 0)
     refresh()
     print(f"已刷新 {DOC}")
+    记一笔()
     for b in check(): print(f"  ⚠ {b}")
     if "--不发日志" not in sys.argv:
         项目日志()

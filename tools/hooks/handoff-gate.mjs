@@ -51,6 +51,7 @@
 import { readFileSync, writeFileSync, existsSync, statSync, openSync, readSync, fstatSync, closeSync, appendFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
+import { createHash } from "node:crypto";
 
 // ⚠️ 这两个是**上限**,不是最终值 —— 下面 学阈值() 可能把它们调低。
 //    环境变量给死值时(自测、临时覆盖)照旧说一不二。
@@ -64,6 +65,44 @@ const 最多拦几次 = 2;                       // 防死循环:拦到第 3 次
 // 于是咬合时红的不是被改坏的那一条。**测试和被测共用状态,测出来的不算数。**
 const 状态目录 = process.env.HANDOFF_GATE_STATE
   || join(homedir(), ".claude", "state", "handoff-gate");
+
+// ── 「刷过交接」靠记号,不靠文件时间 ────────────────────────────────────
+//
+// ⚠️⚠️ 2026-11-04 第三刀。前两刀修完、刚推上去,下一轮门禁就说「本轮已刷新」——
+//    **而那是假的**:动 `HANDOFF.md` 的是 `git pull`(并行会话改了它 14 行,
+//    autostash 重新应用时更新了 mtime),不是人刷的。
+//
+//    > **「文件被动过」和「交接刷过了」,在 mtime 上长得一模一样。**
+//
+//    而这个项目里 `HANDOFF.md` 经常被并行会话改,所以**每次 pull 都可能**
+//    让门禁误判成「刷过了」,然后在该拦的时候放行 —— 正是它要防的事。
+//
+// 所以判据改成看**刷新动作留下的记号**:只有真跑了刷新脚本才算刷过。
+// ⚠️ 记号**绝不能放项目里** —— 放项目里就会被 git 带着走,pull 又把它改了,
+//    回到老问题。放 hook 自己的状态目录(git 碰不到)。
+// ⚠️ 没有记号的项目(别的仓库没有刷新脚本)**退回看 mtime**,但那时要在
+//    输出里说清这个判断不可靠 —— 「准的判断」和「将就的判断」不许印得一样。
+function 记号路径(交件) {
+  const key = createHash("sha1").update(String(交件)).digest("hex").slice(0, 16);
+  return join(状态目录, "refreshed", key);
+}
+
+// ⚠️ **这个入口存在的理由是「算法只留一份」。** 刷新脚本(澜绣云裳的
+//    `tools/make_handoff.py`)调它来记一笔,而不是自己照样子算一遍路径 ——
+//    两边各算一次,就是两份会漂的实现。
+if (process.argv.includes("--记一笔")) {
+  const 交件 = process.argv[process.argv.indexOf("--记一笔") + 1];
+  if (!交件) { console.error("用法:--记一笔 <HANDOFF.md 的绝对路径>"); process.exit(2); }
+  const p = 记号路径(交件);
+  try {
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, new Date().toISOString() + "\t" + 交件 + "\n");
+    // ⚠️ 把记号路径印出来 —— **自测要动这个文件,而它不许自己算这条路径**
+    //    (自己算一遍就是第二份实现,迟早和这里漂开)。
+    console.log(`[交接门禁] 记下了:${交件} 刚刷过\n  记号:${p}`);
+    process.exit(0);
+  } catch (e) { console.error(`[交接门禁] 记不下来:${e.message}`); process.exit(1); }
+}
 
 // ── 自测 ──────────────────────────────────────────────────────────────
 // **自测写在 hook 自己身上,不写成外挂脚本。** 外挂的会跟本体分家:
@@ -332,6 +371,56 @@ if (process.argv.includes("--selftest")) {
   ck("㉖ 一个异常低值不许把线拽到地板(用低分位,不用最低值)",
      跑("Stop", 项, "sL"), 0);
 
+  // ── ㉗㉘㉙ 「刷过交接」靠记号,不靠文件时间(2026-11-04 第三刀)──────────
+  //
+  // **逼出这几条的那一刻**:前两刀修完、刚推上去,下一轮门禁就说「本轮已刷新」——
+  // 而动 `HANDOFF.md` 的是 `git pull`(并行会话改了它 14 行),不是人刷的。
+  // > 「文件被动过」和「交接刷过了」,在 mtime 上长得一模一样。
+  //
+  // ⚠️ ㉘ 是主判据,也是**唯一能发现「退回条件写错了」的那一条**。
+  const 记一笔 = 件 => {
+    const r = spawnSync(process.execPath, [本文件, "--记一笔", 件], {
+      env: { ...process.env, HANDOFF_GATE_STATE: join(D, "state") }, encoding: "utf8" });
+    const m = /记号:(.+)/.exec(r.stdout || "");
+    return m ? m[1].trim() : null;      // 路径由 hook 自己印,自测不算它
+  };
+  变旧();
+  造台账([]);
+  造(170_000);                                   // 85%,交接旧 → 该拦
+  ck("   (铺垫)交接旧 → 拦", 跑("Stop", 项, "sM"), 2);
+  const 记号 = 记一笔(交件);
+  ck("   (铺垫)--记一笔 真的写了记号,并把路径印出来了", !!记号 && existsSync(记号), true);
+  ck("㉗ 记了一笔 → 放行", 跑("Stop", 项, "sM"), 0);
+
+  // ㉘ **把记号弄旧,再把文件 mtime 弄新** —— 这正是 git pull 改了 HANDOFF.md
+  //    的样子。按文件时间会放行(就是今天那个假阳性),按记号必须照旧拦。
+  //
+  // ⚠️⚠️ **顺序要紧,第一版就栽在这儿。** 原来写的是「弄旧记号 → 写新文件 → 跑」,
+  //    而那一次跑里 `越线于 = Date.now()`,**晚于** writeFileSync 的时刻。于是:
+  //      按记号判:记号 2020 < 越线于 → 拦
+  //      按 mtime 判:mtime  < 越线于 → **也拦**
+  //    两条路同一个结果 —— **破坏点落在一条执行不到的分支上**,咬合当场报
+  //    「改坏了却没红」。而「没红」既可能是判据漏了、也可能是改动本来无害,
+  //    **这两种看起来一样**。
+  //    所以要**先让越线时刻记下来**,再动文件,文件 mtime 才会晚于越线时刻。
+  const 老 = new Date(2020, 0, 1);
+  utimesSync(记号, 老, 老);                        // 记号先弄旧
+  变旧();                                          // 交接文件也弄旧 → 这一跑必拦
+  ck("   (铺垫)记号和文件都旧 → 拦,顺便把越线时刻记下来", 跑("Stop", 项, "sN"), 2);
+  writeFileSync(交件, "git pull 改的,不是人刷的");  // 只有文件 mtime 新,记号还是旧
+  ck("㉘ 文件被动过、但记号是旧的(= git 改的)→ 照旧拦",
+     跑("Stop", 项, "sN"), 2);
+  ck("   ↳ 拦的理由不是「没有交接」,是没刷过", /不能收工/.test(末.err), true);
+
+  // ㉙ 从来没记过一笔的项目 → 将就看文件时间,**但要说出来这不可靠**。
+  const 别的 = join(D, "other"); mkdirSync(别的, { recursive: true });
+  writeFileSync(join(别的, "HANDOFF.md"), "x");
+  造(170_000);
+  跑("UserPromptSubmit", 别的, "sO");
+  ck("㉙ 没有记号的项目 → 退回看文件时间", /尚未刷新|本轮已刷新/.test(末.out), true);
+  ck("   ↳ 而且明说这个判断不可靠(git 操作也会更新 mtime)",
+     /按文件时间判的/.test(末.out), true);
+
   rmSync(D, { recursive: true, force: true });
   if (败.length) { console.log(`❌ ${败.length} 条没过:${败.join("、")}`); process.exit(1); }
   console.log(`✅ 交接门禁 ${过} 条全过`); process.exit(0);
@@ -437,6 +526,23 @@ function 找交接() {
   return 根 ? { 仓库根: 根 } : {};
 }
 
+// 交接是什么时候刷的?**优先记号,退回 mtime,而两者要分得开。**
+// 回 { 时刻, 来源: "记号" | "文件时间" | null }
+function 刷新情况(交) {
+  if (!交.路径) return { 时刻: null, 来源: null };
+  // ⚠️⚠️ **退回条件是「这个项目从来没记过一笔」,不是「记号太旧」。**
+  //    这一条差点写错,而写错了整个修法就白做:要是改成「记号旧了就退回看
+  //    mtime」,那 git 改了文件、而人没刷,照样会退回 mtime 判成「刷过了」——
+  //    洞原样回来。
+  //    所以:**记号一旦存在就只认它,不比新旧**。记号不存在才说明这个项目
+  //    没有刷新脚本(别的仓库),那时才将就看文件时间。
+  try {
+    const t = statSync(记号路径(交.路径)).mtimeMs;
+    if (t) return { 时刻: t, 来源: "记号" };
+  } catch { }
+  return { 时刻: 交.mtime || null, 来源: 交.mtime ? "文件时间" : null };
+}
+
 function 读状态() {
   try { return JSON.parse(readFileSync(join(状态目录, 会话 + ".json"), "utf8")); }
   catch { return { 拦过: 0 }; }
@@ -524,9 +630,10 @@ if (事件 === "PreCompact") {
   //    > **在台账里印成同一个词。**
   //    退路:拿**上一次压缩**当基准 —— 交接在那之后刷过没有,这才是要问的。
   const 基准 = st.越线于 || 上次压缩时刻();
-  const 新鲜度 = !交.mtime ? "判不了(读不到交接的时间)"
+  const 刷 = 刷新情况(交);
+  const 新鲜度 = !刷.时刻 ? "判不了(读不到交接刷过没有)"
                : !基准 ? "判不了(这个会话还没压过,没有基准)"
-               : 交.mtime > 基准 ? "新鲜" : "过期";
+               : 刷.时刻 > 基准 ? `新鲜(按${刷.来源})` : `过期(按${刷.来源})`;
   try {
     mkdirSync(状态目录, { recursive: true });
     appendFileSync(join(状态目录, "compactions.log"),
@@ -571,10 +678,15 @@ if (事件 === "UserPromptSubmit") {
       //    同一行里「已过 80% 线」「现在就该刷交接」都是有条件显示的,
       //    唯独这句是无条件的 —— 补上它该有的条件。
       const 可判 = !!st.越线于;
-      const 新鲜 = 可判 && 交.mtime > st.越线于;
+      const 刷 = 刷新情况(交);
+      const 新鲜 = 可判 && 刷.时刻 && 刷.时刻 > st.越线于;
+      // ⚠️ 退回看文件时间时要说一句 —— git pull 也会更新 mtime,
+      //    「准的判断」和「将就的判断」不许印得一样。
+      const 将就 = 刷.来源 === "文件时间"
+        ? "(按文件时间判的 —— git 操作也会更新它,不一定是你刷的)" : "";
       console.log(`[交接门禁] ${报数}${比 >= 阈值 ? `,已过 ${阈值 * 100}% 线` : ""}。`
         + (可判
-            ? `交接文件 ${交.路径} ${新鲜 ? "本轮已刷新" : "尚未刷新"}。`
+            ? `交接文件 ${交.路径} ${新鲜 ? "本轮已刷新" : "尚未刷新"}${将就}。`
             : `交接文件 ${交.路径}(还没过 ${阈值 * 100}% 线,这一轮不判新鲜度)。`)
         + (比 >= 阈值 && !新鲜 ? ` **现在就该刷交接**,不要等收工时被拦。` : ""));
     }
@@ -600,7 +712,8 @@ if (事件 === "Stop" || 事件 === "SubagentStop") {
   //
   //    这正是逼出这次改动的那件事的放大版(那次是 70 分钟没进交接)。
   //    所以放行要记下**当时的占用**,占用又涨了一条线的量就再拦一次。
-  if (交.mtime > st.越线于) {
+  const 刷 = 刷新情况(交);
+  if (刷.时刻 && 刷.时刻 > st.越线于) {
     const 增量 = 阈值 * 窗;                  // 每涨「一条线的量」就该再刷一次
     if (st.刷于 === undefined) {             // 这是刷完后第一次收工 —— 记下水位,放行
       写状态({ ...st, 刷于: 占 }); process.exit(0);
