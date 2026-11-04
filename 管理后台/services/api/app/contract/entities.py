@@ -833,7 +833,7 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     # ②'' 访问 API(2026-11-03 用户拍:一把绑一个应用 / 以发密钥的人的身份 / 先工作流再聊天 / 先补记账按金额封顶)
     E("access_keys", "访问密钥", 项目级, 可改,
       ["application_id", "chat_assistant_id", "name", "prefix_code", "lookup_hash", "daily_cap_amount", "currency",
-       "last_used_at", "revoked_at", "revoked_by"],
+       "last_used_at", "revoked_at", "revoked_by", "expires_at"],
       ["**库里只有哈希**(lookup_hash = sha256(原文)):原文只在发出那一刻返回一次,谁都找不回 —— 忘了就吊销重发",
        "**一把只绑一个应用**(application_id),只跑它生产环境指着的那一版;草稿和候选永远调不到",
        "**以发密钥的那个人的身份跑**(created_by),每次调用前重核他还有没有「运行编排测试」;没了就拒",
@@ -841,7 +841,9 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "设了项目每日预算的话不许超过它;只许改小",
        "吊销 = revoked_at 不空,**立刻生效**(每次调用都查);行不删 —— 运行记录还指着它",
        "**绑工作流(application_id)和绑聊天助手(chat_assistant_id)二选一**,库里有 CHECK:两个都填或都空,"
-       "这把密钥就说不清它能调什么(11-03 聊天那一半加的)"],
+       "这把密钥就说不清它能调什么(11-03 聊天那一半加的)",
+       "**有效期必填、最长 1 年**(用户 2026-11-04 拍):发的时候从 30 / 90 / 180 / 365 天里选;到期一律拒并记原因(Dify 对标 C05)。"
+       "轮换 = 发一把绑同一个对象的新钥,旧的有效期缩到 24 小时后(给对方切换);11-04 之前发的按发出那天加一年补上"],
       依赖=["applications", "chat_assistants"]),
     E("access_key_calls", "访问密钥调用", 子对象, 只追加,
       ["access_key_id", "endpoint_code", "outcome_code", "http_code", "execution_run_id", "detail_note"],

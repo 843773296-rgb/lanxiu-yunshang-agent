@@ -345,6 +345,8 @@ _额外检查 = {
     "access_keys": [
         ("ck_access_keys_target", "(application_id is null) <> (chat_assistant_id is null)"),
         ("ck_access_keys_cap", "daily_cap_amount > 0"),
+        # 有效期最长 1 年(用户 11-04 拍)—— 轮换只会把它缩短,不会拉长
+        ("ck_access_keys_expiry", "expires_at > created_at and expires_at <= created_at + interval '366 days'"),
     ],
     # 产出监督(2026-10-10):类型 / 状态只收这几个值 —— 一个拼错的值会自成一档,
     # 而列表筛选时它既不算「待执行」也不算「已执行」,看起来就是没有

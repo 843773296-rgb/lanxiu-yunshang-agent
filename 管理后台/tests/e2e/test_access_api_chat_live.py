@@ -66,10 +66,10 @@ def main():
     print("\n▸ 后台这一半的闸(不依赖聊天站)")
     无绑 = "E2EAKC" + uuid.uuid4().hex[:4]
     打("POST", P + "/memberships", 体={"工号": 无绑, "角色": "admin"})
-    c, k0 = 打("POST", P + f"/chat-assistants/{cid}/access-keys", 谁=无绑, 体={"名字": "e2e 没绑工号", "每天上限": 1})
+    c, k0 = 打("POST", P + f"/chat-assistants/{cid}/access-keys", 谁=无绑, 体={"名字": "e2e 没绑工号", "每天上限": 1, "有效期天数": 90})
     c, b = 问(cid, k0["原文"], "只回复两个字:正常")
     ck("**发密钥的人没绑澜绣工号 → 拒(403 NOT_BOUND)**:聊天站不知道以谁的身份取数", c == 403 and 码(b) == "NOT_BOUND", (c, b))
-    c, k = 打("POST", P + f"/chat-assistants/{cid}/access-keys", 体={"名字": "e2e 店长助手", "每天上限": 1})
+    c, k = 打("POST", P + f"/chat-assistants/{cid}/access-keys", 体={"名字": "e2e 店长助手", "每天上限": 1, "有效期天数": 90})
     密, kid = k["原文"], k["id"]
     ck("U001(已绑工号)发了一把店长助手的密钥", c == 201 and 密.startswith("lx-app-"), (c, k))
     if 其他:
@@ -84,7 +84,7 @@ def main():
     ck("跑的是后台生产那一版(用了哪一版 = 后台 vN)", str((r1 or {}).get("用了哪一版") or "").startswith("后台 v"), r1)
     ck("回答里写明这一轮写工具没挂", "没挂" in str((r1 or {}).get("写工具")), r1)
     会话 = (r1 or {}).get("会话")
-    c, kb = 打("POST", P + f"/chat-assistants/{cid}/access-keys", 体={"名字": "e2e 乙", "每天上限": 1})
+    c, kb = 打("POST", P + f"/chat-assistants/{cid}/access-keys", 体={"名字": "e2e 乙", "每天上限": 1, "有效期天数": 90})
     c, b = 问(cid, kb["原文"], "接着刚才说", 会话)
     ck("**乙密钥续甲密钥的会话 → 拒(SESSION_NOT_YOURS)**,同一个人发的也不行", c == 403 and 码(b) == "SESSION_NOT_YOURS", (c, b))
     c, r2 = 问(cid, 密, "再只回复两个字:正常", 会话)

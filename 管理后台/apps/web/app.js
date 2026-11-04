@@ -2694,6 +2694,32 @@ function 画_设置() {
 
 /* 访问 API(11-03,用户拍:一把绑一个应用 / 以发密钥的人的身份 / 先补记账按金额封顶)。
  * ⚠️ 原文**只在发出那一刻**弹一次 —— 列表接口从不返回原文,页面也不缓存它。 */
+/* ── 访问密钥的有效期 / 轮换(用户 11-04 拍:发的时候必须选,最长 1 年,默认 90 天;Dify 对标 C05)── */
+const 有效期档 = [30, 90, 180, 365];
+function 有效期下拉(id) {
+  return `<select id="${id}">` + 有效期档.map((d) => `<option value="${d}"${d === 90 ? " selected" : ""}>${d} 天${d === 365 ? "(最长)" : ""}</option>`).join("") + `</select>`;
+}
+function 到期格(k) {
+  if (k["吊销于"]) return "—";
+  if (k["过期了吗"]) return '<span class="pill fail">已过期</span>';
+  const 剩 = k["还剩几天"];
+  return `${esc(String(k["有效期至"] || "").slice(0, 10))}` + (剩 != null && 剩 <= 14 ? ` <span class="pill warn">还剩 ${esc(String(剩))} 天</span>` : "");
+}
+function 挂轮换(根, 重画) {
+  根.querySelectorAll("[data-ak-rotate]").forEach((b) => b.onclick = async () => {
+    const 天 = await 问一句("轮换这把密钥", "发一把绑同一个对象、同样上限的新钥;旧的再留 24 小时,让对方换上去。",
+      { 输入: "新钥有效期天数(30 / 90 / 180 / 365)", 必填: true });
+    if (!天) return;
+    try {
+      const r = await 请求(`${P()}/access-keys/${encodeURIComponent(b.dataset.akRotate)}/rotate`,
+        { method: "POST", headers: { "If-Match": b.dataset.rev }, body: JSON.stringify({ 有效期天数: Number(天) }) });
+      提示("新钥发好了 —— 现在就存好", `<div class="note"><b>这是唯一一次看得到新钥原文</b>。旧的还能用到 ${esc(String(r["旧的"]["有效期至"]).slice(0, 16).replace("T", " "))},到点自动拒。</div>
+        <pre>${esc(r["新的"]["原文"])}</pre>`);
+      重画();
+    } catch (e) { 报错(e); }
+  });
+}
+
 async function 画_访问入口() {
   const g = 图态, wid = encodeURIComponent(g.wid);
   $("#tabbody").innerHTML = `<div class="card"><div class="k">在取…</div></div>`;
@@ -2708,8 +2734,9 @@ async function 画_访问入口() {
   const 行 = (d["密钥"] || []).map((k) => `<tr><td>${esc(k["名字"])}</td><td><code>${esc(k["开头"])}</code></td>
       <td>${esc(k["发的人"] || "")}</td><td>${k["今天花了"] == null ? "—" : esc(k["今天花了"].toFixed(4))} / ${esc(String(k["每天上限"]))} ${esc(k["币种"])}
         ${k["今天算不出金额的账"] ? `<div class="k">今天有 ${esc(String(k["今天算不出金额的账"]))} 笔算不出金额 —— 这把今天不再受理</div>` : ""}</td>
-      <td>${esc((k["最后一次用"] || "从没用过").replace("T", " ").slice(0, 19))}</td>
-      <td>${k["吊销于"] ? `已吊销(${esc(k["吊销人"] || "")})` : `<button data-ak-lower="${esc(k.id)}" data-rev="${esc(String(k.revision))}">改小上限</button>
+      <td>${esc((k["最后一次用"] || "从没用过").replace("T", " ").slice(0, 19))}</td><td>${到期格(k)}</td>
+      <td>${k["吊销于"] ? `已吊销(${esc(k["吊销人"] || "")})` : k["过期了吗"] ? "已过期 —— 重发一把" : `<button data-ak-lower="${esc(k.id)}" data-rev="${esc(String(k.revision))}">改小上限</button>
+        <button data-ak-rotate="${esc(k.id)}" data-rev="${esc(String(k.revision))}">轮换</button>
         <button data-ak-revoke="${esc(k.id)}">吊销</button>`}</td></tr>`).join("");
   const 调 = (d["最近调用"] || []).map((x) => `<tr><td>${esc((x["时间"] || "").replace("T", " ").slice(0, 19))}</td>
       <td>${esc(x["密钥"])}</td><td>${esc(x["接口"])}</td><td>${esc(x["结果"])}(${esc(String(x["码"] || ""))})</td>
@@ -2726,11 +2753,12 @@ async function 画_访问入口() {
     <div class="k">限量:每把每分钟 30 次(<b>查结果也算一次</b>,轮询请隔几秒);每天花费到上限就拒(按价目表算的参考价,美元)。</div>
   </div>
   <div class="card"><h3>密钥</h3>
-    ${行 ? `<table><tr><th>名字</th><th>开头</th><th>发的人</th><th>今天花了 / 每天上限</th><th>最后一次用</th><th></th></tr>${行}</table>`
+    ${行 ? `<table><tr><th>名字</th><th>开头</th><th>发的人</th><th>今天花了 / 每天上限</th><th>最后一次用</th><th>有效期至</th><th></th></tr>${行}</table>`
          : `<div class="k">还没有发过密钥。</div>`}
     <h4>发一把新的</h4>
     <label class="f">名字(给谁用)</label><input id="ak-n" placeholder="比如:门店小程序">
     <label class="f">每天最多花多少(美元,必填)</label><input id="ak-cap" placeholder="比如 5">
+    <label class="f">有效期(必选,最长 1 年)</label>${有效期下拉("ak-exp")}
     <button class="pri" id="ak-new">发密钥</button> <span id="ak-msg" class="k"></span>
     <div class="k">原文只在发出那一刻显示一次,库里只存哈希 —— 忘了就吊销重发。上限只许改小;要更大的额度就吊销重发。</div>
   </div>
@@ -2741,7 +2769,7 @@ async function 画_访问入口() {
     const 名 = $("#ak-n").value.trim(), 上限 = $("#ak-cap").value.trim();
     if (!名 || !上限) { $("#ak-msg").textContent = "名字和每天上限都要填"; return; }
     try {
-      const r = await 请求(`${P()}/workflows/${wid}/access-keys`, { method: "POST", body: JSON.stringify({ 名字: 名, 每天上限: Number(上限) }) });
+      const r = await 请求(`${P()}/workflows/${wid}/access-keys`, { method: "POST", body: JSON.stringify({ 名字: 名, 每天上限: Number(上限), 有效期天数: Number($("#ak-exp").value) }) });
       提示("密钥发好了 —— 现在就存好", `<div class="note"><b>这是唯一一次看得到原文</b>,关掉这个框就再也看不到了。</div>
         <pre>${esc(r["原文"])}</pre><div class="k">调用地址:${esc(location.origin + r["调用地址"])}</div>`);
       画_访问入口();
@@ -2753,6 +2781,7 @@ async function 画_访问入口() {
     try { await 请求(`${P()}/access-keys/${encodeURIComponent(b.dataset.akRevoke)}/revoke`, { method: "POST", body: JSON.stringify({ 理由 }) }); 画_访问入口(); }
     catch (e) { 报错(e); }
   });
+  挂轮换($("#tabbody"), 画_访问入口);
   $("#tabbody").querySelectorAll("[data-ak-lower]").forEach((b) => b.onclick = async () => {
     const 新 = await 问一句("改小每天上限", "只许改小;要更大的额度就吊销重发。", { 输入: "新的每天上限(美元)", 必填: true });
     if (!新) return;
@@ -7204,7 +7233,9 @@ async function 画_聊天访问() {
   }
   const 行 = (d["密钥"] || []).map((k) => `<tr><td>${esc(k["名字"])}</td><td><code>${esc(k["开头"])}</code></td>
       <td>${esc(k["发的人"] || "")}</td><td>${k["今天花了"] == null ? "—" : esc(k["今天花了"].toFixed(4))} / ${esc(String(k["每天上限"]))} ${esc(k["币种"])}</td>
-      <td>${k["吊销于"] ? "已吊销" : `<button data-ak-revoke="${esc(k.id)}">吊销</button>`}</td></tr>`).join("");
+      <td>${到期格(k)}</td>
+      <td>${k["吊销于"] ? "已吊销" : k["过期了吗"] ? "已过期 —— 重发一把" : `<button data-ak-rotate="${esc(k.id)}" data-rev="${esc(String(k.revision))}">轮换</button>
+        <button data-ak-revoke="${esc(k.id)}">吊销</button>`}</td></tr>`).join("");
   $("#body").innerHTML = `<div class="card"><h4>外部系统怎么调</h4>
       <div class="k">跑的是这个助手<b>生产指着的那一版</b>${d["生产版本号"] != null ? `(v${esc(String(d["生产版本号"]))})` : " —— <b>还没上生产,调用会被拒</b>"}${d["聊天站读后台配置吗"] ? "" : ";<b>这个角色聊天站还没读后台配置,调用会被拒</b>"}。
         以发密钥那个人绑的澜绣工号取数;<b>这一轮写入类工具不挂</b> —— 只能查、不能改,要改的事回答里会说「它想做什么」。会话归这把密钥。</div>
@@ -7214,20 +7245,22 @@ async function 画_聊天访问() {
 → {"回答": "……", "会话": "……", "用了哪一版": "后台 vN"}</pre>
       <div class="k">限量:每把每分钟 30 次;每天花费到上限就拒(和工作流同一套)。</div></div>
     <div class="card"><h4>密钥</h4>
-      ${行 ? `<table><tr><th>名字</th><th>开头</th><th>发的人</th><th>今天花了 / 每天上限</th><th></th></tr>${行}</table>` : `<div class="k">还没有发过密钥。</div>`}
+      ${行 ? `<table><tr><th>名字</th><th>开头</th><th>发的人</th><th>今天花了 / 每天上限</th><th>有效期至</th><th></th></tr>${行}</table>` : `<div class="k">还没有发过密钥。</div>`}
       <label class="f">名字(给谁用)</label><input id="cak-n" placeholder="比如:企业微信机器人">
       <label class="f">每天最多花多少(美元,必填)</label><input id="cak-cap" placeholder="比如 2">
+      <label class="f">有效期(必选,最长 1 年)</label>${有效期下拉("cak-exp")}
       <button class="pri" id="cak-new">发密钥</button> <span id="cak-msg" class="k"></span>
       <div class="k">原文只在发出那一刻显示一次;发密钥的人要绑了澜绣工号,不然调用会被拒(聊天站不知道以谁的身份取数)。</div></div>`;
   $("#cak-new").onclick = async () => {
     const 名 = $("#cak-n").value.trim(), 上限 = $("#cak-cap").value.trim();
     if (!名 || !上限) { $("#cak-msg").textContent = "名字和每天上限都要填"; return; }
     try {
-      const r = await 请求(`${P()}/chat-assistants/${cid}/access-keys`, { method: "POST", body: JSON.stringify({ 名字: 名, 每天上限: Number(上限) }) });
+      const r = await 请求(`${P()}/chat-assistants/${cid}/access-keys`, { method: "POST", body: JSON.stringify({ 名字: 名, 每天上限: Number(上限), 有效期天数: Number($("#cak-exp").value) }) });
       提示("密钥发好了 —— 现在就存好", `<div class="note"><b>这是唯一一次看得到原文</b>,关掉这个框就再也看不到了。</div><pre>${esc(r["原文"])}</pre>`);
       画_聊天访问();
     } catch (e) { 报错(e); }
   };
+  挂轮换($("#body"), 画_聊天访问);
   $("#body").querySelectorAll("[data-ak-revoke]").forEach((b) => b.onclick = async () => {
     const 理由 = await 问一句("吊销这把密钥", "吊销立刻生效。", { 输入: "理由", 必填: true });
     if (!理由) return;
