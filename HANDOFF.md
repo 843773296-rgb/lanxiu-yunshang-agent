@@ -12,6 +12,40 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 📝 11-04 早:DF-03 第 2 步做完 —— 意见单(主检出,已推 `4184c371`,根门禁 + 后台三项全绿)
+
+### 事情
+做到一半用户丢来一份 PRD(没说话,只给路径):
+`~/Documents/ChatGPT/澜绣云裳agent-辅助/澜绣云裳Agent_意见收集与能力持续改进_PRD_V1.0_20261024.md`。
+**它就是这一步的规格**。第一版按我自己定的「好 / 不好 + 六类」做完、建了表,对照后分类 / 状态 / 字段全对不上,
+趁没推在共享库上降级重建(旧表 answer_feedback 删前 0 行)。**以后 DF-03 的事先读这份 PRD,别再自己定口径。**
+
+### 判据(为什么这么判,摘要留不下)
+- **不往 feedback(A3 人工判读)里塞**:PRD §7.1 明写保留判读含义;塞进去「智能体健康」采纳率分母被撑大
+- **不存 trace_id 列,读时按 request_id = lanxiu-chat:<号> 现对**:推送轮末成批,意见常先到,存列会永远空
+- **不存问答原文**:原文由「查看敏感输入」管,抄进来就绕过授权
+- **POST /opinions 两道**:服务账号 U001(契约要点得出权限)+ 内部凭证且只收本机(请求体里的提问人只在这道过了才采信)。
+  提问人本人不需要后台权限 —— PRD §1 明说不能为收意见放开「运行评测」
+- **只认这一轮的提问人**:`sessions.记这一轮(trace, me)` 成败都记(原来只有会话记了主人,第一轮就失败的没有会话号 → 查不到)。
+  11-04 之前的轮次退回认会话主人
+- 问题类型 / 影响各四份(opinions_api / answer_feedback.py / station.html / 库 CHECK):check ⑥ 盯前三份,e2e 每种真插盯库那份
+- 控件审计(backend/ui_audit.py)**只认字面写出的 `querySelectorAll("[data-x]")`** —— 用变量拼的选择器会被报死控件。
+  照页面现有「报问题」那种写法改了代码,没放宽审计
+
+### 🚫 别重做
+- 别把 status 改回「待审核 / 已采纳 / 已驳回」—— PRD §5.1 是七个(待受理 … 已撤回);采纳成样本是**问题单 / 审核**那条线的事
+- 别让聊天站把页面传来的「提问人」带过去(`answer_feedback.页面能给的` 白名单,咬合盯着)
+
+### 下一步第一个动作
+补 PRD 第一阶段缺口,先做**独立建议入口**:表里 source=独立建议、chat_trace_ref 为空已留位,
+**但这种行唯一约束防不了重**(PG 把 NULL 当互不相同)—— 要先加「提交幂等键」列 + (项目, 工号, 幂等键) 唯一,再开入口。
+然后「我的意见」进度页(PRD §3.3,字段裁剪)、点「停止」那种没 trace 的轮次(现在挂不上)。之后才是受理台(§4.1 + §5.1 + 追加式时间线)。
+
+### 悬而未决
+- CI 结果:推完在盯(`/tmp/claude-501/ci.log`),交接时还没出
+- `agentsite/opinion_browser_smoke.mjs` 不进门禁(同 call_upload_browser_smoke);要先 ./start.sh,会写真数据,跑完要删
+- 聊天页「已停止」的那轮没有 trace_id,不显示意见按钮 —— PRD 要求「取消」也能报,没做
+
 ## 🚦 11-04 凌晨:**那道闸从没触发过**(工 worktree)
 
 ### 事情
@@ -13567,39 +13601,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 08:20。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 08:36。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | fbfab49e · 2026-11-04 · 夜跑评测结果 2026-11-04(自动提交:评测结果、报告、压缩过的运行日志) |
-| 代码量 | 940 个 Python 文件 / 180233 行(不含 .venv) |
-| 验收 | `./check.sh` 共 373 项 —— **接手第一件事就是跑它** |
+| 分支 | `main` |
+| 最新提交 | 4184c371 · 2026-11-04 · 日志与标注 DF-03 第 2 步:聊天站每条问答都能提意见(失败的那一轮也能报),记的是提问的那个人 |
+| 代码量 | 945 个 Python 文件 / 180467 行(不含 .venv) |
+| 验收 | `./check.sh` 共 374 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 没起来 |
 
 **未提交的改动:**
 
 ```
-MM HANDOFF.md
-MM agentsite/evals/funnel.jsonl
-M  agentsite/evals/skill_usage.jsonl
-M  check.sh
-M  tools/hooks/README.md
-M  tools/hooks/handoff-gate.mjs
-M  tools/impact.py
-M  tools/skills/handoff-before-compact/SKILL.md
-?? .feynman/bite-all-20261016.log
+M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
+ M .feynman/tool-eval.json
+ M HANDOFF.md
+ M agentsite/evals/funnel.jsonl
+ M agentsite/evals/skill_usage.jsonl
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
+?? .feynman/nightly-eval.log
+?? .feynman/world-shift-launchd.log
+?? .wip-muslin/
+?? .wip-store-report-SKILL.md
+?? agent/example-ab-results.jsonl
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+4184c371 日志与标注 DF-03 第 2 步:聊天站每条问答都能提意见(失败的那一轮也能报),记的是提问的那个人
+904774f5 交接门禁那条线从没触发过:写死 80%,而这台机器 30% 就自动压缩
 fbfab49e 夜跑评测结果 2026-11-04(自动提交:评测结果、报告、压缩过的运行日志)
 b5c8e324 日志与标注 DF-03 第 1 步:聊天记录能翻页(原来只取前 100 条);翻到后面的页不再 60 秒超时
 0b6befdc 访问 API:同一个幂等键、参数不同 → 409 冲突(Dify 四页对标方案 C06),不再默默返回旧的那一次
-44462e02 收尾:刷交接 + 项目日志(落后 5 次提交,已发飞书)
-0b9f4148 访问 API 聊天那一半 + 上传录音卡片真浏览器点过(抓到两个真 bug)
 ```
 <!--/AUTO-->
 ## 一句话在做什么
