@@ -301,6 +301,21 @@ class H(BaseHTTPRequestHandler):
                 html = _注入登录守卫(html)
             html = _注入版本(html)
             self._send(html.encode(), "text/html; charset=utf-8"); return
+        if p == "/api/my-opinions":
+            # 「我的意见」(PRD §3.3):工号只从登录会话取,不从参数取 —— 别人的意见看不到
+            # ⚠️ 必须在下面那行「/api/ 一律转给门店后台」之前 —— 11-04 第一版写在它后面,永远轮不到,页面报 not found(真浏览器冒烟抓到的)
+            import answer_feedback as _af
+            me = _who(self)
+            if not me:
+                return self._send({"error": "没登录 —— 「我的意见」只给提的人自己看"}, code=401)
+            q = dict(qp.split("=", 1) for qp in (urlparse(self.path).query or "").split("&") if "=" in qp)
+            try: 页 = max(1, int(q.get("page", "1")))
+            except ValueError: 页 = 1
+            码, d = _af.查我的(me, 页)
+            if 码 == 200:
+                return self._send({"ok": True, **d})
+            return self._send({"error": d.get("message") or d.get("error") or f"取不到({码})",
+                               "怎么办": d.get("advice") or d.get("怎么办") or ""}, code=502)
         if p.startswith("/api/") or p.startswith("/img/"): return self._proxy("GET")
         if p == "/report.pdf":
             # 报告导出 PDF(用户 10-10)。**先拿店长自己的 cookie 向后台取这一份** ——
@@ -583,6 +598,24 @@ class H(BaseHTTPRequestHandler):
                                # 字段错误直接说出来 —— 页面只弹 error / 怎么办,「见字段错误」四个字对提问人没有信息量
                                "怎么办": ";".join(str(v) for v in 字段.values()) or d.get("advice") or d.get("怎么办") or "",
                                "字段": 字段 or None}, code=(码 if 码 in (409, 422) else 502))
+        if p == "/api/opinion":
+            # 导航「意见与建议」:不挂任何一轮的独立建议(PRD §3.1);提问人从登录会话取,提交键防重复
+            try: body = json.loads(raw or b"{}")
+            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
+            import answer_feedback as _af
+            me = _who(self)
+            if not me:
+                return self._send({"error": "没登录 —— 意见要记是谁提的"}, code=401)
+            键 = _af.提交键(body)
+            if not 键:
+                return self._send({"error": "缺提交键 —— 刷新页面再提一次"}, code=400)
+            码, d = _af.转给后台(_af.独立建议载荷(me, body), 键=键)
+            if 码 in (200, 201):
+                return self._send({"ok": True, **d})
+            字段 = d.get("field_errors") or {}
+            return self._send({"error": d.get("message") or d.get("error") or f"没记上({码})",
+                               "怎么办": ";".join(str(v) for v in 字段.values()) or d.get("advice") or d.get("怎么办") or ""},
+                              code=(码 if 码 in (409, 422) else 502))
         if p == "/internal/chat":
             # 管理后台转来的访问 API 聊天(11-03):凭证 / 本机 / 身份现查,见 internal_call.py。
             # **写工具这一轮不挂**(sdk.run 只读=True)—— 机器调的不许直接写,网页上那张确认卡 API 那头没人看

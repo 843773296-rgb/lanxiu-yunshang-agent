@@ -5,7 +5,7 @@
 //
 // 走的是真的:登录本地测试账号 → 放一条挂着**这个账号自己那一轮**真 trace 的回答(和一条失败的)→ 点、填、提交 →
 // 页面自己 fetch /api/answer-feedback → 聊天站核提问人、转给管理后台 → 库里一行。
-// ⚠️ 会写真数据:两条意见(chat_trace_ref = 传进来的那两轮)。跑完由调用方删。要先 ./start.sh。不进 check.sh。
+// ⚠️ 会写真数据:两条挂一轮的意见(chat_trace_ref = 传进来的那两轮)+ 两条独立建议(说明以「浏览器冒烟」开头)。跑完由调用方删。要先 ./start.sh。不进 check.sh。
 //   node agentsite/opinion_browser_smoke.mjs <临时目录> <自己那一轮的 trace> <自己那条失败轮的 trace>
 import { spawn } from "node:child_process";
 
@@ -80,10 +80,28 @@ try {
   const 回2 = await ev(`(document.querySelectorAll(".fb")[1] || {}).innerText || ""`);
   ck("失败那条也提上了", 回2.includes("太慢或失败") && 回2.includes("待受理"), 回2 + " | " + await ev(`window.__alerts.join(" / ")`));
 
+  // 停掉的那一轮(没有 trace):按钮还在,点了打开「意见与建议」,类和说明预填好
+  await ev(`(() => { const c = cur(); c.msgs.push({role:"u", text:"帮我查一下上周营收"}); c.msgs.push({role:"assistant", error:"已停止"}); save(); drawStream(); })()`);
+  const 停 = await ev(`document.querySelectorAll("[data-fbstop]").length`);
+  ck("停掉的那一轮(没有 trace)也有「报告执行问题」", 停 === 1, 停);
+  await ev(`document.querySelector("[data-fbstop]").click()`); await sleep(1500);
+  const 预 = await ev(`({类: document.querySelector("#op-type").value, 说明: document.querySelector("#op-note").value})`);
+  ck("点了打开「意见与建议」,类预选「太慢或失败」、说明带上当时问的那句", 预 && 预.类 === "太慢或失败" && 预.说明.includes("上周营收"), JSON.stringify(预));
+  // 独立建议:提交 → 「我的意见」里出现,进度是「已收到」
+  await ev(`(() => { document.querySelector("#op-note").value = "浏览器冒烟:停掉之后不知道有没有在跑"; document.querySelector("#op-send").click(); })()`);
+  await sleep(3000);
+  const 提后 = await ev(`({提示: document.querySelector("#op-why").textContent, 我的: document.querySelector("#op-mine").innerText})`);
+  ck("独立建议提上了,「我的意见」里出现,进度写「已收到」", 提后 && 提后.提示.includes("收到了") && 提后.我的.includes("已收到")
+     && 提后.我的.includes("停掉之后"), JSON.stringify(提后));
+  // 同一个提交键重提(模拟网断了重试):不该多出一条
+  const 重 = await ev(`fetch("/api/opinion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({提交键:"smoke-retry-key",问题类型:"其他",说明:"浏览器冒烟:重试"})}).then(r=>r.json()).then(a=>fetch("/api/opinion",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({提交键:"smoke-retry-key",问题类型:"其他",说明:"浏览器冒烟:重试"})}).then(r=>r.json()).then(b=>[a.id,b.id,b.新建]))`);
+  ck("同一个提交键连提两次 → 同一条,第二次不新建", Array.isArray(重) && 重[0] && 重[0] === 重[1] && 重[2] === false, JSON.stringify(重));
+  await ev(`closeOrder()`);
+
   // 刷新:记在消息上,还在
   await go("http://127.0.0.1:8770/");
   await ev(`document.getElementById("arrival") && (document.getElementById("arrival").hidden=true)`); await sleep(500);
-  const 刷 = await ev(`[...document.querySelectorAll(".fb")].map(e => e.innerText.includes("已提")).join(",")`);
+  const 刷 = await ev(`[...document.querySelectorAll(".fb")].slice(0, 2).map(e => e.innerText.includes("已提")).join(",")`);
   ck("刷新页面后两条都还显示「已提」", 刷 === "true,true", 刷);
   console.log();
   console.log(挂.length ? `❌ ${挂.length} 条不过:${挂.join(" / ")}` : `✅ 聊天页意见:${过.length} 条全过`);

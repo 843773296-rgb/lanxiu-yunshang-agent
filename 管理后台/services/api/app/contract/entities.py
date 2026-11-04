@@ -852,7 +852,7 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     # ②''' 意见单(DF-03 第 2 步,2026-11-04;口径照《意见收集与能力持续改进 PRD》10-24 §3 / §5.1 / §7.1;Dify 对标 C13)
     E("opinions", "意见单", 项目级, 可改,
       ["source", "chat_trace_ref", "session_ref", "verdict", "problem_type", "note", "expected_note", "impact_type",
-       "asker_staff_code", "asker_snapshot", "status", "history_snapshot", "promoted_sample_id"],
+       "asker_staff_code", "asker_snapshot", "status", "history_snapshot", "promoted_sample_id", "submit_ref"],
       ["**每条问答都能提**(原来只有查过知识库的回答有评分条,而那评的是「找得准不准」不是「答得对不对」);"
        "执行失败的那一轮也能报(source=执行失败);独立建议不挂任何一轮(source=独立建议,chat_trace_ref 为空)",
        "**记的是提问的那个人**(asker_staff_code = 澜绣工号,asker_snapshot = 当时的姓名 / 角色 / 门店):"
@@ -864,7 +864,9 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "**受理之后不许再改**(409)—— 否则受理人看的和库里现在写的不是同一句话",
        "「有问题」必须分类且写一句哪里有问题(PRD §3.2「答错了至少填写一句说明」);期望的结果是**候选事实**,不是真值 ——"
        "审核过的才升成评测样本(promoted_sample_id),**不自动改线上答案**(C13)",
-       "状态照 PRD §5.1:待受理 / 待补充 / 核实中 / 已关联问题 / 已答复 / 不采纳 / 已撤回"],
+       "状态照 PRD §5.1:待受理 / 待补充 / 核实中 / 已关联问题 / 已答复 / 不采纳 / 已撤回",
+       "**独立建议**(11-04 第二刀):不挂任何一轮,评价记成「建议」;防重靠 submit_ref(提交幂等键,PRD §3.2「响应丢失后用原提交幂等键"
+       "查询或重试,不能重复生成多条」)—— 挂一轮的那种靠 (项目, 那一轮, 工号) 唯一,而独立建议那一列是空的,PG 把 NULL 当互不相同,防不了"],
       依赖=["samples"]),
 
     # ③ 工具 / 连接 / 指南 / 规则

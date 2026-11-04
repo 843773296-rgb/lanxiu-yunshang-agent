@@ -27,10 +27,16 @@ PRD §7.1 写明:「保留现有 feedback 的人工判读含义……不把新�
 
 问题和回答的正文在调用记录里,谁看得到由「查看敏感输入」那条授权管。抄一份进意见单就绕过了那道授权。
 
-## 还没做(PRD 第一阶段的另一半)
+## 独立建议(11-04 第二刀)
 
-独立建议的入口(不挂任何一轮,要靠提交幂等键防重)、「我的意见」进度页、受理台。表里 source / status 的取值已按 PRD 留好,
-这个口现在只收「问答」和「执行失败」两种来源。
+不挂任何一轮(PRD §3.1「与具体问答无关的建议从导航进入,允许没有 trace」),评价记成「建议」。
+**防重靠提交键**(请求头 Idempotency-Key → submit_ref):挂一轮的那种靠 (项目, 那一轮, 工号) 唯一,
+而独立建议那一列是空的,PG 把 NULL 当互不相同。同一个键、同样内容 → 返回原来那条;同一个键、内容不同 → 409(同访问 API 的 C06)。
+
+## 我的意见(PRD §3.3)
+
+`GET /opinions/mine`:同样只收内部通道,工号由聊天站从登录会话换出来。**字段裁剪**:只给提的人自己写的和进度,
+不给提问人快照、管理后台 trace、改过的旧版 —— PRD「不透出内部或他人业务数据」。
 """
 import hmac
 import json as _json
@@ -46,8 +52,8 @@ router = APIRouter()
 前缀 = "/api/v1/projects/{project_id}"
 
 # 下面几组和 models._额外检查 里的 CHECK 是同一份意思;问题类型还和聊天站、聊天页各有一份(answer_feedback_check ⑥ 盯着)
-这个口收的来源 = ("问答", "执行失败")       # 「独立建议」库里留了位,入口还没做
-评价们 = ("有帮助", "有问题")
+这个口收的来源 = ("问答", "执行失败", "独立建议")
+评价们 = ("有帮助", "有问题", "建议")       # 「建议」只给独立建议用(库 CHECK ck_opinions_suggest)
 问题类型们 = ("答错", "没答全", "证据不支持", "查错对象", "太慢或失败", "不好操作", "新增能力", "其他")
 影响们 = ("仅影响本次", "反复出现", "影响业务办理")
 状态们 = ("待受理", "待补充", "核实中", "已关联问题", "已答复", "不采纳", "已撤回")
@@ -80,10 +86,13 @@ def 校验(体):
     坏, 出 = {}, {}
     出["来源"] = _字(体, "来源") or "问答"
     if 出["来源"] not in 这个口收的来源:
-        坏["来源"] = (f"这个口只收 {list(这个口收的来源)}" +
-                    (" —— 独立建议的入口还没做(要带提交幂等键防重)" if 出["来源"] == "独立建议" else ""))
+        坏["来源"] = f"这个口只收 {list(这个口收的来源)}"
     出["聊天站trace"] = _字(体, "聊天站trace")
-    if not 出["聊天站trace"] or len(出["聊天站trace"]) > 200:
+    独立 = 出["来源"] == "独立建议"
+    if 独立:
+        if 出["聊天站trace"]:
+            坏["聊天站trace"] = "独立建议不挂任何一轮 —— 挂了一轮的请从那条回答下面提(不编造关联,也不把有关联的记成无关)"
+    elif not 出["聊天站trace"] or len(出["聊天站trace"]) > 200:
         坏["聊天站trace"] = "要给聊天站那一轮的 trace 号 —— 挂不上哪一轮的意见,受理人不知道说的是哪句"
     出["会话号"] = _字(体, "会话号")
     出["评价"] = _字(体, "评价")
@@ -91,15 +100,18 @@ def 校验(体):
         坏["评价"] = f"只收 {list(评价们)}"
     if 出["来源"] == "执行失败" and 出["评价"] == "有帮助":
         坏["评价"] = "执行失败的那一轮只能报问题"
+    if 独立 != (出["评价"] == "建议") and 出["评价"] in 评价们:
+        坏["评价"] = "独立建议的评价是「建议」;挂在一轮上的只能是「有帮助 / 有问题」"
     类 = _字(体, "问题类型")
     出["说明"] = _字(体, "说明")
     出["期望结果"] = _字(体, "期望结果")
     出["影响"] = _字(体, "影响")
-    if 出["评价"] == "有问题":
+    if 出["评价"] in ("有问题", "建议"):
         if 类 not in 问题类型们:
-            坏["问题类型"] = f"「有问题」要说是哪一类:{list(问题类型们)} —— 不分类的问题受理人筛不出来"
+            坏["问题类型"] = f"要说是哪一类:{list(问题类型们)} —— 不分类的意见受理人筛不出来"
         if not 出["说明"]:
-            坏["说明"] = "要写一句哪里有问题 —— 只有「错了」两个字,受理人只能回头再问你"
+            坏["说明"] = ("要写一句哪里有问题 —— 只有「错了」两个字,受理人只能回头再问你" if not 独立
+                        else "建议要写内容 —— 想要什么、现在哪里不方便")
         if 出["影响"] and 出["影响"] not in 影响们:
             坏["影响"] = f"只收 {list(影响们)}"
     elif 出["评价"] == "有帮助":
@@ -110,7 +122,7 @@ def 校验(体):
     for k in ("说明", "期望结果"):
         if 出[k] and len(出[k]) > 说明最长:
             坏[k] = f"最多 {说明最长} 字"
-    出["问题类型"] = 类 if 出["评价"] == "有问题" else None
+    出["问题类型"] = 类 if 出["评价"] in ("有问题", "建议") else None
     人 = 体.get("提问人") if isinstance(体.get("提问人"), dict) else {}
     出["工号"] = str(人.get("工号") or "").strip()
     if not 出["工号"]:
@@ -136,6 +148,11 @@ async def 提交意见(project_id: str, request: Request, me: 身份 = Depends(�
     if not isinstance(体, dict):
         raise _错(422, "VALIDATION", "请求体要是 JSON 对象", "见接口说明")
     出, 坏 = 校验(体)
+    键 = (request.headers.get("Idempotency-Key") or "").strip() or None
+    if 出["来源"] == "独立建议" and not 键:
+        坏["Idempotency-Key"] = "独立建议要带提交键 —— 它不挂任何一轮,没有别的东西能防「网断了重提一次变成两条」"
+    if 键 and len(键) > 200:
+        坏["Idempotency-Key"] = "提交键最长 200"
     if 坏:
         raise _错(422, "VALIDATION", "意见的字段不合格", "见字段错误", field_errors=坏)
 
@@ -143,6 +160,8 @@ async def 提交意见(project_id: str, request: Request, me: 身份 = Depends(�
         org = c.execute(text("select organization_id from projects where id=:p"), {"p": project_id}).scalar()
         if not org:
             raise _错(404, "NOT_FOUND", "没有这个项目", "确认项目号")
+        if 出["来源"] == "独立建议":
+            return _收独立建议(c, org, project_id, me, 出, 键)
         # 一句完成「没有就建 / 有且待受理就改(旧版追加进 history_snapshot)/ 受理了就不动」——
         # 先查再写的两步在并发提交时会撞唯一键
         r = c.execute(text("""
@@ -180,6 +199,73 @@ async def 提交意见(project_id: str, request: Request, me: 身份 = Depends(�
             "note": ("收到了,进了管理后台「意见」待受理。期望的结果是**候选**,核实过才会变成评测样本;"
                      "**不会自动改线上答案**"
                      + ("" if 后台trace else "。这一轮的执行记录还没推过来,推过来之后清单里会自动对上"))}
+
+
+def _收独立建议(c, org, project_id, me, 出, 键):
+    """同一个提交键只收一次:内容一样 → 返回原来那条(网断了重提);内容不一样 → 409(那是两件事,不许被旧的吞掉)。"""
+    r = c.execute(text("""
+        insert into opinions (id, organization_id, project_id, created_at, created_by, updated_at, revision,
+               source, verdict, problem_type, note, expected_note, impact_type,
+               asker_staff_code, asker_snapshot, status, history_snapshot, submit_ref)
+        values (:i, :o, :p, now(), :u, now(), 1, '独立建议', '建议', :pt, :n, :ex, :im, :sc,
+                cast(:snap as jsonb), '待受理', '[]'::jsonb, :k)
+        on conflict (project_id, asker_staff_code, submit_ref) do nothing
+        returning id, revision"""),
+        {"i": f"op_{_uuid.uuid4().hex[:12]}", "o": org, "p": project_id, "u": me.user_id, "pt": 出["问题类型"],
+         "n": 出["说明"], "ex": 出["期望结果"], "im": 出["影响"], "sc": 出["工号"],
+         "snap": _json.dumps(出["快照"], ensure_ascii=False), "k": 键}).mappings().first()
+    if r:
+        return {"id": r["id"], "新建": True, "revision": r["revision"], "状态": "待受理", "评价": "建议",
+                "问题类型": 出["问题类型"], "管理后台trace": None,
+                "note": "收到了,进了管理后台「意见」待受理。处理进度在「我的意见」里看"}
+    老 = c.execute(text("""select id, revision, status, problem_type, note, expected_note, impact_type from opinions
+                          where project_id=:p and asker_staff_code=:sc and submit_ref=:k"""),
+                   {"p": project_id, "sc": 出["工号"], "k": 键}).mappings().first()
+    if (老["problem_type"], 老["note"], 老["expected_note"], 老["impact_type"]) != (
+            出["问题类型"], 出["说明"], 出["期望结果"], 出["影响"]):
+        raise _错(409, "IDEMPOTENCY_CONFLICT", "同一个提交键,内容和上次不一样",
+                  "这是另一条建议 —— 换一个提交键再提(页面每次提交会自己生成新的)")
+    return {"id": 老["id"], "新建": False, "revision": 老["revision"], "状态": 老["status"], "评价": "建议",
+            "问题类型": 老["problem_type"], "管理后台trace": None,
+            "note": "**这条之前已经收到了**(同一个提交键)—— 没有再记一条"}
+
+
+# 状态 → 提的人看得懂的话(PRD §3.3「已收到 → 核实中 → 已安排/暂不安排 → 验证中 → 已解决」;内部根因不当成已确认事实说)
+给提的人看 = {"待受理": ("已收到", "还没有人处理,会有人看"),
+           "待补充": ("需要你补充", "处理的人需要更多信息"),
+           "核实中": ("核实中", "正在核对证据,还没有结论"),
+           "已关联问题": ("已安排", "已经并进一个要处理的问题里,修好后会告诉你"),
+           "已答复": ("已答复", "处理的人给了答复"),
+           "不采纳": ("暂不安排", "这次不改,原因见答复"),
+           "已撤回": ("已撤回", "你撤回了这条")}
+
+
+@router.get(前缀 + "/opinions/mine")
+def 我的意见(project_id: str, request: Request, 工号: str = Query(...),
+         limit: int = Query(30, ge=1, le=100), page: int = Query(1, ge=1),
+         me: 身份 = Depends(要权限("运行评测"))):
+    """提意见的人看自己的意见和进度。只收内部通道(工号由聊天站从登录会话换出来);**字段裁剪**,不给内部字段。"""
+    行, 因 = 内部通道核对(request.headers.get("X-Lanxiu-Internal"), request.client.host if request.client else None)
+    if not 行:
+        raise _错(403, "INTERNAL_ONLY", 因, "这个口只收聊天站转来的 —— 是谁要由聊天站从登录会话换出来")
+    工号 = (工号 or "").strip()
+    if not 工号:
+        raise _错(422, "VALIDATION", "要给工号", "由聊天站从登录会话换出来", field_errors={"工号": "必填"})
+    with 连接() as c:
+        rs = c.execute(text("""select count(*) over () 全量, id, source, verdict, problem_type, note, expected_note,
+                                      status, created_at, updated_at, chat_trace_ref
+                                 from opinions where project_id=:p and asker_staff_code=:sc and archived_at is null
+                                order by created_at desc, id desc limit :lim offset :off"""),
+                       {"p": project_id, "sc": 工号, "lim": limit, "off": (page - 1) * limit}).mappings().all()
+    出 = []
+    for x in rs:
+        进度, 一句话 = 给提的人看.get(x["status"], (x["status"], ""))
+        出.append({"id": x["id"], "来源": x["source"], "评价": x["verdict"], "问题类型": x["problem_type"],
+                  "说明": x["note"], "期望结果": x["expected_note"], "进度": 进度, "进度说明": 一句话,
+                  "挂在哪一轮": x["chat_trace_ref"], "提交时间": x["created_at"].isoformat(),
+                  "最近更新": x["updated_at"].isoformat() if x["updated_at"] else None})
+    from workflows_api import 分页信封
+    return {"items": 出, **分页信封(rs, page, limit)}
 
 
 @router.get(前缀 + "/opinions")

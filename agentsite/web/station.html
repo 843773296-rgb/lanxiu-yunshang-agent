@@ -25,7 +25,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
 #side h1 small{display:block;font-weight:400;font-size:11px;color:var(--dim);letter-spacing:0}
 #newbtn{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:9px;
   background:#fff;cursor:pointer;font:inherit;font-size:13px;text-align:left;color:var(--ink)}
-#newbtn:hover,#gallery:hover{border-color:#c9cace}
+#newbtn:hover,#gallery:hover,#opbtn:hover{border-color:#c9cace}
+#opbtn{width:100%;margin-top:7px;padding:8px 12px;border:1px solid transparent;border-radius:9px;background:none;cursor:pointer;text-align:left;color:inherit;font:inherit}
 #gallery{width:100%;margin-top:7px;padding:8px 12px;border:1px solid transparent;border-radius:9px;
   background:none;cursor:pointer;font:inherit;font-size:13px;text-align:left;color:var(--dim)}
 #convs{flex:1;overflow:auto;padding:6px 8px 18px}
@@ -385,6 +386,8 @@ body{margin:0;display:flex;background:var(--bg);color:var(--ink);
     <h1>澜绣云裳 · 智能助手<small>汉服定制运维</small></h1>
     <button id="newbtn">＋ 新建会话</button>
     <button id="gallery">☰ 全部助手</button>
+    <!-- 意见与建议(11-04,意见收集 PRD §3.1):和具体哪条回答无关的建议从这里提;「我的意见」也在这里看进度 -->
+    <button id="opbtn">✉ 意见与建议</button>
   </header>
   <div id="convs"></div>
   <!-- 平台入口放在左栏**底部**(用户 2026-09-24 要「从左侧侧边栏进」)。
@@ -1106,7 +1109,8 @@ const 反馈类型们 = ["答错", "没答全", "证据不支持", "查错对象
 const 影响们 = ["仅影响本次", "反复出现", "影响业务办理"];
 const FB_OPEN = {};      // 消息序号 → 「反馈问题」面板展开着
 function fbBar(m, i){
-  if(!m.trace_id) return "";             // 这一轮没记执行记录 —— 挂不上,不显示一个点了也记不下的按钮
+  // 停掉 / 断了的那一轮没有 trace:挂不上哪一轮,就按**独立建议**报(PRD §6「无 trace 的允许受理,不编造关联」)
+  if(!m.trace_id) return m.error ? `<div class="rate fb"><button data-fbstop="${i}">报告执行问题</button></div>` : "";
   const 失败 = !!m.error, 已 = m.反馈;
   if(已 && !FB_OPEN[i]){
     return `<div class="rate fb"><span class="done">已提「${esc(已.评价)}${已.问题类型 ? "·" + esc(已.问题类型) : ""}」`
@@ -1127,6 +1131,58 @@ function fbBar(m, i){
   return `<div class="rate fb"><span>这条回答怎么样?</span>`
     + `<button data-fb="${i}" data-fbv="有帮助">👍 有帮助</button><button data-fb="${i}" data-fbv="反馈问题">反馈问题</button></div>`;
 }
+/* ── 意见与建议(独立建议 + 我的意见,PRD §3.1 / §3.3)──────────────
+ * 提交键:打开面板时生成一个,网断了重提带同一个(管理后台只记一条);提交成功才换新的。 */
+let 建议键 = null;
+const 新键 = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+async function openOpinions(预填){
+  预填 = (预填 && 预填.说明 !== undefined) ? 预填 : null;     // 从按钮点进来时第一个参数是点击事件,不是预填
+  const ov = $("#od"), bx = $("#odp");
+  ov.classList.add("on");
+  建议键 = 建议键 || 新键();
+  bx.innerHTML = `<button id="odclose">关闭</button><h3>意见与建议</h3>
+    <div class="sub">和某一条回答有关的,请在那条回答下面点「反馈问题」—— 这里提的是和具体哪条回答无关的。</div>
+    <div class="apvact">
+      <select id="op-type"><option value="">哪一类…</option>${反馈类型们.map(t => `<option>${esc(t)}</option>`).join("")}</select>
+      <textarea id="op-note" rows="3" placeholder="想要什么 / 现在哪里不方便(必填)"></textarea>
+      <input id="op-want" placeholder="期望是什么样(选填)" style="width:100%">
+      <select id="op-impact"><option value="">影响(选填)</option>${影响们.map(t => `<option>${esc(t)}</option>`).join("")}</select>
+      <div class="row"><button class="ok" id="op-send">提交</button><span class="sub" id="op-why"></span></div>
+    </div>
+    <h4>我的意见</h4><div id="op-mine" class="sub">在取…</div>`;
+  $("#odclose").onclick = closeOrder;
+  $("#op-send").onclick = 提建议;
+  if(预填){ $("#op-type").value = 预填.类 || ""; $("#op-note").value = 预填.说明 || ""; }
+  画我的意见();
+}
+async function 提建议(){
+  const 类 = $("#op-type").value, 说明 = ($("#op-note").value || "").trim();
+  if(!类){ $("#op-why").textContent = "先选是哪一类"; return; }
+  if(!说明){ $("#op-why").textContent = "写一句想要什么 / 哪里不方便"; return; }
+  $("#op-send").disabled = true; $("#op-why").textContent = "在提交…";
+  const r = await fetch("/api/opinion", {method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify({提交键: 建议键, 问题类型: 类, 说明, 期望结果: ($("#op-want").value || "").trim(), 影响: $("#op-impact").value})})
+    .then(x => x.json()).catch(e => ({error: "网络断了:" + e + " —— 再点一次提交,不会重复记"}));
+  $("#op-send").disabled = false;
+  if(r.ok){
+    建议键 = 新键();     // 提交成功才换键:没成功的那次重提还带原来那个
+    $("#op-note").value = ""; $("#op-want").value = ""; $("#op-type").value = ""; $("#op-impact").value = "";
+    $("#op-why").textContent = r.新建 === false ? "这条之前已经收到了,没有再记一条" : "收到了,进度在下面看";
+    画我的意见(); return;
+  }
+  $("#op-why").textContent = (r.error || "没提上") + (r.怎么办 ? ":" + r.怎么办 : "");   // 失败不装作成功
+}
+async function 画我的意见(){
+  const 框 = $("#op-mine"); if(!框) return;
+  const d = await fetch("/api/my-opinions").then(x => x.json()).catch(e => ({error: String(e)}));
+  if(!d.ok){ 框.textContent = "取不到:" + (d.error || "") + " —— 这是取数失败,不是「你没提过」"; return; }
+  if(!(d.items || []).length){ 框.textContent = "还没有提过意见"; return; }
+  框.innerHTML = d.items.map(x => `<div class="kv"><span>${esc(x.进度)}</span><span>${esc(x.评价)}${x.问题类型 ? "·" + esc(x.问题类型) : ""}`
+    + ` —— ${esc((x.说明 || "").slice(0, 60))}<br><small>${esc(x.进度说明 || "")} · ${esc(String(x.提交时间).slice(0, 16).replace("T", " "))}`
+    + `${x.挂在哪一轮 ? " · 挂在一条回答上" : ""}</small></span></div>`).join("")
+    + (d.页数 > 1 ? `<div class="note">共 ${d.total} 条,这里只列最近 ${d.items.length} 条</div>` : "");
+}
+
 async function 点反馈(b){
   const i = +b.dataset.fb, v = b.dataset.fbv, c = cur(), m = c && c.msgs[i];
   if(!m) return;
@@ -1300,6 +1356,12 @@ function drawStream(){
   });
   s.querySelectorAll("[data-fb]").forEach(b => {
     b.onclick = () => 点反馈(b);
+  });
+  s.querySelectorAll("[data-fbstop]").forEach(b => {
+    b.onclick = () => {
+      const c = cur(), i = +b.dataset.fbstop, 问 = c && c.msgs[i - 1] && c.msgs[i - 1].role === "u" ? c.msgs[i - 1].text : "";
+      openOpinions({类: "太慢或失败", 说明: `这一轮${(c.msgs[i] || {}).error || "没出结果"}` + (问 ? `,当时问的是:${String(问).slice(0, 80)}` : "")});
+    };
   });
   // 每条回答各自的「执行记录」(证据中心 10-25)—— 同样每次重绘重绑
   s.querySelectorAll(".evlink").forEach(b => {
@@ -1761,6 +1823,7 @@ $("#evclose").onclick = () => evOpen(false);
 $("#evt1").onclick = () => { EVTAB = "证据"; drawEv(); };
 $("#evt2").onclick = () => { EVTAB = "子助手"; drawEv(); };
 $("#gallery").onclick = () => { PICKING = true; drawStream(); };
+$("#opbtn").onclick = openOpinions;
 $("#send").onclick = ask;
 $("#stop").onclick = () => { if(RUNNING) RUNNING.abort(); };
 $("#q").addEventListener("input", grow);

@@ -59,23 +59,37 @@ def 载荷(me, trace, 会话号, 页面):
     return 体
 
 
-def 转给后台(体, 凭证=None):
-    """→ (http 码 或 None, dict)。走 curl:这台机器 Python 的 TLS 会被拦,本地 http 也统一走一处(同 open_api)。
-    凭证只进 curl 的参数,不进日志。失败**照实说**,不装作成功。"""
+def 独立建议载荷(me, 页面):
+    """导航「意见与建议」那张表(不挂任何一轮,PRD §3.1)。和 载荷 同一条规矩:提问人只从登录身份取。"""
+    体 = 载荷(me, None, None, {**(页面 if isinstance(页面, dict) else {}), "来源": "独立建议", "评价": "建议"})
+    体.pop("聊天站trace", None)
+    体.pop("会话号", None)
+    return 体
+
+
+def 提交键(页面):
+    """页面每次点「提交」生成一个;网断了重试带同一个 → 管理后台只记一条。只收短的可见字符,别的一律当没给(由后台拒)。"""
+    k = str((页面 or {}).get("提交键") or "").strip()
+    return k if 0 < len(k) <= 64 and k.isprintable() and " " not in k else None
+
+
+def _curl(方法, url, 体=None, 头=(), 凭证=None):
     凭 = 凭证 if 凭证 is not None else _ic.读凭证()
     if not 凭:
         return None, {"error": "内部通道没开:本机没有凭证文件(~/.lanxiu/internal-call)",
-                      "怎么办": "这条反馈记不下来 —— 管理后台只认内部通道转来的提问人"}
-    url = f"{后台基址}/api/v1/projects/{后台项目}/opinions"
+                      "怎么办": "这条意见记不下来 —— 管理后台只认内部通道转来的提问人"}
+    参 = ["curl", "-sS", "-m", "20", "-o", "-", "-w", "\n%{http_code}", "-X", 方法, url,
+         "-H", f"X-Dev-User: {服务账号}", "-H", f"{_ic.凭证头}: {凭}"]
+    for h in 头:
+        参 += ["-H", h]
+    if 体 is not None:
+        参 += ["-H", "content-type: application/json", "--data-binary", "@-"]
     try:
-        p = subprocess.run(["curl", "-sS", "-m", "20", "-o", "-", "-w", "\n%{http_code}", "-X", "POST", url,
-                            "-H", "content-type: application/json", "-H", f"X-Dev-User: {服务账号}",
-                            "-H", f"{_ic.凭证头}: {凭}", "--data-binary", "@-"],
-                           input=json.dumps(体, ensure_ascii=False).encode(), capture_output=True, timeout=30)
+        p = subprocess.run(参, input=json.dumps(体, ensure_ascii=False).encode() if 体 is not None else None,
+                           capture_output=True, timeout=30)
     except Exception as e:
-        return None, {"error": f"连不上管理后台({type(e).__name__})", "怎么办": "管理后台没起的话,这条反馈记不下来"}
-    输出 = p.stdout.decode("utf-8", "replace")
-    正文, _, 码 = 输出.rpartition("\n")
+        return None, {"error": f"连不上管理后台({type(e).__name__})", "怎么办": "管理后台没起的话,这条意见记不下来"}
+    正文, _, 码 = p.stdout.decode("utf-8", "replace").rpartition("\n")
     try:
         码 = int(码)
     except ValueError:
@@ -85,3 +99,19 @@ def 转给后台(体, 凭证=None):
     except Exception:
         d = {"error": 正文[:160]}
     return 码, d
+
+
+def 查我的(me, 页=1, 凭证=None):
+    """「我的意见」:工号只从登录身份取。"""
+    # ⚠️ 参数名「工号」是中文,**整条 query 要编码** —— 裸中文进 URL,后台 uvicorn 直接回「Invalid HTTP request」
+    # (11-04 第一版就这么坏的;只编码了值、没编码名字)
+    from urllib.parse import urlencode
+    return _curl("GET", f"{后台基址}/api/v1/projects/{后台项目}/opinions/mine?" + urlencode({"工号": str(me.get("no")), "page": int(页)}),
+                 凭证=凭证)
+
+
+def 转给后台(体, 凭证=None, 键=None):
+    """→ (http 码 或 None, dict)。走 curl:这台机器 Python 的 TLS 会被拦,本地 http 也统一走一处(同 open_api)。
+    凭证只进 curl 的参数,不进日志。失败**照实说**,不装作成功。"""
+    return _curl("POST", f"{后台基址}/api/v1/projects/{后台项目}/opinions", 体,
+                 头=([f"Idempotency-Key: {键}"] if 键 else []), 凭证=凭证)
