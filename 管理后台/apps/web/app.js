@@ -2751,6 +2751,7 @@ async function 画_访问入口() {
 请求体:{"输入": { …这条流程开始那一步要的字段… }}
 → 202 {"运行编号": "xr_…", "状态": "排队中", "查结果": "/open/v1/runs/xr_…"}</pre>
     <div class="k">限量:每把每分钟 30 次(<b>查结果也算一次</b>,轮询请隔几秒);每天花费到上限就拒(按价目表算的参考价,美元)。</div>
+    <button id="ak-doc">接入文档(按生产那一版的字段生成)</button> <span class="k" id="ak-doc-why"></span>
   </div>
   <div class="card"><h3>密钥</h3>
     ${行 ? `<table><tr><th>名字</th><th>开头</th><th>发的人</th><th>今天花了 / 每天上限</th><th>最后一次用</th><th>有效期至</th><th></th></tr>${行}</table>`
@@ -2782,6 +2783,14 @@ async function 画_访问入口() {
     catch (e) { 报错(e); }
   });
   挂轮换($("#tabbody"), 画_访问入口);
+  // 接入文档(11-04):**按生产那一版的 schema 现生成**,不手写 —— 手写的会和发布出去的那一版对不上
+  $("#ak-doc").onclick = async () => {
+    let 文;
+    try { 文 = await 请求(`${P()}/workflows/${wid}/access-doc`); } catch (e) { 报错(e); return; }
+    if (!文["有文档吗"]) { $("#ak-doc-why").textContent = 文["为什么"] || "还没有生产版本"; return; }
+    提示(`接入文档 · 生产 v${文["生产版本号"]}`, `<div class="k">按生产那一版的定义现生成;生产换版本后重新打开这里,字段跟着变。下面是 Markdown 原文,可以整段复制给对接方。</div>
+      ${md(文["markdown"])}<h4>Markdown 原文</h4><pre>${esc(文["markdown"])}</pre>`);
+  };
   $("#tabbody").querySelectorAll("[data-ak-lower]").forEach((b) => b.onclick = async () => {
     const 新 = await 问一句("改小每天上限", "只许改小;要更大的额度就吊销重发。", { 输入: "新的每天上限(美元)", 必填: true });
     if (!新) return;
