@@ -96,7 +96,16 @@ import `credit` / `ownership` / `roster` / `touchpoint` 再调 `用副本()`,
 ② `tools/bite_replay_touched.py` 那个结构性死锁(两个滚动 jsonl 让工作区永远脏,
   于是 `--工作区脏也跑` 永远要加 = 那道闸退化成一句提示)。
 
-## 📊 11-04 傍晚:DF-04 监测页做完(第一步)—— 验收全绿,提交中;**下一步 = 告警(C16)**
+## 🚨 11-04 傍晚:DF-04 第二步「告警」—— **用户拍了判法,还没写代码**
+
+- **用户拍(AskUserQuestion)**:**连续 N 次越线才报、连续 M 次正常才算恢复**;样本不够最小样本量的那一轮**不算**(既不报也不清零);
+  去重周期内同一条规则不重复提醒;N / M / 最小样本 / 去重周期 / 阈值都在规则里配(产品配置,不写成行业标准)
+- 设计草案(未实现):规则表(名称、应用 / 环境 / 范围筛选、指标、比较方向、阈值、窗口、最小样本、N、M、去重周期、负责人、启用)+
+  状态(连续越线次数、连续正常次数、当前是否触发、上次提醒)+ 站内待办(触发开一条、恢复自动标已恢复,能下钻到那一窗的运行);
+  评估挂在 worker 主循环那个 60 秒的「扫定时」旁边,每 5 分钟一次;**指标计算要抽出 monitoring_api 里的一份函数给告警复用,别再算一遍**
+- 监测页(c7175dc1)CI 绿;并行会话在合并后的树上跑了全量 379 条全绿
+
+## 📊 11-04 傍晚:DF-04 监测页做完(第一步)—— **已推 c7175dc1**
 
 - 用户拍(AskUserQuestion):**办成 = 跑完 + 每处写入都有澜绣「已执行」回执**;跑完没回执 → 跑完·没证实;没写入 → 单列不进办成率
 - `monitoring_api.py`:GET /monitoring,范围默认「业务」(live 且不是连接测试 / 样例预览 / 集成验证);**环境以 definition_ref.环境 为准**
@@ -13980,12 +13989,12 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 17:13。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 20:42。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | 8a706130 · 2026-11-04 · 只追加的 JSON 台账三方合并:一边删过就拒绝 —— 取并集会把故意删掉的条目复活 |
+| 分支 | `main` |
+| 最新提交 | 80484cbd · 2026-11-04 · 交接记下那个三方合并工具 —— 下一个人每次两边都往 bite_specs 追加时都会用到 |
 | 代码量 | 959 个 Python 文件 / 181876 行(不含 .venv) |
 | 验收 | `./check.sh` 共 377 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
@@ -13993,21 +14002,37 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 **未提交的改动:**
 
 ```
-M HANDOFF.md
+M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
+ M .feynman/tool-eval.json
+ M HANDOFF.md
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
-?? .feynman/bite-all-20261016.log
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
+?? .feynman/nightly-eval.log
+?? .feynman/world-shift-launchd.log
+?? .wip-muslin/
+?? .wip-store-report-SKILL.md
+?? agent/example-ab-results.jsonl
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+80484cbd 交接记下那个三方合并工具 —— 下一个人每次两边都往 bite_specs 追加时都会用到
 8a706130 只追加的 JSON 台账三方合并:一边删过就拒绝 —— 取并集会把故意删掉的条目复活
 c7175dc1 DF-04 监测页:办成 = 跑完 + 每处写入都有回执;业务和调试分开;未知不补零
 95cd8417 咬合失效的第六种形状:用例全打在纯函数上,而破坏点在接线上
 1d2efb76 Merge remote-tracking branch 'origin/main' into w75
-88aaa407 访问 API 接入文档:按生产那一版的 schema 现生成;错误码说明表和代码两个方向对账
 ```
 <!--/AUTO-->
 ## 一句话在做什么
