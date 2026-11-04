@@ -979,6 +979,7 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@./.venv/bin/python tests/orchestration/test_structured_output.py
 	@./.venv/bin/python tests/orchestration/test_workflow_cost.py
 	@./.venv/bin/python tests/orchestration/test_workdays.py
+	@./.venv/bin/python tests/orchestration/test_access_doc.py
 	@echo ""
 	@echo "▸ 模板转换:{{名字}} 换成值交给下游;模板里的名字没来源检查配置就拦;取不到值这一步失败;只替换不执行(Jinja 原样留着)"
 	@./.venv/bin/python tests/orchestration/test_template_node.py

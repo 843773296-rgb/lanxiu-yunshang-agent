@@ -672,3 +672,116 @@ async def 对外聊天(cid: str, request: Request, authorization: str = Header(d
     _记一笔(r, "聊天", "受理", 200, 说明=f"会话 {回.get('会话')}")
     return {"回答": 回.get("回答"), "会话": 回.get("会话"), "用了哪一版": 回.get("用了哪一版"),
             "写工具": "这一轮没挂 —— API 只能查,不能改;要改的事回答里会说「它想做什么」,由人在聊天页或后台办"}
+
+
+# ══ 接入文档(Dify 对标 §6.3「接入文档按发布 schema 生成」,11-04)═══════════════════════════════
+# 字段表 / 请求示例**从生产那一版的 input_schema / output_schema 现生成** —— 手写的文档会和发布出去的那一版对不上,
+# 而对不上的表现是对方按文档填了字段、调用照样失败。错误码的说明是人写的(要说清什么时候会遇到、怎么办),
+# 但**哪些码存在不靠人记**:test_access_doc 扫这个文件里每一处 `_拒(...)`,少一条说明就红。
+对外错误码 = {
+    "NO_ACCESS_KEY": (401, "没带密钥,或者不是 Bearer lx-app-… 这个格式", "请求头带 Authorization: Bearer <密钥原文>"),
+    "UNKNOWN_ACCESS_KEY": (401, "密钥认不出(抄错了 / 不是这个系统发的)", "核对原文;找后台的人重发"),
+    "ACCESS_KEY_REVOKED": (401, "密钥被吊销了", "找后台的人重发一把"),
+    "ACCESS_KEY_EXPIRED": (401, "密钥过期了(有效期最长 1 年)", "找后台的人轮换:新钥发给你,旧的还能用 24 小时"),
+    "RATE_LIMITED": (429, "这把密钥一分钟内调了 30 次(查结果、拉事件也算)", "隔一分钟再调;轮询请隔几秒"),
+    "DAILY_CAP_REACHED": (429, "这把密钥今天花到上限了", "明天再调,或者找后台的人调整上限"),
+    "COST_UNKNOWN": (429, "今天有算不出金额的花费,这把今天不再受理", "找后台的人核一下价目表"),
+    "ISSUER_GONE": (403, "发这把密钥的人已经不是项目成员", "找后台的人用在职的账号重发"),
+    "ISSUER_FORBIDDEN": (403, "发这把密钥的人现在没有发起运行的权限", "找管理员核一下他的角色"),
+    "NOT_BOUND": (403, "发密钥的人没绑澜绣工号(聊天助手那种要按工号取数)", "找后台的人先绑工号"),
+    "WRONG_APP": (403, "拿这把密钥去调别的应用 / 助手了 —— 一把只绑一个", "用发给这个应用的那把"),
+    "NOT_IN_PRODUCTION": (409, "这个应用还没有生产版本", "等后台审核发布到生产;草稿和候选版本不对外"),
+    "NOT_WIRED": (409, "这个聊天助手的角色聊天站还没接上后台配置", "找后台的人确认接线"),
+    "IDEMPOTENCY_KEY_REQUIRED": (409, "发起没带 Idempotency-Key", "每次发起自己生成一个编号放进请求头;网断了重发带同一个"),
+    "IDEMPOTENCY_CONFLICT": (409, "同一个 Idempotency-Key、参数不一样", "这是另一件事 —— 换一个新的编号"),
+    "NOT_FOUND": (404, "查不到(只查得到这把密钥自己发起的)", "核对运行编号"),
+    "VALIDATION": (422, "请求体的字段不合格", "看返回里的 field_errors"),
+    "CHAT_UNREACHABLE": (502, "聊天站这一轮没跑起来", "过一会儿再问;一直这样找后台的人"),
+}
+
+
+def _示例(schema, 深=0):
+    """按 JSON Schema 造一个看得懂的示例值(只用来填文档里的请求示例,不拿去跑)。"""
+    s = schema or {}
+    if "enum" in s and s["enum"]:
+        return s["enum"][0]
+    t = s.get("type")
+    if t == "object" or "properties" in s:
+        return {k: _示例(v, 深 + 1) for k, v in (s.get("properties") or {}).items()} if 深 < 3 else {}
+    if t == "array":
+        return [_示例(s.get("items") or {}, 深 + 1)] if 深 < 3 else []
+    return {"integer": 1, "number": 1.5, "boolean": True}.get(t, s.get("description") or "……")
+
+
+def _字段表(schema):
+    s = schema or {}
+    要 = set(s.get("required") or [])
+    return [{"字段": k, "类型": (v or {}).get("type") or ("枚举" if (v or {}).get("enum") else "?"),
+             "必填": k in 要, "可选值": (v or {}).get("enum"), "说明": (v or {}).get("description") or (v or {}).get("title")}
+            for k, v in (s.get("properties") or {}).items()]
+
+
+@router.get(前缀 + "/workflows/{wid}/access-doc")
+def 接入文档(project_id: str, wid: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """这条工作流对外的接入文档:**按生产那一版的 input_schema / output_schema 现生成**(字段表、请求示例、返回示例),
+    外加四个对外接口、状态、错误码。没上生产就没有文档 —— 草稿和候选版本不对外,写了也调不通。"""
+    with 连接() as c:
+        aid = WF._工作流应用(c, project_id, wid)
+        生产 = WF._生产版本(c, project_id, wid)
+        v = c.execute(text("""select version_no, input_schema, output_schema, logical_hash from workflow_versions
+                               where project_id=:p and id=:i"""), {"p": project_id, "i": 生产["版本id"]}).mappings().first() if 生产 else None
+    if not (aid and v):
+        return {"有文档吗": False,
+                "为什么": "这条工作流还没有生产版本 —— 对外只跑生产那一版,先在「版本与发布」审核并发布到生产"}
+    入, 出 = v["input_schema"] or {}, v["output_schema"] or {}
+    入表, 出表 = _字段表(入), _字段表(出)
+    请求例 = {"输入": _示例(入)}
+    行 = lambda t: "\n".join("| " + " | ".join(str(x if x is not None else "—") for x in r) + " |" for r in t)
+    md = f"""# 接入文档 · 应用 `{aid}`(按生产 v{v['version_no']} 生成)
+
+> 这份文档是**按生产那一版的定义现生成的**(定义哈希 `{(v['logical_hash'] or '')[:12]}`)。生产换版本之后重新打开这页,字段会跟着变。
+
+## 认证
+每个请求带 `Authorization: Bearer <访问密钥原文>`。密钥有有效期(最长 1 年),到期找后台轮换。
+限量:每把每分钟 30 次(查结果、拉事件也算);每天花费到上限就拒。以**发密钥的那个人**的身份跑,他的权限每次都重核。
+
+## 1. 发起一次运行
+`POST {对外}/apps/{aid}/runs` · 请求头加 `Idempotency-Key: <你自己生成的编号>`(网断了重发带同一个,不会跑两遍)
+
+输入字段(`输入` 里):
+
+| 字段 | 类型 | 必填 | 可选值 | 说明 |
+|---|---|---|---|---|
+{行([(x["字段"], x["类型"], "是" if x["必填"] else "否", "、".join(map(str, x["可选值"])) if x["可选值"] else None, x["说明"]) for x in 入表]) or "| (这一版没有声明输入字段) | | | | |"}
+
+请求示例:
+```json
+{json.dumps(请求例, ensure_ascii=False, indent=2)}
+```
+返回 `202 {{"运行编号": "xr_…", "状态": "排队中", "查结果": "{对外}/runs/xr_…"}}` —— **202 只是收下了,不是做完了**。
+
+## 2. 查结果
+`GET {对外}/runs/{{运行编号}}` → `状态` / `跑完了吗` / `结果`。跑完时的 `结果`:
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+{行([(x["字段"], x["类型"], x["说明"]) for x in 出表]) or "| (这一版没有声明输出字段) | | |"}
+
+## 3. 订阅进度(断了接着拉)
+`GET {对外}/runs/{{运行编号}}/events?after_seq=0` → `事件`(序号 / 类型 / 步骤 / 时间)、`下一次从这儿拉`、`还有吗`。
+断了就带上一次的 `下一次从这儿拉` 作为 `after_seq` 接着拉,不重不漏。**连接断了不等于运行失败**,以 `状态` 为准。
+
+## 4. 取消
+`POST {对外}/runs/{{运行编号}}/cancel` → 已结束的保留真实终态;在跑的是「取消请求中」。
+返回里逐条列出**已经发生的业务写入** —— 取消撤不回它们。
+
+## 状态
+{"、".join(dict.fromkeys(_对外状态.values()))}。HTTP 200/202、模型说「已完成」都不是业务完成的证据 —— 以 `状态` 为准。
+
+## 错误码(返回体 `code`)
+| code | HTTP | 什么时候 | 怎么办 |
+|---|---|---|---|
+{行([(k, h, 何, 办) for k, (h, 何, 办) in 对外错误码.items()])}
+"""
+    return {"有文档吗": True, "应用id": aid, "生产版本号": v["version_no"], "定义哈希": v["logical_hash"],
+            "输入字段": 入表, "输出字段": 出表, "请求示例": 请求例, "markdown": md}

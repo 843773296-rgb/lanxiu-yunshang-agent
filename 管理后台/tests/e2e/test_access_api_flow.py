@@ -135,6 +135,19 @@ def main():
     ck("**库里只有哈希**:没有一列存着原文", 行 and 密 not in json.dumps({k_: str(v_) for k_, v_ in dict(行).items()}),
        dict(行 or {}))
 
+    print("\n▸ 接入文档(按生产那一版的 schema 现生成)")
+    c, doc = 打("GET", P + f"/workflows/{wid}/access-doc")
+    with 库().connect() as cc:
+        版 = cc.execute(text("select version_no, input_schema from workflow_versions where id=:i"), {"i": vid}).mappings().first()
+    应有 = set(((版 or {}).get("input_schema") or {}).get("properties") or {})
+    ck("上了生产的 → 有文档,标着生产版本号,输入字段就是生产那一版 input_schema 里的那几个",
+       c == 200 and doc.get("有文档吗") and doc.get("生产版本号") == 版["version_no"]
+       and {x["字段"] for x in doc.get("输入字段", [])} == 应有 and 应有, (c, doc and {k: doc.get(k) for k in ("生产版本号", "输入字段")}, 应有))
+    ck("文档里写着四个对外接口和错误码(含过期)", all(t in doc.get("markdown", "") for t in
+       (f"/apps/{doc.get('应用id')}/runs", "/events?after_seq=", "/cancel", "ACCESS_KEY_EXPIRED", "Idempotency-Key")), doc.get("markdown", "")[:300])
+    c, doc2 = 打("GET", P + f"/workflows/{wid2}/access-doc")
+    ck("没上生产的 → 明说没有文档(不拿草稿编一份)", c == 200 and doc2.get("有文档吗") is False and "生产" in doc2.get("为什么", ""), (c, doc2))
+
     print("\n▸ 发起 / 防重复 / 查结果")
     c, b = 外("POST", f"/open/v1/apps/{aid}/runs", 密, {"输入": {"article": "访问 API 端到端"}})
     ck("不带幂等键 → 拒(409)", c == 409 and 码(b) == "IDEMPOTENCY_KEY_REQUIRED", (c, b))
@@ -311,9 +324,16 @@ def main():
     ck("吊销 → 成", c == 200 and b.get("吊销了吗"), (c, b))
     c, b = 外("POST", f"/open/v1/apps/{aid}/runs", 密b, {"输入": {"article": "访问 API 端到端"}}, str(uuid.uuid4()))
     ck("**吊销后马上调 → 401 ACCESS_KEY_REVOKED**", c == 401 and 码(b) == "ACCESS_KEY_REVOKED", (c, b))
+    c, b = 外("POST", f"/open/v1/runs/{rid}/cancel", 密b)
+    ck("**吊销了的密钥去取消 → 401**(取消和发起过的是同一道闸,不是另写一份)", c == 401 and 码(b) == "ACCESS_KEY_REVOKED", (c, b))
+    c, b = 外("GET", f"/open/v1/runs/{rid}/events", 密b)
+    ck("吊销了的密钥去拉事件 → 401", c == 401 and 码(b) == "ACCESS_KEY_REVOKED", (c, b))
     c, m = 打("POST", P + "/memberships", 体={"工号": 发人, "角色": "viewer"})
     c, b = 外("POST", f"/open/v1/apps/{aid}/runs", 密, {"输入": {"article": "访问 API 端到端"}}, str(uuid.uuid4()))
     ck("**发密钥的人降成查看者 → 再调被拒(403 ISSUER_FORBIDDEN)**,权限每次重核",
+       c == 403 and 码(b) == "ISSUER_FORBIDDEN", (c, b))
+    c, b = 外("POST", f"/open/v1/runs/{rid}/cancel", 密)
+    ck("**发密钥的人降成查看者 → 拿他的密钥取消也被拒(403)**:对外取消照样每次重核发密钥那个人的权限",
        c == 403 and 码(b) == "ISSUER_FORBIDDEN", (c, b))
 
     print()
