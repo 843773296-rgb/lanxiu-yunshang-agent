@@ -1179,7 +1179,8 @@ async function 画我的意见(){
   if(!(d.items || []).length){ 框.textContent = "还没有提过意见"; return; }
   框.innerHTML = d.items.map(x => `<div class="kv"><span>${esc(x.进度)}</span><span>${esc(x.评价)}${x.问题类型 ? "·" + esc(x.问题类型) : ""}`
     + ` —— ${esc((x.说明 || "").slice(0, 60))}<br><small>${esc(x.进度说明 || "")} · ${esc(String(x.提交时间).slice(0, 16).replace("T", " "))}`
-    + `${x.挂在哪一轮 ? " · 挂在一条回答上" : ""}</small></span></div>`).join("")
+    + `${x.挂在哪一轮 ? " · 挂在一条回答上" : ""}</small>`
+    + `${x.答复 ? `<br><b>处理的人说:</b>${esc(x.答复)}` : ""}</span></div>`).join("")
     + (d.页数 > 1 ? `<div class="note">共 ${d.total} 条,这里只列最近 ${d.items.length} 条</div>` : "");
 }
 

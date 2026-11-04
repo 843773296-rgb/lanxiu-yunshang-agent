@@ -242,6 +242,8 @@
     "budget": "NUMERIC(20,6)", "timezone": "TEXT", "fusion": "JSONB",
     "rerank": "JSONB", "recall_modes": "JSONB", "human_review": "JSONB",
     "seq": "BIGINT", "supersedes_score_id": "TEXT",
+    # 意见处理时间线(11-04):前后两个状态 —— 套不上后缀约定,点名登记(不给 TEXT 兜底)
+    "from_status": "TEXT", "to_status": "TEXT",
     "param_update_method": "TEXT", "base_model": "TEXT", "pipeline_type": "TEXT",
     "source_info": "JSONB", "effective_at": "TIMESTAMPTZ",
     "candidate_ref": "JSONB", "baseline_ref": "JSONB", "target_ref": "JSONB",
@@ -349,6 +351,7 @@
     "access_key_calls": {"access_key_id", "endpoint_code", "outcome_code"},
     # 意见单(11-04):来路 / 好不好 / 谁提的 / 走到哪 —— 少一样受理人就没法处理(chat_trace_ref 可空:独立建议不挂任何一轮)
     "opinions": {"source", "verdict", "asker_staff_code", "status"},
+    "opinion_events": {"opinion_id", "action_code", "to_status"},
     # 聊天助手版本:开头 / 工具 / 模型 / 从哪来 / 哈希 —— 少一样就说不清「模型收到的是什么」
     "chat_assistant_versions": {"chat_assistant_id", "version_no", "head_template", "tools",
                                 "model_name", "source_kind", "content_hash"},

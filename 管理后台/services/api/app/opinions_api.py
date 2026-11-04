@@ -38,15 +38,17 @@ PRD §7.1 写明:「保留现有 feedback 的人工判读含义……不把新�
 `GET /opinions/mine`:同样只收内部通道,工号由聊天站从登录会话换出来。**字段裁剪**:只给提的人自己写的和进度,
 不给提问人快照、管理后台 trace、改过的旧版 —— PRD「不透出内部或他人业务数据」。
 """
+import datetime as _dt
 import hmac
 import json as _json
 import uuid as _uuid
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy import text
 
 from db import 连接, 事务
 from deps import 身份, 要权限, _错
+import workdays as _wd
 
 router = APIRouter()
 前缀 = "/api/v1/projects/{project_id}"
@@ -162,14 +164,18 @@ async def 提交意见(project_id: str, request: Request, me: 身份 = Depends(�
             raise _错(404, "NOT_FOUND", "没有这个项目", "确认项目号")
         if 出["来源"] == "独立建议":
             return _收独立建议(c, org, project_id, me, 出, 键)
+        # 「待补充」的那条,提的人再提一次就是补充(PRD §5.1「用户补充后回核实中」)—— 先锁住看它现在是什么状态
+        之前 = c.execute(text("""select id, status from opinions
+                                where project_id=:p and chat_trace_ref=:tr and asker_staff_code=:sc for update"""),
+                         {"p": project_id, "tr": 出["聊天站trace"], "sc": 出["工号"]}).mappings().first()
         # 一句完成「没有就建 / 有且待受理就改(旧版追加进 history_snapshot)/ 受理了就不动」——
         # 先查再写的两步在并发提交时会撞唯一键
         r = c.execute(text("""
             insert into opinions (id, organization_id, project_id, created_at, created_by, updated_at, revision,
                    source, chat_trace_ref, session_ref, verdict, problem_type, note, expected_note, impact_type,
-                   asker_staff_code, asker_snapshot, status, history_snapshot)
+                   asker_staff_code, asker_snapshot, status, history_snapshot, first_response_due_at, due_basis_code)
             values (:i, :o, :p, now(), :u, now(), 1, :src, :tr, :ss, :v, :pt, :n, :ex, :im, :sc,
-                    cast(:snap as jsonb), '待受理', '[]'::jsonb)
+                    cast(:snap as jsonb), '待受理', '[]'::jsonb, :due, :basis)
             on conflict (project_id, chat_trace_ref, asker_staff_code) do update
                set source = excluded.source, verdict = excluded.verdict, problem_type = excluded.problem_type,
                    note = excluded.note, expected_note = excluded.expected_note, impact_type = excluded.impact_type,
@@ -179,26 +185,38 @@ async def 提交意见(project_id: str, request: Request, me: 身份 = Depends(�
                        'revision', opinions.revision, '来源', opinions.source, '评价', opinions.verdict,
                        '问题类型', opinions.problem_type, '说明', opinions.note, '期望结果', opinions.expected_note,
                        '影响', opinions.impact_type, '改之前的时间', opinions.updated_at)),
+                   status = case when opinions.status = '待补充' then '核实中' else opinions.status end,
                    updated_at = now(), revision = opinions.revision + 1
-             where opinions.status = '待受理'
-            returning id, revision, (xmax = 0) as 新建"""),
+             where opinions.status in ('待受理', '待补充')
+            returning id, revision, status, (xmax = 0) as 新建"""),
             {"i": f"op_{_uuid.uuid4().hex[:12]}", "o": org, "p": project_id, "u": me.user_id,
              "src": 出["来源"], "tr": 出["聊天站trace"], "ss": 出["会话号"], "v": 出["评价"], "pt": 出["问题类型"],
              "n": 出["说明"], "ex": 出["期望结果"], "im": 出["影响"], "sc": 出["工号"],
-             "snap": _json.dumps(出["快照"], ensure_ascii=False)}).mappings().first()
+             "snap": _json.dumps(出["快照"], ensure_ascii=False), **_截止()}).mappings().first()
         if not r:
             老 = c.execute(text("""select id, status from opinions
                                   where project_id=:p and chat_trace_ref=:tr and asker_staff_code=:sc"""),
                            {"p": project_id, "tr": 出["聊天站trace"], "sc": 出["工号"]}).mappings().first()
-            raise _错(409, "ALREADY_ACCEPTED", f"这条意见已经进了「{(老 or {}).get('status')}」,不能再改",
+            raise _错(409, "ALREADY_ACCEPTED", f"这条意见已经进了「{(老 or {}).get('status')}」,不能再改(只有待受理 / 待补充的能改)",
                       "受理人看的是你当时那句话 —— 改了的话他看的和库里的就不是同一句了;有补充请另外说明")
+        if 之前 and 之前["status"] == "待补充":
+            c.execute(text("""insert into opinion_events (id, organization_id, project_id, created_at, created_by,
+                                  opinion_id, action_code, from_status, to_status, note)
+                              values (:i, :o, :p, now(), :u, :op, '提的人补充', '待补充', '核实中', null)"""),
+                      {"i": f"oe_{_uuid.uuid4().hex[:12]}", "o": org, "p": project_id, "u": me.user_id, "op": r["id"]})
         后台trace = c.execute(text("select id from traces where project_id=:p and request_id=:r limit 1"),
                             {"p": project_id, "r": f"{聊天站来源}:{出['聊天站trace']}"}).scalar()
-    return {"id": r["id"], "新建": bool(r["新建"]), "revision": r["revision"], "状态": "待受理",
+    return {"id": r["id"], "新建": bool(r["新建"]), "revision": r["revision"], "状态": r["status"],
             "评价": 出["评价"], "问题类型": 出["问题类型"], "管理后台trace": 后台trace,
             "note": ("收到了,进了管理后台「意见」待受理。期望的结果是**候选**,核实过才会变成评测样本;"
                      "**不会自动改线上答案**"
                      + ("" if 后台trace else "。这一轮的执行记录还没推过来,推过来之后清单里会自动对上"))}
+
+
+def _截止():
+    """首次处理截止:提交这一刻按工作日算好存下(用户拍 1 个工作日、跳周末和法定假日;口径在 workdays.py)。"""
+    截止, 依据 = _wd.首次处理截止(_dt.datetime.now(_dt.timezone.utc))
+    return {"due": 截止, "basis": 依据}
 
 
 def _收独立建议(c, org, project_id, me, 出, 键):
@@ -206,14 +224,14 @@ def _收独立建议(c, org, project_id, me, 出, 键):
     r = c.execute(text("""
         insert into opinions (id, organization_id, project_id, created_at, created_by, updated_at, revision,
                source, verdict, problem_type, note, expected_note, impact_type,
-               asker_staff_code, asker_snapshot, status, history_snapshot, submit_ref)
+               asker_staff_code, asker_snapshot, status, history_snapshot, submit_ref, first_response_due_at, due_basis_code)
         values (:i, :o, :p, now(), :u, now(), 1, '独立建议', '建议', :pt, :n, :ex, :im, :sc,
-                cast(:snap as jsonb), '待受理', '[]'::jsonb, :k)
+                cast(:snap as jsonb), '待受理', '[]'::jsonb, :k, :due, :basis)
         on conflict (project_id, asker_staff_code, submit_ref) do nothing
         returning id, revision"""),
         {"i": f"op_{_uuid.uuid4().hex[:12]}", "o": org, "p": project_id, "u": me.user_id, "pt": 出["问题类型"],
          "n": 出["说明"], "ex": 出["期望结果"], "im": 出["影响"], "sc": 出["工号"],
-         "snap": _json.dumps(出["快照"], ensure_ascii=False), "k": 键}).mappings().first()
+         "snap": _json.dumps(出["快照"], ensure_ascii=False), "k": 键, **_截止()}).mappings().first()
     if r:
         return {"id": r["id"], "新建": True, "revision": r["revision"], "状态": "待受理", "评价": "建议",
                 "问题类型": 出["问题类型"], "管理后台trace": None,
@@ -253,7 +271,7 @@ def 我的意见(project_id: str, request: Request, 工号: str = Query(...),
         raise _错(422, "VALIDATION", "要给工号", "由聊天站从登录会话换出来", field_errors={"工号": "必填"})
     with 连接() as c:
         rs = c.execute(text("""select count(*) over () 全量, id, source, verdict, problem_type, note, expected_note,
-                                      status, created_at, updated_at, chat_trace_ref
+                                      status, created_at, updated_at, chat_trace_ref, reply_note
                                  from opinions where project_id=:p and asker_staff_code=:sc and archived_at is null
                                 order by created_at desc, id desc limit :lim offset :off"""),
                        {"p": project_id, "sc": 工号, "lim": limit, "off": (page - 1) * limit}).mappings().all()
@@ -262,6 +280,8 @@ def 我的意见(project_id: str, request: Request, 工号: str = Query(...),
         进度, 一句话 = 给提的人看.get(x["status"], (x["status"], ""))
         出.append({"id": x["id"], "来源": x["source"], "评价": x["verdict"], "问题类型": x["problem_type"],
                   "说明": x["note"], "期望结果": x["expected_note"], "进度": 进度, "进度说明": 一句话,
+                  # 答复只在答复 / 不采纳 / 待补充时给 —— 那是受理人写给提的人看的那句话,不是内部记录
+                  "答复": x["reply_note"] if x["status"] in ("已答复", "不采纳", "待补充") else None,
                   "挂在哪一轮": x["chat_trace_ref"], "提交时间": x["created_at"].isoformat(),
                   "最近更新": x["updated_at"].isoformat() if x["updated_at"] else None})
     from workflows_api import 分页信封
@@ -303,9 +323,106 @@ def 意见清单(project_id: str, me: 身份 = Depends(要权限("查看有权�
           "提问人": x["asker_snapshot"] or {"工号": x["asker_staff_code"]}, "状态": x["status"],
           "聊天站trace": x["chat_trace_ref"], "会话号": x["session_ref"], "管理后台trace": x["后台trace"],
           "改过几次": len(x["history_snapshot"] or []), "升成的样本": x["promoted_sample_id"],
+          **_时限(x),
           "提交时间": x["created_at"].isoformat(), "revision": x["revision"]} for x in rs]
     from workflows_api import 分页信封
     return {"items": 出, **分页信封(rs, page, limit),
             "汇总": [dict(x) for x in 汇总],
             "note": ("「有帮助」是提问人自己的感受,**不是准确率**(PRD §8:没人反馈不等于答对);"
                      "期望的结果是候选事实,核实过才升成评测样本")}
+
+
+def _时限(x, 现在=None):
+    """首次处理时限的三样:截止、依据、超没超。**超时只标红,不当成已解决**;处理过了就不再算超时。"""
+    现在 = 现在 or _dt.datetime.now(_dt.timezone.utc)
+    截止 = x.get("first_response_due_at")
+    return {"首次处理截止": 截止.isoformat() if 截止 else None, "截止依据": x.get("due_basis_code"),
+            "首次处理时刻": x["first_responded_at"].isoformat() if x.get("first_responded_at") else None,
+            "超时": bool(截止 and not x.get("first_responded_at") and 现在 > 截止)}
+
+
+# ── 受理(意见收集 PRD §5.1;用户拍「总部运营统一受理」→ 能力「受理意见」)──────────────────
+# 状态 → 这一步能做的动作 → 到哪个状态。**一张表,判据真调它**;不在表里的一律 409。
+# 「关联问题」要等问题单做出来(PRD §4.2),现在不开 —— 开了它就是一个指向不存在东西的状态
+流转 = {
+    "待受理": {"开始核实": "核实中", "请求补充": "待补充"},
+    "待补充": {"开始核实": "核实中"},
+    "核实中": {"答复": "已答复", "不采纳": "不采纳", "请求补充": "待补充"},
+    "已答复": {"重开": "核实中"},
+    "不采纳": {"重开": "核实中"},
+}
+要说明的动作 = ("请求补充", "答复", "不采纳", "重开")      # 和库 CHECK ck_opinion_events_note 同一份意思
+给提的人看的动作 = ("请求补充", "答复", "不采纳")         # 这几步写的那句话会出现在「我的意见」里
+
+
+@router.get(前缀 + "/opinions/{opinion_id}")
+def 意见详情(project_id: str, opinion_id: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """一条意见 + 处理时间线(老的在前)+ 这一步能做哪些动作。受理要带的 revision 从这里拿。"""
+    with 连接() as c:
+        x = c.execute(text("""select f.*, (select t.id from traces t where t.project_id=f.project_id
+                                  and t.request_id = :pre || f.chat_trace_ref limit 1) 后台trace
+                                from opinions f where f.project_id=:p and f.id=:i"""),
+                      {"p": project_id, "i": opinion_id, "pre": 聊天站来源 + ":"}).mappings().first()
+        if not x:
+            raise _错(404, "NOT_FOUND", "没有这条意见", "回清单重新进")
+        线 = c.execute(text("""select created_at, created_by, action_code, from_status, to_status, note from opinion_events
+                              where project_id=:p and opinion_id=:i order by created_at, id"""),
+                       {"p": project_id, "i": opinion_id}).mappings().all()
+    return {"id": x["id"], "来源": x["source"], "评价": x["verdict"], "问题类型": x["problem_type"], "说明": x["note"],
+            "期望结果": x["expected_note"], "影响": x["impact_type"], "提问人": x["asker_snapshot"] or {"工号": x["asker_staff_code"]},
+            "状态": x["status"], "聊天站trace": x["chat_trace_ref"], "会话号": x["session_ref"], "管理后台trace": x["后台trace"],
+            "改之前的版本": x["history_snapshot"] or [], "答复": x["reply_note"], "提交时间": x["created_at"].isoformat(),
+            "revision": x["revision"], **_时限(x),
+            "能做的动作": [{"动作": k, "到": v, "要写说明": k in 要说明的动作, "提的人看得到": k in 给提的人看的动作}
+                        for k, v in 流转.get(x["status"], {}).items()],
+            "时间线": [{"时间": e["created_at"].isoformat(), "谁": e["created_by"], "动作": e["action_code"],
+                      "从": e["from_status"], "到": e["to_status"], "说明": e["note"]} for e in 线]}
+
+
+@router.post(前缀 + "/opinions/{opinion_id}/actions")
+async def 受理一步(project_id: str, opinion_id: str, request: Request,
+               if_match: str = Header(default=None, alias="If-Match"),
+               me: 身份 = Depends(要权限("受理意见"))):
+    """受理动作:`{动作, 说明?}`,带 If-Match(详情里的 revision)。**每一步追加一行时间线,不改不删**;
+    第一次动作记下首次处理时刻(超时标红就此解除)。不采纳 / 答复 / 请求补充写的那句话,提的人在「我的意见」里看得到。"""
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match", "把这条意见详情里的 revision 放进 If-Match 头")
+    try:
+        体 = await request.json()
+    except Exception:
+        体 = None
+    if not isinstance(体, dict):
+        raise _错(422, "VALIDATION", "请求体要是 JSON 对象", "见接口说明")
+    动作 = _字(体, "动作")
+    说明 = _字(体, "说明")
+    if 说明 and len(说明) > 说明最长:
+        raise _错(422, "VALIDATION", f"说明最多 {说明最长} 字", "", field_errors={"说明": f"最多 {说明最长} 字"})
+    with 事务() as c:
+        x = c.execute(text("select status, revision, organization_id from opinions where project_id=:p and id=:i for update"),
+                      {"p": project_id, "i": opinion_id}).mappings().first()
+        if not x:
+            raise _错(404, "NOT_FOUND", "没有这条意见", "回清单重新进")
+        if str(x["revision"]) != str(if_match).strip('"'):
+            raise _错(409, "REVISION_CONFLICT", "这条意见刚被别人处理过(或提的人刚改过)", "刷新看一眼最新状态再处理")
+        能 = 流转.get(x["status"], {})
+        if 动作 not in 能:
+            raise _错(409, "TRANSITION_NOT_ALLOWED", f"「{x['status']}」的意见不能「{动作}」",
+                      f"这一步能做的:{list(能) or '没有(已是终态)'}" + ("。「关联问题」要等问题单做出来" if 动作 == "关联问题" else ""),
+                      field_errors={"动作": f"只收 {list(能)}"})
+        if 动作 in 要说明的动作 and not 说明:
+            raise _错(422, "VALIDATION", f"「{动作}」要写说明", "不采纳要说为什么、答复要写给提的人看的那句话",
+                      field_errors={"说明": "必填"})
+        到 = 能[动作]
+        c.execute(text("""insert into opinion_events (id, organization_id, project_id, created_at, created_by,
+                              opinion_id, action_code, from_status, to_status, note)
+                          values (:i, :o, :p, now(), :u, :op, :a, :f, :t, :n)"""),
+                  {"i": f"oe_{_uuid.uuid4().hex[:12]}", "o": x["organization_id"], "p": project_id, "u": me.user_id,
+                   "op": opinion_id, "a": 动作, "f": x["status"], "t": 到, "n": 说明})
+        r = c.execute(text("""update opinions set status=:t, revision=revision+1, updated_at=now(),
+                                  first_responded_at = coalesce(first_responded_at, now()),
+                                  reply_note = case when :给看 then :n else reply_note end
+                               where project_id=:p and id=:i returning revision, first_responded_at"""),
+                      {"t": 到, "给看": 动作 in 给提的人看的动作, "n": 说明, "p": project_id, "i": opinion_id}).mappings().first()
+    return {"id": opinion_id, "从": x["status"], "到": 到, "revision": r["revision"],
+            "首次处理时刻": r["first_responded_at"].isoformat(),
+            "note": ("提的人在「我的意见」里会看到这句话" if 动作 in 给提的人看的动作 else "这一步只记在时间线上,提的人看到的是进度变了")}

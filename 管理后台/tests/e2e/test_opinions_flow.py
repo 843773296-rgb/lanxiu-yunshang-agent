@@ -88,6 +88,17 @@ def 体(trace, 评价="有问题", 类="答错", 说明="工期算错了", 期�
     return {k: v for k, v in d.items() if v is not None}
 
 
+def _库拒事件(库, text, 项目, oid, 动作):
+    try:
+        with 库.begin() as cc:
+            cc.execute(text("""insert into opinion_events (id, organization_id, project_id, created_at, opinion_id, action_code, to_status)
+                               select 'oe_x' || md5(random()::text), organization_id, id, now(), :o, :a, '不采纳'
+                                 from projects where id=:p"""), {"o": oid, "a": 动作, "p": 项目})
+        return False
+    except Exception as e:
+        return "check" in str(e).lower()
+
+
 def main():
     凭, 造的 = 凭证()
     内 = {"X-Lanxiu-Internal": 凭}
@@ -249,8 +260,90 @@ def main():
            [sorted(x) for x in m["items"]][:1])
         c, m2 = 打("GET", P + "/opinions/mine?" + urllib.parse.urlencode({"工号": "60000011"}), 头=内)
         ck("林岚那边看不到这个人的", c == 200 and not any(x["id"] in (s1.get("id"), s3.get("id")) for x in m2["items"]), (c, len(m2.get("items", []))))
+
+        print("\n▸ ⑪ 首次处理截止:提交那一刻按工作日算好存下")
+        with 库.connect() as cc:
+            行2 = cc.execute(text("""select created_at, first_response_due_at, due_basis_code from opinions
+                                      where project_id=:p and id=:i"""), {"p": 项目, "i": s1["id"]}).mappings().first()
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                        "services", "api", "app"))
+        import workdays as WD
+        应截, 应依 = WD.首次处理截止(行2["created_at"])
+        ck("存下的截止 = 工作日算法按提交时刻算的那个(差不过 1 秒),依据也存了",
+           abs((行2["first_response_due_at"] - 应截).total_seconds()) < 1 and 行2["due_basis_code"] == 应依, (dict(行2), 应截, 应依))
+        c, 详 = 打("GET", P + f"/opinions/{s1['id']}")
+        ck("详情给出截止 / 依据 / 超没超(刚提的不超时)", c == 200 and 详.get("首次处理截止") and 详.get("截止依据")
+           and 详.get("超时") is False, (c, 详))
+        with 库.begin() as cc:
+            cc.execute(text("update opinions set first_response_due_at = now() - interval '1 hour' where project_id=:p and id=:i"),
+                       {"p": 项目, "i": s3["id"]})
+        c, 详3 = 打("GET", P + f"/opinions/{s3['id']}")
+        ck("**过了截止还没处理 → 超时**(只标红,状态还是待受理,不当成已解决)",
+           详3.get("超时") is True and 详3.get("状态") == "待受理", 详3)
+
+        print("\n▸ ⑫ 受理流转(PRD §5.1)")
+        动 = lambda oid, 动作, 说明=None, rev=None, 谁="U001": 打("POST", P + f"/opinions/{oid}/actions",
+                                                          {"动作": 动作, **({"说明": 说明} if 说明 else {})},
+                                                          ({"If-Match": str(rev)} if rev is not None else {}), 谁=谁)
+        rev = 详["revision"]
+        c, b = 动(s1["id"], "开始核实")
+        ck("不带 If-Match → 409 IF_MATCH_REQUIRED", c == 409 and 码(b) == "IF_MATCH_REQUIRED", (c, b))
+        c, b = 动(s1["id"], "开始核实", rev=rev + 99)
+        ck("If-Match 对不上 → 409 REVISION_CONFLICT(两个人同时处理,后到的不许覆盖)", c == 409 and 码(b) == "REVISION_CONFLICT", (c, b))
+        c, b = 动(s1["id"], "答复", "直接答复", rev=rev)
+        ck("待受理直接「答复」→ 409 TRANSITION_NOT_ALLOWED(要先核实)", c == 409 and 码(b) == "TRANSITION_NOT_ALLOWED", (c, b))
+        c, b = 动(s1["id"], "请求补充", rev=rev)
+        ck("「请求补充」不写说明 → 422", c == 422 and "说明" in 字段(b), (c, b))
+        无权 = "E2EOPV" + uuid.uuid4().hex[:4]
+        打("POST", P + "/memberships", {"工号": 无权, "角色": "viewer"})
+        c, b = 动(s1["id"], "开始核实", rev=rev, 谁=无权)
+        ck("**查看者没有「受理意见」→ 403**", c == 403, (c, b))
+        c, b = 动(s1["id"], "请求补充", "要说清是哪家门店、要导出哪几列", rev=rev)
+        ck("「请求补充」→ 待补充,第一次处理时刻记下了", c == 200 and b.get("到") == "待补充" and b.get("首次处理时刻"), (c, b))
+        c, m = 打("GET", P + "/opinions/mine?" + urllib.parse.urlencode({"工号": 标}), 头=内)
+        那 = next((x for x in m.get("items", []) if x["id"] == s1["id"]), {})
+        ck("提的人在「我的意见」里看到「需要你补充」和受理人那句话", 那.get("进度") == "需要你补充"
+           and "哪家门店" in str(那.get("答复")), 那)
+        # 挂一轮的那种补充:另造一条挂一轮的,推到待补充,提的人再提一次
+        c, q = 提(体(标 + "-补", 工号=标))
+        c, dq = 打("GET", P + f"/opinions/{q['id']}")
+        动(q["id"], "请求补充", "期望结果写具体一点", rev=dq["revision"])
+        c, q2 = 提(体(标 + "-补", 工号=标, 期望="应该是 21 个工作日"))
+        c, dq2 = 打("GET", P + f"/opinions/{q['id']}")
+        ck("**待补充的那条,提的人再提一次 → 回到核实中**,时间线记「提的人补充」",
+           c == 200 and dq2.get("状态") == "核实中" and q2.get("状态") == "核实中"
+           and [e["动作"] for e in dq2.get("时间线", [])] == ["请求补充", "提的人补充"], (q2, dq2.get("时间线")))
+        c, dq3 = 打("GET", P + f"/opinions/{q['id']}")
+        c, b = 动(q["id"], "答复", "工期按 21 个工作日算,已经告诉门店", rev=dq3["revision"])
+        ck("核实中 → 答复 → 已答复", c == 200 and b.get("到") == "已答复", (c, b))
+        c, dq4 = 打("GET", P + f"/opinions/{q['id']}")
+        c, b = 动(q["id"], "重开", rev=dq4["revision"])
+        ck("「重开」不写原因 → 422", c == 422, (c, b))
+        c, b = 动(q["id"], "重开", "门店说还是不对", rev=dq4["revision"])
+        ck("已答复 → 重开 → 核实中", c == 200 and b.get("到") == "核实中", (c, b))
+        c, dq5 = 打("GET", P + f"/opinions/{q['id']}")
+        c, b = 动(q["id"], "关联问题", rev=dq5["revision"])
+        ck("「关联问题」现在不开(问题单还没做)→ 409,说清原因", c == 409 and "问题单" in str((b or {}).get("advice")), (c, b))
+        ck("详情里「能做的动作」照流转表给(核实中:答复 / 不采纳 / 请求补充)",
+           {x["动作"] for x in dq5.get("能做的动作", [])} == {"答复", "不采纳", "请求补充"}, dq5.get("能做的动作"))
+        ck("时间线一步不少、老的在前", [e["动作"] for e in dq5.get("时间线", [])] == ["请求补充", "提的人补充", "答复", "重开"],
+           dq5.get("时间线"))
+        with 库.connect() as cc:
+            事 = cc.execute(text("select count(*) from opinion_events where project_id=:p and opinion_id=:i"),
+                           {"p": 项目, "i": q["id"]}).scalar()
+        ck("库里时间线正好 4 行(被拒的那几次一行都没写)", 事 == 4, 事)
+        ck("库这一层:不采纳不写说明 → 库拒", _库拒事件(库, text, 项目, q["id"], "不采纳"))
+
+        print("\n▸ ⑬ 演示项目留一条样例(If-Match 可达性检查要从列表里拿一条;正式项目不留)")
+        样 = {"来源": "问答", "聊天站trace": "e2e-样例-可达性", "评价": "有问题", "问题类型": "其他",
+              "说明": "端到端测试留的样例,供 If-Match 可达性检查用", "提问人": {"工号": "E2E-SAMPLE", "姓名": "e2e"}}
+        c, b = 打("POST", "/api/v1/projects/project_demo_a/opinions", 样, 内)
+        ck("演示项目里有一条样例意见(重复跑不会多出来)", c == 201, (c, b))
     finally:
         with 库.begin() as cc:
+            cc.execute(text("delete from opinion_events where project_id=:p and opinion_id in "
+                            "(select id from opinions where project_id=:p and (chat_trace_ref like :t or asker_staff_code=:s))"),
+                       {"p": 项目, "t": 标 + "%", "s": 标})
             cc.execute(text("delete from opinions where project_id=:p and (chat_trace_ref like :t or asker_staff_code=:s)"),
                        {"p": 项目, "t": 标 + "%", "s": 标})
         if 造的:

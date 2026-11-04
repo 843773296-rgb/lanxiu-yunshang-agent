@@ -314,7 +314,7 @@ page-smoke:    ## 只跑页面冒烟 + 行级对账(要先 make dev)
 	@echo "▸ 页面冒烟(一级页 + 详情页)"
 	@rc=0; \
 	for h in '#/workbench' '#/studio' '#/integrations' '#/studio/all' '#/studio/workflow' '#/studio/agent' '#/studio/chat' '#/studio/app' \
-	         '#/integrations/models' '#/integrations/tools' '#/prompts' '#/runs' '#/workflows' '#/schedules' '#/uploads' \
+	         '#/integrations/models' '#/integrations/tools' '#/prompts' '#/runs' '#/opinions' '#/workflows' '#/schedules' '#/uploads' \
 	         '#/kb' '#/retrieval' '#/rruns' '#/usage' '#/traces' '#/health' '#/tryout' \
 	         '#/evals' '#/compare' '#/human' '#/apps' '#/conns' '#/members' \
 	         '#/datasets' '#/training' '#/artifacts' '#/audit' '#/outputs' \
@@ -419,7 +419,8 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_tool_modelcard_flow.py test_prompt_snapshot_flow.py \
           test_exec_mode_flow.py test_retrieval_runs_flow.py \
           test_raw_log_flow.py test_chat_assistant_flow.py \
-          test_access_api_flow.py test_opinions_flow.py
+          test_access_api_flow.py test_opinions_flow.py \
+          test_opinions_migration_with_data.py
 
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
@@ -535,6 +536,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_chat_assistant_flow.py
 	@./.venv/bin/python tests/e2e/test_access_api_flow.py
 	@./.venv/bin/python tests/e2e/test_opinions_flow.py
+	@./.venv/bin/python tests/e2e/test_opinions_migration_with_data.py
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py
 	@echo ""
 	@echo "▸ 库存补货(12 条:不用派直接结束 / 填齐了才派 / 没填不派 / 退回不派 / 密钥扫描只放过声明过的数值配置 —— 六条第六条)"
@@ -763,6 +765,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_opinions_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_opinions_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_opinions_flow.log
+	@./.venv/bin/python tests/e2e/test_opinions_migration_with_data.py > /tmp/prog-test_opinions_migration_with_data.log 2>&1 \
+	  || { echo "  ❌ test_opinions_migration_with_data 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_opinions_migration_with_data.log; exit 1; }
+	@tail -2 /tmp/prog-test_opinions_migration_with_data.log
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py > /tmp/prog-test_access_api_chat_live.log 2>&1 \
 	  || { echo "  ❌ test_access_api_chat_live 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_access_api_chat_live.log; exit 1; }
@@ -972,6 +978,7 @@ test-orchestration:       ## 编排:契约覆盖 + DSL 语义(夹具驱动,不�
 	@echo "▸ 要模型交 JSON 的步骤:解析不了重问一次、两次用量相加、还不行带着两次原文失败(失败那一步的输出里看得到原文)"
 	@./.venv/bin/python tests/orchestration/test_structured_output.py
 	@./.venv/bin/python tests/orchestration/test_workflow_cost.py
+	@./.venv/bin/python tests/orchestration/test_workdays.py
 	@echo ""
 	@echo "▸ 模板转换:{{名字}} 换成值交给下游;模板里的名字没来源检查配置就拦;取不到值这一步失败;只替换不执行(Jinja 原样留着)"
 	@./.venv/bin/python tests/orchestration/test_template_node.py

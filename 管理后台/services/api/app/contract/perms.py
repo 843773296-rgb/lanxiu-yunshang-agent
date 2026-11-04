@@ -44,6 +44,10 @@
         dict(viewer=否, editor=可授权, annotator=是, trainer=可授权, approver=否, admin=是),
     "运行评测":
         dict(viewer=否, editor=有额度, annotator=是, trainer=是, approver=是, admin=是),
+    # 意见受理(2026-11-04,用户拍「总部运营统一受理」):总部运营在管理后台开的账号是标注 / 测试角色 ——
+    # 受理和标注是同一拨人的活(核实答得对不对)。编辑要受理得另外授权。规格 §15.3 没有这一行(意见收集是后加的 PRD)
+    "受理意见":
+        dict(viewer=否, editor=可授权, annotator=是, trainer=否, approver=否, admin=是),
     "提交真实训练":
         dict(viewer=否, editor=否, annotator=否, trainer=有额度, approver=否, admin=可授权),
     "生产审核/发布/回滚":

@@ -114,6 +114,7 @@ const 导航 = [
   ["#/schedules", "定时", true, true],
   ["grp", "日志与监测"],
   ["#/runs", "运行记录", true, true],
+  ["#/opinions", "意见受理", true, true],
   ["#/traces", "调用链", true, true],
   ["#/outputs", "产出监督", true, true],
   ["#/health", "智能体健康", true, true],
@@ -620,6 +621,78 @@ async function 页_prompt详情(pid) {
       <div class="note">${md(`跑完可以「加入问题集」「保存为评测样本」—— 新样本**先进待审核**,
         避免把错误答案当成真值。(这两个按钮还没实现)`)}</div>`;
   }
+}
+
+/* ── 意见受理(11-04;意见收集 PRD §4.1 / §5.1;用户拍:总部运营统一受理、1 个工作日首次处理、跳周末和法定假日)──
+ * 清单:待受理排前,超时标红(**只标红,不当成已解决**)。详情:原话、时间线、这一步能做的动作 ——
+ * 动作按钮照接口给的「能做的动作」画,页面不另写一份流转规则(两份迟早分叉)。 */
+async function 页_意见受理(页 = 1, 筛 = "") {
+  const 头 = `<div class="crumb">意见受理</div>
+    <div class="head"><div><h1>意见受理</h1>
+      <div class="sub">${md("聊天站里提的意见。**1 个工作日内要第一次处理**(跳过周末和法定假日),超时标红。「有帮助」是提的人自己的感受,**不是准确率**。")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/opinions?limit=30&page=${页}` + (筛 ? `&status=${encodeURIComponent(筛)}` : "")); }
+  catch (e) { const s = 错误块(e, () => 页_意见受理(页, 筛)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 态们 = ["", "待受理", "待补充", "核实中", "已答复", "不采纳", "已撤回"];
+  const 筛条 = `<div>` + 态们.map((t) => `<button data-opf="${esc(t)}"${t === 筛 ? ' class="on"' : ""}>${esc(t || "全部")}</button>`).join("") + `</div>`;
+  const 超 = d.items.filter((x) => x.超时).length;
+  const 表 = !d.items.length ? 状态("", "还没有意见", "聊天站回答下面点「反馈问题」、左栏「意见与建议」提的都会到这里。").html
+    : (超 ? `<div class="note">${md(`**这一页有 ${超} 条超时还没处理。**`)}</div>` : "")
+      + `<table><thead><tr><th>什么时候</th><th>谁提的</th><th>来源 · 评价</th><th>说了什么</th><th>状态</th><th>首次处理截止</th><th></th></tr></thead><tbody>`
+      + d.items.map((x) => `<tr>
+          <td class="k">${esc(String(x.提交时间 || "").slice(5, 16).replace("T", " "))}</td>
+          <td>${esc((x.提问人 || {}).姓名 || (x.提问人 || {}).工号 || "")}<div class="k">${esc((x.提问人 || {}).门店 || "")}</div></td>
+          <td>${esc(x.来源)} · ${esc(x.评价)}${x.问题类型 ? `<div class="k">${esc(x.问题类型)}</div>` : ""}</td>
+          <td>${esc(String(x.说明 || "").slice(0, 60))}</td>
+          <td>${x.状态 === "待受理" ? '<span class="pill warn">' : '<span class="pill">'}${esc(x.状态)}</span></td>
+          <td class="k">${x.超时 ? `<span class="pill fail">超时</span> ` : ""}${esc(String(x.首次处理截止 || "—").slice(5, 16).replace("T", " "))}
+            ${x.截止依据 && x.截止依据 !== "2026放假表" ? `<div class="k">${esc(x.截止依据)}</div>` : ""}</td>
+          <td><button data-opopen="${esc(x.id)}">处理</button></td></tr>`).join("") + `</tbody></table>`;
+  $("#main").innerHTML = 头 + 筛条 + 表 + 页码条(d);
+  $("#main").querySelectorAll("[data-opf]").forEach((b) => { b.onclick = () => 页_意见受理(1, b.dataset.opf); });
+  $("#main").querySelectorAll("[data-opopen]").forEach((b) => { b.onclick = () => { location.hash = "#/opinion/" + encodeURIComponent(b.dataset.opopen); }; });
+  挂页码($("#main"), (n) => 页_意见受理(n, 筛));
+}
+
+async function 页_意见详情(id) {
+  const 头 = `<div class="crumb"><a href="#/opinions">意见受理</a> / ${esc(id)}</div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/opinions/${encodeURIComponent(id)}`); }
+  catch (e) { const s = 错误块(e, () => 页_意见详情(id)); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const kv = (k, v) => `<tr><td class="k">${esc(k)}</td><td>${v == null || v === "" ? "—" : esc(String(v))}</td></tr>`;
+  const 人 = d.提问人 || {};
+  const 钮 = (d.能做的动作 || []).map((a) => `<button data-opact="${esc(a.动作)}">${esc(a.动作)} → ${esc(a.到)}</button>`).join(" ");
+  $("#main").innerHTML = 头 + `<div class="head"><div><h1>${esc(d.评价)}${d.问题类型 ? " · " + esc(d.问题类型) : ""}</h1>
+      <div class="sub">${esc(d.来源)} · ${esc(人.姓名 || 人.工号 || "")} ${esc(人.角色 || "")} ${esc(人.门店 || "")} · 状态 <b>${esc(d.状态)}</b>
+        ${d.超时 ? ' · <span class="pill fail">超时未处理</span>' : ""}</div></div></div>
+    <table><tbody>${kv("哪里有问题 / 建议", d.说明)}${kv("期望的结果(候选,不是真值)", d.期望结果)}${kv("影响", d.影响)}
+      ${kv("首次处理截止", String(d.首次处理截止 || "").slice(0, 16).replace("T", " ") + (d.截止依据 ? `(${d.截止依据})` : ""))}
+      ${kv("首次处理时刻", d.首次处理时刻 && String(d.首次处理时刻).slice(0, 16).replace("T", " "))}
+      ${kv("给提的人的答复", d.答复)}${kv("改过几次", (d.改之前的版本 || []).length)}</tbody></table>
+    ${d.管理后台trace ? `<button data-optrace="${esc(d.管理后台trace)}">看这一轮的调用树</button>`
+      : d.聊天站trace ? `<div class="note">${md("这一轮的执行记录**还没推过来**,推过来之后这里会出现调用树入口。")}</div>` : ""}
+    <h2>处理</h2>
+    ${钮 ? `<textarea id="op-act-note" rows="2" placeholder="说明:不采纳 / 答复 / 请求补充 / 重开要写;答复、不采纳、请求补充写的这句话提的人看得到"></textarea>
+      <div>${钮}</div><div class="k" id="op-act-why"></div>` : `<div class="note">这一步没有能做的动作(已是终态)。</div>`}
+    <h2>时间线</h2>
+    ${(d.时间线 || []).length ? `<table><thead><tr><th>什么时候</th><th>谁</th><th>动作</th><th>从 → 到</th><th>说明</th></tr></thead><tbody>`
+      + d.时间线.map((e) => `<tr><td class="k">${esc(String(e.时间).slice(5, 16).replace("T", " "))}</td><td>${esc(e.谁 || "")}</td>
+          <td>${esc(e.动作)}</td><td>${esc(e.从 || "")} → ${esc(e.到)}</td><td>${esc(e.说明 || "")}</td></tr>`).join("") + `</tbody></table>`
+      : `<div class="note">还没有人处理过。</div>`}`;
+  $("#main").querySelectorAll("[data-optrace]").forEach((b) => { b.onclick = () => { location.hash = "#/trace/" + encodeURIComponent(b.dataset.optrace); }; });
+  $("#main").querySelectorAll("[data-opact]").forEach((b) => {
+    b.onclick = async () => {
+      const 话 = ($("#op-act-note") || {}).value || "";
+      b.disabled = true;
+      try {
+        await 请求(`${P()}/opinions/${encodeURIComponent(id)}/actions`,
+          { method: "POST", headers: { "If-Match": String(d.revision) }, body: JSON.stringify({ 动作: b.dataset.opact, 说明: 话 }) });
+        页_意见详情(id);
+      } catch (e) { b.disabled = false; $("#op-act-why").textContent = "没处理上:" + ((e.体 && (e.体.message + " " + (e.体.advice || ""))) || e.message); }
+    };
+  });
 }
 
 /* ── 运行记录(占位:列表已有接口,详情页还没做)────────────────── */
@@ -7262,6 +7335,8 @@ async function 路由() {
     if (h === "#/outputs") return await 页_产出监督();
     if (h.startsWith("#/output/")) return await 页_产出详情(decodeURIComponent(h.slice(9)));
     if (h === "#/runs") return await 页_运行记录();
+    if (h === "#/opinions") return await 页_意见受理();
+    if (h.startsWith("#/opinion/")) return await 页_意见详情(decodeURIComponent(h.slice(10)));
     if (h === "#/schedules") return await 页_定时();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));
     if (h.startsWith("#/wfrun/")) return await 页_运行详情(decodeURIComponent(h.slice(8)));

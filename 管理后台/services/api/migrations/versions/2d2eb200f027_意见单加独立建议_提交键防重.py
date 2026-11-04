@@ -35,6 +35,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # ⚠️ 旧结构装不下独立建议(没有「建议」这个评价、没有提交键)。**有就拒,不替人删** ——
+    # 2026-11-04 带数据连跑迁移时撞到:不拦的话报的是「ck_opinions_problem 被某行违反」,看不出该怎么办
+    n = op.get_bind().execute(sa.text("select count(*) from opinions where source = '独立建议'")).scalar()
+    if n:
+        raise RuntimeError(f"opinions 里有 {n} 条独立建议,降到 807d1cc1d238 的结构装不下它们 —— "
+                           "不自动删(那是用户提的意见)。要降级先导出这些行、确认可以丢再手动删掉")
     op.drop_constraint('ck_opinions_submit_ref', 'opinions', type_='check')
     op.drop_constraint('ck_opinions_suggest', 'opinions', type_='check')
     op.drop_constraint('ck_opinions_problem', 'opinions', type_='check')

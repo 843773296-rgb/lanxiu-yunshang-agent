@@ -91,6 +91,10 @@ P = f"{基址}/api/v1/projects/{项目}"
     # 它在 test-e2e-ci 里排在这条前面(test_chat_assistant_flow 建的)
     # 访问密钥(11-03):改小上限要的 revision 在密钥列表里(工作流「访问入口」页和项目级列表都给)。
     # 样例由 test-e2e-ci 里的 test_access_api_flow 发的那几把提供(它排在 page-smoke 前面)
+    # 意见受理(11-04):revision 在意见详情里。样例由 test-e2e-ci 里的 test_opinions_flow 在**演示项目**留的那一条提供
+    # (正式项目里不留 —— 总部运营的受理台里不该多出一条测试数据)
+    "POST /opinions/{id}/actions": dict(
+        取id=("/opinions", "items[0].id"), 读="/opinions/{id}", 字段="revision", 项目="project_demo_a"),
     "PATCH /access-keys/{id}": dict(
         取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),
     "PATCH /chat-assistants/{id}/draft": dict(

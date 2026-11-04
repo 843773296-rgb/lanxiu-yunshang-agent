@@ -852,7 +852,8 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     # ②''' 意见单(DF-03 第 2 步,2026-11-04;口径照《意见收集与能力持续改进 PRD》10-24 §3 / §5.1 / §7.1;Dify 对标 C13)
     E("opinions", "意见单", 项目级, 可改,
       ["source", "chat_trace_ref", "session_ref", "verdict", "problem_type", "note", "expected_note", "impact_type",
-       "asker_staff_code", "asker_snapshot", "status", "history_snapshot", "promoted_sample_id", "submit_ref"],
+       "asker_staff_code", "asker_snapshot", "status", "history_snapshot", "promoted_sample_id", "submit_ref",
+       "first_response_due_at", "due_basis_code", "first_responded_at", "reply_note"],
       ["**每条问答都能提**(原来只有查过知识库的回答有评分条,而那评的是「找得准不准」不是「答得对不对」);"
        "执行失败的那一轮也能报(source=执行失败);独立建议不挂任何一轮(source=独立建议,chat_trace_ref 为空)",
        "**记的是提问的那个人**(asker_staff_code = 澜绣工号,asker_snapshot = 当时的姓名 / 角色 / 门店):"
@@ -868,6 +869,12 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "**独立建议**(11-04 第二刀):不挂任何一轮,评价记成「建议」;防重靠 submit_ref(提交幂等键,PRD §3.2「响应丢失后用原提交幂等键"
        "查询或重试,不能重复生成多条」)—— 挂一轮的那种靠 (项目, 那一轮, 工号) 唯一,而独立建议那一列是空的,PG 把 NULL 当互不相同,防不了"],
       依赖=["samples"]),
+    E("opinion_events", "意见处理时间线", 子对象, 只追加,
+      ["opinion_id", "action_code", "from_status", "to_status", "note"],
+      ["**每一次受理动作都追加一行,不改不删**(意见收集 PRD §7.1「处理时间线:操作者、动作、前后值、原因、时间,追加留痕」)",
+       "谁做的在 created_by(管理后台账号);不采纳 / 重开 / 请求补充必须带 note(PRD §5.1「不采纳必须说明原因」)",
+       "意见单上的状态是这张表最后一行的 to_status —— 两边对不上,以这张表为准去查是哪一步没写进去"],
+      依赖=["opinions"]),
 
     # ③ 工具 / 连接 / 指南 / 规则
     E("tool_definitions", "工具", 项目级, 可改,

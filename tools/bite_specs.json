@@ -14464,5 +14464,17 @@
    }
   ],
   "预期红": "⑧ 我的意见:发出去的 URL 全是 ASCII"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_opinions_migration_with_data.py",
+  "改坏": "意见单第二条迁移降级前不再数独立建议 —— 有独立建议时降级报的又是「ck_opinions_problem 被某行违反」,照着没法行动(11-04 带数据连跑时撞到的原样)",
+  "file": [
+   {
+    "path": "管理后台/services/api/migrations/versions/2d2eb200f027_意见单加独立建议_提交键防重.py",
+    "old": "    if n:\n        raise RuntimeError(",
+    "new": "    if False:\n        raise RuntimeError("
+   }
+  ],
+  "预期红": "**报错说清楚:有几条独立建议、不自动删**"
  }
 ]

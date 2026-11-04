@@ -117,6 +117,9 @@ def 该软链的():
     `img.py` 的缓存落在 `backend/.imgcache`,不在 static 下)。
     """
     out = ["agentsite/.venv", ".venv",
+           # 管理后台的 venv(11-04 加):管理后台测试的咬合要用它跑 alembic / sqlalchemy。**只读** ——
+           # 被咬的测试只执行里面的解释器和 alembic,不往里装东西;门禁里也没有任何一步往它写
+           os.path.join("管理后台", ".venv"),
            # 本地 BGE 模型(主检出 91 MB,不进 git)。**只读**:读它的只有
            # `管理后台/.../embedder_bge.py`,而写它的 `tools/fetch_model.sh`
            # 在门禁里**只被 Makefile echo 提了一句**,没有任何一步真执行它
@@ -273,6 +276,10 @@ def 门禁怎么跑(script):
             rest = rest[rest.index('"', 1) + 1:]
         parts = rest.split()
         if parts: return parts
+    # 不在 check.sh 里的管理后台脚本(端到端测试之类):用管理后台自己的 venv 跑 —— 它的依赖(sqlalchemy / alembic)
+    # 只装在那里;拿系统 python 跑,红的是 ImportError,和「改坏了之后它红没红」混在一起分不开(11-04 加)
+    if script.startswith("管理后台/") and os.path.exists(os.path.join(ROOT, "管理后台", ".venv", "bin", "python")):
+        return [os.path.join("管理后台", ".venv", "bin", "python"), script]
     return [sys.executable, script]
 
 

@@ -72,6 +72,9 @@ G, Y, R, D = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
     # 聊天助手配置(2026-10-28)。真的店长助手在 project_lanxiu;冒烟项目里的样例是
     # test_chat_assistant_flow 导的那个最小测试助手(e2e_demo,规矩池空)—— CI 上它排在冒烟前面
     ("#/chat/",     "页_聊天助手",   "chat_assistants",  ""),
+    # 意见受理详情(2026-11-04)。冒烟项目里的样例是 test_opinions_flow 在演示项目留的那一条(E2E-SAMPLE);
+    # CI 上它排在冒烟前面。正式项目里不留测试数据
+    ("#/opinion/",  "页_意见详情",   "opinions",         ""),
 )
 
 # 页签(2026-10-28 导航照 Dify):`#/studio/xxx` `#/integrations/xxx` 也是 startsWith 路由,但**不带 id** ——
