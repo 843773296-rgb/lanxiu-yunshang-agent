@@ -12,6 +12,28 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 🧪 11-04 深夜:今天三次翻车是**同一个形状**,规矩补进全局技能了(`make-a-check-that-holds` ⑨b)
+
+这一条**不在仓库里**(技能在 `~/.claude/skills/make-a-check-that-holds/SKILL.md`),
+所以写在这儿,否则下一个会话不会知道它已经存在、可能会重新推一遍。
+
+今天三次都栽在**我自己刚写下的断言**上,而三次的病理是同一个:
+
+> **「把所有 X 都处理掉了」这句话,在「一处都没匹配上」的时候自动成立。**
+
+- `确认连的是(conn, 副本)` —— 两边都 realpath,软链和目标解完本来就相等,**构造性不可能红**
+- 扫模块的根从 `真库` 算 —— 真库 realpath 指向主检出,这个 worktree 扫出 **0 个模块**,
+  而紧接着那条「切干净了」核的是**同一个空集合**
+- 切库前没先 realpath —— macOS 上 `/var` 解成 `/private/var`,**一处都匹配不上**
+
+逮住三次的**全是同一类东西**:`>= 1` / `>= 5` / 「认得出模块吗」这种**下限**。
+所以技能⑨(「拿那次翻车当试纸」)补了⑨b:**钉不出「那一处」的时候,至少钉一个下限**,
+而且下限写**地板**不写确数(确数会漂,漂了没有东西会说话)。
+
+⚠️ 它和技能⑧的区别别搞混:⑧是**数据**样本空(CI 上没有商品图),去明说「没东西可验」;
+⑨b 是**判据自己算出来的匹配集**空,数据好得很 —— 去**修判据**。
+两者在输出上都长成「下面几条自动成立」。
+
 ## 🧩 11-04 夜:只追加的 JSON 台账冲突有工具了 —— `tools/merge_append_json.py`(已推 `8a706130`,门禁 379 条全绿,CI 绿)
 
 **什么时候用**:两个会话都往同一个只追加的 JSON 列表末尾加了东西(`tools/bite_specs.json` 是典型),git 报冲突时:
@@ -13989,12 +14011,12 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 20:42。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 20:47。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `main` |
-| 最新提交 | 80484cbd · 2026-11-04 · 交接记下那个三方合并工具 —— 下一个人每次两边都往 bite_specs 追加时都会用到 |
+| 分支 | `w75` |
+| 最新提交 | 736998b9 · 2026-11-04 · 交接记一笔:今天三次翻车是同一个形状,规矩补进全局技能了(⑨b) |
 | 代码量 | 959 个 Python 文件 / 181876 行(不含 .venv) |
 | 验收 | `./check.sh` 共 377 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
@@ -14002,37 +14024,20 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 **未提交的改动:**
 
 ```
-M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
- M .feynman/tool-eval.json
- M HANDOFF.md
- M agentsite/evals/funnel.jsonl
+M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
-?? .claude/
-?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
-?? .feynman/authprobe.log
-?? .feynman/authprobe.sh
-?? .feynman/multi-date/
-?? .feynman/nightly-aimc.log
-?? .feynman/nightly-eval-launchd.log
-?? .feynman/nightly-eval-ok
-?? .feynman/nightly-eval-tried
-?? .feynman/nightly-eval.log
-?? .feynman/world-shift-launchd.log
-?? .wip-muslin/
-?? .wip-store-report-SKILL.md
-?? agent/example-ab-results.jsonl
+?? .feynman/bite-all-20261016.log
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+736998b9 交接记一笔:今天三次翻车是同一个形状,规矩补进全局技能了(⑨b)
+ee0b3fbb 交接记下用户拍的告警判法(连续 N 次越线才报、连续 M 次正常才恢复、样本不够那轮不算)
 80484cbd 交接记下那个三方合并工具 —— 下一个人每次两边都往 bite_specs 追加时都会用到
 8a706130 只追加的 JSON 台账三方合并:一边删过就拒绝 —— 取并集会把故意删掉的条目复活
 c7175dc1 DF-04 监测页:办成 = 跑完 + 每处写入都有回执;业务和调试分开;未知不补零
-95cd8417 咬合失效的第六种形状:用例全打在纯函数上,而破坏点在接线上
-1d2efb76 Merge remote-tracking branch 'origin/main' into w75
 ```
 <!--/AUTO-->
 ## 一句话在做什么
