@@ -30,6 +30,7 @@
 要用户自己按一下 —— 而判据的职责是**让漂移被看见**,不是替人决定。
 """
 import os
+import subprocess
 import sys
 
 
@@ -83,6 +84,94 @@ import sys
 
 根 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 仓库hook = os.path.join(根, "tools", "hooks")
+
+
+def _自测():
+    """只验那个判据函数本身。**不碰任何文件,所以能安心进门禁。**
+
+    ⚠️ 为什么不在这里做端到端(造 AIMC_HOOKS_DIR + 给仓库那份加一行未提交改动):
+       那要**在主工作区做破坏**,而并发会话可能正好读到 ——
+       `intent/bite-debt.md` 那条规矩明说「不在主工作区做破坏,在副本里做」。
+       端到端那一轮 2026-11-04 实跑验过(7 条,两个方向各只有它会挂),
+       记录在 HANDOFF.md;这里守的是**判据的那一行逻辑**。
+    """
+    import tempfile
+    过, 败 = 0, []
+
+    def ck(名, 实, 期):
+        nonlocal 过
+        if 实 == 期:
+            过 += 1
+            print(f"  ✅ {名}")
+        else:
+            败.append(名)
+            print(f"  ❌ {名}  期望[{期}] 实得[{实}]")
+
+    print("hook 同步对账 · 判据自测")
+    靶 = os.path.join("tools", "hooks", "handoff-gate.mjs")
+    r = subprocess.run(["git", "-c", "core.quotepath=false", "show", f"HEAD:{靶}"],
+                       cwd=根, capture_output=True, timeout=30)
+    if r.returncode != 0 or not r.stdout:
+        # ⚠️ **「取不到样本」必须和「验过了」分开。** 没有这一闸,浅克隆或
+        #    新仓库上这几条会全部自动成立,而输出看起来一模一样。
+        print("     ℹ️ 取不到 HEAD 上的 hook(浅克隆/新仓库?)—— "
+              "**下面几条没东西可验,不是验过了**")
+        return 0
+    d = tempfile.mkdtemp(prefix="hooksync_self_")
+    try:
+        同 = os.path.join(d, "same")
+        with open(同, "wb") as f:
+            f.write(r.stdout)
+        ck("① 目标内容 = 本检出 HEAD 版本 → True(差异全在未提交改动里)",
+           是本检出的已提交版本(靶, 同), True)
+
+        异 = os.path.join(d, "diff")
+        with open(异, "wb") as f:
+            f.write(r.stdout + "// zzz\n".encode("utf-8"))
+        ck("② 目标内容 ≠ HEAD 版本 → False(可能真漂了,照旧判红)",
+           是本检出的已提交版本(靶, 异), False)
+
+        # ③ **反向,而且是这三条里最要紧的一条。**
+        #    取不到 git 对象时必须回 False —— 写成 True 的话,所有「查不到」
+        #    都会被当成「还没推」放过去,**那是用一个放宽换掉了整道闸**。
+        ck("③ HEAD 上没有这个路径 → False(查不到要算成可能真漂了,宁可多红)",
+           是本检出的已提交版本(os.path.join("tools", "hooks", "不存在的.mjs"), 同),
+           False)
+
+        # ④ 反向:目标文件根本读不到 → 也必须 False,不能抛异常
+        ck("④ 目标文件读不到 → False,而且不许崩",
+           是本检出的已提交版本(靶, os.path.join(d, "没有这个文件")), False)
+    finally:
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)
+
+    if 败:
+        print(f"  ❌ {len(败)} 条没过:{'、'.join(败)}")
+        return 1
+    print(f"  ✅ 判据自测 {过} 条全过(含两条反向:查不到 / 读不到,都必须判成「可能真漂了」)")
+    return 0
+
+
+def 是本检出的已提交版本(相对路径, 目标文件):
+    """目标文件的内容,是不是**本检出 HEAD 上**那个版本?
+
+    ⚠️ 这是用来把「还没推」和「真漂了」分开的判据。**不猜、不看时间戳,只比
+       git 对象**:如果目标 == 本检出的 HEAD 版本,那仓库那份和它的差异就**全部
+       来自未提交的改动** —— 推上去、让那个检出 pull 就一致了。
+    ⚠️ 中文路径要 `core.quotepath=false`(这个仓库大半文件名是中文)。
+    ⚠️ 取不到就回 False —— **「查不到」要算成「可能真漂了」**,
+       宁可多红一次,也不要把一次真漂移放过去。
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-c", "core.quotepath=false", "show", f"HEAD:{相对路径}"],
+            cwd=根, capture_output=True, timeout=30)
+        if r.returncode != 0:
+            return False
+        with open(目标文件, "rb") as b:
+            return r.stdout == b.read()
+    except Exception:
+        return False
 # ⚠️ **装的那份在哪,可以用环境变量指定。** 不是为了方便 ——
 # 是因为**一条没法隔离测试的检查,没法被证明**:
 # 这条检查的对照依赖本机状态,而本机现在真的漂着,
@@ -115,6 +204,7 @@ def main():
     软链 = []
     一样 = []
     别检出 = []          # 软链指向**另一个检出**的同名 hook,而内容一致
+    还没推 = []          # 仓库这份改了还没推,目标 = 本检出的 HEAD 版本
     for f in 们:
         仓 = os.path.join(仓库hook, f)
         装 = os.path.join(装的, f)
@@ -145,6 +235,24 @@ def main():
             with open(仓, "rb") as a, open(指向, "rb") as b:
                 if a.read() == b.read():
                     别检出.append((f, 指向))
+                # ⚠️⚠️ 2026-11-04 再拆一层(用户拍 + 用户执行)。
+                #    10-14 那次把「指向哪个检出」和「内容一致吗」拆开了,
+                #    而「内容不一致」里**还混着两件事**:
+                #
+                #      仓库这份改了**还没推**,目标是本检出的 HEAD 版本 → 推了就一致
+                #      目标跟仓库**无关地漂开了**                      → 真故障
+                #
+                #    2026-11-04 这个结一天出现**两次**(在 worktree 里改 hook
+                #    必然经过它),而它**在推之前不可能绿** —— 于是「门禁绿了
+                #    才提交」在这个场景下不可满足,只能每次靠人拍一下放过。
+                #    > 一个合法流程的中间状态,和一次真的漂移,
+                #    > **在那句「内容已经不一样了」上长得一模一样。**
+                #
+                #    ⚠️ 这是**放宽**(原来红、现在只提示),所以两头都收紧了:
+                #      ① 判据只比 git 对象,不看时间戳、不猜
+                #      ② `是本检出的已提交版本()` 取不到就回 False → 照旧判红
+                elif 是本检出的已提交版本(os.path.join("tools", "hooks", f), 指向):
+                    还没推.append((f, 指向))
                 else:
                     漂.append((f, f"软链指向另一个检出的那份,**而内容已经不一样了**:"
                                   f"{指向} —— 两个检出的这个文件漂开了,"
@@ -161,6 +269,12 @@ def main():
 
     for f in 软链:
         print(f"  ✅ {f}  软链指向仓库 —— **它永远不会漂**")
+    for f, 指向 in 还没推:
+        print(f"  ℹ️ {f}  仓库这份**改了还没推** —— 目标正是本检出 HEAD 上那个版本,"
+              f"所以差异全来自未提交的改动。**推上去、让那个检出 pull 就一致了**。")
+        print(f"       指向:{指向}")
+        print(f"       ⚠️ 在那之前,真正在跑的仍然是旧的那一份 —— "
+              f"**改了仓库那份不等于它生效了**。")
     for f, 指向 in 别检出:
         print(f"  🟢 {f}  软链指向**另一个检出**的同名 hook,内容一致 —— "
               f"不判红(软链只能指一个检出,而这个仓库有多个)")
@@ -202,4 +316,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if "--selftest" in sys.argv:
+        sys.exit(_自测())
     sys.exit(main())

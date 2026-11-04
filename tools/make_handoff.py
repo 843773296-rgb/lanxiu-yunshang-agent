@@ -82,9 +82,23 @@ def auto_block():
     head = sh("git log -1 --format='%h · %ad · %s' --date=short", "?")
     n_check = sh("grep -c '^run ' check.sh", "?")
     ports = []
+    # ⚠️⚠️ **判据是「答不答得出来」,不是「这个路径返不返 200」—— 2026-11-04 改。**
+    #    原来写 `code == '200'`,于是 2026-11-03 把 **8770 报成了「没起来」**,
+    #    而那天页面冒烟 14 页全跑通 —— 服务活得很好,只是根路径不返 200。
+    #    我还照着那个假状态跟用户说「会有几条报不适用」,后来才更正。
+    #    > 「服务活着吗」和「这个路径返 200 吗」是**两个问题**,
+    #    > 而它们在那句「没起来」上长得一模一样。
+    #
+    #    判据照 `tools/com.lanxiu.health.plist` 那个健康哨来(它一直是对的):
+    #      **< 500 就算答得出来** —— 404 / 401 / 302 都是业务答复,
+    #      只有 5xx 和连不上(curl 失败 → 000)才是答不出来。
     for p, name in (("8760", "管理后台"), ("8770", "智能运维平台")):
         code = sh(f"curl -s -o /dev/null -w '%{{http_code}}' --max-time 3 http://127.0.0.1:{p}/", "000")
-        ports.append(f"{name} :{p} → {'在跑 ' + code if code == '200' else '没起来'}")
+        活 = code.isdigit() and 0 < int(code) < 500
+        ports.append(f"{name} :{p} → "
+                     + (f"在跑 {code}" if 活
+                        else ("答不出来 " + code if code.isdigit() and int(code) >= 500
+                              else "连不上(没起来)")))
     L = [A0,
          f"> 自动区,由 `python3 tools/make_handoff.py` 生成于 "
          f"{datetime.datetime.now():%Y-%m-%d %H:%M}。**不要手改这一段。**",
