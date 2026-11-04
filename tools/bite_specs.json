@@ -14452,5 +14452,17 @@
    }
   ],
   "预期红": "④ 载荷里的提问人就是登录的那个人"
+ },
+ {
+  "script": "agentsite/answer_feedback_check.py",
+  "改坏": "「我的意见」的查询参数不编码,中文参数名裸放进 URL —— 后台直接回 Invalid HTTP request,页面永远「取不到」(11-04 第一版的真错)",
+  "file": [
+   {
+    "path": "agentsite/answer_feedback.py",
+    "old": "mine?\" + urlencode({\"工号\": str(me.get(\"no\")), \"page\": int(页)})",
+    "new": "mine?工号={me.get('no')}&page={int(页)}\""
+   }
+  ],
+  "预期红": "⑧ 我的意见:发出去的 URL 全是 ASCII"
  }
 ]

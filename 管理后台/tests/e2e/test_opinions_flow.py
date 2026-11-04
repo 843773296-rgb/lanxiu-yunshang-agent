@@ -112,7 +112,8 @@ def main():
             ("影响不在三档里", dict(影响="很严重"), "影响"),
             ("没有提问人工号(不拿服务账号顶)", dict(工号=""), "提问人"),
             ("评价不是有帮助 / 有问题", dict(评价="一般"), "评价"),
-            ("独立建议:入口还没做,这个口不收", dict(来源="独立建议"), "来源"),
+            ("独立建议却挂了一轮", dict(来源="独立建议", 评价="建议"), "聊天站trace"),
+            ("挂一轮的却说「建议」", dict(评价="建议"), "评价"),
         ]:
             c, b = 提(体(标 + "-1", **改))
             ck(f"{名} → 422,定位到「{该红}」", c == 422 and 该红 in 字段(b), (c, b))
@@ -208,6 +209,46 @@ def main():
         else:
             print("  ℹ️ 库里没有聊天站推来的调用记录 —— 「现对上管理后台 trace」这条**没验**(不是通过)")
         ck("还没推过来的那一轮 → 管理后台trace 是空的(不是报错)", a.get("管理后台trace") is None, a)
+
+        print("\n▸ ⑨ 独立建议:不挂任何一轮,提交键防重")
+        建 = lambda 说明="想要按门店导出意见", 类="新增能力": {"来源": "独立建议", "评价": "建议", "问题类型": 类, "说明": 说明,
+                                                     "提问人": {"工号": 标, "姓名": "e2e"}}
+        c, b = 提(建())
+        ck("**不带提交键 → 422,定位到 Idempotency-Key**(没有那一轮可以拿来防重)",
+           c == 422 and "Idempotency-Key" in 字段(b), (c, b))
+        键 = {**内, "Idempotency-Key": 标 + "-k1"}
+        c, s1 = 提(建(), 键)
+        ck("带提交键 → 201 新建,评价记成「建议」", c == 201 and s1.get("新建") is True and s1.get("评价") == "建议", (c, s1))
+        c, s2 = 提(建(), 键)
+        ck("**同一个键、同样内容再提(网断了重试)→ 返回原来那条,不新建**",
+           c == 201 and s2.get("id") == s1.get("id") and s2.get("新建") is False, (c, s2))
+        c, b = 提(建(说明="另一件事"), 键)
+        ck("同一个键、内容不一样 → 409 IDEMPOTENCY_CONFLICT(不许被旧的吞掉)", c == 409 and 码(b) == "IDEMPOTENCY_CONFLICT", (c, b))
+        c, s3 = 提(建(说明="另一件事"), {**内, "Idempotency-Key": 标 + "-k2"})
+        ck("换一个键 → 另一条", c == 201 and s3.get("id") != s1.get("id") and s3.get("新建") is True, (c, s3))
+        with 库.connect() as cc:
+            几 = cc.execute(text("select count(*) from opinions where project_id=:p and asker_staff_code=:s and source='独立建议'"),
+                           {"p": 项目, "s": 标}).scalar()
+        ck("库里这个人的独立建议正好 2 条(重试没有多出一条)", 几 == 2, 几)
+        ck("库这一层:独立建议不带提交键 → 库拒", 库拒(src="独立建议", t=None, v="建议"))
+
+        print("\n▸ ⑩ 我的意见")
+        c, b = 打("GET", P + "/opinions/mine?" + urllib.parse.urlencode({"工号": 标}))
+        ck("不带内部凭证 → 403", c == 403 and 码(b) == "INTERNAL_ONLY", (c, b))
+        c, m = 打("GET", P + "/opinions/mine?" + urllib.parse.urlencode({"工号": 标}), 头=内)
+        with 库.connect() as cc:
+            应 = cc.execute(text("select count(*) from opinions where project_id=:p and asker_staff_code=:s"),
+                           {"p": 项目, "s": 标}).scalar()
+        ck("只列这个人自己的(条数和库里这个工号的行数一致,两条独立建议都在)",
+           c == 200 and m["total"] == 应 and len(m["items"]) == 应
+           and {s1.get("id"), s3.get("id")} <= {x["id"] for x in m["items"]}, (c, 应, m))
+        ck("**进度是给提的人看的话**(待受理 → 「已收到」),带一句说明",
+           all(x["进度"] == "已收到" and x["进度说明"] for x in m["items"]), m["items"])
+        ck("**字段裁剪**:不给提问人快照、管理后台 trace、旧版、revision",
+           all(not ({"提问人", "管理后台trace", "改过几次", "revision", "history_snapshot"} & set(x)) for x in m["items"]),
+           [sorted(x) for x in m["items"]][:1])
+        c, m2 = 打("GET", P + "/opinions/mine?" + urllib.parse.urlencode({"工号": "60000011"}), 头=内)
+        ck("林岚那边看不到这个人的", c == 200 and not any(x["id"] in (s1.get("id"), s3.get("id")) for x in m2["items"]), (c, len(m2.get("items", []))))
     finally:
         with 库.begin() as cc:
             cc.execute(text("delete from opinions where project_id=:p and (chat_trace_ref like :t or asker_staff_code=:s)"),

@@ -291,7 +291,7 @@ _额外唯一 = {
     "access_keys": [("project_id", "lookup_hash")],
     # 意见单:一个人对一轮只一条 —— 两条的话「他到底觉得有没有帮助」各说各的,有帮助比例的分母也被撑大
     # (独立建议 chat_trace_ref 为空,PG 把 NULL 当互不相同 —— 它的防重要靠提交幂等键,做独立建议入口时一起加)
-    "opinions": [("project_id", "chat_trace_ref", "asker_staff_code")],
+    "opinions": [("project_id", "chat_trace_ref", "asker_staff_code"), ("project_id", "asker_staff_code", "submit_ref")],
     # 执行故障上报(2026-10-25):一轮只一张单 —— 聊天站同一轮会推不止一次
     "trace_incidents": [("project_id", "trace_id")],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,
@@ -324,10 +324,13 @@ _额外检查 = {
         ("ck_opinions_source", "source in ('问答', '执行失败', '独立建议')"),
         # 独立建议不挂任何一轮;挂了一轮的就不是独立建议 —— 不编造关联(PRD §6「无 trace 的独立建议允许受理,不编造关联」)
         ("ck_opinions_trace", "(source = '独立建议') = (chat_trace_ref is null)"),
-        ("ck_opinions_verdict", "verdict in ('有帮助', '有问题')"),
+        ("ck_opinions_verdict", "verdict in ('有帮助', '有问题', '建议')"),
+        # 独立建议 = 评价记成「建议」,而且**必须带提交键**(它没有那一轮可以拿来防重)
+        ("ck_opinions_suggest", "(source = '独立建议') = (verdict = '建议')"),
+        ("ck_opinions_submit_ref", "source <> '独立建议' or submit_ref is not null"),
         ("ck_opinions_failed", "source <> '执行失败' or verdict = '有问题'"),
-        # 「有问题」必须分类、必须写一句;「有帮助」不许带类 —— 否则按类筛会漏掉没分类的那些
-        ("ck_opinions_problem", "(verdict = '有问题') = (problem_type is not null)"),
+        # 「有问题」「建议」必须分类、必须写一句;「有帮助」不许带类 —— 否则按类筛会漏掉没分类的那些
+        ("ck_opinions_problem", "(verdict <> '有帮助') = (problem_type is not null)"),
         ("ck_opinions_problem_note", "verdict = '有帮助' or note is not null"),
         ("ck_opinions_problem_type", "problem_type is null or problem_type in "
                                      "('答错', '没答全', '证据不支持', '查错对象', '太慢或失败', '不好操作', '新增能力', '其他')"),

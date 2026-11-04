@@ -8,6 +8,8 @@
   ④ 载荷里的提问人**只从登录身份取**:页面里写了「提问人」也一个字不带过去;页面字段只收那六样
   ⑤ 内部凭证没有 → 不发请求,照实说「通道没开」(不退回成只带服务账号去发)
   ⑥ 问题类型、影响:和管理后台、聊天页那两份是同一组(各写一份迟早分叉 —— 这条盯着它们没分叉)
+  ⑦ 独立建议 / 我的意见:来源评价写死、不挂一轮、提问人只从登录身份取;提交键只收正常的
+  ⑧ 真正发出去的命令:URL 全是 ASCII、查的是登录那个人的工号;独立建议带着提交键
 """
 import ast
 import os
@@ -17,10 +19,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [HERE, os.path.join(os.path.dirname(HERE), "backend")]
 import answer_feedback as AF
 
-# 咬合记录(可重放的规格在 tools/bite_specs.json,script 为这个文件的那两条)
+# 咬合记录(可重放的规格在 tools/bite_specs.json,script 为这个文件的那三条)
 咬合 = [
     ("别人的那一轮也能评(会话主比对改成永远放行)", "② 别人的那一轮 → 404"),
     ("提问人改成服务账号(载荷里的工号写死 U001)", "④ 载荷里的提问人就是登录的那个人"),
+    ("「我的意见」查询参数不编码(中文参数名裸进 URL)", "⑧ 我的意见:发出去的 URL 全是 ASCII"),
 ]
 
 过, 挂 = [], []
@@ -72,6 +75,37 @@ def main():
        set(体) == {"来源", "评价", "问题类型", "说明", "期望结果", "影响", "聊天站trace", "会话号", "提问人"}, sorted(体))
     ck("④ 挂着那一轮、说明和期望结果去了首尾空白",
        体["聊天站trace"] == "t1" and 体["会话号"] == "s1" and 体["说明"] == "工期算错了" and 体["期望结果"] == "21 天", 体)
+
+    建 = AF.独立建议载荷(顾问, {"问题类型": "新增能力", "说明": " 想要按门店导出 ", "来源": "问答", "评价": "有帮助",
+                              "聊天站trace": "伪造的一轮", "提问人": {"工号": "60000001"}})
+    ck("⑦ 独立建议:来源 / 评价固定成「独立建议 / 建议」,页面写什么都不算;不挂任何一轮",
+       建.get("来源") == "独立建议" and 建.get("评价") == "建议" and "聊天站trace" not in 建 and "会话号" not in 建, 建)
+    ck("⑦ 独立建议:提问人也只从登录身份取", (建.get("提问人") or {}).get("工号") == 顾问["no"] and 建.get("说明") == "想要按门店导出", 建)
+    ck("⑦ 提交键:正常的收下;空的 / 太长的 / 带空格的当没给",
+       AF.提交键({"提交键": "a1b2-c3"}) == "a1b2-c3" and AF.提交键({}) is None and AF.提交键({"提交键": "x" * 65}) is None
+       and AF.提交键({"提交键": "a b"}) is None)
+    码2, d2 = AF.查我的(顾问, 凭证="")
+    ck("⑦ 我的意见:没有内部凭证 → 不发请求、照实说通道没开", 码2 is None and "没开" in str(d2.get("error")), (码2, d2))
+
+    # ⑧ 真正发出去的那条命令(截住 subprocess.run,不真发):11-04 「我的意见」第一版把中文参数名裸放进 URL,
+    #    后台直接回「Invalid HTTP request」—— 只有真浏览器跑才撞得到,这里把它钉成判据
+    import subprocess as _sp
+    from urllib.parse import parse_qs, urlparse
+    发了 = []
+    原run = AF.subprocess.run
+    class _假:
+        stdout, stderr = b'{"ok": true}\n200', b""
+    AF.subprocess.run = lambda 参, **kw: (发了.append((参, kw.get("input"))), _假())[1]
+    try:
+        AF.查我的(顾问, 凭证="x")
+        AF.转给后台(建, 凭证="x", 键="k-123")
+    finally:
+        AF.subprocess.run = 原run
+    url = next((a for a in 发了[0][0] if str(a).startswith("http")), "") if 发了 else ""
+    ck("⑧ 我的意见:发出去的 URL 全是 ASCII(中文参数名要编码),查的工号就是登录的那个人",
+       url.isascii() and parse_qs(urlparse(url).query).get("工号") == [顾问["no"]], url)
+    头们 = [发了[1][0][i + 1] for i, a in enumerate(发了[1][0]) if a == "-H"] if len(发了) > 1 else []
+    ck("⑧ 独立建议:转发时带着提交键(Idempotency-Key)", "Idempotency-Key: k-123" in 头们, 头们)
 
     码, d = AF.转给后台(体, 凭证="")
     ck("⑤ 没有内部凭证 → 不发请求、照实说通道没开", 码 is None and "没开" in str(d.get("error")), (码, d))
