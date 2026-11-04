@@ -14428,5 +14428,29 @@
    }
   ],
   "预期红": "⑥ 去掉之后一个写工具都不剩"
+ },
+ {
+  "script": "agentsite/answer_feedback_check.py",
+  "改坏": "别人的那一轮也能评 —— 店长能以自己的名义去评顾问那一轮,审核台上「谁觉得不好」就是假的",
+  "file": [
+   {
+    "path": "agentsite/answer_feedback.py",
+    "old": "    if str(提问人.get(\"no\")) != str(me[\"no\"]):",
+    "new": "    if False:"
+   }
+  ],
+  "预期红": "② 别人的那一轮 → 404"
+ },
+ {
+  "script": "agentsite/answer_feedback_check.py",
+  "改坏": "提问人写成服务账号 —— 又回到 rate-rag 那样,反馈记不出是谁提的",
+  "file": [
+   {
+    "path": "agentsite/answer_feedback.py",
+    "old": "              \"提问人\": {\"工号\": me.get(\"no\"),",
+    "new": "              \"提问人\": {\"工号\": 服务账号,"
+   }
+  ],
+  "预期红": "④ 载荷里的提问人就是登录的那个人"
  }
 ]

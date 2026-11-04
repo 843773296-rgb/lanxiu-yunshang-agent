@@ -556,6 +556,33 @@ class H(BaseHTTPRequestHandler):
                 except Exception as e:
                     r["门店留档"] = f"没留下:后台连不上({type(e).__name__})"
             return self._send(r, code=(200 if r.get("ok") else 502))
+        if p == "/api/answer-feedback":
+            # 每条回答都能评好 / 不好(DF-03 第 2 步,11-04):只认这一轮会话的主人,带提问人工号转给管理后台
+            try: body = json.loads(raw or b"{}")
+            except Exception: return self._send({"error": "请求体不是 JSON"}, code=400)
+            import answer_feedback as _af
+            import sessions as _ss
+            sys.path.insert(0, os.path.join(os.path.dirname(HERE), "agent"))
+            import spans as _sp
+            tid = str(body.get("trace") or "").strip()
+            if not tid:
+                return self._send({"error": "没有 trace —— 这一轮没记执行记录,没法挂反馈"}, code=400)
+            me = _who(self)
+            rows = _sp.读().get(tid) or []
+            根 = next((x for x in rows if not x.get("parent_span_id")), {})
+            会话号 = 根.get("会话号")
+            行, 码, 因 = _af.能评吗(me, tid, _ss.这一轮是谁的(tid, 会话号))
+            if not 行:
+                return self._send({"error": 因}, code=码)
+            码, d = _af.转给后台(_af.载荷(me, tid, 会话号, body))
+            if 码 in (200, 201):
+                return self._send({"ok": True, **d})
+            # 失败不装作成功:点了没记上而界面显示「已提交」,提问人以为反馈过了
+            字段 = d.get("field_errors") or {}
+            return self._send({"error": d.get("message") or d.get("error") or f"没记上({码})",
+                               # 字段错误直接说出来 —— 页面只弹 error / 怎么办,「见字段错误」四个字对提问人没有信息量
+                               "怎么办": ";".join(str(v) for v in 字段.values()) or d.get("advice") or d.get("怎么办") or "",
+                               "字段": 字段 or None}, code=(码 if 码 in (409, 422) else 502))
         if p == "/internal/chat":
             # 管理后台转来的访问 API 聊天(11-03):凭证 / 本机 / 身份现查,见 internal_call.py。
             # **写工具这一轮不挂**(sdk.run 只读=True)—— 机器调的不许直接写,网页上那张确认卡 API 那头没人看
@@ -694,6 +721,7 @@ class H(BaseHTTPRequestHandler):
                     except Exception as e:
                         r["上报"] = {**报, "给谁": "平台管理员", "说明": f"系统出了问题,但上报没记上({type(e).__name__})"}
                 sessions.own(r.get("session_id"), me)
+                sessions.记这一轮(r.get("trace_id"), me)     # 这一轮是谁问的(反馈只认提问人;失败的那支也记)
                 _记知识检索(r, self.headers.get("cookie"))
                 return self._send(r)
             except Exception as e:
@@ -703,6 +731,10 @@ class H(BaseHTTPRequestHandler):
                 try:
                     import spans as _sp
                     _sp.记中断(轮[0], 轮[1], f"{type(e).__name__}: {e}")
+                except Exception:
+                    pass
+                try:
+                    sessions.记这一轮(轮[0], me)      # 失败的这一轮也能「报告执行问题」—— 要知道是谁问的
                 except Exception:
                     pass
                 return self._send({"error": f"{type(e).__name__}: {e}"[:400], "trace_id": 轮[0]}, code=500)

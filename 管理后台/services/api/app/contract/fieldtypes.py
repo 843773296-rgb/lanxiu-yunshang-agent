@@ -347,6 +347,8 @@
     # (application_id / chat_assistant_id 二选一,由 models._额外检查 的 CHECK 守,所以都不进必填)
     "access_keys": {"name", "prefix_code", "lookup_hash", "daily_cap_amount", "currency"},
     "access_key_calls": {"access_key_id", "endpoint_code", "outcome_code"},
+    # 意见单(11-04):来路 / 好不好 / 谁提的 / 走到哪 —— 少一样受理人就没法处理(chat_trace_ref 可空:独立建议不挂任何一轮)
+    "opinions": {"source", "verdict", "asker_staff_code", "status"},
     # 聊天助手版本:开头 / 工具 / 模型 / 从哪来 / 哈希 —— 少一样就说不清「模型收到的是什么」
     "chat_assistant_versions": {"chat_assistant_id", "version_no", "head_template", "tools",
                                 "model_name", "source_kind", "content_hash"},

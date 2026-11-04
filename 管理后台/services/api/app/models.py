@@ -139,6 +139,8 @@ _依赖列 = {
         "router_connection_id",
     # 2026-10-27 版本标记:列叫 version_id(推出来的是 workflow_version_id)—— 短名,点名在这里
     ("workflow_version_marks", "workflow_versions"): "version_id",
+    # 意见单(11-04):审核后升成的那条样本 —— 列名按用途叫 promoted_sample_id(推出来的是 sample_id)
+    ("opinions", "samples"): "promoted_sample_id",
 }
 
 # ## 唯一约束叫什么名字 —— **这个名字必须和迁移里那个一个字不差**
@@ -287,6 +289,9 @@ _额外唯一 = {
     "chat_assistant_versions": [("project_id", "chat_assistant_id", "version_no")],
     # 密钥按哈希认 —— 两行同一个哈希的话,一把密钥会被认成两把(谁的上限、绑哪个应用都说不清)
     "access_keys": [("project_id", "lookup_hash")],
+    # 意见单:一个人对一轮只一条 —— 两条的话「他到底觉得有没有帮助」各说各的,有帮助比例的分母也被撑大
+    # (独立建议 chat_trace_ref 为空,PG 把 NULL 当互不相同 —— 它的防重要靠提交幂等键,做独立建议入口时一起加)
+    "opinions": [("project_id", "chat_trace_ref", "asker_staff_code")],
     # 执行故障上报(2026-10-25):一轮只一张单 —— 聊天站同一轮会推不止一次
     "trace_incidents": [("project_id", "trace_id")],
     # **一个 revision 只能有一个决定**(§12.2):两个审批者同时点批准,
@@ -314,6 +319,21 @@ _额外唯一 = {
 # CHECK 看不到别的行,写得出来也拦不住。
 _额外检查 = {
     # 访问密钥(11-03):绑工作流 / 绑聊天助手**二选一** —— 两个都填,一把密钥能调两样;都空,它什么都调不了却照样能发
+    # 意见单(11-04,口径照意见收集 PRD §3.2 / §5.1):枚举只收这几个 —— 拼错的值会自成一档,受理台按状态筛时它哪一档都不算
+    "opinions": [
+        ("ck_opinions_source", "source in ('问答', '执行失败', '独立建议')"),
+        # 独立建议不挂任何一轮;挂了一轮的就不是独立建议 —— 不编造关联(PRD §6「无 trace 的独立建议允许受理,不编造关联」)
+        ("ck_opinions_trace", "(source = '独立建议') = (chat_trace_ref is null)"),
+        ("ck_opinions_verdict", "verdict in ('有帮助', '有问题')"),
+        ("ck_opinions_failed", "source <> '执行失败' or verdict = '有问题'"),
+        # 「有问题」必须分类、必须写一句;「有帮助」不许带类 —— 否则按类筛会漏掉没分类的那些
+        ("ck_opinions_problem", "(verdict = '有问题') = (problem_type is not null)"),
+        ("ck_opinions_problem_note", "verdict = '有帮助' or note is not null"),
+        ("ck_opinions_problem_type", "problem_type is null or problem_type in "
+                                     "('答错', '没答全', '证据不支持', '查错对象', '太慢或失败', '不好操作', '新增能力', '其他')"),
+        ("ck_opinions_impact", "impact_type is null or impact_type in ('仅影响本次', '反复出现', '影响业务办理')"),
+        ("ck_opinions_status", "status in ('待受理', '待补充', '核实中', '已关联问题', '已答复', '不采纳', '已撤回')"),
+    ],
     "access_keys": [
         ("ck_access_keys_target", "(application_id is null) <> (chat_assistant_id is null)"),
         ("ck_access_keys_cap", "daily_cap_amount > 0"),

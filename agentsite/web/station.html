@@ -1096,6 +1096,63 @@ async function 报问题(rid){
   alert(r.reason || r.error || "没报上");    // 失败不装作成功
 }
 
+/* ── 意见(DF-03 第 2 步,11-04;口径照《意见收集与能力持续改进 PRD》10-24 §3)──────────────
+ * 上面那条评分条只出现在查过知识库的回答下,评的是「找得准不准」;这条**每条问答都有**:
+ *   · 回答下:「有帮助」一键提交;「反馈问题」打开一个面板(纠正内容和建议都填在这里,不另开弹窗)
+ *   · 执行失败的那一条:「报告执行问题」,不用等成功回答出现
+ * 提问人是谁**不从页面传** —— 聊天站从登录会话换出来、只认这一轮的提问人(agentsite/answer_feedback.py)。
+ * 结果记在这条消息上(m.反馈),刷新后还在;失败不装作成功。 */
+const 反馈类型们 = ["答错", "没答全", "证据不支持", "查错对象", "太慢或失败", "不好操作", "新增能力", "其他"];
+const 影响们 = ["仅影响本次", "反复出现", "影响业务办理"];
+const FB_OPEN = {};      // 消息序号 → 「反馈问题」面板展开着
+function fbBar(m, i){
+  if(!m.trace_id) return "";             // 这一轮没记执行记录 —— 挂不上,不显示一个点了也记不下的按钮
+  const 失败 = !!m.error, 已 = m.反馈;
+  if(已 && !FB_OPEN[i]){
+    return `<div class="rate fb"><span class="done">已提「${esc(已.评价)}${已.问题类型 ? "·" + esc(已.问题类型) : ""}」`
+      + ` —— 进了管理后台「意见」待受理</span><button data-fb="${i}" data-fbv="改">改</button></div>`;
+  }
+  if(FB_OPEN[i]){
+    const 默认类 = (已 && 已.问题类型) || (失败 ? "太慢或失败" : "");
+    return `<div class="rate fb"><span>${失败 ? "执行出了什么问题?" : "哪里有问题?"}</span>`
+      + `<select data-fbtype="${i}"><option value="">选一类…</option>`
+      + 反馈类型们.map(t => `<option${默认类 === t ? " selected" : ""}>${esc(t)}</option>`).join("") + `</select>`
+      + `<input data-fbnote="${i}" placeholder="哪里有问题(必填,一句话就行)" style="min-width:200px" value="${esc((已 && 已.说明) || "")}">`
+      + `<input data-fbwant="${i}" placeholder="期望的结果 / 正确的应该是…(选填)" style="min-width:200px" value="${esc((已 && 已.期望结果) || "")}">`
+      + `<select data-fbimpact="${i}"><option value="">影响(选填)</option>`
+      + 影响们.map(t => `<option${已 && 已.影响 === t ? " selected" : ""}>${esc(t)}</option>`).join("") + `</select>`
+      + `<button data-fb="${i}" data-fbv="提交问题">提交</button><button data-fb="${i}" data-fbv="取消">取消</button></div>`;
+  }
+  if(失败) return `<div class="rate fb"><button data-fb="${i}" data-fbv="反馈问题">报告执行问题</button></div>`;
+  return `<div class="rate fb"><span>这条回答怎么样?</span>`
+    + `<button data-fb="${i}" data-fbv="有帮助">👍 有帮助</button><button data-fb="${i}" data-fbv="反馈问题">反馈问题</button></div>`;
+}
+async function 点反馈(b){
+  const i = +b.dataset.fb, v = b.dataset.fbv, c = cur(), m = c && c.msgs[i];
+  if(!m) return;
+  if(v === "反馈问题" || v === "改"){ FB_OPEN[i] = true; drawStream(); return; }
+  if(v === "取消"){ delete FB_OPEN[i]; drawStream(); return; }
+  // 和上面「报问题」那几个框同一种取法:选出这一类框,再按消息序号挑 —— 控件审计认的就是这个形状
+  const 挑 = (框们, k) => (([...框们].find(e => e.dataset[k] === String(i)) || {}).value || "").trim();
+  const 值 = k => 挑({fbtype: document.querySelectorAll("[data-fbtype]"), fbnote: document.querySelectorAll("[data-fbnote]"),
+                     fbwant: document.querySelectorAll("[data-fbwant]"), fbimpact: document.querySelectorAll("[data-fbimpact]")}[k], k);
+  let 体 = {trace: m.trace_id, 来源: "问答", 评价: "有帮助"};
+  if(v === "提交问题"){
+    const 类 = 值("fbtype"), 说明 = 值("fbnote");
+    if(!类){ alert("先选是哪一类问题"); return; }
+    if(!说明){ alert("写一句哪里有问题 —— 只有「错了」两个字,处理的人只能回头再问你"); return; }
+    体 = {trace: m.trace_id, 来源: m.error ? "执行失败" : "问答", 评价: "有问题", 问题类型: 类, 说明,
+         期望结果: 值("fbwant"), 影响: 值("fbimpact")};
+  }
+  const r = await fetch("/api/answer-feedback", {method: "POST", headers: {"content-type": "application/json"},
+    body: JSON.stringify(体)}).then(x => x.json()).catch(e => ({error: String(e)}));
+  if(r.ok){
+    m.反馈 = {评价: 体.评价, 问题类型: 体.问题类型 || null, 说明: 体.说明 || "", 期望结果: 体.期望结果 || "", 影响: 体.影响 || ""};
+    delete FB_OPEN[i]; save(); drawStream(); return;
+  }
+  alert((r.error || "意见没记上") + (r.怎么办 ? "\n\n" + r.怎么办 : ""));   // 失败不装作成功
+}
+
 const 档位名 = {1:"完全答错 / 帮不上", 2:"找得不对,得自己重查", 3:"勉强能用,还要补",
               4:"基本对,小改就能用", 5:"正好是我要的"};
 const RATED = {};        // 试跑id → 分数(这一页内记着,免得重绘丢掉)
@@ -1201,7 +1258,7 @@ function drawStream(){
     }
     if(m.error)
       return `<div class="msg a"><div class="wrap"><div class="err">${esc(m.error)}</div>
-        <div class="meta"><a href="#" class="evlink" data-i="${i}">执行记录</a></div></div></div>`;
+        <div class="meta"><a href="#" class="evlink" data-i="${i}">执行记录</a></div>${fbBar(m, i)}</div></div>`;
     // 交付状态分开写:「修正后通过」和「未通过检查,需人工核对」是两回事;没查到的不显示成通过
     const 交 = (m.交付检查 || {}).状态;
     const 交说 = {"修正后通过": "修正后通过检查", "未通过": "未通过检查,需人工核对",
@@ -1227,7 +1284,7 @@ function drawStream(){
       ${卡}
       <div class="body">${md(m.text)}</div>${gv}
       <div class="meta">${esc(metaLine(m))} · <a href="#" class="evlink" data-i="${i}">执行记录</a></div>
-      ${rateBar(m, i)}</div></div>`;
+      ${rateBar(m, i)}${fbBar(m, i)}</div></div>`;
   }).join("");
   s.scrollTop = s.scrollHeight;
   // 卡片用**事件委托**绑 —— 每次重绘 innerHTML 都会把旧的 onclick 冲掉,
@@ -1240,6 +1297,9 @@ function drawStream(){
   });
   s.querySelectorAll("[data-callup]").forEach(b => {
     b.onclick = () => 传录音(b);
+  });
+  s.querySelectorAll("[data-fb]").forEach(b => {
+    b.onclick = () => 点反馈(b);
   });
   // 每条回答各自的「执行记录」(证据中心 10-25)—— 同样每次重绘重绑
   s.querySelectorAll(".evlink").forEach(b => {

@@ -82,6 +82,20 @@ def owner(session_id):
     return _load().get(str(session_id))
 
 
+def 记这一轮(trace_id, me):
+    """这一轮(trace)是谁问的 —— **成功失败都记**(11-04,意见收集 PRD §3.1「执行失败也能报」)。
+    会话归属只在拿到 session_id 之后才记,而第一轮就失败的那种没有 session_id —— 报执行问题时查不到提问人。
+    和会话记在同一个文件,键带 `trace:` 前缀,和会话号撞不上。"""
+    if trace_id:
+        own(f"trace:{trace_id}", me)
+
+
+def 这一轮是谁的(trace_id, 会话号=None):
+    """先认这一轮自己的记录;11-04 之前的轮次没记过,退回认它所属会话的主人。都没有 → None(不猜)。"""
+    d = _load()
+    return d.get(f"trace:{trace_id}") or (d.get(str(会话号)) if 会话号 else None)
+
+
 def 能看执行记录吗(me, 会话号=None, 列全部=False):
     """聊天站 `/spans`(执行记录:用户原话、工具参数和返回)谁能看。→ (行不行, HTTP 码, 为什么)。
 
