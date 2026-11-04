@@ -746,7 +746,11 @@ run "商机口径 · 分清是谁说的,别枚举中文说法(19 条自测)" pyt
 run "归属口径 · 分开只因为下一步不同(15 条自测)" python3 knowledge/owner.py
 run "评测指纹 · 行数没变但内容改了,指纹也得变(7 条自测)" python3 agent/fingerprint.py --selftest
 run "首次启动 · 建出来的库要和在用的库一样全(5 条咬合)" python3 backend/initpath_check.py
-run "交接门禁 · 过 80% 不许收工;交接在项目根、会话在子目录也要找得到;照提示提前刷了要放行(18 条)" node tools/hooks/handoff-gate.mjs --selftest
+# ⚠️ 这条标题**故意不写条数**。原来写「18 条」,而实际是 31 条 —— 过期很久没人发现;
+#    我 2026-11-04 把它改成「31 条」,**20 分钟后加了两条用例,又漂成 35**。
+#    > 盯着一个值的东西都会漂。而这个数**没有任何判据在盯它** ——
+#    > 自测自己最后一行就印「N 条全过」,门禁日志里看得到真数,标题再写一遍纯属重复。
+run "交接门禁 · 那条线从台账学(写死 80% 的从没触发过);交接在项目根、会话在子目录也要找得到;照提示提前刷了要放行" node tools/hooks/handoff-gate.mjs --selftest
 run "检查不许往真库的操作台账写(写了就点名是哪个检查)" bash -c '
   # 先自检:故意从门禁里写一笔,它必须被拦下并记进账 —— 拦不下的话,「没有漏写」就什么也说明不了
   python3 -c "import sys; sys.path.insert(0,\"backend\"); import oplog; oplog.log_op(\"门禁自检\",\"check\",\"-\",\"—\",\"—\",True,\"LEAK_CANARY\",\"自检\",{})"

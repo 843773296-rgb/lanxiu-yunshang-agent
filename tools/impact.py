@@ -72,7 +72,49 @@ def 改动(base=None):
             if m:
                 a = int(m.group(1)); n = int(m.group(2) or 1)
                 res[cur].append((a, a + max(n, 1) - 1))
-    return {k: v for k, v in res.items() if k.endswith((".py", ".md", ".sh"))}
+    return {k: v for k, v in res.items() if k.endswith(影响面认的扩展名)}
+
+
+# ⚠️⚠️ **这个白名单漏过一次,而漏的那天报告照样是干净的。**
+# 2026-11-04 查出来:原来只写 (".py", ".md", ".sh"),而门禁里跑着
+# **7 个 `.mjs`**(四个 hook + 三个检查脚本)和 **1 个 `.js`** ——
+# 它们的改动**从来不在影响面里**。而 hook 是能拦住收工的东西:
+# 改坏一个 hook,影响面一个字都不会说。
+# > 一份少算了文件的影响面,和一份完整的影响面,**在报告干净这件事上长得一模一样。**
+影响面认的扩展名 = (".py", ".md", ".sh", ".mjs", ".js")
+
+# 豁免:门禁 run 行里出现、但**不是源码**的文件。
+# ⚠️ 每一条都要写理由,而且下面 自检扩展名() 会**反向查**它还成不成立 ——
+#    没有这一半,豁免表会慢慢攒满早就不存在的条目,而囤积的豁免和真豁免长得一样。
+影响面不认的 = {
+    ".db": "SQLite 库文件:二进制,而且 backend/lanxiu.db 是条软链",
+}
+
+
+def 自检扩展名():
+    """门禁实际在跑的那些文件,影响面认不认它们的扩展名?
+
+    ⚠️ **不枚举扩展名** —— `.mjs` 正是枚举漏掉的。改问**结构**:
+       `check.sh` 的 run 行里真实存在的文件,扩展名要么在白名单里,
+       要么在豁免表里有理由。将来有人加个 `.ts` 检查,这条会自己报出来。
+    ⚠️ 同时**反向查豁免**:豁免表里的扩展名,门禁里还真有这种文件吗?
+    回 (扫了几个文件, 没认的, 豁免里已经没用的)
+    """
+    sh = open(os.path.join(ROOT, "check.sh"), encoding="utf-8").read()
+    见到 = {}
+    for line in sh.split("\n"):
+        if not line.strip().startswith("run "):
+            continue
+        # ⚠️ 这里故意扫整行而不只扫 run 的标题:`\` 续行把真命令挪到了下一行
+        #    (agentsite/js_smoke.js 就是这样),但那种情况标题里通常也写了文件名。
+        for m in re.findall(r"([\w/.\-]+\.[a-z]{1,4})\b", line):
+            p = os.path.join(ROOT, m)
+            if os.path.isfile(p):
+                见到.setdefault(os.path.splitext(m)[1], set()).add(m)
+    没认 = sorted((e, sorted(fs)) for e, fs in 见到.items()
+                  if e not in 影响面认的扩展名 and e not in 影响面不认的)
+    白费 = sorted(e for e in 影响面不认的 if e not in 见到)
+    return sum(len(v) for v in 见到.values()), 没认, 白费
 
 
 def 覆盖(path):
@@ -157,7 +199,34 @@ def main():
             print("     而漏的那天它照样输出一份干净的报告,那正是该报警的时候。")
             return 1
         print("     **钉住下限,只许涨不许掉** —— 和来源欠账、咬合欠账同一个办法")
-        return 0
+
+        # ── 门禁跑的文件,影响面认不认(2026-11-04 加)──────────────────
+        共, 没认, 白费 = 自检扩展名()
+        坏 = False
+        # ⚠️ 先报样本量:**空集合上这条性质自动成立**。
+        #    扫不到文件时「全认了」和「什么都没扫」在输出上一模一样。
+        if 共 < 50:
+            print(f"  ❌ 只在 check.sh 的 run 行里扫到 {共} 个真实文件(下限 50)——"
+                  f" **这是扫描失败,不是全认了**")
+            坏 = True
+        else:
+            print(f"  ✅ 门禁 run 行里扫到 {共} 个真实存在的文件")
+        if 没认:
+            坏 = True
+            for e, fs in 没认:
+                例 = "、".join(fs[:4]) + (f"  ……还有 {len(fs) - 4} 个(共 {len(fs)})" if len(fs) > 4 else "")
+                print(f"  ❌ 门禁在跑 {len(fs)} 个 `{e}` 文件,而影响面**不认这个扩展名**:{例}")
+            print("     改它们的时候影响面一个字都不会说 —— 加进 影响面认的扩展名,")
+            print("     或者加进 影响面不认的 并写清为什么它不是源码。")
+        else:
+            print("  ✅ 门禁跑的每种扩展名,影响面都认(或有豁免理由)")
+        if 白费:
+            坏 = True
+            print(f"  ❌ 豁免表里这些扩展名门禁里已经没有了,删掉:{'、'.join(白费)}")
+            print("     **囤积的豁免和真豁免长得一模一样** —— 所以这一半必须反着查。")
+        else:
+            print(f"  ✅ 豁免表 {len(影响面不认的)} 条都还成立(反向查过)")
+        return 1 if 坏 else 0
     base = sys.argv[1] if len(sys.argv) > 1 else None
     ch = 改动(base)
     print("改动影响面 —— **动手之前问一句「这一改会破坏什么」**")

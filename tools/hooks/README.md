@@ -8,10 +8,18 @@
 | `commit-gate-exitcode.mjs` | `PreToolUse` / `Bash` | 提交前门禁的退出码不许被吞掉 | **拦** |
 | `push-then-ci.mjs` | `PostToolUse` / `Bash` | push 完把 CI 结果推到眼前 | 不拦,只说话 |
 | `tool-or-skill.mjs` | `PostToolUse` / `Write·Edit` | 新增工具时问一句「该由谁判断」 | 不拦,只说话 |
-| `handoff-gate.mjs` | `Stop` + `UserPromptSubmit` + `PreCompact` | 上下文过 80% 且交接过期,不许收工(交接按 git 根找) | **拦**(`Stop`) |
+| `handoff-gate.mjs` | `Stop` + `UserPromptSubmit` + `PreCompact` | 上下文过线且交接过期,不许收工(交接按 git 根找)。**线不是写死的 80%,从台账学** —— 见下 | **拦**(`Stop`) |
 
 > `handoff-gate.mjs` 是四道里唯一挂三个事件的。原因是**一个点管不住整件事**:
-> `UserPromptSubmit` 负责提前报数(到 65% 就说),`Stop` 是唯一拦得住的点
+> `UserPromptSubmit` 负责提前报数(到预警线就说),`Stop` 是唯一拦得住的点
+>
+> ⚠️ **那条线从台账学(2026-11-04 改)。** 原来写死 80%,而 2026-11-03 查出来:
+> 这台机器上 auto 压缩**实际发生在 30% 占用**,80% 那条线一次都没到过 ——
+> `拦过` 计数从头到尾是 0,三次压缩全在交接过期的状态下发生。
+> 根因是**百分比这个口径会漂**:同样 80%,在 20 万窗口上是 16 万(压缩前,
+> 闸有效),在 100 万窗口上是 80 万(压缩早发生了,闸没用)。
+> 现在拿 `compactions.log` 里记的真实占用学线,只看 `auto`(manual 由人决定,
+> 拿它学会把闸挪到荒谬低位),样本少于 2 次不学,学到的线不低于 15%。
 > (官方:`Stop` 的 exit 2 = 不让它停、继续对话),`PreCompact` 负责在压缩
 > **真发生**时记一笔当时交接新不新鲜 —— 没有这一笔,就不知道门禁有没有白干。
 >
