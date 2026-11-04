@@ -69,7 +69,15 @@ def 监测(project_id: str, me: 身份 = Depends(要权限("查看有权配置")
     """监测页:可用性 / 业务办成 / 性能 / 成本,外加按 应用 × 版本 的分组。所有卡片同一个筛选、同一个时间窗。"""
     if 范围 not in 范围们:
         raise _错(422, "VALIDATION", f"范围只收 {list(范围们)}", "默认「业务」;要看连接测试和 mock 跑的选「调试」", field_errors={"范围": f"只收 {list(范围们)}"})
-    参 = {"p": project_id, "d": 天}
+    with 连接() as c:
+        出 = 算(c, project_id, 范围=范围, 应用=应用, 环境=环境, 版本=版本, 入口=入口, 分钟=天 * 1440)
+    出["筛选"]["天"] = 天
+    return 出
+
+
+def 算(c, project_id, *, 范围="业务", 应用=None, 环境=None, 版本=None, 入口=None, 分钟=7 * 1440):
+    """监测的全部数 —— **监测页和告警(alerts_api)都调这一份**,不各算一遍。窗口 = 最近 分钟 分钟。"""
+    参 = {"p": project_id, "d": 分钟}
     条件 = []
     for 名, 值 in (("应用", 应用), ("环境", 环境), ("版本", 版本), ("入口", 入口)):
         if 值 is not None and 值 != "":
@@ -79,45 +87,44 @@ def 监测(project_id: str, me: 身份 = Depends(要权限("查看有权配置")
         条件.append("范围 = :范围")
         参["范围"] = 范围
     where = (" and " + " and ".join(条件)) if 条件 else ""
-    with 连接() as c:
-        行 = c.execute(text(f"""
-            with 跑 as (
-                select r.id, r.status, r.created_at, r.started_at, r.ended_at, r.trace_id, {_维度}
-                  from execution_runs r
-                 where r.project_id=:p and r.archived_at is null and r.kind in ('workflow', 'application')
-                   and r.created_at > now() - make_interval(days => :d))
-            select 跑.*,
-                   (select count(*) from bridge_calls b where b.project_id=:p and b.execution_run_id=跑.id) 写入数,
-                   (select count(*) from bridge_calls b where b.project_id=:p and b.execution_run_id=跑.id
-                       and b.status='已执行') 已执行数,
-                   (select coalesce(sum(u.amount) filter (where u.amount_known), 0) from usage_ledger u
-                     where u.project_id=:p and u.trace_id=跑.trace_id) 已知费用,
-                   (select count(*) filter (where not u.amount_known) from usage_ledger u
-                     where u.project_id=:p and u.trace_id=跑.trace_id) 算不出笔数,
-                   (select coalesce(sum(u.quantity) filter (where u.unit='token'), 0) from usage_ledger u
-                     where u.project_id=:p and u.trace_id=跑.trace_id) token
-              from 跑 where true {where}"""), 参).mappings().all()
-        分位 = c.execute(text(f"""
-            with 跑 as (
-                select r.status, r.created_at, r.started_at, r.ended_at, {_维度}
-                  from execution_runs r
-                 where r.project_id=:p and r.archived_at is null and r.kind in ('workflow', 'application')
-                   and r.created_at > now() - make_interval(days => :d))
-            select count(*) filter (where ended_at is not null and started_at is not null and status in {终态}) 端到端n,
-                   percentile_cont(0.5) within group (order by extract(epoch from ended_at - started_at))
-                       filter (where ended_at is not null and started_at is not null and status in {终态}) 端到端p50,
-                   percentile_cont(0.95) within group (order by extract(epoch from ended_at - started_at))
-                       filter (where ended_at is not null and started_at is not null and status in {终态}) 端到端p95,
-                   count(*) filter (where started_at is not null) 排队n,
-                   percentile_cont(0.5) within group (order by extract(epoch from started_at - created_at))
-                       filter (where started_at is not null) 排队p50,
-                   percentile_cont(0.95) within group (order by extract(epoch from started_at - created_at))
-                       filter (where started_at is not null) 排队p95
-              from 跑 where true {where}"""), 参).mappings().first()
-        选项 = c.execute(text(f"""
-            select distinct {_维度} from execution_runs r
+    行 = c.execute(text(f"""
+        with 跑 as (
+            select r.id, r.status, r.created_at, r.started_at, r.ended_at, r.trace_id, {_维度}
+              from execution_runs r
              where r.project_id=:p and r.archived_at is null and r.kind in ('workflow', 'application')
-               and r.created_at > now() - make_interval(days => :d)"""), {"p": project_id, "d": 天}).mappings().all()
+               and r.created_at > now() - make_interval(mins => :d))
+        select 跑.*,
+               (select count(*) from bridge_calls b where b.project_id=:p and b.execution_run_id=跑.id) 写入数,
+               (select count(*) from bridge_calls b where b.project_id=:p and b.execution_run_id=跑.id
+                   and b.status='已执行') 已执行数,
+               (select coalesce(sum(u.amount) filter (where u.amount_known), 0) from usage_ledger u
+                 where u.project_id=:p and u.trace_id=跑.trace_id) 已知费用,
+               (select count(*) filter (where not u.amount_known) from usage_ledger u
+                 where u.project_id=:p and u.trace_id=跑.trace_id) 算不出笔数,
+               (select coalesce(sum(u.quantity) filter (where u.unit='token'), 0) from usage_ledger u
+                 where u.project_id=:p and u.trace_id=跑.trace_id) token
+          from 跑 where true {where}"""), 参).mappings().all()
+    分位 = c.execute(text(f"""
+        with 跑 as (
+            select r.status, r.created_at, r.started_at, r.ended_at, {_维度}
+              from execution_runs r
+             where r.project_id=:p and r.archived_at is null and r.kind in ('workflow', 'application')
+               and r.created_at > now() - make_interval(mins => :d))
+        select count(*) filter (where ended_at is not null and started_at is not null and status in {终态}) 端到端n,
+               percentile_cont(0.5) within group (order by extract(epoch from ended_at - started_at))
+                   filter (where ended_at is not null and started_at is not null and status in {终态}) 端到端p50,
+               percentile_cont(0.95) within group (order by extract(epoch from ended_at - started_at))
+                   filter (where ended_at is not null and started_at is not null and status in {终态}) 端到端p95,
+               count(*) filter (where started_at is not null) 排队n,
+               percentile_cont(0.5) within group (order by extract(epoch from started_at - created_at))
+                   filter (where started_at is not null) 排队p50,
+               percentile_cont(0.95) within group (order by extract(epoch from started_at - created_at))
+                   filter (where started_at is not null) 排队p95
+          from 跑 where true {where}"""), 参).mappings().first()
+    选项 = c.execute(text(f"""
+        select distinct {_维度} from execution_runs r
+         where r.project_id=:p and r.archived_at is null and r.kind in ('workflow', 'application')
+           and r.created_at > now() - make_interval(mins => :d)"""), {"p": project_id, "d": 分钟}).mappings().all()
 
     类 = {}
     for x in 行:
@@ -164,7 +171,7 @@ def 监测(project_id: str, me: 身份 = Depends(要权限("查看有权配置")
     说.append(f"小样本线 {小样本线} 是产品默认值,业务还没确认过")
 
     return {
-        "筛选": {"范围": 范围, "应用": 应用, "环境": 环境, "版本": 版本, "入口": 入口, "天": 天},
+        "筛选": {"范围": 范围, "应用": 应用, "环境": 环境, "版本": 版本, "入口": 入口, "分钟": 分钟},
         "更新时刻": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         "可用性": {"接收": len(行), "终态": 终态数, "跑完": 跑完数, "失败": 类.get("失败", 0), "取消": 类.get("取消", 0),
                  "没做完": 类.get("没做完", 0), "进行中": 类.get("进行中", 0), "等人核对": 类.get("等人核对", 0),

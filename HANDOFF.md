@@ -118,7 +118,16 @@ import `credit` / `ownership` / `roster` / `touchpoint` 再调 `用副本()`,
 ② `tools/bite_replay_touched.py` 那个结构性死锁(两个滚动 jsonl 让工作区永远脏,
   于是 `--工作区脏也跑` 永远要加 = 那道闸退化成一句提示)。
 
-## 🚨 11-04 傍晚:DF-04 第二步「告警」—— **用户拍了判法,还没写代码**
+## 🚨 11-04 晚:DF-04 第二步「告警」—— **代码写完、建了表(迁移 916d4a565a1e 已在共享库)、e2e 23 条过,还没跑全量、没提交**
+
+- 新文件:`alert_rules.py`(纯函数 下一步 / 取指标;test_alert_rules 13 条)、`alerts_api.py`(规则 CRUD / 立即评估 / 暂停 / 待办 / 处理;
+  评估一条 / 扫告警)、`tests/e2e/test_alerts_flow.py`(在 project_demo_a 造数据;**留一条暂停的样例规则 ar_e2e_sample** 给 ifmatch 检查)
+- `monitoring_api.算()` 抽出来了,监测页和告警共用;窗口改成**分钟**(make_interval(mins))
+- worker 主循环 60 秒那段加了 `扫告警()` 挂钩(出错只打日志);重启过 aimc。**worker 日志在 /tmp/aimc-worker.log**(不是 /tmp/lanxiu-aimc.log)
+- 人工「已处理」会把规则连续次数清零(否则规则停在触发中、再越线也不开新单)
+- 后台「告警」页 + 页面冒烟登记了 '#/alerts';待办能跳监测页看那一窗
+- **还差**:e2e 补一条真走 `扫告警()` 的(并行会话提醒:端到端只走了「立即评估」接口,worker 那条路径没验;要带「至少扫到 1 条」下限)→ 全量验收 → 提交
+- 「样本不够那轮不算」= **跳过、不清零**(test_alert_rules ③ 精确断言:越线、样本不够、越线、越线 → 第 4 次开待办)
 
 - **用户拍(AskUserQuestion)**:**连续 N 次越线才报、连续 M 次正常才算恢复**;样本不够最小样本量的那一轮**不算**(既不报也不清零);
   去重周期内同一条规则不重复提醒;N / M / 最小样本 / 去重周期 / 阈值都在规则里配(产品配置,不写成行业标准)
@@ -14011,12 +14020,12 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 20:47。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-04 20:49。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | 736998b9 · 2026-11-04 · 交接记一笔:今天三次翻车是同一个形状,规矩补进全局技能了(⑨b) |
+| 分支 | `main` |
+| 最新提交 | 1c1d35d8 · 2026-11-04 · 交接记一笔:今天三次翻车是同一个形状,规矩补进全局技能了(⑨b) |
 | 代码量 | 959 个 Python 文件 / 181876 行(不含 .venv) |
 | 验收 | `./check.sh` 共 377 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
@@ -14024,16 +14033,33 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 **未提交的改动:**
 
 ```
-M agentsite/evals/funnel.jsonl
- M agentsite/evals/skill_usage.jsonl
-?? .feynman/bite-all-20261016.log
+M  ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
+M  .feynman/tool-eval.json
+M  HANDOFF.md
+M  agentsite/evals/funnel.jsonl
+M  agentsite/evals/skill_usage.jsonl
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/Makefile"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/apps/web/app.js"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/docs/\345\245\221\347\272\246.md"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/packages/contracts/api.ts"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/packages/contracts/openapi.json"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/endpoints.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/entities.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/contract/fieldtypes.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/main.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/models.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/monitoring_api.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/tools/ifmatch_reachable_check.py"
+M  "\347\256\241\347\220\206\345\220\216\345\217\260/workers/worker.py"
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-736998b9 交接记一笔:今天三次翻车是同一个形状,规矩补进全局技能了(⑨b)
+1c1d35d8 交接记一笔:今天三次翻车是同一个形状,规矩补进全局技能了(⑨b)
 ee0b3fbb 交接记下用户拍的告警判法(连续 N 次越线才报、连续 M 次正常才恢复、样本不够那轮不算)
 80484cbd 交接记下那个三方合并工具 —— 下一个人每次两边都往 bite_specs 追加时都会用到
 8a706130 只追加的 JSON 台账三方合并:一边删过就拒绝 —— 取并集会把故意删掉的条目复活

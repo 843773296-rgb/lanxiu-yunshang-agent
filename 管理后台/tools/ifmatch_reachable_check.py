@@ -100,6 +100,9 @@ P = f"{基址}/api/v1/projects/{项目}"
     # 轮换(11-04)和改小上限同一个 revision 来源
     "POST /access-keys/{id}/rotate": dict(
         取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),
+    # 告警规则暂停(11-04):revision 在规则列表里。样例由 test_alerts_flow 在演示项目 A 留的那一条提供
+    "POST /alert-rules/{id}/pause": dict(
+        取id=None, 读="/alert-rules", 字段="items[0].revision", 项目="project_demo_a"),
     "PATCH /access-keys/{id}": dict(
         取id=None, 读="/access-keys", 字段="密钥[0].revision", 项目="project_lanxiu"),
     "PATCH /chat-assistants/{id}/draft": dict(

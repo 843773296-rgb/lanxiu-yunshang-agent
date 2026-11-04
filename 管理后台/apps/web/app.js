@@ -116,6 +116,7 @@ const 导航 = [
   ["#/runs", "运行记录", true, true],
   ["#/opinions", "意见受理", true, true],
   ["#/monitoring", "监测", true, true],
+  ["#/alerts", "告警", true, true],
   ["#/traces", "调用链", true, true],
   ["#/outputs", "产出监督", true, true],
   ["#/health", "智能体健康", true, true],
@@ -667,6 +668,64 @@ async function 页_监测() {
   $("#main").querySelectorAll("[data-monscope]").forEach((b) => { b.onclick = () => { 监测筛.范围 = b.dataset.monscope; 页_监测(); }; });
   $("#main").querySelectorAll("[data-mondays]").forEach((b) => { b.onclick = () => { 监测筛.天 = +b.dataset.mondays; 页_监测(); }; });
   $("#main").querySelectorAll("[data-monf]").forEach((sel) => { sel.onchange = () => { 监测筛[sel.dataset.monf] = sel.value; 页_监测(); }; });
+}
+
+/* ── 告警(11-04;DF-04 第二步 / C16;用户拍:连续 N 次越线才报、连续 M 次正常才恢复、样本不够那轮不算)──────────
+ * 判定全在服务端(alert_rules.下一步)。建规则时**每一项都要填**:阈值和次数是产品配置,页面不替人填默认数。
+ * 站内待办能跳回监测页看开单那一窗(同一组筛选)。外部通知这一版不做,页面上也不摆那个开关。 */
+async function 页_告警() {
+  const 头 = `<div class="crumb">告警</div><div class="head"><div><h1>告警</h1>
+    <div class="sub">${md("**连续 N 次越线才报、连续 M 次正常才自动恢复**;样本不够最小样本量的那一轮不算。每 5 分钟评估一次,只开站内待办(外部通知这一版不做)。阈值和次数都是你们定的产品配置,不是行业标准。")}</div></div></div>`;
+  $("#main").innerHTML = 头 + `<div class="state">加载中…</div>`;
+  let 规, 单;
+  try { [规, 单] = await Promise.all([请求(`${P()}/alert-rules`), 请求(`${P()}/alert-incidents`)]); }
+  catch (e) { const s = 错误块(e, 页_告警); $("#main").innerHTML = 头 + s.html; s.挂(); return; }
+  const 单表 = !(单.items || []).length ? `<div class="note">现在没有告警待办。</div>`
+    : `<table><thead><tr><th>开单时间</th><th>规则</th><th>状态</th><th>开单那一窗</th><th></th></tr></thead><tbody>`
+      + 单.items.map((x) => { const 窗 = x["开单那一窗"] || {};
+        return `<tr><td class="k">${esc(String(x["开单时间"]).slice(5, 16).replace("T", " "))}</td><td>${esc(x["规则名"])}<div class="k">${esc(x["指标"])} ${esc(x["条件"])}</div></td>
+          <td>${x["状态"] === "触发中" ? '<span class="pill fail">触发中</span>' : `<span class="pill">${esc(x["状态"])}</span>`}${x["又提醒了几次"] ? `<div class="k">又提醒 ${esc(String(x["又提醒了几次"]))} 次</div>` : ""}</td>
+          <td>值 ${esc(String(窗["值"] ?? "—"))} · ${esc(String(窗["样本"] ?? 0))} 条 · 最近 ${esc(String(窗["窗口分钟"] || ""))} 分钟
+            <div><button data-alrdrill="${esc(x.id)}">去监测页看这一窗</button></div></td>
+          <td>${x["状态"] === "已处理" ? esc(x["处理说明"] || "") : `<input data-alrnote="${esc(x.id)}" placeholder="怎么处理的(必填)"> <button data-alrhandle="${esc(x.id)}">标已处理</button>`}</td></tr>`; }).join("") + `</tbody></table>`;
+  const 规表 = !(规.items || []).length ? `<div class="note">还没有告警规则。</div>`
+    : `<table><thead><tr><th>规则</th><th>条件</th><th>判法</th><th>现在</th><th></th></tr></thead><tbody>`
+      + 规.items.map((r) => `<tr><td>${esc(r["名字"])}<div class="k">${esc(JSON.stringify(r["筛选"] || {}))}</div></td>
+          <td>${esc(r["指标"])} ${esc(r["方向"])} ${esc(String(r["阈值"]))} · 最近 ${esc(String(r["窗口分钟"]))} 分钟 · 至少 ${esc(String(r["最小样本"]))} 条</td>
+          <td>连续 ${esc(String(r["连续越线才报"]))} 次才报 · 连续 ${esc(String(r["连续正常才恢复"]))} 次正常才恢复 · ${esc(String(r["去重分钟"]))} 分钟内不重复提醒</td>
+          <td>${r["暂停了吗"] ? "暂停中" : r["触发中"] ? '<span class="pill fail">触发中</span>' : "正常"}<div class="k">${esc((r["上次评估结果"] || {})["结论"] || "还没评估过")}</div></td>
+          <td><button data-alreval="${esc(r.id)}">立即评估</button> <button data-alrpause="${esc(r.id)}" data-rev="${esc(String(r.revision))}" data-to="${r["暂停了吗"] ? "0" : "1"}">${r["暂停了吗"] ? "恢复评估" : "暂停"}</button></td></tr>`).join("") + `</tbody></table>`;
+  const 指标们 = ["终态成功率", "写入办成率", "失败次数", "端到端P95秒", "每个办成任务成本", "算不出金额笔数"];
+  $("#main").innerHTML = 头 + `<h2>待办</h2>${单表}<h2>规则</h2>${规表}
+    <h3>建一条规则(每一项都要填)</h3>
+    <label class="f">名字</label><input id="alr-n" placeholder="比如:回电流程成功率掉了">
+    <label class="f">只看哪个应用(选填,不填 = 全部)</label><input id="alr-app" placeholder="应用 id,监测页里能看到">
+    <label class="f">指标</label><select id="alr-m">${指标们.map((m) => `<option>${esc(m)}</option>`).join("")}</select>
+    <label class="f">方向 / 阈值</label><select id="alr-d"><option>低于</option><option>高于</option></select> <input id="alr-th" placeholder="比如 90">
+    <label class="f">窗口(分钟,5–10080)/ 最小样本</label><input id="alr-w" placeholder="比如 60"> <input id="alr-ms" placeholder="比如 20">
+    <label class="f">连续几次越线才报 / 连续几次正常才恢复(1–20)</label><input id="alr-tc" placeholder="比如 3"> <input id="alr-rc" placeholder="比如 2">
+    <label class="f">去重周期(分钟,5–10080)</label><input id="alr-dm" placeholder="比如 60">
+    <div><button class="pri" id="alr-new">建规则</button> <span class="k" id="alr-why"></span></div>`;
+  $("#alr-new").onclick = async () => {
+    const v = (id) => ($("#" + id).value || "").trim();
+    const 体 = { 名字: v("alr-n"), 筛选: v("alr-app") ? { 范围: "业务", 应用: v("alr-app") } : { 范围: "业务" }, 指标: v("alr-m"), 方向: v("alr-d"),
+      阈值: v("alr-th"), 窗口分钟: v("alr-w"), 最小样本: v("alr-ms"), 连续越线才报: v("alr-tc"), 连续正常才恢复: v("alr-rc"), 去重分钟: v("alr-dm") };
+    try { await 请求(`${P()}/alert-rules`, { method: "POST", body: JSON.stringify(体) }); 页_告警(); }
+    catch (e) { $("#alr-why").textContent = "没建上:" + ((e.体 && (e.体.message + " " + Object.values(e.体.field_errors || {}).join(";"))) || e.message); }
+  };
+  $("#main").querySelectorAll("[data-alreval]").forEach((b) => { b.onclick = async () => {
+    try { const r = await 请求(`${P()}/alert-rules/${encodeURIComponent(b.dataset.alreval)}/evaluate`, { method: "POST", body: "{}" }); 提示(`评估了一次:${r["动作"]}`, esc(r["为什么"] || "")); 页_告警(); }
+    catch (e) { 报错(e); } }; });
+  $("#main").querySelectorAll("[data-alrpause]").forEach((b) => { b.onclick = async () => {
+    try { await 请求(`${P()}/alert-rules/${encodeURIComponent(b.dataset.alrpause)}/pause`, { method: "POST", headers: { "If-Match": b.dataset.rev }, body: JSON.stringify({ 暂停: b.dataset.to === "1" }) }); 页_告警(); }
+    catch (e) { 报错(e); } }; });
+  $("#main").querySelectorAll("[data-alrhandle]").forEach((b) => { b.onclick = async () => {
+    const 话 = (([...document.querySelectorAll("[data-alrnote]")].find((e) => e.dataset.alrnote === b.dataset.alrhandle) || {}).value || "").trim();
+    try { await 请求(`${P()}/alert-incidents/${encodeURIComponent(b.dataset.alrhandle)}/handle`, { method: "POST", body: JSON.stringify({ 说明: 话 }) }); 页_告警(); }
+    catch (e) { 报错(e); } }; });
+  $("#main").querySelectorAll("[data-alrdrill]").forEach((b) => { b.onclick = () => {
+    const x = (单.items || []).find((i) => i.id === b.dataset.alrdrill) || {}, 筛 = (x["开单那一窗"] || {})["筛选"] || {};
+    监测筛 = Object.assign({ 范围: "业务", 天: 1 }, 筛); location.hash = "#/monitoring"; }; });
 }
 
 /* ── 意见受理(11-04;意见收集 PRD §4.1 / §5.1;用户拍:总部运营统一受理、1 个工作日首次处理、跳周末和法定假日)──
@@ -7443,6 +7502,7 @@ async function 路由() {
     if (h === "#/runs") return await 页_运行记录();
     if (h === "#/opinions") return await 页_意见受理();
     if (h === "#/monitoring") return await 页_监测();
+    if (h === "#/alerts") return await 页_告警();
     if (h.startsWith("#/opinion/")) return await 页_意见详情(decodeURIComponent(h.slice(10)));
     if (h === "#/schedules") return await 页_定时();
     if (h.startsWith("#/workflow/")) return await 页_画布(decodeURIComponent(h.slice(11)));

@@ -260,6 +260,12 @@ export const ENDPOINTS = [
   { method: "POST", path: "/opinions", summary: "聊天站转来一条意见(有帮助 / 有问题,记提问人工号)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/opinions/mine", summary: "我的意见(提的人看自己的意见和进度)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/monitoring", summary: "监测:可用性 / 业务办成 / 性能 / 成本 + 按应用×版本分组", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/alert-rules", summary: "告警规则(带评估状态)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/alert-rules", summary: "建一条告警规则", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/alert-rules/{id}/evaluate", summary: "立即评估一次(和 worker 走同一个评估)", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/alert-rules/{id}/pause", summary: "暂停 / 恢复评估", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
+  { method: "GET", path: "/alert-incidents", summary: "告警待办(站内;触发中排前)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/alert-incidents/{id}/handle", summary: "把一条告警标成已处理(要写怎么处理的)", capability: "配置密钥与预算", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/opinions/{id}", summary: "一条意见 + 处理时间线 + 这一步能做的动作", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/opinions/{id}/actions", summary: "受理一步(开始核实 / 请求补充 / 答复 / 不采纳 / 重开)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "POST", path: "/opinions/{id}/promote", summary: "把意见提成待复核的评测样本(总部运营提)", capability: "受理意见", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
@@ -287,4 +293,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 199 条接口 · 24 条异步 · 32 条要幂等键 · 22 条要 If-Match */
+/** 共 205 条接口 · 24 条异步 · 32 条要幂等键 · 23 条要 If-Match */

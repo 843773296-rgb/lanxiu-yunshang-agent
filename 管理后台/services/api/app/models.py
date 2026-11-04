@@ -320,6 +320,19 @@ _额外唯一 = {
 _额外检查 = {
     # 访问密钥(11-03):绑工作流 / 绑聊天助手**二选一** —— 两个都填,一把密钥能调两样;都空,它什么都调不了却照样能发
     # 意见单(11-04,口径照意见收集 PRD §3.2 / §5.1):枚举只收这几个 —— 拼错的值会自成一档,受理台按状态筛时它哪一档都不算
+    # 告警(11-04):枚举只收这几个;次数 / 分钟有上下限 —— 一条「连续 0 次就报」的规则等于每轮都报
+    "alert_rules": [
+        ("ck_alert_rules_metric", "metric_code in ('终态成功率', '写入办成率', '失败次数', '端到端P95秒', '每个办成任务成本', '算不出金额笔数')"),
+        ("ck_alert_rules_direction", "direction_code in ('低于', '高于')"),
+        ("ck_alert_rules_window", "window_minutes between 5 and 10080"),
+        ("ck_alert_rules_min_sample", "min_sample_count >= 1"),
+        ("ck_alert_rules_counts", "trigger_count between 1 and 20 and recover_count between 1 and 20"),
+        ("ck_alert_rules_dedupe", "dedupe_minutes between 5 and 10080"),
+    ],
+    "alert_incidents": [
+        ("ck_alert_incidents_status", "status in ('触发中', '已恢复', '已处理')"),
+        ("ck_alert_incidents_handled", "status <> '已处理' or (handled_at is not null and note is not null)"),
+    ],
     "opinion_events": [
         ("ck_opinion_events_action", "action_code in ('开始核实', '请求补充', '关联问题', '答复', '不采纳', '重开', '提的人补充', '提为样本', '店长通过', '店长退回')"),
         # 不采纳 / 重开 / 请求补充 / 答复 一定要写为什么(给提的人看的那句话也在这里)

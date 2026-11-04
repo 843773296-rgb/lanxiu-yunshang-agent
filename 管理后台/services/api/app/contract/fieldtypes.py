@@ -244,6 +244,8 @@
     "seq": "BIGINT", "supersedes_score_id": "TEXT",
     # 意见处理时间线(11-04):前后两个状态 —— 套不上后缀约定,点名登记(不给 TEXT 兜底)
     "from_status": "TEXT", "to_status": "TEXT",
+    # 告警规则(11-04):阈值 / 窗口 / 去重周期 —— 套不上后缀约定,点名登记
+    "threshold_value": "NUMERIC(20,6)", "window_minutes": "INTEGER", "dedupe_minutes": "INTEGER",
     "param_update_method": "TEXT", "base_model": "TEXT", "pipeline_type": "TEXT",
     "source_info": "JSONB", "effective_at": "TIMESTAMPTZ",
     "candidate_ref": "JSONB", "baseline_ref": "JSONB", "target_ref": "JSONB",
@@ -352,6 +354,10 @@
     # 意见单(11-04):来路 / 好不好 / 谁提的 / 走到哪 —— 少一样受理人就没法处理(chat_trace_ref 可空:独立建议不挂任何一轮)
     "opinions": {"source", "verdict", "asker_staff_code", "status"},
     "opinion_events": {"opinion_id", "action_code", "to_status"},
+    # 告警(11-04):少一样规则就判不了 / 待办就说不清是哪条规则、什么状态
+    "alert_rules": {"name", "filter_snapshot", "metric_code", "direction_code", "threshold_value", "window_minutes",
+                    "min_sample_count", "trigger_count", "recover_count", "dedupe_minutes", "owner", "breach_count", "normal_count"},
+    "alert_incidents": {"alert_rule_id", "status", "eval_snapshot"},
     # 聊天助手版本:开头 / 工具 / 模型 / 从哪来 / 哈希 —— 少一样就说不清「模型收到的是什么」
     "chat_assistant_versions": {"chat_assistant_id", "version_no", "head_template", "tools",
                                 "model_name", "source_kind", "content_hash"},

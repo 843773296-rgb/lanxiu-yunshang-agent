@@ -1671,6 +1671,12 @@ def main():
             上次定时 = time.monotonic()
             for x in 扫定时():
                 print("  定时:" + x)
+            try:
+                import alerts_api as _ALR   # 告警(11-04):每 60 秒扫一次,规则自己 5 分钟评一次;出错只打日志,不拖垮 worker
+                for x in _ALR.扫告警():
+                    print("  告警:" + x)
+            except Exception as e:
+                print(f"  ⚠️ 告警扫描出错({type(e).__name__}: {e})—— 下一轮再扫")
         with 事务() as c:
             发, 卡 = OB.发布一批(c)
         with 事务() as c:
