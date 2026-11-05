@@ -14861,5 +14861,29 @@
    }
   ],
   "预期红": "⑩ 跑通过了、但用到的模型连接事后被停用 → 生产拦,点名是哪条连接"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_cross_project_read.py",
+  "改坏": "工作流列表的 SQL 漏了 project_id 条件(「反正前面验过成员身份了」)—— B 项目的人在列表里看到 A 项目的工作流,接口照样回 200",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/workflows_api.py",
+    "old": "             where w.project_id=:p and w.archived_at is null\n",
+    "new": "             where w.archived_at is null\n"
+   }
+  ],
+  "预期红": "**列表:B 项目的列表里一个只属于 A 的 id 都没有**"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_cross_project_read.py",
+  "改坏": "运行详情按 id 取数时漏了 project_id(「id 是全局唯一的」)—— 拿 A 项目的运行号走 B 项目的路径就能看到那次运行",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/workflows_api.py",
+    "old": "        r = c.execute(text(\"select * from execution_runs where project_id=:p and id=:i\"),\n",
+    "new": "        r = c.execute(text(\"select * from execution_runs where id=:i and cast(:p as text) is not null\"),\n"
+   }
+  ],
+  "预期红": "**详情:拿 A 的 id 走 B 的路径,一条都拿不到**"
  }
 ]

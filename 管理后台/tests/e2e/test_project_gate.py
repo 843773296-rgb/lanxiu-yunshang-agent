@@ -85,6 +85,21 @@ def main():
         c.close()
     ck("⑥ 试完钥匙照旧是 false、一个临时项目都没留下(每一刀都回滚了)", 还是关的 is False and 留下 == 0, (还是关的, 留下))
 
+    # ⑦ 钥匙读的是判据,不是谁的一句话(并行会话 11-05 提的三条):钥匙是 true 的时候,下面三样必须都在 ——
+    #    攻击判据文件在 / 它挂在门禁里 / 它在 bite_specs 里有咬合(「存在且挂着」≠「真会红」,咬合才是会红的凭据)
+    import json as _json
+    仓 = os.path.dirname(_根)
+    攻击 = "tests/e2e/test_cross_project_read.py"
+    在 = os.path.exists(os.path.join(_根, 攻击))
+    挂门禁 = os.path.basename(攻击) in open(os.path.join(_根, "Makefile"), encoding="utf-8").read()
+    咬合 = sum(1 for x in _json.load(open(os.path.join(仓, "tools", "bite_specs.json"), encoding="utf-8"))
+             if x.get("script") == "管理后台/" + 攻击)
+    if 还是关的 is False:
+        print(f"  ℹ️ 钥匙关着(跨项目读隔离已结构化() = false)—— 开门那三样现在:攻击判据{'在' if 在 else '不在'} / "
+              f"{'挂在' if 挂门禁 else '没挂'}门禁里 / 咬合 {咬合} 条。**这一条现在没在拦东西**,钥匙翻成 true 那天才拦")
+    ck("⑦ 钥匙是 true 时:跨项目读取攻击判据在、挂在门禁里、至少 2 条咬合(列表一条 + 详情一条)",
+       还是关的 is False or (在 and 挂门禁 and 咬合 >= 2), (在, 挂门禁, 咬合))
+
     print()
     if 挂:
         print(f"❌ {len(挂)} 条不过:{' / '.join(挂)}")
