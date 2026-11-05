@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""第二个正式项目的门(2026-11-05;用户 11-04 拍「上第二个正式项目之前必须补好跨项目读取隔离」)。
+
+迁移 9a6c1d3e7f42 声称这道门靠**结构**(库里的触发器)。一条从没被攻击过的结构性保证仍然只是约定 ——
+所以这里**真去建一次**,每一刀都在一条回滚的事务里,库里什么都不留。
+
+  ① 库里现在恰好一个没归档的正式项目(样本量:门要拦的前提)
+  ② 再建一个正式项目 → 库拒,报错写明为什么、该做什么
+  ③ 不标是哪种项目 → 库拒(必填、没有默认值 —— 不然新的正式项目会以「没标」的样子溜进来)
+  ④ 把演示项目改成正式 → 库拒(不只拦插入)
+  ⑤ 测试 / 演示项目 → 照建(e2e 要临时项目)
+  ⑥ 钥匙:把「跨项目读隔离已结构化()」改成 true(补好隔离那个迁移会这么做)→ 第二个正式项目就建得了
+"""
+import os
+import sys
+import uuid
+
+_根 = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(_根, "services", "api", "app"))
+from sqlalchemy import text  # noqa: E402
+from db import 引擎 as _引擎  # noqa: E402
+
+过, 挂 = [], []
+
+
+def ck(名, 真, 补=""):
+    print(f"  {'✅' if 真 else '❌'} {名}{('  ' + str(补)[:300]) if 补 and not 真 else ''}")
+    (过 if 真 else 挂).append(名)
+
+
+def 试(sql, 参=None, 先=None):
+    """在一条一定回滚的事务里执行 → ("成", None) / ("拒", 报错)。先 = 同一条事务里先跑的 SQL(比如换钥匙)。"""
+    c = _引擎().connect()
+    tx = c.begin()
+    try:
+        for x in (先 or []):
+            c.execute(text(x))
+        c.execute(text(sql), 参 or {})
+        return "成", None
+    except Exception as e:
+        return "拒", str(e).split("\n")[0]
+    finally:
+        tx.rollback()
+        c.close()
+
+
+def main():
+    c = _引擎().connect()
+    try:
+        org = c.execute(text("select organization_id from projects where id='project_lanxiu'")).scalar() \
+            or c.execute(text("select id from organizations limit 1")).scalar()
+        正式们 = c.execute(text("select id from projects where kind_code='正式' and archived_at is null")).scalars().all()
+    finally:
+        c.close()
+    ck(f"① 库里恰好一个没归档的正式项目(门要拦的前提;现有:{正式们})", len(正式们) == 1, 正式们)
+
+    新 = lambda: f"e2e_gate_{uuid.uuid4().hex[:8]}"   # noqa: E731
+    建 = "insert into projects (id, organization_id, name, status, kind_code, created_at) values (:i, :o, 'e2e 门', 'active', :k, now())"
+
+    结果, 错 = 试(建, {"i": 新(), "o": org, "k": "正式"})
+    ck("② 再建一个正式项目 → 库拒,报错写明「跨项目读取隔离」和怎么开门",
+       结果 == "拒" and "第二个正式项目" in (错 or "") and "隔离" in (错 or ""), (结果, 错))
+
+    结果, 错 = 试("insert into projects (id, organization_id, name, status, created_at) values (:i, :o, 'e2e 门', 'active', now())",
+                {"i": 新(), "o": org})
+    ck("③ 不标是哪种项目 → 库拒(kind_code 必填、没有默认值)", 结果 == "拒" and "kind_code" in (错 or ""), (结果, 错))
+
+    结果, 错 = 试("update projects set kind_code='正式' where id='project_demo_a'")
+    ck("④ 把演示项目改成正式 → 库拒(门不只拦插入)", 结果 == "拒" and "第二个正式项目" in (错 or ""), (结果, 错))
+
+    a, _ = 试(建, {"i": 新(), "o": org, "k": "测试"})
+    b, _ = 试(建, {"i": 新(), "o": org, "k": "演示"})
+    ck("⑤ 测试 / 演示项目照建(e2e 要临时项目)", (a, b) == ("成", "成"), (a, b))
+
+    结果, 错 = 试(建, {"i": 新(), "o": org, "k": "正式"},
+                 先=["create or replace function 跨项目读隔离已结构化() returns boolean language sql immutable as $$ select true $$"])
+    ck("⑥ 钥匙换成 true(补好隔离那个迁移会这么做)→ 第二个正式项目建得了(门不是一律拒)", 结果 == "成", (结果, 错))
+
+    c = _引擎().connect()
+    try:
+        还是关的 = c.execute(text("select 跨项目读隔离已结构化()")).scalar()
+        留下 = c.execute(text("select count(*) from projects where id like 'e2e_gate_%'")).scalar()
+    finally:
+        c.close()
+    ck("⑥ 试完钥匙照旧是 false、一个临时项目都没留下(每一刀都回滚了)", 还是关的 is False and 留下 == 0, (还是关的, 留下))
+
+    print()
+    if 挂:
+        print(f"❌ {len(挂)} 条不过:{' / '.join(挂)}")
+        return 1
+    print(f"✅ 第二个正式项目的门:{len(过)} 条全过")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

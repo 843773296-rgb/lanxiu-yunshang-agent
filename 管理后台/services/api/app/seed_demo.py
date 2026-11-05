@@ -104,8 +104,8 @@ def 跑():
         for p, n in ((A, "演示项目 A"), (B, "演示项目 B(用来验跨项目隔离)")):
             c.execute(text("""
                 insert into projects (id, organization_id, name, owner, status,
-                    timezone, created_at, created_by, updated_at, revision)
-                values (:i,:o,:n,'U001','active','Asia/Shanghai', now(),'seed', now(),1)
+                    timezone, kind_code, created_at, created_by, updated_at, revision)
+                values (:i,:o,:n,'U001','active','Asia/Shanghai','演示', now(),'seed', now(),1)
                 on conflict (id) do nothing"""), {"i": p, "o": ORG, "n": n})
         for u, p, role, g in 人:
             # 幂等:唯一约束是 (organization_id, project_id, user_id)

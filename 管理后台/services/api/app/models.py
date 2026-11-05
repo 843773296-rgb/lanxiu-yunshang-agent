@@ -331,6 +331,10 @@ _额外检查 = {
         ("ck_alert_rules_counts", "trigger_count between 1 and 20 and recover_count between 1 and 20"),
         ("ck_alert_rules_dedupe", "dedupe_minutes between 5 and 10080"),
     ],
+    # 第二个正式项目的门(11-05)
+    "projects": [
+        ("ck_projects_kind", "kind_code in ('正式', '演示', '测试')"),
+    ],
     # 评测派发(11-05):老评测 / 老逐题回填「外部登记」,两列从此不许空(并行会话提醒:可空的话「老数据」和「漏写」是同一个 NULL)
     "evaluations": [
         ("ck_evaluations_executor", "executor_code in ('外部登记', '后台派发')"),

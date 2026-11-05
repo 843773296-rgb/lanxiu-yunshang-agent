@@ -105,8 +105,8 @@ try:
     c.execute(text("insert into organizations (id, name, status, created_at)"
                    " values (:i,'测试组织','active', now())"), {"i": org})
     for p, n in ((pa, "A 项目"), (pb, "B 项目")):
-        c.execute(text("insert into projects (id, organization_id, name, status, created_at)"
-                       " values (:i,:o,:n,'active', now())"), {"i": p, "o": org, "n": n})
+        c.execute(text("insert into projects (id, organization_id, name, status, kind_code, created_at)"
+                       " values (:i,:o,:n,'active','测试', now())"), {"i": p, "o": org, "n": n})
 
     def 摆一套(proj, 后缀):
         """在某个项目里摆出 知识库→文档→版本→片段→构建 一条链。"""

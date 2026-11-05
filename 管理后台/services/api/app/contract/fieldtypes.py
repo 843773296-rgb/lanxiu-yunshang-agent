@@ -362,6 +362,8 @@
     "alert_incidents": {"alert_rule_id", "status", "eval_snapshot"},
     # 评测派发(11-05):少一样就说不清这次派的是哪道题、哪一边、第几轮、跑的哪一版、回执是哪次运行
     "evaluations": {"executor_code"},
+    # 第二个正式项目的门(11-05):不标是哪一种项目,一个新的正式项目会以「没标」的样子溜过那道门
+    "projects": {"kind_code"},
     "evaluation_items": {"variant_code", "round_no"},
     "evaluation_runs": {"evaluation_id", "sample_id", "variant_code", "round_no", "workflow_version_id",
                         "execution_run_id", "job_id"},

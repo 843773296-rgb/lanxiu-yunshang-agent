@@ -217,9 +217,9 @@ def main():
                       {"i": 项目id}).first()
         if not 有:
             c.execute(_t("""insert into projects
-                (id, organization_id, name, owner, status, timezone,
+                (id, organization_id, name, owner, status, timezone, kind_code,
                  created_at, created_by, updated_at, revision)
-                values (:i,:o,:n,'seed','active','Asia/Shanghai',
+                values (:i,:o,:n,'seed','active','Asia/Shanghai','正式',
                         now(),'import', now(), 1)"""),
                       {"i": 项目id, "o": org, "n": 项目名})
             建了项目 = True
