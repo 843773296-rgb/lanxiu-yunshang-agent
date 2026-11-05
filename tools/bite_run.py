@@ -225,6 +225,22 @@ def 建副本(dst, 上限=None):
         if not os.path.exists(link): os.symlink(os.path.join(ROOT, rel), link)
     _拷实外指的软链(dst, 软链)
 
+    # ── 借主检出的 `管理后台/.venv`,**软链回副本里它原来的位置** ──────────────
+    #
+    # ⚠️ 2026-11-06 的第二跳。第一跳是「外层用哪个解释器跑这个脚本」(见 `管理后台解释器`),
+    # 修完 19 条里 15 条过了;而 `管理后台/tests/e2e/test_orchestration_flow.py` 照旧红,
+    # 因为**它自己也要起 `根/管理后台/.venv/bin/python`** 去跑 worker ——
+    # 只把绝对路径递给执行器,够不到被测脚本内部那一句。
+    # > 「这台机器上有那份 venv」和「副本里那个路径存在」是两件事,
+    # > 而只修了前者的时候,报出来还是「对照就是红的」。
+    # 只读:副本里的测试只执行它里面的解释器,不往里装东西(和 `该软链的()` 对这份 venv 的判断同源)。
+    借py = 管理后台解释器()
+    if 借py and not 借py.startswith(os.path.realpath(ROOT) + os.sep) \
+             and not 借py.startswith(ROOT + os.sep):
+        目的 = os.path.join(dst, "管理后台", ".venv")
+        if not os.path.exists(目的) and os.path.isdir(os.path.join(dst, "管理后台")):
+            os.symlink(os.path.dirname(os.path.dirname(借py)), 目的)
+
     库 = os.path.join(dst, "backend", "lanxiu.db")
     if not os.path.exists(库):
         raise SystemExit("❌ 副本里没有 backend/lanxiu.db —— 拷贝漏了库,跑出来的全是环境问题")
@@ -267,6 +283,41 @@ def 建副本(dst, 上限=None):
     return dst
 
 
+def 管理后台解释器(根=None):
+    """跑 `管理后台/` 那些端到端测试要用的解释器。**找不到就返回 None,不退回系统 python。**
+
+    ⚠️ **2026-11-06 第一次整轮咬合重放,1258 条里 23 条没过,而其中 19 条跟判据一点关系都没有。**
+    那 19 条全是 `管理后台/tests/` 下的,报的是「对照就是红的」;把对照的原始输出打出来,
+    红的是一行 `ModuleNotFoundError: No module named 'sqlalchemy'` ——
+    `管理后台/.venv` 只装在**主检出**,子 worktree 里没有,而这里原来
+    `os.path.exists` 为假就退回 `sys.executable`。
+
+    > 「用对的解释器验过一遍」和「这台检出没有那个 venv、于是崩在 import 上」,
+    > **在「对照就是红的」那一行上长得一模一样** —— 而后者会把人指向判据。
+
+    这是这个项目那条「别让兜底把『我不知道』变成一句听起来很肯定的话」的又一次:
+    11-04 加那一支时注释已经写明「拿系统 python 跑,红的是 ImportError,
+    和『改坏了之后它红没红』混在一起分不开」,**漏的是兜底那一半**。
+
+    三步,顺序固定:
+      ① 本检出自己的 `管理后台/.venv`
+      ② 借**共享真库所在那个检出**的那一份(`锁目录()` 已经是这么认「主检出」的,不另立一套)。
+         只读 —— 只执行里面的解释器,不往它装东西(和 `该软链的()` 里对这份 venv 的判断同源)
+      ③ 两个都没有 → **None**,由调用方单独报一类「这台检出验不了」:
+         不混进「对照就是红的」,也不报成通过
+    """
+    根 = 根 or ROOT
+    近 = os.path.join(根, "管理后台", ".venv", "bin", "python")
+    if os.path.exists(近):
+        return 近
+    # 真库是条绝对路径软链,指向主检出 —— 顺着它找那个检出(`锁目录()` 同一套认法)
+    主 = os.path.dirname(os.path.dirname(os.path.realpath(
+        os.path.join(根, "backend", "lanxiu.db"))))
+    借 = os.path.join(主, "管理后台", ".venv", "bin", "python")
+    # `借 != 近` 挡住「库不是软链(就在主检出里跑)」那种情况下的空转
+    return 借 if 借 != 近 and os.path.exists(借) else None
+
+
 def 门禁怎么跑(script):
     """从 check.sh 里取这个脚本的原样命令。
 
@@ -287,13 +338,35 @@ def 门禁怎么跑(script):
         if parts: return parts
     # 不在 check.sh 里的管理后台脚本(端到端测试之类):用管理后台自己的 venv 跑 —— 它的依赖(sqlalchemy / alembic)
     # 只装在那里;拿系统 python 跑,红的是 ImportError,和「改坏了之后它红没红」混在一起分不开(11-04 加)
-    if script.startswith("管理后台/") and os.path.exists(os.path.join(ROOT, "管理后台", ".venv", "bin", "python")):
-        return [os.path.join("管理后台", ".venv", "bin", "python"), script]
+    #
+    # ⚠️ **找不到解释器就返回 None,绝不退回系统 python** —— 退回的正是上面这句话要避免的姿势。
+    #    (2026-11-06 第一次整轮重放逮到:19 条全报「对照就是红的」。详见 `管理后台解释器`。)
+    if script.startswith("管理后台/"):
+        py = 管理后台解释器()
+        return [py, script] if py else None
     return [sys.executable, script]
+
+
+def 跑不了的理由(script):
+    """这条规格在**这台检出**上压根跑不了的理由;跑得了就返回 None。
+
+    ⚠️ 这是项目里那条「『没东西可验』必须和『验过了』分开」的第三面:
+    「没被验」既不等于「验过了」,也不等于「判据死了」—— **三件事,三种下一步动作**
+    (去装依赖 / 什么都不用做 / 去修判据)。把它们报成同一句话,人就会修错东西。
+    2026-11-06 整轮重放里 19 条就是这么被报成「对照就是红的」的。
+    """
+    if script.startswith("管理后台/") and 门禁怎么跑(script) is None:
+        return ("这台检出没有 `管理后台/.venv`,主检出也借不到 —— 它的依赖(sqlalchemy / alembic)"
+                "只装在那里。**这条咬合没被验:不是通过,也不是判据坏了**")
+    return None
 
 
 def 跑(sand, script):
     cmd = 门禁怎么跑(script)
+    if cmd is None:
+        # 走到这里说明调用方漏了「这台检出验不了」那一支 —— **崩在这里比拿系统 python 糊过去好**
+        raise SystemExit(f"❌ {script} 没有可用的解释器(缺 管理后台/.venv)—— "
+                         f"调用方必须先用 跑不了的理由() 挑出来,别退回系统 python")
     p = subprocess.run(cmd, cwd=sand, capture_output=True, text=True, timeout=600)
     return p.returncode, p.stdout + p.stderr
 
@@ -734,6 +807,70 @@ def 自测():
         睡.terminate()
         try: 睡.wait(timeout=5)
         except Exception: pass
+    # ── ⑧ 管理后台的解释器:找不到要**拒跑**,不许退回系统 python(2026-11-06 加)──
+    #
+    # 逼出这条判据的那次翻车:**第一次整轮重放**,19 条 `管理后台/tests/` 的咬合全报
+    # 「对照就是红的」,而真相是这份检出没有 `管理后台/.venv`,`os.path.exists` 为假
+    # 就退回了系统 python,红在 `ModuleNotFoundError: No module named 'sqlalchemy'` 上。
+    # **试纸拿那次的形状去喂**:一个没有 venv 的子检出 + 一条库软链指向有 venv 的主检出。
+    # (项目里那条:拿「逼出这条判据的那次翻车」当试纸 —— 扫不到它就是判据的视野漏了。)
+    基8 = tempfile.mkdtemp(prefix="bite-自测8-")
+    try:
+        def _做根(名, 带venv, 库指向=None):
+            r = os.path.join(基8, 名)
+            os.makedirs(os.path.join(r, "backend"), exist_ok=True)
+            open(os.path.join(r, "check.sh"), "w").close()   # `门禁怎么跑` 要读它
+            if 带venv:
+                os.makedirs(os.path.join(r, "管理后台", ".venv", "bin"), exist_ok=True)
+                open(os.path.join(r, "管理后台", ".venv", "bin", "python"), "w").close()
+            if 库指向:
+                os.symlink(库指向, os.path.join(r, "backend", "lanxiu.db"))
+            else:
+                open(os.path.join(r, "backend", "lanxiu.db"), "w").close()
+            return r
+
+        主8 = _做根("主检出", True)
+        子8 = _做根("子检出", False, os.path.join(主8, "backend", "lanxiu.db"))
+        孤8 = _做根("孤检出", False)
+        借到的 = os.path.join(主8, "管理后台", ".venv", "bin", "python")
+        # ⚠️ 比的是 `realpath`:macOS 的临时目录 `/var/folders/...` 本身是条软链
+        # (解成 `/private/var/...`),而这个函数顺着库软链找主检出时会解开它 ——
+        # 拿字面串比会**一处都对不上**。项目里早有这一刀(「去掉切库前对真库路径的
+        # realpath」那条咬合),这次是在自测的夹具这一头又撞到同一件事。
+        def _同一个(a, b):
+            return bool(a) and bool(b) and os.path.realpath(a) == os.path.realpath(b)
+        试纸8 = [
+            ("本检出有 venv → 用自己那一份", _同一个(管理后台解释器(主8), 借到的)),
+            ("**反向** · 本检出没有、而库软链指向的那个检出有 → **借它那一份**"
+             "(11-06 夜 19 条就栽在这里:原来直接退回系统 python,红在 ImportError 上,"
+             "而那和「检查看不见这处破坏」长得一模一样)",
+             _同一个(管理后台解释器(子8), 借到的)),
+            ("两边都没有 → **None**,绝不退回系统 python", 管理后台解释器(孤8) is None),
+        ]
+        for 名, 真 in 试纸8:
+            if not 真:
+                print(f"  ❌ 管理后台解释器:{名}"); 坏 += 1
+        if all(真 for _, 真 in 试纸8):
+            print(f"  ✅ 管理后台解释器 {len(试纸8)} 条都对(含一条反向:子检出借主检出那一份)")
+
+        # 接线:拒跑这件事要真的走到调用方 —— **光有纯函数不算**(项目里那条「破坏点在接线上」)
+        旧根 = globals()["ROOT"]
+        try:
+            globals()["ROOT"] = 孤8
+            脚 = os.path.join("管理后台", "tests", "e2e", "test_cross_project_read.py")
+            if 门禁怎么跑(脚) is not None:
+                print("  ❌ 缺 venv 时 `门禁怎么跑` 还是给出了命令 —— 它会拿系统 python 去跑,"
+                      "红的是 ImportError"); 坏 += 1
+            elif not 跑不了的理由(脚):
+                print("  ❌ `跑不了的理由` 没把它挑出来 —— 主循环会照旧跑对照,"
+                      "报成「对照就是红的」,把人指向判据"); 坏 += 1
+            else:
+                print("  ✅ 接线:缺 venv 时 `门禁怎么跑` 返回 None、`跑不了的理由` 给得出话 —— "
+                      "主循环报「这台检出验不了」,不报「对照就是红的」")
+        finally:
+            globals()["ROOT"] = 旧根
+    finally:
+        shutil.rmtree(基8, ignore_errors=True)
     if 坏:
         print(f"❌ 副本自测 {坏} 条没过")
         return 1
@@ -819,6 +956,7 @@ def main():
 
     对照 = {}
     红 = []
+    验不了 = []          # 「这台检出跑不了」—— 和「判据死了」分开记
     for i, s in enumerate(specs, 1):
         script, expect = s["script"], s["预期红"]
         work = os.path.join(base, "work")
@@ -862,6 +1000,13 @@ def main():
                 print(f"  ❌ [{i}/{len(specs)}] {script}  前置步骤没跑成:{挂}")
                 print(f"       —— **这不是判据的错**,是这条咬合需要的库状态没建起来")
                 红.append(s); continue
+
+        # ①·5 **这台检出压根跑不了的,单独报一类。**
+        #     不混进「对照就是红的」—— 后者会把人指向判据,而这里要做的是去装依赖。
+        不行 = 跑不了的理由(script)
+        if 不行:
+            print(f"  ⛔ [{i}/{len(specs)}] {script}  **这台检出验不了** —— {不行}")
+            验不了.append(s); continue
 
         # ② 对照要绿
         键 = (script, 前置)
@@ -916,8 +1061,21 @@ def main():
 
     print("=" * 96)
     shutil.rmtree(base, ignore_errors=True)
+    if 验不了:
+        脚本们 = sorted({s["script"] for s in 验不了})
+        print(f"⛔ {len(验不了)}/{len(specs)} 条**在这台检出上验不了**(涉及 {len(脚本们)} 个脚本)"
+              f" —— 没被验,**不是通过**,也不是判据坏了")
+        for n in 脚本们[:6]:
+            print(f"     · {n}")
+        if len(脚本们) > 6:
+            print(f"     · ……还有 {len(脚本们) - 6} 个(共 {len(脚本们)})")
     if 红:
         print(f"❌ {len(红)}/{len(specs)} 条咬合规格没过 —— **这些检查没被证明过**")
+        return 1
+    if 验不了:
+        # 退非零:**别把「没验」读成「全过」**。没有一条判据在这一轮里被证伪,
+        # 而上面那几条也没有被证明过 —— 这两件事都要留在退出码上。
+        print(f"✅ 跑得了的 {len(specs) - len(验不了)} 条全过;⛔ 上面那 {len(验不了)} 条没被验 —— **退非零**")
         return 1
     print(f"✅ {len(specs)} 条咬合规格全过(每条都验了:对照绿 → 改坏 → 红的是那一条)")
     return 0

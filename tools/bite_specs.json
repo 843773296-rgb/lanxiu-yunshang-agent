@@ -9635,9 +9635,9 @@
  },
  {
   "script": "agent/triage_sets_check.py",
-  "改坏": "让 mcp/protocol.指到副本() 什么都不改(于是取材料的子进程读的是真库,不是快照)。⚠️ 这条**必须带前置**:快照是从真库冻的,内容一致时读哪个都取得出材料,这条攻击会**静默变绿**(2026-10-20 夜做过对照实验,不带前置确实没红)",
+  "改坏": "让 mcp/protocol.指到副本() 什么都不改(于是取材料的子进程读的是真库,不是快照)。⚠️ 这条**必须带前置**:快照是从真库冻的,内容一致时读哪个都取得出材料,这条攻击会**静默变绿**(2026-10-20 夜做过对照实验,不带前置确实没红)  ⚠️ **2026-11-06 第一次整轮重放时这条的前置挂了**:它写死「删题集第一道题的那个包裹」并断言删到 1 行,而库重建过、pkg 的 id 重新生成了 —— 三套题 166 道里只有 2 道的包裹号还在现在的库里。题集靠的是自带快照(`triage-sets-snapshot.db.gz`),所以评测照旧跑得起来,**而前置读的是真库**。现在改成:从三套里挑第一个真库里还在的包裹来删;一个都不在就明说「两个世界本来就不一样,不靠前置也砍得到」—— 那是**事实陈述,不是通过**",
   "前置": [
-   "python3 -c \"import json,sqlite3; j=json.load(open('agent/triage-sets.json',encoding='utf-8')); pkg=j['套']['测试集'][0]['包裹']; c=sqlite3.connect('backend/lanxiu.db'); n=c.execute('DELETE FROM pkg WHERE pkg_id=?',(pkg,)).rowcount; c.commit(); c.close(); assert n==1, '前置没删到那一行 —— 这条咬合会变成空转'; print('前置:在副本的真库里删掉了', pkg, '(快照里它还在)')\""
+   "python3 -c \"\nimport json, sqlite3\nj = json.load(open('agent/triage-sets.json', encoding='utf-8'))\n号 = [t['包裹'] for 套 in j['套'].values() for t in 套]\nc = sqlite3.connect('backend/lanxiu.db')\n在 = [p for p in 号 if c.execute('SELECT 1 FROM pkg WHERE pkg_id=?', (p,)).fetchone()]\nif 在:\n    n = c.execute('DELETE FROM pkg WHERE pkg_id=?', (在[0],)).rowcount\n    c.commit()\n    assert n == 1, '前置没删到那一行 —— 这条咬合会变成空转'\n    print('前置:在副本的真库里删掉了', 在[0], '(快照里它还在)')\nelse:\n    print('前置:题集的包裹号在真库里一个都不在了(库重建过,id 重新生成)——')\n    print('     两个世界本来就不一样,这条咬合不靠前置也砍得到;**不是前置坏了**')\nc.close()\n\""
   ],
   "file": [
    {
@@ -14011,36 +14011,41 @@
  },
  {
   "script": "tools/skill_gate_status_check.py",
-  "改坏": "把「真挂上了」那一列整个去掉 —— 于是管理后台只能看到「在目录里」,而 10-27 那个 bug 正是目录 13 个、挂上去 10 个",
+  "改坏": "把「真挂上了」这一列**改个名**(连小结里引它的那一处一起改)—— 管理后台是按列名取的,改名就等于那一列没了,而 10-27 那个 bug 正是目录 13 个、挂上去 10 个。⚠️ 原来这条是「整个去掉」,而那样小结里 `x[\"真挂上了\"]` 当场 KeyError、只读口崩掉,红的是「只读口跑得起来」和「输出不是 JSON」—— **红了,但红的不是指定那一条**(2026-11-06 第一次整轮重放逮到)",
   "file": [
    {
     "path": "tools/skill_gate_status.py",
-    "old": "                           \"放行吗\": 放, \"状态\": 状, \"真挂上了\": n in 挂了,",
-    "new": "                           \"放行吗\": 放, \"状态\": 状,"
+    "old": "                           \"放行吗\": 放, \"状态\": 状, \"真挂上了\": n in 挂了,\n",
+    "new": "                           \"放行吗\": 放, \"状态\": 状, \"挂上了吗\": n in 挂了,\n"
+   },
+   {
+    "path": "tools/skill_gate_status.py",
+    "old": "                  \"在目录里却没挂上\": [x[\"技能\"] for x in 出[\"技能\"] if not x[\"真挂上了\"]],\n",
+    "new": "                  \"在目录里却没挂上\": [x[\"技能\"] for x in 出[\"技能\"] if not x[\"挂上了吗\"]],\n"
    }
   ],
   "预期红": "四列一个都不少(在目录里/自有吗/放行吗/真挂上了)"
  },
  {
   "script": "tools/takeover_effect_check.py",
-  "改坏": "把「三个环境变量都配了」的判断改成恒真 —— 于是聊天站没配管理后台地址(接管当全关)也照样绿,而管理后台上看不出来",
+  "改坏": "让读 launchd 配置那一步**漏掉其中一个环境变量**(模拟「没配管理后台地址」)—— 三个缺一个,接管就当全关,而管理后台上看不出来。⚠️ 这条改过两次:① 原来改的是判据自己(`ck(..., True, ...)`),**把判据改成恒真永远不可能让它红**;② 11-06 第一次改成「把 plist 路径指到一个不存在的文件」,照旧没红 —— **那条路进的是「这台机器上没有这个服务」那一支**,而那一支按设计归「没验到」、不算失败。> 一个「配漏了」和一个「这台机器上压根没装」,**都让 cfg 取不全**,而它们该触发的动作相反:前者必须红,后者只能说「没验到」。",
   "file": [
    {
     "path": "tools/takeover_effect_check.py",
-    "old": "    ck(\"三个都配了(没配 = 聊天站当全关,而管理后台上看不出来)\", cfg is not None and not 缺, 缺 or \"读不到 plist\")",
-    "new": "    ck(\"三个都配了(没配 = 聊天站当全关,而管理后台上看不出来)\", True, 缺 or \"读不到 plist\")"
+    "old": "            env = plistlib.load(f).get(\"EnvironmentVariables\") or {}\n",
+    "new": "            env = {k: v for k, v in (plistlib.load(f).get(\"EnvironmentVariables\") or {}).items()\n                   if k != \"LANXIU_USAGE_URL\"}\n"
    }
   ],
   "预期红": "三个都配了"
  },
  {
   "script": "tools/takeover_effect_check.py",
-  "改坏": "把两边清单的比较改成恒真 —— 于是管理后台开着的和聊天站真拉到的不一致也照样绿,而「开关改了没生效」正是这条检查要抓的",
+  "改坏": "让聊天站拉到的清单里**多出一条后台没开的技能** —— 两边对不上时这条必须红,而「开关改了没生效」正是这条检查要抓的。⚠️ 原来这条改的是判据自己(`ck(..., True, ...)`),永远不可能红;而且**加一条**比删一条稳:后台一条都没开着的时候,删一条是空操作、破坏点不可观测(2026-11-06 第一次整轮重放逮到)",
   "file": [
    {
-    "path": "tools/takeover_effect_check.py",
-    "old": "        ck(f\"逐条一致(管理后台开着 {len(开)} 条 / 聊天站拉到 {len(站开)} 条)\", 站开 == 开, {\"后台\": 开, \"聊天站\": 站开})",
-    "new": "        ck(f\"逐条一致(管理后台开着 {len(开)} 条 / 聊天站拉到 {len(站开)} 条)\", True, {\"后台\": 开, \"聊天站\": 站开})"
+    "path": "backend/takeover_client.py",
+    "old": "    _内存.update(at=time.time(), items=items)\n    return items\n",
+    "new": "    items = {**items, \"咬合假技能\": {\"workflow_id\": \"WF-咬合\", \"名称\": None, \"版本\": None}}\n    _内存.update(at=time.time(), items=items)\n    return items\n"
    }
   ],
   "预期红": "逐条一致"
@@ -14938,5 +14943,41 @@
    }
   ],
   "预期红": "自己的目录**不许**被跳过"
+ },
+ {
+  "script": "agent/negative_judgetest.py",
+  "改坏": "把「协议走没走」改成恒真 —— 于是「内容对了只差协议」那一批又被算成全对,而那正是拆成两个数要分开的两件事",
+  "file": [
+   {
+    "path": "agent/negative.py",
+    "old": "    协议 = bool(f)\n",
+    "new": "    协议 = True\n"
+   }
+  ],
+  "预期红": "只是没交草稿"
+ },
+ {
+  "script": "agent/negative_judgetest.py",
+  "改坏": "把「先盖掉匹配串再问否定」那一步去掉(回到 2026-11-06 之前)—— 9 个失败根因词里自带「不 / 未」的那 4 个从此一次都抓不到,而它报出来是「没硬编根因」",
+  "file": [
+   {
+    "path": "agent/negative.py",
+    "old": "        掩 = text[:m.start()] + (\"○\" * (m.end() - m.start())) + text[m.end():]\n        if not tm.negated(掩, m.start(), span=win, both_sides=True):\n",
+    "new": "        if not tm.negated(text, m.start(), span=win, both_sides=True):\n"
+   }
+  ],
+  "预期红": "硬编了一个名字里自带"
+ },
+ {
+  "script": "agent/negative_judgetest.py",
+  "改坏": "让落盘那条记录的 passed 只看内容(不看协议走没走)—— 「两样都对」那个数就不再和历史上那一个同义,两张对比表静默变得不可比",
+  "file": [
+   {
+    "path": "agent/negative.py",
+    "old": "                 passed=bool(内容 and 协议), judge=why,\n",
+    "new": "                 passed=bool(内容), judge=why,\n"
+   }
+  ],
+  "预期红": "passed 不等于"
  }
 ]
