@@ -14589,8 +14589,8 @@
   "file": [
    {
     "path": "tools/merge_append_json.py",
-    "old": "    if 我删的 or 他删的:\n        raise 不是纯追加(我删的, 他删的)",
-    "new": "    if False and (我删的 or 他删的):\n        raise 不是纯追加(我删的, 他删的)"
+    "old": "    if 我删的 or 他删的:\n",
+    "new": "    if False and (我删的 or 他删的):\n"
    }
   ],
   "预期红": "该拒绝,**却合了**"
@@ -14753,5 +14753,29 @@
    }
   ],
   "预期红": "那次没跑完的运行被取消了(不是留着挂着)"
+ },
+ {
+  "script": "tools/bite_run.py",
+  "改坏": "把 在锁里吗 放宽成「有锁主就算」—— 等于回到被否决的环境变量方案:谁都算在锁里,于是谁都不拿锁,而别人的门禁挂钟会莫名多出一大截",
+  "file": [
+   {
+    "path": "tools/bite_run.py",
+    "old": "    return 主人 is not None and 主人 in 链\n",
+    "new": "    return 主人 is not None\n"
+   }
+  ],
+  "预期红": "活着、但不在我的祖先链上"
+ },
+ {
+  "script": "tools/merge_append_json_check.py",
+  "改坏": "把 分辨删改 的门槛放宽成 0 —— 真删的也被当成「改过」,于是工具会建议「直接取新那一版」,而那正是把故意删掉的条目复活",
+  "file": [
+   {
+    "path": "tools/merge_append_json.py",
+    "old": "def 分辨删改(删的, 同边加的, 门槛=0.5):\n",
+    "new": "def 分辨删改(删的, 同边加的, 门槛=0.0):\n"
+   }
+  ],
+  "预期红": "真删了一条(同边新增的是同一个脚本的另一条规格"
  }
 ]
