@@ -307,8 +307,41 @@ def 发到(wid_, vid_, 环境, 谁="U001"):
              头={"Idempotency-Key": str(uuid.uuid4())})
 
 
+def 跑通这一版(wid_, vid_):
+    """照这一版从头跑到成功一次(用户 11-05 拍:生产只发对着这一版跑通过的)。
+    走真路径:取转写回执 → 人工核对批准 → 写跟进回执 —— 和上面 ②—⑤ 同一套,只是不逐步断言。"""
+    c, r = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())},
+             体={"workflow_id": wid_, "workflow_version_id": vid_, "输入": {"call_id": "TS-001", "customer_id": "C10001"}})
+    rid_ = (r or {}).get("resource_id")
+    for _ in range(8):
+        st, _r = 等到(rid_, ("waiting_external", "waiting_approval", "succeeded", "failed", "incomplete", "cancelled"))
+        if st != "waiting_external" and st != "waiting_approval":
+            return st, rid_
+        if st == "waiting_approval":
+            for h in 待办(rid_):
+                决定(h["id"], "approved", edits={"定稿": "e2e 上生产前跑通这一版"})
+        for x in 单(rid_):
+            输出 = ({"text": "顾客想做一套宋制褙子,预算三千。", "call_id": "TS-001", "customer_id": "C10001"} if x["工具"] == "取转写"
+                    else {"跟进号": "FU-E2E-PRE", "customer_id": "C10001", "是新写的": True, "结果": "已写跟进 FU-E2E-PRE"})
+            打("POST", P + f"/bridge-calls/{x['id']}/ack", "U004", 体={"结果": "已执行", "输出": 输出})
+    return 等到(rid_, ("succeeded",))[0], rid_
+
+
+def 当成真模型跑的(rid_):
+    """e2e 没有真模型(也不该花钱):把这一次跑通**当成真模型跑的**。用户 11-05 拍「发生产必须真模型跑通」,
+    闸本身(演示模型跑通拦、真模型跑通放)在 test_orchestration_flow 的 DF-01 段直接验 —— 这里只是给后面要用生产版的地方铺路。"""
+    sys.path.insert(0, os.path.join(根, "services", "api", "app"))
+    from sqlalchemy import text as _t
+    from db import 事务 as _事务
+    with _事务() as _c:
+        _c.execute(_t("update execution_runs set execution_mode='live' where project_id=:p and id=:i"), {"p": 项目, "i": rid_})
+
+
 def 发到生产(wid_, vid_):
-    """审核 + 发生产,一步到位(给后面要用生产版的地方)。"""
+    """跑通一次 + 审核 + 发生产,一步到位(给后面要用生产版的地方)。"""
+    st, rid_ = 跑通这一版(wid_, vid_)
+    assert st == "succeeded", f"上生产前跑通这一版没成:{st}"
+    当成真模型跑的(rid_)
     c, b = 发到(wid_, vid_, "production")
     if c == 422:
         打("POST", P + f"/releases/{(b.get('field_errors') or {}).get('清单id')}/reviews", "U001", 体={"结论": "通过"})
@@ -330,7 +363,12 @@ ck("**没审核就发生产 → 422 CANNOT_DEPLOY,并带回清单号去审**(生
    c == 422 and (b or {}).get("code") == "CANNOT_DEPLOY" and 清单1, (c, b))
 c, _ = 打("POST", P + f"/releases/{清单1}/reviews", "U001", 体={"结论": "通过"})
 c, b = 发到(wid, v1, "production")
-ck("审核通过之后发生产 → 202", c == 202, (c, b))
+_闸 = " ".join(((b or {}).get("field_errors") or {}).get("闸") or [])
+ck("审核过了、但 v1 只用演示模型跑通过 → 生产照样拦(用户 11-05:必须真模型跑通)", c == 422 and "真模型" in _闸, (c, _闸[:200]))
+st, 跑v1 = 跑通这一版(wid, v1)
+当成真模型跑的(跑v1)
+c, b = 发到(wid, v1, "production")
+ck("审核通过、对着 v1 真模型跑通一次之后发生产 → 202", st == "succeeded" and c == 202, (st, c, b))
 c, d = 打("GET", P + f"/workflows/{wid}")
 c, b = 打("PATCH", P + f"/workflows/{wid}", 体={"名称": d["名称"], "聊天接管": True}, 头={"If-Match": str(d["revision"])})
 ck("发布到生产之后打开接管 → 200", c == 200 and b.get("聊天接管") is True, (c, b))
@@ -554,6 +592,27 @@ ck("没有原文授权(U002):只看得到「有一句、多长」,看不到文�
    [(x["文本"], x["长度"]) for x in (d2 or {}).get("回复们") or []] == [(None, len(回复文))], (d2 or {}).get("回复们"))
 c, v3 = 打("POST", P + f"/workflows/{wid3}/versions", 体={"变更说明": "e2e:直接回复"})
 发到生产(wid3, v3["id"])
+# DF-01 欠债(11-05):工具父行 tool_definitions 的 adapter 能在工具目录里改,而 worker 运行时按它定走哪个执行通道 ——
+# 改了之后,之前那次跑通不算(依赖指纹);改回原样 → 又算。比的是内容,不是「改没改过」
+def _够3():
+    return ((打("GET", P + f"/workflows/{wid3}/versions/{v3['id']}", "U001")[1] or {}).get("验证记录") or {}).get("够发生产")
+sys.path.insert(0, os.path.join(根, "services", "api", "app"))
+from sqlalchemy import text as _t3
+from db import 事务 as _事务3
+_前3 = _够3()
+with _事务3() as _c:
+    _td, _原ad = _c.execute(_t3("""select td.id, td.adapter from tool_versions tv join tool_definitions td
+                                    on td.project_id=tv.project_id and td.id=tv.tool_definition_id
+                                 where tv.project_id=:p and td.name='取转写' order by tv.version_no desc limit 1"""), {"p": 项目}).first()
+    _c.execute(_t3("update tool_definitions set adapter = coalesce(adapter, '') || '-e2e' where project_id=:p and id=:i"), {"p": 项目, "i": _td})
+try:
+    _改后3 = _够3()
+finally:
+    with _事务3() as _c:
+        _c.execute(_t3("update tool_definitions set adapter=:a where project_id=:p and id=:i"), {"a": _原ad, "p": 项目, "i": _td})
+_回后3 = _够3()
+ck("**跑通之后把它用的业务动作(取转写)的执行通道改了 → 那次跑通不算(够发生产 → 否);改回原样 → 又算**",
+   (_前3, _改后3, _回后3) == (True, False, True), (_前3, _改后3, _回后3))
 c, d3 = 打("GET", P + f"/workflows/{wid3}")
 c, b = 打("PATCH", P + f"/workflows/{wid3}", 体={"名称": d3["名称"], "聊天接管": True}, 头={"If-Match": str(d3["revision"])})
 工号3 = "E2E" + uuid.uuid4().hex[:6]

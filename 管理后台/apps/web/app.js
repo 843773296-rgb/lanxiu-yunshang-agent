@@ -2391,11 +2391,17 @@ async function 盯运行(rid, 自动切 = false) {
 // 这次试运行每一步的结果(按节点):编排页的列表和图上都标出来(10-26 第 4 块)。只标发起时那份定义里的步骤
 const 运行状态中文 = { succeeded: "成功", failed: "失败", waiting_human: "等人工核对", waiting_external: "等澜绣回执",
   running: "进行中", skipped: "跳过", cancelled: "取消", pending: "排队" };
+/* 一步的「上次值」:除了值本身,还记它是什么时候采到的、对着哪份图跑的(DF-01 §5.2 第 1 / 2 条)。
+ * 还算数 = 服务端拿那次运行对着的逻辑哈希和**现在的草稿**比出来的 —— 前端不自己比,只照着标 */
+function 运行态条(d, s) {
+  const 调 = d["调试"] || {};
+  return { 状态: s["状态"], 错误码: s["错误码"], 分支: s["走的分支"], 输入: s["输入"], 输出: s["输出"], 原文: !!d["看得到原文"],
+    时间: s["结束于"] || s["开始于"], 运行: d.id, 还算数: 调["还算数"], 说法: 调["说法"] };
+}
 function 记运行态(d) {
   if (!图态) return;
   const 态 = {};
-  (d["步骤"] || []).forEach((s) => { 态[s["节点"]] = { 状态: s["状态"], 错误码: s["错误码"], 分支: s["走的分支"],
-    输入: s["输入"], 输出: s["输出"], 原文: !!d["看得到原文"] }; });
+  (d["步骤"] || []).forEach((s) => { 态[s["节点"]] = 运行态条(d, s); });
   const 等 = d["在等什么"]; if (等 && 等["步骤"]) 态[等["步骤"]] = { 状态: 等["种类"] === "human" ? "waiting_human" : "waiting_external" };
   图态.运行态 = 态;
   if (document.body.classList.contains("wf-full")) { if (图态.视图 === "流程图") { if (typeof 画_节点 === "function") 画_节点(); } else if ($("#steps")) 画_步骤(); }
@@ -2669,8 +2675,17 @@ async function 页_定时() {
 }
 async function 做_发布工作流(vid, 环境, 各环境) {
   const v = 图态.版本们.find((x) => x.id === vid) || {};
+  // 生产前先说清这一版是用什么模型跑通的(用户 11-05 拍:演示模型跑通照样放行,但要标明,由点发布的人判断)
+  let 模式话 = "";
+  if (环境 === "production") {
+    try {
+      const vv = await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/versions/${encodeURIComponent(vid)}`);
+      const 验 = (vv || {})["验证记录"] || {};
+      模式话 = 跑通模式话(验["跑通模式"], 验["够发生产"]);
+    } catch (e) { 模式话 = "<br>(没取到这一版的验证记录)"; }
+  }
   if (环境 === "production" && !(await 问一句(`把 ${v["版本"]} 发到生产?`,
-      "发出去之后,<b>聊天接管和定时从这一刻起跑这一版</b>。生产只认审核过的那一版;没审过的会先停在「等生产审核」。",
+      "发出去之后,<b>聊天接管和定时从这一刻起跑这一版</b>。生产只认审核过、而且对着这一版用真模型跑通过一次的那一版。" + 模式话,
       { 确定: "发到生产", 取消: "先不" }))) return;
   try {
     await 请求(`${P()}/workflows/${encodeURIComponent(图态.wid)}/releases`, { method: "POST",
@@ -2680,7 +2695,10 @@ async function 做_发布工作流(vid, 环境, 各环境) {
   } catch (e) {
     const b = e.体 || {};
     if (b.code === "CANNOT_DEPLOY" && 环境 === "production") {
-      提示("等生产审核", `这一版还没审核过,没有发到生产。<br>审核入口已经出现在这一行:有生产审核权限的人点「审核通过」后,再点一次「发到生产」。`);
+      // 照服务端给的每一条理由摆(没审核 / 没跑通 / 连接没探过 …),不自己猜是哪一条
+      const 闸 = ((b.field_errors || {})["闸"] || []);
+      提示("还不能发到生产", `${esc(v["版本"] || "这一版")} 没有发到生产,原因:<ul>${闸.map((x) => `<li>${md(x)}</li>`).join("")}</ul>
+        ${闸.some((x) => x.includes("审核")) ? "审核入口已经出现在这一行:有生产审核权限的人点「审核通过」后,再点一次「发到生产」。" : ""}`);
     } else 报错(e);
   }
   await 画_版本();
@@ -2697,6 +2715,26 @@ async function 做_审核发布(清单id, 通过) {
 
 /* 冻结版本只读(§10.4 T20):**不可原地编辑**,只给看 + 「复制为草稿」。
  * 复制为草稿 = 一次可撤销的本地编辑(覆盖当前草稿的定义和布局),要保存才落到服务端 —— 不碰那个冻结版本本身 */
+/* 这一版的验证记录(DF-01 §5.2-6):只列对着这一版逻辑跑的;对不上的照数说出来,不悄悄扔掉 */
+// 用户 11-05 拍:发生产必须用真模型跑通(没有模型步骤的流程跑通就够)。「够不够」由服务端那道闸的同一个函数给,这里只照着说
+function 跑通模式话(模式, 够) {
+  const m = 模式 || [];
+  if (!m.length) return "<br><b>⚠️ 这一版还没有对着它整条跑通过</b> —— 发生产会被拦,先在编排页照这一版试运行一次。";
+  if (够 === false) return "<br><b>⚠️ 这一版只用演示模型跑通过</b>(不花钱的假模型)—— <b>发生产会被拦</b>:要用真模型照这一版从头跑通一次。";
+  return m.includes("live") ? "<br>这一版用真模型跑通过。" : "<br>这一版跑通过(流程里没有模型步骤,不需要真模型)。";
+}
+function 验证记录块(x) {
+  if (!x) return "";
+  const 行 = (x["条目"] || []).map((r) => `<tr><td>${时间(r["时间"])}</td><td>${esc(r["种类"])}${r["步骤"] ? " · " + esc((节点(r["步骤"]) && 业务名(节点(r["步骤"]))) || r["步骤"]) : ""}</td>
+      <td>${esc(r["跑法"])} · ${esc(r["模式"] === "mock" ? "演示模型" : "真模型")}</td><td>${esc(运行状态中文[r["状态"]] || r["状态"])}</td>
+      <td><a href="#/wfrun/${encodeURIComponent(r["运行"])}">看 →</a></td></tr>`).join("");
+  return `<h4>这一版的验证记录</h4>
+    <div class="k">${跑通模式话(x["跑通模式"], x["够发生产"]).replace(/^<br>/, "")}</div>
+    ${(x["停用的连接"] || []).length ? `<div class="ferr">⚠️ 这一版用到的模型连接 / 业务动作已经停用或归档:${esc(x["停用的连接"].join("、"))} —— 发生产会被拦(发上去每一跑都会失败)。</div>` : ""}
+    <div class="k">对着这一版逻辑跑过 <b>${x["对得上"]}</b> 次${x["对不上不算"] ? `;另有 ${x["对不上不算"]} 次是对着别的版本 / 修改前后的图跑的,不算这一版的验证` : ""}(看了最近 ${x["看了最近几次"]} 次)。</div>
+    ${行 ? `<table class="t"><thead><tr><th>时间</th><th>测了什么</th><th>跑法</th><th>结果</th><th></th></tr></thead><tbody>${行}</tbody></table>`
+      : `<div class="note">还没有对着这一版的测试记录 —— <b>发到生产会被拦</b>:要先照这一版用真模型试运行、从头跑通一次(测试 / 预发不管这一条)。</div>`}`;
+}
 async function 看冻结版本(vid) {
   const el = $("#vview"); if (!el) return;
   el.innerHTML = `<div class="state">在取…</div>`;
@@ -2716,6 +2754,7 @@ async function 看冻结版本(vid) {
     <div class="k">${esc(v["变更说明"] || "")} · ${时间(v["冻结于"])} · ${esc(v["冻结人"] || "")} · 逻辑哈希 <code>${esc(String(v["逻辑哈希"] || "").slice(0, 19))}…</code></div>
     <div class="note"><b>冻结版本不可原地编辑。</b>要在它的基础上改,点「复制为草稿」—— 会替换当前草稿(可撤销,保存后才落到服务端),这个版本本身不变。</div>
     <div style="overflow:auto;max-height:420px;border:1px solid var(--line);border-radius:6px"><svg width="${宽}" height="${高}">${线}${点}</svg></div>
+    ${验证记录块(v["验证记录"])}
     <div class="acts">${能改图() ? `<button class="pri" id="vv-copy">复制为草稿</button>` : `<span class="k">只读:你没有改草稿的权限</span>`}
       <button id="vv-close">收起</button></div></div>`;
   $("#vv-close").onclick = () => { el.innerHTML = ""; };
@@ -3122,7 +3161,8 @@ function 画_变量检查() {
   if (!g.变量选 || !变量值(g.变量选)) g.变量选 = 有[0] ? 有[0].id : null;
   const 名 = (n) => n.type === "start" ? "使用者输入" : 业务名(n);
   const 左 = 有.length ? 有.map((n) => `${n.id === g.变量选 ? `<button class="lk on" data-vi="${esc(n.id)}">` : `<button class="lk" data-vi="${esc(n.id)}">`}${esc(名(n))}${
-      (g.变量改 || {})[n.id] !== undefined ? ' <span class="pill warn">已编辑</span>' : ""}</button>`).join("")
+      (g.变量改 || {})[n.id] !== undefined ? ' <span class="pill warn">已编辑</span>'
+        : ((g.运行态 || {})[n.id] || {}).还算数 === false ? ' <span class="pill fail" title="跑完之后流程改过了">修改前的</span>' : ""}</button>`).join("")
     : `<div class="k">在画布上试运行或单独测一步之后,这里能看到每一步交出的结果。</div>`;
   let 右 = "";
   const 选 = g.变量选 && 节点(g.变量选), x = 选 && 变量值(选.id);
@@ -3230,6 +3270,24 @@ function 单测字段(n) {
   return Object.entries((n.config || {}).bindings || {})
     .filter(([, r]) => !(r && (r.source === "constant" || r.source === "system"))).map(([k]) => k);
 }
+/* 每一项要填的:从哪来(哪一步 / 使用者输入)、什么类型、预填的值是什么时候采到的、还算不算这份图的(DF-01 §5.2-1 / 2)。
+ * 预填来自修改前的图时**照填但标出来**:调试时拿旧值试是正常的,只是不能把它当成本版的产物 */
+function 单测来源说明(n, f, 填自) {
+  const r = ((n.config || {}).bindings || {})[f] || {};
+  const 起点 = 图态.定义.nodes.find((x) => x.type === "start");
+  const 源节点 = r.source === "node" ? 节点(r.node_id) : r.source === "input" ? 起点 : null;
+  const 源名 = r.source === "node" ? (源节点 ? 业务名(源节点) : `已删除的步骤 ${r.node_id}`) : r.source === "input" ? "使用者输入" : "—";
+  const 段 = String(r.pointer || "").replace(/^\//, "");
+  const 式 = r.source === "input" ? ((起点 && (起点.config || {}).input_schema) || 图态.定义.input_schema || {})
+    : 源节点 ? ((源节点.config || {}).output_schema || {}) : {};
+  const 型 = ((式.properties || {})[段.split("/")[0]] || {}).type || "没声明";
+  const 跑 = 填自 === "变量" ? (源节点 && 图态.运行态 && 图态.运行态[源节点.id]) : 填自 === "上次" ? (图态.运行态 && 图态.运行态[n.id]) : null;
+  const 改过 = 填自 === "变量" && 源节点 && (图态.变量改 || {})[源节点.id] !== undefined;
+  const 时 = 改过 ? "你在变量检查里改过的值(只在这一页)" : 跑 && 跑.时间 ? `${时间(跑.时间)} 采到` : 填自 ? "" : "没有上次的值,要手填";
+  const 旧 = 跑 && !改过 && 跑.还算数 === false
+    ? `<div class="ferr">⚠️ ${esc(跑.说法 || "这是修改前的图跑出来的值")} —— 可以拿来试,但测出的结果不算这一版的</div>` : "";
+  return `<div class="k">来自 ${esc(源名)}${段 ? " · " + esc(段) : ""} · 类型 ${esc(型)}${时 ? " · " + esc(时) : ""}</div>${旧}`;
+}
 function 单测表(n) {
   if (!单测类型[n.type]) return "";
   let 只能演练 = false;
@@ -3249,7 +3307,8 @@ function 单测表(n) {
   };
   const 框 = 单测字段(n).map((f) => {
     const 变 = 从变量(f), v = 变 !== undefined ? 变 : 上次入[f], 默 = v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v);
-    return `<label class="f">${esc(f)}</label><textarea rows="2" data-st="${esc(f)}">${esc(默)}</textarea>`;
+    return `<label class="f">${esc(f)}</label>${单测来源说明(n, f, 变 !== undefined ? "变量" : v !== undefined ? "上次" : null)}
+      <textarea rows="2" data-st="${esc(f)}">${esc(默)}</textarea>`;
   }).join("");
   return `<div class="stest"><div class="k">单独跑这一步,不从头跑整条流程。${Object.keys(上次入).length ? "下面已填上它上次收到的内容,可以改。" : ""}
       用的是这一步选的模型:演示模型不花钱,真模型按一次调用计费。</div>
@@ -3291,6 +3350,14 @@ async function 做_单测(nid) {
     await 盯单测(d.resource_id, nid);
   } catch (e) { 报错(e); }
 }
+// 这一次单测的账(DF-01 §5.2-5):第几次、耗时、费用 —— 每次都是新的一条运行,不覆盖上一次
+function 单测账(d, s) {
+  const 调 = d["调试"] || {}, 费 = 调["费用"] || {};
+  const 钱 = 费["金额"] == null ? esc(费["状态"] || "—") : `${费["状态"] === "有算不出的" ? "至少 " : ""}¥${Number(费["金额"]).toFixed(4)}${
+    费["算不出笔数"] ? `(另有 ${费["算不出笔数"]} 笔算不出)` : ""}`;
+  return `<div class="k">这一步第 ${esc(String(调["第几次"] ?? "—"))} 次单独测 · 运行 <code>${esc(d.id)}</code>
+    · 耗时 ${s && s["耗时毫秒"] != null ? (s["耗时毫秒"] / 1000).toFixed(1) + " 秒" : "—"} · 费用 ${钱}</div>`;
+}
 async function 盯单测(rid, nid) {
   for (let i = 0; i < 40; i++) {
     let d;
@@ -3298,12 +3365,11 @@ async function 盯单测(rid, nid) {
     const s = (d["步骤"] || []).find((x) => x["节点"] === nid);
     // 只更新这一步的标记,不覆盖其它步骤上次整条试运行的结果(小图里只有这一步)
     if (s) {
-      图态.运行态 = Object.assign({}, 图态.运行态 || {}, { [nid]: { 状态: s["状态"], 错误码: s["错误码"], 分支: s["走的分支"],
-        输入: s["输入"], 输出: s["输出"], 原文: !!d["看得到原文"] } });
+      图态.运行态 = Object.assign({}, 图态.运行态 || {}, { [nid]: 运行态条(d, s) });
     }
     const 完 = d["是终态吗"] || d["在等什么"];
     if ($("#st-st") && 图态.选中 === nid) {
-      $("#st-st").innerHTML = `${业务结果块(d)}
+      $("#st-st").innerHTML = `${业务结果块(d)}${单测账(d, s)}
         ${s ? 步骤IO(s, d["看得到原文"], true) : ""}<a href="#/wfrun/${encodeURIComponent(rid)}">完整详情 →</a>`;
     }
     if (完) {

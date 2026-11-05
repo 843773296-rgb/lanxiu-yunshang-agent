@@ -263,6 +263,180 @@ c, b = 打("POST", P + f"/workflows/{wid}/steps/{起步['id']}/test-runs", "U004
 ck("不能单测的步骤(开始)→ 422,并说清为什么、该怎么办",
    c == 422 and (b or {}).get("code") == "STEP_TEST_UNSUPPORTED" and (b or {}).get("advice"), [c, (b or {}).get("message")])
 
+# ── DF-01 §5.2(11-05):结果对着哪份图、第几次、耗时 / 费用;改了流程旧结果失效;发布判定只认哈希一致的 ──
+print("▸ DF-01 单步测试的调试信息与失效")
+调 = 单.get("调试") or {}
+ck("**单步测试记下了它对着哪份草稿**,草稿没改过 → 还算数",
+   调.get("还算数") is True and str(调.get("对着的图") or "").startswith("sha256:")
+   and 调.get("对着的图") == 调.get("现在的草稿") == v["逻辑哈希"], 调)
+ck("带第几次测这一步(每次都是新的一条运行)", isinstance(调.get("第几次"), int) and 调["第几次"] >= 1, 调.get("第几次"))
+ck("这一步带开始 / 结束时间和耗时", (单步.get(模型步["id"]) or {}).get("耗时毫秒") is not None
+   and (单步.get(模型步["id"]) or {}).get("开始于"), 单步.get(模型步["id"]))
+ck("费用照实写:演示模型 → 「不花钱」,不是空着", 单.get("模式") != "mock" or (调.get("费用") or {}).get("状态") == "演示模型,不花钱",
+   [单.get("模式"), 调.get("费用")])
+c, b = 打("POST", 单测路, "U004", {"输入": 单入}, 头={"Idempotency-Key": uuid.uuid4().hex})
+单2 = 等到终态(b["resource_id"]) if c == 202 else {}
+ck("**再测一次 → 新的一条运行、第几次 +1**,上一次那条原样还在",
+   单2.get("id") and 单2["id"] != 单["id"] and (单2.get("调试") or {}).get("第几次") == 调.get("第几次", 0) + 1
+   and 打("GET", P + f"/execution-runs/{单['id']}", "U004")[1].get("执行状态") == "succeeded",
+   [(单2.get("调试") or {}).get("第几次"), 调.get("第几次")])
+
+c, d3 = 打("GET", P + f"/workflows/{wid}")
+布局3 = dict(d3["草稿"]["布局"])
+布局3[list(布局3)[0]] = {"x": 123, "y": 45}
+打("PATCH", P + f"/workflows/{wid}/draft", 体={"布局": 布局3}, 头={"If-Match": str(d3["草稿"]["revision"])})
+ck("**只挪位置 → 旧结果照样算数**(比的是逻辑哈希,不是草稿 revision;挪一下就全判过期会让人不再信这个标记)",
+   (打("GET", P + f"/execution-runs/{单['id']}", "U004")[1].get("调试") or {}).get("还算数") is True)
+
+c, v1看 = 打("GET", P + f"/workflows/{wid}/versions/{v['id']}")
+验1 = (v1看 or {}).get("验证记录") or {}
+对上 = {x["运行"] for x in 验1.get("条目", [])}
+ck("**v1 的验证记录列出对着 v1 逻辑跑的那几次**(整条试运行 + 两次单步测试)",
+   {rid, 单["id"], 单2["id"]} <= 对上, [验1.get("对得上"), 验1.get("对不上不算")])
+
+c, d4 = 打("GET", P + f"/workflows/{wid}")
+定义4 = d4["草稿"]["定义"]
+for n in 定义4["nodes"]:
+    if n["type"] == "end":
+        n["config"].setdefault("output_schema", {"type": "object", "properties": {}, "required": []})
+        n["config"]["output_schema"].setdefault("properties", {})["回显"] = {"type": "string"}
+        n["config"].setdefault("bindings", {})["回显"] = {"source": "input", "pointer": "/article"}
+定义4.setdefault("output_schema", {"type": "object", "properties": {}, "required": []}).setdefault("properties", {})["回显"] = {"type": "string"}
+c, b = 打("PATCH", P + f"/workflows/{wid}/draft", 体={"定义": 定义4}, 头={"If-Match": str(d4["草稿"]["revision"])})
+旧单 = 打("GET", P + f"/execution-runs/{单['id']}", "U004")[1].get("调试") or {}
+旧整 = 打("GET", P + f"/execution-runs/{rid}", "U004")[1].get("调试") or {}
+ck("**改了流程(结束多交一项)→ 之前的单步测试和整条试运行都标「修改前的图跑的」**",
+   c == 200 and 旧单.get("还算数") is False and 旧整.get("还算数") is False and "改过" in (旧单.get("说法") or ""),
+   [c, 旧单.get("说法"), 旧整.get("还算数")])
+c, v2 = 打("POST", P + f"/workflows/{wid}/versions", 体={"变更说明": "e2e DF-01 结束多交一项"})
+c, v2看 = 打("GET", P + f"/workflows/{wid}/versions/{(v2 or {}).get('id')}")
+验2 = (v2看 or {}).get("验证记录") or {}
+ck("**v2 的验证记录一条都没有** —— 修改前跑的那几次不能拿来当 v2 的发布依据,而且照数报出「不算」的",
+   c == 200 and 验2.get("对得上") == 0 and 验2.get("对不上不算", 0) >= 3, [验2.get("对得上"), 验2.get("对不上不算")])
+c, b = 打("POST", 单测路, "U004", {"输入": 单入}, 头={"Idempotency-Key": uuid.uuid4().hex})
+单3 = 等到终态(b["resource_id"]) if c == 202 else {}
+c, v2看 = 打("GET", P + f"/workflows/{wid}/versions/{(v2 or {}).get('id')}")
+ck("改完再测一次 → 这次算数,也进了 v2 的验证记录",
+   (单3.get("调试") or {}).get("还算数") is True
+   and 单3.get("id") in {x["运行"] for x in ((v2看 or {}).get("验证记录") or {}).get("条目", [])},
+   [(单3.get("调试") or {}).get("说法")])
+
+# 发生产的闸(用户 11-05 拍:生产强制,测试 / 预发不管):v2 现在只有一次单步测试,没有整条跑通过
+v2id = (v2 or {}).get("id")
+def _发(环境):
+    return 打("POST", P + f"/workflows/{wid}/releases", "U001", 体={"版本id": v2id, "环境": 环境}, 头={"Idempotency-Key": str(uuid.uuid4())})
+c, b = _发("production")
+_闸 = " ".join(((b or {}).get("field_errors") or {}).get("闸") or [])
+ck("**v2 只单测过一步、没整条跑通过 → 发生产被拦,理由点名「还没有对着它跑通过」**",
+   c == 422 and "还没有对着它跑通过" in _闸, [c, _闸[:160]])
+c, b = _发("staging")
+ck("同一版发预发 → 不拦(测试 / 预发不管这一条)", c == 202, [c, b])
+c, t = 打("POST", P + "/execution-runs", 头={"Idempotency-Key": str(uuid.uuid4())},
+         体={"workflow_id": wid, "workflow_version_id": v2id, "输入": {"article": "上生产前对着 v2 跑一次"}})
+跑2 = 等到终态(t["resource_id"]) if c == 202 else {}
+c, b = _发("production")
+_闸 = " ".join(((b or {}).get("field_errors") or {}).get("闸") or [])
+ck("**对着 v2 整条跑通了、但用的是演示模型 → 生产照样拦,理由点名「用真模型」**(用户 11-05 改口:演示模型跑通不算)",
+   跑2.get("执行状态") == "succeeded" and 跑2.get("模式") == "mock" and c == 422 and "还没有对着它跑通过" in _闸 and "真模型" in _闸,
+   [跑2.get("执行状态"), 跑2.get("模式"), c, _闸[:160]])
+c, _v2看 = 打("GET", P + f"/workflows/{wid}/versions/{v2id}")
+_验 = (_v2看 or {}).get("验证记录") or {}
+ck("版本页的验证记录照实说:跑通模式只有演示模型、够不够发生产 = 不够(和闸同一个函数)",
+   _验.get("跑通模式") == ["mock"] and _验.get("够发生产") is False, [_验.get("跑通模式"), _验.get("够发生产")])
+# CI 和本地 e2e 没有真模型(也不该花钱):把这一次跑通**当成真模型跑的**,验闸认 live。
+# 这是测试夹具改自己刚造的那一行,不是绕过闸 —— 闸判 live 的那一句真调的是 workflows_api.这一版跑通过吗
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "services", "api", "app"))
+from sqlalchemy import text as _t      # noqa: E402
+from db import 事务 as _事务, 连接 as _连  # noqa: E402
+with _事务() as _c:
+    _c.execute(_t("update execution_runs set execution_mode='live' where project_id=:p and id=:i"), {"p": 项目, "i": 跑2.get("id")})
+c, b = _发("production")
+if c == 422:
+    打("POST", P + f"/releases/{((b or {}).get('field_errors') or {}).get('清单id')}/reviews", "U001", 体={"结论": "通过"})
+    c, b = _发("production")
+_闸 = " ".join(((b or {}).get("field_errors") or {}).get("闸") or [])
+ck("**那一次换成真模型跑通的 → 生产放行**(审核照旧要)", 跑2.get("执行状态") == "succeeded" and c == 202,
+   [跑2.get("执行状态"), c, _闸[:160]])
+
+# ── DF-01 欠债(11-05):被引用的版本不许原地改(结构:触发器)—— **真去改一次**,改得动就是边界破了 ──
+class _回滚(Exception):
+    pass
+
+
+def _改得动吗(sql, 参):
+    """→ "拒"(库拒了,而且是那道触发器拒的)/ True(改得动)/ "没这一行"(攻击落空 —— 不许当成「改得动」或「拒了」)。"""
+    try:
+        with _事务() as _c:
+            n = _c.execute(_t(sql), 参).rowcount
+            raise _回滚(n)                      # 改得动也不留下:这条事务一律不提交
+    except _回滚 as e:
+        return True if e.args[0] else "没这一行"
+    except Exception as e:
+        return "拒" if "不可变版本" in str(e) else f"别的错:{str(e)[:80]}"
+_拒 = {
+    "提示词内容": _改得动吗("update prompt_versions set params = coalesce(params, '{}'::jsonb) || '{\"e2e\": 1}'::jsonb where project_id=:p and id=:i",
+                         {"p": 项目, "i": "pv_seed_article_summary"}),
+    "连接地址": _改得动吗("update connection_versions set endpoint = coalesce(endpoint, '') || '-e2e' where project_id=:p and id=:i",
+                       {"p": 项目, "i": "cv_mock_" + 项目}),
+    "工具内容": _改得动吗("update tool_versions set timeout_seconds = coalesce(timeout_seconds, 30) + 1 where project_id=:p and id = (select id from tool_versions where project_id=:p limit 1)",
+                       {"p": 项目}),
+    "探测写的 capabilities": _改得动吗("update connection_versions set capabilities = capabilities where project_id=:p and id=:i",
+                                    {"p": 项目, "i": "cv_mock_" + 项目}),
+}
+ck("**版本行原地改 → 库直接拒**(提示词 / 连接地址 / 工具内容),**探测那一处(capabilities)照常能写**",
+   _拒 == {"提示词内容": "拒", "连接地址": "拒", "工具内容": "拒", "探测写的 capabilities": True}, _拒)
+_mc = None
+with _连() as _c:
+    _mc = _c.execute(_t("select connection_id from connection_versions where project_id=:p and id=:i"), {"p": 项目, "i": "cv_mock_" + 项目}).scalar()
+_拒2 = {
+    "连接适配器": _改得动吗("update model_connections set adapter = adapter || '-e2e' where project_id=:p and id=:i", {"p": 项目, "i": _mc}),
+    "连接状态(停用是正常管理动作)": _改得动吗("update model_connections set status = status where project_id=:p and id=:i", {"p": 项目, "i": _mc}),
+}
+ck("**模型连接的适配器原地改 → 库直接拒;状态(停用 / 归档)照常能改**", _拒2 == {"连接适配器": "拒", "连接状态(停用是正常管理动作)": True}, _拒2)
+# 停用了这一版用的连接 → 发生产被拦(父行 status 不在哈希和指纹里,闸单独查);启用回来 → 不再因为它拦
+with _事务() as _c:
+    _原状态 = _c.execute(_t("select status from model_connections where project_id=:p and id=:i"), {"p": 项目, "i": _mc}).scalar()
+    _c.execute(_t("update model_connections set status='disabled' where project_id=:p and id=:i"), {"p": 项目, "i": _mc})
+try:
+    _验停 = ((打("GET", P + f"/workflows/{wid}/versions/{v2id}")[1] or {}).get("验证记录") or {})
+    c, b = _发("production")
+    _闸停 = " ".join(((b or {}).get("field_errors") or {}).get("闸") or [])
+finally:
+    with _事务() as _c:
+        _c.execute(_t("update model_connections set status=:s where project_id=:p and id=:i"), {"s": _原状态, "p": 项目, "i": _mc})
+_验回 = ((打("GET", P + f"/workflows/{wid}/versions/{v2id}")[1] or {}).get("验证记录") or {})
+ck("**跑通过之后把它用的模型连接停用 → 版本页点名、发生产被拦;启用回来 → 不再点名**",
+   _验停.get("停用的连接") and c == 422 and "停用" in _闸停 and _验回.get("停用的连接") == [],
+   [_验停.get("停用的连接"), c, _闸停[:120], _验回.get("停用的连接")])
+# 探测原地改了 capabilities(id 不变、哈希不变)→ 之前那次真模型跑通不算了;改回去 → 又算(比的是内容指纹,不是「改没改过」)
+def _够():
+    return ((打("GET", P + f"/workflows/{wid}/versions/{v2id}")[1] or {}).get("验证记录") or {}).get("够发生产")
+_前 = _够()
+with _事务() as _c:
+    _原 = _c.execute(_t("select capabilities from connection_versions where project_id=:p and id=:i"), {"p": 项目, "i": "cv_mock_" + 项目}).scalar()
+    _c.execute(_t("update connection_versions set capabilities = coalesce(capabilities, '{}'::jsonb) || '{\"e2e探测\": 1}'::jsonb where project_id=:p and id=:i"),
+               {"p": 项目, "i": "cv_mock_" + 项目})
+try:
+    _探后 = _够()
+finally:
+    with _事务() as _c:
+        _c.execute(_t("update connection_versions set capabilities = cast(:c as jsonb) where project_id=:p and id=:i"),
+                   {"c": json.dumps(_原, ensure_ascii=False) if _原 is not None else None, "p": 项目, "i": "cv_mock_" + 项目})
+_回后 = _够()
+ck("**探测原地改了连接设置 → v2 那次真模型跑通不算了(够发生产 → 否);设置改回原样 → 又算**",
+   (_前, _探后, _回后) == (True, False, True), (_前, _探后, _回后))
+
+# 监测:草稿试运行 / 单步测试即使是真模型、跑法「正常」也算调试(§5.2-5 与 production 隔离)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "services", "api", "app"))
+import monitoring_api as _MA           # noqa: E402
+with _连() as _c:
+    _范围 = {k: _c.execute(_t(f"""select 范围 from (select {_MA._维度} from (select cast(:dr as jsonb) definition_ref,
+                 'live'::text execution_mode, 'development'::text environment) r) x"""), {"dr": json.dumps(dr, ensure_ascii=False)}).scalar()
+            for k, dr in {"单步": {"kind": "step_test", "id": wid}, "草稿": {"kind": "graph_draft", "id": wid},
+                          "版本": {"kind": "workflow_version", "id": wid, "version_no": 1}}.items()}
+ck("**监测:真模型的草稿试运行 / 单步测试算「调试」,跑生产版本的才算「业务」**(用监测页同一段 SQL 判)",
+   _范围 == {"单步": "调试", "草稿": "调试", "版本": "业务"}, _范围)
+
 # ── 测试样例与历史输入(10-26,方案 §8.1)────────────────────────────────
 样路 = P + f"/workflows/{wid}/test-samples"
 秘 = "宋制褙子要配织金马面,预算三千"            # 一段只在样例里出现的原文 —— 用来查「没授权的人一个字都拿不到」

@@ -14777,5 +14777,89 @@
    }
   ],
   "预期红": "真删了一条(同边新增的是同一个脚本的另一条规格"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_step_freshness_check.py",
+  "改坏": "比对哈希那一句删掉(「测过就算数」)—— 流程改过之后,修改前的测试结果还被当成这一版的,能拿去当发布依据",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/单步测试.py",
+    "old": "    if 对着 != 现在的哈希:\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "③ 改了流程 → 不算数,说法写「改过了」"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_step_freshness_check.py",
+  "改坏": "老单步测试没记草稿哈希时拿小图自己的哈希顶上(「总比没有好」)—— 小图哈希和草稿根本不是一份东西,碰巧相等就会被当成算数",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/单步测试.py",
+    "old": "        return 来源.get(\"草稿哈希\") or None   # 11-05 之前的单步测试没记 —— 说不清,不猜\n",
+    "new": "        return 来源.get(\"草稿哈希\") or 运行哈希\n"
+   }
+  ],
+  "预期红": "④ 老单步测试没记草稿哈希 → 不算数,说法是「没记下」(即使它自己的哈希碰巧一样也不拿来顶)"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_orchestration_flow.py",
+  "改坏": "监测不排除草稿试运行 / 单步测试(「跑法是正常、连的是真模型,就算业务」)—— 搭流程时多试几次就能把业务办成率拉上拉下",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/monitoring_api.py",
+    "old": "              and coalesce(r.definition_ref->>'kind', '') not in ('graph_draft', 'step_test')\n",
+    "new": ""
+   }
+  ],
+  "预期红": "**监测:真模型的草稿试运行 / 单步测试算「调试」,跑生产版本的才算「业务」**(用监测页同一段 SQL 判)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_step_freshness_check.py",
+  "改坏": "发布闸不看跑没跑通(「审过就行」)—— 流程改过之后没人再跑一遍,生产上直接是一版谁都没跑通过的",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/release.py",
+    "old": "        if 跑通过吗 is False:\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "⑦ 审过了、但这一版没跑通过 → 生产拦,说清怎么办"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_step_freshness_check.py",
+  "改坏": "跑通不分真模型 / 演示模型(「跑通了就是跑通了」)—— 用户拍的是必须真模型跑通,演示模型跑通只证明流程接得通",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/release.py",
+    "old": "    return \"live\" in (跑通模式 or [])\n",
+    "new": "    return bool(跑通模式)\n"
+   }
+  ],
+  "预期红": "⑦ 有模型步骤:只有演示模型跑通 → 不够;有一次真模型跑通 → 够(用户 11-05 改口)"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_step_freshness_check.py",
+  "改坏": "闸不比依赖指纹(「连接 id 没变就是同一个连接」)—— 探测原地改了 capabilities(含 mock / live),之前那次跑通照样放行",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/release.py",
+    "old": "    return all(当时.get(i) and 当时.get(i) == (现在 or {}).get(i) for i in 要的)\n",
+    "new": "    return True\n"
+   }
+  ],
+  "预期红": "⑨ 探测把那个连接的设置改了(指纹变了)→ 那次跑通不算"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_step_freshness_check.py",
+  "改坏": "发生产不查用到的连接停没停用(「跑通过就行」)—— 跑通之后连接被停用,发上去每一跑都 MODEL_CONNECTION_DISABLED",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/release.py",
+    "old": "        if 停用的连接:\n",
+    "new": "        if False:\n"
+   }
+  ],
+  "预期红": "⑩ 跑通过了、但用到的模型连接事后被停用 → 生产拦,点名是哪条连接"
  }
 ]

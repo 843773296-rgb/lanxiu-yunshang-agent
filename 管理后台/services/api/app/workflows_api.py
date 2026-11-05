@@ -1063,10 +1063,12 @@ async def 发布工作流(project_id: str, wid: str, request: Request,
                   {"d": json.dumps({"workflow_version_id": vid}), "p": project_id, "a": aid})
         单 = AP._出清单(c, project_id, aid, me)
         拦了, 从 = AP._切指针(c, project_id, 单["id"], 环境, me, 体.get("环境revision"))
+        跑通模式 = 这一版跑通的模式(c, project_id, vid)
     if 拦了:
         raise _错(422, "CANNOT_DEPLOY", "这一版还不能发到" + {"test": "测试", "staging": "预发", "production": "生产"}[环境],
-                  "生产要先有人审核这份清单;按下面每一条处理", field_errors={"闸": 拦了, "清单id": 单["id"]})
+                  "生产要先有人审核这份清单、这一版要整条跑通过一次;按下面每一条处理", field_errors={"闸": 拦了, "清单id": 单["id"]})
     return {"环境": 环境, "清单id": 单["id"], "版本id": vid, "从": 从,
+            "跑通模式": 跑通模式,
             "note": "已切换。" + ("聊天接管和定时从现在起跑这一版" if 环境 == "production" else "只影响这个环境,生产不变")}
 
 
@@ -1702,13 +1704,165 @@ def 看冻结版本(project_id: str, wid: str, vid: str, me: 身份 = Depends(�
         v = c.execute(text("""select id, version_no, nodes, edges, layout, logical_hash, change_note, created_at, created_by
                                 from workflow_versions where project_id=:p and workflow_id=:w and id=:v"""),
                       {"p": project_id, "w": wid, "v": vid}).mappings().first()
+        验证 = _验证记录(c, project_id, wid, v["logical_hash"]) if v else None
+        if 验证 is not None:
+            验证["够发生产"] = 这一版跑通过吗(c, project_id, vid)    # 和发生产那道闸同一个函数,页面不自己推
+            验证["停用的连接"] = 这一版停用的连接(c, project_id, vid)
     if not v:
         # 404 而不是 403:不泄露「这个版本 ID 在别处存在」(§17.4)
         raise _错(404, "NOT_FOUND", "没有这个版本", "回「版本与发布」重新选一个")
     return {"id": v["id"], "版本": f"v{v['version_no']}", "逻辑哈希": v["logical_hash"], "变更说明": v["change_note"],
             "冻结于": v["created_at"].isoformat() if v["created_at"] else None, "冻结人": v["created_by"],
             "定义": {"nodes": v["nodes"] or [], "edges": v["edges"] or []}, "布局": v["layout"] or {},
-            "只读": True, "note": "冻结版本只读 —— 要改先「复制为草稿」,不会原地覆盖历史版本"}
+            "只读": True, "验证记录": 验证,
+            "note": "冻结版本只读 —— 要改先「复制为草稿」,不会原地覆盖历史版本"}
+
+
+# 节点配置里带 connection_version_id 的那几类(contract/dsl.py 节点表)。受理时定 mock / live、发生产的闸判「有没有模型步」都用这一张。
+# Agent 步骤不在里面:它的模型在 Agent 版本上,不在这一步的配置里 —— 只有 Agent 步骤的流程,闸按「没有模型步」判(已知限定)
+用模型连接的步骤 = ("llm", "classifier", "extractor")
+不算跑通的跑法 = ("样例预览",)   # 样例预览不真跑模型 / 检索 / 业务动作,拿上次的输出顶 —— 跑完了也不说明这一版能跑
+
+
+def 这一版跑通过吗(c, project_id, 版本id):
+    """发生产的闸(用户 11-05 拍:生产强制,测试 / 预发不管)。→ True / False。
+
+    算数的:这条工作流的**整条**运行(草稿试运行或跑这一版),状态 succeeded,跑法不是样例预览,
+    而且 `结果还算数吗` 判它对着的就是这一版的逻辑哈希 —— 和验证记录同一个函数;
+    **有模型步骤的流程,那次还得是真模型(live)跑的**(用户 11-05 改口,演示模型跑通不算)。
+    单步测试不算(只测了一步)。
+
+    ⚠️ **它只保证一件事:这一版至少有一条路径从头到尾跑通过,不是一上线就崩。** 不保证的(别让闸的名字比它的保证大):
+      · 每一步都执行过 —— 有条件分支的流程走最短那一路也算 succeeded,另一路可能一次没跑过
+      · 依赖的**内容**没变 —— 提示词 / 连接 / 业务动作按版本 id 钉在节点里,换一版 id 就换哈希、要重跑;
+        但知识库里的文档内容、澜绣那边的数据不在哈希里,变了不会要求重跑
+      · 写入段真写过 —— 「正常」跑法的跑通会过人工核对、真写一次;「连接测试」跑法的跑通**写入只演练**,也算数。
+        写入段的正确性靠人工核对、写入判定和状态机那几道闸,不靠这一道
+    **这道闸的正确性依赖「被引用的版本不可变」**(提示词 / 连接 / 工具版本 id 不变,内容就不变)。
+    那一条现在是**约定**,不是结构:契约里标着「不可变」(contract/entities.py),库里没有触发器拦原地改;
+    而且已知一处原地写 —— 探测连接会改 connection_versions.capabilities(id 不变),**execution_mode 就在里面,
+    worker 运行时读它定 mock / live**(workers/worker.py `_模型` 那段)。
+    所以真模型那一跑之后,有人探测把连接改成了 mock(或反过来),**那次跑通记录照样算数**。改版本表的人看这里。
+    跑通那次在哪跑:编排页的试运行(管理后台,写入前停在人工核对 / 连接测试不真写),**不需要先碰生产**。
+    回滚走另一条口(可以回滚吗),不过这道闸 —— 回去的那一版在生产上跑过。"""
+    v = c.execute(text("select workflow_id, logical_hash, nodes from workflow_versions where project_id=:p and id=:v"),
+                  {"p": project_id, "v": 版本id}).mappings().first()
+    if not v:
+        return False
+    import release as RL
+    return RL.跑通够不够(_跑通模式(c, project_id, v["workflow_id"], v["logical_hash"]), _有模型步(v["nodes"]))
+
+
+def _有模型步(节点们):
+    return any(n.get("type") in 用模型连接的步骤 for n in (节点们 or []))
+
+
+def 这一版停用的连接(c, project_id, 版本id):
+    """这一版用到的模型连接里,父行不是 active 的那几条(显示名)。worker 运行时读 model_connections.status,
+    停用的连接每一跑都 MODEL_CONNECTION_DISABLED —— 而它不在哈希、不在依赖指纹里,所以发生产时单独查。"""
+    节点们 = c.execute(text("select nodes from workflow_versions where project_id=:p and id=:v"),
+                       {"p": project_id, "v": 版本id}).scalar()
+    cvs = _用的连接(节点们)
+    在 = list(c.execute(text("""select coalesce(mc.display_name, mc.id) 名, mc.status from connection_versions cv
+                             join model_connections mc on mc.project_id=cv.project_id and mc.id=cv.connection_id
+                            where cv.project_id=:p and cv.id = any(:ids)"""), {"p": project_id, "ids": cvs}).mappings()) if cvs else []
+    出 = sorted({r["名"] for r in 在 if r["status"] != "active"}) + (["(有连接配置版本已经查不到)"] if len(在) < len(cvs) else [])
+    # 工具那一侧同形状(并行会话 11-05):父行 tool_definitions.status 停用了,那一步每一跑都会失败
+    tvs = [x[5:] for x in _用的依赖(节点们) if x.startswith("tool:")]
+    工 = list(c.execute(text("""select '业务动作「' || td.name || '」' 名, td.status from tool_versions tv
+                             join tool_definitions td on td.project_id=tv.project_id and td.id=tv.tool_definition_id
+                            where tv.project_id=:p and tv.id = any(:ids)"""), {"p": project_id, "ids": tvs}).mappings()) if tvs else []
+    return 出 + sorted({r["名"] for r in 工 if r["status"] != "active"}) + (["(有工具版本已经查不到)"] if len(工) < len(tvs) else [])
+
+
+def 这一版跑通的模式(c, project_id, 版本id):
+    """这一版跑通过的那几次用的是什么模式 → ["live"] / ["mock"] / ["live", "mock"] / []。发布页照着标明。"""
+    v = c.execute(text("select workflow_id, logical_hash from workflow_versions where project_id=:p and id=:v"),
+                  {"p": project_id, "v": 版本id}).mappings().first()
+    return _跑通模式(c, project_id, v["workflow_id"], v["logical_hash"]) if v else []
+
+
+def _依赖指纹(c, project_id, 要的):
+    """依赖 → 它现在**运行时真读的那几列**的指纹。受理时记一份、闸那边现算一份,两边**同一个函数**。
+
+      · 连接配置版本 id → capabilities(探测会原地改它;里面有 execution_mode)
+      · "tool:" + 工具版本 id → 父行 tool_definitions 的 name / adapter / side_effect_type
+        (worker 取工具时 join 父行,按 name / adapter 定走哪个执行通道 —— 工具目录页允许改这几列,
+        所以这里不用触发器拦,改了就让之前的跑通失效;并行会话 11-05 指出)
+    jsonb::text 是规范化表示(键序无关);两边都从库里现读,不存在两种序。"""
+    cvs = sorted({x for x in 要的 if x and not x.startswith("tool:")})
+    tvs = sorted({x[5:] for x in 要的 if x and x.startswith("tool:")})
+    出 = {}
+    if cvs:
+        出.update({r["id"]: r["h"] for r in c.execute(text("""select id, md5(coalesce(capabilities, '{}'::jsonb)::text) h
+                    from connection_versions where project_id=:p and id = any(:ids)"""), {"p": project_id, "ids": cvs}).mappings()})
+    if tvs:
+        出.update({"tool:" + r["id"]: r["h"] for r in c.execute(text("""select tv.id, md5(concat_ws('|', td.name, td.adapter, td.side_effect_type)) h
+                    from tool_versions tv join tool_definitions td on td.project_id=tv.project_id and td.id=tv.tool_definition_id
+                    where tv.project_id=:p and tv.id = any(:ids)"""), {"p": project_id, "ids": tvs}).mappings()})
+    return 出
+
+
+def _用的连接(节点们):
+    return sorted({(n.get("config") or {}).get("connection_version_id") for n in (节点们 or [])
+                   if n.get("type") in 用模型连接的步骤 and (n.get("config") or {}).get("connection_version_id")})
+
+
+def _用的依赖(节点们):
+    """依赖指纹要盯的那几样:模型连接配置版本 + 业务动作的工具版本(记成 "tool:<id>")。"""
+    return _用的连接(节点们) + sorted({"tool:" + (n.get("config") or {}).get("tool_version_id") for n in (节点们 or [])
+                                    if n.get("type") == "tool" and (n.get("config") or {}).get("tool_version_id")})
+
+
+def _跑通模式(c, project_id, wid, 版本哈希):
+    """闸、验证记录、发布页**共用这一处**:对着这一版哈希、整条、succeeded、不是样例预览的那几次,各是什么模式。
+    还要**那次跑时的连接设置和现在是同一份**(release.依赖没变吗)—— 探测改了 capabilities 之后,之前的跑通不算。"""
+    import release as RL
+    import 单步测试 as ST1
+    节点们 = c.execute(text("""select nodes from workflow_versions where project_id=:p and workflow_id=:w and logical_hash=:h
+                              order by version_no desc limit 1"""), {"p": project_id, "w": wid, "h": 版本哈希}).scalar()
+    # 调用方(闸 / 验证记录)传的都是冻结版本的哈希,版本行一定在;万一不在 → 没有可比的连接,只靠哈希判
+    要的 = _用的依赖(节点们)
+    现在 = _依赖指纹(c, project_id, 要的)
+    rs = c.execute(text("""select definition_ref, definition_hash, execution_mode from execution_runs
+                            where project_id=:p and kind='workflow' and status='succeeded'
+                              and definition_ref->>'id'=:w and definition_hash=:h
+                              and definition_ref->>'kind' in ('graph_draft', 'workflow_version')"""),
+                   {"p": project_id, "w": wid, "h": 版本哈希}).mappings().all()
+    return sorted({x["execution_mode"] for x in rs
+                   if ST1.结果还算数吗(x["definition_ref"], x["definition_hash"], 版本哈希)[0]
+                   and ((x["definition_ref"] or {}).get("跑法") or "正常") not in 不算跑通的跑法
+                   and RL.依赖没变吗((x["definition_ref"] or {}).get("依赖指纹"), 现在, 要的)})
+
+
+def _验证记录(c, project_id, wid, 版本哈希, 条数=20):
+    """能拿来做发布判定的测试记录(DF-01 §5.2-6):**只认对着这一版逻辑的那几次**。
+
+    整条试运行 / 跑这一版的运行比 definition_hash;单步测试比受理时记下的「草稿哈希」。
+    规则真调 runtime/单步测试.py::结果还算数吗 —— 和运行详情里「还算数吗」是同一个函数,两处不会说法不一。
+    对不上的照数报出来(不是悄悄扔掉):「测过 30 次」和「对着这一版测过 2 次」是两件事。"""
+    import 单步测试 as ST1
+    rs = c.execute(text("""select id, status, definition_ref, definition_hash, execution_mode, created_at
+                             from execution_runs
+                            where project_id=:p and kind='workflow' and definition_ref->>'id'=:w
+                              and definition_ref->>'kind' in ('graph_draft', 'step_test', 'workflow_version')
+                            order by created_at desc limit 500"""),
+                   {"p": project_id, "w": wid}).mappings().all()
+    算, 不算 = [], 0
+    for x in rs:
+        ok, _ = ST1.结果还算数吗(x["definition_ref"], x["definition_hash"], 版本哈希)
+        if ok:
+            算.append(x)
+        else:
+            不算 += 1
+    return {"对得上": len(算), "对不上不算": 不算, "看了最近几次": len(rs),
+            "跑通模式": _跑通模式(c, project_id, wid, 版本哈希),
+            "条目": [{"运行": x["id"], "状态": x["status"], "模式": x["execution_mode"],
+                     "种类": "单步测试" if (x["definition_ref"] or {}).get("kind") == "step_test" else "整条流程",
+                     "步骤": (x["definition_ref"] or {}).get("node_id"),
+                     "跑法": (x["definition_ref"] or {}).get("跑法") or "正常",
+                     "时间": x["created_at"].isoformat()} for x in 算[:条数]],
+            "说法": "只列对着这一版逻辑跑的;流程改过之前或之后跑的不算这一版的验证"}
 
 
 # ── 版本历史:命名 / 删除(10-27,用户确认照 Dify;适配分析「照抄但要改:生产在用的不能删」)──────────
@@ -2016,12 +2170,61 @@ async def 单步测试(project_id: str, wid: str, node_id: str, request: Request
             raise _错(422, "VALIDATION", f"还有 {len(缺)} 项没填,这次没有开始运行",
                       "把每一项都填上再测。这次一个模型都没调用,不花钱",
                       field_errors={f: "必填" for f in 缺})
-        来源 = {"kind": "step_test", "id": wid, "node_id": node_id, "draft_revision": d["revision"]}
+        来源 = {"kind": "step_test", "id": wid, "node_id": node_id, "draft_revision": d["revision"],
+                # 对着哪份草稿(DF-01 §5.2-6):小图自己的哈希和草稿对不上,另记当时草稿的逻辑哈希 ——
+                # 草稿改过之后,这次结果就标「修改前的图跑的」,也进不了发布判定的验证记录
+                "草稿哈希": _草稿哈希(d["definition"])}
         if 跑法 != "正常":
             来源["跑法"] = 跑法
         if 体.get("样例id") or 体.get("沿用运行"):
             来源["输入来自"] = {"样例": 体.get("样例id")} if 体.get("样例id") else {"运行": 体.get("沿用运行")}
         return _受理运行(c, me, project_id, 小图, 来源, {f: 输入[f] for f in 要填}, idempotency_key, 体.get("上限"))
+
+
+def _草稿哈希(定义):
+    """草稿的逻辑哈希;算不出(草稿是空的 / 里面有密钥明文)就 None —— 调用方按「说不清」处理,不猜。"""
+    try:
+        return DS.逻辑哈希(定义 or {})
+    except Exception:
+        return None
+
+
+def _调试信息(c, project_id, r):
+    """一次运行的调试信息(DF-01,方案 §5.2 第 2 / 5 / 6 条)。
+
+    · 还算数吗:对着的那份图和**现在的草稿**比逻辑哈希(规则在 runtime/单步测试.py::结果还算数吗,判据真调它)
+    · 第几次:单步测试才有 —— 这条工作流的这一步,连这次在内一共测过几次(每次都是新的一条运行,不覆盖上一次)
+    · 费用:按这次运行的 trace 从 usage_ledger 现算;演示模型写「不花钱」,有算不出的笔数照实写,不当成 0"""
+    import 单步测试 as ST1
+    来源 = r["definition_ref"] or {}
+    wid = 来源.get("id")
+    出 = {"对着的图": None, "还算数": None, "说法": None, "第几次": None}
+    if 来源.get("kind") in ("step_test", "graph_draft", "workflow_version") and wid:
+        d = c.execute(text("select definition from graph_drafts where project_id=:p and workflow_id=:i"),
+                      {"p": project_id, "i": wid}).scalar()
+        现在 = _草稿哈希(d) if d is not None else None
+        算数, 说法 = ST1.结果还算数吗(来源, r["definition_hash"], 现在)
+        对着 = ST1.对着的草稿哈希(来源, r["definition_hash"])
+        出.update({"对着的图": 对着, "现在的草稿": 现在, "还算数": 算数, "说法": 说法,
+                  "对着哪一版": (f"v{来源['version_no']}" if 来源.get("kind") == "workflow_version" and 来源.get("version_no")
+                              else "草稿")})
+    if 来源.get("kind") == "step_test" and wid:
+        出["第几次"] = c.execute(text("""select count(*) from execution_runs
+             where project_id=:p and kind='workflow' and definition_ref->>'kind'='step_test'
+               and definition_ref->>'id'=:w and definition_ref->>'node_id'=:n and created_at <= :t"""),
+            {"p": project_id, "w": wid, "n": 来源.get("node_id"), "t": r["created_at"]}).scalar()
+    费 = c.execute(text("""select coalesce(sum(amount) filter (where amount_known), 0) 已知,
+                                 count(*) filter (where not amount_known) 算不出, count(*) 笔数
+                            from usage_ledger where project_id=:p and trace_id=:t"""),
+                  {"p": project_id, "t": r["trace_id"]}).mappings().first() if r["trace_id"] else None
+    if r["execution_mode"] == "mock":
+        出["费用"] = {"状态": "演示模型,不花钱", "金额": 0}
+    elif not 费 or not 费["笔数"]:
+        出["费用"] = {"状态": "还没有记账(运行没结束,或这次没调用要计费的服务)", "金额": None}
+    else:
+        出["费用"] = {"状态": "有算不出的" if 费["算不出"] else "已记账", "金额": float(费["已知"]),
+                    "算不出笔数": int(费["算不出"])}
+    return 出
 
 
 def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, 上限=None):
@@ -2049,12 +2252,19 @@ def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, �
                   field_errors={(p["node_id"] or "图") + "." + (p["field_path"] or ""):
                                 p["消息"] for p in 阻})
     # 这次运行算 mock 还是 live:**有一个 AI 步骤选了真连接就是 live**(而部署没明确选只跑 mock)
+    # 11-05:原来只看 llm 步骤 —— 问题分类器 / 参数提取器也走模型连接,只有它们的流程选了真连接也一律跑成 mock,
+    # 而且「发生产要真模型跑通」那道闸对它们永远过不去。三类一张表,闸那边用同一张(用模型连接的步骤)
     cvs = [n["config"].get("connection_version_id") for n in 定义.get("nodes") or []
-           if n.get("type") == "llm" and (n.get("config") or {}).get("connection_version_id")]
+           if n.get("type") in 用模型连接的步骤 and (n.get("config") or {}).get("connection_version_id")]
     真的 = c.execute(text("""select count(*) from connection_versions where project_id=:p and id = any(:ids)
                                and coalesce(capabilities->>'execution_mode', '') <> 'mock'"""),
                      {"p": project_id, "ids": cvs}).scalar() if cvs else 0
     模式 = "live" if (真的 and not __import__("runtime_cfg").模型是mock()) else "mock"
+    _要的 = _用的依赖(定义.get("nodes"))
+    if _要的:
+        # 依赖指纹(DF-01 欠债,11-05):这一跑用的连接设置 / 工具父行是哪一份。探测会原地改 capabilities、
+        # 工具目录能改 name / adapter(id 不变、哈希不变)—— 发生产的闸拿它判「那次跑通时的,现在还是不是这一份」
+        来源 = {**来源, "依赖指纹": _依赖指纹(c, project_id, _要的)}
     job, run, trace = _新id("job"), _新id("xr"), _新id("tr")
     # trace 先建:execution_runs 有一条指向 traces 的复合外键
     c.execute(text("""
@@ -2451,10 +2661,11 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
             raise _错(404, "NOT_FOUND", "没有这次运行", "回运行列表")
         steps = c.execute(text("""
             select node_id, kind, status, attempt, execution_key, branch_key,
-                   skipped_reason, error_code, error_detail, input_ref, output_ref, started_at
+                   skipped_reason, error_code, error_detail, input_ref, output_ref, started_at, ended_at
               from run_steps where project_id=:p and execution_run_id=:i
              order by started_at nulls last, node_id
         """), {"p": project_id, "i": rid}).mappings().all()
+        调试 = _调试信息(c, project_id, r)
         回复步 = _按回复先后(c, project_id, rid, steps)
         evs = c.execute(text("""
             select seq, event_type, payload, occurred_at from run_events
@@ -2540,8 +2751,14 @@ def 运行详情(project_id: str, rid: str, me: 身份 = Depends(要权限("查�
                 "尝试": s["attempt"], "执行键": s["execution_key"],
                 "走的分支": s["branch_key"], "为什么跳过": s["skipped_reason"],
                 "错误码": s["error_code"], "错误细节": s["error_detail"],
-                "输入": _步(s["input_ref"]), "输出": _步(s["output_ref"])}
+                "输入": _步(s["input_ref"]), "输出": _步(s["output_ref"]),
+                "开始于": s["started_at"].isoformat() if s["started_at"] else None,
+                "结束于": s["ended_at"].isoformat() if s["ended_at"] else None,
+                "耗时毫秒": int((s["ended_at"] - s["started_at"]).total_seconds() * 1000)
+                           if s["started_at"] and s["ended_at"] else None}
                for s in steps],
+        # DF-01 §5.2:这次结果对着哪份图、还算不算数、第几次测这一步、花了多少
+        "调试": 调试,
         # 前端据此决定写「原文」还是「只看得到形状」—— 不让它从值长什么样去猜
         "看得到原文": bool(看原文),
         # 「直接回复」那几步说的话(10-27,用户:「要呈现出来,不然测试时不好看结果」)—— 页面用对话气泡摆

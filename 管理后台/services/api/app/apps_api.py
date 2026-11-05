@@ -572,7 +572,12 @@ def _切指针(c, project_id, rid, 环境, me, if_match=None):
             各 = [c.execute(text("select capabilities from connection_versions where project_id=:p and id=:i"),
                             {"p": project_id, "i": x}).mappings().first() for x in cvs]
             探过 = all(x is not None and _CN.探过吗(dict(x)) for x in 各)
-    问 = RL.可以发布吗(环境=环境, 清单=r, 审核=审核, 连接探过吗=探过)
+    跑通, 停用 = None, None
+    if r and r.get("workflow_version_id") and 环境 == RL.生产环境:
+        import workflows_api as _WA
+        跑通 = _WA.这一版跑通过吗(c, project_id, r["workflow_version_id"])
+        停用 = _WA.这一版停用的连接(c, project_id, r["workflow_version_id"])
+    问 = RL.可以发布吗(环境=环境, 清单=r, 审核=审核, 连接探过吗=探过, 跑通过吗=跑通, 停用的连接=停用)
     if 问:
         _审计(c, me, "release.deploy.blocked",
               {"release_id": rid, "environment": 环境},

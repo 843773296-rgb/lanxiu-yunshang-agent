@@ -110,6 +110,15 @@ def main():
     def 发生产():
         return 打("POST", P + f"/workflows/{wid}/releases", 体={"版本id": vid, "环境": "production"},
                  头={"Idempotency-Key": str(uuid.uuid4())})
+    # 生产只发对着这一版测通过的(用户 11-05 拍)—— 先照这一版试运行一次,跑到终态
+    c, t = 打("POST", P + "/execution-runs", 体={"workflow_id": wid, "workflow_version_id": vid, "输入": {"article": "上生产前测一次"}},
+             头={"Idempotency-Key": str(uuid.uuid4())})
+    for _ in range(60):
+        c2, r = 打("GET", P + f"/execution-runs/{(t or {}).get('resource_id')}")
+        if (r or {}).get("是终态吗"):
+            break
+        time.sleep(1)
+    ck("上生产前照这一版试运行一次 → 成功", (r or {}).get("执行状态") == "succeeded", (c, t, (r or {}).get("执行状态")))
     c, b = 发生产()
     if c == 422:
         打("POST", P + f"/releases/{(b.get('field_errors') or {}).get('清单id')}/reviews", 体={"结论": "通过"})
