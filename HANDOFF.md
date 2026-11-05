@@ -12,6 +12,25 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 🗂️ 11-05 傍晚:「澜绣云裳agent-工」**已挪进主文件夹**(用户拍)→ 现在在 `~/Desktop/澜绣云裳agent/.claude/worktrees/工`;下一件:写入侧隔离
+
+- **用户拍(AskUserQuestion)**:桌面上两个文件夹合一 → 选「把 -工 挪进主文件夹」。主文件夹**不动**(7 个 launchd 服务写死了它)。
+  目标:`git worktree move ~/Desktop/澜绣云裳agent-工 ~/Desktop/澜绣云裳agent/.claude/worktrees/工` ——
+  放 .claude/worktrees 是因为 bite_run(副本 400MB 上限,现在 332MB)/ impact / staff_cred_check 都已排掉这个目录;放可见新目录会翻倍超限
+- **已挪(21:1x)**:`git worktree move` 完成,worktree list 指新路径;挪完实测:主检出 `git status` 只有 `?? .claude/` 一条、未入库 .py 仍是 4(和挪前基线一样)、那边的库软链是绝对路径照旧指主检出的库。并行会话要在新路径重开会话;锁标签它内联传 `LANXIU_LOCK_WHO=澜绣云裳agent-工`(不写配置)
+- 挪完要做:① 主检出实测 `git status --porcelain | grep claude`(应只有 `?? .claude/` 一条)和
+  `git ls-files --others --exclude-standard | grep '\.py$' | wc -l`(**挪之前基线 4**,挪完还应是 4;变多就在 .gitignore 加 `.claude/worktrees/`)
+  ② 两边设 `LANXIU_LOCK_WHO`(锁 owner 标签是 basename $(pwd),挪完会变成「工」):我这边「澜绣云裳agent-主」,它那边「澜绣云裳agent-工」
+  ③ 改记忆 `lanxiu-two-checkouts.md` 里的旧路径 ④ 告诉用户挪完了(用户说「挪完告诉我」)
+- **写入侧隔离(新发现,还没做)**:复合外键只挡跨项目引用,挡不住 `update … where id=:i` 漏 project_id。
+  做法定了:**扫 SQL 字面量**(AST 取字符串,整句判,不按行)—— 每句 UPDATE / DELETE 打带 project_id 的表,WHERE 里要有 project_id。
+  原型扫到 118 句、6 句没带:evals_api.py:385(评测收尾那句,**真该补**)、import_lanxiu_tools.py:311(**该补**)、
+  jobs/lease.py:3(docstring 误报)、seed_datasets.py 三句(按 dataset_id 删,种子脚本;登记或补)。要配棘轮登记 + 咬合
+- 小样本线 20 用户已确认(e95c0a0d 已推,CI 没盯)
+- ⚠️ **并行会话核过:它那轮根门禁绿 ≠ 跨项目两条新判据验过** —— test_cross_project_read / test_project_gate 是管理后台 e2e,不在根 check.sh 里。我这边 14:49 那轮 `make test-e2e-ci` 绿时覆盖到 72004340;8777882c(登记理由那次)之后**只单跑过 test_cross_project_read + 3 条咬合,e2e-ci 没整轮重跑** —— 下一轮 e2e-ci 要跑
+- 并行会话提:数据那一桶(`/knob-plans/{key}` 这类)缺「推它的手」—— 加一条**不对称**判据:登记成数据缺的,哪天攻到了就红一次(不判「还缺」,那才是量库)
+- 还排着:问用户评测判分规则(算法选型卡,一次一题);读数据的 POST(原始日志导出)纳入攻击;开钥匙要问用户
+
 ## 🚪 11-05 午后:按用户说的顺序做老欠债(「按你说的顺序做」)—— 放假表提醒已推;第二个正式项目的门**已推(根门禁 + 后台三项全绿)**
 
 - **2027 放假表**:国务院还没公布(11-05 查,只有第三方预估 —— **预估不录**)。加了提醒(6621d575):11 月起 test_workdays 最后一行提醒次年没录,
@@ -6659,7 +6678,7 @@ CI 里**一处都没被调用**,而它守的是「九张表约 2160 行存着顾
 
 ### 七、worktree 的三条代价(全量门禁实测,都不是代码缺陷)
 
-在 `~/Desktop/澜绣云裳agent-工`(worktree)跑全量门禁,会出现三类**环境性**的红。
+在 worktree(11-05 起 `~/Desktop/澜绣云裳agent/.claude/worktrees/工`,之前是 `~/Desktop/澜绣云裳agent-工`)跑全量门禁,会出现三类**环境性**的红。
 **在原目录跑同一份代码是绿的**,所以不要照着这三条去改门禁。
 
 1. **`agentsite/.venv` 不存在 → 15 条检查全部崩溃**(`FileNotFoundError: ./agentsite/.venv/bin/python`)。
@@ -6823,7 +6842,7 @@ seed_new_products)在 CI 上一次都没跑过**(上一轮在第 23 步就挂了
 ### ③ git worktree 搭好了(并行会话留原目录)
 
     原目录  ~/Desktop/澜绣云裳agent        main  ← eureka-79(start.sh 的服务从这儿读页面)
-    新检出  ~/Desktop/澜绣云裳agent-工     w75   ← 数据工厂线;推用 `git push origin w75:main`
+    新检出  ~/Desktop/澜绣云裳agent/.claude/worktrees/工(11-05 前在 ~/Desktop/澜绣云裳agent-工)     w75   ← 数据工厂线;推用 `git push origin w75:main`
     库       新检出里 backend/lanxiu.db 是**符号链接**指回原目录那一个
 
 ⚠️ **符号链接那步是必须的**:`backend/lanxiu.db` 在 `.gitignore:6` 里,新检出**根本没有这个文件**。
@@ -14204,12 +14223,12 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-05 20:59。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-05 21:14。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 8777882c · 2026-11-05 · 跨项目读取攻击:没验的逐条登记理由、两头都盯;数据碰巧缺的只打印不判红 |
+| 最新提交 | e95c0a0d · 2026-11-05 · 小样本线 20 改成「用户已确认」:页面说明、代码注释、判据一起改,判据钉住 20 |
 | 代码量 | 974 个 Python 文件 / 182555 行(不含 .venv) |
 | 验收 | `./check.sh` 共 377 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
@@ -14222,8 +14241,6 @@ M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
  M HANDOFF.md
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/monitoring_api.py"
- M "\347\256\241\347\220\206\345\220\216\345\217\260/tests/orchestration/test_monitoring.py"
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
@@ -14237,17 +14254,19 @@ M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
 ?? .feynman/nightly-eval.log
 ?? .feynman/world-shift-launchd.log
 ?? .wip-muslin/
+?? .wip-store-report-SKILL.md
+?? agent/example-ab-results.jsonl
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+e95c0a0d 小样本线 20 改成「用户已确认」:页面说明、代码注释、判据一起改,判据钉住 20
 8777882c 跨项目读取攻击:没验的逐条登记理由、两头都盯;数据碰巧缺的只打印不判红
 72004340 跨项目读取攻击补到 83 / 88 个读接口:查询串里的 id 筛选、多层路径参数、库里兜底取 id
 1d933e3d 影响面警示段落棘轮 341 → 342:门禁自己提的那一格
 331dd2d6 跨项目读取隔离:按真路由表枚举攻击,新接口不用人记得补;门的钥匙绑到这条判据上
-8753ced1 第二个正式项目的门:跨项目读取隔离补好之前,库里只许有一个正式项目
 ```
 <!--/AUTO-->
 ## 一句话在做什么
