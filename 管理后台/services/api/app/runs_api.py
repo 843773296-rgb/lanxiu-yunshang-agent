@@ -429,7 +429,7 @@ def 评测列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
     with 连接() as c:
         rs = c.execute(text("""
             select count(*) over () 全量, e.id, e.candidate_ref, e.baseline_ref, e.dataset_version_id,
-                   e.scorer_version, e.status, e.job_id, e.created_at,
+                   e.scorer_version, e.status, e.job_id, e.created_at, e.executor_code, e.end_reason_code,
                    (select count(*) from evaluation_items i
                      where i.project_id=e.project_id and i.evaluation_id=e.id) 题数
               from evaluations e
@@ -445,7 +445,13 @@ def 评测列表(project_id: str, me: 身份 = Depends(要权限("查看有权�
         d["有基线吗"] = bool(d["baseline_ref"])
         d["能当结论吗"] = bool(d["baseline_ref"]) and bool(d["dataset_version_id"]) \
             and bool(d["scorer_version"])
-        if not d["能当结论吗"]:
+        if d["能当结论吗"] and d["status"] != "已完成":
+            # ⚠️ 四样都在也不够:**没跑完的评测不能当结论**(11-05,DF-05)。排队中 / 执行中的分数还在变,
+            # 超时 / 超出费用上限 / 已取消的只收回了一部分题 —— 拿它和别的评测比,分母不一样
+            d["能当结论吗"] = False
+            d["为什么不能当结论"] = (f"这次评测是「{d['status']}」,不是「已完成」—— "
+                                  f"没跑完的评测只收回了一部分题,分数还在变或者分母不全")
+        elif not d["能当结论吗"]:
             缺 = [名 for 名, v in (("基线", d["baseline_ref"]),
                                  ("数据集版本", d["dataset_version_id"]),
                                  ("判据版本", d["scorer_version"])) if not v]

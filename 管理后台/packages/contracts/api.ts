@@ -142,6 +142,8 @@ export const ENDPOINTS = [
   { method: "POST", path: "/evaluations", summary: "建评测", capability: "运行评测", fieldCapabilities: [], isAsync: true, needsIdempotencyKey: true, needsIfMatch: false },
   { method: "POST", path: "/evaluations/{id}/items", summary: "登记逐题结果与评分(外部跑完的)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "POST", path: "/evaluations/{id}/reviews", summary: "人工复核", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "GET", path: "/evaluations/{id}/progress", summary: "评测派发进度(每边每轮派了几次、收回几次、回执、心跳、截止、费用)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
+  { method: "POST", path: "/evaluations/{id}/cancel", summary: "取消一次后台派发的评测(要写理由)", capability: "运行评测", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: true },
   { method: "GET", path: "/applications", summary: "应用列表", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/applications/{id}", summary: "应用详情(各环境指针**带 revision**)", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
   { method: "GET", path: "/applications/{id}/releases", summary: "发布清单历史", capability: "查看有权配置", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: false, needsIfMatch: false },
@@ -293,4 +295,4 @@ export const ENDPOINTS = [
   { method: "POST", path: "/human-requests/{id}/decisions", summary: "处理待办", capability: "审批工具动作", fieldCapabilities: [], isAsync: false, needsIdempotencyKey: true, needsIfMatch: true },
 ] as const satisfies readonly EndpointSpec[];
 
-/** 共 205 条接口 · 24 条异步 · 32 条要幂等键 · 23 条要 If-Match */
+/** 共 207 条接口 · 24 条异步 · 32 条要幂等键 · 24 条要 If-Match */

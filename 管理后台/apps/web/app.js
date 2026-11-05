@@ -4825,13 +4825,15 @@ async function 页_评测中心() {
     return;
   }
   $("#main").innerHTML = 头 + `<table><thead><tr>
-      <th>候选</th><th>基线</th><th class="num">题</th>
+      <th>候选</th><th>基线</th><th>状态</th><th class="num">题</th>
       <th>数据集版本</th><th>判据</th><th>能当结论吗</th></tr></thead><tbody>`
     + d.items.map((r) => `<tr>
         <td><b>${esc((r.candidate_ref || {})["名"] || r.id)}</b>
           <div class="k">${esc(r.id)}</div></td>
         <td>${r["有基线吗"] ? esc((r.baseline_ref || {})["名"] || "有")
                             : `<span class="pill fail">没有基线</span>`}</td>
+        <td>${esc(r.status || "—")}<div class="k">${esc(r.executor_code || "")}</div>
+          ${r.executor_code === "后台派发" ? `<button data-evp="${esc(r.id)}">看进度</button>` : ""}</td>
         <td class="num">${r["题数"]}</td>
         <td class="k">${esc(String(r.dataset_version_id || "—").slice(-10))}</td>
         <td class="k">${esc(r.scorer_version || "—")}</td>
@@ -4839,7 +4841,32 @@ async function 页_评测中心() {
               : `<span class="pill fail">不能</span>
                  <div class="k">${esc(r["为什么不能当结论"] || "")}</div>`}</td>
       </tr>`).join("")
-    + `</tbody></table><div class="note">${md(d.note || "")}</div>`;
+    + `</tbody></table><div id="evp"></div><div class="note">${md(d.note || "")}</div>`;
+  // 后台派发的评测(DF-05):派了几次、收回几次、每次运行是谁在跑 —— **「已派发」只是排上队,不是在跑**
+  $("#main").querySelectorAll("[data-evp]").forEach((b) => b.onclick = async () => {
+    const box = $("#evp");
+    box.innerHTML = `<div class="state">加载中…</div>`;
+    let g;
+    try { g = await 请求(`${P()}/evaluations/${encodeURIComponent(b.dataset.evp)}/progress`); }
+    catch (e) { const s = 错误块(e, null); box.innerHTML = s.html; return; }
+    const 时 = (t) => t ? esc(String(t).replace("T", " ").slice(0, 19)) : "—";
+    box.innerHTML = `<div class="card"><h3>评测进度 · ${esc(g.id)}</h3>
+      ${g["过了截止没收尾"] ? `<div class="state err">${md(g.note)}</div>` : `<div class="note">${md(g.note)}</div>`}
+      <div class="k">状态 ${esc(g.status)}${g["结束原因"] ? " · " + esc(g["结束原因"]) : ""} ·
+        派发 ${时(g["派发于"])} · 开始 ${时(g["开始于"])} · 心跳 ${时(g["心跳"])} · 截止 ${时(g["截止"])} · 结束 ${时(g["结束于"])}</div>
+      <div class="k">已知费用 ${esc(g["已知费用"])} / 上限 ${esc(g["费用上限"])} 美元${g["算不出金额的笔数"] ? ` · ${g["算不出金额的笔数"]} 笔算不出金额(费用是「至少」)` : ""}</div>
+      <table><thead><tr><th>边</th><th class="num">轮</th><th class="num">派了</th><th class="num">收回</th><th class="num">跑通</th><th class="num">跑通率</th></tr></thead><tbody>`
+      + (g["分组"] || []).map((x) => `<tr><td>${esc(x["边"])}</td><td class="num">${x["轮"]}</td>
+          <td class="num">${x["派了"]}</td><td class="num">${x["已收"]}</td><td class="num">${x["跑通"]}</td>
+          <td class="num">${x["跑通率"] == null ? `<span class="pill warn">未知</span>` : x["跑通率"]}</td></tr>`).join("")
+      + `</tbody></table>
+      <table><thead><tr><th>题</th><th>边</th><th class="num">轮</th><th>运行</th><th>运行状态</th><th>执行者</th><th>收回了吗</th></tr></thead><tbody>`
+      + (g["回执"] || []).map((x) => `<tr><td class="k">${esc(String(x["题"]).slice(-10))}</td><td>${esc(x["边"])}</td>
+          <td class="num">${x["轮"]}</td><td class="k"><a href="#/wfrun/${encodeURIComponent(x["运行"])}">${esc(String(x["运行"]).slice(-8))}</a></td>
+          <td>${esc(x["运行状态"])}</td><td class="k">${esc(x["执行者"] || "还没人领")}</td>
+          <td>${x["收回了吗"] ? "是" : "否"}</td></tr>`).join("")
+      + `</tbody></table></div>`;
+  });
 }
 
 /* ── 实验对比(M5:/experiments 重建)──────────────────────────────────

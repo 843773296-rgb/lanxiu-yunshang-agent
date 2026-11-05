@@ -468,7 +468,7 @@ def _跑一张工作流(c, job, 打点):
             # 「写入类业务动作不许单测」在这儿**再查一次**:受理之后有人把这个动作改登记成写入,也不能跑
             import 单步测试 as ST1
             try:
-                定义, _ = ST1.拼小图(定义, 来源.get("node_id"), 写入只演练=(来源.get("跑法") == "连接测试"),
+                定义, _ = ST1.拼小图(定义, 来源.get("node_id"), 写入只演练=(来源.get("跑法") in ("连接测试", "评测")),
                                    工具读写=lambda tv: tv and c.execute(text(
                     "select side_effect_type from tool_versions where project_id=:p and id=:i"),
                     {"p": job["project_id"], "i": tv}).scalar())
@@ -690,7 +690,8 @@ def _跑一张工作流(c, job, 打点):
                 if not _ok:
                     raise RN.节点失败("INTEGRATION_TARGET_NOT_TEST", _为什么,
                                     "集成验证只用来验「真写进澜绣」这条路 —— 输入里换成测试客户(IT- 开头,每家店一个)再跑")
-        if 跑法 == "连接测试":
+        if 跑法 in ("连接测试", "评测"):
+            # 评测(11-05,DF-05)和连接测试同一条:模型真调、数据真读,**写入只演练** —— 评测一道题跑四遍,真写就是写四次
             import dsl as _DS
             tvr = c.execute(text("select side_effect_type, output_schema from tool_versions where project_id=:p and id=:i"),
                             {"p": job["project_id"], "i": tv}).mappings().first() or {}
@@ -1677,6 +1678,12 @@ def main():
                     print("  告警:" + x)
             except Exception as e:
                 print(f"  ⚠️ 告警扫描出错({type(e).__name__}: {e})—— 下一轮再扫")
+            try:
+                import eval_dispatch as _EVD   # 评测派发(11-05):收子运行结果、判超时 / 超费用 / 收齐;出错只打日志
+                for x in _EVD.收一遍():
+                    print("  评测:" + x)
+            except Exception as e:
+                print(f"  ⚠️ 收评测出错({type(e).__name__}: {e})—— 下一轮再收")
         with 事务() as c:
             发, 卡 = OB.发布一批(c)
         with 事务() as c:

@@ -246,6 +246,8 @@
     "from_status": "TEXT", "to_status": "TEXT",
     # 告警规则(11-04):阈值 / 窗口 / 去重周期 —— 套不上后缀约定,点名登记
     "threshold_value": "NUMERIC(20,6)", "window_minutes": "INTEGER", "dedupe_minutes": "INTEGER",
+    # 评测派发(11-05):超时分钟 —— 套不上后缀约定,点名登记
+    "timeout_minutes": "INTEGER",
     "param_update_method": "TEXT", "base_model": "TEXT", "pipeline_type": "TEXT",
     "source_info": "JSONB", "effective_at": "TIMESTAMPTZ",
     "candidate_ref": "JSONB", "baseline_ref": "JSONB", "target_ref": "JSONB",
@@ -358,6 +360,11 @@
     "alert_rules": {"name", "filter_snapshot", "metric_code", "direction_code", "threshold_value", "window_minutes",
                     "min_sample_count", "trigger_count", "recover_count", "dedupe_minutes", "owner", "breach_count", "normal_count"},
     "alert_incidents": {"alert_rule_id", "status", "eval_snapshot"},
+    # 评测派发(11-05):少一样就说不清这次派的是哪道题、哪一边、第几轮、跑的哪一版、回执是哪次运行
+    "evaluations": {"executor_code"},
+    "evaluation_items": {"variant_code", "round_no"},
+    "evaluation_runs": {"evaluation_id", "sample_id", "variant_code", "round_no", "workflow_version_id",
+                        "execution_run_id", "job_id"},
     # 聊天助手版本:开头 / 工具 / 模型 / 从哪来 / 哈希 —— 少一样就说不清「模型收到的是什么」
     "chat_assistant_versions": {"chat_assistant_id", "version_no", "head_template", "tools",
                                 "model_name", "source_kind", "content_hash"},

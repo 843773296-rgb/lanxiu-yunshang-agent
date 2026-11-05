@@ -304,6 +304,8 @@ _额外唯一 = {
     # 产出监督(2026-10-10):同一份产出的同一版只记一行 —— 重复上报不许变成两条,
     # 否则打回会挂在其中一条上,而另一条在列表里看起来「正常」
     "artifacts": [("project_id", "external_ref", "version_no")],
+    # 评测派发(11-05):同一次评测里,一道题 × 一边 × 一轮只派一次 —— 重派会让「两轮」变成三轮,波动算错
+    "evaluation_runs": [("project_id", "evaluation_id", "sample_id", "variant_code", "round_no")],
 }
 
 
@@ -328,6 +330,19 @@ _额外检查 = {
         ("ck_alert_rules_min_sample", "min_sample_count >= 1"),
         ("ck_alert_rules_counts", "trigger_count between 1 and 20 and recover_count between 1 and 20"),
         ("ck_alert_rules_dedupe", "dedupe_minutes between 5 and 10080"),
+    ],
+    # 评测派发(11-05):老评测 / 老逐题回填「外部登记」,两列从此不许空(并行会话提醒:可空的话「老数据」和「漏写」是同一个 NULL)
+    "evaluations": [
+        ("ck_evaluations_executor", "executor_code in ('外部登记', '后台派发')"),
+        ("ck_evaluations_dispatch", "executor_code <> '后台派发' or (timeout_minutes between 1 and 1440 and cost_cap_amount > 0 and rounds_count between 1 and 5)"),
+    ],
+    "evaluation_items": [
+        ("ck_evaluation_items_variant", "variant_code in ('外部登记', '候选', '基线')"),
+        ("ck_evaluation_items_round", "round_no between 1 and 5"),
+    ],
+    "evaluation_runs": [
+        ("ck_evaluation_runs_variant", "variant_code in ('候选', '基线')"),
+        ("ck_evaluation_runs_round", "round_no between 1 and 5"),
     ],
     "alert_incidents": [
         ("ck_alert_incidents_status", "status in ('触发中', '已恢复', '已处理')"),

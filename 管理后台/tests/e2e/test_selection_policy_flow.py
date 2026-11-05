@@ -242,10 +242,10 @@ def main():
         真实验 = f"ev_假的{尾}"
         _c.execute(_t("""insert into evaluations
             (id, organization_id, project_id, candidate_ref, baseline_ref,
-             dataset_version_id, scorer_version, status,
+             dataset_version_id, scorer_version, status, executor_code,
              created_at, created_by, updated_at, revision)
             values (:i,:o,:p, cast('{"ref":"候选"}' as jsonb),
-                    cast('{"ref":"基线"}' as jsonb), null, 'v1', '已完成',
+                    cast('{"ref":"基线"}' as jsonb), null, 'v1', '已完成', '外部登记',
                     now(),'test', now(), 1)"""),
                    {"i": 真实验, "o": _org, "p": 项目})
         真模型连接 = f"mc_假的{尾}"

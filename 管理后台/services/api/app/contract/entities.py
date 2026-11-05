@@ -377,12 +377,19 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     # ⑦ 评测
     E("evaluations", "评测实验", 项目级, 可改,
       ["candidate_ref", "baseline_ref", "dataset_version_id", "scorer_version",
-       "status", "job_id"],
+       "status", "job_id", "executor_code", "timeout_minutes", "cost_cap_amount", "rounds_count",
+       "dispatched_at", "started_at", "heartbeat_at", "deadline_at", "ended_at", "end_reason_code", "end_detail"],
       ["**候选与基线都要记**:没有基线的分数不能当结论",
-       "数据版本和评分版本都要记 —— 换了判据的两轮不可比"]),
+       "数据版本和评分版本都要记 —— 换了判据的两轮不可比",
+       "**执行方式**(11-05,DF-05):外部登记 = 建一条记录、等外面把结果登记进来;后台派发 = 每道题 × 候选 / 基线 × 每一轮"
+       "各派一次工作流运行(写入只演练),回执记在 evaluation_runs",
+       "后台派发的**超时分钟 / 费用上限 / 轮数都必填,没有系统默认值**(和告警阈值同一条:产品配置不伪装成标准);"
+       "状态 已派发 → 执行中(有一次运行真的开始了)→ 已完成 / 超时 / 超出费用上限 / 已取消;**只登记排队不算执行中**(C17)",
+       "heartbeat_at = 最近一次看到子运行有进展;过了 deadline_at 还没收尾的,页面上标「过了截止没收尾」,不算在跑"]),
     # 内容寻址=False:一次写入的记录:身份是(实验, 样本) —— 内容哈希对它没有意义。
     E("evaluation_items", "评测逐题结果", 子对象, 不可变,
-      ["evaluation_id", "sample_id", "raw_output", "trace_id", "finished_at"],
+      ["evaluation_id", "sample_id", "raw_output", "trace_id", "finished_at",
+       "variant_code", "round_no", "execution_run_id"],
       ["**原始结果不被复核覆盖**(§18)—— 所以这张表里**没有分数**:"
        "分数在 scores 里,人工改判是**新增一条**,不是改这一行",
        "raw_output 要能追回 trace:「模型实际收到什么」是这个后台的立项痛点之一"],
@@ -395,6 +402,14 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     #   ② 人工复核要是改同一行,**原始结果就被覆盖了** —— 而规格明确禁止。
     # 「一条题只有一个分数」这个隐含假设,是把复核做成覆盖的根源。
     # 内容寻址=False:一次写入的记录:身份是「谁在什么时候用哪一版判据打的」 —— 内容哈希对它没有意义。
+    # 评测派发回执(11-05,DF-05 / C17):每派一次记一行,收结果时填 collected_at
+    E("evaluation_runs", "评测派发回执", 子对象, 可改,
+      ["evaluation_id", "sample_id", "variant_code", "round_no", "workflow_version_id",
+       "execution_run_id", "job_id", "collected_at"],
+      ["**执行回执**:哪道题、哪一边(候选 / 基线)、第几轮、跑的哪一版工作流、派出的运行和任务是哪个 —— 「派了」要能查到派给了谁",
+       "collected_at 空 = 结果还没收回来;收回来时同一个事务里写一条 evaluation_items(不可变)再填这一列",
+       "(评测, 题, 边, 轮) 唯一:重派会让「两轮」变成三轮,波动就算错了"],
+      依赖=["evaluations"]),
     E("scores", "评分", 子对象, 不可变,
       ["evaluation_item_id", "dimension", "value", "value_known", "source",
        "scorer_version", "rationale", "by", "at", "supersedes_score_id"],

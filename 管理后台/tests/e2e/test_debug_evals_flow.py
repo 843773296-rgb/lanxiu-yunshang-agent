@@ -73,9 +73,9 @@ def 造一条判分器分数(评测id):
         org = c.execute(text("select organization_id from projects where id=:p"),
                         {"p": 项目}).scalar()
         c.execute(text("""insert into evaluation_items
-            (id, organization_id, project_id, evaluation_id, created_at, created_by,
-             updated_at, revision)
-            values (:i,:o,:p,:e, now(),'test', now(), 1)
+            (id, organization_id, project_id, evaluation_id, variant_code, round_no,
+             created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:e, '外部登记', 1, now(),'test', now(), 1)
             on conflict do nothing"""),
                   {"i": 项id, "o": org, "p": 项目, "e": 评测id})
         c.execute(text("""insert into scores

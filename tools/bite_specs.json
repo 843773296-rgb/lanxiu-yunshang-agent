@@ -14705,5 +14705,53 @@
    }
   ],
   "预期红": "不靠日期也算得出来"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_eval_dispatch_check.py",
+  "改坏": "派发前不查人工核对步骤(「评测而已,挂几条待办无所谓」)—— 每道题跑四遍,核对人的待办里会挂一堆评测单",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/eval_dispatch.py",
+    "old": "        人工 = [n.get(\"id\") for n in (v.get(\"nodes\") or []) if n.get(\"type\") == \"human\"]\n",
+    "new": "        人工 = []\n"
+   }
+  ],
+  "预期红": "④ 候选那一版带人工核对 → 拒,点名是哪一边"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_eval_dispatch_check.py",
+  "改坏": "派发上限用 ≥ 判(差一位)—— 正好在上限内的题集被拒",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/eval_dispatch.py",
+    "old": "    if 次数 > 派发上限:\n",
+    "new": "    if 次数 >= 派发上限:\n"
+   }
+  ],
+  "预期红": "⑥ 正好在上限内 → 能派(边界)"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_eval_dispatch_flow.py",
+  "改坏": "收的时候不看费用(「上限是建的时候查过的」)—— 一次评测花多少钱没人拦",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/eval_dispatch.py",
+    "old": "    if 费用 > float(ev[\"cost_cap_amount\"]):\n",
+    "new": "    if False:\n"
+   }
+  ],
+  "预期红": "**已知花费 0.5 > 上限 0.01 → 超出费用上限**,说明里写着花了多少"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_eval_dispatch_flow.py",
+  "改坏": "超时只落终态、不取消没跑完的(「反正评测已经结束了」)—— 那些运行接着挂着、接着花钱",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/eval_dispatch.py",
+    "old": "    if 未完 and 现在 >= ev[\"deadline_at\"]:\n        摘要[\"取消了\"] = _取消没跑完的(c, ev, 子们)\n",
+    "new": "    if 未完 and 现在 >= ev[\"deadline_at\"]:\n        摘要[\"取消了\"] = 0\n"
+   }
+  ],
+  "预期红": "那次没跑完的运行被取消了(不是留着挂着)"
  }
 ]

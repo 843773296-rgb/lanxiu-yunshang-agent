@@ -101,6 +101,27 @@ async def 建评测(project_id: str, request: Request,
         坏["数据集版本"] = ("必填,而且要是**冻结过的版本** —— "
                       "拿活数据跑出来的分数,下次跑的时候题已经变了")
     if not 判据: 坏["判据版本"] = "必填 —— 换了判据的两轮不可比"
+    执行 = (体.get("执行方式") or "外部登记").strip()
+    if 执行 not in ("外部登记", "后台派发"):
+        坏["执行方式"] = "只收「外部登记」(建一条记录、等外面登记结果)或「后台派发」(后台把每道题派成工作流运行)"
+    if 执行 == "后台派发":
+        # 超时 / 费用上限**必填、没有系统默认值** —— 和告警阈值同一条:产品配置,系统替人填一个数等于把它伪装成标准
+        try:
+            超时 = int(体.get("超时分钟"))
+            if not 1 <= 超时 <= 1440: raise ValueError
+        except (TypeError, ValueError):
+            坏["超时分钟"] = "必填,1 到 1440 之间的整数 —— 到点还没跑完的会被取消、评测记成「超时」"
+        try:
+            上限 = float(体.get("费用上限"))
+            if not 上限 > 0: raise ValueError
+        except (TypeError, ValueError):
+            坏["费用上限"] = "必填,大于 0(美元)—— 已知花费超过它就停,没跑完的取消、评测记成「超出费用上限」"
+        # 轮数照方案 §8.2:「基线与候选各跑两轮」—— 不给就是 2;只跑 1 轮看不出波动
+        try:
+            轮数 = int(体.get("轮数") or 2)
+            if not 1 <= 轮数 <= 5: raise ValueError
+        except (TypeError, ValueError):
+            坏["轮数"] = "1 到 5;不给就是 2(方案:基线与候选各跑两轮,才看得出波动)"
     if 坏:
         raise _错(422, "VALIDATION", "这次评测建不了",
                   "候选、基线、数据集版本、判据版本,四个都要在场",
@@ -123,14 +144,16 @@ async def 建评测(project_id: str, request: Request,
                       "先冻一版 —— **不静默用「当前样本」**:"
                       "那样下次跑的时候题已经变了,而两次的分数看起来可比")
         eid = _新id("ev")
+        if 执行 == "后台派发":
+            return _后台派发(c, me, project_id, org, eid, v, 候选, 基线, 版本, 判据, 超时, 上限, 轮数, idempotency_key)
         # ⚠️ `candidate_ref` 是 **JSONB**(这个仓库为「JSONB 塞裸串」栽过八次),
         # 顺手把幂等键放进去 —— 这张表没有 idempotency_key 列。
         c.execute(text("""insert into evaluations
             (id, organization_id, project_id, candidate_ref, baseline_ref,
-             dataset_version_id, scorer_version, status,
+             dataset_version_id, scorer_version, status, executor_code,
              created_at, created_by, updated_at, revision)
             values (:i,:o,:p, cast(:cand as jsonb), cast(:base as jsonb),
-                    :dv,:sc,'排队中', now(), :by, now(), 1)"""),
+                    :dv,:sc,'排队中','外部登记', now(), :by, now(), 1)"""),
                   {"i": eid, "o": org, "p": project_id,
                    "cand": _json.dumps({"ref": 候选, "幂等键": idempotency_key},
                                        ensure_ascii=False),
@@ -145,6 +168,52 @@ async def 建评测(project_id: str, request: Request,
                      "少任何一个,跑出来的分数都不能当结论。"
                      "⚠️ 跑完之后还要过 `可比吗()`:换了题或换了判据的两轮,"
                      "**并排两个不可比的数,读的人会算出一个差值**")}
+
+
+def _后台派发(c, me, project_id, org, eid, 数据版本, 候选, 基线, 版本, 判据, 超时, 上限, 轮数, 幂等键):
+    """后台派发(DF-05,11-05):先把能查的全查了(版本在不在、每道题的输入合不合格式、有没有人工核对步骤、次数上限),
+    再在**同一个事务里**建评测 + 逐条派运行 + 记回执。任何一处不过 → 整个不建,一个模型都没调。"""
+    import eval_dispatch as ED
+    行们 = {}
+    for 边, vid in (("候选", 候选), ("基线", 基线)):
+        r = c.execute(text("select * from workflow_versions where project_id=:p and id=:i"),
+                      {"p": project_id, "i": vid}).mappings().first()
+        if not r:
+            raise _错(422, "VALIDATION", f"{边}「{vid}」不是这个项目里的工作流版本",
+                      "后台派发要候选和基线都是**已发布的工作流版本**(版本号在工作流详情的版本列表里)",
+                      field_errors={边: "要是工作流版本 id"})
+        行们[边] = dict(r)
+    if 候选 == 基线:
+        raise _错(422, "VALIDATION", "候选和基线是同一版", "选两个不同的版本 —— 同一版自己比自己,差值只剩波动",
+                  field_errors={"基线": "要和候选不同"})
+    题们 = 数据版本["frozen_samples"] or []
+    if isinstance(题们, str):
+        题们 = _json.loads(题们)
+    坏 = ED.派发前检查(题们, 行们, 轮数)
+    if 坏:
+        raise _错(422, "VALIDATION", f"这次评测派不出去({len(坏)} 处)",
+                  "按下面逐处改好再建 —— 这次一个模型都没调,不花钱", field_errors=坏)
+    c.execute(text("""insert into evaluations
+        (id, organization_id, project_id, candidate_ref, baseline_ref, dataset_version_id, scorer_version, status,
+         executor_code, timeout_minutes, cost_cap_amount, rounds_count, dispatched_at, deadline_at,
+         created_at, created_by, updated_at, revision)
+        values (:i,:o,:p, cast(:cand as jsonb), cast(:base as jsonb), :dv,:sc,'已派发',
+                '后台派发', :to, :cap, :rn, now(), now() + make_interval(mins => :to), now(), :by, now(), 1)"""),
+              {"i": eid, "o": org, "p": project_id,
+               "cand": _json.dumps({"ref": 候选, "kind": "workflow_version", "名": f"v{行们['候选']['version_no']}",
+                                    "幂等键": 幂等键}, ensure_ascii=False),
+               "base": _json.dumps({"ref": 基线, "kind": "workflow_version", "名": f"v{行们['基线']['version_no']}"},
+                                   ensure_ascii=False),
+               "dv": 版本, "sc": 判据, "to": 超时, "cap": 上限, "rn": 轮数, "by": me.user_id})
+    n = ED.派(c, me, project_id, eid, 行们, 题们, 轮数)
+    _审计(c, me, "evaluation.dispatch",
+          {"evaluation_id": eid, "candidate": 候选, "baseline": 基线, "dataset_version_id": 版本,
+           "派了": n, "超时分钟": 超时, "费用上限": 上限, "轮数": 轮数})
+    return {"id": eid, "status": "已派发", "新建了吗": True, "执行方式": "后台派发", "派了": n,
+            "候选": 候选, "基线": 基线, "数据集版本": 版本, "判据版本": 判据,
+            "note": (f"派了 {n} 次运行({len(题们)} 题 × 候选 / 基线 × {轮数} 轮),写入只演练。"
+                     f"**「已派发」只是排上了队,不是在跑** —— 有一次运行真的开始了才变「执行中」;"
+                     f"{超时} 分钟内没跑完的会被取消、记成「超时」")}
 
 
 # ── 登记一次在外面跑完的评测 ──────────────────────────────────────
@@ -196,12 +265,16 @@ async def 登记逐题(project_id: str, eid: str, request: Request,
                   "空集合上所有性质都成立,而「一条都没登记」会被读成「登记好了」",
                   field_errors={"逐题": "必填,且非空"})
     with 事务() as c:
-        ev = c.execute(text("""select id, status, dataset_version_id, scorer_version
+        ev = c.execute(text("""select id, status, dataset_version_id, scorer_version, executor_code
                               from evaluations where project_id=:p and id=:i"""),
                        {"p": project_id, "i": eid}).mappings().first()
         if not ev:
             raise _错(404, "NOT_FOUND", f"没有评测 {eid}",
                       "先建评测(候选 + 基线 + 冻结的数据版本 + 判据版本)")
+        if ev["executor_code"] == "后台派发":
+            raise _错(409, "EVALUATION_DISPATCHED", f"评测 {eid} 是后台派发的,结果由后台自己收",
+                      "后台派发的评测每道题都对着一次真实运行 —— 从外面再登记一份,"
+                      "同一道题就有两份来路不同的结果。要改判走 `/reviews`(新增一条评分)")
         if ev["status"] == "已完成":
             raise _错(409, "EVALUATION_ALREADY_DONE",
                       f"评测 {eid} 已经完成了,不许再登记",
@@ -280,8 +353,8 @@ async def 登记逐题(project_id: str, eid: str, request: Request,
             原 = it.get("原始输出", it.get("raw_output"))
             c.execute(text("""insert into evaluation_items
                 (id, organization_id, project_id, evaluation_id, sample_id,
-                 raw_output, trace_id, finished_at, created_at, created_by)
-                values (:i,:o,:p,:e,:s, cast(:r as jsonb), :t, now(), now(), :by)"""),
+                 raw_output, trace_id, finished_at, variant_code, round_no, created_at, created_by)
+                values (:i,:o,:p,:e,:s, cast(:r as jsonb), :t, now(), '外部登记', 1, now(), :by)"""),
                       {"i": iid, "o": org, "p": project_id, "e": eid, "s": 号,
                        "r": _json.dumps(原 if isinstance(原, dict) else {"text": 原},
                                         ensure_ascii=False),
@@ -447,3 +520,88 @@ async def 改片段(project_id: str, dvid: str, request: Request,
                      f"{用了几次} 个索引成员引用着 —— 它照样能检索、照样能复现。"
                      "原地改的话,**昨天那次检索为什么召回这一条,今天就解释不了了**。"
                      "⚠️ 这是个**候选**:要让它生效,得重建索引")}
+
+
+# ── 评测派发:进度 / 取消(DF-05,11-05)───────────────────────────────
+@router.get(前缀 + "/evaluations/{eid}/progress")
+async def 派发进度(project_id: str, eid: str, me: 身份 = Depends(要权限("运行评测"))):
+    """每一边、每一轮派了几次、收回几次、成功几次;回执(每次运行)、心跳、截止、费用。
+
+    ⚠️ **过了截止还没收尾的,标「过了截止没收尾」,不算在跑**(并行会话提醒:「还在跑」和「跑崩了没人收」
+    都是有开始、没结束 —— 收尾的是 worker 每分钟那一遍,worker 停了就会这样)。"""
+    import eval_dispatch as ED
+    with 连接() as c:
+        ev = c.execute(text("select * from evaluations where project_id=:p and id=:i"),
+                       {"p": project_id, "i": eid}).mappings().first()
+        if not ev:
+            raise _错(404, "NOT_FOUND", f"没有评测 {eid}", "回评测中心刷新看看")
+        子们 = ED._子运行们(c, project_id, eid) if ev["executor_code"] == "后台派发" else []
+        现在 = c.execute(text("select now()")).scalar()
+    分组 = {}
+    for 子 in 子们:
+        g = 分组.setdefault((子["variant_code"], 子["round_no"]),
+                           {"边": 子["variant_code"], "轮": 子["round_no"], "派了": 0, "已收": 0, "跑通": 0})
+        g["派了"] += 1
+        if 子["collected_at"]:
+            g["已收"] += 1
+            g["跑通"] += 1 if 子["status"] == "succeeded" else 0
+    for g in 分组.values():
+        g["跑通率"] = round(g["跑通"] / g["已收"], 4) if g["已收"] else None
+    没收尾 = (ev["status"] in ("已派发", "执行中") and ev["deadline_at"] is not None and 现在 > ev["deadline_at"])
+    return {"id": eid, "执行方式": ev["executor_code"], "status": ev["status"], "revision": ev["revision"],
+            "过了截止没收尾": 没收尾,
+            "派发于": ev["dispatched_at"], "开始于": ev["started_at"], "心跳": ev["heartbeat_at"],
+            "截止": ev["deadline_at"], "结束于": ev["ended_at"], "结束原因": ev["end_reason_code"],
+            "结束说明": ev["end_detail"], "超时分钟": ev["timeout_minutes"],
+            "费用上限": (float(ev["cost_cap_amount"]) if ev["cost_cap_amount"] is not None else None),
+            "已知费用": round(sum(float(子["费用"] or 0) for 子 in 子们), 6),
+            "算不出金额的笔数": sum(int(子["算不出笔数"] or 0) for 子 in 子们),
+            "分组": sorted(分组.values(), key=lambda g: (g["边"], g["轮"])),
+            "回执": [{"题": 子["sample_id"], "边": 子["variant_code"], "轮": 子["round_no"],
+                     "运行": 子["execution_run_id"], "任务": 子["job_id"], "运行状态": 子["status"],
+                     "执行者": 子["执行者"], "开始于": 子["started_at"], "尝试次数": 子["尝试次数"],
+                     "收回了吗": bool(子["collected_at"])} for 子 in 子们],
+            "note": ("外部登记的评测没有派发回执 —— 结果由外面登记进来" if ev["executor_code"] != "后台派发" else
+                     ("⚠️ 过了截止时间还没收尾:负责收尾的 worker 可能没在跑 —— **这不是「还在跑」**" if 没收尾 else
+                      "「已派发」= 排上队了;「执行中」= 至少一次运行真的开始了;跑通 = 子运行成功结束(这一版唯一的分,"
+                      "「答得对不对」等判分器或人工复核)"))}
+
+
+@router.post(前缀 + "/evaluations/{eid}/cancel")
+async def 取消评测(project_id: str, eid: str, request: Request,
+               if_match: str = Header(default=None, alias="If-Match"),
+               me: 身份 = Depends(要权限("运行评测"))):
+    """取消一次后台派发的评测:没跑完的子运行取消掉,已收的结果留着,评测记「已取消」。"""
+    import eval_dispatch as ED
+    if not if_match:
+        raise _错(409, "IF_MATCH_REQUIRED", "要带 If-Match", "把进度里的 revision 放进 If-Match 头")
+    体 = {}
+    try:
+        体 = await request.json()
+    except Exception:
+        pass
+    理由 = ((体 or {}).get("理由") or "").strip()
+    if not 理由:
+        raise _错(422, "VALIDATION", "取消要写理由", "写一句为什么停 —— 半途停掉的评测,过后没人记得是谁停的、为什么",
+                  field_errors={"理由": "必填"})
+    with 事务() as c:
+        ev = c.execute(text("select * from evaluations where project_id=:p and id=:i for update"),
+                       {"p": project_id, "i": eid}).mappings().first()
+        if not ev:
+            raise _错(404, "NOT_FOUND", f"没有评测 {eid}", "回评测中心刷新看看")
+        if ev["executor_code"] != "后台派发":
+            raise _错(409, "NOT_DISPATCHED", "这次评测不是后台派发的,没有可取消的运行", "外部登记的评测由外面那一方停")
+        if ev["status"] in ED.评测终态们:
+            raise _错(409, "EVALUATION_ENDED", f"这次评测已经是「{ev['status']}」了", "已经结束的评测取消不了;要重跑就新建一次")
+        if str(ev["revision"]) != str(if_match).strip('"'):
+            raise _错(409, "REVISION_CONFLICT", "这次评测在你看过之后变了", "刷新进度再决定要不要取消")
+        子们 = ED._子运行们(c, project_id, eid)
+        for 子 in 子们:      # 先把已经结束的收进来,别让取消吞掉已有结果
+            if 子["status"] in ED.终态们 and not 子["collected_at"]:
+                ED._收一条(c, dict(ev), 子)
+        取消了 = ED._取消没跑完的(c, dict(ev), 子们)
+        ED._落终态(c, dict(ev), "已取消", "CANCELLED_BY_USER",
+                  {"理由": 理由, "谁": me.user_id, "取消了": 取消了, "共派": len(子们)})
+        _审计(c, me, "evaluation.cancel", {"evaluation_id": eid, "取消了": 取消了}, reason=理由)
+    return {"id": eid, "status": "已取消", "取消了": 取消了,
+            "note": "没跑完的运行已取消;已经收回的结果留着。⚠️ 已经在跑的那一步可能还会把这一步跑完 —— 写入本来就只演练"}

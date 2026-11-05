@@ -128,10 +128,10 @@ def main():
             e = 新("ev")
             c.execute(text("""insert into evaluations
                 (id, organization_id, project_id, candidate_ref, baseline_ref,
-                 dataset_version_id, scorer_version, status,
+                 dataset_version_id, scorer_version, status, executor_code,
                  created_at, created_by, updated_at, revision)
                 values (:i,:o,:p, cast(:cand as jsonb), cast(:base as jsonb),
-                        :dv,:sv,'已完成', now(),:by, now(),1)"""),
+                        :dv,:sv,'已完成','外部登记', now(),:by, now(),1)"""),
                       # ⚠️ `candidate_ref` / `baseline_ref` 是 **JSONB**,不是 TEXT ——
                       # 查过列类型才写的。今天这是同族第三次
                       # (前两次:裸串塞进 JSONB 的 `spans.error`、
@@ -147,8 +147,8 @@ def main():
                 it = 新("ei")
                 c.execute(text("""insert into evaluation_items
                     (id, organization_id, project_id, evaluation_id, sample_id,
-                     raw_output, finished_at, created_at, created_by)
-                    values (:i,:o,:p,:e,:s, cast(:r as jsonb), now(), now(),'seed')"""),
+                     raw_output, finished_at, variant_code, round_no, created_at, created_by)
+                    values (:i,:o,:p,:e,:s, cast(:r as jsonb), now(), '外部登记', 1, now(),'seed')"""),
                           {"i": it, "o": org, "p": proj, "e": e, "s": sid[i],
                            "r": json.dumps({"text": f"{名} 对第 {i+1} 题的回答"},
                                            ensure_ascii=False)})

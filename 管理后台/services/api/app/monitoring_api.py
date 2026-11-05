@@ -27,7 +27,7 @@ router = APIRouter()
 前缀 = "/api/v1/projects/{project_id}"
 
 小样本线 = 20          # 产品默认值,业务未确认(见文件头)
-调试跑法 = ("连接测试", "样例预览", "集成验证")
+调试跑法 = ("连接测试", "样例预览", "集成验证", "评测")
 终态 = ("succeeded", "failed", "cancelled", "incomplete")
 范围们 = ("业务", "调试", "全部")
 
@@ -38,7 +38,7 @@ _维度 = """
     coalesce(r.definition_ref->>'环境', r.environment) 环境,
     coalesce(r.definition_ref->>'发起', case when r.definition_ref->>'跑法' is not null then '后台:' || (r.definition_ref->>'跑法')
                                          else '后台' end) 入口,
-    case when r.execution_mode = 'live' and coalesce(r.definition_ref->>'跑法', '正常') not in ('连接测试', '样例预览', '集成验证')
+    case when r.execution_mode = 'live' and coalesce(r.definition_ref->>'跑法', '正常') not in ('连接测试', '样例预览', '集成验证', '评测')
          then '业务' else '调试' end 范围"""
 
 
