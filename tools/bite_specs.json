@@ -14547,7 +14547,12 @@
     "new": "    if False:\n        res.update(未跟踪的("
    }
   ],
-  "预期红": "未跟踪的新文件也算改动 · **接线**断了"
+  "预期红": "未跟踪的新文件也算改动 · **接线**断了",
+  "前置": [
+   "git init -q",
+   "git add -A",
+   "git -c user.email=b@b -c user.name=b commit -qm 咬合副本基线"
+  ]
  },
  {
   "script": "tools/impact.py",
@@ -14559,7 +14564,12 @@
     "new": "        if not f or not f.endswith(影响面认的扩展名):"
    }
   ],
-  "预期红": "未跟踪的新文件也算改动 · **纯函数**坏了"
+  "预期红": "未跟踪的新文件也算改动 · **纯函数**坏了",
+  "前置": [
+   "git init -q",
+   "git add -A",
+   "git -c user.email=b@b -c user.name=b commit -qm 咬合副本基线"
+  ]
  },
  {
   "script": "管理后台/tests/orchestration/test_access_doc.py",
@@ -14620,5 +14630,80 @@
    }
   ],
   "预期红": "正常、样本不够、正常 → 第 3 轮恢复"
+ },
+ {
+  "script": "tools/impact.py",
+  "改坏": "把 覆盖() 里「被读」那一支关掉 —— 十五条纯函数用例照旧全对,只有走 覆盖() 的那张试纸红",
+  "file": [
+   {
+    "path": "tools/impact.py",
+    "old": "    if 被读:\n",
+    "new": "    if False and 被读:\n"
+   }
+  ],
+  "预期红": "「被读」那一档 · **接线 / 试纸**不对",
+  "前置": [
+   "git init -q",
+   "git add -A",
+   "git -c user.email=b@b -c user.name=b commit -qm 咬合副本基线"
+  ]
+ },
+ {
+  "script": "tools/impact.py",
+  "改坏": "让 _路径串() 不再认「先赋给变量再 open 那个变量」—— 这正是第一版真实漏掉的写法,漏的时候不报错、照旧说「一条都没有」",
+  "file": [
+   {
+    "path": "tools/impact.py",
+    "old": "        return (名表 or {}).get(节点.id)\n",
+    "new": "        return None\n"
+   }
+  ],
+  "预期红": "「被读」那一档 · **纯函数**坏了",
+  "前置": [
+   "git init -q",
+   "git add -A",
+   "git -c user.email=b@b -c user.name=b commit -qm 咬合副本基线"
+  ]
+ },
+ {
+  "script": "tools/impact.py",
+  "改坏": "让 解析diff() 不再把 git 转义过的中文名解回来 —— 整个 管理后台/ 树和十几个中文名文件会一声不响退出影响面报告,而报告看起来只是干净",
+  "file": [
+   {
+    "path": "tools/impact.py",
+    "old": "            cur = 去引号(line[6:]); res.setdefault(cur, [])\n",
+    "new": "            cur = line[6:]; res.setdefault(cur, [])\n"
+   }
+  ],
+  "预期红": "中文名路径 · **纯函数**坏了",
+  "前置": [
+   "git init -q",
+   "git add -A",
+   "git -c user.email=b@b -c user.name=b commit -qm 咬合副本基线"
+  ]
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "把挑「编出来的天数」的搜索范围缩成空 —— 夹具立不起来,而用例照旧跑",
+  "file": [
+   {
+    "path": "agent/recall_eval_judgetest.py",
+    "old": "    for off in range(1, 15):\n",
+    "new": "    for off in range(1, 1):\n"
+   }
+  ],
+  "预期红": "挑不出一个「编出来的天数」"
+ },
+ {
+  "script": "agent/recall_eval_judgetest.py",
+  "改坏": "让「写出日期、天数算对了不算编数」那条用带日期规则的可推导集去核自己 —— 那条用例从此在日期规则被删掉之后照旧通过",
+  "file": [
+   {
+    "path": "agent/recall_eval_judgetest.py",
+    "old": "日期算对, None)\n",
+    "new": "日期算对, 事实.get(\"今天\"))\n"
+   }
+  ],
+  "预期红": "不靠日期也算得出来"
  }
 ]

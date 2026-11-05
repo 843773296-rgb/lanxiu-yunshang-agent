@@ -37,7 +37,7 @@
     python3 tools/impact.py           # 看工作区还没提交的改动
     python3 tools/impact.py HEAD~3    # 看最近三次提交动了什么
 """
-import json, os, re, subprocess, sys
+import ast, json, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -61,6 +61,19 @@ ROOT = os.path.dirname(HERE)
      "未跟踪的新文件也算改动 · **接线**断了"),
     ("去掉纯函数里「已经在 diff 里的不许再覆盖一遍」那个条件",
      "未跟踪的新文件也算改动 · **纯函数**坏了"),
+    # 2026-11-05:「被读」那一档。同样两条 —— 一条接线、一条纯函数。
+    # ⚠️ **下限那一条咬不出来**,这是故意记下来的:任何让「认出几条路径」掉下去的改动,
+    #    都会**先**被上面十五条用例红掉(它们才先跑)。所以那个下限是**兜底**,不是咬合点 ——
+    #    别把这两条咬合改成指着它,会变成一个永远咬不到的破坏点(技能⑤那四种失效之一)。
+    ("把 `覆盖()` 里「被读」那一支关掉(`if 被读:` → `if False and 被读:`)—— 接线",
+     "「被读」那一档 · **接线 / 试纸**不对"),
+    ("让 `_路径串()` 不再查「先赋给变量」的名表(`return 名表.get(...)` → `return None`)—— 纯函数",
+     "「被读」那一档 · **纯函数**坏了"),
+    # 2026-11-05:中文名路径。⚠️ **只有一条**,而且打在 `解析diff()` 用不用 `去引号()` 上。
+    #    打在「命令里有没有 `core.quotepath=false`」上是**咬不到的** —— 那是故意的:
+    #    两道防线各自都够,拆掉任一道另一道还在(所以那一刀不该红,它也确实不红)。
+    ("让 `解析diff()` 不再把转义过的名字解回来(`cur = 去引号(…)` → `cur = line[6:]`)",
+     "中文名路径 · **纯函数**坏了"),
 ]
 
 
@@ -69,19 +82,51 @@ def _git(*a):
                           text=True).stdout
 
 
-def 改动(base=None):
-    """返回 {文件: [(起, 止), …]} —— 改动落在哪些行区间。"""
-    args = ["diff", "-U0"] + ([base] if base else [])
-    out, cur, res = _git(*args), None, {}
+def 去引号(名):
+    """git 把**名字里有非 ASCII 字符**的路径转义成 `"tools/\\345\\275..."` —— 解回来。**纯函数,好验。**
+
+    ⚠️⚠️ **2026-11-05 实测逮到的:这个仓库里整个 `管理后台/` 树(路径里有中文)
+       加上十几个中文名文件,改动影响面从来没报过。**
+       `git diff --name-only HEAD~1` 说改了 6 个文件,而 `改动()` 只报 2 个 ——
+       因为 `+++ b/"tools/\\345\\275...json"` 解析出来的名字**结尾带一个引号**,
+       按扩展名过滤时 `.json"` 不在白名单里,于是**一声不响**被丢掉。
+
+       > 一个「这个文件这次没被碰到」和一个「它名字里有中文所以我没认出来」,
+       > **在那份干净的报告上长得一模一样。**
+
+       11-04 给「未跟踪的新文件」那一支加过 `-c core.quotepath=false`,
+       **而 `git diff` 这一支没加 —— 修了一半。**
+    ⚠️ 两道都上:命令上加 `core.quotepath=false`(让 git 别转义),
+       这个函数再把转义过的解回来 —— **于是哪一道被人拆掉,另一道还在**。
+       判据打在这个纯函数上,拆掉它那十五条用例里有两条会红。
+    """
+    if len(名) >= 2 and 名[0] == '"' and 名[-1] == '"':
+        try:
+            return 名[1:-1].encode("latin-1", "backslashreplace").decode("unicode_escape") \
+                     .encode("latin-1").decode("utf-8")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            return 名[1:-1]
+    return 名
+
+
+def 解析diff(out):
+    """`git diff -U0` 的输出 → {文件: [(起行, 止行), …]}。**纯函数,好验。**"""
+    cur, res = None, {}
     for line in out.split("\n"):
         if line.startswith("+++ b/"):
-            cur = line[6:]; res.setdefault(cur, [])
+            cur = 去引号(line[6:]); res.setdefault(cur, [])
         elif line.startswith("@@") and cur:
             m = re.search(r"\+(\d+)(?:,(\d+))?", line)
             if m:
                 a = int(m.group(1)); n = int(m.group(2) or 1)
                 res[cur].append((a, a + max(n, 1) - 1))
-    res = {k: v for k, v in res.items() if k.endswith(影响面认的扩展名)}
+    return {k: v for k, v in res.items() if k.endswith(影响面认的扩展名)}
+
+
+def 改动(base=None):
+    """返回 {文件: [(起, 止), …]} —— 改动落在哪些行区间。"""
+    args = ["-c", "core.quotepath=false", "diff", "-U0"] + ([base] if base else [])
+    res = 解析diff(_git(*args))
     # ⚠️ 只给「工作区还没提交的改动」补未跟踪的;指定了 base 时比的是两个提交,
     #    那时未跟踪的文件不属于那个区间。
     if not base:
@@ -170,6 +215,145 @@ def 自检扩展名():
     return sum(len(v) for v in 见到.values()), 没认, 白费
 
 
+# ── 「某个脚本会去读这个文件」怎么认(2026-11-05 加)──────────────────────
+#
+# 逼出这一段的是一条**漏报**,而且是这个工具报在自己身上的:`check.sh`、`CLAUDE.md`、
+# `tools/bite_specs.json` 三个文件,影响面全报「**覆盖它的检查:一条都没有 ——
+# 改坏了不会有任何地方报**」,而这三个各自都有检查在读。
+# 根在下面 `覆盖()` 的「间接」那一档**只认 Python 的 `import`** ——
+# 而数据文件不是模块,它是被 `open()` 读进去的。
+#
+# > 一个「真没有检查覆盖它」和一个「有检查覆盖、而我认不出来」,
+# > **在「一条都没有」这五个字上长得一模一样。** 而两者该触发相反的动作:
+# > 一个去补检查,一个什么都不用做。
+#
+# ⚠️ **判法走语法树,不搜字符串**(2026-11-05 摆了选型卡,用户拍的)。
+#    搜字符串会把注释里那句「别手改 tools/bite_specs.json」也算成「这个脚本覆盖它」,
+#    那是**往危险的那一侧**错:我改坏了那个文件,它告诉我有检查会报,**而没有东西会报**。
+#    漏报只是少说一句;误报是**假保证**。
+#
+# ⚠️ **写模式的 open 不算覆盖。** 一个脚本重新生成某个文件,不等于它会验那个文件。
+#
+# ⚠️ 认得出的只有 `.py` 检查(run 行里的 `.py` 文件)。`.mjs` / `.sh` 那几条读了什么,
+#    这一档**看不见** —— 那是**少说**,不是假保证,所以留着;补的时候记得连下限一起提。
+打开动作 = ("open", "read_text", "read_bytes", "readlines")
+_路径样 = re.compile(r"\.(py|sh|md|mjs|js|json|jsonl|sql|txt|csv|html|yml|yaml|toml)$")
+_读缓存 = {}
+
+
+def _像路径(s):
+    s = (s or "").strip()
+    return bool(s) and ("/" in s or bool(_路径样.search(s))) and " " not in s and "\n" not in s
+
+
+def _路径串(节点, 名表=None):
+    """从一个表达式里拼出它指的那个路径串;拼不出来回 None。**纯函数,好验。**
+
+    认五种写法:字面量、`os.path.join(ROOT, "tools", "x.json")`、
+    `ROOT + "/tools/x.json"`、`ROOT / "x.md"`(pathlib)、
+    以及**先赋给一个变量再 open 那个变量**(`名表` 里查)。
+    碰到查不到的变量(`ROOT` 这种)就**跳过那一段** —— 于是拼出来的是**相对的尾巴**,
+    正好是 `命中()` 要对的东西。
+
+    ⚠️⚠️ 「先赋给变量」这一条是**第一版漏掉的**,而漏掉的后果不是报错:
+       `tools/bite_check.py` 写的是 `_sp = os.path.join(ROOT, "tools", "bite_specs.json")`
+       然后 `open(_sp)`,于是第一版对 `tools/bite_specs.json` **仍然扫出 0 条**、
+       仍然印「覆盖它的检查:一条都没有」—— 和没改之前一模一样。
+       逮住它的是⑨那张试纸(拿逼出这条判据的那三个文件去扫),不是用例。
+    """
+    if isinstance(节点, ast.Name):
+        return (名表 or {}).get(节点.id)
+    if isinstance(节点, ast.Constant):
+        return 节点.value if isinstance(节点.value, str) else None
+    if isinstance(节点, ast.JoinedStr):            # f-string:只取常量段
+        片 = [x.value for x in 节点.values
+              if isinstance(x, ast.Constant) and isinstance(x.value, str)]
+        return "".join(片) or None
+    if isinstance(节点, ast.BinOp) and isinstance(节点.op, (ast.Add, ast.Div)):
+        片 = [x for x in (_路径串(节点.left, 名表), _路径串(节点.right, 名表)) if x]
+        return "/".join(x.strip("/") for x in 片) if 片 else None
+    if isinstance(节点, ast.Call):
+        名 = 节点.func.attr if isinstance(节点.func, ast.Attribute) else getattr(节点.func, "id", "")
+        if 名 in ("join", "Path", "PurePath"):
+            片 = [x for x in (_路径串(a, 名表) for a in 节点.args) if x]
+            return "/".join(x.strip("/") for x in 片) if 片 else None
+    return None
+
+
+def _是写(节点, 名表=None):
+    """这个 open 是去写的吗?(`"w"` / `"a"` / `"x"`,位置参数和 `mode=` 都认)"""
+    模 = _路径串(节点.args[1], 名表) if len(节点.args) > 1 else None
+    if 模 is None:
+        模 = next((_路径串(k.value, 名表) for k in 节点.keywords if k.arg == "mode"), None)
+    return bool(模) and any(c in 模 for c in "wax")
+
+
+def 读到的路径(源码):
+    """这段源码**真正交给打开动作**的那些路径(相对尾巴的集合)。**纯函数,好验。**
+
+    注释、文档字符串、`print()` 里提到的路径一概不算 —— 它们不在打开动作的参数上。
+    """
+    出 = set()
+    try:
+        树 = ast.parse(源码)
+    except SyntaxError:
+        return 出
+    # ① 先把「路径赋给了哪个变量」收一遍。走**两轮**,这样 `b = a` 这种转手也跟得上。
+    名表 = {}
+    赋 = [n for n in ast.walk(树) if isinstance(n, ast.Assign) and len(n.targets) == 1
+          and isinstance(n.targets[0], ast.Name)]
+    for _ in range(2):
+        for n in 赋:
+            v = _路径串(n.value, 名表)
+            if v and _像路径(v):
+                名表[n.targets[0].id] = v.strip("/")
+    # ② 再扫打开动作
+    for n in ast.walk(树):
+        if not isinstance(n, ast.Call):
+            continue
+        名 = n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, "id", "")
+        if 名 not in 打开动作:
+            continue
+        if 名 == "open" and _是写(n, 名表):
+            continue
+        候 = list(n.args[:1])
+        if isinstance(n.func, ast.Attribute):
+            候.append(n.func.value)      # `(ROOT / "x.md").read_text()` —— 路径在接收者身上
+        for a in 候:
+            s = _路径串(a, 名表)
+            if s and _像路径(s):
+                出.add(s.strip("/"))
+    return 出
+
+
+def 命中(读, 文件):
+    """`读到的路径()` 里的一条,指的就是这个文件吗?**纯函数,好验。**
+
+    ⚠️⚠️ **同名不同目录是两个文件。** 带目录的那一种要求**完全相等**,
+       不许按后缀认 —— 否则 `open(os.path.join(ROOT, "tools", "x.json"))`
+       会把 `管理后台/tools/x.json` 也认领走,而那是**假保证**:
+       我改坏了后者,它告诉我有检查会报。
+       只有「光一个文件名」(`os.path.join(HERE, "x.json")` 这种,目录信息
+       在变量里、拼不出来)才退回按文件名认 —— 那一侧错只会**多说**一条覆盖,
+       而且文件名相同的两份本来就该一起看。
+    """
+    读 = (读 or "").strip("/")
+    if not 读 or os.path.basename(读) != os.path.basename(文件):
+        return False
+    return 读 == 文件.strip("/") if "/" in 读 else True
+
+
+def _脚本读到的(sp):
+    """缓存:一个检查脚本读了哪些路径。覆盖() 每个改动文件都要问一遍,不缓存会重复解析整棵树。"""
+    if sp not in _读缓存:
+        f = os.path.join(ROOT, sp)
+        try:
+            _读缓存[sp] = 读到的路径(open(f, encoding="utf-8").read()) if os.path.isfile(f) else set()
+        except Exception:
+            _读缓存[sp] = set()
+    return _读缓存[sp]
+
+
 def 覆盖(path):
     """check.sh 里哪几条检查跑到了这个文件。
 
@@ -177,6 +361,7 @@ def 覆盖(path):
 
       直接   check.sh 那一行里就写着这个文件
       间接   有检查 import 它(顺着 import 找一层)
+      被读   有检查把它 open 进去(2026-11-05 加 —— 数据文件不是模块,走不了 import)
       全局   `backend/seed.py` 这种 —— 没有任何一条直接点名,
              **而所有检查都跑在它生成的库上**
 
@@ -207,6 +392,11 @@ def 覆盖(path):
                 间接.append(名)
     if 直接 or 间接:
         return [f"{x}(直接)" for x in 直接] + [f"{x}(间接)" for x in dict.fromkeys(间接)]
+    # ④ **被读**:某条检查把这个文件 open 进去了。数据文件走这一档 —— 它不是模块,
+    #    没有任何检查会 `import` 它,而「间接」那一档只认 import。
+    被读 = [名 for 名, sp in 脚本 if any(命中(x, path) for x in _脚本读到的(sp))]
+    if 被读:
+        return [f"{x}(读它)" for x in dict.fromkeys(被读)]
     # 数据生成器:没人点名,但所有检查都跑在它生成的库上
     if base in ("seed.py",) or path.startswith("knowledge/derive_"):
         return ["**全员** —— 它生成的是所有检查跑的那个库,改坏了哪一条先红说不准"]
@@ -352,10 +542,25 @@ def main():
         哨 = "tools/_影响面自测临时_勿提交.py"
         哨路 = os.path.join(ROOT, 哨)
         接线坏 = None
+        # ⚠️⚠️ **不是 git 仓库的时候这条没东西可验**(2026-11-05 补)。
+        #    `tools/bite_run.py` 的副本里**没有 `.git`** —— 于是 `改动()` 什么都返回不了,
+        #    这条接线用例必红,而那时 `bite_run` 报的是「**对照就是红的**」:
+        #    impact.py 的四条咬合规格**从 11-04 加这条用例那天起就一条都重放不了了**,
+        #    而 `bite_check`(只核「记录在不在」)照旧绿。
+        #    > 一条「证明了判据」的咬合,和一条「从此再也跑不起来」的咬合,
+        #    > **在咬合对账的绿勾上长得一模一样。**
+        #    所以:没有 git 就明说「没东西可验」(技能⑧),**不报成不合格**
+        #    —— 误报会被人关掉。而规格那边加了 `前置: git init -q`,
+        #    副本里照旧有仓库可用,**破坏点仍然可观测**(技能⑤)。
+        有仓库 = subprocess.run(["git", "rev-parse", "--git-dir"], cwd=ROOT,
+                             capture_output=True, text=True).returncode == 0
+        if not 有仓库:
+            print("     ℹ️ 这个树不是 git 仓库(`bite_run` 的副本、浅克隆都这样)——"
+                  " 下面那条**接线没东西可验,不是验过了**")
         try:
             with open(哨路, "w", encoding="utf-8") as h:
                 h.write("# 影响面自测用,跑完就删\n")
-            得 = 改动()
+            得 = 改动() if 有仓库 else {哨: []}
             if 哨 not in 得:
                 接线坏 = (f"真造了一个未跟踪的 {哨},而 `改动()` 没把它报出来 —— "
                           f"**接线断了**(补未跟踪那一支没被调到)")
@@ -370,6 +575,178 @@ def main():
         print(f"  ✅ 未跟踪的新文件也算改动 · {len(未跟踪用例)} 种情况都对"
               f"(含两条反向),**而且真调 `改动()` 验过接线** —— "
               f"`git diff` 看不见它们,而刚写出来的检查脚本正是最该问「碰到什么」的时候")
+
+        # ── 再验「名字里有中文的路径不许被丢掉」(2026-11-05 加)──────────
+        # 逼出这一段的那次实测:`git diff --name-only HEAD~1` 说改了 6 个文件,
+        # 而 `改动()` 只报 2 个 —— 整个 `管理后台/` 树和十几个中文名文件
+        # **从来没进过影响面报告**,而报告看起来只是干净。
+        中文名 = "tools/影响面基线.json"
+        转义名 = '"' + "".join(
+            c if ord(c) < 128 else "".join("\\%03o" % b for b in c.encode())
+            for c in 中文名) + '"'
+        引号用例 = [
+            ("ASCII 名字原样返回", "tools/impact.py", "tools/impact.py"),
+            ("**中文名要解回来**(git 默认转义成八进制 + 外面套一对引号)", 转义名, 中文名),
+            # ⚠️ 用 `\\377`(0xFF,合法八进制但**不是合法 UTF-8**)—— 不要用 `\\9` 那种
+            #    非法转义:`unicode_escape` 解它会抛 DeprecationWarning,**在门禁输出里刷一行脏**。
+            ("解不开的也不许崩,至少把那对引号去掉", '"a\\377b"', "a\\377b"),
+        ]
+        diff用例 = [
+            ("中文名的 +++ 行要认出来、而且行区间要对",
+             f"diff --git a/{转义名} b/{转义名}\n+++ b/{转义名}\n@@ -1 +1,3 @@\n",
+             {中文名: [(1, 3)]}),
+            ("**反向** · 不认的扩展名照旧不算(.jsonl 是滚动副本)",
+             "+++ b/agentsite/evals/funnel.jsonl\n@@ -1 +1 @@\n", {}),
+        ]
+        引坏 = []
+        for 名, 入, 期 in 引号用例:
+            实 = 去引号(入)
+            if 实 != 期:
+                引坏.append(f"{名}  期望 {期!r} 实得 {实!r}")
+        for 名, 入, 期 in diff用例:
+            实 = 解析diff(入)
+            if 实 != 期:
+                引坏.append(f"{名}  期望 {期} 实得 {实}")
+        if 引坏:
+            print(f"  ❌ 中文名路径 · **纯函数**坏了 {len(引坏)} 处:")
+            for x in 引坏:
+                print(f"     {x}")
+            return 1
+        # ⚠️⚠️ **接线 + 下限(技能⑨b)。** 上面那几条是我自己按 git 的转义规则造的输入 ——
+        #    那是**同源谬误**的温床(期望值和被测对象来自同一支笔)。所以这里**真调 `改动()`,
+        #    和 git 自己的 `--name-only` 对账**,并且断言这次对账里
+        #    **至少有一个名字带中文** —— 没有那一条,全是 ASCII 名字的那一轮
+        #    会让「中文名也认得出」在空集合上自动成立。
+        对账坏 = []
+        if 有仓库:
+            旧字节 = None
+            基线路 = os.path.join(ROOT, 中文名)
+            try:
+                if os.path.isfile(基线路):
+                    旧字节 = open(基线路, "rb").read()
+                    open(基线路, "wb").write(旧字节 + b"\n")   # 只加空白:中断了也还是合法 JSON
+                得 = set(改动())
+                说 = {x for x in _git("-c", "core.quotepath=false", "diff", "--name-only").split("\n")
+                      if x.endswith(影响面认的扩展名)}
+                漏 = 说 - 得
+                if 漏:
+                    对账坏.append(f"git 说改了而 `改动()` 没报出来:{sorted(漏)[:4]}")
+                带中文 = [x for x in 说 if any(ord(c) > 127 for c in x)]
+                if not 带中文:
+                    对账坏.append("这次对账里**一个中文名文件都没有** —— 这条用例什么都没验到"
+                                 "(本该至少有 " + 中文名 + ",它刚被动过)")
+            finally:
+                if 旧字节 is not None:
+                    open(基线路, "wb").write(旧字节)
+        if 对账坏:
+            print(f"  ❌ 中文名路径 · **接线 / 对账**不对 {len(对账坏)} 处:")
+            for x in 对账坏:
+                print(f"     {x}")
+            return 1
+        print(f"  ✅ 中文名路径 {len(引号用例) + len(diff用例)} 种情况都对"
+              + (f",**而且真调 `改动()` 和 git 的 `--name-only` 对过账**"
+                 f"(断言里至少要有一个中文名文件,否则这条自动成立)" if 有仓库
+                 else ",⏸ 接线那一条**没仓库可验,不是验过了**"))
+
+        # ── 再验「被读」那一档:数据文件不是模块,走不了 import(2026-11-05 加)──
+        被读用例 = [
+            ("os.path.join 拼出来的要认出来",
+             'open(os.path.join(ROOT, "tools", "bite_specs.json"), encoding="utf-8")',
+             {"tools/bite_specs.json"}),
+            ("**先赋给变量、再 open 那个变量** —— 第一版漏的正是这个写法,"
+             "而漏的时候它不报错、照旧说「一条都没有」",
+             '_sp = os.path.join(ROOT, "tools", "bite_specs.json")\nd = load(open(_sp))',
+             {"tools/bite_specs.json"}),
+            ("转一手也要跟上(b = a 之后 open(b))",
+             'a = os.path.join(ROOT, "check.sh")\nb = a\nopen(b).read()',
+             {"check.sh"}),
+            ("写死的相对路径", 'open("check.sh").read()', {"check.sh"}),
+            ("pathlib:路径在接收者身上,不在参数里",
+             '(ROOT / "CLAUDE.md").read_text()', {"CLAUDE.md"}),
+            ("**反向** · 注释里提到不算 —— **这正是判法走语法树而不搜字符串的理由**",
+             '# 别手改 tools/bite_specs.json\nx = 1', set()),
+            ("**反向** · 文档字符串里提到不算",
+             '"""读 tools/bite_specs.json 的那个工具。"""\nx = 1', set()),
+            ("**反向** · 只是印出来的提示串不算",
+             'print("记得提交 tools/影响面基线.json")', set()),
+            ("**反向** · 写模式的 open 不算覆盖(重新生成一个文件 ≠ 会验它)",
+             'open(os.path.join(ROOT, "tools", "影响面基线.json"), "w")', set()),
+            ("**反向** · 编码那个关键字参数不许被当成路径",
+             'open(p, encoding="utf-8")', set()),
+            ("语法坏了的脚本不许把整个工具带崩(回空集,不抛)",
+             'def f(:\n    pass', set()),
+        ]
+        命中用例 = [
+            ("带目录的,连目录一起对上", ("tools/bite_specs.json", "tools/bite_specs.json"), True),
+            ("**反向** · 同名不同目录是两个文件,不许按后缀认领",
+             ("tools/x.json", "管理后台/tools/x.json"), False),
+            ("只拼出一个文件名(目录在变量里)→ 退回按文件名认",
+             ("check.sh", "check.sh"), True),
+            ("**反向** · 文件名不同就不算", ("check.sh", "CLAUDE.md"), False),
+        ]
+        被坏 = []
+        for 名, 源, 期 in 被读用例:
+            实 = 读到的路径(源)
+            if 实 != 期:
+                被坏.append(f"{名}  期望{sorted(期)} 实得{sorted(实)}")
+        for 名, (读, 文件), 期 in 命中用例:
+            实 = 命中(读, 文件)
+            if 实 is not 期:
+                被坏.append(f"{名}  期望{期} 实得{实}")
+        if 被坏:
+            # ⚠️ 前缀和下面「接线 / 试纸」那条分开 —— 两类的下一步动作不同:
+            #    纯函数坏了去改匹配规则,试纸不对去看那三档的接线。
+            print(f"  ❌ 「被读」那一档 · **纯函数**坏了 {len(被坏)} 处:")
+            for x in 被坏[:4]:
+                print(f"     {x}")
+            if len(被坏) > 4:
+                print(f"     ……**还有 {len(被坏) - 4} 处**(共 {len(被坏)})")
+            return 1
+
+        # ⚠️⚠️ **下限(技能⑨b)。** 上面十五条用例全是手写的小样本,
+        #    它们**管不住「匹配规则对真实代码一处都没匹配上」** —— 而那种时候
+        #    「覆盖它的检查」会对**每个**文件都报「一条都没有」,看起来只是干净。
+        #    > 一个「真没有检查读它」和一个「我的匹配规则算错了」,
+        #    > **在那句「一条都没有」上长得一模一样。**
+        #    地板不写确数:2026-11-05 实测 225 条 / 131 个脚本,钉在六成上。
+        门禁脚本 = set()
+        for line in open(os.path.join(ROOT, "check.sh"), encoding="utf-8").read().split("\n"):
+            if line.startswith("run "):
+                门禁脚本 |= set(re.findall(r"([\w/]+\.py)", line))
+        认出 = {sp: _脚本读到的(sp) for sp in 门禁脚本}
+        条数 = sum(len(v) for v in 认出.values())
+        有的 = sum(1 for v in 认出.values() if v)
+        if 条数 < 130 or 有的 < 75:
+            print(f"  ❌ 「被读」那一档从 {len(门禁脚本)} 个门禁脚本里只认出 {条数} 条路径"
+                  f"({有的} 个脚本有)—— 下限 130 条 / 75 个脚本")
+            print("     **这是匹配规则算错了,不是真没人读文件。**")
+            return 1
+
+        # ⚠️ **试纸(技能⑨)+ 接线。** 拿逼出这一档的那两个文件去扫,而且走 `覆盖()`
+        #    这个入口 —— 上面的用例全打在纯函数上,把 `覆盖()` 里「被读」那一支关掉,
+        #    十五条照旧全对(这是 2026-11-04 栽过的第六种形状)。
+        试纸 = []
+        for f, 要有 in (("check.sh", True), ("tools/bite_specs.json", True), ("CLAUDE.md", False)):
+            得 = [x for x in 覆盖(f) if x.endswith("(读它)")]
+            if 要有 and not 得:
+                试纸.append(f"{f}:一条「读它」都扫不到 —— **判据的视野漏了**,不是真没人读它。"
+                            f"(另一种可能:它现在被某条 run 行**直接点名**了,"
+                            f"那时 `覆盖()` 在「直接」那一档就返回 —— 换一个只走「被读」的文件当试纸)")
+            if not 要有 and 得:
+                试纸.append(f"{f}:居然扫到了 {len(得)} 条「读它」 —— 有人给它补了检查?"
+                            f"**那就把这条反向断言和下面那笔欠账一起删掉**(技能⑥:豁免不许囤积)")
+        if 试纸:
+            print(f"  ❌ 「被读」那一档 · **接线 / 试纸**不对 {len(试纸)} 处:")
+            for x in 试纸:
+                print(f"     {x}")
+            return 1
+        print(f"  ✅ 「被读」那一档 {len(被读用例) + len(命中用例)} 种情况都对"
+              f"(含 {sum(1 for x in 被读用例 if not x[2]) + 2} 条反向),"
+              f"门禁脚本里认出 {条数} 条路径 / {有的} 个脚本(下限 130 / 75),"
+              f"**而且真调 `覆盖()` 拿 check.sh 和 bite_specs.json 当试纸验过接线**")
+        print("     ℹ️ **`CLAUDE.md` 现在确实没有任何检查读它** —— 那句「覆盖它的检查:一条都没有」"
+              "是真话,不是漏报(43 个脚本在注释里提到它,而注释不算)。这是一笔欠账:"
+              "哪天有人补了读它的检查,上面那条反向断言会红一次 —— 那时把它一起删掉。")
 
         n = 自检()
         基线 = 读基线()
