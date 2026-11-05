@@ -11,6 +11,10 @@
   ④ 把演示项目改成正式 → 库拒(不只拦插入)
   ⑤ 测试 / 演示项目 → 照建(e2e 要临时项目)
   ⑥ 钥匙:把「跨项目读隔离已结构化()」改成 true(补好隔离那个迁移会这么做)→ 第二个正式项目就建得了
+
+11-06 开门(迁移 c4f2a8d6e1b7,用户 11-05 拍「补完全绿就开」)之后:钥匙在库里是 true。
+②④ 改成**在回滚事务里先把钥匙临时关上再试** —— 门这套机制还在,钥匙一旦被改回 false 照样拦得住,这件事每轮照旧真验;
+最后那条从「钥匙照旧是 false」改成「钥匙是开的」;⑦ 从这一刻起真在拦东西。
 """
 import os
 import sys
@@ -55,19 +59,20 @@ def main():
         c.close()
     ck(f"① 库里恰好一个没归档的正式项目(门要拦的前提;现有:{正式们})", len(正式们) == 1, 正式们)
 
+    关 = "create or replace function 跨项目读隔离已结构化() returns boolean language sql immutable as $$ select false $$"
     新 = lambda: f"e2e_gate_{uuid.uuid4().hex[:8]}"   # noqa: E731
     建 = "insert into projects (id, organization_id, name, status, kind_code, created_at) values (:i, :o, 'e2e 门', 'active', :k, now())"
 
-    结果, 错 = 试(建, {"i": 新(), "o": org, "k": "正式"})
-    ck("② 再建一个正式项目 → 库拒,报错写明「跨项目读取隔离」和怎么开门",
+    结果, 错 = 试(建, {"i": 新(), "o": org, "k": "正式"}, 先=[关])
+    ck("② 钥匙关着时再建一个正式项目 → 库拒,报错写明「跨项目读取隔离」和怎么开门",
        结果 == "拒" and "第二个正式项目" in (错 or "") and "隔离" in (错 or ""), (结果, 错))
 
     结果, 错 = 试("insert into projects (id, organization_id, name, status, created_at) values (:i, :o, 'e2e 门', 'active', now())",
                 {"i": 新(), "o": org})
     ck("③ 不标是哪种项目 → 库拒(kind_code 必填、没有默认值)", 结果 == "拒" and "kind_code" in (错 or ""), (结果, 错))
 
-    结果, 错 = 试("update projects set kind_code='正式' where id='project_demo_a'")
-    ck("④ 把演示项目改成正式 → 库拒(门不只拦插入)", 结果 == "拒" and "第二个正式项目" in (错 or ""), (结果, 错))
+    结果, 错 = 试("update projects set kind_code='正式' where id='project_demo_a'", 先=[关])
+    ck("④ 钥匙关着时把演示项目改成正式 → 库拒(门不只拦插入)", 结果 == "拒" and "第二个正式项目" in (错 or ""), (结果, 错))
 
     a, _ = 试(建, {"i": 新(), "o": org, "k": "测试"})
     b, _ = 试(建, {"i": 新(), "o": org, "k": "演示"})
@@ -83,7 +88,7 @@ def main():
         留下 = c.execute(text("select count(*) from projects where id like 'e2e_gate_%'")).scalar()
     finally:
         c.close()
-    ck("⑥ 试完钥匙照旧是 false、一个临时项目都没留下(每一刀都回滚了)", 还是关的 is False and 留下 == 0, (还是关的, 留下))
+    ck("⑥ 钥匙是开的(开门迁移 c4f2a8d6e1b7 之后)、试完一个临时项目都没留下(每一刀都回滚了)", 还是关的 is True and 留下 == 0, (还是关的, 留下))
 
     # ⑦ 钥匙读的是判据,不是谁的一句话(并行会话 11-05 提的三条):钥匙是 true 的时候,下面三样必须都在 ——
     #    攻击判据文件在 / 它挂在门禁里 / 它在 bite_specs 里有咬合(「存在且挂着」≠「真会红」,咬合才是会红的凭据)

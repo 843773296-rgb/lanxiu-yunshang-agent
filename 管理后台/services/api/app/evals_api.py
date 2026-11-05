@@ -145,7 +145,8 @@ async def 建评测(project_id: str, request: Request,
                       "那样下次跑的时候题已经变了,而两次的分数看起来可比")
         eid = _新id("ev")
         if 执行 == "后台派发":
-            return _后台派发(c, me, project_id, org, eid, v, 候选, 基线, 版本, 判据, 超时, 上限, 轮数, idempotency_key)
+            return _后台派发(c, me, project_id, org, eid, v, 候选, 基线, 版本, 判据, 超时, 上限, 轮数, idempotency_key,
+                         评审连接=(体.get("评审连接") or 体.get("judge_connection_version_id") or "").strip() or None)
         # ⚠️ `candidate_ref` 是 **JSONB**(这个仓库为「JSONB 塞裸串」栽过八次),
         # 顺手把幂等键放进去 —— 这张表没有 idempotency_key 列。
         c.execute(text("""insert into evaluations
@@ -170,7 +171,7 @@ async def 建评测(project_id: str, request: Request,
                      "**并排两个不可比的数,读的人会算出一个差值**")}
 
 
-def _后台派发(c, me, project_id, org, eid, 数据版本, 候选, 基线, 版本, 判据, 超时, 上限, 轮数, 幂等键):
+def _后台派发(c, me, project_id, org, eid, 数据版本, 候选, 基线, 版本, 判据, 超时, 上限, 轮数, 幂等键, 评审连接=None):
     """后台派发(DF-05,11-05):先把能查的全查了(版本在不在、每道题的输入合不合格式、有没有人工核对步骤、次数上限),
     再在**同一个事务里**建评测 + 逐条派运行 + 记回执。任何一处不过 → 整个不建,一个模型都没调。"""
     import eval_dispatch as ED
@@ -190,21 +191,23 @@ def _后台派发(c, me, project_id, org, eid, 数据版本, 候选, 基线, 版
     if isinstance(题们, str):
         题们 = _json.loads(题们)
     坏 = ED.派发前检查(题们, 行们, 轮数)
+    # 判对规则 C(用户 11-05 拍):题上写了字段判据就查格式;只有期望说明的要模型评审 → 必须给评审连接,而且得是这个项目的
+    坏.update(ED.判对前检查(c, project_id, 题们, 评审连接))
     if 坏:
         raise _错(422, "VALIDATION", f"这次评测派不出去({len(坏)} 处)",
                   "按下面逐处改好再建 —— 这次一个模型都没调,不花钱", field_errors=坏)
     c.execute(text("""insert into evaluations
         (id, organization_id, project_id, candidate_ref, baseline_ref, dataset_version_id, scorer_version, status,
          executor_code, timeout_minutes, cost_cap_amount, rounds_count, dispatched_at, deadline_at,
-         created_at, created_by, updated_at, revision)
+         judge_connection_version_id, created_at, created_by, updated_at, revision)
         values (:i,:o,:p, cast(:cand as jsonb), cast(:base as jsonb), :dv,:sc,'已派发',
-                '后台派发', :to, :cap, :rn, now(), now() + make_interval(mins => :to), now(), :by, now(), 1)"""),
+                '后台派发', :to, :cap, :rn, now(), now() + make_interval(mins => :to), :jc, now(), :by, now(), 1)"""),
               {"i": eid, "o": org, "p": project_id,
                "cand": _json.dumps({"ref": 候选, "kind": "workflow_version", "名": f"v{行们['候选']['version_no']}",
                                     "幂等键": 幂等键}, ensure_ascii=False),
                "base": _json.dumps({"ref": 基线, "kind": "workflow_version", "名": f"v{行们['基线']['version_no']}"},
                                    ensure_ascii=False),
-               "dv": 版本, "sc": 判据, "to": 超时, "cap": 上限, "rn": 轮数, "by": me.user_id})
+               "dv": 版本, "sc": 判据, "to": 超时, "cap": 上限, "rn": 轮数, "jc": 评审连接, "by": me.user_id})
     n = ED.派(c, me, project_id, eid, 行们, 题们, 轮数)
     _审计(c, me, "evaluation.dispatch",
           {"evaluation_id": eid, "candidate": 候选, "baseline": 基线, "dataset_version_id": 版本,
@@ -547,6 +550,7 @@ async def 派发进度(project_id: str, eid: str, me: 身份 = Depends(要权限
             g["跑通"] += 1 if 子["status"] == "succeeded" else 0
     for g in 分组.values():
         g["跑通率"] = round(g["跑通"] / g["已收"], 4) if g["已收"] else None
+    答对 = _答对汇总(project_id, eid) if ev["executor_code"] == "后台派发" else None
     没收尾 = (ev["status"] in ("已派发", "执行中") and ev["deadline_at"] is not None and 现在 > ev["deadline_at"])
     return {"id": eid, "执行方式": ev["executor_code"], "status": ev["status"], "revision": ev["revision"],
             "过了截止没收尾": 没收尾,
@@ -557,14 +561,61 @@ async def 派发进度(project_id: str, eid: str, me: 身份 = Depends(要权限
             "已知费用": round(sum(float(子["费用"] or 0) for 子 in 子们), 6),
             "算不出金额的笔数": sum(int(子["算不出笔数"] or 0) for 子 in 子们),
             "分组": sorted(分组.values(), key=lambda g: (g["边"], g["轮"])),
+            "答对": 答对,
             "回执": [{"题": 子["sample_id"], "边": 子["variant_code"], "轮": 子["round_no"],
                      "运行": 子["execution_run_id"], "任务": 子["job_id"], "运行状态": 子["status"],
                      "执行者": 子["执行者"], "开始于": 子["started_at"], "尝试次数": 子["尝试次数"],
                      "收回了吗": bool(子["collected_at"])} for 子 in 子们],
             "note": ("外部登记的评测没有派发回执 —— 结果由外面登记进来" if ev["executor_code"] != "后台派发" else
                      ("⚠️ 过了截止时间还没收尾:负责收尾的 worker 可能没在跑 —— **这不是「还在跑」**" if 没收尾 else
-                      "「已派发」= 排上队了;「执行中」= 至少一次运行真的开始了;跑通 = 子运行成功结束(这一版唯一的分,"
-                      "「答得对不对」等判分器或人工复核)"))}
+                      "「已派发」= 排上队了;「执行中」= 至少一次运行真的开始了;跑通 = 子运行成功结束;"
+                      "答对 = 按题上的字段判据比,写不成判据的交模型评审(标明「模型判的」),**两轮都对才算对**(用户 11-05 拍)"))}
+
+
+def _答对汇总(project_id, eid):
+    """每一边:几道题两轮都对 / 判错 / 两轮不一致 / 还没判出来 / 没判据(不判),以及模型判的几道(用户 11-05 拍:两轮都对才算对)。
+    同一条逐题结果有多个「答对」分时取**没被顶替的那一条**(模型评审判完会插一条新的顶替「待模型评审」)。"""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime"))
+    import 判对 as PD
+    with 连接() as c:
+        rs = c.execute(text("""
+            select i.sample_id, i.variant_code, i.round_no, s.value, s.value_known, s.source, s.rationale
+              from evaluation_items i
+              left join scores s on s.project_id=i.project_id and s.evaluation_item_id=i.id and s.dimension='答对'
+                    and not exists (select 1 from scores n where n.project_id=s.project_id and n.supersedes_score_id=s.id)
+             where i.project_id=:p and i.evaluation_id=:e"""), {"p": project_id, "e": eid}).mappings().all()
+    题们 = {}
+    for r in rs:
+        k = (r["variant_code"], r["sample_id"])
+        题们.setdefault(k, {"轮": {}, "模型判的": False, "有分": False})
+        t = 题们[k]
+        if r["source"] is not None:
+            t["有分"] = True
+            t["轮"][r["round_no"]] = (bool(r["value"]) if r["value_known"] else None)
+            t["模型判的"] = t["模型判的"] or str(r["source"]).startswith("模型评审")
+    出 = {}
+    for (边, 题), t in 题们.items():
+        g = 出.setdefault(边, {"边": 边, "题数": 0, "两轮都对": 0, "判错": 0, "两轮不一致": 0, "还没判出来": 0,
+                             "没判据": 0, "模型判的": 0, "不一致的题": []})
+        g["题数"] += 1
+        if not t["有分"]:
+            g["没判据"] += 1
+            continue
+        g["模型判的"] += 1 if t["模型判的"] else 0
+        结, 说 = PD.两轮合起来(t["轮"])
+        if 结 is None:
+            g["还没判出来"] += 1
+        elif 结:
+            g["两轮都对"] += 1
+        else:
+            g["判错"] += 1
+            if "不一致" in 说:
+                g["两轮不一致"] += 1
+                g["不一致的题"].append(题)
+    for g in 出.values():
+        判了 = g["两轮都对"] + g["判错"]
+        g["答对率"] = round(g["两轮都对"] / 判了, 4) if 判了 else None      # 分母只算判出结论的题;没判据 / 没判出来的不进分母
+    return sorted(出.values(), key=lambda g: g["边"])
 
 
 @router.post(前缀 + "/evaluations/{eid}/cancel")

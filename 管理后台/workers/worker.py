@@ -1684,6 +1684,12 @@ def main():
                     print("  评测:" + x)
             except Exception as e:
                 print(f"  ⚠️ 收评测出错({type(e).__name__}: {e})—— 下一轮再收")
+            try:
+                import eval_dispatch as _EVD   # 判对规则 C(用户 11-05 拍):只写了期望说明的题交模型评审;出错只打日志
+                for sid, 结 in _EVD.评审一遍():
+                    print(f"  评测评审:{sid} → {结}")
+            except Exception as e:
+                print(f"  ⚠️ 评测评审出错({type(e).__name__}: {e})—— 下一轮再评")
         with 事务() as c:
             发, 卡 = OB.发布一批(c)
         with 事务() as c:

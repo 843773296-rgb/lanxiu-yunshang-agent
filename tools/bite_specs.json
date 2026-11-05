@@ -14979,5 +14979,41 @@
    }
   ],
   "预期红": "passed 不等于"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_judge_rules.py",
+  "改坏": "两轮合起来改成「任一轮对就算对」(「做得到就行」)—— 用户拍的是两轮都对才算对,一个时好时坏的版本会显得和稳定的一样好",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/判对.py",
+    "old": "    if all(值们):\n",
+    "new": "    if any(值们):\n"
+   }
+  ],
+  "预期红": "⑦ 一轮对一轮错 → 错,并标「两轮不一致」"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_judge_rules.py",
+  "改坏": "「有这一项」把空值也算有(「键在就行」)—— 交了一个空壳的输出被判成对",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/判对.py",
+    "old": "            过 = 实 is not _没有 and 实 not in (None, \"\", [], {})\n",
+    "new": "            过 = 实 is not _没有\n"
+   }
+  ],
+  "预期红": "② 有这一项:值是空字符串 / None → 判错(「有个空壳」不算交出了这一项)"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_cross_project_read.py",
+  "改坏": "取消运行那个口按 id 取运行时漏了 project_id(「id 是全局唯一的」)—— B 项目的人拿 A 的运行号走 B 的路径就能取消 A 的运行(已结束的会回 202 + 它的真实状态)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runctl.py",
+    "old": "        r = _取(c, project_id, run_id, 锁=True)\n        return 取消一次(c, project_id, run_id, r, rev, 谁=me.user_id)\n",
+    "new": "        r = dict(c.execute(text(\"select * from execution_runs where id=:i and archived_at is null for update\"),\n                           {\"i\": run_id}).mappings().first() or {})\n        return 取消一次(c, project_id, run_id, r, rev, 谁=me.user_id)\n"
+   }
+  ],
+  "预期红": "**提交类接口:B 的路径塞 A 的 id,一个都不许成功、回的内容里没有 A 的记录**"
  }
 ]

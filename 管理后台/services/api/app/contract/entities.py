@@ -379,7 +379,8 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     E("evaluations", "评测实验", 项目级, 可改,
       ["candidate_ref", "baseline_ref", "dataset_version_id", "scorer_version",
        "status", "job_id", "executor_code", "timeout_minutes", "cost_cap_amount", "rounds_count",
-       "dispatched_at", "started_at", "heartbeat_at", "deadline_at", "ended_at", "end_reason_code", "end_detail"],
+       "dispatched_at", "started_at", "heartbeat_at", "deadline_at", "ended_at", "end_reason_code", "end_detail",
+       "judge_connection_version_id"],
       ["**候选与基线都要记**:没有基线的分数不能当结论",
        "数据版本和评分版本都要记 —— 换了判据的两轮不可比",
        "**执行方式**(11-05,DF-05):外部登记 = 建一条记录、等外面把结果登记进来;后台派发 = 每道题 × 候选 / 基线 × 每一轮"

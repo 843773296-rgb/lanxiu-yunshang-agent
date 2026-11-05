@@ -110,6 +110,74 @@ def 库里取A的id(路径前段, 参名, A的, n=3):
     return [x for x in a if x not in b and (列 != "id" or x in A的)][:n]
 
 
+def 写口(客, 攻, A的, 型, 路由们):
+    """提交类接口(11-05 补):POST / PATCH / PUT / DELETE。两种攻法:
+    ① **路径里带 id 的**:B 的路径 + A 的 id(请求体给空的,带上幂等键和 If-Match)→ 不许成功(2xx),回的内容里不许有 A 的 id
+       (去掉自己塞的那个)。泄露在这里有两种样子:把 A 的数据回给 B(导出原始日志),或者**动了 A 的行**(取消别人的运行)——
+       漏了的话这一刀会真改到演示项目 A 的数据:那正是要知道的事,演示项目本来就是拿来攻的
+    ② **请求体里带别的记录 id 的**(沿用某次运行的输入 / 从某次运行拷样例):在 B 建一条临时工作流,拿 A 的运行号去要 —— 不许拿到
+    幂等键每次新造:同一个键第二次进来会直接回第一次的结果,那就不是在攻这一次了。"""
+    import uuid as _u
+    方法们 = ("POST", "PATCH", "PUT", "DELETE")
+    写路由 = sorted({(m, r.path) for r in 路由们 for m in (getattr(r, "methods", None) or set())
+                    if m in 方法们 and "{project_id}" in r.path and re.findall(r"\{(\w+)\}", r.path.replace("{project_id}", ""))})
+    漏, 验, 没验 = [], 0, []
+    for m, 路 in 写路由:
+        参 = [p for p in re.findall(r"\{(\w+)\}", 路) if p != "project_id"]
+        填, 组 = 路.replace("{project_id}", A), {}
+        for k in 参:
+            前 = 填.split("{" + k + "}")[0].rstrip("/")
+            ids = 取A的id(客, 前, A的, n=1) or 取A的id(客, 前.rsplit("/", 1)[0], A的, n=1) or 库里取A的id(前, k, A的, n=1)
+            if not ids:
+                break
+            组[k] = ids[0]
+            填 = 填.replace("{" + k + "}", ids[0])
+        if len(组) < len(参):
+            没验.append(f"{m} {路.replace('/api/v1/projects/{project_id}', '')}")
+            continue
+        验 += 1
+        b路 = 路.replace("{project_id}", B)
+        for k, v in 组.items():
+            b路 = b路.replace("{" + k + "}", v)
+        r = 客.request(m, b路, json={}, headers={"X-Dev-User": 攻, "Idempotency-Key": _u.uuid4().hex, "If-Match": "1"})
+        正文 = r.text
+        for v in 组.values():
+            正文 = 正文.replace(v, "")
+        m2 = 型.search(正文)
+        if 200 <= r.status_code < 300 or m2:
+            漏.append((m, 路.replace("/api/v1/projects/{project_id}", ""), r.status_code, m2.group(1) if m2 else None))
+    ck("**提交类接口:B 的路径塞 A 的 id,一个都不许成功、回的内容里没有 A 的记录**", not 漏, 漏[:6])
+    ck("提交类接口攻到的不少于 30 个(防「一个都没攻所以一个都没漏」)", 验 >= 30, (验, len(写路由)))
+    print(f"  ℹ️ 提交类接口(路径带 id):共 {len(写路由)} 个、攻了 {验} 个;A 里取不到 id 的 {len(没验)} 个(不是判据):{', '.join(没验[:8])}")
+
+    # ② 请求体里带别的记录 id 的:在 B 建一条临时工作流,拿 A 的运行号去要
+    with 连接() as c:
+        A运行 = c.execute(text("""select id from execution_runs where project_id=:p and kind='workflow' and status='succeeded'
+                                     and input_snapshot is not null order by created_at desc limit 1"""), {"p": A}).scalar()
+    rb = 客.post(f"/api/v1/projects/{B}/workflows", json={"名称": f"e2e 跨项目攻击 {_u.uuid4().hex[:6]}", "模板": "空白"},
+                headers={"X-Dev-User": 攻})
+    bwid = (rb.json() or {}).get("id") if rb.status_code in (200, 201) else None
+    if not (A运行 and bwid):
+        ck("请求体带 id 的攻击:准备好了(B 里建得出临时工作流、A 里有一次跑完的运行)", False, (rb.status_code, A运行))
+        return
+    try:
+        攻们 = {
+            "存样例时「来自运行」= A 的运行": 客.post(f"/api/v1/projects/{B}/workflows/{bwid}/test-samples",
+                                          json={"名称": "e2e 跨项目", "来自运行": A运行}, headers={"X-Dev-User": 攻}),
+            "试运行时「沿用运行」= A 的运行": 客.post(f"/api/v1/projects/{B}/execution-runs",
+                                          json={"workflow_id": bwid, "沿用运行": A运行},
+                                          headers={"X-Dev-User": 攻, "Idempotency-Key": _u.uuid4().hex}),
+        }
+        体漏 = [(k, r.status_code) for k, r in 攻们.items() if 200 <= r.status_code < 300 or 型.search(r.text.replace(A运行, ""))]
+        ck("**请求体里塞 A 的运行号(沿用输入 / 拷成样例)→ 一个都拿不到**", not 体漏, 体漏)
+    finally:
+        with 事务() as c:
+            for t in ("workflow_test_samples", "execution_runs", "graph_drafts"):
+                c.execute(text(f"delete from {t} where project_id=:p and {'workflow_id' if t != 'execution_runs' else 'definition_ref->>' + chr(39) + 'id' + chr(39)}=:w"),
+                          {"p": B, "w": bwid})
+            c.execute(text("delete from workflows where project_id=:p and id=:w"), {"p": B, "w": bwid})
+
+
 def 取A的id(客, 列表路径, A的, n=3):
     """以 A 的人取 A 的列表,挑几个只属于 A 的 id。列表信封不统一(items / 应用 / 数据集 / 连接 …),
     所以找响应里**第一个「元素是带 id 的对象」的列表**;管理员(U001)和带专项授权的标注员(U004)都试,有的列表只开给其中一个。"""
@@ -129,6 +197,27 @@ def 取A的id(客, 列表路径, A的, n=3):
     return []
 
 
+def 去掉攻击者自己的审计(r):
+    """B 的列表正文,去掉**以前几轮攻击账号(E2EXP…)自己写下的审计行**之后再找 A 的 id(11-06 加)。
+
+    写口那一段拿 A 的发布号走 B 的路径去「部署」→ 被拦,审计**照规矩**在 B 里记一笔「有人试过部署 rel_…」
+    (审计只追加、不许删,§15.4)。下一轮读 B 的审计列表就看见了 A 的号 —— 那是 B 的人自己敲进去的,不是漏给 B 的。
+    审计列表回的操作人字段叫「谁」(不是库里的 actor —— 第一版按 actor 剔,一行都没剔掉)。
+    **只剔「操作人是攻击账号」的那几行**:别的人写的审计里出现 A 的 id,照旧算漏。"""
+    try:
+        体 = r.json()
+    except ValueError:
+        return r.text
+
+    def 剔(x):
+        if isinstance(x, list):
+            return [剔(v) for v in x if not (isinstance(v, dict) and str(v.get("谁") or v.get("actor") or "").startswith("E2EXP"))]
+        if isinstance(x, dict):
+            return {k: 剔(v) for k, v in x.items()}
+        return x
+    return json.dumps(剔(体), ensure_ascii=False)
+
+
 def main():
     from fastapi.testclient import TestClient
     import endpoints as EP
@@ -144,6 +233,13 @@ def main():
                   {"i": "mb_" + uuid.uuid4().hex[:12], "o": org, "p": B, "u": 攻,
                    "g": json.dumps(["查看敏感输入/独立测试答案", "审批工具动作"], ensure_ascii=False)})
     try:
+        class _假:
+            def __init__(self, d): self._d = d
+            def json(self): return self._d
+        试 = 去掉攻击者自己的审计(_假({"记录": [{"谁": "E2EXPabc123", "对象": "{\"release_id\": \"rel_甲\"}"},
+                                              {"谁": "U001", "对象": "{\"release_id\": \"rel_乙\"}"}]}))
+        ck("试纸:审计列表只剔攻击账号自己写的那一行(rel_甲 没了),别人写的照旧留着(rel_乙 还在)",
+           "rel_甲" not in 试 and "rel_乙" in 试, 试)
         A的 = 只属于A的id()
         print(f"  ℹ️ A 有、B 没有的 id:{len(A的)} 个")
         ck("样本:A 有、B 没有的 id 不少于 100 个", len(A的) >= 100, len(A的))
@@ -197,7 +293,7 @@ def main():
                     记没验(f"B 路径回 {r.status_code}(要查询参数 / 不适用)", 路)
                     continue
                 列表验 += 1
-                m = 型.search(r.text)
+                m = 型.search(去掉攻击者自己的审计(r))
                 if m:
                     列表漏.append((路, m.group(1)))
                 continue
@@ -268,6 +364,7 @@ def main():
         print(f"\n  ℹ️ 共 {len(路由们)} 个带项目的 GET;列表验 {列表验}、详情验 {详情验}、查询串验 {len(查询验)};没验的按原因(**不是验过了**):")
         for k, v in sorted(没验.items(), key=lambda kv: -len(kv[1])):
             print(f"     · {k}:{len(v)} 个 —— {', '.join(x.replace('/api/v1/projects/{project_id}', '') for x in v)}")
+        写口(客, 攻, A的, 型, 平(M.app.routes))
     finally:
         with 事务() as c:
             c.execute(text("delete from memberships where project_id=:p and user_id=:u"), {"p": B, "u": 攻})

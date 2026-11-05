@@ -93,6 +93,36 @@ def 派发前检查(题们, 版本们, 轮数):
     return 坏
 
 
+def 判对前检查(c, project_id, 题们, 评审连接):
+    """判对规则 C(用户 2026-11-05 拍)派发前就查:→ field_errors。
+    · 写了字段判据的题,判据格式要对(没有「包含某个词」—— 成段的话写进期望说明)
+    · 有只靠「期望说明」的题 → 要模型评审 → 必须给评审连接,而且按 project_id 查得到(不许指向别的项目的连接)"""
+    import 判对 as PD
+    坏, 要评审 = {}, []
+    for t in 题们:
+        内容 = t.get("content") or {}
+        if isinstance(内容, str):
+            try:
+                内容 = json.loads(内容)
+            except ValueError:
+                内容 = {}
+        法 = PD.判法(内容)
+        if 法 == "字段":
+            问 = PD.判据格式问题(内容.get("判据"))
+            if 问:
+                坏[f"题[{t.get('id')}].判据"] = ";".join(问)
+        elif 法 == "模型":
+            要评审.append(t.get("id"))
+    if 要评审:
+        if not 评审连接:
+            坏["评审连接"] = (f"有 {len(要评审)} 道题只写了期望说明(比如 {要评审[0]}),要交给模型评审 —— "
+                         "填一条模型连接的配置版本 id;或者给这些题写字段判据")
+        elif not c.execute(text("select 1 from connection_versions where project_id=:p and id=:i"),
+                           {"p": project_id, "i": 评审连接}).first():
+            坏["评审连接"] = "这个项目里没有这条模型连接配置版本(不能用别的项目的连接)"
+    return 坏
+
+
 def 派(c, me, project_id, eid, 版本们, 题们, 轮数):
     """建评测那个事务里调。版本们 = {"候选": workflow_versions 行, "基线": 行}。返回回执条数。"""
     import workflows_api as WA
@@ -167,8 +197,131 @@ def _收一条(c, ev, 子):
               {"i": _新id("sc"), "o": ev["organization_id"], "p": ev["project_id"], "it": iid,
                "v": 1 if 子["status"] == "succeeded" else 0, "sv": ev["scorer_version"],
                "ra": f"子运行终态 {子['status']}" + (f"({子['completion_reason']})" if 子["completion_reason"] else "")})
+    _判这一条(c, ev, 子, iid, 输出)
     c.execute(text("""update evaluation_runs set collected_at=now(), updated_at=now(), revision=revision+1
                        where project_id=:p and id=:i"""), {"p": ev["project_id"], "i": 子["rid"]})
+
+
+评审待判 = "待模型评审"
+
+
+def _判这一条(c, ev, 子, iid, 输出):
+    """「答对」分(判对规则 C,用户 2026-11-05 拍)。
+    · 这道题没写判据也没写期望说明 → 不写这个分(**不判 ≠ 判错**,进度里算「没判据」)
+    · 子运行没跑通 → 0,理由「没跑通,不看内容」
+    · 有字段判据 → 当场按字段比(确定性规则)
+    · 只有期望说明 → 先记一条「待模型评审」(value 空、value_known 否),worker 的评审一遍再判,判完用新的一条顶替它"""
+    import 判对 as PD
+    内容 = c.execute(text("select content from samples where project_id=:p and id=:i"),
+                     {"p": ev["project_id"], "i": 子["sample_id"]}).scalar() or {}
+    if isinstance(内容, str):
+        try:
+            内容 = json.loads(内容)
+        except ValueError:
+            内容 = {}
+    法 = PD.判法(内容)
+    if 法 is None:
+        return
+    if 子["status"] != "succeeded":
+        值, 知, 源, 理 = 0, True, "确定性规则", f"没跑通({子['status']}),不看内容"
+    elif 法 == "字段":
+        对, 理由 = PD.按字段判(输出, 内容["判据"])
+        值, 知, 源, 理 = (1 if 对 else 0), True, "确定性规则", ";".join(理由)
+    else:
+        值, 知, 源, 理 = None, False, "模型评审", 评审待判
+    c.execute(text("""insert into scores
+        (id, organization_id, project_id, evaluation_item_id, dimension, value, value_known, source,
+         scorer_version, rationale, by, at, created_at, created_by)
+        values (:i, :o, :p, :it, '答对', :v, :k, :src, :sv, :ra, 'eval-collector', now(), now(), 'eval-collector')"""),
+              {"i": _新id("sc"), "o": ev["organization_id"], "p": ev["project_id"], "it": iid, "v": 值, "k": 知,
+               "src": 源, "sv": ev["scorer_version"], "ra": 理[:2000]})
+
+
+def 评审一遍(项目=None, 每遍上限=20):
+    """worker 每 60 秒那段调:把「待模型评审」的「答对」分交给评测上记的评审连接判,判完插一条新的顶替(supersedes)。
+    · 评审连接是演示模型(mock)→ 记「演示模型判的,不算数」(value_known 否)—— 用户 11-05 拍过发生产只认真模型,
+      评测结论同理:演示模型说「对」不能当真
+    · 真模型 → 判出对 / 错,花费记进 usage_ledger,**挂在被评那次运行的 trace 上** —— 评测的已知费用和费用上限自动算进去
+    · 看不懂评审的回答 → 记「评审的回答看不懂」(value_known 否),不当成对也不当成错
+    · 每遍最多判 每遍上限 条:评审是串行的真调用,一遍判太多会拖住 worker 那 60 秒里别的活"""
+    import 判对 as PD
+    from db import 事务
+    出 = []
+    with 事务() as c:
+        rs = c.execute(text("""
+            select s.id sid, s.organization_id, s.project_id, s.evaluation_item_id, s.scorer_version,
+                   i.raw_output, i.trace_id, i.sample_id, e.judge_connection_version_id cv, e.id eid
+              from scores s
+              join evaluation_items i on i.project_id=s.project_id and i.id=s.evaluation_item_id
+              join evaluations e on e.project_id=i.project_id and e.id=i.evaluation_id
+             where s.dimension='答对' and s.source='模型评审' and s.rationale=:待 and s.value_known is not true
+               and (cast(:p as text) is null or s.project_id=:p)
+               and not exists (select 1 from scores n where n.project_id=s.project_id and n.supersedes_score_id=s.id)
+             order by s.created_at limit :n
+             for update of s skip locked"""), {"待": 评审待判, "p": 项目, "n": 每遍上限}).mappings().all()
+        for r in rs:
+            try:
+                出.append(_评一条(c, dict(r), PD))
+            except Exception as e:       # 一条评坏了不拖累别的;记下来,下一遍不再重试同一条(避免反复花钱)
+                _顶替(c, r, None, False, "模型评审", f"评审出错:{type(e).__name__}:{str(e)[:200]}")
+                出.append((r["sid"], "出错"))
+    return 出
+
+
+def _顶替(c, r, 值, 知, 源, 理, 评审版本=None):
+    c.execute(text("""insert into scores
+        (id, organization_id, project_id, evaluation_item_id, dimension, value, value_known, source,
+         scorer_version, rationale, by, at, supersedes_score_id, created_at, created_by)
+        values (:i, :o, :p, :it, '答对', :v, :k, :src, :sv, :ra, 'eval-judge', now(), :sup, now(), 'eval-judge')"""),
+              {"i": _新id("sc"), "o": r["organization_id"], "p": r["project_id"], "it": r["evaluation_item_id"],
+               "v": 值, "k": 知, "src": 源, "sv": 评审版本 or r["scorer_version"], "ra": (理 or "")[:2000], "sup": r["sid"]})
+
+
+def _评一条(c, r, PD):
+    连 = c.execute(text("""select cv.id 连接版本id, cv.endpoint, cv.secret_ref, cv.capabilities, mc.status, mc.adapter
+                            from connection_versions cv join model_connections mc
+                              on mc.project_id=cv.project_id and mc.id=cv.connection_id
+                           where cv.project_id=:p and cv.id=:i"""), {"p": r["project_id"], "i": r["cv"]}).mappings().first()
+    if not 连 or 连["status"] != "active":
+        _顶替(c, r, None, False, "模型评审", "评审连接不在了或已停用,这一条没判")
+        return r["sid"], "连接不可用"
+    import runtime_cfg
+    if (连["capabilities"] or {}).get("execution_mode") == "mock" or runtime_cfg.模型是mock():
+        _顶替(c, r, None, False, "模型评审·演示模型", "演示模型判的,不算数(只证明这条评审路接得通)")
+        return r["sid"], "演示模型"
+    内容 = c.execute(text("select content from samples where project_id=:p and id=:i"),
+                     {"p": r["project_id"], "i": r["sample_id"]}).scalar() or {}
+    if isinstance(内容, str):
+        内容 = json.loads(内容)
+    原 = r["raw_output"] or {}
+    if isinstance(原, str):
+        原 = json.loads(原)
+    import 真模型 as TM
+    回 = TM.生成(连接=dict(连), 系统=PD.评审系统提示, 用户=PD.评审用户消息(内容, 原.get("输出")),
+                参数={"max_tokens": 400, "temperature": 0})
+    对, 理由 = PD.解析评审(回.get("text"))
+    账 = _记评审的账(c, r, 回, 连)
+    理 = ("模型判的:" + 理由) if 对 is not None else 理由
+    if 账:
+        理 += f"(⚠️ 这次评审的花费没记上账:{账} —— 评测的已知费用少了这一笔)"
+    _顶替(c, r, (None if 对 is None else (1 if 对 else 0)), 对 is not None, "模型评审", 理,
+         评审版本=f"模型评审:{回.get('actual_model')}")
+    return r["sid"], ("对" if 对 else "错" if 对 is False else "看不懂")
+
+
+def _记评审的账(c, r, 回, 连):
+    """评审这一次真调用的花费 → usage_ledger,挂在被评那次运行的 trace 上(评测费用按 trace 汇总,自动算进已知费用和上限)。
+    → None(记上了)/ 一句为什么没记上。**没记上不吞**:写进那条分的理由里,看得见。"""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge"))
+    import usage as UG
+    try:
+        供应商 = {"anthropic-messages": "anthropic"}.get(连["adapter"], 连["adapter"])
+        UG.写进库(c, 组织=r["organization_id"], 项目=r["project_id"], 谁="eval-judge", 用量=回.get("usage") or {},
+                模型=回.get("actual_model"), 提供方=供应商, 资源=UG.生成, 事件键=f"评审:{r['sid']}",
+                trace_id=r["trace_id"], 调用方="评测评审", _新id=_新id)
+        return None
+    except Exception as e:
+        return f"{type(e).__name__}:{str(e)[:160]}"
 
 
 def _取消没跑完的(c, ev, 子们):

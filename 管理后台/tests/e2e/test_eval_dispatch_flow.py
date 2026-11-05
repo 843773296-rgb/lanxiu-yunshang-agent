@@ -159,8 +159,14 @@ def main():
     ck("出了两版", bool(基线 and 候选 and 基线 != 候选), 原)
     dv, 题号 = 造题集([{"输入": {"article": "第 1 题"}}, {"输入": {"article": "第 2 题"}}])
     dv坏, _ = 造题集([{"输入": {"article": "好题"}}, {"问": "聊天形状的题", "答": "没有工作流输入"}])
+    # 判对规则 C(用户 11-05 拍):第 1 题两版都该对;第 2 题只有候选交「回显」→ 候选对、基线错;第 3 题只写期望说明 → 模型评审
+    dv判, 判题 = 造题集([{"输入": {"article": "甲"}, "判据": [{"项": "/summary", "方式": "等于", "值": "甲"}]},
+                       {"输入": {"article": "乙"}, "判据": [{"项": "/回显", "方式": "有这一项"}]},
+                       {"输入": {"article": "丙"}, "期望说明": "摘要要和原文一字不差"}])
+    dv判坏, _ = 造题集([{"输入": {"article": "丁"}, "判据": [{"项": "/summary", "方式": "包含", "值": "丁"}]}])
     try:
         跑(wid, 基线, 候选, dv, dv坏, 题号)
+        判对(基线, 候选, dv判, 判题, dv判坏)
     finally:
         清()
     print()
@@ -169,6 +175,52 @@ def main():
         return 1
     print(f"✅ 评测派发:{len(过)} 条全过")
     return 0
+
+
+def 判对(基线, 候选, dv判, 判题, dv判坏):
+    print("\n▸ ⑨ 判对(用户 11-05 拍:字段判据 + 写不成的交模型评审;两轮都对才算对)")
+    s, b = 派(候选, 基线, dv判)
+    ck("有只写了期望说明的题、却没给评审连接 → 422,点名评审连接", s == 422 and "评审连接" in 错字段(b), (s, b))
+    s, b = 派(候选, 基线, dv判, 评审连接="cv_mock_project_demo_b")
+    ck("评审连接用别的项目的 → 422(只能用本项目的连接)", s == 422 and "评审连接" in 错字段(b), (s, b))
+    s, b = 派(候选, 基线, dv判坏, 评审连接="cv_mock_" + 项目)
+    ck("判据写成「包含某个词」→ 422,点名是哪道题的判据", s == 422 and any(k.endswith(".判据") for k in 错字段(b)), (s, b))
+    s, b = 派(候选, 基线, dv判, 评审连接="cv_mock_" + 项目)
+    ck("给了本项目的评审连接 → 派出去(3 题 × 2 边 × 2 轮 = 12 次)", s == 202 and b.get("派了") == 12, (s, b))
+    eid = (b or {}).get("id")
+    行 = {}
+    for _ in range(240):                 # 收齐要一两轮 worker(60 秒一遍),评审再一遍
+        行 = 评测行(eid)
+        if 行.get("status") in ED.评测终态们:
+            with 事务() as c:
+                待 = c.execute(text("""select count(*) from scores s join evaluation_items i on i.project_id=s.project_id
+                                          and i.id=s.evaluation_item_id
+                                        where i.project_id=:p and i.evaluation_id=:e and s.dimension='答对' and s.rationale=:r
+                                          and not exists (select 1 from scores n where n.project_id=s.project_id
+                                                           and n.supersedes_score_id=s.id)"""),
+                              {"p": 项目, "e": eid, "r": ED.评审待判}).scalar()
+            if 待 == 0:
+                break
+        time.sleep(1)
+    s, pg = 打("GET", f"{P}/evaluations/{eid}/progress")
+    边们 = {g["边"]: g for g in (pg.get("答对") or [])}
+    候, 基 = 边们.get("候选") or {}, 边们.get("基线") or {}
+    ck("收成「已完成」,而且模型评审那几条都判过了(不再有「待模型评审」)", 行.get("status") == "已完成" and 待 == 0, (行.get("status"), 待))
+    ck("**候选:第 1、2 题两轮都对**(字段判据当场比)", 候.get("两轮都对") == 2 and 候.get("判错") == 0, 候)
+    ck("**基线:第 1 题对、第 2 题错**(它不交「回显」)—— 判对分得出两版的差别,跑通分分不出", 基.get("两轮都对") == 1 and 基.get("判错") == 1, 基)
+    ck("**第 3 题交演示模型评审 → 「还没判出来」,不当成对也不当成错**(演示模型判的不算数)",
+       候.get("还没判出来") == 1 and 基.get("还没判出来") == 1 and 候.get("模型判的") == 1, (候, 基))
+    ck("答对率分母只算判出结论的题:候选 1.0、基线 0.5", 候.get("答对率") == 1 and 基.get("答对率") == 0.5, (候.get("答对率"), 基.get("答对率")))
+    with 事务() as c:
+        理们 = [dict(x) for x in c.execute(text("""select i.sample_id, i.variant_code, s.value, s.source, s.rationale, s.supersedes_score_id
+                  from scores s join evaluation_items i on i.project_id=s.project_id and i.id=s.evaluation_item_id
+                 where i.project_id=:p and i.evaluation_id=:e and s.dimension='答对'"""), {"p": 项目, "e": eid}).mappings()]
+    错的 = [x for x in 理们 if x["sample_id"] == 判题[1] and x["variant_code"] == "基线"]
+    ck("判错的理由说清是哪一项、实际是什么(基线第 2 题:/回显 没有这一项)",
+       错的 and all("/回显" in x["rationale"] and "没有这一项" in x["rationale"] for x in 错的), 错的[:1])
+    演 = [x for x in 理们 if x["sample_id"] == 判题[2] and x["supersedes_score_id"]]
+    ck("模型评审那几条:**插一条新的顶替「待模型评审」**(原来那条不改),来源标「演示模型」",
+       len(演) == 4 and all(x["source"] == "模型评审·演示模型" and "不算数" in x["rationale"] for x in 演), 演[:1])
 
 
 def 跑(wid, 基线, 候选, dv, dv坏, 题号):
