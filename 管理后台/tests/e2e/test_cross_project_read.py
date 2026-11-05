@@ -41,6 +41,15 @@ from db import 事务, 连接  # noqa: E402
 
 A, B = "project_demo_a", "project_demo_b"
 过, 挂 = [], []
+# 没验的必须**逐条登记理由**(棘轮):新冒出一个没验的而没登记 → 红;登记了的现在验得到了 → 也红(逼人回来删)。
+# 「83 / 88」这个比值分不出分母里那几个是有理由的豁免还是没人记得补的欠账(并行会话 11-05 指出)
+不验登记 = {
+    "/evaluations/compare": "要两个评测 id 当查询参数(a / b),参数名太通用,不进 id 类查询参数表;欠账:单独写一刀",
+    "/opinion-samples/pending": "聊天站内部通道:按角色 / 门店现算待复核的,查询参数是身份不是项目记录 id",
+    "/opinions/mine": "按提的人工号查自己的意见,查询参数是身份不是项目记录 id",
+    "/chat-assistants/by-role/{role}/production": "路径参数是角色名(店长 / 顾问),不是项目记录 id",
+    "/knob-plans/{key}": "数据:演示项目 A 里没有调参方案,取不到 A 的 key;欠账:A 里造一份再攻(数据类只打印不判)",
+}
 # 地板(防空集合上「一条都没漏」自动成立);够高就行,不用跟着实际涨
 列表下限, 详情下限 = 30, 10
 
@@ -101,7 +110,7 @@ def 库里取A的id(路径前段, 参名, A的, n=3):
     return [x for x in a if x not in b and (列 != "id" or x in A的)][:n]
 
 
-def 取A的id(客, 列表路径, A的):
+def 取A的id(客, 列表路径, A的, n=3):
     """以 A 的人取 A 的列表,挑几个只属于 A 的 id。列表信封不统一(items / 应用 / 数据集 / 连接 …),
     所以找响应里**第一个「元素是带 id 的对象」的列表**;管理员(U001)和带专项授权的标注员(U004)都试,有的列表只开给其中一个。"""
     for 谁 in ("U001", "U004"):
@@ -114,7 +123,7 @@ def 取A的id(客, 列表路径, A的):
             continue
         候选 = [j] if isinstance(j, list) else [v for v in (j.values() if isinstance(j, dict) else []) if isinstance(v, list)]
         for 列 in 候选:
-            ids = [x.get("id") for x in 列 if isinstance(x, dict) and x.get("id") in A的][:3]
+            ids = [x.get("id") for x in 列 if isinstance(x, dict) and x.get("id") in A的][:n]
             if ids:
                 return ids
     return []
@@ -194,16 +203,23 @@ def main():
                 continue
             # 一层一层取:第一个参数从它前面那段的列表里取 A 的 id,填上之后第二个参数再从下一段的列表里取 ……
             # (/workflows/{wid}/versions/{vid}:先拿 A 的工作流,再拿那条工作流的版本)。多个参数各取第一个能取到的
-            填 = 路.replace("{project_id}", A)
-            组 = {}
-            for k in 参:
-                前 = 填.split("{" + k + "}")[0].rstrip("/")
+            def 取(前, k):
                 # 前面那段不一定是列表(工作流的版本列在 /workflows/{wid} 的详情里,不是 /workflows/{wid}/versions)—— 再往上一段试
-                ids = 取A的id(客, 前, A的) or 取A的id(客, 前.rsplit("/", 1)[0], A的) or 库里取A的id(前, k, A的)
-                if not ids:
-                    break
-                组[k] = ids
-                填 = 填.replace("{" + k + "}", ids[0])
+                return 取A的id(客, 前, A的, n=8) or 取A的id(客, 前.rsplit("/", 1)[0], A的, n=8) or 库里取A的id(前, k, A的)
+
+            def 走(填, 剩):
+                """一层一层取;中间那一层逐个试候选,直到下一层取得到(最新那条工作流可能还没有版本 —— 只试第一个会时验时不验)。"""
+                if not 剩:
+                    return {}
+                k = 剩[0]
+                ids = 取(填.split("{" + k + "}")[0].rstrip("/"), k)
+                for i in (ids if len(剩) > 1 else ids[:1]):
+                    下 = 走(填.replace("{" + k + "}", i), 剩[1:])
+                    if 下 is not None:
+                        return {k: ([i] if len(剩) > 1 else ids[:3]), **下}
+                return None
+
+            组 = 走(路.replace("{project_id}", A), 参) or {}
             if len(组) < len(参):
                 记没验("A 那边取不到只属于 A 的 id(没有同前缀的列表 / 列表是空的)", 路)
                 continue
@@ -228,6 +244,22 @@ def main():
         ck("查询串验到的不少于 3 个(执行记录按工作流 / 桥请求按运行 / 监测按应用)", len(查询验) >= 3, 查询验)
         ck("列表验到的数量不低于地板(防「一个都没验所以一条都没漏」)", 列表验 >= 列表下限, (列表验, 列表下限))
         ck("详情验到的数量不低于地板", 详情验 >= 详情下限, (详情验, 详情下限))
+        # 拆成两件(CLAUDE.md「判据红不红取决于库里碰巧有什么」那条):
+        #   结构上没法攻的(要身份参数 / 路径参数不是记录 id / 流式 / 两个评测 id)→ 判据,两头都盯
+        #   A 里碰巧没这种数据的 → **只打印、不判红**:CI 是新库,数据少,判它就是在量库里有什么,不是在量代码
+        #   (代码那一头由「详情验到的不低于地板」兜着 —— 地板是硬的)
+        数据缺 = {x.replace("/api/v1/projects/{project_id}", "") for k, v in 没验.items() if k.startswith("A 那边取不到") for x in v}
+        结构没验 = {x.replace("/api/v1/projects/{project_id}", "") for k, v in 没验.items() if not k.startswith("A 那边取不到") for x in v}
+        结构登记 = {k for k, v in 不验登记.items() if not v.startswith("数据:")}
+        # 登记成结构原因的(比如路径参数是角色名),取 id 那一步也会落进「取不到」那一桶 —— 按登记的原因归类
+        结构没验 |= 数据缺 & 结构登记
+        数据缺 -= 结构登记
+        ck("**结构上没法攻的每一个都登记了理由**(新冒出来一个、又没登记 → 红)", not (结构没验 - 结构登记),
+           sorted(结构没验 - 结构登记))
+        ck("登记了的结构原因现在还成立(攻得到了就从 不验登记 里删掉 —— 豁免不许囤积)", not (结构登记 - 结构没验),
+           sorted(结构登记 - 结构没验))
+        if 数据缺:
+            print(f"  ℹ️ A 里碰巧没数据、这一轮没攻到的 {len(数据缺)} 个(**不是判据**,换一个库数量会变):{', '.join(sorted(数据缺))}")
         print(f"\n  ℹ️ 共 {len(路由们)} 个带项目的 GET;列表验 {列表验}、详情验 {详情验}、查询串验 {len(查询验)};没验的按原因(**不是验过了**):")
         for k, v in sorted(没验.items(), key=lambda kv: -len(kv[1])):
             print(f"     · {k}:{len(v)} 个 —— {', '.join(x.replace('/api/v1/projects/{project_id}', '') for x in v)}")
