@@ -58,14 +58,60 @@ G, R, D = "\033[32m", "\033[31m", "\033[0m"
 # 救它的是下面「一处都没扫到就报判据坏了」那一条 —— 自己写的保护逮到自己的 bug。
 模式 = re.compile(r"SELECT\s+" + re.escape(星) + r"\s+FROM\s+staff\b", re.I)
 
-命中, 查过 = [], 0
-for d, _, fs in os.walk(ROOT):
-    if any(x in d for x in (".git", ".venv", "node_modules", "__pycache__")):
-        continue
+别的检出 = os.path.join(".claude", "worktrees")
+
+
+def 跳过吗(目录, 根):
+    """这个目录要不要跳过。**按相对仓库根的路径判,绝不按绝对路径。**
+
+    ⚠️ 2026-11-05 夜栽在这一行上:原来写的是 `if os.path.join(".claude","worktrees") in d`,
+    而 `d` 是 `os.walk` 给的**绝对路径**。那天这份 worktree 被挪进了
+    `~/Desktop/澜绣云裳agent/.claude/worktrees/工` —— 于是**每一个目录的绝对路径里都含着那个名字**,
+    条条命中、条条跳过,`查过` 变成 0。
+    > 这条排除规则一个字都没改,而它的含义被挪目录改掉了 ——
+    > 原来是「跳过别人的检出」,现在是「跳过我自己」。
+    救它的是下面那条「扫到的文件数要够」—— 否则它会印「共 0 处」然后**绿着**。
+    ⚠️ `tools/impact.py` 里**早就写着**这条教训(10-23 一个子任务踩过同样的坑,注释原话
+    「按相对仓库根的路径判断,不按绝对路径」),而这个文件照旧按绝对路径写 ——
+    **教训记在一个地方,而下一次踩它的人不在那个地方。**
+    ⚠️ **别给这件事配「把它改回绝对路径」那种咬合**:`bite_run` 在临时目录的副本上重放,
+    那个路径里不含 `.claude/worktrees`,所以那一刀在副本里**一点事都没有** ——
+    破坏点不可观测,咬合会永远「没红」。判据要打在这个函数上(见下面的自测)。
+    """
+    rel = os.path.relpath(目录, 根)
+    if rel == os.curdir:
+        return False
+    段 = rel.split(os.sep)
+    if any(x in 段 for x in (".git", ".venv", "node_modules", "__pycache__")):
+        return True
     # `.claude/worktrees/` 底下是子代理开的**别的检出**(各停在一个旧提交上),不是这份代码 ——
     # 2026-10-29 主检出里有 10 份,这条把它们的旧 server.py 也扫进来,红了 50 处,而 CI 和别的检出上没有这个目录。
     # **只跳这一层**:`agentsite/.claude/skills/` 里技能自己的脚本照样要扫(它们也可能查 staff)
-    if os.path.join(".claude", "worktrees") in d:
+    return rel == 别的检出 or rel.startswith(别的检出 + os.sep)
+
+
+# ── 自测:拿 2026-11-05 那次翻车当试纸 ──────────────────────────────
+# 这三条里**第二条**就是那次翻车。它在任何路径下都可观测(不像「改回绝对路径」那一刀)。
+_挪进去了 = os.path.join(os.sep, "x", "proj", ".claude", "worktrees", "工")
+_试纸 = [
+    ("仓库根下的 .claude/worktrees 要跳(那是别人的检出)",
+     跳过吗(os.path.join(ROOT, ".claude", "worktrees", "agent-a1"), ROOT) is True),
+    ("**反向** · 自己就住在 .claude/worktrees 底下时,自己的目录**不许**被跳过 —— "
+     "绝对路径里含那个名字,相对仓库根却不含(11-05 夜就栽在这里,扫到 0 个文件)",
+     跳过吗(os.path.join(_挪进去了, "backend"), _挪进去了) is False),
+    ("只跳那一层:agentsite/.claude/skills 照样要扫(技能脚本也可能查 staff)",
+     跳过吗(os.path.join(ROOT, "agentsite", ".claude", "skills"), ROOT) is False),
+]
+_挂 = [名 for 名, 真 in _试纸 if not 真]
+if _挂:
+    print(f"{R}❌ 员工表凭据 · 判据自己的自测就不过 —— 下面扫出来的数一个都不能信:{D}")
+    for 名 in _挂:
+        print(f"  {R}❌{D} {名}")
+    sys.exit(1)
+
+命中, 查过 = [], 0
+for d, _, fs in os.walk(ROOT):
+    if 跳过吗(d, ROOT):
         continue
     for f in fs:
         if not f.endswith(".py"):
@@ -89,8 +135,15 @@ for d, _, fs in os.walk(ROOT):
 
 print("员工表凭据 · 检查")
 print(f"  扫了 {查过} 个 .py;对 staff 用星号的共 {len(命中)} 处,其中豁免 {len(命中) - len(坏)} 处")
-if 查过 == 0:
-    print(f"{R}❌ 一个文件都没扫到 —— 判据坏了,不是「全都对」{D}")
+# ⚠️ **地板,不是棘轮** —— 够高就行,不用跟着实际涨(项目里那条「分清地板和棘轮」)。
+# 原来写的是 `查过 == 0`,而那只挡得住**全坏**:11-05 夜那次正好是全坏(0 个)所以被逮到了。
+# 少跳一个目录那种**部分**失效,`查过` 还有几百,`== 0` 一声不响。
+# 500 的来路:跟踪的 .py 是 977 个(CI 拿到的就是这些),本机扫到 976 —— 取一半出头,
+# 删掉半个仓库才会误报,而少扫掉任何一个大目录都会红。
+文件下限 = 500
+if 查过 < 文件下限:
+    print(f"{R}❌ 只扫到 {查过} 个 .py(下限 {文件下限})—— **判据坏了,不是「全都对」**。"
+          f"先去看 跳过吗() 是不是把该扫的目录也跳了{D}")
     sys.exit(1)
 if not 命中:
     print(f"{R}❌ 一处都没扫到(连豁免的登录验证也没有)—— 判据大概坏了:"

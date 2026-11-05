@@ -14926,5 +14926,17 @@
    }
   ],
   "预期红": "**每一句 UPDATE / DELETE 打到带项目的表,条件里都有 project_id**(没有又没登记理由 → 红)"
+ },
+ {
+  "script": "backend/staff_cred_check.py",
+  "改坏": "把「这个目录跳不跳」改回按**绝对路径**判子串(2026-11-05 夜真栽的那一刀)—— 自己住在 .claude/worktrees 底下时,每个目录都命中、条条跳过,扫到 0 个文件而输出是「共 0 处」",
+  "file": [
+   {
+    "path": "backend/staff_cred_check.py",
+    "old": "    return rel == 别的检出 or rel.startswith(别的检出 + os.sep)\n",
+    "new": "    return 别的检出 in 目录\n"
+   }
+  ],
+  "预期红": "自己的目录**不许**被跳过"
  }
 ]
