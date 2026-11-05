@@ -575,6 +575,9 @@ def 聊天助手的密钥(project_id: str, cid: str, me: 身份 = Depends(要权
         密钥们 = [_键的样子(r, *_今天花了(c, project_id, r["id"])) for r in 行]
         a = c.execute(text("select role_key, production_version_no from chat_assistants where project_id=:p and id=:i"),
                       {"p": project_id, "i": cid}).mappings().first()
+    if not a:
+        # 11-05 跨项目攻击判据扫出来的:原来这个项目里没有这个助手也回 200 + 一个拼好的调用地址 —— 不漏数据,但会让人以为它存在
+        raise _错(404, "NOT_FOUND", "这个项目里没有这个聊天助手", "回聊天助手列表重新选")
     return {"条数": len(密钥们), "密钥": 密钥们, "调用地址": f"{对外}/chat-assistants/{cid}/messages",
             "生产版本号": a and a["production_version_no"], "聊天站读后台配置吗": bool(a and CA._接线(a["role_key"])[0]),
             "note": "原文只在发出那一刻显示一次;**API 调的这一轮写工具不挂** —— 只能查、不能改,要改的会说「它想做什么」"}

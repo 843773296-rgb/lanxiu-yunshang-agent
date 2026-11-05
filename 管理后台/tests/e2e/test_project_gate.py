@@ -91,14 +91,19 @@ def main():
     仓 = os.path.dirname(_根)
     攻击 = "tests/e2e/test_cross_project_read.py"
     在 = os.path.exists(os.path.join(_根, 攻击))
-    挂门禁 = os.path.basename(攻击) in open(os.path.join(_根, "Makefile"), encoding="utf-8").read()
+    # 查结构不查子串:那个文件名要出现在一条**真会执行的 recipe 行**上(tab 开头、去掉缩进后不以 # 开头)——
+    # 子串的话,那一行被注释掉照样算「挂着」(并行会话 11-05 指出)
+    挂门禁 = any(行.startswith("\t") and not 行.strip().startswith("#") and os.path.basename(攻击) in 行
+               for 行 in open(os.path.join(_根, "Makefile"), encoding="utf-8").read().splitlines())
     咬合 = sum(1 for x in _json.load(open(os.path.join(仓, "tools", "bite_specs.json"), encoding="utf-8"))
              if x.get("script") == "管理后台/" + 攻击)
     if 还是关的 is False:
         print(f"  ℹ️ 钥匙关着(跨项目读隔离已结构化() = false)—— 开门那三样现在:攻击判据{'在' if 在 else '不在'} / "
               f"{'挂在' if 挂门禁 else '没挂'}门禁里 / 咬合 {咬合} 条。**这一条现在没在拦东西**,钥匙翻成 true 那天才拦")
-    ck("⑦ 钥匙是 true 时:跨项目读取攻击判据在、挂在门禁里、至少 2 条咬合(列表一条 + 详情一条)",
-       还是关的 is False or (在 and 挂门禁 and 咬合 >= 2), (在, 挂门禁, 咬合))
+    # 无条件断言(棘轮):原来写成「钥匙关着 or 三样都在」—— 钥匙恒关,右半边从不求值,这条恒绿,
+    # 第一次真被求值的那天正是有人急着开门的那天(并行会话 11-05 指出)。三样今天都成立,所以每轮都真验
+    ck("⑦ 开门那三样每轮都在:跨项目读取攻击判据在、挂在门禁的执行行上、至少 2 条咬合",
+       在 and 挂门禁 and 咬合 >= 2, (在, 挂门禁, 咬合))
 
     print()
     if 挂:

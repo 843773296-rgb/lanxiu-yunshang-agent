@@ -14885,5 +14885,34 @@
    }
   ],
   "预期红": "**详情:拿 A 的 id 走 B 的路径,一条都拿不到**"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_cross_project_read.py",
+  "改坏": "桥请求列表给了运行号就不再按项目筛(「运行号是全局唯一的」)—— B 项目的人塞一个 A 的运行号,就看到 A 那次运行写给澜绣的单子",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/bridge_api.py",
+    "old": "             where project_id=:p and status=:s\n",
+    "new": "             where (project_id=:p or cast(:r as text) is not null) and status=:s\n"
+   }
+  ],
+  "预期红": "**查询串:塞 A 的 id 走 B 的路径,带不出 A 的任何记录**"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_project_gate.py",
+  "改坏": "把跨项目读取攻击从门禁里注释掉(「这条跑得慢,先关了」)—— 判据文件还在、名字还在 Makefile 里,而它已经不跑了;门的钥匙读的那条判据从此不再被证明",
+  "file": [
+   {
+    "path": "管理后台/Makefile",
+    "old": "\t@./.venv/bin/python tests/e2e/test_cross_project_read.py\n",
+    "new": "\t# @./.venv/bin/python tests/e2e/test_cross_project_read.py\n"
+   },
+   {
+    "path": "管理后台/Makefile",
+    "old": "\t@./.venv/bin/python tests/e2e/test_cross_project_read.py > /tmp/prog-test_cross_project_read.log 2>&1 \\\n",
+    "new": "\t# @./.venv/bin/python tests/e2e/test_cross_project_read.py > /tmp/prog-test_cross_project_read.log 2>&1 \\\n"
+   }
+  ],
+  "预期红": "⑦ 开门那三样每轮都在:跨项目读取攻击判据在、挂在门禁的执行行上、至少 2 条咬合"
  }
 ]

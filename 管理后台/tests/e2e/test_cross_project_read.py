@@ -19,7 +19,11 @@
 **进程内跑**(TestClient,不打 8801):咬合在代码副本上改坏一处取数,这里调的就是副本里的代码 ——
 打常驻服务的话,副本里改了什么服务都看不见,咬合会砍空。
 
-已知不盖:查询串里带 id 的筛选(?workflow_id=…)、要两个以上路径参数的接口、流式接口 —— 照数报出来,不算「验过了」。
+  · **查询串**(11-05 补):带 id 类筛选参数的列表(workflow_id / execution_run_id / 监测的「应用」这几个查询参数;参数用 params 交给客户端转码,不手拼),塞 A 的 id 走 B 的路径 ——
+    响应里(去掉回显的那个值)不许出现别的只属于 A 的 id。A 的 id 挑「真被那一列引用过的」(有桥请求的运行、有运行的工作流),
+    不然一个没人引用的 id 塞进去什么都带不出来,「没漏」就白成立
+
+已知不盖:流式接口、node_id 这类不是项目记录的参数(多个路径参数的接口 11-05 起一层一层取 id 也攻) —— 照数报出来,不算「验过了」。
 """
 import json
 import os
@@ -55,6 +59,46 @@ def 只属于A的id():
             for p, s in ((A, a), (B, b)):
                 s.update(x for x in c.execute(text(f'select id::text from "{t}" where project_id=:p'), {"p": p}).scalars() if x)
     return {x for x in a - b if len(x) >= 6}
+
+
+# 查询串里哪些参数是「项目记录的 id」:按参数名找同名列(应用 = 工作流 id)。node_id / 节点 是图里的节点名,不是项目记录
+查询id列 = {"workflow_id": "workflow_id", "execution_run_id": "execution_run_id", "document_id": "document_id", "应用": "workflow_id"}
+# 有的列表默认只给一部分(桥请求默认只列「待执行」)—— 别的取值也要试,不然漏的那部分看不见
+查询额外 = {"/bridge-calls": [{}, {"状态": "已执行"}, {"状态": "执行失败"}]}
+
+
+def 查询池(列, A的, n=4):
+    """A 里**真被这一列引用过**的只属于 A 的值(先挑被引用最多的)。"""
+    with 连接() as c:
+        表们 = c.execute(text("""select table_name from information_schema.columns where table_schema='public'
+                                 group by table_name having bool_or(column_name='project_id') and bool_or(column_name=:c)"""),
+                         {"c": 列}).scalars().all()
+        计 = {}
+        for t in 表们:
+            for v, k in c.execute(text(f'select "{列}"::text, count(*) from "{t}" where project_id=:p and "{列}" is not null group by 1'),
+                                  {"p": A}):
+                if v in A的:
+                    计[v] = 计.get(v, 0) + k
+    return [v for v, _ in sorted(计.items(), key=lambda kv: -kv[1])[:n]]
+
+
+# 路径段 → 表(段名把 - 换成 _ 就是表名的不用登记;登记的是对不上的那几个)
+段到表 = {"releases": "release_manifests", "runs": "execution_runs"}
+
+
+def 库里取A的id(路径前段, 参名, A的, n=3):
+    """列表取不到时的兜底:按路径里参数前面那一段找表,直接从库里拿只属于 A 的值。
+    取不到(表对不上 / A 里没这种数据)就照实报「没验」。"""
+    段 = 路径前段.rstrip("/").rsplit("/", 1)[-1]
+    表 = 段到表.get(段, 段.replace("-", "_"))
+    列 = "key" if 参名 == "key" else "id"
+    with 连接() as c:
+        if not c.execute(text("""select 1 from information_schema.columns where table_schema='public' and table_name=:t
+                                  and column_name in (:c, 'project_id') having count(*) = 2"""), {"t": 表, "c": 列}).first():
+            return []
+        a = [x for x in c.execute(text(f'select "{列}"::text from "{表}" where project_id=:p limit 200'), {"p": A}).scalars()]
+        b = set(c.execute(text(f'select "{列}"::text from "{表}" where project_id=:p'), {"p": B}).scalars())
+    return [x for x in a if x not in b and (列 != "id" or x in A的)][:n]
 
 
 def 取A的id(客, 列表路径, A的):
@@ -108,6 +152,13 @@ def main():
         路由们 = sorted({r.path for r in 平(M.app.routes) if "GET" in (getattr(r, "methods", None) or set()) and "{project_id}" in r.path})
         ck("扫到的带项目 GET 不少于 80 个(契约里登记了 88 个;扫少了就是展开路由那一步漏了)", len(路由们) >= 80, len(路由们))
         列表漏, 详情漏, 列表验, 详情验, 没验 = [], [], 0, 0, {}
+        查询漏, 查询验 = [], []
+        查询参数 = {}
+        for r in 平(M.app.routes):
+            if "GET" in (getattr(r, "methods", None) or set()) and "{project_id}" in r.path:
+                qs = [q.alias or q.name for q in r.dependant.query_params if (q.alias or q.name) in 查询id列]
+                if qs:
+                    查询参数[r.path] = qs
 
         def 记没验(原因, 路):
             没验.setdefault(原因, []).append(路)
@@ -118,6 +169,20 @@ def main():
                 记没验("流式接口", 路)
                 continue
             if not 参:
+                # 查询串里的 id 类筛选(11-05 补)
+                for q in 查询参数.get(路, []):
+                    池 = 查询池(查询id列[q], A的)
+                    if not 池:
+                        记没验(f"查询参数 {q}:A 里没有被引用的 id", 路)
+                        continue
+                    查询验.append((路, q))
+                    for v in 池:
+                        for 额 in 查询额外.get(路.split("{project_id}", 1)[1], [{}]):
+                            rq = 客.get(路.replace("{project_id}", B), params={q: v, **额}, headers={"X-Dev-User": 攻})
+                            if rq.status_code == 200:
+                                m = 型.search(rq.text.replace(v, ""))
+                                if m:
+                                    查询漏.append((路, q, v, 额, m.group(1)))
                 r = 客.get(路.replace("{project_id}", B), headers={"X-Dev-User": 攻})
                 if r.status_code != 200:
                     记没验(f"B 路径回 {r.status_code}(要查询参数 / 不适用)", 路)
@@ -127,27 +192,45 @@ def main():
                 if m:
                     列表漏.append((路, m.group(1)))
                 continue
-            if len(参) > 1:
-                记没验("两个以上路径参数", 路)
-                continue
-            前 = 路.split("{" + 参[0] + "}")[0].rstrip("/")
-            ids = 取A的id(客, 前.replace("{project_id}", A), A的)
-            if not ids:
+            # 一层一层取:第一个参数从它前面那段的列表里取 A 的 id,填上之后第二个参数再从下一段的列表里取 ……
+            # (/workflows/{wid}/versions/{vid}:先拿 A 的工作流,再拿那条工作流的版本)。多个参数各取第一个能取到的
+            填 = 路.replace("{project_id}", A)
+            组 = {}
+            for k in 参:
+                前 = 填.split("{" + k + "}")[0].rstrip("/")
+                # 前面那段不一定是列表(工作流的版本列在 /workflows/{wid} 的详情里,不是 /workflows/{wid}/versions)—— 再往上一段试
+                ids = 取A的id(客, 前, A的) or 取A的id(客, 前.rsplit("/", 1)[0], A的) or 库里取A的id(前, k, A的)
+                if not ids:
+                    break
+                组[k] = ids
+                填 = 填.replace("{" + k + "}", ids[0])
+            if len(组) < len(参):
                 记没验("A 那边取不到只属于 A 的 id(没有同前缀的列表 / 列表是空的)", 路)
                 continue
             详情验 += 1
-            for i in ids:
-                rb = 客.get(路.replace("{project_id}", B).replace("{" + 参[0] + "}", i), headers={"X-Dev-User": 攻})
-                if rb.status_code == 200 and 型.search(rb.text):
-                    详情漏.append((路, i, rb.status_code))
+            末 = 参[-1]
+            for i in 组[末]:
+                b路 = 路.replace("{project_id}", B)
+                for k in 参[:-1]:
+                    b路 = b路.replace("{" + k + "}", 组[k][0])
+                rb = 客.get(b路.replace("{" + 末 + "}", i), headers={"X-Dev-User": 攻})
+                # 去掉自己塞进去的那几个 id 再找:响应回显路径里的 id(比如拼一个「调用地址」)不是漏数据
+                正文 = rb.text
+                for x in [i] + [组[k][0] for k in 参[:-1]]:
+                    正文 = 正文.replace(x, "")
+                m = 型.search(正文) if rb.status_code == 200 else None
+                if m:
+                    详情漏.append((路, i, m.group(1)))
 
         ck("**列表:B 项目的列表里一个只属于 A 的 id 都没有**", not 列表漏, 列表漏[:5])
         ck("**详情:拿 A 的 id 走 B 的路径,一条都拿不到**", not 详情漏, 详情漏[:5])
+        ck("**查询串:塞 A 的 id 走 B 的路径,带不出 A 的任何记录**", not 查询漏, 查询漏[:5])
+        ck("查询串验到的不少于 3 个(执行记录按工作流 / 桥请求按运行 / 监测按应用)", len(查询验) >= 3, 查询验)
         ck("列表验到的数量不低于地板(防「一个都没验所以一条都没漏」)", 列表验 >= 列表下限, (列表验, 列表下限))
         ck("详情验到的数量不低于地板", 详情验 >= 详情下限, (详情验, 详情下限))
-        print(f"\n  ℹ️ 共 {len(路由们)} 个带项目的 GET;列表验 {列表验}、详情验 {详情验};没验的按原因(**不是验过了**):")
+        print(f"\n  ℹ️ 共 {len(路由们)} 个带项目的 GET;列表验 {列表验}、详情验 {详情验}、查询串验 {len(查询验)};没验的按原因(**不是验过了**):")
         for k, v in sorted(没验.items(), key=lambda kv: -len(kv[1])):
-            print(f"     · {k}:{len(v)} 个 —— {', '.join(v[:4])}{' …' if len(v) > 4 else ''}")
+            print(f"     · {k}:{len(v)} 个 —— {', '.join(x.replace('/api/v1/projects/{project_id}', '') for x in v)}")
     finally:
         with 事务() as c:
             c.execute(text("delete from memberships where project_id=:p and user_id=:u"), {"p": B, "u": 攻})
