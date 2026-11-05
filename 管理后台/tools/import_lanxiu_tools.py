@@ -311,7 +311,7 @@ def 写库(项目, 计划):
                     c.execute(text("""update tool_definitions
                         set side_effect_type=:se, updated_at=now(),
                             revision=revision+1
-                        where id=:i"""), {"se": 档, "i": did})
+                        where project_id=:p and id=:i"""), {"se": 档, "p": 项目, "i": did})
             有 = c.execute(text("""select max(version_no) from tool_versions
                                   where tool_definition_id=:d"""),
                            {"d": did}).scalar()

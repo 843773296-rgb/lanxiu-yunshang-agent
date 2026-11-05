@@ -14914,5 +14914,17 @@
    }
   ],
   "预期红": "⑦ 开门那三样每轮都在:跨项目读取攻击判据在、挂在门禁的执行行上、至少 2 条咬合"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_write_project_scope.py",
+  "改坏": "评测收尾那句 update 漏了 project_id(「eid 前面按项目查过了」)—— 写入侧隔离靠每一句自己带项目条件,漏一句就能改到别家的行",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/evals_api.py",
+    "old": "                              updated_at=now(), revision=revision+1 where project_id=:p and id=:i\"\"\"),\n",
+    "new": "                              updated_at=now(), revision=revision+1 where id=:i and :p is not null\"\"\"),\n"
+   }
+  ],
+  "预期红": "**每一句 UPDATE / DELETE 打到带项目的表,条件里都有 project_id**(没有又没登记理由 → 红)"
  }
 ]

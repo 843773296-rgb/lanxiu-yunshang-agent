@@ -12,6 +12,25 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 🌙 11-05 夜:用户「先完成拍板,完成后开始夜间流程」—— 拍板全完,夜里自己干
+
+**用户今晚拍的(AskUserQuestion,都已定,别再问)**:
+- 小样本线 **20**(已落地 e95c0a0d)
+- 评测「答得对不对」判法 **C 两种结合**:能写成**字段判据**的按字段比(等于 / 在范围内 / 有没有这一项 —— **只比结构化字段,不拿关键词匹配成段的话**);
+  写不成的交给**模型评审**(用 Claude —— CLAUDE.md §4 评测一律 Claude),结果上标明「模型判的」可抽查
+- 一道题算对:**两轮都对才算对**;报告另列「两轮不一致」的题
+- 第二个正式项目的门:**补完全绿就开**(把 `跨项目读隔离已结构化()` 改成 true 的新迁移;开之前告诉并行会话)
+- 用户说「能一次拍完吗?」→ 以后拍板类合成一张卡一次问(记忆 batch-decisions-one-card)
+
+**夜里的顺序**(并行会话要占锁 2–3 小时跑整轮咬合重放 1253 条,它让我先跑):
+1. [持锁中] 验收并推:写入侧 SQL 扫描(`tests/orchestration/test_write_project_scope.py`,117 句、补了 5 句 project_id:evals_api 收尾 / seed_datasets 三句 /
+   import_lanxiu_tools)、数据桶不对称判据、对应咬合 → 绿了推,告诉并行会话起重放
+2. 它重放期间**只写代码不占锁**:① 判分规则 C(eval_dispatch 收一条那里加「判对」:字段判据 + 模型评审,两轮都对才算对)
+   ② 会回数据的 POST 纳入跨项目攻击(原始日志导出等)
+3. 它重放完(等它说一声)→ 跑测试 / 咬合 / 全量 → 推
+4. 全绿 → 开门迁移(钥匙 true)→ test_project_gate ⑦ 要三样都在(已经在)→ 全量 → 推 → 第二天告诉用户
+- 并行会话今晚还做:删 10 份 `.claude/worktrees/agent-*`(用户拍,含会打印密码哈希的旧代码;**不碰 工 / 一期**)、负向评测拆两个数、三个第三方技能审查
+
 ## 🗂️ 11-05 傍晚:「澜绣云裳agent-工」**已挪进主文件夹**(用户拍)→ 现在在 `~/Desktop/澜绣云裳agent/.claude/worktrees/工`;下一件:写入侧隔离
 
 - **用户拍(AskUserQuestion)**:桌面上两个文件夹合一 → 选「把 -工 挪进主文件夹」。主文件夹**不动**(7 个 launchd 服务写死了它)。
@@ -14224,12 +14243,12 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-05 21:18。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-05 22:00。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
 | 分支 | `main` |
-| 最新提交 | 40e434f6 · 2026-11-05 · 交接:「澜绣云裳agent-工」已挪进主文件夹(.claude/worktrees/工),旧路径改掉 |
+| 最新提交 | 49ecfac1 · 2026-11-05 · 交接:「澜绣-一期」也挪进主文件夹(.claude/worktrees/一期),旧路径改掉 |
 | 代码量 | 974 个 Python 文件 / 182555 行(不含 .venv) |
 | 验收 | `./check.sh` 共 377 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
@@ -14242,6 +14261,12 @@ M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
  M HANDOFF.md
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
+ M tools/bite_specs.json
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/Makefile"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/services/api/app/evals_api.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/tests/e2e/test_cross_project_read.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/tools/import_lanxiu_tools.py"
+ M "\347\256\241\347\220\206\345\220\216\345\217\260/tools/seed_datasets.py"
 ?? .claude/
 ?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
 ?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
@@ -14251,23 +14276,17 @@ M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
 ?? .feynman/nightly-aimc.log
 ?? .feynman/nightly-eval-launchd.log
 ?? .feynman/nightly-eval-ok
-?? .feynman/nightly-eval-tried
-?? .feynman/nightly-eval.log
-?? .feynman/world-shift-launchd.log
-?? .wip-muslin/
-?? .wip-store-report-SKILL.md
-?? agent/example-ab-results.jsonl
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
+49ecfac1 交接:「澜绣-一期」也挪进主文件夹(.claude/worktrees/一期),旧路径改掉
 40e434f6 交接:「澜绣云裳agent-工」已挪进主文件夹(.claude/worktrees/工),旧路径改掉
 e95c0a0d 小样本线 20 改成「用户已确认」:页面说明、代码注释、判据一起改,判据钉住 20
 8777882c 跨项目读取攻击:没验的逐条登记理由、两头都盯;数据碰巧缺的只打印不判红
 72004340 跨项目读取攻击补到 83 / 88 个读接口:查询串里的 id 筛选、多层路径参数、库里兜底取 id
-1d933e3d 影响面警示段落棘轮 341 → 342:门禁自己提的那一格
 ```
 <!--/AUTO-->
 ## 一句话在做什么

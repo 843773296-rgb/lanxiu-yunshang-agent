@@ -383,8 +383,8 @@ async def 登记逐题(project_id: str, eid: str, request: Request,
         齐 = bool(v["sample_count"]) and 共 >= v["sample_count"]
         if 齐:
             c.execute(text("""update evaluations set status='已完成',
-                              updated_at=now(), revision=revision+1 where id=:i"""),
-                      {"i": eid})
+                              updated_at=now(), revision=revision+1 where project_id=:p and id=:i"""),
+                      {"p": project_id, "i": eid})
         _审计(c, me, "evaluation.items.record",
               {"evaluation_id": eid, "登记": len(写了), "累计": 共, "齐了吗": 齐})
     return {"evaluation_id": eid, "登记了": len(写了), "累计": 共,

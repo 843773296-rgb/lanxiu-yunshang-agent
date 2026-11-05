@@ -103,7 +103,7 @@ def main():
             if 旧:
                 # **幂等:同名的先清掉再建。** 不清的话每跑一次多一份同名数据集,
                 # 而列表页上五份「导出能过的那一份」谁也说不清该看哪个。
-                c.execute(text("delete from samples where dataset_id=:d"), {"d": 旧})
+                c.execute(text("delete from samples where project_id=:p and dataset_id=:d"), {"p": 项目, "d": 旧})
                 # ⚠️ **先删引用方,再删被引用方 —— 整条链都要走。**
                 # `training_jobs.dataset_version_id` 上有外键,而它自己又被
                 # `model_artifacts` 引用、后者又被 `deployments` 引用。
@@ -135,8 +135,8 @@ def main():
                 c.execute(text(f"""delete from training_jobs
                      where project_id=:p and dataset_version_id in ({版本子查询})"""),
                           {"p": 项目, "d": 旧})
-                c.execute(text("delete from dataset_versions where dataset_id=:d"), {"d": 旧})
-                c.execute(text("delete from datasets where id=:d"), {"d": 旧})
+                c.execute(text("delete from dataset_versions where project_id=:p and dataset_id=:d"), {"p": 项目, "d": 旧})
+                c.execute(text("delete from datasets where project_id=:p and id=:d"), {"p": 项目, "d": 旧})
             dsid = f"ds_{uuid.uuid4().hex[:10]}"
             c.execute(text("""insert into datasets (id, organization_id, project_id, name,
                                   format, purpose, redaction_policy, created_at, created_by,
