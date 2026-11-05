@@ -15015,5 +15015,17 @@
    }
   ],
   "预期红": "**提交类接口:B 的路径塞 A 的 id,一个都不许成功、回的内容里没有 A 的记录**"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "把 g23 第一层的 `被否定了` 换回 `negated` —— 匹配串自己里面的否定词又开始算否定,于是「减免」这个说法自己把自己否定掉,这道「不让价」的闸对它一次都不响(2026-11-06 实测逮到的真绕过:同一条规则 `减(免|价)` 的两半,「减价」活着、「减免」是死的)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "        if not tm.被否定了(text, m.start(), m.end(), both_sides=True):\n",
+    "new": "        if not tm.negated(text, m.start(), both_sides=True):\n"
+   }
+  ],
+  "预期红": "「减免」也算让价"
  }
 ]

@@ -225,6 +225,31 @@ def negated(text, idx, span=DEFAULT_SPAN, both_sides=False):
     return None
 
 
+def 被否定了(text, start, end, span=DEFAULT_SPAN, both_sides=False):
+    """`text[start:end]` 这一处匹配**被否定了吗** —— **匹配串自己里面的否定词不算**。
+
+    和 `negated(text, idx, ...)` 的区别只有一条:那个的后看窗口从 `idx` 开始、
+    **把匹配串自己也圈了进去**,所以匹配串里带「不 / 未 / 免 / 非」的时候,
+    它永远自己把自己否定掉。
+
+    ⚠️ **2026-11-06 实测逮到一次真的绕过**(不是评测判据,是运行时护栏):
+    `agentsite/guards.py` 的「不让价」那道闸,词表里有一支 `减(免|价)` ——
+    「这笔可以**减价**处理」拦得住,而「给您**减免**一部分」**一次都拦不住**,
+    因为「免」在 `NEG` 里。同一条规则的两半,一半活着一半是死的。
+
+    > 一个真的被否定了的说法(「我们不做减免」),和一个名字里自带否定字的说法(「减免」),
+    > **在否定检查眼里长得一模一样。**
+
+    盖成**等长**的占位符(不是删掉)—— 删掉会让前后窗口的距离变短,把窗口外的否定词拉进来。
+
+    ⚠️ 这是**新增**的一条,`negated` / `find` / `says` 的行为一个字都没动:
+    那三个被几十个判分器用着,改它们会一次性移动很多成绩单上的数。
+    要用这条的地方自己换过来(现在只有 `guards.g23` 第一层和 `negative.unnegated` 用)。
+    """
+    掩 = text[:start] + ("○" * (end - start)) + text[end:]
+    return negated(掩, start, span, both_sides)
+
+
 def find(text, word, span=DEFAULT_SPAN, both_sides=False):
     """找 word 第一次**未被否定**地出现的位置。找不到返回 None。
 
@@ -372,6 +397,12 @@ if __name__ == "__main__":
                       both_sides=True) is None, True),
         ("⑤ 不过加钱可以赶 → 「不过」不是否定,算答应了",
          lambda: says("最慢 174 天,不过加钱可以赶出来", "加钱可以") is not None, True),
+        # 被否定了() —— 匹配串自己里面的否定词不算(2026-11-06 加,逼出它的是 guards 那道真绕过)
+        ("⑤·2 「减免」自带「免」,而「免」在否定词表里 —— **不算被否定**(原来 negated 会说它被否定了)",
+         lambda: 被否定了("这单可以给您减免一部分", 6, 8, both_sides=True) is None
+                 and negated("这单可以给您减免一部分", 6, both_sides=True) is not None, True),
+        ("⑤·3 **反向** · 「我们不做减免」是真的被否定了 —— 这一条**必须**仍然算否定",
+         lambda: 被否定了("我们不做减免,但可以免首次改衣", 4, 6, both_sides=True) is not None, True),
         ("⑥ 香云纱 不该撞上面料名「纱」的子串",
          lambda: "纱" in "香云纱涂层" and mentions("香云纱涂层", "香云纱") is not None, True),
         # in_clause —— 限定词必须落在**同一小句**里。
