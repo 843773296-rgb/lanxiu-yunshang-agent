@@ -88,7 +88,13 @@ agentsite/delivery_check.py      15 条       ← 共 78 条,与我推 f29ee472 
 **进度**:存储 + 接口已推 8a328a0a(整轮全绿)。术语草稿内容交给了一个只读子任务在整理(写到 scratchpad glossary_draft.json,还没回)。
 **聊天站(并行会话的线)**:它定了「本地缓存一版冻结的、启动时同步」,要我出:`GET /glossary-versions/{id}` 一次给全(项目 / key / 版本号 / 冻结时间 /
 内容哈希 / entries);试一下原样返回命中 + 模型会收到的原文(已有);「当前该用哪一版」—— 我提议放在**聊天助手版本**上(chat_assistant_versions 加
-glossary_version_id,换术语 = 换聊天助手版本、走发布),**等它回聊天站拉配置用的身份**再开口。它今晚**不把术语接进聊天站提示词**(用户要跑技能评测存新基线,
+glossary_version_id,换术语 = 换聊天助手版本、走发布),**它已回(16:5x)**:
+  · 身份 = `X-Dev-User: <服务账号工号>`(聊天站 backend/takeover_client.py::_curl 唯一发请求处),路径必须在 `/api/v1/projects/{项目}/…` 下;
+    → `GET /glossary-versions/{id}` 的权限要和 `GET /chat-assistants/by-role/{role}/production` **用同一个**(那个口聊天站现在就在调)
+  · 「当前用哪一版」= 在 `/chat-assistants/by-role/{role}/production` 的响应里加 `glossary_version_id`,**这一版没挂术语时给显式 null**,
+    不许字段缺失(缺失 = 老响应没这个字段,它要分得开)→ chat_assistant_versions 要加 glossary_version_id 列(迁移)
+  · 200 + entries=[] 是业务状态;拿不到 200 是环境问题(它用上一次缓存并标来源)
+  · 它拿 preview 的「模型会收到」和本地纯函数输出**逐字比对**做门禁检查;推完 GET 那口要喊它它今晚**不把术语接进聊天站提示词**(用户要跑技能评测存新基线,
 动模型上下文会让基线作废)。
 顺序:① 引用 → ② 注入(管理后台两处)→ 和并行会话对聊天站 → ③ 页面 → ④ 草稿内容 → PRD 附录 A。
 
