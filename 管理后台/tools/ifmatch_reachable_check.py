@@ -74,6 +74,8 @@ P = f"{基址}/api/v1/projects/{项目}"
     "PATCH /prompts/{id}/draft": dict(
         取id=("/prompts", "items[0].id"),
         读="/prompts/{id}", 字段="草稿.revision"),
+    "PATCH /glossaries/{id}/draft": dict(          # 术语配置(11-06):详情顶层就是草稿的 revision
+        取id=("/glossaries", "items[0].id"), 读="/glossaries/{id}", 字段="revision", 项目="project_demo_a"),
     "PATCH /applications/{id}/draft": dict(
         取id=("/applications", "应用[0].id"),
         读="/applications/{id}", 字段="候选revision"),

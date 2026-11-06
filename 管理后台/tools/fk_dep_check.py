@@ -70,6 +70,9 @@ sys.path.insert(0, os.path.join(根, "services", "api", "app"))
     ("prompt_versions", "prompt_drafts"):
         "③ 冻结时从草稿生成,**不留回指指针** —— 依赖是语义上的。"
         "留指针反而会让人以为「改草稿会影响已冻结的版本」",
+    ("glossary_versions", "glossary_drafts"):
+        "和 prompt_versions → prompt_drafts 同一形状(11-06):版本和草稿靠 (project_id, key) 认,不留指针 —— "
+        "草稿可以删了重建,版本照旧在;版本里存的是冻结那一刻的全部术语,不需要回指草稿",
     ("tool_group_versions", "tool_versions"):
         "② 成员在 `member_manifest`(JSONB)里,一条一条带着加载角色和必要性,"
         "**不是单列** —— JSONB 里的 id 加不了外键。"

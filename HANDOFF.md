@@ -78,6 +78,15 @@ agentsite/delivery_check.py      15 条       ← 共 78 条,与我推 f29ee472 
 - 工作区留着的三样**都不该提交**:`agentsite/evals/funnel.jsonl` / `agentsite/evals/skill_usage.jsonl`(截断滚动副本,谁都不 add)、`.feynman/bite-all-20261016.log`(未跟踪,不是我的)
 - `管理后台/.venv` 在这个 worktree 里是**借主检出那份的软链**,已进 `.git/info/exclude`(共用文件,已告知并行会话)。`.gitignore` 里 `.venv/` 带斜杠**只匹配目录**,匹配不到软链 —— 差点把绝对路径软链推进公开仓库
 
+## ⏰ 11-06 16:3x 用户开了「长期任务,到晚上八点」—— 术语配置接着做,四件已拍(一张卡)
+
+① **每条工作流 / 每个智能体选一版术语**(整条流程共用;换版本 = 改了流程,发生产要重新跑通;否决:每步各选 / 项目级生效版本)
+② 用在 **工作流的模型步骤(含分类器 / 参数提取器)+ 智能体 + 澜绣聊天站** 三处(聊天站归并行会话 eureka-40 那条线,要和它配合 —— 我出接口 / 约定,它接)
+③ **后台页面这次一起做**(列表 + 编辑页:逐条录标准词 / 叫法 / 定义 / 口径 / 取数工具,页面上看得到格式检查和「试一下」)
+④ **初始内容我从现有资料整理一版草稿**(knowledge 的形制 / 面料 / 工艺 md + 代码里的指标口径:生命周期八档 / RFM / 到店率等),
+   **只放草稿不冻结**,等用户看过再冻;每条注明出处,不自己编口径。
+顺序:先把存储那笔推了(整轮在跑,b3y7l33db)→ ① 引用 → ② 注入(管理后台两处)→ 和并行会话对聊天站 → ③ 页面 → ④ 草稿内容 → PRD 附录 A。
+
 ## 🤖 11-06:Agent 执行器(用户拍「现在就把执行器做出来」+「走桥,给 Agent 加断点续跑」)—— **①②③④ 都已推**(见 git log)
 
 ## ✅ 11-06 午后:第二轮拍板也做完了 —— 放行 + g29 补注 + 四处顺手修
@@ -286,7 +295,19 @@ e2e-ci 里常驻 dev worker 是 mock,手改成 live 会和它抢活、时红时�
 **术语配置进度**:第 ① 步(纯函数)**已推 10c6af94**,CI 前一笔(审批 53132c0c)三项全绿 —— runtime/术语.py(匹配 / 上下文段 / 格式问题)+
 tests/orchestration/test_glossary.py 11 条(含「到店 / 到店率」前缀用例 —— 第一版没有它,「从短到长」那条咬合没红)+ 咬合 2 条。
 **它还没被任何地方调用**(下一步接线;接线后要有一条走真入口的用例,别只验纯函数)。
-**下一步第一个动作**(第 ② 步:存储):先照 prompts / prompt_versions 的写法(草稿 + 冻结版本、版本行不可原地改的触发器)设计
+**② 存储 + ③ 接口:写完、迁移 07b867630470 已上共享库(15:50 前后,锁里;中途 downgrade 重上过一次修触发器参数),未提交**:
+entities(glossary_drafts / glossary_versions)· fieldtypes(entries JSONB、版本非空列)· models 唯一约束 · tools/fk_dep_check 例外 ·
+docs/契约.md 重新生成 · 新 glossaries_api.py(列表 / 建 / 详情 / 改草稿 If-Match / 冻结:格式阻断 + 一字没改 + 取数口工具存在且启用 / 试一下)挂进 main ·
+tests/e2e/test_glossary_flow.py 7 条全过(挂了 Makefile 三处)· 咬合 1 条(取数口检查放行 → ② 红),**还没重放**。
+⚠️ **并行会话为这次停手了**(不跑门禁 / 咬合 / 不碰库),等我推完喊它拉 —— 推完必须吱它。
+踩到:触发器挂时没传参数 → 函数里 foreach 空数组报 FOREACH 错(拦了但理由不对),改成传占位列名 '_一列都不放过'。
+**整轮第一次(15:51)红了三处,都已改**:① 6 个新接口没登记进 contract/endpoints.py(登了,重新生成契约.md / openapi.json / api.ts)
+② page-smoke 的 ifmatch_reachable_check 要登记「PATCH /glossaries/{id}/draft 的 revision 从哪来」(登了:详情顶层 revision,项目 demo_a)
+③ 那条检查在 CI 里**排在 e2e 之前**、新库没有术语表 → 新加 tools/seed_glossary.py(可重复执行,demo-terms 草稿),挂在 Makefile 两处 seed_training 后面;
+另外 e2e ⑤ 改成断言 SQLSTATE 23514 + 表名(不认中文文案,并行会话提醒)、e2e 结束不再归档术语表。咬合 test_glossary_flow 1 条已三关过。
+**下一步第一个动作**:锁里整轮复跑(check.sh + e2e-ci + contract + orchestration)→ 一起提交推(表 + 代码)→ 吱并行会话 →
+然后 ④ 引用(工作流 llm 节点 / Agent 版本挂 glossary_version_id)⑤ 注入 ⑥ PRD 附录 A。
+(旧)第 ② 步的做法:先照 prompts / prompt_versions 的写法(草稿 + 冻结版本、版本行不可原地改的触发器)设计
 glossaries(按项目)+ glossary_versions(entries jsonb、content_hash、version_no);要同时改 models.py、contract/entities.py(spec_coverage 会查)、
 迁移(接在 c4f2a8d6e1b7 之后,先 `alembic heads` 确认单头);**建表前喊并行会话**(它说共享库空着、会让开),表和代码一起推。
 然后 ③ 接口(草稿 PATCH / 校验 = 术语.格式问题 / 冻结)④ 引用:工作流 llm 节点 / Agent 版本挂 glossary_version_id(DSL 节点表配置要加)

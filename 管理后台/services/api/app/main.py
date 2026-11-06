@@ -196,6 +196,7 @@ import bridge_api as _BR       # 澜绣桥:工作流里取转写 / 写跟进,由
 import chat_assistants_api as _CA   # 聊天助手配置(10-28 分两步;第 2 步聊天站读生产那一版,11-02 店长助手上了 v2)
 import alerts_api as _ALR  # 告警(11-04,DF-04 第二步):连续 N 次越线才报、连续 M 次正常才恢复
 import monitoring_api as _MON  # 监测(11-04,DF-04):办成 = 跑完 + 每处写入有回执;未知不补零
+import glossaries_api as _GLS  # 术语配置 / 语义层(11-06):草稿 / 冻结版本 / 试一下
 import opinions_api as _AF  # 意见单(11-04,DF-03 第 2 步):聊天站每条问答都能提意见,记提问人工号
 import open_api as _OA              # 访问 API(11-03):外部系统带密钥跑应用的生产版;先工作流,聊天那一半还没做
 app.include_router(_WF.router)
@@ -224,6 +225,7 @@ app.include_router(_OA.router)
 app.include_router(_AF.router)
 app.include_router(_MON.router)
 app.include_router(_ALR.router)
+app.include_router(_GLS.router)
 
 
 # ── 健康 / 运行信息 ────────────────────────────────────────────────

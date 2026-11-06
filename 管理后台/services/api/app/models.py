@@ -226,6 +226,8 @@ _额外唯一 = {
     # 「版本号唯一且密集」是一堆地方都在隐含依赖的不变量 —— 依赖它就该钉住它。
     "prompt_versions": [("project_id", "key", "content_hash"),
                         ("project_id", "key", "version_no")],
+    "glossary_versions": [("project_id", "key", "content_hash"),
+                          ("project_id", "key", "version_no")],
     "document_versions": [("project_id", "document_id", "content_hash")],
     "dataset_versions": [("project_id", "dataset_id", "content_hash")],
     "release_manifests": [("project_id", "application_id", "content_hash")],

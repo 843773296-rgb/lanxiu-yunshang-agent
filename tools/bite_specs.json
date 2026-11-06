@@ -15399,5 +15399,17 @@
    }
   ],
   "预期红": "④ 交给模型的只有这次提到的那条"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_glossary_flow.py",
+  "改坏": "冻结时不查取数口的工具在不在(「说明而已」)—— 模型照着说明去调一个这个项目里没有的工具",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/glossaries_api.py",
+    "old": "    if not 要:\n        return []\n    在 = {r[\"name\"]",
+    "new": "    if True:\n        return []\n    在 = {r[\"name\"]"
+   }
+  ],
+  "预期红": "② 取数口写了这个项目里不存在的工具"
  }
 ]

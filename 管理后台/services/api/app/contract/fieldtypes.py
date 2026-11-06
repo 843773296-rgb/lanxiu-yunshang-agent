@@ -223,6 +223,7 @@
     "id": "TEXT", "name": "TEXT", "status": "TEXT", "role": "TEXT",
     "purpose": "TEXT", "adapter": "TEXT", "endpoint": "TEXT", "revision": "BIGINT",
     "messages": "JSONB", "params": "JSONB", "capabilities": "JSONB",
+    "entries": "JSONB",          # 术语表的那一组术语(11-06)
     "acl": "JSONB", "text": "TEXT", "ordinal": "INTEGER", "format": "TEXT",
     # ⚠️ `rating` 点名登记成 INTEGER(2026-10-08,检索试跑的 5 档评价)。
     # **不叫 `rating_count`** —— 那样能命中 `_count` 后缀不用登记,
@@ -370,6 +371,8 @@
     # 聊天助手版本:开头 / 工具 / 模型 / 从哪来 / 哈希 —— 少一样就说不清「模型收到的是什么」
     "chat_assistant_versions": {"chat_assistant_id", "version_no", "head_template", "tools",
                                 "model_name", "source_kind", "content_hash"},
+    # 术语表版本(11-06):少一样就说不清「模型拿到的是哪一份术语」
+    "glossary_versions": {"key", "version_no", "entries", "content_hash"},
     "workflow_schedules": {"workflow_id", "cadence", "fire_time", "timezone", "schedule_enabled", "principal",
                            "input_snapshot"},
     # 检索试跑记录(2026-10-08):这五列**一列都不能空**,否则那一行没有用 ——
