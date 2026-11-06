@@ -163,6 +163,21 @@ def 冻术语版本(project_id: str, gid: str, me: 身份 = Depends(要权限("�
             "note": "版本已冻结,**内容不再原地修改**。工作流 / Agent 要用它,得在配置里选这一版。"}
 
 
+@router.get(前缀 + "/glossary-versions/{vid}")
+def 术语版本(project_id: str, vid: str, me: 身份 = Depends(要权限("查看有权配置"))):
+    """一个冻结版本**一次给全**(聊天站本地缓存用,11-06 和并行会话对过):项目 / key / 版本号 / 冻结时间 / 内容哈希 / 全部术语。
+    权限和聊天站现在调的 /chat-assistants/by-role/{role}/production 同一个(服务账号工号)。
+    这一版没有术语 → 200 + 术语=[](业务状态);拿不到 200 是环境问题 —— 两件事,不把错误包成空列表。"""
+    with 连接() as c:
+        v = c.execute(text("""select id, project_id, key, version_no, entries, content_hash, created_at, created_by
+                                from glossary_versions where project_id=:p and id=:i"""), {"p": project_id, "i": vid}).mappings().first()
+    if not v:
+        raise _错(404, "NOT_FOUND", "没有这个术语版本", "回术语表详情选一个版本")
+    return {"id": v["id"], "项目": v["project_id"], "key": v["key"], "版本": f"v{v['version_no']}", "version_no": v["version_no"],
+            "冻结于": v["created_at"].isoformat() if v["created_at"] else None, "冻结人": v["created_by"],
+            "内容哈希": v["content_hash"], "术语": v["entries"] or []}
+
+
 @router.post(前缀 + "/glossary-versions/{vid}/preview")
 async def 试一下(project_id: str, vid: str, request: Request, me: 身份 = Depends(要权限("查看有权配置"))):
     """给一段话 → 命中了哪些术语、模型会收到的那一段。**和运行时同一个函数**(runtime/术语.匹配 / 上下文段)。"""

@@ -67,6 +67,9 @@ def main():
     ck("④ 试一下:只返回这次提到的「到店率」,模型会收到的那段里没有「褙子」",
        c_ == 200 and [h["标准词"] for h in pv["命中"]] == ["到店率"] and "褙子" not in pv["模型会收到"] and "不含已取消" in pv["模型会收到"],
        (c_, pv))
+    c_, gv = 打("GET", f"/glossary-versions/{v['id']}")
+    ck("④ 取一个冻结版本一次给全:内容哈希 = 冻结时那个、术语一条不少、带项目和冻结时间(聊天站本地缓存用)",
+       c_ == 200 and gv["内容哈希"] == v["内容哈希"] and len(gv["术语"]) == 2 and gv["项目"] == 项目 and gv["冻结于"], (c_, gv))
     try:
         with 事务() as c:
             c.execute(text("update glossary_versions set entries='[]'::jsonb where project_id=:p and id=:i"), {"p": 项目, "i": v["id"]})
