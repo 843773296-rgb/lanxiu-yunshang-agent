@@ -413,6 +413,7 @@ run "读不读得出效果 · 判据本身要能被测" ./agentsite/.venv/bin/py
 run "能力清单 · 声明/文件/白名单三边一致" ./agentsite/.venv/bin/python agentsite/manifest.py
 run "RFM 评分 · 自测" python3 knowledge/rfm.py
 run "RFM 评分 · 五条性质" python3 backend/rfm_check.py
+run "聊天站取术语 · 每种「空」各说一句不同的话、404 不告警而连不上要告警、比内容哈希不比版本号、字段缺失≠显式 null、缓存坏掉不崩、匹配只有一份实现" python3 backend/glossary_client_check.py
 run "夜跑评测清单 · 每个套的脚本都在、点名的套没囤积、单跑那晚塞得进窗口、「找不到脚本」不算「跑完了」(夜跑没人看着)" python3 tools/nightly_check.py
 run "交接文档 · 四段必填是否齐全" python3 tools/make_handoff.py --check
 run "intent · 待办都点了名,「做完了」的判据真的在" python3 tools/intent_check.py

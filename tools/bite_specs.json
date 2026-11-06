@@ -15512,5 +15512,53 @@
    }
   ],
   "预期红": "「找不到脚本」不算「跑完了」"
+ },
+ {
+  "script": "backend/glossary_client_check.py",
+  "改坏": "让「要不要重取」看不见内容哈希不一样 —— 版本号没动而内容换了就发现不了",
+  "file": [
+   {
+    "path": "backend/glossary_client.py",
+    "old": "    if 后台哈希 and 缓存[\"内容哈希\"] != 后台哈希:",
+    "new": "    if False and 后台哈希 and 缓存[\"内容哈希\"] != 后台哈希:"
+   }
+  ],
+  "预期红": "内容哈希不一样就重取,哪怕版本号相同"
+ },
+ {
+  "script": "backend/glossary_client_check.py",
+  "改坏": "把「响应里没有这个字段」那一支关掉 —— 于是「契约还没上」和「这一版没挂术语」混成一个",
+  "file": [
+   {
+    "path": "backend/glossary_client.py",
+    "old": "    if \"glossary_version_id\" not in 体:",
+    "new": "    if False and \"glossary_version_id\" not in 体:"
+   }
+  ],
+  "预期红": "字段缺失和显式 null 不是同一个态"
+ },
+ {
+  "script": "backend/glossary_client_check.py",
+  "改坏": "把「可能不是最新的」从那句话里去掉 —— 顾问看不出这一轮的术语是旧的",
+  "file": [
+   {
+    "path": "backend/glossary_client.py",
+    "old": "f\"这一轮用缓存的 {状态.get('版本')}(取到于 {状态.get('取到于')}),**可能不是最新的**\"",
+    "new": "f\"这一轮用缓存的 {状态.get('版本')}(取到于 {状态.get('取到于')})\""
+   }
+  ],
+  "预期红": "取不到后台而用缓存时,话里要说清它可能不是最新"
+ },
+ {
+  "script": "backend/glossary_client_check.py",
+  "改坏": "把 404 那一支关掉 —— 后台没给这个角色配助手(开发机本来就这样)被当成「连不上」并打告警,打多了就没人看",
+  "file": [
+   {
+    "path": "backend/glossary_client.py",
+    "old": "    if 码 == \"404\":",
+    "new": "    if False and 码 == \"404\":"
+   }
+  ],
+  "预期红": "404 是业务状态,不打告警"
  }
 ]
