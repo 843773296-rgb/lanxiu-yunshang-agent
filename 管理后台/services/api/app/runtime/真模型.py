@@ -76,18 +76,11 @@ class 调不动(Exception):
         super().__init__(f"{码}: {细节}")
 
 
-def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
-    """真发一次生成。返回的形状和 `main._mock生成` **一致**。
-
-    形状一致是有意的(规格 §19.4:mock 和真实实现同一契约),
-    而**正因为形状一致,`execution_mode` 这个标记必须显眼** ——
-    否则一份 mock 跑出来的报告和真实报告在数据形状上一模一样。
-    """
+def _发(*, 连接, 包, 型号, 超时, 用途):
+    """真发一次 Messages 请求 → (回复 JSON, 往返毫秒, 凭据来路, http 状态)。生成和对话一轮**共用这一处**:
+    curl / 代理 / 非 2xx 当场抛 / 失败也记记录仪,只写一次(11-06 从 生成 里抽出来)。"""
     端点 = (连接 or {}).get("endpoint")
     引用 = (连接 or {}).get("secret_ref")
-    型号 = ((参数 or {}).get("model")
-            or (连接 or {}).get("model")
-            or "claude-haiku-4-5")
     if not 端点 or not 引用:
         raise 调不动("MODEL_CONNECTION_INCOMPLETE",
                    f"连接里缺 {[k for k in ('endpoint', 'secret_ref') if not (连接 or {}).get(k)]}")
@@ -96,14 +89,6 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
     except Exception as e:
         # ⚠️ 异常文字来自 secretref,它保证不带值
         raise 调不动("SECRET_UNRESOLVED", f"凭据定位符解析不了:{e}")
-
-    包 = {"model": 型号,
-          "max_tokens": int((参数 or {}).get("max_tokens") or 1024),
-          "messages": [{"role": "user", "content": 用户 or ""}]}
-    if 系统:
-        包["system"] = 系统
-    if (参数 or {}).get("temperature") is not None:
-        包["temperature"] = (参数 or {})["temperature"]
 
     cmd = ["curl", "-sS", "-o", "-", "-w", "\n%{http_code}",
            "--max-time", str(超时), "-X", "POST", 端点,
@@ -121,7 +106,7 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
         # ⚠️ **失败也记。** 一次发不出去的调用照样花了时间,
         # 而不记的话它在日志里**和「从没试过」长得一模一样** ——
         # 于是「这个端点一直连不上」这种问题在成本报表上是隐形的。
-        trace.record(用途="Prompt 调试运行(真实模型)", 模型=型号,
+        trace.record(用途=用途, 模型=型号,
                      耗时毫秒=int((time.time() - t0) * 1000), 成功=False,
                      是mock=False, 细节={"失败": "REQUEST_NOT_SENT",
                                        "异常": type(e).__name__})
@@ -140,7 +125,7 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
         # ⚠️ **非 2xx 当场抛。** 这个仓库 10-03 栽过一次反例:
         # 「接口非 2xx 就直写库」—— 而接口返的是「没权限」,
         # 于是一个被拒的动作被当成「接口不支持」绕过去了。
-        trace.record(用途="Prompt 调试运行(真实模型)", 模型=型号,
+        trace.record(用途=用途, 模型=型号,
                      耗时毫秒=ms, 成功=False, 是mock=False,
                      细节={"失败": "MODEL_CALL_FAILED", "http状态": 码,
                           # ⚠️ 只记端点怎么拒的,**不记请求体**(可能带业务原文)
@@ -152,6 +137,28 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
     except Exception:
         raise 调不动("MODEL_BAD_JSON", f"2xx 而正文不是 JSON(前 120 字):{正文[:120]}")
 
+    return j, ms, 来路, 码
+
+
+def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
+    """真发一次生成。返回的形状和 `main._mock生成` **一致**。
+
+    形状一致是有意的(规格 §19.4:mock 和真实实现同一契约),
+    而**正因为形状一致,`execution_mode` 这个标记必须显眼** ——
+    否则一份 mock 跑出来的报告和真实报告在数据形状上一模一样。
+    """
+    型号 = ((参数 or {}).get("model")
+            or (连接 or {}).get("model")
+            or "claude-haiku-4-5")
+    包 = {"model": 型号,
+          "max_tokens": int((参数 or {}).get("max_tokens") or 1024),
+          "messages": [{"role": "user", "content": 用户 or ""}]}
+    if 系统:
+        包["system"] = 系统
+    if (参数 or {}).get("temperature") is not None:
+        包["temperature"] = (参数 or {})["temperature"]
+
+    j, ms, 来路, 码 = _发(连接=连接, 包=包, 型号=型号, 超时=超时, 用途="Prompt 调试运行(真实模型)")
     文 = "".join(b.get("text") or "" for b in (j.get("content") or [])
                  if isinstance(b, dict))
     u = j.get("usage") or {}
@@ -211,3 +218,45 @@ def 生成(*, 连接, 系统, 用户, 参数=None, 超时=60):
         "凭据来路": 来路,          # 来路(env:// / keychain://),**不是值**
         "展开后模板": 用户 or "",
     }
+
+
+def 对话一轮(*, 连接, 系统, 消息们, 工具们, 参数=None, 超时=120):
+    """带工具定义真发一轮(Agent Loop 用,11-06)→ 原样的回复 JSON(content 块 + usage + model)。
+    翻译在 `工具协议`;这里只发、只记账。**失败照样抛,不退回 mock**(和 生成 同一条)。"""
+    型号 = ((参数 or {}).get("model") or (连接 or {}).get("model") or "claude-haiku-4-5")
+    包 = {"model": 型号, "max_tokens": int((参数 or {}).get("max_tokens") or 2048),
+          "messages": 消息们, "tools": 工具们}
+    if 系统:
+        包["system"] = 系统
+    if (参数 or {}).get("temperature") is not None:
+        包["temperature"] = (参数 or {})["temperature"]
+    j, ms, 来路, 码 = _发(连接=连接, 包=包, 型号=型号, 超时=超时, 用途="Agent 回合(真实模型)")
+    u = j.get("usage") or {}
+    # 记录仪:和 生成 同一口径(缓存写入按 TTL 分档)。换一条路径,记录仪要重新接一次 —— 就是这一行
+    trace.record(用途="Agent 回合(真实模型)", 模型=j.get("model") or 型号,
+                 用量={"input_tokens": u.get("input_tokens"), "output_tokens": u.get("output_tokens"),
+                      "cache_read_tokens": u.get("cache_read_input_tokens"),
+                      "cache_write_tokens": u.get("cache_creation_input_tokens"),
+                      "cache_write_5m_tokens": (u.get("cache_creation") or {}).get("ephemeral_5m_input_tokens"),
+                      "cache_write_1h_tokens": (u.get("cache_creation") or {}).get("ephemeral_1h_input_tokens")},
+                 耗时毫秒=ms, 成功=True, 是mock=False,
+                 细节={"请求的型号": 型号, "凭据来路": 来路, "http状态": 码,
+                      "停在": j.get("stop_reason"), "工具数": len(工具们 or [])})
+    return dict(j, 往返毫秒=ms, 凭据来路=来路, 请求的型号=型号)
+
+
+def Agent模型(连接, *, 输出Schema=None, 参数=None, 发=None):
+    """→ agent_loop 要的 `适配器["model"]`:fn(消息们, 工具定义们) -> 响应。
+    `发` 默认是 对话一轮;测试换成假的(只换「发出去」那一下,翻译走真代码)。"""
+    import 工具协议 as TP
+    发 = 发 or 对话一轮
+
+    def 一轮(消息们, 工具定义们):
+        工具们, 号, 拆 = TP.工具们(工具定义们, 输出Schema)
+        系统, 消息 = TP.消息们(消息们, 号)
+        回 = 发(连接=连接, 系统=系统, 消息们=消息, 工具们=工具们, 参数=参数)
+        出 = TP.解析(回, 号, 拆)
+        出["execution_mode"] = "live"
+        出["actual_model"] = 回.get("model")
+        return 出
+    return 一轮
