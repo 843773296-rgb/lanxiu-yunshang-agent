@@ -137,7 +137,7 @@ def 跑通够不够(跑通模式, 有模型步):
     return "live" in (跑通模式 or [])
 
 
-def 依赖没变吗(当时, 现在, 要的):
+def 依赖没变吗(当时, 现在, 要的, 旧=None):
     """那次跑通时依赖的连接设置,现在还是不是那一份(DF-01 欠债,11-05)。
 
     `要的`:这一版用到的连接配置版本 id。`当时`:运行受理时记下的 {id: 指纹};`现在`:现算的 {id: 指纹}。
@@ -145,12 +145,33 @@ def 依赖没变吗(当时, 现在, 要的):
     id 没变、哈希没变,而那一跑和现在跑的已经不是同一套设置。所以比指纹:
       · 这一版一个连接都不用 → 没什么可变的,True
       · 那次没记指纹(11-05 之前受理的)→ 说不清,False
-      · 有一个对不上 / 现在查不到 → False"""
+      · 有一个对不上 / 现在查不到 → False
+
+    两种算法(用户 11-06 拍「指纹只算能力项」):新值带 `v2:` 前缀,只和新算法(`现在`)比;
+    **不带前缀的是 11-06 之前记的老值**(md5 整份 capabilities),和新算法比不上,就和 `旧`(老算法现算的)比 ——
+    不这么做的话,换算法那一刻所有老记录一起对不上,等于上线就作废全部真跑通(比重探还狠,并行会话 11-06 指出)。
+    老值**永远不许**按新算法放行,新值也不许按老算法放行:两种只认各自那一种。"""
     if not 要的:
         return True
     if not isinstance(当时, dict):
         return False
-    return all(当时.get(i) and 当时.get(i) == (现在 or {}).get(i) for i in 要的)
+
+    def 对得上(i):
+        v = 当时.get(i)
+        if not v:
+            return False
+        if v == (现在 or {}).get(i):
+            return True
+        return not str(v).startswith("v2:") and v == (旧 or {}).get(i)
+    return all(对得上(i) for i in 要的)
+
+
+def 靠旧算法的(当时, 现在, 要的, 旧=None):
+    """这一条对得上,**是不是只靠老算法**(反向检查用:这种的条数只许降,降到 0 就可以摘掉老算法)。"""
+    if not isinstance(当时, dict) or not 要的:
+        return False
+    return any(当时.get(i) and 当时.get(i) != (现在 or {}).get(i) and not str(当时[i]).startswith("v2:")
+               and 当时[i] == (旧 or {}).get(i) for i in 要的) and 依赖没变吗(当时, 现在, 要的, 旧=旧)
 
 
 def 可以发布吗(*, 环境, 清单, 审核, 连接探过吗=None, 跑通过吗=None, 停用的连接=None):

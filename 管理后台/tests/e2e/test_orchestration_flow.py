@@ -409,22 +409,30 @@ ck("**跑通过之后把它用的模型连接停用 → 版本页点名、发生
    _验停.get("停用的连接") and c == 422 and "停用" in _闸停 and _验回.get("停用的连接") == [],
    [_验停.get("停用的连接"), c, _闸停[:120], _验回.get("停用的连接")])
 # 探测原地改了 capabilities(id 不变、哈希不变)→ 之前那次真模型跑通不算了;改回去 → 又算(比的是内容指纹,不是「改没改过」)
+# 11-06 用户拍「指纹只算能力项」:只改了测量噪声(这里用一个不是能力项的键)→ **照样算**;改了真正的能力项 → 不算
 def _够():
     return ((打("GET", P + f"/workflows/{wid}/versions/{v2id}")[1] or {}).get("验证记录") or {}).get("够发生产")
-_前 = _够()
-with _事务() as _c:
-    _原 = _c.execute(_t("select capabilities from connection_versions where project_id=:p and id=:i"), {"p": 项目, "i": "cv_mock_" + 项目}).scalar()
-    _c.execute(_t("update connection_versions set capabilities = coalesce(capabilities, '{}'::jsonb) || '{\"e2e探测\": 1}'::jsonb where project_id=:p and id=:i"),
-               {"p": 项目, "i": "cv_mock_" + 项目})
-try:
-    _探后 = _够()
-finally:
+
+
+def _改了再看(补丁):
     with _事务() as _c:
-        _c.execute(_t("update connection_versions set capabilities = cast(:c as jsonb) where project_id=:p and id=:i"),
-                   {"c": json.dumps(_原, ensure_ascii=False) if _原 is not None else None, "p": 项目, "i": "cv_mock_" + 项目})
+        _原 = _c.execute(_t("select capabilities from connection_versions where project_id=:p and id=:i"), {"p": 项目, "i": "cv_mock_" + 项目}).scalar()
+        _c.execute(_t("update connection_versions set capabilities = coalesce(capabilities, '{}'::jsonb) || cast(:b as jsonb) where project_id=:p and id=:i"),
+                   {"b": json.dumps(补丁, ensure_ascii=False), "p": 项目, "i": "cv_mock_" + 项目})
+    try:
+        return _够()
+    finally:
+        with _事务() as _c:
+            _c.execute(_t("update connection_versions set capabilities = cast(:c as jsonb) where project_id=:p and id=:i"),
+                       {"c": json.dumps(_原, ensure_ascii=False) if _原 is not None else None, "p": 项目, "i": "cv_mock_" + 项目})
+
+
+_前 = _够()
+_噪声后 = _改了再看({"e2e探测": 1, "往返毫秒": 4321})
+_能力后 = _改了再看({"原生工具调用": "e2e改过"})
 _回后 = _够()
-ck("**探测原地改了连接设置 → v2 那次真模型跑通不算了(够发生产 → 否);设置改回原样 → 又算**",
-   (_前, _探后, _回后) == (True, False, True), (_前, _探后, _回后))
+ck("**探测只改了测量噪声 → 那次真模型跑通照样算;改了真正的能力项 → 不算了;设置改回原样 → 又算**(指纹只算能力项,用户 11-06 拍)",
+   (_前, _噪声后, _能力后, _回后) == (True, True, False, True), (_前, _噪声后, _能力后, _回后))
 
 # 监测:草稿试运行 / 单步测试即使是真模型、跑法「正常」也算调试(§5.2-5 与 production 隔离)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "services", "api", "app"))

@@ -422,7 +422,7 @@ E2E_CI := test_api_flow.py test_job_events_sse.py test_orchestration_flow.py tes
           test_access_api_flow.py test_opinions_flow.py \
           test_opinions_migration_with_data.py test_monitoring_flow.py test_alerts_flow.py \
           test_eval_dispatch_flow.py test_project_gate.py test_cross_project_read.py \
-          test_agent_bridge_flow.py
+          test_agent_bridge_flow.py test_fingerprint_ratchet.py
 
 E2E_CI_JS := test_conn_page_actions.js test_runctl_page_actions.js \
              test_sample_page_actions.js test_tool_page_actions.js \
@@ -545,6 +545,7 @@ test-e2e:      ## 端到端:接口闭环 + 禁止行为 + 页面冒烟(要先 ma
 	@./.venv/bin/python tests/e2e/test_project_gate.py
 	@./.venv/bin/python tests/e2e/test_cross_project_read.py
 	@./.venv/bin/python tests/e2e/test_agent_bridge_flow.py
+	@./.venv/bin/python tests/e2e/test_fingerprint_ratchet.py
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py
 	@echo ""
 	@echo "▸ 库存补货(12 条:不用派直接结束 / 填齐了才派 / 没填不派 / 退回不派 / 密钥扫描只放过声明过的数值配置 —— 六条第六条)"
@@ -801,6 +802,10 @@ progress:      ## 生成逐项实现进度(§20 的三档)—— **带运行时�
 	  || { echo "  ❌ test_agent_bridge_flow 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_agent_bridge_flow.log; exit 1; }
 	@tail -2 /tmp/prog-test_agent_bridge_flow.log
+	@./.venv/bin/python tests/e2e/test_fingerprint_ratchet.py > /tmp/prog-test_fingerprint_ratchet.log 2>&1 \
+	  || { echo "  ❌ test_fingerprint_ratchet 挂了 —— 报告不许在它没跑完的情况下生成:"; \
+	       tail -24 /tmp/prog-test_fingerprint_ratchet.log; exit 1; }
+	@tail -2 /tmp/prog-test_fingerprint_ratchet.log
 	@./.venv/bin/python tests/e2e/test_access_api_chat_live.py > /tmp/prog-test_access_api_chat_live.log 2>&1 \
 	  || { echo "  ❌ test_access_api_chat_live 挂了 —— 报告不许在它没跑完的情况下生成:"; \
 	       tail -24 /tmp/prog-test_access_api_chat_live.log; exit 1; }

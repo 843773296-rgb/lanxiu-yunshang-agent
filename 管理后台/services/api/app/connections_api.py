@@ -299,20 +299,25 @@ async def 建连接(project_id: str, request: Request,
                      "而把密钥混进哈希会让哈希本身变成一条侧信道")}
 
 
-def 判工具调用(码, 错话):
-    """第二个探测请求(带一个合法工具、空 messages)的回话 → (支持吗 True/False/None, 怎么判的)。
+def 判工具调用(码, 回包):
+    """第二个探测请求(**真发**一次:一句话 + 一个 ping 工具 + 强制要求调它)的回包 → (支持吗 True/False/None, 怎么判的)。
 
-    11-06 拿正式项目的真连接实测过三种回话(都不生成、不花钱):
-      · 带合法工具 → 400「messages: at least one message is required」—— 只抱怨消息,工具参数被收下了
-      · 乱编的参数 → 400「tools_bogus: Extra inputs are not permitted」—— 不认的参数会被点名
-      · 工具名不合法 → 400「tools.0.custom.name: String should match pattern …」—— 它真在解析工具定义
-    所以:400 且只说 messages、不提 tools → 支持;点名 tools 是多余参数 → 不支持;别的 → 说不清(None,**未知不等于支持**)。
-    规格附录 D.2「不按模型家族名字推断兼容」—— 判据是端点自己的参数校验,不是「它是 Anthropic」。"""
-    话 = str(错话 or "")
-    if 码 == "400" and "tools" in 话 and ("Extra inputs" in 话 or "not permitted" in 话):
-        return False, f"端点把 tools 当成不认的参数拒了:{话[:120]}"
-    if 码 == "400" and "messages" in 话 and "tools" not in 话:
-        return True, f"带合法工具定义的请求只被拒在空 messages 上 —— 工具参数被收下了:{话[:120]}"
+    用户 11-06 拍「改成真发一次请求」:判据落在**协议结构**上(回包里有没有 tool_use 块),不落在供应商的错误文案上 ——
+    原来的零成本判法看「拒的理由」,对方改一个字就判不出来(并行会话指出)。代价:每次探测真生成一次、花一点钱、记一笔用量,
+    打破 10-03「探测不花钱」—— 这是用户拍的取舍。
+      · 2xx 且回包里有调用 ping 的 tool_use 块 → 支持
+      · 2xx 但没有 tool_use(强制要求调都不调)→ 不支持
+      · 4xx 且点名 tools / tool_choice 是不认的参数 → 不支持
+      · 别的(401 / 500 / 没见过的回话)→ None,**未知不等于支持**,落库存 null(校验器单独报码)"""
+    j = 回包 if isinstance(回包, dict) else {}
+    块们 = [b for b in (j.get("content") or []) if isinstance(b, dict)]
+    if str(码).startswith("2"):
+        if any(b.get("type") == "tool_use" and b.get("name") == "ping" for b in 块们):
+            return True, "强制要求调 ping,回包里有 tool_use 块 —— 按协议结构判的,不看文案"
+        return False, f"强制要求调 ping,回包里没有 tool_use 块(只有:{[b.get('type') for b in 块们]})"
+    话 = str(((j.get("error") or {}).get("message")) or (回包 if isinstance(回包, str) else ""))
+    if str(码).startswith("4") and ("tools" in 话 or "tool_choice" in 话) and ("Extra inputs" in 话 or "not permitted" in 话):
+        return False, f"端点把工具参数当成不认的拒了:{话[:120]}"
     return None, f"http {码}:{话[:120]} —— 判不出来(**未知不等于支持**)"
 
 
@@ -398,32 +403,37 @@ def _真探(endpoint, secret_ref):
                  耗时毫秒=ms, 成功=码.startswith(("2", "4")), 是mock=False,
                  细节={"http状态": 码, "凭据来路": 来路,
                       "⚠️": "这个请求必被参数校验拒掉,不产生生成、不花钱"})
-    # ── 第二个请求:支不支持原生工具调用(11-06,Agent 真跑要它)── 同一招:带一个合法工具 + 空 messages,必被拒,看拒的理由
-    # ⚠️ **存三值,别把「没判出来」压成 False**(11-06 并行会话指出:原来写的是 `支持 is True`)。
-    # 压成 False 的话,对方哪天改了错误文案,探测会静默记成「不支持」,和真的不支持分不开 —— 校验器对 null 单独报码。
-    # 三值**不改库里已存的行**(只在下一次探测时写),所以碰不到依赖指纹:已有的真跑通不会因为这次格式改造作废。
-    # 判法没换成「真发一次带工具的请求看 tool_use」(判据落结构、更稳):那会真生成一次、花钱、留用量,
-    # 破 10-03 定的「探测不生成、不花钱」原则 —— 改原则交用户拍(11-06 已列给用户)
+    # ── 第二个请求:支不支持原生工具调用(11-06,Agent 真跑要它)—— 用户拍「真发一次」:一句话 + ping 工具 + 强制要求调它,
+    # 看回包里有没有 tool_use 块(判据在 判工具调用)。⚠️ 这一个请求**真生成、花钱**(max_tokens 64,几十个 token),记录仪照实记用量。
+    # ⚠️ 存三值:第一个请求就没拿到 400(端点 / 凭据不对)→ null(不知道,不是不支持);判不出来也是 null —— 校验器对 null 单独报码。
+    # 三值 / 新判法都只在下一次探测时写,不改库里已存的行
     工具 = {"原生工具调用": None, "原生工具调用怎么判的": "第一个请求没拿到 400(端点 / 凭据不对),没往下探 —— 不知道,不是不支持"}
+    工具用量 = None
     if 码 == "400":
-        包2 = _json.dumps({"model": "claude-haiku-4-5", "max_tokens": 1, "messages": [],
-                          "tools": [{"name": "ping", "description": "探测用", "input_schema": {"type": "object"}}]})
+        包2 = _json.dumps({"model": "claude-haiku-4-5", "max_tokens": 64,
+                          "messages": [{"role": "user", "content": "调用 ping 工具。"}],
+                          "tools": [{"name": "ping", "description": "连接探测用", "input_schema": {"type": "object"}}],
+                          "tool_choice": {"type": "tool", "name": "ping"}}, ensure_ascii=False)
+        t2 = time.time()
         try:
             o2 = subprocess.run(cmd, input=包2, capture_output=True, text=True, timeout=25, env=_真.curl环境())
             行2 = (o2.stdout or "").strip().splitlines()
             码2 = 行2[-1] if 行2 else ""
             try:
-                话2 = ((_json.loads("\n".join(行2[:-1])) or {}).get("error") or {}).get("message")
+                回包2 = _json.loads("\n".join(行2[:-1]))
             except Exception:
-                话2 = "\n".join(行2[:-1])[:200]
-            支持, 怎么判 = 判工具调用(码2, 话2)
+                回包2 = "\n".join(行2[:-1])[:200]
+            支持, 怎么判 = 判工具调用(码2, 回包2)
+            工具用量 = (回包2.get("usage") if isinstance(回包2, dict) else None) or None
         except Exception as e:
             支持, 怎么判 = None, f"第二个请求发不出去:{type(e).__name__}"
         trace.record(用途="模型连接探测(工具调用)", 模型="claude-haiku-4-5", 成功=支持 is not None, 是mock=False,
-                     细节={"判了": 支持, "⚠️": "必被参数校验拒掉,不产生生成、不花钱"})
+                     耗时毫秒=int((time.time() - t2) * 1000),
+                     用量={"input_tokens": (工具用量 or {}).get("input_tokens"), "output_tokens": (工具用量 or {}).get("output_tokens")},
+                     细节={"判了": 支持, "⚠️": "这一个请求真生成、花钱(用户 11-06 拍改成真发一次)"})
         工具 = {"原生工具调用": 支持, "原生工具调用怎么判的": 怎么判}
     return {
-        **工具,
+        **工具, "_工具探测用量": 工具用量,
         "探法": f"真实端点 —— **真发过一个请求**(凭据来路 {来路})",
         "发出请求了吗": True,
         "探成了吗": 码.startswith(("2", "4")),   # 4xx 也算探成:端点在说话
@@ -502,6 +512,7 @@ async def 探测连接(project_id: str, cid: str,
         # 解析在 `secretref.py`。
         if not 是mock:
             实 = _真探(cv["endpoint"], cv["secret_ref"])
+            探测用量 = 实.pop("_工具探测用量", None)     # 真生成那一下花的钱进用量账,不进 capabilities
             能力.update(实)
             # ⚠️ **落库之前过一道「凭据漏没漏」。**
             # 不是防御性编程 —— 这仓库记着:
@@ -524,6 +535,16 @@ async def 探测连接(project_id: str, cid: str,
                            where project_id=:p and id=:i"""),
                   {"c": _json.dumps(能力, ensure_ascii=False), "h": 哈,
                    "p": project_id, "i": cv["id"]})
+        if not 是mock and 探测用量 and 探测用量.get("input_tokens"):
+            # 探测里真生成了一次(判原生工具调用,用户 11-06 拍)—— 那一笔钱照实进账本,走唯一的写入口
+            import knowledge.usage as _UG
+            try:
+                _UG.写进库(c, 组织=me.org_id, 项目=project_id, 谁=me.user_id, 用量=探测用量, 模型="claude-haiku-4-5",
+                          提供方={"anthropic-messages": "anthropic"}.get(mc["adapter"]) or "未知", 资源="generate",
+                          事件键=f"probe:{cv['id']}:{idempotency_key}", trace_id=None, 是mock=False,
+                          调用方="模型连接探测", _新id=_新id)
+            except _UG.用量不对:
+                pass
         _审计(c, me, "model_connection.probe",
               {"connection_id": cid, "connection_version_id": cv["id"],
                "是mock探的": bool(是mock)})

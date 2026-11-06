@@ -1787,6 +1787,30 @@ def 这一版跑通的模式(c, project_id, 版本id):
     return _跑通模式(c, project_id, v["workflow_id"], v["logical_hash"]) if v else []
 
 
+# 连接指纹只吃**运行时真用到的能力项**(用户 11-06 拍「改,只算能力项」)。原来是 md5(整份 capabilities),
+# 而探测每次都会改 往返毫秒 / 探的人 / http状态 / 端点原话 这些**测量噪声** —— 能力一个字没变的重探也必然让之前的真跑通作废。
+# 留下的键:execution_mode(worker 靠它定 mock / live)、原生工具调用(Agent 校验 / 真跑)、支持的方法 / 必留字段(适配器契约)、
+# endpoint、是mock探的(mock 探的和真探的不是一回事)、探成了吗。新加一项能力要不要进指纹,在这里决定
+能力指纹键 = ("execution_mode", "原生工具调用", "支持的方法", "必留字段", "endpoint", "是mock探的", "探成了吗")
+指纹前缀 = "v2:"     # 新算法的值带前缀;不带的是 11-06 之前按 md5(整份) 记的老值 —— release.依赖没变吗 两种都认
+
+
+def 能力指纹(能力):
+    """capabilities → 新算法的指纹(纯函数,离线可测)。缺的键记成 null —— 「没这一项」和「这一项是 false」分开。"""
+    import hashlib
+    取 = {k: (能力 or {}).get(k) for k in 能力指纹键}
+    return 指纹前缀 + hashlib.md5(json.dumps(取, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _依赖指纹旧(c, project_id, cvs):
+    """**过渡期**:老算法(md5 整份 capabilities)现算一份,只用来认 11-06 之前记下的老值。
+    什么时候能摘:`还靠旧算法的版本数()` 降到 0(test_agent_bridge_flow 旁边那条反向检查盯着,只许降不许涨)。"""
+    if not cvs:
+        return {}
+    return {r["id"]: r["h"] for r in c.execute(text("""select id, md5(coalesce(capabilities, '{}'::jsonb)::text) h
+                from connection_versions where project_id=:p and id = any(:ids)"""), {"p": project_id, "ids": sorted(cvs)}).mappings()}
+
+
 def _依赖指纹(c, project_id, 要的):
     """依赖 → 它现在**运行时真读的那几列**的指纹。受理时记一份、闸那边现算一份,两边**同一个函数**。
 
@@ -1799,7 +1823,7 @@ def _依赖指纹(c, project_id, 要的):
     tvs = sorted({x[5:] for x in 要的 if x and x.startswith("tool:")})
     出 = {}
     if cvs:
-        出.update({r["id"]: r["h"] for r in c.execute(text("""select id, md5(coalesce(capabilities, '{}'::jsonb)::text) h
+        出.update({r["id"]: 能力指纹(r["capabilities"]) for r in c.execute(text("""select id, capabilities
                     from connection_versions where project_id=:p and id = any(:ids)"""), {"p": project_id, "ids": cvs}).mappings()})
     if tvs:
         出.update({"tool:" + r["id"]: r["h"] for r in c.execute(text("""select tv.id, md5(concat_ws('|', td.name, td.adapter, td.side_effect_type)) h
@@ -1829,6 +1853,7 @@ def _跑通模式(c, project_id, wid, 版本哈希):
     # 调用方(闸 / 验证记录)传的都是冻结版本的哈希,版本行一定在;万一不在 → 没有可比的连接,只靠哈希判
     要的 = _用的依赖(节点们)
     现在 = _依赖指纹(c, project_id, 要的)
+    旧 = _依赖指纹旧(c, project_id, [x for x in 要的 if x and not x.startswith("tool:")])
     rs = c.execute(text("""select definition_ref, definition_hash, execution_mode from execution_runs
                             where project_id=:p and kind='workflow' and status='succeeded'
                               and definition_ref->>'id'=:w and definition_hash=:h
@@ -1837,7 +1862,7 @@ def _跑通模式(c, project_id, wid, 版本哈希):
     return sorted({x["execution_mode"] for x in rs
                    if ST1.结果还算数吗(x["definition_ref"], x["definition_hash"], 版本哈希)[0]
                    and ((x["definition_ref"] or {}).get("跑法") or "正常") not in 不算跑通的跑法
-                   and RL.依赖没变吗((x["definition_ref"] or {}).get("依赖指纹"), 现在, 要的)})
+                   and RL.依赖没变吗((x["definition_ref"] or {}).get("依赖指纹"), 现在, 要的, 旧=旧)})
 
 
 def _验证记录(c, project_id, wid, 版本哈希, 条数=20):
