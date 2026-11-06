@@ -727,6 +727,7 @@ run "自测都进了门禁 · 没注册的自测和不存在的自测在绿勾�
 #    `CHK_OUT` 带 `$$`(子进程自己的 pid),所以不会和这一轮互相盖
 #    —— 那正是 10-09 两轮并行互相覆盖换来的那条教训在这儿兑现。
 run "门禁通过时印什么 · 只在通过时才有用的提示不许被 tail 截掉(11-03 栽两次)" python3 tools/gate_print_check.py
+run "评测题集导出 · 人造对照 + 真跑一遍 main(多轮必须逐轮印出来、全轮都对才算对;同一天的每一轮在历次里各占一条;没有真值的那套不许印成全错)" python3 tools/export_evals_test.py
 run "负向评测判分器 · 11 条对照 + 真跑一遍落盘路径(内容和协议两个数必须各动各的;自带「不」的根因要抓得到)" python3 agent/negative_judgetest.py
 run "工具评测判分器 · 21 条对照用例" python3 agent/tool_eval_judgetest.py
 run "成长评测判分器 · 22 条对照用例" python3 agent/growth_eval_judgetest.py

@@ -25,7 +25,9 @@ OUT = os.path.join(ROOT, "澜绣云裳agent-评测题集.md")
         "member": "会员与生命周期", "liability": "售后判责", "role": "角色边界",
         "pattern": "版师核料", "report": "复盘报告", "chat": "工艺问答", "negative": "负向题(早期)",
         "vision": "识图", "scheme": "方案", "tool": "工具用法", "eval": "综合", "gen-compare": "三代对比", "fitting": "白坯试衣", "skill": "技能触发",
-        "funnel": "漏斗", "skill_usage": "技能用量", "opportunity": "商机判断"}
+        "funnel": "漏斗", "skill_usage": "技能用量", "opportunity": "商机判断",
+        "rating": "签收后评价与差评", "workshop": "自有工坊报工", "store-report": "经营报告(Skill 出的报告对不对)",
+        "wild-run": "野外巡检(真实语料,**没有真值**)", "negative": "负向题(早期)"}
 
 
 def 说明(名):
@@ -91,15 +93,21 @@ def 历次(套们):
         for l in open(H, encoding="utf-8"):
             try: 旧.append(json.loads(l))
             except Exception: pass
-    见 = {(x["套"], x["题"], x["跑于"], x.get("模型")) for x in 旧}
+    # ⚠️ 键里**必须带轮号**:同一天跑三轮,`(套,题,跑于,模型)` 对三条结果是同一个键 ——
+    # 于是历次里只会留下一轮,而「这天跑了三轮」和「这天跑了一轮」在历次表上一模一样。
+    # 老记录没有这个字段,读的时候当第 1 轮(写的时候也从 1 起算),所以老数据不会被重记一遍。
+    见 = {(x["套"], x["题"], x["跑于"], x.get("模型"), int(x.get("轮") or 1)) for x in 旧}
     新 = []
     for s in 套们:
-        for k, r in s["题"].items():
-            键 = (s["名"], str(k), s["跑于"], s["模型"])
-            if 键 in 见 or not s["跑于"]:
-                continue
-            新.append(dict(套=s["名"], 题=str(k), 跑于=s["跑于"], 模型=s["模型"],
-                           过=bool(r.get("passed"))))
+        for k, xs in s["轮们"].items():
+            for r in xs:
+                轮 = int(str(r.get("轮") or 1) or 1)
+                键 = (s["名"], str(k), s["跑于"], s["模型"], 轮)
+                if 键 in 见 or not s["跑于"]:
+                    continue
+                见.add(键)
+                新.append(dict(套=s["名"], 题=str(k), 跑于=s["跑于"], 模型=s["模型"],
+                               轮=轮, 过=bool(r.get("passed"))))
     if 新:
         with open(H, "a", encoding="utf-8") as fh:
             for x in 新: fh.write(json.dumps(x, ensure_ascii=False) + "\n")
@@ -107,7 +115,7 @@ def 历次(套们):
     按题, 按套 = collections.defaultdict(list), collections.defaultdict(list)
     for x in 全:
         按题[(x["套"], x["题"])].append(x)
-        按套[(x["套"], x["跑于"])].append(x)
+        按套[(x["套"], x["跑于"], int(x.get("轮") or 1))].append(x)
     return 按题, 按套
 
 
@@ -120,13 +128,32 @@ def 一套(f):
     rs = [r for r in rs if r.get("q") or r.get("prompt")]
     if not rs:
         return None
+    # ⚠️ 2026-11-06:原来这里是 `题[id] = r`,**同一题多轮时只留最后一轮** ——
+    # 负向那套改成跑三轮之后,一道「三轮都对」的题和一道「只有最后一轮碰巧对」的题,
+    # **在这份导出的 ✅ 上长得一模一样**,而它们该触发的下一步动作相反
+    # (前者是能力稳,后者是要去查抖动)。所以按题把**全部轮次**收齐。
+    轮们 = collections.defaultdict(list)
+    for i, r in enumerate(rs):
+        # 没有 id 的那几套(wild-run)用**行号**当键 —— 原来写 len(题),
+        # 一题多轮时它会跟着字典长度漂,同一题的第二轮可能顶掉另一题。
+        轮们[r.get("id") or r.get("case") or i].append(r)
     题 = {}
-    for r in rs:                       # 同一题保留最后一次(题面会随数据现挑而变)
-        题[r.get("id") or r.get("case") or len(题)] = r
-    过 = sum(1 for r in 题.values() if r.get("passed"))
+    for k, xs in 轮们.items():
+        xs.sort(key=lambda r: (int(str(r.get("轮") or 1) or 1), str(r.get("跑于") or "")))
+        题[k] = xs[-1]                 # 题面 / 答案照旧取最后一轮(题面是现挑的)
+    # **判对的口径跟评测本身一致(判法 C,用户 2026-11-05 拍):全部轮次都对才算这道题对。**
+    # 单轮的那几套 all([x]) == x,行为一个字没变。
+    # ⚠️ 有的套**压根不按对错判**(野外巡检:真实语料没有真值,它量的是违规 / 一致 / 拒答)。
+    # 它的结果行里没有 `passed`,而 `sum(... if x.get("passed"))` 会算出 0 ——
+    # **「这套没有对错这个概念」和「这套全错了」在 0/20 上长得一模一样。** 所以这里给 None。
+    有判 = any("passed" in x for xs in 轮们.values() for x in xs)
+    过 = sum(1 for xs in 轮们.values() if all(x.get("passed") for x in xs)) if 有判 else None
+    抖 = sorted(str(k) for k, xs in 轮们.items() if len({bool(x.get("passed")) for x in xs}) > 1)
+    轮数 = max((len(xs) for xs in 轮们.values()), default=0)
     模 = collections.Counter(r.get("模型") or r.get("model") or "?" for r in 题.values()).most_common(1)
     跑于 = max((str(r.get("跑于") or r.get("ts") or "") for r in 题.values()), default="")
-    return dict(名=名, 中文=名字.get(名, 名), 题=题, 过=过, 模型=模[0][0] if 模 else "?", 跑于=跑于[:10])
+    return dict(名=名, 中文=名字.get(名, 名), 题=题, 轮们=轮们, 轮数=轮数, 抖=抖,
+                过=过, 有判=有判, 模型=模[0][0] if 模 else "?", 跑于=跑于[:10])
 
 
 def main():
@@ -138,11 +165,18 @@ def main():
          f"> 由 `tools/export_evals.py` 从**跑出来的结果文件**导出 —— 题面是现挑的,",
          f"> 脚本里存的是模板,这里是**模型当时真正看到的那句话**。",
          f"> 共 {len(套)} 套、{sum(len(s['题']) for s in 套)} 道题。", ""]
-    L += ["## 一眼看全", "", "| 评测 | 题数 | 正向 / 负向 | 最近一次 | 跑于 | 模型 |", "|---|---|---|---|---|---|"]
+    L += ["## 一眼看全", "",
+          "| 评测 | 题数 | 正向 / 负向 | 跑了几轮 | 判对(**全轮都对**才算) | 轮间翻面 | 跑于 | 模型 |",
+          "|---|---|---|---|---|---|---|---|"]
     for s in 套:
         正 = sum(1 for r in s["题"].values() if (r.get("kind") or "") == "正向")
         L.append(f"| **{s['中文']}** | {len(s['题'])} | {正} / {len(s['题']) - 正} | "
-                 f"{s['过']}/{len(s['题'])} | {s['跑于'] or '—'} | {s['模型']} |")
+                 f"{s['轮数']}{'' if s['轮数'] > 1 else ' ⚠️'} | "
+                 f"{str(s['过']) + '/' + str(len(s['题'])) if s['有判'] else '**不按对错判**'} | "
+                 f"{(str(len(s['抖'])) + ' 道') if s['轮数'] > 1 else '—'} | {s['跑于'] or '—'} | {s['模型']} |")
+    L += ["", "⚠️ **「跑了几轮 = 1」的那几套,它那一栏是一次抛硬币** —— 存下来的结果文件里只有一轮,",
+          "所以「这道题它答得稳」和「这一次它碰巧答对了」在上面的数字里分不开。",
+          "负向那套 2026-11-06 起跑三轮:同一个提交三轮之间差了 24 个百分点。", ""]
     L += ["", "**负向题占大头是有意的** —— 正向测「答得对不对」,负向测「顺着错误前提往下滑会怎样」:",
           "用户带着错的前提来问(加钱能不能催织造、能不能先确认下单回头补量体、帮我编个物流单号),",
           "看它顶不顶得住。", ""]
@@ -153,36 +187,62 @@ def main():
         有答案 = sum(1 for k, r in s["题"].items() if r.get("期望") or _判.get(str(k)))
         if 有答案 < len(s["题"]):
             缺答案.append((s["中文"], len(s["题"]) - 有答案))
+        头 = (f"判对 **{s['过']}/{len(s['题'])}**(准确率 {s['过'] * 100 // max(len(s['题']), 1)}%,"
+              f"{'跑了 ' + str(s['轮数']) + ' 轮、**全轮都对才算对**' if s['轮数'] > 1 else '**只跑了一轮**,不算结论'})"
+              if s["有判"] else
+              f"**这套不按对错判** —— 它的语料没有真值,量的不是「对了几道」(共 {len(s['题'])} 条)")
         L += ["---", "", f"## {s['中文']}", "",
-              f"最近一次 **{s['过']}/{len(s['题'])}**(准确率 {s['过'] * 100 // max(len(s['题']), 1)}%)"
-              f" · {s['跑于'] or '没记日期'} · {s['模型']}", ""]
+              头 + f" · {s['跑于'] or '没记日期'} · {s['模型']}", ""]
+        if s["轮数"] > 1 and s["抖"]:
+            L += [f"⚠️ **{len(s['抖'])} 道题在轮次之间翻过面**:{'、'.join(s['抖'])} —— "
+                  f"这几道的单轮成绩不能当能力读。", ""]
+        # 有的评测**一条结果里有两个互不相干的判定**(负向那套:内容对不对 / 协议走没走)。
+        # 合成一个数会把「答对了但没按协议交」和「压根答错了」压成同一个 ❌,而它们该修的地方不同。
+        两数 = [(字, sum(1 for xs in s["轮们"].values() for x in xs if x.get(字) is True),
+                sum(1 for xs in s["轮们"].values() for x in xs if 字 in x))
+               for 字 in ("内容对", "协议走")]
+        if all(总 for _, _, 总 in 两数):
+            L += ["这套题**一条结果里有两个互不相干的数,不合成一个**(合成会把「答对了但没按协议交草稿」"
+                  "和「压根答错了」压成同一个 ❌,而这两件事要修的地方不同):", "",
+                  "| | 对了多少 | 占全部轮次 |", "|---|---|---|"]
+            for 字, 对, 总 in 两数:
+                L.append(f"| **{字}** | {对}/{总} | {对 * 100 // max(总, 1)}% |")
+            只差协议 = sum(1 for xs in s["轮们"].values() for x in xs
+                       if x.get("内容对") is True and x.get("协议走") is False)
+            L += ["", f"其中 **{只差协议} 次是「内容对了、协议没走」** —— 答对了但产品侧拿不到结构化结果。", ""]
         说 = 说明(s["名"])
         if 说:
             L += ["<details><summary><b>这块业务是什么、这套题为什么这么出</b>(点开)</summary>", "",
                   说, "", "</details>", ""]
         # 历次准确率
-        轮 = sorted({k[1] for k in 按套 if k[0] == s["名"]})
-        if 轮:
-            L += ["**历次准确率**(从 2026-09-24 开始逐题攒;更早的只留了当轮总分,逐题对错没存):", "",
-                  "| 跑于 | 准确率 |", "|---|---|"]
-            for d in 轮:
-                xs = 按套[(s["名"], d)]
-                L.append(f"| {d} | {sum(1 for x in xs if x['过'])}/{len(xs)} "
+        日轮 = sorted({(k[1], k[2]) for k in 按套 if k[0] == s["名"]})
+        if 日轮:
+            L += ["**历次准确率**(从 2026-09-24 开始逐题攒;更早的只留了当轮总分,逐题对错没存。",
+                  "**同一天的每一轮各占一行** —— 合成一个日均数会把轮间抖动抹掉):", "",
+                  "| 跑于 | 第几轮 | 准确率 |", "|---|---|---|"]
+            for d, 轮号 in 日轮:
+                xs = 按套[(s["名"], d, 轮号)]
+                L.append(f"| {d} | 第 {轮号} 轮 | {sum(1 for x in xs if x['过'])}/{len(xs)} "
                          f"({sum(1 for x in xs if x['过']) * 100 // max(len(xs), 1)}%) |")
             L.append("")
         判据 = _判
-        L += ["| 题号 | 正/负 | 题目(用户会怎么说这句话) | 标准答案:它该答出什么 | 最近一次 | 历次 | 没过的话是为什么 |",
+        L += [f"| 题号 | 正/负 | 题目(用户会怎么说这句话) | 标准答案:它该答出什么 | "
+              f"{'逐轮(左起第 1 轮)' if s['轮数'] > 1 else '最近一次'} | 历次 | 没过的话是为什么 |",
               "|---|---|---|---|---|---|---|"]
         for k, r in s["题"].items():
             q = re.sub(r"\s+", " ", str(r.get("q") or r.get("prompt") or ""))[:170]
             自动 = 判据.get(str(k), "")
             ans = re.sub(r"\s+", " ", str(r.get("期望") or "")) \
                 or (自动 + "  *(从判据现取)*" if 自动 else "*(还没写标准答案)*")
-            why = "、".join(str(x) for x in (r.get("why") or []))[:110] if not r.get("passed") else ""
+            xs = s["轮们"][k]
+            why = "、".join(str(x) for x in (xs[-1].get("why") or []))[:110] \
+                if not all(x.get("passed") for x in xs) else ""
             h = 按题.get((s["名"], str(k)), [])
             历 = f"{sum(1 for x in h if x['过'])}/{len(h)}" if h else "—"
+            # **逐轮印**,不是只印最后一轮:三个 ✅ 和「❌❌✅」在一个 ✅ 上分不开。
+            本次 = "".join("✅" if x.get("passed") else "❌" for x in xs) if s["有判"] else "—"
             L.append(f"| {k} | {'正' if (r.get('kind') or '') == '正向' else '负'} | {q} | {ans} | "
-                     f"{'✅' if r.get('passed') else '❌'} | {历} | {why} |")
+                     f"{本次} | {历} | {why} |")
         L.append("")
     if 缺答案:
         L += ["---", "", "## 还没写标准答案的", "",
@@ -197,8 +257,11 @@ def main():
           "- **一道题挂了,先怀疑判分器**:这个项目实测过一次「16 条人造对照全过、真跑 12 题挂 5 条,",
           "  五条全是判分器的错」。所以每套评测都配一份**判分器对照**(`agent/*_judgetest.py`),",
           "  真跑之后还要把模型的真实说法钉回对照用例。",
-          "- **单轮结果不算结论**:每套都跑两轮,两轮不一致的题会单独列出来 ——",
-          "  轮间抖动经常比版本差异还大。",
+          "- **单轮结果不算结论**,而**现在只有负向那套真的跑了多轮**(三轮)——",
+          "  其余各套存下来的结果文件里都只有一轮,所以上面那张总表里专门有「跑了几轮」一栏:",
+          "  ⚠️ 这里原先写的是「每套都跑两轮」,2026-11-06 核对结果文件发现**不是真的** ——",
+          "  一句写在文档里的约定,和一件真的在做的事,**对照着它读的人分不出来**。",
+          "  轮间抖动经常比版本差异还大:负向那套三轮之间差了 24 个百分点。",
           "- **题面里的客户、订单、日期都是现挑的**:写死的夹具会被一次合理的数据变更打断,",
           "  而打断时它只会说「参数不存在」,不会说「这道题已经不成立了」。", ""]
     open(OUT, "w", encoding="utf-8").write("\n".join(L))

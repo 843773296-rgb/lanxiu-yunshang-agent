@@ -15051,5 +15051,53 @@
    }
   ],
   "预期红": "⑪ 「会调模型的步骤」= 带模型连接的那几类 + 配置指向 Agent 版本的那几类"
+ },
+ {
+  "script": "tools/export_evals_test.py",
+  "改坏": "把「全部轮次都对才算对」改回「只看最后一轮」—— 这正是 2026-11-06 修掉的那个洞:一道「前两轮错、最后一轮碰巧对」的题,在导出的那个 ✅ 上和「三轮都对」长得一模一样",
+  "file": [
+   {
+    "path": "tools/export_evals.py",
+    "old": "    过 = sum(1 for xs in 轮们.values() if all(x.get(\"passed\") for x in xs)) if 有判 else None\n",
+    "new": "    过 = sum(1 for xs in 轮们.values() if xs[-1].get(\"passed\")) if 有判 else None\n"
+   }
+  ],
+  "预期红": "只有最后一轮对的题被算成了对"
+ },
+ {
+  "script": "tools/export_evals_test.py",
+  "改坏": "把历次成绩的键里的轮号去掉 —— 同一天的三轮又变成同一个键,历次表上「这天跑了三轮」和「这天跑了一轮」从此分不开",
+  "file": [
+   {
+    "path": "tools/export_evals.py",
+    "old": "                键 = (s[\"名\"], str(k), s[\"跑于\"], s[\"模型\"], 轮)\n",
+    "new": "                键 = (s[\"名\"], str(k), s[\"跑于\"], s[\"模型\"], 1)\n"
+   }
+  ],
+  "预期红": "同一天的三轮在历次里只留下"
+ },
+ {
+  "script": "tools/export_evals_test.py",
+  "改坏": "让导出的「逐轮」那一栏只印最后一轮 —— **破坏点打在渲染那根线上,纯函数一个字没动**,专门咬那条「判据全打在纯函数上、而破坏点在接线上,自测会全绿」",
+  "file": [
+   {
+    "path": "tools/export_evals.py",
+    "old": "            本次 = \"\".join(\"✅\" if x.get(\"passed\") else \"❌\" for x in xs) if s[\"有判\"] else \"—\"\n",
+    "new": "            本次 = (\"✅\" if xs[-1].get(\"passed\") else \"❌\") if s[\"有判\"] else \"—\"\n"
+   }
+  ],
+  "预期红": "逐轮那一栏只印了一个格子"
+ },
+ {
+  "script": "tools/export_evals_test.py",
+  "改坏": "让「这套有没有对错这个概念」恒真 —— 野外巡检那套(真实语料、没有真值、结果行里压根没有 passed)于是被算成 0/20,而「这套没有对错」和「这套全错了」在那个 0/20 上长得一模一样",
+  "file": [
+   {
+    "path": "tools/export_evals.py",
+    "old": "    有判 = any(\"passed\" in x for xs in 轮们.values() for x in xs)\n",
+    "new": "    有判 = True\n"
+   }
+  ],
+  "预期红": "没有真值的那套被印成了全错"
  }
 ]
