@@ -1718,9 +1718,14 @@ def 看冻结版本(project_id: str, wid: str, vid: str, me: 身份 = Depends(�
             "note": "冻结版本只读 —— 要改先「复制为草稿」,不会原地覆盖历史版本"}
 
 
-# 节点配置里带 connection_version_id 的那几类(contract/dsl.py 节点表)。受理时定 mock / live、发生产的闸判「有没有模型步」都用这一张。
-# Agent 步骤不在里面:它的模型在 Agent 版本上,不在这一步的配置里 —— 只有 Agent 步骤的流程,闸按「没有模型步」判(已知限定)
+# 节点配置里带 connection_version_id 的那几类(contract/dsl.py 节点表)。受理时定 mock / live、取连接 / 依赖指纹用这一张。
 用模型连接的步骤 = ("llm", "classifier", "extractor")
+# 「会调模型的步骤」= 上面那几类 + Agent。发生产的闸判「有没有模型步」用**这一张**(11-06)。
+# Agent 的模型配在 Agent 版本上、不在这一步的配置里,所以它不在上一张;原来闸只看上一张 ——
+# 只有 Agent 步骤的流程会被当成「一步模型都没有」,**演示模式跑通一次就放行生产**,正好绕过用户 11-05 拍的「必须真模型跑通」。
+# 今天这条路还没被走通(工作流的 worker 没给 Agent 步骤接执行器,跑到这一步就 ADAPTER_MISSING,整条跑不成),
+# 所以没有真被绕过;这一刀是在有人接上执行器之前把门先关上:算模型步 → 必须 live 跑通,接的人得把 live 一起接对。
+调模型的步骤 = 用模型连接的步骤 + ("agent",)
 不算跑通的跑法 = ("样例预览",)   # 样例预览不真跑模型 / 检索 / 业务动作,拿上次的输出顶 —— 跑完了也不说明这一版能跑
 
 
@@ -1754,7 +1759,7 @@ def 这一版跑通过吗(c, project_id, 版本id):
 
 
 def _有模型步(节点们):
-    return any(n.get("type") in 用模型连接的步骤 for n in (节点们 or []))
+    return any(n.get("type") in 调模型的步骤 for n in (节点们 or []))
 
 
 def 这一版停用的连接(c, project_id, 版本id):
@@ -2253,7 +2258,8 @@ def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, �
                                 p["消息"] for p in 阻})
     # 这次运行算 mock 还是 live:**有一个 AI 步骤选了真连接就是 live**(而部署没明确选只跑 mock)
     # 11-05:原来只看 llm 步骤 —— 问题分类器 / 参数提取器也走模型连接,只有它们的流程选了真连接也一律跑成 mock,
-    # 而且「发生产要真模型跑通」那道闸对它们永远过不去。三类一张表,闸那边用同一张(用模型连接的步骤)
+    # 而且「发生产要真模型跑通」那道闸对它们永远过不去。三类一张表(用模型连接的步骤);
+    # 闸判「有没有模型步」用的是它再加上 Agent 那一张(调模型的步骤,11-06)—— Agent 的连接在 Agent 版本上,这里取不到
     cvs = [n["config"].get("connection_version_id") for n in 定义.get("nodes") or []
            if n.get("type") in 用模型连接的步骤 and (n.get("config") or {}).get("connection_version_id")]
     真的 = c.execute(text("""select count(*) from connection_versions where project_id=:p and id = any(:ids)

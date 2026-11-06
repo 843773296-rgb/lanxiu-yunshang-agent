@@ -15027,5 +15027,29 @@
    }
   ],
   "预期红": "「减免」也算让价"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_step_freshness_check.py",
+  "改坏": "「有没有模型步」改回只看带模型连接的那几类(11-06 之前的写法,「Agent 的连接不在这一步的配置里」)—— 只有 Agent 步骤的流程演示模式跑通一次就放行生产",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/workflows_api.py",
+    "old": "    return any(n.get(\"type\") in 调模型的步骤 for n in (节点们 or []))\n",
+    "new": "    return any(n.get(\"type\") in 用模型连接的步骤 for n in (节点们 or []))\n"
+   }
+  ],
+  "预期红": "⑪ 只有 Agent 步骤的流程算「有模型步」"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_step_freshness_check.py",
+  "改坏": "「会调模型的步骤」里把 Agent 拿掉(「Agent 自己会管模型」)",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/workflows_api.py",
+    "old": "调模型的步骤 = 用模型连接的步骤 + (\"agent\",)\n",
+    "new": "调模型的步骤 = 用模型连接的步骤\n"
+   }
+  ],
+  "预期红": "⑪ 「会调模型的步骤」= 带模型连接的那几类 + 配置指向 Agent 版本的那几类"
  }
 ]

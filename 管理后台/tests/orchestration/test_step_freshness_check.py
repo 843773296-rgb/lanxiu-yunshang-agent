@@ -14,7 +14,8 @@
   ⑦ 发布闸(用户 11-05 拍:生产强制,测试 / 预发不管):没跑通 → 生产拦、预发不拦;没判(None)→ 不拦
   ⑨ 依赖指纹(DF-01 欠债):那次跑通时的连接设置和现在不是同一份(探测原地改了 capabilities)→ 不算;没记指纹 → 不算
   ⑩ 用到的模型连接事后被停用 / 归档(父行 status,不在哈希和指纹里)→ 生产拦
-  ⑧ 「用模型连接的步骤」= 节点表里配置带 connection_version_id 的那几类(受理定 mock/live 和闸都用它;新加一类模型步骤忘了登记 → 红)
+  ⑧ 「用模型连接的步骤」= 节点表里配置带 connection_version_id 的那几类(受理定 mock/live 用它;新加一类模型步骤忘了登记 → 红)
+  ⑪ 发生产的闸判「有没有模型步」用「会调模型的步骤」= 上面那几类 + Agent(11-06):只有 Agent 步骤的流程演示模式跑通不算
 """
 import copy
 import os
@@ -111,6 +112,16 @@ def main():
     带连接 = sorted(n["名"] for n in DS.节点表 if "connection_version_id" in (n.get("配置") or []))
     ck("⑧ 「用模型连接的步骤」和节点表一致(至少 3 类:模型 / 问题分类器 / 参数提取器)",
        sorted(WA.用模型连接的步骤) == 带连接 and len(带连接) >= 3, (WA.用模型连接的步骤, 带连接))
+    带Agent = sorted(n["名"] for n in DS.节点表 if "agent_version_id" in (n.get("配置") or []))
+    ck("⑪ 「会调模型的步骤」= 带模型连接的那几类 + 配置指向 Agent 版本的那几类(Agent 的模型在 Agent 版本上;漏登记 → 红)",
+       set(WA.调模型的步骤) == set(带连接) | set(带Agent) and 带Agent, (WA.调模型的步骤, 带连接, 带Agent))
+    只Agent = [{"id": "s", "type": "start"}, {"id": "a", "type": "agent", "config": {"agent_version_id": "agv_x"}},
+              {"id": "e", "type": "end"}]
+    ck("⑪ 只有 Agent 步骤的流程算「有模型步」→ 演示模式跑通不够发生产,要真模型跑通(11-06;原来按「没有模型步」放行)",
+       WA._有模型步(只Agent) is True
+       and RL.跑通够不够(["mock"], WA._有模型步(只Agent)) is False and RL.跑通够不够(["live"], WA._有模型步(只Agent)) is True)
+    ck("⑪ 一步模型都没有(开始 → 工具 → 结束)→ 照旧不算有模型步",
+       WA._有模型步([{"id": "s", "type": "start"}, {"id": "t", "type": "tool"}, {"id": "e", "type": "end"}]) is False)
 
     print()
     if 挂:
