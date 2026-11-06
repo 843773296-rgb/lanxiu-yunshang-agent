@@ -253,6 +253,30 @@ glossary_version_id,换术语 = 换聊天助手版本、走发布),**它已回(1
 CI 结果写到 scratchpad ci_4155.txt。**锁交给并行会话跑技能评测基线(--repeat 3,约到 19:40)—— 它说「跑完」之前:不碰共享库、不跑门禁 / 咬合 / seed、
 不重启 aimc,只写代码。** 这期间写:① 工作流定义 / Agent 版本选 glossary_version_id ② worker 注入(术语.匹配 + 上下文段 拼进 system)
 ③ chat_assistant_versions 加 glossary_version_id + /chat-assistants/by-role/{role}/production 返回它(显式 null)④ 后台页面;它跑完再一起验收。
+**并行会话评测窗口里写的(未提交、未跑,都在主检出工作区)**:
+· 工作流选术语 = **开始节点配置 `glossary_version_id`**(不是定义顶层 —— workflow_versions 冻结时只存 nodes / edges / 输入输出,顶层字段会丢;
+  开始节点跟着节点冻、进逻辑哈希)。contract/dsl.py 开始节点 配置 加了它;validator 引用字段表加 "glossary_version_id"(逐节点查存在);
+  workflows_api `_引用表` 加 glossary_versions。
+· workers/worker.py `_跑一张工作流`:读开始节点选的版本(选了却查不到 → 干不了 GLOSSARY_VERSION_NOT_FOUND,不悄悄不带);`_术语段(文本)` =
+  术语.匹配 + 上下文段 + 记事 glossary.injected{术语版本, 带了};live 拼在 system 前面;**mock 分支也匹配、记事件**(CI 全是 mock,不然验不到)。
+· tests/e2e/test_glossary_flow 加 ⑥(三条:带了到店率没带褙子 / 没提到不带 / 选不存在版本校验 REF_NOT_FOUND)—— **还没跑过**。
+· 聊天助手(写了,未上库未跑):entities chat_assistant_versions 加 glossary_version_id;chat_assistants_api 建版本写它(cfg["术语版本"],
+  核对存在于本项目,否则 422)、内容哈希**只在选了时才算进去**(老版本哈希不变)、生产配置响应加 `"术语版本": 显式 null`;
+  迁移 **0c3a95ae7655_聊天助手版本记术语版本**(只 add_column,**未上库**)。还要核:聊天助手草稿 PATCH 收不收「术语版本」这个键。
+· Agent(写了,未上库未跑):entities agent_versions 加 glossary_version_id;agents_api 冻结写它;**agent cfg 的字段元组三处都加了**
+  (agents_api 受理 / worker `_agent` / worker 单独跑 —— 漏一处受理哈希和 worker 重算对不上 → DEFINITION_CHANGED_WHILE_QUEUED);
+  worker 新 `_Agent术语段(c, 项目, cfg, 输入, 记事)`:匹配 task_template + 输入,拼在 instructions 前面、记 glossary.injected;
+  单独跑那条放在 AL.跑一个agent 调用前(记事 在那之前才定义)。agent_versions 那一列**并进了同一个迁移 0c3a95ae7655**(未上库)。
+  还没测:Agent 的术语注入没有测试用例(下一步在 test_agent_bridge_flow 或新用例里补)。
+· 后台页面(子任务做完,未提交):apps/web/app.js 新 页_术语列表 / 页_术语详情,菜单「术语配置」(Prompt 管理同级),路由 #/glossaries、#/glossary/{id};
+  Makefile 页面冒烟名单加 #/glossaries;tools/detail_page_hashes.py 登记 #/glossary/(样例取 glossary_drafts);tests/e2e/page_smoke.js 加逐行核对。
+  不起服务的检查全过(node --check / page_render_check 49/49 / css_class / native_dialog / md_render / nav_smoke 26 页 / route_exists);
+  **page-smoke 没跑**(要服务 + 库)。拿不准:「模型会收到」原文里的 ** 会原样显示,真浏览器冒烟如果点了「试一下」可能被「不许字面星号」那条看到(现在冒烟不点按钮)。
+· PRD 附录 A-289 已推 6597d38c。
+**并行会话说「跑完」之后的验收清单**:锁里 alembic upgrade(0c3a95ae7655:agent_versions / chat_assistant_versions 各加 glossary_version_id)→
+重启 aimc → test_glossary_flow(含 ⑥ 工作流注入)+ test_agent_bridge_flow / test_agent_step_flow(回归:agent cfg 元组加了字段)+ chat assistant 相关 e2e →
+补 Agent 注入和聊天助手 术语版本 的用例 + 咬合 → 整轮(含 page-smoke)→ 表和代码一起推 → 吱并行会话(聊天助手生产配置里有「术语版本」了)。
+**它说「跑完」之后第一件**:锁里重启 aimc → 跑 test_glossary_flow + test-orchestration → 配咬合(开始节点选的版本不读 → ⑥ 红)→ 整轮 → 推。
 **术语草稿内容已出**:管理后台/tools/seed_data/术语草稿_澜绣_20261106.json(71 条:名词 49 / 指标 22,每条带出处;生成脚本同目录)。
 用正式项目校验过:格式阻断 0、取数口问题 0、提醒 10。**下一步把它放进正式项目当草稿(key lanxiu-terms,不冻结)**,等整轮放锁再写。
 **晚上汇报要请用户判的 6 处**(子任务列的):① 褙子 / 交领襦裙 / 圆领袍这三个通称没当叫法(01-形制.md 09-21 定过通称不独占朝代,
