@@ -15426,11 +15426,11 @@
  },
  {
   "script": "agentsite/skill_eval_truth_check.py",
-  "改坏": "把存基线那一处的 `**这一轮的口径(...)` 删掉 —— 两个口径又变成只印在屏幕上,基线文件里没有",
+  "改坏": "把存基线那一处的 `**这一轮的口径(...)` 删掉 —— 两个口径又变成只印在屏幕上,基线文件里没有(⚠️ 这个破坏点盯着实参列表,改 `这一轮的口径` 的参数时要同步更新 —— 11-06 夜加第三个参数时漂过一次,bite_run 的预检当场报了出来)",
   "file": [
    {
     "path": "agentsite/skill_eval.py",
-    "old": "                       **这一轮的口径(_接管开跑, _挂了)),",
+    "old": "                       **这一轮的口径(_接管开跑, _挂了, 术语实况())),",
     "new": "                       ),"
    }
   ],
@@ -15716,5 +15716,65 @@
    }
   ],
   "预期红": "真跑钉回(11-06 术语对比):「181 到 365 天」规矩里写的是「181–365 天」→ 放行"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "让术语口径把那句「说明」也算进去比 —— 改一个字的措辞,所有基线当场「不可比」",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "    return (状态.get(\"接了\"), 塞.get(\"态\"), int(塞.get(\"条数\") or 0), 塞.get(\"内容哈希\"))",
+    "new": "    return (状态.get(\"接了\"), 塞.get(\"态\"), int(塞.get(\"条数\") or 0), 塞.get(\"内容哈希\"), 状态.get(\"说明\"))"
+   }
+  ],
+  "预期红": "术语口径只比结构,说明的文案不算口径变了"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "把「装配没接」和「接了但这一轮没走到」合并成同一个结果 —— 一个是还没做、一个是接线断了,下一步完全不同",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "        return (状态.get(\"接了\"), None, 0, None)",
+    "new": "        return (True, None, 0, None)"
+   }
+  ],
+  "预期红": "「装配没接」和「接了但没走到那条路」不是同一个结果"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "把术语那一栏的「老基线没这一栏」说成和「两版一致」同一句话 —— 前者要换一版基线来比,后者可以直接读差异",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "    if 老术 is None:\n        出.append((\"不知道\",",
+    "new": "    if False and 老术 is None:\n        出.append((\"不知道\","
+   }
+  ],
+  "预期红": "老基线没有术语这一栏 → 「不知道」,不是「一致」"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "把存基线那一处的 `术语实况()` 换成写死的「没接」—— 接了术语之后基线照旧记「没接」,而它和真的没接长得一模一样",
+  "file": [
+   {
+    "path": "agentsite/skill_eval.py",
+    "old": "**这一轮的口径(_接管开跑, _挂了, 术语实况())),",
+    "new": "**这一轮的口径(_接管开跑, _挂了, {\"接了\": False, \"塞了\": None})),"
+   }
+  ],
+  "预期红": "接线:存基线那一处真的去问术语实况,不是写死的"
+ },
+ {
+  "script": "agentsite/skill_eval_truth_check.py",
+  "改坏": "让「接上了吗」永远返回 True —— 于是「模块在」就被当成「装配接上了」(这正是 allowed_tools 那条教训的同一张脸)",
+  "file": [
+   {
+    "path": "backend/glossary_client.py",
+    "old": "def 接上了吗():\n    return _接上了",
+    "new": "def 接上了吗():\n    return True"
+   }
+  ],
+  "预期红": "「装配没接」和「接了但没走到那条路」不是同一个结果"
  }
 ]
