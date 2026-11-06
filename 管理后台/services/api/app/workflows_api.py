@@ -624,6 +624,11 @@ def _差评返修(桥):
     "rating-repair": "差评与维修研判", "deadline-rescue": "工期抢救",
     "quote": "报价", "growth-plan": "成长计划", "roster": "排班", "exchange": "换货",
     "pattern-draft": "打版",
+    # 2026-11-06 用户拍「把库存巡检优化为我的技能」→ 进了 skills_own.OURS,
+    # 而 tools/takeover_skills_check.py 要求两边登记一致(一边有一边没有的两种后果都不报错:
+    # 这边多登记 = 拨开接管开关而聊天站永远碰不到,**看着接管了其实什么都没变**;
+    # 那边多 = 这件事想接管也选不到)。这个技能是**纯只读**的,接管它只是改「谁来做」。
+    "stock-patrol-lanxiu": "库存巡检",
 }
 _模板技能 = {"音频整理": "call-notes", "经营报告": "store-report", "订单风险": "deadline-rescue",
             "老客召回": "customer-recall", "差评返修": "rating-repair"}

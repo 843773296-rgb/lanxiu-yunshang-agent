@@ -39,7 +39,19 @@ import knowledge.capability as CAP
 
 DB = os.path.join(ROOT, "backend", "lanxiu.db")
 SKILLS = os.path.join(HERE, ".claude", "skills")
-OURS = {"quote", "growth-plan", "roster", "deadline-rescue", "exchange"}      # 自己写的,不是从 Accio 拿的
+# 自己写的技能(不是从 Accio 拿的)。**从真名单现读,不在这里抄第二份** ——
+# ⚠️ 2026-11-06 发现:这里原来是一份手抄的字面量,写着 5 个,而真名单已经有 10 个。
+# 它用在底下 `没用过 = 装了 - 用过 - OURS` 上,于是后来加的那几个自有技能
+# 会被算成「装着一次没上过场」。
+# > 一份漂了的清单,和一份对的清单,**在它算出来的那个数上长得一模一样。**
+def _自有():
+    import importlib.util as _u
+    sp = _u.spec_from_file_location("skills_own", os.path.join(HERE, "skills_own.py"))
+    m = _u.module_from_spec(sp); sp.loader.exec_module(m)
+    return set(m.OURS)
+
+
+OURS = _自有()
 
 
 # ── 探针:每一条都必须拿得出证据 ────────────────────────────────

@@ -700,6 +700,7 @@ run "报告模板 · 清单外指标拒存、必选取消不了、只有总部�
 run "报告模板门店标识 · 存编码、比较前归一、页面仍显示店名(门店改一次名,「一家店同时只试一版」那条互斥会把老串和新串当成两家店而不报错;自造最小库)" python3 backend/report_tpl_shop_check.py
 run "角色工具名单 · 必须是字面量(拼出来的名单模型拿得到、而从源码读字面量的判据看不见 —— 工具给了、规矩没给;2026 年咬合失效的原形)" python3 agentsite/role_tools_literal_check.py
 run "经营报告「统计期已校正」标注 · 有痕迹就标、取最后一条、没改正文时说清(用户 10-23 拍:正文不改写)" python3 backend/report_realign_note_check.py
+run "改造过的第三方技能 · 正文还是审查过的那一版(改了就红一次 —— 门槛删干净了是人的判断,机器只能保证它不在没人看见的时候失效;判据跟着「改造自」走,不写死名字)" python3 agentsite/skill_body_check.py
 run "聊天接管的技能登记 · 管理后台能接管的技能和聊天站的自有技能两边一致(用户 10-24 拍「默认关;打开时聊天站改走工作流」)" python3 tools/takeover_skills_check.py
 run "澜绣桥名单 · 管理后台和澜绣两边一致、写口不许放进「只读」(放进去就不经核对写进澜绣)、库约束的迁移跟得上" python3 tools/bridge_tools_check.py
 run "订单交付风险分档 · 逐例真值(用户 10-25 拍「全用规则分档,模型只写建议」;缺承诺完工日不许落进低风险)" python3 knowledge/delivery_risk_check.py

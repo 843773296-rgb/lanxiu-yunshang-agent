@@ -3,7 +3,10 @@
 
 ## 为什么需要这个文件
 
-`agentsite/.claude/skills/` 现在有 239 个目录,其中 **236 个是从 Accio 提取来的第三方技能**
+`agentsite/.claude/skills/` 下装着自有技能和从 Accio 提取的第三方技能
+(**具体几个一律现数,别写在这句话里** —— 2026-11-06 发现这里原来写着「239 个目录、
+其中 236 个第三方」,而那时实际只剩 13 个目录。凡是写在话里的条数都会漂,
+而漂了的数和对的数在读的人眼里长得一模一样)
 (用户明确要求全拿,装完拿评测量过:触发准确率 13/15、误触发 0,
 代价是每轮多 2.7 万 token 常驻上下文)。
 
@@ -32,7 +35,14 @@
 OURS = ("quote", "growth-plan", "roster", "deadline-rescue", "exchange", "pattern-draft", "call-notes",
         "store-report",
         "rating-repair",    # 差评与维修研判(2026-10-23,intent/skill-new-batch.md ③)
-        "customer-recall")  # 客户召回(2026-10-23,intent/skill-new-batch.md ②)
+        "customer-recall",  # 客户召回(2026-10-23,intent/skill-new-batch.md ②)
+        # 2026-11-06 用户拍:「把这份第三方技能优化为我的技能,然后删除原来的内容」。
+        # ⚠️ **进这份清单有两个连带后果,别只当成一行名单**:
+        #   ① 放行的默认值翻面 —— `backend/skill_registry.默认状态`:自有 = 已发布(放行)、
+        #      第三方 = 已安装待审查(拦)。库里 `skill_cfg` 一条登记都没有(库重建时丢了),
+        #      所以它**从「拦」变成「放行」**。为此它的正文已改成**纯只读**(摘掉了派任务)。
+        #   ② `tools/takeover_skills_check.py` 会要求管理后台的 `可接管技能` 也登记它。
+        "stock-patrol-lanxiu")
 
 # 从 Accio 提取的第三方技能:装了、注册了、能触发,但**不受我们的质量检查管**。
 # 它们的来源、体量和验证结果见 accio索引/README.md 和 agentsite/evals/runs/all239.json
