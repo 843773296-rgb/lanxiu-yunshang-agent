@@ -96,6 +96,11 @@ glossary_version_id,换术语 = 换聊天助手版本、走发布),**它已回(1
   · 200 + entries=[] 是业务状态;拿不到 200 是环境问题(它用上一次缓存并标来源)
   · 它拿 preview 的「模型会收到」和本地纯函数输出**逐字比对**做门禁检查;推完 GET 那口要喊它它今晚**不把术语接进聊天站提示词**(用户要跑技能评测存新基线,
 动模型上下文会让基线作废)。
+**17:2x 状态**:已推 09734b80(GET /glossary-versions/{id})、4155ec95(词边界 + seed_glossary 登记修 CI + 草稿数据)。
+**正式项目已放草稿 lanxiu-terms**(gl_6ffb6020a3d3,71 条,未冻结)。CI 从 8a328a0a 起红在 admin-e2e 的 seed_rerun_check(seed_glossary 漏登),4155ec95 修,
+CI 结果写到 scratchpad ci_4155.txt。**锁交给并行会话跑技能评测基线(--repeat 3,约到 19:40)—— 它说「跑完」之前:不碰共享库、不跑门禁 / 咬合 / seed、
+不重启 aimc,只写代码。** 这期间写:① 工作流定义 / Agent 版本选 glossary_version_id ② worker 注入(术语.匹配 + 上下文段 拼进 system)
+③ chat_assistant_versions 加 glossary_version_id + /chat-assistants/by-role/{role}/production 返回它(显式 null)④ 后台页面;它跑完再一起验收。
 **术语草稿内容已出**:管理后台/tools/seed_data/术语草稿_澜绣_20261106.json(71 条:名词 49 / 指标 22,每条带出处;生成脚本同目录)。
 用正式项目校验过:格式阻断 0、取数口问题 0、提醒 10。**下一步把它放进正式项目当草稿(key lanxiu-terms,不冻结)**,等整轮放锁再写。
 **晚上汇报要请用户判的 6 处**(子任务列的):① 褙子 / 交领襦裙 / 圆领袍这三个通称没当叫法(01-形制.md 09-21 定过通称不独占朝代,
