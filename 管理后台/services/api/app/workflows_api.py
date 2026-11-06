@@ -48,6 +48,7 @@ router = APIRouter()
 
 # 引用字段 → (表名, 说明)。**每一条都按 project_id 过滤。**
 _引用表 = {
+    "glossary_version_id": ("glossary_versions", "术语版本"),     # 11-06:整条工作流选一版术语(挂在开始节点的配置上)
     "connection_version_id": ("connection_versions", "连接版本"),
     "prompt_version_id": ("prompt_versions", "Prompt 版本"),
     "tool_version_id": ("tool_versions", "工具版本"),

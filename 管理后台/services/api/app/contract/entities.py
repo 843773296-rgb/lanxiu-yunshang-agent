@@ -800,7 +800,7 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
        "**不按工具数量给 Agent 打「能力强弱分」**(§9.1)—— "
        "工具数只表示授权候选集合的规模"]),
     E("agent_versions", "智能体版本", 子对象, 不可变,
-      ["agent_id", "version_no", "prompt_version_id", "connection_version_id",
+      ["agent_id", "version_no", "prompt_version_id", "connection_version_id", "glossary_version_id",
        "task_template", "tools", "context_policy", "limits", "output_schema",
        "completion_criteria", "incomplete_strategy", "execution_strategy",
        "input_schema", "content_hash", "change_note",
@@ -847,7 +847,8 @@ def E(名, 中文, 范围, 可变性, 关键字段, 约束, 依赖=(), 内容寻
     E("chat_assistant_versions", "聊天助手版本", 子对象, 不可变,
       ["chat_assistant_id", "version_no", "head_template", "foot_template", "tools",
        "model_name", "rule_pool_ids", "rule_ids", "skill_snapshot", "prompt_snapshot",
-       "source_kind", "source_hash", "content_hash", "change_note"],
+       "source_kind", "source_hash", "content_hash", "change_note",
+       "glossary_version_id"],      # 11-06:这一版聊天助手用哪一版术语(可空 = 不带术语);聊天站从生产配置里拿
       ["**v0 是从代码里算出来的基线**(source_kind=代码导入):调聊天站自己的 `prompts.assemble`,"
        "不在后台照样子重写一份 —— 否则基线本身就可能和在跑的那份不一样",
        "规矩**不另存正文**:rule_pool_ids 是这个角色的候选规矩(按代码里的顺序),"

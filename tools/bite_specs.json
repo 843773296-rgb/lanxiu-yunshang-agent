@@ -15560,5 +15560,17 @@
    }
   ],
   "预期红": "404 是业务状态,不打告警"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_glossary_flow.py",
+  "改坏": "校验器不逐节点查术语版本这个引用(「开始节点的配置里随便写个 id 就行」)—— 选了一个不存在的术语版本,校验照样放行,到运行时才干不了",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "              \"glossary_version_id\": \"术语版本\"}",
+    "new": "              \"glossary_version_id_没登记\": \"术语版本\"}"
+   }
+  ],
+  "预期红": "⑥ 开始节点选了一个不存在的术语版本 → 校验当场拦"
  }
 ]

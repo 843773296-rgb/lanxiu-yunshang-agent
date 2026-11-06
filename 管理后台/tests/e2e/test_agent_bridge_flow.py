@@ -162,6 +162,13 @@ def main():
     if not tv:
         return 1
 
+    # 术语(11-06,用户拍「每个智能体选一版」):冻一版只有两条的术语 —— 输入里提到「顾问」,没提到「褙子」
+    c_, gl = 打("POST", P + "/glossaries", 体={"key": "e2e-agent-" + uuid.uuid4().hex[:6]})
+    打("PATCH", P + f"/glossaries/{gl['id']}/draft", 头={"If-Match": "1"},
+      体={"术语": [{"标准词": "顾问", "类别": "名词", "定义": "门店里跟这位客户的那位导购_e2e"},
+                   {"标准词": "褙子", "类别": "名词", "定义": "宋制对襟长衣_e2e"}]})
+    c_, gv = 打("POST", P + f"/glossaries/{gl['id']}/versions")
+    ck("前提:冻出一版术语", c_ == 201 and (gv or {}).get("id"), (c_, gv))
     c_, a = 打("POST", P + "/agents", 体={"名称": f"e2e 走桥 Agent {uuid.uuid4().hex[:6]}"})
     aid = a["id"]
     c_, d = 打("GET", P + f"/agents/{aid}")
@@ -169,7 +176,7 @@ def main():
                input_schema={"type": "object", "properties": {"顾问": {"type": "string"}}, "required": ["顾问"]},
                output_schema={"type": "object", "properties": {"名单": {"type": "array", "items": {"type": "string"}}},
                               "required": ["名单"]},
-               completion_criteria={})
+               completion_criteria={}, glossary_version_id=gv["id"])
     c_, b = 打("PATCH", P + f"/agents/{aid}/draft", 体={"配置": cfg}, 头={"If-Match": str(d["草稿"]["revision"])})
     c_, b = 打("POST", P + f"/agents/{aid}/validate")
     ck("前提:钉假接口连接 + 只给「召回名单」的 Agent 校验通过", c_ == 200 and b.get("通过"),
@@ -194,6 +201,12 @@ def main():
        s == "waiting_external" and len(bc) == 1 and bc[0]["tool_name"] == "召回名单"
        and bc[0]["arguments_snapshot"] == {"上限": 5} and bc[0]["status"] == "待执行" and bc[0]["node_id"] == "agent",
        (s, [dict(x) for x in bc], (快 or {}).get("completion_reason")))
+    with 事务() as c:
+        注 = [x["带了"] for x in c.execute(text("""select payload from run_events where project_id=:p and execution_run_id=:r
+                                                   and event_type='glossary.injected' order by seq"""), {"p": 项目, "r": rid}).scalars()]
+    首 = json.dumps((请求们 or [{}])[0].get("system", ""), ensure_ascii=False)
+    ck("①b Agent 选了一版术语:第一回合只带输入里提到的「顾问」(事件 glossary.injected),发给模型的系统提示里有它的定义、没有「褙子」",
+       注[:1] == [["顾问"]] and "跟这位客户的那位导购_e2e" in 首 and "宋制对襟长衣_e2e" not in 首, (注, 首[:300]))
     ck("② 挂起时存了检查点(从 agent 接着)、假接口只被问了 1 次",
        (快["resume_snapshot"] or {}).get("从") == "agent" and (快["resume_snapshot"] or {}).get("检查点")
        and len(请求们) == 1, (len(请求们), list((快["resume_snapshot"] or {}).keys())))

@@ -55,7 +55,7 @@ def _接线(角色):
     return (True, 接上了) if 角色 in 聊天站读的角色 else (False, 还没接)
 
 
-可改的键 = ("开头", "结尾", "模型", "工具")
+可改的键 = ("开头", "结尾", "模型", "工具", "术语版本")
 
 
 def _短名(t):
@@ -104,7 +104,9 @@ def _标记(cfg):
 def 内容哈希(cfg, 规矩):
     """只算会改变模型收到什么的:开头 / 结尾 / 开着的工具 / 模型 / 装上的规矩。变更说明不进。"""
     料 = {"开头": cfg.get("开头") or "", "结尾": cfg.get("结尾") or "", "模型": cfg.get("模型"),
-         "工具": sorted(_开着的(cfg)), "规矩": list(规矩)}
+         "工具": sorted(_开着的(cfg)), "规矩": list(规矩),
+         # 术语版本(11-06)会改变模型收到什么;**只在选了时才进哈希** —— 不选的老版本哈希不变,不凭空多出「内容一样哈希不同」的版本
+         **({"术语版本": cfg["术语版本"]} if cfg.get("术语版本") else {})}
     return "sha256:" + hashlib.sha256(json.dumps(料, ensure_ascii=False, sort_keys=True)
                                       .encode()).hexdigest()
 
@@ -114,13 +116,16 @@ def _插版本(c, me, project_id, a, cfg, 规矩, 来源, 说明, 快照=None, �
                          where project_id=:p and chat_assistant_id=:a"""),
                    {"p": project_id, "a": a}).scalar()
     号 = 上 + 1
+    if cfg.get("术语版本") and not c.execute(text("select 1 from glossary_versions where project_id=:p and id=:i"),
+                                          {"p": project_id, "i": cfg["术语版本"]}).first():
+        raise _错(422, "REF_NOT_FOUND", "选的术语版本不在这个项目里", "在术语配置里冻结一版再选", field_errors={"术语版本": "不存在"})
     c.execute(text("""
         insert into chat_assistant_versions (id, organization_id, project_id, chat_assistant_id,
             version_no, head_template, foot_template, tools, model_name, rule_pool_ids, rule_ids,
             skill_snapshot, prompt_snapshot, source_kind, source_hash, content_hash, change_note,
-            created_at, created_by)
+            glossary_version_id, created_at, created_by)
         values (:i,:o,:p,:a,:n,:h,:f,cast(:t as jsonb),:m,cast(:rp as jsonb),cast(:r as jsonb),
-                cast(:sk as jsonb),cast(:ps as jsonb),:sr,:sh,:ch,:cn, now(), :u)"""),
+                cast(:sk as jsonb),cast(:ps as jsonb),:sr,:sh,:ch,:cn,:gv, now(), :u)"""),
               {"i": _新id("cav"), "o": me.org_id, "p": project_id, "a": a, "n": 号,
                "h": cfg.get("开头") or "", "f": cfg.get("结尾"),
                "t": json.dumps(_开着的(cfg), ensure_ascii=False), "m": cfg.get("模型"),
@@ -128,7 +133,7 @@ def _插版本(c, me, project_id, a, cfg, 规矩, 来源, 说明, 快照=None, �
                "r": json.dumps(list(规矩), ensure_ascii=False),
                "sk": json.dumps(cfg.get("技能") or [], ensure_ascii=False),
                "ps": json.dumps(快照, ensure_ascii=False) if 快照 else None,
-               "sr": 来源, "sh": 来源哈希, "ch": 内容哈希(cfg, 规矩), "cn": 说明, "u": me.user_id})
+               "sr": 来源, "sh": 来源哈希, "ch": 内容哈希(cfg, 规矩), "cn": 说明, "gv": cfg.get("术语版本"), "u": me.user_id})
     return 号
 
 
@@ -241,9 +246,9 @@ def 生产版本(project_id: str, role: str, me: 身份 = Depends(要权限("查
         if not a:
             raise _错(404, "NOT_FOUND", f"没有角色 {role} 的聊天助手", "先用 import_chat_assistant.py 导入")
         if a["production_version_no"] is None:
-            return {"角色键": role, "版本号": None, "note": "没指定生产 —— 聊天站照用代码里那一份"}
+            return {"角色键": role, "版本号": None, "glossary_version_id": None, "note": "没指定生产 —— 聊天站照用代码里那一份"}
         v = c.execute(text("""select version_no, head_template, foot_template, tools, model_name, rule_ids,
-                                     content_hash, source_kind, source_hash from chat_assistant_versions
+                                     content_hash, source_kind, source_hash, glossary_version_id from chat_assistant_versions
                                where project_id=:p and chat_assistant_id=:a and version_no=:n"""),
                       {"p": project_id, "a": a["id"], "n": a["production_version_no"]}).mappings().first()
     if not v:      # 指针存的是版本号、库里没外键(见契约)—— 指着一个不存在的版本要明说,不当成「没指定」
@@ -252,6 +257,9 @@ def 生产版本(project_id: str, role: str, me: 身份 = Depends(要权限("查
     return {"角色键": role, "版本号": v["version_no"], "开头": v["head_template"], "结尾": v["foot_template"] or "",
             "工具": v["tools"] or [], "模型": v["model_name"], "规矩": v["rule_ids"] or [],
             "内容哈希": v["content_hash"], "来源": v["source_kind"],
+            # 术语(11-06,和并行会话对过):这一版没挂术语给**显式 null**,不许字段缺失 —— 缺失 = 老响应没这个字段,聊天站要分得开
+            # 键名用 glossary_version_id(和并行会话约定的名字;聊天站客户端按这个名字认,「字段缺失」它当成契约没同步)
+            "glossary_version_id": v["glossary_version_id"],
             # 只有「代码导入」的版本存着当时真组装出的全文哈希 —— 核对口拿它逐字比;后台编辑出的没有,核对口要明说没比
             "全文哈希": v["source_hash"] if v["source_kind"] == "代码导入" else None}
 
@@ -331,6 +339,21 @@ async def 改聊天助手草稿(project_id: str, cid: str, request: Request,
         if 多:
             raise _错(422, "VALIDATION", f"这几个工具聊天站这个角色没有:{多}",
                       "工具清单随导入从聊天站带过来,这里只能开关", field_errors={"工具": "未知工具"})
+        # 术语版本(11-06):**没带这个键 = 不动**(老页面 / 老客户端提交时不会把已选的术语悄悄清掉);
+        # 带了 null / 空串 = 不挂术语;带了 id 必须是这个项目里冻结过的版本 —— 选了却查不到,当场 422,不存一个悬空引用
+        # 读出口(给聊天站的生产配置)用的是英文键 glossary_version_id —— 那是和聊天站约定的契约名;
+        # 草稿这边和「开头 / 结尾 / 模型 / 工具」一样用中文键。两套是故意的,而照着读出口的键名来写会**静默不生效**
+        # (不带「术语版本」= 不动),所以写进来的英文键当场 422 点名,不吞(并行会话 11-06 指出)
+        if "glossary_version_id" in 新:
+            raise _错(422, "VALIDATION", "草稿里术语版本的键名是「术语版本」", "把 glossary_version_id 改成 术语版本 再提交"
+                      "(glossary_version_id 是给聊天站读的生产配置里的名字)", field_errors={"glossary_version_id": "用「术语版本」"})
+        if "术语版本" in 新:
+            gv = (新.get("术语版本") or "").strip() or None
+            if gv and not c.execute(text("select 1 from glossary_versions where project_id=:p and id=:i"),
+                                    {"p": project_id, "i": gv}).first():
+                raise _错(422, "REF_NOT_FOUND", "选的术语版本不在这个项目里", "在术语配置里冻结一版再选",
+                          field_errors={"术语版本": "不存在"})
+            cfg["术语版本"] = gv
         cfg.update({"开头": 新["开头"], "结尾": 新.get("结尾") or "", "模型": 新["模型"],
                     "工具": [{**t, "开": 开.get(n, t.get("开"))} for n, t in 全.items()]})
         版 = int(a["draft_revision"]) + 1

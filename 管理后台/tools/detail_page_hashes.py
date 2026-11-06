@@ -48,6 +48,8 @@ G, Y, R, D = "\033[32m", "\033[33m", "\033[31m", "\033[0m"
 #    否则它又变成一个「没人冒烟过」的页面。`nav_smoke_check.py` 盯着这件事。
 页们 = (
     ("#/prompt/",   "页_prompt详情", "prompt_drafts",    ""),
+    # 术语表编辑页(2026-11-06)。样例 id 来自 tools/seed_glossary.py 在演示项目铺的 demo-terms(CI 里排在冒烟前面)
+    ("#/glossary/", "页_术语详情",   "glossary_drafts",  "and archived_at is null"),
     ("#/human/",    "页_待办详情",   "human_requests",   ""),
     ("#/trace/",    "页_调用树",     "traces",           ""),
     ("#/workflow/", "页_画布",       "workflows",        ""),

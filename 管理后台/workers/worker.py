@@ -313,6 +313,23 @@ Agent审批人 = ["approver", "admin"]      # 用户 11-06 拍「店长批」;�
 Agent审批时限小时 = 24                    # 用户 11-06 拍「24 小时没人处理就作废」(拍脑袋的数,用户知道);到期由 扫过期核对 收成 expired
 
 
+def _Agent术语段(c, 项目, cfg, 输入, 记事):
+    """Agent 选的那一版术语(用户 11-06 拍「每个智能体选一版」)里,**这次任务和输入提到的**那几条 → 拼在指令前面的那一段。
+    没选 = ""。选了却查不到 → 抛(不悄悄不带);和工作流 / 聊天站同一个函数(runtime/术语)。"""
+    gv = (cfg or {}).get("glossary_version_id")
+    if not gv:
+        return ""
+    条 = c.execute(text("select entries from glossary_versions where project_id=:p and id=:i"), {"p": 项目, "i": gv}).scalar()
+    if 条 is None:
+        raise 干不了("GLOSSARY_VERSION_NOT_FOUND", {"为什么": f"Agent 选的术语版本 {gv} 在这个项目里找不到 —— 不悄悄不带术语跑"})
+    import json as _j
+    import 术语 as _T
+    命 = _T.匹配(str(cfg.get("task_template") or "") + "\n" + _j.dumps(输入 or {}, ensure_ascii=False), 条)
+    if 命:
+        记事("glossary.injected", {"术语版本": gv, "带了": [h["标准词"] for h in 命]})
+    return _T.上下文段(命, 条)
+
+
 def _Agent批准们(c, 项目, run_id):
     """这次运行里,种类为「Agent写操作审批」的人工待办上**店长批准了**的那几条 → [{参数摘要, 处理人}]。
     从库里现查,不从任何模型输出里取 —— 桥闸拿它判 Agent 的写操作能不能记单(runtime/桥闸.Agent批准成立吗)。"""
@@ -592,6 +609,26 @@ def _跑一张工作流(c, job, 打点):
             return v if isinstance(v, str) else _j.dumps(v, ensure_ascii=False)
         return _re.sub(r"\{\{\s*([^{}]+?)\s*\}\}", 换, 模板 or "")
 
+    # 术语(11-06,用户拍「每条工作流选一版」):开始节点配置里的 glossary_version_id;没选 = 不带术语
+    _术语条 = None
+    _选的术语 = next(((n.get("config") or {}).get("glossary_version_id") for n in 定义.get("nodes") or []
+                      if n.get("type") == "start"), None)
+    if _选的术语:
+        _术语条 = c.execute(text("select entries from glossary_versions where project_id=:p and id=:i"),
+                            {"p": job["project_id"], "i": _选的术语}).scalar()
+        if _术语条 is None:
+            raise 干不了("GLOSSARY_VERSION_NOT_FOUND", {"为什么": f"开始节点选的术语版本 {_选的术语} 在这个项目里找不到 —— 不悄悄不带术语跑"})
+
+    def _术语段(文本):
+        """这一步提到的术语 → 拼给模型的那一段(和「试一下」、聊天站同一个函数);记一条事件:带了哪几条。"""
+        if not _术语条:
+            return ""
+        import 术语 as _T
+        命 = _T.匹配(文本, _术语条)
+        if 命:
+            记事("glossary.injected", {"术语版本": _选的术语, "带了": [h["标准词"] for h in 命]})
+        return _T.上下文段(命, _术语条)
+
     def _按节点llm(cfg, 实参):
         连 = _节点连接(cfg.get("connection_version_id"))
         if not 连:
@@ -603,6 +640,8 @@ def _跑一张工作流(c, job, 打点):
         if (连["capabilities"] or {}).get("execution_mode") == "mock" or r["execution_mode"] != "live":
             # 选的就是演示连接,或者这次运行受理时就定成了 mock —— 都是**明确的选择**。
             # 看的是**运行上记的模式**,不是这台 worker 的环境:模式在受理那一刻定,跑的人不许改
+            # 术语照样匹配、记事件(mock 那一端不收提示词,但「这一步会带哪几条」要在 CI 的 mock 跑法里也验得到)
+            _术语段("\n".join(v if isinstance(v, str) else _j.dumps(v, ensure_ascii=False) for v in (实参 or {}).values()))
             return _mock_llm(cfg, 实参)
         if not 连["探过吗"]:
             raise RN.节点失败("MODEL_CONNECTION_UNPROBED",
@@ -634,7 +673,12 @@ def _跑一张工作流(c, job, 打点):
         # 不在模板里写 max_output_tokens:定义冻结时的密钥扫描按键名里有没有 token 判,会把它当成密钥拒掉(已报给用户)
         参 = {"max_tokens": cfg.get("max_output_tokens") or 4000, **(cfg.get("sampling_params") or {})}
         try:
-            出 = _真.生成(连接=dict(连), 系统=_渲染(要.get("system"), 实参) or None, 用户=用户, 参数=参)
+            系统 = _渲染(要.get("system"), 实参) or None
+            段 = _术语段(用户 + "\n" + (系统 or ""))
+            if 段:
+                # 术语(11-06):只带这一步提到的那几条,拼在系统提示前面(用户拍「只带这次提到的」;算法以代码为准,术语是说明)
+                系统 = 段 + ("\n\n" + 系统 if 系统 else "")
+            出 = _真.生成(连接=dict(连), 系统=系统, 用户=用户, 参数=参)
         except _真.调不动 as e:
             raise RN.节点失败(e.码, str(e.细节)[:200], "看「模型与连接」那条连接还通不通;**不退回 mock**")
         结果 = {"text": 出["text"], "lang": "zh", "execution_mode": "live", "usage": 出["usage"],
@@ -741,12 +785,17 @@ def _跑一张工作流(c, job, 打点):
             raise RN.节点失败("AGENT_VERSION_NOT_FOUND", "这一步选的 Agent 版本在这个项目里找不到", "回「搭建」重新选一个 Agent 版本")
         acfg = {k: v[k] for k in ("prompt_version_id", "connection_version_id", "task_template", "tools", "context_policy",
                                    "limits", "output_schema", "completion_criteria", "incomplete_strategy",
-                                   "execution_strategy", "input_schema")}
+                                   "execution_strategy", "input_schema", "glossary_version_id")}
         pv = c.execute(text("select messages from prompt_versions where project_id=:p and id=:i"),
                        {"p": job["project_id"], "i": acfg.get("prompt_version_id")}).scalar()
         acfg["instructions"] = ((pv or {}).get("system") if pv else "") or ""
         if 包.get("任务"):
             acfg["task_template"] = 包["任务"] if isinstance(包["任务"], str) else _jj.dumps(包["任务"], ensure_ascii=False)
+        # 术语要在**换上这一步的任务之后**再匹配(11-06 自查:原来排在前面,匹配的是 Agent 版本里写的任务模板,
+        # 而工作流交下来的任务里提到的术语一条都带不上)
+        _段 = _Agent术语段(c, job["project_id"], acfg, 包.get("输入"), lambda k, x: 记事(k, dict(x or {}, node_id=包.get("node_id"))))
+        if _段:
+            acfg["instructions"] = _段 + "\n\n" + acfg["instructions"]
         # 工具:Agent 版本的 ∩ allowed_capabilities(给了才收窄 —— 有效权限取交集,§6.1)
         允许 = cfg.get("allowed_capabilities")
         acfg["tools"] = [t for t in (acfg.get("tools") or [])
@@ -1380,7 +1429,7 @@ def _跑一个agent(c, job, 打点):
                                  "task_template", "tools", "context_policy", "limits",
                                  "output_schema", "completion_criteria",
                                  "incomplete_strategy", "execution_strategy",
-                                 "input_schema")}
+                                 "input_schema", "glossary_version_id")}
     else:
         d = c.execute(text("""select * from graph_drafts
                              where project_id=:p and agent_id=:i"""),
@@ -1652,6 +1701,10 @@ def _跑一个agent(c, job, 打点):
     else:
         适配器 = _mock适配器()
 
+    # 术语(11-06,用户拍「每个智能体选一版」):这次任务和输入提到的那几条拼在指令前面(放在这里是因为 记事 在上面才定义)
+    _段 = _Agent术语段(c, job["project_id"], cfg, r["input_snapshot"] or {}, 记事)
+    if _段:
+        cfg = dict(cfg, instructions=_段 + "\n\n" + (cfg.get("instructions") or ""))
     结果 = AL.跑一个agent(
         cfg, r["input_snapshot"] or {}, 适配器=适配器, 工具目录=目录,
         有效范围={"paths": [], "hosts": ["*.example.com"], "ids": []},

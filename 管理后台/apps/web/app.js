@@ -105,6 +105,7 @@ const 导航 = [
   ["#/workbench", "主页", true],
   ["#/studio", "工作室", true],
   ["#/prompts", "Prompt 管理", true, true],
+  ["#/glossaries", "术语配置", true, true],
   ["#/kb", "知识库", true],
   ["#/uploads", "加资料", true, true],
   ["#/retrieval", "召回测试", true, true],
@@ -623,6 +624,300 @@ async function 页_prompt详情(pid) {
       <div class="note">${md(`跑完可以「加入问题集」「保存为评测样本」—— 新样本**先进待审核**,
         避免把错误答案当成真值。(这两个按钮还没实现)`)}</div>`;
   }
+}
+
+/* ── 术语配置(11-06;用户拍「后台页面这次一起做」)────────────────────────────
+ * 和 Prompt 同一个形状:草稿随便改(带 If-Match)、冻结的版本不可变;工作流 / Agent 引用的是冻结版本。
+ * **检查(阻断 / 提醒)全在服务端算**(glossaries_api._详情),页面只摆出来,不自己再判一遍 ——
+ * 自己判就成了第二份规矩,而两份规矩不一致的表现是「页面说能冻、点了被拒」。
+ * 「试一下」打的是 preview 接口,和运行时同一个函数;页面不自己匹配叫法。 */
+async function 页_术语列表() {
+  const 头 = `<div class="crumb">术语配置</div>
+    <div class="head"><div>
+      <h1>术语配置</h1>
+      <div class="sub">${md(`把店里的叫法统一成一个标准词,写清它是什么意思;指标还要写清**怎么算**(分子 / 分母 / 时间)。
+        模型只收到这次对话里**提到的那几条**。改草稿不影响在跑的东西,**冻结成版本、在流程里选这一版**才生效。`)}</div>
+    </div><div class="acts">
+      <button id="g-new" class="pri">新建术语表</button>
+    </div></div>
+    <div id="tbl"><div class="state">加载中…</div></div>`;
+  $("#main").innerHTML = 头;
+  const 新建 = async () => {
+    const key = await 问一句("新建术语表", "给它起一个标识:项目内唯一,建好之后不随意改。", { 输入: "比如 store-terms", 确定: "新建", 必填: true });
+    if (!key) return;
+    try {
+      const r = await 请求(`${P()}/glossaries`, { method: "POST", body: JSON.stringify({ key, 术语: [] }) });
+      location.hash = `#/glossary/${encodeURIComponent(r.id)}`;   // 建好直接进编辑页 —— 空表留在列表里没有用
+    } catch (e) { 报错(e); }
+  };
+  $("#g-new").onclick = 新建;
+  const 画 = async () => {
+    let d;
+    try { d = await 请求(`${P()}/glossaries`); }
+    catch (e) { const s = 错误块(e, 画); $("#tbl").innerHTML = s.html; s.挂(); return; }
+    const rs = d.items || [];
+    if (!rs.length) {
+      const s = 状态("", "这个项目还没有术语表",
+        "术语表把「到店转化」「预约到店比」这类叫法统一成一个标准词,并写清定义和口径 —— **模型按这里的意思理解,不按它自己猜的**。",
+        { 文: "新建术语表", 做: 新建 });
+      $("#tbl").innerHTML = s.html; s.挂(); return;
+    }
+    $("#tbl").innerHTML = `<table><thead><tr>
+        <th>标识</th><th>条数</th><th>最新冻结版本</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${rs.map((r) => `
+        <tr><td class="num">${esc(r.key)}</td>
+          <td class="num">${esc(r.条数 ?? 0)}</td>
+          <td>${r.最新冻结版本 ? `<span class="pill ok">${esc(r.最新冻结版本)}</span>`
+                               : '<span class="pill none">还没冻结过</span>'}</td>
+          <td class="num">${时间(r.更新时间)}</td>
+          <td><a href="#/glossary/${encodeURIComponent(r.id)}">打开编辑</a></td></tr>`).join("")}
+      </tbody></table>
+      <div class="pager"><span>共 ${rs.length} 张</span></div>`;
+  };
+  await 画();
+}
+
+/* 术语表编辑页:逐条增删改 → 保存草稿(If-Match)→ 冻结版本 → 选一个版本试一句话。
+ * ⚠️ 检查结果是**上次保存的草稿**的,不是输入框里的 —— 有没保存的改动时要明说,不然人会以为「改完了检查还红」是改错了。 */
+async function 页_术语详情(gid) {
+  $("#main").innerHTML = `<div class="state">加载中…</div>`;
+  let d;
+  try { d = await 请求(`${P()}/glossaries/${encodeURIComponent(gid)}`); }
+  catch (e) { const s = 错误块(e, () => 页_术语详情(gid)); $("#main").innerHTML = s.html; s.挂(); return; }
+  let rev = d.revision;                  // 乐观锁:每次保存后换成服务端给的新值
+  let 脏 = false;
+  let 条们 = JSON.parse(JSON.stringify(d.术语 || []));
+  let 版本们 = d.版本 || [];
+  const 拆叫法 = (s) => [...new Set(String(s || "").split(/[,，、;；\n\r]+/).map((x) => x.trim()).filter(Boolean))];
+
+  $("#main").innerHTML = `
+    <div class="crumb"><a href="#/glossaries">术语配置</a> / ${esc(d.key)}</div>
+    <div class="head"><div>
+      <h1>${esc(d.key)}</h1>
+      <div class="sub">草稿 revision <code id="g-rev">${esc(rev)}</code> · <span id="g-vcount"></span>
+        <br>${md(d.note || "")}</div>
+    </div></div>
+    <div id="g-check"></div>
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:6px">术语(<span id="g-n"></span> 条)</div>
+      <div class="note">${md("叫法用逗号或回车分开。类别选「指标」时要写**口径**(分子 / 分母 / 时间)—— 不写的话模型会按它自己的理解算;**取数工具**要填项目里真有、而且开着的工具名。")}</div>
+      <div id="g-list"></div>
+      <div style="margin-top:10px"><button id="g-add">加一条术语</button></div>
+      <div class="footbar">
+        <span class="msg" id="g-fb"></span>
+        <button id="g-back">回列表</button>
+        <button id="g-save">保存草稿</button>
+        <button id="g-freeze" class="pri">冻结版本</button>
+      </div>
+    </div>
+    <div class="card" id="g-vers"></div>
+    <div class="card" id="g-try"></div>`;
+
+  const 画一条 = (t, i) => {
+    const 指标 = (t.类别 || "名词") === "指标", 口 = t.口径 || {}, 取 = t.取数口 || {};
+    const 框 = (f, 值, 提示) => `<input class="t" data-i="${i}" data-f="${f}" value="${esc(值 || "")}" placeholder="${esc(提示)}">`;
+    return `<div class="card" data-row="${i}">
+      <div class="two">
+        <div><label class="f">标准词 <span class="req">*</span></label>${框("标准词", t.标准词, "比如 到店率")}</div>
+        <div><label class="f">类别</label>
+          <select class="t" data-i="${i}" data-f="类别">
+            <option value="名词"${指标 ? "" : " selected"}>名词(说清是什么)</option>
+            <option value="指标"${指标 ? " selected" : ""}>指标(还要说清怎么算)</option></select></div>
+      </div>
+      <label class="f">叫法 <span style="color:var(--ink3)">店里、客户会怎么说它;逗号或回车分开</span></label>
+      <textarea class="t" rows="2" style="min-height:44px" data-i="${i}" data-f="叫法" placeholder="比如 到店转化,预约到店比">${esc((t.叫法 || []).join(","))}</textarea>
+      <label class="f">定义 <span class="req">*</span></label>
+      <textarea class="t" rows="2" style="min-height:44px" data-i="${i}" data-f="定义" placeholder="一句话说清它是什么">${esc(t.定义 || "")}</textarea>
+      ${指标 ? `<label class="f">口径 <span class="req">*</span> <span style="color:var(--ink3)">分子 / 分母 / 时间至少写清楚,特殊规定写在「其它」</span></label>
+        <div class="two">
+          <div>${框("口径.分子", 口.分子, "分子:比如 到店的预约数")}</div>
+          <div>${框("口径.分母", 口.分母, "分母:比如 预约数(不含已取消)")}</div>
+          <div>${框("口径.时间", 口.时间, "时间:比如 按预约日期")}</div>
+          <div>${框("口径.其它", 口.其它, "其它(选填)")}</div>
+        </div>
+        <label class="f">取数口 <span style="color:var(--ink3)">选填;要算这个数调哪个工具 —— 填了就必须是项目里真有、开着的工具</span></label>
+        <div class="two">
+          <div>${框("取数口.工具", 取.工具, "工具名:比如 appt_funnel")}</div>
+          <div>${框("取数口.说明", 取.说明, "怎么取:比如 按门店 / 周取")}</div>
+        </div>` : ""}
+      <label class="f">出处 <span style="color:var(--ink3)">选填;这个说法从哪来(制度文件、业务口头约定…)</span></label>
+      ${框("出处", t.出处, "比如 门店运营手册 2026 版")}
+      <div style="margin-top:8px;text-align:right"><button class="danger" data-del="${i}">删掉这一条</button></div>
+    </div>`;
+  };
+  const 画列表 = () => {
+    $("#g-n").textContent = String(条们.length);
+    $("#g-list").innerHTML = 条们.length ? 条们.map(画一条).join("")
+      : 状态("", "这张表还没有术语", "点下面「加一条术语」开始写。至少要有一条才能冻结版本。").html;
+  };
+  const 画检查 = (检) => {
+    const 阻 = (检 && 检.阻断) || [], 醒 = (检 && 检.提醒) || [];
+    const 旧 = 脏 ? `<div class="k">⚠️ 下面是<b>上次保存的草稿</b>的检查结果;你有没保存的改动,保存之后会重新检查。</div>` : "";
+    $("#g-check").innerHTML = (阻.length
+      ? `<div class="card bad"><div style="font-weight:600;color:var(--fail)">要改完这 ${阻.length} 处才能冻结</div>
+          <ul>${阻.map((x) => `<li>${md(x)}</li>`).join("")}</ul>${旧}</div>`
+      : `<div class="note">${md("**检查通过,没有挡住冻结的问题。**")}${旧}</div>`)
+      + (醒.length ? `<div class="note warn"><b>提醒(不挡冻结,建议看一眼):</b><ul>${醒.map((x) => `<li>${md(x)}</li>`).join("")}</ul></div>` : "");
+  };
+  const 画版本 = () => {
+    $("#g-vcount").innerHTML = 版本们.length ? `已有 ${版本们.length} 个冻结版本(最新 ${esc(版本们[0].版本)})` : "<b>还没冻结过版本</b>";
+    $("#g-vers").innerHTML = `<div style="font-weight:600;margin-bottom:8px">冻结的版本</div>`
+      + (版本们.length ? `<table><thead><tr><th>版本</th><th>条数</th><th>内容哈希</th><th>冻结于</th><th>冻结人</th></tr></thead><tbody>
+          ${版本们.map((v) => `<tr><td class="num">${esc(v.版本)}</td><td class="num">${esc(v.条数 ?? "")}</td>
+            <td class="num">${esc(String(v.内容哈希 || "").slice(0, 19))}</td><td class="num">${时间(v.冻结于)}</td><td>${esc(v.冻结人 || "")}</td></tr>`).join("")}
+          </tbody></table>
+          <div class="note">${md("冻结的版本**内容不再改**。工作流 / Agent 要用哪一版,在它们的配置里选。")}</div>`
+        : `<div class="state" style="padding:20px">还没有冻结的版本 —— 上面写好、保存之后点「冻结版本」。</div>`);
+    // 「试一下」只摆在有版本的时候 —— 没有版本时摆一个按钮,点了只会被拒,那是死按钮
+    $("#g-try").innerHTML = `<div style="font-weight:600;margin-bottom:6px">试一下</div>`
+      + (版本们.length ? `<div class="note">${md("输入一句店员或客户会说的话,看这一版会认出哪些术语、**模型实际会收到什么**。和正式运行用的是同一套匹配。")}</div>
+          <label class="f">用哪个版本</label>
+          <select class="t" id="g-tv">${版本们.map((v) => `<option value="${esc(v.id)}">${esc(v.版本)}(${esc(v.条数 ?? "")} 条 · ${时间(v.冻结于)})</option>`).join("")}</select>
+          <label class="f">一句话</label>
+          <textarea class="t" id="g-tt" rows="2" style="min-height:44px" placeholder="比如:上周到店转化怎么掉了这么多?"></textarea>
+          <div style="margin-top:8px"><button class="pri" id="g-tgo">试一下</button> <span class="k" id="g-tmsg"></span></div>
+          <div id="g-tout"></div>`
+        : `<div class="state" style="padding:20px">要先冻结一个版本才能试 —— 试的是冻结版本,和流程里真正用的是同一份。</div>`);
+    if (版本们.length) $("#g-tgo").onclick = 试一下;
+  };
+  const 标脏 = () => {
+    if (!脏) { 脏 = true; 画检查(d.检查); }
+    $("#g-fb").textContent = "有没保存的改动"; $("#g-fb").className = "msg";
+  };
+
+  /* 输入框 → 条们(不重画,免得光标跳走);只有切类别 / 增删要重画 */
+  const 写回 = (el) => {
+    const i = Number(el.dataset.i), f = el.dataset.f, t = 条们[i];
+    if (!t || !f) return;
+    if (f === "叫法") t.叫法 = 拆叫法(el.value);
+    else if (f.includes(".")) { const [组, 键] = f.split("."); t[组] = Object.assign({}, t[组] || {}, { [键]: el.value }); }
+    else t[f] = el.value;
+  };
+  $("#g-list").oninput = (e) => { if (e.target && e.target.dataset && e.target.dataset.f) { 写回(e.target); 标脏(); } };
+  $("#g-list").onchange = (e) => {
+    if (e.target && e.target.dataset && e.target.dataset.f === "类别") { 写回(e.target); 标脏(); 画列表(); }
+  };
+  $("#g-list").onclick = async (e) => {
+    const i = e.target && e.target.dataset ? e.target.dataset.del : undefined;
+    if (i === undefined) return;
+    const t = 条们[Number(i)] || {};
+    if (!(await 问一句("删掉这一条?", `「${esc(t.标准词 || "没写标准词的这条")}」会从草稿里拿掉;要点「保存草稿」才真的存下来。`, { 确定: "删掉", 取消: "留着" }))) return;
+    条们.splice(Number(i), 1); 标脏(); 画列表();
+  };
+  $("#g-add").onclick = () => {
+    条们.push({ 标准词: "", 叫法: [], 类别: "名词", 定义: "" }); 标脏(); 画列表();
+  };
+
+  /* 存之前整理:空的口径项 / 取数口不发;名词不带口径和取数口(界面上看不到的东西不该悄悄存进去) */
+  const 整理 = () => 条们.map((t) => {
+    const o = Object.assign({}, t);
+    o.标准词 = String(o.标准词 || "").trim(); o.定义 = String(o.定义 || "").trim();
+    o.叫法 = 拆叫法((o.叫法 || []).join(","));
+    o.类别 = o.类别 || "名词";
+    const 清 = (x) => { const r = {}; Object.entries(x || {}).forEach(([k, v]) => { if (String(v || "").trim()) r[k] = String(v).trim(); }); return r; };
+    if (o.类别 === "指标") {
+      const 口 = 清(o.口径), 取 = 清(o.取数口);
+      if (Object.keys(口).length) o.口径 = 口; else delete o.口径;
+      if (Object.keys(取).length) o.取数口 = 取; else delete o.取数口;
+    } else { delete o.口径; delete o.取数口; }
+    if (String(o.出处 || "").trim()) o.出处 = String(o.出处).trim(); else delete o.出处;
+    return o;
+  });
+
+  $("#g-back").onclick = async () => {
+    if (脏 && !(await 问一句("离开这一页?", "有没保存的改动,离开会丢掉。", { 确定: "丢掉并离开", 取消: "留下" }))) return;
+    location.hash = "#/glossaries";
+  };
+
+  const 存草稿 = async () => {
+    try {
+      const r = await 请求(`${P()}/glossaries/${encodeURIComponent(gid)}/draft`, {
+        method: "PATCH",
+        headers: { "If-Match": String(rev) },      // **必填** —— 否则就是「最后写的人赢」,输的人看不到自己被盖掉了
+        body: JSON.stringify({ 术语: 整理() }),
+      });
+      rev = r.revision; $("#g-rev").textContent = String(rev);
+      d.检查 = r.检查; 条们 = JSON.parse(JSON.stringify(r.术语 || [])); 版本们 = r.版本 || 版本们;
+      脏 = false; 画列表(); 画检查(r.检查); 画版本();
+      $("#g-fb").innerHTML = md(r.note || "草稿已保存。"); $("#g-fb").className = "msg";
+      return true;
+    } catch (e) {
+      const b = e.体 || {};
+      if (e.码 === 409) {
+        // 并发冲突:**不覆盖**。把自己这边没存的内容摆出来,刷新之后照着合并
+        $("#g-fb").innerHTML = `<b>这张表被别人改过了,刷新再合并,不要直接覆盖。</b><br>${esc(b.message || "")}
+          <br><button id="g-reload">刷新看最新的</button>
+          <details><summary>我这边没保存的内容(刷新会丢,先复制下来)</summary><pre class="io">${esc(JSON.stringify(整理(), null, 2))}</pre></details>`;
+        $("#g-fb").className = "msg bad";
+        $("#g-reload").onclick = () => 页_术语详情(gid);
+      } else {
+        $("#g-fb").innerHTML = `<b>${esc(b.message || e.message)}</b><br>${md(b.advice || "")}`;
+        $("#g-fb").className = "msg bad";
+      }
+      return false;
+    }
+  };
+  $("#g-save").onclick = async () => { $("#g-save").disabled = true; await 存草稿(); $("#g-save").disabled = false; };
+
+  $("#g-freeze").onclick = async () => {
+    if (脏) {
+      if (!(await 问一句("先保存草稿?", "冻结的是<b>已保存的草稿</b>。你有没保存的改动 —— 先保存,再冻结。", { 确定: "保存并冻结", 取消: "先不冻" }))) return;
+      if (!(await 存草稿())) return;
+    }
+    $("#g-freeze").disabled = true;
+    try {
+      const r = await 请求(`${P()}/glossaries/${encodeURIComponent(gid)}/versions`, { method: "POST" });
+      $("#g-fb").innerHTML = `已冻结为 <b>${esc(r.版本)}</b>(内容哈希 <code>${esc(String(r.内容哈希 || "").slice(0, 19))}</code>)<br>${md(r.note || "")}`;
+      $("#g-fb").className = "msg";
+      setTimeout(() => 页_术语详情(gid), 900);
+    } catch (e) {
+      const b = e.体 || {};
+      const 阻 = (b.field_errors && b.field_errors.阻断) || [];
+      if (e.码 === 422 && 阻.length) {
+        $("#g-fb").innerHTML = `<b>还冻不了,先改这 ${阻.length} 处:</b>${阻.map((x) => "<br>· " + md(x)).join("")}`;
+      } else if (b.code === "NO_CHANGE") {
+        $("#g-fb").innerHTML = `<b>${esc(b.message || "内容和上一版一样")}</b> —— 不用再冻一版。<br>${md(b.advice || "")}`;
+      } else {
+        $("#g-fb").innerHTML = `<b>${esc(b.message || e.message)}</b><br>${md(b.advice || "")}`;
+      }
+      $("#g-fb").className = "msg bad";
+      $("#g-freeze").disabled = false;
+    }
+  };
+
+  async function 试一下() {
+    const 文 = $("#g-tt").value.trim(), vid = $("#g-tv").value;
+    if (!文) { $("#g-tmsg").textContent = "先写一句话。"; return; }
+    $("#g-tgo").disabled = true; $("#g-tmsg").textContent = "在试…";
+    try {
+      const r = await 请求(`${P()}/glossary-versions/${encodeURIComponent(vid)}/preview`, {
+        method: "POST", body: JSON.stringify({ 文本: 文 }) });
+      const 命 = r.命中 || [];
+      // 原句里把命中的那几处加粗(位置按字算;只标服务端报的那几处,页面不自己再找一遍)
+      const 字 = Array.from(文), 标 = {};
+      命.forEach((h) => { const n = Array.from(String(h.命中的叫法 || "")).length; if (Number.isInteger(h.位置) && n) 标[h.位置] = n; });
+      let 句 = "";
+      for (let i = 0; i < 字.length;) {
+        if (标[i]) { 句 += `<b>${esc(字.slice(i, i + 标[i]).join(""))}</b>`; i += 标[i]; }
+        else { 句 += esc(字[i]); i += 1; }
+      }
+      $("#g-tmsg").textContent = "";
+      $("#g-tout").innerHTML = `<label class="f">认出了 ${命.length} 条术语</label>
+        <div class="note">${句}</div>
+        ${命.length ? `<table><thead><tr><th>标准词</th><th>句子里的说法</th><th>在第几个字</th></tr></thead><tbody>
+          ${命.map((h) => `<tr><td>${esc(h.标准词)}</td><td>${esc(h.命中的叫法)}</td><td class="num">${Number.isInteger(h.位置) ? h.位置 + 1 : "—"}</td></tr>`).join("")}
+          </tbody></table>` : ""}
+        <label class="f">模型会收到</label>
+        ${r.模型会收到 ? `<pre class="io">${esc(r.模型会收到)}</pre>`
+          : `<div class="note">这句话一条术语都没提到 —— <b>模型这次什么都不会收到</b>。</div>`}
+        ${r.note ? `<div class="note">${md(r.note)}</div>` : ""}`;
+    } catch (e) {
+      const b = e.体 || {};
+      $("#g-tmsg").innerHTML = `<b style="color:var(--fail)">${esc(b.message || e.message)}</b>${b.advice ? " " + md(b.advice) : ""}`;
+    }
+    $("#g-tgo").disabled = false;
+  }
+
+  画列表(); 画检查(d.检查); 画版本();
 }
 
 /* ── 监测(11-04;Dify 对标 §8.1 / DF-04)────────────────────────────────────────────
@@ -7582,6 +7877,8 @@ async function 路由() {
     if (h.startsWith("#/integrations/")) return await 页_分页签("#/integrations", 集成类型, h.slice(15));
     if (h === "#/prompts") return await 页_prompt列表();
     if (h.startsWith("#/prompt/")) return await 页_prompt详情(decodeURIComponent(h.slice(9)));
+    if (h === "#/glossaries") return await 页_术语列表();
+    if (h.startsWith("#/glossary/")) return await 页_术语详情(decodeURIComponent(h.slice(11)));
     if (h === "#/human") return await 页_人工待办();
     if (h.startsWith("#/human/")) return await 页_待办详情(decodeURIComponent(h.slice(8)));
     if (h === "#/evals") return await 页_评测中心();

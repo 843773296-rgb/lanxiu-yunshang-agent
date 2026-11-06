@@ -117,7 +117,7 @@ def N(名, 中文, *, 端口, 配置, 调用外部, 实现=未实现, 不适用=
 # ── 节点登记表(对齐规格 §6.1 那张表的每一行)────────────────────────
 节点表 = [
     N("start", "开始",
-      端口=[成功], 配置=["input_schema", "defaults", "size_limits"],
+      端口=[成功], 配置=["input_schema", "defaults", "size_limits", "glossary_version_id"],
       调用外部=False, 实现=已实现, 唯一=True,
       不适用=["timeout_seconds", "retryable_errors", "max_retries",
               "bindings", "required_capability"],

@@ -7,6 +7,7 @@
   ③ 改好 → 冻出 v1;一字没改再冻 → 409 NO_CHANGE
   ④ 「试一下」:只返回这次提到的那几条(用户拍:只带这次提到的),模型会收到的那段里没有没提到的术语
   ⑤ 冻结的版本在库里改不动(版本行不可原地改的触发器)—— 断言错误码 + 表名,不断言中文文案
+  ⑥ 工作流开始节点选这一版 → 模型步骤只带这一步提到的术语(事件 glossary.injected);没提到不带;选了不存在的版本校验拦
 """
 import os
 import sys
@@ -35,6 +36,57 @@ def ck(名, 真, 补=""):
 def 打(方法, 路, 体=None, 头=None, 谁="U002"):
     r = 客.request(方法, P + 路, json=体, headers={"X-Dev-User": 谁, **(头 or {})})
     return r.status_code, (r.json() if r.content else None)
+
+
+def 跑工作流(术语版本):
+    """建一条 开始 → 模型(演示连接)→ 结束 的工作流,开始节点选术语版本;跑两次(提到 / 没提到术语),返回每次 glossary.injected 带了什么。"""
+    import subprocess
+    import time
+    # 要带「模板: 文本处理」—— 不带模板建出来只有 开始 / 结束 两个节点,没有模型步骤,
+    # 于是下面那个 for 一个 llm 都改不到、运行被校验挡在门外(11-06 第一次跑就栽在这,事件为空而 ❌ 什么都没印)
+    c_, w = 打("POST", "/workflows", {"名称": f"e2e 术语注入 {uuid.uuid4().hex[:6]}", "模板": "文本处理"})
+    wid = w["id"]
+    c_, d = 打("GET", f"/workflows/{wid}")
+    if not any(n["type"] == "llm" for n in d["草稿"]["定义"]["nodes"]):
+        return "前提不成立:模板里没有模型步骤", None, []
+    定义 = d["草稿"]["定义"]
+    for n in 定义["nodes"]:
+        if n["type"] == "llm":
+            n["config"]["connection_version_id"] = "cv_mock_" + 项目
+            n["config"]["prompt_version_id"] = "pv_seed_article_summary"
+        if n["type"] == "start":
+            n["config"]["glossary_version_id"] = 术语版本
+    打("PATCH", f"/workflows/{wid}/draft", {"定义": 定义}, {"If-Match": str(d["草稿"]["revision"])})
+    结果 = []
+    for 文 in ("上周到店转化怎么样,帮我总结一下", "今天天气不错,帮我总结一下"):
+        c_, r = 打("POST", "/execution-runs", {"workflow_id": wid, "输入": {"article": 文}}, {"Idempotency-Key": str(uuid.uuid4())})
+        rid = (r or {}).get("resource_id")
+        if not rid:   # 运行没建起来 ≠ 跑了但没带术语 —— 分开报,否则 ❌ 后面是空的(第二条「没提到不带」还会因为空列表误绿)
+            结果.append(f"运行没建起来:{c_} {str(r)[:200]}")
+            continue
+        for _ in range(10):
+            with 事务() as c:
+                st = c.execute(text("select status from execution_runs where project_id=:p and id=:i"), {"p": 项目, "i": rid}).scalar()
+            if st in ("succeeded", "failed", "incomplete"):
+                break
+            subprocess.run([os.path.join(根, ".venv", "bin", "python"), os.path.join(根, "workers", "worker.py"), "--一轮"],
+                           capture_output=True, timeout=180, cwd=根)
+            time.sleep(0.3)
+        with 事务() as c:
+            结果.append([x["带了"] for x in c.execute(text("""select payload from run_events where project_id=:p and execution_run_id=:r
+                                                           and event_type='glossary.injected'"""), {"p": 项目, "r": rid}).scalars()])
+    坏 = [dict(n) for n in 定义["nodes"]]
+    for n in 坏:
+        if n["type"] == "start":
+            n["config"] = dict(n["config"], glossary_version_id="glv_不存在的")
+    c_, d2 = 打("GET", f"/workflows/{wid}")
+    打("PATCH", f"/workflows/{wid}/draft", {"定义": dict(定义, nodes=坏)}, {"If-Match": str(d2["草稿"]["revision"])})
+    c_, b = 打("POST", f"/workflows/{wid}/validate")
+    # 收尾:草稿改回选**存在的**那一版。这条工作流有跑成功的运行,别的 e2e(test_fingerprint_ratchet / test_runctl_page_actions)
+    # 拿「演示项目里最近一条跑成功的草稿运行 / 列表第一条工作流」当夹具 —— 留着一个坏引用,它们受理时 422、红在跟它们无关的地方(11-06 撞过)
+    c_, d3 = 打("GET", f"/workflows/{wid}")
+    打("PATCH", f"/workflows/{wid}/draft", {"定义": 定义}, {"If-Match": str(d3["草稿"]["revision"])})
+    return 结果[0], 结果[1], [p["code"] for p in (b or {}).get("问题", []) if p.get("级别") == "blocking"]
 
 
 def main():
@@ -81,6 +133,12 @@ def main():
         改得动 = not (码 == "23514" and "glossary_versions" in str(e))
         改得动 = 改得动 and f"(sqlstate={码})"
     ck("⑤ 冻结的版本在库里改不动:被触发器拒(错误码 23514 check_violation、错误里点名 glossary_versions)", 改得动 is False, 改得动)
+    # ⑥ 工作流选用这一版术语(开始节点配置 glossary_version_id,用户拍「每条工作流选一版」)→ 模型步骤带上这一步提到的
+    带, 不带, 校 = 跑工作流(v["id"])
+    ck("⑥ 工作流开始节点选了这一版:输入提到「到店转化」的那一次,模型步骤带了「到店率」、没带「褙子」(事件 glossary.injected)",
+       带 == [["到店率"]], repr(带))
+    ck("⑥ 输入一个术语都没提到 → 不带任何术语(不记事件)", 不带 == [], repr(不带))
+    ck("⑥ 开始节点选了一个不存在的术语版本 → 校验当场拦(REF_NOT_FOUND)", "REF_NOT_FOUND" in 校, repr(校))
     # 这张术语表**留着不归档**:tools/ifmatch_reachable_check 要从术语表列表里取一张样例,验「界面拿得到改草稿要带的 revision」——
     # CI 是新库,这一条要是归档了,那条检查拿不到样例就判红(而那条红的理由是「什么都没验到」,是对的)
     print()

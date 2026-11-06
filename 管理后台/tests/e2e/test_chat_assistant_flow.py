@@ -196,6 +196,52 @@ def main():
     ck("空规矩池 → 导得进(201)", s == 201, (s, d))
     s, pv = 打("GET", "/api/v1/projects/project_demo_a/chat-assistants/by-role/e2e_demo/production")
     ck("没指定生产 → 版本号 null(聊天站照用代码),不替它挑最新那一版", s == 200 and pv.get("版本号") is None, (s, pv))
+    ck("没指定生产时也带着 glossary_version_id 这个键、值是 null(聊天站把「字段缺失」当成契约没同步,和「没挂术语」分开)",
+       s == 200 and "glossary_version_id" in pv and pv["glossary_version_id"] is None, pv)
+
+    print("\n▸ ⑨ 术语版本(11-06):聊天助手选一版术语 → 出版本 → 上生产 → 按角色取生产给出这一版的 id")
+    D = "/api/v1/projects/project_demo_a"
+    # 用单独一个角色 e2e_terms:上生产的指针放不回「没指定」(没有这个口),挪用 e2e_demo 会让下一轮 ⑧ 那条「没指定生产」红
+    打("POST", f"{D}/chat-assistants/import", 体={**快, "角色键": "e2e_terms", "名称": "术语测试助手", "规矩池": [], "装上的规矩": []})
+    s, l = 打("GET", f"{D}/chat-assistants?含测试=true")
+    did = next((x["id"] for x in (l or {}).get("items", []) if x["角色键"] == "e2e_terms"), None)
+    ck("前提:导入术语测试助手 e2e_terms", bool(did), l)
+    s, g = 打("GET", f"{D}/chat-assistants/{did}")
+    ck("草稿配置里有「术语版本」这一项(详情页要能显示当前选的哪一版)", s == 200 and "术语版本" in g["草稿"]["配置"], (s, g.get("草稿")))
+    # 测试自己造一版冻结的术语(演示项目;CI 是新库,不依赖别的测试留下的)
+    import uuid
+    s, gl = 打("POST", f"{D}/glossaries", 谁="U002", 体={"key": "e2e-chat-" + uuid.uuid4().hex[:6]})
+    gid = (gl or {}).get("id")
+    打("PATCH", f"{D}/glossaries/{gid}/draft", 谁="U002", 头={"If-Match": "1"},
+      体={"术语": [{"标准词": "褙子", "叫法": ["长褙"], "类别": "名词", "定义": "宋制对襟长衣"}]})
+    s, gv = 打("POST", f"{D}/glossaries/{gid}/versions", 谁="U002")
+    vid = (gv or {}).get("id")
+    ck("前提:冻出一版术语", s == 201 and vid, (s, gv))
+    配 = dict(g["草稿"]["配置"])
+    rv = g["草稿"]["revision"]
+    s, d = 打("PATCH", f"{D}/chat-assistants/{did}/draft", 头={"If-Match": str(rv)}, 体={"配置": {**配, "术语版本": "glv_不存在的"}})
+    ck("选一个不存在的术语版本 → 422 REF_NOT_FOUND(不存一个悬空引用)", s == 422 and 码(d) == "REF_NOT_FOUND", (s, d))
+    s, d = 打("PATCH", f"{D}/chat-assistants/{did}/draft", 头={"If-Match": str(rv)}, 体={"配置": {**配, "glossary_version_id": vid}})
+    ck("照着读出口的英文键 glossary_version_id 来写 → 422 点名该用「术语版本」(不许静默不生效)",
+       s == 422 and 码(d) == "VALIDATION" and "glossary_version_id" in (((d or {}).get("error") or d or {}).get("field_errors") or {}), (s, d))
+    s, d = 打("PATCH", f"{D}/chat-assistants/{did}/draft", 头={"If-Match": str(rv)}, 体={"配置": {**配, "术语版本": vid}})
+    ck("选这一版 → 200", s == 200, (s, d))
+    s, g2 = 打("GET", f"{D}/chat-assistants/{did}")
+    s, d = 打("PATCH", f"{D}/chat-assistants/{did}/draft", 头={"If-Match": str(g2["草稿"]["revision"])},
+             体={"配置": {k: v for k, v in g2["草稿"]["配置"].items() if k != "术语版本"}})
+    s, g3 = 打("GET", f"{D}/chat-assistants/{did}")
+    ck("再提交时**没带**「术语版本」这个键 → 已选的不动(老页面提交不会把术语悄悄清掉)",
+       g3["草稿"]["配置"].get("术语版本") == vid, g3["草稿"]["配置"].get("术语版本"))
+    s, v = 打("POST", f"{D}/chat-assistants/{did}/versions", 体={"变更说明": "e2e:挂上术语"})
+    ck("挂上术语算内容变了 → 出得了新版本(201,不是「内容没变」409)", s == 201, (s, v))
+    号 = int((v or {}).get("版本", "v-1")[1:])
+    s, d = 打("POST", f"{D}/chat-assistants/{did}/production", 体={"版本号": 号, "理由": "e2e 挂术语上生产"})
+    s, pv = 打("GET", f"{D}/chat-assistants/by-role/e2e_terms/production")
+    ck("按角色取生产:glossary_version_id 就是选的那一版(聊天站拿它去取术语)",
+       s == 200 and pv.get("版本号") == 号 and pv.get("glossary_version_id") == vid, (s, pv))
+    s, pv = 打("GET", f"{P}/chat-assistants/by-role/{角色}/production")
+    ck("没挂术语的那一版:glossary_version_id 是显式 null,不是字段缺失",
+       s == 200 and "glossary_version_id" in pv and pv["glossary_version_id"] is None, pv)
 
     print(f"\n{'✅' if not 挂 else '❌'} {len(过)} 过 / {len(挂)} 挂" + (f":{' / '.join(挂)}" if 挂 else ""))
     return 1 if 挂 else 0

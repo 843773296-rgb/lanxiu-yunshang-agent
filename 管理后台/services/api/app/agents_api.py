@@ -552,12 +552,12 @@ async def 冻结agent(project_id: str, aid: str, request: Request,
                 version_no, prompt_version_id, connection_version_id, task_template,
                 tools, context_policy, limits, output_schema, completion_criteria,
                 incomplete_strategy, execution_strategy, input_schema, content_hash,
-                change_note, created_at, created_by)
-            values (:i,:o,:p,:a,:vn,:pv,:cv,:tt,:tl,:cp,:lm,:os,:cc,:is_,:es,:isc,:h,:cn,
+                change_note, glossary_version_id, created_at, created_by)
+            values (:i,:o,:p,:a,:vn,:pv,:cv,:tt,:tl,:cp,:lm,:os,:cc,:is_,:es,:isc,:h,:cn,:gv,
                     now(), :u)
         """), {"i": vid, "o": me.org_id, "p": project_id, "a": aid, "vn": 版本号,
                "pv": cfg.get("prompt_version_id"),
-               "cv": cfg.get("connection_version_id"),
+               "cv": cfg.get("connection_version_id"), "gv": cfg.get("glossary_version_id"),
                "tt": cfg.get("task_template"),
                "tl": json.dumps(cfg.get("tools") or [], ensure_ascii=False),
                "cp": json.dumps(cfg.get("context_policy") or {}, ensure_ascii=False),
@@ -612,7 +612,7 @@ async def 跑agent(project_id: str, request: Request,
                                      "task_template", "tools", "context_policy",
                                      "limits", "output_schema", "completion_criteria",
                                      "incomplete_strategy", "execution_strategy",
-                                     "input_schema")}
+                                     "input_schema", "glossary_version_id")}
             来源 = {"kind": "agent_version", "id": v["agent_id"],
                     "version_id": 版本id, "version_no": v["version_no"]}
         else:

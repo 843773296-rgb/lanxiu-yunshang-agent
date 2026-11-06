@@ -647,7 +647,10 @@ def 校验(定义, *, 依赖存在=None, 父额度=None):
               "tool_version_id": "工具版本", "agent_version_id": "Agent 版本",
               "knowledge_base_id": "知识库", "index_build_id": "索引构建",
               "retrieval_config_version_id": "检索配置版本",
-              "workflow_version_id": "工作流版本"}
+              "workflow_version_id": "工作流版本",
+              # 11-06:整条工作流选一版术语,挂在**开始节点**的配置上(冻结版本只存节点 / 连线 / 输入输出,
+              # 顶层字段冻结时会丢;开始节点跟着节点一起冻、一起进逻辑哈希 —— 换术语版本 = 改了流程,发生产要重新跑通)
+              "glossary_version_id": "术语版本"}
     if 依赖存在 is None:
         跳过.append("选的模型、处理要求、业务动作这些还在不在(这次没给查询能力)—— 这不算通过,是没查")
     else:
