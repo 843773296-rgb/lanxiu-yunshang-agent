@@ -15375,5 +15375,29 @@
    }
   ],
   "预期红": "⑦ 登记成 reversible 的写工具"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "叫法按从短到长试(「先认出来再说」)—— 「宋制对襟长褙」被拆成里面的「褙」,长词白录了",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "    return sorted(set(出), key=lambda p: (-len(p[0]), p[0]))\n",
+    "new": "    return sorted(set(出), key=lambda p: (len(p[0]), p[0]))\n"
+   }
+  ],
+  "预期红": "① 短词是长词的前缀"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "交给模型的那一段把整张表都带上(「多给点总没错」)—— 违背用户拍的「只带这次提到的」,术语越多每次调用越贵",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "    for h in 命中们 or []:\n        t = 按词.get(h[\"标准词\"]) or {}\n",
+    "new": "    for h in [{\"标准词\": k} for k in 按词 if k]:\n        t = 按词.get(h[\"标准词\"]) or {}\n"
+   }
+  ],
+  "预期红": "④ 交给模型的只有这次提到的那条"
  }
 ]
