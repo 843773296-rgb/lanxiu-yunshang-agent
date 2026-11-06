@@ -283,10 +283,15 @@ e2e-ci 里常驻 dev worker 是 mock,手改成 live 会和它抢活、时红时�
 · 测试:tests/orchestration/test_agent_approval.py 10 条(含 reversible 别名、真认不出的照旧挡)· tests/e2e/test_agent_approval_flow.py
   (①②④ 已过;③「批准 → 交给桥」先后撞了 reversible 和 external_status_lookup 两道,都修了,**修后在跑**:后台 bo2ii5xse,scratchpad aaf.log)
 
-**术语配置进度**:第 ① 步(纯函数)写完测过、**正在跑门禁准备提交** —— runtime/术语.py(匹配 / 上下文段 / 格式问题)+
+**术语配置进度**:第 ① 步(纯函数)**已推 10c6af94**,CI 前一笔(审批 53132c0c)三项全绿 —— runtime/术语.py(匹配 / 上下文段 / 格式问题)+
 tests/orchestration/test_glossary.py 11 条(含「到店 / 到店率」前缀用例 —— 第一版没有它,「从短到长」那条咬合没红)+ 咬合 2 条。
 **它还没被任何地方调用**(下一步接线;接线后要有一条走真入口的用例,别只验纯函数)。
-**下一步第一个动作**(第 ① 步提交之后):新表 + 迁移(术语表 / 版本,按项目)→ 管理后台接口(草稿 / 冻结)→
+**下一步第一个动作**(第 ② 步:存储):先照 prompts / prompt_versions 的写法(草稿 + 冻结版本、版本行不可原地改的触发器)设计
+glossaries(按项目)+ glossary_versions(entries jsonb、content_hash、version_no);要同时改 models.py、contract/entities.py(spec_coverage 会查)、
+迁移(接在 c4f2a8d6e1b7 之后,先 `alembic heads` 确认单头);**建表前喊并行会话**(它说共享库空着、会让开),表和代码一起推。
+然后 ③ 接口(草稿 PATCH / 校验 = 术语.格式问题 / 冻结)④ 引用:工作流 llm 节点 / Agent 版本挂 glossary_version_id(DSL 节点表配置要加)
+⑤ 注入:worker 调模型前 术语.匹配(输入) → 上下文段 拼进 system ⑥ 检查:取数口的工具存在且启用 ⑦ e2e(走真入口)⑧ PRD 附录 A 记最长匹配。
+原计划(保留):新表 + 迁移(术语表 / 版本,按项目)→ 管理后台接口(草稿 / 冻结)→
 最长匹配纯函数(先写离线测试)→ 注入点(模型步骤 / Agent 调用前)→ 检查「取数口指向的工具存在且启用」→ e2e → 记 PRD 附录 A。
 ⚠️ 建新表要先告诉并行会话(共享库),而且表和代码要一起推(见 lanxiu-new-table-with-code)。
 用户没回之前别自己开工 —— 那是改审批流程的产品决定(谁批、在哪批、批了多久过期),要摆选型卡。
