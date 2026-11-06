@@ -49,12 +49,26 @@ OK = os.path.join(FEY, "nightly-eval-ok")
 窗口开始, 不开新的, 强停 = dt.time(0, 0), dt.time(4, 30), dt.time(4, 55)   # 0 点开跑:用户 10-14 拍「放在12点跑」
 每套上限分钟 = 25
 # 按白天真跑的时长单独给(10-16):商机一套 41 分钟;运营 68 题×两轮,60 分钟跑不完,约 2 个多小时
-单独上限分钟 = {"oppo_eval.py": 50, "ops_eval.py": 150}
+# ⚠️ 技能触发那套实测 3716–4434 秒(两遍 49 条)—— 默认 25 分钟会在**跑到一半**被停,
+# 而「超时被停」和「跑完了判红」在报告的那一栏里是两种事、下一步相反。给 120 分钟。
+单独上限分钟 = {"oppo_eval.py": 50, "ops_eval.py": 150, "skill_eval.py": 120}
 # ⚠️ 影子跑那一项的上限在下面 `先跑` 那段旁边定义(`单独上限分钟_补`),
 # 跑完在这儿并进来 —— 放一起写会让那段长注释插在这张表中间,读不下去
 # 运营 150 分钟 + 其余 23 套约 3 小时 40 分,一晚(0:00–4:55)放不下 ——
 # 用户 10-17 拍「每周一晚单跑运营」:周日凌晨(周六晚那一轮)只跑它,其余六晚跑另外 23 套
-单跑那晚 = {"ops_eval.py": 6}   # 套名 → 星期几(周一=0 … 周日=6)
+单跑那晚 = {"ops_eval.py": 6,
+            # 技能触发评测(用户 2026-11-06 拍「别现在跑,挪到夜里」)。
+            # 周六凌晨单跑:两遍 49 条约 70 分钟,跟那 23 套挤在一晚会把别人推到 04:30 之后。
+            "skill_eval.py": 5}   # 套名 → 星期几(周一=0 … 周日=6)
+
+# ── 不在 `agent/` 下的套 ──────────────────────────────────────────────
+# ⚠️ `跑一套()` 原来把脚本路径写死成 `agent/<套名>`。那对 agent/ 下那 23 套成立,
+# **而技能触发评测在 `agentsite/`** —— 照老写法挂上去,夜里会去跑一个不存在的
+# `agent/skill_eval.py`,报告里记成「崩了」。
+# > 一个「挂上去了、今晚真会跑」和一个「挂上去了、而路径是错的」,
+# > **在这张清单里长得一模一样** —— 所以下面那条检查专门去核每个套的脚本在不在。
+# (解释器不用特殊处理:`PY` 本来就是 agentsite/.venv 里那个。)
+别处的套 = {"skill_eval.py": "agentsite/skill_eval.py"}
 # 先跑最能回答「能力变没变」的两套,其余按名字
 先跑 = [("gen_compare.py", []), ("tool_eval.py", []),
         # ── 闸四影子运行(用户 2026-10-21 拍「装进夜跑,全自动」)────────────
@@ -74,7 +88,38 @@ OK = os.path.join(FEY, "nightly-eval-ok")
         # 它在夜里跑上一个钟头、把别的评测挤掉(「过了 04:30 不开新的」只拦**开始**,
         # 不拦**已经开跑的那一套**)。
         ("triage_shadow.py", ["--跑", "3"])]
-额外参数 = {"scheme_eval.py": ["--run"]}
+def 技能触发的参数():
+    """`--diff` 对最近一版夜跑基线、`--save` 存一版**带日期**的。
+
+    ⚠️ 不写死 `--diff v3 --save v4`:写死的 `--save` 每周把同一版覆盖掉
+    (基线的意思就是定格,被覆盖的基线等于没有),写死的 `--diff` 会越比越旧
+    而**它不会报错,只是慢慢变得没有分辨力**。
+    ⚠️ 第一次跑(还没有任何夜跑基线)只存不比 —— 脚本自己也会说「没有可比的上一轮」。
+    """
+    runs = os.path.join(ROOT, "agentsite", "evals", "runs")
+    夜 = sorted(x[:-5] for x in os.listdir(runs) if x.startswith("夜-") and x.endswith(".json")) \
+        if os.path.isdir(runs) else []
+    今 = f"夜-{dt.date.today():%Y%m%d}"
+    上一版 = 夜[-1] if 夜 and 夜[-1] != 今 else 第一次拿谁当上一版(runs)
+    return (["--diff", 上一版] if 上一版 else []) + ["--save", 今]
+
+
+# ⚠️ **一次性接力**:夜跑之前这套一直是手跑的,最后一版手跑基线是 `v3`。
+# 没有它的话今晚只有一个分数、没有逐题差异 —— 而最想看的恰恰是
+# 「那三条经营分析的题,在技能真的挂上之后有没有转正」。
+# 今晚存下 `夜-…` 之后,上面那一行就再也走不到这里,**这段接力自己消失**。
+# (不写死 `--diff v3`:写死的会越比越旧,而**它不报错,只是慢慢没有分辨力**。)
+def 第一次拿谁当上一版(runs):
+    # 手跑那条线最后两版是 v3(10-27)和 v4(11-06 白天三轮);有 v4 就比 v4。
+    for 名 in ("v4", "v3"):
+        if os.path.exists(os.path.join(runs, f"{名}.json")):
+            return 名
+    return None
+
+
+# ⚠️ 值可以是一个**现算的函数**(在 `清单()` 里求值)—— 写死的参数会漂,
+# 而漂了的参数不报错(见 `技能触发的参数` 的注释)。
+额外参数 = {"scheme_eval.py": ["--run"], "skill_eval.py": 技能触发的参数}
 # 影子跑一晚最多三条、每条一两分钟 —— 给 15 分钟够宽,又不至于占住一晚
 单独上限分钟_补 = {"triage_shadow.py": 15}
 
@@ -144,18 +189,23 @@ def 有人在用():
 每晚都跑 = ("triage_shadow.py",)
 
 
+def _参数(套名):
+    x = 额外参数.get(套名, [])
+    return list(x() if callable(x) else x)
+
+
 def 清单(星期=None):
     星期 = dt.date.today().weekday() if 星期 is None else 星期
     _每晚 = [x for x in 先跑 if x[0] in 每晚都跑]
-    单跑 = [(f, 额外参数.get(f, [])) for f, 哪天 in 单跑那晚.items() if 哪天 == 星期]
+    单跑 = [(f, _参数(f)) for f, 哪天 in 单跑那晚.items() if 哪天 == 星期]
     if 单跑:
         # 单跑那晚也带上「每晚都跑」的 —— 它们放在前面,免得被运营那 150 分钟挤到 04:30 之后
         return _每晚 + 单跑
-    套 = [x for x in 先跑 if x[0] not in 单跑那晚]
+    套 = [(f, _参数(f)) for f, _ in 先跑 if f not in 单跑那晚]
     已 = {x for x, _ in 套}
     for f in sorted(os.listdir(os.path.join(ROOT, "agent"))):
         if f.endswith("_eval.py") and f not in 已 and f not in 单跑那晚:
-            套.append((f, 额外参数.get(f, [])))
+            套.append((f, _参数(f)))
     return 套
 
 
@@ -421,8 +471,16 @@ def 跑一套(名, 参数, 截止):
     env = 评测环境()
     限 = max(60, min(单独上限分钟.get(名, 每套上限分钟) * 60, int((截止 - dt.datetime.now()).total_seconds())))
     t0 = time.time()
+    脚本 = 别处的套.get(名) or os.path.join("agent", 名)
+    # **「这台机器上没有它」和「跑了但判红」是两件事**,报告里不许混成一个字。
+    if not os.path.exists(os.path.join(ROOT, 脚本)):
+        return dict(套=名, 结果="没跑成(找不到脚本)", 判定="没打", 退出码=None, 分钟=0,
+                    尾=[f"找不到 {脚本} —— 它挂在清单里,但文件不在那儿"])
+    if not os.path.exists(PY):
+        return dict(套=名, 结果="没跑成(环境)", 判定="没打", 退出码=None, 分钟=0,
+                    尾=[f"找不到解释器 {os.path.relpath(PY, ROOT)} —— 这套要 agentsite/.venv"])
     try:
-        r = subprocess.run([PY, os.path.join("agent", 名), *参数], cwd=ROOT, env=env,
+        r = subprocess.run([PY, 脚本, *参数], cwd=ROOT, env=env,
                            capture_output=True, text=True, timeout=限)
         尾 = [x for x in (r.stdout + r.stderr).strip().splitlines() if x.strip()][-3:]
         # 跑到一半登录掉了也算(开跑前那一问只证明开跑那一刻通)—— 输出里有认证失败就是**没跑成**,
