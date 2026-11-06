@@ -15265,42 +15265,50 @@ chat/growth/vision/liability/ops/report/role 七套是今天盖过来路之前�
 ## 当前状态(自动)
 
 <!--AUTO-->
-> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-06 19:21。**不要手改这一段。**
+> 自动区,由 `python3 tools/make_handoff.py` 生成于 2026-11-06 20:47。**不要手改这一段。**
 
 | 项 | 值 |
 |---|---|
-| 分支 | `w75` |
-| 最新提交 | a9f2a52f · 2026-11-06 · 交接:等评测窗口期间的禁区、未验证项和放锁后第一个动作 |
-| 代码量 | 999 个 Python 文件 / 184168 行(不含 .venv) |
+| 分支 | `main` |
+| 最新提交 | 7ac0c7d7 · 2026-11-06 · 术语接进三处:工作流 / 智能体 / 聊天助手各选一版,只带这次提到的那几条 + 后台术语页面 |
+| 代码量 | 1003 个 Python 文件 / 184578 行(不含 .venv) |
 | 验收 | `./check.sh` 共 382 项 —— **接手第一件事就是跑它** |
 | 服务 | 管理后台 :8760 → 在跑 200 · 智能运维平台 :8770 → 在跑 302 |
 
 **未提交的改动:**
 
 ```
-M .gitignore
- M HANDOFF.md
+M ".feynman/select-eval-\347\254\254\344\270\200\345\261\202.json"
+ M .feynman/tool-eval.json
  M agentsite/evals/funnel.jsonl
  M agentsite/evals/skill_usage.jsonl
- M check.sh
- M intent/skill-new-batch.md
- M tools/bite_specs.json
- M "\345\276\205\345\212\236\346\270\205\345\215\225.md"
-?? .feynman/bite-all-20261016.log
-?? agentsite/evals/runs/v4.json
-?? backend/glossary_client.py
-?? backend/glossary_client_check.py
+?? .claude/
+?? ".feynman/artifact-acked.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? ".feynman/artifact-outbox.jsonl.\351\207\215\345\273\272\345\211\215-20261010"
+?? .feynman/authprobe.log
+?? .feynman/authprobe.sh
+?? .feynman/multi-date/
+?? .feynman/nightly-aimc.log
+?? .feynman/nightly-eval-launchd.log
+?? .feynman/nightly-eval-ok
+?? .feynman/nightly-eval-tried
+?? .feynman/nightly-eval.log
+?? .feynman/world-shift-launchd.log
+?? .wip-glossary/
+?? .wip-muslin/
+?? .wip-store-report-SKILL.md
+?? agent/example-ab-results.jsonl
 ```
 ⚠️ 工作区不干净。**先搞清楚这些改动是什么再往下做** ——上一个会话可能是被打断的,而不是做完了。
 
 **最近 5 次提交:**
 
 ```
-a9f2a52f 交接:等评测窗口期间的禁区、未验证项和放锁后第一个动作
-6b2fb190 交接:评测窗口里写完的术语引用 / 注入 / 页面,和跑完之后的验收清单
-6597d38c PRD 附录 A-289:术语配置的词表最长匹配(选型卡 11-06 用户拍的四件 + 词边界)
-8f032310 评测的「口径」要进基线文件,不能只印在终端;夜跑第一次有了门禁检查
-674457d4 交接:术语三件做完、锁交给并行会话跑基线;这段时间只写代码
+7ac0c7d7 术语接进三处:工作流 / 智能体 / 聊天助手各选一版,只带这次提到的那几条 + 后台术语页面
+0283fac3 踩过的坑 +1:包命令时 `echo "…$(date)… 退出码=$?"` 永远印 0(今天拿它判过门禁绿没绿)
+894ac58a 项目日志:重新生成(含今天四笔),已发飞书
+6c43fbc3 影响面棘轮:警示段落 345 → 346(取术语那个文件带来的)
+adea8974 交接:新基线的结果和两条限定、第六种「空」、以及一个骗了我两次的退出码
 ```
 <!--/AUTO-->
 ## 一句话在做什么
