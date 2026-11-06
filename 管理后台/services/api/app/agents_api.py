@@ -652,13 +652,20 @@ async def 跑agent(project_id: str, request: Request,
         # > 一个只存了采用值的运行记录,和一个上限从没变过的,
         # > **在那一列上长得一模一样。**
         冻的 = _本次策略(c, project_id)
+        # 这次跑 mock 还是 live(11-06,原来写死 'mock':Agent Loop 当时没接真模型)。口径和工作流受理那一处同一条:
+        # 钉的连接版本不是演示连接、而且部署没明确选只跑 mock → live
+        _cv = cfg.get("connection_version_id")
+        _真的 = c.execute(text("""select count(*) from connection_versions where project_id=:p and id=:i
+                                    and coalesce(capabilities->>'execution_mode', '') <> 'mock'"""),
+                          {"p": project_id, "i": _cv}).scalar() if _cv else 0
+        模式 = "live" if (_真的 and not __import__("runtime_cfg").模型是mock()) else "mock"
         c.execute(text("""
             insert into execution_runs (id, organization_id, project_id, kind,
                 definition_ref, input_snapshot, definition_hash, principal, status,
                 limits, environment, execution_mode, quality_evaluation_status,
                 started_at, trace_id, idempotency_key, policy_snapshot,
                 created_at, created_by, updated_at, revision)
-            values (:i,:o,:p,'agent',:dr,:isn,:dh,:pr,'queued',:lm,:env,'mock',
+            values (:i,:o,:p,'agent',:dr,:isn,:dh,:pr,'queued',:lm,:env,:em,
                     '未评', now(), :t, :k, :ps, now(), :u, now(), 1)
         """), {"i": run, "o": me.org_id, "p": project_id,
                "dr": json.dumps(来源, ensure_ascii=False),
@@ -666,7 +673,7 @@ async def 跑agent(project_id: str, request: Request,
                "dh": DS.逻辑哈希(cfg), "pr": me.user_id,
                "lm": json.dumps(cfg.get("limits") or {}, ensure_ascii=False),
                "env": os.environ.get("APP_ENV", "development"),
-               "ps": json.dumps(冻的, ensure_ascii=False),
+               "ps": json.dumps(冻的, ensure_ascii=False), "em": 模式,
                "t": trace, "k": idempotency_key, "u": me.user_id})
         c.execute(text("""
             insert into jobs (id, organization_id, project_id, type, target_ref, status,
@@ -688,7 +695,7 @@ async def 跑agent(project_id: str, request: Request,
                 seq, event_type, payload, occurred_at, created_at, created_by)
             values (:i,:o,:p,:r,1,'run.accepted',:pl, now(), now(), :u)
         """), {"i": _新id("re"), "o": me.org_id, "p": project_id, "r": run,
-               "pl": json.dumps({"来源": 来源, "模式": "mock"}, ensure_ascii=False),
+               "pl": json.dumps({"来源": 来源, "模式": 模式}, ensure_ascii=False),
                "u": me.user_id})
         OB.入箱(c, org=me.org_id, 项目=project_id, job_id=job, topic="agent_run",
                payload={"run_id": run}, 新id=_新id("ob"))

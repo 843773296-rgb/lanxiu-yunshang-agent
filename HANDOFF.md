@@ -12,7 +12,7 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
-## 🤖 11-06 上午:Agent 执行器(用户拍「现在就把执行器做出来」+「走桥,给 Agent 加断点续跑」)—— **第 ① ② 笔已推**(工具调用协议 / 断点续跑,见 git log);下一笔 ③
+## 🤖 11-06 上午:Agent 执行器(用户拍「现在就把执行器做出来」+「走桥,给 Agent 加断点续跑」)—— **第 ① ② ③ 笔已推**(见 git log);下一笔 ④ 工作流的 Agent 步骤
 
 **一句话**:工作流里的 Agent 步骤从来跑不了(worker 适配器只有 llm / tool,而节点表标「已实现」);后台单独跑的 Agent 也只接了 mock
 (worker 里明写 ENTRY_NOT_WIRED_LIVE:真模型只做单次生成,没有工具调用协议)。用户拍做,分四笔:
@@ -28,10 +28,18 @@ test_agent_resume 12 条 + 3 条咬合 · 原 57 条 Agent 对抗测试照过。
 **踩到**:真接口当场打回 —— 参数名也只收 `^[a-zA-Z0-9_.-]{1,64}$`(参数名是中文「顾问」),离线假接口只查了工具名所以 14 条全绿;
 已钉回假接口,当场又抓到我自己的「问题」「结果」两个中文键。另:剧本里参数直接写中文键,还原对认不得的键放行 → 往返没被验到,已改成代号。
 
-**下一步第一个动作**:第 ③ 笔 —— worker 里单独跑的 Agent(`_跑一个agent` 那段,ENTRY_NOT_WIRED_LIVE)接 真模型.Agent模型 + 桥工具适配器(抛 `要等`);
-waiting_external 时照 `_挂起` 记 bridge_calls(node_id='agent')+ resume_snapshot;续跑时取回执带 `恢复`;事件序号接着已有的排;
-live 用量逐回合走 knowledge.usage.写进库。要先核:execution_runs 对 agent 这种 kind 收不收 waiting_external、run_resume.排恢复 对 agent 运行管不管用、桥闸对写的批准判法
-(工作流要求「这次运行里有人工节点批过」;Agent 没人工节点 → 写工具会被桥闸拒,**这是安全的默认**,先这样,写动作的批准另议)。
+**✅ 第 ③ 笔(已推)**:worker 单独跑的 Agent 接真模型 + 走桥(挂起记 bridge_calls node_id='agent'、resume_snapshot{从: agent, 检查点, 等待};
+回执 → run_resume 按 kind 排回 agent_run —— 原来写死 workflow_run)· Agent 受理按钉的连接定 mock/live(原来写死 mock)·
+探测加零成本第二请求判「原生工具调用」· e2e test_agent_bridge_flow 10 条(本地假 Anthropic 接口,凭据 env://HOME)。
+
+**🔻 等用户拍(一张卡)**:① 正式项目那条真连接(cv_ffc3943b4995)要不要重探 —— 不重探它过不了 Agent 校验(没有「原生工具调用」);
+重探会改 capabilities → 依赖指纹(md5 整份 capabilities)变 → 用它的工作流之前的真跑通全部作废。
+② 指纹要不要先摘掉测量噪声(往返毫秒 / 探的人 / http状态 每次探都变)—— 改算法要新旧都认,否则上线那一刻全部对不上;
+配反向检查「还靠旧算法才匹配的条数」只许降。③ 探测判法要不要改成真发一次带工具的请求看 tool_use(判据落结构;但破 10-03「探测不花钱」原则)。
+
+**下一步第一个动作**:先做「探测存三值」(True / False / null;null 落库别被压成 False —— 现在 `支持 is True` 就是压成了 False;
+校验器对「探过这一项但没判出来」单独报码,没探过这一项的老连接照旧 MODEL_NO_TOOL_CALLING),注释写明三值不改库里已存的行、碰不到指纹;
+再发拍板卡;然后第 ④ 笔。
 
 **别重做 / 已否决**:别给只读工具开同步直连(用户否了:绕开桥这道统一入口);别「先只接真模型、工具用替身」(过闸名不副实,用户否了);
 别从模型的一段话里抠 JSON 当结果(用交结果工具);代号别泄出翻译层(判据 / 提示词 / 白名单只认中文名)。

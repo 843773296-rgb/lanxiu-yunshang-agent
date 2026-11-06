@@ -22,6 +22,7 @@ from sqlalchemy import text
 import outbox as OB
 
 挂起态 = ("waiting_approval", "waiting_external")
+恢复任务类型 = {"workflow": "workflow_run", "agent": "agent_run"}   # 运行的 kind → 恢复交给哪个处理器
 
 
 def _新id(前缀名):
@@ -30,7 +31,7 @@ def _新id(前缀名):
 
 def 排恢复(c, *, project_id, run_id, 为什么, 谁):
     """在调用方的事务里把一次挂起的运行排回队列。返回 job_id;不该排时返回 (None, 理由)。"""
-    r = c.execute(text("""select organization_id, status, resume_snapshot, checkpoint_seq
+    r = c.execute(text("""select organization_id, status, resume_snapshot, checkpoint_seq, kind
                             from execution_runs where project_id=:p and id=:i for update"""),
                   {"p": project_id, "i": run_id}).mappings().first()
     if not r:
@@ -49,6 +50,9 @@ def 排恢复(c, *, project_id, run_id, 为什么, 谁):
         return 老, "这次挂起已经排过恢复了"
     job = _新id("job")
     org = r["organization_id"]
+    # 排给哪个处理器按运行的种类定(11-06)—— 原来写死 workflow_run:Agent 走桥挂起之后回执一到,
+    # 恢复任务会交给跑工作流的处理器,它按工作流去读一份 Agent 的检查点
+    类型 = 恢复任务类型.get(r["kind"], "workflow_run")
     c.execute(text("""update execution_runs set status='queued', updated_at=now(),
                              revision=revision+1
                        where project_id=:p and id=:i"""), {"p": project_id, "i": run_id})
@@ -56,8 +60,8 @@ def 排恢复(c, *, project_id, run_id, 为什么, 谁):
         insert into jobs (id, organization_id, project_id, type, target_ref, status,
             attempts, max_attempts, snapshot_hash, idempotency_key,
             created_at, created_by, updated_at, revision)
-        values (:i,:o,:p,'workflow_run',:t,'排队中',0,3,:sh,:k, now(), :u, now(), 1)
-    """), {"i": job, "o": org, "p": project_id,
+        values (:i,:o,:p,:ty,:t,'排队中',0,3,:sh,:k, now(), :u, now(), 1)
+    """), {"i": job, "o": org, "p": project_id, "ty": 类型,
            "t": json.dumps({"run_id": run_id, "恢复": True, "停在": 停在}, ensure_ascii=False),
            "sh": 快照.get("逻辑哈希"), "k": 键, "u": 谁})
     c.execute(text("""
@@ -67,6 +71,6 @@ def 排恢复(c, *, project_id, run_id, 为什么, 谁):
     """), {"i": _新id("je"), "o": org, "p": project_id, "j": job,
            "pl": json.dumps({"阶段": "排队", "说明": f"恢复:{为什么}"}, ensure_ascii=False),
            "u": 谁})
-    OB.入箱(c, org=org, 项目=project_id, job_id=job, topic="workflow_run",
+    OB.入箱(c, org=org, 项目=project_id, job_id=job, topic=类型,
            payload={"run_id": run_id}, 新id=_新id("ob"))
     return job, f"已排恢复(从 {停在} 接着跑)"

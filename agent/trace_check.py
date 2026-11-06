@@ -39,6 +39,10 @@ SKIP = (".git", ".venv", "__pycache__", "node_modules")
          "真调用走 `runtime/真模型.py`,**那里接了记录仪**,"
          "所以这个文件属于这份文件头说的"
          "「调用别人封装好的 run() 的文件,不算 call site」那一类。"),
+    "管理后台/tests/e2e/test_agent_bridge_flow.py":
+        ("测试自己起一个本地假 Anthropic 接口(127.0.0.1 随机端口),连接的 endpoint 拼成 `…/v1/messages` 指向它 —— "
+         "那是**夹具字符串,不是调用点**:这个文件自己不发模型请求,真调用走 worker → `runtime/真模型.对话一轮`,"
+         "**那里接了记录仪**(用途「Agent 回合(真实模型)」)。和上一条同一类(11-06)。"),
 }
 
 # 真正发起调用的指纹

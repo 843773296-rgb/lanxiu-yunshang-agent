@@ -15159,5 +15159,41 @@
    }
   ],
   "预期红": "⑤ 回合数接着数"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_agent_bridge_flow.py",
+  "改坏": "恢复任务的类型写死成跑工作流(11-06 之前就是这样)—— Agent 走桥回执之后被交给跑工作流的处理器",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/run_resume.py",
+    "old": "    类型 = 恢复任务类型.get(r[\"kind\"], \"workflow_run\")\n",
+    "new": "    类型 = \"workflow_run\"\n"
+   }
+  ],
+  "预期红": "③ 回执(真接口)→ 排回恢复任务,**排给 agent_run**"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_probe_tool_calling.py",
+  "改坏": "不认 tools 的那种回话不再判「不支持」(「没说支持就当不知道」)—— 明确不支持的端点被记成说不清,界面上分不出「不支持」和「没探出来」",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/connections_api.py",
+    "old": "    if 码 == \"400\" and \"tools\" in 话 and (\"Extra inputs\" in 话 or \"not permitted\" in 话):\n        return False, f\"端点把 tools 当成不认的参数拒了:{话[:120]}\"\n",
+    "new": ""
+   }
+  ],
+  "预期红": "② 端点把 tools 当成不认的参数"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_probe_tool_calling.py",
+  "改坏": "判「支持」时不管回话里有没有提到 tools(「是 400 就说明协议对」)—— 工具定义被挑毛病也被当成支持",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/connections_api.py",
+    "old": "    if 码 == \"400\" and \"messages\" in 话 and \"tools\" not in 话:",
+    "new": "    if 码 == \"400\":"
+   }
+  ],
+  "预期红": "④ 回话里挑了工具定义的毛病"
  }
 ]

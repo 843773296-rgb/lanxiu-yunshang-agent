@@ -1173,6 +1173,19 @@ def _跑一个agent(c, job, 打点):
         raise 干不了("RUN_NOT_FOUND", {"run_id": run_id})
     if r["status"] in ("succeeded", "incomplete", "failed", "cancelled", "expired"):
         return {"run_id": run_id, "已经是终态": r["status"]}
+    # 断点续跑(11-06):调澜绣工具时挂起过、桥回执之后 run_resume.排恢复 把它排回来 —— 取回执,带着检查点接着跑
+    恢复 = None
+    _快 = r["resume_snapshot"] or {}
+    if t.get("恢复") and _快.get("检查点"):
+        bc = c.execute(text("""select status, result_output, error_detail from bridge_calls
+                                where project_id=:p and execution_run_id=:r and node_id='agent'
+                                order by created_at desc limit 1"""),
+                       {"p": job["project_id"], "r": run_id}).mappings().first()
+        if not bc or bc["status"] == "待执行":
+            raise 干不了("RESUME_WITHOUT_RECEIPT", {"为什么": "Agent 被排回队列,但桥请求还没有回执 —— 不猜"})
+        恢复 = {"检查点": _快["检查点"],
+                "结果": (dict(bc["result_output"] or {}) if bc["status"] == "已执行"
+                         else {"失败": bc["error_detail"] or {}})}
 
     import sys as _s
     _rt = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -1276,6 +1289,9 @@ def _跑一个agent(c, job, 打点):
             """), {"i": self.步骤id, "o": job["organization_id"],
                    "p": job["project_id"], "r": run_id,
                    "ek": f"{run_id}:agent:/:1", "u": 我是谁})
+            # 续跑时那一行已经在(上面那句什么都没插)—— 账要挂在**原来那一行**上,不是这次新起的 id
+            self.步骤id = c.execute(text("""select id from run_steps where project_id=:p and execution_key=:ek"""),
+                                  {"p": job["project_id"], "ek": f"{run_id}:agent:/:1"}).scalar() or self.步骤id
 
         def 查(self, aid):
             r2 = c.execute(text("""select * from tool_invocations
@@ -1327,7 +1343,10 @@ def _跑一个agent(c, job, 打点):
                 self.条目[aid]["结果"] = 结果
 
     账 = 表账本()
-    事件序号 = [1]
+    # 事件序号接着已有的往后排(续跑时这次运行已经有一批事件了;和工作流那条同一个写法)
+    事件序号 = [int(c.execute(text("""select coalesce(max(seq), 1) from run_events
+                                     where project_id=:p and execution_run_id=:r"""),
+                            {"p": job["project_id"], "r": run_id}).scalar() or 1)]
 
     def 记事(种类, 载荷):
         事件序号[0] += 1
@@ -1358,26 +1377,26 @@ def _跑一个agent(c, job, 打点):
     # > 一个在「要真跑」时跑了 mock 的入口,和一个真接通了的,
     # > **在那次运行出的报告上长得一模一样**。
     import 执行模式 as _模式
+    # 用哪条连接:**Agent 版本钉的那一版**(受理时定 mock / live 看的也是它);没钉才退到运行快照里的那条
+    钉的 = None
+    if cfg.get("connection_version_id"):
+        钉的 = c.execute(text("""select cv.connection_id as id, cv.id as 连接版本id, cv.endpoint, cv.secret_ref,
+                                      cv.capabilities is not null as 探过吗, mc.status, mc.adapter
+                                 from connection_versions cv join model_connections mc
+                                   on mc.project_id=cv.project_id and mc.id=cv.connection_id
+                                where cv.project_id=:p and cv.id=:i"""),
+                         {"p": job["project_id"], "i": cfg["connection_version_id"]}).mappings().first()
+        钉的 = dict(钉的) if 钉的 else None
+    连 = 钉的 or _取冻结的模型连接(c, job["project_id"], r["input_snapshot"] or {})
     try:
         # 按**这次运行受理时记的模式**定,不按这台 worker 的环境(10-27):和工作流那条入口同一个口径。
-        # 原来看 MODEL_ADAPTER —— 受理成 mock 的运行被真模型模式的常驻 worker 抢到,就报「没有冻结的模型连接」失败;
-        # 被测试自己起的 mock worker 抢到就成功。同一次运行,结果取决于谁先抢到,看起来就是偶发
-        模式, 替身 = _模式.定(连接=_取冻结的模型连接(
-            c, job["project_id"], r["input_snapshot"] or {}),
+        模式, 替身 = _模式.定(连接=连,
             允许mock=(r["execution_mode"] == "mock") if r["execution_mode"] in ("mock", "live") else None)
     except _模式.不能跑 as e:
         raise 干不了(e.码, {"为什么": e.细节, "入口": "后台 Agent Loop"})
-    if 模式 == _模式.真:
-        raise 干不了("ENTRY_NOT_WIRED_LIVE",
-                   {"入口": "后台 Agent Loop",
-                    "为什么": "这条入口的**真实适配器还没实现** —— 它要的是工具调用"
-                              "循环(tool_calls / finish),而现有的真模型适配器只做"
-                              "单次生成。**不退回 mock**:那会出一份合成报告,"
-                              "而它和真实运行的报告在数据形状上一模一样。",
-                    "现在能怎么办": "要跑这条入口就明确选模拟运行"
-                                    "(MODEL_ADAPTER=mock);要真实联调,"
-                                    "先把工具调用协议接上。",
-                    "⚠️": "**这一条记「未验证」,不计为通过**(外部审阅 §5.4)"})
+    if 模式 == _模式.真 and (连 or {}).get("status") != "active":
+        raise 干不了("MODEL_CONNECTION_DISABLED", {"入口": "后台 Agent Loop",
+                    "为什么": "钉的模型连接已停用 —— **不退回 mock**", "怎么办": "换一个,或者请管理员在「模型与连接」里启用"})
 
     # ── mock 模型:**脚本化的,而且它自己说自己是 mock** ─────────────
     轮 = [0]
@@ -1399,28 +1418,63 @@ def _跑一个agent(c, job, 打点):
         return {"items": [{"title": "官方页", "url": "https://example.com/official"}],
                 "execution_mode": "mock"}
 
-    适配器 = {"model": _mock模型}
-    for 名, 契 in 目录.items():
-        # 只给只读工具接 mock 实现;**写工具默认不接** ——
-        # §14.1:「对有写能力的测试,**默认替换模拟适配器并显示替换清单**」。
-        # 这里更保守:干脆不接,于是网关会报 ADAPTER_MISSING,**而那是要被看见的**。
-        if 契["side_effect_type"] == _DS.只读:
-            适配器[契["adapter"]] = _mock只读工具
-    # ⚠️ 把**模型的替身**也并进这条留痕 —— 原来它只报工具那一半,
-    # 于是一次「模型是 mock、工具也是 mock」的运行,
-    # 和一次「模型真、工具是 mock」的运行,在这条事件上长得一样。
-    # 审阅 §5.4:混合运行**必须逐项显示替换清单**,不能整体标成真实。
-    替身 = list(替身) + [
-        {"哪一样": f"工具 {契['adapter']}", "换成了": "只读 mock 实现",
-         "为什么": "这条入口现在只给只读工具接 mock"}
-        for 契 in 目录.values() if 契["side_effect_type"] == _DS.只读]
-    记事("agent.adapters", {
-        **_模式.记一笔(模式, 替身, 入口="后台 Agent Loop"),
-        "接了": [k for k in 适配器 if k != "model"],
-        "没接": [契["adapter"] for 契 in 目录.values()
-                if 契["side_effect_type"] != _DS.只读],
-        "为什么": "**写工具默认不接 mock 实现** —— 网关会报 ADAPTER_MISSING,"
-                 "而那是要被看见的(§14.1:写动作测试要显示替换清单)"})
+    def _mock适配器():
+        """mock 跑法(原来那一套,原样):模型是脚本化的 mock,只读工具接 mock 实现,写工具不接。"""
+        nonlocal 替身
+        适配器 = {"model": _mock模型}
+        for 名, 契 in 目录.items():
+            # 只给只读工具接 mock 实现;**写工具默认不接** ——
+            # §14.1:「对有写能力的测试,**默认替换模拟适配器并显示替换清单**」。
+            # 这里更保守:干脆不接,于是网关会报 ADAPTER_MISSING,**而那是要被看见的**。
+            if 契["side_effect_type"] == _DS.只读:
+                适配器[契["adapter"]] = _mock只读工具
+        # ⚠️ 把**模型的替身**也并进这条留痕 —— 原来它只报工具那一半,
+        # 于是一次「模型是 mock、工具也是 mock」的运行,
+        # 和一次「模型真、工具是 mock」的运行,在这条事件上长得一样。
+        # 审阅 §5.4:混合运行**必须逐项显示替换清单**,不能整体标成真实。
+        替身 = list(替身) + [
+            {"哪一样": f"工具 {契['adapter']}", "换成了": "只读 mock 实现",
+             "为什么": "这条入口现在只给只读工具接 mock"}
+            for 契 in 目录.values() if 契["side_effect_type"] == _DS.只读]
+        记事("agent.adapters", {
+            **_模式.记一笔(模式, 替身, 入口="后台 Agent Loop"),
+            "接了": [k for k in 适配器 if k != "model"],
+            "没接": [契["adapter"] for 契 in 目录.values()
+                    if 契["side_effect_type"] != _DS.只读],
+            "为什么": "**写工具默认不接 mock 实现** —— 网关会报 ADAPTER_MISSING,"
+                     "而那是要被看见的(§14.1:写动作测试要显示替换清单)"})
+        return 适配器
+
+    回合用量 = []        # 真跑时每一回合的用量(记账用)
+    if 模式 == _模式.真:
+        # ── 真跑(11-06):模型走 真模型.Agent模型(工具调用协议);澜绣桥名单上的工具一律**交给桥**
+        # (抛 要等 → 挂起、等澜绣执行回执 → 从断点接着),和工作流同一条路:澜绣自己执行、桥闸管批准。
+        # 名单外的不接 —— 网关照样报 ADAPTER_MISSING,而那是要被看见的
+        import 真模型 as _真
+        import 桥工具 as _桥
+        _真模 = _真.Agent模型(dict(连), 输出Schema=cfg.get("output_schema"))
+
+        def _真模型(消息们, 工具定义们):
+            try:
+                出 = _真模(消息们, 工具定义们)
+            except _真.调不动 as e:
+                raise 干不了(e.码, {"为什么": str(e.细节)[:200], "入口": "后台 Agent Loop", "⚠️": "**不退回 mock**"})
+            回合用量.append(出)
+            return 出
+
+        适配器 = {"model": _真模型}
+        for 契 in 目录.values():
+            if _桥.种类(契["name"]) and (契["adapter"] == "lanxiu_bridge" or str(契["adapter"] or "").startswith("lanxiu-")):
+                # 按**工具名**接,不按 adapter 名:同一个 adapter(lanxiu_bridge)底下有好几个工具,网关先查 adapter 名、再查工具名
+                适配器[契["name"]] = (lambda 名: lambda 实参: (_ for _ in ()).throw(
+                    TG.要等({"工具": 名, "参数": 实参})))(契["name"])
+        记事("agent.adapters", {
+            **_模式.记一笔(模式, 替身, 入口="后台 Agent Loop"),
+            "接了": [k for k in 适配器 if k != "model"],
+            "没接": [契["name"] for 契 in 目录.values() if 契["name"] not in 适配器],
+            "为什么": "真跑:澜绣工具**交给桥**(挂起等回执);名单外的不接,网关会报 ADAPTER_MISSING —— 那是要被看见的"})
+    else:
+        适配器 = _mock适配器()
 
     结果 = AL.跑一个agent(
         cfg, r["input_snapshot"] or {}, 适配器=适配器, 工具目录=目录,
@@ -1440,8 +1494,59 @@ def _跑一个agent(c, job, 打点):
         # 并记一笔 `agent.limits_inline` 说「组织级护栏这一次没参与」——
         # 那条记录是**这件事唯一看得见的地方**。
         执行策略=现的,
-        批准查询=None, run_id=run_id)
+        批准查询=None, run_id=run_id, 恢复=恢复)
     打点("执行完", {"状态": 结果["execution_status"]})
+
+    # 真跑的每一回合各记一笔(挂起也记 —— 那几回合的钱已经花了);走 knowledge/usage.写进库,账本只有那一个写入口
+    if 回合用量:
+        import knowledge.usage as _UG
+        for 序, 出 in enumerate(回合用量, 1):
+            if not 出.get("usage") or not 出["usage"].get("input_tokens"):
+                continue
+            try:
+                _UG.写进库(c, 组织=job["organization_id"], 项目=job["project_id"], 谁=我是谁,
+                          用量=出["usage"], 模型=出.get("actual_model"),
+                          提供方=连接协议到供应商.get((连 or {}).get("adapter")) or "未知",
+                          资源="generate", 事件键=f"{run_id}:agent:{出.get('响应id') or 序}",
+                          trace_id=r["trace_id"], 是mock=False, 调用方="Agent 运行", _新id=_新)
+            except _UG.用量不对:
+                continue
+
+    if 结果["execution_status"] == "waiting_external":
+        # 调澜绣工具 → 交给桥:记一张桥请求、存检查点、运行停在挂起态,**任务结束**(不占着 Worker 干等,§12.4)。
+        # 回执一到 bridge_api → run_resume.排恢复(按 kind 排回 agent_run)→ 这里带着检查点接着跑
+        import 桥闸
+        载 = 结果["等待"]["载荷"]
+        放行, 为什么不 = 桥闸.放行吗(载.get("工具"), {}, {})
+        if not 放行:
+            # Agent 没有人工节点 → 要批准的桥工具在这里拒(写工具在网关那道「要确认」通常已经先拒了)
+            c.execute(text("""update execution_runs set status='failed', completion_reason='WRITE_NEEDS_REVIEW',
+                                     ended_at=now(), updated_at=now(), revision=revision+1
+                               where project_id=:p and id=:i"""), {"p": job["project_id"], "i": run_id})
+            记事("run.failed", {"code": "WRITE_NEEDS_REVIEW", "为什么": 为什么不})
+            return {"run_id": run_id, "执行状态": "failed", "完成原因": "WRITE_NEEDS_REVIEW"}
+        第几次 = int(r["checkpoint_seq"] or 0) + 1
+        c.execute(text("""
+            insert into bridge_calls (id, organization_id, project_id, execution_run_id, node_id,
+                tool_name, arguments_snapshot, idempotency_key, status,
+                created_at, created_by, updated_at, revision)
+            values (:i,:o,:p,:r,'agent',:t, cast(:a as jsonb), :k, '待执行', now(), :u, now(), 1)
+            on conflict (project_id, idempotency_key) do nothing
+        """), {"i": _新("bc"), "o": job["organization_id"], "p": job["project_id"], "r": run_id,
+               "t": 载["工具"], "a": _j.dumps(载.get("参数") or {}, ensure_ascii=False, default=str),
+               "k": f"{run_id}:agent:{第几次}", "u": 我是谁})
+        c.execute(text("""
+            update execution_runs
+               set status='waiting_external', resume_snapshot=cast(:snap as jsonb), checkpoint_seq=:seq,
+                   current_step_id='agent', usage_snapshot=cast(:us as jsonb), updated_at=now(), revision=revision+1
+             where project_id=:p and id=:i
+        """), {"snap": _j.dumps({"从": "agent", "检查点": 结果["检查点"], "等待": 结果["等待"]},
+                                ensure_ascii=False, default=str),
+               "seq": 第几次, "us": _j.dumps(结果["usage"], ensure_ascii=False),
+               "p": job["project_id"], "i": run_id})
+        记事("run.suspended", {"node_id": "agent", "等的是": "external",
+                             "说明": f"等澜绣执行「{载.get('工具')}」并回执", "第几次挂起": 第几次})
+        return {"run_id": run_id, "执行状态": "waiting_external", "停在": "agent", "等": 载.get("工具")}
 
     c.execute(text("""update run_steps set status=:st, ended_at=now(), updated_at=now()
                       where project_id=:p and execution_run_id=:r and node_id='agent'"""),
@@ -1462,7 +1567,7 @@ def _跑一个agent(c, job, 打点):
     # 账本里多一行说不清的账比少一行糟 —— 按供应商/按模型的报表会把它算进分母。
     # ⚠️ 同一条规矩 `knowledge/usage.py` 里早就有,而 Worker 有**自己的写入口**,
     # 规矩没跟过来 —— **一条只写在一个写入口上的规矩,拦不住第二个写入口**。
-    if (结果["usage"]["模型回合"]) or 0:
+    if 模式 != _模式.真 and ((结果["usage"]["模型回合"]) or 0):
         c.execute(text("""
             insert into usage_ledger (id, organization_id, project_id, event_key, trace_id,
                 resource, quantity, unit, currency, amount, amount_known, source,

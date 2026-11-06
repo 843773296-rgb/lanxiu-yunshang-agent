@@ -299,6 +299,23 @@ async def 建连接(project_id: str, request: Request,
                      "而把密钥混进哈希会让哈希本身变成一条侧信道")}
 
 
+def 判工具调用(码, 错话):
+    """第二个探测请求(带一个合法工具、空 messages)的回话 → (支持吗 True/False/None, 怎么判的)。
+
+    11-06 拿正式项目的真连接实测过三种回话(都不生成、不花钱):
+      · 带合法工具 → 400「messages: at least one message is required」—— 只抱怨消息,工具参数被收下了
+      · 乱编的参数 → 400「tools_bogus: Extra inputs are not permitted」—— 不认的参数会被点名
+      · 工具名不合法 → 400「tools.0.custom.name: String should match pattern …」—— 它真在解析工具定义
+    所以:400 且只说 messages、不提 tools → 支持;点名 tools 是多余参数 → 不支持;别的 → 说不清(None,**未知不等于支持**)。
+    规格附录 D.2「不按模型家族名字推断兼容」—— 判据是端点自己的参数校验,不是「它是 Anthropic」。"""
+    话 = str(错话 or "")
+    if 码 == "400" and "tools" in 话 and ("Extra inputs" in 话 or "not permitted" in 话):
+        return False, f"端点把 tools 当成不认的参数拒了:{话[:120]}"
+    if 码 == "400" and "messages" in 话 and "tools" not in 话:
+        return True, f"带合法工具定义的请求只被拒在空 messages 上 —— 工具参数被收下了:{话[:120]}"
+    return None, f"http {码}:{话[:120]} —— 判不出来(**未知不等于支持**)"
+
+
 def _真探(endpoint, secret_ref):
     """真发一个最小请求,把**实际发生的事**记下来。
 
@@ -381,7 +398,27 @@ def _真探(endpoint, secret_ref):
                  耗时毫秒=ms, 成功=码.startswith(("2", "4")), 是mock=False,
                  细节={"http状态": 码, "凭据来路": 来路,
                       "⚠️": "这个请求必被参数校验拒掉,不产生生成、不花钱"})
+    # ── 第二个请求:支不支持原生工具调用(11-06,Agent 真跑要它)── 同一招:带一个合法工具 + 空 messages,必被拒,看拒的理由
+    工具 = {"原生工具调用": False, "原生工具调用怎么判的": "第一个请求没拿到 400(端点 / 凭据不对),没往下探"}
+    if 码 == "400":
+        包2 = _json.dumps({"model": "claude-haiku-4-5", "max_tokens": 1, "messages": [],
+                          "tools": [{"name": "ping", "description": "探测用", "input_schema": {"type": "object"}}]})
+        try:
+            o2 = subprocess.run(cmd, input=包2, capture_output=True, text=True, timeout=25, env=_真.curl环境())
+            行2 = (o2.stdout or "").strip().splitlines()
+            码2 = 行2[-1] if 行2 else ""
+            try:
+                话2 = ((_json.loads("\n".join(行2[:-1])) or {}).get("error") or {}).get("message")
+            except Exception:
+                话2 = "\n".join(行2[:-1])[:200]
+            支持, 怎么判 = 判工具调用(码2, 话2)
+        except Exception as e:
+            支持, 怎么判 = None, f"第二个请求发不出去:{type(e).__name__}"
+        trace.record(用途="模型连接探测(工具调用)", 模型="claude-haiku-4-5", 成功=支持 is not None, 是mock=False,
+                     细节={"判了": 支持, "⚠️": "必被参数校验拒掉,不产生生成、不花钱"})
+        工具 = {"原生工具调用": 支持 is True, "原生工具调用怎么判的": 怎么判}
     return {
+        **工具,
         "探法": f"真实端点 —— **真发过一个请求**(凭据来路 {来路})",
         "发出请求了吗": True,
         "探成了吗": 码.startswith(("2", "4")),   # 4xx 也算探成:端点在说话

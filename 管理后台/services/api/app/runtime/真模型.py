@@ -258,5 +258,6 @@ def Agent模型(连接, *, 输出Schema=None, 参数=None, 发=None):
         出 = TP.解析(回, 号, 拆)
         出["execution_mode"] = "live"
         出["actual_model"] = 回.get("model")
+        出["响应id"] = 回.get("id")          # 记账的事件键用它(续跑之后回合数接着数,但每一次回复的 id 才是唯一的)
         return 出
     return 一轮
