@@ -22,9 +22,25 @@
 · **短叫法是长词的一部分**:只录了「纱」、没录「香云纱」,「香云纱」也会命中「纱」(这个项目记过这个坑)。
   最长匹配只在长词也录了时才挡得住 —— 所以 `格式问题()` 把「一条的叫法是另一条叫法的一部分」报成**提醒**(不阻断),让人决定补不补长词
 · 同一个叫法对到两个标准词 → 先后顺序决定结果 → 报成**格式错误**(阻断)
+· 英文 / 数字缩写(ROI、GMV):全是 ASCII 字母数字的叫法要求前后是词边界(「ROI」不命中「ROIC」);中文叫法照旧按子串
 """
 
 类别们 = ("名词", "指标")
+
+
+def _是ASCII词字(ch):
+    return ch.isascii() and ch.isalnum()
+
+
+def _边界成立(s, i, 叫):
+    """叫法**全是 ASCII 字母数字**时,前后不能紧挨着 ASCII 字母数字才算命中(11-06,并行会话指出):
+    「ROI」不该命中「ROIC 怎么算」、「15」不该命中「115」—— 命中错的术语和命中对的,在返回结构上长得一模一样。
+    中文 / 混合叫法不受影响(中文没有空格,按子串最长匹配是对的)。"""
+    if not all(_是ASCII词字(c) for c in 叫):
+        return True
+    前 = s[i - 1] if i > 0 else ""
+    后 = s[i + len(叫)] if i + len(叫) < len(s) else ""
+    return not (前 and _是ASCII词字(前)) and not (后 and _是ASCII词字(后))
 
 
 def _叫法表(术语们):
@@ -51,7 +67,7 @@ def 匹配(文本, 术语们):
     while i < len(s):
         hit = None
         for 叫, std in 表:
-            if s.startswith(叫, i):
+            if s.startswith(叫, i) and _边界成立(s, i, 叫):
                 hit = (叫, std)
                 break
         if hit:

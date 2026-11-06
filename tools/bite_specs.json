@@ -15411,5 +15411,17 @@
    }
   ],
   "预期红": "② 取数口写了这个项目里不存在的工具"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_glossary.py",
+  "改坏": "英文 / 数字叫法不看词边界(「中文没空格,子串就够了」)—— ROI 命中 ROIC、15 命中 115,给模型塞了错的定义",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/术语.py",
+    "old": "            if s.startswith(叫, i) and _边界成立(s, i, 叫):\n",
+    "new": "            if s.startswith(叫, i):\n"
+   }
+  ],
+  "预期红": "① 英文 / 数字叫法要词边界"
  }
 ]
