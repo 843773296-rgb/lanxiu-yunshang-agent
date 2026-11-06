@@ -186,9 +186,9 @@ Makefile 三处 + orchestration 一行已挂。live 那一支现在本机要 `MO
 e2e-ci 里常驻 dev worker 是 mock,手改成 live 会和它抢活、时红时绿。所以**跟着受理时的模式走**,测试起的 worker 按模式设 MODEL_ADAPTER。
 (单独跑的 Agent 那份 test_agent_bridge_flow 手改 live 能稳,是因为 agent_run 处理器没有这道 RUN_MODE_MISMATCH。)
 
-**下一步第一个动作**:check8b.log 绿 → `git pull --rebase --autostash`(并行会话已推 f29ee472;bite_specs 合完应 **1293** = 1288 + 我 5,
-我这笔改删老规格 0 条;HANDOFF 两节都留)→ 提交 ④(文件:runtime/runner.py、workers/worker.py、workflows_api.py、两个新测试、Makefile、
-bite_specs、agent/trace_check.py、两份 HANDOFF)→ 扫密钥推 → 给用户汇总四笔。
+**✅ ④ 已推 a05d98ef,CI 三项全绿**(admin-e2e 在新库上跑:Agent 步骤 mock 那一支 + 指纹棘轮都找到了样本)。四笔 + 三件拍板都已汇报给用户。
+**下一步第一个动作**:等用户回「要不要做 Agent 里的写工具接人工批准」(现在 Agent 的写工具一律被网关拒:批准查询=None)。
+用户没回之前别自己开工 —— 那是改审批流程的产品决定(谁批、在哪批、批了多久过期),要摆选型卡。
 **没配咬合(已知)**:worker `_agent` 里上限 / 工具取交集 —— 副本里改坏打不准(常驻 worker 抢活)。
 
 **已知没盖到(汇报要说)**:工作流 Agent 步骤里**写工具**一律被网关拒(批准查询=None,没有接人工批准);Agent 用内存账本(写工具反正到不了);
