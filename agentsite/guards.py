@@ -1507,6 +1507,75 @@ def g28_scope_as_absence(text, calls):
             "改成「你的门店里没有 / 不在你名下」,别说成库里、系统里没有;也别猜他在哪家店")
 
 
+def g29_price_ask_soft_promise(text, calls, prompt=""):
+    """顾客**这一问在问价格**,而答复里许了个「我去问问 / 我申请一下」却**自己一个字没提价格**。
+    **不打回**,交付时由系统补一句请店长确认(用户 2026-11-06 拍:「不拦,但进店长待复核」)。
+
+    ## 为什么要单开一条,而不是把 g23 放宽
+
+    g23 第二层(软性让价)按业务 2026-09-25 拍的口径办:**只有提到价格才拦**。
+    于是「这个价格确实偏高,我看看能不能跟店长申请一下」🚨 拦得住,
+    而「我看看能不能给您申请一下」(**答复里一个字没提价格**)放过 ——
+    而顾客可能刚刚问完价钱,他听完这句就在等一个回话,**而回话只能是「不行」**。
+
+    > 一句「我去问问」接在「这件多少钱」后面,和一句「我去问问」接在「能不能提前取」后面,
+    > **在答复自己那段文本里长得一模一样** —— 分得开它们的信息**只在顾客那一问里**。
+
+    这正是这个项目 2026-09-14 记过的那条:**有一类失败只看回答看不出来。**
+    所以这条判据读 `prompt`,而那道闸原来只读答复。
+
+    ## 为什么是补注而不是打回
+
+    两头都有真代价,所以用户拍的是第三条路:
+      · 直接拦 → 「我问问店长能不能免一次改衣」(那是能让的三样之一)也会被扣下,
+        而**误拦顾客当场看得见**
+      · 维持现状 → 这类话漏过去
+      · **不拦、交付时补一句请店长确认** → 顾客侧照旧放过,而这件事进了店长那边的复核
+    用的是判责那条(`g17`)2026-10-08 就在用的同一套机制,不另发明一套。
+
+    ⚠️ **挑不出「对顾客说的那部分」时按整段判** —— 和 g23 同一个做法,不另立一套。
+    内部报告那一类用「这一轮调过哪些工具」来免(周报 / 退款研判 / 库存清单里的「申请」
+    是走流程,不是替顾客去要让价),那也是 g23 用的同一个形状。
+    > 第一版我写的是「挑不出对客的话就不响」,结果**最该响的那一句不响** ——
+    > 「我看看能不能给您申请一下。」整句都是对顾客说的,而那个抽取器挑不出来(它找的是
+    > 「您可以这样说」这类标记)。**「这段话不是对顾客说的」和「抽取器认不出来」
+    > 在它返回 None 上长得一模一样。**
+    """
+    if not (prompt or "").strip():
+        return None                      # 没有问句 → 这条判不了(不是「通过」)
+    if not re.search(钱话, prompt):
+        return None                      # 顾客这一问没在问价格 → 不是这条管的
+    _对客 = 对顾客说的那部分(text)
+    # 内部报告 / 退款研判 / 库存清单:挑不出对客的话 **且** 这一轮调过那几个工具 → 不是这条管的
+    if not _对客 and any(_called(calls or [], t) for t in (
+            "store_report", "get_deposit", "get_refund_trace", "get_payment_flow",
+            "stock_alert", "get_stock")):
+        return None
+    看 = _对客 or (text or "")
+    # **答复自己已经写了「须店长 / 总部确认后再告知顾客」→ 这条不响。**
+    # 两个作用,缺一不可:
+    #   ① 它是个真改进 —— 模型自己把这件事交给店长了,没什么要补的
+    #   ② **幂等**:补上去的那句话里就有「店长」和「确认」,所以补完之后这条自己不再响。
+    #      这正是判责那条(g17)能用的原因:**补注的句子自己满足判据的条件**。
+    #      ⚠️ 2026-11-06 第一版的句子里写了「价格」,补完当场被 g23 第二层
+    #      当成一句新的让价许诺、整份扣下 —— 而表现是「这个答案没交出去」,
+    #      不是「补注这件事出错了」。补注的句子必须自己过一遍 check_answer。
+    if tm.in_sentence(text or "", "确认", ("店长", "总部", "质检")):
+        return None
+    if re.search(钱话, 看):
+        return None                      # 答复自己提了价格 → g23 第二层本来就管,不重复
+    for m in re.finditer(许诺, 看):
+        if _有告诫(看, m.start()):                          # 在告诫顾问别这么说
+            continue
+        if tm.negated(看, m.start(), both_sides=True):      # 「不会帮您申请」是照规矩在答
+            continue
+        if tm.in_clause(看, m.group(0), 可以许的):           # 许的是能让的那三样
+            continue
+        return ("顾客这一问在问价格,而答复里许了「" + m.group(0) + "」却没说清许的是什么 —— "
+                "业务 2026-09-24 定:**不让价,只让东西**。这条不打回,但要店长确认后再告知顾客")
+    return None
+
+
 CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g5_fit_guess, g6_undefined, g7_rush_promise, g8_business_fact, g9_quote_disclaimer,
           g10_point_no_range, g11_girth_point, g12_expired_ignored, g13_target_conflict, g14_consent_bypass,
@@ -1514,7 +1583,8 @@ CHECKS = [g1_no_source, g2_cost_as_price, g3_lead_single, g4_no_rule,
           g17_liability_promise, g18_vision_conclusion,
           g19_account_state, g20_consent_version, g21_apply_as_done,
           g22_agree_without_reading, g23_discount_promise, g24_growth_not_statistical,
-          g25_count_without_lookup, g26_wan_mismatch, g27_notfound_without_lookup, g28_scope_as_absence]
+          g25_count_without_lookup, g26_wan_mismatch, g27_notfound_without_lookup, g28_scope_as_absence,
+          g29_price_ask_soft_promise]
 
 
 def check_answer(text, calls, prompt="", 带图=False, 规矩=""):
@@ -2238,13 +2308,20 @@ def 打回说明(bad):
 # 判责「须店长 / 质检确认」写进提示词两处(TK10 / TL49),10-07 四套真跑首答照样不写(返修 P02 第一稿),
 # 靠 g17 打回一次才补上 —— 顾问多等一轮,偶尔改一次还不过就整份扣下。这句话是**固定的**,
 # 不需要模型组织语言,所以不靠模型:交付前系统追加,再整份重查一次。
-交付时补注 = {"g17_liability_promise": "\n\n> ⚠️ 以上是判责建议,须店长 / 质检确认后再告知顾客;确认前请勿对顾客承诺。"}
+交付时补注 = {"g17_liability_promise": "\n\n> ⚠️ 以上是判责建议,须店长 / 质检确认后再告知顾客;确认前请勿对顾客承诺。",
+            # 2026-11-06 用户拍「不拦,但进店长待复核」。顾客这一问在问价格,而答复里许了
+            # 「我去问问 / 我申请一下」—— 不打回(误拦顾客当场看得见),交付时补这一句,
+            # 并记进 `答案检查[].交付时补注`,店长那边凭它复核。
+            # ⚠️ 这句话**自己不许踩别的闸**:不提价格类的词(否则 g23 第二层把它当成一句新的
+            # 让价许诺),而且要含着「店长」+「确认」(g29 靠这个变成幂等,见那条的注释)。
+            "g29_price_ask_soft_promise": "\n\n> ⚠️ 这一条须店长 / 总部确认后再告知顾客;"
+                                          "确认之前不要给顾客任何承诺。"}
 
 
 def _补注(state, text):
     """交付前:最终答案若触发「交付时补注」里的规则,追加那句固定的话,并把补后的这份查一遍记下。"""
     加 = [k for k, 句 in 交付时补注.items()
-         if 句.strip() not in (text or "") and _规则(k)(text, state.get("calls"))]
+         if 句.strip() not in (text or "") and _跑一条(k, text, state)]
     if not 加:
         return text
     text = (text or "").rstrip() + "".join(交付时补注[k] for k in 加)
@@ -2263,7 +2340,31 @@ def _补注(state, text):
 
 
 def _规则(名):
-    return {"g17_liability_promise": g17_liability_promise}[名]
+    """名字 → 那条规则的函数。**从 CHECKS 现查,不手抄一张映射表**。
+
+    ⚠️ 2026-11-06 踩到:这里原来是写死的 `{"g17_liability_promise": g17_liability_promise}`。
+    加第二条补注规则(g29)时**只在 `交付时补注` 里登记了**,交付那一刻 `KeyError` ——
+    > 一条「登记进了补注字典」的规则,和一条「交付时真的会补上那句话」的规则,
+    > **在那张字典上长得一模一样。**
+    （而它炸在交付路径上:`_补注` 的调用方把异常吞了,所以上线之后的表现会是
+    「这句话永远不补」,不是报错。）
+    """
+    for fn in CHECKS:
+        if fn.__name__ == 名:
+            return fn
+    raise KeyError(f"{名} 登记在「交付时补注」里,而 CHECKS 里没有这条规则")
+
+
+def _跑一条(名, text, state):
+    """跑一条补注规则。**按它声明的参数喂**(和 `check_answer` 同一个做法)——
+    g29 要看顾客那一问,而原来这里只传 (text, calls),于是它永远判不出来。"""
+    fn = _规则(名)
+    参 = fn.__code__.co_varnames[:fn.__code__.co_argcount]
+    额 = {}
+    if "prompt" in 参: 额["prompt"] = state.get("prompt") or ""
+    if "带图" in 参: 额["带图"] = bool(state.get("带图"))
+    if "规矩" in 参: 额["规矩"] = state.get("规矩原文") or ""
+    return fn(text or "", state.get("calls") or [], **额)
 
 
 def 答案哈希(text):

@@ -13483,12 +13483,12 @@
  },
  {
   "script": "agentsite/guards_test.py",
-  "改坏": "g28 没接进交付前检查清单",
+  "改坏": "g28 没接进交付前检查清单。⚠️ 2026-11-06 改过破坏点:原来写的是 `…g28_scope_as_absence]`、**把末尾那个 `]` 也圈进去了**,于是往清单后面再加一条(g29)就当场过期。盯着「我恰好是最后一个」的破坏点和盯着一个值的破坏点一样会漂。",
   "file": [
    {
     "path": "agentsite/guards.py",
-    "old": "g27_notfound_without_lookup, g28_scope_as_absence]",
-    "new": "g27_notfound_without_lookup]"
+    "old": "g27_notfound_without_lookup, g28_scope_as_absence,",
+    "new": "g27_notfound_without_lookup,"
    }
   ],
   "预期红": "真跑钉回:王青梧在别店,工具标了范围,回答说「库里没有」"
@@ -15267,5 +15267,41 @@
    }
   ],
   "预期红": "有目录、没登指纹"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "把 g29「顾客这一问在不在问价格」那一问反过来 —— 分得开「我去问问」接在「这件多少钱」后面和接在「能不能提前取」后面的信息**只在顾客那一问里**,这一刀正是砍在那根线上",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if not re.search(钱话, prompt):\n        return None                      # 顾客这一问没在问价格 → 不是这条管的\n",
+    "new": "    if re.search(钱话, prompt):\n        return None                      # 顾客这一问没在问价格 → 不是这条管的\n"
+   }
+  ],
+  "预期红": "顾客问价 + 答复许「申请」"
+ },
+ {
+  "script": "agentsite/guards_test.py",
+  "改坏": "把 g29「答复自己已经写了须店长确认」那一支关掉 —— 它一关,补上去的那句话会让这条再响一次,补注就不幂等了(而判责 g17 能用,靠的正是「补注的句子自己满足判据的条件」)",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if tm.in_sentence(text or \"\", \"确认\", (\"店长\", \"总部\", \"质检\")):\n        return None\n",
+    "new": "    if False and tm.in_sentence(text or \"\", \"确认\", (\"店长\", \"总部\", \"质检\")):\n        return None\n"
+   }
+  ],
+  "预期红": "答复自己已经写了"
+ },
+ {
+  "script": "agentsite/delivery_check.py",
+  "改坏": "`_跑一条` 不把顾客那一问递给补注规则 —— g29 判的就是那一问,拿不到就永远判不出来。⚠️ 这一刀**砍在接线上,纯函数一个字不动**:只测 g29 本身的用例照旧全绿",
+  "file": [
+   {
+    "path": "agentsite/guards.py",
+    "old": "    if \"prompt\" in 参: 额[\"prompt\"] = state.get(\"prompt\") or \"\"\n",
+    "new": "    if False and \"prompt\" in 参: 额[\"prompt\"] = state.get(\"prompt\") or \"\"\n"
+   }
+  ],
+  "预期红": "第二条补注规则真的接上了"
  }
 ]
