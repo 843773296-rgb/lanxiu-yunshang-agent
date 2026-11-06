@@ -15719,12 +15719,12 @@
  },
  {
   "script": "agentsite/skill_eval_truth_check.py",
-  "改坏": "让术语口径把那句「说明」也算进去比 —— 改一个字的措辞,所有基线当场「不可比」",
+  "改坏": "让术语口径把那句「说明」算进去比(**项数不变,所以不会崩** —— 崩了验到的是「它崩了」,不是「它守住了」):改一个字的措辞,所有基线当场「不可比」",
   "file": [
    {
     "path": "agentsite/skill_eval.py",
     "old": "    return (状态.get(\"接了\"), 塞.get(\"态\"), int(塞.get(\"条数\") or 0), 塞.get(\"内容哈希\"))",
-    "new": "    return (状态.get(\"接了\"), 塞.get(\"态\"), int(塞.get(\"条数\") or 0), 塞.get(\"内容哈希\"), 状态.get(\"说明\"))"
+    "new": "    return (状态.get(\"接了\"), 塞.get(\"态\"), int(塞.get(\"条数\") or 0), 状态.get(\"说明\"))"
    }
   ],
   "预期红": "术语口径只比结构,说明的文案不算口径变了"
@@ -15743,12 +15743,12 @@
  },
  {
   "script": "agentsite/skill_eval_truth_check.py",
-  "改坏": "把术语那一栏的「老基线没这一栏」说成和「两版一致」同一句话 —— 前者要换一版基线来比,后者可以直接读差异",
+  "改坏": "把「老基线没有术语这一栏」当成「装配没接术语」—— 「不知道」被说成一个确凿的结论,而前者该换一版基线来比、后者可以直接读差异(⚠️ 破坏点带了后一行:那段 isinstance 判断在 `_接管口径` 和 `_术语口径` 里一字不差,不带上下文会命中两处)",
   "file": [
    {
     "path": "agentsite/skill_eval.py",
-    "old": "    if 老术 is None:\n        出.append((\"不知道\",",
-    "new": "    if False and 老术 is None:\n        出.append((\"不知道\","
+    "old": "    if not isinstance(状态, dict):\n        return None\n    塞 = 状态.get(\"塞了\")",
+    "new": "    if not isinstance(状态, dict):\n        return (False, None, 0, None)\n    塞 = 状态.get(\"塞了\")"
    }
   ],
   "预期红": "老基线没有术语这一栏 → 「不知道」,不是「一致」"
@@ -15775,6 +15775,6 @@
     "new": "def 接上了吗():\n    return True"
    }
   ],
-  "预期红": "「装配没接」和「接了但没走到那条路」不是同一个结果"
+  "预期红": "真调术语实况:装配没宣告 → 接了=False(不是靠 import 成不成功推的)"
  }
 ]
