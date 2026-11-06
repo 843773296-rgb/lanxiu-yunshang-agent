@@ -169,6 +169,18 @@ def main():
     ck("⑧ 工作流资源 / 聊天助手详情 / 智能体详情都列出这一版冻结的术语(名称 / 版本 / 条数)—— 页面下拉框从这里取",
        c_ == 200 and 有(res.get("术语")) and 有(gd.get("可选术语")) and 有(ad.get("可选术语")),
        (c_, (res or {}).get("术语", [])[:2], (gd or {}).get("可选术语", [])[:1], (ad or {}).get("可选术语", [])[:1]))
+    # ⑨ 智能体选了一个不存在的术语版本 → 校验当场拦(原来校验 / 冻结都放行,到运行时才 GLOSSARY_VERSION_NOT_FOUND)
+    aid = (ag or {}).get("id")
+    def 校验带(gv):
+        _, a2 = 打("GET", f"/agents/{aid}")
+        打("PATCH", f"/agents/{aid}/draft", {"配置": dict(a2["草稿"]["配置"], glossary_version_id=gv)},
+          {"If-Match": str(a2["草稿"]["revision"])})
+        _, b = 打("POST", f"/agents/{aid}/validate")
+        return [p for p in (b or {}).get("问题", []) if p.get("field_path") == "glossary_version_id"]
+    坏引 = 校验带("glv_不存在的")
+    好引 = 校验带(v["id"])
+    ck("⑨ 智能体选了不存在的术语版本 → 校验阻断 REF_NOT_FOUND(点名 glossary_version_id);选存在的那一版 → 这一项没问题",
+       [p.get("code") for p in 坏引] == ["REF_NOT_FOUND"] and 好引 == [], (坏引, 好引))
     # 这张术语表**留着不归档**:tools/ifmatch_reachable_check 要从术语表列表里取一张样例,验「界面拿得到改草稿要带的 revision」——
     # CI 是新库,这一条要是归档了,那条检查拿不到样例就判红(而那条红的理由是「什么都没验到」,是对的)
     print()

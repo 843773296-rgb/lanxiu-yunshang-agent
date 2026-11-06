@@ -776,12 +776,14 @@ def 校验Agent(配置, *, 依赖存在=None, 连接能力=None, 工具目录=No
     if 依赖存在 is None:
         跳过.append("引用的依赖存不存在(调用方没给查询能力)")
     else:
-        for f in ("connection_version_id", "prompt_version_id"):
+        # glossary_version_id(11-06 深夜补):选了一个不存在的术语版本,原来校验 / 冻结都放行,到运行时才 GLOSSARY_VERSION_NOT_FOUND
+        for f in ("connection_version_id", "prompt_version_id", "glossary_version_id"):
             v = 配置.get(f)
             if v and not 依赖存在(f, v):
                 出.append(问(阻断, "REF_NOT_FOUND",
                            f"{f} = {v} 不存在、无权访问或已撤回",
-                           "换一个当前项目里有权访问的版本", field_path=f))
+                           "换一个当前项目里有权访问的版本" + ("(术语要选「术语配置」里冻结过的版本)" if f == "glossary_version_id" else ""),
+                           field_path=f))
         for i, t in enumerate(配置.get("tools") or []):
             tv = t.get("tool_version_id") if isinstance(t, dict) else t
             if tv and not 依赖存在("tool_version_id", tv):

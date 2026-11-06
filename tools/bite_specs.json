@@ -15692,5 +15692,17 @@
    }
   ],
   "预期红": "⑧ 工作流资源 / 聊天助手详情 / 智能体详情都列出这一版冻结的术语"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_glossary_flow.py",
+  "改坏": "智能体校验不查术语版本这个引用(11-06 之前就是这样)—— 选了一个不存在的版本照样冻得出,到运行时才干不了",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/validator.py",
+    "old": "        for f in (\"connection_version_id\", \"prompt_version_id\", \"glossary_version_id\"):",
+    "new": "        for f in (\"connection_version_id\", \"prompt_version_id\"):"
+   }
+  ],
+  "预期红": "⑨ 智能体选了不存在的术语版本 → 校验阻断"
  }
 ]
