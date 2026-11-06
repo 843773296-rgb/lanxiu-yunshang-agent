@@ -43,16 +43,20 @@ def main():
     _, rs = 打("GET", "/execution-runs" + q(limit=50))
     rid = 全 = None
     for r in rs.get("items") or []:
-        c, x = 打("GET", f"/execution-runs/{r['id']}/raw-log")
+        # 一次取全(接口每页默认 100、上限 500):下面拿「这一页的条目」和「共」比 —— 默认一页 100,
+        # 挑中一次超过 100 条的运行就必然对不上(11-06 CI 撞到:挑中 142 条的那次,指纹那条红,而记录本身没问题)
+        c, x = 打("GET", f"/execution-runs/{r['id']}/raw-log" + q(条数=500))
         if c == 200 and x["按来源"]["步骤尝试"] >= 2 and x["按来源"]["事件"] >= 3:
             rid, 全 = r["id"], x
             break
     ck("项目里有带步骤和事件的运行可验(样本量不能是 0)", rid is not None)
     if not rid:
         return 1
+    ck("这一页取全了(共 ≤ 500,否则下面的「指纹一样 + 条数相等」量的是一页,不是整次运行)", len(全["条目"]) == 全["共"],
+       (len(全["条目"]), 全["共"]))
     ck("条数对账:共 = 各来源之和", 全["共"] == sum(全["按来源"].values()), 全["按来源"])
     ck("没有「查看敏感输入」的人(U002)→ 能看原文 False", 全["能看原文"] is False)
-    _, 原 = 打("GET", f"/execution-runs/{rid}/raw-log", 谁="U004")
+    _, 原 = 打("GET", f"/execution-runs/{rid}/raw-log" + q(条数=500), 谁="U004")
     ck("有授权的人(U004)→ 能看原文 True", 原.get("能看原文") is True)
     指A = {(e["来源表"], e["主键"]): e["指纹"] for e in 全["条目"]}
     指B = {(e["来源表"], e["主键"]): e["指纹"] for e in 原["条目"]}
