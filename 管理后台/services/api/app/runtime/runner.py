@@ -351,7 +351,9 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     "expires_at_policy": cfg.get("expires_at_policy"), "材料": 载荷})
 
             if t in ("llm", "retrieve", "tool", "agent"):
-                if 当前 in 注入:
+                # Agent 步骤恢复时**不能**把回执直接当这一步的输出(11-06):回执只是它中途一次工具调用的结果,
+                # 它拿到之后还要接着想 —— 交回 Agent 适配器(带着它自己的检查点)接着跑,见下面 t == "agent" 那一支
+                if 当前 in 注入 and t != "agent":
                     r = _拿注入(当前)
                     if t == "tool":
                         用量["工具调用"] += 1
@@ -366,8 +368,9 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     记一步(当前, 失败, error_code="MAX_TURNS")
                     break
                 选填 = set(状态.get("选填输入") or ())
-                实参, 缺 = 解绑定(cfg.get("bindings"), 状态, 允许缺失=[
-                    字段 for 字段, 引 in (cfg.get("bindings") or {}).items()
+                _绑 = cfg.get("input_mapping") if t == "agent" else cfg.get("bindings")
+                实参, 缺 = 解绑定(_绑, 状态, 允许缺失=[
+                    字段 for 字段, 引 in (_绑 or {}).items()
                     if isinstance(引, dict) and 引.get("source") == "input"
                     and str(引.get("pointer") or "").lstrip("/") in 选填])
                 本步入 = 实参
@@ -382,7 +385,23 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                     # 缺适配器要报出来,不能当成这一步不需要做
                     raise 节点失败("ADAPTER_MISSING", "这类步骤在当前环境还跑不了",
                                  "请联系技术管理员 —— 这一步没有执行,不是执行成功")
-                r = fn(cfg, 实参)
+                if t == "agent":
+                    # 交给 Agent 适配器的一包:输入、任务(task_binding 是引用就现取,是字面量就原样)、
+                    # 父流程还剩多少回合(子额度不许超过父额度,§13.2)、续跑用的东西(恢复时才有)
+                    _任 = cfg.get("task_binding")
+                    _任 = 取值(_任, 状态) if isinstance(_任, dict) else _任
+                    _剩 = (上限.get("max_model_turns") - 用量["模型调用"]) if 上限.get("max_model_turns") is not None else None
+                    _续 = None
+                    if 当前 in 注入:
+                        _续 = {"检查点": (((恢复 or {}).get("等待") or {}).get("载荷") or {}).get("agent检查点"),
+                               "结果": 注入.pop(当前)}
+                    r = fn(cfg, {"输入": 实参, "任务": None if _任 is DS.缺失 else _任, "父流程剩余回合": _剩,
+                                 "续": _续, "node_id": 当前})
+                    # Agent 这一段真用掉的(续跑时只算这一段,不重算挂起前那几回合)计入父流程(§6.1:子任务消耗计入父任务额度)
+                    用量["模型调用"] += int((r.get("本段用量") or {}).get("模型回合") or 0)
+                    用量["工具调用"] += int((r.get("本段用量") or {}).get("工具尝试") or 0)
+                else:
+                    r = fn(cfg, 实参)
                 if t == "llm":
                     用量["模型调用"] += 1
                     # ⚠️ **普通 LLM 节点不执行它提出的工具调用**(§6.1、附录 C.2
@@ -741,6 +760,10 @@ def 跑一张图(计划, 输入, *, 适配器, 记事=None, run_id="run", 系统
                          "换成能用的步骤搭出同样的流程")
 
         except 需要等待 as w:
+            # Agent 步骤挂起时,它这一段已经用掉的回合 / 工具也计入父流程(不然挂起一次就漏一段账)
+            if t == "agent":
+                用量["模型调用"] += int(((w.载荷 or {}).get("本段用量") or {}).get("模型回合") or 0)
+                用量["工具调用"] += int(((w.载荷 or {}).get("本段用量") or {}).get("工具尝试") or 0)
             步态, 执行状态 = 等待态[w.种类]
             记一步(当前, 步态, waiting_for=w.种类, 入=本步入)
             检查点 = {"从": 当前, "逻辑哈希": 计划["逻辑哈希"], "节点输出": 状态["节点"], "循环帧": 帧们,

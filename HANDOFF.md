@@ -12,6 +12,8 @@
 > (`backend/source_check.py` / `tools/intent_check.py` 现在各盯着一头 ——
 > 前者盯欠账只许降不许涨,后者盯「挂着的待办,它的 intent 别已经是做完了」。)
 
+## 🤖 11-06:Agent 执行器(用户拍「现在就把执行器做出来」+「走桥,给 Agent 加断点续跑」)—— **①②③④ 都已推**(见 git log)
+
 ## ✅ 11-06 午后:第二轮拍板也做完了 —— 放行 + g29 补注 + 四处顺手修
 
 用户 11-06 第二次拍板(AskUserQuestion,三题一张卡):
@@ -159,36 +161,43 @@
 
 ## 🤖 11-06 上午:Agent 执行器(用户拍「现在就把执行器做出来」+「走桥,给 Agent 加断点续跑」)—— **第 ① ② ③ 笔已推**(见 git log);下一笔 ④ 工作流的 Agent 步骤
 
-**一句话**:工作流里的 Agent 步骤从来跑不了(worker 适配器只有 llm / tool,而节点表标「已实现」);后台单独跑的 Agent 也只接了 mock
-(worker 里明写 ENTRY_NOT_WIRED_LIVE:真模型只做单次生成,没有工具调用协议)。用户拍做,分四笔:
-① 工具调用协议(真模型能调工具)② Agent 断点续跑(调澜绣工具时像工作流一样挂起、等桥回执、从断点接着想)
-③ 单独跑的 Agent 接真模型 + 桥 ④ 工作流的 Agent 步骤接进来(上限取交集、工具只给 allowed_capabilities、用量计入父流程、受理 mock/live 和依赖指纹算上 Agent 版本的连接)。
+**一句话**:工作流里的 Agent 步骤从来跑不了(worker 适配器只有 llm / tool,节点表却标「已实现」)。分四笔:
+① 工具调用协议 ② Agent 断点续跑 ③ 单独跑的 Agent 接真模型 + 桥 —— **都已推**(见 git log)。④ 工作流的 Agent 步骤 —— 代码写完,未提交。
+同期另推:探测存三值 / 指纹只算能力项 + 探测真发一次(用户 11-06 拍,见 git log 0ea10613);**正式项目那条连接 12:43 已重探**:原生工具调用 = true,
+用量账 674 token;重探前后量过,引用它的 5 个版本「够发生产」前后都是 False(11-05 加指纹以来正式项目没有一次成功的工作流运行 —— 本来就没有可作废的)。
 
-**✅ 第 ① 笔(已推)**:`runtime/工具协议.py`(新)· `真模型.py` 抽出共用 `_发`(生成行为不变)+ `对话一轮` + `Agent模型` ·
-`tests/orchestration/test_agent_protocol.py` 15 条(挂在 Makefile test-orchestration)· 咬合 2 条三关过 ·
-**真接口跑通一次**(正式项目连接 cv_ffc3943b4995,月租凭据;2 回合 1 次工具,参数中文键还原正确)。
-**✅ 第 ② 笔(已推)**:tool_gateway 加 `要等`(原样放行)· agent_loop 可从断点接着处理同一次回复里剩下的调用 ·
-test_agent_resume 12 条 + 3 条咬合 · 原 57 条 Agent 对抗测试照过。①② 一起在 09:17:27 重启后整轮全绿。
+**④ 改了什么(未提交,都在主检出工作区)**:
+· runtime/runner.py:停在 agent 步骤的恢复**不把回执当这一步的输出**,交回 Agent 适配器(带 恢复.等待.载荷.agent检查点);agent 步骤的入参走 input_mapping、
+  任务走 task_binding(引用现取 / 字面量原样);Agent 本段用量(含挂起时 需要等待.载荷.本段用量)计入父流程 用量
+· workers/worker.py `_跑一张工作流` 里新 `_agent` 适配器(挂在 跑一张图 的 适配器 "agent"):上限 = min(Agent 版本 / sub_limits / 父流程剩余回合);
+  工具 = Agent 版本 ∩ allowed_capabilities;live 走 真模型.Agent模型(钉 Agent 版本的连接,查停用 / 没探过),mock 是脚本(第一轮调第一个工具,第二轮按 output_schema 填 [mock]);
+  桥工具抛 要等 → 转成 需要等待("external", {工具, 参数, agent检查点, 本段用量}) → 整条工作流走 `_挂起`(桥闸照旧);live 每回合进用量账(事件键 run:node:响应id)
+· workflows_api.py `_Agent步骤的连接()`:受理定 mock / live、依赖指纹(_跑通模式 / 受理)、停用检查 三处都把 Agent 版本钉的连接算进去
+· 新 e2e tests/e2e/test_agent_step_flow.py(**还没挂进 Makefile、没配咬合**)
 
-**踩到**:真接口当场打回 —— 参数名也只收 `^[a-zA-Z0-9_.-]{1,64}$`(参数名是中文「顾问」),离线假接口只查了工具名所以 14 条全绿;
-已钉回假接口,当场又抓到我自己的「问题」「结果」两个中文键。另:剧本里参数直接写中文键,还原对认不得的键放行 → 往返没被验到,已改成代号。
+**✅ 验过的**:test_agent_step_flow live 那一支 11 条(本机,受理走 HTTP 8801 时)· mock 那一支 10 条(受理改成 TestClient 之后默认 mock;
+**mock 那一支第一次跑就抓到真 bug**:worker `_agent` 的 mock 模型按轮次计数,续跑新建适配器从 1 重来 → 又调同一个工具 → 永远交不了卷;
+改成看对话里有没有工具结果)· 新 tests/orchestration/test_agent_step_runner.py 6 条(执行器那一层,纯)· 咬合 3 条三关过
+(runner 把回执当输出 / 挂起那段用量不计父流程 / _Agent步骤的连接 返回 [])· 整轮 13:28:30 重启后 e2e-ci / contract / orchestration 全绿,
+根 check.sh 红在 trace_check(test_agent_step_flow 照搬的 `/v1/messages` 夹具串),已登记例外,**根门禁复跑中**(后台 bk9otpbz2,scratchpad check8b.log)。
+Makefile 三处 + orchestration 一行已挂。live 那一支现在本机要 `MODEL_ADAPTER=anthropic` 跑测试才走(受理在测试进程里)。
 
-**✅ 第 ③ 笔(已推)**:worker 单独跑的 Agent 接真模型 + 走桥(挂起记 bridge_calls node_id='agent'、resume_snapshot{从: agent, 检查点, 等待};
-回执 → run_resume 按 kind 排回 agent_run —— 原来写死 workflow_run)· Agent 受理按钉的连接定 mock/live(原来写死 mock)·
-探测加零成本第二请求判「原生工具调用」· e2e test_agent_bridge_flow 10 条(本地假 Anthropic 接口,凭据 env://HOME)。
+**判据 / 为什么这么判**:测试不手改 execution_mode —— 工作流 worker 对「受理成 live、自己只跑 mock」会 RUN_MODE_MISMATCH 拒跑(对的保护),
+e2e-ci 里常驻 dev worker 是 mock,手改成 live 会和它抢活、时红时绿。所以**跟着受理时的模式走**,测试起的 worker 按模式设 MODEL_ADAPTER。
+(单独跑的 Agent 那份 test_agent_bridge_flow 手改 live 能稳,是因为 agent_run 处理器没有这道 RUN_MODE_MISMATCH。)
 
-**✅ 用户 11-06 拍了三件,都已做完并推**:① 指纹只算能力项(`workflows_api.能力指纹`,v2: 前缀;老值过渡期靠 `_依赖指纹旧` 认;
-`test_fingerprint_ratchet` 棘轮「只靠老算法的成功运行」上限 550,降到 0 就可以摘老算法)② 探测改成真发一次(ping 工具 + 强制调,
-看回包有没有 tool_use 块;花钱进用量账)③ 改完再重探正式项目那条连接 —— **重探还没做**,下一步就是它。
-探测存三值(null = 没判出来,校验器报 MODEL_TOOL_CALLING_UNKNOWN)也已推。
+**下一步第一个动作**:check8b.log 绿 → `git pull --rebase --autostash`(并行会话已推 f29ee472;bite_specs 合完应 **1293** = 1288 + 我 5,
+我这笔改删老规格 0 条;HANDOFF 两节都留)→ 提交 ④(文件:runtime/runner.py、workers/worker.py、workflows_api.py、两个新测试、Makefile、
+bite_specs、agent/trace_check.py、两份 HANDOFF)→ 扫密钥推 → 给用户汇总四笔。
+**没配咬合(已知)**:worker `_agent` 里上限 / 工具取交集 —— 副本里改坏打不准(常驻 worker 抢活)。
 
-**下一步第一个动作**:锁里重探正式项目那条连接(cv_ffc3943b4995,走探测接口)。**重探前后各量一次**正式项目里用它的工作流版本「够发生产」——
-按新指纹,能力没变的重探不该作废任何一个(这是指纹改造要兑现的保证;量出来作废了就是改造有洞)。然后第 ④ 笔(工作流的 Agent 步骤,设计已想清:
-runner 恢复时停在 agent 步骤 → 把「Agent 检查点 + 回执」交回 Agent 适配器接着跑,不当成这一步的输出;受理定 mock/live 和依赖指纹要把 Agent 版本钉的连接算进去)。
-⚠️ 并行会话等我推完 workflows_api.py 后要往 `可接管技能` 加一行 —— 推完要吱它一声。
+**已知没盖到(汇报要说)**:工作流 Agent 步骤里**写工具**一律被网关拒(批准查询=None,没有接人工批准);Agent 用内存账本(写工具反正到不了);
+Agent 默认模板仍故意排除桥工具(要用户自己勾);validator 的「密钥不进模型」检查是否覆盖 agent 的 input_mapping 没核。
 
-**别重做 / 已否决**:别给只读工具开同步直连(用户否了:绕开桥这道统一入口);别「先只接真模型、工具用替身」(过闸名不副实,用户否了);
-别从模型的一段话里抠 JSON 当结果(用交结果工具);代号别泄出翻译层(判据 / 提示词 / 白名单只认中文名)。
+**别重做 / 已否决**:只读工具直连(用户否)/ 工具用替身过闸(用户否)/ 从一段话里抠 JSON(用交结果工具)/ 代号泄出翻译层;
+探测零成本看文案(用户改成真发一次)/ 指纹 md5 整份(用户改成只算能力项,老值靠 _依赖指纹旧 过渡,棘轮 test_fingerprint_ratchet 上限 550);
+棘轮别判「库里切换后所有运行」(另一份没拉代码的检出会写老算法,那是环境)。
+
 
 ## 📋 11-06 早:**飞书上那份《评测题集》把多轮折叠成了最后一轮**(工 worktree,门禁排队中)
 

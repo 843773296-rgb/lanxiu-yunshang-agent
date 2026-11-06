@@ -15303,5 +15303,41 @@
    }
   ],
   "预期红": "第二条补注规则真的接上了"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_agent_step_runner.py",
+  "改坏": "恢复时把回执直接当 Agent 步骤的输出(和工具步骤一样处理)—— Agent 中途一次工具调用的结果被当成它的最终答案,它再也不会接着想",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "                if 当前 in 注入 and t != \"agent\":\n",
+    "new": "                if 当前 in 注入:\n"
+   }
+  ],
+  "预期红": "③ 恢复:回执交回 Agent 适配器"
+ },
+ {
+  "script": "管理后台/tests/orchestration/test_agent_step_runner.py",
+  "改坏": "Agent 挂起那一段用掉的回合不计入父流程(「它还没跑完」)—— 挂起一次就漏一段账,父流程的回合上限被绕过",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/runtime/runner.py",
+    "old": "            if t == \"agent\":\n                用量[\"模型调用\"] += int(((w.载荷 or {}).get(\"本段用量\") or {}).get(\"模型回合\") or 0)\n",
+    "new": "            if t == \"agent\":\n                pass\n"
+   }
+  ],
+  "预期红": "④ 挂起前一段 + 恢复后一段的回合都计入父流程"
+ },
+ {
+  "script": "管理后台/tests/e2e/test_agent_step_flow.py",
+  "改坏": "受理时不算 Agent 版本钉的连接(「这一步的配置里没有连接」)—— 只有 Agent 步骤的流程依赖指纹是空的,连接被探测改了 / 停用了都不拦",
+  "file": [
+   {
+    "path": "管理后台/services/api/app/workflows_api.py",
+    "old": "    if not avs:\n        return []\n    return sorted({x for x in c.execute(text(\"\"\"select connection_version_id from agent_versions",
+    "new": "    if True:\n        return []\n    return sorted({x for x in c.execute(text(\"\"\"select connection_version_id from agent_versions"
+   }
+  ],
+  "预期红": "① 受理时依赖指纹里有 Agent 版本钉的那条连接"
  }
 ]

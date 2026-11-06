@@ -1772,7 +1772,7 @@ def 这一版停用的连接(c, project_id, 版本id):
     停用的连接每一跑都 MODEL_CONNECTION_DISABLED —— 而它不在哈希、不在依赖指纹里,所以发生产时单独查。"""
     节点们 = c.execute(text("select nodes from workflow_versions where project_id=:p and id=:v"),
                        {"p": project_id, "v": 版本id}).scalar()
-    cvs = _用的连接(节点们)
+    cvs = sorted(set(_用的连接(节点们)) | set(_Agent步骤的连接(c, project_id, 节点们)))
     在 = list(c.execute(text("""select coalesce(mc.display_name, mc.id) 名, mc.status from connection_versions cv
                              join model_connections mc on mc.project_id=cv.project_id and mc.id=cv.connection_id
                             where cv.project_id=:p and cv.id = any(:ids)"""), {"p": project_id, "ids": cvs}).mappings()) if cvs else []
@@ -1842,6 +1842,18 @@ def _用的连接(节点们):
                    if n.get("type") in 用模型连接的步骤 and (n.get("config") or {}).get("connection_version_id")})
 
 
+def _Agent步骤的连接(c, project_id, 节点们):
+    """Agent 步骤的模型连接在 **Agent 版本上**,不在这一步的配置里(11-06)—— 受理定 mock / live、依赖指纹、停用检查都要把它算进去,
+    不然只有 Agent 步骤的流程会被当成「一个连接都不用」:演示连接跑通也算、连接停用了也不拦。"""
+    avs = sorted({(n.get("config") or {}).get("agent_version_id") for n in (节点们 or [])
+                  if n.get("type") == "agent" and (n.get("config") or {}).get("agent_version_id")})
+    if not avs:
+        return []
+    return sorted({x for x in c.execute(text("""select connection_version_id from agent_versions
+                                                where project_id=:p and id = any(:ids)"""),
+                                       {"p": project_id, "ids": avs}).scalars() if x})
+
+
 def _用的依赖(节点们):
     """依赖指纹要盯的那几样:模型连接配置版本 + 业务动作的工具版本(记成 "tool:<id>")。"""
     return _用的连接(节点们) + sorted({"tool:" + (n.get("config") or {}).get("tool_version_id") for n in (节点们 or [])
@@ -1856,7 +1868,7 @@ def _跑通模式(c, project_id, wid, 版本哈希):
     节点们 = c.execute(text("""select nodes from workflow_versions where project_id=:p and workflow_id=:w and logical_hash=:h
                               order by version_no desc limit 1"""), {"p": project_id, "w": wid, "h": 版本哈希}).scalar()
     # 调用方(闸 / 验证记录)传的都是冻结版本的哈希,版本行一定在;万一不在 → 没有可比的连接,只靠哈希判
-    要的 = _用的依赖(节点们)
+    要的 = sorted(set(_用的依赖(节点们)) | set(_Agent步骤的连接(c, project_id, 节点们)))
     现在 = _依赖指纹(c, project_id, 要的)
     旧 = _依赖指纹旧(c, project_id, [x for x in 要的 if x and not x.startswith("tool:")])
     rs = c.execute(text("""select definition_ref, definition_hash, execution_mode from execution_runs
@@ -2292,11 +2304,12 @@ def _受理运行(c, me, project_id, 定义, 来源, 输入, idempotency_key, �
     # 闸判「有没有模型步」用的是它再加上 Agent 那一张(调模型的步骤,11-06)—— Agent 的连接在 Agent 版本上,这里取不到
     cvs = [n["config"].get("connection_version_id") for n in 定义.get("nodes") or []
            if n.get("type") in 用模型连接的步骤 and (n.get("config") or {}).get("connection_version_id")]
+    cvs += _Agent步骤的连接(c, project_id, 定义.get("nodes"))      # Agent 的连接在 Agent 版本上(11-06)
     真的 = c.execute(text("""select count(*) from connection_versions where project_id=:p and id = any(:ids)
                                and coalesce(capabilities->>'execution_mode', '') <> 'mock'"""),
                      {"p": project_id, "ids": cvs}).scalar() if cvs else 0
     模式 = "live" if (真的 and not __import__("runtime_cfg").模型是mock()) else "mock"
-    _要的 = _用的依赖(定义.get("nodes"))
+    _要的 = sorted(set(_用的依赖(定义.get("nodes"))) | set(_Agent步骤的连接(c, project_id, 定义.get("nodes"))))
     if _要的:
         # 依赖指纹(DF-01 欠债,11-05):这一跑用的连接设置 / 工具父行是哪一份。探测会原地改 capabilities、
         # 工具目录能改 name / adapter(id 不变、哈希不变)—— 发生产的闸拿它判「那次跑通时的,现在还是不是这一份」

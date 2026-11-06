@@ -701,6 +701,130 @@ def _跑一张工作流(c, job, 打点):
                 return _EM.连接测试替身(名, 实参, tvr.get("output_schema"))
         raise RN.需要等待("external", {"工具": 名, "参数": 实参, "tool_version_id": tv})
 
+    def _agent(cfg, 包):
+        """工作流里的 Agent 步骤(11-06,用户拍「现在就把执行器做出来」)。
+
+        跑的是这一步选的 **Agent 版本**(确切版本),上限取三者里最严的:Agent 版本自己的 / 这一步的 sub_limits /
+        父流程还剩的回合(§13.2:嵌套不能重新拿一份完整预算);工具 = Agent 版本的 ∩ 这一步 allowed_capabilities(给了才收窄)。
+        模型:这次运行受理时定的 mock / live(live 走 真模型.Agent模型,钉的是 Agent 版本的那条连接)。
+        澜绣桥的工具交给桥:Agent 循环抛 要等 → 这里抛 需要等待("external"),**整条工作流挂起**(和工具步骤同一条路,
+        桥闸照旧管批准)—— 载荷里带着 Agent 自己的检查点;回执一到,runner 把「检查点 + 回执」交回这里接着跑。
+        连接测试 / 评测跑法里的写工具照旧只演练(和工具步骤同一条)。"""
+        import json as _jj
+        import agent_loop as _AL
+        import agents_api as _AA
+        import tool_gateway as _TG
+        import 桥工具 as _桥
+        import dsl as _DS
+        v = c.execute(text("select * from agent_versions where project_id=:p and id=:i"),
+                      {"p": job["project_id"], "i": cfg.get("agent_version_id")}).mappings().first()
+        if not v:
+            raise RN.节点失败("AGENT_VERSION_NOT_FOUND", "这一步选的 Agent 版本在这个项目里找不到", "回「搭建」重新选一个 Agent 版本")
+        acfg = {k: v[k] for k in ("prompt_version_id", "connection_version_id", "task_template", "tools", "context_policy",
+                                   "limits", "output_schema", "completion_criteria", "incomplete_strategy",
+                                   "execution_strategy", "input_schema")}
+        pv = c.execute(text("select messages from prompt_versions where project_id=:p and id=:i"),
+                       {"p": job["project_id"], "i": acfg.get("prompt_version_id")}).scalar()
+        acfg["instructions"] = ((pv or {}).get("system") if pv else "") or ""
+        if 包.get("任务"):
+            acfg["task_template"] = 包["任务"] if isinstance(包["任务"], str) else _jj.dumps(包["任务"], ensure_ascii=False)
+        # 工具:Agent 版本的 ∩ allowed_capabilities(给了才收窄 —— 有效权限取交集,§6.1)
+        允许 = cfg.get("allowed_capabilities")
+        acfg["tools"] = [t for t in (acfg.get("tools") or [])
+                         if not 允许 or (t.get("tool_version_id") if isinstance(t, dict) else t) in 允许]
+        # 上限:三者取最严
+        限 = dict(acfg.get("limits") or {})
+        for k in ("max_model_turns", "max_tool_attempts"):
+            候 = [x for x in (限.get(k), (cfg.get("sub_limits") or {}).get(k),
+                             包.get("父流程剩余回合") if k == "max_model_turns" else None) if isinstance(x, (int, float))]
+            if 候:
+                限[k] = int(min(候))
+        acfg["limits"] = 限
+        目录 = _AA._工具目录(c, job["project_id"], acfg.get("tools") or [])
+        错 = _TG.校验Schema(包.get("输入") or {}, acfg.get("input_schema") or {})
+        if 错 and not 包.get("续"):
+            raise RN.节点失败("AGENT_INPUT_INVALID", f"交给 Agent 的输入不合它的输入格式:{'; '.join(错[:3])}",
+                            "在右侧「用到的数据」里把输入映射对上 Agent 版本的输入格式")
+        # 模型
+        回合用量 = []
+        if r["execution_mode"] == "live":
+            连 = c.execute(text("""select cv.endpoint, cv.secret_ref, cv.capabilities is not null as 探过吗, mc.status, mc.adapter
+                                    from connection_versions cv join model_connections mc
+                                      on mc.project_id=cv.project_id and mc.id=cv.connection_id
+                                   where cv.project_id=:p and cv.id=:i"""),
+                           {"p": job["project_id"], "i": acfg.get("connection_version_id")}).mappings().first()
+            if not 连:
+                raise RN.节点失败("NO_MODEL_CONNECTION", "这个 Agent 版本钉的模型连接找不到", "回 Agent 页重新选一条连接再冻一版")
+            if 连["status"] != "active":
+                raise RN.节点失败("MODEL_CONNECTION_DISABLED", "这个 Agent 版本钉的模型连接已停用", "换一个,或者请管理员启用")
+            if not 连["探过吗"]:
+                raise RN.节点失败("MODEL_CONNECTION_UNPROBED", "这个 Agent 版本钉的模型连接从没探测过", "去「模型与连接」探一次。**不退回 mock**")
+            import 真模型 as _真
+            _模 = _真.Agent模型(dict(连), 输出Schema=acfg.get("output_schema"))
+
+            def _模型(消息们, 工具定义们):
+                try:
+                    出 = _模(消息们, 工具定义们)
+                except _真.调不动 as e:
+                    raise RN.节点失败(e.码, str(e.细节)[:200], "看「模型与连接」那条连接还通不通;**不退回 mock**")
+                回合用量.append(出)
+                return 出
+        else:
+            def _填(sch):
+                t = (sch or {}).get("type")
+                if t == "object":
+                    return {k: _填(x) for k, x in ((sch or {}).get("properties") or {}).items()}
+                return [] if t == "array" else 0 if t in ("integer", "number") else False if t == "boolean" else "[mock]"
+            def _模型(消息们, 工具定义们):
+                # mock:脚本化,**自己说自己是 mock** —— 对话里还没有工具结果就调第一个工具(有的话),有了就按输出格式交一份 [mock] 结果。
+                # ⚠️ 看对话、不数轮次(11-06 e2e 第一次跑 mock 那一支就撞到):续跑时这个适配器是新建的,轮次计数从 1 重来 ——
+                # 于是又去调同一个工具、又挂起,**永远交不了卷**。对话是跟着检查点存下来的,它才是「跑到哪了」的真相
+                if 工具定义们 and not any(m.get("role") == "tool" for m in 消息们 or []):
+                    return {"tool_calls": [{"id": "mock_1", "name": 工具定义们[0]["name"], "arguments": {}}],
+                            "usage": {"input_tokens": 1, "output_tokens": 1}, "execution_mode": "mock"}
+                return {"finish": _填(acfg.get("output_schema") or {"type": "object"}),
+                        "usage": {"input_tokens": 1, "output_tokens": 1}, "execution_mode": "mock"}
+        适 = {"model": _模型}
+        for 契 in 目录.values():
+            if not (_桥.种类(契["name"]) and (契["adapter"] == "lanxiu_bridge" or str(契["adapter"] or "").startswith("lanxiu-"))):
+                continue
+            if 跑法 in ("连接测试", "评测") and 契["side_effect_type"] != _DS.只读:
+                import 执行模式 as _EM
+                适[契["name"]] = (lambda 名, sch: lambda 实参: _EM.连接测试替身(名, 实参, sch))(契["name"], 契.get("output_schema"))
+            else:
+                适[契["name"]] = (lambda 名: lambda 实参: (_ for _ in ()).throw(_TG.要等({"工具": 名, "参数": 实参})))(契["name"])
+        续 = 包.get("续")
+        前回合 = int(((续 or {}).get("检查点") or {}).get("回合") or 0)
+        前工具 = int(((续 or {}).get("检查点") or {}).get("工具尝试") or 0)
+        结果 = _AL.跑一个agent(acfg, 包.get("输入") or {}, 适配器=适, 工具目录=目录,
+                             有效范围={"paths": [], "hosts": [], "ids": []}, 账本=None,
+                             记事=lambda k, x: 记事(k, dict(x or {}, node_id=包.get("node_id"))),
+                             产物在吗=lambda ref: False, 批准查询=None,
+                             run_id=f"{run_id}:{包.get('node_id')}", 恢复=续)
+        # 真跑的每一回合进用量账(走唯一写入口;挂起也记 —— 那几回合的钱已经花了)
+        if 回合用量:
+            import knowledge.usage as _UG
+            for 序, 出 in enumerate(回合用量, 1):
+                if not (出.get("usage") or {}).get("input_tokens"):
+                    continue
+                try:
+                    _UG.写进库(c, 组织=job["organization_id"], 项目=job["project_id"], 谁=我是谁, 用量=出["usage"],
+                              模型=出.get("actual_model"), 提供方=连接协议到供应商.get(连["adapter"]) or "未知",
+                              资源="generate", 事件键=f"{run_id}:{包.get('node_id')}:{出.get('响应id') or 序}",
+                              trace_id=r["trace_id"], 是mock=False, 调用方="工作流 Agent 步骤", _新id=_新)
+                except _UG.用量不对:
+                    continue
+        本段 = {"模型回合": 结果["usage"]["模型回合"] - 前回合, "工具尝试": 结果["usage"]["工具尝试"] - 前工具}
+        if 结果["execution_status"] == "waiting_external":
+            载 = 结果["等待"]["载荷"]
+            raise RN.需要等待("external", {"工具": 载.get("工具"), "参数": 载.get("参数"),
+                                          "agent检查点": 结果["检查点"], "本段用量": 本段})
+        if 结果["execution_status"] != "succeeded":
+            raise RN.节点失败("AGENT_" + str(结果["completion_reason"] or "incomplete").upper(),
+                            f"Agent 没完成(停在「{结果['completion_reason']}」):{'; '.join(结果['validation_results'][:2])}",
+                            "看这一步的事件:回合 / 工具上限够不够、输出核验差了什么")
+        return dict(结果["output"] or {}, execution_mode=r["execution_mode"], 本段用量=本段)
+
     恢复 = None
     if 快照:
         等 = 快照.get("等待") or {}
@@ -779,7 +903,7 @@ def _跑一张工作流(c, job, 打点):
             if isinstance(v, dict) and "__没存全__" not in v:
                 样例[行["node_id"]] = v
         打点("样例预览:取到样例", {"有样例的步骤": sorted(样例)})
-    结果 = RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm, "tool": _工具},
+    结果 = RN.跑一张图(计划, r["input_snapshot"] or {}, 适配器={"llm": _llm, "tool": _工具, "agent": _agent},
                     记事=记事, run_id=run_id, 上限=r["limits"] or {},
                     系统={"project_id": job["project_id"]}, 恢复=恢复, 样例=样例)
     打点("执行完", {"状态": 结果["执行状态"]})
